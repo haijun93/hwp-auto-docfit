@@ -40,3 +40,14 @@ jobs:
         with:
           name: LineFit_v0.1_windows
           path: package/
+
+      - name: Publish package to git branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B exe-artifact-v0.1
+          git add -f package/LineFit_v0.1.exe package/FilePathCheckerModuleExample.dll
+          git commit -m "Build LineFit v0.1 Windows executable"
+          git push -f origin exe-artifact-v0.1
