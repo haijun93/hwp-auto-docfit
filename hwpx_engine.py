@@ -203,6 +203,17 @@ def fit_hwpx_package(src_hwpx_path: str, dst_hwpx_path: str) -> dict:
                                 new_cid = create_adjusted_char_pr(orig_cid, sp_delta, rt_delta)
                                 run.attrib["charPrIDRef"] = new_cid
 
+                        # [핵심] linesegarray를 1줄 단일 세그먼트로 갱신하여 뷰어의 2줄 강제 줄바꿈 방지
+                        lsa = p.find("{http://www.hancom.co.kr/hwpml/2011/paragraph}linesegarray")
+                        if lsa is not None:
+                            segs = lsa.findall("{http://www.hancom.co.kr/hwpml/2011/paragraph}lineseg")
+                            if len(segs) > 1:
+                                # 2번째 줄 이후의 lineseg 제거
+                                for extra in segs[1:]:
+                                    lsa.remove(extra)
+                                # 첫 번째 lineseg의 flags를 문단 종료 플래그(1441792)로 설정
+                                segs[0].attrib["flags"] = "1441792"
+
                         adjusted_records.append({
                             "section": sec_name,
                             "text_preview": full_text[:40] + ("..." if len(full_text) > 40 else ""),
