@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - main
       - claude/add-letter-spacing-script
     paths:
       - ".github/workflows/build-windows-exe.yml"
