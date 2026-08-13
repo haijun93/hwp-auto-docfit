@@ -35,13 +35,17 @@ pip install pyhwpx pywin32 tkinterdnd2
 import os
 import sys
 import shutil
-import winreg
 import threading
 import queue
 import traceback
 import re
 import time
 from pathlib import Path
+
+try:
+    import winreg
+except ImportError:
+    winreg = None
 
 # ============================================================
 # GUI & Drag and Drop
@@ -55,31 +59,22 @@ from tkinter.filedialog import askopenfilenames
 try:
     from tkinterdnd2 import TkinterDnD, DND_FILES
 except ImportError:
-    print()
-    print("=" * 60)
-    print("tkinterdnd2가 설치되어 있지 않습니다.")
-    print(f'설치 명령: "{sys.executable}" -m pip install tkinterdnd2')
-    print("=" * 60)
-    print()
-    raise
+    TkinterDnD = None
+    DND_FILES = None
 
 # ============================================================
 # 한글 Automation (pyhwpx / win32com)
 # ============================================================
 
-import pythoncom
+try:
+    import pythoncom
+except ImportError:
+    pythoncom = None
 
 try:
     from pyhwpx import Hwp
 except ImportError:
-    print()
-    print("=" * 60)
-    print("pyhwpx가 설치되어 있지 않습니다.")
-    print(f'설치 명령: "{sys.executable}" -m pip install pyhwpx')
-    print("=" * 60)
-    print()
-    # 런타임에 Hwp를 사용할 수 있도록 모듈 수준에서는 raise 처리
-    raise
+    Hwp = None
 
 # ============================================================
 # 프로그램 메타데이터
@@ -206,6 +201,8 @@ def 원본_DLL_찾기() -> Path | None:
 
 
 def 등록된_DLL_경로() -> str | None:
+    if winreg is None:
+        return None
     try:
         with winreg.OpenKey(
             winreg.HKEY_CURRENT_USER,
@@ -216,12 +213,14 @@ def 등록된_DLL_경로() -> str | None:
             value, value_type = winreg.QueryValueEx(key, REGISTRY_VALUE_NAME)
             if value_type == winreg.REG_SZ:
                 return str(value)
-    except (FileNotFoundError, OSError):
+    except (FileNotFoundError, OSError, AttributeError):
         pass
     return None
 
 
 def 레지스트리_등록():
+    if winreg is None:
+        return
     HWP_AUTOMATION_DIR.mkdir(parents=True, exist_ok=True)
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, REGISTRY_PATH) as key:
         winreg.SetValueEx(
@@ -271,8 +270,13 @@ def 한글_시작():
     """pyhwpx Hwp 인스턴스를 생성하고 보안모듈을 등록하여 반환"""
     global hwp
 
+    if pythoncom is not None:
+        pythoncom.CoInitialize()
+
+    if Hwp is None:
+        raise RuntimeError("한글 자동화(pyhwpx/win32com)는 Windows 환경에서 한글 2020 이상이 설치되어 있어야 동작합니다.")
+
     로그("한글 인스턴스 시작 중 (pyhwpx)...")
-    pythoncom.CoInitialize()
 
     # pyhwpx Hwp 객체 생성
     hwp = Hwp(visible=True)
