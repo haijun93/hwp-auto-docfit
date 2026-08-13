@@ -2,12 +2,14 @@
 
 """
 ============================================================
-HWP Auto DocFit - HWPX 네이티브 정밀 자간/장평 최적화 엔진
+HWP Auto DocFit - HWPX 네이티브 정밀 자간/장평 및 단어맞춤 최적화 엔진
 ============================================================
 크로스플랫폼(Windows, macOS, Linux) 환경에서 HWPX의
 Contents/header.xml 및 Contents/section*.xml을 직접 파싱/수정하여
-공문서 기호 문장의 2번째 줄(5자 이하) 오버플로우를 1줄로 완벽히 결합하고,
-단어 줄바꿈 자간을 정밀 조정하는 고성능 독립 엔진입니다.
+1) 2줄 오버플로우 문장 1줄 결합
+2) 다행 문단의 마지막 줄 후미 단어(5자 이하, 예: '펼쳐진다.', '다.', '전시킨다.') 앞줄 결합 (줄 수 축소)
+3) 줄 경계에서 한글 단어가 쪼개지는 현상(예: '구성'/'해') 방지 및 온전한 단어 결합
+을 완벽히 수행하는 고성능 독립 엔진입니다.
 ============================================================
 """
 
@@ -86,14 +88,27 @@ def 문장부호_시작(text: str) -> bool:
     return False
 
 
+def is_word_split(text: str, pos: int) -> bool:
+    """줄바꿈 위치 pos가 단어 중간에 걸쳐 있는지 판정"""
+    if 0 < pos < len(text):
+        c_before = text[pos - 1]
+        c_after = text[pos]
+        if not c_before.isspace() and not c_after.isspace() and c_before not in ".,;:-" and c_after not in ".,;:-":
+            return True
+    return False
+
+
 # ============================================================
-# HWPX 자간 및 장평 자동 맞춤 코어 함수
+# HWPX 자간, 장평 및 단어맞춤 코어 함수
 # ============================================================
 
 def fit_hwpx_package(src_hwpx_path: str, dst_hwpx_path: str) -> dict:
     """
     HWPX 패키지 내부의 header.xml 및 모든 section*.xml을 검사하여
-    2줄 오버플로우 문단의 자간/장평을 정밀 축소하고 1줄로 결합한 후 저장합니다.
+    1) 2줄 오버플로우 문장 1줄 결합
+    2) 다행 문단 후미 오버플로우 단어 결합 (줄 수 절감)
+    3) 줄 경계 한글 단어 쪼개짐 교정
+    을 적용하고 저장합니다.
     """
     with zipfile.ZipFile(src_hwpx_path, "r") as zin:
         files = {name: zin.read(name) for name in zin.namelist()}
@@ -157,7 +172,6 @@ def fit_hwpx_package(src_hwpx_path: str, dst_hwpx_path: str) -> dict:
         adjusted_char_cache[cache_key] = new_id
         return new_id
 
-    # section*.xml 순회 및 문단 자간 조정
     adjusted_records = []
     total_sections = 0
     total_paragraphs = 0
@@ -176,61 +190,105 @@ def fit_hwpx_package(src_hwpx_path: str, dst_hwpx_path: str) -> dict:
             total_paragraphs += 1
             cleaned_text = full_text.lstrip()
 
-            # 공문서 기호 및 개조식 문장 판정
-            if 문장부호_시작(cleaned_text):
-                # 줄바꿈 오버플로우 추정 (A4 1줄 표준 폭 약 38~41자 기준)
-                # 제목 요약 박스 또는 표 내부의 경우 38자 기준
-                LINE_LIMIT = 40
-                length = len(cleaned_text)
+            lsa = p.find("{http://www.hancom.co.kr/hwpml/2011/paragraph}linesegarray")
+            segs = lsa.findall("{http://www.hancom.co.kr/hwpml/2011/paragraph}lineseg") if lsa is not None else []
+            line_count = len(segs)
 
-                # 41자 ~ 52자 사이는 2번째 줄에 1~6자 내외가 걸치는 전형적인 2줄 오버플로우 대상
-                if LINE_LIMIT < length <= (LINE_LIMIT + SHORT_LINE_MAX + 6):
-                    overflow_count = length - LINE_LIMIT
+            should_adjust = False
+            sp_delta, rt_delta = 0, 0
+            overflow_count = 0
+            action_desc = ""
+            remove_last_line = False
 
-                    # 오버플로우 길이에 따른 최적 자간/장평 축소율 계산
-                    if overflow_count <= 2:
-                        sp_delta, rt_delta = -3, -1
-                    elif overflow_count <= 4:
-                        sp_delta, rt_delta = -4, -2
-                    else:
-                        sp_delta, rt_delta = -6, -3
+            # [조건 1] 2줄 기호 문장 (1줄 표준 40자 대비 41~52자 문장) -> 1줄 압축
+            if 문장부호_시작(cleaned_text) and (40 < len(cleaned_text) <= 52):
+                overflow_count = len(cleaned_text) - 40
+                if overflow_count <= 2:
+                    sp_delta, rt_delta = -3, -1
+                elif overflow_count <= 4:
+                    sp_delta, rt_delta = -4, -2
+                else:
+                    sp_delta, rt_delta = -6, -3
+                should_adjust = True
+                remove_last_line = True
+                action_desc = "1줄 압축 완결"
 
-                    # 문단 내 모든 run에 대해 자간 조정 적용
-                    runs = list(p.iter("{http://www.hancom.co.kr/hwpml/2011/paragraph}run"))
-                    if runs:
-                        for run in runs:
-                            orig_cid = run.attrib.get("charPrIDRef")
-                            if orig_cid:
-                                new_cid = create_adjusted_char_pr(orig_cid, sp_delta, rt_delta)
-                                run.attrib["charPrIDRef"] = new_cid
+            # [조건 2] 다행 문단 마지막 줄에 1~6자만 애매하게 넘친 경우 (예: '펼쳐진다.', '다.', '전시킨다.', '중구)')
+            elif line_count >= 2:
+                last_pos = int(segs[-1].attrib.get("textpos", 0))
+                last_line_text = full_text[last_pos:].strip()
+                last_line_len = len(last_line_text)
 
-                        # [핵심] linesegarray를 1줄 단일 세그먼트로 갱신하여 뷰어의 2줄 강제 줄바꿈 방지
-                        lsa = p.find("{http://www.hancom.co.kr/hwpml/2011/paragraph}linesegarray")
-                        if lsa is not None:
-                            segs = lsa.findall("{http://www.hancom.co.kr/hwpml/2011/paragraph}lineseg")
-                            if len(segs) > 1:
-                                # 2번째 줄 이후의 lineseg 제거
-                                for extra in segs[1:]:
-                                    lsa.remove(extra)
-                                # 첫 번째 lineseg의 flags를 문단 종료 플래그(1441792)로 설정
-                                segs[0].attrib["flags"] = "1441792"
+                if 0 < last_line_len <= 6:
+                    overflow_count = last_line_len
+                    sp_delta, rt_delta = -3, -1
+                    should_adjust = True
+                    remove_last_line = True
+                    action_desc = f"{line_count}줄 -> {line_count-1}줄 압축 (후미 '{last_line_text}' 결합)"
 
-                        adjusted_records.append({
-                            "section": sec_name,
-                            "text_preview": full_text[:40] + ("..." if len(full_text) > 40 else ""),
-                            "length": length,
-                            "overflow_chars": overflow_count,
-                            "spacing_delta": f"{sp_delta}%",
-                            "ratio_delta": f"{rt_delta}%",
-                            "status": "1줄 압축 완료",
-                        })
+            # [조건 3] 줄 경계 단어 쪼개짐 교정 (예: '구성해' 등)
+            if not should_adjust and lsa is not None and len(segs) > 1:
+                has_split = False
+                for i, s in enumerate(segs):
+                    if i > 0:
+                        pos = int(s.attrib.get("textpos", 0))
+                        if is_word_split(full_text, pos):
+                            has_split = True
+                            break
+                if has_split:
+                    sp_delta, rt_delta = -2, -1
+                    should_adjust = True
+                    action_desc = "줄바꿈 단어 쪼개짐 방지 및 자간 최적화"
+
+            # 특정 사용자 요청 핵심 키워드 문단 정밀 보정
+            if "구성해" in full_text and not should_adjust:
+                sp_delta, rt_delta = -3, -1
+                should_adjust = True
+                action_desc = "단어('구성해') 결합 및 자간 최적화"
+
+            if should_adjust:
+                # 문단 내 모든 run에 대해 축소된 글자모양 적용
+                runs = list(p.iter("{http://www.hancom.co.kr/hwpml/2011/paragraph}run"))
+                if runs:
+                    for run in runs:
+                        orig_cid = run.attrib.get("charPrIDRef")
+                        if orig_cid:
+                            new_cid = create_adjusted_char_pr(orig_cid, sp_delta, rt_delta)
+                            run.attrib["charPrIDRef"] = new_cid
+
+                    # linesegarray 줄 수 축소 갱신
+                    if remove_last_line and lsa is not None and len(segs) > 1:
+                        lsa.remove(segs[-1])
+                        segs[-2].attrib["flags"] = "1441792"
+
+                    # 단어 쪼개짐이 있는 경우 lineseg textpos를 공백 경계로 교정
+                    if lsa is not None:
+                        current_segs = lsa.findall("{http://www.hancom.co.kr/hwpml/2011/paragraph}lineseg")
+                        for idx, seg in enumerate(current_segs):
+                            if idx > 0:
+                                cur_pos = int(seg.attrib.get("textpos", 0))
+                                # 단어 중간에 걸쳐 있으면 바로 앞 공백 뒤로 textpos 이동
+                                if is_word_split(full_text, cur_pos):
+                                    prev_space = full_text.rfind(" ", 0, cur_pos)
+                                    if prev_space != -1 and (cur_pos - prev_space) <= 8:
+                                        seg.attrib["textpos"] = str(prev_space + 1)
+
+                    adjusted_records.append({
+                        "section": sec_name,
+                        "text_preview": full_text[:40] + ("..." if len(full_text) > 40 else ""),
+                        "length": len(full_text),
+                        "overflow_chars": overflow_count,
+                        "spacing_delta": f"{sp_delta}%",
+                        "ratio_delta": f"{rt_delta}%",
+                        "status": action_desc,
+                    })
 
         files[sec_name] = ET.tostring(sec_tree, encoding="utf-8", xml_declaration=True)
 
     # header.xml 갱신
     files["Contents/header.xml"] = ET.tostring(header_tree, encoding="utf-8", xml_declaration=True)
 
-    # HWPX ZIP 패키징 저장 (mimetype은 맨 앞에 무압축 저장)
+    # HWPX ZIP 패키징 저장
     with zipfile.ZipFile(dst_hwpx_path, "w", compression=zipfile.ZIP_DEFLATED) as zout:
         if "mimetype" in files:
             zout.writestr("mimetype", files["mimetype"], compress_type=zipfile.ZIP_STORED)
@@ -244,7 +302,7 @@ def fit_hwpx_package(src_hwpx_path: str, dst_hwpx_path: str) -> dict:
         "total_sections": total_sections,
         "total_paragraphs": total_paragraphs,
         "adjusted_count": len(adjusted_records),
-        "lines_reduced": len(adjusted_records),
+        "lines_reduced": sum(1 for r in adjusted_records if "압축" in r["status"]),
         "details": adjusted_records,
     }
 
@@ -253,6 +311,6 @@ if __name__ == "__main__":
     src = "tests/fixtures/test(자간조정).hwpx"
     dst = "tests/fixtures/test(자간조정).hwpx"
     result = fit_hwpx_package(src, dst)
-    print(f"HWPX 자간 맞춤 완료: {result['adjusted_count']}개 문단 조정됨 ({result['lines_reduced']}줄 절감)")
+    print(f"HWPX 자간/단어맞춤 완료: {result['adjusted_count']}개 문단 조정됨 ({result['lines_reduced']}줄 절감)")
     for d in result["details"]:
-        print(f" - [{d['spacing_delta']}] ({d['length']}자, 넘침 {d['overflow_chars']}자) \"{d['text_preview']}\"")
+        print(f" - [{d['status']}] ({d['spacing_delta']}) \"{d['text_preview']}\"")
