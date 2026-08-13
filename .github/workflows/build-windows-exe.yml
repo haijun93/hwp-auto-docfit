@@ -1,0 +1,35 @@
+name: Build Windows executable
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install pyinstaller pywin32
+
+      - name: Build executable
+        run: pyinstaller --onefile --name "LineFit_v0.1" "hwp auto letter spacing.py"
+
+      - name: Assemble release package
+        run: |
+          mkdir package
+          copy dist\LineFit_v0.1.exe package\
+          copy FilePathCheckerModuleExample.dll package\
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: LineFit_v0.1_windows
+          path: package/

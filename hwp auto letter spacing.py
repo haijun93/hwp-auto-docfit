@@ -17,6 +17,8 @@ import win32com.client as win32
 
 APP_NAME = "LineFit"
 
+VERSION = "0.1"
+
 DLL_NAME = "FilePathCheckerModuleExample.dll"
 
 # DLL이 최종적으로 설치될 위치
@@ -803,6 +805,10 @@ def main():
     성공목록 = []
     실패목록 = []
 
+    print("=" * 70)
+    print(f"{APP_NAME} v{VERSION}")
+    print("=" * 70)
+
     try:
 
         # ====================================================
@@ -997,7 +1003,7 @@ def main():
         try:
 
             messagebox.showerror(
-                APP_NAME,
+                f"{APP_NAME} v{VERSION}",
                 f"프로그램 실행 중 오류가 발생했습니다.\n\n{e}"
             )
 
