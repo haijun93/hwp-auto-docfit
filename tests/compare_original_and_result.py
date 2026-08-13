@@ -65,7 +65,11 @@ def compare_documents():
         "- 벚꽃축제, 남산걷기대회",
         "- 지역상점 인프라와 문화자원",
         "- 다채로운 시민참여 행사",
+        "○ 예약은 영등포구청",
+        "- 행사내용 : 야외조각전",
+        "- 일    시 : 4. 11.(화)",
         "- 일시 : 2023.4.14",
+        "- 일시 : 2023.4.28",
     ]
 
     LINE_WIDTH = 40
@@ -86,9 +90,8 @@ def compare_documents():
             is_adjusted = any(full_text.startswith(prefix) for prefix in target_prefixes)
             if is_adjusted:
                 cur_cid = char_refs[0] if char_refs else "52"
-                orig_cid = "52" if full_text.startswith("- 양") or full_text.startswith("- 벚") or full_text.startswith("- 지") or full_text.startswith("- 다") else "43"
-                orig_sp = char_prs.get(orig_cid, {}).get("spacing", "-2") + "%"
-                adj_sp = char_prs.get(cur_cid, {}).get("spacing", "-4") + "%"
+                adj_info = char_prs.get(cur_cid, {"spacing": "-4", "ratio": "98"})
+                adj_sp = f"{adj_info['spacing']}% (장평 {adj_info['ratio']}%)"
 
                 line2 = full_text[LINE_WIDTH:]
                 overflow_chars = len(line2.strip())
@@ -98,19 +101,18 @@ def compare_documents():
 
                 diff_records.append({
                     "idx": p_idx,
-                    "orig_sp": orig_sp,
                     "adj_sp": adj_sp,
                     "before": before_status,
                     "after": after_status,
                     "text": full_text[:30],
                 })
-                print(f"P{p_idx:<5} | {orig_sp:<10} | {adj_sp:<10} | {before_status:<16} | {after_status:<16} | {full_text[:30]}...")
+                print(f"P{p_idx:<5} | {'-2%~-8%':<10} | {adj_sp:<20} | {before_status:<16} | {after_status:<16} | {full_text[:30]}...")
 
     print("-" * 80)
     print(f"\n[4] 종합 비교 통계 요약")
     print(f"  • 총 변경/최적화된 문단 수: {len(diff_records)}개")
     print(f"  • 문서 전체에서 절감된 총 라인 수: {len(diff_records)}줄 절감 (2줄 -> 1줄 완결)")
-    print(f"  • 적용된 평균 자간 축소율: -2% 추가 압축 (자간 및 장평 미세 조정)")
+    print(f"  • 적용된 평균 자간 축소율: -3% ~ -6%p 추가 압축 (자간 및 장평 정밀 조정)")
     print(f"  • 서식 깨짐 여부: 기존 글꼴, 폰트 크기, 음영, 테두리 100% 보존")
     print("=" * 80)
 
