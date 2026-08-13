@@ -16,8 +16,12 @@ from pathlib import Path
 # 프로젝트 루트 디렉터리를 sys.path에 추가
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# 테스트 대상 파일
-TEST_HWP_PATH = "/Users/hyeokjunkong/Downloads/test/test.hwp"
+# 테스트 대상 파일 (저장소 내 fixture 우선, 없을 경우 다운로드 폴더)
+REPO_FIXTURE_PATH = Path(__file__).parent / "fixtures" / "test.hwp"
+if REPO_FIXTURE_PATH.is_file():
+    TEST_HWP_PATH = str(REPO_FIXTURE_PATH.resolve())
+else:
+    TEST_HWP_PATH = "/Users/hyeokjunkong/Downloads/test/test.hwp"
 
 # hwp_auto_docfit 로직 복제/참조
 SENTENCE_MARKS = (
@@ -164,7 +168,7 @@ def run_all_tests():
     # -------------------------------------------------------------
     # 1. 저장파일명 생성 테스트 (항상 .hwpx 확장자)
     # -------------------------------------------------------------
-    expected_save_path = "/Users/hyeokjunkong/Downloads/test/test(자간조정).hwpx"
+    expected_save_path = str(Path(TEST_HWP_PATH).with_name(f"{Path(TEST_HWP_PATH).stem}(자간조정).hwpx"))
     actual_save_path = 저장파일명(TEST_HWP_PATH)
     assert actual_save_path == expected_save_path, f"저장파일명 오류: {actual_save_path}"
     print("[TEST 1/5] 저장파일명 생성 (항상 .hwpx): PASS")
