@@ -615,8 +615,9 @@ def 컨트롤_내부_자간조정() -> bool:
 # ============================================================
 
 def 저장파일명(파일_경로: str) -> str:
+    """결과 파일명을 항상 .hwpx 확장자로 생성"""
     path = Path(파일_경로)
-    return str(path.with_name(f"{path.stem}(자간조정){path.suffix}"))
+    return str(path.with_name(f"{path.stem}(자간조정).hwpx"))
 
 
 def 문서_닫기():
@@ -637,7 +638,7 @@ def 문서_닫기():
 
 
 def 문서_처리(파일: str, index: int, total: int) -> bool:
-    """단일 HWP/HWPX 문서 처리"""
+    """단일 HWP/HWPX 문서 처리 및 HWPX 결과 저장"""
     global hwp
 
     if 중단_요청됨():
@@ -672,11 +673,11 @@ def 문서_처리(파일: str, index: int, total: int) -> bool:
     if 중단_요청됨():
         return False
 
-    # 저장
+    # 저장 (항상 HWPX 포맷으로 저장)
     저장파일 = 저장파일명(파일)
-    상태(f"{파일명} : 저장 중...")
-    로그(f"저장 시작: {저장파일}")
-    hwp.save_as(저장파일)
+    상태(f"{파일명} : HWPX로 저장 중...")
+    로그(f"HWPX 저장 시작: {저장파일}")
+    hwp.save_as(저장파일, Format="HWPX")
 
     if not Path(저장파일).is_file():
         raise RuntimeError("결과 파일 생성 확인 실패")

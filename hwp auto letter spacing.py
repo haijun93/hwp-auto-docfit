@@ -641,13 +641,13 @@ def 저장경로_생성(파일):
 
     파일명 = os.path.basename(파일)
 
-    이름, 확장자 = os.path.splitext(
+    이름, _ = os.path.splitext(
         파일명
     )
 
     return os.path.join(
         폴더,
-        f"{이름}(자간조정){확장자}"
+        f"{이름}(자간조정).hwpx"
     )
 
 
@@ -776,7 +776,7 @@ def 문서_처리(
 
     hwp.SaveAs(
         Path=저장경로,
-        Format=포맷,
+        Format="HWPX",
         arg=""
     )
 

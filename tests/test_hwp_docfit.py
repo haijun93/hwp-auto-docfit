@@ -84,7 +84,7 @@ def 문장부호_시작(text: str) -> bool:
 
 def 저장파일명(파일: str) -> str:
     path = Path(파일)
-    return str(path.with_name(f"{path.stem}(자간조정){path.suffix}"))
+    return str(path.with_name(f"{path.stem}(자간조정).hwpx"))
 
 
 def extract_hwp_paragraphs(hwp_path: str) -> list[str]:
@@ -159,12 +159,12 @@ def run_all_tests():
     print("=" * 70)
 
     # -------------------------------------------------------------
-    # 1. 저장파일명 생성 테스트
+    # 1. 저장파일명 생성 테스트 (항상 .hwpx 확장자)
     # -------------------------------------------------------------
-    expected_save_path = "/Users/hyeokjunkong/Downloads/test/test(자간조정).hwp"
+    expected_save_path = "/Users/hyeokjunkong/Downloads/test/test(자간조정).hwpx"
     actual_save_path = 저장파일명(TEST_HWP_PATH)
     assert actual_save_path == expected_save_path, f"저장파일명 오류: {actual_save_path}"
-    print("[TEST 1/5] 저장파일명 생성: PASS")
+    print("[TEST 1/5] 저장파일명 생성 (항상 .hwpx): PASS")
     print(f"         원본: {TEST_HWP_PATH}")
     print(f"         저장: {actual_save_path}")
 
