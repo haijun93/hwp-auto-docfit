@@ -19,6 +19,8 @@ HWP Auto DocFit
 8. 중복 파일 자동 제거
 9. 기존 자간 자동 조정 알고리즘
 10. 공문서 문장부호/번호 문장 자동 인식
+    (같은 문단 내 자동 줄바꿈으로 2줄이 된 경우만 대상,
+     실제 Enter로 문단이 나뉜 경우는 제외)
 11. 2번째 줄 5자 이하인 경우 자간 축소
 12. 한 줄이 될 때까지 반복
 13. 표 / 글상자 / 각주 / 미주 등 컨트롤 내부 처리
@@ -30,6 +32,7 @@ HWP Auto DocFit
 19. GUI 창 크기 자유 조절
 20. 최소 GUI 크기 450 x 350
 21. 실행 전 확인창 생략
+22. 공문서 문장부호 자동 자간 축소 GUI 옵션(ON/OFF)
 
 필요 패키지
 ------------------------------------------------------------
@@ -131,7 +134,7 @@ import win32com.client as win32
 # ============================================================
 
 APP_NAME = "HWP Auto DocFit"
-APP_VERSION = "4.0"
+APP_VERSION = "4.1"
 
 
 # ============================================================
@@ -320,6 +323,9 @@ hwp = None
 gui_queue = queue.Queue()
 
 중단_event = threading.Event()
+
+# 공문서 문장부호 자동 자간 축소 기능 ON/OFF (GUI 체크박스로 제어)
+문장부호_옵션_사용 = True
 
 
 # ============================================================
@@ -908,6 +914,30 @@ def 다음줄_이동():
 
 
 # ============================================================
+# 같은 문단인지 확인
+# ============================================================
+
+def 같은_문단(pos_a, pos_b):
+
+    """
+    hwp.GetPos()는 (List, Para, Pos)를 반환한다.
+
+    List/Para가 같다면 두 위치는 같은 문단(문단 내
+    자동 줄바꿈) 안에 있는 것이고, 다르다면 그 사이에
+    실제 Enter(문단 나눔)가 있었다는 뜻이다.
+
+    텍스트에서 "\\n"을 찾는 방식보다 HWP가 실제로
+    관리하는 문단 경계를 직접 확인하므로 더 정확하다.
+    """
+
+    return (
+        pos_a[0] == pos_b[0]
+        and
+        pos_a[1] == pos_b[1]
+    )
+
+
+# ============================================================
 # 문장부호 2줄 처리
 # ============================================================
 
@@ -924,17 +954,25 @@ def 문장부호_2줄_자간조정():
     위와 같은 구조에서:
 
     1. 첫 번째 줄이 문장부호/번호로 시작
-    2. 다음 줄이 존재
+    2. 다음 줄이 "같은 문단" 안에서 자동 줄바꿈으로 존재
+       (실제 Enter로 나뉜 다음 문단이면 대상에서 제외)
     3. 다음 줄의 글자수가 공백 포함 5자 이하
 
     라면 첫 번째 줄의 자간을 -1% 한다.
 
     한 줄로 합쳐질 때까지 반복한다.
 
+    GUI에서 이 기능을 끈 경우(문장부호_옵션_사용 == False)에는
+    아무 작업도 하지 않고 즉시 반환한다.
+
     반환:
         True  = 처리
         False = 중단
     """
+
+    if not 문장부호_옵션_사용:
+
+        return True
 
     if 중단_요청됨():
 
@@ -1039,6 +1077,22 @@ def 문장부호_2줄_자간조정():
             if (
                 before_next
                 ==
+                after_next
+            ):
+
+                break
+
+            # ------------------------------------------------
+            # 문단 경계(실제 Enter) 확인
+            #
+            # 다음 문자가 다른 문단으로 넘어갔다면,
+            # 지금 첫 번째 줄은 그 자체로 완결된 문단이고
+            # 그 뒤에 실제 Enter가 있다는 뜻이다.
+            # 이 경우는 자동 줄바꿈이 아니므로 대상에서 제외한다.
+            # ------------------------------------------------
+
+            if not 같은_문단(
+                current_pos,
                 after_next
             ):
 
@@ -2142,6 +2196,11 @@ class HwpAutoDocFitGUI:
 
         main_frame.grid_rowconfigure(
             2,
+            weight=0
+        )
+
+        main_frame.grid_rowconfigure(
+            3,
             weight=2
         )
 
@@ -2284,6 +2343,45 @@ class HwpAutoDocFitGUI:
         )
 
         # ====================================================
+        # Options
+        # ====================================================
+
+        options_frame = ttk.Frame(
+            main_frame
+        )
+
+        options_frame.grid(
+            row=1,
+            column=0,
+            sticky="ew",
+            pady=(0, 4)
+        )
+
+        options_frame.grid_columnconfigure(
+            0,
+            weight=1
+        )
+
+        self.문장부호_var = tk.BooleanVar(
+            value=True
+        )
+
+        self.문장부호_checkbox = ttk.Checkbutton(
+            options_frame,
+            text=(
+                "공문서 문장부호(항목기호) "
+                "자동 자간 축소"
+            ),
+            variable=self.문장부호_var
+        )
+
+        self.문장부호_checkbox.grid(
+            row=0,
+            column=0,
+            sticky="w"
+        )
+
+        # ====================================================
         # Status
         # ====================================================
 
@@ -2292,7 +2390,7 @@ class HwpAutoDocFitGUI:
         )
 
         status_frame.grid(
-            row=1,
+            row=2,
             column=0,
             sticky="ew",
             pady=(0, 4)
@@ -2343,7 +2441,7 @@ class HwpAutoDocFitGUI:
         )
 
         log_frame.grid(
-            row=2,
+            row=3,
             column=0,
             sticky="nsew",
             pady=(0, 4)
@@ -2838,6 +2936,16 @@ class HwpAutoDocFitGUI:
 
         중단_event.clear()
 
+        # ----------------------------------------------------
+        # 공문서 문장부호 자동 자간 축소 옵션 적용
+        # ----------------------------------------------------
+
+        global 문장부호_옵션_사용
+
+        문장부호_옵션_사용 = (
+            self.문장부호_var.get()
+        )
+
         self.progress["value"] = 0
 
         # ----------------------------------------------------
@@ -2857,6 +2965,10 @@ class HwpAutoDocFitGUI:
         )
 
         self.clear_button.config(
+            state="disabled"
+        )
+
+        self.문장부호_checkbox.config(
             state="disabled"
         )
 
@@ -3029,6 +3141,10 @@ class HwpAutoDocFitGUI:
                         state="normal"
                     )
 
+                    self.문장부호_checkbox.config(
+                        state="normal"
+                    )
+
                     self.status_var.set(
                         "작업 중단"
                     )
@@ -3081,6 +3197,10 @@ class HwpAutoDocFitGUI:
                     )
 
                     self.clear_button.config(
+                        state="normal"
+                    )
+
+                    self.문장부호_checkbox.config(
                         state="normal"
                     )
 
@@ -3141,6 +3261,10 @@ class HwpAutoDocFitGUI:
                     )
 
                     self.clear_button.config(
+                        state="normal"
+                    )
+
+                    self.문장부호_checkbox.config(
                         state="normal"
                     )
 
@@ -3233,6 +3357,10 @@ class HwpAutoDocFitGUI:
             )
 
             self.clear_button.config(
+                state="disabled"
+            )
+
+            self.문장부호_checkbox.config(
                 state="disabled"
             )
 
