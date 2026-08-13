@@ -2,6 +2,13 @@ name: Build Windows executable
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - claude/add-letter-spacing-script
+    paths:
+      - ".github/workflows/build-windows-exe.yml"
+      - "hwp auto letter spacing.py"
+      - "FilePathCheckerModuleExample.dll"
 
 jobs:
   build:
