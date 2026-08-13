@@ -10,6 +10,9 @@ on:
       - "hwp auto letter spacing.py"
       - "FilePathCheckerModuleExample.dll"
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
