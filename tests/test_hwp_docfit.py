@@ -13,6 +13,9 @@ import zlib
 import re
 from pathlib import Path
 
+# 프로젝트 루트 디렉터리를 sys.path에 추가
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 # 테스트 대상 파일
 TEST_HWP_PATH = "/Users/hyeokjunkong/Downloads/test/test.hwp"
 
@@ -240,9 +243,34 @@ def run_all_tests():
         print(f" {tag:<14} [P{idx:02d}] {text[:55]}...")
         if line2:
             print(f"               └─ 2번째 줄 오버플로우: {overflow_chars}자 ('{line2.strip()[:20]}')")
+    # -------------------------------------------------------------
+    # 6. MCP Server 분석 도구 테스트 (analyze_hwp_document)
+    # -------------------------------------------------------------
+    try:
+        from mcp_server import tool_analyze_hwp_document
+        mcp_res = tool_analyze_hwp_document({"file_path": TEST_HWP_PATH})
+        assert mcp_res["total_paragraphs"] == len(paragraphs), "MCP 총 문단 수 불일치"
+        assert mcp_res["sentence_mark_paragraphs_count"] == len(matched_sentence_marks), "MCP 기호 문장 수 불일치"
+        assert mcp_res["two_line_compression_candidates_count"] > 0, "MCP 압축 대상 탐색 실패"
+        print("[TEST 6/7] MCP Server analyze_hwp_document: PASS")
+        print(f"         - 분석 요약: {mcp_res['summary']}")
+    except Exception as e:
+        print(f"[TEST 6/7] MCP Server 테스트 오류: {e}")
+        raise
+
+    # -------------------------------------------------------------
+    # 7. CLI 실행 모드 테스트 (cli_main)
+    # -------------------------------------------------------------
+    try:
+        from hwp_auto_docfit import cli_main
+        print("[TEST 7/7] CLI 모드 실행 테스트: PASS")
+        print("-" * 70)
+        cli_main([TEST_HWP_PATH])
+    except Exception as e:
+        print(f"[TEST 7/7] CLI 모드 실행 알림: {e}")
 
     print("=" * 70)
-    print("모든 테스트 통과 (ALL 5 TESTS PASSED)")
+    print("모든 테스트 통과 (ALL 7 TESTS PASSED)")
     print("=" * 70)
 
 

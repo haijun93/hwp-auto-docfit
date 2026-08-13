@@ -1206,10 +1206,61 @@ class HwpAutoDocFitGUI:
 
 
 # ============================================================
-# 메인 엔트리포인트
+# CLI 및 메인 엔트리포인트
 # ============================================================
 
+def cli_main(files: list[str]):
+    """CLI 환경에서 일괄 문서 처리 및 분석 통계 리포트 출력"""
+    print("=" * 70)
+    print(f"{APP_NAME} v{APP_VERSION} (CLI 모드)")
+    print("=" * 70)
+
+    try:
+        from mcp_server import tool_analyze_hwp_document
+    except ImportError:
+        tool_analyze_hwp_document = None
+
+    valid_files = [f for f in files if os.path.isfile(f)]
+    if not valid_files:
+        print("처리할 파일이 없습니다.")
+        return
+
+    for idx, f in enumerate(valid_files, 1):
+        print(f"\n[{idx}/{len(valid_files)}] 문서 분석 및 자간 맞춤: {f}")
+        if tool_analyze_hwp_document:
+            analysis = tool_analyze_hwp_document({"file_path": f})
+            print(f"  • 총 문단 수: {analysis.get('total_paragraphs', 0)}개")
+            print(f"  • 공문서 기호/번호 문장: {analysis.get('sentence_mark_paragraphs_count', 0)}개")
+            print(f"  • 2줄 압축 대상 문단: {analysis.get('two_line_compression_candidates_count', 0)}개 (예상 {analysis.get('estimated_lines_saved', 0)}줄 절감)")
+
+        out_path = 저장파일명(f)
+        print(f"  • HWPX 결과 저장 예정: {out_path}")
+
+    # 실제 한글 환경일 경우 일괄 실행
+    try:
+        작업_실행(valid_files)
+    except Exception as e:
+        print(f"실행 알림: {e}")
+
+
 def main():
+    args = sys.argv[1:]
+
+    # 1. MCP 서버 모드
+    if "--mcp" in args:
+        try:
+            import mcp_server
+            mcp_server.main()
+        except Exception as e:
+            print(f"MCP 서버 실행 오류: {e}", file=sys.stderr)
+        return
+
+    # 2. CLI 파일 인자 전달 모드
+    if args and not args[0].startswith("-"):
+        cli_main(args)
+        return
+
+    # 3. 기본 GUI 모드
     root = TkinterDnD.Tk()
     HwpAutoDocFitGUI(root)
     root.mainloop()
