@@ -7,7 +7,7 @@ on:
       - claude/add-letter-spacing-script
     paths:
       - ".github/workflows/build-windows-exe.yml"
-      - "hwp auto letter spacing.py"
+      - "4444.py"
       - "FilePathCheckerModuleExample.dll"
 
 permissions:
@@ -27,21 +27,21 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install pyinstaller pywin32
+        run: pip install pyinstaller pywin32 tkinterdnd2
 
       - name: Build executable
-        run: pyinstaller --onefile --name "LineFit_v0.1" "hwp auto letter spacing.py"
+        run: pyinstaller --onefile --windowed --collect-all tkinterdnd2 --name "HWP_Auto_DocFit_v4.1" "4444.py"
 
       - name: Assemble release package
         run: |
           mkdir package
-          copy dist\LineFit_v0.1.exe package\
+          copy dist\HWP_Auto_DocFit_v4.1.exe package\
           copy FilePathCheckerModuleExample.dll package\
 
       - name: Upload package
         uses: actions/upload-artifact@v4
         with:
-          name: LineFit_v0.1_windows
+          name: HWP_Auto_DocFit_v4.1_windows
           path: package/
 
       - name: Publish package to git branch
@@ -50,7 +50,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout -B exe-artifact-v0.1
-          git add -f package/LineFit_v0.1.exe package/FilePathCheckerModuleExample.dll
-          git commit -m "Build LineFit v0.1 Windows executable"
-          git push -f origin exe-artifact-v0.1
+          git checkout -B exe-artifact-v4.1
+          git add -f package/HWP_Auto_DocFit_v4.1.exe package/FilePathCheckerModuleExample.dll
+          git commit -m "Build HWP Auto DocFit v4.1 Windows executable"
+          git push -f origin exe-artifact-v4.1

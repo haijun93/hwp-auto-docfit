@@ -284,6 +284,14 @@ SENTENCE_MARKS = (
 # 번호형 문장 시작 패턴
 # ============================================================
 
+# 가나다 순 항목기호로 실제 사용되는 14개 음절만 허용한다.
+# [가-힣]처럼 모든 한글 음절을 허용하면 "네. 알겠습니다"처럼
+# 흔한 한 글자 단어로 시작하는 일반 문장까지
+# 번호형 항목으로 오인식하게 된다.
+HANGUL_OUTLINE_SYLLABLES = (
+    "가나다라마바사아자차카타파하"
+)
+
 NUMBER_MARK_PATTERN = re.compile(
     r"""
     ^
@@ -292,9 +300,9 @@ NUMBER_MARK_PATTERN = re.compile(
         |
         \([0-9]{1,3}\)
         |
-        [가-힣][.)]
+        [""" + HANGUL_OUTLINE_SYLLABLES + r"""][.)]
         |
-        \([가-힣]\)
+        \([""" + HANGUL_OUTLINE_SYLLABLES + r"""]\)
         |
         [A-Za-z][.)]
         |
@@ -1183,10 +1191,6 @@ def 문장부호_2줄_자간조정():
                 current_pos[0],
                 current_pos[1],
                 current_pos[2]
-            )
-
-            first_line_after = (
-                현재줄_텍스트()
             )
 
             hwp.Run(
