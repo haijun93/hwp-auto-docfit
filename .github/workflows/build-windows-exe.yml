@@ -7,7 +7,7 @@ on:
       - claude/add-letter-spacing-script
     paths:
       - ".github/workflows/build-windows-exe.yml"
-      - "4444.py"
+      - "hwp_auto_docfit.py"
       - "FilePathCheckerModuleExample.dll"
 
 permissions:
@@ -27,10 +27,10 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install pyinstaller pywin32 tkinterdnd2
+        run: pip install pyinstaller pywin32 tkinterdnd2 pyhwpx
 
       - name: Build executable
-        run: pyinstaller --onefile --windowed --collect-all tkinterdnd2 --name "HWP_Auto_DocFit_v4.1" "4444.py"
+        run: pyinstaller --onefile --windowed --collect-all tkinterdnd2 --collect-all pyhwpx --name "HWP_Auto_DocFit_v4.1" "hwp_auto_docfit.py"
 
       - name: Assemble release package
         run: |

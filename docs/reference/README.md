@@ -1,6 +1,6 @@
 # 참고 자료 (한글 자동화 개발 참고 문서)
 
-이 폴더는 `hwp auto letter spacing.py` / `4444.py`(HWP Auto DocFit) 개발·유지보수 시
+이 폴더는 `hwp auto letter spacing.py` / `hwp_auto_docfit.py`(HWP Auto DocFit) 개발·유지보수 시
 참고할 한글(HWP) Automation 공식 자료를 모아둔 것이다.
 
 ## pyhwpx
