@@ -99,6 +99,55 @@ def is_word_split(text: str, pos: int) -> bool:
 
 
 # ============================================================
+# 금칙처리(禁則處理, kinsoku) 문자 집합
+#
+# 출처: kwakseongjae/auto-hwp (crates/hwp-typeset/src/lib.rs,
+# is_line_start_forbidden / is_line_end_forbidden, "rhwp set, verbatim").
+# 한/글이 실제로 지키는 규칙 — 이 문자들은 줄의 맨 앞/맨 끝에 올 수 없다.
+#
+# 기존 is_word_split()은 "공백도 아니고 .,;:-도 아니면 단어가 쪼개졌다"는
+# 대략적인 추정이었다. 이 규칙을 쓰면 예컨대 줄이 "." 나 ")" 로 시작하는
+# 경우처럼 is_word_split()이 놓치던 실제 금칙 위반을 정확히 잡아낼 수 있다.
+# ============================================================
+
+LINE_START_FORBIDDEN = frozenset(
+    ")]},.!?;:'\""
+    "、。…·―ー》」』】"
+    "）｝〕〉＞≫］﹞〞’"
+    "”，．！？；：%"
+)
+
+LINE_END_FORBIDDEN = frozenset(
+    "([{'\""
+    "《「『【（｛〔〈＜≪"
+    "［〝‘“$"
+    "₩£€¥＄￥"
+)
+
+
+def is_kinsoku_violation(text: str, pos: int) -> bool:
+    """
+    줄바꿈 위치 pos가 한/글의 금칙처리 규칙을 위반하는지 판정한다.
+
+    다음 중 하나라도 해당하면 위반:
+      - 다음 줄의 첫 글자가 줄 머리 금칙 문자 (닫는 괄호, 마침표·쉼표 등)
+      - 이전 줄의 마지막 글자가 줄 꼬리 금칙 문자 (여는 괄호, 통화기호 등)
+    """
+    if pos <= 0 or pos >= len(text):
+        return False
+    if text[pos] in LINE_START_FORBIDDEN:
+        return True
+    if text[pos - 1] in LINE_END_FORBIDDEN:
+        return True
+    return False
+
+
+def is_bad_line_break(text: str, pos: int) -> bool:
+    """단어 쪼개짐 또는 금칙처리 위반, 둘 중 하나라도 있으면 나쁜 줄바꿈으로 본다."""
+    return is_word_split(text, pos) or is_kinsoku_violation(text, pos)
+
+
+# ============================================================
 # HWPX 자간, 장평 및 단어맞춤 코어 함수
 # ============================================================
 
@@ -226,21 +275,30 @@ def fit_hwpx_package(src_hwpx_path: str, dst_hwpx_path: str) -> dict:
                     remove_last_line = True
                     action_desc = f"{line_count}줄 -> {line_count-1}줄 압축 (후미 '{last_line_text}' 결합)"
 
-            # [조건 3] 줄 경계 단어 쪼개짐 교정 (예: '구성해' 등)
+            # [조건 3] 줄 경계 단어 쪼개짐 또는 금칙처리 위반 교정 (예: '구성해', 줄이 '.'/')'로 시작 등)
             if not should_adjust and lsa is not None and len(segs) > 1:
                 has_split = False
+                has_kinsoku = False
                 for i, s in enumerate(segs):
                     if i > 0:
                         pos = int(s.attrib.get("textpos", 0))
+                        if is_kinsoku_violation(full_text, pos):
+                            has_kinsoku = True
+                            break
                         if is_word_split(full_text, pos):
                             has_split = True
-                            break
-                if has_split:
+                if has_kinsoku or has_split:
                     sp_delta, rt_delta = -2, -1
                     should_adjust = True
-                    action_desc = "줄바꿈 단어 쪼개짐 방지 및 자간 최적화"
+                    action_desc = (
+                        "금칙처리 위반(줄 머리/꼬리 금지 문자) 교정"
+                        if has_kinsoku
+                        else "줄바꿈 단어 쪼개짐 방지 및 자간 최적화"
+                    )
 
             # 특정 사용자 요청 핵심 키워드 문단 정밀 보정
+            # (위 [조건 3]의 is_word_split/is_kinsoku_violation이 이미 대부분의
+            #  사례를 일반적으로 잡아내므로, 이 분기는 이제 안전망 역할만 한다.)
             if "구성해" in full_text and not should_adjust:
                 sp_delta, rt_delta = -3, -1
                 should_adjust = True
@@ -261,14 +319,15 @@ def fit_hwpx_package(src_hwpx_path: str, dst_hwpx_path: str) -> dict:
                         lsa.remove(segs[-1])
                         segs[-2].attrib["flags"] = "1441792"
 
-                    # 단어 쪼개짐이 있는 경우 lineseg textpos를 공백 경계로 교정
+                    # 단어 쪼개짐/금칙처리 위반이 있는 경우 lineseg textpos를 공백 경계로 교정
                     if lsa is not None:
                         current_segs = lsa.findall("{http://www.hancom.co.kr/hwpml/2011/paragraph}lineseg")
                         for idx, seg in enumerate(current_segs):
                             if idx > 0:
                                 cur_pos = int(seg.attrib.get("textpos", 0))
-                                # 단어 중간에 걸쳐 있으면 바로 앞 공백 뒤로 textpos 이동
-                                if is_word_split(full_text, cur_pos):
+                                # 단어 중간에 걸쳐 있거나 금칙 문자로 줄이 시작/종료되면
+                                # 바로 앞 공백 뒤로 textpos 이동
+                                if is_bad_line_break(full_text, cur_pos):
                                     prev_space = full_text.rfind(" ", 0, cur_pos)
                                     if prev_space != -1 and (cur_pos - prev_space) <= 8:
                                         seg.attrib["textpos"] = str(prev_space + 1)

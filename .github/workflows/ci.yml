@@ -1,0 +1,28 @@
+name: CI (accuracy gate & tests)
+
+on:
+  push:
+    branches:
+      - main
+      - claude/add-letter-spacing-script
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Accuracy regression gate
+        run: python3 scripts/verify_gate.py
+
+      - name: Unit test suite
+        run: python3 tests/test_hwp_docfit.py
