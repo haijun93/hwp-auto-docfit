@@ -21,10 +21,12 @@ HWP Auto DocFit (with pyhwpx)
 9. 작업 진행률 표시바 및 실시간 상세 로그 제공
 10. GUI 반응성을 위한 백그라운드 워커 스레드 처리
 11. 실행 / 중단 / 종료 버튼 및 작업 취소 지원
+12. 폴더 일괄 변환: HWP/HWPX -> PDF, XLSX -> Markdown
+    (`python hwp_auto_docfit.py --convert-folder <폴더경로>`, folder_convert.py 참고)
 
 필요 패키지
 ------------------------------------------------------------
-pip install pyhwpx pywin32 tkinterdnd2
+pip install pyhwpx pywin32 tkinterdnd2 openpyxl
 ============================================================
 """
 
@@ -1260,12 +1262,26 @@ def main():
             print(f"MCP 서버 실행 오류: {e}", file=sys.stderr)
         return
 
-    # 2. CLI 파일 인자 전달 모드
+    # 2. 폴더 일괄 변환 모드 (HWP/HWPX -> PDF, XLSX -> Markdown)
+    if "--convert-folder" in args:
+        idx = args.index("--convert-folder")
+        folder = args[idx + 1] if idx + 1 < len(args) else None
+        if not folder:
+            print("사용법: python hwp_auto_docfit.py --convert-folder <폴더경로> [--no-recursive]")
+            return
+        from folder_convert import cli_main as convert_cli_main
+        convert_args = [folder]
+        if "--no-recursive" in args:
+            convert_args.append("--no-recursive")
+        convert_cli_main(convert_args)
+        return
+
+    # 3. CLI 파일 인자 전달 모드
     if args and not args[0].startswith("-"):
         cli_main(args)
         return
 
-    # 3. 기본 GUI 모드
+    # 4. 기본 GUI 모드
     root = TkinterDnD.Tk()
     HwpAutoDocFitGUI(root)
     root.mainloop()

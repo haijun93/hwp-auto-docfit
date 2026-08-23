@@ -9,6 +9,8 @@ on:
     paths:
       - ".github/workflows/build-windows-exe.yml"
       - "hwp_auto_docfit.py"
+      - "mcp_server.py"
+      - "folder_convert.py"
       - "FilePathCheckerModuleExample.dll"
 
 permissions:
@@ -28,7 +30,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install pyinstaller pywin32 tkinterdnd2 pyhwpx
+        run: pip install pyinstaller pywin32 tkinterdnd2 pyhwpx openpyxl
 
       - name: Build executable
         run: pyinstaller --onefile --windowed --collect-all tkinterdnd2 --collect-all pyhwpx --name "HWP_Auto_DocFit_v4.1" "hwp_auto_docfit.py"

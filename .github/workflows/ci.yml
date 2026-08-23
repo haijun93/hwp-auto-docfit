@@ -21,8 +21,14 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install dependencies
+        run: pip install openpyxl
+
       - name: Accuracy regression gate
         run: python3 scripts/verify_gate.py
 
       - name: Unit test suite
         run: python3 tests/test_hwp_docfit.py
+
+      - name: Folder convert unit tests
+        run: python3 tests/test_folder_convert.py

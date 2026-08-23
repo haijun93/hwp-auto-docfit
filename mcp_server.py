@@ -307,6 +307,36 @@ def tool_batch_fit_documents(args: dict) -> dict:
     }
 
 
+def tool_convert_folder_documents(args: dict) -> dict:
+    """
+    지정된 폴더(하위 폴더 포함) 내의 모든 HWP/HWPX 문서를 PDF로,
+    모든 XLSX 통합 문서를 Markdown으로 일괄 변환합니다.
+
+    HWP/HWPX -> PDF 변환은 한/글 OLE Automation(pyhwpx)이 필요하므로
+    Windows + 한글 2020 이상 환경에서만 동작합니다. 해당 환경이 아니면
+    XLSX -> Markdown 변환만 수행하고, HWP/HWPX 건은 오류 목록에
+    사유와 함께 보고합니다.
+    """
+    folder_path = args.get("folder_path")
+    if not folder_path or not os.path.isdir(folder_path):
+        return {"error": f"폴더를 찾을 수 없습니다: {folder_path}"}
+
+    recursive = args.get("recursive", True)
+
+    try:
+        from folder_convert import convert_folder
+    except ImportError as e:
+        return {"error": f"folder_convert 모듈을 불러올 수 없습니다: {e}"}
+
+    result = convert_folder(folder_path, recursive=recursive)
+    result["summary"] = (
+        f"HWP/HWPX {result['total_hwp_found']}개 중 {result['pdf_converted_count']}개 PDF 변환, "
+        f"XLSX {result['total_xlsx_found']}개 중 {result['markdown_converted_count']}개 Markdown 변환 완료"
+        + (f" (오류 {len(result['errors'])}건)" if result["errors"] else "")
+    )
+    return result
+
+
 # ============================================================
 # MCP JSON-RPC 2.0 서버 구현
 # ============================================================
@@ -354,6 +384,24 @@ TOOLS_DEFINITIONS = [
             "required": ["folder_path"],
         },
     },
+    {
+        "name": "convert_folder_documents",
+        "description": "지정된 폴더(하위 폴더 포함) 내의 모든 HWP/HWPX 문서를 PDF로, 모든 XLSX 통합 문서를 Markdown으로 일괄 변환합니다. HWP/HWPX -> PDF 변환은 Windows + 한글 2020 이상 환경이 필요하며, 해당 환경이 아니면 XLSX -> Markdown 변환만 수행하고 나머지는 오류로 보고합니다.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "folder_path": {
+                    "type": "string",
+                    "description": "변환할 문서들이 들어있는 폴더의 절대 경로",
+                },
+                "recursive": {
+                    "type": "boolean",
+                    "description": "하위 폴더까지 검색할지 여부 (기본값: true)",
+                },
+            },
+            "required": ["folder_path"],
+        },
+    },
 ]
 
 
@@ -397,6 +445,8 @@ def handle_json_rpc(request: dict) -> dict | None:
             res = tool_fit_hwp_document(arguments)
         elif tool_name == "batch_fit_documents":
             res = tool_batch_fit_documents(arguments)
+        elif tool_name == "convert_folder_documents":
+            res = tool_convert_folder_documents(arguments)
         else:
             return {
                 "jsonrpc": "2.0",
