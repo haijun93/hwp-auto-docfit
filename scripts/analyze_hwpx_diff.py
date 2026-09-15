@@ -65,6 +65,20 @@ def definitions(root: ET.Element, element_name: str) -> dict[str, tuple]:
     return result
 
 
+def effective_runs(runs):
+    """Ignore empty runs and arbitrary splits with identical formatting."""
+    result = []
+    for run in runs:
+        text, shape = run["text"], run["char_format"]
+        if not text:
+            continue
+        if result and result[-1][1] == shape:
+            result[-1] = (result[-1][0] + text, shape)
+        else:
+            result.append((text, shape))
+    return result
+
+
 def own_text(element: ET.Element) -> str:
     parts: list[str] = []
 
@@ -179,8 +193,8 @@ def compare(before_path: Path, after_path: Path) -> dict:
                 "after_ref": right["para_ref"],
                 "delta": property_delta(left["para_format"], right["para_format"]),
             }
-        before_runs = [(run["text"], run["char_format"]) for run in left["runs"]]
-        after_runs = [(run["text"], run["char_format"]) for run in right["runs"]]
+        before_runs = effective_runs(left["runs"])
+        after_runs = effective_runs(right["runs"])
         if before_runs != after_runs:
             change["character_format"] = {
                 "before": [

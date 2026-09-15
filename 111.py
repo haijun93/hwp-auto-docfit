@@ -2965,7 +2965,7 @@ def 문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=2
             return False
 
     # 5. 표/컨트롤 내부 처리 — 회차와 무관하게 항상 실행
-    if 표준서식_사용 and 표_헤더서식_사용:
+    if 회차 == 1 and 표준서식_사용 and 표_헤더서식_사용:
         상태(f"{파일명} [{회차}/{총회차}] : 표 헤더/본문 서식 적용")
         if 표_헤더서식_전체_적용() is False:
             return False
@@ -3011,6 +3011,7 @@ def 문서_전체_자간_초기화():
     if hwp is None:
         return False
     try:
+        보호영역 = 한칸표_영역_목록()
         hwp_run("Cancel")
         hwp_run("MoveDocBegin")
         hwp_run("MoveSelDocEnd")
@@ -3025,6 +3026,8 @@ def 문서_전체_자간_초기화():
             hwp.SetPos(area, 0, 0)
             if hwp.GetPos()[0] == 0:
                 break
+            if area in 보호영역:
+                continue
             hwp_run("MoveListBegin")
             hwp_run("MoveSelListEnd")
             문자모양_적용_현재선택(자간=0)
