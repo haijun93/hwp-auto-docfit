@@ -6690,17 +6690,51 @@ class HwpAutoDocFitGUI:
             root.after(1500, self._자동업데이트_확인_시작)
 
 
-    def _자동업데이트_확인_시작(self):
+    def _자동업데이트_확인_시작(self, 수동=False):
+        if 수동:
+            버튼 = getattr(self, "update_button", None)
+            if 버튼 is not None:
+                버튼.config(state="disabled")
+            self.status_var.set("새 업데이트가 있는지 확인하고 있어요…")
+
+        def 결과_표시(릴리스=None, 오류=None):
+            버튼 = getattr(self, "update_button", None)
+            if 버튼 is not None and not self.running:
+                버튼.config(state="normal")
+            if 오류 is not None:
+                if 수동:
+                    messagebox.showerror(
+                        APP_NAME,
+                        f"업데이트 정보를 확인하지 못했습니다.\n\n{오류}",
+                        parent=self.settings_toplevel or self.root,
+                    )
+                    self.status_var.set("업데이트 확인에 실패했어요.")
+                return
+            최신버전 = str((릴리스 or {}).get("tag_name") or (릴리스 or {}).get("name") or APP_VERSION)
+            if not 릴리스 or _버전_튜플(최신버전) <= _버전_튜플(APP_VERSION):
+                if 수동:
+                    messagebox.showinfo(
+                        APP_NAME,
+                        f"현재 최신 버전을 사용하고 있습니다.\n\n현재 버전: {APP_VERSION}",
+                        parent=self.settings_toplevel or self.root,
+                    )
+                    self.status_var.set(f"현재 버전 {APP_VERSION}은 최신 버전이에요.")
+                return
+            self._자동업데이트_안내(릴리스)
+
         def 확인():
             try:
                 릴리스 = _최신_릴리스_조회()
-            except Exception:
+            except Exception as exc:
                 # 네트워크가 없거나 GitLab이 응답하지 않아도 앱 사용은 막지 않는다.
-                return
-            if not 릴리스 or _버전_튜플(릴리스.get("tag_name")) <= _버전_튜플(APP_VERSION):
+                if 수동:
+                    try:
+                        self.root.after(0, lambda 오류=str(exc): 결과_표시(오류=오류))
+                    except Exception:
+                        pass
                 return
             try:
-                self.root.after(0, lambda: self._자동업데이트_안내(릴리스))
+                self.root.after(0, lambda: 결과_표시(릴리스=릴리스))
             except Exception:
                 pass
 
@@ -7808,6 +7842,12 @@ class HwpAutoDocFitGUI:
         ttk.Button(footer, text="완료 · 닫기", style="Start.TButton", command=self.settings_toplevel.withdraw).pack(side="right")
         self.reset_button = ttk.Button(footer, text="기본값으로 되돌리기", command=self._설정_초기화_클릭)
         self.reset_button.pack(side="right", padx=8)
+        self.update_button = ttk.Button(
+            footer,
+            text="업데이트 확인",
+            command=lambda: self._자동업데이트_확인_시작(수동=True),
+        )
+        self.update_button.pack(side="right")
 
         self.settings_toplevel.withdraw()
 
@@ -8126,7 +8166,7 @@ class HwpAutoDocFitGUI:
         self._안내_설정(1)
 
     def 버튼_작업중(self):
-        for widget in self.mode_buttons + self.file_buttons + self.preset_buttons + [self.cat_pick_button, self.cat_default_button, self.cat_motion_check, self.reset_button]:
+        for widget in self.mode_buttons + self.file_buttons + self.preset_buttons + [self.cat_pick_button, self.cat_default_button, self.cat_motion_check, self.reset_button, self.update_button]:
             widget.configure(state="disabled")
         self.profile_combo.config(state="disabled")
         self.copy_format_button.config(state="disabled")
@@ -8161,7 +8201,7 @@ class HwpAutoDocFitGUI:
         self.verify_check.config(state="disabled")
 
     def 버튼_대기중(self):
-        for widget in self.mode_buttons + self.file_buttons + self.preset_buttons + [self.cat_pick_button, self.cat_default_button, self.cat_motion_check, self.reset_button]:
+        for widget in self.mode_buttons + self.file_buttons + self.preset_buttons + [self.cat_pick_button, self.cat_default_button, self.cat_motion_check, self.reset_button, self.update_button]:
             widget.configure(state="normal")
         self._요약갱신()
         self.profile_combo.config(state="readonly")
