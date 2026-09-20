@@ -55,6 +55,7 @@ release-windows:
 
 create-pages:
   stage: deploy
+  needs: []
   script:
     - mkdir -p public
     - cp -r website/. public/
