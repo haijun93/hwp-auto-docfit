@@ -48,6 +48,7 @@ release-windows:
         --data-urlencode "name=HWP_AutoDocFit.exe" \
         --data-urlencode "url=$CI_PROJECT_URL/-/jobs/$CI_JOB_ID/artifacts/raw/dist/HWP_AutoDocFit.exe" \
         --data-urlencode "link_type=package" \
+        --data-urlencode "direct_asset_path=/HWP_AutoDocFit.exe" \
         "$CI_API_V4_URL/projects/$CI_PROJECT_ID/releases/$CI_COMMIT_TAG/assets/links"
   artifacts:
     name: "HWP_AutoDocFit-$CI_COMMIT_TAG"

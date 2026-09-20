@@ -2,7 +2,7 @@
 
 한글 2020의 HWP/HWPX 문서를 편집하는 Windows용 Python 프로그램입니다.
 바이너리 HWP 입력은 원본을 변경하지 않고 작업용 HWPX로 변환하며, 모든 처리 결과는 HWPX로 저장합니다.
-실행 파일은 `hwp-auto-docfit.py`이며, 프로그램 버전은 `1.66`입니다.
+실행 파일은 `hwp-auto-docfit.py`이며, 프로그램 버전은 `1.67`입니다.
 
 이 프로젝트의 기준 저장소는 다음 GitLab 저장소입니다.
 
@@ -94,7 +94,7 @@ python -m venv .venv
 
 자동 업데이트를 배포하려면 현재 GitLab 프로젝트에 Release를 만들고 다음 규칙을 지킵니다.
 
-- 태그: 현재 앱 버전보다 높은 버전(예: `v1.66`)
+- 태그: 현재 앱 버전보다 높은 버전(예: `v1.68`)
 - Release 자산 링크 이름: `HWP_AutoDocFit.exe`
 - 자산 링크 대상: 빌드한 `HWP_AutoDocFit.exe`를 내려받을 수 있는 URL
 - 자동 업데이트를 사용하는 배포 환경에서는 Release API와 자산 링크를 인증 없이 읽고 내려받을 수 있어야 함
