@@ -17,7 +17,7 @@ validate-source:
     - security-deploy
   before_script:
     - python --version
-    - python -m pip install --disable-pip-version-check defusedxml
+    - python -m pip install --disable-pip-version-check --break-system-packages defusedxml
   script:
     - python -m py_compile hwp-auto-docfit.py
     - python -m unittest tests.test_hwpx_core tests.test_kordoc_bridge -v
