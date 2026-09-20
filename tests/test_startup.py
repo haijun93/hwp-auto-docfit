@@ -7,6 +7,7 @@ from pathlib import Path
 import runpy
 import tempfile
 import unittest
+import urllib.error
 from unittest.mock import Mock, patch
 
 
@@ -37,6 +38,18 @@ class StartupTest(unittest.TestCase):
             select_asset(release)["browser_download_url"],
             "https://gitlab.example/releases/app.exe",
         )
+
+    def test_gitlab_without_releases_is_treated_as_up_to_date(self):
+        source = Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"
+        namespace = runpy.run_path(str(source), run_name="no_release_updater_test")
+        fetch_release = namespace["_최신_릴리스_조회"]
+        not_found = urllib.error.HTTPError(
+            namespace["UPDATE_API_URL"], 404, "Not Found", {}, None
+        )
+        self.addCleanup(not_found.close)
+
+        with patch.object(namespace["urllib"].request, "urlopen", side_effect=not_found):
+            self.assertIsNone(fetch_release())
 
     def test_pillow_is_available_and_embedded_cat_images_are_valid(self):
         source = Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"

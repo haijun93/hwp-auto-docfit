@@ -120,8 +120,15 @@ def _최신_릴리스_조회(timeout=8):
             "User-Agent": f"HWP-AutoDocFit/{APP_VERSION}",
         },
     )
-    with urllib.request.urlopen(요청, timeout=timeout) as 응답:
-        릴리스 = json.loads(응답.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(요청, timeout=timeout) as 응답:
+            릴리스 = json.loads(응답.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        # GitLab은 프로젝트에 Release가 하나도 없으면 latest API에서 404를 반환한다.
+        # 이는 통신 오류가 아니라 아직 배포된 업데이트가 없다는 뜻이다.
+        if exc.code == 404:
+            return None
+        raise
     링크들 = 릴리스.get("assets", {}).get("links", [])
     릴리스["assets"] = [
         {
