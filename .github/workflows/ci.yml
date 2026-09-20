@@ -28,10 +28,10 @@ jobs:
         run: python -m pip install -r requirements.txt
 
       - name: Check Python syntax
-        run: python -m py_compile 111.py
+        run: python -m py_compile hwp-auto-docfit.py
 
       - name: Check application imports
-        run: python -c "import runpy; runpy.run_path('111.py', run_name='import_check')"
+        run: python -c "import runpy; runpy.run_path('hwp-auto-docfit.py', run_name='import_check')"
 
       - name: Check GUI startup
         run: python -m unittest discover -s tests -v

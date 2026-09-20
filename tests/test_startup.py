@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 class StartupTest(unittest.TestCase):
     def test_partial_charshape_does_not_fill_unrequested_bold(self):
-        source = Path(__file__).resolve().parents[1] / "111.py"
+        source = Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"
         namespace = runpy.run_path(str(source), run_name="charshape_test")
 
         class ParameterSet:
@@ -47,7 +47,7 @@ class StartupTest(unittest.TestCase):
         self.assertEqual(fake.action.parameters.items["SpacingHangul"], 0)
 
     def test_gui_initializes_without_callback_errors(self):
-        source = Path(__file__).resolve().parents[1] / "111.py"
+        source = Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"
         with tempfile.TemporaryDirectory(prefix="hwp-docfit-test-") as settings_dir:
             with patch.dict(os.environ, {"APPDATA": settings_dir}):
                 namespace = runpy.run_path(str(source), run_name="startup_test")

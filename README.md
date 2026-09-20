@@ -1,7 +1,7 @@
 # HWP Auto DocFit — hwp 자동 편집기
 
 한글 2020의 HWP/HWPX 문서를 편집하는 Windows용 Python 프로그램입니다.
-실행 파일은 `111.py`이며, 프로그램 버전은 `1.64`입니다.
+실행 파일은 `hwp-auto-docfit.py`이며, 프로그램 버전은 `1.64`입니다.
 
 ## 주요 기능
 
@@ -17,7 +17,7 @@
 - Windows
 - Python 3.14 및 Tkinter
 - 한글 2020 설치 및 `HwpFrame.HwpObject` COM 자동화 사용 가능 환경
-- `FilePathCheckerModuleExample.dll`: `111.py`와 같은 폴더에 배치
+- `FilePathCheckerModuleExample.dll`: `hwp-auto-docfit.py`와 같은 폴더에 배치
 
 보안 모듈 DLL은 저장소에 포함되어 있지 않습니다. 문서 처리 시 프로그램이 이 DLL을
 `C:\HwpAutomation`에 복사하고 현재 사용자 레지스트리에 등록합니다.
@@ -29,7 +29,7 @@
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe 111.py
+.\.venv\Scripts\python.exe hwp-auto-docfit.py
 ```
 
 창에서 HWP/HWPX 파일을 선택하거나 끌어다 놓고, 설정을 조정한 다음 **실행**을 누릅니다.
@@ -43,8 +43,8 @@ python -m venv .venv
 ## 기본 검증
 
 ```powershell
-.\.venv\Scripts\python.exe -m py_compile 111.py
-.\.venv\Scripts\python.exe -c "import runpy; runpy.run_path('111.py', run_name='import_check')"
+.\.venv\Scripts\python.exe -m py_compile hwp-auto-docfit.py
+.\.venv\Scripts\python.exe -c "import runpy; runpy.run_path('hwp-auto-docfit.py', run_name='import_check')"
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
