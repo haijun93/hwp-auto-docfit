@@ -5,11 +5,11 @@
 
 이 프로젝트의 기준 저장소는 다음 GitLab 저장소입니다.
 
-- `https://gitlab.aigov.go.kr/haijun93/mapo-agent.git`
+- `https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit.git`
 
 ```powershell
-git clone https://gitlab.aigov.go.kr/haijun93/mapo-agent.git
-cd mapo-agent
+git clone https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit.git
+cd hwp_autodocfit
 ```
 
 ## 주요 기능

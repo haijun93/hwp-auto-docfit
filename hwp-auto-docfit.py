@@ -102,8 +102,8 @@ from defusedxml.ElementTree import fromstring as safe_xml_fromstring
 
 APP_NAME = "HWP 자동 편집기"
 APP_VERSION = "1.64"
-PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/mapo-agent"
-UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fmapo-agent/releases/permalink/latest"
+PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
+UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 UPDATE_ASSET_NAME = "HWP_AutoDocFit.exe"
 
 
