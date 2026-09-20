@@ -33,6 +33,17 @@ python -m venv .venv
 ```
 
 창에서 HWP/HWPX 파일을 선택하거나 끌어다 놓고, 설정을 조정한 다음 **실행**을 누릅니다.
+
+## EXE 빌드와 자동 업데이트
+
+`build.bat`을 실행하면 `dist\HWP_AutoDocFit.exe`가 생성됩니다. Pillow와 tkinterdnd2도 EXE에 포함됩니다.
+
+자동 업데이트를 배포하려면 GitHub에 draft/prerelease가 아닌 정식 Release를 만들고 다음 규칙을 지킵니다.
+
+- 태그: 현재 앱 버전보다 높은 버전(예: `v1.65`)
+- 첨부 자산: `HWP_AutoDocFit.exe`
+
+배포된 EXE는 시작 후 백그라운드에서 최신 정식 Release를 확인합니다. 새 버전이 있으면 사용자 확인 후 EXE를 다운로드하고, 가능한 경우 GitHub 자산의 SHA-256 digest를 검증한 뒤 현재 실행 파일을 교체하고 다시 실행합니다. 네트워크 오류나 Release가 없는 경우 앱 실행에는 영향을 주지 않습니다.
 결과는 원본과 같은 폴더에 `원본파일명(자간조정).hwp` 또는
 `원본파일명(자간조정).hwpx`로 저장됩니다.
 설정은 `%APPDATA%\HwpAutoDocFit\settings.json`에 저장됩니다.

@@ -71,6 +71,11 @@ import io
 import struct
 import tempfile
 import uuid
+import subprocess
+import importlib
+import hashlib
+import urllib.error
+import urllib.request
 import xml.etree.ElementTree as ET
 from collections import Counter, deque
 from tkinter import simpledialog
@@ -96,6 +101,37 @@ import win32con
 
 APP_NAME = "HWP 자동 편집기"
 APP_VERSION = "1.64"
+UPDATE_API_URL = "https://api.github.com/repos/haijun93/hwp-auto-docfit/releases/latest"
+UPDATE_ASSET_NAME = "HWP_AutoDocFit.exe"
+
+
+def _버전_튜플(value):
+    숫자 = [int(item) for item in re.findall(r"\d+", str(value))]
+    return tuple((숫자 + [0, 0, 0])[:3])
+
+
+def _최신_릴리스_조회(timeout=8):
+    요청 = urllib.request.Request(
+        UPDATE_API_URL,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": f"HWP-AutoDocFit/{APP_VERSION}",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
+    with urllib.request.urlopen(요청, timeout=timeout) as 응답:
+        릴리스 = json.loads(응답.read().decode("utf-8"))
+    if 릴리스.get("draft") or 릴리스.get("prerelease"):
+        return None
+    return 릴리스
+
+
+def _업데이트_자산_선택(릴리스):
+    자산들 = [item for item in 릴리스.get("assets", []) if str(item.get("name", "")).lower().endswith(".exe")]
+    for 자산 in 자산들:
+        if str(자산.get("name", "")).lower() == UPDATE_ASSET_NAME.lower():
+            return 자산
+    return 자산들[0] if len(자산들) == 1 else None
 
 # ============================================================
 # AutomationModule
@@ -5499,11 +5535,75 @@ def 작업_실행(
         except Exception:
             pass
 
-# 캐릭터 JPG/PNG 표시를 위한 선택 패키지: python -m pip install Pillow
-try:
-    from PIL import Image, ImageTk, ImageOps
-except ImportError:
-    Image = ImageTk = ImageOps = None
+# 캐릭터 JPG/PNG 표시에 필요한 Pillow를 현재 Python 환경에 자동 준비한다.
+def _import_pillow():
+    image_module = importlib.import_module("PIL.Image")
+    image_tk_module = importlib.import_module("PIL.ImageTk")
+    image_ops_module = importlib.import_module("PIL.ImageOps")
+    return image_module, image_tk_module, image_ops_module
+
+
+def _run_dependency_command(args):
+    return subprocess.run(
+        [sys.executable, *args],
+        check=True,
+        capture_output=True,
+        text=True,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+
+
+def _install_pillow():
+    if getattr(sys, "frozen", False):
+        raise RuntimeError(
+            "PyInstaller 실행 파일에 Pillow가 포함되지 않았습니다. "
+            "build.bat의 --collect-all PIL 설정으로 다시 빌드해 주세요."
+        )
+
+    try:
+        _run_dependency_command(["-m", "pip", "--version"])
+    except (OSError, subprocess.CalledProcessError):
+        _run_dependency_command(["-m", "ensurepip", "--upgrade"])
+
+    install_args = ["-m", "pip", "install", "--disable-pip-version-check", "Pillow"]
+    try:
+        _run_dependency_command(install_args)
+    except (OSError, subprocess.CalledProcessError):
+        # 시스템 Python의 site-packages에 쓰기 권한이 없으면 사용자 영역을 사용한다.
+        if sys.prefix == getattr(sys, "base_prefix", sys.prefix):
+            _run_dependency_command([*install_args, "--user"])
+        else:
+            raise
+
+
+def _load_pillow():
+    try:
+        return _import_pillow()
+    except (ImportError, OSError):
+        pass
+
+    try:
+        _install_pillow()
+        importlib.invalidate_caches()
+        return _import_pillow()
+    except Exception as exc:
+        detail = str(exc)
+        if isinstance(exc, subprocess.CalledProcessError):
+            detail = (exc.stderr or exc.stdout or detail).strip()
+        try:
+            messagebox.showerror(
+                APP_NAME,
+                "이미지 기능에 필요한 Pillow를 자동 설치하지 못했습니다.\n"
+                "앱을 시작할 수 없습니다.\n\n"
+                f"{detail}\n\n"
+                f"수동 설치 명령:\n{sys.executable} -m pip install Pillow",
+            )
+        except Exception:
+            traceback.print_exc()
+        raise RuntimeError("Pillow를 준비하지 못했습니다.") from exc
+
+
+Image, ImageTk, ImageOps = _load_pillow()
 
 # 사용자 제공 image.jpg 원본 바이트. 출처: Black Cat @xkysluv.
 # 표정은 실행 시 스프라이트 영역으로 읽으며 원본 이미지는 보존한다.
@@ -6579,7 +6679,123 @@ class HwpAutoDocFitGUI:
         root.bind("<Control-o>", lambda e: self.파일선택())
         root.protocol("WM_DELETE_WINDOW", self.종료)
         root.after_idle(self._창_최소높이_보정)
+        if getattr(sys, "frozen", False):
+            root.after(1500, self._자동업데이트_확인_시작)
 
+
+    def _자동업데이트_확인_시작(self):
+        def 확인():
+            try:
+                릴리스 = _최신_릴리스_조회()
+            except Exception:
+                # 네트워크가 없거나 GitHub가 응답하지 않아도 앱 사용은 막지 않는다.
+                return
+            if not 릴리스 or _버전_튜플(릴리스.get("tag_name")) <= _버전_튜플(APP_VERSION):
+                return
+            try:
+                self.root.after(0, lambda: self._자동업데이트_안내(릴리스))
+            except Exception:
+                pass
+
+        threading.Thread(target=확인, daemon=True, name="release-update-check").start()
+
+    def _자동업데이트_안내(self, 릴리스):
+        if self.closing or self.running:
+            return
+        자산 = _업데이트_자산_선택(릴리스)
+        버전 = str(릴리스.get("tag_name") or 릴리스.get("name") or "새 버전")
+        if not 자산 or not 자산.get("browser_download_url"):
+            messagebox.showinfo(
+                APP_NAME,
+                f"{버전} 정식 버전이 출시되었지만 Windows EXE 파일이 없습니다.\n"
+                f"Release에 {UPDATE_ASSET_NAME}를 첨부해 주세요.",
+                parent=self.root,
+            )
+            return
+        if not messagebox.askyesno(
+            APP_NAME,
+            f"새 정식 버전 {버전}이 출시되었습니다.\n\n"
+            "지금 다운로드하고 앱을 자동으로 업데이트할까요?",
+            parent=self.root,
+        ):
+            return
+        self.status_var.set(f"{버전} 업데이트를 다운로드하고 있어요…")
+        threading.Thread(
+            target=self._자동업데이트_다운로드,
+            args=(릴리스, 자산),
+            daemon=True,
+            name="release-update-download",
+        ).start()
+
+    def _자동업데이트_다운로드(self, 릴리스, 자산):
+        try:
+            업데이트_폴더 = 설정_폴더() / "updates"
+            업데이트_폴더.mkdir(parents=True, exist_ok=True)
+            버전 = re.sub(r"[^0-9A-Za-z._-]+", "_", str(릴리스.get("tag_name", "latest")))
+            다운로드_경로 = 업데이트_폴더 / f"HWP_AutoDocFit-{버전}.exe"
+            요청 = urllib.request.Request(
+                자산["browser_download_url"],
+                headers={"User-Agent": f"HWP-AutoDocFit/{APP_VERSION}"},
+            )
+            해시 = hashlib.sha256()
+            크기 = 0
+            with urllib.request.urlopen(요청, timeout=30) as 응답, open(다운로드_경로, "wb") as 출력:
+                while True:
+                    조각 = 응답.read(1024 * 1024)
+                    if not 조각:
+                        break
+                    출력.write(조각)
+                    해시.update(조각)
+                    크기 += len(조각)
+            예상_크기 = int(자산.get("size") or 0)
+            if 크기 <= 0 or (예상_크기 and 크기 != 예상_크기):
+                raise RuntimeError("다운로드한 업데이트 파일 크기가 올바르지 않습니다.")
+            digest = str(자산.get("digest") or "")
+            if digest.startswith("sha256:") and 해시.hexdigest().lower() != digest[7:].lower():
+                raise RuntimeError("업데이트 파일의 SHA-256 검증에 실패했습니다.")
+            self.root.after(0, lambda: self._자동업데이트_설치(다운로드_경로))
+        except Exception as exc:
+            try:
+                self.root.after(0, lambda 오류=str(exc): messagebox.showerror(
+                    APP_NAME, f"자동 업데이트를 다운로드하지 못했습니다.\n\n{오류}", parent=self.root
+                ))
+            except Exception:
+                pass
+
+    def _자동업데이트_설치(self, 다운로드_경로):
+        현재_실행파일 = Path(sys.executable).resolve()
+        스크립트 = 다운로드_경로.with_suffix(".ps1")
+        스크립트.write_text(
+            "param([int]$OldPid,[string]$Downloaded,[string]$Target)\n"
+            "Wait-Process -Id $OldPid -ErrorAction SilentlyContinue\n"
+            "try {\n"
+            "    Copy-Item -LiteralPath $Downloaded -Destination $Target -Force -ErrorAction Stop\n"
+            "    Start-Process -FilePath $Target\n"
+            "    Remove-Item -LiteralPath $Downloaded -Force -ErrorAction SilentlyContinue\n"
+            "} catch {\n"
+            "    Start-Process -FilePath $Downloaded\n"
+            "} finally {\n"
+            "    Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue\n"
+            "}\n",
+            encoding="utf-8-sig",
+        )
+        try:
+            subprocess.Popen(
+                [
+                    "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                    "-File", str(스크립트), "-OldPid", str(os.getpid()),
+                    "-Downloaded", str(다운로드_경로), "-Target", str(현재_실행파일),
+                ],
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except Exception:
+            try:
+                스크립트.unlink()
+            except OSError:
+                pass
+            raise
+        self.closing = True
+        self.root.destroy()
 
     def _항상위_적용(self):
         """실행창(및 함께 쓰는 처리 기록·설정 창)을 항상 위에 둘지 반영한다."""
