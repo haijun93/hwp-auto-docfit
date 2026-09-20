@@ -53,11 +53,12 @@ release-windows:
   rules:
     - if: '$CI_COMMIT_TAG'
 
-pages:
+create-pages:
   stage: deploy
   script:
-    - mkdir public
+    - mkdir -p public
     - cp -r website/. public/
+  pages: true
   artifacts:
     paths:
       - public
