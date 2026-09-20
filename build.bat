@@ -28,7 +28,7 @@ echo [3/3] Building %APPNAME%.exe...
     --onefile ^
     --windowed ^
     --name "%APPNAME%" ^
-    --add-data "FilePathCheckerModuleExample.dll;." ^
+    --add-data "MapoHwpAutoDocFitSecurity.dll;." ^
     --collect-all tkinterdnd2 ^
     --collect-all PIL ^
     --hidden-import PIL.Image ^

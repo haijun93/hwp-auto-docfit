@@ -1,7 +1,7 @@
 # HWP Auto DocFit — hwp 자동 편집기
 
 한글 2020의 HWP/HWPX 문서를 편집하는 Windows용 Python 프로그램입니다.
-실행 파일은 `hwp-auto-docfit.py`이며, 프로그램 버전은 `1.64`입니다.
+실행 파일은 `hwp-auto-docfit.py`이며, 프로그램 버전은 `1.65`입니다.
 
 이 프로젝트의 기준 저장소는 다음 GitLab 저장소입니다.
 
@@ -26,10 +26,15 @@ cd hwp_autodocfit
 - Windows
 - Python 3.14 및 Tkinter
 - 한글 2020 설치 및 `HwpFrame.HwpObject` COM 자동화 사용 가능 환경
-- `FilePathCheckerModuleExample.dll`: `hwp-auto-docfit.py`와 같은 폴더에 배치
+- `MapoHwpAutoDocFitSecurity.dll`: `hwp-auto-docfit.py`와 같은 폴더에 배치
 
-보안 모듈 DLL은 저장소에 포함되어 있지 않습니다. 문서 처리 시 프로그램이 이 DLL을
-`C:\HwpAutomation`에 복사하고 현재 사용자 레지스트리에 등록합니다.
+문서 처리 시 프로그램은 프로젝트 전용 이름의 보안 모듈 DLL을 `C:\HwpAutomation`에 복사하고,
+현재 사용자의 `Software\HNC\HwpAutomation\Modules` 아래에
+`MapoHwpAutoDocFitSecurity`라는 고유한 값 이름으로 등록합니다.
+
+현재 DLL은 한컴 예제 바이너리를 프로젝트 전용 파일명으로 변경한 것입니다. 상업용 배포나 사내 주요
+시스템에서는 한컴이 제공하는 보안 모듈 소스를 검토하고 동일한 고유 명칭으로 직접 컴파일한 DLL로
+교체하는 것을 권장합니다.
 
 ## 설치 및 실행
 
@@ -49,7 +54,7 @@ python -m venv .venv
 
 자동 업데이트를 배포하려면 현재 GitLab 프로젝트에 Release를 만들고 다음 규칙을 지킵니다.
 
-- 태그: 현재 앱 버전보다 높은 버전(예: `v1.65`)
+- 태그: 현재 앱 버전보다 높은 버전(예: `v1.66`)
 - Release 자산 링크 이름: `HWP_AutoDocFit.exe`
 - 자산 링크 대상: 빌드한 `HWP_AutoDocFit.exe`를 내려받을 수 있는 URL
 - 자동 업데이트를 사용하는 배포 환경에서는 Release API와 자산 링크를 인증 없이 읽고 내려받을 수 있어야 함

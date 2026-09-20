@@ -18,7 +18,7 @@ class StartupTest(unittest.TestCase):
         version_tuple = namespace["_버전_튜플"]
         select_asset = namespace["_업데이트_자산_선택"]
 
-        self.assertGreater(version_tuple("v1.65.1"), version_tuple("1.64"))
+        self.assertGreater(version_tuple("v1.66"), version_tuple("1.65"))
         preferred = {"name": "HWP_AutoDocFit.exe", "browser_download_url": "https://example.test/app.exe"}
         release = {"assets": [{"name": "notes.txt"}, preferred, {"name": "other.exe"}]}
         self.assertIs(select_asset(release), preferred)

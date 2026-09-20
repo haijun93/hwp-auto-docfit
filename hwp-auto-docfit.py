@@ -11,7 +11,7 @@ hwp 자동 편집기
 ------------------------------------------------------------
 1. HWPFrame.HwpObject COM 자동화
 2. AutomationModule 보안모듈 등록
-3. FilePathCheckerModuleExample.dll 최초 1회 설치
+3. MapoHwpAutoDocFitSecurity.dll 최초 1회 설치
 4. Registry AutomationModule 최초 1회 등록
 5. HWP / HWPX 다중 선택
 6. Drag & Drop
@@ -101,7 +101,7 @@ from defusedxml.ElementTree import fromstring as safe_xml_fromstring
 # ============================================================
 
 APP_NAME = "HWP 자동 편집기"
-APP_VERSION = "1.64"
+APP_VERSION = "1.65"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 UPDATE_ASSET_NAME = "HWP_AutoDocFit.exe"
@@ -151,16 +151,16 @@ def _업데이트_자산_선택(릴리스):
 # AutomationModule
 # ============================================================
 
-DLL_NAME = "FilePathCheckerModuleExample.dll"
+DLL_NAME = "MapoHwpAutoDocFitSecurity.dll"
 HWP_AUTOMATION_DIR = Path(r"C:\HwpAutomation")
 TARGET_DLL = HWP_AUTOMATION_DIR / DLL_NAME
 REGISTRY_PATH = r"Software\HNC\HwpAutomation\Modules"
-# Hancom expects the second RegisterModule argument to match the registry
-# value name under ...\HwpAutomation\Modules.  The distributed example DLL
-# is registered under this name.
-REGISTRY_VALUE_NAME = "FilePathCheckerModuleExample"
+# 한/글은 RegisterModule의 두 번째 인자와
+# ...\HwpAutomation\Modules 아래 레지스트리 값 이름이 같아야 한다.
+# 공용 예제 이름 대신 이 프로젝트 전용 이름을 사용한다.
+REGISTRY_VALUE_NAME = "MapoHwpAutoDocFitSecurity"
 REGISTER_MODULE_NAME = "FilePathCheckDLL"
-REGISTER_MODULE_VALUE = "FilePathCheckerModuleExample"
+REGISTER_MODULE_VALUE = REGISTRY_VALUE_NAME
 
 # ============================================================
 # 전역 상태
@@ -1564,7 +1564,7 @@ def 보안모듈_초기화():
     source_dll = 원본_DLL_찾기()
     if source_dll is None:
         raise FileNotFoundError(
-            f"\n\nFilePathCheckerModuleExample.dll을 프로그램 폴더에서 찾을 수 없습니다.\n"
+            f"\n\n{DLL_NAME}을 프로그램 폴더에서 찾을 수 없습니다.\n"
             f"위치: {프로그램_폴더() / DLL_NAME}"
         )
     HWP_AUTOMATION_DIR.mkdir(parents=True, exist_ok=True)
