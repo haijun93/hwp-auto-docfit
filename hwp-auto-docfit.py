@@ -674,7 +674,7 @@ def 서식프로파일_목록():
 
 
 def hwpx_서식_분석(path):
-    """본문 문단의 사용 빈도로 대표 서식을 추출. 표/머리말 등은 제외한다."""
+    """HWPX의 대표 페이지·문단·문자·표 서식을 분석해 재사용 프로필로 만든다."""
     profile = 기본_서식프로파일()
     fmt = profile["format"]
     def tag(e): return e.tag.rsplit("}", 1)[-1]
@@ -689,6 +689,8 @@ def hwpx_서식_분석(path):
         chars = {e.get("id"): e for e in header.iter() if tag(e) == "charPr"}
         paras = {e.get("id"): e for e in header.iter() if tag(e) == "paraPr"}
         groups = {r[0]: Counter() for r in fmt["기호_규칙"]}
+        body_styles = Counter()
+        first_styles = []
         ratios, spacing = Counter(), Counter()
         paragraphs = {k: Counter() for k in groups}
         aliases = {"ㅁ": "□", "○": "ㅇ", "☞": "ㅇ", "*": "※", "→": "※"}
@@ -726,13 +728,21 @@ def hwpx_서식_분석(path):
                 font = fonts.get(fontref.get("hangul")) if fontref is not None else None
                 height = float(char.get("height", "0")) / 100
                 ratio = child(char, "ratio")
-                if ratio is not None: ratios[float(ratio.get("hangul", "100"))] += 1
+                if ratio is not None: ratios[float(ratio.get("hangul", "100"))] += max(1, len(text))
+                letter_spacing = child(char, "spacing")
+                if letter_spacing is not None and letter_spacing.get("hangul") is not None:
+                    try: fmt["기본_자간"] = float(letter_spacing.get("hangul"))
+                    except (TypeError, ValueError): pass
                 pp = paras.get(para.get("paraPrIDRef"))
                 ls = child(pp, "lineSpacing") if pp is not None else None
                 if ls is not None and ls.get("type") == "PERCENT":
-                    spacing[float(ls.get("value"))] += 1
-                if symbol not in groups or not font or height <= 0: continue
+                    spacing[float(ls.get("value"))] += max(1, len(text))
                 bold = child(char, "bold") is not None
+                if font and height > 0:
+                    body_styles[(font, height, bold)] += max(1, len(text))
+                    if len(first_styles) < 2:
+                        first_styles.append((font, height, bold))
+                if symbol not in groups or not font or height <= 0: continue
                 groups[symbol][(font, height, bold)] += 1
                 if pp is not None:
                     pm = child(pp, "margin")
@@ -747,10 +757,16 @@ def hwpx_서식_분석(path):
                         vals["LineSpacingType"] = 0
                         vals["LineSpacing"] = int(float(ls.get("value")))
                     paragraphs[symbol][tuple(sorted(vals.items()))] += 1
-        if not count or not any(groups.values()):
-            raise ValueError("□/ㅁ/ㅇ/○/-/※/*로 시작하는 본문 문단의 서식을 찾지 못했습니다.")
+        if not count or not body_styles:
+            raise ValueError("본문에서 복제할 수 있는 글꼴·문단 서식을 찾지 못했습니다.")
         if ratios: fmt["기본_장평"] = ratios.most_common(1)[0][0]
         if spacing: fmt["기본_줄간격_퍼센트"] = spacing.most_common(1)[0][0]
+        if first_styles:
+            font, size, bold = first_styles[0]
+            fmt["제목_문단"] = {"font": font, "size_pt": size, "bold": bold}
+        if len(first_styles) > 1:
+            font, size, bold = first_styles[1]
+            fmt["일자담당자_문단"] = {"font": font, "size_pt": size, "bold": bold}
         fmt["복사_문단모양"] = {}
         found, missing = [], []
         for i, rule in enumerate(fmt["기호_규칙"]):
@@ -764,11 +780,55 @@ def hwpx_서식_분석(path):
                     fmt["복사_문단모양"][symbol] = dict(paragraphs[symbol].most_common(1)[0][0])
                 found.append(f"{symbol}: {font} {size:g}pt, 굵게 {'ON' if bold else 'OFF'}")
             else: missing.append(symbol)
+        대표폰트, 대표크기, 대표굵게 = body_styles.most_common(1)[0][0]
+        fmt["본문_문단"] = {"font": 대표폰트, "size_pt": 대표크기, "bold": 대표굵게}
+        # 기본 프로필은 기존처럼 일반 본문을 보존한다. 분석해서 만든 프로필만
+        # 대표 본문 글꼴·크기를 일반 문단에도 적용한다.
+        fmt["복제_본문서식"] = True
+
+        # 첫 표의 첫 행과 나머지 행에서 대표 문자 서식을 추출한다.
+        table_header_styles, table_body_styles = Counter(), Counter()
+        for name in sections:
+            root = safe_xml_fromstring(z.read(name))
+            first_table = next((e for e in root.iter() if tag(e) == "tbl"), None)
+            if first_table is None:
+                continue
+            rows = [e for e in first_table.iter() if tag(e) == "tr"]
+            for row_index, row in enumerate(rows):
+                counter = table_header_styles if row_index == 0 else table_body_styles
+                for run in (e for e in row.iter() if tag(e) == "run"):
+                    text = "".join("".join(t.itertext()) for t in run if tag(t) == "t").strip()
+                    char = chars.get(run.get("charPrIDRef"))
+                    if not text or char is None:
+                        continue
+                    fontref = child(char, "fontRef")
+                    font = fonts.get(fontref.get("hangul")) if fontref is not None else None
+                    height = float(char.get("height", "0")) / 100
+                    if font and height > 0:
+                        counter[(font, height, child(char, "bold") is not None)] += len(text)
+            break
+        header_style = table_header_styles.most_common(1)[0][0] if table_header_styles else (대표폰트, 대표크기, 대표굵게)
+        body_style = table_body_styles.most_common(1)[0][0] if table_body_styles else (대표폰트, 대표크기, 대표굵게)
+        profile["table_format"] = {
+            "header_font": header_style[0], "header_size": header_style[1], "header_bold": header_style[2],
+            "body_font": body_style[0], "body_size": body_style[1], "body_bold": body_style[2],
+        }
+        profile["profile_version"] = 2
+        profile["storage_format"] = "json"
+        profile["source"] = {"filename": Path(path).name, "paragraphs_analyzed": count}
+        profile["options"]["symbol_fonts"] = {
+            rule[0]: {"font": rule[2], "size": str(rule[3])} for rule in fmt["기호_규칙"]
+        }
         # 복사한 글자 강조/문단 여백을 다른 후처리로 덮지 않는다.
         profile["options"].update(paren_shrink=False, paren_label_bold=False,
                                    std_hanging_indent=False, std_supplement_indent=False)
-        profile["summary"] = ("\n".join(found) + "\n미검출 기호(기본값 유지): " + (", ".join(missing) or "없음")
-                              + "\n본문의 대표 서식을 복사합니다. 표·제목·머리말·개별 강조는 복사 대상이 아닙니다.")
+        profile["summary"] = (
+            f"대표 본문: {대표폰트} {대표크기:g}pt, 굵게 {'ON' if 대표굵게 else 'OFF'}\n"
+            + ("\n".join(found) + "\n" if found else "")
+            + "미검출 기호(기본값 유지): " + (", ".join(missing) or "없음")
+            + f"\n표 머리글: {header_style[0]} {header_style[1]:g}pt / 표 본문: {body_style[0]} {body_style[1]:g}pt"
+            + "\n페이지 여백·장평·자간·줄간격·문단 모양·제목·표 서식을 함께 복제합니다."
+        )
         return profile
 
 
@@ -2469,6 +2529,23 @@ def 표준서식_문단_처리(문단_순번, 헤더_역할=None, 상속_기호_
     # 한다. 제목·일자·일반 본문에는 장평/줄간격/폰트/내어쓰기를 적용하지
     # 않아 원문 서식을 보존한다.
     if 자체_기호_매칭 is None:
+        본문규칙 = 표준서식_설정.get("본문_문단") if 표준서식_설정.get("복제_본문서식") else None
+        if 본문규칙:
+            hwp_run("MoveParaBegin")
+            hwp_run("MoveSelParaEnd")
+            문자모양_적용_현재선택(
+                폰트=본문규칙.get("font"),
+                크기_pt=본문규칙.get("size_pt"),
+                굵게=True if 본문규칙.get("bold") else None,
+                장평=표준서식_설정["기본_장평"] if 표준서식_장평_사용 else None,
+                자간=표준서식_설정.get("기본_자간") if 표준서식_장평_사용 else None,
+            )
+            hwp_run("Cancel")
+            if 표준서식_줄간격_사용:
+                hwp_run("MoveParaBegin")
+                hwp_run("MoveSelParaEnd")
+                문단_줄간격_적용_현재선택(표준서식_설정["기본_줄간격_퍼센트"])
+                hwp_run("Cancel")
         if 표준서식_내어쓰기_사용 and 문단_내어쓰기_기준_오프셋(text) is not None:
             hwp_run("MoveParaBegin")
             문단_내어쓰기_적용(hwp.GetPos(), text)
@@ -6666,9 +6743,27 @@ class HwpAutoDocFitGUI:
         self.options_summary = ttk.Label(quick, style="Hint.TLabel", wraplength=540, justify="left")
         self.options_summary.pack(side="left")
 
+        # 실행창에서 바로 사용할 서식 선택과 예시 문서 드롭 분석.
+        format_quick = ttk.Frame(choose)
+        format_quick.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(6, 0))
+        ttk.Label(format_quick, text="적용 서식", font=("맑은 고딕", 9, "bold")).pack(side="left", padx=(0, 6))
+        self.main_profile_combo = ttk.Combobox(format_quick, state="readonly", width=20)
+        self.main_profile_combo.pack(side="left")
+        self.main_profile_combo.bind("<<ComboboxSelected>>", self._프로파일_선택)
+        self.format_drop_label = ttk.Label(
+            format_quick,
+            text="예시 HWP/HWPX를 여기에 놓으면 분석 후 바로 선택합니다",
+            style="Drop.TLabel",
+            padding=(8, 4),
+            anchor="center",
+        )
+        self.format_drop_label.pack(side="left", fill="x", expand=True, padx=(8, 0))
+        self.format_drop_label.drop_target_register(DND_FILES)
+        self.format_drop_label.dnd_bind("<<Drop>>", self.서식파일_드롭)
+
         # 작업 범위: 기본은 문서 전체. 쪽을 지정하면 그 쪽에 놓인 내용만 처리한다.
         scope = ttk.Frame(choose)
-        scope.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(6, 0))
+        scope.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(6, 0))
         ttk.Label(scope, text="작업 범위", font=("맑은 고딕", 10, "bold")).pack(side="left", padx=(0, 8))
         self.range_all_radio = ttk.Radiobutton(scope, text="문서 전체", value="all", variable=self.range_mode_var)
         self.range_all_radio.pack(side="left")
@@ -7387,20 +7482,35 @@ class HwpAutoDocFitGUI:
 
     def _프로파일_전역반영(self, profile):
         global 표준서식_설정
+        global 표_헤더서식_헤더_폰트, 표_헤더서식_헤더_크기, 표_헤더서식_헤더_굵게
+        global 표_헤더서식_본문_폰트, 표_헤더서식_본문_크기, 표_헤더서식_본문_굵게
         서식_기본값_전역_복원()
         표준서식_설정 = copy.deepcopy(profile["format"])
+        table = profile.get("table_format", {})
+        표_헤더서식_헤더_폰트 = table.get("header_font", 표_헤더서식_헤더_폰트)
+        표_헤더서식_헤더_크기 = table.get("header_size", 표_헤더서식_헤더_크기)
+        표_헤더서식_헤더_굵게 = table.get("header_bold", 표_헤더서식_헤더_굵게)
+        표_헤더서식_본문_폰트 = table.get("body_font", 표_헤더서식_본문_폰트)
+        표_헤더서식_본문_크기 = table.get("body_size", 표_헤더서식_본문_크기)
+        표_헤더서식_본문_굵게 = table.get("body_bold", 표_헤더서식_본문_굵게)
 
     def _프로파일_목록갱신(self):
         self._프로파일_ids = list(self._프로파일들)
-        self.profile_combo["values"] = [p["name"] for p in self._프로파일들.values()]
-        self.profile_combo.current(self._프로파일_ids.index(self._활성_서식_프로파일))
+        이름들 = [p["name"] for p in self._프로파일들.values()]
+        현재 = self._프로파일_ids.index(self._활성_서식_프로파일)
+        for 콤보이름 in ("profile_combo", "main_profile_combo"):
+            콤보 = getattr(self, 콤보이름, None)
+            if 콤보 is not None:
+                콤보["values"] = 이름들
+                콤보.current(현재)
         삭제버튼 = getattr(self, "delete_format_button", None)
         if 삭제버튼 is not None:
             삭제버튼.config(state="normal" if self._활성_서식_프로파일 else "disabled")
 
     def _프로파일_선택(self, event=None):
         if self.running: return
-        self._활성_서식_프로파일 = self._프로파일_ids[self.profile_combo.current()]
+        콤보 = event.widget if event is not None and isinstance(event.widget, ttk.Combobox) else self.profile_combo
+        self._활성_서식_프로파일 = self._프로파일_ids[콤보.current()]
         profile = self._프로파일들[self._활성_서식_프로파일]
         self._프로파일_전역반영(profile)
         options = profile["options"]
@@ -7408,9 +7518,14 @@ class HwpAutoDocFitGUI:
             var.set(options.get(key, 기본_설정[key]))
         self.paren_shrink_var.set(options.get("paren_shrink", True))
         self.paren_label_bold_var.set(options.get("paren_label_bold", True))
+        for symbol, values in options.get("symbol_fonts", {}).items():
+            if symbol in self.symbol_font_vars:
+                self.symbol_font_vars[symbol]["font"].set(str(values.get("font", "")))
+                self.symbol_font_vars[symbol]["size"].set(str(values.get("size", "")))
         for key, var in self.label_symbol_vars.items():
             var.set(options.get("label_symbols", 기본_설정["label_symbols"]).get(key, True))
         self._설정_변경됨()
+        self._프로파일_목록갱신()
         self._표준서식_하위옵션_상태_갱신()
         삭제버튼 = getattr(self, "delete_format_button", None)
         if 삭제버튼 is not None:
@@ -7447,15 +7562,33 @@ class HwpAutoDocFitGUI:
         path = askopenfilename(parent=self.settings_toplevel, title="서식을 복사할 한글파일",
                                filetypes=[("한글파일", "*.hwp *.hwpx")])
         if not path: return
-        name = simpledialog.askstring(APP_NAME, "새 문서 서식 이름", parent=self.settings_toplevel,
-                                      initialvalue=Path(path).stem)
+        self._서식_분석_시작(path, 이름묻기=True)
+
+    def _서식_분석_시작(self, path, 이름묻기=False):
+        if self.running or getattr(self, "_서식분석중", False):
+            return
+        parent = self.settings_toplevel if self.settings_toplevel and self.settings_toplevel.winfo_viewable() else self.root
+        name = Path(path).stem
+        if 이름묻기:
+            name = simpledialog.askstring(APP_NAME, "새 문서 서식 이름", parent=parent, initialvalue=name)
         if name is None: return
         name = name.strip()
-        if not name or any(p["name"] == name for p in self._프로파일들.values()):
-            messagebox.showwarning(APP_NAME, "비어 있지 않은 새 이름을 입력해 주세요.", parent=self.settings_toplevel)
+        if not name:
+            messagebox.showwarning(APP_NAME, "비어 있지 않은 이름을 입력해 주세요.", parent=parent)
             return
+        기존이름 = {p["name"] for p in self._프로파일들.values()}
+        if name in 기존이름:
+            if 이름묻기:
+                messagebox.showwarning(APP_NAME, "이미 사용 중인 서식 이름입니다.", parent=parent)
+                return
+            기본이름, 순번 = name, 2
+            while name in 기존이름:
+                name = f"{기본이름} ({순번})"
+                순번 += 1
         self._서식분석중 = True
         self.copy_format_button.config(state="disabled")
+        if hasattr(self, "format_drop_label"):
+            self.format_drop_label.configure(text=f"분석 중 · {Path(path).name}")
         self.status_var.set("문서 서식을 분석하고 있습니다…")
         def worker():
             try:
@@ -7466,12 +7599,29 @@ class HwpAutoDocFitGUI:
                 gui_queue.put(("format_copy_error", str(exc)))
         threading.Thread(target=worker, daemon=True).start()
 
+    def 서식파일_드롭(self, event):
+        if self.running or getattr(self, "_서식분석중", False):
+            return
+        try:
+            items = self.root.tk.splitlist(event.data)
+        except Exception:
+            items = [event.data]
+        candidates = [str(item).strip() for item in items if Path(str(item).strip()).suffix.lower() in (".hwp", ".hwpx")]
+        if not candidates:
+            messagebox.showwarning(APP_NAME, "HWP 또는 HWPX 예시 문서를 놓아 주세요.", parent=self.root)
+            return
+        self.selected_mode.set("format")
+        self._서식_분석_시작(candidates[0], 이름묻기=False)
+
     def _서식_복사완료(self, profile=None, error=None):
         self._서식분석중 = False
         self.copy_format_button.config(state="normal")
+        parent = self.settings_toplevel if self.settings_toplevel and self.settings_toplevel.winfo_viewable() else self.root
         if error:
             self.status_var.set("서식 분석 실패")
-            messagebox.showerror(APP_NAME, f"서식 복사 실패\n{error}", parent=self.settings_toplevel)
+            if hasattr(self, "format_drop_label"):
+                self.format_drop_label.configure(text="예시 HWP/HWPX를 여기에 놓으면 분석 후 바로 선택합니다")
+            messagebox.showerror(APP_NAME, f"서식 복사 실패\n{error}", parent=parent)
             return
         identifier = uuid.uuid4().hex
         folder = 서식프로파일_폴더()
@@ -7481,15 +7631,18 @@ class HwpAutoDocFitGUI:
             temp.write_text(json.dumps(profile, ensure_ascii=False, indent=2), encoding="utf-8")
             os.replace(temp, folder / (identifier + ".json"))
         except Exception as exc:
-            messagebox.showerror(APP_NAME, f"서식 저장 실패\n{exc}", parent=self.settings_toplevel)
+            messagebox.showerror(APP_NAME, f"서식 저장 실패\n{exc}", parent=parent)
             return
         self._프로파일들[identifier] = profile
         self._활성_서식_프로파일 = identifier
         self._프로파일_목록갱신()
         self._프로파일_선택()
+        self.selected_mode.set("format")
+        if hasattr(self, "format_drop_label"):
+            self.format_drop_label.configure(text=f"적용 준비 완료 · {profile['name']}")
         self.status_var.set(f"새 문서 서식 추가: {profile['name']}")
         messagebox.showinfo(APP_NAME, f"'{profile['name']}' 서식을 저장하고 선택했습니다.\n\n{profile['summary']}",
-                            parent=self.settings_toplevel)
+                            parent=parent)
 
     def _색상표시_상태_갱신(self, *args):
         """'자간을 수정한 글자를 색으로 표시하기' On/Off에 따라 색상 선택 라디오를 활성화/비활성화한다."""
@@ -8300,6 +8453,7 @@ class HwpAutoDocFitGUI:
         for widget in self.mode_buttons + self.file_buttons + self.preset_buttons + [self.cat_pick_button, self.cat_default_button, self.cat_motion_check, self.reset_button, self.update_button]:
             widget.configure(state="disabled")
         self.profile_combo.config(state="disabled")
+        self.main_profile_combo.config(state="disabled")
         self.copy_format_button.config(state="disabled")
         self._설정탭_상태_갱신()   # 세부 설정 버튼은 켜 둔다(처리 기록 탭만 사용 가능)
         self.keep_punctuation_set_check.config(state="disabled")
@@ -8336,6 +8490,7 @@ class HwpAutoDocFitGUI:
             widget.configure(state="normal")
         self._요약갱신()
         self.profile_combo.config(state="readonly")
+        self.main_profile_combo.config(state="readonly")
         self.copy_format_button.config(state="normal")
         self.settings_button.config(state="normal")
         self._설정탭_상태_갱신()

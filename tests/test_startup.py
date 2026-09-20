@@ -146,6 +146,8 @@ class StartupTest(unittest.TestCase):
                     self.assertIsNone(app.worker)
                     self.assertFalse(app.running)
                     self.assertTrue(app.check_updates_on_start_var.get())
+                    self.assertEqual(app.main_profile_combo.get(), "기본 보고서 서식")
+                    self.assertIn("HWP/HWPX", app.format_drop_label.cget("text"))
                 finally:
                     root.destroy()
 
