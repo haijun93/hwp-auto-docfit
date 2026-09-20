@@ -12,6 +12,16 @@ from unittest.mock import Mock, patch
 
 
 class StartupTest(unittest.TestCase):
+    def test_output_filename_is_always_hwpx(self):
+        source = Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"
+        namespace = runpy.run_path(str(source), run_name="output_filename_test")
+        output_filename = namespace["저장파일명"]
+        output_filename.__globals__["작업_모드"] = "spacing"
+        output_filename.__globals__["쪽범위_실제"] = None
+
+        self.assertEqual(Path(output_filename("보고서.hwp")).name, "보고서(자간조정).hwpx")
+        self.assertEqual(Path(output_filename("보고서.hwpx")).name, "보고서(자간조정).hwpx")
+
     def test_release_version_and_exe_asset_selection(self):
         source = Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"
         namespace = runpy.run_path(str(source), run_name="updater_test")

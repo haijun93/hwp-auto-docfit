@@ -5239,7 +5239,8 @@ def 저장파일명(파일):
     if 쪽범위_실제 is not None:
         # 일부 쪽만 처리한 결과가 전체 처리 결과를 덮어쓰지 않도록 범위를 이름에 남긴다.
         suffix += f"({쪽범위_실제[0]}-{쪽범위_실제[1]}쪽)"
-    return str(path.with_name(path.stem + suffix + path.suffix))
+    # 입력이 바이너리 HWP여도 결과물은 항상 개방형 HWPX로 저장한다.
+    return str(path.with_name(path.stem + suffix + ".hwpx"))
 
 # ============================================================
 # 문서 처리 파이프라인
@@ -5376,7 +5377,7 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
     로그(f"[{index}/{total}] {파일명}")
 
     확장자 = Path(파일).suffix.lower()
-    확장자명 = "hwpx" if 확장자 == ".hwpx" else "hwp"
+    원본_확장자명 = "hwpx" if 확장자 == ".hwpx" else "hwp"
 
     파일경로 = Path(파일)
     if not 파일경로.is_file():
@@ -5386,7 +5387,8 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
 
     # 한글에 넘기기 전에 경로 조작, ZIP bomb, CRC와 필수 구조를 검사한다.
     원본_구조 = None
-    검수_임시폴더 = None
+    작업_임시폴더 = None
+    작업파일경로 = 파일경로
     if 확장자 == ".hwpx":
         검사정보 = validate_hwpx(파일경로)
         로그(
@@ -5401,21 +5403,28 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
     단계표시("열기")
     # HWP NEO에서 최신 HWPX의 호환성 경고가 뜨는 경우에도 자동화가
     # 중단되지 않도록 강제 열기 옵션을 사용한다.
-    열린결과 = hwp.Open(str(파일경로), Format=확장자명.upper(), arg="forceopen:true")
+    열린결과 = hwp.Open(str(파일경로), Format=원본_확장자명.upper(), arg="forceopen:true")
     if 열린결과 is False:
         raise RuntimeError(f"한글에서 문서를 열지 못했습니다: {파일}")
 
-    # 바이너리 HWP도 편집 전 HWPX 스냅샷을 만들어 같은 검사기를 사용한다.
-    if 검수_사용 and 확장자 == ".hwp":
-        검수_임시폴더 = tempfile.TemporaryDirectory(prefix="docfit_integrity_")
-        원본_스냅샷 = Path(검수_임시폴더.name) / "before.hwpx"
-        if hwp.SaveAs(str(원본_스냅샷), "HWPX", "") is False:
-            raise RuntimeError("무결성 검사용 원본 스냅샷을 만들지 못했습니다.")
-        원본_구조 = inspect_hwpx(원본_스냅샷)
-        if hwp.Open(str(파일경로), Format="HWP", arg="forceopen:true") is False:
-            raise RuntimeError("검수 스냅샷 생성 후 원본 문서를 다시 열지 못했습니다.")
+    # 바이너리 HWP는 원본을 건드리지 않고 임시 HWPX로 변환한다. 이후의
+    # 분석·서식 적용·무결성 검사·저장은 모두 HWPX 문서를 기준으로 수행한다.
+    if 확장자 == ".hwp":
+        작업_임시폴더 = tempfile.TemporaryDirectory(prefix="docfit_hwp_to_hwpx_")
+        작업파일경로 = Path(작업_임시폴더.name) / f"{파일경로.stem}.hwpx"
+        if hwp.SaveAs(str(작업파일경로), "HWPX", "") is False:
+            raise RuntimeError("HWP 문서를 작업용 HWPX로 변환하지 못했습니다.")
+        검사정보 = validate_hwpx(작업파일경로)
+        로그(
+            f"HWP → HWPX 변환 완료: {작업파일경로.name} / "
+            f"압축 항목 {검사정보['entry_count']}개"
+        )
+        if 검수_사용:
+            원본_구조 = inspect_hwpx(작업파일경로)
+        if hwp.Open(str(작업파일경로), Format="HWPX", arg="forceopen:true") is False:
+            raise RuntimeError("변환한 작업용 HWPX 문서를 다시 열지 못했습니다.")
 
-    원본_뷰어_문서표시(파일, 확장자명)
+    원본_뷰어_문서표시(파일, 원본_확장자명)
     비교보기_임베드_재확인()
 
     if 표준서식_사용 and 작업_모드 in ('format', 'all'):
@@ -5425,7 +5434,7 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
         else:
             단계표시("제목·개요·붙임 선행 서식")
             상태(f"{파일명} : 제목·개요·붙임 선행 서식")
-            if 제목붙임_선행적용(파일경로) is False:
+            if 제목붙임_선행적용(작업파일경로) is False:
                 return False
     한칸표_보호영역 = 한칸표_영역_목록()
 
@@ -5462,36 +5471,25 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
     저장파일 = 저장파일명(파일)
     단계표시("저장")
     상태(f"{파일명} : 2회 처리 완료 / 최종 저장 중")
-    문서_format = 확장자명.upper()
     처리쪽수 = 처리_쪽수_구하기()
-    저장결과 = hwp.SaveAs(Path=저장파일, Format=문서_format, arg="")
+    저장결과 = hwp.SaveAs(Path=저장파일, Format="HWPX", arg="")
     if 저장결과 is False:
         raise RuntimeError(f"문서 저장에 실패했습니다: {저장파일}")
     로그(f"전체 처리 2회 완료")
     로그(f"저장 완료: {저장파일}")
     if 검수_사용 and 원본_구조 is not None:
-        try:
-            if 확장자 == ".hwpx":
-                결과_구조 = inspect_hwpx(저장파일)
-            else:
-                if 검수_임시폴더 is None:
-                    검수_임시폴더 = tempfile.TemporaryDirectory(prefix="docfit_integrity_")
-                결과_스냅샷 = Path(검수_임시폴더.name) / "after.hwpx"
-                if hwp.SaveAs(str(결과_스냅샷), "HWPX", "") is False:
-                    raise RuntimeError("무결성 검사용 결과 스냅샷을 만들지 못했습니다.")
-                결과_구조 = inspect_hwpx(결과_스냅샷)
-            무결성 = compare_documents(원본_구조, 결과_구조)
-            보고서경로 = Path(저장파일).with_name(Path(저장파일).stem + "(무결성검사).json")
-            보고서경로.write_text(json.dumps(무결성, ensure_ascii=False, indent=2), encoding="utf-8")
-            로그(
-                f"문서 무결성 검사: {'통과' if 무결성['ok'] else '확인 필요'} / "
-                f"본문 일치도 {무결성['text_similarity']:.1%} / 보고서 {보고서경로.name}"
-            )
-            for 문제 in 무결성["issues"]:
-                로그(f"  - [{문제['severity']}] {문제['message']}")
-        finally:
-            if 검수_임시폴더 is not None:
-                검수_임시폴더.cleanup()
+        결과_구조 = inspect_hwpx(저장파일)
+        무결성 = compare_documents(원본_구조, 결과_구조)
+        보고서경로 = Path(저장파일).with_name(Path(저장파일).stem + "(무결성검사).json")
+        보고서경로.write_text(json.dumps(무결성, ensure_ascii=False, indent=2), encoding="utf-8")
+        로그(
+            f"문서 무결성 검사: {'통과' if 무결성['ok'] else '확인 필요'} / "
+            f"본문 일치도 {무결성['text_similarity']:.1%} / 보고서 {보고서경로.name}"
+        )
+        for 문제 in 무결성["issues"]:
+            로그(f"  - [{문제['severity']}] {문제['message']}")
+    if 작업_임시폴더 is not None:
+        작업_임시폴더.cleanup()
     # 실행창이 '작업 결과' 표시와 '결과파일 열기'에 쓰도록 알린다.
     gui_queue.put(("saved", str(파일), str(저장파일), 처리쪽수))
     return True
@@ -6557,7 +6555,7 @@ class CatCompanion(tk.Canvas):
 
 class HwpAutoDocFitGUI:
 
-    FOOTER_NOTE_DEFAULT = "결과는 원본 폴더에 별도 저장됩니다. 같은 이름의 이전 결과는 덮어씁니다."
+    FOOTER_NOTE_DEFAULT = "HWP 입력도 HWPX로 변환해 원본 폴더에 저장합니다. 같은 이름의 이전 결과는 덮어씁니다."
 
     def __init__(self, root):
         self.root = root
