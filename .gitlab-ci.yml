@@ -1,0 +1,26 @@
+stages:
+  - test
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+cache:
+  key: "$CI_JOB_NAME"
+  paths:
+    - .cache/pip/
+
+validate-windows:
+  stage: test
+  tags:
+    - windows
+  before_script:
+    - python --version
+    - python -m pip install --disable-pip-version-check -r requirements.txt
+  script:
+    - python -m py_compile hwp-auto-docfit.py
+    - python -c "import runpy; runpy.run_path('hwp-auto-docfit.py', run_name='import_check')"
+    - python -m unittest discover -s tests -v
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_PIPELINE_SOURCE == "web"'

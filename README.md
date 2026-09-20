@@ -1,93 +1,74 @@
-# Mapo Agent
+# HWP Auto DocFit — hwp 자동 편집기
 
+한글 2020의 HWP/HWPX 문서를 편집하는 Windows용 Python 프로그램입니다.
+실행 파일은 `hwp-auto-docfit.py`이며, 프로그램 버전은 `1.64`입니다.
 
+이 프로젝트의 기준 저장소는 다음 GitLab 저장소입니다.
 
-## Getting started
+- `https://gitlab.aigov.go.kr/haijun93/mapo-agent.git`
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
-
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
-
-```
-cd existing_repo
-git remote add origin https://gitlab.aigov.go.kr/haijun93/mapo-agent.git
-git branch -M main
-git push -uf origin main
+```powershell
+git clone https://gitlab.aigov.go.kr/haijun93/mapo-agent.git
+cd mapo-agent
 ```
 
-## Integrate with your tools
+## 주요 기능
 
-* [Set up project integrations](https://gitlab.aigov.go.kr/haijun93/mapo-agent/-/settings/integrations)
+- 파일·폴더 드래그 앤 드롭과 여러 문서 일괄 처리
+- 줄 끝 단어 분리를 줄이기 위한 자간 조정
+- 공문서 항목 인식, 문장 줄 병합, 세트 문장의 같은 페이지 유지
+- 보고서 표준서식, 표·셀 서식, 괄호·공백 정리
+- 글자색 표시, 결과 검수, 진행률과 작업 로그
+- 설정 저장 및 작업 중단
 
-## Collaborate with your team
+## 실행 환경
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+- Windows
+- Python 3.14 및 Tkinter
+- 한글 2020 설치 및 `HwpFrame.HwpObject` COM 자동화 사용 가능 환경
+- `FilePathCheckerModuleExample.dll`: `hwp-auto-docfit.py`와 같은 폴더에 배치
 
-## Test and Deploy
+보안 모듈 DLL은 저장소에 포함되어 있지 않습니다. 문서 처리 시 프로그램이 이 DLL을
+`C:\HwpAutomation`에 복사하고 현재 사용자 레지스트리에 등록합니다.
 
-Use the built-in continuous integration in GitLab.
+## 설치 및 실행
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
+프로젝트 폴더에서 PowerShell로 실행합니다.
 
-***
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe hwp-auto-docfit.py
+```
 
-# Editing this README
+창에서 HWP/HWPX 파일을 선택하거나 끌어다 놓고, 설정을 조정한 다음 **실행**을 누릅니다.
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+## EXE 빌드와 자동 업데이트
 
-## Suggestions for a good README
+`build.bat`을 실행하면 `dist\HWP_AutoDocFit.exe`가 생성됩니다. Pillow와 tkinterdnd2도 EXE에 포함됩니다.
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+자동 업데이트를 배포하려면 현재 GitLab 프로젝트에 Release를 만들고 다음 규칙을 지킵니다.
 
-## Name
-Choose a self-explaining name for your project.
+- 태그: 현재 앱 버전보다 높은 버전(예: `v1.65`)
+- Release 자산 링크 이름: `HWP_AutoDocFit.exe`
+- 자산 링크 대상: 빌드한 `HWP_AutoDocFit.exe`를 내려받을 수 있는 URL
+- 자동 업데이트를 사용하는 배포 환경에서는 Release API와 자산 링크를 인증 없이 읽고 내려받을 수 있어야 함
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+배포된 EXE는 시작 후 백그라운드에서 현재 GitLab 프로젝트의 최신 Release를 확인합니다. 새 버전이 있으면 사용자 확인 후 EXE를 다운로드하고 현재 실행 파일을 교체한 뒤 다시 실행합니다. 네트워크 오류나 Release가 없는 경우 앱 실행에는 영향을 주지 않습니다.
+결과는 원본과 같은 폴더에 `원본파일명(자간조정).hwp` 또는
+`원본파일명(자간조정).hwpx`로 저장됩니다.
+설정은 `%APPDATA%\HwpAutoDocFit\settings.json`에 저장됩니다.
+보고서 표준서식은 `□`, `ㅇ`, `-`, `※` 등 문장부호로 시작하는 문단에만
+적용됩니다. 각 작업의 전체 로그는 원본 문서 폴더에
+`원본파일명(작업로그-YYYYMMDD-HHMMSS).log`로 저장됩니다.
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+## 기본 검증
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+```powershell
+.\.venv\Scripts\python.exe -m py_compile hwp-auto-docfit.py
+.\.venv\Scripts\python.exe -c "import runpy; runpy.run_path('hwp-auto-docfit.py', run_name='import_check')"
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+```
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+GitLab CI도 Windows에서 문법, 모듈 로딩, GUI 초기화를 확인합니다. CI 작업을 실행하려면 `windows` 태그가 지정되고 Python 3.14 및 데스크톱 세션을 사용할 수 있는 GitLab Runner가 필요합니다.
+실제 문서 편집 검증에는 한글과 보안 모듈 DLL이 필요합니다.

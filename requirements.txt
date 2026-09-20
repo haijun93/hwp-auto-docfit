@@ -1,0 +1,4 @@
+pywin32
+tkinterdnd2
+Pillow
+defusedxml
