@@ -96,7 +96,25 @@ import win32com.client as win32
 import win32gui
 import win32con
 from defusedxml.ElementTree import fromstring as safe_xml_fromstring
-from docfit_core import compare_documents, export_markdown, inspect_hwpx, validate_hwpx
+from docfit_core import (
+    KordocUnavailableError,
+    analyze_form,
+    analyze_tables,
+    compare_documents,
+    compare_documents_advanced,
+    export_advanced_markdown,
+    export_common_ir,
+    export_markdown,
+    export_rag_chunks,
+    fill_form,
+    generate_hwpx,
+    inspect_hwpx,
+    kordoc_engine_version,
+    lint_document,
+    patch_document,
+    render_preview,
+    validate_hwpx,
+)
 
 # ============================================================
 # 프로그램 정보
@@ -6831,6 +6849,7 @@ class HwpAutoDocFitGUI:
         self.file_buttons = []
         for title, command in (("+ 파일 추가", self.파일선택), ("폴더 추가", self._폴더선택),
                                ("Markdown 내보내기", self.Markdown_내보내기),
+                               ("고급 문서 도구", self.고급문서도구_열기),
                                ("선택 항목 빼기", self._선택삭제), ("목록 비우기", self.목록지우기)):
             button = ttk.Button(file_actions, text=title, command=command)
             button.pack(side="left", padx=(0, 6))
@@ -8621,6 +8640,126 @@ class HwpAutoDocFitGUI:
             gui_queue.put(("markdown_exported", 성공, 실패))
 
         threading.Thread(target=worker, daemon=True, name="markdown-export").start()
+
+    def _고급도구_대상(self):
+        선택 = list(self.file_list.curselection())
+        if 선택:
+            return Path(self.files[선택[0]])
+        if self.files:
+            return Path(self.files[0])
+        return None
+
+    def _고급도구_비동기(self, 이름, 작업):
+        if self.running:
+            return
+        self.status_var.set(f"{이름} 실행 중")
+        def worker():
+            try:
+                result = 작업()
+                self.root.after(0, lambda: self._고급도구_완료(이름, result))
+            except Exception as exc:
+                self.root.after(0, lambda error=str(exc): self._고급도구_실패(이름, error))
+        threading.Thread(target=worker, daemon=True, name="kordoc-advanced-tool").start()
+
+    def _고급도구_완료(self, 이름, result):
+        self.status_var.set(f"{이름} 완료")
+        self.로그표시(f"{이름} 완료: {result}")
+        messagebox.showinfo(APP_NAME, f"{이름}을 완료했습니다.\n\n{result}", parent=self.root)
+
+    def _고급도구_실패(self, 이름, error):
+        self.status_var.set(f"{이름} 실패")
+        self.로그표시(f"{이름} 실패: {error}")
+        messagebox.showerror(APP_NAME, f"{이름}을 완료하지 못했습니다.\n\n{error}", parent=self.root)
+
+    def 고급문서도구_열기(self):
+        if self.running:
+            return
+        if getattr(self, "advanced_tools_toplevel", None) is not None:
+            try:
+                self.advanced_tools_toplevel.lift()
+                return
+            except tk.TclError:
+                self.advanced_tools_toplevel = None
+        window = tk.Toplevel(self.root)
+        self.advanced_tools_toplevel = window
+        window.title("고급 문서 도구 · kordoc v4")
+        window.geometry("620x520")
+        window.resizable(True, True)
+        window.transient(self.root)
+        body = ttk.Frame(window, padding=18)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="구조 분석 · 비교 · 생성", font=("맑은 고딕", 16, "bold")).pack(anchor="w")
+        engine_text = tk.StringVar(value="문서 엔진 확인 중…")
+        ttk.Label(body, textvariable=engine_text, style="Hint.TLabel").pack(anchor="w", pady=(2, 12))
+        def check_engine():
+            try: value = f"kordoc {kordoc_engine_version()} · Node.js 선택형 연동"
+            except Exception as exc: value = str(exc)
+            self.root.after(0, lambda: engine_text.set(value))
+        threading.Thread(target=check_engine, daemon=True).start()
+
+        target = self._고급도구_대상()
+        target_text = tk.StringVar(value=str(target) if target else "문서 목록에서 대상 파일을 먼저 선택하세요.")
+        ttk.Label(body, textvariable=target_text, wraplength=570).pack(anchor="w", pady=(0, 12))
+        grid = ttk.Frame(body)
+        grid.pack(fill="x")
+        for column in range(2): grid.grid_columnconfigure(column, weight=1)
+
+        def require_target():
+            selected = self._고급도구_대상()
+            if selected is None:
+                raise ValueError("문서 목록에서 대상 파일을 먼저 선택해 주세요.")
+            return selected
+        def page_export():
+            pages = simpledialog.askstring(APP_NAME, "페이지 범위를 입력하세요. 예: 1-3, 5", parent=window)
+            if pages: self._고급도구_비동기("페이지별 Markdown", lambda: export_advanced_markdown(require_target(), pages))
+        def compare_tool():
+            other = askopenfilename(parent=window, title="비교할 문서 선택")
+            if other: self._고급도구_비동기("블록·셀 신구대조", lambda: compare_documents_advanced(require_target(), other))
+        def fill_tool():
+            fields = simpledialog.askstring(APP_NAME, "채울 값을 입력하세요.\n예: 성명=홍길동,전화=02-123-4567", parent=window)
+            if fields: self._고급도구_비동기("양식 자동 채우기", lambda: fill_form(require_target(), fields))
+        def patch_tool():
+            edited = askopenfilename(parent=window, title="편집한 Markdown 선택", filetypes=[("Markdown", "*.md")])
+            if edited: self._고급도구_비동기("서식 보존 텍스트 패치", lambda: patch_document(require_target(), edited))
+
+        tools = (
+            ("고급 Markdown", lambda: self._고급도구_비동기("고급 Markdown", lambda: export_advanced_markdown(require_target()))),
+            ("페이지별 Markdown", page_export),
+            ("RAG 구조 청크", lambda: self._고급도구_비동기("RAG 구조 청크", lambda: export_rag_chunks(require_target()))),
+            ("공통 문서 IR(JSON)", lambda: self._고급도구_비동기("공통 문서 IR", lambda: export_common_ir(require_target()))),
+            ("표 추출·분류", lambda: self._고급도구_비동기("표 추출·분류", lambda: analyze_tables(require_target()))),
+            ("양식 필드 분석", lambda: self._고급도구_비동기("양식 필드 분석", lambda: analyze_form(require_target()))),
+            ("블록·셀 신구대조", compare_tool),
+            ("양식 자동 채우기", fill_tool),
+            ("서식 보존 텍스트 패치", patch_tool),
+            ("공문서 표기법 검수", lambda: self._고급도구_비동기("공문서 표기법 검수", lambda: lint_document(require_target()))),
+            ("페이지 이미지 미리보기", lambda: self._고급도구_비동기("페이지 이미지 미리보기", lambda: render_preview(require_target()))),
+        )
+        for index, (label, command) in enumerate(tools):
+            ttk.Button(grid, text=label, command=command).grid(
+                row=index // 2, column=index % 2, sticky="ew", padx=4, pady=4
+            )
+
+        separator = ttk.Separator(body)
+        separator.pack(fill="x", pady=14)
+        generate_frame = ttk.LabelFrame(body, text="Markdown → HWPX 생성", padding=10)
+        generate_frame.pack(fill="x")
+        preset = tk.StringVar(value="보고서")
+        ttk.Label(generate_frame, text="프리셋").pack(side="left")
+        ttk.Combobox(generate_frame, textvariable=preset, values=("보고서", "계획서", "기안문"),
+                     state="readonly", width=10).pack(side="left", padx=8)
+        def generate_tool():
+            markdown = askopenfilename(parent=window, title="생성할 Markdown 선택", filetypes=[("Markdown", "*.md")])
+            if markdown:
+                selected_preset = preset.get()
+                self._고급도구_비동기(
+                    f"{selected_preset} HWPX 생성",
+                    lambda: generate_hwpx(markdown, selected_preset),
+                )
+        ttk.Button(generate_frame, text="HWPX 생성…", command=generate_tool).pack(side="left")
+        ttk.Label(body, text="Node.js 18+가 없으면 고급 도구만 사용할 수 없으며 기존 편집 기능에는 영향이 없습니다.",
+                  style="Hint.TLabel", wraplength=570).pack(anchor="w", pady=(12, 0))
+        window.protocol("WM_DELETE_WINDOW", lambda: (setattr(self, "advanced_tools_toplevel", None), window.destroy()))
 
     def 목록지우기(self):
         if self.running:

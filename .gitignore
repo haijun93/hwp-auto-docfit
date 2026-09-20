@@ -8,5 +8,6 @@ venv/
 .cache/
 build/
 dist/
+benchmark-results/
 *.log
 .DS_Store
