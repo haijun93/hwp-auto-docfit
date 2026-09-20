@@ -6722,10 +6722,10 @@ class HwpAutoDocFitGUI:
                 if 수동:
                     messagebox.showinfo(
                         APP_NAME,
-                        f"현재 최신 버전을 사용하고 있습니다.\n\n현재 버전: {APP_VERSION}",
+                        "현재 최신버전입니다.",
                         parent=self.settings_toplevel or self.root,
                     )
-                    self.status_var.set(f"현재 버전 {APP_VERSION}은 최신 버전이에요.")
+                    self.status_var.set("현재 최신버전입니다.")
                 return
             self._자동업데이트_안내(릴리스)
 
