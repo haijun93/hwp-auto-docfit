@@ -95,6 +95,7 @@ import win32com.client as win32
 import win32gui
 import win32con
 from defusedxml.ElementTree import fromstring as safe_xml_fromstring
+from docfit_core import compare_documents, export_markdown, inspect_hwpx, validate_hwpx
 
 # ============================================================
 # 프로그램 정보
@@ -795,6 +796,41 @@ def 한글파일_서식_분석(path):
             if app is not None:
                 try: app.Quit()
                 except Exception: pass
+            pythoncom.CoUninitialize()
+
+
+def 문서_markdown_내보내기(path):
+    """HWP/HWPX를 같은 이름의 UTF-8 Markdown 파일로 내보낸다."""
+    source = Path(path)
+    target = source.with_suffix(".md")
+    if source.suffix.lower() == ".hwpx":
+        validate_hwpx(source)
+        return export_markdown(source, target)
+    if source.suffix.lower() != ".hwp":
+        raise ValueError("HWP 또는 HWPX 문서만 Markdown으로 내보낼 수 있습니다.")
+
+    with tempfile.TemporaryDirectory(prefix="hwp_markdown_") as folder:
+        copied = Path(folder) / "source.hwp"
+        snapshot = Path(folder) / "source.hwpx"
+        shutil.copy2(source, copied)
+        app = None
+        pythoncom.CoInitialize()
+        try:
+            보안모듈_초기화()
+            app = win32.DispatchEx("HwpFrame.HwpObject")
+            if not app.RegisterModule(REGISTER_MODULE_NAME, REGISTER_MODULE_VALUE):
+                raise RuntimeError("한글 보안 모듈을 등록하지 못했습니다.")
+            if not app.Open(str(copied), "HWP", ""):
+                raise RuntimeError("한글파일을 열지 못했습니다.")
+            if not app.SaveAs(str(snapshot), "HWPX", ""):
+                raise RuntimeError("Markdown 변환용 HWPX 스냅샷을 만들지 못했습니다.")
+            return export_markdown(snapshot, target)
+        finally:
+            if app is not None:
+                try:
+                    app.Quit()
+                except Exception:
+                    pass
             pythoncom.CoUninitialize()
 
 
@@ -5271,6 +5307,18 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
     if 확장자 not in (".hwp", ".hwpx"):
         raise ValueError(f"지원하지 않는 파일 형식입니다: {확장자 or '(확장자 없음)'}")
 
+    # 한글에 넘기기 전에 경로 조작, ZIP bomb, CRC와 필수 구조를 검사한다.
+    원본_구조 = None
+    검수_임시폴더 = None
+    if 확장자 == ".hwpx":
+        검사정보 = validate_hwpx(파일경로)
+        로그(
+            f"HWPX 안전 검사 통과: 압축 항목 {검사정보['entry_count']}개 / "
+            f"해제 예상 {검사정보['total_uncompressed_size']:,}바이트"
+        )
+        if 검수_사용:
+            원본_구조 = inspect_hwpx(파일경로)
+
     로그(f"문서 열기: {파일}")
     단계초기화()
     단계표시("열기")
@@ -5279,6 +5327,16 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
     열린결과 = hwp.Open(str(파일경로), Format=확장자명.upper(), arg="forceopen:true")
     if 열린결과 is False:
         raise RuntimeError(f"한글에서 문서를 열지 못했습니다: {파일}")
+
+    # 바이너리 HWP도 편집 전 HWPX 스냅샷을 만들어 같은 검사기를 사용한다.
+    if 검수_사용 and 확장자 == ".hwp":
+        검수_임시폴더 = tempfile.TemporaryDirectory(prefix="docfit_integrity_")
+        원본_스냅샷 = Path(검수_임시폴더.name) / "before.hwpx"
+        if hwp.SaveAs(str(원본_스냅샷), "HWPX", "") is False:
+            raise RuntimeError("무결성 검사용 원본 스냅샷을 만들지 못했습니다.")
+        원본_구조 = inspect_hwpx(원본_스냅샷)
+        if hwp.Open(str(파일경로), Format="HWP", arg="forceopen:true") is False:
+            raise RuntimeError("검수 스냅샷 생성 후 원본 문서를 다시 열지 못했습니다.")
 
     원본_뷰어_문서표시(파일, 확장자명)
     비교보기_임베드_재확인()
@@ -5334,6 +5392,29 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
         raise RuntimeError(f"문서 저장에 실패했습니다: {저장파일}")
     로그(f"전체 처리 2회 완료")
     로그(f"저장 완료: {저장파일}")
+    if 검수_사용 and 원본_구조 is not None:
+        try:
+            if 확장자 == ".hwpx":
+                결과_구조 = inspect_hwpx(저장파일)
+            else:
+                if 검수_임시폴더 is None:
+                    검수_임시폴더 = tempfile.TemporaryDirectory(prefix="docfit_integrity_")
+                결과_스냅샷 = Path(검수_임시폴더.name) / "after.hwpx"
+                if hwp.SaveAs(str(결과_스냅샷), "HWPX", "") is False:
+                    raise RuntimeError("무결성 검사용 결과 스냅샷을 만들지 못했습니다.")
+                결과_구조 = inspect_hwpx(결과_스냅샷)
+            무결성 = compare_documents(원본_구조, 결과_구조)
+            보고서경로 = Path(저장파일).with_name(Path(저장파일).stem + "(무결성검사).json")
+            보고서경로.write_text(json.dumps(무결성, ensure_ascii=False, indent=2), encoding="utf-8")
+            로그(
+                f"문서 무결성 검사: {'통과' if 무결성['ok'] else '확인 필요'} / "
+                f"본문 일치도 {무결성['text_similarity']:.1%} / 보고서 {보고서경로.name}"
+            )
+            for 문제 in 무결성["issues"]:
+                로그(f"  - [{문제['severity']}] {문제['message']}")
+        finally:
+            if 검수_임시폴더 is not None:
+                검수_임시폴더.cleanup()
     # 실행창이 '작업 결과' 표시와 '결과파일 열기'에 쓰도록 알린다.
     gui_queue.put(("saved", str(파일), str(저장파일), 처리쪽수))
     return True
@@ -6462,7 +6543,9 @@ class HwpAutoDocFitGUI:
         file_actions = ttk.Frame(file_frame)
         file_actions.grid(row=2, column=0, sticky="ew", pady=(4, 0))
         self.file_buttons = []
-        for title, command in (("+ 파일 추가", self.파일선택), ("폴더 추가", self._폴더선택), ("선택 항목 빼기", self._선택삭제), ("목록 비우기", self.목록지우기)):
+        for title, command in (("+ 파일 추가", self.파일선택), ("폴더 추가", self._폴더선택),
+                               ("Markdown 내보내기", self.Markdown_내보내기),
+                               ("선택 항목 빼기", self._선택삭제), ("목록 비우기", self.목록지우기)):
             button = ttk.Button(file_actions, text=title, command=command)
             button.pack(side="left", padx=(0, 6))
             self.file_buttons.append(button)
@@ -7821,7 +7904,7 @@ class HwpAutoDocFitGUI:
         self.autoclose_check = ttk.Checkbutton(group3, text="작업 완료 후 한글 문서 창 닫기", variable=self.autoclose_var)
         self.autoclose_check.pack(anchor="w")
         self.verify_check = ttk.Checkbutton(
-            group3, text="상세 진단 내용을 처리 기록에 표시하기 · 정리가 덜 된 문단 등을 확인해요", variable=self.verify_var
+            group3, text="상세 진단 및 문서 무결성 검사 · 본문·표·이미지·섹션 변화를 확인해요", variable=self.verify_var
         )
         self.verify_check.pack(anchor="w", pady=(6, 0))
 
@@ -8155,6 +8238,26 @@ class HwpAutoDocFitGUI:
         if added:
             self.로그표시(f"{added}개 문서 추가")
 
+    def Markdown_내보내기(self):
+        if self.running or not self.files:
+            return
+        선택 = list(self.file_list.curselection())
+        대상들 = [self.files[index] for index in 선택] if 선택 else list(self.files)
+        self.status_var.set(f"Markdown 변환 중 · {len(대상들)}개 문서")
+        for button in self.file_buttons:
+            button.config(state="disabled")
+
+        def worker():
+            성공, 실패 = [], []
+            for source in 대상들:
+                try:
+                    성공.append(str(문서_markdown_내보내기(source)))
+                except Exception as exc:
+                    실패.append((str(source), str(exc)))
+            gui_queue.put(("markdown_exported", 성공, 실패))
+
+        threading.Thread(target=worker, daemon=True, name="markdown-export").start()
+
     def 목록지우기(self):
         if self.running:
             return
@@ -8458,6 +8561,23 @@ class HwpAutoDocFitGUI:
                     self._서식_복사완료(profile=item[1])
                 elif event == "format_copy_error":
                     self._서식_복사완료(error=item[1])
+                elif event == "markdown_exported":
+                    성공, 실패 = item[1], item[2]
+                    for button in self.file_buttons:
+                        button.config(state="normal")
+                    for path in 성공:
+                        self.로그표시(f"Markdown 저장 완료: {path}")
+                    for source, error in 실패:
+                        self.로그표시(f"Markdown 변환 실패: {source}\n{error}")
+                    self.status_var.set(f"Markdown 변환 완료 · 성공 {len(성공)}개 / 실패 {len(실패)}개")
+                    if 실패:
+                        messagebox.showwarning(
+                            APP_NAME,
+                            f"Markdown 변환을 마쳤습니다.\n\n성공: {len(성공)}개\n실패: {len(실패)}개\n처리 기록을 확인해 주세요.",
+                            parent=self.root,
+                        )
+                    else:
+                        messagebox.showinfo(APP_NAME, f"Markdown 파일 {len(성공)}개를 원본 폴더에 저장했습니다.", parent=self.root)
                 elif event == "log":
                     self.stage_board.signal()
                     모인_로그.append(str(item[1]))

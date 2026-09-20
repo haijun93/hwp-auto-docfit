@@ -23,6 +23,9 @@ cd hwp_autodocfit
 - 줄 끝 단어 분리를 줄이기 위한 자간 조정
 - 공문서 항목 인식, 문장 줄 병합, 세트 문장의 같은 페이지 유지
 - 보고서 표준서식, 표·셀 서식, 괄호·공백 정리
+- HWPX ZIP bomb·경로 조작·CRC·필수 구조 사전 검사
+- 처리 전후 본문·표·이미지·섹션 무결성 비교와 JSON 보고서
+- HWP/HWPX 문단과 표를 UTF-8 Markdown으로 내보내기
 - 글자색 표시, 결과 검수, 진행률과 작업 로그
 - 설정 저장 및 작업 중단
 
@@ -53,6 +56,15 @@ python -m venv .venv
 
 창에서 HWP/HWPX 파일을 선택하거나 끌어다 놓고, 설정을 조정한 다음 **실행**을 누릅니다.
 
+목록에서 문서를 선택하고 **Markdown 내보내기**를 누르면 원본 폴더에 같은 이름의
+`.md` 파일이 생성됩니다. HWPX는 직접 안전하게 분석하며, 바이너리 HWP는 한글 COM으로
+임시 HWPX 스냅샷을 만든 뒤 변환합니다. 표는 Markdown 표로, 번호형 제목은 가능한 범위에서
+제목 문법으로 변환됩니다.
+
+세부 설정의 **상세 진단 및 문서 무결성 검사**가 켜져 있으면 편집 결과 옆에
+`(무결성검사).json` 보고서가 만들어집니다. 본문 일치도와 문단·표·이미지·섹션 개수 변화를
+기록하며, 경고가 있어도 결과를 삭제하지 않으므로 보고서를 확인해 최종 판단할 수 있습니다.
+
 ## EXE 빌드와 자동 업데이트
 
 `build.bat`을 실행하면 `dist\HWP_AutoDocFit.exe`가 생성됩니다. Pillow와 tkinterdnd2도 EXE에 포함됩니다.
@@ -75,7 +87,7 @@ python -m venv .venv
 ## 기본 검증
 
 ```powershell
-.\.venv\Scripts\python.exe -m py_compile hwp-auto-docfit.py
+.\.venv\Scripts\python.exe -m py_compile hwp-auto-docfit.py docfit_core\__init__.py docfit_core\hwpx.py
 .\.venv\Scripts\python.exe -c "import runpy; runpy.run_path('hwp-auto-docfit.py', run_name='import_check')"
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
