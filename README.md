@@ -131,6 +131,7 @@ kordoc 엔진을 실행하며, Node가 없어도 기존 HWP/HWPX 편집 기능�
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-GitLab CI도 Windows에서 문법, 모듈 로딩, GUI 초기화를 확인합니다. 현재 프로젝트에 연결된
-`security-deploy` Runner를 사용하며 Python과 Windows용 PyInstaller를 실행할 수 있어야 합니다.
+GitLab CI는 연결된 Linux `security-deploy` Runner에서 공통 소스와 HWPX 코어를 검사합니다.
+Windows EXE는 Windows에서 전체 테스트 후 빌드한 `release-assets/HWP_AutoDocFit.exe`를 태그
+파이프라인이 공식 Release 자산으로 게시합니다.
 실제 문서 편집 검증에는 한글과 보안 모듈 DLL이 필요합니다.

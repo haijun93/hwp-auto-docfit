@@ -11,18 +11,16 @@ cache:
   paths:
     - .cache/pip/
 
-validate-windows:
+validate-source:
   stage: test
   tags:
-    # 이 GitLab 인스턴스에서 온라인 상태인 프로젝트 Runner 태그입니다.
     - security-deploy
   before_script:
     - python --version
-    - python -m pip install --disable-pip-version-check -r requirements.txt
+    - python -m pip install --disable-pip-version-check defusedxml
   script:
     - python -m py_compile hwp-auto-docfit.py
-    - python -c "import runpy; runpy.run_path('hwp-auto-docfit.py', run_name='import_check')"
-    - python -m unittest discover -s tests -v
+    - python -m unittest tests.test_hwpx_core tests.test_kordoc_bridge -v
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
@@ -32,12 +30,11 @@ release-windows:
   stage: release
   tags:
     - security-deploy
-  before_script:
-    - python --version
-    - python -m pip install --disable-pip-version-check -r requirements.txt pyinstaller
   script:
-    - python -m unittest discover -s tests -v
-    - python -m PyInstaller --noconfirm --clean --onefile --windowed --name HWP_AutoDocFit --add-data "MapoHwpAutoDocFitSecurity.dll;." --collect-all tkinterdnd2 --collect-all PIL --hidden-import PIL.Image --hidden-import PIL.ImageTk --hidden-import PIL.ImageOps hwp-auto-docfit.py
+    - test -f release-assets/HWP_AutoDocFit.exe
+    - mkdir -p dist
+    - cp release-assets/HWP_AutoDocFit.exe dist/HWP_AutoDocFit.exe
+    - sha256sum dist/HWP_AutoDocFit.exe
   artifacts:
     name: "HWP_AutoDocFit-$CI_COMMIT_TAG"
     paths:
