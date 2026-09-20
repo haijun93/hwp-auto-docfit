@@ -113,7 +113,9 @@ HWP 입력은 임시 작업 공간에서 HWPX로 변환되므로 원본 HWP 파�
 - 원본 서식 보존 텍스트 패치, 날짜·금액·붙임 등 공문서 표기법 검수
 - Markdown을 보고서·계획서·기안문 프리셋 HWPX로 생성
 
-이 기능에는 Node.js 18 이상이 필요합니다. 앱은 `npx -y kordoc@^4`로 MIT 라이선스의
+이 기능에는 [Node.js 18 이상](https://nodejs.org/ko/download)이 필요합니다. 고급 문서 도구 창의
+**Node.js LTS 받기** 버튼에서 설치 페이지를 열 수 있으며, 설치 후 앱을 다시 실행해야 합니다.
+앱은 `npx -y kordoc@^4`로 MIT 라이선스의
 kordoc 엔진을 실행하며, Node가 없어도 기존 HWP/HWPX 편집 기능은 그대로 사용할 수 있습니다.
 폐쇄망 배포 환경은 사전에 kordoc npm 패키지를 내부 저장소나 오프라인 캐시에 준비해야 합니다.
 설정은 `%APPDATA%\HwpAutoDocFit\settings.json`에 저장됩니다.
@@ -129,5 +131,6 @@ kordoc 엔진을 실행하며, Node가 없어도 기존 HWP/HWPX 편집 기능�
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-GitLab CI도 Windows에서 문법, 모듈 로딩, GUI 초기화를 확인합니다. CI 작업을 실행하려면 `windows` 태그가 지정되고 Python 3.14 및 데스크톱 세션을 사용할 수 있는 GitLab Runner가 필요합니다.
+GitLab CI도 Windows에서 문법, 모듈 로딩, GUI 초기화를 확인합니다. 현재 프로젝트에 연결된
+`security-deploy` Runner를 사용하며 Python과 Windows용 PyInstaller를 실행할 수 있어야 합니다.
 실제 문서 편집 검증에는 한글과 보안 모듈 DLL이 필요합니다.

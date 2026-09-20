@@ -77,6 +77,7 @@ import hashlib
 import difflib
 import urllib.error
 import urllib.request
+import webbrowser
 import xml.etree.ElementTree as ET
 from collections import Counter, deque
 from tkinter import simpledialog
@@ -8683,7 +8684,7 @@ class HwpAutoDocFitGUI:
         window = tk.Toplevel(self.root)
         self.advanced_tools_toplevel = window
         window.title("고급 문서 도구 · kordoc v4")
-        window.geometry("620x520")
+        window.geometry("620x570")
         window.resizable(True, True)
         window.transient(self.root)
         body = ttk.Frame(window, padding=18)
@@ -8757,8 +8758,20 @@ class HwpAutoDocFitGUI:
                     lambda: generate_hwpx(markdown, selected_preset),
                 )
         ttk.Button(generate_frame, text="HWPX 생성…", command=generate_tool).pack(side="left")
-        ttk.Label(body, text="Node.js 18+가 없으면 고급 도구만 사용할 수 없으며 기존 편집 기능에는 영향이 없습니다.",
-                  style="Hint.TLabel", wraplength=570).pack(anchor="w", pady=(12, 0))
+        requirement_frame = ttk.LabelFrame(body, text="고급 문서 도구 필수 구성", padding=10)
+        requirement_frame.pack(fill="x", pady=(12, 0))
+        ttk.Label(
+            requirement_frame,
+            text=("고급 문서 도구를 실행하려면 Node.js 18 이상이 설치되어 있어야 합니다. "
+                  "설치 후 앱을 다시 실행해 주세요. 기존 문서 편집 기능은 Node.js 없이도 사용할 수 있습니다."),
+            style="Hint.TLabel",
+            wraplength=410,
+        ).pack(side="left", fill="x", expand=True)
+        ttk.Button(
+            requirement_frame,
+            text="Node.js LTS 받기",
+            command=lambda: webbrowser.open("https://nodejs.org/ko/download"),
+        ).pack(side="right", padx=(10, 0))
         window.protocol("WM_DELETE_WINDOW", lambda: (setattr(self, "advanced_tools_toplevel", None), window.destroy()))
 
     def 목록지우기(self):
