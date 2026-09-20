@@ -2,7 +2,7 @@
 
 한글 2020의 HWP/HWPX 문서를 편집하는 Windows용 Python 프로그램입니다.
 바이너리 HWP 입력은 원본을 변경하지 않고 작업용 HWPX로 변환하며, 모든 처리 결과는 HWPX로 저장합니다.
-실행 파일은 `hwp-auto-docfit.py`이며, 프로그램 버전은 `1.67`입니다.
+실행 파일은 `hwp-auto-docfit.py`이며, 프로그램 버전은 `1.67 Beta`입니다.
 
 이 프로젝트의 기준 저장소는 다음 GitLab 저장소입니다.
 

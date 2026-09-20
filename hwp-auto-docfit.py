@@ -122,7 +122,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "HWP 자동 편집기"
-APP_VERSION = "1.67"
+APP_VERSION = "1.67 Beta"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 UPDATE_ASSET_NAME = "HWP_AutoDocFit.exe"

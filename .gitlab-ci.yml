@@ -36,11 +36,14 @@ release-windows:
     - cp release-assets/HWP_AutoDocFit.exe dist/HWP_AutoDocFit.exe
     - sha256sum dist/HWP_AutoDocFit.exe
     - |
+      curl --silent --show-error --request DELETE \
+        --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+        "$CI_API_V4_URL/projects/$CI_PROJECT_ID/releases/$CI_COMMIT_TAG" || true
       curl --fail-with-body --request POST \
         --header "JOB-TOKEN: $CI_JOB_TOKEN" \
         --data-urlencode "tag_name=$CI_COMMIT_TAG" \
-        --data-urlencode "name=HWP Auto DocFit $CI_COMMIT_TAG" \
-        --data-urlencode "description=HWP Auto DocFit Windows 공식 릴리스입니다. 고급 문서 도구는 Node.js 18 이상이 필요합니다." \
+        --data-urlencode "name=HWP Auto DocFit $CI_COMMIT_TAG Beta" \
+        --data-urlencode "description=기능 검증을 위한 Windows 테스트 베타 릴리스입니다. 운영 환경 적용 전 충분히 테스트해 주세요. 고급 문서 도구는 Node.js 18 이상이 필요합니다." \
         "$CI_API_V4_URL/projects/$CI_PROJECT_ID/releases"
     - |
       curl --fail-with-body --request POST \
