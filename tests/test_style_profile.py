@@ -29,8 +29,32 @@ SECTION = '''<?xml version="1.0" encoding="UTF-8"?>
   <hp:p><hp:run><hp:tbl rowCnt="2" colCnt="1" borderFillIDRef="0"><hp:sz width="10000" height="4000"/><hp:tr><hp:tc borderFillIDRef="0" hasMargin="1"><hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="10000" height="2000"/><hp:cellMargin left="100" right="100" top="50" bottom="50"/><hp:subList vertAlign="CENTER"><hp:p paraPrIDRef="0"><hp:run charPrIDRef="1"><hp:t>구분</hp:t></hp:run></hp:p></hp:subList></hp:tc></hp:tr><hp:tr><hp:tc borderFillIDRef="0"><hp:cellAddr colAddr="0" rowAddr="1"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="10000" height="2000"/><hp:cellMargin left="100" right="100" top="50" bottom="50"/><hp:subList vertAlign="CENTER"><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>내용</hp:t></hp:run></hp:p></hp:subList></hp:tc></hp:tr></hp:tbl></hp:run></hp:p>
 </hs:sec>'''.encode("utf-8")
 
+TABLE_ONLY_SECTION = SECTION.replace(
+    b'<hp:p paraPrIDRef="0"><hp:run charPrIDRef="1"><hp:t>\xeb\xac\xb8\xec\x84\x9c \xec\xa0\x9c\xeb\xaa\xa9</hp:t></hp:run></hp:p>\n  '
+    b'<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>\xea\xb8\xb0\xed\x98\xb8 \xec\x97\x86\xec\x9d\xb4 \xec\x9e\x91\xec\x84\xb1\xeb\x90\x9c \xec\x9d\xbc\xeb\xb0\x98 \xeb\xb3\xb8\xeb\xac\xb8\xec\x9e\x85\xeb\x8b\x88\xeb\x8b\xa4.</hp:t></hp:run></hp:p>\n  ',
+    b'',
+)
+
 
 class StyleProfileTest(unittest.TestCase):
+    def test_table_only_document_uses_table_body_as_body_style(self):
+        namespace = runpy.run_path(
+            str(Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"),
+            run_name="table_only_style_profile_test",
+        )
+        analyze = namespace["hwpx_서식_분석"]
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "table-only.hwpx"
+            with ZipFile(source, "w", ZIP_DEFLATED) as archive:
+                archive.writestr("Contents/header.xml", HEADER)
+                archive.writestr("Contents/section0.xml", TABLE_ONLY_SECTION)
+            profile = analyze(source)
+
+        self.assertEqual(profile["source"]["paragraphs_analyzed"], 0)
+        self.assertEqual(profile["source"]["body_style_fallback"], "표 본문 셀")
+        self.assertEqual(profile["format"]["본문_문단"]["size_pt"], 12)
+        self.assertEqual(len(profile["precise_tables"]["tables"]), 1)
+
     def test_plain_document_without_symbols_can_be_profile(self):
         namespace = runpy.run_path(
             str(Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"),

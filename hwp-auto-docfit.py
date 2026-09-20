@@ -103,7 +103,7 @@ from docfit_core import compare_documents, export_markdown, inspect_hwpx, valida
 # ============================================================
 
 APP_NAME = "HWP 자동 편집기"
-APP_VERSION = "1.65"
+APP_VERSION = "1.66"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 UPDATE_ASSET_NAME = "HWP_AutoDocFit.exe"
@@ -799,8 +799,35 @@ def hwpx_서식_분석(path):
                         vals["LineSpacingType"] = 0
                         vals["LineSpacing"] = int(float(ls.get("value")))
                     paragraphs[symbol][tuple(sorted(vals.items()))] += 1
-        if not count or not body_styles:
-            raise ValueError("본문에서 복제할 수 있는 글꼴·문단 서식을 찾지 못했습니다.")
+        # 첫 표의 첫 행과 나머지 행에서 대표 문자 서식을 추출한다. 일반 본문이
+        # 없는 표 전용 문서는 표 본문(없으면 머리글)을 대표 본문 대체값으로 쓴다.
+        table_header_styles, table_body_styles = Counter(), Counter()
+        for name in sections:
+            root = safe_xml_fromstring(z.read(name))
+            first_table = next((e for e in root.iter() if tag(e) == "tbl"), None)
+            if first_table is None:
+                continue
+            rows = [e for e in first_table.iter() if tag(e) == "tr"]
+            for row_index, row in enumerate(rows):
+                counter = table_header_styles if row_index == 0 else table_body_styles
+                for run in (e for e in row.iter() if tag(e) == "run"):
+                    text = "".join("".join(t.itertext()) for t in run if tag(t) == "t").strip()
+                    char = chars.get(run.get("charPrIDRef"))
+                    if not text or char is None:
+                        continue
+                    fontref = child(char, "fontRef")
+                    font = fonts.get(fontref.get("hangul")) if fontref is not None else None
+                    height = float(char.get("height", "0")) / 100
+                    if font and height > 0:
+                        counter[(font, height, child(char, "bold") is not None)] += len(text)
+            break
+        본문_대체출처 = None
+        if not body_styles:
+            fallback_styles = table_body_styles or table_header_styles
+            if not fallback_styles:
+                raise ValueError("본문 또는 표 셀에서 복제할 수 있는 문자 서식을 찾지 못했습니다.")
+            body_styles.update(fallback_styles)
+            본문_대체출처 = "표 본문 셀" if table_body_styles else "표 머리글 셀"
         if ratios: fmt["기본_장평"] = ratios.most_common(1)[0][0]
         if spacing: fmt["기본_줄간격_퍼센트"] = spacing.most_common(1)[0][0]
         if first_styles:
@@ -828,27 +855,6 @@ def hwpx_서식_분석(path):
         # 대표 본문 글꼴·크기를 일반 문단에도 적용한다.
         fmt["복제_본문서식"] = True
 
-        # 첫 표의 첫 행과 나머지 행에서 대표 문자 서식을 추출한다.
-        table_header_styles, table_body_styles = Counter(), Counter()
-        for name in sections:
-            root = safe_xml_fromstring(z.read(name))
-            first_table = next((e for e in root.iter() if tag(e) == "tbl"), None)
-            if first_table is None:
-                continue
-            rows = [e for e in first_table.iter() if tag(e) == "tr"]
-            for row_index, row in enumerate(rows):
-                counter = table_header_styles if row_index == 0 else table_body_styles
-                for run in (e for e in row.iter() if tag(e) == "run"):
-                    text = "".join("".join(t.itertext()) for t in run if tag(t) == "t").strip()
-                    char = chars.get(run.get("charPrIDRef"))
-                    if not text or char is None:
-                        continue
-                    fontref = child(char, "fontRef")
-                    font = fonts.get(fontref.get("hangul")) if fontref is not None else None
-                    height = float(char.get("height", "0")) / 100
-                    if font and height > 0:
-                        counter[(font, height, child(char, "bold") is not None)] += len(text)
-            break
         header_style = table_header_styles.most_common(1)[0][0] if table_header_styles else (대표폰트, 대표크기, 대표굵게)
         body_style = table_body_styles.most_common(1)[0][0] if table_body_styles else (대표폰트, 대표크기, 대표굵게)
         profile["table_format"] = {
@@ -859,7 +865,8 @@ def hwpx_서식_분석(path):
         profile["precise_tables"] = _정밀표_프로필_추출(header, section_payloads)
         profile["profile_version"] = 3
         profile["storage_format"] = "json"
-        profile["source"] = {"filename": Path(path).name, "paragraphs_analyzed": count}
+        profile["source"] = {"filename": Path(path).name, "paragraphs_analyzed": count,
+                             "body_style_fallback": 본문_대체출처}
         profile["options"]["symbol_fonts"] = {
             rule[0]: {"font": rule[2], "size": str(rule[3])} for rule in fmt["기호_규칙"]
         }
@@ -868,6 +875,7 @@ def hwpx_서식_분석(path):
                                    std_hanging_indent=False, std_supplement_indent=False)
         profile["summary"] = (
             f"대표 본문: {대표폰트} {대표크기:g}pt, 굵게 {'ON' if 대표굵게 else 'OFF'}\n"
+            + (f"대표 본문 대체 분석: {본문_대체출처}\n" if 본문_대체출처 else "")
             + ("\n".join(found) + "\n" if found else "")
             + "미검출 기호(기본값 유지): " + (", ".join(missing) or "없음")
             + f"\n표 머리글: {header_style[0]} {header_style[1]:g}pt / 표 본문: {body_style[0]} {body_style[1]:g}pt"
