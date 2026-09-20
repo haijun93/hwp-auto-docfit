@@ -74,6 +74,7 @@ import uuid
 import subprocess
 import importlib
 import hashlib
+import difflib
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -233,6 +234,7 @@ _콘솔_출력_가능 = (sys.stdout is not None)
 표_헤더서식_본문_폰트 = "휴먼명조"
 표_헤더서식_본문_크기 = 12
 표_헤더서식_본문_굵게 = False
+활성_정밀표_프로필 = None
 
 표준서식_설정 = {
     "여백_mm": {
@@ -533,6 +535,7 @@ def 서식_기본값_전역_복원():
     global 표_헤더서식_헤더_폰트, 표_헤더서식_헤더_크기, 표_헤더서식_헤더_굵게
     global 표_헤더서식_본문_폰트, 표_헤더서식_본문_크기, 표_헤더서식_본문_굵게
     global 표준서식_문단위간격_box_pt, 표준서식_문단위간격_circle_pt, 표준서식_문단위간격_note_pt
+    global 활성_정밀표_프로필
 
     표준서식_설정 = copy.deepcopy(_표준서식_설정_기본값)
     표_헤더서식_헤더_폰트 = _표_헤더서식_기본값["헤더_폰트"]
@@ -544,6 +547,7 @@ def 서식_기본값_전역_복원():
     표준서식_문단위간격_box_pt = _표준서식_문단위간격_기본값["box"]
     표준서식_문단위간격_circle_pt = _표준서식_문단위간격_기본값["circle"]
     표준서식_문단위간격_note_pt = _표준서식_문단위간격_기본값["note"]
+    활성_정밀표_프로필 = None
 
 검수_사용 = False
 검수_문제목록 = []
@@ -671,6 +675,44 @@ def 서식프로파일_목록():
                 if _콘솔_출력_가능:
                     print(f"서식 파일 제외: {path.name}: {exc}")
     return result
+
+
+def _표_텍스트(element):
+    return " ".join("".join(t.itertext()).strip() for t in element.iter()
+                    if 제목_xml이름(t) == "t" and "".join(t.itertext()).strip())
+
+
+def _표_서명(table, ordinal=0):
+    rows = [row for row in table.iter() if 제목_xml이름(row) == "tr"]
+    cells = 제목_셀들(table)
+    first_row_cells = [cell for cell in rows[0] if 제목_xml이름(cell) == "tc"] if rows else []
+    return {
+        "ordinal": ordinal,
+        "rows": int(table.get("rowCnt", len(rows)) or len(rows)),
+        "cols": int(table.get("colCnt", 0) or 0),
+        "cell_count": len(cells),
+        "first_cell": _표_텍스트(cells[0])[:120] if cells else "",
+        "first_row": " | ".join(_표_텍스트(cell) for cell in first_row_cells)[:500],
+    }
+
+
+def _정밀표_프로필_추출(header, sections):
+    """표별 구조와 셀 서식을 원본 HWPX XML 그대로 JSON 호환 형태로 보존한다."""
+    tables = []
+    ordinal = 0
+    for section_name in sections:
+        root = safe_xml_fromstring(sections[section_name])
+        for table in (e for e in root.iter() if 제목_xml이름(e) == "tbl"):
+            signature = _표_서명(table, ordinal)
+            signature["section"] = section_name
+            signature["table_xml"] = ET.tostring(table, encoding="unicode")
+            tables.append(signature)
+            ordinal += 1
+    return {
+        "version": 1,
+        "header_xml": ET.tostring(header, encoding="unicode"),
+        "tables": tables,
+    }
 
 
 def hwpx_서식_분석(path):
@@ -813,7 +855,9 @@ def hwpx_서식_분석(path):
             "header_font": header_style[0], "header_size": header_style[1], "header_bold": header_style[2],
             "body_font": body_style[0], "body_size": body_style[1], "body_bold": body_style[2],
         }
-        profile["profile_version"] = 2
+        section_payloads = {name: z.read(name) for name in sections}
+        profile["precise_tables"] = _정밀표_프로필_추출(header, section_payloads)
+        profile["profile_version"] = 3
         profile["storage_format"] = "json"
         profile["source"] = {"filename": Path(path).name, "paragraphs_analyzed": count}
         profile["options"]["symbol_fonts"] = {
@@ -827,7 +871,8 @@ def hwpx_서식_분석(path):
             + ("\n".join(found) + "\n" if found else "")
             + "미검출 기호(기본값 유지): " + (", ".join(missing) or "없음")
             + f"\n표 머리글: {header_style[0]} {header_style[1]:g}pt / 표 본문: {body_style[0]} {body_style[1]:g}pt"
-            + "\n페이지 여백·장평·자간·줄간격·문단 모양·제목·표 서식을 함께 복제합니다."
+            + f"\n정밀 표 프로필: {len(profile['precise_tables']['tables'])}개"
+            + "\n페이지 여백·장평·자간·줄간격·문단 모양과 셀별 표 서식을 함께 복제합니다."
         )
         return profile
 
@@ -1168,6 +1213,133 @@ def 제목_표서식_복사(table, sample, maps):
                             p.insert(index, nr); index += 1
 
 
+def _정밀표_매칭점수(target_signature, source_signature):
+    score = 0.0
+    if (target_signature["rows"], target_signature["cols"]) == (source_signature["rows"], source_signature["cols"]):
+        score += 80
+    else:
+        score -= 20 * (abs(target_signature["rows"] - source_signature["rows"])
+                       + abs(target_signature["cols"] - source_signature["cols"]))
+    if target_signature["cell_count"] == source_signature["cell_count"]:
+        score += 45
+    if target_signature["first_cell"] and target_signature["first_cell"] == source_signature["first_cell"]:
+        score += 35
+    score += 25 * difflib.SequenceMatcher(
+        None, target_signature["first_row"], source_signature["first_row"]
+    ).ratio()
+    score += max(0, 10 - abs(target_signature["ordinal"] - source_signature["ordinal"]) * 2)
+    return round(score, 2)
+
+
+def _정밀표_셀서식_복사(target, sample, maps, copy_geometry):
+    """셀 내용은 유지하고 HWPX 표·셀·문단·문자 서식 참조만 복사한다."""
+    reference_attrs = {
+        "borderFillIDRef": "borderFills",
+        "paraPrIDRef": "paraProperties",
+        "charPrIDRef": "charProperties",
+    }
+    for attr in ("borderFillIDRef", "cellSpacing", "textWrap", "textFlow", "pageBreak", "repeatHeader"):
+        if attr in sample.attrib:
+            value = sample.get(attr)
+            target.set(attr, maps.get(reference_attrs.get(attr, ""), {}).get(value, value))
+    for name in ("sz", "inMargin", "outMargin"):
+        source_child, target_child = 제목_자식(sample, name), 제목_자식(target, name)
+        if source_child is not None and target_child is not None:
+            target_child.attrib.update(source_child.attrib)
+
+    target_cells, source_cells = 제목_셀들(target), 제목_셀들(sample)
+    for target_cell, source_cell in zip(target_cells, source_cells):
+        border = source_cell.get("borderFillIDRef")
+        if border is not None:
+            target_cell.set("borderFillIDRef", maps["borderFills"].get(border, border))
+        if "hasMargin" in source_cell.attrib:
+            target_cell.set("hasMargin", source_cell.get("hasMargin"))
+        geometry_names = ("cellAddr", "cellSpan", "cellSz") if copy_geometry else ()
+        for name in (*geometry_names, "cellMargin"):
+            source_child, target_child = 제목_자식(source_cell, name), 제목_자식(target_cell, name)
+            if source_child is not None and target_child is not None:
+                target_child.attrib.update(source_child.attrib)
+        source_sub, target_sub = 제목_자식(source_cell, "subList"), 제목_자식(target_cell, "subList")
+        if source_sub is not None and target_sub is not None:
+            for attr in ("vertAlign", "textDirection", "lineWrap"):
+                if attr in source_sub.attrib:
+                    target_sub.set(attr, source_sub.get(attr))
+
+        source_paragraphs = 제목_문단들(source_cell)
+        target_paragraphs = 제목_문단들(target_cell)
+        for paragraph_index, target_para in enumerate(target_paragraphs):
+            if not source_paragraphs:
+                break
+            source_para = source_paragraphs[min(paragraph_index, len(source_paragraphs) - 1)]
+            para_ref = source_para.get("paraPrIDRef")
+            if para_ref is not None:
+                target_para.set("paraPrIDRef", maps["paraProperties"].get(para_ref, para_ref))
+            source_runs = [run for run in source_para if 제목_xml이름(run) == "run"]
+            target_runs = [run for run in target_para if 제목_xml이름(run) == "run"]
+            for run_index, target_run in enumerate(target_runs):
+                if not source_runs:
+                    break
+                source_run = source_runs[min(run_index, len(source_runs) - 1)]
+                char_ref = source_run.get("charPrIDRef")
+                if char_ref is not None:
+                    target_run.set("charPrIDRef", maps["charProperties"].get(char_ref, char_ref))
+
+
+def 정밀표_서식_적용(source_path, target_path, precise_profile):
+    """프로필 표를 구조·앵커로 매칭해 대상 HWPX에 셀별 서식을 적용한다."""
+    if not precise_profile or not precise_profile.get("tables"):
+        return {"applied": 0, "skipped": 0, "matches": []}
+    with zipfile.ZipFile(source_path) as archive:
+        contents = {name: archive.read(name) for name in archive.namelist()}
+    target_header = safe_xml_fromstring(contents["Contents/header.xml"])
+    source_header = safe_xml_fromstring(precise_profile["header_xml"].encode("utf-8"))
+    maps = 제목_참조병합(target_header, source_header)
+    source_tables = []
+    for item in precise_profile["tables"]:
+        parsed = safe_xml_fromstring(item["table_xml"].encode("utf-8"))
+        source_tables.append((item, parsed))
+
+    before_text = []
+    matches = []
+    ordinal = 0
+    for name in sorted(n for n in contents if re.fullmatch(r"Contents/section\d+\.xml", n)):
+        root = safe_xml_fromstring(contents[name])
+        changed = False
+        for table in (element for element in root.iter() if 제목_xml이름(element) == "tbl"):
+            before_text.append(_표_텍스트(table))
+            target_signature = _표_서명(table, ordinal)
+            scored = [(_정밀표_매칭점수(target_signature, signature), signature, sample)
+                      for signature, sample in source_tables]
+            score, signature, sample = max(scored, key=lambda item: item[0])
+            # 행·열 또는 셀 수가 같은 표만 적용해 무관한 레이아웃 훼손을 방지한다.
+            compatible = ((target_signature["rows"], target_signature["cols"])
+                          == (signature["rows"], signature["cols"])
+                          or target_signature["cell_count"] == signature["cell_count"])
+            if compatible and score >= 45:
+                exact = (target_signature["rows"] == signature["rows"]
+                         and target_signature["cols"] == signature["cols"]
+                         and target_signature["cell_count"] == signature["cell_count"])
+                _정밀표_셀서식_복사(table, sample, maps, exact)
+                changed = True
+                matches.append({"target": ordinal, "source": signature["ordinal"],
+                                "score": score, "geometry": exact})
+            ordinal += 1
+        if changed:
+            contents[name] = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+    contents["Contents/header.xml"] = ET.tostring(target_header, encoding="utf-8", xml_declaration=True)
+
+    after_text = []
+    for name in sorted(n for n in contents if re.fullmatch(r"Contents/section\d+\.xml", n)):
+        root = safe_xml_fromstring(contents[name])
+        after_text.extend(_표_텍스트(table) for table in root.iter() if 제목_xml이름(table) == "tbl")
+    if before_text != after_text:
+        raise RuntimeError("정밀 표 서식 적용 중 표 내용 보존 검사에 실패했습니다.")
+    with zipfile.ZipFile(target_path, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, data in contents.items():
+            archive.writestr(name, data, compress_type=zipfile.ZIP_STORED if name == "mimetype" else zipfile.ZIP_DEFLATED)
+    return {"applied": len(matches), "skipped": ordinal - len(matches), "matches": matches}
+
+
 
 def 제목_문단_가운데정렬(header, table):
     """제목 셀의 모든 실제 제목 문단을 가운데 정렬로 강제한다.
@@ -1490,6 +1662,31 @@ def 제목붙임_선행적용(원본문서경로):
             if hwp.Open(str(source), 'HWPX', 'forceopen:true') is False:
                 raise RuntimeError('선행 서식 결과를 열지 못했습니다.')
             로그('선행 서식 결과 열기 완료')
+        return True
+    finally:
+        _제목_임시폴더_정리(folder)
+
+
+def 정밀표_선행적용():
+    """현재 문서를 HWPX로 스냅샷 저장한 뒤 선택 프로필의 표 서식을 적용한다."""
+    if not 활성_정밀표_프로필 or not 활성_정밀표_프로필.get("tables"):
+        return True
+    folder = Path(tempfile.mkdtemp(prefix="hwp_precise_table_"))
+    try:
+        source = _제목_임시hwpx_저장(folder / "before.hwpx")
+        target = folder / "after.hwpx"
+        result = 정밀표_서식_적용(source, target, 활성_정밀표_프로필)
+        if result["applied"]:
+            if hwp.Open(str(target), "HWPX", "forceopen:true") is False:
+                raise RuntimeError("정밀 표 서식 결과를 열지 못했습니다.")
+        로그(
+            f"일반 표 정밀 복제: 적용 {result['applied']}개 / 건너뜀 {result['skipped']}개"
+        )
+        for match in result["matches"]:
+            진단로그(
+                f"[표 매칭] 대상 {match['target'] + 1}번 ← 프로필 {match['source'] + 1}번 / "
+                f"점수 {match['score']:.1f} / 병합·크기 {'복제' if match['geometry'] else '보존'}"
+            )
         return True
     finally:
         _제목_임시폴더_정리(folder)
@@ -5271,7 +5468,8 @@ def 문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=2
         if 부연설명_들여쓰기_사용:
             if not stage('부연설명 들여쓰기', 부연설명_들여쓰기_전체_적용):
                 return False
-        if 표_헤더서식_사용 and not stage('표 서식', 표_헤더서식_전체_적용):
+        # 정밀 프로필은 셀별 문자 서식을 이미 적용했으므로 대표 머리글/본문 값으로 덮지 않는다.
+        if 표_헤더서식_사용 and not 활성_정밀표_프로필 and not stage('표 서식', 표_헤더서식_전체_적용):
             return False
     if 작업_모드 == 'format' and 표준서식_사용:
         if not stage('개요·한 칸 표 자간 조정', 한칸표_자간조정):
@@ -5435,6 +5633,11 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
             단계표시("제목·개요·붙임 선행 서식")
             상태(f"{파일명} : 제목·개요·붙임 선행 서식")
             if 제목붙임_선행적용(작업파일경로) is False:
+                return False
+        if 쪽범위_요청 is None and 활성_정밀표_프로필:
+            단계표시("표 정밀 서식")
+            상태(f"{파일명} : 일반 표 정밀 서식 복제")
+            if 정밀표_선행적용() is False:
                 return False
     한칸표_보호영역 = 한칸표_영역_목록()
 
@@ -7482,6 +7685,7 @@ class HwpAutoDocFitGUI:
         global 표준서식_설정
         global 표_헤더서식_헤더_폰트, 표_헤더서식_헤더_크기, 표_헤더서식_헤더_굵게
         global 표_헤더서식_본문_폰트, 표_헤더서식_본문_크기, 표_헤더서식_본문_굵게
+        global 활성_정밀표_프로필
         서식_기본값_전역_복원()
         표준서식_설정 = copy.deepcopy(profile["format"])
         table = profile.get("table_format", {})
@@ -7491,6 +7695,7 @@ class HwpAutoDocFitGUI:
         표_헤더서식_본문_폰트 = table.get("body_font", 표_헤더서식_본문_폰트)
         표_헤더서식_본문_크기 = table.get("body_size", 표_헤더서식_본문_크기)
         표_헤더서식_본문_굵게 = table.get("body_bold", 표_헤더서식_본문_굵게)
+        활성_정밀표_프로필 = copy.deepcopy(profile.get("precise_tables"))
 
     def _프로파일_목록갱신(self):
         self._프로파일_ids = list(self._프로파일들)
