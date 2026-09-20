@@ -145,6 +145,7 @@ class StartupTest(unittest.TestCase):
                     self.assertEqual(callback_errors, [])
                     self.assertIsNone(app.worker)
                     self.assertFalse(app.running)
+                    self.assertTrue(app.check_updates_on_start_var.get())
                 finally:
                     root.destroy()
 

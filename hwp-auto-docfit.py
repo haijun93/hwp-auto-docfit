@@ -632,6 +632,7 @@ def 번들_리소스_폴더():
     "cat_image_path": "",
     "cat_animation": True,
     "always_on_top": True,
+    "check_updates_on_start": True,
     "table_spacing": True,
     "log_file": False,
 }
@@ -6483,6 +6484,9 @@ class HwpAutoDocFitGUI:
         self.reset_spacing_var = tk.BooleanVar(value=bool(저장된_설정.get("reset_spacing_before_cleanup", False)))
         self.table_spacing_var = tk.BooleanVar(value=bool(저장된_설정.get("table_spacing", True)))
         self.log_file_var = tk.BooleanVar(value=bool(저장된_설정.get("log_file", False)))
+        self.check_updates_on_start_var = tk.BooleanVar(
+            value=bool(저장된_설정.get("check_updates_on_start", True))
+        )
         # 작업 범위는 작업마다 정하는 값이라 저장하지 않고, 실행할 때마다 '문서 전체'로 시작한다.
         # 쪽 표시: 숫자 문자열 또는 '마지막쪽'(내부값 0). 종료쪽 기본값은 시작쪽이다.
         self.range_mode_var = tk.StringVar(value="all")
@@ -6531,7 +6535,8 @@ class HwpAutoDocFitGUI:
         for 변수 in ([self.prevent_word_split_var, self.punctuation_var, self.punctuation_threshold_var, self.keep_punctuation_set_var,
                      self.color_mark_on_var, self.color_var,
                      self.autoclose_var, self.stdformat_var, self.verify_var,
-                     self.reset_spacing_var, self.table_spacing_var, self.log_file_var, self.retry_body_var, self.retry_table_var, self.paren_shrink_var,
+                     self.reset_spacing_var, self.table_spacing_var, self.log_file_var, self.check_updates_on_start_var,
+                     self.retry_body_var, self.retry_table_var, self.paren_shrink_var,
                      self.linespacing_min_var, self.linespacing_max_var, self.font_folder_var,
                      self.paren_label_bold_var] + list(self.std_bool_vars.values()) + list(self.std_parspace_vars.values())
                     + [v for 항목 in self.symbol_font_vars.values() for v in 항목.values()]):
@@ -6693,7 +6698,7 @@ class HwpAutoDocFitGUI:
         root.bind("<Control-o>", lambda e: self.파일선택())
         root.protocol("WM_DELETE_WINDOW", self.종료)
         root.after_idle(self._창_최소높이_보정)
-        if getattr(sys, "frozen", False):
+        if getattr(sys, "frozen", False) and self.check_updates_on_start_var.get():
             root.after(1500, self._자동업데이트_확인_시작)
 
 
@@ -7500,6 +7505,20 @@ class HwpAutoDocFitGUI:
             self.preset_buttons.append(button)
         ttk.Label(tabs["advanced"], text="처리 속도와 세부 강조 규칙을 조절해요. 처음에는 기본값을 유지해도 됩니다.",
                   style="Hint.TLabel", wraplength=700).pack(anchor="w", pady=(0, 12))
+        update_box = ttk.LabelFrame(tabs["advanced"], text="앱 업데이트", padding=10)
+        update_box.pack(fill="x", pady=(0, 12))
+        self.check_updates_on_start_check = ttk.Checkbutton(
+            update_box,
+            text="앱 시작 시 업데이트 확인",
+            variable=self.check_updates_on_start_var,
+        )
+        self.check_updates_on_start_check.pack(anchor="w")
+        ttk.Label(
+            update_box,
+            text="기본값은 켜짐입니다. 끄더라도 설정 창의 ‘업데이트 확인’ 버튼으로 직접 확인할 수 있습니다.",
+            style="Hint.TLabel",
+            wraplength=650,
+        ).pack(anchor="w", padx=(22, 0), pady=(2, 0))
         container = tabs["spacing"]
         self.reset_spacing_check = ttk.Checkbutton(
             container, text="기존 자간을 0%로 초기화 후 정리하기",
@@ -7895,6 +7914,7 @@ class HwpAutoDocFitGUI:
                 "reset_spacing_before_cleanup": bool(self.reset_spacing_var.get()),
                 "table_spacing": bool(self.table_spacing_var.get()),
                 "log_file": bool(self.log_file_var.get()),
+                "check_updates_on_start": bool(self.check_updates_on_start_var.get()),
                 "retry_body": str(self.retry_body_var.get()),
                 "retry_table": str(self.retry_table_var.get()),
                 "linespacing_min": str(self.linespacing_min_var.get()),
@@ -7993,6 +8013,7 @@ class HwpAutoDocFitGUI:
         self.reset_spacing_var.set(기본_설정["reset_spacing_before_cleanup"])
         self.table_spacing_var.set(기본_설정["table_spacing"])
         self.log_file_var.set(기본_설정["log_file"])
+        self.check_updates_on_start_var.set(기본_설정["check_updates_on_start"])
         self.retry_body_var.set(기본_설정["retry_body"])
         self.retry_table_var.set(기본_설정["retry_table"])
         self.linespacing_min_var.set(기본_설정["linespacing_min"])
