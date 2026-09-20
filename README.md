@@ -12,6 +12,11 @@ git clone https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit.git
 cd hwp_autodocfit
 ```
 
+## 프로젝트 웹사이트
+
+앱 소개, 기능별 안내, 사용법과 최신 Windows 릴리스 다운로드 페이지는 `website/`에 있습니다.
+`main` 브랜치가 갱신되면 GitLab Pages 작업이 정적 사이트를 배포합니다.
+
 ## 주요 기능
 
 - 파일·폴더 드래그 앤 드롭과 여러 문서 일괄 처리

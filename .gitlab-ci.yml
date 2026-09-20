@@ -1,6 +1,7 @@
 stages:
   - test
   - release
+  - deploy
 
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
@@ -51,3 +52,14 @@ release-windows:
           link_type: "package"
   rules:
     - if: '$CI_COMMIT_TAG'
+
+pages:
+  stage: deploy
+  script:
+    - mkdir public
+    - cp -r website/. public/
+  artifacts:
+    paths:
+      - public
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'

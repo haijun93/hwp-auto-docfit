@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="HWP Auto DocFit — 한글 문서의 자간과 서식을 빠르고 안전하게 정리하는 Windows 앱">
+  <meta name="theme-color" content="#10261f">
+  <title>HWP Auto DocFit — 한글 문서 정리 도우미</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">본문으로 이동</a>
+  <header class="site-header">
+    <a class="brand" href="#top" aria-label="HWP Auto DocFit 홈">
+      <span class="brand-mark" aria-hidden="true">한</span>
+      <span>HWP Auto DocFit</span>
+    </a>
+    <nav aria-label="주요 메뉴">
+      <a href="#features">기능</a>
+      <a href="#guide">사용법</a>
+      <a href="#download">다운로드</a>
+      <a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit" target="_blank" rel="noreferrer">소스코드</a>
+    </nav>
+    <a class="button button-small" href="#download">v1.65 받기</a>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="top">
+      <div class="hero-copy reveal">
+        <p class="eyebrow"><span></span> 한글 문서 정리, 이제 한 번에</p>
+        <h1>내용은 그대로.<br><em>문서는 반듯하게.</em></h1>
+        <p class="hero-lead">복잡한 HWP·HWPX 문서의 자간, 문단, 표와 공문서 서식을 자동으로 정리하세요. 여러 파일도 끌어다 놓고 한 번에 처리할 수 있습니다.</p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="https://gitlab.aigov.go.kr/api/v4/projects/903/packages/generic/hwp-auto-docfit/1.65/HWP_AutoDocFit.exe">Windows용 다운로드 <span>↓</span></a>
+          <a class="text-link" href="#guide">3분 사용법 보기 <span>→</span></a>
+        </div>
+        <div class="hero-meta">
+          <span>Windows 10·11</span><i></i><span>한글 2020</span><i></i><span>무료 공개 프로젝트</span>
+        </div>
+      </div>
+
+      <div class="app-stage reveal" aria-label="앱 화면 미리보기">
+        <div class="orbit orbit-one"></div><div class="orbit orbit-two"></div>
+        <div class="app-window">
+          <div class="window-bar">
+            <div class="window-title"><span class="app-icon">한</span> 한글 문서 정리 도우미 <b>v1.65</b></div>
+            <div class="window-controls">—　□　×</div>
+          </div>
+          <div class="window-body">
+            <div class="drop-card">
+              <span class="file-glyph">HWP</span>
+              <strong>정리할 문서를 놓아주세요</strong>
+              <small>HWP · HWPX · 여러 파일 지원</small>
+            </div>
+            <div class="mode-row">
+              <div class="mode active"><span>01</span><b>자간 정리</b><small>끊긴 단어를 자연스럽게</small></div>
+              <div class="mode"><span>02</span><b>서식 정리</b><small>문단과 표를 반듯하게</small></div>
+              <div class="mode"><span>03</span><b>한 번에 정리</b><small>모든 작업을 한 번에</small></div>
+            </div>
+            <div class="progress-card"><span>문서가 준비되면</span><b>실행 버튼 하나로 끝나요.</b><button type="button" tabindex="-1">실행</button></div>
+          </div>
+        </div>
+        <div class="floating-note note-a"><b>✓</b> 원본은 안전하게 보존</div>
+        <div class="floating-note note-b"><b>8</b>개 문서 일괄 처리</div>
+      </div>
+    </section>
+
+    <section class="trust-strip" aria-label="핵심 장점">
+      <p>문서 편집의 반복을 줄이고</p>
+      <div><strong>자동 정리</strong><span>자간·문단·표</span></div>
+      <div><strong>일괄 처리</strong><span>파일·폴더 드롭</span></div>
+      <div><strong>안전 저장</strong><span>새 파일로 결과 보존</span></div>
+      <div><strong>업데이트</strong><span>새 버전 자동 확인</span></div>
+    </section>
+
+    <section class="section feature-section" id="features">
+      <div class="section-heading reveal">
+        <p class="eyebrow"><span></span> 필요한 기능만 똑똑하게</p>
+        <h2>반복 작업은 앱에게,<br><em>검토와 판단은 사람에게.</em></h2>
+        <p>문서 내용을 바꾸는 대신 읽기 편한 흐름과 일관된 서식을 만드는 데 집중했습니다.</p>
+      </div>
+      <div class="feature-grid">
+        <article class="feature-card feature-large reveal">
+          <div class="feature-number">01</div>
+          <div><p class="tag">SMART SPACING</p><h3>줄 끝에서 끊긴 단어를 자연스럽게</h3><p>화면 줄 경계를 분석해 필요한 구간의 자간만 단계적으로 조절합니다. 표 안의 문장까지 선택적으로 처리할 수 있습니다.</p></div>
+          <div class="line-demo"><span>제공하</span><span class="break">며,</span><i>→</i><span class="fixed">제공하며,</span></div>
+        </article>
+        <article class="feature-card reveal">
+          <div class="feature-number">02</div><p class="tag">PUBLIC DOCUMENT</p><h3>공문서 구조 인식</h3><p>□, ㅇ, -, ※ 등의 문두 기호와 제목·붙임·담당자 문단을 구분해 알맞은 서식을 적용합니다.</p>
+        </article>
+        <article class="feature-card dark reveal">
+          <div class="feature-number">03</div><p class="tag">BATCH WORK</p><h3>여러 문서를 한 번에</h3><p>파일이나 폴더를 끌어다 놓고 진행률과 작업 기록을 한 화면에서 확인하세요.</p>
+          <div class="mini-files"><span>계획서.hwp</span><span>보고서.hwpx</span><span>회의자료.hwp</span></div>
+        </article>
+        <article class="feature-card reveal">
+          <div class="feature-number">04</div><p class="tag">FORMAT CLEANUP</p><h3>표·문단·공백 정리</h3><p>내어쓰기, 글꼴, 문단 간격, 괄호 안쪽 공백과 표 머리글을 설정한 규칙으로 맞춥니다.</p>
+        </article>
+        <article class="feature-card accent reveal">
+          <div class="feature-number">05</div><p class="tag">SAFE RESULT</p><h3>원본은 그대로 보존</h3><p>결과는 원본 옆에 별도 파일로 저장하고, 선택 시 상세 작업 로그도 함께 남깁니다.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section steps-section" id="guide">
+      <div class="section-heading light reveal">
+        <p class="eyebrow"><span></span> 처음이어도 어렵지 않아요</p>
+        <h2>세 단계면<br><em>문서 정리 완료.</em></h2>
+      </div>
+      <div class="steps">
+        <article class="step reveal"><span>1</span><div class="step-visual drop-visual"><b>HWP</b><i>＋</i></div><h3>문서를 추가하세요</h3><p>파일 또는 폴더를 창에 끌어다 놓습니다. 여러 문서를 함께 선택해도 됩니다.</p></article>
+        <article class="step reveal"><span>2</span><div class="step-visual option-visual"><i></i><i></i><i></i></div><h3>작업을 고르세요</h3><p>자간 정리, 서식 정리, 한 번에 정리 중 필요한 작업과 세부 옵션을 선택합니다.</p></article>
+        <article class="step reveal"><span>3</span><div class="step-visual done-visual">✓</div><h3>실행하고 확인하세요</h3><p>진행률을 확인하고 원본 폴더에 생성된 결과 파일을 검토하면 끝입니다.</p></article>
+      </div>
+      <aside class="notice reveal"><strong>사용 전 확인</strong><p>Windows와 한글 2020이 필요합니다. 처음 실행할 때 프로젝트 전용 보안 모듈이 사용자 환경에 등록됩니다.</p></aside>
+    </section>
+
+    <section class="section download-section" id="download">
+      <div class="download-panel reveal">
+        <div class="download-copy">
+          <p class="eyebrow"><span></span> LATEST RELEASE</p>
+          <h2>지금 바로<br><em>문서 정리를 시작하세요.</em></h2>
+          <p>설치 과정 없이 EXE 파일을 내려받아 실행하면 됩니다. 앱 시작 시 새 버전도 자동으로 확인합니다.</p>
+          <ul><li>Windows 10·11 64비트</li><li>한글 2020 필요</li><li>버전 1.65</li></ul>
+        </div>
+        <div class="release-card">
+          <span class="release-badge">최초 공식 릴리스</span>
+          <div class="release-version"><small>HWP Auto DocFit</small><strong>v1.65</strong></div>
+          <a class="button button-primary button-download" href="https://gitlab.aigov.go.kr/api/v4/projects/903/packages/generic/hwp-auto-docfit/1.65/HWP_AutoDocFit.exe">HWP_AutoDocFit.exe <span>↓</span></a>
+          <a class="release-link" href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/v1.65" target="_blank" rel="noreferrer">릴리스 정보 보기 →</a>
+          <details><summary>파일 무결성 확인</summary><code>EAC15A1764AE2EA5C9A9F9806835697649B9A71C842411B8CDBF2572FC0E0AD5</code></details>
+        </div>
+      </div>
+    </section>
+
+    <section class="faq section">
+      <div class="section-heading reveal"><p class="eyebrow"><span></span> 자주 묻는 질문</p><h2>시작하기 전에<br><em>확인해 보세요.</em></h2></div>
+      <div class="faq-list">
+        <details class="reveal"><summary>원본 문서가 변경되나요?</summary><p>아니요. 결과는 원본과 같은 폴더에 새 파일로 저장되어 원본을 안전하게 보존합니다.</p></details>
+        <details class="reveal"><summary>어떤 파일을 지원하나요?</summary><p>한글의 HWP 및 HWPX 문서를 지원하며 여러 파일과 폴더 단위 일괄 처리가 가능합니다.</p></details>
+        <details class="reveal"><summary>업데이트는 어떻게 하나요?</summary><p>기본적으로 앱 시작 시 최신 릴리스를 확인합니다. 설정 화면에서 자동 확인을 끄거나 직접 확인할 수도 있습니다.</p></details>
+        <details class="reveal"><summary>macOS에서도 사용할 수 있나요?</summary><p>현재는 한글 COM 자동화를 사용하는 Windows 전용 프로그램입니다.</p></details>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <a class="brand" href="#top"><span class="brand-mark">한</span><span>HWP Auto DocFit</span></a>
+    <p>반복되는 한글 문서 정리를 더 빠르고 반듯하게.</p>
+    <div><a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit" target="_blank" rel="noreferrer">GitLab</a><a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases" target="_blank" rel="noreferrer">Releases</a><span>© 2026</span></div>
+  </footer>
+  <script src="script.js"></script>
+</body>
+</html>
