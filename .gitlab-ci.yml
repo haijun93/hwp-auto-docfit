@@ -42,7 +42,7 @@ release-windows:
       curl --fail-with-body --request POST \
         --header "JOB-TOKEN: $CI_JOB_TOKEN" \
         --data-urlencode "tag_name=$CI_COMMIT_TAG" \
-        --data-urlencode "name=HWP Auto DocFit $CI_COMMIT_TAG Beta" \
+        --data-urlencode "name=한글문서 후처리 도구 $CI_COMMIT_TAG Beta" \
         --data-urlencode "description=기능 검증을 위한 Windows 테스트 베타 릴리스입니다. 운영 환경 적용 전 충분히 테스트해 주세요. 고급 문서 도구는 Node.js 18 이상이 필요합니다." \
         "$CI_API_V4_URL/projects/$CI_PROJECT_ID/releases"
     - |

@@ -122,7 +122,7 @@ from docfit_core import (
 # 프로그램 정보
 # ============================================================
 
-APP_NAME = "HWP 자동 편집기"
+APP_NAME = "한글문서 후처리 도구"
 APP_VERSION = "1.67 Beta"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
@@ -6836,7 +6836,7 @@ class HwpAutoDocFitGUI:
         self.compare_left_frame = None
         self.compare_right_frame = None
 
-        root.title(f"한글 문서 정리 도우미 · v{APP_VERSION}")
+        root.title(f"{APP_NAME} · v{APP_VERSION}")
         width = min(600, root.winfo_screenwidth() - 40)
         height = min(560, root.winfo_screenheight() - 80)
         root.geometry(f"{width}x{height}")
@@ -7077,7 +7077,7 @@ class HwpAutoDocFitGUI:
                                      wraplength=440, justify="left")
         self.footer_note.pack(side="left", padx=(12, 0))
         self.log_window = tk.Toplevel(root)
-        self.log_window.title("처리 기록 · 한글 문서 정리 도우미")
+        self.log_window.title(f"처리 기록 · {APP_NAME}")
         self.log_window.geometry("780x360")
         self.log_window.minsize(500, 240)
         self.log_window.protocol("WM_DELETE_WINDOW", self._기록닫기)

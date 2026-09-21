@@ -144,12 +144,14 @@ class StartupTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="hwp-docfit-test-") as settings_dir:
             with patch.dict(os.environ, {"APPDATA": settings_dir}):
                 namespace = runpy.run_path(str(source), run_name="startup_test")
+                self.assertEqual(namespace["APP_NAME"], "한글문서 후처리 도구")
                 root = namespace["TkinterDnD"].Tk()
                 root.withdraw()
                 callback_errors = []
                 root.report_callback_exception = lambda *args: callback_errors.append(args)
                 try:
                     app = namespace["HwpAutoDocFitGUI"](root)
+                    self.assertIn("한글문서 후처리 도구", root.title())
                     root.update()
                     self.assertTrue(root.winfo_children())
                     self.assertEqual(callback_errors, [])
