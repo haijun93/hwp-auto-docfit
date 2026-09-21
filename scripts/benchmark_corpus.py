@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import json
 import runpy
 import shutil
@@ -81,6 +82,19 @@ def main() -> int:
                     profile = analyze(working)
                     item["analysis_seconds"] = round(time.perf_counter() - analysis_started, 4)
                     item["precise_table_profiles"] = len(profile.get("precise_tables", {}).get("tables", []))
+                    hierarchy = profile.get("style_hierarchy", {})
+                    item["role_counts"] = dict(Counter(hierarchy.get("role_sequence", [])))
+                    item["hierarchy_styles"] = len(hierarchy.get("styles", []))
+                    item["hierarchy_warnings"] = hierarchy.get("warnings", [])
+                    marked = [style for style in hierarchy.get("styles", [])
+                              if style.get("marker") != "(없음)" and style.get("role") != "미분류"]
+                    available = {rule[0] for rule in profile["format"]["기호_규칙"]}
+                    item["marked_styles"] = len(marked)
+                    item["matched_marker_styles"] = sum(style["marker"] in available for style in marked)
+                    item["spacing_variants"] = sum(
+                        len(style.get("prev_spacing_values", [])) > 1
+                        for style in hierarchy.get("styles", [])
+                    )
 
                     clone_started = time.perf_counter()
                     cloned = temp / f"{index:03d}_{source.stem}_cloned.hwpx"
@@ -124,6 +138,13 @@ def main() -> int:
         "failed": sum(not bool(item["ok"]) for item in results),
         "tables_found": sum(int(item.get("tables", 0)) for item in results),
         "tables_applied": sum(int(item.get("tables_applied", 0)) for item in results),
+        "roles": dict(sum((Counter(item.get("role_counts", {})) for item in results), Counter())),
+        "hierarchy_styles": sum(int(item.get("hierarchy_styles", 0)) for item in results),
+        "marked_styles": sum(int(item.get("marked_styles", 0)) for item in results),
+        "matched_marker_styles": sum(int(item.get("matched_marker_styles", 0)) for item in results),
+        "hierarchy_warning_count": sum(len(item.get("hierarchy_warnings", [])) for item in results),
+        "files_with_hierarchy_warnings": sum(bool(item.get("hierarchy_warnings")) for item in results),
+        "styles_with_spacing_variants": sum(int(item.get("spacing_variants", 0)) for item in results),
         "elapsed_seconds": round(time.perf_counter() - started, 3),
         "mean_file_seconds": round(statistics.mean(durations), 4) if durations else 0,
         "median_file_seconds": round(statistics.median(durations), 4) if durations else 0,
