@@ -68,7 +68,7 @@ class StyleProfileTest(unittest.TestCase):
                 archive.writestr("Contents/section0.xml", SECTION)
             profile = analyze(source)
 
-        self.assertEqual(profile["profile_version"], 3)
+        self.assertEqual(profile["profile_version"], 4)
         self.assertEqual(profile["format"]["기본_장평"], 95)
         self.assertEqual(profile["format"]["기본_줄간격_퍼센트"], 170)
         self.assertEqual(profile["format"]["제목_문단"]["font"], "테스트명조")
@@ -76,6 +76,24 @@ class StyleProfileTest(unittest.TestCase):
         self.assertEqual(profile["table_format"]["body_size"], 12)
         self.assertEqual(len(profile["precise_tables"]["tables"]), 1)
         self.assertEqual(profile["precise_tables"]["tables"][0]["rows"], 2)
+
+    def test_copied_profile_contains_logical_marker_rules(self):
+        namespace = runpy.run_path(
+            str(Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"),
+            run_name="logical_style_test",
+        )
+        section = SECTION.replace("문서 제목".encode(), "□ 사업".encode()).replace(
+            "기호 없이 작성된 일반 본문입니다.".encode(), "ㅇ 추진 내용".encode())
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "logical.hwpx"
+            with ZipFile(source, "w", ZIP_DEFLATED) as archive:
+                archive.writestr("Contents/header.xml", HEADER)
+                archive.writestr("Contents/section0.xml", section)
+            profile = namespace["hwpx_서식_분석"](source)
+        hierarchy = profile["style_hierarchy"]
+        self.assertEqual(hierarchy["role_sequence"], ["소제목", "본문"])
+        self.assertEqual(profile["format"]["논리역할_규칙"]["소제목"][0], "□")
+        self.assertTrue(profile["format"]["복제_들여쓰기_유지"])
 
     def test_precise_table_style_preserves_text_and_copies_geometry(self):
         namespace = runpy.run_path(

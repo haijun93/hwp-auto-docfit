@@ -79,7 +79,7 @@ import urllib.error
 import urllib.request
 import webbrowser
 import xml.etree.ElementTree as ET
-from collections import Counter, deque
+from collections import Counter, defaultdict, deque
 from tkinter import simpledialog
 import datetime as _datetime
 from datetime import datetime
@@ -97,6 +97,7 @@ import win32com.client as win32
 import win32gui
 import win32con
 from defusedxml.ElementTree import fromstring as safe_xml_fromstring
+from docfit_core.style_hierarchy import analyze_hierarchy, hierarchy_summary, leading_marker
 from docfit_core import (
     KordocUnavailableError,
     analyze_form,
@@ -754,6 +755,8 @@ def hwpx_서식_분석(path):
         first_styles = []
         ratios, spacing = Counter(), Counter()
         paragraphs = {k: Counter() for k in groups}
+        marker_shapes = defaultdict(Counter)
+        hierarchy_paragraphs = []
         aliases = {"ㅁ": "□", "○": "ㅇ", "☞": "ㅇ", "*": "※", "→": "※"}
         count = 0
         margins = False
@@ -799,6 +802,17 @@ def hwpx_서식_분석(path):
                 if ls is not None and ls.get("type") == "PERCENT":
                     spacing[float(ls.get("value"))] += max(1, len(text))
                 bold = child(char, "bold") is not None
+                pm = child(pp, "margin") if pp is not None else None
+                def margin_value(key):
+                    item = child(pm, key) if pm is not None else None
+                    return int(item.get("value", "0")) if item is not None and item.get("unit", "HWPUNIT") == "HWPUNIT" else 0
+                hierarchy_paragraphs.append({"text": text, "font": font,
+                                             "size_pt": height, "left": margin_value("left"),
+                                             "indent": margin_value("intent"),
+                                             "prev_spacing": margin_value("prev")})
+                detected_marker, detected_role = leading_marker(text)
+                if detected_marker and font and height > 0:
+                    marker_shapes[(detected_role, detected_marker)][(font, height, bold)] += 1
                 if font and height > 0:
                     body_styles[(font, height, bold)] += max(1, len(text))
                     if len(first_styles) < 2:
@@ -862,8 +876,9 @@ def hwpx_서식_분석(path):
             if groups[symbol]:
                 font, size, bold = groups[symbol].most_common(1)[0][0]
                 fmt["기호_규칙"][i] = (symbol, rule[1], font, size, bold, False)
-                key = {"□": "box", "ㅇ": "o", "-": "dash", "※": "note"}[symbol]
-                profile["options"][f"std_symbol_{key}_bold"] = bold
+                key = {"□": "box", "ㅇ": "o", "-": "dash", "※": "note"}.get(symbol)
+                if key:
+                    profile["options"][f"std_symbol_{key}_bold"] = bold
                 if paragraphs[symbol]:
                     fmt["복사_문단모양"][symbol] = dict(paragraphs[symbol].most_common(1)[0][0])
                 found.append(f"{symbol}: {font} {size:g}pt, 굵게 {'ON' if bold else 'OFF'}")
@@ -882,7 +897,27 @@ def hwpx_서식_분석(path):
         }
         section_payloads = {name: z.read(name) for name in sections}
         profile["precise_tables"] = _정밀표_프로필_추출(header, section_payloads)
-        profile["profile_version"] = 3
+        profile["style_hierarchy"] = analyze_hierarchy(hierarchy_paragraphs)
+        fmt["논리역할_규칙"] = {}
+        for item in profile["style_hierarchy"]["styles"]:
+            role, marker = item["role"], item["marker"]
+            if role not in ("중제목", "소제목", "본문", "내용", "부연설명") or marker == "(없음)":
+                continue
+            shape = marker_shapes.get((role, marker))
+            font, size, bold = shape.most_common(1)[0][0] if shape else (item["font"], item["size_pt"], False)
+            if not font or not size:
+                continue
+            rule = (marker, 0, font, size, bold, False)
+            fmt["논리역할_규칙"].setdefault(role, rule)
+            if marker not in {r[0] for r in fmt["기호_규칙"]}:
+                fmt["기호_규칙"].append(rule)
+            fmt["복사_문단모양"].setdefault(marker, {
+                "LeftMargin": item["left_hwpunit"],
+                "Indentation": item["first_line_hwpunit"],
+                "PrevSpacing": item["prev_spacing_typical"] or 0,
+            })
+        fmt["복제_들여쓰기_유지"] = True
+        profile["profile_version"] = 4
         profile["storage_format"] = "json"
         profile["source"] = {"filename": Path(path).name, "paragraphs_analyzed": count,
                              "body_style_fallback": 본문_대체출처}
@@ -899,6 +934,7 @@ def hwpx_서식_분석(path):
             + "미검출 기호(기본값 유지): " + (", ".join(missing) or "없음")
             + f"\n표 머리글: {header_style[0]} {header_style[1]:g}pt / 표 본문: {body_style[0]} {body_style[1]:g}pt"
             + f"\n정밀 표 프로필: {len(profile['precise_tables']['tables'])}개"
+            + "\n\n" + hierarchy_summary(profile["style_hierarchy"])
             + "\n페이지 여백·장평·자간·줄간격·문단 모양과 셀별 표 서식을 함께 복제합니다."
         )
         return profile
@@ -2713,6 +2749,13 @@ def 표준서식_기호규칙_찾기(text):
     벗긴텍스트 = text.lstrip()
     if not 벗긴텍스트:
         return None
+    detected_marker, detected_role = leading_marker(벗긴텍스트)
+    if 표준서식_설정.get("논리역할_규칙"):
+        for 규칙 in 표준서식_설정["기호_규칙"]:
+            if 규칙[0] == detected_marker:
+                return 규칙
+        if detected_role in 표준서식_설정["논리역할_규칙"]:
+            return 표준서식_설정["논리역할_규칙"][detected_role]
     for 규칙 in 표준서식_설정["기호_규칙"]:
         if 벗긴텍스트.startswith(규칙[0]):
             return 규칙
@@ -2785,7 +2828,7 @@ def 표준서식_문단_처리(문단_순번, 헤더_역할=None, 상속_기호_
     )
 
     # 자체 문장부호가 있는 경우에만 표준 선행공백으로 보정한다.
-    if 자체_기호_매칭:
+    if 자체_기호_매칭 and not 표준서식_설정.get("복제_들여쓰기_유지"):
         들여쓰기_공백_맞추기(자체_기호_매칭[1])
 
     if 표준서식_장평_사용:
@@ -2800,7 +2843,7 @@ def 표준서식_문단_처리(문단_순번, 헤더_역할=None, 상속_기호_
         문단_줄간격_적용_현재선택(표준서식_설정["기본_줄간격_퍼센트"])
         hwp_run("Cancel")
 
-    if 표준서식_문단위간격_사용:
+    if 표준서식_문단위간격_사용 and not 표준서식_설정.get("복제_들여쓰기_유지"):
         간격_pt = 표준서식_문단위간격_찾기(text)
         if 간격_pt is not None:
             hwp_run("MoveParaBegin")
@@ -2860,7 +2903,8 @@ def 표준서식_문단_처리(문단_순번, 헤더_역할=None, 상속_기호_
             if 문단_내어쓰기_기준_오프셋(현재_text) is not None:
                 문단_내어쓰기_적용(문단_기준위치, 현재_text, 폰트크기_pt=크기, 폰트=폰트, 굵게=문단굵게)
 
-        복사_문단모양_적용(기호)
+        실제기호, _ = leading_marker(현재_text)
+        복사_문단모양_적용(실제기호 if 실제기호 in 표준서식_설정.get("복사_문단모양", {}) else 기호)
 
         # 기호 자체 bold는 실제 기호가 존재하는 문단에만 적용한다.
         if 자체_기호_매칭 and 기호만굵게 and not 문단굵게:
@@ -4132,18 +4176,8 @@ def 현재문단_줄간격_퍼센트():
 
 
 def 보고서_문단역할(text):
-    text = (text or '').lstrip()
-    if not text:
-        return None
-    if text.startswith(('**', '*', '※')):
-        return '부연설명'
-    if text[0] in 'ㅁ□■':
-        return '제목'
-    if text[0] in 'ㅇ○◦':
-        return '본문'
-    if text.startswith('-'):
-        return '내용'
-    return None
+    _, role = leading_marker(text)
+    return role or None
 
 
 def 보고서_본문묶음_수집(시작위치):
@@ -4154,7 +4188,7 @@ def 보고서_본문묶음_수집(시작위치):
     """
     original = hwp.GetPos()
     result = []
-    levels = {'제목': 0, '본문': 1, '내용': 2}
+    levels = {'소제목': 0, '본문': 1, '내용': 2}
     try:
         hwp.SetPos(*시작위치)
         root_level = None
@@ -4275,7 +4309,7 @@ def 세트문장_같은쪽_시도(시작위치, text):
     """묶음의 쪽별 줄 수를 비교해 앞쪽으로 당기거나 뒤쪽으로 민다."""
     if 중단_요청됨():
         return False
-    if 보고서_문단역할(text) not in ('제목', '본문', '내용'):
+    if 보고서_문단역할(text) not in ('소제목', '본문', '내용'):
         return True
     backup = None
     attempted = False
@@ -4292,8 +4326,12 @@ def 세트문장_같은쪽_시도(시작위치, text):
             return not 중단_요청됨()
         counts = 보고서_묶음_쪽별줄수(paragraphs)
         pages = sorted(counts) if counts else []
+        if len(pages) == 1:
+            return not 중단_요청됨()
         if len(pages) != 2 or pages[1] != pages[0] + 1:
             진단로그(f'[문장 묶음] 인접한 두 쪽 조건 미충족: 쪽별 줄 수 {counts} / {summary}')
+            if len(pages) > 1:
+                검수_문제_기록(현재_처리파일, f'[문장 묶음 페이지 분리] {summary}')
             return not 중단_요청됨()
         expand = not 보고서_압축조건(counts)
         direction = "확대" if expand else "축소"
@@ -4362,7 +4400,7 @@ def 세트문장_같은쪽_전체_적용():
         # 본문(리스트 0) 문단만 대상으로 한다. 표/글상자 등은 기존 컨트롤 처리와 충돌하지 않게 제외한다.
         if 시작위치[0] == 0:
             text = 현재문단_텍스트()
-            if 보고서_문단역할(text) in ('제목', '본문', '내용'):
+            if 보고서_문단역할(text) in ('소제목', '본문', '내용'):
                 if 세트문장_같은쪽_시도(시작위치, text) is False:
                     return False
                 try:
@@ -7854,6 +7892,9 @@ class HwpAutoDocFitGUI:
                 self.format_drop_label.configure(text="예시 HWP/HWPX를 여기에 놓으면 분석 후 바로 선택합니다")
             messagebox.showerror(APP_NAME, f"서식 복사 실패\n{error}", parent=parent)
             return
+        if not self._서식_구조_확인(profile, parent):
+            self.status_var.set("서식 복사를 취소했습니다.")
+            return
         identifier = uuid.uuid4().hex
         folder = 서식프로파일_폴더()
         try:
@@ -7874,6 +7915,40 @@ class HwpAutoDocFitGUI:
         self.status_var.set(f"새 문서 서식 추가: {profile['name']}")
         messagebox.showinfo(APP_NAME, f"'{profile['name']}' 서식을 저장하고 선택했습니다.\n\n{profile['summary']}",
                             parent=parent)
+
+    def _서식_구조_확인(self, profile, parent):
+        """Show the five-factor analysis before copying, without truncation."""
+        dialog = tk.Toplevel(parent)
+        dialog.title(f"서식 구조 확인 · {profile['name']}")
+        dialog.geometry("740x500")
+        dialog.transient(parent)
+        dialog.grab_set()
+        body = ttk.Frame(dialog, padding=14)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="들여쓰기 중심 문서 구조 분석",
+                  font=("맑은 고딕", 14, "bold")).pack(anchor="w")
+        ttk.Label(body, text="문단 위 여백은 역할 판정에 사용하지 않고, 동일 역할 내 차이를 함께 표시합니다.",
+                  style="Hint.TLabel").pack(anchor="w", pady=(2, 10))
+        frame = ttk.Frame(body)
+        frame.pack(fill="both", expand=True)
+        details = tk.Text(frame, wrap="word", height=18, state="normal")
+        bar = ttk.Scrollbar(frame, orient="vertical", command=details.yview)
+        details.configure(yscrollcommand=bar.set)
+        details.pack(side="left", fill="both", expand=True)
+        bar.pack(side="right", fill="y")
+        details.insert("1.0", hierarchy_summary(profile.get("style_hierarchy", {"styles": []})))
+        details.configure(state="disabled")
+        result = {"confirmed": False}
+        buttons = ttk.Frame(body)
+        buttons.pack(fill="x", pady=(10, 0))
+        def close(confirmed=False):
+            result["confirmed"] = confirmed
+            dialog.destroy()
+        ttk.Button(buttons, text="취소", command=close).pack(side="right")
+        ttk.Button(buttons, text="확인하고 서식 저장", command=lambda: close(True)).pack(side="right", padx=8)
+        dialog.protocol("WM_DELETE_WINDOW", close)
+        parent.wait_window(dialog)
+        return result["confirmed"]
 
     def _색상표시_상태_갱신(self, *args):
         """'자간을 수정한 글자를 색으로 표시하기' On/Off에 따라 색상 선택 라디오를 활성화/비활성화한다."""
