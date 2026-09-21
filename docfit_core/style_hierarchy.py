@@ -95,8 +95,10 @@ def analyze_hierarchy(paragraphs):
     for index, record in enumerate(records):
         role = record["role"]
         later = [item["role"] for item in records[index + 1:]]
-        if role == "소제목" and (not later or later[0] != "본문"):
-            warnings.append(f"{index + 1}번째 소제목 바로 뒤에 본문이 없습니다.")
+        if role == "소제목":
+            following = next((name for name in later if name != "부연설명"), None)
+            if following != "본문":
+                warnings.append(f"{index + 1}번째 소제목 아래에 본문이 없습니다.")
         if role == "내용" and not any(item["role"] == "본문" for item in records[:index]):
             warnings.append(f"{index + 1}번째 내용에 앞선 본문이 없습니다.")
         if role == "부연설명" and (index == 0 or records[index - 1]["role"] not in
