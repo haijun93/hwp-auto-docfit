@@ -9,5 +9,6 @@ venv/
 build/
 dist/
 benchmark-results/
+reports/
 *.log
 .DS_Store

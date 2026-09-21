@@ -26,6 +26,45 @@ class StyleHierarchyTest(unittest.TestCase):
         self.assertEqual(subheading["left_hwpunit"], 100)
         self.assertEqual(result["role_sequence"], ["소제목", "소제목", "본문"])
 
+    def test_explanations_after_subheading_are_optional(self):
+        for explanations in ([], ["* 참고"], ["* 참고", "** 추가 설명"]):
+            with self.subTest(explanations=explanations):
+                texts = ["□ 소제목", *explanations, "ㅇ 본문"]
+                records = [{"text": value, "left": 100, "indent": 0,
+                            "font": "명조", "size_pt": 12} for value in texts]
+                result = analyze_hierarchy(records)
+                self.assertEqual(result["warnings"], [])
+                self.assertTrue(result["page_policy"]["optional_explanations_after_subheading"])
+
+    def test_subheading_still_requires_body_after_explanations(self):
+        records = [{"text": value, "left": 100, "indent": 0,
+                    "font": "명조", "size_pt": 12}
+                   for value in ("□ 소제목", "* 참고", "□ 다음 소제목", "ㅇ 본문")]
+        result = analyze_hierarchy(records)
+        self.assertIn("1번째 소제목 아래에 본문이 없습니다.", result["warnings"])
+
+    def test_circled_marker_can_replace_three_roles(self):
+        for anchor, expected, indent, size in (
+                ("ㅇ 기준 본문", "본문", 100, 14),
+                ("- 기준 내용", "내용", 200, 12),
+                ("※ 기준 부연설명", "부연설명", 300, 10)):
+            with self.subTest(expected=expected):
+                records = [
+                    {"text": "□ 소제목", "left": 0, "font": "명조", "size_pt": 16},
+                    {"text": "ㅇ 본문", "left": 100, "font": "명조", "size_pt": 14},
+                    {"text": anchor, "left": indent, "font": "명조", "size_pt": size},
+                    {"text": "① 원문자", "left": indent, "font": "명조", "size_pt": size},
+                ]
+                result = analyze_hierarchy(records)
+                self.assertEqual(result["role_sequence"][-1], expected)
+                self.assertEqual(leading_marker("① 원문자"), ("①", ""))
+
+    def test_circled_marker_without_style_anchor_requests_confirmation(self):
+        records = [{"text": "① 항목", "left": 100, "font": "명조", "size_pt": 12}]
+        result = analyze_hierarchy(records)
+        self.assertEqual(result["role_sequence"], ["미분류"])
+        self.assertTrue(any("원문자의 역할" in warning for warning in result["warnings"]))
+
 
 if __name__ == "__main__":
     unittest.main()

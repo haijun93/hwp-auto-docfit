@@ -98,6 +98,10 @@ import win32gui
 import win32con
 from defusedxml.ElementTree import fromstring as safe_xml_fromstring
 from docfit_core.style_hierarchy import analyze_hierarchy, hierarchy_summary, leading_marker
+from docfit_core.style_profile_edit import FIELDS as STYLE_FIELDS, ROLES as STYLE_ROLES, apply_reviewed_styles
+from docfit_core.korean_proofread import (
+    apply_approved_hwpx, load_exclusions, save_exclusions, scan_hwpx,
+)
 from docfit_core import (
     KordocUnavailableError,
     analyze_form,
@@ -123,7 +127,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글문서 후처리 도구"
-APP_VERSION = "1.67 Beta"
+APP_VERSION = "1.67 Beta 1"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 UPDATE_ASSET_NAME = "HWP_AutoDocFit.exe"
@@ -967,6 +971,33 @@ def 한글파일_서식_분석(path):
             pythoncom.CoUninitialize()
 
 
+def 교정용_hwpx_준비(path, folder):
+    """Return an HWPX snapshot; HWP conversion touches only a temporary copy."""
+    source = Path(path)
+    if source.suffix.lower() == ".hwpx":
+        return source
+    copied = Path(folder) / (uuid.uuid4().hex + ".hwp")
+    target = copied.with_suffix(".hwpx")
+    shutil.copy2(source, copied)
+    app = None
+    pythoncom.CoInitialize()
+    try:
+        보안모듈_초기화()
+        app = win32.DispatchEx("HwpFrame.HwpObject")
+        if not app.RegisterModule(REGISTER_MODULE_NAME, REGISTER_MODULE_VALUE):
+            raise RuntimeError("한글 보안 모듈을 등록하지 못했습니다.")
+        if app.Open(str(copied), "HWP", "") is False:
+            raise RuntimeError("HWP 파일을 열지 못했습니다.")
+        if app.SaveAs(str(target), "HWPX", "") is False:
+            raise RuntimeError("HWPX 임시 변환에 실패했습니다.")
+        return target
+    finally:
+        if app is not None:
+            try: app.Quit()
+            except Exception: pass
+        pythoncom.CoUninitialize()
+
+
 def 문서_markdown_내보내기(path):
     """HWP/HWPX를 같은 이름의 UTF-8 Markdown 파일로 내보낸다."""
     source = Path(path)
@@ -1005,12 +1036,19 @@ def 문서_markdown_내보내기(path):
 def 복사_문단모양_적용(symbol):
     values = 표준서식_설정.get("복사_문단모양", {}).get(symbol)
     if not values: return
+    selected = 표준서식_설정.get("스타일_속성선택", {}).get(symbol, {})
     action = hwp.CreateAction("ParagraphShape")
     params = action.CreateSet()
+    applied = 0
     for key, value in values.items():
+        if key in ("LeftMargin", "Indentation") and selected.get("indent") is False: continue
+        if key in ("PrevSpacing", "NextSpacing") and selected.get("spacing") is False: continue
         if key in ("LineSpacing", "LineSpacingType") and not 표준서식_줄간격_사용: continue
         if key in ("PrevSpacing", "NextSpacing") and not 표준서식_문단위간격_사용: continue
         params.SetItem(key, value)
+        applied += 1
+    if not applied:
+        return
     if action.Execute(params) is False:
         raise RuntimeError("복사한 문단 서식적용 실패")
 
@@ -2670,7 +2708,9 @@ def 부연설명_들여쓰기_전체_적용():
                 else:
                     부모_W = None
             elif _부연설명_문단인가(text):
-                if 부모_W:
+                marker, _ = leading_marker(text)
+                들여쓰기_선택 = 표준서식_설정.get("스타일_속성선택", {}).get(marker, {}).get("indent", True)
+                if 부모_W and 들여쓰기_선택:
                     if _부연설명_들여쓰기_적용(문단_시작, text, 부모_W):
                         적용수 += 1
             else:
@@ -2853,12 +2893,16 @@ def 표준서식_문단_처리(문단_순번, 헤더_역할=None, 상속_기호_
 
     if 제목_문단인가:
         규칙 = 표준서식_설정["제목_문단"]
+        선택 = 표준서식_설정.get("스타일_속성선택", {}).get("(제목)", {})
         hwp_run("MoveParaBegin")
         hwp_run("MoveSelParaEnd")
         문자모양_적용_현재선택(
-            폰트=규칙["font"], 크기_pt=규칙["size_pt"], 굵게=표준서식_제목_굵게
+            폰트=규칙["font"] if 선택.get("font", True) else None,
+            크기_pt=규칙["size_pt"] if 선택.get("size", True) else None,
+            굵게=표준서식_제목_굵게
         )
         hwp_run("Cancel")
+        복사_문단모양_적용("(제목)")
     elif 일자담당자_문단인가:
         규칙 = 표준서식_설정["일자담당자_문단"]
         hwp_run("MoveParaBegin")
@@ -2869,6 +2913,7 @@ def 표준서식_문단_처리(문단_순번, 헤더_역할=None, 상속_기호_
         hwp_run("Cancel")
     elif 기호_매칭:
         기호, 공백수, 폰트, 크기, 문단굵게_기본값, 기호만굵게_기본값 = 기호_매칭
+        선택 = 표준서식_설정.get("스타일_속성선택", {}).get(기호, {})
         굵게_허용 = 표준서식_기호_굵게.get(기호, True)
         문단굵게 = 문단굵게_기본값 and 굵게_허용
         기호만굵게 = 기호만굵게_기본값 and 굵게_허용
@@ -2879,8 +2924,8 @@ def 표준서식_문단_처리(문단_순번, 헤더_역할=None, 상속_기호_
         # 적용하면 원문에서 강조된 일부 텍스트까지 일반체로 풀리므로,
         # 굵게 해제는 하지 않고 기존 강조를 보존한다.
         문자모양_적용_현재선택(
-            폰트=폰트,
-            크기_pt=크기,
+            폰트=폰트 if 선택.get("font", True) else None,
+            크기_pt=크기 if 선택.get("size", True) else None,
             굵게=문단굵게 if "복사_문단모양" in 표준서식_설정 else (True if 문단굵게 else None),
         )
         hwp_run("Cancel")
@@ -2898,7 +2943,7 @@ def 표준서식_문단_처리(문단_순번, 헤더_역할=None, 상속_기호_
 
         # 라벨/본문을 정확히 정렬하는 내어쓰기. on/off 가능(표준서식_내어쓰기_사용).
         # 오프셋을 찾을 수 없는 단순 연속 설명문은 건드리지 않는다.
-        if 표준서식_내어쓰기_사용:
+        if 표준서식_내어쓰기_사용 and 선택.get("indent", True):
             hwp.SetPos(문단_기준위치[0], 문단_기준위치[1], 문단_기준위치[2])
             if 문단_내어쓰기_기준_오프셋(현재_text) is not None:
                 문단_내어쓰기_적용(문단_기준위치, 현재_text, 폰트크기_pt=크기, 폰트=폰트, 굵게=문단굵게)
@@ -4176,7 +4221,8 @@ def 현재문단_줄간격_퍼센트():
 
 
 def 보고서_문단역할(text):
-    _, role = leading_marker(text)
+    marker, role = leading_marker(text)
+    role = 표준서식_설정.get("문두기호_역할", {}).get(marker, role)
     return role or None
 
 
@@ -7007,6 +7053,8 @@ class HwpAutoDocFitGUI:
         quick.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(5, 0))
         self.settings_button = ttk.Button(quick, text="세부 설정…", command=self.설정창_열기)
         self.settings_button.pack(side="right")
+        self.proofread_button = ttk.Button(quick, text="공공언어·맞춤법 검토…", command=self._공공언어_검토)
+        self.proofread_button.pack(side="right", padx=(0, 6))
         self.options_summary = ttk.Label(quick, style="Hint.TLabel", wraplength=540, justify="left")
         self.options_summary.pack(side="left")
 
@@ -7139,7 +7187,8 @@ class HwpAutoDocFitGUI:
         self._고양이불러오기()
         self._항상위_적용()
 
-        root.after(100, self.queue_처리)
+        self._queue_after_id = root.after(100, self.queue_처리)
+        root.bind("<Destroy>", self._루트_파괴시_예약취소, add="+")
         root.bind("<Control-o>", lambda e: self.파일선택())
         root.protocol("WM_DELETE_WINDOW", self.종료)
         root.after_idle(self._창_최소높이_보정)
@@ -7775,6 +7824,9 @@ class HwpAutoDocFitGUI:
         삭제버튼 = getattr(self, "delete_format_button", None)
         if 삭제버튼 is not None:
             삭제버튼.config(state="normal" if self._활성_서식_프로파일 else "disabled")
+        수정버튼 = getattr(self, "edit_format_button", None)
+        if 수정버튼 is not None:
+            수정버튼.config(state="normal")
 
     def _프로파일_선택(self, event=None):
         if self.running: return
@@ -7825,6 +7877,192 @@ class HwpAutoDocFitGUI:
         self._프로파일_목록갱신()
         self._프로파일_선택()
         self.status_var.set(f"'{이름}' 서식을 삭제했습니다.")
+
+    def _서식_수정하기(self):
+        if self.running:
+            return
+        identifier = self._활성_서식_프로파일
+        profile = copy.deepcopy(self._프로파일들[identifier])
+        if not identifier:
+            profile["name"] = "기본 보고서 서식 (사용자 수정)"
+        if not self._서식_구조_확인(profile, self.settings_toplevel):
+            return
+        try:
+            folder = 서식프로파일_폴더()
+            folder.mkdir(parents=True, exist_ok=True)
+            if not identifier:
+                identifier = uuid.uuid4().hex
+            temp = folder / (identifier + ".tmp")
+            temp.write_text(json.dumps(profile, ensure_ascii=False, indent=2), encoding="utf-8")
+            os.replace(temp, folder / (identifier + ".json"))
+        except Exception as exc:
+            messagebox.showerror(APP_NAME, f"서식 수정 저장 실패\n{exc}", parent=self.settings_toplevel)
+            return
+        self._프로파일들[identifier] = profile
+        self._활성_서식_프로파일 = identifier
+        self._프로파일_목록갱신()
+        self._프로파일_선택()
+        self.status_var.set(f"'{profile['name']}' 서식을 수정했습니다.")
+
+    def _공공언어_검토(self):
+        if getattr(self, "_교정_창", None) is not None:
+            self._교정_창.lift()
+            return
+        if self.running or getattr(self, "_서식분석중", False) or getattr(self, "_교정_작업중", False):
+            return
+        if not self.files:
+            messagebox.showinfo(APP_NAME, "먼저 검토할 HWP/HWPX 파일을 추가해 주세요.", parent=self.root)
+            return
+        try:
+            제외경로 = 설정_폴더() / "proofreading_exclusions.json"
+            self._교정_제외 = load_exclusions(제외경로)
+        except Exception as exc:
+            messagebox.showerror(APP_NAME, f"교정 제외 목록을 읽지 못했습니다.\n{exc}", parent=self.root)
+            return
+        dialog = tk.Toplevel(self.root)
+        dialog.title("공공언어 바로쓰기 · 한국어 문서 교정")
+        dialog.geometry("1050x610")
+        dialog.transient(self.root)
+        self._교정_창 = dialog
+        self._교정_임시폴더 = tempfile.TemporaryDirectory(prefix="docfit_proofread_")
+        self._교정_후보 = []
+        self._교정_대상 = {}
+        body = ttk.Frame(dialog, padding=12)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="로컬 공공언어·맞춤법 검토", font=("맑은 고딕", 14, "bold")).pack(anchor="w")
+        ttk.Label(body, text="문서를 외부에 전송하지 않습니다. 교정안은 제안이며, 선택한 항목만 원본과 별도 HWPX로 저장합니다.",
+                  style="Hint.TLabel").pack(anchor="w", pady=(2, 8))
+        frame = ttk.Frame(body)
+        frame.pack(fill="both", expand=True)
+        columns = ("file", "category", "source", "suggestion", "count", "reason", "context")
+        labels = ("파일", "유형", "검출 표현", "교정 제안", "횟수", "검토 이유", "문맥")
+        tree = ttk.Treeview(frame, columns=columns, show="headings", selectmode="extended")
+        self._교정_목록 = tree
+        for key, label in zip(columns, labels):
+            tree.heading(key, text=label)
+            tree.column(key, width=270 if key in ("file", "context") else 100, anchor="w")
+        ybar = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
+        xbar = ttk.Scrollbar(body, orient="horizontal", command=tree.xview)
+        tree.configure(yscrollcommand=ybar.set, xscrollcommand=xbar.set)
+        tree.pack(side="left", fill="both", expand=True)
+        ybar.pack(side="right", fill="y")
+        xbar.pack(fill="x")
+        상태 = tk.StringVar(value="선택한 문서를 검사하고 있습니다…")
+        self._교정_상태 = 상태
+        ttk.Label(body, textvariable=상태, style="Hint.TLabel").pack(anchor="w", pady=(8, 4))
+        controls = ttk.Frame(body)
+        controls.pack(fill="x")
+        ttk.Button(controls, text="모두 선택", command=lambda: tree.selection_set(*tree.get_children())).pack(side="left")
+        ttk.Button(controls, text="선택 해제", command=lambda: tree.selection_remove(*tree.selection())).pack(side="left", padx=5)
+        ttk.Button(controls, text="선택 표현 이후 검색에서 제외", command=self._교정_선택제외).pack(side="left", padx=5)
+        ttk.Button(controls, text="제외 목록 관리", command=self._교정_제외관리).pack(side="left", padx=5)
+        ttk.Button(controls, text="선택 교정 승인·새 파일 저장", command=self._교정_승인).pack(side="right")
+        def close():
+            if getattr(self, "_교정_작업중", False):
+                messagebox.showinfo(APP_NAME, "검사 또는 저장이 끝난 뒤 닫아 주세요.", parent=dialog)
+                return
+            self._교정_임시폴더.cleanup()
+            self._교정_창 = None
+            dialog.destroy()
+        dialog.protocol("WM_DELETE_WINDOW", close)
+        self._교정_작업중 = True
+        sources = list(self.files)
+        def worker():
+            candidates, snapshots, errors = [], {}, []
+            for source in sources:
+                try:
+                    snapshot = 교정용_hwpx_준비(source, self._교정_임시폴더.name)
+                    snapshots[source] = snapshot
+                    for item in scan_hwpx(snapshot, self._교정_제외):
+                        candidates.append({**item, "source_path": source})
+                except Exception as exc:
+                    errors.append((source, str(exc)))
+            gui_queue.put(("proofread_scan_done", candidates, snapshots, errors))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _교정_목록갱신(self):
+        tree = self._교정_목록
+        children = tree.get_children()
+        if children:
+            tree.delete(*children)
+        for index, item in enumerate(self._교정_후보):
+            tree.insert("", "end", iid=str(index), values=(
+                Path(item["source_path"]).name, item["category"], item["source"],
+                item["suggestion"], item["count"], item["reason"],
+                item["examples"][0] if item["examples"] else ""))
+
+    def _교정_선택제외(self):
+        if getattr(self, "_교정_작업중", False): return
+        selected = {int(item) for item in self._교정_목록.selection()}
+        if not selected:
+            messagebox.showinfo(APP_NAME, "제외할 표현을 선택해 주세요.", parent=self._교정_창)
+            return
+        expressions = {self._교정_후보[index]["source"] for index in selected}
+        updated = self._교정_제외 | expressions
+        try:
+            save_exclusions(설정_폴더() / "proofreading_exclusions.json", updated)
+        except Exception as exc:
+            messagebox.showerror(APP_NAME, f"제외 목록 저장 실패\n{exc}", parent=self._교정_창)
+            return
+        self._교정_제외 = updated
+        self._교정_후보 = [item for item in self._교정_후보 if item["source"] not in updated]
+        self._교정_목록갱신()
+        self._교정_상태.set(f"{len(expressions)}개 표현을 이후 검색에서 제외합니다. 남은 후보 {len(self._교정_후보)}개")
+
+    def _교정_제외관리(self):
+        if getattr(self, "_교정_작업중", False): return
+        dialog = tk.Toplevel(self._교정_창)
+        dialog.title("교정 제외 목록")
+        dialog.geometry("430x420")
+        dialog.transient(self._교정_창)
+        dialog.grab_set()
+        body = ttk.Frame(dialog, padding=10)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="검색에서 제외한 표현을 선택해 다시 포함할 수 있습니다.").pack(anchor="w")
+        listing = tk.Listbox(body, selectmode="extended")
+        listing.pack(fill="both", expand=True, pady=8)
+        for item in sorted(self._교정_제외): listing.insert("end", item)
+        def restore():
+            chosen = {listing.get(index) for index in listing.curselection()}
+            if not chosen: return
+            try:
+                save_exclusions(설정_폴더() / "proofreading_exclusions.json", self._교정_제외 - chosen)
+            except Exception as exc:
+                messagebox.showerror(APP_NAME, str(exc), parent=dialog)
+                return
+            self._교정_제외 -= chosen
+            dialog.destroy()
+            messagebox.showinfo(APP_NAME, "복원한 표현은 다음 검사부터 다시 검색됩니다.", parent=self._교정_창)
+        ttk.Button(body, text="선택 표현 다시 검색", command=restore).pack(side="right")
+
+    def _교정_승인(self):
+        if getattr(self, "_교정_작업중", False): return
+        selected = [self._교정_후보[int(index)] for index in self._교정_목록.selection()]
+        if not selected:
+            messagebox.showinfo(APP_NAME, "승인할 교정 항목을 선택해 주세요.", parent=self._교정_창)
+            return
+        grouped = defaultdict(set)
+        for item in selected:
+            grouped[item["source_path"]].add(item["rule_id"])
+        self._교정_작업중 = True
+        self._교정_상태.set("승인한 교정안을 새 HWPX 파일에 저장하고 있습니다…")
+        def worker():
+            results, errors = [], []
+            for source, rule_ids in grouped.items():
+                try:
+                    original = Path(source)
+                    base = original.with_name(original.stem + "_공공언어교정.hwpx")
+                    target = base
+                    number = 2
+                    while target.exists():
+                        target = base.with_name(base.stem + f" ({number})" + base.suffix)
+                        number += 1
+                    count = apply_approved_hwpx(self._교정_대상[source], target, rule_ids, self._교정_제외)
+                    results.append((str(target), count))
+                except Exception as exc:
+                    errors.append((source, str(exc)))
+            gui_queue.put(("proofread_apply_done", results, errors))
+        threading.Thread(target=worker, daemon=True).start()
 
     def _서식_복사하기(self):
         if self.running or getattr(self, "_서식분석중", False): return
@@ -7917,32 +8155,134 @@ class HwpAutoDocFitGUI:
                             parent=parent)
 
     def _서식_구조_확인(self, profile, parent):
-        """Show the five-factor analysis before copying, without truncation."""
+        """Review and edit every repeated or one-off hierarchy style before saving."""
+        hierarchy = profile.setdefault("style_hierarchy", {"styles": []})
+        if not hierarchy.get("styles") and not hierarchy.get("variants"):
+            fmt = profile["format"]
+            defaults = [("제목", "(없음)", fmt["제목_문단"]["font"],
+                         fmt["제목_문단"]["size_pt"])]
+            defaults += [(leading_marker(str(rule[0]) + " 항목")[1] or "미분류",
+                          rule[0], rule[2], rule[3]) for rule in fmt["기호_규칙"]]
+            hierarchy["variants"] = [
+                {"role": role, "marker": marker, "count": 1, "kind": "기본값",
+                 "font": font, "size_pt": size,
+                 "left_hwpunit": fmt.get("복사_문단모양", {}).get(marker, {}).get("LeftMargin", 0),
+                 "first_line_hwpunit": fmt.get("복사_문단모양", {}).get(marker, {}).get("Indentation", 0),
+                 "prev_spacing_hwpunit": fmt.get("복사_문단모양", {}).get(marker, {}).get("PrevSpacing", 0)}
+                for role, marker, font, size in defaults]
+        if not hierarchy.get("variants"):
+            hierarchy["variants"] = [
+                {"role": item["role"], "marker": item["marker"],
+                 "count": item["count"], "kind": "반복" if item["count"] > 1 else "비반복",
+                 "font": item.get("font"), "size_pt": item.get("size_pt") or 12,
+                 "left_hwpunit": item.get("left_hwpunit", 0),
+                 "first_line_hwpunit": item.get("first_line_hwpunit", 0),
+                 "prev_spacing_hwpunit": item.get("prev_spacing_typical") or 0}
+                for item in hierarchy.get("styles", [])]
+        rows = copy.deepcopy(hierarchy["variants"])
         dialog = tk.Toplevel(parent)
-        dialog.title(f"서식 구조 확인 · {profile['name']}")
-        dialog.geometry("740x500")
+        dialog.title(f"서식 구조 검토·수정 · {profile['name']}")
+        dialog.geometry("1050x690")
         dialog.transient(parent)
         dialog.grab_set()
         body = ttk.Frame(dialog, padding=14)
         body.pack(fill="both", expand=True)
-        ttk.Label(body, text="들여쓰기 중심 문서 구조 분석",
+        ttk.Label(body, text="계층별 문서 스타일 검토",
                   font=("맑은 고딕", 14, "bold")).pack(anchor="w")
-        ttk.Label(body, text="문단 위 여백은 역할 판정에 사용하지 않고, 동일 역할 내 차이를 함께 표시합니다.",
+        ttk.Label(body, text="반복·비반복 스타일을 모두 표시합니다. 항목을 선택해 수정하고, 적용할 속성만 체크하세요. 값의 단위는 pt입니다.",
                   style="Hint.TLabel").pack(anchor="w", pady=(2, 10))
         frame = ttk.Frame(body)
         frame.pack(fill="both", expand=True)
-        details = tk.Text(frame, wrap="word", height=18, state="normal")
+        columns = ("kind", "count", "role", "marker", "font", "size", "left", "indent", "spacing")
+        headings = ("유형", "횟수", "계층", "문두기호", "글꼴", "크기", "왼쪽 여백", "첫 줄 들여쓰기", "문단 위 여백")
+        details = ttk.Treeview(frame, columns=columns, show="headings", selectmode="browse")
         bar = ttk.Scrollbar(frame, orient="vertical", command=details.yview)
         details.configure(yscrollcommand=bar.set)
+        for key, heading in zip(columns, headings):
+            details.heading(key, text=heading)
+            details.column(key, width=110 if key == "font" else 85, anchor="center")
         details.pack(side="left", fill="both", expand=True)
         bar.pack(side="right", fill="y")
-        details.insert("1.0", hierarchy_summary(profile.get("style_hierarchy", {"styles": []})))
-        details.configure(state="disabled")
+        def display(index):
+            row = rows[index]
+            return (row["kind"], row["count"], row["role"], row["marker"], row.get("font") or "",
+                    f"{float(row.get('size_pt') or 0):g}",
+                    f"{float(row.get('left_hwpunit') or 0) / 100:g}",
+                    f"{float(row.get('first_line_hwpunit') or 0) / 100:g}",
+                    f"{float(row.get('prev_spacing_hwpunit') or 0) / 100:g}")
+        for index in range(len(rows)):
+            details.insert("", "end", iid=str(index), values=display(index))
+        editor = ttk.LabelFrame(body, text="선택한 스타일 수정 및 속성별 적용", padding=8)
+        editor.pack(fill="x", pady=(8, 0))
+        variables = {key: tk.StringVar() for key in ("role", "font", "size", "left", "indent", "spacing")}
+        selection = {key: tk.BooleanVar(value=True) for key in STYLE_FIELDS}
+        ttk.Label(editor, text="계층").grid(row=0, column=0, padx=3)
+        ttk.Combobox(editor, textvariable=variables["role"], values=STYLE_ROLES,
+                     state="readonly", width=10).grid(row=1, column=0, padx=3)
+        labels = (("font", "글꼴"), ("size", "크기"), ("left", "왼쪽 여백"),
+                  ("indent", "첫 줄 들여쓰기"), ("spacing", "문단 위 여백"))
+        for column, (key, label) in enumerate(labels, 1):
+            ttk.Label(editor, text=label).grid(row=0, column=column, padx=3)
+            ttk.Entry(editor, textvariable=variables[key], width=14).grid(row=1, column=column, padx=3)
+        for column, (key, label) in enumerate((("font", "글꼴 적용"), ("size", "크기 적용"),
+                                               ("indent", "들여쓰기 적용"), ("spacing", "문단 위 여백 적용"))):
+            ttk.Checkbutton(editor, text=label, variable=selection[key]).grid(row=2, column=column + 1, sticky="w", pady=6)
+        ttk.Label(body, text="같은 문두기호에 여러 변형이 있으면 가장 많이 사용된 변형이 적용 기준입니다. 비반복 항목도 검토·수정할 수 있습니다.",
+                  style="Hint.TLabel").pack(anchor="w", pady=(5, 0))
+        warnings = hierarchy.get("warnings", [])
+        if warnings:
+            ttk.Label(body, text=f"논리 구조 확인 필요: {len(warnings)}건 · {warnings[0]}",
+                      style="Hint.TLabel").pack(anchor="w", pady=(3, 0))
         result = {"confirmed": False}
+        current = {"index": None}
+        def save_current():
+            index = current["index"]
+            if index is None: return
+            row = rows[index]
+            row.update(role=variables["role"].get(), font=variables["font"].get(),
+                       size_pt=variables["size"].get(),
+                       left_hwpunit=str(float(variables["left"].get()) * 100),
+                       first_line_hwpunit=str(float(variables["indent"].get()) * 100),
+                       prev_spacing_hwpunit=str(float(variables["spacing"].get()) * 100),
+                       apply={key: var.get() for key, var in selection.items()})
+            details.item(str(index), values=display(index))
+        def choose(event=None):
+            picked = details.selection()
+            if not picked: return
+            try:
+                save_current()
+            except ValueError:
+                messagebox.showerror(APP_NAME, "여백과 크기는 숫자로 입력해 주세요.", parent=dialog)
+                return
+            index = int(picked[0])
+            current["index"] = index
+            row = rows[index]
+            shown = display(index)
+            for key, value in zip(("role", "font", "size", "left", "indent", "spacing"),
+                                  (shown[2], shown[4], shown[5], shown[6], shown[7], shown[8])):
+                variables[key].set(value)
+            for key in STYLE_FIELDS:
+                selection[key].set(row.get("apply", {}).get(key, True))
+        details.bind("<<TreeviewSelect>>", choose)
+        if rows:
+            details.selection_set("0")
+            choose()
         buttons = ttk.Frame(body)
         buttons.pack(fill="x", pady=(10, 0))
         def close(confirmed=False):
-            result["confirmed"] = confirmed
+            if confirmed:
+                try:
+                    save_current()
+                    edited = apply_reviewed_styles(profile, rows)
+                except ValueError as exc:
+                    messagebox.showerror(APP_NAME, str(exc), parent=dialog)
+                    return
+                previous_summary = profile.get("summary", "")
+                summary_prefix = previous_summary.split("\n\n들여쓰기 →", 1)[0]
+                edited["summary"] = (summary_prefix + "\n\n" if summary_prefix else "") + hierarchy_summary(edited["style_hierarchy"])
+                profile.clear()
+                profile.update(edited)
+                result["confirmed"] = True
             dialog.destroy()
         ttk.Button(buttons, text="취소", command=close).pack(side="right")
         ttk.Button(buttons, text="확인하고 서식 저장", command=lambda: close(True)).pack(side="right", padx=8)
@@ -8169,6 +8509,8 @@ class HwpAutoDocFitGUI:
         self.profile_combo.bind("<<ComboboxSelected>>", self._프로파일_선택)
         self.copy_format_button = ttk.Button(profile_row, text="서식 복사하기…", command=self._서식_복사하기)
         self.copy_format_button.pack(side="left")
+        self.edit_format_button = ttk.Button(profile_row, text="상세 수정…", command=self._서식_수정하기)
+        self.edit_format_button.pack(side="left", padx=(6, 0))
         self.delete_format_button = ttk.Button(profile_row, text="삭제", command=self._서식_삭제하기)
         self.delete_format_button.pack(side="left", padx=(6, 0))
         self._프로파일_목록갱신()
@@ -9021,6 +9363,9 @@ class HwpAutoDocFitGUI:
         if getattr(self, "_서식분석중", False):
             messagebox.showinfo(APP_NAME, "서식 분석이 끝난 뒤 실행해 주세요.")
             return
+        if getattr(self, "_교정_창", None) is not None:
+            messagebox.showinfo(APP_NAME, "공공언어·맞춤법 검토 창을 닫은 뒤 실행해 주세요.", parent=self.root)
+            return
         if self.running:
             return
         if not self.files:
@@ -9154,6 +9499,22 @@ class HwpAutoDocFitGUI:
                     self._서식_복사완료(profile=item[1])
                 elif event == "format_copy_error":
                     self._서식_복사완료(error=item[1])
+                elif event == "proofread_scan_done":
+                    self._교정_작업중 = False
+                    if getattr(self, "_교정_창", None) is not None:
+                        self._교정_후보, self._교정_대상 = item[1], item[2]
+                        self._교정_목록갱신()
+                        self._교정_상태.set(f"교정 후보 {len(item[1])}개 표현 · 검사 실패 {len(item[3])}개 파일")
+                        if item[3]:
+                            messagebox.showwarning(APP_NAME, "검사하지 못한 파일:\n" + "\n".join(
+                                f"{Path(path).name}: {error}" for path, error in item[3]), parent=self._교정_창)
+                elif event == "proofread_apply_done":
+                    self._교정_작업중 = False
+                    if getattr(self, "_교정_창", None) is not None:
+                        self._교정_상태.set(f"저장 완료 {len(item[1])}개 파일 · 실패 {len(item[2])}개")
+                        details = "\n".join(f"{path} ({count}건 교정)" for path, count in item[1])
+                        details += "\n" + "\n".join(f"실패: {Path(path).name}: {error}" for path, error in item[2])
+                        messagebox.showinfo(APP_NAME, details.strip() or "저장된 결과가 없습니다.", parent=self._교정_창)
                 elif event == "markdown_exported":
                     성공, 실패 = item[1], item[2]
                     for button in self.file_buttons:
@@ -9230,9 +9591,20 @@ class HwpAutoDocFitGUI:
             self.로그_여러줄_표시(모인_로그)
 
         try:
-            self.root.after(20 if not gui_queue.empty() else 100, self.queue_처리)
+            self._queue_after_id = self.root.after(20 if not gui_queue.empty() else 100, self.queue_처리)
         except tk.TclError:
             pass
+
+    def _루트_파괴시_예약취소(self, event):
+        if event.widget is not self.root:
+            return
+        job = getattr(self, "_queue_after_id", None)
+        if job is not None:
+            try:
+                self.root.after_cancel(job)
+            except tk.TclError:
+                pass
+            self._queue_after_id = None
 
     def 종료(self):
         if self.closing:

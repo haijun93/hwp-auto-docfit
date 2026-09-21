@@ -12,10 +12,16 @@ MARKERS = (
     ("부연설명", r"(?:\*\*?|※|[•·∙]|\([가-하0-9]+\)[.．]?)(?=\s|$)"),
 )
 ROLE_ORDER = ("중제목", "소제목", "본문", "내용", "부연설명")
+CIRCLED_MARKER = re.compile(r"[①-⑳㉠-㉻❶-❿➊-➓](?=\s|$)")
+CIRCLED_ROLES = ("본문", "내용", "부연설명")
 
 
 def leading_marker(text):
     stripped = (text or "").lstrip()
+    circled = CIRCLED_MARKER.match(stripped)
+    if circled:
+        # 역할은 기호만으로 정할 수 없으므로 문서 내 서식과 문맥으로 판정한다.
+        return circled.group(), ""
     for role, pattern in MARKERS:
         match = re.match(pattern, stripped)
         if match:
@@ -52,9 +58,26 @@ def analyze_hierarchy(paragraphs):
     }
     indent_levels = sorted(set(r["indent_hwpunit"] for r in records))
     styles = defaultdict(list)
-    for record in records:
+    for index, record in enumerate(records):
         role = record["marker_role"]
-        if not role:
+        if CIRCLED_MARKER.fullmatch(record["marker"]):
+            candidates = []
+            for name in CIRCLED_ROLES:
+                value = role_indent[name]
+                if value is None:
+                    continue
+                font, size = role_typography[name]
+                distance = abs(record["indent_hwpunit"] - value)
+                penalty = (0 if record.get("font") == font else 150)
+                penalty += abs((record.get("size_pt") or 0) - (size or 0)) * 100
+                candidates.append((distance, distance + penalty,
+                                   CIRCLED_ROLES.index(name), name))
+            if candidates:
+                role = min(candidates)[3]
+            else:
+                previous = records[index - 1]["role"] if index else ""
+                role = "본문" if previous == "소제목" else "내용" if previous in ("본문", "내용") else "부연설명" if previous == "부연설명" else "미분류"
+        elif not role:
             # Unmarked paragraphs use indentation before typography. A lone
             # large first line is a title, not an invented list item.
             nearest = []
@@ -77,6 +100,7 @@ def analyze_hierarchy(paragraphs):
         key = (role, record["marker"] or "(없음)")
         styles[key].append(record)
     summary = []
+    variants = []
     for (role, marker), items in sorted(styles.items(), key=lambda kv:
                                        (ROLE_ORDER.index(kv[0][0]) if kv[0][0] in ROLE_ORDER else 9,
                                         min(records.index(item) for item in kv[1]))):
@@ -91,11 +115,24 @@ def analyze_hierarchy(paragraphs):
                         "left_hwpunit": primary[3], "first_line_hwpunit": primary[4],
                         "prev_spacing_values": sorted(spaces),
                         "prev_spacing_typical": _most_common(spaces)})
+        signatures = Counter((item.get("font"), item.get("size_pt"),
+                              item.get("left", 0), item.get("indent", 0),
+                              item.get("prev_spacing")) for item in items)
+        for (font, size, left, indent, prev), count in signatures.most_common():
+            variants.append({"role": role, "marker": marker, "count": count,
+                             "kind": "반복" if count > 1 else "비반복",
+                             "font": font, "size_pt": size,
+                             "left_hwpunit": left, "first_line_hwpunit": indent,
+                             "prev_spacing_hwpunit": prev})
     warnings = []
     for index, record in enumerate(records):
         role = record["role"]
+        if CIRCLED_MARKER.fullmatch(record["marker"]) and all(
+                role_indent[name] is None for name in CIRCLED_ROLES):
+            warnings.append(f"{index + 1}번째 원문자의 역할은 비교할 서식이 없어 확인이 필요합니다.")
         later = [item["role"] for item in records[index + 1:]]
         if role == "소제목":
+            # 소제목 바로 뒤의 부연설명은 0개 이상 허용하되 본문은 필수다.
             following = next((name for name in later if name != "부연설명"), None)
             if following != "본문":
                 warnings.append(f"{index + 1}번째 소제목 아래에 본문이 없습니다.")
@@ -106,17 +143,21 @@ def analyze_hierarchy(paragraphs):
             warnings.append(f"{index + 1}번째 부연설명에 짝이 되는 앞 항목이 없습니다.")
     return {"version": 1, "priority": ["indentation", "font", "size", "marker"],
             "auxiliary": "prev_spacing", "indent_levels_hwpunit": indent_levels,
+            "ambiguous_marker_roles": {"원문자": list(CIRCLED_ROLES)},
             "styles": summary,
+            "variants": variants,
             "role_sequence": [r["role"] for r in records],
             "warnings": warnings,
             "page_policy": {"subheading_with_bodies": True,
+                            "optional_explanations_after_subheading": True,
                             "body_with_contents": True,
                             "explanation_with_parent": True}}
 
 
 def hierarchy_summary(analysis):
     lines = ["들여쓰기 → 글꼴 → 크기 → 문두기호 순으로 판정; 문단 위 여백은 보조값",
-             "논리적 구조: 중제목 > 소제목 > 본문 > 내용; 부연설명은 직전 항목과 같은 쪽"]
+             "논리적 구조: 중제목 > 소제목 > 부연설명(0개 이상) > 본문(1개 이상) > 내용; 부연설명은 짝이 되는 항목과 같은 쪽",
+             "원문자(① 등)는 서식에 따라 본문 ㅇ, 내용 -, 부연설명 기호를 대신할 수 있음"]
     for item in analysis["styles"]:
         values = ", ".join(f"{n / 100:g}pt" for n in item["prev_spacing_values"]) or "없음"
         lines.append(f"{item['role']} [{item['marker']}] {item['count']}개 | "
