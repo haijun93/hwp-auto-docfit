@@ -9,11 +9,14 @@ MARKERS = (
     ("소제목", r"(?:[□ㅁ■]|\d{1,2}[.．]?)(?=\s|$)"),
     ("본문", r"(?:[ㅇ○◦☞]|[가-하]\))(?=\s|$)"),
     ("내용", r"(?:-|\d+\))(?=\s|$)"),
-    ("부연설명", r"(?:\*\*?|※|[•·∙]|\([가-하0-9]+\)[.．]?)(?=\s|$)"),
+    ("부연설명", r"(?:\*\*?|※|[•·∙‧ㆍ]|\([가-하0-9]+\)[.．]?)(?=\s|$)"),
 )
 ROLE_ORDER = ("중제목", "소제목", "본문", "내용", "부연설명")
 CIRCLED_MARKER = re.compile(r"[①-⑳㉠-㉻❶-❿➊-➓](?=\s|$)")
 CIRCLED_ROLES = ("본문", "내용", "부연설명")
+
+# 점(dot) 모양 문두기호는 시각적으로 구분되지 않으므로 모두 대표 기호 •로 통일한다.
+DOT_BULLET_ALIASES = {"·": "•", "∙": "•", "‧": "•", "ㆍ": "•"}
 
 
 def leading_marker(text):
@@ -25,7 +28,8 @@ def leading_marker(text):
     for role, pattern in MARKERS:
         match = re.match(pattern, stripped)
         if match:
-            return match.group(), role
+            marker = match.group()
+            return DOT_BULLET_ALIASES.get(marker, marker), role
     return "", ""
 
 

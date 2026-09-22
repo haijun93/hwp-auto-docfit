@@ -85,7 +85,7 @@ def apply_reviewed_styles(profile, rows):
             "PrevSpacing": item["prev_spacing_hwpunit"],
         }
         fmt["논리역할_규칙"].setdefault(item["role"], old)
-        if marker in ("□", "ㅇ", "-", "※", "·", "•", "∙"):
+        if marker in ("□", "ㅇ", "-", "※", "•"):
             updated.setdefault("options", {}).setdefault("symbol_fonts", {})[marker] = {
                 "font": item["font"], "size": f"{item['size_pt']:g}"}
     fmt["기호_규칙"] = list(rules.values())

@@ -287,9 +287,8 @@ _콘솔_출력_가능 = (sys.stdout is not None)
         ("ㅇ", 1, "한컴돋움", 15, True, False),
         ("-", 3, "휴먼명조", 14, False, False),
         ("※", 5, "한컴돋움", 13, False, False),
-        ("·", 5, "한컴돋음", 13, False, False),
+        # 점(dot) 모양 문두기호(·/∙/‧/ㆍ)는 모두 대표 기호 •로 통일해 취급한다.
         ("•", 5, "한컴돋음", 13, False, False),
-        ("∙", 5, "한컴돋음", 13, False, False),
     ],
 }
 
@@ -323,7 +322,24 @@ def 표준서식_문단위간격_찾기(text):
         return 표준서식_문단위간격_note_pt
     return None
 
-문장기호_목록 = ["□", "ㅇ", "-", "※", "·", "•", "∙"]
+문장기호_목록 = ["□", "ㅇ", "-", "※", "•"]
+
+# 점(dot) 모양 문두기호는 모두 대표 기호 •로 통일한다. 예전 버전에서 저장된
+# 프로파일/설정에 ·나 ∙로 남아 있는 규칙은 불러올 때 •로 합친다.
+문두기호_점모양_별칭 = {"·": "•", "∙": "•", "‧": "•", "ㆍ": "•"}
+
+
+def _기호_규칙_점모양_통합(규칙들):
+    """규칙 목록에서 ·/∙/‧/ㆍ 항목을 대표 기호 •로 합친다."""
+    점모양_규칙 = [rule for rule in 규칙들 if rule[0] in 문두기호_점모양_별칭]
+    if not 점모양_규칙:
+        return 규칙들
+    나머지 = [rule for rule in 규칙들 if rule[0] not in 문두기호_점모양_별칭]
+    기존_대표 = next((rule for rule in 규칙들 if rule[0] == "•"), None)
+    대표규칙 = 기존_대표 or 점모양_규칙[0]
+    if not any(rule[0] == "•" for rule in 나머지):
+        나머지.append(("•", *대표규칙[1:]))
+    return 나머지
 
 
 def 기호글꼴_적용(설정딕셔너리=None):
@@ -337,8 +353,9 @@ def 기호글꼴_적용(설정딕셔너리=None):
     규칙들 = 표준서식_설정.setdefault("기호_규칙", [])
     기존기호 = {rule[0] for rule in 규칙들}
     for rule in _표준서식_설정_기본값["기호_규칙"]:
-        if rule[0] in ("·", "•", "∙") and rule[0] not in 기존기호:
+        if rule[0] == "•" and rule[0] not in 기존기호:
             규칙들.append(rule)
+    표준서식_설정["기호_규칙"] = _기호_규칙_점모양_통합(표준서식_설정["기호_규칙"])
     글꼴맵 = (설정딕셔너리 or 기본_설정).get("symbol_fonts") or {}
     if not 글꼴맵:
         return
@@ -653,9 +670,7 @@ def 번들_리소스_폴더():
         "ㅇ": {"font": "한컴돋움", "size": "15"},
         "-": {"font": "휴먼명조", "size": "14"},
         "※": {"font": "한컴돋움", "size": "13"},
-        "·": {"font": "한컴돋음", "size": "13"},
         "•": {"font": "한컴돋음", "size": "13"},
-        "∙": {"font": "한컴돋음", "size": "13"},
     },
     "hwp_font_folder": "",
     "cat_image_path": "",
@@ -694,6 +709,8 @@ def 서식프로파일_목록():
                 for rule in fmt["기호_규칙"]:
                     if len(rule) != 6 or not 0 < float(rule[3]) <= 1000:
                         raise ValueError("잘못된 글자 크기")
+                # 예전 버전에서 저장된 프로필의 ·/∙ 문두기호 규칙을 •로 합친다.
+                fmt["기호_규칙"] = _기호_규칙_점모양_통합(fmt["기호_규칙"])
                 result[path.stem] = data
             except Exception as exc:
                 if _콘솔_출력_가능:
@@ -761,7 +778,8 @@ def hwpx_서식_분석(path):
         paragraphs = {k: Counter() for k in groups}
         marker_shapes = defaultdict(Counter)
         hierarchy_paragraphs = []
-        aliases = {"ㅁ": "□", "○": "ㅇ", "☞": "ㅇ", "*": "※", "→": "※"}
+        aliases = {"ㅁ": "□", "○": "ㅇ", "☞": "ㅇ", "*": "※", "→": "※",
+                   "·": "•", "∙": "•", "‧": "•", "ㆍ": "•"}
         count = 0
         margins = False
         sections = sorted((n for n in z.namelist() if re.fullmatch(r"Contents/section\d+\.xml", n)),
@@ -2769,6 +2787,11 @@ def 들여쓰기_공백_맞추기(목표_공백수):
     # 있었다(공문서_기호·문단위간격_찾기에서도 이미 같은 기호로 취급 중).
     # 오타로 들어간 경우에도 서식이 깨지지 않도록 별칭으로 남겨 둔다.
     "○": "ㅇ",
+    # 점(dot) 모양 문두기호(·/∙/‧/ㆍ)는 모두 대표 기호 •로 통일한다.
+    "·": "•",
+    "∙": "•",
+    "‧": "•",
+    "ㆍ": "•",
 }
 # 주의: '-'는 규정상 키보드 마이너스(U+002D, HYPHEN-MINUS)만 사용하도록
 # 되어 있다. en dash/em dash 등 다른 대시 문자는 별칭으로 묶지 않는다 —
@@ -4017,7 +4040,7 @@ def 본문_기존자간조정():
 
 공문서_기호 = {
     "※", "ㅁ", "□", "■", "○", "●", "◎", "◇", "◆", "△", "▲", "▽", "▼",
-    "▷", "▶", "◁", "◀", "▪", "▫", "ㆍ", "·", "•", "∙", "‣", "⁃", "ㅇ",
+    "▷", "▶", "◁", "◀", "▪", "▫", "ㆍ", "·", "•", "∙", "‧", "‣", "⁃", "ㅇ",
     "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩",
     # DINGBAT NEGATIVE CIRCLED DIGIT/SANS-SERIF DIGIT (❶❷❸.../➊➋➌...).
     # 유니코드 카테고리가 "No"(숫자류)라서 문장부호_시작인가()의 P/S 카테고리
@@ -8574,7 +8597,7 @@ class HwpAutoDocFitGUI:
         # 2-4. 기호별 서식
         기호_행 = ttk.Frame(std_detail)
         기호_행.pack(anchor="w", fill="x", pady=(4, 0))
-        기호_체크 = ttk.Checkbutton(기호_행, text="기호별 글꼴·크기·시작 위치 맞추기 (□ / ㅇ / - / ※ / · / • / ∙)", variable=self.std_bool_vars["std_symbols"])
+        기호_체크 = ttk.Checkbutton(기호_행, text="기호별 글꼴·크기·시작 위치 맞추기 (□ / ㅇ / - / ※ / •)", variable=self.std_bool_vars["std_symbols"])
         기호_체크.pack(side="left")
         self.std_detail_checks.append(기호_체크)
 
