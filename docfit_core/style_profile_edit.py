@@ -3,6 +3,8 @@
 from copy import deepcopy
 from collections import Counter
 
+from .style_hierarchy import canonical_marker
+
 
 FIELDS = ("font", "size", "indent", "spacing")
 ROLES = ("제목", "중제목", "소제목", "본문", "내용", "부연설명", "미분류")
@@ -34,7 +36,7 @@ def apply_reviewed_styles(profile, rows):
         if not 0 < size <= 1000 or any(abs(value) > 1_000_000 for value in (left, indent, spacing)) or spacing < 0:
             raise ValueError(f"{index}번째 스타일의 크기·여백 값이 범위를 벗어났습니다.")
         selected = {field: bool(row.get("apply", {}).get(field, True)) for field in FIELDS}
-        item.update(role=role, font=font, size_pt=size, left_hwpunit=left,
+        item.update(role=role, marker=canonical_marker(item["marker"]), font=font, size_pt=size, left_hwpunit=left,
                     first_line_hwpunit=indent, prev_spacing_hwpunit=spacing,
                     apply=selected)
         cleaned.append(item)
@@ -70,7 +72,11 @@ def apply_reviewed_styles(profile, rows):
         marker = item["marker"]
         if marker != "(없음)" and item["role"] != "미분류":
             chosen.setdefault(marker, item)
-    rules = {rule[0]: list(rule) for rule in fmt["기호_규칙"]}
+    rules = {canonical_marker(rule[0]): [canonical_marker(rule[0]), *rule[1:]]
+             for rule in fmt["기호_규칙"] if canonical_marker(rule[0]) != "•"}
+    for rule in fmt["기호_규칙"]:
+        if canonical_marker(rule[0]) == "•":
+            rules.setdefault("•", ["•", *rule[1:]])
     paragraph_shapes = fmt.setdefault("복사_문단모양", {})
     for marker, item in chosen.items():
         old = rules.get(marker, [marker, 0, item["font"], item["size_pt"], False, False])
@@ -85,7 +91,7 @@ def apply_reviewed_styles(profile, rows):
             "PrevSpacing": item["prev_spacing_hwpunit"],
         }
         fmt["논리역할_규칙"].setdefault(item["role"], old)
-        if marker in ("□", "ㅇ", "-", "※", "·", "•", "∙"):
+        if marker in ("□", "ㅇ", "-", "※", "•"):
             updated.setdefault("options", {}).setdefault("symbol_fonts", {})[marker] = {
                 "font": item["font"], "size": f"{item['size_pt']:g}"}
     fmt["기호_규칙"] = list(rules.values())

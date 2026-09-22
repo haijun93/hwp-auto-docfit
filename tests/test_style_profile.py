@@ -43,6 +43,8 @@ class StyleProfileTest(unittest.TestCase):
             run_name="table_only_style_profile_test",
         )
         analyze = namespace["hwpx_서식_분석"]
+        self.assertEqual(namespace["표준서식_설정"]["여백_mm"]["left"], 20)
+        self.assertEqual(namespace["표준서식_설정"]["여백_mm"]["right"], 20)
         with tempfile.TemporaryDirectory() as folder:
             source = Path(folder) / "table-only.hwpx"
             with ZipFile(source, "w", ZIP_DEFLATED) as archive:
@@ -69,6 +71,8 @@ class StyleProfileTest(unittest.TestCase):
             profile = analyze(source)
 
         self.assertEqual(profile["profile_version"], 4)
+        self.assertAlmostEqual(profile["format"]["여백_mm"]["left"], 18, places=2)
+        self.assertAlmostEqual(profile["format"]["여백_mm"]["right"], 18, places=2)
         self.assertEqual(profile["format"]["기본_장평"], 95)
         self.assertEqual(profile["format"]["기본_줄간격_퍼센트"], 170)
         self.assertEqual(profile["format"]["제목_문단"]["font"], "테스트명조")

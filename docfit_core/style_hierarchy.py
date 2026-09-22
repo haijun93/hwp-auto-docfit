@@ -4,14 +4,39 @@ from collections import Counter, defaultdict
 import re
 
 
+# 문두에서 쓰인 점 계열 기호는 하나의 서식 항목으로 취급한다.
+DOT_MARKERS = frozenset("•·‧∙⋅ㆍ●")
+
+
+def canonical_marker(marker):
+    return "•" if marker in DOT_MARKERS else marker
+
+
+def normalize_leading_dot(text):
+    """문장 안의 가운데점은 보존하고 문두의 점 계열 기호만 바꾼다."""
+    match = re.match(r"(\s*)([•·‧∙⋅ㆍ●])(?=\s|$)", text or "")
+    return text[:match.start(2)] + "•" + text[match.end(2):] if match else text
+
+
 MARKERS = (
     ("중제목", r"(?:[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+|[가-하])(?=\s|[.．])"),
     ("소제목", r"(?:[□ㅁ■]|\d{1,2}[.．]?)(?=\s|$)"),
     ("본문", r"(?:[ㅇ○◦☞]|[가-하]\))(?=\s|$)"),
     ("내용", r"(?:-|\d+\))(?=\s|$)"),
-    ("부연설명", r"(?:\*\*?|※|[•·∙]|\([가-하0-9]+\)[.．]?)(?=\s|$)"),
+    ("부연설명", r"(?:\*\*?|※|[•·‧∙⋅ㆍ●]|\([가-하0-9]+\)[.．]?)(?=\s|$)"),
 )
 ROLE_ORDER = ("중제목", "소제목", "본문", "내용", "부연설명")
+ROLE_LABELS = {"제목": "1단계", "중제목": "2단계", "소제목": "3단계",
+               "본문": "4단계", "내용": "5단계", "부연설명": "부연설명"}
+LABEL_ROLES = {label: role for role, label in ROLE_LABELS.items()}
+
+
+def display_role(role):
+    return ROLE_LABELS.get(role, role)
+
+
+def stored_role(label):
+    return LABEL_ROLES.get(label, label)
 CIRCLED_MARKER = re.compile(r"[①-⑳㉠-㉻❶-❿➊-➓](?=\s|$)")
 CIRCLED_ROLES = ("본문", "내용", "부연설명")
 
@@ -25,7 +50,7 @@ def leading_marker(text):
     for role, pattern in MARKERS:
         match = re.match(pattern, stripped)
         if match:
-            return match.group(), role
+            return canonical_marker(match.group()), role
     return "", ""
 
 
@@ -135,9 +160,9 @@ def analyze_hierarchy(paragraphs):
             # 소제목 바로 뒤의 부연설명은 0개 이상 허용하되 본문은 필수다.
             following = next((name for name in later if name != "부연설명"), None)
             if following != "본문":
-                warnings.append(f"{index + 1}번째 소제목 아래에 본문이 없습니다.")
+                warnings.append(f"{index + 1}번째 3단계 아래에 4단계가 없습니다.")
         if role == "내용" and not any(item["role"] == "본문" for item in records[:index]):
-            warnings.append(f"{index + 1}번째 내용에 앞선 본문이 없습니다.")
+            warnings.append(f"{index + 1}번째 5단계에 앞선 4단계가 없습니다.")
         if role == "부연설명" and (index == 0 or records[index - 1]["role"] not in
                                  ("소제목", "본문", "내용", "부연설명")):
             warnings.append(f"{index + 1}번째 부연설명에 짝이 되는 앞 항목이 없습니다.")
@@ -156,11 +181,11 @@ def analyze_hierarchy(paragraphs):
 
 def hierarchy_summary(analysis):
     lines = ["들여쓰기 → 글꼴 → 크기 → 문두기호 순으로 판정; 문단 위 여백은 보조값",
-             "논리적 구조: 중제목 > 소제목 > 부연설명(0개 이상) > 본문(1개 이상) > 내용; 부연설명은 짝이 되는 항목과 같은 쪽",
-             "원문자(① 등)는 서식에 따라 본문 ㅇ, 내용 -, 부연설명 기호를 대신할 수 있음"]
+             "논리적 구조: 1단계 > 2단계 > 3단계 > 4단계 > 5단계; 부연설명은 관련 항목과 같은 쪽",
+             "원문자(① 등)는 서식에 따라 4단계 ㅇ, 5단계 -, 부연설명 기호를 대신할 수 있음"]
     for item in analysis["styles"]:
         values = ", ".join(f"{n / 100:g}pt" for n in item["prev_spacing_values"]) or "없음"
-        lines.append(f"{item['role']} [{item['marker']}] {item['count']}개 | "
+        lines.append(f"{display_role(item['role'])} [{item['marker']}] {item['count']}개 | "
                      f"들여쓰기 {item['indent_hwpunit'] / 100:g}pt | "
                      f"{item['font'] or '미상'} {item['size_pt'] or 0:g}pt | "
                      f"문단 위 여백 {values}")
