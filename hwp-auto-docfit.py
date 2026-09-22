@@ -250,6 +250,12 @@ _콘솔_출력_가능 = (sys.stdout is not None)
 표준서식_문단위간격_box_pt = 15
 표준서식_문단위간격_circle_pt = 10
 표준서식_문단위간격_note_pt = 3
+# 더 깊은 위계(예: 참고)에서 더 얕은 위계(예: 동그라미)로 돌아올 때, 그 얕은
+# 위계 자신의 기본 간격에 곱해 적용하는 확대 비율(%). 새로운 항목의 시작임을
+# 시각적으로 드러내기 위함이며, 100이면 기존과 동일하게 항상 고정값만 쓴다.
+표준서식_문단위간격_복귀배율 = 150
+# 표준서식_전체_적용() 시작 시 초기화되는, 문단 순회 중 직전에 적용된 위계.
+_표준서식_직전_문단위간격_위계 = None
 
 표_헤더서식_사용 = True
 표_헤더서식_헤더_폰트 = "한컴돋움"
@@ -262,8 +268,10 @@ _콘솔_출력_가능 = (sys.stdout is not None)
 
 표준서식_설정 = {
     "여백_mm": {
-        "left": 18,
-        "right": 18,
+        # 중앙부처 관행값인 좌우 20mm를 기본값으로 사용한다. 서식 복사로
+        # 만든 프로필은 원본 문서에서 추출한 값을 그대로 쓰므로 영향 없다.
+        "left": 20,
+        "right": 20,
         "top": 12.7,
         "bottom": 12.7,
         "header": 12.7,
@@ -305,22 +313,57 @@ _표준서식_문단위간격_기본값 = {
     "box": 표준서식_문단위간격_box_pt,
     "circle": 표준서식_문단위간격_circle_pt,
     "note": 표준서식_문단위간격_note_pt,
+    "return_boost": 표준서식_문단위간격_복귀배율,
 }
 
+# 위계 깊이 순서(얕음→깊음). '-'는 자체 강제 간격은 없지만, 더 얕은 위계로
+# 되돌아오는 상황을 올바로 인식하기 위해 깊이 판정에는 포함한다.
+표준서식_문단위간격_위계순서 = ("box", "circle", "dash", "note")
+
+
+def _표준서식_문단위간격_위계_판정(첫글자):
+    if 첫글자 == "□":
+        return "box"
+    if 첫글자 in ("ㅇ", "○", "☞"):
+        return "circle"
+    if 첫글자 == "-":
+        return "dash"
+    if 첫글자 in ("*", "※", "→"):
+        return "note"
+    return None
+
+
 def 표준서식_문단위간격_찾기(text):
+    """문단 위 간격(pt)을 문단의 문두기호 위계로 판정한다.
+
+    같은 위계가 반복될 때는 기본값을 그대로 쓰지만, 참고(*, ※) 등 더 깊은
+    위계를 거쳐 더 얕은 위계로 되돌아올 때는 새 항목의 시작임을 시각적으로
+    드러내기 위해 기본값에 '복귀배율'을 곱해 확대한다. (예: □ 소제목 아래에
+    ㅇ 본문이 몇 차례 이어지다 참고(*)가 붙은 뒤, 다음 ㅇ가 새로 시작되면
+    ㅇ의 평소 간격보다 넓게 띄운다.)
+    """
+    global _표준서식_직전_문단위간격_위계
     if not text:
         return None
     벗긴텍스트 = text.lstrip()
     if not 벗긴텍스트:
         return None
-    첫글자 = 벗긴텍스트[0]
-    if 첫글자 == "□":
-        return 표준서식_문단위간격_box_pt
-    if 첫글자 in ("ㅇ", "○", "☞"):
-        return 표준서식_문단위간격_circle_pt
-    if 첫글자 in ("*", "※", "→"):
-        return 표준서식_문단위간격_note_pt
-    return None
+    위계 = _표준서식_문단위간격_위계_판정(벗긴텍스트[0])
+    if 위계 is None:
+        return None
+    이전위계 = _표준서식_직전_문단위간격_위계
+    _표준서식_직전_문단위간격_위계 = 위계
+    기본값 = {
+        "box": 표준서식_문단위간격_box_pt,
+        "circle": 표준서식_문단위간격_circle_pt,
+        "note": 표준서식_문단위간격_note_pt,
+    }.get(위계)
+    if 기본값 is None:
+        return None  # dash: 간격은 강제하지 않되, 위계 추적은 갱신한다.
+    if (이전위계 is not None
+            and 표준서식_문단위간격_위계순서.index(이전위계) > 표준서식_문단위간격_위계순서.index(위계)):
+        return round(기본값 * 표준서식_문단위간격_복귀배율 / 100)
+    return 기본값
 
 문장기호_목록 = ["□", "ㅇ", "-", "※", "•"]
 
@@ -576,6 +619,7 @@ def 서식_기본값_전역_복원():
     global 표_헤더서식_헤더_폰트, 표_헤더서식_헤더_크기, 표_헤더서식_헤더_굵게
     global 표_헤더서식_본문_폰트, 표_헤더서식_본문_크기, 표_헤더서식_본문_굵게
     global 표준서식_문단위간격_box_pt, 표준서식_문단위간격_circle_pt, 표준서식_문단위간격_note_pt
+    global 표준서식_문단위간격_복귀배율
     global 활성_정밀표_프로필
 
     표준서식_설정 = copy.deepcopy(_표준서식_설정_기본값)
@@ -588,6 +632,7 @@ def 서식_기본값_전역_복원():
     표준서식_문단위간격_box_pt = _표준서식_문단위간격_기본값["box"]
     표준서식_문단위간격_circle_pt = _표준서식_문단위간격_기본값["circle"]
     표준서식_문단위간격_note_pt = _표준서식_문단위간격_기본값["note"]
+    표준서식_문단위간격_복귀배율 = _표준서식_문단위간격_기본값["return_boost"]
     활성_정밀표_프로필 = None
 
 검수_사용 = False
@@ -663,6 +708,7 @@ def 번들_리소스_폴더():
     "std_parspace_box": "15",
     "std_parspace_circle": "10",
     "std_parspace_note": "3",
+    "std_parspace_return_boost": "150",
     "std_table_header": True,
     "active_format_profile": "",
     "symbol_fonts": {
@@ -2983,9 +3029,11 @@ def 표준서식_문단_처리(문단_순번, 헤더_역할=None, 상속_기호_
             hwp_run("Cancel")
 
 def 표준서식_전체_적용():
+    global _표준서식_직전_문단위간격_위계
     if 중단_요청됨():
         return False
     로그("표준서식적용 시작")
+    _표준서식_직전_문단위간격_위계 = None
     if 표준서식_여백_사용:
         if 쪽범위_사용중():
             로그("쪽 범위 지정: 편집 여백은 구역 전체에 적용되는 설정이라 이번 작업에서는 건드리지 않습니다.")
@@ -4770,6 +4818,51 @@ def 단어사이_연속공백_정리_문단_처리():
     return 수정수
 
 
+# 연도 표기 앞의 작은따옴표류(', ‘, ʼ, ′, `, ´)는 모두 대표 기호 ’로 통일한다.
+# 예: '21년 / ‘21.4월 / ′21.4.4일 → ’21년 / ’21.4월 / ’21.4.4일
+_연도_작은따옴표_패턴 = re.compile(r"['‘ʼ′`´](?=[0-9]{2}(?:년|\.[0-9]{1,2}))")
+
+
+def 연도_작은따옴표_보정_대상(text):
+    """연도 표기 앞 작은따옴표류를 대표 기호 ’로 통일할 구간을 찾는다."""
+    if not text:
+        return []
+    return [m.span() for m in _연도_작은따옴표_패턴.finditer(text)]
+
+
+def 연도_작은따옴표_정리_문단_처리():
+    """현재 문단에서 연도 표기 앞 작은따옴표류를 대표 기호 ’로 통일한다."""
+    if 현재_한칸표인가():
+        return 0
+    text = 현재문단_텍스트()
+    수정구간 = 연도_작은따옴표_보정_대상(text)
+    if not 수정구간:
+        return 0
+
+    문단_시작위치 = hwp.GetPos()
+    수정수 = 0
+    try:
+        # 오른쪽부터 처리하여 앞쪽 문자 위치가 변하지 않게 한다.
+        for 시작, 끝 in reversed(수정구간):
+            try:
+                문단_범위_선택(문단_시작위치, 시작, 끝)
+                hwp_run("Delete")
+                텍스트_삽입("’")
+                수정수 += 1
+            except Exception as e:
+                로그(f"연도 작은따옴표 정리 실패(무시): {e}")
+                try:
+                    hwp_run("Cancel")
+                except Exception:
+                    pass
+    finally:
+        try:
+            hwp.SetPos(*문단_시작위치)
+        except Exception:
+            pass
+    return 수정수
+
+
 def 문두_미음_기호_위치(text):
     """문단 첫 비공백 문자가 항목기호 ㅁ일 때만 위치를 반환한다."""
     stripped = (text or "").lstrip()
@@ -4816,6 +4909,7 @@ def 문장내_공백_정규화_전체_적용():
     쉼표수정수 = 0
     연속공백수정수 = 0
     기호수정수 = 0
+    연도표기수정수 = 0
     방문문단수 = 0
     정체횟수 = 0
 
@@ -4830,6 +4924,7 @@ def 문장내_공백_정규화_전체_적용():
         괄호삭제수 += 괄호_안쪽_공백_정리_문단_처리()
         쉼표수정수 += 쉼표_공백_정리_문단_처리()
         연속공백수정수 += 단어사이_연속공백_정리_문단_처리()
+        연도표기수정수 += 연도_작은따옴표_정리_문단_처리()
 
         if not 범위_다음_문단으로_진행():
             break
@@ -4844,7 +4939,8 @@ def 문장내_공백_정규화_전체_적용():
     로그(
         "문장 내 공백 정규화 완료 "
         f"(방문 문단 {방문문단수}개 / 괄호 AllReplace {allreplace_실행수}회 / "
-        f"문두 ㅁ→□ {기호수정수}건 / 괄호 후방삭제 {괄호삭제수}자 / 쉼표 공백 {쉼표수정수}건 / 연속 공백 {연속공백수정수}건)"
+        f"문두 ㅁ→□ {기호수정수}건 / 괄호 후방삭제 {괄호삭제수}자 / 쉼표 공백 {쉼표수정수}건 / "
+        f"연속 공백 {연속공백수정수}건 / 연도 표기 {연도표기수정수}건)"
     )
     return True
 
@@ -5879,6 +5975,7 @@ def 작업_실행(
     global 부연설명_들여쓰기_사용
     global 표준서식_기호_굵게, 표준서식_문단위간격_사용, 표준서식_문단위간격_box_pt
     global 표준서식_문단위간격_circle_pt, 표준서식_문단위간격_note_pt, 표_헤더서식_사용
+    global 표준서식_문단위간격_복귀배율
 
     if 표준서식_세부 is None:
         표준서식_세부 = {}
@@ -5955,6 +6052,7 @@ def 작업_실행(
         표준서식_문단위간격_box_pt = 표준서식_문단위간격_pt.get("std_parspace_box", 표준서식_문단위간격_box_pt)
         표준서식_문단위간격_circle_pt = 표준서식_문단위간격_pt.get("std_parspace_circle", 표준서식_문단위간격_circle_pt)
         표준서식_문단위간격_note_pt = 표준서식_문단위간격_pt.get("std_parspace_note", 표준서식_문단위간격_note_pt)
+        표준서식_문단위간격_복귀배율 = 표준서식_문단위간격_pt.get("std_parspace_return_boost", 표준서식_문단위간격_복귀배율)
         표_헤더서식_사용 = 표준서식_세부.get("std_table_header", 표_헤더서식_사용)
 
         문장부호_통계 = {"대상": 0, "성공": 0, "실패": 0}
@@ -7025,7 +7123,8 @@ class HwpAutoDocFitGUI:
         ]
         self.std_bool_vars = {키: tk.BooleanVar(value=bool(저장된_설정[키])) for 키 in self.std_bool_keys}
 
-        self.std_parspace_str_keys = ["std_parspace_box", "std_parspace_circle", "std_parspace_note"]
+        self.std_parspace_str_keys = ["std_parspace_box", "std_parspace_circle", "std_parspace_note",
+                                       "std_parspace_return_boost"]
         self.std_parspace_vars = {키: tk.StringVar(value=str(저장된_설정[키])) for 키 in self.std_parspace_str_keys}
 
         for 변수 in ([self.prevent_word_split_var, self.punctuation_var, self.punctuation_threshold_var, self.keep_punctuation_set_var,
@@ -8679,6 +8778,18 @@ class HwpAutoDocFitGUI:
             ttk.Label(문단위간격_행, text="pt").pack(side="left", padx=(2, 0))
             self.std_parspace_spins.append(스핀)
 
+        문단위간격_복귀_행 = ttk.Frame(std_detail)
+        문단위간격_복귀_행.pack(anchor="w", fill="x", padx=(18, 0), pady=(2, 0))
+        ttk.Label(문단위간격_복귀_행, text="참고 등 하위 항목 뒤 상위 항목으로 복귀 시 확대:").pack(side="left")
+        복귀_스핀 = ttk.Spinbox(문단위간격_복귀_행, from_=100, to=400, increment=10, width=4,
+                             textvariable=self.std_parspace_vars["std_parspace_return_boost"], justify="center")
+        복귀_스핀.pack(side="left", padx=(4, 0))
+        ttk.Label(문단위간격_복귀_행, text="%").pack(side="left", padx=(2, 0))
+        self.std_parspace_spins.append(복귀_스핀)
+        ttk.Label(std_detail, text="예: 참고(*, ※) 다음에 상위 기호(□/ㅇ)가 다시 나오면, 그 기호의 기본 간격에\n"
+                  "위 비율을 곱해 적용합니다. 100%면 항상 기본 간격만 사용합니다(이전 동작과 동일).",
+                  style="Hint.TLabel", wraplength=650).pack(anchor="w", padx=(18, 0), pady=(2, 0))
+
         # 2-6. 표 헤더 서식
         표_헤더서식_체크 = ttk.Checkbutton(
             std_detail,
@@ -9455,7 +9566,8 @@ class HwpAutoDocFitGUI:
             self.linespacing_min_var.set(str(줄간격최소값))
             self.linespacing_max_var.set(str(줄간격최대값))
 
-        문단위간격_기본값 = {"std_parspace_box": 15, "std_parspace_circle": 10, "std_parspace_note": 3}
+        문단위간격_기본값 = {"std_parspace_box": 15, "std_parspace_circle": 10, "std_parspace_note": 3,
+                     "std_parspace_return_boost": 150}
         문단위간격_값 = {}
         for 키, 기본값 in 문단위간격_기본값.items():
             try:
