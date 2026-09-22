@@ -1,9 +1,17 @@
 import unittest
 
-from docfit_core.style_hierarchy import analyze_hierarchy, leading_marker
+from docfit_core.style_hierarchy import analyze_hierarchy, leading_marker, normalize_leading_dot
 
 
 class StyleHierarchyTest(unittest.TestCase):
+    def test_dot_markers_share_bullet_identity(self):
+        for marker in ("•", "·", "‧", "∙", "⋅", "ㆍ", "●"):
+            with self.subTest(marker=marker):
+                self.assertEqual(leading_marker(f"{marker} 설명"), ("•", "부연설명"))
+                self.assertEqual(normalize_leading_dot(f"  {marker} 설명"), "  • 설명")
+        self.assertEqual(normalize_leading_dot("서울·경기"), "서울·경기")
+        self.assertEqual(normalize_leading_dot("·붙은 문장"), "·붙은 문장")
+
     def test_two_marker_systems(self):
         cases = {"Ⅰ 총괄": "중제목", "□ 사업": "소제목", "ㅇ 목적": "본문",
                  "- 실행": "내용", "** 참고": "부연설명", "가. 총괄": "중제목",
@@ -41,7 +49,7 @@ class StyleHierarchyTest(unittest.TestCase):
                     "font": "명조", "size_pt": 12}
                    for value in ("□ 소제목", "* 참고", "□ 다음 소제목", "ㅇ 본문")]
         result = analyze_hierarchy(records)
-        self.assertIn("1번째 소제목 아래에 본문이 없습니다.", result["warnings"])
+        self.assertIn("1번째 3단계 아래에 4단계가 없습니다.", result["warnings"])
 
     def test_circled_marker_can_replace_three_roles(self):
         for anchor, expected, indent, size in (

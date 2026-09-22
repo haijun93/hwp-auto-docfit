@@ -6,9 +6,13 @@ import io
 from pathlib import Path
 import runpy
 import tempfile
+import time
 import unittest
 import urllib.error
 from unittest.mock import Mock, patch
+from zipfile import ZIP_DEFLATED, ZipFile
+
+from tests.test_style_profile import HEADER, SECTION
 
 
 class StartupTest(unittest.TestCase):
@@ -160,6 +164,43 @@ class StartupTest(unittest.TestCase):
                     self.assertTrue(app.check_updates_on_start_var.get())
                     self.assertEqual(app.main_profile_combo.get(), "기본 보고서 서식")
                     self.assertIn("HWP/HWPX", app.format_drop_label.cget("text"))
+                    self.assertIn("문서 구조", app.document_review_button.cget("text"))
+                finally:
+                    root.destroy()
+
+    def test_document_review_window_shows_read_only_result(self):
+        source = Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"
+        with tempfile.TemporaryDirectory(prefix="hwp-docfit-review-") as folder:
+            document = Path(folder) / "sample.hwpx"
+            with ZipFile(document, "w", ZIP_DEFLATED) as archive:
+                archive.writestr("Contents/header.xml", HEADER)
+                archive.writestr("Contents/section0.xml", SECTION)
+            before = document.read_bytes()
+            with patch.dict(os.environ, {"APPDATA": folder}):
+                namespace = runpy.run_path(str(source), run_name="document_review_ui_test")
+                root = namespace["TkinterDnD"].Tk()
+                root.withdraw()
+                errors = []
+                root.report_callback_exception = lambda *args: errors.append(args)
+                try:
+                    app = namespace["HwpAutoDocFitGUI"](root)
+                    app.files = [str(document)]
+                    app._문서검토_열기()
+                    def trees(widget):
+                        for child in widget.winfo_children():
+                            if isinstance(child, namespace["ttk"].Treeview):
+                                yield child
+                            yield from trees(child)
+                    deadline = time.monotonic() + 5
+                    while time.monotonic() < deadline:
+                        root.update()
+                        if any(tree.get_children() for tree in trees(app._문서검토_창)):
+                            break
+                        time.sleep(.03)
+                    self.assertFalse(errors)
+                    self.assertEqual(document.read_bytes(), before)
+                    self.assertTrue(app._문서검토_창.winfo_exists())
+                    self.assertTrue(any(tree.get_children() for tree in trees(app._문서검토_창)))
                 finally:
                     root.destroy()
 
