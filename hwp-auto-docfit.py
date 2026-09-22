@@ -44,6 +44,7 @@ hwp 자동 편집기
 32. 선택형 다줄 단어 분리 방지: 앞/뒤 글자 수 비교에 따른 축소·확대
 33. 본문·내용·부연설명 묶음의 쪽별 줄 수에 따른 줄간격 축소·확대
 34. 쉼표·따옴표 및 공백 없이 붙은 3글자 이하 괄호를 단어와 함께 처리
+35. 생성형 AI 채팅창에서 복사한 텍스트 정리(마크다운 기호 제거, 문단·목록 줄바꿈 복원)
 
 필요 패키지
 ------------------------------------------------------------
@@ -105,6 +106,7 @@ from docfit_core.style_profile_edit import FIELDS as STYLE_FIELDS, ROLES as STYL
 from docfit_core.korean_proofread import (
     apply_approved_hwpx, load_exclusions, save_exclusions, scan_hwpx,
 )
+from docfit_core.pasted_text import clean_pasted_text
 from docfit_core import (
     KordocUnavailableError,
     analyze_form,
@@ -7111,6 +7113,8 @@ class HwpAutoDocFitGUI:
         self.proofread_button.pack(side="right", padx=(0, 6))
         self.document_review_button = ttk.Button(quick, text="문서 구조·가독성 검토…", command=self._문서검토_열기)
         self.document_review_button.pack(side="right", padx=(0, 6))
+        self.paste_text_button = ttk.Button(quick, text="붙여넣은 텍스트 정리…", command=self._붙여넣기_정리_열기)
+        self.paste_text_button.pack(side="right", padx=(0, 6))
         self.options_summary = ttk.Label(quick, style="Hint.TLabel", wraplength=540, justify="left")
         self.options_summary.pack(side="left")
 
@@ -8121,6 +8125,106 @@ class HwpAutoDocFitGUI:
 
         start_button.config(command=start)
         start()
+
+    def _붙여넣기_정리_열기(self):
+        """제미나이·클로드·챗GPT 등에서 복사한 답변을 정리한다. 파일을 건드리지 않는다."""
+        existing = getattr(self, "_붙여넣기_창", None)
+        if existing is not None and existing.winfo_exists():
+            existing.lift()
+            return
+        window = tk.Toplevel(self.root)
+        self._붙여넣기_창 = window
+        window.title("붙여넣은 텍스트 정리")
+        window.geometry("900x600")
+        window.minsize(560, 380)
+        window.transient(self.root)
+
+        def closed():
+            self._붙여넣기_창 = None
+        window.protocol("WM_DELETE_WINDOW", lambda: (window.destroy(), closed()))
+
+        body = ttk.Frame(window, padding=12)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="제미나이·클로드·챗GPT 채팅창에서 복사한 답변을 붙여넣으세요.",
+                  font=("맑은 고딕", 12, "bold")).pack(anchor="w")
+        ttk.Label(body,
+                  text="마크다운 기호(**, #, - 등)를 지우고, 흐트러진 띄어쓰기·줄바꿈을 정리해 보기 좋은 문장으로 바꿉니다.",
+                  style="Hint.TLabel").pack(anchor="w", pady=(2, 8))
+
+        panes = ttk.Frame(body)
+        panes.pack(fill="both", expand=True)
+        panes.grid_columnconfigure(0, weight=1)
+        panes.grid_columnconfigure(1, weight=1)
+        panes.grid_rowconfigure(1, weight=1)
+
+        ttk.Label(panes, text="붙여넣은 텍스트").grid(row=0, column=0, sticky="w")
+        ttk.Label(panes, text="정리된 결과").grid(row=0, column=1, sticky="w", padx=(8, 0))
+
+        input_frame = ttk.Frame(panes)
+        input_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 4))
+        input_frame.grid_columnconfigure(0, weight=1)
+        input_frame.grid_rowconfigure(0, weight=1)
+        input_text = tk.Text(input_frame, wrap="word", undo=True, font=("맑은 고딕", 10))
+        input_text.grid(row=0, column=0, sticky="nsew")
+        input_scroll = ttk.Scrollbar(input_frame, orient="vertical", command=input_text.yview)
+        input_scroll.grid(row=0, column=1, sticky="ns")
+        input_text.configure(yscrollcommand=input_scroll.set)
+
+        output_frame = ttk.Frame(panes)
+        output_frame.grid(row=1, column=1, sticky="nsew", padx=(4, 0))
+        output_frame.grid_columnconfigure(0, weight=1)
+        output_frame.grid_rowconfigure(0, weight=1)
+        output_text = tk.Text(output_frame, wrap="word", font=("맑은 고딕", 10), background="#f7f7f7")
+        output_text.grid(row=0, column=0, sticky="nsew")
+        output_scroll = ttk.Scrollbar(output_frame, orient="vertical", command=output_text.yview)
+        output_scroll.grid(row=0, column=1, sticky="ns")
+        output_text.configure(yscrollcommand=output_scroll.set)
+
+        status = tk.StringVar(value="텍스트를 붙여넣고 ‘한 번에 정리’를 눌러 주세요.")
+
+        def 정리하기():
+            원문 = input_text.get("1.0", "end-1c")
+            if not 원문.strip():
+                status.set("붙여넣은 텍스트가 없습니다.")
+                return
+            try:
+                결과 = clean_pasted_text(원문)
+            except Exception as e:
+                messagebox.showerror(APP_NAME, f"텍스트 정리 중 오류가 발생했습니다.\n\n{e}", parent=window)
+                return
+            output_text.delete("1.0", "end")
+            output_text.insert("1.0", 결과)
+            status.set(f"정리 완료 · {len(결과)}자")
+
+        def 결과복사():
+            결과 = output_text.get("1.0", "end-1c")
+            if not 결과.strip():
+                status.set("복사할 정리 결과가 없습니다.")
+                return
+            window.clipboard_clear()
+            window.clipboard_append(결과)
+            status.set("정리된 텍스트를 클립보드에 복사했습니다.")
+
+        def 지우기():
+            input_text.delete("1.0", "end")
+            output_text.delete("1.0", "end")
+            status.set("텍스트를 붙여넣고 ‘한 번에 정리’를 눌러 주세요.")
+
+        actions = ttk.Frame(body)
+        actions.pack(fill="x", pady=(8, 0))
+        ttk.Button(actions, text="한 번에 정리", command=정리하기).pack(side="left")
+        ttk.Button(actions, text="결과 복사", command=결과복사).pack(side="left", padx=(6, 0))
+        ttk.Button(actions, text="지우기", command=지우기).pack(side="left", padx=(6, 0))
+        ttk.Button(actions, text="닫기", command=lambda: (window.destroy(), closed())).pack(side="right")
+        ttk.Label(body, textvariable=status, style="Hint.TLabel").pack(anchor="w", pady=(6, 0))
+
+        try:
+            붙여넣기 = window.clipboard_get()
+        except tk.TclError:
+            붙여넣기 = ""
+        if 붙여넣기.strip():
+            input_text.insert("1.0", 붙여넣기)
+        input_text.focus_set()
 
     def _공공언어_검토(self):
         if getattr(self, "_교정_창", None) is not None:
