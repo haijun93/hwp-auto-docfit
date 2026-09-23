@@ -128,6 +128,12 @@ hwp 자동 편집기
     경우만 다뤄 전화번호·법령 조항·사업 코드의 하이픈은 손대지 않음.
     단, 기간 앞뒤 날짜가 같은 연도를 반복 표기한 경우를 "2026. 6. 30"
     같은 축약형으로 압축하는 것은 의미 판단이 필요해 자동화하지 않음
+59. 마지막 쪽에 2~3줄만 걸쳐 있으면, 본문 줄간격은 그대로 두고 항목기호
+    문단의 '문단 아래 간격'만 1pt씩 줄여(최대 10pt) 앞쪽 쪽으로 당겨
+    페이지 수를 맞춤. 실제 페이지 수를 매 단계 다시 측정해 판단하며,
+    최대치까지 줄여도 안 되면 더 손대지 않고 멈춤(본문 내용을 강제로
+    줄이거나 지우지 않음). '관련 문단 페이지 배치' 다음 마지막 단계로
+    실행되는 세부 작업(page_fit)으로 켜고 끌 수 있음
 
 필요 패키지
 ------------------------------------------------------------
@@ -186,7 +192,7 @@ from docfit_core.stage_selection import STAGE_EXAMPLES, enabled as stage_enabled
 from docfit_core.document_rules import (
     ParagraphSpacingTracker, YEAR_QUOTE_PATTERN, marker_space_fix,
     curly_single_quote_replacements, normalize_date_range_marks,
-    straight_double_quote_replacements, text_edit_spans,
+    paragraph_level, straight_double_quote_replacements, text_edit_spans,
 )
 from docfit_core.document_review import DOCUMENT_KINDS, PURPOSES, review_document
 from docfit_core.style_profile_edit import FIELDS as STYLE_FIELDS, ROLES as STYLE_ROLES, apply_reviewed_styles
@@ -727,6 +733,15 @@ def 서식_기본값_전역_복원():
 # 축소/확대는 금지한다.
 세트문장_최소줄간격_퍼센트 = 160
 세트문장_최대줄간격_퍼센트 = 200
+
+# 마지막 쪽에 몇 줄 안 되는 내용만 넘어가 있으면(예: 2~3줄), 본문 줄간격은
+# 그대로 두고 항목기호 문단의 '문단 아래 간격'만 1pt씩 줄여 앞쪽 쪽으로
+# 당겨오는 걸 시도한다. 마지막 쪽 줄 수가 이 값을 넘으면(내용이 많이 남은
+# 경우) 간격을 조금 줄이는 정도로는 해결이 안 되므로 시도하지 않는다.
+페이지맞춤_문단간격_사용 = True
+페이지맞춤_최대남은줄수 = 4
+페이지맞춤_최대_pt = 10.0
+페이지맞춤_스텝_pt = 1.0
 
 문장부호_통계 = {"대상": 0, "성공": 0, "실패": 0}
 세트문장_통계 = {"대상": 0, "성공": 0, "실패": 0, "축소횟수": 0, "확대횟수": 0}
@@ -2503,6 +2518,30 @@ def 문단_위간격_적용_현재선택(pt):
         act.Execute("ParagraphShape", pset.HSet)
     except Exception as e:
         로그(f"문단 위 간격 적용 실패(무시): {e}")
+
+def 문단_아래간격_pt_현재문단():
+    """현재 캐럿이 있는 문단의 '문단 아래 간격' 값을 pt로 읽는다."""
+    if hwp is None:
+        return None
+    try:
+        return hwp.HwpUnitToPoint(hwp.ParaShape.Item("NextSpacing"))
+    except Exception as e:
+        로그(f"문단 아래 간격 읽기 실패(무시): {e}")
+        return None
+
+def 문단_아래간격_적용_현재선택(pt):
+    if 현재_한칸표인가():
+        return
+    if hwp is None:
+        return
+    try:
+        act = hwp.HAction
+        pset = hwp.HParameterSet.HParaShape
+        act.GetDefault("ParagraphShape", pset.HSet)
+        pset.NextSpacing = hwp.PointToHwpUnit(max(0.0, pt))
+        act.Execute("ParagraphShape", pset.HSet)
+    except Exception as e:
+        로그(f"문단 아래 간격 적용 실패(무시): {e}")
 
 def 텍스트_너비_em(text):
     총 = 0.0
@@ -4882,6 +4921,160 @@ def 세트문장_같은쪽_전체_적용():
     return True
 
 
+def 마지막쪽_화면줄수():
+    """문서 끝이 있는 쪽 번호와, 그 쪽에 걸린 화면줄 수를 반환한다.
+
+    실패하면 (None, None). 본문(리스트 0)만 대상으로 한다 — 표/글상자
+    안 텍스트는 별도 리스트라 MovePageBegin 등 쪽 이동 명령이 기대한
+    대로 동작하지 않는다.
+    """
+    if hwp is None:
+        return None, None
+    원위치 = hwp.GetPos()
+    try:
+        hwp_run('MoveDocEnd')
+        문서끝 = hwp.GetPos()
+        if 문서끝[0] != 0:
+            return None, None
+        마지막쪽 = 현재_페이지번호()
+        if 마지막쪽 is None:
+            return None, None
+        hwp.SetPos(*문서끝)
+        hwp_run('MovePageBegin')
+        줄수 = 0
+        이전줄끝 = None
+        while True:
+            if 중단_요청됨():
+                return None, None
+            hwp_run('MoveLineEnd')
+            줄끝 = hwp.GetPos()
+            if 줄끝 == 이전줄끝:
+                break
+            줄수 += 1
+            if (줄끝[1], 줄끝[2]) >= (문서끝[1], 문서끝[2]):
+                break
+            이전줄끝 = 줄끝
+            hwp_run('MoveNextChar')
+            if hwp.GetPos() == 줄끝:
+                break
+        return 마지막쪽, 줄수
+    except Exception as e:
+        로그(f"마지막 쪽 줄 수 확인 실패(무시): {e}")
+        return None, None
+    finally:
+        try:
+            hwp.SetPos(*원위치)
+        except Exception:
+            pass
+
+
+def 구조문단_아래간격_일괄조정(delta_pt):
+    """문서 전체(본문 리스트만)에서 항목기호(□/ㅇ/-/*/※/• 등)로 시작하는
+    문단의 '문단 아래 간격'을 delta_pt만큼 조정한다(0pt 아래로는 내려가지
+    않음). 본문 줄간격과 '문단 위 간격'(표준서식 단계별 리듬)은 건드리지
+    않는다. 실제로 값이 바뀐 문단 수를 반환한다.
+    """
+    if hwp is None or 중단_요청됨():
+        return 0
+    원위치 = hwp.GetPos()
+    순회_시작()
+    적용수 = 0
+    정체 = 0
+    try:
+        while True:
+            if 중단_요청됨():
+                break
+            시작위치 = hwp.GetPos()
+            if 시작위치[0] == 0 and not 현재_한칸표인가():
+                text = 현재문단_텍스트()
+                if paragraph_level(text) is not None:
+                    현재값 = 문단_아래간격_pt_현재문단()
+                    if 현재값 is not None:
+                        새값 = max(0.0, round(현재값 + delta_pt, 1))
+                        if abs(새값 - 현재값) >= 0.05:
+                            hwp_run('MoveParaBegin')
+                            hwp_run('MoveSelParaEnd')
+                            문단_아래간격_적용_현재선택(새값)
+                            hwp_run('Cancel')
+                            적용수 += 1
+            if not 범위_다음_문단으로_진행():
+                break
+            if hwp.GetPos() == 시작위치:
+                정체 += 1
+                if 정체 >= 2:
+                    break
+            else:
+                정체 = 0
+    finally:
+        try:
+            hwp.SetPos(*원위치)
+        except Exception:
+            pass
+    return 적용수
+
+
+def 보고서_페이지수_맞춤_시도(목표_페이지수):
+    """본문 줄간격은 그대로 둔 채 항목기호 문단의 '문단 아래 간격'만
+    1pt씩 줄여 실제 페이지 수를 목표에 맞춘다.
+
+    사용자가 Alt+T로 문단 아래 여백을 pt 단위로 조금씩 줄이며 페이지
+    수를 눈으로 확인하는 시행착오를 그대로 자동화한 것 — 줄 높이를
+    직접 계산하지 않고 매 단계 실제 페이지 수를 다시 측정한다.
+    페이지맞춤_최대_pt까지 줄여도 목표에 못 미치면 더 손대지 않고
+    멈춘다(본문 내용을 강제로 줄이거나 지우지 않음 — 그럴 때는 수동으로
+    문구를 다듬어야 한다).
+    """
+    if hwp is None or not 목표_페이지수 or 목표_페이지수 <= 0:
+        return False
+    최대반복 = max(1, int(round(페이지맞춤_최대_pt / 페이지맞춤_스텝_pt)))
+    로그(f"페이지 수 맞춤 시도: 목표 {목표_페이지수}쪽 (문단 아래 간격 최대 {페이지맞춤_최대_pt:g}pt 축소)")
+    for 회 in range(1, 최대반복 + 1):
+        if 중단_요청됨():
+            return False
+        조정수 = 구조문단_아래간격_일괄조정(-페이지맞춤_스텝_pt)
+        if 조정수 == 0:
+            로그("페이지 수 맞춤 중단: 더 줄일 항목기호 문단이 없음")
+            return False
+        마지막쪽, _ = 마지막쪽_화면줄수()
+        if 마지막쪽 is None:
+            로그("페이지 수 맞춤 중단: 쪽 번호 확인 실패")
+            return False
+        if 마지막쪽 <= 목표_페이지수:
+            로그(f"페이지 수 맞춤 완료: {회}단계({회 * 페이지맞춤_스텝_pt:g}pt)만에 {목표_페이지수}쪽 달성")
+            return True
+    로그(
+        f"페이지 수 맞춤 실패: 문단 아래 간격을 {페이지맞춤_최대_pt:g}pt까지 줄였지만 "
+        f"목표({목표_페이지수}쪽) 미달 — 본문 내용을 줄여야 할 수 있음"
+    )
+    return False
+
+
+def 보고서_페이지수_맞춤_전체_적용():
+    """마지막 쪽에 몇 줄 안 되는 내용만 걸쳐 있으면(다음 쪽으로 밀려난
+    상황), 문단 아래 간격을 줄여 앞쪽 쪽으로 당겨오도록 시도한다.
+
+    목표 쪽수를 사용자가 지정하지 않아도 되도록, "마지막 쪽 줄 수가
+    적다"는 것 자체를 트리거로 쓴다 — 이 값이 크면(내용이 많이 남은
+    경우) 간격 조정만으로는 해결이 안 되는 상황이라 아예 시도하지
+    않는다. 실패해도 문서 자체는 항상 그대로 저장 가능한 상태로
+    남는다(마지막 시도 이후 값이 남아있을 뿐, 구조를 깨지 않음).
+    """
+    if not 페이지맞춤_문단간격_사용:
+        return True
+    if 중단_요청됨():
+        return False
+    마지막쪽, 줄수 = 마지막쪽_화면줄수()
+    if 마지막쪽 is None or 줄수 is None:
+        로그("페이지 수 맞춤 건너뜀: 마지막 쪽 정보 확인 실패")
+        return True
+    if 마지막쪽 <= 1 or 줄수 > 페이지맞춤_최대남은줄수:
+        return True
+    로그(f"마지막 쪽({마지막쪽}쪽)에 {줄수}줄만 남아 페이지 수 맞춤을 시도합니다.")
+    보고서_페이지수_맞춤_시도(마지막쪽 - 1)
+    hwp_run('MoveDocBegin')
+    return True
+
+
 # ============================================================
 # 문장 내 공백 정규화
 #   1) 괄호 바로 안쪽 공백 제거: "( 내용 )" -> "(내용)"
@@ -6166,6 +6359,9 @@ def 문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=2
             return False
     if 작업_모드 in ('format', 'all') and 표준서식_사용 and 세트문장_같은쪽_사용 and stage_enabled(선택_세부작업, 'page_group'):
         if not stage('관련 문단 페이지 배치', 세트문장_같은쪽_전체_적용):
+            return False
+    if 작업_모드 in ('format', 'all') and 표준서식_사용 and stage_enabled(선택_세부작업, 'page_fit'):
+        if not stage('문단 아래 간격 페이지 맞춤', 보고서_페이지수_맞춤_전체_적용):
             return False
     hwp_run('MoveDocBegin')
     return True
