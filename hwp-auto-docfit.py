@@ -63,6 +63,9 @@ hwp 자동 편집기
 42. 실행창 '세부 작업'과 세부 설정의 '01. 문서 전체 자간 초기화' 등
     번호가 붙은 항목 제목을 굵은 글씨로 표시해 켜고 끄는 단계가
     잘 구분되도록 개선
+43. 서식 정리의 문두기호별 글꼴 선택 목록에 한컴오피스 전용 번들
+    (HFT) 글꼴도 자동으로 찾아 포함. 설치 경로에서 .hft 파일이 있는
+    폴더를 이름에 상관없이 직접 찾아 지정한 글꼴 폴더의 목록과 합침
 
 필요 패키지
 ------------------------------------------------------------
@@ -431,7 +434,7 @@ def 한글_폰트_폴더_자동감지():
     """
     def _폰트파일_있음(폴더):
         try:
-            return any(p.suffix.lower() in (".ttf", ".ttc", ".otf")
+            return any(p.suffix.lower() in (".ttf", ".ttc", ".otf", ".hft")
                        for p in 폴더.iterdir() if p.is_file())
         except (OSError, PermissionError):
             return False
@@ -552,7 +555,11 @@ def _ttf_패밀리이름(path):
 
 
 def 한글_폰트_목록(폴더):
-    """지정한 폴더(보통 한/글 폰트 폴더) 안의 ttf/ttc/otf에서 패밀리명을 모은다."""
+    """지정한 폴더(보통 한/글 폰트 폴더) 안의 ttf/ttc/otf/hft에서 패밀리명을 모은다.
+
+    hft는 한컴오피스 전용 번들 글꼴 컨테이너 형식으로, 표준 sfnt name 테이블
+    파싱이 통하지 않는 경우가 많아 그때는 파일명(확장자 제외)을 글꼴 이름으로
+    쓴다. 한/글은 이 이름으로 내부 번들 글꼴을 인식해 적용할 수 있다."""
     결과 = []
     if not 폴더:
         return 결과
@@ -562,7 +569,7 @@ def 한글_폰트_목록(폴더):
             return 결과
         본적있음 = set()
         for p in sorted(경로.rglob("*")):
-            if not p.is_file() or p.suffix.lower() not in (".ttf", ".ttc", ".otf"):
+            if not p.is_file() or p.suffix.lower() not in (".ttf", ".ttc", ".otf", ".hft"):
                 continue
             이름 = _ttf_패밀리이름(p) or p.stem
             if 이름 and 이름 not in 본적있음:
@@ -571,6 +578,46 @@ def 한글_폰트_목록(폴더):
         결과.sort(key=lambda s: (0 if re.match(r'^[A-Za-z]', s) else 1, s))
     except (OSError, PermissionError):
         pass
+    return 결과
+
+
+def 한컴_번들_폰트_폴더_목록():
+    """설치 경로 후보들 아래에서 .hft(한컴오피스 전용 번들 글꼴) 파일이 있는
+    폴더를 모두 찾는다. 폴더 이름이 'Fonts'가 아니어도 실제 .hft 파일 위치를
+    직접 뒤져서 찾으므로, 배포판마다 다른 폴더 이름에 흔들리지 않는다."""
+    폴더집합 = set()
+    후보들 = list(_hwp_설치폴더_후보_레지스트리()) + list(_hwp_설치폴더_후보_공통경로())
+    후보들.append(Path(r"C:\Program Files (x86)\Hnc\Office 2020\HOffice110\Shared\Fonts"))
+    검사한 = set()
+    for 시작 in 후보들:
+        try:
+            if not 시작.exists() or 시작 in 검사한:
+                continue
+            검사한.add(시작)
+        except OSError:
+            continue
+        try:
+            for hft파일 in 시작.rglob("*.hft"):
+                폴더집합.add(hft파일.parent)
+        except (OSError, PermissionError):
+            continue
+    return sorted(폴더집합, key=str)
+
+
+def 한글_폰트_목록_전체(폴더):
+    """사용자가 지정한 글꼴 폴더 목록에, 자동으로 찾은 한컴오피스 전용
+    번들(HFT) 글꼴 폴더의 글꼴을 더해 합친 전체 글꼴 이름 목록을 돌려준다."""
+    결과 = list(한글_폰트_목록(폴더))
+    본적있음 = set(결과)
+    폴더_문자열 = str(Path(폴더)) if 폴더 else ""
+    for 번들폴더 in 한컴_번들_폰트_폴더_목록():
+        if str(번들폴더) == 폴더_문자열:
+            continue
+        for 이름 in 한글_폰트_목록(str(번들폴더)):
+            if 이름 not in 본적있음:
+                본적있음.add(이름)
+                결과.append(이름)
+    결과.sort(key=lambda s: (0 if re.match(r'^[A-Za-z]', s) else 1, s))
     return 결과
 
 
@@ -7244,7 +7291,7 @@ class HwpAutoDocFitGUI:
             }
         if not self.font_folder_var.get():
             self.font_folder_var.set(한글_폰트_폴더_자동감지())
-        self._한글_폰트_목록_캐시 = 한글_폰트_목록(self.font_folder_var.get())
+        self._한글_폰트_목록_캐시 = 한글_폰트_목록_전체(self.font_folder_var.get())
         기호글꼴_적용(저장된_설정)
         self.paren_shrink_var = tk.BooleanVar(value=bool(저장된_설정["paren_shrink"]))
         self.paren_label_bold_var = tk.BooleanVar(value=bool(저장된_설정["paren_label_bold"]))
@@ -7821,6 +7868,7 @@ class HwpAutoDocFitGUI:
             ttk.Label(
                 기호글꼴_틀,
                 text="기본은 윈도우 글꼴 폴더(C:\\Windows\\Fonts)이며, 이 폴더에서 글꼴 목록을 불러옵니다. "
+                     "한컴오피스 전용 번들(HFT) 글꼴은 설치 경로에서 자동으로 찾아 목록에 함께 더합니다. "
                      "목록에 없는 이름도 직접 입력할 수 있습니다.",
                 style="Hint.TLabel", wraplength=520
             ).pack(anchor="w", pady=(0, 6))
@@ -9495,13 +9543,14 @@ class HwpAutoDocFitGUI:
         콤보.bind("<Button-5>", lambda e: (_이동(1), "break"))
 
     def _폰트목록_새로고침(self):
-        self._한글_폰트_목록_캐시 = 한글_폰트_목록(self.font_folder_var.get())
+        self._한글_폰트_목록_캐시 = 한글_폰트_목록_전체(self.font_folder_var.get())
         for 콤보 in getattr(self, "symbol_font_combos", {}).values():
             콤보["values"] = self._한글_폰트_목록_캐시
         if not self._한글_폰트_목록_캐시:
             messagebox.showinfo(
                 APP_NAME,
-                "지정한 폴더에서 글꼴 파일(ttf/ttc/otf)을 찾지 못했습니다.\n"
+                "지정한 폴더와 한컴오피스 번들(HFT) 글꼴 폴더에서 글꼴 파일(ttf/ttc/otf/hft)을 "
+                "찾지 못했습니다.\n"
                 "한/글 글꼴 폴더를 '찾아보기'로 직접 지정해 주세요. "
                 "폴더를 몰라도 이름을 직접 입력해서 쓸 수 있습니다.",
                 parent=self.settings_toplevel or self.root,
@@ -9550,7 +9599,7 @@ class HwpAutoDocFitGUI:
         self.linespacing_min_var.set(기본_설정["linespacing_min"])
         self.linespacing_max_var.set(기본_설정["linespacing_max"])
         self.font_folder_var.set(기본_설정.get("hwp_font_folder", "") or 한글_폰트_폴더_자동감지())
-        self._한글_폰트_목록_캐시 = 한글_폰트_목록(self.font_folder_var.get())
+        self._한글_폰트_목록_캐시 = 한글_폰트_목록_전체(self.font_folder_var.get())
         for 기호, v in self.symbol_font_vars.items():
             기본항목 = 기본_설정.get("symbol_fonts", {}).get(기호, {})
             v["font"].set(기본항목.get("font", ""))
