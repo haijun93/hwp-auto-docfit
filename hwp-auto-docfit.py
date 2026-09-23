@@ -70,6 +70,9 @@ hwp 자동 편집기
     스캔 PDF 페이지는 내장 OCR로 인식하고, 문서 안 이미지는 kordoc이
     추출한 그대로 결과 HWPX에 실제로 임베드(이전에는 자리표시만 남고
     이미지가 사라졌음)
+45. 자간 정리 '01. 문서 전체 자간 초기화'에서 같은 뜻으로 중복되던
+    "기존 자간을 0%로 초기화 후 정리하기" 체크박스를 없애고, 번호
+    체크박스 하나로 통일(한 번에 정리에서도 같은 체크박스로 켜고 끔)
 
 필요 패키지
 ------------------------------------------------------------
@@ -246,7 +249,6 @@ _콘솔_출력_가능 = (sys.stdout is not None)
 # ============================================================
 
 작업_모드 = "all"
-자간초기화_사용 = False
 문두라벨_기호설정 = {"□": False, "ㅁ": False, "※": False}
 표준서식_사용 = False
 
@@ -692,7 +694,6 @@ def 번들_리소스_폴더():
     "autoclose": False,
     "stdformat": True,
     "verify": True,
-    "reset_spacing_before_cleanup": False,
     "retry_body": "15",
     "retry_table": "5",
     "linespacing_min": "160",
@@ -6066,7 +6067,7 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
 
     # 잔여 자간(이전 실행/수동 편집으로 남은 값)이 있으면 압축 여유가
     # 줄어드니, 두 회차를 시작하기 전 문서 전체를 한 번만 0%로 초기화한다.
-    if stage_enabled(선택_세부작업, 'reset_spacing') and (작업_모드 == "all" or (작업_모드 == "spacing" and 자간초기화_사용)):
+    if stage_enabled(선택_세부작업, 'reset_spacing'):
         상태(f"{파일명} : 자간 초기화")
         if 문서_전체_자간_초기화() is False:
             return False
@@ -6138,14 +6139,13 @@ def 작업_실행(
     라벨기호설정=None,
     줄간격최소=160,
     줄간격최대=200,
-    자간초기화=False,
     표자간조정=True,
     쪽범위=None,
     로그파일=False,
     세부작업_선택=None,
     시작_인덱스=1
 ):
-    global 작업_모드, 문두라벨_기호설정, 자간초기화_사용
+    global 작업_모드, 문두라벨_기호설정
     global 표_자간조정_사용, 쪽범위_요청, 로그파일_사용
     global 단어중간_줄바꿈방지_사용
     global 제목4종_사용, 붙임2종_사용
@@ -6173,7 +6173,6 @@ def 작업_실행(
             raise ValueError("잘못된 실행 모드")
         작업_모드 = 실행모드
         선택_세부작업 = dict(세부작업_선택 or {})
-        자간초기화_사용 = bool(자간초기화)
         표_자간조정_사용 = bool(표자간조정)
         쪽범위_요청 = tuple(쪽범위) if 쪽범위 else None
         문두라벨_기호설정 = dict(기본_설정["label_symbols"])
@@ -7273,7 +7272,6 @@ class HwpAutoDocFitGUI:
         self.autoclose_var = tk.BooleanVar(value=bool(저장된_설정["autoclose"]))
         self.stdformat_var = tk.BooleanVar(value=bool(저장된_설정["stdformat"]))
         self.verify_var = tk.BooleanVar(value=bool(저장된_설정["verify"]))
-        self.reset_spacing_var = tk.BooleanVar(value=bool(저장된_설정.get("reset_spacing_before_cleanup", False)))
         self.table_spacing_var = tk.BooleanVar(value=bool(저장된_설정.get("table_spacing", True)))
         self.log_file_var = tk.BooleanVar(value=bool(저장된_설정.get("log_file", False)))
         self.check_updates_on_start_var = tk.BooleanVar(
@@ -7327,7 +7325,7 @@ class HwpAutoDocFitGUI:
         for 변수 in ([self.prevent_word_split_var, self.punctuation_var, self.punctuation_threshold_var, self.keep_punctuation_set_var,
                      self.color_mark_on_var, self.color_var,
                      self.autoclose_var, self.stdformat_var, self.verify_var,
-                     self.reset_spacing_var, self.table_spacing_var, self.log_file_var, self.check_updates_on_start_var,
+                     self.table_spacing_var, self.log_file_var, self.check_updates_on_start_var,
                      self.retry_body_var, self.retry_table_var, self.paren_shrink_var,
                      self.linespacing_min_var, self.linespacing_max_var, self.font_folder_var,
                      self.paren_label_bold_var] + list(self.std_bool_vars.values()) + list(self.std_parspace_vars.values())
@@ -7731,15 +7729,13 @@ class HwpAutoDocFitGUI:
 
         같은 변수(self.xxx_var)에 새 위젯을 만들어 값은 항상 공유한다.
         주설정탭=True(세부 설정 탭)일 때만 작업 중 비활성화 등에 쓰이는
-        단일 속성(self.reset_spacing_check 등)에 연결한다.
+        단일 속성(self.prevent_word_split_check 등)에 연결한다.
         """
         if key == "reset_spacing":
-            체크 = ttk.Checkbutton(parent, text="기존 자간을 0%로 초기화 후 정리하기", variable=self.reset_spacing_var)
-            체크.pack(anchor="w")
-            ttk.Label(parent, text="기본값은 꺼짐입니다. ‘한 번에 정리’는 이 설정과 관계없이 항상 자간을 0%로 초기화합니다.",
-                      style="Hint.TLabel", wraplength=610).pack(anchor="w", pady=(0, 2))
-            if 주설정탭:
-                self.reset_spacing_check = 체크
+            # 이 단계 자체가 곧 "자간 초기화 여부"라서 위 번호 체크박스 하나로
+            # 충분하다(설명은 그 체크박스 옆 "예:" 문구로 이미 나옴). 별도 on/off를
+            # 더 두면 같은 뜻의 체크박스가 중복된다.
+            pass
         elif key == "body_spacing":
             체크 = ttk.Checkbutton(parent, text="줄 끝에서 단어가 끊기지 않게 정리하기", variable=self.prevent_word_split_var)
             체크.pack(anchor="w")
@@ -9496,7 +9492,6 @@ class HwpAutoDocFitGUI:
                 "autoclose": bool(self.autoclose_var.get()),
                 "stdformat": bool(self.stdformat_var.get()),
                 "verify": bool(self.verify_var.get()),
-                "reset_spacing_before_cleanup": bool(self.reset_spacing_var.get()),
                 "table_spacing": bool(self.table_spacing_var.get()),
                 "log_file": bool(self.log_file_var.get()),
                 "check_updates_on_start": bool(self.check_updates_on_start_var.get()),
@@ -9598,7 +9593,6 @@ class HwpAutoDocFitGUI:
         self.autoclose_var.set(기본_설정["autoclose"])
         self.stdformat_var.set(기본_설정["stdformat"])
         self.verify_var.set(기본_설정["verify"])
-        self.reset_spacing_var.set(기본_설정["reset_spacing_before_cleanup"])
         self.table_spacing_var.set(기본_설정["table_spacing"])
         self.log_file_var.set(기본_설정["log_file"])
         self.check_updates_on_start_var.set(기본_설정["check_updates_on_start"])
@@ -9954,7 +9948,6 @@ class HwpAutoDocFitGUI:
         self.prevent_word_split_check.config(state="disabled")
         self.punctuation_check.config(state="disabled")
         self.punctuation_threshold_spin.config(state="disabled")
-        self.reset_spacing_check.config(state="disabled")
         self.table_spacing_check.config(state="disabled")
         self.log_file_check.config(state="disabled")
         for 위젯 in (self.range_all_radio, self.range_pages_radio, self.range_start_spin, self.range_end_spin):
@@ -9993,7 +9986,6 @@ class HwpAutoDocFitGUI:
         self.prevent_word_split_check.config(state="normal")
         self.punctuation_check.config(state="normal")
         self.punctuation_threshold_spin.config(state="normal")
-        self.reset_spacing_check.config(state="normal")
         self.table_spacing_check.config(state="normal")
         self.log_file_check.config(state="normal")
         self.range_all_radio.config(state="normal")
@@ -10199,7 +10191,6 @@ class HwpAutoDocFitGUI:
                 {k: v.get() for k, v in self.label_symbol_vars.items()},
                 줄간격최소값,
                 줄간격최대값,
-                self.reset_spacing_var.get(),
                 self.table_spacing_var.get(),
                 작업범위,
                 self.log_file_var.get(),
