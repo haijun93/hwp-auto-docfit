@@ -83,6 +83,9 @@ hwp 자동 편집기
     번호를 그대로 쓰거나 없으면 ㅁ을, 그 아래는 들여쓰기 깊이에 따라
     ㅇ→-→•(3단계 이후는 모두 •) 순으로 문두기호를 붙여 공문서
     개조식 서식으로 바꿈
+48. 실행창 '01 정리할 문서'에 '텍스트 붙여넣기' 버튼 추가. 파일이
+    없어도 텍스트를 붙여넣어 .txt로 저장하면 바로 문서 목록에
+    추가되어 다른 파일과 함께 자간·서식 정리를 적용할 수 있음
 
 필요 패키지
 ------------------------------------------------------------
@@ -7258,6 +7261,7 @@ class HwpAutoDocFitGUI:
         file_actions.grid(row=2, column=0, sticky="ew", pady=(4, 0))
         self.file_buttons = []
         for title, command in (("+ 파일 추가", self.파일선택), ("폴더 추가", self._폴더선택),
+                               ("텍스트 붙여넣기", self._텍스트로_문서추가_열기),
                                ("Markdown 내보내기", self.Markdown_내보내기),
                                ("고급 문서 도구", self.고급문서도구_열기),
                                ("선택 항목 빼기", self._선택삭제), ("목록 비우기", self.목록지우기)):
@@ -8660,6 +8664,96 @@ class HwpAutoDocFitGUI:
 
         start_button.config(command=start)
         start()
+
+    def _텍스트로_문서추가_열기(self):
+        """붙여넣은 텍스트를 .txt 파일로 저장해 '01 정리할 문서' 목록에 바로 추가한다."""
+        if self.running:
+            return
+        existing = getattr(self, "_텍스트추가_창", None)
+        if existing is not None and existing.winfo_exists():
+            existing.lift()
+            return
+        window = tk.Toplevel(self.root)
+        self._텍스트추가_창 = window
+        window.title("텍스트 붙여넣기로 문서 추가")
+        window.geometry("640x480")
+        window.minsize(420, 320)
+        window.transient(self.root)
+
+        def closed():
+            self._텍스트추가_창 = None
+        window.protocol("WM_DELETE_WINDOW", lambda: (window.destroy(), closed()))
+
+        body = ttk.Frame(window, padding=12)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="추가할 문서 내용을 붙여넣거나 입력하세요.",
+                  font=("맑은 고딕", 12, "bold")).pack(anchor="w")
+        ttk.Label(body,
+                  text="텍스트를 .txt 파일로 저장한 뒤 문서 목록에 추가합니다(저장 위치는 직접 고를 수 있습니다).",
+                  style="Hint.TLabel").pack(anchor="w", pady=(2, 8))
+
+        text_frame = ttk.Frame(body)
+        text_frame.pack(fill="both", expand=True)
+        text_frame.grid_columnconfigure(0, weight=1)
+        text_frame.grid_rowconfigure(0, weight=1)
+        input_text = tk.Text(text_frame, wrap="word", undo=True, font=("맑은 고딕", 10))
+        input_text.grid(row=0, column=0, sticky="nsew")
+        scroll = ttk.Scrollbar(text_frame, orient="vertical", command=input_text.yview)
+        scroll.grid(row=0, column=1, sticky="ns")
+        input_text.configure(yscrollcommand=scroll.set)
+
+        status = tk.StringVar(value="텍스트를 붙여넣고 ‘문서로 추가’를 눌러 주세요.")
+
+        def 기본파일명(내용):
+            for 줄 in 내용.splitlines():
+                줄 = 줄.strip()
+                if 줄:
+                    안전한줄 = re.sub(r'[\\/:*?"<>|]', " ", 줄).strip()
+                    return (안전한줄[:40] or "붙여넣은 텍스트") + ".txt"
+            return "붙여넣은 텍스트.txt"
+
+        def 문서로추가():
+            내용 = input_text.get("1.0", "end-1c")
+            if not 내용.strip():
+                status.set("붙여넣은 텍스트가 없습니다.")
+                return
+            경로 = asksaveasfilename(
+                parent=window, title="텍스트를 저장할 위치",
+                initialfile=기본파일명(내용), defaultextension=".txt",
+                filetypes=[("텍스트 파일", "*.txt")],
+            )
+            if not 경로:
+                return
+            try:
+                Path(경로).write_text(내용, encoding="utf-8")
+            except OSError as e:
+                messagebox.showerror(APP_NAME, f"파일 저장 중 오류가 발생했습니다.\n\n{e}", parent=window)
+                return
+            if self.파일추가(경로):
+                status.set(f"문서로 추가했습니다 · {Path(경로).name}")
+                self.status_var.set(f"{len(self.files)}개 문서 선택")
+                self.로그표시(f"텍스트를 문서로 추가: {Path(경로).name}")
+            else:
+                status.set("이미 목록에 있는 파일입니다.")
+
+        def 지우기():
+            input_text.delete("1.0", "end")
+            status.set("텍스트를 붙여넣고 ‘문서로 추가’를 눌러 주세요.")
+
+        actions = ttk.Frame(body)
+        actions.pack(fill="x", pady=(8, 0))
+        ttk.Button(actions, text="문서로 추가", command=문서로추가).pack(side="left")
+        ttk.Button(actions, text="지우기", command=지우기).pack(side="left", padx=(6, 0))
+        ttk.Button(actions, text="닫기", command=lambda: (window.destroy(), closed())).pack(side="right")
+        ttk.Label(body, textvariable=status, style="Hint.TLabel").pack(anchor="w", pady=(6, 0))
+
+        try:
+            붙여넣기 = window.clipboard_get()
+        except tk.TclError:
+            붙여넣기 = ""
+        if 붙여넣기.strip():
+            input_text.insert("1.0", 붙여넣기)
+        input_text.focus_set()
 
     def _붙여넣기_정리_열기(self):
         """제미나이·클로드·챗GPT 등에서 복사한 답변을 정리한다. 파일을 건드리지 않는다."""
