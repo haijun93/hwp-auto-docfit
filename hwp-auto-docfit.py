@@ -48,6 +48,8 @@ hwp 자동 편집기
 36. 괄호 안 공백을 포함한 부연 설명 전체를 한 어절로 보고 줄 끝 분리 방지
     (예: "계약방법(공개모집 원칙, 수의계약)이")
 37. 작업 중단 후 실행 버튼으로 완료된 문서는 건너뛰고 이어서 진행
+38. 세부 설정 '자간 정리' 탭을 실행창 '세부 작업'과 같은 7단계로 재구성,
+    짧은 마지막 줄 병합 글자 수를 세부 작업 창에서 바로 설정
 
 필요 패키지
 ------------------------------------------------------------
@@ -7605,6 +7607,13 @@ class HwpAutoDocFitGUI:
                             variable=choices[key]).pack(anchor="w")
             ttk.Label(item, text=STAGE_EXAMPLES[key], style="Hint.TLabel",
                       wraplength=445, justify="left").pack(anchor="w", padx=(25, 0), pady=(1, 0))
+            if key == "short_line":
+                threshold_frame = ttk.Frame(item)
+                threshold_frame.pack(anchor="w", padx=(25, 0), pady=(4, 0))
+                ttk.Label(threshold_frame, text="마지막 줄").pack(side="left")
+                ttk.Spinbox(threshold_frame, from_=1, to=20, width=3,
+                            textvariable=self.punctuation_threshold_var, justify="center").pack(side="left", padx=(4, 4))
+                ttk.Label(threshold_frame, text="자 이하일 때 합쳐요 (표·컨트롤 줄 병합에도 함께 적용)").pack(side="left")
         def save():
             self.stage_choices[mode] = {key: variable.get() for key, variable in choices.items()}
             self._요약갱신()
@@ -8799,7 +8808,7 @@ class HwpAutoDocFitGUI:
         notebook.pack(fill="both", expand=True, padx=18)
         self.settings_notebook = notebook
         tabs = {}
-        for key, title in (("spacing", "글자 간격"), ("format", "서식·내어쓰기"),
+        for key, title in (("spacing", "자간 정리"), ("format", "서식·내어쓰기"),
                            ("layout", "페이지·검토"), ("advanced", "고급 설정"), ("cat", "고양이 이미지"),
                            ("log", "처리 기록")):
             frame = ttk.Frame(notebook)
@@ -8851,42 +8860,68 @@ class HwpAutoDocFitGUI:
             wraplength=650,
         ).pack(anchor="w", padx=(22, 0), pady=(2, 0))
         container = tabs["spacing"]
+        ttk.Label(container,
+                  text="실행창의 ‘자간 정리 · 세부 작업’과 같은 7단계입니다. 여기서 켜고 끄면 세부 작업 창에도 그대로 반영됩니다.",
+                  style="Hint.TLabel", wraplength=680).pack(anchor="w", pady=(0, 10))
+
+        self.spacing_stage_vars = {}
+        spacing_stage_frames = {}
+        for number, (key, label) in enumerate(stages_for_mode("spacing"), 1):
+            var = tk.BooleanVar(value=self.stage_choices["spacing"].get(key, True))
+            var.trace_add("write", lambda *_, k=key, v=var: self.stage_choices["spacing"].__setitem__(k, v.get()))
+            self.spacing_stage_vars[key] = var
+            item = ttk.Frame(container)
+            item.pack(fill="x", pady=(4, 7))
+            ttk.Checkbutton(item, text=f"{number:02d}. {label}", variable=var).pack(anchor="w")
+            ttk.Label(item, text=STAGE_EXAMPLES[key], style="Hint.TLabel",
+                      wraplength=650, justify="left").pack(anchor="w", padx=(25, 0), pady=(1, 0))
+            spacing_stage_frames[key] = item
+
+        # 01. 문서 전체 자간 초기화 — 위 체크와 별개로, 실제로 초기화하려면 아래도 켜야 한다.
+        sub1 = ttk.Frame(spacing_stage_frames["reset_spacing"])
+        sub1.pack(anchor="w", padx=(25, 0), pady=(4, 0), fill="x")
         self.reset_spacing_check = ttk.Checkbutton(
-            container, text="기존 자간을 0%로 초기화 후 정리하기",
+            sub1, text="기존 자간을 0%로 초기화 후 정리하기",
             variable=self.reset_spacing_var)
-        self.reset_spacing_check.pack(anchor="w", pady=(0, 4))
-        ttk.Label(container, text="‘자간 정리’에 적용되며 기본값은 꺼짐입니다. ‘한 번에 정리’(일괄 적용)는 이 설정과 관계없이 항상 자간을 0%로 초기화합니다.",
-                  style="Hint.TLabel", wraplength=650).pack(anchor="w", pady=(0, 10))
+        self.reset_spacing_check.pack(anchor="w")
+        ttk.Label(sub1, text="기본값은 꺼짐입니다. ‘한 번에 정리’는 이 설정과 관계없이 항상 자간을 0%로 초기화합니다.",
+                  style="Hint.TLabel", wraplength=620).pack(anchor="w", pady=(0, 2))
 
-        # 그룹 1: 줄 끝을 깔끔하게
-        group1 = ttk.LabelFrame(container, text="줄 끝을 깔끔하게", padding=8)
-        group1.pack(fill="x", pady=(0, 8))
-
+        # 02. 본문 자간 조정 — 04. 표·컨트롤 자간 조정과 알고리즘을 함께 씀.
+        sub2 = ttk.Frame(spacing_stage_frames["body_spacing"])
+        sub2.pack(anchor="w", padx=(25, 0), pady=(4, 0), fill="x")
         self.prevent_word_split_check = ttk.Checkbutton(
-            group1, text="줄 끝에서 단어가 끊기지 않게 정리하기",
+            sub2, text="줄 끝에서 단어가 끊기지 않게 정리하기",
             variable=self.prevent_word_split_var)
-        self.prevent_word_split_check.pack(anchor="w", pady=(0, 6))
+        self.prevent_word_split_check.pack(anchor="w")
+        ttk.Label(sub2, text="04. 표·컨트롤 자간 조정에도 함께 적용됩니다.",
+                  style="Hint.TLabel", wraplength=620).pack(anchor="w", pady=(0, 2))
 
-        punctuation_frame = ttk.Frame(group1)
-        punctuation_frame.pack(anchor="w", fill="x")
+        # 03. 짧은 마지막 줄 병합 — 05. 표·컨트롤 줄 병합과 글자 수 기준을 함께 씀.
+        sub3 = ttk.Frame(spacing_stage_frames["short_line"])
+        sub3.pack(anchor="w", padx=(25, 0), pady=(4, 0), fill="x")
         self.punctuation_check = ttk.Checkbutton(
-            punctuation_frame,
-            text="짧게 남은 마지막 줄 합치기 (마지막 줄",
-            variable=self.punctuation_var
-        )
-        self.punctuation_check.pack(side="left")
+            sub3, text="문장부호로 시작하는 문장의 짧은 줄 병합 사용",
+            variable=self.punctuation_var)
+        self.punctuation_check.pack(anchor="w")
+        punctuation_frame = ttk.Frame(sub3)
+        punctuation_frame.pack(anchor="w", fill="x", pady=(2, 0))
+        ttk.Label(punctuation_frame, text="마지막 줄").pack(side="left")
         self.punctuation_threshold_spin = ttk.Spinbox(
             punctuation_frame, from_=1, to=20, width=3, textvariable=self.punctuation_threshold_var, justify="center"
         )
         self.punctuation_threshold_spin.pack(side="left", padx=(4, 4))
-        ttk.Label(punctuation_frame, text="자 이하일 때)").pack(side="left")
+        ttk.Label(punctuation_frame, text="자 이하일 때 합쳐요 (05. 표·컨트롤 줄 병합에도 함께 적용)").pack(side="left")
 
+        # 04. 표·컨트롤 자간 조정 — 05. 표·컨트롤 줄 병합도 이 설정을 함께 씀.
+        sub4 = ttk.Frame(spacing_stage_frames["control_spacing"])
+        sub4.pack(anchor="w", padx=(25, 0), pady=(4, 0), fill="x")
         self.table_spacing_check = ttk.Checkbutton(
-            group1, text="표 서식 내 문장도 자간조정하기",
+            sub4, text="표 서식 내 문장도 자간조정하기",
             variable=self.table_spacing_var)
-        self.table_spacing_check.pack(anchor="w", pady=(6, 0))
-        ttk.Label(group1, text="끄면 표(셀) 안의 문장은 글자 간격 조정과 짧은 줄 합치기에서 제외됩니다. 기본값은 켜짐입니다.",
-                  style="Hint.TLabel", wraplength=640).pack(anchor="w", padx=(22, 0))
+        self.table_spacing_check.pack(anchor="w")
+        ttk.Label(sub4, text="끄면 표(셀) 안의 문장은 04·05단계에서 제외됩니다. 기본값은 켜짐입니다.",
+                  style="Hint.TLabel", wraplength=620).pack(anchor="w", pady=(0, 2))
 
         self.keep_punctuation_set_check = ttk.Checkbutton(
             tabs["layout"],
@@ -9236,8 +9271,14 @@ class HwpAutoDocFitGUI:
             self._설정창_생성()
             self._항상위_적용()
         self._설정탭_상태_갱신()
+        self._자간정리탭_갱신()
         self.settings_toplevel.deiconify()
         self.settings_toplevel.lift()
+
+    def _자간정리탭_갱신(self):
+        """실행창의 '세부 작업…'에서 바꾼 값을 설정창의 '자간 정리' 탭에도 반영한다."""
+        for key, var in getattr(self, "spacing_stage_vars", {}).items():
+            var.set(self.stage_choices["spacing"].get(key, True))
 
     def _설정_변경됨(self, *args):
         try:
