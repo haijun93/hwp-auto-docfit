@@ -45,6 +45,8 @@ hwp 자동 편집기
 33. 본문·내용·부연설명 묶음의 쪽별 줄 수에 따른 줄간격 축소·확대
 34. 쉼표·따옴표 및 공백 없이 붙은 3글자 이하 괄호를 단어와 함께 처리
 35. 생성형 AI 채팅창에서 복사한 텍스트 정리(마크다운 기호 제거, 문단·목록 줄바꿈 복원)
+36. 괄호 안 공백을 포함한 부연 설명 전체를 한 어절로 보고 줄 끝 분리 방지
+    (예: "계약방법(공개모집 원칙, 수의계약)이")
 
 필요 패키지
 ------------------------------------------------------------
@@ -3530,6 +3532,72 @@ def 현재줄_끝_붙임괄호_분리인가():
             pass
 
 
+_괄호내부_다음구간_미리보기_글자수 = 40
+
+
+def 현재줄_끝_괄호내부_공백분리인가():
+    """'계약방법(공개모집' | '원칙, 수의계약)이'처럼, 괄호 안 부연 설명의
+    공백에서 화면줄이 갈라졌는지 확인한다.
+
+    '(공개모집 원칙, 수의계약)'처럼 여는 괄호와 닫는 괄호 사이가 공백·쉼표로
+    이어진 짧은 설명은 여는 괄호부터 닫는 괄호까지를 하나의 어절로 보고,
+    그 안의 공백에서 줄이 갈라지면 다른 어절 분리와 똑같이 자간을 좁혀
+    같은 화면줄에 붙인다. 닫는 괄호가 미리보기 범위 안에 없으면(설명이
+    너무 길면) 대상으로 보지 않는다.
+    """
+    if hwp is None:
+        return False
+
+    원래위치 = hwp.GetPos()
+    try:
+        hwp_run("MoveLineEnd")
+        줄끝위치 = hwp.GetPos()
+
+        # 줄 끝 바로 다음 문자가 실제 공백이어야 이 규칙의 대상이다
+        # (실제 Enter는 제외).
+        hwp_run("MoveSelRight")
+        다음위치 = hwp.GetPos()
+        다음문자 = 현재선택영역_텍스트()
+        hwp_run("Cancel")
+        hwp.SetPos(*줄끝위치)
+        if not 다음문자 or 실제_엔터_포함(다음문자) or not 다음문자[0].isspace():
+            return False
+        if 다음위치[0] != 줄끝위치[0] or 다음위치[1] != 줄끝위치[1]:
+            return False
+
+        # 문단 시작부터 줄 끝까지 열린 괄호가 아직 닫히지 않았는지 확인한다.
+        hwp.SetPos(줄끝위치[0], 줄끝위치[1], 0)
+        if hwp.SelectText(줄끝위치[1], 0, 줄끝위치[1], 줄끝위치[2]) is False:
+            hwp.SetPos(*줄끝위치)
+            return False
+        앞부분 = (현재선택영역_텍스트() or "").replace("\r", "").replace("\n", "")
+        hwp_run("Cancel")
+        hwp.SetPos(*줄끝위치)
+        여는괄호수 = sum(앞부분.count(ch) for ch in "(（")
+        닫는괄호수 = sum(앞부분.count(ch) for ch in ")）")
+        if 여는괄호수 <= 닫는괄호수:
+            return False
+
+        # 닫는 괄호가 미리보기 범위 안에서 나오는지 확인한다.
+        for _ in range(_괄호내부_다음구간_미리보기_글자수):
+            hwp_run("MoveSelRight")
+        다음구간 = (현재선택영역_텍스트() or "").replace("\r", "").replace("\n", "")
+        hwp_run("Cancel")
+        hwp.SetPos(*줄끝위치)
+        return any(ch in ")）" for ch in 다음구간)
+    except Exception:
+        try:
+            hwp_run("Cancel")
+        except Exception:
+            pass
+        return False
+    finally:
+        try:
+            hwp.SetPos(*원래위치)
+        except Exception:
+            pass
+
+
 # 단어는 한글/영문/숫자와 결합문자, 단어 사이 가운뎃점으로 판정한다.
 def 단어문자인가(ch):
     return bool(ch) and all(c.isalnum() or unicodedata.category(c).startswith('M')
@@ -3738,6 +3806,23 @@ def 단어모드_자간적용(runs, delta):
 
 def 단어중간_줄바꿈방지(최대시도):
     """현재 화면줄을 처리하고 다음 경계는 호출자의 줄 순회에서 처리한다."""
+    # '단어모드_분리정보'는 경계에서 양옆으로 공백을 만나면 즉시 멈추므로
+    # '계약방법(공개모집' | '원칙, 수의계약)이'처럼 괄호 안 공백에서 갈라진
+    # 경우는 감지하지 못한다. 아래 루프에서 먼저 자간을 좁혀 처리한다.
+    for _ in range(max(1, 최대시도)):
+        if 중단_요청됨():
+            return False
+        if not 현재줄_끝_괄호내부_공백분리인가():
+            break
+        hwp_run("MoveLineEnd")
+        hwp_run("MoveSelLineBegin")
+        hwp_run("CharShapeSpacingDecrease")
+        색상_적용_현재선택()
+        hwp_run("Cancel")
+    else:
+        문제줄 = 현재_화면줄_텍스트()
+        검수_문제_기록(현재_처리파일, f"[괄호 안 공백 분리] {문제줄.strip()}")
+
     anchor, _ = 단어모드_줄범위(hwp.GetPos())
     seen = set()
     failure_reason = "반복 한도 도달"
@@ -3825,6 +3910,7 @@ def 자간자동조정(최대시도=None):
     총_시도 = 0
     총_시도_상한 = max(최대시도 * 8, 40)
     붙임괄호_축소횟수 = 0
+    괄호내부공백_축소횟수 = 0
     어절분리_축소횟수 = 0
     단어_장평축소횟수 = 0
 
@@ -3864,6 +3950,29 @@ def 자간자동조정(최대시도=None):
             continue
 
         붙임괄호_축소횟수 = 0
+
+        # '계약방법(공개모집' | '원칙, 수의계약)이'처럼 괄호 안 부연 설명의
+        # 공백에서 갈라진 경우도 하나의 어절로 보고 우선 처리한다.
+        if 현재줄_끝_괄호내부_공백분리인가():
+            if 괄호내부공백_축소횟수 >= 최대시도:
+                for _ in range(괄호내부공백_축소횟수):
+                    hwp_run("Undo")
+                문제줄 = 현재_화면줄_텍스트()
+                검수_문제_기록(현재_처리파일, f"[괄호 안 공백 분리] {문제줄.strip()}")
+                return True
+
+            hwp_run("MoveLineEnd")
+            hwp_run("MoveSelLineBegin")
+            hwp_run("CharShapeSpacingDecrease")
+            색상_적용_현재선택()
+            hwp_run("Cancel")
+            괄호내부공백_축소횟수 += 1
+            총_시도 += 1
+            if 총_시도 > 총_시도_상한:
+                return True
+            continue
+
+        괄호내부공백_축소횟수 = 0
 
         # '제공하' | '며,'처럼 공백 없는 한 어절이 화면줄 경계에서
         # 갈라진 경우에는 HWP의 단어 선택 로직보다 먼저 처리한다.
