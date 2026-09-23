@@ -100,6 +100,21 @@ hwp 자동 편집기
     두면 '문서로 추가'를 누를 때 바로 그 폴더에 HWPX로 변환해(배치
     작업과 독립된 한/글 세션 사용) 문서 목록에 추가하며, 비워두면
     기존처럼 저장 위치를 직접 골라 .txt로 추가함
+52. 곧은 큰따옴표(")를 한글 표준 둥근따옴표(" ")로 자동 통일(공백
+    정규화 단계에 포함). 여는/닫는 판정은 줄 시작·공백·여는 괄호 뒤인지로
+    가리며, 작은따옴표는 발·분 표기나 영어 축약형과 구분할 방법이 없어
+    다루지 않음(연도 앞 표기는 기존 규칙 그대로 유지)
+53. 문두기호 뒤 공백 보정이 탭·전각공백도 인식해 표준 반각 공백 1칸으로
+    바꿈(이전엔 스페이스만 인식해 탭·전각공백 뒤에 공백을 하나 더
+    끼워 넣었음). 단어 사이 공백 정리도 탭·전각공백 1칸까지 대상에 포함
+54. 자간만으로 줄바꿈이 해결되지 않는 긴 어절에 장평(글자 가로비율)을
+    추가로 줄이는 기능 활성화. 자간은 적당히만(최대 4%p) 남기고 장평을
+    1%씩 최대 15단계(85%까지) 줄이며 재확인 — 자간을 허용 범위 끝까지
+    밀어붙여 글자가 다닥다닥 붙어 보이는 대신 장평과 나눠 분담함
+55. 긴 단어 전체가 통째로 다음 줄로 밀려 양쪽정렬 단어 간격이 비정상
+    적으로 벌어지는 경우를 새로 감지해 자간(부족하면 장평도 추가)으로
+    끌어올림. 기존에는 단어가 중간에서 갈라지는 경우만 감지했고, 이처럼
+    깨끗한 단어 경계에서 통째로 밀려난 경우는 대상이 아니었음
 
 필요 패키지
 ------------------------------------------------------------
@@ -155,7 +170,10 @@ import win32con
 from defusedxml.ElementTree import fromstring as safe_xml_fromstring
 from docfit_core.style_hierarchy import DOT_MARKERS, analyze_hierarchy, display_role, hierarchy_summary, leading_marker, normalize_leading_dot, stored_role
 from docfit_core.stage_selection import STAGE_EXAMPLES, enabled as stage_enabled, stages_for_mode
-from docfit_core.document_rules import ParagraphSpacingTracker, YEAR_QUOTE_PATTERN
+from docfit_core.document_rules import (
+    ParagraphSpacingTracker, YEAR_QUOTE_PATTERN, marker_space_fix,
+    straight_double_quote_replacements,
+)
 from docfit_core.document_review import DOCUMENT_KINDS, PURPOSES, review_document
 from docfit_core.style_profile_edit import FIELDS as STYLE_FIELDS, ROLES as STYLE_ROLES, apply_reviewed_styles
 from docfit_core.korean_proofread import (
@@ -3901,6 +3919,145 @@ def 단어모드_자간적용(runs, delta):
     hwp_run('Cancel')
 
 
+_단어모드_장평필드 = tuple('Ratio' + name for name in
+    ('Hangul', 'Latin', 'Hanja', 'Japanese', 'Other', 'Symbol', 'User'))
+
+
+def 단어모드_장평보관(start, end):
+    """혼합 장평(글자 가로비율)을 연속 구간별 보관. 자간보관과 동일한 방식."""
+    runs = []
+    pos = start
+    while pos[2] < end[2]:
+        if 중단_요청됨():
+            return None
+        part = 단어모드_한글자(pos)
+        if not part or part[1][2] > end[2]:
+            raise RuntimeError('장평 보관 중 문자 위치 확인 실패')
+        단어모드_범위선택(pos, part[1])
+        pset = hwp.HParameterSet.HCharShape
+        hwp.HAction.GetDefault('CharShape', pset.HSet)
+        values = tuple(int(getattr(pset, key)) for key in _단어모드_장평필드)
+        if runs and runs[-1][2] == values:
+            runs[-1] = (runs[-1][0], part[1], values)
+        else:
+            runs.append((pos, part[1], values))
+        pos = part[1]
+    hwp_run('Cancel')
+    return runs
+
+
+def 단어모드_장평적용(runs, delta):
+    for start, end, values in runs:
+        단어모드_범위선택(start, end)
+        act = hwp.CreateAction('CharShape')
+        pset = act.CreateSet()
+        for key, value in zip(_단어모드_장평필드, values):
+            pset.SetItem(key, max(85, min(150, value + delta)))
+        if act.Execute(pset) is False:
+            raise RuntimeError('단어 모드 장평 적용 실패')
+    hwp_run('Cancel')
+
+
+def 단어_장평_추가축소_시도(start, end, anchor, word_end, 최대시도):
+    """자간만으로 안 줄어드는 긴 어절에 장평(글자 가로비율)을 추가로 줄여본다.
+
+    자간을 허용 범위 끝까지 밀어붙이면 글자가 다닥다닥 붙어 보기 흉해
+    지므로, 사람이 수동으로 하듯 자간은 적당히만(최대 4%p) 남기고 장평을
+    1%씩 최대 15단계(85%까지) 줄이며 다시 확인한다 — '자간 -4%, 장평
+    93%' 조합처럼, 자간을 극한까지 밀어붙이는 대신 장평과 나눠 분담한다.
+    """
+    spacing_runs = 단어모드_자간보관(start, end)
+    if spacing_runs is None:
+        return False
+    자간값 = -min(4, max(1, 최대시도))
+    if any(not -50 <= v + 자간값 <= 50 for _, _, vs in spacing_runs for v in vs):
+        자간값 = 0
+    자간적용됨 = False
+    성공 = False
+    try:
+        if 자간값:
+            단어모드_자간적용(spacing_runs, 자간값)
+            자간적용됨 = True
+        ratio_runs = 단어모드_장평보관(start, end)
+        if ratio_runs is None:
+            return False
+        for step in range(1, 16):
+            if 중단_요청됨():
+                return False
+            단어모드_장평적용(ratio_runs, -step)
+            _, new_end = 단어모드_줄범위(anchor)
+            성공 = new_end[2] >= word_end[2]
+            if 성공:
+                진단로그(f"[단어 분리 보정] 자간 {자간값}%p + 장평 {100 - step}%로 해결")
+                break
+        if not 성공:
+            단어모드_장평적용(ratio_runs, 0)
+    finally:
+        if not 성공 and 자간적용됨:
+            단어모드_자간적용(spacing_runs, 0)
+    return 성공
+
+
+def 다음단어_당김_시도(anchor, 최대시도):
+    """긴 단어 전체가 통째로 다음 줄로 밀려, 이번 줄 양쪽정렬이 단어
+    사이 간격을 비정상적으로 벌린 경우를 찾아 끌어올린다.
+
+    단어 중간에서 갈라진 경우(단어모드_분리정보가 처리)는 이미 아래
+    본 루프가 다루므로 여기서는 제외한다 — 줄 끝이 이미 깨끗한 단어
+    경계(공백)이고 바로 다음이 새 단어로 시작하는 경우만 다룬다. 자간
+    (-50%까지)만으로 안 되면 장평도 추가로 줄인다.
+    """
+    start, boundary = 단어모드_줄범위(anchor)
+    다음글자 = 단어모드_한글자(boundary)
+    if not 다음글자 or not 다음글자[2] or 다음글자[2].isspace():
+        return False
+    if 단어모드_분리정보(anchor) is not None:
+        return False
+
+    pos = boundary
+    다음단어_끝 = boundary
+    while True:
+        if 중단_요청됨():
+            return False
+        part = 단어모드_한글자(pos)
+        if not part or not part[2] or part[2].isspace():
+            break
+        다음단어_끝 = part[1]
+        pos = part[1]
+    if 다음단어_끝[2] == boundary[2]:
+        return False
+
+    runs = 단어모드_자간보관(start, boundary)
+    if runs is None:
+        return False
+    success = False
+    changed = False
+    try:
+        for step in range(1, 최대시도 + 1):
+            if 중단_요청됨():
+                return False
+            delta = -step
+            if any(not -50 <= v + delta <= 50 for _, _, vs in runs for v in vs):
+                break
+            changed = True
+            단어모드_자간적용(runs, delta)
+            _, new_end = 단어모드_줄범위(anchor)
+            success = new_end[2] >= 다음단어_끝[2]
+            if success:
+                break
+    finally:
+        if changed and not success:
+            단어모드_자간적용(runs, 0)
+    if not success and 단어_장평_추가축소_시도(start, boundary, anchor, 다음단어_끝, 최대시도):
+        success = True
+    if success:
+        단어모드_범위선택(start, boundary)
+        색상_적용_현재선택()
+        hwp_run('Cancel')
+        진단로그("[다음 단어 당김] 통째로 밀린 단어를 앞줄로 끌어올림")
+    return success
+
+
 def 단어중간_줄바꿈방지(최대시도):
     """현재 화면줄을 처리하고 다음 경계는 호출자의 줄 순회에서 처리한다."""
     # '단어모드_분리정보'는 경계에서 양옆으로 공백을 만나면 즉시 멈추므로
@@ -3919,6 +4076,15 @@ def 단어중간_줄바꿈방지(최대시도):
     else:
         문제줄 = 현재_화면줄_텍스트()
         검수_문제_기록(현재_처리파일, f"[괄호 안 공백 분리] {문제줄.strip()}")
+
+    # 긴 단어 전체가 통째로 다음 줄로 밀려 양쪽정렬 간격이 벌어진 경우도
+    # 같은 방식(자간 우선, 부족하면 장평 추가)으로 먼저 당겨 본다.
+    for _ in range(max(1, 최대시도)):
+        if 중단_요청됨():
+            return False
+        anchor0, _ = 단어모드_줄범위(hwp.GetPos())
+        if not 다음단어_당김_시도(anchor0, 최대시도):
+            break
 
     anchor, _ = 단어모드_줄범위(hwp.GetPos())
     seen = set()
@@ -3980,6 +4146,14 @@ def 단어중간_줄바꿈방지(최대시도):
             finally:
                 if changed and not success:
                     단어모드_자간적용(runs, 0)
+            if not success and shrink:
+                # 자간(-50%까지)만으로 안 되면 장평을 추가로 줄여 본다 —
+                # 사람이 수동으로 하듯 자간은 적당히만 남기고 장평과 나눠
+                # 분담한다('확대' 방향은 장평을 넓히는 부작용이 더 크므로
+                # 대상에서 제외).
+                if 단어_장평_추가축소_시도(start, end, anchor, word_end, 최대시도):
+                    success = True
+                    failure_reason = ""
             if not success:
                 break
             단어모드_범위선택(start, end)
@@ -4914,26 +5088,33 @@ def 쉼표_앞_공백_정리_문단_처리():
     return 쉼표_공백_정리_문단_처리()
 
 
+_단어사이_공백류 = (" ", "\t", "　")
+
+
 def 단어사이_연속공백_정리_대상(text):
-    """문단 안에서 단어 사이의 연속 공백(2칸 이상)을 1칸으로 줄일 구간을 찾는다.
+    """문단 안에서 단어 사이의 공백류(2칸 이상, 또는 탭·전각공백 1칸)를
+    표준 반각 공백 1칸으로 줄일 구간을 찾는다.
 
     문단 맨 앞의 들여쓰기 공백(□/ㅇ/- 등 항목 위치나 세트문장 후속 판정에
     쓰이는 선행 공백)은 이 정리의 대상이 아니므로 건드리지 않고, 실제
-    내용이 시작된 뒤에 나오는 연속 공백만 대상으로 한다.
+    내용이 시작된 뒤에 나오는 공백류만 대상으로 한다. 탭·전각공백은
+    자동 탭 간격이 규격과 안 맞아 수기로 스페이스를 끼워 넣은 흔적인
+    경우가 많아, 연속이 아니어도(1칸이라도) 표준 공백이 아니면 대상으로
+    삼는다.
     """
     결과 = []
     if not text:
         return 결과
-    벗긴텍스트 = text.lstrip(" ")
+    벗긴텍스트 = text.lstrip("".join(_단어사이_공백류))
     선행공백_길이 = len(text) - len(벗긴텍스트)
     i = 선행공백_길이
     n = len(text)
     while i < n:
-        if text[i] == " ":
+        if text[i] in _단어사이_공백류:
             시작 = i
-            while i < n and text[i] == " ":
+            while i < n and text[i] in _단어사이_공백류:
                 i += 1
-            if i - 시작 > 1:
+            if i - 시작 > 1 or text[시작] != " ":
                 결과.append((시작, i))
         else:
             i += 1
@@ -5020,6 +5201,31 @@ def 연도_따옴표_정리_문단_처리():
     return changed
 
 
+def 곧은따옴표_통일_문단_처리():
+    """현재 문단에서 곧은 큰따옴표(")를 한글 표준 둥근따옴표(" ")로 바꾼다.
+
+    작은따옴표는 여기서 다루지 않는다 — 발·분 표기(6' 2")나 영어 축약형과
+    진짜 인용부호를 구분할 방법이 없어, 연도 앞 표기처럼 문맥이 분명한
+    좁은 규칙(연도_따옴표_정리_문단_처리)만 따로 둔다.
+    """
+    text = 현재문단_텍스트()
+    replacements = straight_double_quote_replacements(text or "")
+    if not replacements:
+        return 0
+    start = hwp.GetPos()
+    changed = 0
+    try:
+        for index, replacement in reversed(replacements):
+            if 문단_범위_선택(start, index, index + 1) is False:
+                raise RuntimeError("곧은따옴표 선택 실패")
+            텍스트_삽입(replacement)
+            changed += 1
+    finally:
+        hwp_run("Cancel")
+        hwp.SetPos(*start)
+    return changed
+
+
 def 문장내_공백_정규화_전체_적용():
     """괄호 안쪽 공백 + 단어 사이 쉼표 공백 + 단어 사이 연속 공백을 문서 전체에 적용한다."""
     if 중단_요청됨():
@@ -5040,6 +5246,7 @@ def 문장내_공백_정규화_전체_적용():
     연속공백수정수 = 0
     기호수정수 = 0
     연도따옴표수정수 = 0
+    따옴표수정수 = 0
     방문문단수 = 0
     정체횟수 = 0
 
@@ -5052,6 +5259,7 @@ def 문장내_공백_정규화_전체_적용():
 
         기호수정수 += 문두_미음_기호_정리()
         연도따옴표수정수 += 연도_따옴표_정리_문단_처리()
+        따옴표수정수 += 곧은따옴표_통일_문단_처리()
         괄호삭제수 += 괄호_안쪽_공백_정리_문단_처리()
         쉼표수정수 += 쉼표_공백_정리_문단_처리()
         연속공백수정수 += 단어사이_연속공백_정리_문단_처리()
@@ -5069,7 +5277,8 @@ def 문장내_공백_정규화_전체_적용():
     로그(
         "문장 내 공백 정규화 완료 "
         f"(방문 문단 {방문문단수}개 / 괄호 AllReplace {allreplace_실행수}회 / "
-        f"문두 ㅁ→□ {기호수정수}건 / 연도 따옴표 {연도따옴표수정수}건 / 괄호 후방삭제 {괄호삭제수}자 / 쉼표 공백 {쉼표수정수}건 / 연속 공백 {연속공백수정수}건)"
+        f"문두 ㅁ→□ {기호수정수}건 / 연도 따옴표 {연도따옴표수정수}건 / 곧은따옴표 {따옴표수정수}건 / "
+        f"괄호 후방삭제 {괄호삭제수}자 / 쉼표 공백 {쉼표수정수}건 / 연속 공백 {연속공백수정수}건)"
     )
     return True
 
@@ -5086,11 +5295,21 @@ def 문장부호_뒤_공백_보정_문단_처리():
     if not text:
         return False
     마커_끝 = 문장부호_마커_끝위치(text)
-    if 마커_끝 is None or 마커_끝 >= len(text) or text[마커_끝] == " ":
+    조치 = marker_space_fix(text, 마커_끝)
+    if 조치 is None:
         return False
 
     문단_시작위치 = hwp.GetPos()
     try:
+        if 조치 == "replace":
+            # 탭·전각공백 등 다른 공백류가 이미 있으면 지우고 표준 반각
+            # 공백 한 칸으로 다시 넣는다(그냥 앞에 삽입만 하면 두 공백이
+            # 함께 남는다).
+            if 문단_범위_선택(문단_시작위치, 마커_끝, 마커_끝 + 1) is False:
+                raise RuntimeError("공백류 문자 선택 실패")
+            if hwp_run("Delete") is False:
+                raise RuntimeError("공백류 문자 삭제 실패")
+            hwp.SetPos(*문단_시작위치)
         hwp.SetPos(문단_시작위치[0], 문단_시작위치[1], 문단_시작위치[2] + 마커_끝)
         텍스트_삽입(" ")
         return True
