@@ -47,6 +47,7 @@ hwp 자동 편집기
 35. 생성형 AI 채팅창에서 복사한 텍스트 정리(마크다운 기호 제거, 문단·목록 줄바꿈 복원)
 36. 괄호 안 공백을 포함한 부연 설명 전체를 한 어절로 보고 줄 끝 분리 방지
     (예: "계약방법(공개모집 원칙, 수의계약)이")
+37. 작업 중단 후 실행 버튼으로 완료된 문서는 건너뛰고 이어서 진행
 
 필요 패키지
 ------------------------------------------------------------
@@ -5993,7 +5994,8 @@ def 작업_실행(
     표자간조정=True,
     쪽범위=None,
     로그파일=False,
-    세부작업_선택=None
+    세부작업_선택=None,
+    시작_인덱스=1
 ):
     global 작업_모드, 문두라벨_기호설정, 자간초기화_사용
     global 표_자간조정_사용, 쪽범위_요청, 로그파일_사용
@@ -6120,7 +6122,12 @@ def 작업_실행(
         성공 = 0
         실패 = 0
 
+        if 시작_인덱스 > 1:
+            로그(f"이전에 중단된 작업을 이어서 진행합니다: {시작_인덱스}/{total}번째 문서부터")
+
         for index, 파일 in enumerate(파일목록, 1):
+            if index < 시작_인덱스:
+                continue
             if 중단_요청됨():
                 break
             try:
@@ -7280,6 +7287,9 @@ class HwpAutoDocFitGUI:
         # '03 진행 상황' 바로 아래 결과 줄: 결과 버튼 두 개(작업 결과가 나오기 전에는 비활성)와,
         # 그 오른쪽 옆에 저장 안내 / '[작업 결과]' 문구를 둔다.
         self._결과목록 = []
+        self._재개_대기중 = False    # 중단 버튼으로 멈춘 작업이 있어 실행 버튼으로 이어서 진행할 수 있는 상태
+        self._재개_시작_인덱스 = 1
+        self._재개_모드 = None
         self._작업시작시각 = None
         self._작업모드 = "all"
         self.result_bar = ttk.Frame(main, height=40)
@@ -7709,9 +7719,16 @@ class HwpAutoDocFitGUI:
         for 파일 in 파일들:
             self._경로_열기(파일)
 
-    def _결과_초기화(self):
-        """이전 작업 결과 표시(결과 버튼 비활성화·작업 결과 문구·절약 시간 메시지)를 되돌린다."""
-        self._결과목록 = []
+    def _결과_초기화(self, 결과목록도_지우기=True):
+        """이전 작업 결과 표시(결과 버튼 비활성화·작업 결과 문구·절약 시간 메시지)를 되돌린다.
+
+        결과목록도_지우기=False면 '재개 대기' 상태(중단된 작업을 실행 버튼으로
+        이어서 진행하는 상태)의 완료 기록을 남겨 둔다.
+        """
+        if 결과목록도_지우기:
+            self._결과목록 = []
+            self._재개_대기중 = False
+            self._재개_시작_인덱스 = 1
         self.open_result_button.config(state="disabled")
         self._원본폴더_버튼_갱신()      # 원본 폴더 버튼은 목록에 문서가 있으면 계속 켜 둔다.
         self.footer_note_var.set(self.FOOTER_NOTE_DEFAULT)
@@ -7881,6 +7898,7 @@ class HwpAutoDocFitGUI:
         self.file_count.configure(text=f"{len(self.files)}개 문서")
         self._실행버튼_상태("normal" if self.files else "disabled")
         self._원본폴더_버튼_갱신()
+        self._재개_대기중 = False     # 목록이 바뀌면 이전 중단 지점은 더 이상 유효하지 않음
         if not self.files:
             self._안내_설정(1)     # 목록이 비면 다시 문서 추가부터 안내
 
@@ -9822,17 +9840,28 @@ class HwpAutoDocFitGUI:
 
         if mode in ("format", "all"):
             self.stdformat_var.set(True)
+
+        # 중단 버튼으로 멈춘 작업과 같은 모드로 다시 실행하면, 이미 끝낸
+        # 문서는 건너뛰고 그 다음 문서부터 이어서 진행한다. 모드가 다르면
+        # 새 작업으로 보고 처음부터 다시 시작한다.
+        이어서_진행 = self._재개_대기중 and self._재개_모드 == mode
+        시작_인덱스 = self._재개_시작_인덱스 if 이어서_진행 else 1
+        self._재개_대기중 = False
+
         self.running = True
         self._고양이상태(mode)
         self.settings_toplevel.withdraw()
         self.closing = False
         중단_event.clear()
-        self._결과_초기화()          # 이전 작업 결과 표시를 지우고 진행 표시를 초기화
-        self._작업시작시각 = time.monotonic()
+        self._결과_초기화(결과목록도_지우기=not 이어서_진행)   # 이어서 진행할 때는 이전 결과 기록을 남긴다
+        if not 이어서_진행:
+            self._작업시작시각 = time.monotonic()
         self._작업모드 = mode
         self.버튼_작업중()
 
         self.로그표시("")
+        if 이어서_진행:
+            self.로그표시(f"중단된 작업을 이어서 진행합니다 ({시작_인덱스}/{len(self.files)}번째 문서부터).")
         self.로그표시("=" * 45)
         self.로그표시(f"{APP_NAME} 작업 시작 — {dict(spacing='자간조정', format='서식적용', all='일괄적용')[mode]}")
         self.로그표시(f"문서: {len(self.files)}개")
@@ -9925,6 +9954,7 @@ class HwpAutoDocFitGUI:
                 작업범위,
                 self.log_file_var.get(),
                 dict(self.stage_choices[mode]),
+                시작_인덱스,
             ),
             daemon=True
         )
@@ -10015,10 +10045,20 @@ class HwpAutoDocFitGUI:
                     self._안내_설정(0)
                     self.버튼_대기중()
                     self._고양이상태("stopped")
-                    self.status_var.set("작업 중단")
-                    self.로그표시("=" * 45 + "\n작업이 중단되었습니다.\n" + "=" * 45)
+                    완료수 = len(self._결과목록)
+                    # 완료된 문서 수가 전체와 같으면(마지막 문서 저장 직후 중단) 더 이어갈 게 없다.
+                    if 0 < 완료수 < len(self.files):
+                        self._재개_대기중 = True
+                        self._재개_시작_인덱스 = 완료수 + 1
+                        self._재개_모드 = self._작업모드
+                        안내 = f"작업이 중단되었습니다. ({완료수}/{len(self.files)}개 완료 — 실행을 누르면 이어서 진행합니다.)"
+                    else:
+                        self._재개_대기중 = False
+                        안내 = "작업이 중단되었습니다."
+                    self.status_var.set(안내)
+                    self.로그표시("=" * 45 + f"\n{안내}\n" + "=" * 45)
                     if not self.closing:
-                        messagebox.showinfo(APP_NAME, "문서 처리가 중단되었습니다.", parent=self.root)
+                        messagebox.showinfo(APP_NAME, 안내, parent=self.root)
                 elif event == "finished":
                     self.running = False
                     self._안내_설정(0)   # 작업이 끝나면 강조를 기본값으로 되돌린다.
