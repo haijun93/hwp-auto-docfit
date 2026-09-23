@@ -66,6 +66,10 @@ hwp 자동 편집기
 43. 서식 정리의 문두기호별 글꼴 선택 목록에 한컴오피스 전용 번들
     (HFT) 글꼴도 자동으로 찾아 포함. 설치 경로에서 .hft 파일이 있는
     폴더를 이름에 상관없이 직접 찾아 지정한 글꼴 폴더의 목록과 합침
+44. PDF·DOC(X)를 HWPX로 변환할 때 내용 손실을 줄임: 텍스트층이 없는
+    스캔 PDF 페이지는 내장 OCR로 인식하고, 문서 안 이미지는 kordoc이
+    추출한 그대로 결과 HWPX에 실제로 임베드(이전에는 자리표시만 남고
+    이미지가 사라졌음)
 
 필요 패키지
 ------------------------------------------------------------
@@ -5921,13 +5925,19 @@ def 외부문서_hwpx로_변환(원본경로, 확장자, 대상경로):
     글머리 구조를 살려 변환한다. 없으면 .md는 서식 없이 텍스트로라도
     변환하고, .doc/.docx/.pdf는 이 엔진 없이는 읽을 방법이 없어 오류로
     알린다.
+
+    PDF는 텍스트층이 없는 스캔 페이지만 내장 OCR로 인식해(--ocr) 이미지만
+    있는 문서도 글자를 뽑아낸다. 추출된 이미지는 kordoc이 마크다운 옆
+    images/ 폴더에 저장하는데, generate 단계에 --image-dir로 그 폴더를
+    알려줘야 실제 이미지 데이터가 결과 HWPX에 그대로 임베드된다(지정하지
+    않으면 자리표시만 남고 이미지가 사라진다).
     """
     if 확장자 == ".txt":
         텍스트_hwpx로_변환(텍스트파일_읽기(원본경로), 대상경로)
         return
     if 확장자 == ".md":
         try:
-            generate_hwpx(str(원본경로), "보고서", str(대상경로))
+            generate_hwpx(str(원본경로), "보고서", str(대상경로), image_dir=Path(원본경로).parent)
             return
         except KordocUnavailableError as e:
             로그(f"고급 문서 엔진을 쓸 수 없어 서식 없이 텍스트로만 변환합니다: {e}")
@@ -5936,8 +5946,8 @@ def 외부문서_hwpx로_변환(원본경로, 확장자, 대상경로):
     if 확장자 in (".doc", ".docx", ".pdf"):
         with tempfile.TemporaryDirectory(prefix="docfit_변환_") as 임시폴더:
             임시_md = Path(임시폴더) / f"{Path(원본경로).stem}.md"
-            parse_document(str(원본경로), str(임시_md), output_format="markdown")
-            generate_hwpx(str(임시_md), "보고서", str(대상경로))
+            parse_document(str(원본경로), str(임시_md), output_format="markdown", ocr=(확장자 == ".pdf"))
+            generate_hwpx(str(임시_md), "보고서", str(대상경로), image_dir=임시폴더)
         return
     raise ValueError(f"지원하지 않는 변환 형식입니다: {확장자}")
 

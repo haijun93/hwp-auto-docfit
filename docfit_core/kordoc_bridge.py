@@ -66,10 +66,14 @@ def engine_version() -> str:
 
 
 def parse_document(source: str | Path, target: str | Path, *, output_format: str = "markdown",
-                   pages: str | None = None) -> Path:
+                   pages: str | None = None, ocr: bool = False) -> Path:
     args = [str(source), "--format", output_format, "-o", str(target), "--silent"]
     if pages:
         args.extend(["--pages", pages])
+    if ocr:
+        # 텍스트층이 없는 페이지만 내장 OCR로 인식한다(스캔 PDF 대응). 텍스트층이
+        # 있으면 건드리지 않으므로 일반 PDF에도 안전하게 항상 켤 수 있다.
+        args.append("--ocr")
     run_kordoc(args)
     return Path(target)
 
@@ -188,10 +192,16 @@ def lint_document(source: str | Path) -> Path:
 PRESET_NAMES = {"보고서": "보고서", "계획서": "계획서", "기안문": "기안문"}
 
 
-def generate_hwpx(markdown: str | Path, preset: str, target: str | Path | None = None) -> Path:
+def generate_hwpx(markdown: str | Path, preset: str, target: str | Path | None = None,
+                   *, image_dir: str | Path | None = None) -> Path:
     markdown = Path(markdown)
     if preset not in PRESET_NAMES:
         raise ValueError(f"지원하지 않는 프리셋입니다: {preset}")
     target = Path(target) if target else markdown.with_name(markdown.stem + f"({preset}).hwpx")
-    run_kordoc(["generate", str(markdown), "-o", str(target), "--preset", PRESET_NAMES[preset], "--silent"])
+    args = ["generate", str(markdown), "-o", str(target), "--preset", PRESET_NAMES[preset], "--silent"]
+    if image_dir:
+        # kordoc generate는 --image-dir을 줘야만 마크다운의 이미지 참조를 실제
+        # 바이트로 읽어 HWPX에 임베드한다(없으면 자리표시만 남고 이미지가 사라짐).
+        args.extend(["--image-dir", str(image_dir)])
+    run_kordoc(args)
     return target

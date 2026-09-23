@@ -19,6 +19,45 @@ class KordocBridgeTest(unittest.TestCase):
         self.assertEqual(arguments[arguments.index("--preset") + 1], "보고서")
         self.assertEqual(target.suffix, ".hwpx")
 
+    def test_generate_passes_image_dir_when_given(self):
+        with tempfile.TemporaryDirectory() as folder:
+            markdown = Path(folder) / "report.md"
+            markdown.write_text("# 제목", encoding="utf-8")
+            with patch.object(kordoc_bridge, "run_kordoc") as run:
+                kordoc_bridge.generate_hwpx(markdown, "보고서", image_dir=folder)
+        arguments = run.call_args.args[0]
+        self.assertIn("--image-dir", arguments)
+        self.assertEqual(arguments[arguments.index("--image-dir") + 1], str(folder))
+
+    def test_generate_omits_image_dir_when_not_given(self):
+        with tempfile.TemporaryDirectory() as folder:
+            markdown = Path(folder) / "report.md"
+            markdown.write_text("# 제목", encoding="utf-8")
+            with patch.object(kordoc_bridge, "run_kordoc") as run:
+                kordoc_bridge.generate_hwpx(markdown, "보고서")
+        arguments = run.call_args.args[0]
+        self.assertNotIn("--image-dir", arguments)
+
+    def test_parse_document_passes_ocr_flag_when_requested(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "scan.pdf"
+            source.write_bytes(b"%PDF-1.4")
+            target = Path(folder) / "scan.md"
+            with patch.object(kordoc_bridge, "run_kordoc") as run:
+                kordoc_bridge.parse_document(source, target, ocr=True)
+        arguments = run.call_args.args[0]
+        self.assertIn("--ocr", arguments)
+
+    def test_parse_document_omits_ocr_flag_by_default(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "doc.docx"
+            source.write_bytes(b"PK")
+            target = Path(folder) / "doc.md"
+            with patch.object(kordoc_bridge, "run_kordoc") as run:
+                kordoc_bridge.parse_document(source, target)
+        arguments = run.call_args.args[0]
+        self.assertNotIn("--ocr", arguments)
+
     def test_compare_documents_reports_block_changes(self):
         documents = [
             {"blocks": [{"type": "paragraph", "text": "이전 내용"}]},
