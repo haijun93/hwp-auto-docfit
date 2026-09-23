@@ -134,6 +134,18 @@ hwp 자동 편집기
     최대치까지 줄여도 안 되면 더 손대지 않고 멈춤(본문 내용을 강제로
     줄이거나 지우지 않음). '관련 문단 페이지 배치' 다음 마지막 단계로
     실행되는 세부 작업(page_fit)으로 켜고 끌 수 있음
+60. 표 구조 정밀 조정 3종(기본 꺼짐 — 표_셀여백_축소_사용/표_열너비_맞춤_사용
+    /표_테두리_통일_사용을 True로 바꿔야 실행됨. 실험적 기능으로,
+    문자 서식보다 잘못됐을 때 위험이 커 실제 한/글 검증 전까지는
+    기본값을 꺼둠):
+    - 셀 안쪽 여백 강제 축소: 셀 텍스트가 2줄로 넘어가면 좌우 안쪽
+      여백을 1.8mm→0mm까지 0.3mm씩 줄여 1줄로 줄어드는지 시도
+    - 셀 너비 본문 맞춤: 표 첫 행(칼럼별 셀)의 현재 너비 비율을 유지한
+      채 표 전체 너비를 본문 가용 너비(용지 폭 - 좌우 여백)에 비례
+      조정. 첫 행이 병합돼 칼럼을 구분 못 하면 건드리지 않음
+    - 표 테두리 선 굵기 통일(삼선표): 위/아래 외곽선 0.5mm 실선, 헤더
+      아래 이중선 0.5mm, 나머지 안쪽 구분선 0.12mm 실선, 좌우
+      외곽선은 선 없음으로 통일
 
 필요 패키지
 ------------------------------------------------------------
@@ -5992,6 +6004,445 @@ def 표_헤더서식_전체_적용():
     로그(f"표 헤더/본문 서식적용 완료 (검사한 컨트롤 영역 {방문영역수}개 / 적용된 표 셀 {셀수}개 / 한 칸 표 제외 {제외수}개 / 대상 아님·실패 {실패수}건)")
     return True
 
+
+# ============================================================
+# 표 구조 정밀 조정 (셀 안쪽 여백 / 열 너비 / 테두리 굵기) — 실험적 기능
+#
+# 이 세 기능은 표의 구조(셀 너비, 테두리)를 직접 바꾸므로, 문자 서식
+# 조정보다 잘못됐을 때의 위험이 크다. 이 환경에는 한/글이 없어 실제로
+# 검증할 수 없었고, PyPI의 pyhwpx·hwpapi 패키지 소스(포럼 문서 사이트는
+# 이 환경에서 접근 차단됨)를 읽어 확인한 API를 근거로 구현했다. 기본값을
+# 꺼둔 채(아래 *_사용 변수 참고) 제공하니, 실제 한/글에서 사본으로 먼저
+# 확인한 뒤 켜서 쓰는 것을 권한다.
+# ============================================================
+
+표_셀여백_축소_사용 = False
+표_셀여백_기본_mm = 1.8
+표_셀여백_최소_mm = 0.0
+표_셀여백_스텝_mm = 0.3
+
+표_열너비_맞춤_사용 = False
+표_열너비_허용오차_mm = 1.0
+
+표_테두리_통일_사용 = False
+
+
+def 표_목록_수집():
+    """문서를 훑어 표마다 [(area, 칼럼문자, 행번호), ...] 목록을 모아
+    반환한다(한 칸 표는 제외). 셀 주소가 'A1'로 돌아오는 지점을 새 표의
+    시작으로 본다 — 한칸표_영역_목록과 같은 규칙.
+    """
+    if hwp is None:
+        return []
+    한칸표영역 = 한칸표_영역_목록()
+    표들 = []
+    현재표 = []
+    area = 1
+    while True:
+        if 중단_요청됨():
+            break
+        area += 1
+        try:
+            hwp.SetPos(area, 0, 0)
+        except Exception:
+            break
+        if hwp.GetPos()[0] == 0:
+            break
+        if area in 한칸표영역:
+            if 현재표:
+                표들.append(현재표)
+                현재표 = []
+            continue
+        주소, 행번호 = 현재_셀_주소_행번호()
+        if 주소 is None:
+            if 현재표:
+                표들.append(현재표)
+                현재표 = []
+            continue
+        if 주소 == "A1" and 현재표:
+            표들.append(현재표)
+            현재표 = []
+        일치 = re.match(r"[A-Za-z]+", 주소)
+        컬럼 = 일치.group(0) if 일치 else "A"
+        현재표.append((area, 컬럼, 행번호))
+    if 현재표:
+        표들.append(현재표)
+    return 표들
+
+
+# ---- C1. 셀 안쪽 여백 강제 축소 ------------------------------------------
+
+def 셀_화면줄수():
+    """캐럿이 있는 셀(리스트) 안에 실제로 배치된 화면줄 수를 센다."""
+    if hwp is None:
+        return None
+    원위치 = hwp.GetPos()
+    try:
+        hwp_run('MoveListBegin')
+        hwp_run('MoveSelListEnd')
+        리스트끝 = hwp.GetPos()
+        hwp.SetPos(원위치[0], 0, 0)
+        hwp_run('MoveListBegin')
+        줄수 = 0
+        이전줄끝 = None
+        while True:
+            if 중단_요청됨():
+                return None
+            hwp_run('MoveLineEnd')
+            줄끝 = hwp.GetPos()
+            if 줄끝 == 이전줄끝:
+                break
+            줄수 += 1
+            if (줄끝[1], 줄끝[2]) >= (리스트끝[1], 리스트끝[2]):
+                break
+            이전줄끝 = 줄끝
+            hwp_run('MoveNextChar')
+            if hwp.GetPos() == 줄끝:
+                break
+        return 줄수
+    except Exception as e:
+        로그(f"셀 화면줄 수 확인 실패(무시): {e}")
+        return None
+    finally:
+        try:
+            hwp.SetPos(*원위치)
+        except Exception:
+            pass
+
+
+def 셀_안쪽여백_현재선택(mm):
+    """캐럿이 있는 셀의 좌우 안쪽 여백을 mm로 설정한다."""
+    if hwp is None:
+        return False
+    try:
+        pset = hwp.HParameterSet.HShapeObject
+        hwp.HAction.GetDefault("TablePropertyDialog", pset.HSet)
+        pset.HSet.SetItem("ShapeType", 3)
+        pset.HSet.SetItem("ShapeCellSize", 0)
+        pset.ShapeTableCell.HasMargin = 1
+        pset.ShapeTableCell.MarginLeft = hwp.MiliToHwpUnit(mm)
+        pset.ShapeTableCell.MarginRight = hwp.MiliToHwpUnit(mm)
+        return hwp.HAction.Execute("TablePropertyDialog", pset.HSet) is not False
+    except Exception as e:
+        로그(f"셀 안쪽 여백 적용 실패(무시): {e}")
+        return False
+
+
+def 셀_안쪽여백_축소_시도():
+    """캐럿이 있는 셀의 텍스트가 2줄 이상이면 좌우 안쪽 여백을 조금씩
+    줄여(표_셀여백_기본_mm → 표_셀여백_최소_mm) 1줄로 줄어드는지 시도한다.
+    """
+    if 셀_화면줄수() is None:
+        return False
+    줄수 = 셀_화면줄수()
+    if 줄수 is None or 줄수 <= 1:
+        return False
+    현재_mm = 표_셀여백_기본_mm
+    최대반복 = max(1, int(round((표_셀여백_기본_mm - 표_셀여백_최소_mm) / 표_셀여백_스텝_mm)))
+    for _ in range(최대반복):
+        if 중단_요청됨():
+            return False
+        현재_mm = max(표_셀여백_최소_mm, round(현재_mm - 표_셀여백_스텝_mm, 2))
+        if not 셀_안쪽여백_현재선택(현재_mm):
+            return False
+        새_줄수 = 셀_화면줄수()
+        if 새_줄수 is None:
+            return False
+        if 새_줄수 <= 1:
+            return True
+        if 현재_mm <= 표_셀여백_최소_mm:
+            break
+    return False
+
+
+def 표_셀_안쪽여백_전체_적용():
+    if not 표_셀여백_축소_사용:
+        return True
+    if 중단_요청됨():
+        return False
+    로그("셀 안쪽 여백 강제 축소 시작")
+    원위치 = hwp.GetPos()
+    한칸표영역 = 한칸표_영역_목록()
+    검사수 = 0
+    적용수 = 0
+    area = 1
+    while True:
+        if 중단_요청됨():
+            return False
+        area += 1
+        try:
+            hwp.SetPos(area, 0, 0)
+        except Exception:
+            break
+        if hwp.GetPos()[0] == 0:
+            break
+        if area in 한칸표영역:
+            continue
+        주소, _ = 현재_셀_주소_행번호()
+        if 주소 is None:
+            continue
+        검사수 += 1
+        if 셀_안쪽여백_축소_시도():
+            적용수 += 1
+    try:
+        hwp.SetPos(*원위치)
+    except Exception:
+        pass
+    로그(f"셀 안쪽 여백 강제 축소 완료 (검사 {검사수}개 / 축소 적용 {적용수}개)")
+    return True
+
+
+# ---- C2. 셀 너비를 본문 여백에 맞춤 ---------------------------------------
+
+def 본문_가용너비_mm():
+    """현재 섹션 용지 폭에서 좌우 여백을 뺀 본문 가용 너비(mm)."""
+    if hwp is None:
+        return None
+    try:
+        act = hwp.HAction
+        pset = hwp.HParameterSet.HSecDef
+        act.GetDefault("PageSetup", pset.HSet)
+        return hwp.HwpUnitToMili(
+            pset.PageDef.PaperWidth - pset.PageDef.LeftMargin - pset.PageDef.RightMargin
+        )
+    except Exception as e:
+        로그(f"본문 가용 너비 확인 실패(무시): {e}")
+        return None
+
+
+def 표_전체너비_mm():
+    """캐럿이 표 안 어딘가에 있을 때, 그 표 전체의 현재 너비(mm)."""
+    if hwp is None:
+        return None
+    try:
+        return hwp.HwpUnitToMili(hwp.CellShape.Item("Width"))
+    except Exception as e:
+        로그(f"표 전체 너비 확인 실패(무시): {e}")
+        return None
+
+
+def 현재셀_너비_mm():
+    """캐럿이 있는 셀(표 안)의 현재 너비(mm)."""
+    if hwp is None:
+        return None
+    try:
+        pset = hwp.HParameterSet.HShapeObject
+        hwp.HAction.GetDefault("TablePropertyDialog", pset.HSet)
+        return hwp.HwpUnitToMili(pset.ShapeTableCell.Width)
+    except Exception as e:
+        로그(f"셀 너비 확인 실패(무시): {e}")
+        return None
+
+
+def 표_열너비_순서대로_설정(목표_mm_목록):
+    """캐럿이 표의 첫 행 첫 칸에 있다고 가정하고, 왼쪽 열부터 순서대로
+    목표_mm_목록의 값으로 각 열 너비를 설정한다. 실제로 적용된 열 수를
+    반환한다.
+
+    열을 고르는 방식(TableColPageUp → TableCellBlock →
+    TableCellBlockExtend → TableColPageDown으로 한 열 전체 선택 후
+    ShapeCellSize=1로 너비 지정)은 사람이 Alt+방향키 대신 '표/셀 속성'
+    대화상자를 여는 것과 같은 효과의 실제 한/글 액션 조합이다.
+    """
+    if hwp is None:
+        return 0
+    hwp_run('TableColBegin')
+    적용수 = 0
+    for 목표_mm in 목표_mm_목록:
+        if 중단_요청됨():
+            break
+        try:
+            hwp_run('TableColPageUp')
+            hwp_run('TableCellBlock')
+            hwp_run('TableCellBlockExtend')
+            hwp_run('TableColPageDown')
+            pset = hwp.HParameterSet.HShapeObject
+            hwp.HAction.GetDefault("TablePropertyDialog", pset.HSet)
+            pset.HSet.SetItem("ShapeType", 3)
+            pset.HSet.SetItem("ShapeCellSize", 1)
+            pset.ShapeTableCell.Width = hwp.MiliToHwpUnit(목표_mm)
+            if hwp.HAction.Execute("TablePropertyDialog", pset.HSet) is not False:
+                적용수 += 1
+            hwp_run('Cancel')
+            hwp_run('TableRightCell')
+        except Exception as e:
+            로그(f"열 너비 설정 실패(무시): {e}")
+            try:
+                hwp_run('Cancel')
+            except Exception:
+                pass
+            break
+    return 적용수
+
+
+def 표_열너비_본문맞춤_시도(표_셀목록, 목표_전체너비_mm):
+    """표 첫 행(칼럼별 대표 셀)의 현재 너비 비율을 유지한 채, 표 전체
+    너비를 목표_전체너비_mm에 맞춰 각 열 너비를 비례 조정한다.
+
+    첫 행이 병합돼 칼럼별 셀을 구분할 수 없거나(첫 행 셀이 1개뿐),
+    이미 허용오차 안이면 건드리지 않는다.
+    """
+    if not 표_셀목록 or 목표_전체너비_mm is None or 목표_전체너비_mm <= 0:
+        return False
+    첫행_area = [area for area, _, 행 in 표_셀목록 if 행 == 1]
+    if len(첫행_area) < 2:
+        return False
+    try:
+        hwp.SetPos(첫행_area[0], 0, 0)
+    except Exception:
+        return False
+    현재_전체너비 = 표_전체너비_mm()
+    if 현재_전체너비 is None or 현재_전체너비 <= 0:
+        return False
+    if abs(현재_전체너비 - 목표_전체너비_mm) <= 표_열너비_허용오차_mm:
+        return False
+    현재_너비들 = []
+    for area in 첫행_area:
+        try:
+            hwp.SetPos(area, 0, 0)
+        except Exception:
+            return False
+        w = 현재셀_너비_mm()
+        if w is None or w <= 0:
+            return False
+        현재_너비들.append(w)
+    비율합 = sum(현재_너비들)
+    if 비율합 <= 0:
+        return False
+    목표_너비들 = [w / 비율합 * 목표_전체너비_mm for w in 현재_너비들]
+    try:
+        hwp.SetPos(첫행_area[0], 0, 0)
+    except Exception:
+        return False
+    적용수 = 표_열너비_순서대로_설정(목표_너비들)
+    return 적용수 == len(목표_너비들)
+
+
+def 표_열너비_본문맞춤_전체_적용():
+    if not 표_열너비_맞춤_사용:
+        return True
+    if 중단_요청됨():
+        return False
+    목표_mm = 본문_가용너비_mm()
+    if 목표_mm is None or 목표_mm <= 0:
+        로그("셀 너비 본문 맞춤 건너뜀: 본문 가용 너비 확인 실패")
+        return True
+    로그(f"셀 너비를 본문 여백({목표_mm:.1f}mm)에 맞추는 작업 시작")
+    원위치 = hwp.GetPos()
+    표들 = 표_목록_수집()
+    적용표수 = 0
+    for 표 in 표들:
+        if 중단_요청됨():
+            return False
+        if 표_열너비_본문맞춤_시도(표, 목표_mm):
+            적용표수 += 1
+    try:
+        hwp.SetPos(*원위치)
+    except Exception:
+        pass
+    로그(f"셀 너비 본문 맞춤 완료 (표 {len(표들)}개 중 {적용표수}개 조정)")
+    return True
+
+
+# ---- C3. 표 테두리 선 굵기 통일 (삼선표: 외곽 0.5mm / 헤더 이중선 /
+#          내부 0.12mm / 좌우 외곽선 없음) ---------------------------------
+
+def 표_셀_테두리_적용(위=None, 아래=None, 왼쪽=None, 오른쪽=None):
+    """캐럿이 있는 셀에 지정된 방향의 테두리 선 종류/굵기를 적용한다.
+    각 인자는 (HwpLineType 이름, HwpLineWidth 이름) 튜플이거나
+    None(해당 방향은 건드리지 않음).
+    """
+    if hwp is None:
+        return False
+    try:
+        pset = hwp.HParameterSet.HCellBorderFill
+        hwp.HAction.GetDefault("CellBorderFill", pset.HSet)
+        pset.ApplyTo = 0  # 0: 선택된 셀(캐럿이 있는 현재 셀)
+        대상 = pset.SelCellsBorderFill
+        if 위 is not None:
+            종류, 굵기 = 위
+            대상.BorderTypeTop = hwp.HwpLineType(종류)
+            대상.BorderWidthTop = hwp.HwpLineWidth(굵기)
+        if 아래 is not None:
+            종류, 굵기 = 아래
+            대상.BorderTypeBottom = hwp.HwpLineType(종류)
+            대상.BorderWidthBottom = hwp.HwpLineWidth(굵기)
+        if 왼쪽 is not None:
+            종류, 굵기 = 왼쪽
+            대상.BorderTypeLeft = hwp.HwpLineType(종류)
+            대상.BorderWidthLeft = hwp.HwpLineWidth(굵기)
+        if 오른쪽 is not None:
+            종류, 굵기 = 오른쪽
+            대상.BorderTypeRight = hwp.HwpLineType(종류)
+            대상.BorderWidthRight = hwp.HwpLineWidth(굵기)
+        return hwp.HAction.Execute("CellBorderFill", pset.HSet) is not False
+    except Exception as e:
+        로그(f"표 셀 테두리 적용 실패(무시): {e}")
+        return False
+
+
+def 표_테두리_삼선표_적용(표_셀목록):
+    """표 하나(표_목록_수집이 모은 (area, 칼럼, 행번호) 목록)에 삼선표
+    규칙을 적용한다: 위/아래 외곽선 0.5mm 실선, 헤더 아래 이중선 0.5mm,
+    나머지 안쪽 구분선(가로/세로) 0.12mm 실선, 좌우 외곽선은 선 없음.
+    """
+    if not 표_셀목록:
+        return 0
+    마지막행 = max(행 for _, _, 행 in 표_셀목록)
+    행별_첫area = {}
+    행별_끝area = {}
+    for area, _, 행 in 표_셀목록:
+        if 행 not in 행별_첫area:
+            행별_첫area[행] = area
+        행별_끝area[행] = area
+    적용수 = 0
+    for area, _, 행 in 표_셀목록:
+        if 중단_요청됨():
+            break
+        if 행 == 마지막행:
+            아래 = ("Solid", "0.5mm")
+        elif 행 == 1:
+            아래 = ("DoubleSlim", "0.5mm")
+        else:
+            아래 = ("Solid", "0.12mm")
+        if 행 == 1:
+            위 = ("Solid", "0.5mm")
+        elif 행 == 2:
+            위 = ("DoubleSlim", "0.5mm")
+        else:
+            위 = ("Solid", "0.12mm")
+        왼쪽 = ("None", "0.1mm") if area == 행별_첫area[행] else ("Solid", "0.12mm")
+        오른쪽 = ("None", "0.1mm") if area == 행별_끝area[행] else ("Solid", "0.12mm")
+        try:
+            hwp.SetPos(area, 0, 0)
+        except Exception:
+            continue
+        if 표_셀_테두리_적용(위=위, 아래=아래, 왼쪽=왼쪽, 오른쪽=오른쪽):
+            적용수 += 1
+    return 적용수
+
+
+def 표_테두리_전체_적용():
+    if not 표_테두리_통일_사용:
+        return True
+    if 중단_요청됨():
+        return False
+    로그("표 테두리 선 굵기 통일 시작")
+    원위치 = hwp.GetPos()
+    표들 = 표_목록_수집()
+    총적용 = 0
+    for 표 in 표들:
+        if 중단_요청됨():
+            return False
+        총적용 += 표_테두리_삼선표_적용(표)
+    try:
+        hwp.SetPos(*원위치)
+    except Exception:
+        pass
+    로그(f"표 테두리 선 굵기 통일 완료 (표 {len(표들)}개 / 적용 셀 {총적용}개)")
+    return True
+
+
 def 컨트롤_내부_자간조정():
     """표/글상자 등 모든 컨트롤 영역의 단어 분리를 보정한다.
 
@@ -6336,6 +6787,14 @@ def 문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=2
                 return False
         # 정밀 프로필은 셀별 문자 서식을 이미 적용했으므로 대표 머리글/본문 값으로 덮지 않는다.
         if stage_enabled(선택_세부작업, 'table_format') and 표_헤더서식_사용 and not 활성_정밀표_프로필 and not stage('표 서식', 표_헤더서식_전체_적용):
+            return False
+        # 표 구조 정밀 조정(셀 여백/너비/테두리)은 기본 꺼짐(각 *_사용 변수
+        # 참고) — 실험적 기능이라 각 함수가 꺼져 있으면 즉시 True를 반환한다.
+        if not stage('셀 안쪽 여백 강제 축소', 표_셀_안쪽여백_전체_적용):
+            return False
+        if not stage('셀 너비 본문 맞춤', 표_열너비_본문맞춤_전체_적용):
+            return False
+        if not stage('표 테두리 선 굵기 통일', 표_테두리_전체_적용):
             return False
     if 작업_모드 == 'format' and 표준서식_사용 and stage_enabled(선택_세부작업, 'single_cell_spacing'):
         if not stage('개요·한 칸 표 자간 조정', 한칸표_자간조정):
