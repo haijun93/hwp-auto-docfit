@@ -73,11 +73,16 @@ hwp 자동 편집기
 45. 자간 정리 '01. 문서 전체 자간 초기화'에서 같은 뜻으로 중복되던
     "기존 자간을 0%로 초기화 후 정리하기" 체크박스를 없애고, 번호
     체크박스 하나로 통일(한 번에 정리에서도 같은 체크박스로 켜고 끔)
-46. 붙여넣은 텍스트 정리가 제미나이 등에서 자주 나오는 "\*\*굵게\*\*"
-    처럼 백슬래시로 이스케이프된 강조 기호를 먼저 풀어낸 뒤 정리해,
-    이전엔 뒤따르는 글자에 따라 삐뚤빼뚤 깨지던 문제를 없앰. 문장
-    끝에 붙는 [1], [2][4] 같은 숫자 전용 각주 표시도 함께 제거(글자가
-    섞인 [별표 21의2] 같은 대괄호는 그대로 유지)
+46. 붙여넣은 텍스트 정리가 제미나이 등에서 자주 나오는, 백슬래시로
+    이스케이프된 굵게 표시를 먼저 풀어낸 뒤 정리해, 이전엔 뒤따르는
+    글자에 따라 삐뚤빼뚤 깨지던 문제를 없앰. 문장 끝에 붙는 [1],
+    [2][4] 같은 숫자 전용 각주 표시도 함께 제거(글자가 섞인
+    [별표 21의2] 같은 대괄호는 그대로 유지)
+47. 붙여넣은 텍스트 정리에 '개조식으로 변환' 버튼 추가. 제미나이 등의
+    답변에 있는 제목(#)·글머리 기호의 계층 구조를 읽어 1단계는 원문
+    번호를 그대로 쓰거나 없으면 ㅁ을, 그 아래는 들여쓰기 깊이에 따라
+    ㅇ→-→•(3단계 이후는 모두 •) 순으로 문두기호를 붙여 공문서
+    개조식 서식으로 바꿈
 
 필요 패키지
 ------------------------------------------------------------
@@ -139,7 +144,7 @@ from docfit_core.style_profile_edit import FIELDS as STYLE_FIELDS, ROLES as STYL
 from docfit_core.korean_proofread import (
     apply_approved_hwpx, load_exclusions, save_exclusions, scan_hwpx,
 )
-from docfit_core.pasted_text import clean_pasted_text
+from docfit_core.pasted_text import clean_pasted_text, outline_pasted_text
 from docfit_core import (
     KordocUnavailableError,
     analyze_form,
@@ -8678,8 +8683,9 @@ class HwpAutoDocFitGUI:
         ttk.Label(body, text="제미나이·클로드·챗GPT 채팅창에서 복사한 답변을 붙여넣으세요.",
                   font=("맑은 고딕", 12, "bold")).pack(anchor="w")
         ttk.Label(body,
-                  text="마크다운 기호(**, #, - 등)를 지우고, 흐트러진 띄어쓰기·줄바꿈을 정리해 보기 좋은 문장으로 바꿉니다.",
-                  style="Hint.TLabel").pack(anchor="w", pady=(2, 8))
+                  text="‘한 번에 정리’는 마크다운 기호(**, #, - 등)를 지우고 보기 좋은 문장으로 바꾸고,\n"
+                       "‘개조식으로 변환’은 제목·글머리 기호의 계층 구조를 ㅁ/ㅇ/-/• 문두기호로 바꿉니다.",
+                  style="Hint.TLabel", justify="left").pack(anchor="w", pady=(2, 8))
 
         panes = ttk.Frame(body)
         panes.pack(fill="both", expand=True)
@@ -8712,19 +8718,25 @@ class HwpAutoDocFitGUI:
 
         status = tk.StringVar(value="텍스트를 붙여넣고 ‘한 번에 정리’를 눌러 주세요.")
 
-        def 정리하기():
+        def 변환실행(변환함수, 완료문구):
             원문 = input_text.get("1.0", "end-1c")
             if not 원문.strip():
                 status.set("붙여넣은 텍스트가 없습니다.")
                 return
             try:
-                결과 = clean_pasted_text(원문)
+                결과 = 변환함수(원문)
             except Exception as e:
                 messagebox.showerror(APP_NAME, f"텍스트 정리 중 오류가 발생했습니다.\n\n{e}", parent=window)
                 return
             output_text.delete("1.0", "end")
             output_text.insert("1.0", 결과)
-            status.set(f"정리 완료 · {len(결과)}자")
+            status.set(f"{완료문구} · {len(결과)}자")
+
+        def 정리하기():
+            변환실행(clean_pasted_text, "정리 완료")
+
+        def 개조식으로변환():
+            변환실행(outline_pasted_text, "개조식 변환 완료")
 
         def 결과복사():
             결과 = output_text.get("1.0", "end-1c")
@@ -8743,6 +8755,7 @@ class HwpAutoDocFitGUI:
         actions = ttk.Frame(body)
         actions.pack(fill="x", pady=(8, 0))
         ttk.Button(actions, text="한 번에 정리", command=정리하기).pack(side="left")
+        ttk.Button(actions, text="개조식으로 변환", command=개조식으로변환).pack(side="left", padx=(6, 0))
         ttk.Button(actions, text="결과 복사", command=결과복사).pack(side="left", padx=(6, 0))
         ttk.Button(actions, text="지우기", command=지우기).pack(side="left", padx=(6, 0))
         ttk.Button(actions, text="닫기", command=lambda: (window.destroy(), closed())).pack(side="right")

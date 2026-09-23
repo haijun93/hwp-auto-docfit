@@ -1,6 +1,6 @@
 import unittest
 
-from docfit_core.pasted_text import clean_pasted_text
+from docfit_core.pasted_text import clean_pasted_text, outline_pasted_text
 
 
 class CleanPastedTextTest(unittest.TestCase):
@@ -154,6 +154,106 @@ class CleanPastedTextTest(unittest.TestCase):
             "자세한 내용은 가이드를 참고하세요."
         )
         self.assertEqual(clean_pasted_text(text), expected)
+
+
+class OutlinePastedTextTest(unittest.TestCase):
+    def test_empty_input(self):
+        self.assertEqual(outline_pasted_text(""), "")
+        self.assertEqual(outline_pasted_text("   \n  \n "), "")
+
+    def test_heading_without_number_gets_box_marker(self):
+        text = "## 요약\n본문 내용입니다."
+        self.assertEqual(outline_pasted_text(text), "ㅁ 요약\n본문 내용입니다.")
+
+    def test_heading_with_existing_number_keeps_it_as_is(self):
+        text = "### 1. 법적 근거\n* 첫째 항목"
+        self.assertEqual(outline_pasted_text(text), "1. 법적 근거\nㅇ 첫째 항목")
+
+    def test_bullet_depth_maps_to_o_dash_dot_tiers(self):
+        text = "* 최상위 항목\n  * 두 칸 들여쓰기\n    * 네 칸 들여쓰기\n      * 여섯 칸도 점으로 묶임"
+        self.assertEqual(
+            outline_pasted_text(text),
+            "ㅇ 최상위 항목\n- 두 칸 들여쓰기\n• 네 칸 들여쓰기\n• 여섯 칸도 점으로 묶임",
+        )
+
+    def test_blank_line_before_each_new_level1_section_only(self):
+        text = "# 하나\n* 항목 A\n# 둘\n* 항목 B"
+        self.assertEqual(outline_pasted_text(text), "ㅁ 하나\nㅇ 항목 A\n\nㅁ 둘\nㅇ 항목 B")
+
+    def test_bullet_is_self_contained_and_does_not_absorb_the_next_plain_line(self):
+        # clean_pasted_text와 마찬가지로 글머리 기호 줄은 그 자체로 완결되며,
+        # 기호 없는 다음 줄은 별도의 일반 문단으로 남는다(항목에 흡수되지 않음).
+        text = "* 첫째 항목\n뒤이은 일반 문장입니다."
+        self.assertEqual(outline_pasted_text(text), "ㅇ 첫째 항목\n뒤이은 일반 문장입니다.")
+
+    def test_wrapped_plain_sentence_across_lines_is_rejoined(self):
+        text = "기호 없는 문장이 줄바꿈으로\n끊겨 있습니다."
+        self.assertEqual(outline_pasted_text(text), "기호 없는 문장이 줄바꿈으로 끊겨 있습니다.")
+
+    def test_horizontal_rule_between_sections_is_dropped(self):
+        text = "# 하나\n* 항목\n---\n# 둘\n* 항목2"
+        self.assertEqual(outline_pasted_text(text), "ㅁ 하나\nㅇ 항목\n\nㅁ 둘\nㅇ 항목2")
+
+    def test_gemini_legal_answer_end_to_end(self):
+        text = (
+            "### **1\\. 법정 의무운행기간(2년)의 법적 근거**\n"
+            "\n"
+            "* **「대기환경보전법 시행규칙」 제79조의4 제1항**: 보조금을 지원받은 전기자동차 "
+            "구매자는 최초 등록일을 기준으로 **최소 2년(24개월)의 법정 의무운행기간**을 "
+            "준수해야 합니다[1][2].\n"
+            "* **환경부 「전기자동차 보급사업 보조금 업무처리지침」 (5-3\\. 의무운행기간)**: "
+            "전기차를 구매하여 신규 등록한 날부터 **2년간의 의무운행기간**을 설정하고 이에 "
+            "따른 사후관리를 규정하고 있습니다[1][2].\n"
+            "\n---\n\n"
+            "### **2\\. 매각 제한 및 보조금 회수·환수의 법적 근거**\n"
+            "\n"
+            "* **「대기환경보전법」 제58조 (저공해자동차의 운행 등)**: 국가 및 지방자치단체가 "
+            "저공해자동차(전기차 등) 구매자에게 지급하는 보조금의 지원, 의무 이행 및 환수에 "
+            "관한 근거를 제공합니다[3].\n"
+            "* **「대기환경보전법 시행규칙」 제79조의4 및 [별표 21의2] (보조금 회수기준)**:\n"
+            "  * **중고 매도 시 의무 승계**: 의무운행기간(2년) 내에 차량을 제3자에게 "
+            "매도(매각)하는 것은 가능하나, **매수자가 잔여 의무운행기간 준수 의무를 그대로 "
+            "승계**하게 됩니다[2][4].\n"
+            "  * **등록말소(폐차·수출 등) 시 사전 승인 및 회수**: 의무운행기간 내에 폐차나 "
+            "말소등록을 하려면 지자체 등 보조사업자의 사전 승인을 받아야 하며, 사용 기간에 "
+            "미달한 경우 \\*\\*[별표 21의2]의 운행기간별 보조금 회수요율(70%\\~20%)\\*\\*에 "
+            "따라 지급된 보조금(국비+지방비)을 회수 및 반납해야 합니다[1].\n"
+            "  * **회수요율 적용 (일반 말소 기준)**:\n"
+            "    * 3개월 미만 70% \\~ 21개월 이상 24개월 미만 20%\n"
+            "    * **24개월(2년) 이상 경과 시 회수요율 0%** (보조금 반환 의무 완전히 "
+            "소멸)[4].\n"
+            "* **전기화물차의 특수 제한**: 보조금을 받아 구매한 전기화물차를 최초 "
+            "등록일로부터 1년 이내에 1만 km 이상 운행하지 않고 판매하는 경우 지급된 "
+            "보조금의 **30%를 회수**합니다"
+        )
+        expected = (
+            "1. 법정 의무운행기간(2년)의 법적 근거\n"
+            "ㅇ 「대기환경보전법 시행규칙」 제79조의4 제1항: 보조금을 지원받은 전기자동차 "
+            "구매자는 최초 등록일을 기준으로 최소 2년(24개월)의 법정 의무운행기간을 준수해야 "
+            "합니다.\n"
+            "ㅇ 환경부 「전기자동차 보급사업 보조금 업무처리지침」 (5-3. 의무운행기간): 전기차를 "
+            "구매하여 신규 등록한 날부터 2년간의 의무운행기간을 설정하고 이에 따른 사후관리를 "
+            "규정하고 있습니다.\n"
+            "\n"
+            "2. 매각 제한 및 보조금 회수·환수의 법적 근거\n"
+            "ㅇ 「대기환경보전법」 제58조 (저공해자동차의 운행 등): 국가 및 지방자치단체가 "
+            "저공해자동차(전기차 등) 구매자에게 지급하는 보조금의 지원, 의무 이행 및 환수에 "
+            "관한 근거를 제공합니다.\n"
+            "ㅇ 「대기환경보전법 시행규칙」 제79조의4 및 [별표 21의2] (보조금 회수기준):\n"
+            "- 중고 매도 시 의무 승계: 의무운행기간(2년) 내에 차량을 제3자에게 매도(매각)하는 "
+            "것은 가능하나, 매수자가 잔여 의무운행기간 준수 의무를 그대로 승계하게 됩니다.\n"
+            "- 등록말소(폐차·수출 등) 시 사전 승인 및 회수: 의무운행기간 내에 폐차나 "
+            "말소등록을 하려면 지자체 등 보조사업자의 사전 승인을 받아야 하며, 사용 기간에 "
+            "미달한 경우 [별표 21의2]의 운행기간별 보조금 회수요율(70%~20%)에 따라 지급된 "
+            "보조금(국비+지방비)을 회수 및 반납해야 합니다.\n"
+            "- 회수요율 적용 (일반 말소 기준):\n"
+            "• 3개월 미만 70% ~ 21개월 이상 24개월 미만 20%\n"
+            "• 24개월(2년) 이상 경과 시 회수요율 0% (보조금 반환 의무 완전히 소멸).\n"
+            "ㅇ 전기화물차의 특수 제한: 보조금을 받아 구매한 전기화물차를 최초 등록일로부터 "
+            "1년 이내에 1만 km 이상 운행하지 않고 판매하는 경우 지급된 보조금의 30%를 "
+            "회수합니다"
+        )
+        self.assertEqual(outline_pasted_text(text), expected)
 
 
 if __name__ == "__main__":
