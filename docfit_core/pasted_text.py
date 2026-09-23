@@ -40,6 +40,13 @@ _INLINE_CODE = re.compile(r"`([^`\n]+)`")
 _IMAGE = re.compile(r"!\[([^\]]*)\]\([^)]*\)")
 _LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")
 _CITATION_TAG = re.compile(r"【[^】]*】")
+# 제미나이 등에서 각주 표시로 붙는 [1], [2][4] 같은 숫자 전용 대괄호.
+# "[별표 21의2]"처럼 글자가 섞인 대괄호는 \d+로 걸리지 않아 그대로 남는다.
+_CITATION_NUMBER = re.compile(r"[ \t]*(?:\[\d{1,4}\])+")
+# 일부 채팅창은 강조 기호를 "\*\*text\*\*", "\~"처럼 백슬래시로 이스케이프한
+# 채로 복사된다. 굵게/취소선 정규식은 이스케이프되지 않은 기호만 인식하므로,
+# 다른 처리보다 먼저 백슬래시를 벗겨 일반 마크다운 기호로 되돌려 둔다.
+_ESCAPED_MD_CHAR = re.compile(r"\\([\\`*_{}\[\]()#+\-.!~|>])")
 
 _SENTENCE_END = r".!?…\"'”’」』"
 _MARKER_GLUE = re.compile(
@@ -50,11 +57,13 @@ _MARKER_GLUE = re.compile(
 
 def _strip_invisible(text: str) -> str:
     text = text.translate(_INVISIBLE_MAP)
-    return text.replace("\r\n", "\n").replace("\r", "\n")
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    return _ESCAPED_MD_CHAR.sub(r"\1", text)
 
 
 def _strip_inline_markup(line: str) -> str:
     line = _CITATION_TAG.sub("", line)
+    line = _CITATION_NUMBER.sub("", line)
     line = _INLINE_CODE.sub(r"\1", line)
     line = _IMAGE.sub(r"\1", line)
     line = _LINK.sub(r"\1", line)

@@ -101,6 +101,32 @@ class CleanPastedTextTest(unittest.TestCase):
         text = "이것은    여러    공백이   있는   문장입니다."
         self.assertEqual(clean_pasted_text(text), "이것은 여러 공백이 있는 문장입니다.")
 
+    def test_numeric_citation_markers_are_removed(self):
+        text = "매수자가 의무를 승계하게 됩니다[2][4]. 보조금을 반납해야 합니다[1]."
+        self.assertEqual(clean_pasted_text(text),
+                          "매수자가 의무를 승계하게 됩니다. 보조금을 반납해야 합니다.")
+
+    def test_bracket_reference_with_text_is_kept(self):
+        text = "「대기환경보전법 시행규칙」 제79조의4 및 [별표 21의2] (보조금 회수기준)"
+        self.assertEqual(clean_pasted_text(text), text)
+
+    def test_escaped_bold_and_tilde_are_unescaped_then_bold_stripped(self):
+        text = r"보조금 회수요율은 \*\*70%\~20%\*\*입니다."
+        self.assertEqual(clean_pasted_text(text), "보조금 회수요율은 70%~20%입니다.")
+
+    def test_gemini_style_nested_bullets_with_citations_are_flattened(self):
+        text = (
+            "* **회수요율 적용 (일반 말소 기준)**:\n"
+            "  * 3개월 미만 70% \\~ 21개월 이상 24개월 미만 20%\n"
+            "  * **24개월(2년) 이상 경과 시 회수요율 0%** (보조금 반환 의무 완전히 소멸)[4]."
+        )
+        expected = (
+            "- 회수요율 적용 (일반 말소 기준):\n\n"
+            "- 3개월 미만 70% ~ 21개월 이상 24개월 미만 20%\n\n"
+            "- 24개월(2년) 이상 경과 시 회수요율 0% (보조금 반환 의무 완전히 소멸)."
+        )
+        self.assertEqual(clean_pasted_text(text), expected)
+
     def test_realistic_llm_answer_end_to_end(self):
         text = (
             "## 요약\n"
