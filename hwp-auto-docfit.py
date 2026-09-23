@@ -86,6 +86,20 @@ hwp 자동 편집기
 48. 실행창 '01 정리할 문서'에 '텍스트 붙여넣기' 버튼 추가. 파일이
     없어도 텍스트를 붙여넣어 .txt로 저장하면 바로 문서 목록에
     추가되어 다른 파일과 함께 자간·서식 정리를 적용할 수 있음
+49. '01 정리할 문서'에 '아웃라이너로 작성' 버튼 추가. 워크플로위처럼
+    Tab/Shift+Tab으로 계층을 넣고 빼며 새 글을 쓰고, 저장 형식 자체가
+    계층 구조를 담은 마크다운(0단계 "# ", 그 아래는 "- "를 들여쓰기
+    깊이만큼 겹침)이라 '개조식 텍스트로 추가'를 누르면 ㅁ/ㅇ/-/•
+    공문서 문두기호로 바꿔 바로 문서 목록에 추가됨(또는 '마크다운으로
+    추가'로 원본 그대로 추가해 고급 문서 엔진이 서식을 살려 변환)
+50. 붙여넣은 텍스트 정리의 '개조식으로 변환'이 워크플로위 등을
+    브라우저에서 통째로 복사해 줄바꿈이 모두 공백으로 뭉개진 경우도
+    알아서 인식. 이때는 계층 깊이까지는 복원할 수 없어 항목만 한 줄씩
+    펼쳐 ㅇ로 표시하고, 워크플로위 해시태그(#표시)도 함께 정리
+51. '텍스트 붙여넣기'에 자동 저장 폴더 지정 기능 추가. 폴더를 지정해
+    두면 '문서로 추가'를 누를 때 바로 그 폴더에 HWPX로 변환해(배치
+    작업과 독립된 한/글 세션 사용) 문서 목록에 추가하며, 비워두면
+    기존처럼 저장 위치를 직접 골라 .txt로 추가함
 
 필요 패키지
 ------------------------------------------------------------
@@ -747,6 +761,7 @@ def 번들_리소스_폴더():
         "•": {"font": "한컴돋음", "size": "13"},
     },
     "hwp_font_folder": "",
+    "paste_add_folder": "",
     "cat_image_path": "",
     "cat_animation": True,
     "always_on_top": True,
@@ -5932,6 +5947,50 @@ def 텍스트_hwpx로_변환(텍스트, 대상경로):
         raise RuntimeError("텍스트를 HWPX로 저장하지 못했습니다.")
 
 
+def 텍스트_hwpx_단독변환(텍스트, 대상경로):
+    """'텍스트 붙여넣기'에서 저장 즉시 HWPX로 바꿀 때 쓰는, 배치 작업(작업_실행)과
+    완전히 독립된 한/글 세션.
+
+    전역 hwp는 작업_실행 전용이라 배치가 실행 중일 때 그 세션을 건드리면
+    RPC_E_WRONG_THREAD 류 오류가 난다. 이 함수는 자기 몫의 한/글 인스턴스를
+    새로 띄우고 끝나면 바로 종료해, 배치가 동시에 있어도 서로 간섭하지
+    않는다. COM은 생성한 스레드에서 정리해야 하므로 반드시 전용 스레드
+    (daemon Thread)에서만 호출한다.
+    """
+    pythoncom.CoInitialize()
+    단독_hwp = None
+    try:
+        단독_hwp = win32.Dispatch("HwpFrame.HwpObject")
+        try:
+            단독_hwp.RegisterModule(REGISTER_MODULE_NAME, REGISTER_MODULE_VALUE)
+        except Exception:
+            pass  # 새 문서를 만들어 텍스트만 적으므로 보안 모듈 등록 실패는 무시해도 된다.
+        if 단독_hwp.Run("FileNew") is False:
+            raise RuntimeError("빈 문서를 만들지 못했습니다.")
+        줄들 = 텍스트.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+        for 순번, 줄 in enumerate(줄들):
+            if 줄:
+                act = 단독_hwp.HAction
+                pset = 단독_hwp.HParameterSet.HInsertText
+                act.GetDefault("InsertText", pset.HSet)
+                pset.Text = 줄
+                act.Execute("InsertText", pset.HSet)
+            if 순번 < len(줄들) - 1:
+                단독_hwp.Run("BreakPara")
+        if 단독_hwp.SaveAs(str(대상경로), "HWPX", "") is False:
+            raise RuntimeError("HWPX로 저장하지 못했습니다.")
+    finally:
+        if 단독_hwp is not None:
+            try:
+                단독_hwp.Quit()
+            except Exception:
+                pass
+        try:
+            pythoncom.CoUninitialize()
+        except Exception:
+            pass
+
+
 def 외부문서_hwpx로_변환(원본경로, 확장자, 대상경로):
     """.txt/.md/.doc/.docx/.pdf를 자간·서식 처리에 쓸 작업용 HWPX로 변환한다.
 
@@ -7262,6 +7321,7 @@ class HwpAutoDocFitGUI:
         self.file_buttons = []
         for title, command in (("+ 파일 추가", self.파일선택), ("폴더 추가", self._폴더선택),
                                ("텍스트 붙여넣기", self._텍스트로_문서추가_열기),
+                               ("아웃라이너로 작성", self._아웃라이너_열기),
                                ("Markdown 내보내기", self.Markdown_내보내기),
                                ("고급 문서 도구", self.고급문서도구_열기),
                                ("선택 항목 빼기", self._선택삭제), ("목록 비우기", self.목록지우기)):
@@ -7303,6 +7363,7 @@ class HwpAutoDocFitGUI:
         self.linespacing_min_var = tk.StringVar(value=str(저장된_설정["linespacing_min"]))
         self.linespacing_max_var = tk.StringVar(value=str(저장된_설정["linespacing_max"]))
         self.font_folder_var = tk.StringVar(value=str(저장된_설정.get("hwp_font_folder", "")))
+        self.paste_add_folder_var = tk.StringVar(value=str(저장된_설정.get("paste_add_folder", "")))
         저장된_기호글꼴 = 저장된_설정.get("symbol_fonts", {})
         self.symbol_font_vars = {}
         for 기호 in 문장기호_목록:
@@ -7342,6 +7403,7 @@ class HwpAutoDocFitGUI:
                      self.table_spacing_var, self.log_file_var, self.check_updates_on_start_var,
                      self.retry_body_var, self.retry_table_var, self.paren_shrink_var,
                      self.linespacing_min_var, self.linespacing_max_var, self.font_folder_var,
+                     self.paste_add_folder_var,
                      self.paren_label_bold_var] + list(self.std_bool_vars.values()) + list(self.std_parspace_vars.values())
                     + [v for 항목 in self.symbol_font_vars.values() for v in 항목.values()]):
             변수.trace_add("write", self._설정_변경됨)
@@ -8665,8 +8727,260 @@ class HwpAutoDocFitGUI:
         start_button.config(command=start)
         start()
 
+    @staticmethod
+    def _아웃라인_깊이(줄):
+        """한 줄의 계층 깊이와 본문을 읽는다.
+
+        저장 형식: 0단계는 "# 본문"(들여쓰기 없음), N단계(N≥1)는
+        ((N-1)*2)칸 들여쓰기 + "- 본문". 이 형식은 outline_pasted_text가
+        그대로 읽어 0단계→ㅁ, 1→ㅇ, 2→-, 3단계 이후는 모두 •로 바꾼다.
+        """
+        본문시작 = 줄.lstrip(" ")
+        들여쓰기 = len(줄) - len(본문시작)
+        if 본문시작.startswith("# "):
+            return 0, 본문시작[2:]
+        if 본문시작.startswith("- "):
+            return (들여쓰기 // 2) + 1, 본문시작[2:]
+        return 0, 본문시작
+
+    @staticmethod
+    def _아웃라인_접두(깊이, 본문):
+        if 깊이 <= 0:
+            return f"# {본문}"
+        return " " * ((깊이 - 1) * 2) + f"- {본문}"
+
+    def _아웃라이너_열기(self):
+        """워크플로위류 아웃라이너로 새 글을 쓴다.
+
+        Tab/Shift+Tab으로 계층을 넣고 빼며, 저장 형식 자체가 계층 구조를
+        그대로 담은 마크다운이다(0단계 "# ", 그 아래는 "- "를 들여쓰기
+        깊이만큼 겹쳐 표시). '개조식 텍스트로 추가'는 이 마크다운을
+        outline_pasted_text로 ㅁ/ㅇ/-/• 공문서 문두기호로 바꿔 문서
+        목록에 추가하고, '마크다운으로 추가'는 원본 그대로 추가해
+        고급 문서 엔진(kordoc)이 있을 때 서식을 살려 변환하게 한다.
+        """
+        if self.running:
+            return
+        existing = getattr(self, "_아웃라이너_창", None)
+        if existing is not None and existing.winfo_exists():
+            existing.lift()
+            return
+        window = tk.Toplevel(self.root)
+        self._아웃라이너_창 = window
+        window.title("아웃라이너로 새 글 작성")
+        window.geometry("980x620")
+        window.minsize(640, 420)
+        window.transient(self.root)
+
+        def closed():
+            self._아웃라이너_창 = None
+        window.protocol("WM_DELETE_WINDOW", lambda: (window.destroy(), closed()))
+
+        body = ttk.Frame(window, padding=12)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="워크플로위처럼 항목을 쓰고 Tab/Shift+Tab으로 계층을 넣고 빼세요.",
+                  font=("맑은 고딕", 12, "bold")).pack(anchor="w")
+        ttk.Label(body,
+                  text="Enter: 같은 계층의 새 항목 · Tab: 한 단계 들여쓰기(바로 위 항목 아래로) · "
+                       "Shift+Tab: 내어쓰기. 0단계는 ㅁ, 1단계는 ㅇ, 2단계는 -, 3단계 이후는 모두 •로 바뀝니다.",
+                  style="Hint.TLabel", wraplength=940, justify="left").pack(anchor="w", pady=(2, 8))
+
+        panes = ttk.Frame(body)
+        panes.pack(fill="both", expand=True)
+        panes.grid_columnconfigure(0, weight=1)
+        panes.grid_columnconfigure(1, weight=1)
+        panes.grid_rowconfigure(1, weight=1)
+
+        ttk.Label(panes, text="아웃라인").grid(row=0, column=0, sticky="w")
+        ttk.Label(panes, text="공문서 개조식 미리보기").grid(row=0, column=1, sticky="w", padx=(8, 0))
+
+        outline_frame = ttk.Frame(panes)
+        outline_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 4))
+        outline_frame.grid_columnconfigure(0, weight=1)
+        outline_frame.grid_rowconfigure(0, weight=1)
+        outline_text = tk.Text(outline_frame, wrap="word", undo=True, font=("맑은 고딕", 11))
+        outline_text.grid(row=0, column=0, sticky="nsew")
+        outline_scroll = ttk.Scrollbar(outline_frame, orient="vertical", command=outline_text.yview)
+        outline_scroll.grid(row=0, column=1, sticky="ns")
+        outline_text.configure(yscrollcommand=outline_scroll.set)
+
+        preview_frame = ttk.Frame(panes)
+        preview_frame.grid(row=1, column=1, sticky="nsew", padx=(4, 0))
+        preview_frame.grid_columnconfigure(0, weight=1)
+        preview_frame.grid_rowconfigure(0, weight=1)
+        preview_text = tk.Text(preview_frame, wrap="word", font=("맑은 고딕", 10), background="#f7f7f7")
+        preview_text.grid(row=0, column=0, sticky="nsew")
+        preview_scroll = ttk.Scrollbar(preview_frame, orient="vertical", command=preview_text.yview)
+        preview_scroll.grid(row=0, column=1, sticky="ns")
+        preview_text.configure(yscrollcommand=preview_scroll.set)
+
+        status = tk.StringVar(value="항목을 입력하고 Enter로 다음 항목을 이어가세요.")
+
+        def 현재줄범위():
+            return outline_text.index("insert linestart"), outline_text.index("insert lineend")
+
+        def 이전줄_깊이(줄시작):
+            행 = int(줄시작.split(".")[0])
+            if 행 <= 1:
+                return None
+            이전줄 = outline_text.get(f"{행 - 1}.0", f"{행 - 1}.end")
+            깊이, _ = self._아웃라인_깊이(이전줄)
+            return 깊이
+
+        def 엔터처리(event=None):
+            줄시작, 줄끝 = 현재줄범위()
+            전체줄 = outline_text.get(줄시작, 줄끝)
+            깊이, 본문 = self._아웃라인_깊이(전체줄)
+            프리픽스길이 = len(전체줄) - len(본문)
+            커서컬럼 = int(outline_text.index("insert").split(".")[1])
+            분할지점 = max(프리픽스길이, 커서컬럼)
+            앞부분 = 전체줄[프리픽스길이:분할지점]
+            뒷부분 = 전체줄[분할지점:]
+            outline_text.delete(줄시작, 줄끝)
+            outline_text.insert(줄시작, self._아웃라인_접두(깊이, 앞부분))
+            새프리픽스 = self._아웃라인_접두(깊이, "")
+            outline_text.insert("insert", "\n" + 새프리픽스 + 뒷부분)
+            행 = int(줄시작.split(".")[0]) + 1
+            outline_text.mark_set("insert", f"{행}.{len(새프리픽스)}")
+            return "break"
+
+        def 들여쓰기(event=None):
+            줄시작, 줄끝 = 현재줄범위()
+            전체줄 = outline_text.get(줄시작, 줄끝)
+            깊이, 본문 = self._아웃라인_깊이(전체줄)
+            이전깊이 = 이전줄_깊이(줄시작)
+            최대깊이 = 0 if 이전깊이 is None else 이전깊이 + 1
+            새깊이 = min(깊이 + 1, max(최대깊이, 0), 8)
+            if 새깊이 == 깊이:
+                return "break"
+            이전프리픽스길이 = len(전체줄) - len(본문)
+            커서오프셋 = max(0, int(outline_text.index("insert").split(".")[1]) - 이전프리픽스길이)
+            새줄 = self._아웃라인_접두(새깊이, 본문)
+            outline_text.delete(줄시작, 줄끝)
+            outline_text.insert(줄시작, 새줄)
+            새프리픽스길이 = len(새줄) - len(본문)
+            outline_text.mark_set("insert", f"{줄시작.split('.')[0]}.{새프리픽스길이 + 커서오프셋}")
+            return "break"
+
+        def 내어쓰기(event=None):
+            줄시작, 줄끝 = 현재줄범위()
+            전체줄 = outline_text.get(줄시작, 줄끝)
+            깊이, 본문 = self._아웃라인_깊이(전체줄)
+            새깊이 = max(깊이 - 1, 0)
+            if 새깊이 == 깊이:
+                return "break"
+            이전프리픽스길이 = len(전체줄) - len(본문)
+            커서오프셋 = max(0, int(outline_text.index("insert").split(".")[1]) - 이전프리픽스길이)
+            새줄 = self._아웃라인_접두(새깊이, 본문)
+            outline_text.delete(줄시작, 줄끝)
+            outline_text.insert(줄시작, 새줄)
+            새프리픽스길이 = len(새줄) - len(본문)
+            outline_text.mark_set("insert", f"{줄시작.split('.')[0]}.{새프리픽스길이 + 커서오프셋}")
+            return "break"
+
+        outline_text.bind("<Return>", 엔터처리)
+        outline_text.bind("<Tab>", 들여쓰기)
+        outline_text.bind("<Shift-Tab>", 내어쓰기)
+        outline_text.bind("<ISO_Left_Tab>", 내어쓰기)  # 일부 배치에서 Shift+Tab이 이 키심볼로 옴
+
+        def 기본파일명(내용, 확장자):
+            for 줄 in 내용.splitlines():
+                _, 본문 = self._아웃라인_깊이(줄)
+                본문 = 본문.strip()
+                if 본문:
+                    안전한줄 = re.sub(r'[\\/:*?"<>|]', " ", 본문).strip()
+                    return (안전한줄[:40] or "아웃라이너 글") + 확장자
+            return f"아웃라이너 글{확장자}"
+
+        def 미리보기():
+            원문 = outline_text.get("1.0", "end-1c")
+            if not 원문.strip():
+                status.set("작성한 항목이 없습니다.")
+                return None
+            try:
+                결과 = outline_pasted_text(원문)
+            except Exception as e:
+                messagebox.showerror(APP_NAME, f"개조식 변환 중 오류가 발생했습니다.\n\n{e}", parent=window)
+                return None
+            preview_text.delete("1.0", "end")
+            preview_text.insert("1.0", 결과)
+            status.set(f"미리보기 완료 · {len(결과)}자")
+            return 결과
+
+        def 개조식으로추가():
+            결과 = 미리보기()
+            if not 결과:
+                return
+            경로 = asksaveasfilename(
+                parent=window, title="개조식 텍스트를 저장할 위치",
+                initialfile=기본파일명(outline_text.get("1.0", "end-1c"), ".txt"),
+                defaultextension=".txt", filetypes=[("텍스트 파일", "*.txt")],
+            )
+            if not 경로:
+                return
+            try:
+                Path(경로).write_text(결과, encoding="utf-8")
+            except OSError as e:
+                messagebox.showerror(APP_NAME, f"파일 저장 중 오류가 발생했습니다.\n\n{e}", parent=window)
+                return
+            if self.파일추가(경로):
+                status.set(f"개조식 문서로 추가했습니다 · {Path(경로).name}")
+                self.status_var.set(f"{len(self.files)}개 문서 선택")
+                self.로그표시(f"아웃라이너 글을 개조식 문서로 추가: {Path(경로).name}")
+            else:
+                status.set("이미 목록에 있는 파일입니다.")
+
+        def 마크다운으로추가():
+            원문 = outline_text.get("1.0", "end-1c")
+            if not 원문.strip():
+                status.set("작성한 항목이 없습니다.")
+                return
+            경로 = asksaveasfilename(
+                parent=window, title="마크다운을 저장할 위치",
+                initialfile=기본파일명(원문, ".md"),
+                defaultextension=".md", filetypes=[("Markdown", "*.md")],
+            )
+            if not 경로:
+                return
+            try:
+                Path(경로).write_text(원문, encoding="utf-8")
+            except OSError as e:
+                messagebox.showerror(APP_NAME, f"파일 저장 중 오류가 발생했습니다.\n\n{e}", parent=window)
+                return
+            if self.파일추가(경로):
+                status.set(f"마크다운 문서로 추가했습니다 · {Path(경로).name}")
+                self.status_var.set(f"{len(self.files)}개 문서 선택")
+                self.로그표시(f"아웃라이너 글을 마크다운 문서로 추가: {Path(경로).name}")
+            else:
+                status.set("이미 목록에 있는 파일입니다.")
+
+        def 지우기():
+            outline_text.delete("1.0", "end")
+            outline_text.insert("1.0", "# ")
+            outline_text.mark_set("insert", "1.2")
+            preview_text.delete("1.0", "end")
+            status.set("항목을 입력하고 Enter로 다음 항목을 이어가세요.")
+
+        actions = ttk.Frame(body)
+        actions.pack(fill="x", pady=(8, 0))
+        ttk.Button(actions, text="미리보기", command=미리보기).pack(side="left")
+        ttk.Button(actions, text="개조식 문서로 추가", command=개조식으로추가).pack(side="left", padx=(6, 0))
+        ttk.Button(actions, text="마크다운으로 추가", command=마크다운으로추가).pack(side="left", padx=(6, 0))
+        ttk.Button(actions, text="지우기", command=지우기).pack(side="left", padx=(6, 0))
+        ttk.Button(actions, text="닫기", command=lambda: (window.destroy(), closed())).pack(side="right")
+        ttk.Label(body, textvariable=status, style="Hint.TLabel").pack(anchor="w", pady=(6, 0))
+
+        outline_text.insert("1.0", "# ")
+        outline_text.mark_set("insert", "1.2")
+        outline_text.focus_set()
+
     def _텍스트로_문서추가_열기(self):
-        """붙여넣은 텍스트를 .txt 파일로 저장해 '01 정리할 문서' 목록에 바로 추가한다."""
+        """붙여넣은 텍스트를 파일로 저장해 '01 정리할 문서' 목록에 바로 추가한다.
+
+        자동 저장 폴더를 지정해 두면, 저장 즉시 그 폴더에 HWPX로 변환해
+        추가한다(배치 작업과 독립된 한/글 세션 사용). 지정하지 않으면
+        기존처럼 저장 위치를 직접 골라 .txt로 추가한다.
+        """
         if self.running:
             return
         existing = getattr(self, "_텍스트추가_창", None)
@@ -8676,21 +8990,46 @@ class HwpAutoDocFitGUI:
         window = tk.Toplevel(self.root)
         self._텍스트추가_창 = window
         window.title("텍스트 붙여넣기로 문서 추가")
-        window.geometry("640x480")
-        window.minsize(420, 320)
+        window.geometry("640x520")
+        window.minsize(420, 360)
         window.transient(self.root)
+
+        진행중 = {"value": False}
 
         def closed():
             self._텍스트추가_창 = None
-        window.protocol("WM_DELETE_WINDOW", lambda: (window.destroy(), closed()))
+
+        def 닫기_요청():
+            if 진행중["value"]:
+                return
+            window.destroy()
+            closed()
+        window.protocol("WM_DELETE_WINDOW", 닫기_요청)
 
         body = ttk.Frame(window, padding=12)
         body.pack(fill="both", expand=True)
         ttk.Label(body, text="추가할 문서 내용을 붙여넣거나 입력하세요.",
                   font=("맑은 고딕", 12, "bold")).pack(anchor="w")
         ttk.Label(body,
-                  text="텍스트를 .txt 파일로 저장한 뒤 문서 목록에 추가합니다(저장 위치는 직접 고를 수 있습니다).",
-                  style="Hint.TLabel").pack(anchor="w", pady=(2, 8))
+                  text="자동 저장 폴더를 지정하면 저장 즉시 그 폴더에 HWPX로 변환해 문서 목록에 추가합니다. "
+                       "비워두면 저장 위치를 직접 골라 .txt로 추가합니다.",
+                  style="Hint.TLabel", wraplength=600, justify="left").pack(anchor="w", pady=(2, 8))
+
+        folder_row = ttk.Frame(body)
+        folder_row.pack(fill="x", pady=(0, 8))
+        ttk.Label(folder_row, text="자동 저장 폴더").pack(side="left")
+        folder_entry = ttk.Entry(folder_row, textvariable=self.paste_add_folder_var, width=40)
+        folder_entry.pack(side="left", padx=(6, 4), fill="x", expand=True)
+
+        def 폴더_찾아보기():
+            시작 = self.paste_add_folder_var.get() or str(Path.home())
+            폴더 = askdirectory(title="자동 저장 폴더 선택", initialdir=시작 if Path(시작).exists() else None,
+                                parent=window)
+            if 폴더:
+                self.paste_add_folder_var.set(폴더)
+
+        ttk.Button(folder_row, text="찾아보기…", command=폴더_찾아보기).pack(side="left", padx=(0, 4))
+        ttk.Button(folder_row, text="지정 안 함", command=lambda: self.paste_add_folder_var.set("")).pack(side="left")
 
         text_frame = ttk.Frame(body)
         text_frame.pack(fill="both", expand=True)
@@ -8704,22 +9043,78 @@ class HwpAutoDocFitGUI:
 
         status = tk.StringVar(value="텍스트를 붙여넣고 ‘문서로 추가’를 눌러 주세요.")
 
-        def 기본파일명(내용):
+        def 기본이름(내용):
             for 줄 in 내용.splitlines():
                 줄 = 줄.strip()
                 if 줄:
                     안전한줄 = re.sub(r'[\\/:*?"<>|]', " ", 줄).strip()
-                    return (안전한줄[:40] or "붙여넣은 텍스트") + ".txt"
-            return "붙여넣은 텍스트.txt"
+                    return 안전한줄[:40] or "붙여넣은 텍스트"
+            return "붙여넣은 텍스트"
+
+        def 겹치지않는경로(폴더, 이름, 확장자):
+            대상 = Path(폴더) / f"{이름}{확장자}"
+            번호 = 2
+            while 대상.exists():
+                대상 = Path(폴더) / f"{이름} ({번호}){확장자}"
+                번호 += 1
+            return 대상
+
+        추가_버튼 = None
+        지우기_버튼 = None
+        닫기_버튼 = None
+
+        def 버튼상태(상태):
+            for 위젯 in (추가_버튼, 지우기_버튼, 닫기_버튼, folder_entry):
+                if 위젯 is not None:
+                    위젯.config(state=상태)
+
+        def 완료(오류, 대상경로):
+            진행중["value"] = False
+            if not window.winfo_exists():
+                return
+            버튼상태("normal")
+            if 오류:
+                messagebox.showerror(APP_NAME, f"HWPX 변환 중 오류가 발생했습니다.\n\n{오류}", parent=window)
+                status.set("HWPX 변환에 실패했습니다.")
+                return
+            if self.파일추가(str(대상경로)):
+                status.set(f"HWPX 문서로 추가했습니다 · {대상경로.name}")
+                self.status_var.set(f"{len(self.files)}개 문서 선택")
+                self.로그표시(f"텍스트를 HWPX 문서로 추가: {대상경로.name}")
+            else:
+                status.set("이미 목록에 있는 파일입니다.")
 
         def 문서로추가():
             내용 = input_text.get("1.0", "end-1c")
             if not 내용.strip():
                 status.set("붙여넣은 텍스트가 없습니다.")
                 return
+            폴더 = self.paste_add_folder_var.get().strip()
+            if 폴더:
+                if not Path(폴더).is_dir():
+                    messagebox.showerror(APP_NAME, f"자동 저장 폴더를 찾을 수 없습니다.\n\n{폴더}", parent=window)
+                    return
+                if self.running:
+                    messagebox.showinfo(APP_NAME, "다른 작업이 실행 중입니다. 완료 후 다시 시도해 주세요.",
+                                        parent=window)
+                    return
+                대상경로 = 겹치지않는경로(폴더, 기본이름(내용), ".hwpx")
+                진행중["value"] = True
+                버튼상태("disabled")
+                status.set("HWPX로 변환하는 중입니다… (한/글이 잠시 열립니다)")
+
+                def 작업():
+                    오류 = None
+                    try:
+                        텍스트_hwpx_단독변환(내용, 대상경로)
+                    except Exception as e:
+                        오류 = str(e)
+                    self.root.after(0, 완료, 오류, 대상경로)
+                threading.Thread(target=작업, daemon=True, name="paste-add-hwpx").start()
+                return
             경로 = asksaveasfilename(
                 parent=window, title="텍스트를 저장할 위치",
-                initialfile=기본파일명(내용), defaultextension=".txt",
+                initialfile=기본이름(내용) + ".txt", defaultextension=".txt",
                 filetypes=[("텍스트 파일", "*.txt")],
             )
             if not 경로:
@@ -8742,9 +9137,12 @@ class HwpAutoDocFitGUI:
 
         actions = ttk.Frame(body)
         actions.pack(fill="x", pady=(8, 0))
-        ttk.Button(actions, text="문서로 추가", command=문서로추가).pack(side="left")
-        ttk.Button(actions, text="지우기", command=지우기).pack(side="left", padx=(6, 0))
-        ttk.Button(actions, text="닫기", command=lambda: (window.destroy(), closed())).pack(side="right")
+        추가_버튼 = ttk.Button(actions, text="문서로 추가", command=문서로추가)
+        추가_버튼.pack(side="left")
+        지우기_버튼 = ttk.Button(actions, text="지우기", command=지우기)
+        지우기_버튼.pack(side="left", padx=(6, 0))
+        닫기_버튼 = ttk.Button(actions, text="닫기", command=닫기_요청)
+        닫기_버튼.pack(side="right")
         ttk.Label(body, textvariable=status, style="Hint.TLabel").pack(anchor="w", pady=(6, 0))
 
         try:
@@ -9614,6 +10012,7 @@ class HwpAutoDocFitGUI:
                 "linespacing_min": str(self.linespacing_min_var.get()),
                 "linespacing_max": str(self.linespacing_max_var.get()),
                 "hwp_font_folder": str(self.font_folder_var.get()),
+                "paste_add_folder": str(self.paste_add_folder_var.get()),
                 "symbol_fonts": {
                     기호: {"font": v["font"].get(), "size": v["size"].get()}
                     for 기호, v in self.symbol_font_vars.items()
@@ -9716,6 +10115,7 @@ class HwpAutoDocFitGUI:
         self.linespacing_max_var.set(기본_설정["linespacing_max"])
         self.font_folder_var.set(기본_설정.get("hwp_font_folder", "") or 한글_폰트_폴더_자동감지())
         self._한글_폰트_목록_캐시 = 한글_폰트_목록_전체(self.font_folder_var.get())
+        self.paste_add_folder_var.set(기본_설정.get("paste_add_folder", ""))
         for 기호, v in self.symbol_font_vars.items():
             기본항목 = 기본_설정.get("symbol_fonts", {}).get(기호, {})
             v["font"].set(기본항목.get("font", ""))
