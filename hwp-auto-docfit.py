@@ -119,6 +119,15 @@ hwp 자동 편집기
     보고서 작성 표준(□0칸→ㅇ1칸→―2칸→·/*3칸)에 맞춤. 기존 기본값
     (-3칸, ※·•5칸)이 실제 표준과 달라 항목 기호 뒤에 스페이스바를
     수동으로 끼워 맞추던 원인이었음
+57. 곧은 작은따옴표(')도 한글 표준 둥근따옴표(' ')로 통일. 숫자 뒤
+    발·분 표기(6', 37° 33')는 단위 기호로 보아 건드리지 않고, 연도 앞
+    표기('26년)는 기존 규칙이 먼저 처리하므로 겹치지 않음
+58. 날짜·기간·시간 표기의 하이픈(-)·엔대시(–)·엠대시(—)를 물결표(~)로
+    통일하고 날짜 뒤 빠진 온점, 요일 괄호(예: (금)) 앞뒤 온점 위치를
+    표준에 맞춤. 점(.)으로 연·월·일을 구분한 날짜/시:분 형태 사이에 낀
+    경우만 다뤄 전화번호·법령 조항·사업 코드의 하이픈은 손대지 않음.
+    단, 기간 앞뒤 날짜가 같은 연도를 반복 표기한 경우를 "2026. 6. 30"
+    같은 축약형으로 압축하는 것은 의미 판단이 필요해 자동화하지 않음
 
 필요 패키지
 ------------------------------------------------------------
@@ -176,7 +185,8 @@ from docfit_core.style_hierarchy import DOT_MARKERS, analyze_hierarchy, display_
 from docfit_core.stage_selection import STAGE_EXAMPLES, enabled as stage_enabled, stages_for_mode
 from docfit_core.document_rules import (
     ParagraphSpacingTracker, YEAR_QUOTE_PATTERN, marker_space_fix,
-    straight_double_quote_replacements,
+    curly_single_quote_replacements, normalize_date_range_marks,
+    straight_double_quote_replacements, text_edit_spans,
 )
 from docfit_core.document_review import DOCUMENT_KINDS, PURPOSES, review_document
 from docfit_core.style_profile_edit import FIELDS as STYLE_FIELDS, ROLES as STYLE_ROLES, apply_reviewed_styles
@@ -5233,6 +5243,76 @@ def 곧은따옴표_통일_문단_처리():
     return changed
 
 
+def 작은따옴표_통일_문단_처리():
+    """현재 문단에서 곧은 작은따옴표(')를 한글 표준 둥근따옴표(' ')로 바꾼다.
+
+    연도 앞 표기('26년)는 이미 앞서 실행되는 연도_따옴표_정리_문단_처리가
+    처리하므로, 여기 도달하는 '는 일반 인용부호로 보고 문맥(앞 글자)으로
+    여는/닫는 방향을 판정한다. 숫자 뒤에 오는 '(6', 37° 33')는 발·분 표기로
+    보아 건드리지 않는다 — curly_single_quote_replacements 참고.
+    """
+    text = 현재문단_텍스트()
+    replacements = curly_single_quote_replacements(text or "")
+    if not replacements:
+        return 0
+    start = hwp.GetPos()
+    changed = 0
+    try:
+        for index, replacement in reversed(replacements):
+            if 문단_범위_선택(start, index, index + 1) is False:
+                raise RuntimeError("작은따옴표 선택 실패")
+            텍스트_삽입(replacement)
+            changed += 1
+    finally:
+        hwp_run("Cancel")
+        hwp.SetPos(*start)
+    return changed
+
+
+def 날짜_구분자_정리_문단_처리():
+    """현재 문단에서 날짜·기간·시간 표기의 대시류(-,–,—)를 물결표(~)로,
+    날짜 뒤 빠진 온점과 요일 괄호 앞뒤 온점 위치를 표준에 맞춘다.
+
+    normalize_date_range_marks가 만든 결과 문자열과 원문을 비교해 바뀐
+    구간만 역순으로 적용한다(text_edit_spans) — 전화번호·법령 조항·사업
+    코드처럼 점(.) 없는 하이픈은 애초에 패턴에 안 걸려 손대지 않는다.
+    """
+    text = 현재문단_텍스트()
+    if not text:
+        return 0
+    변환후 = normalize_date_range_marks(text)
+    spans = text_edit_spans(text, 변환후)
+    if not spans:
+        return 0
+    문단_시작위치 = hwp.GetPos()
+    수정수 = 0
+    try:
+        for 시작, 끝, 대체 in sorted(spans, key=lambda s: s[0], reverse=True):
+            try:
+                if 끝 > 시작:
+                    if 문단_범위_선택(문단_시작위치, 시작, 끝) is False:
+                        raise RuntimeError("날짜 구분자 구간 선택 실패")
+                    if hwp_run("Delete") is False:
+                        raise RuntimeError("날짜 구분자 구간 삭제 실패")
+                    hwp.SetPos(*문단_시작위치)
+                if 대체:
+                    hwp.SetPos(문단_시작위치[0], 문단_시작위치[1], 문단_시작위치[2] + 시작)
+                    텍스트_삽입(대체)
+                수정수 += 1
+            except Exception as e:
+                로그(f"날짜 구분자 정리 실패(무시): {e}")
+                try:
+                    hwp_run("Cancel")
+                except Exception:
+                    pass
+    finally:
+        try:
+            hwp.SetPos(*문단_시작위치)
+        except Exception:
+            pass
+    return 수정수
+
+
 def 문장내_공백_정규화_전체_적용():
     """괄호 안쪽 공백 + 단어 사이 쉼표 공백 + 단어 사이 연속 공백을 문서 전체에 적용한다."""
     if 중단_요청됨():
@@ -5254,6 +5334,8 @@ def 문장내_공백_정규화_전체_적용():
     기호수정수 = 0
     연도따옴표수정수 = 0
     따옴표수정수 = 0
+    작은따옴표수정수 = 0
+    날짜구분자수정수 = 0
     방문문단수 = 0
     정체횟수 = 0
 
@@ -5267,6 +5349,8 @@ def 문장내_공백_정규화_전체_적용():
         기호수정수 += 문두_미음_기호_정리()
         연도따옴표수정수 += 연도_따옴표_정리_문단_처리()
         따옴표수정수 += 곧은따옴표_통일_문단_처리()
+        작은따옴표수정수 += 작은따옴표_통일_문단_처리()
+        날짜구분자수정수 += 날짜_구분자_정리_문단_처리()
         괄호삭제수 += 괄호_안쪽_공백_정리_문단_처리()
         쉼표수정수 += 쉼표_공백_정리_문단_처리()
         연속공백수정수 += 단어사이_연속공백_정리_문단_처리()
@@ -5285,6 +5369,7 @@ def 문장내_공백_정규화_전체_적용():
         "문장 내 공백 정규화 완료 "
         f"(방문 문단 {방문문단수}개 / 괄호 AllReplace {allreplace_실행수}회 / "
         f"문두 ㅁ→□ {기호수정수}건 / 연도 따옴표 {연도따옴표수정수}건 / 곧은따옴표 {따옴표수정수}건 / "
+        f"작은따옴표 {작은따옴표수정수}건 / 날짜 구분자 {날짜구분자수정수}건 / "
         f"괄호 후방삭제 {괄호삭제수}자 / 쉼표 공백 {쉼표수정수}건 / 연속 공백 {연속공백수정수}건)"
     )
     return True
