@@ -56,6 +56,10 @@ hwp 자동 편집기
 40. 실행창 '세부 작업' 창에도 세부 설정과 동일한 상세 항목(문서 스타일,
     문두기호별 글꼴·크기·굵게, 문단위 여백 등)을 표시해 두 창이 항상
     같은 내용을 보이도록 통일(같은 변수를 공유해 어느 쪽에서 바꿔도 반영)
+41. HWP/HWPX 외 TXT·MD·DOC(X)·PDF 파일도 추가해 처리 가능. 자간·서식
+    작업 전에 작업용 HWPX로 자동 변환하며, 결과물은 항상 HWPX로 저장.
+    MD/DOC(X)/PDF는 선택형 kordoc 엔진(Node.js)이 있어야 서식을 살려
+    변환하며, MD는 엔진이 없으면 서식 없이 텍스트로만 변환
 
 필요 패키지
 ------------------------------------------------------------
@@ -133,6 +137,7 @@ from docfit_core import (
     inspect_hwpx,
     kordoc_engine_version,
     lint_document,
+    parse_document,
     patch_document,
     render_preview,
     validate_hwpx,
@@ -5832,6 +5837,61 @@ def 문서_전체_자간_초기화():
         return False
 
 
+지원_확장자 = (".hwp", ".hwpx", ".txt", ".md", ".doc", ".docx", ".pdf")
+_텍스트_인코딩_후보 = ("utf-8-sig", "utf-8", "cp949")
+
+
+def 텍스트파일_읽기(경로):
+    for 인코딩 in _텍스트_인코딩_후보:
+        try:
+            return Path(경로).read_text(encoding=인코딩)
+        except (UnicodeDecodeError, LookupError):
+            continue
+    raise ValueError(f"텍스트 인코딩을 확인하지 못했습니다(UTF-8/CP949만 지원): {경로}")
+
+
+def 텍스트_hwpx로_변환(텍스트, 대상경로):
+    """현재 hwp에 새 빈 문서를 만들어 텍스트를 문단 단위로 넣고 HWPX로 저장한다."""
+    if hwp.Run("FileNew") is False:
+        raise RuntimeError("빈 문서를 만들지 못했습니다.")
+    줄들 = 텍스트.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    for 순번, 줄 in enumerate(줄들):
+        if 줄:
+            텍스트_삽입(줄)
+        if 순번 < len(줄들) - 1:
+            hwp_run("BreakPara")
+    if hwp.SaveAs(str(대상경로), "HWPX", "") is False:
+        raise RuntimeError("텍스트를 HWPX로 저장하지 못했습니다.")
+
+
+def 외부문서_hwpx로_변환(원본경로, 확장자, 대상경로):
+    """.txt/.md/.doc/.docx/.pdf를 자간·서식 처리에 쓸 작업용 HWPX로 변환한다.
+
+    .md/.doc/.docx/.pdf는 선택형 kordoc 엔진(Node.js)이 있어야 문단·표·
+    글머리 구조를 살려 변환한다. 없으면 .md는 서식 없이 텍스트로라도
+    변환하고, .doc/.docx/.pdf는 이 엔진 없이는 읽을 방법이 없어 오류로
+    알린다.
+    """
+    if 확장자 == ".txt":
+        텍스트_hwpx로_변환(텍스트파일_읽기(원본경로), 대상경로)
+        return
+    if 확장자 == ".md":
+        try:
+            generate_hwpx(str(원본경로), "보고서", str(대상경로))
+            return
+        except KordocUnavailableError as e:
+            로그(f"고급 문서 엔진을 쓸 수 없어 서식 없이 텍스트로만 변환합니다: {e}")
+            텍스트_hwpx로_변환(텍스트파일_읽기(원본경로), 대상경로)
+            return
+    if 확장자 in (".doc", ".docx", ".pdf"):
+        with tempfile.TemporaryDirectory(prefix="docfit_변환_") as 임시폴더:
+            임시_md = Path(임시폴더) / f"{Path(원본경로).stem}.md"
+            parse_document(str(원본경로), str(임시_md), output_format="markdown")
+            generate_hwpx(str(임시_md), "보고서", str(대상경로))
+        return
+    raise ValueError(f"지원하지 않는 변환 형식입니다: {확장자}")
+
+
 def 문서_처리(파일, index, total, 문장부호기능=True):
     global hwp, 현재_처리파일, 한칸표_보호영역
     global 쪽범위_본문_문단, 쪽범위_컨트롤영역, 쪽범위_실제
@@ -5854,49 +5914,69 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
     파일경로 = Path(파일)
     if not 파일경로.is_file():
         raise FileNotFoundError(f"문서를 찾을 수 없습니다: {파일}")
-    if 확장자 not in (".hwp", ".hwpx"):
+    if 확장자 not in 지원_확장자:
         raise ValueError(f"지원하지 않는 파일 형식입니다: {확장자 or '(확장자 없음)'}")
 
     # 한글에 넘기기 전에 경로 조작, ZIP bomb, CRC와 필수 구조를 검사한다.
     원본_구조 = None
     작업_임시폴더 = None
     작업파일경로 = 파일경로
-    if 확장자 == ".hwpx":
-        검사정보 = validate_hwpx(파일경로)
-        로그(
-            f"HWPX 안전 검사 통과: 압축 항목 {검사정보['entry_count']}개 / "
-            f"해제 예상 {검사정보['total_uncompressed_size']:,}바이트"
-        )
-        if 검수_사용:
-            원본_구조 = inspect_hwpx(파일경로)
 
-    로그(f"문서 열기: {파일}")
-    단계초기화()
-    단계표시("열기")
-    # HWP NEO에서 최신 HWPX의 호환성 경고가 뜨는 경우에도 자동화가
-    # 중단되지 않도록 강제 열기 옵션을 사용한다.
-    열린결과 = hwp.Open(str(파일경로), Format=원본_확장자명.upper(), arg="forceopen:true")
-    if 열린결과 is False:
-        raise RuntimeError(f"한글에서 문서를 열지 못했습니다: {파일}")
+    if 확장자 in (".hwp", ".hwpx"):
+        if 확장자 == ".hwpx":
+            검사정보 = validate_hwpx(파일경로)
+            로그(
+                f"HWPX 안전 검사 통과: 압축 항목 {검사정보['entry_count']}개 / "
+                f"해제 예상 {검사정보['total_uncompressed_size']:,}바이트"
+            )
+            if 검수_사용:
+                원본_구조 = inspect_hwpx(파일경로)
 
-    # 바이너리 HWP는 원본을 건드리지 않고 임시 HWPX로 변환한다. 이후의
-    # 분석·서식 적용·무결성 검사·저장은 모두 HWPX 문서를 기준으로 수행한다.
-    if 확장자 == ".hwp":
-        작업_임시폴더 = tempfile.TemporaryDirectory(prefix="docfit_hwp_to_hwpx_")
+        로그(f"문서 열기: {파일}")
+        단계초기화()
+        단계표시("열기")
+        # HWP NEO에서 최신 HWPX의 호환성 경고가 뜨는 경우에도 자동화가
+        # 중단되지 않도록 강제 열기 옵션을 사용한다.
+        열린결과 = hwp.Open(str(파일경로), Format=원본_확장자명.upper(), arg="forceopen:true")
+        if 열린결과 is False:
+            raise RuntimeError(f"한글에서 문서를 열지 못했습니다: {파일}")
+
+        # 바이너리 HWP는 원본을 건드리지 않고 임시 HWPX로 변환한다. 이후의
+        # 분석·서식 적용·무결성 검사·저장은 모두 HWPX 문서를 기준으로 수행한다.
+        if 확장자 == ".hwp":
+            작업_임시폴더 = tempfile.TemporaryDirectory(prefix="docfit_hwp_to_hwpx_")
+            작업파일경로 = Path(작업_임시폴더.name) / f"{파일경로.stem}.hwpx"
+            if hwp.SaveAs(str(작업파일경로), "HWPX", "") is False:
+                raise RuntimeError("HWP 문서를 작업용 HWPX로 변환하지 못했습니다.")
+            검사정보 = validate_hwpx(작업파일경로)
+            로그(
+                f"HWP → HWPX 변환 완료: {작업파일경로.name} / "
+                f"압축 항목 {검사정보['entry_count']}개"
+            )
+            if 검수_사용:
+                원본_구조 = inspect_hwpx(작업파일경로)
+            if hwp.Open(str(작업파일경로), Format="HWPX", arg="forceopen:true") is False:
+                raise RuntimeError("변환한 작업용 HWPX 문서를 다시 열지 못했습니다.")
+
+        원본_뷰어_문서표시(파일, 원본_확장자명)
+    else:
+        # .txt/.md/.doc/.docx/.pdf: 한글이 직접 열 수 없으므로 먼저 작업용
+        # HWPX로 변환한 뒤, 이후 단계는 HWP/HWPX와 동일하게 진행한다.
+        로그(f"문서 변환 중: {파일} → HWPX")
+        단계초기화()
+        단계표시("변환")
+        상태(f"{파일명} : {확장자[1:].upper()} → HWPX 변환 중")
+        작업_임시폴더 = tempfile.TemporaryDirectory(prefix="docfit_외부문서_")
         작업파일경로 = Path(작업_임시폴더.name) / f"{파일경로.stem}.hwpx"
-        if hwp.SaveAs(str(작업파일경로), "HWPX", "") is False:
-            raise RuntimeError("HWP 문서를 작업용 HWPX로 변환하지 못했습니다.")
+        외부문서_hwpx로_변환(파일경로, 확장자, 작업파일경로)
         검사정보 = validate_hwpx(작업파일경로)
-        로그(
-            f"HWP → HWPX 변환 완료: {작업파일경로.name} / "
-            f"압축 항목 {검사정보['entry_count']}개"
-        )
+        로그(f"변환 완료: {작업파일경로.name} / 압축 항목 {검사정보['entry_count']}개")
         if 검수_사용:
             원본_구조 = inspect_hwpx(작업파일경로)
+        단계표시("열기")
         if hwp.Open(str(작업파일경로), Format="HWPX", arg="forceopen:true") is False:
-            raise RuntimeError("변환한 작업용 HWPX 문서를 다시 열지 못했습니다.")
-
-    원본_뷰어_문서표시(파일, 원본_확장자명)
+            raise RuntimeError(f"변환한 문서를 열지 못했습니다: {파일}")
+        # 원본이 HWP/HWPX가 아니므로 좌우 비교 보기 대상에서는 제외한다.
     비교보기_임베드_재확인()
 
     if 표준서식_사용 and 작업_모드 in ('format', 'all'):
@@ -7081,7 +7161,7 @@ class HwpAutoDocFitGUI:
         self.file_frame = file_frame
         file_frame.grid_columnconfigure(0, weight=1)
         file_frame.grid_rowconfigure(1, weight=1)
-        self.drop_label = ttk.Label(file_frame, text="HWP · HWPX 파일 또는 폴더를 여기에 놓으세요", anchor="center", padding=6, style="Drop.TLabel")
+        self.drop_label = ttk.Label(file_frame, text="HWP·HWPX·TXT·MD·DOC(X)·PDF 파일 또는 폴더를 여기에 놓으세요", anchor="center", padding=6, style="Drop.TLabel")
         self.drop_label.grid(row=0, column=0, sticky="ew", pady=(0, 4))
         self.drop_label.drop_target_register(DND_FILES)
         self.drop_label.dnd_bind("<<Drop>>", self.파일_드롭)
@@ -9526,7 +9606,7 @@ class HwpAutoDocFitGUI:
 
         if not os.path.isfile(file_path):
             return False
-        if Path(file_path).suffix.lower() not in (".hwp", ".hwpx"):
+        if Path(file_path).suffix.lower() not in 지원_확장자:
             return False
         if file_path in self.files:
             return False
@@ -9554,7 +9634,7 @@ class HwpAutoDocFitGUI:
             return 0
 
         for path in items:
-            if path.is_file() and path.suffix.lower() in (".hwp", ".hwpx"):
+            if path.is_file() and path.suffix.lower() in 지원_확장자:
                 if self.파일추가(path):
                     count += 1
         return count
@@ -9585,9 +9665,13 @@ class HwpAutoDocFitGUI:
             return
         files = askopenfilenames(
             parent=self.root,
-            title="처리할 HWP/HWPX 문서를 선택하세요.",
+            title="처리할 문서를 선택하세요.",
             initialdir=os.getcwd(),
-            filetypes=[("한/글 파일", "*.hwp *.hwpx"), ("HWP 파일", "*.hwp"), ("HWPX 파일", "*.hwpx")]
+            filetypes=[
+                ("지원하는 모든 문서", "*.hwp *.hwpx *.txt *.md *.doc *.docx *.pdf"),
+                ("한/글 파일", "*.hwp *.hwpx"), ("HWP 파일", "*.hwp"), ("HWPX 파일", "*.hwpx"),
+                ("텍스트/Markdown", "*.txt *.md"), ("MS Word", "*.doc *.docx"), ("PDF", "*.pdf"),
+            ]
         )
         if not files:
             return
@@ -9931,7 +10015,7 @@ class HwpAutoDocFitGUI:
         if self.running:
             return
         if not self.files:
-            messagebox.showwarning(APP_NAME, "먼저 HWP/HWPX 문서를 선택하거나 끌어다 놓으세요.", parent=self.root)
+            messagebox.showwarning(APP_NAME, "먼저 문서(HWP/HWPX/TXT/MD/DOC(X)/PDF)를 선택하거나 끌어다 놓으세요.", parent=self.root)
             return
 
         범위_확인, 작업범위 = self._작업범위_읽기()
