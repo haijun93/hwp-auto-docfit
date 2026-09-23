@@ -6,6 +6,9 @@ on:
       - claude/affectionate-goldberg-ggln7c
   workflow_dispatch: {}
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -44,3 +47,17 @@ jobs:
           name: HWP_AutoDocFit-exe
           path: dist/HWP_AutoDocFit.exe
           if-no-files-found: error
+
+      - name: Commit built exe to release-assets
+        shell: bash
+        run: |
+          cp dist/HWP_AutoDocFit.exe release-assets/HWP_AutoDocFit.exe
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add release-assets/HWP_AutoDocFit.exe
+          if git diff --cached --quiet; then
+            echo "No change in built exe; skipping commit."
+          else
+            git commit -m "Update built HWP_AutoDocFit.exe from CI run ${{ github.run_id }}"
+            git push origin HEAD:${{ github.ref_name }}
+          fi
