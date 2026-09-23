@@ -255,6 +255,59 @@ class OutlinePastedTextTest(unittest.TestCase):
         )
         self.assertEqual(outline_pasted_text(text), expected)
 
+    def test_flattened_single_line_outline_is_split_into_items(self):
+        # 워크플로위를 브라우저에서 통째로 복사하면 줄바꿈이 공백으로 뭉개져
+        # 한 줄에 " - "만 남는다. 깊이는 못 살리지만 항목만은 한 줄씩 펼친다.
+        text = "Home  - 첫째 항목   - 둘째 항목 - 셋째 항목    - 넷째 항목"
+        self.assertEqual(
+            outline_pasted_text(text),
+            "ㅁ Home\nㅇ 첫째 항목\nㅇ 둘째 항목\nㅇ 셋째 항목\nㅇ 넷째 항목",
+        )
+
+    def test_flattened_outline_strips_leading_hashtags(self):
+        text = "Home  - #항목하나  - 둘째 항목 - #셋째항목 - 넷째 항목"
+        self.assertEqual(
+            outline_pasted_text(text),
+            "ㅁ Home\nㅇ 항목하나\nㅇ 둘째 항목\nㅇ 셋째항목\nㅇ 넷째 항목",
+        )
+
+    def test_normal_multiline_text_is_not_treated_as_flattened_outline(self):
+        # 실제 줄바꿈이 여러 줄 있으면(진짜 문단 구조) 이 통짜-복사 휴리스틱을
+        # 적용하지 않는다 — 그렇지 않으면 평범한 여러 줄 글도 흩어질 수 있다.
+        text = "# 제목\n\n* 항목 A - 세부 설명\n* 항목 B - 세부 설명\n* 항목 C - 세부 설명"
+        result = outline_pasted_text(text)
+        self.assertIn("항목 A - 세부 설명", result)
+        self.assertNotIn("ㅇ 세부 설명", result)
+
+    def test_short_line_with_a_couple_of_dashes_is_not_flattened(self):
+        # 구분자가 몇 개 안 되는 짧은 한 줄은 그냥 평범한 문장으로 둔다.
+        text = "회의는 A - B 순서로 진행됩니다."
+        self.assertEqual(outline_pasted_text(text), text)
+
+    def test_flattened_outline_real_workflowy_export_end_to_end(self):
+        text = (
+            "Home  - 우선재고용의무 의의 및 법적성질   - 우선재고용의무 의의 - 25조1항 > "
+            "#25조1항입법취지는*이직복기보장해자보호   - 우선재고용의무 위반 여부 - "
+            "#해3해담업같업근채해자원하면우재고의무발생*#반의표근체기어객사특사없는한위반 > "
+            "반대의사를 표시하거나 근로계약체결을 기대하기 어려울 객관적 사정 등 특별한 사정이 "
+            "없는한  해고자를 우선재고용할 의무가 있고 사용자가 해고자에게 고용계약 체결 의사를 "
+            "확인하지 않은 채 제3자를 채용하였다면 특별한 사정이 없는한 25조1항 위반이다.    - "
+            "우선재고용의무 법적성질 - 공법상 의무규정설, 사법상 청구권설, 형성권설  #고갈판사> "
+            "사용자는 해고근로자를 우선재고용할 의무가 있으므로, 해고근로자는 사용자가 불이행시, "
+            "사용자를 상대로 고용의 의사표시를 갈음할 판결을 구할 사법상 권리가 있고, 판결이 "
+            "확정되면 사용자와 해고근로자 사이에 고용관계가 성립한다."
+        )
+        result = outline_pasted_text(text)
+        lines = result.split("\n")
+        self.assertEqual(lines[0], "ㅁ Home")
+        # 계층 깊이는 복원하지 않지만, 통짜 문장이 항목 하나당 한 줄로 펼쳐지고
+        # 잡음 없는 순수 "#" 태그는 제거된다.
+        self.assertTrue(all(line.startswith(("ㅁ ", "ㅇ ")) for line in lines))
+        self.assertIn("ㅇ 우선재고용의무 의의 및 법적성질", lines)
+        self.assertIn("ㅇ 우선재고용의무 위반 여부", lines)
+        self.assertTrue(any(line.startswith("ㅇ 25조1항 > ") for line in lines))
+        self.assertNotIn("#", "".join(lines))
+
 
 if __name__ == "__main__":
     unittest.main()

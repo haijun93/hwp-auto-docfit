@@ -61,6 +61,39 @@ _OUTLINE_ALREADY_NUMBERED = re.compile(r"^\d+[.)][ \t]")
 _INDENTED_BULLET = re.compile(r"^([ \t]*)[-*+][ \t]+(?=\S)")
 _UNINDENTED_NUMBER = re.compile(r"^\d+[.)][ \t]+(?=\S)")
 
+# 워크플로위 등에서 브라우저로 outline 전체를 통째로 복사하면 줄바꿈이
+# 전부 공백으로 뭉개져, 한 줄에 "항목1  - 항목2   - 항목3 - 항목4"처럼
+# " - " 구분자만 계층의 흔적으로 남는다. 이때 구분자 앞 공백 개수는 탭
+# 폭이 위치마다 다르게 뭉개진 결과라 깊이를 알려주지 못하므로(부모보다
+# 자식의 공백 수가 더 적은 경우도 흔함), 깊이 복원은 포기하고 항목만
+# 한 줄씩 펼쳐 ㅇ(2단계)로 표시한다. 정확한 계층까지 살리려면 워크플로위의
+# '내보내기 > 일반 텍스트'처럼 줄바꿈이 보존된 형식으로 다시 붙여넣어야
+# 한다.
+_FLAT_OUTLINE_SEPARATOR = re.compile(r"[ \t]{1,}-[ \t]+(?=\S)")
+# "#" 바로 뒤에 공백 없이 글자가 오면(마크다운 표제는 "#" 뒤에 공백이
+# 있어야 하므로) 위치와 상관없이 워크플로위류 해시태그로 본다.
+_FLAT_OUTLINE_HASHTAG = re.compile(r"#(?=\S)")
+
+
+def _looks_like_flattened_outline(text: str) -> bool:
+    real_lines = [line for line in text.split("\n") if line.strip()]
+    if len(real_lines) > 2:
+        return False
+    return len(_FLAT_OUTLINE_SEPARATOR.findall(text)) >= 4
+
+
+def _unflatten_outline(text: str) -> str:
+    first, *rest = _FLAT_OUTLINE_SEPARATOR.split(text)
+    lines = []
+    first = _FLAT_OUTLINE_HASHTAG.sub("", first).strip()
+    if first:
+        lines.append(f"# {first}")
+    for item in rest:
+        item = _FLAT_OUTLINE_HASHTAG.sub("", item).strip()
+        if item:
+            lines.append(f"- {item}")
+    return "\n".join(lines)
+
 
 def _strip_invisible(text: str) -> str:
     text = text.translate(_INVISIBLE_MAP)
@@ -182,9 +215,17 @@ def outline_pasted_text(text: str) -> str:
     보고 이미 번호가 있으면 그대로 두며(없으면 ㅁ을 붙임), 글머리 기호는
     들여쓰기 깊이에 따라 ㅇ→-→•(3단계 이후는 모두 •) 순으로 매긴다. 줄바꿈
     으로 끊긴 같은 항목의 나머지 문장은 앞 항목에 이어 붙인다.
+
+    워크플로위처럼 항목마다 줄이 나뉘어야 할 아웃라이너를 브라우저에서
+    통째로 복사해 줄바꿈이 전부 공백으로 뭉개진 경우(예: 실제 줄바꿈은
+    없고 "항목1  - 항목2   - 항목3"처럼 " - "만 남은 한 줄), 계층 깊이는
+    복원할 수 없어 항목만 한 줄씩 펼쳐 ㅇ(2단계)로 표시한다.
     """
     if not text or not text.strip():
         return ""
+
+    if _looks_like_flattened_outline(text):
+        text = _unflatten_outline(text)
 
     text = _strip_invisible(text)
     text = _MARKER_GLUE.sub("\n", text)
