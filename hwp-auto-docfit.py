@@ -60,6 +60,9 @@ hwp 자동 편집기
     작업 전에 작업용 HWPX로 자동 변환하며, 결과물은 항상 HWPX로 저장.
     MD/DOC(X)/PDF는 선택형 kordoc 엔진(Node.js)이 있어야 서식을 살려
     변환하며, MD는 엔진이 없으면 서식 없이 텍스트로만 변환
+42. 실행창 '세부 작업'과 세부 설정의 '01. 문서 전체 자간 초기화' 등
+    번호가 붙은 항목 제목을 굵은 글씨로 표시해 켜고 끄는 단계가
+    잘 구분되도록 개선
 
 필요 패키지
 ------------------------------------------------------------
@@ -7660,6 +7663,7 @@ class HwpAutoDocFitGUI:
         style.configure("Result.TLabel", foreground=c["teal_dark"], font=("맑은 고딕", 9, "bold"))
         style.configure("Drop.TLabel", background=c["teal_tint"], foreground=c["ink"])
         style.configure("Mode.TRadiobutton", font=("맑은 고딕", 10, "bold"))
+        style.configure("Stage.TCheckbutton", font=("맑은 고딕", 10, "bold"))
         style.configure("TNotebook", borderwidth=0)
         style.configure("TNotebook.Tab", padding=(12, 9), background=c["rose"])
         style.map("TNotebook.Tab", background=[("selected", c["lavender"]), ("active", "#E5E1F4")], foreground=[("selected", c["ink"])])
@@ -7926,7 +7930,7 @@ class HwpAutoDocFitGUI:
         for number, (key, label) in enumerate(stages_for_mode(mode), 1):
             item = ttk.Frame(content)
             item.pack(fill="x", pady=(4, 7))
-            ttk.Checkbutton(item, text=f"{number:02d}. {label}",
+            ttk.Checkbutton(item, text=f"{number:02d}. {label}", style="Stage.TCheckbutton",
                             variable=choices[key]).pack(anchor="w")
             ttk.Label(item, text=STAGE_EXAMPLES[key], style="Hint.TLabel",
                       wraplength=610, justify="left").pack(anchor="w", padx=(25, 0), pady=(1, 0))
@@ -9213,7 +9217,8 @@ class HwpAutoDocFitGUI:
             self.spacing_stage_vars[key] = var
             item = ttk.Frame(container)
             item.pack(fill="x", pady=(4, 7))
-            ttk.Checkbutton(item, text=f"{number:02d}. {label}", variable=var).pack(anchor="w")
+            ttk.Checkbutton(item, text=f"{number:02d}. {label}", style="Stage.TCheckbutton",
+                            variable=var).pack(anchor="w")
             ttk.Label(item, text=STAGE_EXAMPLES[key], style="Hint.TLabel",
                       wraplength=650, justify="left").pack(anchor="w", padx=(25, 0), pady=(1, 0))
             detail = ttk.Frame(item)
@@ -9292,7 +9297,8 @@ class HwpAutoDocFitGUI:
             self.format_stage_vars[key] = var
             item = ttk.Frame(format_container)
             item.pack(fill="x", pady=(4, 7))
-            ttk.Checkbutton(item, text=f"{number:02d}. {label}", variable=var).pack(anchor="w")
+            ttk.Checkbutton(item, text=f"{number:02d}. {label}", style="Stage.TCheckbutton",
+                            variable=var).pack(anchor="w")
             ttk.Label(item, text=STAGE_EXAMPLES[key], style="Hint.TLabel",
                       wraplength=650, justify="left").pack(anchor="w", padx=(25, 0), pady=(1, 0))
             detail = ttk.Frame(item)
@@ -9313,7 +9319,8 @@ class HwpAutoDocFitGUI:
         self.indent_stage_vars[hanging_key] = indent_var
         indent_item = ttk.Frame(tabs["indent"])
         indent_item.pack(fill="x", pady=(4, 7))
-        ttk.Checkbutton(indent_item, text=f"10. {hanging_label}", variable=indent_var).pack(anchor="w")
+        ttk.Checkbutton(indent_item, text=f"10. {hanging_label}", style="Stage.TCheckbutton",
+                        variable=indent_var).pack(anchor="w")
         ttk.Label(indent_item, text=STAGE_EXAMPLES[hanging_key], style="Hint.TLabel",
                   wraplength=650, justify="left").pack(anchor="w", padx=(25, 0), pady=(1, 0))
         indent_sub = ttk.Frame(indent_item)
