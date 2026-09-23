@@ -20,6 +20,7 @@ from .kordoc_bridge import (
     fill_form,
     generate_hwpx,
     lint_document,
+    parse_document,
     patch_document,
     render_preview,
 )
@@ -42,6 +43,7 @@ __all__ = [
     "fill_form",
     "generate_hwpx",
     "lint_document",
+    "parse_document",
     "patch_document",
     "render_preview",
 ]

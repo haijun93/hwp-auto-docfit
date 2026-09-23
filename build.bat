@@ -7,21 +7,38 @@ set "APPNAME=HWP_AutoDocFit"
 set "PYTHON=.venv\Scripts\python.exe"
 
 if not exist "%PYTHON%" (
-    echo [FAIL] Virtual environment Python was not found: %PYTHON%
-    echo Run: python -m venv .venv
+    echo [0/4] Virtual environment not found. Creating .venv ...
+    set "BASEPY="
+    py -3 --version >nul 2>&1 && set "BASEPY=py -3"
+    if not defined BASEPY (
+        python --version >nul 2>&1 && set "BASEPY=python"
+    )
+    if not defined BASEPY (
+        echo [FAIL] Python was not found on this PC.
+        echo Install Python 3.11 or later from https://www.python.org/downloads/
+        echo and make sure to check "Add python.exe to PATH" during installation.
+        pause
+        exit /b 1
+    )
+    %BASEPY% -m venv .venv
+    if errorlevel 1 goto :fail
+)
+
+if not exist "%PYTHON%" (
+    echo [FAIL] Virtual environment Python still not found: %PYTHON%
     pause
     exit /b 1
 )
 
-echo [1/3] Installing build dependencies...
+echo [1/4] Installing build dependencies...
 "%PYTHON%" -m pip install --disable-pip-version-check -r requirements.txt pyinstaller
 if errorlevel 1 goto :fail
 
-echo [2/3] Checking Pillow image support...
+echo [2/4] Checking Pillow image support...
 "%PYTHON%" -c "from PIL import Image, ImageTk, ImageOps; print('Pillow', Image.__version__)"
 if errorlevel 1 goto :fail
 
-echo [3/3] Building %APPNAME%.exe...
+echo [3/4] Building %APPNAME%.exe...
 "%PYTHON%" -m PyInstaller ^
     --noconfirm ^
     --clean ^

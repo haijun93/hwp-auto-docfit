@@ -12,6 +12,7 @@ FORMAT_STAGES = (
     ("single_cell_spacing", "개요·한 칸 표 자간 조정"),
     ("hanging_indent", "최종 서식 기준 내어쓰기"),
     ("page_group", "관련 문단 페이지 배치"),
+    ("page_fit", "문단 아래 간격 페이지 맞춤"),
 )
 SPACING_STAGES = (
     ("reset_spacing", "문서 전체 자간 초기화"),
@@ -35,6 +36,7 @@ STAGE_EXAMPLES = {
     "single_cell_spacing": "예: 한 칸짜리 개요 표에서 줄 끝에 걸린 단어를 자간으로 조정합니다.",
     "hanging_indent": "예: 'ㅇ 추진 계획'이 두 줄이면 둘째 줄을 '추진' 시작점에 맞춥니다.",
     "page_group": "예: 3단계 항목과 이어지는 4단계·부연설명이 쪽 사이에 갈라지지 않도록 조정합니다.",
+    "page_fit": "예: 마지막 쪽에 2~3줄만 남았으면 문단 아래 간격을 줄여 앞쪽 쪽으로 당겨옵니다.",
     "reset_spacing": "예: 이전 편집에서 남은 자간 값을 0%로 되돌린 뒤 정리합니다.",
     "body_spacing": "예: 본문 줄 끝에서 단어가 갈라지면 글자 사이 간격을 조정합니다.",
     "short_line": "예: 마지막 줄에 짧게 남은 글자를 앞줄에 모으도록 시도합니다.",
