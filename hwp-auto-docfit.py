@@ -155,6 +155,16 @@ hwp 자동 편집기
     문장부호_2줄_기준글자수(기본 5자)보다 길면 아예 시도하지 않고,
     시도하더라도 자간은 최대 10%p(기존 최대 30%p), 장평은 최대
     90%까지(기존 85%까지)만 쓰도록 좁힘
+62. 실사용 로그에서 발견된 버그 수정: hwp.HwpUnitToPoint()/
+    hwp.HwpUnitToMili()가 실제 한/글 자동화 API에는 없는 메서드였음
+    (win32com 원시 객체 기준 "HwpFrame.HwpObject.HwpUnitToPoint" 오류로
+    확인 — pyhwpx가 자기 래퍼 클래스에서 순수 파이썬 나눗셈으로
+    흉내만 낸 편의 메서드를 실제 COM 메서드로 착각해 그대로 가져다
+    쓴 것이 원인). 항목 59(문단 아래 간격 페이지 맞춤)와 항목 60의
+    셀 너비 본문 맞춤이 영향을 받아, 값을 하나도 읽지 못한 채 매번
+    조용히 실패(무시)하고 있었음. HwpUnit_pt()/HwpUnit_mm() 함수를
+    새로 만들어 같은 비율(100 HwpUnit=1pt, 7200 HwpUnit=1인치)로
+    직접 계산하도록 고침
 
 필요 패키지
 ------------------------------------------------------------
@@ -2535,6 +2545,31 @@ def 문단_줄간격_적용_현재선택(퍼센트):
     except Exception as e:
         로그(f"줄간격 적용 실패(무시): {e}")
 
+def HwpUnit_pt(hwpunit):
+    """HwpUnit(1/7200인치) 값을 포인트로 변환한다.
+
+    hwp.PointToHwpUnit()은 실제 한/글 자동화 API에 있는 메서드지만,
+    그 반대 방향인 HwpUnitToPoint()는 그렇지 않다 — pyhwpx가 자기
+    래퍼 클래스에서 순수 파이썬 나눗셈(HwpUnit/100)으로 흉내만 낸
+    편의 메서드였을 뿐, win32com으로 직접 붙는 이 코드베이스의 raw
+    HwpFrame.HwpObject에는 없다. 실사용 로그에서
+    "HwpFrame.HwpObject.HwpUnitToPoint" 오류로 확인됨. 같은 비율
+    (100 HwpUnit = 1pt)로 직접 계산한다.
+    """
+    if not hwpunit:
+        return 0.0
+    return hwpunit / 100
+
+
+def HwpUnit_mm(hwpunit):
+    """HwpUnit(1/7200인치) 값을 밀리미터로 변환한다. HwpUnit_pt와 같은
+    이유로 hwp.HwpUnitToMili()도 존재하지 않아 직접 계산한다.
+    """
+    if not hwpunit:
+        return 0.0
+    return hwpunit / 7200 * 25.4
+
+
 def 문단_위간격_적용_현재선택(pt):
     if 현재_한칸표인가():
         return
@@ -2554,7 +2589,7 @@ def 문단_아래간격_pt_현재문단():
     if hwp is None:
         return None
     try:
-        return hwp.HwpUnitToPoint(hwp.ParaShape.Item("NextSpacing"))
+        return HwpUnit_pt(hwp.ParaShape.Item("NextSpacing"))
     except Exception as e:
         로그(f"문단 아래 간격 읽기 실패(무시): {e}")
         return None
@@ -6230,7 +6265,7 @@ def 본문_가용너비_mm():
         act = hwp.HAction
         pset = hwp.HParameterSet.HSecDef
         act.GetDefault("PageSetup", pset.HSet)
-        return hwp.HwpUnitToMili(
+        return HwpUnit_mm(
             pset.PageDef.PaperWidth - pset.PageDef.LeftMargin - pset.PageDef.RightMargin
         )
     except Exception as e:
@@ -6243,7 +6278,7 @@ def 표_전체너비_mm():
     if hwp is None:
         return None
     try:
-        return hwp.HwpUnitToMili(hwp.CellShape.Item("Width"))
+        return HwpUnit_mm(hwp.CellShape.Item("Width"))
     except Exception as e:
         로그(f"표 전체 너비 확인 실패(무시): {e}")
         return None
@@ -6256,7 +6291,7 @@ def 현재셀_너비_mm():
     try:
         pset = hwp.HParameterSet.HShapeObject
         hwp.HAction.GetDefault("TablePropertyDialog", pset.HSet)
-        return hwp.HwpUnitToMili(pset.ShapeTableCell.Width)
+        return HwpUnit_mm(pset.ShapeTableCell.Width)
     except Exception as e:
         로그(f"셀 너비 확인 실패(무시): {e}")
         return None
