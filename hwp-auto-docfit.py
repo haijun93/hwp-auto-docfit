@@ -53,6 +53,9 @@ hwp 자동 편집기
 39. 세부 설정 '서식·내어쓰기' 탭을 '서식 정리'·'내어쓰기'로 분리하고
     실행창 '세부 작업'과 같은 10단계로 재구성. 문서 스타일(계층구조) 편집,
     문두기호별 글꼴·크기·굵게, 문단위 여백을 각 단계 아래로 모음
+40. 실행창 '세부 작업' 창에도 세부 설정과 동일한 상세 항목(문서 스타일,
+    문두기호별 글꼴·크기·굵게, 문단위 여백 등)을 표시해 두 창이 항상
+    같은 내용을 보이도록 통일(같은 변수를 공유해 어느 쪽에서 바꿔도 반영)
 
 필요 패키지
 ------------------------------------------------------------
@@ -7120,6 +7123,7 @@ class HwpAutoDocFitGUI:
         self.review_document_kind = 저장된_설정.get("review_document_kind", "보고서")
         self.review_reading_purpose = 저장된_설정.get("review_reading_purpose", "상세 설명용")
         self._활성_서식_프로파일 = str(저장된_설정.get("active_format_profile", ""))
+        self._프로파일_콤보_이름목록 = ["profile_combo", "main_profile_combo"]
         self.prevent_word_split_var = tk.BooleanVar(value=bool(저장된_설정["prevent_word_split"]))
         self.punctuation_var = tk.BooleanVar(value=bool(저장된_설정["punctuation"]))
         self.punctuation_threshold_var = tk.StringVar(value=str(저장된_설정["punctuation_threshold"]))
@@ -7581,17 +7585,253 @@ class HwpAutoDocFitGUI:
         style.map("TNotebook.Tab", background=[("selected", c["lavender"]), ("active", "#E5E1F4")], foreground=[("selected", c["ink"])])
         style.map("TCheckbutton", indicatorbackground=[("selected", c["teal"]), ("disabled", c["rose"])])
 
+    def _자간정리_항목_상세(self, parent, key, *, 주설정탭):
+        """'자간 정리' 세부 설정 탭과 세부 작업 창이 함께 쓰는 항목별 상세 위젯.
+
+        같은 변수(self.xxx_var)에 새 위젯을 만들어 값은 항상 공유한다.
+        주설정탭=True(세부 설정 탭)일 때만 작업 중 비활성화 등에 쓰이는
+        단일 속성(self.reset_spacing_check 등)에 연결한다.
+        """
+        if key == "reset_spacing":
+            체크 = ttk.Checkbutton(parent, text="기존 자간을 0%로 초기화 후 정리하기", variable=self.reset_spacing_var)
+            체크.pack(anchor="w")
+            ttk.Label(parent, text="기본값은 꺼짐입니다. ‘한 번에 정리’는 이 설정과 관계없이 항상 자간을 0%로 초기화합니다.",
+                      style="Hint.TLabel", wraplength=610).pack(anchor="w", pady=(0, 2))
+            if 주설정탭:
+                self.reset_spacing_check = 체크
+        elif key == "body_spacing":
+            체크 = ttk.Checkbutton(parent, text="줄 끝에서 단어가 끊기지 않게 정리하기", variable=self.prevent_word_split_var)
+            체크.pack(anchor="w")
+            ttk.Label(parent, text="04. 표·컨트롤 자간 조정에도 함께 적용됩니다.",
+                      style="Hint.TLabel", wraplength=610).pack(anchor="w", pady=(0, 2))
+            if 주설정탭:
+                self.prevent_word_split_check = 체크
+        elif key == "short_line":
+            체크 = ttk.Checkbutton(parent, text="문장부호로 시작하는 문장의 짧은 줄 병합 사용", variable=self.punctuation_var)
+            체크.pack(anchor="w")
+            행 = ttk.Frame(parent)
+            행.pack(anchor="w", fill="x", pady=(2, 0))
+            ttk.Label(행, text="마지막 줄").pack(side="left")
+            스핀 = ttk.Spinbox(행, from_=1, to=20, width=3, textvariable=self.punctuation_threshold_var, justify="center")
+            스핀.pack(side="left", padx=(4, 4))
+            ttk.Label(행, text="자 이하일 때 합쳐요 (05. 표·컨트롤 줄 병합에도 함께 적용)").pack(side="left")
+            if 주설정탭:
+                self.punctuation_check = 체크
+                self.punctuation_threshold_spin = 스핀
+        elif key == "control_spacing":
+            체크 = ttk.Checkbutton(parent, text="표 서식 내 문장도 자간조정하기", variable=self.table_spacing_var)
+            체크.pack(anchor="w")
+            ttk.Label(parent, text="끄면 표(셀) 안의 문장은 04·05단계에서 제외됩니다. 기본값은 켜짐입니다.",
+                      style="Hint.TLabel", wraplength=610).pack(anchor="w", pady=(0, 2))
+            if 주설정탭:
+                self.table_spacing_check = 체크
+
+    def _서식정리_항목_상세(self, parent, key, *, 주설정탭):
+        """'서식 정리'·'내어쓰기' 세부 설정 탭과 세부 작업 창이 함께 쓰는
+        항목별 상세 위젯. _자간정리_항목_상세와 동일한 방식으로 동작한다.
+        """
+        if key == "pre_format":
+            title_auto = ttk.Checkbutton(parent, text="제목 모양 자동 정리 · 제목표가 있을 때",
+                                          variable=self.std_bool_vars["std_title_auto"])
+            title_auto.pack(anchor="w")
+            ttk.Label(parent, text="문서 앞부분의 제목과 개요를 인식해 알맞은 모양을 적용합니다. 제목표가 없으면 건너뜁니다.",
+                      style="Hint.TLabel", wraplength=610).pack(anchor="w")
+            attachment_auto = ttk.Checkbutton(parent, text="붙임서식적용 (붙임 2종 자동 판별)",
+                                               variable=self.std_bool_vars["std_attachment_auto"])
+            attachment_auto.pack(anchor="w", pady=(6, 0))
+            ttk.Label(parent, text="쪽 첫부분의 '붙임' 표를 1행3열/1행2열 구조로 판별하여 해당 기준서식을 적용.",
+                      style="Hint.TLabel", wraplength=610).pack(anchor="w")
+            if 주설정탭:
+                self.std_detail_checks += [title_auto, attachment_auto]
+        elif key == "precise_table":
+            profile_row = ttk.Frame(parent)
+            profile_row.pack(anchor="w", fill="x")
+            ttk.Label(profile_row, text="문서 스타일(계층구조)").pack(side="left")
+            콤보 = ttk.Combobox(profile_row, state="readonly", width=24)
+            콤보.pack(side="left", padx=6)
+            콤보.bind("<<ComboboxSelected>>", self._프로파일_선택)
+            복사버튼 = ttk.Button(profile_row, text="서식 복사하기…", command=self._서식_복사하기)
+            복사버튼.pack(side="left")
+            수정버튼 = ttk.Button(profile_row, text="상세 수정…", command=self._서식_수정하기)
+            수정버튼.pack(side="left", padx=(6, 0))
+            삭제버튼 = ttk.Button(profile_row, text="삭제", command=self._서식_삭제하기)
+            삭제버튼.pack(side="left", padx=(6, 0))
+            삭제버튼.config(state="normal" if self._활성_서식_프로파일 else "disabled")
+            ttk.Label(parent, text="예시 문서에서 복사한 표 서식과, 제목·본문·부연설명 등 계층별 글꼴·크기·들여쓰기를 ‘상세 수정…’에서 편집합니다.",
+                      style="Hint.TLabel", wraplength=610).pack(anchor="w", pady=(2, 0))
+            if 주설정탭:
+                self.profile_combo = 콤보
+                self.copy_format_button = 복사버튼
+                self.edit_format_button = 수정버튼
+                self.delete_format_button = 삭제버튼
+            else:
+                self._팝업_profile_combo = 콤보
+                if "_팝업_profile_combo" not in self._프로파일_콤보_이름목록:
+                    self._프로파일_콤보_이름목록.append("_팝업_profile_combo")
+            self._프로파일_목록갱신()
+        elif key == "standard_format":
+            stdformat_check = ttk.Checkbutton(
+                parent, text="서식 옵션 사용 · 아래에서 바꿀 항목을 선택하세요", variable=self.stdformat_var)
+            stdformat_check.pack(anchor="w")
+            self.stdformat_var.set(True)  # 실행 모드가 서식 적용 여부를 결정하므로 중복된 전체 토글은 숨긴다.
+
+            std_detail = ttk.Frame(parent)
+            std_detail.pack(anchor="w", fill="x", pady=(4, 0))
+            기본항목_행 = ttk.Frame(std_detail)
+            기본항목_행.pack(anchor="w", fill="x")
+            기본항목_체크들 = []
+            for 문구, 설정_키, 여백 in [("편집 여백", "std_margin", 0), ("글자 가로폭", "std_ratio", 10), ("줄 사이 간격", "std_linespacing", 10)]:
+                체크 = ttk.Checkbutton(기본항목_행, text=문구, variable=self.std_bool_vars[설정_키])
+                체크.pack(side="left", padx=(여백, 0))
+                기본항목_체크들.append(체크)
+
+            문단위간격_체크 = ttk.Checkbutton(std_detail, text="항목 사이 간격 맞추기 · 문단 위 여백", variable=self.std_bool_vars["std_parspace"])
+            문단위간격_체크.pack(anchor="w", pady=(8, 0))
+
+            문단위간격_행 = ttk.Frame(std_detail)
+            문단위간격_행.pack(anchor="w", fill="x", padx=(18, 0), pady=(2, 0))
+            문단위간격_스핀들 = []
+            for 라벨, 설정_키 in [("□", "std_parspace_box"), ("ㅇ·○·☞", "std_parspace_circle"), ("*·※·→", "std_parspace_note")]:
+                ttk.Label(문단위간격_행, text=f"{라벨}:").pack(side="left", padx=(0 if 라벨 == "□" else 10, 0))
+                스핀 = ttk.Spinbox(문단위간격_행, from_=0, to=99, width=3, textvariable=self.std_parspace_vars[설정_키], justify="center")
+                스핀.pack(side="left", padx=(4, 0))
+                ttk.Label(문단위간격_행, text="pt").pack(side="left", padx=(2, 0))
+                문단위간격_스핀들.append(스핀)
+            ttk.Label(문단위간격_행, text="깊은 항목에서 복귀할 때:").pack(side="left", padx=(12, 0))
+            복귀배율_스핀 = ttk.Spinbox(
+                문단위간격_행, from_=100, to=400, increment=10, width=4,
+                textvariable=self.std_parspace_vars["std_parspace_return_percent"], justify="center")
+            복귀배율_스핀.pack(side="left", padx=(4, 0))
+            ttk.Label(문단위간격_행, text="% (100% = 기존 간격)").pack(side="left", padx=(2, 0))
+            문단위간격_스핀들.append(복귀배율_스핀)
+
+            if 주설정탭:
+                self.stdformat_check = stdformat_check
+                self.std_detail_checks += 기본항목_체크들 + [문단위간격_체크]
+                self.std_parspace_spins = 문단위간격_스핀들
+        elif key == "parenthesis":
+            기호_체크 = ttk.Checkbutton(parent, text="기호별 글꼴·크기·시작 위치 맞추기 (□ / ㅇ / - / ※ / •; 점 계열은 •로 통일)",
+                                      variable=self.std_bool_vars["std_symbols"])
+            기호_체크.pack(anchor="w")
+
+            기호_굵게_행 = ttk.Frame(parent)
+            기호_굵게_행.pack(anchor="w", fill="x", pady=(2, 0))
+            ttk.Label(기호_굵게_행, text="굵게:").pack(side="left")
+            기호_굵게_체크들 = []
+            for 기호_텍스트, 설정_키 in [("□", "std_symbol_box_bold"), ("ㅇ", "std_symbol_o_bold"), ("-", "std_symbol_dash_bold"), ("※", "std_symbol_note_bold")]:
+                체크 = ttk.Checkbutton(기호_굵게_행, text=기호_텍스트, variable=self.std_bool_vars[설정_키])
+                체크.pack(side="left", padx=(6, 0))
+                기호_굵게_체크들.append(체크)
+
+            기호글꼴_틀 = ttk.LabelFrame(parent, text="문장기호별 글꼴 · 크기", padding=8)
+            기호글꼴_틀.pack(anchor="w", fill="x", pady=(6, 0))
+
+            폰트폴더_행 = ttk.Frame(기호글꼴_틀)
+            폰트폴더_행.pack(anchor="w", fill="x", pady=(0, 6))
+            ttk.Label(폰트폴더_행, text="글꼴 폴더").pack(side="left")
+            폰트폴더_입력 = ttk.Entry(폰트폴더_행, textvariable=self.font_folder_var, width=40)
+            폰트폴더_입력.pack(side="left", padx=(6, 4))
+            ttk.Button(폰트폴더_행, text="찾아보기…", command=self._폰트폴더_찾아보기).pack(side="left", padx=(0, 4))
+            ttk.Button(폰트폴더_행, text="새로고침", command=self._폰트목록_새로고침).pack(side="left")
+
+            ttk.Label(
+                기호글꼴_틀,
+                text="기본은 윈도우 글꼴 폴더(C:\\Windows\\Fonts)이며, 이 폴더에서 글꼴 목록을 불러옵니다. "
+                     "목록에 없는 이름도 직접 입력할 수 있습니다.",
+                style="Hint.TLabel", wraplength=520
+            ).pack(anchor="w", pady=(0, 6))
+
+            글꼴_콤보들, 크기_스핀들 = {}, {}
+            for 기호 in 문장기호_목록:
+                행 = ttk.Frame(기호글꼴_틀)
+                행.pack(anchor="w", fill="x", pady=(2, 0))
+                ttk.Label(행, text=기호, width=3).pack(side="left")
+                콤보 = ttk.Combobox(
+                    행, textvariable=self.symbol_font_vars[기호]["font"],
+                    values=self._한글_폰트_목록_캐시, width=22
+                )
+                콤보.pack(side="left", padx=(4, 8))
+                self._휠_콤보박스_바인딩(콤보)
+                글꼴_콤보들[기호] = 콤보
+                ttk.Label(행, text="크기").pack(side="left")
+                크기스핀 = ttk.Spinbox(
+                    행, from_=1, to=200, width=4, justify="center",
+                    textvariable=self.symbol_font_vars[기호]["size"]
+                )
+                크기스핀.pack(side="left", padx=(4, 2))
+                ttk.Label(행, text="pt").pack(side="left")
+                크기_스핀들[기호] = 크기스핀
+
+            paren_shrink_check = ttk.Checkbutton(
+                parent,
+                text="괄호 안 부연설명 글자 크기 축소\n(문장 중간·끝에 오는 괄호 안 글자를 2pt 작게 표시)",
+                variable=self.paren_shrink_var,
+            )
+            paren_shrink_check.pack(anchor="w", pady=(10, 0))
+
+            label_bold_frame = ttk.LabelFrame(parent, text="항목 이름 강조", padding=10)
+            label_bold_frame.pack(fill="x", pady=(10, 0))
+            paren_label_bold_check = ttk.Checkbutton(
+                label_bold_frame,
+                text="문두 라벨(괄호 및 콜론 라벨) 굵게\n(\"ㅇ (운영방식)\"의 괄호 또는 \"- 추진부서 :\"처럼 문장부호 뒤 콜론 앞 텍스트 굵게)",
+                variable=self.paren_label_bold_var,
+            )
+            paren_label_bold_check.pack(anchor="w")
+            symbol_frame = ttk.LabelFrame(label_bold_frame, text='↳ 강조할 기호 선택', padding=6)
+            symbol_frame.pack(fill='x', pady=(6, 0))
+            label_symbol_checks = []
+            for index, (skey, svar) in enumerate(self.label_symbol_vars.items()):
+                check = ttk.Checkbutton(symbol_frame, text=skey, variable=svar)
+                check.grid(row=index // 8, column=index % 8, sticky='w', padx=4)
+                label_symbol_checks.append(check)
+
+            if 주설정탭:
+                self.std_detail_checks += [기호_체크] + 기호_굵게_체크들
+                self.symbol_font_combos = 글꼴_콤보들
+                self.symbol_size_spins = 크기_스핀들
+                self.font_folder_entry = 폰트폴더_입력
+                self.paren_shrink_check = paren_shrink_check
+                self.paren_label_bold_check = paren_label_bold_check
+                self.label_symbol_checks = label_symbol_checks
+        elif key == "supplement_indent":
+            체크 = ttk.Checkbutton(
+                parent,
+                text="부연설명 문단 전체를 위 문단에 맞추기 (선택)\n*, **, ※의 시작 위치를 위 문단의 본문 첫 글자 아래로 옮깁니다.\n‘내어쓰기’는 같은 문단의 둘째 줄 이후만 맞추므로 역할이 다릅니다.",
+                variable=self.std_bool_vars["std_supplement_indent"])
+            체크.pack(anchor="w")
+            if 주설정탭:
+                self.std_detail_checks.append(체크)
+        elif key == "table_format":
+            체크 = ttk.Checkbutton(
+                parent,
+                text="표 헤더/본문 서식적용\n(1행: 한컴돋움 13pt 굵게 / 나머지 행: 휴먼명조 12pt)",
+                variable=self.std_bool_vars["std_table_header"],
+            )
+            체크.pack(anchor="w")
+            if 주설정탭:
+                self.std_detail_checks.append(체크)
+        elif key == "hanging_indent":
+            체크 = ttk.Checkbutton(parent, text="내어쓰기 · 둘째 줄부터 본문 시작 위치에 맞추기",
+                                  variable=self.std_bool_vars["std_hanging_indent"])
+            체크.pack(anchor="w")
+            ttk.Label(parent, text="예: ㅇ (개요) 본문 → 다음 줄은 ‘본문’ 아래부터 시작\n기호별 글꼴 옵션을 켜지 않아도 적용됩니다.",
+                      style="Hint.TLabel", wraplength=610).pack(anchor="w", pady=(1, 0))
+            if 주설정탭:
+                self.std_detail_checks.append(체크)
+
     def _세부작업_열기(self, mode):
         titles = {"spacing": "자간 정리", "format": "서식 정리", "all": "한 번에 정리"}
         dialog = tk.Toplevel(self.root)
         dialog.title(f"{titles[mode]} · 세부 작업")
-        dialog.geometry("520x650")
+        dialog.geometry("520x650" if mode == "spacing" else "720x700")
         dialog.transient(self.root)
         dialog.grab_set()
         frame = ttk.Frame(dialog, padding=14)
         frame.pack(fill="both", expand=True)
-        ttk.Label(frame, text="실행 순서대로 표시합니다. 체크를 끄면 해당 단계는 건너뜁니다.\n기존 설정에서 꺼진 기능은 여기서 켜도 실행되지 않습니다.",
-                  style="Hint.TLabel", wraplength=480).pack(anchor="w", pady=(0, 8))
+        ttk.Label(frame, text="실행 순서대로 표시합니다. 체크를 끄면 해당 단계는 건너뜁니다.\n"
+                              "기존 설정에서 꺼진 기능은 여기서 켜도 실행되지 않습니다. 아래 상세 항목은 "
+                              "세부 설정 창의 내용과 같은 값을 그대로 공유합니다.",
+                  style="Hint.TLabel", wraplength=680).pack(anchor="w", pady=(0, 8))
         canvas = tk.Canvas(frame, highlightthickness=0)
         scrollbar = ttk.Scrollbar(frame, orient="vertical", command=canvas.yview)
         canvas.configure(yscrollcommand=scrollbar.set)
@@ -7609,23 +7849,31 @@ class HwpAutoDocFitGUI:
             ttk.Checkbutton(item, text=f"{number:02d}. {label}",
                             variable=choices[key]).pack(anchor="w")
             ttk.Label(item, text=STAGE_EXAMPLES[key], style="Hint.TLabel",
-                      wraplength=445, justify="left").pack(anchor="w", padx=(25, 0), pady=(1, 0))
-            if key == "short_line":
-                threshold_frame = ttk.Frame(item)
-                threshold_frame.pack(anchor="w", padx=(25, 0), pady=(4, 0))
-                ttk.Label(threshold_frame, text="마지막 줄").pack(side="left")
-                ttk.Spinbox(threshold_frame, from_=1, to=20, width=3,
-                            textvariable=self.punctuation_threshold_var, justify="center").pack(side="left", padx=(4, 4))
-                ttk.Label(threshold_frame, text="자 이하일 때 합쳐요 (표·컨트롤 줄 병합에도 함께 적용)").pack(side="left")
+                      wraplength=610, justify="left").pack(anchor="w", padx=(25, 0), pady=(1, 0))
+            detail = ttk.Frame(item)
+            detail.pack(anchor="w", padx=(25, 0), pady=(4, 0), fill="x")
+            self._자간정리_항목_상세(detail, key, 주설정탭=False)
+            self._서식정리_항목_상세(detail, key, 주설정탭=False)
+
+        def cleanup():
+            if "_팝업_profile_combo" in self._프로파일_콤보_이름목록:
+                self._프로파일_콤보_이름목록.remove("_팝업_profile_combo")
+            if hasattr(self, "_팝업_profile_combo"):
+                del self._팝업_profile_combo
+
+        def close():
+            cleanup()
+            dialog.destroy()
+
         def save():
             self.stage_choices[mode] = {key: variable.get() for key, variable in choices.items()}
             self._요약갱신()
-            dialog.destroy()
+            close()
         buttons = ttk.Frame(dialog, padding=(14, 4, 14, 12))
         buttons.pack(fill="x")
-        ttk.Button(buttons, text="취소", command=dialog.destroy).pack(side="right")
+        ttk.Button(buttons, text="취소", command=close).pack(side="right")
         ttk.Button(buttons, text="적용", command=save).pack(side="right", padx=8)
-        dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
+        dialog.protocol("WM_DELETE_WINDOW", close)
 
     def _요약갱신(self, *args):
         if not hasattr(self, "options_summary"):
@@ -8057,7 +8305,7 @@ class HwpAutoDocFitGUI:
         self._프로파일_ids = list(self._프로파일들)
         이름들 = [p["name"] for p in self._프로파일들.values()]
         현재 = self._프로파일_ids.index(self._활성_서식_프로파일)
-        for 콤보이름 in ("profile_combo", "main_profile_combo"):
+        for 콤보이름 in self._프로파일_콤보_이름목록:
             콤보 = getattr(self, 콤보이름, None)
             if 콤보 is not None:
                 콤보["values"] = 이름들
@@ -8879,7 +9127,6 @@ class HwpAutoDocFitGUI:
                   style="Hint.TLabel", wraplength=680).pack(anchor="w", pady=(0, 10))
 
         self.spacing_stage_vars = {}
-        spacing_stage_frames = {}
         for number, (key, label) in enumerate(stages_for_mode("spacing"), 1):
             var = tk.BooleanVar(value=self.stage_choices["spacing"].get(key, True))
             var.trace_add("write", lambda *_, k=key, v=var: self.stage_choices["spacing"].__setitem__(k, v.get()))
@@ -8889,53 +9136,9 @@ class HwpAutoDocFitGUI:
             ttk.Checkbutton(item, text=f"{number:02d}. {label}", variable=var).pack(anchor="w")
             ttk.Label(item, text=STAGE_EXAMPLES[key], style="Hint.TLabel",
                       wraplength=650, justify="left").pack(anchor="w", padx=(25, 0), pady=(1, 0))
-            spacing_stage_frames[key] = item
-
-        # 01. 문서 전체 자간 초기화 — 위 체크와 별개로, 실제로 초기화하려면 아래도 켜야 한다.
-        sub1 = ttk.Frame(spacing_stage_frames["reset_spacing"])
-        sub1.pack(anchor="w", padx=(25, 0), pady=(4, 0), fill="x")
-        self.reset_spacing_check = ttk.Checkbutton(
-            sub1, text="기존 자간을 0%로 초기화 후 정리하기",
-            variable=self.reset_spacing_var)
-        self.reset_spacing_check.pack(anchor="w")
-        ttk.Label(sub1, text="기본값은 꺼짐입니다. ‘한 번에 정리’는 이 설정과 관계없이 항상 자간을 0%로 초기화합니다.",
-                  style="Hint.TLabel", wraplength=620).pack(anchor="w", pady=(0, 2))
-
-        # 02. 본문 자간 조정 — 04. 표·컨트롤 자간 조정과 알고리즘을 함께 씀.
-        sub2 = ttk.Frame(spacing_stage_frames["body_spacing"])
-        sub2.pack(anchor="w", padx=(25, 0), pady=(4, 0), fill="x")
-        self.prevent_word_split_check = ttk.Checkbutton(
-            sub2, text="줄 끝에서 단어가 끊기지 않게 정리하기",
-            variable=self.prevent_word_split_var)
-        self.prevent_word_split_check.pack(anchor="w")
-        ttk.Label(sub2, text="04. 표·컨트롤 자간 조정에도 함께 적용됩니다.",
-                  style="Hint.TLabel", wraplength=620).pack(anchor="w", pady=(0, 2))
-
-        # 03. 짧은 마지막 줄 병합 — 05. 표·컨트롤 줄 병합과 글자 수 기준을 함께 씀.
-        sub3 = ttk.Frame(spacing_stage_frames["short_line"])
-        sub3.pack(anchor="w", padx=(25, 0), pady=(4, 0), fill="x")
-        self.punctuation_check = ttk.Checkbutton(
-            sub3, text="문장부호로 시작하는 문장의 짧은 줄 병합 사용",
-            variable=self.punctuation_var)
-        self.punctuation_check.pack(anchor="w")
-        punctuation_frame = ttk.Frame(sub3)
-        punctuation_frame.pack(anchor="w", fill="x", pady=(2, 0))
-        ttk.Label(punctuation_frame, text="마지막 줄").pack(side="left")
-        self.punctuation_threshold_spin = ttk.Spinbox(
-            punctuation_frame, from_=1, to=20, width=3, textvariable=self.punctuation_threshold_var, justify="center"
-        )
-        self.punctuation_threshold_spin.pack(side="left", padx=(4, 4))
-        ttk.Label(punctuation_frame, text="자 이하일 때 합쳐요 (05. 표·컨트롤 줄 병합에도 함께 적용)").pack(side="left")
-
-        # 04. 표·컨트롤 자간 조정 — 05. 표·컨트롤 줄 병합도 이 설정을 함께 씀.
-        sub4 = ttk.Frame(spacing_stage_frames["control_spacing"])
-        sub4.pack(anchor="w", padx=(25, 0), pady=(4, 0), fill="x")
-        self.table_spacing_check = ttk.Checkbutton(
-            sub4, text="표 서식 내 문장도 자간조정하기",
-            variable=self.table_spacing_var)
-        self.table_spacing_check.pack(anchor="w")
-        ttk.Label(sub4, text="끄면 표(셀) 안의 문장은 04·05단계에서 제외됩니다. 기본값은 켜짐입니다.",
-                  style="Hint.TLabel", wraplength=620).pack(anchor="w", pady=(0, 2))
+            detail = ttk.Frame(item)
+            detail.pack(anchor="w", padx=(25, 0), pady=(4, 0), fill="x")
+            self._자간정리_항목_상세(detail, key, 주설정탭=True)
 
         self.keep_punctuation_set_check = ttk.Checkbutton(
             tabs["layout"],
@@ -9002,7 +9205,7 @@ class HwpAutoDocFitGUI:
         # 읽고 쓰므로, 실행창의 '세부 작업…'과 항상 같은 값을 공유한다.
         format_container = tabs["format"]
         self.format_stage_vars = {}
-        format_stage_frames = {}
+        self.std_detail_checks = []
         for number, (key, label) in enumerate(stages_for_mode("format")[:9], 1):
             var = tk.BooleanVar(value=self.stage_choices["format"].get(key, True))
             var.trace_add("write", lambda *_, k=key, v=var: self.stage_choices["format"].__setitem__(k, v.get()))
@@ -9012,190 +9215,9 @@ class HwpAutoDocFitGUI:
             ttk.Checkbutton(item, text=f"{number:02d}. {label}", variable=var).pack(anchor="w")
             ttk.Label(item, text=STAGE_EXAMPLES[key], style="Hint.TLabel",
                       wraplength=650, justify="left").pack(anchor="w", padx=(25, 0), pady=(1, 0))
-            format_stage_frames[key] = ttk.Frame(item)
-            format_stage_frames[key].pack(anchor="w", padx=(25, 0), pady=(4, 0), fill="x")
-
-        self.std_detail_checks = []
-
-        # 01. 제목·개요·붙임 선행 서식
-        sub1 = format_stage_frames["pre_format"]
-        title_auto = ttk.Checkbutton(sub1,
-            text="제목 모양 자동 정리 · 제목표가 있을 때",
-            variable=self.std_bool_vars["std_title_auto"])
-        title_auto.pack(anchor="w")
-        self.std_detail_checks.append(title_auto)
-        ttk.Label(sub1, text="문서 앞부분의 제목과 개요를 인식해 알맞은 모양을 적용합니다. 제목표가 없으면 건너뜁니다.",
-                  style="Hint.TLabel", wraplength=610).pack(anchor="w")
-        attachment_auto = ttk.Checkbutton(sub1,
-            text="붙임서식적용 (붙임 2종 자동 판별)",
-            variable=self.std_bool_vars["std_attachment_auto"])
-        attachment_auto.pack(anchor="w", pady=(6, 0))
-        self.std_detail_checks.append(attachment_auto)
-        ttk.Label(sub1, text="쪽 첫부분의 '붙임' 표를 1행3열/1행2열 구조로 판별하여 해당 기준서식을 적용.",
-                  style="Hint.TLabel", wraplength=610).pack(anchor="w")
-
-        # 일반 첫째/둘째 문단을 처리하지 않는 기존 엔진의 비활성 옵션(숨김 유지).
-        제목_행 = ttk.Frame(sub1)
-        for 문구, 설정_키, 여백 in [("제목 문단(1번째 문단) 서식", "std_title", 0), ("굵게", "std_title_bold", 10)]:
-            체크 = ttk.Checkbutton(제목_행, text=문구, variable=self.std_bool_vars[설정_키])
-            체크.pack(side="left", padx=(여백, 0))
-            self.std_detail_checks.append(체크)
-        일자담당자_행 = ttk.Frame(sub1)
-        for 문구, 설정_키, 여백 in [("일자·담당자 문단(2번째 문단) 서식", "std_dateinfo", 0), ("굵게", "std_dateinfo_bold", 10)]:
-            체크 = ttk.Checkbutton(일자담당자_행, text=문구, variable=self.std_bool_vars[설정_키])
-            체크.pack(side="left", padx=(여백, 0))
-            self.std_detail_checks.append(체크)
-
-        # 02. 일반 표 정밀 서식 복제 — 문서 스타일(계층구조) 프로필 선택·상세 수정.
-        sub2 = format_stage_frames["precise_table"]
-        profile_row = ttk.Frame(sub2)
-        profile_row.pack(anchor="w", fill="x")
-        ttk.Label(profile_row, text="문서 스타일(계층구조)").pack(side="left")
-        self.profile_combo = ttk.Combobox(profile_row, state="readonly", width=24)
-        self.profile_combo.pack(side="left", padx=6)
-        self.profile_combo.bind("<<ComboboxSelected>>", self._프로파일_선택)
-        self.copy_format_button = ttk.Button(profile_row, text="서식 복사하기…", command=self._서식_복사하기)
-        self.copy_format_button.pack(side="left")
-        self.edit_format_button = ttk.Button(profile_row, text="상세 수정…", command=self._서식_수정하기)
-        self.edit_format_button.pack(side="left", padx=(6, 0))
-        self.delete_format_button = ttk.Button(profile_row, text="삭제", command=self._서식_삭제하기)
-        self.delete_format_button.pack(side="left", padx=(6, 0))
-        ttk.Label(sub2, text="예시 문서에서 복사한 표 서식과, 제목·본문·부연설명 등 계층별 글꼴·크기·들여쓰기를 ‘상세 수정…’에서 편집합니다.",
-                  style="Hint.TLabel", wraplength=610).pack(anchor="w", pady=(2, 0))
-        self._프로파일_목록갱신()
-
-        # 05. 보고서 표준서식
-        sub5 = format_stage_frames["standard_format"]
-        self.stdformat_check = ttk.Checkbutton(
-            sub5, text="서식 옵션 사용 · 아래에서 바꿀 항목을 선택하세요", variable=self.stdformat_var)
-        self.stdformat_check.pack(anchor="w")
-        # 실행 모드가 서식 적용 여부를 결정하므로 중복된 전체 토글은 숨긴다.
-        self.stdformat_var.set(True)
-
-        std_detail = ttk.Frame(sub5)
-        std_detail.pack(anchor="w", fill="x", pady=(4, 0))
-        기본항목_행 = ttk.Frame(std_detail)
-        기본항목_행.pack(anchor="w", fill="x")
-        for 문구, 설정_키, 여백 in [("편집 여백", "std_margin", 0), ("글자 가로폭", "std_ratio", 10), ("줄 사이 간격", "std_linespacing", 10)]:
-            체크 = ttk.Checkbutton(기본항목_행, text=문구, variable=self.std_bool_vars[설정_키])
-            체크.pack(side="left", padx=(여백, 0))
-            self.std_detail_checks.append(체크)
-
-        self.std_parspace_spins = []
-        문단위간격_체크 = ttk.Checkbutton(std_detail, text="항목 사이 간격 맞추기 · 문단 위 여백", variable=self.std_bool_vars["std_parspace"])
-        문단위간격_체크.pack(anchor="w", pady=(8, 0))
-        self.std_detail_checks.append(문단위간격_체크)
-
-        문단위간격_행 = ttk.Frame(std_detail)
-        문단위간격_행.pack(anchor="w", fill="x", padx=(18, 0), pady=(2, 0))
-        for 라벨, 설정_키 in [("□", "std_parspace_box"), ("ㅇ·○·☞", "std_parspace_circle"), ("*·※·→", "std_parspace_note")]:
-            ttk.Label(문단위간격_행, text=f"{라벨}:").pack(side="left", padx=(0 if 라벨 == "□" else 10, 0))
-            스핀 = ttk.Spinbox(문단위간격_행, from_=0, to=99, width=3, textvariable=self.std_parspace_vars[설정_키], justify="center")
-            스핀.pack(side="left", padx=(4, 0))
-            ttk.Label(문단위간격_행, text="pt").pack(side="left", padx=(2, 0))
-            self.std_parspace_spins.append(스핀)
-        ttk.Label(문단위간격_행, text="깊은 항목에서 복귀할 때:").pack(side="left", padx=(12, 0))
-        복귀배율_스핀 = ttk.Spinbox(
-            문단위간격_행, from_=100, to=400, increment=10, width=4,
-            textvariable=self.std_parspace_vars["std_parspace_return_percent"], justify="center")
-        복귀배율_스핀.pack(side="left", padx=(4, 0))
-        ttk.Label(문단위간격_행, text="% (100% = 기존 간격)").pack(side="left", padx=(2, 0))
-        self.std_parspace_spins.append(복귀배율_스핀)
-
-        # 06. 문두 라벨·괄호 서식 — 기호별 글꼴·크기·굵게를 모두 이 단계에 모은다.
-        sub6 = format_stage_frames["parenthesis"]
-        기호_체크 = ttk.Checkbutton(sub6, text="기호별 글꼴·크기·시작 위치 맞추기 (□ / ㅇ / - / ※ / •; 점 계열은 •로 통일)", variable=self.std_bool_vars["std_symbols"])
-        기호_체크.pack(anchor="w")
-        self.std_detail_checks.append(기호_체크)
-
-        기호_굵게_행 = ttk.Frame(sub6)
-        기호_굵게_행.pack(anchor="w", fill="x", pady=(2, 0))
-        ttk.Label(기호_굵게_행, text="굵게:").pack(side="left")
-        for 기호_텍스트, 설정_키 in [("□", "std_symbol_box_bold"), ("ㅇ", "std_symbol_o_bold"), ("-", "std_symbol_dash_bold"), ("※", "std_symbol_note_bold")]:
-            체크 = ttk.Checkbutton(기호_굵게_행, text=기호_텍스트, variable=self.std_bool_vars[설정_키])
-            체크.pack(side="left", padx=(6, 0))
-            self.std_detail_checks.append(체크)
-
-        기호글꼴_틀 = ttk.LabelFrame(sub6, text="문장기호별 글꼴 · 크기", padding=8)
-        기호글꼴_틀.pack(anchor="w", fill="x", pady=(6, 0))
-
-        폰트폴더_행 = ttk.Frame(기호글꼴_틀)
-        폰트폴더_행.pack(anchor="w", fill="x", pady=(0, 6))
-        ttk.Label(폰트폴더_행, text="글꼴 폴더").pack(side="left")
-        self.font_folder_entry = ttk.Entry(폰트폴더_행, textvariable=self.font_folder_var, width=40)
-        self.font_folder_entry.pack(side="left", padx=(6, 4))
-        ttk.Button(폰트폴더_행, text="찾아보기…", command=self._폰트폴더_찾아보기).pack(side="left", padx=(0, 4))
-        ttk.Button(폰트폴더_행, text="새로고침", command=self._폰트목록_새로고침).pack(side="left")
-
-        ttk.Label(
-            기호글꼴_틀,
-            text="기본은 윈도우 글꼴 폴더(C:\\Windows\\Fonts)이며, 이 폴더에서 글꼴 목록을 불러옵니다. "
-                 "목록에 없는 이름도 직접 입력할 수 있습니다.",
-            style="Hint.TLabel", wraplength=520
-        ).pack(anchor="w", pady=(0, 6))
-
-        self.symbol_font_combos = {}
-        self.symbol_size_spins = {}
-        for 기호 in 문장기호_목록:
-            행 = ttk.Frame(기호글꼴_틀)
-            행.pack(anchor="w", fill="x", pady=(2, 0))
-            ttk.Label(행, text=기호, width=3).pack(side="left")
-            콤보 = ttk.Combobox(
-                행, textvariable=self.symbol_font_vars[기호]["font"],
-                values=self._한글_폰트_목록_캐시, width=22
-            )
-            콤보.pack(side="left", padx=(4, 8))
-            self._휠_콤보박스_바인딩(콤보)
-            self.symbol_font_combos[기호] = 콤보
-            ttk.Label(행, text="크기").pack(side="left")
-            크기스핀 = ttk.Spinbox(
-                행, from_=1, to=200, width=4, justify="center",
-                textvariable=self.symbol_font_vars[기호]["size"]
-            )
-            크기스핀.pack(side="left", padx=(4, 2))
-            ttk.Label(행, text="pt").pack(side="left")
-            self.symbol_size_spins[기호] = 크기스핀
-
-        self.paren_shrink_check = ttk.Checkbutton(
-            sub6,
-            text="괄호 안 부연설명 글자 크기 축소\n(문장 중간·끝에 오는 괄호 안 글자를 2pt 작게 표시)",
-            variable=self.paren_shrink_var,
-        )
-        self.paren_shrink_check.pack(anchor="w", pady=(10, 0))
-
-        label_bold_frame = ttk.LabelFrame(sub6, text="항목 이름 강조", padding=10)
-        label_bold_frame.pack(fill="x", pady=(10, 0))
-        self.paren_label_bold_check = ttk.Checkbutton(
-            label_bold_frame,
-            text="문두 라벨(괄호 및 콜론 라벨) 굵게\n(\"ㅇ (운영방식)\"의 괄호 또는 \"- 추진부서 :\"처럼 문장부호 뒤 콜론 앞 텍스트 굵게)",
-            variable=self.paren_label_bold_var,
-        )
-        self.paren_label_bold_check.pack(anchor="w")
-        symbol_frame = ttk.LabelFrame(label_bold_frame, text='↳ 강조할 기호 선택', padding=6)
-        symbol_frame.pack(fill='x', pady=(6, 0))
-        self.label_symbol_checks = []
-        for index, (key, var) in enumerate(self.label_symbol_vars.items()):
-            check = ttk.Checkbutton(symbol_frame, text=key, variable=var)
-            check.grid(row=index // 8, column=index % 8, sticky='w', padx=4)
-            self.label_symbol_checks.append(check)
-
-        # 07. 부연설명 들여쓰기
-        sub7 = format_stage_frames["supplement_indent"]
-        부연설명_체크 = ttk.Checkbutton(sub7, text="부연설명 문단 전체를 위 문단에 맞추기 (선택)\n*, **, ※의 시작 위치를 위 문단의 본문 첫 글자 아래로 옮깁니다.\n‘내어쓰기’는 같은 문단의 둘째 줄 이후만 맞추므로 역할이 다릅니다.", variable=self.std_bool_vars["std_supplement_indent"])
-        부연설명_체크.pack(anchor="w")
-        self.std_detail_checks.append(부연설명_체크)
-
-        # 08. 표 머리글·본문 서식
-        sub8 = format_stage_frames["table_format"]
-        표_헤더서식_체크 = ttk.Checkbutton(
-            sub8,
-            text="표 헤더/본문 서식적용\n(1행: 한컴돋움 13pt 굵게 / 나머지 행: 휴먼명조 12pt)",
-            variable=self.std_bool_vars["std_table_header"],
-        )
-        표_헤더서식_체크.pack(anchor="w")
-        self.std_detail_checks.append(표_헤더서식_체크)
-
-        # 09. 개요·한 칸 표 자간 조정 — 별도 세부 설정 없음(체크리스트만).
+            detail = ttk.Frame(item)
+            detail.pack(anchor="w", padx=(25, 0), pady=(4, 0), fill="x")
+            self._서식정리_항목_상세(detail, key, 주설정탭=True)
 
         # 표준서식/문두 라벨 굵게 토글에 따른 하위 옵션 활성화 이벤트 연결.
         self.stdformat_var.trace_add("write", self._표준서식_하위옵션_상태_갱신)
@@ -9216,11 +9238,7 @@ class HwpAutoDocFitGUI:
                   wraplength=650, justify="left").pack(anchor="w", padx=(25, 0), pady=(1, 0))
         indent_sub = ttk.Frame(indent_item)
         indent_sub.pack(anchor="w", padx=(25, 0), pady=(4, 0), fill="x")
-        내어쓰기_체크 = ttk.Checkbutton(indent_sub, text="내어쓰기 · 둘째 줄부터 본문 시작 위치에 맞추기", variable=self.std_bool_vars["std_hanging_indent"])
-        내어쓰기_체크.pack(anchor="w")
-        self.std_detail_checks.append(내어쓰기_체크)
-        ttk.Label(indent_sub, text="예: ㅇ (개요) 본문 → 다음 줄은 ‘본문’ 아래부터 시작\n기호별 글꼴 옵션을 켜지 않아도 적용됩니다.",
-                  style="Hint.TLabel", wraplength=610).pack(anchor="w", pady=(1, 0))
+        self._서식정리_항목_상세(indent_sub, hanging_key, 주설정탭=True)
 
 
         # 그룹 3: 완료 후 처리
