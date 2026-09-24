@@ -293,7 +293,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글문서 후처리 도구"
-APP_VERSION = "1.67 Beta 3"
+APP_VERSION = "1.68 Alpha 1"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 UPDATE_ASSET_NAME = "HWP_AutoDocFit.exe"
@@ -1912,6 +1912,32 @@ def _제목_임시hwpx_저장(경로):
     raise RuntimeError('제목 분석/적용용 HWPX 저장 완료를 확인하지 못했습니다.')
 
 
+_작업_임시폴더_접두어 = ("hwp_format_first_", "hwp_precise_table_", "docfit_외부문서_")
+
+
+def 이전_작업_임시폴더_정리(최소_경과초=600):
+    """이전 실행에서 한글이 파일을 잡고 있어 지우지 못한 작업용 임시 폴더를
+    정리한다. 지금 실행 중인 다른 작업의 폴더를 건드리지 않도록 일정 시간
+    지난 폴더만 지우며, 아직 사용 중인 폴더는 조용히 건너뛴다."""
+    기준 = time.time() - 최소_경과초
+    정리수 = 0
+    try:
+        후보들 = list(Path(tempfile.gettempdir()).iterdir())
+    except OSError:
+        return 0
+    for 폴더 in 후보들:
+        if not 폴더.name.startswith(_작업_임시폴더_접두어):
+            continue
+        try:
+            if not 폴더.is_dir() or 폴더.stat().st_mtime > 기준:
+                continue
+            shutil.rmtree(폴더)
+            정리수 += 1
+        except OSError:
+            continue
+    return 정리수
+
+
 def _제목_임시폴더_정리(폴더):
     """한글이 잠시 파일 핸들을 유지해도 본 작업을 실패시키지 않도록 지연 정리한다."""
     폴더 = Path(폴더)
@@ -2008,18 +2034,22 @@ def 붙임2종_현재문서_조사(원본문서경로):
     return 서식구조_조사(원본문서경로, 붙임_hwpx_처리, '붙임')
 
 
-def 제목붙임_선행적용(원본문서경로):
+def 제목붙임_선행적용(원본문서경로, 현재문서_기준=False):
     """제목·개요·붙임을 먼저 처리하고 결과 문서를 한 번만 연다.
 
     원본 HWPX는 읽기만 한다. HWP는 이미 열린 작업용 한글에서 한 번
     변환한다. 별도 한글 생성/등록/원본 재열기를 수행하지 않는다.
+    현재문서_기준이면 원본 파일 대신 지금 열린 문서(예: 자간 초기화를 마친
+    문서)를 스냅샷으로 저장해 그 위에 서식을 입힌다.
     """
     if not (제목4종_사용 or 붙임2종_사용):
         return True
     folder = Path(tempfile.mkdtemp(prefix='hwp_format_first_'))
     try:
         source = Path(원본문서경로)
-        if source.suffix.lower() != '.hwpx':
+        if 현재문서_기준:
+            source = _제목_임시hwpx_저장(folder / 'source.hwpx')
+        elif source.suffix.lower() != '.hwpx':
             로그('선행 서식: 현재 한글에서 HWPX 변환 시작')
             source = _제목_임시hwpx_저장(folder / 'source.hwpx')
             로그('선행 서식: HWPX 변환 완료')
@@ -2346,11 +2376,19 @@ def 색상_미리보기_hex(rgb):
 # 이 호출 횟수로 한 차례 자간 조정에서 실제 변경이 있었는지 판단해,
 # 변경이 있으면 내어쓰기를 다시 적용하고 자간을 재검사한다.
 자간_변경_횟수 = 0
+# 자간을 바꾼 문단의 (리스트, 문단) 번호. 자간 조정 뒤에는 이 문단들만
+# 내어쓰기를 다시 계산한다(내어쓰기 값은 그 문단 첫 줄에만 달려 있다).
+자간_변경문단 = set()
 
 
 def 색상_적용_현재선택():
     global 자간_변경_횟수
     자간_변경_횟수 += 1
+    try:
+        if hwp is not None:
+            자간_변경문단.add(tuple(hwp.GetPos()[:2]))
+    except Exception:
+        pass
     if 색상_설정 is None or hwp is None:
         return
     try:
@@ -2900,6 +2938,19 @@ def _내어쓰기_값_설정(value):
 
 
 
+# 문서 처리 중 '최종 서식 기준 내어쓰기' 단계가 뒤에 예정돼 있으면
+# 표준서식 단계에서는 내어쓰기를 계산하지 않는다(어차피 다시 계산된다).
+최종_내어쓰기_예정 = False
+
+
+def 내어쓰기_기호선택_허용(text):
+    """서식 프로파일의 기호별 '내어쓰기' 선택이 꺼진 기호 문단이면 False."""
+    매칭 = 표준서식_기호규칙_찾기(text) if text else None
+    if not 매칭:
+        return True
+    return 표준서식_설정.get("스타일_속성선택", {}).get(매칭[0], {}).get("indent", True)
+
+
 def 재검사_대상인가(pos):
     """2차 이후 재검사에서 이 위치의 문단을 검사해야 하는지."""
     return 재검사_대상문단 is None or tuple(pos[:2]) in 재검사_대상문단
@@ -2910,19 +2961,27 @@ def 재검사_영역인가(area):
     return 재검사_대상문단 is None or any(key[0] == area for key in 재검사_대상문단)
 
 
-def 문단_내어쓰기_전체_갱신():
+def 문단_내어쓰기_전체_갱신(대상문단=None):
     """최종 문자 서식/자간으로 본문 내어쓰기만 재계산한다.
 
+    대상문단((리스트, 문단) 번호 집합)을 주면 그 문단만 계산한다.
     값이 실제로 바뀐 문단은 내어쓰기_변경문단에 모아 다음 재검사 범위로 쓴다.
     """
     내어쓰기_변경문단.clear()
+    if 대상문단 is not None and not 대상문단:
+        return True
     순회_시작()
     while True:
         if 중단_요청됨():
             return False
         hwp_run("MoveParaBegin")
+        if 대상문단 is not None and tuple(hwp.GetPos()[:2]) not in 대상문단:
+            if not 범위_다음_문단으로_진행():
+                break
+            continue
         text = 현재문단_텍스트()
-        if not 현재_한칸표인가() and 문단_내어쓰기_기준_오프셋(text) is not None:
+        if (not 현재_한칸표인가() and 문단_내어쓰기_기준_오프셋(text) is not None
+                and 내어쓰기_기호선택_허용(text)):
             문단_내어쓰기_적용(hwp.GetPos(), text)
         if not 범위_다음_문단으로_진행():
             break
@@ -3265,7 +3324,8 @@ def 표준서식_문단_처리(문단_순번, 헤더_역할=None, 상속_기호_
                 hwp_run("MoveSelParaEnd")
                 문단_줄간격_적용_현재선택(표준서식_설정["기본_줄간격_퍼센트"])
                 hwp_run("Cancel")
-        if 표준서식_내어쓰기_사용 and 문단_내어쓰기_기준_오프셋(text) is not None:
+        if (표준서식_내어쓰기_사용 and not 최종_내어쓰기_예정
+                and 문단_내어쓰기_기준_오프셋(text) is not None):
             hwp_run("MoveParaBegin")
             문단_내어쓰기_적용(hwp.GetPos(), text)
         진단로그(f"[표준서식 제외] 문장부호로 시작하지 않음: {text.strip()[:80]}")
@@ -3347,7 +3407,7 @@ def 표준서식_문단_처리(문단_순번, 헤더_역할=None, 상속_기호_
 
         # 라벨/본문을 정확히 정렬하는 내어쓰기. on/off 가능(표준서식_내어쓰기_사용).
         # 오프셋을 찾을 수 없는 단순 연속 설명문은 건드리지 않는다.
-        if 표준서식_내어쓰기_사용 and 선택.get("indent", True):
+        if 표준서식_내어쓰기_사용 and 선택.get("indent", True) and not 최종_내어쓰기_예정:
             hwp.SetPos(문단_기준위치[0], 문단_기준위치[1], 문단_기준위치[2])
             if 문단_내어쓰기_기준_오프셋(현재_text) is not None:
                 문단_내어쓰기_적용(문단_기준위치, 현재_text, 폰트크기_pt=크기, 폰트=폰트, 굵게=문단굵게)
@@ -3917,6 +3977,41 @@ def 현재_페이지번호():
     except Exception:
         pass
     return None
+
+# 저장 후 결과 검사가 끝난 규칙은 처리 중 기록을 대신한다. 처리 중 기록은
+# 뒤 단계에서 해결됐을 수도 있고, 같은 문제를 다른 이름으로 한 번 더 세게 된다.
+_처리중_기록_접두어 = {
+    'page_group': ('[문장 묶음 페이지 분리]', '[소제목 묶음 쪽 분리]'),
+    'word': ('[단어 중간 줄바꿈 미해결]', '[어절 줄분리]', '[단어 분리]',
+             '[붙임 괄호 분리]', '[괄호 안 공백 분리]'),
+}
+
+
+def 처리중_기록_대체(파일, 완료된_검사, 경계):
+    """검수_문제목록[:경계](저장 전 처리 중 기록) 가운데, 저장 후 검사를 마친
+    규칙의 기록을 지운다. 경계 뒤의 저장 후 검사 기록은 그대로 둔다.
+
+    단어 분리 기록은 본문·표 구분이 없으므로, 표·컨트롤 단어 검사가 필요한
+    작업이면 두 검사를 모두 마쳤을 때만 지운다.
+    """
+    global 검수_문제목록
+    접두어 = []
+    if 'page_group' in 완료된_검사:
+        접두어 += _처리중_기록_접두어['page_group']
+    컨트롤_필요 = (stage_enabled(선택_세부작업, 'control_spacing')
+                or stage_enabled(선택_세부작업, 'control_word_check'))
+    if 'word_check' in 완료된_검사 and (not 컨트롤_필요 or 'control_word_check' in 완료된_검사):
+        접두어 += _처리중_기록_접두어['word']
+    if not 접두어:
+        return 0
+    접두어 = tuple(접두어)
+    남김 = [item for index, item in enumerate(검수_문제목록)
+          if index >= 경계 or str(item.get('file')) != str(파일)
+          or not str(item.get('text', '')).startswith(접두어)]
+    지운수 = len(검수_문제목록) - len(남김)
+    검수_문제목록[:] = 남김
+    return 지운수
+
 
 def 검수_문제_기록(파일, text):
     global 검수_문제목록
@@ -7739,6 +7834,17 @@ def 저장파일명(파일):
 
 def 문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=1):
     """실행 버튼의 작업 범위에 맞춰 서식과 자간 단계를 분리한다."""
+    global 최종_내어쓰기_예정
+    최종_내어쓰기_예정 = bool(
+        작업_모드 in ('format', 'all') and 표준서식_사용 and 표준서식_내어쓰기_사용
+        and stage_enabled(선택_세부작업, 'hanging_indent'))
+    try:
+        return _문서_처리_1회(파일명, 문장부호기능, 회차, 총회차)
+    finally:
+        최종_내어쓰기_예정 = False
+
+
+def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=1):
     if 중단_요청됨():
         return False
     def stage(name, action):
@@ -7803,6 +7909,7 @@ def 문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=1
                     로그(f"[자간·내어쓰기 반복] {차수}차 재검사: 내어쓰기가 바뀐 "
                          f"{len(재검사_대상문단)}개 문단만 단어 분리 검사(다음 단어 당김 제외)")
                 변경_전 = 자간_변경_횟수
+                자간_변경문단.clear()
                 # 두 선택 항목은 같은 전수 순회 함수를 사용하므로 한 번만 실행한다.
                 if (stage_enabled(선택_세부작업, 'body_spacing')
                         or stage_enabled(선택_세부작업, 'word_check')):
@@ -7823,8 +7930,11 @@ def 문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=1
                     break
                 if not 내어쓰기_재적용:
                     break
-                로그(f"[자간·내어쓰기 반복] {차수}차 자간 조정 {변경}건 → 내어쓰기 재적용")
-                if not stage('자간 조정 후 내어쓰기' + 접미, 문단_내어쓰기_전체_갱신):
+                대상 = set(자간_변경문단)
+                로그(f"[자간·내어쓰기 반복] {차수}차 자간 조정 {변경}건 → "
+                     f"자간이 바뀐 {len(대상)}개 문단 내어쓰기 재적용")
+                if not stage('자간 조정 후 내어쓰기' + 접미,
+                             lambda: 문단_내어쓰기_전체_갱신(대상문단=대상)):
                     return False
             else:
                 로그(f"[자간·내어쓰기 반복] 최대 {자간_내어쓰기_최대반복}회 도달, 반복 종료")
@@ -7833,12 +7943,29 @@ def 문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=1
             다음단어_당김_사용 = True
     # 문단 아래 간격 조정은 세로 배치를 다시 바꾼다. 개별 문단이 쪽 사이에
     # 갈라졌는지는 이 단계가 끝난 뒤 마지막으로 처리해야 결과가 재오염되지 않는다.
-    if 작업_모드 in ('format', 'all') and 표준서식_사용 and stage_enabled(선택_세부작업, 'page_fit'):
+    쪽수맞춤_사용 = (작업_모드 in ('format', 'all') and 표준서식_사용
+                   and stage_enabled(선택_세부작업, 'page_fit'))
+    if 쪽수맞춤_사용:
         if not stage('문단 아래 간격 페이지 맞춤', 보고서_페이지수_맞춤_전체_적용):
             return False
     if 작업_모드 in ('format', 'all') and 표준서식_사용 and 세트문장_같은쪽_사용 and stage_enabled(선택_세부작업, 'page_group'):
+        조정_전 = 세트문장_통계.get('확대횟수', 0) + 세트문장_통계.get('축소횟수', 0)
         if not stage('개별 문단 페이지 배치', 세트문장_같은쪽_전체_적용):
             return False
+        조정_후 = 세트문장_통계.get('확대횟수', 0) + 세트문장_통계.get('축소횟수', 0)
+        # 문단 페이지 배치가 줄간격을 바꾸면 마지막 쪽이 넘치거나 줄어 쪽 수가
+        # 달라질 수 있다. 쪽 수 맞춤을 한 번 더 확인하고, 그 결과 쪽 수가 바뀌면
+        # 문단 페이지 배치도 한 번만 더 한다(무한 반복 방지).
+        if 쪽수맞춤_사용 and 조정_후 > 조정_전:
+            전_쪽, _ = 마지막쪽_화면줄수()
+            로그("[쪽 수 재확인] 문단 페이지 배치가 줄간격을 바꿔 페이지 수 맞춤을 다시 확인합니다.")
+            if not stage('문단 아래 간격 페이지 맞춤 (재확인)', 보고서_페이지수_맞춤_전체_적용):
+                return False
+            후_쪽, _ = 마지막쪽_화면줄수()
+            if 전_쪽 != 후_쪽:
+                로그(f"[쪽 수 재확인] 쪽 수 {전_쪽} → {후_쪽}: 문단 페이지 배치를 한 번 더 확인합니다.")
+                if not stage('개별 문단 페이지 배치 (재확인)', 세트문장_같은쪽_전체_적용):
+                    return False
     hwp_run('MoveDocBegin')
     return True
 
@@ -8104,6 +8231,17 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
         # 원본이 HWP/HWPX가 아니므로 좌우 비교 보기 대상에서는 제외한다.
     비교보기_임베드_재확인()
 
+    # 자간 초기화는 제목·개요·붙임 선행 서식과 일반 표 정밀 복제보다 먼저 한다.
+    # 두 단계는 예시 서식의 글자 모양(자간 포함)을 복사하므로, 뒤에서 초기화하면
+    # 복사한 자간이 0%로 지워진다. 쪽 범위 작업은 두 단계를 건너뛰므로 범위를
+    # 고정한 뒤(아래) 초기화한다.
+    자간초기화_완료 = False
+    if 쪽범위_요청 is None and stage_enabled(선택_세부작업, 'reset_spacing'):
+        상태(f"{파일명} : 자간 초기화")
+        if 문서_전체_자간_초기화() is False:
+            return False
+        자간초기화_완료 = True
+
     if 표준서식_사용 and 작업_모드 in ('format', 'all'):
         if 쪽범위_요청 is not None:
             # 제목·개요·붙임 표 서식은 문서 전체 구조를 한 번에 바꾸는 방식이라 쪽별로 나눌 수 없다.
@@ -8111,7 +8249,7 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
         elif stage_enabled(선택_세부작업, 'pre_format'):
             단계표시("제목·개요·붙임 선행 서식")
             상태(f"{파일명} : 제목·개요·붙임 선행 서식")
-            if 제목붙임_선행적용(작업파일경로) is False:
+            if 제목붙임_선행적용(작업파일경로, 현재문서_기준=자간초기화_완료) is False:
                 return False
         if 쪽범위_요청 is None and 활성_정밀표_프로필 and stage_enabled(선택_세부작업, 'precise_table'):
             단계표시("표 정밀 서식")
@@ -8136,7 +8274,7 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
 
     # 잔여 자간(이전 실행/수동 편집으로 남은 값)이 있으면 압축 여유가
     # 줄어드니, 처리 회차를 시작하기 전 문서 전체를 한 번만 0%로 초기화한다.
-    if stage_enabled(선택_세부작업, 'reset_spacing'):
+    if stage_enabled(선택_세부작업, 'reset_spacing') and not 자간초기화_완료:
         상태(f"{파일명} : 자간 초기화")
         if 문서_전체_자간_초기화() is False:
             return False
@@ -8193,6 +8331,7 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
                 최종규칙검사[key] = {'status': 'error', 'error': str(exc)}
             검수_문제_기록(파일, f'[저장 결과 재열기 실패] {exc}')
         else:
+            기록_경계 = len(검수_문제목록)
             for key, inspect in inspections.items():
                 try:
                     result = inspect()
@@ -8203,6 +8342,11 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
                 except Exception as exc:
                     최종규칙검사[key] = {'status': 'error', 'error': str(exc)}
                     검수_문제_기록(파일, f'[최종 {key} 검사 실패] {exc}')
+            완료된_검사 = {key for key, value in 최종규칙검사.items()
+                        if value.get('status') in ('passed', 'failed')}
+            대체수 = 처리중_기록_대체(파일, 완료된_검사, 기록_경계)
+            if 대체수:
+                로그(f"처리 중 미해결 기록 {대체수}건을 저장 결과 검사로 대체")
     무결성 = None
     if 검수_사용 and 원본_구조 is not None:
         결과_구조 = inspect_hwpx(저장파일)
@@ -8308,6 +8452,9 @@ def 작업_실행(
             로그_파일_경로 = None
         로그(f"프로그램 버전: {APP_VERSION} / 전체 처리 {작업_반복횟수}회 / 단어 분리 방지: {bool(단어분리방지)} / 본문 {본문재시도횟수}단계 / 표 {표재시도횟수}단계 / 줄간격 조정범위 {줄간격최소}~{줄간격최대}%")
         로그(f"작업 로그 파일: {로그_파일_경로 or '(만들지 않음)'}")
+        정리수 = 이전_작업_임시폴더_정리()
+        if 정리수:
+            로그(f"이전 실행의 임시 폴더 {정리수}개 정리")
         if 쪽범위_요청 is None:
             로그("작업 범위: 문서 전체")
         else:

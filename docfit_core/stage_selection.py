@@ -11,8 +11,9 @@ FORMAT_STAGES = (
     ("table_format", "표 머리글·본문 서식"),
     ("single_cell_spacing", "개요·한 칸 표 자간 조정"),
     ("hanging_indent", "최종 서식 기준 내어쓰기"),
-    ("page_group", "관련 문단 페이지 배치"),
+    # 실행 순서: 쪽 수 맞춤(문단 아래 간격)을 먼저 하고 문단 페이지 배치를 마지막에 한다.
     ("page_fit", "문단 아래 간격 페이지 맞춤"),
+    ("page_group", "관련 문단 페이지 배치"),
 )
 SPACING_STAGES = (
     ("reset_spacing", "문서 전체 자간 초기화"),
@@ -53,7 +54,10 @@ def stages_for_mode(mode):
     if mode == "spacing":
         return SPACING_STAGES
     if mode == "all":
-        return FORMAT_STAGES[:2] + SPACING_STAGES[:1] + FORMAT_STAGES[2:8] + SPACING_STAGES[1:] + FORMAT_STAGES[9:]
+        # 실제 실행 순서와 같게 보여 준다. 자간 초기화는 선행 서식·정밀 표 복제보다
+        # 먼저 실행되고(복사한 자간 보존), 내어쓰기는 자간 조정 뒤 최종 확정된다.
+        # 개요·한 칸 표 자간 조정(single_cell_spacing)은 서식 전용이다.
+        return SPACING_STAGES[:1] + FORMAT_STAGES[:8] + SPACING_STAGES[1:] + FORMAT_STAGES[9:]
     raise ValueError("지원하지 않는 작업 모드입니다.")
 
 
