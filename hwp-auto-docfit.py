@@ -293,7 +293,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글문서 후처리 도구"
-APP_VERSION = "1.68 Alpha 1"
+APP_VERSION = "1.68 Alpha 2"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 UPDATE_ASSET_NAME = "HWP_AutoDocFit.exe"
@@ -4589,6 +4589,80 @@ def 단어모드_장평적용(runs, delta):
     hwp_run('Cancel')
 
 
+class _단계탐색_중단(Exception):
+    """단계 탐색 중 사용자가 작업을 중단했다."""
+
+
+# 자간·장평 단계 탐색에서 실제로 줄 배치를 다시 잰 횟수(작업 로그 통계용).
+단계탐색_통계 = {"탐색": 0, "측정": 0}
+
+
+def 최소_성공단계_탐색(최대, 적용후_확인, 상한먼저=False, 선형구간=8):
+    """1..최대 단계 중 성공하는 가장 작은 단계를 찾는다.
+
+    적용후_확인(step)은 step 단계를 문서에 적용하고 성공 여부를 돌려준다
+    (중단이면 None). 측정(줄 배치 다시 재기)이 비싸므로 상황별로 줄인다.
+
+    - 기본(성공이 흔하고 대개 작은 단계에서 성공하는 어절 분리): 선형구간
+      (8단계)까지는 한 단계씩 올려 예전과 똑같이 찾고, 그래도 안 되면 상한을
+      바로 확인한 뒤 그 사이를 이분 탐색한다. 실패 시 30번 대신 약 10번만 잰다.
+    - 상한먼저(실패가 흔한 다음 단어 당김·장평 축소): 상한에서도 안 되면 한
+      번만 재고 포기하고, 되면 한 단계씩 올려 가장 작은 단계를 찾는다.
+
+    반환: 성공 단계(그 단계가 적용된 상태) 또는 None(마지막으로 시도한
+    단계가 적용된 상태이므로 호출자가 원래 값으로 복원한다).
+    중단 시 _단계탐색_중단을 일으킨다.
+    """
+    if 최대 < 1:
+        return None
+    단계탐색_통계["탐색"] += 1
+    마지막 = [None]
+
+    def 확인(step):
+        if 중단_요청됨():
+            raise _단계탐색_중단
+        결과 = 적용후_확인(step)
+        if 결과 is None:
+            raise _단계탐색_중단
+        단계탐색_통계["측정"] += 1
+        마지막[0] = step
+        return bool(결과)
+
+    def 확정(step):
+        # 마지막으로 잰 단계가 아니면 다시 적용해 확인한다. 드문 비단조 배치로
+        # 실패하면 그 위 단계를 차례로 확인한다.
+        if 마지막[0] == step:
+            return step
+        while not 확인(step):
+            if step >= 최대:
+                return None
+            step += 1
+        return step
+
+    if 상한먼저:
+        if not 확인(최대):
+            return None
+        for step in range(1, 최대):
+            if 확인(step):
+                return step
+        return 확정(최대)
+
+    for step in range(1, min(선형구간, 최대) + 1):
+        if 확인(step):
+            return step
+    if 최대 <= 선형구간 or not 확인(최대):
+        return None
+    성공 = 최대
+    lo, hi = 선형구간 + 1, 최대 - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if 확인(mid):
+            성공, hi = mid, mid - 1
+        else:
+            lo = mid + 1
+    return 확정(성공)
+
+
 def 단어_장평_추가축소_시도(start, end, anchor, word_end, 최대시도):
     """자간만으로 안 줄어드는 긴 어절에 장평(글자 가로비율)을 추가로 줄여본다.
 
@@ -4623,16 +4697,19 @@ def 단어_장평_추가축소_시도(start, end, anchor, word_end, 최대시도
         현재_최소장평 = min((v for _, _, vs in ratio_runs for v in vs), default=100)
         장평_바닥 = 100 - 단어_장평_추가축소_최대_단계
         여유_단계 = max(0, min(단어_장평_추가축소_최대_단계, 현재_최소장평 - 장평_바닥))
-        for step in range(1, 여유_단계 + 1):
-            if 중단_요청됨():
-                return False
+
+        def 장평_확인(step):
             단어모드_장평적용(ratio_runs, -step)
-            _, new_end = 단어모드_줄범위(anchor)
-            성공 = new_end[2] >= word_end[2]
-            if 성공:
-                진단로그(f"[단어 분리 보정] 자간 {자간값}%p + 장평 {현재_최소장평 - step}%로 해결")
-                break
-        if not 성공 and 여유_단계:
+            return 단어모드_줄범위(anchor)[1][2] >= word_end[2]
+
+        try:
+            단계 = 최소_성공단계_탐색(여유_단계, 장평_확인, 상한먼저=True)
+        except _단계탐색_중단:
+            return False
+        성공 = 단계 is not None
+        if 성공:
+            진단로그(f"[단어 분리 보정] 자간 {자간값}%p + 장평 {현재_최소장평 - 단계}%로 해결")
+        elif 여유_단계:
             단어모드_장평적용(ratio_runs, 0)
     finally:
         if not 성공 and 자간적용됨:
@@ -4691,19 +4768,19 @@ def 다음단어_당김_시도(anchor, 최대시도):
     # 최대 10%p"가 아니라 "최종적으로 최대 10%p"가 되도록.
     현재_최소자간 = min((v for _, _, vs in runs for v in vs), default=0)
     자간_상한 = max(0, min(최대시도, 다음단어_당김_자간_최대_퍼센트 + 현재_최소자간))
+    # 자간은 -50%보다 작게 할 수 없다.
+    탐색_상한 = min(자간_상한, 50 + 현재_최소자간)
+
+    def 당김_확인(step):
+        nonlocal changed
+        changed = True
+        단어모드_자간적용(runs, -step)
+        return 단어모드_줄범위(anchor)[1][2] >= 다음단어_끝[2]
+
     try:
-        for step in range(1, 자간_상한 + 1):
-            if 중단_요청됨():
-                return False
-            delta = -step
-            if any(not -50 <= v + delta <= 50 for _, _, vs in runs for v in vs):
-                break
-            changed = True
-            단어모드_자간적용(runs, delta)
-            _, new_end = 단어모드_줄범위(anchor)
-            success = new_end[2] >= 다음단어_끝[2]
-            if success:
-                break
+        success = 최소_성공단계_탐색(탐색_상한, 당김_확인, 상한먼저=True) is not None
+    except _단계탐색_중단:
+        return False
     finally:
         if changed and not success:
             단어모드_자간적용(runs, 0)
@@ -4840,18 +4917,22 @@ def 단어중간_줄바꿈방지(최대시도):
                     return None
                 success = False
                 changed = False
+                # 자간은 -50%보다 작게 할 수 없다.
+                상한 = min(최대시도, 50 + min((v for _, _, vs in runs for v in vs), default=0))
+
+                def 당김_확인(step):
+                    nonlocal changed
+                    changed = True
+                    단어모드_자간적용(runs, -step)
+                    return 단어모드_줄범위(anchor)[1][2] >= word_end[2]
+
                 try:
-                    for step in range(1, 최대시도 + 1):
-                        if 중단_요청됨():
-                            return None
-                        if any(not -50 <= v - step <= 50 for _, _, vs in runs for v in vs):
-                            break
-                        changed = True
-                        단어모드_자간적용(runs, -step)
-                        _, new_end = 단어모드_줄범위(anchor)
-                        success = new_end[2] >= word_end[2]
-                        if success:
-                            return f"앞줄 자간 -{step}%로 당김"
+                    step = 최소_성공단계_탐색(상한, 당김_확인)
+                    success = step is not None
+                    if success:
+                        return f"앞줄 자간 -{step}%로 당김"
+                except _단계탐색_중단:
+                    return None
                 finally:
                     if changed and not success:
                         단어모드_자간적용(runs, 0)
@@ -4871,22 +4952,26 @@ def 단어중간_줄바꿈방지(최대시도):
                     return None
                 success = False
                 changed = False
+                # 자간은 +50%보다 크게 할 수 없다.
+                상한 = min(최대시도, 50 - max((v for _, _, vs in push_runs for v in vs), default=0))
+
+                def 밀기_확인(push_step):
+                    nonlocal changed
+                    changed = True
+                    단어모드_자간적용(push_runs, push_step)
+                    _, previous_end = 단어모드_줄범위(anchor)
+                    next_start, next_end = 단어모드_줄범위(word_start)
+                    return (previous_end[2] <= word_start[2]
+                            and next_start[2] <= word_start[2]
+                            and next_end[2] >= word_end[2])
+
                 try:
-                    for push_step in range(1, 최대시도 + 1):
-                        if 중단_요청됨():
-                            return None
-                        if any(not -50 <= v + push_step <= 50
-                               for _, _, vs in push_runs for v in vs):
-                            break
-                        changed = True
-                        단어모드_자간적용(push_runs, push_step)
-                        _, previous_end = 단어모드_줄범위(anchor)
-                        next_start, next_end = 단어모드_줄범위(word_start)
-                        success = (previous_end[2] <= word_start[2]
-                                   and next_start[2] <= word_start[2]
-                                   and next_end[2] >= word_end[2])
-                        if success:
-                            return f"앞 구간 자간 +{push_step}%로 어절 전체를 다음 줄로 밈"
+                    push_step = 최소_성공단계_탐색(상한, 밀기_확인)
+                    success = push_step is not None
+                    if success:
+                        return f"앞 구간 자간 +{push_step}%로 어절 전체를 다음 줄로 밈"
+                except _단계탐색_중단:
+                    return None
                 finally:
                     if changed and not success:
                         단어모드_자간적용(push_runs, 0)
@@ -7957,7 +8042,14 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
         # 달라질 수 있다. 쪽 수 맞춤을 한 번 더 확인하고, 그 결과 쪽 수가 바뀌면
         # 문단 페이지 배치도 한 번만 더 한다(무한 반복 방지).
         if 쪽수맞춤_사용 and 조정_후 > 조정_전:
-            전_쪽, _ = 마지막쪽_화면줄수()
+            # 마지막 쪽을 한 번만 재서, 쪽 수 맞춤이 할 일이 없으면(마지막 쪽에
+            # 내용이 충분하면) 쪽 수 맞춤 단계 자체를 건너뛴다.
+            전_쪽, 남은줄 = 마지막쪽_화면줄수()
+            if not (페이지맞춤_문단간격_사용 and 전_쪽 and 전_쪽 > 1
+                    and 남은줄 is not None and 남은줄 <= 페이지맞춤_최대남은줄수):
+                진단로그(f"[쪽 수 재확인] 마지막 쪽({전_쪽}쪽) {남은줄}줄: 페이지 수 맞춤 불필요")
+                hwp_run('MoveDocBegin')
+                return True
             로그("[쪽 수 재확인] 문단 페이지 배치가 줄간격을 바꿔 페이지 수 맞춤을 다시 확인합니다.")
             if not stage('문단 아래 간격 페이지 맞춤 (재확인)', 보고서_페이지수_맞춤_전체_적용):
                 return False
@@ -8517,6 +8609,7 @@ def 작업_실행(
         문장부호_통계 = {"대상": 0, "성공": 0, "실패": 0}
         세트문장_통계 = {"대상": 0, "성공": 0, "실패": 0, "축소횟수": 0, "확대횟수": 0}
         단어분리_통계 = {"대상": 0, "성공": 0, "실패": 0}
+        단계탐색_통계.update(탐색=0, 측정=0)
         다음단어_통계 = {"대상": 0, "적용": 0, "미적용": 0}
 
         원본_뷰어_분리()
@@ -8577,6 +8670,8 @@ def 작업_실행(
         로그("=" * 45)
         로그(f"문장부호 줄병합 자간조정 통계({작업_반복횟수}회 누적): 대상 {문장부호_통계['대상']}건 (성공 {문장부호_통계['성공']}/실패 {문장부호_통계['실패']})")
         로그(f"단어 분리 방지 통계({작업_반복횟수}회 누적): 대상 {단어분리_통계['대상']}건 (성공 {단어분리_통계['성공']}/실패 {단어분리_통계['실패']})")
+        if 단계탐색_통계["탐색"]:
+            로그(f"자간·장평 단계 탐색: {단계탐색_통계['탐색']}회 / 줄 배치 측정 {단계탐색_통계['측정']}회")
         로그(f"선택적 다음 단어 당김: 대상 {다음단어_통계['대상']}건 "
              f"(적용 {다음단어_통계['적용']}/미적용 {다음단어_통계['미적용']}, 오류 통계 제외)")
         if 세트문장_같은쪽_사용:
