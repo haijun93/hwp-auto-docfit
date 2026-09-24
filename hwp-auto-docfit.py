@@ -8317,6 +8317,17 @@ def 문서_전체_자간_초기화():
 
 
 지원_확장자 = (".hwp", ".hwpx", ".txt", ".md", ".doc", ".docx", ".pdf")
+
+
+def 바이너리_HWP_파일인가(path):
+    """파일 앞부분이 OLE 복합 문서(HWP 5.0 바이너리) 서명인지 본다."""
+    try:
+        with open(path, "rb") as f:
+            return f.read(8) == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+    except OSError:
+        return False
+
+
 _텍스트_인코딩_후보 = ("utf-8-sig", "utf-8", "cp949")
 
 
@@ -8445,6 +8456,11 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
         raise FileNotFoundError(f"문서를 찾을 수 없습니다: {파일}")
     if 확장자 not in 지원_확장자:
         raise ValueError(f"지원하지 않는 파일 형식입니다: {확장자 or '(확장자 없음)'}")
+    if 확장자 == ".hwpx" and 바이너리_HWP_파일인가(파일경로):
+        # 실측: 이름만 .hwpx이고 내용은 HWP 5.0 바이너리인 배포 문서가 있다.
+        로그("확장자는 .hwpx지만 실제 내용은 HWP(바이너리) 문서라 HWP로 엽니다.")
+        확장자 = ".hwp"
+        원본_확장자명 = "hwp"
 
     # 한글에 넘기기 전에 경로 조작, ZIP bomb, CRC와 필수 구조를 검사한다.
     원본_구조 = None
@@ -8849,7 +8865,7 @@ def 작업_실행(
                     "integrity_ok": None, "error": str(e),
                 })
                 traceback.print_exc()
-                로그(f"문서 처리 오류: {파일}")
+                로그(f"문서 처리 오류: {파일} — {e}")
                 gui_queue.put(("document_error", str(파일), str(e)))
 
         로그("=" * 45)
