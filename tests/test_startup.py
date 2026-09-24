@@ -16,6 +16,130 @@ from tests.test_style_profile import HEADER, SECTION
 
 
 class StartupTest(unittest.TestCase):
+    def test_page_group_collects_only_the_current_paragraph(self):
+        source = Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"
+        namespace = runpy.run_path(str(source), run_name="page_group_unit_test")
+        collect = namespace["보고서_본문묶음_수집"]
+
+        class FakeHwp:
+            def __init__(self):
+                self.pos = (0, 10, 0)
+
+            def GetPos(self):
+                return self.pos
+
+            def SetPos(self, *pos):
+                self.pos = tuple(pos)
+
+        fake = FakeHwp()
+        actions = []
+
+        def run(action):
+            actions.append(action)
+            if action == "MoveParaBegin":
+                fake.pos = (0, 10, 0)
+            elif action == "MoveParaEnd":
+                fake.pos = (0, 10, 25)
+
+        with patch.dict(collect.__globals__, {
+            "hwp": fake,
+            "hwp_run": run,
+            "현재문단_텍스트": lambda: "ㅇ 본문",
+            "보고서_문단역할": lambda text: "본문",
+        }):
+            self.assertEqual(
+                collect((0, 10, 0)),
+                [((0, 10, 0), (0, 10, 25), "본문")],
+            )
+
+        self.assertEqual(fake.GetPos(), (0, 10, 0))
+
+    def test_final_save_clears_page_protection(self):
+        source = Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"
+        text = source.read_text(encoding="utf-8")
+        clear_call = text.index("if 보고서_페이지보호_전체해제() is False:",
+                                text.index("# 선택한 처리 회차가 끝난 뒤"))
+        save_call = text.index("저장결과 = hwp.SaveAs", clear_call)
+        self.assertLess(clear_call, save_call)
+
+    def test_title_connects_first_body_but_not_entire_section(self):
+        namespace = runpy.run_path(str(Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"))
+        collect = namespace["보고서_본문묶음_수집"]
+        class Document:
+            pos = (0, 0, 0)
+            def GetPos(self):
+                return self.pos
+            def SetPos(self, *pos):
+                self.pos = pos
+            def run(self, action):
+                _, para, _ = self.pos
+                if action == 'MoveParaBegin':
+                    self.pos = (0, para, 0)
+                elif action == 'MoveParaEnd':
+                    self.pos = (0, para, 20)
+                elif action == 'MoveNextParaBegin':
+                    self.pos = (0, min(para + 1, 3), 0)
+        doc = Document()
+        roles = ['소제목', '본문', '본문', '내용']
+        with patch.dict(collect.__globals__, {
+            'hwp': doc, 'hwp_run': doc.run,
+            '현재문단_텍스트': lambda: roles[doc.pos[1]],
+            '보고서_문단역할': lambda text: text,
+        }):
+            self.assertEqual([p[0][1] for p in collect((0, 0, 0))], [0, 1])
+            self.assertEqual(doc.pos, (0, 0, 0))
+            roles[1] = '소제목'
+            self.assertEqual(len(collect((0, 0, 0))), 1)
+
+    def test_body_group_includes_all_children_and_stops_at_next_body(self):
+        namespace = runpy.run_path(str(Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"))
+        collect = namespace['보고서_본문묶음_수집']
+        class Document:
+            pos = (0, 0, 0)
+            def GetPos(self):
+                return self.pos
+            def SetPos(self, *pos):
+                self.pos = tuple(pos)
+            def run(self, action):
+                _, para, _ = self.pos
+                if action == 'MoveParaBegin':
+                    self.pos = (0, para, 0)
+                elif action == 'MoveParaEnd':
+                    self.pos = (0, para, 20)
+                elif action == 'MoveNextParaBegin':
+                    self.pos = (0, min(para + 1, len(roles) - 1), 0)
+        doc = Document()
+        # □ 3안 / ㅇ 운영방식 / - 세 항목과 부연설명 / ㅇ 행정사항
+        roles = ['소제목', '본문', '내용', '내용', '내용', '부연설명', '본문', '내용']
+        with patch.dict(collect.__globals__, {
+            'hwp': doc, 'hwp_run': doc.run,
+            '현재문단_텍스트': lambda: roles[doc.pos[1]],
+            '보고서_문단역할': lambda text: text,
+            '중단_요청됨': lambda: False,
+        }):
+            self.assertEqual([p[0][1] for p in collect((0, 1, 0))], [1, 2, 3, 4, 5])
+            self.assertEqual([p[0][1] for p in collect((0, 0, 0))], [0, 1, 2, 3, 4, 5])
+            self.assertEqual([p[0][1] for p in collect((0, 4, 0))], [4, 5])
+            roles[3] = None  # 빈 문단·무기호 문단을 넘어서 연결하지 않는다.
+            self.assertEqual([p[0][1] for p in collect((0, 1, 0))], [1, 2])
+        self.assertEqual(doc.GetPos(), (0, 0, 0))
+
+    def test_hanging_indent_treats_attached_open_quote_as_body_boundary(self):
+        source = Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"
+        namespace = runpy.run_path(str(source), run_name="hanging_indent_offset_test")
+        offset = namespace["문단_내어쓰기_기준_오프셋"]
+
+        self.assertEqual(offset(" ㅇ (개요) 본문"), 8)
+        # 낫표로 시작하는 본문은 '「'이 아니라 바로 다음 글자 '공'이 기준이다.
+        self.assertEqual(offset(" ㅇ (개요)「공유재산법 시행령」제75조"), 8)
+        self.assertEqual(offset(" ㅇ (개요) 「공유재산법」에 따라"), 9)
+        self.assertEqual(offset(" ㅇ 「공유재산법」에 따라"), 4)
+        self.assertEqual(offset(" - 근거 : 『지방재정법』 제17조"), 9)
+        # 다른 인용부호는 기존처럼 부호 위치가 기준이다.
+        self.assertEqual(offset(" - (운영방식)“공용차량 조례”"), 9)
+        # 연도 괄호가 지명에 붙은 형태는 문두 라벨로 오인하지 않는다.
+        self.assertEqual(offset(" ㅇ (2026)서울"), 3)
+
     def test_output_filename_is_always_hwpx(self):
         source = Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"
         namespace = runpy.run_path(str(source), run_name="output_filename_test")
