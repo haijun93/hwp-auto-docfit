@@ -96,13 +96,18 @@ class PageFitFallbackTest(unittest.TestCase):
             'hwp': object(), '중단_요청됨': lambda: False, '로그': Mock(),
             '구조문단_간격_일괄조정': adjust,
             '마지막쪽_화면줄수': lambda: (next(pages, 4), 1),
-            '쪽맞춤_묶음분리_있음': lambda: next(split_iter, False),
+            '쪽맞춤_묶음분리_있음': lambda 최소쪽=None: calls.append(f'묶음검사:{최소쪽}') or next(split_iter, False),
             '구조문단_간격_복원': lambda values, 위간격=False: restored.append((위간격, len(values))) or len(values),
             '페이지맞춤_최대_pt': 3.0, '페이지맞춤_스텝_pt': 1.0, '페이지맞춤_뒤쪽범위_쪽수': 2,
-            '페이지맞춤_묶음확인_추가단계': 4, '쪽맞춤_묶음_확인됨': False,
+            '페이지맞춤_묶음확인_추가단계': 4, '쪽맞춤_묶음_확인됨': False, '쪽맞춤_묶음이동_결정': False,
         }):
             result = fn(3)
             confirmed = g['쪽맞춤_묶음_확인됨']
+            self.move_decided = g['쪽맞춤_묶음이동_결정']
+        # 묶음 검사는 간격을 바꾸는 쪽(최소쪽 = 목표 3 - 뒤쪽범위 2 = 1)부터만 본다.
+        checks = [c for c in calls if c.startswith('묶음검사')]
+        self.assertTrue(all(c == '묶음검사:1' for c in checks), checks)
+        calls = [c for c in calls if not c.startswith('묶음검사')]
         return result, calls, restored, confirmed
 
     def test_uses_paragraph_top_spacing_when_bottom_spacing_is_zero(self):
@@ -124,6 +129,7 @@ class PageFitFallbackTest(unittest.TestCase):
         result, calls, restored, confirmed = self._fit([0], [3, 3, 3], splits=[True, True, True])
         self.assertTrue(result)
         self.assertFalse(confirmed)                     # 쪽 배치가 묶음을 옮겨야 함
+        self.assertTrue(self.move_decided)              # 재확인에서 다시 줄이지 않음
         self.assertEqual(calls, ['아래', '위', '위', '위', '위'])
         self.assertEqual(restored, [(True, 3), (False, 0)])
 
@@ -131,8 +137,22 @@ class PageFitFallbackTest(unittest.TestCase):
         result, calls, restored, confirmed = self._fit([2, 2, 2], [4, 4, 4, 4, 4, 4])
         self.assertFalse(result)
         self.assertFalse(confirmed)
+        self.assertFalse(self.move_decided)
         self.assertEqual(calls, ['아래'] * 3 + ['위'] * 3)
         self.assertEqual(restored, [(True, 3), (False, 3)])
+
+
+    def test_whole_pass_clears_previous_document_decision(self):
+        fn = self.ns['보고서_페이지수_맞춤_전체_적용']
+        g = fn.__globals__
+        with patch.dict(g, {
+            '쪽맞춤_묶음_확인됨': True, '쪽맞춤_묶음이동_결정': True,
+            '페이지맞춤_문단간격_사용': True, '중단_요청됨': lambda: False,
+            '마지막쪽_화면줄수': lambda: (3, 25), '페이지맞춤_최대남은줄수': 3,
+        }):
+            self.assertTrue(fn())
+            self.assertFalse(g['쪽맞춤_묶음_확인됨'])
+            self.assertFalse(g['쪽맞춤_묶음이동_결정'])
 
 
 if __name__ == '__main__':
