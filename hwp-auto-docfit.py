@@ -893,6 +893,8 @@ def 번들_리소스_폴더():
     # 같은 문두기호의 라벨이 굵게 되면 다른 문단의 머리말도 굵게 맞춤
     "std_marker_bold_consistency": True,
     "std_parspace": True,
+    # 문두기호 문장 사이에 빈 줄로 띄운 간격 삭제(문단 위 여백으로 대신함)
+    "std_remove_blank_lines": True,
     "std_parspace_box": "15",
     "std_parspace_circle": "10",
     "std_parspace_note": "3",
@@ -3328,6 +3330,96 @@ def 표준서식_문단_처리(문단_순번, 헤더_역할=None, 상속_기호_
             문자모양_적용_현재선택(굵게=True)
             hwp_run("Cancel")
 
+# 문서 작성자가 문단 위 여백 대신 빈 줄로 띄운 간격은 표준서식의 문단 위
+# 여백과 겹치므로 지운다. 앞뒤가 모두 문두기호 문장인 빈 문단만 대상이다.
+# 설정 > 서식 정리 > 보고서 표준서식에서 켜고 끈다.
+문두기호문장_빈줄_삭제_사용 = True
+
+
+def 빈문단_분류(text, begin, end):
+    """'blank'(공백만 있는 빈 문단), 'marker'(문두기호 문장), 'other'.
+
+    표·그림 같은 컨트롤은 글자 없이 위치만 차지하므로, 위치 길이가 공백
+    글자 수와 같을 때만 빈 문단으로 본다.
+    """
+    body = (text or '').rstrip('\r\n')
+    if not body.strip():
+        units = len(body.encode('utf-16-le')) // 2
+        return 'blank' if end[2] - begin[2] == units else 'other'
+    # 날짜 줄('2026. 9. 24.')처럼 번호로 보이는 머리 문단은 문두기호 문장이 아니다.
+    return 'marker' if 보고서_문단역할(body) else 'other'
+
+
+def 문두기호문장_사이_빈문단_찾기(kinds):
+    """분류 목록에서 앞뒤 가장 가까운 비어 있지 않은 문단이 모두 문두기호
+    문장인 빈 문단의 인덱스."""
+    result = []
+    for index, kind in enumerate(kinds):
+        if kind != 'blank':
+            continue
+        before = next((k for k in reversed(kinds[:index]) if k != 'blank'), None)
+        after = next((k for k in kinds[index + 1:] if k != 'blank'), None)
+        if before == 'marker' and after == 'marker':
+            result.append(index)
+    return result
+
+
+def 문두기호문장_사이_빈줄_삭제():
+    if not 문두기호문장_빈줄_삭제_사용 or hwp is None:
+        return True
+    original = hwp.GetPos()
+    paragraphs = []
+    try:
+        hwp_run('MoveDocBegin')
+        while True:
+            if 중단_요청됨():
+                return False
+            hwp_run('MoveParaBegin')
+            begin = hwp.GetPos()
+            text = 현재문단_텍스트()
+            hwp.SetPos(*begin)
+            hwp_run('MoveParaEnd')
+            end = hwp.GetPos()
+            paragraphs.append((begin, end, 빈문단_분류(text, begin, end)))
+            hwp.SetPos(*begin)
+            hwp_run('MoveNextParaBegin')
+            after = hwp.GetPos()
+            if after == begin or after[0] != 0 or after[1] <= begin[1]:
+                break
+
+        targets = [index for index in 문두기호문장_사이_빈문단_찾기([p[2] for p in paragraphs])
+                   if index > 0 and 쪽범위_안인가(paragraphs[index][0])]
+        삭제수 = 0
+        # 뒤에서부터 지워야 앞 문단의 위치가 바뀌지 않는다. 빈 문단은 바로 앞
+        # 문단 끝에 합쳐 지운다 — 뒤 문단에 합치면 문두기호 문장의 문단 모양이
+        # 빈 문단의 모양으로 바뀐다.
+        for index in reversed(targets):
+            if 중단_요청됨():
+                return False
+            prev_end = paragraphs[index - 1][1]
+            blank_end = paragraphs[index][1]
+            try:
+                hwp.SetPos(*prev_end)
+                if hwp.SelectText(prev_end[1], prev_end[2], blank_end[1], blank_end[2]) is False:
+                    raise RuntimeError('빈 줄 범위 선택 실패')
+                hwp_run('Delete')
+                삭제수 += 1
+            except Exception as e:
+                로그(f'문두기호 문장 사이 빈 줄 삭제 중 오류(건너뜀): {e}')
+            finally:
+                hwp_run('Cancel')
+        로그(f'문두기호 문장 사이 빈 줄 삭제: {삭제수}개')
+        return True
+    finally:
+        try:
+            hwp_run('MoveDocBegin')
+        except Exception:
+            try:
+                hwp.SetPos(*original)
+            except Exception:
+                pass
+
+
 def 표준서식_전체_적용():
     if 중단_요청됨():
         return False
@@ -3338,6 +3430,9 @@ def 표준서식_전체_적용():
             로그("쪽 범위 지정: 편집 여백은 구역 전체에 적용되는 설정이라 이번 작업에서는 건드리지 않습니다.")
         else:
             페이지_여백_설정(표준서식_설정["여백_mm"])
+
+    if not 문두기호문장_사이_빈줄_삭제():
+        return False
 
     hwp_run("MoveDocBegin")
     문단_순번 = 0
@@ -4130,41 +4225,95 @@ def 일반_의미단위_범위(text):
     return result
 
 
+# 열거 뒤에 쓰는 의존명사 '등'은 바로 앞 어절과 한 어절로 묶는다.
+# 예: '사과, 바나나 등으로' → '바나나 등으로'가 한 어절이므로 '바나나 | 등으로'로
+# 갈라지면 단어 분리로 보고 자간을 조정한다. '등록', '등급'처럼 '등'으로
+# 시작하는 다른 낱말은 뒤에 조사만 오는 경우가 아니므로 묶지 않는다.
+_등_어절 = re.compile(
+    r"등(?:으로서|으로써|으로|에서|에게|까지|부터|이며|이고|이다|이나|이라|"
+    r"과|와|을|를|은|는|이|가|의|에|도|만)?[,，.)）」』’”]*")
+
+
+def 등_어절인가(text):
+    return bool(text) and bool(_등_어절.fullmatch(text))
+
+
+def 어절_의미단위_범위(text):
+    """의미단위_범위에 '앞 어절 + 공백 + 등' 묶음을 더한 범위."""
+    result = []
+    for a, b in 의미단위_범위(text):
+        if (result and 등_어절인가(text[a:b]) and a >= 1 and text[a - 1] == ' '
+                and result[-1][1] == a - 1):
+            result[-1] = (result[-1][0], b)
+        else:
+            result.append((a, b))
+    return result
+
+
+def _단어모드_공백전까지(pos, 뒤로=False):
+    """pos에서 한 방향으로 공백·개행·컨트롤 전까지의 글자 목록과,
+    멈춘 글자가 보통 공백(' ')이면 그 글자를 돌려준다. 중단 시 (None, None)."""
+    parts = []
+    while True:
+        if 중단_요청됨():
+            return None, None
+        part = 단어모드_한글자(pos, 뒤로)
+        if not part or not part[2]:
+            return parts, None
+        if any(c.isspace() or unicodedata.category(c) == 'Cc' for c in part[2]):
+            return parts, (part if part[2] == ' ' else None)
+        parts.append(part)
+        pos = part[0] if 뒤로 else part[1]
+
+
 def 단어모드_분리정보(anchor):
     start, boundary = 단어모드_줄범위(anchor)
     right = 단어모드_한글자(boundary)
-    if not right or not right[2] or any(c.isspace() for c in right[2]):
+    if not right or not right[2]:
         return None
+    if any(c.isspace() for c in right[2]):
+        # 공백에서 줄이 바뀐 경우는 다음 어절이 '등'일 때만 분리 후보다.
+        if right[2] != ' ':
+            return None
+        peek = 단어모드_한글자(right[1])
+        if not peek or peek[2] != '등':
+            return None
     _, next_end = 단어모드_줄범위(right[1])
     if next_end[2] <= boundary[2]:
         return None
     # 공백/실제 개행/컨트롤 경계를 넘지 않는 구간의 실제 HWP 위치를 보관.
-    before, after = [], []
-    pos = boundary
-    while True:
-        if 중단_요청됨():
+    before, stop_left = _단어모드_공백전까지(boundary, True)
+    if before is None:
+        return None
+    after, stop_right = _단어모드_공백전까지(boundary)
+    if after is None:
+        return None
+    if not before and not after:
+        return None
+    # 경계가 걸친 어절이 '등' 어절이면 공백 앞 어절까지 묶는다.
+    현재어절 = ''.join(p[2] for p in reversed(before)) + ''.join(p[2] for p in after)
+    if stop_left is not None and 등_어절인가(현재어절):
+        previous, _ = _단어모드_공백전까지(stop_left[0], True)
+        if previous is None:
             return None
-        part = 단어모드_한글자(pos, True)
-        if not part or not part[2] or any(c.isspace() or unicodedata.category(c) == 'Cc' for c in part[2]):
-            break
-        before.append(part)
-        pos = part[0]
-    pos = boundary
-    while True:
-        if 중단_요청됨():
-            return None
-        part = 단어모드_한글자(pos)
-        if not part or not part[2] or any(c.isspace() or unicodedata.category(c) == 'Cc' for c in part[2]):
-            break
-        after.append(part)
-        pos = part[1]
+        if previous:
+            before = before + [stop_left] + previous
+    # 경계가 걸친 어절 뒤에 '등' 어절이 이어지면 그 어절까지 묶는다.
+    elif stop_right is not None:
+        peek = 단어모드_한글자(stop_right[1])
+        if peek and peek[2] == '등':
+            following, _ = _단어모드_공백전까지(stop_right[1])
+            if following is None:
+                return None
+            if 등_어절인가(''.join(p[2] for p in following)):
+                after = after + [stop_right] + following
     parts = list(reversed(before)) + after
     text = ''.join(part[2] for part in parts)
     offsets = [0]
     for part in parts:
         offsets.append(offsets[-1] + len(part[2]))
     cut = sum(len(part[2]) for part in before)
-    for a, b in 의미단위_범위(text):
+    for a, b in 어절_의미단위_범위(text):
         if not a < cut < b or a not in offsets or b not in offsets:
             continue
         selected = parts[offsets.index(a):offsets.index(b)]
@@ -4183,7 +4332,9 @@ def 붙임의미단위_줄분리인가():
             return False
         단어모드_범위선택(info[2], info[3])
         text = 현재선택영역_텍스트()
-        return bool(_기간_단위.search(text)) or any(ch in _단어_붙임표시 or ch in '(（' for ch in text)
+        return (bool(_기간_단위.search(text))
+                or any(ch in _단어_붙임표시 or ch in '(（' for ch in text)
+                or any(등_어절인가(word) for word in text.split(' ')[1:]))
     finally:
         hwp_run('Cancel')
         hwp.SetPos(*original)
@@ -8093,7 +8244,7 @@ def 작업_실행(
     global 표준서식_여백_사용, 표준서식_장평_사용, 표준서식_줄간격_사용, 표준서식_제목_사용
     global 표준서식_일자담당자_사용, 표준서식_기호_사용, 표준서식_제목_굵게, 표준서식_일자담당자_굵게
     global 표준서식_내어쓰기_사용
-    global 부연설명_들여쓰기_사용, 문두기호_굵게_일관성_사용
+    global 부연설명_들여쓰기_사용, 문두기호_굵게_일관성_사용, 문두기호문장_빈줄_삭제_사용
     global 표준서식_기호_굵게, 표준서식_문단위간격_사용, 표준서식_문단위간격_box_pt
     global 선택_세부작업, 작업_반복횟수
     global 표준서식_문단위간격_circle_pt, 표준서식_문단위간격_note_pt, 표준서식_문단위간격_복귀배율, 표_헤더서식_사용
@@ -8162,6 +8313,7 @@ def 작업_실행(
         표준서식_내어쓰기_사용 = 표준서식_세부.get("std_hanging_indent", 표준서식_내어쓰기_사용)
         부연설명_들여쓰기_사용 = 표준서식_세부.get("std_supplement_indent", 부연설명_들여쓰기_사용)
         문두기호_굵게_일관성_사용 = bool(표준서식_세부.get("std_marker_bold_consistency", True))
+        문두기호문장_빈줄_삭제_사용 = bool(표준서식_세부.get("std_remove_blank_lines", True))
         표준서식_제목_굵게 = 표준서식_세부.get("std_title_bold", 표준서식_제목_굵게)
         표준서식_일자담당자_굵게 = 표준서식_세부.get("std_dateinfo_bold", 표준서식_일자담당자_굵게)
 
@@ -9302,6 +9454,7 @@ class HwpAutoDocFitGUI:
             "std_dateinfo", "std_dateinfo_bold", "std_symbols", "std_symbol_box_bold",
             "std_symbol_o_bold", "std_symbol_dash_bold", "std_symbol_note_bold",
             "std_marker_bold_consistency",
+            "std_remove_blank_lines",
             "std_hanging_indent",
             "std_supplement_indent",
             "std_parspace", "std_table_header",
@@ -9832,9 +9985,14 @@ class HwpAutoDocFitGUI:
             ttk.Label(문단위간격_행, text="% (100% = 기존 간격)").pack(side="left", padx=(2, 0))
             문단위간격_스핀들.append(복귀배율_스핀)
 
+            빈줄삭제_체크 = ttk.Checkbutton(
+                std_detail, text="문두기호 문장 사이 빈 줄 삭제 (빈 줄로 띄운 간격은 문단 위 여백으로 대신함)",
+                variable=self.std_bool_vars["std_remove_blank_lines"])
+            빈줄삭제_체크.pack(anchor="w", pady=(6, 0))
+
             if 주설정탭:
                 self.stdformat_check = stdformat_check
-                self.std_detail_checks += 기본항목_체크들 + [문단위간격_체크]
+                self.std_detail_checks += 기본항목_체크들 + [문단위간격_체크, 빈줄삭제_체크]
                 self.std_parspace_spins = 문단위간격_스핀들
         elif key == "parenthesis":
             기호_체크 = ttk.Checkbutton(parent, text="기호별 글꼴·크기·시작 위치 맞추기 (□ / ㅇ / - / ※ / •; 점 계열은 •로 통일)",
