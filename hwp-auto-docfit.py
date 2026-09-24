@@ -522,6 +522,33 @@ def 기호글꼴_적용(설정딕셔너리=None):
     표준서식_설정["기호_규칙"] = 새규칙
 
 
+def 표글꼴_적용(table_fonts=None):
+    """설정창의 표 머리글·본문 글꼴·크기를 표 서식 값에 반영한다.
+
+    비어 있거나 잘못된 값(1~200pt 밖의 크기 등)은 현재 값을 그대로 둔다.
+    """
+    global 표_헤더서식_헤더_폰트, 표_헤더서식_헤더_크기
+    global 표_헤더서식_본문_폰트, 표_헤더서식_본문_크기
+    fonts = table_fonts or {}
+
+    def 값(part, current_font, current_size):
+        item = fonts.get(part) or {}
+        font = str(item.get("font") or "").strip() or current_font
+        try:
+            size = float(str(item.get("size", "")).strip())
+            if not 1 <= size <= 200:
+                raise ValueError
+            size = int(size) if size.is_integer() else size
+        except (TypeError, ValueError):
+            size = current_size
+        return font, size
+
+    표_헤더서식_헤더_폰트, 표_헤더서식_헤더_크기 = 값(
+        "header", 표_헤더서식_헤더_폰트, 표_헤더서식_헤더_크기)
+    표_헤더서식_본문_폰트, 표_헤더서식_본문_크기 = 값(
+        "body", 표_헤더서식_본문_폰트, 표_헤더서식_본문_크기)
+
+
 def _hwp_설치폴더_후보_레지스트리():
     """레지스트리에서 한/글(HWP) 설치 경로를 찾아본다. 버전별로 키 이름이 달라
     여러 후보를 시도하고, 실패해도 예외를 삼켜 폰트 자동감지 실패로만 남긴다."""
@@ -909,6 +936,12 @@ def 번들_리소스_폴더():
         "-": {"font": "휴먼명조", "size": "14"},
         "※": {"font": "한컴돋움", "size": "13"},
         "•": {"font": "한컴돋음", "size": "13"},
+    },
+    # 표 머리글(첫 행)·본문(나머지 행) 글꼴·크기. 문장기호별 글꼴처럼 서식
+    # 프로파일보다 우선하는 개인 설정이다.
+    "table_fonts": {
+        "header": {"font": "한컴돋움", "size": "13"},
+        "body": {"font": "휴먼명조", "size": "12"},
     },
     "hwp_font_folder": "",
     "paste_add_folder": "",
@@ -8331,6 +8364,8 @@ def 작업_실행(
         표준서식_문단위간격_복귀배율 = 표준서식_문단위간격_pt.get(
             "std_parspace_return_percent", 표준서식_문단위간격_복귀배율)
         표_헤더서식_사용 = 표준서식_세부.get("std_table_header", 표_헤더서식_사용)
+        # 설정창의 표 글꼴·크기는 서식 프로파일 값보다 우선한다.
+        표글꼴_적용(표준서식_세부.get("table_fonts"))
 
         문장부호_통계 = {"대상": 0, "성공": 0, "실패": 0}
         세트문장_통계 = {"대상": 0, "성공": 0, "실패": 0, "축소횟수": 0, "확대횟수": 0}
@@ -9437,6 +9472,14 @@ class HwpAutoDocFitGUI:
                 "font": tk.StringVar(value=str(항목.get("font", ""))),
                 "size": tk.StringVar(value=str(항목.get("size", ""))),
             }
+        저장된_표글꼴 = 저장된_설정.get("table_fonts") or {}
+        self.table_font_vars = {}
+        for part in ("header", "body"):
+            항목 = {**기본_설정["table_fonts"][part], **(저장된_표글꼴.get(part) or {})}
+            self.table_font_vars[part] = {
+                "font": tk.StringVar(value=str(항목.get("font", ""))),
+                "size": tk.StringVar(value=str(항목.get("size", ""))),
+            }
         if not self.font_folder_var.get():
             self.font_folder_var.set(한글_폰트_폴더_자동감지())
         self._한글_폰트_목록_캐시 = 한글_폰트_목록_전체(self.font_folder_var.get())
@@ -9472,7 +9515,8 @@ class HwpAutoDocFitGUI:
                      self.linespacing_min_var, self.linespacing_max_var, self.font_folder_var,
                      self.paste_add_folder_var,
                      self.paren_label_bold_var] + list(self.std_bool_vars.values()) + list(self.std_parspace_vars.values())
-                    + [v for 항목 in self.symbol_font_vars.values() for v in 항목.values()]):
+                    + [v for 항목 in self.symbol_font_vars.values() for v in 항목.values()]
+                    + [v for 항목 in self.table_font_vars.values() for v in 항목.values()]):
             변수.trace_add("write", self._설정_변경됨)
 
         self.color_radios = []
@@ -10047,6 +10091,35 @@ class HwpAutoDocFitGUI:
                 크기스핀.pack(side="left", padx=(4, 2))
                 ttk.Label(행, text="pt").pack(side="left")
                 크기_스핀들[기호] = 크기스핀
+
+            표글꼴_틀 = ttk.LabelFrame(parent, text="표 안 글꼴 · 크기", padding=8)
+            표글꼴_틀.pack(anchor="w", fill="x", pady=(6, 0))
+            ttk.Label(
+                표글꼴_틀,
+                text="'표 머리글·본문 서식' 작업에서 표의 첫 행(머리글)과 나머지 행(본문)에 적용합니다. "
+                     "한 칸짜리 표(제목·개요 상자)는 바꾸지 않습니다.",
+                style="Hint.TLabel", wraplength=520
+            ).pack(anchor="w", pady=(0, 4))
+            for part, 이름 in (("header", "머리글"), ("body", "본문")):
+                행 = ttk.Frame(표글꼴_틀)
+                행.pack(anchor="w", fill="x", pady=(2, 0))
+                ttk.Label(행, text=이름, width=6).pack(side="left")
+                콤보 = ttk.Combobox(
+                    행, textvariable=self.table_font_vars[part]["font"],
+                    values=self._한글_폰트_목록_캐시, width=22
+                )
+                콤보.pack(side="left", padx=(4, 8))
+                self._휠_콤보박스_바인딩(콤보)
+                # 글꼴 목록 새로고침이 문장기호 글꼴 상자와 함께 갱신하도록 같이 보관한다.
+                글꼴_콤보들[f"표_{part}"] = 콤보
+                ttk.Label(행, text="크기").pack(side="left")
+                크기스핀 = ttk.Spinbox(
+                    행, from_=1, to=200, width=4, justify="center",
+                    textvariable=self.table_font_vars[part]["size"]
+                )
+                크기스핀.pack(side="left", padx=(4, 2))
+                ttk.Label(행, text="pt").pack(side="left")
+                크기_스핀들[f"표_{part}"] = 크기스핀
 
             paren_shrink_check = ttk.Checkbutton(
                 parent,
@@ -10628,6 +10701,10 @@ class HwpAutoDocFitGUI:
             if symbol in self.symbol_font_vars:
                 self.symbol_font_vars[symbol]["font"].set(str(values.get("font", "")))
                 self.symbol_font_vars[symbol]["size"].set(str(values.get("size", "")))
+        self.table_font_vars["header"]["font"].set(str(표_헤더서식_헤더_폰트))
+        self.table_font_vars["header"]["size"].set(str(표_헤더서식_헤더_크기))
+        self.table_font_vars["body"]["font"].set(str(표_헤더서식_본문_폰트))
+        self.table_font_vars["body"]["size"].set(str(표_헤더서식_본문_크기))
         for key, var in self.label_symbol_vars.items():
             var.set(options.get("label_symbols", 기본_설정["label_symbols"]).get(key, True))
         self._설정_변경됨()
@@ -12106,6 +12183,10 @@ class HwpAutoDocFitGUI:
                     기호: {"font": v["font"].get(), "size": v["size"].get()}
                     for 기호, v in self.symbol_font_vars.items()
                 },
+                "table_fonts": {
+                    part: {"font": v["font"].get(), "size": v["size"].get()}
+                    for part, v in self.table_font_vars.items()
+                },
                 "label_symbols": {k: v.get() for k, v in self.label_symbol_vars.items()},
                 "paren_shrink": bool(self.paren_shrink_var.get()),
                 "paren_label_bold": bool(self.paren_label_bold_var.get()),
@@ -12120,6 +12201,7 @@ class HwpAutoDocFitGUI:
             설정값["active_format_profile"] = getattr(self, "_활성_서식_프로파일", "")
             설정_저장(설정값)
             기호글꼴_적용(설정값)
+            표글꼴_적용(설정값.get("table_fonts"))
         except Exception:
             pass
 
@@ -12212,6 +12294,12 @@ class HwpAutoDocFitGUI:
             v["size"].set(기본항목.get("size", ""))
             if hasattr(self, "symbol_font_combos") and 기호 in self.symbol_font_combos:
                 self.symbol_font_combos[기호]["values"] = self._한글_폰트_목록_캐시
+        for part, v in self.table_font_vars.items():
+            v["font"].set(기본_설정["table_fonts"][part]["font"])
+            v["size"].set(기본_설정["table_fonts"][part]["size"])
+            콤보 = getattr(self, "symbol_font_combos", {}).get(f"표_{part}")
+            if 콤보 is not None:
+                콤보["values"] = self._한글_폰트_목록_캐시
         for key, var in self.label_symbol_vars.items():
             var.set(기본_설정["label_symbols"].get(key, True))
         self.paren_shrink_var.set(기본_설정["paren_shrink"])
@@ -12769,6 +12857,10 @@ class HwpAutoDocFitGUI:
 
         선택_색상 = COLOR_MAP.get(self.color_var.get()) if self.color_mark_on_var.get() else None
         표준서식_세부_전달 = {키: var.get() for 키, var in self.std_bool_vars.items()}
+        표준서식_세부_전달["table_fonts"] = {
+            part: {"font": v["font"].get(), "size": v["size"].get()}
+            for part, v in self.table_font_vars.items()
+        }
 
         self.worker = threading.Thread(
             target=작업_실행,
