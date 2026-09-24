@@ -39,7 +39,7 @@ hwp 자동 편집기
 27. 붙임 괄호 줄분리 우선 자간조정
 28. 표 컨트롤/셀 직접 순회 서식적용
 29. 괄호 안쪽 불필요 공백 자동 제거 (( 내용 ) → (내용))
-30. 전체 편집 파이프라인 2회 반복 처리
+30. 전체 편집 파이프라인 기본 1회, 사용자 선택 시 2회 반복 처리
 31. 화면줄 경계 어절 분리 우선 자간조정 (예: 제공하 | 며,)
 32. 선택형 다줄 단어 분리 방지: 앞/뒤 글자 수 비교에 따른 축소·확대
 33. 본문·내용·부연설명 묶음의 쪽별 줄 수에 따른 줄간격 축소·확대
@@ -200,19 +200,6 @@ hwp 자동 편집기
     다음단어_당김_시도()에 추가해, 기존 문장부호_통계·세트문장_통계와
     합산한 값을 "finished" 이벤트에 실어 팝업에 띄움(로그 파일에도
     "작업 항목 총계" 줄로 남음)
-67. 최종 검수 절차 추가(검수_사용이 켜져 있을 때, 2회차 처리가 모두
-    끝나고 저장하기 직전에 실행): 항목 66의 통계가 "처리 중 자기
-    보고"(그 순간 성공/실패로 판정한 값)인 것과 달리, 완료된 문서를
-    다시 한 번 읽기 전용으로 재순회해 실제로 남아 있는 문제 수를
-    직접 센다 — 이후 단계나 2회차가 이전 단계의 수정을 되돌리는
-    경우까지 잡아낼 수 있음. 이미 있는 판정 함수(단어모드_분리정보,
-    marker_space_fix, 문장부호_대상문장인가+줄_목록_수집)를 그대로
-    재사용해 새 판정 기준을 만들지 않았으므로 처리 로직과 검수
-    기준이 어긋날 위험이 없음. 검사 항목: 단어 중간 줄바꿈 잔존,
-    문두기호 뒤 공백 위반 잔존, 마지막 줄 병합 대상 잔존(모두 본문+
-    표/글상자 포함). 로그에 "최종 검수 총계" 줄로 남고, 완료 팝업에도
-    "(최종 검수 — 결과물 N개 재확인) 잔존 문제: M건"으로 표시됨. 아무
-    것도 고치지 않는 순수 검사 단계임
 
 필요 패키지
 ------------------------------------------------------------
@@ -274,6 +261,7 @@ from docfit_core.document_rules import (
     paragraph_level, straight_double_quote_replacements, text_edit_spans,
 )
 from docfit_core.document_review import DOCUMENT_KINDS, PURPOSES, review_document
+from docfit_core.final_evaluation import build_work_goal, evaluate_work, write_evaluation_report
 from docfit_core.style_profile_edit import FIELDS as STYLE_FIELDS, ROLES as STYLE_ROLES, apply_reviewed_styles
 from docfit_core.korean_proofread import (
     apply_approved_hwpx, load_exclusions, save_exclusions, scan_hwpx,
@@ -798,6 +786,7 @@ def 서식_기본값_전역_복원():
 
 검수_사용 = False
 검수_문제목록 = []
+최종검수_문서목록 = []
 현재_처리파일 = None
 단어중간_줄바꿈방지_사용 = False
 문장부호_2줄_기준글자수 = 5
@@ -811,10 +800,21 @@ def 서식_기본값_전역_복원():
 # 축소 폭도 원래 설계 예시(자간 -1%~-10%, 장평 90~99%)를 넘지 않도록
 # 자간_최대시도_본문/표(최대 -30%p)와는 별도로 더 좁게 둔다.
 다음단어_당김_자간_최대_퍼센트 = 10
+# 자간 조정 → 내어쓰기 재적용 → 자간 재검사 반복의 최대 횟수(무한 반복 방지).
+자간_내어쓰기_최대반복 = 3
+# 2차 이후 재검사는 내어쓰기 값이 실제로 바뀐 문단만 대상으로 한다.
+# None이면 전체 문단, 집합이면 (리스트, 문단) 번호가 들어 있는 문단만 검사한다.
+재검사_대상문단 = None
+# 가장 최근 내어쓰기 전체 갱신에서 값이 바뀐 문단의 (리스트, 문단) 번호.
+내어쓰기_변경문단 = set()
+# 선택적 '다음 단어 당김'은 1차에서만 시도한다. 2차 이후에 켜 두면 1차에서
+# 방향 규칙에 따라 다음 줄로 밀어 둔 어절을 다시 끌어올려 규칙을 뒤집고,
+# 이미 실패한 당김을 매 차수 반복해 시간만 쓴다.
+다음단어_당김_사용 = True
 단어_장평_추가축소_최대_단계 = 10  # 장평 100% -> 90%까지만(기존 15단계=85%에서 축소)
 
-# ㅇ 본문 묶음의 앞쪽 줄 수가 더 많거나 같으면 앞쪽 전체부터 묶음 끝까지 축소.
-# 더 적으면 묶음 앞의 문단만 확대해 뒤쪽으로 이동. 단계당 10%p, 최대 6단계.
+# 한 문단의 앞쪽 줄 수가 더 많거나 같으면 앞쪽 전체부터 해당 문단까지 축소.
+# 더 적으면 해당 문단 앞의 문단만 확대해 뒤쪽으로 이동. 단계당 10%p, 최대 6단계.
 세트문장_같은쪽_사용 = True
 세트문장_페이지줄간격_최대시도 = 6
 # 줄간격 조정은 160~200% 범위 밖으로 나가지 않는다. 이 범위를 벗어나는
@@ -839,10 +839,7 @@ def 서식_기본값_전역_복원():
 문장부호_통계 = {"대상": 0, "성공": 0, "실패": 0}
 세트문장_통계 = {"대상": 0, "성공": 0, "실패": 0, "축소횟수": 0, "확대횟수": 0}
 단어분리_통계 = {"대상": 0, "성공": 0, "실패": 0}
-# 저장 직전 결과물을 다시 읽기 전용으로 재검사한 "최종 검수" 누적값.
-# 위 세 통계(처리 중 자기보고)와 달리, 완료된 문서에 실제로 남아 있는
-# 문제를 직접 센 값이다.
-최종검수_통계 = {"검사_문서수": 0, "단어분리_잔존": 0, "공백위반_잔존": 0, "짧은줄_잔존": 0}
+다음단어_통계 = {"대상": 0, "적용": 0, "미적용": 0}
 
 def 프로그램_폴더():
     if getattr(sys, "frozen", False):
@@ -869,6 +866,7 @@ def 번들_리소스_폴더():
     "autoclose": False,
     "stdformat": True,
     "verify": True,
+    "two_pass_processing": False,
     "retry_body": "15",
     "retry_table": "5",
     "linespacing_min": "160",
@@ -892,6 +890,8 @@ def 번들_리소스_폴더():
     "std_symbol_o_bold": True,
     "std_symbol_dash_bold": False,
     "std_symbol_note_bold": False,
+    # 같은 문두기호의 라벨이 굵게 되면 다른 문단의 머리말도 굵게 맞춤
+    "std_marker_bold_consistency": True,
     "std_parspace": True,
     "std_parspace_box": "15",
     "std_parspace_circle": "10",
@@ -2169,6 +2169,12 @@ def hwp_run(command):
     if hwp is None:
         raise RuntimeError("HWP 객체가 없습니다.")
     try:
+        if command in ('CharShapeSpacingDecrease', 'CharShapeSpacingIncrease',
+                       'CharShapeRatioDecrease', 'CharShapeRatioIncrease'):
+            # 이 명령들은 화면줄 선택을 사용하는 기존 자간/줄 병합 경로다.
+            # 문두 라벨만 있는 줄에는 조정을 실행하지 않는다.
+            if not 자간조정_현재줄_본문선택():
+                raise RuntimeError('문두 보호: 이 화면줄에 조정 가능한 본문이 없습니다')
         return hwp.Run(command)
     except Exception as e:
         로그(f"HWP 명령 실패: {command} / {e}")
@@ -2301,7 +2307,15 @@ def 색상_미리보기_hex(rgb):
         return "#808080"
     return "#{:02X}{:02X}{:02X}".format(*rgb)
 
+# 자간을 줄이거나 넓힌 구간은 모두 색상_적용_현재선택으로 표시한다.
+# 이 호출 횟수로 한 차례 자간 조정에서 실제 변경이 있었는지 판단해,
+# 변경이 있으면 내어쓰기를 다시 적용하고 자간을 재검사한다.
+자간_변경_횟수 = 0
+
+
 def 색상_적용_현재선택():
+    global 자간_변경_횟수
+    자간_변경_횟수 += 1
     if 색상_설정 is None or hwp is None:
         return
     try:
@@ -2680,8 +2694,26 @@ def _문단_공백_건너뛰기(text, idx):
     return idx
 
 
+# 본문이 낫표(「」, 『』)로 시작하면 여는 낫표가 아니라 그 바로 다음
+# 글자를 내어쓰기 기준으로 삼는다.
+# 예: 'ㅇ (개요)「공유재산법 시행령」…' → 기준은 '「'이 아니라 '공'.
+_내어쓰기_건너뛸_여는낫표 = "「『"
+
+
 def 문단_내어쓰기_기준_오프셋(text):
     """문단 첫 화면줄에서 Shift+Tab을 실행할 본문 시작 문자 위치."""
+    offset = _문단_본문시작_오프셋(text)
+    if offset is None:
+        return None
+    body = text.rstrip("\r\n")
+    if (offset + 1 < len(body) and body[offset] in _내어쓰기_건너뛸_여는낫표
+            and not body[offset + 1].isspace()):
+        return offset + 1
+    return offset
+
+
+def _문단_본문시작_오프셋(text):
+    """문두기호·괄호라벨·콜론라벨 뒤 본문이 시작하는 문자 위치."""
     if not text:
         return None
     # 문단 끝 개행만 제외. 내부 강제 줄바꿈 뒤 문장은 라벨 탐색하지 않는다.
@@ -2728,7 +2760,13 @@ def 문단_내어쓰기_기준_오프셋(text):
                 after = _문단_공백_건너뛰기(text, after + 1)
                 separated = True
             year = re.fullmatch(r"['’‘]?[0-9]{2,4}(?:년|[./-][0-9]{1,2})*\.?", label)
-            if label and not year and separated and after < len(text) and text[after] not in "\r\n":
+            # '(개요)「법령명」…'처럼 문두 라벨 바로 뒤에 여는 인용부호가
+            # 붙는 공문서 표기도 라벨과 본문의 경계다. 공백만 요구하면
+            # 기준 오프셋이 괄호 앞에 머물러 둘째 줄이 '(개요)' 아래로 간다.
+            quote_boundary = (after < len(text)
+                              and text[after] in "「『‘“'\"")
+            if (label and not year and (separated or quote_boundary)
+                    and after < len(text) and text[after] not in "\r\n"):
                 return after
         return idx
     m = re.match(r"([^\n\r:：]{1,30}?)[ \t]*[:：][ \t]+(?=\S)", text[idx:])
@@ -2827,8 +2865,22 @@ def _내어쓰기_값_설정(value):
 
 
 
+def 재검사_대상인가(pos):
+    """2차 이후 재검사에서 이 위치의 문단을 검사해야 하는지."""
+    return 재검사_대상문단 is None or tuple(pos[:2]) in 재검사_대상문단
+
+
+def 재검사_영역인가(area):
+    """2차 이후 재검사에서 이 컨트롤 영역(리스트)을 검사해야 하는지."""
+    return 재검사_대상문단 is None or any(key[0] == area for key in 재검사_대상문단)
+
+
 def 문단_내어쓰기_전체_갱신():
-    """최종 문자 서식/자간으로 본문 내어쓰기만 재계산한다."""
+    """최종 문자 서식/자간으로 본문 내어쓰기만 재계산한다.
+
+    값이 실제로 바뀐 문단은 내어쓰기_변경문단에 모아 다음 재검사 범위로 쓴다.
+    """
+    내어쓰기_변경문단.clear()
     순회_시작()
     while True:
         if 중단_요청됨():
@@ -2885,6 +2937,8 @@ def 문단_내어쓰기_적용(문단_시작위치, text, 폰트크기_pt=None, 
         value = hwp.ParaShape.Item("Indentation")
         if value >= 0:
             raise RuntimeError("Shift+Tab 실행 후 내어쓰기 값이 설정되지 않았습니다")
+        if value != original_indent:
+            내어쓰기_변경문단.add(tuple(begin[:2]))
         진단로그(f"[내어쓰기] Shift+Tab 오프셋 {offset}, 값 {value}: {text.strip()[:60]}")
         return True
     except Exception as e:
@@ -3447,6 +3501,51 @@ def 문두_라벨_굵게_제외_문단인가(text):
         symbol = '기타'
     return not 문두라벨_기호설정.get(symbol, True)
 
+
+# 문두기호별 굵게 일관성 규칙:
+# 같은 문두기호를 쓰는 문단 중 하나라도 문두 라벨('- 추진부서 : …'의
+# '추진부서', '- (운영방식) …'의 '(운영방식)')이 굵게 처리되면, 그 기호를
+# 쓰는 다른 문단의 머리말('- 조례제정 (무료 셔틀버스 …)'의 '조례제정')도
+# 굵게 맞춘다. 부연·보조 설명 괄호는 굵게 하지 않는다. 머리말 없이 일반
+# 문장으로 이어지는 문단은 문장 전체가 굵어지므로 대상에서 뺀다.
+_일관성_머리말_최대글자수 = 15
+문두기호_굵게_일관성_사용 = True  # 설정 > 서식 정리 > 항목 이름 강조에서 켜고 끔
+_일관성_굵게_적용기호 = set()
+
+
+def 문두기호_키(text):
+    """문두기호별 설정·일관성 규칙에서 쓰는 기호 키('**', '-', 'ㅇ' 등)."""
+    text = (text or '').lstrip()
+    return '**' if text.startswith('**') else (text[:1] or '기타')
+
+
+def 일관성_굵게_머리말_범위(text):
+    """'- 조례제정 (설명)'에서 굵게 맞출 머리말 '조례제정'의 [시작, 끝) 위치.
+
+    문두기호 바로 뒤의 짧은 머리말 다음에 부연설명 괄호가 이어지는 문단만
+    대상으로 한다. 콜론 라벨·괄호 라벨 문단(기존 규칙이 처리), 머리말이
+    길거나 쉼표·마침표가 있는 일반 문장은 None.
+    """
+    if not text or not 문장부호_시작인가(text):
+        return None
+    마커_끝 = 문장부호_마커_끝위치(text)
+    if 마커_끝 is None:
+        return None
+    idx = 마커_끝
+    while idx < len(text) and text[idx] in (" ", "\t"):
+        idx += 1
+    나머지 = text[idx:].rstrip("\r\n")
+    if not 나머지 or 나머지[0] in "(（" or re.match(r"^[^\n\r:：]{1,25}?[ \t]*[:：][ \t]+\S", 나머지):
+        return None
+    m = re.match(r"^([^()（）:：,，.。\r\n]+?)[ \t]*[(（][^()（）]{3,}[)）]", 나머지)
+    if not m:
+        return None
+    머리말 = m.group(1).strip()
+    if not 머리말 or len(머리말) > _일관성_머리말_최대글자수 or not any(c.isalpha() for c in 머리말):
+        return None
+    시작 = idx + 나머지.find(머리말)
+    return 시작, 시작 + len(머리말)
+
 def 문두_라벨_굵게_선반영(문단_시작위치, text):
     """Shift+Tab 내어쓰기 계산 직전, 오프셋에 포함되는 문두 라벨(콜론 라벨
     또는 괄호 라벨)을 미리 굵게 처리해 첫 줄의 실제 폭을 확정한다.
@@ -3550,6 +3649,7 @@ def 괄호_및_라벨_텍스트_문단_처리(세트후속문단=False):
                             문자모양_적용_현재선택(굵게=True)
                             hwp_run("Cancel")
                             적용_횟수 += 1
+                            _일관성_굵게_적용기호.add(문두기호_키(text))
                             진단로그(f"[문두라벨굵게] '{라벨_텍스트}' 굵게 적용")
                         except Exception as e:
                             로그(f"문두 라벨 굵게 적용 중 오류(무시): {e}")
@@ -3581,6 +3681,8 @@ def 괄호_및_라벨_텍스트_문단_처리(세트후속문단=False):
                     문자모양_적용_현재선택(굵게=True)
                     hwp_run("Cancel")
                     적용_횟수 += 1
+                    if 괄호_문두_라벨인가(text, match):
+                        _일관성_굵게_적용기호.add(문두기호_키(text))
                     진단로그(f"[괄호굵게] '{match.group(0)}' 굵게 적용")
                 except Exception as e:
                     로그(f"괄호 라벨 굵게 적용 중 오류(무시): {e}")
@@ -3624,6 +3726,8 @@ def 괄호_텍스트_크기_축소_전체_적용():
     순회_시작()
     총_적용_횟수 = 0
     활성_세트_들여쓰기 = None
+    _일관성_굵게_적용기호.clear()
+    일관성_후보 = []
 
     while True:
         if 중단_요청됨():
@@ -3631,6 +3735,11 @@ def 괄호_텍스트_크기_축소_전체_적용():
 
         text = 현재문단_텍스트()
         세트후속문단 = False
+        if (괄호_라벨_볼드_사용 and 문두기호_굵게_일관성_사용
+                and not 문두_라벨_굵게_제외_문단인가(text)):
+            범위 = 일관성_굵게_머리말_범위(text)
+            if 범위:
+                일관성_후보.append((hwp.GetPos(), text, 범위))
 
         # 순차 문단 문맥을 유지해 '※ ...' 다음의 더 깊게 들여쓴
         # '(6~16번) : ...' 등을 같은 세트의 후속 문단으로 인식한다.
@@ -3647,7 +3756,25 @@ def 괄호_텍스트_크기_축소_전체_적용():
         if not 범위_다음_문단으로_진행():
             break
 
-    로그(f"문두 라벨 / 괄호 처리 완료 (총 {총_적용_횟수}건)")
+    # 문서 전체를 본 뒤에야 어떤 문두기호에 라벨 굵게가 적용됐는지 알 수 있다.
+    일관성_적용 = 0
+    for 위치, text, (시작, 끝) in 일관성_후보:
+        if 중단_요청됨():
+            return False
+        if 문두기호_키(text) not in _일관성_굵게_적용기호:
+            continue
+        try:
+            문단_범위_선택(위치, 시작, 끝)
+            문자모양_적용_현재선택(굵게=True)
+            hwp_run("Cancel")
+            일관성_적용 += 1
+            진단로그(f"[문두기호 굵게 일관성] '{text[시작:끝]}' 굵게 적용 "
+                     f"('{문두기호_키(text)}' 기호 라벨 굵게와 통일, 괄호 설명 제외)")
+        except Exception as e:
+            로그(f"문두기호 굵게 일관성 적용 중 오류(무시): {e}")
+    총_적용_횟수 += 일관성_적용
+
+    로그(f"문두 라벨 / 괄호 처리 완료 (총 {총_적용_횟수}건, 문두기호 굵게 일관성 {일관성_적용}건)")
     return True
 
 # ============================================================
@@ -3672,7 +3799,7 @@ def 검수_문제_기록(파일, text):
         "text": text,
         "page": 현재_페이지번호(),
     }
-    # 동일한 문서를 2회 처리하므로 같은 미해결 줄이 반복 검출될 수 있다.
+    # 반복 처리나 최종 검수에서 같은 미해결 줄이 반복 검출될 수 있다.
     # 파일·페이지·문제 텍스트가 같으면 한 번만 기록한다.
     문제키 = (문제["file"], 문제["page"], 문제["text"])
     기존키 = {(항목["file"], 항목["page"], 항목["text"]) for 항목 in 검수_문제목록}
@@ -3933,8 +4060,13 @@ def 단어모드_줄범위(pos):
         hwp_run('MoveLineBegin')
         next_start = hwp.GetPos()
         if next_start[:2] == start[:2] and next_start[2] > start[2]:
-            # 수동 줄바꿈도 이 범위에 포함되며 의미단위 탐색에서 공백으로 제외.
-            return start, next_start
+            # 소프트 줄바꿈에서는 MoveLineEnd가 정확한 경계이고, 다음 줄의
+            # MoveLineBegin은 첫 글자 뒤 위치를 돌려주는 한글 COM 사례가 있다.
+            # 이를 next_start로 쓰면 '맞춤|형'의 '형'을 건너뛰어 분리를 놓친다.
+            # 실제 줄바꿈 문자가 있을 때만 그 문자를 포함한 next_start를 쓴다.
+            if 두_위치_사이_줄바꿈_문자인가(raw_end, next_start):
+                return start, next_start
+            return start, raw_end
     hwp.SetPos(*start)
     hwp_run('MoveParaEnd')
     return start, hwp.GetPos()
@@ -4061,8 +4193,48 @@ _단어모드_자간필드 = tuple('Spacing' + name for name in
     ('Hangul', 'Latin', 'Hanja', 'Japanese', 'Other', 'Symbol', 'User'))
 
 
+def 자간조정_본문범위(start, end):
+    """내어쓰기와 같은 기준으로 문두기호·라벨·후행 공백을 제외한다."""
+    if start[:2] != end[:2]:
+        raise ValueError('자간 조정 범위는 한 문단이어야 합니다')
+    original = hwp.GetPos()
+    try:
+        hwp.SetPos(start[0], start[1], 0)
+        text = 현재문단_텍스트()
+        offset = 문단_내어쓰기_기준_오프셋(text)
+        # '(운영방식)'처럼 본문 없이 라벨만 있는 문단은 라벨 끝까지 보호한다.
+        marker_end = 문장부호_마커_끝위치(text)
+        if marker_end is not None and re.fullmatch(r'\s*[（(][^\r\n]+[)）]\s*[:：]?\s*', text[marker_end:]):
+            offset = len(text.rstrip('\r\n'))
+        if marker_end is not None and not text[marker_end:].strip():
+            offset = len(text.rstrip('\r\n'))
+        if offset is None:
+            return start, end
+        body = len(text[:offset].encode('utf-16-le')) // 2
+        return (start[0], start[1], min(end[2], max(start[2], body))), end
+    finally:
+        hwp.SetPos(*original)
+
+
+def 자간조정_현재줄_본문선택():
+    """화면줄 기반 단축키 조정에서도 선행부를 제외한다."""
+    anchor = hwp.GetPos()
+    hwp.Run('Cancel')
+    hwp.SetPos(*anchor)
+    hwp.Run('MoveLineEnd')
+    end = hwp.GetPos()
+    hwp.Run('MoveLineBegin')
+    start = hwp.GetPos()
+    start, end = 자간조정_본문범위(start, end)
+    if start[2] >= end[2]:
+        return False
+    단어모드_범위선택(start, end)
+    return True
+
+
 def 단어모드_자간보관(start, end):
     """혼합 자간을 연속 구간별 보관. 실패 시 Undo 이력 대신 정확히 복원."""
+    start, end = 자간조정_본문범위(start, end)
     runs = []
     pos = start
     while pos[2] < end[2]:
@@ -4104,6 +4276,7 @@ _단어모드_장평필드 = tuple('Ratio' + name for name in
 
 def 단어모드_장평보관(start, end):
     """혼합 장평(글자 가로비율)을 연속 구간별 보관. 자간보관과 동일한 방식."""
+    start, end = 자간조정_본문범위(start, end)
     runs = []
     pos = start
     while pos[2] < end[2]:
@@ -4212,6 +4385,7 @@ def 다음단어_당김_시도(anchor, 최대시도):
 
     pos = boundary
     다음단어_끝 = boundary
+    당김단어 = ''
     while True:
         if 중단_요청됨():
             return False
@@ -4219,18 +4393,18 @@ def 다음단어_당김_시도(anchor, 최대시도):
         if not part or not part[2] or part[2].isspace():
             break
         다음단어_끝 = part[1]
+        당김단어 += part[2]
         pos = part[1]
     if 다음단어_끝[2] == boundary[2]:
         return False
     if 다음단어_끝[2] - boundary[2] > 문장부호_2줄_기준글자수:
         return False
 
-    global 단어분리_통계
-    단어분리_통계["대상"] += 1
-
     runs = 단어모드_자간보관(start, boundary)
     if runs is None:
         return False
+    # 정상적인 단어 경계에서의 선택적 당김은 단어 분리 오류가 아니다.
+    다음단어_통계['대상'] += 1
     success = False
     changed = False
     # 단어_장평_추가축소_시도와 같은 이유로, 이 구간이 이미 어느 정도
@@ -4257,14 +4431,52 @@ def 다음단어_당김_시도(anchor, 최대시도):
     if not success and 단어_장평_추가축소_시도(start, boundary, anchor, 다음단어_끝, 자간_상한):
         success = True
     if success:
-        단어분리_통계["성공"] += 1
+        다음단어_통계['적용'] += 1
         단어모드_범위선택(start, boundary)
         색상_적용_현재선택()
         hwp_run('Cancel')
-        진단로그("[다음 단어 당김] 통째로 밀린 단어를 앞줄로 끌어올림")
+        진단로그(f"[다음 단어 당김 적용] {당김단어!r} / 위치={anchor}")
     else:
-        단어분리_통계["실패"] += 1
+        다음단어_통계['미적용'] += 1
+        진단로그(f"[다음 단어 당김 미적용] {당김단어!r} / 위치={anchor} / "
+                 f"허용 자간 {자간_상한}단계·장평 범위 내 당김 불가, 원래 서식 복원 (오류 아님)")
     return success
+
+
+def 어절분리_앞줄당김인가(left, right, 마지막줄_짧음=False):
+    """화면줄 경계에서 갈라진 어절을 앞줄로 당길지(True) 다음 줄로 밀지(False).
+
+    1) 문단 마지막 줄에 남는 글자가 빈칸 포함 5자 미만이면 무조건 당긴다.
+    2) 그 외에는 글자 수가 많은 쪽으로 붙인다. 같으면 앞줄로 당긴다.
+       예: '전기|버스'(2:2) → 당김, '실|질적인'(1:3) → '실'을 다음 줄로 밈.
+    """
+    return bool(마지막줄_짧음) or left >= right
+
+
+def 단어모드_마지막줄_짧은잔여인가(boundary):
+    """경계 다음 화면줄이 문단의 마지막 줄이고, 그 줄의 글자 수가
+    빈칸 포함 문장부호_2줄_기준글자수(기본 5자) 미만인지 확인한다."""
+    original = hwp.GetPos()
+    try:
+        right = 단어모드_한글자(boundary)
+        if not right:
+            return False
+        _, next_end = 단어모드_줄범위(right[1])
+        hwp.SetPos(*boundary)
+        hwp_run('MoveParaEnd')
+        para_end = hwp.GetPos()
+        if para_end[:2] != boundary[:2] or para_end[2] <= boundary[2]:
+            return False
+        if next_end[:2] != para_end[:2] or next_end[2] < para_end[2]:
+            return False
+        단어모드_범위선택(boundary, para_end)
+        text = (현재선택영역_텍스트() or '').replace('\r', '').replace('\n', '')
+        return len(text) < 문장부호_2줄_기준글자수
+    except Exception:
+        return False
+    finally:
+        hwp_run('Cancel')
+        hwp.SetPos(*original)
 
 
 def 단어중간_줄바꿈방지(최대시도):
@@ -4299,8 +4511,13 @@ def 단어중간_줄바꿈방지(최대시도):
     if 중단_요청됨():
         return False
     anchor0, _ = 단어모드_줄범위(hwp.GetPos())
-    다음단어_당김_시도(anchor0, 최대시도)
+    if 다음단어_당김_사용:
+        다음단어_당김_시도(anchor0, 최대시도)
 
+    # 다음 단어 당김의 탐색 함수가 경계 주변 문자를 읽으며 커서를 옮긴다.
+    # 원래 화면줄로 복귀하지 않으면 바로 뒤의 분리 어절 검사가 다른 줄에서
+    # 시작해 '맞춤|형' 같은 실제 문제를 놓친다.
+    hwp.SetPos(*anchor0)
     anchor, _ = 단어모드_줄범위(hwp.GetPos())
     seen = set()
     failure_reason = "반복 한도 도달"
@@ -4323,61 +4540,100 @@ def 단어중간_줄바꿈방지(최대시도):
                 failure_reason = "같은 경계 반복"
                 break
             seen.add(key)
-            shrink = left >= right
-            end = word_end if shrink else word_start
-            # 이전 줄에서 이미 시작한 긴 단어 또는 확대할 앞부분이 없는 경우.
-            if word_start[2] < start[2] or end[2] <= start[2]:
-                failure_reason = "이전 줄부터 이어진 단어 또는 확대할 앞부분 없음"
+            # 마지막 줄에 빈칸 포함 5자 미만이 남으면 무조건 앞줄로 당긴다.
+            # 그 외에는 글자 수가 많은 쪽으로 붙인다(같으면 앞줄로 당김).
+            # 예: '실|질적인'은 '실'이 있는 앞줄 자간을 넓혀 '실'을 다음 줄로
+            # 밀어낸다. 밀기는 어절 앞까지만 넓혀 어절 전체를 옮기므로
+            # '맞|춤형'이 '맞춤|형'으로 일부만 이동한 상태는 성공으로 보지 않는다.
+            마지막줄_짧음 = 단어모드_마지막줄_짧은잔여인가(boundary)
+            shrink = 어절분리_앞줄당김인가(left, right, 마지막줄_짧음)
+            # 이전 줄에서 이미 시작한 긴 단어는 어느 방향으로도 옮길 수 없다.
+            if word_start[2] < start[2] or word_end[2] <= start[2]:
+                failure_reason = "이전 줄부터 이어진 단어"
                 break
             단어분리_통계["대상"] += 1
-            runs = 단어모드_자간보관(start, end)
-            if runs is None:
-                return False
-            success = False
             failure_reason = f"{최대시도}단계 이내 이동 실패"
-            changed = False
-            try:
-                for step in range(1, 최대시도 + 1):
-                    if 중단_요청됨():
-                        return False
-                    delta = -step if shrink else step
-                    if any(not -50 <= v + delta <= 50 for _, _, vs in runs for v in vs):
-                        failure_reason = "자간 허용 범위 도달"
-                        break
-                    changed = True
-                    단어모드_자간적용(runs, delta)
-                    _, new_end = 단어모드_줄범위(anchor)
-                    if shrink:
+            방법 = ""
+
+            def 앞줄로_당기기():
+                runs = 단어모드_자간보관(start, word_end)
+                if runs is None:
+                    return None
+                success = False
+                changed = False
+                try:
+                    for step in range(1, 최대시도 + 1):
+                        if 중단_요청됨():
+                            return None
+                        if any(not -50 <= v - step <= 50 for _, _, vs in runs for v in vs):
+                            break
+                        changed = True
+                        단어모드_자간적용(runs, -step)
+                        _, new_end = 단어모드_줄범위(anchor)
                         success = new_end[2] >= word_end[2]
-                    else:
-                        part = 단어모드_한글자(word_start)
-                        next_start, next_end = 단어모드_줄범위(part[1])
-                        success = (new_end[2] <= word_start[2]
-                                   and next_start[2] > start[2]
-                                   and next_start[2] == new_end[2]
+                        if success:
+                            return f"앞줄 자간 -{step}%로 당김"
+                finally:
+                    if changed and not success:
+                        단어모드_자간적용(runs, 0)
+                # 자간만으로 안 되면 장평을 추가로 줄여 본다 — 사람이 수동으로
+                # 하듯 자간은 적당히만 남기고 장평과 나눠 분담한다.
+                if 단어_장평_추가축소_시도(start, word_end, anchor, word_end, 최대시도):
+                    return "앞줄 자간+장평 축소로 당김"
+                return ""
+
+            def 다음줄로_밀기():
+                # 어절 앞까지만 넓혀 어절 전체를 다음 줄로 보낸다. 어절 일부나
+                # 다음 줄 전체를 넓히지 않으므로 혼합 자간 상태를 남기지 않는다.
+                if word_start[2] <= start[2]:
+                    return ""
+                push_runs = 단어모드_자간보관(start, word_start)
+                if push_runs is None:
+                    return None
+                success = False
+                changed = False
+                try:
+                    for push_step in range(1, 최대시도 + 1):
+                        if 중단_요청됨():
+                            return None
+                        if any(not -50 <= v + push_step <= 50
+                               for _, _, vs in push_runs for v in vs):
+                            break
+                        changed = True
+                        단어모드_자간적용(push_runs, push_step)
+                        _, previous_end = 단어모드_줄범위(anchor)
+                        next_start, next_end = 단어모드_줄범위(word_start)
+                        success = (previous_end[2] <= word_start[2]
                                    and next_start[2] <= word_start[2]
                                    and next_end[2] >= word_end[2])
-                    if success:
-                        break
-            finally:
-                if changed and not success:
-                    단어모드_자간적용(runs, 0)
-            if not success and shrink:
-                # 자간(-50%까지)만으로 안 되면 장평을 추가로 줄여 본다 —
-                # 사람이 수동으로 하듯 자간은 적당히만 남기고 장평과 나눠
-                # 분담한다('확대' 방향은 장평을 넓히는 부작용이 더 크므로
-                # 대상에서 제외).
-                if 단어_장평_추가축소_시도(start, end, anchor, word_end, 최대시도):
-                    success = True
-                    failure_reason = ""
-            if not success:
+                        if success:
+                            return f"앞 구간 자간 +{push_step}%로 어절 전체를 다음 줄로 밈"
+                finally:
+                    if changed and not success:
+                        단어모드_자간적용(push_runs, 0)
+                return ""
+
+            # 정한 방향을 먼저 시도하고, 한도 안에서 안 되면 반대 방향으로
+            # 보완해 어절이 갈라진 채 남지 않게 한다.
+            시도순서 = (앞줄로_당기기, 다음줄로_밀기) if shrink else (다음줄로_밀기, 앞줄로_당기기)
+            for 시도 in 시도순서:
+                결과 = 시도()
+                if 결과 is None:
+                    return False
+                if 결과:
+                    방법 = 결과
+                    break
+            if not 방법:
                 단어분리_통계["실패"] += 1
                 break
+            failure_reason = ""
             단어분리_통계["성공"] += 1
+            end = word_end if 방법.startswith("앞줄") else word_start
             단어모드_범위선택(start, end)
             색상_적용_현재선택()
             hwp_run('Cancel')
-            진단로그(f"[단어 중간 줄바꿈 방지] {unit_text!r} {'축소' if shrink else '확대'}: {left}/{right}자, {step}단계")
+            기준 = "마지막 줄 5자 미만" if 마지막줄_짧음 else ("글자 수 같음" if left == right else "글자 수 많은 쪽")
+            진단로그(f"[단어 중간 줄바꿈 방지] {unit_text!r} {left}/{right}자 ({기준}): {방법}")
         if 단어모드_분리정보(anchor) is not None:
             hwp.SetPos(*anchor)
             로그(f"[단어 중간 줄바꿈 미해결] {unit_text!r}: {failure_reason}")
@@ -4391,7 +4647,10 @@ def 단어중간_줄바꿈방지(최대시도):
 def 자간자동조정(최대시도=None):
     if 최대시도 is None:
         최대시도 = 자간_최대시도_본문
-    if 단어중간_줄바꿈방지_사용:
+    # 세부 작업에서 '단어 분리 최종 검사'를 선택했다면 일반 자간 옵션과
+    # 무관하게 실제 화면줄의 공백 없는 어절 분리를 검사해야 한다.
+    if (단어중간_줄바꿈방지_사용
+            or stage_enabled(선택_세부작업, 'word_check')):
         return 단어중간_줄바꿈방지(최대시도)
 
     count = 0
@@ -4582,6 +4841,10 @@ def 자간자동조정(최대시도=None):
         hwp_run("Cancel")
 
 def 본문_기존자간조정():
+    # 호출 전 단계가 남긴 커서 위치에 의존하면 두 번째 '최종 검사'가 문서
+    # 끝에서 시작해 아무것도 검사하지 않는 경우가 생긴다. 모든 호출은
+    # 본문 시작부터 독립적으로 전수 검사한다.
+    순회_시작()
     직전위치 = None
     정체횟수 = 0
     while True:
@@ -4590,8 +4853,10 @@ def 본문_기존자간조정():
         현재위치 = hwp.GetPos()
         if 쪽범위_끝지남(현재위치):
             return True
-        if (not 쪽범위_안인가(현재위치)) or 표셀_자간_제외인가():
-            # 작업 쪽 범위 밖이거나 '표 안 문장 제외'인 표 셀이면 조정하지 않고 다음 문단으로 넘어간다.
+        if ((not 쪽범위_안인가(현재위치)) or (not 재검사_대상인가(현재위치))
+                or 표셀_자간_제외인가()):
+            # 작업 쪽 범위 밖, 2차 이후 재검사 대상이 아닌 문단, '표 안 문장 제외'인
+            # 표 셀이면 조정하지 않고 다음 문단으로 넘어간다.
             hwp_run("MoveParaEnd")
             hwp_run("MoveNextChar")
             if hwp.GetPos() == 현재위치:
@@ -4845,36 +5110,155 @@ def 보고서_문단역할(text):
 
 
 def 보고서_본문묶음_수집(시작위치):
-    """소제목 > 본문 > 내용 계층과 바로 뒤 부연설명을 한 묶음으로 수집.
+    """본문과 직속 내용·부연설명을 묶고, 소제목은 첫 본문 묶음에 연결한다.
 
-    하위 항목이 없는 단일 문단도 포함한다. 같은 단계나 상위 단계,
-    빈 문단, 무기호 문단, 다른 텍스트 영역에서는 수집을 끝낸다.
+    ㅇ 다음의 - 항목들은 다음 ㅇ/□ 전까지 한 묶음이다. □는 첫 ㅇ 묶음까지만
+    연결하므로 여러 ㅇ 묶음을 포함하는 안 전체를 한 쪽으로 강제하지 않는다.
+    빈 문단이나 다른 역할·텍스트 영역은 묶음 경계다.
     """
     original = hwp.GetPos()
-    result = []
-    levels = {'소제목': 0, '본문': 1, '내용': 2}
     try:
         hwp.SetPos(*시작위치)
-        root_level = None
+        hwp_run('MoveParaBegin')
+        start = hwp.GetPos()
+        role = 보고서_문단역할(현재문단_텍스트())
+        if role not in ('소제목', '본문', '내용', '부연설명'):
+            return []
+        hwp_run('MoveParaEnd')
+        result = [(start, hwp.GetPos(), role)]
+        body_attached = role == '본문'
         while True:
             if 중단_요청됨():
                 return []
-            hwp_run('MoveParaBegin')
-            start = hwp.GetPos()
-            role = 보고서_문단역할(현재문단_텍스트())
-            if not result:
-                if role not in levels:
-                    break
-                root_level = levels[role]
-            elif role != '부연설명' and (role not in levels or levels[role] <= root_level):
+            hwp_run('MoveNextParaBegin')
+            next_start = hwp.GetPos()
+            if next_start[0] != start[0] or next_start[1] <= result[-1][0][1]:
+                break
+            next_role = 보고서_문단역할(현재문단_텍스트())
+            if role == '소제목' and not body_attached and next_role == '본문':
+                body_attached = True
+            elif next_role == '부연설명':
+                pass
+            elif body_attached and next_role == '내용':
+                pass
+            else:
                 break
             hwp_run('MoveParaEnd')
-            result.append((start, hwp.GetPos(), role))
-            hwp_run('MoveNextParaBegin')
-            nxt = hwp.GetPos()
-            if nxt[0] != 시작위치[0] or nxt[1] <= start[1]:
-                break
+            result.append((next_start, hwp.GetPos(), next_role))
         return result
+    finally:
+        hwp.SetPos(*original)
+
+
+def 보고서_단어분리_최종검사(컨트롤=False):
+    """저장 후 화면줄 경계의 의미 단위 분리를 읽기 전용으로 검사한다."""
+    original = hwp.GetPos()
+    checked = 0
+    issues = []
+    areas = []
+    try:
+        if 컨트롤:
+            area = 2
+            while True:
+                if 중단_요청됨():
+                    return False
+                hwp.SetPos(area, 0, 0)
+                if hwp.GetPos()[0] != area:
+                    break
+                if ((not 쪽범위_사용중() or area in 쪽범위_컨트롤영역)
+                        and not 표셀_자간_제외인가()):
+                    areas.append(area)
+                area += 1
+        else:
+            areas = [0]
+        for area in areas:
+            hwp.SetPos(area, 0, 0)
+            if area == 0:
+                순회_시작()
+            seen = set()
+            while True:
+                if 중단_요청됨():
+                    return False
+                pos = tuple(hwp.GetPos())
+                if pos[0] != area or (area == 0 and 쪽범위_끝지남(pos)):
+                    break
+                if pos in seen:
+                    raise RuntimeError(f'단어 검수 순회 정체: {pos}')
+                seen.add(pos)
+                hwp_run('MoveLineEnd')
+                boundary = tuple(hwp.GetPos())
+                page = 현재_페이지번호()
+                hwp_run('MoveParaEnd')
+                end = tuple(hwp.GetPos())
+                if boundary[:2] != pos[:2] or end[:2] != pos[:2]:
+                    raise RuntimeError(f'단어 검수 줄 경계 측정 실패: {pos}')
+                if boundary[2] < end[2]:
+                    checked += 1
+                    info = 단어모드_분리정보(pos)
+                    if info:
+                        단어모드_범위선택(info[2], info[3])
+                        word = 현재선택영역_텍스트()
+                        hwp_run('Cancel')
+                        message = f'[저장 결과 단어 분리] {word!r}'
+                        issues.append({'text': message, 'page': page, 'position': pos})
+                        hwp.SetPos(*pos)
+                        검수_문제_기록(현재_처리파일, message)
+                hwp.SetPos(*boundary)
+                hwp_run('MoveNextChar')
+                if tuple(hwp.GetPos()) == boundary:
+                    break
+        return {'status': 'failed' if issues else 'passed', 'checked': checked,
+                'measurement': '화면줄 경계', 'areas': areas, 'issues': issues}
+    finally:
+        hwp_run('Cancel')
+        hwp.SetPos(*original)
+
+
+def 보고서_페이지배치_최종검사():
+    """문서를 수정하지 않고 제목 고립과 문단 내부 쪽 분리를 검사한다."""
+    original = hwp.GetPos()
+    checked = 0
+    issues = []
+    try:
+        순회_시작()
+        while True:
+            if 중단_요청됨():
+                return False
+            pos = hwp.GetPos()
+            text = 현재문단_텍스트()
+            # 논리단위 5개 이하 □ 묶음은 묶음 전체가 한 쪽에 있어야 한다.
+            group_target = (소제목묶음_쪽맞춤_대상(pos)
+                            if 보고서_문단역할(text) == '소제목' else None)
+            if group_target and all(쪽범위_안인가(p[0]) for p in group_target[0]):
+                counts = 보고서_묶음_쪽별줄수(group_target[0])
+                if not counts:
+                    raise RuntimeError('최종 페이지 검사의 화면줄 측정 실패')
+                checked += 1
+                if len(counts) > 1:
+                    message = f'[소제목 묶음 쪽 분리] {text.strip()[:80]}'
+                    issues.append({'text': message, 'pages': sorted(counts), 'paragraph': pos[1]})
+                    검수_문제_기록(현재_처리파일, message)
+                hwp.SetPos(*pos)
+                if not 범위_다음_문단으로_진행():
+                    break
+                continue
+            paragraphs = 보고서_본문묶음_수집(pos)
+            if paragraphs and all(쪽범위_안인가(p[0]) for p in paragraphs):
+                counts = 보고서_묶음_쪽별줄수(paragraphs)
+                if not counts:
+                    raise RuntimeError('최종 페이지 검사의 화면줄 측정 실패')
+                checked += 1
+                if counts and len(counts) > 1:
+                    kind = ('상위·하위 문단 묶음 분리' if len(paragraphs) > 1
+                            else '문단 내부 페이지 분리')
+                    message = f'[{kind}] {text.strip()[:80]}'
+                    issues.append({'text': message, 'pages': sorted(counts), 'paragraph': pos[1]})
+                    검수_문제_기록(현재_처리파일, message)
+            hwp.SetPos(*pos)
+            if not 범위_다음_문단으로_진행():
+                break
+        return {'status': 'passed' if not issues else 'failed',
+                'checked': checked, 'issues': issues}
     finally:
         hwp.SetPos(*original)
 
@@ -4969,74 +5353,218 @@ def 보고서_줄간격_적용(보관, 단계, 확대=False):
     return changed
 
 
-def 세트문장_같은쪽_시도(시작위치, text):
-    """묶음의 쪽별 줄 수를 비교해 앞쪽으로 당기거나 뒤쪽으로 민다."""
-    if 중단_요청됨():
-        return False
-    if 보고서_문단역할(text) not in ('소제목', '본문', '내용'):
+def 보고서_페이지보호_보관(문단들):
+    """묶음 문단의 현재 페이지 보호 속성을 보관한다."""
+    result = []
+    for start, _, _ in 문단들:
+        hwp.SetPos(*start)
+        pset = hwp.HParameterSet.HParaShape
+        hwp.HAction.GetDefault('ParagraphShape', pset.HSet)
+        result.append((start, int(getattr(pset, 'KeepWithNext', 0) or 0),
+                       int(getattr(pset, 'KeepLines', 0) or 0)))
+    return result
+
+
+def 보고서_페이지보호_적용(보관, 묶음유지=True):
+    """한 문단의 줄과 연속 문단 묶음이 페이지 사이에서 갈라지지 않게 한다."""
+    for index, (pos, keep_next, keep_lines) in enumerate(보관):
+        hwp.SetPos(*pos)
+        act = hwp.CreateAction('ParagraphShape')
+        pset = act.CreateSet()
+        pset.SetItem('KeepLines', 1 if 묶음유지 else keep_lines)
+        pset.SetItem('KeepWithNext', 1 if 묶음유지 and index < len(보관) - 1 else keep_next)
+        if act.Execute(pset) is False:
+            raise RuntimeError('보고서 묶음 페이지 보호 적용 실패')
+
+
+def 보고서_페이지보호_전체해제():
+    """최종 결과에 문단 페이지 보호(KeepLines/KeepWithNext)를 남기지 않는다."""
+    original = hwp.GetPos()
+    changed = 0
+    try:
+        hwp_run('MoveDocBegin')
+        visited = set()
+        while True:
+            if 중단_요청됨():
+                return False
+            hwp_run('MoveParaBegin')
+            pos = hwp.GetPos()
+            if pos in visited:
+                break
+            visited.add(pos)
+            if pos[0] == 0:
+                pset = hwp.HParameterSet.HParaShape
+                hwp.HAction.GetDefault('ParagraphShape', pset.HSet)
+                keep_next = int(getattr(pset, 'KeepWithNext', 0) or 0)
+                keep_lines = int(getattr(pset, 'KeepLines', 0) or 0)
+                if keep_next or keep_lines:
+                    act = hwp.CreateAction('ParagraphShape')
+                    clear_set = act.CreateSet()
+                    clear_set.SetItem('KeepWithNext', 0)
+                    clear_set.SetItem('KeepLines', 0)
+                    if act.Execute(clear_set) is False:
+                        raise RuntimeError('최종 문단 페이지 보호 해제 실패')
+                    changed += 1
+            before = hwp.GetPos()
+            hwp_run('MoveNextParaBegin')
+            after = hwp.GetPos()
+            if after == before or after[0] != 0 or after[1] <= pos[1]:
+                break
+        로그(f'최종 문단 페이지 보호 해제 완료 ({changed}개 문단)')
         return True
+    finally:
+        try:
+            hwp.SetPos(*original)
+        except Exception:
+            pass
+
+
+# 쪽 맞춤 논리묶음: □(소제목)를 기준으로 이어지는 ㅇ/-/* 문단 전체.
+# 논리단위: □ 또는 ㅇ에서 시작하고, 뒤따르는 -(내용)·*(부연설명)은 바로 앞
+# 단위에 붙는다(ㅇ- = ㅇ, ㅇ* = ㅇ, ㅇ-* = ㅇ, □* = □). 논리단위가
+# 쪽맞춤_묶음_최대단위(5개) 이하인 묶음은 묶음 전체를 한 쪽에 모은다.
+# 앞쪽에서 시작한 단위 수가 뒤쪽 이상이면 앞쪽으로 당기고, 적으면 뒤쪽으로 민다.
+# 예: □/ㅇ → □ㅇ/, □ㅇ/ㅇㅇ → □ㅇㅇㅇ/, □ㅇ/ㅇㅇㅇ → /□ㅇㅇㅇㅇ,
+#     □ㅇ-/-- → □ㅇ---/(쪽을 넘어간 -는 앞쪽에서 시작한 ㅇ 단위),
+#     □ㅇ--/-ㅇㅇ → □ㅇ/ㅇㅇ와 같으므로 □ㅇ---ㅇㅇ/.
+# 6개 이상이면 묶음은 그대로 두고 ㅇ 단위(ㅇ와 -·*)만 한 쪽에 모은다.
+쪽맞춤_묶음_최대단위 = 5
+
+
+def 쪽맞춤_논리단위(roles):
+    """문단 역할 목록을 논리단위(문단 인덱스 목록)로 나눈다."""
+    units = []
+    for index, role in enumerate(roles):
+        if role in ('소제목', '본문') or not units:
+            units.append([index])
+        else:
+            units[-1].append(index)
+    return units
+
+
+def 쪽맞춤_뒤로밀기인가(unit_pages, pages):
+    """논리단위 시작 쪽 목록으로 방향을 정한다. 뒤쪽 단위가 더 많을 때만 민다."""
+    앞쪽 = sum(1 for page in unit_pages if page == pages[0])
+    뒤쪽 = sum(1 for page in unit_pages if page == pages[1])
+    return 앞쪽 < 뒤쪽, 앞쪽, 뒤쪽
+
+
+def 보고서_소제목묶음_수집(시작위치):
+    """□ 문단부터 다음 □ 전까지의 ㅇ/-/* 문단을 모은다. □가 아니면 []."""
+    original = hwp.GetPos()
+    try:
+        hwp.SetPos(*시작위치)
+        hwp_run('MoveParaBegin')
+        start = hwp.GetPos()
+        if 보고서_문단역할(현재문단_텍스트()) != '소제목':
+            return []
+        hwp_run('MoveParaEnd')
+        result = [(start, hwp.GetPos(), '소제목')]
+        while True:
+            if 중단_요청됨():
+                return []
+            hwp_run('MoveNextParaBegin')
+            next_start = hwp.GetPos()
+            if next_start[0] != start[0] or next_start[1] <= result[-1][0][1]:
+                break
+            next_role = 보고서_문단역할(현재문단_텍스트())
+            if next_role not in ('본문', '내용', '부연설명'):
+                break
+            hwp_run('MoveParaEnd')
+            result.append((next_start, hwp.GetPos(), next_role))
+        return result
+    finally:
+        hwp.SetPos(*original)
+
+
+def 문단_첫줄_쪽(start):
+    """문단 첫 화면줄이 놓인 쪽 번호."""
+    original = hwp.GetPos()
+    try:
+        hwp.SetPos(*start)
+        hwp_run('MoveLineEnd')
+        return 현재_페이지번호()
+    finally:
+        hwp.SetPos(*original)
+
+
+def 소제목묶음_쪽맞춤_대상(시작위치):
+    """(묶음, 논리단위) 또는 None. 논리단위가 최대 개수를 넘으면 None."""
+    group = 보고서_소제목묶음_수집(시작위치)
+    if not group:
+        return None
+    units = 쪽맞춤_논리단위([role for _, _, role in group])
+    if len(units) > 쪽맞춤_묶음_최대단위:
+        return None
+    return group, units
+
+
+def _묶음_같은쪽_이동(시작위치, paragraphs, counts, 먼저_확대, summary):
+    """묶음 전체를 두 쪽 중 한 쪽으로 옮긴다.
+
+    먼저_확대로 정한 방향을 먼저 시도하고, 줄간격이 이미 한계값이라
+    움직일 수 없거나 실패하면 반대 방향으로 보완한다.
+    '성공', '실패'(원래 줄간격 복원), '건너뜀', 중단/오류는 None.
+    """
+    pages = sorted(counts)
     backup = None
     attempted = False
     success = False
     expand = False
-    summary = text.strip().replace('\r', ' ').replace('\n', ' ')[:50]
     try:
-        paragraphs = 보고서_본문묶음_수집(시작위치)
-        if not paragraphs:
-            return not 중단_요청됨()
-        if 쪽범위_사용중() and any(not 쪽범위_안인가(item[0]) for item in paragraphs):
-            # 묶음이 작업 쪽 범위 밖까지 이어지면 범위 밖 문단의 줄간격을 건드리게 되므로 건너뛴다.
-            진단로그(f'[문장 묶음] 작업 쪽 범위 밖으로 이어져 건너뜀 / {summary}')
-            return not 중단_요청됨()
-        counts = 보고서_묶음_쪽별줄수(paragraphs)
-        pages = sorted(counts) if counts else []
-        if len(pages) == 1:
-            return not 중단_요청됨()
-        if len(pages) != 2 or pages[1] != pages[0] + 1:
-            진단로그(f'[문장 묶음] 인접한 두 쪽 조건 미충족: 쪽별 줄 수 {counts} / {summary}')
-            if len(pages) > 1:
-                검수_문제_기록(현재_처리파일, f'[문장 묶음 페이지 분리] {summary}')
-            return not 중단_요청됨()
-        expand = not 보고서_압축조건(counts)
-        direction = "확대" if expand else "축소"
-        target_page = pages[1] if expand else pages[0]
-        세트문장_통계['대상'] += 1
-        진단로그(f'[문장 묶음] 쪽별 줄 수 {counts}: {direction}하여 {target_page}쪽으로 이동 / {summary}')
         hwp.SetPos(*시작위치)
         hwp_run('MovePageBegin')
         page_start = hwp.GetPos()
         if 쪽범위_사용중() and not 쪽범위_안인가(page_start):
             진단로그(f'[문장 묶음] 쪽 시작이 작업 쪽 범위 밖이라 건너뜀 / {summary}')
-            return True
-        # 확대는 본문 묶음 앞의 문단만 변경한다. 이동할 묶음 자체는 제외.
-        # 페이지 첫 문단에 묶음이 시작하면 확대할 앞부분이 없어 해결 불가.
-        backup = 보고서_줄간격_보관(
-            page_start, 시작위치 if expand else paragraphs[-1][1])
-        if backup is None:
+            return '건너뜀'
+
+        def 방향_시도(expand):
+            """성공 True, 실패 False(원래 줄간격 복원), 중단/오류 None."""
+            nonlocal backup, attempted, success
+            direction = "확대" if expand else "축소"
+            target_page = pages[1] if expand else pages[0]
+            진단로그(f'[문장 묶음] 쪽별 줄 수 {counts}: {direction}하여 {target_page}쪽으로 이동 / {summary}')
+            # 확대는 묶음 앞의 문단만 변경한다. 이동할 묶음 자체는 제외.
+            # 페이지 첫 문단에 묶음이 시작하면 확대할 앞부분이 없어 해결 불가.
+            backup = 보고서_줄간격_보관(
+                page_start, 시작위치 if expand else paragraphs[-1][1])
+            if backup is None:
+                return None
+            if expand:
+                backup = [item for item in backup if item[0][1] < 시작위치[1]]
+            # 처음 확정한 범위만 변경하며 재배치 후 유입된 문단은 포함하지 않는다.
+            for step in range(1, 세트문장_페이지줄간격_최대시도 + 1):
+                if 중단_요청됨():
+                    return None
+                if not 보고서_줄간격_적용(backup, step, 확대=expand):
+                    # 이미 최소/최대 줄간격이라 더 바꿀 수 없다.
+                    break
+                attempted = True
+                count_key = '확대횟수' if expand else '축소횟수'
+                세트문장_통계[count_key] = 세트문장_통계.get(count_key, 0) + 1
+                new_counts = 보고서_묶음_쪽별줄수(paragraphs)
+                if new_counts is None:
+                    return None
+                success = set(new_counts) == {target_page}
+                if success:
+                    로그(f'문장 묶음 {target_page}쪽 배치 완료: {summary} (줄간격 {step}단계 {direction})')
+                    return True
+            # 페이지 보호 속성은 최종 문서에 남기지 않는다. 줄간격 범위 안에서
+            # 해결되지 않으면 원래 값을 복원한다.
+            if attempted:
+                보고서_줄간격_적용(backup, 0, 확대=expand)
+                attempted = False
+            진단로그(f'[문장 묶음] {direction} 방향 줄간격 범위 내 이동 불가 / {summary}')
             return False
-        if expand:
-            backup = [item for item in backup if item[0][1] < 시작위치[1]]
-        # 처음 확정한 범위만 변경하며 재배치 후 유입된 문단은 포함하지 않는다.
-        for step in range(1, 세트문장_페이지줄간격_최대시도 + 1):
-            if 중단_요청됨():
-                return False
-            attempted = True
-            if not 보고서_줄간격_적용(backup, step, 확대=expand):
-                break
-            count_key = '확대횟수' if expand else '축소횟수'
-            세트문장_통계[count_key] = 세트문장_통계.get(count_key, 0) + 1
-            new_counts = 보고서_묶음_쪽별줄수(paragraphs)
-            if new_counts is None:
-                return False
-            success = set(new_counts) == {target_page}
-            if success:
-                세트문장_통계['성공'] += 1
-                로그(f'문장 묶음 {target_page}쪽 배치 완료: {summary} (줄간격 {step}단계 {direction})')
-                return True
-        세트문장_통계['실패'] += 1
-        검수_문제_기록(현재_처리파일, f'[문장 묶음 페이지 분리] {summary}')
-        로그(f'문장 묶음 배치 미해결 — 원래 줄간격 복원: {summary}')
-        return True
+
+        for expand in (먼저_확대, not 먼저_확대):
+            result = 방향_시도(expand)
+            if result is None:
+                return None
+            if result:
+                return '성공'
+        return '실패'
     finally:
         try:
             if attempted and not success:
@@ -5045,6 +5573,91 @@ def 세트문장_같은쪽_시도(시작위치, text):
         finally:
             hwp_run('Cancel')
             hwp.SetPos(*시작위치)
+
+
+def 소제목묶음_같은쪽_시도(시작위치, text):
+    """논리단위 5개 이하인 □ 묶음 전체를 한 쪽에 모은다.
+
+    ('처리', 묶음): 이미 한 쪽이거나 옮겼음 — 묶음 안 문단은 다시 보지 않는다.
+    ('단위별', 묶음): 대상이 아니거나 옮기지 못함 — ㅇ 단위별 처리로 넘긴다.
+    None: 중단/오류.
+    """
+    summary = text.strip().replace('\r', ' ').replace('\n', ' ')[:50]
+    target = 소제목묶음_쪽맞춤_대상(시작위치)
+    if target is None:
+        return '단위별', []
+    group, units = target
+    if 쪽범위_사용중() and any(not 쪽범위_안인가(item[0]) for item in group):
+        return '단위별', group
+    counts = 보고서_묶음_쪽별줄수(group)
+    if counts is None:
+        return None
+    pages = sorted(counts)
+    if len(pages) == 1:
+        return '처리', group
+    if len(pages) != 2 or pages[1] != pages[0] + 1:
+        return '단위별', group
+    unit_pages = []
+    for unit in units:
+        page = 문단_첫줄_쪽(group[unit[0]][0])
+        if page is None:
+            return '단위별', group
+        unit_pages.append(page)
+    먼저_확대, 앞쪽, 뒤쪽 = 쪽맞춤_뒤로밀기인가(unit_pages, pages)
+    세트문장_통계['대상'] += 1
+    진단로그(f'[쪽 맞춤 묶음] 논리단위 {len(units)}개(앞쪽 {앞쪽}/뒤쪽 {뒤쪽}): '
+             f'{"뒤쪽으로 밈" if 먼저_확대 else "앞쪽으로 당김"} / {summary}')
+    result = _묶음_같은쪽_이동(시작위치, group, counts, 먼저_확대, summary)
+    if result is None:
+        return None
+    if result == '성공':
+        세트문장_통계['성공'] += 1
+        return '처리', group
+    if result == '실패':
+        세트문장_통계['실패'] += 1
+        검수_문제_기록(현재_처리파일, f'[소제목 묶음 쪽 분리] {summary}')
+        로그(f'소제목 묶음 배치 미해결(축소·확대 모두 불가) — ㅇ 단위별 배치로 진행: {summary}')
+    return '단위별', group
+
+
+def 세트문장_같은쪽_시도(시작위치, text):
+    """문단 하나의 쪽별 줄 수를 비교해 앞쪽으로 당기거나 뒤쪽으로 민다."""
+    if 중단_요청됨():
+        return False
+    if 보고서_문단역할(text) not in ('소제목', '본문', '내용', '부연설명'):
+        return True
+    summary = text.strip().replace('\r', ' ').replace('\n', ' ')[:50]
+    paragraphs = 보고서_본문묶음_수집(시작위치)
+    if not paragraphs:
+        return not 중단_요청됨()
+    if 쪽범위_사용중() and any(not 쪽범위_안인가(item[0]) for item in paragraphs):
+        # 묶음이 작업 쪽 범위 밖까지 이어지면 범위 밖 문단의 줄간격을 건드리게 되므로 건너뛴다.
+        진단로그(f'[문장 묶음] 작업 쪽 범위 밖으로 이어져 건너뜀 / {summary}')
+        return not 중단_요청됨()
+    counts = 보고서_묶음_쪽별줄수(paragraphs)
+    pages = sorted(counts) if counts else []
+    if len(pages) == 1:
+        return not 중단_요청됨()
+    if len(pages) != 2 or pages[1] != pages[0] + 1:
+        진단로그(f'[문장 묶음] 인접한 두 쪽 조건 미충족: 쪽별 줄 수 {counts} / {summary}')
+        if len(pages) > 1:
+            검수_문제_기록(현재_처리파일, f'[문장 묶음 페이지 분리] {summary}')
+        return not 중단_요청됨()
+    세트문장_통계['대상'] += 1
+    # 쪽별 줄 수로 정한 방향을 먼저 시도하고, 안 되면 반대 방향으로 보완한다.
+    # 예: 앞쪽 4줄/뒤쪽 1줄이지만 줄간격이 이미 최소(160%)라 당길 수
+    # 없으면, 앞 문단들의 줄간격을 넓혀 묶음 전체를 뒤쪽으로 민다.
+    result = _묶음_같은쪽_이동(시작위치, paragraphs, counts,
+                             not 보고서_압축조건(counts), summary)
+    if result is None:
+        return False
+    if result == '성공':
+        세트문장_통계['성공'] += 1
+    elif result == '실패':
+        세트문장_통계['실패'] += 1
+        검수_문제_기록(현재_처리파일, f'[문장 묶음 페이지 분리] {summary}')
+        로그(f'문장 묶음 배치 미해결(축소·확대 모두 불가) — 원래 줄간격 복원: {summary}')
+    return True
 
 
 def 세트문장_같은쪽_전체_적용():
@@ -5064,7 +5677,18 @@ def 세트문장_같은쪽_전체_적용():
         # 본문(리스트 0) 문단만 대상으로 한다. 표/글상자 등은 기존 컨트롤 처리와 충돌하지 않게 제외한다.
         if 시작위치[0] == 0:
             text = 현재문단_텍스트()
-            if 보고서_문단역할(text) in ('소제목', '본문', '내용'):
+            role = 보고서_문단역할(text)
+            처리됨 = False
+            if role == '소제목':
+                result = 소제목묶음_같은쪽_시도(시작위치, text)
+                if result is None:
+                    return False
+                상태값, group = result
+                if 상태값 == '처리' and group:
+                    # 묶음 전체가 한 쪽에 있으므로 안의 ㅇ 단위는 다시 보지 않는다.
+                    hwp.SetPos(*group[-1][0])
+                    처리됨 = True
+            if not 처리됨 and role in ('소제목', '본문', '내용', '부연설명'):
                 if 세트문장_같은쪽_시도(시작위치, text) is False:
                     return False
                 try:
@@ -5978,8 +6602,10 @@ def 본문_문장부호_처리():
         현재위치 = hwp.GetPos()
         if 쪽범위_끝지남(현재위치):
             return True
-        if (not 쪽범위_안인가(현재위치)) or 표셀_자간_제외인가():
-            # 작업 쪽 범위 밖이거나 '표 안 문장 제외'인 표 셀이면 줄 병합을 하지 않고 넘어간다.
+        if ((not 쪽범위_안인가(현재위치)) or (not 재검사_대상인가(현재위치))
+                or 표셀_자간_제외인가()):
+            # 작업 쪽 범위 밖, 2차 이후 재검사 대상이 아닌 문단, '표 안 문장 제외'인
+            # 표 셀이면 줄 병합을 하지 않고 넘어간다.
             try:
                 hwp_run("MoveParaEnd")
                 hwp_run("MoveNextChar")
@@ -6625,6 +7251,8 @@ def 컨트롤_내부_자간조정():
             break
         if 쪽범위_사용중() and area not in 쪽범위_컨트롤영역:
             continue
+        if not 재검사_영역인가(area):
+            continue
         if 표셀_자간_제외인가():
             진단로그(f"[표 안 문장 제외] 영역 {area}: 자간 조정 안 함")
             continue
@@ -6698,6 +7326,8 @@ def 컨트롤_내부_문장부호_처리():
         hwp.SetPos(area, 0, 0)
         if hwp.GetPos()[0] == 0:
             break
+        if not 재검사_영역인가(area):
+            continue
         if area in 한칸표영역:
             진단로그(f"[한 칸 표 제외] 영역 {area}: 문장부호 서식 보존")
             continue
@@ -6920,9 +7550,10 @@ def 저장파일명(파일):
 # ============================================================
 
 선택_세부작업 = {}
+작업_반복횟수 = 1
 
 
-def 문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=2):
+def 문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=1):
     """실행 버튼의 작업 범위에 맞춰 서식과 자간 단계를 분리한다."""
     if 중단_요청됨():
         return False
@@ -6961,42 +7592,82 @@ def 문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=2
     if 작업_모드 == 'format' and 표준서식_사용 and stage_enabled(선택_세부작업, 'single_cell_spacing'):
         if not stage('개요·한 칸 표 자간 조정', 한칸표_자간조정):
             return False
-    if 작업_모드 in ('spacing', 'all'):
-        if stage_enabled(선택_세부작업, 'body_spacing') and not stage('자간 조정', 본문_기존자간조정):
-            return False
-        if stage_enabled(선택_세부작업, 'short_line') and 문장부호기능 and not stage('짧은 마지막 줄 병합', 본문_문장부호_처리):
-            return False
-        if stage_enabled(선택_세부작업, 'control_spacing') and not stage('표/컨트롤 자간 조정', 컨트롤_내부_자간조정):
-            return False
-        if stage_enabled(선택_세부작업, 'control_short_line') and 문장부호기능 and not stage('표/컨트롤 줄 병합', 컨트롤_내부_문장부호_처리):
-            return False
-        if 단어중간_줄바꿈방지_사용:
-            if stage_enabled(선택_세부작업, 'word_check') and not stage('단어 분리 최종 검사', 본문_기존자간조정):
-                return False
-            if stage_enabled(선택_세부작업, 'control_word_check') and not stage('표/컨트롤 단어 검사', 컨트롤_내부_자간조정):
-                return False
+    # 내어쓰기는 화면줄의 가로 폭과 줄바꿈을 바꿀 수 있으므로 자간·단어
+    # 분리 검사를 수행하기 전에 최종 문단 모양을 먼저 확정한다.
     if 작업_모드 in ('format', 'all') and 표준서식_사용 and 표준서식_내어쓰기_사용 and stage_enabled(선택_세부작업, 'hanging_indent'):
         if not stage('최종 서식 기준 내어쓰기', 문단_내어쓰기_전체_갱신):
             return False
-    if 작업_모드 in ('format', 'all') and 표준서식_사용 and 세트문장_같은쪽_사용 and stage_enabled(선택_세부작업, 'page_group'):
-        if not stage('관련 문단 페이지 배치', 세트문장_같은쪽_전체_적용):
-            return False
+    if 작업_모드 in ('spacing', 'all'):
+        # 자간을 줄이거나 넓히면 문두기호 문장의 첫 줄 폭이 바뀌어
+        # 내어쓰기 기준점이 어긋날 수 있다. 자간 변경이 있으면 내어쓰기를
+        # 1회 다시 적용하고, 그 결과로 새로 생긴 단어 분리를 다시 검사한다.
+        # 무한 반복을 막기 위해 자간 조정 → 내어쓰기는 최대 3회만 수행한다.
+        # 2차 이후는 직전 내어쓰기에서 값이 바뀐 문단만 단어 분리를 다시
+        # 검사하고, 선택적 '다음 단어 당김'은 하지 않는다.
+        내어쓰기_재적용 = 표준서식_내어쓰기_사용 and stage_enabled(선택_세부작업, 'hanging_indent')
+        global 재검사_대상문단, 다음단어_당김_사용
+        try:
+            for 차수 in range(1, 자간_내어쓰기_최대반복 + 1):
+                접미 = ""
+                if 차수 > 1:
+                    접미 = f" ({차수}/{자간_내어쓰기_최대반복}차)"
+                    재검사_대상문단 = set(내어쓰기_변경문단)
+                    다음단어_당김_사용 = False
+                    if not 재검사_대상문단:
+                        로그(f"[자간·내어쓰기 반복] {차수}차 재검사 생략: 내어쓰기 값이 바뀐 문단 없음")
+                        break
+                    로그(f"[자간·내어쓰기 반복] {차수}차 재검사: 내어쓰기가 바뀐 "
+                         f"{len(재검사_대상문단)}개 문단만 단어 분리 검사(다음 단어 당김 제외)")
+                변경_전 = 자간_변경_횟수
+                # 두 선택 항목은 같은 전수 순회 함수를 사용하므로 한 번만 실행한다.
+                if (stage_enabled(선택_세부작업, 'body_spacing')
+                        or stage_enabled(선택_세부작업, 'word_check')):
+                    if not stage('본문 자간·단어 분리 조정' + 접미, 본문_기존자간조정):
+                        return False
+                if stage_enabled(선택_세부작업, 'short_line') and 문장부호기능 and not stage('짧은 마지막 줄 병합' + 접미, 본문_문장부호_처리):
+                    return False
+                if (stage_enabled(선택_세부작업, 'control_spacing')
+                        or stage_enabled(선택_세부작업, 'control_word_check')):
+                    if not stage('표/컨트롤 자간·단어 분리 조정' + 접미, 컨트롤_내부_자간조정):
+                        return False
+                if stage_enabled(선택_세부작업, 'control_short_line') and 문장부호기능 and not stage('표/컨트롤 줄 병합' + 접미, 컨트롤_내부_문장부호_처리):
+                    return False
+                변경 = 자간_변경_횟수 - 변경_전
+                if not 변경:
+                    if 차수 > 1:
+                        로그(f"[자간·내어쓰기 반복] {차수}차 재검사: 추가 자간 조정 없음, 반복 종료")
+                    break
+                if not 내어쓰기_재적용:
+                    break
+                로그(f"[자간·내어쓰기 반복] {차수}차 자간 조정 {변경}건 → 내어쓰기 재적용")
+                if not stage('자간 조정 후 내어쓰기' + 접미, 문단_내어쓰기_전체_갱신):
+                    return False
+            else:
+                로그(f"[자간·내어쓰기 반복] 최대 {자간_내어쓰기_최대반복}회 도달, 반복 종료")
+        finally:
+            재검사_대상문단 = None
+            다음단어_당김_사용 = True
+    # 문단 아래 간격 조정은 세로 배치를 다시 바꾼다. 개별 문단이 쪽 사이에
+    # 갈라졌는지는 이 단계가 끝난 뒤 마지막으로 처리해야 결과가 재오염되지 않는다.
     if 작업_모드 in ('format', 'all') and 표준서식_사용 and stage_enabled(선택_세부작업, 'page_fit'):
         if not stage('문단 아래 간격 페이지 맞춤', 보고서_페이지수_맞춤_전체_적용):
+            return False
+    if 작업_모드 in ('format', 'all') and 표준서식_사용 and 세트문장_같은쪽_사용 and stage_enabled(선택_세부작업, 'page_group'):
+        if not stage('개별 문단 페이지 배치', 세트문장_같은쪽_전체_적용):
             return False
     hwp_run('MoveDocBegin')
     return True
 
 
 def 문서_전체_자간_초기화():
-    """문서 전체(본문 + 표/글상자 등 컨트롤 내부)의 자간을 0%로 되돌린다.
+    """문두기호·라벨을 제외한 본문·컨트롤의 자간을 0%로 되돌린다.
 
     이 프로그램을 이미 한 번 이상 돌렸거나 사용자가 손으로 자간을 만져둔
     문서를 다시 처리하면, 잔여 자간값 위에 압축이 계속 누적되어 HWP의
     자간 조정 가능 범위(최솟값)에 금방 닿아버린다. 그러면 겉보기엔
     "본문 자간 자동조정"이 여러 번 시도해도 실제로는 더 줄어들 여지가
     없어 단어 분리가 그대로 남는다. 2회차 처리를 시작하기 전, 문서
-    전체를 한 번만 0%로 되돌려 항상 최대한의 압축 여유를 확보한 채로
+    조정 가능한 본문만 한 번 0%로 되돌려 압축 여유를 확보한 채로
     자간조정을 시작하도록 한다. 회차마다 반복하면 1회차의 압축 결과가
     지워지므로 문서당 정확히 한 번만 호출해야 한다.
     """
@@ -7005,20 +7676,31 @@ def 문서_전체_자간_초기화():
     try:
         hwp_run("Cancel")
         hwp_run("MoveDocBegin")
-        if 쪽범위_사용중():
-            # 작업 쪽 범위의 본문 문단만 선택해 자간을 되돌린다.
-            첫문단, 끝문단 = 쪽범위_본문_문단
-            hwp.SetPos(0, 끝문단, 0)
-            hwp_run("MoveParaEnd")
-            끝offset = hwp.GetPos()[2]
-            hwp.SetPos(0, 첫문단, 0)
-            if hwp.SelectText(첫문단, 0, 끝문단, 끝offset) is False:
-                raise RuntimeError("작업 쪽 범위 선택 실패")
-            문자모양_적용_현재선택(자간=0)
-        else:
-            hwp_run("MoveSelDocEnd")
-            문자모양_적용_현재선택(자간=0)
-        hwp_run("Cancel")
+        def 영역_초기화(area):
+            while True:
+                if 중단_요청됨():
+                    return False
+                hwp_run('MoveParaBegin')
+                start = hwp.GetPos()
+                if start[0] != area or (area == 0 and 쪽범위_끝지남(start)):
+                    break
+                hwp_run('MoveParaEnd')
+                end = hwp.GetPos()
+                body, end = 자간조정_본문범위(start, end)
+                if body[2] < end[2]:
+                    단어모드_범위선택(body, end)
+                    문자모양_적용_현재선택(자간=0)
+                    hwp_run('Cancel')
+                hwp.SetPos(*end)
+                hwp_run('MoveNextParaBegin')
+                nxt = hwp.GetPos()
+                if nxt[0] != area or nxt[1] <= start[1]:
+                    break
+            return True
+
+        순회_시작()
+        if 영역_초기화(0) is False:
+            return False
 
         area = 1
         while True:
@@ -7026,16 +7708,14 @@ def 문서_전체_자간_초기화():
                 return False
             area += 1
             hwp.SetPos(area, 0, 0)
-            if hwp.GetPos()[0] == 0:
+            if hwp.GetPos()[0] != area:
                 break
             if 쪽범위_사용중() and area not in 쪽범위_컨트롤영역:
                 continue
             if 표셀_자간_제외인가():
                 continue
-            hwp_run("MoveListBegin")
-            hwp_run("MoveSelListEnd")
-            문자모양_적용_현재선택(자간=0)
-            hwp_run("Cancel")
+            if 영역_초기화(area) is False:
+                return False
 
         hwp_run("MoveDocBegin")
         return True
@@ -7153,169 +7833,8 @@ def 외부문서_hwpx로_변환(원본경로, 확장자, 대상경로):
     raise ValueError(f"지원하지 않는 변환 형식입니다: {확장자}")
 
 
-# ============================================================
-# 최종 검수 (저장 직전 결과물 재검증)
-#
-# 처리 중 각 기능이 "시도했다/성공했다"고 자기보고하는 통계
-# (문장부호_통계·세트문장_통계·단어분리_통계)는 그 순간의 판단일 뿐,
-# 그 뒤에 실행되는 다른 단계나 2회차가 그 수정을 다시 건드리거나
-# 되돌릴 가능성을 반영하지 못한다. 여기서는 모든 처리가 끝나고 저장
-# 하기 직전의 문서를 다시 한 번 읽기 전용으로 훑어, 자기보고가 아니라
-# "지금 실제로 목표 상태에 도달했는가"를 직접 센다. 아무 것도 고치지
-# 않는다 — 이미 만들어진 판정 함수(단어모드_분리정보/marker_space_fix/
-# 문장부호_대상문장인가 등)를 그대로 재사용해 새로운 판정 로직을
-# 만들지 않으므로, 처리 로직과 검수 기준이 어긋날 위험도 없다.
-# ============================================================
-
-def 최종검수_단어분리_잔존수():
-    """단어모드_분리정보가 여전히 감지되는 화면줄 수(본문+컨트롤)."""
-    if hwp is None:
-        return 0
-    잔존 = 0
-    원위치 = hwp.GetPos()
-    try:
-        순회_시작()
-        while True:
-            if 중단_요청됨():
-                break
-            if (not (쪽범위_사용중() and not 쪽범위_안인가(hwp.GetPos()))
-                    and not 표셀_자간_제외인가()):
-                anchor, _ = 단어모드_줄범위(hwp.GetPos())
-                if 단어모드_분리정보(anchor) is not None:
-                    잔존 += 1
-            hwp_run("MoveLineEnd")
-            줄끝 = hwp.GetPos()
-            hwp_run("MoveNextChar")
-            if hwp.GetPos() == 줄끝:
-                break
-
-        area = 1
-        while True:
-            if 중단_요청됨():
-                break
-            area += 1
-            hwp.SetPos(area, 0, 0)
-            if hwp.GetPos()[0] != area:
-                break
-            if 쪽범위_사용중() and area not in 쪽범위_컨트롤영역:
-                continue
-            if 표셀_자간_제외인가():
-                continue
-            while True:
-                if 중단_요청됨():
-                    break
-                시작위치 = hwp.GetPos()
-                anchor, _ = 단어모드_줄범위(hwp.GetPos())
-                if 단어모드_분리정보(anchor) is not None:
-                    잔존 += 1
-                hwp_run('MoveLineEnd')
-                끝 = hwp.GetPos()
-                hwp_run('MoveNextChar')
-                다음 = hwp.GetPos()
-                if 다음[0] != area or 다음 in (시작위치, 끝):
-                    break
-    except Exception as e:
-        로그(f"최종 검수(단어 분리) 확인 실패(무시): {e}")
-    finally:
-        try:
-            hwp.SetPos(*원위치)
-        except Exception:
-            pass
-    return 잔존
-
-
-def 최종검수_문단단위_잔존수():
-    """문두기호 뒤 공백 위반, 마지막 줄 병합 대상(여전히 짧게 남은 경우)을
-    문단 단위로 한 번에 센다(본문+컨트롤). (공백위반, 짧은줄잔존) 반환.
-    """
-    if hwp is None:
-        return 0, 0
-    공백위반 = 0
-    짧은줄잔존 = 0
-
-    def 문단_확인():
-        nonlocal 공백위반, 짧은줄잔존
-        if 현재_한칸표인가():
-            return
-        text = 현재문단_텍스트()
-        if not text:
-            return
-        마커_끝 = 문장부호_마커_끝위치(text)
-        if marker_space_fix(text, 마커_끝) is not None:
-            공백위반 += 1
-        if 문장부호_시작인가(text):
-            hwp_run("MoveParaBegin")
-            hwp_run("MoveLineBegin")
-            줄목록, 끝까지_확인됨 = 줄_목록_수집(hwp.GetPos())
-            if len(줄목록) >= 2 and 끝까지_확인됨:
-                _, 마지막줄_텍스트 = 줄목록[-1]
-                if len(마지막줄_텍스트) <= 문장부호_2줄_기준글자수:
-                    짧은줄잔존 += 1
-
-    원위치 = hwp.GetPos()
-    try:
-        순회_시작()
-        while True:
-            if 중단_요청됨():
-                break
-            if not (쪽범위_사용중() and not 쪽범위_안인가(hwp.GetPos())):
-                문단_확인()
-            if not 범위_다음_문단으로_진행():
-                break
-
-        area = 1
-        while True:
-            if 중단_요청됨():
-                break
-            area += 1
-            hwp.SetPos(area, 0, 0)
-            if hwp.GetPos()[0] != area:
-                break
-            if 쪽범위_사용중() and area not in 쪽범위_컨트롤영역:
-                continue
-            while True:
-                if 중단_요청됨():
-                    break
-                문단_확인()
-                if not 다음_문단으로_진행():
-                    break
-                if hwp.GetPos()[0] != area:
-                    break
-    except Exception as e:
-        로그(f"최종 검수(문단 단위) 확인 실패(무시): {e}")
-    finally:
-        try:
-            hwp.SetPos(*원위치)
-        except Exception:
-            pass
-    return 공백위반, 짧은줄잔존
-
-
-def 최종검수_실행():
-    """모든 처리(2회차)가 끝난 뒤, 저장 직전 문서를 다시 한 번 읽기
-    전용으로 재검사한다. 처리 중 자기보고된 시도/성공/실패 통계와
-    달리, 이후 단계가 이전 단계의 수정을 되돌리는 경우까지 실제
-    결과로 잡아낼 수 있다. 아무 것도 고치지 않는다.
-    """
-    global 최종검수_통계
-    if hwp is None or 중단_요청됨():
-        return None
-    단어분리_잔존 = 최종검수_단어분리_잔존수()
-    공백위반_잔존, 짧은줄_잔존 = 최종검수_문단단위_잔존수()
-    최종검수_통계["검사_문서수"] += 1
-    최종검수_통계["단어분리_잔존"] += 단어분리_잔존
-    최종검수_통계["공백위반_잔존"] += 공백위반_잔존
-    최종검수_통계["짧은줄_잔존"] += 짧은줄_잔존
-    로그(
-        f"최종 검수: 단어 중간 줄바꿈 잔존 {단어분리_잔존}건 / "
-        f"문두기호 뒤 공백 위반 잔존 {공백위반_잔존}건 / "
-        f"마지막 줄 병합 대상 잔존 {짧은줄_잔존}건"
-    )
-    return {"단어분리_잔존": 단어분리_잔존, "공백위반_잔존": 공백위반_잔존, "짧은줄_잔존": 짧은줄_잔존}
-
-
 def 문서_처리(파일, index, total, 문장부호기능=True):
-    global hwp, 현재_처리파일, 한칸표_보호영역
+    global hwp, 현재_처리파일, 한칸표_보호영역, 최종검수_문서목록
     global 쪽범위_본문_문단, 쪽범위_컨트롤영역, 쪽범위_실제
     한칸표_보호영역 = set()
     쪽범위_본문_문단 = None
@@ -7417,6 +7936,11 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
                 return False
     한칸표_보호영역 = 한칸표_영역_목록()
 
+    # 기존 결과를 다시 입력했거나 원문 자체에 설정돼 있던 페이지 보호가
+    # 페이지 판정을 왜곡하지 않도록 처리 시작 전에도 먼저 해제한다.
+    if 보고서_페이지보호_전체해제() is False:
+        return False
+
     # 쪽 범위 작업: 아무것도 고치기 전에 범위를 문단·영역 번호로 고정한다.
     if 쪽범위_요청 is not None:
         상태(f"{파일명} : 작업 쪽 범위 확인")
@@ -7427,39 +7951,75 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
             raise RuntimeError("지정한 쪽 범위에 처리할 내용이 없습니다. 쪽 범위를 확인해 주세요.")
 
     # 잔여 자간(이전 실행/수동 편집으로 남은 값)이 있으면 압축 여유가
-    # 줄어드니, 두 회차를 시작하기 전 문서 전체를 한 번만 0%로 초기화한다.
+    # 줄어드니, 처리 회차를 시작하기 전 문서 전체를 한 번만 0%로 초기화한다.
     if stage_enabled(선택_세부작업, 'reset_spacing'):
         상태(f"{파일명} : 자간 초기화")
         if 문서_전체_자간_초기화() is False:
             return False
 
-    # 전체 파이프라인을 총 2회 수행한다.
-    # 1회차 결과에서 새로 생긴 줄바꿈/페이지 배치를 2회차가 다시 검사한다.
-    총회차 = 2
+    # 기본은 1회 처리한다. 사용자가 2회 반복을 선택한 경우에만 1회차의
+    # 서식 변경으로 새로 생긴 줄바꿈/페이지 배치를 전체 파이프라인으로 재처리한다.
+    총회차 = 작업_반복횟수
     for 회차 in range(1, 총회차 + 1):
         if 중단_요청됨():
             return False
         if 문서_처리_1회(파일명, 문장부호기능, 회차, 총회차) is False:
             return False
 
-    # 모든 2회 처리가 끝난 뒤 최종 결과만 한 번 저장한다.
+    # 각 검사는 최종 문단 모양이 확정된 뒤 실행되고 페이지 배치는 맨 마지막에
+    # 실행된다. 검수라는 이름으로 같은 수정 함수를 다시 호출하지 않는다.
+    if 검수_사용:
+        상태(f"{파일명} : 최종 검수 결과 집계")
+        미해결수 = len([x for x in 검수_문제목록 if str(x.get('file')) == str(파일)])
+        로그(f"최종 결과 규칙 검수 집계 완료: 미해결 {미해결수}건")
+
+    # 선택한 처리 회차가 끝난 뒤 최종 결과만 한 번 저장한다.
     if 중단_요청됨():
         return False
 
-    if 검수_사용:
-        단계표시("최종 검수")
-        상태(f"{파일명} : 결과물 최종 검수 중")
-        최종검수_실행()
-
+    # 중간 처리나 입력 문서에 있던 페이지 보호가 최종 HWPX에 남으면 이후
+    # 편집 시 큰 문단 묶음이 다시 통째로 이동한다. 저장 직전에 항상 해제한다.
+    if 보고서_페이지보호_전체해제() is False:
+        return False
     저장파일 = 저장파일명(파일)
+    최종규칙검사 = {}
     단계표시("저장")
-    상태(f"{파일명} : 2회 처리 완료 / 최종 저장 중")
+    상태(f"{파일명} : {총회차}회 처리 완료 / 최종 저장 중")
     처리쪽수 = 처리_쪽수_구하기()
     저장결과 = hwp.SaveAs(Path=저장파일, Format="HWPX", arg="")
     if 저장결과 is False:
         raise RuntimeError(f"문서 저장에 실패했습니다: {저장파일}")
-    로그(f"전체 처리 2회 완료")
+    로그(f"전체 처리 {총회차}회 완료")
     로그(f"저장 완료: {저장파일}")
+    if 검수_사용:
+        inspections = {}
+        if 작업_모드 in ('format', 'all') and stage_enabled(선택_세부작업, 'page_group'):
+            inspections['page_group'] = 보고서_페이지배치_최종검사
+        if 작업_모드 in ('spacing', 'all'):
+            if stage_enabled(선택_세부작업, 'word_check'):
+                inspections['word_check'] = 보고서_단어분리_최종검사
+            if stage_enabled(선택_세부작업, 'control_word_check'):
+                inspections['control_word_check'] = lambda: 보고서_단어분리_최종검사(컨트롤=True)
+        try:
+            # 저장된 결과를 다시 열어 실제 재배치 상태를 검사한다. 수정 함수는 호출하지 않는다.
+            if hwp.Open(str(저장파일), Format='HWPX', arg='forceopen:true') is False:
+                raise RuntimeError('저장 결과 재열기 실패')
+        except Exception as exc:
+            for key in inspections:
+                최종규칙검사[key] = {'status': 'error', 'error': str(exc)}
+            검수_문제_기록(파일, f'[저장 결과 재열기 실패] {exc}')
+        else:
+            for key, inspect in inspections.items():
+                try:
+                    result = inspect()
+                    if result is False:
+                        return False
+                    최종규칙검사[key] = result
+                    로그(f"저장 결과 {key} 검수: {result['status']} / 검사 {result['checked']}건 / 오류 {len(result['issues'])}건")
+                except Exception as exc:
+                    최종규칙검사[key] = {'status': 'error', 'error': str(exc)}
+                    검수_문제_기록(파일, f'[최종 {key} 검사 실패] {exc}')
+    무결성 = None
     if 검수_사용 and 원본_구조 is not None:
         결과_구조 = inspect_hwpx(저장파일)
         무결성 = compare_documents(원본_구조, 결과_구조)
@@ -7471,6 +8031,15 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
         )
         for 문제 in 무결성["issues"]:
             로그(f"  - [{문제['severity']}] {문제['message']}")
+    최종검수_문서목록.append({
+        "source": str(파일),
+        "output": str(저장파일),
+        "success": True,
+        "rule_checks": 최종규칙검사,
+        "processed_pages": 처리쪽수,
+        "integrity_ok": 무결성["ok"] if 무결성 is not None else None,
+        "text_similarity": 무결성.get("text_similarity") if 무결성 is not None else None,
+    })
     if 작업_임시폴더 is not None:
         작업_임시폴더.cleanup()
     # 실행창이 '작업 결과' 표시와 '결과파일 열기'에 쓰도록 알린다.
@@ -7508,6 +8077,7 @@ def 작업_실행(
     쪽범위=None,
     로그파일=False,
     세부작업_선택=None,
+    반복횟수=1,
     시작_인덱스=1
 ):
     global 작업_모드, 문두라벨_기호설정
@@ -7515,17 +8085,17 @@ def 작업_실행(
     global 단어중간_줄바꿈방지_사용
     global 제목4종_사용, 붙임2종_사용
     global hwp, 색상_설정, 비교보기_사용, 비교보기_좌측_프레임_hwnd, 비교보기_우측_프레임_hwnd, 로그_파일_경로
-    global 작업_hwp_hwnd, 자동닫기_설정, 표준서식_사용, 검수_사용, 검수_문제목록
+    global 작업_hwp_hwnd, 자동닫기_설정, 표준서식_사용, 검수_사용, 검수_문제목록, 최종검수_문서목록
     global 문장부호_2줄_기준글자수, 문장부호_통계, 자간_최대시도_본문, 자간_최대시도_표
-    global 세트문장_같은쪽_사용, 세트문장_통계, 단어분리_통계, 최종검수_통계
+    global 세트문장_같은쪽_사용, 세트문장_통계, 단어분리_통계, 다음단어_통계
     global 세트문장_최소줄간격_퍼센트, 세트문장_최대줄간격_퍼센트
     global 괄호_축소_사용, 괄호_라벨_볼드_사용
     global 표준서식_여백_사용, 표준서식_장평_사용, 표준서식_줄간격_사용, 표준서식_제목_사용
     global 표준서식_일자담당자_사용, 표준서식_기호_사용, 표준서식_제목_굵게, 표준서식_일자담당자_굵게
     global 표준서식_내어쓰기_사용
-    global 부연설명_들여쓰기_사용
+    global 부연설명_들여쓰기_사용, 문두기호_굵게_일관성_사용
     global 표준서식_기호_굵게, 표준서식_문단위간격_사용, 표준서식_문단위간격_box_pt
-    global 선택_세부작업
+    global 선택_세부작업, 작업_반복횟수
     global 표준서식_문단위간격_circle_pt, 표준서식_문단위간격_note_pt, 표준서식_문단위간격_복귀배율, 표_헤더서식_사용
 
     if 표준서식_세부 is None:
@@ -7537,6 +8107,7 @@ def 작업_실행(
         if 실행모드 not in ("spacing", "format", "all"):
             raise ValueError("잘못된 실행 모드")
         작업_모드 = 실행모드
+        작업_반복횟수 = 2 if int(반복횟수) >= 2 else 1
         선택_세부작업 = dict(세부작업_선택 or {})
         표_자간조정_사용 = bool(표자간조정)
         쪽범위_요청 = tuple(쪽범위) if 쪽범위 else None
@@ -7551,7 +8122,7 @@ def 작업_실행(
             ))
         else:
             로그_파일_경로 = None
-        로그(f"프로그램 버전: {APP_VERSION} / 단어 분리 방지: {bool(단어분리방지)} / 본문 {본문재시도횟수}단계 / 표 {표재시도횟수}단계 / 줄간격 조정범위 {줄간격최소}~{줄간격최대}%")
+        로그(f"프로그램 버전: {APP_VERSION} / 전체 처리 {작업_반복횟수}회 / 단어 분리 방지: {bool(단어분리방지)} / 본문 {본문재시도횟수}단계 / 표 {표재시도횟수}단계 / 줄간격 조정범위 {줄간격최소}~{줄간격최대}%")
         로그(f"작업 로그 파일: {로그_파일_경로 or '(만들지 않음)'}")
         if 쪽범위_요청 is None:
             로그("작업 범위: 문서 전체")
@@ -7569,6 +8140,7 @@ def 작업_실행(
         표준서식_사용 = bool(표준서식) and 작업_모드 != "spacing"
         검수_사용 = 검수
         검수_문제목록 = []
+        최종검수_문서목록 = []
         문장부호_2줄_기준글자수 = 둘째줄기준글자수
         자간_최대시도_본문 = 본문재시도횟수
         자간_최대시도_표 = 표재시도횟수
@@ -7589,6 +8161,7 @@ def 작업_실행(
         표준서식_기호_사용 = 표준서식_세부.get("std_symbols", 표준서식_기호_사용)
         표준서식_내어쓰기_사용 = 표준서식_세부.get("std_hanging_indent", 표준서식_내어쓰기_사용)
         부연설명_들여쓰기_사용 = 표준서식_세부.get("std_supplement_indent", 부연설명_들여쓰기_사용)
+        문두기호_굵게_일관성_사용 = bool(표준서식_세부.get("std_marker_bold_consistency", True))
         표준서식_제목_굵게 = 표준서식_세부.get("std_title_bold", 표준서식_제목_굵게)
         표준서식_일자담당자_굵게 = 표준서식_세부.get("std_dateinfo_bold", 표준서식_일자담당자_굵게)
 
@@ -7610,7 +8183,7 @@ def 작업_실행(
         문장부호_통계 = {"대상": 0, "성공": 0, "실패": 0}
         세트문장_통계 = {"대상": 0, "성공": 0, "실패": 0, "축소횟수": 0, "확대횟수": 0}
         단어분리_통계 = {"대상": 0, "성공": 0, "실패": 0}
-        최종검수_통계 = {"검사_문서수": 0, "단어분리_잔존": 0, "공백위반_잔존": 0, "짧은줄_잔존": 0}
+        다음단어_통계 = {"대상": 0, "적용": 0, "미적용": 0}
 
         원본_뷰어_분리()
         작업창_분리()
@@ -7638,6 +8211,13 @@ def 작업_실행(
 
         if 시작_인덱스 > 1:
             로그(f"이전에 중단된 작업을 이어서 진행합니다: {시작_인덱스}/{total}번째 문서부터")
+            for 완료파일 in 파일목록[:시작_인덱스 - 1]:
+                기존결과 = 저장파일명(완료파일)
+                최종검수_문서목록.append({
+                    "source": str(완료파일), "output": str(기존결과),
+                    "success": Path(기존결과).is_file(), "integrity_ok": None,
+                    "resumed_result": True,
+                })
 
         for index, 파일 in enumerate(파일목록, 1):
             if index < 시작_인덱스:
@@ -7652,16 +8232,22 @@ def 작업_실행(
                 진행률(index / total * 100)
             except Exception as e:
                 실패 += 1
+                최종검수_문서목록.append({
+                    "source": str(파일), "output": None, "success": False,
+                    "integrity_ok": None, "error": str(e),
+                })
                 traceback.print_exc()
                 로그(f"문서 처리 오류: {파일}")
                 gui_queue.put(("document_error", str(파일), str(e)))
 
         로그("=" * 45)
-        로그(f"문장부호 줄병합 자간조정 통계(2회 누적): 대상 {문장부호_통계['대상']}건 (성공 {문장부호_통계['성공']}/실패 {문장부호_통계['실패']})")
-        로그(f"단어 분리 방지 통계(2회 누적): 대상 {단어분리_통계['대상']}건 (성공 {단어분리_통계['성공']}/실패 {단어분리_통계['실패']})")
+        로그(f"문장부호 줄병합 자간조정 통계({작업_반복횟수}회 누적): 대상 {문장부호_통계['대상']}건 (성공 {문장부호_통계['성공']}/실패 {문장부호_통계['실패']})")
+        로그(f"단어 분리 방지 통계({작업_반복횟수}회 누적): 대상 {단어분리_통계['대상']}건 (성공 {단어분리_통계['성공']}/실패 {단어분리_통계['실패']})")
+        로그(f"선택적 다음 단어 당김: 대상 {다음단어_통계['대상']}건 "
+             f"(적용 {다음단어_통계['적용']}/미적용 {다음단어_통계['미적용']}, 오류 통계 제외)")
         if 세트문장_같은쪽_사용:
             로그(
-                f"세트문장 페이지 맞춤 통계(2회 누적): 대상 {세트문장_통계['대상']}건 "
+                f"세트문장 페이지 맞춤 통계({작업_반복횟수}회 누적): 대상 {세트문장_통계['대상']}건 "
                 f"(성공 {세트문장_통계['성공']}/미해결 {세트문장_통계['실패']}, "
                 f"줄간격 축소 {세트문장_통계['축소횟수']}회, 확대 {세트문장_통계.get('확대횟수', 0)}회)"
             )
@@ -7670,7 +8256,6 @@ def 작업_실행(
         총작업_실패 = 문장부호_통계['실패'] + 단어분리_통계['실패'] + 세트문장_통계['실패']
         로그(f"작업 항목 총계: 시도 {총작업_대상}건 (성공 {총작업_성공}/실패 {총작업_실패})")
 
-        최종검수_잔존_총합 = 0
         if 검수_사용:
             if 검수_문제목록:
                 로그("=" * 45)
@@ -7681,30 +8266,38 @@ def 작업_실행(
             else:
                 로그("검수 결과: 자간조정 미해결 문단 없음")
 
-            # 처리 중 자기보고(위 통계)가 아니라, 저장 직전 결과물을 다시
-            # 읽기 전용으로 재검사해 실제로 남아 있는 문제만 최종 집계한다.
-            최종검수_잔존_총합 = (
-                최종검수_통계['단어분리_잔존']
-                + 최종검수_통계['공백위반_잔존']
-                + 최종검수_통계['짧은줄_잔존']
-            )
-            로그(
-                f"최종 검수 총계(문서 {최종검수_통계['검사_문서수']}개 재확인): "
-                f"잔존 문제 {최종검수_잔존_총합}건 "
-                f"(단어 중간 줄바꿈 {최종검수_통계['단어분리_잔존']} / "
-                f"문두기호 뒤 공백 {최종검수_통계['공백위반_잔존']} / "
-                f"마지막 줄 병합 대상 {최종검수_통계['짧은줄_잔존']})"
-            )
-
         if 중단_요청됨():
             상태("작업 중단")
             gui_queue.put(("stopped", None))
         else:
+            작업목표 = build_work_goal(작업_모드, total, 선택_세부작업)
+            최종검수 = evaluate_work(
+                작업목표,
+                최종검수_문서목록,
+                {"attempted": 총작업_대상, "succeeded": 총작업_성공},
+                검수_문제목록,
+                verification_enabled=검수_사용,
+            )
+            최종검수['optional_optimizations'] = {'next_word_pull': dict(다음단어_통계)}
+            검수보고서 = Path(파일목록[0]).with_name(
+                Path(파일목록[0]).stem + "(최종검수).json"
+            )
+            write_evaluation_report(최종검수, 검수보고서)
+            로그("=" * 45)
+            로그(
+                f"작업 수행 점수: {최종검수['score']:.1f}/100 / "
+                f"판정 {최종검수['verdict']} / 보고서 {검수보고서.name}"
+            )
+            for 기준 in 최종검수["criteria"]:
+                점수 = f"{기준['score']:.1f}%" if 기준["applicable"] else "해당 없음"
+                로그(f"  - {기준['label']}: {점수}")
+            for 사유 in 최종검수["blockers"]:
+                로그(f"  - 확인: {사유}")
+            for 참고 in 최종검수.get("notes", []):
+                로그(f"  - 참고: {참고}")
             상태("모든 작업 완료")
-            gui_queue.put((
-                "finished", 성공, 실패, 총작업_대상, 총작업_성공, 총작업_실패,
-                검수_사용, 최종검수_통계['검사_문서수'], 최종검수_잔존_총합,
-            ))
+            gui_queue.put(("finished", 성공, 실패, 총작업_대상, 총작업_성공, 총작업_실패,
+                           최종검수, str(검수보고서)))
 
     except Exception as e:
         traceback.print_exc()
@@ -8665,6 +9258,7 @@ class HwpAutoDocFitGUI:
         self.autoclose_var = tk.BooleanVar(value=bool(저장된_설정["autoclose"]))
         self.stdformat_var = tk.BooleanVar(value=bool(저장된_설정["stdformat"]))
         self.verify_var = tk.BooleanVar(value=bool(저장된_설정["verify"]))
+        self.two_pass_var = tk.BooleanVar(value=bool(저장된_설정.get("two_pass_processing", False)))
         self.table_spacing_var = tk.BooleanVar(value=bool(저장된_설정.get("table_spacing", True)))
         self.log_file_var = tk.BooleanVar(value=bool(저장된_설정.get("log_file", False)))
         self.check_updates_on_start_var = tk.BooleanVar(
@@ -8707,6 +9301,7 @@ class HwpAutoDocFitGUI:
             "std_margin", "std_ratio", "std_linespacing", "std_title", "std_title_bold", "std_title_auto", "std_attachment_auto",
             "std_dateinfo", "std_dateinfo_bold", "std_symbols", "std_symbol_box_bold",
             "std_symbol_o_bold", "std_symbol_dash_bold", "std_symbol_note_bold",
+            "std_marker_bold_consistency",
             "std_hanging_indent",
             "std_supplement_indent",
             "std_parspace", "std_table_header",
@@ -8718,7 +9313,7 @@ class HwpAutoDocFitGUI:
 
         for 변수 in ([self.prevent_word_split_var, self.punctuation_var, self.punctuation_threshold_var, self.keep_punctuation_set_var,
                      self.color_mark_on_var, self.color_var,
-                     self.autoclose_var, self.stdformat_var, self.verify_var,
+                     self.autoclose_var, self.stdformat_var, self.verify_var, self.two_pass_var,
                      self.table_spacing_var, self.log_file_var, self.check_updates_on_start_var,
                      self.retry_body_var, self.retry_table_var, self.paren_shrink_var,
                      self.linespacing_min_var, self.linespacing_max_var, self.font_folder_var,
@@ -9317,6 +9912,16 @@ class HwpAutoDocFitGUI:
                 check = ttk.Checkbutton(symbol_frame, text=skey, variable=svar)
                 check.grid(row=index // 8, column=index % 8, sticky='w', padx=4)
                 label_symbol_checks.append(check)
+            # 문두 라벨 굵게가 켜져 있을 때만 의미가 있으므로 기호 선택과 같이
+            # 활성/비활성된다.
+            consistency_check = ttk.Checkbutton(
+                label_bold_frame,
+                text="문두기호별 굵게 일관성 적용\n(같은 기호의 라벨이 굵게 되면 \"- 조례제정 (설명)\"의 \"조례제정\"처럼 "
+                     "다른 문단 머리말도 굵게 맞춤, 괄호 설명은 제외)",
+                variable=self.std_bool_vars["std_marker_bold_consistency"],
+            )
+            consistency_check.pack(anchor="w", pady=(6, 0))
+            label_symbol_checks.append(consistency_check)
 
             if 주설정탭:
                 self.std_detail_checks += [기호_체크] + 기호_굵게_체크들
@@ -11110,7 +11715,7 @@ class HwpAutoDocFitGUI:
 
         self.keep_punctuation_set_check = ttk.Checkbutton(
             tabs["layout"],
-            text="관련 문단을 같은 페이지에 모으기\nㅁ 3단계·ㅇ 4단계·- 5단계와 *, **, ※ 부연설명의 쪽별 줄 수로 줄간격을 조정합니다.\n‘서식 정리’ 또는 ‘한 번에 정리’에서 적용됩니다.",
+            text="문단 묶음 분리 및 제목 고립 방지\nㅇ 본문과 이어지는 - 내용·부연설명을 묶고, □·ㅁ 제목은 첫 ㅇ 묶음에 연결합니다.\n쪽별 줄 수로 배치를 조정하며, 저장할 때 문단 페이지 보호를 해제하고 다시 검사합니다.",
             variable=self.keep_punctuation_set_var,
         )
         self.keep_punctuation_set_check.pack(anchor="w", pady=(6, 0))
@@ -11155,6 +11760,12 @@ class HwpAutoDocFitGUI:
 
         retry_frame = ttk.LabelFrame(tabs["advanced"], text="정밀 조정 횟수 · 높일수록 시간이 늘어날 수 있어요", padding=10)
         retry_frame.pack(anchor="w", fill="x", pady=(6, 0))
+        self.two_pass_check = ttk.Checkbutton(
+            retry_frame,
+            text="전체 작업 절차를 2회 반복 (기본 1회)",
+            variable=self.two_pass_var,
+        )
+        self.two_pass_check.pack(side="right", padx=(12, 0))
         ttk.Label(retry_frame, text="본문:").pack(side="left")
         self.retry_body_spin = ttk.Spinbox(
             retry_frame, from_=1, to=99, width=3, textvariable=self.retry_body_var, justify="center"
@@ -11321,6 +11932,7 @@ class HwpAutoDocFitGUI:
                 "autoclose": bool(self.autoclose_var.get()),
                 "stdformat": bool(self.stdformat_var.get()),
                 "verify": bool(self.verify_var.get()),
+                "two_pass_processing": bool(self.two_pass_var.get()),
                 "table_spacing": bool(self.table_spacing_var.get()),
                 "log_file": bool(self.log_file_var.get()),
                 "check_updates_on_start": bool(self.check_updates_on_start_var.get()),
@@ -11423,6 +12035,7 @@ class HwpAutoDocFitGUI:
         self.autoclose_var.set(기본_설정["autoclose"])
         self.stdformat_var.set(기본_설정["stdformat"])
         self.verify_var.set(기본_설정["verify"])
+        self.two_pass_var.set(기본_설정["two_pass_processing"])
         self.table_spacing_var.set(기본_설정["table_spacing"])
         self.log_file_var.set(기본_설정["log_file"])
         self.check_updates_on_start_var.set(기본_설정["check_updates_on_start"])
@@ -11785,6 +12398,7 @@ class HwpAutoDocFitGUI:
             위젯.config(state="disabled")
         self.retry_body_spin.config(state="disabled")
         self.retry_table_spin.config(state="disabled")
+        self.two_pass_check.config(state="disabled")
         self.color_mark_check.config(state="disabled")
         for 라디오 in self.color_radios:
             라디오.config(state="disabled")
@@ -11824,6 +12438,7 @@ class HwpAutoDocFitGUI:
         self._범위_상태_갱신()
         self.retry_body_spin.config(state="normal")
         self.retry_table_spin.config(state="normal")
+        self.two_pass_check.config(state="normal")
         self.color_mark_check.config(state="normal")
 
         self.autoclose_check.config(state="normal")
@@ -12026,6 +12641,7 @@ class HwpAutoDocFitGUI:
                 작업범위,
                 self.log_file_var.get(),
                 dict(self.stage_choices[mode]),
+                2 if self.two_pass_var.get() else 1,
                 시작_인덱스,
             ),
             daemon=True
@@ -12137,7 +12753,16 @@ class HwpAutoDocFitGUI:
                     self.버튼_대기중()
                     self._고양이상태("done" if item[2] == 0 else "error")
                     self._작업결과_표시(item[2] == 0)
-                    self.status_var.set(f"처리 완료 · 성공 {item[1]}개 / 실패 {item[2]}개")
+                    최종검수 = item[6] if len(item) >= 8 else None
+                    if 최종검수:
+                        self.status_var.set(
+                            f"처리 완료 · 수행 점수 {최종검수['score']:.1f}/100 · {최종검수['verdict']}"
+                        )
+                        self.stage_board.set_result_message(
+                            f"최종 검수: 수행 점수 {최종검수['score']:.1f}/100 · {최종검수['verdict']}"
+                        )
+                    else:
+                        self.status_var.set(f"처리 완료 · 성공 {item[1]}개 / 실패 {item[2]}개")
                     self.로그표시("=" * 45 + f"\n작업 완료 - 성공 {item[1]}개 / 실패 {item[2]}개\n" + "=" * 45)
                     if not self.closing:
                         안내문 = f"문서 처리가 완료되었습니다.\n\n성공: {item[1]}개\n실패: {item[2]}개"
@@ -12148,14 +12773,15 @@ class HwpAutoDocFitGUI:
                                 f"성공: {item[4]}건\n"
                                 f"실패: {item[5]}건"
                             )
-                        if len(item) >= 9 and item[6]:
-                            # 처리 중 자기보고가 아니라, 저장 직전 결과물을 다시
-                            # 읽기 전용으로 재검사한 최종 검수 결과.
+                        if 최종검수:
                             안내문 += (
-                                f"\n\n(최종 검수 — 결과물 {item[7]}개 재확인)\n"
-                                f"잔존 문제: {item[8]}건"
-                                + ("" if item[8] == 0 else "\n(로그에서 항목별 내역 확인 가능)")
+                                f"\n\n[목표 기준 최종 검수]\n"
+                                f"수행 점수: {최종검수['score']:.1f}/100 (규칙 준수율과 별도)\n"
+                                f"판정: {최종검수['verdict']}"
                             )
+                            if 최종검수["blockers"]:
+                                안내문 += "\n확인사항: " + ", ".join(최종검수["blockers"])
+                            안내문 += f"\n보고서: {item[7]}"
                         messagebox.showinfo(APP_NAME, 안내문, parent=self.root)
                 elif event == "fatal_error":
                     self.running = False
