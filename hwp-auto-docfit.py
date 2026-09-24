@@ -293,7 +293,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글문서 후처리 도구"
-APP_VERSION = "1.68 Alpha 4"
+APP_VERSION = "1.68 Alpha 5"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 UPDATE_ASSET_NAME = "HWP_AutoDocFit.exe"
@@ -3433,10 +3433,14 @@ def 빈문단_분류(text, begin, end):
     """'blank'(공백만 있는 빈 문단), 'marker'(문두기호 문장), 'other'.
 
     표·그림 같은 컨트롤은 글자 없이 위치만 차지하므로, 위치 길이가 공백
-    글자 수와 같을 때만 빈 문단으로 본다.
+    글자 수와 같을 때만 빈 문단으로 본다. 표 하나만 있는 문단은
+    MoveParaBegin이 표 뒤(pos 8)에 멈춰 시작·끝이 같아 보이므로, 시작
+    위치가 0이 아니면 빈 문단이 아니다(실측: 공고문 표 5개가 지워짐).
     """
     body = (text or '').rstrip('\r\n')
     if not body.strip():
+        if begin[2] != 0:
+            return 'other'
         units = len(body.encode('utf-16-le')) // 2
         return 'blank' if end[2] - begin[2] == units else 'other'
     # 날짜 줄('2026. 9. 24.')처럼 번호로 보이는 머리 문단은 문두기호 문장이 아니다.
@@ -3463,11 +3467,34 @@ def 문두기호문장_사이_빈문단_찾기(kinds):
     return result
 
 
+def 본문_컨트롤_문단번호():
+    """본문(리스트 0)에서 표·그림·글상자 등 컨트롤이 놓인 문단 번호.
+
+    빈 줄 삭제가 컨트롤 문단을 빈 문단으로 오인해 표를 통째로 지우지
+    않도록 막는 이중 안전장치다. 읽지 못하면 빈 집합을 돌려준다.
+    """
+    result = set()
+    try:
+        ctrl = hwp.HeadCtrl
+        while ctrl:
+            try:
+                anchor = ctrl.GetAnchorPos(0)
+                if anchor.Item("List") == 0:
+                    result.add(anchor.Item("Para"))
+            except Exception:
+                pass
+            ctrl = ctrl.Next
+    except Exception as e:
+        진단로그(f'본문 컨트롤 위치 확인 실패(무시): {e}')
+    return result
+
+
 def 문두기호문장_사이_빈줄_삭제():
     if not 문두기호문장_빈줄_삭제_사용 or hwp is None:
         return True
     original = hwp.GetPos()
     paragraphs = []
+    컨트롤문단 = 본문_컨트롤_문단번호()
     try:
         hwp_run('MoveDocBegin')
         while True:
@@ -3479,7 +3506,8 @@ def 문두기호문장_사이_빈줄_삭제():
             hwp.SetPos(*begin)
             hwp_run('MoveParaEnd')
             end = hwp.GetPos()
-            paragraphs.append((begin, end, 빈문단_분류(text, begin, end)))
+            kind = 'other' if begin[1] in 컨트롤문단 else 빈문단_분류(text, begin, end)
+            paragraphs.append((begin, end, kind))
             hwp.SetPos(*begin)
             hwp_run('MoveNextParaBegin')
             after = hwp.GetPos()

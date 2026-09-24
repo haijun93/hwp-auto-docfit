@@ -54,7 +54,14 @@ class HwpxCoreTest(unittest.TestCase):
             make_hwpx(before_path)
             make_hwpx(after_path, no_table)
             result = compare_documents(inspect_hwpx(before_path), inspect_hwpx(after_path))
-            self.assertTrue(any("표 개수" in issue["message"] for issue in result["issues"]))
+            # 표가 사라지면 경고가 아니라 오류다(무결성 검사 실패).
+            self.assertTrue(any(issue["severity"] == "error" and "표가 사라졌습니다" in issue["message"]
+                                for issue in result["issues"]))
+            self.assertFalse(result["ok"])
+            # 반대로 표가 늘어난 것은 경고로 둔다.
+            added = compare_documents(inspect_hwpx(after_path), inspect_hwpx(before_path))
+            self.assertTrue(added["ok"])
+            self.assertTrue(any("표 개수" in issue["message"] for issue in added["issues"]))
 
 
 if __name__ == "__main__":

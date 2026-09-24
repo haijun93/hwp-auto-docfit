@@ -285,7 +285,11 @@ def compare_documents(before: DocumentInspection, after: DocumentInspection) -> 
         ("이미지", before.image_count, after.image_count),
         ("섹션", before.section_count, after.section_count),
     ):
-        if old != new:
+        if new < old and label != "섹션":
+            # 표·이미지가 사라지면 본문 일치도(표 안 글자 제외)는 높게 나와도
+            # 실제로는 내용이 지워진 것이다(실측: 빈 줄 삭제가 표 문단을 지움).
+            issues.append({"severity": "error", "message": f"{label}가 사라졌습니다({old} → {new})."})
+        elif old != new:
             issues.append({"severity": "warning", "message": f"{label} 개수가 변경되었습니다({old} → {new})."})
     return {
         "ok": not any(item["severity"] == "error" for item in issues),
