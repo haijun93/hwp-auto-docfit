@@ -21,7 +21,8 @@ class ResultAuditTest(unittest.TestCase):
             '단어모드_한글자': lambda p: (p, (0, 0, 3), '끝') if p[2] == 2 else None,
             '단어모드_분리정보': lambda p: None,
             '단어모드_자간보관': lambda *args: [((0, 0, 0), (0, 0, 2), [0])],
-            '단어_장평_추가축소_시도': lambda *args: False,
+            '단어모드_서식보관': lambda *args: ([((0, 0, 0), (0, 0, 2), [0])], []),
+            '단어_장평_추가축소_시도': lambda *args, **kw: False,
             '중단_요청됨': lambda: False, '진단로그': log,
         }):
             self.assertFalse(fn((0, 0, 0), 0))

@@ -293,7 +293,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글문서 후처리 도구"
-APP_VERSION = "1.68 Alpha 2"
+APP_VERSION = "1.68 Alpha 3"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 UPDATE_ASSET_NAME = "HWP_AutoDocFit.exe"
@@ -4470,6 +4470,8 @@ def 붙임의미단위_줄분리인가():
 
 _단어모드_자간필드 = tuple('Spacing' + name for name in
     ('Hangul', 'Latin', 'Hanja', 'Japanese', 'Other', 'Symbol', 'User'))
+_단어모드_장평필드 = tuple('Ratio' + name for name in
+    ('Hangul', 'Latin', 'Hanja', 'Japanese', 'Other', 'Symbol', 'User'))
 
 
 def 자간조정_본문범위(start, end):
@@ -4511,30 +4513,58 @@ def 자간조정_현재줄_본문선택():
     return True
 
 
-def 단어모드_자간보관(start, end):
-    """혼합 자간을 연속 구간별 보관. 실패 시 Undo 이력 대신 정확히 복원."""
+def _단어모드_다음위치(pos):
+    """pos 다음 글자 위치(같은 문단 안). 글자 내용은 읽지 않는다."""
+    hwp.SetPos(*pos)
+    hwp_run('MoveNextChar')
+    other = hwp.GetPos()
+    if other[:2] != pos[:2] or other == pos:
+        return None
+    return other
+
+
+def 단어모드_서식보관(start, end):
+    """자간과 장평을 한 번에 글자별로 읽어 (자간 runs, 장평 runs)로 보관한다.
+
+    실패 시 Undo 이력 대신 정확히 복원하기 위한 원래 값이다. 한글은 여러
+    글자를 선택했을 때 서식이 섞여 있으면 값을 믿을 수 없게 돌려주므로(실측)
+    글자마다 읽되, 보관에는 글자 내용이 필요 없어 위치만 옮긴다(한글 호출
+    약 40% 감소). 자간과 장평을 따로 읽던 두 번의 순회도 한 번으로 줄인다.
+    """
     start, end = 자간조정_본문범위(start, end)
-    runs = []
+    spacing_runs, ratio_runs = [], []
     pos = start
+
+    def 병합(runs, pos, nxt, values):
+        if runs and runs[-1][2] == values:
+            runs[-1] = (runs[-1][0], nxt, values)
+        else:
+            runs.append((pos, nxt, values))
+
     while pos[2] < end[2]:
         if 중단_요청됨():
             return None
-        part = 단어모드_한글자(pos)
-        if not part or part[1][2] > end[2]:
-            raise RuntimeError('자간 보관 중 문자 위치 확인 실패')
-        단어모드_범위선택(pos, part[1])
+        nxt = _단어모드_다음위치(pos)
+        if not nxt or nxt[2] > end[2]:
+            raise RuntimeError('서식 보관 중 문자 위치 확인 실패')
+        단어모드_범위선택(pos, nxt)
         pset = hwp.HParameterSet.HCharShape
         hwp.HAction.GetDefault('CharShape', pset.HSet)
-        values = tuple(int(getattr(pset, key)) for key in _단어모드_자간필드)
-        if any(v < -50 or v > 50 for v in values):
+        spacing = tuple(int(getattr(pset, key)) for key in _단어모드_자간필드)
+        if any(v < -50 or v > 50 for v in spacing):
             raise RuntimeError('허용 범위 밖의 원래 자간')
-        if runs and runs[-1][2] == values:
-            runs[-1] = (runs[-1][0], part[1], values)
-        else:
-            runs.append((pos, part[1], values))
-        pos = part[1]
+        ratio = tuple(int(getattr(pset, key)) for key in _단어모드_장평필드)
+        병합(spacing_runs, pos, nxt, spacing)
+        병합(ratio_runs, pos, nxt, ratio)
+        pos = nxt
     hwp_run('Cancel')
-    return runs
+    return spacing_runs, ratio_runs
+
+
+def 단어모드_자간보관(start, end):
+    """혼합 자간을 연속 구간별 보관. 실패 시 Undo 이력 대신 정확히 복원."""
+    보관 = 단어모드_서식보관(start, end)
+    return None if 보관 is None else 보관[0]
 
 
 def 단어모드_자간적용(runs, delta):
@@ -4549,32 +4579,10 @@ def 단어모드_자간적용(runs, delta):
     hwp_run('Cancel')
 
 
-_단어모드_장평필드 = tuple('Ratio' + name for name in
-    ('Hangul', 'Latin', 'Hanja', 'Japanese', 'Other', 'Symbol', 'User'))
-
-
 def 단어모드_장평보관(start, end):
-    """혼합 장평(글자 가로비율)을 연속 구간별 보관. 자간보관과 동일한 방식."""
-    start, end = 자간조정_본문범위(start, end)
-    runs = []
-    pos = start
-    while pos[2] < end[2]:
-        if 중단_요청됨():
-            return None
-        part = 단어모드_한글자(pos)
-        if not part or part[1][2] > end[2]:
-            raise RuntimeError('장평 보관 중 문자 위치 확인 실패')
-        단어모드_범위선택(pos, part[1])
-        pset = hwp.HParameterSet.HCharShape
-        hwp.HAction.GetDefault('CharShape', pset.HSet)
-        values = tuple(int(getattr(pset, key)) for key in _단어모드_장평필드)
-        if runs and runs[-1][2] == values:
-            runs[-1] = (runs[-1][0], part[1], values)
-        else:
-            runs.append((pos, part[1], values))
-        pos = part[1]
-    hwp_run('Cancel')
-    return runs
+    """혼합 장평(글자 가로비율)을 연속 구간별 보관."""
+    보관 = 단어모드_서식보관(start, end)
+    return None if 보관 is None else 보관[1]
 
 
 def 단어모드_장평적용(runs, delta):
@@ -4663,7 +4671,7 @@ def 최소_성공단계_탐색(최대, 적용후_확인, 상한먼저=False, 선
     return 확정(성공)
 
 
-def 단어_장평_추가축소_시도(start, end, anchor, word_end, 최대시도):
+def 단어_장평_추가축소_시도(start, end, anchor, word_end, 최대시도, 보관=None):
     """자간만으로 안 줄어드는 긴 어절에 장평(글자 가로비율)을 추가로 줄여본다.
 
     자간을 허용 범위 끝까지 밀어붙이면 글자가 다닥다닥 붙어 보기 흉해
@@ -4672,9 +4680,13 @@ def 단어_장평_추가축소_시도(start, end, anchor, word_end, 최대시도
     다시 확인한다 — '자간 -4%, 장평 93%' 조합처럼, 자간을 극한까지
     밀어붙이는 대신 장평과 나눠 분담한다.
     """
-    spacing_runs = 단어모드_자간보관(start, end)
-    if spacing_runs is None:
+    # 보관: 호출자가 같은 구간을 이미 읽고 원래 값으로 되돌려 둔 (자간, 장평)
+    # runs. 넘겨받으면 같은 줄을 다시 글자별로 읽지 않는다.
+    if 보관 is None:
+        보관 = 단어모드_서식보관(start, end)
+    if 보관 is None:
         return False
+    spacing_runs, ratio_runs = 보관
     # 이 구간이 이전 단계·이전 회차에서 이미 일부 압축돼 있을 수 있다
     # (자간/장평은 회차 사이에 초기화되지 않는다). "이번에 -4%p까지"가
     # 아니라 "최종적으로 -4%p까지"가 되도록, 이미 줄어든 만큼을 빼고
@@ -4691,9 +4703,6 @@ def 단어_장평_추가축소_시도(start, end, anchor, word_end, 최대시도
         if 자간값:
             단어모드_자간적용(spacing_runs, 자간값)
             자간적용됨 = True
-        ratio_runs = 단어모드_장평보관(start, end)
-        if ratio_runs is None:
-            return False
         현재_최소장평 = min((v for _, _, vs in ratio_runs for v in vs), default=100)
         장평_바닥 = 100 - 단어_장평_추가축소_최대_단계
         여유_단계 = max(0, min(단어_장평_추가축소_최대_단계, 현재_최소장평 - 장평_바닥))
@@ -4756,9 +4765,10 @@ def 다음단어_당김_시도(anchor, 최대시도):
     if 다음단어_끝[2] - boundary[2] > 문장부호_2줄_기준글자수:
         return False
 
-    runs = 단어모드_자간보관(start, boundary)
-    if runs is None:
+    보관 = 단어모드_서식보관(start, boundary)
+    if 보관 is None:
         return False
+    runs = 보관[0]
     # 정상적인 단어 경계에서의 선택적 당김은 단어 분리 오류가 아니다.
     다음단어_통계['대상'] += 1
     success = False
@@ -4784,7 +4794,7 @@ def 다음단어_당김_시도(anchor, 최대시도):
     finally:
         if changed and not success:
             단어모드_자간적용(runs, 0)
-    if not success and 단어_장평_추가축소_시도(start, boundary, anchor, 다음단어_끝, 자간_상한):
+    if not success and 단어_장평_추가축소_시도(start, boundary, anchor, 다음단어_끝, 자간_상한, 보관=보관):
         success = True
     if success:
         다음단어_통계['적용'] += 1
@@ -4912,9 +4922,10 @@ def 단어중간_줄바꿈방지(최대시도):
             방법 = ""
 
             def 앞줄로_당기기():
-                runs = 단어모드_자간보관(start, word_end)
-                if runs is None:
+                보관 = 단어모드_서식보관(start, word_end)
+                if 보관 is None:
                     return None
+                runs = 보관[0]
                 success = False
                 changed = False
                 # 자간은 -50%보다 작게 할 수 없다.
@@ -4938,7 +4949,7 @@ def 단어중간_줄바꿈방지(최대시도):
                         단어모드_자간적용(runs, 0)
                 # 자간만으로 안 되면 장평을 추가로 줄여 본다 — 사람이 수동으로
                 # 하듯 자간은 적당히만 남기고 장평과 나눠 분담한다.
-                if 단어_장평_추가축소_시도(start, word_end, anchor, word_end, 최대시도):
+                if 단어_장평_추가축소_시도(start, word_end, anchor, word_end, 최대시도, 보관=보관):
                     return "앞줄 자간+장평 축소로 당김"
                 return ""
 
@@ -6118,11 +6129,25 @@ def 마지막쪽_화면줄수():
             pass
 
 
-def 구조문단_아래간격_일괄조정(delta_pt, 최소쪽=None):
+def 문단_위간격_pt_현재문단():
+    """현재 캐럿이 있는 문단의 '문단 위 간격' 값을 pt로 읽는다."""
+    if hwp is None:
+        return None
+    try:
+        return HwpUnit_pt(hwp.ParaShape.Item("PrevSpacing"))
+    except Exception as e:
+        로그(f"문단 위 간격 읽기 실패(무시): {e}")
+        return None
+
+
+def 구조문단_간격_일괄조정(delta_pt, 최소쪽=None, 위간격=False, 원래값=None):
     """문서 전체(본문 리스트만)에서 항목기호(□/ㅇ/-/*/※/• 등)로 시작하는
-    문단의 '문단 아래 간격'을 delta_pt만큼 조정한다(0pt 아래로는 내려가지
-    않음). 본문 줄간격과 '문단 위 간격'(표준서식 단계별 리듬)은 건드리지
-    않는다. 실제로 값이 바뀐 문단 수를 반환한다.
+    문단의 '문단 아래 간격'(위간격이면 '문단 위 간격')을 delta_pt만큼
+    조정한다(0pt 아래로는 내려가지 않음). 본문 줄간격은 건드리지 않는다.
+    실제로 값이 바뀐 문단 수를 반환한다.
+
+    원래값(dict)을 주면 처음 바꾸는 문단의 원래 pt를 (리스트, 문단) 번호로
+    기록해 구조문단_간격_복원으로 되돌릴 수 있게 한다.
 
     최소쪽을 주면 그 이전 쪽의 문단은 손대지 않는다 — 페이지 수 맞춤은
     항상 마지막 몇 쪽만 조정하면 충분한데, 문단마다 현재문단_텍스트()를
@@ -6132,6 +6157,8 @@ def 구조문단_아래간격_일괄조정(delta_pt, 최소쪽=None):
     """
     if hwp is None or 중단_요청됨():
         return 0
+    읽기 = 문단_위간격_pt_현재문단 if 위간격 else 문단_아래간격_pt_현재문단
+    쓰기 = 문단_위간격_적용_현재선택 if 위간격 else 문단_아래간격_적용_현재선택
     원위치 = hwp.GetPos()
     순회_시작()
     적용수 = 0
@@ -6146,13 +6173,15 @@ def 구조문단_아래간격_일괄조정(delta_pt, 최소쪽=None):
                 if 최소쪽 is None or 쪽번호 is None or 쪽번호 >= 최소쪽:
                     text = 현재문단_텍스트()
                     if paragraph_level(text) is not None:
-                        현재값 = 문단_아래간격_pt_현재문단()
+                        현재값 = 읽기()
                         if 현재값 is not None:
                             새값 = max(0.0, round(현재값 + delta_pt, 1))
                             if abs(새값 - 현재값) >= 0.05:
+                                if 원래값 is not None:
+                                    원래값.setdefault(tuple(hwp.GetPos()[:2]), 현재값)
                                 hwp_run('MoveParaBegin')
                                 hwp_run('MoveSelParaEnd')
-                                문단_아래간격_적용_현재선택(새값)
+                                쓰기(새값)
                                 hwp_run('Cancel')
                                 적용수 += 1
             if not 범위_다음_문단으로_진행():
@@ -6171,42 +6200,79 @@ def 구조문단_아래간격_일괄조정(delta_pt, 최소쪽=None):
     return 적용수
 
 
-def 보고서_페이지수_맞춤_시도(목표_페이지수):
-    """본문 줄간격은 그대로 둔 채 항목기호 문단의 '문단 아래 간격'만
-    1pt씩 줄여 실제 페이지 수를 목표에 맞춘다.
+def 구조문단_아래간격_일괄조정(delta_pt, 최소쪽=None):
+    return 구조문단_간격_일괄조정(delta_pt, 최소쪽=최소쪽)
 
-    사용자가 Alt+T로 문단 아래 여백을 pt 단위로 조금씩 줄이며 페이지
-    수를 눈으로 확인하는 시행착오를 그대로 자동화한 것 — 줄 높이를
-    직접 계산하지 않고 매 단계 실제 페이지 수를 다시 측정한다.
-    페이지맞춤_최대_pt까지 줄여도 목표에 못 미치면 더 손대지 않고
-    멈춘다(본문 내용을 강제로 줄이거나 지우지 않음 — 그럴 때는 수동으로
-    문구를 다듬어야 한다).
+
+def 구조문단_간격_복원(원래값, 위간격=False):
+    """구조문단_간격_일괄조정이 기록한 원래 간격으로 되돌린다."""
+    if hwp is None or not 원래값:
+        return 0
+    쓰기 = 문단_위간격_적용_현재선택 if 위간격 else 문단_아래간격_적용_현재선택
+    원위치 = hwp.GetPos()
+    복원수 = 0
+    try:
+        for (list_id, para_id), 값 in 원래값.items():
+            try:
+                hwp.SetPos(list_id, para_id, 0)
+                hwp_run('MoveParaBegin')
+                hwp_run('MoveSelParaEnd')
+                쓰기(값)
+                hwp_run('Cancel')
+                복원수 += 1
+            except Exception as e:
+                로그(f"문단 간격 복원 실패(무시): {e}")
+    finally:
+        try:
+            hwp.SetPos(*원위치)
+        except Exception:
+            pass
+    return 복원수
+
+
+def 보고서_페이지수_맞춤_시도(목표_페이지수):
+    """본문 줄간격은 그대로 둔 채 항목기호 문단의 간격만 1pt씩 줄여 실제
+    페이지 수를 목표에 맞춘다.
+
+    먼저 '문단 아래 간격'을 줄이고, 그래도 안 되면(또는 줄일 아래 간격이
+    없으면) '문단 위 간격'을 줄인다. 표준서식은 항목 사이 간격을 문단 위
+    여백으로 주고 빈 줄도 지우므로, 아래 간격만으로는 줄일 여지가 없는
+    경우가 많다. 각각 페이지맞춤_최대_pt까지만 줄이며, 매 단계 실제 페이지
+    수를 다시 잰다. 목표에 못 미치면 바꾼 간격을 모두 원래 값으로 되돌린다
+    (본문 내용을 강제로 줄이거나 지우지 않음 — 그럴 때는 수동으로 문구를
+    다듬어야 한다).
     """
     if hwp is None or not 목표_페이지수 or 목표_페이지수 <= 0:
         return False
     최대반복 = max(1, int(round(페이지맞춤_최대_pt / 페이지맞춤_스텝_pt)))
     최소쪽 = max(1, 목표_페이지수 - 페이지맞춤_뒤쪽범위_쪽수)
     로그(
-        f"페이지 수 맞춤 시도: 목표 {목표_페이지수}쪽 (문단 아래 간격 최대 "
+        f"페이지 수 맞춤 시도: 목표 {목표_페이지수}쪽 (문단 아래·위 간격 각각 최대 "
         f"{페이지맞춤_최대_pt:g}pt 축소, {최소쪽}쪽부터만 검사)"
     )
-    for 회 in range(1, 최대반복 + 1):
-        if 중단_요청됨():
-            return False
-        조정수 = 구조문단_아래간격_일괄조정(-페이지맞춤_스텝_pt, 최소쪽=최소쪽)
-        if 조정수 == 0:
-            로그("페이지 수 맞춤 중단: 더 줄일 항목기호 문단이 없음")
-            return False
-        마지막쪽, _ = 마지막쪽_화면줄수()
-        if 마지막쪽 is None:
-            로그("페이지 수 맞춤 중단: 쪽 번호 확인 실패")
-            return False
-        if 마지막쪽 <= 목표_페이지수:
-            로그(f"페이지 수 맞춤 완료: {회}단계({회 * 페이지맞춤_스텝_pt:g}pt)만에 {목표_페이지수}쪽 달성")
-            return True
+    원래값 = {False: {}, True: {}}
+    for 위간격 in (False, True):
+        이름 = "문단 위 간격" if 위간격 else "문단 아래 간격"
+        for 회 in range(1, 최대반복 + 1):
+            if 중단_요청됨():
+                return False
+            조정수 = 구조문단_간격_일괄조정(
+                -페이지맞춤_스텝_pt, 최소쪽=최소쪽, 위간격=위간격, 원래값=원래값[위간격])
+            if 조정수 == 0:
+                로그(f"페이지 수 맞춤: 더 줄일 {이름}이 있는 항목기호 문단이 없음")
+                break
+            마지막쪽, _ = 마지막쪽_화면줄수()
+            if 마지막쪽 is None:
+                로그("페이지 수 맞춤 중단: 쪽 번호 확인 실패")
+                break
+            if 마지막쪽 <= 목표_페이지수:
+                로그(f"페이지 수 맞춤 완료: {이름} {회}단계({회 * 페이지맞춤_스텝_pt:g}pt) 축소로 "
+                     f"{목표_페이지수}쪽 달성")
+                return True
+    복원수 = 구조문단_간격_복원(원래값[True], 위간격=True) + 구조문단_간격_복원(원래값[False])
     로그(
-        f"페이지 수 맞춤 실패: 문단 아래 간격을 {페이지맞춤_최대_pt:g}pt까지 줄였지만 "
-        f"목표({목표_페이지수}쪽) 미달 — 본문 내용을 줄여야 할 수 있음"
+        f"페이지 수 맞춤 실패: 문단 아래·위 간격을 {페이지맞춤_최대_pt:g}pt까지 줄여도 "
+        f"목표({목표_페이지수}쪽) 미달 — 바꾼 간격 {복원수}곳을 원래 값으로 되돌림"
     )
     return False
 
