@@ -106,7 +106,7 @@ class PipelineOrderFixesTest(unittest.TestCase):
         self.assertEqual(seen, [True, False])
 
     # A2: 문단 페이지 배치가 줄간격을 바꾸면 쪽 수 맞춤을 한 번 더 확인한다.
-    def _page_stages(self, page_counts, group_changes, last_lines=3):
+    def _page_stages(self, page_counts, group_changes, last_lines=3, fit_confirms=False):
         fn = self.ns['_문서_처리_1회']
         g = fn.__globals__
         calls = []
@@ -126,7 +126,8 @@ class PipelineOrderFixesTest(unittest.TestCase):
             '선택_세부작업': selection, '세트문장_통계': stats,
             '중단_요청됨': lambda: False, '단계표시': Mock(), '상태': Mock(), '로그': Mock(),
             'hwp_run': lambda cmd: True, '순회_시작': lambda: None,
-            '보고서_페이지수_맞춤_전체_적용': lambda: calls.append('fit') or True,
+            '보고서_페이지수_맞춤_전체_적용': lambda: calls.append('fit') or g.__setitem__('쪽맞춤_묶음_확인됨', fit_confirms) or True,
+            '쪽맞춤_묶음_확인됨': False,
             '세트문장_같은쪽_전체_적용': page_group,
             '마지막쪽_화면줄수': lambda: (next(pages), last_lines),
             '페이지맞춤_문단간격_사용': True, '페이지맞춤_최대남은줄수': 4, '진단로그': Mock(),
@@ -140,6 +141,8 @@ class PipelineOrderFixesTest(unittest.TestCase):
         self.assertEqual(self._page_stages([], [0]), ['fit', 'group'])
         # 마지막 쪽에 내용이 충분하면 한 번만 재고 쪽 수 맞춤을 건너뛴다.
         self.assertEqual(self._page_stages([4], [1], last_lines=20), ['fit', 'group'])
+        # 쪽 수 맞춤이 묶음 규칙까지 확인했으면 쪽 배치를 다시 하지 않는다.
+        self.assertEqual(self._page_stages([4, 3], [2, 0], fit_confirms=True), ['fit', 'group', 'fit'])
 
 
 if __name__ == '__main__':

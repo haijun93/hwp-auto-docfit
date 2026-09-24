@@ -26,7 +26,10 @@ class BlankLineRemovalTest(unittest.TestCase):
         find = self.ns['문두기호문장_사이_빈문단_찾기']
         kinds = ['other', 'blank', 'marker', 'blank', 'blank', 'marker', 'blank',
                  'other', 'blank', 'marker', 'blank']
-        self.assertEqual(find(kinds), [3, 4])
+        # 3·4번: 문두기호 문장 사이, 10번: 문서 끝 빈 문단(빈 쪽 방지)
+        self.assertEqual(find(kinds), [3, 4, 10])
+        self.assertEqual(find(['marker', 'blank', 'blank']), [1, 2])
+        self.assertEqual(find(['blank', 'marker']), [])
 
     def test_deletes_from_the_end_joining_into_previous_paragraph(self):
         fn = self.ns['문두기호문장_사이_빈줄_삭제']

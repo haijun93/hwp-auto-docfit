@@ -76,11 +76,14 @@ class PageFitFallbackTest(unittest.TestCase):
     def setUpClass(cls):
         cls.ns = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'hwp-auto-docfit.py'))
 
-    def _fit(self, below_changes, above_pages):
+    def _fit(self, below_changes, above_pages, splits=()):
+        """splits: 목표 쪽 수에 닿았을 때마다 돌려줄 '묶음 걸림' 여부."""
         fn = self.ns['보고서_페이지수_맞춤_시도']
+        g = fn.__globals__
         calls, restored = [], []
         below = iter(below_changes)
         pages = iter(above_pages)
+        split_iter = iter(splits)
 
         def adjust(delta, 최소쪽=None, 위간격=False, 원래값=None):
             calls.append('위' if 위간격 else '아래')
@@ -89,25 +92,45 @@ class PageFitFallbackTest(unittest.TestCase):
                 원래값.setdefault((0, len(calls)), 10.0)
             return count
 
-        with patch.dict(fn.__globals__, {
+        with patch.dict(g, {
             'hwp': object(), '중단_요청됨': lambda: False, '로그': Mock(),
             '구조문단_간격_일괄조정': adjust,
             '마지막쪽_화면줄수': lambda: (next(pages, 4), 1),
+            '쪽맞춤_묶음분리_있음': lambda: next(split_iter, False),
             '구조문단_간격_복원': lambda values, 위간격=False: restored.append((위간격, len(values))) or len(values),
             '페이지맞춤_최대_pt': 3.0, '페이지맞춤_스텝_pt': 1.0, '페이지맞춤_뒤쪽범위_쪽수': 2,
+            '페이지맞춤_묶음확인_추가단계': 4, '쪽맞춤_묶음_확인됨': False,
         }):
             result = fn(3)
-        return result, calls, restored
+            confirmed = g['쪽맞춤_묶음_확인됨']
+        return result, calls, restored, confirmed
 
     def test_uses_paragraph_top_spacing_when_bottom_spacing_is_zero(self):
-        result, calls, restored = self._fit([0], [4, 3])
+        result, calls, restored, confirmed = self._fit([0], [4, 3])
         self.assertTrue(result)
+        self.assertTrue(confirmed)                      # 묶음도 온전
         self.assertEqual(calls, ['아래', '위', '위'])
         self.assertEqual(restored, [])
 
+    def test_keeps_shrinking_until_groups_are_intact(self):
+        result, calls, restored, confirmed = self._fit([0], [3, 3], splits=[True, False])
+        self.assertTrue(result)
+        self.assertTrue(confirmed)
+        self.assertEqual(calls, ['아래', '위', '위'])
+        self.assertEqual(restored, [])
+
+    def test_falls_back_to_first_step_that_reached_target(self):
+        # 1단계에서 3쪽에 닿았지만 끝까지 묶음이 걸림 → 되돌린 뒤 1단계만 다시 적용.
+        result, calls, restored, confirmed = self._fit([0], [3, 3, 3], splits=[True, True, True])
+        self.assertTrue(result)
+        self.assertFalse(confirmed)                     # 쪽 배치가 묶음을 옮겨야 함
+        self.assertEqual(calls, ['아래', '위', '위', '위', '위'])
+        self.assertEqual(restored, [(True, 3), (False, 0)])
+
     def test_failure_restores_all_changed_spacing(self):
-        result, calls, restored = self._fit([2, 2, 2], [4, 4, 4, 4, 4, 4])
+        result, calls, restored, confirmed = self._fit([2, 2, 2], [4, 4, 4, 4, 4, 4])
         self.assertFalse(result)
+        self.assertFalse(confirmed)
         self.assertEqual(calls, ['아래'] * 3 + ['위'] * 3)
         self.assertEqual(restored, [(True, 3), (False, 3)])
 
