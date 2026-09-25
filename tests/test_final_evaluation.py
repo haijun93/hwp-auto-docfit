@@ -104,6 +104,20 @@ class FinalEvaluationTest(unittest.TestCase):
         self.assertEqual(report["verdict"], "달성")
         self.assertTrue(any("칸 폭보다 긴 단어 1개" in note for note in report["notes"]))
 
+    def test_number_check_review_is_a_note_not_a_blocker(self):
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder) / "result.hwpx"
+            output.touch()
+            report = evaluate_work(
+                build_work_goal("all", 1, {"page_group": True}),
+                [{"output": str(output), "success": True, "integrity_ok": True,
+                  "rule_checks": {"page_group": {"status": "passed", "issues": []},
+                                  "number_check": {"status": "passed", "checked": 3, "issues": [],
+                                                   "review": [{"text": "'1,500억원'"}]}}}],
+                {"attempted": 1, "succeeded": 1}, verification_enabled=True)
+        self.assertEqual(report["verdict"], "달성")
+        self.assertTrue(any("숫자 대조" in note and "1개" in note for note in report["notes"]))
+
     def test_missing_checker_result_still_blocks(self):
         with tempfile.TemporaryDirectory() as folder:
             output = Path(folder) / "result.hwpx"

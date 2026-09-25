@@ -119,6 +119,10 @@ def evaluate_work(goal, documents, item_stats=None, unresolved=None, verificatio
     groups = exempt_count('page_group')
     if groups:
         notes.append(f"한 쪽보다 긴 묶음 {groups}개는 쪽 배치 규칙 적용 제외(한 쪽에 모을 수 없음)")
+    numbers = sum(len((item.get('rule_checks') or {}).get('number_check', {}).get('review') or [])
+                  for item in outputs)
+    if numbers:
+        notes.append(f"숫자 대조: 표 가까이 본문 수치 중 표에서 찾지 못한 {numbers}개는 확인 필요(자동 수정 안 함)")
     words = exempt_count('word_check', 'control_word_check')
     if words:
         notes.append(f"칸 폭보다 긴 단어 {words}개는 단어 분리 규칙 적용 제외(줄 첫머리부터 넘침)")

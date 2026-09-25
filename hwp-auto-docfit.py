@@ -254,6 +254,7 @@ import win32gui
 import win32con
 from defusedxml.ElementTree import fromstring as safe_xml_fromstring
 from docfit_core.style_hierarchy import DOT_MARKERS, analyze_hierarchy, display_role, hierarchy_summary, leading_marker, normalize_leading_dot, stored_role
+from docfit_core.number_check import 숫자_대조
 from docfit_core.stage_selection import STAGE_EXAMPLES, default_choice as stage_default, enabled as stage_enabled, stages_for_mode
 from docfit_core.document_rules import (
     ParagraphSpacingTracker, YEAR_QUOTE_PATTERN, marker_space_fix,
@@ -9292,6 +9293,21 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
         )
         for 문제 in 무결성["issues"]:
             로그(f"  - [{문제['severity']}] {문제['message']}")
+    if 검수_사용:
+        # 숫자 데이터 일치 검사(TODO 4순위): 표 가까이의 본문 수치가 그 표에 같은 단위로
+        # 있는지 본다. 읽기 전용이며 실패가 아닌 '확인 필요'로만 알린다.
+        try:
+            대조 = 숫자_대조(결과_구조 if 원본_구조 is not None else inspect_hwpx(저장파일))
+            최종규칙검사['number_check'] = 대조
+            if 대조['status'] == 'skipped':
+                진단로그(f"숫자 대조: {대조['reason']}")
+            else:
+                로그(f"숫자 대조: 표 가까이 본문 수치 {대조['checked']}개 중 표에서 찾지 못한 "
+                     f"{len(대조['review'])}개(확인 필요)")
+                for 항목 in 대조['review']:
+                    로그(f"  - [숫자 대조 확인 필요] {항목['text']}: {항목['context']}")
+        except Exception as exc:
+            진단로그(f"숫자 대조 실패(무시): {exc}")
     최종검수_문서목록.append({
         "source": str(파일),
         "output": str(저장파일),
