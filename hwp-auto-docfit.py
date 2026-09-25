@@ -8758,6 +8758,23 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
 # 백그라운드 작업 실행 스레드
 # ============================================================
 
+def 절전_방지(켜기):
+    """처리 중에는 PC가 절전(대기)에 들어가지 않게 한다(화면은 꺼져도 됨).
+
+    실전 테스트에서 긴 문서 처리 중 PC가 절전에 들어가 한글 연결이 끊기고
+    (RPC 서버를 사용할 수 없음) 하루 가까이 멈춰 있었다. 이 설정은 호출한
+    스레드에만 적용되고, 끄거나 스레드가 끝나면 원래대로 돌아간다. 사용자가
+    직접 절전·덮개 닫기를 하면 막지 못한다.
+    """
+    ES_CONTINUOUS, ES_SYSTEM_REQUIRED = 0x80000000, 0x00000001
+    try:
+        import ctypes
+        ctypes.windll.kernel32.SetThreadExecutionState(
+            ES_CONTINUOUS | (ES_SYSTEM_REQUIRED if 켜기 else 0))
+    except Exception:
+        pass
+
+
 def 작업_실행(
     파일목록,
     문장부호기능=True,
@@ -8811,6 +8828,7 @@ def 작업_실행(
     if 표준서식_문단위간격_pt is None:
         표준서식_문단위간격_pt = {}
 
+    절전_방지(True)
     try:
         if 실행모드 not in ("spacing", "format", "all"):
             raise ValueError("잘못된 실행 모드")
@@ -9020,6 +9038,7 @@ def 작업_실행(
         traceback.print_exc()
         gui_queue.put(("fatal_error", str(e)))
     finally:
+        절전_방지(False)
         # COM 객체는 생성한 작업 스레드에서 반드시 정리한다.
         # 창을 보존하는 옵션이어도 COM 프록시 자체를 다음 작업 스레드로 넘기면
         # RPC_E_WRONG_THREAD 류 오류가 날 수 있으므로 창만 분리하고 참조를 해제한다.
