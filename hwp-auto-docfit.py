@@ -5689,7 +5689,7 @@ def 보고서_단어분리_최종검사(컨트롤=False):
                 if hwp.GetPos()[0] != area:
                     break
                 if ((not 쪽범위_사용중() or area in 쪽범위_컨트롤영역)
-                        and not 표셀_자간_제외인가()):
+                        and not 표셀_자간_제외인가() and not 숫자_표칸인가()):
                     areas.append(area)
                 area += 1
         else:
@@ -8075,6 +8075,8 @@ def 컨트롤_내부_자간조정():
         if 표셀_자간_제외인가():
             진단로그(f"[표 안 문장 제외] 영역 {area}: 자간 조정 안 함")
             continue
+        if 숫자_표칸인가():
+            continue
         while True:
             if 중단_요청됨():
                 return False
@@ -8154,6 +8156,8 @@ def 컨트롤_내부_문장부호_처리():
             continue
         if area in 한칸표영역:
             진단로그(f"[한 칸 표 제외] 영역 {area}: 문장부호 서식 보존")
+            continue
+        if 숫자_표칸인가():
             continue
         while True:
             if 중단_요청됨():
@@ -8279,6 +8283,36 @@ def 현재_표셀인가():
         return 주소 is not None
     except Exception:
         return False
+
+# 숫자·기호만으로 된 표 칸(통계표의 수치 칸 등)은 어절이 없어 자간·단어 분리
+# 조정할 것이 없다. 실측: 수출입동향(통계표 위주) 문서에서 자간 초기화만
+# 32분이 걸렸다(사용자 요청 2026-09-25: 숫자만으로 된 표는 건너뜀).
+_숫자칸_패턴 = re.compile(r"[\s0-9０-９,，.．%％+\-－−–△▲▼▽↑↓()（）~∼'‘’/:×·]*")
+
+
+def 숫자_표칸인가(area=None):
+    """커서가 있는(또는 area) 표 칸의 글자가 숫자·기호뿐이면 True(빈 칸 포함)."""
+    original = hwp.GetPos()
+    try:
+        if area is not None:
+            hwp.SetPos(area, 0, 0)
+            if hwp.GetPos()[0] != area:
+                return False
+        if hwp.GetPos()[0] == 0 or not 현재_표셀인가():
+            return False
+        hwp_run('MoveListBegin')
+        hwp_run('MoveSelListEnd')
+        text = 현재선택영역_텍스트() or ''
+        hwp_run('Cancel')
+        return bool(_숫자칸_패턴.fullmatch(text.replace(chr(13), '').replace(chr(10), '')))
+    except Exception:
+        return False
+    finally:
+        try:
+            hwp.SetPos(*original)
+        except Exception:
+            pass
+
 
 def 표셀_자간_제외인가():
     """'표 서식 내 문장도 자간조정하기'가 꺼져 있고 커서가 표 셀 안이면 True."""
@@ -8588,7 +8622,7 @@ def 문서_전체_자간_초기화():
                 break
             if 쪽범위_사용중() and area not in 쪽범위_컨트롤영역:
                 continue
-            if 표셀_자간_제외인가():
+            if 표셀_자간_제외인가() or 숫자_표칸인가():
                 continue
             if 영역_초기화(area) is False:
                 return False

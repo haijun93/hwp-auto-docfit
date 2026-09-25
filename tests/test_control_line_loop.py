@@ -87,5 +87,34 @@ class ControlLineLoopTest(unittest.TestCase):
         self.assertEqual(calls, [(2, 0, 0)])
 
 
+class NumericCellTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.ns = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'hwp-auto-docfit.py'))
+
+    def check(self, text):
+        fn = self.ns['숫자_표칸인가']
+
+        class Doc:
+            pos = (5, 0, 0)
+            def GetPos(self):
+                return self.pos
+            def SetPos(self, *pos):
+                self.pos = tuple(pos)
+        with patch.dict(fn.__globals__, {
+            'hwp': Doc(), 'hwp_run': lambda cmd: True, '현재_표셀인가': lambda: True,
+            '현재선택영역_텍스트': lambda: text,
+        }):
+            return fn()
+
+    def test_numeric_cells(self):
+        for text in ('1,234', '12.5%', '△3.2', '(-1.4)', '2026. 8.', '', '  ' + chr(13) + chr(10), '▲15.8'):
+            self.assertTrue(self.check(text), text)
+
+    def test_text_cells_are_processed(self):
+        for text in ('구분', '반도체', '12.3%p', '1,234억원', '수출 증가'):
+            self.assertFalse(self.check(text), text)
+
+
 if __name__ == '__main__':
     unittest.main()
