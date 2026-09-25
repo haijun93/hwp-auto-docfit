@@ -3063,10 +3063,17 @@ def 문단_내어쓰기_적용(문단_시작위치, text, 폰트크기_pt=None, 
 #    가로 위치. 즉 위 문단에 문두 라벨(괄호/콜론)이 있으면 그 라벨 뒤 첫
 #    글자 위치, 없으면 첫 공백 뒤 첫 글자 위치.
 #
-# 구현: 위 문단의 본문 첫 글자 폭 W(HWPUNIT)를 기존 내어쓰기 계산 함수로
-# 재사용해 구하고, 부연설명 문단에 왼쪽여백 = W 를 준다. 부연설명 자체의
-# 선행 공백 폭은 첫 줄 들여쓰기(-w_lead)로 상쇄해, 마커(*, ※)가 정확히
-# W 위치에서 시작하도록 한다(텍스트는 건드리지 않는다).
+# 구현(1.68 Alpha 6, TODO.md 1순위): 폭을 글자 크기로 '계산'하지 않고 한/글에
+# '실측'시킨다. 본문 내어쓰기와 같은 원리로, 캐럿을 본문 첫 글자에 두고 실제
+# Shift+Tab(ParagraphShapeIndentAtCaret)을 실행해 한/글이 정한 값을 읽는다.
+# 실측(2026-09-25, 통합테스트 문서): 예전 계산 폭은 한/글 실측값의 절반
+# 수준이었다(예: '  - ' 계산 2800 / 실측 5600). 양쪽정렬로 늘어난 공백까지
+# 한/글이 반영하므로 정렬과 무관하게 맞는다.
+#  - 위 문단 본문 첫 글자 위치 = 위 문단 왼쪽여백 + 실측 폭
+#  - 부연설명 왼쪽여백 = 그 위치 − 부연설명 자신의 선행 공백 실측 폭
+#    → 선행 공백 뒤 마커(*, ※)가 위 문단 본문 첫 글자와 같은 칸에서 시작한다.
+#  - 부연설명 자신의 첫 줄 값(내어쓰기)은 건드리지 않는다(자기 본문에 맞춘
+#    내어쓰기를 그대로 두고 문단 전체만 옮긴다).
 부연설명_들여쓰기_사용 = True
 
 _제목_기호 = set("□ㅁ■")
@@ -3098,48 +3105,117 @@ def _선행공백_길이(text):
         i += 1
     return i
 
-def _부연설명_들여쓰기_적용(문단_시작, text, 부모_W):
-    """부연설명 문단에 왼쪽여백 = 부모_W 를 적용한다.
 
-    부연설명 자체의 선행 공백 폭(w_lead)은 첫 줄 들여쓰기 -w_lead로 상쇄하여,
-    선행 공백이 있든 없든 마커가 정확히 부모_W 위치에서 시작하게 한다.
-    (둘째 줄 이후로 넘어가도 왼쪽여백 = 부모_W 라 같은 칸에서 시작한다.)
+def _캐럿위치_폭_실측(문단_시작, 글자수):
+    """문단 첫 줄에서 앞 글자수(문자열 길이)만큼의 가로 폭을 한/글에 실측시킨다.
+
+    첫 줄 값을 0으로 두고 그 위치에서 실제 Shift+Tab을 실행해 생긴 내어쓰기
+    값을 읽은 뒤, 문단의 원래 첫 줄 값으로 되돌린다. 문단 모양 단위(왼쪽여백과
+    같은 단위)로 돌려주며, 위치가 첫 화면줄 밖이거나 실패하면 None.
+    """
+    original_pos = hwp.GetPos()
+    begin = None
+    original = None
+    try:
+        hwp_run("Cancel")
+        hwp.SetPos(*문단_시작)
+        hwp_run("MoveParaBegin")
+        begin = hwp.GetPos()
+        original = hwp.ParaShape.Item("Indentation")
+        _내어쓰기_값_설정(0)
+        hwp.SetPos(*begin)
+        hwp_run("MoveLineEnd")
+        line_end = hwp.GetPos()
+        text = 현재문단_텍스트()
+        units = len(text[:글자수].encode("utf-16-le")) // 2
+        target = (begin[0], begin[1], begin[2] + units)
+        if line_end[:2] != begin[:2] or target[2] >= line_end[2]:
+            return None
+        if hwp.SetPos(*target) is False or tuple(hwp.GetPos()) != target:
+            return None
+        if hwp_run("ParagraphShapeIndentAtCaret") is False:
+            return None
+        value = hwp.ParaShape.Item("Indentation")
+        return -int(value) if value < 0 else None
+    except Exception as e:
+        진단로그(f"[부연설명 들여쓰기] 폭 실측 실패: {e}")
+        return None
+    finally:
+        if begin is not None and original is not None:
+            try:
+                hwp.SetPos(*begin)
+                _내어쓰기_값_설정(original)
+            except Exception:
+                pass
+        try:
+            hwp.SetPos(*original_pos)
+        except Exception:
+            pass
+
+
+def 부모_본문시작_실측(문단_시작, text):
+    """위 문단(제목/본문/내용) 본문 첫 글자의 가로 위치 = 왼쪽여백 + 실측 폭."""
+    오프셋 = 문단_내어쓰기_기준_오프셋(text)
+    if not 오프셋 or 오프셋 <= 0:
+        return None
+    폭 = _캐럿위치_폭_실측(문단_시작, 오프셋)
+    if 폭 is None:
+        return None
+    hwp.SetPos(*문단_시작)
+    return int(hwp.ParaShape.Item("LeftMargin")) + 폭
+
+
+def _부연설명_들여쓰기_적용(문단_시작, text, 부모_시작):
+    """부연설명 문단의 왼쪽여백을 맞춰 마커가 부모_시작 칸에서 시작하게 한다.
+
+    바뀌었으면 True, 이미 같으면 False, 실패하면 None.
     """
     if 현재_한칸표인가():
-        return
+        return False
+    lead = _선행공백_길이(text)
+    w_lead = 0
+    if lead > 0:
+        w_lead = _캐럿위치_폭_실측(문단_시작, lead)
+        if w_lead is None:
+            로그(f"부연설명 들여쓰기 건너뜀(선행 공백 폭 실측 실패): {text.strip()[:40]}")
+            return None
+    margin = max(0, int(부모_시작) - int(w_lead))
     try:
-        lead = _선행공백_길이(text)
-        w_lead = 문단_선행부_폭_HWPUNIT(문단_시작, text, lead) if lead > 0 else 0
-        hwp.SetPos(문단_시작[0], 문단_시작[1], 문단_시작[2])
+        hwp.SetPos(*문단_시작)
         hwp_run("MoveParaBegin")
-        act = hwp.HAction
-        pset = hwp.HParameterSet.HParaShape
-        act.GetDefault("ParagraphShape", pset.HSet)
-        try:
-            pset.LeftMargin = 부모_W
-        except Exception:
-            pass
-        try:
-            pset.Indentation = -w_lead
-        except Exception:
-            pass
-        act.Execute("ParagraphShape", pset.HSet)
-        진단로그(f"[부연설명 들여쓰기] W={부모_W}HWPUNIT({부모_W/100:.1f}pt) lead={w_lead}: {text.strip()[:50]}")
+        if int(hwp.ParaShape.Item("LeftMargin")) == margin:
+            return False
+        act = hwp.CreateAction("ParagraphShape")
+        pset = act.CreateSet()
+        pset.SetItem("LeftMargin", margin)
+        if act.Execute(pset) is False:
+            raise RuntimeError("왼쪽여백 설정 실패")
+        진단로그(f"[부연설명 들여쓰기] 부모 본문 시작 {부모_시작}, 선행 공백 {w_lead} → "
+                 f"왼쪽여백 {margin}: {text.strip()[:50]}")
         return True
     except Exception as e:
         로그(f"부연설명 들여쓰기 적용 실패(무시): {e}")
-        return False
+        return None
 
-def 부연설명_들여쓰기_전체_적용():
-    """문서를 순회하며 각 부연설명(*, **, ※)을 바로 위 제목/본문/내용의
-    본문 첫 글자 위치에 맞춰 들여쓴다."""
+
+def 부연설명_들여쓰기_전체_적용(부모대상=None):
+    """각 부연설명(*, **, ※)을 바로 위 제목/본문/내용의 본문 첫 글자 위치에 맞춘다.
+
+    부모대상((리스트, 문단) 집합)을 주면 그 부모에 딸린 부연설명만 다시 맞춘다
+    (자간 조정 후 부모 내어쓰기가 바뀐 경우). 옮긴 부연설명은
+    내어쓰기_변경문단에 더해 다음 단어 분리 재검사 대상이 되게 한다.
+    """
     if not 부연설명_들여쓰기_사용:
         return True
     if 중단_요청됨():
         return False
-    로그("부연설명(*, **, ※) 들여쓰기 적용 시작")
+    if 부모대상 is not None and not 부모대상:
+        return True
+    if 부모대상 is None:
+        로그("부연설명(*, **, ※) 들여쓰기 적용 시작")
     순회_시작()
-    부모_W = None      # 최근 제목/본문/내용의 본문 첫 글자 위치(HWPUNIT)
+    부모 = None        # (부모 문단 시작 위치, 텍스트)
+    부모_시작 = None   # 실측한 부모 본문 첫 글자 위치(필요할 때 한 번만 잰다)
     적용수 = 0
     while True:
         if 중단_요청됨():
@@ -3151,24 +3227,29 @@ def 부연설명_들여쓰기_전체_적용():
         if text and text.strip():
             유형 = _부모문단_유형(text)
             if 유형 is not None:
-                오프셋 = 문단_내어쓰기_기준_오프셋(text)
-                if 오프셋 and 오프셋 > 0:
-                    부모_W = 문단_선행부_폭_HWPUNIT(문단_시작, text, 오프셋)
-                else:
-                    부모_W = None
+                부모 = (문단_시작, text)
+                부모_시작 = None
             elif _부연설명_문단인가(text):
                 marker, _ = leading_marker(text)
                 들여쓰기_선택 = 표준서식_설정.get("스타일_속성선택", {}).get(marker, {}).get("indent", True)
-                if 부모_W and 들여쓰기_선택:
-                    if _부연설명_들여쓰기_적용(문단_시작, text, 부모_W):
-                        적용수 += 1
+                대상 = 부모 is not None and (부모대상 is None or tuple(부모[0][:2]) in 부모대상)
+                if 대상 and 들여쓰기_선택:
+                    if 부모_시작 is None:
+                        부모_시작 = 부모_본문시작_실측(*부모)
+                    if 부모_시작:
+                        결과 = _부연설명_들여쓰기_적용(문단_시작, text, 부모_시작)
+                        if 결과:
+                            적용수 += 1
+                            내어쓰기_변경문단.add(tuple(문단_시작[:2]))
+                hwp.SetPos(*문단_시작)
             else:
                 # 제목/본문/내용도 부연설명도 아닌 일반 문단이 끼면 연결이 끊긴다.
-                부모_W = None
+                부모 = None
 
         if not 범위_다음_문단으로_진행():
             break
-    로그(f"부연설명 들여쓰기 적용 완료 (적용 {적용수}건)")
+    if 부모대상 is None or 적용수:
+        로그(f"부연설명 들여쓰기 적용 완료 (적용 {적용수}건)")
     return True
 
 def 페이지_여백_설정(여백_mm):
@@ -8446,9 +8527,6 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
         if stage_enabled(선택_세부작업, 'parenthesis') and (괄호_축소_사용 or 괄호_라벨_볼드_사용):
             if not stage('문두 라벨/괄호 서식', 괄호_텍스트_크기_축소_전체_적용):
                 return False
-        if stage_enabled(선택_세부작업, 'supplement_indent') and 부연설명_들여쓰기_사용:
-            if not stage('부연설명 들여쓰기', 부연설명_들여쓰기_전체_적용):
-                return False
         # 정밀 프로필은 셀별 문자 서식을 이미 적용했으므로 대표 머리글/본문 값으로 덮지 않는다.
         if stage_enabled(선택_세부작업, 'table_format') and 표_헤더서식_사용 and not 활성_정밀표_프로필 and not stage('표 서식', 표_헤더서식_전체_적용):
             return False
@@ -8467,6 +8545,14 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
     # 분리 검사를 수행하기 전에 최종 문단 모양을 먼저 확정한다.
     if 작업_모드 in ('format', 'all') and 표준서식_사용 and 표준서식_내어쓰기_사용 and stage_enabled(선택_세부작업, 'hanging_indent'):
         if not stage('최종 서식 기준 내어쓰기', 문단_내어쓰기_전체_갱신):
+            return False
+    # 부연설명은 위 문단의 '실측' 본문 시작 위치에 맞추므로 최종 내어쓰기 뒤에
+    # 한다. 자간·단어 분리 검사보다는 앞이어야 옮긴 부연설명의 줄바꿈도 검사된다.
+    부연설명_단계_사용 = (작업_모드 in ('format', 'all') and 표준서식_사용
+                      and stage_enabled(선택_세부작업, 'supplement_indent')
+                      and 부연설명_들여쓰기_사용)
+    if 부연설명_단계_사용:
+        if not stage('부연설명 들여쓰기', 부연설명_들여쓰기_전체_적용):
             return False
     if 작업_모드 in ('spacing', 'all'):
         # 자간을 줄이거나 넓히면 문두기호 문장의 첫 줄 폭이 바뀌어
@@ -8517,6 +8603,13 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
                 if not stage('자간 조정 후 내어쓰기' + 접미,
                              lambda: 문단_내어쓰기_전체_갱신(대상문단=대상)):
                     return False
+                # 내어쓰기가 바뀐 위 문단에 딸린 부연설명도 새 위치에 다시 맞춘다
+                # (옮긴 부연설명은 다음 차수 단어 분리 재검사 대상에 들어간다).
+                if 부연설명_단계_사용 and 내어쓰기_변경문단:
+                    부모들 = set(내어쓰기_변경문단)
+                    if not stage('자간 조정 후 부연설명 들여쓰기' + 접미,
+                                 lambda: 부연설명_들여쓰기_전체_적용(부모대상=부모들)):
+                        return False
             else:
                 로그(f"[자간·내어쓰기 반복] 최대 {자간_내어쓰기_최대반복}회 도달, 반복 종료")
         finally:
