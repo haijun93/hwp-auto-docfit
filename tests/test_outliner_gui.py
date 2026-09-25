@@ -3,6 +3,7 @@ from pathlib import Path
 import os
 import runpy
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -41,7 +42,13 @@ class OutlinerGuiTest(unittest.TestCase):
 
                     def key(sequence, line, col="end"):
                         outline.mark_set("insert", f"{line}.{col}")
-                        outline.focus_force()
+                        # 포커스가 실제로 옮겨진 뒤에 키를 보낸다(가끔 먼저 가서 무시되던 문제).
+                        for _ in range(20):
+                            outline.focus_force()
+                            root.update()
+                            if root.focus_get() is outline:
+                                break
+                            time.sleep(0.05)
                         outline.event_generate(sequence, when="tail")
                         root.update()
 
