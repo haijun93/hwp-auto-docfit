@@ -255,6 +255,7 @@ import win32con
 from defusedxml.ElementTree import fromstring as safe_xml_fromstring
 from docfit_core.style_hierarchy import DOT_MARKERS, analyze_hierarchy, display_role, hierarchy_summary, leading_marker, normalize_leading_dot, stored_role
 from docfit_core.number_check import 숫자_대조
+from docfit_core import outline_ops
 from docfit_core.stage_selection import STAGE_EXAMPLES, default_choice as stage_default, enabled as stage_enabled, stages_for_mode
 from docfit_core.document_rules import (
     ParagraphSpacingTracker, YEAR_QUOTE_PATTERN, marker_space_fix,
@@ -12069,6 +12070,12 @@ class HwpAutoDocFitGUI:
         outline_pasted_text로 ㅁ/ㅇ/-/• 공문서 문두기호로 바꿔 문서
         목록에 추가하고, '마크다운으로 추가'는 원본 그대로 추가해
         고급 문서 엔진(kordoc)이 있을 때 서식을 살려 변환하게 한다.
+
+        1.68 Alpha 6(TODO 5순위): 접기/펼치기(Ctrl+↑/↓), 확대(Alt+→/←),
+        항목 이동(Alt+Shift+↑/↓), 완료 표시(Ctrl+Enter, "[x] "), 메모
+        (Shift+Enter, "> "), 검색 걸러 보기(Ctrl+F), 저장·열기(Ctrl+S/O)와
+        닫을 때 자동 저장한 글을 다음에 이어 쓰기. 줄 계산은
+        docfit_core.outline_ops의 순수 함수가 맡는다.
         """
         if self.running:
             return
@@ -12079,22 +12086,28 @@ class HwpAutoDocFitGUI:
         window = tk.Toplevel(self.root)
         self._아웃라이너_창 = window
         window.title("아웃라이너로 새 글 작성")
-        window.geometry("980x620")
-        window.minsize(640, 420)
+        window.geometry("1020x660")
+        window.minsize(680, 440)
         window.transient(self.root)
-
-        def closed():
-            self._아웃라이너_창 = None
-        window.protocol("WM_DELETE_WINDOW", lambda: (window.destroy(), closed()))
+        임시저장_경로 = Path(설정_파일_경로()).with_name("outliner_draft.md")
 
         body = ttk.Frame(window, padding=12)
         body.pack(fill="both", expand=True)
         ttk.Label(body, text="워크플로위처럼 항목을 쓰고 Tab/Shift+Tab으로 계층을 넣고 빼세요.",
                   font=("맑은 고딕", 12, "bold")).pack(anchor="w")
         ttk.Label(body,
-                  text="Enter: 같은 계층의 새 항목 · Tab: 한 단계 들여쓰기(바로 위 항목 아래로) · "
-                       "Shift+Tab: 내어쓰기. 0단계는 ㅁ, 1단계는 ㅇ, 2단계는 -, 3단계 이후는 모두 •로 바뀝니다.",
-                  style="Hint.TLabel", wraplength=940, justify="left").pack(anchor="w", pady=(2, 8))
+                  text="Enter: 같은 계층의 새 항목 · Tab/Shift+Tab: 들여쓰기/내어쓰기 · "
+                       "Ctrl+↑/↓: 접기/펼치기 · Alt+→/←: 확대/전체 보기 · Alt+Shift+↑/↓: 항목 이동 · "
+                       "Ctrl+Enter: 완료 표시 · Shift+Enter: 메모 · Ctrl+F: 검색 · Ctrl+S/O: 저장/열기. "
+                       "0단계는 ㅁ, 1단계는 ㅇ, 2단계는 -, 3단계 이후는 •, 메모는 ※로 바뀝니다.",
+                  style="Hint.TLabel", wraplength=980, justify="left").pack(anchor="w", pady=(2, 6))
+
+        toolbar = ttk.Frame(body)
+        toolbar.pack(fill="x", pady=(0, 6))
+        ttk.Label(toolbar, text="검색").pack(side="left")
+        search_var = tk.StringVar()
+        search_entry = ttk.Entry(toolbar, textvariable=search_var, width=22)
+        search_entry.pack(side="left", padx=(4, 10))
 
         panes = ttk.Frame(body)
         panes.pack(fill="both", expand=True)
@@ -12114,6 +12127,13 @@ class HwpAutoDocFitGUI:
         outline_scroll = ttk.Scrollbar(outline_frame, orient="vertical", command=outline_text.yview)
         outline_scroll.grid(row=0, column=1, sticky="ns")
         outline_text.configure(yscrollcommand=outline_scroll.set)
+        # 접기·확대·검색은 줄을 화면에서만 숨긴다(저장 내용은 그대로).
+        for 태그 in ("hidden_fold", "hidden_zoom", "hidden_filter"):
+            outline_text.tag_configure(태그, elide=True)
+        outline_text.tag_configure("done", overstrike=True, foreground="#8a8a8a")
+        outline_text.tag_configure("note", foreground="#6b6b6b", font=("맑은 고딕", 10, "italic"))
+        outline_text.tag_configure("folded", background="#eef3fb")
+        outline_text.tag_configure("found", background="#fff1a8")
 
         preview_frame = ttk.Frame(panes)
         preview_frame.grid(row=1, column=1, sticky="nsew", padx=(4, 0))
@@ -12127,6 +12147,40 @@ class HwpAutoDocFitGUI:
 
         status = tk.StringVar(value="항목을 입력하고 Enter로 다음 항목을 이어가세요.")
 
+        def 줄목록():
+            return outline_text.get("1.0", "end-1c").split("\n")
+
+        def 현재줄번호():
+            return int(outline_text.index("insert").split(".")[0]) - 1
+
+        def 줄범위(시작, 끝):
+            return f"{시작 + 1}.0", f"{끝 + 1}.0"
+
+        def 모양_갱신(event=None):
+            줄들 = 줄목록()
+            for 태그 in ("done", "note"):
+                outline_text.tag_remove(태그, "1.0", "end")
+            for i, 줄 in enumerate(줄들):
+                if outline_ops.is_done(줄):
+                    outline_text.tag_add("done", f"{i + 1}.0", f"{i + 1}.end")
+                elif outline_ops.parse(줄)[0] == "note":
+                    outline_text.tag_add("note", f"{i + 1}.0", f"{i + 1}.end")
+
+        def 숨김_해제():
+            for 태그 in ("hidden_fold", "hidden_zoom", "hidden_filter", "folded", "found"):
+                outline_text.tag_remove(태그, "1.0", "end")
+
+        def 내용_바꾸기(줄들, 커서줄=None, 커서칸="end"):
+            숨김_해제()
+            outline_text.edit_separator()
+            outline_text.delete("1.0", "end")
+            outline_text.insert("1.0", "\n".join(줄들))
+            outline_text.edit_separator()
+            if 커서줄 is not None:
+                outline_text.mark_set("insert", f"{커서줄 + 1}.{커서칸}")
+                outline_text.see("insert")
+            모양_갱신()
+
         def 현재줄범위():
             return outline_text.index("insert linestart"), outline_text.index("insert lineend")
 
@@ -12134,13 +12188,18 @@ class HwpAutoDocFitGUI:
             행 = int(줄시작.split(".")[0])
             if 행 <= 1:
                 return None
-            이전줄 = outline_text.get(f"{행 - 1}.0", f"{행 - 1}.end")
-            깊이, _ = self._아웃라인_깊이(이전줄)
-            return 깊이
+            return outline_ops.depth(줄목록(), 행 - 2)
 
         def 엔터처리(event=None):
             줄시작, 줄끝 = 현재줄범위()
             전체줄 = outline_text.get(줄시작, 줄끝)
+            if outline_ops.parse(전체줄)[0] == "note":
+                # 메모 줄에서 Enter는 메모가 딸린 항목과 같은 계층의 새 항목을 연다.
+                깊이 = outline_ops.depth(줄목록(), 현재줄번호())
+                새프리픽스 = self._아웃라인_접두(깊이, "")
+                outline_text.insert(줄끝, "\n" + 새프리픽스)
+                outline_text.mark_set("insert", f"{int(줄시작.split('.')[0]) + 1}.{len(새프리픽스)}")
+                return "break"
             깊이, 본문 = self._아웃라인_깊이(전체줄)
             프리픽스길이 = len(전체줄) - len(본문)
             커서컬럼 = int(outline_text.index("insert").split(".")[1])
@@ -12158,6 +12217,8 @@ class HwpAutoDocFitGUI:
         def 들여쓰기(event=None):
             줄시작, 줄끝 = 현재줄범위()
             전체줄 = outline_text.get(줄시작, 줄끝)
+            if outline_ops.parse(전체줄)[0] == "note":
+                return "break"
             깊이, 본문 = self._아웃라인_깊이(전체줄)
             이전깊이 = 이전줄_깊이(줄시작)
             최대깊이 = 0 if 이전깊이 is None else 이전깊이 + 1
@@ -12176,6 +12237,8 @@ class HwpAutoDocFitGUI:
         def 내어쓰기(event=None):
             줄시작, 줄끝 = 현재줄범위()
             전체줄 = outline_text.get(줄시작, 줄끝)
+            if outline_ops.parse(전체줄)[0] == "note":
+                return "break"
             깊이, 본문 = self._아웃라인_깊이(전체줄)
             새깊이 = max(깊이 - 1, 0)
             if 새깊이 == 깊이:
@@ -12189,10 +12252,127 @@ class HwpAutoDocFitGUI:
             outline_text.mark_set("insert", f"{줄시작.split('.')[0]}.{새프리픽스길이 + 커서오프셋}")
             return "break"
 
+        def 접기(event=None):
+            줄들 = 줄목록()
+            i = outline_ops.item_start(줄들, 현재줄번호())
+            끝 = outline_ops.subtree_end(줄들, i)
+            if 끝 <= i + 1:
+                status.set("접을 하위 항목이 없습니다.")
+                return "break"
+            outline_text.tag_add("hidden_fold", *줄범위(i + 1, 끝))
+            outline_text.tag_add("folded", f"{i + 1}.0", f"{i + 1}.end")
+            outline_text.mark_set("insert", f"{i + 1}.end")
+            status.set(f"접음 · 하위 {끝 - i - 1}줄 (Ctrl+↓로 펼치기)")
+            return "break"
+
+        def 펼치기(event=None):
+            줄들 = 줄목록()
+            i = outline_ops.item_start(줄들, 현재줄번호())
+            끝 = outline_ops.subtree_end(줄들, i)
+            outline_text.tag_remove("hidden_fold", *줄범위(i + 1, 끝))
+            outline_text.tag_remove("folded", f"{i + 1}.0", f"{i + 1}.end")
+            status.set("펼침")
+            return "break"
+
+        def 확대(event=None):
+            줄들 = 줄목록()
+            i = outline_ops.item_start(줄들, 현재줄번호())
+            끝 = outline_ops.subtree_end(줄들, i)
+            outline_text.tag_remove("hidden_zoom", "1.0", "end")
+            if i > 0:
+                outline_text.tag_add("hidden_zoom", "1.0", f"{i + 1}.0")
+            if 끝 < len(줄들):
+                outline_text.tag_add("hidden_zoom", f"{끝}.end", "end")
+            status.set(f"확대: {outline_ops.parse(줄들[i])[2][:30]} (Alt+←로 전체 보기)")
+            return "break"
+
+        def 전체보기(event=None):
+            outline_text.tag_remove("hidden_zoom", "1.0", "end")
+            status.set("전체 보기")
+            return "break"
+
+        def 이동(up):
+            줄들 = 줄목록()
+            결과 = outline_ops.move_block(줄들, 현재줄번호(), up)
+            if 결과 is None:
+                status.set("같은 계층에서 더 옮길 수 없습니다.")
+                return "break"
+            새줄들, 새번호 = 결과
+            내용_바꾸기(새줄들, 새번호)
+            status.set("항목을 옮겼습니다.")
+            return "break"
+
+        def 완료표시(event=None):
+            줄들 = 줄목록()
+            i = outline_ops.item_start(줄들, 현재줄번호())
+            새줄 = outline_ops.toggle_done(줄들[i])
+            if 새줄 != 줄들[i]:
+                outline_text.delete(f"{i + 1}.0", f"{i + 1}.end")
+                outline_text.insert(f"{i + 1}.0", 새줄)
+                모양_갱신()
+                status.set("완료 표시" if outline_ops.is_done(새줄) else "완료 표시 해제")
+            return "break"
+
+        def 메모추가(event=None):
+            줄들 = 줄목록()
+            i = outline_ops.item_start(줄들, 현재줄번호())
+            j = i + 1
+            while j < len(줄들) and outline_ops.parse(줄들[j])[0] == "note":
+                j += 1
+            접두 = outline_ops.note_prefix(줄들[i])
+            outline_text.insert(f"{j}.end", "\n" + 접두)
+            outline_text.mark_set("insert", f"{j + 1}.end")
+            모양_갱신()
+            status.set("메모를 입력하세요(개조식으로 바꿀 때 ※ 부연설명이 됩니다).")
+            return "break"
+
+        def 검색(*args):
+            outline_text.tag_remove("hidden_filter", "1.0", "end")
+            outline_text.tag_remove("found", "1.0", "end")
+            검색어 = search_var.get().strip()
+            if not 검색어:
+                status.set("검색을 지웠습니다.")
+                return
+            줄들 = 줄목록()
+            보일줄 = outline_ops.filter_visible(줄들, 검색어)
+            for i in range(len(줄들)):
+                if i not in 보일줄:
+                    outline_text.tag_add("hidden_filter", *줄범위(i, i + 1))
+            시작 = "1.0"
+            while True:
+                위치 = outline_text.search(검색어, 시작, stopindex="end", nocase=True)
+                if not 위치:
+                    break
+                끝 = f"{위치}+{len(검색어)}c"
+                outline_text.tag_add("found", 위치, 끝)
+                시작 = 끝
+            status.set(f"검색: '{검색어}' — {len([i for i in 보일줄 if 검색어.lower() in 줄들[i].lower()])}줄 (Esc로 해제)")
+
+        def 검색해제(event=None):
+            search_var.set("")
+            outline_text.focus_set()
+            return "break"
+
+        search_var.trace_add("write", 검색)
+        search_entry.bind("<Escape>", 검색해제)
+        search_entry.bind("<Return>", lambda e: (outline_text.focus_set(), "break")[1])
+
         outline_text.bind("<Return>", 엔터처리)
         outline_text.bind("<Tab>", 들여쓰기)
         outline_text.bind("<Shift-Tab>", 내어쓰기)
         outline_text.bind("<ISO_Left_Tab>", 내어쓰기)  # 일부 배치에서 Shift+Tab이 이 키심볼로 옴
+        outline_text.bind("<Control-Up>", 접기)
+        outline_text.bind("<Control-Down>", 펼치기)
+        outline_text.bind("<Alt-Right>", 확대)
+        outline_text.bind("<Alt-Left>", 전체보기)
+        outline_text.bind("<Alt-Shift-Up>", lambda e: 이동(True))
+        outline_text.bind("<Alt-Shift-Down>", lambda e: 이동(False))
+        outline_text.bind("<Control-Return>", 완료표시)
+        outline_text.bind("<Shift-Return>", 메모추가)
+        outline_text.bind("<Escape>", 검색해제)
+        outline_text.bind("<KeyRelease>", 모양_갱신)
+        for 위젯 in (outline_text, search_entry):
+            위젯.bind("<Control-f>", lambda e: (search_entry.focus_set(), "break")[1])
 
         def 기본파일명(내용, 확장자):
             for 줄 in 내용.splitlines():
@@ -12209,7 +12389,7 @@ class HwpAutoDocFitGUI:
                 status.set("작성한 항목이 없습니다.")
                 return None
             try:
-                결과 = outline_pasted_text(원문)
+                결과 = outline_pasted_text(outline_ops.export_markdown(원문.split("\n")))
             except Exception as e:
                 messagebox.showerror(APP_NAME, f"개조식 변환 중 오류가 발생했습니다.\n\n{e}", parent=window)
                 return None
@@ -12265,12 +12445,70 @@ class HwpAutoDocFitGUI:
             else:
                 status.set("이미 목록에 있는 파일입니다.")
 
+        def 저장(event=None):
+            원문 = outline_text.get("1.0", "end-1c")
+            경로 = asksaveasfilename(
+                parent=window, title="아웃라인을 저장할 위치(나중에 '열기'로 이어 쓰기)",
+                initialfile=기본파일명(원문, ".md"),
+                defaultextension=".md", filetypes=[("Markdown", "*.md")],
+            )
+            if not 경로:
+                return "break"
+            try:
+                Path(경로).write_text(원문, encoding="utf-8")
+                status.set(f"저장했습니다 · {Path(경로).name}")
+            except OSError as e:
+                messagebox.showerror(APP_NAME, f"파일 저장 중 오류가 발생했습니다.\n\n{e}", parent=window)
+            return "break"
+
+        def 열기(event=None):
+            경로 = askopenfilename(parent=window, title="이어 쓸 아웃라인 열기",
+                                   filetypes=[("Markdown", "*.md"), ("텍스트 파일", "*.txt")])
+            if not 경로:
+                return "break"
+            try:
+                내용 = Path(경로).read_text(encoding="utf-8-sig")
+            except (OSError, UnicodeDecodeError) as e:
+                messagebox.showerror(APP_NAME, f"파일을 열지 못했습니다.\n\n{e}", parent=window)
+                return "break"
+            내용_바꾸기(내용.split("\n"), len(내용.split("\n")) - 1)
+            status.set(f"불러왔습니다 · {Path(경로).name}")
+            return "break"
+
         def 지우기():
+            숨김_해제()
             outline_text.delete("1.0", "end")
             outline_text.insert("1.0", "# ")
             outline_text.mark_set("insert", "1.2")
             preview_text.delete("1.0", "end")
+            try:
+                임시저장_경로.unlink()
+            except OSError:
+                pass
             status.set("항목을 입력하고 Enter로 다음 항목을 이어가세요.")
+
+        def 닫기():
+            # 닫을 때 쓰던 글을 자동 저장해 다음에 창을 열면 이어 쓸 수 있게 한다.
+            원문 = outline_text.get("1.0", "end-1c")
+            try:
+                if 원문.strip() and 원문.strip() != "#":
+                    임시저장_경로.write_text(원문, encoding="utf-8")
+                elif 임시저장_경로.exists():
+                    임시저장_경로.unlink()
+            except OSError:
+                pass
+            window.destroy()
+            self._아웃라이너_창 = None
+
+        window.protocol("WM_DELETE_WINDOW", 닫기)
+        for 위젯 in (outline_text, search_entry):
+            위젯.bind("<Control-s>", 저장)
+            위젯.bind("<Control-o>", 열기)
+
+        for 이름, 명령 in (("접기", 접기), ("펼치기", 펼치기), ("확대", 확대), ("전체 보기", 전체보기),
+                         ("위로", lambda: 이동(True)), ("아래로", lambda: 이동(False)),
+                         ("완료", 완료표시), ("메모", 메모추가), ("열기…", 열기), ("저장…", 저장)):
+            ttk.Button(toolbar, text=이름, command=명령).pack(side="left", padx=(0, 4))
 
         actions = ttk.Frame(body)
         actions.pack(fill="x", pady=(8, 0))
@@ -12278,11 +12516,21 @@ class HwpAutoDocFitGUI:
         ttk.Button(actions, text="개조식 문서로 추가", command=개조식으로추가).pack(side="left", padx=(6, 0))
         ttk.Button(actions, text="마크다운으로 추가", command=마크다운으로추가).pack(side="left", padx=(6, 0))
         ttk.Button(actions, text="지우기", command=지우기).pack(side="left", padx=(6, 0))
-        ttk.Button(actions, text="닫기", command=lambda: (window.destroy(), closed())).pack(side="right")
+        ttk.Button(actions, text="닫기", command=닫기).pack(side="right")
         ttk.Label(body, textvariable=status, style="Hint.TLabel").pack(anchor="w", pady=(6, 0))
 
-        outline_text.insert("1.0", "# ")
-        outline_text.mark_set("insert", "1.2")
+        이전글 = ""
+        try:
+            if 임시저장_경로.exists():
+                이전글 = 임시저장_경로.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            이전글 = ""
+        if 이전글.strip():
+            내용_바꾸기(이전글.split("\n"), len(이전글.split("\n")) - 1)
+            status.set("지난번 작성하던 글을 불러왔습니다(닫을 때 자동 저장). 새로 쓰려면 '지우기'.")
+        else:
+            outline_text.insert("1.0", "# ")
+            outline_text.mark_set("insert", "1.2")
         outline_text.focus_set()
 
     def _텍스트로_문서추가_열기(self):
