@@ -254,7 +254,7 @@ import win32gui
 import win32con
 from defusedxml.ElementTree import fromstring as safe_xml_fromstring
 from docfit_core.style_hierarchy import DOT_MARKERS, analyze_hierarchy, display_role, hierarchy_summary, leading_marker, normalize_leading_dot, stored_role
-from docfit_core.stage_selection import STAGE_EXAMPLES, enabled as stage_enabled, stages_for_mode
+from docfit_core.stage_selection import STAGE_EXAMPLES, default_choice as stage_default, enabled as stage_enabled, stages_for_mode
 from docfit_core.document_rules import (
     ParagraphSpacingTracker, YEAR_QUOTE_PATTERN, marker_space_fix,
     curly_single_quote_replacements, normalize_date_range_marks,
@@ -3634,6 +3634,122 @@ def 문두기호문장_사이_빈줄_삭제():
                 hwp.SetPos(*original)
             except Exception:
                 pass
+
+
+# ============================================================
+# 서식통일 (TODO.md 3순위)
+# ============================================================
+# 여러 사람이 쓴 문서를 합쳐 만든 문서 안에서, 문두기호(□·ㅇ·-·*·※ 등)별로
+# 본문 글자의 글꼴·크기·장평을 모아 가장 많이 쓴 값(대표 스타일)을 정하고, 대표와
+# 다른 문단만 대표 값으로 맞춘다. 고정된 기준 서식을 적용하는 '서식 정리'와 달리
+# 기준이 '이 문서 자신'이다.
+#  - 제목·날짜처럼 일부러 다르게 쓰는 일반 문단과 표·글상자는 대상이 아니다.
+#  - 같은 기호 문단이 서식통일_최소문단수 이상이고 대표 값의 비율이
+#    서식통일_최소비율 이상일 때만 맞춘다(애매하면 건드리지 않음).
+#  - 라벨·굵기 등 다른 글자 속성은 건드리지 않고, 다른 항목만 바꾼다.
+서식통일_최소문단수 = 3
+서식통일_최소비율 = 0.6
+
+
+def _서식통일_글자모양(pos):
+    """pos 글자 하나의 (글꼴, 크기 HWPUNIT, 장평). 실패 시 None."""
+    try:
+        nxt = _단어모드_다음위치(pos)
+        if not nxt:
+            return None
+        단어모드_범위선택(pos, nxt)
+        pset = hwp.HParameterSet.HCharShape
+        hwp.HAction.GetDefault("CharShape", pset.HSet)
+        return (str(pset.FaceNameHangul), int(pset.Height), int(pset.RatioHangul))
+    except Exception:
+        return None
+    finally:
+        try:
+            hwp_run("Cancel")
+        except Exception:
+            pass
+
+
+def 서식통일_표본(시작, text):
+    """문두기호 문단 본문의 대표 글자모양과 본문 범위 (모양, 본문 시작, 본문 끝).
+
+    본문 첫 글자와 가운데 글자의 모양이 같을 때만 쓴다(한 문단 안에서 섞여 있으면
+    어느 쪽이 의도인지 알 수 없어 건너뜀).
+    """
+    body = (text or "").rstrip("\r\n")
+    offset = 문단_내어쓰기_기준_오프셋(body)
+    if offset is None or offset >= len(body) - 1:
+        return None
+
+    def 위치(i):
+        return (시작[0], 시작[1], 시작[2] + len(body[:i].encode("utf-16-le")) // 2)
+
+    첫글자 = _서식통일_글자모양(위치(offset))
+    가운데 = _서식통일_글자모양(위치(offset + (len(body) - offset) // 2))
+    if 첫글자 is None or 첫글자 != 가운데:
+        return None
+    return 첫글자, 위치(offset), 위치(len(body))
+
+
+def 서식통일_대표(모양들):
+    """모양 목록에서 대표 모양과 그 개수. 조건이 안 되면 (None, 개수)."""
+    if len(모양들) < 서식통일_최소문단수:
+        return None, 0
+    대표, 수 = Counter(모양들).most_common(1)[0]
+    if 수 / len(모양들) < 서식통일_최소비율:
+        return None, 수
+    return 대표, 수
+
+
+def 서식통일_전체_적용():
+    if 중단_요청됨():
+        return False
+    로그("서식통일 시작: 문두기호별로 문서 안에서 가장 많이 쓴 글꼴·크기·장평으로 맞춥니다")
+    표본 = {}
+    순회_시작()
+    while True:
+        if 중단_요청됨():
+            return False
+        hwp_run("MoveParaBegin")
+        pos = hwp.GetPos()
+        if pos[0] == 0 and 쪽범위_안인가(pos):
+            text = 현재문단_텍스트()
+            if text.strip() and 보고서_문단역할(text):
+                marker, _ = leading_marker(text)
+                결과 = 서식통일_표본(pos, text) if marker else None
+                if 결과:
+                    표본.setdefault(marker, []).append(결과 + (text,))
+            hwp.SetPos(*pos)
+        if not 범위_다음_문단으로_진행():
+            break
+    교정수 = 0
+    for marker, 항목들 in 표본.items():
+        대표, 수 = 서식통일_대표([모양 for 모양, *_ in 항목들])
+        if 대표 is None:
+            if len(항목들) >= 서식통일_최소문단수:
+                진단로그(f"[서식통일] '{marker}' 문단 {len(항목들)}개: 대표 스타일이 뚜렷하지 않아 건너뜀")
+            continue
+        글꼴, 크기, 장평 = 대표
+        바꾼수 = 0
+        for 모양, 시작, 끝, text in 항목들:
+            if 모양 == 대표 or 중단_요청됨():
+                continue
+            try:
+                단어모드_범위선택(시작, 끝)
+                문자모양_적용_현재선택(
+                    폰트=글꼴 if 모양[0] != 글꼴 else None,
+                    크기_pt=크기 / 100 if 모양[1] != 크기 else None,
+                    장평=장평 if 모양[2] != 장평 else None)
+                바꾼수 += 1
+                진단로그(f"[서식통일] {모양[0]} {모양[1] / 100:g}pt 장평 {모양[2]}% → "
+                         f"{글꼴} {크기 / 100:g}pt 장평 {장평}%: {text.strip()[:40]}")
+            finally:
+                hwp_run("Cancel")
+        교정수 += 바꾼수
+        로그(f"[서식통일] '{marker}' 문단 {len(항목들)}개: 대표 {글꼴} {크기 / 100:g}pt 장평 {장평}% "
+             f"({수}개) — {바꾼수}개 교정")
+    로그(f"서식통일 완료 (교정 {교정수}개 문단)")
+    return True
 
 
 def 표준서식_전체_적용():
@@ -8618,10 +8734,17 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
         순회_시작()
         return action() is not False
     로그(f"{작업_모드} 처리 {회차}/{총회차}회차 시작")
+    # 서식통일은 옵트인(기본 꺼짐). 서식 정리 단계 묶음이 돌지 않는 경우(자간 정리 모드,
+    # 표준서식 꺼짐)에도 따로 실행한다.
+    if (회차 == 1 and stage_enabled(선택_세부작업, 'style_unify')
+            and not (작업_모드 in ('format', 'all') and 표준서식_사용)):
+        if not stage('서식통일', 서식통일_전체_적용):
+            return False
     if 작업_모드 in ('format', 'all') and 표준서식_사용 and 회차 == 1:
         for key, name, action in (
             ('normalize_space', '공백 정규화', 문장내_공백_정규화_전체_적용),
             ('punctuation_space', '문장부호 뒤 공백 보정', 문장부호_뒤_공백_보정_전체_적용),
+            ('style_unify', '서식통일', 서식통일_전체_적용),
             ('standard_format', '보고서 표준서식', 표준서식_전체_적용),
         ):
             if stage_enabled(선택_세부작업, key) and not stage(name, action):
@@ -10339,8 +10462,10 @@ class HwpAutoDocFitGUI:
         self.files = []
         self.worker = None
         self.running = False
-        self.stage_choices = {mode: {key: True for key, _ in stages_for_mode(mode)}
+        self.stage_choices = {mode: {key: stage_default(key) for key, _ in stages_for_mode(mode)}
                               for mode in ("spacing", "format", "all")}
+        # 실행창 프리셋: '' | 'basic'(기본후처리) | 'pro'(전문후처리)
+        self.preset_var = tk.StringVar(value="")
         self.closing = False
 
         self.compare_toplevel = None
@@ -10515,17 +10640,30 @@ class HwpAutoDocFitGUI:
         choose.grid(row=1, column=0, sticky="ew", pady=6)
         self.choose_frame = choose
         self.mode_buttons = []
+        # 프리셋(TODO 3순위): 기존 3카드 위에 조합 실행 버튼 2개. 고르면 해당 카드와
+        # '서식통일' 세부 작업이 함께 켜지고, 카드를 직접 고르면 서식통일은 꺼진다.
+        preset_row = ttk.Frame(choose)
+        preset_row.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 5))
+        ttk.Label(preset_row, text="빠른 선택", font=("맑은 고딕", 9, "bold")).pack(side="left", padx=(0, 6))
+        self.preset_buttons = []
+        for 값, 이름, 설명 in (
+                ("basic", "기본후처리", "자간정리 + 서식통일"),
+                ("pro", "전문후처리", "자간정리 + 서식통일 + 서식적용 + 한번에 적용")):
+            버튼 = ttk.Radiobutton(preset_row, text=f"{이름} ({설명})", value=값, variable=self.preset_var,
+                                 command=lambda v=값: self._프리셋_선택(v), style="Mode.TRadiobutton")
+            버튼.pack(side="left", padx=(0, 12))
+            self.preset_buttons.append(버튼)
         for i, (title, mode, desc, color) in enumerate((
             ("자간 정리", "spacing", "글자 사이 간격을 조절해\n줄 끝의 끊긴 단어를 정리해요.", "teal"),
             ("서식 정리", "format", "내어쓰기·글꼴·문단 간격을\n설정한 규칙으로 맞춰요.", "orange"),
             ("한 번에 정리", "all", "자간과 서식을\n한 번에 정리해요.", "lavender"))):
             choose.grid_columnconfigure(i, weight=1, uniform="modes")
             card = tk.Frame(choose, bg=UI_COLORS[color], padx=2, pady=2)
-            card.grid(row=0, column=i, sticky="nsew", padx=3)
+            card.grid(row=1, column=i, sticky="nsew", padx=3)
             inner = ttk.Frame(card, padding=6)
             inner.pack(fill="both", expand=True)
             rb = ttk.Radiobutton(inner, text=title, value=mode, variable=self.selected_mode,
-                                 command=self._모드_선택됨, style="Mode.TRadiobutton")
+                                 command=lambda m=mode: self._카드_클릭(m), style="Mode.TRadiobutton")
             rb.pack(anchor="w")
             ttk.Button(inner, text="세부 작업…", width=11,
                        command=lambda m=mode: self._세부작업_열기(m)).pack(anchor="w", pady=(2, 0))
@@ -10535,7 +10673,7 @@ class HwpAutoDocFitGUI:
             for surface in (card, inner, description):
                 surface.bind("<Button-1>", lambda e, m=mode: self._카드_클릭(m))
         quick = ttk.Frame(choose)
-        quick.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(5, 0))
+        quick.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(5, 0))
         self.settings_button = ttk.Button(quick, text="세부 설정…", command=self.설정창_열기)
         self.settings_button.pack(side="right")
         self.proofread_button = ttk.Button(quick, text="공공언어·맞춤법 검토…", command=self._공공언어_검토)
@@ -10549,7 +10687,7 @@ class HwpAutoDocFitGUI:
 
         # 실행창에서 바로 사용할 서식 선택과 예시 문서 드롭 분석.
         format_quick = ttk.Frame(choose)
-        format_quick.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(6, 0))
+        format_quick.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(6, 0))
         ttk.Label(format_quick, text="적용 서식", font=("맑은 고딕", 9, "bold")).pack(side="left", padx=(0, 6))
         self.main_profile_combo = ttk.Combobox(format_quick, state="readonly", width=20)
         self.main_profile_combo.pack(side="left")
@@ -10567,7 +10705,7 @@ class HwpAutoDocFitGUI:
 
         # 작업 범위: 기본은 문서 전체. 쪽을 지정하면 그 쪽에 놓인 내용만 처리한다.
         scope = ttk.Frame(choose)
-        scope.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(6, 0))
+        scope.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(6, 0))
         ttk.Label(scope, text="작업 범위", font=("맑은 고딕", 10, "bold")).pack(side="left", padx=(0, 8))
         self.range_all_radio = ttk.Radiobutton(scope, text="문서 전체", value="all", variable=self.range_mode_var)
         self.range_all_radio.pack(side="left")
@@ -11239,7 +11377,10 @@ class HwpAutoDocFitGUI:
                 summary = "서식만 정리합니다. 글자 간격은 그대로 둬요.\n" + 항목
             else:
                 summary = "서식을 정리한 뒤 글자 간격까지 조정합니다.\n" + 항목
-        disabled = sum(not value for value in self.stage_choices[mode].values())
+        choices = self.stage_choices[mode]
+        disabled = sum(not value for key, value in choices.items() if stage_default(key))
+        if choices.get("style_unify"):
+            summary += "\n서식통일 켜짐: 문서 안에서 가장 많이 쓴 스타일로 맞춰요."
         if disabled:
             summary += f"\n세부 작업 {disabled}개 제외"
         self.options_summary.configure(text=summary)
@@ -11267,6 +11408,22 @@ class HwpAutoDocFitGUI:
     def _카드_클릭(self, mode):
         if self.running:
             return
+        # 카드를 직접 고르면 예전과 같은 동작(서식통일 꺼짐)으로 돌아간다.
+        if self.preset_var.get():
+            self.preset_var.set("")
+            for choices in self.stage_choices.values():
+                if "style_unify" in choices:
+                    choices["style_unify"] = False
+        self.selected_mode.set(mode)
+        self._모드_선택됨()
+
+    def _프리셋_선택(self, preset):
+        """기본후처리 = 자간 정리 + 서식통일, 전문후처리 = 한 번에 정리(자간+서식) + 서식통일."""
+        if self.running:
+            return
+        mode = "spacing" if preset == "basic" else "all"
+        self.preset_var.set(preset)
+        self.stage_choices[mode]["style_unify"] = True
         self.selected_mode.set(mode)
         self._모드_선택됨()
 
@@ -12909,12 +13066,12 @@ class HwpAutoDocFitGUI:
         ).pack(anchor="w", padx=(22, 0), pady=(2, 0))
         container = tabs["spacing"]
         ttk.Label(container,
-                  text="실행창의 ‘자간 정리 · 세부 작업’과 같은 7단계입니다. 여기서 켜고 끄면 세부 작업 창에도 그대로 반영됩니다.",
+                  text=f"실행창의 ‘자간 정리 · 세부 작업’과 같은 {len(stages_for_mode('spacing'))}단계입니다. 여기서 켜고 끄면 세부 작업 창에도 그대로 반영됩니다.",
                   style="Hint.TLabel", wraplength=680).pack(anchor="w", pady=(0, 10))
 
         self.spacing_stage_vars = {}
         for number, (key, label) in enumerate(stages_for_mode("spacing"), 1):
-            var = tk.BooleanVar(value=self.stage_choices["spacing"].get(key, True))
+            var = tk.BooleanVar(value=self.stage_choices["spacing"].get(key, stage_default(key)))
             var.trace_add("write", lambda *_, k=key, v=var: self.stage_choices["spacing"].__setitem__(k, v.get()))
             self.spacing_stage_vars[key] = var
             item = ttk.Frame(container)
@@ -12999,8 +13156,10 @@ class HwpAutoDocFitGUI:
         format_container = tabs["format"]
         self.format_stage_vars = {}
         self.std_detail_checks = []
-        for number, (key, label) in enumerate(stages_for_mode("format")[:9], 1):
-            var = tk.BooleanVar(value=self.stage_choices["format"].get(key, True))
+        서식_단계 = list(stages_for_mode("format"))
+        내어쓰기_번호 = next(i for i, (key, _) in enumerate(서식_단계) if key == "hanging_indent")
+        for number, (key, label) in enumerate(서식_단계[:내어쓰기_번호], 1):
+            var = tk.BooleanVar(value=self.stage_choices["format"].get(key, stage_default(key)))
             var.trace_add("write", lambda *_, k=key, v=var: self.stage_choices["format"].__setitem__(k, v.get()))
             self.format_stage_vars[key] = var
             item = ttk.Frame(format_container)
@@ -13020,14 +13179,14 @@ class HwpAutoDocFitGUI:
 
         # 10. 최종 서식 기준 내어쓰기 — 별도 탭('내어쓰기')에 배치.
         self.indent_stage_vars = {}
-        hanging_key, hanging_label = stages_for_mode("format")[9]
+        hanging_key, hanging_label = 서식_단계[내어쓰기_번호]
         indent_var = tk.BooleanVar(value=self.stage_choices["format"].get(hanging_key, True))
         indent_var.trace_add(
             "write", lambda *_, k=hanging_key, v=indent_var: self.stage_choices["format"].__setitem__(k, v.get()))
         self.indent_stage_vars[hanging_key] = indent_var
         indent_item = ttk.Frame(tabs["indent"])
         indent_item.pack(fill="x", pady=(4, 7))
-        ttk.Checkbutton(indent_item, text=f"10. {hanging_label}", style="Stage.TCheckbutton",
+        ttk.Checkbutton(indent_item, text=f"{내어쓰기_번호 + 1:02d}. {hanging_label}", style="Stage.TCheckbutton",
                         variable=indent_var).pack(anchor="w")
         ttk.Label(indent_item, text=STAGE_EXAMPLES[hanging_key], style="Hint.TLabel",
                   wraplength=650, justify="left").pack(anchor="w", padx=(25, 0), pady=(1, 0))
