@@ -4400,16 +4400,40 @@ def 등_어절인가(text):
     return bool(text) and bool(_등_어절.fullmatch(text))
 
 
+# 열거의 '단어 + 빈칸 + 숫자 + 쉼표'도 한 어절로 묶는다.
+# 예: '수원 2, 서울 4, 용인 1등으로 구성' → '수원 2,'와 '서울 4,'가 각각 한
+# 어절이므로 '수원 | 2,'로 갈라지면 단어 분리로 보고 자간을 조정한다.
+_숫자쉼표_어절 = re.compile(r"[0-9]+(?:\.[0-9]+)?[,，]")
+
+
+def 숫자쉼표_어절인가(text):
+    return bool(text) and bool(_숫자쉼표_어절.fullmatch(text))
+
+
+def _숫자쉼표_앞단어인가(text):
+    """'수원 2,'의 '수원'처럼 숫자 앞에 오는 단어. 숫자·쉼표로 끝나는 앞 항목
+    ('2,' 등)은 단어가 아니므로 '2, 3,'처럼 숫자끼리는 묶지 않는다."""
+    return bool(text) and not text[-1] in ',，' and any(ch.isalpha() for ch in text)
+
+
 def 어절_의미단위_범위(text):
-    """의미단위_범위에 '앞 어절 + 공백 + 등' 묶음을 더한 범위."""
+    """의미단위_범위에 '앞 어절 + 공백 + 등', '단어 + 공백 + 숫자,' 묶음을 더한 범위."""
     result = []
     for a, b in 의미단위_범위(text):
-        if (result and 등_어절인가(text[a:b]) and a >= 1 and text[a - 1] == ' '
-                and result[-1][1] == a - 1):
+        joined = result and a >= 1 and text[a - 1] == ' ' and result[-1][1] == a - 1
+        if joined and 등_어절인가(text[a:b]):
+            result[-1] = (result[-1][0], b)
+        elif (joined and 숫자쉼표_어절인가(text[a:b])
+                and _숫자쉼표_앞단어인가(text[result[-1][0]:result[-1][1]])):
             result[-1] = (result[-1][0], b)
         else:
             result.append((a, b))
     return result
+
+
+def 앞어절_묶음_후속인가(text):
+    """앞 어절과 빈칸을 사이에 두고 한 어절로 묶이는 뒤 어절('등으로', '2,')."""
+    return 등_어절인가(text) or 숫자쉼표_어절인가(text)
 
 
 def _단어모드_공백전까지(pos, 뒤로=False):
@@ -4434,11 +4458,12 @@ def 단어모드_분리정보(anchor):
     if not right or not right[2]:
         return None
     if any(c.isspace() for c in right[2]):
-        # 공백에서 줄이 바뀐 경우는 다음 어절이 '등'일 때만 분리 후보다.
+        # 공백에서 줄이 바뀐 경우는 다음 어절이 '등' 또는 '숫자,'일 때만
+        # 분리 후보다(실제로 묶이는지는 어절_의미단위_범위가 가린다).
         if right[2] != ' ':
             return None
         peek = 단어모드_한글자(right[1])
-        if not peek or peek[2] != '등':
+        if not peek or not (peek[2] == '등' or peek[2].isdigit()):
             return None
     _, next_end = 단어모드_줄범위(right[1])
     if next_end[2] <= boundary[2]:
@@ -4452,22 +4477,22 @@ def 단어모드_분리정보(anchor):
         return None
     if not before and not after:
         return None
-    # 경계가 걸친 어절이 '등' 어절이면 공백 앞 어절까지 묶는다.
+    # 경계가 걸친 어절이 '등'·'숫자,' 어절이면 공백 앞 어절까지 묶는다.
     현재어절 = ''.join(p[2] for p in reversed(before)) + ''.join(p[2] for p in after)
-    if stop_left is not None and 등_어절인가(현재어절):
+    if stop_left is not None and 앞어절_묶음_후속인가(현재어절):
         previous, _ = _단어모드_공백전까지(stop_left[0], True)
         if previous is None:
             return None
         if previous:
             before = before + [stop_left] + previous
-    # 경계가 걸친 어절 뒤에 '등' 어절이 이어지면 그 어절까지 묶는다.
+    # 경계가 걸친 어절 뒤에 '등'·'숫자,' 어절이 이어지면 그 어절까지 묶는다.
     elif stop_right is not None:
         peek = 단어모드_한글자(stop_right[1])
-        if peek and peek[2] == '등':
+        if peek and (peek[2] == '등' or peek[2].isdigit()):
             following, _ = _단어모드_공백전까지(stop_right[1])
             if following is None:
                 return None
-            if 등_어절인가(''.join(p[2] for p in following)):
+            if 앞어절_묶음_후속인가(''.join(p[2] for p in following)):
                 after = after + [stop_right] + following
     parts = list(reversed(before)) + after
     text = ''.join(part[2] for part in parts)
@@ -4496,7 +4521,7 @@ def 붙임의미단위_줄분리인가():
         text = 현재선택영역_텍스트()
         return (bool(_기간_단위.search(text))
                 or any(ch in _단어_붙임표시 or ch in '(（' for ch in text)
-                or any(등_어절인가(word) for word in text.split(' ')[1:]))
+                or any(앞어절_묶음_후속인가(word) for word in text.split(' ')[1:]))
     finally:
         hwp_run('Cancel')
         hwp.SetPos(*original)

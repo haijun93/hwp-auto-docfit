@@ -53,5 +53,34 @@ class DeungWordUnitTest(unittest.TestCase):
         self.assertEqual(self.split_at('주민 등|록 절차', text), '등록')
 
 
+NUM_TEXT = '수원 2, 서울 4, 용인 1등으로 구성'
+
+
+class NumberCommaWordUnitTest(DeungWordUnitTest):
+    """'단어 + 빈칸 + 숫자 + 쉼표'(예: '수원 2,')는 한 어절로 묶는다."""
+
+    def test_unit_ranges(self):
+        ranges = self.ns['어절_의미단위_범위'](NUM_TEXT)
+        self.assertEqual([NUM_TEXT[a:b] for a, b in ranges],
+                         ['수원 2,', '서울 4,', '용인', '1등으로', '구성'])
+        # 숫자끼리의 열거는 묶지 않는다.
+        text = '순번 1, 2, 3'
+        self.assertEqual([text[a:b] for a, b in self.ns['어절_의미단위_범위'](text)],
+                         ['순번 1,', '2,', '3'])
+
+    def test_break_between_word_and_number(self):
+        self.assertEqual(self.split_at('수원 |2, 서울 4, 용인 1등으로 구성', NUM_TEXT), '수원 2,')
+        self.assertEqual(self.split_at('수원| 2, 서울 4, 용인 1등으로 구성', NUM_TEXT), '수원 2,')
+        self.assertEqual(self.split_at('수원 2, 서울 |4, 용인 1등으로 구성', NUM_TEXT), '서울 4,')
+
+    def test_break_inside_word(self):
+        self.assertEqual(self.split_at('수|원 2, 서울 4, 용인 1등으로 구성', NUM_TEXT), '수원 2,')
+
+    def test_ordinary_breaks_unchanged(self):
+        self.assertIsNone(self.split_at('수원 2, |서울 4, 용인 1등으로 구성', NUM_TEXT))
+        self.assertIsNone(self.split_at('수원 2, 서울 4, 용인 |1등으로 구성', NUM_TEXT))
+        self.assertIsNone(self.split_at('순번 1, |2, 3', '순번 1, 2, 3'))
+
+
 if __name__ == '__main__':
     unittest.main()
