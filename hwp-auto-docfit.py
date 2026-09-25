@@ -1233,6 +1233,28 @@ def hwpx_서식_분석(path):
         return profile
 
 
+def 예시문서_기본이름(문단들):
+    """직접 편집한 예시 문서의 기본 서식 이름: 첫 문장의 앞 8글자(TODO 6순위).
+
+    첫 번째 비어 있지 않은 문단을 첫 문장으로 보고, 문두기호(□·ㅇ·- 등)와 앞 공백은
+    빼며 첫 마침표(. ! ?) 앞까지만 쓴다. 쓸 글자가 없으면 '새 서식'.
+    """
+    for text in 문단들:
+        body = (text or "").strip()
+        if not body:
+            continue
+        marker_end = 문장부호_마커_끝위치(body)
+        if marker_end:
+            body = body[marker_end:].strip()
+        끝 = re.search(r"[.!?。]", body)
+        if 끝:
+            body = body[:끝.start()]
+        body = re.sub(r"\s+", " ", body).strip()
+        if body:
+            return body[:8].strip()
+    return "새 서식"
+
+
 def 한글파일_서식_분석(path):
     if Path(path).suffix.lower() == ".hwpx":
         return hwpx_서식_분석(path)
@@ -11110,6 +11132,8 @@ class HwpAutoDocFitGUI:
             콤보.bind("<<ComboboxSelected>>", self._프로파일_선택)
             복사버튼 = ttk.Button(profile_row, text="서식 복사하기…", command=self._서식_복사하기)
             복사버튼.pack(side="left")
+            ttk.Button(profile_row, text="편집하여 추가…", command=self._서식_예시편집_시작).pack(side="left", padx=(6, 0))
+            ttk.Button(profile_row, text="이름 바꾸기…", command=self._서식_이름바꾸기).pack(side="left", padx=(6, 0))
             수정버튼 = ttk.Button(profile_row, text="상세 수정…", command=self._서식_수정하기)
             수정버튼.pack(side="left", padx=(6, 0))
             삭제버튼 = ttk.Button(profile_row, text="삭제", command=self._서식_삭제하기)
@@ -11866,6 +11890,116 @@ class HwpAutoDocFitGUI:
         삭제버튼 = getattr(self, "delete_format_button", None)
         if 삭제버튼 is not None:
             삭제버튼.config(state="normal" if self._활성_서식_프로파일 else "disabled")
+
+    def _서식_이름바꾸기(self):
+        """저장된 서식의 이름을 언제든 바꾼다(TODO 6순위). 기본 서식은 바꾸지 않는다."""
+        if self.running:
+            return
+        parent = self.settings_toplevel if self.settings_toplevel and self.settings_toplevel.winfo_viewable() else self.root
+        identifier = self._활성_서식_프로파일
+        if not identifier:
+            messagebox.showinfo(APP_NAME, "기본 문서 서식은 이름을 바꿀 수 없습니다.", parent=parent)
+            return
+        profile = self._프로파일들[identifier]
+        새이름 = simpledialog.askstring(APP_NAME, "서식 이름", parent=parent, initialvalue=profile["name"])
+        if 새이름 is None:
+            return
+        새이름 = 새이름.strip()
+        if not 새이름:
+            messagebox.showwarning(APP_NAME, "비어 있지 않은 이름을 입력해 주세요.", parent=parent)
+            return
+        if any(p["name"] == 새이름 for k, p in self._프로파일들.items() if k != identifier):
+            messagebox.showwarning(APP_NAME, "이미 사용 중인 서식 이름입니다.", parent=parent)
+            return
+        바뀐 = dict(profile, name=새이름)
+        try:
+            folder = 서식프로파일_폴더()
+            temp = folder / (identifier + ".tmp")
+            temp.write_text(json.dumps(바뀐, ensure_ascii=False, indent=2), encoding="utf-8")
+            os.replace(temp, folder / (identifier + ".json"))
+        except Exception as exc:
+            messagebox.showerror(APP_NAME, f"서식 이름 저장 실패\n{exc}", parent=parent)
+            return
+        self._프로파일들[identifier] = 바뀐
+        self._프로파일_목록갱신()
+        self.status_var.set(f"서식 이름을 '{새이름}'(으)로 바꿨습니다.")
+
+    def _서식_예시편집_시작(self):
+        """빈 한/글 문서를 열어 사용자가 예시 문서를 직접 쓰게 하고, '분석 시작'을
+        누르면 그 문서를 분석해 새 서식으로 등록한다(TODO 6순위)."""
+        if self.running or getattr(self, "_서식분석중", False):
+            return
+        기존창 = getattr(self, "_예시편집_창", None)
+        if 기존창 is not None and 기존창.winfo_exists():
+            기존창.lift()
+            return
+        parent = self.settings_toplevel if self.settings_toplevel and self.settings_toplevel.winfo_viewable() else self.root
+        try:
+            pythoncom.CoInitialize()
+            보안모듈_초기화()
+            app = win32.DispatchEx("HwpFrame.HwpObject")
+            if not app.RegisterModule(REGISTER_MODULE_NAME, REGISTER_MODULE_VALUE):
+                raise RuntimeError("한글 보안 모듈을 등록하지 못했습니다.")
+            app.XHwpWindows.Item(0).Visible = True
+        except Exception as exc:
+            messagebox.showerror(APP_NAME, f"한글을 열지 못했습니다.\n{exc}", parent=parent)
+            return
+        self._예시편집_hwp = app
+        창 = tk.Toplevel(parent)
+        self._예시편집_창 = 창
+        창.title("서식 예시 문서 편집")
+        창.attributes("-topmost", True)
+        창.resizable(False, False)
+        ttk.Label(창, text="열린 한/글 창에서 예시 문서를 작성하세요.", font=("맑은 고딕", 11, "bold")).pack(
+            anchor="w", padx=14, pady=(12, 2))
+        ttk.Label(창, text="□·ㅇ·-·※ 같은 문두기호를 섞어 원하는 계층 구조로 쓰면, 기호별로 가장 많이 쓴 "
+                          "글꼴·크기·들여쓰기가 그 기호의 서식이 됩니다. 다 쓰면 '분석 시작'을 누르세요.\n"
+                          "서식 이름은 첫 문장의 앞 8글자로 정하며 나중에 '이름 바꾸기…'로 고칠 수 있습니다.",
+                  style="Hint.TLabel", wraplength=420, justify="left").pack(anchor="w", padx=14)
+        안내 = tk.StringVar(value="")
+        ttk.Label(창, textvariable=안내, foreground="#b03030", wraplength=420).pack(anchor="w", padx=14, pady=(6, 0))
+        버튼줄 = ttk.Frame(창)
+        버튼줄.pack(fill="x", padx=14, pady=12)
+
+        def 한글닫기():
+            한글 = getattr(self, "_예시편집_hwp", None)
+            self._예시편집_hwp = None
+            if 한글 is not None:
+                try:
+                    한글.Clear(1)
+                    한글.Quit()
+                except Exception:
+                    pass
+
+        def 취소():
+            한글닫기()
+            창.destroy()
+            self._예시편집_창 = None
+
+        def 분석시작():
+            한글 = self._예시편집_hwp
+            if 한글 is None:
+                return
+            임시 = Path(tempfile.mkdtemp(prefix="docfit_example_")) / "예시.hwpx"
+            try:
+                if 한글.SaveAs(str(임시), "HWPX", "") is False:
+                    raise RuntimeError("예시 문서를 임시 파일로 저장하지 못했습니다.")
+                문단들 = [b.text for b in inspect_hwpx(임시).blocks if b.type == "paragraph"]
+            except Exception as exc:
+                안내.set(f"예시 문서를 읽지 못했습니다: {exc}")
+                return
+            if not any(leading_marker(t)[0] for t in 문단들):
+                안내.set("문두기호(□·ㅇ·-·※ 등)로 시작하는 문단이 없습니다. 기호를 붙인 문단을 한두 개 이상 써 주세요.")
+                return
+            이름 = 예시문서_기본이름(문단들)
+            한글닫기()
+            창.destroy()
+            self._예시편집_창 = None
+            self._서식_분석_시작(str(임시), 이름묻기=False, 기본이름=이름)
+
+        ttk.Button(버튼줄, text="분석 시작", command=분석시작).pack(side="left")
+        ttk.Button(버튼줄, text="취소", command=취소).pack(side="right")
+        창.protocol("WM_DELETE_WINDOW", 취소)
 
     def _서식_삭제하기(self):
         if self.running:
@@ -12987,11 +13121,11 @@ class HwpAutoDocFitGUI:
         if not path: return
         self._서식_분석_시작(path, 이름묻기=True)
 
-    def _서식_분석_시작(self, path, 이름묻기=False):
+    def _서식_분석_시작(self, path, 이름묻기=False, 기본이름=None):
         if self.running or getattr(self, "_서식분석중", False):
             return
         parent = self.settings_toplevel if self.settings_toplevel and self.settings_toplevel.winfo_viewable() else self.root
-        name = Path(path).stem
+        name = 기본이름 or Path(path).stem
         if 이름묻기:
             name = simpledialog.askstring(APP_NAME, "새 문서 서식 이름", parent=parent, initialvalue=name)
         if name is None: return
