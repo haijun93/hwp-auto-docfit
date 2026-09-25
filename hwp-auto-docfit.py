@@ -7544,13 +7544,62 @@ def 현재_셀_행번호():
 def 현재_한칸표인가():
     return hwp is not None and hwp.GetPos()[0] in 한칸표_보호영역
 
+def 현재_표_키():
+    """캐럿이 있는 칸을 담은 표 컨트롤의 고유 키(앵커 위치). 표가 아니면 None.
+
+    예외가 나면 False(판정 불가)를 돌려 호출자가 예전 방식으로 대신하게 한다.
+    """
+    try:
+        ctrl = hwp.ParentCtrl
+        if ctrl is None or ctrl.CtrlID != 'tbl':
+            return None
+        anchor = ctrl.GetAnchorPos(0)
+        return (anchor.Item('List'), anchor.Item('Para'), anchor.Item('Pos'))
+    except Exception:
+        return False
+
+
+def 표칸_묶음_수집():
+    """표마다 [(area, 셀주소, 행번호), ...] 목록(문서 순서). 판정 불가면 None.
+
+    예전에는 'A1 칸이 나오면 새 표'로 묶었는데, 실측(2026-09-25, 표 서식 문서)에서
+    가운데 열이 세로 병합된 표가 세 조각으로 나뉘어 셀 너비 맞춤이 엉뚱한 열에
+    너비를 넣었다. 칸을 담은 표 컨트롤(ParentCtrl)의 앵커 위치로 묶는다.
+    """
+    묶음 = {}
+    area = 1
+    while True:
+        if 중단_요청됨():
+            break
+        area += 1
+        try:
+            hwp.SetPos(area, 0, 0)
+        except Exception:
+            break
+        if hwp.GetPos()[0] != area:
+            break
+        키 = 현재_표_키()
+        if 키 is False:
+            return None
+        if 키 is None:
+            continue
+        주소, 행번호 = 현재_셀_주소_행번호()
+        if 주소 is None:
+            continue
+        묶음.setdefault(키, []).append((area, 주소, 행번호))
+    return list(묶음.values())
+
+
 def 한칸표_영역_목록():
     """문서의 컨트롤 리스트를 훑어 한 셀로만 된 표의 영역 번호를 찾는다.
 
-    한글은 표의 각 셀을 연속된 리스트 영역으로 노출하고 각 표는 A1에서
-    시작한다. 다음 A1 또는 비표 영역이 나오기 전까지를 한 표로 묶어,
-    셀 주소가 A1 하나뿐인 표를 한 칸 표로 판정한다.
+    칸을 담은 표 컨트롤 기준으로 묶어(표칸_묶음_수집) 칸이 A1 하나뿐인 표를
+    한 칸 표로 판정한다. 표 컨트롤을 읽지 못하는 환경이면 예전 규칙(다음 A1
+    또는 비표 영역이 나오기 전까지를 한 표로 봄)으로 대신한다.
     """
+    묶음 = 표칸_묶음_수집()
+    if 묶음 is not None:
+        return {칸들[0][0] for 칸들 in 묶음 if len(칸들) == 1 and 칸들[0][1] == "A1"}
     한칸영역 = set()
     현재표 = []
 
@@ -7701,6 +7750,18 @@ def 표_목록_수집():
     """
     if hwp is None:
         return []
+    묶음 = 표칸_묶음_수집()
+    if 묶음 is not None:
+        표들 = []
+        for 칸들 in 묶음:
+            if len(칸들) == 1 and 칸들[0][1] == "A1":
+                continue      # 한 칸 표
+            표 = []
+            for area, 주소, 행번호 in 칸들:
+                일치 = re.match(r"[A-Za-z]+", 주소)
+                표.append((area, 일치.group(0) if 일치 else "A", 행번호))
+            표들.append(표)
+        return 표들
     한칸표영역 = 한칸표_영역_목록()
     표들 = []
     현재표 = []
@@ -7777,8 +7838,22 @@ def 셀_화면줄수():
             pass
 
 
-def 셀_안쪽여백_현재선택(mm):
-    """캐럿이 있는 셀의 좌우 안쪽 여백을 mm로 설정한다."""
+def 셀_안쪽여백_읽기():
+    """캐럿이 있는 셀의 (셀 여백 사용 여부, 왼쪽, 오른쪽) 원래 값. 실패 시 None."""
+    if hwp is None:
+        return None
+    try:
+        pset = hwp.HParameterSet.HShapeObject
+        hwp.HAction.GetDefault("TablePropertyDialog", pset.HSet)
+        cell = pset.ShapeTableCell
+        return int(cell.HasMargin), int(cell.MarginLeft), int(cell.MarginRight)
+    except Exception as e:
+        로그(f"셀 안쪽 여백 읽기 실패(무시): {e}")
+        return None
+
+
+def 셀_안쪽여백_현재선택(mm=None, 원래값=None):
+    """캐럿이 있는 셀의 좌우 안쪽 여백을 mm로 설정한다(원래값을 주면 그 값으로 복원)."""
     if hwp is None:
         return False
     try:
@@ -7786,9 +7861,12 @@ def 셀_안쪽여백_현재선택(mm):
         hwp.HAction.GetDefault("TablePropertyDialog", pset.HSet)
         pset.HSet.SetItem("ShapeType", 3)
         pset.HSet.SetItem("ShapeCellSize", 0)
-        pset.ShapeTableCell.HasMargin = 1
-        pset.ShapeTableCell.MarginLeft = hwp.MiliToHwpUnit(mm)
-        pset.ShapeTableCell.MarginRight = hwp.MiliToHwpUnit(mm)
+        if 원래값 is not None:
+            pset.ShapeTableCell.HasMargin, pset.ShapeTableCell.MarginLeft, pset.ShapeTableCell.MarginRight = 원래값
+        else:
+            pset.ShapeTableCell.HasMargin = 1
+            pset.ShapeTableCell.MarginLeft = hwp.MiliToHwpUnit(mm)
+            pset.ShapeTableCell.MarginRight = hwp.MiliToHwpUnit(mm)
         return hwp.HAction.Execute("TablePropertyDialog", pset.HSet) is not False
     except Exception as e:
         로그(f"셀 안쪽 여백 적용 실패(무시): {e}")
@@ -7804,6 +7882,21 @@ def 셀_안쪽여백_축소_시도():
     줄수 = 셀_화면줄수()
     if 줄수 is None or 줄수 <= 1:
         return False
+    # 실측(2026-09-25): 1줄로 만들지 못한 셀도 여백이 0으로 남아(표 서식 문서 46칸)
+    # 표 모양만 바뀌었다. 실패하면 원래 여백으로 되돌린다.
+    원래값 = 셀_안쪽여백_읽기()
+    if 원래값 is None:
+        return False
+    try:
+        if _셀_안쪽여백_단계축소():
+            return True
+    except Exception:
+        pass
+    셀_안쪽여백_현재선택(원래값=원래값)
+    return False
+
+
+def _셀_안쪽여백_단계축소():
     현재_mm = 표_셀여백_기본_mm
     최대반복 = max(1, int(round((표_셀여백_기본_mm - 표_셀여백_최소_mm) / 표_셀여백_스텝_mm)))
     for _ in range(최대반복):
@@ -7954,6 +8047,16 @@ def 표_열너비_본문맞춤_시도(표_셀목록, 목표_전체너비_mm):
     첫행_area = [area for area, _, 행 in 표_셀목록 if 행 == 1]
     if len(첫행_area) < 2:
         return False
+    # 실측(2026-09-25): 첫 행이 병합된 표(연도 아래 분기 칸 등)는 첫 행 칸과 실제
+    # 열이 맞지 않아 너비가 엉뚱한 열에 들어가 표가 용지 밖으로 넘쳤다(4쪽→7쪽).
+    # 모든 행의 열 구성이 첫 행과 같은 격자형 표만 조정한다.
+    행별_열 = {}
+    for _, 컬럼, 행 in 표_셀목록:
+        행별_열.setdefault(행, []).append(컬럼)
+    첫행_열 = 행별_열.get(1, [])
+    if any(열 != 첫행_열 for 열 in 행별_열.values()):
+        진단로그("[셀 너비 본문 맞춤] 병합된 칸이 있는 표는 건너뜀")
+        return False
     try:
         hwp.SetPos(첫행_area[0], 0, 0)
     except Exception:
@@ -8019,33 +8122,32 @@ def 표_셀_테두리_적용(위=None, 아래=None, 왼쪽=None, 오른쪽=None)
     각 인자는 (HwpLineType 이름, HwpLineWidth 이름) 튜플이거나
     None(해당 방향은 건드리지 않음).
     """
+    # 실측(2026-09-25): pset.SelCellsBorderFill 아래 항목에 값을 넣는 예전 방식은
+    # 실행 결과가 True여도 테두리가 바뀌지 않았다. 셀을 블록으로 선택한 뒤
+    # HCellBorderFill의 BorderType*/BorderWidth* 항목을 직접 넣어야 적용된다.
+    # 'CellBorderFill' 액션은 셀 배경색까지 다시 적용해 머리글 배경이 지워졌으므로
+    # 테두리만 바꾸는 'CellBorder' 액션을 쓴다.
     if hwp is None:
         return False
     try:
+        hwp_run("TableCellBlock")
         pset = hwp.HParameterSet.HCellBorderFill
-        hwp.HAction.GetDefault("CellBorderFill", pset.HSet)
-        pset.ApplyTo = 0  # 0: 선택된 셀(캐럿이 있는 현재 셀)
-        대상 = pset.SelCellsBorderFill
-        if 위 is not None:
-            종류, 굵기 = 위
-            대상.BorderTypeTop = hwp.HwpLineType(종류)
-            대상.BorderWidthTop = hwp.HwpLineWidth(굵기)
-        if 아래 is not None:
-            종류, 굵기 = 아래
-            대상.BorderTypeBottom = hwp.HwpLineType(종류)
-            대상.BorderWidthBottom = hwp.HwpLineWidth(굵기)
-        if 왼쪽 is not None:
-            종류, 굵기 = 왼쪽
-            대상.BorderTypeLeft = hwp.HwpLineType(종류)
-            대상.BorderWidthLeft = hwp.HwpLineWidth(굵기)
-        if 오른쪽 is not None:
-            종류, 굵기 = 오른쪽
-            대상.BorderTypeRight = hwp.HwpLineType(종류)
-            대상.BorderWidthRight = hwp.HwpLineWidth(굵기)
-        return hwp.HAction.Execute("CellBorderFill", pset.HSet) is not False
+        hwp.HAction.GetDefault("CellBorder", pset.HSet)
+        for 방향, 값 in (("Top", 위), ("Bottom", 아래), ("Left", 왼쪽), ("Right", 오른쪽)):
+            if 값 is None:
+                continue
+            종류, 굵기 = 값
+            setattr(pset, "BorderType" + 방향, hwp.HwpLineType(종류))
+            setattr(pset, "BorderWidth" + 방향, hwp.HwpLineWidth(굵기))
+        return hwp.HAction.Execute("CellBorder", pset.HSet) is not False
     except Exception as e:
         로그(f"표 셀 테두리 적용 실패(무시): {e}")
         return False
+    finally:
+        try:
+            hwp_run("Cancel")
+        except Exception:
+            pass
 
 
 def 표_테두리_삼선표_적용(표_셀목록):
