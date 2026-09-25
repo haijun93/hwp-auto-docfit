@@ -7877,10 +7877,14 @@ def 컨트롤_내부_자간조정():
             if result is False:
                 return False
             hwp_run("MoveLineEnd")
+            줄끝 = hwp.GetPos()
             hwp_run("MoveNextChar")
             if hwp.GetPos()[0] != area:
                 break
-            if hwp.GetPos() == 시작위치:
+            # 셀의 마지막 줄에서는 MoveNextChar가 줄 끝에 머문다. 시작 위치와만
+            # 비교하면 같은 줄을 한 번 더 처리했다(실측: 표 셀마다 다음 단어
+            # 당김을 두 번 시도해 한 번에 약 5초씩 낭비).
+            if hwp.GetPos() in (시작위치, 줄끝):
                 break
     return True
 
@@ -7946,10 +7950,12 @@ def 컨트롤_내부_문장부호_처리():
             if 컨트롤_줄병합_대상인가():
                 문장부호_줄병합_시도()
             hwp_run("MoveLineEnd")
+            줄끝 = hwp.GetPos()
             hwp_run("MoveNextChar")
             if hwp.GetPos()[0] != 0 and hwp.GetPos()[0] >= area:
                 area = hwp.GetPos()[0]
-            if hwp.GetPos() == 시작위치:
+            # 마지막 줄에서 MoveNextChar가 줄 끝에 머물면 같은 줄을 다시 처리하지 않는다.
+            if hwp.GetPos() in (시작위치, 줄끝):
                 break
     return True
 
