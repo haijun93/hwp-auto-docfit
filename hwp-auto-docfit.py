@@ -3444,7 +3444,15 @@ def 빈문단_분류(text, begin, end):
         units = len(body.encode('utf-16-le')) // 2
         return 'blank' if end[2] - begin[2] == units else 'other'
     # 날짜 줄('2026. 9. 24.')처럼 번호로 보이는 머리 문단은 문두기호 문장이 아니다.
-    return 'marker' if 보고서_문단역할(body) else 'other'
+    if not 보고서_문단역할(body):
+        return 'other'
+    # 'ㅇ'·'*'처럼 기호만 있고 내용이 빈 문단은 제출서식의 작성란이다. 그
+    # 앞뒤 빈 줄은 작성 여백이므로 지우지 않는다(실측: 공고문 '□ (자유작성)'
+    # 아래 작성란 여백이 모두 지워짐).
+    marker_end = 문장부호_마커_끝위치(body)
+    if marker_end is not None and not body[marker_end:].strip():
+        return 'template'
+    return 'marker'
 
 
 def 문두기호문장_사이_빈문단_찾기(kinds):
@@ -5625,7 +5633,15 @@ def 보고서_단어분리_최종검사(컨트롤=False):
                 if pos[0] != area or (area == 0 and 쪽범위_끝지남(pos)):
                     break
                 if pos in seen:
-                    raise RuntimeError(f'단어 검수 순회 정체: {pos}')
+                    # 문단 앞 컨트롤 뒤 등에서 MoveLineEnd가 제자리로 돌아오면 같은
+                    # 위치를 다시 밟는다. 검사 전체를 실패시키지 말고 다음 문단으로
+                    # 넘어간다(실측: 보도자료 (0, 25, 9)에서 검사 중단).
+                    진단로그(f'[단어 검수] 같은 위치 반복 {pos}: 다음 문단으로 넘어감')
+                    hwp_run('MoveNextParaBegin')
+                    moved = tuple(hwp.GetPos())
+                    if moved in seen or moved[:2] == pos[:2]:
+                        break
+                    continue
                 seen.add(pos)
                 hwp_run('MoveLineEnd')
                 boundary = tuple(hwp.GetPos())

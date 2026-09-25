@@ -66,6 +66,42 @@ class ResultAuditTest(unittest.TestCase):
         self.assertEqual(doc.pos, (0, 0, 0))
         record.assert_called_once()
 
+    def test_word_audit_skips_to_next_paragraph_when_traversal_stalls(self):
+        # 문단 0의 (0,0,9)에서 MoveLineEnd가 앞(8)으로 돌아와 같은 위치를 다시
+        # 밟는다 → 검사 실패 대신 다음 문단으로 넘어가 끝까지 검사한다.
+        fn = self.ns['보고서_단어분리_최종검사']
+        visited = []
+
+        class Document:
+            pos = (0, 0, 9)
+            def GetPos(self):
+                return self.pos
+            def SetPos(self, *pos):
+                self.pos = tuple(pos)
+            def run(self, action):
+                para, i = self.pos[1], self.pos[2]
+                if action == 'MoveLineEnd':
+                    visited.append(self.pos)
+                    self.pos = (0, 0, 8) if para == 0 else (0, 1, 5)
+                elif action == 'MoveParaEnd':
+                    self.pos = (0, para, 12 if para == 0 else 5)
+                elif action == 'MoveNextChar':
+                    self.pos = (0, para, min(12 if para == 0 else 5, i + 1))
+                elif action == 'MoveNextParaBegin':
+                    self.pos = (0, 1, 0)
+                elif action != 'Cancel':
+                    raise AssertionError('Unexpected mutation/action: ' + action)
+        doc = Document()
+        with patch.dict(fn.__globals__, {
+            'hwp': doc, 'hwp_run': doc.run, '순회_시작': lambda: doc.SetPos(0, 0, 9),
+            '중단_요청됨': lambda: False, '쪽범위_끝지남': lambda p: False,
+            '현재_페이지번호': lambda: 1, '현재_처리파일': 'sample.hwpx',
+            '단어모드_분리정보': lambda p: None, '진단로그': Mock(),
+        }):
+            result = fn()
+        self.assertEqual(result['status'], 'passed')
+        self.assertIn((0, 1, 0), visited)
+
 
 if __name__ == '__main__':
     unittest.main()

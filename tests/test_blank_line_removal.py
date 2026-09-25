@@ -22,6 +22,15 @@ class BlankLineRemovalTest(unittest.TestCase):
         self.assertEqual(self.classify('2026. 9. 24.(목)'), 'other')
         self.assertEqual(self.classify('일반 문장'), 'other')
 
+    def test_form_template_writing_space_is_kept(self):
+        # 기호만 있는 작성란('○', '*')은 template → 그 앞뒤 빈 줄(작성 여백)은 둔다.
+        self.assertEqual(self.classify('○'), 'template')
+        self.assertEqual(self.classify('  * '), 'template')
+        self.assertEqual(self.classify('□ (자유작성)'), 'marker')
+        find = self.ns['문두기호문장_사이_빈문단_찾기']
+        kinds = ['marker', 'blank', 'template', 'blank', 'marker', 'blank', 'marker']
+        self.assertEqual(find(kinds), [5])
+
     def test_table_only_paragraph_is_not_blank(self):
         # 표 하나만 있는 문단: MoveParaBegin이 표 뒤(pos 8)에 멈춰 시작·끝이 같다.
         fn = self.ns['빈문단_분류']
