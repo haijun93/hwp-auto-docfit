@@ -7700,7 +7700,13 @@ def 현재_표_키():
 
 
 def 표칸_묶음_수집():
-    """표마다 [(area, 셀주소, 행번호), ...] 목록(문서 순서). 판정 불가면 None.
+    """표마다 [(area, 셀주소, 행번호), ...] 목록(문서 순서). 판정 불가면 None."""
+    묶음 = 표칸_묶음_키별()
+    return None if 묶음 is None else list(묶음.values())
+
+
+def 표칸_묶음_키별():
+    """{표 키(앵커 리스트, 문단, 위치): [(area, 셀주소, 행번호), ...]}. 판정 불가면 None.
 
     예전에는 'A1 칸이 나오면 새 표'로 묶었는데, 실측(2026-09-25, 표 서식 문서)에서
     가운데 열이 세로 병합된 표가 세 조각으로 나뉘어 셀 너비 맞춤이 엉뚱한 열에
@@ -7727,7 +7733,7 @@ def 표칸_묶음_수집():
         if 주소 is None:
             continue
         묶음.setdefault(키, []).append((area, 주소, 행번호))
-    return list(묶음.values())
+    return 묶음
 
 
 def 한칸표_영역_목록():
@@ -7807,6 +7813,58 @@ def 표_헤더서식_현재셀_처리():
 def 표_헤더서식_현재줄_처리():
     return 표_헤더서식_현재셀_처리()
 
+
+# 표 서식을 표 단위로 한 번에 적용할지(칸마다 적용하는 예전 방식과 결과가 같다).
+표_서식_표단위_사용 = True
+
+
+def 표_헤더서식_표단위_처리(칸들):
+    """표 하나(표칸_묶음_수집의 칸 목록)에 본문·머리글 서식을 한 번에 적용한다.
+
+    실측(2026-09-26): 통계표가 많은 수출입동향(표 칸 5,052개)은 칸마다 글자를
+    선택해 적용하느라 표 서식에만 14분이 걸렸다. 표 전체를 칸 블록으로 골라
+    (F5 세 번 = TableCellBlock + TableCellBlockExtend×2) 본문 서식을 한 번에 주고,
+    머리글 서식은 칸 주소가 1행인 칸에만 칸마다 다시 준다(칸마다 적용하던 예전 방식과
+    결과가 같다). 첫 행 선택(TableCellBlockRow)은 A1이 두 행에 걸쳐 병합된 표에서
+    둘째 행까지 골라 결과가 달라졌으므로 쓰지 않는다(실측, 표 서식 문서 2개 표).
+    성공하면 칸 수, A1 칸이 없거나 실패하면 None(호출자가 칸마다 적용으로 대신한다).
+    """
+    첫칸 = next((area for area, 주소, _ in 칸들 if 주소 == "A1"), None)
+    if 첫칸 is None:
+        return None
+    try:
+        hwp.SetPos(첫칸, 0, 0)
+        hwp_run("Cancel")
+        for 명령 in ("TableCellBlock", "TableCellBlockExtend", "TableCellBlockExtend"):
+            hwp_run(명령)
+        문자모양_적용_현재선택(
+            폰트=표_헤더서식_본문_폰트,
+            크기_pt=표_헤더서식_본문_크기,
+            # 본문 칸의 기존 굵은 강조는 해제하지 않는다.
+            굵게=True if 표_헤더서식_본문_굵게 else None,
+        )
+        hwp_run("Cancel")
+        for area, _, 행 in 칸들:
+            if 행 != 1:
+                continue
+            hwp.SetPos(area, 0, 0)
+            hwp_run("MoveListBegin")
+            hwp_run("MoveSelListEnd")
+            문자모양_적용_현재선택(
+                폰트=표_헤더서식_헤더_폰트,
+                크기_pt=표_헤더서식_헤더_크기,
+                굵게=표_헤더서식_헤더_굵게,
+            )
+            hwp_run("Cancel")
+        return len(칸들)
+    except Exception as e:
+        try:
+            hwp_run("Cancel")
+        except Exception:
+            pass
+        로그(f"표 단위 서식적용 실패(칸마다 적용으로 대신): {e}")
+        return None
+
 def 표_헤더서식_전체_적용():
     """표 안의 각 셀에 표준 문자서식을 적용한다.
 
@@ -7831,6 +7889,27 @@ def 표_헤더서식_전체_적용():
     한칸표영역 = 한칸표_영역_목록()
     제외수 = 0
 
+    # 표 단위 일괄 적용(쪽 범위를 지정하면 범위 밖 칸을 건드리지 않도록 칸마다 적용).
+    묶음 = 표칸_묶음_키별() if 표_서식_표단위_사용 and not 쪽범위_사용중() else None
+    if 묶음 is not None:
+        처리된 = set()
+        # 칸 안에 다른 표(한 칸 제목 상자 등)가 든 표는 표 단위 선택이 안쪽 표 글자까지
+        # 바꿔 결과가 달라지므로(실측: 수출입동향) 칸마다 적용하는 예전 방식으로 둔다.
+        안쪽표_리스트 = {키[0] for 키 in 묶음}
+        for 칸들 in 묶음.values():
+            if 중단_요청됨():
+                return False
+            if len(칸들) == 1 and 칸들[0][0] in 한칸표영역:
+                continue
+            if any(area in 안쪽표_리스트 for area, _, _ in 칸들):
+                continue
+            적용 = 표_헤더서식_표단위_처리(칸들)
+            if 적용 is not None:
+                셀수 += 적용
+                처리된.update(area for area, _, _ in 칸들)
+    else:
+        처리된 = set()
+
     area = 1
     while True:
         if 중단_요청됨():
@@ -7850,6 +7929,9 @@ def 표_헤더서식_전체_적용():
             continue
 
         if 쪽범위_사용중() and area not in 쪽범위_컨트롤영역:
+            continue
+
+        if area in 처리된:
             continue
 
         if 표_헤더서식_현재셀_처리():
