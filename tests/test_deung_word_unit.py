@@ -61,8 +61,21 @@ class NumberCommaWordUnitTest(DeungWordUnitTest):
 
     def test_unit_ranges(self):
         ranges = self.ns['어절_의미단위_범위'](NUM_TEXT)
+        # 쉼표 없이 끝나는 마지막 항목 '용인 1등으로'도 한 어절이다.
         self.assertEqual([NUM_TEXT[a:b] for a, b in ranges],
-                         ['수원 2,', '서울 4,', '용인', '1등으로', '구성'])
+                         ['수원 2,', '서울 4,', '용인 1등으로', '구성'])
+        # 열거가 아닌 '1등'(첫째)은 묶지 않는다.
+        text = '대회에서 1등으로 입상'
+        self.assertEqual([text[a:b] for a, b in self.ns['어절_의미단위_범위'](text)],
+                         ['대회에서', '1등으로', '입상'])
+
+    def test_last_item_without_comma(self):
+        self.assertEqual(self.split_at('수원 2, 서울 4, 용인 |1등으로 구성', NUM_TEXT), '용인 1등으로')
+        self.assertEqual(self.split_at('수원 2, 서울 4, 용인| 1등으로 구성', NUM_TEXT), '용인 1등으로')
+        self.assertEqual(self.split_at('수원 2, 서울 4, 용|인 1등으로 구성', NUM_TEXT), '용인 1등으로')
+        self.assertEqual(self.split_at('수원 2, 서울 4, 용인 1등|으로 구성', NUM_TEXT), '용인 1등으로')
+        text = '대회에서 1등으로 입상'
+        self.assertIsNone(self.split_at('대회에서 |1등으로 입상', text))
         # 숫자끼리의 열거는 묶지 않는다.
         text = '순번 1, 2, 3'
         self.assertEqual([text[a:b] for a, b in self.ns['어절_의미단위_범위'](text)],
@@ -78,7 +91,6 @@ class NumberCommaWordUnitTest(DeungWordUnitTest):
 
     def test_ordinary_breaks_unchanged(self):
         self.assertIsNone(self.split_at('수원 2, |서울 4, 용인 1등으로 구성', NUM_TEXT))
-        self.assertIsNone(self.split_at('수원 2, 서울 4, 용인 |1등으로 구성', NUM_TEXT))
         self.assertIsNone(self.split_at('순번 1, |2, 3', '순번 1, 2, 3'))
 
 

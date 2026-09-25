@@ -4430,6 +4430,18 @@ def 숫자쉼표_어절인가(text):
     return bool(text) and bool(_숫자쉼표_어절.fullmatch(text))
 
 
+# 열거의 마지막 항목은 쉼표 없이 끝난다: '…, 서울 4, 용인 1등으로 구성'의
+# '용인 1등으로'. 숫자로 시작하고 쉼표로 끝나지 않는 어절이며, 바로 앞 항목이
+# '서울 4,'처럼 '숫자 + 쉼표'로 끝날 때만 묶는다('대회에서 1등으로'는 묶지 않음).
+_숫자끝_어절 = re.compile(r"[0-9]+(?:\.[0-9]+)?[^\s,，]*")
+_숫자쉼표_끝 = re.compile(r"[0-9]+(?:\.[0-9]+)?[,，]$")
+
+
+def 숫자끝_어절인가(text):
+    return (bool(text) and bool(_숫자끝_어절.fullmatch(text))
+            and not 숫자쉼표_어절인가(text))
+
+
 def _숫자쉼표_앞단어인가(text):
     """'수원 2,'의 '수원'처럼 숫자 앞에 오는 단어. 숫자·쉼표로 끝나는 앞 항목
     ('2,' 등)은 단어가 아니므로 '2, 3,'처럼 숫자끼리는 묶지 않는다."""
@@ -4446,14 +4458,35 @@ def 어절_의미단위_범위(text):
         elif (joined and 숫자쉼표_어절인가(text[a:b])
                 and _숫자쉼표_앞단어인가(text[result[-1][0]:result[-1][1]])):
             result[-1] = (result[-1][0], b)
+        elif (joined and 숫자끝_어절인가(text[a:b]) and len(result) >= 2
+                and _숫자쉼표_앞단어인가(text[result[-1][0]:result[-1][1]])
+                and result[-2][1] + 1 == result[-1][0] and text[result[-2][1]] == ' '
+                and _숫자쉼표_끝.search(text[result[-2][0]:result[-2][1]])):
+            result[-1] = (result[-1][0], b)
         else:
             result.append((a, b))
     return result
 
 
 def 앞어절_묶음_후속인가(text):
-    """앞 어절과 빈칸을 사이에 두고 한 어절로 묶이는 뒤 어절('등으로', '2,')."""
-    return 등_어절인가(text) or 숫자쉼표_어절인가(text)
+    """앞 어절과 빈칸을 사이에 두고 한 어절로 묶일 수 있는 뒤 어절
+    ('등으로', '2,', 열거 마지막 항목의 '1등으로'). 실제로 묶이는지는
+    어절_의미단위_범위가 앞 문맥까지 보고 가린다."""
+    return 등_어절인가(text) or 숫자쉼표_어절인가(text) or 숫자끝_어절인가(text)
+
+
+def _왼쪽_어절_추가(before):
+    """before(경계에서 왼쪽으로 읽은 글자, 역순)에 빈칸 너머 앞 어절 하나를 더한다.
+    열거 마지막 항목('용인 1등으로')은 그 앞 항목('4,')을 보고 묶기 때문이다."""
+    if not before:
+        return before
+    gap, space = _단어모드_공백전까지(before[-1][0], True)
+    if gap is None or gap or space is None:
+        return before
+    previous, _ = _단어모드_공백전까지(space[0], True)
+    if previous:
+        return before + [space] + previous
+    return before
 
 
 def _단어모드_공백전까지(pos, 뒤로=False):
@@ -4506,14 +4539,20 @@ def 단어모드_분리정보(anchor):
         if previous:
             before = before + [stop_left] + previous
     # 경계가 걸친 어절 뒤에 '등'·'숫자,' 어절이 이어지면 그 어절까지 묶는다.
-    elif stop_right is not None:
-        peek = 단어모드_한글자(stop_right[1])
-        if peek and (peek[2] == '등' or peek[2].isdigit()):
-            following, _ = _단어모드_공백전까지(stop_right[1])
-            if following is None:
-                return None
-            if 앞어절_묶음_후속인가(''.join(p[2] for p in following)):
-                after = after + [stop_right] + following
+    뒤어절 = ''
+    if stop_left is None or not 앞어절_묶음_후속인가(현재어절):
+        if stop_right is not None:
+            peek = 단어모드_한글자(stop_right[1])
+            if peek and (peek[2] == '등' or peek[2].isdigit()):
+                following, _ = _단어모드_공백전까지(stop_right[1])
+                if following is None:
+                    return None
+                뒤어절 = ''.join(p[2] for p in following)
+                if 앞어절_묶음_후속인가(뒤어절):
+                    after = after + [stop_right] + following
+    # 열거 마지막 항목은 앞 항목('4,')까지 봐야 묶을지 정할 수 있다.
+    if 숫자끝_어절인가(현재어절) or 숫자끝_어절인가(뒤어절):
+        before = _왼쪽_어절_추가(before)
     parts = list(reversed(before)) + after
     text = ''.join(part[2] for part in parts)
     offsets = [0]
