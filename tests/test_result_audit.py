@@ -54,7 +54,8 @@ class ResultAuditTest(unittest.TestCase):
             'hwp': doc, 'hwp_run': doc.run, '순회_시작': lambda: doc.SetPos(0, 0, 0),
             '중단_요청됨': lambda: False, '쪽범위_끝지남': lambda p: False,
             '현재_페이지번호': lambda: 2, '현재_처리파일': 'sample.hwpx',
-            '단어모드_분리정보': lambda p: (p, (0, 0, 2), p, (0, 0, 4), 2, 2),
+            # 줄 중간(1)에서 시작해 갈라진 단어 — 칸 폭보다 긴 단어가 아니다.
+            '단어모드_분리정보': lambda p: (p, (0, 0, 2), (0, 0, 1), (0, 0, 4), 1, 2),
             '단어모드_범위선택': lambda *args: None,
             '현재선택영역_텍스트': lambda: '전기버스', '검수_문제_기록': record,
         }):
@@ -65,6 +66,38 @@ class ResultAuditTest(unittest.TestCase):
         self.assertIn('전기버스', result['issues'][0]['text'])
         self.assertEqual(doc.pos, (0, 0, 0))
         record.assert_called_once()
+
+    def test_word_wider_than_cell_is_exempt_not_issue(self):
+        fn = self.ns['보고서_단어분리_최종검사']
+        class Document:
+            pos = (0, 0, 0)
+            def GetPos(self):
+                return self.pos
+            def SetPos(self, *pos):
+                self.pos = tuple(pos)
+            def run(self, action):
+                if action == 'MoveLineEnd':
+                    self.pos = (0, 0, 5 if self.pos[2] < 6 else 8)
+                elif action == 'MoveParaEnd':
+                    self.pos = (0, 0, 8)
+                elif action == 'MoveNextChar':
+                    self.pos = (0, 0, min(8, self.pos[2] + 1))
+        doc = Document()
+        record = Mock()
+        with patch.dict(fn.__globals__, {
+            'hwp': doc, 'hwp_run': doc.run, '순회_시작': lambda: doc.SetPos(0, 0, 0),
+            '중단_요청됨': lambda: False, '쪽범위_끝지남': lambda p: False,
+            '현재_페이지번호': lambda: 1, '현재_처리파일': 'sample.hwpx',
+            # 줄 첫머리(0)에서 시작한 8자 단어가 5자 줄을 넘침
+            '단어모드_분리정보': lambda p: (p, (0, 0, 5), p, (0, 0, 8), 5, 3),
+            '단어모드_범위선택': lambda *args: None,
+            '현재선택영역_텍스트': lambda: '질그랭이거점센터', '검수_문제_기록': record,
+        }):
+            result = fn()
+        self.assertEqual(result['status'], 'passed')
+        self.assertEqual(len(result['exempt']), 1)
+        self.assertIn('질그랭이거점센터', result['exempt'][0]['text'])
+        record.assert_not_called()
 
     def test_word_audit_skips_to_next_paragraph_when_traversal_stalls(self):
         # 문단 0의 (0,0,9)에서 MoveLineEnd가 앞(8)으로 돌아와 같은 위치를 다시

@@ -4530,6 +4530,22 @@ def 단어모드_분리정보(anchor):
     return None
 
 
+# 줄 첫머리에서 시작한 단어가 넘친 부분이 그 줄 글자 수의 이 비율을 넘으면
+# 자간·장평을 허용 범위까지 줄여도 한 줄에 넣을 수 없다(좁은 표 칸의 긴 합성어).
+칸폭초과_허용비율 = 0.2
+
+
+def 칸폭보다_긴_단어인가(info):
+    """단어모드_분리정보 결과가 '줄 첫머리에서 시작했는데도 넘치는 단어'인지.
+
+    실측: 공고문 표 칸 단어 분리 미해결 20건 중 13건이 줄 전체가 그 단어
+    하나였다(예: 5자 칸의 '질그랭이거|점센터'). 밀 곳도 당길 곳도 없어 어떤
+    조정으로도 풀 수 없으므로, 시도하지 않고 검수에서도 적용 제외로 적는다.
+    """
+    start, _, word_start, _, left, right = info
+    return word_start[2] <= start[2] and right > left * 칸폭초과_허용비율
+
+
 def 붙임의미단위_줄분리인가():
     original = hwp.GetPos()
     try:
@@ -4985,6 +5001,10 @@ def 단어중간_줄바꿈방지(최대시도):
                 failure_reason = "같은 경계 반복"
                 break
             seen.add(key)
+            if 칸폭보다_긴_단어인가(info):
+                진단로그(f"[단어 분리] {unit_text!r} {left}:{right}자: 줄 첫머리부터 넘치는 "
+                         f"칸 폭보다 긴 단어라 조정 제외")
+                return not 중단_요청됨()
             # 마지막 줄에 빈칸 포함 5자 미만이 남으면 무조건 앞줄로 당긴다.
             # 그 외에는 글자 수가 많은 쪽으로 붙인다(같으면 앞줄로 당김).
             # 예: '실|질적인'은 '실'이 있는 앞줄 자간을 넓혀 '실'을 다음 줄로
@@ -5617,6 +5637,8 @@ def 보고서_단어분리_최종검사(컨트롤=False):
     original = hwp.GetPos()
     checked = 0
     issues = []
+    # 줄 첫머리부터 넘치는 칸 폭보다 긴 단어는 문제 대신 적용 제외로 적는다.
+    exempt = []
     areas = []
     try:
         if 컨트롤:
@@ -5665,7 +5687,14 @@ def 보고서_단어분리_최종검사(컨트롤=False):
                 if boundary[2] < end[2]:
                     checked += 1
                     info = 단어모드_분리정보(pos)
-                    if info:
+                    if info and 칸폭보다_긴_단어인가(info):
+                        단어모드_범위선택(info[2], info[3])
+                        word = 현재선택영역_텍스트()
+                        hwp_run('Cancel')
+                        exempt.append({'text': f'[칸 폭보다 긴 단어] {word!r}',
+                                       'page': page, 'position': pos})
+                        hwp.SetPos(*pos)
+                    elif info:
                         단어모드_범위선택(info[2], info[3])
                         word = 현재선택영역_텍스트()
                         hwp_run('Cancel')
@@ -5678,7 +5707,8 @@ def 보고서_단어분리_최종검사(컨트롤=False):
                 if tuple(hwp.GetPos()) == boundary:
                     break
         return {'status': 'failed' if issues else 'passed', 'checked': checked,
-                'measurement': '화면줄 경계', 'areas': areas, 'issues': issues}
+                'measurement': '화면줄 경계', 'areas': areas, 'issues': issues,
+                'exempt': exempt}
     finally:
         hwp_run('Cancel')
         hwp.SetPos(*original)
