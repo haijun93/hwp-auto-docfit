@@ -17,7 +17,7 @@ class WordSplitDirectionTest(unittest.TestCase):
         self.assertFalse(pull(1, 3))          # 실|질적인
         self.assertTrue(pull(1, 3, True))     # 마지막 줄 5자 미만이면 당김
 
-    def _run(self, left, right, 마지막줄_짧음):
+    def _run(self, left, right, 마지막줄_짧음, 서식보관=None):
         fn = self.ns['단어중간_줄바꿈방지']
         start, boundary = (0, 0, 0), (0, 0, 10)
         word_start, word_end = (0, 0, 9), (0, 0, 13)
@@ -52,7 +52,7 @@ class WordSplitDirectionTest(unittest.TestCase):
             '현재선택영역_텍스트': lambda: '실질적인',
             '단어모드_마지막줄_짧은잔여인가': lambda b: 마지막줄_짧음,
             '단어모드_자간보관': keep,
-            '단어모드_서식보관': lambda a, b: (keep(a, b), []),
+            '단어모드_서식보관': 서식보관 or (lambda a, b: (keep(a, b), [])),
             '단어모드_자간적용': lambda *a: None,
             '단어_장평_추가축소_시도': lambda *a, **kw: False,
             '색상_적용_현재선택': lambda: None,
@@ -73,6 +73,14 @@ class WordSplitDirectionTest(unittest.TestCase):
     def test_short_last_line_pulls_first(self):
         saved, word_start, word_end = self._run(1, 3, True)
         self.assertEqual(saved, [word_end, word_start])
+
+    def test_format_read_failure_tries_other_direction_instead_of_aborting(self):
+        # 앞줄 당김의 서식 보관이 글자 위치 확인에 실패해도 문서 처리를 멈추지
+        # 않고 반대 방향(다음 줄로 밀기)으로 넘어간다.
+        def broken(a, b):
+            raise RuntimeError('서식 보관 중 문자 위치 확인 실패')
+        saved, word_start, _ = self._run(2, 2, False, 서식보관=broken)
+        self.assertEqual(saved, [word_start])
 
 
 if __name__ == '__main__':
