@@ -77,6 +77,19 @@ class FinalEvaluationTest(unittest.TestCase):
         self.assertEqual(report["verification_coverage"][0]["not_checkable"],
                          ["body_spacing", "hanging_indent"])
 
+    def test_group_longer_than_page_is_a_note_not_a_blocker(self):
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder) / "result.hwpx"
+            output.touch()
+            report = evaluate_work(
+                build_work_goal("all", 1, {"page_group": True}),
+                [{"output": str(output), "success": True, "integrity_ok": True,
+                  "rule_checks": {"page_group": {"status": "passed", "issues": [],
+                                                 "exempt": [{"text": "[한 쪽보다 긴 묶음] □ 활용대상"}]}}}],
+                {"attempted": 1, "succeeded": 1}, verification_enabled=True)
+        self.assertEqual(report["verdict"], "달성")
+        self.assertTrue(any("한 쪽보다 긴 묶음 1개" in note for note in report["notes"]))
+
     def test_missing_checker_result_still_blocks(self):
         with tempfile.TemporaryDirectory() as folder:
             output = Path(folder) / "result.hwpx"

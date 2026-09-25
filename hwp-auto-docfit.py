@@ -5689,6 +5689,8 @@ def 보고서_페이지배치_최종검사():
     original = hwp.GetPos()
     checked = 0
     issues = []
+    # 한 쪽에 다 들어갈 수 없는 묶음은 규칙 위반이 아니라 적용 제외로 따로 적는다.
+    exempt = []
     try:
         순회_시작()
         while True:
@@ -5704,7 +5706,10 @@ def 보고서_페이지배치_최종검사():
                 if not counts:
                     raise RuntimeError('최종 페이지 검사의 화면줄 측정 실패')
                 checked += 1
-                if len(counts) > 1:
+                if len(counts) > 1 and 쪽보다_긴_묶음인가(group_target[0], counts):
+                    exempt.append({'text': f'[한 쪽보다 긴 묶음] {text.strip()[:80]}',
+                                   'pages': sorted(counts), 'paragraph': pos[1]})
+                elif len(counts) > 1:
                     message = f'[소제목 묶음 쪽 분리] {text.strip()[:80]}'
                     issues.append({'text': message, 'pages': sorted(counts), 'paragraph': pos[1]})
                     검수_문제_기록(현재_처리파일, message)
@@ -5718,7 +5723,10 @@ def 보고서_페이지배치_최종검사():
                 if not counts:
                     raise RuntimeError('최종 페이지 검사의 화면줄 측정 실패')
                 checked += 1
-                if counts and len(counts) > 1:
+                if len(counts) > 1 and 쪽보다_긴_묶음인가(paragraphs, counts):
+                    exempt.append({'text': f'[한 쪽보다 긴 묶음] {text.strip()[:80]}',
+                                   'pages': sorted(counts), 'paragraph': pos[1]})
+                elif counts and len(counts) > 1:
                     kind = ('상위·하위 문단 묶음 분리' if len(paragraphs) > 1
                             else '문단 내부 페이지 분리')
                     message = f'[{kind}] {text.strip()[:80]}'
@@ -5728,7 +5736,7 @@ def 보고서_페이지배치_최종검사():
             if not 범위_다음_문단으로_진행():
                 break
         return {'status': 'passed' if not issues else 'failed',
-                'checked': checked, 'issues': issues}
+                'checked': checked, 'issues': issues, 'exempt': exempt}
     finally:
         hwp.SetPos(*original)
 
@@ -5760,6 +5768,95 @@ def 보고서_묶음_쪽별줄수(문단들):
                     raise RuntimeError('묶음의 다음 화면줄 이동 실패')
         return counts
     finally:
+        hwp.SetPos(*original)
+
+
+# 줄간격으로 옮기지 못한 묶음을 '문단 앞에서 쪽 나눔'으로 다음 쪽에 보낼 때,
+# 앞쪽에 남는 빈 공간이 한 쪽 줄 수의 이 비율 이하일 때만 쪽을 나눈다.
+쪽나눔_최대_앞쪽비율 = 0.5
+
+
+def 쪽_본문줄수(위치):
+    """위치가 있는 쪽의 본문 화면줄 수(그 쪽에 들어가는 줄 수의 근사값)."""
+    original = hwp.GetPos()
+    try:
+        hwp.SetPos(*위치)
+        page = 현재_페이지번호()
+        hwp_run('MovePageBegin')
+        count = 0
+        while True:
+            if 중단_요청됨():
+                return None
+            hwp_run('MoveLineEnd')
+            line_end = hwp.GetPos()
+            if line_end[0] != 0 or 현재_페이지번호() != page:
+                break
+            count += 1
+            hwp_run('MoveNextChar')
+            if hwp.GetPos() == line_end:
+                break
+        return count
+    finally:
+        hwp.SetPos(*original)
+
+
+def 쪽첫줄_시작인가(시작위치):
+    """묶음 첫 문단이 쪽의 첫 줄에서 시작하는지."""
+    original = hwp.GetPos()
+    try:
+        hwp.SetPos(*시작위치)
+        hwp_run('MovePageBegin')
+        return tuple(hwp.GetPos()) == tuple(시작위치)
+    finally:
+        hwp.SetPos(*original)
+
+
+def 쪽보다_긴_묶음인가(문단들, counts):
+    """한 쪽에 다 들어갈 수 없는 묶음이면 True. 쪽 배치 규칙을 적용하지 않는다.
+
+    쪽 첫 줄에서 시작하는데도 쪽을 넘거나, 전체 줄 수가 앞쪽(꽉 찬 쪽)의 본문
+    줄 수보다 많으면 어떤 배치로도 한 쪽에 모을 수 없다(실측: 34줄 묶음을
+    줄간격으로 옮기려다 실패하고 미해결로 남음).
+    """
+    if not counts or len(counts) < 2:
+        return False
+    if 쪽첫줄_시작인가(문단들[0][0]):
+        return True
+    capacity = 쪽_본문줄수(문단들[0][0])
+    return bool(capacity) and sum(counts.values()) > capacity
+
+
+def 쪽나눔_설정(위치, 켜기):
+    hwp.SetPos(*위치)
+    act = hwp.CreateAction('ParagraphShape')
+    pset = act.CreateSet()
+    pset.SetItem('PagebreakBefore', 1 if 켜기 else 0)
+    if act.Execute(pset) is False:
+        raise RuntimeError('문단 앞 쪽 나눔 설정 실패')
+
+
+def _묶음_쪽나눔_이동(시작위치, 문단들, counts, summary):
+    """줄간격으로 옮기지 못한 묶음을 '문단 앞에서 쪽 나눔'으로 다음 쪽에 보낸다.
+
+    앞쪽에 남은 줄이 한 쪽의 쪽나눔_최대_앞쪽비율 이하일 때만 한다(큰 빈 공간
+    방지). 옮긴 뒤에도 쪽을 넘으면 되돌린다. 성공 True.
+    """
+    pages = sorted(counts)
+    capacity = 쪽_본문줄수(시작위치)
+    if not capacity or counts[pages[0]] > capacity * 쪽나눔_최대_앞쪽비율:
+        return False
+    original = hwp.GetPos()
+    try:
+        쪽나눔_설정(시작위치, True)
+        new_counts = 보고서_묶음_쪽별줄수(문단들)
+        if new_counts and len(new_counts) == 1:
+            로그(f'문장 묶음 쪽 나눔으로 다음 쪽 배치: {summary} '
+                 f'(앞쪽 {counts[pages[0]]}줄/쪽당 약 {capacity}줄)')
+            return True
+        쪽나눔_설정(시작위치, False)
+        return False
+    finally:
+        hwp_run('Cancel')
         hwp.SetPos(*original)
 
 
@@ -6067,6 +6164,10 @@ def 소제목묶음_같은쪽_시도(시작위치, text):
         return '처리', group
     if len(pages) != 2 or pages[1] != pages[0] + 1:
         return '단위별', group
+    if 쪽보다_긴_묶음인가(group, counts):
+        진단로그(f'[쪽 맞춤 묶음] 한 쪽보다 긴 묶음(총 {sum(counts.values())}줄): 묶음 규칙 제외, '
+                 f'ㅇ 단위별 배치로 진행 / {summary}')
+        return '단위별', group
     unit_pages = []
     for unit in units:
         page = 문단_첫줄_쪽(group[unit[0]][0])
@@ -6081,6 +6182,9 @@ def 소제목묶음_같은쪽_시도(시작위치, text):
     if result is None:
         return None
     if result == '성공':
+        세트문장_통계['성공'] += 1
+        return '처리', group
+    if result == '실패' and _묶음_쪽나눔_이동(시작위치, group, counts, summary):
         세트문장_통계['성공'] += 1
         return '처리', group
     if result == '실패':
@@ -6113,6 +6217,9 @@ def 세트문장_같은쪽_시도(시작위치, text):
         if len(pages) > 1:
             검수_문제_기록(현재_처리파일, f'[문장 묶음 페이지 분리] {summary}')
         return not 중단_요청됨()
+    if 쪽보다_긴_묶음인가(paragraphs, counts):
+        진단로그(f'[문장 묶음] 한 쪽보다 긴 묶음(총 {sum(counts.values())}줄): 쪽 배치 제외 / {summary}')
+        return not 중단_요청됨()
     세트문장_통계['대상'] += 1
     # 쪽별 줄 수로 정한 방향을 먼저 시도하고, 안 되면 반대 방향으로 보완한다.
     # 예: 앞쪽 4줄/뒤쪽 1줄이지만 줄간격이 이미 최소(160%)라 당길 수
@@ -6121,6 +6228,8 @@ def 세트문장_같은쪽_시도(시작위치, text):
                              not 보고서_압축조건(counts), summary)
     if result is None:
         return False
+    if result == '실패' and _묶음_쪽나눔_이동(시작위치, paragraphs, counts, summary):
+        result = '성공'
     if result == '성공':
         세트문장_통계['성공'] += 1
     elif result == '실패':
@@ -6361,7 +6470,8 @@ def 쪽맞춤_묶음분리_있음(최소쪽=None):
                     paragraphs = target[0] if target else 보고서_본문묶음_수집(pos)
                     if paragraphs and all(쪽범위_안인가(p[0]) for p in paragraphs):
                         counts = 보고서_묶음_쪽별줄수(paragraphs)
-                        if counts and len(counts) > 1:
+                        if (counts and len(counts) > 1
+                                and not 쪽보다_긴_묶음인가(paragraphs, counts)):
                             진단로그(f'[쪽 수 맞춤] 쪽 경계에 걸린 묶음: {text.strip()[:40]}')
                             return True
                 hwp.SetPos(*pos)
