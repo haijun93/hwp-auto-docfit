@@ -37,10 +37,40 @@ class ControlLineLoopTest(unittest.TestCase):
             '재검사_영역인가': lambda area: True, '표셀_자간_제외인가': lambda: False,
             '괄호_안쪽_공백_정리_문단_처리': lambda: None, '쉼표_공백_정리_문단_처리': lambda: None,
             '자간자동조정': lambda 최대시도=None: calls.append(doc.GetPos()) or True,
-            '작업_모드': 'all', '진단로그': Mock(),
+            '작업_모드': 'all', '진단로그': Mock(), '넓은_표칸_줄인가': lambda: False,
         }):
             self.assertTrue(fn())
         self.assertEqual(calls, [(2, 0, 0)])
+
+    def test_wide_cell_lines_use_body_budget(self):
+        fn = self.ns['컨트롤_내부_자간조정']
+        budgets = []
+        for wide in (True, False):
+            doc = self._doc()
+            with patch.dict(fn.__globals__, {
+                'hwp': doc, 'hwp_run': doc.run, '중단_요청됨': lambda: False,
+                '한칸표_영역_목록': lambda: set(), '쪽범위_사용중': lambda: False,
+                '재검사_영역인가': lambda area: True, '표셀_자간_제외인가': lambda: False,
+                '괄호_안쪽_공백_정리_문단_처리': lambda: None, '쉼표_공백_정리_문단_처리': lambda: None,
+                '자간자동조정': lambda 최대시도=None: budgets.append(최대시도) or True,
+                '작업_모드': 'all', '진단로그': Mock(), '넓은_표칸_줄인가': lambda: wide,
+                '자간_최대시도_본문': 30, '자간_최대시도_표': 5,
+            }):
+                fn()
+        self.assertEqual(budgets, [30, 5])
+
+    def test_wide_cell_detection(self):
+        fn = self.ns['넓은_표칸_줄인가']
+        for length, expected in ((33, True), (20, True), (6, False)):
+            class Doc:
+                def GetPos(self):
+                    return (2, 0, 0)
+                def SetPos(self, *pos):
+                    pass
+            with patch.dict(fn.__globals__, {
+                'hwp': Doc(), '단어모드_줄범위': lambda p, n=length: ((2, 0, 0), (2, 0, n)),
+            }):
+                self.assertIs(fn(), expected)
 
     def test_punctuation_pass_processes_last_line_once(self):
         fn = self.ns['컨트롤_내부_문장부호_처리']
