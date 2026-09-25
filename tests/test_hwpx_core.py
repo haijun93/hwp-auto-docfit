@@ -63,6 +63,20 @@ class HwpxCoreTest(unittest.TestCase):
             self.assertTrue(added["ok"])
             self.assertTrue(any("표 개수" in issue["message"] for issue in added["issues"]))
 
+    def test_integrity_comparison_detects_missing_control(self):
+        # '새 쪽 번호' 같은 글자 없는 컨트롤(hp:ctrl)이 사라지면 오류다.
+        with_ctrl = SECTION.replace(
+            b'<hp:p><hp:run><hp:t>',
+            b'<hp:p><hp:run><hp:ctrl><hp:newNum num="14" numType="PAGE"/></hp:ctrl><hp:t>', 1)
+        with tempfile.TemporaryDirectory() as folder:
+            before_path = Path(folder) / "before.hwpx"
+            after_path = Path(folder) / "after.hwpx"
+            make_hwpx(before_path, with_ctrl)
+            make_hwpx(after_path)
+            result = compare_documents(inspect_hwpx(before_path), inspect_hwpx(after_path))
+            self.assertFalse(result["ok"])
+            self.assertTrue(any("컨트롤이 사라졌습니다" in issue["message"] for issue in result["issues"]))
+
 
 if __name__ == "__main__":
     unittest.main()
