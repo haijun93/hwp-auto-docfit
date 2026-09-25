@@ -68,6 +68,37 @@ word-wrap 방지 전체를 rhwp로 재현하려 하지 말고, **렌더링에 �
   제한적). 실제 사용 전 rhwp 저장소의 API 레퍼런스를 더 깊이 확인
   필요.
 
+## 장기 계획: Kordoc 기술 의존성 제거 (사용자 지정, 2026-09-25)
+
+**결정**: 앱 전체에서 `kordoc`(외부 CLI, 선택적 의존성) 의존을 장기적으로
+제거한다. 지금 당장 코드를 지우지는 않음 — 교체 방안은 각 기능별로
+차차 검토(사용자 지정: "장기 계획으로 기록만, 교체 방안은 천천히").
+
+**현재 kordoc 의존 범위**: `docfit_core/kordoc_bridge.py`가 제공하는
+기능 전부. 메인 화면 "고급 도구" 패널의 6개 버튼이 전부 여기 걸림
+(hwp-auto-docfit.py:12454~12474):
+- 표 추출·분류 — `analyze_tables()`
+- 양식 필드 분석 — `analyze_form()`
+- 서식 보존 텍스트 패치 — `patch_document()`
+- 공문서 표기법 검수 — `lint_document()`
+- 페이지 이미지 미리보기 — `render_preview()` (바로 위 "서식 종류
+  이미지 미리보기" 설계안이 의존하려던 바로 그 함수)
+- Markdown → HWPX 생성 — `generate_hwpx()`
+
+**이미 kordoc-free인 부분(참고, 건드릴 필요 없음)**:
+`docfit_core/hwpx.py`가 제공하는 `compare_documents`, `export_markdown`,
+`inspect_hwpx`, `validate_hwpx`, `HwpxLimits`, `HwpxSecurityError`는
+kordoc 없이 순수 자체 구현으로 이미 동작한다(`kordoc_bridge.py`의
+"_advanced" 버전과 이름이 겹치는 경우가 있어 혼동 주의 —
+`compare_documents`(kordoc-free) vs `compare_documents_advanced`
+(kordoc 기반) 둘 다 import돼 있음, docfit_core/__init__.py 확인).
+
+**지금 당장 하지 않는 것**: 6개 기능을 지금 코드에서 제거하는 것,
+대체 구현을 확정하는 것 — 둘 다 보류. 앞서 조사한 후보 기술
+(`python-hwpx`: 한/글 없이 HWPX 열기·편집·검증 가능, `rhwp`: 감마
+버전 후보와 동일)이 있으나 어느 기능에 무엇을 쓸지는 각 기능을
+실제로 교체할 때 다시 검토한다.
+
 ## 확정된 개발 방향: A (서식 자동화 심화)
 
 실무 보고서(5~10쪽, 총 10시간 기준) 작성 8단계의 시간 비중 데이터를
