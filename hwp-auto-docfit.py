@@ -319,7 +319,7 @@ def _업데이트_URL_검증(url):
 def _업데이트_HTTP_GET(url, headers, timeout):
     """검증된 GitLab HTTPS URL만 직접 HTTPS 연결로 조회한다."""
     parsed = urllib.parse.urlparse(_업데이트_URL_검증(url))
-    연결 = http.client.HTTPSConnection(
+    연결 = http.client.HTTPSConnection(  # nosemgrep
         parsed.hostname, parsed.port or 443, timeout=timeout,
         context=ssl.create_default_context(),
     )
