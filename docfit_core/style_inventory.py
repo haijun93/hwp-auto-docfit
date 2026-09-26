@@ -20,6 +20,7 @@ import io
 import math
 from pathlib import Path
 import re
+# 표준 ElementTree는 직렬화·네임스페이스 등록에만 쓴다. 파싱은 모두 defusedxml(XXE 방지).
 import xml.etree.ElementTree as StdET
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
 
@@ -825,12 +826,12 @@ def build_style_sample(source, target, inventory: dict | None = None,
         payload = z.read(first_name)
         _register_namespaces(payload)
         _register_namespaces(z.read("Contents/header.xml"))
-        root = StdET.fromstring(payload)
+        root = ET.fromstring(payload)
         # 여러 구역이면 나머지 구역의 문단도 순서대로 후보에 넣는다.
         body = [p for p in root if _tag(p) == "p"]
         for name in sections[1:]:
             _register_namespaces(z.read(name))
-            body += [p for p in StdET.fromstring(z.read(name)) if _tag(p) == "p"]
+            body += [p for p in ET.fromstring(z.read(name)) if _tag(p) == "p"]
 
         defs = inventory["definitions"]
         type_stats = {}
