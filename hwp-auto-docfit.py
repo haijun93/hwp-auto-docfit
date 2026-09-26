@@ -234,7 +234,7 @@ import difflib
 import urllib.error
 import urllib.request
 import webbrowser
-import xml.etree.ElementTree as ET
+from defusedxml import ElementTree as ET
 from collections import Counter, defaultdict, deque
 from tkinter import simpledialog
 import datetime as _datetime
