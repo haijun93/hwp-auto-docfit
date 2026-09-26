@@ -283,9 +283,18 @@ def compare_documents(before: DocumentInspection, after: DocumentInspection) -> 
     for label, old, new in (
         ("표", before.table_count, after.table_count),
         ("이미지", before.image_count, after.image_count),
+        # 쪽 번호 새로 시작·머리말 등 글자 없는 컨트롤도 사라지면 내용 손실이다
+        # (실측: 빈 줄 삭제가 '새 쪽 번호(14)' 컨트롤 문단을 지워 쪽 번호가 바뀜).
+        ("컨트롤", before.control_count, after.control_count),
         ("섹션", before.section_count, after.section_count),
     ):
-        if old != new:
+        if new < old and label != "섹션":
+            # 표·이미지가 사라지면 본문 일치도(표 안 글자 제외)는 높게 나와도
+            # 실제로는 내용이 지워진 것이다(실측: 빈 줄 삭제가 표 문단을 지움).
+            # 받침이 있으면 '이'(컨트롤이), 없으면 '가'(표가·이미지가).
+            particle = "이" if (ord(label[-1]) - 0xAC00) % 28 else "가"
+            issues.append({"severity": "error", "message": f"{label}{particle} 사라졌습니다({old} → {new})."})
+        elif old != new:
             issues.append({"severity": "warning", "message": f"{label} 개수가 변경되었습니다({old} → {new})."})
     return {
         "ok": not any(item["severity"] == "error" for item in issues),

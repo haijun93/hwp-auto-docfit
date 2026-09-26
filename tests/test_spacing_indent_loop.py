@@ -18,14 +18,19 @@ class SpacingIndentLoopTest(unittest.TestCase):
         passes = iter(changes_per_pass)
         indents = iter(indent_changes)
 
+        targets = []
+
         def spacing():
             calls.append('spacing')
             seen.append((g['재검사_대상문단'], g['다음단어_당김_사용']))
-            g['자간_변경_횟수'] += next(passes, 0)
+            changes = next(passes, 0)
+            g['자간_변경_횟수'] += changes
+            g['자간_변경문단'].update((0, 100 + i) for i in range(changes))
             return True
 
-        def indent():
+        def indent(대상문단=None):
             calls.append('indent')
+            targets.append(대상문단)
             g['내어쓰기_변경문단'].clear()
             g['내어쓰기_변경문단'].update(next(indents, set()))
             return True
@@ -34,6 +39,7 @@ class SpacingIndentLoopTest(unittest.TestCase):
         with patch.dict(g, {
             '작업_모드': 'spacing', '표준서식_사용': False, '표준서식_내어쓰기_사용': True,
             '선택_세부작업': {}, '자간_변경_횟수': 0, '내어쓰기_변경문단': set(),
+            '자간_변경문단': set(),
             '재검사_대상문단': None, '다음단어_당김_사용': True,
             '중단_요청됨': lambda: False, '단계표시': Mock(), '상태': Mock(), '로그': Mock(),
             'hwp_run': lambda cmd: True, '순회_시작': noop,
@@ -45,6 +51,7 @@ class SpacingIndentLoopTest(unittest.TestCase):
             # 반복이 끝나면 전체 검사·당김 사용 상태로 되돌린다.
             self.assertIsNone(g['재검사_대상문단'])
             self.assertTrue(g['다음단어_당김_사용'])
+        self.targets = targets
         return calls, seen
 
     def test_no_spacing_change_skips_indent(self):
@@ -62,6 +69,10 @@ class SpacingIndentLoopTest(unittest.TestCase):
     def test_later_passes_check_only_changed_paragraphs_without_pull(self):
         _, seen = self._run([3, 1, 0], indent_changes=[{(0, 5), (0, 9)}, {(0, 9)}])
         self.assertEqual(seen, [(None, True), ({(0, 5), (0, 9)}, False), ({(0, 9)}, False)])
+
+    def test_reindent_only_paragraphs_whose_spacing_changed(self):
+        self._run([2, 1, 0])
+        self.assertEqual(self.targets, [{(0, 100), (0, 101)}, {(0, 100)}])
 
     def test_recheck_skipped_when_indent_unchanged(self):
         calls, _ = self._run([4, 1], indent_changes=[set()])

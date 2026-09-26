@@ -112,6 +112,20 @@ def evaluate_work(goal, documents, item_stats=None, unresolved=None, verificatio
             blockers.append(f"결과 규칙 미검사 {len(missing)}개: {', '.join(missing)}")
         if bad:
             blockers.append(f"결과 규칙 검사 실패 또는 미완료: {', '.join(bad)}")
+    # 어떤 조정으로도 풀 수 없어 규칙 적용에서 뺀 항목은 문제가 아니라 참고로 적는다.
+    def exempt_count(*keys):
+        return sum(len((item.get('rule_checks') or {}).get(key, {}).get('exempt') or [])
+                   for item in outputs for key in keys)
+    groups = exempt_count('page_group')
+    if groups:
+        notes.append(f"한 쪽보다 긴 묶음 {groups}개는 쪽 배치 규칙 적용 제외(한 쪽에 모을 수 없음)")
+    numbers = sum(len((item.get('rule_checks') or {}).get('number_check', {}).get('review') or [])
+                  for item in outputs)
+    if numbers:
+        notes.append(f"숫자 대조: 표 가까이 본문 수치 중 표에서 찾지 못한 {numbers}개는 확인 필요(자동 수정 안 함)")
+    words = exempt_count('word_check', 'control_word_check')
+    if words:
+        notes.append(f"칸 폭보다 긴 단어 {words}개는 단어 분리 규칙 적용 제외(줄 첫머리부터 넘침)")
     if outputs and not_checkable:
         notes.append(f"결과 검사 기능이 없는 세부 작업 {len(not_checkable)}개"
                      f"(수행 여부만 확인): {', '.join(not_checkable)}")

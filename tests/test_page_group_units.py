@@ -57,6 +57,8 @@ class PageGroupUnitsTest(unittest.TestCase):
             '_묶음_같은쪽_이동': mover, '세트문장_통계': stats,
             '검수_문제_기록': record, '진단로그': Mock(), '로그': Mock(),
             '현재_처리파일': 'x.hwpx',
+            '쪽보다_긴_묶음인가': lambda paragraphs, counts: False,
+            '_묶음_쪽나눔_이동': lambda *args: False,
         }):
             result = fn((0, 0, 0), 'ㅁ 제목')
         return result, mover, stats, record
