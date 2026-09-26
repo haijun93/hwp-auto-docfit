@@ -9,7 +9,7 @@
 
 | 항목 | 현재 값 |
 |---|---|
-| 제품 | 한/글 2020 문서(HWP/HWPX)를 공문서 규칙에 맞게 자동 후처리하는 Windows 데스크톱 앱(Python·Tkinter) |
+| 제품 | 한/글 2020 문서(HWP/HWPX)를 공문서 규칙에 맞게 자동 후처리하는 Windows 데스크톱 앱(Python·Tkinter 백엔드 + pywebview/WebView2 UI) |
 | 최신 배포 | **v1.68 Beta 2** (2026-09-26) — 작업 유형 4가지 분리 |
 | 직전 배포 | v1.68 Beta 1 (2026-09-26) — 알파 1.68 Alpha 1~6 개선 전체 반영 |
 | 브랜치 | `main` = 베타(배포선), `alpha` = 새 기능 시험판 |
@@ -22,11 +22,11 @@
 
 ## 2. 개발 환경
 
-- **Windows 전용**. 한/글 2020이 설치되어 있고 COM 객체 `HwpFrame.HwpObject`를 쓸 수 있어야 실제 문서 처리가 됩니다.
-- **Python 3.14** 가상환경: `.venv\Scripts\python.exe` (의존성: `requirements.txt` — pywin32, tkinterdnd2, Pillow, defusedxml)
+- **Windows 전용**. 한/글 2020이 설치되어 있고 COM 객체 `HwpFrame.HwpObject`를 쓸 수 있어야 실제 문서 처리가 됩니다. 주 화면에는 WebView2 런타임이 필요하며, 사용할 수 없으면 기존 Tk 화면으로 대체합니다.
+- **Python 3.14** 가상환경: `.venv\Scripts\python.exe` (의존성: `requirements.txt` — pywin32, tkinterdnd2, defusedxml, pywebview)
 - 보안 모듈 `MapoHwpAutoDocFitSecurity.dll`이 `hwp-auto-docfit.py`와 같은 폴더에 있어야 합니다(한/글 자동화 보안 승인용, 앱이 최초 실행 시 등록).
 - 저장소 경로에 **한글과 공백**이 있습니다(`C:\Users\haiju\OneDrive\바탕 화면\HWP_AutoDocFit\mapo-agent-1`). 셸 명령에서는 항상 따옴표로 감싸세요.
-- 실행: `.venv\Scripts\python.exe hwp-auto-docfit.py`
+- 실행: `.venv\Scripts\python.exe hwp-auto-docfit.py` (pywebview가 있으면 WebView2 UI, 그렇지 않으면 Tk UI)
 - 모듈 임포트 시 `docfit_core`를 찾도록 저장소 루트에서 실행하거나 `PYTHONPATH=.`을 지정하세요.
 - 콘솔 한글 깨짐 방지: `PYTHONIOENCODING=utf-8`
 
@@ -37,6 +37,7 @@
 | 경로 | 역할 |
 |---|---|
 | `hwp-auto-docfit.py` (약 15,000줄) | 앱 본체. COM 자동화 파이프라인, 서식 분석, GUI 전체. **CRLF 줄바꿈**, 식별자·주석 대부분 한국어 |
+| `desktop_web_ui.py`, `desktop_web/` | WebView2 키오스크 UI와 Tk 백엔드 연결, 반응형 화면 리소스 |
 | `docfit_core/hwpx.py` | HWPX 안전 검사(ZIP bomb·경로 조작), 구조 파싱, Markdown 내보내기, 무결성 비교 |
 | `docfit_core/stage_selection.py` | 작업 유형별 세부 작업(단계) 목록과 기본 선택값 |
 | `docfit_core/style_hierarchy.py` | 문두기호(□·ㅇ·-·※ 등) 판별, 들여쓰기 기반 계층 분석 |
@@ -55,6 +56,8 @@
 | `.github/workflows/build-windows-exe.yml` | exe 빌드(빌드 브랜치 푸시 때만 실행) |
 | `.gitlab-ci.yml` | 태그 푸시 시 GitLab 릴리스 자동 생성 |
 | `.claude/skills/gongmunseo-report-writing/` | 공문서 작성 스킬(행정업무운영 편람 규정 포함). 다른 에이전트도 문체 기준으로 참고 가능 |
+| `HANDOVER.md` | 인수인계서 본문 |
+| `UI_DESIGN.md` | 알파 UI 화면 흐름·반응형 배치·접근성 기준 |
 | `TODO.md` | 작업 예정·완료 기록(사용자가 "나중에 해"라고 한 항목의 원천) |
 
 ---
@@ -126,6 +129,9 @@
 - 시험 중 한/글 프로세스가 남으면 다음 COM 호출이 꼬입니다. 시험 뒤 `Get-Process Hwp`로 확인하고, **직접 띄운 것만** 정리하세요(사용자가 쓰는 한/글 창을 닫지 말 것).
 - 셸 heredoc으로 파이썬 코드를 넘기면 `\n`, `\b` 같은 역슬래시가 깨질 수 있습니다. 긴 수정은 파일로 스크립트를 써서 실행하세요.
 - PyInstaller 추출물 폴더 안에서 파이썬을 실행하면 추출된 `struct.pyc`가 표준 모듈을 가립니다(외부 exe 분석 시).
+- 앱 주 화면은 pywebview가 메인 스레드에서 실행되고, 기존 Tk UI·설정 창은 전용 이벤트 루프 스레드에서 유지됩니다. WebView ↔ Tk 호출은 `root.after`로 위임하며, HWP COM 처리 경로는 그대로 유지합니다.
+- 작업 유형별 세부 단계는 사용자가 단계 창에서 기본값 저장을 선택한 경우 `%APPDATA%\HwpAutoDocFit\settings.json`의 `stage_choices`에 저장됩니다. Web UI의 네 단계 탭은 언제든 이동 가능하며, 진행 플로차트는 `LiveStageBoard`의 실제 처리 이벤트를 표시합니다.
+- 빌드 시 `desktop_web` 리소스를 exe에 포함하고 `webview`, `pythonnet`, `clr_loader`를 수집해야 합니다. `build.bat` 및 GitHub Actions 빌드 단계에 반영되어 있습니다.
 
 ---
 

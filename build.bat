@@ -34,11 +34,7 @@ echo [1/4] Installing build dependencies...
 "%PYTHON%" -m pip install --disable-pip-version-check -r requirements.txt pyinstaller
 if errorlevel 1 goto :fail
 
-echo [2/4] Checking Pillow image support...
-"%PYTHON%" -c "from PIL import Image, ImageTk, ImageOps; print('Pillow', Image.__version__)"
-if errorlevel 1 goto :fail
-
-echo [3/4] Building %APPNAME%.exe...
+echo [2/3] Building %APPNAME%.exe...
 "%PYTHON%" -m PyInstaller ^
     --noconfirm ^
     --clean ^
@@ -46,11 +42,11 @@ echo [3/4] Building %APPNAME%.exe...
     --windowed ^
     --name "%APPNAME%" ^
     --add-data "MapoHwpAutoDocFitSecurity.dll;." ^
+    --add-data "desktop_web;desktop_web" ^
     --collect-all tkinterdnd2 ^
-    --collect-all PIL ^
-    --hidden-import PIL.Image ^
-    --hidden-import PIL.ImageTk ^
-    --hidden-import PIL.ImageOps ^
+    --collect-all webview ^
+    --collect-all pythonnet ^
+    --collect-all clr_loader ^
     hwp-auto-docfit.py
 if errorlevel 1 goto :fail
 

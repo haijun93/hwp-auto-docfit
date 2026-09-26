@@ -1,0 +1,84 @@
+﻿<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f6f8">
+  <title>문서 정리</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">한</span><strong>문서 정리</strong></div>
+    <div class="top-actions"><span id="version" class="version">알파</span><button id="logButton" class="quiet-link" type="button">처리 기록</button><button id="settingsButton" class="button button-quiet" type="button">설정</button></div>
+  </header>
+
+  <nav class="stepper" role="tablist" aria-label="작업 단계">
+    <button class="step-tab active" data-step="1" role="tab" aria-selected="true"><span>1</span><b>문서 선택</b></button><i></i>
+    <button class="step-tab" data-step="2" role="tab" aria-selected="false"><span>2</span><b>작업 방식</b></button><i></i>
+    <button class="step-tab" data-step="3" role="tab" aria-selected="false"><span>3</span><b>진행</b></button><i></i>
+    <button class="step-tab" data-step="4" role="tab" aria-selected="false"><span>4</span><b>결과</b></button>
+  </nav>
+
+  <main class="workspace">
+    <section class="page active" id="page1" data-page="1">
+      <div class="page-heading"><p class="eyebrow">STEP 1</p><h1>어떤 문서를 정리할까요?</h1><p>문서 파일을 선택하거나 텍스트를 입력해 시작하세요.</p></div>
+      <div class="panel">
+        <div class="drop-area" id="dropArea" tabindex="0" role="button" aria-label="문서를 끌어 놓거나 파일 추가를 선택하세요">
+          <span class="drop-icon" aria-hidden="true">＋</span><div class="drop-copy"><strong>문서 파일을 끌어다 놓으세요</strong><small>HWP · HWPX · TXT · MD · DOC(X) · PDF</small></div>
+          <div class="button-row"><button id="addFiles" class="button button-primary" type="button">문서 선택</button><button id="addFolder" class="button button-quiet" type="button">폴더 선택</button></div>
+        </div>
+        <div class="or-divider"><span>또는</span></div>
+        <button id="textInput" class="text-entry" type="button"><span class="text-entry-icon" aria-hidden="true">T</span><span><b>텍스트 입력</b><small>붙여넣은 내용을 새 문서로 만들어 정리합니다.</small></span><strong aria-hidden="true">→</strong></button>
+        <div id="fileSection" class="file-section" hidden><div class="list-heading"><b>선택한 문서</b><span id="fileCount">0개</span></div><ul id="fileList" class="file-list" aria-live="polite"></ul><div class="list-footer"><span>원본 파일은 변경하지 않습니다.</span><button class="text-button" id="clearFiles" type="button">목록 비우기</button></div></div>
+      </div>
+      <div class="tip"><span aria-hidden="true">i</span><span>정리 결과는 원본과 별도의 새 파일로 저장됩니다.</span></div>
+    </section>
+
+    <section class="page" id="page2" data-page="2" hidden>
+      <div class="page-heading"><p class="eyebrow">STEP 2</p><h1>어떤 방식으로 정리할까요?</h1><p>작업 유형을 고르고 필요하면 세부 항목을 조정하세요.</p></div>
+      <div class="panel">
+        <div class="mode-grid" id="modeGrid" role="radiogroup" aria-label="정리 방식">
+          <button class="mode-card selected" type="button" data-mode="spacing" role="radio" aria-checked="true"><span class="mode-check">✓</span><span class="mode-title">자간 정리</span><span class="mode-desc">줄 끝에서 끊긴 단어와 자간을 다듬습니다.</span></button>
+          <button class="mode-card" type="button" data-mode="unify" role="radio" aria-checked="false"><span class="mode-check">✓</span><span class="mode-title">서식 통일</span><span class="mode-desc">문서에서 많이 쓰인 서식으로 맞춥니다.</span></button>
+          <button class="mode-card" type="button" data-mode="format" role="radio" aria-checked="false"><span class="mode-check">✓</span><span class="mode-title">서식 적용</span><span class="mode-desc">설정한 공문서 서식을 적용합니다.</span></button>
+          <button class="mode-card" type="button" data-mode="all" role="radio" aria-checked="false"><span class="mode-check">✓</span><span class="mode-title">한 번에 적용</span><span class="mode-desc">자간과 서식을 함께 정리합니다.</span></button>
+        </div>
+        <div class="mode-selected"><div><b id="modeSummary">자간 정리</b><small id="defaultNote">이전 작업의 세부 설정을 기본값으로 사용합니다.</small></div><button id="stagesButton" class="button button-quiet" type="button">세부 내용 설정</button></div>
+        <details class="range-box" id="rangeBox"><summary><span><b>특정 쪽만 정리</b><small>기본은 문서 전체를 정리합니다.</small></span><span class="switch" aria-hidden="true"></span></summary><div class="range-fields"><label>시작 쪽<input id="rangeStart" value="1" inputmode="numeric"></label><span>부터</span><label>끝 쪽<input id="rangeEnd" value="1" inputmode="numeric"></label><small>‘마지막쪽’ 입력 가능</small></div></details>
+      </div>
+      <p class="tip"><span aria-hidden="true">✓</span><span>세부 설정 창에서 ‘이 구성 다음에도 기본값으로 사용’을 선택하면 다음 실행에도 유지됩니다.</span></p>
+    </section>
+
+    <section class="page" id="page3" data-page="3" hidden>
+      <div class="page-heading"><p class="eyebrow">STEP 3</p><h1>문서를 정리하고 있어요.</h1><p id="progressHint">한글 문서 처리 단계에 따라 진행합니다. 앱을 종료하지 마세요.</p></div>
+            <div class="panel progress-panel"><div class="progress-top"><div><b id="currentStage">작업 준비</b><small id="progressDetail">문서 처리 전</small></div><span class="working-indicator" id="workingIndicator"><i></i> 처리 중</span></div><ol id="flowchart" class="flowchart" aria-label="문서 정리 진행 과정"></ol><div class="progress-status" id="progressStatus" role="status" aria-live="polite">작업을 시작하기 전입니다. 작업 방식을 고른 뒤 시작하세요.</div></div>
+      <div class="tip"><span aria-hidden="true">i</span><span>한글 응답을 기다리는 단계에서는 잠시 진행 표시가 멈춰 보일 수 있습니다.</span></div>
+    </section>
+
+    <section class="page" id="page4" data-page="4" hidden>
+      <div class="page-heading"><p class="eyebrow">STEP 4</p><h1 id="resultTitle">정리가 끝났습니다.</h1><p id="resultSubtitle">처리 결과를 확인하고 다음 작업을 선택하세요.</p></div>
+      <div class="panel result-panel"><div class="result-status"><span id="resultIcon" aria-hidden="true">✓</span><div><b id="resultStatus">아직 작업 결과가 없습니다.</b><small id="resultCount">작업을 마치면 여기에 결과가 표시됩니다.</small></div></div><div id="resultSection" class="result-section" hidden><b>저장된 결과</b><ul id="resultList" class="file-list"></ul><button id="openResults" class="button button-quiet" type="button">결과 문서 열기</button></div><div class="result-note">원본 문서는 그대로 보존합니다.</div></div>
+      <div class="next-callout"><span class="next-icon" aria-hidden="true">＋</span><div><b>다른 문서도 정리할까요?</b><small>다음 작업을 시작하면 처음 화면으로 돌아갑니다.</small></div></div>
+    </section>
+
+    <section class="page" id="toolsPage" hidden>
+      <div class="page-heading"><p class="eyebrow">도구</p><h1>다른 작업을 선택하세요.</h1></div>
+      <div class="panel tool-list">
+        <button data-tool="review"><b>문서 구조 검토</b><small>구성·표·제목을 확인합니다.</small><span>→</span></button>
+        <button data-tool="proofread"><b>맞춤법 검토</b><small>교정 후보를 확인하고 선택합니다.</small><span>→</span></button>
+        <button data-tool="paste"><b>텍스트 붙여넣기 정리</b><small>내용을 새 문서에 담아 정리합니다.</small><span>→</span></button>
+        <button data-tool="polish"><b>붙여넣은 문장 다듬기</b><small>복사한 글을 읽기 쉽게 정리합니다.</small><span>→</span></button>
+        <button data-tool="outline"><b>아웃라이너</b><small>항목을 구조화해 작성합니다.</small><span>→</span></button>
+        <button data-tool="writing"><b>작성 도우미</b><small>날짜·금액·표 계산 등을 돕습니다.</small><span>→</span></button>
+        <button data-tool="markdown"><b>Markdown 내보내기</b><small>문서를 Markdown으로 저장합니다.</small><span>→</span></button>
+        <button data-tool="advanced"><b>고급 문서 도구</b><small>분석·비교·생성 기능을 엽니다.</small><span>→</span></button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="action-bar"><div class="action-inner"><button id="backButton" class="button button-quiet" type="button" hidden>← 작업으로</button><span id="footerHint" class="footer-hint">문서를 선택하거나 텍스트를 입력하세요.</span><div class="action-buttons"><button id="toolsButton" class="text-button" type="button">다른 도구</button><button id="stopButton" class="button button-stop" type="button" hidden>중단</button><button id="nextButton" class="button button-start" type="button" disabled>다음 <span>→</span></button><button id="startButton" class="button button-start" type="button" hidden>정리 시작 <span>→</span></button><button id="nextJobButton" class="button button-start" type="button" hidden>다음 작업 <span>→</span></button></div></div></footer>
+  <script src="app.js"></script>
+</body>
+</html>
+

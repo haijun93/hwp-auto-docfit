@@ -130,6 +130,40 @@ class FinalEvaluationTest(unittest.TestCase):
         self.assertNotEqual(report["verdict"], "달성")
         self.assertIn("word_check", report["blockers"][0])
 
+    def test_style_unify_requires_saved_result_audit_and_explains_skipped_groups(self):
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder) / "result.hwpx"
+            output.touch()
+            report = evaluate_work(
+                build_work_goal("unify", 1, {"style_unify": True}),
+                [{"output": str(output), "success": True, "integrity_ok": None,
+                  "rule_checks": {"style_unify": {
+                      "status": "incomplete", "checked": 53, "issues": [],
+                      "not_checkable": [{"marker": "※", "samples": 2,
+                                          "fields": ["font", "size"]}],
+                  }}}],
+            )
+        self.assertEqual(report["verdict"], "부분 달성")
+        self.assertLess(report["score"], 100.0)
+        self.assertTrue(any("style_unify" in blocker for blocker in report["blockers"]))
+        self.assertTrue(any("그룹 1개" in note and "추측 적용하지 않음" in note
+                            for note in report["notes"]))
+
+    def test_repeated_rule_blockers_are_summarized_once_across_documents(self):
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder) / "result.hwpx"
+            output.touch()
+            report = evaluate_work(
+                build_work_goal("unify", 4, {"style_unify": True}),
+                [{"output": str(output), "success": True, "integrity_ok": True,
+                  "rule_checks": {"style_unify": {"status": "incomplete", "checked": 2,
+                                                   "issues": [], "not_checkable": []}}}
+                 for _ in range(4)],
+            )
+        rule_blockers = [item for item in report["blockers"] if "style_unify" in item]
+        self.assertEqual(len(rule_blockers), 1)
+        self.assertEqual(len(report["verification_coverage"]), 4)
+
     def test_unresolved_issue_produces_partial_achievement(self):
         with tempfile.TemporaryDirectory() as folder:
             output = Path(folder) / "result.hwpx"

@@ -34,8 +34,12 @@ jobs:
           --windowed
           --name HWP_AutoDocFit
           --add-data "MapoHwpAutoDocFitSecurity.dll;."
+          --add-data "desktop_web;desktop_web"
           --collect-all tkinterdnd2
           --collect-all PIL
+          --collect-all webview
+          --collect-all pythonnet
+          --collect-all clr_loader
           --hidden-import PIL.Image
           --hidden-import PIL.ImageTk
           --hidden-import PIL.ImageOps

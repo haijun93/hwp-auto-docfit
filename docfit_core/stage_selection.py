@@ -79,11 +79,11 @@ def default_choice(key, mode=None):
     '서식 통일' 작업 유형에서는 서식통일이 곧 작업 자체라 켜져 있다.
     """
     if mode == "unify":
-        return True
+        return key == "style_unify"
     return key not in DEFAULT_OFF
 
 
-def enabled(selection, key):
+def enabled(selection, key, mode=None):
     if selection is None:
-        return default_choice(key)
-    return selection.get(key, default_choice(key))
+        return default_choice(key, mode)
+    return selection.get(key, default_choice(key, mode))

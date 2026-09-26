@@ -1,6 +1,6 @@
 # 한글문서 후처리 도구
 
-한글 2020의 HWP/HWPX 문서를 편집하는 Windows용 Python 프로그램입니다.
+한컴오피스 한글(NEO·2020 이상)의 HWP/HWPX 문서를 편집하는 Windows용 Python 프로그램입니다.
 바이너리 HWP 입력은 원본을 변경하지 않고 작업용 HWPX로 변환하며, 모든 처리 결과는 HWPX로 저장합니다.
 실행 파일은 `hwp-auto-docfit.py`이며, 프로그램 버전은 `1.68 Beta 2`입니다(베타 브랜치 `main`; 새 기능 시험판은 `alpha` 브랜치).
 기존 사용자 설정과 자동 업데이트 호환성을 위해 실행 파일명 `HWP_AutoDocFit.exe`,
@@ -100,7 +100,7 @@ cd hwp_autodocfit
 
 - Windows
 - Python 3.14 및 Tkinter
-- 한글 2020 설치 및 `HwpFrame.HwpObject` COM 자동화 사용 가능 환경
+- 한컴오피스 한글(NEO·2020 이상) 설치 및 `HwpFrame.HwpObject` COM 자동화 사용 가능 환경
 - `MapoHwpAutoDocFitSecurity.dll`: `hwp-auto-docfit.py`와 같은 폴더에 배치
 
 문서 처리 시 프로그램은 프로젝트 전용 이름의 보안 모듈 DLL을 `C:\HwpAutomation`에 복사하고,
@@ -222,7 +222,7 @@ HWP/HWPX 파일이나 한글 프로그램은 전혀 사용하지 않는 순수 �
 
 ## EXE 빌드와 자동 업데이트
 
-`build.bat`을 실행하면 `dist\HWP_AutoDocFit.exe`가 생성됩니다. Pillow와 tkinterdnd2도 EXE에 포함됩니다.
+`build.bat`을 실행하면 `dist\HWP_AutoDocFit.exe`가 생성됩니다. tkinterdnd2도 EXE에 포함됩니다.
 
 자동 업데이트를 배포하려면 현재 GitLab 프로젝트에 Release를 만들고 다음 규칙을 지킵니다.
 
