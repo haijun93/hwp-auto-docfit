@@ -56,6 +56,9 @@ STAGE_EXAMPLES = {
 
 
 def stages_for_mode(mode):
+    # '서식 통일' 작업 유형은 서식통일 한 단계만 실행한다(자간·표준서식 없음).
+    if mode == "unify":
+        return (UNIFY_STAGE,)
     # 서식통일은 공백·문장부호 정리 뒤, 표준서식·자간 조정 앞에서 실행한다.
     if mode == "format":
         return FORMAT_STAGES[:4] + (UNIFY_STAGE,) + FORMAT_STAGES[4:]
@@ -70,8 +73,13 @@ def stages_for_mode(mode):
     raise ValueError("지원하지 않는 작업 모드입니다.")
 
 
-def default_choice(key):
-    """세부 작업의 기본 선택값(서식통일처럼 옵트인인 단계만 꺼짐)."""
+def default_choice(key, mode=None):
+    """세부 작업의 기본 선택값(서식통일처럼 옵트인인 단계만 꺼짐).
+
+    '서식 통일' 작업 유형에서는 서식통일이 곧 작업 자체라 켜져 있다.
+    """
+    if mode == "unify":
+        return True
     return key not in DEFAULT_OFF
 
 

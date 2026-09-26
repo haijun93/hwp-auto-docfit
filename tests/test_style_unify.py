@@ -64,5 +64,41 @@ class StyleUnifyTest(unittest.TestCase):
         self.assertEqual(applied, [{'폰트': '한컴돋움', '크기_pt': 15.0, '장평': None}])
 
 
+class UnifyModeTest(unittest.TestCase):
+    """'서식 통일'을 자간 정리·서식 적용·한 번에 적용과 따로 실행하는 작업 유형."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ns = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'hwp-auto-docfit.py'))
+
+    def test_unify_mode_has_only_unify_stage_and_is_on(self):
+        self.assertEqual([k for k, _ in stages_for_mode('unify')], ['style_unify'])
+        self.assertTrue(default_choice('style_unify', 'unify'))
+        self.assertFalse(default_choice('style_unify', 'spacing'))
+
+    def test_pipeline_runs_only_style_unify(self):
+        fn = self.ns['_문서_처리_1회']
+        calls = []
+
+        def track(name):
+            return lambda *a, **k: calls.append(name) or True
+        g = fn.__globals__
+        names = ['서식통일_전체_적용', '표준서식_전체_적용', '본문_기존자간조정', '문단_내어쓰기_전체_갱신',
+                 '문장내_공백_정규화_전체_적용', '컨트롤_내부_자간조정', '표_헤더서식_전체_적용']
+        with patch.dict(g, {**{n: track(n) for n in names},
+                            '작업_모드': 'unify', '표준서식_사용': False, '선택_세부작업': {'style_unify': True},
+                            '중단_요청됨': lambda: False, '단계표시': Mock(), '상태': Mock(), '로그': Mock(),
+                            'hwp_run': lambda *a: True, '순회_시작': lambda: None}):
+            self.assertTrue(fn('문서.hwpx', 회차=1))
+        self.assertEqual(calls, ['서식통일_전체_적용'])
+
+    def test_output_name_and_run_mode(self):
+        fn = self.ns['저장파일명']
+        with patch.dict(fn.__globals__, {'작업_모드': 'unify', '쪽범위_실제': None}):
+            self.assertTrue(fn(r'C:\\문서\\보고.hwp').endswith('보고(서식통일).hwpx'))
+        from docfit_core.final_evaluation import build_work_goal
+        self.assertEqual(build_work_goal('unify', 1)['mode'], 'unify')
+
+
 if __name__ == '__main__':
     unittest.main()
