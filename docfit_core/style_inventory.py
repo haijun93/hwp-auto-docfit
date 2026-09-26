@@ -15,13 +15,10 @@
 from __future__ import annotations
 
 from collections import Counter, OrderedDict, defaultdict
-import copy
 import io
 import math
 from pathlib import Path
 import re
-# 표준 ElementTree는 직렬화·네임스페이스 등록에만 쓴다. 파싱은 모두 defusedxml(XXE 방지).
-import xml.etree.ElementTree as StdET
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
 
 from defusedxml import ElementTree as ET
@@ -787,17 +784,39 @@ def inventory_markdown(inv: dict) -> str:
 # 예시 서식 HWPX 생성
 # ----------------------------------------------------------------------------
 
-def _register_namespaces(xml_bytes: bytes):
-    for prefix, uri in re.findall(rb'xmlns:([A-Za-z0-9_]+)="([^"]+)"', xml_bytes[:8192]):
-        StdET.register_namespace(prefix.decode(), uri.decode())
+_P_TAG = re.compile(r"<(/?)hp:p(?=[\s>/])[^>]*?(/?)>")
+_LINESEG = re.compile(r"<hp:linesegarray\b[^>]*?(?:/>|>.*?</hp:linesegarray>)", re.S)
 
 
-def _strip_layout(e):
+def _top_level_paragraphs(xml_text: str):
+    """구역 XML에서 최상위 문단(<hp:p>)의 원문 구간과 앞·뒤 나머지를 돌려준다.
+
+    예시 문서는 XML을 다시 직렬화하지 않고 원문 구간을 잘라 붙여 만든다(원본 보존,
+    표준 xml 모듈 불필요). 표 안 문단처럼 중첩된 hp:p는 깊이로 건너뛴다.
+    """
+    spans, depth, start = [], 0, None
+    for m in _P_TAG.finditer(xml_text):
+        closing, self_closing = m.group(1) == "/", m.group(2) == "/"
+        if closing:
+            depth -= 1
+            if depth == 0:
+                spans.append((start, m.end()))
+        elif self_closing:
+            if depth == 0:
+                spans.append((m.start(), m.end()))
+        else:
+            if depth == 0:
+                start = m.start()
+            depth += 1
+    if not spans:
+        raise ValueError("구역에서 문단을 찾지 못했습니다.")
+    head, tail = xml_text[:spans[0][0]], xml_text[spans[-1][1]:]
+    return head, [xml_text[a:b] for a, b in spans], tail
+
+
+def _strip_layout(xml_text: str) -> str:
     """줄 배치 캐시(linesegarray)는 한/글이 열 때 다시 계산하므로 지운다."""
-    for parent in list(e.iter()):
-        for child in list(parent):
-            if _tag(child) == "linesegarray":
-                parent.remove(child)
+    return _LINESEG.sub("", xml_text)
 
 
 def _has(e, names):
@@ -823,15 +842,20 @@ def build_style_sample(source, target, inventory: dict | None = None,
     with ZipFile(source) as z:
         sections = _sections(z)
         first_name = sections[0]
-        payload = z.read(first_name)
-        _register_namespaces(payload)
-        _register_namespaces(z.read("Contents/header.xml"))
-        root = ET.fromstring(payload)
-        # 여러 구역이면 나머지 구역의 문단도 순서대로 후보에 넣는다.
-        body = [p for p in root if _tag(p) == "p"]
-        for name in sections[1:]:
-            _register_namespaces(z.read(name))
-            body += [p for p in ET.fromstring(z.read(name)) if _tag(p) == "p"]
+        # 여러 구역이면 나머지 구역의 문단도 순서대로 후보에 넣는다. 파싱한 문단과
+        # 원문 구간은 순서가 같아야 한다.
+        body, raw = [], []
+        head = tail = None
+        for name in sections:
+            payload = z.read(name).decode("utf-8")
+            elements = [p for p in ET.fromstring(payload.encode("utf-8")) if _tag(p) == "p"]
+            h, pieces, t = _top_level_paragraphs(payload)
+            if len(pieces) != len(elements):
+                raise ValueError(f"{name}: 문단 구간({len(pieces)})과 파싱 결과({len(elements)})가 다릅니다.")
+            if head is None:
+                head, tail = h, t
+            body += elements
+            raw += pieces
 
         defs = inventory["definitions"]
         type_stats = {}
@@ -887,27 +911,20 @@ def build_style_sample(source, target, inventory: dict | None = None,
             text = "".join(_run_text(r) for r in runs)
             tbls = [x for r in runs for x in r if _tag(x) == "tbl"]
             if index == 0 or _has(para, {"secPr"}):
-                kept.append(para)  # 쪽 설정·단 설정
+                kept.append(index)  # 쪽 설정·단 설정
             elif tbls:
                 sigs = [_table_signature(t, defs['chars']) for t in tbls]
                 if any(sig not in table_seen for sig in sigs):
                     table_seen.update(sigs)
-                    kept.append(para)
+                    kept.append(index)
                     stats["tables"] += len(tbls)
             elif _has(para, PAGE_CONTROLS) and not text.strip():
-                kept.append(para)  # 머리말·꼬리말·쪽 번호
+                kept.append(index)  # 머리말·꼬리말·쪽 번호
                 stats["page_controls"] += 1
             elif index in picked:
-                kept.append(para)
+                kept.append(index)
 
-        for child in list(root):
-            root.remove(child)
-        for para in kept:
-            para = copy.deepcopy(para)
-            _strip_layout(para)
-            root.append(para)
-        section_bytes = (b'<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>'
-                         + StdET.tostring(root, encoding="utf-8", xml_declaration=False))
+        section_bytes = (head + "".join(_strip_layout(raw[i]) for i in kept) + tail).encode("utf-8")
 
         drop = set(sections[1:])
         buffer = io.BytesIO()
