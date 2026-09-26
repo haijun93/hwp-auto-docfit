@@ -232,6 +232,7 @@ import importlib
 import hashlib
 import difflib
 import urllib.error
+import urllib.parse
 import urllib.request
 import webbrowser
 from defusedxml import ElementTree as ET
@@ -303,6 +304,15 @@ APP_VERSION = "1.68 Beta 2"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 UPDATE_ASSET_NAME = "HWP_AutoDocFit.exe"
+_업데이트_허용_호스트 = "gitlab.aigov.go.kr"
+
+
+def _업데이트_URL_검증(url):
+    """업데이트 조회·다운로드 URL을 HTTPS GitLab 주소로 제한한다."""
+    parsed = urllib.parse.urlparse(str(url))
+    if parsed.scheme != "https" or parsed.hostname != _업데이트_허용_호스트:
+        raise ValueError("허용되지 않은 업데이트 URL입니다.")
+    return str(url)
 
 
 def _버전_튜플(value):
@@ -312,14 +322,14 @@ def _버전_튜플(value):
 
 def _최신_릴리스_조회(timeout=8):
     요청 = urllib.request.Request(
-        UPDATE_API_URL,
+        _업데이트_URL_검증(UPDATE_API_URL),
         headers={
             "Accept": "application/json",
             "User-Agent": f"HWP-AutoDocFit/{APP_VERSION}",
         },
     )
     try:
-        with urllib.request.urlopen(요청, timeout=timeout) as 응답:
+        with urllib.request.urlopen(요청, timeout=timeout) as 응답:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected
             릴리스 = json.loads(응답.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         # GitLab은 프로젝트에 Release가 하나도 없으면 latest API에서 404를 반환한다.
@@ -11045,13 +11055,14 @@ class HwpAutoDocFitGUI:
             업데이트_폴더.mkdir(parents=True, exist_ok=True)
             버전 = re.sub(r"[^0-9A-Za-z._-]+", "_", str(릴리스.get("tag_name", "latest")))
             다운로드_경로 = 업데이트_폴더 / f"HWP_AutoDocFit-{버전}.exe"
+            다운로드_URL = _업데이트_URL_검증(자산["browser_download_url"])
             요청 = urllib.request.Request(
-                자산["browser_download_url"],
+                다운로드_URL,
                 headers={"User-Agent": f"HWP-AutoDocFit/{APP_VERSION}"},
             )
             해시 = hashlib.sha256()
             크기 = 0
-            with urllib.request.urlopen(요청, timeout=30) as 응답, open(다운로드_경로, "wb") as 출력:
+            with urllib.request.urlopen(요청, timeout=30) as 응답, open(다운로드_경로, "wb") as 출력:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected
                 while True:
                     조각 = 응답.read(1024 * 1024)
                     if not 조각:
