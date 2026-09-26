@@ -298,7 +298,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글문서 후처리 도구"
-APP_VERSION = "1.68 Beta 1"
+APP_VERSION = "1.68 Beta 2"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 UPDATE_ASSET_NAME = "HWP_AutoDocFit.exe"
@@ -8659,7 +8659,7 @@ def 쪽표시(n):
 
 # 절약 시간 추정(수작업 기준). 작업 종류별로 한 쪽을 손으로 정리할 때 걸리는 분(分)이다.
 # 처리한 쪽 수 × 이 값 − 실제 걸린 시간 = 화면에 보여 주는 '절약된 시간'이다. 추정치를 바꾸려면 이 값을 고친다.
-절약시간_쪽당_분 = {"spacing": 4.0, "format": 5.0, "all": 8.0}
+절약시간_쪽당_분 = {"spacing": 4.0, "unify": 2.0, "format": 5.0, "all": 8.0}
 
 def 절약시간_표시(분):
     """분(分)을 '약 45분', '약 1시간 20분' 꼴로 보여 준다."""
@@ -8853,7 +8853,7 @@ def 쪽범위_계산(시작쪽, 끝쪽):
 
 def 저장파일명(파일):
     path = Path(파일)
-    suffix = {"spacing": "(자간조정)", "format": "(서식적용)", "all": "(일괄적용)"}[작업_모드]
+    suffix = {"spacing": "(자간조정)", "unify": "(서식통일)", "format": "(서식적용)", "all": "(일괄적용)"}[작업_모드]
     if 쪽범위_실제 is not None:
         # 일부 쪽만 처리한 결과가 전체 처리 결과를 덮어쓰지 않도록 범위를 이름에 남긴다.
         suffix += f"({쪽범위_실제[0]}-{쪽범위_실제[1]}쪽)"
@@ -8892,6 +8892,9 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
     로그(f"{작업_모드} 처리 {회차}/{총회차}회차 시작")
     # 서식통일은 옵트인(기본 꺼짐). 서식 정리 단계 묶음이 돌지 않는 경우(자간 정리 모드,
     # 표준서식 꺼짐)에도 따로 실행한다.
+    if 작업_모드 == 'unify':
+        # '서식 통일' 작업 유형: 서식통일만 실행하고 자간·표준서식은 건드리지 않는다.
+        return 회차 > 1 or stage('서식통일', 서식통일_전체_적용)
     if (회차 == 1 and stage_enabled(선택_세부작업, 'style_unify')
             and not (작업_모드 in ('format', 'all') and 표준서식_사용)):
         if not stage('서식통일', 서식통일_전체_적용):
@@ -9614,7 +9617,7 @@ def 작업_실행(
 
     절전_방지(True)
     try:
-        if 실행모드 not in ("spacing", "format", "all"):
+        if 실행모드 not in ("spacing", "unify", "format", "all"):
             raise ValueError("잘못된 실행 모드")
         작업_모드 = 실행모드
         작업_반복횟수 = 2 if int(반복횟수) >= 2 else 1
@@ -9650,7 +9653,7 @@ def 작업_실행(
         비교보기_좌측_프레임_hwnd = 좌측_프레임_hwnd
         비교보기_우측_프레임_hwnd = 우측_프레임_hwnd
         자동닫기_설정 = 자동닫기
-        표준서식_사용 = bool(표준서식) and 작업_모드 != "spacing"
+        표준서식_사용 = bool(표준서식) and 작업_모드 in ("format", "all")
         검수_사용 = 검수
         검수_문제목록 = []
         최종검수_문서목록 = []
@@ -10693,8 +10696,8 @@ class HwpAutoDocFitGUI:
         self.files = []
         self.worker = None
         self.running = False
-        self.stage_choices = {mode: {key: stage_default(key) for key, _ in stages_for_mode(mode)}
-                              for mode in ("spacing", "format", "all")}
+        self.stage_choices = {mode: {key: stage_default(key, mode) for key, _ in stages_for_mode(mode)}
+                              for mode in ("spacing", "unify", "format", "all")}
         # 실행창 프리셋: '' | 'basic'(기본후처리) | 'pro'(전문후처리)
         self.preset_var = tk.StringVar(value="")
         self.closing = False
@@ -10875,7 +10878,7 @@ class HwpAutoDocFitGUI:
         # 프리셋(TODO 3순위): 기존 3카드 위에 조합 실행 버튼 2개. 고르면 해당 카드와
         # '서식통일' 세부 작업이 함께 켜지고, 카드를 직접 고르면 서식통일은 꺼진다.
         preset_row = ttk.Frame(choose)
-        preset_row.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 5))
+        preset_row.grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 5))
         ttk.Label(preset_row, text="빠른 선택", font=("맑은 고딕", 9, "bold")).pack(side="left", padx=(0, 6))
         self.preset_buttons = []
         for 값, 이름, 설명 in (
@@ -10887,8 +10890,9 @@ class HwpAutoDocFitGUI:
             self.preset_buttons.append(버튼)
         for i, (title, mode, desc, color) in enumerate((
             ("자간 정리", "spacing", "글자 사이 간격을 조절해\n줄 끝의 끊긴 단어를 정리해요.", "teal"),
-            ("서식 정리", "format", "내어쓰기·글꼴·문단 간격을\n설정한 규칙으로 맞춰요.", "orange"),
-            ("한 번에 정리", "all", "자간과 서식을\n한 번에 정리해요.", "lavender"))):
+            ("서식 통일", "unify", "문두기호별로 이 문서에서\n가장 많이 쓴 스타일로 맞춰요.", "brown"),
+            ("서식 적용", "format", "내어쓰기·글꼴·문단 간격을\n설정한 규칙으로 맞춰요.", "orange"),
+            ("한 번에 적용", "all", "자간과 서식을\n한 번에 정리해요.", "lavender"))):
             choose.grid_columnconfigure(i, weight=1, uniform="modes")
             card = tk.Frame(choose, bg=UI_COLORS[color], padx=2, pady=2)
             card.grid(row=1, column=i, sticky="nsew", padx=3)
@@ -10905,7 +10909,7 @@ class HwpAutoDocFitGUI:
             for surface in (card, inner, description):
                 surface.bind("<Button-1>", lambda e, m=mode: self._카드_클릭(m))
         quick = ttk.Frame(choose)
-        quick.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(5, 0))
+        quick.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(5, 0))
         self.settings_button = ttk.Button(quick, text="세부 설정…", command=self.설정창_열기)
         self.settings_button.pack(side="right")
         self.proofread_button = ttk.Button(quick, text="공공언어·맞춤법 검토…", command=self._공공언어_검토)
@@ -10919,7 +10923,7 @@ class HwpAutoDocFitGUI:
 
         # 실행창에서 바로 사용할 서식 선택과 예시 문서 드롭 분석.
         format_quick = ttk.Frame(choose)
-        format_quick.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(6, 0))
+        format_quick.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(6, 0))
         ttk.Label(format_quick, text="적용 서식", font=("맑은 고딕", 9, "bold")).pack(side="left", padx=(0, 6))
         self.main_profile_combo = ttk.Combobox(format_quick, state="readonly", width=20)
         self.main_profile_combo.pack(side="left")
@@ -10937,7 +10941,7 @@ class HwpAutoDocFitGUI:
 
         # 작업 범위: 기본은 문서 전체. 쪽을 지정하면 그 쪽에 놓인 내용만 처리한다.
         scope = ttk.Frame(choose)
-        scope.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(6, 0))
+        scope.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(6, 0))
         ttk.Label(scope, text="작업 범위", font=("맑은 고딕", 10, "bold")).pack(side="left", padx=(0, 8))
         self.range_all_radio = ttk.Radiobutton(scope, text="문서 전체", value="all", variable=self.range_mode_var)
         self.range_all_radio.pack(side="left")
@@ -11540,10 +11544,10 @@ class HwpAutoDocFitGUI:
                 self.std_detail_checks.append(체크)
 
     def _세부작업_열기(self, mode):
-        titles = {"spacing": "자간 정리", "format": "서식 정리", "all": "한 번에 정리"}
+        titles = {"spacing": "자간 정리", "unify": "서식 통일", "format": "서식 적용", "all": "한 번에 적용"}
         dialog = tk.Toplevel(self.root)
         dialog.title(f"{titles[mode]} · 세부 작업")
-        dialog.geometry("520x650" if mode == "spacing" else "720x700")
+        dialog.geometry({"spacing": "520x650", "unify": "520x320"}.get(mode, "720x700"))
         dialog.transient(self.root)
         dialog.grab_set()
         frame = ttk.Frame(dialog, padding=14)
@@ -11601,6 +11605,9 @@ class HwpAutoDocFitGUI:
         mode = self.selected_mode.get()
         if mode == "spacing":
             summary = "글자 간격만 조정합니다.\n줄 끝에서 끊긴 단어와 짧게 남은 마지막 줄을 정리해요."
+        elif mode == "unify":
+            summary = ("여러 사람이 쓴 문서를 문두기호(□·ㅇ·-·*·※)별로 이 문서에서 가장 많이 쓴\n"
+                       "글꼴·크기·장평으로 맞춥니다. 자간과 설정한 표준서식은 건드리지 않아요.")
         else:
             items = [("내어쓰기", "std_hanging_indent"), ("기호별 글꼴", "std_symbols"),
                      ("설명 위치", "std_supplement_indent"), ("문단 간격", "std_parspace"),
@@ -11613,7 +11620,7 @@ class HwpAutoDocFitGUI:
                 summary = "서식을 정리한 뒤 글자 간격까지 조정합니다.\n" + 항목
         choices = self.stage_choices[mode]
         disabled = sum(not value for key, value in choices.items() if stage_default(key))
-        if choices.get("style_unify"):
+        if choices.get("style_unify") and mode != "unify":
             summary += "\n서식통일 켜짐: 문서 안에서 가장 많이 쓴 스타일로 맞춰요."
         if disabled:
             summary += f"\n세부 작업 {disabled}개 제외"
@@ -11645,8 +11652,9 @@ class HwpAutoDocFitGUI:
         # 카드를 직접 고르면 예전과 같은 동작(서식통일 꺼짐)으로 돌아간다.
         if self.preset_var.get():
             self.preset_var.set("")
-            for choices in self.stage_choices.values():
-                if "style_unify" in choices:
+            for 모드, choices in self.stage_choices.items():
+                # '서식 통일' 작업 유형은 서식통일이 작업 자체라 끄지 않는다.
+                if 모드 != "unify" and "style_unify" in choices:
                     choices["style_unify"] = False
         self.selected_mode.set(mode)
         self._모드_선택됨()
@@ -14002,10 +14010,10 @@ class HwpAutoDocFitGUI:
         self.settings_toplevel.bind("<MouseWheel>", wheel)
         self.settings_toplevel.bind("<Button-4>", wheel)
         self.settings_toplevel.bind("<Button-5>", wheel)
-        ttk.Label(tabs["spacing"], text="글자 사이 간격을 조절하는 기능이에요.\n실행창에서 ‘자간 정리’ 또는 ‘한 번에 정리’를 선택하세요.",
+        ttk.Label(tabs["spacing"], text="글자 사이 간격을 조절하는 기능이에요.\n실행창에서 ‘자간 정리’ 또는 ‘한 번에 적용’을 선택하세요.",
                   style="Hint.TLabel", wraplength=700).pack(anchor="w", pady=(0, 12))
         ttk.Label(tabs["format"],
-                  text="실행창의 ‘서식 정리 · 세부 작업’과 같은 9단계입니다(내어쓰기는 별도 탭). "
+                  text="실행창의 ‘서식 적용 · 세부 작업’과 같은 9단계입니다(내어쓰기는 별도 탭). "
                        "여기서 켜고 끄면 세부 작업 창에도 그대로 반영됩니다.\n서식 작업의 기본 공백 정리도 함께 실행됩니다.",
                   style="Hint.TLabel", wraplength=700).pack(anchor="w", pady=(0, 8))
         presets = ttk.Frame(tabs["format"])
@@ -14897,7 +14905,7 @@ class HwpAutoDocFitGUI:
         self._재개_대기중 = False
 
         self.running = True
-        self._고양이상태(mode)
+        self._고양이상태("format" if mode == "unify" else mode)
         self.settings_toplevel.withdraw()
         self.closing = False
         중단_event.clear()
@@ -14911,7 +14919,7 @@ class HwpAutoDocFitGUI:
         if 이어서_진행:
             self.로그표시(f"중단된 작업을 이어서 진행합니다 ({시작_인덱스}/{len(self.files)}번째 문서부터).")
         self.로그표시("=" * 45)
-        self.로그표시(f"{APP_NAME} 작업 시작 — {dict(spacing='자간조정', format='서식적용', all='일괄적용')[mode]}")
+        self.로그표시(f"{APP_NAME} 작업 시작 — {dict(spacing='자간조정', unify='서식통일', format='서식적용', all='일괄적용')[mode]}")
         self.로그표시(f"문서: {len(self.files)}개")
         if 작업범위 is None:
             self.로그표시("작업 범위: 문서 전체")
