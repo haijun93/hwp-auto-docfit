@@ -38,12 +38,19 @@ class ExampleProfileTest(unittest.TestCase):
                     (profiles / 'abc.json').write_text(json.dumps(app._프로파일들['abc'], ensure_ascii=False),
                                                        encoding='utf-8')
                     app._활성_서식_프로파일 = 'abc'
-                    with patch.object(ns['simpledialog'], 'askstring', return_value='주간 보고(마포)'):
+                    # 이름 다음에 기관 이름을 묻는다(비워 두면 기관 없음).
+                    with patch.object(ns['simpledialog'], 'askstring', side_effect=['주간 보고(마포)', '']):
                         app._서식_이름바꾸기()
                     saved = json.loads((profiles / 'abc.json').read_text(encoding='utf-8'))
                     self.assertEqual(saved['name'], '주간 보고(마포)')
+                    self.assertNotIn('organization', saved)
                     self.assertEqual(app._프로파일들['abc']['name'], '주간 보고(마포)')
                     self.assertIn('주간 보고(마포)', list(app.main_profile_combo['values']))
+                    with patch.object(ns['simpledialog'], 'askstring', side_effect=['주간 보고', '마포구']):
+                        app._서식_이름바꾸기()
+                    saved = json.loads((profiles / 'abc.json').read_text(encoding='utf-8'))
+                    self.assertEqual(saved['organization'], '마포구')
+                    self.assertIn('[마포구] 주간 보고', list(app.main_profile_combo['values']))
                     self.assertEqual(errors, [])
                 finally:
                     root.destroy()

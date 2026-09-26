@@ -269,6 +269,9 @@ from docfit_core.korean_proofread import (
     apply_approved_hwpx, load_exclusions, save_exclusions, scan_hwpx,
 )
 from docfit_core.pasted_text import clean_pasted_text, outline_pasted_text
+from docfit_core.labeled_text import label_outline_text, looks_labeled, parse_labeled_text
+from docfit_core import writing_aids, ai_prompts
+from docfit_core.style_inventory import analyze_style_inventory, build_style_sample, inventory_markdown
 from docfit_core import (
     KordocUnavailableError,
     analyze_form,
@@ -1307,6 +1310,53 @@ def 교정용_hwpx_준비(path, folder):
             try: app.Quit()
             except Exception: pass
         pythoncom.CoUninitialize()
+
+
+def 분석용_hwpx_준비(path, folder):
+    """분석할 HWPX 스냅숏. 확장자만 .hwpx인 HWP(ZIP이 아님)도 HWP로 보고 임시 변환한다."""
+    source = Path(path)
+    if source.suffix.lower() == ".hwpx" and not zipfile.is_zipfile(source):
+        copied = Path(folder) / (uuid.uuid4().hex + ".hwp")
+        shutil.copy2(source, copied)
+        source = copied
+    return 교정용_hwpx_준비(source, folder)
+
+
+def 스타일분석_파일생성(경로):
+    """문서 스타일 전수 분석 보고서(.md)와 예시 서식 HWPX를 원본 옆에 만든다(A3).
+
+    HWP는 원본을 건드리지 않고 임시 사본을 HWPX로 바꿔 분석한다.
+    """
+    source = Path(경로)
+    with tempfile.TemporaryDirectory(prefix="docfit_inventory_") as folder:
+        snapshot = 분석용_hwpx_준비(source, folder)
+        inventory = analyze_style_inventory(snapshot)
+        inventory["source"] = source.name
+        report = source.with_name(f"{source.stem}_스타일분석.md")
+        sample = source.with_name(f"{source.stem}_서식예시.hwpx")
+        report.write_text(inventory_markdown(inventory), encoding="utf-8")
+        stats = build_style_sample(snapshot, sample, inventory)
+    return inventory, stats, report, sample
+
+
+def 스타일분석_요약(inventory, stats, report, sample):
+    s = inventory["summary"]
+    줄 = [f"문자 모양 {s['chars_used']}/{s['chars_defined']} · 문단 모양 {s['paras_used']}/{s['paras_defined']} "
+         f"· 본문 스타일 유형 {s['types']} · 표 {s['table_types']}종 · 글자 음영색 {s['shade_colors']}",
+         f"예시 서식: 본문 {stats['paragraphs']}문단, 표 {stats['tables']}개", "",
+         f"보고서: {report}", f"예시 서식: {sample}", ""]
+    for t in inventory["types"]:
+        c = inventory["definitions"]["chars"].get(t["main_char"]) or {}
+        효과 = ", ".join(t["effects"]) or "-"
+        줄.append(f"{t['marker']:>4}  {c.get('font', {}).get('hangul')} {c.get('size_pt', 0):g}pt"
+                 f"{' 굵게' if c.get('bold') else ''} · {t['count']}문단 · 부분 서식: {효과}")
+    return "\n".join(줄)
+
+
+def 서식프로파일_표시이름(profile):
+    """서식 목록에 보일 이름. 기관을 지정한 서식은 '[기관] 이름'."""
+    기관 = str(profile.get("organization") or "").strip()
+    return f"[{기관}] {profile['name']}" if 기관 else profile["name"]
 
 
 def 문서_markdown_내보내기(path):
@@ -9100,6 +9150,55 @@ def 텍스트_hwpx로_변환(텍스트, 대상경로):
         raise RuntimeError("텍스트를 HWPX로 저장하지 못했습니다.")
 
 
+def 라벨블록_한글삽입(한글, 블록들):
+    """labeled_text 블록을 한/글 문서 끝에 차례로 넣는다(A4 제목 상자 표 템플릿).
+
+    제목·개요(상자)·참고는 1×1 표로 넣는다. 문서 첫머리의 1×1 제목 표와 뒤따르는
+    개요 표는 제목 서식(제목_hwpx_처리)이 알아보는 '제목+개요' 구조다.
+    """
+    def 글쓰기(내용):
+        act = 한글.HAction
+        pset = 한글.HParameterSet.HInsertText
+        act.GetDefault("InsertText", pset.HSet)
+        pset.Text = 내용
+        act.Execute("InsertText", pset.HSet)
+
+    def 표넣기(행들):
+        열수 = max(len(행) for 행 in 행들)
+        act = 한글.HAction
+        pset = 한글.HParameterSet.HTableCreation
+        act.GetDefault("TableCreate", pset.HSet)
+        pset.Rows = len(행들)
+        pset.Cols = 열수
+        pset.WidthType = 0   # 단 너비에 맞춤(2는 임의 너비라 글자 폭만큼 좁아진다)
+        pset.HeightType = 0  # 자동 높이
+        pset.TableProperties.TreatAsChar = 1
+        act.Execute("TableCreate", pset.HSet)
+        칸들 = [칸 for 행 in 행들 for 칸 in (행 + [""] * (열수 - len(행)))]
+        for 순번, 칸 in enumerate(칸들):
+            if 칸:
+                글쓰기(칸)
+            if 순번 < len(칸들) - 1:
+                한글.Run("TableRightCell")
+        한글.Run("Cancel")
+        한글.MovePos(3, 0, 0)  # 문서 끝(표 다음 문단)으로 나온다
+
+    처음 = True
+    for 블록 in 블록들:
+        if not 처음:
+            한글.Run("BreakPara")
+        처음 = False
+        종류 = 블록["kind"]
+        if 종류 == "blank":
+            continue
+        if 종류 in ("title", "box", "ref"):
+            표넣기([[블록["text"] if 종류 != "ref" else f"참고  {블록['text']}"]])
+        elif 종류 == "table":
+            표넣기(블록["rows"])
+        else:
+            글쓰기(f"{블록['marker']} {블록['text']}".strip())
+
+
 def 텍스트_hwpx_단독변환(텍스트, 대상경로):
     """'텍스트 붙여넣기'에서 저장 즉시 HWPX로 바꿀 때 쓰는, 배치 작업(작업_실행)과
     완전히 독립된 한/글 세션.
@@ -9120,6 +9219,12 @@ def 텍스트_hwpx_단독변환(텍스트, 대상경로):
             pass  # 새 문서를 만들어 텍스트만 적으므로 보안 모듈 등록 실패는 무시해도 된다.
         if 단독_hwp.Run("FileNew") is False:
             raise RuntimeError("빈 문서를 만들지 못했습니다.")
+        if looks_labeled(텍스트):
+            # 라벨 형식(제목:/네모:/원: …)이면 제목·개요·참고를 1×1 상자 표로, 표: 줄을 표로 넣는다.
+            라벨블록_한글삽입(단독_hwp, parse_labeled_text(텍스트))
+            if 단독_hwp.SaveAs(str(대상경로), "HWPX", "") is False:
+                raise RuntimeError("HWPX로 저장하지 못했습니다.")
+            return
         줄들 = 텍스트.replace("\r\n", "\n").replace("\r", "\n").split("\n")
         for 순번, 줄 in enumerate(줄들):
             if 줄:
@@ -9134,6 +9239,11 @@ def 텍스트_hwpx_단독변환(텍스트, 대상경로):
             raise RuntimeError("HWPX로 저장하지 못했습니다.")
     finally:
         if 단독_hwp is not None:
+            try:
+                # 중간에 실패해 저장 안 된 문서가 남아도 '저장할까요?' 창 없이 닫는다.
+                단독_hwp.Clear(1)
+            except Exception:
+                pass
             try:
                 단독_hwp.Quit()
             except Exception:
@@ -10648,6 +10758,7 @@ class HwpAutoDocFitGUI:
                                ("아웃라이너로 작성", self._아웃라이너_열기),
                                ("Markdown 내보내기", self.Markdown_내보내기),
                                ("고급 문서 도구", self.고급문서도구_열기),
+                               ("작성 도우미", self._작성도우미_열기),
                                ("선택 항목 빼기", self._선택삭제), ("목록 비우기", self.목록지우기)):
             button = ttk.Button(file_actions, text=title, command=command)
             button.pack(side="left", padx=(0, 6))
@@ -11930,8 +12041,11 @@ class HwpAutoDocFitGUI:
         활성_정밀표_프로필 = copy.deepcopy(profile.get("precise_tables"))
 
     def _프로파일_목록갱신(self):
-        self._프로파일_ids = list(self._프로파일들)
-        이름들 = [p["name"] for p in self._프로파일들.values()]
+        # 기본 서식을 맨 앞에 두고 기관별로 묶어 이름순으로 보인다(A3).
+        ids = [k for k in self._프로파일들 if k]
+        ids.sort(key=lambda k: (str(self._프로파일들[k].get("organization") or "￿"), self._프로파일들[k]["name"]))
+        self._프로파일_ids = ([""] if "" in self._프로파일들 else []) + ids
+        이름들 = [서식프로파일_표시이름(self._프로파일들[k]) for k in self._프로파일_ids]
         현재 = self._프로파일_ids.index(self._활성_서식_프로파일)
         for 콤보이름 in self._프로파일_콤보_이름목록:
             콤보 = getattr(self, 콤보이름, None)
@@ -11993,7 +12107,15 @@ class HwpAutoDocFitGUI:
         if any(p["name"] == 새이름 for k, p in self._프로파일들.items() if k != identifier):
             messagebox.showwarning(APP_NAME, "이미 사용 중인 서식 이름입니다.", parent=parent)
             return
+        새기관 = simpledialog.askstring(APP_NAME, "기관 이름(선택, 비워 두면 기관 없음)", parent=parent,
+                                      initialvalue=str(profile.get("organization") or ""))
+        if 새기관 is None:
+            return
         바뀐 = dict(profile, name=새이름)
+        if 새기관.strip():
+            바뀐["organization"] = 새기관.strip()
+        else:
+            바뀐.pop("organization", None)
         try:
             folder = 서식프로파일_폴더()
             temp = folder / (identifier + ".tmp")
@@ -12951,7 +13073,8 @@ class HwpAutoDocFitGUI:
                   font=("맑은 고딕", 12, "bold")).pack(anchor="w")
         ttk.Label(body,
                   text="‘한 번에 정리’는 마크다운 기호(**, #, - 등)를 지우고 보기 좋은 문장으로 바꾸고,\n"
-                       "‘개조식으로 변환’은 제목·글머리 기호의 계층 구조를 ㅁ/ㅇ/-/• 문두기호로 바꿉니다.",
+                       "‘개조식으로 변환’은 제목·글머리 기호의 계층 구조를 ㅁ/ㅇ/-/• 문두기호로 바꿉니다.\n"
+                       "‘제목: / 네모: / 원: / 바:’ 라벨 형식은 라벨 그대로 바꿉니다(‘AI 프롬프트…’로 이 형식의 답을 받을 수 있음).",
                   style="Hint.TLabel", justify="left").pack(anchor="w", pady=(2, 8))
 
         panes = ttk.Frame(body)
@@ -13003,7 +13126,12 @@ class HwpAutoDocFitGUI:
             변환실행(clean_pasted_text, "정리 완료")
 
         def 개조식으로변환():
-            변환실행(outline_pasted_text, "개조식 변환 완료")
+            # 제목:/네모:/원: 같은 라벨 형식이면 계층을 추론하지 않고 라벨대로 바꾼다(A1).
+            원문 = input_text.get("1.0", "end-1c")
+            if looks_labeled(원문):
+                변환실행(label_outline_text, "라벨 형식을 개조식으로 변환 완료")
+            else:
+                변환실행(outline_pasted_text, "개조식 변환 완료")
 
         def 결과복사():
             결과 = output_text.get("1.0", "end-1c")
@@ -13024,6 +13152,7 @@ class HwpAutoDocFitGUI:
         ttk.Button(actions, text="한 번에 정리", command=정리하기).pack(side="left")
         ttk.Button(actions, text="개조식으로 변환", command=개조식으로변환).pack(side="left", padx=(6, 0))
         ttk.Button(actions, text="결과 복사", command=결과복사).pack(side="left", padx=(6, 0))
+        ttk.Button(actions, text="AI 프롬프트…", command=lambda: self._AI_프롬프트_열기(window)).pack(side="left", padx=(6, 0))
         ttk.Button(actions, text="지우기", command=지우기).pack(side="left", padx=(6, 0))
         ttk.Button(actions, text="닫기", command=lambda: (window.destroy(), closed())).pack(side="right")
         ttk.Label(body, textvariable=status, style="Hint.TLabel").pack(anchor="w", pady=(6, 0))
@@ -13035,6 +13164,366 @@ class HwpAutoDocFitGUI:
         if 붙여넣기.strip():
             input_text.insert("1.0", 붙여넣기)
         input_text.focus_set()
+
+    def _AI_프롬프트_열기(self, parent=None):
+        """생성형 AI에게 공문서 초안을 라벨 형식으로 받는 프롬프트를 만들어 복사한다(A2).
+
+        앱은 AI 서비스에 아무것도 보내지 않는다. 프롬프트를 클립보드에 복사하고
+        원하면 브라우저로 AI 사이트를 열 뿐이다.
+        """
+        parent = parent or self.root
+        window = tk.Toplevel(parent)
+        window.title("AI 프롬프트 만들기")
+        window.geometry("860x600")
+        window.minsize(620, 420)
+        window.transient(parent)
+        body = ttk.Frame(window, padding=12)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="AI에게 공문서 초안을 받는 프롬프트", font=("맑은 고딕", 12, "bold")).pack(anchor="w")
+        ttk.Label(body, text="메모를 적고 서식을 고른 뒤 ‘프롬프트 복사’를 누르세요. AI 답변을 ‘붙여넣은 텍스트 정리’나 "
+                             "‘텍스트 붙여넣기’에 넣으면 라벨대로 개조식·제목 상자로 바뀝니다. 앱은 AI에 아무것도 전송하지 않습니다.",
+                  style="Hint.TLabel", wraplength=820, justify="left").pack(anchor="w", pady=(2, 8))
+        panes = ttk.Frame(body)
+        panes.pack(fill="both", expand=True)
+        panes.grid_columnconfigure(1, weight=1)
+        panes.grid_rowconfigure(1, weight=1)
+        panes.grid_rowconfigure(3, weight=2)
+        ttk.Label(panes, text="서식").grid(row=0, column=0, sticky="w")
+        목록 = ai_prompts.all_prompts()
+        listbox = tk.Listbox(panes, exportselection=False, width=24, font=("맑은 고딕", 10))
+        for 이름, 설명, _, 라벨 in 목록:
+            listbox.insert("end", 이름 + ("" if 라벨 else "  (문장)"))
+        listbox.grid(row=1, column=0, rowspan=3, sticky="nsw", padx=(0, 8))
+        ttk.Label(panes, text="메모(업무 내용·일시·장소·대상 등)").grid(row=0, column=1, sticky="w")
+        memo = tk.Text(panes, height=6, wrap="word", undo=True, font=("맑은 고딕", 10))
+        memo.grid(row=1, column=1, sticky="nsew")
+        ttk.Label(panes, text="만들어진 프롬프트").grid(row=2, column=1, sticky="w", pady=(6, 0))
+        preview = tk.Text(panes, wrap="word", font=("맑은 고딕", 9), background="#f7f7f7")
+        preview.grid(row=3, column=1, sticky="nsew")
+        status = tk.StringVar(value="서식을 고르세요.")
+
+        def 갱신(event=None):
+            선택 = listbox.curselection()
+            if not 선택:
+                return
+            이름 = 목록[선택[0]][0]
+            preview.delete("1.0", "end")
+            preview.insert("1.0", ai_prompts.build_prompt(이름, memo.get("1.0", "end-1c")))
+            status.set(f"{이름} · {목록[선택[0]][1]}")
+
+        def 복사():
+            갱신()
+            내용 = preview.get("1.0", "end-1c")
+            if not 내용.strip():
+                status.set("먼저 서식을 고르세요.")
+                return
+            window.clipboard_clear()
+            window.clipboard_append(내용)
+            status.set("프롬프트를 복사했습니다. AI 채팅창에 붙여넣으세요.")
+
+        def 사이트열기(주소):
+            복사()
+            import webbrowser
+            webbrowser.open(주소)
+
+        listbox.bind("<<ListboxSelect>>", 갱신)
+        memo.bind("<KeyRelease>", 갱신)
+        actions = ttk.Frame(body)
+        actions.pack(fill="x", pady=(8, 0))
+        ttk.Button(actions, text="프롬프트 복사", command=복사).pack(side="left")
+        for 이름, 주소 in ai_prompts.AI_SITES.items():
+            ttk.Button(actions, text=f"복사 후 {이름} 열기", command=lambda u=주소: 사이트열기(u)).pack(side="left", padx=(6, 0))
+        ttk.Button(actions, text="닫기", command=window.destroy).pack(side="right")
+        ttk.Label(body, textvariable=status, style="Hint.TLabel").pack(anchor="w", pady=(6, 0))
+        listbox.selection_set(0)
+        갱신()
+        memo.focus_set()
+
+    def _작성도우미_열기(self):
+        """금액·날짜·표 계산·나이·번호·회신공문·기관 서식 도구(B1~B6, A5, A3).
+
+        문서 파일을 직접 바꾸지 않는다. 붙여넣은 텍스트에 적용한 결과를 복사해 쓰게 한다.
+        """
+        existing = getattr(self, "_작성도우미_창", None)
+        if existing is not None and existing.winfo_exists():
+            existing.lift()
+            return
+        window = tk.Toplevel(self.root)
+        self._작성도우미_창 = window
+        window.title("작성 도우미")
+        window.geometry("900x640")
+        window.minsize(640, 480)
+        window.transient(self.root)
+
+        def 닫기():
+            window.destroy()
+            self._작성도우미_창 = None
+        window.protocol("WM_DELETE_WINDOW", 닫기)
+        body = ttk.Frame(window, padding=10)
+        body.pack(fill="both", expand=True)
+        notebook = ttk.Notebook(body)
+        notebook.pack(fill="both", expand=True)
+        self._작성도우미_탭 = notebook
+        status = tk.StringVar(value="탭을 고르고 텍스트를 붙여넣은 뒤 버튼을 누르세요. 결과는 오른쪽에 나옵니다.")
+        self._작성도우미_입출력 = {}
+
+        def 입출력탭(제목, 안내, 버튼들, 위쪽=None):
+            """왼쪽 입력·오른쪽 결과 텍스트와 변환 버튼 줄로 된 공통 탭."""
+            tab = ttk.Frame(notebook, padding=8)
+            notebook.add(tab, text=제목)
+            ttk.Label(tab, text=안내, style="Hint.TLabel", wraplength=840, justify="left").pack(anchor="w")
+            if 위쪽:
+                위쪽(tab)
+            panes = ttk.Frame(tab)
+            panes.pack(fill="both", expand=True, pady=(6, 0))
+            panes.grid_columnconfigure(0, weight=1)
+            panes.grid_columnconfigure(1, weight=1)
+            panes.grid_rowconfigure(0, weight=1)
+            src = tk.Text(panes, wrap="word", undo=True, font=("맑은 고딕", 10))
+            src.grid(row=0, column=0, sticky="nsew", padx=(0, 4))
+            dst = tk.Text(panes, wrap="word", font=("맑은 고딕", 10), background="#f7f7f7")
+            dst.grid(row=0, column=1, sticky="nsew", padx=(4, 0))
+            row = ttk.Frame(tab)
+            row.pack(fill="x", pady=(6, 0))
+
+            def 실행(함수, 이름):
+                try:
+                    결과 = 함수(src.get("1.0", "end-1c"))
+                except Exception as exc:
+                    messagebox.showerror(APP_NAME, f"{이름} 중 오류가 발생했습니다.\n\n{exc}", parent=window)
+                    return
+                dst.delete("1.0", "end")
+                dst.insert("1.0", 결과)
+                status.set(f"{이름} 완료")
+
+            def 복사():
+                내용 = dst.get("1.0", "end-1c")
+                if 내용.strip():
+                    window.clipboard_clear()
+                    window.clipboard_append(내용)
+                    status.set("결과를 복사했습니다.")
+
+            명령 = {}
+            for 이름, 함수 in 버튼들:
+                명령[이름] = lambda f=함수, n=이름: 실행(f, n)
+                ttk.Button(row, text=이름, command=명령[이름]).pack(side="left", padx=(0, 6))
+            ttk.Button(row, text="결과 복사", command=복사).pack(side="right")
+            self._작성도우미_입출력[제목] = (src, dst, 명령)
+            return src, dst
+
+        wa = writing_aids
+
+        # B1·B4 금액·숫자
+        입출력탭("금액·숫자",
+                 "금액(예: 1,500,000원)에 한글 금액을 병기하거나 천 단위 쉼표·단위를 바꿉니다.",
+                 [("한글 금액 병기", wa.hangulize_amounts),
+                  ("쉼표 넣기", wa.add_commas), ("쉼표 빼기", wa.remove_commas),
+                  ("원 → 천원(÷1,000)", lambda t: wa.scale_numbers(t, "0.001")),
+                  ("천원 → 원(×1,000)", lambda t: wa.scale_numbers(t, 1000)),
+                  ("숫자만 한글로", lambda t: re.sub(r"\d{1,3}(?:,\d{3})+|\d+",
+                                                     lambda m: wa.number_to_hangul(int(m.group(0).replace(",", ""))), t))])
+
+        # B2 날짜
+        날짜형식 = tk.StringVar(value="full")
+
+        def 날짜옵션(tab):
+            box = ttk.Frame(tab)
+            box.pack(anchor="w", pady=(4, 0))
+            ttk.Label(box, text="표기").pack(side="left")
+            for 값, 이름 in (("full", "2025. 7. 25.(금)"), ("short", "’25. 7. 25.(금)"), ("plain", "2025. 7. 25.")):
+                ttk.Radiobutton(box, text=이름, value=값, variable=날짜형식).pack(side="left", padx=(6, 0))
+
+        def 기준일(t):
+            return wa.parse_date(t) or _datetime.date.today()
+
+        def 금요일들(t, offset):
+            d = 기준일(t)
+            return "\n".join(wa.format_date(x, 날짜형식.get()) for x in wa.weekdays_in_month(d, 4, offset))
+
+        def 기간(t, kind, offset):
+            d = 기준일(t)
+            if kind == "week":
+                a, b = wa.week_of(d, offset)
+            elif kind == "month":
+                a, b = wa.month_bounds(d, offset)
+            else:
+                a, b = _datetime.date(d.year + offset, 1, 1), _datetime.date(d.year + offset, 12, 31)
+            return wa.date_range_text(a, b, 날짜형식.get())
+
+        def 날짜차이(t):
+            찾은 = [wa.parse_date(m.group(0)) for m in wa._DATE.finditer(t)]
+            찾은 = [x for x in 찾은 if x]
+            if len(찾은) < 2:
+                return "날짜 두 개를 입력하세요. 예: 2025. 7. 1. ~ 2025. 7. 25."
+            a, b = 찾은[:2]
+            return (f"{wa.format_date(a, 날짜형식.get())} ~ {wa.format_date(b, 날짜형식.get())}: "
+                    f"{wa.days_between(a, b)}일 차이(양 끝 포함 {wa.days_between(a, b, True)}일)")
+
+        입출력탭("날짜",
+                 "문장 속 날짜에 요일을 붙이거나(틀린 요일은 고침), 입력한 날짜(없으면 오늘)를 기준으로 날짜를 만듭니다.",
+                 [("요일 붙이기·고치기", wa.add_weekdays),
+                  ("오늘", lambda t: wa.format_date(_datetime.date.today(), 날짜형식.get())),
+                  ("이번 달 금요일", lambda t: 금요일들(t, 0)), ("다음 달 금요일", lambda t: 금요일들(t, 1)),
+                  ("다음 주", lambda t: 기간(t, "week", 1)), ("이번 달 기간", lambda t: 기간(t, "month", 0)),
+                  ("다음 달 기간", lambda t: 기간(t, "month", 1)), ("올해 기간", lambda t: 기간(t, "year", 0)),
+                  ("날짜 차이", 날짜차이)], 날짜옵션)
+
+        # B3 표 계산
+        def 표계산(op):
+            return lambda t: wa.table_to_text(wa.calc_table(wa.parse_table(t), op))
+        입출력탭("표 계산",
+                 "한/글·엑셀 표를 복사해 붙여넣으세요(칸은 탭 또는 |). 첫 행·첫 열이 글자면 머리글로 보고 계산에서 뺍니다. "
+                 "결과를 복사해 한/글 표에 붙여넣으면 됩니다.",
+                 [("열 합계", 표계산("col_sum")), ("열 평균", 표계산("col_avg")),
+                  ("행 합계", 표계산("row_sum")), ("구성비(%)", 표계산("col_ratio"))])
+
+        # B5 나이·주민번호
+        입출력탭("나이·주민번호",
+                 "줄마다 생년월일이나 주민등록번호를 찾아 만 나이를 붙입니다. 주민등록번호는 결과에서 뒷자리를 가립니다.",
+                 [("만 나이 붙이기", wa.ages_for_lines), ("주민번호 → 생년월일", wa.rrn_to_birth_lines),
+                  ("주민번호 가리기", wa.mask_rrn)])
+
+        # B6 번호
+        번호형식 = tk.StringVar(value="1.")
+
+        def 번호옵션(tab):
+            box = ttk.Frame(tab)
+            box.pack(anchor="w", pady=(4, 0))
+            ttk.Label(box, text="번호 모양").pack(side="left")
+            ttk.Combobox(box, textvariable=번호형식, values=list(wa.NUMBER_STYLES), width=6,
+                         state="readonly").pack(side="left", padx=(6, 0))
+        입출력탭("번호",
+                 "줄마다 기존 번호를 지우고 새 번호를 차례로 붙입니다(빈 줄은 건너뜀).",
+                 [("번호 다시 매기기", lambda t: wa.renumber_lines(t, 번호형식.get())),
+                  ("번호 지우기", lambda t: "\n".join(wa._EXISTING_NUMBER.sub("", l) for l in t.splitlines()))], 번호옵션)
+
+        # A5 회신공문
+        tab = ttk.Frame(notebook, padding=8)
+        notebook.add(tab, text="회신공문")
+        ttk.Label(tab, text="요청 공문 정보를 넣으면 ‘관련 → 제출 → 붙임 … 끝.’ 형식의 회신 공문 본문을 만듭니다.",
+                  style="Hint.TLabel").pack(anchor="w")
+        form = ttk.Frame(tab)
+        form.pack(fill="x", pady=(6, 0))
+        form.grid_columnconfigure(1, weight=1)
+        값들 = {}
+        for 순번, (키, 이름, 예시) in enumerate((
+                ("title", "요청 공문 제목", "2025년 하반기 교육 실적 자료 제출 요청"),
+                ("sender", "요청 기관·부서", "행정안전부 인재개발과"),
+                ("doc_no", "문서번호", "인재개발과-1234"),
+                ("doc_date", "시행일", "2025. 7. 1."),
+                ("attachment", "붙임 이름(선택)", ""),
+                ("contact", "문의처(선택)", ""))):
+            ttk.Label(form, text=이름).grid(row=순번, column=0, sticky="w", pady=2)
+            var = tk.StringVar()
+            ttk.Entry(form, textvariable=var).grid(row=순번, column=1, sticky="ew", padx=(8, 0), pady=2)
+            if 예시:
+                ttk.Label(form, text=f"예: {예시}", style="Hint.TLabel").grid(row=순번, column=2, sticky="w", padx=(8, 0))
+            값들[키] = var
+        회신결과 = tk.Text(tab, wrap="word", font=("맑은 고딕", 10), background="#f7f7f7", height=10)
+        회신결과.pack(fill="both", expand=True, pady=(6, 0))
+
+        def 회신만들기():
+            if not 값들["title"].get().strip():
+                status.set("요청 공문 제목을 입력하세요.")
+                return
+            결과 = wa.reply_document(값들["title"].get(), 값들["sender"].get().strip(), 값들["doc_no"].get().strip(),
+                                    값들["doc_date"].get().strip(), 값들["attachment"].get(), 값들["contact"].get())
+            회신결과.delete("1.0", "end")
+            회신결과.insert("1.0", 결과)
+            status.set("회신공문 본문을 만들었습니다.")
+
+        def 회신복사():
+            window.clipboard_clear()
+            window.clipboard_append(회신결과.get("1.0", "end-1c"))
+            status.set("회신공문 본문을 복사했습니다.")
+        self._작성도우미_회신 = (값들, 회신결과, 회신만들기)
+        row = ttk.Frame(tab)
+        row.pack(fill="x", pady=(6, 0))
+        ttk.Button(row, text="회신공문 만들기", command=회신만들기).pack(side="left")
+        ttk.Button(row, text="결과 복사", command=회신복사).pack(side="right")
+
+        # A3 기관 서식
+        tab = ttk.Frame(notebook, padding=8)
+        notebook.add(tab, text="기관 서식")
+        ttk.Label(tab, text="기관 문서(HWP/HWPX)의 모든 스타일 요소를 분석해 보고서와 예시 서식 HWPX를 원본 옆에 만들고, "
+                            "기관 이름을 붙여 문서 서식으로 등록합니다. 등록한 서식은 서식 목록에 ‘[기관] 이름’으로 보입니다.",
+                  style="Hint.TLabel", wraplength=840, justify="left").pack(anchor="w")
+        기관문서 = tk.StringVar()
+        기관이름 = tk.StringVar()
+        form = ttk.Frame(tab)
+        form.pack(fill="x", pady=(8, 0))
+        form.grid_columnconfigure(1, weight=1)
+        ttk.Label(form, text="기관 문서").grid(row=0, column=0, sticky="w")
+        ttk.Entry(form, textvariable=기관문서).grid(row=0, column=1, sticky="ew", padx=(8, 4))
+
+        def 문서고르기():
+            경로 = askopenfilename(parent=window, title="기관 문서", filetypes=[("한글파일", "*.hwp *.hwpx")])
+            if 경로:
+                기관문서.set(경로)
+                예시경로["path"] = None
+        ttk.Button(form, text="찾아보기…", command=문서고르기).grid(row=0, column=2)
+        ttk.Label(form, text="기관 이름").grid(row=1, column=0, sticky="w", pady=(4, 0))
+        ttk.Entry(form, textvariable=기관이름).grid(row=1, column=1, sticky="ew", padx=(8, 4), pady=(4, 0))
+        분석결과 = tk.Text(tab, wrap="word", font=("맑은 고딕", 10), background="#f7f7f7", height=14)
+        분석결과.pack(fill="both", expand=True, pady=(8, 0))
+        예시경로 = {"path": None, "report": None}
+
+        def 분석하기(등록=False):
+            경로 = 기관문서.get().strip()
+            if not 경로 or not Path(경로).exists():
+                status.set("기관 문서를 고르세요.")
+                return
+            if self.running:
+                status.set("다른 작업이 끝난 뒤 다시 시도하세요.")
+                return
+            status.set("스타일을 분석하는 중입니다… (HWP는 한/글로 임시 변환)")
+
+            def worker():
+                try:
+                    결과 = 스타일분석_파일생성(경로)
+                    self.root.after(0, 분석완료, 결과, 등록, None)
+                except Exception as exc:
+                    self.root.after(0, 분석완료, None, False, str(exc))
+            threading.Thread(target=worker, daemon=True, name="style-inventory").start()
+
+        def 분석완료(결과, 등록, error):
+            if not window.winfo_exists():
+                return
+            if error:
+                status.set("스타일 분석 실패")
+                messagebox.showerror(APP_NAME, f"스타일 분석 실패\n{error}", parent=window)
+                return
+            inventory, stats, report, sample = 결과
+            예시경로.update(path=sample, report=report)
+            분석결과.delete("1.0", "end")
+            분석결과.insert("1.0", 스타일분석_요약(inventory, stats, report, sample))
+            status.set("스타일 분석 완료")
+            if 등록:
+                등록하기()
+
+        def 등록하기():
+            if not 예시경로["path"]:
+                분석하기(등록=True)
+                return
+            기관 = 기관이름.get().strip()
+            줄기 = Path(기관문서.get()).stem
+            기본 = f"{기관} {줄기}" if 기관 and 기관 not in 줄기 else 줄기
+            self._서식_분석_시작(str(예시경로["path"]), 이름묻기=True, 기본이름=기본[:40], 기관=기관)
+
+        def 보고서열기():
+            if 예시경로["report"]:
+                os.startfile(str(예시경로["report"]))
+
+        row = ttk.Frame(tab)
+        row.pack(fill="x", pady=(6, 0))
+        ttk.Button(row, text="스타일 분석", command=분석하기).pack(side="left")
+        ttk.Button(row, text="기관 서식으로 등록", command=등록하기).pack(side="left", padx=(6, 0))
+        ttk.Button(row, text="보고서 열기", command=보고서열기).pack(side="left", padx=(6, 0))
+
+        bottom = ttk.Frame(body)
+        bottom.pack(fill="x", pady=(6, 0))
+        ttk.Label(bottom, textvariable=status, style="Hint.TLabel").pack(side="left")
+        ttk.Button(bottom, text="닫기", command=닫기).pack(side="right")
 
     def _공공언어_검토(self):
         if getattr(self, "_교정_창", None) is not None:
@@ -13203,7 +13692,7 @@ class HwpAutoDocFitGUI:
         if not path: return
         self._서식_분석_시작(path, 이름묻기=True)
 
-    def _서식_분석_시작(self, path, 이름묻기=False, 기본이름=None):
+    def _서식_분석_시작(self, path, 이름묻기=False, 기본이름=None, 기관=None):
         if self.running or getattr(self, "_서식분석중", False):
             return
         parent = self.settings_toplevel if self.settings_toplevel and self.settings_toplevel.winfo_viewable() else self.root
@@ -13215,6 +13704,11 @@ class HwpAutoDocFitGUI:
         if not name:
             messagebox.showwarning(APP_NAME, "비어 있지 않은 이름을 입력해 주세요.", parent=parent)
             return
+        if 이름묻기:
+            기관 = simpledialog.askstring(APP_NAME, "기관 이름(선택, 비워 두면 기관 없음)", parent=parent,
+                                         initialvalue=기관 or "")
+            if 기관 is None: return
+        기관 = (기관 or "").strip()
         기존이름 = {p["name"] for p in self._프로파일들.values()}
         if name in 기존이름:
             if 이름묻기:
@@ -13233,6 +13727,8 @@ class HwpAutoDocFitGUI:
             try:
                 result = 한글파일_서식_분석(path)
                 result["name"] = name
+                if 기관:
+                    result["organization"] = 기관
                 gui_queue.put(("format_copied", result))
             except Exception as exc:
                 gui_queue.put(("format_copy_error", str(exc)))
