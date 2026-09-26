@@ -233,7 +233,7 @@ import hashlib
 import difflib
 import urllib.error
 import urllib.parse
-import urllib.request
+import http.client
 import webbrowser
 from defusedxml import ElementTree as ET
 from collections import Counter, defaultdict, deque
@@ -315,22 +315,36 @@ def _업데이트_URL_검증(url):
     return str(url)
 
 
+def _업데이트_HTTP_GET(url, headers, timeout):
+    """검증된 GitLab HTTPS URL만 직접 HTTPS 연결로 조회한다."""
+    parsed = urllib.parse.urlparse(_업데이트_URL_검증(url))
+    연결 = http.client.HTTPSConnection(parsed.hostname, parsed.port or 443, timeout=timeout)
+    연결.request("GET", parsed.path + (f"?{parsed.query}" if parsed.query else ""), headers=headers)
+    응답 = 연결.getresponse()
+    if 응답.status >= 400:
+        상태 = 응답.status
+        응답.read()
+        연결.close()
+        raise urllib.error.HTTPError(url, 상태, 응답.reason, 응답.headers, None)
+    응답._docfit_connection = 연결
+    return 응답
+
+
 def _버전_튜플(value):
     숫자 = [int(item) for item in re.findall(r"\d+", str(value))]
     return tuple((숫자 + [0, 0, 0])[:3])
 
 
 def _최신_릴리스_조회(timeout=8):
-    요청 = urllib.request.Request(
-        _업데이트_URL_검증(UPDATE_API_URL),
-        headers={
+    try:
+        응답 = _업데이트_HTTP_GET(UPDATE_API_URL, {
             "Accept": "application/json",
             "User-Agent": f"HWP-AutoDocFit/{APP_VERSION}",
-        },
-    )
-    try:
-        with urllib.request.urlopen(요청, timeout=timeout) as 응답:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected
+        }, timeout)
+        try:
             릴리스 = json.loads(응답.read().decode("utf-8"))
+        finally:
+            응답._docfit_connection.close()
     except urllib.error.HTTPError as exc:
         # GitLab은 프로젝트에 Release가 하나도 없으면 latest API에서 404를 반환한다.
         # 이는 통신 오류가 아니라 아직 배포된 업데이트가 없다는 뜻이다.
@@ -11056,20 +11070,21 @@ class HwpAutoDocFitGUI:
             버전 = re.sub(r"[^0-9A-Za-z._-]+", "_", str(릴리스.get("tag_name", "latest")))
             다운로드_경로 = 업데이트_폴더 / f"HWP_AutoDocFit-{버전}.exe"
             다운로드_URL = _업데이트_URL_검증(자산["browser_download_url"])
-            요청 = urllib.request.Request(
-                다운로드_URL,
-                headers={"User-Agent": f"HWP-AutoDocFit/{APP_VERSION}"},
-            )
             해시 = hashlib.sha256()
             크기 = 0
-            with urllib.request.urlopen(요청, timeout=30) as 응답, open(다운로드_경로, "wb") as 출력:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected
-                while True:
-                    조각 = 응답.read(1024 * 1024)
-                    if not 조각:
-                        break
-                    출력.write(조각)
-                    해시.update(조각)
-                    크기 += len(조각)
+            응답 = _업데이트_HTTP_GET(다운로드_URL,
+                                    {"User-Agent": f"HWP-AutoDocFit/{APP_VERSION}"}, 30)
+            try:
+                with open(다운로드_경로, "wb") as 출력:
+                    while True:
+                        조각 = 응답.read(1024 * 1024)
+                        if not 조각:
+                            break
+                        출력.write(조각)
+                        해시.update(조각)
+                        크기 += len(조각)
+            finally:
+                응답._docfit_connection.close()
             예상_크기 = int(자산.get("size") or 0)
             if 크기 <= 0 or (예상_크기 and 크기 != 예상_크기):
                 raise RuntimeError("다운로드한 업데이트 파일 크기가 올바르지 않습니다.")

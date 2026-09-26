@@ -185,7 +185,9 @@ class StartupTest(unittest.TestCase):
         )
         self.addCleanup(not_found.close)
 
-        with patch.object(namespace["urllib"].request, "urlopen", side_effect=not_found):
+        def raise_not_found(*args, **kwargs):
+            raise not_found
+        with patch.dict(fetch_release.__globals__, {"_업데이트_HTTP_GET": raise_not_found}):
             self.assertIsNone(fetch_release())
 
     def test_removed_cat_assets_do_not_require_pillow(self):
