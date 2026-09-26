@@ -254,7 +254,9 @@ import win32gui
 import win32con
 from defusedxml.ElementTree import fromstring as safe_xml_fromstring
 from docfit_core.style_hierarchy import DOT_MARKERS, analyze_hierarchy, display_role, hierarchy_summary, leading_marker, normalize_leading_dot, stored_role
-from docfit_core.stage_selection import STAGE_EXAMPLES, enabled as stage_enabled, stages_for_mode
+from docfit_core.number_check import 숫자_대조
+from docfit_core import outline_ops
+from docfit_core.stage_selection import STAGE_EXAMPLES, default_choice as stage_default, enabled as stage_enabled, stages_for_mode
 from docfit_core.document_rules import (
     ParagraphSpacingTracker, YEAR_QUOTE_PATTERN, marker_space_fix,
     curly_single_quote_replacements, normalize_date_range_marks,
@@ -267,6 +269,9 @@ from docfit_core.korean_proofread import (
     apply_approved_hwpx, load_exclusions, save_exclusions, scan_hwpx,
 )
 from docfit_core.pasted_text import clean_pasted_text, outline_pasted_text
+from docfit_core.labeled_text import label_outline_text, looks_labeled, parse_labeled_text
+from docfit_core import writing_aids, ai_prompts
+from docfit_core.style_inventory import analyze_style_inventory, build_style_sample, inventory_markdown
 from docfit_core import (
     KordocUnavailableError,
     analyze_form,
@@ -293,7 +298,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글문서 후처리 도구"
-APP_VERSION = "1.67 Beta 3"
+APP_VERSION = "1.68 Beta 1"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 UPDATE_ASSET_NAME = "HWP_AutoDocFit.exe"
@@ -520,6 +525,33 @@ def 기호글꼴_적용(설정딕셔너리=None):
         else:
             새규칙.append(rule)
     표준서식_설정["기호_규칙"] = 새규칙
+
+
+def 표글꼴_적용(table_fonts=None):
+    """설정창의 표 머리글·본문 글꼴·크기를 표 서식 값에 반영한다.
+
+    비어 있거나 잘못된 값(1~200pt 밖의 크기 등)은 현재 값을 그대로 둔다.
+    """
+    global 표_헤더서식_헤더_폰트, 표_헤더서식_헤더_크기
+    global 표_헤더서식_본문_폰트, 표_헤더서식_본문_크기
+    fonts = table_fonts or {}
+
+    def 값(part, current_font, current_size):
+        item = fonts.get(part) or {}
+        font = str(item.get("font") or "").strip() or current_font
+        try:
+            size = float(str(item.get("size", "")).strip())
+            if not 1 <= size <= 200:
+                raise ValueError
+            size = int(size) if size.is_integer() else size
+        except (TypeError, ValueError):
+            size = current_size
+        return font, size
+
+    표_헤더서식_헤더_폰트, 표_헤더서식_헤더_크기 = 값(
+        "header", 표_헤더서식_헤더_폰트, 표_헤더서식_헤더_크기)
+    표_헤더서식_본문_폰트, 표_헤더서식_본문_크기 = 값(
+        "body", 표_헤더서식_본문_폰트, 표_헤더서식_본문_크기)
 
 
 def _hwp_설치폴더_후보_레지스트리():
@@ -910,6 +942,12 @@ def 번들_리소스_폴더():
         "※": {"font": "한컴돋움", "size": "13"},
         "•": {"font": "한컴돋음", "size": "13"},
     },
+    # 표 머리글(첫 행)·본문(나머지 행) 글꼴·크기. 문장기호별 글꼴처럼 서식
+    # 프로파일보다 우선하는 개인 설정이다.
+    "table_fonts": {
+        "header": {"font": "한컴돋움", "size": "13"},
+        "body": {"font": "휴먼명조", "size": "12"},
+    },
     "hwp_font_folder": "",
     "paste_add_folder": "",
     "cat_image_path": "",
@@ -1198,6 +1236,28 @@ def hwpx_서식_분석(path):
         return profile
 
 
+def 예시문서_기본이름(문단들):
+    """직접 편집한 예시 문서의 기본 서식 이름: 첫 문장의 앞 8글자(TODO 6순위).
+
+    첫 번째 비어 있지 않은 문단을 첫 문장으로 보고, 문두기호(□·ㅇ·- 등)와 앞 공백은
+    빼며 첫 마침표(. ! ?) 앞까지만 쓴다. 쓸 글자가 없으면 '새 서식'.
+    """
+    for text in 문단들:
+        body = (text or "").strip()
+        if not body:
+            continue
+        marker_end = 문장부호_마커_끝위치(body)
+        if marker_end:
+            body = body[marker_end:].strip()
+        끝 = re.search(r"[.!?。]", body)
+        if 끝:
+            body = body[:끝.start()]
+        body = re.sub(r"\s+", " ", body).strip()
+        if body:
+            return body[:8].strip()
+    return "새 서식"
+
+
 def 한글파일_서식_분석(path):
     if Path(path).suffix.lower() == ".hwpx":
         return hwpx_서식_분석(path)
@@ -1250,6 +1310,53 @@ def 교정용_hwpx_준비(path, folder):
             try: app.Quit()
             except Exception: pass
         pythoncom.CoUninitialize()
+
+
+def 분석용_hwpx_준비(path, folder):
+    """분석할 HWPX 스냅숏. 확장자만 .hwpx인 HWP(ZIP이 아님)도 HWP로 보고 임시 변환한다."""
+    source = Path(path)
+    if source.suffix.lower() == ".hwpx" and not zipfile.is_zipfile(source):
+        copied = Path(folder) / (uuid.uuid4().hex + ".hwp")
+        shutil.copy2(source, copied)
+        source = copied
+    return 교정용_hwpx_준비(source, folder)
+
+
+def 스타일분석_파일생성(경로):
+    """문서 스타일 전수 분석 보고서(.md)와 예시 서식 HWPX를 원본 옆에 만든다(A3).
+
+    HWP는 원본을 건드리지 않고 임시 사본을 HWPX로 바꿔 분석한다.
+    """
+    source = Path(경로)
+    with tempfile.TemporaryDirectory(prefix="docfit_inventory_") as folder:
+        snapshot = 분석용_hwpx_준비(source, folder)
+        inventory = analyze_style_inventory(snapshot)
+        inventory["source"] = source.name
+        report = source.with_name(f"{source.stem}_스타일분석.md")
+        sample = source.with_name(f"{source.stem}_서식예시.hwpx")
+        report.write_text(inventory_markdown(inventory), encoding="utf-8")
+        stats = build_style_sample(snapshot, sample, inventory)
+    return inventory, stats, report, sample
+
+
+def 스타일분석_요약(inventory, stats, report, sample):
+    s = inventory["summary"]
+    줄 = [f"문자 모양 {s['chars_used']}/{s['chars_defined']} · 문단 모양 {s['paras_used']}/{s['paras_defined']} "
+         f"· 본문 스타일 유형 {s['types']} · 표 {s['table_types']}종 · 글자 음영색 {s['shade_colors']}",
+         f"예시 서식: 본문 {stats['paragraphs']}문단, 표 {stats['tables']}개", "",
+         f"보고서: {report}", f"예시 서식: {sample}", ""]
+    for t in inventory["types"]:
+        c = inventory["definitions"]["chars"].get(t["main_char"]) or {}
+        효과 = ", ".join(t["effects"]) or "-"
+        줄.append(f"{t['marker']:>4}  {c.get('font', {}).get('hangul')} {c.get('size_pt', 0):g}pt"
+                 f"{' 굵게' if c.get('bold') else ''} · {t['count']}문단 · 부분 서식: {효과}")
+    return "\n".join(줄)
+
+
+def 서식프로파일_표시이름(profile):
+    """서식 목록에 보일 이름. 기관을 지정한 서식은 '[기관] 이름'."""
+    기관 = str(profile.get("organization") or "").strip()
+    return f"[{기관}] {profile['name']}" if 기관 else profile["name"]
 
 
 def 문서_markdown_내보내기(path):
@@ -1879,6 +1986,32 @@ def _제목_임시hwpx_저장(경로):
     raise RuntimeError('제목 분석/적용용 HWPX 저장 완료를 확인하지 못했습니다.')
 
 
+_작업_임시폴더_접두어 = ("hwp_format_first_", "hwp_precise_table_", "docfit_외부문서_")
+
+
+def 이전_작업_임시폴더_정리(최소_경과초=600):
+    """이전 실행에서 한글이 파일을 잡고 있어 지우지 못한 작업용 임시 폴더를
+    정리한다. 지금 실행 중인 다른 작업의 폴더를 건드리지 않도록 일정 시간
+    지난 폴더만 지우며, 아직 사용 중인 폴더는 조용히 건너뛴다."""
+    기준 = time.time() - 최소_경과초
+    정리수 = 0
+    try:
+        후보들 = list(Path(tempfile.gettempdir()).iterdir())
+    except OSError:
+        return 0
+    for 폴더 in 후보들:
+        if not 폴더.name.startswith(_작업_임시폴더_접두어):
+            continue
+        try:
+            if not 폴더.is_dir() or 폴더.stat().st_mtime > 기준:
+                continue
+            shutil.rmtree(폴더)
+            정리수 += 1
+        except OSError:
+            continue
+    return 정리수
+
+
 def _제목_임시폴더_정리(폴더):
     """한글이 잠시 파일 핸들을 유지해도 본 작업을 실패시키지 않도록 지연 정리한다."""
     폴더 = Path(폴더)
@@ -1975,18 +2108,22 @@ def 붙임2종_현재문서_조사(원본문서경로):
     return 서식구조_조사(원본문서경로, 붙임_hwpx_처리, '붙임')
 
 
-def 제목붙임_선행적용(원본문서경로):
+def 제목붙임_선행적용(원본문서경로, 현재문서_기준=False):
     """제목·개요·붙임을 먼저 처리하고 결과 문서를 한 번만 연다.
 
     원본 HWPX는 읽기만 한다. HWP는 이미 열린 작업용 한글에서 한 번
     변환한다. 별도 한글 생성/등록/원본 재열기를 수행하지 않는다.
+    현재문서_기준이면 원본 파일 대신 지금 열린 문서(예: 자간 초기화를 마친
+    문서)를 스냅샷으로 저장해 그 위에 서식을 입힌다.
     """
     if not (제목4종_사용 or 붙임2종_사용):
         return True
     folder = Path(tempfile.mkdtemp(prefix='hwp_format_first_'))
     try:
         source = Path(원본문서경로)
-        if source.suffix.lower() != '.hwpx':
+        if 현재문서_기준:
+            source = _제목_임시hwpx_저장(folder / 'source.hwpx')
+        elif source.suffix.lower() != '.hwpx':
             로그('선행 서식: 현재 한글에서 HWPX 변환 시작')
             source = _제목_임시hwpx_저장(folder / 'source.hwpx')
             로그('선행 서식: HWPX 변환 완료')
@@ -2313,11 +2450,19 @@ def 색상_미리보기_hex(rgb):
 # 이 호출 횟수로 한 차례 자간 조정에서 실제 변경이 있었는지 판단해,
 # 변경이 있으면 내어쓰기를 다시 적용하고 자간을 재검사한다.
 자간_변경_횟수 = 0
+# 자간을 바꾼 문단의 (리스트, 문단) 번호. 자간 조정 뒤에는 이 문단들만
+# 내어쓰기를 다시 계산한다(내어쓰기 값은 그 문단 첫 줄에만 달려 있다).
+자간_변경문단 = set()
 
 
 def 색상_적용_현재선택():
     global 자간_변경_횟수
     자간_변경_횟수 += 1
+    try:
+        if hwp is not None:
+            자간_변경문단.add(tuple(hwp.GetPos()[:2]))
+    except Exception:
+        pass
     if 색상_설정 is None or hwp is None:
         return
     try:
@@ -2867,6 +3012,19 @@ def _내어쓰기_값_설정(value):
 
 
 
+# 문서 처리 중 '최종 서식 기준 내어쓰기' 단계가 뒤에 예정돼 있으면
+# 표준서식 단계에서는 내어쓰기를 계산하지 않는다(어차피 다시 계산된다).
+최종_내어쓰기_예정 = False
+
+
+def 내어쓰기_기호선택_허용(text):
+    """서식 프로파일의 기호별 '내어쓰기' 선택이 꺼진 기호 문단이면 False."""
+    매칭 = 표준서식_기호규칙_찾기(text) if text else None
+    if not 매칭:
+        return True
+    return 표준서식_설정.get("스타일_속성선택", {}).get(매칭[0], {}).get("indent", True)
+
+
 def 재검사_대상인가(pos):
     """2차 이후 재검사에서 이 위치의 문단을 검사해야 하는지."""
     return 재검사_대상문단 is None or tuple(pos[:2]) in 재검사_대상문단
@@ -2877,19 +3035,27 @@ def 재검사_영역인가(area):
     return 재검사_대상문단 is None or any(key[0] == area for key in 재검사_대상문단)
 
 
-def 문단_내어쓰기_전체_갱신():
+def 문단_내어쓰기_전체_갱신(대상문단=None):
     """최종 문자 서식/자간으로 본문 내어쓰기만 재계산한다.
 
+    대상문단((리스트, 문단) 번호 집합)을 주면 그 문단만 계산한다.
     값이 실제로 바뀐 문단은 내어쓰기_변경문단에 모아 다음 재검사 범위로 쓴다.
     """
     내어쓰기_변경문단.clear()
+    if 대상문단 is not None and not 대상문단:
+        return True
     순회_시작()
     while True:
         if 중단_요청됨():
             return False
         hwp_run("MoveParaBegin")
+        if 대상문단 is not None and tuple(hwp.GetPos()[:2]) not in 대상문단:
+            if not 범위_다음_문단으로_진행():
+                break
+            continue
         text = 현재문단_텍스트()
-        if not 현재_한칸표인가() and 문단_내어쓰기_기준_오프셋(text) is not None:
+        if (not 현재_한칸표인가() and 문단_내어쓰기_기준_오프셋(text) is not None
+                and 내어쓰기_기호선택_허용(text)):
             문단_내어쓰기_적용(hwp.GetPos(), text)
         if not 범위_다음_문단으로_진행():
             break
@@ -2971,10 +3137,17 @@ def 문단_내어쓰기_적용(문단_시작위치, text, 폰트크기_pt=None, 
 #    가로 위치. 즉 위 문단에 문두 라벨(괄호/콜론)이 있으면 그 라벨 뒤 첫
 #    글자 위치, 없으면 첫 공백 뒤 첫 글자 위치.
 #
-# 구현: 위 문단의 본문 첫 글자 폭 W(HWPUNIT)를 기존 내어쓰기 계산 함수로
-# 재사용해 구하고, 부연설명 문단에 왼쪽여백 = W 를 준다. 부연설명 자체의
-# 선행 공백 폭은 첫 줄 들여쓰기(-w_lead)로 상쇄해, 마커(*, ※)가 정확히
-# W 위치에서 시작하도록 한다(텍스트는 건드리지 않는다).
+# 구현(1.68 Alpha 6, TODO.md 1순위): 폭을 글자 크기로 '계산'하지 않고 한/글에
+# '실측'시킨다. 본문 내어쓰기와 같은 원리로, 캐럿을 본문 첫 글자에 두고 실제
+# Shift+Tab(ParagraphShapeIndentAtCaret)을 실행해 한/글이 정한 값을 읽는다.
+# 실측(2026-09-25, 통합테스트 문서): 예전 계산 폭은 한/글 실측값의 절반
+# 수준이었다(예: '  - ' 계산 2800 / 실측 5600). 양쪽정렬로 늘어난 공백까지
+# 한/글이 반영하므로 정렬과 무관하게 맞는다.
+#  - 위 문단 본문 첫 글자 위치 = 위 문단 왼쪽여백 + 실측 폭
+#  - 부연설명 왼쪽여백 = 그 위치 − 부연설명 자신의 선행 공백 실측 폭
+#    → 선행 공백 뒤 마커(*, ※)가 위 문단 본문 첫 글자와 같은 칸에서 시작한다.
+#  - 부연설명 자신의 첫 줄 값(내어쓰기)은 건드리지 않는다(자기 본문에 맞춘
+#    내어쓰기를 그대로 두고 문단 전체만 옮긴다).
 부연설명_들여쓰기_사용 = True
 
 _제목_기호 = set("□ㅁ■")
@@ -3006,48 +3179,117 @@ def _선행공백_길이(text):
         i += 1
     return i
 
-def _부연설명_들여쓰기_적용(문단_시작, text, 부모_W):
-    """부연설명 문단에 왼쪽여백 = 부모_W 를 적용한다.
 
-    부연설명 자체의 선행 공백 폭(w_lead)은 첫 줄 들여쓰기 -w_lead로 상쇄하여,
-    선행 공백이 있든 없든 마커가 정확히 부모_W 위치에서 시작하게 한다.
-    (둘째 줄 이후로 넘어가도 왼쪽여백 = 부모_W 라 같은 칸에서 시작한다.)
+def _캐럿위치_폭_실측(문단_시작, 글자수):
+    """문단 첫 줄에서 앞 글자수(문자열 길이)만큼의 가로 폭을 한/글에 실측시킨다.
+
+    첫 줄 값을 0으로 두고 그 위치에서 실제 Shift+Tab을 실행해 생긴 내어쓰기
+    값을 읽은 뒤, 문단의 원래 첫 줄 값으로 되돌린다. 문단 모양 단위(왼쪽여백과
+    같은 단위)로 돌려주며, 위치가 첫 화면줄 밖이거나 실패하면 None.
+    """
+    original_pos = hwp.GetPos()
+    begin = None
+    original = None
+    try:
+        hwp_run("Cancel")
+        hwp.SetPos(*문단_시작)
+        hwp_run("MoveParaBegin")
+        begin = hwp.GetPos()
+        original = hwp.ParaShape.Item("Indentation")
+        _내어쓰기_값_설정(0)
+        hwp.SetPos(*begin)
+        hwp_run("MoveLineEnd")
+        line_end = hwp.GetPos()
+        text = 현재문단_텍스트()
+        units = len(text[:글자수].encode("utf-16-le")) // 2
+        target = (begin[0], begin[1], begin[2] + units)
+        if line_end[:2] != begin[:2] or target[2] >= line_end[2]:
+            return None
+        if hwp.SetPos(*target) is False or tuple(hwp.GetPos()) != target:
+            return None
+        if hwp_run("ParagraphShapeIndentAtCaret") is False:
+            return None
+        value = hwp.ParaShape.Item("Indentation")
+        return -int(value) if value < 0 else None
+    except Exception as e:
+        진단로그(f"[부연설명 들여쓰기] 폭 실측 실패: {e}")
+        return None
+    finally:
+        if begin is not None and original is not None:
+            try:
+                hwp.SetPos(*begin)
+                _내어쓰기_값_설정(original)
+            except Exception:
+                pass
+        try:
+            hwp.SetPos(*original_pos)
+        except Exception:
+            pass
+
+
+def 부모_본문시작_실측(문단_시작, text):
+    """위 문단(제목/본문/내용) 본문 첫 글자의 가로 위치 = 왼쪽여백 + 실측 폭."""
+    오프셋 = 문단_내어쓰기_기준_오프셋(text)
+    if not 오프셋 or 오프셋 <= 0:
+        return None
+    폭 = _캐럿위치_폭_실측(문단_시작, 오프셋)
+    if 폭 is None:
+        return None
+    hwp.SetPos(*문단_시작)
+    return int(hwp.ParaShape.Item("LeftMargin")) + 폭
+
+
+def _부연설명_들여쓰기_적용(문단_시작, text, 부모_시작):
+    """부연설명 문단의 왼쪽여백을 맞춰 마커가 부모_시작 칸에서 시작하게 한다.
+
+    바뀌었으면 True, 이미 같으면 False, 실패하면 None.
     """
     if 현재_한칸표인가():
-        return
+        return False
+    lead = _선행공백_길이(text)
+    w_lead = 0
+    if lead > 0:
+        w_lead = _캐럿위치_폭_실측(문단_시작, lead)
+        if w_lead is None:
+            로그(f"부연설명 들여쓰기 건너뜀(선행 공백 폭 실측 실패): {text.strip()[:40]}")
+            return None
+    margin = max(0, int(부모_시작) - int(w_lead))
     try:
-        lead = _선행공백_길이(text)
-        w_lead = 문단_선행부_폭_HWPUNIT(문단_시작, text, lead) if lead > 0 else 0
-        hwp.SetPos(문단_시작[0], 문단_시작[1], 문단_시작[2])
+        hwp.SetPos(*문단_시작)
         hwp_run("MoveParaBegin")
-        act = hwp.HAction
-        pset = hwp.HParameterSet.HParaShape
-        act.GetDefault("ParagraphShape", pset.HSet)
-        try:
-            pset.LeftMargin = 부모_W
-        except Exception:
-            pass
-        try:
-            pset.Indentation = -w_lead
-        except Exception:
-            pass
-        act.Execute("ParagraphShape", pset.HSet)
-        진단로그(f"[부연설명 들여쓰기] W={부모_W}HWPUNIT({부모_W/100:.1f}pt) lead={w_lead}: {text.strip()[:50]}")
+        if int(hwp.ParaShape.Item("LeftMargin")) == margin:
+            return False
+        act = hwp.CreateAction("ParagraphShape")
+        pset = act.CreateSet()
+        pset.SetItem("LeftMargin", margin)
+        if act.Execute(pset) is False:
+            raise RuntimeError("왼쪽여백 설정 실패")
+        진단로그(f"[부연설명 들여쓰기] 부모 본문 시작 {부모_시작}, 선행 공백 {w_lead} → "
+                 f"왼쪽여백 {margin}: {text.strip()[:50]}")
         return True
     except Exception as e:
         로그(f"부연설명 들여쓰기 적용 실패(무시): {e}")
-        return False
+        return None
 
-def 부연설명_들여쓰기_전체_적용():
-    """문서를 순회하며 각 부연설명(*, **, ※)을 바로 위 제목/본문/내용의
-    본문 첫 글자 위치에 맞춰 들여쓴다."""
+
+def 부연설명_들여쓰기_전체_적용(부모대상=None):
+    """각 부연설명(*, **, ※)을 바로 위 제목/본문/내용의 본문 첫 글자 위치에 맞춘다.
+
+    부모대상((리스트, 문단) 집합)을 주면 그 부모에 딸린 부연설명만 다시 맞춘다
+    (자간 조정 후 부모 내어쓰기가 바뀐 경우). 옮긴 부연설명은
+    내어쓰기_변경문단에 더해 다음 단어 분리 재검사 대상이 되게 한다.
+    """
     if not 부연설명_들여쓰기_사용:
         return True
     if 중단_요청됨():
         return False
-    로그("부연설명(*, **, ※) 들여쓰기 적용 시작")
+    if 부모대상 is not None and not 부모대상:
+        return True
+    if 부모대상 is None:
+        로그("부연설명(*, **, ※) 들여쓰기 적용 시작")
     순회_시작()
-    부모_W = None      # 최근 제목/본문/내용의 본문 첫 글자 위치(HWPUNIT)
+    부모 = None        # (부모 문단 시작 위치, 텍스트)
+    부모_시작 = None   # 실측한 부모 본문 첫 글자 위치(필요할 때 한 번만 잰다)
     적용수 = 0
     while True:
         if 중단_요청됨():
@@ -3059,24 +3301,29 @@ def 부연설명_들여쓰기_전체_적용():
         if text and text.strip():
             유형 = _부모문단_유형(text)
             if 유형 is not None:
-                오프셋 = 문단_내어쓰기_기준_오프셋(text)
-                if 오프셋 and 오프셋 > 0:
-                    부모_W = 문단_선행부_폭_HWPUNIT(문단_시작, text, 오프셋)
-                else:
-                    부모_W = None
+                부모 = (문단_시작, text)
+                부모_시작 = None
             elif _부연설명_문단인가(text):
                 marker, _ = leading_marker(text)
                 들여쓰기_선택 = 표준서식_설정.get("스타일_속성선택", {}).get(marker, {}).get("indent", True)
-                if 부모_W and 들여쓰기_선택:
-                    if _부연설명_들여쓰기_적용(문단_시작, text, 부모_W):
-                        적용수 += 1
+                대상 = 부모 is not None and (부모대상 is None or tuple(부모[0][:2]) in 부모대상)
+                if 대상 and 들여쓰기_선택:
+                    if 부모_시작 is None:
+                        부모_시작 = 부모_본문시작_실측(*부모)
+                    if 부모_시작:
+                        결과 = _부연설명_들여쓰기_적용(문단_시작, text, 부모_시작)
+                        if 결과:
+                            적용수 += 1
+                            내어쓰기_변경문단.add(tuple(문단_시작[:2]))
+                hwp.SetPos(*문단_시작)
             else:
                 # 제목/본문/내용도 부연설명도 아닌 일반 문단이 끼면 연결이 끊긴다.
-                부모_W = None
+                부모 = None
 
         if not 범위_다음_문단으로_진행():
             break
-    로그(f"부연설명 들여쓰기 적용 완료 (적용 {적용수}건)")
+    if 부모대상 is None or 적용수:
+        로그(f"부연설명 들여쓰기 적용 완료 (적용 {적용수}건)")
     return True
 
 def 페이지_여백_설정(여백_mm):
@@ -3232,7 +3479,8 @@ def 표준서식_문단_처리(문단_순번, 헤더_역할=None, 상속_기호_
                 hwp_run("MoveSelParaEnd")
                 문단_줄간격_적용_현재선택(표준서식_설정["기본_줄간격_퍼센트"])
                 hwp_run("Cancel")
-        if 표준서식_내어쓰기_사용 and 문단_내어쓰기_기준_오프셋(text) is not None:
+        if (표준서식_내어쓰기_사용 and not 최종_내어쓰기_예정
+                and 문단_내어쓰기_기준_오프셋(text) is not None):
             hwp_run("MoveParaBegin")
             문단_내어쓰기_적용(hwp.GetPos(), text)
         진단로그(f"[표준서식 제외] 문장부호로 시작하지 않음: {text.strip()[:80]}")
@@ -3314,7 +3562,7 @@ def 표준서식_문단_처리(문단_순번, 헤더_역할=None, 상속_기호_
 
         # 라벨/본문을 정확히 정렬하는 내어쓰기. on/off 가능(표준서식_내어쓰기_사용).
         # 오프셋을 찾을 수 없는 단순 연속 설명문은 건드리지 않는다.
-        if 표준서식_내어쓰기_사용 and 선택.get("indent", True):
+        if 표준서식_내어쓰기_사용 and 선택.get("indent", True) and not 최종_내어쓰기_예정:
             hwp.SetPos(문단_기준위치[0], 문단_기준위치[1], 문단_기준위치[2])
             if 문단_내어쓰기_기준_오프셋(현재_text) is not None:
                 문단_내어쓰기_적용(문단_기준위치, 현재_text, 폰트크기_pt=크기, 폰트=폰트, 굵게=문단굵게)
@@ -3340,19 +3588,35 @@ def 빈문단_분류(text, begin, end):
     """'blank'(공백만 있는 빈 문단), 'marker'(문두기호 문장), 'other'.
 
     표·그림 같은 컨트롤은 글자 없이 위치만 차지하므로, 위치 길이가 공백
-    글자 수와 같을 때만 빈 문단으로 본다.
+    글자 수와 같을 때만 빈 문단으로 본다. 표 하나만 있는 문단은
+    MoveParaBegin이 표 뒤(pos 8)에 멈춰 시작·끝이 같아 보이므로, 시작
+    위치가 0이 아니면 빈 문단이 아니다(실측: 공고문 표 5개가 지워짐).
     """
     body = (text or '').rstrip('\r\n')
     if not body.strip():
+        if begin[2] != 0:
+            return 'other'
         units = len(body.encode('utf-16-le')) // 2
         return 'blank' if end[2] - begin[2] == units else 'other'
     # 날짜 줄('2026. 9. 24.')처럼 번호로 보이는 머리 문단은 문두기호 문장이 아니다.
-    return 'marker' if 보고서_문단역할(body) else 'other'
+    if not 보고서_문단역할(body):
+        return 'other'
+    # 'ㅇ'·'*'처럼 기호만 있고 내용이 빈 문단은 제출서식의 작성란이다. 그
+    # 앞뒤 빈 줄은 작성 여백이므로 지우지 않는다(실측: 공고문 '□ (자유작성)'
+    # 아래 작성란 여백이 모두 지워짐).
+    marker_end = 문장부호_마커_끝위치(body)
+    if marker_end is not None and not body[marker_end:].strip():
+        return 'template'
+    return 'marker'
 
 
 def 문두기호문장_사이_빈문단_찾기(kinds):
-    """분류 목록에서 앞뒤 가장 가까운 비어 있지 않은 문단이 모두 문두기호
-    문장인 빈 문단의 인덱스."""
+    """분류 목록에서 지울 빈 문단의 인덱스.
+
+    - 앞뒤 가장 가까운 비어 있지 않은 문단이 모두 문두기호 문장인 빈 문단
+    - 문서 끝의 빈 문단(뒤에 아무 내용도 없음). 문서 끝 빈 문단 하나가 다음
+      쪽으로 넘어가면 내용 없는 빈 쪽이 인쇄된다(실측: 4쪽이 빈 문단 하나).
+    """
     result = []
     for index, kind in enumerate(kinds):
         if kind != 'blank':
@@ -3361,6 +3625,30 @@ def 문두기호문장_사이_빈문단_찾기(kinds):
         after = next((k for k in kinds[index + 1:] if k != 'blank'), None)
         if before == 'marker' and after == 'marker':
             result.append(index)
+        elif before is not None and after is None:
+            result.append(index)
+    return result
+
+
+def 본문_컨트롤_문단번호():
+    """본문(리스트 0)에서 표·그림·글상자 등 컨트롤이 놓인 문단 번호.
+
+    빈 줄 삭제가 컨트롤 문단을 빈 문단으로 오인해 표를 통째로 지우지
+    않도록 막는 이중 안전장치다. 읽지 못하면 빈 집합을 돌려준다.
+    """
+    result = set()
+    try:
+        ctrl = hwp.HeadCtrl
+        while ctrl:
+            try:
+                anchor = ctrl.GetAnchorPos(0)
+                if anchor.Item("List") == 0:
+                    result.add(anchor.Item("Para"))
+            except Exception:
+                pass
+            ctrl = ctrl.Next
+    except Exception as e:
+        진단로그(f'본문 컨트롤 위치 확인 실패(무시): {e}')
     return result
 
 
@@ -3369,6 +3657,7 @@ def 문두기호문장_사이_빈줄_삭제():
         return True
     original = hwp.GetPos()
     paragraphs = []
+    컨트롤문단 = 본문_컨트롤_문단번호()
     try:
         hwp_run('MoveDocBegin')
         while True:
@@ -3380,7 +3669,8 @@ def 문두기호문장_사이_빈줄_삭제():
             hwp.SetPos(*begin)
             hwp_run('MoveParaEnd')
             end = hwp.GetPos()
-            paragraphs.append((begin, end, 빈문단_분류(text, begin, end)))
+            kind = 'other' if begin[1] in 컨트롤문단 else 빈문단_분류(text, begin, end)
+            paragraphs.append((begin, end, kind))
             hwp.SetPos(*begin)
             hwp_run('MoveNextParaBegin')
             after = hwp.GetPos()
@@ -3408,7 +3698,7 @@ def 문두기호문장_사이_빈줄_삭제():
                 로그(f'문두기호 문장 사이 빈 줄 삭제 중 오류(건너뜀): {e}')
             finally:
                 hwp_run('Cancel')
-        로그(f'문두기호 문장 사이 빈 줄 삭제: {삭제수}개')
+        로그(f'문두기호 문장 사이·문서 끝 빈 줄 삭제: {삭제수}개')
         return True
     finally:
         try:
@@ -3418,6 +3708,122 @@ def 문두기호문장_사이_빈줄_삭제():
                 hwp.SetPos(*original)
             except Exception:
                 pass
+
+
+# ============================================================
+# 서식통일 (TODO.md 3순위)
+# ============================================================
+# 여러 사람이 쓴 문서를 합쳐 만든 문서 안에서, 문두기호(□·ㅇ·-·*·※ 등)별로
+# 본문 글자의 글꼴·크기·장평을 모아 가장 많이 쓴 값(대표 스타일)을 정하고, 대표와
+# 다른 문단만 대표 값으로 맞춘다. 고정된 기준 서식을 적용하는 '서식 정리'와 달리
+# 기준이 '이 문서 자신'이다.
+#  - 제목·날짜처럼 일부러 다르게 쓰는 일반 문단과 표·글상자는 대상이 아니다.
+#  - 같은 기호 문단이 서식통일_최소문단수 이상이고 대표 값의 비율이
+#    서식통일_최소비율 이상일 때만 맞춘다(애매하면 건드리지 않음).
+#  - 라벨·굵기 등 다른 글자 속성은 건드리지 않고, 다른 항목만 바꾼다.
+서식통일_최소문단수 = 3
+서식통일_최소비율 = 0.6
+
+
+def _서식통일_글자모양(pos):
+    """pos 글자 하나의 (글꼴, 크기 HWPUNIT, 장평). 실패 시 None."""
+    try:
+        nxt = _단어모드_다음위치(pos)
+        if not nxt:
+            return None
+        단어모드_범위선택(pos, nxt)
+        pset = hwp.HParameterSet.HCharShape
+        hwp.HAction.GetDefault("CharShape", pset.HSet)
+        return (str(pset.FaceNameHangul), int(pset.Height), int(pset.RatioHangul))
+    except Exception:
+        return None
+    finally:
+        try:
+            hwp_run("Cancel")
+        except Exception:
+            pass
+
+
+def 서식통일_표본(시작, text):
+    """문두기호 문단 본문의 대표 글자모양과 본문 범위 (모양, 본문 시작, 본문 끝).
+
+    본문 첫 글자와 가운데 글자의 모양이 같을 때만 쓴다(한 문단 안에서 섞여 있으면
+    어느 쪽이 의도인지 알 수 없어 건너뜀).
+    """
+    body = (text or "").rstrip("\r\n")
+    offset = 문단_내어쓰기_기준_오프셋(body)
+    if offset is None or offset >= len(body) - 1:
+        return None
+
+    def 위치(i):
+        return (시작[0], 시작[1], 시작[2] + len(body[:i].encode("utf-16-le")) // 2)
+
+    첫글자 = _서식통일_글자모양(위치(offset))
+    가운데 = _서식통일_글자모양(위치(offset + (len(body) - offset) // 2))
+    if 첫글자 is None or 첫글자 != 가운데:
+        return None
+    return 첫글자, 위치(offset), 위치(len(body))
+
+
+def 서식통일_대표(모양들):
+    """모양 목록에서 대표 모양과 그 개수. 조건이 안 되면 (None, 개수)."""
+    if len(모양들) < 서식통일_최소문단수:
+        return None, 0
+    대표, 수 = Counter(모양들).most_common(1)[0]
+    if 수 / len(모양들) < 서식통일_최소비율:
+        return None, 수
+    return 대표, 수
+
+
+def 서식통일_전체_적용():
+    if 중단_요청됨():
+        return False
+    로그("서식통일 시작: 문두기호별로 문서 안에서 가장 많이 쓴 글꼴·크기·장평으로 맞춥니다")
+    표본 = {}
+    순회_시작()
+    while True:
+        if 중단_요청됨():
+            return False
+        hwp_run("MoveParaBegin")
+        pos = hwp.GetPos()
+        if pos[0] == 0 and 쪽범위_안인가(pos):
+            text = 현재문단_텍스트()
+            if text.strip() and 보고서_문단역할(text):
+                marker, _ = leading_marker(text)
+                결과 = 서식통일_표본(pos, text) if marker else None
+                if 결과:
+                    표본.setdefault(marker, []).append(결과 + (text,))
+            hwp.SetPos(*pos)
+        if not 범위_다음_문단으로_진행():
+            break
+    교정수 = 0
+    for marker, 항목들 in 표본.items():
+        대표, 수 = 서식통일_대표([모양 for 모양, *_ in 항목들])
+        if 대표 is None:
+            if len(항목들) >= 서식통일_최소문단수:
+                진단로그(f"[서식통일] '{marker}' 문단 {len(항목들)}개: 대표 스타일이 뚜렷하지 않아 건너뜀")
+            continue
+        글꼴, 크기, 장평 = 대표
+        바꾼수 = 0
+        for 모양, 시작, 끝, text in 항목들:
+            if 모양 == 대표 or 중단_요청됨():
+                continue
+            try:
+                단어모드_범위선택(시작, 끝)
+                문자모양_적용_현재선택(
+                    폰트=글꼴 if 모양[0] != 글꼴 else None,
+                    크기_pt=크기 / 100 if 모양[1] != 크기 else None,
+                    장평=장평 if 모양[2] != 장평 else None)
+                바꾼수 += 1
+                진단로그(f"[서식통일] {모양[0]} {모양[1] / 100:g}pt 장평 {모양[2]}% → "
+                         f"{글꼴} {크기 / 100:g}pt 장평 {장평}%: {text.strip()[:40]}")
+            finally:
+                hwp_run("Cancel")
+        교정수 += 바꾼수
+        로그(f"[서식통일] '{marker}' 문단 {len(항목들)}개: 대표 {글꼴} {크기 / 100:g}pt 장평 {장평}% "
+             f"({수}개) — {바꾼수}개 교정")
+    로그(f"서식통일 완료 (교정 {교정수}개 문단)")
+    return True
 
 
 def 표준서식_전체_적용():
@@ -3877,6 +4283,18 @@ def 괄호_텍스트_크기_축소_전체_적용():
 # ============================================================
 
 def 현재_페이지번호():
+    """캐럿이 있는 쪽의 실제 순서(1부터). 인쇄 쪽 번호가 아니다.
+
+    KeyIndicator()[3]은 인쇄되는 쪽 번호라 '새 번호로 시작'이 있는 문서에서는
+    서로 다른 쪽이 같은 번호를 갖는다(실측: 공고문 18쪽부터 1쪽으로 다시 시작해
+    마지막 쪽이 8쪽으로 보였고, 검수 표시는 13~17쪽). 쪽 수 맞춤·묶음 판정이
+    엉뚱한 쪽을 섞지 않도록 문서 안 실제 쪽 순서를 쓰고, 읽지 못할 때만
+    인쇄 쪽 번호로 대신한다.
+    """
+    try:
+        return int(hwp.XHwpDocuments.Active_XHwpDocument.XHwpDocumentInfo.CurrentPage) + 1
+    except Exception:
+        pass
     try:
         정보 = hwp.KeyIndicator()
         if 정보 and len(정보) >= 4:
@@ -3884,6 +4302,41 @@ def 현재_페이지번호():
     except Exception:
         pass
     return None
+
+# 저장 후 결과 검사가 끝난 규칙은 처리 중 기록을 대신한다. 처리 중 기록은
+# 뒤 단계에서 해결됐을 수도 있고, 같은 문제를 다른 이름으로 한 번 더 세게 된다.
+_처리중_기록_접두어 = {
+    'page_group': ('[문장 묶음 페이지 분리]', '[소제목 묶음 쪽 분리]'),
+    'word': ('[단어 중간 줄바꿈 미해결]', '[어절 줄분리]', '[단어 분리]',
+             '[붙임 괄호 분리]', '[괄호 안 공백 분리]'),
+}
+
+
+def 처리중_기록_대체(파일, 완료된_검사, 경계):
+    """검수_문제목록[:경계](저장 전 처리 중 기록) 가운데, 저장 후 검사를 마친
+    규칙의 기록을 지운다. 경계 뒤의 저장 후 검사 기록은 그대로 둔다.
+
+    단어 분리 기록은 본문·표 구분이 없으므로, 표·컨트롤 단어 검사가 필요한
+    작업이면 두 검사를 모두 마쳤을 때만 지운다.
+    """
+    global 검수_문제목록
+    접두어 = []
+    if 'page_group' in 완료된_검사:
+        접두어 += _처리중_기록_접두어['page_group']
+    컨트롤_필요 = (stage_enabled(선택_세부작업, 'control_spacing')
+                or stage_enabled(선택_세부작업, 'control_word_check'))
+    if 'word_check' in 완료된_검사 and (not 컨트롤_필요 or 'control_word_check' in 완료된_검사):
+        접두어 += _처리중_기록_접두어['word']
+    if not 접두어:
+        return 0
+    접두어 = tuple(접두어)
+    남김 = [item for index, item in enumerate(검수_문제목록)
+          if index >= 경계 or str(item.get('file')) != str(파일)
+          or not str(item.get('text', '')).startswith(접두어)]
+    지운수 = len(검수_문제목록) - len(남김)
+    검수_문제목록[:] = 남김
+    return 지운수
+
 
 def 검수_문제_기록(파일, text):
     global 검수_문제목록
@@ -4238,16 +4691,73 @@ def 등_어절인가(text):
     return bool(text) and bool(_등_어절.fullmatch(text))
 
 
+# 열거의 '단어 + 빈칸 + 숫자 + 쉼표'도 한 어절로 묶는다.
+# 예: '수원 2, 서울 4, 용인 1등으로 구성' → '수원 2,'와 '서울 4,'가 각각 한
+# 어절이므로 '수원 | 2,'로 갈라지면 단어 분리로 보고 자간을 조정한다.
+_숫자쉼표_어절 = re.compile(r"[0-9]+(?:\.[0-9]+)?[,，]")
+
+
+def 숫자쉼표_어절인가(text):
+    return bool(text) and bool(_숫자쉼표_어절.fullmatch(text))
+
+
+# 열거의 마지막 항목은 쉼표 없이 끝난다: '…, 서울 4, 용인 1등으로 구성'의
+# '용인 1등으로'. 숫자로 시작하고 쉼표로 끝나지 않는 어절이며, 바로 앞 항목이
+# '서울 4,'처럼 '숫자 + 쉼표'로 끝날 때만 묶는다('대회에서 1등으로'는 묶지 않음).
+_숫자끝_어절 = re.compile(r"[0-9]+(?:\.[0-9]+)?[^\s,，]*")
+_숫자쉼표_끝 = re.compile(r"[0-9]+(?:\.[0-9]+)?[,，]$")
+
+
+def 숫자끝_어절인가(text):
+    return (bool(text) and bool(_숫자끝_어절.fullmatch(text))
+            and not 숫자쉼표_어절인가(text))
+
+
+def _숫자쉼표_앞단어인가(text):
+    """'수원 2,'의 '수원'처럼 숫자 앞에 오는 단어. 숫자·쉼표로 끝나는 앞 항목
+    ('2,' 등)은 단어가 아니므로 '2, 3,'처럼 숫자끼리는 묶지 않는다."""
+    return bool(text) and not text[-1] in ',，' and any(ch.isalpha() for ch in text)
+
+
 def 어절_의미단위_범위(text):
-    """의미단위_범위에 '앞 어절 + 공백 + 등' 묶음을 더한 범위."""
+    """의미단위_범위에 '앞 어절 + 공백 + 등', '단어 + 공백 + 숫자,' 묶음을 더한 범위."""
     result = []
     for a, b in 의미단위_범위(text):
-        if (result and 등_어절인가(text[a:b]) and a >= 1 and text[a - 1] == ' '
-                and result[-1][1] == a - 1):
+        joined = result and a >= 1 and text[a - 1] == ' ' and result[-1][1] == a - 1
+        if joined and 등_어절인가(text[a:b]):
+            result[-1] = (result[-1][0], b)
+        elif (joined and 숫자쉼표_어절인가(text[a:b])
+                and _숫자쉼표_앞단어인가(text[result[-1][0]:result[-1][1]])):
+            result[-1] = (result[-1][0], b)
+        elif (joined and 숫자끝_어절인가(text[a:b]) and len(result) >= 2
+                and _숫자쉼표_앞단어인가(text[result[-1][0]:result[-1][1]])
+                and result[-2][1] + 1 == result[-1][0] and text[result[-2][1]] == ' '
+                and _숫자쉼표_끝.search(text[result[-2][0]:result[-2][1]])):
             result[-1] = (result[-1][0], b)
         else:
             result.append((a, b))
     return result
+
+
+def 앞어절_묶음_후속인가(text):
+    """앞 어절과 빈칸을 사이에 두고 한 어절로 묶일 수 있는 뒤 어절
+    ('등으로', '2,', 열거 마지막 항목의 '1등으로'). 실제로 묶이는지는
+    어절_의미단위_범위가 앞 문맥까지 보고 가린다."""
+    return 등_어절인가(text) or 숫자쉼표_어절인가(text) or 숫자끝_어절인가(text)
+
+
+def _왼쪽_어절_추가(before):
+    """before(경계에서 왼쪽으로 읽은 글자, 역순)에 빈칸 너머 앞 어절 하나를 더한다.
+    열거 마지막 항목('용인 1등으로')은 그 앞 항목('4,')을 보고 묶기 때문이다."""
+    if not before:
+        return before
+    gap, space = _단어모드_공백전까지(before[-1][0], True)
+    if gap is None or gap or space is None:
+        return before
+    previous, _ = _단어모드_공백전까지(space[0], True)
+    if previous:
+        return before + [space] + previous
+    return before
 
 
 def _단어모드_공백전까지(pos, 뒤로=False):
@@ -4272,11 +4782,12 @@ def 단어모드_분리정보(anchor):
     if not right or not right[2]:
         return None
     if any(c.isspace() for c in right[2]):
-        # 공백에서 줄이 바뀐 경우는 다음 어절이 '등'일 때만 분리 후보다.
+        # 공백에서 줄이 바뀐 경우는 다음 어절이 '등' 또는 '숫자,'일 때만
+        # 분리 후보다(실제로 묶이는지는 어절_의미단위_범위가 가린다).
         if right[2] != ' ':
             return None
         peek = 단어모드_한글자(right[1])
-        if not peek or peek[2] != '등':
+        if not peek or not (peek[2] == '등' or peek[2].isdigit()):
             return None
     _, next_end = 단어모드_줄범위(right[1])
     if next_end[2] <= boundary[2]:
@@ -4290,23 +4801,29 @@ def 단어모드_분리정보(anchor):
         return None
     if not before and not after:
         return None
-    # 경계가 걸친 어절이 '등' 어절이면 공백 앞 어절까지 묶는다.
+    # 경계가 걸친 어절이 '등'·'숫자,' 어절이면 공백 앞 어절까지 묶는다.
     현재어절 = ''.join(p[2] for p in reversed(before)) + ''.join(p[2] for p in after)
-    if stop_left is not None and 등_어절인가(현재어절):
+    if stop_left is not None and 앞어절_묶음_후속인가(현재어절):
         previous, _ = _단어모드_공백전까지(stop_left[0], True)
         if previous is None:
             return None
         if previous:
             before = before + [stop_left] + previous
-    # 경계가 걸친 어절 뒤에 '등' 어절이 이어지면 그 어절까지 묶는다.
-    elif stop_right is not None:
-        peek = 단어모드_한글자(stop_right[1])
-        if peek and peek[2] == '등':
-            following, _ = _단어모드_공백전까지(stop_right[1])
-            if following is None:
-                return None
-            if 등_어절인가(''.join(p[2] for p in following)):
-                after = after + [stop_right] + following
+    # 경계가 걸친 어절 뒤에 '등'·'숫자,' 어절이 이어지면 그 어절까지 묶는다.
+    뒤어절 = ''
+    if stop_left is None or not 앞어절_묶음_후속인가(현재어절):
+        if stop_right is not None:
+            peek = 단어모드_한글자(stop_right[1])
+            if peek and (peek[2] == '등' or peek[2].isdigit()):
+                following, _ = _단어모드_공백전까지(stop_right[1])
+                if following is None:
+                    return None
+                뒤어절 = ''.join(p[2] for p in following)
+                if 앞어절_묶음_후속인가(뒤어절):
+                    after = after + [stop_right] + following
+    # 열거 마지막 항목은 앞 항목('4,')까지 봐야 묶을지 정할 수 있다.
+    if 숫자끝_어절인가(현재어절) or 숫자끝_어절인가(뒤어절):
+        before = _왼쪽_어절_추가(before)
     parts = list(reversed(before)) + after
     text = ''.join(part[2] for part in parts)
     offsets = [0]
@@ -4323,6 +4840,22 @@ def 단어모드_분리정보(anchor):
     return None
 
 
+# 줄 첫머리에서 시작한 단어가 넘친 부분이 그 줄 글자 수의 이 비율을 넘으면
+# 자간·장평을 허용 범위까지 줄여도 한 줄에 넣을 수 없다(좁은 표 칸의 긴 합성어).
+칸폭초과_허용비율 = 0.2
+
+
+def 칸폭보다_긴_단어인가(info):
+    """단어모드_분리정보 결과가 '줄 첫머리에서 시작했는데도 넘치는 단어'인지.
+
+    실측: 공고문 표 칸 단어 분리 미해결 20건 중 13건이 줄 전체가 그 단어
+    하나였다(예: 5자 칸의 '질그랭이거|점센터'). 밀 곳도 당길 곳도 없어 어떤
+    조정으로도 풀 수 없으므로, 시도하지 않고 검수에서도 적용 제외로 적는다.
+    """
+    start, _, word_start, _, left, right = info
+    return word_start[2] <= start[2] and right > left * 칸폭초과_허용비율
+
+
 def 붙임의미단위_줄분리인가():
     original = hwp.GetPos()
     try:
@@ -4334,13 +4867,15 @@ def 붙임의미단위_줄분리인가():
         text = 현재선택영역_텍스트()
         return (bool(_기간_단위.search(text))
                 or any(ch in _단어_붙임표시 or ch in '(（' for ch in text)
-                or any(등_어절인가(word) for word in text.split(' ')[1:]))
+                or any(앞어절_묶음_후속인가(word) for word in text.split(' ')[1:]))
     finally:
         hwp_run('Cancel')
         hwp.SetPos(*original)
 
 
 _단어모드_자간필드 = tuple('Spacing' + name for name in
+    ('Hangul', 'Latin', 'Hanja', 'Japanese', 'Other', 'Symbol', 'User'))
+_단어모드_장평필드 = tuple('Ratio' + name for name in
     ('Hangul', 'Latin', 'Hanja', 'Japanese', 'Other', 'Symbol', 'User'))
 
 
@@ -4383,30 +4918,58 @@ def 자간조정_현재줄_본문선택():
     return True
 
 
-def 단어모드_자간보관(start, end):
-    """혼합 자간을 연속 구간별 보관. 실패 시 Undo 이력 대신 정확히 복원."""
+def _단어모드_다음위치(pos):
+    """pos 다음 글자 위치(같은 문단 안). 글자 내용은 읽지 않는다."""
+    hwp.SetPos(*pos)
+    hwp_run('MoveNextChar')
+    other = hwp.GetPos()
+    if other[:2] != pos[:2] or other == pos:
+        return None
+    return other
+
+
+def 단어모드_서식보관(start, end):
+    """자간과 장평을 한 번에 글자별로 읽어 (자간 runs, 장평 runs)로 보관한다.
+
+    실패 시 Undo 이력 대신 정확히 복원하기 위한 원래 값이다. 한글은 여러
+    글자를 선택했을 때 서식이 섞여 있으면 값을 믿을 수 없게 돌려주므로(실측)
+    글자마다 읽되, 보관에는 글자 내용이 필요 없어 위치만 옮긴다(한글 호출
+    약 40% 감소). 자간과 장평을 따로 읽던 두 번의 순회도 한 번으로 줄인다.
+    """
     start, end = 자간조정_본문범위(start, end)
-    runs = []
+    spacing_runs, ratio_runs = [], []
     pos = start
+
+    def 병합(runs, pos, nxt, values):
+        if runs and runs[-1][2] == values:
+            runs[-1] = (runs[-1][0], nxt, values)
+        else:
+            runs.append((pos, nxt, values))
+
     while pos[2] < end[2]:
         if 중단_요청됨():
             return None
-        part = 단어모드_한글자(pos)
-        if not part or part[1][2] > end[2]:
-            raise RuntimeError('자간 보관 중 문자 위치 확인 실패')
-        단어모드_범위선택(pos, part[1])
+        nxt = _단어모드_다음위치(pos)
+        if not nxt or nxt[2] > end[2]:
+            raise RuntimeError('서식 보관 중 문자 위치 확인 실패')
+        단어모드_범위선택(pos, nxt)
         pset = hwp.HParameterSet.HCharShape
         hwp.HAction.GetDefault('CharShape', pset.HSet)
-        values = tuple(int(getattr(pset, key)) for key in _단어모드_자간필드)
-        if any(v < -50 or v > 50 for v in values):
+        spacing = tuple(int(getattr(pset, key)) for key in _단어모드_자간필드)
+        if any(v < -50 or v > 50 for v in spacing):
             raise RuntimeError('허용 범위 밖의 원래 자간')
-        if runs and runs[-1][2] == values:
-            runs[-1] = (runs[-1][0], part[1], values)
-        else:
-            runs.append((pos, part[1], values))
-        pos = part[1]
+        ratio = tuple(int(getattr(pset, key)) for key in _단어모드_장평필드)
+        병합(spacing_runs, pos, nxt, spacing)
+        병합(ratio_runs, pos, nxt, ratio)
+        pos = nxt
     hwp_run('Cancel')
-    return runs
+    return spacing_runs, ratio_runs
+
+
+def 단어모드_자간보관(start, end):
+    """혼합 자간을 연속 구간별 보관. 실패 시 Undo 이력 대신 정확히 복원."""
+    보관 = 단어모드_서식보관(start, end)
+    return None if 보관 is None else 보관[0]
 
 
 def 단어모드_자간적용(runs, delta):
@@ -4421,32 +4984,10 @@ def 단어모드_자간적용(runs, delta):
     hwp_run('Cancel')
 
 
-_단어모드_장평필드 = tuple('Ratio' + name for name in
-    ('Hangul', 'Latin', 'Hanja', 'Japanese', 'Other', 'Symbol', 'User'))
-
-
 def 단어모드_장평보관(start, end):
-    """혼합 장평(글자 가로비율)을 연속 구간별 보관. 자간보관과 동일한 방식."""
-    start, end = 자간조정_본문범위(start, end)
-    runs = []
-    pos = start
-    while pos[2] < end[2]:
-        if 중단_요청됨():
-            return None
-        part = 단어모드_한글자(pos)
-        if not part or part[1][2] > end[2]:
-            raise RuntimeError('장평 보관 중 문자 위치 확인 실패')
-        단어모드_범위선택(pos, part[1])
-        pset = hwp.HParameterSet.HCharShape
-        hwp.HAction.GetDefault('CharShape', pset.HSet)
-        values = tuple(int(getattr(pset, key)) for key in _단어모드_장평필드)
-        if runs and runs[-1][2] == values:
-            runs[-1] = (runs[-1][0], part[1], values)
-        else:
-            runs.append((pos, part[1], values))
-        pos = part[1]
-    hwp_run('Cancel')
-    return runs
+    """혼합 장평(글자 가로비율)을 연속 구간별 보관."""
+    보관 = 단어모드_서식보관(start, end)
+    return None if 보관 is None else 보관[1]
 
 
 def 단어모드_장평적용(runs, delta):
@@ -4461,7 +5002,81 @@ def 단어모드_장평적용(runs, delta):
     hwp_run('Cancel')
 
 
-def 단어_장평_추가축소_시도(start, end, anchor, word_end, 최대시도):
+class _단계탐색_중단(Exception):
+    """단계 탐색 중 사용자가 작업을 중단했다."""
+
+
+# 자간·장평 단계 탐색에서 실제로 줄 배치를 다시 잰 횟수(작업 로그 통계용).
+단계탐색_통계 = {"탐색": 0, "측정": 0}
+
+
+def 최소_성공단계_탐색(최대, 적용후_확인, 상한먼저=False, 선형구간=8):
+    """1..최대 단계 중 성공하는 가장 작은 단계를 찾는다.
+
+    적용후_확인(step)은 step 단계를 문서에 적용하고 성공 여부를 돌려준다
+    (중단이면 None). 측정(줄 배치 다시 재기)이 비싸므로 상황별로 줄인다.
+
+    - 기본(성공이 흔하고 대개 작은 단계에서 성공하는 어절 분리): 선형구간
+      (8단계)까지는 한 단계씩 올려 예전과 똑같이 찾고, 그래도 안 되면 상한을
+      바로 확인한 뒤 그 사이를 이분 탐색한다. 실패 시 30번 대신 약 10번만 잰다.
+    - 상한먼저(실패가 흔한 다음 단어 당김·장평 축소): 상한에서도 안 되면 한
+      번만 재고 포기하고, 되면 한 단계씩 올려 가장 작은 단계를 찾는다.
+
+    반환: 성공 단계(그 단계가 적용된 상태) 또는 None(마지막으로 시도한
+    단계가 적용된 상태이므로 호출자가 원래 값으로 복원한다).
+    중단 시 _단계탐색_중단을 일으킨다.
+    """
+    if 최대 < 1:
+        return None
+    단계탐색_통계["탐색"] += 1
+    마지막 = [None]
+
+    def 확인(step):
+        if 중단_요청됨():
+            raise _단계탐색_중단
+        결과 = 적용후_확인(step)
+        if 결과 is None:
+            raise _단계탐색_중단
+        단계탐색_통계["측정"] += 1
+        마지막[0] = step
+        return bool(결과)
+
+    def 확정(step):
+        # 마지막으로 잰 단계가 아니면 다시 적용해 확인한다. 드문 비단조 배치로
+        # 실패하면 그 위 단계를 차례로 확인한다.
+        if 마지막[0] == step:
+            return step
+        while not 확인(step):
+            if step >= 최대:
+                return None
+            step += 1
+        return step
+
+    if 상한먼저:
+        if not 확인(최대):
+            return None
+        for step in range(1, 최대):
+            if 확인(step):
+                return step
+        return 확정(최대)
+
+    for step in range(1, min(선형구간, 최대) + 1):
+        if 확인(step):
+            return step
+    if 최대 <= 선형구간 or not 확인(최대):
+        return None
+    성공 = 최대
+    lo, hi = 선형구간 + 1, 최대 - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if 확인(mid):
+            성공, hi = mid, mid - 1
+        else:
+            lo = mid + 1
+    return 확정(성공)
+
+
+def 단어_장평_추가축소_시도(start, end, anchor, word_end, 최대시도, 보관=None):
     """자간만으로 안 줄어드는 긴 어절에 장평(글자 가로비율)을 추가로 줄여본다.
 
     자간을 허용 범위 끝까지 밀어붙이면 글자가 다닥다닥 붙어 보기 흉해
@@ -4470,9 +5085,13 @@ def 단어_장평_추가축소_시도(start, end, anchor, word_end, 최대시도
     다시 확인한다 — '자간 -4%, 장평 93%' 조합처럼, 자간을 극한까지
     밀어붙이는 대신 장평과 나눠 분담한다.
     """
-    spacing_runs = 단어모드_자간보관(start, end)
-    if spacing_runs is None:
+    # 보관: 호출자가 같은 구간을 이미 읽고 원래 값으로 되돌려 둔 (자간, 장평)
+    # runs. 넘겨받으면 같은 줄을 다시 글자별로 읽지 않는다.
+    if 보관 is None:
+        보관 = 단어모드_서식보관(start, end)
+    if 보관 is None:
         return False
+    spacing_runs, ratio_runs = 보관
     # 이 구간이 이전 단계·이전 회차에서 이미 일부 압축돼 있을 수 있다
     # (자간/장평은 회차 사이에 초기화되지 않는다). "이번에 -4%p까지"가
     # 아니라 "최종적으로 -4%p까지"가 되도록, 이미 줄어든 만큼을 빼고
@@ -4489,22 +5108,22 @@ def 단어_장평_추가축소_시도(start, end, anchor, word_end, 최대시도
         if 자간값:
             단어모드_자간적용(spacing_runs, 자간값)
             자간적용됨 = True
-        ratio_runs = 단어모드_장평보관(start, end)
-        if ratio_runs is None:
-            return False
         현재_최소장평 = min((v for _, _, vs in ratio_runs for v in vs), default=100)
         장평_바닥 = 100 - 단어_장평_추가축소_최대_단계
         여유_단계 = max(0, min(단어_장평_추가축소_최대_단계, 현재_최소장평 - 장평_바닥))
-        for step in range(1, 여유_단계 + 1):
-            if 중단_요청됨():
-                return False
+
+        def 장평_확인(step):
             단어모드_장평적용(ratio_runs, -step)
-            _, new_end = 단어모드_줄범위(anchor)
-            성공 = new_end[2] >= word_end[2]
-            if 성공:
-                진단로그(f"[단어 분리 보정] 자간 {자간값}%p + 장평 {현재_최소장평 - step}%로 해결")
-                break
-        if not 성공 and 여유_단계:
+            return 단어모드_줄범위(anchor)[1][2] >= word_end[2]
+
+        try:
+            단계 = 최소_성공단계_탐색(여유_단계, 장평_확인, 상한먼저=True)
+        except _단계탐색_중단:
+            return False
+        성공 = 단계 is not None
+        if 성공:
+            진단로그(f"[단어 분리 보정] 자간 {자간값}%p + 장평 {현재_최소장평 - 단계}%로 해결")
+        elif 여유_단계:
             단어모드_장평적용(ratio_runs, 0)
     finally:
         if not 성공 and 자간적용됨:
@@ -4551,9 +5170,10 @@ def 다음단어_당김_시도(anchor, 최대시도):
     if 다음단어_끝[2] - boundary[2] > 문장부호_2줄_기준글자수:
         return False
 
-    runs = 단어모드_자간보관(start, boundary)
-    if runs is None:
+    보관 = 단어모드_서식보관(start, boundary)
+    if 보관 is None:
         return False
+    runs = 보관[0]
     # 정상적인 단어 경계에서의 선택적 당김은 단어 분리 오류가 아니다.
     다음단어_통계['대상'] += 1
     success = False
@@ -4563,23 +5183,23 @@ def 다음단어_당김_시도(anchor, 최대시도):
     # 최대 10%p"가 아니라 "최종적으로 최대 10%p"가 되도록.
     현재_최소자간 = min((v for _, _, vs in runs for v in vs), default=0)
     자간_상한 = max(0, min(최대시도, 다음단어_당김_자간_최대_퍼센트 + 현재_최소자간))
+    # 자간은 -50%보다 작게 할 수 없다.
+    탐색_상한 = min(자간_상한, 50 + 현재_최소자간)
+
+    def 당김_확인(step):
+        nonlocal changed
+        changed = True
+        단어모드_자간적용(runs, -step)
+        return 단어모드_줄범위(anchor)[1][2] >= 다음단어_끝[2]
+
     try:
-        for step in range(1, 자간_상한 + 1):
-            if 중단_요청됨():
-                return False
-            delta = -step
-            if any(not -50 <= v + delta <= 50 for _, _, vs in runs for v in vs):
-                break
-            changed = True
-            단어모드_자간적용(runs, delta)
-            _, new_end = 단어모드_줄범위(anchor)
-            success = new_end[2] >= 다음단어_끝[2]
-            if success:
-                break
+        success = 최소_성공단계_탐색(탐색_상한, 당김_확인, 상한먼저=True) is not None
+    except _단계탐색_중단:
+        return False
     finally:
         if changed and not success:
             단어모드_자간적용(runs, 0)
-    if not success and 단어_장평_추가축소_시도(start, boundary, anchor, 다음단어_끝, 자간_상한):
+    if not success and 단어_장평_추가축소_시도(start, boundary, anchor, 다음단어_끝, 자간_상한, 보관=보관):
         success = True
     if success:
         다음단어_통계['적용'] += 1
@@ -4691,6 +5311,10 @@ def 단어중간_줄바꿈방지(최대시도):
                 failure_reason = "같은 경계 반복"
                 break
             seen.add(key)
+            if 칸폭보다_긴_단어인가(info):
+                진단로그(f"[단어 분리] {unit_text!r} {left}:{right}자: 줄 첫머리부터 넘치는 "
+                         f"칸 폭보다 긴 단어라 조정 제외")
+                return not 중단_요청됨()
             # 마지막 줄에 빈칸 포함 5자 미만이 남으면 무조건 앞줄로 당긴다.
             # 그 외에는 글자 수가 많은 쪽으로 붙인다(같으면 앞줄로 당김).
             # 예: '실|질적인'은 '실'이 있는 앞줄 자간을 넓혀 '실'을 다음 줄로
@@ -4707,29 +5331,34 @@ def 단어중간_줄바꿈방지(최대시도):
             방법 = ""
 
             def 앞줄로_당기기():
-                runs = 단어모드_자간보관(start, word_end)
-                if runs is None:
+                보관 = 단어모드_서식보관(start, word_end)
+                if 보관 is None:
                     return None
+                runs = 보관[0]
                 success = False
                 changed = False
+                # 자간은 -50%보다 작게 할 수 없다.
+                상한 = min(최대시도, 50 + min((v for _, _, vs in runs for v in vs), default=0))
+
+                def 당김_확인(step):
+                    nonlocal changed
+                    changed = True
+                    단어모드_자간적용(runs, -step)
+                    return 단어모드_줄범위(anchor)[1][2] >= word_end[2]
+
                 try:
-                    for step in range(1, 최대시도 + 1):
-                        if 중단_요청됨():
-                            return None
-                        if any(not -50 <= v - step <= 50 for _, _, vs in runs for v in vs):
-                            break
-                        changed = True
-                        단어모드_자간적용(runs, -step)
-                        _, new_end = 단어모드_줄범위(anchor)
-                        success = new_end[2] >= word_end[2]
-                        if success:
-                            return f"앞줄 자간 -{step}%로 당김"
+                    step = 최소_성공단계_탐색(상한, 당김_확인)
+                    success = step is not None
+                    if success:
+                        return f"앞줄 자간 -{step}%로 당김"
+                except _단계탐색_중단:
+                    return None
                 finally:
                     if changed and not success:
                         단어모드_자간적용(runs, 0)
                 # 자간만으로 안 되면 장평을 추가로 줄여 본다 — 사람이 수동으로
                 # 하듯 자간은 적당히만 남기고 장평과 나눠 분담한다.
-                if 단어_장평_추가축소_시도(start, word_end, anchor, word_end, 최대시도):
+                if 단어_장평_추가축소_시도(start, word_end, anchor, word_end, 최대시도, 보관=보관):
                     return "앞줄 자간+장평 축소로 당김"
                 return ""
 
@@ -4743,22 +5372,26 @@ def 단어중간_줄바꿈방지(최대시도):
                     return None
                 success = False
                 changed = False
+                # 자간은 +50%보다 크게 할 수 없다.
+                상한 = min(최대시도, 50 - max((v for _, _, vs in push_runs for v in vs), default=0))
+
+                def 밀기_확인(push_step):
+                    nonlocal changed
+                    changed = True
+                    단어모드_자간적용(push_runs, push_step)
+                    _, previous_end = 단어모드_줄범위(anchor)
+                    next_start, next_end = 단어모드_줄범위(word_start)
+                    return (previous_end[2] <= word_start[2]
+                            and next_start[2] <= word_start[2]
+                            and next_end[2] >= word_end[2])
+
                 try:
-                    for push_step in range(1, 최대시도 + 1):
-                        if 중단_요청됨():
-                            return None
-                        if any(not -50 <= v + push_step <= 50
-                               for _, _, vs in push_runs for v in vs):
-                            break
-                        changed = True
-                        단어모드_자간적용(push_runs, push_step)
-                        _, previous_end = 단어모드_줄범위(anchor)
-                        next_start, next_end = 단어모드_줄범위(word_start)
-                        success = (previous_end[2] <= word_start[2]
-                                   and next_start[2] <= word_start[2]
-                                   and next_end[2] >= word_end[2])
-                        if success:
-                            return f"앞 구간 자간 +{push_step}%로 어절 전체를 다음 줄로 밈"
+                    push_step = 최소_성공단계_탐색(상한, 밀기_확인)
+                    success = push_step is not None
+                    if success:
+                        return f"앞 구간 자간 +{push_step}%로 어절 전체를 다음 줄로 밈"
+                except _단계탐색_중단:
+                    return None
                 finally:
                     if changed and not success:
                         단어모드_자간적용(push_runs, 0)
@@ -4768,7 +5401,15 @@ def 단어중간_줄바꿈방지(최대시도):
             # 보완해 어절이 갈라진 채 남지 않게 한다.
             시도순서 = (앞줄로_당기기, 다음줄로_밀기) if shrink else (다음줄로_밀기, 앞줄로_당기기)
             for 시도 in 시도순서:
-                결과 = 시도()
+                try:
+                    결과 = 시도()
+                except RuntimeError as e:
+                    # 서식 보관(읽기 전용) 단계에서 글자 위치를 확인하지 못하면
+                    # 이 방향만 실패로 보고 반대 방향·다음 줄로 넘어간다. 예외를
+                    # 올려 보내면 문서 전체 처리가 중단되고 결과도 저장되지
+                    # 않았다(실측: 보도자료 '건강을' 위치에서 중단).
+                    진단로그(f"[단어 중간 줄바꿈 방지] {unit_text!r} 서식 확인 실패로 이 방향 건너뜀: {e}")
+                    결과 = ""
                 if 결과 is None:
                     return False
                 if 결과:
@@ -5306,6 +5947,8 @@ def 보고서_단어분리_최종검사(컨트롤=False):
     original = hwp.GetPos()
     checked = 0
     issues = []
+    # 줄 첫머리부터 넘치는 칸 폭보다 긴 단어는 문제 대신 적용 제외로 적는다.
+    exempt = []
     areas = []
     try:
         if 컨트롤:
@@ -5317,7 +5960,7 @@ def 보고서_단어분리_최종검사(컨트롤=False):
                 if hwp.GetPos()[0] != area:
                     break
                 if ((not 쪽범위_사용중() or area in 쪽범위_컨트롤영역)
-                        and not 표셀_자간_제외인가()):
+                        and not 표셀_자간_제외인가() and not 숫자_표칸인가()):
                     areas.append(area)
                 area += 1
         else:
@@ -5334,7 +5977,15 @@ def 보고서_단어분리_최종검사(컨트롤=False):
                 if pos[0] != area or (area == 0 and 쪽범위_끝지남(pos)):
                     break
                 if pos in seen:
-                    raise RuntimeError(f'단어 검수 순회 정체: {pos}')
+                    # 문단 앞 컨트롤 뒤 등에서 MoveLineEnd가 제자리로 돌아오면 같은
+                    # 위치를 다시 밟는다. 검사 전체를 실패시키지 말고 다음 문단으로
+                    # 넘어간다(실측: 보도자료 (0, 25, 9)에서 검사 중단).
+                    진단로그(f'[단어 검수] 같은 위치 반복 {pos}: 다음 문단으로 넘어감')
+                    hwp_run('MoveNextParaBegin')
+                    moved = tuple(hwp.GetPos())
+                    if moved in seen or moved[:2] == pos[:2]:
+                        break
+                    continue
                 seen.add(pos)
                 hwp_run('MoveLineEnd')
                 boundary = tuple(hwp.GetPos())
@@ -5346,7 +5997,14 @@ def 보고서_단어분리_최종검사(컨트롤=False):
                 if boundary[2] < end[2]:
                     checked += 1
                     info = 단어모드_분리정보(pos)
-                    if info:
+                    if info and 칸폭보다_긴_단어인가(info):
+                        단어모드_범위선택(info[2], info[3])
+                        word = 현재선택영역_텍스트()
+                        hwp_run('Cancel')
+                        exempt.append({'text': f'[칸 폭보다 긴 단어] {word!r}',
+                                       'page': page, 'position': pos})
+                        hwp.SetPos(*pos)
+                    elif info:
                         단어모드_범위선택(info[2], info[3])
                         word = 현재선택영역_텍스트()
                         hwp_run('Cancel')
@@ -5359,7 +6017,8 @@ def 보고서_단어분리_최종검사(컨트롤=False):
                 if tuple(hwp.GetPos()) == boundary:
                     break
         return {'status': 'failed' if issues else 'passed', 'checked': checked,
-                'measurement': '화면줄 경계', 'areas': areas, 'issues': issues}
+                'measurement': '화면줄 경계', 'areas': areas, 'issues': issues,
+                'exempt': exempt}
     finally:
         hwp_run('Cancel')
         hwp.SetPos(*original)
@@ -5370,6 +6029,8 @@ def 보고서_페이지배치_최종검사():
     original = hwp.GetPos()
     checked = 0
     issues = []
+    # 한 쪽에 다 들어갈 수 없는 묶음은 규칙 위반이 아니라 적용 제외로 따로 적는다.
+    exempt = []
     try:
         순회_시작()
         while True:
@@ -5385,7 +6046,10 @@ def 보고서_페이지배치_최종검사():
                 if not counts:
                     raise RuntimeError('최종 페이지 검사의 화면줄 측정 실패')
                 checked += 1
-                if len(counts) > 1:
+                if len(counts) > 1 and 쪽보다_긴_묶음인가(group_target[0], counts):
+                    exempt.append({'text': f'[한 쪽보다 긴 묶음] {text.strip()[:80]}',
+                                   'pages': sorted(counts), 'paragraph': pos[1]})
+                elif len(counts) > 1:
                     message = f'[소제목 묶음 쪽 분리] {text.strip()[:80]}'
                     issues.append({'text': message, 'pages': sorted(counts), 'paragraph': pos[1]})
                     검수_문제_기록(현재_처리파일, message)
@@ -5399,7 +6063,10 @@ def 보고서_페이지배치_최종검사():
                 if not counts:
                     raise RuntimeError('최종 페이지 검사의 화면줄 측정 실패')
                 checked += 1
-                if counts and len(counts) > 1:
+                if len(counts) > 1 and 쪽보다_긴_묶음인가(paragraphs, counts):
+                    exempt.append({'text': f'[한 쪽보다 긴 묶음] {text.strip()[:80]}',
+                                   'pages': sorted(counts), 'paragraph': pos[1]})
+                elif counts and len(counts) > 1:
                     kind = ('상위·하위 문단 묶음 분리' if len(paragraphs) > 1
                             else '문단 내부 페이지 분리')
                     message = f'[{kind}] {text.strip()[:80]}'
@@ -5409,7 +6076,7 @@ def 보고서_페이지배치_최종검사():
             if not 범위_다음_문단으로_진행():
                 break
         return {'status': 'passed' if not issues else 'failed',
-                'checked': checked, 'issues': issues}
+                'checked': checked, 'issues': issues, 'exempt': exempt}
     finally:
         hwp.SetPos(*original)
 
@@ -5441,6 +6108,95 @@ def 보고서_묶음_쪽별줄수(문단들):
                     raise RuntimeError('묶음의 다음 화면줄 이동 실패')
         return counts
     finally:
+        hwp.SetPos(*original)
+
+
+# 줄간격으로 옮기지 못한 묶음을 '문단 앞에서 쪽 나눔'으로 다음 쪽에 보낼 때,
+# 앞쪽에 남는 빈 공간이 한 쪽 줄 수의 이 비율 이하일 때만 쪽을 나눈다.
+쪽나눔_최대_앞쪽비율 = 0.5
+
+
+def 쪽_본문줄수(위치):
+    """위치가 있는 쪽의 본문 화면줄 수(그 쪽에 들어가는 줄 수의 근사값)."""
+    original = hwp.GetPos()
+    try:
+        hwp.SetPos(*위치)
+        page = 현재_페이지번호()
+        hwp_run('MovePageBegin')
+        count = 0
+        while True:
+            if 중단_요청됨():
+                return None
+            hwp_run('MoveLineEnd')
+            line_end = hwp.GetPos()
+            if line_end[0] != 0 or 현재_페이지번호() != page:
+                break
+            count += 1
+            hwp_run('MoveNextChar')
+            if hwp.GetPos() == line_end:
+                break
+        return count
+    finally:
+        hwp.SetPos(*original)
+
+
+def 쪽첫줄_시작인가(시작위치):
+    """묶음 첫 문단이 쪽의 첫 줄에서 시작하는지."""
+    original = hwp.GetPos()
+    try:
+        hwp.SetPos(*시작위치)
+        hwp_run('MovePageBegin')
+        return tuple(hwp.GetPos()) == tuple(시작위치)
+    finally:
+        hwp.SetPos(*original)
+
+
+def 쪽보다_긴_묶음인가(문단들, counts):
+    """한 쪽에 다 들어갈 수 없는 묶음이면 True. 쪽 배치 규칙을 적용하지 않는다.
+
+    쪽 첫 줄에서 시작하는데도 쪽을 넘거나, 전체 줄 수가 앞쪽(꽉 찬 쪽)의 본문
+    줄 수보다 많으면 어떤 배치로도 한 쪽에 모을 수 없다(실측: 34줄 묶음을
+    줄간격으로 옮기려다 실패하고 미해결로 남음).
+    """
+    if not counts or len(counts) < 2:
+        return False
+    if 쪽첫줄_시작인가(문단들[0][0]):
+        return True
+    capacity = 쪽_본문줄수(문단들[0][0])
+    return bool(capacity) and sum(counts.values()) > capacity
+
+
+def 쪽나눔_설정(위치, 켜기):
+    hwp.SetPos(*위치)
+    act = hwp.CreateAction('ParagraphShape')
+    pset = act.CreateSet()
+    pset.SetItem('PagebreakBefore', 1 if 켜기 else 0)
+    if act.Execute(pset) is False:
+        raise RuntimeError('문단 앞 쪽 나눔 설정 실패')
+
+
+def _묶음_쪽나눔_이동(시작위치, 문단들, counts, summary):
+    """줄간격으로 옮기지 못한 묶음을 '문단 앞에서 쪽 나눔'으로 다음 쪽에 보낸다.
+
+    앞쪽에 남은 줄이 한 쪽의 쪽나눔_최대_앞쪽비율 이하일 때만 한다(큰 빈 공간
+    방지). 옮긴 뒤에도 쪽을 넘으면 되돌린다. 성공 True.
+    """
+    pages = sorted(counts)
+    capacity = 쪽_본문줄수(시작위치)
+    if not capacity or counts[pages[0]] > capacity * 쪽나눔_최대_앞쪽비율:
+        return False
+    original = hwp.GetPos()
+    try:
+        쪽나눔_설정(시작위치, True)
+        new_counts = 보고서_묶음_쪽별줄수(문단들)
+        if new_counts and len(new_counts) == 1:
+            로그(f'문장 묶음 쪽 나눔으로 다음 쪽 배치: {summary} '
+                 f'(앞쪽 {counts[pages[0]]}줄/쪽당 약 {capacity}줄)')
+            return True
+        쪽나눔_설정(시작위치, False)
+        return False
+    finally:
+        hwp_run('Cancel')
         hwp.SetPos(*original)
 
 
@@ -5748,6 +6504,10 @@ def 소제목묶음_같은쪽_시도(시작위치, text):
         return '처리', group
     if len(pages) != 2 or pages[1] != pages[0] + 1:
         return '단위별', group
+    if 쪽보다_긴_묶음인가(group, counts):
+        진단로그(f'[쪽 맞춤 묶음] 한 쪽보다 긴 묶음(총 {sum(counts.values())}줄): 묶음 규칙 제외, '
+                 f'ㅇ 단위별 배치로 진행 / {summary}')
+        return '단위별', group
     unit_pages = []
     for unit in units:
         page = 문단_첫줄_쪽(group[unit[0]][0])
@@ -5762,6 +6522,9 @@ def 소제목묶음_같은쪽_시도(시작위치, text):
     if result is None:
         return None
     if result == '성공':
+        세트문장_통계['성공'] += 1
+        return '처리', group
+    if result == '실패' and _묶음_쪽나눔_이동(시작위치, group, counts, summary):
         세트문장_통계['성공'] += 1
         return '처리', group
     if result == '실패':
@@ -5794,6 +6557,9 @@ def 세트문장_같은쪽_시도(시작위치, text):
         if len(pages) > 1:
             검수_문제_기록(현재_처리파일, f'[문장 묶음 페이지 분리] {summary}')
         return not 중단_요청됨()
+    if 쪽보다_긴_묶음인가(paragraphs, counts):
+        진단로그(f'[문장 묶음] 한 쪽보다 긴 묶음(총 {sum(counts.values())}줄): 쪽 배치 제외 / {summary}')
+        return not 중단_요청됨()
     세트문장_통계['대상'] += 1
     # 쪽별 줄 수로 정한 방향을 먼저 시도하고, 안 되면 반대 방향으로 보완한다.
     # 예: 앞쪽 4줄/뒤쪽 1줄이지만 줄간격이 이미 최소(160%)라 당길 수
@@ -5802,6 +6568,8 @@ def 세트문장_같은쪽_시도(시작위치, text):
                              not 보고서_압축조건(counts), summary)
     if result is None:
         return False
+    if result == '실패' and _묶음_쪽나눔_이동(시작위치, paragraphs, counts, summary):
+        result = '성공'
     if result == '성공':
         세트문장_통계['성공'] += 1
     elif result == '실패':
@@ -5905,11 +6673,25 @@ def 마지막쪽_화면줄수():
             pass
 
 
-def 구조문단_아래간격_일괄조정(delta_pt, 최소쪽=None):
+def 문단_위간격_pt_현재문단():
+    """현재 캐럿이 있는 문단의 '문단 위 간격' 값을 pt로 읽는다."""
+    if hwp is None:
+        return None
+    try:
+        return HwpUnit_pt(hwp.ParaShape.Item("PrevSpacing"))
+    except Exception as e:
+        로그(f"문단 위 간격 읽기 실패(무시): {e}")
+        return None
+
+
+def 구조문단_간격_일괄조정(delta_pt, 최소쪽=None, 위간격=False, 원래값=None):
     """문서 전체(본문 리스트만)에서 항목기호(□/ㅇ/-/*/※/• 등)로 시작하는
-    문단의 '문단 아래 간격'을 delta_pt만큼 조정한다(0pt 아래로는 내려가지
-    않음). 본문 줄간격과 '문단 위 간격'(표준서식 단계별 리듬)은 건드리지
-    않는다. 실제로 값이 바뀐 문단 수를 반환한다.
+    문단의 '문단 아래 간격'(위간격이면 '문단 위 간격')을 delta_pt만큼
+    조정한다(0pt 아래로는 내려가지 않음). 본문 줄간격은 건드리지 않는다.
+    실제로 값이 바뀐 문단 수를 반환한다.
+
+    원래값(dict)을 주면 처음 바꾸는 문단의 원래 pt를 (리스트, 문단) 번호로
+    기록해 구조문단_간격_복원으로 되돌릴 수 있게 한다.
 
     최소쪽을 주면 그 이전 쪽의 문단은 손대지 않는다 — 페이지 수 맞춤은
     항상 마지막 몇 쪽만 조정하면 충분한데, 문단마다 현재문단_텍스트()를
@@ -5919,6 +6701,8 @@ def 구조문단_아래간격_일괄조정(delta_pt, 최소쪽=None):
     """
     if hwp is None or 중단_요청됨():
         return 0
+    읽기 = 문단_위간격_pt_현재문단 if 위간격 else 문단_아래간격_pt_현재문단
+    쓰기 = 문단_위간격_적용_현재선택 if 위간격 else 문단_아래간격_적용_현재선택
     원위치 = hwp.GetPos()
     순회_시작()
     적용수 = 0
@@ -5933,13 +6717,15 @@ def 구조문단_아래간격_일괄조정(delta_pt, 최소쪽=None):
                 if 최소쪽 is None or 쪽번호 is None or 쪽번호 >= 최소쪽:
                     text = 현재문단_텍스트()
                     if paragraph_level(text) is not None:
-                        현재값 = 문단_아래간격_pt_현재문단()
+                        현재값 = 읽기()
                         if 현재값 is not None:
                             새값 = max(0.0, round(현재값 + delta_pt, 1))
                             if abs(새값 - 현재값) >= 0.05:
+                                if 원래값 is not None:
+                                    원래값.setdefault(tuple(hwp.GetPos()[:2]), 현재값)
                                 hwp_run('MoveParaBegin')
                                 hwp_run('MoveSelParaEnd')
-                                문단_아래간격_적용_현재선택(새값)
+                                쓰기(새값)
                                 hwp_run('Cancel')
                                 적용수 += 1
             if not 범위_다음_문단으로_진행():
@@ -5958,44 +6744,172 @@ def 구조문단_아래간격_일괄조정(delta_pt, 최소쪽=None):
     return 적용수
 
 
-def 보고서_페이지수_맞춤_시도(목표_페이지수):
-    """본문 줄간격은 그대로 둔 채 항목기호 문단의 '문단 아래 간격'만
-    1pt씩 줄여 실제 페이지 수를 목표에 맞춘다.
+def 구조문단_아래간격_일괄조정(delta_pt, 최소쪽=None):
+    return 구조문단_간격_일괄조정(delta_pt, 최소쪽=최소쪽)
 
-    사용자가 Alt+T로 문단 아래 여백을 pt 단위로 조금씩 줄이며 페이지
-    수를 눈으로 확인하는 시행착오를 그대로 자동화한 것 — 줄 높이를
-    직접 계산하지 않고 매 단계 실제 페이지 수를 다시 측정한다.
-    페이지맞춤_최대_pt까지 줄여도 목표에 못 미치면 더 손대지 않고
-    멈춘다(본문 내용을 강제로 줄이거나 지우지 않음 — 그럴 때는 수동으로
-    문구를 다듬어야 한다).
+
+def 구조문단_간격_복원(원래값, 위간격=False):
+    """구조문단_간격_일괄조정이 기록한 원래 간격으로 되돌린다."""
+    if hwp is None or not 원래값:
+        return 0
+    쓰기 = 문단_위간격_적용_현재선택 if 위간격 else 문단_아래간격_적용_현재선택
+    원위치 = hwp.GetPos()
+    복원수 = 0
+    try:
+        for (list_id, para_id), 값 in 원래값.items():
+            try:
+                hwp.SetPos(list_id, para_id, 0)
+                hwp_run('MoveParaBegin')
+                hwp_run('MoveSelParaEnd')
+                쓰기(값)
+                hwp_run('Cancel')
+                복원수 += 1
+            except Exception as e:
+                로그(f"문단 간격 복원 실패(무시): {e}")
+    finally:
+        try:
+            hwp.SetPos(*원위치)
+        except Exception:
+            pass
+    return 복원수
+
+
+# 목표 쪽 수에 닿은 뒤 묶음이 쪽 경계에 걸려 있으면 몇 단계까지 더 줄여 볼지.
+페이지맞춤_묶음확인_추가단계 = 4
+# 마지막 페이지 수 맞춤이 묶음 규칙까지 지키며 끝났는지(쪽 배치 재실행 생략용).
+쪽맞춤_묶음_확인됨 = False
+# 마지막 페이지 수 맞춤이 '걸린 묶음은 다음 쪽으로 옮긴다'로 끝났는지. 이때는
+# 쪽 배치가 묶음을 옮겨 마지막 쪽이 짧아져도 다시 줄이지 않는다(사용자 결정).
+쪽맞춤_묶음이동_결정 = False
+
+
+def 쪽맞춤_묶음분리_있음(최소쪽=None):
+    """쪽 배치 규칙을 어기고 쪽 경계에 걸린 묶음이 있는지 읽기 전용으로 본다.
+
+    최종 쪽 배치 검사와 같은 기준이다: 논리단위 5개 이하 □ 묶음은 묶음
+    전체, 그 밖에는 ㅇ 단위(ㅇ와 -·*)와 □+첫 ㅇ 단위. 처음 발견하면 멈춘다.
+
+    최소쪽을 주면 (최소쪽-1)쪽보다 앞에서 시작하는 묶음은 보지 않는다.
+    페이지 수 맞춤은 최소쪽부터만 간격을 바꾸므로 그 앞의 쪽 나눔은 그대로다.
+    앞쪽에 원래부터 풀 수 없는 긴 묶음이 걸려 있으면 매 단계 '걸림'으로 판정돼
+    헛되이 더 줄였다(실측: 10쪽 회의자료에서 단계마다 약 30초).
     """
+    original = hwp.GetPos()
+    try:
+        순회_시작()
+        while True:
+            if 중단_요청됨():
+                return False
+            pos = hwp.GetPos()
+            쪽 = 현재_페이지번호() if (최소쪽 and pos[0] == 0) else None
+            if pos[0] == 0 and (쪽 is None or 쪽 >= 최소쪽 - 1):
+                text = 현재문단_텍스트()
+                role = 보고서_문단역할(text)
+                if role in ('소제목', '본문', '내용', '부연설명'):
+                    target = 소제목묶음_쪽맞춤_대상(pos) if role == '소제목' else None
+                    paragraphs = target[0] if target else 보고서_본문묶음_수집(pos)
+                    if paragraphs and all(쪽범위_안인가(p[0]) for p in paragraphs):
+                        counts = 보고서_묶음_쪽별줄수(paragraphs)
+                        if (counts and len(counts) > 1
+                                and not 쪽보다_긴_묶음인가(paragraphs, counts)):
+                            진단로그(f'[쪽 수 맞춤] 쪽 경계에 걸린 묶음: {text.strip()[:40]}')
+                            return True
+                hwp.SetPos(*pos)
+            if not 범위_다음_문단으로_진행():
+                return False
+    finally:
+        hwp.SetPos(*original)
+
+
+def 보고서_페이지수_맞춤_시도(목표_페이지수):
+    """본문 줄간격은 그대로 둔 채 항목기호 문단의 간격만 1pt씩 줄여 실제
+    페이지 수를 목표에 맞춘다.
+
+    먼저 '문단 아래 간격'을 줄이고, 그래도 안 되면(또는 줄일 아래 간격이
+    없으면) '문단 위 간격'을 줄인다. 표준서식은 항목 사이 간격을 문단 위
+    여백으로 주고 빈 줄도 지우므로, 아래 간격만으로는 줄일 여지가 없는
+    경우가 많다. 각각 페이지맞춤_최대_pt까지만 줄이며, 매 단계 실제 페이지
+    수를 다시 잰다.
+
+    묶음 규칙도 확인한다. 목표 쪽 수에 닿았을 때 쪽 경계에 걸린 묶음이
+    없으면 그대로 끝낸다. 걸린 묶음이 있으면 몇 단계 더 줄여 보고, 끝내
+    둘 다 만족하지 못하면 처음 목표에 닿았던 단계로 되돌려 둔다 — 그 뒤
+    쪽 배치가 걸린 묶음 전체를 다음 쪽으로 옮긴다(사용자 결정: 마지막 쪽에
+    본문 1줄만 남기는 것보다 묶음 전체를 옮기는 편을 택함).
+    목표 쪽 수에 한 번도 닿지 못하면 바꾼 간격을 모두 원래 값으로 되돌린다.
+    """
+    global 쪽맞춤_묶음_확인됨, 쪽맞춤_묶음이동_결정
+    쪽맞춤_묶음_확인됨 = False
+    쪽맞춤_묶음이동_결정 = False
     if hwp is None or not 목표_페이지수 or 목표_페이지수 <= 0:
         return False
     최대반복 = max(1, int(round(페이지맞춤_최대_pt / 페이지맞춤_스텝_pt)))
     최소쪽 = max(1, 목표_페이지수 - 페이지맞춤_뒤쪽범위_쪽수)
     로그(
-        f"페이지 수 맞춤 시도: 목표 {목표_페이지수}쪽 (문단 아래 간격 최대 "
-        f"{페이지맞춤_최대_pt:g}pt 축소, {최소쪽}쪽부터만 검사)"
+        f"페이지 수 맞춤 시도: 목표 {목표_페이지수}쪽 (문단 아래·위 간격 각각 최대 "
+        f"{페이지맞춤_최대_pt:g}pt 축소, {최소쪽}쪽부터만 검사, 묶음 규칙 확인)"
     )
-    for 회 in range(1, 최대반복 + 1):
-        if 중단_요청됨():
-            return False
-        조정수 = 구조문단_아래간격_일괄조정(-페이지맞춤_스텝_pt, 최소쪽=최소쪽)
-        if 조정수 == 0:
-            로그("페이지 수 맞춤 중단: 더 줄일 항목기호 문단이 없음")
-            return False
-        마지막쪽, _ = 마지막쪽_화면줄수()
-        if 마지막쪽 is None:
-            로그("페이지 수 맞춤 중단: 쪽 번호 확인 실패")
-            return False
-        if 마지막쪽 <= 목표_페이지수:
-            로그(f"페이지 수 맞춤 완료: {회}단계({회 * 페이지맞춤_스텝_pt:g}pt)만에 {목표_페이지수}쪽 달성")
-            return True
-    로그(
-        f"페이지 수 맞춤 실패: 문단 아래 간격을 {페이지맞춤_최대_pt:g}pt까지 줄였지만 "
-        f"목표({목표_페이지수}쪽) 미달 — 본문 내용을 줄여야 할 수 있음"
-    )
-    return False
+    원래값 = {False: {}, True: {}}
+    적용기록 = []          # 적용한 단계 순서(위간격 여부) — 되돌린 뒤 다시 적용할 때 쓴다
+    첫_도달 = None         # 처음 목표 쪽 수에 닿았을 때의 적용기록 길이
+    추가단계 = 0
+
+    def 원래대로():
+        return (구조문단_간격_복원(원래값[True], 위간격=True)
+                + 구조문단_간격_복원(원래값[False]))
+
+    for 위간격 in (False, True):
+        이름 = "문단 위 간격" if 위간격 else "문단 아래 간격"
+        for 회 in range(1, 최대반복 + 1):
+            if 중단_요청됨():
+                return False
+            조정수 = 구조문단_간격_일괄조정(
+                -페이지맞춤_스텝_pt, 최소쪽=최소쪽, 위간격=위간격, 원래값=원래값[위간격])
+            if 조정수 == 0:
+                로그(f"페이지 수 맞춤: 더 줄일 {이름}이 있는 항목기호 문단이 없음")
+                break
+            적용기록.append(위간격)
+            마지막쪽, _ = 마지막쪽_화면줄수()
+            if 마지막쪽 is None:
+                로그("페이지 수 맞춤 중단: 쪽 번호 확인 실패")
+                break
+            if 마지막쪽 > 목표_페이지수:
+                continue
+            if not 쪽맞춤_묶음분리_있음(최소쪽=최소쪽):
+                쪽맞춤_묶음_확인됨 = True
+                로그(f"페이지 수 맞춤 완료: {이름} {회}단계({회 * 페이지맞춤_스텝_pt:g}pt) 축소로 "
+                     f"{목표_페이지수}쪽 달성, 쪽 경계에 걸린 묶음 없음")
+                return True
+            if 첫_도달 is None:
+                첫_도달 = len(적용기록)
+                로그(f"페이지 수 맞춤: {목표_페이지수}쪽에 닿았지만 쪽 경계에 걸린 묶음이 있어 "
+                     f"최대 {페이지맞춤_묶음확인_추가단계}단계 더 줄여 봄")
+            else:
+                추가단계 += 1
+            if 추가단계 >= 페이지맞춤_묶음확인_추가단계:
+                break
+        else:
+            continue
+        if 첫_도달 is not None and 추가단계 >= 페이지맞춤_묶음확인_추가단계:
+            break
+
+    if 첫_도달 is None:
+        복원수 = 원래대로()
+        로그(
+            f"페이지 수 맞춤 실패: 문단 아래·위 간격을 {페이지맞춤_최대_pt:g}pt까지 줄여도 "
+            f"목표({목표_페이지수}쪽) 미달 — 바꾼 간격 {복원수}곳을 원래 값으로 되돌림"
+        )
+        return False
+
+    # 묶음 규칙까지 지키는 단계는 없었다. 처음 목표에 닿았던 단계로 되돌려 두면
+    # 쪽 배치가 걸린 묶음 전체를 다음 쪽으로 옮긴다.
+    원래대로()
+    for 위간격 in 적용기록[:첫_도달]:
+        구조문단_간격_일괄조정(-페이지맞춤_스텝_pt, 최소쪽=최소쪽, 위간격=위간격)
+    쪽맞춤_묶음이동_결정 = True
+    로그(f"페이지 수 맞춤: 묶음 규칙을 함께 지키는 단계가 없어 처음 {목표_페이지수}쪽에 닿은 "
+         f"단계({첫_도달}pt)로 두고, 걸린 묶음은 쪽 배치에서 다음 쪽으로 옮김")
+    return True
 
 
 def 보고서_페이지수_맞춤_전체_적용():
@@ -6008,6 +6922,10 @@ def 보고서_페이지수_맞춤_전체_적용():
     않는다. 실패해도 문서 자체는 항상 그대로 저장 가능한 상태로
     남는다(마지막 시도 이후 값이 남아있을 뿐, 구조를 깨지 않음).
     """
+    global 쪽맞춤_묶음_확인됨, 쪽맞춤_묶음이동_결정
+    # 여러 문서를 이어 처리할 때 앞 문서의 판단이 남지 않도록 매번 지운다.
+    쪽맞춤_묶음_확인됨 = False
+    쪽맞춤_묶음이동_결정 = False
     if not 페이지맞춤_문단간격_사용:
         return True
     if 중단_요청됨():
@@ -6816,13 +7734,68 @@ def 현재_셀_행번호():
 def 현재_한칸표인가():
     return hwp is not None and hwp.GetPos()[0] in 한칸표_보호영역
 
+def 현재_표_키():
+    """캐럿이 있는 칸을 담은 표 컨트롤의 고유 키(앵커 위치). 표가 아니면 None.
+
+    예외가 나면 False(판정 불가)를 돌려 호출자가 예전 방식으로 대신하게 한다.
+    """
+    try:
+        ctrl = hwp.ParentCtrl
+        if ctrl is None or ctrl.CtrlID != 'tbl':
+            return None
+        anchor = ctrl.GetAnchorPos(0)
+        return (anchor.Item('List'), anchor.Item('Para'), anchor.Item('Pos'))
+    except Exception:
+        return False
+
+
+def 표칸_묶음_수집():
+    """표마다 [(area, 셀주소, 행번호), ...] 목록(문서 순서). 판정 불가면 None."""
+    묶음 = 표칸_묶음_키별()
+    return None if 묶음 is None else list(묶음.values())
+
+
+def 표칸_묶음_키별():
+    """{표 키(앵커 리스트, 문단, 위치): [(area, 셀주소, 행번호), ...]}. 판정 불가면 None.
+
+    예전에는 'A1 칸이 나오면 새 표'로 묶었는데, 실측(2026-09-25, 표 서식 문서)에서
+    가운데 열이 세로 병합된 표가 세 조각으로 나뉘어 셀 너비 맞춤이 엉뚱한 열에
+    너비를 넣었다. 칸을 담은 표 컨트롤(ParentCtrl)의 앵커 위치로 묶는다.
+    """
+    묶음 = {}
+    area = 1
+    while True:
+        if 중단_요청됨():
+            break
+        area += 1
+        try:
+            hwp.SetPos(area, 0, 0)
+        except Exception:
+            break
+        if hwp.GetPos()[0] != area:
+            break
+        키 = 현재_표_키()
+        if 키 is False:
+            return None
+        if 키 is None:
+            continue
+        주소, 행번호 = 현재_셀_주소_행번호()
+        if 주소 is None:
+            continue
+        묶음.setdefault(키, []).append((area, 주소, 행번호))
+    return 묶음
+
+
 def 한칸표_영역_목록():
     """문서의 컨트롤 리스트를 훑어 한 셀로만 된 표의 영역 번호를 찾는다.
 
-    한글은 표의 각 셀을 연속된 리스트 영역으로 노출하고 각 표는 A1에서
-    시작한다. 다음 A1 또는 비표 영역이 나오기 전까지를 한 표로 묶어,
-    셀 주소가 A1 하나뿐인 표를 한 칸 표로 판정한다.
+    칸을 담은 표 컨트롤 기준으로 묶어(표칸_묶음_수집) 칸이 A1 하나뿐인 표를
+    한 칸 표로 판정한다. 표 컨트롤을 읽지 못하는 환경이면 예전 규칙(다음 A1
+    또는 비표 영역이 나오기 전까지를 한 표로 봄)으로 대신한다.
     """
+    묶음 = 표칸_묶음_수집()
+    if 묶음 is not None:
+        return {칸들[0][0] for 칸들 in 묶음 if len(칸들) == 1 and 칸들[0][1] == "A1"}
     한칸영역 = set()
     현재표 = []
 
@@ -6890,6 +7863,58 @@ def 표_헤더서식_현재셀_처리():
 def 표_헤더서식_현재줄_처리():
     return 표_헤더서식_현재셀_처리()
 
+
+# 표 서식을 표 단위로 한 번에 적용할지(칸마다 적용하는 예전 방식과 결과가 같다).
+표_서식_표단위_사용 = True
+
+
+def 표_헤더서식_표단위_처리(칸들):
+    """표 하나(표칸_묶음_수집의 칸 목록)에 본문·머리글 서식을 한 번에 적용한다.
+
+    실측(2026-09-26): 통계표가 많은 수출입동향(표 칸 5,052개)은 칸마다 글자를
+    선택해 적용하느라 표 서식에만 14분이 걸렸다. 표 전체를 칸 블록으로 골라
+    (F5 세 번 = TableCellBlock + TableCellBlockExtend×2) 본문 서식을 한 번에 주고,
+    머리글 서식은 칸 주소가 1행인 칸에만 칸마다 다시 준다(칸마다 적용하던 예전 방식과
+    결과가 같다). 첫 행 선택(TableCellBlockRow)은 A1이 두 행에 걸쳐 병합된 표에서
+    둘째 행까지 골라 결과가 달라졌으므로 쓰지 않는다(실측, 표 서식 문서 2개 표).
+    성공하면 칸 수, A1 칸이 없거나 실패하면 None(호출자가 칸마다 적용으로 대신한다).
+    """
+    첫칸 = next((area for area, 주소, _ in 칸들 if 주소 == "A1"), None)
+    if 첫칸 is None:
+        return None
+    try:
+        hwp.SetPos(첫칸, 0, 0)
+        hwp_run("Cancel")
+        for 명령 in ("TableCellBlock", "TableCellBlockExtend", "TableCellBlockExtend"):
+            hwp_run(명령)
+        문자모양_적용_현재선택(
+            폰트=표_헤더서식_본문_폰트,
+            크기_pt=표_헤더서식_본문_크기,
+            # 본문 칸의 기존 굵은 강조는 해제하지 않는다.
+            굵게=True if 표_헤더서식_본문_굵게 else None,
+        )
+        hwp_run("Cancel")
+        for area, _, 행 in 칸들:
+            if 행 != 1:
+                continue
+            hwp.SetPos(area, 0, 0)
+            hwp_run("MoveListBegin")
+            hwp_run("MoveSelListEnd")
+            문자모양_적용_현재선택(
+                폰트=표_헤더서식_헤더_폰트,
+                크기_pt=표_헤더서식_헤더_크기,
+                굵게=표_헤더서식_헤더_굵게,
+            )
+            hwp_run("Cancel")
+        return len(칸들)
+    except Exception as e:
+        try:
+            hwp_run("Cancel")
+        except Exception:
+            pass
+        로그(f"표 단위 서식적용 실패(칸마다 적용으로 대신): {e}")
+        return None
+
 def 표_헤더서식_전체_적용():
     """표 안의 각 셀에 표준 문자서식을 적용한다.
 
@@ -6914,6 +7939,27 @@ def 표_헤더서식_전체_적용():
     한칸표영역 = 한칸표_영역_목록()
     제외수 = 0
 
+    # 표 단위 일괄 적용(쪽 범위를 지정하면 범위 밖 칸을 건드리지 않도록 칸마다 적용).
+    묶음 = 표칸_묶음_키별() if 표_서식_표단위_사용 and not 쪽범위_사용중() else None
+    if 묶음 is not None:
+        처리된 = set()
+        # 칸 안에 다른 표(한 칸 제목 상자 등)가 든 표는 표 단위 선택이 안쪽 표 글자까지
+        # 바꿔 결과가 달라지므로(실측: 수출입동향) 칸마다 적용하는 예전 방식으로 둔다.
+        안쪽표_리스트 = {키[0] for 키 in 묶음}
+        for 칸들 in 묶음.values():
+            if 중단_요청됨():
+                return False
+            if len(칸들) == 1 and 칸들[0][0] in 한칸표영역:
+                continue
+            if any(area in 안쪽표_리스트 for area, _, _ in 칸들):
+                continue
+            적용 = 표_헤더서식_표단위_처리(칸들)
+            if 적용 is not None:
+                셀수 += 적용
+                처리된.update(area for area, _, _ in 칸들)
+    else:
+        처리된 = set()
+
     area = 1
     while True:
         if 중단_요청됨():
@@ -6933,6 +7979,9 @@ def 표_헤더서식_전체_적용():
             continue
 
         if 쪽범위_사용중() and area not in 쪽범위_컨트롤영역:
+            continue
+
+        if area in 처리된:
             continue
 
         if 표_헤더서식_현재셀_처리():
@@ -6973,6 +8022,18 @@ def 표_목록_수집():
     """
     if hwp is None:
         return []
+    묶음 = 표칸_묶음_수집()
+    if 묶음 is not None:
+        표들 = []
+        for 칸들 in 묶음:
+            if len(칸들) == 1 and 칸들[0][1] == "A1":
+                continue      # 한 칸 표
+            표 = []
+            for area, 주소, 행번호 in 칸들:
+                일치 = re.match(r"[A-Za-z]+", 주소)
+                표.append((area, 일치.group(0) if 일치 else "A", 행번호))
+            표들.append(표)
+        return 표들
     한칸표영역 = 한칸표_영역_목록()
     표들 = []
     현재표 = []
@@ -7049,8 +8110,22 @@ def 셀_화면줄수():
             pass
 
 
-def 셀_안쪽여백_현재선택(mm):
-    """캐럿이 있는 셀의 좌우 안쪽 여백을 mm로 설정한다."""
+def 셀_안쪽여백_읽기():
+    """캐럿이 있는 셀의 (셀 여백 사용 여부, 왼쪽, 오른쪽) 원래 값. 실패 시 None."""
+    if hwp is None:
+        return None
+    try:
+        pset = hwp.HParameterSet.HShapeObject
+        hwp.HAction.GetDefault("TablePropertyDialog", pset.HSet)
+        cell = pset.ShapeTableCell
+        return int(cell.HasMargin), int(cell.MarginLeft), int(cell.MarginRight)
+    except Exception as e:
+        로그(f"셀 안쪽 여백 읽기 실패(무시): {e}")
+        return None
+
+
+def 셀_안쪽여백_현재선택(mm=None, 원래값=None):
+    """캐럿이 있는 셀의 좌우 안쪽 여백을 mm로 설정한다(원래값을 주면 그 값으로 복원)."""
     if hwp is None:
         return False
     try:
@@ -7058,9 +8133,12 @@ def 셀_안쪽여백_현재선택(mm):
         hwp.HAction.GetDefault("TablePropertyDialog", pset.HSet)
         pset.HSet.SetItem("ShapeType", 3)
         pset.HSet.SetItem("ShapeCellSize", 0)
-        pset.ShapeTableCell.HasMargin = 1
-        pset.ShapeTableCell.MarginLeft = hwp.MiliToHwpUnit(mm)
-        pset.ShapeTableCell.MarginRight = hwp.MiliToHwpUnit(mm)
+        if 원래값 is not None:
+            pset.ShapeTableCell.HasMargin, pset.ShapeTableCell.MarginLeft, pset.ShapeTableCell.MarginRight = 원래값
+        else:
+            pset.ShapeTableCell.HasMargin = 1
+            pset.ShapeTableCell.MarginLeft = hwp.MiliToHwpUnit(mm)
+            pset.ShapeTableCell.MarginRight = hwp.MiliToHwpUnit(mm)
         return hwp.HAction.Execute("TablePropertyDialog", pset.HSet) is not False
     except Exception as e:
         로그(f"셀 안쪽 여백 적용 실패(무시): {e}")
@@ -7076,6 +8154,21 @@ def 셀_안쪽여백_축소_시도():
     줄수 = 셀_화면줄수()
     if 줄수 is None or 줄수 <= 1:
         return False
+    # 실측(2026-09-25): 1줄로 만들지 못한 셀도 여백이 0으로 남아(표 서식 문서 46칸)
+    # 표 모양만 바뀌었다. 실패하면 원래 여백으로 되돌린다.
+    원래값 = 셀_안쪽여백_읽기()
+    if 원래값 is None:
+        return False
+    try:
+        if _셀_안쪽여백_단계축소():
+            return True
+    except Exception:
+        pass
+    셀_안쪽여백_현재선택(원래값=원래값)
+    return False
+
+
+def _셀_안쪽여백_단계축소():
     현재_mm = 표_셀여백_기본_mm
     최대반복 = max(1, int(round((표_셀여백_기본_mm - 표_셀여백_최소_mm) / 표_셀여백_스텝_mm)))
     for _ in range(최대반복):
@@ -7226,6 +8319,16 @@ def 표_열너비_본문맞춤_시도(표_셀목록, 목표_전체너비_mm):
     첫행_area = [area for area, _, 행 in 표_셀목록 if 행 == 1]
     if len(첫행_area) < 2:
         return False
+    # 실측(2026-09-25): 첫 행이 병합된 표(연도 아래 분기 칸 등)는 첫 행 칸과 실제
+    # 열이 맞지 않아 너비가 엉뚱한 열에 들어가 표가 용지 밖으로 넘쳤다(4쪽→7쪽).
+    # 모든 행의 열 구성이 첫 행과 같은 격자형 표만 조정한다.
+    행별_열 = {}
+    for _, 컬럼, 행 in 표_셀목록:
+        행별_열.setdefault(행, []).append(컬럼)
+    첫행_열 = 행별_열.get(1, [])
+    if any(열 != 첫행_열 for 열 in 행별_열.values()):
+        진단로그("[셀 너비 본문 맞춤] 병합된 칸이 있는 표는 건너뜀")
+        return False
     try:
         hwp.SetPos(첫행_area[0], 0, 0)
     except Exception:
@@ -7291,33 +8394,32 @@ def 표_셀_테두리_적용(위=None, 아래=None, 왼쪽=None, 오른쪽=None)
     각 인자는 (HwpLineType 이름, HwpLineWidth 이름) 튜플이거나
     None(해당 방향은 건드리지 않음).
     """
+    # 실측(2026-09-25): pset.SelCellsBorderFill 아래 항목에 값을 넣는 예전 방식은
+    # 실행 결과가 True여도 테두리가 바뀌지 않았다. 셀을 블록으로 선택한 뒤
+    # HCellBorderFill의 BorderType*/BorderWidth* 항목을 직접 넣어야 적용된다.
+    # 'CellBorderFill' 액션은 셀 배경색까지 다시 적용해 머리글 배경이 지워졌으므로
+    # 테두리만 바꾸는 'CellBorder' 액션을 쓴다.
     if hwp is None:
         return False
     try:
+        hwp_run("TableCellBlock")
         pset = hwp.HParameterSet.HCellBorderFill
-        hwp.HAction.GetDefault("CellBorderFill", pset.HSet)
-        pset.ApplyTo = 0  # 0: 선택된 셀(캐럿이 있는 현재 셀)
-        대상 = pset.SelCellsBorderFill
-        if 위 is not None:
-            종류, 굵기 = 위
-            대상.BorderTypeTop = hwp.HwpLineType(종류)
-            대상.BorderWidthTop = hwp.HwpLineWidth(굵기)
-        if 아래 is not None:
-            종류, 굵기 = 아래
-            대상.BorderTypeBottom = hwp.HwpLineType(종류)
-            대상.BorderWidthBottom = hwp.HwpLineWidth(굵기)
-        if 왼쪽 is not None:
-            종류, 굵기 = 왼쪽
-            대상.BorderTypeLeft = hwp.HwpLineType(종류)
-            대상.BorderWidthLeft = hwp.HwpLineWidth(굵기)
-        if 오른쪽 is not None:
-            종류, 굵기 = 오른쪽
-            대상.BorderTypeRight = hwp.HwpLineType(종류)
-            대상.BorderWidthRight = hwp.HwpLineWidth(굵기)
-        return hwp.HAction.Execute("CellBorderFill", pset.HSet) is not False
+        hwp.HAction.GetDefault("CellBorder", pset.HSet)
+        for 방향, 값 in (("Top", 위), ("Bottom", 아래), ("Left", 왼쪽), ("Right", 오른쪽)):
+            if 값 is None:
+                continue
+            종류, 굵기 = 값
+            setattr(pset, "BorderType" + 방향, hwp.HwpLineType(종류))
+            setattr(pset, "BorderWidth" + 방향, hwp.HwpLineWidth(굵기))
+        return hwp.HAction.Execute("CellBorder", pset.HSet) is not False
     except Exception as e:
         로그(f"표 셀 테두리 적용 실패(무시): {e}")
         return False
+    finally:
+        try:
+            hwp_run("Cancel")
+        except Exception:
+            pass
 
 
 def 표_테두리_삼선표_적용(표_셀목록):
@@ -7382,6 +8484,27 @@ def 표_테두리_전체_적용():
     return True
 
 
+# 한 줄이 이 글자 수 이상인 표 칸은 본문과 같은 자간 한도를 쓴다(사용자 결정
+# 2026-09-25). 좁은 칸은 자간을 많이 바꾸면 글자가 뭉개져 표 한도로 묶어 둔다.
+넓은_표칸_기준글자수 = 20
+
+
+def 넓은_표칸_줄인가():
+    """현재 화면줄이 넓은 표 칸의 줄인지(글자 위치 기준 길이).
+
+    실측: 한 줄 33자인 공고문 표 칸의 '신|뢰를' 등 3건이 표 한도(5단계)
+    때문에 풀리지 않았다.
+    """
+    original = hwp.GetPos()
+    try:
+        start, end = 단어모드_줄범위(original)
+        return end[2] - start[2] >= 넓은_표칸_기준글자수
+    except Exception:
+        return False
+    finally:
+        hwp.SetPos(*original)
+
+
 def 컨트롤_내부_자간조정():
     """표/글상자 등 모든 컨트롤 영역의 단어 분리를 보정한다.
 
@@ -7407,6 +8530,8 @@ def 컨트롤_내부_자간조정():
         if 표셀_자간_제외인가():
             진단로그(f"[표 안 문장 제외] 영역 {area}: 자간 조정 안 함")
             continue
+        if 숫자_표칸인가():
+            continue
         while True:
             if 중단_요청됨():
                 return False
@@ -7416,15 +8541,20 @@ def 컨트롤_내부_자간조정():
             if 작업_모드 != "spacing" and not 현재영역_한칸표:
                 괄호_안쪽_공백_정리_문단_처리()
                 쉼표_공백_정리_문단_처리()
-            최대시도 = 자간_최대시도_본문 if 현재영역_한칸표 else 자간_최대시도_표
+            최대시도 = (자간_최대시도_본문 if 현재영역_한칸표 or 넓은_표칸_줄인가()
+                    else 자간_최대시도_표)
             result = 자간자동조정(최대시도=최대시도)
             if result is False:
                 return False
             hwp_run("MoveLineEnd")
+            줄끝 = hwp.GetPos()
             hwp_run("MoveNextChar")
             if hwp.GetPos()[0] != area:
                 break
-            if hwp.GetPos() == 시작위치:
+            # 셀의 마지막 줄에서는 MoveNextChar가 줄 끝에 머문다. 시작 위치와만
+            # 비교하면 같은 줄을 한 번 더 처리했다(실측: 표 셀마다 다음 단어
+            # 당김을 두 번 시도해 한 번에 약 5초씩 낭비).
+            if hwp.GetPos() in (시작위치, 줄끝):
                 break
     return True
 
@@ -7482,6 +8612,8 @@ def 컨트롤_내부_문장부호_처리():
         if area in 한칸표영역:
             진단로그(f"[한 칸 표 제외] 영역 {area}: 문장부호 서식 보존")
             continue
+        if 숫자_표칸인가():
+            continue
         while True:
             if 중단_요청됨():
                 return False
@@ -7490,10 +8622,12 @@ def 컨트롤_내부_문장부호_처리():
             if 컨트롤_줄병합_대상인가():
                 문장부호_줄병합_시도()
             hwp_run("MoveLineEnd")
+            줄끝 = hwp.GetPos()
             hwp_run("MoveNextChar")
             if hwp.GetPos()[0] != 0 and hwp.GetPos()[0] >= area:
                 area = hwp.GetPos()[0]
-            if hwp.GetPos() == 시작위치:
+            # 마지막 줄에서 MoveNextChar가 줄 끝에 머물면 같은 줄을 다시 처리하지 않는다.
+            if hwp.GetPos() in (시작위치, 줄끝):
                 break
     return True
 
@@ -7605,6 +8739,36 @@ def 현재_표셀인가():
     except Exception:
         return False
 
+# 숫자·기호만으로 된 표 칸(통계표의 수치 칸 등)은 어절이 없어 자간·단어 분리
+# 조정할 것이 없다. 실측: 수출입동향(통계표 위주) 문서에서 자간 초기화만
+# 32분이 걸렸다(사용자 요청 2026-09-25: 숫자만으로 된 표는 건너뜀).
+_숫자칸_패턴 = re.compile(r"[\s0-9０-９,，.．%％+\-－−–△▲▼▽↑↓()（）~∼'‘’/:×·]*")
+
+
+def 숫자_표칸인가(area=None):
+    """커서가 있는(또는 area) 표 칸의 글자가 숫자·기호뿐이면 True(빈 칸 포함)."""
+    original = hwp.GetPos()
+    try:
+        if area is not None:
+            hwp.SetPos(area, 0, 0)
+            if hwp.GetPos()[0] != area:
+                return False
+        if hwp.GetPos()[0] == 0 or not 현재_표셀인가():
+            return False
+        hwp_run('MoveListBegin')
+        hwp_run('MoveSelListEnd')
+        text = 현재선택영역_텍스트() or ''
+        hwp_run('Cancel')
+        return bool(_숫자칸_패턴.fullmatch(text.replace(chr(13), '').replace(chr(10), '')))
+    except Exception:
+        return False
+    finally:
+        try:
+            hwp.SetPos(*original)
+        except Exception:
+            pass
+
+
 def 표셀_자간_제외인가():
     """'표 서식 내 문장도 자간조정하기'가 꺼져 있고 커서가 표 셀 안이면 True."""
     return (not 표_자간조정_사용) and 현재_표셀인가()
@@ -7706,6 +8870,17 @@ def 저장파일명(파일):
 
 def 문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=1):
     """실행 버튼의 작업 범위에 맞춰 서식과 자간 단계를 분리한다."""
+    global 최종_내어쓰기_예정
+    최종_내어쓰기_예정 = bool(
+        작업_모드 in ('format', 'all') and 표준서식_사용 and 표준서식_내어쓰기_사용
+        and stage_enabled(선택_세부작업, 'hanging_indent'))
+    try:
+        return _문서_처리_1회(파일명, 문장부호기능, 회차, 총회차)
+    finally:
+        최종_내어쓰기_예정 = False
+
+
+def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=1):
     if 중단_요청됨():
         return False
     def stage(name, action):
@@ -7715,19 +8890,23 @@ def 문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=1
         순회_시작()
         return action() is not False
     로그(f"{작업_모드} 처리 {회차}/{총회차}회차 시작")
+    # 서식통일은 옵트인(기본 꺼짐). 서식 정리 단계 묶음이 돌지 않는 경우(자간 정리 모드,
+    # 표준서식 꺼짐)에도 따로 실행한다.
+    if (회차 == 1 and stage_enabled(선택_세부작업, 'style_unify')
+            and not (작업_모드 in ('format', 'all') and 표준서식_사용)):
+        if not stage('서식통일', 서식통일_전체_적용):
+            return False
     if 작업_모드 in ('format', 'all') and 표준서식_사용 and 회차 == 1:
         for key, name, action in (
             ('normalize_space', '공백 정규화', 문장내_공백_정규화_전체_적용),
             ('punctuation_space', '문장부호 뒤 공백 보정', 문장부호_뒤_공백_보정_전체_적용),
+            ('style_unify', '서식통일', 서식통일_전체_적용),
             ('standard_format', '보고서 표준서식', 표준서식_전체_적용),
         ):
             if stage_enabled(선택_세부작업, key) and not stage(name, action):
                 return False
         if stage_enabled(선택_세부작업, 'parenthesis') and (괄호_축소_사용 or 괄호_라벨_볼드_사용):
             if not stage('문두 라벨/괄호 서식', 괄호_텍스트_크기_축소_전체_적용):
-                return False
-        if stage_enabled(선택_세부작업, 'supplement_indent') and 부연설명_들여쓰기_사용:
-            if not stage('부연설명 들여쓰기', 부연설명_들여쓰기_전체_적용):
                 return False
         # 정밀 프로필은 셀별 문자 서식을 이미 적용했으므로 대표 머리글/본문 값으로 덮지 않는다.
         if stage_enabled(선택_세부작업, 'table_format') and 표_헤더서식_사용 and not 활성_정밀표_프로필 and not stage('표 서식', 표_헤더서식_전체_적용):
@@ -7747,6 +8926,14 @@ def 문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=1
     # 분리 검사를 수행하기 전에 최종 문단 모양을 먼저 확정한다.
     if 작업_모드 in ('format', 'all') and 표준서식_사용 and 표준서식_내어쓰기_사용 and stage_enabled(선택_세부작업, 'hanging_indent'):
         if not stage('최종 서식 기준 내어쓰기', 문단_내어쓰기_전체_갱신):
+            return False
+    # 부연설명은 위 문단의 '실측' 본문 시작 위치에 맞추므로 최종 내어쓰기 뒤에
+    # 한다. 자간·단어 분리 검사보다는 앞이어야 옮긴 부연설명의 줄바꿈도 검사된다.
+    부연설명_단계_사용 = (작업_모드 in ('format', 'all') and 표준서식_사용
+                      and stage_enabled(선택_세부작업, 'supplement_indent')
+                      and 부연설명_들여쓰기_사용)
+    if 부연설명_단계_사용:
+        if not stage('부연설명 들여쓰기', 부연설명_들여쓰기_전체_적용):
             return False
     if 작업_모드 in ('spacing', 'all'):
         # 자간을 줄이거나 넓히면 문두기호 문장의 첫 줄 폭이 바뀌어
@@ -7770,6 +8957,7 @@ def 문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=1
                     로그(f"[자간·내어쓰기 반복] {차수}차 재검사: 내어쓰기가 바뀐 "
                          f"{len(재검사_대상문단)}개 문단만 단어 분리 검사(다음 단어 당김 제외)")
                 변경_전 = 자간_변경_횟수
+                자간_변경문단.clear()
                 # 두 선택 항목은 같은 전수 순회 함수를 사용하므로 한 번만 실행한다.
                 if (stage_enabled(선택_세부작업, 'body_spacing')
                         or stage_enabled(선택_세부작업, 'word_check')):
@@ -7790,9 +8978,19 @@ def 문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=1
                     break
                 if not 내어쓰기_재적용:
                     break
-                로그(f"[자간·내어쓰기 반복] {차수}차 자간 조정 {변경}건 → 내어쓰기 재적용")
-                if not stage('자간 조정 후 내어쓰기' + 접미, 문단_내어쓰기_전체_갱신):
+                대상 = set(자간_변경문단)
+                로그(f"[자간·내어쓰기 반복] {차수}차 자간 조정 {변경}건 → "
+                     f"자간이 바뀐 {len(대상)}개 문단 내어쓰기 재적용")
+                if not stage('자간 조정 후 내어쓰기' + 접미,
+                             lambda: 문단_내어쓰기_전체_갱신(대상문단=대상)):
                     return False
+                # 내어쓰기가 바뀐 위 문단에 딸린 부연설명도 새 위치에 다시 맞춘다
+                # (옮긴 부연설명은 다음 차수 단어 분리 재검사 대상에 들어간다).
+                if 부연설명_단계_사용 and 내어쓰기_변경문단:
+                    부모들 = set(내어쓰기_변경문단)
+                    if not stage('자간 조정 후 부연설명 들여쓰기' + 접미,
+                                 lambda: 부연설명_들여쓰기_전체_적용(부모대상=부모들)):
+                        return False
             else:
                 로그(f"[자간·내어쓰기 반복] 최대 {자간_내어쓰기_최대반복}회 도달, 반복 종료")
         finally:
@@ -7800,12 +8998,47 @@ def 문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=1
             다음단어_당김_사용 = True
     # 문단 아래 간격 조정은 세로 배치를 다시 바꾼다. 개별 문단이 쪽 사이에
     # 갈라졌는지는 이 단계가 끝난 뒤 마지막으로 처리해야 결과가 재오염되지 않는다.
-    if 작업_모드 in ('format', 'all') and 표준서식_사용 and stage_enabled(선택_세부작업, 'page_fit'):
+    쪽수맞춤_사용 = (작업_모드 in ('format', 'all') and 표준서식_사용
+                   and stage_enabled(선택_세부작업, 'page_fit'))
+    if 쪽수맞춤_사용:
         if not stage('문단 아래 간격 페이지 맞춤', 보고서_페이지수_맞춤_전체_적용):
             return False
     if 작업_모드 in ('format', 'all') and 표준서식_사용 and 세트문장_같은쪽_사용 and stage_enabled(선택_세부작업, 'page_group'):
+        조정_전 = 세트문장_통계.get('확대횟수', 0) + 세트문장_통계.get('축소횟수', 0)
         if not stage('개별 문단 페이지 배치', 세트문장_같은쪽_전체_적용):
             return False
+        조정_후 = 세트문장_통계.get('확대횟수', 0) + 세트문장_통계.get('축소횟수', 0)
+        # 문단 페이지 배치가 줄간격을 바꾸면 마지막 쪽이 넘치거나 줄어 쪽 수가
+        # 달라질 수 있다. 쪽 수 맞춤을 한 번 더 확인하고, 그 결과 쪽 수가 바뀌면
+        # 문단 페이지 배치도 한 번만 더 한다(무한 반복 방지).
+        # 사용자 결정(2026-09-24): 쪽 수 맞춤으로 간격을 줄인 뒤 묶음이 쪽 경계에
+        # 걸려 쪽 배치가 묶음 전체를 다음 쪽으로 옮기면, 쪽 수가 다시 늘더라도
+        # 그 결과와 줄인 간격을 그대로 둔다. 마지막 쪽에 본문 1줄만 남기는 것보다
+        # 묶음 전체를 옮기는 편을 택한다.
+        if 쪽수맞춤_사용 and 조정_후 > 조정_전 and 쪽맞춤_묶음이동_결정:
+            # 쪽 수 맞춤이 이미 '걸린 묶음은 다음 쪽으로'로 정했다. 쪽 배치가 묶음을
+            # 옮겨 마지막 쪽이 짧아진 것은 의도한 결과이므로 다시 줄이지 않는다
+            # (실측: 9쪽을 8쪽으로 줄이려다 실패하고 되돌리는 데 약 2.5분).
+            로그("[쪽 수 재확인] 쪽 수 맞춤이 걸린 묶음을 다음 쪽으로 옮기기로 한 결과라 다시 줄이지 않습니다.")
+        elif 쪽수맞춤_사용 and 조정_후 > 조정_전:
+            # 마지막 쪽을 한 번만 재서, 쪽 수 맞춤이 할 일이 없으면(마지막 쪽에
+            # 내용이 충분하면) 쪽 수 맞춤 단계 자체를 건너뛴다.
+            전_쪽, 남은줄 = 마지막쪽_화면줄수()
+            if not (페이지맞춤_문단간격_사용 and 전_쪽 and 전_쪽 > 1
+                    and 남은줄 is not None and 남은줄 <= 페이지맞춤_최대남은줄수):
+                진단로그(f"[쪽 수 재확인] 마지막 쪽({전_쪽}쪽) {남은줄}줄: 페이지 수 맞춤 불필요")
+                hwp_run('MoveDocBegin')
+                return True
+            로그("[쪽 수 재확인] 문단 페이지 배치가 줄간격을 바꿔 페이지 수 맞춤을 다시 확인합니다.")
+            if not stage('문단 아래 간격 페이지 맞춤 (재확인)', 보고서_페이지수_맞춤_전체_적용):
+                return False
+            후_쪽, _ = 마지막쪽_화면줄수()
+            if 쪽맞춤_묶음_확인됨:
+                로그("[쪽 수 재확인] 쪽 경계에 걸린 묶음이 없어 문단 페이지 배치를 다시 하지 않습니다.")
+            elif 전_쪽 != 후_쪽:
+                로그(f"[쪽 수 재확인] 쪽 수 {전_쪽} → {후_쪽}: 문단 페이지 배치를 한 번 더 확인합니다.")
+                if not stage('개별 문단 페이지 배치 (재확인)', 세트문장_같은쪽_전체_적용):
+                    return False
     hwp_run('MoveDocBegin')
     return True
 
@@ -7863,7 +9096,7 @@ def 문서_전체_자간_초기화():
                 break
             if 쪽범위_사용중() and area not in 쪽범위_컨트롤영역:
                 continue
-            if 표셀_자간_제외인가():
+            if 표셀_자간_제외인가() or 숫자_표칸인가():
                 continue
             if 영역_초기화(area) is False:
                 return False
@@ -7880,6 +9113,17 @@ def 문서_전체_자간_초기화():
 
 
 지원_확장자 = (".hwp", ".hwpx", ".txt", ".md", ".doc", ".docx", ".pdf")
+
+
+def 바이너리_HWP_파일인가(path):
+    """파일 앞부분이 OLE 복합 문서(HWP 5.0 바이너리) 서명인지 본다."""
+    try:
+        with open(path, "rb") as f:
+            return f.read(8) == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+    except OSError:
+        return False
+
+
 _텍스트_인코딩_후보 = ("utf-8-sig", "utf-8", "cp949")
 
 
@@ -7906,6 +9150,55 @@ def 텍스트_hwpx로_변환(텍스트, 대상경로):
         raise RuntimeError("텍스트를 HWPX로 저장하지 못했습니다.")
 
 
+def 라벨블록_한글삽입(한글, 블록들):
+    """labeled_text 블록을 한/글 문서 끝에 차례로 넣는다(A4 제목 상자 표 템플릿).
+
+    제목·개요(상자)·참고는 1×1 표로 넣는다. 문서 첫머리의 1×1 제목 표와 뒤따르는
+    개요 표는 제목 서식(제목_hwpx_처리)이 알아보는 '제목+개요' 구조다.
+    """
+    def 글쓰기(내용):
+        act = 한글.HAction
+        pset = 한글.HParameterSet.HInsertText
+        act.GetDefault("InsertText", pset.HSet)
+        pset.Text = 내용
+        act.Execute("InsertText", pset.HSet)
+
+    def 표넣기(행들):
+        열수 = max(len(행) for 행 in 행들)
+        act = 한글.HAction
+        pset = 한글.HParameterSet.HTableCreation
+        act.GetDefault("TableCreate", pset.HSet)
+        pset.Rows = len(행들)
+        pset.Cols = 열수
+        pset.WidthType = 0   # 단 너비에 맞춤(2는 임의 너비라 글자 폭만큼 좁아진다)
+        pset.HeightType = 0  # 자동 높이
+        pset.TableProperties.TreatAsChar = 1
+        act.Execute("TableCreate", pset.HSet)
+        칸들 = [칸 for 행 in 행들 for 칸 in (행 + [""] * (열수 - len(행)))]
+        for 순번, 칸 in enumerate(칸들):
+            if 칸:
+                글쓰기(칸)
+            if 순번 < len(칸들) - 1:
+                한글.Run("TableRightCell")
+        한글.Run("Cancel")
+        한글.MovePos(3, 0, 0)  # 문서 끝(표 다음 문단)으로 나온다
+
+    처음 = True
+    for 블록 in 블록들:
+        if not 처음:
+            한글.Run("BreakPara")
+        처음 = False
+        종류 = 블록["kind"]
+        if 종류 == "blank":
+            continue
+        if 종류 in ("title", "box", "ref"):
+            표넣기([[블록["text"] if 종류 != "ref" else f"참고  {블록['text']}"]])
+        elif 종류 == "table":
+            표넣기(블록["rows"])
+        else:
+            글쓰기(f"{블록['marker']} {블록['text']}".strip())
+
+
 def 텍스트_hwpx_단독변환(텍스트, 대상경로):
     """'텍스트 붙여넣기'에서 저장 즉시 HWPX로 바꿀 때 쓰는, 배치 작업(작업_실행)과
     완전히 독립된 한/글 세션.
@@ -7926,6 +9219,12 @@ def 텍스트_hwpx_단독변환(텍스트, 대상경로):
             pass  # 새 문서를 만들어 텍스트만 적으므로 보안 모듈 등록 실패는 무시해도 된다.
         if 단독_hwp.Run("FileNew") is False:
             raise RuntimeError("빈 문서를 만들지 못했습니다.")
+        if looks_labeled(텍스트):
+            # 라벨 형식(제목:/네모:/원: …)이면 제목·개요·참고를 1×1 상자 표로, 표: 줄을 표로 넣는다.
+            라벨블록_한글삽입(단독_hwp, parse_labeled_text(텍스트))
+            if 단독_hwp.SaveAs(str(대상경로), "HWPX", "") is False:
+                raise RuntimeError("HWPX로 저장하지 못했습니다.")
+            return
         줄들 = 텍스트.replace("\r\n", "\n").replace("\r", "\n").split("\n")
         for 순번, 줄 in enumerate(줄들):
             if 줄:
@@ -7940,6 +9239,11 @@ def 텍스트_hwpx_단독변환(텍스트, 대상경로):
             raise RuntimeError("HWPX로 저장하지 못했습니다.")
     finally:
         if 단독_hwp is not None:
+            try:
+                # 중간에 실패해 저장 안 된 문서가 남아도 '저장할까요?' 창 없이 닫는다.
+                단독_hwp.Clear(1)
+            except Exception:
+                pass
             try:
                 단독_hwp.Quit()
             except Exception:
@@ -8008,6 +9312,11 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
         raise FileNotFoundError(f"문서를 찾을 수 없습니다: {파일}")
     if 확장자 not in 지원_확장자:
         raise ValueError(f"지원하지 않는 파일 형식입니다: {확장자 or '(확장자 없음)'}")
+    if 확장자 == ".hwpx" and 바이너리_HWP_파일인가(파일경로):
+        # 실측: 이름만 .hwpx이고 내용은 HWP 5.0 바이너리인 배포 문서가 있다.
+        로그("확장자는 .hwpx지만 실제 내용은 HWP(바이너리) 문서라 HWP로 엽니다.")
+        확장자 = ".hwp"
+        원본_확장자명 = "hwp"
 
     # 한글에 넘기기 전에 경로 조작, ZIP bomb, CRC와 필수 구조를 검사한다.
     원본_구조 = None
@@ -8071,6 +9380,17 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
         # 원본이 HWP/HWPX가 아니므로 좌우 비교 보기 대상에서는 제외한다.
     비교보기_임베드_재확인()
 
+    # 자간 초기화는 제목·개요·붙임 선행 서식과 일반 표 정밀 복제보다 먼저 한다.
+    # 두 단계는 예시 서식의 글자 모양(자간 포함)을 복사하므로, 뒤에서 초기화하면
+    # 복사한 자간이 0%로 지워진다. 쪽 범위 작업은 두 단계를 건너뛰므로 범위를
+    # 고정한 뒤(아래) 초기화한다.
+    자간초기화_완료 = False
+    if 쪽범위_요청 is None and stage_enabled(선택_세부작업, 'reset_spacing'):
+        상태(f"{파일명} : 자간 초기화")
+        if 문서_전체_자간_초기화() is False:
+            return False
+        자간초기화_완료 = True
+
     if 표준서식_사용 and 작업_모드 in ('format', 'all'):
         if 쪽범위_요청 is not None:
             # 제목·개요·붙임 표 서식은 문서 전체 구조를 한 번에 바꾸는 방식이라 쪽별로 나눌 수 없다.
@@ -8078,7 +9398,7 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
         elif stage_enabled(선택_세부작업, 'pre_format'):
             단계표시("제목·개요·붙임 선행 서식")
             상태(f"{파일명} : 제목·개요·붙임 선행 서식")
-            if 제목붙임_선행적용(작업파일경로) is False:
+            if 제목붙임_선행적용(작업파일경로, 현재문서_기준=자간초기화_완료) is False:
                 return False
         if 쪽범위_요청 is None and 활성_정밀표_프로필 and stage_enabled(선택_세부작업, 'precise_table'):
             단계표시("표 정밀 서식")
@@ -8103,7 +9423,7 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
 
     # 잔여 자간(이전 실행/수동 편집으로 남은 값)이 있으면 압축 여유가
     # 줄어드니, 처리 회차를 시작하기 전 문서 전체를 한 번만 0%로 초기화한다.
-    if stage_enabled(선택_세부작업, 'reset_spacing'):
+    if stage_enabled(선택_세부작업, 'reset_spacing') and not 자간초기화_완료:
         상태(f"{파일명} : 자간 초기화")
         if 문서_전체_자간_초기화() is False:
             return False
@@ -8160,6 +9480,7 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
                 최종규칙검사[key] = {'status': 'error', 'error': str(exc)}
             검수_문제_기록(파일, f'[저장 결과 재열기 실패] {exc}')
         else:
+            기록_경계 = len(검수_문제목록)
             for key, inspect in inspections.items():
                 try:
                     result = inspect()
@@ -8170,6 +9491,11 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
                 except Exception as exc:
                     최종규칙검사[key] = {'status': 'error', 'error': str(exc)}
                     검수_문제_기록(파일, f'[최종 {key} 검사 실패] {exc}')
+            완료된_검사 = {key for key, value in 최종규칙검사.items()
+                        if value.get('status') in ('passed', 'failed')}
+            대체수 = 처리중_기록_대체(파일, 완료된_검사, 기록_경계)
+            if 대체수:
+                로그(f"처리 중 미해결 기록 {대체수}건을 저장 결과 검사로 대체")
     무결성 = None
     if 검수_사용 and 원본_구조 is not None:
         결과_구조 = inspect_hwpx(저장파일)
@@ -8182,6 +9508,21 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
         )
         for 문제 in 무결성["issues"]:
             로그(f"  - [{문제['severity']}] {문제['message']}")
+    if 검수_사용:
+        # 숫자 데이터 일치 검사(TODO 4순위): 표 가까이의 본문 수치가 그 표에 같은 단위로
+        # 있는지 본다. 읽기 전용이며 실패가 아닌 '확인 필요'로만 알린다.
+        try:
+            대조 = 숫자_대조(결과_구조 if 원본_구조 is not None else inspect_hwpx(저장파일))
+            최종규칙검사['number_check'] = 대조
+            if 대조['status'] == 'skipped':
+                진단로그(f"숫자 대조: {대조['reason']}")
+            else:
+                로그(f"숫자 대조: 표 가까이 본문 수치 {대조['checked']}개 중 표에서 찾지 못한 "
+                     f"{len(대조['review'])}개(확인 필요)")
+                for 항목 in 대조['review']:
+                    로그(f"  - [숫자 대조 확인 필요] {항목['text']}: {항목['context']}")
+        except Exception as exc:
+            진단로그(f"숫자 대조 실패(무시): {exc}")
     최종검수_문서목록.append({
         "source": str(파일),
         "output": str(저장파일),
@@ -8200,6 +9541,23 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
 # ============================================================
 # 백그라운드 작업 실행 스레드
 # ============================================================
+
+def 절전_방지(켜기):
+    """처리 중에는 PC가 절전(대기)에 들어가지 않게 한다(화면은 꺼져도 됨).
+
+    실전 테스트에서 긴 문서 처리 중 PC가 절전에 들어가 한글 연결이 끊기고
+    (RPC 서버를 사용할 수 없음) 하루 가까이 멈춰 있었다. 이 설정은 호출한
+    스레드에만 적용되고, 끄거나 스레드가 끝나면 원래대로 돌아간다. 사용자가
+    직접 절전·덮개 닫기를 하면 막지 못한다.
+    """
+    ES_CONTINUOUS, ES_SYSTEM_REQUIRED = 0x80000000, 0x00000001
+    try:
+        import ctypes
+        ctypes.windll.kernel32.SetThreadExecutionState(
+            ES_CONTINUOUS | (ES_SYSTEM_REQUIRED if 켜기 else 0))
+    except Exception:
+        pass
+
 
 def 작업_실행(
     파일목록,
@@ -8254,6 +9612,7 @@ def 작업_실행(
     if 표준서식_문단위간격_pt is None:
         표준서식_문단위간격_pt = {}
 
+    절전_방지(True)
     try:
         if 실행모드 not in ("spacing", "format", "all"):
             raise ValueError("잘못된 실행 모드")
@@ -8275,6 +9634,9 @@ def 작업_실행(
             로그_파일_경로 = None
         로그(f"프로그램 버전: {APP_VERSION} / 전체 처리 {작업_반복횟수}회 / 단어 분리 방지: {bool(단어분리방지)} / 본문 {본문재시도횟수}단계 / 표 {표재시도횟수}단계 / 줄간격 조정범위 {줄간격최소}~{줄간격최대}%")
         로그(f"작업 로그 파일: {로그_파일_경로 or '(만들지 않음)'}")
+        정리수 = 이전_작업_임시폴더_정리()
+        if 정리수:
+            로그(f"이전 실행의 임시 폴더 {정리수}개 정리")
         if 쪽범위_요청 is None:
             로그("작업 범위: 문서 전체")
         else:
@@ -8331,10 +9693,13 @@ def 작업_실행(
         표준서식_문단위간격_복귀배율 = 표준서식_문단위간격_pt.get(
             "std_parspace_return_percent", 표준서식_문단위간격_복귀배율)
         표_헤더서식_사용 = 표준서식_세부.get("std_table_header", 표_헤더서식_사용)
+        # 설정창의 표 글꼴·크기는 서식 프로파일 값보다 우선한다.
+        표글꼴_적용(표준서식_세부.get("table_fonts"))
 
         문장부호_통계 = {"대상": 0, "성공": 0, "실패": 0}
         세트문장_통계 = {"대상": 0, "성공": 0, "실패": 0, "축소횟수": 0, "확대횟수": 0}
         단어분리_통계 = {"대상": 0, "성공": 0, "실패": 0}
+        단계탐색_통계.update(탐색=0, 측정=0)
         다음단어_통계 = {"대상": 0, "적용": 0, "미적용": 0}
 
         원본_뷰어_분리()
@@ -8389,12 +9754,14 @@ def 작업_실행(
                     "integrity_ok": None, "error": str(e),
                 })
                 traceback.print_exc()
-                로그(f"문서 처리 오류: {파일}")
+                로그(f"문서 처리 오류: {파일} — {e}")
                 gui_queue.put(("document_error", str(파일), str(e)))
 
         로그("=" * 45)
         로그(f"문장부호 줄병합 자간조정 통계({작업_반복횟수}회 누적): 대상 {문장부호_통계['대상']}건 (성공 {문장부호_통계['성공']}/실패 {문장부호_통계['실패']})")
         로그(f"단어 분리 방지 통계({작업_반복횟수}회 누적): 대상 {단어분리_통계['대상']}건 (성공 {단어분리_통계['성공']}/실패 {단어분리_통계['실패']})")
+        if 단계탐색_통계["탐색"]:
+            로그(f"자간·장평 단계 탐색: {단계탐색_통계['탐색']}회 / 줄 배치 측정 {단계탐색_통계['측정']}회")
         로그(f"선택적 다음 단어 당김: 대상 {다음단어_통계['대상']}건 "
              f"(적용 {다음단어_통계['적용']}/미적용 {다음단어_통계['미적용']}, 오류 통계 제외)")
         if 세트문장_같은쪽_사용:
@@ -8455,6 +9822,7 @@ def 작업_실행(
         traceback.print_exc()
         gui_queue.put(("fatal_error", str(e)))
     finally:
+        절전_방지(False)
         # COM 객체는 생성한 작업 스레드에서 반드시 정리한다.
         # 창을 보존하는 옵션이어도 COM 프록시 자체를 다음 작업 스레드로 넘기면
         # RPC_E_WRONG_THREAD 류 오류가 날 수 있으므로 창만 분리하고 참조를 해제한다.
@@ -9325,8 +10693,10 @@ class HwpAutoDocFitGUI:
         self.files = []
         self.worker = None
         self.running = False
-        self.stage_choices = {mode: {key: True for key, _ in stages_for_mode(mode)}
+        self.stage_choices = {mode: {key: stage_default(key) for key, _ in stages_for_mode(mode)}
                               for mode in ("spacing", "format", "all")}
+        # 실행창 프리셋: '' | 'basic'(기본후처리) | 'pro'(전문후처리)
+        self.preset_var = tk.StringVar(value="")
         self.closing = False
 
         self.compare_toplevel = None
@@ -9388,6 +10758,7 @@ class HwpAutoDocFitGUI:
                                ("아웃라이너로 작성", self._아웃라이너_열기),
                                ("Markdown 내보내기", self.Markdown_내보내기),
                                ("고급 문서 도구", self.고급문서도구_열기),
+                               ("작성 도우미", self._작성도우미_열기),
                                ("선택 항목 빼기", self._선택삭제), ("목록 비우기", self.목록지우기)):
             button = ttk.Button(file_actions, text=title, command=command)
             button.pack(side="left", padx=(0, 6))
@@ -9437,6 +10808,14 @@ class HwpAutoDocFitGUI:
                 "font": tk.StringVar(value=str(항목.get("font", ""))),
                 "size": tk.StringVar(value=str(항목.get("size", ""))),
             }
+        저장된_표글꼴 = 저장된_설정.get("table_fonts") or {}
+        self.table_font_vars = {}
+        for part in ("header", "body"):
+            항목 = {**기본_설정["table_fonts"][part], **(저장된_표글꼴.get(part) or {})}
+            self.table_font_vars[part] = {
+                "font": tk.StringVar(value=str(항목.get("font", ""))),
+                "size": tk.StringVar(value=str(항목.get("size", ""))),
+            }
         if not self.font_folder_var.get():
             self.font_folder_var.set(한글_폰트_폴더_자동감지())
         self._한글_폰트_목록_캐시 = 한글_폰트_목록_전체(self.font_folder_var.get())
@@ -9472,7 +10851,8 @@ class HwpAutoDocFitGUI:
                      self.linespacing_min_var, self.linespacing_max_var, self.font_folder_var,
                      self.paste_add_folder_var,
                      self.paren_label_bold_var] + list(self.std_bool_vars.values()) + list(self.std_parspace_vars.values())
-                    + [v for 항목 in self.symbol_font_vars.values() for v in 항목.values()]):
+                    + [v for 항목 in self.symbol_font_vars.values() for v in 항목.values()]
+                    + [v for 항목 in self.table_font_vars.values() for v in 항목.values()]):
             변수.trace_add("write", self._설정_변경됨)
 
         self.color_radios = []
@@ -9492,17 +10872,30 @@ class HwpAutoDocFitGUI:
         choose.grid(row=1, column=0, sticky="ew", pady=6)
         self.choose_frame = choose
         self.mode_buttons = []
+        # 프리셋(TODO 3순위): 기존 3카드 위에 조합 실행 버튼 2개. 고르면 해당 카드와
+        # '서식통일' 세부 작업이 함께 켜지고, 카드를 직접 고르면 서식통일은 꺼진다.
+        preset_row = ttk.Frame(choose)
+        preset_row.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 5))
+        ttk.Label(preset_row, text="빠른 선택", font=("맑은 고딕", 9, "bold")).pack(side="left", padx=(0, 6))
+        self.preset_buttons = []
+        for 값, 이름, 설명 in (
+                ("basic", "기본후처리", "자간정리 + 서식통일"),
+                ("pro", "전문후처리", "자간정리 + 서식통일 + 서식적용 + 한번에 적용")):
+            버튼 = ttk.Radiobutton(preset_row, text=f"{이름} ({설명})", value=값, variable=self.preset_var,
+                                 command=lambda v=값: self._프리셋_선택(v), style="Mode.TRadiobutton")
+            버튼.pack(side="left", padx=(0, 12))
+            self.preset_buttons.append(버튼)
         for i, (title, mode, desc, color) in enumerate((
             ("자간 정리", "spacing", "글자 사이 간격을 조절해\n줄 끝의 끊긴 단어를 정리해요.", "teal"),
             ("서식 정리", "format", "내어쓰기·글꼴·문단 간격을\n설정한 규칙으로 맞춰요.", "orange"),
             ("한 번에 정리", "all", "자간과 서식을\n한 번에 정리해요.", "lavender"))):
             choose.grid_columnconfigure(i, weight=1, uniform="modes")
             card = tk.Frame(choose, bg=UI_COLORS[color], padx=2, pady=2)
-            card.grid(row=0, column=i, sticky="nsew", padx=3)
+            card.grid(row=1, column=i, sticky="nsew", padx=3)
             inner = ttk.Frame(card, padding=6)
             inner.pack(fill="both", expand=True)
             rb = ttk.Radiobutton(inner, text=title, value=mode, variable=self.selected_mode,
-                                 command=self._모드_선택됨, style="Mode.TRadiobutton")
+                                 command=lambda m=mode: self._카드_클릭(m), style="Mode.TRadiobutton")
             rb.pack(anchor="w")
             ttk.Button(inner, text="세부 작업…", width=11,
                        command=lambda m=mode: self._세부작업_열기(m)).pack(anchor="w", pady=(2, 0))
@@ -9512,7 +10905,7 @@ class HwpAutoDocFitGUI:
             for surface in (card, inner, description):
                 surface.bind("<Button-1>", lambda e, m=mode: self._카드_클릭(m))
         quick = ttk.Frame(choose)
-        quick.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(5, 0))
+        quick.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(5, 0))
         self.settings_button = ttk.Button(quick, text="세부 설정…", command=self.설정창_열기)
         self.settings_button.pack(side="right")
         self.proofread_button = ttk.Button(quick, text="공공언어·맞춤법 검토…", command=self._공공언어_검토)
@@ -9526,7 +10919,7 @@ class HwpAutoDocFitGUI:
 
         # 실행창에서 바로 사용할 서식 선택과 예시 문서 드롭 분석.
         format_quick = ttk.Frame(choose)
-        format_quick.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(6, 0))
+        format_quick.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(6, 0))
         ttk.Label(format_quick, text="적용 서식", font=("맑은 고딕", 9, "bold")).pack(side="left", padx=(0, 6))
         self.main_profile_combo = ttk.Combobox(format_quick, state="readonly", width=20)
         self.main_profile_combo.pack(side="left")
@@ -9544,7 +10937,7 @@ class HwpAutoDocFitGUI:
 
         # 작업 범위: 기본은 문서 전체. 쪽을 지정하면 그 쪽에 놓인 내용만 처리한다.
         scope = ttk.Frame(choose)
-        scope.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(6, 0))
+        scope.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(6, 0))
         ttk.Label(scope, text="작업 범위", font=("맑은 고딕", 10, "bold")).pack(side="left", padx=(0, 8))
         self.range_all_radio = ttk.Radiobutton(scope, text="문서 전체", value="all", variable=self.range_mode_var)
         self.range_all_radio.pack(side="left")
@@ -9932,6 +11325,8 @@ class HwpAutoDocFitGUI:
             콤보.bind("<<ComboboxSelected>>", self._프로파일_선택)
             복사버튼 = ttk.Button(profile_row, text="서식 복사하기…", command=self._서식_복사하기)
             복사버튼.pack(side="left")
+            ttk.Button(profile_row, text="편집하여 추가…", command=self._서식_예시편집_시작).pack(side="left", padx=(6, 0))
+            ttk.Button(profile_row, text="이름 바꾸기…", command=self._서식_이름바꾸기).pack(side="left", padx=(6, 0))
             수정버튼 = ttk.Button(profile_row, text="상세 수정…", command=self._서식_수정하기)
             수정버튼.pack(side="left", padx=(6, 0))
             삭제버튼 = ttk.Button(profile_row, text="삭제", command=self._서식_삭제하기)
@@ -9986,7 +11381,7 @@ class HwpAutoDocFitGUI:
             문단위간격_스핀들.append(복귀배율_스핀)
 
             빈줄삭제_체크 = ttk.Checkbutton(
-                std_detail, text="문두기호 문장 사이 빈 줄 삭제 (빈 줄로 띄운 간격은 문단 위 여백으로 대신함)",
+                std_detail, text="문두기호 문장 사이·문서 끝 빈 줄 삭제 (빈 줄로 띄운 간격은 문단 위 여백으로 대신하고, 문서 끝 빈 줄로 생기는 빈 쪽을 없앰)",
                 variable=self.std_bool_vars["std_remove_blank_lines"])
             빈줄삭제_체크.pack(anchor="w", pady=(6, 0))
 
@@ -10047,6 +11442,35 @@ class HwpAutoDocFitGUI:
                 크기스핀.pack(side="left", padx=(4, 2))
                 ttk.Label(행, text="pt").pack(side="left")
                 크기_스핀들[기호] = 크기스핀
+
+            표글꼴_틀 = ttk.LabelFrame(parent, text="표 안 글꼴 · 크기", padding=8)
+            표글꼴_틀.pack(anchor="w", fill="x", pady=(6, 0))
+            ttk.Label(
+                표글꼴_틀,
+                text="'표 머리글·본문 서식' 작업에서 표의 첫 행(머리글)과 나머지 행(본문)에 적용합니다. "
+                     "한 칸짜리 표(제목·개요 상자)는 바꾸지 않습니다.",
+                style="Hint.TLabel", wraplength=520
+            ).pack(anchor="w", pady=(0, 4))
+            for part, 이름 in (("header", "머리글"), ("body", "본문")):
+                행 = ttk.Frame(표글꼴_틀)
+                행.pack(anchor="w", fill="x", pady=(2, 0))
+                ttk.Label(행, text=이름, width=6).pack(side="left")
+                콤보 = ttk.Combobox(
+                    행, textvariable=self.table_font_vars[part]["font"],
+                    values=self._한글_폰트_목록_캐시, width=22
+                )
+                콤보.pack(side="left", padx=(4, 8))
+                self._휠_콤보박스_바인딩(콤보)
+                # 글꼴 목록 새로고침이 문장기호 글꼴 상자와 함께 갱신하도록 같이 보관한다.
+                글꼴_콤보들[f"표_{part}"] = 콤보
+                ttk.Label(행, text="크기").pack(side="left")
+                크기스핀 = ttk.Spinbox(
+                    행, from_=1, to=200, width=4, justify="center",
+                    textvariable=self.table_font_vars[part]["size"]
+                )
+                크기스핀.pack(side="left", padx=(4, 2))
+                ttk.Label(행, text="pt").pack(side="left")
+                크기_스핀들[f"표_{part}"] = 크기스핀
 
             paren_shrink_check = ttk.Checkbutton(
                 parent,
@@ -10187,7 +11611,10 @@ class HwpAutoDocFitGUI:
                 summary = "서식만 정리합니다. 글자 간격은 그대로 둬요.\n" + 항목
             else:
                 summary = "서식을 정리한 뒤 글자 간격까지 조정합니다.\n" + 항목
-        disabled = sum(not value for value in self.stage_choices[mode].values())
+        choices = self.stage_choices[mode]
+        disabled = sum(not value for key, value in choices.items() if stage_default(key))
+        if choices.get("style_unify"):
+            summary += "\n서식통일 켜짐: 문서 안에서 가장 많이 쓴 스타일로 맞춰요."
         if disabled:
             summary += f"\n세부 작업 {disabled}개 제외"
         self.options_summary.configure(text=summary)
@@ -10215,6 +11642,22 @@ class HwpAutoDocFitGUI:
     def _카드_클릭(self, mode):
         if self.running:
             return
+        # 카드를 직접 고르면 예전과 같은 동작(서식통일 꺼짐)으로 돌아간다.
+        if self.preset_var.get():
+            self.preset_var.set("")
+            for choices in self.stage_choices.values():
+                if "style_unify" in choices:
+                    choices["style_unify"] = False
+        self.selected_mode.set(mode)
+        self._모드_선택됨()
+
+    def _프리셋_선택(self, preset):
+        """기본후처리 = 자간 정리 + 서식통일, 전문후처리 = 한 번에 정리(자간+서식) + 서식통일."""
+        if self.running:
+            return
+        mode = "spacing" if preset == "basic" else "all"
+        self.preset_var.set(preset)
+        self.stage_choices[mode]["style_unify"] = True
         self.selected_mode.set(mode)
         self._모드_선택됨()
 
@@ -10598,8 +12041,11 @@ class HwpAutoDocFitGUI:
         활성_정밀표_프로필 = copy.deepcopy(profile.get("precise_tables"))
 
     def _프로파일_목록갱신(self):
-        self._프로파일_ids = list(self._프로파일들)
-        이름들 = [p["name"] for p in self._프로파일들.values()]
+        # 기본 서식을 맨 앞에 두고 기관별로 묶어 이름순으로 보인다(A3).
+        ids = [k for k in self._프로파일들 if k]
+        ids.sort(key=lambda k: (str(self._프로파일들[k].get("organization") or "￿"), self._프로파일들[k]["name"]))
+        self._프로파일_ids = ([""] if "" in self._프로파일들 else []) + ids
+        이름들 = [서식프로파일_표시이름(self._프로파일들[k]) for k in self._프로파일_ids]
         현재 = self._프로파일_ids.index(self._활성_서식_프로파일)
         for 콤보이름 in self._프로파일_콤보_이름목록:
             콤보 = getattr(self, 콤보이름, None)
@@ -10628,6 +12074,10 @@ class HwpAutoDocFitGUI:
             if symbol in self.symbol_font_vars:
                 self.symbol_font_vars[symbol]["font"].set(str(values.get("font", "")))
                 self.symbol_font_vars[symbol]["size"].set(str(values.get("size", "")))
+        self.table_font_vars["header"]["font"].set(str(표_헤더서식_헤더_폰트))
+        self.table_font_vars["header"]["size"].set(str(표_헤더서식_헤더_크기))
+        self.table_font_vars["body"]["font"].set(str(표_헤더서식_본문_폰트))
+        self.table_font_vars["body"]["size"].set(str(표_헤더서식_본문_크기))
         for key, var in self.label_symbol_vars.items():
             var.set(options.get("label_symbols", 기본_설정["label_symbols"]).get(key, True))
         self._설정_변경됨()
@@ -10636,6 +12086,124 @@ class HwpAutoDocFitGUI:
         삭제버튼 = getattr(self, "delete_format_button", None)
         if 삭제버튼 is not None:
             삭제버튼.config(state="normal" if self._활성_서식_프로파일 else "disabled")
+
+    def _서식_이름바꾸기(self):
+        """저장된 서식의 이름을 언제든 바꾼다(TODO 6순위). 기본 서식은 바꾸지 않는다."""
+        if self.running:
+            return
+        parent = self.settings_toplevel if self.settings_toplevel and self.settings_toplevel.winfo_viewable() else self.root
+        identifier = self._활성_서식_프로파일
+        if not identifier:
+            messagebox.showinfo(APP_NAME, "기본 문서 서식은 이름을 바꿀 수 없습니다.", parent=parent)
+            return
+        profile = self._프로파일들[identifier]
+        새이름 = simpledialog.askstring(APP_NAME, "서식 이름", parent=parent, initialvalue=profile["name"])
+        if 새이름 is None:
+            return
+        새이름 = 새이름.strip()
+        if not 새이름:
+            messagebox.showwarning(APP_NAME, "비어 있지 않은 이름을 입력해 주세요.", parent=parent)
+            return
+        if any(p["name"] == 새이름 for k, p in self._프로파일들.items() if k != identifier):
+            messagebox.showwarning(APP_NAME, "이미 사용 중인 서식 이름입니다.", parent=parent)
+            return
+        새기관 = simpledialog.askstring(APP_NAME, "기관 이름(선택, 비워 두면 기관 없음)", parent=parent,
+                                      initialvalue=str(profile.get("organization") or ""))
+        if 새기관 is None:
+            return
+        바뀐 = dict(profile, name=새이름)
+        if 새기관.strip():
+            바뀐["organization"] = 새기관.strip()
+        else:
+            바뀐.pop("organization", None)
+        try:
+            folder = 서식프로파일_폴더()
+            temp = folder / (identifier + ".tmp")
+            temp.write_text(json.dumps(바뀐, ensure_ascii=False, indent=2), encoding="utf-8")
+            os.replace(temp, folder / (identifier + ".json"))
+        except Exception as exc:
+            messagebox.showerror(APP_NAME, f"서식 이름 저장 실패\n{exc}", parent=parent)
+            return
+        self._프로파일들[identifier] = 바뀐
+        self._프로파일_목록갱신()
+        self.status_var.set(f"서식 이름을 '{새이름}'(으)로 바꿨습니다.")
+
+    def _서식_예시편집_시작(self):
+        """빈 한/글 문서를 열어 사용자가 예시 문서를 직접 쓰게 하고, '분석 시작'을
+        누르면 그 문서를 분석해 새 서식으로 등록한다(TODO 6순위)."""
+        if self.running or getattr(self, "_서식분석중", False):
+            return
+        기존창 = getattr(self, "_예시편집_창", None)
+        if 기존창 is not None and 기존창.winfo_exists():
+            기존창.lift()
+            return
+        parent = self.settings_toplevel if self.settings_toplevel and self.settings_toplevel.winfo_viewable() else self.root
+        try:
+            pythoncom.CoInitialize()
+            보안모듈_초기화()
+            app = win32.DispatchEx("HwpFrame.HwpObject")
+            if not app.RegisterModule(REGISTER_MODULE_NAME, REGISTER_MODULE_VALUE):
+                raise RuntimeError("한글 보안 모듈을 등록하지 못했습니다.")
+            app.XHwpWindows.Item(0).Visible = True
+        except Exception as exc:
+            messagebox.showerror(APP_NAME, f"한글을 열지 못했습니다.\n{exc}", parent=parent)
+            return
+        self._예시편집_hwp = app
+        창 = tk.Toplevel(parent)
+        self._예시편집_창 = 창
+        창.title("서식 예시 문서 편집")
+        창.attributes("-topmost", True)
+        창.resizable(False, False)
+        ttk.Label(창, text="열린 한/글 창에서 예시 문서를 작성하세요.", font=("맑은 고딕", 11, "bold")).pack(
+            anchor="w", padx=14, pady=(12, 2))
+        ttk.Label(창, text="□·ㅇ·-·※ 같은 문두기호를 섞어 원하는 계층 구조로 쓰면, 기호별로 가장 많이 쓴 "
+                          "글꼴·크기·들여쓰기가 그 기호의 서식이 됩니다. 다 쓰면 '분석 시작'을 누르세요.\n"
+                          "서식 이름은 첫 문장의 앞 8글자로 정하며 나중에 '이름 바꾸기…'로 고칠 수 있습니다.",
+                  style="Hint.TLabel", wraplength=420, justify="left").pack(anchor="w", padx=14)
+        안내 = tk.StringVar(value="")
+        ttk.Label(창, textvariable=안내, foreground="#b03030", wraplength=420).pack(anchor="w", padx=14, pady=(6, 0))
+        버튼줄 = ttk.Frame(창)
+        버튼줄.pack(fill="x", padx=14, pady=12)
+
+        def 한글닫기():
+            한글 = getattr(self, "_예시편집_hwp", None)
+            self._예시편집_hwp = None
+            if 한글 is not None:
+                try:
+                    한글.Clear(1)
+                    한글.Quit()
+                except Exception:
+                    pass
+
+        def 취소():
+            한글닫기()
+            창.destroy()
+            self._예시편집_창 = None
+
+        def 분석시작():
+            한글 = self._예시편집_hwp
+            if 한글 is None:
+                return
+            임시 = Path(tempfile.mkdtemp(prefix="docfit_example_")) / "예시.hwpx"
+            try:
+                if 한글.SaveAs(str(임시), "HWPX", "") is False:
+                    raise RuntimeError("예시 문서를 임시 파일로 저장하지 못했습니다.")
+                문단들 = [b.text for b in inspect_hwpx(임시).blocks if b.type == "paragraph"]
+            except Exception as exc:
+                안내.set(f"예시 문서를 읽지 못했습니다: {exc}")
+                return
+            if not any(leading_marker(t)[0] for t in 문단들):
+                안내.set("문두기호(□·ㅇ·-·※ 등)로 시작하는 문단이 없습니다. 기호를 붙인 문단을 한두 개 이상 써 주세요.")
+                return
+            이름 = 예시문서_기본이름(문단들)
+            한글닫기()
+            창.destroy()
+            self._예시편집_창 = None
+            self._서식_분석_시작(str(임시), 이름묻기=False, 기본이름=이름)
+
+        ttk.Button(버튼줄, text="분석 시작", command=분석시작).pack(side="left")
+        ttk.Button(버튼줄, text="취소", command=취소).pack(side="right")
+        창.protocol("WM_DELETE_WINDOW", 취소)
 
     def _서식_삭제하기(self):
         if self.running:
@@ -10840,6 +12408,12 @@ class HwpAutoDocFitGUI:
         outline_pasted_text로 ㅁ/ㅇ/-/• 공문서 문두기호로 바꿔 문서
         목록에 추가하고, '마크다운으로 추가'는 원본 그대로 추가해
         고급 문서 엔진(kordoc)이 있을 때 서식을 살려 변환하게 한다.
+
+        1.68 Alpha 6(TODO 5순위): 접기/펼치기(Ctrl+↑/↓), 확대(Alt+→/←),
+        항목 이동(Alt+Shift+↑/↓), 완료 표시(Ctrl+Enter, "[x] "), 메모
+        (Shift+Enter, "> "), 검색 걸러 보기(Ctrl+F), 저장·열기(Ctrl+S/O)와
+        닫을 때 자동 저장한 글을 다음에 이어 쓰기. 줄 계산은
+        docfit_core.outline_ops의 순수 함수가 맡는다.
         """
         if self.running:
             return
@@ -10850,22 +12424,28 @@ class HwpAutoDocFitGUI:
         window = tk.Toplevel(self.root)
         self._아웃라이너_창 = window
         window.title("아웃라이너로 새 글 작성")
-        window.geometry("980x620")
-        window.minsize(640, 420)
+        window.geometry("1020x660")
+        window.minsize(680, 440)
         window.transient(self.root)
-
-        def closed():
-            self._아웃라이너_창 = None
-        window.protocol("WM_DELETE_WINDOW", lambda: (window.destroy(), closed()))
+        임시저장_경로 = Path(설정_파일_경로()).with_name("outliner_draft.md")
 
         body = ttk.Frame(window, padding=12)
         body.pack(fill="both", expand=True)
         ttk.Label(body, text="워크플로위처럼 항목을 쓰고 Tab/Shift+Tab으로 계층을 넣고 빼세요.",
                   font=("맑은 고딕", 12, "bold")).pack(anchor="w")
         ttk.Label(body,
-                  text="Enter: 같은 계층의 새 항목 · Tab: 한 단계 들여쓰기(바로 위 항목 아래로) · "
-                       "Shift+Tab: 내어쓰기. 0단계는 ㅁ, 1단계는 ㅇ, 2단계는 -, 3단계 이후는 모두 •로 바뀝니다.",
-                  style="Hint.TLabel", wraplength=940, justify="left").pack(anchor="w", pady=(2, 8))
+                  text="Enter: 같은 계층의 새 항목 · Tab/Shift+Tab: 들여쓰기/내어쓰기 · "
+                       "Ctrl+↑/↓: 접기/펼치기 · Alt+→/←: 확대/전체 보기 · Alt+Shift+↑/↓: 항목 이동 · "
+                       "Ctrl+Enter: 완료 표시 · Shift+Enter: 메모 · Ctrl+F: 검색 · Ctrl+S/O: 저장/열기. "
+                       "0단계는 ㅁ, 1단계는 ㅇ, 2단계는 -, 3단계 이후는 •, 메모는 ※로 바뀝니다.",
+                  style="Hint.TLabel", wraplength=980, justify="left").pack(anchor="w", pady=(2, 6))
+
+        toolbar = ttk.Frame(body)
+        toolbar.pack(fill="x", pady=(0, 6))
+        ttk.Label(toolbar, text="검색").pack(side="left")
+        search_var = tk.StringVar()
+        search_entry = ttk.Entry(toolbar, textvariable=search_var, width=22)
+        search_entry.pack(side="left", padx=(4, 10))
 
         panes = ttk.Frame(body)
         panes.pack(fill="both", expand=True)
@@ -10885,6 +12465,13 @@ class HwpAutoDocFitGUI:
         outline_scroll = ttk.Scrollbar(outline_frame, orient="vertical", command=outline_text.yview)
         outline_scroll.grid(row=0, column=1, sticky="ns")
         outline_text.configure(yscrollcommand=outline_scroll.set)
+        # 접기·확대·검색은 줄을 화면에서만 숨긴다(저장 내용은 그대로).
+        for 태그 in ("hidden_fold", "hidden_zoom", "hidden_filter"):
+            outline_text.tag_configure(태그, elide=True)
+        outline_text.tag_configure("done", overstrike=True, foreground="#8a8a8a")
+        outline_text.tag_configure("note", foreground="#6b6b6b", font=("맑은 고딕", 10, "italic"))
+        outline_text.tag_configure("folded", background="#eef3fb")
+        outline_text.tag_configure("found", background="#fff1a8")
 
         preview_frame = ttk.Frame(panes)
         preview_frame.grid(row=1, column=1, sticky="nsew", padx=(4, 0))
@@ -10898,6 +12485,40 @@ class HwpAutoDocFitGUI:
 
         status = tk.StringVar(value="항목을 입력하고 Enter로 다음 항목을 이어가세요.")
 
+        def 줄목록():
+            return outline_text.get("1.0", "end-1c").split("\n")
+
+        def 현재줄번호():
+            return int(outline_text.index("insert").split(".")[0]) - 1
+
+        def 줄범위(시작, 끝):
+            return f"{시작 + 1}.0", f"{끝 + 1}.0"
+
+        def 모양_갱신(event=None):
+            줄들 = 줄목록()
+            for 태그 in ("done", "note"):
+                outline_text.tag_remove(태그, "1.0", "end")
+            for i, 줄 in enumerate(줄들):
+                if outline_ops.is_done(줄):
+                    outline_text.tag_add("done", f"{i + 1}.0", f"{i + 1}.end")
+                elif outline_ops.parse(줄)[0] == "note":
+                    outline_text.tag_add("note", f"{i + 1}.0", f"{i + 1}.end")
+
+        def 숨김_해제():
+            for 태그 in ("hidden_fold", "hidden_zoom", "hidden_filter", "folded", "found"):
+                outline_text.tag_remove(태그, "1.0", "end")
+
+        def 내용_바꾸기(줄들, 커서줄=None, 커서칸="end"):
+            숨김_해제()
+            outline_text.edit_separator()
+            outline_text.delete("1.0", "end")
+            outline_text.insert("1.0", "\n".join(줄들))
+            outline_text.edit_separator()
+            if 커서줄 is not None:
+                outline_text.mark_set("insert", f"{커서줄 + 1}.{커서칸}")
+                outline_text.see("insert")
+            모양_갱신()
+
         def 현재줄범위():
             return outline_text.index("insert linestart"), outline_text.index("insert lineend")
 
@@ -10905,13 +12526,18 @@ class HwpAutoDocFitGUI:
             행 = int(줄시작.split(".")[0])
             if 행 <= 1:
                 return None
-            이전줄 = outline_text.get(f"{행 - 1}.0", f"{행 - 1}.end")
-            깊이, _ = self._아웃라인_깊이(이전줄)
-            return 깊이
+            return outline_ops.depth(줄목록(), 행 - 2)
 
         def 엔터처리(event=None):
             줄시작, 줄끝 = 현재줄범위()
             전체줄 = outline_text.get(줄시작, 줄끝)
+            if outline_ops.parse(전체줄)[0] == "note":
+                # 메모 줄에서 Enter는 메모가 딸린 항목과 같은 계층의 새 항목을 연다.
+                깊이 = outline_ops.depth(줄목록(), 현재줄번호())
+                새프리픽스 = self._아웃라인_접두(깊이, "")
+                outline_text.insert(줄끝, "\n" + 새프리픽스)
+                outline_text.mark_set("insert", f"{int(줄시작.split('.')[0]) + 1}.{len(새프리픽스)}")
+                return "break"
             깊이, 본문 = self._아웃라인_깊이(전체줄)
             프리픽스길이 = len(전체줄) - len(본문)
             커서컬럼 = int(outline_text.index("insert").split(".")[1])
@@ -10929,6 +12555,8 @@ class HwpAutoDocFitGUI:
         def 들여쓰기(event=None):
             줄시작, 줄끝 = 현재줄범위()
             전체줄 = outline_text.get(줄시작, 줄끝)
+            if outline_ops.parse(전체줄)[0] == "note":
+                return "break"
             깊이, 본문 = self._아웃라인_깊이(전체줄)
             이전깊이 = 이전줄_깊이(줄시작)
             최대깊이 = 0 if 이전깊이 is None else 이전깊이 + 1
@@ -10947,6 +12575,8 @@ class HwpAutoDocFitGUI:
         def 내어쓰기(event=None):
             줄시작, 줄끝 = 현재줄범위()
             전체줄 = outline_text.get(줄시작, 줄끝)
+            if outline_ops.parse(전체줄)[0] == "note":
+                return "break"
             깊이, 본문 = self._아웃라인_깊이(전체줄)
             새깊이 = max(깊이 - 1, 0)
             if 새깊이 == 깊이:
@@ -10960,10 +12590,127 @@ class HwpAutoDocFitGUI:
             outline_text.mark_set("insert", f"{줄시작.split('.')[0]}.{새프리픽스길이 + 커서오프셋}")
             return "break"
 
+        def 접기(event=None):
+            줄들 = 줄목록()
+            i = outline_ops.item_start(줄들, 현재줄번호())
+            끝 = outline_ops.subtree_end(줄들, i)
+            if 끝 <= i + 1:
+                status.set("접을 하위 항목이 없습니다.")
+                return "break"
+            outline_text.tag_add("hidden_fold", *줄범위(i + 1, 끝))
+            outline_text.tag_add("folded", f"{i + 1}.0", f"{i + 1}.end")
+            outline_text.mark_set("insert", f"{i + 1}.end")
+            status.set(f"접음 · 하위 {끝 - i - 1}줄 (Ctrl+↓로 펼치기)")
+            return "break"
+
+        def 펼치기(event=None):
+            줄들 = 줄목록()
+            i = outline_ops.item_start(줄들, 현재줄번호())
+            끝 = outline_ops.subtree_end(줄들, i)
+            outline_text.tag_remove("hidden_fold", *줄범위(i + 1, 끝))
+            outline_text.tag_remove("folded", f"{i + 1}.0", f"{i + 1}.end")
+            status.set("펼침")
+            return "break"
+
+        def 확대(event=None):
+            줄들 = 줄목록()
+            i = outline_ops.item_start(줄들, 현재줄번호())
+            끝 = outline_ops.subtree_end(줄들, i)
+            outline_text.tag_remove("hidden_zoom", "1.0", "end")
+            if i > 0:
+                outline_text.tag_add("hidden_zoom", "1.0", f"{i + 1}.0")
+            if 끝 < len(줄들):
+                outline_text.tag_add("hidden_zoom", f"{끝}.end", "end")
+            status.set(f"확대: {outline_ops.parse(줄들[i])[2][:30]} (Alt+←로 전체 보기)")
+            return "break"
+
+        def 전체보기(event=None):
+            outline_text.tag_remove("hidden_zoom", "1.0", "end")
+            status.set("전체 보기")
+            return "break"
+
+        def 이동(up):
+            줄들 = 줄목록()
+            결과 = outline_ops.move_block(줄들, 현재줄번호(), up)
+            if 결과 is None:
+                status.set("같은 계층에서 더 옮길 수 없습니다.")
+                return "break"
+            새줄들, 새번호 = 결과
+            내용_바꾸기(새줄들, 새번호)
+            status.set("항목을 옮겼습니다.")
+            return "break"
+
+        def 완료표시(event=None):
+            줄들 = 줄목록()
+            i = outline_ops.item_start(줄들, 현재줄번호())
+            새줄 = outline_ops.toggle_done(줄들[i])
+            if 새줄 != 줄들[i]:
+                outline_text.delete(f"{i + 1}.0", f"{i + 1}.end")
+                outline_text.insert(f"{i + 1}.0", 새줄)
+                모양_갱신()
+                status.set("완료 표시" if outline_ops.is_done(새줄) else "완료 표시 해제")
+            return "break"
+
+        def 메모추가(event=None):
+            줄들 = 줄목록()
+            i = outline_ops.item_start(줄들, 현재줄번호())
+            j = i + 1
+            while j < len(줄들) and outline_ops.parse(줄들[j])[0] == "note":
+                j += 1
+            접두 = outline_ops.note_prefix(줄들[i])
+            outline_text.insert(f"{j}.end", "\n" + 접두)
+            outline_text.mark_set("insert", f"{j + 1}.end")
+            모양_갱신()
+            status.set("메모를 입력하세요(개조식으로 바꿀 때 ※ 부연설명이 됩니다).")
+            return "break"
+
+        def 검색(*args):
+            outline_text.tag_remove("hidden_filter", "1.0", "end")
+            outline_text.tag_remove("found", "1.0", "end")
+            검색어 = search_var.get().strip()
+            if not 검색어:
+                status.set("검색을 지웠습니다.")
+                return
+            줄들 = 줄목록()
+            보일줄 = outline_ops.filter_visible(줄들, 검색어)
+            for i in range(len(줄들)):
+                if i not in 보일줄:
+                    outline_text.tag_add("hidden_filter", *줄범위(i, i + 1))
+            시작 = "1.0"
+            while True:
+                위치 = outline_text.search(검색어, 시작, stopindex="end", nocase=True)
+                if not 위치:
+                    break
+                끝 = f"{위치}+{len(검색어)}c"
+                outline_text.tag_add("found", 위치, 끝)
+                시작 = 끝
+            status.set(f"검색: '{검색어}' — {len([i for i in 보일줄 if 검색어.lower() in 줄들[i].lower()])}줄 (Esc로 해제)")
+
+        def 검색해제(event=None):
+            search_var.set("")
+            outline_text.focus_set()
+            return "break"
+
+        search_var.trace_add("write", 검색)
+        search_entry.bind("<Escape>", 검색해제)
+        search_entry.bind("<Return>", lambda e: (outline_text.focus_set(), "break")[1])
+
         outline_text.bind("<Return>", 엔터처리)
         outline_text.bind("<Tab>", 들여쓰기)
         outline_text.bind("<Shift-Tab>", 내어쓰기)
         outline_text.bind("<ISO_Left_Tab>", 내어쓰기)  # 일부 배치에서 Shift+Tab이 이 키심볼로 옴
+        outline_text.bind("<Control-Up>", 접기)
+        outline_text.bind("<Control-Down>", 펼치기)
+        outline_text.bind("<Alt-Right>", 확대)
+        outline_text.bind("<Alt-Left>", 전체보기)
+        outline_text.bind("<Alt-Shift-Up>", lambda e: 이동(True))
+        outline_text.bind("<Alt-Shift-Down>", lambda e: 이동(False))
+        outline_text.bind("<Control-Return>", 완료표시)
+        outline_text.bind("<Shift-Return>", 메모추가)
+        outline_text.bind("<Escape>", 검색해제)
+        outline_text.bind("<KeyRelease>", 모양_갱신)
+        for 위젯 in (outline_text, search_entry):
+            위젯.bind("<Control-f>", lambda e: (search_entry.focus_set(), "break")[1])
 
         def 기본파일명(내용, 확장자):
             for 줄 in 내용.splitlines():
@@ -10980,7 +12727,7 @@ class HwpAutoDocFitGUI:
                 status.set("작성한 항목이 없습니다.")
                 return None
             try:
-                결과 = outline_pasted_text(원문)
+                결과 = outline_pasted_text(outline_ops.export_markdown(원문.split("\n")))
             except Exception as e:
                 messagebox.showerror(APP_NAME, f"개조식 변환 중 오류가 발생했습니다.\n\n{e}", parent=window)
                 return None
@@ -11036,12 +12783,70 @@ class HwpAutoDocFitGUI:
             else:
                 status.set("이미 목록에 있는 파일입니다.")
 
+        def 저장(event=None):
+            원문 = outline_text.get("1.0", "end-1c")
+            경로 = asksaveasfilename(
+                parent=window, title="아웃라인을 저장할 위치(나중에 '열기'로 이어 쓰기)",
+                initialfile=기본파일명(원문, ".md"),
+                defaultextension=".md", filetypes=[("Markdown", "*.md")],
+            )
+            if not 경로:
+                return "break"
+            try:
+                Path(경로).write_text(원문, encoding="utf-8")
+                status.set(f"저장했습니다 · {Path(경로).name}")
+            except OSError as e:
+                messagebox.showerror(APP_NAME, f"파일 저장 중 오류가 발생했습니다.\n\n{e}", parent=window)
+            return "break"
+
+        def 열기(event=None):
+            경로 = askopenfilename(parent=window, title="이어 쓸 아웃라인 열기",
+                                   filetypes=[("Markdown", "*.md"), ("텍스트 파일", "*.txt")])
+            if not 경로:
+                return "break"
+            try:
+                내용 = Path(경로).read_text(encoding="utf-8-sig")
+            except (OSError, UnicodeDecodeError) as e:
+                messagebox.showerror(APP_NAME, f"파일을 열지 못했습니다.\n\n{e}", parent=window)
+                return "break"
+            내용_바꾸기(내용.split("\n"), len(내용.split("\n")) - 1)
+            status.set(f"불러왔습니다 · {Path(경로).name}")
+            return "break"
+
         def 지우기():
+            숨김_해제()
             outline_text.delete("1.0", "end")
             outline_text.insert("1.0", "# ")
             outline_text.mark_set("insert", "1.2")
             preview_text.delete("1.0", "end")
+            try:
+                임시저장_경로.unlink()
+            except OSError:
+                pass
             status.set("항목을 입력하고 Enter로 다음 항목을 이어가세요.")
+
+        def 닫기():
+            # 닫을 때 쓰던 글을 자동 저장해 다음에 창을 열면 이어 쓸 수 있게 한다.
+            원문 = outline_text.get("1.0", "end-1c")
+            try:
+                if 원문.strip() and 원문.strip() != "#":
+                    임시저장_경로.write_text(원문, encoding="utf-8")
+                elif 임시저장_경로.exists():
+                    임시저장_경로.unlink()
+            except OSError:
+                pass
+            window.destroy()
+            self._아웃라이너_창 = None
+
+        window.protocol("WM_DELETE_WINDOW", 닫기)
+        for 위젯 in (outline_text, search_entry):
+            위젯.bind("<Control-s>", 저장)
+            위젯.bind("<Control-o>", 열기)
+
+        for 이름, 명령 in (("접기", 접기), ("펼치기", 펼치기), ("확대", 확대), ("전체 보기", 전체보기),
+                         ("위로", lambda: 이동(True)), ("아래로", lambda: 이동(False)),
+                         ("완료", 완료표시), ("메모", 메모추가), ("열기…", 열기), ("저장…", 저장)):
+            ttk.Button(toolbar, text=이름, command=명령).pack(side="left", padx=(0, 4))
 
         actions = ttk.Frame(body)
         actions.pack(fill="x", pady=(8, 0))
@@ -11049,11 +12854,21 @@ class HwpAutoDocFitGUI:
         ttk.Button(actions, text="개조식 문서로 추가", command=개조식으로추가).pack(side="left", padx=(6, 0))
         ttk.Button(actions, text="마크다운으로 추가", command=마크다운으로추가).pack(side="left", padx=(6, 0))
         ttk.Button(actions, text="지우기", command=지우기).pack(side="left", padx=(6, 0))
-        ttk.Button(actions, text="닫기", command=lambda: (window.destroy(), closed())).pack(side="right")
+        ttk.Button(actions, text="닫기", command=닫기).pack(side="right")
         ttk.Label(body, textvariable=status, style="Hint.TLabel").pack(anchor="w", pady=(6, 0))
 
-        outline_text.insert("1.0", "# ")
-        outline_text.mark_set("insert", "1.2")
+        이전글 = ""
+        try:
+            if 임시저장_경로.exists():
+                이전글 = 임시저장_경로.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            이전글 = ""
+        if 이전글.strip():
+            내용_바꾸기(이전글.split("\n"), len(이전글.split("\n")) - 1)
+            status.set("지난번 작성하던 글을 불러왔습니다(닫을 때 자동 저장). 새로 쓰려면 '지우기'.")
+        else:
+            outline_text.insert("1.0", "# ")
+            outline_text.mark_set("insert", "1.2")
         outline_text.focus_set()
 
     def _텍스트로_문서추가_열기(self):
@@ -11258,7 +13073,8 @@ class HwpAutoDocFitGUI:
                   font=("맑은 고딕", 12, "bold")).pack(anchor="w")
         ttk.Label(body,
                   text="‘한 번에 정리’는 마크다운 기호(**, #, - 등)를 지우고 보기 좋은 문장으로 바꾸고,\n"
-                       "‘개조식으로 변환’은 제목·글머리 기호의 계층 구조를 ㅁ/ㅇ/-/• 문두기호로 바꿉니다.",
+                       "‘개조식으로 변환’은 제목·글머리 기호의 계층 구조를 ㅁ/ㅇ/-/• 문두기호로 바꿉니다.\n"
+                       "‘제목: / 네모: / 원: / 바:’ 라벨 형식은 라벨 그대로 바꿉니다(‘AI 프롬프트…’로 이 형식의 답을 받을 수 있음).",
                   style="Hint.TLabel", justify="left").pack(anchor="w", pady=(2, 8))
 
         panes = ttk.Frame(body)
@@ -11310,7 +13126,12 @@ class HwpAutoDocFitGUI:
             변환실행(clean_pasted_text, "정리 완료")
 
         def 개조식으로변환():
-            변환실행(outline_pasted_text, "개조식 변환 완료")
+            # 제목:/네모:/원: 같은 라벨 형식이면 계층을 추론하지 않고 라벨대로 바꾼다(A1).
+            원문 = input_text.get("1.0", "end-1c")
+            if looks_labeled(원문):
+                변환실행(label_outline_text, "라벨 형식을 개조식으로 변환 완료")
+            else:
+                변환실행(outline_pasted_text, "개조식 변환 완료")
 
         def 결과복사():
             결과 = output_text.get("1.0", "end-1c")
@@ -11331,6 +13152,7 @@ class HwpAutoDocFitGUI:
         ttk.Button(actions, text="한 번에 정리", command=정리하기).pack(side="left")
         ttk.Button(actions, text="개조식으로 변환", command=개조식으로변환).pack(side="left", padx=(6, 0))
         ttk.Button(actions, text="결과 복사", command=결과복사).pack(side="left", padx=(6, 0))
+        ttk.Button(actions, text="AI 프롬프트…", command=lambda: self._AI_프롬프트_열기(window)).pack(side="left", padx=(6, 0))
         ttk.Button(actions, text="지우기", command=지우기).pack(side="left", padx=(6, 0))
         ttk.Button(actions, text="닫기", command=lambda: (window.destroy(), closed())).pack(side="right")
         ttk.Label(body, textvariable=status, style="Hint.TLabel").pack(anchor="w", pady=(6, 0))
@@ -11342,6 +13164,366 @@ class HwpAutoDocFitGUI:
         if 붙여넣기.strip():
             input_text.insert("1.0", 붙여넣기)
         input_text.focus_set()
+
+    def _AI_프롬프트_열기(self, parent=None):
+        """생성형 AI에게 공문서 초안을 라벨 형식으로 받는 프롬프트를 만들어 복사한다(A2).
+
+        앱은 AI 서비스에 아무것도 보내지 않는다. 프롬프트를 클립보드에 복사하고
+        원하면 브라우저로 AI 사이트를 열 뿐이다.
+        """
+        parent = parent or self.root
+        window = tk.Toplevel(parent)
+        window.title("AI 프롬프트 만들기")
+        window.geometry("860x600")
+        window.minsize(620, 420)
+        window.transient(parent)
+        body = ttk.Frame(window, padding=12)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="AI에게 공문서 초안을 받는 프롬프트", font=("맑은 고딕", 12, "bold")).pack(anchor="w")
+        ttk.Label(body, text="메모를 적고 서식을 고른 뒤 ‘프롬프트 복사’를 누르세요. AI 답변을 ‘붙여넣은 텍스트 정리’나 "
+                             "‘텍스트 붙여넣기’에 넣으면 라벨대로 개조식·제목 상자로 바뀝니다. 앱은 AI에 아무것도 전송하지 않습니다.",
+                  style="Hint.TLabel", wraplength=820, justify="left").pack(anchor="w", pady=(2, 8))
+        panes = ttk.Frame(body)
+        panes.pack(fill="both", expand=True)
+        panes.grid_columnconfigure(1, weight=1)
+        panes.grid_rowconfigure(1, weight=1)
+        panes.grid_rowconfigure(3, weight=2)
+        ttk.Label(panes, text="서식").grid(row=0, column=0, sticky="w")
+        목록 = ai_prompts.all_prompts()
+        listbox = tk.Listbox(panes, exportselection=False, width=24, font=("맑은 고딕", 10))
+        for 이름, 설명, _, 라벨 in 목록:
+            listbox.insert("end", 이름 + ("" if 라벨 else "  (문장)"))
+        listbox.grid(row=1, column=0, rowspan=3, sticky="nsw", padx=(0, 8))
+        ttk.Label(panes, text="메모(업무 내용·일시·장소·대상 등)").grid(row=0, column=1, sticky="w")
+        memo = tk.Text(panes, height=6, wrap="word", undo=True, font=("맑은 고딕", 10))
+        memo.grid(row=1, column=1, sticky="nsew")
+        ttk.Label(panes, text="만들어진 프롬프트").grid(row=2, column=1, sticky="w", pady=(6, 0))
+        preview = tk.Text(panes, wrap="word", font=("맑은 고딕", 9), background="#f7f7f7")
+        preview.grid(row=3, column=1, sticky="nsew")
+        status = tk.StringVar(value="서식을 고르세요.")
+
+        def 갱신(event=None):
+            선택 = listbox.curselection()
+            if not 선택:
+                return
+            이름 = 목록[선택[0]][0]
+            preview.delete("1.0", "end")
+            preview.insert("1.0", ai_prompts.build_prompt(이름, memo.get("1.0", "end-1c")))
+            status.set(f"{이름} · {목록[선택[0]][1]}")
+
+        def 복사():
+            갱신()
+            내용 = preview.get("1.0", "end-1c")
+            if not 내용.strip():
+                status.set("먼저 서식을 고르세요.")
+                return
+            window.clipboard_clear()
+            window.clipboard_append(내용)
+            status.set("프롬프트를 복사했습니다. AI 채팅창에 붙여넣으세요.")
+
+        def 사이트열기(주소):
+            복사()
+            import webbrowser
+            webbrowser.open(주소)
+
+        listbox.bind("<<ListboxSelect>>", 갱신)
+        memo.bind("<KeyRelease>", 갱신)
+        actions = ttk.Frame(body)
+        actions.pack(fill="x", pady=(8, 0))
+        ttk.Button(actions, text="프롬프트 복사", command=복사).pack(side="left")
+        for 이름, 주소 in ai_prompts.AI_SITES.items():
+            ttk.Button(actions, text=f"복사 후 {이름} 열기", command=lambda u=주소: 사이트열기(u)).pack(side="left", padx=(6, 0))
+        ttk.Button(actions, text="닫기", command=window.destroy).pack(side="right")
+        ttk.Label(body, textvariable=status, style="Hint.TLabel").pack(anchor="w", pady=(6, 0))
+        listbox.selection_set(0)
+        갱신()
+        memo.focus_set()
+
+    def _작성도우미_열기(self):
+        """금액·날짜·표 계산·나이·번호·회신공문·기관 서식 도구(B1~B6, A5, A3).
+
+        문서 파일을 직접 바꾸지 않는다. 붙여넣은 텍스트에 적용한 결과를 복사해 쓰게 한다.
+        """
+        existing = getattr(self, "_작성도우미_창", None)
+        if existing is not None and existing.winfo_exists():
+            existing.lift()
+            return
+        window = tk.Toplevel(self.root)
+        self._작성도우미_창 = window
+        window.title("작성 도우미")
+        window.geometry("900x640")
+        window.minsize(640, 480)
+        window.transient(self.root)
+
+        def 닫기():
+            window.destroy()
+            self._작성도우미_창 = None
+        window.protocol("WM_DELETE_WINDOW", 닫기)
+        body = ttk.Frame(window, padding=10)
+        body.pack(fill="both", expand=True)
+        notebook = ttk.Notebook(body)
+        notebook.pack(fill="both", expand=True)
+        self._작성도우미_탭 = notebook
+        status = tk.StringVar(value="탭을 고르고 텍스트를 붙여넣은 뒤 버튼을 누르세요. 결과는 오른쪽에 나옵니다.")
+        self._작성도우미_입출력 = {}
+
+        def 입출력탭(제목, 안내, 버튼들, 위쪽=None):
+            """왼쪽 입력·오른쪽 결과 텍스트와 변환 버튼 줄로 된 공통 탭."""
+            tab = ttk.Frame(notebook, padding=8)
+            notebook.add(tab, text=제목)
+            ttk.Label(tab, text=안내, style="Hint.TLabel", wraplength=840, justify="left").pack(anchor="w")
+            if 위쪽:
+                위쪽(tab)
+            panes = ttk.Frame(tab)
+            panes.pack(fill="both", expand=True, pady=(6, 0))
+            panes.grid_columnconfigure(0, weight=1)
+            panes.grid_columnconfigure(1, weight=1)
+            panes.grid_rowconfigure(0, weight=1)
+            src = tk.Text(panes, wrap="word", undo=True, font=("맑은 고딕", 10))
+            src.grid(row=0, column=0, sticky="nsew", padx=(0, 4))
+            dst = tk.Text(panes, wrap="word", font=("맑은 고딕", 10), background="#f7f7f7")
+            dst.grid(row=0, column=1, sticky="nsew", padx=(4, 0))
+            row = ttk.Frame(tab)
+            row.pack(fill="x", pady=(6, 0))
+
+            def 실행(함수, 이름):
+                try:
+                    결과 = 함수(src.get("1.0", "end-1c"))
+                except Exception as exc:
+                    messagebox.showerror(APP_NAME, f"{이름} 중 오류가 발생했습니다.\n\n{exc}", parent=window)
+                    return
+                dst.delete("1.0", "end")
+                dst.insert("1.0", 결과)
+                status.set(f"{이름} 완료")
+
+            def 복사():
+                내용 = dst.get("1.0", "end-1c")
+                if 내용.strip():
+                    window.clipboard_clear()
+                    window.clipboard_append(내용)
+                    status.set("결과를 복사했습니다.")
+
+            명령 = {}
+            for 이름, 함수 in 버튼들:
+                명령[이름] = lambda f=함수, n=이름: 실행(f, n)
+                ttk.Button(row, text=이름, command=명령[이름]).pack(side="left", padx=(0, 6))
+            ttk.Button(row, text="결과 복사", command=복사).pack(side="right")
+            self._작성도우미_입출력[제목] = (src, dst, 명령)
+            return src, dst
+
+        wa = writing_aids
+
+        # B1·B4 금액·숫자
+        입출력탭("금액·숫자",
+                 "금액(예: 1,500,000원)에 한글 금액을 병기하거나 천 단위 쉼표·단위를 바꿉니다.",
+                 [("한글 금액 병기", wa.hangulize_amounts),
+                  ("쉼표 넣기", wa.add_commas), ("쉼표 빼기", wa.remove_commas),
+                  ("원 → 천원(÷1,000)", lambda t: wa.scale_numbers(t, "0.001")),
+                  ("천원 → 원(×1,000)", lambda t: wa.scale_numbers(t, 1000)),
+                  ("숫자만 한글로", lambda t: re.sub(r"\d{1,3}(?:,\d{3})+|\d+",
+                                                     lambda m: wa.number_to_hangul(int(m.group(0).replace(",", ""))), t))])
+
+        # B2 날짜
+        날짜형식 = tk.StringVar(value="full")
+
+        def 날짜옵션(tab):
+            box = ttk.Frame(tab)
+            box.pack(anchor="w", pady=(4, 0))
+            ttk.Label(box, text="표기").pack(side="left")
+            for 값, 이름 in (("full", "2025. 7. 25.(금)"), ("short", "’25. 7. 25.(금)"), ("plain", "2025. 7. 25.")):
+                ttk.Radiobutton(box, text=이름, value=값, variable=날짜형식).pack(side="left", padx=(6, 0))
+
+        def 기준일(t):
+            return wa.parse_date(t) or _datetime.date.today()
+
+        def 금요일들(t, offset):
+            d = 기준일(t)
+            return "\n".join(wa.format_date(x, 날짜형식.get()) for x in wa.weekdays_in_month(d, 4, offset))
+
+        def 기간(t, kind, offset):
+            d = 기준일(t)
+            if kind == "week":
+                a, b = wa.week_of(d, offset)
+            elif kind == "month":
+                a, b = wa.month_bounds(d, offset)
+            else:
+                a, b = _datetime.date(d.year + offset, 1, 1), _datetime.date(d.year + offset, 12, 31)
+            return wa.date_range_text(a, b, 날짜형식.get())
+
+        def 날짜차이(t):
+            찾은 = [wa.parse_date(m.group(0)) for m in wa._DATE.finditer(t)]
+            찾은 = [x for x in 찾은 if x]
+            if len(찾은) < 2:
+                return "날짜 두 개를 입력하세요. 예: 2025. 7. 1. ~ 2025. 7. 25."
+            a, b = 찾은[:2]
+            return (f"{wa.format_date(a, 날짜형식.get())} ~ {wa.format_date(b, 날짜형식.get())}: "
+                    f"{wa.days_between(a, b)}일 차이(양 끝 포함 {wa.days_between(a, b, True)}일)")
+
+        입출력탭("날짜",
+                 "문장 속 날짜에 요일을 붙이거나(틀린 요일은 고침), 입력한 날짜(없으면 오늘)를 기준으로 날짜를 만듭니다.",
+                 [("요일 붙이기·고치기", wa.add_weekdays),
+                  ("오늘", lambda t: wa.format_date(_datetime.date.today(), 날짜형식.get())),
+                  ("이번 달 금요일", lambda t: 금요일들(t, 0)), ("다음 달 금요일", lambda t: 금요일들(t, 1)),
+                  ("다음 주", lambda t: 기간(t, "week", 1)), ("이번 달 기간", lambda t: 기간(t, "month", 0)),
+                  ("다음 달 기간", lambda t: 기간(t, "month", 1)), ("올해 기간", lambda t: 기간(t, "year", 0)),
+                  ("날짜 차이", 날짜차이)], 날짜옵션)
+
+        # B3 표 계산
+        def 표계산(op):
+            return lambda t: wa.table_to_text(wa.calc_table(wa.parse_table(t), op))
+        입출력탭("표 계산",
+                 "한/글·엑셀 표를 복사해 붙여넣으세요(칸은 탭 또는 |). 첫 행·첫 열이 글자면 머리글로 보고 계산에서 뺍니다. "
+                 "결과를 복사해 한/글 표에 붙여넣으면 됩니다.",
+                 [("열 합계", 표계산("col_sum")), ("열 평균", 표계산("col_avg")),
+                  ("행 합계", 표계산("row_sum")), ("구성비(%)", 표계산("col_ratio"))])
+
+        # B5 나이·주민번호
+        입출력탭("나이·주민번호",
+                 "줄마다 생년월일이나 주민등록번호를 찾아 만 나이를 붙입니다. 주민등록번호는 결과에서 뒷자리를 가립니다.",
+                 [("만 나이 붙이기", wa.ages_for_lines), ("주민번호 → 생년월일", wa.rrn_to_birth_lines),
+                  ("주민번호 가리기", wa.mask_rrn)])
+
+        # B6 번호
+        번호형식 = tk.StringVar(value="1.")
+
+        def 번호옵션(tab):
+            box = ttk.Frame(tab)
+            box.pack(anchor="w", pady=(4, 0))
+            ttk.Label(box, text="번호 모양").pack(side="left")
+            ttk.Combobox(box, textvariable=번호형식, values=list(wa.NUMBER_STYLES), width=6,
+                         state="readonly").pack(side="left", padx=(6, 0))
+        입출력탭("번호",
+                 "줄마다 기존 번호를 지우고 새 번호를 차례로 붙입니다(빈 줄은 건너뜀).",
+                 [("번호 다시 매기기", lambda t: wa.renumber_lines(t, 번호형식.get())),
+                  ("번호 지우기", lambda t: "\n".join(wa._EXISTING_NUMBER.sub("", l) for l in t.splitlines()))], 번호옵션)
+
+        # A5 회신공문
+        tab = ttk.Frame(notebook, padding=8)
+        notebook.add(tab, text="회신공문")
+        ttk.Label(tab, text="요청 공문 정보를 넣으면 ‘관련 → 제출 → 붙임 … 끝.’ 형식의 회신 공문 본문을 만듭니다.",
+                  style="Hint.TLabel").pack(anchor="w")
+        form = ttk.Frame(tab)
+        form.pack(fill="x", pady=(6, 0))
+        form.grid_columnconfigure(1, weight=1)
+        값들 = {}
+        for 순번, (키, 이름, 예시) in enumerate((
+                ("title", "요청 공문 제목", "2025년 하반기 교육 실적 자료 제출 요청"),
+                ("sender", "요청 기관·부서", "행정안전부 인재개발과"),
+                ("doc_no", "문서번호", "인재개발과-1234"),
+                ("doc_date", "시행일", "2025. 7. 1."),
+                ("attachment", "붙임 이름(선택)", ""),
+                ("contact", "문의처(선택)", ""))):
+            ttk.Label(form, text=이름).grid(row=순번, column=0, sticky="w", pady=2)
+            var = tk.StringVar()
+            ttk.Entry(form, textvariable=var).grid(row=순번, column=1, sticky="ew", padx=(8, 0), pady=2)
+            if 예시:
+                ttk.Label(form, text=f"예: {예시}", style="Hint.TLabel").grid(row=순번, column=2, sticky="w", padx=(8, 0))
+            값들[키] = var
+        회신결과 = tk.Text(tab, wrap="word", font=("맑은 고딕", 10), background="#f7f7f7", height=10)
+        회신결과.pack(fill="both", expand=True, pady=(6, 0))
+
+        def 회신만들기():
+            if not 값들["title"].get().strip():
+                status.set("요청 공문 제목을 입력하세요.")
+                return
+            결과 = wa.reply_document(값들["title"].get(), 값들["sender"].get().strip(), 값들["doc_no"].get().strip(),
+                                    값들["doc_date"].get().strip(), 값들["attachment"].get(), 값들["contact"].get())
+            회신결과.delete("1.0", "end")
+            회신결과.insert("1.0", 결과)
+            status.set("회신공문 본문을 만들었습니다.")
+
+        def 회신복사():
+            window.clipboard_clear()
+            window.clipboard_append(회신결과.get("1.0", "end-1c"))
+            status.set("회신공문 본문을 복사했습니다.")
+        self._작성도우미_회신 = (값들, 회신결과, 회신만들기)
+        row = ttk.Frame(tab)
+        row.pack(fill="x", pady=(6, 0))
+        ttk.Button(row, text="회신공문 만들기", command=회신만들기).pack(side="left")
+        ttk.Button(row, text="결과 복사", command=회신복사).pack(side="right")
+
+        # A3 기관 서식
+        tab = ttk.Frame(notebook, padding=8)
+        notebook.add(tab, text="기관 서식")
+        ttk.Label(tab, text="기관 문서(HWP/HWPX)의 모든 스타일 요소를 분석해 보고서와 예시 서식 HWPX를 원본 옆에 만들고, "
+                            "기관 이름을 붙여 문서 서식으로 등록합니다. 등록한 서식은 서식 목록에 ‘[기관] 이름’으로 보입니다.",
+                  style="Hint.TLabel", wraplength=840, justify="left").pack(anchor="w")
+        기관문서 = tk.StringVar()
+        기관이름 = tk.StringVar()
+        form = ttk.Frame(tab)
+        form.pack(fill="x", pady=(8, 0))
+        form.grid_columnconfigure(1, weight=1)
+        ttk.Label(form, text="기관 문서").grid(row=0, column=0, sticky="w")
+        ttk.Entry(form, textvariable=기관문서).grid(row=0, column=1, sticky="ew", padx=(8, 4))
+
+        def 문서고르기():
+            경로 = askopenfilename(parent=window, title="기관 문서", filetypes=[("한글파일", "*.hwp *.hwpx")])
+            if 경로:
+                기관문서.set(경로)
+                예시경로["path"] = None
+        ttk.Button(form, text="찾아보기…", command=문서고르기).grid(row=0, column=2)
+        ttk.Label(form, text="기관 이름").grid(row=1, column=0, sticky="w", pady=(4, 0))
+        ttk.Entry(form, textvariable=기관이름).grid(row=1, column=1, sticky="ew", padx=(8, 4), pady=(4, 0))
+        분석결과 = tk.Text(tab, wrap="word", font=("맑은 고딕", 10), background="#f7f7f7", height=14)
+        분석결과.pack(fill="both", expand=True, pady=(8, 0))
+        예시경로 = {"path": None, "report": None}
+
+        def 분석하기(등록=False):
+            경로 = 기관문서.get().strip()
+            if not 경로 or not Path(경로).exists():
+                status.set("기관 문서를 고르세요.")
+                return
+            if self.running:
+                status.set("다른 작업이 끝난 뒤 다시 시도하세요.")
+                return
+            status.set("스타일을 분석하는 중입니다… (HWP는 한/글로 임시 변환)")
+
+            def worker():
+                try:
+                    결과 = 스타일분석_파일생성(경로)
+                    self.root.after(0, 분석완료, 결과, 등록, None)
+                except Exception as exc:
+                    self.root.after(0, 분석완료, None, False, str(exc))
+            threading.Thread(target=worker, daemon=True, name="style-inventory").start()
+
+        def 분석완료(결과, 등록, error):
+            if not window.winfo_exists():
+                return
+            if error:
+                status.set("스타일 분석 실패")
+                messagebox.showerror(APP_NAME, f"스타일 분석 실패\n{error}", parent=window)
+                return
+            inventory, stats, report, sample = 결과
+            예시경로.update(path=sample, report=report)
+            분석결과.delete("1.0", "end")
+            분석결과.insert("1.0", 스타일분석_요약(inventory, stats, report, sample))
+            status.set("스타일 분석 완료")
+            if 등록:
+                등록하기()
+
+        def 등록하기():
+            if not 예시경로["path"]:
+                분석하기(등록=True)
+                return
+            기관 = 기관이름.get().strip()
+            줄기 = Path(기관문서.get()).stem
+            기본 = f"{기관} {줄기}" if 기관 and 기관 not in 줄기 else 줄기
+            self._서식_분석_시작(str(예시경로["path"]), 이름묻기=True, 기본이름=기본[:40], 기관=기관)
+
+        def 보고서열기():
+            if 예시경로["report"]:
+                os.startfile(str(예시경로["report"]))
+
+        row = ttk.Frame(tab)
+        row.pack(fill="x", pady=(6, 0))
+        ttk.Button(row, text="스타일 분석", command=분석하기).pack(side="left")
+        ttk.Button(row, text="기관 서식으로 등록", command=등록하기).pack(side="left", padx=(6, 0))
+        ttk.Button(row, text="보고서 열기", command=보고서열기).pack(side="left", padx=(6, 0))
+
+        bottom = ttk.Frame(body)
+        bottom.pack(fill="x", pady=(6, 0))
+        ttk.Label(bottom, textvariable=status, style="Hint.TLabel").pack(side="left")
+        ttk.Button(bottom, text="닫기", command=닫기).pack(side="right")
 
     def _공공언어_검토(self):
         if getattr(self, "_교정_창", None) is not None:
@@ -11510,11 +13692,11 @@ class HwpAutoDocFitGUI:
         if not path: return
         self._서식_분석_시작(path, 이름묻기=True)
 
-    def _서식_분석_시작(self, path, 이름묻기=False):
+    def _서식_분석_시작(self, path, 이름묻기=False, 기본이름=None, 기관=None):
         if self.running or getattr(self, "_서식분석중", False):
             return
         parent = self.settings_toplevel if self.settings_toplevel and self.settings_toplevel.winfo_viewable() else self.root
-        name = Path(path).stem
+        name = 기본이름 or Path(path).stem
         if 이름묻기:
             name = simpledialog.askstring(APP_NAME, "새 문서 서식 이름", parent=parent, initialvalue=name)
         if name is None: return
@@ -11522,6 +13704,11 @@ class HwpAutoDocFitGUI:
         if not name:
             messagebox.showwarning(APP_NAME, "비어 있지 않은 이름을 입력해 주세요.", parent=parent)
             return
+        if 이름묻기:
+            기관 = simpledialog.askstring(APP_NAME, "기관 이름(선택, 비워 두면 기관 없음)", parent=parent,
+                                         initialvalue=기관 or "")
+            if 기관 is None: return
+        기관 = (기관 or "").strip()
         기존이름 = {p["name"] for p in self._프로파일들.values()}
         if name in 기존이름:
             if 이름묻기:
@@ -11540,6 +13727,8 @@ class HwpAutoDocFitGUI:
             try:
                 result = 한글파일_서식_분석(path)
                 result["name"] = name
+                if 기관:
+                    result["organization"] = 기관
                 gui_queue.put(("format_copied", result))
             except Exception as exc:
                 gui_queue.put(("format_copy_error", str(exc)))
@@ -11853,12 +14042,12 @@ class HwpAutoDocFitGUI:
         ).pack(anchor="w", padx=(22, 0), pady=(2, 0))
         container = tabs["spacing"]
         ttk.Label(container,
-                  text="실행창의 ‘자간 정리 · 세부 작업’과 같은 7단계입니다. 여기서 켜고 끄면 세부 작업 창에도 그대로 반영됩니다.",
+                  text=f"실행창의 ‘자간 정리 · 세부 작업’과 같은 {len(stages_for_mode('spacing'))}단계입니다. 여기서 켜고 끄면 세부 작업 창에도 그대로 반영됩니다.",
                   style="Hint.TLabel", wraplength=680).pack(anchor="w", pady=(0, 10))
 
         self.spacing_stage_vars = {}
         for number, (key, label) in enumerate(stages_for_mode("spacing"), 1):
-            var = tk.BooleanVar(value=self.stage_choices["spacing"].get(key, True))
+            var = tk.BooleanVar(value=self.stage_choices["spacing"].get(key, stage_default(key)))
             var.trace_add("write", lambda *_, k=key, v=var: self.stage_choices["spacing"].__setitem__(k, v.get()))
             self.spacing_stage_vars[key] = var
             item = ttk.Frame(container)
@@ -11943,8 +14132,10 @@ class HwpAutoDocFitGUI:
         format_container = tabs["format"]
         self.format_stage_vars = {}
         self.std_detail_checks = []
-        for number, (key, label) in enumerate(stages_for_mode("format")[:9], 1):
-            var = tk.BooleanVar(value=self.stage_choices["format"].get(key, True))
+        서식_단계 = list(stages_for_mode("format"))
+        내어쓰기_번호 = next(i for i, (key, _) in enumerate(서식_단계) if key == "hanging_indent")
+        for number, (key, label) in enumerate(서식_단계[:내어쓰기_번호], 1):
+            var = tk.BooleanVar(value=self.stage_choices["format"].get(key, stage_default(key)))
             var.trace_add("write", lambda *_, k=key, v=var: self.stage_choices["format"].__setitem__(k, v.get()))
             self.format_stage_vars[key] = var
             item = ttk.Frame(format_container)
@@ -11964,14 +14155,14 @@ class HwpAutoDocFitGUI:
 
         # 10. 최종 서식 기준 내어쓰기 — 별도 탭('내어쓰기')에 배치.
         self.indent_stage_vars = {}
-        hanging_key, hanging_label = stages_for_mode("format")[9]
+        hanging_key, hanging_label = 서식_단계[내어쓰기_번호]
         indent_var = tk.BooleanVar(value=self.stage_choices["format"].get(hanging_key, True))
         indent_var.trace_add(
             "write", lambda *_, k=hanging_key, v=indent_var: self.stage_choices["format"].__setitem__(k, v.get()))
         self.indent_stage_vars[hanging_key] = indent_var
         indent_item = ttk.Frame(tabs["indent"])
         indent_item.pack(fill="x", pady=(4, 7))
-        ttk.Checkbutton(indent_item, text=f"10. {hanging_label}", style="Stage.TCheckbutton",
+        ttk.Checkbutton(indent_item, text=f"{내어쓰기_번호 + 1:02d}. {hanging_label}", style="Stage.TCheckbutton",
                         variable=indent_var).pack(anchor="w")
         ttk.Label(indent_item, text=STAGE_EXAMPLES[hanging_key], style="Hint.TLabel",
                   wraplength=650, justify="left").pack(anchor="w", padx=(25, 0), pady=(1, 0))
@@ -12106,6 +14297,10 @@ class HwpAutoDocFitGUI:
                     기호: {"font": v["font"].get(), "size": v["size"].get()}
                     for 기호, v in self.symbol_font_vars.items()
                 },
+                "table_fonts": {
+                    part: {"font": v["font"].get(), "size": v["size"].get()}
+                    for part, v in self.table_font_vars.items()
+                },
                 "label_symbols": {k: v.get() for k, v in self.label_symbol_vars.items()},
                 "paren_shrink": bool(self.paren_shrink_var.get()),
                 "paren_label_bold": bool(self.paren_label_bold_var.get()),
@@ -12120,6 +14315,7 @@ class HwpAutoDocFitGUI:
             설정값["active_format_profile"] = getattr(self, "_활성_서식_프로파일", "")
             설정_저장(설정값)
             기호글꼴_적용(설정값)
+            표글꼴_적용(설정값.get("table_fonts"))
         except Exception:
             pass
 
@@ -12212,6 +14408,12 @@ class HwpAutoDocFitGUI:
             v["size"].set(기본항목.get("size", ""))
             if hasattr(self, "symbol_font_combos") and 기호 in self.symbol_font_combos:
                 self.symbol_font_combos[기호]["values"] = self._한글_폰트_목록_캐시
+        for part, v in self.table_font_vars.items():
+            v["font"].set(기본_설정["table_fonts"][part]["font"])
+            v["size"].set(기본_설정["table_fonts"][part]["size"])
+            콤보 = getattr(self, "symbol_font_combos", {}).get(f"표_{part}")
+            if 콤보 is not None:
+                콤보["values"] = self._한글_폰트_목록_캐시
         for key, var in self.label_symbol_vars.items():
             var.set(기본_설정["label_symbols"].get(key, True))
         self.paren_shrink_var.set(기본_설정["paren_shrink"])
@@ -12769,6 +14971,10 @@ class HwpAutoDocFitGUI:
 
         선택_색상 = COLOR_MAP.get(self.color_var.get()) if self.color_mark_on_var.get() else None
         표준서식_세부_전달 = {키: var.get() for 키, var in self.std_bool_vars.items()}
+        표준서식_세부_전달["table_fonts"] = {
+            part: {"font": v["font"].get(), "size": v["size"].get()}
+            for part, v in self.table_font_vars.items()
+        }
 
         self.worker = threading.Thread(
             target=작업_실행,

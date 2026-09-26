@@ -10,8 +10,13 @@ class StageSelectionTest(unittest.TestCase):
             self.assertEqual(len(keys), len(set(keys)))
             self.assertTrue(all(STAGE_EXAMPLES.get(key, "").startswith("예:") for key in keys))
         all_keys = [key for key, _ in stages_for_mode("all")]
-        self.assertLess(all_keys.index("pre_format"), all_keys.index("reset_spacing"))
-        self.assertLess(all_keys.index("reset_spacing"), all_keys.index("normalize_space"))
+        # 자간 초기화는 선행 서식·정밀 표 복제보다 먼저 실행된다(복사한 자간 보존).
+        self.assertEqual(all_keys[0], "reset_spacing")
+        self.assertLess(all_keys.index("reset_spacing"), all_keys.index("pre_format"))
+        # 쪽 수 맞춤 뒤에 문단 페이지 배치를 한다.
+        for mode in ("format", "all"):
+            keys = [key for key, _ in stages_for_mode(mode)]
+            self.assertLess(keys.index("page_fit"), keys.index("page_group"))
         self.assertLess(all_keys.index("body_spacing"), all_keys.index("hanging_indent"))
         self.assertNotIn("single_cell_spacing", all_keys)
 

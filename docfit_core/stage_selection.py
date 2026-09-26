@@ -11,9 +11,16 @@ FORMAT_STAGES = (
     ("table_format", "표 머리글·본문 서식"),
     ("single_cell_spacing", "개요·한 칸 표 자간 조정"),
     ("hanging_indent", "최종 서식 기준 내어쓰기"),
-    ("page_group", "관련 문단 페이지 배치"),
+    # 실행 순서: 쪽 수 맞춤(문단 아래 간격)을 먼저 하고 문단 페이지 배치를 마지막에 한다.
     ("page_fit", "문단 아래 간격 페이지 맞춤"),
+    ("page_group", "관련 문단 페이지 배치"),
 )
+# 서식통일: 고정된 기준 서식이 아니라 '이 문서 안에서 가장 많이 쓴 스타일'로
+# 이질적인 스타일을 맞춘다. 기준이 달라지는 기능이라 기본값은 꺼져 있고(옵트인),
+# 실행창의 '기본후처리'·'전문후처리' 프리셋이 켠다.
+UNIFY_STAGE = ("style_unify", "서식통일 (문서 안 대표 스타일로 맞춤)")
+DEFAULT_OFF = frozenset({"style_unify"})
+
 SPACING_STAGES = (
     ("reset_spacing", "문서 전체 자간 초기화"),
     ("body_spacing", "본문 자간 조정"),
@@ -25,6 +32,7 @@ SPACING_STAGES = (
 )
 
 STAGE_EXAMPLES = {
+    "style_unify": "예: 여러 사람이 쓴 문서를 합쳐 ㅇ 문단 대부분이 휴먼명조 15pt인데 몇 개만 굴림 13pt이면, 그 몇 개를 휴먼명조 15pt로 맞춥니다.",
     "pre_format": "예: 문서 제목, 개요, 붙임 표시를 먼저 찾아 각 영역의 서식을 정리합니다.",
     "precise_table": "예: 예시 서식의 표 셀 글꼴·테두리·너비를 대응하는 표에 복사합니다.",
     "normalize_space": "예: 문장 안에 불규칙하게 들어간 여러 공백을 정리합니다.",
@@ -48,14 +56,26 @@ STAGE_EXAMPLES = {
 
 
 def stages_for_mode(mode):
+    # 서식통일은 공백·문장부호 정리 뒤, 표준서식·자간 조정 앞에서 실행한다.
     if mode == "format":
-        return FORMAT_STAGES
+        return FORMAT_STAGES[:4] + (UNIFY_STAGE,) + FORMAT_STAGES[4:]
     if mode == "spacing":
-        return SPACING_STAGES
+        return SPACING_STAGES[:1] + (UNIFY_STAGE,) + SPACING_STAGES[1:]
     if mode == "all":
-        return FORMAT_STAGES[:2] + SPACING_STAGES[:1] + FORMAT_STAGES[2:8] + SPACING_STAGES[1:] + FORMAT_STAGES[9:]
+        # 실제 실행 순서와 같게 보여 준다. 자간 초기화는 선행 서식·정밀 표 복제보다
+        # 먼저 실행되고(복사한 자간 보존), 내어쓰기는 자간 조정 뒤 최종 확정된다.
+        # 개요·한 칸 표 자간 조정(single_cell_spacing)은 서식 전용이다.
+        return (SPACING_STAGES[:1] + FORMAT_STAGES[:4] + (UNIFY_STAGE,) + FORMAT_STAGES[4:8]
+                + SPACING_STAGES[1:] + FORMAT_STAGES[9:])
     raise ValueError("지원하지 않는 작업 모드입니다.")
 
 
+def default_choice(key):
+    """세부 작업의 기본 선택값(서식통일처럼 옵트인인 단계만 꺼짐)."""
+    return key not in DEFAULT_OFF
+
+
 def enabled(selection, key):
-    return selection is None or selection.get(key, True)
+    if selection is None:
+        return default_choice(key)
+    return selection.get(key, default_choice(key))
