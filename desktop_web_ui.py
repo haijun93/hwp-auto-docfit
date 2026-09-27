@@ -18,6 +18,9 @@ class DesktopWebBridge:
         self.gui = gui
         self.window = None
         self.tk_stopped = None
+        # 사용자가 웹 창을 닫아 종료하는 중인지. 이때는 창이 스스로 닫히므로
+        # 종료 감시 스레드가 destroy()를 다시 부르면 안 된다(pywebview 이중 닫힘 오류).
+        self.user_closing = False
 
     def _tk(self, callback, timeout=120, front=False):
         result = Future()
@@ -250,11 +253,15 @@ class DesktopWebBridge:
                     return True
             except Exception:
                 return True
+            self.user_closing = True
             self.gui.종료()
             try:
-                return not bool(self.gui.root.winfo_exists())
+                closed = not bool(self.gui.root.winfo_exists())
             except Exception:
-                return True
+                closed = True
+            if not closed:
+                self.user_closing = False   # 작업 중 종료를 취소한 경우
+            return closed
 
         # 작업 중이면 종료 확인 창이 떠서 사용자의 답을 기다린다.
         return self._tk(close, timeout=None, front=True)
@@ -401,6 +408,10 @@ def run_webview(gui):
 
     def stop_webview_when_app_exits(web_window):
         tk_stopped.wait()
+        if bridge.user_closing:
+            # 사용자가 웹 창을 닫는 중이면 창이 스스로 닫힌다. 여기서 destroy()를 또 부르면
+            # pywebview가 닫힘 처리를 두 번 실행해 .NET '처리되지 않은 예외' 창이 뜬다.
+            return
         try:
             web_window.destroy()
         except Exception:
