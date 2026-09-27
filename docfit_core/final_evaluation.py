@@ -18,7 +18,7 @@ MODE_LABELS = {
 # 저장한 결과물을 다시 열어 규칙 준수를 검사하는 기능이 있는 세부 작업.
 # 이 작업들의 검사 결과가 없거나 실패하면 판정을 막는다. 그 밖의 작업은
 # 결과 검사 기능 자체가 없으므로 '미검사'를 문제로 보지 않고 참고로만 알린다.
-RESULT_CHECKED_STAGES = frozenset({"page_group", "word_check", "control_word_check"})
+RESULT_CHECKED_STAGES = frozenset({"page_group", "word_check", "control_word_check", "style_unify"})
 
 
 def build_work_goal(mode, source_count, selected_stages=None):
@@ -54,6 +54,8 @@ def evaluate_work(goal, documents, item_stats=None, unresolved=None, verificatio
     expected = int(goal.get("source_count", len(documents)))
     succeeded = sum(1 for item in documents if item.get("success"))
     failed = max(0, expected - succeeded)
+    selected = set(goal.get('selected_stages') or [])
+    required = selected & RESULT_CHECKED_STAGES
 
     completion_score = 100 if expected == 0 else succeeded / expected * 100
     outputs = [item for item in documents if item.get("success")]
@@ -77,6 +79,34 @@ def evaluate_work(goal, documents, item_stats=None, unresolved=None, verificatio
     else:
         quality_score = 0
 
+    rule_scores = []
+    if required:
+        for item in outputs:
+            checks = item.get('rule_checks') or {}
+            for key in required:
+                result = checks.get(key)
+                if not result:
+                    rule_scores.append(0.0)
+                    continue
+                status = result.get('status')
+                if status == 'error':
+                    rule_scores.append(0.0)
+                    continue
+                checked = max(0, int(result.get('checked', 0)))
+                issues = len(result.get('issues') or [])
+                skipped = 0
+                if key == 'style_unify':
+                    skipped = sum(max(0, int(group.get('samples', 0)))
+                                  for group in result.get('not_checkable') or [])
+                denominator = checked + skipped
+                if denominator == 0:
+                    rule_scores.append(100.0 if status == 'passed' else 0.0)
+                else:
+                    rule_scores.append(
+                        max(0.0, checked - issues) / denominator * 100.0)
+        rule_scores.extend([0.0] * failed)
+        rule_score = sum(rule_scores) / len(rule_scores) if rule_scores else 0.0
+
     criteria = [
         _criterion("completion", "요청 문서 처리 완료", 35, completion_score,
                    {"requested": expected, "succeeded": succeeded, "failed": failed}),
@@ -90,6 +120,10 @@ def evaluate_work(goal, documents, item_stats=None, unresolved=None, verificatio
                     "verified": len(verified), "integrity_passed": integrity_passed,
                     "unresolved_count": len(unresolved)}, quality_applicable),
     ]
+    if required:
+        criteria.append(_criterion(
+            "rule_conformance", "저장 결과 규칙 일치", 20, rule_score,
+            {"selected_rules": sorted(required), "per_check_scores": rule_scores}, True))
     applicable = [item for item in criteria if item["applicable"]]
     weight = sum(item["weight"] for item in applicable)
     score = sum(item["score"] * item["weight"] for item in applicable) / weight if weight else 0
@@ -97,8 +131,6 @@ def evaluate_work(goal, documents, item_stats=None, unresolved=None, verificatio
     blockers = []
     notes = []
     # 작업 시도 통계는 결과 규칙 검사 증거가 아니다. 실제 검사 범위를 별도 공개한다.
-    selected = set(goal.get('selected_stages') or [])
-    required = selected & RESULT_CHECKED_STAGES
     not_checkable = sorted(selected - RESULT_CHECKED_STAGES)
     coverage = []
     for item in outputs:
@@ -127,11 +159,19 @@ def evaluate_work(goal, documents, item_stats=None, unresolved=None, verificatio
     words = exempt_count('word_check', 'control_word_check')
     if words:
         notes.append(f"칸 폭보다 긴 단어 {words}개는 단어 분리 규칙 적용 제외(줄 첫머리부터 넘침)")
+    unverified_style_groups = sum(
+        len((item.get('rule_checks') or {}).get('style_unify', {}).get('not_checkable') or [])
+        for item in outputs
+    )
+    if unverified_style_groups:
+        notes.append(f"서식통일: 대표값을 확정할 근거가 부족한 스타일 그룹 {unverified_style_groups}개는 추측 적용하지 않음")
     if outputs and not_checkable:
         notes.append(f"결과 검사 기능이 없는 세부 작업 {len(not_checkable)}개"
                      f"(수행 여부만 확인): {', '.join(not_checkable)}")
-    if not verification_enabled or not selected:
+    if not selected:
         blockers.append('최종 규칙 검수 범위가 확인되지 않음')
+    elif not required and not verification_enabled:
+        blockers.append('선택된 작업 중 저장 결과에서 확인할 수 있는 규칙이 없음')
     if failed:
         blockers.append(f"처리하지 못한 문서 {failed}개")
     if valid_outputs < succeeded:
@@ -141,6 +181,10 @@ def evaluate_work(goal, documents, item_stats=None, unresolved=None, verificatio
         blockers.append(f"무결성 확인이 필요한 문서 {integrity_failed}개")
     if unresolved:
         blockers.append(f"미해결 검수 항목 {len(unresolved)}건")
+
+    # Multiple documents can report the same rule-level blocker; each document's
+    # detailed status remains in verification_coverage, so repeat the summary once.
+    blockers = list(dict.fromkeys(blockers))
 
     if score >= 100 and not blockers:
         verdict = "달성"
@@ -153,7 +197,7 @@ def evaluate_work(goal, documents, item_stats=None, unresolved=None, verificatio
         "evaluated_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
         "goal": goal,
         "score": round(score, 1),
-        "score_meaning": "작업 수행 지표이며 모든 결과 규칙의 준수율을 뜻하지 않음",
+        "score_meaning": "완료·산출물·선택된 저장 결과 규칙의 종합 점수이며, 검증 범위는 별도 공개",
         "verification_coverage": coverage,
         "verdict": verdict,
         "criteria": criteria,

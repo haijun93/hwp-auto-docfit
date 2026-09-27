@@ -56,9 +56,10 @@ STAGE_EXAMPLES = {
 
 
 def stages_for_mode(mode):
-    # '서식 통일' 작업 유형은 서식통일 한 단계만 실행한다(자간·표준서식 없음).
+    # 서식통일은 예외 문단별 서식→자간→내어쓰기 처리이며 전체 자간 단계는 돌리지 않는다.
     if mode == "unify":
-        return (UNIFY_STAGE,)
+        # 서식통일은 문서 자체의 대표 서식이 기준이다. 쪽 맞춤은 사용자가 켤 때만 실행한다.
+        return (UNIFY_STAGE, FORMAT_STAGES[-2])
     # 서식통일은 공백·문장부호 정리 뒤, 표준서식·자간 조정 앞에서 실행한다.
     if mode == "format":
         return FORMAT_STAGES[:4] + (UNIFY_STAGE,) + FORMAT_STAGES[4:]
@@ -79,11 +80,11 @@ def default_choice(key, mode=None):
     '서식 통일' 작업 유형에서는 서식통일이 곧 작업 자체라 켜져 있다.
     """
     if mode == "unify":
-        return True
+        return key == "style_unify"
     return key not in DEFAULT_OFF
 
 
-def enabled(selection, key):
+def enabled(selection, key, mode=None):
     if selection is None:
-        return default_choice(key)
-    return selection.get(key, default_choice(key))
+        return default_choice(key, mode)
+    return selection.get(key, default_choice(key, mode))

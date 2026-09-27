@@ -47,12 +47,12 @@ class WritingAidsGuiTest(unittest.TestCase):
                     # 작업 유형 4가지: 자간 정리 / 서식 통일 / 서식 적용 / 한 번에 적용
                     self.assertEqual([b.cget("text") for b in app.mode_buttons],
                                      ["자간 정리", "서식 통일", "서식 적용", "한 번에 적용"])
-                    app._프리셋_선택("basic")
+                    app._빠른설정("report")
                     app._카드_클릭("unify")  # 빠른 선택 해제가 서식 통일 모드 자체를 끄면 안 된다
                     self.assertEqual(app.selected_mode.get(), "unify")
                     self.assertTrue(app.stage_choices["unify"]["style_unify"])
                     self.assertFalse(app.stage_choices["spacing"]["style_unify"])
-                    self.assertIn("가장 많이 쓴", app.options_summary.cget("text"))
+                    self.assertIn("문서에서 많이 쓰인", app.options_summary.cget("text"))
 
                     # 기관을 붙인 서식은 '[기관] 이름'으로 보이고 기관별로 묶인다.
                     base = app._프로파일들[""]
