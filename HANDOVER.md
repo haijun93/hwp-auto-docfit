@@ -1,4 +1,4 @@
-# 인수인계서 — 한글문서 후처리 도구 (HWP AutoDocFit)
+# 인수인계서 — 한글편집 후처리 도구 (HWP AutoDocFit)
 
 작성: 2026-09-26, Claude Code 세션에서 작성. 대상: 이 저장소 작업을 이어받는 AI 코딩 에이전트(ChatGPT Codex, Gemini CLI 등)와 담당자.
 작업을 시작하기 전에 이 문서를 끝까지 읽고, 모르는 내용은 `README.md`와 `TODO.md`를 참고하세요.
