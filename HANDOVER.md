@@ -10,8 +10,8 @@
 | 항목 | 현재 값 |
 |---|---|
 | 제품 | 한/글 2020 문서(HWP/HWPX)를 공문서 규칙에 맞게 자동 후처리하는 Windows 데스크톱 앱(Python·Tkinter 백엔드 + pywebview/WebView2 UI) |
-| 최신 배포 | **v1.68 Beta 2** (2026-09-26) — 작업 유형 4가지 분리 |
-| 직전 배포 | v1.68 Beta 1 (2026-09-26) — 알파 1.68 Alpha 1~6 개선 전체 반영 |
+| 최신 배포 | **v1.69 Beta 1** (2026-09-27) — 서식통일 재설계(문서 대표 서식 기준·다른 문장만 수정), Flutter 진행 안내 |
+| 직전 배포 | v1.68 Beta 2 (2026-09-26) — 작업 유형 4가지 분리 |
 | 브랜치 | `main` = 베타(배포선), `alpha` = 새 기능 시험판 |
 | 원격 | `github` = 원본(https://github.com/haijun93/hwp-auto-docfit), `origin` = GitLab 백업(gitlab.aigov.go.kr/haijun93/hwp_autodocfit) |
 | 사용자 업데이트 | 앱이 GitLab "최신 릴리스"를 조회해 새 exe를 알림 |
