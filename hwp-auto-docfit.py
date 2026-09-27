@@ -11721,7 +11721,8 @@ class HwpAutoDocFitGUI:
         scale = getattr(self, "_ui_scale", 1.0)
         min_width = min(max(self._minimum_width, round(520 * scale)), screen_width - 24)
         min_height = min(max(self._minimum_height, round(480 * scale)), screen_height - 48)
-        self.root.minsize(max(420, min_width), max(400, min_height))
+        if not getattr(self.root, "_docfit_hidden_backend", False):
+            self.root.minsize(max(420, min_width), max(400, min_height))
         self._반응형_배치()
 
     def _테마_적용(self):
@@ -16072,6 +16073,10 @@ def 웹모드_기본창_숨김(root):
     """
     root.overrideredirect(True)
     root.attributes("-alpha", 0.0)
+    # 기존 화면의 최소 크기(약 420x400) 때문에 투명 창이 커져 그 영역의 클릭을 가로채지 않도록 1px로 고정한다.
+    root._docfit_min_size = root.minsize()
+    root.minsize(1, 1)
+    root.maxsize(1, 1)
     root.geometry(f"1x1+{root.winfo_screenwidth() // 2}+{root.winfo_screenheight() // 3}")
     root._docfit_hidden_backend = True
     root.bind_class("Toplevel", "<Map>", _새창_맨앞으로, add="+")
@@ -16080,6 +16085,8 @@ def 웹모드_기본창_숨김(root):
 def 웹모드_기본창_복원(root):
     """웹 화면을 쓸 수 없을 때 기존 Tk 화면을 정상 창으로 되돌린다."""
     root._docfit_hidden_backend = False
+    root.maxsize(root.winfo_screenwidth(), root.winfo_screenheight())
+    root.minsize(*(getattr(root, "_docfit_min_size", None) or (420, 400)))
     root.overrideredirect(False)
     root.attributes("-alpha", 1.0)
     root.geometry("1040x760")
