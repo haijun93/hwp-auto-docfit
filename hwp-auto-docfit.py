@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 
 """
 ============================================================
@@ -259,6 +259,7 @@ from docfit_core.style_hierarchy import DOT_MARKERS, analyze_hierarchy, display_
 from docfit_core.style_unify import complement_ranges as 서식통일_범위분리, merge_adjacent as 서식통일_범위병합, parenthetical_spans as 서식통일_부연괄호, representative as 서식통일_최빈값
 from docfit_core.number_check import 숫자_대조
 from docfit_core import outline_ops
+from docfit_core.progress_guide import guide_key as 진행안내_키, guide_state as 진행안내_상태
 from docfit_core.stage_selection import STAGE_EXAMPLES, default_choice as stage_default, enabled as stage_enabled, stages_for_mode
 from docfit_core.document_rules import (
     ParagraphSpacingTracker, YEAR_QUOTE_PATTERN, marker_space_fix,
@@ -274,6 +275,44 @@ from docfit_core.korean_proofread import (
 from docfit_core.pasted_text import clean_pasted_text, outline_pasted_text
 from docfit_core.labeled_text import label_outline_text, looks_labeled, parse_labeled_text
 from docfit_core import writing_aids, ai_prompts
+
+
+def XML_네임스페이스_등록(prefix, uri):
+    """defusedxml 파서는 유지하면서 ElementTree 직렬화 접두사만 등록한다.
+
+    defusedxml.ElementTree는 안전 파싱 API로 적합하지만 register_namespace를
+    노출하지 않는다. tostring이 사용하는 직렬화 네임스페이스 레지스트리에만
+    등록하며, 입력 XML 파싱은 계속 defusedxml 경로를 사용한다.
+    """
+    register = getattr(ET, "register_namespace", None)
+    if callable(register):
+        register(prefix, uri)
+        return True
+    registry = getattr(ET.tostring, "__globals__", {}).get("_namespace_map")
+    if not isinstance(registry, dict):
+        # 접두사 이름은 XML 의미에 영향을 주지 않는다. 레지스트리를 제공하지
+        # 않는 구현에서는 serializer가 ns0/ns1 접두사를 안전하게 생성하게 둔다.
+        return False
+    for existing_uri, existing_prefix in list(registry.items()):
+        if existing_uri == uri or existing_prefix == prefix:
+            del registry[existing_uri]
+    registry[uri] = prefix
+    return True
+
+
+def XML_요소_생성(prototype, tag=None, attrib=None):
+    """defusedxml이 생성자 API를 노출하지 않을 때 파싱 요소 타입으로 새 노드를 만든다."""
+    if prototype is None:
+        raise ValueError('새 XML 요소를 만들 프로토타입이 없습니다.')
+    return type(prototype)(tag if tag is not None else prototype.tag,
+                           {} if attrib is None else dict(attrib))
+
+
+def XML_자식_추가(parent, prototype, tag=None, attrib=None):
+    """안전 파싱 결과와 같은 요소 타입으로 자식 노드를 생성해 추가한다."""
+    child = XML_요소_생성(prototype, tag=tag, attrib=attrib)
+    parent.append(child)
+    return child
 from docfit_core.style_inventory import analyze_style_inventory, build_style_sample, inventory_markdown
 from docfit_core import (
     KordocUnavailableError,
@@ -301,7 +340,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글문서 후처리 도구"
-APP_VERSION = "1.68 Beta 2"
+APP_VERSION = "1.69 Alpha 1"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 UPDATE_ASSET_NAME = "HWP_AutoDocFit.exe"
@@ -1658,7 +1697,7 @@ def 제목_참조병합(header, source):
         lang = sf.get('lang')
         target = next((x for x in find(header, 'fontfaces') if x.get('lang') == lang), None)
         if target is None:
-            target = ET.SubElement(find(header, 'fontfaces'), sf.tag, {'lang': lang, 'fontCnt': '0'})
+            target = XML_자식_추가(find(header, 'fontfaces'), sf, tag=sf.tag, attrib={'lang': lang, 'fontCnt': '0'})
         mapping = {}
         for f in sf:
             same = next((x for x in target if x.get('face') == f.get('face') and x.get('type') == f.get('type')), None)
@@ -1734,9 +1773,9 @@ def 제목_표서식_복사(table, sample, maps):
                         index = list(p).index(r); p.remove(r)
                         for piece in re.split(r"([‘’'])", text):
                             if not piece: continue
-                            nr = ET.Element(r.tag, dict(r.attrib))
+                            nr = XML_요소_생성(r, tag=r.tag, attrib=dict(r.attrib))
                             nr.set('charPrIDRef', maps['charProperties'][quote if piece in ('‘', '’', "'") else main])
-                            ET.SubElement(nr, '{http://www.hancom.co.kr/hwpml/2011/paragraph}t').text = piece
+                            XML_자식_추가(nr, r, tag='{http://www.hancom.co.kr/hwpml/2011/paragraph}t').text = piece
                             p.insert(index, nr); index += 1
 
 
@@ -1959,11 +1998,11 @@ def 제목_괄호부연_축소(header, table):
             for piece in pieces:
                 if not piece:
                     continue
-                nr = ET.Element(run.tag, dict(run.attrib))
+                nr = XML_요소_생성(run, tag=run.tag, attrib=dict(run.attrib))
                 if pattern.fullmatch(piece):
                     nr.set('charPrIDRef', reduced_char_id(run.get('charPrIDRef')))
                     applied += 1
-                nt = ET.SubElement(nr, ts[0].tag, dict(ts[0].attrib))
+                nt = XML_자식_추가(nr, ts[0], tag=ts[0].tag, attrib=dict(ts[0].attrib))
                 nt.text = piece
                 p.insert(idx, nr)
                 idx += 1
@@ -1976,7 +2015,7 @@ def 제목_hwpx_처리(source, target=None, selections=None):
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
             for _, pair in ET.iterparse(io.BytesIO(data), events=('start-ns',)):
-                if not re.fullmatch(r'ns\d+', pair[0]): ET.register_namespace(*pair)
+                if not re.fullmatch(r'ns\d+', pair[0]): XML_네임스페이스_등록(*pair)
     header = safe_xml_fromstring(contents['Contents/header.xml'])
     sections = {n: safe_xml_fromstring(data) for n, data in contents.items()
                 if re.fullmatch(r'Contents/section\d+\.xml', n)}
@@ -2139,7 +2178,7 @@ def 붙임_hwpx_처리(source, target=None, selections=None):
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
             for _, pair in ET.iterparse(io.BytesIO(data), events=('start-ns',)):
-                if not re.fullmatch(r'ns\d+', pair[0]): ET.register_namespace(*pair)
+                if not re.fullmatch(r'ns\d+', pair[0]): XML_네임스페이스_등록(*pair)
     header = safe_xml_fromstring(contents['Contents/header.xml'])
     sections = {n: safe_xml_fromstring(data) for n, data in contents.items() if re.fullmatch(r'Contents/section\d+\.xml', n)}
     if selections is None:
@@ -2184,12 +2223,15 @@ def 제목붙임_선행적용(원본문서경로, 현재문서_기준=False):
     if not (제목4종_사용 or 붙임2종_사용):
         return True
     folder = Path(tempfile.mkdtemp(prefix='hwp_format_first_'))
+    스냅샷_저장시도 = False
     try:
         source = Path(원본문서경로)
         if 현재문서_기준:
+            스냅샷_저장시도 = True
             source = _제목_임시hwpx_저장(folder / 'source.hwpx')
         elif source.suffix.lower() != '.hwpx':
             로그('선행 서식: 현재 한글에서 HWPX 변환 시작')
+            스냅샷_저장시도 = True
             source = _제목_임시hwpx_저장(folder / 'source.hwpx')
             로그('선행 서식: HWPX 변환 완료')
         changed = False
@@ -2220,6 +2262,20 @@ def 제목붙임_선행적용(원본문서경로, 현재문서_기준=False):
                 raise RuntimeError('선행 서식 결과를 열지 못했습니다.')
             로그('선행 서식 결과 열기 완료')
         return True
+    except Exception:
+        # 현재 문서 기준 스냅샷 SaveAs 후 분석이 실패하면 한글은 임시
+        # source.hwpx를 계속 열고 있을 수 있다. 원본으로 되돌려 임시파일
+        # 핸들이 남는 문제와 다음 작업의 잘못된 문서 대상을 함께 막는다.
+        if 스냅샷_저장시도:
+            원본 = Path(원본문서경로)
+            형식 = 'HWPX' if 원본.suffix.lower() == '.hwpx' else 'HWP'
+            try:
+                if 한글_문서_열기(hwp, 원본, 형식, 'forceopen:true') is False:
+                    raise RuntimeError('원본 문서 재열기 결과가 False입니다.')
+                로그('선행 서식 실패 후 원본 문서 복구 완료')
+            except Exception as 복구오류:
+                로그(f'선행 서식 오류 후 원본 문서 복구 실패: {복구오류}')
+        raise
     finally:
         _제목_임시폴더_정리(folder)
 
@@ -2364,6 +2420,8 @@ def 단계표시(단계명):
     상위 = _세부단계_단계매핑.get(단계명, 단계명)
     if 상위 in 진행단계_순서:
         gui_queue.put(("step", 상위))
+    # 진행 화면의 친절한 단계 안내 문장도 함께 바꾼다.
+    gui_queue.put(("guide", 단계명))
 
 def 단계초기화():
     gui_queue.put(("step_reset", None))
@@ -2811,6 +2869,12 @@ def 문자모양_적용_현재선택(폰트=None, 크기_pt=None, 굵게=None, �
                 pset.SetItem("Bold", 1 if 굵게 else 0)
             except Exception:
                 pass
+        # 분석한 서식 프로필은 장평·자간을 100.0처럼 실수로 담는다. COM에 실수를 넘기면
+        # 정수 항목이 0으로 들어가 글자가 완전히 눌리므로 정수로 바꾸고 허용 범위로 제한한다.
+        if 장평 is not None:
+            장평 = max(50, min(200, int(round(float(장평)))))
+        if 자간 is not None:
+            자간 = max(-50, min(50, int(round(float(자간)))))
         if 장평 is not None:
             for 필드 in ("RatioHangul", "RatioLatin", "RatioHanja", "RatioJapanese",
                          "RatioOther", "RatioSymbol", "RatioUser"):
@@ -3816,7 +3880,15 @@ def 문두기호문장_사이_빈줄_삭제():
 서식통일_최소문단수 = 3
 서식통일_최소비율 = 0.6
 _서식통일_문서대표프로필 = {}
+# 표준 서식이 서식통일 뒤에 기준을 정하는 작업이면 미확정 문단을 빨간색으로 표시하지 않는다.
+서식통일_빨간표시_사용 = True
+# 괄호(문두 라벨 제외)가 본문보다 얼마나 작은지(1/100pt)의 문서 관행. None이면 설정값(-2pt).
+서식통일_괄호크기차이 = None
+# 표준 서식이 뒤따르면 서식통일이 고친 문장의 자간을 표준 서식 뒤에 다시 조정한다.
+# 문단 위치는 빈 줄 삭제 등으로 바뀔 수 있어 문단 텍스트로 다시 찾는다.
+_서식통일_자간보류문단 = {}
 _서식통일_최종감사 = None
+_서식통일_대표값_검토콜백 = None
 
 
 def _서식통일_문두요소_범위(text):
@@ -3884,7 +3956,7 @@ def 서식통일_표본(시작, text):
     label_span16 = tuple(utf16길이(body[:i]) for i in label_span) if label_span else None
     보호괄호 = tuple(span for span in (marker_span, label_span) if span)
     부연괄호16 = tuple(tuple(utf16길이(body[:i]) for i in span)
-                      for span in 서식통일_부연괄호(body, 보호괄호))
+                      for span in 서식통일_부연괄호(body, 보호괄호, include_trailing=True))
     try:
         from zipfile import ZipFile
         from defusedxml import ElementTree as ET
@@ -3907,7 +3979,9 @@ def 서식통일_표본(시작, text):
             문단모양 = paras.get(para.get("paraPrIDRef"), {})
             cursor = 0
             runs = []
+            text_colors = []
             marker_bold_runs, label_bold_runs, aside_runs = [], [], []
+            장평빈도 = Counter()
             for run in (item for item in para if _tag(item) == "run"):
                 run_text = _run_text(run)
                 run_length = len(run_text.encode("utf-16-le")) // 2
@@ -3916,6 +3990,8 @@ def 서식통일_표본(시작, text):
                 end_selected = min(end_offset, 본문끝)
                 char = chars.get(run.get("charPrIDRef"))
                 if char and run_text.strip() and end_selected > start_selected:
+                    text_colors.append(str(char.get("color", "")).upper())
+                    장평빈도[int(char.get("ratio", 100))] += end_selected - start_selected
                     shape = (char["font"].get("hangul"), round(char["size_pt"] * 100))
                     구간들 = [(left, right, False)
                              for left, right in 서식통일_범위분리(
@@ -3984,14 +4060,22 @@ def 서식통일_표본(시작, text):
         return bold > plain
 
     표본모양 = (문단_요소별_표본값(0), 문단_요소별_표본값(1), tuple(runs), {
-        "prev_spacing": 문단모양.get("prev"),
         "indentation": 문단모양.get("indent"),
         "left_margin": 문단모양.get("left"),
+        # HWPX의 음수 first-line offset은 내어쓰기 상태를 뜻한다. 정확한
+        # 폭은 문두 라벨마다 다르므로 대표값은 '적용/미적용'으로 집계하고,
+        # 적용 단계에서는 한/글 Shift+Tab으로 각 문장의 폭을 실측한다.
+        "hanging_indent": int(문단모양.get("indent") or 0) < -20,
+        # 문단 전체에 쓰이는 장평·문단 위 간격도 문서 대표값과 비교한다. 줄 간격은 쪽 배치를
+        # 위해 구역별로 일부러 조정하는 레이아웃 값이라 서식통일 비교 대상에서 뺀다.
+        "ratio": 장평빈도.most_common(1)[0][0] if 장평빈도 else None,
+        "prev_spacing": 문단모양.get("prev"),
         "marker_bold": weighted_bold(marker_bold_runs),
         "label_bold": weighted_bold(label_bold_runs),
         "marker_bold_runs": tuple(marker_bold_runs),
         "label_bold_runs": tuple(label_bold_runs),
         "parenthetical_size_runs": tuple(aside_runs),
+        "red_marked": bool(text_colors) and all(color == "#FF0000" for color in text_colors),
     })
     return 표본모양, 시작, (시작[0], 시작[1], 시작[2] + 본문끝)
 
@@ -4028,6 +4112,11 @@ def _서식통일_불일치_구간(모양, 시작, 끝, 글꼴, 크기):
     for run in runs:
         run_start, run_end, run_shape = run[:3]
         is_aside = bool(run[4]) if len(run) > 4 else False
+        # 표준 서식이 기준을 정하는 작업에서는 괄호 축소 규칙이 줄인 글자(본문 -2pt)를
+        # 서식통일의 '중간 괄호' 판정과 관계없이 정상으로 본다.
+        if (not 서식통일_빨간표시_사용 and 괄호_축소_사용 and 크기 is not None
+                and run_shape[1] == 크기 - int(round(float(괄호_축소_pt) * 100))):
+            is_aside = True
         # 대표 글꼴·크기와 다른 run만 교정한다. 글꼴·크기와 무관한 강조 속성은
         # 문자모양 적용 단계에서 기존 값을 보존한다.
         mismatch = ((글꼴 is not None and run_shape[0] != 글꼴)
@@ -4051,7 +4140,9 @@ def _서식통일_부연괄호_불일치_구간(모양, 표준크기):
     """본문 크기보다 2pt 작은 규칙을 벗어난 중간 괄호만 교정한다."""
     if 표준크기 is None or len(모양) < 4 or not isinstance(모양[3], dict):
         return [], None
-    목표크기 = int(표준크기) - int(round(float(괄호_축소_pt) * 100))
+    차이 = (서식통일_괄호크기차이 if 서식통일_괄호크기차이 is not None
+            else int(round(float(괄호_축소_pt) * 100)))
+    목표크기 = int(표준크기) - 차이
     if 목표크기 <= 0:
         return [], None
     runs = 모양[3].get("parenthetical_size_runs", ())
@@ -4088,18 +4179,128 @@ def 서식통일_대표(모양들):
     for 항목, 추출 in (
         ("font", lambda 모양: 모양[0]),
         ("size", lambda 모양: 모양[1]),
-        ("prev_spacing", lambda 모양: 모양[3].get("prev_spacing")
-         if len(모양) > 3 and isinstance(모양[3], dict) else None),
         ("marker_bold", lambda 모양: 모양[3].get("marker_bold")
          if len(모양) > 3 and isinstance(모양[3], dict) else None),
         ("label_bold", lambda 모양: 모양[3].get("label_bold")
          if len(모양) > 3 and isinstance(모양[3], dict) else None),
+        ("hanging_indent", lambda 모양: 모양[3].get("hanging_indent")
+         if len(모양) > 3 and isinstance(모양[3], dict) else None),
+        ("ratio", lambda 모양: 모양[3].get("ratio")
+         if len(모양) > 3 and isinstance(모양[3], dict) else None),
     ):
         값들 = [추출(모양) for 모양 in 모양들 if 모양]
+        # 표본이 두 개뿐인 희소 기호(예: ※)도 두 표본이 완전히 일치하면
+        # 빈도 100%의 대표값으로 인정한다. 둘이 다르면 동률이라 자동 보정하지 않는다.
+        최소표본 = max(2, min(서식통일_최소문단수, len(모양들)))
         대표값, 빈도, _ = 서식통일_최빈값(
-            값들, minimum=서식통일_최소문단수, ratio=서식통일_최소비율)
+            값들, minimum=최소표본, ratio=서식통일_최소비율)
         결과[항목] = (대표값, 빈도 if 대표값 is not None else 0)
     return 결과
+
+
+def _서식통일_참고표_이웃대표_보완(그룹별_표본, 프로필):
+    """※ 대표값이 미확정이면 앞뒤 문장이 모두 표준인 ※의 값을 대표값으로 본다."""
+    필드추출 = {
+        "font": lambda 모양: 모양[0],
+        "size": lambda 모양: 모양[1],
+        "marker_bold": lambda 모양: 모양[3].get("marker_bold"),
+        "label_bold": lambda 모양: 모양[3].get("label_bold"),
+        "hanging_indent": lambda 모양: 모양[3].get("hanging_indent"),
+    }
+
+    def 추출(모양, 필드):
+        if 필드 not in ("font", "size") and (len(모양) < 4 or not isinstance(모양[3], dict)):
+            return None
+        return 필드추출[필드](모양)
+
+    def 표준문장인가(그룹키, 모양):
+        대표 = 프로필.get(그룹키) or {}
+        for 필드 in 필드추출:
+            표준 = 대표.get(필드, (None, 0))[0]
+            if 필드 in ("font", "size") and 표준 is None:
+                return False
+            if 표준 is not None and 추출(모양, 필드) not in (None, 표준):
+                return False
+        return True
+
+    순서 = sorted(((항목[1], 그룹키, 항목[0])
+                  for 그룹키, 항목들 in 그룹별_표본.items() for 항목 in 항목들),
+                 key=lambda item: item[0])
+    후보 = {}
+    for i, (_, 그룹키, 모양) in enumerate(순서):
+        대표 = 프로필.get(그룹키)
+        if 그룹키[0] != "※" or not 대표:
+            continue
+        if not 0 < i < len(순서) - 1:
+            continue
+        미확정 = [필드 for 필드 in 필드추출 if 대표.get(필드, (None, 0))[0] is None]
+        if not 미확정:
+            continue
+        앞, 뒤 = 순서[i - 1], 순서[i + 1]
+        if not (표준문장인가(앞[1], 앞[2]) and 표준문장인가(뒤[1], 뒤[2])):
+            continue
+        for 필드 in 미확정:
+            값 = 추출(모양, 필드)
+            if 값 is not None:
+                후보.setdefault((그룹키, 필드), []).append(값)
+    보완수 = 0
+    for (그룹키, 필드), 값들 in 후보.items():
+        값 = max(값들, key=값들.count)
+        프로필[그룹키][필드] = (값, 값들.count(값))
+        보완수 += 1
+        로그(f"[서식통일] ※ 대표값 보완: {그룹키[0]}/{그룹키[1]} {필드}={값} "
+             f"(앞뒤 문장이 표준인 ※ {len(값들)}개 기준)")
+    return 보완수
+
+
+def _서식통일_대표값_사용자검토(그룹별_표본):
+    """조사된 대표 서식을 사용자 확인 없이 자동 승인한다."""
+    로그(f"[서식통일] 대표 서식 {len(그룹별_표본)}개 그룹 자동 승인(사용자 확인 생략)")
+    return True
+
+
+def _서식통일_적용영역_사용자검토(계획):
+    """불일치 영역을 적용 전에 사용자에게 보여 주고 선택된 계획만 돌려준다."""
+    후보 = [index for index, item in enumerate(계획) if item.get("mismatch")]
+    if _서식통일_대표값_검토콜백 is None:
+        로그("[서식통일] 사용자 검토 UI가 없어 시험 모드에서 불일치 영역 전체 승인")
+        return {"approved": True, "selected": 후보}
+    요청 = _서식통일_대표값_검토콜백("regions", 계획)
+    return 요청 or {"approved": False, "selected": []}
+
+
+def _서식통일_최종결과_사용자확인(결과):
+    """저장 후 읽기 전용 검수 결과를 GUI에 제시하고 사용자의 확인을 기다린다."""
+    if _서식통일_대표값_검토콜백 is None:
+        return
+    _서식통일_대표값_검토콜백("result", 결과)
+
+
+def _서식통일_미확정_항목(대표, text):
+    """실제로 존재하는 요소의 대표값만 요구한다(라벨 없는 문장 등 제외)."""
+    marker, label = _서식통일_문두요소_범위(text)
+    fields = ["font", "size"]
+    if marker:
+        fields.append("marker_bold")
+    if label:
+        fields.append("label_bold")
+    offset = 문단_내어쓰기_기준_오프셋(text)
+    if offset is not None and offset > 0:
+        fields.append("hanging_indent")
+    return [field for field in fields if 대표.get(field, (None, 0))[0] is None]
+
+
+def _서식통일_미확정_빨간표시(시작, 끝):
+    """대표값 미확정 문단은 글자색만 변경한다. 혼합 자간은 읽거나 쓰지 않는다."""
+    try:
+        단어모드_범위선택(시작, 끝)
+        action = hwp.CreateAction("CharShape")
+        params = action.CreateSet()
+        params.SetItem("TextColor", hwp.RGBColor(255, 0, 0))
+        if action.Execute(params) is False:
+            raise RuntimeError("대표값 미확정 문단의 빨간색 표시 실패")
+    finally:
+        hwp_run("Cancel")
 
 
 def _서식통일_문단앞간격_적용(pos, hwpunit):
@@ -4163,8 +4364,167 @@ def _서식통일_내어쓰기_필요(pos, text):
             pass
 
 
+def _서식통일_내어쓰기_상태(pos, text):
+    """문단의 내어쓰기 적용 여부를 읽기 전용으로 반환한다 (불명은 None)."""
+    offset = 문단_내어쓰기_기준_오프셋(text)
+    if hwp is None or offset is None or offset <= 0:
+        return None
+    original_pos = None
+    try:
+        original_pos = hwp.GetPos()
+        if hwp.SetPos(*pos) is False:
+            return None
+        hwp_run("MoveParaBegin")
+        return int(hwp.ParaShape.Item("Indentation")) < -20
+    except Exception as exc:
+        진단로그(f"[서식통일] 내어쓰기 상태 조사 실패 — 안전을 위해 건너뜀: {exc}")
+        return None
+    finally:
+        try:
+            hwp_run("Cancel")
+            if original_pos is not None:
+                hwp.SetPos(*original_pos)
+        except Exception:
+            pass
+
+
+def _서식통일_문단서식_적용(item):
+    """한 문단 안에서 대표값과 다른 문자 속성만 적용한다."""
+    operations = (
+        (item["font_runs"], {"폰트": item["font"]}),
+        (item["size_runs"], {"크기_pt": item["size"] / 100 if item["size"] else None}),
+        (item["aside_runs"], {"크기_pt": item["aside_size"] / 100 if item["aside_size"] else None}),
+        (item["marker_bold_runs"], {"굵게": item["marker_bold"]}),
+        (item["label_bold_runs"], {"굵게": item["label_bold"]}),
+    )
+    for ranges, options in operations:
+        for start, end in ranges:
+            try:
+                단어모드_범위선택(start, end)
+                문자모양_적용_현재선택(**options, 자간_유지=True)
+            finally:
+                hwp_run("Cancel")
+    if item.get("ratio_fix") is not None:
+        try:
+            단어모드_범위선택(item["start"], item["end"])
+            문자모양_적용_현재선택(장평=item["ratio_fix"], 자간_유지=True)
+        finally:
+            hwp_run("Cancel")
+    예시 = item.get("para_examples") or {}
+    if 예시:
+        # 문서 안에서 대표값을 가진 실제 문단의 값을 읽어 그대로 복사한다(단위 변환 없음).
+        값들 = {}
+        for 종류, 위치 in 예시.items():
+            if 위치 is None:
+                continue
+            hwp.SetPos(*위치)
+            모양 = hwp.HParameterSet.HParaShape
+            hwp.HAction.GetDefault("ParagraphShape", 모양.HSet)
+            if 종류 == "indent":
+                값들["Indentation"] = int(모양.Indentation)
+                값들["LeftMargin"] = int(모양.LeftMargin)
+            else:
+                값들["PrevSpacing"] = int(모양.PrevSpacing)
+        if 값들:
+            hwp.SetPos(*item["start"])
+            action = hwp.CreateAction("ParagraphShape")
+            params = action.CreateSet()
+            for key, value in 값들.items():
+                params.SetItem(key, value)
+            if action.Execute(params) is False:
+                raise RuntimeError("대표 문단모양 복사 실패")
+
+
+def _서식통일_문단내어쓰기_적용(item):
+    """해당 문단의 자간 처리가 끝난 실제 글자 폭으로 내어쓰기를 확정한다."""
+    expected = item["expected_hanging"]
+    if expected is None or 문단_내어쓰기_기준_오프셋(item["text"]) is None:
+        return
+    if expected:
+        if not 문단_내어쓰기_적용(item["start"], item["text"]):
+            검수_문제_기록(현재_처리파일, "[서식통일 내어쓰기 미적용] " + item["text"].strip())
+    elif item["hanging_mismatch"]:
+        if hwp.SetPos(*item["start"]) is False:
+            raise RuntimeError("대상 문단 이동 실패")
+        hwp_run("MoveParaBegin")
+        _내어쓰기_값_설정(0)
+
+
+def _서식통일_문단자간_조정(start, end):
+    """예외 문단만 검사. 분리 어절을 ±10% 이내에서 조정하고 실패 시 복원."""
+    if start[:2] != end[:2] or start[2] >= end[2]:
+        raise ValueError("자간 처리 범위는 같은 문단이어야 합니다")
+    anchor = start
+    seen = set()
+    limit = max(0, min(10, int(자간_최대시도_본문)))
+    while anchor[:2] == start[:2] and anchor[2] < end[2]:
+        if 중단_요청됨():
+            return False
+        if anchor in seen:
+            break
+        seen.add(anchor)
+        hwp.SetPos(*anchor)
+        info = 단어모드_분리정보(anchor)
+        if info:
+            line_start, boundary, word_start, word_end, left, right = info
+            positions = (line_start, boundary, word_start, word_end)
+            if any(pos[:2] != start[:2] or not start[2] <= pos[2] <= end[2] for pos in positions):
+                raise RuntimeError("자간 조정 범위가 대상 문단을 벗어났습니다")
+            shrink = 어절분리_앞줄당김인가(left, right, 단어모드_마지막줄_짧은잔여인가(boundary))
+            success = False
+            for direction in ((-1, 1) if shrink else (1, -1)):
+                target_end = word_end if direction < 0 else word_start
+                if target_end[2] <= line_start[2] or word_start[2] < line_start[2]:
+                    continue
+                runs = 단어모드_자간보관(line_start, target_end)
+                if runs is None:
+                    return False
+                if not runs:
+                    continue
+                values = [value for _, _, items in runs for value in items]
+                # 이미 압축된 자간을 반복 실행 때 더 누적 축소하지 않는다.
+                budget = min(limit, 10 + min(values) if direction < 0 else 10 - max(values))
+                changed = False
+                try:
+                    for step in range(1, max(0, budget) + 1):
+                        if 중단_요청됨():
+                            return False
+                        changed = True
+                        단어모드_자간적용(runs, direction * step)
+                        _, previous_end = 단어모드_줄범위(anchor)
+                        if direction < 0:
+                            success = previous_end[:2] == end[:2] and previous_end[2] >= word_end[2]
+                        else:
+                            next_start, next_end = 단어모드_줄범위(word_start)
+                            success = (previous_end[2] <= word_start[2] and
+                                       next_start[:2] == end[:2] == next_end[:2] and
+                                       next_start[2] <= word_start[2] and next_end[2] >= word_end[2])
+                        if success:
+                            진단로그(f"[서식통일 자간] 문단 {start[:2]}, {direction * step:+d}%p")
+                            break
+                finally:
+                    if changed and not success:
+                        단어모드_자간적용(runs, 0)
+                if success:
+                    break
+            if not success:
+                검수_문제_기록(현재_처리파일, f"[서식통일 자간 미해결] 문단 {start[:2]}, 경계 {boundary[2]}: 안전 한도 내 조정 불가")
+        hwp.SetPos(*anchor)
+        hwp_run("MoveLineEnd")
+        line_end = hwp.GetPos()
+        if line_end[:2] != end[:2] or line_end[2] >= end[2]:
+            break
+        hwp_run("MoveNextChar")
+        next_pos = hwp.GetPos()
+        if next_pos[:2] != end[:2] or next_pos[2] <= anchor[2]:
+            break
+        anchor = next_pos
+    hwp_run("Cancel")
+    return True
+
+
 def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False):
-    global _서식통일_문서대표프로필, _서식통일_최종감사
+    global _서식통일_문서대표프로필, _서식통일_최종감사, 서식통일_괄호크기차이
     if 중단_요청됨():
         return False
     범위표시 = (f"{쪽범위_실제[0]}~{쪽범위_실제[1]}쪽" if 쪽범위_실제 is not None
@@ -4172,12 +4532,18 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
     기준설명 = ("최초 문서 표본에서 고정한 대표 프로필로 후속 변경을 재검증"
                if 고정_프로필_재적용 else "문두기호·보고서 계층별 문서 표본에서 대표 서식 산출")
     작업설명 = "저장 결과를 읽기 전용으로 검증" if 검증만 else "표준과 다른 구간만 보정"
+    if 검증만:
+        단계표시("서식통일 검수")
+    elif not 고정_프로필_재적용:
+        단계표시("서식통일 조사")
     로그(f"서식통일 시작: 수정 범위 {범위표시}, {기준설명}, {작업설명}, "
-         "표준 문장은 무변경, 중간 괄호는 본문 크기 기준 -2pt, 자간 초기화 없음")
+         "표준 문장은 무변경, 괄호(문두 라벨 제외)는 본문 크기 기준 -2pt, 자간 초기화 없음")
     표본 = {}
     # 쪽 범위는 수정 대상을 제한하지만, 대표서식은 같은 문서의 정상 문장까지
     # 포함해 산출해야 한다. 선택 쪽에서만 표본을 모으면 그 쪽의 이상 서식이
     # 대표값으로 채택되어 검출이 0건이 되는 문제가 생긴다.
+    문맥 = {}        # 문단 시작 위치 → 바로 앞 문장의 문두기호(문단 위 간격 기준)
+    직전기호 = None
     hwp_run("MoveDocBegin")
     while True:
         if 중단_요청됨():
@@ -4191,6 +4557,10 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
                 결과 = 서식통일_표본(pos, text) if marker else None
                 if 결과:
                     표본.setdefault(marker, []).append(결과 + (text,))
+                    문맥[tuple(pos)] = 직전기호
+                직전기호 = marker or None
+            elif text.strip():
+                직전기호 = None
             hwp.SetPos(*pos)
         if not 다음_문단으로_진행():
             break
@@ -4198,12 +4568,78 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
     확인문단수 = 0
     불일치목록 = []
     판정불가그룹 = []
+    미확정문단 = []
     그룹별_표본 = {}
     for marker, 항목들 in 표본.items():
         for 항목 in 항목들:
             모양, 시작, 끝, text = 항목
             그룹키 = _서식통일_그룹키(marker, text, 시작)
             그룹별_표본.setdefault(그룹키, []).append(항목)
+    로그(f"[서식통일] 1/5 표본 조사 완료: {sum(map(len, 그룹별_표본.values()))}개 문장, "
+         f"{len(그룹별_표본)}개 그룹 — 문서 변경 0건(읽기 전용)")
+    # 괄호 크기 규칙도 문서 관행을 따른다. 괄호를 본문보다 작게 쓰는 문서만 그 차이를 적용하고,
+    # 본문과 같은 크기로 쓰는 문서는 괄호도 본문 크기로 본다.
+    if not 고정_프로필_재적용:
+        차이빈도 = Counter()
+        for 항목들 in 그룹별_표본.values():
+            for 모양, *_ in 항목들:
+                본문크기 = 모양[1]
+                if 본문크기 is None or len(모양) < 4 or not isinstance(모양[3], dict):
+                    continue
+                for _, _, size, 길이 in 모양[3].get("parenthetical_size_runs", ()):
+                    차이빈도[int(본문크기) - int(size)] += 1
+        서식통일_괄호크기차이 = 차이빈도.most_common(1)[0][0] if 차이빈도 else None
+        if 서식통일_괄호크기차이 is not None:
+            로그(f"[서식통일] 괄호 크기 관행: 본문보다 {서식통일_괄호크기차이 / 100:g}pt 작게")
+    # 프로필은 모든 표본 수집이 끝난 뒤 한 번에 확정한다. 이 구간에는
+    # COM 서식 쓰기 호출이 없어 문서의 현재 서식을 조사값으로 보존한다.
+    for 그룹키, 항목들 in 그룹별_표본.items():
+        if 고정_프로필_재적용:
+            대표 = _서식통일_문서대표프로필.get(그룹키)
+        else:
+            대표 = 서식통일_대표([모양 for 모양, *_ in 항목들])
+            _서식통일_문서대표프로필[그룹키] = 대표
+    if not 고정_프로필_재적용:
+        _서식통일_참고표_이웃대표_보완(그룹별_표본, _서식통일_문서대표프로필)
+        # 괄호 라벨 굵기는 문서 전체의 관행이다. 그룹 안에 라벨 문장이 적어 기준이 없으면
+        # 다른 그룹들의 라벨 굵기 다수값을 따른다(예: ※ 라벨 문장이 하나뿐인 경우).
+        라벨관행 = Counter()
+        for 대표값 in _서식통일_문서대표프로필.values():
+            값, 수 = (대표값 or {}).get("label_bold", (None, 0))
+            if 값 is not None:
+                라벨관행[값] += 수
+        if 라벨관행:
+            (관행값, 관행수), *나머지 = 라벨관행.most_common()
+            if not 나머지 or 나머지[0][1] < 관행수:
+                for 그룹키, 대표값 in _서식통일_문서대표프로필.items():
+                    if 대표값 and 대표값.get("label_bold", (None, 0))[0] is None:
+                        대표값["label_bold"] = (관행값, 관행수)
+                        로그(f"[서식통일] '{그룹키[0]}' 괄호 라벨 굵기는 문서 전체 관행({관행값})을 따름")
+    # 문단 위 간격은 앞 문장 기호에 따라 달라지므로(□ 다음 ㅇ, ㅇ 다음 ㅇ 등) 문맥별 대표값을
+    # 구하고, 대표값을 가진 실제 문단을 예시로 삼아 그 값을 그대로 복사한다.
+    위간격모음 = defaultdict(list)
+    for 그룹키, 항목들 in 그룹별_표본.items():
+        for 모양, 시작, 끝, text in 항목들:
+            위간격모음[(그룹키, 문맥.get(tuple(시작)))].append((모양[3].get("prev_spacing"), 시작))
+    위간격대표 = {}
+    for key, pairs in 위간격모음.items():
+        값, _, _ = 서식통일_최빈값([v for v, _ in pairs if v is not None],
+                               minimum=max(2, min(서식통일_최소문단수, len(pairs))),
+                               ratio=서식통일_최소비율)
+        if 값 is not None:
+            위간격대표[key] = (값, next(pos for v, pos in pairs if v == 값))
+    로그("[서식통일] 2/5 문서 전체 표본으로 대표값 확정 완료(읽기 전용)")
+
+    # 실제 적용 전에 추정 대표값을 사용자가 확인·수정한다. 특히 ※ 표본이
+    # 동률/소수라 대표값이 없을 때는 * 계열과 함께 화면에 제시하고 사용자가
+    # 선택하거나 직접 값을 입력해야 보정 계획에 반영된다.
+    if not 검증만 and not 고정_프로필_재적용:
+        로그("[서식통일] 2/5 조사된 대표 서식 확인·수정 대기")
+        if not _서식통일_대표값_사용자검토(그룹별_표본):
+            로그("[서식통일] 사용자가 대표 서식 검토를 취소하여 문서 수정 전 작업 중단")
+            return False
+
+    계획 = []
     for 그룹키, 항목들 in 그룹별_표본.items():
         marker, role, level = 그룹키
         if 고정_프로필_재적용:
@@ -4213,48 +4649,71 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
                      "최초 표본이 없어 안전을 위해 건너뜀")
                 continue
         else:
-            대표 = 서식통일_대표([모양 for 모양, *_ in 항목들])
-            _서식통일_문서대표프로필[그룹키] = 대표
+            대표 = _서식통일_문서대표프로필.get(그룹키)
         글꼴, 글꼴수 = 대표["font"]
         크기, 크기수 = 대표["size"]
-        앞간격, 앞간격수 = 대표["prev_spacing"]
         문두굵게, 문두굵게수 = 대표["marker_bold"]
         라벨굵게, 라벨굵게수 = 대표["label_bold"]
-        미판정필드 = [field for field in ("font", "size", "prev_spacing", "marker_bold", "label_bold")
-                       if 대표[field][0] is None]
-        if 미판정필드:
-            판정불가그룹.append({"marker": marker, "role": role,
-                                 "samples": len(항목들), "fields": 미판정필드})
-        if all(value is None for value in (글꼴, 크기, 앞간격, 문두굵게, 라벨굵게)):
-            로그(f"[서식통일] '{marker}' 표본 {len(항목들)}개: 글꼴·크기·문단 앞 여백 대표값을 "
-                 f"판정할 수 없어 해당 기호 그룹은 건너뜀 (최소 표본 {서식통일_최소문단수}개, "
-                 f"최소 빈도 {서식통일_최소비율:.0%})")
-            continue
-        바꾼수 = 0
+        내어쓰기표준, 내어쓰기수 = 대표.get("hanging_indent", (None, 0))
+        그룹미판정 = set()
         for 모양, 시작, 끝, text in 항목들:
             # 쪽 범위는 대표값 표본에 적용하지 않고 실제 수정 단계에서만 적용한다.
             if not 쪽범위_안인가(시작):
                 continue
+            미판정필드 = _서식통일_미확정_항목(대표, text)
+            그룹미판정.update(미판정필드)
+            if 미판정필드:
+                미확정문단.append({"text": text.strip()[:100], "fields": 미판정필드,
+                                   "start": 시작, "marker": marker,
+                                   "red_marked": bool(모양[3].get("red_marked", False))})
             글꼴불일치구간 = _서식통일_불일치_구간(모양, 시작, 끝, 글꼴, None)
             크기불일치구간 = _서식통일_불일치_구간(모양, 시작, 끝, None, 크기)
             불일치구간 = 서식통일_범위병합(글꼴불일치구간 + 크기불일치구간)
             문두굵기구간 = _서식통일_굵기_불일치_구간(모양, "marker", 문두굵게)
             라벨굵기구간 = _서식통일_굵기_불일치_구간(모양, "label", 라벨굵게)
             괄호크기구간, 괄호목표크기 = _서식통일_부연괄호_불일치_구간(모양, 크기)
-            기존앞간격 = (모양[3].get("prev_spacing")
-                         if len(모양) > 3 and isinstance(모양[3], dict) else None)
-            앞간격_불일치 = 앞간격 is not None and 기존앞간격 != 앞간격
             paragraph_offset = 문단_내어쓰기_기준_오프셋(text)
             문단시작 = 시작
-            내어쓰기_누락 = (_서식통일_내어쓰기_필요(문단시작, text)
-                              if paragraph_offset is not None else False)
-            내어쓰기_강제갱신 = bool(
-                paragraph_offset is not None and
-                (불일치구간 or 문두굵기구간 or 라벨굵기구간 or 괄호크기구간))
-            내어쓰기_불일치 = (True if 내어쓰기_강제갱신 else
-                               내어쓰기_누락)
+            현재내어쓰기 = (_서식통일_내어쓰기_상태(문단시작, text)
+                            if paragraph_offset is not None else None)
+            # 기준 미정 문단은 내어쓰기를 일부러 건너뛰고 빨간 표시로 보고하므로 불일치로 세지 않는다.
+            내어쓰기_불일치 = (내어쓰기표준 is not None and 현재내어쓰기 is not None
+                               and 내어쓰기표준 != 현재내어쓰기 and not 미판정필드)
+            부가 = 모양[3] if len(모양) > 3 and isinstance(모양[3], dict) else {}
+            장평표준 = 대표.get("ratio", (None, 0))[0]
+            장평_불일치 = 장평표준 is not None and 부가.get("ratio") not in (None, 장평표준)
+            위간격 = 위간격대표.get((그룹키, 문맥.get(tuple(시작))))
+            위간격_불일치 = 위간격 is not None and 부가.get("prev_spacing") != 위간격[0]
+            문단모양_예시 = {}
+            if 위간격_불일치:
+                문단모양_예시["prev"] = 위간격[1]
+            if 내어쓰기_불일치 and 내어쓰기표준:
+                # 한 줄짜리 문장은 실측 내어쓰기가 되지 않으므로, 같은 그룹에서 라벨(본문 앞부분)이
+                # 같고 내어쓰기가 된 문장의 들여쓰기 값을 예시로 복사한다.
+                앞부분 = text.lstrip()[:max(0, paragraph_offset - (len(text) - len(text.lstrip())))]
+                for 예시모양, 예시시작, _, 예시text in 항목들:
+                    예시offset = 문단_내어쓰기_기준_오프셋(예시text)
+                    if (예시시작 != 시작 and 예시offset is not None
+                            and 예시모양[3].get("hanging_indent")
+                            and 예시text.lstrip()[:max(0, 예시offset - (len(예시text) - len(예시text.lstrip())))] == 앞부분):
+                        문단모양_예시["indent"] = 예시시작
+                        break
             현재불일치 = (불일치구간 or 문두굵기구간 or 라벨굵기구간
-                        or 괄호크기구간 or 앞간격_불일치 or 내어쓰기_누락 is True)
+                        or 괄호크기구간 or 내어쓰기_불일치 or 장평_불일치 or 문단모양_예시)
+            item_plan = {"marker": marker, "role": role, "level": level,
+                         "shape": 모양, "start": 문단시작, "end": 끝, "text": text,
+                         "unresolved_fields": 미판정필드,
+                         "font": 글꼴, "size": 크기,
+                         "font_runs": 글꼴불일치구간, "size_runs": 크기불일치구간,
+                         "aside_runs": 괄호크기구간, "aside_size": 괄호목표크기,
+                         "marker_bold_runs": 문두굵기구간, "marker_bold": 문두굵게,
+                         "label_bold_runs": 라벨굵기구간, "label_bold": 라벨굵게,
+                         "hanging_mismatch": 내어쓰기_불일치,
+                         "ratio_fix": 장평표준 if 장평_불일치 else None,
+                         "para_examples": 문단모양_예시,
+                         "expected_hanging": 내어쓰기표준,
+                         "mismatch": bool(현재불일치)}
+            계획.append(item_plan)
             if 검증만:
                 확인문단수 += 1
                 if 현재불일치:
@@ -4283,98 +4742,150 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
                         항목["fields"].append("marker_bold")
                     if 라벨굵기구간:
                         항목["fields"].append("label_bold")
-                    if 앞간격_불일치:
+                    if 장평_불일치:
+                        항목["fields"].append("ratio")
+                    if 위간격_불일치:
                         항목["fields"].append("prev_spacing")
-                        항목["expected_actual"]["prev_spacing"] = {
-                            "expected": 앞간격, "actual": 기존앞간격,
+                    if 내어쓰기_불일치:
+                        항목["fields"].append("hanging_indent")
+                        항목["expected_actual"]["hanging_indent"] = {
+                            "expected": 내어쓰기표준, "actual": 현재내어쓰기,
                         }
-                    if 내어쓰기_누락 is True:
-                        항목["fields"].append("hanging_indent_missing")
                     불일치목록.append(항목)
-                continue
-            if not 현재불일치 and not 내어쓰기_강제갱신 or 중단_요청됨():
-                continue
-            for 구간시작, 구간끝 in 글꼴불일치구간:
-                try:
-                    단어모드_범위선택(구간시작, 구간끝)
-                    문자모양_적용_현재선택(
-                        폰트=글꼴, 자간_유지=True)
-                    바꾼수 += 1
-                finally:
-                    hwp_run("Cancel")
-            for 구간시작, 구간끝 in 크기불일치구간:
-                try:
-                    단어모드_범위선택(구간시작, 구간끝)
-                    문자모양_적용_현재선택(
-                        크기_pt=크기 / 100 if 크기 is not None else None, 자간_유지=True)
-                    바꾼수 += 1
-                finally:
-                    hwp_run("Cancel")
-            for 구간시작, 구간끝 in 괄호크기구간:
-                try:
-                    단어모드_범위선택(구간시작, 구간끝)
-                    문자모양_적용_현재선택(
-                        크기_pt=괄호목표크기 / 100, 자간_유지=True)
-                    바꾼수 += 1
-                finally:
-                    hwp_run("Cancel")
-            for 구간들, 표준굵기 in ((문두굵기구간, 문두굵게), (라벨굵기구간, 라벨굵게)):
-                for 구간시작, 구간끝 in 구간들:
-                    try:
-                        단어모드_범위선택(구간시작, 구간끝)
-                        문자모양_적용_현재선택(굵게=표준굵기, 자간_유지=True)
-                        바꾼수 += 1
-                    finally:
-                        hwp_run("Cancel")
-            문단교정 = False
-            if len(모양) > 3 and isinstance(모양[3], dict):
-                if 앞간격_불일치:
-                    if _서식통일_문단앞간격_적용(문단시작, 앞간격):
-                        문단교정 = True
-                        진단로그(f"[서식통일] 문단 앞 간격 {기존앞간격} → {앞간격}: {text.strip()[:40]}")
-                # 글꼴·크기 교정 후의 실제 폭을 기준으로 다시 판정한다. 이미
-                # 본문 첫 글자에 맞은 문단은 내어쓰기 적용기를 호출하지 않는다.
-                내어쓰기_불일치 = (_서식통일_내어쓰기_필요(문단시작, text)
-                                   if paragraph_offset is not None else False)
-                if 내어쓰기_강제갱신:
-                    내어쓰기_불일치 = True
-                if 내어쓰기_불일치 is True and 문단_내어쓰기_적용(문단시작, text):
-                    문단교정 = True
-                    진단로그(f"[서식통일] 내어쓰기 적용: {text.strip()[:40]}")
-            if 불일치구간 or 괄호크기구간 or 문두굵기구간 or 라벨굵기구간:
-                문단교정 = True
-            if 문단교정:
-                교정수 += 1
-            진단로그(f"[서식통일] {marker}/{role}/계층{level}: 본문 글꼴·크기 {len(불일치구간)}구간, "
-                     f"부연괄호 크기 {len(괄호크기구간)}구간, 문두 굵기 {len(문두굵기구간)}구간, "
-                     f"라벨 굵기 {len(라벨굵기구간)}구간 교정 — {text.strip()[:40]}")
+        if 그룹미판정:
+            판정불가그룹.append({"marker": marker, "role": role,
+                                 "samples": len(항목들), "fields": sorted(그룹미판정)})
         글꼴표시 = f"{글꼴} ({글꼴수})" if 글꼴 is not None else "판정 보류"
         크기표시 = f"{크기 / 100:g}pt ({크기수})" if 크기 is not None else "판정 보류"
-        앞간격표시 = f"{앞간격} HWPUNIT ({앞간격수})" if 앞간격 is not None else "판정 보류"
-        문두굵기표시 = f"{'굵게' if 문두굵게 else '보통'} ({문두굵게수})" if 문두굵게 is not None else "판정 보류"
-        라벨굵기표시 = f"{'굵게' if 라벨굵게 else '보통'} ({라벨굵게수})" if 라벨굵게 is not None else "판정 보류"
-        대상수 = sum(1 for _, 시작, _, _ in 항목들 if 쪽범위_안인가(시작))
-        로그(f"[서식통일] '{marker}/{role}/계층{level}' 문서 표본 {len(항목들)}개, "
-             f"작업 범위 대상 {대상수}개: 대표 글꼴 {글꼴표시}, 크기 {크기표시}, "
-             f"문단 앞 간격 {앞간격표시}, 문두 굵기 {문두굵기표시}, "
-             f"괄호라벨 굵기 {라벨굵기표시} — {바꾼수}개 구간 교정")
+        진단로그(f"[서식통일] '{marker}/{role}/계층{level}' 대표값: 글꼴 {글꼴표시}, "
+                 f"크기 {크기표시}, 문두 굵기 {문두굵게}, 괄호라벨 굵기 {라벨굵게}, "
+                 f"내어쓰기 {내어쓰기표준} ({내어쓰기수})")
+        continue
+
+    후보수 = sum(1 for p in 계획 if p["mismatch"])
+    로그(f"[서식통일] 3/5 예외 영역 자동 검출: 수정 후보 {후보수}개 / "
+         f"대표값 미확정 {len(미확정문단)}개 — 개별 승인 없이 적용")
     if 검증만:
+        for item in (미확정문단 if 서식통일_빨간표시_사용 else ()):
+            if not item["red_marked"]:
+                불일치목록.append({"text": item["text"], "fields": ["unresolved_red_marking"]})
         if not 확인문단수:
             status = "incomplete"
-        elif 판정불가그룹 and not 불일치목록:
+        elif 판정불가그룹 and not 불일치목록 and 서식통일_빨간표시_사용:
             status = "incomplete"
         else:
             status = "failed" if 불일치목록 else "passed"
-        _서식통일_최종감사 = {
-            "status": status,
-            "checked": 확인문단수,
-            "issues": 불일치목록,
-            "not_checkable": 판정불가그룹,
-        }
-        로그(f"저장 결과 서식통일 검증: {status} / 확인 {확인문단수}개 표준 대상 / "
-             f"불일치 {len(불일치목록)}개 문단 / 대표 판정 보류 그룹 {len(판정불가그룹)}개")
+        _서식통일_최종감사 = {"status": status, "checked": 확인문단수,
+                             "issues": 불일치목록, "not_checkable": 판정불가그룹,
+                             "unresolved": 미확정문단}
+        로그(f"5/5 저장 결과 서식통일 검수(읽기 전용): {status} / 확인 {확인문단수}개 / "
+             f"불일치 {len(불일치목록)}개 / 보류 그룹 {len(판정불가그룹)}개")
+        if 불일치목록:
+            항목별 = Counter(field for issue in 불일치목록 for field in issue["fields"])
+            로그("[서식통일] 불일치 항목별 문장 수: "
+                 + ", ".join(f"{field} {count}" for field, count in 항목별.most_common()))
         return _서식통일_최종감사
+
+    # 4단계: 문서 순서로 한 문단의 서식 → 자간 → 내어쓰기를 끝낸다.
+    로그("[서식통일] 4/5 문장별 자동 처리: 서식 → 자간 → 내어쓰기")
+    if not 고정_프로필_재적용:
+        단계표시("서식통일 적용")
+    for item in sorted(계획, key=lambda entry: entry["start"]):
+        if 중단_요청됨():
+            return False
+        if not item["mismatch"] and not item["unresolved_fields"]:
+            continue
+        if item["mismatch"]:
+            진단로그(f"[서식통일 문장] 시작 {item['start']}: {item['text'].strip()[:100]}")
+            _서식통일_문단서식_적용(item)
+            # 기준이 미확정된 문장은 확정된 항목만 고치고 빨간 표시한다.
+            # 불완전한 기준으로 자간/내어쓰기를 연쇄 변경하지 않는다.
+            if not item["unresolved_fields"]:
+                if item["hanging_mismatch"] and not item["expected_hanging"]:
+                    _서식통일_문단내어쓰기_적용(item)   # 대표값이 '내어쓰기 없음'이면 여기서 해제
+                # 내어쓰기 → 자간 → 외톨이 당기기는 모든 문장의 서식을 맞춘 뒤 한 묶음으로 한다.
+                _서식통일_자간보류문단[item["text"].strip()] = item["expected_hanging"]
+            elif not 서식통일_빨간표시_사용:
+                _서식통일_자간보류문단[item["text"].strip()] = item["expected_hanging"]
+            교정수 += 1
+            진단로그(f"[서식통일 문장] 완료 {item['start']}")
+        if item["unresolved_fields"] and not 서식통일_빨간표시_사용:
+            진단로그(f"[서식통일] 대표값 미확정은 뒤이은 표준 서식이 결정하여 빨간 표시 생략: "
+                     f"{item['text'].strip()[:100]}")
+        elif item["unresolved_fields"]:
+            _서식통일_미확정_빨간표시(item["start"], item["end"])
+            진단로그(f"[서식통일] 대표값 미확정 빨간 표시 ({', '.join(item['unresolved_fields'])}): "
+                     f"{item['text'].strip()[:100]}")
+    로그(f"[서식통일] 4/5 문장별 처리 완료; 미확정 문단 {len(미확정문단)}개 "
+         f"{'빨간 표시' if 서식통일_빨간표시_사용 else '표준 서식에 맡김'}, "
+         "저장 후 5/5 결과 확인 대기")
+    if 서식통일_빨간표시_사용 and not 고정_프로필_재적용:
+        # 표준 서식이 뒤따르지 않으면 서식통일이 고친 문장만 지금 자간을 조정한다.
+        if 서식통일_보류자간_재조정() is False:
+            return False
     로그(f"서식통일 완료 (교정 {교정수}개 문단)")
+    return True
+
+
+서식통일_줄병합_사용 = True   # 짧은 마지막 줄(외톨이 글자) 당기기 사용 여부(작업별로 설정)
+
+
+def 서식통일_문장_마무리(시작, text, 내어쓰기):
+    """한 문장의 마무리 묶음: 내어쓰기 → 자간 → 마지막 줄 외톨이 글자 당기기.
+
+    내어쓰기를 먼저 확정해야 자간 조정 뒤 줄 폭이 다시 바뀌지 않고, 외톨이 글자 당기기는
+    자간 조정으로 확정된 줄바꿈을 기준으로 해야 하므로 이 순서로 한 문장씩 끝낸다.
+    """
+    if 내어쓰기 and 문단_내어쓰기_기준_오프셋(text) is not None:
+        문단_내어쓰기_적용(시작, text)
+    hwp.SetPos(*시작)
+    hwp_run("MoveParaEnd")
+    끝 = hwp.GetPos()
+    if 끝[:2] == 시작[:2] and 끝[2] > 시작[2]:
+        if _서식통일_문단자간_조정(시작, 끝) is False:
+            return False
+        if 서식통일_줄병합_사용:
+            hwp.SetPos(*시작)
+            지난 = set()
+            while True:
+                if 중단_요청됨():
+                    return False
+                pos = hwp.GetPos()
+                if pos[:2] != 시작[:2] or pos in 지난:
+                    break
+                지난.add(pos)
+                문장부호_줄병합_시도()
+                hwp_run("MoveLineEnd")
+                hwp_run("MoveNextChar")
+    hwp.SetPos(*시작)
+    return True
+
+
+def 서식통일_보류자간_재조정():
+    """(표준 서식 없음) 서식통일이 고친 문장에 마무리 묶음을 적용한다."""
+    if not _서식통일_자간보류문단:
+        return True
+    대상 = dict(_서식통일_자간보류문단)
+    조정수 = 0
+    hwp_run("MoveDocBegin")
+    while 대상:
+        if 중단_요청됨():
+            return False
+        hwp_run("MoveParaBegin")
+        시작 = hwp.GetPos()
+        if 시작[0] == 0:
+            text = 현재문단_텍스트()
+            key = text.strip()
+            if key in 대상:
+                if 서식통일_문장_마무리(시작, text, bool(대상.pop(key))) is False:
+                    return False
+                조정수 += 1
+        if not 다음_문단으로_진행():
+            break
+    로그(f"[서식통일] 교정 문장 마무리(내어쓰기→자간→외톨이 당기기): {조정수}개"
+         + (f" / 위치를 찾지 못한 문장 {len(대상)}개" if 대상 else ""))
+    for text in 대상:
+        검수_문제_기록(현재_처리파일, "[서식통일 자간 미조정] 문장 위치를 찾지 못함: " + text[:60])
     return True
 
 
@@ -7487,6 +7998,8 @@ def 보고서_페이지수_맞춤_전체_적용():
         로그("페이지 수 맞춤 건너뜀: 마지막 쪽 정보 확인 실패")
         return True
     if 마지막쪽 <= 1 or 줄수 > 페이지맞춤_최대남은줄수:
+        로그(f"페이지 수 맞춤 불필요: 마지막 쪽({마지막쪽}쪽)에 {줄수}줄 "
+             f"(당겨올 기준 {페이지맞춤_최대남은줄수}줄 이하가 아님)")
         return True
     로그(f"마지막 쪽({마지막쪽}쪽)에 {줄수}줄만 남아 페이지 수 맞춤을 시도합니다.")
     보고서_페이지수_맞춤_시도(마지막쪽 - 1)
@@ -9433,11 +9946,12 @@ def 문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=1
 
 
 def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=1):
-    global _서식통일_문서대표프로필
+    global _서식통일_문서대표프로필, 서식통일_줄병합_사용
     if 중단_요청됨():
         return False
     if 회차 == 1:
         _서식통일_문서대표프로필 = {}
+        _서식통일_자간보류문단.clear()
     def stage(name, action):
         단계표시(name)
         상태(f"{파일명} [{회차}/{총회차}] : {name}")
@@ -9455,8 +9969,17 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
     # 서식통일은 옵트인(기본 꺼짐). 서식 정리 단계 묶음이 돌지 않는 경우(자간 정리 모드,
     # 표준서식 꺼짐)에도 따로 실행한다.
     if 작업_모드 == 'unify':
-        # '서식 통일' 작업 유형: 서식통일만 실행하고 자간·표준서식은 건드리지 않는다.
-        return 회차 > 1 or stage('서식통일', 서식통일_전체_적용)
+        if 회차 > 1:
+            return True
+        서식통일_줄병합_사용 = bool(문장부호기능)
+        # 문서를 한 번 읽어 문두기호·계층별 대표 서식을 구하고, 다른 문장만 그 값으로 맞춘 뒤
+        # 그 문장에만 내어쓰기 → 자간 → 외톨이 글자 당기기를 한 묶음으로 적용한다.
+        if not stage('서식통일', 서식통일_전체_적용):
+            return False
+        # 쪽 맞춤은 사용자가 세부 작업에서 켠 경우에만 서식통일 뒤에 실행한다.
+        if stage_enabled(선택_세부작업, 'page_fit', 작업_모드):
+            return stage('문단 아래 간격 페이지 맞춤', 보고서_페이지수_맞춤_전체_적용)
+        return True
     if (회차 == 1 and stage_enabled(선택_세부작업, 'style_unify')
             and not (작업_모드 in ('format', 'all') and 표준서식_사용)):
         if not stage('서식통일', 서식통일_전체_적용):
@@ -9966,7 +10489,7 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
         if 쪽범위_요청 is not None:
             # 제목·개요·붙임 표 서식은 문서 전체 구조를 한 번에 바꾸는 방식이라 쪽별로 나눌 수 없다.
             로그("쪽 범위 지정: 제목·개요·붙임 자동 서식(문서 전체 구조 변환)은 이번 작업에서 건너뜁니다.")
-        elif stage_enabled(선택_세부작업, 'pre_format'):
+        elif stage_enabled(선택_세부작업, 'pre_format', 작업_모드):
             단계표시("제목·개요·붙임 선행 서식")
             상태(f"{파일명} : 제목·개요·붙임 선행 서식")
             if 제목붙임_선행적용(작업파일경로, 현재문서_기준=자간초기화_완료) is False:
@@ -9980,7 +10503,7 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
 
     # 기존 결과를 다시 입력했거나 원문 자체에 설정돼 있던 페이지 보호가
     # 페이지 판정을 왜곡하지 않도록 처리 시작 전에도 먼저 해제한다.
-    if 보고서_페이지보호_전체해제() is False:
+    if 작업_모드 != 'unify' and 보고서_페이지보호_전체해제() is False:
         return False
 
     # 쪽 범위 작업: 아무것도 고치기 전에 범위를 문단·영역 번호로 고정한다.
@@ -10023,7 +10546,7 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
 
     # 중간 처리나 입력 문서에 있던 페이지 보호가 최종 HWPX에 남으면 이후
     # 편집 시 큰 문단 묶음이 다시 통째로 이동한다. 저장 직전에 항상 해제한다.
-    if 보고서_페이지보호_전체해제() is False:
+    if 작업_모드 != 'unify' and 보고서_페이지보호_전체해제() is False:
         return False
     저장파일 = 저장파일명(파일)
     최종규칙검사 = {}
@@ -10045,8 +10568,11 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
             try:
                 if 한글_문서_열기(hwp, 저장파일, 'HWPX', 'forceopen:true') is False:
                     raise RuntimeError('저장 결과 재열기 실패')
+                if not 서식통일_빨간표시_사용:
+                    # 표준 서식이 뒤이어 기준을 정했으면 저장 결과에서 대표값을 새로 조사해 검수한다.
+                    _서식통일_문서대표프로필.clear()
                 style_check = 서식통일_전체_적용(
-                    고정_프로필_재적용=True, 검증만=True)
+                    고정_프로필_재적용=서식통일_빨간표시_사용, 검증만=True)
                 최종규칙검사['style_unify'] = style_check
                 if style_check.get('status') != 'passed':
                     검수_문제_기록(
@@ -10061,6 +10587,8 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
                 }
                 검수_문제_기록(파일, f'[저장 결과 서식통일 검증 실패] {exc}')
                 로그(f"저장 결과 서식통일 검증 실패: {exc}")
+        로그("[서식통일] 5/5 저장된 결과를 읽기 전용으로 재검수 완료")
+        _서식통일_최종결과_사용자확인(최종규칙검사['style_unify'])
     if 검수_사용:
         inspections = {}
         if 작업_모드 in ('format', 'all') and stage_enabled(선택_세부작업, 'page_group'):
@@ -10194,6 +10722,7 @@ def 작업_실행(
     global 제목4종_사용, 붙임2종_사용
     global hwp, 색상_설정, 비교보기_사용, 비교보기_좌측_프레임_hwnd, 비교보기_우측_프레임_hwnd, 로그_파일_경로
     global 작업_hwp_hwnd, 자동닫기_설정, 표준서식_사용, 검수_사용, 검수_문제목록, 최종검수_문서목록
+    global 서식통일_빨간표시_사용
     global 문장부호_2줄_기준글자수, 문장부호_통계, 자간_최대시도_본문, 자간_최대시도_표
     global 세트문장_같은쪽_사용, 세트문장_통계, 단어분리_통계, 다음단어_통계
     global 세트문장_최소줄간격_퍼센트, 세트문장_최대줄간격_퍼센트
@@ -10249,7 +10778,9 @@ def 작업_실행(
         비교보기_좌측_프레임_hwnd = 좌측_프레임_hwnd
         비교보기_우측_프레임_hwnd = 우측_프레임_hwnd
         자동닫기_설정 = 자동닫기
+        # 서식통일은 문서 자체의 대표 서식이 기준이므로 설정의 표준 서식을 쓰지 않는다.
         표준서식_사용 = bool(표준서식) and 작업_모드 in ("format", "all")
+        서식통일_빨간표시_사용 = not 표준서식_사용
         검수_사용 = 검수
         검수_문제목록 = []
         최종검수_문서목록 = []
@@ -10453,6 +10984,16 @@ UI_COLORS = {
 }
 
 
+def 색_rgb(color):
+    """Tk 진행 표시용 #RGB/#RRGGBB 색상을 정수 RGB 튜플로 바꾼다."""
+    value = str(color).strip().lstrip("#")
+    if len(value) == 3:
+        value = "".join(character * 2 for character in value)
+    if len(value) != 6:
+        raise ValueError(f"잘못된 색상 값: {color}")
+    return tuple(int(value[index:index + 2], 16) for index in (0, 2, 4))
+
+
 class LiveStageBoard(tk.Canvas):
     """실제 단계 이벤트를 표시. 점멸은 실행 표시이며 완료율 추정이 아니다."""
     def __init__(self, parent):
@@ -10466,6 +11007,7 @@ class LiveStageBoard(tk.Canvas):
         self.ended = None
         self.result_message = None   # 작업이 모두 끝났을 때 보여 줄 메시지(예: 절약된 시간)
         self.job = None
+        self._draw_error_reported = False
         self.bind('<Destroy>', self._destroy, add='+')
         self._frame()
 
@@ -10514,9 +11056,22 @@ class LiveStageBoard(tk.Canvas):
 
     def _frame(self):
         self.job = None
-        if self.winfo_ismapped():
-            self.draw()
-        self.job = self.after(66 if self.winfo_ismapped() else 250, self._frame)
+        try:
+            mapped = self.winfo_ismapped()
+            if mapped:
+                self.draw()
+                self._draw_error_reported = False
+        except Exception as exc:
+            # 진행 표시 오류가 Tk의 예약 콜백을 끊어 GUI 이벤트 큐까지
+            # 멈추게 하지 않도록 진단만 남기고 다음 프레임을 계속 예약한다.
+            if not self._draw_error_reported:
+                진단로그(f"[진행 표시] 다시 그리기 실패(작업 계속): {exc}")
+                self._draw_error_reported = True
+            mapped = False
+        try:
+            self.job = self.after(66 if mapped else 250, self._frame)
+        except tk.TclError:
+            self.job = None
 
     def draw(self):
         self.delete('all')
@@ -10577,7 +11132,9 @@ class HwpAutoDocFitGUI:
     FOOTER_NOTE_DEFAULT = "정리된 HWPX는 원본 폴더에 저장되며, 같은 이름의 기존 결과를 바꿉니다."
 
     def __init__(self, root):
+        global _서식통일_대표값_검토콜백
         self.root = root
+        _서식통일_대표값_검토콜백 = self._서식통일_대표값_검토_요청
         self.files = []
         self.worker = None
         self.running = False
@@ -10901,6 +11458,7 @@ class HwpAutoDocFitGUI:
         self.STEP_IDLE_FG = UI_COLORS["ink"]
         self.STEP_ACTIVE_FG = "white"
         self.step_boxes = {}  # 이전 설정 코드와의 호환
+        self._안내키, self._안내지남 = None, set()   # 진행 화면 단계 안내 상태
         self.stage_board = LiveStageBoard(status_frame)
         self.stage_board.pack(fill="x", pady=(2, 0))
         # '03 진행 상황' 바로 아래 결과 줄: 결과 버튼 두 개(작업 결과가 나오기 전에는 비활성)와,
@@ -14938,6 +15496,347 @@ class HwpAutoDocFitGUI:
         self.status_var.set("작업 중단 처리 중...")
         self.로그표시("사용자가 작업 중단을 요청했습니다.")
 
+    def _서식통일_대표값_검토_요청(self, kind, payload):
+        요청 = {"payload": payload, "done": threading.Event(), "approved": False}
+        event = f"style_unify_{kind}_review"
+        gui_queue.put((event, 요청))
+        while not 요청["done"].wait(0.1):
+            if 중단_요청됨() or self.closing:
+                return {"approved": False, "selected": []}
+        return 요청
+
+    def _대화상자_부모(self):
+        """숨겨진 기본 창 대신 맨 앞에 뜨는 임시 부모를 돌려준다."""
+        if (self.root.state() != "withdrawn"
+                and not getattr(self.root, "_docfit_hidden_backend", False)):
+            return self.root, None
+        임시 = tk.Toplevel(self.root)
+        임시.wm_transient("")
+        임시.overrideredirect(True)
+        임시.attributes("-alpha", 0.0)
+        임시.attributes("-topmost", True)
+        임시.geometry(f"1x1+{임시.winfo_screenwidth() // 2}+{임시.winfo_screenheight() // 3}")
+        임시.deiconify()
+        임시.lift()
+        임시.focus_force()
+        return 임시, 임시
+
+    def _알림(self, 함수, *args, **kwargs):
+        """웹 화면 모드에서도 메시지 창이 보이도록 임시 부모로 띄운다."""
+        부모, 임시 = self._대화상자_부모()
+        try:
+            return 함수(*args, parent=부모, **kwargs)
+        finally:
+            if 임시 is not None:
+                임시.destroy()
+
+    def _검토창_앞으로(self, window):
+        """한글 창에 가려지지 않도록 검토 창을 맨 앞으로 올린다."""
+        try:
+            if self.root.state() == "withdrawn":
+                # 웹 화면 모드에서는 Tk 기본 창이 숨겨져 transient 창도 보이지 않는다.
+                window.wm_transient("")
+            window.deiconify()
+            window.lift()
+            window.attributes("-topmost", True)
+            window.after(300, lambda: window.attributes("-topmost", False))
+            window.focus_force()
+        except tk.TclError:
+            pass
+
+    def _서식통일_대표서식_검토창(self, 요청):
+        """표본 조사값을 보여 주고 적용 전 문서별 표준값을 편집하게 한다."""
+        그룹별_표본 = 요청["payload"]
+        window = tk.Toplevel(self.root)
+        window.title("서식통일 2/5 · 대표 서식 확인")
+        window.transient(self.root)
+        window.geometry("900x680")
+        window.minsize(700, 480)
+        host = ttk.Frame(window, padding=16)
+        host.pack(fill="both", expand=True)
+        ttk.Label(host, text="문서에서 조사한 대표 서식", font=("맑은 고딕", 15, "bold")).pack(anchor="w")
+        ttk.Label(host, text="대표값을 확인하면 불일치 부분을 추가 승인 없이 자동 교정합니다. 빈 값은 보정하지 않으며, 필요한 대표값이 없는 문단은 결과 문서에 빨간색으로 표시합니다.",
+                  wraplength=850).pack(anchor="w", pady=(5, 10))
+
+        # ※ 표본이 우세값을 만들지 못한 경우 * 표본의 크기와 후보를 함께
+        # 제시하되 자동으로 복사하지 않는다. 최종 선택은 사용자가 한다.
+        stars = [key for key in 그룹별_표본 if key[0] in ("*", "**")]
+        star_sizes = []
+        for key in stars:
+            profile = _서식통일_문서대표프로필.get(key, {})
+            value = profile.get("size", (None, 0))[0]
+            if value is not None:
+                star_sizes.append(f"{key[0]} {value / 100:g}pt")
+        if any(key[0] == "※" and any(v[0] is None for v in _서식통일_문서대표프로필.get(key, {}).values())
+               for key in 그룹별_표본):
+            note = "※ 대표값이 불명확합니다. *·** 계열의 크기 유사성은 참고 후보일 뿐이며, 자동 선택하지 않습니다."
+            if star_sizes:
+                note += " 후보: " + ", ".join(star_sizes)
+            ttk.Label(host, text=note, foreground="#9a3412", wraplength=850).pack(anchor="w", pady=(0, 8))
+            ambiguous = next(key for key in 그룹별_표본 if key[0] == "※"
+                             and any(v[0] is None for v in _서식통일_문서대표프로필.get(key, {}).values()))
+            candidate_keys = [key for key in stars
+                              if _서식통일_문서대표프로필.get(key, {}).get("font", (None, 0))[0] is not None
+                              or _서식통일_문서대표프로필.get(key, {}).get("size", (None, 0))[0] is not None]
+            if candidate_keys:
+                choice_row = ttk.Frame(host)
+                choice_row.pack(fill="x", pady=(0, 8))
+                choice = ttk.Combobox(choice_row, state="readonly", width=26,
+                                      values=[f"{key[0]} 대표값 사용" for key in candidate_keys])
+                choice.current(0)
+                choice.pack(side="left")
+
+                def use_candidate():
+                    selected = candidate_keys[max(0, choice.current())]
+                    source = _서식통일_문서대표프로필.get(selected, {})
+                    for field, control in editors.get(ambiguous, {}).items():
+                        value = source.get(field, (None, 0))[0]
+                        if field == "font":
+                            control.delete(0, "end")
+                            if value is not None:
+                                control.insert(0, str(value))
+                        elif field == "size":
+                            control.delete(0, "end")
+                            if value is not None:
+                                control.insert(0, f"{value / 100:g}")
+                        elif value is not None:
+                            control.set(("굵게" if value else "보통") if field.endswith("bold")
+                                        else ("적용" if value else "미적용"))
+                    self.로그표시(f"※ 대표값 후보로 {selected[0]} 그룹 값을 선택했습니다. 확인 후 필요하면 개별 수정하세요.")
+
+                ttk.Button(choice_row, text="선택한 후보를 ※에 채우기", command=use_candidate).pack(side="left", padx=8)
+
+        canvas = tk.Canvas(host, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(host, orient="vertical", command=canvas.yview)
+        body = ttk.Frame(canvas)
+        body.bind("<Configure>", lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=body, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        editors = {}
+        필드 = (("font", "글꼴"), ("size", "크기(pt)"), ("marker_bold", "문두 굵게"),
+                ("label_bold", "괄호라벨 굵게"), ("hanging_indent", "내어쓰기"))
+        for row, (key, 항목들) in enumerate(그룹별_표본.items()):
+            marker, role, level = key
+            frame = ttk.LabelFrame(body, text=f"{marker}  ·  {role}  ·  표본 {len(항목들)}개", padding=8)
+            frame.grid(row=row, column=0, sticky="ew", padx=4, pady=4)
+            body.grid_columnconfigure(0, weight=1)
+            profile = _서식통일_문서대표프로필.get(key, {})
+            editors[key] = {}
+            for col, (field, label) in enumerate(필드):
+                ttk.Label(frame, text=label).grid(row=0, column=col, sticky="w", padx=4)
+                pair = profile.get(field, (None, 0))
+                value = pair[0]
+                if field == "font":
+                    shown = "" if value is None else str(value)
+                    control = ttk.Entry(frame, width=18)
+                    control.insert(0, shown)
+                elif field == "size":
+                    shown = "" if value is None else f"{value / 100:g}"
+                    control = ttk.Entry(frame, width=9)
+                    control.insert(0, shown)
+                else:
+                    options = ("판정 보류", "굵게", "보통") if field in ("marker_bold", "label_bold") else ("판정 보류", "적용", "미적용")
+                    shown = "판정 보류" if value is None else (("굵게" if value else "보통") if field.endswith("bold") else ("적용" if value else "미적용"))
+                    control = ttk.Combobox(frame, values=options, state="readonly", width=10)
+                    control.set(shown)
+                control.grid(row=1, column=col, sticky="ew", padx=4, pady=(2, 4))
+                editors[key][field] = control
+        buttons = ttk.Frame(host)
+        buttons.pack(fill="x", pady=(10, 0))
+
+        def finish(approved):
+            if approved:
+                for key, controls in editors.items():
+                    prior = _서식통일_문서대표프로필.get(key, {})
+                    updated = dict(prior)
+                    for field, control in controls.items():
+                        raw = control.get().strip()
+                        old_count = prior.get(field, (None, 0))[1]
+                        if not raw or raw == "판정 보류":
+                            value = None
+                        elif field == "font":
+                            value = raw
+                        elif field == "size":
+                            try:
+                                value = int(round(float(raw) * 100))
+                                if value <= 0:
+                                    raise ValueError
+                            except ValueError:
+                                messagebox.showerror(APP_NAME, f"{key[0]} 크기는 0보다 큰 pt 숫자여야 합니다.", parent=window)
+                                return
+                        elif field.endswith("bold"):
+                            value = raw == "굵게"
+                        else:
+                            value = raw == "적용"
+                        updated[field] = (value, old_count)
+                    _서식통일_문서대표프로필[key] = updated
+            요청["approved"] = approved
+            요청["done"].set()
+            window.destroy()
+
+        ttk.Button(buttons, text="취소", command=lambda: finish(False)).pack(side="right")
+        ttk.Button(buttons, text="확인한 대표값으로 진행", style="Primary.TButton",
+                   command=lambda: finish(True)).pack(side="right", padx=(0, 8))
+        window.protocol("WM_DELETE_WINDOW", lambda: finish(False))
+        window.grab_set()
+        self._검토창_앞으로(window)
+        window.focus_set()
+
+    def _서식통일_적용영역_검토창(self, 요청):
+        계획 = 요청["payload"]
+        후보 = [(index, item) for index, item in enumerate(계획) if item.get("mismatch")]
+        window = tk.Toplevel(self.root)
+        window.title("서식통일 3/5 · 편집 영역 확인")
+        window.transient(self.root)
+        window.geometry("1040x700")
+        window.minsize(760, 500)
+        host = ttk.Frame(window, padding=14)
+        host.pack(fill="both", expand=True)
+        ttk.Label(host, text="대표 서식 미적용 영역", font=("맑은 고딕", 15, "bold")).pack(anchor="w")
+        ttk.Label(host, text="체크된 문장만 적용합니다. 문장을 선택하면 전체 내용과 적용 예정 속성을 확인할 수 있습니다.",
+                  wraplength=980).pack(anchor="w", pady=(4, 10))
+        columns = ("apply", "marker", "fields", "text")
+        tree = ttk.Treeview(host, columns=columns, show="headings", selectmode="browse", height=13)
+        for column, title, width in (("apply", "적용", 48), ("marker", "기호/유형", 105),
+                                     ("fields", "변경 예정", 250), ("text", "문장 미리보기", 560)):
+            tree.heading(column, text=title)
+            tree.column(column, width=width, minwidth=45, stretch=column == "text", anchor="w")
+        tree_scroll = ttk.Scrollbar(host, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=tree_scroll.set)
+        tree.pack(side="top", fill="both", expand=True)
+        tree_scroll.place(in_=tree, relx=1.0, rely=0, relheight=1.0, anchor="ne")
+        selected = {index for index, _ in 후보}
+
+        def changed_fields(item):
+            fields = []
+            if item.get("font_runs"):
+                fields.append(f"글꼴 {len(item['font_runs'])}영역 → {item.get('font') or '판정 보류'}")
+            if item.get("size_runs"):
+                fields.append(f"크기 {len(item['size_runs'])}영역 → {item.get('size') / 100:g}pt")
+            if item.get("aside_runs"):
+                fields.append(f"괄호 {len(item['aside_runs'])}영역 → {item.get('aside_size') / 100:g}pt")
+            if item.get("marker_bold_runs"):
+                fields.append(f"문두 굵기 {len(item['marker_bold_runs'])}영역 → {'굵게' if item.get('marker_bold') else '보통'}")
+            if item.get("label_bold_runs"):
+                fields.append(f"라벨 굵기 {len(item['label_bold_runs'])}영역 → {'굵게' if item.get('label_bold') else '보통'}")
+            if item.get("hanging_mismatch"):
+                fields.append(f"내어쓰기 → {'적용' if item.get('expected_hanging') else '미적용'}")
+            return fields
+
+        for index, item in 후보:
+            tree.insert("", "end", iid=str(index), values=("☑", f"{item['marker']} / {item['role']}",
+                        ", ".join(changed_fields(item)), item.get("text", "").strip()))
+
+        details = tk.Text(host, height=7, wrap="word", state="disabled")
+        details.pack(fill="x", pady=(8, 0))
+
+        def show_detail(_event=None):
+            current = tree.selection()
+            if not current:
+                return
+            index = int(current[0])
+            item = 계획[index]
+            lines = [f"문두기호: {item['marker']}   유형: {item['role']}   계층: {item['level']}",
+                     "적용 예정: " + ("; ".join(changed_fields(item)) or "변경 없음"),
+                     "문장 전체:", item.get("text", "").strip()]
+            details.configure(state="normal")
+            details.delete("1.0", "end")
+            details.insert("1.0", "\n".join(lines))
+            details.configure(state="disabled")
+
+        def toggle(event):
+            if tree.identify_column(event.x) != "#1":
+                return
+            row = tree.identify_row(event.y)
+            if row:
+                index = int(row)
+                if index in selected:
+                    selected.remove(index)
+                    mark = "☐"
+                else:
+                    selected.add(index)
+                    mark = "☑"
+                values = list(tree.item(row, "values"))
+                values[0] = mark
+                tree.item(row, values=values)
+                count.set(f"선택 {len(selected)} / 후보 {len(후보)}개")
+
+        tree.bind("<<TreeviewSelect>>", show_detail)
+        tree.bind("<Button-1>", toggle, add="+")
+        if 후보:
+            tree.selection_set(str(후보[0][0]))
+            show_detail()
+        else:
+            ttk.Label(host, text="대표 서식과 다른 적용 영역이 없습니다. 문서는 변경하지 않습니다.").pack(anchor="w", pady=10)
+        footer = ttk.Frame(host)
+        footer.pack(fill="x", pady=(10, 0))
+        count = tk.StringVar(value=f"선택 {len(selected)} / 후보 {len(후보)}개")
+        ttk.Label(footer, textvariable=count).pack(side="left")
+
+        def finish(approved):
+            요청["selected"] = sorted(selected) if approved else []
+            요청["approved"] = approved
+            요청["done"].set()
+            window.destroy()
+
+        ttk.Button(footer, text="취소", command=lambda: finish(False)).pack(side="right")
+        ttk.Button(footer, text="선택 영역만 적용", style="Primary.TButton",
+                   command=lambda: finish(True)).pack(side="right", padx=(0, 8))
+        window.protocol("WM_DELETE_WINDOW", lambda: finish(False))
+        window.grab_set()
+        self._검토창_앞으로(window)
+        window.focus_set()
+
+    def _서식통일_결과_확인창(self, 요청):
+        result = 요청["payload"] or {}
+        window = tk.Toplevel(self.root)
+        window.title("서식통일 5/5 · 작업 결과 확인")
+        window.transient(self.root)
+        window.geometry("760x560")
+        window.minsize(600, 400)
+        host = ttk.Frame(window, padding=16)
+        host.pack(fill="both", expand=True)
+        status = result.get("status", "error")
+        status_text = {"passed": "검수 통과", "failed": "불일치 남음",
+                       "incomplete": "일부 판정 보류", "error": "검수 오류"}.get(status, status)
+        ttk.Label(host, text=f"저장 결과 확인 · {status_text}",
+                  font=("맑은 고딕", 15, "bold")).pack(anchor="w")
+        ttk.Label(host, text=f"검사 문장 {result.get('checked', 0)}개 · 불일치 {len(result.get('issues', []))}개 · 판정 보류 그룹 {len(result.get('not_checkable', []))}개",
+                  ).pack(anchor="w", pady=(5, 10))
+        report = tk.Text(host, wrap="word", state="normal")
+        report.pack(fill="both", expand=True)
+        report.insert("end", "[남은 불일치]\n")
+        for issue in result.get("issues", [])[:100]:
+            report.insert("end", f"• {issue.get('text', '')}\n  항목: {', '.join(issue.get('fields', []))}\n")
+        if not result.get("issues"):
+            report.insert("end", "남은 불일치가 없습니다.\n")
+        report.insert("end", "\n[판정 보류]\n")
+        for group in result.get("not_checkable", [])[:100]:
+            report.insert("end", f"• {group.get('marker')} / {group.get('role')} — {', '.join(group.get('fields', []))}\n")
+        if not result.get("not_checkable"):
+            report.insert("end", "판정 보류 그룹이 없습니다.\n")
+        if result.get("error"):
+            report.insert("end", "\n오류: " + str(result["error"]))
+        report.insert("end", "\n[대표값 미확정 문단 · 빨간색 표시]\n")
+        for item in result.get("unresolved", []):
+            marked = "빨간 표시 확인" if item.get("red_marked") else "빨간 표시 미확인"
+            report.insert("end", f"• {item.get('text', '')}\n  미확정: {', '.join(item.get('fields', []))} · {marked}\n")
+        report.configure(state="disabled")
+
+        def finish():
+            요청["approved"] = True
+            요청["done"].set()
+            window.destroy()
+
+        ttk.Button(host, text="결과 확인", style="Primary.TButton", command=finish).pack(anchor="e", pady=(10, 0))
+        window.protocol("WM_DELETE_WINDOW", finish)
+        window.grab_set()
+        self._검토창_앞으로(window)
+        window.focus_set()
+
     def queue_처리(self):
         모인_로그 = []
         deadline = time.monotonic() + .012
@@ -14947,7 +15846,21 @@ class HwpAutoDocFitGUI:
                     break
                 item = gui_queue.get_nowait()
                 event = item[0]
-                if event == "format_copied":
+                if event in ("style_unify_profile_review", "style_unify_regions_review",
+                             "style_unify_result_review"):
+                    try:
+                        if event == "style_unify_profile_review":
+                            self._서식통일_대표서식_검토창(item[1])
+                        elif event == "style_unify_regions_review":
+                            self._서식통일_적용영역_검토창(item[1])
+                        else:
+                            self._서식통일_결과_확인창(item[1])
+                    except Exception as exc:
+                        로그(f"[서식통일] 사용자 확인창 오류: {exc}")
+                        item[1]["approved"] = False
+                        item[1]["selected"] = []
+                        item[1]["done"].set()
+                elif event == "format_copied":
                     self._서식_복사완료(profile=item[1])
                 elif event == "document_review_done":
                     item[1](result=item[2], error=item[3])
@@ -15001,6 +15914,13 @@ class HwpAutoDocFitGUI:
                     self._단계_강조(item[1])
                 elif event == "step_reset":
                     self._단계_초기화()
+                    self._안내키, self._안내지남 = None, set()
+                elif event == "guide":
+                    key = 진행안내_키(item[1])
+                    if key and key != self._안내키:
+                        if self._안내키:
+                            self._안내지남.add(self._안내키)
+                        self._안내키 = key
                 elif event == "progress":
                     pass  # 긴 진행 바는 없앴다. 단계 표시(LiveStageBoard)가 진행 상황을 보여 준다.
                 elif event == "saved":
@@ -15032,6 +15952,9 @@ class HwpAutoDocFitGUI:
                     self._안내_설정(0)   # 작업이 끝나면 강조를 기본값으로 되돌린다.
                     self.버튼_대기중()
                     self.stage_board.finish("완료" if item[2] == 0 else "오류")
+                    if self._안내키:
+                        self._안내지남.add(self._안내키)
+                    self._안내키 = "done" if item[2] == 0 else self._안내키
                     self._작업결과_표시(item[2] == 0)
                     최종검수 = item[6] if len(item) >= 8 else None
                     if 최종검수:
@@ -15062,7 +15985,7 @@ class HwpAutoDocFitGUI:
                             if 최종검수["blockers"]:
                                 안내문 += "\n확인사항: " + ", ".join(최종검수["blockers"])
                             안내문 += f"\n보고서: {item[7]}"
-                        messagebox.showinfo(APP_NAME, 안내문, parent=self.root)
+                        self._알림(messagebox.showinfo, APP_NAME, 안내문)
                 elif event == "fatal_error":
                     self.running = False
                     self._안내_설정(0)
@@ -15071,9 +15994,12 @@ class HwpAutoDocFitGUI:
                     self.status_var.set("오류 발생 · 처리 기록을 확인해 주세요")
                     self.로그표시(f"치명적 오류:\n{item[1]}")
                     if not self.closing:
-                        messagebox.showerror(APP_NAME, f"작업 중 오류가 발생했습니다.\n\n{item[1]}", parent=self.root)
+                        self._알림(messagebox.showerror, APP_NAME, f"작업 중 오류가 발생했습니다.\n\n{item[1]}")
         except queue.Empty:
             pass
+        except Exception as exc:
+            # 이벤트 하나의 UI 오류가 큐 polling 자체를 영구 중단하지 않게 한다.
+            진단로그(f"[GUI 이벤트] 처리 중 예외(다음 이벤트부터 계속): {exc}")
 
         if 모인_로그:
             self.로그_여러줄_표시(모인_로그)
@@ -15098,7 +16024,7 @@ class HwpAutoDocFitGUI:
         if self.closing:
             return
         if self.running:
-            if not messagebox.askyesno(APP_NAME, "현재 자간 조정 작업이 진행 중입니다.\n\n작업을 중단하고 종료하시겠습니까?", parent=self.root):
+            if not self._알림(messagebox.askyesno, APP_NAME, "현재 자간 조정 작업이 진행 중입니다.\n\n작업을 중단하고 종료하시겠습니까?"):
                 return
             self.closing = True
             중단_event.set()
@@ -15124,12 +16050,51 @@ class HwpAutoDocFitGUI:
 # Main 실행부
 # ============================================================
 
+def _새창_맨앞으로(event):
+    """웹 화면 뒤에 설정·검토 창이 숨지 않도록 새로 뜬 Tk 창을 앞으로 올린다."""
+    window = event.widget
+    try:
+        if window.winfo_toplevel() is not window or window.overrideredirect():
+            return
+        window.lift()
+        window.attributes("-topmost", True)
+        window.after(300, lambda: window.winfo_exists() and window.attributes("-topmost", False))
+        window.focus_force()
+    except tk.TclError:
+        pass
+
+
+def 웹모드_기본창_숨김(root):
+    """Tk 기본 창을 withdraw 대신 화면 중앙의 투명한 1px 창으로 둔다.
+
+    withdraw된 창에 transient로 붙은 설정·검토 창과 메시지 창은 Windows에서
+    표시되지 않거나 웹 화면 뒤로 숨어 UI가 멈춘 것처럼 보인다.
+    """
+    root.overrideredirect(True)
+    root.attributes("-alpha", 0.0)
+    root.geometry(f"1x1+{root.winfo_screenwidth() // 2}+{root.winfo_screenheight() // 3}")
+    root._docfit_hidden_backend = True
+    root.bind_class("Toplevel", "<Map>", _새창_맨앞으로, add="+")
+
+
+def 웹모드_기본창_복원(root):
+    """웹 화면을 쓸 수 없을 때 기존 Tk 화면을 정상 창으로 되돌린다."""
+    root._docfit_hidden_backend = False
+    root.overrideredirect(False)
+    root.attributes("-alpha", 1.0)
+    root.geometry("1040x760")
+    root.deiconify()
+    root.lift()
+
+
 def main():
     import importlib.util
 
     # WebView2가 있으면 반응형 웹 화면을 주 UI로 사용하고, 문서 처리·설정 창은
-    # 기존 Tk 백엔드에 연결한다. 연결 패키지가 없으면 기존 실행 방식으로 돌아간다.
-    if importlib.util.find_spec("webview") is None:
+    # 기존 Tk 백엔드에 연결한다. WebView 초기화 문제 진단·복구 시 환경변수로
+    # 기존 화면을 선택할 수 있고, 연결 패키지가 없을 때도 Tk 화면으로 돌아간다.
+    tk_only = os.environ.get("HWP_AUTODOCFIT_UI", "").strip().lower() == "tk"
+    if tk_only or importlib.util.find_spec("webview") is None:
         root = TkinterDnD.Tk()
         HwpAutoDocFitGUI(root)
         root.mainloop()
@@ -15142,7 +16107,7 @@ def main():
         try:
             root = TkinterDnD.Tk()
             gui = HwpAutoDocFitGUI(root)
-            root.withdraw()
+            웹모드_기본창_숨김(root)
             보관.update(root=root, gui=gui)
             준비됨.set()
             root.mainloop()
@@ -15164,7 +16129,7 @@ def main():
         desktop_web_ui.APP_VERSION = APP_VERSION
         desktop_web_ui.STAGE_ORDER = 진행단계_순서
         if not desktop_web_ui.run_webview(보관["gui"]):
-            보관["root"].after(0, 보관["root"].deiconify)
+            보관["root"].after(0, lambda: 웹모드_기본창_복원(보관["root"]))
             tk_thread.join()
     except Exception as 오류:
         def 기존화면_안내(시작오류):
@@ -15174,7 +16139,7 @@ def main():
                 f"{시작오류}",
                 parent=보관["root"],
             )
-            보관["root"].deiconify()
+            웹모드_기본창_복원(보관["root"])
 
         try:
             보관["root"].after(0, lambda 시작오류=오류: 기존화면_안내(시작오류))

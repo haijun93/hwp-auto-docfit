@@ -17,14 +17,12 @@ class StyleUnifyTest(unittest.TestCase):
         fn = self.ns['서식통일_대표']
         samples = [('휴먼명조', 1500), ('휴먼명조', 1200), ('휴먼명조', 1500),
                    ('굴림', 1500), ('굴림', 1200)]
-        self.assertEqual(fn(samples), {
-            'font': ('휴먼명조', 3), 'size': (1500, 3), 'prev_spacing': (None, 0),
-            'marker_bold': (None, 0), 'label_bold': (None, 0),
-        })
-        self.assertEqual(fn(samples[:2]), {
-            'font': (None, 0), 'size': (None, 0), 'prev_spacing': (None, 0),
-            'marker_bold': (None, 0), 'label_bold': (None, 0),
-        })
+        result = fn(samples)
+        self.assertEqual((result['font'], result['size']), (('휴먼명조', 3), (1500, 3)))
+        self.assertEqual(result['marker_bold'], (None, 0))
+        # 표본 두 개가 같으면 대표값으로 인정하고, 다르면(크기 1500 vs 1200) 판정을 보류한다.
+        tied = fn(samples[:2])
+        self.assertEqual((tied['font'], tied['size']), (('휴먼명조', 2), (None, 0)))
 
     def test_stage_is_opt_in_in_every_mode(self):
         for mode in ('spacing', 'format', 'all'):
@@ -41,141 +39,8 @@ class StyleUnifyTest(unittest.TestCase):
         self.assertFalse(enabled({'style_unify': True}, 'reset_spacing', 'unify'))
         self.assertTrue(enabled({}, 'reset_spacing', 'spacing'))
 
-    def test_only_deviating_paragraphs_are_corrected(self):
-        fn = self.ns['서식통일_전체_적용']
-        texts = ['ㅇ 가', 'ㅇ 나', 'ㅇ 다', 'ㅇ 라', '제목 문단']
-        styles = [('한컴돋움', 1500, 500)] * 3 + [('굴림', 1200, 750)]
-        state = {'i': 0}
-        applied = []
-        paragraph_applied = []
-
-        class Doc:
-            def GetPos(self):
-                return (0, state['i'], 0)
-            def SetPos(self, *pos):
-                state['i'] = pos[1]
-
-        def next_para():
-            if state['i'] >= len(texts) - 1:
-                return False
-            state['i'] += 1
-            return True
-        with patch.dict(fn.__globals__, {
-            'hwp': Doc(), 'hwp_run': lambda cmd: True, '중단_요청됨': lambda: False,
-            '순회_시작': lambda: state.__setitem__('i', 0), '쪽범위_안인가': lambda pos=None: True,
-            '현재문단_텍스트': lambda: texts[state['i']],
-            '보고서_문단역할': lambda text: '본문' if text.startswith('ㅇ') else None,
-            '서식통일_표본': lambda pos, text: ((styles[pos[1]][0], styles[pos[1]][1],
-                                                 (((0, pos[1], 2), (0, pos[1], 3), styles[pos[1]][:2], 1),),
-                                                 {'prev_spacing': styles[pos[1]][2]}),
-                                                (0, pos[1], 0), (0, pos[1], 3)),
-            '_서식통일_그룹키': lambda marker, text, pos: (marker, '본문', 0),
-            '다음_문단으로_진행': next_para, '단어모드_범위선택': lambda *a: None,
-            '문자모양_적용_현재선택': lambda **kw: applied.append(kw),
-            '_서식통일_문단앞간격_적용': lambda pos, value: paragraph_applied.append((pos, value)) or True,
-            '문단_내어쓰기_적용': lambda pos, text: paragraph_applied.append((pos, 'hanging')) or True,
-            '_서식통일_내어쓰기_필요': lambda pos, text: pos[1] == 3,
-            '로그': Mock(), '진단로그': Mock(),
-        }):
-            self.assertTrue(fn())
-        # 글꼴과 크기를 독립 적용해 괄호의 -2pt 크기를 덮지 않으며,
-        # 장평·자간은 변경하지 않는다.
-        self.assertEqual(applied, [
-            {'폰트': '한컴돋움', '자간_유지': True},
-            {'크기_pt': 15.0, '자간_유지': True},
-        ])
-        self.assertEqual(paragraph_applied, [((0, 3, 0), 500), ((0, 3, 0), 'hanging')])
-
-    def test_paragraph_spacing_mismatch_is_corrected_without_font_mismatch(self):
-        fn = self.ns['서식통일_전체_적용']
-        texts = ['ㅇ 가', 'ㅇ 나', 'ㅇ 다']
-        margins = [500, 500, 750]
-        state = {'i': 0}
-        character_applied = []
-        paragraph_applied = []
-
-        class Doc:
-            def GetPos(self):
-                return (0, state['i'], 0)
-            def SetPos(self, *pos):
-                state['i'] = pos[1]
-
-        def next_para():
-            if state['i'] >= len(texts) - 1:
-                return False
-            state['i'] += 1
-            return True
-
-        def sample(pos, text):
-            idx = pos[1]
-            shape = ('한컴돋움', 1500,
-                     (((0, idx, 0), (0, idx, len(text)), ('한컴돋움', 1500), len(text)),),
-                     {'prev_spacing': margins[idx]})
-            return shape, (0, idx, 0), (0, idx, len(text))
-
-        with patch.dict(fn.__globals__, {
-            'hwp': Doc(), 'hwp_run': lambda cmd: True,
-            '중단_요청됨': lambda: False, '순회_시작': lambda: state.__setitem__('i', 0),
-            '쪽범위_안인가': lambda pos=None: True,
-            '현재문단_텍스트': lambda: texts[state['i']],
-            '보고서_문단역할': lambda text: '본문' if text.startswith('ㅇ') else None,
-            '서식통일_표본': sample,
-            '다음_문단으로_진행': next_para,
-            '단어모드_범위선택': lambda *args: None,
-            '문자모양_적용_현재선택': lambda **kwargs: character_applied.append(kwargs),
-            '_서식통일_문단앞간격_적용': lambda pos, value: paragraph_applied.append((pos, value)) or True,
-            '문단_내어쓰기_적용': lambda pos, text: paragraph_applied.append((pos, 'hanging')) or True,
-            '_서식통일_내어쓰기_필요': lambda pos, text: pos[1] == 2,
-            '로그': Mock(), '진단로그': Mock(),
-        }):
-            self.assertTrue(fn())
-
-        self.assertEqual(character_applied, [])
-        self.assertEqual(paragraph_applied, [((0, 2, 0), 500), ((0, 2, 0), 'hanging')])
-
-    def test_standard_paragraphs_receive_no_format_write_calls(self):
-        fn = self.ns['서식통일_전체_적용']
-        texts = ['ㅇ 기준 하나', 'ㅇ 기준 둘', 'ㅇ 기준 셋']
-        state = {'i': 0}
-        writes = []
-
-        class Doc:
-            def GetPos(self):
-                return (0, state['i'], 0)
-            def SetPos(self, *pos):
-                state['i'] = pos[1]
-
-        def advance():
-            if state['i'] >= len(texts) - 1:
-                return False
-            state['i'] += 1
-            return True
-
-        def sample(pos, text):
-            end = len(text)
-            shape = ('한컴돋움', 1500,
-                     (((0, pos[1], 0), (0, pos[1], end), ('한컴돋움', 1500), end),),
-                     {'prev_spacing': 500})
-            return shape, pos, (0, pos[1], end)
-
-        with patch.dict(fn.__globals__, {
-            'hwp': Doc(), 'hwp_run': lambda cmd: True,
-            '중단_요청됨': lambda: False, '순회_시작': lambda: state.__setitem__('i', 0),
-            '쪽범위_안인가': lambda pos=None: True,
-            '현재문단_텍스트': lambda: texts[state['i']],
-            '보고서_문단역할': lambda text: '본문',
-            '서식통일_표본': sample,
-            '다음_문단으로_진행': advance,
-            '_서식통일_그룹키': lambda marker, text, pos: (marker, '본문', '문서 공통'),
-            '_서식통일_내어쓰기_필요': lambda pos, text: False,
-            '단어모드_범위선택': lambda *args: writes.append(('select', args)),
-            '문자모양_적용_현재선택': lambda **kwargs: writes.append(('char', kwargs)),
-            '_서식통일_문단앞간격_적용': lambda *args: writes.append(('spacing', args)) or True,
-            '문단_내어쓰기_적용': lambda *args: writes.append(('indent', args)) or True,
-            '로그': Mock(), '진단로그': Mock(),
-        }):
-            self.assertTrue(fn())
-        self.assertEqual(writes, [])
+    # 예외 문장만 고치기·표준 문장 무변경·마무리 묶음 순서는 현재 설계 기준으로
+    # tests/test_style_unify_auto.py에서 검사한다.
 
     def test_saved_result_audit_is_read_only_and_detects_remaining_mismatch(self):
         fn = self.ns['서식통일_전체_적용']
@@ -185,7 +50,7 @@ class StyleUnifyTest(unittest.TestCase):
         writes = []
         profile = {('ㅇ', '본문', '문서 공통'): {
             'font': ('한컴돋움', 3), 'size': (1500, 3), 'prev_spacing': (500, 3),
-            'marker_bold': (None, 0), 'label_bold': (None, 0),
+            'marker_bold': (False, 3), 'label_bold': (None, 0),
         }}
 
         class Doc:
@@ -207,6 +72,8 @@ class StyleUnifyTest(unittest.TestCase):
             return (style[0], style[1], (run,), {'prev_spacing': style[2]}), pos, (0, idx, len(text))
 
         with patch.dict(fn.__globals__, {
+            '서식통일_보류자간_재조정': lambda: True,
+            '문단_내어쓰기_기준_오프셋': lambda text: None,
             'hwp': Doc(), 'hwp_run': lambda *args: True,
             '중단_요청됨': lambda: False, '순회_시작': lambda: state.__setitem__('i', 0),
             '쪽범위_안인가': lambda pos=None: True,
@@ -216,6 +83,7 @@ class StyleUnifyTest(unittest.TestCase):
             '_서식통일_그룹키': lambda marker, text, pos: ('ㅇ', '본문', '문서 공통'),
             '다음_문단으로_진행': advance,
             '_문단_내어쓰기_기준_오프셋': lambda text: None,
+            '문단_내어쓰기_기준_오프셋': lambda text: None,
             '_서식통일_문서대표프로필': profile,
             '단어모드_범위선택': lambda *args: writes.append(('select', args)),
             '문자모양_적용_현재선택': lambda **kwargs: writes.append(('char', kwargs)),
@@ -346,7 +214,9 @@ class UnifyModeTest(unittest.TestCase):
         cls.ns = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'hwp-auto-docfit.py'))
 
     def test_unify_mode_has_only_unify_stage_and_is_on(self):
-        self.assertEqual([k for k, _ in stages_for_mode('unify')], ['style_unify'])
+        # 쪽 맞춤은 서식통일 뒤 사용자가 켤 때만 실행하는 선택 단계다.
+        self.assertEqual([k for k, _ in stages_for_mode('unify')], ['style_unify', 'page_fit'])
+        self.assertFalse(default_choice('page_fit', 'unify'))
         self.assertTrue(default_choice('style_unify', 'unify'))
         self.assertFalse(default_choice('style_unify', 'spacing'))
 

@@ -35,6 +35,54 @@ class PipelineOrderFixesTest(unittest.TestCase):
             self.assertTrue(fn('C:/원본/문서.hwpx'))
             self.assertEqual(seen, ['문서.hwpx'])
 
+    def test_alpha_namespace_registration_uses_defusedxml_serializer_registry(self):
+        register = self.ns['XML_네임스페이스_등록']
+        element_tree = self.ns['ET']
+        registry = element_tree.tostring.__globals__.get('_namespace_map')
+        self.assertIsInstance(registry, dict)
+        before = dict(registry)
+        try:
+            self.assertTrue(register('hp', 'urn:hancom:test'))
+            prototype = element_tree.fromstring('<seed/>')
+            element = self.ns['XML_요소_생성'](prototype, '{urn:hancom:test}sec')
+            xml = element_tree.tostring(element, encoding='unicode')
+            self.assertIn('<hp:sec', xml)
+            self.assertIn('xmlns:hp="urn:hancom:test"', xml)
+        finally:
+            registry.clear()
+            registry.update(before)
+
+    def test_pre_format_reopens_original_after_snapshot_analysis_error(self):
+        fn = self.ns['제목붙임_선행적용']
+        g = fn.__globals__
+        root = Path(tempfile.mkdtemp(prefix='docfit-test-'))
+        work = root / 'hwp_format_first_case'
+        work.mkdir()
+        original = Path('C:/원본/문서.hwpx')
+        hwp_object = object()
+        reopened = Mock(return_value=True)
+        try:
+            with patch.object(g['tempfile'], 'mkdtemp', return_value=str(work)), \
+                 patch.dict(g, {
+                     '제목4종_사용': True,
+                     '붙임2종_사용': False,
+                     '중단_요청됨': lambda: False,
+                     '_제목_임시hwpx_저장': lambda path: Path(path),
+                     '제목_hwpx_처리': Mock(side_effect=RuntimeError('분석 실패')),
+                     '한글_문서_열기': reopened,
+                     'hwp': hwp_object,
+                     '로그': Mock(),
+                     '진단로그': Mock(),
+                 }):
+                with self.assertRaisesRegex(RuntimeError, '분석 실패'):
+                    fn(str(original), 현재문서_기준=True)
+            reopened.assert_called_once_with(hwp_object, original, 'HWPX', 'forceopen:true')
+            self.assertFalse(work.exists())
+        finally:
+            if root.exists():
+                import shutil
+                shutil.rmtree(root, ignore_errors=True)
+
     # B3: 저장 후 검사를 마친 규칙의 처리 중 기록만 지운다.
     def test_in_process_records_replaced_by_saved_result_check(self):
         fn = self.ns['처리중_기록_대체']

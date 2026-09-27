@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import importlib.util
+import logging
 import threading
 from concurrent.futures import Future, TimeoutError
 from pathlib import Path
+
+from docfit_core.progress_guide import guide_state
 
 
 class DesktopWebBridge:
@@ -16,12 +19,19 @@ class DesktopWebBridge:
         self.window = None
         self.tk_stopped = None
 
-    def _tk(self, callback, timeout=120):
+    def _tk(self, callback, timeout=120, front=False):
         result = Future()
 
         def run():
             if result.cancelled():
                 return
+            if front:
+                try:
+                    # 파일 선택 등 기본 창을 부모로 쓰는 대화상자가 웹 화면 뒤에 뜨지 않게 한다.
+                    self.gui.root.lift()
+                    self.gui.root.focus_force()
+                except Exception:
+                    pass
             try:
                 result.set_result(callback())
             except BaseException as exc:
@@ -61,10 +71,15 @@ class DesktopWebBridge:
                     "detail": getattr(gui.stage_board, "detail", ""),
                 },
                 "results": [
-                    {"name": Path(item.get("結果", "")).name, "path": item.get("결과", "")}
+                    {"name": Path(item.get("결과", "")).name, "path": item.get("결과", "")}
                     for item in getattr(gui, "_결과목록", [])
                 ],
                 "default_saved": bool(gui._세부작업_기본저장.get(gui.selected_mode.get(), True)),
+                "guide": guide_state(
+                    gui.selected_mode.get(),
+                    getattr(gui, "_안내키", None),
+                    getattr(gui, "_안내지남", ()),
+                ),
                 "can_start": bool(gui.files) and not gui.running,
                 "version": APP_VERSION,
             }
@@ -72,11 +87,11 @@ class DesktopWebBridge:
         return self._tk(snapshot)
 
     def add_files(self):
-        self._tk(self.gui.파일선택)
+        self._tk(self.gui.파일선택, timeout=None, front=True)
         return self.get_state()
 
     def add_folder(self):
-        self._tk(self.gui._폴더선택)
+        self._tk(self.gui._폴더선택, timeout=None, front=True)
         return self.get_state()
 
     def add_paths(self, paths):
@@ -173,25 +188,25 @@ class DesktopWebBridge:
         return self.get_state()
 
     def open_settings(self):
-        self._tk(self.gui.설정창_열기)
+        self._tk(self.gui.설정창_열기, timeout=None, front=True)
         return True
 
     def text_input(self):
-        self._tk(self.gui._텍스트로_문서추가_열기)
+        self._tk(self.gui._텍스트로_문서추가_열기, timeout=None, front=True)
         return self.get_state()
 
     def open_stages(self):
         self._tk(lambda: self.gui._세부작업_열기(
             self.gui.selected_mode.get(), self.gui._세부작업_기본저장.get(self.gui.selected_mode.get(), True)
-        ))
+        ), timeout=None, front=True)
         return True
 
     def open_log(self):
-        self._tk(lambda: (self.gui.log_window.deiconify(), self.gui.log_window.lift()))
+        self._tk(lambda: (self.gui.log_window.deiconify(), self.gui.log_window.lift()), front=True)
         return True
 
     def open_results(self):
-        self._tk(self.gui._결과파일_열기)
+        self._tk(self.gui._결과파일_열기, timeout=None, front=True)
         return True
 
     def next_job(self):
@@ -199,6 +214,9 @@ class DesktopWebBridge:
             if self.gui.running:
                 return
             self.gui.목록지우기()
+            self.gui._결과_초기화()
+            self.gui._안내키, self.gui._안내지남 = None, set()
+            self.gui.status_var.set("새 문서를 선택하세요.")
             self.gui.selected_mode.set("spacing")
             self.gui._모드_선택됨()
 
@@ -219,7 +237,7 @@ class DesktopWebBridge:
         command = commands.get(name)
         if command is None:
             raise ValueError("지원하지 않는 도구입니다.")
-        self._tk(command)
+        self._tk(command, timeout=None, front=True)
         return True
 
     def request_close(self):
@@ -238,14 +256,94 @@ class DesktopWebBridge:
             except Exception:
                 return True
 
-        return self._tk(close)
+        # 작업 중이면 종료 확인 창이 떠서 사용자의 답을 기다린다.
+        return self._tk(close, timeout=None, front=True)
+
+
+class _BrowserApi:
+    """Expose commands only: pywebview recursively inspects public attributes."""
+
+    def __init__(self, bridge):
+        for name in (
+            "get_state", "add_files", "add_folder", "add_paths", "remove_file",
+            "clear_files", "set_mode", "set_range", "start", "stop",
+            "open_settings", "text_input", "open_stages", "open_log",
+            "open_results", "next_job", "run_tool",
+        ):
+            setattr(self, name, getattr(bridge, name))
 
 
 def _resource_path():
     import sys
 
     base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    flutter_page = base / "desktop_web" / "flutter" / "index.html"
+    if flutter_page.is_file() and (flutter_page.parent / "main.dart.js").is_file():
+        return flutter_page
     return base / "desktop_web" / "index.html"
+
+
+_FILE_DROP_SCRIPT = """
+(() => {
+  if (window.docfitFileDropInstalled) return;
+  window.docfitFileDropInstalled = true;
+  let depth = 0;
+  const overlay = document.createElement('div');
+  overlay.id = 'docfit-file-drop';
+  overlay.textContent = '여기에 놓으면 문서 목록에 추가됩니다';
+  overlay.style.cssText = 'display:none;position:fixed;inset:16px;z-index:2147483647;'
+    + 'pointer-events:none;align-items:center;justify-content:center;border:3px dashed #2563eb;'
+    + 'border-radius:24px;background:rgba(239,246,255,.94);color:#1e40af;'
+    + 'font:600 20px sans-serif;text-align:center;padding:24px;';
+  document.body.appendChild(overlay);
+  const files = e => Array.from(e.dataTransfer?.types || []).includes('Files');
+  const hide = () => { depth = 0; overlay.style.display = 'none'; };
+  document.addEventListener('dragenter', e => {
+    if (!files(e)) return;
+    e.preventDefault(); depth++; overlay.style.display = 'flex';
+  }, true);
+  document.addEventListener('dragover', e => {
+    if (!files(e)) return;
+    e.preventDefault(); e.dataTransfer.dropEffect = 'copy';
+    overlay.style.display = 'flex';
+  }, true);
+  document.addEventListener('dragleave', () => {
+    depth = Math.max(0, depth - 1); if (!depth) hide();
+  }, true);
+  document.addEventListener('drop', e => {
+    if (files(e)) e.preventDefault();
+    hide();
+    // Keep bubbling: pywebview's DOM handler resolves native Windows paths.
+  }, true);
+  window.addEventListener('blur', hide);
+  document.addEventListener('dragend', hide, true);
+})();
+"""
+
+
+def _bind_file_drop(web_window, bridge):
+    """Enable file drops above Flutter's canvas and retain native path resolution."""
+    from webview.dom import DOMEventHandler
+
+    def dropped(event):
+        try:
+            transfer = event.get("dataTransfer") or event.get("domTransfer") or {}
+            files = transfer.get("files", [])
+            paths = [item.get("pywebviewFullPath") for item in files if isinstance(item, dict)]
+            paths = [path for path in paths if path]
+            if paths:
+                bridge.add_paths(paths)
+            elif files:
+                bridge._tk(lambda: bridge.gui.status_var.set(
+                    "드롭한 파일 경로를 읽지 못했습니다. 문서 선택 버튼을 이용해 주세요."))
+                logging.getLogger(__name__).warning("File drop received without native paths")
+        except Exception:
+            logging.getLogger(__name__).exception("File drop failed")
+
+    # Register with pywebview (not plain JS) so WebView2 supplies full file paths.
+    web_window.dom.document.events.drop += DOMEventHandler(
+        dropped, prevent_default=True, stop_propagation=True)
+    web_window.run_js(_FILE_DROP_SCRIPT)
 
 
 def run_webview(gui):
@@ -272,8 +370,10 @@ def run_webview(gui):
 
     window = webview.create_window(
         f"{APP_NAME} · v{APP_VERSION}",
-        url=page.as_uri(),
-        js_api=bridge,
+        # A filesystem path activates pywebview's local HTTP asset server;
+        # file:// URLs bypass it and cannot load Flutter's WASM/font assets.
+        url=str(page),
+        js_api=_BrowserApi(bridge),
         width=width,
         height=height,
         x=x,
@@ -295,20 +395,9 @@ def run_webview(gui):
 
     def bind_file_drop(web_window):
         try:
-            from webview.dom import DOMEventHandler
-
-            def dropped(event):
-                transfer = event.get("domTransfer") or event.get("dataTransfer") or {}
-                files = transfer.get("files", [])
-                paths = [item.get("pywebviewFullPath") for item in files]
-                bridge.add_paths([path for path in paths if path])
-
-            web_window.dom.document.events.drop += DOMEventHandler(
-                dropped, prevent_default=True, stop_propagation=True
-            )
+            _bind_file_drop(web_window, bridge)
         except Exception:
-            # 드롭 이벤트를 지원하지 않는 환경에서도 파일 선택 버튼은 사용 가능하다.
-            return
+            logging.getLogger(__name__).exception("Could not enable file drag and drop")
 
     def stop_webview_when_app_exits(web_window):
         tk_stopped.wait()
@@ -327,7 +416,7 @@ def run_webview(gui):
             daemon=True,
         ).start()
 
-    webview.start(initialize_webview, args=[window], gui="edgechromium")
+    webview.start(initialize_webview, args=[window], gui="edgechromium", http_server=True)
     return True
 
 

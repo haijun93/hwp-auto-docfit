@@ -12,3 +12,6 @@ benchmark-results/
 reports/
 *.log
 .DS_Store
+flutter_ui/.dart_tool/
+flutter_ui/.flutter-plugins*
+desktop_web/flutter/

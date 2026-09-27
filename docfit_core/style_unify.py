@@ -23,8 +23,11 @@ def representative(values, minimum=3, ratio=0.6):
     return winners[0], best_count, len(usable)
 
 
-def parenthetical_spans(text, protected=()):
+def parenthetical_spans(text, protected=(), include_trailing=False):
     """Find balanced inline parentheses, excluding an already classified label.
+
+    include_trailing=True also returns parentheses that end the sentence, e.g.
+    '전기버스 4대(※차량원복시 23인승)', which follow the same -2pt rule.
 
     Only outermost pairs are returned, so nested explanatory parentheses are
     treated as one semantic span and can never receive the size reduction twice.
@@ -70,7 +73,7 @@ def parenthetical_spans(text, protected=()):
         return False
 
     return tuple((start, end) for start, end in pairs
-                 if is_mid_sentence(end)
+                 if (include_trailing or is_mid_sentence(end))
                  and not any(start < other_end and other_start < end
                              for other_start, other_end in protected))
 

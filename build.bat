@@ -35,6 +35,8 @@ echo [1/4] Installing build dependencies...
 if errorlevel 1 goto :fail
 
 echo [2/3] Building %APPNAME%.exe...
+powershell -NoProfile -ExecutionPolicy Bypass -File build_flutter.ps1
+if errorlevel 1 goto :fail
 "%PYTHON%" -m PyInstaller ^
     --noconfirm ^
     --clean ^

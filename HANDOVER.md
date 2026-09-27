@@ -38,6 +38,7 @@
 |---|---|
 | `hwp-auto-docfit.py` (약 15,000줄) | 앱 본체. COM 자동화 파이프라인, 서식 분석, GUI 전체. **CRLF 줄바꿈**, 식별자·주석 대부분 한국어 |
 | `desktop_web_ui.py`, `desktop_web/` | WebView2 키오스크 UI와 Tk 백엔드 연결, 반응형 화면 리소스 |
+| `flutter_ui/`, `build_flutter.ps1` | 새 알파 Flutter Material 3 화면. 빌드하면 `desktop_web/flutter/`를 우선 사용하며, 상세 설정은 기존 Tk 창을 연결. SDK 위치·검사는 `flutter_ui/README.md` 참고 |
 | `docfit_core/hwpx.py` | HWPX 안전 검사(ZIP bomb·경로 조작), 구조 파싱, Markdown 내보내기, 무결성 비교 |
 | `docfit_core/stage_selection.py` | 작업 유형별 세부 작업(단계) 목록과 기본 선택값 |
 | `docfit_core/style_hierarchy.py` | 문두기호(□·ㅇ·-·※ 등) 판별, 들여쓰기 기반 계층 분석 |
@@ -58,6 +59,8 @@
 | `.claude/skills/gongmunseo-report-writing/` | 공문서 작성 스킬(행정업무운영 편람 규정 포함). 다른 에이전트도 문체 기준으로 참고 가능 |
 | `HANDOVER.md` | 인수인계서 본문 |
 | `UI_DESIGN.md` | 알파 UI 화면 흐름·반응형 배치·접근성 기준 |
+
+Flutter UI 빌드는 `powershell -File build_flutter.ps1`로 수행하며 `build.bat`와 GitHub 빌드에도 포함됩니다. 생성된 웹 리소스는 Git에서 제외합니다. 화면 검사는 `scripts/preview_flutter.py`(선택 의존성 Playwright, 설치된 Edge 사용)로 수행하며 사용자 문서는 처리하지 않습니다. `desktop_web_ui._BrowserApi`는 명령만 공개합니다. Tk GUI나 WebView 창 자체를 `js_api`에 공개하면 pywebview의 재귀 탐색으로 COM 스레드 오류가 발생하므로 금지합니다.
 | `TODO.md` | 작업 예정·완료 기록(사용자가 "나중에 해"라고 한 항목의 원천) |
 
 ---
@@ -83,6 +86,9 @@
 - 테스트용 헤드리스 실행 예: `scripts/smoke_style_corpus.py` 참고. `ns["작업_실행"]([경로], 실행모드="format", 자동닫기=True, 표준서식=True, 검수=True, 세부작업_선택={...})` 후 `gui_queue`에서 `("saved", …)` 이벤트를 꺼내 결과 경로를 얻습니다.
 
 ### 서식 프로필
+
+- 알파 서식통일: 대표값 확인 후 개별 문단 승인 없이 문서 순서로 예외 문단만 `서식 → 해당 문단 자간 → 내어쓰기` 처리합니다. 정상 문단은 건너뛰고 전체 자간 초기화와 전체 페이지 보호 해제를 실행하지 않습니다. 자간은 분리 어절만 ±10% 안전 한도로 시도하며 실패 시 원래 값으로 복원합니다.
+- 필요한 대표값이 없으면 확정된 속성만 적용하고 해당 문단을 빨간 글자로 표시합니다(자간·내어쓰기 연쇄 작업 생략). 없는 괄호라벨은 미확정으로 보지 않습니다. 저장 후 검수는 미확정 문단과 빨간 표시 여부를 보고하며 읽기 전용입니다. 회귀 테스트는 `tests/test_style_unify_auto.py`, 생성 문서 COM 검증은 `scripts/smoke_unify_auto.py`입니다.
 - 기본 서식 + 사용자 서식(`%APPDATA%\HwpAutoDocFit\` 아래 JSON). 예시 문서를 분석(`hwpx_서식_분석`)해 만듭니다.
 - 프로필에 `organization`(기관)을 넣으면 목록에 `[기관] 이름`으로 묶여 보입니다.
 - 문서 첫머리 1×1 표는 제목 표로 판정되어 제목 서식이 적용됩니다(`제목_유형판별`, `제목_대상찾기`).
