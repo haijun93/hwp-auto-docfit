@@ -2508,6 +2508,50 @@ def 보안모듈_초기화():
     로그("AutomationModule 초기화 완료")
 
 # ============================================================
+# 상용구 파일저장 (HWP.IDO)
+# ============================================================
+
+# 상용구(자주 쓰는 텍스트·서식)는 한/글이 기본 데이터 폴더의
+# \User\Hwp\버전폴더 아래에 HWP.IDO 파일로 저장한다(예: 한/글 2020 = 60).
+상용구_파일명 = "HWP.IDO"
+
+
+def 번들_상용구_파일_찾기():
+    """앱에 포함해 배포하는 상용구 파일(resources/HWP.IDO)의 실제 경로를 찾는다."""
+    후보_목록 = [프로그램_폴더() / "resources" / 상용구_파일명]
+    번들_폴더 = 번들_리소스_폴더()
+    if 번들_폴더 is not None:
+        후보_목록.append(번들_폴더 / "resources" / 상용구_파일명)
+    for 경로 in 후보_목록:
+        if 경로.is_file():
+            return 경로
+    return None
+
+
+def 상용구_전용폴더_찾기():
+    """HWP.IDO를 저장해야 할 한/글 버전별 전용 폴더를 찾는다.
+
+    %AppData%\\HNC\\User\\Hwp\\ 아래에 한/글 버전마다 고유 숫자 폴더가
+    있다(한/글 2020 = 60). 이미 HWP.IDO가 있는 폴더를 최우선으로 고르고,
+    없으면 폴더 이름 숫자가 가장 큰(최신 버전으로 추정되는) 폴더를 고른다.
+    AppData 폴더는 숨김 처리돼 있어 탐색기에서 '숨긴 항목'을 켜야 보인다.
+    """
+    appdata = os.environ.get("APPDATA")
+    if not appdata:
+        return None
+    기준_폴더 = Path(appdata) / "HNC" / "User" / "Hwp"
+    if not 기준_폴더.is_dir():
+        return None
+    후보_폴더들 = [경로 for 경로 in 기준_폴더.iterdir() if 경로.is_dir() and 경로.name.isdigit()]
+    if not 후보_폴더들:
+        return None
+    기존_상용구_폴더들 = [경로 for 경로 in 후보_폴더들 if (경로 / 상용구_파일명).is_file()]
+    if 기존_상용구_폴더들:
+        return max(기존_상용구_폴더들, key=lambda p: int(p.name))
+    return max(후보_폴더들, key=lambda p: int(p.name))
+
+
+# ============================================================
 # 한글 시작
 # ============================================================
 
@@ -14531,6 +14575,19 @@ class HwpAutoDocFitGUI:
         window_options.pack(fill="x", pady=(0, 12))
         ttk.Checkbutton(window_options, text="앱 창을 항상 위에 표시",
                         variable=self.always_on_top_var).pack(anchor="w")
+
+        idiom_box = ttk.LabelFrame(tabs["advanced"], text="상용구 파일저장", padding=10)
+        idiom_box.pack(fill="x", pady=(0, 12))
+        ttk.Label(
+            idiom_box,
+            text="앱에 포함된 상용구 파일(HWP.IDO)을 한/글의 상용구 전용 폴더에 저장합니다.\n"
+                 "(예: 한/글 2020 → %AppData%\\HNC\\User\\Hwp\\60)\n"
+                 "진행 전에 한/글을 완전히 종료해 주세요.",
+            style="Hint.TLabel",
+            wraplength=650,
+            justify="left",
+        ).pack(anchor="w", pady=(0, 6))
+        ttk.Button(idiom_box, text="상용구 파일저장", command=self._상용구파일_저장_클릭).pack(anchor="w")
         container = tabs["spacing"]
         ttk.Label(container,
                   text=f"실행창의 ‘자간 정리 · 세부 작업’과 같은 {len(stages_for_mode('spacing'))}단계입니다. 여기서 켜고 끄면 세부 작업 창에도 그대로 반영됩니다.",
@@ -14842,6 +14899,50 @@ class HwpAutoDocFitGUI:
         if 폴더:
             self.font_folder_var.set(폴더)
             self._폰트목록_새로고침()
+
+    def _상용구파일_저장_클릭(self):
+        """앱에 포함된 상용구 파일(HWP.IDO)을 한/글의 상용구 전용 폴더에 복사한다."""
+        부모창 = self.settings_toplevel or self.root
+        원본 = 번들_상용구_파일_찾기()
+        if 원본 is None:
+            messagebox.showerror(
+                APP_NAME,
+                f"앱에 포함된 {상용구_파일명} 파일을 찾을 수 없습니다.",
+                parent=부모창,
+            )
+            return
+        대상_폴더 = 상용구_전용폴더_찾기()
+        if 대상_폴더 is None:
+            messagebox.showerror(
+                APP_NAME,
+                "한/글 상용구 전용 폴더를 찾지 못했습니다.\n"
+                "한컴오피스 한/글을 한 번 이상 실행한 뒤 다시 시도해 주세요.\n"
+                "(예상 위치: %AppData%\\HNC\\User\\Hwp\\버전폴더, "
+                "탐색기에서 '숨긴 항목'을 켜야 보입니다)",
+                parent=부모창,
+            )
+            return
+        대상_경로 = 대상_폴더 / 상용구_파일명
+        if 대상_경로.exists():
+            if not messagebox.askyesno(
+                APP_NAME,
+                f"이미 상용구 파일이 있습니다.\n{대상_경로}\n\n"
+                "앱에 포함된 상용구 파일로 덮어쓸까요?\n"
+                "(진행 전에 한/글을 완전히 종료해 주세요)",
+                parent=부모창,
+            ):
+                return
+        try:
+            대상_폴더.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(원본, 대상_경로)
+        except Exception as e:
+            messagebox.showerror(APP_NAME, f"상용구 파일 저장에 실패했습니다: {e}", parent=부모창)
+            return
+        messagebox.showinfo(
+            APP_NAME,
+            f"상용구 파일을 저장했습니다.\n{대상_경로}\n\n한/글을 다시 시작하면 적용됩니다.",
+            parent=부모창,
+        )
 
     def _설정_초기화_클릭(self):
         if self.running:
