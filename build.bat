@@ -45,6 +45,7 @@ if errorlevel 1 goto :fail
     --name "%APPNAME%" ^
     --add-data "MapoHwpAutoDocFitSecurity.dll;." ^
     --add-data "desktop_web;desktop_web" ^
+    --add-data "resources;resources" ^
     --collect-all tkinterdnd2 ^
     --collect-all webview ^
     --collect-all pythonnet ^

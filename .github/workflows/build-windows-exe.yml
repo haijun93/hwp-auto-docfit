@@ -45,6 +45,7 @@ jobs:
           --name HWP_AutoDocFit
           --add-data "MapoHwpAutoDocFitSecurity.dll;."
           --add-data "desktop_web;desktop_web"
+          --add-data "resources;resources"
           --collect-all tkinterdnd2
           --collect-all PIL
           --collect-all webview
