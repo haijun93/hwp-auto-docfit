@@ -341,7 +341,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리 도구"
-APP_VERSION = "1.69 Beta 2"
+APP_VERSION = "1.69 Beta 3"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 UPDATE_ASSET_NAME = "HWP_AutoDocFit.exe"
@@ -13692,15 +13692,17 @@ class HwpAutoDocFitGUI:
             input_text.delete("1.0", "end")
             status.set("텍스트를 붙여넣고 ‘문서로 추가’를 눌러 주세요.")
 
+        # 입력칸보다 먼저 아래쪽에 자리를 잡아야 화면 배율이 커도 버튼이 가려지지 않는다.
+        status_label = ttk.Label(body, textvariable=status, style="Hint.TLabel")
+        status_label.pack(side="bottom", anchor="w", pady=(6, 0), before=text_frame)
         actions = ttk.Frame(body)
-        actions.pack(fill="x", pady=(8, 0))
+        actions.pack(side="bottom", fill="x", pady=(8, 0), before=status_label)
         추가_버튼 = ttk.Button(actions, text="문서로 추가", command=문서로추가)
         추가_버튼.pack(side="left")
         지우기_버튼 = ttk.Button(actions, text="지우기", command=지우기)
         지우기_버튼.pack(side="left", padx=(6, 0))
         닫기_버튼 = ttk.Button(actions, text="닫기", command=닫기_요청)
         닫기_버튼.pack(side="right")
-        ttk.Label(body, textvariable=status, style="Hint.TLabel").pack(anchor="w", pady=(6, 0))
 
         try:
             붙여넣기 = window.clipboard_get()
