@@ -10,9 +10,15 @@ class StageSelectionTest(unittest.TestCase):
             self.assertEqual(len(keys), len(set(keys)))
             self.assertTrue(all(STAGE_EXAMPLES.get(key, "").startswith("예:") for key in keys))
         all_keys = [key for key, _ in stages_for_mode("all")]
+        # 박스 그림 표 변환은 문단 구조 자체를 바꾸므로 다른 모든 단계보다 먼저 실행된다.
+        self.assertEqual(all_keys[0], "text_table_convert")
         # 자간 초기화는 선행 서식·정밀 표 복제보다 먼저 실행된다(복사한 자간 보존).
-        self.assertEqual(all_keys[0], "reset_spacing")
+        self.assertEqual(all_keys[1], "reset_spacing")
         self.assertLess(all_keys.index("reset_spacing"), all_keys.index("pre_format"))
+        for mode in ("format", "all"):
+            keys = [key for key, _ in stages_for_mode(mode)]
+            self.assertEqual(keys[0], "text_table_convert")
+            self.assertLess(keys.index("text_table_convert"), keys.index("pre_format"))
         # 쪽 수 맞춤 뒤에 문단 페이지 배치를 한다.
         for mode in ("format", "all"):
             keys = [key for key, _ in stages_for_mode(mode)]

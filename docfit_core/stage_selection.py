@@ -19,6 +19,10 @@ FORMAT_STAGES = (
 # 이질적인 스타일을 맞춘다. 기준이 달라지는 기능이라 기본값은 꺼져 있고(옵트인),
 # 실행창의 '기본후처리'·'전문후처리' 프리셋이 켠다.
 UNIFY_STAGE = ("style_unify", "서식통일 (문서 안 대표 스타일로 맞춤)")
+# AI 채팅 답변을 붙여넣을 때 흔히 딸려오는 박스 그림 표(┌─┬─┐ …)를 실제
+# 한/글 표로 바꾼다. 다른 모든 서식·자간 단계보다 먼저 실행해야 하므로
+# FORMAT_STAGES 안에 넣지 않고 UNIFY_STAGE와 같은 방식으로 앞자리에 끼워 넣는다.
+TEXT_TABLE_STAGE = ("text_table_convert", "텍스트 표(박스 그림)를 실제 표로 변환")
 DEFAULT_OFF = frozenset({"style_unify"})
 
 SPACING_STAGES = (
@@ -52,6 +56,7 @@ STAGE_EXAMPLES = {
     "control_short_line": "예: 표 셀·글상자의 짧은 마지막 줄을 앞줄에 모으도록 시도합니다.",
     "word_check": "예: 1차 조정 뒤 본문에 남은 단어 분리를 다시 검사합니다.",
     "control_word_check": "예: 1차 조정 뒤 표 셀·글상자에 남은 단어 분리를 다시 검사합니다.",
+    "text_table_convert": "예: '┌──┬──┐ / │ 구분 │ 내용 │ / └──┴──┘'처럼 박스 그림으로 그려 붙여넣은 표를 한/글의 실제 표로 바꿉니다.",
 }
 
 
@@ -61,15 +66,16 @@ def stages_for_mode(mode):
         # 서식통일은 문서 자체의 대표 서식이 기준이다. 쪽 맞춤은 사용자가 켤 때만 실행한다.
         return (UNIFY_STAGE, FORMAT_STAGES[-2])
     # 서식통일은 공백·문장부호 정리 뒤, 표준서식·자간 조정 앞에서 실행한다.
+    # 박스 그림 표 변환은 문단 구조 자체를 바꾸므로 다른 모든 단계보다 먼저 실행한다.
     if mode == "format":
-        return FORMAT_STAGES[:4] + (UNIFY_STAGE,) + FORMAT_STAGES[4:]
+        return (TEXT_TABLE_STAGE,) + FORMAT_STAGES[:4] + (UNIFY_STAGE,) + FORMAT_STAGES[4:]
     if mode == "spacing":
         return SPACING_STAGES[:1] + (UNIFY_STAGE,) + SPACING_STAGES[1:]
     if mode == "all":
         # 실제 실행 순서와 같게 보여 준다. 자간 초기화는 선행 서식·정밀 표 복제보다
         # 먼저 실행되고(복사한 자간 보존), 내어쓰기는 자간 조정 뒤 최종 확정된다.
         # 개요·한 칸 표 자간 조정(single_cell_spacing)은 서식 전용이다.
-        return (SPACING_STAGES[:1] + FORMAT_STAGES[:4] + (UNIFY_STAGE,) + FORMAT_STAGES[4:8]
+        return ((TEXT_TABLE_STAGE,) + SPACING_STAGES[:1] + FORMAT_STAGES[:4] + (UNIFY_STAGE,) + FORMAT_STAGES[4:8]
                 + SPACING_STAGES[1:] + FORMAT_STAGES[9:])
     raise ValueError("지원하지 않는 작업 모드입니다.")
 

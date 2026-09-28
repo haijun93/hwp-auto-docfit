@@ -274,6 +274,7 @@ from docfit_core.korean_proofread import (
 )
 from docfit_core.pasted_text import clean_pasted_text, outline_pasted_text
 from docfit_core.labeled_text import label_outline_text, looks_labeled, parse_labeled_text
+from docfit_core.text_table import find_box_tables
 from docfit_core import writing_aids, ai_prompts
 
 
@@ -10425,6 +10426,93 @@ def 외부문서_hwpx로_변환(원본경로, 확장자, 대상경로):
     raise ValueError(f"지원하지 않는 변환 형식입니다: {확장자}")
 
 
+def _박스그림표_한글표_삽입(행들):
+    """현재 커서 위치(빈 문단)에 행렬(rows)로 실제 한/글 표를 만든다.
+
+    라벨 입력 모드의 '표:' 삽입(라벨블록_한글삽입/표넣기)과 같은 HTableCreation
+    설정을 쓴다 — 단 너비 맞춤(WidthType 0)·자동 높이(HeightType 0)·글자처럼
+    취급(TreatAsChar 1). 표 뒤 후속 서식 단계(표 머리글/본문 서식 등)가 그대로
+    적용될 수 있도록 첫 행을 머리글로 가정한 별도 서식은 여기서 넣지 않는다.
+    """
+    열수 = max(len(행) for 행 in 행들)
+    act = hwp.HAction
+    pset = hwp.HParameterSet.HTableCreation
+    act.GetDefault("TableCreate", pset.HSet)
+    pset.Rows = len(행들)
+    pset.Cols = 열수
+    pset.WidthType = 0   # 단 너비에 맞춤(2는 임의 너비라 글자 폭만큼 좁아진다)
+    pset.HeightType = 0  # 자동 높이
+    pset.TableProperties.TreatAsChar = 1
+    act.Execute("TableCreate", pset.HSet)
+    칸들 = [칸 for 행 in 행들 for 칸 in (행 + [""] * (열수 - len(행)))]
+    for 순번, 칸 in enumerate(칸들):
+        if 칸:
+            텍스트_삽입(칸)
+        if 순번 < len(칸들) - 1:
+            hwp_run("TableRightCell")
+    hwp_run("Cancel")
+
+
+def _박스그림표_교체(시작문단, 끝문단, 행들):
+    """문단 [시작문단, 끝문단](둘 다 본문, list id 0) 구간의 텍스트를 지우고
+    그 자리에 실제 표를 삽입한다."""
+    hwp.SetPos(0, 끝문단, 0)
+    hwp_run('MoveParaEnd')
+    끝위치 = hwp.GetPos()
+    hwp.SetPos(0, 시작문단, 0)
+    if hwp.SelectText(시작문단, 0, 끝위치[1], 끝위치[2]) is False:
+        raise RuntimeError('박스 그림 표 범위 선택 실패')
+    if hwp_run('Delete') is False:
+        raise RuntimeError('박스 그림 표 텍스트 삭제 실패')
+    hwp.SetPos(0, 시작문단, 0)
+    _박스그림표_한글표_삽입(행들)
+
+
+def 박스그림_전체_적용():
+    """문서 본문에서 박스 그림(┌─┬─┐ 등)으로 그려진 표를 찾아 실제 한/글
+    표로 바꾼다. AI 채팅 답변을 붙여넣을 때 흔히 딸려오는 형태다.
+
+    본문(list id 0) 문단 텍스트를 먼저 전부 모아 docfit_core.text_table로
+    블록을 찾은 뒤, 뒤에 있는 표부터 차례로 바꾼다(문두기호문장_사이_빈줄_삭제와
+    같은 이유 — 뒤에서부터 바꿔야 앞쪽에서 찾아 둔 문단 번호가 바뀌지 않는다).
+    """
+    if 중단_요청됨():
+        return False
+    hwp_run('MoveDocBegin')
+    문단텍스트들 = []
+    while True:
+        if 중단_요청됨():
+            return False
+        문단텍스트들.append(현재문단_텍스트())
+        hwp_run('MoveNextParaBegin')
+        새위치 = hwp.GetPos()
+        if 새위치[0] != 0 or 새위치[1] != len(문단텍스트들):
+            break
+
+    매치들 = find_box_tables(문단텍스트들)
+    if not 매치들:
+        로그("텍스트 표(박스 그림) 변환: 대상 없음")
+        hwp_run('MoveDocBegin')
+        return True
+
+    변환수 = 0
+    for 시작, 끝, 행들 in reversed(매치들):
+        if 중단_요청됨():
+            return False
+        try:
+            _박스그림표_교체(시작, 끝, 행들)
+            변환수 += 1
+        except Exception as e:
+            로그(f"텍스트 표(박스 그림) 변환 중 오류(건너뜀, {시작 + 1}~{끝 + 1}번째 문단): {e}")
+            try:
+                hwp_run('Cancel')
+            except Exception:
+                pass
+    로그(f"텍스트 표(박스 그림) 변환 완료: {변환수}개")
+    hwp_run('MoveDocBegin')
+    return True
+
+
 def 문서_처리(파일, index, total, 문장부호기능=True):
     global hwp, 현재_처리파일, 한칸표_보호영역, 최종검수_문서목록
     global 쪽범위_본문_문단, 쪽범위_컨트롤영역, 쪽범위_실제
@@ -10516,6 +10604,17 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
             raise RuntimeError(f"변환한 문서를 열지 못했습니다: {파일}")
         # 원본이 HWP/HWPX가 아니므로 좌우 비교 보기 대상에서는 제외한다.
     비교보기_임베드_재확인()
+
+    # 박스 그림 표(AI 채팅 답변을 붙여넣을 때 흔한 '┌─┬─┐ / │ … │ / └─┴─┘' 형태)는
+    # 문단 구조 자체를 바꾸므로, 자간 초기화를 포함한 다른 모든 서식·자간 단계보다
+    # 먼저 변환한다. 쪽 범위 지정 작업은 pre_format·precise_table과 마찬가지로
+    # 건너뛴다(문서 전체 구조를 바꾸는 작업이라 쪽 단위로 나눌 수 없음).
+    if (표준서식_사용 and 작업_모드 in ('format', 'all') and 쪽범위_요청 is None
+            and stage_enabled(선택_세부작업, 'text_table_convert')):
+        단계표시("텍스트 표(박스 그림) 변환")
+        상태(f"{파일명} : 텍스트 표(박스 그림) 변환")
+        if 박스그림_전체_적용() is False:
+            return False
 
     # 자간 초기화는 제목·개요·붙임 선행 서식과 일반 표 정밀 복제보다 먼저 한다.
     # 두 단계는 예시 서식의 글자 모양(자간 포함)을 복사하므로, 뒤에서 초기화하면
@@ -14673,7 +14772,7 @@ class HwpAutoDocFitGUI:
         self.retry_table_spin.pack(side="left", padx=(4, 0))
 
         # 그룹 2: 보고서 서식
-        # 실행창 '서식 정리 · 세부 작업'과 같은 9단계(10번째 내어쓰기는 별도 탭)를
+        # 실행창 '서식 정리 · 세부 작업'과 같은 10단계(내어쓰기는 별도 탭)를
         # 번호 순서로 나열하고, 각 단계에 딸린 상세 설정을 그 아래 중첩한다.
         # 자간 정리 탭과 마찬가지로 self.stage_choices["format"]을 그대로
         # 읽고 쓰므로, 실행창의 '세부 작업…'과 항상 같은 값을 공유한다.
