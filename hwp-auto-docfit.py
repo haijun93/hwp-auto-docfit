@@ -274,6 +274,7 @@ from docfit_core.korean_proofread import (
 )
 from docfit_core.pasted_text import clean_pasted_text, outline_pasted_text
 from docfit_core.labeled_text import label_outline_text, looks_labeled, parse_labeled_text
+from docfit_core.text_table import find_box_tables
 from docfit_core import writing_aids, ai_prompts
 
 
@@ -340,7 +341,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리 도구"
-APP_VERSION = "1.69 Beta 1"
+APP_VERSION = "1.69 Beta 2"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 UPDATE_ASSET_NAME = "HWP_AutoDocFit.exe"
@@ -568,6 +569,8 @@ _표준서식_문단위간격_상태 = ParagraphSpacingTracker()
         ("ㅇ", 1, "한컴돋움", 15, True, False),
         ("-", 2, "휴먼명조", 14, False, False),
         ("※", 3, "한컴돋움", 13, False, False),
+        # *(주석1)의 대표 문두기호는 *이며(**는 여기로 합침), 기본값은 ※와 같다.
+        ("*", 3, "한컴돋움", 13, False, False),
         ("•", 3, "한컴돋음", 13, False, False),
     ],
 }
@@ -596,7 +599,7 @@ def 표준서식_문단위간격_찾기(text):
         표준서식_문단위간격_복귀배율,
     )
 
-문장기호_목록 = ["□", "ㅇ", "-", "※", "•"]
+문장기호_목록 = ["□", "ㅇ", "-", "※", "*", "•"]
 
 
 def 기호글꼴_적용(설정딕셔너리=None):
@@ -1046,6 +1049,8 @@ def 번들_리소스_폴더():
         "ㅇ": {"font": "한컴돋움", "size": "15"},
         "-": {"font": "휴먼명조", "size": "14"},
         "※": {"font": "한컴돋움", "size": "13"},
+        # *(대표 기호, **는 *로 합침)의 기본값은 ※와 동일하다.
+        "*": {"font": "한컴돋움", "size": "13"},
         "•": {"font": "한컴돋음", "size": "13"},
     },
     # 표 머리글(첫 행)·본문(나머지 행) 글꼴·크기. 문장기호별 글꼴처럼 서식
@@ -2508,6 +2513,50 @@ def 보안모듈_초기화():
     로그("AutomationModule 초기화 완료")
 
 # ============================================================
+# 상용구 파일저장 (HWP.IDO)
+# ============================================================
+
+# 상용구(자주 쓰는 텍스트·서식)는 한/글이 기본 데이터 폴더의
+# \User\Hwp\버전폴더 아래에 HWP.IDO 파일로 저장한다(예: 한/글 2020 = 60).
+상용구_파일명 = "HWP.IDO"
+
+
+def 번들_상용구_파일_찾기():
+    """앱에 포함해 배포하는 상용구 파일(resources/HWP.IDO)의 실제 경로를 찾는다."""
+    후보_목록 = [프로그램_폴더() / "resources" / 상용구_파일명]
+    번들_폴더 = 번들_리소스_폴더()
+    if 번들_폴더 is not None:
+        후보_목록.append(번들_폴더 / "resources" / 상용구_파일명)
+    for 경로 in 후보_목록:
+        if 경로.is_file():
+            return 경로
+    return None
+
+
+def 상용구_전용폴더_찾기():
+    """HWP.IDO를 저장해야 할 한/글 버전별 전용 폴더를 찾는다.
+
+    %AppData%\\HNC\\User\\Hwp\\ 아래에 한/글 버전마다 고유 숫자 폴더가
+    있다(한/글 2020 = 60). 이미 HWP.IDO가 있는 폴더를 최우선으로 고르고,
+    없으면 폴더 이름 숫자가 가장 큰(최신 버전으로 추정되는) 폴더를 고른다.
+    AppData 폴더는 숨김 처리돼 있어 탐색기에서 '숨긴 항목'을 켜야 보인다.
+    """
+    appdata = os.environ.get("APPDATA")
+    if not appdata:
+        return None
+    기준_폴더 = Path(appdata) / "HNC" / "User" / "Hwp"
+    if not 기준_폴더.is_dir():
+        return None
+    후보_폴더들 = [경로 for 경로 in 기준_폴더.iterdir() if 경로.is_dir() and 경로.name.isdigit()]
+    if not 후보_폴더들:
+        return None
+    기존_상용구_폴더들 = [경로 for 경로 in 후보_폴더들 if (경로 / 상용구_파일명).is_file()]
+    if 기존_상용구_폴더들:
+        return max(기존_상용구_폴더들, key=lambda p: int(p.name))
+    return max(후보_폴더들, key=lambda p: int(p.name))
+
+
+# ============================================================
 # 한글 시작
 # ============================================================
 
@@ -3395,21 +3444,25 @@ def 부모_본문시작_실측(문단_시작, text):
     return int(hwp.ParaShape.Item("LeftMargin")) + 폭
 
 
-def _부연설명_들여쓰기_적용(문단_시작, text, 부모_시작):
-    """부연설명 문단의 왼쪽여백을 맞춰 마커가 부모_시작 칸에서 시작하게 한다.
+def _부연설명_들여쓰기_적용(문단_시작, text, 목표_위치, 여분_글자수=0):
+    """부연설명 문단의 왼쪽여백을 맞춰 마커가 목표_위치 칸에서 시작하게 한다.
+
+    여분_글자수는 마커 중 목표_위치보다 먼저 건너뛸 자기 자신의 글자 수다.
+    예: **(주석2)는 두 번째 별표를 앞줄 *(주석1)의 별표 위치에 맞추므로,
+    선행 공백 뒤 첫 번째 별표 1글자를 더 건너뛴다(여분_글자수=1).
 
     바뀌었으면 True, 이미 같으면 False, 실패하면 None.
     """
     if 현재_한칸표인가():
         return False
-    lead = _선행공백_길이(text)
+    lead = _선행공백_길이(text) + 여분_글자수
     w_lead = 0
     if lead > 0:
         w_lead = _캐럿위치_폭_실측(문단_시작, lead)
         if w_lead is None:
             로그(f"부연설명 들여쓰기 건너뜀(선행 공백 폭 실측 실패): {text.strip()[:40]}")
             return None
-    margin = max(0, int(부모_시작) - int(w_lead))
+    margin = max(0, int(목표_위치) - int(w_lead))
     try:
         hwp.SetPos(*문단_시작)
         hwp_run("MoveParaBegin")
@@ -3420,7 +3473,7 @@ def _부연설명_들여쓰기_적용(문단_시작, text, 부모_시작):
         pset.SetItem("LeftMargin", margin)
         if act.Execute(pset) is False:
             raise RuntimeError("왼쪽여백 설정 실패")
-        진단로그(f"[부연설명 들여쓰기] 부모 본문 시작 {부모_시작}, 선행 공백 {w_lead} → "
+        진단로그(f"[부연설명 들여쓰기] 목표 위치 {목표_위치}, 선행 폭 {w_lead} → "
                  f"왼쪽여백 {margin}: {text.strip()[:50]}")
         return True
     except Exception as e:
@@ -3446,6 +3499,11 @@ def 부연설명_들여쓰기_전체_적용(부모대상=None):
     순회_시작()
     부모 = None        # (부모 문단 시작 위치, 텍스트)
     부모_시작 = None   # 실측한 부모 본문 첫 글자 위치(필요할 때 한 번만 잰다)
+    # **(주석2)는 위 제목/본문/내용이 아니라 바로 앞줄의 *(주석1)를 기준으로
+    # 삼는다. 이번에 *를 목표 위치(부모_시작)에 정확히 맞췄을(또는 이미
+    # 그 자리였을) 때만 그 위치를 믿고 다음 줄이 **면 그대로 물려준다.
+    # 사이에 다른 문단(※ 포함)이 끼거나 확신할 수 없으면 즉시 비운다.
+    직전_별표_위치 = None
     적용수 = 0
     while True:
         if 중단_요청됨():
@@ -3459,11 +3517,21 @@ def 부연설명_들여쓰기_전체_적용(부모대상=None):
             if 유형 is not None:
                 부모 = (문단_시작, text)
                 부모_시작 = None
+                직전_별표_위치 = None
             elif _부연설명_문단인가(text):
                 marker, _ = leading_marker(text)
                 들여쓰기_선택 = 표준서식_설정.get("스타일_속성선택", {}).get(marker, {}).get("indent", True)
                 대상 = 부모 is not None and (부모대상 is None or tuple(부모[0][:2]) in 부모대상)
-                if 대상 and 들여쓰기_선택:
+                이번_별표_위치 = None
+                if marker == "**" and 직전_별표_위치 is not None and 들여쓰기_선택:
+                    # **의 두 번째 별표를 바로 앞줄 *의 별표 위치에 맞춘다(*와
+                    # **의 내어쓰기 기준위치는 같다. 여분_글자수=1로 첫 번째
+                    # 별표 1글자를 더 건너뛴다).
+                    결과 = _부연설명_들여쓰기_적용(문단_시작, text, 직전_별표_위치, 여분_글자수=1)
+                    if 결과:
+                        적용수 += 1
+                        내어쓰기_변경문단.add(tuple(문단_시작[:2]))
+                elif 대상 and 들여쓰기_선택:
                     if 부모_시작 is None:
                         부모_시작 = 부모_본문시작_실측(*부모)
                     if 부모_시작:
@@ -3471,10 +3539,16 @@ def 부연설명_들여쓰기_전체_적용(부모대상=None):
                         if 결과:
                             적용수 += 1
                             내어쓰기_변경문단.add(tuple(문단_시작[:2]))
+                        if marker == "*" and 결과 is not None:
+                            # 방금 부모_시작에 맞췄거나(True) 이미 그 자리였다(False):
+                            # 두 경우 모두 이 문단의 * 위치는 부모_시작으로 확정됐다.
+                            이번_별표_위치 = 부모_시작
                 hwp.SetPos(*문단_시작)
+                직전_별표_위치 = 이번_별표_위치
             else:
                 # 제목/본문/내용도 부연설명도 아닌 일반 문단이 끼면 연결이 끊긴다.
                 부모 = None
+                직전_별표_위치 = None
 
         if not 범위_다음_문단으로_진행():
             break
@@ -3529,6 +3603,8 @@ def 들여쓰기_공백_맞추기(목표_공백수):
     # 있었다(공문서_기호·문단위간격_찾기에서도 이미 같은 기호로 취급 중).
     # 오타로 들어간 경우에도 서식이 깨지지 않도록 별칭으로 남겨 둔다.
     "○": "ㅇ",
+    # **(주석2)는 *(주석1)와 같은 대표 기호로 묶는다(별표 하나짜리 규칙을 그대로 씀).
+    "**": "*",
     **{marker: "•" for marker in DOT_MARKERS if marker != "•"},
 }
 # 주의: '-'는 규정상 키보드 마이너스(U+002D, HYPHEN-MINUS)만 사용하도록
@@ -10381,6 +10457,93 @@ def 외부문서_hwpx로_변환(원본경로, 확장자, 대상경로):
     raise ValueError(f"지원하지 않는 변환 형식입니다: {확장자}")
 
 
+def _박스그림표_한글표_삽입(행들):
+    """현재 커서 위치(빈 문단)에 행렬(rows)로 실제 한/글 표를 만든다.
+
+    라벨 입력 모드의 '표:' 삽입(라벨블록_한글삽입/표넣기)과 같은 HTableCreation
+    설정을 쓴다 — 단 너비 맞춤(WidthType 0)·자동 높이(HeightType 0)·글자처럼
+    취급(TreatAsChar 1). 표 뒤 후속 서식 단계(표 머리글/본문 서식 등)가 그대로
+    적용될 수 있도록 첫 행을 머리글로 가정한 별도 서식은 여기서 넣지 않는다.
+    """
+    열수 = max(len(행) for 행 in 행들)
+    act = hwp.HAction
+    pset = hwp.HParameterSet.HTableCreation
+    act.GetDefault("TableCreate", pset.HSet)
+    pset.Rows = len(행들)
+    pset.Cols = 열수
+    pset.WidthType = 0   # 단 너비에 맞춤(2는 임의 너비라 글자 폭만큼 좁아진다)
+    pset.HeightType = 0  # 자동 높이
+    pset.TableProperties.TreatAsChar = 1
+    act.Execute("TableCreate", pset.HSet)
+    칸들 = [칸 for 행 in 행들 for 칸 in (행 + [""] * (열수 - len(행)))]
+    for 순번, 칸 in enumerate(칸들):
+        if 칸:
+            텍스트_삽입(칸)
+        if 순번 < len(칸들) - 1:
+            hwp_run("TableRightCell")
+    hwp_run("Cancel")
+
+
+def _박스그림표_교체(시작문단, 끝문단, 행들):
+    """문단 [시작문단, 끝문단](둘 다 본문, list id 0) 구간의 텍스트를 지우고
+    그 자리에 실제 표를 삽입한다."""
+    hwp.SetPos(0, 끝문단, 0)
+    hwp_run('MoveParaEnd')
+    끝위치 = hwp.GetPos()
+    hwp.SetPos(0, 시작문단, 0)
+    if hwp.SelectText(시작문단, 0, 끝위치[1], 끝위치[2]) is False:
+        raise RuntimeError('박스 그림 표 범위 선택 실패')
+    if hwp_run('Delete') is False:
+        raise RuntimeError('박스 그림 표 텍스트 삭제 실패')
+    hwp.SetPos(0, 시작문단, 0)
+    _박스그림표_한글표_삽입(행들)
+
+
+def 박스그림_전체_적용():
+    """문서 본문에서 박스 그림(┌─┬─┐ 등)으로 그려진 표를 찾아 실제 한/글
+    표로 바꾼다. AI 채팅 답변을 붙여넣을 때 흔히 딸려오는 형태다.
+
+    본문(list id 0) 문단 텍스트를 먼저 전부 모아 docfit_core.text_table로
+    블록을 찾은 뒤, 뒤에 있는 표부터 차례로 바꾼다(문두기호문장_사이_빈줄_삭제와
+    같은 이유 — 뒤에서부터 바꿔야 앞쪽에서 찾아 둔 문단 번호가 바뀌지 않는다).
+    """
+    if 중단_요청됨():
+        return False
+    hwp_run('MoveDocBegin')
+    문단텍스트들 = []
+    while True:
+        if 중단_요청됨():
+            return False
+        문단텍스트들.append(현재문단_텍스트())
+        hwp_run('MoveNextParaBegin')
+        새위치 = hwp.GetPos()
+        if 새위치[0] != 0 or 새위치[1] != len(문단텍스트들):
+            break
+
+    매치들 = find_box_tables(문단텍스트들)
+    if not 매치들:
+        로그("텍스트 표(박스 그림) 변환: 대상 없음")
+        hwp_run('MoveDocBegin')
+        return True
+
+    변환수 = 0
+    for 시작, 끝, 행들 in reversed(매치들):
+        if 중단_요청됨():
+            return False
+        try:
+            _박스그림표_교체(시작, 끝, 행들)
+            변환수 += 1
+        except Exception as e:
+            로그(f"텍스트 표(박스 그림) 변환 중 오류(건너뜀, {시작 + 1}~{끝 + 1}번째 문단): {e}")
+            try:
+                hwp_run('Cancel')
+            except Exception:
+                pass
+    로그(f"텍스트 표(박스 그림) 변환 완료: {변환수}개")
+    hwp_run('MoveDocBegin')
+    return True
+
+
 def 문서_처리(파일, index, total, 문장부호기능=True):
     global hwp, 현재_처리파일, 한칸표_보호영역, 최종검수_문서목록
     global 쪽범위_본문_문단, 쪽범위_컨트롤영역, 쪽범위_실제
@@ -10472,6 +10635,17 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
             raise RuntimeError(f"변환한 문서를 열지 못했습니다: {파일}")
         # 원본이 HWP/HWPX가 아니므로 좌우 비교 보기 대상에서는 제외한다.
     비교보기_임베드_재확인()
+
+    # 박스 그림 표(AI 채팅 답변을 붙여넣을 때 흔한 '┌─┬─┐ / │ … │ / └─┴─┘' 형태)는
+    # 문단 구조 자체를 바꾸므로, 자간 초기화를 포함한 다른 모든 서식·자간 단계보다
+    # 먼저 변환한다. 쪽 범위 지정 작업은 pre_format·precise_table과 마찬가지로
+    # 건너뛴다(문서 전체 구조를 바꾸는 작업이라 쪽 단위로 나눌 수 없음).
+    if (표준서식_사용 and 작업_모드 in ('format', 'all') and 쪽범위_요청 is None
+            and stage_enabled(선택_세부작업, 'text_table_convert')):
+        단계표시("텍스트 표(박스 그림) 변환")
+        상태(f"{파일명} : 텍스트 표(박스 그림) 변환")
+        if 박스그림_전체_적용() is False:
+            return False
 
     # 자간 초기화는 제목·개요·붙임 선행 서식과 일반 표 정밀 복제보다 먼저 한다.
     # 두 단계는 예시 서식의 글자 모양(자간 포함)을 복사하므로, 뒤에서 초기화하면
@@ -14531,6 +14705,19 @@ class HwpAutoDocFitGUI:
         window_options.pack(fill="x", pady=(0, 12))
         ttk.Checkbutton(window_options, text="앱 창을 항상 위에 표시",
                         variable=self.always_on_top_var).pack(anchor="w")
+
+        idiom_box = ttk.LabelFrame(tabs["advanced"], text="상용구 파일저장", padding=10)
+        idiom_box.pack(fill="x", pady=(0, 12))
+        ttk.Label(
+            idiom_box,
+            text="앱에 포함된 상용구 파일(HWP.IDO)을 한/글의 상용구 전용 폴더에 저장합니다.\n"
+                 "(예: 한/글 2020 → %AppData%\\HNC\\User\\Hwp\\60)\n"
+                 "진행 전에 한/글을 완전히 종료해 주세요.",
+            style="Hint.TLabel",
+            wraplength=650,
+            justify="left",
+        ).pack(anchor="w", pady=(0, 6))
+        ttk.Button(idiom_box, text="상용구 파일저장", command=self._상용구파일_저장_클릭).pack(anchor="w")
         container = tabs["spacing"]
         ttk.Label(container,
                   text=f"실행창의 ‘자간 정리 · 세부 작업’과 같은 {len(stages_for_mode('spacing'))}단계입니다. 여기서 켜고 끄면 세부 작업 창에도 그대로 반영됩니다.",
@@ -14616,7 +14803,7 @@ class HwpAutoDocFitGUI:
         self.retry_table_spin.pack(side="left", padx=(4, 0))
 
         # 그룹 2: 보고서 서식
-        # 실행창 '서식 정리 · 세부 작업'과 같은 9단계(10번째 내어쓰기는 별도 탭)를
+        # 실행창 '서식 정리 · 세부 작업'과 같은 10단계(내어쓰기는 별도 탭)를
         # 번호 순서로 나열하고, 각 단계에 딸린 상세 설정을 그 아래 중첩한다.
         # 자간 정리 탭과 마찬가지로 self.stage_choices["format"]을 그대로
         # 읽고 쓰므로, 실행창의 '세부 작업…'과 항상 같은 값을 공유한다.
@@ -14842,6 +15029,50 @@ class HwpAutoDocFitGUI:
         if 폴더:
             self.font_folder_var.set(폴더)
             self._폰트목록_새로고침()
+
+    def _상용구파일_저장_클릭(self):
+        """앱에 포함된 상용구 파일(HWP.IDO)을 한/글의 상용구 전용 폴더에 복사한다."""
+        부모창 = self.settings_toplevel or self.root
+        원본 = 번들_상용구_파일_찾기()
+        if 원본 is None:
+            messagebox.showerror(
+                APP_NAME,
+                f"앱에 포함된 {상용구_파일명} 파일을 찾을 수 없습니다.",
+                parent=부모창,
+            )
+            return
+        대상_폴더 = 상용구_전용폴더_찾기()
+        if 대상_폴더 is None:
+            messagebox.showerror(
+                APP_NAME,
+                "한/글 상용구 전용 폴더를 찾지 못했습니다.\n"
+                "한컴오피스 한/글을 한 번 이상 실행한 뒤 다시 시도해 주세요.\n"
+                "(예상 위치: %AppData%\\HNC\\User\\Hwp\\버전폴더, "
+                "탐색기에서 '숨긴 항목'을 켜야 보입니다)",
+                parent=부모창,
+            )
+            return
+        대상_경로 = 대상_폴더 / 상용구_파일명
+        if 대상_경로.exists():
+            if not messagebox.askyesno(
+                APP_NAME,
+                f"이미 상용구 파일이 있습니다.\n{대상_경로}\n\n"
+                "앱에 포함된 상용구 파일로 덮어쓸까요?\n"
+                "(진행 전에 한/글을 완전히 종료해 주세요)",
+                parent=부모창,
+            ):
+                return
+        try:
+            대상_폴더.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(원본, 대상_경로)
+        except Exception as e:
+            messagebox.showerror(APP_NAME, f"상용구 파일 저장에 실패했습니다: {e}", parent=부모창)
+            return
+        messagebox.showinfo(
+            APP_NAME,
+            f"상용구 파일을 저장했습니다.\n{대상_경로}\n\n한/글을 다시 시작하면 적용됩니다.",
+            parent=부모창,
+        )
 
     def _설정_초기화_클릭(self):
         if self.running:
