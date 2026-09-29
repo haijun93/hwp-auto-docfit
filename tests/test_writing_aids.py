@@ -22,7 +22,8 @@ class LabeledTextTest(unittest.TestCase):
     def test_parses_blocks_and_key_values(self):
         blocks = parse_labeled_text(self.SAMPLE)
         kinds = [b["kind"] for b in blocks]
-        self.assertEqual(kinds[:2], ["title", "box"])
+        self.assertEqual(kinds[:2], ["title1", "box"])  # "제목:"은 "제목1:"과 같다
+        self.assertEqual(parse_labeled_text("문서제목: 가\n네모: 나")[0]["kind"], "title")
         self.assertIn({"kind": "table", "rows": [["구분", "금액"], ["강사료", "500,000원"]]}, blocks)
         self.assertEqual(blocks[-1], {"kind": "ref", "text": "문의 총무과"})
         text = label_outline_text(self.SAMPLE)

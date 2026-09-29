@@ -45,6 +45,15 @@ class RegistryTest(unittest.TestCase):
             self.assertIsNone(match_line(text, REGISTRY), text)
         self.assertIsNone(match_line('제목1: 가', {}))
 
+    def test_title_word_is_treated_as_title1(self):
+        """준말 "제목:"은 "제목1:"로 취급한다(등록표에 '제목'이 따로 있으면 그 등록이 우선)."""
+        self.assertEqual(match_line('제목: 지구 침공계획(안) 보고', REGISTRY), ('제목1', '지구 침공계획(안) 보고', 4))
+        self.assertEqual(match_line('제목 :지구', REGISTRY)[:2], ('제목1', '지구'))
+        own = dict(REGISTRY, 제목={'type': 'text', 'value': '자체 제목'})
+        self.assertEqual(match_line('제목: 가', own)[0], '제목')
+        no_title1 = {k: v for k, v in REGISTRY.items() if k != '제목1'}
+        self.assertIsNone(match_line('제목: 가', no_title1))   # 제목1이 없으면 별칭도 없다
+
     def test_split_title2_at_first_comma(self):
         self.assertEqual(split_title2('희망2023 나눔캠페인, ‘사랑의 온도탑’ 제막행사 검토보고'),
                          ('희망2023 나눔캠페인', '‘사랑의 온도탑’ 제막행사 검토보고'))
@@ -136,6 +145,14 @@ class DocumentConversionTest(unittest.TestCase):
         self.assertEqual(ns['제목_문자열'](paragraphs[3]), '일시: 오늘')
         ids = [t.get('id') for t in section.iter() if self.name(t) == 'tbl']
         self.assertEqual(len(set(ids)), len(ids))
+
+    def test_title_line_becomes_title1_table_in_document(self):
+        ns = self.ns
+        found, count, _, section = self._convert(self._p('제목: 지구 침공계획(안) 보고'))
+        self.assertEqual(found, {'Contents/section0.xml': [(0, '제목1', '지구 침공계획(안) 보고')]})
+        table = next(t for t in section.iter() if self.name(t) == 'tbl')
+        self.assertEqual((table.get('rowCnt'), table.get('colCnt')), ('2', '2'))
+        self.assertEqual(ns['제목_문자열'](ns['제목_셀들'](table)[0]), '지구 침공계획(안) 보고')
 
     def test_title2_splits_subtitle_at_comma_and_centers_all_title_text(self):
         ns = self.ns

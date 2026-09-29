@@ -36,6 +36,8 @@ DEFAULT_ENTRIES: dict[str, dict] = {
 }
 
 _MAX_KEY = 12
+# 준말 별칭: 등록표에 '제목'이 따로 없으면 '제목:'은 '제목1:'로 취급한다.
+ALIASES = {"제목": "제목1"}
 ROMAN = "ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅪⅫ"
 _MAX_TEXT = 500
 
@@ -74,6 +76,14 @@ def normalize(entries) -> dict[str, dict]:
     return result
 
 
+def resolve_key(word: str, registry: dict[str, dict]):
+    """줄 첫 어절을 등록된 준말로 풀어 준다. 등록되어 있으면 그대로, 별칭이면 별칭이 가리키는 등록 준말, 아니면 None."""
+    if word in registry:
+        return word
+    alias = ALIASES.get(word)
+    return alias if alias in registry else None
+
+
 def match_line(text: str, registry: dict[str, dict]):
     """줄의 첫 어절이 등록한 준말이고 콜론이 이어지면 (준말, 콜론 뒤 글, 앞부분 글자 수)를 돌려준다.
 
@@ -85,8 +95,8 @@ def match_line(text: str, registry: dict[str, dict]):
     match = re.match(r"^(\s*)(\S+?)(\s*)([:：])(\s*)(.*)$", text, re.S)
     if not match:
         return None
-    key = match.group(2)
-    if key not in registry:
+    key = resolve_key(match.group(2), registry)
+    if key is None:
         # 콜론 앞에 빈칸 없이 붙은 어절 전체가 준말이 아닌 경우(예: "일시:" 처럼 다른 낱말)는 제외
         return None
     return key, match.group(6).strip(), match.end(5)
