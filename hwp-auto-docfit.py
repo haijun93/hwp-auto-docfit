@@ -275,6 +275,7 @@ from docfit_core.korean_proofread import (
 from docfit_core.pasted_text import clean_pasted_text, outline_pasted_text
 from docfit_core.labeled_text import label_outline_text, looks_labeled, parse_labeled_text
 from docfit_core.asterisk_superscript import mark_spans as 별표_위치
+from docfit_core.attachment_block import find_blocks as 붙임묶음_찾기
 from docfit_core.abbreviations import merge_with_defaults as 준말_기본_병합, match_line as 준말_줄_판별, normalize as 준말_등록표_정리, roman_of_key as 준말_로마자, split_title2
 from docfit_core.text_table import find_box_tables
 from docfit_core import writing_aids, ai_prompts
@@ -2853,6 +2854,149 @@ def 별표위첨자_선행적용(원본문서경로, 현재문서_기준=True, �
     """문서의 별표(*, **)를 위첨자로 바꾼 결과를 한 번만 다시 연다(바꿀 별표가 없으면 다시 열지 않음)."""
     return 제목붙임_선행적용(원본문서경로, 현재문서_기준=현재문서_기준,
                             처리목록=((True, '별표 위첨자', 별표위첨자_hwpx_처리, 'asterisk.hwpx'),), 변경알림=변경알림)
+
+
+def _한글_글꼴표(header):
+    """언어별 글꼴 ID → 글꼴 이름 표({언어(소문자): {id: 이름}})."""
+    return {ff.get('lang', '').lower(): {f.get('id'): f.get('face') for f in ff}
+            for ff in header.iter() if 제목_xml이름(ff) == 'fontface'}
+
+
+def _글꼴_확보(header, face, cache):
+    """모든 언어 글꼴 그룹에 face가 있게 하고 {언어(소문자): ID}를 돌려준다(없으면 첫 글꼴을 본떠 추가)."""
+    if face in cache:
+        return cache[face]
+    result = {}
+    for ff in [x for x in header.iter() if 제목_xml이름(x) == 'fontface']:
+        found = next((f for f in ff if f.get('face') == face), None)
+        if found is None:
+            found = copy.deepcopy(next(iter(ff)))
+            found.set('face', face)
+            found.set('id', str(max([int(f.get('id')) for f in ff if (f.get('id') or '').isdigit()] + [-1]) + 1))
+            ff.append(found)
+            ff.set('fontCnt', str(len(ff)))
+        result[ff.get('lang', '').lower()] = found.get('id')
+    cache[face] = result
+    return result
+
+
+def _글자모양_글꼴크기(char, faces):
+    """글자모양의 (언어별 글꼴 이름 집합, 크기 pt)."""
+    ref = next((x for x in char if 제목_xml이름(x) == 'fontRef'), None)
+    names = {faces.get(lang, {}).get(fid) for lang, fid in (ref.attrib.items() if ref is not None else [])}
+    return names, int(char.get('height', '0')) / 100
+
+
+def _본문기호_글꼴(header, paras):
+    """붙임 묶음에 맞출 (글꼴 이름, 크기 pt). 기호 서식을 쓰면 표준서식의 ㅇ 규칙, 아니면 문서 ㅇ 문장의 대표 글꼴."""
+    if 표준서식_기호_사용:
+        for rule in 표준서식_설정.get('기호_규칙', []):
+            if rule[0] == 'ㅇ':
+                return rule[2], float(rule[3])
+    faces = _한글_글꼴표(header)
+    chars = {x.get('id'): x for x in header.iter() if 제목_xml이름(x) == 'charPr'}
+    tally = {}
+    for p in paras:
+        texts = _문단_일반글(p)
+        if not texts or leading_marker(''.join(t.text or '' for t in texts))[0] != 'ㅇ':
+            continue
+        for run in [r for r in p if 제목_xml이름(r) == 'run']:
+            length = sum(len(t.text or '') for t in run if 제목_xml이름(t) == 't')
+            char = chars.get(run.get('charPrIDRef'))
+            if length and char is not None:
+                _, size = _글자모양_글꼴크기(char, faces)
+                ref = next(x for x in char if 제목_xml이름(x) == 'fontRef')
+                key = (faces.get('hangul', {}).get(ref.get('hangul')), size)
+                tally[key] = tally.get(key, 0) + length
+    return max(tally, key=tally.get) if tally else None
+
+
+def 붙임글꼴_hwpx_처리(source, target=None, selections=None):
+    """'붙임 …'부터 '끝.'까지 묶음의 모든 문장을 문두기호 ㅇ와 같은 글꼴 종류·크기로 맞춘다(글은 그대로)."""
+    with zipfile.ZipFile(source) as z:
+        contents = {n: z.read(n) for n in z.namelist()}
+    for name, data in contents.items():
+        if name.startswith('Contents/') and name.endswith('.xml'):
+            for _, pair in ET.iterparse(io.BytesIO(data), events=('start-ns',)):
+                if not re.fullmatch(r'ns\d+', pair[0]): XML_네임스페이스_등록(*pair)
+    header = safe_xml_fromstring(contents['Contents/header.xml'])
+    sections = {n: safe_xml_fromstring(data) for n, data in contents.items() if re.fullmatch(r'Contents/section\d+\.xml', n)}
+    body = {n: [c for c in root if 제목_xml이름(c) == 'p'] for n, root in sections.items()}
+    goal = _본문기호_글꼴(header, [p for paras in body.values() for p in paras])
+    faces = _한글_글꼴표(header)
+    chars = {x.get('id'): x for x in header.iter() if 제목_xml이름(x) == 'charPr'}
+
+    def paragraph_text(p):
+        texts = _문단_일반글(p)
+        return None if texts is None else ''.join(t.text or '' for t in texts)
+
+    def runs_with_text(p):
+        return [r for r in p if 제목_xml이름(r) == 'run' and any(제목_xml이름(t) == 't' and (t.text or '') for t in r)]
+
+    def needs_change(p):
+        for run in runs_with_text(p):
+            char = chars.get(run.get('charPrIDRef'))
+            if char is not None:
+                names, size = _글자모양_글꼴크기(char, faces)
+                if names != {goal[0]} or abs(size - goal[1]) > 0.001:
+                    return True
+        return False
+
+    if selections is None:
+        if goal is None:
+            return {n: [] for n in body}
+        return {n: [(s, e) for s, e in 붙임묶음_찾기([paragraph_text(p) for p in paras])
+                    if any(needs_change(p) for p in paras[s:e + 1])]
+                for n, paras in body.items()}
+    if goal is None or not any(items for items in selections.values()):
+        if target is not None: shutil.copyfile(source, target)
+        return 0
+    font_cache, char_cache, count = {}, {}, 0
+    group = next(x for x in header.iter() if 제목_xml이름(x) == 'charProperties')
+    for name, items in selections.items():
+        for start, end in items:
+            for p in body[name][start:end + 1]:
+                before = 제목_문자열(p)
+                for run in runs_with_text(p):
+                    old = run.get('charPrIDRef')
+                    if old not in char_cache:
+                        source_char = chars.get(old)
+                        names, size = _글자모양_글꼴크기(source_char, faces) if source_char is not None else ({None}, 0)
+                        if source_char is None or (names == {goal[0]} and abs(size - goal[1]) < 0.001):
+                            char_cache[old] = old
+                        else:
+                            clone = copy.deepcopy(source_char)
+                            clone.set('height', str(int(round(goal[1] * 100))))
+                            ids = _글꼴_확보(header, goal[0], font_cache)
+                            ref = next(x for x in clone if 제목_xml이름(x) == 'fontRef')
+                            for lang in list(ref.attrib):
+                                if lang.lower() in ids:
+                                    ref.set(lang, ids[lang.lower()])
+                            new_id = str(max([int(x.get('id')) for x in group if (x.get('id') or '').isdigit()] + [-1]) + 1)
+                            clone.set('id', new_id)
+                            group.append(clone)
+                            group.set('itemCnt', str(len(group)))
+                            chars[new_id] = clone
+                            faces = _한글_글꼴표(header)
+                            char_cache[old] = new_id
+                    run.set('charPrIDRef', char_cache[old])
+                if 제목_문자열(p) != before:
+                    raise RuntimeError('붙임 글꼴 통일 중 문장 글이 바뀌어 중단했습니다.')
+                for lineseg in [x for x in p if 제목_xml이름(x) == 'linesegarray']:
+                    p.remove(lineseg)
+                count += 1
+        contents[name] = ET.tostring(sections[name], encoding='utf-8', xml_declaration=True)
+    contents['Contents/header.xml'] = ET.tostring(header, encoding='utf-8', xml_declaration=True)
+    _hwpx_안전_저장(contents, target)
+    return count
+
+
+def 글자서식_선행적용(원본문서경로, 별표위첨자=True, 붙임글꼴=True, 현재문서_기준=True, 변경알림=None):
+    """별표 위첨자·붙임 글꼴 통일을 한 번에 처리해 결과를 한 번만 다시 연다(둘 다 글자 모양만 바꾸는 단계)."""
+    return 제목붙임_선행적용(
+        원본문서경로, 현재문서_기준=현재문서_기준, 변경알림=변경알림,
+        처리목록=((별표위첨자, '별표 위첨자', 별표위첨자_hwpx_처리, 'asterisk.hwpx'),
+                  (붙임글꼴, '붙임 글꼴', 붙임글꼴_hwpx_처리, 'attach_font.hwpx')))
 
 
 def 붙임2종_현재문서_조사(원본문서경로):
@@ -11336,16 +11480,18 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
                 return False
             문서_변경됨 = 문서_변경됨 or bool(알림.get('changed'))
 
-    # 별표 위첨자: 문두기호 문장의 단어 뒤 * / **를 위첨자로 한다. 글자 모양만 바꾸는 문서 전체 변환이라
-    # 쪽 범위 작업에서는 건너뛴다.
-    if (표준서식_사용 and 작업_모드 in ('format', 'all') and 쪽범위_요청 is None
-            and stage_enabled(선택_세부작업, 'asterisk_superscript', 작업_모드)):
-        단계표시("별표 위첨자")
-        상태(f"{파일명} : 별표(*, **) 위첨자 적용")
-        알림 = {}
-        if 별표위첨자_선행적용(작업파일경로, 현재문서_기준=문서_변경됨, 변경알림=알림) is False:
-            return False
-        문서_변경됨 = 문서_변경됨 or bool(알림.get('changed'))
+    # 글자 서식 정리: 별표(*, **) 위첨자와 붙임~끝. 묶음의 글꼴·크기 통일. 글자 모양만 바꾸는 문서 전체 변환이라
+    # 한 번에 처리하고 쪽 범위 작업에서는 건너뛴다.
+    if 표준서식_사용 and 작업_모드 in ('format', 'all') and 쪽범위_요청 is None:
+        위첨자_켬 = stage_enabled(선택_세부작업, 'asterisk_superscript', 작업_모드)
+        붙임글꼴_켬 = stage_enabled(선택_세부작업, 'attachment_font', 작업_모드)
+        if 위첨자_켬 or 붙임글꼴_켬:
+            단계표시("별표 위첨자")
+            상태(f"{파일명} : 별표 위첨자·붙임 글꼴 정리")
+            알림 = {}
+            if 글자서식_선행적용(작업파일경로, 위첨자_켬, 붙임글꼴_켬, 문서_변경됨, 알림) is False:
+                return False
+            문서_변경됨 = 문서_변경됨 or bool(알림.get('changed'))
 
     if 표준서식_사용 and 작업_모드 in ('format', 'all'):
         if 쪽범위_요청 is not None:
