@@ -257,6 +257,8 @@ import win32con
 from defusedxml.ElementTree import fromstring as safe_xml_fromstring
 from docfit_core.style_hierarchy import DOT_MARKERS, analyze_hierarchy, display_role, hierarchy_summary, leading_marker, normalize_leading_dot, stored_role
 from docfit_core.style_unify import complement_ranges as 서식통일_범위분리, merge_adjacent as 서식통일_범위병합, parenthetical_spans as 서식통일_부연괄호, representative as 서식통일_최빈값
+from docfit_core.style_unify import dominant as 서식통일_우세값, hierarchy_levels as 서식통일_계층순서, looks_like_cover as 서식통일_표지판정, unify_marker as 서식통일_문두기호, vocabulary_fallback as 서식통일_문서어휘_대표
+from docfit_core.style_unify import attachment_heading as 서식통일_붙임제목, style_change_points as 서식통일_체계전환점
 from docfit_core.number_check import 숫자_대조
 from docfit_core import outline_ops
 from docfit_core.progress_guide import guide_key as 진행안내_키, guide_state as 진행안내_상태
@@ -3122,7 +3124,10 @@ def _문단_본문시작_오프셋(text):
                 return after
         return idx
     m = re.match(r"([^\n\r:：]{1,30}?)[ \t]*[:：][ \t]+(?=\S)", text[idx:])
-    if m and not re.search(r"[/\\]|https?$|^\d+$", m.group(1).strip(), re.I):
+    # 콜론 라벨은 '일    시', '교육내용'처럼 짧은 항목명이다. 공백을 뺀 12자를 넘으면
+    # 문장 속 콜론('… 지원 규모 : (’25)…')이라 라벨로 보면 둘째 줄이 문장 중간까지 밀린다.
+    if (m and len("".join(m.group(1).split())) <= 12
+            and not re.search(r"[/\\]|https?$|^\d+$", m.group(1).strip(), re.I)):
         return idx + m.end()
     return idx
 
@@ -3965,6 +3970,9 @@ _서식통일_문서대표프로필 = {}
 _서식통일_자간보류문단 = {}
 _서식통일_최종감사 = None
 _서식통일_대표값_검토콜백 = None
+# 원본 HWPX 분석 결과(경로·수정 시각·크기가 같을 때 재사용)와 마무리 단계용 위치 기준 텍스트.
+_서식통일_HWPX_캐시 = {}
+_서식통일_위치텍스트_보관 = {}
 
 
 def _서식통일_문두요소_범위(text):
@@ -4014,12 +4022,120 @@ def _서식통일_글자모양(pos):
             pass
 
 
+def _서식통일_공백제거(text):
+    return "".join(str(text or "").split())
+
+
+def _서식통일_HWPX_분석(문서경로):
+    """HWPX의 글자·문단 모양과 본문 직속 문단 목록을 한 번만 읽어 재사용한다.
+
+    서식통일은 문단마다 원본 HWPX를 참조한다. 문단마다 ZIP을 다시 풀면 큰 문서에서
+    조사만 수 분이 걸리므로, 경로·수정 시각·크기가 같으면 분석 결과를 재사용한다.
+    """
+    from zipfile import ZipFile
+    from defusedxml import ElementTree as ET
+    from docfit_core.style_inventory import _sections, _parse_fonts, _parse_char, _parse_para, _tag
+    path = Path(문서경로)
+    stat = path.stat()
+    key = (str(path), stat.st_mtime_ns, stat.st_size)
+    if _서식통일_HWPX_캐시.get("key") == key:
+        return _서식통일_HWPX_캐시["value"]
+    with ZipFile(path) as archive:
+        header = ET.fromstring(archive.read("Contents/header.xml"))
+        fonts = _parse_fonts(header)
+        chars = {item.get("id"): _parse_char(item, fonts)
+                 for item in header.iter() if _tag(item) == "charPr"}
+        paras = {item.get("id"): _parse_para(item)
+                 for item in header.iter() if _tag(item) == "paraPr"}
+        문단들 = []
+        for name in _sections(archive):
+            section = ET.fromstring(archive.read(name))
+            # GetPos()[1]는 본문 리스트의 문단 번호다. section.iter()를 쓰면
+            # 표 셀·글상자 안의 하위 문단까지 끼어들어 뒤쪽 문단 인덱스가 밀리고,
+            # 다른 쪽 문장의 서식을 읽거나 수정하게 된다. 본문 직속 문단만 센다.
+            문단들.extend(item for item in section if _tag(item) == "p")
+    value = {"chars": chars, "paras": paras, "paragraphs": 문단들}
+    _서식통일_HWPX_캐시.clear()
+    _서식통일_HWPX_캐시.update(key=key, value=value)
+    return value
+
+
+# 한/글 글자 위치에서 한 칸을 차지하는 문장 안 요소. 강제 줄바꿈도 한 칸이다
+# (실측: 줄바꿈 뒤 괄호 구간이 한 글자씩 밀려 적용됨). 줄바꿈은 공백으로 취급되는
+# U+2028로 두어 문장 끝 개행 제거·공백 비교에 영향을 주지 않는다.
+_서식통일_글자요소 = {"fwSpace": " ", "nbSpace": " ", "tab": " ", "lineBreak": " "}
+
+
+def _서식통일_run_text(run):
+    """(글자, 위치 확실 여부). 표·그림·필드처럼 글자 사이 개체가 있으면 위치를 확신할 수 없다."""
+    from docfit_core.style_inventory import _tag
+    parts, 확실 = [], True
+    for child in run:
+        if _tag(child) != "t":
+            확실 = False
+            continue
+        parts.append(child.text or "")
+        for sub in child:
+            기호 = _서식통일_글자요소.get(_tag(sub))
+            if 기호 is None:
+                확실 = False
+            else:
+                parts.append(기호)
+            parts.append(sub.tail or "")
+    return "".join(parts), 확실
+
+
+def _서식통일_XML문단(pos):
+    """본문 문단 위치의 (HWPX 분석, 문단 요소, HWPX 원문 텍스트, 위치 확실 여부). 없으면 None."""
+    문서경로 = _서식통일_현재_HWPX()
+    if 문서경로 is None or pos[0] != 0:
+        return None
+    try:
+        from docfit_core.style_inventory import _tag
+        분석 = _서식통일_HWPX_분석(문서경로)
+        para = 분석["paragraphs"][pos[1]]
+        조각 = [_서식통일_run_text(run) for run in para if _tag(run) == "run"]
+        return 분석, para, "".join(text for text, _ in 조각), all(확실 for _, 확실 in 조각)
+    except Exception:
+        return None
+
+
+def _서식통일_위치텍스트(pos, text):
+    """글자 위치와 맞는 문단 텍스트.
+
+    한/글 GetText는 고정폭·묶음 빈칸을 빼고 돌려준다(' ㅇ  본문' → ' ㅇ본문'). 그러면
+    문두기호를 찾지 못해 문단이 조사에서 빠지고, 글자 위치도 어긋난다. 공백을 뺀 글자가
+    같을 때만 HWPX 원문을 쓰고, 다르면(다른 문단을 읽은 경우) 한/글 텍스트를 쓴다.
+    """
+    found = _서식통일_XML문단(pos)
+    if found and _서식통일_공백제거(found[2]) == _서식통일_공백제거(text):
+        return found[2]
+    return text
+
+
+def _서식통일_음영값(value):
+    value = str(value or "").strip().upper()
+    return "없음" if value in ("", "NONE", "#FFFFFF") else value
+
+
 def 서식통일_표본(시작, text):
     """문두기호·라벨·본문의 기준 서식과 보호할 괄호 구간을 분리해 표본을 만든다."""
     body = (text or "").rstrip("\r\n")
-    문서경로 = _서식통일_현재_HWPX()
-    if 문서경로 is None or not body.strip():
+    found = _서식통일_XML문단(시작)
+    if found is None or not body.strip():
         return None
+    분석, para, 원문, 위치확실 = found
+    # 같은 번호의 HWPX 문단이 이 문단이 아니면(앞 단계에서 문단이 지워지는 등) 다른 문장의
+    # 서식을 읽게 되므로 건너뛴다. 글자 위치는 HWPX 원문 기준이다(한/글 텍스트는 고정폭
+    # 빈칸이 빠져 위치가 밀린다).
+    if _서식통일_공백제거(원문) != _서식통일_공백제거(body):
+        진단로그(f"[서식통일] HWPX 원문과 문단 글자가 달라 건너뜀: {body.strip()[:40]}")
+        return None
+    if not 위치확실:
+        진단로그(f"[서식통일] 문장 안에 표·그림 등 개체가 있어 글자 위치를 확신할 수 없어 건너뜀: "
+                 f"{body.strip()[:40]}")
+        return None
+    body = 원문.rstrip("\r\n")
 
     def utf16길이(value):
         return len(value.encode("utf-16-le")) // 2
@@ -4034,71 +4150,61 @@ def 서식통일_표본(시작, text):
     부연괄호16 = tuple(tuple(utf16길이(body[:i]) for i in span)
                       for span in 서식통일_부연괄호(body, 보호괄호, include_trailing=True))
     try:
-        from zipfile import ZipFile
-        from defusedxml import ElementTree as ET
-        from docfit_core.style_inventory import (
-            _sections, _parse_fonts, _parse_char, _parse_para, _tag, _run_text,
-        )
-        with ZipFile(문서경로) as archive:
-            header = ET.fromstring(archive.read("Contents/header.xml"))
-            fonts = _parse_fonts(header)
-            chars = {_item.get("id"): _parse_char(_item, fonts)
-                     for _item in header.iter() if _tag(_item) == "charPr"}
-            paras = {_item.get("id"): _parse_para(_item)
-                     for _item in header.iter() if _tag(_item) == "paraPr"}
-            section = ET.fromstring(archive.read(_sections(archive)[시작[0]]))
-            # GetPos()[1]는 본문 리스트의 문단 번호다. section.iter()를 쓰면
-            # 표 셀·글상자 안의 하위 문단까지 끼어들어 뒤쪽 문단 인덱스가 밀리고,
-            # 다른 쪽 문장의 서식을 읽거나 수정하게 된다. 본문 직속 문단만 센다.
-            본문문단 = [item for item in section if _tag(item) == "p"]
-            para = 본문문단[시작[1]]
-            문단모양 = paras.get(para.get("paraPrIDRef"), {})
-            cursor = 0
-            runs = []
-            text_colors = []
-            marker_bold_runs, label_bold_runs, aside_runs = [], [], []
-            장평빈도 = Counter()
-            for run in (item for item in para if _tag(item) == "run"):
-                run_text = _run_text(run)
-                run_length = len(run_text.encode("utf-16-le")) // 2
-                end_offset = cursor + run_length
-                start_selected = cursor
-                end_selected = min(end_offset, 본문끝)
-                char = chars.get(run.get("charPrIDRef"))
-                if char and run_text.strip() and end_selected > start_selected:
-                    text_colors.append(str(char.get("color", "")).upper())
-                    장평빈도[int(char.get("ratio", 100))] += end_selected - start_selected
-                    shape = (char["font"].get("hangul"), round(char["size_pt"] * 100))
-                    구간들 = [(left, right, False)
-                             for left, right in 서식통일_범위분리(
-                                 start_selected, end_selected, 부연괄호16)]
-                    구간들.extend((max(start_selected, left), min(end_selected, right), True)
-                                  for left, right in 부연괄호16
-                                  if right > start_selected and left < end_selected)
-                    # 괄호 안도 대표 글꼴 판정·적용 대상이다. 다만 크기는 별도
-                    # 규칙(-2pt)이므로 기본 크기 표본/적용에서는 제외한다.
-                    for left, right, is_aside in sorted(구간들):
+        from docfit_core.style_inventory import _tag
+        chars, paras = 분석["chars"], 분석["paras"]
+        문단모양 = paras.get(para.get("paraPrIDRef"), {})
+        cursor = 0
+        runs = []
+        text_colors = []
+        color_runs, shade_runs = [], []
+        marker_bold_runs, label_bold_runs, aside_runs = [], [], []
+        장평빈도 = Counter()
+        for run in (item for item in para if _tag(item) == "run"):
+            run_text = _서식통일_run_text(run)[0]
+            run_length = len(run_text.encode("utf-16-le")) // 2
+            end_offset = cursor + run_length
+            start_selected = cursor
+            end_selected = min(end_offset, 본문끝)
+            char = chars.get(run.get("charPrIDRef"))
+            if char and run_text.strip() and end_selected > start_selected:
+                text_colors.append(str(char.get("color", "")).upper())
+                구간 = ((시작[0], 시작[1], 시작[2] + start_selected),
+                        (시작[0], 시작[1], 시작[2] + end_selected))
+                글자수 = len(run_text.strip()) or 1
+                color_runs.append(구간 + (str(char.get("color", "")).upper(), 글자수))
+                shade_runs.append(구간 + (_서식통일_음영값(char.get("shade")), 글자수))
+                장평빈도[int(char.get("ratio", 100))] += end_selected - start_selected
+                shape = (char["font"].get("hangul"), round(char["size_pt"] * 100))
+                구간들 = [(left, right, False)
+                         for left, right in 서식통일_범위분리(
+                             start_selected, end_selected, 부연괄호16)]
+                구간들.extend((max(start_selected, left), min(end_selected, right), True)
+                              for left, right in 부연괄호16
+                              if right > start_selected and left < end_selected)
+                # 괄호 안도 대표 글꼴 판정·적용 대상이다. 다만 크기는 별도
+                # 규칙(-2pt)이므로 기본 크기 표본/적용에서는 제외한다.
+                for left, right, is_aside in sorted(구간들):
+                    if right > left:
+                        run_start = (시작[0], 시작[1], 시작[2] + left)
+                        run_end = (시작[0], 시작[1], 시작[2] + right)
+                        runs.append((run_start, run_end, shape, max(1, right - left), is_aside))
+                for span, bold_runs in ((marker_span16, marker_bold_runs),
+                                        (label_span16, label_bold_runs)):
+                    if span:
+                        left, right = max(start_selected, span[0]), min(end_selected, span[1])
                         if right > left:
-                            run_start = (시작[0], 시작[1], 시작[2] + left)
-                            run_end = (시작[0], 시작[1], 시작[2] + right)
-                            runs.append((run_start, run_end, shape, max(1, right - left), is_aside))
-                    for span, bold_runs in ((marker_span16, marker_bold_runs),
-                                            (label_span16, label_bold_runs)):
-                        if span:
-                            left, right = max(start_selected, span[0]), min(end_selected, span[1])
-                            if right > left:
-                                bold_runs.append(((시작[0], 시작[1], 시작[2] + left),
-                                                  (시작[0], 시작[1], 시작[2] + right),
-                                                  bool(char.get("bold")), right - left))
-                    for left, right in 부연괄호16:
-                        left, right = max(start_selected, left), min(end_selected, right)
-                        if right > left:
-                            aside_runs.append(((시작[0], 시작[1], 시작[2] + left),
-                                               (시작[0], 시작[1], 시작[2] + right),
-                                               round(char["size_pt"] * 100), right - left))
-                cursor = end_offset
-            if cursor < 본문끝:
-                return None
+                            bold_runs.append(((시작[0], 시작[1], 시작[2] + left),
+                                              (시작[0], 시작[1], 시작[2] + right),
+                                              bool(char.get("bold")), right - left))
+                for left, right in 부연괄호16:
+                    left, right = max(start_selected, left), min(end_selected, right)
+                    if right > left:
+                        aside_runs.append(((시작[0], 시작[1], 시작[2] + left),
+                                           (시작[0], 시작[1], 시작[2] + right),
+                                           round(char["size_pt"] * 100), right - left))
+            cursor = end_offset
+        if cursor < 본문끝:
+            return None
     except Exception as exc:
         진단로그(f"[서식통일] HWPX 문자모양 분석 실패 — 안전을 위해 해당 문단 건너뜀: {exc}")
         return None
@@ -4142,6 +4248,9 @@ def 서식통일_표본(시작, text):
         # 폭은 문두 라벨마다 다르므로 대표값은 '적용/미적용'으로 집계하고,
         # 적용 단계에서는 한/글 Shift+Tab으로 각 문장의 폭을 실측한다.
         "hanging_indent": int(문단모양.get("indent") or 0) < -20,
+        # 한/글이 저장한 줄 배치(lineseg) 수. 내어쓰기는 둘째 줄이 있어야 드러난다.
+        "line_count": sum(1 for item in para if _tag(item) == "linesegarray"
+                          for _ in item) or 1,
         # 문단 전체에 쓰이는 장평·문단 위 간격도 문서 대표값과 비교한다. 줄 간격은 쪽 배치를
         # 위해 구역별로 일부러 조정하는 레이아웃 값이라 서식통일 비교 대상에서 뺀다.
         "ratio": 장평빈도.most_common(1)[0][0] if 장평빈도 else None,
@@ -4152,14 +4261,22 @@ def 서식통일_표본(시작, text):
         "label_bold_runs": tuple(label_bold_runs),
         "parenthetical_size_runs": tuple(aside_runs),
         "red_marked": bool(text_colors) and all(color == "#FF0000" for color in text_colors),
+        # 글자색·음영은 문장 대부분(60% 이상)이 쓰는 값을 문장 값으로 본다. 한두 낱말의
+        # 강조색은 문장 값을 바꾸지 못하므로 서식통일이 건드리지 않는다.
+        "color": 서식통일_우세값((run[2], run[3]) for run in color_runs),
+        "shade": 서식통일_우세값((run[2], run[3]) for run in shade_runs),
+        "color_runs": tuple(color_runs),
+        "shade_runs": tuple(shade_runs),
+        "position_text": body,
     })
     return 표본모양, 시작, (시작[0], 시작[1], 시작[2] + 본문끝)
 
 
 def _서식통일_그룹키(marker, text, pos):
-    """같은 문두기호·보고서 계층에 속한 문장끼리 대표 서식을 비교한다."""
-    role = 보고서_문단역할(text) or leading_marker(text)[1] or "미분류"
-    return marker, role, "문서 공통"
+    """같은 계층(번호 계열을 묶은 문두기호·보고서 역할)의 문장끼리 대표 서식을 비교한다."""
+    기호, 역할, 원래기호 = 서식통일_문두기호(text)
+    role = 표준서식_설정.get("문두기호_역할", {}).get(원래기호) or 역할 or 보고서_문단역할(text) or "미분류"
+    return 기호 or marker, role, "문서 공통"
 
 
 def _서식통일_현재_HWPX():
@@ -4259,9 +4376,15 @@ def 서식통일_대표(모양들):
          if len(모양) > 3 and isinstance(모양[3], dict) else None),
         ("label_bold", lambda 모양: 모양[3].get("label_bold")
          if len(모양) > 3 and isinstance(모양[3], dict) else None),
+        # 내어쓰기 대표값은 여러 줄 문장으로만 정한다(한 줄 항목의 내어쓰기는 보이지 않는다).
         ("hanging_indent", lambda 모양: 모양[3].get("hanging_indent")
-         if len(모양) > 3 and isinstance(모양[3], dict) else None),
+         if len(모양) > 3 and isinstance(모양[3], dict) and 모양[3].get("line_count", 2) > 1
+         else None),
         ("ratio", lambda 모양: 모양[3].get("ratio")
+         if len(모양) > 3 and isinstance(모양[3], dict) else None),
+        ("color", lambda 모양: 모양[3].get("color")
+         if len(모양) > 3 and isinstance(모양[3], dict) else None),
+        ("shade", lambda 모양: 모양[3].get("shade")
          if len(모양) > 3 and isinstance(모양[3], dict) else None),
     ):
         값들 = [추출(모양) for 모양 in 모양들 if 모양]
@@ -4272,6 +4395,117 @@ def 서식통일_대표(모양들):
             값들, minimum=최소표본, ratio=서식통일_최소비율)
         결과[항목] = (대표값, 빈도 if 대표값 is not None else 0)
     return 결과
+
+
+def _서식통일_표지인가(첫쪽_문단번호, 본문크기):
+    """1쪽이 표지인지 HWPX로 판정한다(표 안 제목 글자까지 포함, 읽기 전용).
+
+    본문 대표 크기보다 확연히 큰 가운데 정렬 글자가 있고 본문형 문장(ㅇ·- 등)이
+    거의 없으면 표지로 보고 서식통일에서 뺀다.
+    """
+    문서경로 = _서식통일_현재_HWPX()
+    if 문서경로 is None or not 첫쪽_문단번호 or not 본문크기:
+        return False
+    try:
+        from docfit_core.style_inventory import _tag, _run_text
+        분석 = _서식통일_HWPX_분석(문서경로)
+        항목들 = []
+        for 번호 in 첫쪽_문단번호:
+            문단 = 분석["paragraphs"][번호]
+            for p in (item for item in 문단.iter() if _tag(item) == "p"):
+                글자 = "".join(_run_text(run) for run in p if _tag(run) == "run")
+                if not 글자.strip():
+                    continue
+                크기들 = [round(분석["chars"][run.get("charPrIDRef")]["size_pt"] * 100)
+                          for run in p if _tag(run) == "run" and _run_text(run).strip()
+                          and run.get("charPrIDRef") in 분석["chars"]]
+                크기 = max(크기들, default=0)
+                가운데 = 분석["paras"].get(p.get("paraPrIDRef"), {}).get("align") == "CENTER"
+                본문형 = (서식통일_문두기호(글자)[1] in ("본문", "내용", "부연설명")
+                          and 크기 <= 본문크기 * 1.15)
+                항목들.append((글자, 크기, 가운데, 본문형))
+        return 서식통일_표지판정(항목들, 본문크기)
+    except Exception as exc:
+        진단로그(f"[서식통일] 표지 판정 실패 — 1쪽도 일반 쪽으로 처리: {exc}")
+        return False
+
+
+def _서식통일_제목표_표본(제외문단=()):
+    """1칸 표(제목 상자) 안 문두기호 문장의 (본문 문단 번호, 그룹키, 표본 모양) 목록.
+
+    장·절 제목은 흔히 1칸 표 안에 있고, 같은 계층 제목이 본문에 표 없이 한두 번
+    나오기도 한다. 본문 표본이 부족한 계층의 대표값을 정할 때만 읽기 전용으로 참고한다.
+    """
+    문서경로 = _서식통일_현재_HWPX()
+    if 문서경로 is None:
+        return []
+    try:
+        from docfit_core.style_inventory import _tag, _run_text
+        분석 = _서식통일_HWPX_분석(문서경로)
+    except Exception:
+        return []
+    결과 = []
+    for 번호, 문단 in enumerate(분석["paragraphs"]):
+        if 번호 in 제외문단:
+            continue
+        for 표 in (item for item in 문단.iter() if _tag(item) == "tbl"):
+            if 표.get("rowCnt") != "1" or 표.get("colCnt") != "1":
+                continue
+            for p in (item for item in 표.iter() if _tag(item) == "p"):
+                글자 = "".join(_run_text(run) for run in p if _tag(run) == "run")
+                if not 서식통일_문두기호(글자)[0]:
+                    continue
+                값들 = []
+                for run in (item for item in p if _tag(item) == "run"):
+                    char = 분석["chars"].get(run.get("charPrIDRef"))
+                    길이 = len(_run_text(run).strip())
+                    if char and 길이:
+                        값들.append((char["font"].get("hangul"), round(char["size_pt"] * 100),
+                                    str(char.get("color", "")).upper(),
+                                    _서식통일_음영값(char.get("shade")), 길이))
+                if not 값들:
+                    continue
+                모양 = (서식통일_우세값((v[0], v[4]) for v in 값들),
+                        서식통일_우세값((v[1], v[4]) for v in 값들), (), {
+                            "color": 서식통일_우세값((v[2], v[4]) for v in 값들),
+                            "shade": 서식통일_우세값((v[3], v[4]) for v in 값들),
+                            "table_heading": True})
+                결과.append((번호, _서식통일_그룹키("", 글자, None), 모양))
+    return 결과
+
+
+def _서식통일_체계경계(표본, 위치텍스트):
+    """서식 체계가 바뀌는 (본문 문단 번호, 영역 이름) 목록.
+
+    붙임·별첨 제목(본문 문단이나 제목 표 안)은 구조 경계로, 여러 계층이 같은 곳에서 함께
+    서식을 바꾸는 큰 전환점은 서식 경계로 본다. 작은 구간의 다른 서식은 경계가 아니다.
+    """
+    경계 = {}
+    문서경로 = _서식통일_현재_HWPX()
+    if 문서경로 is not None:
+        try:
+            from docfit_core.style_inventory import _tag
+            분석 = _서식통일_HWPX_분석(문서경로)
+            for 번호, 문단 in enumerate(분석["paragraphs"]):
+                for p in (item for item in 문단.iter() if _tag(item) == "p"):
+                    글자 = "".join(_서식통일_run_text(run)[0] for run in p if _tag(run) == "run")
+                    if 글자.strip():
+                        이름 = 서식통일_붙임제목(글자)
+                        if 이름 and 번호 > 0:
+                            경계[번호] = 이름
+                        break
+        except Exception as exc:
+            진단로그(f"[서식통일] 붙임 구역 판별 실패 — 문서 전체를 한 체계로 봄: {exc}")
+    순서열 = defaultdict(list)
+    for marker, 항목들 in 표본.items():
+        for 모양, 시작, _, text in 항목들:
+            키 = _서식통일_그룹키(marker, 위치텍스트.get(tuple(시작), text), 시작)[:2]
+            값 = (모양[0], 모양[1]) if 모양[0] is not None and 모양[1] is not None else None
+            순서열[키].append((시작[1], 값))
+    for 위치 in 서식통일_체계전환점(순서열):
+        if not any(abs(위치 - 기존) <= 5 for 기존 in 경계):
+            경계[위치] = f"서식 전환 {len(경계) + 1}"
+    return sorted(경계.items())
 
 
 def _서식통일_참고표_이웃대표_보완(그룹별_표본, 프로필):
@@ -4353,16 +4587,18 @@ def _서식통일_최종결과_사용자확인(결과):
 
 
 def _서식통일_미확정_항목(대표, text):
-    """실제로 존재하는 요소의 대표값만 요구한다(라벨 없는 문장 등 제외)."""
+    """실제로 존재하는 요소의 대표값만 요구한다(라벨 없는 문장 등 제외).
+
+    내어쓰기는 문장 서식이 아니라 줄 배치 값이다. 한 줄 항목은 내어쓰기가 보이지 않아
+    문서마다 제각각이므로(실측: '-' 한 줄 항목 57:39), 대표값이 없다고 빨간 표시하지 않고
+    내어쓰기만 건드리지 않는다.
+    """
     marker, label = _서식통일_문두요소_범위(text)
     fields = ["font", "size"]
     if marker:
         fields.append("marker_bold")
     if label:
         fields.append("label_bold")
-    offset = 문단_내어쓰기_기준_오프셋(text)
-    if offset is not None and offset > 0:
-        fields.append("hanging_indent")
     return [field for field in fields if 대표.get(field, (None, 0))[0] is None]
 
 
@@ -4486,6 +4722,14 @@ def _서식통일_문단서식_적용(item):
             문자모양_적용_현재선택(장평=item["ratio_fix"], 자간_유지=True)
         finally:
             hwp_run("Cancel")
+    for ranges, 필드, 값 in ((item.get("color_runs", ()), "TextColor", item.get("color")),
+                            (item.get("shade_runs", ()), "ShadeColor", item.get("shade"))):
+        for start, end in ranges:
+            try:
+                단어모드_범위선택(start, end)
+                _서식통일_색_적용(필드, 값)
+            finally:
+                hwp_run("Cancel")
     예시 = item.get("para_examples") or {}
     if 예시:
         # 문서 안에서 대표값을 가진 실제 문단의 값을 읽어 그대로 복사한다(단위 변환 없음).
@@ -4511,13 +4755,31 @@ def _서식통일_문단서식_적용(item):
                 raise RuntimeError("대표 문단모양 복사 실패")
 
 
+def _서식통일_색값(value):
+    """'#RRGGBB'는 한/글 색 값으로, '없음'(음영 없음)은 0xFFFFFFFF로 바꾼다."""
+    text = str(value or "").strip().lstrip("#")
+    if len(text) != 6:
+        return 0xFFFFFFFF
+    return hwp.RGBColor(int(text[0:2], 16), int(text[2:4], 16), int(text[4:6], 16))
+
+
+def _서식통일_색_적용(필드, 값):
+    """선택 영역의 글자색(TextColor) 또는 음영색(ShadeColor)만 바꾼다."""
+    action = hwp.CreateAction("CharShape")
+    params = action.CreateSet()
+    params.SetItem(필드, _서식통일_색값(값))
+    if action.Execute(params) is False:
+        raise RuntimeError(f"서식통일 {필드} 적용 실패")
+
+
 def _서식통일_문단내어쓰기_적용(item):
     """해당 문단의 자간 처리가 끝난 실제 글자 폭으로 내어쓰기를 확정한다."""
     expected = item["expected_hanging"]
-    if expected is None or 문단_내어쓰기_기준_오프셋(item["text"]) is None:
+    원문 = item.get("position_text") or item["text"]
+    if expected is None or 문단_내어쓰기_기준_오프셋(원문) is None:
         return
     if expected:
-        if not 문단_내어쓰기_적용(item["start"], item["text"]):
+        if not 문단_내어쓰기_적용(item["start"], 원문):
             검수_문제_기록(현재_처리파일, "[서식통일 내어쓰기 미적용] " + item["text"].strip())
     elif item["hanging_mismatch"]:
         if hwp.SetPos(*item["start"]) is False:
@@ -4614,11 +4876,22 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
         단계표시("서식통일 조사")
     로그(f"서식통일 시작: 수정 범위 {범위표시}, {기준설명}, {작업설명}, "
          "표준 문장은 무변경, 괄호(문두 라벨 제외)는 본문 크기 기준 -2pt, 자간 초기화 없음")
+    if (not 검증만 and (고정_프로필_재적용 or 작업_모드 != "unify")
+            and _서식통일_현재_HWPX() is not None):
+        # 앞선 단계(공백 정리·표준 서식 등)가 문서를 바꿨으면 디스크의 HWPX와 문단 번호·글자
+        # 위치가 다르다. 조사 전에 현재 상태를 스냅숏으로 저장해 원문·서식을 정확히 읽는다.
+        try:
+            _제목_임시hwpx_저장(Path(tempfile.mkdtemp(prefix="hwp_format_first_")) / "서식통일.hwpx")
+        except Exception as exc:
+            로그(f"[서식통일] 현재 상태 스냅숏 저장 실패 — 원문이 다른 문단은 건너뜀: {exc}")
     표본 = {}
     # 쪽 범위는 수정 대상을 제한하지만, 대표서식은 같은 문서의 정상 문장까지
     # 포함해 산출해야 한다. 선택 쪽에서만 표본을 모으면 그 쪽의 이상 서식이
     # 대표값으로 채택되어 검출이 0건이 되는 문제가 생긴다.
     문맥 = {}        # 문단 시작 위치 → 바로 앞 문장의 문두기호(문단 위 간격 기준)
+    위치텍스트 = {}  # 문단 시작 위치 → 글자 위치와 맞는 원문(고정폭 빈칸 포함)
+    첫쪽문단 = []    # 표지 판정용 1쪽 본문 문단 번호
+    첫쪽끝 = False
     직전기호 = None
     hwp_run("MoveDocBegin")
     while True:
@@ -4627,32 +4900,80 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
         hwp_run("MoveParaBegin")
         pos = hwp.GetPos()
         if pos[0] == 0:
+            if not 첫쪽끝:
+                if 현재_페이지번호() == 1:
+                    첫쪽문단.append(pos[1])
+                else:
+                    첫쪽끝 = True
             text = 현재문단_텍스트()
-            if text.strip() and 보고서_문단역할(text):
-                marker, _ = leading_marker(text)
-                결과 = 서식통일_표본(pos, text) if marker else None
+            본문 = _서식통일_위치텍스트(pos, text) if text.strip() else text
+            # 번호 계열('1.' '2.' …)은 한 그룹으로 묶고, 고정폭 빈칸 뒤 문두기호도 인식한다.
+            marker = 서식통일_문두기호(본문)[0] if 본문.strip() else ""
+            if marker:
+                결과 = 서식통일_표본(pos, text)
                 if 결과:
                     표본.setdefault(marker, []).append(결과 + (text,))
                     문맥[tuple(pos)] = 직전기호
-                직전기호 = marker or None
+                    위치텍스트[tuple(pos)] = 본문
+                직전기호 = marker
             elif text.strip():
                 직전기호 = None
             hwp.SetPos(*pos)
         if not 다음_문단으로_진행():
             break
+    # 1쪽이 표지(본문보다 확연히 큰 가운데 정렬 제목)이면 표본·수정 대상에서 뺀다.
+    본문크기 = 서식통일_우세값(((모양[1], 1) for 항목들 in 표본.values()
+                             for 모양, *_ in 항목들 if 모양[1]), ratio=0)
+    표지문단 = set()
+    if 첫쪽끝 and 첫쪽문단 and _서식통일_표지인가(첫쪽문단, 본문크기):
+        표지문단 = set(첫쪽문단)
+        제외수 = 0
+        for marker in list(표본):
+            남김 = [항목 for 항목 in 표본[marker] if 항목[1][1] not in 표지문단]
+            제외수 += len(표본[marker]) - len(남김)
+            if 남김:
+                표본[marker] = 남김
+            else:
+                del 표본[marker]
+        로그(f"[서식통일] 1쪽을 표지로 판단해 제외: 본문({본문크기 / 100:g}pt)보다 큰 가운데 정렬 제목, "
+             f"문두기호 문장 {제외수}개 제외")
     교정수 = 0
     확인문단수 = 0
     불일치목록 = []
     판정불가그룹 = []
     미확정문단 = []
     그룹별_표본 = {}
+    # 한 문서에 서식 체계가 둘 이상일 수 있다(본문과 붙임 등). 붙임·별첨 제목과, 여러 계층이
+    # 함께 서식을 바꾸는 큰 전환점에서 영역을 나누고 영역마다 대표 서식을 따로 정한다.
+    경계 = _서식통일_체계경계(표본, 위치텍스트)
+
+    def 영역키(번호):
+        이름 = "본문" if 경계 else "문서 공통"
+        for 위치, 경계이름 in 경계:
+            if 번호 >= 위치:
+                이름 = 경계이름
+        return 이름
+
     for marker, 항목들 in 표본.items():
         for 항목 in 항목들:
             모양, 시작, 끝, text = 항목
-            그룹키 = _서식통일_그룹키(marker, text, 시작)
+            그룹키 = (_서식통일_그룹키(marker, 위치텍스트.get(tuple(시작), text), 시작)[:2]
+                      + (영역키(시작[1]),))
             그룹별_표본.setdefault(그룹키, []).append(항목)
+    제목표_표본 = [(번호, 키[:2] + (영역키(번호),), 모양)
+                   for 번호, 키, 모양 in _서식통일_제목표_표본(표지문단)]
+    if 경계:
+        로그(f"[서식통일] 서식 체계 {len(경계) + 1}개로 나눠 영역마다 대표 서식을 정함: 본문 / "
+             + " / ".join(f"{이름}(문단 {위치 + 1}부터)" for 위치, 이름 in 경계))
+    # 문서 체계: 본문 문장과 제목 표의 문두기호를 문서 순서로 늘어놓아 바깥 → 안쪽 계층을 추정한다.
+    순서 = sorted([(시작[1], 그룹키[:2]) for 그룹키, 항목들 in 그룹별_표본.items()
+                  for _, 시작, _, _ in 항목들]
+                 + [(번호, 그룹키[:2]) for 번호, 그룹키, _ in 제목표_표본])
+    체계 = 서식통일_계층순서([그룹키 for _, 그룹키 in 순서])
+    로그("[서식통일] 문서 체계(바깥 → 안쪽): "
+         + " > ".join(f"{i}단계 {키[0]}({키[1]})" for i, 키 in enumerate(체계, 1)))
     로그(f"[서식통일] 1/5 표본 조사 완료: {sum(map(len, 그룹별_표본.values()))}개 문장, "
-         f"{len(그룹별_표본)}개 그룹 — 문서 변경 0건(읽기 전용)")
+         f"{len(그룹별_표본)}개 그룹, 제목 표 {len(제목표_표본)}개 — 문서 변경 0건(읽기 전용)")
     # 괄호 크기 규칙도 문서 관행을 따른다. 괄호를 본문보다 작게 쓰는 문서만 그 차이를 적용하고,
     # 본문과 같은 크기로 쓰는 문서는 괄호도 본문 크기로 본다.
     if not 고정_프로필_재적용:
@@ -4669,12 +4990,34 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
             로그(f"[서식통일] 괄호 크기 관행: 본문보다 {서식통일_괄호크기차이 / 100:g}pt 작게")
     # 프로필은 모든 표본 수집이 끝난 뒤 한 번에 확정한다. 이 구간에는
     # COM 서식 쓰기 호출이 없어 문서의 현재 서식을 조사값으로 보존한다.
+    보충표본 = {}
     for 그룹키, 항목들 in 그룹별_표본.items():
+        # 본문 표본이 적은 계층만 같은 기호의 제목 표 문장을 함께 본다.
+        if len(항목들) < 서식통일_최소문단수:
+            보충 = [모양 for _, 키, 모양 in 제목표_표본 if 키 == 그룹키]
+            if 보충:
+                보충표본[그룹키] = 보충
+                로그(f"[서식통일] '{그룹키[0]}' 본문 표본 {len(항목들)}개 — 같은 계층 제목 표 "
+                     f"{len(보충)}개를 대표 서식 조사에 참고")
         if 고정_프로필_재적용:
             대표 = _서식통일_문서대표프로필.get(그룹키)
         else:
-            대표 = 서식통일_대표([모양 for 모양, *_ in 항목들])
+            대표 = 서식통일_대표([모양 for 모양, *_ in 항목들] + 보충표본.get(그룹키, []))
             _서식통일_문서대표프로필[그룹키] = 대표
+    전체수 = Counter()   # 영역을 합친 같은 계층 문장 수(비교 기준이 있는지 판단)
+    for 그룹키, 항목들 in 그룹별_표본.items():
+        전체수[그룹키[:2]] += len(항목들) + len(보충표본.get(그룹키, []))
+    if 경계 and not 고정_프로필_재적용:
+        # 영역 안 표본이 부족해 정하지 못한 값은 문서 전체의 같은 계층 대표값을 따른다.
+        전체모양 = defaultdict(list)
+        for 그룹키, 항목들 in 그룹별_표본.items():
+            전체모양[그룹키[:2]].extend([모양 for 모양, *_ in 항목들] + 보충표본.get(그룹키, []))
+        전체대표 = {키: 서식통일_대표(모양들) for 키, 모양들 in 전체모양.items()}
+        for 그룹키 in 그룹별_표본:
+            대표값, 기준 = _서식통일_문서대표프로필.get(그룹키), 전체대표.get(그룹키[:2])
+            for 필드, 값 in (기준 or {}).items():
+                if 대표값 is not None and 대표값.get(필드, (None, 0))[0] is None and 값[0] is not None:
+                    대표값[필드] = 값
     if not 고정_프로필_재적용:
         _서식통일_참고표_이웃대표_보완(그룹별_표본, _서식통일_문서대표프로필)
         # 괄호 라벨 굵기는 문서 전체의 관행이다. 그룹 안에 라벨 문장이 적어 기준이 없으면
@@ -4691,6 +5034,30 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
                     if 대표값 and 대표값.get("label_bold", (None, 0))[0] is None:
                         대표값["label_bold"] = (관행값, 관행수)
                         로그(f"[서식통일] '{그룹키[0]}' 괄호 라벨 굵기는 문서 전체 관행({관행값})을 따름")
+        # 엄격한 다수(60%)에 못 미친 글꼴·크기·색은, 최다값이 문서의 다른 계층도 대표로 쓰는
+        # 값이면 채택한다(예: ※ 글꼴이 6:4:2로 갈렸지만 최다 글꼴이 ㅇ 대표 글꼴과 같은 경우).
+        필드위치 = {"font": lambda 모양: 모양[0], "size": lambda 모양: 모양[1],
+                    "color": lambda 모양: 모양[3].get("color") if len(모양) > 3 else None,
+                    "shade": lambda 모양: 모양[3].get("shade") if len(모양) > 3 else None}
+        어휘 = defaultdict(set)
+        for 대표값 in _서식통일_문서대표프로필.values():
+            for 필드 in 필드위치:
+                값 = (대표값 or {}).get(필드, (None, 0))[0]
+                if 값 is not None:
+                    어휘[필드].add(값)
+        for 그룹키, 항목들 in 그룹별_표본.items():
+            대표값 = _서식통일_문서대표프로필.get(그룹키)
+            if not 대표값:
+                continue
+            모양들 = [모양 for 모양, *_ in 항목들] + 보충표본.get(그룹키, [])
+            for 필드, 추출 in 필드위치.items():
+                if 대표값.get(필드, (None, 0))[0] is not None:
+                    continue
+                값 = 서식통일_문서어휘_대표([추출(모양) for 모양 in 모양들], 어휘[필드])
+                if 값 is not None:
+                    대표값[필드] = (값, sum(1 for 모양 in 모양들 if 추출(모양) == 값))
+                    로그(f"[서식통일] '{그룹키[0]}' {필드} 대표값 보조 판정: {값} "
+                         f"(최다값이 문서의 다른 계층 대표값과 같음)")
     # 문단 위 간격은 앞 문장 기호에 따라 달라지므로(□ 다음 ㅇ, ㅇ 다음 ㅇ 등) 문맥별 대표값을
     # 구하고, 대표값을 가진 실제 문단을 예시로 삼아 그 값을 그대로 복사한다.
     위간격모음 = defaultdict(list)
@@ -4726,8 +5093,15 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
                 continue
         else:
             대표 = _서식통일_문서대표프로필.get(그룹키)
+        if 전체수[그룹키[:2]] < 2:
+            # 같은 계층 문장이 하나뿐이면 '다른 문장'을 가릴 기준이 없다. 고치거나 표시하지 않는다.
+            진단로그(f"[서식통일] '{marker}/{role}' 문장이 하나뿐이라 비교 대상이 없어 건너뜀: "
+                     f"{항목들[0][3].strip()[:60]}")
+            continue
         글꼴, 글꼴수 = 대표["font"]
         크기, 크기수 = 대표["size"]
+        색표준 = 대표.get("color", (None, 0))[0]
+        음영표준 = 대표.get("shade", (None, 0))[0]
         문두굵게, 문두굵게수 = 대표["marker_bold"]
         라벨굵게, 라벨굵게수 = 대표["label_bold"]
         내어쓰기표준, 내어쓰기수 = 대표.get("hanging_indent", (None, 0))
@@ -4736,7 +5110,9 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
             # 쪽 범위는 대표값 표본에 적용하지 않고 실제 수정 단계에서만 적용한다.
             if not 쪽범위_안인가(시작):
                 continue
-            미판정필드 = _서식통일_미확정_항목(대표, text)
+            # 한/글 텍스트는 문장을 다시 찾는 열쇠로만 쓰고, 기호·위치 판정은 원문으로 한다.
+            원문 = 위치텍스트.get(tuple(시작), text)
+            미판정필드 = _서식통일_미확정_항목(대표, 원문)
             그룹미판정.update(미판정필드)
             if 미판정필드:
                 미확정문단.append({"text": text.strip()[:100], "fields": 미판정필드,
@@ -4748,26 +5124,47 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
             문두굵기구간 = _서식통일_굵기_불일치_구간(모양, "marker", 문두굵게)
             라벨굵기구간 = _서식통일_굵기_불일치_구간(모양, "label", 라벨굵게)
             괄호크기구간, 괄호목표크기 = _서식통일_부연괄호_불일치_구간(모양, 크기)
-            paragraph_offset = 문단_내어쓰기_기준_오프셋(text)
+            paragraph_offset = 문단_내어쓰기_기준_오프셋(원문)
             문단시작 = 시작
-            현재내어쓰기 = (_서식통일_내어쓰기_상태(문단시작, text)
-                            if paragraph_offset is not None else None)
-            # 기준 미정 문단은 내어쓰기를 일부러 건너뛰고 빨간 표시로 보고하므로 불일치로 세지 않는다.
-            내어쓰기_불일치 = (내어쓰기표준 is not None and 현재내어쓰기 is not None
-                               and 내어쓰기표준 != 현재내어쓰기 and not 미판정필드)
             부가 = 모양[3] if len(모양) > 3 and isinstance(모양[3], dict) else {}
+            # 내어쓰기 상태는 조사한 HWPX 문단 모양에 이미 있다. 문장마다 한/글에 다시 묻지 않는다.
+            if paragraph_offset is None or paragraph_offset <= 0:
+                현재내어쓰기 = None
+            elif "hanging_indent" in 부가:
+                현재내어쓰기 = bool(부가["hanging_indent"])
+            else:
+                현재내어쓰기 = _서식통일_내어쓰기_상태(문단시작, 원문)
+            # 기준 미정 문단은 내어쓰기를 일부러 건너뛰고 빨간 표시로 보고하므로 불일치로 세지 않는다.
+            # 한 줄 문장은 내어쓰기가 보이지 않으므로 비교하지 않는다(서식을 고친 뒤 줄이 늘면
+            # 마무리 단계가 대표값대로 내어쓴다).
+            내어쓰기_불일치 = (내어쓰기표준 is not None and 현재내어쓰기 is not None
+                               and 부가.get("line_count", 2) > 1
+                               and 내어쓰기표준 != 현재내어쓰기 and not 미판정필드)
             장평표준 = 대표.get("ratio", (None, 0))[0]
             장평_불일치 = 장평표준 is not None and 부가.get("ratio") not in (None, 장평표준)
             위간격 = 위간격대표.get((그룹키, 문맥.get(tuple(시작))))
             위간격_불일치 = 위간격 is not None and 부가.get("prev_spacing") != 위간격[0]
+            # 글자색·음영: 문장 값이 대표값과 다르면 그 값을 쓴 구간만 대표값으로 바꾼다
+            # (다른 색으로 강조한 낱말은 그대로 둔다). 대표값 미확정 문장은 빨간 표시가 우선이다.
+            색구간, 음영구간 = [], []
+            if not 미판정필드:
+                문장색 = 부가.get("color")
+                if 색표준 is not None and 문장색 not in (None, 색표준):
+                    색구간 = list(서식통일_범위병합(
+                        (run[0], run[1]) for run in 부가.get("color_runs", ()) if run[2] == 문장색))
+                문장음영 = 부가.get("shade")
+                if 음영표준 is not None and 문장음영 not in (None, 음영표준):
+                    음영구간 = list(서식통일_범위병합(
+                        (run[0], run[1]) for run in 부가.get("shade_runs", ()) if run[2] == 문장음영))
             문단모양_예시 = {}
             if 위간격_불일치:
                 문단모양_예시["prev"] = 위간격[1]
             if 내어쓰기_불일치 and 내어쓰기표준:
                 # 한 줄짜리 문장은 실측 내어쓰기가 되지 않으므로, 같은 그룹에서 라벨(본문 앞부분)이
                 # 같고 내어쓰기가 된 문장의 들여쓰기 값을 예시로 복사한다.
-                앞부분 = text.lstrip()[:max(0, paragraph_offset - (len(text) - len(text.lstrip())))]
+                앞부분 = 원문.lstrip()[:max(0, paragraph_offset - (len(원문) - len(원문.lstrip())))]
                 for 예시모양, 예시시작, _, 예시text in 항목들:
+                    예시text = 위치텍스트.get(tuple(예시시작), 예시text)
                     예시offset = 문단_내어쓰기_기준_오프셋(예시text)
                     if (예시시작 != 시작 and 예시offset is not None
                             and 예시모양[3].get("hanging_indent")
@@ -4775,9 +5172,13 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
                         문단모양_예시["indent"] = 예시시작
                         break
             현재불일치 = (불일치구간 or 문두굵기구간 or 라벨굵기구간
-                        or 괄호크기구간 or 내어쓰기_불일치 or 장평_불일치 or 문단모양_예시)
+                        or 괄호크기구간 or 내어쓰기_불일치 or 장평_불일치 or 문단모양_예시
+                        or 색구간 or 음영구간)
             item_plan = {"marker": marker, "role": role, "level": level,
                          "shape": 모양, "start": 문단시작, "end": 끝, "text": text,
+                         "position_text": 원문,
+                         "color": 색표준, "color_runs": 색구간,
+                         "shade": 음영표준, "shade_runs": 음영구간,
                          "unresolved_fields": 미판정필드,
                          "font": 글꼴, "size": 크기,
                          "font_runs": 글꼴불일치구간, "size_runs": 크기불일치구간,
@@ -4820,6 +5221,12 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
                         항목["fields"].append("label_bold")
                     if 장평_불일치:
                         항목["fields"].append("ratio")
+                    if 색구간:
+                        항목["fields"].append("color")
+                        항목["expected_actual"]["color"] = {"expected": 색표준, "actual": 부가.get("color")}
+                    if 음영구간:
+                        항목["fields"].append("shade")
+                        항목["expected_actual"]["shade"] = {"expected": 음영표준, "actual": 부가.get("shade")}
                     if 위간격_불일치:
                         항목["fields"].append("prev_spacing")
                     if 내어쓰기_불일치:
@@ -4833,9 +5240,9 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
                                  "samples": len(항목들), "fields": sorted(그룹미판정)})
         글꼴표시 = f"{글꼴} ({글꼴수})" if 글꼴 is not None else "판정 보류"
         크기표시 = f"{크기 / 100:g}pt ({크기수})" if 크기 is not None else "판정 보류"
-        진단로그(f"[서식통일] '{marker}/{role}/계층{level}' 대표값: 글꼴 {글꼴표시}, "
-                 f"크기 {크기표시}, 문두 굵기 {문두굵게}, 괄호라벨 굵기 {라벨굵게}, "
-                 f"내어쓰기 {내어쓰기표준} ({내어쓰기수})")
+        진단로그(f"[서식통일] '{marker}/{role}' 대표값({len(항목들)}문장): 글꼴 {글꼴표시}, "
+                 f"크기 {크기표시}, 글자색 {색표준 or '판정 보류'}, 음영 {음영표준 or '판정 보류'}, "
+                 f"문두 굵기 {문두굵게}, 괄호라벨 굵기 {라벨굵게}, 내어쓰기 {내어쓰기표준} ({내어쓰기수})")
         continue
 
     후보수 = sum(1 for p in 계획 if p["mismatch"])
@@ -4853,7 +5260,10 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
             status = "failed" if 불일치목록 else "passed"
         _서식통일_최종감사 = {"status": status, "checked": 확인문단수,
                              "issues": 불일치목록, "not_checkable": 판정불가그룹,
-                             "unresolved": 미확정문단}
+                             "unresolved": 미확정문단,
+                             "hierarchy": [f"{키[0]}({키[1]})" for 키 in 체계],
+                             "systems": ["본문"] + [이름 for _, 이름 in 경계],
+                             "cover_excluded": bool(표지문단)}
         로그(f"5/5 저장 결과 서식통일 검수(읽기 전용): {status} / 확인 {확인문단수}개 / "
              f"불일치 {len(불일치목록)}개 / 보류 그룹 {len(판정불가그룹)}개")
         if 불일치목록:
@@ -4881,8 +5291,10 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
                     _서식통일_문단내어쓰기_적용(item)   # 대표값이 '내어쓰기 없음'이면 여기서 해제
                 # 내어쓰기 → 자간 → 외톨이 당기기는 모든 문장의 서식을 맞춘 뒤 한 묶음으로 한다.
                 _서식통일_자간보류문단[item["text"].strip()] = item["expected_hanging"]
+                _서식통일_위치텍스트_보관[item["text"].strip()] = item["position_text"]
             elif not 서식통일_빨간표시_사용:
                 _서식통일_자간보류문단[item["text"].strip()] = item["expected_hanging"]
+                _서식통일_위치텍스트_보관[item["text"].strip()] = item["position_text"]
             교정수 += 1
             진단로그(f"[서식통일 문장] 완료 {item['start']}")
         if item["unresolved_fields"] and not 서식통일_빨간표시_사용:
@@ -4953,7 +5365,10 @@ def 서식통일_보류자간_재조정():
             text = 현재문단_텍스트()
             key = text.strip()
             if key in 대상:
-                if 서식통일_문장_마무리(시작, text, bool(대상.pop(key))) is False:
+                원문 = _서식통일_위치텍스트_보관.get(key, text)
+                if _서식통일_공백제거(원문) != _서식통일_공백제거(text):
+                    원문 = text
+                if 서식통일_문장_마무리(시작, 원문, bool(대상.pop(key))) is False:
                     return False
                 조정수 += 1
         if not 다음_문단으로_진행():
@@ -4962,6 +5377,124 @@ def 서식통일_보류자간_재조정():
          + (f" / 위치를 찾지 못한 문장 {len(대상)}개" if 대상 else ""))
     for text in 대상:
         검수_문제_기록(현재_처리파일, "[서식통일 자간 미조정] 문장 위치를 찾지 못함: " + text[:60])
+    return True
+
+
+def _서식통일_표모형(제외문단=()):
+    """HWPX의 표를 표 서식통일 판정용 모형으로 읽는다(읽기 전용).
+
+    한/글의 목록 번호는 문서 순서의 subList(표 칸·머리말·캡션 등) 순번 + 2다(실측: 교육부
+    46개, 정책회의 1,179개가 COM 목록 수와 일치). 칸 글자 위치를 확신할 수 없는 문단(칸 안
+    표·그림)은 비교에서 뺀다.
+    """
+    문서경로 = _서식통일_현재_HWPX()
+    if 문서경로 is None:
+        return []
+    from docfit_core.style_inventory import _tag
+    분석 = _서식통일_HWPX_분석(문서경로)
+    목록번호 = {}
+    for 문단 in 분석["paragraphs"]:
+        for item in 문단.iter():
+            if _tag(item) == "subList":
+                목록번호[id(item)] = len(목록번호) + 2
+    표들 = []
+    for 번호, 문단 in enumerate(분석["paragraphs"]):
+        if 번호 in 제외문단:
+            continue
+        for 표 in (item for item in 문단.iter() if _tag(item) == "tbl"):
+            칸들 = []
+            for tc in (item for tr in 표 if _tag(tr) == "tr" for item in tr if _tag(item) == "tc"):
+                sub = next((item for item in tc if _tag(item) == "subList"), None)
+                주소 = next((item for item in tc if _tag(item) == "cellAddr"), None)
+                if sub is None or id(sub) not in 목록번호:
+                    continue
+                문단들 = []
+                for 칸문단번호, p in enumerate(item for item in sub if _tag(item) == "p"):
+                    조각 = [(run, *_서식통일_run_text(run)) for run in p if _tag(run) == "run"]
+                    글자 = "".join(text for _, text, _ in 조각)
+                    runs = []
+                    if all(확실 for _, _, 확실 in 조각):
+                        cursor = 0
+                        for run, text, _ in 조각:
+                            길이 = len(text.encode("utf-16-le")) // 2
+                            char = 분석["chars"].get(run.get("charPrIDRef"))
+                            if char and text.strip():
+                                runs.append((cursor, cursor + 길이, char["font"].get("hangul"),
+                                             round(char["size_pt"] * 100),
+                                             str(char.get("color", "")).upper(), bool(char.get("bold"))))
+                            cursor += 길이
+                    문단들.append({"index": 칸문단번호, "text": 글자, "runs": runs})
+                칸들.append({"area": 목록번호[id(sub)],
+                             "header": 주소 is not None and 주소.get("rowAddr") == "0",
+                             "fill": tc.get("borderFillIDRef"), "paras": 문단들})
+            첫글자 = next((para["text"] for 칸 in 칸들 for para in 칸["paras"] if para["text"].strip()), "")
+            표들.append({"index": len(표들), "cells": 칸들,
+                         "box": 표.get("rowCnt") == "1" and 표.get("colCnt") == "1",
+                         "marker": 서식통일_문두기호(첫글자)[0]})
+    return 표들
+
+
+def 서식통일_표_전체_적용(검증만=False):
+    """같은 종류(같은 모양 칸·같은 기호 제목 상자)의 표끼리 글자 서식을 맞춘다.
+
+    판정은 docfit_core.table_unify가 HWPX만 보고 하며, 한/글에서는 고칠 칸 문단의 글자가
+    HWPX와 같은지 확인한 뒤 그 구간만 바꾼다. 검증만=True면 읽기 전용으로 남은 불일치를 센다.
+    """
+    from docfit_core.table_unify import plan_table_fixes
+    if 중단_요청됨():
+        return False
+    if not 검증만:
+        단계표시("표 서식통일")
+    표들 = _서식통일_표모형()
+    고칠것, 요약 = plan_table_fixes(표들)
+    if 검증만:
+        issues = [{"text": fix["text"].strip()[:100], "fields": [f"table_{fix['field']}"],
+                   "expected_actual": {fix["field"]: {"expected": fix["value"], "actual": fix["was"]}}}
+                  for fix in 고칠것]
+        status = "failed" if issues else "passed"
+        로그(f"[표 서식통일] 저장 결과 검수(읽기 전용): {status} / 표 {len(표들)}개 / 불일치 구간 {len(issues)}개")
+        return {"status": status, "checked": len(표들), "issues": issues}
+    로그(f"[표 서식통일] 표 {len(표들)}개 조사 — 고칠 구간 {len(고칠것)}개 "
+         + (", ".join(f"{이름} {수}" for 이름, 수 in 요약.items()) or "(없음)"))
+    적용, 건너뜀 = 0, 0
+    확인됨 = {}
+    for fix in sorted(고칠것, key=lambda item: (item["area"], item["para"], item["start"])):
+        if 중단_요청됨():
+            return False
+        문단키 = (fix["area"], fix["para"])
+        if 문단키 not in 확인됨:
+            # 목록 번호가 어긋나면 다른 칸을 고치게 되므로, 칸 문단 글자가 HWPX와 같은지 확인한다.
+            try:
+                hwp.SetPos(fix["area"], fix["para"], 0)
+                같은칸 = (tuple(hwp.GetPos()[:2]) == 문단키
+                          and _서식통일_공백제거(현재문단_텍스트()) == _서식통일_공백제거(fix["text"]))
+            except Exception:
+                같은칸 = False
+            확인됨[문단키] = 같은칸
+            if not 같은칸:
+                진단로그(f"[표 서식통일] 칸 위치를 확인하지 못해 건너뜀: {fix['text'].strip()[:40]}")
+        if not 확인됨[문단키]:
+            건너뜀 += 1
+            continue
+        시작 = (fix["area"], fix["para"], fix["start"])
+        끝 = (fix["area"], fix["para"], fix["end"])
+        try:
+            단어모드_범위선택(시작, 끝)
+            if fix["field"] == "color":
+                _서식통일_색_적용("TextColor", fix["value"])
+            else:
+                옵션 = {"font": {"폰트": fix["value"]},
+                        "size": {"크기_pt": fix["value"] / 100},
+                        "bold": {"굵게": fix["value"]}}[fix["field"]]
+                문자모양_적용_현재선택(**옵션, 자간_유지=True)
+            적용 += 1
+            진단로그(f"[표 서식통일] {fix['reason']}: {fix['field']} {fix['was']} → {fix['value']} "
+                     f"'{fix['text'].strip()[:30]}'")
+        finally:
+            hwp_run("Cancel")
+    hwp_run("MoveDocBegin")
+    로그(f"[표 서식통일] 완료: {적용}개 구간 수정"
+         + (f", 칸 위치 확인 실패로 {건너뜀}개 건너뜀" if 건너뜀 else ""))
     return True
 
 
@@ -10028,6 +10561,7 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
     if 회차 == 1:
         _서식통일_문서대표프로필 = {}
         _서식통일_자간보류문단.clear()
+        _서식통일_위치텍스트_보관.clear()
     def stage(name, action):
         단계표시(name)
         상태(f"{파일명} [{회차}/{총회차}] : {name}")
@@ -10052,6 +10586,10 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
         # 그 문장에만 내어쓰기 → 자간 → 외톨이 글자 당기기를 한 묶음으로 적용한다.
         if not stage('서식통일', 서식통일_전체_적용):
             return False
+        # 표는 본문과 따로, 같은 종류의 표끼리 맞춘다(세부 작업에서 끌 수 있다).
+        if stage_enabled(선택_세부작업, 'table_unify', 작업_모드):
+            if not stage('표 서식통일', 서식통일_표_전체_적용):
+                return False
         # 쪽 맞춤은 사용자가 세부 작업에서 켠 경우에만 서식통일 뒤에 실행한다.
         if stage_enabled(선택_세부작업, 'page_fit', 작업_모드):
             return stage('문단 아래 간격 페이지 맞춤', 보고서_페이지수_맞춤_전체_적용)
@@ -10755,6 +11293,12 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
                         f"불일치 {len(style_check.get('issues', []))}개, "
                         f"판정 보류 그룹 {len(style_check.get('not_checkable', []))}개",
                     )
+                if 작업_모드 == 'unify' and stage_enabled(선택_세부작업, 'table_unify', 작업_모드):
+                    table_check = 서식통일_표_전체_적용(검증만=True)
+                    최종규칙검사['table_unify'] = table_check
+                    if table_check.get('status') != 'passed':
+                        검수_문제_기록(파일, f"[저장 결과 표 서식통일 검증 {table_check.get('status')}] "
+                                             f"불일치 {len(table_check.get('issues', []))}개")
             except Exception as exc:
                 최종규칙검사['style_unify'] = {
                     'status': 'error', 'checked': 0, 'issues': [], 'error': str(exc),
@@ -12268,13 +12812,7 @@ class HwpAutoDocFitGUI:
             self.stage_choices[mode] = {key: variable.get() for key, variable in choices.items()}
             self._세부작업_기본저장[mode] = bool(기본저장_var.get())
             if 기본저장_var.get():
-                저장값 = 설정_불러오기()
-                저장된_세부작업 = 저장값.get("stage_choices", {})
-                if not isinstance(저장된_세부작업, dict):
-                    저장된_세부작업 = {}
-                저장된_세부작업[mode] = dict(self.stage_choices[mode])
-                저장값["stage_choices"] = 저장된_세부작업
-                설정_저장(저장값)
+                self._세부작업_기본값_저장(mode)
             self._요약갱신()
             close()
         buttons = ttk.Frame(dialog, padding=(14, 4, 14, 12))
@@ -12284,6 +12822,22 @@ class HwpAutoDocFitGUI:
         ttk.Button(buttons, text="취소", command=close).pack(side="right")
         ttk.Button(buttons, text="적용", command=save).pack(side="right", padx=8)
         dialog.protocol("WM_DELETE_WINDOW", close)
+
+    def _세부작업_기본값_저장(self, mode, 저장=True):
+        """작업 유형의 세부 작업 구성을 다음 실행에도 쓰도록 저장한다. 저장=False면 저장값을 지운다."""
+        self._세부작업_기본저장[mode] = bool(저장)
+        저장값 = 설정_불러오기()
+        저장된_세부작업 = 저장값.get("stage_choices", {})
+        if not isinstance(저장된_세부작업, dict):
+            저장된_세부작업 = {}
+        if 저장:
+            저장된_세부작업[mode] = dict(self.stage_choices[mode])
+        elif mode in 저장된_세부작업:
+            del 저장된_세부작업[mode]
+        else:
+            return
+        저장값["stage_choices"] = 저장된_세부작업
+        설정_저장(저장값)
 
     def _요약갱신(self, *args):
         if not hasattr(self, "options_summary"):

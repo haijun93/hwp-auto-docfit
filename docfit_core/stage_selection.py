@@ -23,6 +23,8 @@ UNIFY_STAGE = ("style_unify", "서식통일 (문서 안 대표 스타일로 맞�
 # 한/글 표로 바꾼다. 다른 모든 서식·자간 단계보다 먼저 실행해야 하므로
 # FORMAT_STAGES 안에 넣지 않고 UNIFY_STAGE와 같은 방식으로 앞자리에 끼워 넣는다.
 TEXT_TABLE_STAGE = ("text_table_convert", "텍스트 표(박스 그림)를 실제 표로 변환")
+# 서식통일 작업에서 표를 본문과 따로, 같은 종류(같은 모양 칸·같은 기호 제목 상자)끼리 맞춘다.
+TABLE_UNIFY_STAGE = ("table_unify", "표 서식통일 (같은 종류 표끼리 글꼴·크기 맞춤)")
 DEFAULT_OFF = frozenset({"style_unify"})
 
 SPACING_STAGES = (
@@ -57,6 +59,7 @@ STAGE_EXAMPLES = {
     "word_check": "예: 1차 조정 뒤 본문에 남은 단어 분리를 다시 검사합니다.",
     "control_word_check": "예: 1차 조정 뒤 표 셀·글상자에 남은 단어 분리를 다시 검사합니다.",
     "text_table_convert": "예: '┌──┬──┐ / │ 구분 │ 내용 │ / └──┴──┘'처럼 박스 그림으로 그려 붙여넣은 표를 한/글의 실제 표로 바꿉니다.",
+    "table_unify": "예: 같은 모양 표에서 한 칸만 굴림이면 한컴돋움으로, 󰊱 제목 상자 하나만 10pt면 다른 제목 상자처럼 15pt로 맞춥니다. 칸에 맞추려 줄인 글자와 표 안 글자색은 그대로 둡니다.",
 }
 
 
@@ -64,7 +67,7 @@ def stages_for_mode(mode):
     # 서식통일은 예외 문단별 서식→자간→내어쓰기 처리이며 전체 자간 단계는 돌리지 않는다.
     if mode == "unify":
         # 서식통일은 문서 자체의 대표 서식이 기준이다. 쪽 맞춤은 사용자가 켤 때만 실행한다.
-        return (UNIFY_STAGE, FORMAT_STAGES[-2])
+        return (UNIFY_STAGE, TABLE_UNIFY_STAGE, FORMAT_STAGES[-2])
     # 서식통일은 공백·문장부호 정리 뒤, 표준서식·자간 조정 앞에서 실행한다.
     # 박스 그림 표 변환은 문단 구조 자체를 바꾸므로 다른 모든 단계보다 먼저 실행한다.
     if mode == "format":
@@ -86,7 +89,7 @@ def default_choice(key, mode=None):
     '서식 통일' 작업 유형에서는 서식통일이 곧 작업 자체라 켜져 있다.
     """
     if mode == "unify":
-        return key == "style_unify"
+        return key in ("style_unify", "table_unify")
     return key not in DEFAULT_OFF
 
 

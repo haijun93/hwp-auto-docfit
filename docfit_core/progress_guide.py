@@ -30,6 +30,8 @@ GUIDE_ITEMS = (
      ("문단 아래 간격 페이지 맞춤",)),
     ("page_group", "함께 읽어야 할 문단이 쪽 사이로 갈라지지 않게 배치하고 있어요.",
      ("개별 문단 페이지 배치", "관련 문단 페이지 배치")),
+    ("table_unify", "같은 종류의 표끼리 글꼴·크기가 다른 칸을 찾아 맞추고 있어요.",
+     ("표 서식통일",)),
     ("unify_recheck", "앞선 작업 뒤에도 서식통일 결과가 그대로인지 다시 확인하고 있어요.",
      ("후속 작업 후 서식통일 재검증",)),
     ("save", "결과를 새 파일로 저장하고 원본과 내용이 같은지 검사하고 있어요.", ("저장",)),
@@ -41,7 +43,8 @@ GUIDE_ITEMS = (
 MODE_GUIDES = {
     "spacing": ("open", "body_spacing", "control_spacing", "short_line", "indent",
                 "save", "done"),
-    "unify": ("open", "unify_survey", "unify_apply", "page_fit", "save", "unify_verify", "done"),
+    "unify": ("open", "unify_survey", "unify_apply", "table_unify", "page_fit", "save",
+              "unify_verify", "done"),
     "format": ("open", "pre_format", "space", "unify_survey", "standard", "body_spacing",
                "indent", "page_fit", "page_group", "unify_recheck", "save", "done"),
     "all": ("open", "pre_format", "space", "unify_survey", "standard", "body_spacing",

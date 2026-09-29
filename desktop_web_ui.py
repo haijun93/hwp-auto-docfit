@@ -4,11 +4,22 @@ from __future__ import annotations
 
 import importlib.util
 import logging
+import os
+import subprocess
 import threading
 from concurrent.futures import Future, TimeoutError
 from pathlib import Path
+from types import SimpleNamespace
 
 from docfit_core.progress_guide import guide_state
+from docfit_core.stage_selection import STAGE_EXAMPLES, default_choice, stages_for_mode
+
+# 화면에서 바로 켜고 끄는 공통 설정(이름 → 앱의 Tk 변수 속성). 값을 바꾸면 앱이 설정 파일에 저장한다.
+QUICK_OPTIONS = {
+    "autoclose": "autoclose_var",
+    "verify": "verify_var",
+    "check_updates": "check_updates_on_start_var",
+}
 
 
 class DesktopWebBridge:
@@ -49,16 +60,42 @@ class DesktopWebBridge:
         except TimeoutError as exc:
             raise RuntimeError("앱 응답 시간이 초과되었습니다.") from exc
 
+    def _stages(self, mode):
+        choices = self.gui.stage_choices.get(mode, {})
+        return [
+            {
+                "key": key,
+                "label": label,
+                "example": STAGE_EXAMPLES.get(key, ""),
+                "on": bool(choices.get(key, default_choice(key, mode))),
+                "default": default_choice(key, mode),
+            }
+            for key, label in stages_for_mode(mode)
+        ]
+
+    def _profiles(self):
+        gui = self.gui
+        profiles = getattr(gui, "_프로파일들", {}) or {}
+        ids = getattr(gui, "_프로파일_ids", None) or list(profiles)
+        items = []
+        for identifier in ids:
+            profile = profiles.get(identifier) or {}
+            name = str(profile.get("name") or "기본 서식")
+            organization = str(profile.get("organization") or "").strip()
+            items.append({"id": identifier, "name": f"[{organization}] {name}" if organization else name})
+        return items
+
     def get_state(self):
         def snapshot():
             gui = self.gui
+            mode = gui.selected_mode.get()
             return {
                 "files": [
-                    {"name": Path(path).name, "path": path}
+                    {"name": Path(path).name, "path": path, "folder": str(Path(path).parent)}
                     for path in gui.files
                 ],
                 "count": len(gui.files),
-                "mode": gui.selected_mode.get(),
+                "mode": mode,
                 "status": gui.status_var.get(),
                 "running": bool(gui.running),
                 "range": {
@@ -74,12 +111,25 @@ class DesktopWebBridge:
                     "detail": getattr(gui.stage_board, "detail", ""),
                 },
                 "results": [
-                    {"name": Path(item.get("결과", "")).name, "path": item.get("결과", "")}
+                    {
+                        "name": Path(item.get("결과", "")).name,
+                        "path": item.get("결과", ""),
+                        "source": Path(item.get("원본", "")).name,
+                        "pages": item.get("쪽수"),
+                    }
                     for item in getattr(gui, "_결과목록", [])
                 ],
-                "default_saved": bool(gui._세부작업_기본저장.get(gui.selected_mode.get(), True)),
+                "default_saved": bool(gui._세부작업_기본저장.get(mode, False)),
+                "stages": self._stages(mode),
+                "profiles": self._profiles(),
+                "profile": getattr(gui, "_활성_서식_프로파일", ""),
+                "options": {
+                    name: bool(getattr(gui, attribute).get())
+                    for name, attribute in QUICK_OPTIONS.items()
+                    if hasattr(gui, attribute)
+                },
                 "guide": guide_state(
-                    gui.selected_mode.get(),
+                    mode,
                     getattr(gui, "_안내키", None),
                     getattr(gui, "_안내지남", ()),
                 ),
@@ -212,6 +262,105 @@ class DesktopWebBridge:
         self._tk(self.gui._결과파일_열기, timeout=None, front=True)
         return True
 
+    def _result_path(self, index):
+        try:
+            return getattr(self.gui, "_결과목록", [])[int(index)].get("결과", "")
+        except (IndexError, TypeError, ValueError):
+            return ""
+
+    def open_result(self, index):
+        """결과 파일 하나를 연결된 프로그램(한/글)으로 연다."""
+        def open_one():
+            path = self._result_path(index)
+            if path and os.path.isfile(path):
+                self.gui._경로_열기(path)
+            else:
+                self.gui.status_var.set("결과 파일을 찾을 수 없습니다. 옮기거나 지우지 않았는지 확인해 주세요.")
+
+        self._tk(open_one, timeout=None, front=True)
+        return self.get_state()
+
+    def show_result(self, index):
+        """탐색기에서 결과 파일이 있는 폴더를 열고 그 파일을 선택해 둔다."""
+        def reveal():
+            path = self._result_path(index)
+            if path and os.path.isfile(path) and os.name == "nt":
+                subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
+            elif path and os.path.isdir(os.path.dirname(path)):
+                self.gui._경로_열기(os.path.dirname(path))
+            else:
+                self.gui.status_var.set("결과 폴더를 찾을 수 없습니다.")
+
+        self._tk(reveal, timeout=None, front=True)
+        return self.get_state()
+
+    def set_stage(self, key, on):
+        """현재 작업 유형의 세부 작업 하나를 켜고 끈다. 기본값 저장을 켠 유형이면 바로 저장한다."""
+        def update():
+            gui = self.gui
+            mode = gui.selected_mode.get()
+            if gui.running or key not in gui.stage_choices.get(mode, {}):
+                return
+            gui.stage_choices[mode][key] = bool(on)
+            if gui._세부작업_기본저장.get(mode):
+                gui._세부작업_기본값_저장(mode)
+            gui._요약갱신()
+
+        self._tk(update)
+        return self.get_state()
+
+    def reset_stages(self):
+        """현재 작업 유형의 세부 작업을 처음 기본값으로 되돌린다."""
+        def reset():
+            gui = self.gui
+            mode = gui.selected_mode.get()
+            if gui.running:
+                return
+            gui.stage_choices[mode] = {key: default_choice(key, mode) for key, _ in stages_for_mode(mode)}
+            if gui._세부작업_기본저장.get(mode):
+                gui._세부작업_기본값_저장(mode)
+            gui._요약갱신()
+
+        self._tk(reset)
+        return self.get_state()
+
+    def set_stage_default(self, save):
+        """현재 구성을 다음 실행에도 쓸지 정한다. 끄면 저장한 구성을 지워 처음 기본값으로 시작한다."""
+        def update():
+            if not self.gui.running:
+                self.gui._세부작업_기본값_저장(self.gui.selected_mode.get(), bool(save))
+
+        self._tk(update)
+        return self.get_state()
+
+    def set_profile(self, identifier):
+        """서식 적용에 쓸 서식(프로파일)을 고른다. 기존 콤보 선택과 같은 경로로 반영한다."""
+        def select():
+            gui = self.gui
+            ids = list(getattr(gui, "_프로파일_ids", []) or [])
+            combo = getattr(gui, "main_profile_combo", None)
+            if gui.running or identifier not in ids or combo is None:
+                return
+            combo.current(ids.index(identifier))
+            gui._프로파일_선택(SimpleNamespace(widget=combo))
+
+        self._tk(select)
+        return self.get_state()
+
+    def set_option(self, name, value):
+        """빠른 설정의 켜기·끄기 값을 바꾼다. 앱 설정 변수의 변경 감시가 설정 파일에 저장한다."""
+        attribute = QUICK_OPTIONS.get(name)
+        if attribute is None:
+            raise ValueError("지원하지 않는 설정입니다.")
+
+        def update():
+            variable = getattr(self.gui, attribute, None)
+            if variable is not None and not self.gui.running:
+                variable.set(bool(value))
+
+        self._tk(update)
+        return self.get_state()
+
     def next_job(self):
         def reset():
             if self.gui.running:
@@ -275,7 +424,9 @@ class _BrowserApi:
             "get_state", "add_files", "add_folder", "add_paths", "remove_file",
             "clear_files", "set_mode", "set_range", "start", "stop",
             "open_settings", "text_input", "open_stages", "open_log",
-            "open_results", "next_job", "run_tool",
+            "open_results", "next_job", "run_tool", "open_result",
+            "show_result", "set_stage", "reset_stages", "set_stage_default",
+            "set_profile", "set_option",
         ):
             setattr(self, name, getattr(bridge, name))
 

@@ -215,8 +215,9 @@ class UnifyModeTest(unittest.TestCase):
 
     def test_unify_mode_has_only_unify_stage_and_is_on(self):
         # 쪽 맞춤은 서식통일 뒤 사용자가 켤 때만 실행하는 선택 단계다.
-        self.assertEqual([k for k, _ in stages_for_mode('unify')], ['style_unify', 'page_fit'])
+        self.assertEqual([k for k, _ in stages_for_mode('unify')], ['style_unify', 'table_unify', 'page_fit'])
         self.assertFalse(default_choice('page_fit', 'unify'))
+        self.assertTrue(default_choice('table_unify', 'unify'))
         self.assertTrue(default_choice('style_unify', 'unify'))
         self.assertFalse(default_choice('style_unify', 'spacing'))
 

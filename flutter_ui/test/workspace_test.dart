@@ -2,6 +2,26 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:docfit_ui/main.dart';
 
+Map<String, dynamic> initialState() => <String, dynamic>{
+  'files': <Map<String, String>>[],
+  'mode': 'spacing',
+  'running': false,
+  'range': {'enabled': false, 'start': '1', 'end': '1'},
+  'results': [],
+  'stages': [
+    {'key': 'reset_spacing', 'label': '문서 전체 자간 초기화', 'example': '예: 1', 'on': true, 'default': true},
+    {'key': 'style_unify', 'label': '서식통일', 'example': '예: 2', 'on': false, 'default': false},
+  ],
+  'default_saved': false,
+  'profiles': [
+    {'id': '', 'name': '기본 서식'},
+    {'id': 'abc', 'name': '[마포구] 보고서'},
+  ],
+  'profile': '',
+  'options': {'autoclose': true, 'verify': false, 'check_updates': true},
+  'version': 'test',
+};
+
 void main() {
   for (final width in [420.0, 1024.0]) {
     testWidgets('navigation and scoped commands at width $width', (
@@ -12,23 +32,12 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       final calls = <String>[];
-      final state = <String, dynamic>{
-        'files': <Map<String, String>>[],
-        'mode': 'spacing',
-        'running': false,
-        'range': {'enabled': false, 'start': '1', 'end': '1'},
-        'progress': {
-          'steps': ['열기', '서식', '저장'],
-          'visited': [],
-        },
-        'results': [],
-        'version': 'test',
-      };
+      final state = initialState();
       Future<Object?> api(String name, List<Object?> args) async {
         calls.add(name);
         if (name == 'add_files') {
           state['files'] = [
-            {'name': '문서.hwpx'},
+            {'name': '문서.hwpx', 'folder': r'C:\문서'},
           ];
         }
         if (name == 'set_mode') state['mode'] = args.first;
@@ -41,14 +50,19 @@ void main() {
 
       await tester.pumpWidget(DocFitApp(api: api));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('문서 선택').last);
+      expect(find.text('세 단계면 끝나요'), findsOneWidget);
+      await tester.tap(find.text('문서 추가'));
       await tester.pumpAndSettle();
       expect(find.text('문서.hwpx'), findsOneWidget);
+      expect(find.text('HWPX'), findsOneWidget);
+      // 문서가 들어오면 안내 영역을 접어 목록이 잘 보이게 한다.
+      expect(find.text('세 단계면 끝나요'), findsNothing);
       await tester.tap(find.text('작업 방식 선택'));
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('서식 통일'));
       await tester.tap(find.text('서식 통일'));
       await tester.pumpAndSettle();
+      expect(find.textContaining('1개 문서 · 서식 통일 · 문서 전체'), findsOneWidget);
       await tester.tap(find.text('정리 시작'));
       await tester.pump(const Duration(milliseconds: 300));
       expect(calls.where((s) => s != 'get_state'), [
@@ -64,6 +78,113 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
   }
+
+  testWidgets('stages, page range and quick settings change in place', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1024, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final calls = <List<Object?>>[];
+    final state = initialState();
+    state['files'] = [
+      {'name': '문서.hwp', 'folder': r'C:\문서'},
+    ];
+    Future<Object?> api(String name, List<Object?> args) async {
+      if (name != 'get_state') calls.add([name, ...args]);
+      if (name == 'set_stage') {
+        final stages = state['stages'] as List;
+        (stages.firstWhere((s) => s['key'] == args[0]) as Map)['on'] = args[1];
+      }
+      if (name == 'set_option') {
+        (state['options'] as Map)[args[0] as String] = args[1];
+      }
+      if (name == 'set_range') {
+        state['range'] = {'enabled': args[0], 'start': args[1], 'end': args[2]};
+      }
+      return Map<String, dynamic>.from(state);
+    }
+
+    await tester.pumpWidget(DocFitApp(api: api));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('작업 방식 선택'));
+    await tester.pumpAndSettle();
+
+    // 세부 작업: 펼쳐서 바로 켜고 끈다.
+    expect(find.text('세부 작업  1/2'), findsOneWidget);
+    await tester.tap(find.text('세부 작업  1/2'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('2. 서식통일'));
+    await tester.tap(find.text('2. 서식통일'));
+    await tester.pumpAndSettle();
+    expect(calls.last, ['set_stage', 'style_unify', true]);
+    expect(find.text('세부 작업  2/2'), findsOneWidget);
+
+    // 쪽 범위: 잘못된 범위면 시작 버튼을 막는다.
+    await tester.ensureVisible(find.text('쪽 지정'));
+    await tester.tap(find.text('쪽 지정'));
+    await tester.pumpAndSettle();
+    expect(calls.last, ['set_range', true, '1', '1']);
+    await tester.enterText(find.widgetWithText(TextField, '시작 쪽'), '5');
+    await tester.enterText(find.widgetWithText(TextField, '끝 쪽'), '3');
+    await tester.pump();
+    expect(find.textContaining('올바르게 입력하세요'), findsOneWidget);
+    final start = tester.widget<FilledButton>(
+      find.ancestor(of: find.text('정리 시작'), matching: find.byWidgetPredicate((w) => w is FilledButton)),
+    );
+    expect(start.onPressed, isNull);
+
+    // 빠른 설정: 서랍에서 바로 저장한다.
+    await tester.tap(find.byTooltip('설정'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('저장 뒤 결과 검수'));
+    await tester.pumpAndSettle();
+    expect(calls.last, ['set_option', 'verify', true]);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('finished job moves to results with per-file actions', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1024, 820);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final calls = <List<Object?>>[];
+    final state = initialState();
+    state['files'] = [
+      {'name': '문서.hwpx', 'folder': r'C:\문서'},
+    ];
+    Future<Object?> api(String name, List<Object?> args) async {
+      if (name != 'get_state') calls.add([name, ...args]);
+      if (name == 'start') state['running'] = true;
+      return Map<String, dynamic>.from(state);
+    }
+
+    await tester.pumpWidget(DocFitApp(api: api));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('작업 방식 선택'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('정리 시작'));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('문서를 정리하고 있어요'), findsOneWidget);
+
+    state['running'] = false;
+    state['results'] = [
+      {'name': '문서(자간조정).hwpx', 'path': r'C:\문서\문서(자간조정).hwpx', 'source': '문서.hwpx', 'pages': 3},
+    ];
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+    expect(find.text('문서(자간조정).hwpx'), findsOneWidget);
+    expect(find.text('원본: 문서.hwpx · 3쪽'), findsOneWidget);
+    await tester.tap(find.byTooltip('폴더에서 보기'));
+    await tester.pumpAndSettle();
+    expect(calls.last, ['show_result', 0]);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('disconnected UI never starts work', (tester) async {
     await tester.pumpWidget(
       DocFitApp(api: (method, args) async => throw StateError('offline')),
