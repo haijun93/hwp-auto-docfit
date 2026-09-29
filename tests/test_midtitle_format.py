@@ -149,6 +149,32 @@ class MidTitleFormatTest(unittest.TestCase):
     def test_numeral_bold_setting_defaults_on(self):
         self.assertTrue(self.ns['기본_설정']['std_midtitle_bold'])
 
+    def test_reference_borders_are_black_of_first_two_tables(self):
+        """기준 모양은 Ⅰ·Ⅱ 표의 검은 0.5mm 테두리이며 Ⅲ 표의 남색 변형이 아니다."""
+        ns = self.ns
+        source = self._hwpx([self._plain_table(3), self._plain_table(2, numeral='Ⅱ')])
+        found = ns['중제목_hwpx_처리'](source)
+        target = source.with_name('border.hwpx')
+        ns['중제목_hwpx_처리'](source, target, found)
+        with zipfile.ZipFile(target) as z:
+            header = self.parse(z.read('Contents/header.xml'))
+            section = self.parse(z.read('Contents/section0.xml'))
+        fills = {b.get('id'): b for b in header.iter() if self.name(b) == 'borderFill'}
+        def side(fill, name):
+            e = next(x for x in fills[fill] if self.name(x) == name)
+            return e.get('type'), e.get('width'), e.get('color')
+        solid = ('SOLID', '0.5 mm', '#000000')
+        for table in (t for t in section.iter() if self.name(t) == 'tbl'):
+            cells = ns['제목_셀들'](table)
+            number = cells[0].get('borderFillIDRef')
+            for name in ('leftBorder', 'rightBorder', 'topBorder', 'bottomBorder'):
+                self.assertEqual(side(number, name), solid, name)
+            text = cells[-1].get('borderFillIDRef')
+            for name in ('topBorder', 'bottomBorder'):
+                self.assertEqual(side(text, name), solid, name)
+        for fill in fills.values():
+            self.assertNotIn('#1D1E42', [x.get('color') for x in fill.iter() if x.get('color')])
+
     def test_pre_format_runs_midtitle_processor_when_enabled(self):
         from unittest.mock import Mock, patch
         fn = self.ns['제목붙임_선행적용']
