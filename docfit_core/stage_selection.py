@@ -26,6 +26,9 @@ TEXT_TABLE_STAGE = ("text_table_convert", "텍스트 표(박스 그림)를 실�
 # 준말(제목1: 등)을 서식 표·문구로 바꾼다. 한 번에 적용에서만 실행하며, 등록한 준말이 없으면
 # 아무 일도 하지 않는다. 문서 구조를 바꾸므로 선행 서식보다 먼저(자간 초기화 다음) 실행한다.
 ABBREVIATION_STAGE = ("abbreviation", "준말 → 본말 변환")
+# 문두기호 문장에서 단어 뒤에 붙은 * / **를 위첨자(Shift+Alt+P)로 만든다. 글자 모양만 바꾸며
+# 서식 적용·한 번에 적용에서 실행한다.
+ASTERISK_STAGE = ("asterisk_superscript", "별표(*, **) 위첨자 적용")
 DEFAULT_OFF = frozenset({"style_unify"})
 
 SPACING_STAGES = (
@@ -60,6 +63,7 @@ STAGE_EXAMPLES = {
     "word_check": "예: 1차 조정 뒤 본문에 남은 단어 분리를 다시 검사합니다.",
     "control_word_check": "예: 1차 조정 뒤 표 셀·글상자에 남은 단어 분리를 다시 검사합니다.",
     "abbreviation": "예: 미리 등록한 준말을 줄 맨 앞에 '제목1: 지구 침공계획(안) 보고'·'로1 : 추진배경'·'붙임: 자료명'처럼 적으면 해당 서식 표로 바꾸고 콜론 뒤 글을 표에 넣습니다.",
+    "asterisk_superscript": "예: 'ㅇ (핵심 내용) 지자* 선행 투입 → 함대** 발진'에서 단어 뒤에 붙은 *와 **를 위첨자로 바꿉니다. 줄 맨 앞의 '* 설명'·'** 설명' 문두기호는 그대로 둡니다.",
     "text_table_convert": "예: '┌──┬──┐ / │ 구분 │ 내용 │ / └──┴──┘'처럼 박스 그림으로 그려 붙여넣은 표를 한/글의 실제 표로 바꿉니다.",
 }
 
@@ -72,14 +76,14 @@ def stages_for_mode(mode):
     # 서식통일은 공백·문장부호 정리 뒤, 표준서식·자간 조정 앞에서 실행한다.
     # 박스 그림 표 변환은 문단 구조 자체를 바꾸므로 다른 모든 단계보다 먼저 실행한다.
     if mode == "format":
-        return (TEXT_TABLE_STAGE,) + FORMAT_STAGES[:4] + (UNIFY_STAGE,) + FORMAT_STAGES[4:]
+        return (TEXT_TABLE_STAGE, ASTERISK_STAGE) + FORMAT_STAGES[:4] + (UNIFY_STAGE,) + FORMAT_STAGES[4:]
     if mode == "spacing":
         return SPACING_STAGES[:1] + (UNIFY_STAGE,) + SPACING_STAGES[1:]
     if mode == "all":
         # 실제 실행 순서와 같게 보여 준다. 자간 초기화는 선행 서식·정밀 표 복제보다
         # 먼저 실행되고(복사한 자간 보존), 내어쓰기는 자간 조정 뒤 최종 확정된다.
         # 개요·한 칸 표 자간 조정(single_cell_spacing)은 서식 전용이다.
-        return ((TEXT_TABLE_STAGE,) + SPACING_STAGES[:1] + (ABBREVIATION_STAGE,) + FORMAT_STAGES[:4] + (UNIFY_STAGE,) + FORMAT_STAGES[4:8]
+        return ((TEXT_TABLE_STAGE,) + SPACING_STAGES[:1] + (ABBREVIATION_STAGE, ASTERISK_STAGE) + FORMAT_STAGES[:4] + (UNIFY_STAGE,) + FORMAT_STAGES[4:8]
                 + SPACING_STAGES[1:] + FORMAT_STAGES[9:])
     raise ValueError("지원하지 않는 작업 모드입니다.")
 

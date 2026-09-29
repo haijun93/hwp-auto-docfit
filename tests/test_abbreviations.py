@@ -63,6 +63,31 @@ class RegistryTest(unittest.TestCase):
         self.assertEqual(split_title2('가,'), ('', '가'))
 
 
+class DefaultsTest(unittest.TestCase):
+    def test_defaults_work_without_any_registration(self):
+        """"제목1 :"·"개요 :" 같은 기본 준말은 사용자가 등록하지 않아도 쓸 수 있다."""
+        from docfit_core.abbreviations import merge_with_defaults
+        merged = merge_with_defaults({})
+        self.assertEqual(match_line('제목1 : 지구 침공계획(안) 보고', merged)[:2], ('제목1', '지구 침공계획(안) 보고'))
+        self.assertEqual(match_line('개요 : 삼채인의 명랑', merged)[:2], ('개요', '삼채인의 명랑'))
+        self.assertEqual(match_line('제목: 가', merged)[0], '제목1')
+        self.assertEqual(match_line('로1 : 추진배경', merged)[0], '로1')
+        self.assertEqual(match_line('붙임: 자료', merged)[0], '붙임')
+        self.assertEqual(merge_with_defaults({}, False), {})
+        own = merge_with_defaults({'개요': {'type': 'text', 'value': '내 개요'}})
+        self.assertEqual(own['개요'], {'type': 'text', 'value': '내 개요'})   # 사용자 등록 우선
+        self.assertIn('제목1', own)
+
+    def test_run_builds_registry_from_settings_with_defaults(self):
+        ns = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'hwp-auto-docfit.py'))
+        build = ns['준말_사용표_만들기']
+        self.assertIn('제목1', build({}))
+        self.assertIn('제목1', build({'abbreviations': {}}))
+        self.assertEqual(build({'abbreviation_defaults': False}), {})
+        self.assertEqual(set(build({'abbreviation_defaults': False, 'abbreviations': {'요약': {'type': 'text', 'value': 'x'}}})), {'요약'})
+        self.assertTrue(ns['기본_설정']['abbreviation_defaults'])
+
+
 class DocumentConversionTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -299,7 +324,33 @@ class DocumentConversionTest(unittest.TestCase):
         self.assertEqual(found, {'Contents/section0.xml': []})
         self.assertEqual(count, 0)
 
-    def test_empty_registry_finds_nothing_and_stage_is_a_noop(self):
+    def test_stage_reads_original_hwpx_and_reopens_only_when_something_changed(self):
+        """기본 준말 사용표로 "제목1 :"·"개요 :" 줄이 있는 HWPX를 처리하면 결과를 한 번만 다시 연다."""
+        from docfit_core.abbreviations import merge_with_defaults
+        ns = self.ns
+        stage = ns['준말_선행적용']
+        registry = merge_with_defaults({})
+        opened = Mock(return_value=True)
+        env = {'준말_등록표': registry, '한글_문서_열기': opened, 'hwp': object(), '로그': Mock(),
+               '중단_요청됨': lambda: False, '진단로그': Mock()}
+        source = self._doc(self._p('제목1 : 지구 침공계획(안) 보고') + self._p('개요 : 삼채인의 명랑 지구침략계획을 수립하고 보고드림')
+                           + self._p('□ 보고 개요'))
+        with patch.dict(stage.__globals__, env):
+            notice = {}
+            self.assertTrue(stage(str(source), 현재문서_기준=False, 변경알림=notice))
+        self.assertTrue(notice['changed'])
+        self.assertEqual(opened.call_count, 1)
+        self.assertEqual(Path(opened.call_args.args[1]).name, 'abbrev.hwpx')
+        # 바꿀 줄이 없는 문서는 다시 열지 않는다.
+        plain = self._doc(self._p('□ 보고 개요') + self._p('일시: 오늘'))
+        opened.reset_mock()
+        with patch.dict(stage.__globals__, dict(env, 한글_문서_열기=opened)):
+            notice = {}
+            self.assertTrue(stage(str(plain), 현재문서_기준=False, 변경알림=notice))
+        self.assertFalse(notice['changed'])
+        opened.assert_not_called()
+
+
         ns = self.ns
         source = self._doc(self._p('제목1: 가'))
         fn = ns['준말_hwpx_처리']

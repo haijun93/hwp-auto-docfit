@@ -274,7 +274,8 @@ from docfit_core.korean_proofread import (
 )
 from docfit_core.pasted_text import clean_pasted_text, outline_pasted_text
 from docfit_core.labeled_text import label_outline_text, looks_labeled, parse_labeled_text
-from docfit_core.abbreviations import match_line as 준말_줄_판별, normalize as 준말_등록표_정리, roman_of_key as 준말_로마자, split_title2
+from docfit_core.asterisk_superscript import mark_spans as 별표_위치
+from docfit_core.abbreviations import merge_with_defaults as 준말_기본_병합, match_line as 준말_줄_판별, normalize as 준말_등록표_정리, roman_of_key as 준말_로마자, split_title2
 from docfit_core.text_table import find_box_tables
 from docfit_core import writing_aids, ai_prompts
 
@@ -1025,6 +1026,7 @@ def 번들_리소스_폴더():
     "std_midtitle_auto": True,
     "std_midtitle_bold": True,
     "abbreviations": {},
+    "abbreviation_defaults": True,
     "std_title_bold": True,
     "std_dateinfo": True,
     "std_dateinfo_bold": True,
@@ -2713,19 +2715,151 @@ def 준말_hwpx_처리(source, target=None, selections=None):
     return count
 
 
-def 준말_선행적용(원본문서경로):
-    """열려 있는 문서의 준말 줄을 본말로 바꾼 결과를 한 번만 다시 연다(등록표가 비면 아무것도 안 함)."""
+def 준말_사용표_만들기(설정):
+    """설정의 준말 등록과 기본 준말(제목1·제목2·개요·붙임·로1~로10)을 합친 사용표. 사용자가 같은 준말을 등록하면 그 등록이 우선한다."""
+    return 준말_기본_병합(설정.get('abbreviations'), 설정.get('abbreviation_defaults', True))
+
+
+def 준말_선행적용(원본문서경로, 현재문서_기준=True, 변경알림=None):
+    """문서의 준말 줄을 본말로 바꾼 결과를 한 번만 다시 연다(사용표가 비면 아무것도 안 함).
+
+    현재문서_기준이 아니면(앞 단계가 문서를 바꾸지 않았으면) 원본 HWPX를 직접 읽어 확인하므로
+    바꿀 줄이 없을 때는 저장·다시 열기도 하지 않는다. 변경알림 dict에 changed를 채워 준다.
+    """
     if not 준말_등록표:
         return True
-    return 제목붙임_선행적용(원본문서경로, 현재문서_기준=True,
-                            처리목록=((True, '준말 변환', 준말_hwpx_처리, 'abbrev.hwpx'),))
+    return 제목붙임_선행적용(원본문서경로, 현재문서_기준=현재문서_기준,
+                            처리목록=((True, '준말 변환', 준말_hwpx_처리, 'abbrev.hwpx'),), 변경알림=변경알림)
+
+
+def _위첨자_글자모양(header, char_id, cache):
+    """글자모양 char_id에 위첨자만 더한 사본의 ID를 돌려준다(이미 위첨자면 그대로, 같은 원본은 사본 하나를 공유)."""
+    if char_id in cache:
+        return cache[char_id]
+    group = next(x for x in header.iter() if 제목_xml이름(x) == 'charProperties')
+    source = next((x for x in group if x.get('id') == char_id), None)
+    if source is None or any(제목_xml이름(x) == 'supscript' for x in source):
+        cache[char_id] = char_id
+        return char_id
+    clone = copy.deepcopy(source)
+    for sub in [x for x in clone if 제목_xml이름(x) == 'subscript']:
+        clone.remove(sub)
+    XML_자식_추가(clone, source, tag=source.tag.rsplit('}', 1)[0] + '}supscript')
+    new_id = str(max([int(x.get('id')) for x in group if (x.get('id') or '').isdigit()] + [-1]) + 1)
+    clone.set('id', new_id)
+    group.append(clone)
+    group.set('itemCnt', str(len(group)))
+    cache[char_id] = new_id
+    return new_id
+
+
+def _문단_별표_대상(p, header_super_ids):
+    """(글 요소 목록, 새로 위첨자로 만들 별표 글자 위치 집합)을 돌려준다. 대상이 없으면 None."""
+    texts = _문단_일반글(p)
+    if not texts:
+        return None
+    full = ''.join(t.text or '' for t in texts)
+    spans = 별표_위치(full)
+    if not spans:
+        return None
+    return texts, spans
+
+
+def 별표위첨자_hwpx_처리(source, target=None, selections=None):
+    """문두기호 문장의 단어 뒤 * / **를 위첨자로 바꾼다(글은 그대로, 별표 글자모양에 위첨자만 더함)."""
+    with zipfile.ZipFile(source) as z:
+        contents = {n: z.read(n) for n in z.namelist()}
+    for name, data in contents.items():
+        if name.startswith('Contents/') and name.endswith('.xml'):
+            for _, pair in ET.iterparse(io.BytesIO(data), events=('start-ns',)):
+                if not re.fullmatch(r'ns\d+', pair[0]): XML_네임스페이스_등록(*pair)
+    header = safe_xml_fromstring(contents['Contents/header.xml'])
+    sections = {n: safe_xml_fromstring(data) for n, data in contents.items() if re.fullmatch(r'Contents/section\d+\.xml', n)}
+    super_ids = {x.get('id') for x in header.iter() if 제목_xml이름(x) == 'charPr'
+                 and any(제목_xml이름(c) == 'supscript' for c in x)}
+    body = {n: [c for c in root if 제목_xml이름(c) == 'p'] for n, root in sections.items()}
+
+    def plan(p):
+        """별표 위치 중 아직 위첨자가 아닌 것만 글 요소별 (요소, 시작, 끝) 조각으로 나눈다."""
+        found = _문단_별표_대상(p, super_ids)
+        if found is None:
+            return []
+        texts, spans = found
+        pieces, offset = [], 0
+        for t in texts:
+            length = len(t.text or '')
+            for start, end in spans:
+                lo, hi = max(start, offset), min(end, offset + length)
+                if lo < hi:
+                    pieces.append((t, lo - offset, hi - offset))
+            offset += length
+        return pieces
+
+    def already(p, piece):
+        run = next(r for r in p if piece[0] in list(r))
+        return run.get('charPrIDRef') in super_ids
+
+    if selections is None:
+        result = {}
+        for name, paras in body.items():
+            result[name] = [(i, sum(1 for pc in plan(p) if not already(p, pc)))
+                            for i, p in enumerate(paras)
+                            if any(not already(p, pc) for pc in plan(p))]
+        return result
+    if not any(items for items in selections.values()):
+        if target is not None: shutil.copyfile(source, target)
+        return 0
+    cache, count = {}, 0
+    for name, items in selections.items():
+        for index, _ in items:
+            p = body[name][index]
+            by_text = {}
+            for piece in plan(p):
+                by_text.setdefault(id(piece[0]), []).append(piece)
+            before = ''.join(제목_문자열(r) for r in p if 제목_xml이름(r) == 'run')
+            for pieces in by_text.values():
+                t = pieces[0][0]
+                run = next(r for r in p if t in list(r))
+                if len(run) != 1 or any(제목_xml이름(x) != 't' for x in run) or len(t):
+                    continue  # 다른 요소가 섞인 글 묶음은 건드리지 않는다.
+                if run.get('charPrIDRef') in super_ids:
+                    continue
+                text, cuts, position = t.text or '', [], 0
+                for _, lo, hi in sorted(pieces, key=lambda x: x[1]):
+                    cuts += [(position, lo, False), (lo, hi, True)]
+                    position = hi
+                cuts.append((position, len(text), False))
+                at = list(p).index(run)
+                p.remove(run)
+                for lo, hi, mark in [c for c in cuts if c[0] < c[1]]:
+                    piece_run = XML_요소_생성(run, tag=run.tag, attrib=dict(run.attrib))
+                    if mark:
+                        piece_run.set('charPrIDRef', _위첨자_글자모양(header, run.get('charPrIDRef'), cache))
+                        count += 1
+                    XML_자식_추가(piece_run, t, tag=t.tag, attrib=dict(t.attrib)).text = text[lo:hi]
+                    p.insert(at, piece_run)
+                    at += 1
+            if ''.join(제목_문자열(r) for r in p if 제목_xml이름(r) == 'run') != before:
+                raise RuntimeError('별표 위첨자 적용 중 문장 글이 바뀌어 중단했습니다.')
+            for lineseg in [x for x in p if 제목_xml이름(x) == 'linesegarray']:
+                p.remove(lineseg)
+        contents[name] = ET.tostring(sections[name], encoding='utf-8', xml_declaration=True)
+    contents['Contents/header.xml'] = ET.tostring(header, encoding='utf-8', xml_declaration=True)
+    _hwpx_안전_저장(contents, target)
+    return count
+
+
+def 별표위첨자_선행적용(원본문서경로, 현재문서_기준=True, 변경알림=None):
+    """문서의 별표(*, **)를 위첨자로 바꾼 결과를 한 번만 다시 연다(바꿀 별표가 없으면 다시 열지 않음)."""
+    return 제목붙임_선행적용(원본문서경로, 현재문서_기준=현재문서_기준,
+                            처리목록=((True, '별표 위첨자', 별표위첨자_hwpx_처리, 'asterisk.hwpx'),), 변경알림=변경알림)
 
 
 def 붙임2종_현재문서_조사(원본문서경로):
     return 서식구조_조사(원본문서경로, 붙임_hwpx_처리, '붙임')
 
 
-def 제목붙임_선행적용(원본문서경로, 현재문서_기준=False, 처리목록=None):
+def 제목붙임_선행적용(원본문서경로, 현재문서_기준=False, 처리목록=None, 변경알림=None):
     """제목·개요·붙임을 먼저 처리하고 결과 문서를 한 번만 연다.
 
     원본 HWPX는 읽기만 한다. HWP는 이미 열린 작업용 한글에서 한 번
@@ -2770,6 +2904,8 @@ def 제목붙임_선행적용(원본문서경로, 현재문서_기준=False, 처
             source = target
             changed = True
             로그(f'{name} 선행 서식 파일 생성 완료')
+        if 변경알림 is not None:
+            변경알림['changed'] = changed
         if changed:
             if 중단_요청됨():
                 return False
@@ -2862,6 +2998,7 @@ def 설정_불러오기():
             if isinstance(저장된값.get("stage_choices"), dict):
                 설정["stage_choices"] = 저장된값["stage_choices"]
             설정["abbreviations"] = 준말_등록표_정리(저장된값.get("abbreviations"))
+            설정["abbreviation_defaults"] = bool(저장된값.get("abbreviation_defaults", True))
     except Exception as e:
         if _콘솔_출력_가능:
             print(f"설정 불러오기 실패(기본값 사용): {e}")
@@ -11158,6 +11295,7 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
         # 원본이 HWP/HWPX가 아니므로 좌우 비교 보기 대상에서는 제외한다.
     비교보기_임베드_재확인()
 
+    박스그림_실행 = False
     # 박스 그림 표(AI 채팅 답변을 붙여넣을 때 흔한 '┌─┬─┐ / │ … │ / └─┴─┘' 형태)는
     # 문단 구조 자체를 바꾸므로, 자간 초기화를 포함한 다른 모든 서식·자간 단계보다
     # 먼저 변환한다. 쪽 범위 지정 작업은 pre_format·precise_table과 마찬가지로
@@ -11168,6 +11306,7 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
         상태(f"{파일명} : 텍스트 표(박스 그림) 변환")
         if 박스그림_전체_적용() is False:
             return False
+        박스그림_실행 = True
 
     # 자간 초기화는 제목·개요·붙임 선행 서식과 일반 표 정밀 복제보다 먼저 한다.
     # 두 단계는 예시 서식의 글자 모양(자간 포함)을 복사하므로, 뒤에서 초기화하면
@@ -11183,16 +11322,30 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
 
     # 준말 → 본말 변환(한 번에 적용): 줄 첫 어절의 준말을 서식 표·문구로 바꾼다. 문서 구조를 바꾸므로
     # 제목·개요·붙임 선행 서식보다 먼저 하고, 쪽 범위 작업에서는 건너뛴다.
-    준말변환_실행 = False
+    # 앞 단계(박스 그림 표 변환·자간 초기화)가 열린 문서를 바꿨으면 그 문서를, 아니면 원본 파일을 기준으로 한다.
+    # 준말·별표 위첨자는 바꿀 것이 있을 때만 결과를 다시 열고, 다시 열었으면 뒤 단계도 그 문서를 기준으로 한다.
+    문서_변경됨 = 자간초기화_완료 or 박스그림_실행
     if 작업_모드 == 'all' and 준말_등록표 and stage_enabled(선택_세부작업, 'abbreviation', 작업_모드):
         if 쪽범위_요청 is not None:
             로그("쪽 범위 지정: 준말 변환(문서 전체 구조 변환)은 이번 작업에서 건너뜁니다.")
         else:
             단계표시("준말 변환")
             상태(f"{파일명} : 준말 → 본말 변환")
-            if 준말_선행적용(작업파일경로) is False:
+            알림 = {}
+            if 준말_선행적용(작업파일경로, 현재문서_기준=문서_변경됨, 변경알림=알림) is False:
                 return False
-            준말변환_실행 = True
+            문서_변경됨 = 문서_변경됨 or bool(알림.get('changed'))
+
+    # 별표 위첨자: 문두기호 문장의 단어 뒤 * / **를 위첨자로 한다. 글자 모양만 바꾸는 문서 전체 변환이라
+    # 쪽 범위 작업에서는 건너뛴다.
+    if (표준서식_사용 and 작업_모드 in ('format', 'all') and 쪽범위_요청 is None
+            and stage_enabled(선택_세부작업, 'asterisk_superscript', 작업_모드)):
+        단계표시("별표 위첨자")
+        상태(f"{파일명} : 별표(*, **) 위첨자 적용")
+        알림 = {}
+        if 별표위첨자_선행적용(작업파일경로, 현재문서_기준=문서_변경됨, 변경알림=알림) is False:
+            return False
+        문서_변경됨 = 문서_변경됨 or bool(알림.get('changed'))
 
     if 표준서식_사용 and 작업_모드 in ('format', 'all'):
         if 쪽범위_요청 is not None:
@@ -11201,7 +11354,7 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
         elif stage_enabled(선택_세부작업, 'pre_format', 작업_모드):
             단계표시("제목·개요·붙임 선행 서식")
             상태(f"{파일명} : 제목·개요·붙임 선행 서식")
-            if 제목붙임_선행적용(작업파일경로, 현재문서_기준=(자간초기화_완료 or 준말변환_실행)) is False:
+            if 제목붙임_선행적용(작업파일경로, 현재문서_기준=문서_변경됨) is False:
                 return False
         if 쪽범위_요청 is None and 활성_정밀표_프로필 and stage_enabled(선택_세부작업, 'precise_table'):
             단계표시("표 정밀 서식")
@@ -11447,7 +11600,7 @@ def 작업_실행(
 
     if 표준서식_세부 is None:
         표준서식_세부 = {}
-    준말_등록표 = 준말_등록표_정리(설정_불러오기().get('abbreviations') if 준말_등록 is None else 준말_등록)
+    준말_등록표 = 준말_사용표_만들기(설정_불러오기() if 준말_등록 is None else {'abbreviations': 준말_등록})
     if 표준서식_문단위간격_pt is None:
         표준서식_문단위간격_pt = {}
 
@@ -12546,10 +12699,15 @@ class HwpAutoDocFitGUI:
                     설정 = 설정_불러오기()
                     설정["abbreviations"] = 준말_등록표_정리(등록표)
                     설정_저장(설정)
-                open_abbreviation_dialog(parent.winfo_toplevel(), lambda: 설정_불러오기().get("abbreviations", {}), 저장)
+                def 기본_저장(사용):
+                    설정 = 설정_불러오기()
+                    설정["abbreviation_defaults"] = bool(사용)
+                    설정_저장(설정)
+                open_abbreviation_dialog(parent.winfo_toplevel(), lambda: 설정_불러오기().get("abbreviations", {}), 저장,
+                                         lambda: 설정_불러오기().get("abbreviation_defaults", True), 기본_저장)
             ttk.Button(parent, text="준말 등록·관리…", command=준말창_열기).pack(anchor="w")
-            ttk.Label(parent, text="등록한 준말이 없으면 이 단계는 아무것도 하지 않습니다. 콜론 앞에 준말을 적은 줄만 바꾸며, "
-                                   "쪽 범위 작업에서는 건너뜁니다.",
+            ttk.Label(parent, text="기본 준말(제목1:·제목2:·개요:·붙임:·로1 : …)은 등록하지 않아도 바뀝니다. 콜론 앞에 준말을 적은 줄만 바꾸며, "
+                                   "쪽 범위 작업에서는 건너뜁니다. 끄려면 이 단계의 체크를 해제하세요.",
                       style="Hint.TLabel", wraplength=610).pack(anchor="w", pady=(2, 0))
         elif key == "precise_table":
             profile_row = ttk.Frame(parent)
@@ -15542,6 +15700,7 @@ class HwpAutoDocFitGUI:
             if isinstance(기존_세부작업, dict) and 기존_세부작업:
                 설정값["stage_choices"] = 기존_세부작업
             설정값["abbreviations"] = 기존_설정.get("abbreviations", {})
+            설정값["abbreviation_defaults"] = 기존_설정.get("abbreviation_defaults", True)
             설정_저장(설정값)
             기호글꼴_적용(설정값)
             표글꼴_적용(설정값.get("table_fonts"))

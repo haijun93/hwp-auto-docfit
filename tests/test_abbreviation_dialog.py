@@ -58,6 +58,16 @@ class DialogTest(unittest.TestCase):
         self.assertNotIn('요약', saved[-1])
         window.destroy()
 
+    def test_defaults_checkbox_is_saved(self):
+        flags = []
+        window = open_abbreviation_dialog(self.root, lambda: {}, lambda data: None, lambda: True, flags.append)
+        actions = window._docfit_actions
+        self.assertTrue(actions['defaults_var'].get())
+        actions['defaults_var'].set(False)
+        actions['defaults_changed']()
+        self.assertEqual(flags, [False])
+        window.destroy()
+
 
 if __name__ == '__main__':
     unittest.main()

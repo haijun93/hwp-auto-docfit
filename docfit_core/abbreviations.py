@@ -142,3 +142,10 @@ def describe(spec: dict) -> tuple[str, str]:
     if spec.get("type") == "format":
         return TYPE_LABELS["format"], FORMAT_KINDS.get(spec.get("value"), str(spec.get("value")))
     return TYPE_LABELS["text"], str(spec.get("value", ""))
+
+
+def merge_with_defaults(user_entries, use_defaults: bool = True) -> dict[str, dict]:
+    """사용자가 등록한 준말에 기본 준말(제목1·제목2·개요·붙임·로1~로10)을 합친다. 같은 준말은 사용자 등록이 우선한다."""
+    merged = normalize(DEFAULT_ENTRIES) if use_defaults else {}
+    merged.update(normalize(user_entries))
+    return merged

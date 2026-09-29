@@ -8,8 +8,10 @@ from tkinter import messagebox, ttk
 from .abbreviations import DEFAULT_ENTRIES, FORMAT_KINDS, TYPE_LABELS, describe, normalize, upsert
 
 
-def open_abbreviation_dialog(parent, load, save):
-    """load() -> 등록표(dict), save(등록표) 로 저장한다. 창 객체를 돌려준다."""
+def open_abbreviation_dialog(parent, load, save, load_defaults=None, save_defaults=None):
+    """load() -> 등록표(dict), save(등록표) 로 저장한다. 기본 준말 사용 여부는 load_defaults()/save_defaults(bool)로 다룬다.
+
+    창 객체를 돌려준다."""
     entries = normalize(load())
     window = tk.Toplevel(parent)
     window.title("준말 등록·관리")
@@ -18,11 +20,20 @@ def open_abbreviation_dialog(parent, load, save):
     body = ttk.Frame(window, padding=12)
     body.pack(fill="both", expand=True)
     ttk.Label(body, wraplength=600, justify="left", text=(
-        "한/글의 상용구처럼 준말을 본말로 바꿉니다. '한 번에 적용'을 실행하면 줄 맨 앞 어절이 준말이고 "
+        "한/글의 상용구처럼 준말을 본말로 바꿉니다. 제목1·제목2(제목:)·개요·붙임·로1~로10(로마자 번호)은 "
+        "등록하지 않아도 기본으로 쓸 수 있습니다. '한 번에 적용'을 실행하면 줄 맨 앞 어절이 준말이고 "
         "바로 뒤에 콜론(:)이 이어지는 줄(예: 제목1: 지구 침공계획(안) 보고)을 본말로 바꿉니다. "
         "서식 표는 콜론 뒤 글을 표 A1 칸에 넣고, 문구는 준말·콜론을 본말로 바꿔 뒷글에 이어 붙입니다.")
               ).pack(anchor="w", pady=(0, 8))
 
+    defaults_var = tk.BooleanVar(value=True if load_defaults is None else bool(load_defaults()))
+
+    def defaults_changed():
+        if save_defaults is not None:
+            save_defaults(bool(defaults_var.get()))
+
+    ttk.Checkbutton(body, text="기본 준말 사용 (제목1·제목2·개요·붙임·로1~로10, 아래 등록이 같은 준말이면 등록이 우선)",
+                    variable=defaults_var, command=defaults_changed).pack(anchor="w", pady=(0, 6))
     tree = ttk.Treeview(body, columns=("key", "type", "value"), show="headings", height=8, selectmode="browse")
     for column, title, width in (("key", "준말", 110), ("type", "종류", 90), ("value", "본말", 400)):
         tree.heading(column, text=title)
@@ -106,7 +117,7 @@ def open_abbreviation_dialog(parent, load, save):
     buttons.pack(fill="x", pady=(8, 0))
     ttk.Button(buttons, text="추가·수정", command=add).pack(side="left")
     ttk.Button(buttons, text="삭제", command=remove).pack(side="left", padx=(6, 0))
-    ttk.Button(buttons, text="기본 준말 넣기 (제목1·제목2·개요)", command=add_defaults).pack(side="left", padx=(6, 0))
+    ttk.Button(buttons, text="기본 준말을 목록에 복사(고쳐 쓰기)", command=add_defaults).pack(side="left", padx=(6, 0))
     ttk.Button(buttons, text="닫기", command=window.destroy).pack(side="right")
 
     type_box.bind("<<ComboboxSelected>>", switch_type)
@@ -115,5 +126,6 @@ def open_abbreviation_dialog(parent, load, save):
     refresh()
     window.entries_view = tree  # 시험용 접근점
     window._docfit_actions = {"add": add, "remove": remove, "defaults": add_defaults,
-                              "vars": (key_var, type_var, format_var, text_var, status)}
+                              "vars": (key_var, type_var, format_var, text_var, status),
+                              "defaults_var": defaults_var, "defaults_changed": defaults_changed}
     return window
