@@ -26,7 +26,7 @@ class PipelineOrderFixesTest(unittest.TestCase):
 
         snapshot = Mock(side_effect=lambda path: Path(path))
         with patch.dict(fn.__globals__, {
-            '제목4종_사용': True, '붙임2종_사용': False, '제목_hwpx_처리': processor,
+            '제목4종_사용': True, '붙임2종_사용': False, '중제목_사용': False, '제목_hwpx_처리': processor,
             '_제목_임시hwpx_저장': snapshot, '로그': Mock(), '중단_요청됨': lambda: False,
         }):
             self.assertTrue(fn('C:/원본/문서.hwpx', 현재문서_기준=True))
@@ -66,6 +66,7 @@ class PipelineOrderFixesTest(unittest.TestCase):
                  patch.dict(g, {
                      '제목4종_사용': True,
                      '붙임2종_사용': False,
+                     '중제목_사용': False,
                      '중단_요청됨': lambda: False,
                      '_제목_임시hwpx_저장': lambda path: Path(path),
                      '제목_hwpx_처리': Mock(side_effect=RuntimeError('분석 실패')),

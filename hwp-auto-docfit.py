@@ -1021,6 +1021,7 @@ def 번들_리소스_폴더():
     "std_title": True,
     "std_title_auto": True,
     "std_attachment_auto": True,
+    "std_midtitle_auto": True,
     "std_title_bold": True,
     "std_dateinfo": True,
     "std_dateinfo_bold": True,
@@ -1528,8 +1529,12 @@ _제목4종_XML = 'eJztXetv21aW/1cI90sLrC3xoZfRppBlOXYrW4ElN5NFUIOWriQ2FMmSVFRns
 # 첨부한 4종 제목 표의 원본 XML을 내장한다(외부 서식파일 불필요).
 제목4종_사용 = True
 붙임2종_사용 = True
+중제목_사용 = True
 
 _개요붙임3종_XML = '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'
+
+# 첨부한 '중제목' 표(로마자 번호 + 글)의 기준 서식. 번호·글 모두 HY견고딕 20pt로 정규화해 내장한다.
+_중제목_XML = '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'
 
 def 개요붙임_원본자료():
     payload = json.loads(zlib.decompress(base64.b64decode(_개요붙임3종_XML)).decode('utf-8'))
@@ -1568,6 +1573,129 @@ def 붙임_대상찾기(section):
                     result.append((ordinal, kind))
                 ordinal += 1
     return result
+
+_중제목_번호 = re.compile(r'^(?:[Ⅰ-ⅿ]+|[IVX]{1,4})\s*[.．]?$')
+_중제목_글자폭_pt = 20
+
+
+def 중제목_유형판별(table):
+    """중제목 표: 1행, 첫 칸은 로마자 번호, 다음 칸(유형2) 또는 다음다음 칸(유형1)에 글.
+
+    유형1 = 1행3열(번호·빈칸·글), 유형2 = 1행2열(번호·글). 표·그림이 든 칸이나
+    붙임·기호 문장으로 시작하는 글은 중제목으로 보지 않는다.
+    """
+    cells = 제목_셀들(table)
+    rows, cols = int(table.get('rowCnt', '0')), int(table.get('colCnt', '0'))
+    if rows != 1 or cols not in (2, 3) or len(cells) != cols:
+        return None
+    for c in cells:
+        if any(제목_xml이름(x) in ('tbl', 'pic', 'ole', 'rect', 'fieldBegin') for x in c.iter()):
+            return None
+        span = 제목_자식(c, 'cellSpan')
+        if span is not None and (span.get('colSpan', '1') != '1' or span.get('rowSpan', '1') != '1'):
+            return None
+    texts = [제목_문자열(c).strip() for c in cells]
+    if not _중제목_번호.match(texts[0]):
+        return None
+    text = texts[-1]
+    if not text or len(text) > 80 or re.match(r'^[□ㅁㅇ○※*\-]', text) or text.startswith('붙임'):
+        return None
+    if cols == 3 and texts[1]:
+        return None
+    return 1 if cols == 3 else 2
+
+
+def 중제목_대상찾기(section):
+    """각 구역의 최상위 표 중 중제목 구조인 표의 (순번, 유형) 목록."""
+    result = []
+    ordinal = 0
+    for p in section:
+        for run in p:
+            for table in run:
+                if 제목_xml이름(table) != 'tbl':
+                    continue
+                kind = 중제목_유형판별(table)
+                if kind:
+                    result.append((ordinal, kind))
+                ordinal += 1
+    return result
+
+
+def 중제목_원본자료():
+    payload = json.loads(zlib.decompress(base64.b64decode(_중제목_XML)).decode('utf-8'))
+    return safe_xml_fromstring(payload['header']), safe_xml_fromstring(payload['section'])
+
+
+def _중제목_글폭(text, pt=_중제목_글자폭_pt):
+    """20pt 기준 글 한 줄의 대략적인 폭(HWPUNIT). 한글·한자는 전각, 영문·숫자는 절반."""
+    full = pt * 100
+    total = 0
+    for ch in text:
+        if ch == ' ':
+            total += full * 0.5
+        elif ord(ch) < 0x2E80 and ch.isascii():
+            total += full * 0.55
+        else:
+            total += full
+    return int(total)
+
+
+def 중제목_표서식_복사(table, sample, maps, kind):
+    """중제목 글은 그대로 두고 표·칸·문단·글자 서식만 기준 표에서 복사한다.
+
+    기준 표는 [번호 | 빈칸 | 글] 순서이며 유형2(2열)는 빈칸 서식을 건너뛴다.
+    표·칸 크기는 문서의 것을 유지하되, 20pt 글이 칸에 들어가지 않으면 글 칸만 넓힌다.
+    """
+    for attr in ('borderFillIDRef', 'cellSpacing', 'textWrap', 'textFlow', 'pageBreak', 'repeatHeader'):
+        if attr in sample.attrib:
+            value = sample.get(attr)
+            table.set(attr, maps['borderFills'][value] if attr == 'borderFillIDRef' else value)
+    for name in ('inMargin', 'outMargin'):
+        src, dst = 제목_자식(sample, name), 제목_자식(table, name)
+        if src is not None and dst is not None:
+            dst.attrib.update(src.attrib)
+    scells = 제목_셀들(sample)
+    roles = [scells[0], scells[1], scells[2]] if kind == 1 else [scells[0], scells[2]]
+    for cell, scell in zip(제목_셀들(table), roles):
+        cell.set('borderFillIDRef', maps['borderFills'][scell.get('borderFillIDRef')])
+        cell.set('hasMargin', scell.get('hasMargin', '0'))
+        src, dst = 제목_자식(scell, 'cellMargin'), 제목_자식(cell, 'cellMargin')
+        if src is not None and dst is not None:
+            dst.attrib.update(src.attrib)
+        sub, ssub = 제목_자식(cell, 'subList'), 제목_자식(scell, 'subList')
+        sub.set('vertAlign', ssub.get('vertAlign', 'CENTER'))
+        sp = 제목_문단들(scell)[0]
+        para_id = maps['paraProperties'].get(sp.get('paraPrIDRef'))
+        char_id = maps['charProperties'].get(next(r for r in sp if 제목_xml이름(r) == 'run').get('charPrIDRef'))
+        if para_id is None or char_id is None:
+            raise RuntimeError(f'중제목 기준서식 매핑 누락: {sp.get("paraPrIDRef")}')
+        # 빈칸 문단도 함께 맞춰 글자 크기(줄 높이)가 서식 그대로 유지되게 한다.
+        for p in 제목_문단들(cell):
+            p.set('paraPrIDRef', para_id)
+            p.set('styleIDRef', '0')
+            for r in list(p):
+                if 제목_xml이름(r) == 'linesegarray':
+                    p.remove(r)
+                elif 제목_xml이름(r) == 'run':
+                    r.set('charPrIDRef', char_id)
+    _중제목_칸폭_확보(table)
+
+
+def _중제목_칸폭_확보(table):
+    """글 칸이 20pt 글보다 좁으면 그 칸과 표 폭을 필요한 만큼 늘린다."""
+    cells = 제목_셀들(table)
+    text_cell = cells[-1]
+    size, margin = 제목_자식(text_cell, 'cellSz'), 제목_자식(text_cell, 'cellMargin')
+    tsize = 제목_자식(table, 'sz')
+    if size is None or margin is None or tsize is None:
+        return
+    lines = [제목_문자열(p) for p in 제목_문단들(text_cell)]
+    need = max([_중제목_글폭(t) for t in lines] + [0]) + int(margin.get('left', '0')) + int(margin.get('right', '0')) + 600
+    have = int(size.get('width', '0'))
+    if need > have:
+        size.set('width', str(need))
+        tsize.set('width', str(int(tsize.get('width', '0')) + need - have))
+
 
 def 개요_표인가(table):
     cells = 제목_셀들(table)
@@ -2213,6 +2341,43 @@ def 붙임_hwpx_처리(source, target=None, selections=None):
             z.writestr(name, data, compress_type=zipfile.ZIP_STORED if name == 'mimetype' else zipfile.ZIP_DEFLATED)
     return count
 
+def 중제목_hwpx_처리(source, target=None, selections=None):
+    with zipfile.ZipFile(source) as z:
+        contents = {n: z.read(n) for n in z.namelist()}
+    for name, data in contents.items():
+        if name.startswith('Contents/') and name.endswith('.xml'):
+            for _, pair in ET.iterparse(io.BytesIO(data), events=('start-ns',)):
+                if not re.fullmatch(r'ns\d+', pair[0]): XML_네임스페이스_등록(*pair)
+    header = safe_xml_fromstring(contents['Contents/header.xml'])
+    sections = {n: safe_xml_fromstring(data) for n, data in contents.items() if re.fullmatch(r'Contents/section\d+\.xml', n)}
+    if selections is None:
+        return {n: 중제목_대상찾기(root) for n, root in sections.items()}
+    if not any(items for items in selections.values()):
+        if target is not None: shutil.copyfile(source, target)
+        return 0
+    sh, ss = 중제목_원본자료()
+    sample = next(x for x in ss.iter() if 제목_xml이름(x) == 'tbl')
+    maps = 제목_참조병합(header, sh)
+    count = 0
+    for name, items in selections.items():
+        root = sections[name]
+        tables = [t for p in root for r in p for t in r if 제목_xml이름(t) == 'tbl']
+        for index, kind in items:
+            table = tables[index]
+            if 중제목_유형판별(table) != kind:
+                raise RuntimeError('처리 중 중제목 구조가 변경되어 중제목 서식적용을 중단했습니다.')
+            before = 제목_문자열(table)
+            중제목_표서식_복사(table, sample, maps, kind)
+            if 제목_문자열(table) != before: raise RuntimeError('중제목 텍스트 보존 검사 실패')
+            count += 1
+        contents[name] = ET.tostring(root, encoding='utf-8', xml_declaration=True)
+    contents['Contents/header.xml'] = ET.tostring(header, encoding='utf-8', xml_declaration=True)
+    with zipfile.ZipFile(target, 'w', zipfile.ZIP_DEFLATED) as z:
+        for name, data in contents.items():
+            z.writestr(name, data, compress_type=zipfile.ZIP_STORED if name == 'mimetype' else zipfile.ZIP_DEFLATED)
+    return count
+
+
 def 붙임2종_현재문서_조사(원본문서경로):
     return 서식구조_조사(원본문서경로, 붙임_hwpx_처리, '붙임')
 
@@ -2225,7 +2390,7 @@ def 제목붙임_선행적용(원본문서경로, 현재문서_기준=False):
     현재문서_기준이면 원본 파일 대신 지금 열린 문서(예: 자간 초기화를 마친
     문서)를 스냅샷으로 저장해 그 위에 서식을 입힌다.
     """
-    if not (제목4종_사용 or 붙임2종_사용):
+    if not (제목4종_사용 or 붙임2종_사용 or 중제목_사용):
         return True
     folder = Path(tempfile.mkdtemp(prefix='hwp_format_first_'))
     스냅샷_저장시도 = False
@@ -2242,6 +2407,7 @@ def 제목붙임_선행적용(원본문서경로, 현재문서_기준=False):
         changed = False
         for enabled, name, processor, filename in (
             (제목4종_사용, '제목·개요', 제목_hwpx_처리, 'title.hwpx'),
+            (중제목_사용, '중제목', 중제목_hwpx_처리, 'midtitle.hwpx'),
             (붙임2종_사용, '붙임', 붙임_hwpx_처리, 'attachment.hwpx'),
         ):
             if 중단_요청됨():
@@ -10662,7 +10828,7 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
     if 표준서식_사용 and 작업_모드 in ('format', 'all'):
         if 쪽범위_요청 is not None:
             # 제목·개요·붙임 표 서식은 문서 전체 구조를 한 번에 바꾸는 방식이라 쪽별로 나눌 수 없다.
-            로그("쪽 범위 지정: 제목·개요·붙임 자동 서식(문서 전체 구조 변환)은 이번 작업에서 건너뜁니다.")
+            로그("쪽 범위 지정: 제목·개요·중제목·붙임 자동 서식(문서 전체 구조 변환)은 이번 작업에서 건너뜁니다.")
         elif stage_enabled(선택_세부작업, 'pre_format', 작업_모드):
             단계표시("제목·개요·붙임 선행 서식")
             상태(f"{파일명} : 제목·개요·붙임 선행 서식")
@@ -10893,7 +11059,7 @@ def 작업_실행(
     global 작업_모드, 문두라벨_기호설정
     global 표_자간조정_사용, 쪽범위_요청, 로그파일_사용
     global 단어중간_줄바꿈방지_사용
-    global 제목4종_사용, 붙임2종_사용
+    global 제목4종_사용, 붙임2종_사용, 중제목_사용
     global hwp, 색상_설정, 비교보기_사용, 비교보기_좌측_프레임_hwnd, 비교보기_우측_프레임_hwnd, 로그_파일_경로
     global 작업_hwp_hwnd, 자동닫기_설정, 표준서식_사용, 검수_사용, 검수_문제목록, 최종검수_문서목록
     global 서식통일_빨간표시_사용
@@ -10973,6 +11139,7 @@ def 작업_실행(
         표준서식_줄간격_사용 = 표준서식_세부.get("std_linespacing", 표준서식_줄간격_사용)
         제목4종_사용 = bool(표준서식_세부.get("std_title_auto", True))
         붙임2종_사용 = bool(표준서식_세부.get("std_attachment_auto", True))
+        중제목_사용 = bool(표준서식_세부.get("std_midtitle_auto", True))
         표준서식_제목_사용 = 표준서식_세부.get("std_title", 표준서식_제목_사용)
         표준서식_일자담당자_사용 = 표준서식_세부.get("std_dateinfo", 표준서식_일자담당자_사용)
         표준서식_기호_사용 = 표준서식_세부.get("std_symbols", 표준서식_기호_사용)
@@ -11492,7 +11659,7 @@ class HwpAutoDocFitGUI:
 
 
         self.std_bool_keys = [
-            "std_margin", "std_ratio", "std_linespacing", "std_title", "std_title_bold", "std_title_auto", "std_attachment_auto",
+            "std_margin", "std_ratio", "std_linespacing", "std_title", "std_title_bold", "std_title_auto", "std_attachment_auto", "std_midtitle_auto",
             "std_dateinfo", "std_dateinfo_bold", "std_symbols", "std_symbol_box_bold",
             "std_symbol_o_bold", "std_symbol_dash_bold", "std_symbol_note_bold",
             "std_marker_bold_consistency",
@@ -11989,8 +12156,13 @@ class HwpAutoDocFitGUI:
             attachment_auto.pack(anchor="w", pady=(6, 0))
             ttk.Label(parent, text="쪽 첫부분의 '붙임' 표를 1행3열/1행2열 구조로 판별하여 해당 기준서식을 적용.",
                       style="Hint.TLabel", wraplength=610).pack(anchor="w")
+            midtitle_auto = ttk.Checkbutton(parent, text="중제목표 서식 적용 (Ⅰ·Ⅱ 번호 표)",
+                                             variable=self.std_bool_vars["std_midtitle_auto"])
+            midtitle_auto.pack(anchor="w", pady=(6, 0))
+            ttk.Label(parent, text="로마자 번호 칸 뒤에 글이 오는 1행 표를 중제목으로 판별해 번호·글을 HY견고딕 20pt 서식으로 정리.",
+                      style="Hint.TLabel", wraplength=610).pack(anchor="w")
             if 주설정탭:
-                self.std_detail_checks += [title_auto, attachment_auto]
+                self.std_detail_checks += [title_auto, attachment_auto, midtitle_auto]
         elif key == "precise_table":
             profile_row = ttk.Frame(parent)
             profile_row.pack(anchor="w", fill="x")
