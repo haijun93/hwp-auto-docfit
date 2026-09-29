@@ -32,6 +32,27 @@ class LabeledTextTest(unittest.TestCase):
         self.assertIn("※ 일정은 추후 확정", text)
         self.assertIn("* 예산 포함", text)
 
+    def test_title1_and_overview_labels_become_blocks_without_label_lines(self):
+        text = "제목1: 지구 침공계획(안) 보고\n개요: 삼채인의 명랑 지구침략계획을 수립하고 보고드림"
+        self.assertTrue(looks_labeled(text))
+        self.assertEqual(parse_labeled_text(text), [
+            {"kind": "title1", "text": "지구 침공계획(안) 보고"},
+            {"kind": "box", "text": "삼채인의 명랑 지구침략계획을 수립하고 보고드림"},
+        ])
+        # 라벨과 콜론 사이의 빈칸·전각 콜론·앞뒤 공백을 허용한다. 라벨 줄 자체는 결과에 남지 않는다.
+        for line in ("제목1 : 지구 침공계획(안) 보고", "  제목1   ：지구 침공계획(안) 보고", "제목1:지구 침공계획(안) 보고"):
+            blocks = parse_labeled_text(line + "\n개요 : 요지 문장")
+            self.assertEqual(blocks[0], {"kind": "title1", "text": "지구 침공계획(안) 보고"}, line)
+            self.assertEqual(blocks[1], {"kind": "box", "text": "요지 문장"}, line)
+        rendered = label_outline_text(text)
+        self.assertNotIn("제목1", rendered)
+        self.assertNotIn("개요:", rendered)
+
+    def test_title1_line_continuation_and_following_items(self):
+        blocks = parse_labeled_text("제목1: 지구 침공\n계획 보고\n개요: 요지\n네모: 배경")
+        self.assertEqual(blocks[0], {"kind": "title1", "text": "지구 침공 계획 보고"})
+        self.assertEqual([b["kind"] for b in blocks], ["title1", "box", "para"])
+
     def test_numbered_headings_and_continuation(self):
         text = label_outline_text("숫자소제목: 추진 배경\n원: 현황\n이어지는 문장\n숫자소제목: 추진 계획\n로마소제목: 총괄")
         self.assertIn("1. 추진 배경", text)

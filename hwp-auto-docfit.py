@@ -2363,6 +2363,100 @@ def 중제목_hwpx_처리(source, target=None, selections=None):
     return count
 
 
+# 라벨 입력 모드(제목1:/개요:)가 한/글에 넣은 1×1 표의 첫 칸에 붙이는 표식. 저장한 HWPX에서
+# 이 표식이 붙은 표를 찾아 제목1·개요 서식 표로 바꾸고 표식은 지운다.
+_라벨_표식 = {'title1': '@@DOCFIT:제목1@@', 'box': '@@DOCFIT:개요@@'}
+
+
+def 라벨_서식표_적용(source, target=None):
+    """표식이 붙은 표를 제목1(2×2, 글은 A1) 또는 개요(요지) 서식 표로 바꾼다. 바꾼 표 수를 돌려준다.
+
+    표식 없는 문서는 파일을 건드리지 않는다. target이 없으면 source를 덮어쓴다.
+    """
+    target = source if target is None else target
+    with zipfile.ZipFile(source) as z:
+        contents = {n: z.read(n) for n in z.namelist()}
+    if not any(m.encode('utf-8') in data for n, data in contents.items()
+               if re.fullmatch(r'Contents/section\d+\.xml', n) for m in _라벨_표식.values()):
+        return 0
+    for name, data in contents.items():
+        if name.startswith('Contents/') and name.endswith('.xml'):
+            for _, pair in ET.iterparse(io.BytesIO(data), events=('start-ns',)):
+                if not re.fullmatch(r'ns\d+', pair[0]): XML_네임스페이스_등록(*pair)
+    header = safe_xml_fromstring(contents['Contents/header.xml'])
+    sections = {n: safe_xml_fromstring(data) for n, data in contents.items() if re.fullmatch(r'Contents/section\d+\.xml', n)}
+    title_sample = title_maps = overview_sample = overview_maps = None
+    next_id = 1 + max([int(t.get('id')) for root in sections.values() for t in root.iter()
+                       if 제목_xml이름(t) == 'tbl' and (t.get('id') or '').isdigit()] + [0])
+    count = 0
+    for name, root in sections.items():
+        for run in [r for p in root for r in p]:
+            for table in [t for t in run if 제목_xml이름(t) == 'tbl']:
+                cells = 제목_셀들(table)
+                head_text = 제목_문자열(cells[0]) if cells else ''
+                kind = next((k for k, m in _라벨_표식.items() if head_text.startswith(m)), None)
+                if kind is None:
+                    continue
+                marker = _라벨_표식[kind]
+                for t in cells[0].iter():
+                    if 제목_xml이름(t) == 't' and t.text and marker in t.text:
+                        t.text = t.text.replace(marker, '', 1)
+                        break
+                if marker in 제목_문자열(cells[0]):
+                    raise RuntimeError('라벨 표식을 지우지 못했습니다.')
+                text = 제목_문자열(cells[0])
+                if kind == 'box':
+                    if overview_sample is None:
+                        eh, es = 개요붙임_원본자료()
+                        overview_sample = next(x for x in es.iter() if 제목_xml이름(x) == 'tbl')
+                        overview_maps = 제목_참조병합(header, eh)
+                    제목_표서식_복사(table, overview_sample, overview_maps)
+                    제목_괄호부연_축소(header, table)
+                    result = table
+                else:
+                    if title_sample is None:
+                        th, ts = 제목_원본자료()
+                        title_sample = next(x for x in ts.iter() if 제목_xml이름(x) == 'tbl')
+                        title_maps = 제목_참조병합(header, th)
+                    result = copy.deepcopy(title_sample)
+                    rcells = 제목_셀들(result)
+                    first = 제목_문단들(rcells[0])[0]
+                    runs = [r for r in first if 제목_xml이름(r) == 'run']
+                    for extra in runs[1:]:
+                        first.remove(extra)
+                    for child in list(runs[0]):
+                        runs[0].remove(child)
+                    XML_자식_추가(runs[0], title_sample, tag='{http://www.hancom.co.kr/hwpml/2011/paragraph}t').text = text
+                    제목_표서식_복사(result, title_sample, title_maps)
+                    제목_문단_가운데정렬(header, result)
+                    제목_괄호부연_축소(header, result)
+                    # 날짜·담당자 칸은 서식만 남기고 비운다(글은 A1에만 넣는다).
+                    for cell in rcells[1:]:
+                        for p in 제목_문단들(cell):
+                            for r in [x for x in p if 제목_xml이름(x) == 'run']:
+                                for t in [x for x in r if 제목_xml이름(x) == 't']:
+                                    r.remove(t)
+                    result.set('id', str(next_id)); next_id += 1
+                    run[list(run).index(table)] = result
+                if 제목_문자열(result if kind == 'box' else rcells[0]).strip() != text.strip():
+                    raise RuntimeError('라벨 서식표 텍스트 보존 검사 실패')
+                count += 1
+        contents[name] = ET.tostring(root, encoding='utf-8', xml_declaration=True)
+    contents['Contents/header.xml'] = ET.tostring(header, encoding='utf-8', xml_declaration=True)
+    임시 = Path(str(target) + '.tmp')
+    with zipfile.ZipFile(임시, 'w', zipfile.ZIP_DEFLATED) as z:
+        for name, data in contents.items():
+            z.writestr(name, data, compress_type=zipfile.ZIP_STORED if name == 'mimetype' else zipfile.ZIP_DEFLATED)
+    for 시도 in range(20):
+        try:
+            os.replace(임시, target)
+            break
+        except PermissionError:
+            if 시도 == 19: raise
+            time.sleep(0.1)
+    return count
+
+
 def 붙임2종_현재문서_조사(원본문서경로):
     return 서식구조_조사(원본문서경로, 붙임_hwpx_처리, '붙임')
 
@@ -10474,7 +10568,8 @@ def 라벨블록_한글삽입(한글, 블록들):
     """labeled_text 블록을 한/글 문서 끝에 차례로 넣는다(A4 제목 상자 표 템플릿).
 
     제목·개요(상자)·참고는 1×1 표로 넣는다. 1×1 제목 표는 제목 서식(제목_hwpx_처리)의
-    대상이 아니므로(유형 삭제) 제목 서식이 자동으로 적용되지 않는다.
+    대상이 아니므로(유형 삭제) 제목 서식이 자동으로 적용되지 않는다. 제목1·개요 라벨은
+    표식을 붙여 넣고 저장 뒤 라벨_서식표_적용이 각각 제목1·개요 서식 표로 바꾼다.
     """
     def 글쓰기(내용):
         act = 한글.HAction
@@ -10511,7 +10606,10 @@ def 라벨블록_한글삽입(한글, 블록들):
         종류 = 블록["kind"]
         if 종류 == "blank":
             continue
-        if 종류 in ("title", "box", "ref"):
+        if 종류 in ("title1", "box"):
+            # 제목1·개요는 표식을 붙여 넣고, 저장 뒤 라벨_서식표_적용이 서식 표로 바꾼다.
+            표넣기([[_라벨_표식[종류] + 블록["text"]]])
+        elif 종류 in ("title", "ref"):
             표넣기([[블록["text"] if 종류 != "ref" else f"참고  {블록['text']}"]])
         elif 종류 == "table":
             표넣기(블록["rows"])
@@ -10531,6 +10629,7 @@ def 텍스트_hwpx_단독변환(텍스트, 대상경로):
     """
     pythoncom.CoInitialize()
     단독_hwp = None
+    서식표_후처리 = False
     try:
         단독_hwp = 한글_COM_인스턴스_생성(독립=True)
         try:
@@ -10541,22 +10640,24 @@ def 텍스트_hwpx_단독변환(텍스트, 대상경로):
             raise RuntimeError("빈 문서를 만들지 못했습니다.")
         if looks_labeled(텍스트):
             # 라벨 형식(제목:/네모:/원: …)이면 제목·개요·참고를 1×1 상자 표로, 표: 줄을 표로 넣는다.
-            라벨블록_한글삽입(단독_hwp, parse_labeled_text(텍스트))
+            블록들 = parse_labeled_text(텍스트)
+            라벨블록_한글삽입(단독_hwp, 블록들)
             if 단독_hwp.SaveAs(str(대상경로), "HWPX", "") is False:
                 raise RuntimeError("HWPX로 저장하지 못했습니다.")
-            return
-        줄들 = 텍스트.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-        for 순번, 줄 in enumerate(줄들):
-            if 줄:
-                act = 단독_hwp.HAction
-                pset = 단독_hwp.HParameterSet.HInsertText
-                act.GetDefault("InsertText", pset.HSet)
-                pset.Text = 줄
-                act.Execute("InsertText", pset.HSet)
-            if 순번 < len(줄들) - 1:
-                단독_hwp.Run("BreakPara")
-        if 단독_hwp.SaveAs(str(대상경로), "HWPX", "") is False:
-            raise RuntimeError("HWPX로 저장하지 못했습니다.")
+            서식표_후처리 = any(b["kind"] in ("title1", "box") for b in 블록들)
+        else:
+            줄들 = 텍스트.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+            for 순번, 줄 in enumerate(줄들):
+                if 줄:
+                    act = 단독_hwp.HAction
+                    pset = 단독_hwp.HParameterSet.HInsertText
+                    act.GetDefault("InsertText", pset.HSet)
+                    pset.Text = 줄
+                    act.Execute("InsertText", pset.HSet)
+                if 순번 < len(줄들) - 1:
+                    단독_hwp.Run("BreakPara")
+            if 단독_hwp.SaveAs(str(대상경로), "HWPX", "") is False:
+                raise RuntimeError("HWPX로 저장하지 못했습니다.")
     finally:
         if 단독_hwp is not None:
             try:
@@ -10572,6 +10673,9 @@ def 텍스트_hwpx_단독변환(텍스트, 대상경로):
             pythoncom.CoUninitialize()
         except Exception:
             pass
+    if 서식표_후처리:
+        # 한/글이 저장 파일을 놓은 뒤에 표식 표를 제목1·개요 서식 표로 바꾼다.
+        라벨_서식표_적용(대상경로)
 
 
 def 외부문서_hwpx로_변환(원본경로, 확장자, 대상경로):
