@@ -36,7 +36,12 @@ if errorlevel 1 goto :fail
 
 echo [2/3] Building %APPNAME%.exe...
 powershell -NoProfile -ExecutionPolicy Bypass -File build_flutter.ps1
-if errorlevel 1 goto :fail
+if errorlevel 1 (
+    echo.
+    echo [WARN] Flutter UI was not built ^(Flutter SDK missing or build error^).
+    echo [WARN] Continuing without it: the app will use the built-in WebView/Tk screen.
+    echo.
+)
 "%PYTHON%" -m PyInstaller ^
     --noconfirm ^
     --clean ^
