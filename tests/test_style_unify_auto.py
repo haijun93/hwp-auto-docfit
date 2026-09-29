@@ -69,11 +69,12 @@ class AutomaticUnifyTests(unittest.TestCase):
             writes.assert_not_called()
             self.assertEqual(marks.call_count, 2)
 
-    def test_entirely_unknown_profile_still_marks_paragraph(self):
+    def test_single_sentence_group_is_left_alone(self):
+        # 같은 계층 문장이 하나뿐이면 '다른 문장'을 가릴 기준이 없으므로 고치거나 표시하지 않는다.
         with self.document((1500,)) as (fn, _, writes, marks, _, _):
             self.assertTrue(fn())
             writes.assert_not_called()
-            marks.assert_called_once()
+            marks.assert_not_called()
 
     def test_marking_respects_selected_page_range(self):
         with self.document((1500, 1700), scope=lambda pos: pos[1] == 1) as (fn, _, _, marks, _, _):

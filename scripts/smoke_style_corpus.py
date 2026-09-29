@@ -34,7 +34,8 @@ def main():
                     표준서식=True, 검수=True, 실행모드="format",
                     표준서식_세부={**profile["options"],
                                     "std_title_auto": False,
-                                    "std_attachment_auto": False},
+                                    "std_attachment_auto": False,
+                                    "std_midtitle_auto": False},
                 )
                 events = []
                 while not globals_["gui_queue"].empty():

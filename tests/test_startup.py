@@ -138,6 +138,9 @@ class StartupTest(unittest.TestCase):
         self.assertEqual(offset(" - (운영방식)“공용차량 조례”"), 9)
         # 연도 괄호가 지명에 붙은 형태는 문두 라벨로 오인하지 않는다.
         self.assertEqual(offset(" ㅇ (2026)서울"), 3)
+        # 짧은 콜론 라벨은 콜론 뒤가 기준이고, 문장 속 긴 콜론은 라벨이 아니다.
+        self.assertEqual(offset(" ㅇ 교육내용: 성희롱 예방교육"), 9)
+        self.assertEqual(offset("    ** 이공학 학술연구기반구축 – 박사후연구원 등 지원 규모 : (’25)1,352명"), 7)
 
     def test_output_filename_is_always_hwpx(self):
         source = Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"
