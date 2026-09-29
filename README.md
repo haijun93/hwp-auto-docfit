@@ -288,7 +288,7 @@ HWP/HWPX 파일이나 한글 프로그램은 전혀 사용하지 않는 순수 �
 
 ## EXE 빌드와 자동 업데이트
 
-`build.bat`을 실행하면 `dist\HWP_AutoDocFit.exe`가 생성됩니다. tkinterdnd2도 EXE에 포함됩니다.
+`build.bat`을 실행하면 `dist\HWP_AutoDocFit.exe`가 생성됩니다. Flutter SDK가 없으면 새 Flutter 화면만 건너뛰고 기존 화면으로 빌드합니다. tkinterdnd2도 EXE에 포함됩니다.
 
 자동 업데이트를 배포하려면 현재 GitLab 프로젝트에 Release를 만들고 다음 규칙을 지킵니다.
 
