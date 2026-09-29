@@ -1,4 +1,4 @@
-"""첨부 문서로 학습한 제목 서식2(2행1열)와 요지 서식 기준값을 확인한다."""
+"""첨부 문서로 학습한 제목 서식2(2행1열, 유형3)와 요지 서식 기준값을 확인한다."""
 import copy
 from pathlib import Path
 import runpy
@@ -82,9 +82,9 @@ class LearnedTitleStyleTest(unittest.TestCase):
 
     def test_title2_kind_detection(self):
         judge = self.ns['제목_유형판별']
-        self.assertEqual(judge(self._title2_sample()[1]), 5)
-        self.assertEqual(judge(self._plain_title2()), 5)
-        self.assertEqual(judge(self._plain_title2(paragraphs=1)), 5)
+        self.assertEqual(judge(self._title2_sample()[1]), 3)
+        self.assertEqual(judge(self._plain_title2()), 3)
+        self.assertEqual(judge(self._plain_title2(paragraphs=1)), 3)
         self.assertIsNone(judge(self._plain_title2(owner='특이사항 없음')))
 
     def test_title2_is_found_and_styled(self):
@@ -92,7 +92,7 @@ class LearnedTitleStyleTest(unittest.TestCase):
         table = self._plain_title2()
         source = self._hwpx(table)
         found = ns['제목_hwpx_처리'](source)
-        self.assertEqual(found, {'Contents/section0.xml': [(0, 5)]})
+        self.assertEqual(found, {'Contents/section0.xml': [(0, 3)]})
         target = source.with_name('out.hwpx')
         self.assertEqual(ns['제목_hwpx_처리'](source, target, found), 1)
         with zipfile.ZipFile(target) as z:
@@ -115,7 +115,7 @@ class LearnedTitleStyleTest(unittest.TestCase):
         self.assertEqual(look(title), (2700, 'HY헤드라인M'))
         self.assertEqual(look(ns['제목_문단들'](cells[1])[0]), (1200, '휴먼명조'))
         self.assertEqual(ns['제목_자식'](out, 'sz').get('width'), '48758')
-        self.assertEqual(ns['제목_유형판별'](out), 5)
+        self.assertEqual(ns['제목_유형판별'](out), 3)
 
     def test_title2_without_subtitle_uses_title_paragraph_style(self):
         ns = self.ns
@@ -131,6 +131,25 @@ class LearnedTitleStyleTest(unittest.TestCase):
         title = [p for p in ns['제목_문단들'](ns['제목_셀들'](out)[0]) if ns['제목_문자열'](p).strip()][0]
         run = next(r for r in title if self.name(r) == 'run')
         self.assertEqual(chars[run.get('charPrIDRef')].get('height'), '2700')
+
+    def test_one_by_one_title_tables_are_not_title_targets(self):
+        """1×1 제목 표(옛 유형3·4)는 삭제되어 제목 서식 대상이 아니다."""
+        ns = self.ns
+        _, sample = self._title2_sample()
+        one = copy.deepcopy(sample)
+        row2 = [r for r in one if self.name(r) == 'tr'][1]
+        one.remove(row2)
+        one.set('rowCnt', '1')
+        self.assertEqual(len(ns['제목_셀들'](one)), 1)
+        self.assertIsNone(ns['제목_유형판별'](one))
+        found = ns['제목_hwpx_처리'](self._hwpx(one))
+        self.assertEqual(found, {'Contents/section0.xml': []})
+
+    def test_title_reference_has_two_by_two_samples_only(self):
+        header, section = self.ns['제목_원본자료']()
+        tables = [x for x in section.iter() if self.name(x) == 'tbl']
+        self.assertEqual([(t.get('rowCnt'), t.get('colCnt')) for t in tables], [('2', '2'), ('2', '2')])
+        self.assertEqual([self.ns['제목_유형판별'](t) for t in tables], [1, 2])
 
     def test_overview_reference_matches_learned_values(self):
         """요지: 문단 좌우 여백 5, 줄간격 140%, 한컴돋움 15 진하게, 자간 0."""

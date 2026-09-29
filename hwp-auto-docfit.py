@@ -1525,9 +1525,11 @@ def 복사_문단모양_적용(symbol):
         raise RuntimeError("복사한 문단 서식적용 실패")
 
 
-_제목4종_XML = 'eJztXetv21aW/1cI90sLrC3xoZfRppBlOXYrW4ElN5NFUIOWriQ2FMmSVFRnsUB2Ol100EW6g02nmd1kkGIfzRQBtmj6ITvo/DMz3yL7f9j7InkpSjZlW5ZE3TaAfS/v45xzz/mdc8+9pP9hpQPUJrBX1oWVd9//rKsL94HtaKbx3t0VcS19d0UARsNsakYbVhzUt1bzsMpxVaOp6qYBYOUxcGDV+zfe7XTW0VgCHMRw1jsqfNZxXWs9ler3+2sdFY7TXWuYa/fsVKdvdfWUlBbFlGpZsDvtY8XrY6m22rZVq8P0FNNx+mZH9XXizeqAhgsFE/RrxOvXMG0QdOrE64QkyXSKSWJHc1zTPg46duP166qOC+xVS20zlFqtMzo7jQ7oqnRWq+X3ajJCsXq2vmba7VSzkQI66ALDdVLimpjyW5vDc2hNq4W7SOl0LgUfM21N+LPRUW033kIH7QOW+lbP0FxUGW+M7b51ADuUYAd/EGD1js4m2vHbNkyjpSHL6dnGuqk6mrNuqF3grLsNyDswmmajh8SyzjZfJ3bH2qGCjA40SgbiXby7go3tCLQ1Y6/XFdCykXqhZZquYbpeEc7AlCytQX9zj3Svxac91aXT3F1J4YFt0KpARcK/t0zDbakN4AiaC7qEgBwlwHsm6CqGh+3i3s2DCqbCcEnTLNNU0JqwBrGGOsFfB19/dfIfDxE5xxYq1+tbsKA55e4RaDYBbY37oxY7RsuEXbuaflwnHbZKxfrhzWp9e6cEO/aB1u7QSQXLNi3TppyhOaFsXRuqOS06rm3eAx+ptsawL6h2t+Ye657AdOBCs2iZdpdWdLWmrhne48+2vRmJ6FKU0SGOxYDj029enPz85eC7l9fGujJT1qVRrP/4+PTzbxLPusyw/vTnwYtfBj98cfLdj1fPd2a++FYCvrfvnH77X4N/ezp49svJs9e7iTf0TMD6yVfP4XoLb356+ebV88FjRt23t+pXwnv6Qrynw7ynh3lPh3hPh3hPD/GeYlzASH9QKdZ39rg74O6AuwPuDrg7WHZ3ALcHHxS5O+DugLsD7g64O1h2d/BB8VZxr1wrc4/APQL3CNwjcI/whXD6+dMl9giQ5vJ+yB1k5sIdDBmINFJSUlhS0rCkpJCkpJCkFO4OuDuYkTuYM22fqTu4dtbPhcTand2NKj9S5ZjIMZGHyDPBxHkLka8sabJ752Dv5gfVBYuRD2pzGSJzd8DdAXcH3B1cPethRGRLDrkFadpNYG9puj7qimLwNEAKt2MDsOkR31GbZt9jDBiQyAoha6+6h3LTRzZQ75WArtcAujrsgoqP43gGR1edjid22qdkm1AiHhZrTsnsoYF9vEeEqY17tYt11UHL3cB8DfXta00XXS9Or4lCt4sXSjdR17fS+D//ficS9aVGcE3rUv2PTNc1u5caoqmpbdNQda97rVrZ2YzbPxVSjZGaInFN4ZoC+zfWW1AnNuye08GlvmbgAobgEu1hmAa6ON9R3UbHq3urgP9DUKhb+G0IT/dCQ8ZQRTmRqjhiGaRJlXHiMSLqOPEIoxRy4kGmDV5KIjUmYvdS5tLodc4QMfRFuQp1OZuKaatLZjnUhfu6qfk6b5RL+7rscqji5Mg1MWjEcXVnjxAPu87Gv2lDVy6R+jLxUl2Pq1s0fQmXSb4Avfx5yzYtYLta6K1GsUAVgLQIcqkdPzVBIM4Fn7lR4EN6N4yRPQdsmYZbs0i2Jk2qPgS2Qd6nxv2Ou7uqfY/RT5/gnc19gN6PlZgUL6yB0Gu0e/p79OxRdTXvWBI++ESlv3+iWqoBHO8M0nQ7WOkkMuWR6fWHBNF6qkkoiRNMIWLmvElIyZuGlJiJSIU3FSn5k5EinU4MVtyB0oHiCKZkJ2SnG5qMnSo0ETNNYB9Arz24Tq7MVssB7nSZ6hlQUVASbcjkoSqGbGeMqTmurd0DZs/1O9D+Y9rDltHJ6FAYdIfI8IfZkND/iDMslF9hSfnFO7RI7ZdYX8QQxbk2RJHVJlaXhjSJ1aOQFjE6xA2RG+IcG6LEGmKB2yG3Q26Hs7BDeZ7tkAem3A6XxA6VebbDZPrD1QwzIy54E+ICMx8ue9Phgj8bLtHJ0O/cHBNhjhnWHMVs1B6lck7ZyHB75H6RG+I0DTEbMkSRO0ZuiNwQZ2GIuZAhZmZjiJlxhqgwq6swq6uEV1dhVldhV1cJVlfhhrhwhgifNJfPJPOsSUq5OTPJqSgvN0lukvNskoW5NknuJblJLp1J4g5B5CrNmU0m002usjvjVXZrvDq0N15lN8erod3xKrM9XhUTbZpLZZDhSzjzZpAys7wys7xyeHllZnlldnnlYHllbpDcIBfAIEOXccQZRa3iOINkj+nYU7qhQzr2jC50C4A5oeO3ALglzrUlhq7j8Cwrt8R5ssQl3T+GrubMXU5nKtrLbZLb5FzbZOh+ztzZJPeT3CaXzybDV3XmLa2TTD/J0zp8MznWIMNXdubNIHmelRvkkhlk6MLOMhpkgVWhAqtDhSElKrBaVAipUYHRo8JZlsi+PkZKgS0OvUJGKgJrDCWQSdG3R4kb5KIaZPC79+UOPJOrHo38lofsfesUPQ++5KH2XLOuHlVAyw3X7Ic+xxzuKEY6ivE6SnFmDD53GuIFj2X0ukfAhrYR+kwJZc1/GFDpuKpNp8FN0OdttoHa9B+QD7HeB7rHhK61kQpWyvgL2lCjdgzHvU0/teKxuQMVy5uafIel2Pyk53/+FeFgFa8d/ZTsrfJ+qbxXDz1C8IUaQ6q3TLuroorNnZs7qBVZVw/lFKmgFLI5qZDBj0DjnnrkfVf7xsfiGpaVx9n5bEozZ3O7uHfzoHJYu1OpFDcq5QkZliZlWJ45wxdZV/mdCdlUZs7m5dZVmZThzMwZvsC6vv1xZlI+szPn81IL+/bH2Uk5zs2c49LOfqlS3jyccIWRK/o4NyG3+bnh9sLrjPnOT8h3YeZ8U34/KO5WJ9LpVIxgIj1z7varu8W9w9pusVKZaCVp9OWHU0NFx2d+ZKApZZhYiw01cTTnzZ/G8S9i3A/r0SYOfXiQ/UsggmOoVt28aQcRXc+ybOA4qOUeJsnxhkNchL7rj8UvdExbewDHVtGyfHBQq+9s3YHN7yPKG7hyo1grV3aCaL0DFxWFkeFwXWsGpHur7OsC/oRiDbgu6ocLFbSZuQ23rLDZh+XyrcPb1X202cAP90xj3HOoAGa/altwA0QnuweAdVtzO3twtZkqJAGPd0ttgw008AZombYnUbQbuW2rFmJxv1z80CMWKV2N7jFB0dFUo+zvukkZSjbgzlp3+prb6OBfG6oDBPjTBp/2NBs0Vw21Cxy6j++4rrWeSvX7/TVIfsPsrjXMtXt2qtO3unpKSovZ1HbfOjA0twS1ka5SV7XbmnEDfV1VM1xoCcJ9Ve/5aQHYGFnq7VsHewiJU7gh+j5kjGb4G5Ax2kGNuh+jmQEX4LxmKZajzjpaAk/U7rD5ekOJ2bGDEYFjyTdBS+3pLpfZ+TLzRZVildf78uXot6LpbpvZl5IKZj9La+qmFSpv4I98BqBmgIbXAeIPNMddzJtvUCkfHCM4KXKc5Dg5LZykd/CSa/bTgUo5nXCxLSxaSsNoKYbRUppruKwe1MlTjphzi5hJN/3pIKaUdLEtLGLKCUZMkSPm7BEz8aY/HcRUki62hUVMJcGIKXHEnD1iJn57OR3EzCZdbAuLmJkEI6bMEXP2iJn4YGk6iJlPutgWFjGzCUZMhSPm7BEzk3TTnw5iiumky21hITOXYMjMcMicPWQmfn85JchMfAJ4YSEzn2DIzHLInD1k5pJu+lOCzMTnMxYWMgvDkJm+y69jBs8xmHG8XN472JlrB8tky2xhgRK/7cSRkgeWkwHlqiiLS2P48tWB5aqUlbjcFhow5+ZNH/pu6jyhJY8rlzxGukKo5DJbaJicn1d8OE5ynDzT5ulH8GKYvTyu4YJkLK9YcJISV3DZaxPc4iJm5BUfiQeWHDDn0e5jGn2Oo+UFpCaOBVWOlaE/h8KxkmPlNF4dF2d0qLvocCmdFUZzxJwxYkZe7uGIyRFzwQ1/0RFTOWv/zBFzxoh53ss914aYMU7Grw4iJDHVBa7qqm1K0ETXOfNnW8ykyH6mAvFz/ZkhfiHpFx+ndGGUv8k5t2h/3ntJHO2jIF3gaL8MaJ/8tymn9zW9ZMttceH+vHeqONxHUTrH4X4Z4D7xQeqUgvvEv3i8uGjPXwfjeJmwyxX5K83gLsv7YOLVXkRL5Cth+GYuR0uOlglCy6s0emVJsPK6ZLa4QDk3r4IhcZf35wwn+a2KJTd6/jIYfxmMAGXkZTAOlBwor/A7/DHN/qyW82z4U/sQf0y5ndVynuW2uIAZeRdsVoC5uVOr7+9sHNTLcwaafBfOMXMmf7wkAZh5pYc8mXnBTGVeMJOnLZMHmIu/s1yWI57rktniBJfB76aFAAk4mFDHPdaBI2gu6JYMNBjapgdPCKqiCTz5FPeLsIRsEZYGPz4+/fybN68fIns22nukds+0u6qOwQLNF0JiaI3hGrRsNTQVW6mrRntnEwk/rSCJ6Wbj3hYclQVChj5xLH2vXg9evg4Rt2E2jyOkifFIEycnTRpH2psfn578+2NBDBFX7blIJ3FtmEIpHoXS5BTK51AojaRQilAox6NQnpxC5RwK5ZEUyhEKlXgUKpNTmDmHQmUkhUqEwkw8CjOTU5g9h8LMSAozEQqz8SjMTk5h7hwKsyMpzEYozMWjMDc5hflzKMyNpDAXoTAfj8L85BQWzqEwP5LCfBQPY5JYuABWj3UmlMbCSBoLURpjqqJ4EYcy1qN4sJ0ejdvpKJkx9VG8gHMRGe9S2i7uB2Se/PAXYfDTl6dPws7vFozeBbKZieGexatyz2NdzODF68H/vBx8/68hKrfhrmgEgYUIgdJIQV7Aw4hnuJh/OvnPX0LkbZmma5guiC51VITySAov4GHEsS5m8L+vhyksG83LEXgBByOO9TCDPz0e/PAiROAu6JpR6qJRmDKSugs4F3Gsdzn58cXgu4fCyfOngx/+FCKyXi0J22SDHqU1Go9lRtJ6ATcjjvUzlFYxQmY0XhSj4Vh2JIEX8DLiWDdDCZQiBEbDRTEajY0m8AI+RhrrYyiBcoTAaLQoRoOxkQRKF0BEaax/OfnzdydfPAmRV1ItVzONKIFRQBy9J4jlWVL+ZpD8boNWRXNIEqBhdi3V1Y50sGk2el2UBXDhThO4cDPZtlU0CNwYS2nxV3TvqKvHZs8t0W6arrnHdIroULhD02xUMZfevvyeZrRMyLDbgYPfJXmnHaMDbM3b8bYoDIdq6Szh4VxbbdyDgmqDkmm0tLbQ0tU2Smhlsn4PlIm7sfJ3wooD99Sw48q6sPLu+591dZS+c2AFEt0a8foNE2ECrDiob60i+3Fc1Wiqummg5ToGDqx6H87srMPBBDiG4ax31PdiZK3ElGpZsDftY8Xrg9QCLoPVYXqK6Th9s6P6OvFmpYIK+jXi9WuYNgg6deJ1QsvDdIpJYgcqsGkfBx278fp1VccF9irSOUakrTM6O40O6Kp0Vqvl92oyQrF6tr5m2u1Us5ECOkC676TENTHltzaH59CaVgt3kdLpXAo+Ztqa8CeyfjfeQgftA5b6Fkprocp4Y4RSqnQQYPWOziba8ds2sPnB1j3bWDdVR3PWcVJ33W1A3oHRpJCwzjZfx2aHE5MWzViIkigW0ulCdOOC8//OcLzqJ629MNfUe12DrekCCGdBRt9at3vGcDQs0UdQ8b3jBoTiEG43NZsYAwLC6v7O31f36sUKogSlq0t4NgdHODI9n6i5OLVH37KiFR/hMwIlVHcwlHcUTLLVqHVUK5SX6sKQKlSZpsR9RI8fbmtNt4PiGY9lrORoR0ASfx7nbVtr4oQ+PQvxYkam2DeNdtv8REMORA2QF8kG+gUXbjCwyGuo4FSRVDaq9W26EN6aaA2PyCN6wCGAT3sqFaM/4n3NoR5E6GhNsKXZjks2CLSTX4vi8mjtrs8mfUJysrBQ267ePixW0Dq1NF0P1/j9UU//kCKoLnct9xgdjNAHTsfsBydFLAO6X4uXR7ABFlKdeH+ijj3D3TimpaaG3EnDH5hKdGhUJEmohdCtN52Gioe6vbNZrqADpz5aaeTeChkJmUjHO+fKK2IexTDtngtlQilAn+I6rO6hnnhkkh8XOp6MZXKI2fKkS8tkjPe8Uyqcy86IaRRb2HQ6WiSqTrsdeSlsUqZpdMINnh7NswenokV0ggS5J5rmhUybOzexLfQcYJcIeiGNgiGL9llQdnqtoPwOrrCchq1ZIY1FIQRaOMiD0cZiW2WCs1q1srPJiDS9JkpCt0swxEQDv5VOkze8g+G8I4Uj4PYBMBA3yPqlPAoyj4BONAXHH2h7oB6Z9wGtyWeCkfCaM0cTJYgqO3sH1YMajvL6RCtFXyN0iDU4NsO/wUflYmn7sFStHOzu4YkNAMOpun+2R2U/JHCIwrMVv6hkC5KsKNNZhPQ1L8He5mF163CzWjrYJcdK45YhLHfssfzDI296iqLRUyWRYv2Gh223irfwDUdixTuGA3GLiZuHq+BQRegNg46YCHLo5Bm3qODNrGfctEiMmxZ84yZlxrgDXs5gr/xReS/B7FU3Nxefu5QXAJEzetcmHENDZGMiep2hfLvm8UJ2hO/5X36EHUrI7VH+HRgG1h4whZuqFTIPMlOKRGbnRWjujbcHr35+8+r5yW+e0syOcPL0+emTb8R38BhueCjkoh3QVm1bPWYr8LJYpocb6CJHuORoD/ARMfkGIWrt+1pad6Q6QCfAIipKhsaEZPuYzyD32DHtB8GoqERHVQoyDme93aoMy2LWl0iYaLxWbJAczURfR2wMYzkvg17IiXIuX0AsPqhSzcYJWw9UafxRL25UylR69A5JvXrrsAiRE+JdvbpLn21B0KYYeFiDoU6NZjG8sMk2LRgIYf6Q7sHN+BB3pTKO7GxgQQD2Q0ikcLbZp4ffVDODAtD1mr9gQfjI2i9OoZrF5ic9h42jnQe+w1LyuUzec2D7QK+bsLK4Af0auVIZBGhSQfTLIxpaNjT/RsiBQtURXMihW3Sor0UjqK0WbFcJk96CEkTXe6jvwe10WFeFqqx79gY1UG8WjQZUxKLRrFUZbfcIohkrpKpDVahVEd2FIotIG3k1zEdfqxidGJ1nKwhjEC7IdQYPw0j85EEYKREEo5GVB2C4SAbRjPAYENvCMMii4BAIemO4BOvchpej86HZo1912IsX4VUSQFODezndg+umZrvHY3VJ8ZSnd4Syb/F2mdHbV6GF8F93QGk1NGroKIfWoStfwzvH2168Rcuh+3KQaaRHQQ9YAcMhv8xikSQqOSUvZ5URG3ZxaqCU973BXx8+GQX70S4Fv8vJr18O/vi7k2dPhJMnLwZf/+b089/FG4Kd9Q/CxNNCZ/X9b09//1s4v/Dmp4en//yceLJpuC1phNuSIm5LkgpDbks8223llVx2QreVClSehBMQdovNpo0WHv2ks0CcDkopvyVEOQO1RD8pbsOWtCSGWkYx2ec8Kyt5tu0lgQOvV4P+tK8dSLJLByTS9KKbNGvT8UwaHWbSPpK0JihrglhYe/v0D4+nE4BKIwJQKRKApvFZVWDJctazXTIquebP2HKOSHqqpiyeYcpiLFPOZ+QgakLtCoo8BUu+LtPNLZ3pytMzXcYdf/sV/Pfm1S8nf/zv1OCrnwdf/d+bnx/ilCNSsAZI3VgPlf767SP678kjSZTlVZRiEsgwp//yEA5zVuffv6L/njwSJVkRyIxn9vgL/ffkUSaby88RTuSkc3ACAoMy6VY1BlCIVwwUSlqScteAFJ7PT5EdMVHA1CWXUsrgdAGzmvl8Jje8mrSOWc0cOQRIdtphbMJHuhp/K0pSVrzLkz7xkj55dDPFT/qg4XjShyd9eNKHJ32YK3NTAiXZdwmC8LeHj06fvRx8/0xKS7Iw+PWTwZePT/78/PTRk5Nnr//28OuphFiZEW4hE3ELUi7sFrJ+SHVlSZVZ599EZfIEHLp0edkMXGjeuCk4duKp5uAk8pcFeRqOp+ESCe1TTMNlL5CGy/E0HE/D8TQcT8PxNBxPw11FGk5U8vjdKp6HmygPJ1+Nw5WUjDSUBeV5uPGXr9AIfh4Ov847x3k48seXdKZwvXk4svNYwDycf8V7qpm4i2TReCZu3mO+6WXigp0XT8Pxa3ATTstTcFeRgosZjl9zCu5qT8Vz6ZwSXsxsVo4sJq1jFjOTlbOJDwjHhuPK1YTjspJB79DPezh+FvDOJC5X2Lhc5nE5j8t5XM7jch4P8tcieDB4mXAkJ6bz8x8Mzi4cSV1MrjBYKwzvr+cmzEuR7yzdWPnH/wc7/8Qn'
+_제목2종_XML = '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'
 
-# 첨부한 4종 제목 표의 원본 XML을 내장한다(외부 서식파일 불필요).
+# 첨부한 제목 표의 원본 XML을 내장한다(외부 서식파일 불필요). 제목 유형은 2×2 제목+날짜·담당자 2종(1·2)과
+# 2행1열 제목+담당자(3, 별도 기준표)이며 1×1 제목 표는 제목 서식 대상이 아니다.
+# (변수명 제목4종_사용은 설정 호환을 위해 옛 이름을 유지한다.)
 제목4종_사용 = True
 붙임2종_사용 = True
 중제목_사용 = True
@@ -1728,12 +1730,15 @@ def 제목_문자열(e):
     return ''.join(x.text or '' for x in e.iter() if 제목_xml이름(x) == 't')
 
 def 제목_유형판별(table):
-    """한 제목 셀(1~2문단), 선택적인 날짜/담당자 2셀만 허용한다."""
+    """제목 표 유형. 1·2 = 2×2(제목+날짜·담당자, 부제 없음/있음), 3 = 2행1열(제목+담당자).
+
+    한 제목 칸(1~2문단)과 담당자 칸(2×2는 날짜·담당자 2칸)만 허용한다. 1×1 제목 표는
+    제목 서식 대상이 아니다.
+    """
     cells = 제목_셀들(table)
-    if len(cells) not in (1, 2, 3): return None
+    if len(cells) not in (2, 3): return None
     rows, cols = int(table.get('rowCnt', '0')), int(table.get('colCnt', '0'))
-    if ((len(cells) == 1 and (rows, cols) != (1, 1)) or (len(cells) == 2 and (rows, cols) != (2, 1))
-            or (len(cells) == 3 and (rows, cols) != (2, 2))):
+    if (len(cells) == 2 and (rows, cols) != (2, 1)) or (len(cells) == 3 and (rows, cols) != (2, 2)):
         return None
     for c in cells:
         if any(제목_xml이름(x) in ('tbl', 'pic', 'ole', 'rect', 'fieldBegin') for x in c.iter()):
@@ -1742,89 +1747,37 @@ def 제목_유형판별(table):
     if len(ps) not in (1, 2): return None
     if any(re.match(r'^\s*[□ㅁㅇ○※*\-]', 제목_문자열(p)) for p in ps): return None
     if len(cells) == 2:
-        # 유형5: 윗칸(부제+제목) / 아랫칸(담당자) 2행1열. 날짜 칸이 없다.
+        # 유형3: 윗칸(부제+제목) / 아랫칸(담당자) 2행1열. 날짜 칸이 없다.
         if not re.search(r'담당|과장|팀장|☎|전화|부서|작성', 제목_문자열(cells[1])): return None
-        return 5
-    if len(cells) == 3:
-        span = 제목_자식(cells[0], 'cellSpan')
-        if span is None or span.get('colSpan') != '2': return None
-        date, owner = map(제목_문자열, cells[1:])
-        if not re.search(r'[0-9]{2,4}\s*[.년/\-]\s*[0-9]{1,2}', date): return None
-        if not re.search(r'담당|과장|팀장|☎|전화|부서|작성', owner): return None
-        return 2 if len(ps) == 2 else 1
-    return 3 if len(ps) == 2 else 4
+        return 3
+    span = 제목_자식(cells[0], 'cellSpan')
+    if span is None or span.get('colSpan') != '2': return None
+    date, owner = map(제목_문자열, cells[1:])
+    if not re.search(r'[0-9]{2,4}\s*[.년/\-]\s*[0-9]{1,2}', date): return None
+    if not re.search(r'담당|과장|팀장|☎|전화|부서|작성', owner): return None
+    return 2 if len(ps) == 2 else 1
 
 
 def 제목_대상찾기(section, header):
-    """쪽 첫부분의 제목 표를 판별한다.
+    """쪽 첫부분의 제목 표(유형 1·2·3)를 판별한다.
 
-    핵심 원칙:
-    - 아직 제목서식이 적용되지 않은 문서도 판별해야 하므로 글자크기/가운데정렬을
-      필수조건으로 사용하지 않는다.
-    - section 첫 유효 컨트롤이 1x1 표이고, 그 다음 유효 컨트롤도 1x1 개요표이며,
-      뒤이어 □/ㅁ 본문이 시작하면 이를 '제목+개요' 구조로 강하게 판정한다.
-    - 이미 서식이 있는 문서는 기존의 정렬/크기 근거도 보조적으로 사용한다.
+    날짜·담당자 칸이 있는 2×2 표, 또는 담당자 칸이 있는 2행1열 표는 구조만으로
+    제목으로 확정한다(글자크기·정렬 같은 시각 서식은 필요 없다). 1×1 표는 제목으로 보지 않는다.
     """
-    chars = {x.get('id'): x for x in header.iter() if 제목_xml이름(x) == 'charPr'}
-    paras = {x.get('id'): x for x in header.iter() if 제목_xml이름(x) == 'paraPr'}
     result = []
-    tables = []
-    body_first_symbol = False
-    seen_nonempty_direct = False
     ordinal = 0
-
     for p in section:
-        direct_text = ''.join(제목_문자열(t) for run in p if 제목_xml이름(run) == 'run'
-                              for t in run if 제목_xml이름(t) == 't').strip()
-        if direct_text:
-            seen_nonempty_direct = True
-            if re.match(r'^[□ㅁ]', direct_text):
-                body_first_symbol = True
         for run in p:
             for table in run:
                 if 제목_xml이름(table) != 'tbl':
                     continue
-                tables.append((ordinal, table, seen_nonempty_direct))
+                kind = 제목_유형판별(table)
+                if kind:
+                    cells = 제목_셀들(table)
+                    title = 제목_문자열(cells[0]).strip()
+                    if title and len(title) <= 160 and not title.startswith('붙임'):
+                        result.append((ordinal, kind))
                 ordinal += 1
-
-    # 1) 가장 신뢰도가 높은 구조 판정: 문서 첫부분의 제목표 + 개요표 쌍.
-    # 실제 미서식 문서는 제목이 10pt/JUSTIFY일 수 있으므로 시각 서식을 요구하면 안 된다.
-    if len(tables) >= 2:
-        ord0, t0, text_before0 = tables[0]
-        ord1, t1, _ = tables[1]
-        k0 = 제목_유형판별(t0)
-        c1 = 제목_셀들(t1)
-        overview_ok = (int(t1.get('rowCnt', '0')) == 1 and int(t1.get('colCnt', '0')) == 1
-                       and len(c1) == 1 and bool(제목_문자열(c1[0]).strip()))
-        title_text = 제목_문자열(제목_셀들(t0)[0]).strip() if 제목_셀들(t0) else ''
-        title_ok = (k0 in (3, 4) and bool(title_text) and len(title_text) <= 160
-                    and not re.match(r'^\s*[□ㅁㅇ○※*\-]', title_text)
-                    and not title_text.startswith('붙임'))
-        # 첫 표 앞에 일반 본문이 없고, 제목+개요 뒤에 □/ㅁ 본문이 존재하는 경우
-        # 미서식 상태라도 제목으로 확정한다.
-        if not text_before0 and title_ok and overview_ok and body_first_symbol:
-            return [(ord0, k0)]
-
-    # 2) 기존 보조 판정: 날짜/담당자 구조 또는 이미 제목다운 시각 서식이 있는 표.
-    for ordinal, table, _ in tables:
-        kind = 제목_유형판별(table)
-        if not kind:
-            continue
-        cells = 제목_셀들(table)
-        title = 제목_문자열(cells[0]).strip() if cells else ''
-        title_ps = [q for q in 제목_문단들(cells[0]) if 제목_문자열(q).strip()] if cells else []
-        heights = [int(chars[x.get('charPrIDRef')].get('height', '0'))
-                   for x in table.iter() if 제목_xml이름(x) == 'run' and x.get('charPrIDRef') in chars]
-        pp = paras.get(title_ps[-1].get('paraPrIDRef')) if title_ps else None
-        centered = pp is not None and any(제목_xml이름(x) == 'align' and x.get('horizontal') == 'CENTER'
-                                          for x in pp.iter())
-        max_height = max(heights or [0])
-        title_text_ok = (bool(title) and len(title) <= 160
-                         and not re.match(r'^\s*[□ㅁㅇ○※*\-]', title)
-                         and not title.startswith('붙임'))
-        if title_text_ok and (kind in (1, 2, 5) or centered or max_height >= 1600):
-            result.append((ordinal, kind))
-
     return result
 
 
@@ -1834,7 +1787,7 @@ def 제목2행1열_원본자료():
 
 
 def 제목_원본자료():
-    payload = json.loads(zlib.decompress(base64.b64decode(_제목4종_XML)).decode('utf-8'))
+    payload = json.loads(zlib.decompress(base64.b64decode(_제목2종_XML)).decode('utf-8'))
     return safe_xml_fromstring(payload['header']), safe_xml_fromstring(payload['section'])
 
 
@@ -2170,15 +2123,15 @@ def 제목_hwpx_처리(source, target=None, selections=None):
                 if re.fullmatch(r'Contents/section\d+\.xml', n)}
     if selections is None:
         return {n: 제목_대상찾기(root, header) for n, root in sections.items()}
-    if not any(kind in (1, 2, 3, 4, 5) for items in selections.values() for _, kind in items):
+    if not any(kind in (1, 2, 3) for items in selections.values() for _, kind in items):
         if target is not None: shutil.copyfile(source, target)
         return 0
     sh, ss = 제목_원본자료()
     samples = [x for x in ss.iter() if 제목_xml이름(x) == 'tbl']
     maps = 제목_참조병합(header, sh)
-    # 유형5(2행1열)는 별도 기준표를 쓰므로 필요할 때만 병합한다.
+    # 유형3(2행1열)는 별도 기준표를 쓰므로 필요할 때만 병합한다.
     sample5 = maps5 = None
-    if any(kind == 5 for items in selections.values() for _, kind in items):
+    if any(kind == 3 for items in selections.values() for _, kind in items):
         h5, s5 = 제목2행1열_원본자료()
         sample5 = next(x for x in s5.iter() if 제목_xml이름(x) == 'tbl')
         maps5 = 제목_참조병합(header, h5)
@@ -2196,7 +2149,7 @@ def 제목_hwpx_처리(source, target=None, selections=None):
             if 제목_유형판별(table) != kind:
                 raise RuntimeError('처리 중 제목 구조가 변경되어 제목 서식적용을 중단했습니다.')
             before = 제목_문자열(table)
-            if kind == 5:
+            if kind == 3:
                 제목_표서식_복사(table, sample5, maps5)
             else:
                 제목_표서식_복사(table, samples[kind-1], maps)
@@ -10520,8 +10473,8 @@ def 텍스트_hwpx로_변환(텍스트, 대상경로):
 def 라벨블록_한글삽입(한글, 블록들):
     """labeled_text 블록을 한/글 문서 끝에 차례로 넣는다(A4 제목 상자 표 템플릿).
 
-    제목·개요(상자)·참고는 1×1 표로 넣는다. 문서 첫머리의 1×1 제목 표와 뒤따르는
-    개요 표는 제목 서식(제목_hwpx_처리)이 알아보는 '제목+개요' 구조다.
+    제목·개요(상자)·참고는 1×1 표로 넣는다. 1×1 제목 표는 제목 서식(제목_hwpx_처리)의
+    대상이 아니므로(유형 삭제) 제목 서식이 자동으로 적용되지 않는다.
     """
     def 글쓰기(내용):
         act = 한글.HAction
