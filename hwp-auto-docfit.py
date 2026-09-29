@@ -274,7 +274,7 @@ from docfit_core.korean_proofread import (
 )
 from docfit_core.pasted_text import clean_pasted_text, outline_pasted_text
 from docfit_core.labeled_text import label_outline_text, looks_labeled, parse_labeled_text
-from docfit_core.abbreviations import match_line as 준말_줄_판별, normalize as 준말_등록표_정리, split_title2
+from docfit_core.abbreviations import match_line as 준말_줄_판별, normalize as 준말_등록표_정리, roman_of_key as 준말_로마자, split_title2
 from docfit_core.text_table import find_box_tables
 from docfit_core import writing_aids, ai_prompts
 
@@ -1650,7 +1650,30 @@ def _중제목_글폭(text, pt=_중제목_글자폭_pt):
     return int(total)
 
 
-def 중제목_표서식_복사(table, sample, maps, kind):
+def _구역_본문폭(section):
+    """구역의 쪽 폭에서 좌우 여백을 뺀 본문 폭(HWPUNIT). 찾지 못하면 A4 기본(42520)."""
+    for x in section.iter():
+        if 제목_xml이름(x) == 'pagePr':
+            margin = next((m for m in x if 제목_xml이름(m) == 'margin'), None)
+            try:
+                return int(x.get('width')) - int(margin.get('left')) - int(margin.get('right'))
+            except (TypeError, ValueError, AttributeError):
+                break
+    return 42520
+
+
+def _중제목_번호굵게_적용(header, maps):
+    """번호 굵게를 끈 경우 병합된 번호 글자모양(기준 8번)에서 굵게를 뺀다(중제목 전용 사본이라 안전)."""
+    if 중제목_번호굵게:
+        return
+    merged = maps['charProperties'].get('8')
+    for cp in header.iter():
+        if 제목_xml이름(cp) == 'charPr' and cp.get('id') == merged:
+            for b in [x for x in cp if 제목_xml이름(x) == 'bold']:
+                cp.remove(b)
+
+
+def 중제목_표서식_복사(table, sample, maps, kind, 최대폭=None):
     """중제목 글은 그대로 두고 표·칸·문단·글자 서식만 기준 표에서 복사한다.
 
     기준 표는 [번호 | 빈칸 | 글] 순서이며 유형2(2열)는 빈칸 서식을 건너뛴다.
@@ -1688,11 +1711,11 @@ def 중제목_표서식_복사(table, sample, maps, kind):
                     p.remove(r)
                 elif 제목_xml이름(r) == 'run':
                     r.set('charPrIDRef', char_id)
-    _중제목_칸폭_확보(table)
+    _중제목_칸폭_확보(table, 최대폭)
 
 
-def _중제목_칸폭_확보(table):
-    """글 칸이 20pt 글보다 좁으면 그 칸과 표 폭을 필요한 만큼 늘린다."""
+def _중제목_칸폭_확보(table, 최대폭=None):
+    """글 칸이 20pt 글보다 좁으면 그 칸과 표 폭을 필요한 만큼 늘린다(최대폭이 있으면 쪽 본문 폭까지만)."""
     cells = 제목_셀들(table)
     text_cell = cells[-1]
     size, margin = 제목_자식(text_cell, 'cellSz'), 제목_자식(text_cell, 'cellMargin')
@@ -1702,6 +1725,9 @@ def _중제목_칸폭_확보(table):
     lines = [제목_문자열(p) for p in 제목_문단들(text_cell)]
     need = max([_중제목_글폭(t) for t in lines] + [0]) + int(margin.get('left', '0')) + int(margin.get('right', '0')) + 600
     have = int(size.get('width', '0'))
+    if 최대폭:
+        table_width = int(tsize.get('width', '0'))
+        need = min(need, have + max(0, 최대폭 - table_width))
     if need > have:
         size.set('width', str(need))
         tsize.set('width', str(int(tsize.get('width', '0')) + need - have))
@@ -2338,13 +2364,7 @@ def 중제목_hwpx_처리(source, target=None, selections=None):
     sh, ss = 중제목_원본자료()
     sample = next(x for x in ss.iter() if 제목_xml이름(x) == 'tbl')
     maps = 제목_참조병합(header, sh)
-    if not 중제목_번호굵게:
-        # 기준 표의 번호 글자모양(8번)은 굵게다. 병합된 사본은 중제목 전용이라 안전하게 해제한다.
-        merged = maps['charProperties'].get('8')
-        for cp in header.iter():
-            if 제목_xml이름(cp) == 'charPr' and cp.get('id') == merged:
-                for b in [x for x in cp if 제목_xml이름(x) == 'bold']:
-                    cp.remove(b)
+    _중제목_번호굵게_적용(header, maps)
     count = 0
     for name, items in selections.items():
         root = sections[name]
@@ -2354,7 +2374,7 @@ def 중제목_hwpx_처리(source, target=None, selections=None):
             if 중제목_유형판별(table) != kind:
                 raise RuntimeError('처리 중 중제목 구조가 변경되어 중제목 서식적용을 중단했습니다.')
             before = 제목_문자열(table)
-            중제목_표서식_복사(table, sample, maps, kind)
+            중제목_표서식_복사(table, sample, maps, kind, _구역_본문폭(root))
             if 제목_문자열(table) != before: raise RuntimeError('중제목 텍스트 보존 검사 실패')
             count += 1
         contents[name] = ET.tostring(root, encoding='utf-8', xml_declaration=True)
@@ -2371,18 +2391,24 @@ _라벨_표식 = {'title1': '@@DOCFIT:제목1@@', 'title2': '@@DOCFIT:제목2@@'
 _라벨_블록_종류 = {'title1': 'title1', 'title2': 'title2', 'box': 'overview'}  # 블록 종류 → 서식 표 종류
 
 
+# 서식 표 종류 → 기준 자료 묶음(한 묶음의 기준 표는 header에 한 번만 병합한다)
+_서식표_묶음 = {'title1': '제목', 'title2': '제목2행1열', 'overview': '개요붙임', 'attach1': '개요붙임',
+               'attach2': '개요붙임', 'midtitle': '중제목'}
+
+
 def _서식표_기준(header, kind, cache):
     """서식 표 종류의 (기준 표, ID 매핑)을 문서 header에 한 번만 병합해 돌려준다."""
-    if kind not in cache:
-        if kind == 'title1':
-            source_header, source = 제목_원본자료()
-        elif kind == 'title2':
-            source_header, source = 제목2행1열_원본자료()
-        else:
-            source_header, source = 개요붙임_원본자료()
-        sample = next(x for x in source.iter() if 제목_xml이름(x) == 'tbl')
-        cache[kind] = (sample, 제목_참조병합(header, source_header))
-    return cache[kind]
+    group = _서식표_묶음[kind]
+    if group not in cache:
+        source_header, source = {'제목': 제목_원본자료, '제목2행1열': 제목2행1열_원본자료,
+                                 '개요붙임': 개요붙임_원본자료, '중제목': 중제목_원본자료}[group]()
+        maps = 제목_참조병합(header, source_header)
+        if group == '중제목':
+            _중제목_번호굵게_적용(header, maps)
+        cache[group] = ([x for x in source.iter() if 제목_xml이름(x) == 'tbl'], maps)
+    tables, maps = cache[group]
+    index = {'overview': 0, 'attach1': 1, 'attach2': 2}.get(kind, 0)
+    return tables[index], maps
 
 
 def _칸_글_지우기(cell):
@@ -2392,16 +2418,57 @@ def _칸_글_지우기(cell):
                 r.remove(t)
 
 
-def 서식표_생성(header, kind, text, cache):
-    """기준 서식 표를 복사해 글을 A1 칸에 넣은 새 표를 만든다.
+def _빈칸_서식_참조_변환(cell, maps):
+    """글 없는 칸의 문단·글자 모양 참조를 새로 병합된 ID로 바꾼다(글 있는 문단은 표서식 복사가 처리)."""
+    for p in 제목_문단들(cell):
+        p.set('paraPrIDRef', maps['paraProperties'].get(p.get('paraPrIDRef'), p.get('paraPrIDRef')))
+        for r in p:
+            if 제목_xml이름(r) == 'run' and r.get('charPrIDRef') is not None:
+                r.set('charPrIDRef', maps['charProperties'].get(r.get('charPrIDRef'), r.get('charPrIDRef')))
 
-    title1 = 제목 서식1(2×2, 날짜·담당자 칸은 서식만 남기고 비움), title2 = 제목 서식2(2행1열,
-    첫 쉼표 앞은 부제 15pt·뒤는 제목 27pt, 쉼표가 없으면 제목 한 줄), overview = 개요(요지) 표.
-    제목 서식의 A1 글은 모두 가운데 정렬이다.
+
+def _칸_글_넣기(cell, sample, value):
+    """칸의 첫 문단을 글 하나만 있는 한 문단으로 만들어 value를 넣는다(서식 참조는 이후 복사 단계가 맞춘다)."""
+    top = 제목_자식(cell, 'subList')
+    paras = [p for p in top if 제목_xml이름(p) == 'p']
+    for extra in paras[1:]:
+        top.remove(extra)
+    runs = [r for r in paras[0] if 제목_xml이름(r) == 'run']
+    for extra in runs[1:]:
+        paras[0].remove(extra)
+    for child in list(runs[0]):
+        runs[0].remove(child)
+    XML_자식_추가(runs[0], sample, tag='{http://www.hancom.co.kr/hwpml/2011/paragraph}t').text = value
+
+
+def 서식표_생성(header, kind, text, cache, 번호=None, 최대폭=None):
+    """기준 서식 표를 복사해 글을 넣은 새 표를 만든다.
+
+    title1 = 제목 서식1(2×2, 글은 A1, 날짜·담당자 칸은 서식만 남기고 비움), title2 = 제목 서식2(2행1열,
+    첫 쉼표 앞은 부제 15pt·뒤는 제목 27pt, 쉼표가 없으면 제목 한 줄), overview = 개요(요지) 표(글은 A1).
+    제목 서식의 글은 모두 가운데 정렬이다. midtitle = 중제목 표(번호 칸에 로마자 번호, 글은 글 칸),
+    attach1·attach2 = 붙임 서식1(1행3열)·2(1행2열)(글은 마지막 글 칸, '붙임' 글자는 그대로).
     """
     sample, maps = _서식표_기준(header, kind, cache)
     result = copy.deepcopy(sample)
     cells = 제목_셀들(result)
+    if kind in ('midtitle', 'attach1', 'attach2'):
+        # 마지막 칸이 글 칸이다. 번호·붙임 글자 칸과 빈 칸은 기준 표의 글을 그대로 두거나 비운다.
+        blank = not text.strip()
+        _칸_글_넣기(cells[-1], sample, text if not blank else 'X')
+        if kind == 'midtitle':
+            _칸_글_넣기(cells[0], sample, 번호 or 'Ⅰ')
+        if len(cells) == 3:  # 가운데 빈칸은 글이 없으므로 기준 표의 글 없는 문단을 비워 둔다.
+            _칸_글_지우기(cells[1])
+        if kind == 'midtitle':
+            중제목_표서식_복사(result, sample, maps, 1, 최대폭)
+        else:
+            제목_표서식_복사(result, sample, maps)
+            if len(cells) == 3:
+                _빈칸_서식_참조_변환(cells[1], maps)
+        if blank:
+            _칸_글_지우기(cells[-1])
+        return result
     sub = ''
     if kind == 'title2':
         sub, text = split_title2(text)
@@ -2438,8 +2505,16 @@ def _서식표_글(table):
     return 제목_문자열(제목_셀들(table)[0])
 
 
-def _서식표_글_확인(kind, table, text):
-    """A1 칸 글이 요청한 글과 같은지(제목2는 쉼표만 빠짐) 확인한다."""
+def _서식표_글_확인(kind, table, text, 번호=None):
+    """넣은 글이 요청한 글과 같은지 확인한다(제목2는 쉼표만 빠짐, 중제목은 번호 칸도 확인)."""
+    cells = 제목_셀들(table)
+    if kind in ('midtitle', 'attach1', 'attach2'):
+        ok = 제목_문자열(cells[-1]).strip() == text.strip()
+        if kind == 'midtitle':
+            ok = ok and 제목_문자열(cells[0]).strip() == (번호 or 'Ⅰ')
+        if not ok:
+            raise RuntimeError('서식 표 글 삽입 검사 실패')
+        return
     if kind == 'title2':
         sub, title = split_title2(text)
         expected = sub + title
@@ -2478,7 +2553,7 @@ def 라벨_서식표_적용(source, target=None):
                 if kind is None:
                     continue
                 text = head_text[len(_라벨_표식[kind]):]
-                result = 서식표_생성(header, kind, text, cache)
+                result = 서식표_생성(header, kind, text, cache, 최대폭=_구역_본문폭(root))
                 _서식표_글_확인(kind, result, text)
                 _서식표_번호_부여(result, ids)
                 run[list(run).index(table)] = result
@@ -2612,8 +2687,9 @@ def 준말_hwpx_처리(source, target=None, selections=None):
             else:
                 base_char = next((r.get('charPrIDRef') for r in p if 제목_xml이름(r) == 'run'
                                   and any(제목_xml이름(c) == 't' for c in r)), '0')
-                table = 서식표_생성(header, spec['value'], rest, cache)
-                _서식표_글_확인(spec['value'], table, rest)
+                numeral = 준말_로마자(key) if spec['value'] == 'midtitle' else None
+                table = 서식표_생성(header, spec['value'], rest, cache, numeral, _구역_본문폭(sections[name]))
+                _서식표_글_확인(spec['value'], table, rest, numeral)
                 _서식표_번호_부여(table, ids)
                 for run in [r for r in p if 제목_xml이름(r) == 'run']:
                     had_text = any(제목_xml이름(c) == 't' for c in run)

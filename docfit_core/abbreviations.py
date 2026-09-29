@@ -5,7 +5,8 @@
 줄을 본말로 바꾼다. 준말과 콜론 사이에는 빈칸이 있어도 된다.
 
 본말의 종류:
-    format  서식 표(제목1·제목2·개요). 콜론 뒤 글은 표의 A1 칸에 넣고 준말 줄은 지운다.
+    format  서식 표(제목1·제목2·개요·중제목·붙임). 콜론 뒤 글을 표의 글 칸(제목·개요는 A1, 중제목·붙임은
+            번호·'붙임' 글자 다음 칸)에 넣고 준말 줄은 지운다.
     text    문구. 준말과 콜론을 본말로 바꾸고 콜론 뒤 글은 그대로 이어 붙인다.
 """
 
@@ -18,6 +19,9 @@ FORMAT_KINDS: dict[str, str] = {
     "title1": "제목 서식1 표",
     "title2": "제목 서식2 표 (쉼표 앞은 부제)",
     "overview": "개요(요지) 서식 표",
+    "midtitle": "중제목 서식 표 (준말 끝 숫자 = 로마자 번호, 예: 로1 → Ⅰ)",
+    "attach1": "붙임 서식1 표 (1행3열)",
+    "attach2": "붙임 서식2 표 (1행2열)",
 }
 TYPES = ("format", "text")
 TYPE_LABELS = {"format": "서식 표", "text": "문구"}
@@ -27,9 +31,12 @@ DEFAULT_ENTRIES: dict[str, dict] = {
     "제목1": {"type": "format", "value": "title1"},
     "제목2": {"type": "format", "value": "title2"},
     "개요": {"type": "format", "value": "overview"},
+    "붙임": {"type": "format", "value": "attach1"},
+    **{f"로{n}": {"type": "format", "value": "midtitle"} for n in range(1, 11)},
 }
 
 _MAX_KEY = 12
+ROMAN = "ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅪⅫ"
 _MAX_TEXT = 500
 
 
@@ -39,6 +46,13 @@ def clean_key(key: str) -> str:
     if not key or len(key) > _MAX_KEY or re.search(r"[\s:：]", key):
         return ""
     return key
+
+
+def roman_of_key(key: str) -> str:
+    """중제목 준말 끝의 숫자(1~12)를 로마자 번호로 바꾼다(로3 → Ⅲ). 숫자가 없거나 범위 밖이면 빈 글."""
+    match = re.search(r"(\d{1,2})$", key or "")
+    number = int(match.group(1)) if match else 0
+    return ROMAN[number - 1] if 1 <= number <= len(ROMAN) else ""
 
 
 def normalize(entries) -> dict[str, dict]:
@@ -52,6 +66,8 @@ def normalize(entries) -> dict[str, dict]:
             continue
         kind, value = spec.get("type"), spec.get("value")
         if kind == "format" and value in FORMAT_KINDS:
+            if value == "midtitle" and not roman_of_key(key):
+                continue  # 번호를 알 수 없는 중제목 준말은 쓸 수 없다.
             result[key] = {"type": "format", "value": value}
         elif kind == "text" and isinstance(value, str) and value.strip() and len(value) <= _MAX_TEXT:
             result[key] = {"type": "text", "value": value.strip()}
@@ -96,6 +112,8 @@ def upsert(entries: dict, key: str, kind: str, value: str) -> tuple[dict, str]:
     if kind == "format":
         if value not in FORMAT_KINDS:
             return entries, "서식 표 종류를 골라 주세요."
+        if value == "midtitle" and not roman_of_key(clean):
+            return entries, "중제목 준말은 끝에 1~12 숫자를 붙여 주세요(예: 로1 → Ⅰ, 로3 → Ⅲ)."
     elif kind == "text":
         value = (value or "").strip()
         if not value:

@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import Mock, patch
 import zipfile
 
-from docfit_core.abbreviations import (DEFAULT_ENTRIES, clean_key, match_line, normalize, split_title2)
+from docfit_core.abbreviations import (DEFAULT_ENTRIES, clean_key, match_line, normalize, split_title2, upsert)
 
 HP = 'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"'
 HS = 'xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"'
@@ -16,6 +16,10 @@ REGISTRY = {
     '제목2': {'type': 'format', 'value': 'title2'},
     '개요': {'type': 'format', 'value': 'overview'},
     '요약': {'type': 'text', 'value': '본 문서는 다음과 같이 보고함'},
+    '로1': {'type': 'format', 'value': 'midtitle'},
+    '로3': {'type': 'format', 'value': 'midtitle'},
+    '붙임': {'type': 'format', 'value': 'attach1'},
+    '붙임2': {'type': 'format', 'value': 'attach2'},
 }
 
 
@@ -170,6 +174,96 @@ class DocumentConversionTest(unittest.TestCase):
         self.assertEqual(next(x for x in paras[p.get('paraPrIDRef')] if self.name(x) == 'align').get('horizontal'), 'CENTER')
         run = next(r for r in p if self.name(r) == 'run')
         self.assertEqual(chars[run.get('charPrIDRef')].get('height'), '2700')
+
+    def _faces_and_chars(self, header):
+        faces = {f.get('id'): f.get('face') for ff in header.iter()
+                 if self.name(ff) == 'fontface' and ff.get('lang') == 'HANGUL' for f in ff}
+        return faces, {c.get('id'): c for c in header.iter() if self.name(c) == 'charPr'}
+
+    def test_midtitle_abbreviation_numeral_from_key_and_text_in_text_cell(self):
+        ns = self.ns
+        body = self._p('로1 : 추진배경') + self._p('로3: 행 정 사 항')
+        found, count, header, section = self._convert(body)
+        self.assertEqual(count, 2)
+        tables = [t for t in section.iter() if self.name(t) == 'tbl']
+        self.assertEqual([[ns['제목_문자열'](c) for c in ns['제목_셀들'](t)] for t in tables],
+                         [['Ⅰ', '', '추진배경'], ['Ⅲ', '', '행 정 사 항']])
+        faces, chars = self._faces_and_chars(header)
+        for table in tables:
+            self.assertEqual(ns['중제목_유형판별'](table), 1)      # 다시 판별해도 중제목
+            for run in (r for r in table.iter() if self.name(r) == 'run' and ns['제목_문자열'](r).strip()):
+                cp = chars[run.get('charPrIDRef')]
+                self.assertEqual(cp.get('height'), '2000')
+                font = next(x for x in cp if self.name(x) == 'fontRef')
+                self.assertEqual(faces[font.get('hangul')], 'HY견고딕')
+        numeral_run = next(r for r in ns['제목_셀들'](tables[0])[0].iter() if self.name(r) == 'run')
+        self.assertTrue(any(self.name(x) == 'bold' for x in chars[numeral_run.get('charPrIDRef')]))
+        self.assertNotIn('로1', ''.join(self._texts(section)))
+
+    def test_midtitle_bold_switch_and_page_width_cap(self):
+        ns = self.ns
+        long_text = '아주 긴 중제목 문구 ' * 20
+        fn = ns['준말_hwpx_처리']
+        source = self._doc(self._p('로1: ' + long_text))
+        with patch.dict(fn.__globals__, {'준말_등록표': REGISTRY, '중제목_번호굵게': False}):
+            target = source.with_name('nb.hwpx')
+            fn(source, target, fn(source))
+        with zipfile.ZipFile(target) as z:
+            header = self.parse(z.read('Contents/header.xml'))
+            section = self.parse(z.read('Contents/section0.xml'))
+        _, chars = self._faces_and_chars(header)
+        table = next(t for t in section.iter() if self.name(t) == 'tbl')
+        numeral_run = next(r for r in ns['제목_셀들'](table)[0].iter() if self.name(r) == 'run')
+        self.assertFalse(any(self.name(x) == 'bold' for x in chars[numeral_run.get('charPrIDRef')]))
+        self.assertLessEqual(int(ns['제목_자식'](table, 'sz').get('width')), 42520)   # 쪽 본문 폭을 넘지 않는다
+
+    def test_attachment_abbreviations_use_attachment_formats(self):
+        ns = self.ns
+        body = self._p('붙임: 우수시책 요약서 작성서식') + self._p('붙임2 : 참고자료')
+        found, count, header, section = self._convert(body)
+        self.assertEqual(count, 2)
+        tables = [t for t in section.iter() if self.name(t) == 'tbl']
+        self.assertEqual([[ns['제목_문자열'](c) for c in ns['제목_셀들'](t)] for t in tables],
+                         [['붙임', '', '우수시책 요약서 작성서식'], ['붙임', '참고자료']])
+        self.assertEqual([ns['붙임_유형판별'](t) for t in tables], [1, 2])
+        faces, chars = self._faces_and_chars(header)
+        for table in tables:
+            for run in (r for r in table.iter() if self.name(r) == 'run' and ns['제목_문자열'](r).strip()):
+                font = next(x for x in chars[run.get('charPrIDRef')] if self.name(x) == 'fontRef')
+                self.assertEqual(faces[font.get('hangul')], 'HY헤드라인M')
+
+    def test_every_format_kind_leaves_only_valid_style_references(self):
+        """모든 서식 표 종류를 변환한 뒤에도 문단·글자·테두리 참조가 헤더에 실제로 있어야 한다."""
+        body = ''.join(self._p(line) for line in (
+            '제목1: 가', '제목2: 부제, 제목', '개요: 나', '로1: 다', '붙임: 라', '붙임2: 마', '제목1:', '로3:', '붙임:'))
+        _, count, header, section = self._convert(body)
+        self.assertEqual(count, 9)
+        ids = {tag: {x.get('id') for x in header.iter() if self.name(x) == tag}
+               for tag in ('paraPr', 'charPr', 'borderFill', 'tabPr')}
+        used = {'paraPr': set(), 'charPr': set(), 'borderFill': set()}
+        for x in section.iter():
+            if x.get('paraPrIDRef') is not None: used['paraPr'].add(x.get('paraPrIDRef'))
+            if x.get('charPrIDRef') is not None: used['charPr'].add(x.get('charPrIDRef'))
+            if x.get('borderFillIDRef') is not None: used['borderFill'].add(x.get('borderFillIDRef'))
+        for x in header.iter():   # 헤더 안 서로 간 참조
+            if self.name(x) == 'charPr': used['borderFill'].add(x.get('borderFillIDRef'))
+            if self.name(x) == 'paraPr':
+                used['tabPr'] = used.get('tabPr', set()) | {x.get('tabPrIDRef')}
+        for tag, refs in used.items():
+            self.assertLessEqual({r for r in refs if r is not None}, ids[tag], tag)
+        empty_titles = [t for t in section.iter() if self.name(t) == 'tbl']
+        self.assertEqual(len(empty_titles), 9)
+
+    def test_midtitle_key_needs_a_roman_number(self):
+        from docfit_core.abbreviations import roman_of_key
+        self.assertEqual([roman_of_key(k) for k in ('로1', '로3', '로12', '로', '로13', '로0')], ['Ⅰ', 'Ⅲ', 'Ⅻ', '', '', ''])
+        self.assertEqual(normalize({'로': {'type': 'format', 'value': 'midtitle'}}), {})
+        entries, error = upsert({}, '로', 'format', 'midtitle')
+        self.assertTrue(error)
+        self.assertEqual(entries, {})
+        self.assertEqual(upsert({}, '로2', 'format', 'midtitle')[0]['로2']['value'], 'midtitle')
+        self.assertEqual(normalize(DEFAULT_ENTRIES), DEFAULT_ENTRIES)
+        self.assertEqual(DEFAULT_ENTRIES['붙임'], {'type': 'format', 'value': 'attach1'})
 
     def test_text_type_replaces_abbreviation_and_keeps_rest_formatting(self):
         body = ('<hp:p id="1" paraPrIDRef="0" styleIDRef="0">'
