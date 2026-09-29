@@ -8496,6 +8496,8 @@ def 보고서_페이지배치_최종검사():
     issues = []
     # 한 쪽에 다 들어갈 수 없는 묶음은 규칙 위반이 아니라 적용 제외로 따로 적는다.
     exempt = []
+    표문단 = 본문_표_문단번호()
+    _표칸영역.clear()
     try:
         순회_시작()
         while True:
@@ -8503,6 +8505,29 @@ def 보고서_페이지배치_최종검사():
                 return False
             pos = hwp.GetPos()
             text = 현재문단_텍스트()
+            # 표 묶음: 제목 문장은 표가 시작하는 쪽에, 주석은 표가 끝나는 쪽에 있어야 한다.
+            표묶음 = (보고서_표묶음_수집(pos, 표문단)
+                      if 보고서_문단역할(text) in ('소제목', '본문') else None)
+            if 표묶음 and all(쪽범위_안인가(p[0]) for p in 표묶음[0]):
+                lead, 표항목, notes, 표키 = 표묶음
+                lead_counts = 보고서_묶음_쪽별줄수(lead)
+                notes_counts = 보고서_묶음_쪽별줄수(notes) if notes else {}
+                표쪽 = 표_쪽범위(표키)
+                if lead_counts and 표쪽 and notes_counts is not None:
+                    checked += 1
+                    제목_홀로 = max(lead_counts) < 표쪽[0]
+                    주석_홀로 = bool(notes_counts) and min(notes_counts) > 표쪽[1]
+                    if 제목_홀로 or 주석_홀로:
+                        message = (f'[표 묶음 쪽 분리] {text.strip()[:60]} '
+                                   f'({"제목 문장" if 제목_홀로 else "주석"}이 표와 다른 쪽)')
+                        issues.append({'text': message, 'pages': sorted(set(lead_counts) | set(표쪽)
+                                                                         | set(notes_counts)),
+                                       'paragraph': pos[1]})
+                        검수_문제_기록(현재_처리파일, message)
+                hwp.SetPos(*(notes or [표항목])[-1][0])
+                if not 범위_다음_문단으로_진행():
+                    break
+                continue
             # 논리단위 5개 이하 □ 묶음은 묶음 전체가 한 쪽에 있어야 한다.
             group_target = (소제목묶음_쪽맞춤_대상(pos)
                             if 보고서_문단역할(text) == '소제목' else None)
@@ -8640,11 +8665,13 @@ def 쪽나눔_설정(위치, 켜기):
         raise RuntimeError('문단 앞 쪽 나눔 설정 실패')
 
 
-def _묶음_쪽나눔_이동(시작위치, 문단들, counts, summary):
+def _묶음_쪽나눔_이동(시작위치, 문단들, counts, summary, 표키=None, 표까지만=False):
     """줄간격으로 옮기지 못한 묶음을 '문단 앞에서 쪽 나눔'으로 다음 쪽에 보낸다.
 
     앞쪽에 남은 줄이 한 쪽의 쪽나눔_최대_앞쪽비율 이하일 때만 한다(큰 빈 공간
     방지). 옮긴 뒤에도 쪽을 넘으면 되돌린다. 성공 True.
+    표키를 주면 표 첫 칸도 같은 쪽이어야 하고, 표까지만=False면 표 끝까지 같은 쪽이어야 한다
+    (한 쪽보다 긴 표는 제목 문장이 표 시작과 같은 쪽에 오기만 하면 된다).
     """
     pages = sorted(counts)
     capacity = 쪽_본문줄수(시작위치)
@@ -8654,7 +8681,12 @@ def _묶음_쪽나눔_이동(시작위치, 문단들, counts, summary):
     try:
         쪽나눔_설정(시작위치, True)
         new_counts = 보고서_묶음_쪽별줄수(문단들)
-        if new_counts and len(new_counts) == 1:
+        표쪽 = 표_쪽범위(표키) if 표키 is not None else None
+        같은쪽 = bool(new_counts) and len(new_counts) == 1
+        if 같은쪽 and 표키 is not None:
+            쪽 = next(iter(new_counts))
+            같은쪽 = bool(표쪽) and 표쪽[0] == 쪽 and (표까지만 or 표쪽[1] == 쪽)
+        if 같은쪽:
             로그(f'문장 묶음 쪽 나눔으로 다음 쪽 배치: {summary} '
                  f'(앞쪽 {counts[pages[0]]}줄/쪽당 약 {capacity}줄)')
             return True
@@ -8871,11 +8903,12 @@ def 소제목묶음_쪽맞춤_대상(시작위치):
     return group, units
 
 
-def _묶음_같은쪽_이동(시작위치, paragraphs, counts, 먼저_확대, summary):
+def _묶음_같은쪽_이동(시작위치, paragraphs, counts, 먼저_확대, summary, 표키=None, 한방향=False):
     """묶음 전체를 두 쪽 중 한 쪽으로 옮긴다.
 
     먼저_확대로 정한 방향을 먼저 시도하고, 줄간격이 이미 한계값이라
-    움직일 수 없거나 실패하면 반대 방향으로 보완한다.
+    움직일 수 없거나 실패하면 반대 방향으로 보완한다(한방향=True면 보완하지 않음).
+    표키를 주면 그 표의 첫 칸·마지막 칸도 목표 쪽에 있어야 성공이다(표 묶음).
     '성공', '실패'(원래 줄간격 복원), '건너뜀', 중단/오류는 None.
     """
     pages = sorted(counts)
@@ -8918,7 +8951,8 @@ def _묶음_같은쪽_이동(시작위치, paragraphs, counts, 먼저_확대, su
                 new_counts = 보고서_묶음_쪽별줄수(paragraphs)
                 if new_counts is None:
                     return None
-                success = set(new_counts) == {target_page}
+                success = (set(new_counts) == {target_page}
+                           and (표키 is None or 표_쪽범위(표키) == (target_page, target_page)))
                 if success:
                     로그(f'문장 묶음 {target_page}쪽 배치 완료: {summary} (줄간격 {step}단계 {direction})')
                     return True
@@ -8930,7 +8964,7 @@ def _묶음_같은쪽_이동(시작위치, paragraphs, counts, 먼저_확대, su
             진단로그(f'[문장 묶음] {direction} 방향 줄간격 범위 내 이동 불가 / {summary}')
             return False
 
-        for expand in (먼저_확대, not 먼저_확대):
+        for expand in ((먼저_확대,) if 한방향 else (먼저_확대, not 먼저_확대)):
             result = 방향_시도(expand)
             if result is None:
                 return None
@@ -8999,6 +9033,202 @@ def 소제목묶음_같은쪽_시도(시작위치, text):
     return '단위별', group
 
 
+# ---- 표 묶음 쪽 배치 ------------------------------------------------------
+# 'ㅇ (세부 추진일정)' + 표 + 표 주석(*, **, ※)은 하나의 묶음이다(실측: 지구 침공계획 보고,
+# 제목 문장만 3쪽 끝에 남고 표·주석은 4쪽으로 넘어감). 표가 든 문단은 글자가 없어 역할이
+# 없으므로 예전 묶음 수집은 표 앞에서 끊겼고, 표 높이는 본문 줄 수로 잴 수 없다.
+# 표의 쪽은 첫 칸과 마지막 칸의 쪽으로 판정한다.
+_표칸영역 = {}
+
+
+def 본문_표_문단번호():
+    """{본문 문단 번호: 표 키(앵커 위치)}. 본문(리스트 0)에 놓인 표만."""
+    result = {}
+    try:
+        ctrl = hwp.HeadCtrl
+        남은수 = 100000   # 컨트롤 목록이 끝나지 않는 비정상 상황 방지
+        while ctrl and 남은수 > 0:
+            남은수 -= 1
+            try:
+                if ctrl.CtrlID == 'tbl':
+                    anchor = ctrl.GetAnchorPos(0)
+                    if anchor.Item('List') == 0:
+                        result[anchor.Item('Para')] = (0, anchor.Item('Para'), anchor.Item('Pos'))
+            except Exception:
+                pass
+            ctrl = ctrl.Next
+    except Exception as e:
+        진단로그(f'본문 표 위치 확인 실패(무시): {e}')
+    return result
+
+
+def 표_칸영역_범위(표키):
+    """표 칸 목록 번호의 (처음, 끝). 처음 부를 때 문서의 표 칸을 한 번 훑어 기억한다."""
+    if not _표칸영역:
+        original = hwp.GetPos()
+        try:
+            area = 2
+            while not 중단_요청됨():
+                try:
+                    hwp.SetPos(area, 0, 0)
+                except Exception:
+                    break
+                if hwp.GetPos()[0] != area:
+                    break
+                키 = 현재_표_키()
+                if 키:
+                    처음, 끝 = _표칸영역.get(키, (area, area))
+                    _표칸영역[키] = (min(처음, area), max(끝, area))
+                area += 1
+        finally:
+            hwp.SetPos(*original)
+    return _표칸영역.get(tuple(표키)) if 표키 is not None else None
+
+
+def 표_쪽범위(표키):
+    """표 첫 칸 시작과 마지막 칸 끝이 놓인 (첫 쪽, 끝 쪽). 모르면 None."""
+    범위 = 표_칸영역_범위(표키)
+    if not 범위:
+        return None
+    original = hwp.GetPos()
+    try:
+        hwp.SetPos(범위[0], 0, 0)
+        첫쪽 = 현재_페이지번호()
+        hwp.SetPos(범위[1], 0, 0)
+        hwp_run('MoveListEnd')
+        끝쪽 = 현재_페이지번호()
+        return (첫쪽, 끝쪽) if 첫쪽 and 끝쪽 else None
+    except Exception:
+        return None
+    finally:
+        hwp.SetPos(*original)
+
+
+def 보고서_표묶음_수집(시작위치, 표문단):
+    """(제목 문장 묶음, 표 문단 위치, 주석 문단들, 표 키) 또는 None.
+
+    제목 문장 묶음(□ 또는 ㅇ와 딸린 -·*) 바로 뒤에 표가 오면 표와, 표 바로 뒤의
+    부연설명(*, **, ※)까지 한 묶음이다. 사이의 빈 문단 하나는 묶음에 넣는다.
+    """
+    if not 표문단:
+        return None
+    lead = 보고서_본문묶음_수집(시작위치)
+    if not lead:
+        return None
+    original = hwp.GetPos()
+
+    def 문단(번호):
+        """(시작, 끝, 글자) 또는 None."""
+        try:
+            hwp.SetPos(0, 번호, 0)
+        except Exception:
+            return None
+        if tuple(hwp.GetPos()[:2]) != (0, 번호):
+            return None
+        start = hwp.GetPos()
+        text = 현재문단_텍스트()
+        hwp.SetPos(*start)
+        hwp_run('MoveParaEnd')
+        return start, hwp.GetPos(), text
+
+    try:
+        번호 = lead[-1][0][1] + 1
+        사이빈줄 = []
+        if 번호 not in 표문단:
+            빈 = 문단(번호)
+            if not 빈 or 빈[2].strip() or 번호 + 1 not in 표문단:
+                return None
+            사이빈줄.append((빈[0], 빈[1], '빈 줄'))
+            번호 += 1
+        표 = 문단(번호)
+        if not 표 or 표[2].strip():
+            return None      # 표 옆에 글자가 있는 문단은 표 묶음으로 보지 않는다.
+        표항목 = (표[0], 표[1], '표')
+        notes = []
+        다음 = 번호 + 1
+        while not 중단_요청됨():
+            item = 문단(다음)
+            if not item:
+                break
+            role = 보고서_문단역할(item[2]) if item[2].strip() else None
+            if role == '부연설명':
+                notes.append((item[0], item[1], role))
+            elif not item[2].strip() and 다음 not in 표문단 and not notes:
+                뒤 = 문단(다음 + 1)
+                if not 뒤 or 보고서_문단역할(뒤[2]) != '부연설명':
+                    break
+                notes.append((item[0], item[1], '빈 줄'))
+            else:
+                break
+            다음 += 1
+        return lead + 사이빈줄, 표항목, notes, 표문단[번호]
+    finally:
+        hwp.SetPos(*original)
+
+
+def 표묶음_같은쪽_시도(시작위치, text, 표문단):
+    """제목 문장 + 표 + 주석 묶음을 배치한다. 표 묶음이 아니면 None, 처리했으면 묶음 끝 위치,
+    중단·오류면 False.
+
+    - 묶음이 한 쪽에 들어가면 표가 시작하는 쪽에 모은다. 제목 문장만 앞쪽에 남았으면 뒤로 밀고
+      (줄간격 확대 → 안 되면 제목 앞 쪽 나눔), 표는 앞쪽에 있고 주석만 넘쳤으면 앞으로 당긴다.
+    - 표가 한 쪽보다 길면 표가 쪽을 넘는 것은 두되, 제목 문장이 표 시작과 다른 쪽에 홀로
+      남지 않게 한다. 표가 앞쪽에서 시작했으면 앞쪽을 크게 비우는 쪽 나눔은 하지 않는다.
+    """
+    묶음 = 보고서_표묶음_수집(시작위치, 표문단)
+    if 묶음 is None:
+        return None
+    lead, 표항목, notes, 표키 = 묶음
+    끝위치 = (notes or [표항목])[-1][0]
+    summary = text.strip().replace('\r', ' ').replace('\n', ' ')[:50]
+    전체 = lead + [표항목] + notes
+    if 쪽범위_사용중() and any(not 쪽범위_안인가(item[0]) for item in 전체):
+        진단로그(f'[표 묶음] 작업 쪽 범위 밖으로 이어져 건너뜀 / {summary}')
+        return 끝위치
+    글문단 = lead + [item for item in notes if item[2] != '빈 줄']
+    lead_counts = 보고서_묶음_쪽별줄수(lead)
+    notes_counts = 보고서_묶음_쪽별줄수(notes) if notes else {}
+    표쪽 = 표_쪽범위(표키)
+    if lead_counts is None or notes_counts is None or not 표쪽:
+        진단로그(f'[표 묶음] 쪽 측정 실패로 건너뜀 / {summary}')
+        return 끝위치
+    tf, tl = 표쪽
+    쪽들 = set(lead_counts) | {tf, tl} | set(notes_counts)
+    if len(쪽들) == 1:
+        return 끝위치
+    제목끝쪽 = max(lead_counts)
+    세트문장_통계['대상'] += 1
+    진단로그(f'[표 묶음] 제목 {sorted(lead_counts)}쪽 · 표 {tf}~{tl}쪽 · 주석 {sorted(notes_counts) or "-"}쪽 '
+             f'/ {summary}')
+    앞쪽 = min(쪽들)
+    결과 = '실패'
+    if len(쪽들) == 2 and max(쪽들) == 앞쪽 + 1:
+        counts = {앞쪽: 1, 앞쪽 + 1: 1}
+        # 표가 앞쪽에서 시작해 끝나고 주석만 넘쳤으면 앞으로 당기고, 그 밖에는 뒤로 민다.
+        당김 = tf == tl == 앞쪽 and notes_counts and min(notes_counts) > 앞쪽
+        결과 = _묶음_같은쪽_이동(lead[0][0], 글문단, counts, not 당김, summary, 표키=표키,
+                             한방향=not 당김 and tf == 앞쪽)
+        if 결과 is None:
+            return False
+        if 결과 == '실패' and tf > 앞쪽:
+            # 제목 문장만 앞쪽 끝에 남은 경우: 제목 앞에서 쪽을 나눠 표와 함께 보낸다.
+            if _묶음_쪽나눔_이동(lead[0][0], 글문단, lead_counts, summary, 표키=표키):
+                결과 = '성공'
+    if 결과 != '성공' and 제목끝쪽 < tf:
+        # 한 쪽에 다 모으지 못해도 제목 문장이 표와 다른 쪽에 홀로 남지는 않게 한다.
+        if _묶음_쪽나눔_이동(lead[0][0], lead, lead_counts, summary, 표키=표키, 표까지만=True):
+            로그(f'[표 묶음] 표보다 길어 한 쪽에 모으지 못함 — 제목 문장을 표 시작 쪽으로 옮김: {summary}')
+            결과 = '성공'
+    if 결과 == '성공':
+        세트문장_통계['성공'] += 1
+    else:
+        세트문장_통계['실패'] += 1
+        검수_문제_기록(현재_처리파일, f'[표 묶음 쪽 분리] {summary} (제목 {sorted(lead_counts)}쪽, '
+                              f'표 {tf}~{tl}쪽, 주석 {sorted(notes_counts) or "-"}쪽)')
+        로그(f'표 묶음 배치 미해결 — 원래 줄간격 유지: {summary}')
+    return 끝위치
+
+
 def 세트문장_같은쪽_시도(시작위치, text):
     """문단 하나의 쪽별 줄 수를 비교해 앞쪽으로 당기거나 뒤쪽으로 민다."""
     if 중단_요청됨():
@@ -9051,6 +9281,9 @@ def 세트문장_같은쪽_전체_적용():
         return False
 
     로그("문장부호 세트문장 동일 페이지 유지 처리 시작")
+    # 표 묶음(제목 문장 + 표 + 주석) 판정용: 본문에 놓인 표의 문단 번호. 표 칸 범위는 새로 잰다.
+    표문단 = 본문_표_문단번호()
+    _표칸영역.clear()
     순회_시작()
 
     while True:
@@ -9063,7 +9296,15 @@ def 세트문장_같은쪽_전체_적용():
             text = 현재문단_텍스트()
             role = 보고서_문단역할(text)
             처리됨 = False
-            if role == '소제목':
+            if role in ('소제목', '본문'):
+                끝위치 = 표묶음_같은쪽_시도(시작위치, text, 표문단)
+                if 끝위치 is False:
+                    return False
+                if 끝위치 is not None:
+                    # 표 묶음 안의 문단(표·주석)은 다시 보지 않는다.
+                    hwp.SetPos(*끝위치)
+                    처리됨 = True
+            if not 처리됨 and role == '소제목':
                 result = 소제목묶음_같은쪽_시도(시작위치, text)
                 if result is None:
                     return False
