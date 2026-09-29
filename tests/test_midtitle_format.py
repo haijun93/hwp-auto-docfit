@@ -9,6 +9,7 @@ import tempfile
 import unittest
 import zipfile
 import zlib
+from unittest.mock import patch
 
 
 class MidTitleFormatTest(unittest.TestCase):
@@ -122,6 +123,31 @@ class MidTitleFormatTest(unittest.TestCase):
         # 결과를 다시 판별해도 같은 유형이다.
         again = ns['중제목_hwpx_처리'](target)
         self.assertEqual(again, found)
+
+    def _numeral_and_text_bold(self, bold_option):
+        ns = self.ns
+        source = self._hwpx([self._plain_table(3)])
+        found = ns['중제목_hwpx_처리'](source)
+        target = source.with_name('bold.hwpx')
+        with patch.dict(ns['중제목_hwpx_처리'].__globals__, {'중제목_번호굵게': bold_option}):
+            ns['중제목_hwpx_처리'](source, target, found)
+        with zipfile.ZipFile(target) as z:
+            header = self.parse(z.read('Contents/header.xml'))
+            section = self.parse(z.read('Contents/section0.xml'))
+        chars = {c.get('id'): c for c in header.iter() if self.name(c) == 'charPr'}
+        cells = ns['제목_셀들'](next(t for t in section.iter() if self.name(t) == 'tbl'))
+        def bold(cell):
+            run = next(r for r in cell.iter() if self.name(r) == 'run')
+            return any(self.name(x) == 'bold' for x in chars[run.get('charPrIDRef')])
+        return bold(cells[0]), bold(cells[2])
+
+    def test_numeral_bold_is_default_and_can_be_turned_off(self):
+        self.assertTrue(self.ns['중제목_번호굵게'])
+        self.assertEqual(self._numeral_and_text_bold(True), (True, False))
+        self.assertEqual(self._numeral_and_text_bold(False), (False, False))
+
+    def test_numeral_bold_setting_defaults_on(self):
+        self.assertTrue(self.ns['기본_설정']['std_midtitle_bold'])
 
     def test_pre_format_runs_midtitle_processor_when_enabled(self):
         from unittest.mock import Mock, patch

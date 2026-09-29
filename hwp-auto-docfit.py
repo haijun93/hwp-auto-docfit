@@ -1022,6 +1022,7 @@ def 번들_리소스_폴더():
     "std_title_auto": True,
     "std_attachment_auto": True,
     "std_midtitle_auto": True,
+    "std_midtitle_bold": True,
     "std_title_bold": True,
     "std_dateinfo": True,
     "std_dateinfo_bold": True,
@@ -1530,6 +1531,7 @@ _제목4종_XML = 'eJztXetv21aW/1cI90sLrC3xoZfRppBlOXYrW4ElN5NFUIOWriQ2FMmSVFRns
 제목4종_사용 = True
 붙임2종_사용 = True
 중제목_사용 = True
+중제목_번호굵게 = True
 
 _개요붙임3종_XML = 'eNrtXf9v20aW/1cI95c94GzxmyjJ6GUh23LsVLYCS75sDkUDWhpZrCmSS1JxncMC3W0KdNHDdYtzrtk9J0hwe5dsEWDdLyiMve4/FMn/w83wm4aiZFGyFVHSS4FaM5wv782893lv3nCG/7rUQHINmUurzNL7v/ykqTIPkWkpuvZPHy5xK+yHSwzSqnpN0Q5xxn5lczmLsyxb1mqyqmsIZ54gC2f98tb7jcYqaYvBjWjWakPGzxq2baymUsfHxysNGbfTXKnqK0dmqnFsNNUUz3JcSjYMXN2rY8SrY8imfGjKRoOqybFx6kr96lrxerVQ1cYD061XjVevqpuoW6kRrxIZSapSTBIbimXr5km3YjNevaZs2chcNuRDilKjfkVlq9pATdnr1agHtWrUoBgtU13RzcNUrZpCKmoizbZS3AqXCkrrvX0oNaPuVOFZNpPCj6myOv5bbcimHW+iu+W7LB0bLU2xSWa8NraOjX1cYR1XCBpBRuvgaqKtoGxV1+oK0ZyWqa3qsqVYq5rcRNaqXcW8I62mV1tkWFbp4quu3tF6KBKlQ9V1jfDOfbjkKNsBOlS03VaTIdPm5jN1Xbc13faTuAcqZShV75d9oPolft2Sba+bD5dSTsMmqhexIDm/67pm1+UqshjFRk2XgIxHgP+MUWUHHrbyu7f3iw4Vmu0WzVJFGaWGcwhrpBL+2f7qy85/fUrIOTFIulLZxAnFKjQPUK2GvNJOfVJiW6vruGpTUU8qboXN9Xzlwe1SZWt7HVc8Rsphg3QqEV5N3dBNjzPSJx5b28Ri7iUt29SP0D/LpkKxz8hms2yfqP6AqcjGalHXzaaX0VRqqqL5jz/Z8nt0hy7lMdrDMUdx/OrrzrNPmbc/vGifPrl5xtO9jAthxvm+jLNhxtlexvkQ42yIcfEqxvku45dPzjr/9+OCTLhA8/268+MX7Zdv3hnr4lRZF/uxfn56+dmTuWc9TbF+9mP79c/tbz/vvDx/B1o+Xb6lLt9b9y+/+XP7P87az37uPLvYmXtFz3RZ73z5As838/b7N73gvrVZuRHe2bF4Hwbu7BXgzvbwnqJsfl8HoJivbO+C/Qf7D/Yf7D/Yf7D/YP8Xyv5v5Xfv5MH+g/0H+w/2H+w/2H+w/wtl/+/k7+Z3C+UCuADgAoALAC4AuADgAiycC3D52dkCuwCY5sJeyP5nEmH/xThmkA+PFH+1GeTjm0Gw/2D/wf6D/Z9TeJuq/X/nrA+1geX7O2sleA8OjCAYQTCCYARhEQxx8LEXwTv393dv3ynN2Cp4v5zIRTDYf7D/YP/B/oP9B/t/TdbDJpBOWe7hNN2sIXNTUVX65BgXnF0LHndtg90wEdrwqW/INf3Y5wxpmMqiS9duaZdsMB+YSD5aR6paRuRIp42KAS47PViqbDX8cffqrJs6HhLf+irWut4iDQcWnhAmV4/K41VVUd1ec/jqqXus1Gxy7JNd4Zhm05kpVSdV32Odf8G5OzLW12rB1o1r1T/QbVtvXquJmiIf6pqs+tXLpeL2Rtz6qZBo9JUUHiQFJAXXr67WsUysmS2r4aSOFc1JOBi87tXQdI0caG7IdrXh572Xc/4RLFQN55S6L3uhJmOIojCXothnGvhRhXHkNiLiOHIL/QRy5EYmDV7iYoAXn742eg1pIoa8iDchLumpiksabB3YumvZOr+Va9s6CZArtqm7NnQNaSEedolTha7MovhGSTB1cyAvWZCXWQOYSTpH8Uzee5trhc0NcXJWLwcOGDhg13LANjdvTBg5FjByYvGGqDjxNyCS0402cNyCCIx4fXkRkxBuEKduUDc2C9Jm5oZCpuG0uy9E7l68a+oGMm0ldKkg74uYW6L7kkQj2IJyYdRGn9hRS08kuxeJWxba1DW7bLi7cqyb9QEyNfc6U6feSXNHNo8oDQgI3t7YQ3V3xyHY6sM5eGi0w5bqRfNU2Vb8vUf84GPZ+/2xbMgaspCX1O2GI9ai2+WB7tfHBJnB+wNEWMlmXbcLzmHO78RN+d24KaojN8Pvyk0FnblJrzuuK1UWHh08HN0u6Q7p7no6o7sKdUR101VBpJYfvUuu9HrdQvZkmWppWFDIZmkPqGFRDOnnAHW2bFM5QnrLDip49QeUxyWjnXlNObDeQ0bQzBpP/iOcOYPyK9+VcJP3vaRnUlztiygil2hFFKjZFajZFcKzK1CzK9CzK3RnVwBFBEVMsCLytCLmQA9BD0EPp6GHQpL1EBxT0MMF0UMR7OG71sPlNNWjk/A7dBJUf07a785JBL05Ka8z8hvUcS7UMR1aJ0pRfeQLGXEtDfoIdhEUcZKKKIUUkQPDCIoIijgNRcyEFDE9HUVMD1JEiZpdiZpdKTy7EjW7Ej27Und2JVDEmVNE/KS2eCqZpVWSzyRMJScivKCSoJJJVslcolUSrCSo5OJt+YdfvuHBTL6L2CpHx1Y5OrbK9cRWOTq2yoViqxwVW+VgJTkvCsklWiHpXQF6U6BnT4DeEgjtCFAbAmlQSFDIGVDI0Ms43JS8Vm6QQmao6c1Q05sJT29m0FsAGXgLADRxRjRRWHTTmKNFKEfLUK5HiHK0FOVCYpSj5Ch3lU3kQ0aRD1lFvtcs8iG7yIcNI09bRh4Ucl4UUkyCacxBQAdM4wxrYqAj19HEoa/kTNVJBU0ETVwUmyiBTQRNBE1MgCaGX8oRoproXtswJU2kQ450xLEn4EjHG0PhRirayCUokkoDzDKNMMs9ELNMY8xyCGSWKZRZlkAh50Uhs4l+S44Od9DBjp5QBx3oCIU5qCAHnyCFpI+JLdPnxJZ7Doot0yfFlkNB4mXqrNiyCK8BzJ9q5kA1p7DrGN52DO87RjYewzuPPVuPob1HDjR09jU0FblHx72kSD7oe7OO4H9hgjzv3qsjt2y9Ih8UUd0O5+yFvnoUrshFKnLxKvJxeux+ZCLEi9OW1moeIBNrSeh7Eh5rwcMulZYtmzZ1cxW5zmoLybXggfv5i4fI95hlVTkkwlgsOB+qwrK1rVn2Pe9yJZ/NbSxYftfuzUv52set4KMbBBhLztx5H/C4W9hbL+xWQo8InpHCmOpN3WzKJGNj+/Y2KeXOqw97Ip8Tc1KGz6WdR6h6JB/4Hye69RG34oyVz9lwNvmps7mV3729X3xQvl8s5teKhREZ5kdlWJjJeRX+YUQ2xRmfV3FUhtOzOK+/+Cg9Kp/SbE/sLz6SRuU4M3WO17f31ouFjQcjzjAxRR9lRuQ2mxhux55nh+/siHznkiLXd/I7pZFkOhXDmWCnzt1eaSe/+6C8ky8WR5pJz/sK3KmepBUw3/8Kxyzla9GupuPN+f17nyrDjAcOPlnVkYtG6Q9uMpYmGxX9ttn16FqGYSLLIiV3HZIsvznCRehras7wMw3dVB7htmUyLXf2y5Xtzfu4+ENCedXJXMuXC8XtrrfewJNK3Miwu67UuqT7s9xddJArU8vItkk9J1Eky5p7eA2Li31QKNx9cK+0t+Ffrrqra4OeYwHQj0umgZdCXmdHCBn3FLuxi2ebyiIj4PNuyIdojTS8huq6GXy4Epe4Z8oGYXGvkP/AJ5YIXdlbbaK8pchaIViGu2k8sl3ujFXrWLGrDednVbYQg/+a6NctxUS1ZU1uIstb2Dds21hNpY6Pj1cw+VW9uVLVV47MVOPYaKopnuWk1Naxsa8p9jqWRm+WmrJ5qGjOdaSKZmNNYB7KaiuIE+DCRFPv3d3fJUjs3mJK7oONUcy59DVGOSxRD2MU0/AEDCuWojlqrJIp8Ifa7lVfvylOGtiYO+DOyNdQXW6pNozZ8DELhipFC69/D23/NxO81Ta1LnUzqPWsl1PRjVB6zbnWtwtqGqr6FTD+YHXccXgLfULYBccITnKAk4CTgJOAkwnFST4hOMkDTgJOTgonve0tgMrRhk1gWUDLRKKl0IuWXBgt+UTDZWm/4j4FxEwsYrKAmGMMGw+ImVDEFOcYMTlAzOkjJg+IOc6wiYCYCUXM9BwjJg+IOX3EFAAxxxk2CRAzoYgpzTFiCoCY00dMERBznGHLAmImFDEzc4yYIiDm9BEzDYg5bvgXIDORkJmdY8hMA2ROHzIlgMyxIBP2fpIKmbk5hkwJIHP6kJkByBwLMmHzJ6mQycH5nivx0kEzAMzFfQk7DS+u3+iYzS5Swgkf8CxHB8plTuAWRvGFmwPLZV7iYdxmGjATc9THO8QPfiX4lfMIlTBmMw2TyTnjAzgJOHmlzntfZoqh9gILp8epgePFuAMnsRCzHIaYkTM+PDiWAJgz7CRlAC3HGDVOBKwcipVpwErAygmdHedYgMuxjpDyLCBmYhFTAsQExJzQ2XEeEHO8A1EiIGZyEXPY6R7YGYed8bFVPwfvXI7lnMNhyMTiZRbwEvBykje6AWCOd68TAGYyATMHgAmAOSnAzAJejmVn4H6ixN6xDod6AC/nbIs8y8KpnjHClxILB3uGoSUc7AG0hDfVByq9CG+q3+iYzS5QJuZADxnuwh7sjQNQwpEeONKTPKAUACgBKCd4nXpMtb+q5OKBpRR73CQWAPPdAqaYFMDc2C5X9rbX9isFWIUDZsI3KOYCM290kyedFMxMQ9gSABNW43BxG+zvXA2UEqzGYTUOQLnox8XhtaFhQJkBjxI8ygm+ZhlT7bMJXkpmpvKeZcyB46QZHbnZgczub90g0IQsh1DLPlGRxSg2aq5rtrdX3n3i4qvzVqY3Pvm9PE4RrcSp9vnp5WdP3l58SjRbO9x1c3d1symrDmyQ/kKvvmO9DKM0mbYy6YrOVGXtcHvDORMikhFT9erRJm6VhkSKPm4gfT9ctN9chIhb02snEdL4eKRxo5PGDyLt7flZ50+nDBcirtSyiUw6uWEKhXgU8qNTKAyhkO9LIR+hUIxHoTA6heIQCoW+FAoRCtPxKBRHpzA9hEKxL4VihEIpHoXp0SmUhlCY7kthOkJhJh6F0ugUZoZQKPWlUIpQmI1HYWZ0CrNDKMz0pTAToTAXj8Ls6BTmhlCY7UthNgrVMUnMjYHV7BAac31pzEVpjCmK3DgGhRsG22x/3GajZMaUR24M48JR1mV9K7/XJbPz7d+Z9vdfXD4NG7+72I9n3GVNhFA2Qid3U+Z5oIlpv75o/++b9qs/hKjcwuujPgRyUQr5viM5honhrrAxv+38988h+jZ13dZ0G0UpjLo4Ql8KxzAx3EAb0/7rRS+FBa12PQLHsDDcQBPT/stp+9vXIQJ3UFOPUhd1w8S+1I1hXbiB5qVz/rr98lOm8+Ks/e1fQkRWSuvMlrtWj9IadcjSfWkdw85w2SG0chEyow4jF/XHpL4EjmFmuNwQAvkIgVF/kUvHJHAMI8OzQwgUIgRG3UVOikcgPwYk8gMNTOdvLzufPw2Rty4btqJr0VULG3NREMu0pILVoPvbRPWiYrmxgKreNGRbOVDRhl5tNUkwwMZLTWTj1eShKTfdlTHPcr/yFo+qfKK37HWvmqIq9onXRbQpp0JNr5YcLv2F+ZGi1XXMsN3AjXshqG2tgUzFDgJ6LgyHcr1ews3Zplw9wgN1iNZ1ra4cMnVVPiSxrbQU1CBBuVtL/8gsWXhRjSsurTJL72sWu4rTzCdNVbNWcSpOEIpLeU1gGv2KXLyKZH7xeBoNMoy41qrRXYD3zD3RHqvXMAdxuiBGoLaaGp3TRHjagiAm6cJsab12n/ef2Qeq7xDlMlxWECUiOo9KJKrhq4PjTWCIrLjSXMmvFUk408ZS6AUHK6W7D/K7Gw/WSpVKacd7tqnqx2Q5XqpsPShvbxTKnkx6dNZM3ajKhsOhE1LQUA9/64ViEWeZyECy7boMns9i6sduLMM9bK9SCaSqXsDH6ycaoXEMop6vfdyybHqcrEckduqIo5jlcrwbS7Ube0it6Dgzv1YuFd3Xrxp+iDnN5zJBuk9Bw8TyG8RwUt6c6xZjYybtvEXCmB7pcr2OSxbD1NfxIJLQbcUN3TrlVJxXeohMVfaDRw1dreW1akM381qtXPJySYDaJ8mDIFziUU8WKZUncW53Hr1Cfg510V/JiVAFPZqPQhkeaxgT3BAVo7rRLz5Lhtv0hstN2U7Uy/194Ee83KTXjKKFW+FEjmrFTbmtuL+DVtyk14pten+rPvY6U+UJksOGbNERtZ7pQjXFlg9UP9xYU0z7ZKBUEc/Lk6PWAcFVV688ZdhQTBcyCJCW9rb/pbRbyRf7hthDMxLsyxLAJK2GvHQvj8T16XxHMz1J9tOhTRHMNhGobg2cgRcNQToETTwnZsSsIInRVaSzLTMpjMoGGHWr8805XkLg/3e+PGv/z89M+9XzzpPHTPt3T9tfnLbfXFz+8ZRp//S4c/b47cU5KdB5ed55/N3lk6c4zeBs/KvzzRum87s37edfd549ZTpPX7e/enz52dfM+ym3D/cvpmMgQTmKIOxLvvr95X/+nrRI+vvptPMq6OVvLy7//Wnn2YXT0U9n7e9PO88eM50n/4aXQm9/eMEQLv6KK51f4OIOP1993n7xZ0LuDy86z//AXD55PYAsIi4WOpRNUz4J5TiTjIGF0v1wylIeeS9S+CIRgJiXdyBbiLTmGIiMY34CLOLYNO+pvdusuxNC0l7DoiSwWQexXMsr5ATecbBSg+gUpBChfNrpYtq0pqLD7GQZ3l9Pu12miLnJ12omkXHy1xtvbJ+oVKpbFoO7RsqSv11bRqXoslFz1Gt2qNLXxUtX3Kr+D9P/caB6Mh8UuoYscjwvceE5TmcloXeOvTxqjsVcVgzNcbZninsnGE+oOPoEJ9EhS+doh0ycJYdMuEGHLJOTcnEcMj6XZcEhu8IhG8+VmkGHLLuA/pg0QYgSu+5P+6c/dp4/dhJ1Yr2qCM8wPzGXJdPHDchE3ABR7HUDePYqG5HOZvgZ8gEkjsQyaKBzAoCTcAHe3ZqJXTwdZSeooumIu30NrZP6aJ0U0TrBed+wq3U56Uqlw1rKTkjpuAkoXVpK93EuZlrnBFC5m1Q5qWsVmc6fzjtfPMWr+853n+PEaefJ3zuPz5jO8687j7/DvzpfPosfbcjcpC5PxoKKbE4SJ6TN/CSW0RzvSMe70OdJLqNzvJQJT7DAO3H70AR7edQE85mMsKCraMcqBavo9CytovmbXEWLrAiraFhFwyoaVtGwip6TVTR49ODRz4BHz4FHP3hjLCtm0wl26VPee1K3ln7z//pEyfI='
 
@@ -2358,6 +2360,13 @@ def 중제목_hwpx_처리(source, target=None, selections=None):
     sh, ss = 중제목_원본자료()
     sample = next(x for x in ss.iter() if 제목_xml이름(x) == 'tbl')
     maps = 제목_참조병합(header, sh)
+    if not 중제목_번호굵게:
+        # 기준 표의 번호 글자모양(8번)은 굵게다. 병합된 사본은 중제목 전용이라 안전하게 해제한다.
+        merged = maps['charProperties'].get('8')
+        for cp in header.iter():
+            if 제목_xml이름(cp) == 'charPr' and cp.get('id') == merged:
+                for b in [x for x in cp if 제목_xml이름(x) == 'bold']:
+                    cp.remove(b)
     count = 0
     for name, items in selections.items():
         root = sections[name]
@@ -11059,7 +11068,7 @@ def 작업_실행(
     global 작업_모드, 문두라벨_기호설정
     global 표_자간조정_사용, 쪽범위_요청, 로그파일_사용
     global 단어중간_줄바꿈방지_사용
-    global 제목4종_사용, 붙임2종_사용, 중제목_사용
+    global 제목4종_사용, 붙임2종_사용, 중제목_사용, 중제목_번호굵게
     global hwp, 색상_설정, 비교보기_사용, 비교보기_좌측_프레임_hwnd, 비교보기_우측_프레임_hwnd, 로그_파일_경로
     global 작업_hwp_hwnd, 자동닫기_설정, 표준서식_사용, 검수_사용, 검수_문제목록, 최종검수_문서목록
     global 서식통일_빨간표시_사용
@@ -11140,6 +11149,7 @@ def 작업_실행(
         제목4종_사용 = bool(표준서식_세부.get("std_title_auto", True))
         붙임2종_사용 = bool(표준서식_세부.get("std_attachment_auto", True))
         중제목_사용 = bool(표준서식_세부.get("std_midtitle_auto", True))
+        중제목_번호굵게 = bool(표준서식_세부.get("std_midtitle_bold", True))
         표준서식_제목_사용 = 표준서식_세부.get("std_title", 표준서식_제목_사용)
         표준서식_일자담당자_사용 = 표준서식_세부.get("std_dateinfo", 표준서식_일자담당자_사용)
         표준서식_기호_사용 = 표준서식_세부.get("std_symbols", 표준서식_기호_사용)
@@ -11659,7 +11669,7 @@ class HwpAutoDocFitGUI:
 
 
         self.std_bool_keys = [
-            "std_margin", "std_ratio", "std_linespacing", "std_title", "std_title_bold", "std_title_auto", "std_attachment_auto", "std_midtitle_auto",
+            "std_margin", "std_ratio", "std_linespacing", "std_title", "std_title_bold", "std_title_auto", "std_attachment_auto", "std_midtitle_auto", "std_midtitle_bold",
             "std_dateinfo", "std_dateinfo_bold", "std_symbols", "std_symbol_box_bold",
             "std_symbol_o_bold", "std_symbol_dash_bold", "std_symbol_note_bold",
             "std_marker_bold_consistency",
@@ -12161,8 +12171,11 @@ class HwpAutoDocFitGUI:
             midtitle_auto.pack(anchor="w", pady=(6, 0))
             ttk.Label(parent, text="로마자 번호 칸 뒤에 글이 오는 1행 표를 중제목으로 판별해 번호·글을 HY견고딕 20pt 서식으로 정리.",
                       style="Hint.TLabel", wraplength=610).pack(anchor="w")
+            midtitle_bold = ttk.Checkbutton(parent, text="중제목 로마자 번호 굵게 (기본)",
+                                             variable=self.std_bool_vars["std_midtitle_bold"])
+            midtitle_bold.pack(anchor="w", padx=(18, 0))
             if 주설정탭:
-                self.std_detail_checks += [title_auto, attachment_auto, midtitle_auto]
+                self.std_detail_checks += [title_auto, attachment_auto, midtitle_auto, midtitle_bold]
         elif key == "precise_table":
             profile_row = ttk.Frame(parent)
             profile_row.pack(anchor="w", fill="x")
