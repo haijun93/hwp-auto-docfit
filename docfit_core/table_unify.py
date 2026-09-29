@@ -8,8 +8,9 @@
 - 여러 칸 표 안: 같은 역할(머리글 행 여부 + 칸 모양) 칸의 80% 이상이 쓰는 글꼴·크기·굵기와
   다른 칸만 고친다. 글자 크기는 더 큰 칸만 줄인다(작은 칸은 칸에 맞추려 줄였을 수 있다).
   표 안 글자색은 증감 표시 등 의미가 있어 건드리지 않는다.
-- 여러 표 사이: 같은 모양 칸의 글꼴만 문서 대표값(표 60% 이상)으로 맞춘다. 크기는 표마다
-  칸 폭에 맞춰 다를 수 있으므로 표 사이에서는 맞추지 않는다.
+- 여러 표 사이: 칸 모양 구성이 같은 표(같은 양식)끼리, 표 전체가 한 글꼴인 표의 글꼴만 문서
+  대표값(표 60% 이상)으로 표 전체를 맞춘다. 칸 모양 하나만 같은 다른 양식 표의 한 열만 바꾸면
+  표 안 글꼴이 도리어 섞인다. 크기는 표마다 칸 폭에 맞춰 다를 수 있으므로 맞추지 않는다.
 
 입력 표 모델:
     {"index": 문서 순번, "box": 1칸 표 여부, "marker": 첫 글자 문두기호 그룹,
@@ -102,17 +103,18 @@ def plan_table_fixes(tables, *, consensus=0.8, minimum_cells=4, minimum_tables=3
                               f"표 {table['index'] + 1} {'머리글' if header else '본문'} 칸", fixes)
                     summary["표 안"] += 1
 
-    # 3) 여러 표 사이: 같은 모양 칸의 글꼴만 문서 대표값으로.
-    by_role = defaultdict(list)
+    # 3) 여러 표 사이: 같은 양식(칸 모양 구성이 같은) 표끼리, 표 전체가 한 글꼴인 표만 비교해
+    #    다수 글꼴과 다르면 그 표 전체를 바꾼다(실측: 칸 모양 하나만 같은 표끼리 맞추다가
+    #    정책회의 표 11의 '참여지자체' 열만 다른 글꼴로 바뀜).
+    designs = defaultdict(list)
     for table in grids:
-        roles = defaultdict(list)
-        for cell in _text_cells(table):
-            roles[(cell["header"], cell["fill"])].append(cell)
-        for role, cells in roles.items():
-            font = dominant(((cell_value(cell, "font"), 1) for cell in cells), ratio=0.6)
-            if font is not None:
-                by_role[role].append((table, cells, font))
-    for role, entries in by_role.items():
+        cells = _text_cells(table)
+        fonts = {cell_value(cell, "font") for cell in cells}
+        if not cells or len(fonts) != 1 or None in fonts:
+            continue
+        design = frozenset((cell["header"], cell["fill"]) for cell in cells)
+        designs[design].append((table, cells, fonts.pop()))
+    for entries in designs.values():
         if len(entries) < minimum_tables:
             continue
         value, _, _ = representative([font for _, _, font in entries],
@@ -123,9 +125,8 @@ def plan_table_fixes(tables, *, consensus=0.8, minimum_cells=4, minimum_tables=3
             if font == value:
                 continue
             for cell in cells:
-                if cell_value(cell, "font") == font:
-                    _fix_runs(cell, "font", font, value,
-                              f"표 {table['index'] + 1}의 글꼴을 같은 모양 표들과 맞춤", fixes)
+                _fix_runs(cell, "font", font, value,
+                          f"표 {table['index'] + 1}의 글꼴을 같은 양식 표들과 맞춤", fixes)
             summary["표 사이"] += 1
 
     # 같은 구간에 같은 항목을 두 번 적용하지 않는다.

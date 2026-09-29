@@ -205,6 +205,49 @@ class StyleUnifyTest(unittest.TestCase):
             self.assertEqual(sample[1], (0, 0, 0))
             self.assertEqual(shape[2][0][0], (0, 0, 0))
 
+    def sample_for(self, runs):
+        """(charPr 번호, 글자) 목록으로 문단 하나짜리 HWPX를 만들어 표본을 뽑는다."""
+        from tempfile import TemporaryDirectory
+        from zipfile import ZipFile
+        header = ('<hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head"><hh:fontface lang="HANGUL">'
+                  '<hh:font id="0" face="휴먼명조"/><hh:font id="1" face="굴림"/></hh:fontface><hh:charProperties>'
+                  '<hh:charPr id="0" height="1500"><hh:fontRef hangul="0"/></hh:charPr>'
+                  '<hh:charPr id="1" height="1100"><hh:fontRef hangul="1"/></hh:charPr></hh:charProperties></hh:head>')
+        body = "".join(f'<hp:run charPrIDRef="{char}"><hp:t>{text}</hp:t></hp:run>' for char, text in runs)
+        section = f'<hp:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p>{body}</hp:p></hp:sec>'
+        with TemporaryDirectory() as temp:
+            source = Path(temp) / 'source.hwpx'
+            with ZipFile(source, 'w') as archive:
+                archive.writestr('Contents/header.xml', header)
+                archive.writestr('Contents/section0.xml', section)
+            fn = self.ns['서식통일_표본']
+            fake_hwp = Mock()
+            fake_hwp.Path = str(source)
+            with patch.dict(fn.__globals__, {'hwp': fake_hwp, '진단로그': Mock(),
+                                             '_서식통일_HWPX_캐시': {}}):
+                return fn((0, 0, 0), "".join(text for _, text in runs))
+
+    def test_inline_reference_note_keeps_its_own_style(self):
+        # 실측(정책회의): 'ㅇ 모집기간: … 마감시  ※ 일부 프로그램 상이'의 11pt ※ 참고가 15pt로 커졌다.
+        lead = 'ㅇ 모집기간: 2026. 9. 10.(목) ~ 선착순 마감시  '
+        sample = self.sample_for([(0, lead), (1, '※ 일부 프로그램 상이')])
+        self.assertIsNotNone(sample)
+        shape, start, end = sample
+        self.assertEqual((shape[0], shape[1]), ('휴먼명조', 1500))
+        body_end = len(lead.rstrip())
+        self.assertEqual(end, (0, 0, body_end))
+        self.assertTrue(all(run[1][2] <= body_end for run in shape[2]))
+        self.assertTrue(all(run[1][2] <= body_end for run in shape[3]['color_runs']))
+
+    def test_note_marker_inside_parentheses_follows_parenthesis_rule(self):
+        text = '□ 활용대상: 전기버스 4대(※차량원복시 23인승)'
+        sample = self.sample_for([(0, text)])
+        self.assertEqual(sample[2], (0, 0, len(text)))
+        self.assertEqual(len(sample[0][3]['parenthetical_size_runs']), 1)
+
+    def test_leading_note_marker_is_not_an_inline_note(self):
+        text = '※ 기존 28개소 → 설치 후 총 39개소'
+        self.assertEqual(self.sample_for([(1, text)])[2], (0, 0, len(text)))
 
 class UnifyModeTest(unittest.TestCase):
     """'서식 통일'을 자간 정리·서식 적용·한 번에 적용과 따로 실행하는 작업 유형."""

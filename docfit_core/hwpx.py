@@ -137,8 +137,14 @@ def _own_text(element: ET.Element) -> str:
             parts.append("\n")
         elif name == "tab":
             parts.append("\t")
+        elif name in {"fwSpace", "nbSpace"}:
+            parts.append(" ")
         for child in node:
             visit(child)
+            # <hp:t>ㅇ<hp:fwSpace/>본문</hp:t>: 글자 요소 뒤 본문은 tail에 있다
+            # (실측: tail을 빼면 'ㅇ'만 남아 무결성 일치도가 98.9%로 떨어짐).
+            if name == "t" and child.tail:
+                parts.append(child.tail)
 
     visit(element, True)
     return "".join(parts)

@@ -32,9 +32,15 @@ class NoteNeighborRuleTests(unittest.TestCase):
         return profile[note]
 
     def test_note_between_standard_sentences_becomes_representative(self):
-        profile = self.run_rule([1500, 1500, 1500], [1300, 1200])
-        # 두 ※ 모두 앞뒤가 표준이라 후보가 동률이면 문서 순서상 첫 값을 쓴다.
+        # ※ 7개 중 4개(57%)라 60% 기준엔 못 미치지만, 앞뒤가 표준인 ※ 가운데 과반이다.
+        profile = self.run_rule([1500] * 8, [1300] * 4 + [1200, 1100, 1000])
         self.assertEqual(profile['size'][0], 1300)
+
+    def test_tied_or_minority_neighbor_value_is_not_used(self):
+        # 동률(1:1)이나 소수값(5개 중 2개)은 문서 다수 서식이 아니므로 대표로 삼지 않는다
+        # (실측: 정책회의 ※ 11개 중 2개만 쓰는 글꼴이 대표가 됨).
+        self.assertIsNone(self.run_rule([1500] * 3, [1300, 1200])['size'][0])
+        self.assertIsNone(self.run_rule([1500] * 6, [1300, 1300, 1200, 1100, 1000])['size'][0])
 
     def test_note_next_to_nonstandard_sentence_is_not_used(self):
         profile = self.run_rule([1500, 1700, 1500, 1500], [1300, 1200, None][:2])

@@ -77,6 +77,19 @@ class HwpxCoreTest(unittest.TestCase):
             self.assertFalse(result["ok"])
             self.assertTrue(any("컨트롤이 사라졌습니다" in issue["message"] for issue in result["issues"]))
 
+    def test_text_after_inline_space_element_is_read(self):
+        # 원본: 'ㅇ' + 전각 공백 요소 + 본문(tail). 한/글 재저장본: 같은 글자를 일반 텍스트로 저장.
+        inline = '<hs:sec xmlns:hs="urn:section" xmlns:hp="urn:para"><hp:p><hp:run><hp:t>ㅇ<hp:fwSpace/>본문 내용</hp:t></hp:run></hp:p></hs:sec>'.encode()
+        plain = '<hs:sec xmlns:hs="urn:section" xmlns:hp="urn:para"><hp:p><hp:run><hp:t>ㅇ 본문 내용</hp:t></hp:run></hp:p></hs:sec>'.encode()
+        with tempfile.TemporaryDirectory() as folder:
+            before_path = Path(folder) / "before.hwpx"
+            after_path = Path(folder) / "after.hwpx"
+            make_hwpx(before_path, inline)
+            make_hwpx(after_path, plain)
+            before = inspect_hwpx(before_path)
+            self.assertEqual(before.text, "ㅇ 본문 내용")
+            self.assertEqual(compare_documents(before, inspect_hwpx(after_path))["text_similarity"], 1.0)
+
 
 if __name__ == "__main__":
     unittest.main()

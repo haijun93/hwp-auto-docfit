@@ -1,5 +1,8 @@
 """표 서식통일 판정: 표 종류별로 같은 모양 칸끼리만 비교한다."""
+from pathlib import Path
+import runpy
 import unittest
+from unittest.mock import Mock, patch
 
 from docfit_core.table_unify import plan_table_fixes
 
@@ -64,6 +67,21 @@ class TableUnifyTests(unittest.TestCase):
         tables.append(grid(3, [cell(400 + j, f'값{j}', font='휴먼명조', fill='8') for j in range(3)]))
         self.assertEqual(plan_table_fixes(tables)[0], [])
 
+    def test_table_sharing_one_cell_design_is_not_partly_changed(self):
+        # 실측(정책회의 표 11): 다른 표들과 칸 모양 하나만 같은 표에서 그 열만 글꼴이 바뀌어
+        # 표 안이 섞였다. 칸 모양 구성이 다른 표는 다른 양식으로 본다.
+        tables = [grid(i, [cell(100 * i + j, f'값{j}', font='휴먼명조') for j in range(3)]) for i in range(3)]
+        mixed_design = [cell(400 + j, f'지역{j}', fill='10') for j in range(3)]
+        mixed_design += [cell(410 + j, f'품목{j}') for j in range(3)]
+        tables.append(grid(3, mixed_design))
+        self.assertEqual(plan_table_fixes(tables)[0], [])
+
+    def test_table_with_mixed_fonts_is_left_to_in_table_rule(self):
+        tables = [grid(i, [cell(100 * i + j, f'값{j}') for j in range(3)]) for i in range(3)]
+        tables.append(grid(3, [cell(400, '값0', font='휴먼명조'), cell(401, '값1', font='굴림'),
+                               cell(402, '값2', font='휴먼명조')]))
+        self.assertEqual(plan_table_fixes(tables)[0], [])
+
     def test_heading_boxes_of_same_marker_are_unified_including_color(self):
         tables = [box(i, 10 + i, f'\U000F02B1 절 제목 {i}', marker='\U000F02B1',
                       font='HY헤드라인M', size=1500) for i in range(3)]
@@ -85,6 +103,34 @@ class TableUnifyTests(unittest.TestCase):
     def test_two_different_boxes_have_no_representative(self):
         tables = [box(0, 10, '가', font='굴림'), box(1, 11, '나', font='돋움')]
         self.assertEqual(plan_table_fixes(tables)[0], [])
+
+
+class TableUnifyApplyTests(unittest.TestCase):
+    """한/글 적용 단계: 항목마다 해당 글자 모양 인자만 넘긴다."""
+
+    def test_each_field_is_applied_with_its_own_argument(self):
+        # 실측(정책회의 문서): 글꼴 수정에서 '글꼴 이름 / 100'을 계산해 문서 처리가 멈췄다.
+        ns = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'hwp-auto-docfit.py'))
+        fn = ns['서식통일_표_전체_적용']
+        cells = [cell(10 + i, f'값{i}') for i in range(8)]
+        cells += [cell(20, '다른 글꼴', font='굴림'), cell(21, '큰 글', size=1500), cell(22, '굵은 글', bold=True)]
+        texts = {item['area']: item['paras'][0]['text'] for item in cells}
+        state = {}
+        hwp = Mock()
+        hwp.SetPos.side_effect = lambda area, para, pos: state.update(pos=(area, para, pos))
+        hwp.GetPos.side_effect = lambda: state['pos']
+        apply = Mock()
+        with patch.dict(fn.__globals__, {
+            '중단_요청됨': lambda: False, '단계표시': Mock(), '_서식통일_표모형': lambda: [grid(0, cells)],
+            'hwp': hwp, '현재문단_텍스트': lambda: texts[state['pos'][0]], '단어모드_범위선택': Mock(),
+            '문자모양_적용_현재선택': apply, 'hwp_run': Mock(), '로그': Mock(), '진단로그': Mock(),
+        }):
+            self.assertTrue(fn())
+        self.assertCountEqual([call.kwargs for call in apply.call_args_list], [
+            {'폰트': '한컴돋움', '자간_유지': True},
+            {'크기_pt': 13.0, '자간_유지': True},
+            {'굵게': False, '자간_유지': True},
+        ])
 
 
 if __name__ == '__main__':

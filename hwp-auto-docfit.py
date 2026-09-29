@@ -3685,10 +3685,12 @@ def 문자모양_적용_현재선택(폰트=None, 크기_pt=None, 굵게=None, �
             # 짝을 지어 지정해야 한글이 그 이름을 실제 폰트로 등록/적용한다.
             # (한컴디벨로퍼 포럼·pyhwpx 예제 등에서 공통적으로 FaceName*와
             # FontType*를 항상 함께 SetItem하는 이유와 동일)
+            # 형식은 문서 헤더에 적힌 대로(HFT 글꼴을 TTF로 지정하면 조용히 무시됨).
+            형식 = _글꼴형식.get(폰트, "TTF")
             try:
-                ttf_타입 = hwp.FontType("TTF")
+                ttf_타입 = hwp.FontType(형식)
             except Exception:
-                ttf_타입 = 1  # FontType("TTF") 호출이 실패해도 TTF의 관례적 값 1로 대체
+                ttf_타입 = {"TTF": 1, "HFT": 2}.get(형식, 1)  # FontType 호출 실패 시 관례값
             for 필드, 타입필드 in (
                 ("FaceNameHangul", "FontTypeHangul"),
                 ("FaceNameLatin", "FontTypeLatin"),
@@ -4766,6 +4768,9 @@ _서식통일_대표값_검토콜백 = None
 # 원본 HWPX 분석 결과(경로·수정 시각·크기가 같을 때 재사용)와 마무리 단계용 위치 기준 텍스트.
 _서식통일_HWPX_캐시 = {}
 _서식통일_위치텍스트_보관 = {}
+# 문서 헤더에서 읽은 글꼴 이름별 형식(TTF/HFT). 한/글 내장 HFT 글꼴(한양중고딕 등)을
+# TTF로 지정하면 한/글이 오류 없이 무시한다(실측: 정책회의 ※ 문장 8개 글꼴 미반영).
+_글꼴형식 = {}
 
 
 def _서식통일_문두요소_범위(text):
@@ -4836,6 +4841,11 @@ def _서식통일_HWPX_분석(문서경로):
     with ZipFile(path) as archive:
         header = ET.fromstring(archive.read("Contents/header.xml"))
         fonts = _parse_fonts(header)
+        for item in header.iter():
+            이름, 형식 = item.get("face"), (item.get("type") or "").upper()
+            # 같은 이름이 두 형식으로 있으면 설치된 TTF를 쓴다.
+            if _tag(item) == "font" and 이름 and 형식 and _글꼴형식.get(이름) != "TTF":
+                _글꼴형식[이름] = 형식
         chars = {item.get("id"): _parse_char(item, fonts)
                  for item in header.iter() if _tag(item) == "charPr"}
         paras = {item.get("id"): _parse_para(item)
@@ -4940,8 +4950,17 @@ def 서식통일_표본(시작, text):
     marker_span16 = tuple(utf16길이(body[:i]) for i in marker_span) if marker_span else None
     label_span16 = tuple(utf16길이(body[:i]) for i in label_span) if label_span else None
     보호괄호 = tuple(span for span in (marker_span, label_span) if span)
-    부연괄호16 = tuple(tuple(utf16길이(body[:i]) for i in span)
-                      for span in 서식통일_부연괄호(body, 보호괄호, include_trailing=True))
+    부연괄호 = 서식통일_부연괄호(body, 보호괄호, include_trailing=True)
+    # 문장 안 ※ 참고(예: 'ㅇ 모집기간: … 마감시  ※ 일부 프로그램 상이')는 문서가 본문보다
+    # 작게 쓰는 부연이다(실측: 정책회의의 11~13pt ※ 참고가 15pt로 커짐). 조사·교정 범위를
+    # ※ 앞에서 끝내 원래 서식을 둔다. 괄호 안 ※는 괄호 규칙을 따른다.
+    앞요소끝 = max((span[1] for span in 보호괄호), default=0)
+    참고 = body.find("※", 앞요소끝)
+    if (참고 > 0 and body[앞요소끝:참고].strip()
+            and not any(left <= 참고 < right for left, right in 부연괄호)):
+        본문끝 = utf16길이(body[:참고].rstrip())
+        부연괄호 = tuple(span for span in 부연괄호 if span[1] <= 참고)
+    부연괄호16 = tuple(tuple(utf16길이(body[:i]) for i in span) for span in 부연괄호)
     try:
         from docfit_core.style_inventory import _tag
         chars, paras = 분석["chars"], 분석["paras"]
@@ -5349,6 +5368,10 @@ def _서식통일_참고표_이웃대표_보완(그룹별_표본, 프로필):
     보완수 = 0
     for (그룹키, 필드), 값들 in 후보.items():
         값 = max(값들, key=값들.count)
+        # 이웃 기준 ※ 가운데 과반이 같은 값일 때만 채택한다(실측: 5개 중 2개뿐인 글꼴을
+        # 대표로 삼아 다수 글꼴 ※ 6개를 바꾸려 함).
+        if 값들.count(값) * 2 <= len(값들):
+            continue
         프로필[그룹키][필드] = (값, 값들.count(값))
         보완수 += 1
         로그(f"[서식통일] ※ 대표값 보완: {그룹키[0]}/{그룹키[1]} {필드}={값} "
@@ -5812,23 +5835,10 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
                 if 대표값 is not None and 대표값.get(필드, (None, 0))[0] is None and 값[0] is not None:
                     대표값[필드] = 값
     if not 고정_프로필_재적용:
-        _서식통일_참고표_이웃대표_보완(그룹별_표본, _서식통일_문서대표프로필)
-        # 괄호 라벨 굵기는 문서 전체의 관행이다. 그룹 안에 라벨 문장이 적어 기준이 없으면
-        # 다른 그룹들의 라벨 굵기 다수값을 따른다(예: ※ 라벨 문장이 하나뿐인 경우).
-        라벨관행 = Counter()
-        for 대표값 in _서식통일_문서대표프로필.values():
-            값, 수 = (대표값 or {}).get("label_bold", (None, 0))
-            if 값 is not None:
-                라벨관행[값] += 수
-        if 라벨관행:
-            (관행값, 관행수), *나머지 = 라벨관행.most_common()
-            if not 나머지 or 나머지[0][1] < 관행수:
-                for 그룹키, 대표값 in _서식통일_문서대표프로필.items():
-                    if 대표값 and 대표값.get("label_bold", (None, 0))[0] is None:
-                        대표값["label_bold"] = (관행값, 관행수)
-                        로그(f"[서식통일] '{그룹키[0]}' 괄호 라벨 굵기는 문서 전체 관행({관행값})을 따름")
         # 엄격한 다수(60%)에 못 미친 글꼴·크기·색은, 최다값이 문서의 다른 계층도 대표로 쓰는
         # 값이면 채택한다(예: ※ 글꼴이 6:4:2로 갈렸지만 최다 글꼴이 ㅇ 대표 글꼴과 같은 경우).
+        # 이웃 기준 ※ 보완보다 먼저 한다: 이웃 표본은 몇 개뿐이라 그룹 안 소수 글꼴이 대표가
+        # 될 수 있다(실측: 정책회의 ※ 11개 중 2개만 쓰는 글꼴).
         필드위치 = {"font": lambda 모양: 모양[0], "size": lambda 모양: 모양[1],
                     "color": lambda 모양: 모양[3].get("color") if len(모양) > 3 else None,
                     "shade": lambda 모양: 모양[3].get("shade") if len(모양) > 3 else None}
@@ -5851,6 +5861,21 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
                     대표값[필드] = (값, sum(1 for 모양 in 모양들 if 추출(모양) == 값))
                     로그(f"[서식통일] '{그룹키[0]}' {필드} 대표값 보조 판정: {값} "
                          f"(최다값이 문서의 다른 계층 대표값과 같음)")
+        _서식통일_참고표_이웃대표_보완(그룹별_표본, _서식통일_문서대표프로필)
+        # 괄호 라벨 굵기는 문서 전체의 관행이다. 그룹 안에 라벨 문장이 적어 기준이 없으면
+        # 다른 그룹들의 라벨 굵기 다수값을 따른다(예: ※ 라벨 문장이 하나뿐인 경우).
+        라벨관행 = Counter()
+        for 대표값 in _서식통일_문서대표프로필.values():
+            값, 수 = (대표값 or {}).get("label_bold", (None, 0))
+            if 값 is not None:
+                라벨관행[값] += 수
+        if 라벨관행:
+            (관행값, 관행수), *나머지 = 라벨관행.most_common()
+            if not 나머지 or 나머지[0][1] < 관행수:
+                for 그룹키, 대표값 in _서식통일_문서대표프로필.items():
+                    if 대표값 and 대표값.get("label_bold", (None, 0))[0] is None:
+                        대표값["label_bold"] = (관행값, 관행수)
+                        로그(f"[서식통일] '{그룹키[0]}' 괄호 라벨 굵기는 문서 전체 관행({관행값})을 따름")
     # 문단 위 간격은 앞 문장 기호에 따라 달라지므로(□ 다음 ㅇ, ㅇ 다음 ㅇ 등) 문맥별 대표값을
     # 구하고, 대표값을 가진 실제 문단을 예시로 삼아 그 값을 그대로 복사한다.
     위간격모음 = defaultdict(list)
@@ -6273,13 +6298,15 @@ def 서식통일_표_전체_적용(검증만=False):
         끝 = (fix["area"], fix["para"], fix["end"])
         try:
             단어모드_범위선택(시작, 끝)
+            # 항목별로 따로 분기한다(사전 리터럴은 값을 모두 계산해 글꼴 이름 / 100에서 멈춤).
             if fix["field"] == "color":
                 _서식통일_색_적용("TextColor", fix["value"])
+            elif fix["field"] == "font":
+                문자모양_적용_현재선택(폰트=fix["value"], 자간_유지=True)
+            elif fix["field"] == "size":
+                문자모양_적용_현재선택(크기_pt=fix["value"] / 100, 자간_유지=True)
             else:
-                옵션 = {"font": {"폰트": fix["value"]},
-                        "size": {"크기_pt": fix["value"] / 100},
-                        "bold": {"굵게": fix["value"]}}[fix["field"]]
-                문자모양_적용_현재선택(**옵션, 자간_유지=True)
+                문자모양_적용_현재선택(굵게=fix["value"], 자간_유지=True)
             적용 += 1
             진단로그(f"[표 서식통일] {fix['reason']}: {fix['field']} {fix['was']} → {fix['value']} "
                      f"'{fix['text'].strip()[:30]}'")
