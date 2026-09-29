@@ -6,7 +6,7 @@
 
 블록 종류:
     title  문서 제목(1×1 제목 표)          box   제목 아래 개요 상자(개요 서식 표)
-    title1 제목 서식1 표(글은 A1 칸)
+    title1 제목 서식1 표(글은 A1 칸)   title2 제목 서식2 표(쉼표 앞은 부제)
     ref    참고 상자(1×1 표)               para  문두기호 문단(marker + text)
     table  표(rows)                        blank 빈 줄(항목 묶음 구분)
 """
@@ -20,6 +20,7 @@ LABELS: dict[str, tuple[str, str]] = {}
 for names, spec in (
     (("제목", "문서제목", "타이틀"), ("title", "")),
     (("제목1", "제목서식1"), ("title1", "")),
+    (("제목2", "제목서식2"), ("title2", "")),
     (("개요", "요지", "상자", "상단박스", "개요상자", "요약", "서론"), ("box", "")),
     (("참고", "참고상자", "참고박스"), ("ref", "")),
     (("네모", "사각형", "소제목", "항목"), ("para", "□")),
@@ -56,7 +57,7 @@ def looks_labeled(text: str) -> bool:
     """줄머리 라벨이 두 줄 이상이고, 그중 계층 라벨(제목·네모·원 등)이 있으면 라벨 형식."""
     hits = [_label_of(line) for line in (text or "").splitlines()]
     hits = [h for h in hits if h]
-    return len(hits) >= 2 and any(h[1][0] in ("title", "title1", "para", "box") for h in hits)
+    return len(hits) >= 2 and any(h[1][0] in ("title", "title1", "title2", "para", "box") for h in hits)
 
 
 def _table_cells(value: str) -> list[str]:
@@ -95,7 +96,7 @@ def parse_labeled_text(text: str) -> list[dict]:
                 continue
             if not value:
                 continue
-            if kind in ("title", "title1", "box", "ref"):
+            if kind in ("title", "title1", "title2", "box", "ref"):
                 blocks.append({"kind": kind, "text": value})
                 continue
             if marker in numbers:
@@ -118,7 +119,7 @@ def parse_labeled_text(text: str) -> list[dict]:
             blocks.append({"kind": "para", "marker": child, "text": f"({kv.group(1).strip()}) {kv.group(2).strip()}",
                            "level": child})
             continue
-        if blocks and blocks[-1]["kind"] in ("para", "box", "ref", "title", "title1"):
+        if blocks and blocks[-1]["kind"] in ("para", "box", "ref", "title", "title1", "title2"):
             blocks[-1]["text"] += " " + line  # 줄바꿈으로 끊긴 같은 항목
         else:
             blocks.append({"kind": "para", "marker": "", "text": line, "level": ""})
@@ -134,7 +135,7 @@ def render_blocks(blocks: list[dict]) -> str:
         kind = block["kind"]
         if kind == "blank":
             lines.append("")
-        elif kind in ("title", "title1"):
+        elif kind in ("title", "title1", "title2"):
             lines.append(block["text"])
         elif kind == "box":
             lines.append(f"[개요] {block['text']}")
@@ -146,7 +147,7 @@ def render_blocks(blocks: list[dict]) -> str:
             marker = block["marker"]
             # 새 □/숫자 항목 앞은 한 줄 띄워 묶음을 구분한다(앞이 이미 빈 줄이면 생략).
             if block.get("level") in ("□", "#1", "#Ⅰ") and lines and lines[-1] != "" and index > 0 \
-                    and blocks[index - 1]["kind"] not in ("title", "title1"):
+                    and blocks[index - 1]["kind"] not in ("title", "title1", "title2"):
                 lines.append("")
             lines.append(f"{marker} {block['text']}".strip())
     return "\n".join(lines).strip()

@@ -23,6 +23,9 @@ UNIFY_STAGE = ("style_unify", "서식통일 (문서 안 대표 스타일로 맞�
 # 한/글 표로 바꾼다. 다른 모든 서식·자간 단계보다 먼저 실행해야 하므로
 # FORMAT_STAGES 안에 넣지 않고 UNIFY_STAGE와 같은 방식으로 앞자리에 끼워 넣는다.
 TEXT_TABLE_STAGE = ("text_table_convert", "텍스트 표(박스 그림)를 실제 표로 변환")
+# 준말(제목1: 등)을 서식 표·문구로 바꾼다. 한 번에 적용에서만 실행하며, 등록한 준말이 없으면
+# 아무 일도 하지 않는다. 문서 구조를 바꾸므로 선행 서식보다 먼저(자간 초기화 다음) 실행한다.
+ABBREVIATION_STAGE = ("abbreviation", "준말 → 본말 변환")
 DEFAULT_OFF = frozenset({"style_unify"})
 
 SPACING_STAGES = (
@@ -56,6 +59,7 @@ STAGE_EXAMPLES = {
     "control_short_line": "예: 표 셀·글상자의 짧은 마지막 줄을 앞줄에 모으도록 시도합니다.",
     "word_check": "예: 1차 조정 뒤 본문에 남은 단어 분리를 다시 검사합니다.",
     "control_word_check": "예: 1차 조정 뒤 표 셀·글상자에 남은 단어 분리를 다시 검사합니다.",
+    "abbreviation": "예: 미리 등록한 준말 '제목1'을 줄 맨 앞에 '제목1: 지구 침공계획(안) 보고'로 적으면 제목 서식1 표로 바꾸고 글을 표 A1 칸에 넣습니다.",
     "text_table_convert": "예: '┌──┬──┐ / │ 구분 │ 내용 │ / └──┴──┘'처럼 박스 그림으로 그려 붙여넣은 표를 한/글의 실제 표로 바꿉니다.",
 }
 
@@ -75,7 +79,7 @@ def stages_for_mode(mode):
         # 실제 실행 순서와 같게 보여 준다. 자간 초기화는 선행 서식·정밀 표 복제보다
         # 먼저 실행되고(복사한 자간 보존), 내어쓰기는 자간 조정 뒤 최종 확정된다.
         # 개요·한 칸 표 자간 조정(single_cell_spacing)은 서식 전용이다.
-        return ((TEXT_TABLE_STAGE,) + SPACING_STAGES[:1] + FORMAT_STAGES[:4] + (UNIFY_STAGE,) + FORMAT_STAGES[4:8]
+        return ((TEXT_TABLE_STAGE,) + SPACING_STAGES[:1] + (ABBREVIATION_STAGE,) + FORMAT_STAGES[:4] + (UNIFY_STAGE,) + FORMAT_STAGES[4:8]
                 + SPACING_STAGES[1:] + FORMAT_STAGES[9:])
     raise ValueError("지원하지 않는 작업 모드입니다.")
 

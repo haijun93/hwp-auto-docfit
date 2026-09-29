@@ -48,6 +48,11 @@ class LabeledTextTest(unittest.TestCase):
         self.assertNotIn("제목1", rendered)
         self.assertNotIn("개요:", rendered)
 
+    def test_title2_label_becomes_block(self):
+        blocks = parse_labeled_text("제목2: 희망2023 나눔캠페인, ‘사랑의 온도탑’ 제막행사 검토보고\n개요: 요지")
+        self.assertEqual(blocks[0], {"kind": "title2", "text": "희망2023 나눔캠페인, ‘사랑의 온도탑’ 제막행사 검토보고"})
+        self.assertNotIn("제목2", label_outline_text("제목2: 가\n개요: 나"))
+
     def test_title1_line_continuation_and_following_items(self):
         blocks = parse_labeled_text("제목1: 지구 침공\n계획 보고\n개요: 요지\n네모: 배경")
         self.assertEqual(blocks[0], {"kind": "title1", "text": "지구 침공 계획 보고"})

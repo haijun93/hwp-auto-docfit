@@ -72,7 +72,7 @@ class LabelTableTest(unittest.TestCase):
         title, overview = '지구 침공계획(안) 보고', '삼채인의 명랑 지구침략계획을 수립하고 보고드림'
         marks = ns['_라벨_표식']
         source = self._hwpx([self._plain_one_by_one(marks['title1'] + title),
-                             self._plain_one_by_one(marks['box'] + overview)])
+                             self._plain_one_by_one(marks['overview'] + overview)])
         self.assertEqual(ns['라벨_서식표_적용'](source), 2)
         header, section = self._read(source)
         tables = [t for t in section.iter() if self.name(t) == 'tbl']
@@ -105,6 +105,21 @@ class LabelTableTest(unittest.TestCase):
         ids = [t.get('id') for t in tables]
         self.assertEqual(len(set(ids)), len(ids))
 
+    def test_title2_marker_table_splits_subtitle_at_comma(self):
+        ns = self.ns
+        text = '희망2023 나눔캠페인, ‘사랑의 온도탑’ 제막행사 검토보고'
+        source = self._hwpx([self._plain_one_by_one(ns['_라벨_표식']['title2'] + text)])
+        self.assertEqual(ns['라벨_서식표_적용'](source), 1)
+        header, section = self._read(source)
+        table = next(t for t in section.iter() if self.name(t) == 'tbl')
+        self.assertEqual((table.get('rowCnt'), table.get('colCnt')), ('2', '1'))
+        chars = {c.get('id'): c for c in header.iter() if self.name(c) == 'charPr'}
+        paras = ns['제목_문단들'](ns['제목_셀들'](table)[0])
+        self.assertEqual([ns['제목_문자열'](p) for p in paras], ['희망2023 나눔캠페인', '‘사랑의 온도탑’ 제막행사 검토보고'])
+        heights = [{chars[r.get('charPrIDRef')].get('height') for r in p if self.name(r) == 'run'
+                    and ns['제목_문자열'](r).strip()} for p in paras]
+        self.assertEqual(heights, [{'1500'}, {'2700'}])
+
     def test_document_without_markers_is_left_untouched(self):
         source = self._hwpx([self._plain_one_by_one('일반 1×1 표')])
         before = source.read_bytes()
@@ -114,7 +129,7 @@ class LabelTableTest(unittest.TestCase):
     def test_only_marked_tables_change(self):
         ns = self.ns
         plain = self._plain_one_by_one('표식 없는 표')
-        source = self._hwpx([plain, self._plain_one_by_one(ns['_라벨_표식']['box'] + '개요 문장')])
+        source = self._hwpx([plain, self._plain_one_by_one(ns['_라벨_표식']['overview'] + '개요 문장')])
         self.assertEqual(ns['라벨_서식표_적용'](source), 1)
         _, section = self._read(source)
         tables = [t for t in section.iter() if self.name(t) == 'tbl']
@@ -132,7 +147,7 @@ class LabelTableTest(unittest.TestCase):
         ns['라벨블록_한글삽입'](hwp, [{'kind': 'title1', 'text': '지구 침공계획(안) 보고'},
                                     {'kind': 'box', 'text': '개요 문장'}])
         self.assertIn(ns['_라벨_표식']['title1'] + '지구 침공계획(안) 보고', typed)
-        self.assertIn(ns['_라벨_표식']['box'] + '개요 문장', typed)
+        self.assertIn(ns['_라벨_표식']['overview'] + '개요 문장', typed)
 
     def test_standalone_conversion_post_processes_after_hangul_quits(self):
         """저장 → 한/글 종료 → 표식 표 서식 적용 순서로 실행된다."""
@@ -141,7 +156,7 @@ class LabelTableTest(unittest.TestCase):
         ns = self.ns
         fn = ns['텍스트_hwpx_단독변환']
         prepared = self._hwpx([self._plain_one_by_one(ns['_라벨_표식']['title1'] + '제목 글'),
-                               self._plain_one_by_one(ns['_라벨_표식']['box'] + '개요 글')])
+                               self._plain_one_by_one(ns['_라벨_표식']['overview'] + '개요 글')])
         target = prepared.with_name('result.hwpx')
         events = []
         fake = MagicMock()

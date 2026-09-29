@@ -274,6 +274,7 @@ from docfit_core.korean_proofread import (
 )
 from docfit_core.pasted_text import clean_pasted_text, outline_pasted_text
 from docfit_core.labeled_text import label_outline_text, looks_labeled, parse_labeled_text
+from docfit_core.abbreviations import match_line as 준말_줄_판별, normalize as 준말_등록표_정리, split_title2
 from docfit_core.text_table import find_box_tables
 from docfit_core import writing_aids, ai_prompts
 
@@ -1023,6 +1024,7 @@ def 번들_리소스_폴더():
     "std_attachment_auto": True,
     "std_midtitle_auto": True,
     "std_midtitle_bold": True,
+    "abbreviations": {},
     "std_title_bold": True,
     "std_dateinfo": True,
     "std_dateinfo_bold": True,
@@ -2363,13 +2365,92 @@ def 중제목_hwpx_처리(source, target=None, selections=None):
     return count
 
 
-# 라벨 입력 모드(제목1:/개요:)가 한/글에 넣은 1×1 표의 첫 칸에 붙이는 표식. 저장한 HWPX에서
-# 이 표식이 붙은 표를 찾아 제목1·개요 서식 표로 바꾸고 표식은 지운다.
-_라벨_표식 = {'title1': '@@DOCFIT:제목1@@', 'box': '@@DOCFIT:개요@@'}
+# 라벨 입력 모드(제목1:/제목2:/개요:)가 한/글에 넣은 1×1 표의 첫 칸에 붙이는 표식. 저장한 HWPX에서
+# 이 표식이 붙은 표를 찾아 해당 서식 표로 바꾸고 표식은 지운다. (키는 서식 표 종류)
+_라벨_표식 = {'title1': '@@DOCFIT:제목1@@', 'title2': '@@DOCFIT:제목2@@', 'overview': '@@DOCFIT:개요@@'}
+_라벨_블록_종류 = {'title1': 'title1', 'title2': 'title2', 'box': 'overview'}  # 블록 종류 → 서식 표 종류
+
+
+def _서식표_기준(header, kind, cache):
+    """서식 표 종류의 (기준 표, ID 매핑)을 문서 header에 한 번만 병합해 돌려준다."""
+    if kind not in cache:
+        if kind == 'title1':
+            source_header, source = 제목_원본자료()
+        elif kind == 'title2':
+            source_header, source = 제목2행1열_원본자료()
+        else:
+            source_header, source = 개요붙임_원본자료()
+        sample = next(x for x in source.iter() if 제목_xml이름(x) == 'tbl')
+        cache[kind] = (sample, 제목_참조병합(header, source_header))
+    return cache[kind]
+
+
+def _칸_글_지우기(cell):
+    for p in 제목_문단들(cell):
+        for r in [x for x in p if 제목_xml이름(x) == 'run']:
+            for t in [x for x in r if 제목_xml이름(x) == 't']:
+                r.remove(t)
+
+
+def 서식표_생성(header, kind, text, cache):
+    """기준 서식 표를 복사해 글을 A1 칸에 넣은 새 표를 만든다.
+
+    title1 = 제목 서식1(2×2, 날짜·담당자 칸은 서식만 남기고 비움), title2 = 제목 서식2(2행1열,
+    첫 쉼표 앞은 부제 15pt·뒤는 제목 27pt, 쉼표가 없으면 제목 한 줄), overview = 개요(요지) 표.
+    제목 서식의 A1 글은 모두 가운데 정렬이다.
+    """
+    sample, maps = _서식표_기준(header, kind, cache)
+    result = copy.deepcopy(sample)
+    cells = 제목_셀들(result)
+    sub = ''
+    if kind == 'title2':
+        sub, text = split_title2(text)
+    top = 제목_자식(cells[0], 'subList')
+    paras = [p for p in top if 제목_xml이름(p) == 'p']
+    # A1 칸: 글 문단 수만큼만 남긴다(부제가 없으면 제목 문단 하나).
+    wanted = [t for t in ((sub, text) if kind == 'title2' and sub else (text,))]
+    keep = paras[len(paras) - len(wanted):] if kind == 'title2' else paras[:1]
+    for p in paras:
+        if p not in keep:
+            top.remove(p)
+    blank = not any(w.strip() for w in wanted)
+    for p, value in zip(keep, wanted):
+        runs = [r for r in p if 제목_xml이름(r) == 'run']
+        for extra in runs[1:]:
+            p.remove(extra)
+        for child in list(runs[0]):
+            runs[0].remove(child)
+        # 글이 비면 서식만 복사되도록 표시용 글자를 잠시 넣었다가 지운다.
+        XML_자식_추가(runs[0], sample, tag='{http://www.hancom.co.kr/hwpml/2011/paragraph}t').text = value or 'X'
+    제목_표서식_복사(result, sample, maps)
+    if kind != 'overview':
+        제목_문단_가운데정렬(header, result)
+    제목_괄호부연_축소(header, result)
+    if blank:
+        _칸_글_지우기(cells[0])
+    # 날짜·담당자 같은 나머지 칸은 서식만 남기고 비운다(글은 A1에만 넣는다).
+    for cell in cells[1:]:
+        _칸_글_지우기(cell)
+    return result
+
+
+def _서식표_글(table):
+    return 제목_문자열(제목_셀들(table)[0])
+
+
+def _서식표_글_확인(kind, table, text):
+    """A1 칸 글이 요청한 글과 같은지(제목2는 쉼표만 빠짐) 확인한다."""
+    if kind == 'title2':
+        sub, title = split_title2(text)
+        expected = sub + title
+    else:
+        expected = text.strip()
+    if _서식표_글(table).strip() != expected:
+        raise RuntimeError('서식 표 글 삽입 검사 실패')
 
 
 def 라벨_서식표_적용(source, target=None):
-    """표식이 붙은 표를 제목1(2×2, 글은 A1) 또는 개요(요지) 서식 표로 바꾼다. 바꾼 표 수를 돌려준다.
+    """표식이 붙은 표를 제목1·제목2·개요 서식 표로 바꾼다. 바꾼 표 수를 돌려준다.
 
     표식 없는 문서는 파일을 건드리지 않는다. target이 없으면 source를 덮어쓴다.
     """
@@ -2385,9 +2466,8 @@ def 라벨_서식표_적용(source, target=None):
                 if not re.fullmatch(r'ns\d+', pair[0]): XML_네임스페이스_등록(*pair)
     header = safe_xml_fromstring(contents['Contents/header.xml'])
     sections = {n: safe_xml_fromstring(data) for n, data in contents.items() if re.fullmatch(r'Contents/section\d+\.xml', n)}
-    title_sample = title_maps = overview_sample = overview_maps = None
-    next_id = 1 + max([int(t.get('id')) for root in sections.values() for t in root.iter()
-                       if 제목_xml이름(t) == 'tbl' and (t.get('id') or '').isdigit()] + [0])
+    cache = {}
+    ids = _문서_표번호(sections)
     count = 0
     for name, root in sections.items():
         for run in [r for p in root for r in p]:
@@ -2397,52 +2477,35 @@ def 라벨_서식표_적용(source, target=None):
                 kind = next((k for k, m in _라벨_표식.items() if head_text.startswith(m)), None)
                 if kind is None:
                     continue
-                marker = _라벨_표식[kind]
-                for t in cells[0].iter():
-                    if 제목_xml이름(t) == 't' and t.text and marker in t.text:
-                        t.text = t.text.replace(marker, '', 1)
-                        break
-                if marker in 제목_문자열(cells[0]):
-                    raise RuntimeError('라벨 표식을 지우지 못했습니다.')
-                text = 제목_문자열(cells[0])
-                if kind == 'box':
-                    if overview_sample is None:
-                        eh, es = 개요붙임_원본자료()
-                        overview_sample = next(x for x in es.iter() if 제목_xml이름(x) == 'tbl')
-                        overview_maps = 제목_참조병합(header, eh)
-                    제목_표서식_복사(table, overview_sample, overview_maps)
-                    제목_괄호부연_축소(header, table)
-                    result = table
-                else:
-                    if title_sample is None:
-                        th, ts = 제목_원본자료()
-                        title_sample = next(x for x in ts.iter() if 제목_xml이름(x) == 'tbl')
-                        title_maps = 제목_참조병합(header, th)
-                    result = copy.deepcopy(title_sample)
-                    rcells = 제목_셀들(result)
-                    first = 제목_문단들(rcells[0])[0]
-                    runs = [r for r in first if 제목_xml이름(r) == 'run']
-                    for extra in runs[1:]:
-                        first.remove(extra)
-                    for child in list(runs[0]):
-                        runs[0].remove(child)
-                    XML_자식_추가(runs[0], title_sample, tag='{http://www.hancom.co.kr/hwpml/2011/paragraph}t').text = text
-                    제목_표서식_복사(result, title_sample, title_maps)
-                    제목_문단_가운데정렬(header, result)
-                    제목_괄호부연_축소(header, result)
-                    # 날짜·담당자 칸은 서식만 남기고 비운다(글은 A1에만 넣는다).
-                    for cell in rcells[1:]:
-                        for p in 제목_문단들(cell):
-                            for r in [x for x in p if 제목_xml이름(x) == 'run']:
-                                for t in [x for x in r if 제목_xml이름(x) == 't']:
-                                    r.remove(t)
-                    result.set('id', str(next_id)); next_id += 1
-                    run[list(run).index(table)] = result
-                if 제목_문자열(result if kind == 'box' else rcells[0]).strip() != text.strip():
-                    raise RuntimeError('라벨 서식표 텍스트 보존 검사 실패')
+                text = head_text[len(_라벨_표식[kind]):]
+                result = 서식표_생성(header, kind, text, cache)
+                _서식표_글_확인(kind, result, text)
+                _서식표_번호_부여(result, ids)
+                run[list(run).index(table)] = result
                 count += 1
         contents[name] = ET.tostring(root, encoding='utf-8', xml_declaration=True)
     contents['Contents/header.xml'] = ET.tostring(header, encoding='utf-8', xml_declaration=True)
+    _hwpx_안전_저장(contents, target)
+    return count
+
+
+def _문서_표번호(sections):
+    """문서의 표 id·zOrder 최댓값(새 표에 겹치지 않는 번호를 주기 위한 카운터)."""
+    tables = [t for root in sections.values() for t in root.iter() if 제목_xml이름(t) == 'tbl']
+    def biggest(attr):
+        return max([int(t.get(attr)) for t in tables if (t.get(attr) or '').isdigit()] + [0])
+    return {'id': biggest('id'), 'z': biggest('zOrder')}
+
+
+def _서식표_번호_부여(table, ids):
+    ids['id'] += 1
+    ids['z'] += 1
+    table.set('id', str(ids['id']))
+    table.set('zOrder', str(ids['z']))
+
+
+def _hwpx_안전_저장(contents, target):
+    """HWPX 항목을 임시 파일에 쓴 뒤 바꿔 넣는다(한/글이 잠시 파일을 잡고 있어도 재시도)."""
     임시 = Path(str(target) + '.tmp')
     with zipfile.ZipFile(임시, 'w', zipfile.ZIP_DEFLATED) as z:
         for name, data in contents.items():
@@ -2450,18 +2513,143 @@ def 라벨_서식표_적용(source, target=None):
     for 시도 in range(20):
         try:
             os.replace(임시, target)
-            break
+            return
         except PermissionError:
             if 시도 == 19: raise
             time.sleep(0.1)
+
+
+# 준말(약어) 등록표. 작업_실행이 설정에서 채우며, 한 번에 적용 때 줄 첫 어절의 준말을 본말로 바꾼다.
+준말_등록표 = {}
+
+
+def _문단_일반글(p):
+    """표·그림·필드가 없는 일반 글 문단이면 글 요소(t) 목록을, 아니면 None을 돌려준다."""
+    texts = []
+    for run in p:
+        if 제목_xml이름(run) == 'linesegarray':
+            continue
+        if 제목_xml이름(run) != 'run':
+            return None
+        for child in run:
+            name = 제목_xml이름(child)
+            if name == 't':
+                if len(child):  # 탭·강제 줄바꿈 등이 섞인 글은 건드리지 않는다.
+                    return None
+                texts.append(child)
+            elif name == 'secPr':
+                continue
+            elif name == 'ctrl':
+                if any(제목_xml이름(x) not in ('colPr', 'secPr') for x in child):
+                    return None
+            else:
+                return None
+    return texts
+
+
+def _문단_준말_판별(p):
+    texts = _문단_일반글(p)
+    if not texts:
+        return None
+    found = 준말_줄_판별(''.join(t.text or '' for t in texts), 준말_등록표)
+    return (texts, found) if found else None
+
+
+def _문단_글_바꾸기(p, texts, remove, insert):
+    """문단 앞의 remove 글자를 지우고 그 자리에 insert를 넣는다(나머지 글의 글자 모양은 유지)."""
+    left = remove
+    for t in texts:
+        value = t.text or ''
+        cut = min(left, len(value))
+        t.text = value[cut:]
+        left -= cut
+    texts[0].text = insert + (texts[0].text or '')
+    for lineseg in [x for x in p if 제목_xml이름(x) == 'linesegarray']:
+        p.remove(lineseg)
+
+
+def 준말_hwpx_처리(source, target=None, selections=None):
+    """줄 첫 어절이 등록한 준말이고 콜론이 이어지면 본말로 바꾼다.
+
+    서식 표 본말은 콜론 뒤 글을 표 A1 칸에 넣고 준말 줄의 글을 지운다. 문구 본말은
+    준말과 콜론을 본말로 바꾸고 나머지 글은 그대로 둔다. 본문(구역 바로 아래) 문단만 대상이다.
+    """
+    with zipfile.ZipFile(source) as z:
+        contents = {n: z.read(n) for n in z.namelist()}
+    for name, data in contents.items():
+        if name.startswith('Contents/') and name.endswith('.xml'):
+            for _, pair in ET.iterparse(io.BytesIO(data), events=('start-ns',)):
+                if not re.fullmatch(r'ns\d+', pair[0]): XML_네임스페이스_등록(*pair)
+    header = safe_xml_fromstring(contents['Contents/header.xml'])
+    sections = {n: safe_xml_fromstring(data) for n, data in contents.items() if re.fullmatch(r'Contents/section\d+\.xml', n)}
+    body = {n: [c for c in root if 제목_xml이름(c) == 'p'] for n, root in sections.items()}
+    if selections is None:
+        result = {}
+        for name, paras in body.items():
+            result[name] = [(i, found[1][0], found[1][1]) for i, p in enumerate(paras)
+                            for found in [_문단_준말_판별(p) or (None, None)] if found[1]]
+        return result
+    if not any(items for items in selections.values()):
+        if target is not None: shutil.copyfile(source, target)
+        return 0
+    para_group = next((x for x in header.iter() if 제목_xml이름(x) == 'paraProperties'), None)
+    has_default_para = para_group is not None and any(x.get('id') == '0' for x in para_group)
+    cache, ids, count = {}, _문서_표번호(sections), 0
+    for name, items in selections.items():
+        for index, key, _ in items:
+            p = body[name][index]
+            judged = _문단_준말_판별(p)
+            if judged is None or judged[1][0] != key:
+                raise RuntimeError('처리 중 준말 줄이 바뀌어 준말 변환을 중단했습니다.')
+            texts, (_, rest, prefix_len) = judged
+            spec = 준말_등록표[key]
+            if spec['type'] == 'text':
+                replacement = spec['value'] + (' ' if rest else '')
+                expected = replacement + rest
+                _문단_글_바꾸기(p, texts, prefix_len, replacement)
+                if ''.join(t.text or '' for t in texts) != expected:
+                    raise RuntimeError('준말 문구 바꾸기 검사 실패')
+            else:
+                base_char = next((r.get('charPrIDRef') for r in p if 제목_xml이름(r) == 'run'
+                                  and any(제목_xml이름(c) == 't' for c in r)), '0')
+                table = 서식표_생성(header, spec['value'], rest, cache)
+                _서식표_글_확인(spec['value'], table, rest)
+                _서식표_번호_부여(table, ids)
+                for run in [r for r in p if 제목_xml이름(r) == 'run']:
+                    had_text = any(제목_xml이름(c) == 't' for c in run)
+                    for t in [c for c in run if 제목_xml이름(c) == 't']:
+                        run.remove(t)
+                    if had_text and not len(run):
+                        p.remove(run)
+                for lineseg in [x for x in p if 제목_xml이름(x) == 'linesegarray']:
+                    p.remove(lineseg)
+                holder = XML_자식_추가(p, p, tag='{http://www.hancom.co.kr/hwpml/2011/paragraph}run',
+                                       attrib={'charPrIDRef': base_char})
+                holder.append(table)
+                XML_자식_추가(holder, p, tag='{http://www.hancom.co.kr/hwpml/2011/paragraph}t')
+                if has_default_para:  # 들여쓰기·내어쓰기가 표 위치를 밀지 않도록 기본 문단 모양을 쓴다.
+                    p.set('paraPrIDRef', '0')
+                p.set('styleIDRef', '0')
+            count += 1
+        contents[name] = ET.tostring(sections[name], encoding='utf-8', xml_declaration=True)
+    contents['Contents/header.xml'] = ET.tostring(header, encoding='utf-8', xml_declaration=True)
+    _hwpx_안전_저장(contents, target)
     return count
+
+
+def 준말_선행적용(원본문서경로):
+    """열려 있는 문서의 준말 줄을 본말로 바꾼 결과를 한 번만 다시 연다(등록표가 비면 아무것도 안 함)."""
+    if not 준말_등록표:
+        return True
+    return 제목붙임_선행적용(원본문서경로, 현재문서_기준=True,
+                            처리목록=((True, '준말 변환', 준말_hwpx_처리, 'abbrev.hwpx'),))
 
 
 def 붙임2종_현재문서_조사(원본문서경로):
     return 서식구조_조사(원본문서경로, 붙임_hwpx_처리, '붙임')
 
 
-def 제목붙임_선행적용(원본문서경로, 현재문서_기준=False):
+def 제목붙임_선행적용(원본문서경로, 현재문서_기준=False, 처리목록=None):
     """제목·개요·붙임을 먼저 처리하고 결과 문서를 한 번만 연다.
 
     원본 HWPX는 읽기만 한다. HWP는 이미 열린 작업용 한글에서 한 번
@@ -2469,7 +2657,13 @@ def 제목붙임_선행적용(원본문서경로, 현재문서_기준=False):
     현재문서_기준이면 원본 파일 대신 지금 열린 문서(예: 자간 초기화를 마친
     문서)를 스냅샷으로 저장해 그 위에 서식을 입힌다.
     """
-    if not (제목4종_사용 or 붙임2종_사용 or 중제목_사용):
+    if 처리목록 is None:
+        처리목록 = (
+            (제목4종_사용, '제목·개요', 제목_hwpx_처리, 'title.hwpx'),
+            (중제목_사용, '중제목', 중제목_hwpx_처리, 'midtitle.hwpx'),
+            (붙임2종_사용, '붙임', 붙임_hwpx_처리, 'attachment.hwpx'),
+        )
+    if not any(enabled for enabled, *_ in 처리목록):
         return True
     folder = Path(tempfile.mkdtemp(prefix='hwp_format_first_'))
     스냅샷_저장시도 = False
@@ -2484,11 +2678,7 @@ def 제목붙임_선행적용(원본문서경로, 현재문서_기준=False):
             source = _제목_임시hwpx_저장(folder / 'source.hwpx')
             로그('선행 서식: HWPX 변환 완료')
         changed = False
-        for enabled, name, processor, filename in (
-            (제목4종_사용, '제목·개요', 제목_hwpx_처리, 'title.hwpx'),
-            (중제목_사용, '중제목', 중제목_hwpx_처리, 'midtitle.hwpx'),
-            (붙임2종_사용, '붙임', 붙임_hwpx_처리, 'attachment.hwpx'),
-        ):
+        for enabled, name, processor, filename in 처리목록:
             if 중단_요청됨():
                 return False
             if not enabled:
@@ -2595,6 +2785,7 @@ def 설정_불러오기():
                     설정[키] = 저장된값[키]
             if isinstance(저장된값.get("stage_choices"), dict):
                 설정["stage_choices"] = 저장된값["stage_choices"]
+            설정["abbreviations"] = 준말_등록표_정리(저장된값.get("abbreviations"))
     except Exception as e:
         if _콘솔_출력_가능:
             print(f"설정 불러오기 실패(기본값 사용): {e}")
@@ -10568,8 +10759,8 @@ def 라벨블록_한글삽입(한글, 블록들):
     """labeled_text 블록을 한/글 문서 끝에 차례로 넣는다(A4 제목 상자 표 템플릿).
 
     제목·개요(상자)·참고는 1×1 표로 넣는다. 1×1 제목 표는 제목 서식(제목_hwpx_처리)의
-    대상이 아니므로(유형 삭제) 제목 서식이 자동으로 적용되지 않는다. 제목1·개요 라벨은
-    표식을 붙여 넣고 저장 뒤 라벨_서식표_적용이 각각 제목1·개요 서식 표로 바꾼다.
+    대상이 아니므로(유형 삭제) 제목 서식이 자동으로 적용되지 않는다. 제목1·제목2·개요 라벨은
+    표식을 붙여 넣고 저장 뒤 라벨_서식표_적용이 각각의 서식 표로 바꾼다.
     """
     def 글쓰기(내용):
         act = 한글.HAction
@@ -10606,9 +10797,9 @@ def 라벨블록_한글삽입(한글, 블록들):
         종류 = 블록["kind"]
         if 종류 == "blank":
             continue
-        if 종류 in ("title1", "box"):
-            # 제목1·개요는 표식을 붙여 넣고, 저장 뒤 라벨_서식표_적용이 서식 표로 바꾼다.
-            표넣기([[_라벨_표식[종류] + 블록["text"]]])
+        if 종류 in _라벨_블록_종류:
+            # 제목1·제목2·개요는 표식을 붙여 넣고, 저장 뒤 라벨_서식표_적용이 서식 표로 바꾼다.
+            표넣기([[_라벨_표식[_라벨_블록_종류[종류]] + 블록["text"]]])
         elif 종류 in ("title", "ref"):
             표넣기([[블록["text"] if 종류 != "ref" else f"참고  {블록['text']}"]])
         elif 종류 == "table":
@@ -10644,7 +10835,7 @@ def 텍스트_hwpx_단독변환(텍스트, 대상경로):
             라벨블록_한글삽입(단독_hwp, 블록들)
             if 단독_hwp.SaveAs(str(대상경로), "HWPX", "") is False:
                 raise RuntimeError("HWPX로 저장하지 못했습니다.")
-            서식표_후처리 = any(b["kind"] in ("title1", "box") for b in 블록들)
+            서식표_후처리 = any(b["kind"] in _라벨_블록_종류 for b in 블록들)
         else:
             줄들 = 텍스트.replace("\r\n", "\n").replace("\r", "\n").split("\n")
             for 순번, 줄 in enumerate(줄들):
@@ -10914,6 +11105,19 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
             return False
         자간초기화_완료 = True
 
+    # 준말 → 본말 변환(한 번에 적용): 줄 첫 어절의 준말을 서식 표·문구로 바꾼다. 문서 구조를 바꾸므로
+    # 제목·개요·붙임 선행 서식보다 먼저 하고, 쪽 범위 작업에서는 건너뛴다.
+    준말변환_실행 = False
+    if 작업_모드 == 'all' and 준말_등록표 and stage_enabled(선택_세부작업, 'abbreviation', 작업_모드):
+        if 쪽범위_요청 is not None:
+            로그("쪽 범위 지정: 준말 변환(문서 전체 구조 변환)은 이번 작업에서 건너뜁니다.")
+        else:
+            단계표시("준말 변환")
+            상태(f"{파일명} : 준말 → 본말 변환")
+            if 준말_선행적용(작업파일경로) is False:
+                return False
+            준말변환_실행 = True
+
     if 표준서식_사용 and 작업_모드 in ('format', 'all'):
         if 쪽범위_요청 is not None:
             # 제목·개요·붙임 표 서식은 문서 전체 구조를 한 번에 바꾸는 방식이라 쪽별로 나눌 수 없다.
@@ -10921,7 +11125,7 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
         elif stage_enabled(선택_세부작업, 'pre_format', 작업_모드):
             단계표시("제목·개요·붙임 선행 서식")
             상태(f"{파일명} : 제목·개요·붙임 선행 서식")
-            if 제목붙임_선행적용(작업파일경로, 현재문서_기준=자간초기화_완료) is False:
+            if 제목붙임_선행적용(작업파일경로, 현재문서_기준=(자간초기화_완료 or 준말변환_실행)) is False:
                 return False
         if 쪽범위_요청 is None and 활성_정밀표_프로필 and stage_enabled(선택_세부작업, 'precise_table'):
             단계표시("표 정밀 서식")
@@ -11130,6 +11334,7 @@ def 작업_실행(
     표재시도횟수=5,
     괄호축소=True,
     표준서식_세부=None,
+    준말_등록=None,
     표준서식_문단위간격_pt=None,
     괄호라벨굵게=True,
     세트문장같은쪽=True,
@@ -11148,7 +11353,7 @@ def 작업_실행(
     global 작업_모드, 문두라벨_기호설정
     global 표_자간조정_사용, 쪽범위_요청, 로그파일_사용
     global 단어중간_줄바꿈방지_사용
-    global 제목4종_사용, 붙임2종_사용, 중제목_사용, 중제목_번호굵게
+    global 제목4종_사용, 붙임2종_사용, 중제목_사용, 중제목_번호굵게, 준말_등록표
     global hwp, 색상_설정, 비교보기_사용, 비교보기_좌측_프레임_hwnd, 비교보기_우측_프레임_hwnd, 로그_파일_경로
     global 작업_hwp_hwnd, 자동닫기_설정, 표준서식_사용, 검수_사용, 검수_문제목록, 최종검수_문서목록
     global 서식통일_빨간표시_사용
@@ -11166,6 +11371,7 @@ def 작업_실행(
 
     if 표준서식_세부 is None:
         표준서식_세부 = {}
+    준말_등록표 = 준말_등록표_정리(설정_불러오기().get('abbreviations') if 준말_등록 is None else 준말_등록)
     if 표준서식_문단위간격_pt is None:
         표준서식_문단위간격_pt = {}
 
@@ -12256,6 +12462,19 @@ class HwpAutoDocFitGUI:
             midtitle_bold.pack(anchor="w", padx=(18, 0))
             if 주설정탭:
                 self.std_detail_checks += [title_auto, attachment_auto, midtitle_auto, midtitle_bold]
+        elif key == "abbreviation":
+            def 준말창_열기():
+                from docfit_core.abbreviation_dialog import open_abbreviation_dialog
+
+                def 저장(등록표):
+                    설정 = 설정_불러오기()
+                    설정["abbreviations"] = 준말_등록표_정리(등록표)
+                    설정_저장(설정)
+                open_abbreviation_dialog(parent.winfo_toplevel(), lambda: 설정_불러오기().get("abbreviations", {}), 저장)
+            ttk.Button(parent, text="준말 등록·관리…", command=준말창_열기).pack(anchor="w")
+            ttk.Label(parent, text="등록한 준말이 없으면 이 단계는 아무것도 하지 않습니다. 콜론 앞에 준말을 적은 줄만 바꾸며, "
+                                   "쪽 범위 작업에서는 건너뜁니다.",
+                      style="Hint.TLabel", wraplength=610).pack(anchor="w", pady=(2, 0))
         elif key == "precise_table":
             profile_row = ttk.Frame(parent)
             profile_row.pack(anchor="w", fill="x")
@@ -15242,9 +15461,11 @@ class HwpAutoDocFitGUI:
                 설정값[키] = str(변수.get())
             설정값["always_on_top"] = bool(self.always_on_top_var.get()) if hasattr(self, "always_on_top_var") else True
             설정값["active_format_profile"] = getattr(self, "_활성_서식_프로파일", "")
-            기존_세부작업 = 설정_불러오기().get("stage_choices", {})
+            기존_설정 = 설정_불러오기()
+            기존_세부작업 = 기존_설정.get("stage_choices", {})
             if isinstance(기존_세부작업, dict) and 기존_세부작업:
                 설정값["stage_choices"] = 기존_세부작업
+            설정값["abbreviations"] = 기존_설정.get("abbreviations", {})
             설정_저장(설정값)
             기호글꼴_적용(설정값)
             표글꼴_적용(설정값.get("table_fonts"))
