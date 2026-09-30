@@ -1,7 +1,9 @@
 """준말 등록 창(Tk)이 등록표를 추가·삭제·저장하는지 확인한다. 화면을 띄울 수 없으면 건너뛴다."""
 import unittest
+from unittest.mock import patch
 
 from docfit_core.abbreviations import DEFAULT_ENTRIES, describe, upsert
+from docfit_core.table_style import default_style
 
 try:
     import tkinter as tk
@@ -56,6 +58,26 @@ class DialogTest(unittest.TestCase):
         tree.selection_set('요약')
         actions['remove']()
         self.assertNotIn('요약', saved[-1])
+        window.destroy()
+
+    def test_learning_a_table_style_saves_it_as_table_abbreviation(self):
+        saved = []
+        window = open_abbreviation_dialog(self.root, lambda: {}, lambda data: saved.append(data), lambda: True)
+        actions = window._docfit_actions
+        self.assertIn('표서식예시.hwpx', actions['table_var'].get())      # 처음에는 내장 기본값
+        learned = dict(default_style(), source='내 예시.hwpx')
+        with patch('docfit_core.abbreviation_dialog.learn_table_style', return_value=learned) as learn:
+            self.assertTrue(actions['learn_table']('내 예시.hwpx'))
+        learn.assert_called_once_with('내 예시.hwpx')
+        self.assertEqual(saved[-1]['표']['style']['source'], '내 예시.hwpx')
+        self.assertIn('내 예시.hwpx', actions['table_var'].get())
+        with patch('docfit_core.abbreviation_dialog.learn_table_style', side_effect=ValueError('표 없음')):
+            self.assertFalse(actions['learn_table']('빈 문서.hwpx'))
+        self.assertIn('표 없음', actions['vars'][4].get())               # 오류 문구, 저장은 그대로
+        self.assertEqual(saved[-1]['표']['style']['source'], '내 예시.hwpx')
+        actions['reset_table']()
+        self.assertEqual(saved[-1]['표'], {'type': 'format', 'value': 'table'})
+        self.assertIn('표서식예시.hwpx', actions['table_var'].get())
         window.destroy()
 
     def test_defaults_checkbox_is_saved(self):

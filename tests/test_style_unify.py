@@ -29,7 +29,8 @@ class StyleUnifyTest(unittest.TestCase):
             keys = [k for k, _ in stages_for_mode(mode)]
             self.assertIn('style_unify', keys)
             if mode != 'spacing':
-                self.assertLess(keys.index('style_unify'), keys.index('standard_format'))
+                # 보고서 표준서식은 준말 변환 다음 다른 모든 단계보다 먼저 실행한다(서식통일보다도 먼저).
+                self.assertLess(keys.index('standard_format'), keys.index('style_unify'))
         self.assertFalse(default_choice('style_unify'))
         self.assertFalse(enabled(None, 'style_unify'))
         self.assertFalse(enabled({}, 'style_unify'))
@@ -257,8 +258,12 @@ class UnifyModeTest(unittest.TestCase):
         cls.ns = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'hwp-auto-docfit.py'))
 
     def test_unify_mode_has_only_unify_stage_and_is_on(self):
-        # 쪽 맞춤은 서식통일 뒤 사용자가 켤 때만 실행하는 선택 단계다.
-        self.assertEqual([k for k, _ in stages_for_mode('unify')], ['style_unify', 'table_unify', 'page_fit'])
+        # 기본 표 서식(준말 '표')을 먼저 입히고, 쪽 맞춤은 서식통일 뒤 사용자가 켤 때만 실행한다.
+        # 준말 변환·보고서 표준서식은 서식 통일에서 하지 않는다.
+        self.assertEqual([k for k, _ in stages_for_mode('unify')], ['table_style', 'style_unify', 'table_unify', 'page_fit'])
+        self.assertTrue(default_choice('table_style', 'unify'))
+        for key in ('abbreviation', 'standard_format'):
+            self.assertFalse(default_choice(key, 'unify'), key)
         self.assertFalse(default_choice('page_fit', 'unify'))
         self.assertTrue(default_choice('table_unify', 'unify'))
         self.assertTrue(default_choice('style_unify', 'unify'))
@@ -279,6 +284,45 @@ class UnifyModeTest(unittest.TestCase):
                             'hwp_run': lambda *a: True, '순회_시작': lambda: None}):
             self.assertTrue(fn('문서.hwpx', 회차=1))
         self.assertEqual(calls, ['서식통일_전체_적용'])
+
+    def test_standard_format_is_not_repeated_inside_the_pass(self):
+        """보고서 표준서식은 선행 단계(표준서식_선행_적용)에서 이미 입혔으므로 회차 안에서 다시 하지 않는다."""
+        fn = self.ns['_문서_처리_1회']
+        g = fn.__globals__
+        calls = []
+        names = ['표준서식_전체_적용', '문장내_공백_정규화_전체_적용', '문장부호_뒤_공백_보정_전체_적용']
+        with patch.dict(g, {**{n: (lambda n: lambda *a, **k: calls.append(n) or True)(n) for n in names},
+                            '작업_모드': 'format', '표준서식_사용': True, '선택_세부작업': {},
+                            'stage_enabled': lambda selection, key, mode=None: key in ('normalize_space', 'standard_format'),
+                            '중단_요청됨': lambda: False, '단계표시': Mock(), '상태': Mock(), '로그': Mock(),
+                            '진단로그': Mock(), 'hwp_run': lambda *a: True, '순회_시작': lambda: None,
+                            '표_셀_안쪽여백_전체_적용': lambda: True, '표_열너비_본문맞춤_전체_적용': lambda: True,
+                            '표_테두리_전체_적용': lambda: True}):
+            self.assertTrue(fn('문서.hwpx', 회차=1))
+        self.assertEqual(calls, ['문장내_공백_정규화_전체_적용'])
+
+    def test_leading_standard_format_defers_hanging_indent(self):
+        fn = self.ns['표준서식_선행_적용']
+        g = fn.__globals__
+        seen = []
+
+        def standard():
+            seen.append((g['작업_모드'], g['최종_내어쓰기_예정']))
+            return True
+        for mode in ('format', 'all'):
+            with patch.dict(g, {'표준서식_전체_적용': standard, '작업_모드': mode, '표준서식_선행_사용': True,
+                                '표준서식_내어쓰기_사용': True, '선택_세부작업': {},
+                                '단계표시': Mock(), '상태': Mock(), 'hwp_run': lambda *a: True,
+                                '순회_시작': lambda: None}):
+                self.assertTrue(fn('문서.hwpx'))
+                self.assertFalse(g['최종_내어쓰기_예정'])          # 끝나면 되돌린다
+        # 최종 내어쓰기 단계가 뒤에 있으므로 표준서식 안의 문단별 내어쓰기는 미룬다.
+        self.assertEqual(seen, [('format', True), ('all', True)])
+        for off in ({'표준서식_선행_사용': False}, {'선택_세부작업': {'standard_format': False}}):
+            with patch.dict(g, {'표준서식_전체_적용': standard, '작업_모드': 'format', '표준서식_선행_사용': True,
+                                '선택_세부작업': {}, **off}):
+                self.assertIsNone(fn('문서.hwpx'))
+        self.assertEqual(len(seen), 2)
 
     def test_all_mode_rechecks_using_frozen_document_profile_after_other_stages(self):
         fn = self.ns['_문서_처리_1회']

@@ -279,6 +279,8 @@ from docfit_core.labeled_text import label_outline_text, looks_labeled, parse_la
 from docfit_core.asterisk_superscript import mark_spans as 별표_위치
 from docfit_core.attachment_block import find_blocks as 붙임묶음_찾기
 from docfit_core.abbreviations import merge_with_defaults as 준말_기본_병합, match_line as 준말_줄_판별, normalize as 준말_등록표_정리, roman_of_key as 준말_로마자, split_title2
+from docfit_core.abbreviations import line_registry as 준말_줄변환표, table_style_of as 준말_표서식
+from docfit_core.table_style import HeaderPool as 표서식_저장소, apply_table_style as 표서식_적용, describe_style as 표서식_설명, is_grid_table as 표서식_모양인가
 from docfit_core.text_table import find_box_tables
 from docfit_core import writing_aids, ai_prompts
 
@@ -346,7 +348,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리 도구"
-APP_VERSION = "1.69 Beta 4"
+APP_VERSION = "1.69 Beta 5"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 UPDATE_ASSET_NAME = "HWP_AutoDocFit.exe"
@@ -1762,11 +1764,12 @@ def 제목_문단들(cell):
 def 제목_문자열(e):
     return ''.join(x.text or '' for x in e.iter() if 제목_xml이름(x) == 't')
 
-def 제목_유형판별(table):
+def 제목_유형판별(table, 빈칸허용=False):
     """제목 표 유형. 1·2 = 2×2(제목+날짜·담당자, 부제 없음/있음), 3 = 2행1열(제목+담당자).
 
     한 제목 칸(1~2문단)과 담당자 칸(2×2는 날짜·담당자 2칸)만 허용한다. 1×1 제목 표는
-    제목 서식 대상이 아니다.
+    제목 서식 대상이 아니다. 빈칸허용이면 날짜·담당자 칸이 모두 빈 표(준말 변환이 만든
+    제목 표)도 같은 유형으로 본다.
     """
     cells = 제목_셀들(table)
     if len(cells) not in (2, 3): return None
@@ -1779,15 +1782,16 @@ def 제목_유형판별(table):
     ps = [p for p in 제목_문단들(cells[0]) if 제목_문자열(p).strip()]
     if len(ps) not in (1, 2): return None
     if any(re.match(r'^\s*[□ㅁㅇ○※*\-]', 제목_문자열(p)) for p in ps): return None
+    정보칸_빔 = 빈칸허용 and not any(제목_문자열(c).strip() for c in cells[1:])
     if len(cells) == 2:
         # 유형3: 윗칸(부제+제목) / 아랫칸(담당자) 2행1열. 날짜 칸이 없다.
-        if not re.search(r'담당|과장|팀장|☎|전화|부서|작성', 제목_문자열(cells[1])): return None
+        if not 정보칸_빔 and not re.search(r'담당|과장|팀장|☎|전화|부서|작성', 제목_문자열(cells[1])): return None
         return 3
     span = 제목_자식(cells[0], 'cellSpan')
     if span is None or span.get('colSpan') != '2': return None
     date, owner = map(제목_문자열, cells[1:])
-    if not re.search(r'[0-9]{2,4}\s*[.년/\-]\s*[0-9]{1,2}', date): return None
-    if not re.search(r'담당|과장|팀장|☎|전화|부서|작성', owner): return None
+    if not 정보칸_빔 and not re.search(r'[0-9]{2,4}\s*[.년/\-]\s*[0-9]{1,2}', date): return None
+    if not 정보칸_빔 and not re.search(r'담당|과장|팀장|☎|전화|부서|작성', owner): return None
     return 2 if len(ps) == 2 else 1
 
 
@@ -2234,7 +2238,7 @@ def _제목_임시hwpx_저장(경로):
     raise RuntimeError('제목 분석/적용용 HWPX 저장 완료를 확인하지 못했습니다.')
 
 
-_작업_임시폴더_접두어 = ("hwp_format_first_", "hwp_precise_table_", "docfit_외부문서_")
+_작업_임시폴더_접두어 = ("hwp_format_first_", "hwp_precise_table_", "docfit_외부문서_", "hwp_table_guard_")
 
 
 def 이전_작업_임시폴더_정리(최소_경과초=600):
@@ -2603,8 +2607,16 @@ def _hwpx_안전_저장(contents, target):
 준말_등록표 = {}
 
 
+# 글 위치를 차지하지 않는 구역·쪽 설정 컨트롤(단 설정·쪽 번호·감추기·머리말 등). 문서 첫 문단에 흔히 함께 있다.
+_문단_설정컨트롤 = frozenset({'colPr', 'secPr', 'pageNum', 'pageNumCtrl', 'pageHiding', 'newNum', 'header', 'footer'})
+
+
 def _문단_일반글(p):
-    """표·그림·필드가 없는 일반 글 문단이면 글 요소(t) 목록을, 아니면 None을 돌려준다."""
+    """표·그림·필드가 없는 일반 글 문단이면 글 요소(t) 목록을, 아니면 None을 돌려준다.
+
+    구역·쪽 설정 컨트롤은 글 위치를 차지하지 않으므로 허용한다(실측: 첫 문단에 쪽 번호
+    컨트롤이 있으면 '제목:' 준말을 찾지 못해 제목 표가 만들어지지 않았다).
+    """
     texts = []
     for run in p:
         if 제목_xml이름(run) == 'linesegarray':
@@ -2620,7 +2632,7 @@ def _문단_일반글(p):
             elif name == 'secPr':
                 continue
             elif name == 'ctrl':
-                if any(제목_xml이름(x) not in ('colPr', 'secPr') for x in child):
+                if any(제목_xml이름(x) not in _문단_설정컨트롤 for x in child):
                     return None
             else:
                 return None
@@ -2631,8 +2643,47 @@ def _문단_준말_판별(p):
     texts = _문단_일반글(p)
     if not texts:
         return None
-    found = 준말_줄_판별(''.join(t.text or '' for t in texts), 준말_등록표)
+    found = 준말_줄_판별(''.join(t.text or '' for t in texts), 준말_줄변환표(준말_등록표))
     return (texts, found) if found else None
+
+
+# 준말 줄을 건너뛴 이유로 알려 줄 요소 이름(없는 이름은 XML 이름 그대로 보여 준다).
+_준말_제외요소_이름 = {'tbl': '표', 'pic': '그림', 'ole': 'OLE 개체', 'rect': '글상자', 'equation': '수식',
+                     'fieldBegin': '필드(누름틀·하이퍼링크 등)', 'fieldEnd': '필드 끝', 'bookmark': '책갈피',
+                     'footNote': '각주', 'endNote': '미주', 'autoNum': '자동 번호', 'tab': '탭',
+                     'fwSpace': '고정폭 빈칸', 'nbSpace': '묶음 빈칸', 'lineBreak': '강제 줄바꿈'}
+
+
+def _문단_준말_제외사유(p):
+    """준말 줄처럼 시작하지만 글 사이에 표·필드·탭 같은 요소가 있어 바꾸지 않는 문단이면 알림 문구를, 아니면 None.
+
+    실측(2026-09-30): 첫 문단의 쪽 번호 컨트롤 때문에 '제목:' 줄이 아무 기록 없이 건너뛰어져
+    원인을 찾기 어려웠다. 바꾸지 않는 이유를 작업 로그에 남긴다.
+    """
+    if _문단_일반글(p) is not None:
+        return None
+    글, 요소 = [], []
+    for run in p:
+        이름 = 제목_xml이름(run)
+        if 이름 == 'linesegarray':
+            continue
+        if 이름 != 'run':
+            요소.append(이름)
+            continue
+        for child in run:
+            name = 제목_xml이름(child)
+            if name == 't':
+                글.append(''.join(child.itertext()))
+                요소.extend(제목_xml이름(x) for x in child)
+            elif name == 'ctrl':
+                요소.extend(제목_xml이름(x) for x in child if 제목_xml이름(x) not in _문단_설정컨트롤)
+            elif name != 'secPr':
+                요소.append(name)
+    줄 = ''.join(글)
+    if not 요소 or not 준말_줄_판별(줄, 준말_줄변환표(준말_등록표)):
+        return None
+    이름들 = ', '.join(dict.fromkeys(_준말_제외요소_이름.get(x, x) for x in 요소))
+    return f"[준말 제외] '{줄.strip()[:40]}': 줄 안에 있는 {이름들} 때문에 본말로 바꾸지 않습니다."
 
 
 def _문단_글_바꾸기(p, texts, remove, insert):
@@ -2668,6 +2719,10 @@ def 준말_hwpx_처리(source, target=None, selections=None):
         for name, paras in body.items():
             result[name] = [(i, found[1][0], found[1][1]) for i, p in enumerate(paras)
                             for found in [_문단_준말_판별(p) or (None, None)] if found[1]]
+            for p in paras:
+                사유 = _문단_준말_제외사유(p)
+                if 사유:
+                    로그(사유)
         return result
     if not any(items for items in selections.values()):
         if target is not None: shutil.copyfile(source, target)
@@ -2733,6 +2788,73 @@ def 준말_선행적용(원본문서경로, 현재문서_기준=True, 변경알�
         return True
     return 제목붙임_선행적용(원본문서경로, 현재문서_기준=현재문서_기준,
                             처리목록=((True, '준말 변환', 준말_hwpx_처리, 'abbrev.hwpx'),), 변경알림=변경알림)
+
+
+# 기본 표 서식을 입혔으면(준말 '표') COM 표 머리글·본문 서식 단계가 그 서식을 덮지 않게 건너뛴다.
+기본표서식_적용됨 = False
+
+
+def 기본표서식():
+    """준말 '표'의 본말(기본 표 서식). 배운 서식이 없으면 내장 기본값, 준말 '표'가 없거나 다른 본말이면 None."""
+    return 준말_표서식(준말_등록표)
+
+
+def _기본표서식_대상인가(table):
+    """2행 2열 이상 일반 표만 대상이다. 제목(준말로 만든 빈 정보 칸 제목 표 포함)·중제목·붙임 서식 표는 뺀다."""
+    return bool(표서식_모양인가(table) and not (
+        제목_유형판별(table, 빈칸허용=True) or 중제목_유형판별(table) or 붙임_유형판별(table)))
+
+
+def 기본표서식_hwpx_처리(source, target=None, selections=None):
+    """문서의 일반 표에 기본 표 서식(준말 '표'의 본말)을 입힌다. 칸 글은 바꾸지 않는다.
+
+    예시 표의 같은 위치 칸에서 테두리·바탕색·글꼴(종류·크기·굵게·장평·자간)·세로 정렬을 가져오고,
+    머리글과 한 줄에 들어가는 짧은 문단만 예시 정렬로 바꾼다(docfit_core.table_style).
+    """
+    style = 기본표서식()
+    with zipfile.ZipFile(source) as z:
+        contents = {n: z.read(n) for n in z.namelist()}
+    for name, data in contents.items():
+        if name.startswith('Contents/') and name.endswith('.xml'):
+            for _, pair in ET.iterparse(io.BytesIO(data), events=('start-ns',)):
+                if not re.fullmatch(r'ns\d+', pair[0]): XML_네임스페이스_등록(*pair)
+    header = safe_xml_fromstring(contents['Contents/header.xml'])
+    sections = {n: safe_xml_fromstring(data) for n, data in contents.items() if re.fullmatch(r'Contents/section\d+\.xml', n)}
+
+    def 표들(root):
+        return [t for t in root.iter() if 제목_xml이름(t) == 'tbl']
+
+    if selections is None:
+        if style is None:
+            return {n: [] for n in sections}
+        return {n: [i for i, t in enumerate(표들(root)) if _기본표서식_대상인가(t)] for n, root in sections.items()}
+    if style is None or not any(items for items in selections.values()):
+        if target is not None: shutil.copyfile(source, target)
+        return 0
+    저장소 = 표서식_저장소(header, style)
+    count = 0
+    for name, items in selections.items():
+        root = sections[name]
+        found = 표들(root)
+        for index in items:
+            table = found[index]
+            if not _기본표서식_대상인가(table):
+                raise RuntimeError('처리 중 표 구조가 바뀌어 기본 표 서식 적용을 중단했습니다.')
+            before = _표_텍스트(table)
+            표서식_적용(저장소, table)
+            if _표_텍스트(table) != before:
+                raise RuntimeError('기본 표 서식 적용 중 표 내용 보존 검사에 실패했습니다.')
+            count += 1
+        contents[name] = ET.tostring(root, encoding='utf-8', xml_declaration=True)
+    contents['Contents/header.xml'] = ET.tostring(header, encoding='utf-8', xml_declaration=True)
+    _hwpx_안전_저장(contents, target)
+    return count
+
+
+def 기본표서식_선행적용(원본문서경로, 현재문서_기준=False, 변경알림=None):
+    """문서의 일반 표에 기본 표 서식을 입힌 결과를 한 번만 다시 연다(대상 표가 없으면 다시 열지 않음)."""
+    return 제목붙임_선행적용(원본문서경로, 현재문서_기준=현재문서_기준,
+                            처리목록=((True, '기본 표 서식', 기본표서식_hwpx_처리, 'table_style.hwpx'),), 변경알림=변경알림)
 
 
 def _위첨자_글자모양(header, char_id, cache):
@@ -3206,6 +3328,7 @@ _세부단계_단계매핑 = {
     "표 서식": "서식",
     "개요·한 칸 표 자간 조정": "자간",
     "제목·개요·붙임 선행 서식": "서식",
+    "기본 표 서식": "서식",
     "자간 조정": "자간",
     "표/컨트롤 자간 조정": "자간",
     "단어 분리 최종 검사": "자간",
@@ -3851,7 +3974,11 @@ _내어쓰기_건너뛸_여는낫표 = "「『"
 
 def 문단_내어쓰기_기준_오프셋(text):
     """문단 첫 화면줄에서 Shift+Tab을 실행할 본문 시작 문자 위치."""
-    offset = _문단_본문시작_오프셋(text)
+    return _여는낫표_건너뛰기(text, _문단_본문시작_오프셋(text))
+
+
+def _여는낫표_건너뛰기(text, offset):
+    """본문이 '「법령」'처럼 여는 낫표로 시작하면 낫표 다음 글자 위치로 옮긴다."""
     if offset is None:
         return None
     body = text.rstrip("\r\n")
@@ -3859,6 +3986,29 @@ def 문단_내어쓰기_기준_오프셋(text):
             and not body[offset + 1].isspace()):
         return offset + 1
     return offset
+
+
+def _문단_기호뒤_오프셋(text):
+    """문두기호(□·ㅇ·-·* 등)와 뒤 빈칸을 건너뛴 글 시작 문자 위치. 괄호·콜론 라벨은 글에 포함한다.
+
+    기호로 시작하지 않는 문단이거나 기호 뒤에 글이 없으면 None.
+    """
+    if not text:
+        return None
+    text = text.rstrip("\r\n")
+    start = _문단_공백_건너뛰기(text, 0)
+    if start >= len(text):
+        return None
+    tail = text[start:]
+    if not (tail[0] in 공문서_기호 or tail[0] in "*＊☞ㅁ" or any(p.match(tail) for p in 항목_패턴)):
+        return None
+    marker_end = 문장부호_마커_끝위치(text)
+    if marker_end is None:
+        marker_end = start + 1
+    idx = _문단_공백_건너뛰기(text, marker_end)
+    if idx >= len(text) or text[idx] in "\r\n":
+        return None
+    return idx
 
 
 def _문단_본문시작_오프셋(text):
@@ -3878,11 +4028,8 @@ def _문단_본문시작_오프셋(text):
         # 기존 세트 후속 라벨: '(6~16번) : 본문'
         m = re.match(r"[（(][^()（）\r\n]+[)）][ \t]*[:：][ \t]*(?=\S)", tail)
         return start + m.end() if m else None
-    marker_end = 문장부호_마커_끝위치(text)
-    if marker_end is None:
-        marker_end = start + 1
-    idx = _문단_공백_건너뛰기(text, marker_end)
-    if idx >= len(text) or text[idx] in "\r\n":
+    idx = _문단_기호뒤_오프셋(text)
+    if idx is None:
         return None
     # 균형 괄호만 문두 라벨로 인정한다. 붙어 있는 '(연도)지명'은 제외.
     pairs = {"(": ")", "（": "）"}
@@ -4233,8 +4380,13 @@ def _캐럿위치_폭_실측(문단_시작, 글자수):
 
 
 def 부모_본문시작_실측(문단_시작, text):
-    """위 문단(제목/본문/내용) 본문 첫 글자의 가로 위치 = 왼쪽여백 + 실측 폭."""
-    오프셋 = 문단_내어쓰기_기준_오프셋(text)
+    """위 문단(제목/본문/내용) 글 첫 글자의 가로 위치 = 왼쪽여백 + 실측 폭.
+
+    글 첫 글자는 문두기호 바로 뒤 글자다. 괄호·콜론 라벨은 글에 포함하므로 'ㅇ (핵심 내용) 본문'에 딸린
+    부연설명은 '(핵심 내용)' 아래에 선다. 실측(2026-09-30, 삼채인.txt): 라벨 뒤 내어쓰기 위치에 맞추면
+    부연설명 왼쪽여백이 6cm를 넘고, 자기 콜론 라벨 내어쓰기까지 더해 둘째 줄이 쪽 오른쪽 끝에서 시작했다.
+    """
+    오프셋 = _여는낫표_건너뛰기(text, _문단_기호뒤_오프셋(text))
     if not 오프셋 or 오프셋 <= 0:
         return None
     폭 = _캐럿위치_폭_실측(문단_시작, 오프셋)
@@ -10650,6 +10802,77 @@ def 표_헤더서식_표단위_처리(칸들):
         로그(f"표 단위 서식적용 실패(칸마다 적용으로 대신): {e}")
         return None
 
+def 서식표_영역_목록(hwpx경로):
+    """HWPX의 제목·중제목·붙임 서식 표마다 (칸 목록 번호 목록, 확인할 (목록 번호, 문단 순번, 글))을 돌려준다.
+
+    한/글의 목록 번호는 문서 순서의 subList 순번 + 2다(_서식통일_표모형 참고). 준말 변환이 만든
+    제목 표는 날짜·담당자 칸이 비어 있으므로 빈 정보 칸도 제목 표로 본다. 확인할 글은 표에서
+    가장 긴 글 문단이다(중제목 번호처럼 짧은 글로 확인하면 다른 표와 헷갈릴 수 있다).
+    """
+    from docfit_core.style_inventory import _sections
+    with zipfile.ZipFile(hwpx경로) as z:
+        구역들 = [safe_xml_fromstring(z.read(name)) for name in _sections(z)]
+    목록번호 = {}
+    for root in 구역들:
+        for item in root.iter():
+            if 제목_xml이름(item) == 'subList':
+                목록번호[id(item)] = len(목록번호) + 2
+    결과 = []
+    for root in 구역들:
+        for table in [t for p in root for run in p for t in run if 제목_xml이름(t) == 'tbl']:
+            if not (제목_유형판별(table, 빈칸허용=True) or 중제목_유형판별(table) or 붙임_유형판별(table)):
+                continue
+            영역들, 확인 = [], None
+            for cell in 제목_셀들(table):
+                sub = 제목_자식(cell, 'subList')
+                if sub is None or id(sub) not in 목록번호:
+                    continue
+                영역들.append(목록번호[id(sub)])
+                for 순번, p in enumerate(x for x in sub if 제목_xml이름(x) == 'p'):
+                    글 = ''.join(_서식통일_run_text(run)[0] for run in p if 제목_xml이름(run) == 'run')
+                    if len(글.strip()) > len(확인[2].strip() if 확인 else ''):
+                        확인 = (목록번호[id(sub)], 순번, 글)
+            if 영역들 and 확인:
+                결과.append((영역들, 확인))
+    return 결과
+
+
+def 서식표_보호영역_조사(묶음=None):
+    """표 머리글·본문 서식에서 뺄 제목·중제목·붙임 서식 표 칸의 목록 번호 집합.
+
+    실측(2026-09-30): 2×2·2행1열 제목 표와 1행 붙임 표는 한 칸 표가 아니라서 1행이 머리글
+    서식(한컴돋움 13pt)으로 덮여 제목 27pt·붙임 17pt가 사라졌다. 현재 문서를 HWPX로 스냅샷
+    저장해 구조로 판별하고, 한/글에서 칸 글이 같은지 확인된 표만 돌려준다. 묶음(표칸_묶음_키별)이
+    있고 서식 표 모양(칸 2~3개)의 표가 없으면 저장하지 않는다. 판별에 실패하면 빈 집합이다.
+    스냅샷은 지금 편집 문서가 되어 한/글이 잡고 있으므로 다음 실행 때 정리한다.
+    """
+    모양 = ({'A1', 'A2', 'B2'}, {'A1', 'A2'}, {'A1', 'B1'}, {'A1', 'B1', 'C1'})
+    if 묶음 is not None and not any({주소 for _, 주소, _ in 칸들} in 모양 for 칸들 in 묶음.values()):
+        return set()
+    folder = Path(tempfile.mkdtemp(prefix='hwp_table_guard_'))
+    try:
+        표들 = 서식표_영역_목록(_제목_임시hwpx_저장(folder / 'tables.hwpx'))
+    except Exception as e:
+        shutil.rmtree(folder, ignore_errors=True)
+        로그(f"서식 표 판별 실패(표 서식을 모든 표에 적용): {e}")
+        return set()
+    보호 = set()
+    for 영역들, (area, 순번, 글) in 표들:
+        # 목록 번호가 어긋나면 다른 표를 빼게 되므로, 칸 문단 글자가 HWPX와 같은지 확인한다.
+        try:
+            hwp.SetPos(area, 순번, 0)
+            같은칸 = (tuple(hwp.GetPos()[:2]) == (area, 순번)
+                      and _서식통일_공백제거(현재문단_텍스트()) == _서식통일_공백제거(글))
+        except Exception:
+            같은칸 = False
+        if 같은칸:
+            보호.update(영역들)
+        else:
+            진단로그(f"[서식 표 제외] 칸 위치를 확인하지 못해 표 서식을 적용합니다: {글.strip()[:40]}")
+    hwp_run("Cancel")
+    return 보호
+
+
 def 표_헤더서식_전체_적용():
     """표 안의 각 셀에 표준 문자서식을 적용한다.
 
@@ -10662,7 +10885,8 @@ def 표_헤더서식_전체_적용():
     가지므로, ``컨트롤_내부_자간조정()``과 동일하게 리스트 번호를
     1씩 늘려가며 SetPos로 직접 진입하는, 이미 검증된 방식으로 대체한다.
     표가 아닌 영역(글상자 등)은 ``표_헤더서식_현재셀_처리()``가 셀
-    주소를 못 찾으면 그대로 건너뛰므로 안전하다.
+    주소를 못 찾으면 그대로 건너뛰므로 안전하다. 제목·중제목·붙임 서식 표는
+    데이터 표가 아니므로 건너뛴다(서식표_보호영역_조사).
     """
     if 중단_요청됨():
         return False
@@ -10673,9 +10897,11 @@ def 표_헤더서식_전체_적용():
     방문영역수 = 0
     한칸표영역 = 한칸표_영역_목록()
     제외수 = 0
+    서식표_제외수 = 0
 
     # 표 단위 일괄 적용(쪽 범위를 지정하면 범위 밖 칸을 건드리지 않도록 칸마다 적용).
     묶음 = 표칸_묶음_키별() if 표_서식_표단위_사용 and not 쪽범위_사용중() else None
+    서식표영역 = 서식표_보호영역_조사(묶음)
     if 묶음 is not None:
         처리된 = set()
         # 칸 안에 다른 표(한 칸 제목 상자 등)가 든 표는 표 단위 선택이 안쪽 표 글자까지
@@ -10685,6 +10911,8 @@ def 표_헤더서식_전체_적용():
             if 중단_요청됨():
                 return False
             if len(칸들) == 1 and 칸들[0][0] in 한칸표영역:
+                continue
+            if any(area in 서식표영역 for area, _, _ in 칸들):
                 continue
             if any(area in 안쪽표_리스트 for area, _, _ in 칸들):
                 continue
@@ -10713,6 +10941,11 @@ def 표_헤더서식_전체_적용():
             진단로그(f"[한 칸 표 제외] 영역 {area}: 문자서식 보존")
             continue
 
+        if area in 서식표영역:
+            서식표_제외수 += 1
+            진단로그(f"[서식 표 제외] 영역 {area}: 제목·중제목·붙임 서식 보존")
+            continue
+
         if 쪽범위_사용중() and area not in 쪽범위_컨트롤영역:
             continue
 
@@ -10724,7 +10957,7 @@ def 표_헤더서식_전체_적용():
         else:
             실패수 += 1
 
-    로그(f"표 헤더/본문 서식적용 완료 (검사한 컨트롤 영역 {방문영역수}개 / 적용된 표 셀 {셀수}개 / 한 칸 표 제외 {제외수}개 / 대상 아님·실패 {실패수}건)")
+    로그(f"표 헤더/본문 서식적용 완료 (검사한 컨트롤 영역 {방문영역수}개 / 적용된 표 셀 {셀수}개 / 한 칸 표 제외 {제외수}개 / 서식 표 칸 제외 {서식표_제외수}개 / 대상 아님·실패 {실패수}건)")
     return True
 
 
@@ -11603,6 +11836,34 @@ def 저장파일명(파일):
 작업_반복횟수 = 1
 
 
+# 보고서 표준서식(문두기호별 서식 등)을 준말 변환 바로 다음, 다른 모든 단계보다 먼저 입힐지.
+# 작업_실행이 서식 적용·한 번에 적용에서 서식 옵션을 켰을 때 채운다(서식 통일은 표준서식을 쓰지 않는다).
+표준서식_선행_사용 = False
+
+
+def 표준서식_선행_적용(파일명):
+    """보고서 표준서식을 입힌다. 입혔으면 True, 꺼져 있으면 None, 실패·중단이면 False.
+
+    뒤에 최종 내어쓰기 단계가 있으면 문단별 내어쓰기를 그 단계로 미룬다(최종_내어쓰기_예정).
+    """
+    global 최종_내어쓰기_예정
+    if not (표준서식_선행_사용 and stage_enabled(선택_세부작업, 'standard_format', 작업_모드)):
+        return None
+    단계표시("보고서 표준서식")
+    상태(f"{파일명} : 보고서 표준서식")
+    최종_내어쓰기_예정 = bool(
+        작업_모드 in ('format', 'all') and 표준서식_내어쓰기_사용
+        and stage_enabled(선택_세부작업, 'hanging_indent'))
+    try:
+        hwp_run('Cancel')
+        순회_시작()
+        if 표준서식_전체_적용() is False:
+            return False
+    finally:
+        최종_내어쓰기_예정 = False
+    return True
+
+
 def 문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=1):
     """실행 버튼의 작업 범위에 맞춰 서식과 자간 단계를 분리한다."""
     global 최종_내어쓰기_예정
@@ -11664,15 +11925,16 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
             ('normalize_space', '공백 정규화', 문장내_공백_정규화_전체_적용),
             ('punctuation_space', '문장부호 뒤 공백 보정', 문장부호_뒤_공백_보정_전체_적용),
             ('style_unify', '서식통일', 서식통일_전체_적용),
-            ('standard_format', '보고서 표준서식', 표준서식_전체_적용),
+            # 보고서 표준서식은 준말 변환 다음 다른 모든 단계보다 먼저 이미 입혔다(표준서식_선행_적용).
         ):
             if stage_enabled(선택_세부작업, key) and not stage(name, action):
                 return False
         if stage_enabled(선택_세부작업, 'parenthesis') and (괄호_축소_사용 or 괄호_라벨_볼드_사용):
             if not stage('문두 라벨/괄호 서식', 괄호_텍스트_크기_축소_전체_적용):
                 return False
-        # 정밀 프로필은 셀별 문자 서식을 이미 적용했으므로 대표 머리글/본문 값으로 덮지 않는다.
-        if stage_enabled(선택_세부작업, 'table_format') and 표_헤더서식_사용 and not 활성_정밀표_프로필 and not stage('표 서식', 표_헤더서식_전체_적용):
+        # 정밀 프로필·기본 표 서식(준말 '표')은 칸별 서식을 이미 입혔으므로 대표 머리글/본문 값으로 덮지 않는다.
+        if (stage_enabled(선택_세부작업, 'table_format') and 표_헤더서식_사용 and not 활성_정밀표_프로필
+                and not 기본표서식_적용됨 and not stage('표 서식', 표_헤더서식_전체_적용)):
             return False
         # 표 구조 정밀 조정(셀 여백/너비/테두리)은 기본 꺼짐(각 *_사용 변수
         # 참고) — 실험적 기능이라 각 함수가 꺼져 있으면 즉시 True를 반환한다.
@@ -12155,8 +12417,9 @@ def 박스그림_전체_적용():
 
 def 문서_처리(파일, index, total, 문장부호기능=True):
     global hwp, 현재_처리파일, 한칸표_보호영역, 최종검수_문서목록
-    global 쪽범위_본문_문단, 쪽범위_컨트롤영역, 쪽범위_실제
+    global 쪽범위_본문_문단, 쪽범위_컨트롤영역, 쪽범위_실제, 기본표서식_적용됨
     한칸표_보호영역 = set()
+    기본표서식_적용됨 = False
     쪽범위_본문_문단 = None
     쪽범위_컨트롤영역 = set()
     쪽범위_실제 = None
@@ -12245,6 +12508,32 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
         # 원본이 HWP/HWPX가 아니므로 좌우 비교 보기 대상에서는 제외한다.
     비교보기_임베드_재확인()
 
+    # 서식 적용·한 번에 적용은 ① 준말 → 본말 변환 ② 보고서 표준서식(문두기호별 서식 등)을 다른 모든 단계보다
+    # 먼저 한다. 서식 통일은 두 단계를 하지 않는다(기본 표 서식 → 서식통일 → 표 서식통일).
+    # ① 준말 변환: 줄 첫 어절의 준말을 서식 표·문구로 바꿔 문서 구조가 바뀌므로 뒤의 모든 단계가 바뀐 문서를
+    # 기준으로 하게 한다. 아직 문서를 고치지 않았으므로 원본 HWPX를 직접 읽고, 바꿀 줄이 있을 때만 결과를 다시
+    # 연다. 쪽 범위 작업에서는 건너뛴다. 서식 표 기준 글자 모양의 자간은 0%라 뒤의 자간 초기화가 만든 표의
+    # 서식을 바꾸지 않는다.
+    문서_변경됨 = False
+    if (작업_모드 in ('format', 'all') and 준말_등록표
+            and stage_enabled(선택_세부작업, 'abbreviation', 작업_모드)):
+        if 쪽범위_요청 is not None:
+            로그("쪽 범위 지정: 준말 변환(문서 전체 구조 변환)은 이번 작업에서 건너뜁니다.")
+        else:
+            단계표시("준말 변환")
+            상태(f"{파일명} : 준말 → 본말 변환")
+            알림 = {}
+            if 준말_선행적용(작업파일경로, 현재문서_기준=False, 변경알림=알림) is False:
+                return False
+            문서_변경됨 = bool(알림.get('changed'))
+
+    # ② 보고서 표준서식. 쪽 범위 작업은 범위를 문단 번호로 고정한 뒤(아래) 입힌다.
+    if 쪽범위_요청 is None:
+        결과 = 표준서식_선행_적용(파일명)
+        if 결과 is False:
+            return False
+        문서_변경됨 = 문서_변경됨 or bool(결과)
+
     박스그림_실행 = False
     # 박스 그림 표(AI 채팅 답변을 붙여넣을 때 흔한 '┌─┬─┐ / │ … │ / └─┴─┘' 형태)는
     # 문단 구조 자체를 바꾸므로, 자간 초기화를 포함한 다른 모든 서식·자간 단계보다
@@ -12270,21 +12559,10 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
             return False
         자간초기화_완료 = True
 
-    # 준말 → 본말 변환(한 번에 적용): 줄 첫 어절의 준말을 서식 표·문구로 바꾼다. 문서 구조를 바꾸므로
-    # 제목·개요·붙임 선행 서식보다 먼저 하고, 쪽 범위 작업에서는 건너뛴다.
-    # 앞 단계(박스 그림 표 변환·자간 초기화)가 열린 문서를 바꿨으면 그 문서를, 아니면 원본 파일을 기준으로 한다.
-    # 준말·별표 위첨자는 바꿀 것이 있을 때만 결과를 다시 열고, 다시 열었으면 뒤 단계도 그 문서를 기준으로 한다.
-    문서_변경됨 = 자간초기화_완료 or 박스그림_실행
-    if 작업_모드 == 'all' and 준말_등록표 and stage_enabled(선택_세부작업, 'abbreviation', 작업_모드):
-        if 쪽범위_요청 is not None:
-            로그("쪽 범위 지정: 준말 변환(문서 전체 구조 변환)은 이번 작업에서 건너뜁니다.")
-        else:
-            단계표시("준말 변환")
-            상태(f"{파일명} : 준말 → 본말 변환")
-            알림 = {}
-            if 준말_선행적용(작업파일경로, 현재문서_기준=문서_변경됨, 변경알림=알림) is False:
-                return False
-            문서_변경됨 = 문서_변경됨 or bool(알림.get('changed'))
+    # 앞 단계(준말 변환·박스 그림 표 변환·자간 초기화)가 열린 문서를 바꿨으면 뒤 단계는 그 문서를, 아니면 원본
+    # 파일을 기준으로 한다. 별표 위첨자는 바꿀 것이 있을 때만 결과를 다시 열고, 다시 열었으면 뒤 단계도 그 문서를
+    # 기준으로 한다.
+    문서_변경됨 = 문서_변경됨 or 자간초기화_완료 or 박스그림_실행
 
     # 글자 서식 정리: 별표(*, **) 위첨자와 붙임~끝. 묶음의 글꼴·크기 통일. 글자 모양만 바꾸는 문서 전체 변환이라
     # 한 번에 처리하고 쪽 범위 작업에서는 건너뛴다.
@@ -12306,8 +12584,26 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
         elif stage_enabled(선택_세부작업, 'pre_format', 작업_모드):
             단계표시("제목·개요·붙임 선행 서식")
             상태(f"{파일명} : 제목·개요·붙임 선행 서식")
-            if 제목붙임_선행적용(작업파일경로, 현재문서_기준=문서_변경됨) is False:
+            알림 = {}
+            if 제목붙임_선행적용(작업파일경로, 현재문서_기준=문서_변경됨, 변경알림=알림) is False:
                 return False
+            문서_변경됨 = 문서_변경됨 or bool(알림.get('changed'))
+    # 기본 표 서식(준말 '표'의 본말)은 제목·중제목·붙임 서식 표를 정한 뒤, 일반 표 정밀 복제보다 먼저
+    # 입힌다(정밀 복제에 맞는 표는 예시 서식으로 다시 덮인다). 서식통일 작업에서도 적용한다.
+    if (((표준서식_사용 and 작업_모드 in ('format', 'all')) or 작업_모드 == 'unify')
+            and stage_enabled(선택_세부작업, 'table_style', 작업_모드) and 기본표서식() is not None):
+        if 쪽범위_요청 is not None:
+            로그("쪽 범위 지정: 기본 표 서식(문서 전체 표 서식 변환)은 이번 작업에서 건너뜁니다.")
+        else:
+            단계표시("기본 표 서식")
+            상태(f"{파일명} : 기본 표 서식")
+            로그(f"기본 표 서식(준말 '표'): {표서식_설명(기본표서식())}")
+            알림 = {}
+            if 기본표서식_선행적용(작업파일경로, 현재문서_기준=문서_변경됨, 변경알림=알림) is False:
+                return False
+            문서_변경됨 = 문서_변경됨 or bool(알림.get('changed'))
+            기본표서식_적용됨 = True
+    if 표준서식_사용 and 작업_모드 in ('format', 'all'):
         if 쪽범위_요청 is None and 활성_정밀표_프로필 and stage_enabled(선택_세부작업, 'precise_table'):
             단계표시("표 정밀 서식")
             상태(f"{파일명} : 일반 표 정밀 서식 복제")
@@ -12328,6 +12624,9 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
             return False
         if 범위결과 is False:
             raise RuntimeError("지정한 쪽 범위에 처리할 내용이 없습니다. 쪽 범위를 확인해 주세요.")
+        # 쪽 범위 작업은 앞의 구조 변환 단계(준말·박스 그림·선행 서식)를 건너뛰었으므로 보고서 표준서식이 첫 단계다.
+        if 표준서식_선행_적용(파일명) is False:
+            return False
 
     # 잔여 자간(이전 실행/수동 편집으로 남은 값)이 있으면 압축 여유가
     # 줄어드니, 처리 회차를 시작하기 전 문서 전체를 한 번만 0%로 초기화한다.
@@ -12543,7 +12842,7 @@ def 작업_실행(
     global 제목4종_사용, 붙임2종_사용, 중제목_사용, 중제목_번호굵게, 준말_등록표
     global hwp, 색상_설정, 비교보기_사용, 비교보기_좌측_프레임_hwnd, 비교보기_우측_프레임_hwnd, 로그_파일_경로
     global 작업_hwp_hwnd, 자동닫기_설정, 표준서식_사용, 검수_사용, 검수_문제목록, 최종검수_문서목록
-    global 서식통일_빨간표시_사용
+    global 서식통일_빨간표시_사용, 표준서식_선행_사용
     global 문장부호_2줄_기준글자수, 문장부호_통계, 자간_최대시도_본문, 자간_최대시도_표
     global 세트문장_같은쪽_사용, 세트문장_통계, 단어분리_통계, 다음단어_통계
     global 세트문장_최소줄간격_퍼센트, 세트문장_최대줄간격_퍼센트
@@ -12603,6 +12902,8 @@ def 작업_실행(
         # 서식통일은 문서 자체의 대표 서식이 기준이므로 설정의 표준 서식을 쓰지 않는다.
         표준서식_사용 = bool(표준서식) and 작업_모드 in ("format", "all")
         서식통일_빨간표시_사용 = not 표준서식_사용
+        # 보고서 표준서식은 준말 변환 다음 가장 먼저 입힌다(서식 적용·한 번에 적용).
+        표준서식_선행_사용 = 표준서식_사용
         검수_사용 = 검수
         검수_문제목록 = []
         최종검수_문서목록 = []
@@ -13628,6 +13929,19 @@ class HwpAutoDocFitGUI:
         """'서식 정리'·'내어쓰기' 세부 설정 탭과 세부 작업 창이 함께 쓰는
         항목별 상세 위젯. _자간정리_항목_상세와 동일한 방식으로 동작한다.
         """
+        def 준말창_열기():
+            from docfit_core.abbreviation_dialog import open_abbreviation_dialog
+
+            def 저장(등록표):
+                설정 = 설정_불러오기()
+                설정["abbreviations"] = 준말_등록표_정리(등록표)
+                설정_저장(설정)
+            def 기본_저장(사용):
+                설정 = 설정_불러오기()
+                설정["abbreviation_defaults"] = bool(사용)
+                설정_저장(설정)
+            open_abbreviation_dialog(parent.winfo_toplevel(), lambda: 설정_불러오기().get("abbreviations", {}), 저장,
+                                     lambda: 설정_불러오기().get("abbreviation_defaults", True), 기본_저장)
         if key == "pre_format":
             title_auto = ttk.Checkbutton(parent, text="제목 모양 자동 정리 · 제목표가 있을 때",
                                           variable=self.std_bool_vars["std_title_auto"])
@@ -13649,20 +13963,18 @@ class HwpAutoDocFitGUI:
             midtitle_bold.pack(anchor="w", padx=(18, 0))
             if 주설정탭:
                 self.std_detail_checks += [title_auto, attachment_auto, midtitle_auto, midtitle_bold]
+        elif key == "table_style":
+            설정 = 설정_불러오기()
+            서식 = 준말_표서식(준말_사용표_만들기(설정))
+            ttk.Label(parent, text=("현재 기본 표 서식: " + 표서식_설명(서식)) if 서식 else
+                      "준말 '표'가 없어 기본 표 서식을 쓰지 않습니다(아래 '표 머리글·본문 서식'을 씁니다).",
+                      wraplength=610).pack(anchor="w")
+            ttk.Button(parent, text="준말 등록·관리 (표 서식 학습)…", command=준말창_열기).pack(anchor="w", pady=(4, 0))
+            ttk.Label(parent, text="준말 '표'의 본말에 담긴 예시 표처럼 문서의 일반 표(2행 2열 이상)에 칸 위치별 테두리·바탕색·"
+                                   "글꼴·크기를 입힙니다. 제목·중제목·붙임 서식 표와 한 칸 상자는 두며, 문서의 '표:' 줄은 바꾸지 않습니다. "
+                                   "준말 창의 '표 서식 학습…'으로 다른 예시 문서의 표를 배울 수 있습니다.",
+                      style="Hint.TLabel", wraplength=610).pack(anchor="w", pady=(2, 0))
         elif key == "abbreviation":
-            def 준말창_열기():
-                from docfit_core.abbreviation_dialog import open_abbreviation_dialog
-
-                def 저장(등록표):
-                    설정 = 설정_불러오기()
-                    설정["abbreviations"] = 준말_등록표_정리(등록표)
-                    설정_저장(설정)
-                def 기본_저장(사용):
-                    설정 = 설정_불러오기()
-                    설정["abbreviation_defaults"] = bool(사용)
-                    설정_저장(설정)
-                open_abbreviation_dialog(parent.winfo_toplevel(), lambda: 설정_불러오기().get("abbreviations", {}), 저장,
-                                         lambda: 설정_불러오기().get("abbreviation_defaults", True), 기본_저장)
             ttk.Button(parent, text="준말 등록·관리…", command=준말창_열기).pack(anchor="w")
             ttk.Label(parent, text="기본 준말(제목1:·제목2:·개요:·붙임:·로1 : …)은 등록하지 않아도 바뀝니다. 콜론 앞에 준말을 적은 줄만 바꾸며, "
                                    "쪽 범위 작업에서는 건너뜁니다. 끄려면 이 단계의 체크를 해제하세요.",

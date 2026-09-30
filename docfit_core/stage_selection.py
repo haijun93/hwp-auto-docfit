@@ -25,14 +25,17 @@ UNIFY_STAGE = ("style_unify", "서식통일 (문서 안 대표 스타일로 맞�
 TEXT_TABLE_STAGE = ("text_table_convert", "텍스트 표(박스 그림)를 실제 표로 변환")
 # 서식통일 작업에서 표를 본문과 따로, 같은 종류(같은 모양 칸·같은 기호 제목 상자)끼리 맞춘다.
 TABLE_UNIFY_STAGE = ("table_unify", "표 서식통일 (같은 종류 표끼리 글꼴·크기 맞춤)")
-# 준말(제목1: 등)을 서식 표·문구로 바꾼다. 한 번에 적용에서만 실행하며, 등록한 준말이 없으면
-# 아무 일도 하지 않는다. 문서 구조를 바꾸므로 선행 서식보다 먼저(자간 초기화 다음) 실행한다.
+# 준말(제목1: 등)을 서식 표·문구로 바꾼다. 서식 적용·한 번에 적용에서 실행하며, 등록한 준말이
+# 없으면 아무 일도 하지 않는다. 문서 구조를 바꾸므로 다른 모든 단계보다 먼저(가장 처음에) 실행한다.
 ABBREVIATION_STAGE = ("abbreviation", "준말 → 본말 변환")
 # 문두기호 문장에서 단어 뒤에 붙은 * / **를 위첨자(Shift+Alt+P)로 만든다. 글자 모양만 바꾸며
 # 서식 적용·한 번에 적용에서 실행한다.
 ASTERISK_STAGE = ("asterisk_superscript", "별표(*, **) 위첨자 적용")
 # '붙임 …'부터 '끝.'까지 묶음의 글꼴 종류·크기를 문두기호 ㅇ와 같게 한다(글자 모양만 바꿈).
 ATTACH_FONT_STAGE = ("attachment_font", "붙임~끝. 묶음 글꼴·크기를 ㅇ와 동일하게")
+# 준말 '표'의 본말(예시 표에서 배운 위치별 테두리·바탕색·글꼴)을 문서의 일반 표에 입힌다. 제목·개요·붙임
+# 선행 서식 다음, 일반 표 정밀 복제 앞에서 실행하며 서식통일 작업에서도 실행한다.
+TABLE_STYLE_STAGE = ("table_style", "기본 표 서식 (준말 '표'의 예시 표 서식 적용)")
 DEFAULT_OFF = frozenset({"style_unify"})
 
 SPACING_STAGES = (
@@ -51,7 +54,7 @@ STAGE_EXAMPLES = {
     "precise_table": "예: 예시 서식의 표 셀 글꼴·테두리·너비를 대응하는 표에 복사합니다.",
     "normalize_space": "예: 문장 안에 불규칙하게 들어간 여러 공백을 정리합니다.",
     "punctuation_space": "예: 쉼표·마침표 뒤에 빠진 공백을 문맥에 맞게 보정합니다.",
-    "standard_format": "예: 여백·글꼴·문두기호·문단 간격을 선택한 서식 기준에 맞춥니다.",
+    "standard_format": "예: 준말 변환 바로 다음, 다른 모든 단계보다 먼저 여백·글꼴·문두기호·문단 간격을 선택한 서식 기준에 맞춥니다.",
     "parenthesis": "예: 문두의 '(개요)' 같은 라벨 크기·굵기를 설정값에 맞춥니다.",
     "supplement_indent": "예: '* 참고'를 바로 위 항목의 글 시작 위치에 맞춥니다.",
     "table_format": "예: 표 첫 행은 머리글, 나머지 행은 본문 서식으로 맞춥니다.",
@@ -66,32 +69,48 @@ STAGE_EXAMPLES = {
     "control_short_line": "예: 표 셀·글상자의 짧은 마지막 줄을 앞줄에 모으도록 시도합니다.",
     "word_check": "예: 1차 조정 뒤 본문에 남은 단어 분리를 다시 검사합니다.",
     "control_word_check": "예: 1차 조정 뒤 표 셀·글상자에 남은 단어 분리를 다시 검사합니다.",
-    "abbreviation": "예: 미리 등록한 준말을 줄 맨 앞에 '제목1: 지구 침공계획(안) 보고'·'로1 : 추진배경'·'붙임: 자료명'처럼 적으면 해당 서식 표로 바꾸고 콜론 뒤 글을 표에 넣습니다.",
+    "abbreviation": "예: 줄 맨 앞(빈칸 제외) 어절이 준말인 '제목1: 지구 침공계획(안) 보고'·'로1 추진배경'·'붙임 자료명' 같은 줄을 가장 먼저 해당 서식 표로 바꾸고 준말 뒤 글을 표에 넣습니다(콜론은 있어도 없어도 됨).",
     "asterisk_superscript": "예: 'ㅇ (핵심 내용) 지자* 선행 투입 → 함대** 발진'에서 단어 뒤에 붙은 *와 **를 위첨자로 바꿉니다. 줄 맨 앞의 '* 설명'·'** 설명' 문두기호는 그대로 둡니다.",
     "attachment_font": "예: '붙임: 1. 지구 침공 세부 시행계획 1부.'부터 '끝.'까지 마침표로 끝나는 한 줄 문장들의 글꼴·크기를 ㅇ 문장과 같게 맞춥니다.",
     "text_table_convert": "예: '┌──┬──┐ / │ 구분 │ 내용 │ / └──┴──┘'처럼 박스 그림으로 그려 붙여넣은 표를 한/글의 실제 표로 바꿉니다.",
+    "table_style": "예: 준말 '표'에 담긴 예시 표처럼 머리글 행은 바탕색·이중 밑줄·한컴돋움 13pt 굵게, 본문은 휴먼명조 12pt로 맞추고 칸 위치별 테두리를 입힙니다. 준말 창의 '표 서식 학습…'으로 예시 표를 바꿉니다.",
     "table_unify": "예: 같은 모양 표에서 한 칸만 굴림이면 한컴돋움으로, 󰊱 제목 상자 하나만 10pt면 다른 제목 상자처럼 15pt로 맞춥니다. 칸에 맞추려 줄인 글자와 표 안 글자색은 그대로 둡니다.",
 }
 
 
-def stages_for_mode(mode):
+_STAGE_BY_KEY = {stage[0]: stage for stage in FORMAT_STAGES + SPACING_STAGES + (
+    UNIFY_STAGE, TEXT_TABLE_STAGE, TABLE_UNIFY_STAGE, ABBREVIATION_STAGE, ASTERISK_STAGE,
+    ATTACH_FONT_STAGE, TABLE_STYLE_STAGE)}
+# 서식 적용·한 번에 적용은 준말 → 본말 변환을 가장 먼저, 문두기호별 서식 등 보고서 표준서식을 두 번째로
+# 다른 모든 단계보다 먼저 실행한다(서식 통일은 두 단계를 하지 않는다).
+_FIRST_STAGES = ("abbreviation", "standard_format")
+# 실제 실행 순서와 같게 보여 준다. 박스 그림 표 변환은 문단 구조를 바꾸므로 나머지 단계보다 먼저,
+# 자간 초기화는 선행 서식·정밀 표 복제보다 먼저(복사한 자간 보존) 실행하고, 서식통일은 공백·문장부호
+# 정리 뒤에 한다. 한 번에 적용의 내어쓰기는 자간 조정 뒤 최종 확정된다.
+_MODE_STAGES = {
+    # 서식통일은 문서 자체의 대표 서식이 기준이다. 기본 표 서식(준말 '표')을 먼저 입힌 뒤 서식을 맞추고,
+    # 쪽 맞춤은 사용자가 켤 때만 실행한다.
+    "unify": ("table_style", "style_unify", "table_unify", "page_fit"),
+    "format": _FIRST_STAGES + (
+        "text_table_convert", "asterisk_superscript", "attachment_font", "pre_format", "table_style",
+        "precise_table", "normalize_space", "punctuation_space", "style_unify", "parenthesis",
+        "supplement_indent", "table_format", "single_cell_spacing", "hanging_indent", "page_fit", "page_group"),
     # 서식통일은 예외 문단별 서식→자간→내어쓰기 처리이며 전체 자간 단계는 돌리지 않는다.
-    if mode == "unify":
-        # 서식통일은 문서 자체의 대표 서식이 기준이다. 쪽 맞춤은 사용자가 켤 때만 실행한다.
-        return (UNIFY_STAGE, TABLE_UNIFY_STAGE, FORMAT_STAGES[-2])
-    # 서식통일은 공백·문장부호 정리 뒤, 표준서식·자간 조정 앞에서 실행한다.
-    # 박스 그림 표 변환은 문단 구조 자체를 바꾸므로 다른 모든 단계보다 먼저 실행한다.
-    if mode == "format":
-        return (TEXT_TABLE_STAGE, ASTERISK_STAGE, ATTACH_FONT_STAGE) + FORMAT_STAGES[:4] + (UNIFY_STAGE,) + FORMAT_STAGES[4:]
-    if mode == "spacing":
-        return SPACING_STAGES[:1] + (UNIFY_STAGE,) + SPACING_STAGES[1:]
-    if mode == "all":
-        # 실제 실행 순서와 같게 보여 준다. 자간 초기화는 선행 서식·정밀 표 복제보다
-        # 먼저 실행되고(복사한 자간 보존), 내어쓰기는 자간 조정 뒤 최종 확정된다.
-        # 개요·한 칸 표 자간 조정(single_cell_spacing)은 서식 전용이다.
-        return ((TEXT_TABLE_STAGE,) + SPACING_STAGES[:1] + (ABBREVIATION_STAGE, ASTERISK_STAGE, ATTACH_FONT_STAGE) + FORMAT_STAGES[:4] + (UNIFY_STAGE,) + FORMAT_STAGES[4:8]
-                + SPACING_STAGES[1:] + FORMAT_STAGES[9:])
-    raise ValueError("지원하지 않는 작업 모드입니다.")
+    "spacing": ("reset_spacing", "style_unify", "body_spacing", "short_line", "control_spacing",
+                "control_short_line", "word_check", "control_word_check"),
+    # 개요·한 칸 표 자간 조정(single_cell_spacing)은 서식 전용이다.
+    "all": _FIRST_STAGES + (
+        "text_table_convert", "reset_spacing", "asterisk_superscript", "attachment_font", "pre_format",
+        "table_style", "precise_table", "normalize_space", "punctuation_space", "style_unify", "parenthesis",
+        "supplement_indent", "table_format", "body_spacing", "short_line", "control_spacing",
+        "control_short_line", "word_check", "control_word_check", "hanging_indent", "page_fit", "page_group"),
+}
+
+
+def stages_for_mode(mode):
+    if mode not in _MODE_STAGES:
+        raise ValueError("지원하지 않는 작업 모드입니다.")
+    return tuple(_STAGE_BY_KEY[key] for key in _MODE_STAGES[mode])
 
 
 def default_choice(key, mode=None):
@@ -100,7 +119,7 @@ def default_choice(key, mode=None):
     '서식 통일' 작업 유형에서는 서식통일이 곧 작업 자체라 켜져 있다.
     """
     if mode == "unify":
-        return key in ("style_unify", "table_unify")
+        return key in ("style_unify", "table_unify", "table_style")
     return key not in DEFAULT_OFF
 
 
