@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 
-from .abbreviations import DEFAULT_ENTRIES, FORMAT_KINDS, TYPE_LABELS, describe, normalize, upsert
+from .abbreviations import DEFAULT_ENTRIES, FORMAT_KINDS, TABLE_KEY, TYPE_LABELS, describe, normalize, upsert
+from .table_style import default_style, describe_style, learn_table_style
 
 
 def open_abbreviation_dialog(parent, load, save, load_defaults=None, save_defaults=None):
@@ -21,9 +22,10 @@ def open_abbreviation_dialog(parent, load, save, load_defaults=None, save_defaul
     body.pack(fill="both", expand=True)
     ttk.Label(body, wraplength=600, justify="left", text=(
         "한/글의 상용구처럼 준말을 본말로 바꿉니다. 제목1·제목2(제목:)·개요·붙임·로1~로10(로마자 번호)은 "
-        "등록하지 않아도 기본으로 쓸 수 있습니다. '한 번에 적용'을 실행하면 줄 맨 앞 어절이 준말이고 "
-        "바로 뒤에 콜론(:)이 이어지는 줄(예: 제목1: 지구 침공계획(안) 보고)을 본말로 바꿉니다. "
-        "서식 표는 콜론 뒤 글을 표 A1 칸에 넣고, 문구는 준말·콜론을 본말로 바꿔 뒷글에 이어 붙입니다.")
+        "등록하지 않아도 기본으로 쓸 수 있습니다. 서식 적용·한 번에 적용을 실행하면 빈칸을 뺀 줄 맨 앞 어절이 준말인 줄"
+        "(예: 제목1: 지구 침공계획(안) 보고, 제목 지구 침공계획(안) 보고 — 콜론은 있어도 없어도 됨)을 가장 먼저 본말로 바꿉니다. "
+        "서식 표는 준말 뒤 글을 표 A1 칸에 넣고, 문구는 준말(과 콜론)을 본말로 바꿔 뒷글에 이어 붙입니다. "
+        "준말 '표'의 본말은 기본 표 서식으로, 문서의 '표:' 줄은 바꾸지 않고 문서의 일반 표에 그 서식을 입힙니다.")
               ).pack(anchor="w", pady=(0, 8))
 
     defaults_var = tk.BooleanVar(value=True if load_defaults is None else bool(load_defaults()))
@@ -31,8 +33,9 @@ def open_abbreviation_dialog(parent, load, save, load_defaults=None, save_defaul
     def defaults_changed():
         if save_defaults is not None:
             save_defaults(bool(defaults_var.get()))
+        refresh()   # 기본 준말을 끄면 기본 표 서식 표시도 바뀐다.
 
-    ttk.Checkbutton(body, text="기본 준말 사용 (제목1·제목2·개요·붙임·로1~로10, 아래 등록이 같은 준말이면 등록이 우선)",
+    ttk.Checkbutton(body, text="기본 준말 사용 (제목1·제목2·개요·붙임·로1~로10·표, 아래 등록이 같은 준말이면 등록이 우선)",
                     variable=defaults_var, command=defaults_changed).pack(anchor="w", pady=(0, 6))
     tree = ttk.Treeview(body, columns=("key", "type", "value"), show="headings", height=8, selectmode="browse")
     for column, title, width in (("key", "준말", 110), ("type", "종류", 90), ("value", "본말", 400)):
@@ -58,11 +61,22 @@ def open_abbreviation_dialog(parent, load, save, load_defaults=None, save_defaul
     kind_by_label = {label: kind for kind, label in TYPE_LABELS.items()}
     format_by_label = {label: kind for kind, label in FORMAT_KINDS.items()}
 
+    table_var = tk.StringVar()
+
     def refresh():
         tree.delete(*tree.get_children())
         for key in sorted(entries):
             kind_label, detail = describe(entries[key])
             tree.insert("", "end", iid=key, values=(key, kind_label, detail))
+        spec = entries.get(TABLE_KEY)
+        if spec and spec.get("value") == "table":
+            style = spec.get("style") or default_style()
+        elif spec is None and defaults_var.get():
+            style = default_style()
+        else:
+            style = None
+        table_var.set(f"기본 표 서식(준말 '{TABLE_KEY}'): " + (describe_style(style) if style else
+                      f"쓰지 않음 — 준말 '{TABLE_KEY}'가 기본 표 서식이 아닙니다."))
 
     def switch_type(*_):
         if kind_by_label.get(type_var.get()) == "text":
@@ -113,6 +127,38 @@ def open_abbreviation_dialog(parent, load, save, load_defaults=None, save_defaul
         status.set("")
         persist()
 
+    def learn_table(path=None):
+        """예시 HWPX의 표를 배워 준말 '표'의 본말(기본 표 서식)로 저장한다. path가 없으면 파일을 고르게 한다."""
+        path = path or filedialog.askopenfilename(
+            parent=window, title="기본 표 서식으로 배울 예시 문서(HWPX)",
+            filetypes=[("한/글 HWPX 문서", "*.hwpx"), ("모든 파일", "*.*")])
+        if not path:
+            return False
+        try:
+            style = learn_table_style(path)
+        except Exception as exc:  # 잘못된 파일·표가 없는 문서
+            status.set(f"표 서식을 배우지 못했습니다: {exc}")
+            return False
+        entries[TABLE_KEY] = {"type": "format", "value": "table", "style": style}
+        status.set("")
+        persist()
+        return True
+
+    def reset_table():
+        """준말 '표'를 내장 기본 표 서식(표서식예시.hwpx에서 배운 값)으로 되돌린다."""
+        if entries.get(TABLE_KEY, {}).get("value") == "table":
+            entries[TABLE_KEY] = {"type": "format", "value": "table"}
+        else:
+            entries.pop(TABLE_KEY, None)
+        status.set("")
+        persist()
+
+    table_row = ttk.Frame(body)
+    table_row.pack(fill="x", pady=(8, 0))
+    ttk.Label(table_row, textvariable=table_var, wraplength=600).pack(anchor="w")
+    ttk.Button(table_row, text="표 서식 학습…", command=learn_table).pack(side="left", pady=(4, 0))
+    ttk.Button(table_row, text="내장 표 서식으로 되돌리기", command=reset_table).pack(side="left", padx=(6, 0), pady=(4, 0))
+
     buttons = ttk.Frame(body)
     buttons.pack(fill="x", pady=(8, 0))
     ttk.Button(buttons, text="추가·수정", command=add).pack(side="left")
@@ -126,6 +172,7 @@ def open_abbreviation_dialog(parent, load, save, load_defaults=None, save_defaul
     refresh()
     window.entries_view = tree  # 시험용 접근점
     window._docfit_actions = {"add": add, "remove": remove, "defaults": add_defaults,
+                              "learn_table": learn_table, "reset_table": reset_table, "table_var": table_var,
                               "vars": (key_var, type_var, format_var, text_var, status),
                               "defaults_var": defaults_var, "defaults_changed": defaults_changed}
     return window

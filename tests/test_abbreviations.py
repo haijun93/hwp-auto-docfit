@@ -36,19 +36,47 @@ class RegistryTest(unittest.TestCase):
         self.assertEqual(clean_key(' 제목1 '), '제목1')
         self.assertEqual(clean_key('두 어절'), '')
 
-    def test_match_requires_registered_first_word_followed_by_colon(self):
+    def test_match_uses_first_word_with_or_without_colon(self):
+        """빈칸을 뺀 첫 어절이 준말이면 바꾼다. 콜론은 있어도 되고 없어도 된다."""
         self.assertEqual(match_line('제목1: 지구 침공계획(안) 보고', REGISTRY), ('제목1', '지구 침공계획(안) 보고', 5))
         self.assertEqual(match_line('  제목1 :지구', REGISTRY)[:2], ('제목1', '지구'))
         self.assertEqual(match_line('제목1：지구', REGISTRY)[:2], ('제목1', '지구'))
         self.assertEqual(match_line('제목1:', REGISTRY)[:2], ('제목1', ''))
-        for text in ('제목1', '제목1 지구: 가', '일시: 오늘', '제목11: 가', ''):
+        self.assertEqual(match_line('제목1 지구 침공계획(안) 보고', REGISTRY), ('제목1', '지구 침공계획(안) 보고', 4))
+        self.assertEqual(match_line('   로1   추진배경', REGISTRY), ('로1', '추진배경', 8))
+        self.assertEqual(match_line('제목1 지구: 가', REGISTRY)[:2], ('제목1', '지구: 가'))
+        self.assertEqual(match_line('붙임  지구 침공 세부 시행계획 1부.  끝.', REGISTRY)[:2],
+                         ('붙임', '지구 침공 세부 시행계획 1부.  끝.'))
+        # 첫 어절 전체가 준말이 아니거나, 콜론도 뒤 글도 없이 준말만 있는 줄은 바꾸지 않는다.
+        for text in ('제목1', '  개요  ', '제목입니다 가', '일시: 오늘', '제목11: 가', '□ 개요 가', ''):
             self.assertIsNone(match_line(text, REGISTRY), text)
         self.assertIsNone(match_line('제목1: 가', {}))
+
+    def test_table_entry_keeps_learned_style_and_never_converts_lines(self):
+        """준말 '표'의 본말은 기본 표 서식이다. 배운 서식을 담고, 문서의 '표:' 줄은 바꾸지 않는다."""
+        from docfit_core.abbreviations import describe, line_registry, table_style_of
+        from docfit_core.table_style import default_style
+        style = dict(default_style(), source='내 예시.hwpx')
+        entries = normalize({'표': {'type': 'format', 'value': 'table', 'style': style},
+                             '표2': {'type': 'format', 'value': 'table', 'style': {'망가진': 1}}})
+        self.assertEqual(entries['표']['style']['source'], '내 예시.hwpx')
+        self.assertNotIn('style', entries['표2'])                 # 손상된 서식은 버린다
+        self.assertEqual(table_style_of(entries)['source'], '내 예시.hwpx')
+        self.assertEqual(table_style_of({'표': {'type': 'format', 'value': 'table'}})['source'], '표서식예시.hwpx')
+        self.assertIsNone(table_style_of({'표': {'type': 'text', 'value': '표'}}))
+        self.assertIsNone(table_style_of({}))
+        self.assertIsNone(match_line('표: 추진 현황', line_registry(entries)))
+        self.assertIsNone(match_line('표 1. 연도별 현황', line_registry(entries)))
+        updated, error = upsert(entries, '표', 'format', 'table')
+        self.assertEqual((error, updated['표']['style']['source']), ('', '내 예시.hwpx'))   # 다시 저장해도 유지
+        self.assertIn('내 예시.hwpx', describe(entries['표'])[1])
+        self.assertEqual(DEFAULT_ENTRIES['표'], {'type': 'format', 'value': 'table'})
 
     def test_title_word_is_treated_as_title1(self):
         """준말 "제목:"은 "제목1:"로 취급한다(등록표에 '제목'이 따로 있으면 그 등록이 우선)."""
         self.assertEqual(match_line('제목: 지구 침공계획(안) 보고', REGISTRY), ('제목1', '지구 침공계획(안) 보고', 4))
         self.assertEqual(match_line('제목 :지구', REGISTRY)[:2], ('제목1', '지구'))
+        self.assertEqual(match_line('제목 지구 침공계획(안) 보고', REGISTRY), ('제목1', '지구 침공계획(안) 보고', 3))
         own = dict(REGISTRY, 제목={'type': 'text', 'value': '자체 제목'})
         self.assertEqual(match_line('제목: 가', own)[0], '제목')
         no_title1 = {k: v for k, v in REGISTRY.items() if k != '제목1'}
@@ -317,6 +345,113 @@ class DocumentConversionTest(unittest.TestCase):
         self.assertEqual(self._texts(section), ['본 문서는 다음과 같이 보고함 뒤 글'])
         runs = [r for r in next(p for p in section if self.name(p) == 'p') if self.name(r) == 'run']
         self.assertEqual(runs[-1].get('charPrIDRef'), '1')   # 나머지 글의 글자 모양 유지
+
+    def test_first_paragraph_with_page_number_and_header_controls_still_converts(self):
+        """실측(2026-09-30): 첫 문단에 쪽 번호 컨트롤이 있으면 '제목:' 줄을 찾지 못해 제목 표가 생기지 않았다."""
+        ns = self.ns
+        controls = ('<hp:run charPrIDRef="0"><hp:secPr id="" textDirection="HORIZONTAL"/>'
+                    '<hp:ctrl><hp:colPr id="" type="NEWSPAPER"/></hp:ctrl>'
+                    '<hp:ctrl><hp:pageNum pos="BOTTOM_CENTER" formatType="DIGIT" sideChar="-"/></hp:ctrl>'
+                    '<hp:ctrl><hp:header id="1" applyPageType="BOTH"><hp:subList>'
+                    '<hp:p id="2" paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:t>머리말</hp:t></hp:run></hp:p>'
+                    '</hp:subList></hp:header></hp:ctrl>'
+                    '<hp:t>제목: </hp:t></hp:run>')
+        found, count, _, section = self._convert(self._p(controls, '지구 침공계획(안) 보고'))
+        self.assertEqual(found, {'Contents/section0.xml': [(0, '제목1', '지구 침공계획(안) 보고')]})
+        self.assertEqual(count, 1)
+        first = next(p for p in section if self.name(p) == 'p')
+        names = {self.name(x) for x in first.iter()}
+        self.assertLessEqual({'secPr', 'colPr', 'pageNum', 'header'}, names)   # 설정 컨트롤은 그대로
+        table = next(t for t in first.iter() if self.name(t) == 'tbl')
+        self.assertEqual(ns['제목_문자열'](ns['제목_셀들'](table)[0]), '지구 침공계획(안) 보고')
+        self.assertIn('머리말', ns['제목_문자열'](first))
+        self.assertNotIn('제목:', ns['제목_문자열'](first))
+
+    def test_field_controls_still_block_conversion(self):
+        field = ('<hp:run charPrIDRef="0"><hp:ctrl><hp:fieldBegin id="1" type="HYPERLINK"/></hp:ctrl>'
+                 '<hp:t>제목: 가</hp:t></hp:run>')
+        found, count, _, _ = self._convert(self._p(field))
+        self.assertEqual(found, {'Contents/section0.xml': []})
+        self.assertEqual(count, 0)
+
+    @staticmethod
+    def _data_table():
+        def cell(r, c):
+            return (f'<hp:tc name="" header="0" hasMargin="0" protect="0" editable="0" dirty="0" borderFillIDRef="1">'
+                    f'<hp:subList id="" vertAlign="TOP"><hp:p id="0" paraPrIDRef="0" styleIDRef="0">'
+                    f'<hp:run charPrIDRef="0"><hp:t>칸{r}{c}</hp:t></hp:run></hp:p></hp:subList>'
+                    f'<hp:cellAddr colAddr="{c}" rowAddr="{r}"/><hp:cellSpan colSpan="1" rowSpan="1"/>'
+                    f'<hp:cellSz width="10000" height="1000"/><hp:cellMargin left="510" right="510" top="141" bottom="141"/></hp:tc>')
+        rows = ''.join(f'<hp:tr>{cell(r, 0)}{cell(r, 1)}</hp:tr>' for r in range(3))
+        return ('<hp:p id="1" paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0">'
+                '<hp:tbl id="9" rowCnt="3" colCnt="2" borderFillIDRef="1"><hp:sz width="20000" height="3000"/>'
+                f'<hp:inMargin left="510" right="510" top="141" bottom="141"/>{rows}</hp:tbl><hp:t/></hp:run></hp:p>')
+
+    def test_default_table_style_skips_format_tables_and_keeps_table_lines(self):
+        """기본 준말만으로 '제목 …'은 제목 표가 되고 '표: …' 줄은 그대로, 기본 표 서식은 일반 표에만 입힌다."""
+        from docfit_core.abbreviations import merge_with_defaults
+        ns = self.ns
+        source = self._doc(self._p('제목 가 보고') + self._p('표: 추진 현황') + self._data_table())
+        convert, style = ns['준말_hwpx_처리'], ns['기본표서식_hwpx_처리']
+        with patch.dict(convert.__globals__, {'준말_등록표': merge_with_defaults({})}):
+            found = convert(source)
+            self.assertEqual([key for _, key, _ in found['Contents/section0.xml']], ['제목1'])
+            converted = source.with_name('converted.hwpx')
+            convert(source, converted, found)
+            selections = style(converted)
+            self.assertEqual(selections, {'Contents/section0.xml': [1]})   # 0번 = 제목 표(날짜·담당자 칸 빔)
+            styled = source.with_name('styled.hwpx')
+            self.assertEqual(style(converted, styled, selections), 1)
+        with patch.dict(style.__globals__, {'준말_등록표': {}}):
+            self.assertEqual(style(converted), {'Contents/section0.xml': []})   # 준말 '표'가 없으면 입히지 않는다
+        with zipfile.ZipFile(styled) as z:
+            header = self.parse(z.read('Contents/header.xml'))
+            section = self.parse(z.read('Contents/section0.xml'))
+        self.assertIn('표: 추진 현황', self._texts(section))
+        tables = [t for t in section.iter() if self.name(t) == 'tbl']
+        fills = {x.get('id'): x for x in header.iter() if self.name(x) == 'borderFill'}
+        chars = {x.get('id'): x for x in header.iter() if self.name(x) == 'charPr'}
+        head_cell = ns['제목_셀들'](tables[1])[0]
+        brush = next(x for x in fills[head_cell.get('borderFillIDRef')].iter() if self.name(x) == 'winBrush')
+        self.assertEqual(brush.get('faceColor'), '#DFE6F7')
+        title_run = next(r for r in ns['제목_셀들'](tables[0])[0].iter() if self.name(r) == 'run')
+        self.assertEqual(chars[title_run.get('charPrIDRef')].get('height'), '2700')   # 제목은 27pt 그대로
+
+    def test_skipped_abbreviation_line_logs_the_reason(self):
+        ns = self.ns
+        body = (self._p('<hp:run charPrIDRef="0"><hp:t>제목1: 표 안</hp:t><hp:tbl/></hp:run>')
+                + self._p('<hp:run charPrIDRef="0"><hp:t>개요:<hp:tab/>나</hp:t></hp:run>')
+                + self._p('일시: 오늘'))
+        source = self._doc(body)
+        fn = ns['준말_hwpx_처리']
+        logged = []
+        with patch.dict(fn.__globals__, {'준말_등록표': REGISTRY, '로그': logged.append}):
+            self.assertEqual(fn(source), {'Contents/section0.xml': []})
+        self.assertEqual(len(logged), 2)                      # 준말이 아닌 '일시:' 줄은 알리지 않는다
+        self.assertIn("'제목1: 표 안'", logged[0])
+        self.assertIn('표', logged[0])
+        self.assertIn('탭', logged[1])
+
+    def test_format_tables_are_found_for_table_style_guard(self):
+        """표 머리글·본문 서식이 덮지 않도록 준말로 만든 제목(빈 날짜·담당자 칸)·중제목·붙임 표를 찾는다."""
+        ns = self.ns
+        lines = ('제목1: 가 보고', '제목2: 부제, 긴 제목 글', '개요: 나', '로1: 추진배경', '붙임: 우수시책 요약서')
+        source = self._doc(''.join(self._p(line) for line in lines))
+        fn = ns['준말_hwpx_처리']
+        with patch.dict(fn.__globals__, {'준말_등록표': REGISTRY}):
+            target = source.with_name('guard.hwpx')
+            fn(source, target, fn(source))
+        with zipfile.ZipFile(target) as z:
+            section = self.parse(z.read('Contents/section0.xml'))
+        tables = [t for t in section.iter() if self.name(t) == 'tbl']
+        self.assertIsNone(ns['제목_유형판별'](tables[0]))                  # 선행 서식 대상 판별은 그대로
+        self.assertEqual(ns['제목_유형판별'](tables[0], 빈칸허용=True), 1)
+        self.assertEqual(ns['제목_유형판별'](tables[1], 빈칸허용=True), 3)
+        found = ns['서식표_영역_목록'](target)
+        # 목록 번호 = 문서 순서의 subList 순번 + 2. 한 칸 개요 표(7)는 서식 표로 보지 않는다.
+        self.assertEqual([areas for areas, _ in found], [[2, 3, 4], [5, 6], [8, 9, 10], [11, 12, 13]])
+        self.assertEqual([check for _, check in found],
+                         [(2, 0, '가 보고'), (5, 1, '긴 제목 글'), (10, 0, '추진배경'), (13, 0, '우수시책 요약서')])
 
     def test_lines_with_objects_or_inside_tables_are_ignored(self):
         body = (self._p('제목1: 표 안', attrs='') .replace('<hp:t>제목1: 표 안</hp:t>', '<hp:t>제목1: 표 안</hp:t><hp:tbl/>'))

@@ -1,18 +1,23 @@
 """준말(약어) → 본말 등록표.
 
 한/글의 상용구(준말을 입력하고 Alt+I로 본말을 펼치는 기능)와 같은 개념을 앱 안에 만든 것이다.
-'한 번에 적용'을 실행하면 문서의 줄 중 첫 어절이 등록한 준말이고 바로 뒤에 콜론(:)이 이어지는
-줄을 본말로 바꾼다. 준말과 콜론 사이에는 빈칸이 있어도 된다.
+'서식 적용'·'한 번에 적용'을 실행하면 가장 먼저 문서의 줄 중 빈칸을 뺀 첫 어절이 등록한 준말인 줄을
+본말로 바꾼다. 준말 뒤
+콜론(:)은 있어도 되고 없어도 되며, 준말과 콜론 사이에는 빈칸이 있어도 된다.
 
 본말의 종류:
-    format  서식 표(제목1·제목2·개요·중제목·붙임). 콜론 뒤 글을 표의 글 칸(제목·개요는 A1, 중제목·붙임은
-            번호·'붙임' 글자 다음 칸)에 넣고 준말 줄은 지운다.
-    text    문구. 준말과 콜론을 본말로 바꾸고 콜론 뒤 글은 그대로 이어 붙인다.
+    format  서식 표(제목1·제목2·개요·중제목·붙임). 준말(과 콜론) 뒤 글을 표의 글 칸(제목·개요는 A1,
+            중제목·붙임은 번호·'붙임' 글자 다음 칸)에 넣고 준말 줄은 지운다.
+            기본 표 서식(table)은 줄을 바꾸지 않는다. 준말 '표'의 본말이면 그 서식(예시 표에서 배운 위치별
+            테두리·바탕색·글꼴)을 문서의 일반 표에 적용하는 기본 표 서식으로 쓴다(docfit_core.table_style).
+    text    문구. 준말(과 콜론)을 본말로 바꾸고 뒤 글은 그대로 이어 붙인다.
 """
 
 from __future__ import annotations
 
 import re
+
+from .table_style import valid_style
 
 # 서식 표 종류 → 화면에 보여 줄 이름
 FORMAT_KINDS: dict[str, str] = {
@@ -22,7 +27,10 @@ FORMAT_KINDS: dict[str, str] = {
     "midtitle": "중제목 서식 표 (준말 끝 숫자 = 로마자 번호, 예: 로1 → Ⅰ)",
     "attach1": "붙임 서식1 표 (1행3열)",
     "attach2": "붙임 서식2 표 (1행2열)",
+    "table": "기본 표 서식 (문서의 일반 표에 적용, 줄은 바꾸지 않음)",
 }
+# 기본 표 서식을 정하는 준말. 이 준말의 본말(서식 표 'table')에 담긴 표 서식을 문서의 일반 표에 적용한다.
+TABLE_KEY = "표"
 TYPES = ("format", "text")
 TYPE_LABELS = {"format": "서식 표", "text": "문구"}
 
@@ -33,6 +41,7 @@ DEFAULT_ENTRIES: dict[str, dict] = {
     "개요": {"type": "format", "value": "overview"},
     "붙임": {"type": "format", "value": "attach1"},
     **{f"로{n}": {"type": "format", "value": "midtitle"} for n in range(1, 11)},
+    TABLE_KEY: {"type": "format", "value": "table"},   # 배운 서식(style)이 없으면 내장 기본 표 서식
 }
 
 _MAX_KEY = 12
@@ -71,6 +80,8 @@ def normalize(entries) -> dict[str, dict]:
             if value == "midtitle" and not roman_of_key(key):
                 continue  # 번호를 알 수 없는 중제목 준말은 쓸 수 없다.
             result[key] = {"type": "format", "value": value}
+            if value == "table" and isinstance(spec.get("style"), dict) and valid_style(spec["style"]):
+                result[key]["style"] = spec["style"]
         elif kind == "text" and isinstance(value, str) and value.strip() and len(value) <= _MAX_TEXT:
             result[key] = {"type": "text", "value": value.strip()}
     return result
@@ -84,22 +95,40 @@ def resolve_key(word: str, registry: dict[str, dict]):
     return alias if alias in registry else None
 
 
-def match_line(text: str, registry: dict[str, dict]):
-    """줄의 첫 어절이 등록한 준말이고 콜론이 이어지면 (준말, 콜론 뒤 글, 앞부분 글자 수)를 돌려준다.
+def line_registry(registry: dict[str, dict]) -> dict[str, dict]:
+    """줄을 바꾸는 준말만 남긴다(기본 표 서식은 문서의 '표:' 줄을 바꾸지 않는다)."""
+    return {key: spec for key, spec in (registry or {}).items() if spec.get("value") != "table"}
 
-    앞부분 글자 수는 줄 앞의 빈칸·준말·빈칸·콜론·빈칸까지의 길이다(문구 바꾸기에서 지울 범위).
-    첫 어절에 콜론이 붙어 있어야 하므로 중간에 다른 낱말이 끼면 일치하지 않는다.
+
+def table_style_of(registry: dict[str, dict]):
+    """준말 '표'의 본말이 기본 표 서식이면 그 서식(배운 서식, 없으면 내장 기본값)을, 아니면 None."""
+    from .table_style import default_style
+    spec = (registry or {}).get(TABLE_KEY)
+    if not spec or spec.get("type") != "format" or spec.get("value") != "table":
+        return None
+    return spec.get("style") or default_style()
+
+
+def match_line(text: str, registry: dict[str, dict]):
+    """줄에서 빈칸을 뺀 첫 어절이 등록한 준말이면 (준말, 본말에 넣을 뒤 글, 앞부분 글자 수)를 돌려준다.
+
+    준말 뒤 콜론(:)은 있어도 되고 없어도 된다('제목1: 가'·'제목1 :가'·'제목1 가'). 앞부분 글자 수는 줄 앞의
+    빈칸·준말·빈칸·콜론·빈칸까지의 길이다(문구 바꾸기에서 지울 범위). 첫 어절(콜론 앞까지) 전체가 준말이어야
+    하므로 '제목입니다'·'일시:' 같은 다른 낱말은 일치하지 않는다. 콜론도 뒤 글도 없이 준말만 있는 줄(예: 소제목
+    한 줄 '개요')은 글이 사라지지 않게 바꾸지 않는다.
     """
     if not registry or not text:
         return None
-    match = re.match(r"^(\s*)(\S+?)(\s*)([:：])(\s*)(.*)$", text, re.S)
+    match = re.match(r"^(\s*)([^\s:：]+)(\s*[:：])?(\s*)(.*)$", text, re.S)
     if not match:
         return None
     key = resolve_key(match.group(2), registry)
     if key is None:
-        # 콜론 앞에 빈칸 없이 붙은 어절 전체가 준말이 아닌 경우(예: "일시:" 처럼 다른 낱말)는 제외
         return None
-    return key, match.group(6).strip(), match.end(5)
+    rest = match.group(5)
+    if match.group(3) is None and not rest.strip():
+        return None
+    return key, rest.strip(), match.end(4)
 
 
 def split_title2(text: str) -> tuple[str, str]:
@@ -133,19 +162,26 @@ def upsert(entries: dict, key: str, kind: str, value: str) -> tuple[dict, str]:
     else:
         return entries, "본말 종류를 골라 주세요."
     updated = dict(entries)
+    previous = entries.get(clean) or {}
     updated[clean] = {"type": kind, "value": value}
+    if kind == "format" and value == "table" and previous.get("value") == "table" and previous.get("style"):
+        updated[clean]["style"] = previous["style"]   # 같은 준말을 다시 저장해도 배운 표 서식은 유지한다.
     return updated, ""
 
 
 def describe(spec: dict) -> tuple[str, str]:
     """등록 항목을 화면에 보여 줄 (종류 이름, 본말 설명)으로 바꾼다."""
     if spec.get("type") == "format":
+        if spec.get("value") == "table":
+            from .table_style import describe_style
+            learned = describe_style(spec["style"]) if spec.get("style") else "내장 기본값"
+            return TYPE_LABELS["format"], f"{FORMAT_KINDS['table']} · {learned}"
         return TYPE_LABELS["format"], FORMAT_KINDS.get(spec.get("value"), str(spec.get("value")))
     return TYPE_LABELS["text"], str(spec.get("value", ""))
 
 
 def merge_with_defaults(user_entries, use_defaults: bool = True) -> dict[str, dict]:
-    """사용자가 등록한 준말에 기본 준말(제목1·제목2·개요·붙임·로1~로10)을 합친다. 같은 준말은 사용자 등록이 우선한다."""
+    """사용자가 등록한 준말에 기본 준말(제목1·제목2·개요·붙임·로1~로10·표)을 합친다. 같은 준말은 사용자 등록이 우선한다."""
     merged = normalize(DEFAULT_ENTRIES) if use_defaults else {}
     merged.update(normalize(user_entries))
     return merged

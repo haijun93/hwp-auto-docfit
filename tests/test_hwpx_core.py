@@ -77,6 +77,32 @@ class HwpxCoreTest(unittest.TestCase):
             self.assertFalse(result["ok"])
             self.assertTrue(any("컨트롤이 사라졌습니다" in issue["message"] for issue in result["issues"]))
 
+    def test_text_moved_into_tables_is_not_counted_as_lost(self):
+        # 준말 줄·박스 그림 표를 표로 바꾸면 글이 문단에서 표 칸으로 옮겨 간다. 선 글자(─│)는 분량에서 뺀다.
+        lines = ['┌──────────┬──────────┐', '│ 구  분   │ 내  용   │', '├──────────┼──────────┤',
+                 '│ 추진 방향│ 기술 차단 │', '└──────────┴──────────┘', '끝.']
+        text_doc = ('<hs:sec xmlns:hs="urn:section" xmlns:hp="urn:para">'
+                    + ''.join(f'<hp:p><hp:run><hp:t>{line}</hp:t></hp:run></hp:p>' for line in lines)
+                    + '</hs:sec>').encode()
+        cells = ''.join(f'<hp:tr><hp:tc><hp:subList><hp:p><hp:run><hp:t>{a}</hp:t></hp:run></hp:p></hp:subList></hp:tc>'
+                        f'<hp:tc><hp:subList><hp:p><hp:run><hp:t>{b}</hp:t></hp:run></hp:p></hp:subList></hp:tc></hp:tr>'
+                        for a, b in (('구  분', '내  용'), ('추진 방향', '기술 차단')))
+        table_doc = ('<hs:sec xmlns:hs="urn:section" xmlns:hp="urn:para"><hp:p><hp:run><hp:tbl>' + cells
+                     + '</hp:tbl></hp:run></hp:p><hp:p><hp:run><hp:t>끝.</hp:t></hp:run></hp:p></hs:sec>').encode()
+        with tempfile.TemporaryDirectory() as folder:
+            before_path = Path(folder) / "before.hwpx"
+            after_path = Path(folder) / "after.hwpx"
+            make_hwpx(before_path, text_doc)
+            make_hwpx(after_path, table_doc)
+            result = compare_documents(inspect_hwpx(before_path), inspect_hwpx(after_path))
+            self.assertTrue(result["ok"], result["issues"])
+            self.assertFalse(any("분량" in issue["message"] for issue in result["issues"]))
+            # 표 칸 글까지 실제로 지워지면 여전히 오류다.
+            make_hwpx(after_path, b'<hs:sec xmlns:hs="urn:section" xmlns:hp="urn:para">'
+                                  b'<hp:p><hp:run><hp:t>\xeb\x81\x9d.</hp:t></hp:run></hp:p></hs:sec>')
+            lost = compare_documents(inspect_hwpx(before_path), inspect_hwpx(after_path))
+            self.assertFalse(lost["ok"])
+
     def test_text_after_inline_space_element_is_read(self):
         # 원본: 'ㅇ' + 전각 공백 요소 + 본문(tail). 한/글 재저장본: 같은 글자를 일반 텍스트로 저장.
         inline = '<hs:sec xmlns:hs="urn:section" xmlns:hp="urn:para"><hp:p><hp:run><hp:t>ㅇ<hp:fwSpace/>본문 내용</hp:t></hp:run></hp:p></hs:sec>'.encode()

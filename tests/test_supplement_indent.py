@@ -44,6 +44,23 @@ class SupplementIndentTest(unittest.TestCase):
             self.assertTrue(fn((0, 5, 0), '    ※ (차량규격) 전기버스', 15160))
         self.assertEqual(applied, [{'LeftMargin': 10160}])
 
+    def test_parent_text_start_includes_the_label(self):
+        """'ㅇ (핵심 내용) 본문'의 부연설명은 라벨 뒤가 아니라 '(핵심 내용)' 아래(기호 바로 뒤 글 시작)에 맞춘다."""
+        fn = self.ns['부모_본문시작_실측']
+        measured = []
+        doc, _ = self._doc(left_margin=700)
+        with patch.dict(fn.__globals__, {
+            'hwp': doc, '_캐럿위치_폭_실측': lambda start, n: measured.append(n) or 100 * n,
+        }):
+            self.assertEqual(fn((0, 5, 0), ' ㅇ (핵심 내용) 지자 선행 투입 → 함대 발진'), 700 + 300)
+            self.assertEqual(fn((0, 5, 0), ' ㅇ 운영시기: 정기회의 분기별 1회'), 700 + 300)
+            self.assertEqual(fn((0, 5, 0), '  - 항세기와 난세기가 교차'), 700 + 400)
+            self.assertEqual(fn((0, 5, 0), ' ㅇ 「도로교통법」 개정'), 700 + 400)   # 여는 낫표 다음 글자
+            self.assertIsNone(fn((0, 5, 0), '일반 문장'))
+        self.assertEqual(measured, [3, 3, 4, 4])
+        # 둘째 줄 내어쓰기 기준(라벨 뒤)은 그대로다.
+        self.assertEqual(self.ns['문단_내어쓰기_기준_오프셋'](' ㅇ (핵심 내용) 지자 선행 투입'), 11)
+
     def test_no_leading_space_and_unchanged_margin(self):
         fn = self.ns['_부연설명_들여쓰기_적용']
         measure = Mock(side_effect=AssertionError('선행 공백이 없으면 재지 않음'))

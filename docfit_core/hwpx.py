@@ -277,12 +277,28 @@ def export_markdown(source: str | Path, target: str | Path | None = None) -> Pat
     return target_path
 
 
+# 박스 그림 선 글자(─ │ ┌ 등). 텍스트 표를 실제 표로 바꾸면 사라지는 모양 글자라 분량 비교에서 뺀다.
+_BOX_DRAWING = re.compile("[\u2500-\u257f]")
+
+
+def _content_length(document: DocumentInspection) -> int:
+    """본문 분량 비교용 글자 수: 문단 글과 표 칸 글, 박스 그림 선 글자와 빈칸은 뺀다.
+
+    준말 줄(제목:·개요: 등)과 텍스트 표(박스 그림)를 서식 표·실제 표로 바꾸면 글이 문단에서 표 칸으로 옮겨 가므로,
+    문단 글만 세면 내용이 그대로여도 분량이 크게 준 것처럼 보인다(실측: 삼채인.txt 한 번에 적용).
+    """
+    parts = [block.text for block in document.blocks if block.text]
+    parts += [cell for block in document.blocks if block.type == "table"
+              for row in (block.rows or []) for cell in row if cell]
+    return len("".join(_BOX_DRAWING.sub("", "".join(parts)).split()))
+
+
 def compare_documents(before: DocumentInspection, after: DocumentInspection) -> dict:
     similarity = SequenceMatcher(None, before.text, after.text, autojunk=False).ratio()
     issues: list[dict[str, str]] = []
     if after.paragraph_count == 0 and before.paragraph_count:
         issues.append({"severity": "error", "message": "결과 문서의 본문을 찾지 못했습니다."})
-    elif before.text and len(after.text) < len(before.text) * 0.8:
+    elif before.text and _content_length(after) < _content_length(before) * 0.8:
         issues.append({"severity": "error", "message": "결과 문서의 본문 분량이 20% 이상 감소했습니다."})
     elif similarity < 0.9:
         issues.append({"severity": "warning", "message": f"본문 일치도가 낮습니다({similarity:.1%})."})
