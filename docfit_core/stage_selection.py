@@ -1,16 +1,16 @@
 """User-selectable processing stages, in execution order."""
 
 FORMAT_STAGES = (
+    ("standard_format", "보고서 표준서식"),
     ("pre_format", "제목·개요·붙임 선행 서식"),
     ("precise_table", "일반 표 정밀 서식 복제"),
     ("normalize_space", "공백 정규화"),
     ("punctuation_space", "문장부호 뒤 공백 보정"),
-    ("standard_format", "보고서 표준서식"),
     ("parenthesis", "문두 라벨·괄호 서식"),
-    ("supplement_indent", "부연설명 들여쓰기"),
     ("table_format", "표 머리글·본문 서식"),
     ("single_cell_spacing", "개요·한 칸 표 자간 조정"),
     ("hanging_indent", "최종 서식 기준 내어쓰기"),
+    ("supplement_indent", "부연설명 들여쓰기"),
     # 실행 순서: 쪽 수 맞춤(문단 아래 간격)을 먼저 하고 문단 페이지 배치를 마지막에 한다.
     ("page_fit", "문단 아래 간격 페이지 맞춤"),
     ("page_group", "관련 문단 페이지 배치"),
@@ -86,7 +86,7 @@ _STAGE_BY_KEY = {stage[0]: stage for stage in FORMAT_STAGES + SPACING_STAGES + (
 _FIRST_STAGES = ("abbreviation", "standard_format")
 # 실제 실행 순서와 같게 보여 준다. 박스 그림 표 변환은 문단 구조를 바꾸므로 나머지 단계보다 먼저,
 # 자간 초기화는 선행 서식·정밀 표 복제보다 먼저(복사한 자간 보존) 실행하고, 서식통일은 공백·문장부호
-# 정리 뒤에 한다. 한 번에 적용의 내어쓰기는 자간 조정 뒤 최종 확정된다.
+# 정리 뒤에 한다. 내어쓰기·부연설명을 먼저 맞추고 자간 변경 문단만 내어쓰기를 재조정한다.
 _MODE_STAGES = {
     # 서식통일은 문서 자체의 대표 서식이 기준이다. 기본 표 서식(준말 '표')을 먼저 입힌 뒤 서식을 맞추고,
     # 쪽 맞춤은 사용자가 켤 때만 실행한다.
@@ -94,7 +94,7 @@ _MODE_STAGES = {
     "format": _FIRST_STAGES + (
         "text_table_convert", "asterisk_superscript", "attachment_font", "pre_format", "table_style",
         "precise_table", "normalize_space", "punctuation_space", "style_unify", "parenthesis",
-        "supplement_indent", "table_format", "single_cell_spacing", "hanging_indent", "page_fit", "page_group"),
+        "table_format", "single_cell_spacing", "hanging_indent", "supplement_indent", "page_fit", "page_group"),
     # 서식통일은 예외 문단별 서식→자간→내어쓰기 처리이며 전체 자간 단계는 돌리지 않는다.
     "spacing": ("reset_spacing", "style_unify", "body_spacing", "short_line", "control_spacing",
                 "control_short_line", "word_check", "control_word_check"),
@@ -102,8 +102,8 @@ _MODE_STAGES = {
     "all": _FIRST_STAGES + (
         "text_table_convert", "reset_spacing", "asterisk_superscript", "attachment_font", "pre_format",
         "table_style", "precise_table", "normalize_space", "punctuation_space", "style_unify", "parenthesis",
-        "supplement_indent", "table_format", "body_spacing", "short_line", "control_spacing",
-        "control_short_line", "word_check", "control_word_check", "hanging_indent", "page_fit", "page_group"),
+        "table_format", "hanging_indent", "supplement_indent", "body_spacing", "short_line", "control_spacing",
+        "control_short_line", "word_check", "control_word_check", "page_fit", "page_group"),
 }
 
 

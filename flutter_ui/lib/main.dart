@@ -75,7 +75,8 @@ class _WorkspaceState extends State<Workspace> {
   bool rangeOn = false, rangeLoaded = false;
 
   static const tabs = ['문서 선택', '작업 방식', '진행 과정', '결과 확인'];
-  // (내부 모드, 이름, 설명, 아이콘, 결과 파일 접미사)
+  // (내부 모드, 이름, 설명, 아이콘, 결과 파일 접미사). 카드는 세 장이며, 서식 적용(format)은
+  // '한 번에 적용' 카드에서 '자간 조정 포함'을 끈 것이다.
   static const modes = [
     (
       'spacing',
@@ -92,16 +93,9 @@ class _WorkspaceState extends State<Workspace> {
       '서식통일',
     ),
     (
-      'format',
-      '서식 적용',
-      '고른 서식 기준의 글꼴·문단·표 모양을 문서에 적용해요.',
-      Icons.format_paint_rounded,
-      '서식적용',
-    ),
-    (
       'all',
       '한 번에 적용',
-      '서식 적용과 자간 정리를 한 번에 진행해요.',
+      '고른 서식 기준의 글꼴·문단·표 모양을 입히고 자간까지 정리해요.',
       Icons.auto_awesome_rounded,
       '일괄적용',
     ),
@@ -115,8 +109,11 @@ class _WorkspaceState extends State<Workspace> {
   List get profiles => state['profiles'] as List? ?? [];
   Map get quickOptions => state['options'] as Map? ?? {};
   String get mode => state['mode'] as String? ?? 'spacing';
-  String get modeTitle =>
-      modes.firstWhere((m) => m.$1 == mode, orElse: () => modes.first).$2;
+  String get cardMode => mode == 'format' ? 'all' : mode;
+  bool get includeSpacing => state['include_spacing'] != false;
+  String get modeTitle => mode == 'format'
+      ? '한 번에 적용(자간 조정 제외)'
+      : modes.firstWhere((m) => m.$1 == mode, orElse: () => modes.first).$2;
   int get stagesOn => stages.where((s) => s['on'] == true).length;
   bool get stagesChanged => stages.any((s) => s['on'] != s['default']);
   bool get usesProfile => mode == 'format' || mode == 'all';
@@ -854,20 +851,25 @@ class _WorkspaceState extends State<Workspace> {
     children: [
       heading('어떻게 정리할까요?', '작업을 고르면 아래에서 세부 작업과 범위를 바로 조정할 수 있어요.'),
       LayoutBuilder(
-        builder: (context, box) => Wrap(
-          spacing: 16,
-          runSpacing: 16,
-          children: modes
-              .map(
-                (m) => SizedBox(
-                  width: box.maxWidth >= 620
-                      ? (box.maxWidth - 16) / 2
-                      : box.maxWidth,
-                  child: modeCard(m),
-                ),
-              )
-              .toList(),
-        ),
+        builder: (context, box) {
+          final columns = box.maxWidth >= 900
+              ? 3
+              : box.maxWidth >= 620
+              ? 2
+              : 1;
+          return Wrap(
+            spacing: 16,
+            runSpacing: 16,
+            children: modes
+                .map(
+                  (m) => SizedBox(
+                    width: (box.maxWidth - 16 * (columns - 1)) / columns,
+                    child: modeCard(m),
+                  ),
+                )
+                .toList(),
+          );
+        },
       ),
       const SizedBox(height: 20),
       if (usesProfile) ...[
@@ -896,7 +898,9 @@ class _WorkspaceState extends State<Workspace> {
   Widget modeCard(
     (String, String, String, IconData, String) m,
   ) {
-    final selected = mode == m.$1;
+    final selected = cardMode == m.$1;
+    final isAll = m.$1 == 'all';
+    final suffix = isAll && !includeSpacing ? '서식적용' : m.$5;
     return Material(
       color: selected ? const Color(0xffeaf1ff) : Colors.white,
       shape: RoundedRectangleBorder(
@@ -940,9 +944,34 @@ class _WorkspaceState extends State<Workspace> {
                 ),
                 const SizedBox(height: 10),
                 Text(m.$3, style: const TextStyle(height: 1.6)),
+                if (isAll) ...[
+                  const SizedBox(height: 8),
+                  // 끄면 기존 자간은 그대로 두고 서식만 적용한다(서식 적용).
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          '자간 조정 포함',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      Switch(
+                        value: includeSpacing,
+                        onChanged: locked
+                            ? null
+                            : (on) => command('set_include_spacing', [on]),
+                      ),
+                    ],
+                  ),
+                  if (!includeSpacing)
+                    const Text(
+                      '기존 자간은 그대로 두고 서식만 적용해요.',
+                      style: TextStyle(fontSize: 12, color: _faint),
+                    ),
+                ],
                 const SizedBox(height: 12),
                 Text(
-                  '결과: 문서이름(${m.$5}).hwpx',
+                  '결과: 문서이름($suffix).hwpx',
                   style: const TextStyle(fontSize: 12, color: _faint),
                 ),
               ],

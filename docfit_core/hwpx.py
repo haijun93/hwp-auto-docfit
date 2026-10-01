@@ -7,7 +7,7 @@ the same deterministic parser is used for both formats.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from difflib import SequenceMatcher
 from hashlib import sha256
 from pathlib import Path, PurePosixPath
@@ -53,9 +53,11 @@ class DocumentInspection:
     warnings: list[str]
 
     def summary(self) -> dict:
-        data = asdict(self)
+        # 본문·표 전체를 깊은 복사한 뒤 버리지 않고, 작은 요약 값만 복사한다.
+        data = vars(self).copy()
         data.pop("blocks", None)
         data.pop("text", None)
+        data["warnings"] = list(self.warnings)
         return data
 
 
@@ -199,6 +201,13 @@ def _direct_content(root: ET.Element) -> Iterable[ET.Element]:
 
 
 def inspect_hwpx(path: str | Path, limits: HwpxLimits | None = None) -> DocumentInspection:
+    return validate_and_inspect_hwpx(path, limits)[1]
+
+
+def validate_and_inspect_hwpx(
+    path: str | Path, limits: HwpxLimits | None = None,
+) -> tuple[dict, DocumentInspection]:
+    """안전 검사와 구조 분석을 함께 반환한다. CRC 전수 검사는 한 번만 한다."""
     source = Path(path)
     validation = validate_hwpx(source, limits)
     blocks: list[DocumentBlock] = []
@@ -231,7 +240,7 @@ def inspect_hwpx(path: str | Path, limits: HwpxLimits | None = None) -> Document
                     blocks.append(DocumentBlock("table", rows=rows, section=section_index))
                     table_count += 1
     plain_text = "\n".join(block.text for block in blocks if block.text)
-    return DocumentInspection(
+    return validation, DocumentInspection(
         path=str(source),
         blocks=blocks,
         section_count=len(validation["section_names"]),
@@ -294,11 +303,15 @@ def _content_length(document: DocumentInspection) -> int:
 
 
 def compare_documents(before: DocumentInspection, after: DocumentInspection) -> dict:
-    similarity = SequenceMatcher(None, before.text, after.text, autojunk=False).ratio()
+    # 서식만 바꾼 문서는 본문이 같다. 반복 문구가 많은 본문을 다시 대조하면
+    # SequenceMatcher의 최악 경우 제곱 시간 비용이 불필요하게 발생한다.
+    similarity = (1.0 if before.text == after.text else
+                  SequenceMatcher(None, before.text, after.text, autojunk=False).ratio())
     issues: list[dict[str, str]] = []
-    if after.paragraph_count == 0 and before.paragraph_count:
+    before_length, after_length = _content_length(before), _content_length(after)
+    if before_length and not after_length:
         issues.append({"severity": "error", "message": "결과 문서의 본문을 찾지 못했습니다."})
-    elif before.text and _content_length(after) < _content_length(before) * 0.8:
+    elif before_length and after_length < before_length * 0.8:
         issues.append({"severity": "error", "message": "결과 문서의 본문 분량이 20% 이상 감소했습니다."})
     elif similarity < 0.9:
         issues.append({"severity": "warning", "message": f"본문 일치도가 낮습니다({similarity:.1%})."})

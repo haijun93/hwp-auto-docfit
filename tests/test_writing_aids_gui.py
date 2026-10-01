@@ -44,9 +44,24 @@ class WritingAidsGuiTest(unittest.TestCase):
                     app._AI_프롬프트_열기(root)
                     root.update()
 
-                    # 작업 유형 4가지: 자간 정리 / 서식 통일 / 서식 적용 / 한 번에 적용
+                    # 작업 카드 3장: 자간 정리 / 서식 통일 / 한 번에 적용(+ 자간 조정 포함 선택)
                     self.assertEqual([b.cget("text") for b in app.mode_buttons],
-                                     ["자간 정리", "서식 통일", "서식 적용", "한 번에 적용"])
+                                     ["자간 정리", "서식 통일", "한 번에 적용", "자간 조정 포함"])
+                    self.assertEqual(list(app.mode_cards), ["spacing", "unify", "all"])
+                    app._카드_클릭("all")
+                    self.assertEqual(app.selected_mode.get(), "all")
+                    # 자간 조정을 빼면 같은 카드에서 서식 적용(format)으로 실행하고 기존 자간을 둔다.
+                    app.include_spacing_var.set(False)
+                    app._자간포함_변경()
+                    self.assertEqual((app.selected_mode.get(), app.card_mode_var.get()), ("format", "all"))
+                    self.assertIn("자간 조정 제외", app.options_summary.cget("text"))
+                    app._카드_클릭("spacing")
+                    app._카드_클릭("all")
+                    self.assertEqual(app.selected_mode.get(), "format")   # 선택을 기억한다
+                    self.assertFalse(ns["설정_불러오기"]()["all_include_spacing"])
+                    app.include_spacing_var.set(True)
+                    app._자간포함_변경()
+                    self.assertEqual(app.selected_mode.get(), "all")
                     app._빠른설정("report")
                     app._카드_클릭("unify")  # 빠른 선택 해제가 서식 통일 모드 자체를 끄면 안 된다
                     self.assertEqual(app.selected_mode.get(), "unify")

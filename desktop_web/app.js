@@ -1,4 +1,4 @@
-﻿const MODE_LABELS = {spacing:"자간 정리",unify:"서식 통일",format:"서식 적용",all:"한 번에 적용"};
+﻿const MODE_LABELS = {spacing:"자간 정리",unify:"서식 통일",format:"한 번에 적용 · 자간 조정 제외",all:"한 번에 적용"};
 const $ = (id) => document.getElementById(id);
 let currentStep = 1;
 let returnStep = 1;
@@ -89,12 +89,17 @@ function renderFiles(state) {
 
 function renderModes(state) {
   currentMode = state.mode || currentMode;
+  // 서식 적용(format)은 '한 번에 적용' 카드에서 자간 조정을 끈 것이다.
+  const cardMode = currentMode === "format" ? "all" : currentMode;
   document.querySelectorAll(".mode-card").forEach((card)=>{
-    const selected = card.dataset.mode === currentMode;
+    const selected = card.dataset.mode === cardMode;
     card.classList.toggle("selected",selected);
     card.setAttribute("aria-checked",String(selected));
     card.disabled = Boolean(state.running);
   });
+  $("spacingOption").hidden = cardMode !== "all";
+  $("includeSpacing").checked = state.include_spacing !== false;
+  $("includeSpacing").disabled = Boolean(state.running);
   $("modeSummary").textContent = MODE_LABELS[currentMode] || MODE_LABELS.spacing;
   $("defaultNote").textContent = state.default_saved
     ? "세부 설정에서 저장한 기본 구성을 사용합니다."
@@ -248,6 +253,7 @@ document.querySelectorAll(".mode-card").forEach((card)=>card.addEventListener("c
   render({...lastState,mode:currentMode});
   await callApi("set_mode",currentMode);
 }));
+$("includeSpacing").addEventListener("change",()=>callApi("set_include_spacing",$("includeSpacing").checked));
 
 $("rangeBox").addEventListener("toggle",()=>{
   if (window.pywebview?.api && !lastState?.running) callApi("set_range",$("rangeBox").open,$("rangeStart").value,$("rangeEnd").value);

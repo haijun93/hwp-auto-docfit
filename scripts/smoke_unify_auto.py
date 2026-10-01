@@ -52,7 +52,7 @@ def main():
         # No fallback to an existing user's COM session.
         app = win32com.client.DispatchEx('HwpFrame.HwpObject')
         app.RegisterModule(globals_['REGISTER_MODULE_NAME'], globals_['REGISTER_MODULE_VALUE'])
-        globals_.update(hwp=app, 쪽범위_실제=None, 쪽범위_본문_문단=None,
+        globals_.update(hwp=app, 작업_모드='unify', 쪽범위_실제=None, 쪽범위_본문_문단=None,
                         _서식통일_문서대표프로필={}, 로그=lambda *_: None, 진단로그=lambda *_: None)
         app.Run('FileNew')
         texts = ['ㅇ 정상 문단 하나', 'ㅇ 정상 문단 둘', 'ㅇ 정상 문단 셋',
@@ -77,13 +77,12 @@ def main():
         calls = []
         def review(kind, payload):
             calls.append(kind)
-            assert kind == 'profile', 'Unexpected per-paragraph approval dialog'
-            return {'approved': True}
+            raise AssertionError('Automatic unification must not request approval: ' + kind)
         globals_['_서식통일_대표값_검토콜백'] = review
         assert fn() is True
         assert app.SaveAs(str(result), 'HWPX', '') is not False
         after = snapshot(result)[1:]
-        assert calls == ['profile'], calls
+        assert calls == [], calls
         assert before[:3] == after[:3], 'Normal paragraphs changed'
         assert all(value[2] == 15 for value in after[3]), 'Outlier was not corrected'
         assert all(-10 <= int(value) <= 10 for char in after[3] for _, value in char[4]), 'Unsafe spacing'

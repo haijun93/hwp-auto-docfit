@@ -29,7 +29,10 @@ class StageSelectionTest(unittest.TestCase):
         for mode in ("format", "all"):
             keys = [key for key, _ in stages_for_mode(mode)]
             self.assertLess(keys.index("page_fit"), keys.index("page_group"))
-        self.assertLess(all_keys.index("body_spacing"), all_keys.index("hanging_indent"))
+        for keys in (format_keys, all_keys):
+            self.assertLess(keys.index("table_format"), keys.index("hanging_indent"))
+            self.assertLess(keys.index("hanging_indent"), keys.index("supplement_indent"))
+        self.assertLess(all_keys.index("supplement_indent"), all_keys.index("body_spacing"))
         self.assertNotIn("single_cell_spacing", all_keys)
 
     def test_omitted_selection_keeps_previous_behavior(self):

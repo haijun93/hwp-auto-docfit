@@ -335,6 +335,7 @@ from docfit_core import (
     fill_form,
     generate_hwpx,
     inspect_hwpx,
+    validate_and_inspect_hwpx,
     kordoc_engine_version,
     lint_document,
     parse_document,
@@ -348,7 +349,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리 도구"
-APP_VERSION = "1.69 Beta 5"
+APP_VERSION = "1.69 Beta 6"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 UPDATE_ASSET_NAME = "HWP_AutoDocFit.exe"
@@ -1076,6 +1077,8 @@ def 번들_리소스_폴더():
     "check_updates_on_start": True,
     "table_spacing": True,
     "log_file": False,
+    # '한 번에 적용' 카드의 '자간 조정 포함'. 끄면 기존 자간을 두고 서식만 입히는 서식 적용(format)으로 실행한다.
+    "all_include_spacing": True,
 }
 
 
@@ -3134,6 +3137,8 @@ def 제목붙임_선행적용(원본문서경로, 현재문서_기준=False, 처
     변환한다. 별도 한글 생성/등록/원본 재열기를 수행하지 않는다.
     현재문서_기준이면 원본 파일 대신 지금 열린 문서(예: 자간 초기화를 마친
     문서)를 스냅샷으로 저장해 그 위에 서식을 입힌다.
+    처리목록 항목은 (사용, 이름, 처리함수, 파일명[, 진행 단계명])이며 앞 항목의 결과 HWPX를
+    다음 항목이 이어 받는다. 진행 단계명이 있으면 화면의 진행 단계를 그 이름으로 표시한다.
     """
     if 처리목록 is None:
         처리목록 = (
@@ -3156,11 +3161,13 @@ def 제목붙임_선행적용(원본문서경로, 현재문서_기준=False, 처
             source = _제목_임시hwpx_저장(folder / 'source.hwpx')
             로그('선행 서식: HWPX 변환 완료')
         changed = False
-        for enabled, name, processor, filename in 처리목록:
+        for enabled, name, processor, filename, *진행단계 in 처리목록:
             if 중단_요청됨():
                 return False
             if not enabled:
                 continue
+            if 진행단계:
+                단계표시(진행단계[0])
             로그(f'{name} 구조 직접 분석 시작')
             selections = processor(source)
             count = sum(len(items) for items in selections.values())
@@ -4837,6 +4844,7 @@ def 본문_컨트롤_문단번호():
 
 
 def 문두기호문장_사이_빈줄_삭제():
+    global 쪽범위_본문_문단
     if not 문두기호문장_빈줄_삭제_사용 or hwp is None:
         return True
     original = hwp.GetPos()
@@ -4882,6 +4890,11 @@ def 문두기호문장_사이_빈줄_삭제():
                 로그(f'문두기호 문장 사이 빈 줄 삭제 중 오류(건너뜀): {e}')
             finally:
                 hwp_run('Cancel')
+        if 삭제수 and 쪽범위_본문_문단 is not None:
+            # 지운 빈 문단은 모두 범위 안이라 그만큼 뒤 문단 번호가 당겨진다. 고정한 범위 끝을 같이
+            # 당기지 않으면 뒤 단계가 다음 쪽(범위 밖) 문단까지 고친다.
+            시작, 끝 = 쪽범위_본문_문단
+            쪽범위_본문_문단 = (시작, max(시작, 끝 - 삭제수))
         로그(f'문두기호 문장 사이·문서 끝 빈 줄 삭제: {삭제수}개')
         return True
     finally:
@@ -5548,10 +5561,15 @@ def _서식통일_적용영역_사용자검토(계획):
 
 
 def _서식통일_최종결과_사용자확인(결과):
-    """저장 후 읽기 전용 검수 결과를 GUI에 제시하고 사용자의 확인을 기다린다."""
+    """저장 후 읽기 전용 검수 결과를 GUI에 보여 준다.
+
+    결과는 읽기 전용이라 확인을 기다릴 이유가 없다. 예전에는 작업 스레드가 '결과 확인'을 누를
+    때까지 멈춰, 여러 문서를 맡기고 자리를 비우면 첫 문서 뒤에서 일괄 작업이 서 있었다.
+    """
     if _서식통일_대표값_검토콜백 is None:
         return
-    _서식통일_대표값_검토콜백("result", 결과)
+    gui_queue.put(("style_unify_result_review",
+                   {"payload": 결과, "done": threading.Event(), "approved": False}))
 
 
 def _서식통일_미확정_항목(대표, text):
@@ -5943,8 +5961,14 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
     로그(f"[서식통일] 1/5 표본 조사 완료: {sum(map(len, 그룹별_표본.values()))}개 문장, "
          f"{len(그룹별_표본)}개 그룹, 제목 표 {len(제목표_표본)}개 — 문서 변경 0건(읽기 전용)")
     # 괄호 크기 규칙도 문서 관행을 따른다. 괄호를 본문보다 작게 쓰는 문서만 그 차이를 적용하고,
-    # 본문과 같은 크기로 쓰는 문서는 괄호도 본문 크기로 본다.
-    if not 고정_프로필_재적용:
+    # 본문과 같은 크기로 쓰는 문서는 괄호도 본문 크기로 본다. 단, 표준서식이 기준이고 문두 라벨·괄호
+    # 단계가 괄호를 줄이면 그 설정값이 기준이다(표준서식 직후 관행은 보통 0pt라 서로 되돌리게 된다).
+    괄호설정_기준 = (표준서식_사용 and 작업_모드 in ("format", "all") and 괄호_축소_사용
+                   and stage_enabled(선택_세부작업, "parenthesis", 작업_모드))
+    if not 고정_프로필_재적용 and 괄호설정_기준:
+        서식통일_괄호크기차이 = int(round(float(괄호_축소_pt) * 100))
+        로그(f"[서식통일] 괄호 크기 기준: 설정값(본문보다 {괄호_축소_pt:g}pt 작게, 문두 라벨·괄호 서식과 같음)")
+    elif not 고정_프로필_재적용:
         차이빈도 = Counter()
         for 항목들 in 그룹별_표본.values():
             for 모양, *_ in 항목들:
@@ -6047,7 +6071,7 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
     # 동률/소수라 대표값이 없을 때는 * 계열과 함께 화면에 제시하고 사용자가
     # 선택하거나 직접 값을 입력해야 보정 계획에 반영된다.
     if not 검증만 and not 고정_프로필_재적용:
-        로그("[서식통일] 2/5 조사된 대표 서식 확인·수정 대기")
+        로그("[서식통일] 2/5 조사된 대표 서식 확인")
         if not _서식통일_대표값_사용자검토(그룹별_표본):
             로그("[서식통일] 사용자가 대표 서식 검토를 취소하여 문서 수정 전 작업 중단")
             return False
@@ -6075,6 +6099,10 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
         문두굵게, 문두굵게수 = 대표["marker_bold"]
         라벨굵게, 라벨굵게수 = 대표["label_bold"]
         내어쓰기표준, 내어쓰기수 = 대표.get("hanging_indent", (None, 0))
+        if 최종_내어쓰기_예정 and not 검증만:
+            # 뒤의 '최종 서식 기준 내어쓰기' 단계가 문두기호 문장의 내어쓰기를 모두 다시 정한다.
+            # 여기서 대표값대로 넣거나 빼면 그 단계가 곧바로 덮으므로 비교하지 않는다.
+            내어쓰기표준 = None
         그룹미판정 = set()
         for 모양, 시작, 끝, text in 항목들:
             # 쪽 범위는 대표값 표본에 적용하지 않고 실제 수정 단계에서만 적용한다.
@@ -6276,7 +6304,7 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
                      f"{item['text'].strip()[:100]}")
     로그(f"[서식통일] 4/5 문장별 처리 완료; 미확정 문단 {len(미확정문단)}개 "
          f"{'빨간 표시' if 서식통일_빨간표시_사용 else '표준 서식에 맡김'}, "
-         "저장 후 5/5 결과 확인 대기")
+         "저장 후 5/5 결과 검수 예정")
     if 서식통일_빨간표시_사용 and not 고정_프로필_재적용:
         # 표준 서식이 뒤따르지 않으면 서식통일이 고친 문장만 지금 자간을 조정한다.
         if 서식통일_보류자간_재조정() is False:
@@ -6417,13 +6445,20 @@ def 서식통일_표_전체_적용(검증만=False):
         단계표시("표 서식통일")
     표들 = _서식통일_표모형()
     고칠것, 요약 = plan_table_fixes(표들)
+    검사표수 = len(표들)
+    if 쪽범위_사용중():
+        # 대표값은 문서 전체에서 얻되 수정·검수 대상은 선택한 쪽의 칸으로 제한한다.
+        고칠것 = [fix for fix in 고칠것
+                 if 쪽범위_안인가((fix['area'], fix['para'], fix['start']))]
+        검사표수 = sum(any(쪽범위_안인가((칸['area'], 0, 0)) for 칸 in 표['cells'])
+                     for 표 in 표들)
     if 검증만:
         issues = [{"text": fix["text"].strip()[:100], "fields": [f"table_{fix['field']}"],
                    "expected_actual": {fix["field"]: {"expected": fix["value"], "actual": fix["was"]}}}
                   for fix in 고칠것]
         status = "failed" if issues else "passed"
-        로그(f"[표 서식통일] 저장 결과 검수(읽기 전용): {status} / 표 {len(표들)}개 / 불일치 구간 {len(issues)}개")
-        return {"status": status, "checked": len(표들), "issues": issues}
+        로그(f"[표 서식통일] 저장 결과 검수(읽기 전용): {status} / 표 {검사표수}개 / 불일치 구간 {len(issues)}개")
+        return {"status": status, "checked": 검사표수, "issues": issues}
     로그(f"[표 서식통일] 표 {len(표들)}개 조사 — 고칠 구간 {len(고칠것)}개 "
          + (", ".join(f"{이름} {수}" for 이름, 수 in 요약.items()) or "(없음)"))
     적용, 건너뜀 = 0, 0
@@ -8936,55 +8971,35 @@ def 보고서_줄간격_적용(보관, 단계, 확대=False):
     return changed
 
 
-def 보고서_페이지보호_보관(문단들):
-    """묶음 문단의 현재 페이지 보호 속성을 보관한다."""
-    result = []
-    for start, _, _ in 문단들:
-        hwp.SetPos(*start)
-        pset = hwp.HParameterSet.HParaShape
-        hwp.HAction.GetDefault('ParagraphShape', pset.HSet)
-        result.append((start, int(getattr(pset, 'KeepWithNext', 0) or 0),
-                       int(getattr(pset, 'KeepLines', 0) or 0)))
-    return result
-
-
-def 보고서_페이지보호_적용(보관, 묶음유지=True):
-    """한 문단의 줄과 연속 문단 묶음이 페이지 사이에서 갈라지지 않게 한다."""
-    for index, (pos, keep_next, keep_lines) in enumerate(보관):
-        hwp.SetPos(*pos)
-        act = hwp.CreateAction('ParagraphShape')
-        pset = act.CreateSet()
-        pset.SetItem('KeepLines', 1 if 묶음유지 else keep_lines)
-        pset.SetItem('KeepWithNext', 1 if 묶음유지 and index < len(보관) - 1 else keep_next)
-        if act.Execute(pset) is False:
-            raise RuntimeError('보고서 묶음 페이지 보호 적용 실패')
-
-
 def 보고서_페이지보호_전체해제():
-    """최종 결과에 문단 페이지 보호(KeepLines/KeepWithNext)를 남기지 않는다."""
+    """작업 범위 안 문단의 '다음 문단과 함께'(KeepWithNext)를 해제한다.
+
+    이어진 문단 묶음이 통째로 다음 쪽으로 밀리면 쪽 배치 판정이 틀어지므로 처리 전과 저장 직전에 푼다.
+    한/글의 '문단 보호' 항목 이름은 KeepLinesTogether다(KeepLines는 없는 항목이라 읽으면 None,
+    쓰면 무시된다 — 실측 2026-10-01). 문단 보호는 한 문단만 옮기므로 원문 설정을 그대로 둔다.
+    """
     original = hwp.GetPos()
     changed = 0
     try:
-        hwp_run('MoveDocBegin')
+        순회_시작()
         visited = set()
         while True:
             if 중단_요청됨():
                 return False
             hwp_run('MoveParaBegin')
             pos = hwp.GetPos()
+            if 쪽범위_끝지남(pos):
+                break
             if pos in visited:
                 break
             visited.add(pos)
-            if pos[0] == 0:
+            if pos[0] == 0 and 쪽범위_안인가(pos):
                 pset = hwp.HParameterSet.HParaShape
                 hwp.HAction.GetDefault('ParagraphShape', pset.HSet)
-                keep_next = int(getattr(pset, 'KeepWithNext', 0) or 0)
-                keep_lines = int(getattr(pset, 'KeepLines', 0) or 0)
-                if keep_next or keep_lines:
+                if int(getattr(pset, 'KeepWithNext', 0) or 0):
                     act = hwp.CreateAction('ParagraphShape')
                     clear_set = act.CreateSet()
                     clear_set.SetItem('KeepWithNext', 0)
-                    clear_set.SetItem('KeepLines', 0)
                     if act.Execute(clear_set) is False:
                         raise RuntimeError('최종 문단 페이지 보호 해제 실패')
                     changed += 1
@@ -11891,7 +11906,11 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
         순회_시작()
         return action() is not False
     def 최종_서식통일_검증():
-        if (작업_모드 in ('format', 'all')
+        # 서식통일이 기준인 경우(표준서식 없음)에만, 서식통일 뒤의 자간·내어쓰기 반복이 바꾼 문장을
+        # 처음 대표값으로 다시 맞춘다. 표준서식이 기준이면 괄호 -2pt·최종 내어쓰기·부연설명 단계가
+        # 설정값을 입히므로, 서식통일 직후 대표값으로 재적용하면 그 결과를 되돌린다(실측 2026-10-01:
+        # 괄호 축소와 내어쓰기가 모두 해제됨). 서식 적용(표준서식 없음)은 서식통일 뒤 바뀌는 단계가 없다.
+        if (작업_모드 == 'all' and not 표준서식_사용
                 and stage_enabled(선택_세부작업, 'style_unify', 작업_모드)
                 and _서식통일_문서대표프로필):
             return stage('후속 작업 후 서식통일 재검증',
@@ -12021,6 +12040,10 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
         finally:
             재검사_대상문단 = None
             다음단어_당김_사용 = True
+    # 고정 프로필 재적용도 글꼴·크기·문단 간격을 바꿀 수 있는 수정 작업이다.
+    # 쪽 배치 이후에 실행하면 확정한 배치를 다시 깨므로 세로 배치 전에 끝낸다.
+    if not 최종_서식통일_검증():
+        return False
     # 문단 아래 간격 조정은 세로 배치를 다시 바꾼다. 개별 문단이 쪽 사이에
     # 갈라졌는지는 이 단계가 끝난 뒤 마지막으로 처리해야 결과가 재오염되지 않는다.
     쪽수맞춤_사용 = (작업_모드 in ('format', 'all') and 표준서식_사용
@@ -12053,9 +12076,6 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
                     and 남은줄 is not None and 남은줄 <= 페이지맞춤_최대남은줄수):
                 진단로그(f"[쪽 수 재확인] 마지막 쪽({전_쪽}쪽) {남은줄}줄: 페이지 수 맞춤 불필요")
                 hwp_run('MoveDocBegin')
-                if not 최종_서식통일_검증():
-                    return False
-                hwp_run('MoveDocBegin')
                 return True
             로그("[쪽 수 재확인] 문단 페이지 배치가 줄간격을 바꿔 페이지 수 맞춤을 다시 확인합니다.")
             if not stage('문단 아래 간격 페이지 맞춤 (재확인)', 보고서_페이지수_맞춤_전체_적용):
@@ -12067,8 +12087,6 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
                 로그(f"[쪽 수 재확인] 쪽 수 {전_쪽} → {후_쪽}: 문단 페이지 배치를 한 번 더 확인합니다.")
                 if not stage('개별 문단 페이지 배치 (재확인)', 세트문장_같은쪽_전체_적용):
                     return False
-    if not 최종_서식통일_검증():
-        return False
     hwp_run('MoveDocBegin')
     return True
 
@@ -12415,6 +12433,81 @@ def 박스그림_전체_적용():
     return True
 
 
+def 저장결과_규칙검수(파일, 저장파일, 결과창=True):
+    """저장 결과를 한 번 열어 선택된 읽기 전용 검사를 각각 독립 실행한다.
+
+    결과창이 거짓이면(여러 문서 일괄 처리) 서식통일 결과 창을 띄우지 않는다. 결과는 로그와
+    최종검수 보고서에 남는다.
+    """
+    결과 = {}
+    검사들 = {}
+    서식검수 = stage_enabled(선택_세부작업, 'style_unify', 작업_모드)
+    if 서식검수:
+        if not _서식통일_문서대표프로필:
+            결과['style_unify'] = {
+                'status': 'incomplete', 'checked': 0, 'issues': [],
+                'reason': '대표 스타일 표본이 없어 저장 결과를 검증할 수 없습니다.',
+            }
+        else:
+            def 서식_검사():
+                if not 서식통일_빨간표시_사용:
+                    # 표준서식이 뒤이어 기준을 정했으면 최종 대표값을 조사한다.
+                    _서식통일_문서대표프로필.clear()
+                return 서식통일_전체_적용(
+                    고정_프로필_재적용=서식통일_빨간표시_사용, 검증만=True)
+            검사들['style_unify'] = 서식_검사
+        # 표만 있는 문서도 검수한다. 본문 대표값 유무·검사 실패와 독립이다.
+        if 작업_모드 == 'unify' and stage_enabled(선택_세부작업, 'table_unify', 작업_모드):
+            검사들['table_unify'] = lambda: 서식통일_표_전체_적용(검증만=True)
+    if 검수_사용:
+        if 작업_모드 in ('format', 'all') and stage_enabled(선택_세부작업, 'page_group'):
+            검사들['page_group'] = 보고서_페이지배치_최종검사
+        if 작업_모드 in ('spacing', 'all'):
+            if stage_enabled(선택_세부작업, 'word_check'):
+                검사들['word_check'] = 보고서_단어분리_최종검사
+            if stage_enabled(선택_세부작업, 'control_word_check'):
+                검사들['control_word_check'] = lambda: 보고서_단어분리_최종검사(컨트롤=True)
+    if 중단_요청됨():
+        return False
+    if 검사들:
+        try:
+            if 한글_문서_열기(hwp, 저장파일, 'HWPX', 'forceopen:true') is False:
+                raise RuntimeError('저장 결과 재열기 실패')
+        except Exception as exc:
+            for key in 검사들:
+                결과[key] = {'status': 'error', 'checked': 0, 'issues': [], 'error': str(exc)}
+            검수_문제_기록(파일, f'[저장 결과 재열기 실패] {exc}')
+        else:
+            기록_경계 = len(검수_문제목록)
+            for key, 검사 in 검사들.items():
+                if 중단_요청됨():
+                    return False
+                try:
+                    항목 = 검사()
+                    if 항목 is False:
+                        return False
+                    결과[key] = 항목
+                    로그(f"저장 결과 {key} 검수: {항목['status']} / 검사 {항목['checked']}건 / 오류 {len(항목['issues'])}건")
+                    if key in ('style_unify', 'table_unify') and 항목['status'] != 'passed':
+                        검수_문제_기록(파일, f"[저장 결과 {key} 검증 {항목['status']}] "
+                                             f"불일치 {len(항목['issues'])}개, "
+                                             f"판정 보류 그룹 {len(항목.get('not_checkable', []))}개")
+                except Exception as exc:
+                    결과[key] = {'status': 'error', 'checked': 0, 'issues': [], 'error': str(exc)}
+                    검수_문제_기록(파일, f'[최종 {key} 검사 실패] {exc}')
+                    로그(f'저장 결과 {key} 검수 실패: {exc}')
+            완료된_검사 = {key for key, value in 결과.items()
+                        if value.get('status') in ('passed', 'failed')}
+            대체수 = 처리중_기록_대체(파일, 완료된_검사, 기록_경계)
+            if 대체수:
+                로그(f"처리 중 미해결 기록 {대체수}건을 저장 결과 검사로 대체")
+    if 서식검수:
+        로그("[서식통일] 5/5 저장된 결과 읽기 전용 검수 종료")
+        if 결과창:
+            _서식통일_최종결과_사용자확인(dict(결과['style_unify'], file=Path(파일).name))
+    return 결과
+
+
 def 문서_처리(파일, index, total, 문장부호기능=True):
     global hwp, 현재_처리파일, 한칸표_보호영역, 최종검수_문서목록
     global 쪽범위_본문_문단, 쪽범위_컨트롤영역, 쪽범위_실제, 기본표서식_적용됨
@@ -12453,13 +12546,14 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
 
     if 확장자 in (".hwp", ".hwpx"):
         if 확장자 == ".hwpx":
-            검사정보 = validate_hwpx(파일경로)
+            if 검수_사용:
+                검사정보, 원본_구조 = validate_and_inspect_hwpx(파일경로)
+            else:
+                검사정보 = validate_hwpx(파일경로)
             로그(
                 f"HWPX 안전 검사 통과: 압축 항목 {검사정보['entry_count']}개 / "
                 f"해제 예상 {검사정보['total_uncompressed_size']:,}바이트"
             )
-            if 검수_사용:
-                원본_구조 = inspect_hwpx(파일경로)
 
         로그(f"문서 열기: {파일}")
         단계초기화()
@@ -12477,13 +12571,14 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
             작업파일경로 = Path(작업_임시폴더.name) / f"{파일경로.stem}.hwpx"
             if hwp.SaveAs(str(작업파일경로), "HWPX", "") is False:
                 raise RuntimeError("HWP 문서를 작업용 HWPX로 변환하지 못했습니다.")
-            검사정보 = validate_hwpx(작업파일경로)
+            if 검수_사용:
+                검사정보, 원본_구조 = validate_and_inspect_hwpx(작업파일경로)
+            else:
+                검사정보 = validate_hwpx(작업파일경로)
             로그(
                 f"HWP → HWPX 변환 완료: {작업파일경로.name} / "
                 f"압축 항목 {검사정보['entry_count']}개"
             )
-            if 검수_사용:
-                원본_구조 = inspect_hwpx(작업파일경로)
             if 한글_문서_열기(hwp, 작업파일경로, "HWPX", "forceopen:true") is False:
                 raise RuntimeError("변환한 작업용 HWPX 문서를 다시 열지 못했습니다.")
 
@@ -12498,15 +12593,26 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
         작업_임시폴더 = tempfile.TemporaryDirectory(prefix="docfit_외부문서_")
         작업파일경로 = Path(작업_임시폴더.name) / f"{파일경로.stem}.hwpx"
         외부문서_hwpx로_변환(파일경로, 확장자, 작업파일경로)
-        검사정보 = validate_hwpx(작업파일경로)
-        로그(f"변환 완료: {작업파일경로.name} / 압축 항목 {검사정보['entry_count']}개")
         if 검수_사용:
-            원본_구조 = inspect_hwpx(작업파일경로)
+            검사정보, 원본_구조 = validate_and_inspect_hwpx(작업파일경로)
+        else:
+            검사정보 = validate_hwpx(작업파일경로)
+        로그(f"변환 완료: {작업파일경로.name} / 압축 항목 {검사정보['entry_count']}개")
         단계표시("열기")
         if 한글_문서_열기(hwp, 작업파일경로, "HWPX", "forceopen:true") is False:
             raise RuntimeError(f"변환한 문서를 열지 못했습니다: {파일}")
         # 원본이 HWP/HWPX가 아니므로 좌우 비교 보기 대상에서는 제외한다.
     비교보기_임베드_재확인()
+
+    # 원본 배치의 쪽 범위를 수정 전에 고정한다. 페이지 보호 해제나 서식 변경
+    # 이후에 계산하면 쪽이 밀려 사용자가 지정한 문단과 다른 문단을 처리하게 된다.
+    if 쪽범위_요청 is not None:
+        상태(f"{파일명} : 작업 쪽 범위 확인")
+        범위결과 = 쪽범위_계산(*쪽범위_요청)
+        if 범위결과 is None:
+            return False
+        if 범위결과 is False:
+            raise RuntimeError("지정한 쪽 범위에 처리할 내용이 없습니다. 쪽 범위를 확인해 주세요.")
 
     # 서식 적용·한 번에 적용은 ① 준말 → 본말 변환 ② 보고서 표준서식(문두기호별 서식 등)을 다른 모든 단계보다
     # 먼저 한다. 서식 통일은 두 단계를 하지 않는다(기본 표 서식 → 서식통일 → 표 서식통일).
@@ -12527,12 +12633,11 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
                 return False
             문서_변경됨 = bool(알림.get('changed'))
 
-    # ② 보고서 표준서식. 쪽 범위 작업은 범위를 문단 번호로 고정한 뒤(아래) 입힌다.
-    if 쪽범위_요청 is None:
-        결과 = 표준서식_선행_적용(파일명)
-        if 결과 is False:
-            return False
-        문서_변경됨 = 문서_변경됨 or bool(결과)
+    # ② 보고서 표준서식. 쪽 범위는 위에서 이미 문단 번호로 고정했다.
+    결과 = 표준서식_선행_적용(파일명)
+    if 결과 is False:
+        return False
+    문서_변경됨 = 문서_변경됨 or bool(결과)
 
     박스그림_실행 = False
     # 박스 그림 표(AI 채팅 답변을 붙여넣을 때 흔한 '┌─┬─┐ / │ … │ / └─┴─┘' 형태)는
@@ -12564,45 +12669,48 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
     # 기준으로 한다.
     문서_변경됨 = 문서_변경됨 or 자간초기화_완료 or 박스그림_실행
 
-    # 글자 서식 정리: 별표(*, **) 위첨자와 붙임~끝. 묶음의 글꼴·크기 통일. 글자 모양만 바꾸는 문서 전체 변환이라
-    # 한 번에 처리하고 쪽 범위 작업에서는 건너뛴다.
-    if 표준서식_사용 and 작업_모드 in ('format', 'all') and 쪽범위_요청 is None:
-        위첨자_켬 = stage_enabled(선택_세부작업, 'asterisk_superscript', 작업_모드)
-        붙임글꼴_켬 = stage_enabled(선택_세부작업, 'attachment_font', 작업_모드)
-        if 위첨자_켬 or 붙임글꼴_켬:
-            단계표시("별표 위첨자")
-            상태(f"{파일명} : 별표 위첨자·붙임 글꼴 정리")
-            알림 = {}
-            if 글자서식_선행적용(작업파일경로, 위첨자_켬, 붙임글꼴_켬, 문서_변경됨, 알림) is False:
-                return False
-            문서_변경됨 = 문서_변경됨 or bool(알림.get('changed'))
-
-    if 표준서식_사용 and 작업_모드 in ('format', 'all'):
+    # 별표 위첨자·붙임 글꼴 → 제목·개요·붙임 선행 서식 → 기본 표 서식은 모두 HWPX를 직접 고치는 단계다.
+    # 예전에는 단계마다 현재 문서를 스냅숏으로 저장하고 결과를 다시 열었다(최대 3회씩). 순서는 그대로 두고
+    # 한 HWPX에 이어서 처리한 뒤 결과를 한 번만 연다. 쪽 범위 작업에서는 모두 건너뛴다.
+    서식단계_사용 = 표준서식_사용 and 작업_모드 in ('format', 'all')
+    선행목록 = []
+    if 서식단계_사용 and 쪽범위_요청 is None:
+        # 글자 서식 정리: 별표(*, **) 위첨자와 붙임~끝. 묶음의 글꼴·크기 통일(글자 모양만 바꿈).
+        선행목록 += [
+            (stage_enabled(선택_세부작업, 'asterisk_superscript', 작업_모드), '별표 위첨자',
+             별표위첨자_hwpx_처리, 'asterisk.hwpx', '별표 위첨자'),
+            (stage_enabled(선택_세부작업, 'attachment_font', 작업_모드), '붙임 글꼴',
+             붙임글꼴_hwpx_처리, 'attach_font.hwpx', '별표 위첨자'),
+        ]
+    if 서식단계_사용:
         if 쪽범위_요청 is not None:
             # 제목·개요·붙임 표 서식은 문서 전체 구조를 한 번에 바꾸는 방식이라 쪽별로 나눌 수 없다.
             로그("쪽 범위 지정: 제목·개요·중제목·붙임 자동 서식(문서 전체 구조 변환)은 이번 작업에서 건너뜁니다.")
         elif stage_enabled(선택_세부작업, 'pre_format', 작업_모드):
-            단계표시("제목·개요·붙임 선행 서식")
-            상태(f"{파일명} : 제목·개요·붙임 선행 서식")
-            알림 = {}
-            if 제목붙임_선행적용(작업파일경로, 현재문서_기준=문서_변경됨, 변경알림=알림) is False:
-                return False
-            문서_변경됨 = 문서_변경됨 or bool(알림.get('changed'))
+            선행목록 += [
+                (제목4종_사용, '제목·개요', 제목_hwpx_처리, 'title.hwpx', '제목·개요·붙임 선행 서식'),
+                (중제목_사용, '중제목', 중제목_hwpx_처리, 'midtitle.hwpx', '제목·개요·붙임 선행 서식'),
+                (붙임2종_사용, '붙임', 붙임_hwpx_처리, 'attachment.hwpx', '제목·개요·붙임 선행 서식'),
+            ]
     # 기본 표 서식(준말 '표'의 본말)은 제목·중제목·붙임 서식 표를 정한 뒤, 일반 표 정밀 복제보다 먼저
     # 입힌다(정밀 복제에 맞는 표는 예시 서식으로 다시 덮인다). 서식통일 작업에서도 적용한다.
-    if (((표준서식_사용 and 작업_모드 in ('format', 'all')) or 작업_모드 == 'unify')
+    기본표_포함 = False
+    if ((서식단계_사용 or 작업_모드 == 'unify')
             and stage_enabled(선택_세부작업, 'table_style', 작업_모드) and 기본표서식() is not None):
         if 쪽범위_요청 is not None:
             로그("쪽 범위 지정: 기본 표 서식(문서 전체 표 서식 변환)은 이번 작업에서 건너뜁니다.")
         else:
-            단계표시("기본 표 서식")
-            상태(f"{파일명} : 기본 표 서식")
             로그(f"기본 표 서식(준말 '표'): {표서식_설명(기본표서식())}")
-            알림 = {}
-            if 기본표서식_선행적용(작업파일경로, 현재문서_기준=문서_변경됨, 변경알림=알림) is False:
-                return False
-            문서_변경됨 = 문서_변경됨 or bool(알림.get('changed'))
-            기본표서식_적용됨 = True
+            선행목록.append((True, '기본 표 서식', 기본표서식_hwpx_처리, 'table_style.hwpx', '기본 표 서식'))
+            기본표_포함 = True
+    if any(항목[0] for 항목 in 선행목록):
+        상태(f"{파일명} : 글자·제목·표 선행 서식")
+        알림 = {}
+        if 제목붙임_선행적용(작업파일경로, 현재문서_기준=문서_변경됨,
+                            처리목록=tuple(선행목록), 변경알림=알림) is False:
+            return False
+        문서_변경됨 = 문서_변경됨 or bool(알림.get('changed'))
+        기본표서식_적용됨 = 기본표_포함
     if 표준서식_사용 and 작업_모드 in ('format', 'all'):
         if 쪽범위_요청 is None and 활성_정밀표_프로필 and stage_enabled(선택_세부작업, 'precise_table'):
             단계표시("표 정밀 서식")
@@ -12615,18 +12723,6 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
     # 페이지 판정을 왜곡하지 않도록 처리 시작 전에도 먼저 해제한다.
     if 작업_모드 != 'unify' and 보고서_페이지보호_전체해제() is False:
         return False
-
-    # 쪽 범위 작업: 아무것도 고치기 전에 범위를 문단·영역 번호로 고정한다.
-    if 쪽범위_요청 is not None:
-        상태(f"{파일명} : 작업 쪽 범위 확인")
-        범위결과 = 쪽범위_계산(*쪽범위_요청)
-        if 범위결과 is None:
-            return False
-        if 범위결과 is False:
-            raise RuntimeError("지정한 쪽 범위에 처리할 내용이 없습니다. 쪽 범위를 확인해 주세요.")
-        # 쪽 범위 작업은 앞의 구조 변환 단계(준말·박스 그림·선행 서식)를 건너뛰었으므로 보고서 표준서식이 첫 단계다.
-        if 표준서식_선행_적용(파일명) is False:
-            return False
 
     # 잔여 자간(이전 실행/수동 편집으로 남은 값)이 있으면 압축 여유가
     # 줄어드니, 처리 회차를 시작하기 전 문서 전체를 한 번만 0%로 초기화한다.
@@ -12662,7 +12758,6 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
     if 작업_모드 != 'unify' and 보고서_페이지보호_전체해제() is False:
         return False
     저장파일 = 저장파일명(파일)
-    최종규칙검사 = {}
     단계표시("저장")
     상태(f"{파일명} : {총회차}회 처리 완료 / 최종 저장 중")
     처리쪽수 = 처리_쪽수_구하기()
@@ -12671,77 +12766,9 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
         raise RuntimeError(f"문서 저장에 실패했습니다: {저장파일}")
     로그(f"전체 처리 {총회차}회 완료")
     로그(f"저장 완료: {저장파일}")
-    if stage_enabled(선택_세부작업, 'style_unify', 작업_모드):
-        if not _서식통일_문서대표프로필:
-            최종규칙검사['style_unify'] = {
-                'status': 'incomplete', 'checked': 0, 'issues': [],
-                'reason': '대표 스타일 표본이 없어 저장 결과를 검증할 수 없습니다.',
-            }
-        else:
-            try:
-                if 한글_문서_열기(hwp, 저장파일, 'HWPX', 'forceopen:true') is False:
-                    raise RuntimeError('저장 결과 재열기 실패')
-                if not 서식통일_빨간표시_사용:
-                    # 표준 서식이 뒤이어 기준을 정했으면 저장 결과에서 대표값을 새로 조사해 검수한다.
-                    _서식통일_문서대표프로필.clear()
-                style_check = 서식통일_전체_적용(
-                    고정_프로필_재적용=서식통일_빨간표시_사용, 검증만=True)
-                최종규칙검사['style_unify'] = style_check
-                if style_check.get('status') != 'passed':
-                    검수_문제_기록(
-                        파일,
-                        f"[저장 결과 서식통일 검증 {style_check.get('status')}] "
-                        f"불일치 {len(style_check.get('issues', []))}개, "
-                        f"판정 보류 그룹 {len(style_check.get('not_checkable', []))}개",
-                    )
-                if 작업_모드 == 'unify' and stage_enabled(선택_세부작업, 'table_unify', 작업_모드):
-                    table_check = 서식통일_표_전체_적용(검증만=True)
-                    최종규칙검사['table_unify'] = table_check
-                    if table_check.get('status') != 'passed':
-                        검수_문제_기록(파일, f"[저장 결과 표 서식통일 검증 {table_check.get('status')}] "
-                                             f"불일치 {len(table_check.get('issues', []))}개")
-            except Exception as exc:
-                최종규칙검사['style_unify'] = {
-                    'status': 'error', 'checked': 0, 'issues': [], 'error': str(exc),
-                }
-                검수_문제_기록(파일, f'[저장 결과 서식통일 검증 실패] {exc}')
-                로그(f"저장 결과 서식통일 검증 실패: {exc}")
-        로그("[서식통일] 5/5 저장된 결과를 읽기 전용으로 재검수 완료")
-        _서식통일_최종결과_사용자확인(최종규칙검사['style_unify'])
-    if 검수_사용:
-        inspections = {}
-        if 작업_모드 in ('format', 'all') and stage_enabled(선택_세부작업, 'page_group'):
-            inspections['page_group'] = 보고서_페이지배치_최종검사
-        if 작업_모드 in ('spacing', 'all'):
-            if stage_enabled(선택_세부작업, 'word_check'):
-                inspections['word_check'] = 보고서_단어분리_최종검사
-            if stage_enabled(선택_세부작업, 'control_word_check'):
-                inspections['control_word_check'] = lambda: 보고서_단어분리_최종검사(컨트롤=True)
-        try:
-            # 저장된 결과를 다시 열어 실제 재배치 상태를 검사한다. 수정 함수는 호출하지 않는다.
-            if 한글_문서_열기(hwp, 저장파일, 'HWPX', 'forceopen:true') is False:
-                raise RuntimeError('저장 결과 재열기 실패')
-        except Exception as exc:
-            for key in inspections:
-                최종규칙검사[key] = {'status': 'error', 'error': str(exc)}
-            검수_문제_기록(파일, f'[저장 결과 재열기 실패] {exc}')
-        else:
-            기록_경계 = len(검수_문제목록)
-            for key, inspect in inspections.items():
-                try:
-                    result = inspect()
-                    if result is False:
-                        return False
-                    최종규칙검사[key] = result
-                    로그(f"저장 결과 {key} 검수: {result['status']} / 검사 {result['checked']}건 / 오류 {len(result['issues'])}건")
-                except Exception as exc:
-                    최종규칙검사[key] = {'status': 'error', 'error': str(exc)}
-                    검수_문제_기록(파일, f'[최종 {key} 검사 실패] {exc}')
-            완료된_검사 = {key for key, value in 최종규칙검사.items()
-                        if value.get('status') in ('passed', 'failed')}
-            대체수 = 처리중_기록_대체(파일, 완료된_검사, 기록_경계)
-            if 대체수:
-                로그(f"처리 중 미해결 기록 {대체수}건을 저장 결과 검사로 대체")
+    최종규칙검사 = 저장결과_규칙검수(파일, 저장파일, 결과창=(total == 1))
+    if 최종규칙검사 is False:
+        return False
     무결성 = None
     if 검수_사용 and 원본_구조 is not None:
         결과_구조 = inspect_hwpx(저장파일)
@@ -13476,6 +13503,10 @@ class HwpAutoDocFitGUI:
 
         self.selected_mode = tk.StringVar(value="spacing")
         self.always_on_top_var = tk.BooleanVar(value=bool(저장된_설정.get("always_on_top", True)))
+        # 카드는 세 장이다. '한 번에 적용'에서 자간 조정을 빼면 내부 작업 유형은 서식 적용(format)이다.
+        self.include_spacing_var = tk.BooleanVar(value=bool(저장된_설정.get("all_include_spacing", True)))
+        self.include_spacing_var.trace_add("write", self._설정_변경됨)
+        self.card_mode_var = tk.StringVar(value="spacing")   # 카드 표시용(format도 '한 번에 적용' 카드)
         choose = ttk.LabelFrame(main, text="처리 방식", padding=card_padding, style="Card.TLabelframe")
         choose.grid(row=1, column=0, sticky="ew", pady=6)
         self.choose_frame = choose
@@ -13484,15 +13515,14 @@ class HwpAutoDocFitGUI:
         for i, (title, mode, desc) in enumerate((
             ("자간 정리", "spacing", "줄 끝의 끊긴 단어와 자간을 정리합니다."),
             ("서식 통일", "unify", "문서에서 많이 쓰인 서식으로 맞춥니다."),
-            ("서식 적용", "format", "설정한 공문서 서식을 적용합니다."),
-            ("한 번에 적용", "all", "자간과 서식을 함께 정리합니다."))):
+            ("한 번에 적용", "all", "공문서 서식을 입히고 자간까지 정리합니다."))):
             choose.grid_columnconfigure(i, weight=1, uniform="modes")
             card = tk.Frame(choose, bg=UI_COLORS["separator"], padx=1, pady=1, cursor="hand2")
             card.grid(row=1, column=i, sticky="nsew", padx=max(2, round(4 * self._ui_scale)))
             inner = tk.Frame(card, bg=UI_COLORS["surface"], padx=max(7, round(12 * self._ui_scale)),
                              pady=max(6, round(10 * self._ui_scale)), cursor="hand2")
             inner.pack(fill="both", expand=True)
-            rb = ttk.Radiobutton(inner, text=title, value=mode, variable=self.selected_mode,
+            rb = ttk.Radiobutton(inner, text=title, value=mode, variable=self.card_mode_var,
                                  command=lambda m=mode: self._카드_클릭(m), style="Mode.TRadiobutton")
             rb.pack(anchor="w")
             description = tk.Label(inner, text=desc.replace("\n", " "), bg=UI_COLORS["surface"],
@@ -13501,6 +13531,14 @@ class HwpAutoDocFitGUI:
                                    font=("맑은 고딕", 9), cursor="hand2")
             description.pack(anchor="w", fill="x", pady=(5, 8))
             self.mode_buttons.append(rb)
+            if mode == "all":
+                # 끄면 기존 자간을 그대로 두고 서식만 입힌다(결과 파일 이름은 '서식적용').
+                self.include_spacing_check = tk.Checkbutton(
+                    inner, text="자간 조정 포함", variable=self.include_spacing_var,
+                    command=self._자간포함_변경, bg=UI_COLORS["surface"], activebackground=UI_COLORS["surface"],
+                    fg=UI_COLORS["ink"], font=("맑은 고딕", 9), anchor="w", cursor="hand2")
+                self.include_spacing_check.pack(anchor="w", pady=(0, 4))
+                self.mode_buttons.append(self.include_spacing_check)
             self.mode_cards[mode] = (card, inner, description)
             for surface in (card, inner, description):
                 surface.bind("<Button-1>", lambda e, m=mode: self._카드_클릭(m))
@@ -14203,7 +14241,8 @@ class HwpAutoDocFitGUI:
                 self.std_detail_checks.append(체크)
 
     def _세부작업_열기(self, mode, save_default=None):
-        titles = {"spacing": "자간 정리", "unify": "서식 통일", "format": "서식 적용", "all": "한 번에 적용"}
+        titles = {"spacing": "자간 정리", "unify": "서식 통일", "format": "한 번에 적용(자간 조정 제외)",
+                  "all": "한 번에 적용"}
         dialog = tk.Toplevel(self.root)
         dialog.title(f"{titles[mode]} · 세부 작업")
         dialog.geometry({"spacing": "520x650", "unify": "520x320"}.get(mode, "720x700"))
@@ -14291,11 +14330,10 @@ class HwpAutoDocFitGUI:
             summary = "줄 끝의 끊긴 단어와 자간을 정리합니다."
         elif mode == "unify":
             summary = "문두기호별로 문서에서 많이 쓰인 서식을 적용합니다."
+        elif mode == "format":
+            summary = "자간 조정 제외: 기존 자간은 그대로 두고 공문서 서식만 적용합니다."
         else:
-            if mode == "format":
-                summary = "설정한 공문서 서식을 적용합니다."
-            else:
-                summary = "자간과 서식을 함께 정리합니다."
+            summary = "공문서 서식을 입히고 자간까지 함께 정리합니다."
         choices = self.stage_choices[mode]
         disabled = sum(not value for key, value in choices.items() if stage_default(key))
         if choices.get("style_unify") and mode != "unify":
@@ -14336,7 +14374,9 @@ class HwpAutoDocFitGUI:
         라디오 버튼의 작은 표시만으로 선택 상태를 전달하지 않고 카드 테두리와
         배경을 함께 바꾼다. 키보드로 선택해도 같은 피드백을 받는다.
         """
-        selected = self.selected_mode.get()
+        selected = self._카드키(self.selected_mode.get())
+        if hasattr(self, "card_mode_var") and self.card_mode_var.get() != selected:
+            self.card_mode_var.set(selected)
         for mode, (card, inner, description) in getattr(self, "mode_cards", {}).items():
             active = mode == selected
             border = UI_COLORS["teal"] if active else UI_COLORS["separator"]
@@ -14344,6 +14384,8 @@ class HwpAutoDocFitGUI:
             card.configure(bg=border)
             inner.configure(bg=surface)
             description.configure(bg=surface)
+            if mode == "all" and hasattr(self, "include_spacing_check"):
+                self.include_spacing_check.configure(bg=surface, activebackground=surface)
 
     def _메인_크기조정(self, event=None):
         """창 크기가 바뀔 때 UI 밀도를 폭에 맞춰 조정한다."""
@@ -14369,8 +14411,8 @@ class HwpAutoDocFitGUI:
                 widget.grid_forget()
         width, height = self.root.winfo_width(), self.root.winfo_height()
         scale = getattr(self, "_ui_scale", 1.0)
-        columns = 2 if width < 1200 * scale else 4
         cards = list(self.mode_cards.items())
+        columns = 2 if width < 1000 * scale else len(cards)
         for index, (_mode, (card, _inner, _desc)) in enumerate(cards):
             card.grid_configure(row=1 + index // columns, column=index % columns,
                                 sticky="nsew", padx=3, pady=3)
@@ -14419,10 +14461,27 @@ class HwpAutoDocFitGUI:
         if self._안내단계 == 2 and not self.running:
             self._안내_설정(3)
 
+    @staticmethod
+    def _카드키(mode):
+        """내부 작업 유형이 놓이는 카드. 서식 적용(format)은 '한 번에 적용'에서 자간 조정을 뺀 것이다."""
+        return "all" if mode == "format" else mode
+
+    def _한번에_모드(self):
+        """'한 번에 적용' 카드의 내부 작업 유형: 자간 조정 포함이면 all, 아니면 format."""
+        return "all" if self.include_spacing_var.get() else "format"
+
     def _카드_클릭(self, mode):
         if self.running:
+            self._모드카드_외관갱신()
             return
-        self.selected_mode.set(mode)
+        self.selected_mode.set(self._한번에_모드() if mode in ("all", "format") else mode)
+        self._모드_선택됨()
+
+    def _자간포함_변경(self):
+        """'자간 조정 포함'을 바꾸면 '한 번에 적용' 카드를 고르고 내부 작업 유형을 맞춘다."""
+        if self.running:
+            return
+        self.selected_mode.set(self._한번에_모드())
         self._모드_선택됨()
 
     # ---- 문서·결과 열기 / 작업 결과 표시 ------------------------------
@@ -14640,7 +14699,7 @@ class HwpAutoDocFitGUI:
             self.paren_shrink_var.set(True)
             self.paren_label_bold_var.set(True)
             self.keep_punctuation_set_var.set(True)
-        self.selected_mode.set("format")
+        self.selected_mode.set(self._한번에_모드())
         if self._안내단계 == 2:
             self._안내_설정(3)
         self._표준서식_하위옵션_상태_갱신()
@@ -16405,7 +16464,7 @@ class HwpAutoDocFitGUI:
         if not candidates:
             messagebox.showwarning(APP_NAME, "HWP 또는 HWPX 예시 문서를 놓아 주세요.", parent=self.root)
             return
-        self.selected_mode.set("format")
+        self.selected_mode.set(self._한번에_모드())
         self._서식_분석_시작(candidates[0], 이름묻기=False)
 
     def _서식_복사완료(self, profile=None, error=None):
@@ -16435,7 +16494,7 @@ class HwpAutoDocFitGUI:
         self._활성_서식_프로파일 = identifier
         self._프로파일_목록갱신()
         self._프로파일_선택()
-        self.selected_mode.set("format")
+        self.selected_mode.set(self._한번에_모드())
         if hasattr(self, "format_drop_label"):
             self.format_drop_label.configure(text=f"적용 준비 완료 · {profile['name']}")
         self.status_var.set(f"새 문서 서식 추가: {profile['name']}")
@@ -16974,6 +17033,8 @@ class HwpAutoDocFitGUI:
             for 키, 변수 in self.std_parspace_vars.items():
                 설정값[키] = str(변수.get())
             설정값["always_on_top"] = bool(self.always_on_top_var.get()) if hasattr(self, "always_on_top_var") else True
+            설정값["all_include_spacing"] = (bool(self.include_spacing_var.get())
+                                           if hasattr(self, "include_spacing_var") else True)
             설정값["active_format_profile"] = getattr(self, "_활성_서식_프로파일", "")
             기존_설정 = 설정_불러오기()
             기존_세부작업 = 기존_설정.get("stage_choices", {})
@@ -18028,7 +18089,7 @@ class HwpAutoDocFitGUI:
     def _서식통일_결과_확인창(self, 요청):
         result = 요청["payload"] or {}
         window = tk.Toplevel(self.root)
-        window.title("서식통일 5/5 · 작업 결과 확인")
+        window.title("서식통일 5/5 · 작업 결과 확인" + (f" · {result['file']}" if result.get("file") else ""))
         window.transient(self.root)
         window.geometry("760x560")
         window.minsize(600, 400)
@@ -18068,7 +18129,7 @@ class HwpAutoDocFitGUI:
 
         ttk.Button(host, text="결과 확인", style="Primary.TButton", command=finish).pack(anchor="e", pady=(10, 0))
         window.protocol("WM_DELETE_WINDOW", finish)
-        window.grab_set()
+        # 작업은 이 창을 기다리지 않고 이어지므로 모달로 잡지 않는다(중단 단추·완료 안내를 막지 않게).
         self._검토창_앞으로(window)
         window.focus_set()
 

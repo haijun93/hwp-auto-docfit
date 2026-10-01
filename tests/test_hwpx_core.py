@@ -1,9 +1,11 @@
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
-from docfit_core import HwpxSecurityError, compare_documents, export_markdown, inspect_hwpx, validate_hwpx
+from docfit_core import (HwpxSecurityError, compare_documents, export_markdown, inspect_hwpx,
+                        validate_and_inspect_hwpx, validate_hwpx)
 
 
 HEADER = b'<?xml version="1.0" encoding="UTF-8"?><hh:head xmlns:hh="urn:head" />'
@@ -115,6 +117,66 @@ class HwpxCoreTest(unittest.TestCase):
             before = inspect_hwpx(before_path)
             self.assertEqual(before.text, "ㅇ 본문 내용")
             self.assertEqual(compare_documents(before, inspect_hwpx(after_path))["text_similarity"], 1.0)
+
+    def test_identical_body_skips_expensive_sequence_matching(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / 'same.hwpx'
+            make_hwpx(source)
+            document = inspect_hwpx(source)
+            with patch('docfit_core.hwpx.SequenceMatcher', side_effect=AssertionError('동일 본문 재비교')):
+                result = compare_documents(document, document)
+            self.assertTrue(result['ok'])
+            self.assertEqual(result['text_similarity'], 1.0)
+
+    def test_all_body_text_can_move_into_a_table(self):
+        before_xml = '<sec><p><run><t>보존할 보고서 본문입니다</t></run></p></sec>'.encode()
+        after_xml = ('<sec><p><run><tbl><tr><tc><p><run><t>보존할 보고서 본문입니다</t>'
+                     '</run></p></tc></tr></tbl></run></p></sec>').encode()
+        with tempfile.TemporaryDirectory() as folder:
+            before_path, after_path = Path(folder) / 'before.hwpx', Path(folder) / 'after.hwpx'
+            make_hwpx(before_path, before_xml)
+            make_hwpx(after_path, after_xml)
+            result = compare_documents(inspect_hwpx(before_path), inspect_hwpx(after_path))
+            self.assertTrue(result['ok'], result['issues'])
+
+    def test_table_only_document_still_detects_content_loss(self):
+        template = '<sec><tbl><tr><tc><p><run><t>{}</t></run></p></tc></tr></tbl></sec>'
+        with tempfile.TemporaryDirectory() as folder:
+            before_path, after_path = Path(folder) / 'before.hwpx', Path(folder) / 'after.hwpx'
+            make_hwpx(before_path, template.format('표 안의 중요한 본문 내용입니다').encode())
+            make_hwpx(after_path, template.format('표').encode())
+            result = compare_documents(inspect_hwpx(before_path), inspect_hwpx(after_path))
+            self.assertFalse(result['ok'])
+            self.assertTrue(any('분량' in issue['message'] for issue in result['issues']))
+
+    def test_summary_does_not_copy_discarded_blocks(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / 'summary.hwpx'
+            make_hwpx(source)
+            document = inspect_hwpx(source)
+            class NoCopy:
+                def __deepcopy__(self, memo):
+                    raise AssertionError('요약에서 버릴 문서 구조를 복사함')
+            document.blocks = [NoCopy()]
+            summary = document.summary()
+            self.assertNotIn('blocks', summary)
+            self.assertNotIn('text', summary)
+            summary['warnings'].append('독립된 목록')
+            self.assertEqual(document.warnings, [])
+
+    def test_combined_validation_and_inspection_checks_crc_once(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / 'checked.hwpx'
+            make_hwpx(source)
+            original = ZipFile.testzip
+            with patch.object(ZipFile, 'testzip', autospec=True, side_effect=original) as crc:
+                validation, document = validate_and_inspect_hwpx(source)
+            crc.assert_called_once()
+            self.assertEqual(validation['entry_count'], 3)
+            self.assertEqual(document.table_count, 1)
+            with patch.object(ZipFile, 'testzip', return_value='Contents/section0.xml'):
+                with self.assertRaisesRegex(HwpxSecurityError, 'CRC'):
+                    validate_and_inspect_hwpx(source)
 
 
 if __name__ == "__main__":
