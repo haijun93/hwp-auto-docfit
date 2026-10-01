@@ -145,6 +145,48 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('all card can exclude spacing and runs as format', (tester) async {
+    tester.view.physicalSize = const Size(1024, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final calls = <List<Object?>>[];
+    final state = initialState();
+    state['files'] = [
+      {'name': '문서.hwp', 'folder': r'C:\문서'},
+    ];
+    state['include_spacing'] = true;
+    Future<Object?> api(String name, List<Object?> args) async {
+      if (name != 'get_state') calls.add([name, ...args]);
+      if (name == 'set_mode') {
+        state['mode'] = state['include_spacing'] == true ? 'all' : 'format';
+      }
+      if (name == 'set_include_spacing') {
+        state['include_spacing'] = args.first;
+        state['mode'] = args.first == true ? 'all' : 'format';
+      }
+      return Map<String, dynamic>.from(state);
+    }
+
+    await tester.pumpWidget(DocFitApp(api: api));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('작업 방식 선택'));
+    await tester.pumpAndSettle();
+    // 카드는 세 장이고 '서식 적용' 카드는 없다.
+    expect(find.text('서식 적용'), findsNothing);
+    await tester.tap(find.text('한 번에 적용'));
+    await tester.pumpAndSettle();
+    expect(calls.last, ['set_mode', 'all']);
+    expect(find.text('결과: 문서이름(일괄적용).hwpx'), findsOneWidget);
+    await tester.tap(find.byType(Switch));
+    await tester.pumpAndSettle();
+    expect(calls.last, ['set_include_spacing', false]);
+    expect(find.text('결과: 문서이름(서식적용).hwpx'), findsOneWidget);
+    expect(find.textContaining('한 번에 적용(자간 조정 제외)'), findsWidgets);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('finished job moves to results with per-file actions', (
     tester,
   ) async {

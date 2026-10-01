@@ -41,9 +41,9 @@
         <div class="mode-grid" id="modeGrid" role="radiogroup" aria-label="정리 방식">
           <button class="mode-card selected" type="button" data-mode="spacing" role="radio" aria-checked="true"><span class="mode-check">✓</span><span class="mode-title">자간 정리</span><span class="mode-desc">줄 끝에서 끊긴 단어와 자간을 다듬습니다.</span></button>
           <button class="mode-card" type="button" data-mode="unify" role="radio" aria-checked="false"><span class="mode-check">✓</span><span class="mode-title">서식 통일</span><span class="mode-desc">문서에서 많이 쓰인 서식으로 맞춥니다.</span></button>
-          <button class="mode-card" type="button" data-mode="format" role="radio" aria-checked="false"><span class="mode-check">✓</span><span class="mode-title">서식 적용</span><span class="mode-desc">설정한 공문서 서식을 적용합니다.</span></button>
-          <button class="mode-card" type="button" data-mode="all" role="radio" aria-checked="false"><span class="mode-check">✓</span><span class="mode-title">한 번에 적용</span><span class="mode-desc">자간과 서식을 함께 정리합니다.</span></button>
+          <button class="mode-card" type="button" data-mode="all" role="radio" aria-checked="false"><span class="mode-check">✓</span><span class="mode-title">한 번에 적용</span><span class="mode-desc">공문서 서식을 입히고 자간까지 정리합니다.</span></button>
         </div>
+        <label class="spacing-option" id="spacingOption" hidden><input type="checkbox" id="includeSpacing" checked><span><b>자간 조정 포함</b><small>끄면 기존 자간은 그대로 두고 서식만 적용합니다(결과: 문서이름(서식적용).hwpx).</small></span></label>
         <div class="mode-selected"><div><b id="modeSummary">자간 정리</b><small id="defaultNote">이전 작업의 세부 설정을 기본값으로 사용합니다.</small></div><button id="stagesButton" class="button button-quiet" type="button">세부 내용 설정</button></div>
         <details class="range-box" id="rangeBox"><summary><span><b>특정 쪽만 정리</b><small>기본은 문서 전체를 정리합니다.</small></span><span class="switch" aria-hidden="true"></span></summary><div class="range-fields"><label>시작 쪽<input id="rangeStart" value="1" inputmode="numeric"></label><span>부터</span><label>끝 쪽<input id="rangeEnd" value="1" inputmode="numeric"></label><small>‘마지막쪽’ 입력 가능</small></div></details>
       </div>

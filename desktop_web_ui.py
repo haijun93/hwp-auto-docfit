@@ -96,6 +96,7 @@ class DesktopWebBridge:
                 ],
                 "count": len(gui.files),
                 "mode": mode,
+                "include_spacing": self._include_spacing(),
                 "status": gui.status_var.get(),
                 "running": bool(gui.running),
                 "range": {
@@ -191,16 +192,47 @@ class DesktopWebBridge:
         self._tk(self.gui.목록지우기)
         return self.get_state()
 
+    def _include_spacing(self):
+        variable = getattr(self.gui, "include_spacing_var", None)
+        return True if variable is None else bool(variable.get())
+
+    def _mode_selected(self):
+        if hasattr(self.gui, "_모드_선택됨"):
+            self.gui._모드_선택됨()
+
     def set_mode(self, mode):
+        """작업 카드를 고른다. 카드는 세 장이며 '한 번에 적용'(all)은 '자간 조정 포함'을 끄면
+        서식 적용(format)으로 실행한다. 예전 화면이 보내는 format은 자간 조정을 끈 한 번에 적용이다."""
         if mode not in {"spacing", "unify", "format", "all"}:
             raise ValueError("지원하지 않는 작업 방식입니다.")
 
         def select():
-            if not self.gui.running:
-                self.gui.selected_mode.set(mode)
-                self.gui._모드_선택됨()
+            if self.gui.running:
+                return
+            internal = mode
+            if mode in ("all", "format"):
+                variable = getattr(self.gui, "include_spacing_var", None)
+                if mode == "format" and variable is not None:
+                    variable.set(False)
+                internal = "all" if self._include_spacing() else "format"
+            self.gui.selected_mode.set(internal)
+            self._mode_selected()
 
         self._tk(select)
+        return self.get_state()
+
+    def set_include_spacing(self, on):
+        """'한 번에 적용'의 '자간 조정 포함'을 바꾸고 그 카드를 고른다(설정 파일에 저장된다)."""
+        def update():
+            gui = self.gui
+            variable = getattr(gui, "include_spacing_var", None)
+            if gui.running or variable is None:
+                return
+            variable.set(bool(on))
+            gui.selected_mode.set("all" if on else "format")
+            self._mode_selected()
+
+        self._tk(update)
         return self.get_state()
 
     def set_range(self, enabled, start="1", end="1"):
@@ -426,7 +458,7 @@ class _BrowserApi:
             "open_settings", "text_input", "open_stages", "open_log",
             "open_results", "next_job", "run_tool", "open_result",
             "show_result", "set_stage", "reset_stages", "set_stage_default",
-            "set_profile", "set_option",
+            "set_profile", "set_option", "set_include_spacing",
         ):
             setattr(self, name, getattr(bridge, name))
 

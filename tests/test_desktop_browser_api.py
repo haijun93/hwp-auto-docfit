@@ -50,6 +50,7 @@ class _FakeGui:
         self.autoclose_var = _Var(True)
         self.verify_var = _Var(False)
         self.check_updates_on_start_var = _Var(True)
+        self.include_spacing_var = _Var(True)
         self._결과목록 = [{"원본": r"C:\a\문서.hwp", "결과": r"C:\a\문서(자간조정).hwpx", "쪽수": 3}]
         self.opened = []
         self.stage_board = object()
@@ -81,7 +82,7 @@ class BrowserApiTests(unittest.TestCase):
         bridge.window = object()
         api = _BrowserApi(bridge)
         public = {name: getattr(api, name) for name in dir(api) if not name.startswith('_')}
-        self.assertEqual(len(public), 24)
+        self.assertEqual(len(public), 25)
         self.assertTrue(all(callable(value) for value in public.values()))
         self.assertNotIn('gui', public)
         self.assertNotIn('window', public)
@@ -145,6 +146,24 @@ class BrowserApiTests(unittest.TestCase):
             {"id": "", "name": "기본 서식"},
             {"id": "abc", "name": "[마포구] 보고서"},
         ])
+
+    def test_all_card_runs_format_when_spacing_is_excluded(self):
+        gui = _FakeGui()
+        bridge = _bridge(gui)
+        state = bridge.set_mode("all")
+        self.assertEqual((state["mode"], state["include_spacing"]), ("all", True))
+        # '자간 조정 포함'을 끄면 같은 카드에서 서식 적용(format)으로 실행한다.
+        state = bridge.set_include_spacing(False)
+        self.assertEqual((state["mode"], state["include_spacing"]), ("format", False))
+        bridge.set_mode("spacing")
+        self.assertEqual(bridge.set_mode("all")["mode"], "format")   # 저장된 선택을 따른다
+        state = bridge.set_include_spacing(True)
+        self.assertEqual(state["mode"], "all")
+        # 예전 화면이 보내는 format은 자간 조정을 끈 한 번에 적용이다.
+        state = bridge.set_mode("format")
+        self.assertEqual((state["mode"], state["include_spacing"]), ("format", False))
+        gui.running = True
+        self.assertEqual(bridge.set_include_spacing(True)["mode"], "format")
 
     def test_result_actions_use_selected_result(self):
         gui = _FakeGui()

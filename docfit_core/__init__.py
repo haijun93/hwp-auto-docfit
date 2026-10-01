@@ -6,6 +6,7 @@ from .hwpx import (
     compare_documents,
     export_markdown,
     inspect_hwpx,
+    validate_and_inspect_hwpx,
     validate_hwpx,
 )
 from .kordoc_bridge import (
@@ -31,6 +32,7 @@ __all__ = [
     "compare_documents",
     "export_markdown",
     "inspect_hwpx",
+    "validate_and_inspect_hwpx",
     "validate_hwpx",
     "KordocUnavailableError",
     "analyze_form",
