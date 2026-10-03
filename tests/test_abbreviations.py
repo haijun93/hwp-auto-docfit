@@ -36,21 +36,36 @@ class RegistryTest(unittest.TestCase):
         self.assertEqual(clean_key(' 제목1 '), '제목1')
         self.assertEqual(clean_key('두 어절'), '')
 
-    def test_match_uses_first_word_with_or_without_colon(self):
-        """빈칸을 뺀 첫 어절이 준말이면 바꾼다. 콜론은 있어도 되고 없어도 된다."""
+    def test_match_requires_colon_after_first_word(self):
+        """빈칸을 뺀 첫 어절이 준말이고 바로 뒤에 콜론이 있어야 바꾼다(준말과 콜론 사이 빈칸은 허용)."""
         self.assertEqual(match_line('제목1: 지구 침공계획(안) 보고', REGISTRY), ('제목1', '지구 침공계획(안) 보고', 5))
         self.assertEqual(match_line('  제목1 :지구', REGISTRY)[:2], ('제목1', '지구'))
         self.assertEqual(match_line('제목1：지구', REGISTRY)[:2], ('제목1', '지구'))
         self.assertEqual(match_line('제목1:', REGISTRY)[:2], ('제목1', ''))
-        self.assertEqual(match_line('제목1 지구 침공계획(안) 보고', REGISTRY), ('제목1', '지구 침공계획(안) 보고', 4))
-        self.assertEqual(match_line('   로1   추진배경', REGISTRY), ('로1', '추진배경', 8))
-        self.assertEqual(match_line('제목1 지구: 가', REGISTRY)[:2], ('제목1', '지구: 가'))
-        self.assertEqual(match_line('붙임  지구 침공 세부 시행계획 1부.  끝.', REGISTRY)[:2],
-                         ('붙임', '지구 침공 세부 시행계획 1부.  끝.'))
-        # 첫 어절 전체가 준말이 아니거나, 콜론도 뒤 글도 없이 준말만 있는 줄은 바꾸지 않는다.
-        for text in ('제목1', '  개요  ', '제목입니다 가', '일시: 오늘', '제목11: 가', '□ 개요 가', ''):
+        self.assertEqual(match_line('   로1   :  추진배경', REGISTRY), ('로1', '추진배경', 11))
+        self.assertEqual(match_line('붙임: 지구 침공 세부 시행계획', REGISTRY)[:2],
+                         ('붙임', '지구 침공 세부 시행계획'))
+        # 콜론이 없으면 준말로 시작하는 줄도 바꾸지 않는다(본문에 흔한 '붙임 1부'·'개요' 등).
+        for text in ('제목1 지구 침공계획(안) 보고', '   로1   추진배경', '제목1 지구: 가',
+                     '붙임  지구 침공 세부 시행계획 1부.  끝.', '개요 사업 목적'):
+            self.assertIsNone(match_line(text, REGISTRY), text)
+        # 첫 어절 전체가 준말이 아니거나 준말만 있는 줄도 바꾸지 않는다.
+        for text in ('제목1', '  개요  ', '제목입니다 가', '일시: 오늘', '제목11: 가', '□ 개요: 가', ''):
             self.assertIsNone(match_line(text, REGISTRY), text)
         self.assertIsNone(match_line('제목1: 가', {}))
+
+    def test_attachment_list_with_copies_is_not_converted(self):
+        """콜론 뒤 글에 부수 표기('1부.')가 있으면 공문 붙임 목록이라 본말로 바꾸지 않는다."""
+        from docfit_core.abbreviations import excluded_reason
+        for text in ('붙임 : 1. 지구 침공 세부 시행계획 1부.', '붙임  : 1. 지구 침공 세부 시행계획 1부.  끝.',
+                     '붙임: 회의 자료 2 부.', '개요: 시행계획 1부.'):
+            self.assertIsNone(match_line(text, REGISTRY), text)
+            self.assertIn('붙임 목록', excluded_reason(text, REGISTRY))
+        # 부수 표기가 아니면 그대로 바꾼다('행정안전부'의 '부'는 부수가 아니다).
+        self.assertEqual(match_line('붙임: 행정안전부 지침', REGISTRY)[:2], ('붙임', '행정안전부 지침'))
+        self.assertEqual(match_line('붙임: 지구 침공 세부 시행계획', REGISTRY)[0], '붙임')
+        self.assertEqual(excluded_reason('붙임: 지구 침공 세부 시행계획', REGISTRY), '')
+        self.assertEqual(excluded_reason('본문 1부.', REGISTRY), '')
 
     def test_table_entry_keeps_learned_style_and_never_converts_lines(self):
         """준말 '표'의 본말은 기본 표 서식이다. 배운 서식을 담고, 문서의 '표:' 줄은 바꾸지 않는다."""
@@ -76,7 +91,7 @@ class RegistryTest(unittest.TestCase):
         """준말 "제목:"은 "제목1:"로 취급한다(등록표에 '제목'이 따로 있으면 그 등록이 우선)."""
         self.assertEqual(match_line('제목: 지구 침공계획(안) 보고', REGISTRY), ('제목1', '지구 침공계획(안) 보고', 4))
         self.assertEqual(match_line('제목 :지구', REGISTRY)[:2], ('제목1', '지구'))
-        self.assertEqual(match_line('제목 지구 침공계획(안) 보고', REGISTRY), ('제목1', '지구 침공계획(안) 보고', 3))
+        self.assertIsNone(match_line('제목 지구 침공계획(안) 보고', REGISTRY))   # 콜론이 없으면 바꾸지 않는다
         own = dict(REGISTRY, 제목={'type': 'text', 'value': '자체 제목'})
         self.assertEqual(match_line('제목: 가', own)[0], '제목')
         no_title1 = {k: v for k, v in REGISTRY.items() if k != '제목1'}
@@ -169,6 +184,21 @@ class DocumentConversionTest(unittest.TestCase):
         ns = self.ns
         return [ns['제목_문자열'](p) for p in section if self.name(p) == 'p']
 
+    def test_official_attachment_list_is_not_abbreviation(self):
+        """공문 붙임 목록('붙임 : 1. … 1부.  끝.')은 준말이 아니므로 바꾸지 않고 이유를 작업 로그에 남긴다."""
+        ns = self.ns
+        body = (self._p('붙임 : 1. 지구 침공 세부 시행계획 1부.')
+                + self._p('            2. 스케줄표 1부.  끝.')
+                + self._p('붙임  : 1. 지구 침공 세부 시행계획 1부.  끝.')
+                + self._p('붙임: 지구 침공 세부 시행계획'))
+        fn = ns['준말_hwpx_처리']
+        logs = Mock()
+        with patch.dict(fn.__globals__, {'준말_등록표': REGISTRY, '로그': logs}):
+            found = fn(self._doc(body))
+        self.assertEqual(found, {'Contents/section0.xml': [(3, '붙임', '지구 침공 세부 시행계획')]})
+        messages = [call.args[0] for call in logs.call_args_list]
+        self.assertEqual(sum('공문 붙임 목록' in m for m in messages), 2, messages)
+
     def test_format_lines_become_tables_and_label_lines_disappear(self):
         ns = self.ns
         body = (self._p(self.BODY_SEC, '제목1: 지구 침공계획(안) 보고')
@@ -186,7 +216,10 @@ class DocumentConversionTest(unittest.TestCase):
         self.assertEqual((first.get('rowCnt'), first.get('colCnt')), ('2', '2'))
         cells = ns['제목_셀들'](first)
         self.assertEqual(ns['제목_문자열'](cells[0]), '지구 침공계획(안) 보고')
-        self.assertEqual([ns['제목_문자열'](c) for c in cells[1:]], ['', ''])
+        # 날짜 칸은 오늘 날짜(요일 포함)로, 담당자 칸은 기준 표 글 그대로 둔다(사용자 글은 A1에만).
+        today = __import__('datetime').date.today()
+        dated = f"’{today.year % 100:02d}. {today.month}. {today.day}.({'월화수목금토일'[today.weekday()]})"
+        self.assertEqual([ns['제목_문자열'](c) for c in cells[1:]], [dated, '○○과장/담당관'])
         third = next(t for t in paragraphs[2].iter() if self.name(t) == 'tbl')
         self.assertEqual((third.get('rowCnt'), third.get('colCnt')), ('1', '1'))
         self.assertEqual(ns['제목_문자열'](third), '삼채인의 명랑 지구침략계획을 수립하고 보고드림')
@@ -388,10 +421,10 @@ class DocumentConversionTest(unittest.TestCase):
                 f'<hp:inMargin left="510" right="510" top="141" bottom="141"/>{rows}</hp:tbl><hp:t/></hp:run></hp:p>')
 
     def test_default_table_style_skips_format_tables_and_keeps_table_lines(self):
-        """기본 준말만으로 '제목 …'은 제목 표가 되고 '표: …' 줄은 그대로, 기본 표 서식은 일반 표에만 입힌다."""
+        """기본 준말만으로 '제목: …'은 제목 표가 되고 '표: …' 줄은 그대로, 기본 표 서식은 일반 표에만 입힌다."""
         from docfit_core.abbreviations import merge_with_defaults
         ns = self.ns
-        source = self._doc(self._p('제목 가 보고') + self._p('표: 추진 현황') + self._data_table())
+        source = self._doc(self._p('제목: 가 보고') + self._p('표: 추진 현황') + self._data_table())
         convert, style = ns['준말_hwpx_처리'], ns['기본표서식_hwpx_처리']
         with patch.dict(convert.__globals__, {'준말_등록표': merge_with_defaults({})}):
             found = convert(source)
@@ -433,7 +466,7 @@ class DocumentConversionTest(unittest.TestCase):
         self.assertIn('탭', logged[1])
 
     def test_format_tables_are_found_for_table_style_guard(self):
-        """표 머리글·본문 서식이 덮지 않도록 준말로 만든 제목(빈 날짜·담당자 칸)·중제목·붙임 표를 찾는다."""
+        """표 머리글·본문 서식이 덮지 않도록 준말로 만든 제목(날짜는 오늘, 담당자는 기준 글)·중제목·붙임 표를 찾는다."""
         ns = self.ns
         lines = ('제목1: 가 보고', '제목2: 부제, 긴 제목 글', '개요: 나', '로1: 추진배경', '붙임: 우수시책 요약서')
         source = self._doc(''.join(self._p(line) for line in lines))
@@ -444,14 +477,16 @@ class DocumentConversionTest(unittest.TestCase):
         with zipfile.ZipFile(target) as z:
             section = self.parse(z.read('Contents/section0.xml'))
         tables = [t for t in section.iter() if self.name(t) == 'tbl']
-        self.assertIsNone(ns['제목_유형판별'](tables[0]))                  # 선행 서식 대상 판별은 그대로
+        # 날짜(오늘)·담당자 칸 글이 있으므로 제목 서식 단계도 제목 표로 본다.
+        self.assertEqual(ns['제목_유형판별'](tables[0]), 1)
         self.assertEqual(ns['제목_유형판별'](tables[0], 빈칸허용=True), 1)
         self.assertEqual(ns['제목_유형판별'](tables[1], 빈칸허용=True), 3)
         found = ns['서식표_영역_목록'](target)
         # 목록 번호 = 문서 순서의 subList 순번 + 2. 한 칸 개요 표(7)는 서식 표로 보지 않는다.
         self.assertEqual([areas for areas, _ in found], [[2, 3, 4], [5, 6], [8, 9, 10], [11, 12, 13]])
-        self.assertEqual([check for _, check in found],
-                         [(2, 0, '가 보고'), (5, 1, '긴 제목 글'), (10, 0, '추진배경'), (13, 0, '우수시책 요약서')])
+        # 확인할 글은 표에서 가장 긴 문단이다. 제목 표는 담당자 칸(기준 표 글 유지)이 가장 길 수 있다.
+        self.assertTrue(all(check[0] in areas for areas, check in found))
+        self.assertEqual([check for _, check in found][2:], [(10, 0, '추진배경'), (13, 0, '우수시책 요약서')])
 
     def test_lines_with_objects_or_inside_tables_are_ignored(self):
         body = (self._p('제목1: 표 안', attrs='') .replace('<hp:t>제목1: 표 안</hp:t>', '<hp:t>제목1: 표 안</hp:t><hp:tbl/>'))

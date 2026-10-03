@@ -15,7 +15,7 @@
 | 브랜치 | `main` = 베타(배포선), `alpha` = 새 기능 시험판 |
 | 원격 | `github` = 원본(https://github.com/haijun93/hwp-auto-docfit), `origin` = GitLab 백업(gitlab.aigov.go.kr/haijun93/hwp_autodocfit) |
 | 사용자 업데이트 | 앱이 GitLab "최신 릴리스"를 조회해 새 exe를 알림 |
-| 테스트 | `python -m unittest discover -s tests` → 560개 통과(2026-10-03 기준) |
+| 테스트 | `python -m unittest discover -s tests` → 592개 통과(2026-10-03 기준) |
 | 사용자 | 마포구청 공무원(개발자이자 실사용자). 한국어로 소통, 결과는 개조식 공문서 문체를 선호 |
 
 ---
@@ -43,8 +43,10 @@
 | `docfit_core/stage_selection.py` | 작업 유형별 세부 작업(단계) 목록과 기본 선택값 |
 | `docfit_core/abbreviations.py`, `abbreviation_dialog.py` | 준말 등록표(첫 어절 판별 `match_line`, 줄 변환용 `line_registry`)와 준말 등록·관리 창(표 서식 학습 버튼 포함) |
 | `docfit_core/table_style.py` | 기본 표 서식(준말 `표`의 본말): 예시 표 위치별 서식 학습(`learn_table_style`)·적용(`apply_table_style`), 내장 기본값 |
+| `docfit_core/table_width.py` | 표 칸 너비: 칸 글자 수 비율(1행 제외, 2행부터 행별 비율 평균)로 열 너비를 나누고 표 폭을 본문 폭에 맞춤(`fit_table`) |
 | `docfit_core/style_hierarchy.py` | 문두기호(□·ㅇ·-·※ 등) 판별, 들여쓰기 기반 계층 분석 |
 | `docfit_core/style_inventory.py` | **문서 스타일 전수 분석**(정의/사용, 스타일 유형, 위첨자·글자색·음영, 표 종류)과 **예시 서식 HWPX 생성** |
+| `docfit_core/fidelity/`, `scripts/fidelity.py` | **원본 보존 경로**(`STYLE_FIDELITY_DESIGN.md` 첫 구현 범위): HWPX 무손실 보관·최소 변경 쓰기, 요소·속성 전수 목록과 해석 범위, 원문 위치 맵, 내용만 바꾸는 패치, 다층 검증. 공문서 후처리와 실행 경로가 분리되어 있다 |
 | `docfit_core/format_elements.py` | **서식 요소 전수 분석**: 문두기호 문장 계층별·서식 표 칸별(A1·A2·B2 …) 글자·문단·칸 요소의 대표값, 서식 표 예시 보관·세부값 수정, 프로필 반영(`apply_to_profile`) |
 | `docfit_core/labeled_text.py` | 라벨 입력 모드(`제목:/상자:/네모:/원:/바:/당구:/주석:/참고:/표:`) 파서 |
 | `docfit_core/ai_prompts.py` | 생성형 AI에게 라벨 형식으로 답하게 하는 공문서 프롬프트 모음 |
@@ -79,7 +81,7 @@ Flutter UI 빌드는 `powershell -File build_flutter.ps1`로 수행하며 `build
 | 한 번에 적용 | `all` | `(일괄적용).hwpx` |
 
 - 카드는 자간 정리·서식 통일·한 번에 적용 세 장입니다. 한 번에 적용 카드의 `자간 조정 포함`(설정 `all_include_spacing`, 기본 켜짐)을 끄면 내부 작업 유형 `format`으로 실행합니다. 내부 유형 4가지와 세부 작업 저장값(`stage_choices`)은 그대로이며, Tk는 `selected_mode`(내부 유형)와 `card_mode_var`(카드 표시), 웹·Flutter는 `include_spacing` 상태와 `set_include_spacing` 명령을 씁니다.
-- 자간 정리 카드의 `기존 자간 초기화`(설정 `spacing_reset_existing`, 기본 켜짐)는 세부 작업 01 `reset_spacing`(`stage_choices["spacing"]`)과 같은 값입니다. Tk는 `reset_spacing_var`(설정창 자간 정리 탭과 공유, `_요약갱신`이 세부 작업 값에 맞춤), 웹·Flutter는 `reset_spacing` 상태와 `set_reset_spacing` 명령을 씁니다. 설정값이 None(예전 설정 파일)이면 저장된 세부 작업 구성을 따릅니다. 한 번에 적용의 자간 초기화는 별도 세부 작업으로 남아 있습니다.
+- 자간 정리 카드의 `기존 자간 초기화`(설정 `spacing_reset_existing`, 기본 켜짐)는 세부 작업 01 `reset_spacing`(`stage_choices["spacing"]`)과 같은 값입니다. Tk는 `reset_spacing_var`(설정창 자간 정리 탭과 공유, `_요약갱신`이 세부 작업 값에 맞춤), 웹·Flutter는 `reset_spacing` 상태와 `set_reset_spacing` 명령을 씁니다. 설정값이 None(예전 설정 파일)이면 저장된 세부 작업 구성을 따릅니다. 한 번에 적용의 자간 초기화는 별도 세부 작업으로 남아 있습니다. 같은 카드의 `표 내 자간 정리`(기본 켜짐)는 설정 `table_spacing`(설정창 '표 서식 내 문장도 자간조정하기', 전역 `표_자간조정_사용`)과 같은 값이며, Tk `table_spacing_var`, 웹·Flutter `table_spacing` 상태와 `set_table_spacing` 명령을 씁니다. 끄면 `표셀_자간_제외인가`가 표 칸을 자간 초기화·자간 조정·줄 병합·단어 검사에서 뺍니다.
 
 - 빠른 선택: 기본후처리 = 자간 정리 + 서식통일, 전문후처리 = 한 번에 적용 + 서식통일.
 - 원본은 절대 덮어쓰지 않습니다. HWP 입력도 결과는 항상 HWPX입니다.
@@ -93,6 +95,8 @@ Flutter UI 빌드는 `powershell -File build_flutter.ps1`로 수행하며 `build
 - 선행 표준서식은 `표준서식_선행_사용`(= `표준서식_사용`, 서식 적용·한 번에 적용)으로 켜고, `최종_내어쓰기_예정`으로 문단별 내어쓰기를 뒤의 최종 내어쓰기 단계로 미룹니다.
 - 서식 적용·한 번에 적용에서 서식통일을 켜면 표준서식이 기준입니다. 서식통일은 괄호 크기를 설정값(-2pt, 문두 라벨·괄호 단계와 같음)으로 보고, 최종 내어쓰기 단계가 예정돼 있으면 내어쓰기를 비교하지 않으며, '후속 작업 후 서식통일 재검증'은 하지 않습니다(재검증이 괄호 축소·최종 내어쓰기를 되돌리던 오류, 2026-10-01 실측). 재검증은 표준서식 없는 한 번에 적용에서 자간 반복 뒤에만 합니다.
 - 저장 후 검수는 저장 결과를 한 번만 다시 열어 서식통일·표 서식통일·쪽 배치·단어 분리 검사를 이어서 합니다(`저장결과_규칙검수`). 서식통일 결과 창은 작업을 멈추지 않으며, 여러 문서 일괄 처리 때는 띄우지 않고 로그·최종검수 보고서에만 남깁니다.
+- 표 칸 너비(`table_width`, 2026-10-03)는 기본 표 서식 다음 같은 처리목록에서 `표너비_hwpx_처리`가 입힙니다. 본문 폭은 `_구역_본문폭`(가로 쪽은 용지 높이), 대상은 `서식표_종류판별`이 None이고 `table_width.is_target`인 최상위 표입니다. 비율은 `column_ratios`(2행부터 모든 칸에 글이 있는 행 → 글 있는 행 → 1행 순), 최소 폭은 가장 긴 낱말 × 글자 폭(반각 0.5) + 칸 좌우 여백이며 넘치면 `cap_floors`가 큰 값부터 깎습니다. 칸 문단의 `linesegarray`를 지워 한/글이 줄 배치를 다시 계산하게 합니다.
+- 제목 서식 표를 새로 만들 때(`서식표_생성`) A1 밖 칸은 `_칸_날짜_현행화`가 요일 붙은 날짜만 오늘로 바꾸고 연도는 `’26` 약어로 씁니다(`writing_aids.refresh_dates(short_year=True)`, 따옴표가 앞 글 조각에 있으면 그대로 둠).
 - 기본 표 서식은 `기본표서식_hwpx_처리`(XML)로 입히며, 입혔으면 `기본표서식_적용됨`이 켜져 COM `표_헤더서식_전체_적용`을 건너뜁니다. 서식 값은 설정의 `abbreviations['표']['style']`(없으면 `table_style.default_style()`)입니다.
 - 핵심 원칙: **계산보다 한/글 실측**. 자간·내어쓰기·쪽 배치는 한/글에게 실제 커서 위치를 물어 판단합니다.
 - 저장 후 결과를 다시 열어 단어 분리·쪽 배치를 검사하고(`검수`), 무결성 비교와 최종검수 보고서(`(최종검수).json`)를 남깁니다.

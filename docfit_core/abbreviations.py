@@ -1,16 +1,15 @@
 """준말(약어) → 본말 등록표.
 
 한/글의 상용구(준말을 입력하고 Alt+I로 본말을 펼치는 기능)와 같은 개념을 앱 안에 만든 것이다.
-'서식 적용'·'한 번에 적용'을 실행하면 가장 먼저 문서의 줄 중 빈칸을 뺀 첫 어절이 등록한 준말인 줄을
-본말로 바꾼다. 준말 뒤
-콜론(:)은 있어도 되고 없어도 되며, 준말과 콜론 사이에는 빈칸이 있어도 된다.
+'서식 적용'·'한 번에 적용'을 실행하면 가장 먼저 문서의 줄 중 빈칸을 뺀 첫 어절이 등록한 준말이고
+바로 뒤에 콜론(:)이 있는 줄을 본말로 바꾼다. 준말과 콜론 사이에는 빈칸이 있어도 된다. 콜론이 없으면 바꾸지 않는다.
 
 본말의 종류:
-    format  서식 표(제목1·제목2·개요·중제목·붙임). 준말(과 콜론) 뒤 글을 표의 글 칸(제목·개요는 A1,
+    format  서식 표(제목1·제목2·개요·중제목·붙임). 준말과 콜론 뒤 글을 표의 글 칸(제목·개요는 A1,
             중제목·붙임은 번호·'붙임' 글자 다음 칸)에 넣고 준말 줄은 지운다.
             기본 표 서식(table)은 줄을 바꾸지 않는다. 준말 '표'의 본말이면 그 서식(예시 표에서 배운 위치별
             테두리·바탕색·글꼴)을 문서의 일반 표에 적용하는 기본 표 서식으로 쓴다(docfit_core.table_style).
-    text    문구. 준말(과 콜론)을 본말로 바꾸고 뒤 글은 그대로 이어 붙인다.
+    text    문구. 준말과 콜론을 본말로 바꾸고 뒤 글은 그대로 이어 붙인다.
 """
 
 from __future__ import annotations
@@ -109,26 +108,51 @@ def table_style_of(registry: dict[str, dict]):
     return spec.get("style") or default_style()
 
 
-def match_line(text: str, registry: dict[str, dict]):
-    """줄에서 빈칸을 뺀 첫 어절이 등록한 준말이면 (준말, 본말에 넣을 뒤 글, 앞부분 글자 수)를 돌려준다.
+# 공문 붙임 목록의 부수 표기('1부.', '2 부.'). '붙임 : 1. 세부 시행계획 1부.  끝.' 같은 줄은 준말이 아니라
+# 공문 본문의 붙임 목록이므로 본말로 바꾸지 않는다(2026-10-03 사용자 요청).
+_COPIES = re.compile(r"\d+\s*부\s*\.")
 
-    준말 뒤 콜론(:)은 있어도 되고 없어도 된다('제목1: 가'·'제목1 :가'·'제목1 가'). 앞부분 글자 수는 줄 앞의
-    빈칸·준말·빈칸·콜론·빈칸까지의 길이다(문구 바꾸기에서 지울 범위). 첫 어절(콜론 앞까지) 전체가 준말이어야
-    하므로 '제목입니다'·'일시:' 같은 다른 낱말은 일치하지 않는다. 콜론도 뒤 글도 없이 준말만 있는 줄(예: 소제목
-    한 줄 '개요')은 글이 사라지지 않게 바꾸지 않는다.
-    """
+
+def _colon_line(text: str, registry: dict[str, dict]):
+    """첫 어절이 준말이고 바로 뒤에 콜론이 있는 줄의 (준말, 뒤 글, 앞부분 글자 수). 아니면 None."""
     if not registry or not text:
         return None
-    match = re.match(r"^(\s*)([^\s:：]+)(\s*[:：])?(\s*)(.*)$", text, re.S)
+    match = re.match(r"^(\s*)([^\s:：]+)(\s*[:：])(\s*)(.*)$", text, re.S)
     if not match:
         return None
     key = resolve_key(match.group(2), registry)
     if key is None:
         return None
-    rest = match.group(5)
-    if match.group(3) is None and not rest.strip():
+    return key, match.group(5).strip(), match.end(4)
+
+
+def is_attachment_list(rest: str) -> bool:
+    """준말 뒤 글이 공문 붙임 목록('… 1부.', '… 1부.  끝.')이면 True."""
+    return bool(_COPIES.search(rest or ""))
+
+
+def match_line(text: str, registry: dict[str, dict]):
+    """줄에서 빈칸을 뺀 첫 어절이 등록한 준말이고 바로 뒤에 콜론(:)이 있으면
+    (준말, 본말에 넣을 뒤 글, 앞부분 글자 수)를 돌려준다.
+
+    콜론이 있어야 바꾼다('제목1: 가'·'제목1 :가'·'제목1：가', 준말과 콜론 사이 빈칸은 허용). 콜론 없는
+    '제목1 가'·'붙임 자료'·'개요'처럼 본문에 흔히 쓰는 줄은 바꾸지 않는다(2026-10-03 사용자 요청: 준말로
+    시작하는 일반 문장이 서식 표로 바뀌지 않게). 콜론 뒤 글에 부수 표기('1부.')가 있으면 공문 붙임 목록이므로
+    바꾸지 않는다. 앞부분 글자 수는 줄 앞의 빈칸·준말·빈칸·콜론·빈칸까지의 길이다(문구 바꾸기에서 지울 범위).
+    첫 어절(콜론 앞까지) 전체가 준말이어야 하므로 '제목입니다'·'일시:' 같은 다른 낱말은 일치하지 않는다.
+    """
+    found = _colon_line(text, registry)
+    if found is None or is_attachment_list(found[1]):
         return None
-    return key, rest.strip(), match.end(4)
+    return found
+
+
+def excluded_reason(text: str, registry: dict[str, dict]) -> str:
+    """준말·콜론으로 시작하지만 규칙상 바꾸지 않는 줄이면 그 이유, 아니면 빈 글."""
+    found = _colon_line(text, registry)
+    if found and is_attachment_list(found[1]):
+        return "공문 붙임 목록(‘1부.’ 같은 부수 표기)이라 본말로 바꾸지 않습니다."
+    return ""
 
 
 def split_title2(text: str) -> tuple[str, str]:

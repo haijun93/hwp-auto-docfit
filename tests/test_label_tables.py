@@ -82,7 +82,10 @@ class LabelTableTest(unittest.TestCase):
         self.assertEqual((first.get('rowCnt'), first.get('colCnt')), ('2', '2'))
         cells = ns['제목_셀들'](first)
         self.assertEqual(ns['제목_문자열'](cells[0]), title)
-        self.assertEqual([ns['제목_문자열'](c) for c in cells[1:]], ['', ''])
+        # 날짜 칸은 오늘 날짜(요일 포함)로, 담당자 칸은 기준 표 글 그대로 둔다(사용자 글은 A1에만).
+        today = __import__('datetime').date.today()
+        dated = f"’{today.year % 100:02d}. {today.month}. {today.day}.({'월화수목금토일'[today.weekday()]})"
+        self.assertEqual([ns['제목_문자열'](c) for c in cells[1:]], [dated, '○○과장/담당관'])
         chars = {c.get('id'): c for c in header.iter() if self.name(c) == 'charPr'}
         faces = {f.get('id'): f.get('face') for ff in header.iter()
                  if self.name(ff) == 'fontface' and ff.get('lang') == 'HANGUL' for f in ff}

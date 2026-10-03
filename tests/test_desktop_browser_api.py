@@ -82,7 +82,7 @@ class BrowserApiTests(unittest.TestCase):
         bridge.window = object()
         api = _BrowserApi(bridge)
         public = {name: getattr(api, name) for name in dir(api) if not name.startswith('_')}
-        self.assertEqual(len(public), 26)
+        self.assertEqual(len(public), 27)
         self.assertTrue(all(callable(value) for value in public.values()))
         self.assertNotIn('gui', public)
         self.assertNotIn('window', public)
@@ -185,6 +185,19 @@ class BrowserApiTests(unittest.TestCase):
         gui.running = True
         bridge.set_reset_spacing(True)
         self.assertFalse(gui.reset_spacing_var.get())
+
+    def test_spacing_card_toggles_table_spacing(self):
+        # '자간 정리' 카드의 '표 내 자간 정리'는 설정 table_spacing(표 안 문장 자간조정)과 같은 값이다.
+        gui = _FakeGui()
+        gui.selected_mode.set("all")
+        bridge = _bridge(gui)
+        self.assertTrue(bridge.get_state()["table_spacing"])   # 변수가 없으면 기본값 켜짐
+        gui.table_spacing_var = _Var(True)
+        state = bridge.set_table_spacing(False)
+        self.assertEqual((state["mode"], state["table_spacing"]), ("spacing", False))
+        self.assertFalse(gui.table_spacing_var.get())
+        gui.running = True
+        self.assertFalse(bridge.set_table_spacing(True)["table_spacing"])   # 작업 중에는 바꾸지 않는다
 
     def test_result_actions_use_selected_result(self):
         gui = _FakeGui()

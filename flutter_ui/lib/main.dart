@@ -113,6 +113,7 @@ class _WorkspaceState extends State<Workspace> {
   bool get includeSpacing => state['include_spacing'] != false;
   // '자간 정리' 카드의 '기존 자간 초기화'(세부 작업 01과 같은 값).
   bool get resetSpacing => state['reset_spacing'] != false;
+  bool get tableSpacing => state['table_spacing'] != false;
   String get modeTitle => mode == 'format'
       ? '한 번에 적용(자간 조정 제외)'
       : modes.firstWhere((m) => m.$1 == mode, orElse: () => modes.first).$2;
@@ -969,6 +970,29 @@ class _WorkspaceState extends State<Workspace> {
                   if (!resetSpacing)
                     const Text(
                       '문서에 있던 자간은 그대로 두고 그 위에서 정리해요.',
+                      style: TextStyle(fontSize: 12, color: _faint),
+                    ),
+                  // 끄면 표 칸 안 문장은 자간 정리 대상에서 뺀다(설정 table_spacing과 같은 값).
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          '표 내 자간 정리',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      Switch(
+                        key: const Key('tableSpacingSwitch'),
+                        value: tableSpacing,
+                        onChanged: locked
+                            ? null
+                            : (on) => command('set_table_spacing', [on]),
+                      ),
+                    ],
+                  ),
+                  if (!tableSpacing)
+                    const Text(
+                      '표 칸 안 문장은 자간 정리에서 빼요.',
                       style: TextStyle(fontSize: 12, color: _faint),
                     ),
                 ],

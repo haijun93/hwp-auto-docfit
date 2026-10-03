@@ -44,9 +44,21 @@ class WritingAidsGuiTest(unittest.TestCase):
                     app._AI_프롬프트_열기(root)
                     root.update()
 
-                    # 작업 카드 3장: 자간 정리(+ 기존 자간 초기화) / 서식 통일 / 한 번에 적용(+ 자간 조정 포함)
+                    # 작업 카드 3장: 자간 정리(+ 기존 자간 초기화·표 내 자간 정리) / 서식 통일 / 한 번에 적용(+ 자간 조정 포함)
                     self.assertEqual([b.cget("text") for b in app.mode_buttons],
-                                     ["자간 정리", "기존 자간 초기화", "서식 통일", "한 번에 적용", "자간 조정 포함"])
+                                     ["자간 정리", "기존 자간 초기화", "표 내 자간 정리", "서식 통일", "한 번에 적용",
+                                      "자간 조정 포함"])
+                    # '표 내 자간 정리'는 설정 table_spacing(표 안 문장 자간조정)과 같은 값이고 기본은 켜짐이다.
+                    self.assertTrue(app.table_spacing_var.get())
+                    app._카드_클릭("all")
+                    app.table_spacing_var.set(False)
+                    app._자간초기화_변경()
+                    self.assertEqual(app.selected_mode.get(), "spacing")
+                    self.assertIn("표 안 문장 제외", app.options_summary.cget("text"))
+                    self.assertFalse(ns["설정_불러오기"]()["table_spacing"])
+                    app.table_spacing_var.set(True)
+                    self.assertNotIn("표 안 문장 제외", app.options_summary.cget("text"))
+                    self.assertTrue(ns["설정_불러오기"]()["table_spacing"])
                     # '기존 자간 초기화'는 자간 정리 세부 작업 01과 같은 값이고 설정 파일에 저장된다.
                     app._카드_클릭("all")
                     app.reset_spacing_var.set(False)
