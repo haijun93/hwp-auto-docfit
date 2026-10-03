@@ -93,6 +93,12 @@ class WritingAidsGuiTest(unittest.TestCase):
                     self.assertEqual(ns["제목_부제_크기_반영"].__globals__["제목_부제_크기_pt"], 18)
                     self.assertEqual(ns["설정_불러오기"]()["std_title_subtitle_pt"], "18")
                     부제.set("15")
+                    # 설정창 '제목 표 담당자 칸(B2) 글'은 기본 빈 글이고, 바꾸면 바로 반영·저장된다.
+                    self.assertEqual(app.title_owner_var.get(), "")
+                    app.title_owner_var.set("기획예산과 홍길동(2345)")
+                    self.assertEqual(ns["제목_담당자_글_반영"].__globals__["제목_담당자_글"], "기획예산과 홍길동(2345)")
+                    self.assertEqual(ns["설정_불러오기"]()["title_owner_text"], "기획예산과 홍길동(2345)")
+                    app.title_owner_var.set("")
                     # '기존 자간 초기화'는 자간 정리 세부 작업 01과 같은 값이고 설정 파일에 저장된다.
                     app._카드_클릭("all")
                     app.reset_spacing_var.set(False)
