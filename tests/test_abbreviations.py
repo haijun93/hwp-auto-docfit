@@ -299,6 +299,24 @@ class DocumentConversionTest(unittest.TestCase):
                     and ns['제목_문자열'](r).strip()} for p in paras]
         self.assertEqual(heights, [{'1800'}, {'2700'}])
 
+    def test_owner_cell_text_follows_setting(self):
+        # 설정창 '제목 표 담당자 칸(B2) 글'이 있으면 새 제목 표의 담당자 칸(2×2 B2, 2행1열 A2)에 그 글을 넣는다.
+        ns = self.ns
+        owner = '기획예산과 홍길동(2345)'
+        self.assertEqual(ns['제목_담당자_글_반영'](' 줄\n바꿈 글 '), '줄 바꿈 글')
+        ns['제목_담당자_글_반영']('')
+        with patch.dict(ns['서식표_생성'].__globals__, {'제목_담당자_글': owner}):
+            _, count, _, section = self._convert(self._p('제목1: 지구 침공계획(안) 보고')
+                                                 + self._p('제목2: 부제, 본 제목'))
+            self.assertEqual(count, 2)
+            tables = [t for t in section.iter() if self.name(t) == 'tbl']
+            self.assertEqual(ns['제목_문자열'](ns['제목_셀들'](tables[0])[-1]), owner)   # 2×2 표 B2
+            self.assertEqual(ns['제목_문자열'](ns['제목_셀들'](tables[1])[-1]), owner)   # 2행1열 표 A2
+            # '담당·과장' 같은 낱말이 없어도 설정한 글이면 담당자 칸으로 보아 제목 표로 판별한다.
+            self.assertEqual(ns['제목_유형판별'](tables[0]), 1)
+            self.assertEqual(ns['제목_유형판별'](tables[1]), 3)
+        self.assertIsNone(ns['제목_유형판별'](tables[0]))   # 설정이 없으면 판별 근거가 없다
+
     def test_title1_text_is_centered_27pt(self):
         ns = self.ns
         _, _, header, section = self._convert(self._p('제목1: 지구 침공계획(안) 보고'))

@@ -354,7 +354,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리 도구"
-APP_VERSION = "1.69 Beta 10"
+APP_VERSION = "1.69 Beta 11"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 UPDATE_ASSET_NAME = "HWP_AutoDocFit.exe"
@@ -1067,6 +1067,8 @@ def 번들_리소스_폴더():
     "std_parspace_return_percent": "150",
     # 제목 서식 부제(제목 글의 첫 쉼표 앞 글) 글자 크기 pt
     "std_title_subtitle_pt": "15",
+    # 새로 만드는 제목 서식 표의 담당자 칸(2×2 표 B2, 2행1열 표 A2) 글. 비우면 기준 표의 글을 그대로 둔다.
+    "title_owner_text": "",
     "std_table_header": True,
     "active_format_profile": "",
     "review_document_kind": "보고서",
@@ -1951,13 +1953,15 @@ def 제목_유형판별(table, 빈칸허용=False):
     정보칸_빔 = 빈칸허용 and not any(제목_문자열(c).strip() for c in cells[1:])
     if len(cells) == 2:
         # 유형3: 윗칸(부제+제목) / 아랫칸(담당자) 2행1열. 날짜 칸이 없다.
-        if not 정보칸_빔 and not re.search(r'담당|과장|팀장|☎|전화|부서|작성', 제목_문자열(cells[1])): return None
+        if (not 정보칸_빔 and not re.search(r'담당|과장|팀장|☎|전화|부서|작성', 제목_문자열(cells[1]))
+                and not _설정_담당자_글인가(제목_문자열(cells[1]))): return None
         return 3
     span = 제목_자식(cells[0], 'cellSpan')
     if span is None or span.get('colSpan') != '2': return None
     date, owner = map(제목_문자열, cells[1:])
     if not 정보칸_빔 and not re.search(r'[0-9]{2,4}\s*[.년/\-]\s*[0-9]{1,2}', date): return None
-    if not 정보칸_빔 and not re.search(r'담당|과장|팀장|☎|전화|부서|작성', owner): return None
+    if not 정보칸_빔 and not re.search(r'담당|과장|팀장|☎|전화|부서|작성', owner) and not _설정_담당자_글인가(owner):
+        return None
     return 2 if len(ps) == 2 else 1
 
 
@@ -2705,6 +2709,23 @@ def 제목_부제_크기_반영(value):
     return 제목_부제_크기_pt
 
 
+# 새로 만드는 제목 서식 표 담당자 칸(B2) 글. 빈 글이면 기준 표의 글(○○과장/담당관 …)을 그대로 둔다.
+# 설정창 '제목 표 담당자 칸(B2) 글'(title_owner_text)로 바꾼다(2026-10-03 사용자 요청).
+제목_담당자_글 = ''
+
+
+def 제목_담당자_글_반영(value):
+    """설정값(한 줄, 앞뒤 빈칸 제거, 200자까지)을 제목 담당자 칸 글 전역값에 반영하고 반영한 값을 돌려준다."""
+    global 제목_담당자_글
+    제목_담당자_글 = ' '.join(str(value or '').split('\n')).replace('\r', ' ').strip()[:200]
+    return 제목_담당자_글
+
+
+def _설정_담당자_글인가(text):
+    """칸 글이 설정한 제목 담당자 칸 글과 같은지(담당·과장 같은 낱말이 없는 글도 담당자 칸으로 본다)."""
+    return bool(제목_담당자_글) and (text or '').strip() == 제목_담당자_글
+
+
 def _서식표_기준(header, kind, cache):
     """서식 표 종류의 (기준 표, ID 매핑)을 문서 header에 한 번만 병합해 돌려준다.
 
@@ -2892,6 +2913,12 @@ def 서식표_생성(header, kind, text, cache, 번호=None, 최대폭=None, 본
     오늘 = _datetime.date.today()
     for cell in cells[1:]:
         _칸_날짜_현행화(cell, 오늘)
+    # 담당자 칸(2×2 표 B2, 2행1열 표 A2 = 마지막 칸)은 설정한 글이 있으면 그 글로 바꾼다(글자 모양은 기준 표 것).
+    if kind in ('title1', 'title2') and 제목_담당자_글 and len(cells) >= 2:
+        _칸_글_넣기(cells[-1], sample, 제목_담당자_글)
+        for p in 제목_문단들(cells[-1]):
+            for cache in [x for x in p if 제목_xml이름(x) == 'linesegarray']:
+                p.remove(cache)
     # 제목·개요 표 가로 크기는 쪽 좌우 여백 사이 최대 폭으로 한다(본문폭 = 쪽 정보로 잰 폭, 없으면 그대로).
     if 본문폭:
         _서식표_가로맞춤(result, 본문폭)
@@ -13740,6 +13767,7 @@ def 작업_실행(
         # 설정창의 표 글꼴·크기는 서식 프로파일 값보다 우선한다.
         표글꼴_적용(표준서식_세부.get("table_fonts"))
         제목_부제_크기_반영(표준서식_세부.get("std_title_subtitle_pt", 제목_부제_크기_pt))
+        제목_담당자_글_반영(표준서식_세부.get("title_owner_text", 제목_담당자_글))
 
         문장부호_통계 = {"대상": 0, "성공": 0, "실패": 0}
         세트문장_통계 = {"대상": 0, "성공": 0, "실패": 0, "축소횟수": 0, "확대횟수": 0}
@@ -14252,6 +14280,11 @@ class HwpAutoDocFitGUI:
         제목_부제_크기_반영(저장된_설정["std_title_subtitle_pt"])
         self.std_parspace_vars["std_title_subtitle_pt"].trace_add(
             "write", lambda *_: 제목_부제_크기_반영(self.std_parspace_vars["std_title_subtitle_pt"].get()))
+        # 제목 표 담당자 칸(B2) 글: 사용자 고유 글이라 서식 프로필을 골라도 바꾸지 않는다. 바뀌면 바로 반영·저장한다.
+        self.title_owner_var = tk.StringVar(value=str(저장된_설정.get("title_owner_text", "") or ""))
+        제목_담당자_글_반영(self.title_owner_var.get())
+        self.title_owner_var.trace_add("write", lambda *_: 제목_담당자_글_반영(self.title_owner_var.get()))
+        self.title_owner_var.trace_add("write", self._설정_변경됨)
 
         for 변수 in ([self.prevent_word_split_var, self.punctuation_var, self.punctuation_threshold_var, self.keep_punctuation_set_var,
                      self.color_mark_on_var, self.color_var,
@@ -14801,6 +14834,14 @@ class HwpAutoDocFitGUI:
             ttk.Label(parent, text="'제목: 부제, 제목'처럼 쉼표가 있으면 쉼표 앞 글을 이 크기의 부제로 윗줄에 넣습니다. "
                                    "서식 프로필의 예시 제목 표를 쓰면 그 표의 크기를 따릅니다.",
                       style="Hint.TLabel", wraplength=610).pack(anchor="w", padx=(18, 0))
+            담당자_행 = ttk.Frame(parent)
+            담당자_행.pack(anchor="w", fill="x", padx=(18, 0), pady=(6, 0))
+            ttk.Label(담당자_행, text="제목 표 담당자 칸(B2) 글:").pack(side="left")
+            담당자_입력 = ttk.Entry(담당자_행, textvariable=self.title_owner_var, width=58)
+            담당자_입력.pack(side="left", padx=(4, 0), fill="x", expand=True)
+            ttk.Label(parent, text="준말(제목:)·라벨로 새로 만드는 제목 표의 담당자 칸(2행1열 표는 A2)에 이 글을 넣습니다. "
+                                   "비우면 기본 글(○○과장/담당관 : ◎◎◎☎2133-0000 …)을 넣고, 문서에 이미 있는 제목 표는 바꾸지 않습니다.",
+                      style="Hint.TLabel", wraplength=610).pack(anchor="w", padx=(18, 0))
             attachment_auto = ttk.Checkbutton(parent, text="붙임서식적용 (붙임 2종 자동 판별)",
                                                variable=self.std_bool_vars["std_attachment_auto"])
             attachment_auto.pack(anchor="w", pady=(6, 0))
@@ -14815,7 +14856,8 @@ class HwpAutoDocFitGUI:
                                              variable=self.std_bool_vars["std_midtitle_bold"])
             midtitle_bold.pack(anchor="w", padx=(18, 0))
             if 주설정탭:
-                self.std_detail_checks += [title_auto, 부제_스핀, attachment_auto, midtitle_auto, midtitle_bold]
+                self.std_detail_checks += [title_auto, 부제_스핀, 담당자_입력, attachment_auto, midtitle_auto,
+                                           midtitle_bold]
         elif key == "table_style":
             설정 = 설정_불러오기()
             서식 = 준말_표서식(준말_사용표_만들기(설정))
@@ -18103,6 +18145,8 @@ class HwpAutoDocFitGUI:
             설정값["abbreviations"] = 기존_설정.get("abbreviations", {})
             설정값["abbreviation_defaults"] = 기존_설정.get("abbreviation_defaults", True)
             설정값["label_symbols_rev"] = 2
+            설정값["title_owner_text"] = (str(self.title_owner_var.get())
+                                        if hasattr(self, "title_owner_var") else "")
             설정_저장(설정값)
             기호글꼴_적용(설정값)
             표글꼴_적용(설정값.get("table_fonts"))
@@ -18254,6 +18298,7 @@ class HwpAutoDocFitGUI:
             self.std_bool_vars[키].set(기본_설정[키])
         for 키 in self.std_parspace_str_keys:
             self.std_parspace_vars[키].set(기본_설정[키])
+        self.title_owner_var.set(기본_설정["title_owner_text"])
 
         서식_기본값_전역_복원()
         self._활성_서식_프로파일 = ""
@@ -18807,6 +18852,7 @@ class HwpAutoDocFitGUI:
         표준서식_세부_전달["std_title_subtitle_pt"] = 제목_부제_크기_반영(
             self.std_parspace_vars["std_title_subtitle_pt"].get())
         self.std_parspace_vars["std_title_subtitle_pt"].set(str(제목_부제_크기_pt))   # 잘못된 값은 고친 값으로 보여 준다
+        표준서식_세부_전달["title_owner_text"] = 제목_담당자_글_반영(self.title_owner_var.get())
         표준서식_세부_전달["table_fonts"] = {
             part: {"font": v["font"].get(), "size": v["size"].get()}
             for part, v in self.table_font_vars.items()
