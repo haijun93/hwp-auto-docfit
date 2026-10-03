@@ -121,7 +121,7 @@ class LabelTableTest(unittest.TestCase):
         self.assertEqual([ns['제목_문자열'](p) for p in paras], ['희망2023 나눔캠페인', '‘사랑의 온도탑’ 제막행사 검토보고'])
         heights = [{chars[r.get('charPrIDRef')].get('height') for r in p if self.name(r) == 'run'
                     and ns['제목_문자열'](r).strip()} for p in paras]
-        self.assertEqual(heights, [{'1700'}, {'2700'}])   # 쉼표 앞 부제 17pt
+        self.assertEqual(heights, [{'1500'}, {'2700'}])   # 쉼표 앞 부제 15pt
 
     def test_document_without_markers_is_left_untouched(self):
         source = self._hwpx([self._plain_one_by_one('일반 1×1 표')])

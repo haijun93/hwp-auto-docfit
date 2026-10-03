@@ -47,7 +47,34 @@ class WritingAidsGuiTest(unittest.TestCase):
                     # 작업 카드 3장: 자간 정리(+ 기존 자간 초기화·표 내 자간 정리) / 서식 통일 / 한 번에 적용(+ 자간 조정 포함)
                     self.assertEqual([b.cget("text") for b in app.mode_buttons],
                                      ["자간 정리", "기존 자간 초기화", "표 내 자간 정리", "서식 통일", "한 번에 적용",
-                                      "자간 조정 포함"])
+                                      "자간 조정 포함", "표 제외"])
+                    # '표 제외'는 기본 꺼짐. 켜면 한 번에 적용 카드를 고르고 요약에 알리며 설정에 저장한다.
+                    self.assertFalse(app.exclude_tables_var.get())
+                    app.exclude_tables_var.set(True)
+                    app._표제외_변경()
+                    self.assertIn(app.selected_mode.get(), ("all", "format"))
+                    self.assertIn("표 제외", app.options_summary.cget("text"))
+                    self.assertTrue(ns["설정_불러오기"]()["all_exclude_tables"])
+                    # 실행하면 표 관련 세부 작업을 모두 끄고 표 칸 안 문장도 자간 작업에서 뺀다.
+                    import threading
+                    captured = {}
+
+                    class _Thread:
+                        def __init__(self, target=None, args=(), daemon=None):
+                            captured["args"] = args
+
+                        def start(self):
+                            pass
+
+                    app.files = [str(Path(folder) / "문서.hwpx")]
+                    with patch.object(threading, "Thread", _Thread):
+                        app.작업시작(app.selected_mode.get())
+                    args = captured["args"]
+                    self.assertFalse(args[22])                       # 표자간조정
+                    self.assertTrue(all(args[25][k] is False for k in ns["표작업_키목록"]))
+                    app.running = False
+                    app.exclude_tables_var.set(False)
+                    self.assertNotIn("표 제외", app.options_summary.cget("text"))
                     # '표 내 자간 정리'는 설정 table_spacing(표 안 문장 자간조정)과 같은 값이고 기본은 켜짐이다.
                     self.assertTrue(app.table_spacing_var.get())
                     app._카드_클릭("all")
@@ -59,6 +86,13 @@ class WritingAidsGuiTest(unittest.TestCase):
                     app.table_spacing_var.set(True)
                     self.assertNotIn("표 안 문장 제외", app.options_summary.cget("text"))
                     self.assertTrue(ns["설정_불러오기"]()["table_spacing"])
+                    # 설정창 '제목 부제 크기'는 기본 15pt이고, 바꾸면 바로 반영·저장된다.
+                    부제 = app.std_parspace_vars["std_title_subtitle_pt"]
+                    self.assertEqual(부제.get(), "15")
+                    부제.set("18")
+                    self.assertEqual(ns["제목_부제_크기_반영"].__globals__["제목_부제_크기_pt"], 18)
+                    self.assertEqual(ns["설정_불러오기"]()["std_title_subtitle_pt"], "18")
+                    부제.set("15")
                     # '기존 자간 초기화'는 자간 정리 세부 작업 01과 같은 값이고 설정 파일에 저장된다.
                     app._카드_클릭("all")
                     app.reset_spacing_var.set(False)

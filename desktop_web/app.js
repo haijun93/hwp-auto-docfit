@@ -106,6 +106,9 @@ function renderModes(state) {
   $("spacingOption").hidden = cardMode !== "all";
   $("includeSpacing").checked = state.include_spacing !== false;
   $("includeSpacing").disabled = Boolean(state.running);
+  $("excludeTablesOption").hidden = cardMode !== "all";
+  $("excludeTables").checked = state.exclude_tables === true;
+  $("excludeTables").disabled = Boolean(state.running);
   $("modeSummary").textContent = MODE_LABELS[currentMode] || MODE_LABELS.spacing;
   $("defaultNote").textContent = state.default_saved
     ? "세부 설정에서 저장한 기본 구성을 사용합니다."
@@ -260,6 +263,7 @@ document.querySelectorAll(".mode-card").forEach((card)=>card.addEventListener("c
   await callApi("set_mode",currentMode);
 }));
 $("includeSpacing").addEventListener("change",()=>callApi("set_include_spacing",$("includeSpacing").checked));
+$("excludeTables").addEventListener("change",()=>callApi("set_exclude_tables",$("excludeTables").checked));
 $("resetSpacing").addEventListener("change",()=>callApi("set_reset_spacing",$("resetSpacing").checked));
 $("tableSpacing").addEventListener("change",()=>callApi("set_table_spacing",$("tableSpacing").checked));
 

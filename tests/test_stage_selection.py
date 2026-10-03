@@ -1,6 +1,6 @@
 import unittest
 
-from docfit_core.stage_selection import STAGE_EXAMPLES, enabled, stages_for_mode
+from docfit_core.stage_selection import STAGE_EXAMPLES, TABLE_STAGE_KEYS, enabled, stages_for_mode, without_tables
 
 
 class StageSelectionTest(unittest.TestCase):
@@ -39,6 +39,16 @@ class StageSelectionTest(unittest.TestCase):
         self.assertTrue(enabled(None, "body_spacing"))
         self.assertTrue(enabled({}, "body_spacing"))
         self.assertFalse(enabled({"body_spacing": False}, "body_spacing"))
+
+    def test_without_tables_turns_off_every_table_stage(self):
+        # 한 번에 적용의 '표 제외': 표 관련 작업만 끄고 다른 선택과 제목·개요 서식(pre_format)은 그대로 둔다.
+        all_keys = [key for key, _ in stages_for_mode("all")]
+        self.assertTrue(set(TABLE_STAGE_KEYS) - {"table_unify"} <= set(all_keys))
+        chosen = without_tables({"body_spacing": False, "table_style": True})
+        self.assertTrue(all(chosen[key] is False for key in TABLE_STAGE_KEYS))
+        self.assertFalse(chosen["body_spacing"])
+        self.assertTrue(enabled(chosen, "pre_format", "all"))
+        self.assertTrue(enabled(chosen, "word_check", "all"))
 
 
 if __name__ == "__main__":

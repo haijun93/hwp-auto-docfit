@@ -127,6 +127,17 @@ def default_choice(key, mode=None):
     return key not in DEFAULT_OFF
 
 
+# 한 번에 적용의 '표 제외'를 켜면 끄는 표 관련 세부 작업(일반 표 변환·서식·너비, 표 안 자간·줄·단어 작업).
+# 제목·개요·중제목·붙임 서식 표(pre_format)는 문서 제목·구조라 그대로 둔다.
+TABLE_STAGE_KEYS = ("text_table_convert", "table_style", "table_width", "precise_table", "table_format",
+                    "table_unify", "control_spacing", "control_short_line", "control_word_check")
+
+
+def without_tables(selection):
+    """세부 작업 선택에서 표 관련 작업을 모두 끈 사본."""
+    return {**dict(selection or {}), **{key: False for key in TABLE_STAGE_KEYS}}
+
+
 def enabled(selection, key, mode=None):
     if selection is None:
         return default_choice(key, mode)

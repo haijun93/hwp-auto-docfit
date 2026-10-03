@@ -114,6 +114,8 @@ class _WorkspaceState extends State<Workspace> {
   // '자간 정리' 카드의 '기존 자간 초기화'(세부 작업 01과 같은 값).
   bool get resetSpacing => state['reset_spacing'] != false;
   bool get tableSpacing => state['table_spacing'] != false;
+  // '한 번에 적용'의 '표 제외'(설정 all_exclude_tables, 기본 꺼짐).
+  bool get excludeTables => state['exclude_tables'] == true;
   String get modeTitle => mode == 'format'
       ? '한 번에 적용(자간 조정 제외)'
       : modes.firstWhere((m) => m.$1 == mode, orElse: () => modes.first).$2;
@@ -1019,6 +1021,29 @@ class _WorkspaceState extends State<Workspace> {
                   if (!includeSpacing)
                     const Text(
                       '기존 자간은 그대로 두고 서식만 적용해요.',
+                      style: TextStyle(fontSize: 12, color: _faint),
+                    ),
+                  // 켜면 표 관련 작업을 모두 빼고 정리한다(제목·개요 서식 표는 정리).
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          '표 제외',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      Switch(
+                        key: const Key('excludeTablesSwitch'),
+                        value: excludeTables,
+                        onChanged: locked
+                            ? null
+                            : (on) => command('set_exclude_tables', [on]),
+                      ),
+                    ],
+                  ),
+                  if (excludeTables)
+                    const Text(
+                      '표 관련 작업은 모두 빼고 정리해요. 제목·개요 서식 표는 정리해요.',
                       style: TextStyle(fontSize: 12, color: _faint),
                     ),
                 ],

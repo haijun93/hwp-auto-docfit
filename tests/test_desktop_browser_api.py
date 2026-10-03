@@ -82,7 +82,7 @@ class BrowserApiTests(unittest.TestCase):
         bridge.window = object()
         api = _BrowserApi(bridge)
         public = {name: getattr(api, name) for name in dir(api) if not name.startswith('_')}
-        self.assertEqual(len(public), 27)
+        self.assertEqual(len(public), 28)
         self.assertTrue(all(callable(value) for value in public.values()))
         self.assertNotIn('gui', public)
         self.assertNotIn('window', public)
@@ -198,6 +198,20 @@ class BrowserApiTests(unittest.TestCase):
         self.assertFalse(gui.table_spacing_var.get())
         gui.running = True
         self.assertFalse(bridge.set_table_spacing(True)["table_spacing"])   # 작업 중에는 바꾸지 않는다
+
+    def test_all_card_toggles_exclude_tables(self):
+        # '한 번에 적용'의 '표 제외'(설정 all_exclude_tables)는 기본 꺼짐이고, 바꾸면 그 카드를 고른다.
+        gui = _FakeGui()
+        gui.selected_mode.set("spacing")
+        bridge = _bridge(gui)
+        self.assertFalse(bridge.get_state()["exclude_tables"])   # 변수가 없으면 기본값 꺼짐
+        gui.exclude_tables_var = _Var(False)
+        state = bridge.set_exclude_tables(True)
+        self.assertEqual((state["mode"], state["exclude_tables"]), ("all", True))
+        gui.include_spacing_var.set(False)
+        self.assertEqual(bridge.set_exclude_tables(True)["mode"], "format")   # 자간 조정을 뺀 한 번에 적용
+        gui.running = True
+        self.assertTrue(bridge.set_exclude_tables(False)["exclude_tables"])   # 작업 중에는 바꾸지 않는다
 
     def test_result_actions_use_selected_result(self):
         gui = _FakeGui()

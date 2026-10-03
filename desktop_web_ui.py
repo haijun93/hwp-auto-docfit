@@ -99,6 +99,7 @@ class DesktopWebBridge:
                 "include_spacing": self._include_spacing(),
                 "reset_spacing": self._reset_spacing(),
                 "table_spacing": self._table_spacing(),
+                "exclude_tables": self._exclude_tables(),
                 "status": gui.status_var.get(),
                 "running": bool(gui.running),
                 "range": {
@@ -274,6 +275,27 @@ class DesktopWebBridge:
                 return
             variable.set(bool(on))
             gui.selected_mode.set("spacing")
+            self._mode_selected()
+
+        self._tk(update)
+        return self.get_state()
+
+    def _exclude_tables(self):
+        variable = getattr(self.gui, "exclude_tables_var", None)
+        return False if variable is None else bool(variable.get())
+
+    def set_exclude_tables(self, on):
+        """'한 번에 적용'의 '표 제외'(설정 all_exclude_tables)를 바꾸고 그 카드를 고른다.
+
+        켜면 표 관련 세부 작업을 모두 빼고 표 칸 안 문장도 자간 작업에서 뺀다. 설정 파일에 저장된다.
+        """
+        def update():
+            gui = self.gui
+            variable = getattr(gui, "exclude_tables_var", None)
+            if gui.running or variable is None:
+                return
+            variable.set(bool(on))
+            gui.selected_mode.set("all" if self._include_spacing() else "format")
             self._mode_selected()
 
         self._tk(update)
@@ -503,6 +525,7 @@ class _BrowserApi:
             "open_results", "next_job", "run_tool", "open_result",
             "show_result", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",
+            "set_exclude_tables",
         ):
             setattr(self, name, getattr(bridge, name))
 

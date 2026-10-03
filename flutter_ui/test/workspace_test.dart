@@ -255,6 +255,40 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('all card toggles exclude tables', (tester) async {
+    tester.view.physicalSize = const Size(1024, 820);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final calls = <List<Object?>>[];
+    final state = initialState();
+    state['files'] = [
+      {'name': '문서.hwp', 'folder': r'C:\문서'},
+    ];
+    state['mode'] = 'all';
+    state['exclude_tables'] = false;
+    Future<Object?> api(String name, List<Object?> args) async {
+      if (name != 'get_state') calls.add([name, ...args]);
+      if (name == 'set_exclude_tables') {
+        state['exclude_tables'] = args.first;
+        state['mode'] = 'all';
+      }
+      return Map<String, dynamic>.from(state);
+    }
+
+    await tester.pumpWidget(DocFitApp(api: api));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('작업 방식 선택'));
+    await tester.pumpAndSettle();
+    expect(find.text('표 제외'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('excludeTablesSwitch')));
+    await tester.pumpAndSettle();
+    expect(calls.last, ['set_exclude_tables', true]);
+    expect(find.text('표 관련 작업은 모두 빼고 정리해요. 제목·개요 서식 표는 정리해요.'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('finished job moves to results with per-file actions', (
     tester,
   ) async {
