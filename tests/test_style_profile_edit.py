@@ -61,7 +61,8 @@ class StyleProfileEditTest(unittest.TestCase):
             "스타일_속성선택": {"□": {"indent": False, "spacing": True}}}
         globals_["표준서식_문단위간격_사용"] = True
         apply_shape("□")
-        self.assertEqual(app.action.params.values, {"PrevSpacing": 500})
+        # 복사_문단모양은 HWPX case 값이고 COM ParaShape는 그 두 배 값을 쓴다(실측 2026-10-03).
+        self.assertEqual(app.action.params.values, {"PrevSpacing": 1000})
 
 
 if __name__ == "__main__":
