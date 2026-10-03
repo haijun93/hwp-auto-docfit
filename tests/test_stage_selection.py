@@ -1,6 +1,7 @@
 import unittest
 
-from docfit_core.stage_selection import STAGE_EXAMPLES, TABLE_STAGE_KEYS, enabled, stages_for_mode, without_tables
+from docfit_core.stage_selection import (STAGE_EXAMPLES, TABLE_STAGE_KEYS, enabled, stages_for_mode, without_page_fit,
+                                         without_tables)
 
 
 class StageSelectionTest(unittest.TestCase):
@@ -49,6 +50,11 @@ class StageSelectionTest(unittest.TestCase):
         self.assertFalse(chosen["body_spacing"])
         self.assertTrue(enabled(chosen, "pre_format", "all"))
         self.assertTrue(enabled(chosen, "word_check", "all"))
+
+    def test_without_page_fit_turns_off_both_page_stages(self):
+        # '페이지 맞춤 제외': (1) 문단 아래 간격 페이지 맞춤 (2) 관련 문단 페이지 배치를 끈다.
+        chosen = without_page_fit({"page_fit": True, "body_spacing": True})
+        self.assertEqual((chosen["page_fit"], chosen["page_group"], chosen["body_spacing"]), (False, False, True))
 
 
 if __name__ == "__main__":

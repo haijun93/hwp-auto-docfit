@@ -15,7 +15,7 @@
 | 브랜치 | `main` = 베타(배포선), `alpha` = 새 기능 시험판 |
 | 원격 | `github` = 원본(https://github.com/haijun93/hwp-auto-docfit), `origin` = GitLab 백업(gitlab.aigov.go.kr/haijun93/hwp_autodocfit) |
 | 사용자 업데이트 | 앱이 GitLab "최신 릴리스"를 조회해 새 exe를 알림 |
-| 테스트 | `python -m unittest discover -s tests` → 606개 통과(2026-10-03 기준) |
+| 테스트 | `python -m unittest discover -s tests` → 610개 통과(2026-10-04 기준) |
 | 사용자 | 마포구청 공무원(개발자이자 실사용자). 한국어로 소통, 결과는 개조식 공문서 문체를 선호 |
 
 ---
@@ -81,7 +81,7 @@ Flutter UI 빌드는 `powershell -File build_flutter.ps1`로 수행하며 `build
 | 한 번에 적용 | `all` | `(일괄적용).hwpx` |
 
 - 카드는 자간 정리·서식 통일·한 번에 적용 세 장입니다. 한 번에 적용 카드의 `자간 조정 포함`(설정 `all_include_spacing`, 기본 켜짐)을 끄면 내부 작업 유형 `format`으로 실행합니다. 내부 유형 4가지와 세부 작업 저장값(`stage_choices`)은 그대로이며, Tk는 `selected_mode`(내부 유형)와 `card_mode_var`(카드 표시), 웹·Flutter는 `include_spacing` 상태와 `set_include_spacing` 명령을 씁니다. 그 아래 `표 제외`(설정 `all_exclude_tables`, 기본 꺼짐, Tk `exclude_tables_var`, 웹·Flutter `exclude_tables` 상태와 `set_exclude_tables` 명령)를 켜면 `작업시작`이 세부 작업을 `stage_selection.without_tables`로 바꿔(`TABLE_STAGE_KEYS`를 모두 끔) 넘기고 표자간조정도 끄고 넘깁니다. 제목·개요·중제목·붙임 서식 표(`pre_format`)는 그대로입니다.
-- 자간 정리 카드의 `기존 자간 초기화`(설정 `spacing_reset_existing`, 기본 켜짐)는 세부 작업 01 `reset_spacing`(`stage_choices["spacing"]`)과 같은 값입니다. Tk는 `reset_spacing_var`(설정창 자간 정리 탭과 공유, `_요약갱신`이 세부 작업 값에 맞춤), 웹·Flutter는 `reset_spacing` 상태와 `set_reset_spacing` 명령을 씁니다. 설정값이 None(예전 설정 파일)이면 저장된 세부 작업 구성을 따릅니다. 한 번에 적용의 자간 초기화는 별도 세부 작업으로 남아 있습니다. 같은 카드의 `표 내 자간 정리`(기본 켜짐)는 설정 `table_spacing`(설정창 '표 서식 내 문장도 자간조정하기', 전역 `표_자간조정_사용`)과 같은 값이며, Tk `table_spacing_var`, 웹·Flutter `table_spacing` 상태와 `set_table_spacing` 명령을 씁니다. 끄면 `표셀_자간_제외인가`가 표 칸을 자간 초기화·자간 조정·줄 병합·단어 검사에서 뺍니다.
+- 자간 정리 카드의 `기존 자간 초기화`(설정 `spacing_reset_existing`, 기본 켜짐)는 세부 작업 01 `reset_spacing`(`stage_choices["spacing"]`)과 같은 값입니다. Tk는 `reset_spacing_var`(설정창 자간 정리 탭과 공유, `_요약갱신`이 세부 작업 값에 맞춤), 웹·Flutter는 `reset_spacing` 상태와 `set_reset_spacing` 명령을 씁니다. 설정값이 None(예전 설정 파일)이면 저장된 세부 작업 구성을 따릅니다. 한 번에 적용의 자간 초기화는 별도 세부 작업으로 남아 있습니다. 같은 카드의 `표 제외`(기본 꺼짐, 2026-10-04 `표 내 자간 정리`에서 이름과 방향을 바꿈)는 설정 `table_spacing`의 반대 값입니다. Tk 체크는 `onvalue=False, offvalue=True`로 같은 변수 `table_spacing_var`를 씁니다. 설정 `table_spacing`(설정창 '표 서식 내 문장도 자간조정하기', 전역 `표_자간조정_사용`)과 같은 값이며, Tk `table_spacing_var`, 웹·Flutter `table_spacing` 상태와 `set_table_spacing` 명령을 씁니다. 끄면 `표셀_자간_제외인가`가 표 칸을 자간 초기화·자간 조정·줄 병합·단어 검사에서 뺍니다.
 
 - 빠른 선택: 기본후처리 = 자간 정리 + 서식통일, 전문후처리 = 한 번에 적용 + 서식통일.
 - 원본은 절대 덮어쓰지 않습니다. HWP 입력도 결과는 항상 HWPX입니다.
@@ -97,6 +97,8 @@ Flutter UI 빌드는 `powershell -File build_flutter.ps1`로 수행하며 `build
 - 저장 후 검수는 저장 결과를 한 번만 다시 열어 서식통일·표 서식통일·쪽 배치·단어 분리 검사를 이어서 합니다(`저장결과_규칙검수`). 서식통일 결과 창은 작업을 멈추지 않으며, 여러 문서 일괄 처리 때는 띄우지 않고 로그·최종검수 보고서에만 남깁니다.
 - 표 칸 너비(`table_width`, 2026-10-03)는 기본 표 서식 다음 같은 처리목록에서 `표너비_hwpx_처리`가 입힙니다. 본문 폭은 `_구역_본문폭`(가로 쪽은 용지 높이), 대상은 `서식표_종류판별`이 None이고 `table_width.is_target`인 최상위 표입니다. 비율은 `column_ratios`(2행부터 모든 칸에 글이 있는 행 → 글 있는 행 → 1행 순), 최소 폭은 가장 긴 낱말 × 글자 폭(반각 0.5) + 칸 좌우 여백이며 넘치면 `cap_floors`가 큰 값부터 깎습니다. 칸 문단의 `linesegarray`를 지워 한/글이 줄 배치를 다시 계산하게 합니다.
 - 문두 라벨(괄호·콜론 라벨) 굵게의 기호별 제외(`label_symbols`, False = 굵게 안 함)는 □·※와 함께 별표 `*`·`**`도 기본으로 뺍니다(2026-10-03). 예전 설정 파일은 `설정_불러오기`가 `label_symbols_rev` 판(2)이 없으면 한 번만 `*`·`**`를 끄고, 저장할 때 판 2를 남겨 사용자가 다시 켠 값은 그대로 둡니다.
+- 카드 옵션(2026-10-04, 모두 기본 꺼짐, 설정에 저장): 서식 통일 카드 `unify_exclude_tables`(→ `without_tables`)·`unify_exclude_spacing`(→ `표준서식_세부['unify_exclude_spacing']` → 전역 `서식통일_자간조정_사용` 끔, `서식통일_문장_마무리`가 자간 조정·외톨이 당기기를 건너뜀)·`unify_exclude_pagefit`, 한 번에 적용 카드 `all_exclude_pagefit`. 페이지 맞춤 제외는 `stage_selection.without_page_fit`(`page_fit`·`page_group`)입니다. `작업시작`이 세부 작업 사본에 반영해 넘깁니다. Tk 체크는 `card_option_checks`(카드별, 배경색 갱신), 웹·Flutter는 `set_card_option`·`card_options`입니다.
+- 서식통일 뒤 '작업 결과 확인' 창(`_서식통일_결과_확인창`, 서식통일 5/5)은 설정 `unify_result_window`(기본 꺼짐, 전역 `서식통일_결과창_사용`, Tk `unify_result_window_var`, 설정창 '검토와 작업 완료')가 켜져 있고 문서가 하나일 때만 띄웁니다(`_결과창_띄우는가`). `작업_실행`은 `표준서식_세부['unify_result_window']`로 반영합니다(2026-10-04 사용자 요청).
 - 새로 만드는 제목 표의 담당자 칸(2×2 B2, 2행1열 A2 = 마지막 칸) 글은 설정 `title_owner_text`(기본 빈 글 = 기준 표 글 유지), 전역 `제목_담당자_글`입니다. Tk `title_owner_var`는 서식 프로필을 골라도 바꾸지 않는 사용자 고유 값이라 `std_parspace_vars`가 아닌 별도 변수이며, 바뀌면 `제목_담당자_글_반영`·저장합니다. `서식표_생성`이 `_칸_글_넣기`로 넣고, `제목_유형판별`은 이 글을 담당자 칸으로 인정합니다(`_설정_담당자_글인가`). 문서에 이미 있는 제목 표의 담당자 칸은 바꾸지 않습니다.
 - 제목 부제(제목 글의 첫 쉼표 앞 글) 크기는 설정 `std_title_subtitle_pt`(기본 "15", 설정창 서식 정리 > 제목 모양 자동 정리 아래)이고 전역 `제목_부제_크기_pt`에 담깁니다. 화면 변수는 `std_parspace_vars`(숫자 설정 묶음)에 있어 저장·초기화·서식 프로필 반영을 함께 쓰며, 바뀌면 trace로 `제목_부제_크기_반영`을 불러 붙여넣기 변환에도 반영하고, `작업_실행`은 `표준서식_세부['std_title_subtitle_pt']`로 다시 반영합니다. `제목_부제_크기`가 부제 문단 글자 모양을 복제해 크기를 바꿉니다(내장 기준 표일 때만).
 - 제목 서식 표를 새로 만들 때(`서식표_생성`) A1 밖 칸은 `_칸_날짜_현행화`가 요일 붙은 날짜만 오늘로 바꾸고 연도는 `’26` 약어로 씁니다(`writing_aids.refresh_dates(short_year=True)`, 따옴표가 앞 글 조각에 있으면 그대로 둠).

@@ -100,6 +100,7 @@ class DesktopWebBridge:
                 "reset_spacing": self._reset_spacing(),
                 "table_spacing": self._table_spacing(),
                 "exclude_tables": self._exclude_tables(),
+                "card_options": self._card_options(),
                 "status": gui.status_var.get(),
                 "running": bool(gui.running),
                 "range": {
@@ -296,6 +297,43 @@ class DesktopWebBridge:
                 return
             variable.set(bool(on))
             gui.selected_mode.set("all" if self._include_spacing() else "format")
+            self._mode_selected()
+
+        self._tk(update)
+        return self.get_state()
+
+    # 카드 옵션(설정 키 → 화면 변수, 고르는 카드): 한 번에 적용의 '페이지 맞춤 제외', 서식 통일의 '표 제외'·
+    # '자간 정리 제외'·'페이지 맞춤 제외'. 모두 기본 꺼짐이며 설정 파일에 저장된다.
+    _CARD_OPTIONS = {
+        "all_exclude_pagefit": ("all_exclude_pagefit_var", "all"),
+        "unify_exclude_tables": ("unify_exclude_tables_var", "unify"),
+        "unify_exclude_spacing": ("unify_exclude_spacing_var", "unify"),
+        "unify_exclude_pagefit": ("unify_exclude_pagefit_var", "unify"),
+    }
+
+    def _card_options(self):
+        result = {}
+        for key, (name, _) in self._CARD_OPTIONS.items():
+            variable = getattr(self.gui, name, None)
+            result[key] = False if variable is None else bool(variable.get())
+        return result
+
+    def set_card_option(self, key, on):
+        """카드 옵션 하나를 바꾸고 그 카드를 고른다."""
+        if key not in self._CARD_OPTIONS:
+            raise ValueError("지원하지 않는 카드 옵션입니다.")
+        name, card = self._CARD_OPTIONS[key]
+
+        def update():
+            gui = self.gui
+            variable = getattr(gui, name, None)
+            if gui.running or variable is None:
+                return
+            variable.set(bool(on))
+            if card == "all":
+                gui.selected_mode.set("all" if self._include_spacing() else "format")
+            else:
+                gui.selected_mode.set(card)
             self._mode_selected()
 
         self._tk(update)
@@ -525,7 +563,7 @@ class _BrowserApi:
             "open_results", "next_job", "run_tool", "open_result",
             "show_result", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",
-            "set_exclude_tables",
+            "set_exclude_tables", "set_card_option",
         ):
             setattr(self, name, getattr(bridge, name))
 

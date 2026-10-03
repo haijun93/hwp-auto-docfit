@@ -264,6 +264,7 @@ from docfit_core import outline_ops
 from docfit_core.progress_guide import guide_key as 진행안내_키, guide_state as 진행안내_상태
 from docfit_core.stage_selection import STAGE_EXAMPLES, default_choice as stage_default, enabled as stage_enabled, stages_for_mode
 from docfit_core.stage_selection import TABLE_STAGE_KEYS as 표작업_키목록, without_tables as 표작업_제외
+from docfit_core.stage_selection import without_page_fit as 페이지맞춤_제외
 from docfit_core.document_rules import (
     ParagraphSpacingTracker, YEAR_QUOTE_PATTERN, marker_space_fix,
     curly_single_quote_replacements, normalize_date_range_marks,
@@ -1098,6 +1099,14 @@ def 번들_리소스_폴더():
     "all_include_spacing": True,
     # 한 번에 적용의 '표 제외': 켜면 표 관련 세부 작업을 모두 빼고 표 칸 안 문장도 자간 작업에서 뺀다.
     "all_exclude_tables": False,
+    # 한 번에 적용의 '페이지 맞춤 제외': 켜면 문단 아래 간격 페이지 맞춤·관련 문단 페이지 배치를 뺀다.
+    "all_exclude_pagefit": False,
+    # 서식 통일 카드의 '표 제외'·'자간 정리 제외'·'페이지 맞춤 제외'(모두 기본 꺼짐).
+    "unify_exclude_tables": False,
+    "unify_exclude_spacing": False,
+    "unify_exclude_pagefit": False,
+    # 서식통일 뒤 '작업 결과 확인' 창(서식통일 5/5)을 띄울지. 기본 꺼짐(2026-10-04 사용자 요청).
+    "unify_result_window": False,
     # '자간 정리' 카드의 '기존 자간 초기화'(세부 작업 01과 같은 값). None이면 저장된 세부 작업 구성을 따른다.
     "spacing_reset_existing": None,
 }
@@ -6168,6 +6177,23 @@ def _서식통일_적용영역_사용자검토(계획):
     return 요청 or {"approved": False, "selected": []}
 
 
+# 서식통일 뒤 '작업 결과 확인' 창을 띄울지(설정 unify_result_window, 기본 꺼짐). 꺼져 있으면 결과는 처리 기록과
+# 최종 검수 보고서에만 남긴다.
+서식통일_결과창_사용 = False
+
+
+def 서식통일_결과창_반영(value):
+    """설정값을 '작업 결과 확인' 창 사용 여부 전역값에 반영하고 반영한 값을 돌려준다."""
+    global 서식통일_결과창_사용
+    서식통일_결과창_사용 = bool(value)
+    return 서식통일_결과창_사용
+
+
+def _결과창_띄우는가(total):
+    """저장 결과 검수 뒤 '작업 결과 확인' 창을 띄우는지: 문서 하나를 처리할 때, 설정에서 켰을 때만."""
+    return total == 1 and 서식통일_결과창_사용
+
+
 def _서식통일_최종결과_사용자확인(결과):
     """저장 후 읽기 전용 검수 결과를 GUI에 보여 준다.
 
@@ -7041,6 +7067,16 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
 
 
 서식통일_줄병합_사용 = True   # 짧은 마지막 줄(외톨이 글자) 당기기 사용 여부(작업별로 설정)
+# 서식통일이 고친 문장의 자간 조정·외톨이 글자 당기기 사용 여부. 서식 통일 카드의 '자간 정리 제외'를 켜면
+# 끈다(내어쓰기는 그대로 맞춘다).
+서식통일_자간조정_사용 = True
+
+
+def 서식통일_자간조정_반영(사용):
+    """서식통일이 고친 문장의 자간 조정 사용 여부를 반영하고 반영한 값을 돌려준다."""
+    global 서식통일_자간조정_사용
+    서식통일_자간조정_사용 = bool(사용)
+    return 서식통일_자간조정_사용
 
 
 def 서식통일_문장_마무리(시작, text, 내어쓰기):
@@ -7054,7 +7090,7 @@ def 서식통일_문장_마무리(시작, text, 내어쓰기):
     hwp.SetPos(*시작)
     hwp_run("MoveParaEnd")
     끝 = hwp.GetPos()
-    if 끝[:2] == 시작[:2] and 끝[2] > 시작[2]:
+    if 서식통일_자간조정_사용 and 끝[:2] == 시작[:2] and 끝[2] > 시작[2]:
         if _서식통일_문단자간_조정(시작, 끝) is False:
             return False
         if 서식통일_줄병합_사용:
@@ -13555,7 +13591,7 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
         raise RuntimeError(f"문서 저장에 실패했습니다: {저장파일}")
     로그(f"전체 처리 {총회차}회 완료")
     로그(f"저장 완료: {저장파일}")
-    최종규칙검사 = 저장결과_규칙검수(파일, 저장파일, 결과창=(total == 1))
+    최종규칙검사 = 저장결과_규칙검수(파일, 저장파일, 결과창=_결과창_띄우는가(total))
     if 최종규칙검사 is False:
         return False
     무결성 = None
@@ -13768,6 +13804,8 @@ def 작업_실행(
         표글꼴_적용(표준서식_세부.get("table_fonts"))
         제목_부제_크기_반영(표준서식_세부.get("std_title_subtitle_pt", 제목_부제_크기_pt))
         제목_담당자_글_반영(표준서식_세부.get("title_owner_text", 제목_담당자_글))
+        서식통일_결과창_반영(표준서식_세부.get("unify_result_window", 서식통일_결과창_사용))
+        서식통일_자간조정_반영(not 표준서식_세부.get("unify_exclude_spacing", False))
 
         문장부호_통계 = {"대상": 0, "성공": 0, "실패": 0}
         세트문장_통계 = {"대상": 0, "성공": 0, "실패": 0, "축소횟수": 0, "확대횟수": 0}
@@ -14211,6 +14249,8 @@ class HwpAutoDocFitGUI:
         self.color_mark_on_var = tk.BooleanVar(value=bool(저장된_설정["color_mark_on"]))
         self.color_var = tk.StringVar(value=str(저장된_설정["color"]))
         self.autoclose_var = tk.BooleanVar(value=bool(저장된_설정["autoclose"]))
+        self.unify_result_window_var = tk.BooleanVar(value=bool(저장된_설정.get("unify_result_window", False)))
+        서식통일_결과창_반영(self.unify_result_window_var.get())
         self.stdformat_var = tk.BooleanVar(value=bool(저장된_설정["stdformat"]))
         self.verify_var = tk.BooleanVar(value=bool(저장된_설정["verify"]))
         self.two_pass_var = tk.BooleanVar(value=bool(저장된_설정.get("two_pass_processing", False)))
@@ -14288,7 +14328,8 @@ class HwpAutoDocFitGUI:
 
         for 변수 in ([self.prevent_word_split_var, self.punctuation_var, self.punctuation_threshold_var, self.keep_punctuation_set_var,
                      self.color_mark_on_var, self.color_var,
-                     self.autoclose_var, self.stdformat_var, self.verify_var, self.two_pass_var,
+                     self.autoclose_var, self.unify_result_window_var,
+                     self.stdformat_var, self.verify_var, self.two_pass_var,
                      self.table_spacing_var, self.log_file_var, self.check_updates_on_start_var,
                      self.retry_body_var, self.retry_table_var, self.paren_shrink_var,
                      self.linespacing_min_var, self.linespacing_max_var, self.font_folder_var,
@@ -14310,15 +14351,23 @@ class HwpAutoDocFitGUI:
         self.include_spacing_var.trace_add("write", self._설정_변경됨)
         # '한 번에 적용'의 '표 제외'. 켜면 표 관련 세부 작업을 모두 뺀다(설정 파일에 저장).
         self.exclude_tables_var = tk.BooleanVar(value=bool(저장된_설정.get("all_exclude_tables", False)))
-        self.exclude_tables_var.trace_add("write", self._설정_변경됨)
-        self.exclude_tables_var.trace_add("write", self._요약갱신)
+        # '한 번에 적용'의 '페이지 맞춤 제외'와 '서식 통일' 카드의 표 제외·자간 정리 제외·페이지 맞춤 제외(모두 기본 꺼짐).
+        self.all_exclude_pagefit_var = tk.BooleanVar(value=bool(저장된_설정.get("all_exclude_pagefit", False)))
+        self.unify_exclude_tables_var = tk.BooleanVar(value=bool(저장된_설정.get("unify_exclude_tables", False)))
+        self.unify_exclude_spacing_var = tk.BooleanVar(value=bool(저장된_설정.get("unify_exclude_spacing", False)))
+        self.unify_exclude_pagefit_var = tk.BooleanVar(value=bool(저장된_설정.get("unify_exclude_pagefit", False)))
+        for 변수 in (self.exclude_tables_var, self.all_exclude_pagefit_var, self.unify_exclude_tables_var,
+                     self.unify_exclude_spacing_var, self.unify_exclude_pagefit_var):
+            변수.trace_add("write", self._설정_변경됨)
+            변수.trace_add("write", self._요약갱신)
         # '자간 정리' 카드의 '기존 자간 초기화'. 세부 작업 01(문서 전체 자간 초기화)과 같은 값이며 설정 파일에 저장한다.
         저장된_초기화 = 저장된_설정.get("spacing_reset_existing")
         if isinstance(저장된_초기화, bool):
             self.stage_choices["spacing"]["reset_spacing"] = 저장된_초기화
         self.reset_spacing_var = tk.BooleanVar(value=bool(self.stage_choices["spacing"]["reset_spacing"]))
         self.reset_spacing_var.trace_add("write", self._자간초기화_값변경)
-        # '표 내 자간 정리'(설정 table_spacing)를 바꾸면 카드 요약 문구도 고친다(저장은 설정 변경 감시가 한다).
+        # '자간 정리' 카드의 '표 제외'는 설정 table_spacing(표 안 문장 자간조정)의 반대 값이다. 바꾸면 카드 요약
+        # 문구도 고친다(저장은 설정 변경 감시가 한다).
         self.table_spacing_var.trace_add("write", self._요약갱신)
         self.card_mode_var = tk.StringVar(value="spacing")   # 카드 표시용(format도 '한 번에 적용' 카드)
         choose = ttk.LabelFrame(main, text="처리 방식", padding=card_padding, style="Card.TLabelframe")
@@ -14326,6 +14375,7 @@ class HwpAutoDocFitGUI:
         self.choose_frame = choose
         self.mode_buttons = []
         self.mode_cards = {}
+        self.card_option_checks = {}   # 카드별 옵션 체크(선택한 카드 배경색을 같이 바꾼다)
         for i, (title, mode, desc) in enumerate((
             ("자간 정리", "spacing", "줄 끝의 끊긴 단어와 자간을 정리합니다."),
             ("서식 통일", "unify", "문서에서 많이 쓰인 서식으로 맞춥니다."),
@@ -14345,6 +14395,16 @@ class HwpAutoDocFitGUI:
                                    font=("맑은 고딕", 9), cursor="hand2")
             description.pack(anchor="w", fill="x", pady=(5, 8))
             self.mode_buttons.append(rb)
+
+            def 카드_체크(text, variable, command, m=mode, inner=inner, **옵션):
+                check = tk.Checkbutton(
+                    inner, text=text, variable=variable, command=command, bg=UI_COLORS["surface"],
+                    activebackground=UI_COLORS["surface"], fg=UI_COLORS["ink"], font=("맑은 고딕", 9),
+                    anchor="w", cursor="hand2", **옵션)
+                check.pack(anchor="w", pady=(0, 4))
+                self.mode_buttons.append(check)
+                self.card_option_checks.setdefault(m, []).append(check)
+                return check
             if mode == "spacing":
                 # 끄면 문서에 이미 있는 자간을 0%로 되돌리지 않고 그 위에서 정리한다.
                 self.reset_spacing_check = tk.Checkbutton(
@@ -14353,14 +14413,22 @@ class HwpAutoDocFitGUI:
                     fg=UI_COLORS["ink"], font=("맑은 고딕", 9), anchor="w", cursor="hand2")
                 self.reset_spacing_check.pack(anchor="w", pady=(0, 4))
                 self.mode_buttons.append(self.reset_spacing_check)
-                # 끄면 표 칸 안 문장은 자간 초기화·자간 조정·줄 병합·단어 검사 대상에서 뺀다
-                # (설정창 '표 서식 내 문장도 자간조정하기'와 같은 값).
-                self.table_spacing_card_check = tk.Checkbutton(
-                    inner, text="표 내 자간 정리", variable=self.table_spacing_var,
-                    command=self._자간초기화_변경, bg=UI_COLORS["surface"], activebackground=UI_COLORS["surface"],
-                    fg=UI_COLORS["ink"], font=("맑은 고딕", 9), anchor="w", cursor="hand2")
-                self.table_spacing_card_check.pack(anchor="w", pady=(0, 4))
-                self.mode_buttons.append(self.table_spacing_card_check)
+                self.card_option_checks.setdefault(mode, []).append(self.reset_spacing_check)
+                # '표 제외'(기본 꺼짐): 켜면 표 칸 안 문장은 자간 초기화·자간 조정·줄 병합·단어 검사 대상에서 뺀다.
+                # 설정 table_spacing(설정창 '표 서식 내 문장도 자간조정하기')의 반대 값이라 켜면 False를 넣는다
+                # (2026-10-04 사용자 요청: '표 내 자간 정리'를 '표 제외'로 바꿈).
+                self.table_spacing_card_check = 카드_체크(
+                    "표 제외", self.table_spacing_var, self._자간초기화_변경, onvalue=False, offvalue=True)
+            if mode == "unify":
+                # 켜면 기본 표 서식·표 서식통일을 뺀다.
+                self.unify_exclude_tables_check = 카드_체크(
+                    "표 제외", self.unify_exclude_tables_var, lambda: self._카드옵션_변경("unify"))
+                # 켜면 서식통일이 고친 문장의 자간 조정·외톨이 글자 당기기를 뺀다(내어쓰기는 맞춘다).
+                self.unify_exclude_spacing_check = 카드_체크(
+                    "자간 정리 제외", self.unify_exclude_spacing_var, lambda: self._카드옵션_변경("unify"))
+                # 켜면 문단 아래 간격 페이지 맞춤·관련 문단 페이지 배치를 뺀다.
+                self.unify_exclude_pagefit_check = 카드_체크(
+                    "페이지 맞춤 제외", self.unify_exclude_pagefit_var, lambda: self._카드옵션_변경("unify"))
             if mode == "all":
                 # 끄면 기존 자간을 그대로 두고 서식만 입힌다(결과 파일 이름은 '서식적용').
                 self.include_spacing_check = tk.Checkbutton(
@@ -14369,14 +14437,13 @@ class HwpAutoDocFitGUI:
                     fg=UI_COLORS["ink"], font=("맑은 고딕", 9), anchor="w", cursor="hand2")
                 self.include_spacing_check.pack(anchor="w", pady=(0, 4))
                 self.mode_buttons.append(self.include_spacing_check)
+                self.card_option_checks.setdefault(mode, []).append(self.include_spacing_check)
                 # 켜면 표 관련 작업(텍스트 표 변환·기본 표 서식·표 칸 너비·표 정밀 서식·표 머리글 서식·
                 # 표 안 자간·줄·단어 작업)을 모두 빼고 실행한다. 제목·개요 서식 표는 그대로 정리한다.
-                self.exclude_tables_check = tk.Checkbutton(
-                    inner, text="표 제외", variable=self.exclude_tables_var,
-                    command=self._표제외_변경, bg=UI_COLORS["surface"], activebackground=UI_COLORS["surface"],
-                    fg=UI_COLORS["ink"], font=("맑은 고딕", 9), anchor="w", cursor="hand2")
-                self.exclude_tables_check.pack(anchor="w", pady=(0, 4))
-                self.mode_buttons.append(self.exclude_tables_check)
+                self.exclude_tables_check = 카드_체크("표 제외", self.exclude_tables_var, self._표제외_변경)
+                # 켜면 문단 아래 간격 페이지 맞춤·관련 문단 페이지 배치를 뺀다.
+                self.all_exclude_pagefit_check = 카드_체크(
+                    "페이지 맞춤 제외", self.all_exclude_pagefit_var, self._표제외_변경)
             self.mode_cards[mode] = (card, inner, description)
             for surface in (card, inner, description):
                 surface.bind("<Button-1>", lambda e, m=mode: self._카드_클릭(m))
@@ -15192,15 +15259,21 @@ class HwpAutoDocFitGUI:
             summary = ("줄 끝의 끊긴 단어와 자간을 정리합니다." if 초기화
                        else "기존 자간을 초기화하지 않고 그 위에서 줄 끝의 끊긴 단어를 정리합니다.")
             if hasattr(self, "table_spacing_var") and not self.table_spacing_var.get():
-                summary += " · 표 안 문장 제외"
+                summary += " · 표 제외"
         elif mode == "unify":
             summary = "문두기호별로 문서에서 많이 쓰인 서식을 적용합니다."
+            for 이름, 문구 in (("unify_exclude_tables_var", "표 제외"), ("unify_exclude_spacing_var", "자간 정리 제외"),
+                             ("unify_exclude_pagefit_var", "페이지 맞춤 제외")):
+                if hasattr(self, 이름) and getattr(self, 이름).get():
+                    summary += f" · {문구}"
         elif mode == "format":
             summary = "자간 조정 제외: 기존 자간은 그대로 두고 공문서 서식만 적용합니다."
         else:
             summary = "공문서 서식을 입히고 자간까지 함께 정리합니다."
         if mode in ("all", "format") and hasattr(self, "exclude_tables_var") and self.exclude_tables_var.get():
             summary += " · 표 제외"
+        if mode in ("all", "format") and hasattr(self, "all_exclude_pagefit_var") and self.all_exclude_pagefit_var.get():
+            summary += " · 페이지 맞춤 제외"
         choices = self.stage_choices[mode]
         # 자간 정리의 자간 초기화는 위 문구로 이미 알린다.
         disabled = sum(not value for key, value in choices.items()
@@ -15253,14 +15326,8 @@ class HwpAutoDocFitGUI:
             card.configure(bg=border)
             inner.configure(bg=surface)
             description.configure(bg=surface)
-            if mode == "all" and hasattr(self, "include_spacing_check"):
-                self.include_spacing_check.configure(bg=surface, activebackground=surface)
-            if mode == "all" and hasattr(self, "exclude_tables_check"):
-                self.exclude_tables_check.configure(bg=surface, activebackground=surface)
-            if mode == "spacing" and hasattr(self, "reset_spacing_check"):
-                self.reset_spacing_check.configure(bg=surface, activebackground=surface)
-            if mode == "spacing" and hasattr(self, "table_spacing_card_check"):
-                self.table_spacing_card_check.configure(bg=surface, activebackground=surface)
+            for check in getattr(self, "card_option_checks", {}).get(mode, ()):
+                check.configure(bg=surface, activebackground=surface)
 
     def _메인_크기조정(self, event=None):
         """창 크기가 바뀔 때 UI 밀도를 폭에 맞춰 조정한다."""
@@ -15344,6 +15411,13 @@ class HwpAutoDocFitGUI:
     def _한번에_모드(self):
         """'한 번에 적용' 카드의 내부 작업 유형: 자간 조정 포함이면 all, 아니면 format."""
         return "all" if self.include_spacing_var.get() else "format"
+
+    def _카드옵션_변경(self, mode):
+        """카드 옵션 체크를 바꾸면 그 카드를 고른다(값 저장·요약은 변경 감시가 한다)."""
+        if self.running:
+            return
+        self.selected_mode.set(self._한번에_모드() if mode in ("all", "format") else mode)
+        self._모드_선택됨()
 
     def _표제외_변경(self):
         """'표 제외'를 바꾸면 '한 번에 적용' 카드를 고른다(값 저장·요약은 변경 감시가 한다)."""
@@ -18012,6 +18086,10 @@ class HwpAutoDocFitGUI:
         group3.pack(fill="x", pady=(0, 8))
         self.autoclose_check = ttk.Checkbutton(group3, text="작업 완료 후 한글 문서 창 닫기", variable=self.autoclose_var)
         self.autoclose_check.pack(anchor="w")
+        self.unify_result_window_check = ttk.Checkbutton(
+            group3, text="서식통일 후 '작업 결과 확인' 창 띄우기 · 꺼 두면 결과는 처리 기록과 최종 검수 보고서에 남아요",
+            variable=self.unify_result_window_var)
+        self.unify_result_window_check.pack(anchor="w", pady=(6, 0))
         self.verify_check = ttk.Checkbutton(
             group3, text="상세 진단 및 문서 무결성 검사 · 본문·표·이미지·섹션 변화를 확인해요", variable=self.verify_var
         )
@@ -18101,6 +18179,7 @@ class HwpAutoDocFitGUI:
                 "color_mark_on": bool(self.color_mark_on_var.get()),
                 "color": str(self.color_var.get()),
                 "autoclose": bool(self.autoclose_var.get()),
+                "unify_result_window": bool(self.unify_result_window_var.get()),
                 "stdformat": bool(self.stdformat_var.get()),
                 "verify": bool(self.verify_var.get()),
                 "two_pass_processing": bool(self.two_pass_var.get()),
@@ -18136,6 +18215,11 @@ class HwpAutoDocFitGUI:
                                            if hasattr(self, "include_spacing_var") else True)
             설정값["all_exclude_tables"] = (bool(self.exclude_tables_var.get())
                                           if hasattr(self, "exclude_tables_var") else False)
+            for 키, 이름 in (("all_exclude_pagefit", "all_exclude_pagefit_var"),
+                           ("unify_exclude_tables", "unify_exclude_tables_var"),
+                           ("unify_exclude_spacing", "unify_exclude_spacing_var"),
+                           ("unify_exclude_pagefit", "unify_exclude_pagefit_var")):
+                설정값[키] = bool(getattr(self, 이름).get()) if hasattr(self, 이름) else False
             설정값["spacing_reset_existing"] = bool(self.stage_choices["spacing"].get("reset_spacing", True))
             설정값["active_format_profile"] = getattr(self, "_활성_서식_프로파일", "")
             기존_설정 = 설정_불러오기()
@@ -18262,6 +18346,7 @@ class HwpAutoDocFitGUI:
         self.color_mark_on_var.set(기본_설정["color_mark_on"])
         self.color_var.set(기본_설정["color"])
         self.autoclose_var.set(기본_설정["autoclose"])
+        self.unify_result_window_var.set(기본_설정["unify_result_window"])
         self.stdformat_var.set(기본_설정["stdformat"])
         self.verify_var.set(기본_설정["verify"])
         self.two_pass_var.set(기본_설정["two_pass_processing"])
@@ -18853,17 +18938,33 @@ class HwpAutoDocFitGUI:
             self.std_parspace_vars["std_title_subtitle_pt"].get())
         self.std_parspace_vars["std_title_subtitle_pt"].set(str(제목_부제_크기_pt))   # 잘못된 값은 고친 값으로 보여 준다
         표준서식_세부_전달["title_owner_text"] = 제목_담당자_글_반영(self.title_owner_var.get())
+        표준서식_세부_전달["unify_result_window"] = 서식통일_결과창_반영(self.unify_result_window_var.get())
         표준서식_세부_전달["table_fonts"] = {
             part: {"font": v["font"].get(), "size": v["size"].get()}
             for part, v in self.table_font_vars.items()
         }
-        # '한 번에 적용'의 '표 제외': 표 관련 세부 작업을 모두 끄고 표 칸 안 문장도 자간 작업에서 뺀다.
-        표제외 = mode in ("all", "format") and bool(self.exclude_tables_var.get())
-        세부작업 = 표작업_제외(self.stage_choices[mode]) if 표제외 else dict(self.stage_choices[mode])
+        # 카드 옵션: '표 제외'(한 번에 적용·서식 통일)는 표 관련 세부 작업을 모두 끄고 표 칸 안 문장도 자간 작업에서
+        # 빼고, '페이지 맞춤 제외'는 문단 아래 간격 페이지 맞춤·관련 문단 페이지 배치를 끈다. 서식 통일의 '자간 정리
+        # 제외'는 서식통일이 고친 문장의 자간 조정을 끈다.
+        if mode == "unify":
+            표제외, 쪽맞춤제외 = self.unify_exclude_tables_var.get(), self.unify_exclude_pagefit_var.get()
+        elif mode in ("all", "format"):
+            표제외, 쪽맞춤제외 = self.exclude_tables_var.get(), self.all_exclude_pagefit_var.get()
+        else:
+            표제외 = 쪽맞춤제외 = False
+        자간제외 = mode == "unify" and bool(self.unify_exclude_spacing_var.get())
+        세부작업 = dict(self.stage_choices[mode])
         if 표제외:
-            self.로그표시(f"표 제외: 표 관련 작업 {len(표작업_키목록)}가지(텍스트 표 변환·기본 표 서식·표 칸 너비·"
-                       "표 정밀 서식·표 머리글 서식·표 서식통일·표 안 자간·줄·단어 작업)를 빼고, 표 칸 안 문장도 "
-                       "자간 작업에서 뺍니다. 제목·개요 서식 표는 정리합니다.")
+            세부작업 = 표작업_제외(세부작업)
+            self.로그표시("표 제외: 표 관련 작업(텍스트 표 변환·기본 표 서식·표 칸 너비·표 정밀 서식·표 머리글 서식·"
+                       "표 서식통일·표 안 자간·줄·단어 작업)을 빼고, 표 칸 안 문장도 자간 작업에서 뺍니다. "
+                       "제목·개요 서식 표는 정리합니다.")
+        if 쪽맞춤제외:
+            세부작업 = 페이지맞춤_제외(세부작업)
+            self.로그표시("페이지 맞춤 제외: 문단 아래 간격 페이지 맞춤과 관련 문단 페이지 배치를 뺍니다.")
+        if 자간제외:
+            self.로그표시("자간 정리 제외: 서식통일이 고친 문장의 자간 조정·외톨이 글자 당기기를 하지 않습니다.")
+        표준서식_세부_전달["unify_exclude_spacing"] = 자간제외
 
         self.worker = threading.Thread(
             target=작업_실행,

@@ -44,10 +44,15 @@ class WritingAidsGuiTest(unittest.TestCase):
                     app._AI_프롬프트_열기(root)
                     root.update()
 
-                    # 작업 카드 3장: 자간 정리(+ 기존 자간 초기화·표 내 자간 정리) / 서식 통일 / 한 번에 적용(+ 자간 조정 포함)
+                    # 작업 카드 3장: 자간 정리(+ 기존 자간 초기화·표 제외) / 서식 통일(+ 표 제외·자간 정리 제외·
+                    # 페이지 맞춤 제외) / 한 번에 적용(+ 자간 조정 포함·표 제외·페이지 맞춤 제외)
                     self.assertEqual([b.cget("text") for b in app.mode_buttons],
-                                     ["자간 정리", "기존 자간 초기화", "표 내 자간 정리", "서식 통일", "한 번에 적용",
-                                      "자간 조정 포함", "표 제외"])
+                                     ["자간 정리", "기존 자간 초기화", "표 제외",
+                                      "서식 통일", "표 제외", "자간 정리 제외", "페이지 맞춤 제외",
+                                      "한 번에 적용", "자간 조정 포함", "표 제외", "페이지 맞춤 제외"])
+                    for 이름 in ("all_exclude_pagefit_var", "unify_exclude_tables_var", "unify_exclude_spacing_var",
+                                 "unify_exclude_pagefit_var"):
+                        self.assertFalse(getattr(app, 이름).get(), 이름)       # 모두 기본 꺼짐
                     # '표 제외'는 기본 꺼짐. 켜면 한 번에 적용 카드를 고르고 요약에 알리며 설정에 저장한다.
                     self.assertFalse(app.exclude_tables_var.get())
                     app.exclude_tables_var.set(True)
@@ -72,19 +77,56 @@ class WritingAidsGuiTest(unittest.TestCase):
                     args = captured["args"]
                     self.assertFalse(args[22])                       # 표자간조정
                     self.assertTrue(all(args[25][k] is False for k in ns["표작업_키목록"]))
+                    self.assertIsNot(args[25].get("page_fit"), False)  # 페이지 맞춤 제외는 꺼져 있다
                     app.running = False
                     app.exclude_tables_var.set(False)
                     self.assertNotIn("표 제외", app.options_summary.cget("text"))
-                    # '표 내 자간 정리'는 설정 table_spacing(표 안 문장 자간조정)과 같은 값이고 기본은 켜짐이다.
+                    # 한 번에 적용의 '페이지 맞춤 제외': 문단 아래 간격 페이지 맞춤·관련 문단 페이지 배치를 끈다.
+                    app.all_exclude_pagefit_var.set(True)
+                    app._표제외_변경()
+                    self.assertIn("페이지 맞춤 제외", app.options_summary.cget("text"))
+                    with patch.object(threading, "Thread", _Thread):
+                        app.작업시작(app.selected_mode.get())
+                    args = captured["args"]
+                    self.assertEqual((args[25]["page_fit"], args[25]["page_group"]), (False, False))
+                    self.assertTrue(args[22])                        # 표는 그대로
+                    app.running = False
+                    app.all_exclude_pagefit_var.set(False)
+                    self.assertTrue(ns["설정_불러오기"]()["unify_exclude_tables"] is False)
+                    # 서식 통일 카드: 표 제외·자간 정리 제외·페이지 맞춤 제외
+                    app.unify_exclude_tables_var.set(True)
+                    app.unify_exclude_spacing_var.set(True)
+                    app.unify_exclude_pagefit_var.set(True)
+                    app._카드옵션_변경("unify")
+                    self.assertEqual(app.selected_mode.get(), "unify")
+                    summary = app.options_summary.cget("text")
+                    for 문구 in ("표 제외", "자간 정리 제외", "페이지 맞춤 제외"):
+                        self.assertIn(문구, summary)
+                    self.assertTrue(ns["설정_불러오기"]()["unify_exclude_spacing"])
+                    with patch.object(threading, "Thread", _Thread):
+                        app.작업시작("unify")
+                    args = captured["args"]
+                    self.assertEqual(args[18], "unify")
+                    self.assertEqual((args[25]["table_style"], args[25]["table_unify"], args[25]["page_fit"]),
+                                     (False, False, False))
+                    self.assertTrue(args[25]["style_unify"])
+                    self.assertTrue(args[13]["unify_exclude_spacing"])  # 서식통일 자간 조정 끔
+                    app.running = False
+                    app.버튼_대기중()                                   # 작업이 끝난 것처럼 카드 버튼을 다시 켠다
+                    for 이름 in ("unify_exclude_tables_var", "unify_exclude_spacing_var", "unify_exclude_pagefit_var"):
+                        getattr(app, 이름).set(False)
+                    # 자간 정리의 '표 제외'는 설정 table_spacing(표 안 문장 자간조정)의 반대 값이고 기본은 꺼짐이다.
                     self.assertTrue(app.table_spacing_var.get())
+                    self.assertEqual(app.table_spacing_card_check.cget("text"), "표 제외")
                     app._카드_클릭("all")
-                    app.table_spacing_var.set(False)
-                    app._자간초기화_변경()
+                    app.table_spacing_card_check.invoke()             # '표 제외' 켬
+                    self.assertFalse(app.table_spacing_var.get())
                     self.assertEqual(app.selected_mode.get(), "spacing")
-                    self.assertIn("표 안 문장 제외", app.options_summary.cget("text"))
+                    self.assertIn("표 제외", app.options_summary.cget("text"))
                     self.assertFalse(ns["설정_불러오기"]()["table_spacing"])
-                    app.table_spacing_var.set(True)
-                    self.assertNotIn("표 안 문장 제외", app.options_summary.cget("text"))
+                    app.table_spacing_card_check.invoke()             # 다시 끔
+                    self.assertTrue(app.table_spacing_var.get())
+                    self.assertNotIn("표 제외", app.options_summary.cget("text"))
                     self.assertTrue(ns["설정_불러오기"]()["table_spacing"])
                     # 설정창 '제목 부제 크기'는 기본 15pt이고, 바꾸면 바로 반영·저장된다.
                     부제 = app.std_parspace_vars["std_title_subtitle_pt"]
@@ -99,6 +141,11 @@ class WritingAidsGuiTest(unittest.TestCase):
                     self.assertEqual(ns["제목_담당자_글_반영"].__globals__["제목_담당자_글"], "기획예산과 홍길동(2345)")
                     self.assertEqual(ns["설정_불러오기"]()["title_owner_text"], "기획예산과 홍길동(2345)")
                     app.title_owner_var.set("")
+                    # 서식통일 '작업 결과 확인' 창은 기본 꺼짐이고, 켜면 바로 반영·저장된다.
+                    self.assertFalse(app.unify_result_window_var.get())
+                    app.unify_result_window_var.set(True)
+                    self.assertTrue(ns["설정_불러오기"]()["unify_result_window"])
+                    app.unify_result_window_var.set(False)
                     # '기존 자간 초기화'는 자간 정리 세부 작업 01과 같은 값이고 설정 파일에 저장된다.
                     app._카드_클릭("all")
                     app.reset_spacing_var.set(False)

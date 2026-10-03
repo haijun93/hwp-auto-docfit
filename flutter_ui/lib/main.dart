@@ -116,6 +116,9 @@ class _WorkspaceState extends State<Workspace> {
   bool get tableSpacing => state['table_spacing'] != false;
   // '한 번에 적용'의 '표 제외'(설정 all_exclude_tables, 기본 꺼짐).
   bool get excludeTables => state['exclude_tables'] == true;
+  // 카드 옵션(한 번에 적용 '페이지 맞춤 제외', 서식 통일 '표 제외'·'자간 정리 제외'·'페이지 맞춤 제외', 기본 꺼짐).
+  bool cardOption(String key) =>
+      (state['card_options'] as Map? ?? const {})[key] == true;
   String get modeTitle => mode == 'format'
       ? '한 번에 적용(자간 조정 제외)'
       : modes.firstWhere((m) => m.$1 == mode, orElse: () => modes.first).$2;
@@ -974,21 +977,21 @@ class _WorkspaceState extends State<Workspace> {
                       '문서에 있던 자간은 그대로 두고 그 위에서 정리해요.',
                       style: TextStyle(fontSize: 12, color: _faint),
                     ),
-                  // 끄면 표 칸 안 문장은 자간 정리 대상에서 뺀다(설정 table_spacing과 같은 값).
+                  // '표 제외'를 켜면 표 칸 안 문장은 자간 정리 대상에서 뺀다(설정 table_spacing의 반대 값).
                   Row(
                     children: [
                       const Expanded(
                         child: Text(
-                          '표 내 자간 정리',
+                          '표 제외',
                           style: TextStyle(fontWeight: FontWeight.w600),
                         ),
                       ),
                       Switch(
                         key: const Key('tableSpacingSwitch'),
-                        value: tableSpacing,
+                        value: !tableSpacing,
                         onChanged: locked
                             ? null
-                            : (on) => command('set_table_spacing', [on]),
+                            : (on) => command('set_table_spacing', [!on]),
                       ),
                     ],
                   ),
@@ -997,6 +1000,34 @@ class _WorkspaceState extends State<Workspace> {
                       '표 칸 안 문장은 자간 정리에서 빼요.',
                       style: TextStyle(fontSize: 12, color: _faint),
                     ),
+                ],
+                if (m.$1 == 'unify') ...[
+                  const SizedBox(height: 8),
+                  for (final o in const [
+                    ('unify_exclude_tables', '표 제외', '기본 표 서식·표 서식통일을 빼요.'),
+                    ('unify_exclude_spacing', '자간 정리 제외', '서식통일이 고친 문장의 자간은 그대로 둬요.'),
+                    ('unify_exclude_pagefit', '페이지 맞춤 제외', '문단 아래 간격 페이지 맞춤·관련 문단 페이지 배치를 빼요.'),
+                  ]) ...[
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            o.$2,
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        Switch(
+                          key: Key('${o.$1}Switch'),
+                          value: cardOption(o.$1),
+                          onChanged: locked
+                              ? null
+                              : (on) => command('set_card_option', [o.$1, on]),
+                        ),
+                      ],
+                    ),
+                    if (cardOption(o.$1))
+                      Text(o.$3, style: const TextStyle(fontSize: 12, color: _faint)),
+                  ],
                 ],
                 if (isAll) ...[
                   const SizedBox(height: 8),
@@ -1044,6 +1075,32 @@ class _WorkspaceState extends State<Workspace> {
                   if (excludeTables)
                     const Text(
                       '표 관련 작업은 모두 빼고 정리해요. 제목·개요 서식 표는 정리해요.',
+                      style: TextStyle(fontSize: 12, color: _faint),
+                    ),
+                  // 켜면 문단 아래 간격 페이지 맞춤·관련 문단 페이지 배치를 뺀다.
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          '페이지 맞춤 제외',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      Switch(
+                        key: const Key('allExcludePagefitSwitch'),
+                        value: cardOption('all_exclude_pagefit'),
+                        onChanged: locked
+                            ? null
+                            : (on) => command(
+                                'set_card_option',
+                                ['all_exclude_pagefit', on],
+                              ),
+                      ),
+                    ],
+                  ),
+                  if (cardOption('all_exclude_pagefit'))
+                    const Text(
+                      '문단 아래 간격 페이지 맞춤·관련 문단 페이지 배치를 빼요.',
                       style: TextStyle(fontSize: 12, color: _faint),
                     ),
                 ],

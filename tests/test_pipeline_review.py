@@ -151,6 +151,30 @@ class PipelineReviewTest(unittest.TestCase):
         dialog.assert_not_called()
         self.assertEqual(result['style_unify']['status'], 'passed')
 
+    def test_unify_spacing_exclusion_skips_spacing_after_format_fix(self):
+        # 서식 통일 카드의 '자간 정리 제외': 서식통일이 고친 문장의 자간 조정·외톨이 글자 당기기를 하지 않는다.
+        fn = self.ns['서식통일_문장_마무리']
+        doc = Mock()
+        doc.GetPos.return_value = (0, 3, 20)
+        for 사용, 호출수 in ((True, 1), (False, 0)):
+            adjust = Mock(return_value=True)
+            with patch.dict(fn.__globals__, {'hwp': doc, 'hwp_run': Mock(), '_서식통일_문단자간_조정': adjust,
+                                             '서식통일_줄병합_사용': False, '서식통일_자간조정_사용': 사용}):
+                self.assertTrue(fn((0, 3, 0), 'ㅇ 본문 문장', False))
+            self.assertEqual(adjust.call_count, 호출수)
+        self.assertTrue(self.ns['서식통일_자간조정_반영'](True))
+
+    def test_result_window_is_off_by_default(self):
+        # '작업 결과 확인' 창은 기본 꺼짐(설정 unify_result_window). 켜면 문서 하나를 처리할 때만 띄운다.
+        ns = self.ns
+        self.assertFalse(ns['기본_설정']['unify_result_window'])
+        decide = ns['_결과창_띄우는가']
+        with patch.dict(decide.__globals__, {'서식통일_결과창_사용': False}):
+            self.assertFalse(decide(1))
+        with patch.dict(decide.__globals__, {'서식통일_결과창_사용': True}):
+            self.assertTrue(decide(1))
+            self.assertFalse(decide(3))
+
     def test_result_window_does_not_block_the_worker(self):
         import queue
         fn = self.ns['_서식통일_최종결과_사용자확인']
