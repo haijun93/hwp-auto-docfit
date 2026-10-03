@@ -15,7 +15,7 @@
 | 브랜치 | `main` = 베타(배포선), `alpha` = 새 기능 시험판 |
 | 원격 | `github` = 원본(https://github.com/haijun93/hwp-auto-docfit), `origin` = GitLab 백업(gitlab.aigov.go.kr/haijun93/hwp_autodocfit) |
 | 사용자 업데이트 | 앱이 GitLab "최신 릴리스"를 조회해 새 exe를 알림 |
-| 테스트 | `python -m unittest discover -s tests` → 560개 통과(2026-10-03 기준) |
+| 테스트 | `python -m unittest discover -s tests` → 570개 통과(2026-10-03 기준) |
 | 사용자 | 마포구청 공무원(개발자이자 실사용자). 한국어로 소통, 결과는 개조식 공문서 문체를 선호 |
 
 ---
@@ -45,6 +45,7 @@
 | `docfit_core/table_style.py` | 기본 표 서식(준말 `표`의 본말): 예시 표 위치별 서식 학습(`learn_table_style`)·적용(`apply_table_style`), 내장 기본값 |
 | `docfit_core/style_hierarchy.py` | 문두기호(□·ㅇ·-·※ 등) 판별, 들여쓰기 기반 계층 분석 |
 | `docfit_core/style_inventory.py` | **문서 스타일 전수 분석**(정의/사용, 스타일 유형, 위첨자·글자색·음영, 표 종류)과 **예시 서식 HWPX 생성** |
+| `docfit_core/fidelity/`, `scripts/fidelity.py` | **원본 보존 경로**(`STYLE_FIDELITY_DESIGN.md` 첫 구현 범위): HWPX 무손실 보관·최소 변경 쓰기, 요소·속성 전수 목록과 해석 범위, 원문 위치 맵, 내용만 바꾸는 패치, 다층 검증. 공문서 후처리와 실행 경로가 분리되어 있다 |
 | `docfit_core/format_elements.py` | **서식 요소 전수 분석**: 문두기호 문장 계층별·서식 표 칸별(A1·A2·B2 …) 글자·문단·칸 요소의 대표값, 서식 표 예시 보관·세부값 수정, 프로필 반영(`apply_to_profile`) |
 | `docfit_core/labeled_text.py` | 라벨 입력 모드(`제목:/상자:/네모:/원:/바:/당구:/주석:/참고:/표:`) 파서 |
 | `docfit_core/ai_prompts.py` | 생성형 AI에게 라벨 형식으로 답하게 하는 공문서 프롬프트 모음 |
