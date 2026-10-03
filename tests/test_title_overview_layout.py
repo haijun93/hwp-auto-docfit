@@ -182,7 +182,7 @@ class TitleOverviewLayoutTest(unittest.TestCase):
             self.assertEqual(self._kinds(target), ['secPr', 'tbl', 'blank', '일반 안내 글'])
 
     def test_existing_title_subtitle_is_17pt(self):
-        # 문서에 이미 있는 부제 있는 제목 표(2×2)에 제목 서식을 입혀도 부제는 17pt, 제목은 27pt다.
+        # 문서에 이미 있는 부제 있는 제목 표(2×2)에 제목 서식을 입혀도 부제는 15pt, 제목은 27pt다.
         header, section = self.ns['제목_원본자료']()
         title = copy.deepcopy([x for x in section.iter() if self.name(x) == 'tbl'][1])
         source = self._doc(self._table_p(title))
@@ -198,7 +198,40 @@ class TitleOverviewLayoutTest(unittest.TestCase):
         paras = [p for p in self.ns['제목_문단들'](self.ns['제목_셀들'](table)[0]) if self.ns['제목_문자열'](p).strip()]
         heights = [{chars[r.get('charPrIDRef')].get('height') for r in p if self.name(r) == 'run'
                     and self.ns['제목_문자열'](r).strip()} for p in paras]
-        self.assertEqual(heights, [{'1700'}, {'2700'}])
+        self.assertEqual(heights, [{'1500'}, {'2700'}])
+
+    def test_early_width_step_fits_existing_title_and_overview(self):
+        # 작업 맨 앞 단계: 문서에 이미 있는 제목·개요 표를 쪽 좌우 여백 사이 최대 폭으로 맞춘다(서식은 그대로).
+        title, overview = self._tables()
+        for table in (title, overview):
+            self.ns['_서식표_가로맞춤'](table, 30000)          # 좁은 표로 만든다
+        source = self._doc(self._table_p(title) + self._table_p(overview))
+        fn = self.ns['제목개요폭_hwpx_처리']
+        found = fn(source)
+        self.assertEqual(found, {'Contents/section0.xml': [0, 1]})
+        target = source.with_name('early.hwpx')
+        self.assertEqual(fn(source, target, found), 2)
+        for table in (t for t in self._read(target).iter() if self.name(t) == 'tbl'):
+            out = self.ns['제목_자식'](table, 'outMargin')
+            self.assertEqual(self._widths(table)[0], 48190 - int(out.get('left')) - int(out.get('right')))
+        self.assertEqual(fn(target), {'Contents/section0.xml': []})   # 이미 최대 폭이면 대상 없음
+
+    def test_early_width_uses_margins_standard_format_will_apply(self):
+        # 표준서식이 편집 여백(좌우 25mm = 7087)을 바꿀 예정이면 바뀐 뒤 여백으로 잰다.
+        title, _ = self._tables()
+        source = self._doc(self._table_p(title))
+        fn = self.ns['제목개요폭_hwpx_처리']
+        settings = {'left': 25, 'right': 25, 'top': 15, 'bottom': 15, 'header': 10, 'footer': 10}
+        with patch.dict(fn.__globals__, {'작업_모드': 'all', '표준서식_선행_사용': True, '표준서식_여백_사용': True,
+                                         '쪽범위_요청': None, '선택_세부작업': {},
+                                         '표준서식_설정': {**fn.__globals__['표준서식_설정'], '여백_mm': settings}}):
+            self.assertEqual(self.ns['_예정_좌우여백'](), (7087, 7087))
+            target = source.with_name('early-margin.hwpx')
+            fn(source, target, fn(source))
+        table = next(t for t in self._read(target).iter() if self.name(t) == 'tbl')
+        self.assertEqual(self._widths(table)[0], 59528 - 2 * 7087 - 566)
+        # 여백을 바꿀 예정이 없으면(기본) 문서의 지금 여백으로 잰다.
+        self.assertIsNone(self.ns['_예정_좌우여백']())
 
     def test_title_date_cell_uses_short_year(self):
         # 예시 서식 표처럼 날짜가 '2022. 4. 19.(화)'(네 자리 연도)여도 제목 서식 날짜는 ’26 약어로 쓴다.

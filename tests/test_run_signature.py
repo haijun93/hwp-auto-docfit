@@ -31,7 +31,9 @@ class RunSignatureTest(unittest.TestCase):
         self.assertLessEqual(len(args), len(self.params))
         by_name = dict(zip(self.params, args))
         self.assertEqual(ast.unparse(by_name['실행모드']), 'mode')
-        self.assertEqual(ast.unparse(by_name['세부작업_선택']), 'dict(self.stage_choices[mode])')
+        # 세부 작업은 '표 제외'를 반영해 미리 만든 값이다(켜면 표 관련 작업을 모두 끈 사본).
+        self.assertEqual(ast.unparse(by_name['세부작업_선택']), '세부작업')
+        self.assertEqual(ast.unparse(by_name['표자간조정']), 'self.table_spacing_var.get() and (not 표제외)')
         self.assertEqual(ast.unparse(by_name['시작_인덱스']), '시작_인덱스')
         self.assertEqual(ast.unparse(by_name['쪽범위']), '작업범위')
         self.assertEqual(ast.unparse(by_name['표준서식_세부']), '표준서식_세부_전달')

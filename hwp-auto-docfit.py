@@ -263,6 +263,7 @@ from docfit_core.number_check import 숫자_대조
 from docfit_core import outline_ops
 from docfit_core.progress_guide import guide_key as 진행안내_키, guide_state as 진행안내_상태
 from docfit_core.stage_selection import STAGE_EXAMPLES, default_choice as stage_default, enabled as stage_enabled, stages_for_mode
+from docfit_core.stage_selection import TABLE_STAGE_KEYS as 표작업_키목록, without_tables as 표작업_제외
 from docfit_core.document_rules import (
     ParagraphSpacingTracker, YEAR_QUOTE_PATTERN, marker_space_fix,
     curly_single_quote_replacements, normalize_date_range_marks,
@@ -353,7 +354,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리 도구"
-APP_VERSION = "1.69 Beta 9"
+APP_VERSION = "1.69 Beta 10"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 UPDATE_ASSET_NAME = "HWP_AutoDocFit.exe"
@@ -505,7 +506,8 @@ _콘솔_출력_가능 = (sys.stdout is not None)
 # ============================================================
 
 작업_모드 = "all"
-문두라벨_기호설정 = {"□": False, "ㅁ": False, "※": False}
+# 문두 라벨 굵게에서 뺄 기호(False). 별표(*, **)도 기본으로 뺀다(2026-10-03 사용자 요청).
+문두라벨_기호설정 = {"□": False, "ㅁ": False, "※": False, "*": False, "**": False}
 표준서식_사용 = False
 
 # 자간 정리에서 표(셀) 안 문장을 대상에 넣을지 여부. False면 표 안 문장은 제외한다.
@@ -1028,7 +1030,10 @@ def 번들_리소스_폴더():
     "retry_table": "5",
     "linespacing_min": "160",
     "linespacing_max": "200",
-    "label_symbols": {"□": False, "※": False},
+    # 문두 라벨 굵게에서 뺄 기호(False). 별표(*, **)는 2026-10-03부터 기본으로 뺀다.
+    "label_symbols": {"□": False, "※": False, "*": False, "**": False},
+    # 설정 파일 판: 2 = 별표(*, **) 라벨 굵게 기본값 끔을 반영한 설정(예전 파일은 불러올 때 한 번 끈다)
+    "label_symbols_rev": 2,
     "paren_shrink": True,
     "paren_label_bold": True,
     "std_margin": True,
@@ -1060,6 +1065,8 @@ def 번들_리소스_폴더():
     "std_parspace_circle": "10",
     "std_parspace_note": "3",
     "std_parspace_return_percent": "150",
+    # 제목 서식 부제(제목 글의 첫 쉼표 앞 글) 글자 크기 pt
+    "std_title_subtitle_pt": "15",
     "std_table_header": True,
     "active_format_profile": "",
     "review_document_kind": "보고서",
@@ -1087,6 +1094,8 @@ def 번들_리소스_폴더():
     "log_file": False,
     # '한 번에 적용' 카드의 '자간 조정 포함'. 끄면 기존 자간을 두고 서식만 입히는 서식 적용(format)으로 실행한다.
     "all_include_spacing": True,
+    # 한 번에 적용의 '표 제외': 켜면 표 관련 세부 작업을 모두 빼고 표 칸 안 문장도 자간 작업에서 뺀다.
+    "all_exclude_tables": False,
     # '자간 정리' 카드의 '기존 자간 초기화'(세부 작업 01과 같은 값). None이면 저장된 세부 작업 구성을 따른다.
     "spacing_reset_existing": None,
 }
@@ -1700,6 +1709,36 @@ def _구역_본문폭(section, 기본값=42520):
             except (TypeError, ValueError, AttributeError):
                 break
     return 기본값
+
+
+def _예정_좌우여백():
+    """이번 작업에서 보고서 표준서식이 편집 여백을 바꿀 예정이면 (왼쪽, 오른쪽) 여백(HWPUNIT), 아니면 None.
+
+    표준서식_전체_적용이 페이지_여백_설정(표준서식_설정['여백_mm'])을 부르는 조건과 같다.
+    """
+    if not (작업_모드 in ('format', 'all') and 표준서식_선행_사용 and 표준서식_여백_사용 and 쪽범위_요청 is None
+            and stage_enabled(선택_세부작업, 'standard_format', 작업_모드)):
+        return None
+    mm = (표준서식_설정 or {}).get('여백_mm') or {}
+    try:
+        return tuple(int(round(float(mm[k]) * 7200 / 25.4)) for k in ('left', 'right'))
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _최종_본문폭(section):
+    """표준서식이 바꿀 편집 여백까지 반영한 본문 폭(HWPUNIT). 여백을 바꿀 예정이 없으면 지금 여백으로 재고,
+    쪽 정보가 없으면 None. 가로 방향 용지는 높이가 쪽 폭이다(_구역_본문폭과 같음)."""
+    여백 = _예정_좌우여백()
+    if 여백 is None:
+        return _구역_본문폭(section, None)
+    for x in section.iter():
+        if 제목_xml이름(x) == 'pagePr':
+            try:
+                return int(x.get('height') if x.get('landscape') == 'NARROWLY' else x.get('width')) - 여백[0] - 여백[1]
+            except (TypeError, ValueError):
+                return None
+    return None
 
 
 def _빈_문단인가(p):
@@ -2380,7 +2419,7 @@ def 제목_hwpx_처리(source, target=None, selections=None):
                 제목_문단_가운데정렬(header, table)
             # 일반 보고서 서식의 괄호 부연설명 축소 설정을 제목에도 동일 적용한다.
             제목_괄호부연_축소(header, table)
-            # 부제(첫 문단)는 17pt로 둔다(내장 기준 표일 때). 서식 프로필 예시 표는 그 표의 크기를 따른다.
+            # 부제(첫 문단)는 15pt로 둔다(내장 기준 표일 때). 서식 프로필 예시 표는 그 표의 크기를 따른다.
             if not 예시사용:
                 제목_부제_크기(header, table)
             if 제목_문자열(table) != before: raise RuntimeError('제목 텍스트 보존 검사 실패')
@@ -2643,7 +2682,27 @@ _서식표_예시종류 = {'title1': 'title1', 'title1부제': 'title2', 'title2
                  'attach1': 'attach1', 'attach2': 'attach2', 'midtitle': 'midtitle1'}
 
 # 제목 서식의 부제(제목 글의 첫 쉼표 앞 글) 글자 크기(pt). 내장 기준 표에 쓴다(서식 프로필 예시 표는 그 표의 크기).
-제목_부제_크기_pt = 17
+# 기본값 15pt(2026-10-03 사용자 요청, 잠시 17pt였음). 설정창 '제목 부제 크기'(std_title_subtitle_pt)로 바꾼다.
+제목_부제_크기_pt = 15
+
+
+def 제목_부제_크기_해석(value, 기본값=15):
+    """설정의 제목 부제 크기(pt) 글을 숫자로 바꾼다. 숫자가 아니면 기본값, 5~40pt 밖이면 범위 끝 값."""
+    try:
+        크기 = float(str(value).strip().replace(',', '.'))
+    except (TypeError, ValueError):
+        return 기본값
+    if 크기 != 크기:   # NaN
+        return 기본값
+    크기 = min(40.0, max(5.0, 크기))
+    return int(크기) if 크기.is_integer() else 크기
+
+
+def 제목_부제_크기_반영(value):
+    """설정값을 제목 부제 크기 전역값에 반영하고 반영한 값을 돌려준다."""
+    global 제목_부제_크기_pt
+    제목_부제_크기_pt = 제목_부제_크기_해석(value)
+    return 제목_부제_크기_pt
 
 
 def _서식표_기준(header, kind, cache):
@@ -2679,7 +2738,7 @@ def _서식표_기준(header, kind, cache):
 def 제목_부제_크기(header, table, 크기_pt=None):
     """제목 표 A1 칸에 글 문단이 둘 이상이면 첫 문단(부제)의 글자 크기를 정한 크기로 맞춘다. 바꾼 글 묶음 수.
 
-    제목 글의 첫 쉼표 앞 글이 부제다(2026-10-03 사용자 규칙: 쉼표 앞 글자는 17pt). 부제 안 괄호 부연설명도
+    제목 글의 첫 쉼표 앞 글이 부제다(2026-10-03 사용자 규칙: 쉼표 앞 글자는 기본 15pt). 부제 안 괄호 부연설명도
     같은 크기로 둔다. 글자 모양은 복제해서 바꾸므로 다른 곳의 글자 모양은 그대로다.
     """
     cells = 제목_셀들(table)
@@ -2772,7 +2831,7 @@ def 서식표_생성(header, kind, text, cache, 번호=None, 최대폭=None, 본
     """기준 서식 표를 복사해 글을 넣은 새 표를 만든다.
 
     title1 = 제목 서식1(2×2, 글은 A1), title2 = 제목 서식2(2행1열). 제목 글에 쉼표가 있으면 첫 쉼표 앞은
-    부제 17pt·뒤는 제목 27pt 두 줄이다(제목1은 부제 있는 2×2 기준 표를 쓴다). 쉼표가 없으면 제목 한 줄.
+    부제 15pt·뒤는 제목 27pt 두 줄이다(제목1은 부제 있는 2×2 기준 표를 쓴다). 쉼표가 없으면 제목 한 줄.
     overview = 개요(요지) 표(글은 A1).
     제목 서식의 글은 모두 가운데 정렬이다. midtitle = 중제목 표(번호 칸에 로마자 번호, 글은 글 칸),
     attach1·attach2 = 붙임 서식1(1행3열)·2(1행2열)(글은 마지막 글 칸, '붙임' 글자는 그대로).
@@ -2910,7 +2969,7 @@ def 라벨_서식표_적용(source, target=None):
                     continue
                 text = head_text[len(_라벨_표식[kind]):]
                 result = 서식표_생성(header, kind, text, cache, 최대폭=_구역_본문폭(root),
-                                    본문폭=_구역_본문폭(root, None))
+                                    본문폭=_최종_본문폭(root))
                 _서식표_글_확인(kind, result, text)
                 _서식표_번호_부여(result, ids)
                 run[list(run).index(table)] = result
@@ -3104,7 +3163,7 @@ def 준말_hwpx_처리(source, target=None, selections=None):
                                   and any(제목_xml이름(c) == 't' for c in r)), '0')
                 numeral = 준말_로마자(key) if spec['value'] == 'midtitle' else None
                 table = 서식표_생성(header, spec['value'], rest, cache, numeral, _구역_본문폭(sections[name]),
-                                   _구역_본문폭(sections[name], None))
+                                   _최종_본문폭(sections[name]))
                 _서식표_글_확인(spec['value'], table, rest, numeral)
                 _서식표_번호_부여(table, ids)
                 for run in [r for r in p if 제목_xml이름(r) == 'run']:
@@ -3129,6 +3188,78 @@ def 준말_hwpx_처리(source, target=None, selections=None):
         contents[name] = ET.tostring(sections[name], encoding='utf-8', xml_declaration=True)
     contents['Contents/header.xml'] = ET.tostring(header, encoding='utf-8', xml_declaration=True)
     _hwpx_안전_저장(contents, target)
+    return count
+
+
+def 제목개요폭_hwpx_처리(source, target=None, selections=None):
+    """문서의 제목 표와 바로 뒤 개요 표의 가로 크기를 쪽 좌우 여백 사이 최대 폭으로 맞춘다.
+
+    작업 맨 앞(준말 변환 바로 뒤)에서 표·칸 너비만 바꾼다(2026-10-03 사용자 요청: 가로폭 맞춤을 최대한 앞당김).
+    표준서식이 편집 여백을 바꿀 예정이면 바뀐 뒤의 여백으로 잰다(_최종_본문폭). 제목·개요 서식 단계도 같은 폭으로
+    다시 맞추므로 이미 맞으면 그 단계에서는 바뀌지 않는다. 이미 최대 폭인 표는 대상에서 뺀다.
+    """
+    with zipfile.ZipFile(source) as z:
+        contents = {n: z.read(n) for n in z.namelist()}
+    for name, data in contents.items():
+        if name.startswith('Contents/') and name.endswith('.xml'):
+            for _, pair in ET.iterparse(io.BytesIO(data), events=('start-ns',)):
+                if not re.fullmatch(r'ns\d+', pair[0]): XML_네임스페이스_등록(*pair)
+    header = safe_xml_fromstring(contents['Contents/header.xml'])
+    sections = {n: safe_xml_fromstring(data) for n, data in contents.items()
+                if re.fullmatch(r'Contents/section\d+\.xml', n)}
+
+    def 표들(root):
+        return [t for p in root for r in p for t in r if 제목_xml이름(t) == 'tbl']
+
+    def 목표폭(table, 본문폭):
+        out = 제목_자식(table, 'outMargin')
+        try:
+            return int(본문폭) - ((int(out.get('left', '0')) + int(out.get('right', '0'))) if out is not None else 0)
+        except ValueError:
+            return None
+
+    def 대상(root):
+        본문폭 = _최종_본문폭(root)
+        if not 본문폭:
+            return []
+        tables = 표들(root)
+        found = []
+        for index, _ in 제목_대상찾기(root, header):
+            found.append(index)
+            if index + 1 < len(tables) and 개요_표인가(tables[index + 1]):
+                found.append(index + 1)
+        result = []
+        for index in dict.fromkeys(found):
+            size = 제목_자식(tables[index], 'sz')
+            폭 = 목표폭(tables[index], 본문폭)
+            if size is not None and 폭 and size.get('width') != str(폭):
+                result.append(index)
+        return result
+
+    if selections is None:
+        return {n: 대상(root) for n, root in sections.items()}
+    if not any(items for items in selections.values()):
+        if target is not None: shutil.copyfile(source, target)
+        return 0
+    count = 0
+    for name, items in selections.items():
+        root = sections[name]
+        tables, 본문폭 = 표들(root), _최종_본문폭(root)
+        for index in items:
+            table = tables[index]
+            before = 제목_문자열(table)
+            _서식표_가로맞춤(table, 본문폭)
+            # 칸 문단의 줄 배치 캐시는 한/글이 새 폭으로 다시 계산한다.
+            for p in (x for x in table.iter() if 제목_xml이름(x) == 'p'):
+                for cache in [x for x in p if 제목_xml이름(x) == 'linesegarray']:
+                    p.remove(cache)
+            if 제목_문자열(table) != before:
+                raise RuntimeError('제목·개요 표 가로 크기 맞춤 중 글 보존 검사에 실패했습니다.')
+            count += 1
+        contents[name] = ET.tostring(root, encoding='utf-8', xml_declaration=True)
+    _hwpx_안전_저장(contents, target)
+    로그(f"제목·개요 표 가로 크기 맞춤: {count}개 (쪽 좌우 여백 사이 최대 폭"
+         + (", 표준서식 편집 여백 반영)" if _예정_좌우여백() else ")"))
     return count
 
 
@@ -3681,6 +3812,15 @@ def 설정_불러오기():
                 설정["stage_choices"] = 저장된값["stage_choices"]
             설정["abbreviations"] = 준말_등록표_정리(저장된값.get("abbreviations"))
             설정["abbreviation_defaults"] = bool(저장된값.get("abbreviation_defaults", True))
+            # 예전 설정 파일은 별표(*, **) 문두 라벨 굵게가 켜진 채 저장돼 있다. 기본값을 끔으로 바꾼 뒤 한 번만
+            # 끄고(판 2로 저장된 뒤에는 사용자가 다시 켠 값을 그대로 둔다).
+            try:
+                판 = int(저장된값.get("label_symbols_rev", 1) or 1)
+            except (TypeError, ValueError):
+                판 = 1
+            if 판 < 2 and isinstance(설정.get("label_symbols"), dict):
+                설정["label_symbols"] = {**설정["label_symbols"], "*": False, "**": False}
+            설정["label_symbols_rev"] = 2
     except Exception as e:
         if _콘솔_출력_가능:
             print(f"설정 불러오기 실패(기본값 사용): {e}")
@@ -13229,17 +13369,24 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
     # 연다. 쪽 범위 작업에서는 건너뛴다. 서식 표 기준 글자 모양의 자간은 0%라 뒤의 자간 초기화가 만든 표의
     # 서식을 바꾸지 않는다.
     문서_변경됨 = False
+    맨앞목록 = []
     if (작업_모드 in ('format', 'all') and 준말_등록표
             and stage_enabled(선택_세부작업, 'abbreviation', 작업_모드)):
         if 쪽범위_요청 is not None:
             로그("쪽 범위 지정: 준말 변환(문서 전체 구조 변환)은 이번 작업에서 건너뜁니다.")
         else:
-            단계표시("준말 변환")
-            상태(f"{파일명} : 준말 → 본말 변환")
-            알림 = {}
-            if 준말_선행적용(작업파일경로, 현재문서_기준=False, 변경알림=알림) is False:
-                return False
-            문서_변경됨 = bool(알림.get('changed'))
+            맨앞목록.append((True, '준말 변환', 준말_hwpx_처리, 'abbrev.hwpx', '준말 변환'))
+    # 제목·개요 표 가로 크기(쪽 좌우 여백 사이 최대 폭)는 준말 변환 바로 뒤, 다른 모든 단계보다 먼저 맞춘다
+    # (2026-10-03 사용자 요청). 표준서식이 바꿀 편집 여백으로 재므로 여백이 바뀐 뒤에도 그대로 맞는다.
+    if (표준서식_사용 and 작업_모드 in ('format', 'all') and 쪽범위_요청 is None and 제목4종_사용
+            and stage_enabled(선택_세부작업, 'pre_format', 작업_모드)):
+        맨앞목록.append((True, '제목·개요 가로 크기', 제목개요폭_hwpx_처리, 'title_width.hwpx', '제목·개요 가로 크기'))
+    if 맨앞목록:
+        상태(f"{파일명} : " + " · ".join(항목[1] for 항목 in 맨앞목록))
+        알림 = {}
+        if 제목붙임_선행적용(작업파일경로, 현재문서_기준=False, 처리목록=tuple(맨앞목록), 변경알림=알림) is False:
+            return False
+        문서_변경됨 = bool(알림.get('changed'))
 
     # ② 보고서 표준서식. 쪽 범위는 위에서 이미 문단 번호로 고정했다.
     결과 = 표준서식_선행_적용(파일명)
@@ -13592,6 +13739,7 @@ def 작업_실행(
         표_헤더서식_사용 = 표준서식_세부.get("std_table_header", 표_헤더서식_사용)
         # 설정창의 표 글꼴·크기는 서식 프로파일 값보다 우선한다.
         표글꼴_적용(표준서식_세부.get("table_fonts"))
+        제목_부제_크기_반영(표준서식_세부.get("std_title_subtitle_pt", 제목_부제_크기_pt))
 
         문장부호_통계 = {"대상": 0, "성공": 0, "실패": 0}
         세트문장_통계 = {"대상": 0, "성공": 0, "실패": 0, "축소횟수": 0, "확대횟수": 0}
@@ -14096,8 +14244,14 @@ class HwpAutoDocFitGUI:
         ]
         self.std_bool_vars = {키: tk.BooleanVar(value=bool(저장된_설정[키])) for 키 in self.std_bool_keys}
 
-        self.std_parspace_str_keys = ["std_parspace_box", "std_parspace_circle", "std_parspace_note", "std_parspace_return_percent"]
+        # 숫자 설정(문단 위 간격·복귀 배율·제목 부제 크기). 저장·기본값 초기화·서식 프로필 반영을 함께 쓴다.
+        self.std_parspace_str_keys = ["std_parspace_box", "std_parspace_circle", "std_parspace_note",
+                                      "std_parspace_return_percent", "std_title_subtitle_pt"]
         self.std_parspace_vars = {키: tk.StringVar(value=str(저장된_설정[키])) for 키 in self.std_parspace_str_keys}
+        # 부제 크기는 붙여넣은 글 변환(작업 실행 밖)에서도 쓰므로 바뀌는 즉시 전역값에 반영한다.
+        제목_부제_크기_반영(저장된_설정["std_title_subtitle_pt"])
+        self.std_parspace_vars["std_title_subtitle_pt"].trace_add(
+            "write", lambda *_: 제목_부제_크기_반영(self.std_parspace_vars["std_title_subtitle_pt"].get()))
 
         for 변수 in ([self.prevent_word_split_var, self.punctuation_var, self.punctuation_threshold_var, self.keep_punctuation_set_var,
                      self.color_mark_on_var, self.color_var,
@@ -14121,6 +14275,10 @@ class HwpAutoDocFitGUI:
         # 카드는 세 장이다. '한 번에 적용'에서 자간 조정을 빼면 내부 작업 유형은 서식 적용(format)이다.
         self.include_spacing_var = tk.BooleanVar(value=bool(저장된_설정.get("all_include_spacing", True)))
         self.include_spacing_var.trace_add("write", self._설정_변경됨)
+        # '한 번에 적용'의 '표 제외'. 켜면 표 관련 세부 작업을 모두 뺀다(설정 파일에 저장).
+        self.exclude_tables_var = tk.BooleanVar(value=bool(저장된_설정.get("all_exclude_tables", False)))
+        self.exclude_tables_var.trace_add("write", self._설정_변경됨)
+        self.exclude_tables_var.trace_add("write", self._요약갱신)
         # '자간 정리' 카드의 '기존 자간 초기화'. 세부 작업 01(문서 전체 자간 초기화)과 같은 값이며 설정 파일에 저장한다.
         저장된_초기화 = 저장된_설정.get("spacing_reset_existing")
         if isinstance(저장된_초기화, bool):
@@ -14178,6 +14336,14 @@ class HwpAutoDocFitGUI:
                     fg=UI_COLORS["ink"], font=("맑은 고딕", 9), anchor="w", cursor="hand2")
                 self.include_spacing_check.pack(anchor="w", pady=(0, 4))
                 self.mode_buttons.append(self.include_spacing_check)
+                # 켜면 표 관련 작업(텍스트 표 변환·기본 표 서식·표 칸 너비·표 정밀 서식·표 머리글 서식·
+                # 표 안 자간·줄·단어 작업)을 모두 빼고 실행한다. 제목·개요 서식 표는 그대로 정리한다.
+                self.exclude_tables_check = tk.Checkbutton(
+                    inner, text="표 제외", variable=self.exclude_tables_var,
+                    command=self._표제외_변경, bg=UI_COLORS["surface"], activebackground=UI_COLORS["surface"],
+                    fg=UI_COLORS["ink"], font=("맑은 고딕", 9), anchor="w", cursor="hand2")
+                self.exclude_tables_check.pack(anchor="w", pady=(0, 4))
+                self.mode_buttons.append(self.exclude_tables_check)
             self.mode_cards[mode] = (card, inner, description)
             for surface in (card, inner, description):
                 surface.bind("<Button-1>", lambda e, m=mode: self._카드_클릭(m))
@@ -14625,6 +14791,16 @@ class HwpAutoDocFitGUI:
             title_auto.pack(anchor="w")
             ttk.Label(parent, text="문서 앞부분의 제목과 개요를 인식해 알맞은 모양을 적용합니다. 제목표가 없으면 건너뜁니다.",
                       style="Hint.TLabel", wraplength=610).pack(anchor="w")
+            부제_행 = ttk.Frame(parent)
+            부제_행.pack(anchor="w", padx=(18, 0), pady=(2, 0))
+            ttk.Label(부제_행, text="제목 부제 크기 (제목 글의 첫 쉼표 앞 글):").pack(side="left")
+            부제_스핀 = ttk.Spinbox(부제_행, from_=5, to=40, increment=1, width=4, justify="center",
+                                   textvariable=self.std_parspace_vars["std_title_subtitle_pt"])
+            부제_스핀.pack(side="left", padx=(4, 0))
+            ttk.Label(부제_행, text="pt (기본 15)").pack(side="left", padx=(2, 0))
+            ttk.Label(parent, text="'제목: 부제, 제목'처럼 쉼표가 있으면 쉼표 앞 글을 이 크기의 부제로 윗줄에 넣습니다. "
+                                   "서식 프로필의 예시 제목 표를 쓰면 그 표의 크기를 따릅니다.",
+                      style="Hint.TLabel", wraplength=610).pack(anchor="w", padx=(18, 0))
             attachment_auto = ttk.Checkbutton(parent, text="붙임서식적용 (붙임 2종 자동 판별)",
                                                variable=self.std_bool_vars["std_attachment_auto"])
             attachment_auto.pack(anchor="w", pady=(6, 0))
@@ -14639,7 +14815,7 @@ class HwpAutoDocFitGUI:
                                              variable=self.std_bool_vars["std_midtitle_bold"])
             midtitle_bold.pack(anchor="w", padx=(18, 0))
             if 주설정탭:
-                self.std_detail_checks += [title_auto, attachment_auto, midtitle_auto, midtitle_bold]
+                self.std_detail_checks += [title_auto, 부제_스핀, attachment_auto, midtitle_auto, midtitle_bold]
         elif key == "table_style":
             설정 = 설정_불러오기()
             서식 = 준말_표서식(준말_사용표_만들기(설정))
@@ -14981,6 +15157,8 @@ class HwpAutoDocFitGUI:
             summary = "자간 조정 제외: 기존 자간은 그대로 두고 공문서 서식만 적용합니다."
         else:
             summary = "공문서 서식을 입히고 자간까지 함께 정리합니다."
+        if mode in ("all", "format") and hasattr(self, "exclude_tables_var") and self.exclude_tables_var.get():
+            summary += " · 표 제외"
         choices = self.stage_choices[mode]
         # 자간 정리의 자간 초기화는 위 문구로 이미 알린다.
         disabled = sum(not value for key, value in choices.items()
@@ -15035,6 +15213,8 @@ class HwpAutoDocFitGUI:
             description.configure(bg=surface)
             if mode == "all" and hasattr(self, "include_spacing_check"):
                 self.include_spacing_check.configure(bg=surface, activebackground=surface)
+            if mode == "all" and hasattr(self, "exclude_tables_check"):
+                self.exclude_tables_check.configure(bg=surface, activebackground=surface)
             if mode == "spacing" and hasattr(self, "reset_spacing_check"):
                 self.reset_spacing_check.configure(bg=surface, activebackground=surface)
             if mode == "spacing" and hasattr(self, "table_spacing_card_check"):
@@ -15122,6 +15302,13 @@ class HwpAutoDocFitGUI:
     def _한번에_모드(self):
         """'한 번에 적용' 카드의 내부 작업 유형: 자간 조정 포함이면 all, 아니면 format."""
         return "all" if self.include_spacing_var.get() else "format"
+
+    def _표제외_변경(self):
+        """'표 제외'를 바꾸면 '한 번에 적용' 카드를 고른다(값 저장·요약은 변경 감시가 한다)."""
+        if self.running:
+            return
+        self.selected_mode.set(self._한번에_모드())
+        self._모드_선택됨()
 
     def _카드_클릭(self, mode):
         if self.running:
@@ -17905,6 +18092,8 @@ class HwpAutoDocFitGUI:
             설정값["always_on_top"] = bool(self.always_on_top_var.get()) if hasattr(self, "always_on_top_var") else True
             설정값["all_include_spacing"] = (bool(self.include_spacing_var.get())
                                            if hasattr(self, "include_spacing_var") else True)
+            설정값["all_exclude_tables"] = (bool(self.exclude_tables_var.get())
+                                          if hasattr(self, "exclude_tables_var") else False)
             설정값["spacing_reset_existing"] = bool(self.stage_choices["spacing"].get("reset_spacing", True))
             설정값["active_format_profile"] = getattr(self, "_활성_서식_프로파일", "")
             기존_설정 = 설정_불러오기()
@@ -17913,6 +18102,7 @@ class HwpAutoDocFitGUI:
                 설정값["stage_choices"] = 기존_세부작업
             설정값["abbreviations"] = 기존_설정.get("abbreviations", {})
             설정값["abbreviation_defaults"] = 기존_설정.get("abbreviation_defaults", True)
+            설정값["label_symbols_rev"] = 2
             설정_저장(설정값)
             기호글꼴_적용(설정값)
             표글꼴_적용(설정값.get("table_fonts"))
@@ -18614,10 +18804,20 @@ class HwpAutoDocFitGUI:
 
         선택_색상 = COLOR_MAP.get(self.color_var.get()) if self.color_mark_on_var.get() else None
         표준서식_세부_전달 = {키: var.get() for 키, var in self.std_bool_vars.items()}
+        표준서식_세부_전달["std_title_subtitle_pt"] = 제목_부제_크기_반영(
+            self.std_parspace_vars["std_title_subtitle_pt"].get())
+        self.std_parspace_vars["std_title_subtitle_pt"].set(str(제목_부제_크기_pt))   # 잘못된 값은 고친 값으로 보여 준다
         표준서식_세부_전달["table_fonts"] = {
             part: {"font": v["font"].get(), "size": v["size"].get()}
             for part, v in self.table_font_vars.items()
         }
+        # '한 번에 적용'의 '표 제외': 표 관련 세부 작업을 모두 끄고 표 칸 안 문장도 자간 작업에서 뺀다.
+        표제외 = mode in ("all", "format") and bool(self.exclude_tables_var.get())
+        세부작업 = 표작업_제외(self.stage_choices[mode]) if 표제외 else dict(self.stage_choices[mode])
+        if 표제외:
+            self.로그표시(f"표 제외: 표 관련 작업 {len(표작업_키목록)}가지(텍스트 표 변환·기본 표 서식·표 칸 너비·"
+                       "표 정밀 서식·표 머리글 서식·표 서식통일·표 안 자간·줄·단어 작업)를 빼고, 표 칸 안 문장도 "
+                       "자간 작업에서 뺍니다. 제목·개요 서식 표는 정리합니다.")
 
         self.worker = threading.Thread(
             target=작업_실행,
@@ -18644,10 +18844,10 @@ class HwpAutoDocFitGUI:
                 {k: v.get() for k, v in self.label_symbol_vars.items()},
                 줄간격최소값,
                 줄간격최대값,
-                self.table_spacing_var.get(),
+                self.table_spacing_var.get() and not 표제외,
                 작업범위,
                 self.log_file_var.get(),
-                dict(self.stage_choices[mode]),
+                세부작업,
                 2 if self.two_pass_var.get() else 1,
                 시작_인덱스,
             ),
