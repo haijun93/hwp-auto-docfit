@@ -82,7 +82,7 @@ class BrowserApiTests(unittest.TestCase):
         bridge.window = object()
         api = _BrowserApi(bridge)
         public = {name: getattr(api, name) for name in dir(api) if not name.startswith('_')}
-        self.assertEqual(len(public), 25)
+        self.assertEqual(len(public), 26)
         self.assertTrue(all(callable(value) for value in public.values()))
         self.assertNotIn('gui', public)
         self.assertNotIn('window', public)
@@ -164,6 +164,27 @@ class BrowserApiTests(unittest.TestCase):
         self.assertEqual((state["mode"], state["include_spacing"]), ("format", False))
         gui.running = True
         self.assertEqual(bridge.set_include_spacing(True)["mode"], "format")
+
+    def test_spacing_card_toggles_existing_spacing_reset(self):
+        # '자간 정리' 카드의 '기존 자간 초기화'는 세부 작업 01(reset_spacing)과 같은 값이다.
+        gui = _FakeGui()
+        gui.selected_mode.set("all")
+        bridge = _bridge(gui)
+        self.assertTrue(bridge.get_state()["reset_spacing"])
+        state = bridge.set_reset_spacing(False)
+        self.assertEqual((state["mode"], state["reset_spacing"]), ("spacing", False))
+        self.assertFalse(gui.stage_choices["spacing"]["reset_spacing"])
+        self.assertFalse(next(s["on"] for s in state["stages"] if s["key"] == "reset_spacing"))
+        self.assertTrue(gui.stage_choices["all"]["reset_spacing"])   # 한 번에 적용은 따로 둔다
+        # 세부 작업에서 켜도 카드 값이 같이 바뀐다.
+        self.assertTrue(bridge.set_stage("reset_spacing", True)["reset_spacing"])
+        # 변경 감시 변수가 있으면 그 변수로 바꾼다(앱이 세부 작업 값과 설정 파일을 함께 바꿈).
+        gui.reset_spacing_var = _Var(True)
+        bridge.set_reset_spacing(False)
+        self.assertFalse(gui.reset_spacing_var.get())
+        gui.running = True
+        bridge.set_reset_spacing(True)
+        self.assertFalse(gui.reset_spacing_var.get())
 
     def test_result_actions_use_selected_result(self):
         gui = _FakeGui()

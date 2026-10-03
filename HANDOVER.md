@@ -78,6 +78,7 @@ Flutter UI 빌드는 `powershell -File build_flutter.ps1`로 수행하며 `build
 | 한 번에 적용 | `all` | `(일괄적용).hwpx` |
 
 - 카드는 자간 정리·서식 통일·한 번에 적용 세 장입니다. 한 번에 적용 카드의 `자간 조정 포함`(설정 `all_include_spacing`, 기본 켜짐)을 끄면 내부 작업 유형 `format`으로 실행합니다. 내부 유형 4가지와 세부 작업 저장값(`stage_choices`)은 그대로이며, Tk는 `selected_mode`(내부 유형)와 `card_mode_var`(카드 표시), 웹·Flutter는 `include_spacing` 상태와 `set_include_spacing` 명령을 씁니다.
+- 자간 정리 카드의 `기존 자간 초기화`(설정 `spacing_reset_existing`, 기본 켜짐)는 세부 작업 01 `reset_spacing`(`stage_choices["spacing"]`)과 같은 값입니다. Tk는 `reset_spacing_var`(설정창 자간 정리 탭과 공유, `_요약갱신`이 세부 작업 값에 맞춤), 웹·Flutter는 `reset_spacing` 상태와 `set_reset_spacing` 명령을 씁니다. 설정값이 None(예전 설정 파일)이면 저장된 세부 작업 구성을 따릅니다. 한 번에 적용의 자간 초기화는 별도 세부 작업으로 남아 있습니다.
 
 - 빠른 선택: 기본후처리 = 자간 정리 + 서식통일, 전문후처리 = 한 번에 적용 + 서식통일.
 - 원본은 절대 덮어쓰지 않습니다. HWP 입력도 결과는 항상 HWPX입니다.

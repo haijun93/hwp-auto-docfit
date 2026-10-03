@@ -178,11 +178,46 @@ void main() {
     await tester.pumpAndSettle();
     expect(calls.last, ['set_mode', 'all']);
     expect(find.text('결과: 문서이름(일괄적용).hwpx'), findsOneWidget);
-    await tester.tap(find.byType(Switch));
+    await tester.tap(find.byKey(const Key('includeSpacingSwitch')));
     await tester.pumpAndSettle();
     expect(calls.last, ['set_include_spacing', false]);
     expect(find.text('결과: 문서이름(서식적용).hwpx'), findsOneWidget);
     expect(find.textContaining('한 번에 적용(자간 조정 제외)'), findsWidgets);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('spacing card can keep existing character spacing', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1024, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final calls = <List<Object?>>[];
+    final state = initialState();
+    state['files'] = [
+      {'name': '문서.hwp', 'folder': r'C:\문서'},
+    ];
+    state['reset_spacing'] = true;
+    Future<Object?> api(String name, List<Object?> args) async {
+      if (name != 'get_state') calls.add([name, ...args]);
+      if (name == 'set_reset_spacing') {
+        state['reset_spacing'] = args.first;
+        state['mode'] = 'spacing';
+      }
+      return Map<String, dynamic>.from(state);
+    }
+
+    await tester.pumpWidget(DocFitApp(api: api));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('작업 방식 선택'));
+    await tester.pumpAndSettle();
+    expect(find.text('기존 자간 초기화'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('resetSpacingSwitch')));
+    await tester.pumpAndSettle();
+    expect(calls.last, ['set_reset_spacing', false]);
+    expect(find.text('문서에 있던 자간은 그대로 두고 그 위에서 정리해요.'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });

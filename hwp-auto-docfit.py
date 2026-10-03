@@ -1079,6 +1079,8 @@ def 번들_리소스_폴더():
     "log_file": False,
     # '한 번에 적용' 카드의 '자간 조정 포함'. 끄면 기존 자간을 두고 서식만 입히는 서식 적용(format)으로 실행한다.
     "all_include_spacing": True,
+    # '자간 정리' 카드의 '기존 자간 초기화'(세부 작업 01과 같은 값). None이면 저장된 세부 작업 구성을 따른다.
+    "spacing_reset_existing": None,
 }
 
 
@@ -8711,6 +8713,7 @@ def 보고서_페이지배치_최종검사():
     # 한 쪽에 다 들어갈 수 없는 묶음은 규칙 위반이 아니라 적용 제외로 따로 적는다.
     exempt = []
     표문단 = 본문_표_문단번호()
+    본문_쪽나눔_기억(표문단)
     _표칸영역.clear()
     try:
         순회_시작()
@@ -9233,6 +9236,8 @@ def 소제목묶음_같은쪽_시도(시작위치, text):
 # 없으므로 예전 묶음 수집은 표 앞에서 끊겼고, 표 높이는 본문 줄 수로 잴 수 없다.
 # 표의 쪽은 첫 칸과 마지막 칸의 쪽으로 판정한다.
 _표칸영역 = {}
+# 쪽 나눔(Ctrl+Enter)으로 새 쪽을 시작하는 본문 문단 번호. 표 묶음 판정 전에 본문_쪽나눔_기억()으로 채운다.
+_쪽나눔문단 = set()
 
 
 def 본문_표_문단번호():
@@ -9254,6 +9259,34 @@ def 본문_표_문단번호():
     except Exception as e:
         진단로그(f'본문 표 위치 확인 실패(무시): {e}')
     return result
+
+
+def 본문_쪽나눔_기억(표문단):
+    """지금 문서에서 쪽 나눔으로 새 쪽을 시작하는 본문 문단 번호를 _쪽나눔문단에 기억한다.
+
+    한/글 문단 모양에는 이 쪽 나눔이 보이지 않으므로(PagebreakBefore=0, 실측: 10월 확대간부회의
+    자료) 지금 문서의 HWPX 원본에서 본문 직속 문단의 pageBreak를 읽는다. HWPX의 표 문단 번호가
+    한/글의 본문 표 문단 번호와 다르면(저장 뒤 문단이 바뀜) 번호가 어긋나므로 쓰지 않는다.
+    """
+    _쪽나눔문단.clear()
+    문서경로 = _서식통일_현재_HWPX()
+    if 문서경로 is None or not 표문단:
+        return
+    try:
+        from docfit_core.style_inventory import _sections
+        문단들 = []
+        with zipfile.ZipFile(문서경로) as archive:
+            for name in _sections(archive):
+                문단들.extend(p for p in safe_xml_fromstring(archive.read(name)) if 제목_xml이름(p) == 'p')
+    except Exception as e:
+        진단로그(f'쪽 나눔 위치 확인 실패(무시): {e}')
+        return
+    표번호 = {i for i, p in enumerate(문단들)
+              if any(제목_xml이름(x) == 'tbl' for run in p if 제목_xml이름(run) == 'run' for x in run)}
+    if 표번호 != set(표문단):
+        진단로그('쪽 나눔 위치 확인 생략: 저장된 HWPX와 지금 문서의 표 위치가 다름')
+        return
+    _쪽나눔문단.update(i for i, p in enumerate(문단들) if p.get('pageBreak') == '1')
 
 
 def 표_칸영역_범위(표키):
@@ -9334,6 +9367,9 @@ def 보고서_표묶음_수집(시작위치, 표문단):
                 return None
             사이빈줄.append((빈[0], 빈[1], '빈 줄'))
             번호 += 1
+        # 쪽 나눔으로 새 쪽에서 시작하는 표(다음 보고서의 제목 표 등)는 앞 문장과 한 쪽에 놓일 수 없다.
+        if any(n in _쪽나눔문단 for n in range(lead[-1][0][1] + 1, 번호 + 1)):
+            return None
         표 = 문단(번호)
         if not 표 or 표[2].strip():
             return None      # 표 옆에 글자가 있는 문단은 표 묶음으로 보지 않는다.
@@ -9477,6 +9513,7 @@ def 세트문장_같은쪽_전체_적용():
     로그("문장부호 세트문장 동일 페이지 유지 처리 시작")
     # 표 묶음(제목 문장 + 표 + 주석) 판정용: 본문에 놓인 표의 문단 번호. 표 칸 범위는 새로 잰다.
     표문단 = 본문_표_문단번호()
+    본문_쪽나눔_기억(표문단)
     _표칸영역.clear()
     순회_시작()
 
@@ -10068,6 +10105,15 @@ def 쉼표_앞_공백_정리_문단_처리():
 
 
 _단어사이_공백류 = (" ", "\t", "　")
+# '일    시:', '총  무  과:'처럼 글자 사이를 띄워 긴 라벨('참석인원:')과 폭을 맞춘 문두 콜론 라벨.
+# 이 공백은 정렬용이라 줄이면 같은 묶음의 콜론·둘째 줄 위치가 어긋난다(실측: 10월 확대간부회의 자료 24곳).
+_균등라벨_패턴 = re.compile(r"(?:\S{1,2}[ \t　]+)?(\S(?:[ \t　]+\S){1,5})[ \t　]*[:：]")
+
+
+def _균등라벨_범위(text, 시작=0):
+    """text[시작:]이 (문두기호 +) 한 글자씩 띄운 콜론 라벨로 시작하면 라벨의 (처음, 끝), 아니면 None."""
+    m = _균등라벨_패턴.match(text, 시작)
+    return m.span(1) if m else None
 
 
 def 단어사이_연속공백_정리_대상(text):
@@ -10079,13 +10125,15 @@ def 단어사이_연속공백_정리_대상(text):
     내용이 시작된 뒤에 나오는 공백류만 대상으로 한다. 탭·전각공백은
     자동 탭 간격이 규격과 안 맞아 수기로 스페이스를 끼워 넣은 흔적인
     경우가 많아, 연속이 아니어도(1칸이라도) 표준 공백이 아니면 대상으로
-    삼는다.
+    삼는다. '일    시:'처럼 한 글자씩 띄워 폭을 맞춘 문두 콜론 라벨 안의
+    공백은 정렬용이므로 그대로 둔다.
     """
     결과 = []
     if not text:
         return 결과
     벗긴텍스트 = text.lstrip("".join(_단어사이_공백류))
     선행공백_길이 = len(text) - len(벗긴텍스트)
+    라벨 = _균등라벨_범위(text, 선행공백_길이)
     i = 선행공백_길이
     n = len(text)
     while i < n:
@@ -10093,6 +10141,8 @@ def 단어사이_연속공백_정리_대상(text):
             시작 = i
             while i < n and text[i] in _단어사이_공백류:
                 i += 1
+            if 라벨 and 라벨[0] < 시작 and i < 라벨[1]:
+                continue
             if i - 시작 > 1 or text[시작] != " ":
                 결과.append((시작, i))
         else:
@@ -13506,6 +13556,12 @@ class HwpAutoDocFitGUI:
         # 카드는 세 장이다. '한 번에 적용'에서 자간 조정을 빼면 내부 작업 유형은 서식 적용(format)이다.
         self.include_spacing_var = tk.BooleanVar(value=bool(저장된_설정.get("all_include_spacing", True)))
         self.include_spacing_var.trace_add("write", self._설정_변경됨)
+        # '자간 정리' 카드의 '기존 자간 초기화'. 세부 작업 01(문서 전체 자간 초기화)과 같은 값이며 설정 파일에 저장한다.
+        저장된_초기화 = 저장된_설정.get("spacing_reset_existing")
+        if isinstance(저장된_초기화, bool):
+            self.stage_choices["spacing"]["reset_spacing"] = 저장된_초기화
+        self.reset_spacing_var = tk.BooleanVar(value=bool(self.stage_choices["spacing"]["reset_spacing"]))
+        self.reset_spacing_var.trace_add("write", self._자간초기화_값변경)
         self.card_mode_var = tk.StringVar(value="spacing")   # 카드 표시용(format도 '한 번에 적용' 카드)
         choose = ttk.LabelFrame(main, text="처리 방식", padding=card_padding, style="Card.TLabelframe")
         choose.grid(row=1, column=0, sticky="ew", pady=6)
@@ -13531,6 +13587,14 @@ class HwpAutoDocFitGUI:
                                    font=("맑은 고딕", 9), cursor="hand2")
             description.pack(anchor="w", fill="x", pady=(5, 8))
             self.mode_buttons.append(rb)
+            if mode == "spacing":
+                # 끄면 문서에 이미 있는 자간을 0%로 되돌리지 않고 그 위에서 정리한다.
+                self.reset_spacing_check = tk.Checkbutton(
+                    inner, text="기존 자간 초기화", variable=self.reset_spacing_var,
+                    command=self._자간초기화_변경, bg=UI_COLORS["surface"], activebackground=UI_COLORS["surface"],
+                    fg=UI_COLORS["ink"], font=("맑은 고딕", 9), anchor="w", cursor="hand2")
+                self.reset_spacing_check.pack(anchor="w", pady=(0, 4))
+                self.mode_buttons.append(self.reset_spacing_check)
             if mode == "all":
                 # 끄면 기존 자간을 그대로 두고 서식만 입힌다(결과 파일 이름은 '서식적용').
                 self.include_spacing_check = tk.Checkbutton(
@@ -14323,11 +14387,16 @@ class HwpAutoDocFitGUI:
         설정_저장(저장값)
 
     def _요약갱신(self, *args):
+        # 세부 작업 창·설정창·웹 화면에서 바꾼 '01 문서 전체 자간 초기화'를 카드의 '기존 자간 초기화'에도 맞춘다.
+        초기화 = bool(self.stage_choices["spacing"].get("reset_spacing", True))
+        if hasattr(self, "reset_spacing_var") and bool(self.reset_spacing_var.get()) != 초기화:
+            self.reset_spacing_var.set(초기화)
         if not hasattr(self, "options_summary"):
             return
         mode = self.selected_mode.get()
         if mode == "spacing":
-            summary = "줄 끝의 끊긴 단어와 자간을 정리합니다."
+            summary = ("줄 끝의 끊긴 단어와 자간을 정리합니다." if 초기화
+                       else "기존 자간을 초기화하지 않고 그 위에서 줄 끝의 끊긴 단어를 정리합니다.")
         elif mode == "unify":
             summary = "문두기호별로 문서에서 많이 쓰인 서식을 적용합니다."
         elif mode == "format":
@@ -14335,7 +14404,9 @@ class HwpAutoDocFitGUI:
         else:
             summary = "공문서 서식을 입히고 자간까지 함께 정리합니다."
         choices = self.stage_choices[mode]
-        disabled = sum(not value for key, value in choices.items() if stage_default(key))
+        # 자간 정리의 자간 초기화는 위 문구로 이미 알린다.
+        disabled = sum(not value for key, value in choices.items()
+                       if stage_default(key) and not (mode == "spacing" and key == "reset_spacing"))
         if choices.get("style_unify") and mode != "unify":
             summary += " · 서식 통일 포함"
         if disabled:
@@ -14386,6 +14457,8 @@ class HwpAutoDocFitGUI:
             description.configure(bg=surface)
             if mode == "all" and hasattr(self, "include_spacing_check"):
                 self.include_spacing_check.configure(bg=surface, activebackground=surface)
+            if mode == "spacing" and hasattr(self, "reset_spacing_check"):
+                self.reset_spacing_check.configure(bg=surface, activebackground=surface)
 
     def _메인_크기조정(self, event=None):
         """창 크기가 바뀔 때 UI 밀도를 폭에 맞춰 조정한다."""
@@ -14482,6 +14555,19 @@ class HwpAutoDocFitGUI:
         if self.running:
             return
         self.selected_mode.set(self._한번에_모드())
+        self._모드_선택됨()
+
+    def _자간초기화_값변경(self, *args):
+        """'기존 자간 초기화' 값을 자간 정리 세부 작업 01에 반영하고 설정 파일에 저장한다."""
+        self.stage_choices["spacing"]["reset_spacing"] = bool(self.reset_spacing_var.get())
+        self._설정_변경됨()
+        self._요약갱신()
+
+    def _자간초기화_변경(self):
+        """'기존 자간 초기화'를 바꾸면 '자간 정리' 카드를 고른다."""
+        if self.running:
+            return
+        self.selected_mode.set("spacing")
         self._모드_선택됨()
 
     # ---- 문서·결과 열기 / 작업 결과 표시 ------------------------------
@@ -16784,8 +16870,11 @@ class HwpAutoDocFitGUI:
 
         self.spacing_stage_vars = {}
         for number, (key, label) in enumerate(stages_for_mode("spacing"), 1):
-            var = tk.BooleanVar(value=self.stage_choices["spacing"].get(key, stage_default(key)))
-            var.trace_add("write", lambda *_, k=key, v=var: self.stage_choices["spacing"].__setitem__(k, v.get()))
+            if key == "reset_spacing":
+                var = self.reset_spacing_var   # 실행창 카드의 '기존 자간 초기화'와 같은 값
+            else:
+                var = tk.BooleanVar(value=self.stage_choices["spacing"].get(key, stage_default(key)))
+                var.trace_add("write", lambda *_, k=key, v=var: self.stage_choices["spacing"].__setitem__(k, v.get()))
             self.spacing_stage_vars[key] = var
             item = ttk.Frame(container)
             item.pack(fill="x", pady=(4, 7))
@@ -17035,6 +17124,7 @@ class HwpAutoDocFitGUI:
             설정값["always_on_top"] = bool(self.always_on_top_var.get()) if hasattr(self, "always_on_top_var") else True
             설정값["all_include_spacing"] = (bool(self.include_spacing_var.get())
                                            if hasattr(self, "include_spacing_var") else True)
+            설정값["spacing_reset_existing"] = bool(self.stage_choices["spacing"].get("reset_spacing", True))
             설정값["active_format_profile"] = getattr(self, "_활성_서식_프로파일", "")
             기존_설정 = 설정_불러오기()
             기존_세부작업 = 기존_설정.get("stage_choices", {})

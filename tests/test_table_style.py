@@ -194,6 +194,28 @@ class ApplyTest(unittest.TestCase):
         self.assertIsNone(read.face_color((0, 1)))
         self.assertEqual(read.side((1, 0), "topBorder"), "DOUBLE_SLIM")
 
+    def test_picture_cell_background_is_kept(self):
+        # 칸 배경으로 넣은 사진(imgBrush)은 칸 내용이다. 예시 바탕으로 덮으면 사진이 사라진다(10월 확대간부회의 자료).
+        header = _header()
+        fills = next(x for x in header.iter() if _tag(x) == "borderFills")
+        fills.append(ET.fromstring(
+            '<hh:borderFill xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" '
+            'xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core" id="2" threeD="0" shadow="0" centerLine="NONE" '
+            'breakCellSeparateLine="0"><hh:leftBorder type="NONE" width="0.12 mm" color="#000000"/>'
+            '<hc:fillBrush><hc:imgBrush mode="TOTAL"><hc:img binaryItemIDRef="image2" bright="0" contrast="0" '
+            'effect="REAL_PIC" alpha="0"/></hc:imgBrush></hc:fillBrush></hh:borderFill>'))
+        table = _grid(3, 3)
+        photo = next(tc for tc in table.iter() if _tag(tc) == "tc"
+                     and next(x for x in tc if _tag(x) == "cellAddr").attrib == {"colAddr": "2", "rowAddr": "2"})
+        photo.set("borderFillIDRef", "2")
+        apply_table_style(HeaderPool(header, default_style()), table)
+        read = Reader(header, table)
+        fill = read.fills[read.cells[(2, 2)].get("borderFillIDRef")]
+        self.assertEqual([x.get("binaryItemIDRef") for x in fill.iter() if _tag(x) == "img"], ["image2"])
+        self.assertEqual(_tag(list(fill)[-1]), "fillBrush")
+        self.assertEqual(read.side((2, 2), "rightBorder"), "NONE")   # 선은 예시 서식(바깥 오른쪽 선 없음)
+        self.assertEqual(read.face_color((0, 2)), "#DFE6F7")        # 그림이 없는 칸은 예시 바탕
+
     def test_repeated_tables_share_new_styles(self):
         header = _header()
         pool = HeaderPool(header, default_style())

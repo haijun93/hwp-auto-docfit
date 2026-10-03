@@ -4,6 +4,7 @@
 위치 칸 서식을 옮긴다. 칸마다
 - 테두리·바탕: 예시 칸의 테두리/배경(borderFill)을 쓰되, 왼쪽·오른쪽 선은 칸이 놓인 열 위치, 위·아래
   선은 칸이 놓인 행 위치의 예시 칸에서 가져와 크기가 다른 표·병합 칸에서도 바깥선이 맞게 한다.
+  칸 배경이 그림(사진 등)이면 칸 내용이므로 선만 바꾸고 그림 채우기는 그대로 둔다.
 - 글자: 칸 글자 모양을 복제해 글꼴(언어별)·크기·장평·자간을 예시 값으로 바꾸고, 예시가 굵으면 굵게를
   더한다(글자색·밑줄 같은 강조와 본문 칸의 기존 굵게는 그대로 둔다).
 - 정렬: 머리글과 한 줄에 들어가는 짧은 문단만 예시 정렬로 바꾸고, 여러 줄 긴 글은 원래 정렬을 둔다.
@@ -330,6 +331,12 @@ class HeaderPool:
             self._parsed[key] = ET.fromstring(self.style["borders"][key])
         return self._parsed[key]
 
+    def picture_fill(self, border_id):
+        """문서 테두리/배경 border_id의 채우기가 그림(imgBrush)이면 그 fillBrush 요소, 아니면 None."""
+        source = next((x for x in self.groups["borderFills"] if x.get("id") == border_id), None)
+        fill = _child(source, "fillBrush") if source is not None else None
+        return fill if fill is not None and any(_tag(x) == "imgBrush" for x in fill) else None
+
     def border(self, element):
         text = _xml(element)
         if text not in self._borders:
@@ -438,6 +445,13 @@ def apply_table_style(pool, table):
             current = _child(composed, side)
             if source is not None and current is not None:
                 composed[list(composed).index(current)] = copy.deepcopy(source)
+        # 칸 배경 그림(사진)을 예시 바탕으로 덮으면 그림이 문서에서 사라진다(실측: 10월 확대간부회의 자료 5장).
+        picture = pool.picture_fill(tc.get("borderFillIDRef"))
+        if picture is not None:
+            current = _child(composed, "fillBrush")
+            if current is not None:
+                composed.remove(current)
+            composed.append(copy.deepcopy(picture))   # fillBrush는 borderFill의 마지막 요소
         tc.set("borderFillIDRef", pool.border(composed))
         sub = _child(tc, "subList")
         if sub is not None and base.get("valign"):

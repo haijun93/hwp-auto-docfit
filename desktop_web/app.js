@@ -97,6 +97,9 @@ function renderModes(state) {
     card.setAttribute("aria-checked",String(selected));
     card.disabled = Boolean(state.running);
   });
+  $("resetOption").hidden = cardMode !== "spacing";
+  $("resetSpacing").checked = state.reset_spacing !== false;
+  $("resetSpacing").disabled = Boolean(state.running);
   $("spacingOption").hidden = cardMode !== "all";
   $("includeSpacing").checked = state.include_spacing !== false;
   $("includeSpacing").disabled = Boolean(state.running);
@@ -254,6 +257,7 @@ document.querySelectorAll(".mode-card").forEach((card)=>card.addEventListener("c
   await callApi("set_mode",currentMode);
 }));
 $("includeSpacing").addEventListener("change",()=>callApi("set_include_spacing",$("includeSpacing").checked));
+$("resetSpacing").addEventListener("change",()=>callApi("set_reset_spacing",$("resetSpacing").checked));
 
 $("rangeBox").addEventListener("toggle",()=>{
   if (window.pywebview?.api && !lastState?.running) callApi("set_range",$("rangeBox").open,$("rangeStart").value,$("rangeEnd").value);
