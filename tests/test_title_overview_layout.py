@@ -128,6 +128,78 @@ class TitleOverviewLayoutTest(unittest.TestCase):
             self.assertEqual(self._widths(table)[0], 48190 - int(out.get('left')) - int(out.get('right')))
 
 
+    def _kinds(self, path):
+        result = []
+        for p in (x for x in self._read(path) if self.name(x) == 'p'):
+            if any(self.name(x) == 'tbl' for x in p.iter()):
+                result.append('tbl')
+            else:
+                text = ''.join(t.text or '' for t in p.iter() if self.name(t) == 't').strip()
+                result.append(text or ('secPr' if any(self.name(x) == 'secPr' for x in p.iter()) else 'blank'))
+        return result
+
+    def test_no_blank_line_before_first_marker_sentence(self):
+        # 제목·개요 표와 첫 문두기호 문장 사이는 문단 위 여백으로만 띄우고 빈 줄은 지운다.
+        title, overview = self._tables()
+        line = '<hp:p id="0" paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:t>{}</hp:t></hp:run></hp:p>'
+        body = (self._table_p(title) + BLANK + self._table_p(overview) + BLANK + BLANK
+                + line.format('□ 활용대상 : 전기버스 4대') + BLANK + line.format(' ㅇ (개요) 본문'))
+        source = self._doc(body)
+        fn = self.ns['제목_hwpx_처리']
+        target = source.with_name('marker.hwpx')
+        fn(source, target, fn(source))
+        # 문두기호 문장 사이 빈 줄은 이 단계가 아니라 표준서식의 빈 줄 삭제가 맡는다.
+        self.assertEqual(self._kinds(target), ['secPr', 'tbl', 'tbl', '□ 활용대상 : 전기버스 4대', 'blank',
+                                               'ㅇ (개요) 본문'])
+
+    def test_abbreviation_title_overview_and_marker_have_no_blank_line(self):
+        from docfit_core.abbreviations import merge_with_defaults
+        line = '<hp:p id="0" paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:t>{}</hp:t></hp:run></hp:p>'
+        body = (line.format('제목: 마포순환열차버스 사업종료(2026.9.30.)에 따른, 전기버스 활용방안 검토자료')
+                + line.format('개요 :  부구청장 주재 현안토의(2026.9.1.) 결과를 보고드림') + BLANK + BLANK
+                + line.format('□ 활용대상 : 전기버스 4대'))
+        source = self._doc(body)
+        fn = self.ns['준말_hwpx_처리']
+        with patch.dict(fn.__globals__, {'준말_등록표': merge_with_defaults({})}):
+            target = source.with_name('abbr-marker.hwpx')
+            self.assertEqual(fn(source, target, fn(source)), 2)
+        self.assertEqual(self._kinds(target), ['secPr', 'tbl', 'tbl', '□ 활용대상 : 전기버스 4대'])
+
+    def test_title_without_overview_and_plain_text_after(self):
+        from docfit_core.abbreviations import merge_with_defaults
+        line = '<hp:p id="0" paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:t>{}</hp:t></hp:run></hp:p>'
+        fn = self.ns['준말_hwpx_처리']
+        with patch.dict(fn.__globals__, {'준말_등록표': merge_with_defaults({})}):
+            # 개요가 없으면 제목 표 뒤 빈 줄을 첫 문두기호 문장 앞까지 지운다.
+            source = self._doc(line.format('제목1: 지구 침공계획(안) 보고') + BLANK + line.format('ㅇ (목적) 보고'))
+            target = source.with_name('title-only.hwpx')
+            fn(source, target, fn(source))
+            self.assertEqual(self._kinds(target), ['secPr', 'tbl', 'ㅇ (목적) 보고'])
+            # 빈 줄 다음이 문두기호 문장이 아니면(일반 글) 빈 줄을 그대로 둔다.
+            source = self._doc(line.format('제목1: 지구 침공계획(안) 보고') + BLANK + line.format('일반 안내 글'))
+            target = source.with_name('title-plain.hwpx')
+            fn(source, target, fn(source))
+            self.assertEqual(self._kinds(target), ['secPr', 'tbl', 'blank', '일반 안내 글'])
+
+    def test_existing_title_subtitle_is_17pt(self):
+        # 문서에 이미 있는 부제 있는 제목 표(2×2)에 제목 서식을 입혀도 부제는 17pt, 제목은 27pt다.
+        header, section = self.ns['제목_원본자료']()
+        title = copy.deepcopy([x for x in section.iter() if self.name(x) == 'tbl'][1])
+        source = self._doc(self._table_p(title))
+        fn = self.ns['제목_hwpx_처리']
+        found = fn(source)
+        self.assertEqual(found, {'Contents/section0.xml': [(0, 2)]})
+        target = source.with_name('subtitle.hwpx')
+        fn(source, target, found)
+        with zipfile.ZipFile(target) as z:
+            out_header = self.parse(z.read('Contents/header.xml'))
+        chars = {c.get('id'): c for c in out_header.iter() if self.name(c) == 'charPr'}
+        table = next(t for t in self._read(target).iter() if self.name(t) == 'tbl')
+        paras = [p for p in self.ns['제목_문단들'](self.ns['제목_셀들'](table)[0]) if self.ns['제목_문자열'](p).strip()]
+        heights = [{chars[r.get('charPrIDRef')].get('height') for r in p if self.name(r) == 'run'
+                    and self.ns['제목_문자열'](r).strip()} for p in paras]
+        self.assertEqual(heights, [{'1700'}, {'2700'}])
+
     def test_title_date_cell_uses_short_year(self):
         # 예시 서식 표처럼 날짜가 '2022. 4. 19.(화)'(네 자리 연도)여도 제목 서식 날짜는 ’26 약어로 쓴다.
         cell = self.parse(f'<hp:tc {HP}><hp:subList><hp:p><hp:run charPrIDRef="0"><hp:t>2022. 4. 19.(화)</hp:t>'

@@ -8,6 +8,8 @@
 - 글자: 칸 글자 모양을 복제해 글꼴(언어별)·크기·장평·자간을 예시 값으로 바꾸고, 예시가 굵으면 굵게를
   더한다(글자색·밑줄 같은 강조와 본문 칸의 기존 굵게는 그대로 둔다).
 - 정렬: 머리글과 한 줄에 들어가는 짧은 문단만 예시 정렬로 바꾸고, 여러 줄 긴 글은 원래 정렬을 둔다.
+  내장 기본값은 본문 칸(2행부터) 가운데 첫 열이 아닌 칸(B2·B3 …)의 문장을 왼쪽 정렬한다(칸의 text_align).
+  왼쪽 정렬은 여러 줄 글에도 어색하지 않으므로 길이와 관계없이 입히고, 숫자·날짜만 있는 칸은 예시 정렬을 둔다.
 - 세로 정렬: 예시 칸 값.
 칸 크기·안쪽 여백은 내용에 따라 달라 바꾸지 않는다. XML 파싱은 defusedxml만 쓴다.
 """
@@ -256,8 +258,16 @@ _DEFAULT_STYLE_DATA = (
 
 
 def default_style():
-    """내장 기본 표 서식(표서식예시.hwpx에서 배운 값)."""
-    return json.loads(zlib.decompress(base64.b64decode(_DEFAULT_STYLE_DATA)).decode("utf-8"))
+    """내장 기본 표 서식(표서식예시.hwpx에서 배운 값).
+
+    예시 표의 본문 칸은 가운데 정렬이지만, 내장 기본값은 본문 칸(머리글 아래) 가운데 첫 열이 아닌 칸의
+    문장을 왼쪽 정렬한다(2026-10-03 사용자 요청: '함대 이동에 약 450년 소요 예상' 같은 B2·B3 … 칸 문장).
+    """
+    style = json.loads(zlib.decompress(base64.b64decode(_DEFAULT_STYLE_DATA)).decode("utf-8"))
+    for row in style["grid"][style["header_rows"]:]:
+        for index in row[1:]:
+            style["cells"][index]["text_align"] = "LEFT"
+    return style
 
 
 def encode_style(style):
@@ -403,6 +413,11 @@ class HeaderPool:
         return self._paras[key]
 
 
+def _number_like(text):
+    """숫자 칸(금액·수량·비율·날짜·시간 등)인지: 숫자가 있고, 숫자·빈칸·기호를 빼면 글자가 두 자 이하."""
+    return bool(re.search(r"\d", text)) and len(re.sub(r"[\d\s\W_]", "", text)) <= 2
+
+
 def _fits_one_line(paragraph, tc, table, height, ratio):
     """문단 글이 칸 한 줄에 들어가는지 어림한다(한글·전각 = 글자 크기, 반각 = 절반)."""
     text = _text(paragraph).strip()
@@ -458,12 +473,17 @@ def apply_table_style(pool, table):
             sub.set("vertAlign", base["valign"])
         spec = style["chars"][base["char"]]
         ratio = int((spec.get("ratio") or {}).get("hangul", "100"))
+        text_align = base.get("text_align") if base_role != "header" else None
         for paragraph in _paragraphs(tc):
             for run in (r for r in paragraph if _tag(r) == "run"):
                 run.set("charPrIDRef", pool.char(run.get("charPrIDRef"), base["char"]))
-            if base.get("align") and paragraph.get("paraPrIDRef") is not None and (
-                    base_role == "header" or _fits_one_line(paragraph, tc, table, spec["height"], ratio)):
-                paragraph.set("paraPrIDRef", pool.para_align(paragraph.get("paraPrIDRef"), base["align"]))
+            # 본문 문장 정렬(text_align)이 있으면 길이와 관계없이 입힌다. 숫자·날짜 칸은 예시 정렬을 따른다.
+            sentence = bool(text_align) and not _number_like(_text(paragraph).strip())
+            align = text_align if sentence else base.get("align")
+            if align and paragraph.get("paraPrIDRef") is not None and (
+                    sentence or base_role == "header"
+                    or _fits_one_line(paragraph, tc, table, spec["height"], ratio)):
+                paragraph.set("paraPrIDRef", pool.para_align(paragraph.get("paraPrIDRef"), align))
             for lineseg in [x for x in paragraph if _tag(x) == "linesegarray"]:
                 paragraph.remove(lineseg)
         count += 1

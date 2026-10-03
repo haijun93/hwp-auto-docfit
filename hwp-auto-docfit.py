@@ -353,7 +353,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리 도구"
-APP_VERSION = "1.69 Beta 8"
+APP_VERSION = "1.69 Beta 9"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 UPDATE_ASSET_NAME = "HWP_AutoDocFit.exe"
@@ -1735,6 +1735,31 @@ def _문단사이_빈줄_삭제(root, 앞문단, 뒷문단):
     return len(사이)
 
 
+def _문단_본문글(p):
+    """본문 문단에 바로 든 글(표·개체 안 글은 빼고, 빈칸 요소 뒤 글은 넣는다)."""
+    return ''.join((t.text or '') + ''.join(s.tail or '' for s in t)
+                   for r in p if 제목_xml이름(r) == 'run' for t in r if 제목_xml이름(t) == 't')
+
+
+def _서식표_뒤_빈줄_삭제(root, 표문단):
+    """제목·개요 서식 표 문단 바로 뒤의 빈 줄을 첫 문두기호 문장 앞까지 지우고 지운 수를 돌려준다.
+
+    제목·개요 표와 첫 문두기호 문장 사이는 그 문장의 문단 위 여백으로만 띄운다(2026-10-03 사용자 요청:
+    빈 줄이 없어야 함). 빈 줄 다음이 문두기호 문장이 아니면(일반 글·표 등) 그대로 둔다.
+    """
+    문단들 = list(root)
+    if 표문단 not in 문단들:
+        return 0
+    처음 = 끝 = 문단들.index(표문단) + 1
+    while 끝 < len(문단들) and _빈_문단인가(문단들[끝]):
+        끝 += 1
+    if 끝 == 처음 or 끝 >= len(문단들) or not 보고서_문단역할(_문단_본문글(문단들[끝]).strip()):
+        return 0
+    for p in 문단들[처음:끝]:
+        root.remove(p)
+    return 끝 - 처음
+
+
 def _서식표_가로맞춤(table, 본문폭):
     """제목·개요 서식 표를 쪽 좌우 여백 사이 최대 폭(본문 폭 − 표 바깥 여백)으로 맞춘다.
 
@@ -2334,7 +2359,7 @@ def 제목_hwpx_처리(source, target=None, selections=None):
         return 기준[종류]
 
     count = 0
-    지운빈줄 = 0
+    지운빈줄 = 뒤빈줄 = 0
     for name, items in selections.items():
         root = sections[name]
         tables = [t for p in root for r in p for t in r if 제목_xml이름(t) == 'tbl']
@@ -2355,7 +2380,11 @@ def 제목_hwpx_처리(source, target=None, selections=None):
                 제목_문단_가운데정렬(header, table)
             # 일반 보고서 서식의 괄호 부연설명 축소 설정을 제목에도 동일 적용한다.
             제목_괄호부연_축소(header, table)
+            # 부제(첫 문단)는 17pt로 둔다(내장 기준 표일 때). 서식 프로필 예시 표는 그 표의 크기를 따른다.
+            if not 예시사용:
+                제목_부제_크기(header, table)
             if 제목_문자열(table) != before: raise RuntimeError('제목 텍스트 보존 검사 실패')
+            끝문단 = 표문단[id(table)]
             # 제목 다음 표가 개요 구조이면 내용은 보존하고 개요 기준서식 적용
             if index + 1 < len(tables) and 개요_표인가(tables[index + 1]):
                 obefore = 제목_문자열(tables[index + 1])
@@ -2370,10 +2399,15 @@ def 제목_hwpx_처리(source, target=None, selections=None):
                 if 제목_문자열(tables[index + 1]) != obefore: raise RuntimeError('개요 텍스트 보존 검사 실패')
                 # 제목 표와 개요 표 사이에는 빈 줄을 두지 않는다.
                 지운빈줄 += _문단사이_빈줄_삭제(root, 표문단[id(table)], 표문단[id(tables[index + 1])])
+                끝문단 = 표문단[id(tables[index + 1])]
+            # 제목·개요 표와 첫 문두기호 문장 사이도 빈 줄 없이 문단 위 여백으로만 띄운다.
+            뒤빈줄 += _서식표_뒤_빈줄_삭제(root, 끝문단)
             count += 1
         contents[name] = ET.tostring(root, encoding='utf-8', xml_declaration=True)
     if 지운빈줄:
         로그(f"제목 표와 개요 표 사이 빈 줄 {지운빈줄}개 삭제")
+    if 뒤빈줄:
+        로그(f"제목·개요 표와 첫 문두기호 문장 사이 빈 줄 {뒤빈줄}개 삭제")
     contents['Contents/header.xml'] = ET.tostring(header, encoding='utf-8', xml_declaration=True)
     with zipfile.ZipFile(target, 'w', zipfile.ZIP_DEFLATED) as z:
         for name, data in contents.items():
@@ -2600,25 +2634,28 @@ _라벨_블록_종류 = {'title1': 'title1', 'title2': 'title2', 'box': 'overvie
 
 
 # 서식 표 종류 → 기준 자료 묶음(한 묶음의 기준 표는 header에 한 번만 병합한다)
-_서식표_묶음 = {'title1': '제목', 'title2': '제목2행1열', 'overview': '개요붙임', 'attach1': '개요붙임',
-               'attach2': '개요붙임', 'midtitle': '중제목'}
+_서식표_묶음 = {'title1': '제목', 'title1부제': '제목', 'title2': '제목2행1열', 'overview': '개요붙임',
+               'attach1': '개요붙임', 'attach2': '개요붙임', 'midtitle': '중제목'}
 
 
 # 서식 표 종류 → 서식 프로필 예시 표 종류(라벨의 'title2'는 2행1열 제목 = 제목 유형3)
-_서식표_예시종류 = {'title1': 'title1', 'title2': 'title3', 'overview': 'overview', 'attach1': 'attach1',
-                 'attach2': 'attach2', 'midtitle': 'midtitle1'}
+_서식표_예시종류 = {'title1': 'title1', 'title1부제': 'title2', 'title2': 'title3', 'overview': 'overview',
+                 'attach1': 'attach1', 'attach2': 'attach2', 'midtitle': 'midtitle1'}
+
+# 제목 서식의 부제(제목 글의 첫 쉼표 앞 글) 글자 크기(pt). 내장 기준 표에 쓴다(서식 프로필 예시 표는 그 표의 크기).
+제목_부제_크기_pt = 17
 
 
 def _서식표_기준(header, kind, cache):
     """서식 표 종류의 (기준 표, ID 매핑)을 문서 header에 한 번만 병합해 돌려준다.
 
     선택한 서식 프로필에 같은 종류의 예시 표가 있으면 그 표를 쓴다(cache['예시사용']에 종류를 남긴다).
-    2행1열 제목은 부제·제목 두 문단이 있는 예시만 쓴다(부제를 넣을 문단이 있어야 한다).
+    2행1열 제목과 부제 있는 제목 서식1은 부제·제목 두 문단이 있는 예시만 쓴다(부제를 넣을 문단이 있어야 한다).
     """
     예시키 = '예시:' + kind
     if 예시키 not in cache:
         예시 = _서식표_예시(_서식표_예시종류[kind])
-        if 예시 is not None and kind == 'title2' and len(
+        if 예시 is not None and kind in ('title2', 'title1부제') and len(
                 [p for p in 제목_문단들(제목_셀들(예시[1])[0]) if 제목_문자열(p).strip()]) != 2:
             예시 = None
         cache[예시키] = (예시[1], 제목_참조병합(header, 예시[0])) if 예시 is not None else None
@@ -2634,8 +2671,43 @@ def _서식표_기준(header, kind, cache):
             _중제목_번호굵게_적용(header, maps)
         cache[group] = ([x for x in source.iter() if 제목_xml이름(x) == 'tbl'], maps)
     tables, maps = cache[group]
-    index = {'overview': 0, 'attach1': 1, 'attach2': 2}.get(kind, 0)
+    # 제목 원본자료: 0 = 부제 없는 2×2 제목, 1 = 부제·제목 두 문단의 2×2 제목
+    index = {'overview': 0, 'attach1': 1, 'attach2': 2, 'title1부제': 1}.get(kind, 0)
     return tables[index], maps
+
+
+def 제목_부제_크기(header, table, 크기_pt=None):
+    """제목 표 A1 칸에 글 문단이 둘 이상이면 첫 문단(부제)의 글자 크기를 정한 크기로 맞춘다. 바꾼 글 묶음 수.
+
+    제목 글의 첫 쉼표 앞 글이 부제다(2026-10-03 사용자 규칙: 쉼표 앞 글자는 17pt). 부제 안 괄호 부연설명도
+    같은 크기로 둔다. 글자 모양은 복제해서 바꾸므로 다른 곳의 글자 모양은 그대로다.
+    """
+    cells = 제목_셀들(table)
+    ps = [p for p in 제목_문단들(cells[0]) if 제목_문자열(p).strip()] if cells else []
+    char_group = next((x for x in header.iter() if 제목_xml이름(x) == 'charProperties'), None)
+    if len(ps) < 2 or char_group is None:
+        return 0
+    높이 = str(int(round(float(크기_pt or 제목_부제_크기_pt) * 100)))
+    by_id = {x.get('id'): x for x in char_group if 제목_xml이름(x) == 'charPr'}
+    복제 = {}
+    count = 0
+    for run in (r for r in ps[0] if 제목_xml이름(r) == 'run'):
+        old = run.get('charPrIDRef')
+        src = by_id.get(old)
+        if src is None or src.get('height') == 높이:
+            continue
+        if old not in 복제:
+            clone = copy.deepcopy(src)
+            clone.set('height', 높이)
+            new_id = str(max([int(x.get('id')) for x in char_group if (x.get('id') or '').isdigit()] + [-1]) + 1)
+            clone.set('id', new_id)
+            char_group.append(clone)
+            char_group.set('itemCnt', str(len(char_group)))
+            by_id[new_id] = clone
+            복제[old] = new_id
+        run.set('charPrIDRef', 복제[old])
+        count += 1
+    return count
 
 
 def _칸_글_지우기(cell):
@@ -2699,12 +2771,18 @@ def _칸_글_넣기(cell, sample, value):
 def 서식표_생성(header, kind, text, cache, 번호=None, 최대폭=None, 본문폭=None):
     """기준 서식 표를 복사해 글을 넣은 새 표를 만든다.
 
-    title1 = 제목 서식1(2×2, 글은 A1, 날짜·담당자 칸은 서식만 남기고 비움), title2 = 제목 서식2(2행1열,
-    첫 쉼표 앞은 부제 15pt·뒤는 제목 27pt, 쉼표가 없으면 제목 한 줄), overview = 개요(요지) 표(글은 A1).
+    title1 = 제목 서식1(2×2, 글은 A1), title2 = 제목 서식2(2행1열). 제목 글에 쉼표가 있으면 첫 쉼표 앞은
+    부제 17pt·뒤는 제목 27pt 두 줄이다(제목1은 부제 있는 2×2 기준 표를 쓴다). 쉼표가 없으면 제목 한 줄.
+    overview = 개요(요지) 표(글은 A1).
     제목 서식의 글은 모두 가운데 정렬이다. midtitle = 중제목 표(번호 칸에 로마자 번호, 글은 글 칸),
     attach1·attach2 = 붙임 서식1(1행3열)·2(1행2열)(글은 마지막 글 칸, '붙임' 글자는 그대로).
     """
-    sample, maps = _서식표_기준(header, kind, cache)
+    sub = ''
+    if kind in ('title1', 'title2'):
+        # 첫 쉼표 앞은 부제(2026-10-03 사용자 규칙: 제목1도 쉼표 앞 글자는 부제 크기)
+        sub, text = split_title2(text)
+    기준종류 = 'title1부제' if kind == 'title1' and sub else kind
+    sample, maps = _서식표_기준(header, 기준종류, cache)
     result = copy.deepcopy(sample)
     cells = 제목_셀들(result)
     if kind in ('midtitle', 'attach1', 'attach2'):
@@ -2724,14 +2802,11 @@ def 서식표_생성(header, kind, text, cache, 번호=None, 최대폭=None, 본
         if blank:
             _칸_글_지우기(cells[-1])
         return result
-    sub = ''
-    if kind == 'title2':
-        sub, text = split_title2(text)
     top = 제목_자식(cells[0], 'subList')
     paras = [p for p in top if 제목_xml이름(p) == 'p']
     # A1 칸: 글 문단 수만큼만 남긴다(부제가 없으면 제목 문단 하나).
-    wanted = [t for t in ((sub, text) if kind == 'title2' and sub else (text,))]
-    keep = paras[len(paras) - len(wanted):] if kind == 'title2' else paras[:1]
+    wanted = [t for t in ((sub, text) if sub else (text,))]
+    keep = paras[len(paras) - len(wanted):] if (sub or kind == 'title2') else paras[:1]
     for p in paras:
         if p not in keep:
             top.remove(p)
@@ -2746,9 +2821,11 @@ def 서식표_생성(header, kind, text, cache, 번호=None, 최대폭=None, 본
         XML_자식_추가(runs[0], sample, tag='{http://www.hancom.co.kr/hwpml/2011/paragraph}t').text = value or 'X'
     제목_표서식_복사(result, sample, maps)
     # 서식 프로필의 예시 표는 그 표의 정렬을 따른다.
-    if kind != 'overview' and kind not in cache.get('예시사용', ()):
+    if kind != 'overview' and 기준종류 not in cache.get('예시사용', ()):
         제목_문단_가운데정렬(header, result)
     제목_괄호부연_축소(header, result)
+    if sub and 기준종류 not in cache.get('예시사용', ()):
+        제목_부제_크기(header, result)
     if blank:
         _칸_글_지우기(cells[0])
     # 사용자 글은 A1에만 넣는다. 나머지 칸(날짜·담당자 등)은 기준 표의 글을 그대로 두되, 요일이 붙은
@@ -2763,14 +2840,20 @@ def 서식표_생성(header, kind, text, cache, 번호=None, 최대폭=None, 본
 
 
 def _제목개요_빈줄_정리(root, 변환목록):
-    """변환으로 생긴 서식 표 문단 목록[(문단, 종류)]에서 제목 표 바로 다음이 개요 표면 사이 빈 줄을 지운다."""
+    """변환으로 생긴 서식 표 문단 목록[(문단, 종류)]에서 제목 표 바로 다음이 개요 표면 사이 빈 줄을 지우고,
+    제목·개요 표와 그 뒤 첫 문두기호 문장 사이의 빈 줄도 지운다."""
     지운수 = 0
     for (앞, 앞종류), (뒤, 뒤종류) in zip(변환목록, 변환목록[1:]):
         if 앞종류 in ('title1', 'title2') and 뒤종류 == 'overview':
             지운수 += _문단사이_빈줄_삭제(root, 앞, 뒤)
     if 지운수:
         로그(f"제목 표와 개요 표 사이 빈 줄 {지운수}개 삭제")
-    return 지운수
+    # 개요 표가 붙은 제목 표는 바로 뒤가 개요 표라 그대로이고, 개요 표(없으면 제목 표) 뒤 빈 줄만 지운다.
+    뒤빈줄 = sum(_서식표_뒤_빈줄_삭제(root, 문단) for 문단, 종류 in 변환목록
+                if 종류 in ('title1', 'title2', 'title3', 'overview'))
+    if 뒤빈줄:
+        로그(f"제목·개요 표와 첫 문두기호 문장 사이 빈 줄 {뒤빈줄}개 삭제")
+    return 지운수 + 뒤빈줄
 
 
 def _서식표_글(table):
@@ -2778,7 +2861,7 @@ def _서식표_글(table):
 
 
 def _서식표_글_확인(kind, table, text, 번호=None):
-    """넣은 글이 요청한 글과 같은지 확인한다(제목2는 쉼표만 빠짐, 중제목은 번호 칸도 확인)."""
+    """넣은 글이 요청한 글과 같은지 확인한다(제목1·2는 부제를 나눈 쉼표만 빠짐, 중제목은 번호 칸도 확인)."""
     cells = 제목_셀들(table)
     if kind in ('midtitle', 'attach1', 'attach2'):
         ok = 제목_문자열(cells[-1]).strip() == text.strip()
@@ -2787,7 +2870,7 @@ def _서식표_글_확인(kind, table, text, 번호=None):
         if not ok:
             raise RuntimeError('서식 표 글 삽입 검사 실패')
         return
-    if kind == 'title2':
+    if kind in ('title1', 'title2'):
         sub, title = split_title2(text)
         expected = sub + title
     else:
@@ -3085,7 +3168,8 @@ def 기본표서식_hwpx_처리(source, target=None, selections=None):
     """문서의 일반 표에 기본 표 서식(준말 '표'의 본말)을 입힌다. 칸 글은 바꾸지 않는다.
 
     예시 표의 같은 위치 칸에서 테두리·바탕색·글꼴(종류·크기·굵게·장평·자간)·세로 정렬을 가져오고,
-    머리글과 한 줄에 들어가는 짧은 문단만 예시 정렬로 바꾼다(docfit_core.table_style).
+    머리글과 한 줄에 들어가는 짧은 문단만 예시 정렬로 바꾼다. 내장 기본값은 본문 칸 가운데 첫 열이 아닌
+    칸(B2·B3 …)의 문장을 길이와 관계없이 왼쪽 정렬한다(숫자·날짜 칸은 예시 정렬, docfit_core.table_style).
     """
     style = 기본표서식()
     with zipfile.ZipFile(source) as z:

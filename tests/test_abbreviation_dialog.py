@@ -46,7 +46,7 @@ class DialogTest(unittest.TestCase):
         tree = window.entries_view
         self.assertEqual(list(tree.get_children()), ['요약'])
         key_var.set('제목1')
-        format_var.set('제목 서식1 표')
+        format_var.set('제목 서식1 표 (쉼표 앞은 부제)')
         actions['add']()
         self.assertEqual(saved[-1]['제목1'], {'type': 'format', 'value': 'title1'})
         key_var.set('두 어절')
