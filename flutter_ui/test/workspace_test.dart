@@ -113,6 +113,7 @@ void main() {
 
     // 세부 작업: 펼쳐서 바로 켜고 끈다.
     expect(find.text('세부 작업  1/2'), findsOneWidget);
+    await tester.ensureVisible(find.text('세부 작업  1/2'));
     await tester.tap(find.text('세부 작업  1/2'));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('2. 서식통일'));
@@ -246,7 +247,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('작업 방식 선택'));
     await tester.pumpAndSettle();
-    expect(find.text('표 내 자간 정리'), findsOneWidget);
+    // '표 제외'(기본 꺼짐)를 켜면 table_spacing을 끈다(표 제외는 세 카드에 모두 있다).
+    expect(find.text('표 제외'), findsNWidgets(3));
     await tester.tap(find.byKey(const Key('tableSpacingSwitch')));
     await tester.pumpAndSettle();
     expect(calls.last, ['set_table_spacing', false]);
@@ -280,11 +282,48 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('작업 방식 선택'));
     await tester.pumpAndSettle();
-    expect(find.text('표 제외'), findsOneWidget);
+    expect(find.text('표 제외'), findsNWidgets(3));   // 자간 정리·서식 통일·한 번에 적용 카드
     await tester.tap(find.byKey(const Key('excludeTablesSwitch')));
     await tester.pumpAndSettle();
     expect(calls.last, ['set_exclude_tables', true]);
     expect(find.text('표 관련 작업은 모두 빼고 정리해요. 제목·개요 서식 표는 정리해요.'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('unify and all cards toggle card options', (tester) async {
+    tester.view.physicalSize = const Size(1024, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final calls = <List<Object?>>[];
+    final state = initialState();
+    state['files'] = [
+      {'name': '문서.hwp', 'folder': r'C:\문서'},
+    ];
+    state['mode'] = 'unify';
+    state['card_options'] = <String, Object?>{};
+    Future<Object?> api(String name, List<Object?> args) async {
+      if (name != 'get_state') calls.add([name, ...args]);
+      if (name == 'set_card_option') {
+        (state['card_options'] as Map)[args[0]] = args[1];
+      }
+      return Map<String, dynamic>.from(state);
+    }
+
+    await tester.pumpWidget(DocFitApp(api: api));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('작업 방식 선택'));
+    await tester.pumpAndSettle();
+    expect(find.text('자간 정리 제외'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('unify_exclude_spacingSwitch')));
+    await tester.pumpAndSettle();
+    expect(calls.last, ['set_card_option', 'unify_exclude_spacing', true]);
+    expect(find.text('서식통일이 고친 문장의 자간은 그대로 둬요.'), findsOneWidget);
+    await tester.ensureVisible(find.byKey(const Key('allExcludePagefitSwitch')));
+    await tester.tap(find.byKey(const Key('allExcludePagefitSwitch')));
+    await tester.pumpAndSettle();
+    expect(calls.last, ['set_card_option', 'all_exclude_pagefit', true]);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });

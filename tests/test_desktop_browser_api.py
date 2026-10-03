@@ -82,7 +82,7 @@ class BrowserApiTests(unittest.TestCase):
         bridge.window = object()
         api = _BrowserApi(bridge)
         public = {name: getattr(api, name) for name in dir(api) if not name.startswith('_')}
-        self.assertEqual(len(public), 28)
+        self.assertEqual(len(public), 29)
         self.assertTrue(all(callable(value) for value in public.values()))
         self.assertNotIn('gui', public)
         self.assertNotIn('window', public)
@@ -212,6 +212,26 @@ class BrowserApiTests(unittest.TestCase):
         self.assertEqual(bridge.set_exclude_tables(True)["mode"], "format")   # 자간 조정을 뺀 한 번에 적용
         gui.running = True
         self.assertTrue(bridge.set_exclude_tables(False)["exclude_tables"])   # 작업 중에는 바꾸지 않는다
+
+    def test_card_options_toggle_and_select_card(self):
+        # 서식 통일 '표 제외'·'자간 정리 제외'·'페이지 맞춤 제외', 한 번에 적용 '페이지 맞춤 제외'(모두 기본 꺼짐)
+        gui = _FakeGui()
+        gui.selected_mode.set("spacing")
+        bridge = _bridge(gui)
+        self.assertEqual(bridge.get_state()["card_options"],
+                         {"all_exclude_pagefit": False, "unify_exclude_tables": False,
+                          "unify_exclude_spacing": False, "unify_exclude_pagefit": False})
+        for name in ("all_exclude_pagefit_var", "unify_exclude_tables_var", "unify_exclude_spacing_var",
+                     "unify_exclude_pagefit_var"):
+            setattr(gui, name, _Var(False))
+        state = bridge.set_card_option("unify_exclude_spacing", True)
+        self.assertEqual((state["mode"], state["card_options"]["unify_exclude_spacing"]), ("unify", True))
+        state = bridge.set_card_option("all_exclude_pagefit", True)
+        self.assertEqual((state["mode"], state["card_options"]["all_exclude_pagefit"]), ("all", True))
+        with self.assertRaises(ValueError):
+            bridge.set_card_option("unknown", True)
+        gui.running = True
+        self.assertTrue(bridge.set_card_option("all_exclude_pagefit", False)["card_options"]["all_exclude_pagefit"])
 
     def test_result_actions_use_selected_result(self):
         gui = _FakeGui()

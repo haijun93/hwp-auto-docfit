@@ -138,6 +138,15 @@ def without_tables(selection):
     return {**dict(selection or {}), **{key: False for key in TABLE_STAGE_KEYS}}
 
 
+# 작업 카드의 '페이지 맞춤 제외'를 켜면 끄는 작업: (1) 문단 아래 간격 페이지 맞춤 (2) 관련 문단 페이지 배치.
+PAGE_FIT_STAGE_KEYS = ("page_fit", "page_group")
+
+
+def without_page_fit(selection):
+    """세부 작업 선택에서 페이지 맞춤 작업을 모두 끈 사본."""
+    return {**dict(selection or {}), **{key: False for key in PAGE_FIT_STAGE_KEYS}}
+
+
 def enabled(selection, key, mode=None):
     if selection is None:
         return default_choice(key, mode)

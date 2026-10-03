@@ -1,4 +1,11 @@
-﻿const MODE_LABELS = {spacing:"자간 정리",unify:"서식 통일",format:"한 번에 적용 · 자간 조정 제외",all:"한 번에 적용"};
+﻿// 카드 옵션 체크(요소 id, 상태 card_options 키, 보이는 카드)
+const CARD_OPTION_INPUTS = [
+  ["unifyTables", "unify_exclude_tables", "unify"],
+  ["unifySpacing", "unify_exclude_spacing", "unify"],
+  ["unifyPagefit", "unify_exclude_pagefit", "unify"],
+  ["allPagefit", "all_exclude_pagefit", "all"],
+];
+const MODE_LABELS = {spacing:"자간 정리",unify:"서식 통일",format:"한 번에 적용 · 자간 조정 제외",all:"한 번에 적용"};
 const $ = (id) => document.getElementById(id);
 let currentStep = 1;
 let returnStep = 1;
@@ -101,8 +108,15 @@ function renderModes(state) {
   $("resetSpacing").checked = state.reset_spacing !== false;
   $("resetSpacing").disabled = Boolean(state.running);
   $("tableSpacingOption").hidden = cardMode !== "spacing";
-  $("tableSpacing").checked = state.table_spacing !== false;
+  // '자간 정리'의 '표 제외'는 설정 table_spacing(표 안 문장 자간조정)의 반대 값이다.
+  $("tableSpacing").checked = state.table_spacing === false;
   $("tableSpacing").disabled = Boolean(state.running);
+  const cardOptions = state.card_options || {};
+  for (const [id, key, card] of CARD_OPTION_INPUTS) {
+    $(id + "Option").hidden = cardMode !== card;
+    $(id).checked = cardOptions[key] === true;
+    $(id).disabled = Boolean(state.running);
+  }
   $("spacingOption").hidden = cardMode !== "all";
   $("includeSpacing").checked = state.include_spacing !== false;
   $("includeSpacing").disabled = Boolean(state.running);
@@ -265,7 +279,10 @@ document.querySelectorAll(".mode-card").forEach((card)=>card.addEventListener("c
 $("includeSpacing").addEventListener("change",()=>callApi("set_include_spacing",$("includeSpacing").checked));
 $("excludeTables").addEventListener("change",()=>callApi("set_exclude_tables",$("excludeTables").checked));
 $("resetSpacing").addEventListener("change",()=>callApi("set_reset_spacing",$("resetSpacing").checked));
-$("tableSpacing").addEventListener("change",()=>callApi("set_table_spacing",$("tableSpacing").checked));
+$("tableSpacing").addEventListener("change",()=>callApi("set_table_spacing",!$("tableSpacing").checked));
+for (const [id, key] of CARD_OPTION_INPUTS) {
+  $(id).addEventListener("change",()=>callApi("set_card_option",key,$(id).checked));
+}
 
 $("rangeBox").addEventListener("toggle",()=>{
   if (window.pywebview?.api && !lastState?.running) callApi("set_range",$("rangeBox").open,$("rangeStart").value,$("rangeEnd").value);
