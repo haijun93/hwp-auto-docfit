@@ -28,20 +28,30 @@ class FileDropTests(TestCase):
             {'name': '첫째.hwpx', 'pywebviewFullPath': paths[0]},
             {'name': '둘째.hwp', 'pywebviewFullPath': paths[1]},
         ]}})
-        bridge.add_paths.assert_called_once_with(paths)
+        # 끌어 놓은 경로는 놓기 대상(문서 목록·서식 복제)을 고르는 receive_drop으로 간다.
+        bridge.receive_drop.assert_called_once_with(paths)
         self.assertTrue(handler.prevent_default)
+
+    def test_drop_goes_to_format_cloning_while_format_manager_is_open(self):
+        bridge = DesktopWebBridge(Mock())
+        bridge.add_paths, bridge.add_format_paths = Mock(), Mock()
+        bridge.receive_drop([r'C:\예시.hwpx'])
+        bridge.add_paths.assert_called_once_with([r'C:\예시.hwpx'])
+        bridge.drop_target = 'format'
+        bridge.receive_drop([r'C:\예시.hwpx'])
+        bridge.add_format_paths.assert_called_once_with([r'C:\예시.hwpx'])
 
     def test_missing_native_path_never_guesses_from_filename(self):
         handler, bridge = self.bind()
         with self.assertLogs('desktop_web_ui', level='WARNING'):
             handler.callback({'dataTransfer': {'files': [{'name': 'test.hwpx'}]}})
-        bridge.add_paths.assert_not_called()
+        bridge.receive_drop.assert_not_called()
         bridge._tk.assert_called_once()
 
     def test_non_file_drop_does_not_add_documents(self):
         handler, bridge = self.bind()
         handler.callback({'dataTransfer': {'files': []}})
-        bridge.add_paths.assert_not_called()
+        bridge.receive_drop.assert_not_called()
 
     def test_running_job_rejects_document_list_changes(self):
         gui = Mock(running=True)

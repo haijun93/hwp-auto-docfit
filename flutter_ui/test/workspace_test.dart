@@ -328,6 +328,78 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('format manager routes drops and edits formats', (tester) async {
+    tester.view.physicalSize = const Size(1024, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final calls = <List<Object?>>[];
+    final state = initialState();
+    state['files'] = [
+      {'name': '문서.hwp', 'folder': r'C:\문서'},
+    ];
+    state['mode'] = 'all';
+    state['profiles'] = [
+      {'id': '', 'name': '기본 서식', 'title': '기본 서식', 'organization': '', 'builtin': true, 'source': '', 'active': true},
+      {'id': 'abc', 'name': '[마포구] 보고서', 'title': '보고서', 'organization': '마포구', 'builtin': false,
+       'source': '예시.hwpx', 'active': false},
+    ];
+    state['format_task'] = {'busy': false, 'file': ''};
+    Future<Object?> api(String name, List<Object?> args) async {
+      if (name != 'get_state') calls.add([name, ...args]);
+      if (name == 'rename_profile' && args[1] == '중복') {
+        return {...state, 'notice': '이미 사용 중인 서식 이름입니다.'};
+      }
+      if (name == 'delete_profile') {
+        state['profiles'] = [(state['profiles'] as List).first];
+      }
+      return Map<String, dynamic>.from(state);
+    }
+
+    await tester.pumpWidget(DocFitApp(api: api));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('작업 방식 선택'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('openFormatsButton')));
+    await tester.tap(find.byKey(const Key('openFormatsButton')));
+    await tester.pumpAndSettle();
+    // 창이 열려 있는 동안 끌어 놓은 파일은 서식 복제로 간다.
+    expect(calls.last, ['set_drop_target', 'format']);
+    expect(find.text('예시 보고서(HWP·HWPX)를 이 창에 끌어다 놓으세요'), findsOneWidget);
+    expect(find.text('예시 보고서: 예시.hwpx'), findsOneWidget);
+    // 기본 서식은 이름 바꾸기·삭제가 없다.
+    expect(find.byKey(const Key('deleteFormat-')), findsNothing);
+    await tester.tap(find.byKey(const Key('addFormatFile')));
+    await tester.pumpAndSettle();
+    expect(calls.last, ['add_format_file']);
+    // 이름 바꾸기: 겹치는 이름이면 이유를 보여 준다.
+    await tester.tap(find.byKey(const Key('renameFormat-abc')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('formatNameField')), '중복');
+    await tester.tap(find.text('저장'));
+    await tester.pumpAndSettle();
+    expect(calls.last, ['rename_profile', 'abc', '중복', '마포구']);
+    expect(find.text('이미 사용 중인 서식 이름입니다.'), findsWidgets);
+    await tester.tap(find.byKey(const Key('useFormat-abc')));
+    await tester.pumpAndSettle();
+    expect(calls.last, ['set_profile', 'abc']);
+    await tester.tap(find.byKey(const Key('editFormat-abc')));
+    await tester.pumpAndSettle();
+    expect(calls.last, ['edit_profile', 'abc']);
+    // 삭제는 확인한 뒤에만 한다.
+    await tester.tap(find.byKey(const Key('deleteFormat-abc')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('confirmDeleteFormat')));
+    await tester.pumpAndSettle();
+    expect(calls.last, ['delete_profile', 'abc']);
+    expect(find.text('예시 보고서: 예시.hwpx'), findsNothing);
+    await tester.tap(find.byTooltip('닫기').last);
+    await tester.pumpAndSettle();
+    expect(calls.any((c) => c[0] == 'set_drop_target' && c[1] == 'documents'), isTrue);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('finished job moves to results with per-file actions', (
     tester,
   ) async {

@@ -82,7 +82,7 @@ class BrowserApiTests(unittest.TestCase):
         bridge.window = object()
         api = _BrowserApi(bridge)
         public = {name: getattr(api, name) for name in dir(api) if not name.startswith('_')}
-        self.assertEqual(len(public), 29)
+        self.assertEqual(len(public), 35)
         self.assertTrue(all(callable(value) for value in public.values()))
         self.assertNotIn('gui', public)
         self.assertNotIn('window', public)
@@ -142,10 +142,8 @@ class BrowserApiTests(unittest.TestCase):
         self.assertTrue(gui.verify_var.get())
         with self.assertRaises(ValueError):
             bridge.set_option("임의설정", True)
-        self.assertEqual(bridge._profiles(), [
-            {"id": "", "name": "기본 서식"},
-            {"id": "abc", "name": "[마포구] 보고서"},
-        ])
+        self.assertEqual([(p["id"], p["name"]) for p in bridge._profiles()],
+                         [("", "기본 서식"), ("abc", "[마포구] 보고서")])
 
     def test_all_card_runs_format_when_spacing_is_excluded(self):
         gui = _FakeGui()
@@ -232,6 +230,45 @@ class BrowserApiTests(unittest.TestCase):
             bridge.set_card_option("unknown", True)
         gui.running = True
         self.assertTrue(bridge.set_card_option("all_exclude_pagefit", False)["card_options"]["all_exclude_pagefit"])
+
+    def test_format_manager_profiles_drop_routing_and_edits(self):
+        # 서식 목록은 이름·기관·기본 서식 여부·예시 파일·사용 중 여부를 함께 준다.
+        gui = _FakeGui()
+        gui._프로파일들["abc"]["source"] = {"filename": "예시.hwpx"}
+        bridge = _bridge(gui)
+        state = bridge.get_state()
+        self.assertEqual(state["profiles"][1], {"id": "abc", "name": "[마포구] 보고서", "title": "보고서",
+                                                "organization": "마포구", "builtin": False, "source": "예시.hwpx",
+                                                "active": False, "coverage": None})
+        self.assertTrue(state["profiles"][0]["builtin"] and state["profiles"][0]["active"])
+        self.assertEqual((state["drop_target"], state["format_task"]), ("documents", {"busy": False, "file": ""}))
+        # '서식 관리' 창이 열리면 끌어 놓은 예시 보고서는 서식 복제로, 닫히면 문서 목록으로 간다.
+        started, added = [], []
+        gui._서식_분석_시작 = lambda path, 이름묻기=False: started.append((path, 이름묻기))
+        gui.파일추가 = lambda path: added.append(path) or True
+        gui.로그표시 = lambda *_: None
+        with self.assertRaises(ValueError):
+            bridge.set_drop_target("somewhere")
+        self.assertEqual(bridge.set_drop_target("format")["drop_target"], "format")
+        bridge.receive_drop([r"C:\a\메모.txt", r"C:\a\예시.hwpx", r"C:\a\둘째.hwp"])
+        self.assertEqual(started, [(r"C:\a\예시.hwpx", False)])
+        self.assertEqual(added, [])
+        bridge.receive_drop([r"C:\a\메모.txt"])
+        self.assertIn("HWP 또는 HWPX", gui.status_var.get())
+        bridge.set_drop_target("documents")
+        bridge.receive_drop([r"C:\a\보고서.hwpx"])
+        self.assertEqual(added, [r"C:\a\보고서.hwpx"])
+        self.assertEqual(len(started), 1)
+        # 이름 바꾸기·삭제가 안 되면 notice에 이유를 담는다.
+        gui._서식_이름_저장 = lambda identifier, name, organization: "이미 사용 중인 서식 이름입니다." if name == "중복" else None
+        gui._서식_삭제 = lambda identifier: None
+        self.assertEqual(bridge.rename_profile("abc", "중복", "")["notice"], "이미 사용 중인 서식 이름입니다.")
+        self.assertNotIn("notice", bridge.rename_profile("abc", "새 이름", "마포구"))
+        self.assertNotIn("notice", bridge.delete_profile("abc"))
+        edited = []
+        gui._서식_수정하기 = lambda identifier=None: edited.append(identifier)
+        bridge.edit_profile("abc")
+        self.assertEqual(edited, ["abc"])
 
     def test_result_actions_use_selected_result(self):
         gui = _FakeGui()

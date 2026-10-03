@@ -18,6 +18,7 @@ from __future__ import annotations
 from collections import Counter, OrderedDict, defaultdict
 import copy
 import re
+import unicodedata
 from pathlib import Path
 from zipfile import ZipFile
 
@@ -31,6 +32,14 @@ HWPUNIT_PER_MM = 7200 / 25.4
 UNDERLINE_TYPES = ("NONE", "BOTTOM", "CENTER", "TOP")
 ALIGN_TYPES = ("JUSTIFY", "LEFT", "RIGHT", "CENTER", "DISTRIBUTE", "DISTRIBUTE_SPACE")
 LINE_TYPES = ("PERCENT", "FIXED", "BETWEEN_LINES", "AT_LEAST")
+# 한글 줄 나눔 기준(breakSetting breakNonLatinWord): 어절 단위 / 글자 단위
+BREAK_TYPES = ("KEEP_WORD", "BREAK_WORD")
+# 내어쓰기 기준: 둘째 줄이 라벨 뒤 글 시작 / 기호 뒤 글 시작에 맞음, 고정 값, 내어쓰기 없음
+HANGING_RULES = ("after_label", "after_marker", "fixed", "none")
+# 쪽 번호 컨트롤(hp:pageNum)에서 복사하는 속성: 위치(BOTTOM_CENTER 등)·번호 모양(DIGIT 등)·줄표 글자('-')
+PAGE_NUMBER_KEYS = ("pos", "formatType", "sideChar")
+# 문두기호 역할의 깊이(작을수록 상위). 깊은 항목 다음 얕은 항목이 오면 '계층 복귀'다.
+ROLE_DEPTH = {"중제목": 0, "소제목": 1, "본문": 2, "내용": 3, "부연설명": 4}
 VALIGN_TYPES = ("TOP", "CENTER", "BOTTOM")
 BORDER_TYPES = ("NONE", "SOLID", "DASH", "DOT", "DASH_DOT", "DASH_DOT_DOT", "LONG_DASH", "CIRCLE",
                 "DOUBLE_SLIM", "SLIM_THICK", "THICK_SLIM", "SLIM_THICK_SLIM")
@@ -40,6 +49,8 @@ CHOICE_LABELS = {
     "NONE": "없음", "BOTTOM": "아래", "CENTER": "가운데", "TOP": "위",
     "JUSTIFY": "양쪽", "LEFT": "왼쪽", "RIGHT": "오른쪽", "DISTRIBUTE": "배분", "DISTRIBUTE_SPACE": "나눔",
     "PERCENT": "글자에 따라(%)", "FIXED": "고정 값", "BETWEEN_LINES": "여백만 지정", "AT_LEAST": "최소",
+    "KEEP_WORD": "어절", "BREAK_WORD": "글자",
+    "after_label": "라벨 뒤 글 시작", "after_marker": "기호 뒤 글 시작", "fixed": "고정 값", "none": "없음",
     "SOLID": "실선", "DASH": "파선", "DOT": "점선", "DASH_DOT": "일점쇄선", "DASH_DOT_DOT": "이점쇄선",
     "LONG_DASH": "긴 파선", "CIRCLE": "원형 점선", "DOUBLE_SLIM": "이중 실선",
     "SLIM_THICK": "얇고 굵은 이중선", "THICK_SLIM": "굵고 얇은 이중선", "SLIM_THICK_SLIM": "삼중선",
@@ -69,12 +80,15 @@ ELEMENT_SPECS = OrderedDict([
     ("next", ("문단 아래 간격", "hpt", None, True)),
     ("line_type", ("줄 간격 종류", "choice", LINE_TYPES, True)),
     ("line", ("줄 간격 값", "int", None, True)),
+    ("break_word", ("줄 나눔 기준(한글)", "choice", BREAK_TYPES, True)),
     ("lead_spaces", ("기호 앞 빈칸 수", "int", None, True)),
     ("after_spaces", ("기호 뒤 빈칸 수", "int", None, True)),
     ("marker_bold", ("문두기호 굵게", "bool", None, True)),
     ("label_bold", ("괄호 라벨 굵게", "bool", None, True)),
     ("hanging", ("내어쓰기 적용(여러 줄 문장)", "bool", None, True)),
     ("paren_delta", ("괄호 안 글자 줄임", "pt", None, True)),
+    ("hanging_rule", ("내어쓰기 기준", "choice", HANGING_RULES, True)),
+    ("return_prev", ("상위 항목으로 돌아올 때 문단 위 간격", "hpt", None, True)),
     ("width", ("너비", "mm", None, False)),
     ("height", ("높이", "mm", None, False)),
     ("margin_left", ("안 여백 왼쪽", "mm", None, True)),
@@ -103,18 +117,21 @@ ELEMENT_SPECS = OrderedDict([
     ("page_bottom", ("쪽 아래 여백", "mm", None, True)),
     ("page_header", ("머리말 여백", "mm", None, True)),
     ("page_footer", ("꼬리말 여백", "mm", None, True)),
+    ("page_gutter", ("제본 여백", "mm", None, True)),
+    ("page_landscape", ("가로 방향 용지", "bool", None, False)),
 ])
 CHAR_KEYS = ("font", "font_latin", "size", "bold", "italic", "underline", "strikeout",
              "color", "shade", "ratio", "spacing")
-PARA_KEYS = ("align", "left", "right", "indent", "prev", "next", "line_type", "line")
-MARKER_KEYS = ("lead_spaces", "after_spaces", "marker_bold", "label_bold", "hanging", "paren_delta")
+PARA_KEYS = ("align", "left", "right", "indent", "prev", "next", "line_type", "line", "break_word")
+MARKER_KEYS = ("lead_spaces", "after_spaces", "marker_bold", "label_bold", "hanging", "paren_delta",
+               "hanging_rule", "return_prev")
 CELL_KEYS = ("width", "height", "margin_left", "margin_right", "margin_top", "margin_bottom", "valign",
              "fill", "border_left", "border_right", "border_top", "border_bottom")
 TABLE_KEYS = ("width", "height", "out_left", "out_right", "out_top", "out_bottom",
               "in_left", "in_right", "in_top", "in_bottom",
               "fill", "border_left", "border_right", "border_top", "border_bottom")
 PAGE_KEYS = ("page_width", "page_height", "page_left", "page_right", "page_top", "page_bottom",
-             "page_header", "page_footer")
+             "page_header", "page_footer", "page_gutter", "page_landscape")
 
 FORM_KINDS = ("title1", "title2", "title3", "overview", "midtitle1", "midtitle2", "attach1", "attach2", "box")
 FORM_LABELS = {
@@ -135,7 +152,8 @@ CELL_ROLES = {
     "box": {"A1": "글"},
 }
 # 예시 표를 보관해 서식 적용에 쓰는 종류(한 칸 상자는 분석만 한다).
-SAMPLE_KINDS = ("title1", "title2", "title3", "overview", "midtitle1", "midtitle2", "attach1", "attach2")
+# 서식 적용에 쓰려고 표 XML을 보관하는 종류. 한 칸 상자(box)도 보관한다(2026-10-04 서식 복사 전면 복제).
+SAMPLE_KINDS = ("title1", "title2", "title3", "overview", "midtitle1", "midtitle2", "attach1", "attach2", "box")
 
 _CHAR_CHILD_ORDER = ("fontRef", "ratio", "spacing", "relSz", "offset", "italic", "bold", "underline",
                      "strikeout", "outline", "shadow", "emboss", "engrave", "supscript", "subscript")
@@ -400,6 +418,7 @@ def para_values(para_pr):
     align = _first(para_pr, "align")
     margin = _first(para_pr, "margin")
     line = _first(para_pr, "lineSpacing")
+    breaking = _first(para_pr, "breakSetting")
 
     def value(name):
         item = _first(margin, name)
@@ -411,6 +430,7 @@ def para_values(para_pr):
         "prev": value("prev"), "next": value("next"),
         "line_type": line.get("type") if line is not None else None,
         "line": _int(line.get("value"), 0) if line is not None else None,
+        "break_word": (breaking.get("breakNonLatinWord") or "KEEP_WORD") if breaking is not None else None,
     }
 
 
@@ -503,6 +523,35 @@ def _label_span(text, start):
     return None
 
 
+def _prefix_width(text, end, size, ratio=100, spacing=0):
+    """text[:end]의 어림 폭(HWPUNIT). 한글·전각·애매폭 글자는 글자 크기, 반각·빈칸은 절반, 장평·자간 반영."""
+    total = 0.0
+    for letter in text[:end]:
+        wide = unicodedata.east_asian_width(letter) in ("W", "F", "A") and letter != " "
+        total += size * ((1.0 if wide else 0.5) * ratio / 100 + spacing / 100)
+    return total
+
+
+def hanging_rule(text, values, marker, label, after):
+    """여러 줄 문단의 내어쓰기 기준: 내어쓰기 양을 기호 뒤·라벨 뒤 글 시작 폭과 비교한다.
+
+    가까운 쪽이 허용 오차(300 HWPUNIT 또는 15%) 안이면 그 기준, 아니면 고정 값. 내어쓰기가 없으면 'none'.
+    """
+    amount = -int(values.get("indent") or 0)
+    if amount <= 20:
+        return "none"
+    size = values.get("size") or 1000
+    ratio, spacing = values.get("ratio") or 100, values.get("spacing") or 0
+    candidates = {"after_marker": _prefix_width(text, marker[1] + after, size, ratio, spacing)}
+    if label:
+        end = label[1]
+        while end < len(text) and text[end] in _SPACES:
+            end += 1
+        candidates["after_label"] = _prefix_width(text, end, size, ratio, spacing)
+    rule, guess = min(candidates.items(), key=lambda item: abs(item[1] - amount))
+    return rule if abs(guess - amount) <= max(300, 0.15 * amount) else "fixed"
+
+
 def paragraph_values(p, index, *, with_marker=True):
     """문단 하나의 (그룹 기호, 역할, 글자, 요소 값). 글자가 없으면 None.
 
@@ -553,6 +602,7 @@ def paragraph_values(p, index, *, with_marker=True):
                       label_bold=_dominant(label_bold) if label else None,
                       # 한 줄 문장은 내어쓰기가 보이지 않으므로 표본에서 뺀다.
                       hanging=(values.get("indent", 0) < -20) if _line_count(p) > 1 else None,
+                      hanging_rule=hanging_rule(text, values, marker, label, after) if _line_count(p) > 1 else None,
                       paren_delta=(values["size"] - _dominant(aside_sizes))
                       if aside_sizes and values.get("size") else None)
     return group, role, text.strip(), values
@@ -680,22 +730,43 @@ def analyze_format_elements(path, classify=None):
     general = {"header": [], "body": []}
     table_count = 0
     previous_kind = None
+    previous_depth = None
+    title_bottom = None          # 제목·개요 표 문단 마지막 줄 아래(줄 배치 정보, HWPUNIT)
+    spacing_rules = {}
+    page_number = None
     for root in roots:
+        # 쪽 번호 모양(위치·번호 모양·줄표): 처음 나온 것을 대표로 한다.
+        if page_number is None:
+            found_number = next((x for x in root.iter() if _tag(x) == "pageNum"), None)
+            if found_number is not None:
+                page_number = {k: found_number.get(k) for k in PAGE_NUMBER_KEYS if found_number.get(k) is not None}
         # 쪽 모양은 구역마다 하나다(구역 수만큼 표본).
         page_pr = _first(root, "pagePr")
         if page_pr is not None:
             margin = _child(page_pr, "margin")
             page = {"page_width": _int(page_pr.get("width")) or None,
-                    "page_height": _int(page_pr.get("height")) or None}
+                    "page_height": _int(page_pr.get("height")) or None,
+                    "page_landscape": page_pr.get("landscape") == "NARROWLY"}
             if margin is not None:
                 page.update({"page_" + k: _int(margin.get(k))
-                             for k in ("left", "right", "top", "bottom", "header", "footer")})
+                             for k in ("left", "right", "top", "bottom", "header", "footer", "gutter")})
             pages.append(page)
         # 본문 직속 문단만 계층 표본으로 본다(표 칸·글상자 문단은 섞지 않는다).
         for p in (x for x in root if _tag(x) == "p"):
             found = paragraph_values(p, index)
             if found:
                 group, role, text, values = found
+                depth = ROLE_DEPTH.get(role) if group else None
+                if depth is not None:
+                    # 깊은 항목 다음 얕은 항목(계층 복귀)의 문단 위 간격을 따로 모은다.
+                    if previous_depth is not None and depth < previous_depth:
+                        values["return_prev"] = values.get("prev")
+                    previous_depth = depth
+                    if title_bottom is not None and "overview_to_first" not in spacing_rules:
+                        top = _first_line_top(p)
+                        if top is not None and top >= title_bottom[0]:
+                            spacing_rules["overview_to_first"] = max(0, top - title_bottom[1])
+                        title_bottom = None
                 if len(first_paragraphs) < 2:
                     first_paragraphs.append({"font": values.get("font"), "size": values.get("size"),
                                              "bold": values.get("bold"), "text": text[:60]})
@@ -713,6 +784,8 @@ def analyze_format_elements(path, classify=None):
                     previous_kind = kind
                     if kind in FORM_KINDS:
                         forms[kind].append((table, _record_table(table, index)))
+                        if kind.startswith("title") or kind == "overview":
+                            title_bottom = _last_line_bottom(p)
                         continue
                     for addr, tc in table_cells(table):
                         values = cell_values(tc, index)
@@ -748,8 +821,28 @@ def analyze_format_elements(path, classify=None):
         "paragraph_groups": paragraph_groups,
         "forms": form_summary,
         "tables": {"count": table_count - sum(len(v) for v in forms.values()), **tables},
+        "spacing_rules": spacing_rules,
+        "page_number": page_number,
         "samples": samples,
     }
+
+
+def _first_line_top(p):
+    """문단 첫 줄의 위치(줄 배치 정보 vertpos). 없으면 None."""
+    segs = _child(p, "linesegarray")
+    first = next((x for x in segs if _tag(x) == "lineseg"), None) if segs is not None else None
+    return _int(first.get("vertpos"), None) if first is not None else None
+
+
+def _last_line_bottom(p):
+    """문단 마지막 줄의 (위치, 아래 끝 = 위치 + 높이 + 줄 간격). 줄 배치 정보가 없으면 None."""
+    segs = _child(p, "linesegarray")
+    lines = [x for x in segs if _tag(x) == "lineseg"] if segs is not None else []
+    if not lines:
+        return None
+    last = lines[-1]
+    top = _int(last.get("vertpos"))
+    return top, top + _int(last.get("vertsize")) + _int(last.get("spacing"))
 
 
 # ----------------------------------------------------------------------------
@@ -916,6 +1009,11 @@ def _edit_para(para_pr, key, value):
         align = _first(para_pr, "align")
         if align is not None:
             align.set("horizontal", value)
+        return
+    if key == "break_word":
+        breaking = _first(para_pr, "breakSetting")
+        if breaking is not None:
+            breaking.set("breakNonLatinWord", value)
         return
     # hp:switch가 있으면 case는 실제 값, default는 두 배 값을 함께 고친다.
     case = next((x for x in para_pr.iter() if _tag(x) == "case"), None)
@@ -1089,6 +1187,44 @@ def group_title(group):
     return f"{marker} {group['role']}".strip()
 
 
+# 요소마다 서식 적용에 쓰는 방식(세부사항 창 '적용 방식' 열, 서식 관리의 복제 범위 요약)
+MODE_VALUE, MODE_RULE, MODE_SHOW = "값 복사", "규칙 복사", "표시만"
+_RULE_KEYS = {"hanging_rule", "return_prev", "label_bold", "paren_delta"}
+# 문장(문두기호 계층)에서 아직 적용하지 않는 요소: 기호 앞·뒤 빈칸(공백 정규화와 겹침), 내어쓰기 여부(기준으로 대신함)
+_GROUP_SHOW_KEYS = {"lead_spaces", "after_spaces", "hanging"}
+_PAGE_SHOW_KEYS = {"page_width", "page_height", "page_landscape"}
+# 일반 표 칸: 칸 크기·칸 안 여백·문단 여백은 글에 따라 달라 복사하지 않는다(표 기본 안 여백은 복사).
+_TABLE_SHOW_KEYS = {"width", "height", "margin_left", "margin_right", "margin_top", "margin_bottom",
+                    "left", "right", "indent", "prev", "next"}
+
+
+def element_mode(key, path):
+    """경로(detail_nodes의 경로)에 있는 요소의 적용 방식: 값 복사·규칙 복사·표시만."""
+    area = path[0] if path else ""
+    if area == "group":
+        if key in _RULE_KEYS:
+            return MODE_RULE
+        return MODE_SHOW if key in _GROUP_SHOW_KEYS else MODE_VALUE
+    if area == "page":
+        return MODE_SHOW if key in _PAGE_SHOW_KEYS else MODE_VALUE
+    if area == "table":
+        return MODE_SHOW if key in _TABLE_SHOW_KEYS else MODE_VALUE
+    if area == "form":
+        # 서식 표는 예시 표를 통째로 복사한다. 표 폭은 쪽 최대 폭에 예시 열 비율(결정 1).
+        return MODE_RULE if key == "width" else MODE_VALUE
+    return MODE_VALUE
+
+
+def coverage(analysis):
+    """서식 요소 분석에서 서식 적용에 쓰는 요소 수: {"total", "applied", "shown"}."""
+    total = applied = 0
+    for path, _, _ in detail_nodes(analysis or {}):
+        for key in element_map(analysis, path):
+            total += 1
+            applied += element_mode(key, path) != MODE_SHOW
+    return {"total": total, "applied": applied, "shown": total - applied}
+
+
 def detail_nodes(analysis):
     """세부사항 창 왼쪽 목록: (경로, 상위 경로, 이름). 경로로 element_map을 찾는다."""
     nodes = []
@@ -1165,12 +1301,21 @@ def _value(elements, key, default=None):
     return default if item is None else item["value"]
 
 
+# 문두기호 계층마다 글꼴·크기·굵게·문단 여백 밖에 더 복사하는 요소(계층_추가서식). 값은 분석값 그대로다.
+EXTRA_KEYS = ("font_latin", "italic", "underline", "strikeout", "color", "shade", "ratio", "spacing",
+              "align", "break_word")
+# 줄 간격 종류 → 한/글 COM LineSpacingType(실측 2026-10-04: 0 %, 1 고정, 2 여백만, 3 최소)
+LINE_TYPE_CODES = {"PERCENT": 0, "FIXED": 1, "BETWEEN_LINES": 2, "AT_LEAST": 3}
+
+
 def apply_to_profile(profile):
     """서식 요소 분석(사용자 수정 포함)을 서식 적용에 쓰는 프로필 값에 반영한다.
 
-    문두기호 규칙(글꼴·크기·굵게·기호 굵게·기호 앞 빈칸), 기호별 문단 모양, 쪽 여백, 일반 표
-    머리글·본문 글자, 보관한 서식 표 예시를 대표값에 맞춘다. 이미 규칙이 있는 문두기호만 고친다
-    (새 기호 규칙은 계층 분석이 정한다). 문단 모양 값은 HWPX case 단위(실제 HWPUNIT) 그대로 둔다.
+    문두기호 규칙(글꼴·크기·굵게·기호 굵게·기호 앞 빈칸), 기호별 문단 모양(여백·간격·모든 종류의 줄
+    간격), 계층별 추가 서식(영문 글꼴·기울임·밑줄·취소선·글자색·음영·장평·자간·정렬·줄 나눔 기준),
+    쪽 여백(제본 여백 포함)·용지 크기, 일반 표 머리글·본문 글자, 보관한 서식 표 예시를 대표값에 맞춘다.
+    이미 규칙이 있는 문두기호만 고친다(새 기호 규칙은 계층 분석이 정한다). 문단 모양 값은 HWPX case
+    단위(실제 HWPUNIT) 그대로 둔다.
     """
     analysis = profile.get("element_analysis")
     if not analysis:
@@ -1203,14 +1348,24 @@ def apply_to_profile(profile):
                               ("prev", "PrevSpacing"), ("next", "NextSpacing")):
                 if key in elements:
                     shape[name] = int(elements[key]["value"])
-            if _value(elements, "line_type") == "PERCENT" and "line" in elements:
-                shape.update(LineSpacingType=0, LineSpacing=int(elements["line"]["value"]))
+            line_type = _value(elements, "line_type")
+            if line_type in LINE_TYPE_CODES and "line" in elements:
+                shape.update(LineSpacingType=LINE_TYPE_CODES[line_type], LineSpacing=int(elements["line"]["value"]))
             shapes[marker] = shape
+            extra = {key: elements[key]["value"] for key in EXTRA_KEYS if key in elements}
+            if extra:
+                fmt.setdefault("계층_추가서식", {})[marker] = extra
+    _apply_rules(profile, analysis)
     page = analysis.get("page", {})
     margins = fmt.setdefault("여백_mm", {})
-    for key in ("left", "right", "top", "bottom", "header", "footer"):
+    for key in ("left", "right", "top", "bottom", "header", "footer", "gutter"):
         if "page_" + key in page:
             margins[key] = round(page["page_" + key]["value"] / HWPUNIT_PER_MM, 3)
+    # 용지 크기·방향은 복사하지 않고, 정리할 문서와 다르면 알리는 데 쓴다(결정 3).
+    if "page_width" in page and "page_height" in page:
+        fmt["용지_mm"] = {"width": round(page["page_width"]["value"] / HWPUNIT_PER_MM, 1),
+                         "height": round(page["page_height"]["value"] / HWPUNIT_PER_MM, 1),
+                         "landscape": bool(_value(page, "page_landscape", False))}
     tables = analysis.get("tables", {})
     table_format = profile.setdefault("table_format", {})
     for part in ("header", "body"):
@@ -1226,6 +1381,55 @@ def apply_to_profile(profile):
             stored[kind] = refresh_sample(sample, forms[kind])
     sync_hierarchy(profile)
     return profile
+
+
+def _apply_rules(profile, analysis):
+    """글 길이에 따라 달라지는 것은 숫자 대신 규칙으로 복사한다(서식 복사 전면 복제 3단계).
+
+    - 내어쓰기 기준: 라벨 뒤·기호 뒤면 내어쓰기 규칙을 켜고 그 기준으로 계산하게 한다(첫 줄 값은 복사하지 않음).
+      고정 값·없음이면 규칙이 손대지 않고 복사한 첫 줄 값을 쓴다.
+    - 괄호·콜론 라벨 굵게: 예시에서 라벨을 굵게 쓴 계층만 굵게 한다.
+    - 괄호 안 글자 줄임: 예시에서 가장 많이 쓴 줄임 폭으로 괄호 부연설명 축소를 켠다.
+    - 계층 복귀 간격, 제목·개요 표와 첫 문두기호 문장 사이 간격.
+    """
+    fmt, options = profile["format"], profile["options"]
+    shapes = fmt.setdefault("복사_문단모양", {})
+    rules, label_symbols, deltas = {}, {}, Counter()
+    returns = {}
+    for group in analysis.get("paragraph_groups", []):
+        marker, elements = group["marker"], group["elements"]
+        if not marker:
+            continue
+        rule = _value(elements, "hanging_rule")
+        if rule in HANGING_RULES:
+            rules[marker] = rule
+            if rule in ("after_label", "after_marker") and marker in shapes:
+                shapes[marker].pop("Indentation", None)
+        bold = _value(elements, "label_bold")
+        if bold is not None:
+            label_symbols[marker] = bool(bold)
+        delta = _value(elements, "paren_delta")
+        if delta:
+            deltas[int(delta)] += group.get("count", 1)
+        back, normal = _value(elements, "return_prev"), _value(elements, "prev")
+        if back is not None and normal is not None and abs(back - normal) > max(100, 0.1 * abs(normal)):
+            returns[marker] = int(back)
+    fmt["내어쓰기_규칙"] = rules
+    options["std_hanging_indent"] = any(r in ("after_label", "after_marker") for r in rules.values())
+    if label_symbols:
+        options["paren_label_bold"] = any(label_symbols.values())
+        options["label_symbols"] = {**options.get("label_symbols", {}), **label_symbols}
+    if deltas:
+        delta = deltas.most_common(1)[0][0]
+        options["paren_shrink"] = delta > 0
+        fmt["괄호_축소_pt"] = round(delta / 100, 1)
+    fmt["복귀_간격"] = returns
+    gap = (analysis.get("spacing_rules") or {}).get("overview_to_first")
+    if gap is not None:
+        fmt["제목뒤_간격"] = int(gap)
+    # 쪽 번호는 모양만 복사한다(정리할 문서에 쪽 번호가 없으면 넣지 않음, 결정 4).
+    if analysis.get("page_number"):
+        fmt["쪽번호"] = dict(analysis["page_number"])
 
 
 def sync_from_hierarchy(profile, before_styles):

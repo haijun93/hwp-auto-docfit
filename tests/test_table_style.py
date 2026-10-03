@@ -7,7 +7,7 @@ from pathlib import Path
 from defusedxml import ElementTree as ET
 
 from docfit_core.table_style import (HeaderPool, apply_table_style, default_style, describe_style,
-                                     is_grid_table, learn_table_style, valid_style)
+                                     is_grid_table, learn_from_table, learn_table_style, valid_style)
 
 HP_URI = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 HP = f'xmlns:hp="{HP_URI}"'
@@ -187,6 +187,31 @@ class ApplyTest(unittest.TestCase):
             cell.pop("text_align", None)
         _, read = _apply(_grid(3, 3, text=lambda r, c: "짧은 글"), learned)
         self.assertEqual(read.align((2, 2)), "CENTER")
+
+    def test_cell_line_spacing_and_table_inner_margin_are_learned_and_copied(self):
+        # 서식 복사 전면 복제 2단계: 칸 문단 줄 간격과 표 기본 안 여백도 배우고 입힌다.
+        import re
+        text = ET.tostring(_header(), encoding="unicode")
+        switch = ('<hp:switch xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" '
+                  'xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head"><hp:case>'
+                  '<hh:lineSpacing type="PERCENT" value="160" unit="HWPUNIT"/></hp:case><hp:default>'
+                  '<hh:lineSpacing type="PERCENT" value="160" unit="HWPUNIT"/></hp:default></hp:switch>')
+        closing = re.search(r"</[\w]+:paraPr>", text).group(0)
+        header = ET.fromstring(text.replace(closing, switch + closing, 1))
+        learned = learn_from_table(header, _grid(3, 3))
+        self.assertEqual(learned["cells"][0]["line"], {"type": "PERCENT", "value": 160})
+        self.assertEqual(learned["in_margin"], {"left": "510", "right": "510", "top": "141", "bottom": "141"})
+        style = default_style()
+        for cell in style["cells"]:
+            cell["line"] = {"type": "FIXED", "value": 900}
+        style["in_margin"] = {"left": "300", "right": "300", "top": "100", "bottom": "100"}
+        table = _grid(3, 3)
+        apply_table_style(HeaderPool(header, style), table)
+        paras = {x.get("id"): x for x in header.iter() if _tag(x) == "paraPr"}
+        p = next(x for x in table.iter() if _tag(x) == "p")
+        spacing = [x for x in paras[p.get("paraPrIDRef")].iter() if _tag(x) == "lineSpacing"]
+        self.assertEqual([(x.get("type"), x.get("value")) for x in spacing], [("FIXED", "900"), ("FIXED", "1800")])
+        self.assertEqual(next(x for x in table if _tag(x) == "inMargin").get("left"), "300")
 
     def test_body_emphasis_color_and_bold_are_kept(self):
         table = _grid(3, 3, char=lambda r, c: 1 if (r, c) == (2, 1) else 0)

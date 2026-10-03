@@ -15,6 +15,14 @@ from docfit_core.progress_guide import guide_state
 from docfit_core.stage_selection import STAGE_EXAMPLES, default_choice, stages_for_mode
 
 # 화면에서 바로 켜고 끄는 공통 설정(이름 → 앱의 Tk 변수 속성). 값을 바꾸면 앱이 설정 파일에 저장한다.
+def _format_coverage(analysis):
+    try:
+        from docfit_core.format_elements import coverage
+        return coverage(analysis)
+    except Exception:
+        return None
+
+
 QUICK_OPTIONS = {
     "autoclose": "autoclose_var",
     "verify": "verify_var",
@@ -32,6 +40,9 @@ class DesktopWebBridge:
         # 사용자가 웹 창을 닫아 종료하는 중인지. 이때는 창이 스스로 닫히므로
         # 종료 감시 스레드가 destroy()를 다시 부르면 안 된다(pywebview 이중 닫힘 오류).
         self.user_closing = False
+        # 창에 끌어 놓은 파일을 어디에 넣을지: documents(정리할 문서 목록) 또는 format(예시 서식 복제).
+        # 화면의 '서식 관리' 창이 열려 있는 동안 format이다.
+        self.drop_target = "documents"
 
     def _tk(self, callback, timeout=120, front=False):
         result = Future()
@@ -74,16 +85,35 @@ class DesktopWebBridge:
         ]
 
     def _profiles(self):
+        """서식 목록: 표시 이름(기관 포함), 이름·기관, 기본 서식 여부, 예시 파일 이름, 사용 중 여부."""
         gui = self.gui
         profiles = getattr(gui, "_프로파일들", {}) or {}
         ids = getattr(gui, "_프로파일_ids", None) or list(profiles)
+        active = getattr(gui, "_활성_서식_프로파일", "")
         items = []
         for identifier in ids:
             profile = profiles.get(identifier) or {}
             name = str(profile.get("name") or "기본 서식")
             organization = str(profile.get("organization") or "").strip()
-            items.append({"id": identifier, "name": f"[{organization}] {name}" if organization else name})
+            source = profile.get("source")
+            analysis = profile.get("element_analysis")
+            items.append({
+                "id": identifier,
+                "name": f"[{organization}] {name}" if organization else name,
+                "title": name,
+                "organization": organization,
+                "builtin": not identifier,
+                "source": str(source.get("filename") or "") if isinstance(source, dict) else "",
+                "active": identifier == active,
+                # 예시 보고서에서 분석한 서식 요소 가운데 정리에 쓰는 수(서식 관리 창의 복제 범위 요약)
+                "coverage": _format_coverage(analysis) if analysis else None,
+            })
         return items
+
+    def _format_task(self):
+        gui = self.gui
+        return {"busy": bool(getattr(gui, "_서식분석중", False)),
+                "file": str(getattr(gui, "_서식분석_파일", "") or "")}
 
     def get_state(self):
         def snapshot():
@@ -128,6 +158,8 @@ class DesktopWebBridge:
                 "stages": self._stages(mode),
                 "profiles": self._profiles(),
                 "profile": getattr(gui, "_활성_서식_프로파일", ""),
+                "format_task": self._format_task(),
+                "drop_target": self.drop_target,
                 "options": {
                     name: bool(getattr(gui, attribute).get())
                     for name, attribute in QUICK_OPTIONS.items()
@@ -483,6 +515,77 @@ class DesktopWebBridge:
         self._tk(select)
         return self.get_state()
 
+    # ---- 서식 관리(예시 보고서로 서식 복제·이름 바꾸기·세부 수정·삭제) ----
+    def set_drop_target(self, target):
+        """끌어 놓은 파일을 넣을 곳을 바꾼다: documents(문서 목록) 또는 format(예시 서식 복제)."""
+        if target not in ("documents", "format"):
+            raise ValueError("지원하지 않는 놓기 대상입니다.")
+        self.drop_target = target
+        window = self.window
+        if window is not None and hasattr(window, "run_js"):
+            text = ("여기에 놓으면 이 보고서의 서식을 복제합니다" if target == "format"
+                    else "여기에 놓으면 문서 목록에 추가됩니다")
+            try:
+                window.run_js(f"window.docfitDropText = {text!r};")
+            except Exception:
+                logging.getLogger(__name__).debug("drop text update failed", exc_info=True)
+        return self.get_state()
+
+    def add_format_paths(self, paths):
+        """끌어 놓은 예시 보고서(HWP/HWPX) 중 첫 파일의 서식을 분석해 새 서식으로 복제한다."""
+        candidates = [str(value or "").strip() for value in (paths or [])]
+        candidates = [path for path in candidates if Path(path).suffix.lower() in (".hwp", ".hwpx")]
+
+        def start():
+            gui = self.gui
+            if gui.running or getattr(gui, "_서식분석중", False):
+                gui.status_var.set("작업이나 서식 분석이 끝난 뒤 다시 놓아 주세요.")
+                return
+            if not candidates:
+                gui.status_var.set("서식을 복제하려면 HWP 또는 HWPX 예시 보고서를 놓아 주세요.")
+                return
+            if len(candidates) > 1:
+                gui.로그표시(f"예시 보고서는 한 번에 하나씩 복제합니다: {Path(candidates[0]).name}")
+            gui._서식_분석_시작(candidates[0], 이름묻기=False)
+
+        self._tk(start)
+        return self.get_state()
+
+    def receive_drop(self, paths):
+        """창에 끌어 놓은 파일: '서식 관리' 창이 열려 있으면 예시 서식 복제, 아니면 문서 목록에 추가."""
+        if self.drop_target == "format":
+            return self.add_format_paths(paths)
+        return self.add_paths(paths)
+
+    def add_format_file(self):
+        """예시 보고서 파일을 골라 서식을 복제한다."""
+        self._tk(self.gui._서식_파일에서_추가, timeout=None, front=True)
+        return self.get_state()
+
+    def write_format_example(self):
+        """빈 한/글 문서에 예시를 직접 써서 서식을 만든다."""
+        self._tk(self.gui._서식_예시편집_시작, timeout=None, front=True)
+        return self.get_state()
+
+    def _with_notice(self, message):
+        state = self.get_state()
+        if message:
+            state["notice"] = message
+        return state
+
+    def rename_profile(self, identifier, name, organization=""):
+        """서식 이름(과 기관)을 바꾼다. 안 되면 notice에 이유를 담아 돌려준다."""
+        return self._with_notice(self._tk(lambda: self.gui._서식_이름_저장(str(identifier or ""), name, organization)))
+
+    def delete_profile(self, identifier):
+        """서식을 삭제한다(확인은 화면이 한다). 기본 서식은 삭제하지 않는다."""
+        return self._with_notice(self._tk(lambda: self.gui._서식_삭제(str(identifier or ""))))
+
+    def edit_profile(self, identifier):
+        """서식 세부사항 창을 열어 대표값을 고친다(창을 닫을 때까지 기다린다)."""
+        self._tk(lambda: self.gui._서식_수정하기(str(identifier or "")), timeout=None, front=True)
+        return self.get_state()
+
     def set_option(self, name, value):
         """빠른 설정의 켜기·끄기 값을 바꾼다. 앱 설정 변수의 변경 감시가 설정 파일에 저장한다."""
         attribute = QUICK_OPTIONS.get(name)
@@ -564,6 +667,8 @@ class _BrowserApi:
             "show_result", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",
             "set_exclude_tables", "set_card_option",
+            "set_drop_target", "add_format_file", "write_format_example", "rename_profile", "delete_profile",
+            "edit_profile",
         ):
             setattr(self, name, getattr(bridge, name))
 
@@ -585,7 +690,7 @@ _FILE_DROP_SCRIPT = """
   let depth = 0;
   const overlay = document.createElement('div');
   overlay.id = 'docfit-file-drop';
-  overlay.textContent = '여기에 놓으면 문서 목록에 추가됩니다';
+  overlay.textContent = window.docfitDropText || '여기에 놓으면 문서 목록에 추가됩니다';
   overlay.style.cssText = 'display:none;position:fixed;inset:16px;z-index:2147483647;'
     + 'pointer-events:none;align-items:center;justify-content:center;border:3px dashed #2563eb;'
     + 'border-radius:24px;background:rgba(239,246,255,.94);color:#1e40af;'
@@ -595,6 +700,7 @@ _FILE_DROP_SCRIPT = """
   const hide = () => { depth = 0; overlay.style.display = 'none'; };
   document.addEventListener('dragenter', e => {
     if (!files(e)) return;
+    overlay.textContent = window.docfitDropText || '여기에 놓으면 문서 목록에 추가됩니다';
     e.preventDefault(); depth++; overlay.style.display = 'flex';
   }, true);
   document.addEventListener('dragover', e => {
@@ -627,7 +733,7 @@ def _bind_file_drop(web_window, bridge):
             paths = [item.get("pywebviewFullPath") for item in files if isinstance(item, dict)]
             paths = [path for path in paths if path]
             if paths:
-                bridge.add_paths(paths)
+                bridge.receive_drop(paths)
             elif files:
                 bridge._tk(lambda: bridge.gui.status_var.set(
                     "드롭한 파일 경로를 읽지 못했습니다. 문서 선택 버튼을 이용해 주세요."))
