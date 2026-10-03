@@ -98,6 +98,7 @@ class DesktopWebBridge:
                 "mode": mode,
                 "include_spacing": self._include_spacing(),
                 "reset_spacing": self._reset_spacing(),
+                "table_spacing": self._table_spacing(),
                 "status": gui.status_var.get(),
                 "running": bool(gui.running),
                 "range": {
@@ -250,6 +251,28 @@ class DesktopWebBridge:
                 variable.set(bool(on))   # 변경 감시가 세부 작업 값과 설정 파일을 함께 바꾼다
             else:
                 gui.stage_choices["spacing"]["reset_spacing"] = bool(on)
+            gui.selected_mode.set("spacing")
+            self._mode_selected()
+
+        self._tk(update)
+        return self.get_state()
+
+    def _table_spacing(self):
+        variable = getattr(self.gui, "table_spacing_var", None)
+        return True if variable is None else bool(variable.get())
+
+    def set_table_spacing(self, on):
+        """'자간 정리'의 '표 내 자간 정리'(설정 table_spacing)를 바꾸고 그 카드를 고른다.
+
+        끄면 표 칸 안 문장은 자간 초기화·자간 조정·줄 병합·단어 검사 대상에서 빠진다. 설정창의
+        '표 서식 내 문장도 자간조정하기'와 같은 값이며 설정 파일에 저장된다.
+        """
+        def update():
+            gui = self.gui
+            variable = getattr(gui, "table_spacing_var", None)
+            if gui.running or variable is None:
+                return
+            variable.set(bool(on))
             gui.selected_mode.set("spacing")
             self._mode_selected()
 
@@ -479,7 +502,7 @@ class _BrowserApi:
             "open_settings", "text_input", "open_stages", "open_log",
             "open_results", "next_job", "run_tool", "open_result",
             "show_result", "set_stage", "reset_stages", "set_stage_default",
-            "set_profile", "set_option", "set_include_spacing", "set_reset_spacing",
+            "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",
         ):
             setattr(self, name, getattr(bridge, name))
 

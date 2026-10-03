@@ -222,6 +222,39 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('spacing card toggles table spacing', (tester) async {
+    tester.view.physicalSize = const Size(1024, 820);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final calls = <List<Object?>>[];
+    final state = initialState();
+    state['files'] = [
+      {'name': '문서.hwp', 'folder': r'C:\문서'},
+    ];
+    state['table_spacing'] = true;
+    Future<Object?> api(String name, List<Object?> args) async {
+      if (name != 'get_state') calls.add([name, ...args]);
+      if (name == 'set_table_spacing') {
+        state['table_spacing'] = args.first;
+        state['mode'] = 'spacing';
+      }
+      return Map<String, dynamic>.from(state);
+    }
+
+    await tester.pumpWidget(DocFitApp(api: api));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('작업 방식 선택'));
+    await tester.pumpAndSettle();
+    expect(find.text('표 내 자간 정리'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('tableSpacingSwitch')));
+    await tester.pumpAndSettle();
+    expect(calls.last, ['set_table_spacing', false]);
+    expect(find.text('표 칸 안 문장은 자간 정리에서 빼요.'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('finished job moves to results with per-file actions', (
     tester,
   ) async {

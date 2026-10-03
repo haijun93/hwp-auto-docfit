@@ -109,6 +109,27 @@ class DateTest(unittest.TestCase):
         self.assertEqual(wa.days_between(date(2025, 7, 1), d, inclusive=True), 25)
 
 
+    def test_refresh_dates_keeps_original_notation(self):
+        today = date(2026, 10, 3)
+        self.assertEqual(wa.refresh_dates("22. 4. 19.(화)", today), ("26. 10. 3.(토)", 1))
+        self.assertEqual(wa.refresh_dates("’22. 4. 19.(화)", today)[0], "’26. 10. 3.(토)")
+        self.assertEqual(wa.refresh_dates("2022. 04. 09.(토)", today)[0], "2026. 10. 03.(토)")
+        self.assertEqual(wa.refresh_dates("2022년 4월 19일(화)", today)[0], "2026년 10월 3일(토)")
+        # 요일이 없는 날짜는 일정·기한일 수 있어 바꾸지 않는다.
+        self.assertEqual(wa.refresh_dates("기한 2022. 4. 19.", today), ("기한 2022. 4. 19.", 0))
+
+    def test_refresh_dates_short_year_for_title_tables(self):
+        today = date(2026, 10, 3)
+        # 제목 서식 날짜는 연도를 ’26 약어로 쓴다. 따옴표가 이미 있으면(앞 글 조각 포함) 겹쳐 붙이지 않는다.
+        self.assertEqual(wa.refresh_dates("2022. 4. 19.(화)", today, short_year=True), ("’26. 10. 3.(토)", 1))
+        self.assertEqual(wa.refresh_dates("22. 4. 19.(화)", today, short_year=True)[0], "’26. 10. 3.(토)")
+        self.assertEqual(wa.refresh_dates("’22. 4. 19.(화)", today, short_year=True)[0], "’26. 10. 3.(토)")
+        self.assertEqual(wa.refresh_dates("'22. 4. 19.(화)", today, short_year=True)[0], "'26. 10. 3.(토)")
+        self.assertEqual(wa.refresh_dates("22. 4. 19.(화)", today, short_year=True, before="’")[0],
+                         "26. 10. 3.(토)")
+        self.assertEqual(wa.refresh_dates("2022년 4월 19일(화)", today, short_year=True)[0], "’26년 10월 3일(토)")
+
+
 class TableCalcTest(unittest.TestCase):
     ROWS = wa.parse_table("구분\t1월\t2월\n인건비\t1,000\t2,000\n운영비\t500\t700")
 

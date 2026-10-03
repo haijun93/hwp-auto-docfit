@@ -36,6 +36,9 @@ ATTACH_FONT_STAGE = ("attachment_font", "붙임~끝. 묶음 글꼴·크기를 �
 # 준말 '표'의 본말(예시 표에서 배운 위치별 테두리·바탕색·글꼴)을 문서의 일반 표에 입힌다. 제목·개요·붙임
 # 선행 서식 다음, 일반 표 정밀 복제 앞에서 실행하며 서식통일 작업에서도 실행한다.
 TABLE_STYLE_STAGE = ("table_style", "기본 표 서식 (준말 '표'의 예시 표 서식 적용)")
+# 가로로 칸이 둘 이상인 표의 열 너비를 칸 글자 수 비율로 나누고 표 폭을 쪽 좌우 여백 사이로 맞춘다.
+# 기본 표 서식 다음, 일반 표 정밀 복제 앞에서 실행한다.
+TABLE_WIDTH_STAGE = ("table_width", "표 칸 너비 (글자 수 비례, 표 폭은 쪽 좌우 여백 기준)")
 DEFAULT_OFF = frozenset({"style_unify"})
 
 SPACING_STAGES = (
@@ -69,10 +72,11 @@ STAGE_EXAMPLES = {
     "control_short_line": "예: 표 셀·글상자의 짧은 마지막 줄을 앞줄에 모으도록 시도합니다.",
     "word_check": "예: 1차 조정 뒤 본문에 남은 단어 분리를 다시 검사합니다.",
     "control_word_check": "예: 1차 조정 뒤 표 셀·글상자에 남은 단어 분리를 다시 검사합니다.",
-    "abbreviation": "예: 줄 맨 앞(빈칸 제외) 어절이 준말인 '제목1: 지구 침공계획(안) 보고'·'로1 추진배경'·'붙임 자료명' 같은 줄을 가장 먼저 해당 서식 표로 바꾸고 준말 뒤 글을 표에 넣습니다(콜론은 있어도 없어도 됨).",
+    "abbreviation": "예: 줄 맨 앞(빈칸 제외) 어절이 준말이고 콜론이 이어지는 '제목1: 지구 침공계획(안) 보고'·'로1 : 추진배경'·'붙임: 자료명' 같은 줄을 가장 먼저 해당 서식 표로 바꾸고 준말 뒤 글을 표에 넣습니다(콜론이 없으면 바꾸지 않음).",
     "asterisk_superscript": "예: 'ㅇ (핵심 내용) 지자* 선행 투입 → 함대** 발진'에서 단어 뒤에 붙은 *와 **를 위첨자로 바꿉니다. 줄 맨 앞의 '* 설명'·'** 설명' 문두기호는 그대로 둡니다.",
     "attachment_font": "예: '붙임: 1. 지구 침공 세부 시행계획 1부.'부터 '끝.'까지 마침표로 끝나는 한 줄 문장들의 글꼴·크기를 ㅇ 문장과 같게 맞춥니다.",
     "text_table_convert": "예: '┌──┬──┐ / │ 구분 │ 내용 │ / └──┴──┘'처럼 박스 그림으로 그려 붙여넣은 표를 한/글의 실제 표로 바꿉니다.",
+    "table_width": "예: 칸 A1에 '도  시'(빈칸 포함 4자), B1에 '마 을 여  행'(8자)이 있으면 두 칸 너비를 1:2로 나누고, 표 전체 폭은 쪽 좌우 여백 사이 폭으로 맞춥니다. 짧은 낱말이 갈라지지 않을 최소 폭은 지키며 제목·중제목·붙임 서식 표는 두고, 그림·표가 든 표는 바꾸지 않습니다.",
     "table_style": "예: 준말 '표'에 담긴 예시 표처럼 머리글 행은 바탕색·이중 밑줄·한컴돋움 13pt 굵게, 본문은 휴먼명조 12pt로 맞추고 칸 위치별 테두리를 입힙니다. 준말 창의 '표 서식 학습…'으로 예시 표를 바꿉니다.",
     "table_unify": "예: 같은 모양 표에서 한 칸만 굴림이면 한컴돋움으로, 󰊱 제목 상자 하나만 10pt면 다른 제목 상자처럼 15pt로 맞춥니다. 칸에 맞추려 줄인 글자와 표 안 글자색은 그대로 둡니다.",
 }
@@ -80,7 +84,7 @@ STAGE_EXAMPLES = {
 
 _STAGE_BY_KEY = {stage[0]: stage for stage in FORMAT_STAGES + SPACING_STAGES + (
     UNIFY_STAGE, TEXT_TABLE_STAGE, TABLE_UNIFY_STAGE, ABBREVIATION_STAGE, ASTERISK_STAGE,
-    ATTACH_FONT_STAGE, TABLE_STYLE_STAGE)}
+    ATTACH_FONT_STAGE, TABLE_STYLE_STAGE, TABLE_WIDTH_STAGE)}
 # 서식 적용·한 번에 적용은 준말 → 본말 변환을 가장 먼저, 문두기호별 서식 등 보고서 표준서식을 두 번째로
 # 다른 모든 단계보다 먼저 실행한다(서식 통일은 두 단계를 하지 않는다).
 _FIRST_STAGES = ("abbreviation", "standard_format")
@@ -93,7 +97,7 @@ _MODE_STAGES = {
     "unify": ("table_style", "style_unify", "table_unify", "page_fit"),
     "format": _FIRST_STAGES + (
         "text_table_convert", "asterisk_superscript", "attachment_font", "pre_format", "table_style",
-        "precise_table", "normalize_space", "punctuation_space", "style_unify", "parenthesis",
+        "table_width", "precise_table", "normalize_space", "punctuation_space", "style_unify", "parenthesis",
         "table_format", "single_cell_spacing", "hanging_indent", "supplement_indent", "page_fit", "page_group"),
     # 서식통일은 예외 문단별 서식→자간→내어쓰기 처리이며 전체 자간 단계는 돌리지 않는다.
     "spacing": ("reset_spacing", "style_unify", "body_spacing", "short_line", "control_spacing",
@@ -101,8 +105,8 @@ _MODE_STAGES = {
     # 개요·한 칸 표 자간 조정(single_cell_spacing)은 서식 전용이다.
     "all": _FIRST_STAGES + (
         "text_table_convert", "reset_spacing", "asterisk_superscript", "attachment_font", "pre_format",
-        "table_style", "precise_table", "normalize_space", "punctuation_space", "style_unify", "parenthesis",
-        "table_format", "hanging_indent", "supplement_indent", "body_spacing", "short_line", "control_spacing",
+        "table_style", "table_width", "precise_table", "normalize_space", "punctuation_space", "style_unify",
+        "parenthesis", "table_format", "hanging_indent", "supplement_indent", "body_spacing", "short_line", "control_spacing",
         "control_short_line", "word_check", "control_word_check", "page_fit", "page_group"),
 }
 

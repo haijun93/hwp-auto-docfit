@@ -100,6 +100,9 @@ function renderModes(state) {
   $("resetOption").hidden = cardMode !== "spacing";
   $("resetSpacing").checked = state.reset_spacing !== false;
   $("resetSpacing").disabled = Boolean(state.running);
+  $("tableSpacingOption").hidden = cardMode !== "spacing";
+  $("tableSpacing").checked = state.table_spacing !== false;
+  $("tableSpacing").disabled = Boolean(state.running);
   $("spacingOption").hidden = cardMode !== "all";
   $("includeSpacing").checked = state.include_spacing !== false;
   $("includeSpacing").disabled = Boolean(state.running);
@@ -258,6 +261,7 @@ document.querySelectorAll(".mode-card").forEach((card)=>card.addEventListener("c
 }));
 $("includeSpacing").addEventListener("change",()=>callApi("set_include_spacing",$("includeSpacing").checked));
 $("resetSpacing").addEventListener("change",()=>callApi("set_reset_spacing",$("resetSpacing").checked));
+$("tableSpacing").addEventListener("change",()=>callApi("set_table_spacing",$("tableSpacing").checked));
 
 $("rangeBox").addEventListener("toggle",()=>{
   if (window.pywebview?.api && !lastState?.running) callApi("set_range",$("rangeBox").open,$("rangeStart").value,$("rangeEnd").value);

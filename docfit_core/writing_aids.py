@@ -144,6 +144,38 @@ def add_weekdays(text: str) -> str:
     return _DATE.sub(repl, text)
 
 
+# 요일이 붙은 날짜(’22. 4. 19.(화)·2022. 04. 19.(화)·2022년 4월 19일(화)). 따옴표가 다른 글자 묶음에
+# 떨어져 있어도 찾도록 두 자리 연도도 받되, 요일 괄호가 있어야 날짜로 본다.
+_DATED = re.compile(r"(?P<y>(?<!\d)\d{4}|(?<!\d)\d{2})(?P<s1>\s*[.년]\s*)(?P<m>\d{1,2})(?P<s2>\s*[.월]\s*)"
+                    r"(?P<d>\d{1,2})(?P<s3>\s*[.일]?\s*)\((?P<w1>\s*)[월화수목금토일](?P<w2>\s*)\)")
+
+
+_APOSTROPHES = "’'‘`´"
+
+
+def refresh_dates(text: str, today: date, short_year: bool = False, before: str = "") -> tuple[str, int]:
+    """요일이 붙은 날짜를 today로 바꾼다. 연도 자리수·구분자·빈칸·0 채움은 원래 표기를 따른다.
+
+    short_year면 연도를 ’26처럼 따옴표 붙은 두 자리 약어로 쓴다(제목 서식 표기). 바로 앞에 따옴표가 이미
+    있으면 그 따옴표를 그대로 둔다. before는 text 앞에 이어지는 글(따옴표가 앞 글 조각에 있을 때 쓴다).
+    """
+    text = text or ""
+
+    def pad(original: str, value: int) -> str:
+        return f"{value:02d}" if len(original) == 2 and original.startswith("0") else str(value)
+
+    def repl(m):
+        if short_year:
+            prev = (before + text[:m.start()])[-1:]
+            year = ("" if prev and prev in _APOSTROPHES else "’") + f"{today.year % 100:02d}"
+        else:
+            year = str(today.year) if len(m.group("y")) == 4 else f"{today.year % 100:02d}"
+        return (year + m.group("s1") + pad(m.group("m"), today.month) + m.group("s2")
+                + pad(m.group("d"), today.day) + m.group("s3")
+                + f"({m.group('w1')}{WEEKDAYS[today.weekday()]}{m.group('w2')})")
+    return _DATED.subn(repl, text)
+
+
 def month_bounds(ref: date, offset: int = 0) -> tuple[date, date]:
     y, m = ref.year, ref.month + offset
     y += (m - 1) // 12
