@@ -20,7 +20,7 @@ from .table_style import valid_style
 
 # 서식 표 종류 → 화면에 보여 줄 이름
 FORMAT_KINDS: dict[str, str] = {
-    "title1": "제목 서식1 표",
+    "title1": "제목 서식1 표 (쉼표 앞은 부제)",
     "title2": "제목 서식2 표 (쉼표 앞은 부제)",
     "overview": "개요(요지) 서식 표",
     "midtitle": "중제목 서식 표 (준말 끝 숫자 = 로마자 번호, 예: 로1 → Ⅰ)",

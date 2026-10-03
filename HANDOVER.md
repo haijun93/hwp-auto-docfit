@@ -15,7 +15,7 @@
 | 브랜치 | `main` = 베타(배포선), `alpha` = 새 기능 시험판 |
 | 원격 | `github` = 원본(https://github.com/haijun93/hwp-auto-docfit), `origin` = GitLab 백업(gitlab.aigov.go.kr/haijun93/hwp_autodocfit) |
 | 사용자 업데이트 | 앱이 GitLab "최신 릴리스"를 조회해 새 exe를 알림 |
-| 테스트 | `python -m unittest discover -s tests` → 592개 통과(2026-10-03 기준) |
+| 테스트 | `python -m unittest discover -s tests` → 598개 통과(2026-10-03 기준) |
 | 사용자 | 마포구청 공무원(개발자이자 실사용자). 한국어로 소통, 결과는 개조식 공문서 문체를 선호 |
 
 ---

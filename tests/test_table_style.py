@@ -154,7 +154,7 @@ class ApplyTest(unittest.TestCase):
         self.assertIsNone(read.face_color((3, 1)))
         self.assertEqual(read.font((3, 1))[:3], ("휴먼명조", 1200, False))
         self.assertEqual(read.align((3, 0)), "DISTRIBUTE")
-        self.assertEqual(read.align((3, 2)), "CENTER")
+        self.assertEqual(read.align((3, 2)), "CENTER")      # 숫자만 있는 본문 칸('3-2')은 예시 정렬
         self.assertEqual(read.side((4, 0), "leftBorder"), "NONE")
         self.assertEqual(read.side((4, 3), "rightBorder"), "NONE")
         self.assertEqual(read.valign((2, 2)), "CENTER")
@@ -162,10 +162,30 @@ class ApplyTest(unittest.TestCase):
 
     def test_long_body_text_keeps_its_alignment_but_header_is_aligned(self):
         long_text = "가" * 40
-        table = _grid(3, 3, text=lambda r, c: long_text if (r, c) in ((0, 1), (2, 1)) else "짧은 글")
+        table = _grid(3, 3, text=lambda r, c: long_text if (r, c) in ((0, 1), (2, 0)) else "짧은 글")
         _, read = _apply(table)
-        self.assertEqual(read.align((2, 1)), "LEFT")     # 여러 줄 긴 글은 원래 정렬
+        self.assertEqual(read.align((2, 0)), "LEFT")     # 첫 열 여러 줄 긴 글은 원래 정렬
         self.assertEqual(read.align((0, 1)), "CENTER")   # 머리글은 길어도 예시 정렬
+        self.assertEqual(read.align((1, 0)), "DISTRIBUTE")
+
+    def test_default_style_left_aligns_body_sentences_after_first_column(self):
+        # 내장 기본값: B2·B3 … 칸 문장은 길이와 관계없이 왼쪽 정렬, 숫자·날짜 칸과 머리글·첫 열은 예시 정렬
+        texts = {(0, 0): "구  분", (0, 1): "내  용", (0, 2): "배점",
+                 (1, 0): "추진 방향", (1, 1): "기술 발전 차단 후 함대 도착 시 일괄 점령 " * 3, (1, 2): "20",
+                 (2, 0): "소요 기간", (2, 1): "함대 이동에 약 450년 소요 예상", (2, 2): "10. 3.(토)",
+                 (3, 0): "투입 규모", (3, 1): "함선 2,000여 척", (3, 2): "1,000원"}
+        rows = ET.fromstring(_table_xml(4, 3, [(r, _cell(r, c, texts[(r, c)])) for r in range(4) for c in range(3)]))
+        _, read = _apply(rows)
+        for pos in ((1, 1), (2, 1), (3, 1)):
+            self.assertEqual(read.align(pos), "LEFT", pos)
+        for pos in ((1, 2), (2, 2), (3, 2), (0, 1), (0, 2)):
+            self.assertEqual(read.align(pos), "CENTER", pos)
+        self.assertEqual(read.align((2, 0)), "DISTRIBUTE")
+        # 사용자가 배운 서식은 예시 정렬을 그대로 따른다(문장 왼쪽 정렬은 내장 기본값에만).
+        learned = default_style()
+        for cell in learned["cells"]:
+            cell.pop("text_align", None)
+        _, read = _apply(_grid(3, 3, text=lambda r, c: "짧은 글"), learned)
         self.assertEqual(read.align((2, 2)), "CENTER")
 
     def test_body_emphasis_color_and_bold_are_kept(self):

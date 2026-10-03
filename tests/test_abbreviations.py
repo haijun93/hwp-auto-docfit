@@ -258,7 +258,7 @@ class DocumentConversionTest(unittest.TestCase):
         with_sub = [p for p in ns['제목_문단들'](ns['제목_셀들'](tables[0])[0])]
         self.assertEqual([ns['제목_문자열'](p) for p in with_sub],
                          ['희망2023 나눔캠페인', '‘사랑의 온도탑’ 제막행사 검토보고'])
-        self.assertEqual(sizes(with_sub[0]), {'1500'})   # 쉼표 앞 = 부제 15pt
+        self.assertEqual(sizes(with_sub[0]), {'1700'})   # 쉼표 앞 = 부제 17pt
         self.assertEqual(sizes(with_sub[1]), {'2700'})   # 쉼표 뒤 = 제목 27pt
         self.assertEqual([align(p) for p in with_sub], ['CENTER', 'CENTER'])
         self.assertEqual((tables[0].get('rowCnt'), tables[0].get('colCnt')), ('2', '1'))
@@ -266,6 +266,23 @@ class DocumentConversionTest(unittest.TestCase):
         self.assertEqual(len(only_title), 1)             # 쉼표 없음 = 27pt 제목 한 줄
         self.assertEqual(sizes(only_title[0]), {'2700'})
         self.assertEqual(align(only_title[0]), 'CENTER')
+
+    def test_title1_with_comma_has_17pt_subtitle(self):
+        # '제목:'(= 제목1)도 첫 쉼표 앞은 부제 17pt(부제 안 괄호도 17pt), 뒤는 제목 27pt 두 줄이다.
+        ns = self.ns
+        _, count, header, section = self._convert(
+            self._p('제목: 마포순환열차버스 사업종료(2026.9.30.)에 따른, 전기버스 활용방안 검토자료'))
+        self.assertEqual(count, 1)
+        chars = {c.get('id'): c for c in header.iter() if self.name(c) == 'charPr'}
+        table = next(t for t in section.iter() if self.name(t) == 'tbl')
+        self.assertEqual((table.get('rowCnt'), table.get('colCnt')), ('2', '2'))
+        paras = [p for p in ns['제목_문단들'](ns['제목_셀들'](table)[0]) if ns['제목_문자열'](p).strip()]
+        self.assertEqual([ns['제목_문자열'](p) for p in paras],
+                         ['마포순환열차버스 사업종료(2026.9.30.)에 따른', '전기버스 활용방안 검토자료'])
+        heights = [{chars[r.get('charPrIDRef')].get('height') for r in p if self.name(r) == 'run'
+                    and ns['제목_문자열'](r).strip()} for p in paras]
+        self.assertEqual(heights, [{'1700'}, {'2700'}])
+        self.assertEqual(ns['제목_유형판별'](table, 빈칸허용=True), 2)
 
     def test_title1_text_is_centered_27pt(self):
         ns = self.ns
