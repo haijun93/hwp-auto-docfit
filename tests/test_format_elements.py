@@ -264,6 +264,96 @@ class FormatElementsTest(unittest.TestCase):
         item = analysis["paragraph_groups"][number]["elements"]["font"]
         self.assertEqual((item["analyzed"], item["edited"]), ("명조", True))
 
+    def test_full_copy_extra_values_line_types_and_paper(self):
+        # 서식 복사 전면 복제 1단계: 계층별 추가 서식, 모든 줄 간격 종류, 용지 크기·방향, 제본 여백
+        analysis = copy.deepcopy(self.analysis)
+        group = next(g for g in analysis["paragraph_groups"] if g["marker"] == "ㅇ")
+        group["elements"]["line_type"]["value"] = "FIXED"
+        group["elements"]["line"]["value"] = 1000
+        group["elements"]["break_word"] = {"value": "BREAK_WORD"}
+        profile = {"format": {"기호_규칙": [("ㅇ", 1, "기존", 15, True, False)], "복사_문단모양": {}, "여백_mm": {}},
+                   "options": {}, "element_analysis": analysis}
+        fe.apply_to_profile(profile)
+        extra = profile["format"]["계층_추가서식"]["ㅇ"]
+        self.assertEqual((extra["align"], extra["break_word"], extra["ratio"], extra["spacing"]),
+                         ("JUSTIFY", "BREAK_WORD", 100, 0))
+        self.assertEqual((extra["italic"], extra["underline"], extra["color"]), (False, "NONE", "#000000"))
+        shape = profile["format"]["복사_문단모양"]["ㅇ"]
+        self.assertEqual((shape["LineSpacingType"], shape["LineSpacing"]), (1, 1000))
+        self.assertEqual(profile["format"]["용지_mm"], {"width": 210.0, "height": 297.0, "landscape": False})
+        self.assertEqual(profile["format"]["여백_mm"]["gutter"], 0)
+        self.assertFalse(self.analysis["page"]["page_landscape"]["value"])
+        # 한글 줄 나눔 기준은 문단 모양의 breakSetting에서 읽는다.
+        para = ET.fromstring(f'<hh:paraPr {NS} id="9"><hh:breakSetting breakLatinWord="KEEP_WORD" '
+                             'breakNonLatinWord="BREAK_WORD" widowOrphan="0"/></hh:paraPr>')
+        self.assertEqual(fe.para_values(para)["break_word"], "BREAK_WORD")
+        self.assertEqual(fe.format_value("break_word", "KEEP_WORD"), "어절")
+
+    def test_body_box_is_kept_as_sample(self):
+        # 제목 표 뒤가 아닌 한 칸 상자도 서식 적용용 예시로 보관한다.
+        path = Path(self.folder.name) / "box.hwpx"
+        section = (f'<hs:sec {NS}><hp:p paraPrIDRef="1" styleIDRef="0"><hp:run charPrIDRef="0"><hp:secPr>'
+                   '<hp:pagePr width="59528" height="84186"><hp:margin header="3600" footer="3600" gutter="0" '
+                   'left="5102" right="5102" top="3600" bottom="3600"/></hp:pagePr></hp:secPr></hp:run></hp:p>'
+                   + _p(0, (1, "ㅇ"), (0, " 앞 문장입니다"))
+                   + f'<hp:p paraPrIDRef="1" styleIDRef="0"><hp:run charPrIDRef="0">{OVERVIEW}</hp:run></hp:p>'
+                   + '</hs:sec>')
+        with ZipFile(path, "w") as archive:
+            archive.writestr("mimetype", "application/hwp+zip")
+            archive.writestr("Contents/header.xml", HEADER)
+            archive.writestr("Contents/section0.xml", section)
+        analysis = fe.analyze_format_elements(path, classify)
+        self.assertIn("box", analysis["forms"])
+        self.assertIn("box", analysis["samples"])
+
+    def test_hanging_rule_is_judged_from_prefix_width(self):
+        # 'ㅇ (개요) 본문': 기호 뒤 글 시작 = ㅇ(1500)+빈칸(750) = 2250, 라벨 뒤 = 7500 (15pt, 장평 100)
+        text = "ㅇ (개요) 본문 문장입니다"
+        marker, label = (0, 1), (2, 6)
+        for indent, rule in ((-7500, "after_label"), (-2250, "after_marker"), (-5000, "fixed"), (0, "none")):
+            self.assertEqual(fe.hanging_rule(text, {"indent": indent, "size": 1500}, marker, label, 1), rule)
+        self.assertEqual(self.group("ㅇ")["elements"]["hanging_rule"]["value"], "fixed")
+
+    def test_rules_flow_into_profile(self):
+        analysis = copy.deepcopy(self.analysis)
+        group = next(g for g in analysis["paragraph_groups"] if g["marker"] == "ㅇ")
+        group["elements"]["hanging_rule"] = {"value": "after_label"}
+        group["elements"]["label_bold"] = {"value": True}
+        group["elements"]["return_prev"] = {"value": 2400}
+        analysis["spacing_rules"] = {"overview_to_first": 1400}
+        profile = {"format": {"기호_규칙": [("ㅇ", 1, "기존", 15, True, False)],
+                              "복사_문단모양": {"ㅇ": {"LeftMargin": 1500, "Indentation": -1310}}, "여백_mm": {}},
+                   "options": {"std_hanging_indent": False, "paren_shrink": False, "paren_label_bold": False},
+                   "element_analysis": analysis}
+        fe.apply_to_profile(profile)
+        fmt, options = profile["format"], profile["options"]
+        self.assertEqual(fmt["내어쓰기_규칙"]["ㅇ"], "after_label")
+        self.assertNotIn("Indentation", fmt["복사_문단모양"]["ㅇ"])     # 규칙으로 계산하므로 첫 줄 값은 복사하지 않음
+        self.assertTrue(options["std_hanging_indent"])
+        self.assertTrue(options["paren_label_bold"])
+        self.assertTrue(options["label_symbols"]["ㅇ"])
+        self.assertTrue(options["paren_shrink"])
+        self.assertEqual(fmt["괄호_축소_pt"], 2.0)
+        self.assertEqual(fmt["복귀_간격"], {"ㅇ": 2400})
+        self.assertEqual(fmt["제목뒤_간격"], 1400)
+
+    def test_gap_below_title_table_is_measured(self):
+        path = Path(self.folder.name) / "gap.hwpx"
+        seg = ('<hp:linesegarray><hp:lineseg textpos="0" vertpos="{v}" vertsize="{h}" textheight="{h}" baseline="0" '
+               'spacing="600" horzpos="0" horzsize="42520" flags="0"/></hp:linesegarray>')
+        section = (f'<hs:sec {NS}><hp:p paraPrIDRef="1" styleIDRef="0"><hp:run charPrIDRef="0"><hp:secPr>'
+                   '<hp:pagePr width="59528" height="84186"><hp:margin header="3600" footer="3600" gutter="0" '
+                   'left="5102" right="5102" top="3600" bottom="3600"/></hp:pagePr></hp:secPr></hp:run>'
+                   f'<hp:run charPrIDRef="0">{TITLE}</hp:run>' + seg.format(v=0, h=8000) + '</hp:p>'
+                   '<hp:p paraPrIDRef="2" styleIDRef="0"><hp:run charPrIDRef="1"><hp:t>□ 첫 문장</hp:t></hp:run>'
+                   + seg.format(v=10000, h=1700) + '</hp:p></hs:sec>')
+        with ZipFile(path, "w") as archive:
+            archive.writestr("mimetype", "application/hwp+zip")
+            archive.writestr("Contents/header.xml", HEADER)
+            archive.writestr("Contents/section0.xml", section)
+        analysis = fe.analyze_format_elements(path, classify)
+        self.assertEqual(analysis["spacing_rules"], {"overview_to_first": 10000 - 8000 - 600})
+
     def test_hierarchy_review_changes_move_into_analysis(self):
         analysis = copy.deepcopy(self.analysis)
         before = [{"role": "본문", "marker": "ㅇ", "font": "명조", "size_pt": 15}]

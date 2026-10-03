@@ -73,6 +73,10 @@ class _WorkspaceState extends State<Workspace> {
   final rangeStart = TextEditingController(text: '1');
   final rangeEnd = TextEditingController(text: '1');
   bool rangeOn = false, rangeLoaded = false;
+  // '서식 관리' 창은 별도 대화상자라 상태가 바뀔 때마다 다시 그리도록 알린다.
+  final stateVersion = ValueNotifier<int>(0);
+  // 서식 관리에서 안 된 이유(이름 중복 등)를 창 안에 보여 준다.
+  String? formatNotice;
 
   static const tabs = ['문서 선택', '작업 방식', '진행 과정', '결과 확인'];
   // (내부 모드, 이름, 설명, 아이콘, 결과 파일 접미사). 카드는 세 장이며, 서식 적용(format)은
@@ -151,6 +155,7 @@ class _WorkspaceState extends State<Workspace> {
   @override
   void dispose() {
     timer?.cancel();
+    stateVersion.dispose();
     rangeStart.dispose();
     rangeEnd.dispose();
     super.dispose();
@@ -168,6 +173,10 @@ class _WorkspaceState extends State<Workspace> {
     // 작업이 끝나면 진행 화면에서 결과 화면으로 넘어간다.
     if (wasRunning && !running && tab == 2 && results.isNotEmpty) tab = 3;
     wasRunning = running;
+    // 열린 '서식 관리' 창은 이 화면을 다 그린 뒤 다시 그린다(그리는 도중에 알리면 안 됨).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) stateVersion.value++;
+    });
   }
 
   Future<void> refresh() async {
@@ -196,7 +205,17 @@ class _WorkspaceState extends State<Workspace> {
     });
     try {
       final response = await widget.api(method, args);
-      if (mounted && response is Map) setState(() => apply(response));
+      if (mounted && response is Map) {
+        final notice = response['notice'];
+        setState(() {
+          formatNotice = notice is String && notice.isNotEmpty ? notice : null;
+          apply(response);
+        });
+        if (formatNotice != null) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(formatNotice!)));
+        }
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -1117,6 +1136,272 @@ class _WorkspaceState extends State<Workspace> {
     );
   }
 
+  // ---- 서식 관리: 예시 보고서를 끌어다 놓아 서식 복제, 이름 바꾸기·세부 수정·삭제 ----
+  Map get formatTask => state['format_task'] as Map? ?? const {};
+
+  Future<void> setDropTarget(String target) async {
+    try {
+      await widget.api('set_drop_target', [target]);
+    } catch (_) {}
+  }
+
+  Future<void> openFormats() async {
+    // 창이 열려 있는 동안 끌어 놓은 파일은 문서 목록이 아니라 서식 복제로 간다.
+    await setDropTarget('format');
+    if (!mounted) return;
+    setState(() => formatNotice = null);
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => ValueListenableBuilder<int>(
+        valueListenable: stateVersion,
+        builder: (ctx, _, __) => formatManager(ctx),
+      ),
+    );
+    await setDropTarget('documents');
+    refresh();
+  }
+
+  Future<void> renameFormat(Map p) async {
+    final result = await showDialog<(String, String)>(
+      context: context,
+      builder: (ctx) => RenameFormatDialog(
+        name: '${p['title'] ?? ''}',
+        organization: '${p['organization'] ?? ''}',
+      ),
+    );
+    if (result != null) {
+      await command('rename_profile', [p['id'], result.$1, result.$2]);
+    }
+  }
+
+  Future<void> deleteFormat(Map p) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('서식 삭제'),
+        content: Text("'${p['name']}' 서식을 삭제할까요?\n삭제하면 되돌릴 수 없어요."),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            key: const Key('confirmDeleteFormat'),
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xffdc2626)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('삭제'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) await command('delete_profile', [p['id']]);
+  }
+
+  Widget formatRow(Map p) {
+    final active = p['active'] == true;
+    final builtin = p['builtin'] == true;
+    final organization = '${p['organization'] ?? ''}';
+    final source = '${p['source'] ?? ''}';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+      decoration: BoxDecoration(
+        color: active ? _blueSoft : Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: active ? _blue : const Color(0xffe2e8f0)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            active ? Icons.check_circle : Icons.description_outlined,
+            color: active ? _blue : _faint,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      '${p['title'] ?? p['name']}',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    if (organization.isNotEmpty)
+                      Text('· $organization', style: const TextStyle(color: _muted, fontSize: 12)),
+                    if (active)
+                      const Text('사용 중', style: TextStyle(color: _blue, fontSize: 12, fontWeight: FontWeight.w700)),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  builtin
+                      ? '앱에 들어 있는 기본 공문서 서식'
+                      : (source.isNotEmpty ? '예시 보고서: $source' : '직접 만든 서식'),
+                  style: const TextStyle(fontSize: 12, color: _muted),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (p['coverage'] is Map)
+                  Text(
+                    '서식 요소 ${(p['coverage'] as Map)['total']}개 중 '
+                    '${(p['coverage'] as Map)['applied']}개 복제',
+                    style: const TextStyle(fontSize: 11, color: _faint),
+                  ),
+              ],
+            ),
+          ),
+          Wrap(
+            spacing: 2,
+            children: [
+              if (!active)
+                TextButton(
+                  key: Key('useFormat-${p['id']}'),
+                  onPressed: locked ? null : () => command('set_profile', [p['id']]),
+                  child: const Text('사용'),
+                ),
+              TextButton(
+                key: Key('editFormat-${p['id']}'),
+                onPressed: locked ? null : () => command('edit_profile', [p['id']]),
+                child: const Text('세부 수정'),
+              ),
+              if (!builtin) ...[
+                TextButton(
+                  key: Key('renameFormat-${p['id']}'),
+                  onPressed: locked ? null : () => renameFormat(p),
+                  child: const Text('이름 바꾸기'),
+                ),
+                TextButton(
+                  key: Key('deleteFormat-${p['id']}'),
+                  style: TextButton.styleFrom(foregroundColor: const Color(0xffdc2626)),
+                  onPressed: locked ? null : () => deleteFormat(p),
+                  child: const Text('삭제'),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget formatManager(BuildContext ctx) {
+    final analyzing = formatTask['busy'] == true;
+    final file = '${formatTask['file'] ?? ''}';
+    final status = '${state['status'] ?? ''}';
+    return Dialog(
+      insetPadding: const EdgeInsets.all(20),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 760, maxHeight: 680),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.style_outlined, color: _blue),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text('서식 관리', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                  ),
+                  IconButton(
+                    tooltip: '닫기',
+                    onPressed: () => Navigator.pop(ctx),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Container(
+                key: const Key('formatDropZone'),
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: _blueSoft,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: const Color(0xff93c5fd), width: 1.5),
+                ),
+                child: Column(
+                  children: [
+                    const Icon(Icons.file_copy_outlined, size: 30, color: _blue),
+                    const SizedBox(height: 8),
+                    const Text(
+                      '예시 보고서(HWP·HWPX)를 이 창에 끌어다 놓으세요',
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      '제목·개요 표, 문두기호 문장, 표의 글꼴·크기·문단 모양을 분석해 새 서식으로 복제해요. '
+                      '분석이 끝나면 이름과 세부값을 확인하는 창이 열리고, 저장하면 바로 이 서식을 써요.',
+                      style: TextStyle(fontSize: 12, color: _muted, height: 1.5),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.center,
+                      children: [
+                        FilledButton.icon(
+                          key: const Key('addFormatFile'),
+                          onPressed: locked || analyzing ? null : () => command('add_format_file'),
+                          icon: const Icon(Icons.folder_open_outlined, size: 18),
+                          label: const Text('파일에서 고르기'),
+                        ),
+                        OutlinedButton.icon(
+                          key: const Key('writeFormatExample'),
+                          onPressed: locked || analyzing ? null : () => command('write_format_example'),
+                          icon: const Icon(Icons.edit_note_rounded, size: 18),
+                          label: const Text('예시 직접 작성'),
+                        ),
+                      ],
+                    ),
+                    if (analyzing) ...[
+                      const SizedBox(height: 14),
+                      const LinearProgressIndicator(minHeight: 3),
+                      const SizedBox(height: 6),
+                      Text(
+                        '서식 분석 중 · $file',
+                        style: const TextStyle(fontSize: 12, color: _blue, fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (formatNotice != null) ...[
+                const SizedBox(height: 8),
+                Text(formatNotice!, style: const TextStyle(color: Color(0xffdc2626), fontSize: 12)),
+              ] else if (!analyzing && status.contains('서식')) ...[
+                const SizedBox(height: 8),
+                Text(status, style: const TextStyle(color: _muted, fontSize: 12)),
+              ],
+              const SizedBox(height: 16),
+              Text(
+                '서식 목록 (${profiles.length}개)',
+                style: const TextStyle(fontWeight: FontWeight.w700, color: _faint, fontSize: 12),
+              ),
+              const SizedBox(height: 8),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [for (final p in profiles) formatRow(p as Map)],
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '사용 중인 서식은 한 번에 적용(서식 적용) 작업에서 써요. 기본 서식은 지울 수 없고, 세부 수정하면 새 서식으로 저장돼요.',
+                style: TextStyle(fontSize: 12, color: _faint),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget profilePicker() {
     final ids = profiles.map((p) => '${p['id']}').toList();
     final current = '${state['profile'] ?? ''}';
@@ -1156,9 +1441,10 @@ class _WorkspaceState extends State<Workspace> {
         ),
         const SizedBox(width: 8),
         Tooltip(
-          message: '예시 문서에서 서식 복사·편집·이름 바꾸기',
+          message: '예시 보고서를 끌어다 놓아 서식 복제 · 이름 바꾸기 · 세부 수정 · 삭제',
           child: TextButton(
-            onPressed: locked ? null : () => command('open_settings'),
+            key: const Key('openFormatsButton'),
+            onPressed: locked ? null : openFormats,
             child: const Text('서식 관리'),
           ),
         ),
@@ -1744,6 +2030,63 @@ class _WorkspaceState extends State<Workspace> {
         ),
       ],
     ),
+  );
+}
+
+/// 서식 이름·기관 이름을 고치는 창. 입력 상자는 창이 완전히 닫힐 때 정리한다.
+class RenameFormatDialog extends StatefulWidget {
+  const RenameFormatDialog({super.key, required this.name, required this.organization});
+  final String name, organization;
+  @override
+  State<RenameFormatDialog> createState() => _RenameFormatDialogState();
+}
+
+class _RenameFormatDialogState extends State<RenameFormatDialog> {
+  late final name = TextEditingController(text: widget.name);
+  late final organization = TextEditingController(text: widget.organization);
+
+  @override
+  void dispose() {
+    name.dispose();
+    organization.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('서식 이름 바꾸기'),
+    content: SizedBox(
+      width: 380,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              key: const Key('formatNameField'),
+              controller: name,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: '서식 이름'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              key: const Key('formatOrganizationField'),
+              controller: organization,
+              decoration: const InputDecoration(
+                labelText: '기관 이름 (선택)',
+                helperText: '비워 두면 기관 없이 보여요.',
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+    actions: [
+      TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
+      FilledButton(
+        onPressed: () => Navigator.pop(context, (name.text.trim(), organization.text.trim())),
+        child: const Text('저장'),
+      ),
+    ],
   );
 }
 

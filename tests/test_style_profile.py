@@ -70,7 +70,7 @@ class StyleProfileTest(unittest.TestCase):
                 archive.writestr("Contents/section0.xml", SECTION)
             profile = analyze(source)
 
-        self.assertEqual(profile["profile_version"], 4)
+        self.assertEqual(profile["profile_version"], 5)   # 서식 복사 전면 복제(v5)
         self.assertAlmostEqual(profile["format"]["여백_mm"]["left"], 18, places=2)
         self.assertAlmostEqual(profile["format"]["여백_mm"]["right"], 18, places=2)
         self.assertEqual(profile["format"]["기본_장평"], 95)

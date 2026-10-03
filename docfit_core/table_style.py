@@ -193,18 +193,29 @@ def learn_from_table(header, table, source_name=""):
         align = next((x.get("horizontal") for x in para_pr.iter() if _tag(x) == "align"),
                      None) if para_pr is not None else None
         sub = _child(tc, "subList")
+        # 칸 문단 줄 간격(hp:case가 있으면 실제 값 쪽)도 배운다(서식 복사 전면 복제 2단계).
+        line = None
+        if para_pr is not None:
+            scope = next((x for x in para_pr.iter() if _tag(x) == "case"), para_pr)
+            spacing = next((x for x in scope.iter() if _tag(x) == "lineSpacing"), None)
+            if spacing is not None and (spacing.get("value") or "").lstrip("-").isdigit():
+                line = {"type": spacing.get("type") or "PERCENT", "value": int(spacing.get("value"))}
         cells.append({"border": border_id(tc.get("borderFillIDRef")), "char": char_id(char_pr),
-                      "align": align, "valign": sub.get("vertAlign") if sub is not None else None})
+                      "align": align, "valign": sub.get("vertAlign") if sub is not None else None,
+                      "line": line})
         for r in range(row, min(rows, row + row_span)):
             for c in range(col, min(cols, col + col_span)):
                 grid[r][c] = len(cells) - 1
     table_fill = copy.deepcopy(fills[table.get("borderFillIDRef")]) if table.get("borderFillIDRef") in fills else None
     if table_fill is not None:
         table_fill.attrib.pop("id", None)
+    in_margin = _child(table, "inMargin")
     return {"version": VERSION, "source": source_name, "rows": rows, "cols": cols,
             "header_rows": _header_rows(table), "grid": grid, "cells": cells,
             "borders": borders, "chars": char_specs,
-            "table_border": _xml(table_fill) if table_fill is not None else None}
+            "table_border": _xml(table_fill) if table_fill is not None else None,
+            "in_margin": {k: in_margin.get(k) for k in ("left", "right", "top", "bottom") if in_margin.get(k)}
+            if in_margin is not None else None}
 
 
 def valid_style(style):
@@ -398,6 +409,35 @@ class HeaderPool:
         self._chars[key] = self._append("charProperties", clone)
         return self._chars[key]
 
+    def para_line(self, base_id, line):
+        """문단 모양 base_id의 줄 간격을 line(종류·값)으로 바꾼 복제 ID. 같으면 그대로.
+
+        hp:switch가 있으면 case는 실제 값, default는 %가 아니면 두 배 값을 함께 고친다.
+        """
+        key = (base_id, "line", line["type"], line["value"])
+        if key in self._paras:
+            return self._paras[key]
+        source = next((x for x in self.groups["paraProperties"] if x.get("id") == base_id), None)
+        if source is None:
+            self._paras[key] = base_id
+            return base_id
+        clone = copy.deepcopy(source)
+        case = next((x for x in clone.iter() if _tag(x) == "case"), None)
+        default = next((x for x in clone.iter() if _tag(x) == "default"), None)
+        scopes = [(case, 1), (default, 2)] if case is not None else [(clone, 1)]
+        changed = False
+        for scope, factor in scopes:
+            spacing = next((x for x in scope.iter() if _tag(x) == "lineSpacing"), None) if scope is not None else None
+            if spacing is None:
+                continue
+            value = str(line["value"] * (1 if line["type"] == "PERCENT" else factor))
+            if spacing.get("type") != line["type"] or spacing.get("value") != value:
+                spacing.set("type", line["type"])
+                spacing.set("value", value)
+                changed = True
+        self._paras[key] = self._append("paraProperties", clone) if changed else base_id
+        return self._paras[key]
+
     def para_align(self, base_id, align):
         key = (base_id, align)
         if key in self._paras:
@@ -484,9 +524,14 @@ def apply_table_style(pool, table):
                     sentence or base_role == "header"
                     or _fits_one_line(paragraph, tc, table, spec["height"], ratio)):
                 paragraph.set("paraPrIDRef", pool.para_align(paragraph.get("paraPrIDRef"), align))
+            if base.get("line") and paragraph.get("paraPrIDRef") is not None:
+                paragraph.set("paraPrIDRef", pool.para_line(paragraph.get("paraPrIDRef"), base["line"]))
             for lineseg in [x for x in paragraph if _tag(x) == "linesegarray"]:
                 paragraph.remove(lineseg)
         count += 1
     if style.get("table_border"):
         table.set("borderFillIDRef", pool.border(ET.fromstring(style["table_border"])))
+    in_margin = _child(table, "inMargin")
+    if style.get("in_margin") and in_margin is not None:
+        in_margin.attrib.update(style["in_margin"])
     return count
