@@ -97,6 +97,7 @@ class DesktopWebBridge:
                 "count": len(gui.files),
                 "mode": mode,
                 "include_spacing": self._include_spacing(),
+                "reset_spacing": self._reset_spacing(),
                 "status": gui.status_var.get(),
                 "running": bool(gui.running),
                 "range": {
@@ -230,6 +231,26 @@ class DesktopWebBridge:
                 return
             variable.set(bool(on))
             gui.selected_mode.set("all" if on else "format")
+            self._mode_selected()
+
+        self._tk(update)
+        return self.get_state()
+
+    def _reset_spacing(self):
+        return bool(self.gui.stage_choices.get("spacing", {}).get("reset_spacing", True))
+
+    def set_reset_spacing(self, on):
+        """'자간 정리'의 '기존 자간 초기화'(세부 작업 01)를 바꾸고 그 카드를 고른다(설정 파일에 저장된다)."""
+        def update():
+            gui = self.gui
+            if gui.running:
+                return
+            variable = getattr(gui, "reset_spacing_var", None)
+            if variable is not None:
+                variable.set(bool(on))   # 변경 감시가 세부 작업 값과 설정 파일을 함께 바꾼다
+            else:
+                gui.stage_choices["spacing"]["reset_spacing"] = bool(on)
+            gui.selected_mode.set("spacing")
             self._mode_selected()
 
         self._tk(update)
@@ -458,7 +479,7 @@ class _BrowserApi:
             "open_settings", "text_input", "open_stages", "open_log",
             "open_results", "next_job", "run_tool", "open_result",
             "show_result", "set_stage", "reset_stages", "set_stage_default",
-            "set_profile", "set_option", "set_include_spacing",
+            "set_profile", "set_option", "set_include_spacing", "set_reset_spacing",
         ):
             setattr(self, name, getattr(bridge, name))
 

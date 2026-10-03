@@ -111,6 +111,8 @@ class _WorkspaceState extends State<Workspace> {
   String get mode => state['mode'] as String? ?? 'spacing';
   String get cardMode => mode == 'format' ? 'all' : mode;
   bool get includeSpacing => state['include_spacing'] != false;
+  // '자간 정리' 카드의 '기존 자간 초기화'(세부 작업 01과 같은 값).
+  bool get resetSpacing => state['reset_spacing'] != false;
   String get modeTitle => mode == 'format'
       ? '한 번에 적용(자간 조정 제외)'
       : modes.firstWhere((m) => m.$1 == mode, orElse: () => modes.first).$2;
@@ -944,6 +946,32 @@ class _WorkspaceState extends State<Workspace> {
                 ),
                 const SizedBox(height: 10),
                 Text(m.$3, style: const TextStyle(height: 1.6)),
+                if (m.$1 == 'spacing') ...[
+                  const SizedBox(height: 8),
+                  // 끄면 문서에 이미 있는 자간을 0%로 되돌리지 않고 그 위에서 정리한다.
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          '기존 자간 초기화',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      Switch(
+                        key: const Key('resetSpacingSwitch'),
+                        value: resetSpacing,
+                        onChanged: locked
+                            ? null
+                            : (on) => command('set_reset_spacing', [on]),
+                      ),
+                    ],
+                  ),
+                  if (!resetSpacing)
+                    const Text(
+                      '문서에 있던 자간은 그대로 두고 그 위에서 정리해요.',
+                      style: TextStyle(fontSize: 12, color: _faint),
+                    ),
+                ],
                 if (isAll) ...[
                   const SizedBox(height: 8),
                   // 끄면 기존 자간은 그대로 두고 서식만 적용한다(서식 적용).
@@ -956,6 +984,7 @@ class _WorkspaceState extends State<Workspace> {
                         ),
                       ),
                       Switch(
+                        key: const Key('includeSpacingSwitch'),
                         value: includeSpacing,
                         onChanged: locked
                             ? null

@@ -322,6 +322,7 @@ def XML_자식_추가(parent, prototype, tag=None, attrib=None):
     parent.append(child)
     return child
 from docfit_core.style_inventory import analyze_style_inventory, build_style_sample, inventory_markdown
+from docfit_core import format_elements as 서식요소
 from docfit_core import (
     KordocUnavailableError,
     analyze_form,
@@ -349,7 +350,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리 도구"
-APP_VERSION = "1.69 Beta 6"
+APP_VERSION = "1.69 Beta 7"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 UPDATE_ASSET_NAME = "HWP_AutoDocFit.exe"
@@ -546,6 +547,9 @@ _표준서식_문단위간격_상태 = ParagraphSpacingTracker()
 표_헤더서식_본문_크기 = 12
 표_헤더서식_본문_굵게 = False
 활성_정밀표_프로필 = None
+# 선택한 서식 프로필이 예시 문서에서 보관한 서식 표(제목·개요·중제목·붙임) 예시.
+# {종류: {"header_xml", "table_xml"}}. 없는 종류는 내장 기준 표를 쓴다.
+활성_서식표_프로필 = None
 
 표준서식_설정 = {
     "여백_mm": {
@@ -917,7 +921,7 @@ def 서식_기본값_전역_복원():
     global 표_헤더서식_본문_폰트, 표_헤더서식_본문_크기, 표_헤더서식_본문_굵게
     global 표준서식_문단위간격_box_pt, 표준서식_문단위간격_circle_pt, 표준서식_문단위간격_note_pt
     global 표준서식_문단위간격_복귀배율
-    global 활성_정밀표_프로필
+    global 활성_정밀표_프로필, 활성_서식표_프로필
 
     표준서식_설정 = copy.deepcopy(_표준서식_설정_기본값)
     표_헤더서식_헤더_폰트 = _표_헤더서식_기본값["헤더_폰트"]
@@ -932,6 +936,7 @@ def 서식_기본값_전역_복원():
     표준서식_문단위간격_복귀배율 = 150
     _표준서식_문단위간격_상태.reset()
     활성_정밀표_프로필 = None
+    활성_서식표_프로필 = None
 
 검수_사용 = False
 검수_문제목록 = []
@@ -1079,6 +1084,8 @@ def 번들_리소스_폴더():
     "log_file": False,
     # '한 번에 적용' 카드의 '자간 조정 포함'. 끄면 기존 자간을 두고 서식만 입히는 서식 적용(format)으로 실행한다.
     "all_include_spacing": True,
+    # '자간 정리' 카드의 '기존 자간 초기화'(세부 작업 01과 같은 값). None이면 저장된 세부 작업 구성을 따른다.
+    "spacing_reset_existing": None,
 }
 
 
@@ -1346,6 +1353,13 @@ def hwpx_서식_분석(path):
         # 복사한 글자 강조/문단 여백을 다른 후처리로 덮지 않는다.
         profile["options"].update(paren_shrink=False, paren_label_bold=False,
                                    std_hanging_indent=False, std_supplement_indent=False)
+        # 서식 요소 전수 분석: 문두기호 문장은 계층별로, 제목·개요·중제목·붙임 표는 칸(A1·A2·B2 …)별로
+        # 모든 글자·문단·칸 요소의 대표값을 구하고, 서식 표는 예시로 보관해 서식 적용에 쓴다.
+        # 사용자는 서식 세부사항 창에서 대표값을 고칠 수 있다.
+        요소분석 = 서식요소.analyze_format_elements(path, 서식표_종류판별)
+        profile["form_tables"] = dict(요소분석.pop("samples"))
+        profile["element_analysis"] = 요소분석
+        서식요소.apply_to_profile(profile)
         profile["summary"] = (
             f"대표 본문: {대표폰트} {대표크기:g}pt, 굵게 {'ON' if 대표굵게 else 'OFF'}\n"
             + (f"대표 본문 대체 분석: {본문_대체출처}\n" if 본문_대체출처 else "")
@@ -1353,6 +1367,8 @@ def hwpx_서식_분석(path):
             + "미검출 기호(기본값 유지): " + (", ".join(missing) or "없음")
             + f"\n표 머리글: {header_style[0]} {header_style[1]:g}pt / 표 본문: {body_style[0]} {body_style[1]:g}pt"
             + f"\n정밀 표 프로필: {len(profile['precise_tables']['tables'])}개"
+            + (f"\n서식 표 예시: {', '.join(서식요소.FORM_LABELS[k] for k in profile['form_tables'])}"
+               if profile["form_tables"] else "")
             + "\n\n" + hierarchy_summary(profile["style_hierarchy"])
             + "\n페이지 여백·장평·자간·줄간격·문단 모양과 셀별 표 서식을 함께 복제합니다."
         )
@@ -1517,6 +1533,11 @@ def 문서_markdown_내보내기(path):
             pythoncom.CoUninitialize()
 
 
+# 문단 여백·간격 COM 항목. 복사_문단모양은 HWPX case 값(실제 HWPUNIT)을 담고, COM ParaShape는 그
+# 두 배 값을 쓴다(실측 2026-10-03: COM 왼쪽 여백 2000 → HWPX case 1000, 줄 시작 위치 1000).
+_문단여백_COM항목 = ("LeftMargin", "RightMargin", "Indentation", "PrevSpacing", "NextSpacing")
+
+
 def 복사_문단모양_적용(symbol):
     values = 표준서식_설정.get("복사_문단모양", {}).get(symbol)
     if not values: return
@@ -1529,7 +1550,8 @@ def 복사_문단모양_적용(symbol):
         if key in ("PrevSpacing", "NextSpacing") and selected.get("spacing") is False: continue
         if key in ("LineSpacing", "LineSpacingType") and not 표준서식_줄간격_사용: continue
         if key in ("PrevSpacing", "NextSpacing") and not 표준서식_문단위간격_사용: continue
-        params.SetItem(key, value)
+        # 예전에는 case 값을 그대로 넣어 예시 문서의 여백·간격이 절반으로 들어갔다.
+        params.SetItem(key, int(value) * 2 if key in _문단여백_COM항목 else value)
         applied += 1
     if not applied:
         return
@@ -1698,7 +1720,8 @@ def 중제목_표서식_복사(table, sample, maps, kind, 최대폭=None):
         if src is not None and dst is not None:
             dst.attrib.update(src.attrib)
     scells = 제목_셀들(sample)
-    roles = [scells[0], scells[1], scells[2]] if kind == 1 else [scells[0], scells[2]]
+    # 2열 유형은 기준 표의 번호 칸과 마지막(글) 칸을 쓴다(서식 프로필의 2열 예시 표도 같다).
+    roles = [scells[0], scells[1], scells[2]] if kind == 1 else [scells[0], scells[-1]]
     for cell, scell in zip(제목_셀들(table), roles):
         cell.set('borderFillIDRef', maps['borderFills'][scell.get('borderFillIDRef')])
         cell.set('hasMargin', scell.get('hasMargin', '0'))
@@ -1819,6 +1842,47 @@ def 제목_대상찾기(section, header):
                         result.append((ordinal, kind))
                 ordinal += 1
     return result
+
+
+def 서식표_종류판별(table):
+    """서식 요소 분석용 표 종류: 제목(title1~3)·중제목(midtitle1·2)·붙임(attach1·2)·한 칸 상자(box).
+
+    서식 적용과 같은 판별 함수를 쓴다. 제목 표 바로 뒤의 한 칸 상자는 분석 모듈이 개요 표로 본다.
+    그 밖의 표는 None(일반 표)이다.
+    """
+    kind = 제목_유형판별(table)
+    if kind:
+        title = 제목_문자열(제목_셀들(table)[0]).strip()
+        if title and len(title) <= 160 and not title.startswith('붙임'):
+            return f'title{kind}'
+    kind = 중제목_유형판별(table)
+    if kind:
+        return f'midtitle{kind}'
+    kind = 붙임_유형판별(table)
+    if kind:
+        return f'attach{kind}'
+    return 'box' if 개요_표인가(table) else None
+
+
+def _서식표_예시(종류):
+    """선택한 서식 프로필이 예시 문서에서 보관한 서식 표 (header, 표). 없으면 None.
+
+    보관한 표도 서식 적용과 같은 판별 함수로 다시 확인해, 칸 구성이 다른 표를 기준으로 쓰지 않는다.
+    """
+    item = (활성_서식표_프로필 or {}).get(종류)
+    if not item:
+        return None
+    try:
+        header = safe_xml_fromstring(item["header_xml"].encode("utf-8"))
+        table = safe_xml_fromstring(item["table_xml"].encode("utf-8"))
+        판별 = 서식표_종류판별(table)
+    except Exception as exc:
+        로그(f"서식 프로필의 {서식요소.FORM_LABELS.get(종류, 종류)} 예시를 읽지 못해 기본 서식 표를 씁니다: {exc}")
+        return None
+    if 판별 != ('box' if 종류 == 'overview' else 종류):
+        로그(f"서식 프로필의 {서식요소.FORM_LABELS.get(종류, 종류)} 예시가 칸 구성과 맞지 않아 기본 서식 표를 씁니다.")
+        return None
+    return header, table
 
 
 def 제목2행1열_원본자료():
@@ -2166,20 +2230,33 @@ def 제목_hwpx_처리(source, target=None, selections=None):
     if not any(kind in (1, 2, 3) for items in selections.values() for _, kind in items):
         if target is not None: shutil.copyfile(source, target)
         return 0
-    sh, ss = 제목_원본자료()
-    samples = [x for x in ss.iter() if 제목_xml이름(x) == 'tbl']
-    maps = 제목_참조병합(header, sh)
-    # 유형3(2행1열)는 별도 기준표를 쓰므로 필요할 때만 병합한다.
-    sample5 = maps5 = None
-    if any(kind == 3 for items in selections.values() for _, kind in items):
-        h5, s5 = 제목2행1열_원본자료()
-        sample5 = next(x for x in s5.iter() if 제목_xml이름(x) == 'tbl')
-        maps5 = 제목_참조병합(header, h5)
-    # 제목은 개요와 한 쌍이므로, 제목 바로 다음의 1칸 개요표에도 기준 개요 서식을 적용한다.
-    eh, es = 개요붙임_원본자료()
-    emaps = 제목_참조병합(header, eh)
-    extra_tables = [x for x in es.iter() if 제목_xml이름(x) == 'tbl']
-    overview_sample = extra_tables[0]
+    기준 = {}
+
+    def 기준표(종류):
+        """(기준 표, ID 매핑, 서식 프로필 예시 여부). 필요한 기준만 한 번씩 header에 병합한다.
+
+        선택한 서식 프로필에 그 종류의 예시 표가 있으면 그 표를, 없으면 내장 기준 표를 쓴다.
+        유형3(2행1열)과 개요는 내장 기준 자료가 따로 있다.
+        """
+        if 종류 not in 기준:
+            예시 = _서식표_예시(종류)
+            if 예시 is not None:
+                기준[종류] = (예시[1], 제목_참조병합(header, 예시[0]), True)
+            elif 종류 in ('title1', 'title2'):
+                if '내장제목' not in 기준:
+                    sh, ss = 제목_원본자료()
+                    기준['내장제목'] = ([x for x in ss.iter() if 제목_xml이름(x) == 'tbl'], 제목_참조병합(header, sh))
+                samples, maps = 기준['내장제목']
+                기준[종류] = (samples[int(종류[-1]) - 1], maps, False)
+            elif 종류 == 'title3':
+                h5, s5 = 제목2행1열_원본자료()
+                기준[종류] = (next(x for x in s5.iter() if 제목_xml이름(x) == 'tbl'), 제목_참조병합(header, h5), False)
+            else:
+                # 제목은 개요와 한 쌍이므로, 제목 바로 다음의 1칸 개요표에도 기준 개요 서식을 적용한다.
+                eh, es = 개요붙임_원본자료()
+                기준[종류] = ([x for x in es.iter() if 제목_xml이름(x) == 'tbl'][0], 제목_참조병합(header, eh), False)
+        return 기준[종류]
+
     count = 0
     for name, items in selections.items():
         root = sections[name]
@@ -2189,18 +2266,19 @@ def 제목_hwpx_처리(source, target=None, selections=None):
             if 제목_유형판별(table) != kind:
                 raise RuntimeError('처리 중 제목 구조가 변경되어 제목 서식적용을 중단했습니다.')
             before = 제목_문자열(table)
-            if kind == 3:
-                제목_표서식_복사(table, sample5, maps5)
-            else:
-                제목_표서식_복사(table, samples[kind-1], maps)
+            sample, maps, 예시사용 = 기준표(f'title{kind}')
+            제목_표서식_복사(table, sample, maps)
             # 제목 텍스트는 유형과 관계없이 가운데 정렬을 기본값으로 한다.
-            제목_문단_가운데정렬(header, table)
+            # 서식 프로필의 예시 표를 쓰면 그 표의 정렬을 따른다.
+            if not 예시사용:
+                제목_문단_가운데정렬(header, table)
             # 일반 보고서 서식의 괄호 부연설명 축소 설정을 제목에도 동일 적용한다.
             제목_괄호부연_축소(header, table)
             if 제목_문자열(table) != before: raise RuntimeError('제목 텍스트 보존 검사 실패')
             # 제목 다음 표가 개요 구조이면 내용은 보존하고 개요 기준서식 적용
             if index + 1 < len(tables) and 개요_표인가(tables[index + 1]):
                 obefore = 제목_문자열(tables[index + 1])
+                overview_sample, emaps, _ = 기준표('overview')
                 제목_표서식_복사(tables[index + 1], overview_sample, emaps)
                 # 제목_표서식_복사는 문단의 모든 run을 대표 charPrIDRef 하나로
                 # 정규화한다. 개요(요지) 표 문단이 본문 처리 단계에서 이미
@@ -2337,9 +2415,22 @@ def 붙임_hwpx_처리(source, target=None, selections=None):
     if not any(items for items in selections.values()):
         if target is not None: shutil.copyfile(source, target)
         return 0
-    sh, ss = 개요붙임_원본자료()
-    samples = [x for x in ss.iter() if 제목_xml이름(x) == 'tbl'][1:3]
-    maps = 제목_참조병합(header, sh)
+    기준 = {}
+
+    def 기준표(kind):
+        """붙임 유형의 (기준 표, ID 매핑). 서식 프로필의 예시 표가 있으면 그 표를 쓴다."""
+        if kind not in 기준:
+            예시 = _서식표_예시(f'attach{kind}')
+            if 예시 is not None:
+                기준[kind] = (예시[1], 제목_참조병합(header, 예시[0]))
+            else:
+                if '내장' not in 기준:
+                    sh, ss = 개요붙임_원본자료()
+                    기준['내장'] = ([x for x in ss.iter() if 제목_xml이름(x) == 'tbl'][1:3], 제목_참조병합(header, sh))
+                samples, maps = 기준['내장']
+                기준[kind] = (samples[kind - 1], maps)
+        return 기준[kind]
+
     count = 0
     for name, items in selections.items():
         root = sections[name]
@@ -2349,7 +2440,7 @@ def 붙임_hwpx_처리(source, target=None, selections=None):
             if 붙임_유형판별(table) != kind:
                 raise RuntimeError('처리 중 붙임 구조가 변경되어 붙임 서식적용을 중단했습니다.')
             before = 제목_문자열(table)
-            제목_표서식_복사(table, samples[kind-1], maps)
+            제목_표서식_복사(table, *기준표(kind))
             if 제목_문자열(table) != before: raise RuntimeError('붙임 텍스트 보존 검사 실패')
             count += 1
         contents[name] = ET.tostring(root, encoding='utf-8', xml_declaration=True)
@@ -2373,10 +2464,28 @@ def 중제목_hwpx_처리(source, target=None, selections=None):
     if not any(items for items in selections.values()):
         if target is not None: shutil.copyfile(source, target)
         return 0
-    sh, ss = 중제목_원본자료()
-    sample = next(x for x in ss.iter() if 제목_xml이름(x) == 'tbl')
-    maps = 제목_참조병합(header, sh)
-    _중제목_번호굵게_적용(header, maps)
+    기준 = {}
+
+    def 기준표(kind):
+        """중제목 유형의 (기준 표, ID 매핑).
+
+        서식 프로필의 같은 유형 예시를 먼저 쓴다. 2열 유형은 3열 예시(번호·빈칸·글)의 번호·글 칸도
+        쓸 수 있지만, 3열 유형은 빈칸 서식이 필요해 2열 예시로 대신하지 않는다.
+        """
+        if kind not in 기준:
+            예시 = _서식표_예시(f'midtitle{kind}') or (_서식표_예시('midtitle1') if kind == 2 else None)
+            if 예시 is not None:
+                기준[kind] = (예시[1], 제목_참조병합(header, 예시[0]))
+            else:
+                if '내장' not in 기준:
+                    sh, ss = 중제목_원본자료()
+                    maps = 제목_참조병합(header, sh)
+                    # 번호 굵게 끄기는 내장 기준 표의 번호 글자 모양(8번)에만 적용한다.
+                    _중제목_번호굵게_적용(header, maps)
+                    기준['내장'] = (next(x for x in ss.iter() if 제목_xml이름(x) == 'tbl'), maps)
+                기준[kind] = 기준['내장']
+        return 기준[kind]
+
     count = 0
     for name, items in selections.items():
         root = sections[name]
@@ -2386,6 +2495,7 @@ def 중제목_hwpx_처리(source, target=None, selections=None):
             if 중제목_유형판별(table) != kind:
                 raise RuntimeError('처리 중 중제목 구조가 변경되어 중제목 서식적용을 중단했습니다.')
             before = 제목_문자열(table)
+            sample, maps = 기준표(kind)
             중제목_표서식_복사(table, sample, maps, kind, _구역_본문폭(root))
             if 제목_문자열(table) != before: raise RuntimeError('중제목 텍스트 보존 검사 실패')
             count += 1
@@ -2408,8 +2518,27 @@ _서식표_묶음 = {'title1': '제목', 'title2': '제목2행1열', 'overview':
                'attach2': '개요붙임', 'midtitle': '중제목'}
 
 
+# 서식 표 종류 → 서식 프로필 예시 표 종류(라벨의 'title2'는 2행1열 제목 = 제목 유형3)
+_서식표_예시종류 = {'title1': 'title1', 'title2': 'title3', 'overview': 'overview', 'attach1': 'attach1',
+                 'attach2': 'attach2', 'midtitle': 'midtitle1'}
+
+
 def _서식표_기준(header, kind, cache):
-    """서식 표 종류의 (기준 표, ID 매핑)을 문서 header에 한 번만 병합해 돌려준다."""
+    """서식 표 종류의 (기준 표, ID 매핑)을 문서 header에 한 번만 병합해 돌려준다.
+
+    선택한 서식 프로필에 같은 종류의 예시 표가 있으면 그 표를 쓴다(cache['예시사용']에 종류를 남긴다).
+    2행1열 제목은 부제·제목 두 문단이 있는 예시만 쓴다(부제를 넣을 문단이 있어야 한다).
+    """
+    예시키 = '예시:' + kind
+    if 예시키 not in cache:
+        예시 = _서식표_예시(_서식표_예시종류[kind])
+        if 예시 is not None and kind == 'title2' and len(
+                [p for p in 제목_문단들(제목_셀들(예시[1])[0]) if 제목_문자열(p).strip()]) != 2:
+            예시 = None
+        cache[예시키] = (예시[1], 제목_참조병합(header, 예시[0])) if 예시 is not None else None
+    if cache[예시키] is not None:
+        cache.setdefault('예시사용', set()).add(kind)
+        return cache[예시키]
     group = _서식표_묶음[kind]
     if group not in cache:
         source_header, source = {'제목': 제목_원본자료, '제목2행1열': 제목2행1열_원본자료,
@@ -2502,7 +2631,8 @@ def 서식표_생성(header, kind, text, cache, 번호=None, 최대폭=None):
         # 글이 비면 서식만 복사되도록 표시용 글자를 잠시 넣었다가 지운다.
         XML_자식_추가(runs[0], sample, tag='{http://www.hancom.co.kr/hwpml/2011/paragraph}t').text = value or 'X'
     제목_표서식_복사(result, sample, maps)
-    if kind != 'overview':
+    # 서식 프로필의 예시 표는 그 표의 정렬을 따른다.
+    if kind != 'overview' and kind not in cache.get('예시사용', ()):
         제목_문단_가운데정렬(header, result)
     제목_괄호부연_축소(header, result)
     if blank:
@@ -5134,6 +5264,8 @@ def 서식통일_표본(시작, text):
         runs = []
         text_colors = []
         color_runs, shade_runs = [], []
+        # 기울임·밑줄·취소선도 글자색처럼 구간별 값을 모아 문장 대부분이 쓰는 값만 비교한다.
+        italic_runs, underline_runs, strike_runs = [], [], []
         marker_bold_runs, label_bold_runs, aside_runs = [], [], []
         장평빈도 = Counter()
         for run in (item for item in para if _tag(item) == "run"):
@@ -5150,6 +5282,11 @@ def 서식통일_표본(시작, text):
                 글자수 = len(run_text.strip()) or 1
                 color_runs.append(구간 + (str(char.get("color", "")).upper(), 글자수))
                 shade_runs.append(구간 + (_서식통일_음영값(char.get("shade")), 글자수))
+                italic_runs.append(구간 + (bool(char.get("italic")), 글자수))
+                underline_runs.append(구간 + (str(char.get("underline") or "NONE").upper(), 글자수))
+                # 한/글은 취소선 없는 글자에도 shape="3D"를 저장한다(실측). 선 모양만 취소선으로 본다.
+                strike_runs.append(구간 + (str(char.get("strikeout") or "NONE").upper() not in ("NONE", "3D"),
+                                           글자수))
                 장평빈도[int(char.get("ratio", 100))] += end_selected - start_selected
                 shape = (char["font"].get("hangul"), round(char["size_pt"] * 100))
                 구간들 = [(left, right, False)
@@ -5244,6 +5381,17 @@ def 서식통일_표본(시작, text):
         "shade": 서식통일_우세값((run[2], run[3]) for run in shade_runs),
         "color_runs": tuple(color_runs),
         "shade_runs": tuple(shade_runs),
+        "italic": 서식통일_우세값((run[2], run[3]) for run in italic_runs),
+        "underline": 서식통일_우세값((run[2], run[3]) for run in underline_runs),
+        "strike": 서식통일_우세값((run[2], run[3]) for run in strike_runs),
+        "italic_runs": tuple(italic_runs),
+        "underline_runs": tuple(underline_runs),
+        "strike_runs": tuple(strike_runs),
+        # 문단 정렬·좌우 여백. 왼쪽 여백은 문두기호 앞 빈칸으로 들여 쓴 문서와 섞일 수 있어
+        # 기호 앞 빈칸 수가 대표값과 같은 문장끼리만 비교한다.
+        "align": 문단모양.get("align"),
+        "right_margin": 문단모양.get("right"),
+        "lead_spaces": len(body) - len(body.lstrip(" \t 　")),
         "position_text": body,
     })
     return 표본모양, 시작, (시작[0], 시작[1], 시작[2] + 본문끝)
@@ -5362,6 +5510,21 @@ def 서식통일_대표(모양들):
         ("color", lambda 모양: 모양[3].get("color")
          if len(모양) > 3 and isinstance(모양[3], dict) else None),
         ("shade", lambda 모양: 모양[3].get("shade")
+         if len(모양) > 3 and isinstance(모양[3], dict) else None),
+        # 서식 요소 분석 고도화(2026-10-03): 기울임·밑줄·취소선·정렬·좌우 여백·기호 앞 빈칸.
+        ("italic", lambda 모양: 모양[3].get("italic")
+         if len(모양) > 3 and isinstance(모양[3], dict) else None),
+        ("underline", lambda 모양: 모양[3].get("underline")
+         if len(모양) > 3 and isinstance(모양[3], dict) else None),
+        ("strike", lambda 모양: 모양[3].get("strike")
+         if len(모양) > 3 and isinstance(모양[3], dict) else None),
+        ("align", lambda 모양: 모양[3].get("align")
+         if len(모양) > 3 and isinstance(모양[3], dict) else None),
+        ("left", lambda 모양: 모양[3].get("left_margin")
+         if len(모양) > 3 and isinstance(모양[3], dict) else None),
+        ("right", lambda 모양: 모양[3].get("right_margin")
+         if len(모양) > 3 and isinstance(모양[3], dict) else None),
+        ("lead", lambda 모양: 모양[3].get("lead_spaces")
          if len(모양) > 3 and isinstance(모양[3], dict) else None),
     ):
         값들 = [추출(모양) for 모양 in 모양들 if 모양]
@@ -5716,6 +5879,10 @@ def _서식통일_문단서식_적용(item):
                 _서식통일_색_적용(필드, 값)
             finally:
                 hwp_run("Cancel")
+    for 필드, ranges in (item.get("char_runs") or {}).items():
+        if ranges:
+            _서식통일_글자요소_적용(필드, (item.get("char_values") or {}).get(필드),
+                                   (item.get("char_examples") or {}).get(필드), ranges)
     예시 = item.get("para_examples") or {}
     if 예시:
         # 문서 안에서 대표값을 가진 실제 문단의 값을 읽어 그대로 복사한다(단위 변환 없음).
@@ -5729,6 +5896,12 @@ def _서식통일_문단서식_적용(item):
             if 종류 == "indent":
                 값들["Indentation"] = int(모양.Indentation)
                 값들["LeftMargin"] = int(모양.LeftMargin)
+            elif 종류 == "align":
+                값들["AlignType"] = int(모양.AlignType)
+            elif 종류 == "left":
+                값들["LeftMargin"] = int(모양.LeftMargin)
+            elif 종류 == "right":
+                값들["RightMargin"] = int(모양.RightMargin)
             else:
                 값들["PrevSpacing"] = int(모양.PrevSpacing)
         if 값들:
@@ -5739,6 +5912,49 @@ def _서식통일_문단서식_적용(item):
                 params.SetItem(key, value)
             if action.Execute(params) is False:
                 raise RuntimeError("대표 문단모양 복사 실패")
+
+
+# 서식통일 글자 요소 → 한/글 CharShape 항목(실측 2026-10-03: Italic=1 → italic,
+# UnderlineType=1 → underline BOTTOM, StrikeOutType=1 → strikeout SOLID).
+_서식통일_글자요소_항목 = {
+    "italic": ("Italic",),
+    "underline": ("UnderlineType", "UnderlineShape", "UnderlineColor"),
+    "strike": ("StrikeOutType", "StrikeOutShape", "StrikeOutColor"),
+}
+
+
+def _서식통일_글자요소_적용(필드, 표준, 예시구간, 구간들):
+    """기울임·밑줄·취소선을 대표값으로 맞춘다.
+
+    없애는 경우(기울임 끄기, 밑줄·취소선 없음)는 종류 항목만 0으로 둔다. 넣는 경우에는 대표값을 쓴
+    다른 문장 구간(예시구간)의 선 종류·모양·색을 읽어 그대로 복사한다(값 대응을 추정하지 않는다).
+    """
+    항목들 = _서식통일_글자요소_항목[필드]
+    if 필드 == "italic":
+        값들 = {"Italic": 1 if 표준 else 0}
+    elif 표준 in ("NONE", False):
+        값들 = {항목들[0]: 0}
+    else:
+        if not 예시구간:
+            return
+        try:
+            단어모드_범위선택(*예시구간)
+            모양 = hwp.HParameterSet.HCharShape
+            hwp.HAction.GetDefault("CharShape", 모양.HSet)
+            값들 = {항목: int(getattr(모양, 항목)) for 항목 in 항목들}
+        finally:
+            hwp_run("Cancel")
+    for start, end in 구간들:
+        try:
+            단어모드_범위선택(start, end)
+            action = hwp.CreateAction("CharShape")
+            params = action.CreateSet()
+            for 항목, 값 in 값들.items():
+                params.SetItem(항목, 값)
+            if action.Execute(params) is False:
+                raise RuntimeError(f"서식통일 {필드} 적용 실패")
+        finally:
+            hwp_run("Cancel")
 
 
 def _서식통일_색값(value):
@@ -5960,6 +6176,14 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
          + " > ".join(f"{i}단계 {키[0]}({키[1]})" for i, 키 in enumerate(체계, 1)))
     로그(f"[서식통일] 1/5 표본 조사 완료: {sum(map(len, 그룹별_표본.values()))}개 문장, "
          f"{len(그룹별_표본)}개 그룹, 제목 표 {len(제목표_표본)}개 — 문서 변경 0건(읽기 전용)")
+    if 검수_사용 and not 검증만 and not 고정_프로필_재적용 and _서식통일_현재_HWPX() is not None:
+        # 검수 모드에서는 서식 요소 전수 분석(계층별·서식 표 칸별 대표값)을 작업 로그에 함께 남긴다.
+        try:
+            요소분석 = 서식요소.analyze_format_elements(_서식통일_현재_HWPX(), 서식표_종류판별)
+            for 줄 in 서식요소.summary_lines(요소분석, limit=20):
+                진단로그("[서식통일 요소 분석] " + 줄)
+        except Exception as exc:
+            진단로그(f"[서식통일] 서식 요소 분석 실패(무시): {exc}")
     # 괄호 크기 규칙도 문서 관행을 따른다. 괄호를 본문보다 작게 쓰는 문서만 그 차이를 적용하고,
     # 본문과 같은 크기로 쓰는 문서는 괄호도 본문 크기로 본다. 단, 표준서식이 기준이고 문두 라벨·괄호
     # 단계가 괄호를 줄이면 그 설정값이 기준이다(표준서식 직후 관행은 보통 0pt라 서로 되돌리게 된다).
@@ -6154,7 +6378,46 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
                 if 음영표준 is not None and 문장음영 not in (None, 음영표준):
                     음영구간 = list(서식통일_범위병합(
                         (run[0], run[1]) for run in 부가.get("shade_runs", ()) if run[2] == 문장음영))
+            # 기울임·밑줄·취소선: 글자색과 같이 문장 대부분의 값이 대표값과 다를 때 그 값을 쓴 구간만 고친다.
+            # 밑줄·취소선을 새로 넣을 때는 대표값을 쓴 다른 문장의 선 모양·색을 그대로 복사한다.
+            글자구간, 글자예시 = {}, {}
+            if not 미판정필드:
+                for 필드 in ("italic", "underline", "strike"):
+                    표준 = 대표.get(필드, (None, 0))[0]
+                    문장값 = 부가.get(필드)
+                    if 표준 is None or 문장값 in (None, 표준):
+                        continue
+                    글자구간[필드] = list(서식통일_범위병합(
+                        (run[0], run[1]) for run in 부가.get(f"{필드}_runs", ()) if run[2] == 문장값))
+                    if 필드 != "italic" and 표준 not in ("NONE", False):
+                        글자예시[필드] = next(((run[0], run[1]) for 예시모양, *_ in 항목들
+                                               for run in (예시모양[3].get(f"{필드}_runs", ())
+                                                           if len(예시모양) > 3 else ())
+                                               if run[2] == 표준), None)
+                        if 글자예시[필드] is None:
+                            글자구간.pop(필드)
+            # 정렬·좌우 여백: 대표값을 가진 같은 계층 문장의 값을 그대로 복사한다(단위 변환 없음).
+            # 왼쪽 여백은 기호 앞 빈칸 수가 대표값과 같고 내어쓰기를 따로 맞추지 않는 문장만 고친다.
+            정렬표준 = 대표.get("align", (None, 0))[0]
+            왼쪽표준 = 대표.get("left", (None, 0))[0]
+            오른쪽표준 = 대표.get("right", (None, 0))[0]
+            빈칸표준 = 대표.get("lead", (None, 0))[0]
+            정렬_불일치 = 정렬표준 is not None and 부가.get("align") not in (None, 정렬표준)
+            왼쪽_불일치 = (왼쪽표준 is not None and 부가.get("left_margin") not in (None, 왼쪽표준)
+                          and 빈칸표준 is not None and 부가.get("lead_spaces") == 빈칸표준
+                          and not 내어쓰기_불일치)
+            오른쪽_불일치 = 오른쪽표준 is not None and 부가.get("right_margin") not in (None, 오른쪽표준)
             문단모양_예시 = {}
+            for 종류, 불일치, 필드, 표준 in (("align", 정렬_불일치, "align", 정렬표준),
+                                         ("left", 왼쪽_불일치, "left_margin", 왼쪽표준),
+                                         ("right", 오른쪽_불일치, "right_margin", 오른쪽표준)):
+                if not 불일치:
+                    continue
+                예시위치 = next((예시시작 for 예시모양, 예시시작, *_ in 항목들
+                                 if len(예시모양) > 3 and 예시모양[3].get(필드) == 표준
+                                 and (종류 != "left" or 예시모양[3].get("lead_spaces") == 빈칸표준)), None)
+                if 예시위치 is not None:
+                    문단모양_예시[종류] = 예시위치
             if 위간격_불일치:
                 문단모양_예시["prev"] = 위간격[1]
             if 내어쓰기_불일치 and 내어쓰기표준:
@@ -6171,7 +6434,7 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
                         break
             현재불일치 = (불일치구간 or 문두굵기구간 or 라벨굵기구간
                         or 괄호크기구간 or 내어쓰기_불일치 or 장평_불일치 or 문단모양_예시
-                        or 색구간 or 음영구간)
+                        or 색구간 or 음영구간 or 글자구간)
             item_plan = {"marker": marker, "role": role, "level": level,
                          "shape": 모양, "start": 문단시작, "end": 끝, "text": text,
                          "position_text": 원문,
@@ -6185,6 +6448,8 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
                          "label_bold_runs": 라벨굵기구간, "label_bold": 라벨굵게,
                          "hanging_mismatch": 내어쓰기_불일치,
                          "ratio_fix": 장평표준 if 장평_불일치 else None,
+                         "char_runs": 글자구간, "char_examples": 글자예시,
+                         "char_values": {필드: 대표.get(필드, (None, 0))[0] for 필드 in 글자구간},
                          "para_examples": 문단모양_예시,
                          "expected_hanging": 내어쓰기표준,
                          "mismatch": bool(현재불일치)}
@@ -6227,6 +6492,19 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
                         항목["expected_actual"]["shade"] = {"expected": 음영표준, "actual": 부가.get("shade")}
                     if 위간격_불일치:
                         항목["fields"].append("prev_spacing")
+                    for 필드 in 글자구간:
+                        항목["fields"].append(필드)
+                        항목["expected_actual"][필드] = {"expected": 대표.get(필드, (None, 0))[0],
+                                                       "actual": 부가.get(필드)}
+                    for 종류, 필드, 불일치 in (("align", "align", 정렬_불일치),
+                                             ("left_margin", "left_margin", 왼쪽_불일치),
+                                             ("right_margin", "right_margin", 오른쪽_불일치)):
+                        if 불일치:
+                            항목["fields"].append(종류)
+                            항목["expected_actual"][종류] = {
+                                "expected": {"align": 정렬표준, "left_margin": 왼쪽표준,
+                                             "right_margin": 오른쪽표준}[종류],
+                                "actual": 부가.get(필드)}
                     if 내어쓰기_불일치:
                         항목["fields"].append("hanging_indent")
                         항목["expected_actual"]["hanging_indent"] = {
@@ -6240,7 +6518,11 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
         크기표시 = f"{크기 / 100:g}pt ({크기수})" if 크기 is not None else "판정 보류"
         진단로그(f"[서식통일] '{marker}/{role}' 대표값({len(항목들)}문장): 글꼴 {글꼴표시}, "
                  f"크기 {크기표시}, 글자색 {색표준 or '판정 보류'}, 음영 {음영표준 or '판정 보류'}, "
-                 f"문두 굵기 {문두굵게}, 괄호라벨 굵기 {라벨굵게}, 내어쓰기 {내어쓰기표준} ({내어쓰기수})")
+                 f"문두 굵기 {문두굵게}, 괄호라벨 굵기 {라벨굵게}, 내어쓰기 {내어쓰기표준} ({내어쓰기수}), "
+                 f"기울임 {대표.get('italic', (None, 0))[0]}, 밑줄 {대표.get('underline', (None, 0))[0]}, "
+                 f"취소선 {대표.get('strike', (None, 0))[0]}, 정렬 {대표.get('align', (None, 0))[0]}, "
+                 f"왼쪽 여백 {대표.get('left', (None, 0))[0]}(기호 앞 빈칸 {대표.get('lead', (None, 0))[0]}), "
+                 f"오른쪽 여백 {대표.get('right', (None, 0))[0]}")
         continue
 
     후보수 = sum(1 for p in 계획 if p["mismatch"])
@@ -8711,6 +8993,7 @@ def 보고서_페이지배치_최종검사():
     # 한 쪽에 다 들어갈 수 없는 묶음은 규칙 위반이 아니라 적용 제외로 따로 적는다.
     exempt = []
     표문단 = 본문_표_문단번호()
+    본문_쪽나눔_기억(표문단)
     _표칸영역.clear()
     try:
         순회_시작()
@@ -9233,6 +9516,8 @@ def 소제목묶음_같은쪽_시도(시작위치, text):
 # 없으므로 예전 묶음 수집은 표 앞에서 끊겼고, 표 높이는 본문 줄 수로 잴 수 없다.
 # 표의 쪽은 첫 칸과 마지막 칸의 쪽으로 판정한다.
 _표칸영역 = {}
+# 쪽 나눔(Ctrl+Enter)으로 새 쪽을 시작하는 본문 문단 번호. 표 묶음 판정 전에 본문_쪽나눔_기억()으로 채운다.
+_쪽나눔문단 = set()
 
 
 def 본문_표_문단번호():
@@ -9254,6 +9539,34 @@ def 본문_표_문단번호():
     except Exception as e:
         진단로그(f'본문 표 위치 확인 실패(무시): {e}')
     return result
+
+
+def 본문_쪽나눔_기억(표문단):
+    """지금 문서에서 쪽 나눔으로 새 쪽을 시작하는 본문 문단 번호를 _쪽나눔문단에 기억한다.
+
+    한/글 문단 모양에는 이 쪽 나눔이 보이지 않으므로(PagebreakBefore=0, 실측: 10월 확대간부회의
+    자료) 지금 문서의 HWPX 원본에서 본문 직속 문단의 pageBreak를 읽는다. HWPX의 표 문단 번호가
+    한/글의 본문 표 문단 번호와 다르면(저장 뒤 문단이 바뀜) 번호가 어긋나므로 쓰지 않는다.
+    """
+    _쪽나눔문단.clear()
+    문서경로 = _서식통일_현재_HWPX()
+    if 문서경로 is None or not 표문단:
+        return
+    try:
+        from docfit_core.style_inventory import _sections
+        문단들 = []
+        with zipfile.ZipFile(문서경로) as archive:
+            for name in _sections(archive):
+                문단들.extend(p for p in safe_xml_fromstring(archive.read(name)) if 제목_xml이름(p) == 'p')
+    except Exception as e:
+        진단로그(f'쪽 나눔 위치 확인 실패(무시): {e}')
+        return
+    표번호 = {i for i, p in enumerate(문단들)
+              if any(제목_xml이름(x) == 'tbl' for run in p if 제목_xml이름(run) == 'run' for x in run)}
+    if 표번호 != set(표문단):
+        진단로그('쪽 나눔 위치 확인 생략: 저장된 HWPX와 지금 문서의 표 위치가 다름')
+        return
+    _쪽나눔문단.update(i for i, p in enumerate(문단들) if p.get('pageBreak') == '1')
 
 
 def 표_칸영역_범위(표키):
@@ -9334,6 +9647,9 @@ def 보고서_표묶음_수집(시작위치, 표문단):
                 return None
             사이빈줄.append((빈[0], 빈[1], '빈 줄'))
             번호 += 1
+        # 쪽 나눔으로 새 쪽에서 시작하는 표(다음 보고서의 제목 표 등)는 앞 문장과 한 쪽에 놓일 수 없다.
+        if any(n in _쪽나눔문단 for n in range(lead[-1][0][1] + 1, 번호 + 1)):
+            return None
         표 = 문단(번호)
         if not 표 or 표[2].strip():
             return None      # 표 옆에 글자가 있는 문단은 표 묶음으로 보지 않는다.
@@ -9477,6 +9793,7 @@ def 세트문장_같은쪽_전체_적용():
     로그("문장부호 세트문장 동일 페이지 유지 처리 시작")
     # 표 묶음(제목 문장 + 표 + 주석) 판정용: 본문에 놓인 표의 문단 번호. 표 칸 범위는 새로 잰다.
     표문단 = 본문_표_문단번호()
+    본문_쪽나눔_기억(표문단)
     _표칸영역.clear()
     순회_시작()
 
@@ -10068,6 +10385,15 @@ def 쉼표_앞_공백_정리_문단_처리():
 
 
 _단어사이_공백류 = (" ", "\t", "　")
+# '일    시:', '총  무  과:'처럼 글자 사이를 띄워 긴 라벨('참석인원:')과 폭을 맞춘 문두 콜론 라벨.
+# 이 공백은 정렬용이라 줄이면 같은 묶음의 콜론·둘째 줄 위치가 어긋난다(실측: 10월 확대간부회의 자료 24곳).
+_균등라벨_패턴 = re.compile(r"(?:\S{1,2}[ \t　]+)?(\S(?:[ \t　]+\S){1,5})[ \t　]*[:：]")
+
+
+def _균등라벨_범위(text, 시작=0):
+    """text[시작:]이 (문두기호 +) 한 글자씩 띄운 콜론 라벨로 시작하면 라벨의 (처음, 끝), 아니면 None."""
+    m = _균등라벨_패턴.match(text, 시작)
+    return m.span(1) if m else None
 
 
 def 단어사이_연속공백_정리_대상(text):
@@ -10079,13 +10405,15 @@ def 단어사이_연속공백_정리_대상(text):
     내용이 시작된 뒤에 나오는 공백류만 대상으로 한다. 탭·전각공백은
     자동 탭 간격이 규격과 안 맞아 수기로 스페이스를 끼워 넣은 흔적인
     경우가 많아, 연속이 아니어도(1칸이라도) 표준 공백이 아니면 대상으로
-    삼는다.
+    삼는다. '일    시:'처럼 한 글자씩 띄워 폭을 맞춘 문두 콜론 라벨 안의
+    공백은 정렬용이므로 그대로 둔다.
     """
     결과 = []
     if not text:
         return 결과
     벗긴텍스트 = text.lstrip("".join(_단어사이_공백류))
     선행공백_길이 = len(text) - len(벗긴텍스트)
+    라벨 = _균등라벨_범위(text, 선행공백_길이)
     i = 선행공백_길이
     n = len(text)
     while i < n:
@@ -10093,6 +10421,8 @@ def 단어사이_연속공백_정리_대상(text):
             시작 = i
             while i < n and text[i] in _단어사이_공백류:
                 i += 1
+            if 라벨 and 라벨[0] < 시작 and i < 라벨[1]:
+                continue
             if i - 시작 > 1 or text[시작] != " ":
                 결과.append((시작, i))
         else:
@@ -13506,6 +13836,12 @@ class HwpAutoDocFitGUI:
         # 카드는 세 장이다. '한 번에 적용'에서 자간 조정을 빼면 내부 작업 유형은 서식 적용(format)이다.
         self.include_spacing_var = tk.BooleanVar(value=bool(저장된_설정.get("all_include_spacing", True)))
         self.include_spacing_var.trace_add("write", self._설정_변경됨)
+        # '자간 정리' 카드의 '기존 자간 초기화'. 세부 작업 01(문서 전체 자간 초기화)과 같은 값이며 설정 파일에 저장한다.
+        저장된_초기화 = 저장된_설정.get("spacing_reset_existing")
+        if isinstance(저장된_초기화, bool):
+            self.stage_choices["spacing"]["reset_spacing"] = 저장된_초기화
+        self.reset_spacing_var = tk.BooleanVar(value=bool(self.stage_choices["spacing"]["reset_spacing"]))
+        self.reset_spacing_var.trace_add("write", self._자간초기화_값변경)
         self.card_mode_var = tk.StringVar(value="spacing")   # 카드 표시용(format도 '한 번에 적용' 카드)
         choose = ttk.LabelFrame(main, text="처리 방식", padding=card_padding, style="Card.TLabelframe")
         choose.grid(row=1, column=0, sticky="ew", pady=6)
@@ -13531,6 +13867,14 @@ class HwpAutoDocFitGUI:
                                    font=("맑은 고딕", 9), cursor="hand2")
             description.pack(anchor="w", fill="x", pady=(5, 8))
             self.mode_buttons.append(rb)
+            if mode == "spacing":
+                # 끄면 문서에 이미 있는 자간을 0%로 되돌리지 않고 그 위에서 정리한다.
+                self.reset_spacing_check = tk.Checkbutton(
+                    inner, text="기존 자간 초기화", variable=self.reset_spacing_var,
+                    command=self._자간초기화_변경, bg=UI_COLORS["surface"], activebackground=UI_COLORS["surface"],
+                    fg=UI_COLORS["ink"], font=("맑은 고딕", 9), anchor="w", cursor="hand2")
+                self.reset_spacing_check.pack(anchor="w", pady=(0, 4))
+                self.mode_buttons.append(self.reset_spacing_check)
             if mode == "all":
                 # 끄면 기존 자간을 그대로 두고 서식만 입힌다(결과 파일 이름은 '서식적용').
                 self.include_spacing_check = tk.Checkbutton(
@@ -14033,7 +14377,8 @@ class HwpAutoDocFitGUI:
             삭제버튼 = ttk.Button(profile_row, text="삭제", command=self._서식_삭제하기)
             삭제버튼.pack(side="left", padx=(6, 0))
             삭제버튼.config(state="normal" if self._활성_서식_프로파일 else "disabled")
-            ttk.Label(parent, text="예시 문서에서 복사한 표 서식과, 제목·본문·부연설명 등 계층별 글꼴·크기·들여쓰기를 ‘상세 수정…’에서 편집합니다.",
+            ttk.Label(parent, text="예시 문서를 복사하면 문두기호 문장의 계층별 서식과 제목·개요·중제목·붙임 표의 칸별(A1·A2·B2 …) "
+                                   "글자·문단·테두리·배경 값을 모두 분석해 대표값을 정합니다. 이름과 세부값은 ‘상세 수정…’에서 고칩니다.",
                       style="Hint.TLabel", wraplength=610).pack(anchor="w", pady=(2, 0))
             if 주설정탭:
                 self.profile_combo = 콤보
@@ -14323,11 +14668,16 @@ class HwpAutoDocFitGUI:
         설정_저장(저장값)
 
     def _요약갱신(self, *args):
+        # 세부 작업 창·설정창·웹 화면에서 바꾼 '01 문서 전체 자간 초기화'를 카드의 '기존 자간 초기화'에도 맞춘다.
+        초기화 = bool(self.stage_choices["spacing"].get("reset_spacing", True))
+        if hasattr(self, "reset_spacing_var") and bool(self.reset_spacing_var.get()) != 초기화:
+            self.reset_spacing_var.set(초기화)
         if not hasattr(self, "options_summary"):
             return
         mode = self.selected_mode.get()
         if mode == "spacing":
-            summary = "줄 끝의 끊긴 단어와 자간을 정리합니다."
+            summary = ("줄 끝의 끊긴 단어와 자간을 정리합니다." if 초기화
+                       else "기존 자간을 초기화하지 않고 그 위에서 줄 끝의 끊긴 단어를 정리합니다.")
         elif mode == "unify":
             summary = "문두기호별로 문서에서 많이 쓰인 서식을 적용합니다."
         elif mode == "format":
@@ -14335,7 +14685,9 @@ class HwpAutoDocFitGUI:
         else:
             summary = "공문서 서식을 입히고 자간까지 함께 정리합니다."
         choices = self.stage_choices[mode]
-        disabled = sum(not value for key, value in choices.items() if stage_default(key))
+        # 자간 정리의 자간 초기화는 위 문구로 이미 알린다.
+        disabled = sum(not value for key, value in choices.items()
+                       if stage_default(key) and not (mode == "spacing" and key == "reset_spacing"))
         if choices.get("style_unify") and mode != "unify":
             summary += " · 서식 통일 포함"
         if disabled:
@@ -14386,6 +14738,8 @@ class HwpAutoDocFitGUI:
             description.configure(bg=surface)
             if mode == "all" and hasattr(self, "include_spacing_check"):
                 self.include_spacing_check.configure(bg=surface, activebackground=surface)
+            if mode == "spacing" and hasattr(self, "reset_spacing_check"):
+                self.reset_spacing_check.configure(bg=surface, activebackground=surface)
 
     def _메인_크기조정(self, event=None):
         """창 크기가 바뀔 때 UI 밀도를 폭에 맞춰 조정한다."""
@@ -14482,6 +14836,19 @@ class HwpAutoDocFitGUI:
         if self.running:
             return
         self.selected_mode.set(self._한번에_모드())
+        self._모드_선택됨()
+
+    def _자간초기화_값변경(self, *args):
+        """'기존 자간 초기화' 값을 자간 정리 세부 작업 01에 반영하고 설정 파일에 저장한다."""
+        self.stage_choices["spacing"]["reset_spacing"] = bool(self.reset_spacing_var.get())
+        self._설정_변경됨()
+        self._요약갱신()
+
+    def _자간초기화_변경(self):
+        """'기존 자간 초기화'를 바꾸면 '자간 정리' 카드를 고른다."""
+        if self.running:
+            return
+        self.selected_mode.set("spacing")
         self._모드_선택됨()
 
     # ---- 문서·결과 열기 / 작업 결과 표시 ------------------------------
@@ -14745,7 +15112,7 @@ class HwpAutoDocFitGUI:
         global 표준서식_설정
         global 표_헤더서식_헤더_폰트, 표_헤더서식_헤더_크기, 표_헤더서식_헤더_굵게
         global 표_헤더서식_본문_폰트, 표_헤더서식_본문_크기, 표_헤더서식_본문_굵게
-        global 활성_정밀표_프로필
+        global 활성_정밀표_프로필, 활성_서식표_프로필
         서식_기본값_전역_복원()
         표준서식_설정 = copy.deepcopy(profile["format"])
         table = profile.get("table_format", {})
@@ -14756,6 +15123,7 @@ class HwpAutoDocFitGUI:
         표_헤더서식_본문_크기 = table.get("body_size", 표_헤더서식_본문_크기)
         표_헤더서식_본문_굵게 = table.get("body_bold", 표_헤더서식_본문_굵게)
         활성_정밀표_프로필 = copy.deepcopy(profile.get("precise_tables"))
+        활성_서식표_프로필 = copy.deepcopy(profile.get("form_tables")) or None
 
     def _프로파일_목록갱신(self):
         # 기본 서식을 맨 앞에 두고 기관별로 묶어 이름순으로 보인다(A3).
@@ -14955,7 +15323,11 @@ class HwpAutoDocFitGUI:
         profile = copy.deepcopy(self._프로파일들[identifier])
         if not identifier:
             profile["name"] = "기본 보고서 서식 (사용자 수정)"
-        if not self._서식_구조_확인(profile, self.settings_toplevel):
+        if profile.get("element_analysis"):
+            다른이름 = {p["name"] for k, p in self._프로파일들.items() if k != identifier}
+            if not self._서식_세부사항_확인(profile, self.settings_toplevel, 다른이름):
+                return
+        elif not self._서식_구조_확인(profile, self.settings_toplevel):
             return
         try:
             folder = 서식프로파일_폴더()
@@ -16477,7 +16849,13 @@ class HwpAutoDocFitGUI:
                 self.format_drop_label.configure(text="예시 HWP/HWPX를 여기에 놓으면 분석 후 바로 선택합니다")
             messagebox.showerror(APP_NAME, f"서식 복사 실패\n{error}", parent=parent)
             return
-        if not self._서식_구조_확인(profile, parent):
+        # 예시 문서의 서식 요소 분석 결과가 있으면 이름·세부값을 고치는 세부사항 창을 먼저 보인다
+        # (계층 구조 검토는 그 창의 버튼으로 연다).
+        if profile.get("element_analysis"):
+            확인됨 = self._서식_세부사항_확인(profile, parent, {p["name"] for p in self._프로파일들.values()})
+        else:
+            확인됨 = self._서식_구조_확인(profile, parent)
+        if not 확인됨:
             self.status_var.set("서식 복사를 취소했습니다.")
             return
         identifier = uuid.uuid4().hex
@@ -16500,6 +16878,196 @@ class HwpAutoDocFitGUI:
         self.status_var.set(f"새 문서 서식 추가: {profile['name']}")
         messagebox.showinfo(APP_NAME, f"'{profile['name']}' 서식을 저장하고 선택했습니다.\n\n{profile['summary']}",
                             parent=parent)
+
+    def _서식_세부사항_확인(self, profile, parent, 다른이름=()):
+        """예시 문서에서 분석한 서식 요소의 대표값을 보여 주고, 서식 이름과 세부값을 고치게 한다.
+
+        왼쪽은 영역(쪽 여백·문두기호 문장 계층·서식 표의 칸(A1·A2·B2 …)과 칸 문단·일반 표), 오른쪽은 그
+        영역의 요소별 대표값·표본 수·다른 값이다. '확인하고 서식 저장'을 누르면 고친 값을 서식 적용 값과
+        보관한 서식 표 예시에 반영한다. 취소하면 profile을 바꾸지 않는다.
+        """
+        작업본 = copy.deepcopy(profile)
+        analysis = 작업본.setdefault("element_analysis", {})
+        dialog = tk.Toplevel(parent)
+        dialog.title(f"서식 세부사항 검토·수정 · {profile.get('name', '')}")
+        dialog.geometry("1120x720")
+        dialog.transient(parent)
+        dialog.grab_set()
+        body = ttk.Frame(dialog, padding=14)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="서식 세부사항", font=("맑은 고딕", 14, "bold")).pack(anchor="w")
+        ttk.Label(body, text="예시 문서에서 가장 많이 쓴 값이 대표값입니다. 왼쪽에서 영역을 고르고 항목 값을 바꾸면, "
+                             "이 서식으로 문서를 정리할 때 바꾼 값을 씁니다. 글자·문단 크기는 pt, 표·칸 치수는 mm입니다.",
+                  style="Hint.TLabel", wraplength=1080, justify="left").pack(anchor="w", pady=(2, 8))
+        이름줄 = ttk.Frame(body)
+        이름줄.pack(fill="x")
+        ttk.Label(이름줄, text="서식 이름").pack(side="left")
+        이름 = tk.StringVar(value=str(profile.get("name") or ""))
+        ttk.Entry(이름줄, textvariable=이름, width=32).pack(side="left", padx=(6, 18))
+        ttk.Label(이름줄, text="기관(선택)").pack(side="left")
+        기관 = tk.StringVar(value=str(profile.get("organization") or ""))
+        ttk.Entry(이름줄, textvariable=기관, width=22).pack(side="left", padx=6)
+
+        panes = ttk.PanedWindow(body, orient="horizontal")
+        panes.pack(fill="both", expand=True, pady=(10, 0))
+        왼쪽, 오른쪽 = ttk.Frame(panes), ttk.Frame(panes)
+        panes.add(왼쪽, weight=1)
+        panes.add(오른쪽, weight=3)
+        영역목록 = ttk.Treeview(왼쪽, show="tree", selectmode="browse")
+        영역목록.column("#0", width=330)
+        영역바 = ttk.Scrollbar(왼쪽, orient="vertical", command=영역목록.yview)
+        영역목록.configure(yscrollcommand=영역바.set)
+        영역목록.pack(side="left", fill="both", expand=True)
+        영역바.pack(side="right", fill="y")
+        목록틀 = ttk.Frame(오른쪽)
+        목록틀.pack(fill="both", expand=True)
+        columns = ("label", "value", "share", "others")
+        요소목록 = ttk.Treeview(목록틀, columns=columns, show="headings", selectmode="browse")
+        요소바 = ttk.Scrollbar(목록틀, orient="vertical", command=요소목록.yview)
+        요소목록.configure(yscrollcommand=요소바.set)
+        for key, heading, width in (("label", "항목", 210), ("value", "대표값", 190),
+                                    ("share", "표본(같은 값/전체)", 130), ("others", "다른 값(횟수)", 300)):
+            요소목록.heading(key, text=heading)
+            요소목록.column(key, width=width, anchor="w")
+        요소목록.pack(side="left", fill="both", expand=True)
+        요소바.pack(side="right", fill="y")
+        편집 = ttk.LabelFrame(오른쪽, text="선택한 항목 값 바꾸기", padding=8)
+        편집.pack(fill="x", pady=(8, 0))
+        항목이름 = tk.StringVar(value="오른쪽 목록에서 항목을 고르세요")
+        ttk.Label(편집, textvariable=항목이름, width=30).grid(row=0, column=0, sticky="w")
+        값 = tk.StringVar()
+        값상자 = ttk.Combobox(편집, textvariable=값, width=34, state="disabled")
+        값상자.grid(row=0, column=1, padx=6)
+        현재 = {"path": None, "key": None}
+        경로들 = {}
+
+        def 노드키(경로):
+            return "/".join(map(str, 경로))
+
+        for 경로, 상위, 글 in 서식요소.detail_nodes(analysis):
+            경로들[노드키(경로)] = 경로
+            영역목록.insert(노드키(상위) if 상위 else "", "end", iid=노드키(경로), text=글,
+                           open=len(경로) <= 2)
+
+        def 요소_표시(path, 고를=None):
+            요소목록.delete(*요소목록.get_children())
+            for key, item in 서식요소.element_map(analysis, path).items():
+                기준값 = item.get("analyzed", item["value"])
+                다른값 = ", ".join(f"{서식요소.format_value(key, v)}({n})"
+                                  for v, n in item.get("variants", []) if v != 기준값)
+                표본 = f"{item.get('votes', 0)}/{item.get('total', 0)} ({item.get('share', 0):.0%})"
+                표시 = 서식요소.format_value(key, item["value"])
+                if item.get("edited"):
+                    표시 += f"  (분석값 {서식요소.format_value(key, 기준값)})"
+                이름글 = 서식요소.element_label(key) + ("" if 서식요소.element_editable(key) else " · 표시만")
+                요소목록.insert("", "end", iid=key, values=(이름글, 표시, 표본, 다른값))
+            if 고를 and 요소목록.exists(고를):
+                요소목록.selection_set(고를)
+
+        def 영역_선택(event=None):
+            picked = 영역목록.selection()
+            if not picked:
+                return
+            현재.update(path=경로들[picked[0]], key=None)
+            요소_표시(현재["path"])
+            항목이름.set("오른쪽 목록에서 항목을 고르세요")
+            값.set("")
+            값상자.configure(state="disabled", values=())
+
+        def 요소_선택(event=None):
+            picked = 요소목록.selection()
+            if not picked or 현재["path"] is None:
+                return
+            key = picked[0]
+            item = 서식요소.element_map(analysis, 현재["path"]).get(key)
+            if item is None:
+                return
+            현재["key"] = key
+            항목이름.set(서식요소.element_label(key))
+            선택지 = 서식요소.element_choices(key)
+            if key.startswith("border_"):
+                선택지 = ("없음", "실선 0.12 mm #000000", "실선 0.4 mm #000000", "이중 실선 0.5 mm #000000")
+            elif not 선택지:
+                선택지 = tuple(서식요소.format_value(key, v) for v, _ in item.get("variants", []))
+            상태값 = ("disabled" if not 서식요소.element_editable(key)
+                     else "readonly" if 서식요소.element_choices(key) else "normal")
+            값상자.configure(values=선택지, state=상태값)
+            값.set(서식요소.format_value(key, item["value"]))
+
+        def 값_바꾸기(event=None):
+            key, path = 현재["key"], 현재["path"]
+            if key is None or path is None or not 서식요소.element_editable(key):
+                return
+            try:
+                새값 = 서식요소.parse_value(key, 값.get())
+            except ValueError as exc:
+                messagebox.showerror(APP_NAME, str(exc), parent=dialog)
+                return
+            서식요소.set_value(analysis, path, key, 새값)
+            요소_표시(path, key)
+
+        def 분석값으로():
+            key, path = 현재["key"], 현재["path"]
+            item = 서식요소.element_map(analysis, path).get(key) if key else None
+            if item and "analyzed" in item:
+                서식요소.set_value(analysis, path, key, item["analyzed"])
+                요소_표시(path, key)
+                값.set(서식요소.format_value(key, item["value"]))
+
+        영역목록.bind("<<TreeviewSelect>>", 영역_선택)
+        요소목록.bind("<<TreeviewSelect>>", 요소_선택)
+        값상자.bind("<Return>", 값_바꾸기)
+        ttk.Button(편집, text="값 바꾸기", command=값_바꾸기).grid(row=0, column=2, padx=(0, 6))
+        ttk.Button(편집, text="분석값으로 되돌리기", command=분석값으로).grid(row=0, column=3)
+        첫영역 = next((iid for iid, path in 경로들.items() if 서식요소.element_map(analysis, path)), None)
+        if 첫영역:
+            영역목록.see(첫영역)
+            영역목록.selection_set(첫영역)
+            영역_선택()
+        result = {"confirmed": False}
+
+        def 계층검토():
+            이전 = copy.deepcopy((작업본.get("style_hierarchy") or {}).get("styles", []))
+            if self._서식_구조_확인(작업본, dialog):
+                서식요소.sync_from_hierarchy(작업본, 이전)
+                if 현재["path"] is not None:
+                    요소_표시(현재["path"], 현재["key"])
+
+        def 닫기(confirmed=False):
+            if confirmed:
+                새이름 = 이름.get().strip()
+                if not 새이름:
+                    messagebox.showwarning(APP_NAME, "서식 이름을 입력해 주세요.", parent=dialog)
+                    return
+                if 새이름 in set(다른이름):
+                    messagebox.showwarning(APP_NAME, "이미 사용 중인 서식 이름입니다.", parent=dialog)
+                    return
+                작업본["name"] = 새이름
+                if 기관.get().strip():
+                    작업본["organization"] = 기관.get().strip()
+                else:
+                    작업본.pop("organization", None)
+                try:
+                    서식요소.apply_to_profile(작업본)
+                except Exception as exc:
+                    messagebox.showerror(APP_NAME, f"세부사항을 서식에 반영하지 못했습니다.\n{exc}", parent=dialog)
+                    return
+                앞부분 = str(작업본.get("summary", "")).split("\n\n서식 요소 대표값", 1)[0]
+                작업본["summary"] = (앞부분 + "\n\n서식 요소 대표값\n"
+                                   + "\n".join(서식요소.summary_lines(analysis)))
+                profile.clear()
+                profile.update(작업본)
+                result["confirmed"] = True
+            dialog.destroy()
+
+        buttons = ttk.Frame(body)
+        buttons.pack(fill="x", pady=(10, 0))
+        ttk.Button(buttons, text="계층 구조 검토…", command=계층검토).pack(side="left")
+        ttk.Button(buttons, text="취소", command=닫기).pack(side="right")
+        ttk.Button(buttons, text="확인하고 서식 저장", command=lambda: 닫기(True)).pack(side="right", padx=8)
+        dialog.protocol("WM_DELETE_WINDOW", 닫기)
+        parent.wait_window(dialog)
+        return result["confirmed"]
 
     def _서식_구조_확인(self, profile, parent):
         """Review and edit every repeated or one-off hierarchy style before saving."""
@@ -16784,8 +17352,11 @@ class HwpAutoDocFitGUI:
 
         self.spacing_stage_vars = {}
         for number, (key, label) in enumerate(stages_for_mode("spacing"), 1):
-            var = tk.BooleanVar(value=self.stage_choices["spacing"].get(key, stage_default(key)))
-            var.trace_add("write", lambda *_, k=key, v=var: self.stage_choices["spacing"].__setitem__(k, v.get()))
+            if key == "reset_spacing":
+                var = self.reset_spacing_var   # 실행창 카드의 '기존 자간 초기화'와 같은 값
+            else:
+                var = tk.BooleanVar(value=self.stage_choices["spacing"].get(key, stage_default(key)))
+                var.trace_add("write", lambda *_, k=key, v=var: self.stage_choices["spacing"].__setitem__(k, v.get()))
             self.spacing_stage_vars[key] = var
             item = ttk.Frame(container)
             item.pack(fill="x", pady=(4, 7))
@@ -17035,6 +17606,7 @@ class HwpAutoDocFitGUI:
             설정값["always_on_top"] = bool(self.always_on_top_var.get()) if hasattr(self, "always_on_top_var") else True
             설정값["all_include_spacing"] = (bool(self.include_spacing_var.get())
                                            if hasattr(self, "include_spacing_var") else True)
+            설정값["spacing_reset_existing"] = bool(self.stage_choices["spacing"].get("reset_spacing", True))
             설정값["active_format_profile"] = getattr(self, "_활성_서식_프로파일", "")
             기존_설정 = 설정_불러오기()
             기존_세부작업 = 기존_설정.get("stage_choices", {})

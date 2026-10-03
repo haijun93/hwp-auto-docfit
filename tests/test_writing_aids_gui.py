@@ -44,9 +44,22 @@ class WritingAidsGuiTest(unittest.TestCase):
                     app._AI_프롬프트_열기(root)
                     root.update()
 
-                    # 작업 카드 3장: 자간 정리 / 서식 통일 / 한 번에 적용(+ 자간 조정 포함 선택)
+                    # 작업 카드 3장: 자간 정리(+ 기존 자간 초기화) / 서식 통일 / 한 번에 적용(+ 자간 조정 포함)
                     self.assertEqual([b.cget("text") for b in app.mode_buttons],
-                                     ["자간 정리", "서식 통일", "한 번에 적용", "자간 조정 포함"])
+                                     ["자간 정리", "기존 자간 초기화", "서식 통일", "한 번에 적용", "자간 조정 포함"])
+                    # '기존 자간 초기화'는 자간 정리 세부 작업 01과 같은 값이고 설정 파일에 저장된다.
+                    app._카드_클릭("all")
+                    app.reset_spacing_var.set(False)
+                    app._자간초기화_변경()
+                    self.assertEqual(app.selected_mode.get(), "spacing")
+                    self.assertFalse(app.stage_choices["spacing"]["reset_spacing"])
+                    self.assertTrue(app.stage_choices["all"]["reset_spacing"])
+                    self.assertFalse(ns["설정_불러오기"]()["spacing_reset_existing"])
+                    self.assertIn("기존 자간을 초기화하지 않고", app.options_summary.cget("text"))
+                    app.stage_choices["spacing"]["reset_spacing"] = True   # 세부 작업 창에서 다시 켬
+                    app._요약갱신()
+                    self.assertTrue(app.reset_spacing_var.get())
+                    self.assertTrue(ns["설정_불러오기"]()["spacing_reset_existing"])
                     self.assertEqual(list(app.mode_cards), ["spacing", "unify", "all"])
                     app._카드_클릭("all")
                     self.assertEqual(app.selected_mode.get(), "all")
