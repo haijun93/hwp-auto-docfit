@@ -2,13 +2,13 @@
   "kind": "실제 처리 결과를 설명하는 안내 자료; UI 화면 녹화 아님",
   "runs": {
     "spacing": {
-      "app_version": "1.69 Beta 14",
+      "app_version": "1.69 Beta 18",
       "source_file": "삼채인.txt",
       "source_sha256": "fb34e95442e3fd5832185156edb748ed8edde6cb854def422458bff240ad1c01",
       "source_unchanged": true,
-      "code_sha256": "a0b3845d4f151cb18ef31210777c9cea1aece76416522b32ba7aa50986df4909",
-      "git_commit": "676c90c35b99bc566824f29e6bea7351b5457c3a",
-      "elapsed_seconds": 134.65,
+      "code_sha256": "a846b56330d84f98af9e4949873019e2008d540ee23b0334ba041d1c18097012",
+      "git_commit": "9ce625ec173ae1b7c39e9e0d4e43fd565b9817bd",
+      "elapsed_seconds": 123.24,
       "options": {
         "profile": "기본 보고서 서식",
         "verify": true,
@@ -19,7 +19,7 @@
       },
       "hwp_version": "9, 6, 1, 10778",
       "output_hashes": {
-        "삼채인(자간조정).hwpx": "5b550e567a27802928604620e6ed49ee5acdd9ce3d5cb4d9fd01d97449e02fad"
+        "삼채인(자간조정).hwpx": "ce55a963e189228a37208c545e1b84f1644ebe630583d792c776b81a4fc01c51"
       },
       "before_pages": 2,
       "after_pages": 2,
@@ -34,13 +34,13 @@
       }
     },
     "all": {
-      "app_version": "1.69 Beta 14",
+      "app_version": "1.69 Beta 18",
       "source_file": "삼채인.txt",
       "source_sha256": "fb34e95442e3fd5832185156edb748ed8edde6cb854def422458bff240ad1c01",
       "source_unchanged": true,
-      "code_sha256": "a0b3845d4f151cb18ef31210777c9cea1aece76416522b32ba7aa50986df4909",
-      "git_commit": "676c90c35b99bc566824f29e6bea7351b5457c3a",
-      "elapsed_seconds": 440.66,
+      "code_sha256": "a846b56330d84f98af9e4949873019e2008d540ee23b0334ba041d1c18097012",
+      "git_commit": "9ce625ec173ae1b7c39e9e0d4e43fd565b9817bd",
+      "elapsed_seconds": 335.02,
       "options": {
         "profile": "기본 보고서 서식",
         "verify": true,
@@ -51,7 +51,7 @@
       },
       "hwp_version": "9, 6, 1, 10778",
       "output_hashes": {
-        "삼채인(일괄적용).hwpx": "96792a9e4d907792002e0fbdddbbce9c66865ffa10ce52284191bd669dedc58b"
+        "삼채인(일괄적용).hwpx": "0c8656f2a78680f23f7046d4c0275907c106948e6c48e764dbbad6f6120addca"
       },
       "before_pages": 2,
       "after_pages": 3,
@@ -68,28 +68,28 @@
   },
   "assets": {
     "all-comparison.png": {
-      "bytes": 275589,
-      "sha256": "4d6a9a63921ce9cb21c27c415406c1ec389b82eec48e09de9c5d3dbc8783493c"
+      "bytes": 259239,
+      "sha256": "969d579326705a38808a01a9a2bc9c89c15b7519e3389a5fd2a148d467620efb"
     },
     "all-guide.gif": {
-      "bytes": 379048,
-      "sha256": "a01828e3704a71dac3c8360fd575737abb140360506cc763eeb20834dc79b257"
+      "bytes": 357944,
+      "sha256": "0c74e01df88e2892fad23c124ab3033527b1120616c0c2868e038aed041107e8"
     },
     "all-guide.mp4": {
-      "bytes": 306610,
-      "sha256": "1c6ef51ec2a42676b6cf0e6401bb2a77e9edf0aec0ad910a97c2b400b7427de3"
+      "bytes": 287707,
+      "sha256": "9bcedc202d8bbb28e58413135e5e7757e0e342bda950d45900615bf9abec0f8b"
     },
     "all-page-1.png": {
-      "bytes": 285488,
-      "sha256": "ade35c5a678135842eea6604f55fb7b29caf0d685041d62634eba75867728dfa"
+      "bytes": 286377,
+      "sha256": "49b281dc7dfb00dff8716c2852566288676dc5f05ba677e10cb8e19a6fd6e84e"
     },
     "all-page-2.png": {
-      "bytes": 265105,
-      "sha256": "26d3661bfe30b3a198786c5cfb5f7b0ee72d585e21593ebfd8298eca06418e46"
+      "bytes": 265153,
+      "sha256": "3f270fe4ea56d404492495545c3162459c7aeecbfabaaa43f8338b52a0b1abfd"
     },
     "all-page-3.png": {
-      "bytes": 252285,
-      "sha256": "036ec07275d550453eec3c981e535179d4a2c4f00d27f7b7abde81899126d461"
+      "bytes": 253695,
+      "sha256": "c2fa7c69b6446cefc5a28e5ae860c19d8188b2cff884041c0c18415159386c67"
     },
     "all-poster.png": {
       "bytes": 170620,
