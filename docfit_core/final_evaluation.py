@@ -89,6 +89,9 @@ def evaluate_work(goal, documents, item_stats=None, unresolved=None, verificatio
                     rule_scores.append(0.0)
                     continue
                 status = result.get('status')
+                if status == 'not_applicable':        # 검사할 대상이 없는 문서: 위반이 없으므로 만점
+                    rule_scores.append(100.0)
+                    continue
                 if status == 'error':
                     rule_scores.append(0.0)
                     continue
@@ -137,7 +140,7 @@ def evaluate_work(goal, documents, item_stats=None, unresolved=None, verificatio
         checks = item.get('rule_checks') or {}
         missing = sorted(key for key in required if key not in checks)
         bad = sorted(key for key in required if key in checks
-                     and checks[key].get('status') != 'passed')
+                     and checks[key].get('status') not in ('passed', 'not_applicable'))
         coverage.append({'output': item.get('output'), 'unchecked': missing,
                          'not_checkable': not_checkable,
                          'failed_or_incomplete': bad, 'checks': checks})

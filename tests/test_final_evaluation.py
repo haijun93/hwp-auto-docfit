@@ -149,6 +149,20 @@ class FinalEvaluationTest(unittest.TestCase):
         self.assertTrue(any("그룹 1개" in note and "추측 적용하지 않음" in note
                             for note in report["notes"]))
 
+    def test_style_unify_without_sentences_is_not_applicable(self):
+        # 문두기호 문장이 없는 문서(서식·표만 있는 문서)의 서식통일 검수는 '해당 없음'이라 부분 달성 사유가 아니다.
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder) / "result.hwpx"
+            output.touch()
+            report = evaluate_work(
+                build_work_goal("unify", 1, {"style_unify": True}),
+                [{"output": str(output), "success": True, "integrity_ok": True,
+                  "rule_checks": {"style_unify": {"status": "not_applicable", "checked": 0, "issues": []}}}],
+                verification_enabled=True,
+            )
+        self.assertEqual(report["verdict"], "달성")
+        self.assertFalse(any("style_unify" in blocker for blocker in report["blockers"]))
+
     def test_repeated_rule_blockers_are_summarized_once_across_documents(self):
         with tempfile.TemporaryDirectory() as folder:
             output = Path(folder) / "result.hwpx"

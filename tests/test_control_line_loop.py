@@ -2,7 +2,7 @@
 from pathlib import Path
 import runpy
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 
 class ControlLineLoopTest(unittest.TestCase):
@@ -114,6 +114,27 @@ class NumericCellTest(unittest.TestCase):
     def test_text_cells_are_processed(self):
         for text in ('구분', '반도체', '12.3%p', '1,234억원', '수출 증가'):
             self.assertFalse(self.check(text), text)
+
+    def test_label_only_line_is_skipped_not_document_error(self):
+        # 문두기호·라벨만 있는 화면줄은 자간을 줄일 본문이 없다. 예전에는 hwp_run의 거절이 일반 오류라
+        # 문서 전체가 실패했다(범정부오피스 인천 업무보고 서식, 한 번에 적용). 이제 그 줄만 건너뛴다.
+        ns = self.ns
+        doc = Mock()
+
+        def body(최대시도=None):
+            ns['hwp_run']('CharShapeSpacingDecrease')
+            return False                                   # 거절이 없으면 여기까지 온다
+
+        with patch.dict(ns['hwp_run'].__globals__, {
+                'hwp': doc, '자간조정_현재줄_본문선택': lambda: False, '_자간자동조정_본체': body,
+                '_문장부호_줄병합_시도_본체': lambda: body(), '현재_화면줄_텍스트': lambda: '□ ',
+                '진단로그': Mock(), '로그': Mock()}):
+            with self.assertRaises(ns['문두보호_조정불가']):
+                ns['hwp_run']('CharShapeSpacingDecrease')
+            self.assertIs(ns['자간자동조정'](), True)
+            self.assertIs(ns['문장부호_줄병합_시도'](), True)
+        doc.Run.assert_any_call('Cancel')
+        self.assertNotIn(call('CharShapeSpacingDecrease'), doc.Run.call_args_list)
 
 
 if __name__ == '__main__':

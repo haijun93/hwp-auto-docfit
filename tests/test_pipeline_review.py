@@ -197,7 +197,8 @@ class PipelineReviewTest(unittest.TestCase):
     def test_table_audit_runs_without_body_profile(self):
         result, reopened, style, table, _, _ = self._audit(
             작업_모드='unify', _서식통일_문서대표프로필={})
-        self.assertEqual(result['style_unify']['status'], 'incomplete')
+        # 문두기호 문장이 없어 대표 스타일이 없으면 '해당 없음'이다(미완료로 0점 처리하지 않음, 2026-10-04).
+        self.assertEqual(result['style_unify']['status'], 'not_applicable')
         self.assertEqual(result['table_unify']['status'], 'passed')
         style.assert_not_called()
         table.assert_called_once_with(검증만=True)

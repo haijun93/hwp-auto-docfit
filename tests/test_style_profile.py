@@ -76,8 +76,10 @@ class StyleProfileTest(unittest.TestCase):
         self.assertEqual(profile["format"]["기본_장평"], 95)
         self.assertEqual(profile["format"]["기본_줄간격_퍼센트"], 170)
         self.assertEqual(profile["format"]["제목_문단"]["font"], "테스트명조")
-        self.assertEqual(profile["table_format"]["header_size"], 16)
-        self.assertEqual(profile["table_format"]["body_size"], 12)
+        # 2행 1열 표는 데이터 표(본문 뒤 2행 2열 이상 격자 표)가 아니라 표 머리글·본문 글자를 복사하지 않고 기본 표
+        # 서식을 쓴다(2026-10-04: 문서 머리 표·상자 표의 글자가 정리할 문서의 데이터 표에 입혀지던 문제).
+        self.assertNotIn("header_size", profile.get("table_format", {}))
+        self.assertIn("데이터 표가 없어", profile["summary"])
         self.assertEqual(len(profile["precise_tables"]["tables"]), 1)
         self.assertEqual(profile["precise_tables"]["tables"][0]["rows"], 2)
 

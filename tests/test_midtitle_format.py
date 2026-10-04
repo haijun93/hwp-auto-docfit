@@ -82,7 +82,15 @@ class MidTitleFormatTest(unittest.TestCase):
         self.assertEqual(judge(self._plain_table(2)), 2)
         self.assertEqual(judge(self._plain_table(3, numeral='Ⅳ', text='행 정 사 항')), 1)
         self.assertEqual(judge(self._plain_table(3, numeral='II')), 1)
+        # 서식(HY견고딕 20pt)은 로마자 번호 표에만 입히고, 아라비아 숫자 번호(1·01·2.) 표는 글 칸 폭만 맞춘다(2026-10-04).
         self.assertIsNone(judge(self._plain_table(3, numeral='1')))
+        cells = self.ns['중제목_글칸들']
+        self.assertEqual(cells(self._plain_table(3, numeral='1')), [2])
+        self.assertEqual(cells(self._plain_table(2, numeral='01')), [1])
+        self.assertEqual(cells(self._plain_table(2, numeral='2.')), [1])
+        self.assertEqual(cells(self._plain_table(3, numeral='Ⅱ', text='', middle='글')), [1])   # 2열에 글
+        self.assertEqual(cells(self._plain_table(2, numeral='123')), [])
+        self.assertEqual(cells(self._plain_table(3, numeral='가')), [])
         self.assertIsNone(judge(self._plain_table(3, numeral='가')))
         self.assertIsNone(judge(self._plain_table(3, text='')))
         self.assertIsNone(judge(self._plain_table(3, middle='끼임')))
@@ -140,6 +148,38 @@ class MidTitleFormatTest(unittest.TestCase):
             run = next(r for r in cell.iter() if self.name(r) == 'run')
             return any(self.name(x) == 'bold' for x in chars[run.get('charPrIDRef')])
         return bold(cells[0]), bold(cells[2])
+
+    def test_text_cell_width_follows_text_length(self):
+        # 중제목 글 칸 폭은 글자 수에 비례해 자동으로 맞춘다: 짧은 글은 줄이고 긴 글은 넓히며, 표 폭은 칸 폭의 합이다.
+        ns = self.ns
+        texts = ['추진배경', '추진방향 및 세부 추진계획', '추진배경 및 필요성 검토']
+        tables = [self._plain_table(3, numeral=n, text=t) for n, t in zip(('Ⅰ', 'Ⅱ', '3'), texts)]
+        # 번호·글·빈칸처럼 서식 기준 표가 없는 모양도 글 칸 폭만 맞춘다.
+        odd = self._plain_table(3, numeral='4', text='', middle='향후 계획')
+        source = self._hwpx(tables + [odd])
+        found = ns['중제목_hwpx_처리'](source)
+        self.assertEqual(found, {'Contents/section0.xml': [(0, 1), (1, 1), (2, 'fit'), (3, 'fit')]})   # 숫자 번호는 폭만
+        target = source.with_name('fit.hwpx')
+        ns['중제목_hwpx_처리'](source, target, found)
+        with zipfile.ZipFile(target) as z:
+            section = self.parse(z.read('Contents/section0.xml'))
+        out = [t for t in section.iter() if self.name(t) == 'tbl']
+        def widths(table):
+            return [int(ns['제목_자식'](c, 'cellSz').get('width')) for c in ns['제목_셀들'](table)]
+        글칸 = [widths(t)[2] for t in out[:3]]
+        self.assertLess(글칸[0], 15109)                       # 4글자: 기준 표 글 칸보다 좁아짐
+        self.assertTrue(글칸[0] < 글칸[2] < 글칸[1], 글칸)          # 글자 수(4·13·14자) 순서대로 넓어짐
+        # 20pt 한글 4글자 폭(8000) + 여백·여유가 들어가고 너무 넓지 않다.
+        self.assertTrue(8000 < 글칸[0] < 8000 + 3000, 글칸[0])
+        for table in out:
+            self.assertEqual(int(ns['제목_자식'](table, 'sz').get('width')), sum(widths(table)))
+        self.assertEqual(widths(out[3])[0], widths(tables[0])[0])          # 번호 칸은 그대로
+        # 'fit' 표: 좁은 2열에 든 10pt 글 '향후 계획'(한글 4자+빈칸) 폭만큼 넓힌다(4500 + 여백·여유).
+        self.assertTrue(4500 < widths(out[3])[1] < 4500 + 2500, widths(out[3]))
+        # 쪽 본문 폭을 넘으면 글 칸을 줄여 표가 본문 폭 안에 들어가게 한다.
+        long_table = self._plain_table(2, numeral='Ⅴ', text='아주 아주 긴 중제목 문구를 넣어서 쪽 본문 폭을 넘겨 봅니다 정말로')
+        ns['_중제목_칸폭_맞춤'](long_table, 30000, None)
+        self.assertLessEqual(int(ns['제목_자식'](long_table, 'sz').get('width')), 30000)
 
     def test_numeral_bold_is_default_and_can_be_turned_off(self):
         self.assertTrue(self.ns['중제목_번호굵게'])
