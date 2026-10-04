@@ -1,0 +1,35 @@
+# 태그(vX.Y-beta.N)를 푸시하면 GitHub 릴리스를 만든다(2026-10-04).
+# 그전에는 GitLab CI만 릴리스를 만들어 GitHub 릴리스가 v1.69-beta.3에 멈춰 있었다.
+# 노트는 releases/<태그>.md, exe는 태그 커밋의 release-assets/HWP_AutoDocFit.exe(CI 빌드 cherry-pick본)를 쓴다.
+name: GitHub release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          NOTE="releases/${TAG}.md"
+          [ -f "$NOTE" ] || { echo "노트 없음: $NOTE"; exit 1; }
+          TITLE="$(head -1 "$NOTE" | sed 's/^# *//')"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "이미 있는 릴리스: $TAG"
+          else
+            # GitHub는 첨부 파일 이름의 한글을 지우므로(default.txt가 됨) 영문 이름으로 올리고 한글은 표시 이름(#)으로 둔다.
+            cp "release-assets/보고서 예시 파일(한번에 적용).txt" report-example-all-in-one.txt
+            gh release create "$TAG" release-assets/HWP_AutoDocFit.exe \
+              "report-example-all-in-one.txt#보고서 예시 파일(한번에 적용).txt" \
+              --title "$TITLE" --notes-file "$NOTE" --latest
+          fi

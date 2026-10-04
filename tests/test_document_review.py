@@ -10,9 +10,9 @@ from tests.test_style_profile import HEADER, SECTION
 
 class DocumentReviewTest(unittest.TestCase):
     def test_stage_labels_keep_profile_roles_compatible(self):
-        for internal, label in (("제목", "1단계"), ("중제목", "2단계"),
-                                ("소제목", "3단계"), ("본문", "4단계"),
-                                ("내용", "5단계"), ("부연설명", "부연설명")):
+        for internal, label in (("제목", "1단계"), ("장", "2단계"), ("중제목", "3단계"),
+                                ("소제목", "4단계"), ("본문", "5단계"),
+                                ("내용", "6단계"), ("부연설명", "부연설명")):
             self.assertEqual(display_role(internal), label)
             self.assertEqual(stored_role(label), internal)
 
@@ -33,7 +33,7 @@ class DocumentReviewTest(unittest.TestCase):
             self.assertEqual(source.read_bytes(), before)
         self.assertEqual(result["document_kind"], "계획서")
         self.assertEqual(result["body_count"], 2)
-        self.assertEqual(result["outline"][0]["role"], "3단계")
+        self.assertEqual(result["outline"][0]["role"], "4단계")
         self.assertTrue(any(issue["category"] == "첫머리 검토" for issue in result["issues"]))
         self.assertTrue(any("목표·핵심 실행 방안·일정" in issue["message"] for issue in result["issues"]))
 

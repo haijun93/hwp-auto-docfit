@@ -49,7 +49,7 @@ class StyleHierarchyTest(unittest.TestCase):
                     "font": "명조", "size_pt": 12}
                    for value in ("□ 소제목", "* 참고", "□ 다음 소제목", "ㅇ 본문")]
         result = analyze_hierarchy(records)
-        self.assertIn("1번째 3단계 아래에 4단계가 없습니다.", result["warnings"])
+        self.assertIn("1번째 4단계 아래에 5단계가 없습니다.", result["warnings"])
 
     def test_circled_marker_can_replace_three_roles(self):
         for anchor, expected, indent, size in (
@@ -76,3 +76,45 @@ class StyleHierarchyTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SixLevelHierarchyTest(unittest.TestCase):
+    """계층 6단계(제목·장·중제목·소제목·ㅇ·-)와 문서 유형 A·B·C형(2026-10-04)."""
+
+    def test_chapter_marker_is_level_two(self):
+        from docfit_core.style_hierarchy import display_role
+        for text in ("제1장 총칙", "2장 추진 계획", "제2편 개요", "Chapter 3 결론"):
+            self.assertEqual(leading_marker(text)[1], "장", text)
+        self.assertEqual(leading_marker("Ⅰ 추진 배경")[1], "중제목")
+        self.assertEqual(leading_marker("1. 항목")[1], "소제목")
+        self.assertEqual([display_role(r) for r in ("장", "중제목", "소제목", "본문", "내용")],
+                         ["2단계", "3단계", "4단계", "5단계", "6단계"])
+
+    def test_document_types(self):
+        from docfit_core.style_hierarchy import document_type
+        self.assertEqual(document_type(["제목", "장", "중제목", "소제목", "본문", "내용"]), "A형")
+        self.assertEqual(document_type(["제목", "중제목", "소제목", "본문"]), "B형")
+        self.assertEqual(document_type(["제목", "소제목", "본문"], has_midtitle_table=True), "B형")
+        self.assertEqual(document_type(["제목", "소제목", "본문", "내용"]), "C형")
+        self.assertEqual(document_type(["제목", "본문", "본문"]), "기타")       # 보도자료·답변자료 등
+
+    def test_analysis_reports_document_type(self):
+        records = [{"text": t, "left": 0, "indent": 0, "font": "f", "size_pt": 15}
+                   for t in ("제1장 총칙", "Ⅰ 배경", "□ 소제목", "ㅇ 본문", "- 내용")]
+        self.assertEqual(analyze_hierarchy(records)["document_type"], "A형")
+
+    def test_chapter_paragraph_gets_chapter_rule(self):
+        import runpy
+        from pathlib import Path
+        ns = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'hwp-auto-docfit.py'))
+        find = ns['표준서식_기호규칙_찾기']
+        g = find.__globals__
+        self.assertEqual(find('제1장 총칙')[:4], ('(장)', 0, 'HY헤드라인M', 20))      # 기본 장 서식
+        self.assertEqual(find('  2장 추진 계획')[0], '(장)')
+        saved = g['표준서식_설정'].get('논리역할_규칙')
+        try:
+            g['표준서식_설정']['논리역할_규칙'] = {'장': ('(장)', 0, '맑은 고딕', 22, True, False)}
+            self.assertEqual(find('제3장 결론')[2:4], ('맑은 고딕', 22))            # 예시에서 배운 장 서식
+        finally:
+            g['표준서식_설정']['논리역할_규칙'] = saved
+        self.assertEqual(find('□ 소제목')[0], '□')

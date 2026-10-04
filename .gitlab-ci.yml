@@ -34,6 +34,8 @@ release-windows:
     - test -f release-assets/HWP_AutoDocFit.exe
     - mkdir -p dist
     - cp release-assets/HWP_AutoDocFit.exe dist/HWP_AutoDocFit.exe
+    # 한 번에 적용 시험용 보고서 예시(텍스트)도 함께 내려받게 한다(2026-10-04 사용자 요청).
+    - cp "release-assets/보고서 예시 파일(한번에 적용).txt" "dist/보고서 예시 파일(한번에 적용).txt"
     - sha256sum dist/HWP_AutoDocFit.exe
     - |
       if [ -f "releases/$CI_COMMIT_TAG.md" ]; then
@@ -59,10 +61,13 @@ release-windows:
         --data-urlencode "link_type=package" \
         --data-urlencode "direct_asset_path=/HWP_AutoDocFit.exe" \
         "$CI_API_V4_URL/projects/$CI_PROJECT_ID/releases/$CI_COMMIT_TAG/assets/links"
+    - |
+      curl --fail-with-body --request POST         --header "JOB-TOKEN: $CI_JOB_TOKEN"         --data-urlencode "name=보고서 예시 파일(한번에 적용).txt"         --data-urlencode "url=$CI_PROJECT_URL/-/jobs/$CI_JOB_ID/artifacts/raw/dist/%EB%B3%B4%EA%B3%A0%EC%84%9C%20%EC%98%88%EC%8B%9C%20%ED%8C%8C%EC%9D%BC%28%ED%95%9C%EB%B2%88%EC%97%90%20%EC%A0%81%EC%9A%A9%29.txt"         --data-urlencode "link_type=other"         --data-urlencode "direct_asset_path=/보고서 예시 파일(한번에 적용).txt"         "$CI_API_V4_URL/projects/$CI_PROJECT_ID/releases/$CI_COMMIT_TAG/assets/links"
   artifacts:
     name: "HWP_AutoDocFit-$CI_COMMIT_TAG"
     paths:
       - dist/HWP_AutoDocFit.exe
+      - "dist/보고서 예시 파일(한번에 적용).txt"
   rules:
     - if: '$CI_COMMIT_TAG'
 

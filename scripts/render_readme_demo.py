@@ -169,6 +169,9 @@ def main():
         page_folder.mkdir(exist_ok=True)
         before, _ = render_pdf(folder / "before.pdf", page_folder)
         after, _ = render_pdf(folder / "after.pdf", frames / mode)
+        if mode == "all":
+            for index, page in enumerate(after, 1):
+                page.save(args.output / f"all-page-{index}.png")
         compare = comparison(mode, before[0], after[0], args.output)
         guide(mode, before[0], after[0], compare, args.output, frames)
         evidence["runs"][mode] = {k: report[k] for k in

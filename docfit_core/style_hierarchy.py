@@ -18,16 +18,21 @@ def normalize_leading_dot(text):
     return text[:match.start(2)] + "•" + text[match.end(2):] if match else text
 
 
+# 계층은 6단계다(2026-10-04 사용자 정의): 1 제목, 2 장(chapter), 3 중제목(로마자 숫자, 또는 표 첫 칸의
+# 로마자 숫자), 4 소제목(□), 5 ㅇ, 6 - … . *·※ 등은 관련 항목에 붙는 부연설명이다.
+# 문서 유형: A형 = 1~6단계 모두, B형 = 장 없이 1·3~6단계, C형 = 장·중제목 없이 1·4~6단계,
+# 그 밖(보도자료·답변자료 등)은 기타 서식.
 MARKERS = (
+    ("장", r"(?:제\s?\d{1,2}\s?[장편부]|\d{1,2}\s?장|[Cc]hapter\s?\d{1,2})(?=\s|$|[.．:：])"),
     ("중제목", r"(?:[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+|[가-하])(?=\s|[.．])"),
     ("소제목", r"(?:[□ㅁ■]|\d{1,2}[.．]?)(?=\s|$)"),
     ("본문", r"(?:[ㅇ○◦☞]|[가-하]\))(?=\s|$)"),
     ("내용", r"(?:-|\d+\))(?=\s|$)"),
     ("부연설명", r"(?:\*\*?|※|[•·‧∙⋅ㆍ●]|\([가-하0-9]+\)[.．]?)(?=\s|$)"),
 )
-ROLE_ORDER = ("중제목", "소제목", "본문", "내용", "부연설명")
-ROLE_LABELS = {"제목": "1단계", "중제목": "2단계", "소제목": "3단계",
-               "본문": "4단계", "내용": "5단계", "부연설명": "부연설명"}
+ROLE_ORDER = ("장", "중제목", "소제목", "본문", "내용", "부연설명")
+ROLE_LABELS = {"제목": "1단계", "장": "2단계", "중제목": "3단계", "소제목": "4단계",
+               "본문": "5단계", "내용": "6단계", "부연설명": "부연설명"}
 LABEL_ROLES = {label: role for role, label in ROLE_LABELS.items()}
 
 
@@ -37,6 +42,28 @@ def display_role(role):
 
 def stored_role(label):
     return LABEL_ROLES.get(label, label)
+
+
+DOCUMENT_TYPES = {
+    "A형": "1~6단계 모두 사용(장 포함)",
+    "B형": "장 없이 1·3~6단계 사용(중제목부터)",
+    "C형": "장·중제목 없이 1·4~6단계 사용(소제목부터)",
+    "기타": "보도자료·답변자료 등 그 밖의 서식",
+}
+
+
+def document_type(roles, has_midtitle_table=False):
+    """문서에 나온 계층으로 문서 유형(A형·B형·C형·기타)을 정한다.
+
+    has_midtitle_table: 본문 문단 대신 표 첫 칸의 로마자 숫자로 중제목을 쓴 문서인지.
+    """
+    present = set(roles)
+    has_midtitle = "중제목" in present or has_midtitle_table
+    if "소제목" not in present:
+        return "기타"
+    if "장" in present:
+        return "A형" if has_midtitle else "기타"
+    return "B형" if has_midtitle else "C형"
 CIRCLED_MARKER = re.compile(r"[①-⑳㉠-㉻❶-❿➊-➓](?=\s|$)")
 CIRCLED_ROLES = ("본문", "내용", "부연설명")
 
@@ -160,9 +187,9 @@ def analyze_hierarchy(paragraphs):
             # 소제목 바로 뒤의 부연설명은 0개 이상 허용하되 본문은 필수다.
             following = next((name for name in later if name != "부연설명"), None)
             if following != "본문":
-                warnings.append(f"{index + 1}번째 3단계 아래에 4단계가 없습니다.")
+                warnings.append(f"{index + 1}번째 {display_role('소제목')} 아래에 {display_role('본문')}가 없습니다.")
         if role == "내용" and not any(item["role"] == "본문" for item in records[:index]):
-            warnings.append(f"{index + 1}번째 5단계에 앞선 4단계가 없습니다.")
+            warnings.append(f"{index + 1}번째 {display_role('내용')}에 앞선 {display_role('본문')}가 없습니다.")
         if role == "부연설명" and (index == 0 or records[index - 1]["role"] not in
                                  ("소제목", "본문", "내용", "부연설명")):
             warnings.append(f"{index + 1}번째 부연설명에 짝이 되는 앞 항목이 없습니다.")
@@ -172,6 +199,7 @@ def analyze_hierarchy(paragraphs):
             "styles": summary,
             "variants": variants,
             "role_sequence": [r["role"] for r in records],
+            "document_type": document_type([r["role"] for r in records]),
             "warnings": warnings,
             "page_policy": {"subheading_with_bodies": True,
                             "optional_explanations_after_subheading": True,
@@ -181,8 +209,12 @@ def analyze_hierarchy(paragraphs):
 
 def hierarchy_summary(analysis):
     lines = ["들여쓰기 → 글꼴 → 크기 → 문두기호 순으로 판정; 문단 위 여백은 보조값",
-             "논리적 구조: 1단계 > 2단계 > 3단계 > 4단계 > 5단계; 부연설명은 관련 항목과 같은 쪽",
-             "원문자(① 등)는 서식에 따라 4단계 ㅇ, 5단계 -, 부연설명 기호를 대신할 수 있음"]
+             "논리적 구조: 1단계 제목 > 2단계 장 > 3단계 중제목(Ⅰ) > 4단계 소제목(□) > 5단계(ㅇ) > 6단계(-); "
+             "부연설명은 관련 항목과 같은 쪽",
+             "원문자(① 등)는 서식에 따라 5단계 ㅇ, 6단계 -, 부연설명 기호를 대신할 수 있음"]
+    kind = analysis.get("document_type")
+    if kind:
+        lines.append(f"문서 유형: {kind} — {DOCUMENT_TYPES.get(kind, '')}")
     for item in analysis["styles"]:
         values = ", ".join(f"{n / 100:g}pt" for n in item["prev_spacing_values"]) or "없음"
         lines.append(f"{display_role(item['role'])} [{item['marker']}] {item['count']}개 | "

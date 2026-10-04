@@ -255,7 +255,7 @@ import win32com.client as win32
 import win32gui
 import win32con
 from defusedxml.ElementTree import fromstring as safe_xml_fromstring
-from docfit_core.style_hierarchy import DOT_MARKERS, analyze_hierarchy, display_role, hierarchy_summary, leading_marker, normalize_leading_dot, stored_role
+from docfit_core.style_hierarchy import DOT_MARKERS, DOCUMENT_TYPES, analyze_hierarchy, display_role, document_type as 문서유형_판정, hierarchy_summary, leading_marker, normalize_leading_dot, stored_role
 from docfit_core.style_unify import complement_ranges as 서식통일_범위분리, merge_adjacent as 서식통일_범위병합, parenthetical_spans as 서식통일_부연괄호, representative as 서식통일_최빈값
 from docfit_core.style_unify import dominant as 서식통일_우세값, hierarchy_levels as 서식통일_계층순서, looks_like_cover as 서식통일_표지판정, unify_marker as 서식통일_문두기호, vocabulary_fallback as 서식통일_문서어휘_대표
 from docfit_core.style_unify import attachment_heading as 서식통일_붙임제목, style_change_points as 서식통일_체계전환점
@@ -360,7 +360,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리 도구"
-APP_VERSION = "1.69 Beta 17"
+APP_VERSION = "1.69 Beta 18"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 UPDATE_ASSET_NAME = "HWP_AutoDocFit.exe"
@@ -544,6 +544,9 @@ _콘솔_출력_가능 = (sys.stdout is not None)
 }
 
 표준서식_문단위간격_사용 = True
+# 6단계 계층의 문단 위 여백 기본값(2026-10-04): 2단계 장 20 · 3단계 중제목 15 · 4단계 □ 15 · 5단계 ㅇ 10 · 부연설명 3.
+표준서식_문단위간격_chapter_pt = 20
+표준서식_문단위간격_midtitle_pt = 15
 표준서식_문단위간격_box_pt = 15
 표준서식_문단위간격_circle_pt = 10
 표준서식_문단위간격_note_pt = 3
@@ -590,6 +593,9 @@ _표준서식_문단위간격_상태 = ParagraphSpacingTracker()
     # 행정안전부 개조식 보고서 작성 표준(□0칸→ㅇ1칸→―2칸→·/*3칸)에 맞춘
     # 기호 앞 들여쓰기 칸수(각 튜플의 두 번째 값)다. "-"/"※"는 각각
     # 3단계(―)와 4단계(·/*)와 같은 자리에 선다.
+    # 2단계 장(제1장·2장·Chapter 3 …). 문두가 문서마다 달라 기호 대신 역할로 찾는다(표준서식_기호규칙_찾기).
+    # 규칙의 기호 자리는 '(장)'이며, 문단 모양 복사·속성 선택도 이 이름을 쓴다(2026-10-04).
+    "장_규칙": ("(장)", 0, "HY헤드라인M", 20, True, False),
     "기호_규칙": [
         ("□", 0, "HY견고딕", 17, False, True),
         ("ㅇ", 1, "한컴돋움", 15, True, False),
@@ -611,19 +617,28 @@ _표_헤더서식_기본값 = {
     "본문_굵게": 표_헤더서식_본문_굵게,
 }
 _표준서식_문단위간격_기본값 = {
+    "chapter": 표준서식_문단위간격_chapter_pt,
+    "midtitle": 표준서식_문단위간격_midtitle_pt,
     "box": 표준서식_문단위간격_box_pt,
     "circle": 표준서식_문단위간격_circle_pt,
     "note": 표준서식_문단위간격_note_pt,
 }
 
-def 표준서식_문단위간격_찾기(text):
+def _표준서식_문단위간격_표():
+    return {"chapter": 표준서식_문단위간격_chapter_pt,
+            "midtitle": 표준서식_문단위간격_midtitle_pt,
+            "box": 표준서식_문단위간격_box_pt,
+            "circle": 표준서식_문단위간격_circle_pt,
+            "note": 표준서식_문단위간격_note_pt}
+
+
+def 표준서식_문단위간격_찾기(text, 계층=None):
+    """문단 위 간격(pt). 계층을 주면 글 대신 그 계층으로 정한다(표 첫 칸 로마자 중제목 표)."""
+    if 계층:
+        return _표준서식_문단위간격_상태.spacing_for_level(
+            계층, _표준서식_문단위간격_표(), 표준서식_문단위간격_복귀배율)
     return _표준서식_문단위간격_상태.spacing_for(
-        text,
-        {"box": 표준서식_문단위간격_box_pt,
-         "circle": 표준서식_문단위간격_circle_pt,
-         "note": 표준서식_문단위간격_note_pt},
-        표준서식_문단위간격_복귀배율,
-    )
+        text, _표준서식_문단위간격_표(), 표준서식_문단위간격_복귀배율)
 
 문장기호_목록 = ["□", "ㅇ", "-", "※", "*", "•"]
 
@@ -934,6 +949,7 @@ def 서식_기본값_전역_복원():
     global 표_헤더서식_헤더_폰트, 표_헤더서식_헤더_크기, 표_헤더서식_헤더_굵게
     global 표_헤더서식_본문_폰트, 표_헤더서식_본문_크기, 표_헤더서식_본문_굵게
     global 표준서식_문단위간격_box_pt, 표준서식_문단위간격_circle_pt, 표준서식_문단위간격_note_pt
+    global 표준서식_문단위간격_chapter_pt, 표준서식_문단위간격_midtitle_pt
     global 표준서식_문단위간격_복귀배율
     global 활성_정밀표_프로필, 활성_서식표_프로필, 활성_표서식_프로필
 
@@ -944,6 +960,8 @@ def 서식_기본값_전역_복원():
     표_헤더서식_본문_폰트 = _표_헤더서식_기본값["본문_폰트"]
     표_헤더서식_본문_크기 = _표_헤더서식_기본값["본문_크기"]
     표_헤더서식_본문_굵게 = _표_헤더서식_기본값["본문_굵게"]
+    표준서식_문단위간격_chapter_pt = _표준서식_문단위간격_기본값["chapter"]
+    표준서식_문단위간격_midtitle_pt = _표준서식_문단위간격_기본값["midtitle"]
     표준서식_문단위간격_box_pt = _표준서식_문단위간격_기본값["box"]
     표준서식_문단위간격_circle_pt = _표준서식_문단위간격_기본값["circle"]
     표준서식_문단위간격_note_pt = _표준서식_문단위간격_기본값["note"]
@@ -1072,6 +1090,8 @@ def 번들_리소스_폴더():
     "std_parspace": True,
     # 문두기호 문장 사이에 빈 줄로 띄운 간격 삭제(문단 위 여백으로 대신함)
     "std_remove_blank_lines": True,
+    "std_parspace_chapter": "20",
+    "std_parspace_midtitle": "15",
     "std_parspace_box": "15",
     "std_parspace_circle": "10",
     "std_parspace_note": "3",
@@ -1391,11 +1411,20 @@ def hwpx_서식_분석(path):
         fmt["논리역할_규칙"] = {}
         for item in profile["style_hierarchy"]["styles"]:
             role, marker = item["role"], item["marker"]
-            if role not in ("중제목", "소제목", "본문", "내용", "부연설명") or marker == "(없음)":
+            if role not in ("장", "중제목", "소제목", "본문", "내용", "부연설명") or marker == "(없음)":
                 continue
             shape = marker_shapes.get((role, marker))
             font, size, bold = shape.most_common(1)[0][0] if shape else (item["font"], item["size_pt"], False)
             if not font or not size:
+                continue
+            if role == "장":
+                # 장 문두(제1장·제2장 …)는 문서마다 달라 기호 규칙에 넣지 않고 역할 규칙 '(장)'으로 둔다.
+                fmt["논리역할_규칙"].setdefault("장", ("(장)", 0, font, size, bold, False))
+                fmt["복사_문단모양"].setdefault("(장)", {
+                    "LeftMargin": item["left_hwpunit"],
+                    "Indentation": item["first_line_hwpunit"],
+                    "PrevSpacing": item["prev_spacing_typical"] or 0,
+                })
                 continue
             rule = (marker, 0, font, size, bold, False)
             fmt["논리역할_규칙"].setdefault(role, rule)
@@ -1418,6 +1447,10 @@ def hwpx_서식_분석(path):
         profile["options"].update(paren_shrink=False, paren_label_bold=False,
                                    std_hanging_indent=False, std_supplement_indent=False)
         profile["form_tables"] = dict(요소분석.pop("samples"))
+        # 중제목을 표 첫 칸의 로마자 숫자로 쓴 문서도 중제목(3단계)이 있는 것으로 보고 문서 유형(A·B·C형)을 정한다.
+        profile["style_hierarchy"]["document_type"] = 문서유형_판정(
+            profile["style_hierarchy"]["role_sequence"],
+            any(k.startswith("midtitle") for k in profile["form_tables"]))
         profile["element_analysis"] = 요소분석
         서식요소.apply_to_profile(profile)
         표글자 = profile.get("table_format") or {}
@@ -4966,7 +4999,9 @@ def 문단_위간격_적용_현재선택(pt):
         act = hwp.HAction
         pset = hwp.HParameterSet.HParaShape
         act.GetDefault("ParagraphShape", pset.HSet)
-        pset.PrevSpacing = hwp.PointToHwpUnit(pt)
+        # COM ParaShape 문단 간격은 실제 HWPUNIT의 두 배다(_문단여백_COM항목 참고). 예전에는 그대로 넣어
+        # 기본 문단 위 여백(□ 15pt 등)이 절반(7.5pt)으로 들어갔다(2026-10-04 실측).
+        pset.PrevSpacing = hwp.PointToHwpUnit(pt) * 2
         act.Execute("ParagraphShape", pset.HSet)
     except Exception as e:
         로그(f"문단 위 간격 적용 실패(무시): {e}")
@@ -4976,7 +5011,7 @@ def 문단_아래간격_pt_현재문단():
     if hwp is None:
         return None
     try:
-        return HwpUnit_pt(hwp.ParaShape.Item("NextSpacing"))
+        return HwpUnit_pt(hwp.ParaShape.Item("NextSpacing")) / 2      # COM은 실제 HWPUNIT의 두 배
     except Exception as e:
         로그(f"문단 아래 간격 읽기 실패(무시): {e}")
         return None
@@ -4990,7 +5025,7 @@ def 문단_아래간격_적용_현재선택(pt):
         act = hwp.HAction
         pset = hwp.HParameterSet.HParaShape
         act.GetDefault("ParagraphShape", pset.HSet)
-        pset.NextSpacing = hwp.PointToHwpUnit(max(0.0, pt))
+        pset.NextSpacing = hwp.PointToHwpUnit(max(0.0, pt)) * 2      # COM은 실제 HWPUNIT의 두 배
         act.Execute("ParagraphShape", pset.HSet)
     except Exception as e:
         로그(f"문단 아래 간격 적용 실패(무시): {e}")
@@ -5673,6 +5708,9 @@ def 표준서식_기호규칙_찾기(text):
     if not 벗긴텍스트:
         return None
     detected_marker, detected_role = leading_marker(벗긴텍스트)
+    if detected_role == "장":
+        return ((표준서식_설정.get("논리역할_규칙") or {}).get("장")
+                or 표준서식_설정.get("장_규칙") or _표준서식_설정_기본값.get("장_규칙"))
     if 표준서식_설정.get("논리역할_규칙"):
         for 규칙 in 표준서식_설정["기호_규칙"]:
             if 규칙[0] == detected_marker:
@@ -7828,6 +7866,9 @@ def 표준서식_전체_적용():
     if not 문두기호문장_사이_빈줄_삭제():
         return False
 
+    # 표 첫 칸에 로마자 숫자가 있는 중제목 표 문단(글 없음)도 3단계 중제목 문단 위 여백을 받는다.
+    표문단 = 본문_표_문단번호() if 표준서식_문단위간격_사용 and not 표준서식_설정.get("복제_들여쓰기_유지") else {}
+    _표칸영역.clear()
     hwp_run("MoveDocBegin")
     문단_순번 = 0
     구조_시작됨 = False
@@ -7872,6 +7913,17 @@ def 표준서식_전체_적용():
                     elif 상단_비기호_문단수 == 2:
                         헤더_역할 = "dateinfo"
 
+        위치 = hwp.GetPos()
+        if (not (text and text.strip()) and 위치[0] == 0 and 위치[1] in 표문단
+                and 로마자_중제목_표인가(표문단[위치[1]])):
+            간격_pt = 표준서식_문단위간격_찾기("", 계층="midtitle")
+            if 쪽범위_안인가() and 간격_pt is not None:
+                hwp.SetPos(0, 위치[1], 0)
+                hwp_run("MoveParaBegin")
+                hwp_run("MoveSelParaEnd")
+                문단_위간격_적용_현재선택(간격_pt)
+                hwp_run("Cancel")
+                hwp.SetPos(*위치)
         # 제목·일자 판정 등 문맥은 문서 처음부터 읽어 이어 가되, 서식은 쪽 범위 안 문단에만 적용한다.
         if 쪽범위_안인가():
             표준서식_문단_처리(
@@ -11240,7 +11292,7 @@ def 문단_위간격_pt_현재문단():
     if hwp is None:
         return None
     try:
-        return HwpUnit_pt(hwp.ParaShape.Item("PrevSpacing"))
+        return HwpUnit_pt(hwp.ParaShape.Item("PrevSpacing")) / 2      # COM은 실제 HWPUNIT의 두 배
     except Exception as e:
         로그(f"문단 위 간격 읽기 실패(무시): {e}")
         return None
@@ -14745,6 +14797,7 @@ def 작업_실행(
     global 표준서식_기호_굵게, 표준서식_문단위간격_사용, 표준서식_문단위간격_box_pt
     global 선택_세부작업, 작업_반복횟수
     global 표준서식_문단위간격_circle_pt, 표준서식_문단위간격_note_pt, 표준서식_문단위간격_복귀배율, 표_헤더서식_사용
+    global 표준서식_문단위간격_chapter_pt, 표준서식_문단위간격_midtitle_pt
 
     if 표준서식_세부 is None:
         표준서식_세부 = {}
@@ -14833,6 +14886,8 @@ def 작업_실행(
         }
 
         표준서식_문단위간격_사용 = 표준서식_세부.get("std_parspace", 표준서식_문단위간격_사용)
+        표준서식_문단위간격_chapter_pt = 표준서식_문단위간격_pt.get("std_parspace_chapter", 표준서식_문단위간격_chapter_pt)
+        표준서식_문단위간격_midtitle_pt = 표준서식_문단위간격_pt.get("std_parspace_midtitle", 표준서식_문단위간격_midtitle_pt)
         표준서식_문단위간격_box_pt = 표준서식_문단위간격_pt.get("std_parspace_box", 표준서식_문단위간격_box_pt)
         표준서식_문단위간격_circle_pt = 표준서식_문단위간격_pt.get("std_parspace_circle", 표준서식_문단위간격_circle_pt)
         표준서식_문단위간격_note_pt = 표준서식_문단위간격_pt.get("std_parspace_note", 표준서식_문단위간격_note_pt)
@@ -15356,7 +15411,8 @@ class HwpAutoDocFitGUI:
         self.std_bool_vars = {키: tk.BooleanVar(value=bool(저장된_설정[키])) for 키 in self.std_bool_keys}
 
         # 숫자 설정(문단 위 간격·복귀 배율·제목 부제 크기). 저장·기본값 초기화·서식 프로필 반영을 함께 쓴다.
-        self.std_parspace_str_keys = ["std_parspace_box", "std_parspace_circle", "std_parspace_note",
+        self.std_parspace_str_keys = ["std_parspace_chapter", "std_parspace_midtitle",
+                                      "std_parspace_box", "std_parspace_circle", "std_parspace_note",
                                       "std_parspace_return_percent", "std_title_subtitle_pt"]
         self.std_parspace_vars = {키: tk.StringVar(value=str(저장된_설정[키])) for 키 in self.std_parspace_str_keys}
         # 부제 크기는 붙여넣은 글 변환(작업 실행 밖)에서도 쓰므로 바뀌는 즉시 전역값에 반영한다.
@@ -16040,8 +16096,9 @@ class HwpAutoDocFitGUI:
             문단위간격_행 = ttk.Frame(std_detail)
             문단위간격_행.pack(anchor="w", fill="x", padx=(18, 0), pady=(2, 0))
             문단위간격_스핀들 = []
-            for 라벨, 설정_키 in [("□", "std_parspace_box"), ("ㅇ·○·☞", "std_parspace_circle"), ("*·※·→", "std_parspace_note")]:
-                ttk.Label(문단위간격_행, text=f"{라벨}:").pack(side="left", padx=(0 if 라벨 == "□" else 10, 0))
+            for 라벨, 설정_키 in [("장", "std_parspace_chapter"), ("중제목 Ⅰ", "std_parspace_midtitle"),
+                                ("□", "std_parspace_box"), ("ㅇ·○·☞", "std_parspace_circle"), ("*·※·→", "std_parspace_note")]:
+                ttk.Label(문단위간격_행, text=f"{라벨}:").pack(side="left", padx=(0 if 라벨 == "장" else 10, 0))
                 스핀 = ttk.Spinbox(문단위간격_행, from_=0, to=99, width=3, textvariable=self.std_parspace_vars[설정_키], justify="center")
                 스핀.pack(side="left", padx=(4, 0))
                 ttk.Label(문단위간격_행, text="pt").pack(side="left", padx=(2, 0))
@@ -19095,6 +19152,11 @@ class HwpAutoDocFitGUI:
             ttk.Checkbutton(editor, text=label, variable=selection[key]).grid(row=2, column=column + 1, sticky="w", pady=6)
         ttk.Label(body, text="같은 문두기호에 여러 변형이 있으면 가장 많이 사용된 변형이 적용 기준입니다. 비반복 항목도 검토·수정할 수 있습니다.",
                   style="Hint.TLabel").pack(anchor="w", pady=(5, 0))
+        유형 = hierarchy.get("document_type")
+        if 유형:
+            ttk.Label(body, text=f"문서 유형: {유형} — {DOCUMENT_TYPES.get(유형, '')} "
+                                 "(계층: 1 제목 · 2 장 · 3 중제목 · 4 소제목 □ · 5 ㅇ · 6 -)",
+                      style="Hint.TLabel").pack(anchor="w", pady=(3, 0))
         warnings = hierarchy.get("warnings", [])
         if warnings:
             ttk.Label(body, text=f"논리 구조 확인 필요: {len(warnings)}건 · {warnings[0]}",
@@ -20265,7 +20327,8 @@ class HwpAutoDocFitGUI:
             self.linespacing_min_var.set(str(줄간격최소값))
             self.linespacing_max_var.set(str(줄간격최대값))
 
-        문단위간격_기본값 = {"std_parspace_box": 15, "std_parspace_circle": 10, "std_parspace_note": 3}
+        문단위간격_기본값 = {"std_parspace_chapter": 20, "std_parspace_midtitle": 15,
+                        "std_parspace_box": 15, "std_parspace_circle": 10, "std_parspace_note": 3}
         문단위간격_값 = {}
         for 키, 기본값 in 문단위간격_기본값.items():
             try:

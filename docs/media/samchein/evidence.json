@@ -1,0 +1,115 @@
+{
+  "kind": "실제 처리 결과를 설명하는 안내 자료; UI 화면 녹화 아님",
+  "runs": {
+    "spacing": {
+      "app_version": "1.69 Beta 14",
+      "source_file": "삼채인.txt",
+      "source_sha256": "fb34e95442e3fd5832185156edb748ed8edde6cb854def422458bff240ad1c01",
+      "source_unchanged": true,
+      "code_sha256": "a0b3845d4f151cb18ef31210777c9cea1aece76416522b32ba7aa50986df4909",
+      "git_commit": "676c90c35b99bc566824f29e6bea7351b5457c3a",
+      "elapsed_seconds": 134.65,
+      "options": {
+        "profile": "기본 보고서 서식",
+        "verify": true,
+        "reset_spacing": true,
+        "exclude_tables": false,
+        "exclude_pagefit": false,
+        "passes": 1
+      },
+      "hwp_version": "9, 6, 1, 10778",
+      "output_hashes": {
+        "삼채인(자간조정).hwpx": "5b550e567a27802928604620e6ed49ee5acdd9ce3d5cb4d9fd01d97449e02fad"
+      },
+      "before_pages": 2,
+      "after_pages": 2,
+      "review_count": 0,
+      "evaluation": {
+        "score": 100.0,
+        "verdict": "부분 달성",
+        "blockers": [
+          "최종 규칙 검수 범위가 확인되지 않음"
+        ],
+        "notes": []
+      }
+    },
+    "all": {
+      "app_version": "1.69 Beta 14",
+      "source_file": "삼채인.txt",
+      "source_sha256": "fb34e95442e3fd5832185156edb748ed8edde6cb854def422458bff240ad1c01",
+      "source_unchanged": true,
+      "code_sha256": "a0b3845d4f151cb18ef31210777c9cea1aece76416522b32ba7aa50986df4909",
+      "git_commit": "676c90c35b99bc566824f29e6bea7351b5457c3a",
+      "elapsed_seconds": 440.66,
+      "options": {
+        "profile": "기본 보고서 서식",
+        "verify": true,
+        "reset_spacing": true,
+        "exclude_tables": false,
+        "exclude_pagefit": false,
+        "passes": 1
+      },
+      "hwp_version": "9, 6, 1, 10778",
+      "output_hashes": {
+        "삼채인(일괄적용).hwpx": "96792a9e4d907792002e0fbdddbbce9c66865ffa10ce52284191bd669dedc58b"
+      },
+      "before_pages": 2,
+      "after_pages": 3,
+      "review_count": 0,
+      "evaluation": {
+        "score": 100.0,
+        "verdict": "부분 달성",
+        "blockers": [
+          "최종 규칙 검수 범위가 확인되지 않음"
+        ],
+        "notes": []
+      }
+    }
+  },
+  "assets": {
+    "all-comparison.png": {
+      "bytes": 275589,
+      "sha256": "4d6a9a63921ce9cb21c27c415406c1ec389b82eec48e09de9c5d3dbc8783493c"
+    },
+    "all-guide.gif": {
+      "bytes": 379048,
+      "sha256": "a01828e3704a71dac3c8360fd575737abb140360506cc763eeb20834dc79b257"
+    },
+    "all-guide.mp4": {
+      "bytes": 306610,
+      "sha256": "1c6ef51ec2a42676b6cf0e6401bb2a77e9edf0aec0ad910a97c2b400b7427de3"
+    },
+    "all-page-1.png": {
+      "bytes": 285488,
+      "sha256": "ade35c5a678135842eea6604f55fb7b29caf0d685041d62634eba75867728dfa"
+    },
+    "all-page-2.png": {
+      "bytes": 265105,
+      "sha256": "26d3661bfe30b3a198786c5cfb5f7b0ee72d585e21593ebfd8298eca06418e46"
+    },
+    "all-page-3.png": {
+      "bytes": 252285,
+      "sha256": "036ec07275d550453eec3c981e535179d4a2c4f00d27f7b7abde81899126d461"
+    },
+    "all-poster.png": {
+      "bytes": 170620,
+      "sha256": "735184e9c692cb67d3af89f04d49ec145bc652fa52fd9794027f58629c4b0d9f"
+    },
+    "spacing-comparison.png": {
+      "bytes": 172391,
+      "sha256": "4d236802ed249ec63896e8b5999ff87a5626cdf0d72ed3d843324b8dee2246de"
+    },
+    "spacing-guide.gif": {
+      "bytes": 335385,
+      "sha256": "ad1d545d4a27475307295e5e9d4de69ff4b76cac43c56e6f010b1a16ab97e6b0"
+    },
+    "spacing-guide.mp4": {
+      "bytes": 274094,
+      "sha256": "6dacde51d77226f034939a91a0397f4f57001cbf18de3721f6490c82ecdc3ec3"
+    },
+    "spacing-poster.png": {
+      "bytes": 171093,
+      "sha256": "360382ca91de4d3567cbae4d43596c78fed5991e0b397dd1849ad57547a314dd"
+    }
+  }
+}

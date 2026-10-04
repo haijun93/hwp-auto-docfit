@@ -141,7 +141,7 @@ def _structure_issues(body):
         markers = defaultdict(dict)
         for item in items:
             role, marker = item["role"], item["marker"]
-            if role in ("중제목", "소제목", "본문", "내용") and marker:
+            if role in ("장", "중제목", "소제목", "본문", "내용") and marker:
                 markers[role].setdefault(marker, item)
         for role, entries in markers.items():
             if len(entries) > 1:
@@ -157,22 +157,22 @@ def _structure_issues(body):
             elif role == "본문":
                 if has_subheading and not seen_subheading:
                     issues.append(_issue("확인 필요", "상위 항목 확인", item,
-                                          "3단계보다 앞에 4단계 항목이 있습니다. 독립 항목인지 확인하세요."))
+                                          f"{display_role('소제목')}보다 앞에 {display_role('본문')} 항목이 있습니다. 독립 항목인지 확인하세요."))
                 seen_body = True
             elif role == "내용" and not seen_body:
                 issues.append(_issue("확인 필요", "상위 항목 확인", item,
-                                      "앞에 연결할 4단계 항목이 보이지 않습니다."))
+                                      f"앞에 연결할 {display_role('본문')} 항목이 보이지 않습니다."))
         for index, item in enumerate(items):
             if item["role"] != "소제목":
                 continue
             following = []
             for later in items[index + 1:]:
-                if later["role"] in ("제목", "중제목", "소제목"):
+                if later["role"] in ("제목", "장", "중제목", "소제목"):
                     break
                 following.append(later)
             if not any(later["role"] == "본문" for later in following):
                 issues.append(_issue("확인 필요", "하위 내용 확인", item,
-                                      "다음 상위 단계 전까지 4단계 항목이 보이지 않습니다. 표·그림으로 설명했는지 확인하세요."))
+                                      f"다음 상위 단계 전까지 {display_role('본문')} 항목이 보이지 않습니다. 표·그림으로 설명했는지 확인하세요."))
     return issues
 
 
@@ -234,7 +234,7 @@ def _visual_issues(body, cells, profile):
         bold = [item for item in ordinary if item["bold"] is True]
         if len(bold) / len(ordinary) >= 0.6:
             issues.append(_issue("선호 제안", "강조 밀도 확인", bold[0],
-                                  "4·5단계와 부연설명의 굵은 글씨 비율이 높습니다. 강조할 핵심이 구분되는지 확인하세요."))
+                                  "5·6단계와 부연설명의 굵은 글씨 비율이 높습니다. 강조할 핵심이 구분되는지 확인하세요."))
     return issues
 
 
