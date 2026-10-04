@@ -597,6 +597,11 @@ class DesktopWebBridge:
         self._tk(lambda: self.gui._서식_수정하기(str(identifier or "")), timeout=None, front=True)
         return self.get_state()
 
+    def show_format_example(self):
+        """지금 고른 서식을 입힌 예시 보고서를 만들어 한/글로 보여 준다(만드는 동안 작업 진행이 화면에 보인다)."""
+        self._tk(self.gui._서식예시_확인)
+        return self.get_state()
+
     def set_option(self, name, value):
         """빠른 설정의 켜기·끄기 값을 바꾼다. 앱 설정 변수의 변경 감시가 설정 파일에 저장한다."""
         attribute = QUICK_OPTIONS.get(name)
@@ -679,7 +684,7 @@ class _BrowserApi:
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",
             "set_exclude_tables", "set_card_option",
             "set_drop_target", "add_format_file", "write_format_example", "rename_profile", "delete_profile",
-            "edit_profile",
+            "edit_profile", "show_format_example",
         ):
             setattr(self, name, getattr(bridge, name))
 

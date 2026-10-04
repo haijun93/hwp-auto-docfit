@@ -281,14 +281,18 @@ class FormatCopyFidelityTest(unittest.TestCase):
         self.assertEqual(profile["format"]["기호_규칙"][0][4:], (False, True))   # 문단 보통, 기호만 굵게
         self.assertTrue(profile["options"]["std_symbol_box_bold"])
 
-    def test_precise_copy_skips_form_tables_handled_by_form_stages(self):
-        # 제목·중제목·붙임 표와(예시 상자가 있으면) 한 칸 상자는 서식 표 단계가 문단별로 입히므로 정밀 복제하지 않는다.
-        fn = self.ns['_정밀표_서식표인가']
-        for kind, has_box, expected in (('title1', False, True), ('midtitle1', False, True), ('attach2', False, True),
-                                        ('box', True, True), ('box', False, False), (None, True, False)):
-            with patch.dict(fn.__globals__, {'서식표_종류판별': lambda table, k=kind: k,
-                                             '활성_서식표_프로필': {'box': object()} if has_box else None}):
-                self.assertEqual(fn(object()), expected, (kind, has_box))
+    def test_precise_copy_needs_same_table_for_form_and_single_cell_tables(self):
+        # 서식 표(제목·중제목·붙임·한 칸 상자)와 한 칸 표는 첫 칸 글이 같은 예시 표일 때만 정밀 복제한다. 칸 수만 같은
+        # 다른 한 칸 표를 짝지으면 상자 둘째 문단까지 첫 문단 서식으로 덮었다(같은 표면 그 모양을 되살린다).
+        same_only, same_text = self.ns['_정밀표_같은표만'], self.ns['_정밀표_글같음']
+        with patch.dict(same_only.__globals__, {'서식표_종류판별': lambda table: None}):
+            self.assertTrue(same_only(object(), {"cell_count": 1}))
+            self.assertFalse(same_only(object(), {"cell_count": 6}))
+        with patch.dict(same_only.__globals__, {'서식표_종류판별': lambda table: 'midtitle1'}):
+            self.assertTrue(same_only(object(), {"cell_count": 3}))
+        self.assertTrue(same_text("◇ Box안 내용은  보고 배경", "◇ Box안 내용은 보고 배경"))   # 빈칸 무시
+        self.assertFalse(same_text("◇ 보고 배경", "< 핵심 답변 >"))
+        self.assertFalse(same_text("", ""))
 
     def test_font_type_mismatch_retries_other_type_then_without_latin(self):
         # 같은 이름의 글꼴이 TTF·HFT로 둘 다 든 문서에서 고른 형식이 이 PC와 맞지 않으면 글자 모양 실행이 실패한다.
@@ -317,6 +321,32 @@ class FormatCopyFidelityTest(unittest.TestCase):
             keys = [c.args[0] for c in last.SetItem.call_args_list]
             self.assertNotIn("FaceNameLatin", keys)
             self.assertIn("RatioHangul", keys)
+
+    def test_box_copy_uses_main_paragraph_when_counts_differ(self):
+        # 한 칸 상자: 문단 수가 같으면 하나씩, 다르면 예시의 본문 문단(글이 가장 많은 문단) 서식을 입힌다. 예전에는
+        # 끝에서부터 맞춰 한 문단 상자가 예시 끝의 안내 문단(파란 11pt) 서식을 받았다.
+        parse, fn, name = self.ns['safe_xml_fromstring'], self.ns['제목_표서식_복사'], self.ns['제목_xml이름']
+
+        def box(*paras):
+            body = ''.join(f'<hp:p paraPrIDRef="{pid}"><hp:run charPrIDRef="{cid}"><hp:t>{text}</hp:t></hp:run></hp:p>'
+                           for pid, cid, text in paras)
+            return parse(f'<hp:tbl {HP} rowCnt="1" colCnt="1" borderFillIDRef="1"><hp:tr><hp:tc borderFillIDRef="1">'
+                         f'<hp:subList>{body}</hp:subList></hp:tc></hp:tr></hp:tbl>')
+
+        sample = box(("1", "1", "◇ 상자 본문은 보고 배경을 두세 줄로 적습니다"), ("2", "2", "* 안내 글"))
+        maps = {'borderFills': {'1': '1'}, 'paraProperties': {'1': '11', '2': '12'}, 'charProperties': {'1': '21', '2': '22'}}
+        def refs(table):
+            return [(p.get('paraPrIDRef'), next(r for r in p if name(r) == 'run').get('charPrIDRef'))
+                    for p in table.iter() if name(p) == 'p']
+        one = box(("0", "0", "부구청장 주재 현안토의 결과"))
+        fn(one, sample, maps, 상자=True)
+        self.assertEqual(refs(one), [('11', '21')])                       # 본문 문단 서식
+        two = box(("0", "0", "첫 문단"), ("0", "0", "둘째 문단"))
+        fn(two, sample, maps, 상자=True)
+        self.assertEqual(refs(two), [('11', '21'), ('12', '22')])         # 같은 수면 하나씩
+        title = box(("0", "0", "제목 한 줄"))
+        fn(title, sample, maps)
+        self.assertEqual(refs(title), [('12', '22')])                     # 제목 표는 예전처럼 끝에서 맞춤
 
     def test_page_margins_round_trip_exactly(self):
         # 예시 여백 4252(15.0mm 저장)가 한/글 MiliToHwpUnit(소수 버림)으로 4251이 되던 문제: 반올림해 그대로 넣는다.

@@ -168,6 +168,58 @@ def normalize_date_range_marks(text):
     return text
 
 
+
+# ---- 「2025 행정업무운영 편람」 공식 규정(규칙 제2조제2항·제4조제5항) ------------------------
+# .claude/skills/gongmunseo-report-writing/references/official-2025-handbook.md 3~5장.
+# - 끝 표시: 본문·붙임 표시문의 마지막 글자(마침표)에서 2타 띄우고 '끝.'(`…바랍니다.  끝.`).
+#   표 아래처럼 '끝.'만 있는 줄은 왼쪽 기본선에서 2타 띄운다.
+# - 붙임 표시: `붙임  ○○○계획서 1부.  끝.`처럼 '붙임' 뒤 2타(쌍점을 쓴 '붙임 :' 꼴은 그대로 둔다).
+# - 날짜: 연·월·일 글자를 생략하고 마침표 뒤 1타, 0은 쓰지 않는다(`2021. 12. 12.`, `1985. 9. 6.`).
+_OFFICIAL_SPACE = " \t\u3000"
+_END_MARK_RE = re.compile(r"(?<=\.)[ \t\u3000]*끝\.[ \t\u3000]*$")
+_END_MARK_ALONE_RE = re.compile(r"^[ \t\u3000]*끝\.[ \t\u3000]*$")
+# 붙임 표시문: 줄 끝이 'n부.'(뒤에 '끝.'이 와도 됨)인 '붙임 …' 줄만 본다('붙임 자료를 참고하여'처럼 문장은 제외).
+_ATTACH_RE = re.compile(r"^([ \t\u3000]*붙임)([ \t\u3000]+)(?=[^ \t\u3000:：])(?=.*\d+\s*부\.(?:[ \t\u3000]*끝\.)?[ \t\u3000]*$)")
+_OFFICIAL_DATE_RE = re.compile(
+    r"(?<![\d.])(\d{4}|[’']\d{2})\.[ \t\u3000]*(\d{1,2})\.[ \t\u3000]*(\d{1,2})(?=\.|\(|~|[ \t\u3000]|$)")
+
+
+def _official_date(match):
+    month, day = int(match.group(2)), int(match.group(3))
+    if not (1 <= month <= 12 and 1 <= day <= 31):
+        return match.group(0)
+    return f"{match.group(1)}. {month}. {day}"
+
+
+def official_double_space_spans(text):
+    """공식 규정상 2타를 두어야 하는 자리의 공백 구간 [(처음, 끝)]('끝.' 앞, '붙임' 뒤). 연속 공백 정리가 건드리지 않게 한다."""
+    spans = []
+    if not text:
+        return spans
+    match = _ATTACH_RE.match(text)
+    if match:
+        spans.append(match.span(2))
+    match = _END_MARK_RE.search(text)
+    if match:
+        start = match.start()
+        end = start
+        while end < len(text) and text[end] in _OFFICIAL_SPACE:
+            end += 1
+        if end > start:
+            spans.append((start, end))
+    return spans
+
+
+def normalize_official_spacing(text):
+    """「2025 행정업무운영 편람」의 띄어쓰기 규정을 적용한 글을 돌려준다(끝 표시·붙임 표시 2타, 날짜 표기)."""
+    if not text:
+        return text
+    text = _OFFICIAL_DATE_RE.sub(_official_date, text)
+    text = _ATTACH_RE.sub(lambda m: m.group(1) + "  ", text, count=1)
+    if _END_MARK_ALONE_RE.match(text):
+        return "  끝."
+    return _END_MARK_RE.sub("  끝.", text, count=1)
+
 LEVELS = ("box", "circle", "dash", "note")
 
 

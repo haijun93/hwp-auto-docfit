@@ -1441,6 +1441,15 @@ class _WorkspaceState extends State<Workspace> {
           ),
         ),
         const SizedBox(width: 8),
+        // 고른 서식을 예시 보고서(제목·개요·중제목·문두기호 문장·표·붙임)에 입혀 한/글로 미리 보여 준다.
+        Tooltip(
+          message: '고른 서식을 입힌 예시 보고서를 한/글로 보여 줘요(서식마다 처음 한 번 1분쯤 걸려 만들고, 그다음부터는 보관한 예시를 바로 열어요)',
+          child: TextButton(
+            key: const Key('formatExampleButton'),
+            onPressed: locked ? null : () => command('show_format_example'),
+            child: const Text('서식 예시 확인'),
+          ),
+        ),
         Tooltip(
           message: '예시 보고서를 끌어다 놓아 서식 복제 · 이름 바꾸기 · 세부 수정 · 삭제',
           child: TextButton(

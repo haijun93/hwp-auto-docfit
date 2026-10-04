@@ -114,7 +114,7 @@ class PageBreakTableTests(unittest.TestCase):
         # 저장 뒤 문단이 바뀌어 표 위치가 다르면 다른 문단을 쪽 나눔으로 볼 수 있으므로 쓰지 않는다.
         self.assertEqual(self.remember({2: (0, 2, 0), 3: (0, 3, 0)}), set())
 
-    def collect(self, page_breaks):
+    def collect(self, page_breaks, midtitle=False):
         fn = self.ns['보고서_표묶음_수집']
         cursor = [(0, 65, 0)]
         hwp = Mock()
@@ -122,13 +122,101 @@ class PageBreakTableTests(unittest.TestCase):
         hwp.GetPos.side_effect = lambda: cursor[0]
         with patch.dict(fn.__globals__, {'hwp': hwp, '보고서_본문묶음_수집': lambda pos: LEAD,
                                          '현재문단_텍스트': lambda: '', 'hwp_run': Mock(),
-                                         '중단_요청됨': lambda: False, '_쪽나눔문단': page_breaks}):
+                                         '중단_요청됨': lambda: False, '_쪽나눔문단': page_breaks,
+                                         '로마자_중제목_표인가': lambda key: midtitle}):
             return fn((0, 65, 0), {66: KEY})
 
     def test_table_after_page_break_is_not_a_bundle(self):
         self.assertEqual(self.collect(set())[3], KEY)   # 쪽 나눔이 없으면 표 묶음
         self.assertIsNone(self.collect({66}))
 
+    def test_roman_midtitle_table_is_not_a_bundle(self):
+        # 'Ⅱ | 추진 계획' 중제목 표는 앞 문장의 표가 아니라 다음 □ 묶음의 머리다.
+        self.assertIsNone(self.collect(set(), midtitle=True))
+
+
+class MidtitlePageTests(unittest.TestCase):
+    """로마자 중제목이 앞쪽 끝에 홀로 남으면 중제목 앞에서 쪽을 나눈다(소제목과 같은 규칙)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ns = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'hwp-auto-docfit.py'))
+
+    def test_roman_number_pattern(self):
+        pattern = self.ns['_로마자_중제목_번호']
+        for text in ('Ⅰ', 'Ⅱ.', 'Ⅻ', 'IV'):
+            self.assertTrue(pattern.match(text), text)
+        for text in ('1', '가.', '추진 배경', 'Ⅱ 추진'):
+            self.assertFalse(pattern.match(text), text)
+
+    def test_bundle_is_midtitle_heading_and_first_circle_unit(self):
+        # Ⅱ 추진 계획 + □ 단계별 추진 일정 + ㅇ (1단계) + - 입자가속기 … 은 쪼갤 수 없는 하나의 묶음이다.
+        fn = self.ns['중제목_묶음_문단']
+        group = [((0, i, 0), (0, i, 9), role) for i, role in
+                 enumerate(['소제목', '본문', '내용', '본문', '내용'], start=11)]
+        with patch.dict(fn.__globals__, {'보고서_소제목묶음_수집': lambda pos: group}):
+            self.assertEqual(fn((0, 11, 0)), group[:3])
+        only = group[:1] + [((0, 12, 0), (0, 12, 9), '부연설명')]
+        with patch.dict(fn.__globals__, {'보고서_소제목묶음_수집': lambda pos: only}):
+            self.assertEqual(fn((0, 11, 0)), only)
+
+    def fix(self, measures, move='실패', page_break=False, next_break=False):
+        fn = self.ns['중제목_외톨이_정리']
+        measures = list(measures)
+        breaks = []
+        stats = {'대상': 0, '성공': 0, '실패': 0}
+        hwp = Mock()
+        hwp.GetPos.return_value = (0, 1, 0)
+        mover = Mock(return_value=move)
+        breaker = Mock(return_value=page_break)
+        with patch.dict(fn.__globals__, {
+            'hwp': hwp, 'hwp_run': Mock(), '로그': Mock(), '검수_문제_기록': Mock(), '현재_처리파일': '',
+            '쪽범위_사용중': lambda: False, '세트문장_통계': stats,
+            '중제목_묶음_문단': lambda pos: [((0, 11, 0), (0, 11, 9), '소제목')],
+            '중제목_묶음_쪽': lambda mid, paras: measures.pop(0) if len(measures) > 1 else measures[0],
+            '_묶음_같은쪽_이동': mover, '_묶음_쪽나눔_이동': breaker,
+            '쪽나눔_켜짐': lambda pos: next_break,
+            '쪽나눔_설정': lambda pos, on: breaks.append((pos, on)),
+        }):
+            moved = fn({'위치': (0, 10, 0), '표키': (0, 10, 0), '다음': (0, 11, 0), '요약': '□ 추진 계획'})
+        return moved, mover, breaker, breaks, stats
+
+    def test_bundle_on_one_page_is_left_alone(self):
+        moved, mover, breaker, breaks, stats = self.fix([({2: 4}, (2, 2))])
+        self.assertFalse(moved)
+        mover.assert_not_called()
+        self.assertEqual((breaks, stats['대상']), ([], 0))
+
+    def test_midtitle_alone_at_page_end_is_pushed(self):
+        moved, mover, _, _, stats = self.fix([({2: 4}, (1, 1))], move='성공')
+        self.assertTrue(moved)
+        self.assertTrue(mover.call_args.args[3])            # 뒤쪽 줄이 많으면 민다(줄간격 확대)
+        self.assertEqual(mover.call_args.kwargs['표키'], (0, 10, 0))
+        self.assertEqual(stats['성공'], 1)
+
+    def test_only_last_dash_line_spilling_is_pulled_back(self):
+        # 중제목·□·ㅇ는 앞쪽, '- 입자가속기 …'만 뒤쪽이면 당긴다(줄간격 축소).
+        moved, mover, _, _, _ = self.fix([({1: 3, 2: 1}, (1, 1))], move='성공')
+        self.assertTrue(moved)
+        self.assertFalse(mover.call_args.args[3])
+
+    def test_page_break_when_line_spacing_fails(self):
+        moved, _, breaker, _, _ = self.fix([({2: 4}, (1, 1))], page_break=True)
+        self.assertTrue(moved)
+        self.assertEqual(breaker.call_args.args[0], (0, 10, 0))   # 중제목 앞에서 쪽 나눔
+
+    def test_page_break_of_following_heading_is_released_first(self):
+        # □가 이미 쪽 나눔으로 다음 쪽에 갔으면 그 쪽 나눔을 풀어 본다(둘 다 켜면 □가 한 쪽 더 밀림).
+        moved, mover, _, breaks, _ = self.fix([({2: 4}, (1, 1)), ({1: 4}, (1, 1))], next_break=True)
+        self.assertTrue(moved)
+        self.assertEqual(breaks, [((0, 11, 0), False)])
+        mover.assert_not_called()
+
+    def test_failed_move_restores_page_break(self):
+        moved, _, _, breaks, stats = self.fix([({2: 4}, (1, 1))], next_break=True)
+        self.assertFalse(moved)
+        self.assertEqual(breaks, [((0, 11, 0), False), ((0, 11, 0), True)])
+        self.assertEqual(stats['실패'], 1)
 
 if __name__ == '__main__':
     unittest.main()
