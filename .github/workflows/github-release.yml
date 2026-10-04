@@ -28,5 +28,6 @@ jobs:
             echo "이미 있는 릴리스: $TAG"
           else
             gh release create "$TAG" release-assets/HWP_AutoDocFit.exe \
+              "release-assets/보고서 예시 파일(한번에 적용).txt" \
               --title "$TITLE" --notes-file "$NOTE" --latest
           fi

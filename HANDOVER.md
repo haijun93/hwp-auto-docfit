@@ -160,7 +160,7 @@ Flutter UI 빌드는 `powershell -File build_flutter.ps1`로 수행하며 `build
    - 강제 푸시 없이 `git commit-tree "main^{tree}" -p github/claude/affectionate-goldberg-ggln7c -m "…"`로 main과 같은 내용의 커밋을 얹어 푸시합니다.
    - CI가 `Update built HWP_AutoDocFit.exe from CI run …` 커밋을 올리면(보통 5~10분) 그 커밋을 `main`에 cherry-pick.
 5. exe를 실제로 실행해 창 제목의 버전을 확인 → `sha256sum release-assets/HWP_AutoDocFit.exe` 값을 릴리스 노트에 대문자로 기록 → 커밋·푸시(두 원격).
-6. **태그**: `git tag -a vX.Y-beta.N -m "…"` → `git push github <태그>` → `git push origin <태그>`. GitLab CI(`release-windows`)가 릴리스와 exe 첨부를 자동으로 만듭니다(토큰 불필요). GitHub 릴리스는 `.github/workflows/github-release.yml`이 태그 푸시 때 `releases/<태그>.md`와 `release-assets/HWP_AutoDocFit.exe`로 만듭니다(2026-10-04 전에는 없어 GitHub 릴리스가 beta.3에 멈춰 있었음).
+6. **태그**: `git tag -a vX.Y-beta.N -m "…"` → `git push github <태그>` → `git push origin <태그>`. GitLab CI(`release-windows`)가 릴리스와 exe 첨부를 자동으로 만듭니다(토큰 불필요). 두 릴리스 모두 `release-assets/보고서 예시 파일(한번에 적용).txt`(한 번에 적용 시험용 예시)도 첨부합니다. GitHub 릴리스는 `.github/workflows/github-release.yml`이 태그 푸시 때 `releases/<태그>.md`와 `release-assets/HWP_AutoDocFit.exe`로 만듭니다(2026-10-04 전에는 없어 GitHub 릴리스가 beta.3에 멈춰 있었음).
 7. 확인: `https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest`가 새 태그를 가리키는지, 내려받은 exe 해시가 노트와 같은지.
 
 ---
