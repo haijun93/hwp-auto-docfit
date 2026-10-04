@@ -62,6 +62,9 @@ class _FakeGui:
     def _요약갱신(self):
         self.summaries += 1
 
+    def _세부작업_옵션_맞춤(self, mode):
+        self.linked = getattr(self, "linked", []) + [mode]
+
     def _프로파일_선택(self, event):
         self.selected_profiles.append(event.widget.index)
         self._활성_서식_프로파일 = self._프로파일_ids[event.widget.index]
@@ -111,6 +114,8 @@ class BrowserApiTests(unittest.TestCase):
         # 모르는 단계 키는 무시한다.
         bridge.set_stage("없는단계", False)
         self.assertNotIn("없는단계", gui.stage_choices["spacing"])
+        # 세부 작업을 바꿀 때마다 그 카드 옵션(표 제외 등)을 세부 작업에 맞춘다.
+        self.assertEqual(gui.linked, ["spacing", "spacing"])
 
     def test_reset_stages_restores_mode_defaults(self):
         gui = _FakeGui()
@@ -119,6 +124,7 @@ class BrowserApiTests(unittest.TestCase):
         bridge.reset_stages()
         self.assertTrue(gui.stage_choices["spacing"]["body_spacing"])
         self.assertFalse(gui.stage_choices["spacing"]["style_unify"])
+        self.assertEqual(gui.linked, ["spacing", "spacing"])
 
     def test_running_job_blocks_setting_changes(self):
         gui = _FakeGui()

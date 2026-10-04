@@ -32,7 +32,7 @@ class UnifyStageTests(unittest.TestCase):
     def test_unify_uses_document_majority_only_with_optional_page_fit(self):
         from docfit_core.stage_selection import default_choice, stages_for_mode
         self.assertEqual([key for key, _ in stages_for_mode('unify')],
-                         ['table_style', 'style_unify', 'table_unify', 'page_fit'])
+                         ['table_style', 'style_unify', 'unify_spacing', 'table_unify', 'page_fit'])
         self.assertTrue(default_choice('style_unify', 'unify'))
         self.assertFalse(default_choice('page_fit', 'unify'))
         self.assertFalse(default_choice('standard_format', 'unify'))

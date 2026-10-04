@@ -265,6 +265,9 @@ from docfit_core.progress_guide import guide_key as 진행안내_키, guide_stat
 from docfit_core.stage_selection import STAGE_EXAMPLES, default_choice as stage_default, enabled as stage_enabled, stages_for_mode
 from docfit_core.stage_selection import TABLE_STAGE_KEYS as 표작업_키목록, without_tables as 표작업_제외
 from docfit_core.stage_selection import without_page_fit as 페이지맞춤_제외
+from docfit_core.stage_selection import CARD_OPTION_STAGES as 카드옵션_세부작업, card_option_from_stages as 카드옵션_판정
+from docfit_core.stage_selection import card_option_off_keys as 카드옵션_끈작업, card_option_stage_values as 카드옵션_세부작업값
+from docfit_core.stage_selection import card_option_turns_off as 카드옵션_끄는값
 from docfit_core.document_rules import (
     ParagraphSpacingTracker, YEAR_QUOTE_PATTERN, marker_space_fix,
     curly_single_quote_replacements, normalize_date_range_marks,
@@ -1107,10 +1110,11 @@ def 번들_리소스_폴더():
     "all_exclude_tables": False,
     # 한 번에 적용의 '페이지 맞춤 제외': 켜면 문단 아래 간격 페이지 맞춤·관련 문단 페이지 배치를 뺀다.
     "all_exclude_pagefit": False,
-    # 서식 통일 카드의 '표 제외'·'자간 정리 제외'·'페이지 맞춤 제외'(모두 기본 꺼짐).
+    # 서식 통일 카드의 '표 제외'·'자간 정리 제외'·'페이지 맞춤 제외'. 세부 작업과 연동되며, 서식 통일의 쪽 맞춤은
+    # 세부 작업 기본값이 꺼짐이라 '페이지 맞춤 제외'만 기본 켜짐이다.
     "unify_exclude_tables": False,
     "unify_exclude_spacing": False,
-    "unify_exclude_pagefit": False,
+    "unify_exclude_pagefit": True,
     # 서식통일 뒤 '작업 결과 확인' 창(서식통일 5/5)을 띄울지. 기본 꺼짐(2026-10-04 사용자 요청).
     "unify_result_window": False,
     # '자간 정리' 카드의 '기존 자간 초기화'(세부 작업 01과 같은 값). None이면 저장된 세부 작업 구성을 따른다.
@@ -14121,7 +14125,9 @@ def 작업_실행(
         제목_부제_크기_반영(표준서식_세부.get("std_title_subtitle_pt", 제목_부제_크기_pt))
         제목_담당자_글_반영(표준서식_세부.get("title_owner_text", 제목_담당자_글))
         서식통일_결과창_반영(표준서식_세부.get("unify_result_window", 서식통일_결과창_사용))
-        서식통일_자간조정_반영(not 표준서식_세부.get("unify_exclude_spacing", False))
+        # 서식 통일 작업은 세부 작업 '서식통일 문장 자간 정리'(카드의 '자간 정리 제외'와 연동)도 따른다.
+        서식통일_자간조정_반영(not 표준서식_세부.get("unify_exclude_spacing", False)
+                         and (작업_모드 != "unify" or stage_enabled(선택_세부작업, "unify_spacing", 작업_모드)))
 
         문장부호_통계 = {"대상": 0, "성공": 0, "실패": 0}
         세트문장_통계 = {"대상": 0, "성공": 0, "실패": 0, "축소횟수": 0, "확대횟수": 0}
@@ -14667,11 +14673,12 @@ class HwpAutoDocFitGUI:
         self.include_spacing_var.trace_add("write", self._설정_변경됨)
         # '한 번에 적용'의 '표 제외'. 켜면 표 관련 세부 작업을 모두 뺀다(설정 파일에 저장).
         self.exclude_tables_var = tk.BooleanVar(value=bool(저장된_설정.get("all_exclude_tables", False)))
-        # '한 번에 적용'의 '페이지 맞춤 제외'와 '서식 통일' 카드의 표 제외·자간 정리 제외·페이지 맞춤 제외(모두 기본 꺼짐).
+        # '한 번에 적용'의 '페이지 맞춤 제외'와 '서식 통일' 카드의 표 제외·자간 정리 제외·페이지 맞춤 제외. 세부 작업과
+        # 연동한다(_카드옵션_연동_시작).
         self.all_exclude_pagefit_var = tk.BooleanVar(value=bool(저장된_설정.get("all_exclude_pagefit", False)))
         self.unify_exclude_tables_var = tk.BooleanVar(value=bool(저장된_설정.get("unify_exclude_tables", False)))
         self.unify_exclude_spacing_var = tk.BooleanVar(value=bool(저장된_설정.get("unify_exclude_spacing", False)))
-        self.unify_exclude_pagefit_var = tk.BooleanVar(value=bool(저장된_설정.get("unify_exclude_pagefit", False)))
+        self.unify_exclude_pagefit_var = tk.BooleanVar(value=bool(저장된_설정.get("unify_exclude_pagefit", True)))
         for 변수 in (self.exclude_tables_var, self.all_exclude_pagefit_var, self.unify_exclude_tables_var,
                      self.unify_exclude_spacing_var, self.unify_exclude_pagefit_var):
             변수.trace_add("write", self._설정_변경됨)
@@ -14907,6 +14914,7 @@ class HwpAutoDocFitGUI:
         self.always_on_top_var.trace_add("write", self._항상위_변경)
         for var in (self.stdformat_var, *self.std_bool_vars.values()):
             var.trace_add("write", self._요약갱신)
+        self._카드옵션_연동_시작()
         self._요약갱신()
         self._모드카드_외관갱신()
         self._안내_설정(1)     # 처음에는 '01 정리할 문서'부터 안내한다.
@@ -15537,6 +15545,7 @@ class HwpAutoDocFitGUI:
             self._세부작업_기본저장[mode] = bool(기본저장_var.get())
             if 기본저장_var.get():
                 self._세부작업_기본값_저장(mode)
+            self._세부작업_옵션_맞춤(mode)   # 관련 작업을 바꿨으면 카드 옵션(표 제외 등)도 맞춘다
             self._요약갱신()
             close()
         buttons = ttk.Frame(dialog, padding=(14, 4, 14, 12))
@@ -15591,9 +15600,10 @@ class HwpAutoDocFitGUI:
         if mode in ("all", "format") and hasattr(self, "all_exclude_pagefit_var") and self.all_exclude_pagefit_var.get():
             summary += " · 페이지 맞춤 제외"
         choices = self.stage_choices[mode]
-        # 자간 정리의 자간 초기화는 위 문구로 이미 알린다.
+        # 카드 옵션으로 끈 작업(자간 정리의 자간 초기화, 표 제외·페이지 맞춤 제외 등)은 위 문구로 이미 알린다.
+        카드로_끈작업 = 카드옵션_끈작업(self._카드옵션값_목록(), mode)
         disabled = sum(not value for key, value in choices.items()
-                       if stage_default(key) and not (mode == "spacing" and key == "reset_spacing"))
+                       if stage_default(key) and key not in 카드로_끈작업)
         if choices.get("style_unify") and mode != "unify":
             summary += " · 서식 통일 포함"
         if disabled:
@@ -15727,6 +15737,118 @@ class HwpAutoDocFitGUI:
     def _한번에_모드(self):
         """'한 번에 적용' 카드의 내부 작업 유형: 자간 조정 포함이면 all, 아니면 format."""
         return "all" if self.include_spacing_var.get() else "format"
+
+    # 작업 카드 옵션(stage_selection.CARD_OPTION_STAGES 키) → (화면 변수, 변수가 옵션의 반대 값인가).
+    # 자간 정리의 '표 제외'는 설정 table_spacing(표 안 문장 자간조정)의 반대 값이다.
+    _카드옵션_변수 = {
+        "spacing_reset_existing": ("reset_spacing_var", False),
+        "spacing_exclude_tables": ("table_spacing_var", True),
+        "unify_exclude_tables": ("unify_exclude_tables_var", False),
+        "unify_exclude_spacing": ("unify_exclude_spacing_var", False),
+        "unify_exclude_pagefit": ("unify_exclude_pagefit_var", False),
+        "all_include_spacing": ("include_spacing_var", False),
+        "all_exclude_tables": ("exclude_tables_var", False),
+        "all_exclude_pagefit": ("all_exclude_pagefit_var", False),
+    }
+
+    def _카드옵션값(self, 옵션):
+        """카드 옵션 값(화면 변수가 아직 없으면 None)."""
+        이름, 반대 = self._카드옵션_변수[옵션]
+        변수 = getattr(self, 이름, None)
+        return None if 변수 is None else bool(변수.get()) != 반대
+
+    def _카드옵션값_목록(self):
+        return {옵션: self._카드옵션값(옵션) for 옵션 in self._카드옵션_변수}
+
+    def _세부작업_값_넣기(self, mode, 값들):
+        """세부 작업 값을 바꾸고 바뀐 것이 있었는지 돌려준다."""
+        선택 = self.stage_choices[mode]
+        바뀜 = any(선택.get(key) != 값 for key, 값 in 값들.items())
+        선택.update(값들)
+        return 바뀜
+
+    def _세부작업_연동_마무리(self, modes):
+        """연동으로 바뀐 세부 작업 구성을 저장하고(기본값 저장을 켠 유형만) 설정창의 단계 체크에도 반영한다."""
+        for mode in modes:
+            if self._세부작업_기본저장.get(mode):
+                self._세부작업_기본값_저장(mode)
+        for 이름, mode in (("spacing_stage_vars", "spacing"), ("format_stage_vars", "format"),
+                          ("indent_stage_vars", "format")):
+            if mode not in modes:
+                continue
+            for key, var in getattr(self, 이름, {}).items():
+                값 = bool(self.stage_choices[mode].get(key, True))
+                if bool(var.get()) != 값:
+                    var.set(값)
+
+    def _카드옵션_세부작업_반영(self, 옵션):
+        """카드 옵션을 바꾸면 그 카드의 세부 작업 가운데 관련 작업을 모두 같이 켜고 끈다(2026-10-04 사용자 요청).
+
+        실행창 카드·웹 화면·설정창 어디서 바꿔도 같은 변수 감시로 반영한다. 세부 작업에 맞춰 옵션을 고치는
+        중(_세부작업_옵션_맞춤)에는 사용자가 고른 세부 작업을 덮지 않도록 건너뛴다.
+        """
+        if getattr(self, "_카드옵션_맞추는중", False):
+            return
+        옵션값 = self._카드옵션값_목록()
+        바뀐_유형 = [mode for mode in 카드옵션_세부작업[옵션][0]
+                   if self._세부작업_값_넣기(mode, 카드옵션_세부작업값(옵션, 옵션값[옵션], 옵션값, mode))]
+        self._세부작업_연동_마무리(바뀐_유형)
+
+    def _세부작업_옵션_맞춤(self, mode):
+        """세부 작업 구성에 맞게 그 카드의 옵션을 맞춘다(세부 작업 창·화면 목록·설정창에서 바꾼 뒤).
+
+        '제외' 옵션은 관련 작업이 모두 꺼지면 켜지고 하나라도 켜면 꺼진다. 옵션이 관련 작업을 끄는 쪽으로 바뀌면
+        같은 카드의 다른 구성(한 번에 적용의 자간 조정 포함 all·제외 format)에서도 관련 작업을 끈다. 한 번에 적용에서
+        자간 작업을 모두 끄면 '자간 조정 포함'이 꺼지고 서식 적용(format)으로 바뀐다.
+        """
+        바뀐_옵션 = []
+        self._카드옵션_맞추는중 = True
+        try:
+            for 옵션 in 카드옵션_세부작업:
+                값, 현재 = 카드옵션_판정(옵션, self.stage_choices[mode], mode), self._카드옵션값(옵션)
+                if 값 is None or 현재 is None or 값 == 현재:
+                    continue
+                이름, 반대 = self._카드옵션_변수[옵션]
+                getattr(self, 이름).set(값 != 반대)
+                바뀐_옵션.append(옵션)
+        finally:
+            self._카드옵션_맞추는중 = False
+        옵션값 = self._카드옵션값_목록()
+        바뀐_유형 = set()
+        for 옵션 in 바뀐_옵션:
+            if not 카드옵션_끄는값(옵션, 옵션값[옵션]):
+                continue
+            for 다른_유형 in 카드옵션_세부작업[옵션][0]:
+                if 다른_유형 != mode and self._세부작업_값_넣기(
+                        다른_유형, 카드옵션_세부작업값(옵션, 옵션값[옵션], 옵션값, 다른_유형)):
+                    바뀐_유형.add(다른_유형)
+        self._세부작업_연동_마무리(바뀐_유형)
+        if "all_include_spacing" in 바뀐_옵션 and self.selected_mode.get() in ("all", "format"):
+            self.selected_mode.set(self._한번에_모드())
+
+    def _카드옵션_연동_시작(self):
+        """카드 옵션과 세부 작업을 처음 맞추고 옵션 변수에 연동 감시를 건다(화면 변수를 모두 만든 뒤).
+
+        켜 둔 '제외' 옵션은 저장된 세부 작업 구성보다 우선해 관련 작업을 끄고, 나머지 옵션은 세부 작업 구성을
+        따른다(예: 서식 통일의 쪽 맞춤은 기본 꺼짐이라 '페이지 맞춤 제외'가 켜져 보인다). 감시는 기존 감시보다 나중에
+        걸어 먼저 실행되므로, 요약 문구·설정 저장은 바뀐 세부 작업을 본다.
+        """
+        self._카드옵션_맞추는중 = False
+        for 옵션, (_, _, 제외) in 카드옵션_세부작업.items():
+            if 제외 and self._카드옵션값(옵션):
+                self._카드옵션_세부작업_반영(옵션)
+        for mode in ("spacing", "unify", self._한번에_모드()):
+            self._세부작업_옵션_맞춤(mode)
+        for 옵션, (이름, _) in self._카드옵션_변수.items():
+            getattr(self, 이름).trace_add("write", lambda *_, 옵션=옵션: self._카드옵션_세부작업_반영(옵션))
+
+    def _설정탭_세부작업_변경(self, mode, key, var):
+        """설정창의 단계 체크를 세부 작업 구성에 반영하고, 바뀌었으면 카드 옵션도 맞춘다."""
+        값 = bool(var.get())
+        if self.stage_choices[mode].get(key) == 값:
+            return
+        self.stage_choices[mode][key] = 값
+        self._세부작업_옵션_맞춤(mode)
 
     def _카드옵션_변경(self, mode):
         """카드 옵션 체크를 바꾸면 그 카드를 고른다(값 저장·요약은 변경 감시가 한다)."""
@@ -18344,7 +18466,7 @@ class HwpAutoDocFitGUI:
                 var = self.reset_spacing_var   # 실행창 카드의 '기존 자간 초기화'와 같은 값
             else:
                 var = tk.BooleanVar(value=self.stage_choices["spacing"].get(key, stage_default(key)))
-                var.trace_add("write", lambda *_, k=key, v=var: self.stage_choices["spacing"].__setitem__(k, v.get()))
+                var.trace_add("write", lambda *_, k=key, v=var: self._설정탭_세부작업_변경("spacing", k, v))
             self.spacing_stage_vars[key] = var
             item = ttk.Frame(container)
             item.pack(fill="x", pady=(4, 7))
@@ -18432,7 +18554,7 @@ class HwpAutoDocFitGUI:
         내어쓰기_번호 = next(i for i, (key, _) in enumerate(서식_단계) if key == "hanging_indent")
         for number, (key, label) in enumerate(서식_단계[:내어쓰기_번호], 1):
             var = tk.BooleanVar(value=self.stage_choices["format"].get(key, stage_default(key)))
-            var.trace_add("write", lambda *_, k=key, v=var: self.stage_choices["format"].__setitem__(k, v.get()))
+            var.trace_add("write", lambda *_, k=key, v=var: self._설정탭_세부작업_변경("format", k, v))
             self.format_stage_vars[key] = var
             item = ttk.Frame(format_container)
             item.pack(fill="x", pady=(4, 7))
@@ -18454,7 +18576,7 @@ class HwpAutoDocFitGUI:
         hanging_key, hanging_label = 서식_단계[내어쓰기_번호]
         indent_var = tk.BooleanVar(value=self.stage_choices["format"].get(hanging_key, True))
         indent_var.trace_add(
-            "write", lambda *_, k=hanging_key, v=indent_var: self.stage_choices["format"].__setitem__(k, v.get()))
+            "write", lambda *_, k=hanging_key, v=indent_var: self._설정탭_세부작업_변경("format", k, v))
         self.indent_stage_vars[hanging_key] = indent_var
         indent_item = ttk.Frame(tabs["indent"])
         indent_item.pack(fill="x", pady=(4, 7))
@@ -19338,8 +19460,10 @@ class HwpAutoDocFitGUI:
             표제외, 쪽맞춤제외 = self.exclude_tables_var.get(), self.all_exclude_pagefit_var.get()
         else:
             표제외 = 쪽맞춤제외 = False
-        자간제외 = mode == "unify" and bool(self.unify_exclude_spacing_var.get())
         세부작업 = dict(self.stage_choices[mode])
+        # 서식 통일의 '자간 정리 제외'는 세부 작업 '서식통일 문장 자간 정리'를 끈 것과 같다(서로 연동).
+        자간제외 = mode == "unify" and (bool(self.unify_exclude_spacing_var.get())
+                                     or not stage_enabled(세부작업, "unify_spacing", mode))
         if 표제외:
             세부작업 = 표작업_제외(세부작업)
             self.로그표시("표 제외: 표 관련 작업(텍스트 표 변환·기본 표 서식·표 칸 너비·표 정밀 서식·표 머리글 서식·"

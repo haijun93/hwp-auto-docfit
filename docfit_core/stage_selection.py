@@ -39,6 +39,10 @@ TABLE_STYLE_STAGE = ("table_style", "기본 표 서식 (준말 '표'의 예시 �
 # 가로로 칸이 둘 이상인 표의 열 너비를 칸 글자 수 비율로 나누고 표 폭을 쪽 좌우 여백 사이로 맞춘다.
 # 기본 표 서식 다음, 일반 표 정밀 복제 앞에서 실행한다.
 TABLE_WIDTH_STAGE = ("table_width", "표 칸 너비 (글자 수 비례, 표 폭은 쪽 좌우 여백 기준)")
+# 서식 통일 작업에서 서식통일이 고친 문장의 자간 조정·외톨이 글자 당기기. 서식통일 단계 안에서 문장마다
+# 서식 → 내어쓰기 → 자간 순서로 함께 하므로 따로 도는 단계는 아니며, 끄면 내어쓰기만 맞춘다.
+# 서식 통일 카드의 '자간 정리 제외'와 연동한다.
+UNIFY_SPACING_STAGE = ("unify_spacing", "서식통일 문장 자간 정리 (자간 조정·외톨이 글자 당기기)")
 DEFAULT_OFF = frozenset({"style_unify"})
 
 SPACING_STAGES = (
@@ -79,12 +83,13 @@ STAGE_EXAMPLES = {
     "table_width": "예: 칸 A1에 '도  시'(빈칸 포함 4자), B1에 '마 을 여  행'(8자)이 있으면 두 칸 너비를 1:2로 나누고, 표 전체 폭은 쪽 좌우 여백 사이 폭으로 맞춥니다. 짧은 낱말이 갈라지지 않을 최소 폭은 지키며 제목·중제목·붙임 서식 표는 두고, 그림·표가 든 표는 바꾸지 않습니다.",
     "table_style": "예: 준말 '표'에 담긴 예시 표처럼 머리글 행은 바탕색·이중 밑줄·한컴돋움 13pt 굵게, 본문은 휴먼명조 12pt로 맞추고 칸 위치별 테두리를 입힙니다. 준말 창의 '표 서식 학습…'으로 예시 표를 바꿉니다.",
     "table_unify": "예: 같은 모양 표에서 한 칸만 굴림이면 한컴돋움으로, 󰊱 제목 상자 하나만 10pt면 다른 제목 상자처럼 15pt로 맞춥니다. 칸에 맞추려 줄인 글자와 표 안 글자색은 그대로 둡니다.",
+    "unify_spacing": "예: 서식통일로 글꼴·크기를 바꾼 문장에서 줄 끝 단어가 갈라지면 그 문장만 자간으로 붙이고, 마지막 줄에 한두 글자만 남으면 앞줄로 당깁니다. 끄면 내어쓰기만 맞추고 자간은 그대로 둡니다.",
 }
 
 
 _STAGE_BY_KEY = {stage[0]: stage for stage in FORMAT_STAGES + SPACING_STAGES + (
     UNIFY_STAGE, TEXT_TABLE_STAGE, TABLE_UNIFY_STAGE, ABBREVIATION_STAGE, ASTERISK_STAGE,
-    ATTACH_FONT_STAGE, TABLE_STYLE_STAGE, TABLE_WIDTH_STAGE)}
+    ATTACH_FONT_STAGE, TABLE_STYLE_STAGE, TABLE_WIDTH_STAGE, UNIFY_SPACING_STAGE)}
 # 서식 적용·한 번에 적용은 준말 → 본말 변환을 가장 먼저, 문두기호별 서식 등 보고서 표준서식을 두 번째로
 # 다른 모든 단계보다 먼저 실행한다(서식 통일은 두 단계를 하지 않는다).
 _FIRST_STAGES = ("abbreviation", "standard_format")
@@ -94,7 +99,7 @@ _FIRST_STAGES = ("abbreviation", "standard_format")
 _MODE_STAGES = {
     # 서식통일은 문서 자체의 대표 서식이 기준이다. 기본 표 서식(준말 '표')을 먼저 입힌 뒤 서식을 맞추고,
     # 쪽 맞춤은 사용자가 켤 때만 실행한다.
-    "unify": ("table_style", "style_unify", "table_unify", "page_fit"),
+    "unify": ("table_style", "style_unify", "unify_spacing", "table_unify", "page_fit"),
     "format": _FIRST_STAGES + (
         "text_table_convert", "asterisk_superscript", "attachment_font", "pre_format", "table_style",
         "table_width", "precise_table", "normalize_space", "punctuation_space", "style_unify", "parenthesis",
@@ -123,7 +128,7 @@ def default_choice(key, mode=None):
     '서식 통일' 작업 유형에서는 서식통일이 곧 작업 자체라 켜져 있다.
     """
     if mode == "unify":
-        return key in ("style_unify", "table_unify", "table_style")
+        return key in ("style_unify", "unify_spacing", "table_unify", "table_style")
     return key not in DEFAULT_OFF
 
 
@@ -151,3 +156,66 @@ def enabled(selection, key, mode=None):
     if selection is None:
         return default_choice(key, mode)
     return selection.get(key, default_choice(key, mode))
+
+
+SPACING_STAGE_KEYS = tuple(key for key, _ in SPACING_STAGES)
+# 작업 카드 옵션과 세부 작업의 연동(2026-10-04 사용자 요청). 옵션 → (그 카드의 작업 유형, 관련 세부 작업,
+# 켜면 관련 작업을 빼는 '제외' 옵션인가). 옵션을 바꾸면 관련 세부 작업을 모두 같이 켜고 끄며, 세부 작업에서 관련
+# 작업을 바꾸면 옵션을 맞춘다('제외' 옵션은 관련 작업이 모두 꺼졌을 때 켜짐, '포함' 옵션은 하나라도 켜져 있으면 켜짐).
+# 자간 정리의 '표 제외'는 설정 table_spacing의 반대 값이다. 한 번에 적용의 두 구성(자간 조정 포함 all·제외 format)은
+# '표 제외'·'페이지 맞춤 제외'를 함께 쓰고, '자간 조정 포함'은 all 구성의 자간 작업과 연동한다.
+CARD_OPTION_STAGES = {
+    "spacing_reset_existing": (("spacing",), ("reset_spacing",), False),
+    "spacing_exclude_tables": (("spacing",), TABLE_STAGE_KEYS, True),
+    "unify_exclude_tables": (("unify",), TABLE_STAGE_KEYS, True),
+    "unify_exclude_spacing": (("unify",), ("unify_spacing",), True),
+    "unify_exclude_pagefit": (("unify",), PAGE_FIT_STAGE_KEYS, True),
+    "all_include_spacing": (("all",), SPACING_STAGE_KEYS, False),
+    "all_exclude_tables": (("all", "format"), TABLE_STAGE_KEYS, True),
+    "all_exclude_pagefit": (("all", "format"), PAGE_FIT_STAGE_KEYS, True),
+}
+
+
+def card_option_keys(option, mode):
+    """카드 옵션이 그 작업 유형에서 함께 켜고 끄는 세부 작업(실행 순서). 그 카드의 작업 유형이 아니면 빈 묶음."""
+    modes, keys, _ = CARD_OPTION_STAGES[option]
+    if mode not in modes:
+        return ()
+    return tuple(key for key in _MODE_STAGES[mode] if key in keys)
+
+
+def card_option_turns_off(option, value):
+    """옵션 값이 관련 세부 작업을 끄는 쪽인가('제외' 켬, '포함' 끔). 값을 모르면(None) False."""
+    if value is None:
+        return False
+    return bool(value) == CARD_OPTION_STAGES[option][2]
+
+
+def card_option_stage_values(option, value, options, mode):
+    """카드 옵션 값에 맞춘 관련 세부 작업 값 {키: 켬}.
+
+    켜야 하는 작업이라도 같은 작업 유형의 다른 옵션(options)이 끄는 작업이면 끈 채로 둔다
+    (예: '표 제외'를 켠 채 '자간 조정 포함'을 켜면 표·컨트롤 자간 작업은 꺼 둔다).
+    """
+    want_on = not card_option_turns_off(option, value)
+    blocked = set()
+    if want_on:
+        for other in CARD_OPTION_STAGES:
+            if other != option and card_option_turns_off(other, options.get(other)):
+                blocked.update(card_option_keys(other, mode))
+    return {key: want_on and key not in blocked for key in card_option_keys(option, mode)}
+
+
+def card_option_from_stages(option, selection, mode):
+    """세부 작업 구성에 맞는 카드 옵션 값. 그 작업 유형에 관련 작업이 없으면 None."""
+    keys = card_option_keys(option, mode)
+    if not keys:
+        return None
+    any_on = any(enabled(selection, key, mode) for key in keys)
+    return not any_on if CARD_OPTION_STAGES[option][2] else any_on
+
+
+def card_option_off_keys(options, mode):
+    """켜진 '제외' 옵션·꺼진 '포함' 옵션이 끄는 그 작업 유형의 세부 작업(카드 요약 문구가 이미 알리는 작업)."""
+    return {key for option in CARD_OPTION_STAGES if card_option_turns_off(option, options.get(option))
+            for key in card_option_keys(option, mode)}
