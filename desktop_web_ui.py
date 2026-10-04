@@ -335,7 +335,8 @@ class DesktopWebBridge:
         return self.get_state()
 
     # 카드 옵션(설정 키 → 화면 변수, 고르는 카드): 한 번에 적용의 '페이지 맞춤 제외', 서식 통일의 '표 제외'·
-    # '자간 정리 제외'·'페이지 맞춤 제외'. 모두 기본 꺼짐이며 설정 파일에 저장된다.
+    # '자간 정리 제외'·'페이지 맞춤 제외'. 설정 파일에 저장되며, 바꾸면 앱의 변수 감시가 그 카드의 관련 세부 작업을
+    # 같이 켜고 끈다(서식 통일의 쪽 맞춤은 세부 작업 기본값이 꺼짐이라 '페이지 맞춤 제외'가 기본 켜짐).
     _CARD_OPTIONS = {
         "all_exclude_pagefit": ("all_exclude_pagefit_var", "all"),
         "unify_exclude_tables": ("unify_exclude_tables_var", "unify"),
@@ -462,8 +463,16 @@ class DesktopWebBridge:
         self._tk(reveal, timeout=None, front=True)
         return self.get_state()
 
+    def _stages_changed(self, mode):
+        """세부 작업을 바꾼 뒤 그 카드 옵션(표 제외·페이지 맞춤 제외 등)을 세부 작업에 맞춘다."""
+        if hasattr(self.gui, "_세부작업_옵션_맞춤"):
+            self.gui._세부작업_옵션_맞춤(mode)
+
     def set_stage(self, key, on):
-        """현재 작업 유형의 세부 작업 하나를 켜고 끈다. 기본값 저장을 켠 유형이면 바로 저장한다."""
+        """현재 작업 유형의 세부 작업 하나를 켜고 끈다. 기본값 저장을 켠 유형이면 바로 저장한다.
+
+        카드 옵션과 연동된 작업이면 옵션도 바뀐다(예: 표 작업을 하나라도 켜면 '표 제외'가 꺼진다).
+        """
         def update():
             gui = self.gui
             mode = gui.selected_mode.get()
@@ -472,13 +481,14 @@ class DesktopWebBridge:
             gui.stage_choices[mode][key] = bool(on)
             if gui._세부작업_기본저장.get(mode):
                 gui._세부작업_기본값_저장(mode)
+            self._stages_changed(mode)
             gui._요약갱신()
 
         self._tk(update)
         return self.get_state()
 
     def reset_stages(self):
-        """현재 작업 유형의 세부 작업을 처음 기본값으로 되돌린다."""
+        """현재 작업 유형의 세부 작업을 처음 기본값으로 되돌린다(카드 옵션도 그에 맞춘다)."""
         def reset():
             gui = self.gui
             mode = gui.selected_mode.get()
@@ -487,6 +497,7 @@ class DesktopWebBridge:
             gui.stage_choices[mode] = {key: default_choice(key, mode) for key, _ in stages_for_mode(mode)}
             if gui._세부작업_기본저장.get(mode):
                 gui._세부작업_기본값_저장(mode)
+            self._stages_changed(mode)
             gui._요약갱신()
 
         self._tk(reset)

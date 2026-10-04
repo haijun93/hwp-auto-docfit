@@ -120,7 +120,8 @@ class _WorkspaceState extends State<Workspace> {
   bool get tableSpacing => state['table_spacing'] != false;
   // '한 번에 적용'의 '표 제외'(설정 all_exclude_tables, 기본 꺼짐).
   bool get excludeTables => state['exclude_tables'] == true;
-  // 카드 옵션(한 번에 적용 '페이지 맞춤 제외', 서식 통일 '표 제외'·'자간 정리 제외'·'페이지 맞춤 제외', 기본 꺼짐).
+  // 카드 옵션(한 번에 적용 '페이지 맞춤 제외', 서식 통일 '표 제외'·'자간 정리 제외'·'페이지 맞춤 제외').
+  // 앱이 세부 작업과 연동해 돌려주는 상태를 그대로 보여 준다(서식 통일 '페이지 맞춤 제외'만 기본 켜짐).
   bool cardOption(String key) =>
       (state['card_options'] as Map? ?? const {})[key] == true;
   String get modeTitle => mode == 'format'
@@ -1025,7 +1026,7 @@ class _WorkspaceState extends State<Workspace> {
                   for (final o in const [
                     ('unify_exclude_tables', '표 제외', '기본 표 서식·표 서식통일을 빼요.'),
                     ('unify_exclude_spacing', '자간 정리 제외', '서식통일이 고친 문장의 자간은 그대로 둬요.'),
-                    ('unify_exclude_pagefit', '페이지 맞춤 제외', '문단 아래 간격 페이지 맞춤·관련 문단 페이지 배치를 빼요.'),
+                    ('unify_exclude_pagefit', '페이지 맞춤 제외', '문단 아래 간격 페이지 맞춤을 빼요.'),
                   ]) ...[
                     Row(
                       children: [

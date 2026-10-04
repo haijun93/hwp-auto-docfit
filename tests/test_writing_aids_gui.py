@@ -50,16 +50,24 @@ class WritingAidsGuiTest(unittest.TestCase):
                                      ["자간 정리", "기존 자간 초기화", "표 제외",
                                       "서식 통일", "표 제외", "자간 정리 제외", "페이지 맞춤 제외",
                                       "한 번에 적용", "자간 조정 포함", "표 제외", "페이지 맞춤 제외"])
-                    for 이름 in ("all_exclude_pagefit_var", "unify_exclude_tables_var", "unify_exclude_spacing_var",
-                                 "unify_exclude_pagefit_var"):
-                        self.assertFalse(getattr(app, 이름).get(), 이름)       # 모두 기본 꺼짐
+                    for 이름 in ("all_exclude_pagefit_var", "unify_exclude_tables_var", "unify_exclude_spacing_var"):
+                        self.assertFalse(getattr(app, 이름).get(), 이름)       # 기본 꺼짐
+                    # 서식 통일의 쪽 맞춤은 세부 작업 기본값이 꺼짐이라 '페이지 맞춤 제외'가 켜져 보인다(세부 작업과 연동).
+                    self.assertTrue(app.unify_exclude_pagefit_var.get())
+                    self.assertFalse(app.stage_choices["unify"]["page_fit"])
                     # '표 제외'는 기본 꺼짐. 켜면 한 번에 적용 카드를 고르고 요약에 알리며 설정에 저장한다.
                     self.assertFalse(app.exclude_tables_var.get())
                     app.exclude_tables_var.set(True)
                     app._표제외_변경()
                     self.assertIn(app.selected_mode.get(), ("all", "format"))
                     self.assertIn("표 제외", app.options_summary.cget("text"))
+                    self.assertNotIn("세부 작업", app.options_summary.cget("text"))   # 카드 옵션으로 끈 작업은 따로 세지 않는다
                     self.assertTrue(ns["설정_불러오기"]()["all_exclude_tables"])
+                    # 세부 작업 연동: 두 구성(자간 조정 포함 all·제외 format)의 표 관련 작업이 바로 꺼진다.
+                    for 유형 in ("all", "format"):
+                        self.assertTrue(all(not 값 for 키, 값 in app.stage_choices[유형].items()
+                                            if 키 in ns["표작업_키목록"]), 유형)
+                    self.assertTrue(app.stage_choices["all"]["pre_format"])   # 제목·개요 서식 표는 그대로
                     # 실행하면 표 관련 세부 작업을 모두 끄고 표 칸 안 문장도 자간 작업에서 뺀다.
                     import threading
                     captured = {}
@@ -81,10 +89,31 @@ class WritingAidsGuiTest(unittest.TestCase):
                     app.running = False
                     app.exclude_tables_var.set(False)
                     self.assertNotIn("표 제외", app.options_summary.cget("text"))
+                    self.assertTrue(app.stage_choices["all"]["table_style"] and app.stage_choices["all"]["control_spacing"])
+                    self.assertTrue(app.stage_choices["format"]["table_width"])
+                    # 반대로 세부 작업에서 표 작업을 모두 끄면 '표 제외'가 켜지고 다른 구성의 표 작업도 끈다.
+                    app._카드_클릭("all")
+                    for 키 in ns["표작업_키목록"]:
+                        if 키 in app.stage_choices["all"]:
+                            app.stage_choices["all"][키] = False
+                    app._세부작업_옵션_맞춤("all")
+                    self.assertTrue(app.exclude_tables_var.get())
+                    self.assertFalse(app.stage_choices["format"]["table_style"])
+                    # 표 작업을 하나라도 켜면 '표 제외'가 꺼지고, 사용자가 끈 나머지 작업은 그대로 둔다.
+                    app.stage_choices["all"]["table_width"] = True
+                    app._세부작업_옵션_맞춤("all")
+                    self.assertFalse(app.exclude_tables_var.get())
+                    self.assertFalse(app.stage_choices["all"]["table_style"])
+                    app.exclude_tables_var.set(True)
+                    app.exclude_tables_var.set(False)                    # 표 작업을 모두 다시 켠다
+                    self.assertTrue(app.stage_choices["all"]["table_style"])
                     # 한 번에 적용의 '페이지 맞춤 제외': 문단 아래 간격 페이지 맞춤·관련 문단 페이지 배치를 끈다.
                     app.all_exclude_pagefit_var.set(True)
                     app._표제외_변경()
                     self.assertIn("페이지 맞춤 제외", app.options_summary.cget("text"))
+                    for 유형 in ("all", "format"):
+                        self.assertEqual((app.stage_choices[유형]["page_fit"], app.stage_choices[유형]["page_group"]),
+                                         (False, False), 유형)
                     with patch.object(threading, "Thread", _Thread):
                         app.작업시작(app.selected_mode.get())
                     args = captured["args"]
@@ -92,6 +121,7 @@ class WritingAidsGuiTest(unittest.TestCase):
                     self.assertTrue(args[22])                        # 표는 그대로
                     app.running = False
                     app.all_exclude_pagefit_var.set(False)
+                    self.assertTrue(app.stage_choices["all"]["page_group"])
                     self.assertTrue(ns["설정_불러오기"]()["unify_exclude_tables"] is False)
                     # 서식 통일 카드: 표 제외·자간 정리 제외·페이지 맞춤 제외
                     app.unify_exclude_tables_var.set(True)
@@ -103,6 +133,10 @@ class WritingAidsGuiTest(unittest.TestCase):
                     for 문구 in ("표 제외", "자간 정리 제외", "페이지 맞춤 제외"):
                         self.assertIn(문구, summary)
                     self.assertTrue(ns["설정_불러오기"]()["unify_exclude_spacing"])
+                    # 세부 작업 연동: 기본 표 서식·표 서식통일·서식통일 문장 자간 정리·쪽 맞춤이 꺼진다.
+                    for 키 in ("table_style", "table_unify", "unify_spacing", "page_fit"):
+                        self.assertFalse(app.stage_choices["unify"][키], 키)
+                    self.assertTrue(app.stage_choices["unify"]["style_unify"])
                     with patch.object(threading, "Thread", _Thread):
                         app.작업시작("unify")
                     args = captured["args"]
@@ -115,6 +149,20 @@ class WritingAidsGuiTest(unittest.TestCase):
                     app.버튼_대기중()                                   # 작업이 끝난 것처럼 카드 버튼을 다시 켠다
                     for 이름 in ("unify_exclude_tables_var", "unify_exclude_spacing_var", "unify_exclude_pagefit_var"):
                         getattr(app, 이름).set(False)
+                    for 키 in ("table_style", "table_unify", "unify_spacing", "page_fit"):
+                        self.assertTrue(app.stage_choices["unify"][키], 키)
+                    # 세부 작업 '서식통일 문장 자간 정리'를 끄면 '자간 정리 제외'가 켜지고, 실행 때 자간 조정을 끈다.
+                    app.stage_choices["unify"]["unify_spacing"] = False
+                    app._세부작업_옵션_맞춤("unify")
+                    self.assertTrue(app.unify_exclude_spacing_var.get())
+                    self.assertFalse(app.unify_exclude_tables_var.get())
+                    with patch.object(threading, "Thread", _Thread):
+                        app.작업시작("unify")
+                    self.assertTrue(captured["args"][13]["unify_exclude_spacing"])
+                    app.running = False
+                    app.버튼_대기중()
+                    app.unify_exclude_spacing_var.set(False)
+                    self.assertTrue(app.stage_choices["unify"]["unify_spacing"])
                     # 자간 정리의 '표 제외'는 설정 table_spacing(표 안 문장 자간조정)의 반대 값이고 기본은 꺼짐이다.
                     self.assertTrue(app.table_spacing_var.get())
                     self.assertEqual(app.table_spacing_card_check.cget("text"), "표 제외")
@@ -124,10 +172,22 @@ class WritingAidsGuiTest(unittest.TestCase):
                     self.assertEqual(app.selected_mode.get(), "spacing")
                     self.assertIn("표 제외", app.options_summary.cget("text"))
                     self.assertFalse(ns["설정_불러오기"]()["table_spacing"])
+                    # 세부 작업 연동: 표·컨트롤 자간 조정·줄 병합·단어 검사가 꺼진다(한 번에 적용은 따로 둔다).
+                    for 키 in ("control_spacing", "control_short_line", "control_word_check"):
+                        self.assertFalse(app.stage_choices["spacing"][키], 키)
+                    self.assertTrue(app.stage_choices["all"]["control_spacing"])
                     app.table_spacing_card_check.invoke()             # 다시 끔
                     self.assertTrue(app.table_spacing_var.get())
                     self.assertNotIn("표 제외", app.options_summary.cget("text"))
                     self.assertTrue(ns["설정_불러오기"]()["table_spacing"])
+                    self.assertTrue(app.stage_choices["spacing"]["control_word_check"])
+                    # 세부 작업에서 표·컨트롤 작업을 모두 끄면 '표 제외'가 켜진다.
+                    for 키 in ("control_spacing", "control_short_line", "control_word_check"):
+                        app.stage_choices["spacing"][키] = False
+                    app._세부작업_옵션_맞춤("spacing")
+                    self.assertFalse(app.table_spacing_var.get())
+                    app.table_spacing_var.set(True)
+                    self.assertTrue(app.stage_choices["spacing"]["control_spacing"])
                     # 설정창 '제목 부제 크기'는 기본 15pt이고, 바꾸면 바로 반영·저장된다.
                     부제 = app.std_parspace_vars["std_title_subtitle_pt"]
                     self.assertEqual(부제.get(), "15")
@@ -167,6 +227,7 @@ class WritingAidsGuiTest(unittest.TestCase):
                     app._자간포함_변경()
                     self.assertEqual((app.selected_mode.get(), app.card_mode_var.get()), ("format", "all"))
                     self.assertIn("자간 조정 제외", app.options_summary.cget("text"))
+                    self.assertFalse(app.stage_choices["all"]["body_spacing"])   # all 구성의 자간 작업도 끈다
                     app._카드_클릭("spacing")
                     app._카드_클릭("all")
                     self.assertEqual(app.selected_mode.get(), "format")   # 선택을 기억한다
@@ -174,6 +235,16 @@ class WritingAidsGuiTest(unittest.TestCase):
                     app.include_spacing_var.set(True)
                     app._자간포함_변경()
                     self.assertEqual(app.selected_mode.get(), "all")
+                    자간작업 = ns["카드옵션_세부작업"]["all_include_spacing"][1]
+                    self.assertTrue(all(app.stage_choices["all"][키] for 키 in 자간작업))
+                    # 한 번에 적용에서 자간 작업을 모두 끄면 '자간 조정 포함'이 꺼지고 서식 적용(format)으로 바뀐다.
+                    for 키 in 자간작업:
+                        app.stage_choices["all"][키] = False
+                    app._세부작업_옵션_맞춤("all")
+                    self.assertEqual((app.include_spacing_var.get(), app.selected_mode.get()), (False, "format"))
+                    app.include_spacing_var.set(True)
+                    app._자간포함_변경()
+                    self.assertTrue(all(app.stage_choices["all"][키] for 키 in 자간작업))
                     app._빠른설정("report")
                     app._카드_클릭("unify")  # 빠른 선택 해제가 서식 통일 모드 자체를 끄면 안 된다
                     self.assertEqual(app.selected_mode.get(), "unify")
