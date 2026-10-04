@@ -27,7 +27,9 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "이미 있는 릴리스: $TAG"
           else
+            # GitHub는 첨부 파일 이름의 한글을 지우므로(default.txt가 됨) 영문 이름으로 올리고 한글은 표시 이름(#)으로 둔다.
+            cp "release-assets/보고서 예시 파일(한번에 적용).txt" report-example-all-in-one.txt
             gh release create "$TAG" release-assets/HWP_AutoDocFit.exe \
-              "release-assets/보고서 예시 파일(한번에 적용).txt" \
+              "report-example-all-in-one.txt#보고서 예시 파일(한번에 적용).txt" \
               --title "$TITLE" --notes-file "$NOTE" --latest
           fi
