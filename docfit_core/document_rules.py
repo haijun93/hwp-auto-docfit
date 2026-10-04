@@ -220,13 +220,22 @@ def normalize_official_spacing(text):
         return "  끝."
     return _END_MARK_RE.sub("  끝.", text, count=1)
 
-LEVELS = ("box", "circle", "dash", "note")
+# 6단계 계층(2026-10-04): 2단계 장(chapter) · 3단계 중제목(midtitle, 로마자) · 4단계 □(box) · 5단계 ㅇ(circle) · 6단계 -(dash).
+LEVELS = ("chapter", "midtitle", "box", "circle", "dash", "note")
+# 장·중제목은 구역 머리라 깊은 항목에서 돌아올 때의 복귀 배율을 곱하지 않는다(기본값 그대로).
+HEADING_LEVELS = ("chapter", "midtitle")
+_CHAPTER_RE = re.compile(r"(?:제\s?\d{1,2}\s?[장편부]|\d{1,2}\s?장|[Cc]hapter\s?\d{1,2})(?=\s|$|[.．:：])")
+_MIDTITLE_RE = re.compile(r"[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅪⅫ]+(?=\s|$|[.．])")
 
 
 def paragraph_level(text):
     stripped = (text or "").lstrip()
     if not stripped:
         return None
+    if _CHAPTER_RE.match(stripped):
+        return "chapter"
+    if _MIDTITLE_RE.match(stripped):
+        return "midtitle"
     marker = stripped[0]
     if marker == "□":
         return "box"
@@ -251,7 +260,10 @@ class ParagraphSpacingTracker:
     def spacing_for(self, text, base_spacing, return_percent=150):
         if not 100 <= return_percent <= 400:
             raise ValueError("복귀배율은 100~400%여야 합니다.")
-        level = paragraph_level(text)
+        return self.spacing_for_level(paragraph_level(text), base_spacing, return_percent)
+
+    def spacing_for_level(self, level, base_spacing, return_percent=150):
+        """글 없이 계층만 아는 문단(표 첫 칸 로마자 중제목 표 등)의 문단 위 간격."""
         if level is None:
             return None
         previous = self.previous
@@ -259,6 +271,7 @@ class ParagraphSpacingTracker:
         base = base_spacing.get(level)
         if base is None:
             return None
-        if previous is not None and LEVELS.index(previous) > LEVELS.index(level):
+        if (previous is not None and level not in HEADING_LEVELS
+                and LEVELS.index(previous) > LEVELS.index(level)):
             return round(base * return_percent / 100)
         return base

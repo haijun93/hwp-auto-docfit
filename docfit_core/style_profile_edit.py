@@ -7,7 +7,7 @@ from .style_hierarchy import canonical_marker
 
 
 FIELDS = ("font", "size", "indent", "spacing")
-ROLES = ("제목", "중제목", "소제목", "본문", "내용", "부연설명", "미분류")
+ROLES = ("제목", "장", "중제목", "소제목", "본문", "내용", "부연설명", "미분류")
 
 
 def apply_reviewed_styles(profile, rows):
