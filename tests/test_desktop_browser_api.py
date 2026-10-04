@@ -85,12 +85,20 @@ class BrowserApiTests(unittest.TestCase):
         bridge.window = object()
         api = _BrowserApi(bridge)
         public = {name: getattr(api, name) for name in dir(api) if not name.startswith('_')}
-        self.assertEqual(len(public), 35)
+        self.assertEqual(len(public), 36)
         self.assertTrue(all(callable(value) for value in public.values()))
         self.assertNotIn('gui', public)
         self.assertNotIn('window', public)
         self.assertNotIn('request_close', public)
         self.assertEqual(api.get_state, bridge.get_state)
+
+    def test_show_format_example_calls_app(self):
+        # '서식 예시 확인': 지금 고른 서식을 입힌 예시 보고서를 앱이 만들어 연다.
+        gui = _FakeGui()
+        called = []
+        gui._서식예시_확인 = lambda: called.append(True)
+        _bridge(gui).show_format_example()
+        self.assertEqual(called, [True])
 
     def test_state_lists_stages_profiles_and_options(self):
         state = _bridge(_FakeGui()).get_state()

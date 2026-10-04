@@ -42,7 +42,7 @@ class PageGroupUnitsTest(unittest.TestCase):
         units = self.ns['쪽맞춤_논리단위'](layout('ㅁ*ㅇ-*ㅇ*')[0])
         self.assertEqual(units, [[0, 1], [2, 3, 4], [5, 6]])
 
-    def _group_attempt(self, pattern, move_result='성공'):
+    def _group_attempt(self, pattern, move_result='성공', head=None, head_pages=None):
         fn = self.ns['소제목묶음_같은쪽_시도']
         roles, pages = layout(pattern)
         group = [((0, i, 0), (0, i, 5), role) for i, role in enumerate(roles)]
@@ -58,9 +58,10 @@ class PageGroupUnitsTest(unittest.TestCase):
             '검수_문제_기록': record, '진단로그': Mock(), '로그': Mock(),
             '현재_처리파일': 'x.hwpx',
             '쪽보다_긴_묶음인가': lambda paragraphs, counts: False,
-            '_묶음_쪽나눔_이동': lambda *args: False,
+            '_묶음_쪽나눔_이동': lambda *args, **kwargs: False,
+            '표_쪽범위': lambda key: head_pages,
         }):
-            result = fn((0, 0, 0), 'ㅁ 제목')
+            result = fn((0, 0, 0), 'ㅁ 제목', head)
         return result, mover, stats, record
 
     def test_small_group_moves_whole_group_in_decided_direction(self):
@@ -70,6 +71,15 @@ class PageGroupUnitsTest(unittest.TestCase):
         self.assertEqual(stats['성공'], 1)
         result, mover, _, _ = self._group_attempt('ㅁㅇ--/-ㅇㅇ')
         self.assertIs(mover.call_args.args[3], False)  # 앞쪽으로 당김
+
+    def test_midtitle_head_moves_with_group(self):
+        # 'Ⅱ 추진 계획' 중제목이 앞쪽 끝, □ 묶음이 뒤쪽이면 중제목부터 함께 민다(□ 앞 쪽 나눔 금지).
+        head = {'위치': (0, 9, 0), '표키': (0, 9, 0)}
+        result, mover, _, _ = self._group_attempt('/ㅁㅇ-', head=head, head_pages=(1, 1))
+        self.assertEqual(result[0], '처리')
+        self.assertEqual(mover.call_args.args[0], (0, 9, 0))
+        self.assertEqual(mover.call_args.kwargs['표키'], (0, 9, 0))
+        self.assertIs(mover.call_args.args[3], True)
 
     def test_six_or_more_units_left_to_unit_level(self):
         result, mover, stats, _ = self._group_attempt('ㅁㅇㅇ/ㅇㅇㅇ')
