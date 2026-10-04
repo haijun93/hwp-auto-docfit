@@ -128,6 +128,15 @@ class StyleProfileTest(unittest.TestCase):
         self.assertIn("구분", section)
         self.assertIn("내용", section)
         self.assertIn('width="10000"', section)
+        # 행·열 수만 같고 첫 행 글이 다른(대응하지 않는) 표에는 정밀 복제하지 않는다(대표 표 서식을 덮지 않게).
+        with tempfile.TemporaryDirectory() as folder:
+            other = Path(folder) / "other.hwpx"
+            with ZipFile(other, "w", ZIP_DEFLATED) as archive:
+                archive.writestr("Contents/header.xml", HEADER)
+                archive.writestr("Contents/section0.xml", SECTION.replace("구분".encode(), "연번".encode())
+                                 .replace("내용".encode(), "성명".encode()))
+            result = apply_style(other, Path(folder) / "out.hwpx", profile["precise_tables"])
+        self.assertEqual(result["applied"], 0)
 
 
 if __name__ == "__main__":

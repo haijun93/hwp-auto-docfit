@@ -2315,8 +2315,13 @@ def 제목_참조병합(header, source):
     return maps
 
 
-def 제목_표서식_복사(table, sample, maps):
-    """제목 내용은 그대로 두고 원본 표·셀·문단·문자 서식만 복사한다."""
+def 제목_표서식_복사(table, sample, maps, 상자=False):
+    """제목 내용은 그대로 두고 원본 표·셀·문단·문자 서식만 복사한다.
+
+    문단은 끝에서부터 맞춘다(제목 표: 부제가 없는 문서도 제목 문단 서식을 받게). 상자=True(한 칸 상자)는 문단 수가
+    같으면 하나씩, 다르면 예시의 본문 문단(글이 가장 많은 문단) 서식을 모든 문단에 입힌다. 끝에서 맞추면 한 문단
+    상자가 예시 상자 끝의 안내 문단(파란 11pt 등) 서식을 받았다(2026-10-04 범정부오피스 서식 시험).
+    """
     for attr in ('borderFillIDRef', 'cellSpacing', 'textWrap', 'textFlow', 'pageBreak', 'repeatHeader'):
         if attr in sample.attrib:
             value = sample.get(attr)
@@ -2334,8 +2339,9 @@ def 제목_표서식_복사(table, sample, maps):
         sub.set('vertAlign', ssub.get('vertAlign', 'CENTER'))
         ps = [p for p in 제목_문단들(cell) if 제목_문자열(p).strip()]
         sps = [p for p in 제목_문단들(scell) if 제목_문자열(p).strip()]
+        본문 = max(sps, key=lambda q: len(제목_문자열(q).strip())) if 상자 and sps and len(sps) != len(ps) else None
         for i, p in enumerate(ps):
-            sp = sps[min(i + max(0, len(sps) - len(ps)), len(sps)-1)]
+            sp = 본문 if 본문 is not None else sps[min(i + max(0, len(sps) - len(ps)), len(sps)-1)]
             source_para_id = sp.get('paraPrIDRef')
             mapped_para_id = maps['paraProperties'].get(source_para_id)
             if mapped_para_id is None:
@@ -2433,14 +2439,20 @@ def _정밀표_셀서식_복사(target, sample, maps, copy_geometry):
                     target_run.set("charPrIDRef", maps["charProperties"].get(char_ref, char_ref))
 
 
-def _정밀표_서식표인가(table):
-    """정밀 복제에서 뺄 서식 표인가: 제목·중제목·붙임 표와, 서식 프로필에 한 칸 상자 예시가 있을 때의 한 칸 상자.
+def _정밀표_같은표만(table, signature):
+    """정밀 복제를 같은 표(첫 칸 글이 같은 예시 표)에만 할 표인가: 한 칸 표와 서식 표(제목·중제목·붙임·한 칸 상자).
 
-    이 표들은 서식 표 단계가 예시 표 모양을 문단별로 입힌다. 정밀 복제는 칸 수만 같으면 다른 1칸 표를 짝지어
-    상자 둘째 문단(파란 11pt 안내 글 등)까지 첫 문단 서식으로 덮었다(2026-10-04 범정부오피스 인천 서식 왕복 시험).
+    이 표들은 서식 표 단계가 예시 모양을 문단별로 입힌다. 예전에는 칸 수만 같으면 다른 한 칸 표를 짝지어 상자 둘째
+    문단(파란 11pt 안내 글 등)까지 첫 문단 서식으로 덮었다(2026-10-04 범정부오피스 인천 서식 왕복 시험). 같은 표가
+    예시에 있으면(예시 문서 자체를 정리할 때 등) 그 표 모양을 그대로 되살린다.
     """
-    kind = 서식표_종류판별(table)
-    return bool(kind) and (kind != 'box' or bool((활성_서식표_프로필 or {}).get('box')))
+    return signature["cell_count"] == 1 or bool(서식표_종류판별(table))
+
+
+def _정밀표_글같음(first, second):
+    """두 표 첫 칸 글이 같은가(빈칸 무시, 빈 글은 같지 않음)."""
+    first, second = re.sub(r"\s", "", first or ""), re.sub(r"\s", "", second or "")
+    return bool(first) and first == second
 
 
 def 정밀표_서식_적용(source_path, target_path, precise_profile):
@@ -2465,9 +2477,6 @@ def 정밀표_서식_적용(source_path, target_path, precise_profile):
         changed = False
         for table in (element for element in root.iter() if 제목_xml이름(element) == "tbl"):
             before_text.append(_표_텍스트(table))
-            if _정밀표_서식표인가(table):
-                ordinal += 1
-                continue
             target_signature = _표_서명(table, ordinal)
             scored = [(_정밀표_매칭점수(target_signature, signature), signature, sample)
                       for signature, sample in source_tables]
@@ -2476,6 +2485,15 @@ def 정밀표_서식_적용(source_path, target_path, precise_profile):
             compatible = ((target_signature["rows"], target_signature["cols"])
                           == (signature["rows"], signature["cols"])
                           or target_signature["cell_count"] == signature["cell_count"])
+            # 서식 표(제목·중제목·붙임·한 칸 상자)와 한 칸 표는 같은 표(첫 칸 글이 같음)일 때만, 일반 표는 대응하는 표
+            # (첫 칸 글이 같거나 첫 행 글이 60% 이상 같음)일 때만 정밀 복제한다. 예전에는 행·열 수만 같으면 다른 문서의
+            # 무관한 표 모양을 입혀 서식 프로필의 대표 표 서식(기본 표 서식)을 덮었다(2026-10-04 범정부오피스 서식 시험).
+            if compatible and _정밀표_같은표만(table, target_signature):
+                compatible = _정밀표_글같음(target_signature["first_cell"], signature["first_cell"])
+            elif compatible:
+                compatible = (_정밀표_글같음(target_signature["first_cell"], signature["first_cell"])
+                              or difflib.SequenceMatcher(None, target_signature["first_row"],
+                                                         signature["first_row"]).ratio() >= 0.6)
             if compatible and score >= 45:
                 exact = (target_signature["rows"] == signature["rows"]
                          and target_signature["cols"] == signature["cols"]
@@ -3592,7 +3610,7 @@ def 상자서식_hwpx_처리(source, target=None, selections=None):
         for index in items:
             table = tables[index]
             before = 제목_문자열(table)
-            제목_표서식_복사(table, sample, maps)
+            제목_표서식_복사(table, sample, maps, 상자=True)
             if 제목_문자열(table) != before:
                 raise RuntimeError('한 칸 상자 서식 적용 중 글 보존 검사에 실패했습니다.')
             count += 1
