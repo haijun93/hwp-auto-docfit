@@ -706,6 +706,103 @@ def _agreement(record, summary):
     return score
 
 
+# 일반 표 가운데 데이터 표만 일반 표 대표값·기본 표 서식의 표본으로 쓴다(2026-10-04 범정부오피스 서식 시험).
+# 본문이 시작되기 전(문서 머리)의 결재란·보도자료 머리·보고자 표와 제목처럼 큰 글자(18pt 이상)가 든 표는
+# 데이터 표가 아니다. 예전에는 이런 표의 40pt 제목 글자·테두리가 정리할 문서의 데이터 표에 입혀졌다.
+TITLE_TABLE_SIZE = 1800
+
+
+def top_level_tables(roots):
+    """구역 순서대로 본문 직속 문단에 놓인 표(표 안 표 제외). analyze_format_elements의 표 번호와 같은 순서다."""
+    for root in roots:
+        for p in (x for x in root if _tag(x) == "p"):
+            for run in (x for x in p if _tag(x) == "run"):
+                for table in (x for x in run if _tag(x) == "tbl"):
+                    yield table
+
+
+def is_body_sentence(text, size, align):
+    """문두기호 없는 문단이 본문 문장인가: 빈칸을 뺀 글자 12자 이상, 제목보다 작은 글자(18pt 미만), 가운데·오른쪽
+    정렬이 아니고 '붙임'으로 시작하지 않는 문단.
+
+    제목·날짜·서명처럼 짧거나 가운데·오른쪽에 놓인 줄과 붙임 줄(붙임 글꼴 규칙이 따로 있음)은 본문 문장이 아니다.
+    예시의 '일반 문장' 대표값은 본문 문장에서만 구하고, 정리할 문서에서도 본문 문장에만 입힌다(제목 줄이 본문 크기로
+    줄지 않게, 2026-10-04). 글자 수는 빈칸을 빼고 세어 공백 정리 전후로 판정이 바뀌지 않게 한다.
+    """
+    body = (text or "").strip()
+    return (len(re.sub(r"\s", "", body)) >= 12 and not body.startswith("붙임")
+            and (size or 0) < TITLE_TABLE_SIZE and align not in ("CENTER", "RIGHT"))
+
+
+def _starts_body(group, text, values):
+    """본문이 시작되는 문단인가: 문두기호 문장이거나 본문 문장(is_body_sentence). 문두기호 없이 쓰는 보도자료
+    본문도 본문으로 본다."""
+    return bool(group) or is_body_sentence(text, values.get("size"), values.get("align"))
+
+
+def _largest_text_size(table, index):
+    sizes = [(index.char(run.get("charPrIDRef")) or {}).get("size") or 0
+             for run in table.iter() if _tag(run) == "run" and run_text(run).strip()]
+    return max(sizes, default=0)
+
+
+def is_data_table(table, index, body_started):
+    """일반 표 대표값·기본 표 서식을 배울 데이터 표인가: 본문(_starts_body)이 시작된 뒤에 있고, 2행 2열 이상
+    격자 표(table_style.is_grid_table)이며, 제목처럼 큰 글자(18pt 이상)가 없는 표."""
+    from .table_style import is_grid_table
+    return bool(body_started and is_grid_table(table) and _largest_text_size(table, index) < TITLE_TABLE_SIZE)
+
+
+def head_block_tables(roots, header):
+    """데이터 표가 아닌 본문 표: 본문이 시작되기 전(문서 머리)의 표와 제목처럼 큰 글자(18pt 이상)가 든 표, 그 안의 표.
+
+    분석(is_data_table)과 같은 기준으로, 정리할 문서의 결재란·보도자료 머리·보고자 표에는 일반 표 서식을 입히지
+    않는 데 쓴다(2026-10-04 범정부오피스 서식 시험: 예시에 데이터 표가 없을 때 준말 '표' 서식이 결재란에 입혀짐).
+    roots는 구역 순서의 section 루트들이다.
+    """
+    index = header if isinstance(header, HeaderIndex) else HeaderIndex(header)
+    found, before_body, body_started = [], [], False
+    for root in roots:
+        for p in (x for x in root if _tag(x) == "p"):
+            values = paragraph_values(p, index)
+            if values:
+                group, _, text, para = values
+                body_started = body_started or _starts_body(group, text, para)
+            for run in (x for x in p if _tag(x) == "run"):
+                for table in (x for x in run if _tag(x) == "tbl"):
+                    tables = [x for x in table.iter() if _tag(x) == "tbl"]
+                    if _largest_text_size(table, index) >= TITLE_TABLE_SIZE:
+                        found.extend(tables)
+                    elif not body_started:
+                        before_body.extend(tables)
+    # 본문이 끝내 시작되지 않는 문서(표만 있는 문서)는 위치로 가르지 않는다.
+    return found + (before_body if body_started else [])
+
+
+def general_table_agreement(table, header, summary):
+    """일반 표 하나가 일반 표 대표값(analysis['tables']의 머리글·본문 칸)과 같은 요소 비율(0~1).
+
+    예시 보고서의 일반 표 가운데 기본 표 서식을 배울 표를 고를 때 쓴다. 예전에는 칸이 가장 많은 표에서
+    배워, 결재란처럼 모양이 다른 표 하나의 굵게·테두리가 모든 일반 표에 퍼졌다(2026-10-04 범정부오피스
+    서식 시험: 자기 서식을 자기 문서에 다시 입혀도 본문 칸 굵게가 바뀜). 칸 크기·안 여백처럼 글에 따라 달라지는
+    요소(표시만)는 세지 않는다.
+    """
+    index = header if isinstance(header, HeaderIndex) else HeaderIndex(header)
+    matched = total = 0
+    for addr, tc in table_cells(table):
+        values = cell_values(tc, index)
+        merged = dict(values["cell"])
+        if values["paras"]:
+            merged.update(values["paras"][0])
+        part = "header" if re.fullmatch(r"[A-Z]+1", addr) else "body"
+        for key, item in (summary.get(part) or {}).items():
+            if key in _TABLE_SHOW_KEYS:
+                continue
+            total += 1
+            matched += merged.get(key) == item["value"]
+    return matched / total if total else 0.0
+
+
 def _sections(archive):
     names = [n for n in archive.namelist() if re.fullmatch(r"Contents/section\d+\.xml", n)]
     return sorted(names, key=lambda n: int(re.search(r"(\d+)", n.rsplit("/", 1)[-1]).group(1)))
@@ -728,6 +825,8 @@ def analyze_format_elements(path, classify=None):
     first_paragraphs = []
     forms = defaultdict(list)
     general = {"header": [], "body": []}
+    data_tables, before_body, other_tables = [], [], 0
+    body_started = False        # 본문이 시작됐는가(그 앞 표는 문서 머리의 결재란·보고자 표 등, _starts_body)
     table_count = 0
     previous_kind = None
     previous_depth = None
@@ -756,6 +855,7 @@ def analyze_format_elements(path, classify=None):
             found = paragraph_values(p, index)
             if found:
                 group, role, text, values = found
+                body_started = body_started or _starts_body(group, text, values)
                 depth = ROLE_DEPTH.get(role) if group else None
                 if depth is not None:
                     # 깊은 항목 다음 얕은 항목(계층 복귀)의 문단 위 간격을 따로 모은다.
@@ -770,11 +870,13 @@ def analyze_format_elements(path, classify=None):
                 if len(first_paragraphs) < 2:
                     first_paragraphs.append({"font": values.get("font"), "size": values.get("size"),
                                              "bold": values.get("bold"), "text": text[:60]})
-                key = (group, role) if group else ("", "일반 문장")
-                entry = groups.setdefault(key, {"records": [], "samples": [], "order": len(groups)})
-                entry["records"].append(values)
-                if len(entry["samples"]) < 2:
-                    entry["samples"].append(text[:80])
+                # 문두기호 없는 문단은 본문 문장만 '일반 문장' 표본으로 본다(제목·날짜 같은 줄은 섞지 않는다).
+                if group or is_body_sentence(text, values.get("size"), values.get("align")):
+                    key = (group, role) if group else ("", "일반 문장")
+                    entry = groups.setdefault(key, {"records": [], "samples": [], "order": len(groups)})
+                    entry["records"].append(values)
+                    if len(entry["samples"]) < 2:
+                        entry["samples"].append(text[:80])
             for run in (x for x in p if _tag(x) == "run"):
                 for table in (x for x in run if _tag(x) == "tbl"):
                     table_count += 1
@@ -787,14 +889,27 @@ def analyze_format_elements(path, classify=None):
                         if kind.startswith("title") or kind == "overview":
                             title_bottom = _last_line_bottom(p)
                         continue
-                    for addr, tc in table_cells(table):
-                        values = cell_values(tc, index)
-                        # 첫 행(A1·B1 …)은 머리글, 나머지는 본문 칸으로 모은다.
-                        bucket = general["header" if re.fullmatch(r"[A-Z]+1", addr) else "body"]
-                        merged = dict(values["cell"])
-                        if values["paras"]:
-                            merged.update(values["paras"][0])
-                        bucket.append(merged)
+                    if not is_data_table(table, index, True):
+                        other_tables += 1
+                    elif not body_started:
+                        before_body.append((table_count, table))     # 본문이 끝내 없으면(표만 있는 문서) 데이터 표
+                    else:
+                        data_tables.append((table_count, table))
+    # 본문이 시작된 문서는 본문 앞 표(결재란·보고자 표 등)를 빼고, 표만 있는 문서는 위치로 가르지 않는다.
+    if body_started:
+        other_tables += len(before_body)
+    else:
+        data_tables = before_body + data_tables
+    for _, table in data_tables:
+        for addr, tc in table_cells(table):
+            values = cell_values(tc, index)
+            # 첫 행(A1·B1 …)은 머리글, 나머지는 본문 칸으로 모은다.
+            bucket = general["header" if re.fullmatch(r"[A-Z]+1", addr) else "body"]
+            merged = dict(values["cell"])
+            if values["paras"]:
+                merged.update(values["paras"][0])
+            bucket.append(merged)
+    data_tables = [number for number, _ in data_tables]
     paragraph_groups = []
     for (group, role), entry in groups.items():
         records = entry["records"]
@@ -820,7 +935,9 @@ def analyze_format_elements(path, classify=None):
         "first_paragraphs": first_paragraphs,
         "paragraph_groups": paragraph_groups,
         "forms": form_summary,
-        "tables": {"count": table_count - sum(len(v) for v in forms.values()), **tables},
+        # count는 데이터 표 수, other는 데이터 표가 아닌 일반 표(문서 머리 표·제목형 표) 수, data_tables는
+        # 데이터 표의 표 번호(top_level_tables 순서, 1부터).
+        "tables": {"count": len(data_tables), "other": other_tables, "data_tables": data_tables, **tables},
         "spacing_rules": spacing_rules,
         "page_number": page_number,
         "samples": samples,
@@ -1327,6 +1444,7 @@ def apply_to_profile(profile):
     for group in analysis.get("paragraph_groups", []):
         marker, elements = group["marker"], group["elements"]
         if not marker:
+            _apply_plain_sentences(fmt, elements)
             continue
         for index, rule in enumerate(rules):
             if rule[0] != marker:
@@ -1339,7 +1457,9 @@ def apply_to_profile(profile):
                             size / 100 if size else rule[3], bold,
                             bool(marker_bold) and not bold if marker_bold is not None else rule[5])
             if marker in _RULE_BOLD_OPTION:
-                options[f"std_symbol_{_RULE_BOLD_OPTION[marker]}_bold"] = bold
+                # 이 설정은 문단 굵게와 기호만 굵게를 함께 허용하는 문이다. 기호만 굵게 쓴 예시에서 문단 굵게(False)로
+                # 닫으면 기호 굵게까지 빠졌다(2026-10-04 범정부오피스 병무 서식).
+                options[f"std_symbol_{_RULE_BOLD_OPTION[marker]}_bold"] = bold or bool(rules[index][5])
             options.setdefault("symbol_fonts", {})[marker] = {
                 "font": font, "size": f"{rules[index][3]:g}"}
         if marker in shapes or any(rule[0] == marker for rule in rules):
@@ -1356,6 +1476,7 @@ def apply_to_profile(profile):
             if extra:
                 fmt.setdefault("계층_추가서식", {})[marker] = extra
     _apply_rules(profile, analysis)
+    _fill_equivalent_markers(profile, analysis)
     page = analysis.get("page", {})
     margins = fmt.setdefault("여백_mm", {})
     for key in ("left", "right", "top", "bottom", "header", "footer", "gutter"):
@@ -1383,6 +1504,65 @@ def apply_to_profile(profile):
     return profile
 
 
+# 문두기호 없는 본문 문장의 문단 모양·추가 서식 키(복사_문단모양·계층_추가서식).
+PLAIN_KEY = "(일반 문장)"
+_SHAPE_NAMES = (("left", "LeftMargin"), ("right", "RightMargin"), ("indent", "Indentation"),
+                ("prev", "PrevSpacing"), ("next", "NextSpacing"))
+
+
+def _apply_plain_sentences(fmt, elements):
+    """예시의 본문 문장(문두기호 없음) 대표값을 일반 문장 서식으로 둔다: 글꼴·크기·굵게(본문_문단), 문단 모양
+    (여백·간격·줄 간격), 추가 서식(영문 글꼴·장평·자간·정렬 등). 정리할 문서의 본문 문장(is_body_sentence)에만
+    입힌다. 예전에는 문서 전체 최다 글꼴·줄 간격만 모든 기호 없는 문단(제목 줄 포함)에 입혔다(2026-10-04)."""
+    font, size = _value(elements, "font"), _value(elements, "size")
+    if font and size:
+        fmt["본문_문단"] = {"font": font, "size_pt": size / 100, "bold": bool(_value(elements, "bold", False))}
+    shape = {name: int(elements[key]["value"]) for key, name in _SHAPE_NAMES if key in elements}
+    line_type = _value(elements, "line_type")
+    if line_type in LINE_TYPE_CODES and "line" in elements:
+        shape.update(LineSpacingType=LINE_TYPE_CODES[line_type], LineSpacing=int(elements["line"]["value"]))
+    fmt.setdefault("복사_문단모양", {})[PLAIN_KEY] = shape
+    extra = {key: elements[key]["value"] for key in EXTRA_KEYS if key in elements}
+    if extra:
+        fmt.setdefault("계층_추가서식", {})[PLAIN_KEY] = extra
+
+
+# 같은 계층을 뜻하는 다른 모양의 문두기호(예시는 ○, 정리할 문서는 ㅇ를 쓰는 경우 등).
+EQUIVALENT_MARKERS = (("○", "ㅇ"), ("□", "ㅁ"))
+
+
+def _fill_equivalent_markers(profile, analysis):
+    """예시에 한쪽 기호만 있으면 같은 계층의 다른 기호(○↔ㅇ, □↔ㅁ)에도 같은 복사 값을 둔다.
+
+    예전에는 예시 ○ 계층의 문단 모양·추가 서식·규칙이 ○ 문단에만 들어가, ㅇ를 쓰는 문서에는 영문 글꼴·정렬·
+    줄 간격 등이 빠졌다(2026-10-04 범정부오피스 서식 시험). 예시에 두 기호가 모두 있으면 각자의 값을 둔다.
+    """
+    fmt, options = profile["format"], profile["options"]
+    present = {group["marker"] for group in analysis.get("paragraph_groups", []) if group["marker"]}
+    rules = fmt.get("기호_규칙", [])
+    for first, second in EQUIVALENT_MARKERS:
+        for source, target in ((first, second), (second, first)):
+            if source not in present or target in present:
+                continue
+            for table in (fmt.get("복사_문단모양"), fmt.get("계층_추가서식"), fmt.get("내어쓰기_규칙"),
+                          fmt.get("복귀_간격"), fmt.get("괄호_축소_기호별"), options.get("label_symbols"),
+                          options.get("symbol_fonts")):
+                if isinstance(table, dict) and source in table:
+                    table[target] = copy.deepcopy(table[source])
+            rule = next((r for r in rules if r[0] == source), None)
+            if rule is None:
+                continue
+            updated = [target, *rule[1:]]
+            updated = tuple(updated) if isinstance(rule, tuple) else updated
+            index = next((i for i, r in enumerate(rules) if r[0] == target), None)
+            if index is None:
+                rules.append(updated)
+            else:
+                rules[index] = updated
+            if target in _RULE_BOLD_OPTION:
+                options[f"std_symbol_{_RULE_BOLD_OPTION[target]}_bold"] = bool(rule[4]) or bool(rule[5])
+
+
 def _apply_rules(profile, analysis):
     """글 길이에 따라 달라지는 것은 숫자 대신 규칙으로 복사한다(서식 복사 전면 복제 3단계).
 
@@ -1395,7 +1575,7 @@ def _apply_rules(profile, analysis):
     fmt, options = profile["format"], profile["options"]
     shapes = fmt.setdefault("복사_문단모양", {})
     rules, label_symbols, deltas = {}, {}, Counter()
-    returns = {}
+    returns, shrink_by_marker = {}, {}
     for group in analysis.get("paragraph_groups", []):
         marker, elements = group["marker"], group["elements"]
         if not marker:
@@ -1409,6 +1589,8 @@ def _apply_rules(profile, analysis):
         if bold is not None:
             label_symbols[marker] = bool(bold)
         delta = _value(elements, "paren_delta")
+        if delta is not None:
+            shrink_by_marker[marker] = round(int(delta) / 100, 1)
         if delta:
             deltas[int(delta)] += group.get("count", 1)
         back, normal = _value(elements, "return_prev"), _value(elements, "prev")
@@ -1423,6 +1605,9 @@ def _apply_rules(profile, analysis):
         delta = deltas.most_common(1)[0][0]
         options["paren_shrink"] = delta > 0
         fmt["괄호_축소_pt"] = round(delta / 100, 1)
+    # 괄호 안 글자 줄임은 계층마다 다르다(예: ㅇ만 2pt 줄이고 □·*는 그대로). 예전에는 한 계층만 줄여도 모든
+    # 계층을 같은 폭으로 줄였다(2026-10-04 범정부오피스 인천 업무보고 서식). 0이면 그 계층은 줄이지 않는다.
+    fmt["괄호_축소_기호별"] = shrink_by_marker
     fmt["복귀_간격"] = returns
     gap = (analysis.get("spacing_rules") or {}).get("overview_to_first")
     if gap is not None:

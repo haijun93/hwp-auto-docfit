@@ -596,7 +596,7 @@ _표준서식_문단위간격_상태 = ParagraphSpacingTracker()
         ("※", 3, "한컴돋움", 13, False, False),
         # *(주석1)의 대표 문두기호는 *이며(**는 여기로 합침), 기본값은 ※와 같다.
         ("*", 3, "한컴돋움", 13, False, False),
-        ("•", 3, "한컴돋음", 13, False, False),
+        ("•", 3, "한컴돋움", 13, False, False),
     ],
 }
 
@@ -1090,7 +1090,7 @@ def 번들_리소스_폴더():
         "※": {"font": "한컴돋움", "size": "13"},
         # *(대표 기호, **는 *로 합침)의 기본값은 ※와 동일하다.
         "*": {"font": "한컴돋움", "size": "13"},
-        "•": {"font": "한컴돋음", "size": "13"},
+        "•": {"font": "한컴돋움", "size": "13"},
     },
     # 표 머리글(첫 행)·본문(나머지 행) 글꼴·크기. 문장기호별 글꼴처럼 서식
     # 프로파일보다 우선하는 개인 설정이다.
@@ -1211,6 +1211,9 @@ def hwpx_서식_분석(path):
         for face in header.iter():
             if tag(face) == "fontface" and face.get("lang") == "HANGUL":
                 fonts.update({f.get("id"): f.get("face") for f in face if tag(f) == "font"})
+        # 예시 글꼴의 형식(TTF·HFT)을 함께 남긴다. 한/글은 HFT 글꼴(HCI Poppy·한양중고딕 등)을 TTF로 지정하면
+        # 오류 없이 무시하는데, 예전에는 서식통일 때만 형식을 읽어 서식 적용에서 예시 글꼴이 빠졌다(2026-10-04).
+        fmt["글꼴형식"] = 글꼴형식_모으기(header)
         chars = {e.get("id"): e for e in header.iter() if tag(e) == "charPr"}
         paras = {e.get("id"): e for e in header.iter() if tag(e) == "paraPr"}
         groups = {r[0]: Counter() for r in fmt["기호_규칙"]}
@@ -1298,31 +1301,36 @@ def hwpx_서식_분석(path):
                     paragraphs[symbol][tuple(sorted(vals.items()))] += 1
         # 첫 표의 첫 행과 나머지 행에서 대표 문자 서식을 추출한다. 일반 본문이
         # 없는 표 전용 문서는 표 본문(없으면 머리글)을 대표 본문 대체값으로 쓴다.
+        # 글이 있는 첫 표를 쓴다. 빈 테두리 표(1칸 틀 등)가 맨 앞에 있는 서식은 예전에 첫 표만 보다가
+        # '복제할 문자 서식이 없다'며 서식 등록이 실패했다(범정부오피스 용인 쪽지 서식, 2026-10-04).
         table_header_styles, table_body_styles = Counter(), Counter()
         for name in sections:
             root = safe_xml_fromstring(z.read(name))
-            first_table = next((e for e in root.iter() if tag(e) == "tbl"), None)
-            if first_table is None:
-                continue
-            rows = [e for e in first_table.iter() if tag(e) == "tr"]
-            for row_index, row in enumerate(rows):
-                counter = table_header_styles if row_index == 0 else table_body_styles
-                for run in (e for e in row.iter() if tag(e) == "run"):
-                    text = "".join("".join(t.itertext()) for t in run if tag(t) == "t").strip()
-                    char = chars.get(run.get("charPrIDRef"))
-                    if not text or char is None:
-                        continue
-                    fontref = child(char, "fontRef")
-                    font = fonts.get(fontref.get("hangul")) if fontref is not None else None
-                    height = float(char.get("height", "0")) / 100
-                    if font and height > 0:
-                        counter[(font, height, child(char, "bold") is not None)] += len(text)
-            break
+            for table in (e for e in root.iter() if tag(e) == "tbl"):
+                rows = [e for e in table.iter() if tag(e) == "tr"]
+                for row_index, row in enumerate(rows):
+                    counter = table_header_styles if row_index == 0 else table_body_styles
+                    for run in (e for e in row.iter() if tag(e) == "run"):
+                        text = "".join("".join(t.itertext()) for t in run if tag(t) == "t").strip()
+                        char = chars.get(run.get("charPrIDRef"))
+                        if not text or char is None:
+                            continue
+                        fontref = child(char, "fontRef")
+                        font = fonts.get(fontref.get("hangul")) if fontref is not None else None
+                        height = float(char.get("height", "0")) / 100
+                        if font and height > 0:
+                            counter[(font, height, child(char, "bold") is not None)] += len(text)
+                if table_header_styles or table_body_styles:
+                    break
+            if table_header_styles or table_body_styles:
+                break
         본문_대체출처 = None
         if not body_styles:
             fallback_styles = table_body_styles or table_header_styles
             if not fallback_styles:
-                raise ValueError("본문 또는 표 셀에서 복제할 수 있는 문자 서식을 찾지 못했습니다.")
+                raise ValueError("본문 또는 표 셀에서 복제할 수 있는 문자 서식을 찾지 못했습니다. "
+                                 "글이 없는 문서(그림·워터마크만 있는 문서)는 서식 예시로 쓸 수 없습니다. "
+                                 "글이 들어 있는 예시 보고서를 넣어 주세요.")
             body_styles.update(fallback_styles)
             본문_대체출처 = "표 본문 셀" if table_body_styles else "표 머리글 셀"
         if ratios: fmt["기본_장평"] = ratios.most_common(1)[0][0]
@@ -1354,21 +1362,28 @@ def hwpx_서식_분석(path):
         # 대표 본문 글꼴·크기를 일반 문단에도 적용한다.
         fmt["복제_본문서식"] = True
 
-        header_style = table_header_styles.most_common(1)[0][0] if table_header_styles else (대표폰트, 대표크기, 대표굵게)
-        body_style = table_body_styles.most_common(1)[0][0] if table_body_styles else (대표폰트, 대표크기, 대표굵게)
-        profile["table_format"] = {
-            "header_font": header_style[0], "header_size": header_style[1], "header_bold": header_style[2],
-            "body_font": body_style[0], "body_size": body_style[1], "body_bold": body_style[2],
-        }
         section_payloads = {name: z.read(name) for name in sections}
         profile["precise_tables"] = _정밀표_프로필_추출(header, section_payloads)
-        # 일반 표(제목·개요·중제목·붙임·한 칸 상자 제외) 가운데 칸이 가장 많은 표에서 기본 표 서식을 배운다.
-        일반표들 = [t for name in sections for t in safe_xml_fromstring(section_payloads[name]).iter()
-                  if tag(t) == "tbl" and 표서식_모양인가(t) and 서식표_종류판별(t) is None]
+        # 서식 요소 전수 분석: 문두기호 문장은 계층별로, 제목·개요·중제목·붙임 표는 칸(A1·A2·B2 …)별로
+        # 모든 글자·문단·칸 요소의 대표값을 구하고, 서식 표는 예시로 보관해 서식 적용에 쓴다.
+        # 사용자는 서식 세부사항 창에서 대표값을 고칠 수 있다.
+        요소분석 = 서식요소.analyze_format_elements(path, 서식표_종류판별)
+        # 일반 표 서식은 데이터 표(본문이 시작된 뒤의 격자 표, 제목처럼 큰 글자 없음)에서만 배운다. 문서 머리의
+        # 결재란·보도자료 머리·보고자 표는 데이터 표가 아니라 그 서식을 정리할 문서의 표에 입히지 않는다. 표 머리글·본문
+        # 글자(table_format)도 apply_to_profile이 데이터 표 대표값으로만 채우고, 데이터 표가 없으면 기본 표 서식을
+        # 쓴다(2026-10-04 범정부오피스 서식 시험). 예전에는 첫 표(문서 머리 표가 흔함)의 글자를 썼다.
+        데이터표 = 요소분석.get("tables", {})
+        # 데이터 표 가운데 일반 표 대표값과 가장 많이 같은 표에서 기본 표 서식을 배운다(같으면 칸이 많은 표).
+        # 예전처럼 칸이 가장 많은 표에서 배우면 모양이 다른 표 하나의 서식이 모든 일반 표에 퍼졌다.
+        표번호 = set(데이터표.get("data_tables", []))
+        일반표들 = [t for 번호, t in enumerate(서식요소.top_level_tables(
+                      safe_xml_fromstring(section_payloads[name]) for name in sections), 1) if 번호 in 표번호]
         if 일반표들:
+            대표_일반표 = 요소분석.get("tables", {})
+            기준표 = max(일반표들, key=lambda t: (서식요소.general_table_agreement(t, header, 대표_일반표),
+                                             len(제목_셀들(t))))
             try:
-                profile["table_style"] = 표서식_한표학습(header, max(일반표들, key=lambda t: len(제목_셀들(t))),
-                                                     Path(path).name)
+                profile["table_style"] = 표서식_한표학습(header, 기준표, Path(path).name)
             except ValueError as exc:
                 로그(f"예시 보고서의 일반 표 서식을 배우지 못했습니다(준말 '표' 서식을 씁니다): {exc}")
         profile["style_hierarchy"] = analyze_hierarchy(hierarchy_paragraphs)
@@ -1401,19 +1416,19 @@ def hwpx_서식_분석(path):
         # 복사한 글자 강조/문단 여백을 다른 후처리로 덮지 않는다.
         profile["options"].update(paren_shrink=False, paren_label_bold=False,
                                    std_hanging_indent=False, std_supplement_indent=False)
-        # 서식 요소 전수 분석: 문두기호 문장은 계층별로, 제목·개요·중제목·붙임 표는 칸(A1·A2·B2 …)별로
-        # 모든 글자·문단·칸 요소의 대표값을 구하고, 서식 표는 예시로 보관해 서식 적용에 쓴다.
-        # 사용자는 서식 세부사항 창에서 대표값을 고칠 수 있다.
-        요소분석 = 서식요소.analyze_format_elements(path, 서식표_종류판별)
         profile["form_tables"] = dict(요소분석.pop("samples"))
         profile["element_analysis"] = 요소분석
         서식요소.apply_to_profile(profile)
+        표글자 = profile.get("table_format") or {}
         profile["summary"] = (
             f"대표 본문: {대표폰트} {대표크기:g}pt, 굵게 {'ON' if 대표굵게 else 'OFF'}\n"
             + (f"대표 본문 대체 분석: {본문_대체출처}\n" if 본문_대체출처 else "")
             + ("\n".join(found) + "\n" if found else "")
             + "미검출 기호(기본값 유지): " + (", ".join(missing) or "없음")
-            + f"\n표 머리글: {header_style[0]} {header_style[1]:g}pt / 표 본문: {body_style[0]} {body_style[1]:g}pt"
+            + (f"\n표 머리글: {표글자.get('header_font')} {float(표글자.get('header_size') or 0):g}pt / "
+               f"표 본문: {표글자.get('body_font')} {float(표글자.get('body_size') or 0):g}pt"
+               if 표글자.get("header_font") or 표글자.get("body_font")
+               else "\n표 머리글·본문: 예시에 데이터 표가 없어 기본 표 서식을 씁니다")
             + f"\n정밀 표 프로필: {len(profile['precise_tables']['tables'])}개"
             + (f"\n일반 표 서식: {표서식_설명(profile['table_style'])}" if profile.get("table_style") else "")
             + (f"\n서식 표 예시: {', '.join(서식요소.FORM_LABELS[k] for k in profile['form_tables'])}"
@@ -1700,10 +1715,24 @@ def 계층_추가서식_적용(symbol):
         hwp_run("MoveSelParaEnd")
         try:
             action = hwp.CreateAction("CharShape")
-            params = action.CreateSet()
-            for key, value in 글자.items():
-                params.SetItem(key, _서식통일_색값(value) if key in ("TextColor", "ShadeColor") else value)
-            if action.Execute(params) is False:
+
+            def 실행(항목):
+                params = action.CreateSet()
+                for key, value in 항목.items():
+                    params.SetItem(key, _서식통일_색값(value) if key in ("TextColor", "ShadeColor") else value)
+                return params, action.Execute(params) is not False
+
+            params, 됨 = 실행(글자)
+            latin = 글자.get("FaceNameLatin")
+            if not 됨 and latin:
+                # 영문 글꼴 형식이 이 PC와 맞지 않으면 다른 형식으로, 그래도 안 되면 영문 글꼴 없이 장평·자간·글자색
+                # 등 나머지라도 입힌다(예전에는 한 번 실패하면 계층 추가 서식 전체가 빠졌다).
+                됨 = _다른_글꼴형식으로_재실행(action, params, latin, ("FontTypeLatin",))
+                if not 됨:
+                    _, 됨 = 실행({k: v for k, v in 글자.items() if k not in ("FaceNameLatin", "FontTypeLatin")})
+                    if 됨:
+                        로그(f"[서식 복사] '{symbol}' 계층 영문 글꼴 '{latin}'은 이 PC에서 입힐 수 없어 빼고 적용")
+            if not 됨:
                 로그(f"[서식 복사] '{symbol}' 계층 글자 서식 적용 실패(무시)")
         finally:
             hwp_run("Cancel")
@@ -1773,39 +1802,54 @@ def 붙임_대상찾기(section):
                 ordinal += 1
     return result
 
+# 중제목 번호 칸: 서식(HY견고딕 20pt 등)을 입히는 표는 로마자 번호(Ⅰ·Ⅱ, I·V)만, 글 칸 폭을 맞추는 표는 아라비아 숫자
+# 번호(1·01·1.)도 본다(2026-10-04). 숫자 번호 표는 로마자 중제목 아래 소제목인 경우가 많아 서식은 그대로 둔다.
 _중제목_번호 = re.compile(r'^(?:[Ⅰ-ⅿ]+|[IVX]{1,4})\s*[.．]?$')
+_중제목_번호_숫자포함 = re.compile(r'^(?:[Ⅰ-ⅿ]+|[IVX]{1,4}|\d{1,2})\s*[.．]?$')
 _중제목_글자폭_pt = 20
 
 
-def 중제목_유형판별(table):
-    """중제목 표: 1행, 첫 칸은 로마자 번호, 다음 칸(유형2) 또는 다음다음 칸(유형1)에 글.
+def 중제목_글칸들(table, 숫자번호=True):
+    """중제목 모양 표의 글 칸 번호 목록(아니면 빈 목록).
 
-    유형1 = 1행3열(번호·빈칸·글), 유형2 = 1행2열(번호·글). 표·그림이 든 칸이나
-    붙임·기호 문장으로 시작하는 글은 중제목으로 보지 않는다.
+    1행 2열 이상이고, 첫 칸에는 로마자 번호(숫자번호면 아라비아 숫자 번호도)만 있고, 2열 또는 3열에 글이 있는 표다. 칸 병합이나
+    표·그림이 든 칸, 붙임·기호 문장으로 시작하는 글이 있으면 중제목으로 보지 않는다.
     """
     cells = 제목_셀들(table)
     rows, cols = int(table.get('rowCnt', '0')), int(table.get('colCnt', '0'))
-    if rows != 1 or cols not in (2, 3) or len(cells) != cols:
-        return None
+    if rows != 1 or cols < 2 or len(cells) != cols:
+        return []
     for c in cells:
         if any(제목_xml이름(x) in ('tbl', 'pic', 'ole', 'rect', 'fieldBegin') for x in c.iter()):
-            return None
+            return []
         span = 제목_자식(c, 'cellSpan')
         if span is not None and (span.get('colSpan', '1') != '1' or span.get('rowSpan', '1') != '1'):
-            return None
+            return []
     texts = [제목_문자열(c).strip() for c in cells]
-    if not _중제목_번호.match(texts[0]):
-        return None
-    text = texts[-1]
-    if not text or len(text) > 80 or re.match(r'^[□ㅁㅇ○※*\-]', text) or text.startswith('붙임'):
-        return None
-    if cols == 3 and texts[1]:
+    if not (_중제목_번호_숫자포함 if 숫자번호 else _중제목_번호).match(texts[0]):
+        return []
+    글칸 = [i for i, text in enumerate(texts) if i and text]
+    if not set(글칸) & {1, 2}:
+        return []
+    if any(len(texts[i]) > 80 or re.match(r'^[□ㅁㅇ○※*\-]', texts[i]) or texts[i].startswith('붙임') for i in 글칸):
+        return []
+    return 글칸
+
+
+def 중제목_유형판별(table):
+    """중제목 서식 표: 1행, 첫 칸은 번호, 다음 칸(유형2) 또는 다음다음 칸(유형1)에 글.
+
+    유형1 = 1행3열(번호·빈칸·글), 유형2 = 1행2열(번호·글). 번호는 로마자만 본다. 그 밖의 중제목 모양 표(숫자 번호,
+    번호·글·빈칸 등)는 서식은 그대로 두고 글 칸 폭만 맞춘다(중제목_대상찾기의 'fit').
+    """
+    cols = int(table.get('colCnt', '0'))
+    if cols not in (2, 3) or 중제목_글칸들(table, 숫자번호=False) != [cols - 1]:
         return None
     return 1 if cols == 3 else 2
 
 
 def 중제목_대상찾기(section):
-    """각 구역의 최상위 표 중 중제목 구조인 표의 (순번, 유형) 목록."""
+    """각 구역의 최상위 표 중 중제목 구조인 표의 (순번, 유형) 목록. 유형 'fit'은 글 칸 폭만 맞출 표다."""
     result = []
     ordinal = 0
     for p in section:
@@ -1813,7 +1857,7 @@ def 중제목_대상찾기(section):
             for table in run:
                 if 제목_xml이름(table) != 'tbl':
                     continue
-                kind = 중제목_유형판별(table)
+                kind = 중제목_유형판별(table) or ('fit' if 중제목_글칸들(table) else None)
                 if kind:
                     result.append((ordinal, kind))
                 ordinal += 1
@@ -1823,20 +1867,6 @@ def 중제목_대상찾기(section):
 def 중제목_원본자료():
     payload = json.loads(zlib.decompress(base64.b64decode(_중제목_XML)).decode('utf-8'))
     return safe_xml_fromstring(payload['header']), safe_xml_fromstring(payload['section'])
-
-
-def _중제목_글폭(text, pt=_중제목_글자폭_pt):
-    """20pt 기준 글 한 줄의 대략적인 폭(HWPUNIT). 한글·한자는 전각, 영문·숫자는 절반."""
-    full = pt * 100
-    total = 0
-    for ch in text:
-        if ch == ' ':
-            total += full * 0.5
-        elif ord(ch) < 0x2E80 and ch.isascii():
-            total += full * 0.55
-        else:
-            total += full
-    return int(total)
 
 
 def _구역_본문폭(section, 기본값=42520):
@@ -1997,11 +2027,11 @@ def _중제목_번호굵게_적용(header, maps):
                 cp.remove(b)
 
 
-def 중제목_표서식_복사(table, sample, maps, kind, 최대폭=None):
+def 중제목_표서식_복사(table, sample, maps, kind, 최대폭=None, header=None):
     """중제목 글은 그대로 두고 표·칸·문단·글자 서식만 기준 표에서 복사한다.
 
     기준 표는 [번호 | 빈칸 | 글] 순서이며 유형2(2열)는 빈칸 서식을 건너뛴다.
-    표·칸 크기는 문서의 것을 유지하되, 20pt 글이 칸에 들어가지 않으면 글 칸만 넓힌다.
+    번호 칸·빈칸 크기는 문서의 것을 유지하고, 글 칸 폭은 글자 수에 비례해 맞춘다(_중제목_칸폭_맞춤).
     """
     for attr in ('borderFillIDRef', 'cellSpacing', 'textWrap', 'textFlow', 'pageBreak', 'repeatHeader'):
         if attr in sample.attrib:
@@ -2036,26 +2066,78 @@ def 중제목_표서식_복사(table, sample, maps, kind, 최대폭=None):
                     p.remove(r)
                 elif 제목_xml이름(r) == 'run':
                     r.set('charPrIDRef', char_id)
-    _중제목_칸폭_확보(table, 최대폭)
+    _중제목_칸폭_맞춤(table, 최대폭, header)
 
 
-def _중제목_칸폭_확보(table, 최대폭=None):
-    """글 칸이 20pt 글보다 좁으면 그 칸과 표 폭을 필요한 만큼 늘린다(최대폭이 있으면 쪽 본문 폭까지만)."""
+def _중제목_글자치수(header):
+    """header의 글자 모양 ID → (크기 HWPUNIT, 한글 장평 %, 한글 자간 %). 중제목 글 칸 폭 어림에 쓴다."""
+    치수 = {}
+    for cp in (x for x in header.iter() if 제목_xml이름(x) == 'charPr'):
+        ratio, spacing = 제목_자식(cp, 'ratio'), 제목_자식(cp, 'spacing')
+        try:
+            치수[cp.get('id')] = (int(cp.get('height', '0')) or _중제목_글자폭_pt * 100,
+                               int(ratio.get('hangul', '100')) if ratio is not None else 100,
+                               int(spacing.get('hangul', '0')) if spacing is not None else 0)
+        except (TypeError, ValueError):
+            continue
+    return 치수
+
+
+def _중제목_문단폭(p, 치수):
+    """문단 글 한 줄의 폭(HWPUNIT)과 가장 큰 글자 크기. 한글·한자는 글자 크기, 영문·숫자는 0.55배, 빈칸은 0.5배에
+    장평을 곱하고 글자마다 자간(글자 크기의 %)을 더한다. 글자 모양을 모르면 20pt로 어림한다."""
+    폭, 최대크기 = 0.0, 0
+    for run in (r for r in p if 제목_xml이름(r) == 'run'):
+        크기, 장평, 자간 = 치수.get(run.get('charPrIDRef'), (_중제목_글자폭_pt * 100, 100, 0))
+        글 = 제목_문자열(run)
+        if 글:
+            최대크기 = max(최대크기, 크기)
+        for ch in 글:
+            배율 = 0.5 if ch == ' ' else (0.55 if ch.isascii() else 1.0)
+            폭 += 크기 * 배율 * 장평 / 100 + 크기 * 자간 / 100
+    return int(폭), 최대크기
+
+
+def _중제목_칸폭_맞춤(table, 최대폭=None, header=None):
+    """중제목 표의 글 칸 폭을 글자 수에 비례해 자동으로 맞춘다(2026-10-04 사용자 요청).
+
+    글이 든 칸(2열·3열 …)은 가장 긴 줄의 글 폭 + 칸 안 좌우 여백 + 여유(글자 반 개)로 넓히거나 줄이고,
+    번호 칸과 빈칸은 그대로 둔다. 표 폭은 칸 폭의 합이며, 최대폭(쪽 본문 폭)을 넘으면 글 칸을 줄인다(넘친
+    글은 줄바꿈된다). 글 폭은 칸 글자 모양(크기·장평·자간)으로 어림하고, header가 없으면 20pt로 어림한다.
+    예전에는 20pt 글이 들어가지 않을 때 넓히기만 해, 짧은 중제목 칸이 길게 비어 있었다.
+    """
     cells = 제목_셀들(table)
-    text_cell = cells[-1]
-    size, margin = 제목_자식(text_cell, 'cellSz'), 제목_자식(text_cell, 'cellMargin')
+    글칸 = 중제목_글칸들(table)
     tsize = 제목_자식(table, 'sz')
-    if size is None or margin is None or tsize is None:
+    sizes = [제목_자식(c, 'cellSz') for c in cells]
+    if not 글칸 or tsize is None or any(s is None for s in sizes):
         return
-    lines = [제목_문자열(p) for p in 제목_문단들(text_cell)]
-    need = max([_중제목_글폭(t) for t in lines] + [0]) + int(margin.get('left', '0')) + int(margin.get('right', '0')) + 600
-    have = int(size.get('width', '0'))
-    if 최대폭:
-        table_width = int(tsize.get('width', '0'))
-        need = min(need, have + max(0, 최대폭 - table_width))
-    if need > have:
-        size.set('width', str(need))
-        tsize.set('width', str(int(tsize.get('width', '0')) + need - have))
+    치수 = _중제목_글자치수(header) if header is not None else {}
+    안여백 = 제목_자식(table, 'inMargin')
+    widths = [int(s.get('width', '0')) for s in sizes]
+    최소 = {}
+    for i in 글칸:
+        cell = cells[i]
+        margin = 제목_자식(cell, 'cellMargin') if cell.get('hasMargin') == '1' else 안여백
+        좌우 = sum(int(margin.get(k, '0')) for k in ('left', 'right')) if margin is not None else 0
+        줄들 = [_중제목_문단폭(p, 치수) for p in 제목_문단들(cell)]
+        글폭 = max([폭 for 폭, _ in 줄들] + [0])
+        크기 = max([k for _, k in 줄들] + [_중제목_글자폭_pt * 100])
+        widths[i] = 글폭 + 좌우 + max(600, 크기 // 2)
+        최소[i] = 2 * 크기 + 좌우          # 글자 두 개는 들어가게
+        widths[i] = max(widths[i], 최소[i])
+        # 줄 배치를 한/글이 다시 계산하게 한다.
+        for p in 제목_문단들(cell):
+            for r in [x for x in p if 제목_xml이름(x) == 'linesegarray']:
+                p.remove(r)
+    if 최대폭 and sum(widths) > 최대폭:
+        넘침 = sum(widths) - 최대폭
+        글칸폭 = sum(widths[i] for i in 글칸)
+        for i in 글칸:
+            widths[i] = max(최소[i], widths[i] - int(넘침 * widths[i] / 글칸폭) - 1)
+    for size, width in zip(sizes, widths):
+        size.set('width', str(width))
+    tsize.set('width', str(sum(widths)))
 
 
 def 개요_표인가(table):
@@ -2351,6 +2433,16 @@ def _정밀표_셀서식_복사(target, sample, maps, copy_geometry):
                     target_run.set("charPrIDRef", maps["charProperties"].get(char_ref, char_ref))
 
 
+def _정밀표_서식표인가(table):
+    """정밀 복제에서 뺄 서식 표인가: 제목·중제목·붙임 표와, 서식 프로필에 한 칸 상자 예시가 있을 때의 한 칸 상자.
+
+    이 표들은 서식 표 단계가 예시 표 모양을 문단별로 입힌다. 정밀 복제는 칸 수만 같으면 다른 1칸 표를 짝지어
+    상자 둘째 문단(파란 11pt 안내 글 등)까지 첫 문단 서식으로 덮었다(2026-10-04 범정부오피스 인천 서식 왕복 시험).
+    """
+    kind = 서식표_종류판별(table)
+    return bool(kind) and (kind != 'box' or bool((활성_서식표_프로필 or {}).get('box')))
+
+
 def 정밀표_서식_적용(source_path, target_path, precise_profile):
     """프로필 표를 구조·앵커로 매칭해 대상 HWPX에 셀별 서식을 적용한다."""
     if not precise_profile or not precise_profile.get("tables"):
@@ -2373,6 +2465,9 @@ def 정밀표_서식_적용(source_path, target_path, precise_profile):
         changed = False
         for table in (element for element in root.iter() if 제목_xml이름(element) == "tbl"):
             before_text.append(_표_텍스트(table))
+            if _정밀표_서식표인가(table):
+                ordinal += 1
+                continue
             target_signature = _표_서명(table, ordinal)
             scored = [(_정밀표_매칭점수(target_signature, signature), signature, sample)
                       for signature, sample in source_tables]
@@ -2806,11 +2901,16 @@ def 중제목_hwpx_처리(source, target=None, selections=None):
         tables = [t for p in root for r in p for t in r if 제목_xml이름(t) == 'tbl']
         for index, kind in items:
             table = tables[index]
-            if 중제목_유형판별(table) != kind:
+            현재 = 중제목_유형판별(table) or ('fit' if 중제목_글칸들(table) else None)
+            if 현재 != kind:
                 raise RuntimeError('처리 중 중제목 구조가 변경되어 중제목 서식적용을 중단했습니다.')
             before = 제목_문자열(table)
-            sample, maps = 기준표(kind)
-            중제목_표서식_복사(table, sample, maps, kind, _구역_본문폭(root))
+            if kind == 'fit':
+                # 번호·글·빈칸 등 서식 기준 표가 없는 모양은 서식은 두고 글 칸 폭만 글자 수에 맞춘다.
+                _중제목_칸폭_맞춤(table, _구역_본문폭(root), header)
+            else:
+                sample, maps = 기준표(kind)
+                중제목_표서식_복사(table, sample, maps, kind, _구역_본문폭(root), header)
             if 제목_문자열(table) != before: raise RuntimeError('중제목 텍스트 보존 검사 실패')
             count += 1
         contents[name] = ET.tostring(root, encoding='utf-8', xml_declaration=True)
@@ -3025,7 +3125,7 @@ def 서식표_생성(header, kind, text, cache, 번호=None, 최대폭=None, 본
         if len(cells) == 3:  # 가운데 빈칸은 글이 없으므로 기준 표의 글 없는 문단을 비워 둔다.
             _칸_글_지우기(cells[1])
         if kind == 'midtitle':
-            중제목_표서식_복사(result, sample, maps, 1, 최대폭)
+            중제목_표서식_복사(result, sample, maps, 1, 최대폭, header)
         else:
             제목_표서식_복사(result, sample, maps)
             if len(cells) == 3:
@@ -3571,7 +3671,7 @@ def 기본표서식():
 def _기본표서식_대상인가(table):
     """2행 2열 이상 일반 표만 대상이다. 제목(준말로 만든 빈 정보 칸 제목 표 포함)·중제목·붙임 서식 표는 뺀다."""
     return bool(표서식_모양인가(table) and not (
-        제목_유형판별(table, 빈칸허용=True) or 중제목_유형판별(table) or 붙임_유형판별(table)))
+        제목_유형판별(table, 빈칸허용=True) or 중제목_글칸들(table) or 붙임_유형판별(table)))
 
 
 def 기본표서식_hwpx_처리(source, target=None, selections=None):
@@ -3597,7 +3697,12 @@ def 기본표서식_hwpx_처리(source, target=None, selections=None):
     if selections is None:
         if style is None:
             return {n: [] for n in sections}
-        return {n: [i for i, t in enumerate(표들(root)) if _기본표서식_대상인가(t)] for n, root in sections.items()}
+        # 문서 머리의 결재란·보고자 표와 제목처럼 큰 글자가 든 표는 데이터 표가 아니라 일반 표 서식을 입히지 않는다
+        # (서식 요소 분석의 데이터 표와 같은 기준, 2026-10-04).
+        순서 = sorted(sections, key=lambda n: int(re.search(r'(\d+)\.xml$', n).group(1)))
+        머리표 = {id(t) for t in 서식요소.head_block_tables([sections[n] for n in 순서], header)}
+        return {n: [i for i, t in enumerate(표들(root)) if _기본표서식_대상인가(t) and id(t) not in 머리표]
+                for n, root in sections.items()}
     if style is None or not any(items for items in selections.values()):
         if target is not None: shutil.copyfile(source, target)
         return 0
@@ -4118,6 +4223,10 @@ def 설정_불러오기():
             if 판 < 2 and isinstance(설정.get("label_symbols"), dict):
                 설정["label_symbols"] = {**설정["label_symbols"], "*": False, "**": False}
             설정["label_symbols_rev"] = 2
+            # 예전 기본값의 글꼴 이름 오타('한컴돋음' → '한컴돋움', 문두기호 • 기본 글꼴)를 바로잡는다.
+            for 항목 in (설정.get("symbol_fonts") or {}).values():
+                if isinstance(항목, dict) and 항목.get("font") == "한컴돋음":
+                    항목["font"] = "한컴돋움"
     except Exception as e:
         if _콘솔_출력_가능:
             print(f"설정 불러오기 실패(기본값 사용): {e}")
@@ -4204,6 +4313,15 @@ def 단계초기화():
 def 중단_요청됨():
     return 중단_event.is_set()
 
+
+class 문두보호_조정불가(RuntimeError):
+    """화면줄에 문두기호·라벨만 있어 자간·장평을 줄일 본문이 없다. 그 줄만 건너뛴다.
+
+    예전에는 일반 RuntimeError라 줄 단위 자간 함수가 잡지 않아 문서 전체가 실패했다
+    (2026-10-04 범정부오피스 인천 업무보고 서식에서 한 번에 적용이 10분 뒤 실패).
+    """
+
+
 def hwp_run(command):
     if hwp is None:
         raise RuntimeError("HWP 객체가 없습니다.")
@@ -4213,11 +4331,27 @@ def hwp_run(command):
             # 이 명령들은 화면줄 선택을 사용하는 기존 자간/줄 병합 경로다.
             # 문두 라벨만 있는 줄에는 조정을 실행하지 않는다.
             if not 자간조정_현재줄_본문선택():
-                raise RuntimeError('문두 보호: 이 화면줄에 조정 가능한 본문이 없습니다')
+                raise 문두보호_조정불가('문두 보호: 이 화면줄에 조정 가능한 본문이 없습니다')
         return hwp.Run(command)
+    except 문두보호_조정불가:
+        raise
     except Exception as e:
         로그(f"HWP 명령 실패: {command} / {e}")
         raise
+
+
+def _문두보호_줄건너뜀(함수, *args, **kwargs):
+    """줄 단위 자간·줄 병합 함수를 부르고, 조정할 본문이 없는 줄이면 그 줄만 건너뛴다(True)."""
+    try:
+        return 함수(*args, **kwargs)
+    except 문두보호_조정불가:
+        try:
+            hwp.Run("Cancel")
+            줄 = 현재_화면줄_텍스트().strip()[:40]
+        except Exception:
+            줄 = ""
+        진단로그(f"[문두 보호] 조정할 본문이 없는 줄 건너뜀: {줄}")
+        return True
 
 # ============================================================
 # 보안 모듈
@@ -4717,9 +4851,34 @@ def 문자모양_적용_현재선택(폰트=None, 크기_pt=None, 굵게=None, �
                 except Exception:
                     pass
         if act.Execute(pset) is False:
-            raise RuntimeError("CharShape 부분 적용 결과가 False입니다.")
+            # 글꼴 형식(TTF·HFT)이 이 PC의 글꼴과 맞지 않으면 실패한다(같은 이름이 두 형식으로 든 문서 등). 다른 형식으로
+            # 한 번 더 해 보고, 되면 그 형식을 기억한다(2026-10-04 범정부오피스 서식: HCI Poppy가 TTF·HFT 둘 다 있음).
+            if not (폰트 and _다른_글꼴형식으로_재실행(act, pset, 폰트, _언어별_글꼴형식)):
+                raise RuntimeError("CharShape 부분 적용 결과가 False입니다.")
     except Exception as e:
         로그(f"문자모양 적용 실패(무시): {e}")
+
+
+_언어별_글꼴형식 = ("FontTypeHangul", "FontTypeLatin", "FontTypeHanja", "FontTypeJapanese", "FontTypeOther",
+                "FontTypeSymbol", "FontTypeUser")
+
+
+def _다른_글꼴형식으로_재실행(action, params, 글꼴, 형식필드):
+    """글꼴 형식만 반대(TTF↔HFT)로 바꿔 글자 모양을 다시 실행한다. 되면 그 형식을 기억하고 True."""
+    다른 = "HFT" if _글꼴형식.get(글꼴, "TTF") == "TTF" else "TTF"
+    try:
+        코드 = hwp.FontType(다른)
+    except Exception:
+        코드 = {"TTF": 1, "HFT": 2}[다른]
+    try:
+        for 필드 in 형식필드:
+            params.SetItem(필드, 코드)
+        if action.Execute(params) is False:
+            return False
+    except Exception:
+        return False
+    _글꼴형식[글꼴] = 다른
+    return True
 
 def 문단_줄간격_적용_현재선택(퍼센트):
     if 현재_한칸표인가():
@@ -5381,6 +5540,11 @@ def 부연설명_들여쓰기_전체_적용(부모대상=None):
         로그(f"부연설명 들여쓰기 적용 완료 (적용 {적용수}건)")
     return True
 
+def _mm_hwpunit(mm):
+    """mm → HWPUNIT(반올림). 한/글 MiliToHwpUnit은 소수를 버려 예시 여백 4252가 4251로 들어갔다(2026-10-04)."""
+    return int(round(float(mm) * 7200 / 25.4))
+
+
 def 페이지_여백_설정(여백_mm):
     if hwp is None:
         return
@@ -5388,14 +5552,14 @@ def 페이지_여백_설정(여백_mm):
         act = hwp.HAction
         pset = hwp.HParameterSet.HSecDef
         act.GetDefault("PageSetup", pset.HSet)
-        pset.PageDef.LeftMargin = hwp.MiliToHwpUnit(여백_mm["left"])
-        pset.PageDef.RightMargin = hwp.MiliToHwpUnit(여백_mm["right"])
-        pset.PageDef.TopMargin = hwp.MiliToHwpUnit(여백_mm["top"])
-        pset.PageDef.BottomMargin = hwp.MiliToHwpUnit(여백_mm["bottom"])
-        pset.PageDef.HeaderLen = hwp.MiliToHwpUnit(여백_mm["header"])
-        pset.PageDef.FooterLen = hwp.MiliToHwpUnit(여백_mm["footer"])
+        pset.PageDef.LeftMargin = _mm_hwpunit(여백_mm["left"])
+        pset.PageDef.RightMargin = _mm_hwpunit(여백_mm["right"])
+        pset.PageDef.TopMargin = _mm_hwpunit(여백_mm["top"])
+        pset.PageDef.BottomMargin = _mm_hwpunit(여백_mm["bottom"])
+        pset.PageDef.HeaderLen = _mm_hwpunit(여백_mm["header"])
+        pset.PageDef.FooterLen = _mm_hwpunit(여백_mm["footer"])
         if "gutter" in 여백_mm:
-            pset.PageDef.GutterLen = hwp.MiliToHwpUnit(여백_mm["gutter"])
+            pset.PageDef.GutterLen = _mm_hwpunit(여백_mm["gutter"])
         act.Execute("PageSetup", pset.HSet)
     except Exception as e:
         로그(f"표준서식 여백 설정 실패(무시): {e}")
@@ -5495,6 +5659,22 @@ def 표준서식_기호규칙_찾기(text):
                     return 규칙
     return None
 
+
+_정렬_이름 = {값: 이름 for 이름, 값 in _정렬_COM.items()}
+
+
+def 본문형_일반문장인가(text):
+    """지금 문단(문두기호 없음)이 본문 문장인가. 서식 요소 분석의 '일반 문장'과 같은 기준(15자 이상, 18pt 미만,
+    가운데·오른쪽 정렬 아님)으로, 제목·날짜·서명 줄에는 예시의 본문 서식을 입히지 않는다."""
+    try:
+        hwp_run("MoveParaBegin")
+        정렬 = _정렬_이름.get(int(hwp.ParaShape.Item("AlignType")))
+        크기 = int(hwp.CharShape.Item("Height"))
+    except Exception:
+        return False
+    return 서식요소.is_body_sentence(text, 크기, 정렬)
+
+
 def 표준서식_문단_처리(문단_순번, 헤더_역할=None, 상속_기호_매칭=None):
     """현재 문단에 보고서 표준서식을 적용한다.
 
@@ -5545,7 +5725,8 @@ def 표준서식_문단_처리(문단_순번, 헤더_역할=None, 상속_기호_
     # 않아 원문 서식을 보존한다.
     if 자체_기호_매칭 is None:
         본문규칙 = 표준서식_설정.get("본문_문단") if 표준서식_설정.get("복제_본문서식") else None
-        if 본문규칙:
+        # 서식 예시의 본문 서식은 본문 문장에만 입힌다. 예전에는 제목·날짜 줄까지 본문 글꼴·크기로 바꿨다(2026-10-04).
+        if 본문규칙 and 본문형_일반문장인가(text):
             hwp_run("MoveParaBegin")
             hwp_run("MoveSelParaEnd")
             문자모양_적용_현재선택(
@@ -5556,8 +5737,12 @@ def 표준서식_문단_처리(문단_순번, 헤더_역할=None, 상속_기호_
                 자간=표준서식_설정.get("기본_자간") if 표준서식_장평_사용 else None,
             )
             hwp_run("Cancel")
-            if 표준서식_줄간격_사용:
-                hwp_run("MoveParaBegin")
+            hwp_run("MoveParaBegin")
+            if 서식요소.PLAIN_KEY in 표준서식_설정.get("복사_문단모양", {}):
+                # 예시 '일반 문장'의 여백·문단 간격·줄 간격과 영문 글꼴·장평·자간·정렬 등을 그대로 입힌다.
+                복사_문단모양_적용(서식요소.PLAIN_KEY)
+                계층_추가서식_적용(서식요소.PLAIN_KEY)
+            elif 표준서식_줄간격_사용:
                 hwp_run("MoveSelParaEnd")
                 문단_줄간격_적용_현재선택(표준서식_설정["기본_줄간격_퍼센트"])
                 hwp_run("Cancel")
@@ -5831,6 +6016,25 @@ _서식통일_위치텍스트_보관 = {}
 _글꼴형식 = {}
 
 
+def 글꼴형식_모으기(header):
+    """HWPX 헤더 글꼴 목록의 {글꼴 이름: 형식(TTF·HFT)}. 같은 이름이 두 형식으로 있으면 설치된 TTF를 쓴다."""
+    형식들 = {}
+    for item in header.iter():
+        if item.tag.rsplit("}", 1)[-1] != "font":
+            continue
+        이름, 형식 = item.get("face"), (item.get("type") or "").upper()
+        if 이름 and 형식 and 형식들.get(이름) != "TTF":
+            형식들[이름] = 형식
+    return 형식들
+
+
+def 글꼴형식_등록(형식들):
+    """서식 프로필(예시 보고서)·문서에서 읽은 글꼴 형식을 글꼴 지정에 쓰는 표에 더한다(TTF가 우선)."""
+    for 이름, 형식 in (형식들 or {}).items():
+        if 이름 and 형식 and _글꼴형식.get(이름) != "TTF":
+            _글꼴형식[이름] = str(형식).upper()
+
+
 def _서식통일_문두요소_범위(text):
     """문두기호와 바로 뒤 괄호라벨의 (시작, 끝) 문자 오프셋을 돌려준다."""
     if not text:
@@ -5899,11 +6103,7 @@ def _서식통일_HWPX_분석(문서경로):
     with ZipFile(path) as archive:
         header = ET.fromstring(archive.read("Contents/header.xml"))
         fonts = _parse_fonts(header)
-        for item in header.iter():
-            이름, 형식 = item.get("face"), (item.get("type") or "").upper()
-            # 같은 이름이 두 형식으로 있으면 설치된 TTF를 쓴다.
-            if _tag(item) == "font" and 이름 and 형식 and _글꼴형식.get(이름) != "TTF":
-                _글꼴형식[이름] = 형식
+        글꼴형식_등록(글꼴형식_모으기(header))
         chars = {item.get("id"): _parse_char(item, fonts)
                  for item in header.iter() if _tag(item) == "charPr"}
         paras = {item.get("id"): _parse_para(item)
@@ -7312,7 +7512,11 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
         for item in (미확정문단 if 서식통일_빨간표시_사용 else ()):
             if not item["red_marked"]:
                 불일치목록.append({"text": item["text"], "fields": ["unresolved_red_marking"]})
-        if not 확인문단수:
+        if not 확인문단수 and not 판정불가그룹 and not 불일치목록:
+            # 검사할 문두기호 문장이 없는 문서(서식·표만 있는 문서)는 '해당 없음'이다. 예전에는 '미완료'로 0점이 되어
+            # 서식 통일 판정이 '부분 달성'으로 나왔다(2026-10-04 범정부오피스 서식 9종).
+            status = "not_applicable"
+        elif not 확인문단수:
             status = "incomplete"
         elif 판정불가그룹 and not 불일치목록 and 서식통일_빨간표시_사용:
             status = "incomplete"
@@ -7737,13 +7941,23 @@ def 선택범위_현재크기_pt(문단_시작위치, 시작offset, 끝offset):
             pass
         return None
 
-def 괄호_텍스트_크기_축소_현재선택():
+def 괄호_축소량_pt(text):
+    """이 문단의 괄호 안 글자를 줄일 크기(pt). 서식 예시가 계층마다 정한 값이 있으면 그 값(0이면 줄이지 않음)."""
+    기호별 = (표준서식_설정 or {}).get("괄호_축소_기호별") or {}
+    if 기호별:
+        기호 = 서식통일_문두기호(text)[0]
+        if 기호 in 기호별:
+            return float(기호별[기호] or 0)
+    return float(괄호_축소_pt)
+
+
+def 괄호_텍스트_크기_축소_현재선택(축소_pt=None):
     if hwp is None:
         return
     try:
         기존_pt = hwp.CharShape.Item("Height") / 100.0
         if 기존_pt:
-            새_pt = max(1, 기존_pt - 괄호_축소_pt)
+            새_pt = max(1, 기존_pt - (괄호_축소_pt if 축소_pt is None else 축소_pt))
             문자모양_적용_현재선택(크기_pt=새_pt)
     except Exception as e:
         로그(f"괄호 텍스트 크기 축소 실패(무시): {e}")
@@ -7875,7 +8089,10 @@ def 괄호_및_라벨_텍스트_문단_처리(세트후속문단=False):
     if not text:
         return 0
 
-    if not 괄호_라벨_볼드_사용 and (not 괄호_축소_사용 or "(" not in text):
+    # 서식 예시가 이 계층의 괄호를 줄이지 않았으면(0pt) 줄이지 않는다.
+    축소_pt = 괄호_축소량_pt(text)
+    축소_사용 = 괄호_축소_사용 and 축소_pt > 0
+    if not 괄호_라벨_볼드_사용 and (not 축소_사용 or "(" not in text):
         return 0
 
     문단_시작위치 = hwp.GetPos()
@@ -7942,7 +8159,7 @@ def 괄호_및_라벨_텍스트_문단_처리(세트후속문단=False):
                     로그(f"괄호 라벨 굵게 적용 중 오류(무시): {e}")
                 continue
 
-            if not 괄호_축소_사용:
+            if not 축소_사용:
                 continue
 
             if 시작_offset > 0:
@@ -7959,10 +8176,10 @@ def 괄호_및_라벨_텍스트_문단_처리(세트후속문단=False):
 
             try:
                 문단_범위_선택(문단_시작위치, 시작_offset, 끝_offset)
-                괄호_텍스트_크기_축소_현재선택()
+                괄호_텍스트_크기_축소_현재선택(축소_pt)
                 hwp_run("Cancel")
                 적용_횟수 += 1
-                진단로그(f"[괄호축소] '{match.group(0)}' 글자 크기 {괄호_축소_pt}pt 축소")
+                진단로그(f"[괄호축소] '{match.group(0)}' 글자 크기 {축소_pt:g}pt 축소")
             except Exception as e:
                 로그(f"괄호 텍스트 축소 중 오류(무시): {e}")
 
@@ -9190,6 +9407,11 @@ def 단어중간_줄바꿈방지(최대시도):
 
 
 def 자간자동조정(최대시도=None):
+    """현재 화면줄의 단어 분리를 자간으로 푼다. 조정할 본문이 없는 줄(문두 보호)은 건너뛴다."""
+    return _문두보호_줄건너뜀(_자간자동조정_본체, 최대시도)
+
+
+def _자간자동조정_본체(최대시도=None):
     if 최대시도 is None:
         최대시도 = 자간_최대시도_본문
     # 세부 작업에서 '단어 분리 최종 검사'를 선택했다면 일반 자간 옵션과
@@ -11623,6 +11845,11 @@ def 줄_목록_수집(시작위치, 최대줄수=None):
     return 줄목록, False
 
 def 문장부호_줄병합_시도():
+    """짧은 마지막 줄을 앞줄로 당긴다. 조정할 본문이 없는 줄(문두 보호)은 건너뛴다."""
+    return _문두보호_줄건너뜀(_문장부호_줄병합_시도_본체)
+
+
+def _문장부호_줄병합_시도_본체():
     if 현재_한칸표인가():
         return True
     if 중단_요청됨():
@@ -11957,7 +12184,7 @@ def 서식표_영역_목록(hwpx경로):
     결과 = []
     for root in 구역들:
         for table in [t for p in root for run in p for t in run if 제목_xml이름(t) == 'tbl']:
-            if not (제목_유형판별(table, 빈칸허용=True) or 중제목_유형판별(table) or 붙임_유형판별(table)):
+            if not (제목_유형판별(table, 빈칸허용=True) or 중제목_글칸들(table) or 붙임_유형판별(table)):
                 continue
             영역들, 확인 = [], None
             for cell in 제목_셀들(table):
@@ -13567,8 +13794,8 @@ def 저장결과_규칙검수(파일, 저장파일, 결과창=True):
     if 서식검수:
         if not _서식통일_문서대표프로필:
             결과['style_unify'] = {
-                'status': 'incomplete', 'checked': 0, 'issues': [],
-                'reason': '대표 스타일 표본이 없어 저장 결과를 검증할 수 없습니다.',
+                'status': 'not_applicable', 'checked': 0, 'issues': [],
+                'reason': '문두기호 문장이 없어 대표 스타일이 없습니다(검사할 문장 없음).',
             }
         else:
             def 서식_검사():
@@ -13610,7 +13837,7 @@ def 저장결과_규칙검수(파일, 저장파일, 결과창=True):
                         return False
                     결과[key] = 항목
                     로그(f"저장 결과 {key} 검수: {항목['status']} / 검사 {항목['checked']}건 / 오류 {len(항목['issues'])}건")
-                    if key in ('style_unify', 'table_unify') and 항목['status'] != 'passed':
+                    if key in ('style_unify', 'table_unify') and 항목['status'] not in ('passed', 'not_applicable'):
                         검수_문제_기록(파일, f"[저장 결과 {key} 검증 {항목['status']}] "
                                              f"불일치 {len(항목['issues'])}개, "
                                              f"판정 보류 그룹 {len(항목.get('not_checkable', []))}개")
@@ -14125,6 +14352,8 @@ def 작업_실행(
         제목_부제_크기_반영(표준서식_세부.get("std_title_subtitle_pt", 제목_부제_크기_pt))
         제목_담당자_글_반영(표준서식_세부.get("title_owner_text", 제목_담당자_글))
         서식통일_결과창_반영(표준서식_세부.get("unify_result_window", 서식통일_결과창_사용))
+        # 서식 프로필(예시 보고서) 글꼴의 형식(TTF·HFT)을 등록해 HFT 글꼴도 실제로 입혀지게 한다.
+        글꼴형식_등록((표준서식_설정 or {}).get("글꼴형식"))
         # 서식 통일 작업은 세부 작업 '서식통일 문장 자간 정리'(카드의 '자간 정리 제외'와 연동)도 따른다.
         서식통일_자간조정_반영(not 표준서식_세부.get("unify_exclude_spacing", False)
                          and (작업_모드 != "unify" or stage_enabled(선택_세부작업, "unify_spacing", 작업_모드)))
@@ -16167,6 +16396,7 @@ class HwpAutoDocFitGUI:
         활성_표서식_프로필 = copy.deepcopy(profile.get("table_style")) or None
         global 괄호_축소_pt
         괄호_축소_pt = float(profile["format"].get("괄호_축소_pt", 2) or 2)
+        글꼴형식_등록(profile["format"].get("글꼴형식"))
 
     def _프로파일_목록갱신(self):
         # 기본 서식을 맨 앞에 두고 기관별로 묶어 이름순으로 보인다(A3).
@@ -19815,7 +20045,8 @@ class HwpAutoDocFitGUI:
         host.pack(fill="both", expand=True)
         status = result.get("status", "error")
         status_text = {"passed": "검수 통과", "failed": "불일치 남음",
-                       "incomplete": "일부 판정 보류", "error": "검수 오류"}.get(status, status)
+                       "incomplete": "일부 판정 보류", "error": "검수 오류",
+                       "not_applicable": "검사할 문장 없음"}.get(status, status)
         ttk.Label(host, text=f"저장 결과 확인 · {status_text}",
                   font=("맑은 고딕", 15, "bold")).pack(anchor="w")
         ttk.Label(host, text=f"검사 문장 {result.get('checked', 0)}개 · 불일치 {len(result.get('issues', []))}개 · 판정 보류 그룹 {len(result.get('not_checkable', []))}개",

@@ -314,6 +314,47 @@ class FormatElementsTest(unittest.TestCase):
             self.assertEqual(fe.hanging_rule(text, {"indent": indent, "size": 1500}, marker, label, 1), rule)
         self.assertEqual(self.group("ㅇ")["elements"]["hanging_rule"]["value"], "fixed")
 
+    def test_only_data_tables_are_general_table_samples(self):
+        # 일반 표 대표값은 데이터 표에서만 모은다: 본문이 시작되기 전(문서 머리)의 결재란 같은 표와 제목처럼 큰 글자
+        # (18pt 이상)가 든 표는 빼고 본문 뒤의 2행 2열 이상 격자 표만 센다(2026-10-04 범정부오피스 서식 시험).
+        def grid(char, fill):
+            return ('<hp:tbl rowCnt="3" colCnt="3" borderFillIDRef="1"><hp:sz width="30000" height="3000"/>'
+                    '<hp:outMargin left="283" right="283" top="283" bottom="283"/>'
+                    '<hp:inMargin left="141" right="141" top="141" bottom="141"/>'
+                    + "".join("<hp:tr>" + "".join(_cell(c, r, fill, 10000, [(char, f"칸{r}{c}")]) for c in range(3))
+                              + "</hp:tr>" for r in range(3)) + "</hp:tbl>")
+
+        def table_p(table):
+            return f'<hp:p paraPrIDRef="1" styleIDRef="0"><hp:run charPrIDRef="0">{table}</hp:run></hp:p>'
+
+        section = (f'<hs:sec {NS}>' + table_p(grid(5, 2))                     # 문서 머리의 결재란 같은 표
+                   + _p(0, (1, "ㅇ"), (0, " 본문이 시작되는 문장입니다"))
+                   + table_p(grid(4, 3))                                       # 27pt 글자가 든 제목형 표
+                   + table_p(grid(5, 3)) + "</hs:sec>")                        # 데이터 표
+        path = Path(self.folder.name) / "tables.hwpx"
+        with ZipFile(path, "w") as archive:
+            archive.writestr("mimetype", "application/hwp+zip")
+            archive.writestr("Contents/header.xml", HEADER)
+            archive.writestr("Contents/section0.xml", section)
+        tables = fe.analyze_format_elements(path, classify)["tables"]
+        self.assertEqual((tables["count"], tables["other"], tables["data_tables"]), (1, 2, [3]))
+        self.assertEqual(tables["body"]["border_left"]["value"], "SOLID|0.12 mm|#000000")   # 데이터 표의 칸 선
+        self.assertEqual(tables["body"]["size"]["value"], 1200)
+        # 정리할 문서에서도 같은 기준으로 일반 표 서식을 입히지 않을 표(문서 머리 표·제목형 표)를 고른다.
+        header = ET.fromstring(HEADER)
+        root = ET.fromstring(section)
+        head = fe.head_block_tables([root], header)
+        top = list(fe.top_level_tables([root]))
+        self.assertEqual(sorted(top.index(t) for t in head), [0, 1])
+        # 본문이 끝내 시작되지 않는 문서(표만 있는 문서)는 위치로 가르지 않는다: 머리 표도 데이터 표다.
+        only_tables = f'<hs:sec {NS}>' + table_p(grid(5, 2)) + table_p(grid(5, 3)) + "</hs:sec>"
+        with ZipFile(path, "w") as archive:
+            archive.writestr("mimetype", "application/hwp+zip")
+            archive.writestr("Contents/header.xml", HEADER)
+            archive.writestr("Contents/section0.xml", only_tables)
+        self.assertEqual(fe.analyze_format_elements(path, classify)["tables"]["data_tables"], [1, 2])
+        self.assertEqual(fe.head_block_tables([ET.fromstring(only_tables)], header), [])
+
     def test_rules_flow_into_profile(self):
         analysis = copy.deepcopy(self.analysis)
         group = next(g for g in analysis["paragraph_groups"] if g["marker"] == "ㅇ")
@@ -334,7 +375,10 @@ class FormatElementsTest(unittest.TestCase):
         self.assertTrue(options["label_symbols"]["ㅇ"])
         self.assertTrue(options["paren_shrink"])
         self.assertEqual(fmt["괄호_축소_pt"], 2.0)
-        self.assertEqual(fmt["복귀_간격"], {"ㅇ": 2400})
+        # 예시에 ㅇ만 있으면 같은 계층의 ○에도 같은 값을 둔다(○↔ㅇ 동등 기호, 2026-10-04).
+        self.assertEqual(fmt["복귀_간격"], {"ㅇ": 2400, "○": 2400})
+        self.assertEqual(fmt["내어쓰기_규칙"]["○"], "after_label")
+        self.assertEqual(fmt["괄호_축소_기호별"]["ㅇ"], 2.0)          # 괄호 줄임은 계층마다 둔다
         self.assertEqual(fmt["제목뒤_간격"], 1400)
 
     def test_gap_below_title_table_is_measured(self):
