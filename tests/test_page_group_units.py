@@ -81,6 +81,69 @@ class PageGroupUnitsTest(unittest.TestCase):
         self.assertEqual(mover.call_args.kwargs['표키'], (0, 9, 0))
         self.assertIs(mover.call_args.args[3], True)
 
+    def test_failed_pull_does_not_push_whole_group(self):
+        # 실측(서식 예시 'Ⅱ 추진 계획'): □ㅇㅇ/ㅇ는 앞쪽 단위가 많아 당기는데, 줄간격이 이미 최소라 못 당겨도
+        # 묶음 전체를 2쪽으로 밀지 않고 ㅇ 단위 경계에서 나눈다(단위별 배치).
+        result, mover, stats, record = self._group_attempt('ㅁㅇ-ㅇ/ㅇ', move_result='실패')
+        self.assertEqual(result[0], '단위별')
+        self.assertIs(mover.call_args.args[3], False)            # 당김만
+        self.assertIs(mover.call_args.kwargs['한방향'], True)     # 반대(밀기)로 보완하지 않음
+        record.assert_not_called()
+        self.assertEqual((stats['대상'], stats['실패']), (0, 0))
+
+    def test_failed_push_still_tries_page_break(self):
+        result, mover, stats, record = self._group_attempt('ㅁ/ㅇㅇㅇ', move_result='실패')
+        self.assertIs(mover.call_args.kwargs['한방향'], False)
+        self.assertEqual(stats['실패'], 1)                         # 쪽 나눔도 못 하면(이 시험에서는 False) 미해결
+        record.assert_called_once()
+
+    def test_unit_boundary_split_with_front_majority_is_exempt(self):
+        fn = self.ns['소제목묶음_단위경계_앞쪽우선']
+        group = [((0, i, 0), (0, i, 5), role) for i, role in enumerate(['소제목', '본문', '내용', '본문', '본문'])]
+        units = [[0], [1, 2], [3], [4]]
+        pages = {0: 1, 1: 1, 2: 1, 3: 1, 4: 2}
+        def counts(paragraphs):
+            return {pages[p[0][1]]: 1 for p in paragraphs} if len({pages[p[0][1]] for p in paragraphs}) == 1                 else {1: 1, 2: 1}
+        with patch.dict(fn.__globals__, {'보고서_묶음_쪽별줄수': counts}):
+            self.assertTrue(fn(group, units))
+            pages[2] = 2                                          # ㅇ 단위 안(- 줄)에서 나뉘면 예외 아님
+            self.assertFalse(fn(group, units))
+            pages.update({2: 1, 3: 2})                            # 뒤쪽 단위가 더 많으면 예외 아님
+            pages[1] = 2; pages[2] = 2
+            self.assertFalse(fn(group, units))
+
+    def test_group_ending_with_table_is_left_to_unit_and_table_bundles(self):
+        # 'ㅇ (3단계)' 뒤 표가 오면 그 ㅇ는 표의 제목 문장 — □ 묶음 전체 규칙 대신 단위·표 묶음 배치에 맡긴다.
+        fn = self.ns['소제목묶음_뒤_표인가']
+        group = [((0, i, 0), (0, i, 5), role) for i, role in enumerate(['소제목', '본문', '본문'], start=15)]
+        g = fn.__globals__
+        with patch.dict(g, {'로마자_중제목_표인가': lambda key: False}):
+            self.assertTrue(fn(group, {18: (0, 18, 0)}))
+            self.assertFalse(fn(group, {30: (0, 30, 0)}))
+            self.assertFalse(fn(group, None))
+        with patch.dict(g, {'로마자_중제목_표인가': lambda key: True}):
+            self.assertFalse(fn(group, {18: (0, 18, 0)}))       # 다음 중제목 표는 이 묶음의 표가 아니다
+
+    def test_paragraph_space_pull_restores_when_it_fails(self):
+        fn = self.ns['_묶음_위간격_축소_당김']
+        written = []
+        cursor = [(0, 0, 0)]
+        hwp = Mock()
+        hwp.SetPos.side_effect = lambda *pos: cursor.__setitem__(0, pos)
+        backup = [((0, i, 0), 1, 160) for i in range(3)]
+        stats = {'축소횟수': 0}
+        with patch.dict(fn.__globals__, {
+            'hwp': hwp, 'hwp_run': Mock(), '중단_요청됨': lambda: False, '세트문장_통계': stats,
+            '문단_위간격_pt_현재문단': lambda: 10.0,
+            '문단_위간격_적용_현재선택': lambda pt: written.append((cursor[0], pt)),
+            '보고서_묶음_쪽별줄수': lambda paragraphs: {1: 2, 2: 1},
+            '표_쪽범위': lambda key: None, '로그': Mock(), '진단로그': Mock(),
+        }):
+            self.assertFalse(fn(backup, [], 1, None, '□ 단계별 추진 일정'))
+        self.assertEqual([pt for _, pt in written[:3]], [9.0, 9.0, 9.0])     # 10%씩
+        self.assertIn(5.0, [pt for _, pt in written])                         # 최대 50%까지
+        self.assertEqual([pt for _, pt in written[-3:]], [10.0, 10.0, 10.0])  # 못 당기면 복원
+
     def test_six_or_more_units_left_to_unit_level(self):
         result, mover, stats, _ = self._group_attempt('ㅁㅇㅇ/ㅇㅇㅇ')
         self.assertEqual(result, ('단위별', []))

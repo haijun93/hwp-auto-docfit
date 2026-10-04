@@ -360,7 +360,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리 도구"
-APP_VERSION = "1.69 Beta 16"
+APP_VERSION = "1.69 Beta 17"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 UPDATE_ASSET_NAME = "HWP_AutoDocFit.exe"
@@ -10089,7 +10089,7 @@ def 보고서_페이지배치_최종검사():
                     break
                 continue
             # 논리단위 5개 이하 □ 묶음은 묶음 전체가 한 쪽에 있어야 한다.
-            group_target = (소제목묶음_쪽맞춤_대상(pos)
+            group_target = (소제목묶음_쪽맞춤_대상(pos, 표문단)
                             if 보고서_문단역할(text) == '소제목' else None)
             if group_target and all(쪽범위_안인가(p[0]) for p in group_target[0]):
                 counts = 보고서_묶음_쪽별줄수(group_target[0])
@@ -10099,6 +10099,9 @@ def 보고서_페이지배치_최종검사():
                 if len(counts) > 1 and 쪽보다_긴_묶음인가(group_target[0], counts):
                     exempt.append({'text': f'[한 쪽보다 긴 묶음] {text.strip()[:80]}',
                                    'pages': sorted(counts), 'paragraph': pos[1]})
+                elif len(counts) > 1 and 소제목묶음_단위경계_앞쪽우선(*group_target):
+                    exempt.append({'text': f'[ㅇ 단위 경계에서 나눈 소제목 묶음(앞쪽 단위가 많아 밀지 않음)] '
+                                           f'{text.strip()[:60]}', 'pages': sorted(counts), 'paragraph': pos[1]})
                 elif len(counts) > 1:
                     message = f'[소제목 묶음 쪽 분리] {text.strip()[:80]}'
                     issues.append({'text': message, 'pages': sorted(counts), 'paragraph': pos[1]})
@@ -10432,15 +10435,90 @@ def 문단_첫줄_쪽(start):
         hwp.SetPos(*original)
 
 
-def 소제목묶음_쪽맞춤_대상(시작위치):
-    """(묶음, 논리단위) 또는 None. 논리단위가 최대 개수를 넘으면 None."""
+def 소제목묶음_뒤_표인가(group, 표문단):
+    """□ 묶음 바로 뒤(빈 문단 하나 건너뛰어도 됨)에 마지막 ㅇ 단위의 표(로마자 중제목 표 제외)가 오는지."""
+    if not 표문단 or not group:
+        return False
+    번호 = group[-1][0][1] + 1
+    if 번호 not in 표문단:
+        if 번호 + 1 not in 표문단:
+            return False
+        original = hwp.GetPos()
+        try:
+            hwp.SetPos(0, 번호, 0)
+            if tuple(hwp.GetPos()[:2]) != (0, 번호) or 현재문단_텍스트().strip():
+                return False
+        except Exception:
+            return False
+        finally:
+            hwp.SetPos(*original)
+        번호 += 1
+    return not 로마자_중제목_표인가(표문단[번호])
+
+
+def 소제목묶음_쪽맞춤_대상(시작위치, 표문단=None):
+    """(묶음, 논리단위) 또는 None. 논리단위가 최대 개수를 넘으면 None.
+
+    마지막 ㅇ 단위 뒤에 표가 오면(그 ㅇ는 표의 제목 문장) 표까지 한 쪽에 모아야 하므로 묶음 전체 규칙을 쓰지 않고
+    ㅇ 단위·표 묶음 배치에 맡긴다(None). 2026-10-04 실측: 서식 예시 'Ⅱ 추진 계획' 묶음을 1쪽으로 당기자
+    'ㅇ (3단계)'만 1쪽, 그 표는 2쪽에 남음 — 사용자 기대는 1쪽에 'ㅇ (2단계)'까지, 2쪽에 'ㅇ (3단계)'와 표.
+    """
     group = 보고서_소제목묶음_수집(시작위치)
     if not group:
         return None
     units = 쪽맞춤_논리단위([role for _, _, role in group])
     if len(units) > 쪽맞춤_묶음_최대단위:
         return None
+    if 소제목묶음_뒤_표인가(group, 표문단):
+        return None
     return group, units
+
+
+# 줄간격이 이미 최소라 묶음을 앞쪽으로 당기지 못하면, 그 쪽 문단들의 '문단 위 간격'을 원래 값의 10%씩
+# 최대 이 비율까지 줄여 당긴다(2026-10-04 실측: 서식 예시 'Ⅱ 추진 계획' 묶음이 '- 입자가속기 …' 한 줄 때문에
+# 2쪽으로 밀림). 당기지 못하면 원래 간격으로 되돌린다.
+쪽맞춤_위간격_최대축소비율 = 0.5
+
+
+def _묶음_위간격_축소_당김(보관, paragraphs, target_page, 표키, summary):
+    """보관(쪽 시작~묶음 끝 문단) 문단의 문단 위 간격을 줄여 묶음을 target_page로 당긴다.
+
+    성공 True(줄인 간격 유지), 실패 False(원래 간격 복원), 중단·오류 None.
+    """
+    원래 = []
+    for pos, _, _ in 보관:
+        hwp.SetPos(*pos)
+        값 = 문단_위간격_pt_현재문단()
+        if 값 and 값 > 0:
+            원래.append((pos, 값))
+    if not 원래:
+        return False
+
+    def 적용(비율):
+        for pos, 값 in 원래:
+            hwp.SetPos(*pos)
+            hwp_run('MoveParaBegin')
+            hwp_run('MoveSelParaEnd')
+            문단_위간격_적용_현재선택(round(값 * 비율, 1))
+            hwp_run('Cancel')
+
+    단계수 = int(round(쪽맞춤_위간격_최대축소비율 * 10))
+    for step in range(1, 단계수 + 1):
+        if 중단_요청됨():
+            적용(1.0)
+            return None
+        적용(1 - 0.1 * step)
+        세트문장_통계['축소횟수'] = 세트문장_통계.get('축소횟수', 0) + 1
+        new_counts = 보고서_묶음_쪽별줄수(paragraphs)
+        if new_counts is None:
+            적용(1.0)
+            return None
+        if set(new_counts) == {target_page} and (표키 is None or 표_쪽범위(표키) == (target_page, target_page)):
+            로그(f'문장 묶음 {target_page}쪽 배치 완료: {summary} (줄간격 최소라 문단 위 간격 {step * 10}% 축소)')
+            return True
+    적용(1.0)
+    진단로그(f'[문장 묶음] 문단 위 간격 {단계수 * 10}% 축소로도 당기지 못함 / {summary}')
+    return False
 
 
 def _묶음_같은쪽_이동(시작위치, paragraphs, counts, 먼저_확대, summary, 표키=None, 한방향=False):
@@ -10496,6 +10574,14 @@ def _묶음_같은쪽_이동(시작위치, paragraphs, counts, 먼저_확대, su
                 if success:
                     로그(f'문장 묶음 {target_page}쪽 배치 완료: {summary} (줄간격 {step}단계 {direction})')
                     return True
+            if not expand:
+                # 줄간격(최소 한계)으로 못 당기면 줄인 줄간격 위에 문단 위 간격을 더 줄여 본다.
+                당김 = _묶음_위간격_축소_당김(backup, paragraphs, target_page, 표키, summary)
+                if 당김 is None:
+                    return None
+                if 당김:
+                    success = True
+                    return True
             # 페이지 보호 속성은 최종 문서에 남기지 않는다. 줄간격 범위 안에서
             # 해결되지 않으면 원래 값을 복원한다.
             if attempted:
@@ -10521,7 +10607,21 @@ def _묶음_같은쪽_이동(시작위치, paragraphs, counts, 먼저_확대, su
             hwp.SetPos(*시작위치)
 
 
-def 소제목묶음_같은쪽_시도(시작위치, text, 머리=None):
+def 소제목묶음_단위경계_앞쪽우선(group, units):
+    """두 쪽에 걸친 □ 묶음이 ㅇ 단위 경계에서만 나뉘고 앞쪽 단위가 뒤쪽 이상인지(당기지 못해 단위별로 나눈 결과)."""
+    쪽들 = []
+    for unit in units:
+        counts = 보고서_묶음_쪽별줄수([group[index] for index in unit])
+        if not counts or len(counts) != 1:
+            return False
+        쪽들.append(next(iter(counts)))
+    pages = sorted(set(쪽들))
+    # 앞쪽에 □와 ㅇ 단위가 하나 이상 함께 있어야 한다(□만 홀로 남은 것은 위반).
+    return (len(pages) == 2 and 쪽들.count(pages[0]) >= 2
+            and 쪽들.count(pages[0]) >= 쪽들.count(pages[1]))
+
+
+def 소제목묶음_같은쪽_시도(시작위치, text, 머리=None, 표문단=None):
     """논리단위 5개 이하인 □ 묶음 전체를 한 쪽에 모은다.
 
     머리(로마자 중제목 {'위치', '표키'})를 주면 중제목 표도 묶음의 맨 앞(첫 단위)으로 보고, 줄간격·쪽 나눔은
@@ -10532,7 +10632,7 @@ def 소제목묶음_같은쪽_시도(시작위치, text, 머리=None):
     None: 중단/오류.
     """
     summary = text.strip().replace('\r', ' ').replace('\n', ' ')[:50]
-    target = 소제목묶음_쪽맞춤_대상(시작위치)
+    target = 소제목묶음_쪽맞춤_대상(시작위치, 표문단)
     if target is None:
         return '단위별', []
     group, units = target
@@ -10563,18 +10663,30 @@ def 소제목묶음_같은쪽_시도(시작위치, text, 머리=None):
         if page is None:
             return '단위별', group
         unit_pages.append(page)
+    # 앞쪽에 □와 함께 남은 ㅇ 단위 수(□만 앞쪽 끝에 홀로 있으면 0)
+    앞쪽_ㅇ단위 = sum(1 for page in unit_pages[1:] if page == pages[0])
     if 표쪽 and 표쪽[0] < unit_pages[0]:
         unit_pages.insert(0, 표쪽[0])     # □ 앞쪽에 홀로 남은 중제목도 한 단위로 센다
     먼저_확대, 앞쪽, 뒤쪽 = 쪽맞춤_뒤로밀기인가(unit_pages, pages)
     세트문장_통계['대상'] += 1
     진단로그(f'[쪽 맞춤 묶음] 논리단위 {len(units)}개(앞쪽 {앞쪽}/뒤쪽 {뒤쪽}): '
              f'{"뒤쪽으로 밈" if 먼저_확대 else "앞쪽으로 당김"} / {summary}')
-    result = _묶음_같은쪽_이동(이동시작, group, counts, 먼저_확대, summary, 표키=표키)
+    # 앞쪽 단위가 많아 당기기로 했고 앞쪽에 □와 ㅇ 단위가 함께 있으면 당기기만 한다. 줄간격이 이미 최소라
+    # 못 당겨도 묶음 전체를 뒤쪽으로 밀지 않는다 — 앞쪽에 둔 중제목·□·ㅇ가 모두 다음 쪽으로 밀려나 앞쪽이
+    # 크게 빈다(2026-10-04 사용자 지적: 서식 예시 'Ⅱ 추진 계획 … ㅇ (2단계)'가 1쪽에 있어야 하는데 2쪽으로
+    # 밀림). 이때는 ㅇ 단위 경계에서 나뉘도록 단위별 배치로 넘긴다. □만 앞쪽에 남았으면 예전처럼 민다.
+    당김만 = not 먼저_확대 and 앞쪽_ㅇ단위 >= 1
+    result = _묶음_같은쪽_이동(이동시작, group, counts, 먼저_확대, summary, 표키=표키, 한방향=당김만)
     if result is None:
         return None
     if result == '성공':
         세트문장_통계['성공'] += 1
         return '처리', group
+    if result == '실패' and 당김만:
+        세트문장_통계['대상'] -= 1
+        로그(f'[쪽 맞춤 묶음] 앞쪽 단위가 많은데 줄간격으로 당기지 못함 — 묶음을 밀지 않고 ㅇ 단위 경계에서 '
+             f'나누도록 단위별 배치로 진행: {summary}')
+        return '단위별', group
     if result == '실패' and _묶음_쪽나눔_이동(이동시작, group, counts, summary, 표키=표키):
         세트문장_통계['성공'] += 1
         return '처리', group
@@ -11038,7 +11150,7 @@ def 세트문장_같은쪽_전체_적용():
                     hwp.SetPos(*끝위치)
                     처리됨 = True
             if not 처리됨 and role == '소제목':
-                result = 소제목묶음_같은쪽_시도(시작위치, text, 중제목_머리.get(시작위치[1]))
+                result = 소제목묶음_같은쪽_시도(시작위치, text, 중제목_머리.get(시작위치[1]), 표문단)
                 if result is None:
                     return False
                 상태값, group = result
@@ -11243,8 +11355,13 @@ def 쪽맞춤_묶음분리_있음(최소쪽=None):
     페이지 수 맞춤은 최소쪽부터만 간격을 바꾸므로 그 앞의 쪽 나눔은 그대로다.
     앞쪽에 원래부터 풀 수 없는 긴 묶음이 걸려 있으면 매 단계 '걸림'으로 판정돼
     헛되이 더 줄였다(실측: 10쪽 회의자료에서 단계마다 약 30초).
+
+    로마자 중제목 + □ + 첫 ㅇ 단위 묶음도 본다(2026-10-04 실측: 서식 예시에서 쪽 수 맞춤이 2쪽부터 문단 위
+    간격을 줄여 'Ⅱ 추진 계획 · □ · ㅇ (1단계)'만 1쪽으로 올라오고 '- 입자가속기 …'는 2쪽에 남음).
+    ㅇ 단위 경계에서 나뉘고 앞쪽 단위가 많은 □ 묶음은 쪽 배치가 일부러 그렇게 둔 것이라 걸림으로 보지 않는다.
     """
     original = hwp.GetPos()
+    표문단 = 본문_표_문단번호()
     try:
         순회_시작()
         while True:
@@ -11252,16 +11369,27 @@ def 쪽맞춤_묶음분리_있음(최소쪽=None):
                 return False
             pos = hwp.GetPos()
             쪽 = 현재_페이지번호() if (최소쪽 and pos[0] == 0) else None
-            if pos[0] == 0 and (쪽 is None or 쪽 >= 최소쪽 - 1):
+            if (pos[0] == 0 and (쪽 is None or 쪽 >= 최소쪽 - 1) and pos[1] in 표문단
+                    and 로마자_중제목_표인가(표문단[pos[1]])):
+                다음 = 중제목_다음글문단(pos[1], 표문단)
+                묶음 = 중제목_묶음_문단(다음[0]) if 다음 else []
+                if 묶음 and all(쪽범위_안인가(p[0]) for p in 묶음):
+                    counts, 표쪽 = 중제목_묶음_쪽({'표키': 표문단[pos[1]]}, 묶음)
+                    if counts and len(set(counts) | set(표쪽)) > 1:
+                        진단로그(f'[쪽 수 맞춤] 쪽 경계에 걸린 중제목 묶음: {다음[1].strip()[:40]}')
+                        return True
+                hwp.SetPos(*pos)
+            elif pos[0] == 0 and (쪽 is None or 쪽 >= 최소쪽 - 1):
                 text = 현재문단_텍스트()
                 role = 보고서_문단역할(text)
                 if role in ('소제목', '본문', '내용', '부연설명'):
-                    target = 소제목묶음_쪽맞춤_대상(pos) if role == '소제목' else None
+                    target = 소제목묶음_쪽맞춤_대상(pos, 표문단) if role == '소제목' else None
                     paragraphs = target[0] if target else 보고서_본문묶음_수집(pos)
                     if paragraphs and all(쪽범위_안인가(p[0]) for p in paragraphs):
                         counts = 보고서_묶음_쪽별줄수(paragraphs)
                         if (counts and len(counts) > 1
-                                and not 쪽보다_긴_묶음인가(paragraphs, counts)):
+                                and not 쪽보다_긴_묶음인가(paragraphs, counts)
+                                and not (target and 소제목묶음_단위경계_앞쪽우선(*target))):
                             진단로그(f'[쪽 수 맞춤] 쪽 경계에 걸린 묶음: {text.strip()[:40]}')
                             return True
                 hwp.SetPos(*pos)
