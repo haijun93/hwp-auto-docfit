@@ -64,24 +64,6 @@ release-windows:
     - |
       curl --fail-with-body --request POST \
         --header "JOB-TOKEN: $CI_JOB_TOKEN" \
-        --data-urlencode "name=HWP_AutoDocFit.exe (메인 프로그램, Windows 64비트)" \
-        --data-urlencode "url=$CI_PROJECT_URL/-/jobs/$CI_JOB_ID/artifacts/raw/dist/HWP_AutoDocFit.exe" \
-        --data-urlencode "link_type=package" \
-        --data-urlencode "direct_asset_path=/HWP_AutoDocFit.exe" \
-        "$CI_API_V4_URL/projects/$CI_PROJECT_ID/releases/$CI_COMMIT_TAG/assets/links"
-    - |
-      if [ -f "dist/설치파일 초기화.exe" ]; then
-        curl --fail-with-body --request POST \
-          --header "JOB-TOKEN: $CI_JOB_TOKEN" \
-          --data-urlencode "name=설치파일 초기화.exe (보안 DLL 및 레지스트리 원상복구/초기화 도구)" \
-          --data-urlencode "url=$CI_PROJECT_URL/-/jobs/$CI_JOB_ID/artifacts/raw/dist/%EC%84%A4%EC%B9%98%ED%8C%8C%EC%9D%BC%20%EC%B4%88%EA%B8%B0%ED%99%94.exe" \
-          --data-urlencode "link_type=package" \
-          --data-urlencode "direct_asset_path=/reset-install.exe" \
-          "$CI_API_V4_URL/projects/$CI_PROJECT_ID/releases/$CI_COMMIT_TAG/assets/links"
-      fi
-    - |
-      curl --fail-with-body --request POST \
-        --header "JOB-TOKEN: $CI_JOB_TOKEN" \
         --data-urlencode "name=보고서 예시 파일(한번에 적용).txt" \
         --data-urlencode "url=$CI_PROJECT_URL/-/jobs/$CI_JOB_ID/artifacts/raw/dist/%EB%B3%B4%EA%B3%A0%EC%84%9C%20%EC%98%88%EC%8B%9C%20%ED%8C%8C%EC%9D%BC%28%ED%95%9C%EB%B2%88%EC%97%90%20%EC%A0%81%EC%9A%A9%29.txt" \
         --data-urlencode "link_type=other" \
@@ -90,7 +72,7 @@ release-windows:
     - |
       curl --fail-with-body --request POST \
         --header "JOB-TOKEN: $CI_JOB_TOKEN" \
-        --data-urlencode "name=HWP_AutoDocFit-$CI_COMMIT_TAG.zip (통합 압축팩 - 3종 전체 한번에 다운로드)" \
+        --data-urlencode "name=HWP_AutoDocFit-$CI_COMMIT_TAG.zip (통합 압축팩 - 3가지 파일 한 번에 다운로드)" \
         --data-urlencode "url=$CI_PROJECT_URL/-/jobs/$CI_JOB_ID/artifacts/raw/dist/HWP_AutoDocFit-$CI_COMMIT_TAG.zip" \
         --data-urlencode "link_type=package" \
         --data-urlencode "direct_asset_path=/HWP_AutoDocFit-$CI_COMMIT_TAG.zip" \
@@ -99,8 +81,6 @@ release-windows:
     name: "HWP_AutoDocFit-$CI_COMMIT_TAG"
     paths:
       - "dist/HWP_AutoDocFit-$CI_COMMIT_TAG.zip"
-      - dist/HWP_AutoDocFit.exe
-      - "dist/설치파일 초기화.exe"
       - "dist/보고서 예시 파일(한번에 적용).txt"
   rules:
     - if: '$CI_COMMIT_TAG'
