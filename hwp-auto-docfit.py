@@ -360,7 +360,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리"
-APP_VERSION = "1.71"
+APP_VERSION = "1.72 Beta 1"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 UPDATE_ASSET_NAME = "HWP_AutoDocFit.exe"
@@ -5710,7 +5710,7 @@ def 부연설명_들여쓰기_전체_적용(부모대상=None):
 
 def _별표_위치_실측(문단_시작, text):
     """* 문단에서 별표(*) 기호의 실제 가로 위치를 측정한다(왼쪽여백 + 선행 공백 폭)."""
-    if not text:
+    if hwp is None or not text:
         return None
     try:
         hwp.SetPos(*문단_시작)
@@ -5734,7 +5734,7 @@ def _별표_정렬_적용(문단_시작, text, 목표_별표_위치):
     필요시 앞 빈칸을 삭제하고, 남은 차이는 왼쪽여백으로 보정한다.
     바뀌었으면 True, 이미 같으면 False, 실패하면 None.
     """
-    if 현재_한칸표인가():
+    if hwp is None or 현재_한칸표인가():
         return False
     try:
         hwp.SetPos(*문단_시작)
@@ -5782,6 +5782,10 @@ def _별표_정렬_적용(문단_시작, text, 목표_별표_위치):
         if 공백_삭제됨 or 여백_변경됨:
             진단로그(f"[별표(**) 정렬] 목표 {목표_별표_위치}, 폭 {w_lead} → 여백 {margin}"
                      f"{'(앞 공백 삭제)' if 공백_삭제됨 else ''}: {cur_text.strip()[:40]}")
+            # 공백이나 여백이 바뀌었으면 내어쓰기(Shift+Tab)도 새 본문 시작점에 맞게 갱신
+            if 표준서식_내어쓰기_사용 and stage_enabled(선택_세부작업, 'hanging_indent'):
+                hwp.SetPos(*문단_시작)
+                문단_내어쓰기_적용(문단_시작, cur_text)
             return True
         return False
     except Exception as e:
@@ -5794,7 +5798,10 @@ def 별표_정렬_전체_적용():
 
     '부연설명 들여쓰기' 설정(기본 꺼짐)과 분리하여 항상 실행하며,
     필요시 ** 앞의 선행 공백을 지워 정확히 정렬한다.
+    문단 사이의 빈 문단(줄바꿈 공백줄)은 단락 간 여백이므로 별표 연쇄를 끊지 않는다.
     """
+    if hwp is None:
+        return True
     if 중단_요청됨():
         return False
     순회_시작()
@@ -5820,9 +5827,9 @@ def 별표_정렬_전체_적용():
                         내어쓰기_변경문단.add(tuple(문단_시작[:2]))
                 직전_별표_위치 = None
             else:
+                # 일반 본문이나 다른 구조 기호(※, -, □ 등)가 끼면 별표 연쇄를 끊는다
                 직전_별표_위치 = None
-        else:
-            직전_별표_위치 = None
+        # 빈 문단(공백 줄)은 줄바꿈 여백이므로 직전_별표_위치를 유지한다.
 
         if not 범위_다음_문단으로_진행():
             break
@@ -6056,8 +6063,12 @@ def 표준서식_문단_처리(문단_순번, 헤더_역할=None, 상속_기호_
     )
 
     # 자체 문장부호가 있는 경우에만 표준 선행공백으로 보정한다.
+    # **(주석2)는 둘째 별표가 *(주석1)의 별표와 같은 가로 위치에 오도록 선행 공백을 1칸 적게(공백수 - 1) 둔다.
     if 자체_기호_매칭 and not 표준서식_설정.get("복제_들여쓰기_유지"):
-        들여쓰기_공백_맞추기(자체_기호_매칭[1])
+        목표_공백수 = 자체_기호_매칭[1]
+        if text.lstrip().startswith("**"):
+            목표_공백수 = max(0, 목표_공백수 - 1)
+        들여쓰기_공백_맞추기(목표_공백수)
 
     if 표준서식_장평_사용:
         hwp_run("MoveParaBegin")
@@ -14204,6 +14215,12 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
     if 작업_모드 == 'format' and 표준서식_사용 and stage_enabled(선택_세부작업, 'single_cell_spacing'):
         if not stage('개요·한 칸 표 자간 조정', 한칸표_자간조정):
             return False
+    # 별표(**) 정렬: 바로 앞줄 *의 별표 위치에 **의 둘째 별표를 맞춘다.
+    # 부연설명 들여쓰기(기본 꺼짐)와 분리하여 항상 실행하며, 필요시 앞 빈칸을 지워 위치를 맞춘다.
+    # 내어쓰기 전에 별표 위치와 앞 빈칸을 먼저 맞춰 두어야 최종 내어쓰기 기준점이 정확해진다.
+    if 작업_모드 in ('format', 'all') and stage_enabled(선택_세부작업, 'star_align'):
+        if not stage('별표(**) 정렬', 별표_정렬_전체_적용):
+            return False
     # 내어쓰기는 화면줄의 가로 폭과 줄바꿈을 바꿀 수 있으므로 자간·단어
     # 분리 검사를 수행하기 전에 최종 문단 모양을 먼저 확정한다.
     if 작업_모드 in ('format', 'all') and 표준서식_사용 and 표준서식_내어쓰기_사용 and stage_enabled(선택_세부작업, 'hanging_indent'):
@@ -14216,11 +14233,6 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
                       and 부연설명_들여쓰기_사용)
     if 부연설명_단계_사용:
         if not stage('부연설명 들여쓰기', 부연설명_들여쓰기_전체_적용):
-            return False
-    # 별표(**) 정렬: 바로 앞줄 *의 별표 위치에 **의 둘째 별표를 맞춘다.
-    # 부연설명 들여쓰기(기본 꺼짐)와 분리하여 항상 실행하며, 필요시 앞 빈칸을 지워 위치를 맞춘다.
-    if 작업_모드 in ('format', 'all') and stage_enabled(선택_세부작업, 'star_align'):
-        if not stage('별표(**) 정렬', 별표_정렬_전체_적용):
             return False
     if 작업_모드 in ('spacing', 'all'):
         # 자간을 줄이거나 넓히면 문두기호 문장의 첫 줄 폭이 바뀌어
@@ -21461,6 +21473,7 @@ def main():
     if tk_only or importlib.util.find_spec("webview") is None:
         root = TkinterDnD.Tk()
         HwpAutoDocFitGUI(root)
+        _새창_맨앞으로(root)
         root.mainloop()
         return
 

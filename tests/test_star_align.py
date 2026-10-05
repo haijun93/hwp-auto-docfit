@@ -56,6 +56,8 @@ class StarAlignTest(unittest.TestCase):
         all_stages = [s[0] for s in stages_for_mode("all")]
         self.assertIn("star_align", format_stages)
         self.assertIn("star_align", all_stages)
+        self.assertLess(format_stages.index("star_align"), format_stages.index("hanging_indent"))
+        self.assertLess(all_stages.index("star_align"), all_stages.index("hanging_indent"))
 
     def test_measure_star_position(self):
         """_별표_위치_실측은 왼쪽여백 + 선행공백 폭을 합산하여 반환한다."""
@@ -228,6 +230,70 @@ class StarAlignTest(unittest.TestCase):
         }):
             self.assertTrue(fn())
         self.assertEqual(applied_targets, [])
+
+    def test_star_align_empty_line_does_not_break_chain(self):
+        """*와 ** 사이에 빈 줄(공백)이 있어도 끊기지 않고 정렬 대상에 포함된다."""
+        fn = self.ns["별표_정렬_전체_적용"]
+        texts = ["  * 주석1", "", "   ", "  ** 주석2"]
+        state = {"i": 0}
+
+        class Doc:
+            def GetPos(self):
+                return (0, state["i"], 0)
+
+            def SetPos(self, *pos):
+                state["i"] = pos[1]
+
+        def next_para():
+            if state["i"] >= len(texts) - 1:
+                return False
+            state["i"] += 1
+            return True
+
+        applied_targets = []
+
+        def fake_apply(start, text, target):
+            applied_targets.append((start[1], text.strip()[:2], target))
+            return True
+
+        changed = set()
+        with patch.dict(fn.__globals__, {
+            "hwp": Doc(), "hwp_run": lambda cmd: True, "중단_요청됨": lambda: False,
+            "순회_시작": lambda: state.__setitem__("i", 0),
+            "현재문단_텍스트": lambda: texts[state["i"]],
+            "범위_다음_문단으로_진행": next_para,
+            "_별표_위치_실측": lambda start, text: 1200,
+            "_별표_정렬_적용": fake_apply,
+            "내어쓰기_변경문단": changed, "로그": Mock(), "진단로그": Mock(),
+        }):
+            self.assertTrue(fn())
+        # 빈 줄을 건너뛰고 문단 3번(** 주석2)에 대해 정렬 호출됨
+        self.assertEqual(applied_targets, [(3, "**", 1200)])
+        self.assertEqual(changed, {(0, 3)})
+
+    def test_star_align_refreshes_hanging_indent(self):
+        """별표 정렬 중 앞 빈칸을 삭제하거나 여백을 변경하면 문단_내어쓰기_적용이 호출된다."""
+        fn = self.ns["_별표_정렬_적용"]
+        doc, applied, text_box = self._doc(left_margin=0, text="  ** 주석2")
+        indent_called = []
+
+        def fake_hwp_run(cmd):
+            if cmd == "Delete" and text_box[0].startswith(" "):
+                text_box[0] = text_box[0][1:]
+            return True
+
+        with patch.dict(fn.__globals__, {
+            "hwp": doc, "hwp_run": fake_hwp_run, "현재_한칸표인가": lambda: False,
+            "현재문단_텍스트": lambda: text_box[0],
+            "_캐럿위치_폭_실측": lambda start, n: 500 * n,
+            "문단_범위_선택": lambda start, s, e: True,
+            "문단_내어쓰기_적용": lambda start, text: indent_called.append((start, text)),
+            "진단로그": Mock(), "로그": Mock(),
+        }):
+            res = fn((0, 5, 0), "  ** 주석2", 1000)
+            self.assertTrue(res)
+            self.assertEqual(len(indent_called), 1)
+            self.assertEqual(indent_called[0][1], " ** 주석2")
 
 
 if __name__ == "__main__":
