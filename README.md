@@ -389,5 +389,5 @@ PC를 옮길 때는 앱을 종료하고 이 폴더를 백업하세요. **서식 
 
 ## 라이선스
 
-이 프로그램의 소스 코드는 [kordoc](https://github.com/chrisryugj/kordoc)과 같은 **MIT 라이선스**를 따릅니다([LICENSE](LICENSE)).
+이 프로그램의 소스 코드는 **MIT 라이선스**를 따릅니다([LICENSE](LICENSE)).
 Copyright (c) 2026 haijun93 (마포구청 공혁준). 함께 쓰는 외부 구성 요소는 위 표와 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)의 각 라이선스를 따릅니다.
