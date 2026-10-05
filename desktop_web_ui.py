@@ -27,6 +27,7 @@ QUICK_OPTIONS = {
     "autoclose": "autoclose_var",
     "verify": "verify_var",
     "check_updates": "check_updates_on_start_var",
+    "developer_mode": "developer_mode_var",
 }
 
 
@@ -644,6 +645,9 @@ class DesktopWebBridge:
         command = commands.get(name)
         if command is None:
             raise ValueError("지원하지 않는 도구입니다.")
+        developer = getattr(self.gui, "developer_mode_var", None)
+        if developer is not None and not developer.get():
+            raise ValueError("문서 도구는 설정에서 개발자 모드를 켜야 사용할 수 있습니다.")
         self._tk(command, timeout=None, front=True)
         return True
 

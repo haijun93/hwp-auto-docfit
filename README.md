@@ -1,11 +1,11 @@
-# 한글편집 후처리 도구
+# 한글편집 후처리
 
 다 쓴 한글 보고서의 **줄 끝 단어, 제각각인 글꼴, 문단 정렬과 표 모양**을 정리하는 Windows 프로그램입니다.
 문서를 넣고 작업을 고르면 설치된 한/글을 자동으로 조작합니다. **원본은 덮어쓰지 않고, 결과를 새 HWPX 파일로 저장합니다.**
 
 **[Windows 실행 파일 내려받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/permalink/latest)** · [변경 사항](releases/) · [GitHub](https://github.com/haijun93/hwp-auto-docfit) · [GitLab](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
 
-현재 안내 기준: **1.69 Beta 18**. 베타 버전이므로 처음에는 문서 한 개로 시험하고 결과를 확인해 주세요.
+현재 안내 기준: **1.70**(정식 버전). 처음에는 문서 한 개로 시험하고 결과를 확인해 주세요.
 
 ## 어떤 결과가 나오나요?
 

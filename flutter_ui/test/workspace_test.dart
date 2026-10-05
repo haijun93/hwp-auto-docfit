@@ -50,13 +50,13 @@ void main() {
 
       await tester.pumpWidget(DocFitApp(api: api));
       await tester.pumpAndSettle();
-      expect(find.text('세 단계면 끝나요'), findsOneWidget);
+      expect(find.text('3 단계면 끝나요'), findsOneWidget);
       await tester.tap(find.text('문서 추가'));
       await tester.pumpAndSettle();
       expect(find.text('문서.hwpx'), findsOneWidget);
       expect(find.text('HWPX'), findsOneWidget);
       // 문서가 들어오면 안내 영역을 접어 목록이 잘 보이게 한다.
-      expect(find.text('세 단계면 끝나요'), findsNothing);
+      expect(find.text('3 단계면 끝나요'), findsNothing);
       await tester.tap(find.text('작업 방식 선택'));
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('서식 통일'));

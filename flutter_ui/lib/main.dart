@@ -24,7 +24,7 @@ class DocFitApp extends StatelessWidget {
   final ApiCall api;
   @override
   Widget build(BuildContext context) => MaterialApp(
-    title: '한글편집 후처리 도구',
+    title: '한글편집 후처리',
     debugShowCheckedModeBanner: false,
     theme: ThemeData(
       useMaterial3: true,
@@ -406,7 +406,7 @@ class _WorkspaceState extends State<Workspace> {
         const SizedBox(width: 12),
         const Flexible(
           child: Text(
-            '한글편집 후처리 도구',
+            '한글편집 후처리',
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 20,
@@ -428,6 +428,8 @@ class _WorkspaceState extends State<Workspace> {
         onPressed: busy ? null : () => command('open_log'),
         icon: const Icon(Icons.receipt_long_outlined),
       ),
+      // 문서 도구는 설정의 개발자 모드를 켜야 보인다.
+      if (quickOptions['developer_mode'] == true)
       PopupMenuButton<String>(
         tooltip: '문서 도구',
         enabled: !locked,
@@ -816,7 +818,7 @@ class _WorkspaceState extends State<Workspace> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '세 단계면 끝나요',
+                  '3 단계면 끝나요',
                   style: TextStyle(
                     fontSize: layout.maxWidth < 500 ? 26 : 32,
                     fontWeight: FontWeight.w800,
@@ -1956,6 +1958,11 @@ class _WorkspaceState extends State<Workspace> {
             'check_updates',
             '시작할 때 새 버전 확인',
             '새 버전이 있으면 알려 드려요.',
+          ),
+          optionSwitch(
+            'developer_mode',
+            '개발자 모드',
+            '켜면 문서 검토·공공언어 교정·작성 도우미 등 문서 도구 메뉴가 나타나요.',
           ),
           settingsLabel('더 보기'),
           ListTile(

@@ -145,6 +145,24 @@ class BrowserApiTests(unittest.TestCase):
         self.assertFalse(gui.verify_var.get())
         self.assertEqual(gui.selected_profiles, [])
 
+    def test_document_tools_need_developer_mode(self):
+        gui = _FakeGui()
+        called = []
+        for name in ("_문서검토_열기", "_공공언어_검토", "_텍스트로_문서추가_열기", "_붙여넣기_정리_열기",
+                     "_아웃라이너_열기", "_작성도우미_열기", "고급문서도구_열기"):
+            setattr(gui, name, lambda: None)
+        gui.Markdown_내보내기 = lambda: called.append(True)
+        gui.developer_mode_var = _Var(False)
+        bridge = _bridge(gui)
+        self.assertFalse(bridge.get_state()["options"]["developer_mode"])
+        with self.assertRaises(ValueError):
+            bridge.run_tool("markdown")
+        self.assertEqual(called, [])
+        bridge.set_option("developer_mode", True)
+        self.assertTrue(bridge.get_state()["options"]["developer_mode"])
+        bridge.run_tool("markdown")
+        self.assertEqual(called, [True])
+
     def test_profile_and_quick_option(self):
         gui = _FakeGui()
         bridge = _bridge(gui)
