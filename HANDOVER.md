@@ -25,7 +25,7 @@
 - **Windows 전용**. 한/글 2020이 설치되어 있고 COM 객체 `HwpFrame.HwpObject`를 쓸 수 있어야 실제 문서 처리가 됩니다. 주 화면에는 WebView2 런타임이 필요하며, 사용할 수 없으면 기존 Tk 화면으로 대체합니다.
 - **Python 3.14** 가상환경: `.venv\Scripts\python.exe` (의존성: `requirements.txt` — pywin32, tkinterdnd2, defusedxml, pywebview)
 - 보안 모듈 `MapoHwpAutoDocFitSecurity.dll`이 `hwp-auto-docfit.py`와 같은 폴더에 있어야 합니다(한/글 자동화 보안 승인용, 앱이 최초 실행 시 등록).
-- 저장소 경로에 **한글과 공백**이 있습니다(`C:\Users\haiju\OneDrive\바탕 화면\HWP_AutoDocFit\mapo-agent-1`). 셸 명령에서는 항상 따옴표로 감싸세요.
+- 저장소 경로에 **한글과 공백**이 있을 수 있습니다(예: `C:\Users\<사용자명>\OneDrive\바탕 화면\HWP_AutoDocFit\mapo-agent-1`). 셸 명령에서는 항상 따옴표로 감싸세요.
 - 실행: `.venv\Scripts\python.exe hwp-auto-docfit.py` (pywebview가 있으면 WebView2 UI, 그렇지 않으면 Tk UI)
 - 모듈 임포트 시 `docfit_core`를 찾도록 저장소 루트에서 실행하거나 `PYTHONPATH=.`을 지정하세요.
 - 콘솔 한글 깨짐 방지: `PYTHONIOENCODING=utf-8`
@@ -211,7 +211,7 @@ Flutter UI 빌드는 `powershell -File build_flutter.ps1`로 수행하며 `build
 | `bd0b83b` | 작업 유형 4가지 분리(서식 통일 독립) |
 | `cf9464c` | **1.68 Beta 2** 버전 |
 
-검증 데이터: `C:\Users\haiju\OneDrive\바탕 화면\111\테스트 문서`(25개 문서). 스타일 분석·예시 서식 생성 25/25, 한/글 열기 25/25, 예시 재분석 시 서식 일치 21/25(큰 문서 4개는 원본 안에서도 값이 갈려 요약 한계).
+검증 데이터: 로컬 테스트 문서 폴더(예: `C:\Users\<사용자명>\OneDrive\바탕 화면\111\테스트 문서`, 25개 문서). 스타일 분석·예시 서식 생성 25/25, 한/글 열기 25/25, 예시 재분석 시 서식 일치 21/25(큰 문서 4개는 원본 안에서도 값이 갈려 요약 한계).
 
 ---
 
