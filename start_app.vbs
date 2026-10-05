@@ -17,11 +17,10 @@ Else
 End If
 
 If Not fso.FileExists(appScript) Then
-    MsgBox "앱 파일을 찾을 수 없습니다." & vbCrLf & appScript, _
-           vbCritical, "한글편집 후처리"
+    MsgBox "App file not found: " & appScript, vbCritical, "HWP Auto DocFit"
     WScript.Quit 1
 End If
 
 shell.CurrentDirectory = projectDir
 command = Chr(34) & pythonw & Chr(34) & " " & Chr(34) & appScript & Chr(34)
-shell.Run command, 0, False
+shell.Run command, 1, False

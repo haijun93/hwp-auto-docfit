@@ -21420,9 +21420,9 @@ class HwpAutoDocFitGUI:
 # Main 실행부
 # ============================================================
 
-def _새창_맨앞으로(event):
+def _새창_맨앞으로(event_or_window):
     """웹 화면 뒤에 설정·검토 창이 숨지 않도록 새로 뜬 Tk 창을 앞으로 올린다."""
-    window = event.widget
+    window = getattr(event_or_window, "widget", event_or_window)
     try:
         if window.winfo_toplevel() is not window or window.overrideredirect():
             return
@@ -21430,7 +21430,7 @@ def _새창_맨앞으로(event):
         window.attributes("-topmost", True)
         window.after(300, lambda: window.winfo_exists() and window.attributes("-topmost", False))
         window.focus_force()
-    except tk.TclError:
+    except Exception:
         pass
 
 
