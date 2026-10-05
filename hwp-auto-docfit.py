@@ -360,7 +360,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리"
-APP_VERSION = "1.72 Beta 1"
+APP_VERSION = "1.72 Beta 2"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 UPDATE_ASSET_NAME = "HWP_AutoDocFit.exe"
@@ -5748,8 +5748,10 @@ def _별표_정렬_적용(문단_시작, text, 목표_별표_위치):
         필요_여백 = int(목표_별표_위치) - int(w_lead)
         공백_삭제됨 = False
 
-        # 선행 공백이 있고, 필요 여백이 음수이면(두 번째 별표가 오른쪽에 치우침) 앞 빈칸 삭제
-        while 필요_여백 < 0 and _선행공백_길이(cur_text) > 0:
+        # 선행 공백이 있고, 필요 여백이 음수이면(두 번째 별표가 오른쪽에 치우침) 앞 빈칸 삭제.
+        # 단, 글꼴의 미세 폭 오차(예: 공백 693 vs 별표 774의 수십 HWPUNIT 차이)로
+        # 정상 공백이 과도하게 삭제되지 않도록, 공백 1칸의 절반(약 300 HWPUNIT) 이상 음수일 때만 삭제한다.
+        while 필요_여백 <= -300 and _선행공백_길이(cur_text) > 0:
             if cur_text and cur_text[0] in (" ", "\u00a0"):
                 if 문단_범위_선택(문단_시작, 0, 1) is False:
                     break
