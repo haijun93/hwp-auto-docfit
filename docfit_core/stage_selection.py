@@ -11,6 +11,7 @@ FORMAT_STAGES = (
     ("single_cell_spacing", "개요·한 칸 표 자간 조정"),
     ("hanging_indent", "최종 서식 기준 내어쓰기"),
     ("supplement_indent", "부연설명 들여쓰기"),
+    ("star_align", "별표(**) 정렬"),
     # 실행 순서: 쪽 수 맞춤(문단 아래 간격)을 먼저 하고 문단 페이지 배치를 마지막에 한다.
     ("page_fit", "문단 아래 간격 페이지 맞춤"),
     ("page_group", "관련 문단 페이지 배치"),
@@ -64,6 +65,7 @@ STAGE_EXAMPLES = {
     "standard_format": "예: 준말 변환 바로 다음, 다른 모든 단계보다 먼저 여백·글꼴·문두기호·문단 간격을 선택한 서식 기준에 맞춥니다.",
     "parenthesis": "예: 문두의 '(개요)' 같은 라벨 크기·굵기를 설정값에 맞춥니다.",
     "supplement_indent": "예: '* 참고'를 바로 위 항목의 글 시작 위치에 맞춥니다.",
+    "star_align": "예: 바로 앞줄 '*' 주석의 별표 위치에 '**' 주석의 두 번째 별표를 맞춥니다.",
     "table_format": "예: 표 첫 행은 머리글, 나머지 행은 본문 서식으로 맞춥니다.",
     "single_cell_spacing": "예: 한 칸짜리 개요 표에서 줄 끝에 걸린 단어를 자간으로 조정합니다.",
     "hanging_indent": "예: 'ㅇ 추진 계획'이 두 줄이면 둘째 줄을 '추진' 시작점에 맞춥니다.",
@@ -103,7 +105,7 @@ _MODE_STAGES = {
     "format": _FIRST_STAGES + (
         "text_table_convert", "asterisk_superscript", "attachment_font", "pre_format", "table_style",
         "table_width", "precise_table", "normalize_space", "punctuation_space", "style_unify", "parenthesis",
-        "table_format", "single_cell_spacing", "hanging_indent", "supplement_indent", "page_fit", "page_group"),
+        "table_format", "single_cell_spacing", "hanging_indent", "supplement_indent", "star_align", "page_fit", "page_group"),
     # 서식통일은 예외 문단별 서식→자간→내어쓰기 처리이며 전체 자간 단계는 돌리지 않는다.
     "spacing": ("reset_spacing", "style_unify", "body_spacing", "short_line", "control_spacing",
                 "control_short_line", "word_check", "control_word_check"),
@@ -111,7 +113,7 @@ _MODE_STAGES = {
     "all": _FIRST_STAGES + (
         "text_table_convert", "reset_spacing", "asterisk_superscript", "attachment_font", "pre_format",
         "table_style", "table_width", "precise_table", "normalize_space", "punctuation_space", "style_unify",
-        "parenthesis", "table_format", "hanging_indent", "supplement_indent", "body_spacing", "short_line", "control_spacing",
+        "parenthesis", "table_format", "hanging_indent", "supplement_indent", "star_align", "body_spacing", "short_line", "control_spacing",
         "control_short_line", "word_check", "control_word_check", "page_fit", "page_group"),
 }
 

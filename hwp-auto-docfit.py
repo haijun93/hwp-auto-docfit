@@ -4405,6 +4405,8 @@ _세부단계_단계매핑 = {
     "최종 서식 기준 내어쓰기": "서식",
     "문두 라벨/괄호 서식": "서식",
     "부연설명 들여쓰기": "서식",
+    "별표(**) 정렬": "서식",
+    "자간 조정 후 별표(**) 정렬": "자간",
     "표 서식": "서식",
     "개요·한 칸 표 자간 조정": "자간",
     "제목·개요·붙임 선행 서식": "서식",
@@ -5582,19 +5584,41 @@ def _부연설명_들여쓰기_적용(문단_시작, text, 목표_위치, 여분
         if w_lead is None:
             로그(f"부연설명 들여쓰기 건너뜀(선행 공백 폭 실측 실패): {text.strip()[:40]}")
             return None
-    margin = max(0, int(목표_위치) - int(w_lead))
+    필요_여백 = int(목표_위치) - int(w_lead)
+    공백_삭제됨 = False
+    cur_text = text
+    # **처럼 여분 글자가 있어 왼쪽여백이 음수가 되는 경우 앞 빈칸을 삭제해 맞춘다
+    while 필요_여백 < 0 and _선행공백_길이(cur_text) > 0 and 여분_글자수 > 0:
+        if cur_text and cur_text[0] in (" ", "\u00a0"):
+            if 문단_범위_선택(문단_시작, 0, 1) is False:
+                break
+            if hwp_run("Delete") is False:
+                break
+            공백_삭제됨 = True
+            hwp.SetPos(*문단_시작)
+            cur_text = 현재문단_텍스트()
+            lead = _선행공백_길이(cur_text) + 여분_글자수
+            w_lead = _캐럿위치_폭_실측(문단_시작, lead)
+            if w_lead is None:
+                break
+            필요_여백 = int(목표_위치) - int(w_lead)
+        else:
+            break
+    margin = max(0, 필요_여백)
     try:
         hwp.SetPos(*문단_시작)
         hwp_run("MoveParaBegin")
-        if int(hwp.ParaShape.Item("LeftMargin")) == margin:
+        기존_여백 = int(hwp.ParaShape.Item("LeftMargin"))
+        if 기존_여백 == margin and not 공백_삭제됨:
             return False
-        act = hwp.CreateAction("ParagraphShape")
-        pset = act.CreateSet()
-        pset.SetItem("LeftMargin", margin)
-        if act.Execute(pset) is False:
-            raise RuntimeError("왼쪽여백 설정 실패")
+        if 기존_여백 != margin:
+            act = hwp.CreateAction("ParagraphShape")
+            pset = act.CreateSet()
+            pset.SetItem("LeftMargin", margin)
+            if act.Execute(pset) is False:
+                raise RuntimeError("왼쪽여백 설정 실패")
         진단로그(f"[부연설명 들여쓰기] 목표 위치 {목표_위치}, 선행 폭 {w_lead} → "
-                 f"왼쪽여백 {margin}: {text.strip()[:50]}")
+                 f"왼쪽여백 {margin}{'(앞 공백 삭제)' if 공백_삭제됨 else ''}: {cur_text.strip()[:50]}")
         return True
     except Exception as e:
         로그(f"부연설명 들여쓰기 적용 실패(무시): {e}")
@@ -5678,6 +5702,130 @@ def 부연설명_들여쓰기_전체_적용(부모대상=None):
             break
     if 부모대상 is None or 적용수:
         로그(f"부연설명 들여쓰기 적용 완료 (적용 {적용수}건)")
+    return True
+
+
+def _별표_위치_실측(문단_시작, text):
+    """* 문단에서 별표(*) 기호의 실제 가로 위치를 측정한다(왼쪽여백 + 선행 공백 폭)."""
+    if not text:
+        return None
+    try:
+        hwp.SetPos(*문단_시작)
+        hwp_run("MoveParaBegin")
+        left_margin = int(hwp.ParaShape.Item("LeftMargin"))
+        lead = _선행공백_길이(text)
+        w_lead = 0
+        if lead > 0:
+            w_lead = _캐럿위치_폭_실측(문단_시작, lead)
+            if w_lead is None:
+                return None
+        return left_margin + w_lead
+    except Exception as e:
+        진단로그(f"[별표 위치 실측 실패]: {e}")
+        return None
+
+
+def _별표_정렬_적용(문단_시작, text, 목표_별표_위치):
+    """** 문단의 둘째 별표 위치를 바로 앞줄 *의 목표_별표_위치에 맞춘다.
+
+    필요시 앞 빈칸을 삭제하고, 남은 차이는 왼쪽여백으로 보정한다.
+    바뀌었으면 True, 이미 같으면 False, 실패하면 None.
+    """
+    if 현재_한칸표인가():
+        return False
+    try:
+        hwp.SetPos(*문단_시작)
+        hwp_run("MoveParaBegin")
+        cur_text = 현재문단_텍스트() or text
+        lead = _선행공백_길이(cur_text)
+        w_lead = _캐럿위치_폭_실측(문단_시작, lead + 1)
+        if w_lead is None:
+            return None
+
+        필요_여백 = int(목표_별표_위치) - int(w_lead)
+        공백_삭제됨 = False
+
+        # 선행 공백이 있고, 필요 여백이 음수이면(두 번째 별표가 오른쪽에 치우침) 앞 빈칸 삭제
+        while 필요_여백 < 0 and _선행공백_길이(cur_text) > 0:
+            if cur_text and cur_text[0] in (" ", "\u00a0"):
+                if 문단_범위_선택(문단_시작, 0, 1) is False:
+                    break
+                if hwp_run("Delete") is False:
+                    break
+                공백_삭제됨 = True
+                hwp.SetPos(*문단_시작)
+                cur_text = 현재문단_텍스트()
+                lead = _선행공백_길이(cur_text)
+                w_lead = _캐럿위치_폭_실측(문단_시작, lead + 1)
+                if w_lead is None:
+                    break
+                필요_여백 = int(목표_별표_위치) - int(w_lead)
+            else:
+                break
+
+        margin = max(0, 필요_여백)
+        hwp.SetPos(*문단_시작)
+        hwp_run("MoveParaBegin")
+        기존_여백 = int(hwp.ParaShape.Item("LeftMargin"))
+        여백_변경됨 = False
+        if 기존_여백 != margin:
+            act = hwp.CreateAction("ParagraphShape")
+            pset = act.CreateSet()
+            pset.SetItem("LeftMargin", margin)
+            if act.Execute(pset) is False:
+                raise RuntimeError("왼쪽여백 설정 실패")
+            여백_변경됨 = True
+
+        if 공백_삭제됨 or 여백_변경됨:
+            진단로그(f"[별표(**) 정렬] 목표 {목표_별표_위치}, 폭 {w_lead} → 여백 {margin}"
+                     f"{'(앞 공백 삭제)' if 공백_삭제됨 else ''}: {cur_text.strip()[:40]}")
+            return True
+        return False
+    except Exception as e:
+        로그(f"별표(**) 정렬 적용 실패(무시): {e}")
+        return None
+
+
+def 별표_정렬_전체_적용():
+    """문서 내 *(주석1) 바로 뒤에 오는 **(주석2)의 둘째 별표 위치를 *에 맞춘다.
+
+    '부연설명 들여쓰기' 설정(기본 꺼짐)과 분리하여 항상 실행하며,
+    필요시 ** 앞의 선행 공백을 지워 정확히 정렬한다.
+    """
+    if 중단_요청됨():
+        return False
+    순회_시작()
+    직전_별표_위치 = None
+    적용수 = 0
+
+    while True:
+        if 중단_요청됨():
+            return False
+        hwp_run("MoveParaBegin")
+        문단_시작 = hwp.GetPos()
+        text = 현재문단_텍스트()
+
+        if text and text.strip():
+            marker, _ = leading_marker(text)
+            if marker == "*":
+                직전_별표_위치 = _별표_위치_실측(문단_시작, text)
+            elif marker == "**":
+                if 직전_별표_위치 is not None:
+                    결과 = _별표_정렬_적용(문단_시작, text, 직전_별표_위치)
+                    if 결과:
+                        적용수 += 1
+                        내어쓰기_변경문단.add(tuple(문단_시작[:2]))
+                직전_별표_위치 = None
+            else:
+                직전_별표_위치 = None
+        else:
+            직전_별표_위치 = None
+
+        if not 범위_다음_문단으로_진행():
+            break
+
+    if 적용수:
+        로그(f"별표(**) 정렬 완료 (적용 {적용수}건)")
     return True
 
 def _mm_hwpunit(mm):
@@ -13874,6 +14022,11 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
     if 부연설명_단계_사용:
         if not stage('부연설명 들여쓰기', 부연설명_들여쓰기_전체_적용):
             return False
+    # 별표(**) 정렬: 바로 앞줄 *의 별표 위치에 **의 둘째 별표를 맞춘다.
+    # 부연설명 들여쓰기(기본 꺼짐)와 분리하여 항상 실행하며, 필요시 앞 빈칸을 지워 위치를 맞춘다.
+    if 작업_모드 in ('format', 'all') and stage_enabled(선택_세부작업, 'star_align'):
+        if not stage('별표(**) 정렬', 별표_정렬_전체_적용):
+            return False
     if 작업_모드 in ('spacing', 'all'):
         # 자간을 줄이거나 넓히면 문두기호 문장의 첫 줄 폭이 바뀌어
         # 내어쓰기 기준점이 어긋날 수 있다. 자간 변경이 있으면 내어쓰기를
@@ -13934,6 +14087,9 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
                     부모들 = set(내어쓰기_변경문단)
                     if not stage('자간 조정 후 부연설명 들여쓰기' + 접미,
                                  lambda: 부연설명_들여쓰기_전체_적용(부모대상=부모들)):
+                        return False
+                if stage_enabled(선택_세부작업, 'star_align') and 내어쓰기_변경문단:
+                    if not stage('자간 조정 후 별표(**) 정렬' + 접미, 별표_정렬_전체_적용):
                         return False
             else:
                 로그(f"[자간·내어쓰기 반복] 최대 {자간_내어쓰기_최대반복}회 도달, 반복 종료")
