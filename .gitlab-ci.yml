@@ -38,6 +38,11 @@ release-windows:
     - cp "release-assets/보고서 예시 파일(한번에 적용).txt" "dist/보고서 예시 파일(한번에 적용).txt"
     - sha256sum dist/HWP_AutoDocFit.exe
     - |
+      if [ -f "release-assets/설치파일 초기화.exe" ]; then
+        cp "release-assets/설치파일 초기화.exe" "dist/설치파일 초기화.exe"
+        sha256sum "dist/설치파일 초기화.exe"
+      fi
+    - |
       if [ -f "releases/$CI_COMMIT_TAG.md" ]; then
         release_notes="releases/$CI_COMMIT_TAG.md"
       else
@@ -62,11 +67,22 @@ release-windows:
         --data-urlencode "direct_asset_path=/HWP_AutoDocFit.exe" \
         "$CI_API_V4_URL/projects/$CI_PROJECT_ID/releases/$CI_COMMIT_TAG/assets/links"
     - |
+      if [ -f "dist/설치파일 초기화.exe" ]; then
+        curl --fail-with-body --request POST \
+          --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+          --data-urlencode "name=설치파일 초기화.exe" \
+          --data-urlencode "url=$CI_PROJECT_URL/-/jobs/$CI_JOB_ID/artifacts/raw/dist/%EC%84%A4%EC%B9%98%ED%8C%8C%EC%9D%BC%20%EC%B4%88%EA%B8%B0%ED%99%94.exe" \
+          --data-urlencode "link_type=package" \
+          --data-urlencode "direct_asset_path=/%EC%84%A4%EC%B9%98%ED%8C%8C%EC%9D%BC%20%EC%B4%88%EA%B8%B0%ED%99%94.exe" \
+          "$CI_API_V4_URL/projects/$CI_PROJECT_ID/releases/$CI_COMMIT_TAG/assets/links"
+      fi
+    - |
       curl --fail-with-body --request POST         --header "JOB-TOKEN: $CI_JOB_TOKEN"         --data-urlencode "name=보고서 예시 파일(한번에 적용).txt"         --data-urlencode "url=$CI_PROJECT_URL/-/jobs/$CI_JOB_ID/artifacts/raw/dist/%EB%B3%B4%EA%B3%A0%EC%84%9C%20%EC%98%88%EC%8B%9C%20%ED%8C%8C%EC%9D%BC%28%ED%95%9C%EB%B2%88%EC%97%90%20%EC%A0%81%EC%9A%A9%29.txt"         --data-urlencode "link_type=other"         --data-urlencode "direct_asset_path=/report-example-all-in-one.txt"         "$CI_API_V4_URL/projects/$CI_PROJECT_ID/releases/$CI_COMMIT_TAG/assets/links"
   artifacts:
     name: "HWP_AutoDocFit-$CI_COMMIT_TAG"
     paths:
       - dist/HWP_AutoDocFit.exe
+      - "dist/설치파일 초기화.exe"
       - "dist/보고서 예시 파일(한번에 적용).txt"
   rules:
     - if: '$CI_COMMIT_TAG'

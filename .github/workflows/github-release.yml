@@ -29,7 +29,12 @@ jobs:
           else
             # GitHub는 첨부 파일 이름의 한글을 지우므로(default.txt가 됨) 영문 이름으로 올리고 한글은 표시 이름(#)으로 둔다.
             cp "release-assets/보고서 예시 파일(한번에 적용).txt" report-example-all-in-one.txt
-            gh release create "$TAG" release-assets/HWP_AutoDocFit.exe \
+            RESET_OPT=""
+            if [ -f "release-assets/설치파일 초기화.exe" ]; then
+              cp "release-assets/설치파일 초기화.exe" HWP_AutoDocFit_Reset.exe
+              RESET_OPT="HWP_AutoDocFit_Reset.exe#설치파일 초기화.exe"
+            fi
+            gh release create "$TAG" release-assets/HWP_AutoDocFit.exe $RESET_OPT \
               "report-example-all-in-one.txt#보고서 예시 파일(한번에 적용).txt" \
               --title "$TITLE" --notes-file "$NOTE" --latest
           fi

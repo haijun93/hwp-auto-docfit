@@ -360,7 +360,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리"
-APP_VERSION = "1.70"
+APP_VERSION = "1.71"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 UPDATE_ASSET_NAME = "HWP_AutoDocFit.exe"
@@ -1061,6 +1061,9 @@ def 서식_기본값_전역_복원():
 # 맞추는 데 필요한 문단은 어차피 마지막 몇 쪽에 몰려 있으므로 문서
 # 전체를 훑을 필요가 없다 — 긴 문서일수록 이 제한의 효과가 커진다.
 페이지맞춤_뒤쪽범위_쪽수 = 2
+# 문서 세로 조정(페이지 수 맞춤) 시 표 셀의 상하 안쪽 여백도 함께 비례 축소한다.
+페이지맞춤_표셀세로여백_사용 = True
+페이지맞춤_표셀세로여백_최소_pt = 0.0
 
 문장부호_통계 = {"대상": 0, "성공": 0, "실패": 0}
 세트문장_통계 = {"대상": 0, "성공": 0, "실패": 0, "축소횟수": 0, "확대횟수": 0}
@@ -11609,6 +11612,191 @@ def 구조문단_간격_복원(원래값, 위간격=False):
     return 복원수
 
 
+def 셀_세로여백_읽기():
+    """캐럿이 있는 셀의 (셀 여백 사용 여부, 위, 아래) 원래 값(HWPUNIT). 실패 시 None."""
+    if hwp is None:
+        return None
+    try:
+        pset = hwp.HParameterSet.HShapeObject
+        hwp.HAction.GetDefault("TablePropertyDialog", pset.HSet)
+        cell = pset.ShapeTableCell
+        return int(cell.HasMargin), int(cell.MarginTop), int(cell.MarginBottom)
+    except Exception as e:
+        로그(f"셀 세로 여백 읽기 실패(무시): {e}")
+        return None
+
+
+def 셀_세로여백_현재선택(top_hwpunit=None, bottom_hwpunit=None, 원래값=None):
+    """캐럿이 있는 셀의 상하 안쪽 여백을 HWPUNIT으로 설정한다(원래값을 주면 그 값으로 복원)."""
+    if hwp is None:
+        return False
+    try:
+        pset = hwp.HParameterSet.HShapeObject
+        hwp.HAction.GetDefault("TablePropertyDialog", pset.HSet)
+        pset.HSet.SetItem("ShapeType", 3)
+        pset.HSet.SetItem("ShapeCellSize", 0)
+        if 원래값 is not None:
+            pset.ShapeTableCell.HasMargin = int(원래값[0])
+            pset.ShapeTableCell.MarginTop = int(원래값[1])
+            pset.ShapeTableCell.MarginBottom = int(원래값[2])
+        else:
+            pset.ShapeTableCell.HasMargin = 1
+            if top_hwpunit is not None:
+                pset.ShapeTableCell.MarginTop = int(top_hwpunit)
+            if bottom_hwpunit is not None:
+                pset.ShapeTableCell.MarginBottom = int(bottom_hwpunit)
+        return hwp.HAction.Execute("TablePropertyDialog", pset.HSet) is not False
+    except Exception as e:
+        로그(f"셀 세로 여백 적용 실패(무시): {e}")
+        return False
+
+
+def 표_셀_세로여백_일괄조정(스텝, 최소쪽=None, 원래값=None):
+    """최소쪽 이후의 표를 대상으로 셀 세로 여백(위·아래)을 원래 여백에 비례하여
+    스텝(1단계당 페이지맞춤_스텝_pt / 페이지맞춤_최대_pt 비율)만큼 축소한다.
+    실제로 값이 바뀐 셀 수를 반환한다.
+
+    원래값(dict)을 주면 처음 바꾸는 셀의 원래 여백(HasMargin, MarginTop, MarginBottom)을
+    셀 area 번호로 기록해 표_셀_세로여백_복원으로 되돌릴 수 있게 한다.
+    한 칸 표(제목·개요 상자)는 보호하여 건드리지 않는다.
+    """
+    if hwp is None or 중단_요청됨() or not 페이지맞춤_표셀세로여백_사용:
+        return 0
+    if not hasattr(hwp, 'HParameterSet'):
+        return 0
+    최대_pt = max(0.1, float(페이지맞춤_최대_pt))
+    스텝_pt = max(0.1, float(페이지맞춤_스텝_pt))
+    축소비율 = min(1.0, max(0.0, float(스텝) * (스텝_pt / 최대_pt)))
+    최소_hwpunit = max(0, int(round(페이지맞춤_표셀세로여백_최소_pt * 100)))
+
+    원위치 = None
+    try:
+        원위치 = hwp.GetPos()
+    except Exception:
+        pass
+
+    한칸영역 = set()
+    try:
+        목록 = 한칸표_영역_목록()
+        if 목록:
+            한칸영역 = set(목록)
+    except Exception:
+        pass
+
+    적용수 = 0
+    try:
+        묶음 = None
+        try:
+            묶음 = 표칸_묶음_키별()
+        except Exception:
+            묶음 = None
+
+        if 묶음 is not None:
+            for 키, 칸들 in 묶음.items():
+                if 중단_요청됨():
+                    break
+                if not 칸들:
+                    continue
+                if len(칸들) == 1 and 칸들[0][1] == "A1":
+                    continue
+                if 칸들[0][0] in 한칸영역:
+                    continue
+                첫칸 = 칸들[0][0]
+                try:
+                    hwp.SetPos(첫칸, 0, 0)
+                except Exception:
+                    continue
+                쪽 = 현재_페이지번호() if 최소쪽 is not None else None
+                if 최소쪽 is not None and 쪽 is not None and 쪽 < 최소쪽:
+                    continue
+                for area, 주소, 행 in 칸들:
+                    if 중단_요청됨():
+                        break
+                    try:
+                        hwp.SetPos(area, 0, 0)
+                    except Exception:
+                        continue
+                    현재 = 셀_세로여백_읽기()
+                    if 현재 is None:
+                        continue
+                    if 원래값 is not None:
+                        원래값.setdefault(area, 현재)
+                    원래 = 원래값.get(area, 현재) if 원래값 is not None else 현재
+                    원래_has, 원래_top, 원래_bottom = 원래
+                    새_top = max(최소_hwpunit, int(round(원래_top * (1.0 - 축소비율))))
+                    새_bottom = max(최소_hwpunit, int(round(원래_bottom * (1.0 - 축소비율))))
+                    if abs(새_top - 현재[1]) >= 5 or abs(새_bottom - 현재[2]) >= 5:
+                        if 셀_세로여백_현재선택(top_hwpunit=새_top, bottom_hwpunit=새_bottom):
+                            적용수 += 1
+        else:
+            area = 1
+            while True:
+                if 중단_요청됨():
+                    break
+                area += 1
+                try:
+                    hwp.SetPos(area, 0, 0)
+                except Exception:
+                    break
+                try:
+                    pos = hwp.GetPos()
+                    if pos[0] != area:
+                        break
+                except Exception:
+                    break
+                if area in 한칸영역:
+                    continue
+                쪽 = 현재_페이지번호() if 최소쪽 is not None else None
+                if 최소쪽 is not None and 쪽 is not None and 쪽 < 최소쪽:
+                    continue
+                현재 = 셀_세로여백_읽기()
+                if 현재 is None:
+                    continue
+                if 원래값 is not None:
+                    원래값.setdefault(area, 현재)
+                원래 = 원래값.get(area, 현재) if 원래값 is not None else 현재
+                원래_has, 원래_top, 원래_bottom = 원래
+                새_top = max(최소_hwpunit, int(round(원래_top * (1.0 - 축소비율))))
+                새_bottom = max(최소_hwpunit, int(round(원래_bottom * (1.0 - 축소비율))))
+                if abs(새_top - 현재[1]) >= 5 or abs(새_bottom - 현재[2]) >= 5:
+                    if 셀_세로여백_현재선택(top_hwpunit=새_top, bottom_hwpunit=새_bottom):
+                        적용수 += 1
+    finally:
+        if 원위치 is not None:
+            try:
+                hwp.SetPos(*원위치)
+            except Exception:
+                pass
+    return 적용수
+
+
+def 표_셀_세로여백_복원(원래값):
+    """표_셀_세로여백_일괄조정이 기록한 원래 여백으로 되돌린다."""
+    if hwp is None or not 원래값:
+        return 0
+    원위치 = None
+    try:
+        원위치 = hwp.GetPos()
+    except Exception:
+        pass
+    복원수 = 0
+    try:
+        for area, 값 in 원래값.items():
+            try:
+                hwp.SetPos(area, 0, 0)
+                if 셀_세로여백_현재선택(원래값=값):
+                    복원수 += 1
+            except Exception as e:
+                로그(f"셀 세로 여백 복원 실패(무시): {e}")
+    finally:
+        if 원위치 is not None:
+            try:
+                hwp.SetPos(*원위치)
+            except Exception:
+                pass
+    return 복원수
+
+
 # 목표 쪽 수에 닿은 뒤 묶음이 쪽 경계에 걸려 있으면 몇 단계까지 더 줄여 볼지.
 페이지맞춤_묶음확인_추가단계 = 4
 # 마지막 페이지 수 맞춤이 묶음 규칙까지 지키며 끝났는지(쪽 배치 재실행 생략용).
@@ -11673,21 +11861,19 @@ def 쪽맞춤_묶음분리_있음(최소쪽=None):
 
 
 def 보고서_페이지수_맞춤_시도(목표_페이지수):
-    """본문 줄간격은 그대로 둔 채 항목기호 문단의 간격만 1pt씩 줄여 실제
-    페이지 수를 목표에 맞춘다.
+    """본문 줄간격은 그대로 둔 채 항목기호 문단의 간격과 표의 셀 세로 여백을
+    단계별로 비례 축소하여 실제 페이지 수를 목표에 맞춘다.
 
-    먼저 '문단 아래 간격'을 줄이고, 그래도 안 되면(또는 줄일 아래 간격이
-    없으면) '문단 위 간격'을 줄인다. 표준서식은 항목 사이 간격을 문단 위
-    여백으로 주고 빈 줄도 지우므로, 아래 간격만으로는 줄일 여지가 없는
-    경우가 많다. 각각 페이지맞춤_최대_pt까지만 줄이며, 매 단계 실제 페이지
-    수를 다시 잰다.
+    먼저 '문단 아래 간격'과 표 셀 여백을 연동해 줄이고, 그래도 안 되면
+    '문단 위 간격'과 표 셀 여백을 줄인다. 각각 페이지맞춤_최대_pt까지만
+    줄이며, 매 단계 실제 페이지 수를 다시 잰다.
 
     묶음 규칙도 확인한다. 목표 쪽 수에 닿았을 때 쪽 경계에 걸린 묶음이
     없으면 그대로 끝낸다. 걸린 묶음이 있으면 몇 단계 더 줄여 보고, 끝내
     둘 다 만족하지 못하면 처음 목표에 닿았던 단계로 되돌려 둔다 — 그 뒤
     쪽 배치가 걸린 묶음 전체를 다음 쪽으로 옮긴다(사용자 결정: 마지막 쪽에
     본문 1줄만 남기는 것보다 묶음 전체를 옮기는 편을 택함).
-    목표 쪽 수에 한 번도 닿지 못하면 바꾼 간격을 모두 원래 값으로 되돌린다.
+    목표 쪽 수에 한 번도 닿지 못하면 바꾼 간격과 여백을 모두 원래 값으로 되돌린다.
     """
     global 쪽맞춤_묶음_확인됨, 쪽맞춤_묶음이동_결정
     쪽맞춤_묶음_확인됨 = False
@@ -11697,17 +11883,19 @@ def 보고서_페이지수_맞춤_시도(목표_페이지수):
     최대반복 = max(1, int(round(페이지맞춤_최대_pt / 페이지맞춤_스텝_pt)))
     최소쪽 = max(1, 목표_페이지수 - 페이지맞춤_뒤쪽범위_쪽수)
     로그(
-        f"페이지 수 맞춤 시도: 목표 {목표_페이지수}쪽 (문단 아래·위 간격 각각 최대 "
-        f"{페이지맞춤_최대_pt:g}pt 축소, {최소쪽}쪽부터만 검사, 묶음 규칙 확인)"
+        f"페이지 수 맞춤 시도: 목표 {목표_페이지수}쪽 (문단 아래·위 간격 및 표 셀 여백 최대 "
+        f"{페이지맞춤_최대_pt:g}pt 비례 축소, {최소쪽}쪽부터만 검사, 묶음 규칙 확인)"
     )
     원래값 = {False: {}, True: {}}
+    표셀_원래값 = {}
     적용기록 = []          # 적용한 단계 순서(위간격 여부) — 되돌린 뒤 다시 적용할 때 쓴다
     첫_도달 = None         # 처음 목표 쪽 수에 닿았을 때의 적용기록 길이
     추가단계 = 0
 
     def 원래대로():
         return (구조문단_간격_복원(원래값[True], 위간격=True)
-                + 구조문단_간격_복원(원래값[False]))
+                + 구조문단_간격_복원(원래값[False])
+                + 표_셀_세로여백_복원(표셀_원래값))
 
     for 위간격 in (False, True):
         이름 = "문단 위 간격" if 위간격 else "문단 아래 간격"
@@ -11716,8 +11904,13 @@ def 보고서_페이지수_맞춤_시도(목표_페이지수):
                 return False
             조정수 = 구조문단_간격_일괄조정(
                 -페이지맞춤_스텝_pt, 최소쪽=최소쪽, 위간격=위간격, 원래값=원래값[위간격])
-            if 조정수 == 0:
-                로그(f"페이지 수 맞춤: 더 줄일 {이름}이 있는 항목기호 문단이 없음")
+            표조정수 = 0
+            if 페이지맞춤_표셀세로여백_사용:
+                스텝 = len(적용기록) + 1
+                표조정수 = 표_셀_세로여백_일괄조정(
+                    스텝, 최소쪽=최소쪽, 원래값=표셀_원래값)
+            if 조정수 == 0 and 표조정수 == 0:
+                로그(f"페이지 수 맞춤: 더 줄일 {이름} 및 표 셀 여백이 없음")
                 break
             적용기록.append(위간격)
             마지막쪽, _ = 마지막쪽_화면줄수()
@@ -11728,7 +11921,7 @@ def 보고서_페이지수_맞춤_시도(목표_페이지수):
                 continue
             if not 쪽맞춤_묶음분리_있음(최소쪽=최소쪽):
                 쪽맞춤_묶음_확인됨 = True
-                로그(f"페이지 수 맞춤 완료: {이름} {회}단계({회 * 페이지맞춤_스텝_pt:g}pt) 축소로 "
+                로그(f"페이지 수 맞춤 완료: {이름} {회}단계({회 * 페이지맞춤_스텝_pt:g}pt, 표 셀 여백 연동) 축소로 "
                      f"{목표_페이지수}쪽 달성, 쪽 경계에 걸린 묶음 없음")
                 return True
             if 첫_도달 is None:
@@ -11747,8 +11940,8 @@ def 보고서_페이지수_맞춤_시도(목표_페이지수):
     if 첫_도달 is None:
         복원수 = 원래대로()
         로그(
-            f"페이지 수 맞춤 실패: 문단 아래·위 간격을 {페이지맞춤_최대_pt:g}pt까지 줄여도 "
-            f"목표({목표_페이지수}쪽) 미달 — 바꾼 간격 {복원수}곳을 원래 값으로 되돌림"
+            f"페이지 수 맞춤 실패: 문단 아래·위 간격 및 표 셀 여백을 최대 {페이지맞춤_최대_pt:g}pt까지 줄여도 "
+            f"목표({목표_페이지수}쪽) 미달 — 바꾼 간격·여백 {복원수}곳을 원래 값으로 되돌림"
         )
         return False
 
@@ -11757,9 +11950,11 @@ def 보고서_페이지수_맞춤_시도(목표_페이지수):
     원래대로()
     for 위간격 in 적용기록[:첫_도달]:
         구조문단_간격_일괄조정(-페이지맞춤_스텝_pt, 최소쪽=최소쪽, 위간격=위간격)
+    if 페이지맞춤_표셀세로여백_사용 and 첫_도달 > 0:
+        표_셀_세로여백_일괄조정(첫_도달, 최소쪽=최소쪽, 원래값=표셀_원래값)
     쪽맞춤_묶음이동_결정 = True
     로그(f"페이지 수 맞춤: 묶음 규칙을 함께 지키는 단계가 없어 처음 {목표_페이지수}쪽에 닿은 "
-         f"단계({첫_도달}pt)로 두고, 걸린 묶음은 쪽 배치에서 다음 쪽으로 옮김")
+         f"단계({첫_도달}단계)로 두고, 걸린 묶음은 쪽 배치에서 다음 쪽으로 옮김")
     return True
 
 
