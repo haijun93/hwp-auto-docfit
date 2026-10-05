@@ -50,7 +50,7 @@ release-windows:
       curl --fail-with-body --request POST \
         --header "JOB-TOKEN: $CI_JOB_TOKEN" \
         --data-urlencode "tag_name=$CI_COMMIT_TAG" \
-        --data-urlencode "name=한글편집 후처리 도구 $CI_COMMIT_TAG" \
+        --data-urlencode "name=한글편집 후처리 $CI_COMMIT_TAG" \
         --data-urlencode "description@$release_notes" \
         "$CI_API_V4_URL/projects/$CI_PROJECT_ID/releases"
     - |
@@ -62,7 +62,7 @@ release-windows:
         --data-urlencode "direct_asset_path=/HWP_AutoDocFit.exe" \
         "$CI_API_V4_URL/projects/$CI_PROJECT_ID/releases/$CI_COMMIT_TAG/assets/links"
     - |
-      curl --fail-with-body --request POST         --header "JOB-TOKEN: $CI_JOB_TOKEN"         --data-urlencode "name=보고서 예시 파일(한번에 적용).txt"         --data-urlencode "url=$CI_PROJECT_URL/-/jobs/$CI_JOB_ID/artifacts/raw/dist/%EB%B3%B4%EA%B3%A0%EC%84%9C%20%EC%98%88%EC%8B%9C%20%ED%8C%8C%EC%9D%BC%28%ED%95%9C%EB%B2%88%EC%97%90%20%EC%A0%81%EC%9A%A9%29.txt"         --data-urlencode "link_type=other"         --data-urlencode "direct_asset_path=/보고서 예시 파일(한번에 적용).txt"         "$CI_API_V4_URL/projects/$CI_PROJECT_ID/releases/$CI_COMMIT_TAG/assets/links"
+      curl --fail-with-body --request POST         --header "JOB-TOKEN: $CI_JOB_TOKEN"         --data-urlencode "name=보고서 예시 파일(한번에 적용).txt"         --data-urlencode "url=$CI_PROJECT_URL/-/jobs/$CI_JOB_ID/artifacts/raw/dist/%EB%B3%B4%EA%B3%A0%EC%84%9C%20%EC%98%88%EC%8B%9C%20%ED%8C%8C%EC%9D%BC%28%ED%95%9C%EB%B2%88%EC%97%90%20%EC%A0%81%EC%9A%A9%29.txt"         --data-urlencode "link_type=other"         --data-urlencode "direct_asset_path=/report-example-all-in-one.txt"         "$CI_API_V4_URL/projects/$CI_PROJECT_ID/releases/$CI_COMMIT_TAG/assets/links"
   artifacts:
     name: "HWP_AutoDocFit-$CI_COMMIT_TAG"
     paths:
