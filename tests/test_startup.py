@@ -142,6 +142,24 @@ class StartupTest(unittest.TestCase):
         self.assertEqual(offset(" ㅇ 교육내용: 성희롱 예방교육"), 9)
         self.assertEqual(offset("    ** 이공학 학술연구기반구축 – 박사후연구원 등 지원 규모 : (’25)1,352명"), 7)
 
+    def test_double_star_inherits_single_star_hanging_rule(self):
+        source = Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"
+        namespace = runpy.run_path(str(source), run_name="hanging_indent_rule_alias_test")
+        lookup = namespace["복사_내어쓰기_규칙"]
+        globals_ = lookup.__globals__
+        globals_["표준서식_설정"] = {"내어쓰기_규칙": {"*": "after_marker"}}
+        self.assertEqual(lookup("** 참고"), "after_marker")
+        globals_["표준서식_설정"] = {"내어쓰기_규칙": {"*": "after_marker", "**": "none"}}
+        self.assertEqual(lookup("** 참고"), "none")
+
+    def test_square_marker_alias_uses_square_standard_rule(self):
+        source = Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"
+        namespace = runpy.run_path(str(source), run_name="square_marker_rule_alias_test")
+        lookup = namespace["표준서식_기호규칙_찾기"]
+        rule = ("□", 0, "테스트 글꼴", 17, False, True)
+        lookup.__globals__["표준서식_설정"] = {"논리역할_규칙": {}, "기호_규칙": [rule]}
+        self.assertEqual(lookup("ㅁ 사업"), rule)
+
     def test_output_filename_is_always_hwpx(self):
         source = Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"
         namespace = runpy.run_path(str(source), run_name="output_filename_test")

@@ -56,8 +56,10 @@ class StarAlignTest(unittest.TestCase):
         all_stages = [s[0] for s in stages_for_mode("all")]
         self.assertIn("star_align", format_stages)
         self.assertIn("star_align", all_stages)
-        self.assertLess(format_stages.index("star_align"), format_stages.index("hanging_indent"))
-        self.assertLess(all_stages.index("star_align"), all_stages.index("hanging_indent"))
+        self.assertLess(format_stages.index("hanging_indent"), format_stages.index("star_align"))
+        self.assertLess(format_stages.index("supplement_indent"), format_stages.index("star_align"))
+        self.assertLess(all_stages.index("hanging_indent"), all_stages.index("star_align"))
+        self.assertLess(all_stages.index("supplement_indent"), all_stages.index("star_align"))
 
     def test_measure_star_position(self):
         """_별표_위치_실측은 왼쪽여백 + 선행공백 폭을 합산하여 반환한다."""

@@ -5119,7 +5119,11 @@ def 복사_내어쓰기_규칙(text):
     if not rules:
         return None
     marker, _ = leading_marker(text)
-    return rules.get(marker) or rules.get(서식요소.unify_marker(text)[0])
+    rule = rules.get(marker) or rules.get(서식요소.unify_marker(text)[0])
+    if rule is None and marker == "**":
+        # ** 전용 규칙이 없으면 대표 기호 *의 내어쓰기 규칙을 그대로 상속한다.
+        rule = rules.get("*")
+    return rule
 
 
 def 문단_내어쓰기_기준_오프셋(text):
@@ -5917,6 +5921,8 @@ def 들여쓰기_공백_맞추기(목표_공백수):
     # 있었다(공문서_기호·문단위간격_찾기에서도 이미 같은 기호로 취급 중).
     # 오타로 들어간 경우에도 서식이 깨지지 않도록 별칭으로 남겨 둔다.
     "○": "ㅇ",
+    # 네모(ㅁ)는 □와 같은 문두기호로 취급한다.
+    "ㅁ": "□",
     # **(주석2)는 *(주석1)와 같은 대표 기호로 묶는다(별표 하나짜리 규칙을 그대로 씀).
     "**": "*",
     **{marker: "•" for marker in DOT_MARKERS if marker != "•"},
@@ -14217,12 +14223,6 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
     if 작업_모드 == 'format' and 표준서식_사용 and stage_enabled(선택_세부작업, 'single_cell_spacing'):
         if not stage('개요·한 칸 표 자간 조정', 한칸표_자간조정):
             return False
-    # 별표(**) 정렬: 바로 앞줄 *의 별표 위치에 **의 둘째 별표를 맞춘다.
-    # 부연설명 들여쓰기(기본 꺼짐)와 분리하여 항상 실행하며, 필요시 앞 빈칸을 지워 위치를 맞춘다.
-    # 내어쓰기 전에 별표 위치와 앞 빈칸을 먼저 맞춰 두어야 최종 내어쓰기 기준점이 정확해진다.
-    if 작업_모드 in ('format', 'all') and stage_enabled(선택_세부작업, 'star_align'):
-        if not stage('별표(**) 정렬', 별표_정렬_전체_적용):
-            return False
     # 내어쓰기는 화면줄의 가로 폭과 줄바꿈을 바꿀 수 있으므로 자간·단어
     # 분리 검사를 수행하기 전에 최종 문단 모양을 먼저 확정한다.
     if 작업_모드 in ('format', 'all') and 표준서식_사용 and 표준서식_내어쓰기_사용 and stage_enabled(선택_세부작업, 'hanging_indent'):
@@ -14235,6 +14235,11 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
                       and 부연설명_들여쓰기_사용)
     if 부연설명_단계_사용:
         if not stage('부연설명 들여쓰기', 부연설명_들여쓰기_전체_적용):
+            return False
+    # 별표(**) 정렬: 앞선 내어쓰기·부연설명 여백 조정이 끝난 뒤 최종 보정한다.
+    # 바로 앞줄 *의 별표 위치에 **의 둘째 별표를 맞추며, 필요하면 앞 빈칸을 지운다.
+    if 작업_모드 in ('format', 'all') and stage_enabled(선택_세부작업, 'star_align'):
+        if not stage('별표(**) 정렬', 별표_정렬_전체_적용):
             return False
     if 작업_모드 in ('spacing', 'all'):
         # 자간을 줄이거나 넓히면 문두기호 문장의 첫 줄 폭이 바뀌어

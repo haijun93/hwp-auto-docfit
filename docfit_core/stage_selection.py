@@ -97,7 +97,7 @@ _STAGE_BY_KEY = {stage[0]: stage for stage in FORMAT_STAGES + SPACING_STAGES + (
 _FIRST_STAGES = ("abbreviation", "standard_format")
 # 실제 실행 순서와 같게 보여 준다. 박스 그림 표 변환은 문단 구조를 바꾸므로 나머지 단계보다 먼저,
 # 자간 초기화는 선행 서식·정밀 표 복제보다 먼저(복사한 자간 보존) 실행하고, 서식통일은 공백·문장부호
-# 정리 뒤에 한다. 내어쓰기·부연설명을 먼저 맞추고 자간 변경 문단만 내어쓰기를 재조정한다.
+# 정리 뒤에 한다. 내어쓰기·부연설명을 먼저 맞춘 뒤 별표 위치를 최종 보정하고 자간 변경 문단을 재조정한다.
 _MODE_STAGES = {
     # 서식통일은 문서 자체의 대표 서식이 기준이다. 기본 표 서식(준말 '표')을 먼저 입힌 뒤 서식을 맞추고,
     # 쪽 맞춤은 사용자가 켤 때만 실행한다.
@@ -105,7 +105,7 @@ _MODE_STAGES = {
     "format": _FIRST_STAGES + (
         "text_table_convert", "asterisk_superscript", "attachment_font", "pre_format", "table_style",
         "table_width", "precise_table", "normalize_space", "punctuation_space", "style_unify", "parenthesis",
-        "table_format", "single_cell_spacing", "star_align", "hanging_indent", "supplement_indent", "page_fit", "page_group"),
+        "table_format", "single_cell_spacing", "hanging_indent", "supplement_indent", "star_align", "page_fit", "page_group"),
     # 서식통일은 예외 문단별 서식→자간→내어쓰기 처리이며 전체 자간 단계는 돌리지 않는다.
     "spacing": ("reset_spacing", "style_unify", "body_spacing", "short_line", "control_spacing",
                 "control_short_line", "word_check", "control_word_check"),
@@ -113,7 +113,7 @@ _MODE_STAGES = {
     "all": _FIRST_STAGES + (
         "text_table_convert", "reset_spacing", "asterisk_superscript", "attachment_font", "pre_format",
         "table_style", "table_width", "precise_table", "normalize_space", "punctuation_space", "style_unify",
-        "parenthesis", "table_format", "star_align", "hanging_indent", "supplement_indent", "body_spacing", "short_line", "control_spacing",
+        "parenthesis", "table_format", "hanging_indent", "supplement_indent", "star_align", "body_spacing", "short_line", "control_spacing",
         "control_short_line", "word_check", "control_word_check", "page_fit", "page_group"),
 }
 
