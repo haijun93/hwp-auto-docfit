@@ -3,7 +3,10 @@ from pathlib import Path
 import runpy
 import unittest
 
-from docfit_core.document_rules import normalize_official_spacing as fix, official_double_space_spans
+from docfit_core.document_rules import (
+    normalize_official_spacing as fix, official_double_space_spans,
+    normalize_attachment_list_header,
+)
 
 
 class OfficialSpacingTest(unittest.TestCase):
@@ -20,6 +23,12 @@ class OfficialSpacingTest(unittest.TestCase):
         self.assertEqual(fix('붙임 계획서 1부. 끝.'), '붙임  계획서 1부.  끝.')
         self.assertEqual(fix('붙임 : 1. 계획서 1부.'), '붙임 : 1. 계획서 1부.')   # 쌍점 꼴은 그대로
         self.assertEqual(fix('붙임 자료를 참고하여 작성'), '붙임 자료를 참고하여 작성')  # 붙임 표시문이 아님
+
+    def test_official_two_spaces_remain_for_non_numbered_attachment_label(self):
+        self.assertEqual(fix('붙임 계획서 1부.'), '붙임  계획서 1부.')
+        self.assertEqual(fix('붙임: 계획서 1부.'), '붙임: 계획서 1부.')
+        self.assertEqual(normalize_attachment_list_header(fix('붙임    1. 계획서 1부.')), '붙임  1. 계획서 1부.')
+        self.assertEqual(normalize_attachment_list_header('붙임  계획서 1부.'), '붙임  계획서 1부.')
 
     def test_dates_use_dot_space_without_zero(self):
         self.assertEqual(fix('2021.12.12. 개최'), '2021. 12. 12. 개최')

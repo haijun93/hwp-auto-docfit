@@ -271,6 +271,7 @@ from docfit_core.stage_selection import card_option_turns_off as 카드옵션_�
 from docfit_core.document_rules import (
     ParagraphSpacingTracker, YEAR_QUOTE_PATTERN, marker_space_fix,
     curly_single_quote_replacements, normalize_date_range_marks, normalize_official_spacing,
+    normalize_attachment_list_header,
     official_double_space_spans,
     paragraph_level, straight_double_quote_replacements, text_edit_spans,
 )
@@ -284,6 +285,10 @@ from docfit_core.pasted_text import clean_pasted_text, outline_pasted_text
 from docfit_core.labeled_text import label_outline_text, looks_labeled, parse_labeled_text
 from docfit_core.asterisk_superscript import mark_spans as 별표_위치
 from docfit_core.attachment_block import find_blocks as 붙임묶음_찾기
+from docfit_core.attachment_block import (
+    find_trailing_numbered_blocks as 끝붙임번호묶음_찾기,
+    numbered_item_offset as 붙임번호_오프셋,
+)
 from docfit_core.abbreviations import merge_with_defaults as 준말_기본_병합, match_line as 준말_줄_판별, normalize as 준말_등록표_정리, roman_of_key as 준말_로마자, split_title2
 from docfit_core.abbreviations import line_registry as 준말_줄변환표, table_style_of as 준말_표서식
 from docfit_core.abbreviations import excluded_reason as 준말_제외사유
@@ -1013,6 +1018,8 @@ def 서식_기본값_전역_복원():
 검수_사용 = False
 검수_문제목록 = []
 최종검수_문서목록 = []
+무결성보고서파일_사용 = True
+최종검수보고서파일_사용 = True
 현재_처리파일 = None
 단어중간_줄바꿈방지_사용 = False
 문장부호_2줄_기준글자수 = 5
@@ -1095,6 +1102,9 @@ def 번들_리소스_폴더():
     "autoclose": False,
     "stdformat": True,
     "verify": False,
+    # 기록 탭의 보고서 파일 생성 옵션. 상세 진단 자체는 verify가 제어한다.
+    "integrity_report_file": True,
+    "final_review_file": True,
     "two_pass_processing": False,
     "retry_body": "15",
     "retry_table": "5",
@@ -5359,6 +5369,8 @@ def 문단_내어쓰기_전체_갱신(대상문단=None):
     내어쓰기_변경문단.clear()
     if 대상문단 is not None and not 대상문단:
         return True
+    붙임번호_대상 = _붙임목록_내어쓰기_대상수집()
+    붙임번호_기준점들 = {}
     순회_시작()
     while True:
         if 중단_요청됨():
@@ -5369,12 +5381,165 @@ def 문단_내어쓰기_전체_갱신(대상문단=None):
                 break
             continue
         text = 현재문단_텍스트()
-        if (not 현재_한칸표인가() and 문단_내어쓰기_기준_오프셋(text) is not None
+        if 현재_한칸표인가():
+            if not 범위_다음_문단으로_진행():
+                break
+            continue
+        현재키 = tuple(hwp.GetPos()[:2])
+        if 현재키 in 붙임번호_대상:
+            기준문단, 단계 = 붙임번호_대상[현재키]
+            기준키 = 기준문단[0]
+            if 기준키 not in 붙임번호_기준점들:
+                붙임번호_기준점들[기준키] = _붙임번호_기준위치_실측(*기준문단)
+                if 붙임번호_기준점들[기준키] is None:
+                    로그(f"[붙임 내어쓰기] 첫 번호 기준점 측정 실패: {기준문단[1].strip()[:60]}")
+            기준값 = 붙임번호_기준점들[기준키]
+            if 기준값 is None:
+                로그(f"[붙임 내어쓰기] 번호 기준을 측정하지 못했습니다: {text.strip()[:60]}")
+            elif not _붙임목록_번호_내어쓰기_적용(hwp.GetPos(), text, 기준값[0] + 단계 * 기준값[1]):
+                로그(f"[붙임 내어쓰기] 번호 정렬을 건너뜀: {text.strip()[:60]}")
+        elif (문단_내어쓰기_기준_오프셋(text) is not None
                 and 내어쓰기_기호선택_허용(text)):
             문단_내어쓰기_적용(hwp.GetPos(), text)
         if not 범위_다음_문단으로_진행():
             break
     return True
+
+
+def _붙임목록_내어쓰기_대상수집():
+    """문서 맨 끝의 번호 붙임 묶음만 훑어 편람식 항목 단계별 들여쓰기 대상을 수집한다."""
+    paragraphs = []
+    original = hwp.GetPos()
+    try:
+        순회_시작()
+        while True:
+            paragraphs.append((tuple(hwp.GetPos()[:2]), 현재문단_텍스트()))
+            if not 범위_다음_문단으로_진행():
+                break
+    finally:
+        try:
+            hwp.SetPos(*original)
+        except Exception:
+            pass
+    blocks = 끝붙임번호묶음_찾기([text for _, text in paragraphs])
+    targets = {}
+    for start, end in blocks:
+        anchor = paragraphs[start]
+        for 단계, index in enumerate(range(start, end + 1)):
+            key = paragraphs[index][0]
+            targets[key] = (anchor, 단계)
+    return targets
+
+
+def _붙임번호_기준위치_실측(문단_시작위치, text):
+    """첫 번호 위치와 편람의 2타 들여쓰기 폭을 글꼴 기준으로 실측한다."""
+    offset = 붙임번호_오프셋(text)
+    if offset is None:
+        return None
+    original_pos = hwp.GetPos()
+    begin = None
+    original_indent = None
+    try:
+        hwp_run("Cancel")
+        hwp.SetPos(*문단_시작위치)
+        hwp_run("MoveParaBegin")
+        begin = hwp.GetPos()
+        original_indent = hwp.ParaShape.Item("Indentation")
+        left = int(hwp.ParaShape.Item("LeftMargin"))
+        _내어쓰기_값_설정(0)
+        hwp.SetPos(*begin)
+        hwp_run("MoveLineEnd")
+        end = hwp.GetPos()
+        units = len(text[:offset].encode("utf-16-le")) // 2
+        target = (begin[0], begin[1], begin[2] + units)
+        if end[:2] != begin[:2] or target[2] >= end[2]:
+            return None
+        if hwp.SetPos(*target) is False or tuple(hwp.GetPos()) != target:
+            return None
+        if hwp_run("ParagraphShapeIndentAtCaret") is False:
+            return None
+        prefix_width = _캐럿위치_폭_실측(begin, offset)
+        prefix_without_gap = len(text[:offset].rstrip(" \t\u00a0\u3000"))
+        label_width = _캐럿위치_폭_실측(begin, prefix_without_gap)
+        if prefix_width is None or label_width is None or prefix_width <= label_width:
+            return None
+        return left + prefix_width, prefix_width - label_width
+    except Exception as e:
+        로그(f"붙임 번호 기준점 실측 실패: {e}")
+        return None
+    finally:
+        if original_indent is not None and begin is not None:
+            try:
+                hwp.SetPos(*begin)
+                _내어쓰기_값_설정(original_indent)
+            except Exception:
+                pass
+        try:
+            hwp.SetPos(*original_pos)
+        except Exception:
+            pass
+
+
+def _붙임목록_번호_내어쓰기_적용(문단_시작위치, text, 기준위치):
+    """번호 위치를 편람 계층(항목마다 2타 증가)에 맞추고 꺾인 줄은 내용에 맞춘다."""
+    offset = 붙임번호_오프셋(text)
+    if hwp is None or offset is None:
+        return False
+    original_pos = None
+    original_indent = None
+    original_left = None
+    begin = None
+    changed = False
+    try:
+        original_pos = hwp.GetPos()
+        hwp_run("Cancel")
+        if hwp.SetPos(*문단_시작위치) is False:
+            raise RuntimeError("붙임 항목 문단 이동 실패")
+        hwp_run("MoveParaBegin")
+        begin = hwp.GetPos()
+        original_indent = hwp.ParaShape.Item("Indentation")
+        original_left = hwp.ParaShape.Item("LeftMargin")
+        _내어쓰기_값_설정(0)
+        changed = True
+        prefix_width = _캐럿위치_폭_실측(begin, offset) if offset else 0
+        marker_end = text.find(".", offset) + 1
+        marker_width = _캐럿위치_폭_실측(begin, marker_end)
+        if marker_width is None or marker_width <= 0 or prefix_width is None:
+            raise RuntimeError("번호 마커 폭 실측 실패")
+        target_left = 기준위치 - prefix_width + marker_width
+        target_indent = -marker_width
+        action = hwp.CreateAction("ParagraphShape")
+        params = action.CreateSet()
+        params.SetItem("LeftMargin", target_left)
+        params.SetItem("Indentation", target_indent)
+        if action.Execute(params) is False:
+            raise RuntimeError("붙임 번호 내어쓰기 설정 실패")
+        if (int(hwp.ParaShape.Item("LeftMargin")) != target_left
+                or int(hwp.ParaShape.Item("Indentation")) != target_indent):
+            raise RuntimeError("붙임 번호 내어쓰기 값 검증 실패")
+        if (int(original_left) != target_left or int(original_indent) != target_indent):
+            내어쓰기_변경문단.add(tuple(begin[:2]))
+        진단로그(f"[붙임 내어쓰기] 번호 오프셋 {offset}: {text.strip()[:60]}")
+        return True
+    except Exception as e:
+        if changed and original_indent is not None and begin is not None:
+            try:
+                hwp.SetPos(*begin)
+                action = hwp.CreateAction("ParagraphShape")
+                params = action.CreateSet()
+                params.SetItem("LeftMargin", original_left)
+                params.SetItem("Indentation", original_indent)
+                action.Execute(params)
+            except Exception as restore_error:
+                로그(f"붙임 내어쓰기 원래 값 복원 실패: {restore_error}")
+        로그(f"붙임 번호 내어쓰기 실패(건너뜀): {e}")
+        return False
+    finally:
+        if original_pos is not None:
+            try:
+                hwp.SetPos(*original_pos)
+            except Exception:
+                pass
 
 
 
@@ -12465,7 +12630,10 @@ def 공문_띄어쓰기_정리_문단_처리():
     text = 현재문단_텍스트()
     if not text:
         return 0
-    spans = text_edit_spans(text, normalize_official_spacing(text))
+    normalized = normalize_official_spacing(text)
+    if normalize_attachment_list_header(text) != text:
+        normalized = normalize_attachment_list_header(normalized)
+    spans = text_edit_spans(text, normalized)
     if not spans:
         return 0
     문단_시작위치 = hwp.GetPos()
@@ -15132,11 +15300,14 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
     if 검수_사용 and 원본_구조 is not None:
         결과_구조 = inspect_hwpx(저장파일)
         무결성 = compare_documents(원본_구조, 결과_구조)
-        보고서경로 = Path(저장파일).with_name(Path(저장파일).stem + "(무결성검사).json")
-        보고서경로.write_text(json.dumps(무결성, ensure_ascii=False, indent=2), encoding="utf-8")
+        보고서경로 = None
+        if 무결성보고서파일_사용:
+            보고서경로 = Path(저장파일).with_name(Path(저장파일).stem + "(무결성검사).json")
+            보고서경로.write_text(json.dumps(무결성, ensure_ascii=False, indent=2), encoding="utf-8")
         로그(
             f"문서 무결성 검사: {'통과' if 무결성['ok'] else '확인 필요'} / "
-            f"본문 일치도 {무결성['text_similarity']:.1%} / 보고서 {보고서경로.name}"
+            f"본문 일치도 {무결성['text_similarity']:.1%} / "
+            f"보고서 {보고서경로.name if 보고서경로 else '파일 저장 안 함'}"
         )
         for 문제 in 무결성["issues"]:
             로그(f"  - [{문제['severity']}] {문제['message']}")
@@ -15221,6 +15392,8 @@ def 작업_실행(
     반복횟수=1,
     시작_인덱스=1,
     준말_등록=None,  # 화면이 위치 인자로 호출하므로 새 매개변수는 항상 맨 끝에만 추가한다.
+    무결성보고서파일=True,
+    최종검수파일=True,
 ):
     global 작업_모드, 문두라벨_기호설정
     global 표_자간조정_사용, 쪽범위_요청, 로그파일_사용
@@ -15228,6 +15401,7 @@ def 작업_실행(
     global 제목4종_사용, 붙임2종_사용, 중제목_사용, 중제목_번호굵게, 준말_등록표
     global hwp, 색상_설정, 비교보기_사용, 비교보기_좌측_프레임_hwnd, 비교보기_우측_프레임_hwnd, 로그_파일_경로
     global 작업_hwp_hwnd, 자동닫기_설정, 표준서식_사용, 검수_사용, 검수_문제목록, 최종검수_문서목록
+    global 무결성보고서파일_사용, 최종검수보고서파일_사용
     global 서식통일_빨간표시_사용, 표준서식_선행_사용
     global 문장부호_2줄_기준글자수, 문장부호_통계, 자간_최대시도_본문, 자간_최대시도_표
     global 세트문장_같은쪽_사용, 세트문장_통계, 단어분리_통계, 다음단어_통계
@@ -15262,6 +15436,8 @@ def 작업_실행(
         문두라벨_기호설정.update(라벨기호설정 or {})
         total = len(파일목록)
         검수_사용 = bool(검수)
+        무결성보고서파일_사용 = bool(무결성보고서파일)
+        최종검수보고서파일_사용 = bool(최종검수파일)
         로그파일_사용 = bool(로그파일)
         if 파일목록 and 로그파일_사용:
             로그_파일_경로 = str(Path(파일목록[0]).with_name(
@@ -15452,14 +15628,17 @@ def 작업_실행(
                 verification_enabled=검수_사용,
             )
             최종검수['optional_optimizations'] = {'next_word_pull': dict(다음단어_통계)}
-            검수보고서 = Path(파일목록[0]).with_name(
-                Path(파일목록[0]).stem + "(최종검수).json"
-            )
-            write_evaluation_report(최종검수, 검수보고서)
+            검수보고서 = None
+            if 최종검수보고서파일_사용:
+                검수보고서 = Path(파일목록[0]).with_name(
+                    Path(파일목록[0]).stem + "(최종검수).json"
+                )
+                write_evaluation_report(최종검수, 검수보고서)
             로그("=" * 45)
             로그(
                 f"작업 수행 점수: {최종검수['score']:.1f}/100 / "
-                f"판정 {최종검수['verdict']} / 보고서 {검수보고서.name}"
+                f"판정 {최종검수['verdict']} / "
+                f"보고서 {검수보고서.name if 검수보고서 else '파일 저장 안 함'}"
             )
             for 기준 in 최종검수["criteria"]:
                 점수 = f"{기준['score']:.1f}%" if 기준["applicable"] else "해당 없음"
@@ -15470,7 +15649,7 @@ def 작업_실행(
                 로그(f"  - 참고: {참고}")
             상태("모든 작업 완료")
             gui_queue.put(("finished", 성공, 실패, 총작업_대상, 총작업_성공, 총작업_실패,
-                           최종검수, str(검수보고서)))
+                           최종검수, str(검수보고서) if 검수보고서 else None))
 
     except Exception as e:
         traceback.print_exc()
@@ -15796,6 +15975,10 @@ class HwpAutoDocFitGUI:
         서식통일_결과창_반영(self.unify_result_window_var.get())
         self.stdformat_var = tk.BooleanVar(value=bool(저장된_설정["stdformat"]))
         self.verify_var = tk.BooleanVar(value=bool(저장된_설정["verify"]))
+        self.integrity_report_file_var = tk.BooleanVar(
+            value=bool(저장된_설정.get("integrity_report_file", True)))
+        self.final_review_file_var = tk.BooleanVar(
+            value=bool(저장된_설정.get("final_review_file", True)))
         self.two_pass_var = tk.BooleanVar(value=bool(저장된_설정.get("two_pass_processing", False)))
         self.table_spacing_var = tk.BooleanVar(value=bool(저장된_설정.get("table_spacing", True)))
         self.log_file_var = tk.BooleanVar(value=bool(저장된_설정.get("log_file", False)))
@@ -15877,7 +16060,8 @@ class HwpAutoDocFitGUI:
         for 변수 in ([self.prevent_word_split_var, self.punctuation_var, self.punctuation_threshold_var, self.keep_punctuation_set_var,
                      self.color_mark_on_var, self.color_var,
                      self.autoclose_var, self.unify_result_window_var,
-                     self.stdformat_var, self.verify_var, self.two_pass_var,
+                     self.stdformat_var, self.verify_var, self.integrity_report_file_var,
+                     self.final_review_file_var, self.two_pass_var,
                      self.table_spacing_var, self.log_file_var, self.check_updates_on_start_var,
                      self.developer_mode_var,
                      self.retry_body_var, self.retry_table_var, self.paren_shrink_var,
@@ -19977,12 +20161,32 @@ class HwpAutoDocFitGUI:
             self.clear_button.config(state="disabled")
         log_file_box = ttk.LabelFrame(log_tab, text="로그 파일", padding=10)
         log_file_box.pack(fill="x", pady=(16, 0))
-        self.log_file_check = ttk.Checkbutton(log_file_box, text="로그 파일 만들기", variable=self.log_file_var)
+        self.log_file_check = ttk.Checkbutton(log_file_box, text="작업로그 파일 만들기", variable=self.log_file_var)
         self.log_file_check.pack(anchor="w")
         ttk.Label(log_file_box, text="기본값은 꺼짐입니다. 켜면 다음 작업부터 처리 기록을 ‘문서이름(작업로그-날짜시간).log’ 파일로\n첫 번째 문서와 같은 폴더에 저장합니다. 작업 중에는 바꿀 수 없어요.",
                   style="Hint.TLabel", wraplength=680).pack(anchor="w", padx=(22, 0), pady=(2, 0))
         if self.running:
             self.log_file_check.config(state="disabled")
+        report_box = ttk.LabelFrame(log_tab, text="검사·검수 보고서", padding=10)
+        report_box.pack(fill="x", pady=(12, 0))
+        self.integrity_report_file_check = ttk.Checkbutton(
+            report_box, text="무결성검사 JSON 파일 만들기", variable=self.integrity_report_file_var)
+        self.integrity_report_file_check.pack(anchor="w")
+        ttk.Label(
+            report_box,
+            text="문서 탭의 ‘상세 진단 및 문서 무결성 검사’를 켰을 때 검사 결과를 저장합니다.\n"
+                 "끄면 검사는 수행해도 (무결성검사).json 파일은 만들지 않습니다.",
+            style="Hint.TLabel", wraplength=680).pack(anchor="w", padx=(22, 0), pady=(2, 8))
+        self.final_review_file_check = ttk.Checkbutton(
+            report_box, text="최종검수 JSON 파일 만들기", variable=self.final_review_file_var)
+        self.final_review_file_check.pack(anchor="w")
+        ttk.Label(
+            report_box,
+            text="작업 목표 기준의 평가 파일을 저장합니다. 끄더라도 앱 안의 완료 결과·점수 표시는 유지됩니다.",
+            style="Hint.TLabel", wraplength=680).pack(anchor="w", padx=(22, 0), pady=(2, 0))
+        if self.running:
+            self.integrity_report_file_check.config(state="disabled")
+            self.final_review_file_check.config(state="disabled")
         footer = ttk.Frame(self.settings_toplevel, padding=(18, 12))
         footer.pack(fill="x")
         ttk.Label(footer, text="만든 이 : 도토리만두", style="Hint.TLabel").pack(side="left")
@@ -20047,6 +20251,8 @@ class HwpAutoDocFitGUI:
                 "unify_result_window": bool(self.unify_result_window_var.get()),
                 "stdformat": bool(self.stdformat_var.get()),
                 "verify": bool(self.verify_var.get()),
+                "integrity_report_file": bool(self.integrity_report_file_var.get()),
+                "final_review_file": bool(self.final_review_file_var.get()),
                 "two_pass_processing": bool(self.two_pass_var.get()),
                 "table_spacing": bool(self.table_spacing_var.get()),
                 "log_file": bool(self.log_file_var.get()),
@@ -20215,6 +20421,8 @@ class HwpAutoDocFitGUI:
         self.unify_result_window_var.set(기본_설정["unify_result_window"])
         self.stdformat_var.set(기본_설정["stdformat"])
         self.verify_var.set(기본_설정["verify"])
+        self.integrity_report_file_var.set(기본_설정["integrity_report_file"])
+        self.final_review_file_var.set(기본_설정["final_review_file"])
         self.two_pass_var.set(기본_설정["two_pass_processing"])
         self.table_spacing_var.set(기본_설정["table_spacing"])
         self.log_file_var.set(기본_설정["log_file"])
@@ -20602,6 +20810,8 @@ class HwpAutoDocFitGUI:
         for check in self.label_symbol_checks:
             check.config(state="disabled")
         self.verify_check.config(state="disabled")
+        self.integrity_report_file_check.config(state="disabled")
+        self.final_review_file_check.config(state="disabled")
 
     def 버튼_대기중(self):
         for widget in self.mode_buttons + self.file_buttons + self.preset_buttons + [self.tools_button, self.proofread_button, self.stage_details_button, self.reset_button, self.update_button]:
@@ -20636,6 +20846,8 @@ class HwpAutoDocFitGUI:
         self.paren_shrink_check.config(state="normal")
         self.paren_label_bold_check.config(state="normal")
         self.verify_check.config(state="normal")
+        self.integrity_report_file_check.config(state="normal")
+        self.final_review_file_check.config(state="normal")
         self._색상표시_상태_갱신()
         self._표준서식_하위옵션_상태_갱신()
 
@@ -20867,6 +21079,9 @@ class HwpAutoDocFitGUI:
                 세부작업,
                 2 if self.two_pass_var.get() else 1,
                 시작_인덱스,
+                None,
+                self.integrity_report_file_var.get(),
+                self.final_review_file_var.get(),
             ),
             daemon=True
         )
@@ -21361,7 +21576,10 @@ class HwpAutoDocFitGUI:
                             )
                             if 최종검수["blockers"]:
                                 안내문 += "\n확인사항: " + ", ".join(최종검수["blockers"])
-                            안내문 += f"\n보고서: {item[7]}"
+                            if item[7]:
+                                안내문 += f"\n보고서: {item[7]}"
+                            else:
+                                안내문 += "\n최종 검수 파일은 저장하지 않았습니다."
                         self._알림(messagebox.showinfo, APP_NAME, 안내문)
                 elif event == "fatal_error":
                     self.running = False

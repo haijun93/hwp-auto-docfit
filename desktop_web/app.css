@@ -12,4 +12,8 @@
 .workspace{padding-bottom:88px}
 .result-status>span.neutral{background:#f2f4f7;color:#7a818a}
 @media (min-width:681px) and (max-height:900px){.stepper{margin-top:10px}.workspace{padding-top:14px}.page-heading{margin-bottom:10px}.page-heading h1{font-size:25px}.panel{padding:14px}.mode-grid{gap:8px}.mode-card{min-height:88px;padding:10px 14px}.mode-selected{margin-top:6px;padding:7px 2px}.range-box{margin-top:0}}
+.button.is-next-action{background:#008f6b;border-color:#007e5e;color:#fff;box-shadow:0 4px 14px rgba(0,143,107,.28)}
+.button.is-next-action:hover:not(:disabled){background:#00785a;border-color:#006c51;box-shadow:0 5px 17px rgba(0,120,90,.34)}
+.button.is-next-action:focus-visible{outline-color:#70dfbc}
+@media(max-width:390px){.action-bar #nextButton,.action-bar #nextJobButton{min-width:112px;padding-inline:9px}}
 
