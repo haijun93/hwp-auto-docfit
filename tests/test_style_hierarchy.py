@@ -12,6 +12,10 @@ class StyleHierarchyTest(unittest.TestCase):
         self.assertEqual(normalize_leading_dot("서울·경기"), "서울·경기")
         self.assertEqual(normalize_leading_dot("·붙은 문장"), "·붙은 문장")
 
+    def test_square_markers_share_identity(self):
+        self.assertEqual(leading_marker("□ 제목"), ("□", "소제목"))
+        self.assertEqual(leading_marker("ㅁ 제목"), ("□", "소제목"))
+
     def test_two_marker_systems(self):
         cases = {"Ⅰ 총괄": "중제목", "□ 사업": "소제목", "ㅇ 목적": "본문",
                  "- 실행": "내용", "** 참고": "부연설명", "가. 총괄": "중제목",

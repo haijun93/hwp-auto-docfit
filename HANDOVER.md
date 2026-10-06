@@ -25,7 +25,7 @@
 - **Windows 전용**. 한/글 2020이 설치되어 있고 COM 객체 `HwpFrame.HwpObject`를 쓸 수 있어야 실제 문서 처리가 됩니다. 주 화면에는 WebView2 런타임이 필요하며, 사용할 수 없으면 기존 Tk 화면으로 대체합니다.
 - **Python 3.14** 가상환경: `.venv\Scripts\python.exe` (의존성: `requirements.txt` — pywin32, tkinterdnd2, defusedxml, pywebview)
 - 보안 모듈 `MapoHwpAutoDocFitSecurity.dll`이 `hwp-auto-docfit.py`와 같은 폴더에 있어야 합니다(한/글 자동화 보안 승인용, 앱이 최초 실행 시 등록).
-- 저장소 경로에 **한글과 공백**이 있습니다(`C:\Users\haiju\OneDrive\바탕 화면\HWP_AutoDocFit\mapo-agent-1`). 셸 명령에서는 항상 따옴표로 감싸세요.
+- 저장소 경로에 **한글과 공백**이 있을 수 있습니다(예: `C:\Users\<사용자명>\OneDrive\바탕 화면\HWP_AutoDocFit\mapo-agent-1`). 셸 명령에서는 항상 따옴표로 감싸세요.
 - 실행: `.venv\Scripts\python.exe hwp-auto-docfit.py` (pywebview가 있으면 WebView2 UI, 그렇지 않으면 Tk UI)
 - 모듈 임포트 시 `docfit_core`를 찾도록 저장소 루트에서 실행하거나 `PYTHONPATH=.`을 지정하세요.
 - 콘솔 한글 깨짐 방지: `PYTHONIOENCODING=utf-8`
@@ -158,12 +158,12 @@ Flutter UI 빌드는 `powershell -File build_flutter.ps1`로 수행하며 `build
    - 자동 업데이트는 버전 문자열의 숫자 3개로 비교합니다(`_버전_튜플`: "1.68 Beta 2" → (1, 68, 2)).
    - 그래서 1.69 다음 정식판은 '1.7'이 아니라 **'1.70'**입니다('1.7' → (1, 7, 0)은 1.69보다 낮아 기존 앱이 업데이트를 알리지 않음).
 3. 전체 테스트 통과 확인 → 커밋 → `git push github main` → `git push origin main`.
-4. **exe 빌드**: GitHub CI는 빌드 브랜치 `claude/affectionate-goldberg-ggln7c` 푸시 때만 돕니다.
+4. **exe 빌드**: GitHub CI는 빌드 브랜치 `claude/affectionate-goldberg-ggln7c` 푸시 때만 돕니다. 배포용 실행 파일은 메인 `HWP_AutoDocFit.exe` 하나이며 설정 초기화 도구는 릴리스에 포함하지 않습니다.
    - 먼저 `git fetch github` 후 그 브랜치에만 있는 문서·스킬 변경(다른 세션이 남긴 `TODO.md` 등)이 있으면 `main`으로 가져옵니다(CI exe 커밋은 제외).
    - 강제 푸시 없이 `git commit-tree "main^{tree}" -p github/claude/affectionate-goldberg-ggln7c -m "…"`로 main과 같은 내용의 커밋을 얹어 푸시합니다.
-   - CI가 `Update built HWP_AutoDocFit.exe from CI run …` 커밋을 올리면(보통 5~10분) 그 커밋을 `main`에 cherry-pick.
+   - CI가 `Update built exes from CI run …` 커밋을 올리면(보통 5~10분) 그 커밋을 `main`에 cherry-pick.
 5. exe를 실제로 실행해 창 제목의 버전을 확인 → `sha256sum release-assets/HWP_AutoDocFit.exe` 값을 릴리스 노트에 대문자로 기록 → 커밋·푸시(두 원격).
-6. **태그**: `git tag -a vX.Y-beta.N -m "…"` → `git push github <태그>` → `git push origin <태그>`. GitLab CI(`release-windows`)가 릴리스와 exe 첨부를 자동으로 만듭니다(토큰 불필요). 두 릴리스 모두 `release-assets/보고서 예시 파일(한번에 적용).txt`(한 번에 적용 시험용 예시)도 첨부합니다. GitHub 릴리스는 `.github/workflows/github-release.yml`이 태그 푸시 때 `releases/<태그>.md`와 `release-assets/HWP_AutoDocFit.exe`로 만듭니다(2026-10-04 전에는 없어 GitHub 릴리스가 beta.3에 멈춰 있었음).
+6. **태그**: `git tag -a vX.Y-beta.N -m "…"` → `git push github <태그>` → `git push origin <태그>`. GitLab CI(`release-windows`)가 메인 exe·시험용 텍스트·통합 압축팩을, GitHub 릴리스가 메인 exe·통합 압축팩을 자동 첨부합니다. 설정 초기화 exe는 배포하지 않습니다.
 7. 확인: `https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest`가 새 태그를 가리키는지, 내려받은 exe 해시가 노트와 같은지.
 
 ---
@@ -211,7 +211,7 @@ Flutter UI 빌드는 `powershell -File build_flutter.ps1`로 수행하며 `build
 | `bd0b83b` | 작업 유형 4가지 분리(서식 통일 독립) |
 | `cf9464c` | **1.68 Beta 2** 버전 |
 
-검증 데이터: `C:\Users\haiju\OneDrive\바탕 화면\111\테스트 문서`(25개 문서). 스타일 분석·예시 서식 생성 25/25, 한/글 열기 25/25, 예시 재분석 시 서식 일치 21/25(큰 문서 4개는 원본 안에서도 값이 갈려 요약 한계).
+검증 데이터: 로컬 테스트 문서 폴더(예: `C:\Users\<사용자명>\OneDrive\바탕 화면\111\테스트 문서`, 25개 문서). 스타일 분석·예시 서식 생성 25/25, 한/글 열기 25/25, 예시 재분석 시 서식 일치 21/25(큰 문서 4개는 원본 안에서도 값이 갈려 요약 한계).
 
 ---
 

@@ -4,12 +4,16 @@ from collections import Counter, defaultdict
 import re
 
 
-# 문두에서 쓰인 점 계열 기호는 하나의 서식 항목으로 취급한다.
+# 문두의 점 계열 기호와 □·ㅁ는 각각 하나의 서식 항목으로 취급한다.
 DOT_MARKERS = frozenset("•·‧∙⋅ㆍ●")
 
 
 def canonical_marker(marker):
-    return "•" if marker in DOT_MARKERS else marker
+    if marker in DOT_MARKERS:
+        return "•"
+    if marker in {"□", "ㅁ"}:
+        return "□"
+    return marker
 
 
 def normalize_leading_dot(text):

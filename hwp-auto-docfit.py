@@ -360,7 +360,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리"
-APP_VERSION = "1.70"
+APP_VERSION = "1.72 Beta 3"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 UPDATE_ASSET_NAME = "HWP_AutoDocFit.exe"
@@ -1061,6 +1061,9 @@ def 서식_기본값_전역_복원():
 # 맞추는 데 필요한 문단은 어차피 마지막 몇 쪽에 몰려 있으므로 문서
 # 전체를 훑을 필요가 없다 — 긴 문서일수록 이 제한의 효과가 커진다.
 페이지맞춤_뒤쪽범위_쪽수 = 2
+# 문서 세로 조정(페이지 수 맞춤) 시 표 셀의 상하 안쪽 여백도 함께 비례 축소한다.
+페이지맞춤_표셀세로여백_사용 = True
+페이지맞춤_표셀세로여백_최소_pt = 0.0
 
 문장부호_통계 = {"대상": 0, "성공": 0, "실패": 0}
 세트문장_통계 = {"대상": 0, "성공": 0, "실패": 0, "축소횟수": 0, "확대횟수": 0}
@@ -4405,6 +4408,8 @@ _세부단계_단계매핑 = {
     "최종 서식 기준 내어쓰기": "서식",
     "문두 라벨/괄호 서식": "서식",
     "부연설명 들여쓰기": "서식",
+    "별표(**) 정렬": "서식",
+    "자간 조정 후 별표(**) 정렬": "자간",
     "표 서식": "서식",
     "개요·한 칸 표 자간 조정": "자간",
     "제목·개요·붙임 선행 서식": "서식",
@@ -5114,7 +5119,11 @@ def 복사_내어쓰기_규칙(text):
     if not rules:
         return None
     marker, _ = leading_marker(text)
-    return rules.get(marker) or rules.get(서식요소.unify_marker(text)[0])
+    rule = rules.get(marker) or rules.get(서식요소.unify_marker(text)[0])
+    if rule is None and marker == "**":
+        # ** 전용 규칙이 없으면 대표 기호 *의 내어쓰기 규칙을 그대로 상속한다.
+        rule = rules.get("*")
+    return rule
 
 
 def 문단_내어쓰기_기준_오프셋(text):
@@ -5582,19 +5591,41 @@ def _부연설명_들여쓰기_적용(문단_시작, text, 목표_위치, 여분
         if w_lead is None:
             로그(f"부연설명 들여쓰기 건너뜀(선행 공백 폭 실측 실패): {text.strip()[:40]}")
             return None
-    margin = max(0, int(목표_위치) - int(w_lead))
+    필요_여백 = int(목표_위치) - int(w_lead)
+    공백_삭제됨 = False
+    cur_text = text
+    # **처럼 여분 글자가 있어 왼쪽여백이 음수가 되는 경우 앞 빈칸을 삭제해 맞춘다
+    while 필요_여백 < 0 and _선행공백_길이(cur_text) > 0 and 여분_글자수 > 0:
+        if cur_text and cur_text[0] in (" ", "\u00a0"):
+            if 문단_범위_선택(문단_시작, 0, 1) is False:
+                break
+            if hwp_run("Delete") is False:
+                break
+            공백_삭제됨 = True
+            hwp.SetPos(*문단_시작)
+            cur_text = 현재문단_텍스트()
+            lead = _선행공백_길이(cur_text) + 여분_글자수
+            w_lead = _캐럿위치_폭_실측(문단_시작, lead)
+            if w_lead is None:
+                break
+            필요_여백 = int(목표_위치) - int(w_lead)
+        else:
+            break
+    margin = max(0, 필요_여백)
     try:
         hwp.SetPos(*문단_시작)
         hwp_run("MoveParaBegin")
-        if int(hwp.ParaShape.Item("LeftMargin")) == margin:
+        기존_여백 = int(hwp.ParaShape.Item("LeftMargin"))
+        if 기존_여백 == margin and not 공백_삭제됨:
             return False
-        act = hwp.CreateAction("ParagraphShape")
-        pset = act.CreateSet()
-        pset.SetItem("LeftMargin", margin)
-        if act.Execute(pset) is False:
-            raise RuntimeError("왼쪽여백 설정 실패")
+        if 기존_여백 != margin:
+            act = hwp.CreateAction("ParagraphShape")
+            pset = act.CreateSet()
+            pset.SetItem("LeftMargin", margin)
+            if act.Execute(pset) is False:
+                raise RuntimeError("왼쪽여백 설정 실패")
         진단로그(f"[부연설명 들여쓰기] 목표 위치 {목표_위치}, 선행 폭 {w_lead} → "
-                 f"왼쪽여백 {margin}: {text.strip()[:50]}")
+                 f"왼쪽여백 {margin}{'(앞 공백 삭제)' if 공백_삭제됨 else ''}: {cur_text.strip()[:50]}")
         return True
     except Exception as e:
         로그(f"부연설명 들여쓰기 적용 실패(무시): {e}")
@@ -5680,6 +5711,139 @@ def 부연설명_들여쓰기_전체_적용(부모대상=None):
         로그(f"부연설명 들여쓰기 적용 완료 (적용 {적용수}건)")
     return True
 
+
+def _별표_위치_실측(문단_시작, text):
+    """* 문단에서 별표(*) 기호의 실제 가로 위치를 측정한다(왼쪽여백 + 선행 공백 폭)."""
+    if hwp is None or not text:
+        return None
+    try:
+        hwp.SetPos(*문단_시작)
+        hwp_run("MoveParaBegin")
+        left_margin = int(hwp.ParaShape.Item("LeftMargin"))
+        lead = _선행공백_길이(text)
+        w_lead = 0
+        if lead > 0:
+            w_lead = _캐럿위치_폭_실측(문단_시작, lead)
+            if w_lead is None:
+                return None
+        return left_margin + w_lead
+    except Exception as e:
+        진단로그(f"[별표 위치 실측 실패]: {e}")
+        return None
+
+
+def _별표_정렬_적용(문단_시작, text, 목표_별표_위치):
+    """** 문단의 둘째 별표 위치를 바로 앞줄 *의 목표_별표_위치에 맞춘다.
+
+    필요시 앞 빈칸을 삭제하고, 남은 차이는 왼쪽여백으로 보정한다.
+    바뀌었으면 True, 이미 같으면 False, 실패하면 None.
+    """
+    if hwp is None or 현재_한칸표인가():
+        return False
+    try:
+        hwp.SetPos(*문단_시작)
+        hwp_run("MoveParaBegin")
+        cur_text = 현재문단_텍스트() or text
+        lead = _선행공백_길이(cur_text)
+        w_lead = _캐럿위치_폭_실측(문단_시작, lead + 1)
+        if w_lead is None:
+            return None
+
+        필요_여백 = int(목표_별표_위치) - int(w_lead)
+        공백_삭제됨 = False
+
+        # 선행 공백이 있고, 필요 여백이 음수이면(두 번째 별표가 오른쪽에 치우침) 앞 빈칸 삭제.
+        # 단, 글꼴의 미세 폭 오차(예: 공백 693 vs 별표 774의 수십 HWPUNIT 차이)로
+        # 정상 공백이 과도하게 삭제되지 않도록, 공백 1칸의 절반(약 300 HWPUNIT) 이상 음수일 때만 삭제한다.
+        while 필요_여백 <= -300 and _선행공백_길이(cur_text) > 0:
+            if cur_text and cur_text[0] in (" ", "\u00a0"):
+                if 문단_범위_선택(문단_시작, 0, 1) is False:
+                    break
+                if hwp_run("Delete") is False:
+                    break
+                공백_삭제됨 = True
+                hwp.SetPos(*문단_시작)
+                cur_text = 현재문단_텍스트()
+                lead = _선행공백_길이(cur_text)
+                w_lead = _캐럿위치_폭_실측(문단_시작, lead + 1)
+                if w_lead is None:
+                    break
+                필요_여백 = int(목표_별표_위치) - int(w_lead)
+            else:
+                break
+
+        margin = max(0, 필요_여백)
+        hwp.SetPos(*문단_시작)
+        hwp_run("MoveParaBegin")
+        기존_여백 = int(hwp.ParaShape.Item("LeftMargin"))
+        여백_변경됨 = False
+        if 기존_여백 != margin:
+            act = hwp.CreateAction("ParagraphShape")
+            pset = act.CreateSet()
+            pset.SetItem("LeftMargin", margin)
+            if act.Execute(pset) is False:
+                raise RuntimeError("왼쪽여백 설정 실패")
+            여백_변경됨 = True
+
+        if 공백_삭제됨 or 여백_변경됨:
+            진단로그(f"[별표(**) 정렬] 목표 {목표_별표_위치}, 폭 {w_lead} → 여백 {margin}"
+                     f"{'(앞 공백 삭제)' if 공백_삭제됨 else ''}: {cur_text.strip()[:40]}")
+            # 공백이나 여백이 바뀌었으면 내어쓰기(Shift+Tab)도 새 본문 시작점에 맞게 갱신
+            if 표준서식_내어쓰기_사용 and stage_enabled(선택_세부작업, 'hanging_indent'):
+                hwp.SetPos(*문단_시작)
+                문단_내어쓰기_적용(문단_시작, cur_text)
+            return True
+        return False
+    except Exception as e:
+        로그(f"별표(**) 정렬 적용 실패(무시): {e}")
+        return None
+
+
+def 별표_정렬_전체_적용():
+    """문서 내 *(주석1) 바로 뒤에 오는 **(주석2)의 둘째 별표 위치를 *에 맞춘다.
+
+    '부연설명 들여쓰기' 설정(기본 꺼짐)과 분리하여 항상 실행하며,
+    필요시 ** 앞의 선행 공백을 지워 정확히 정렬한다.
+    문단 사이의 빈 문단(줄바꿈 공백줄)은 단락 간 여백이므로 별표 연쇄를 끊지 않는다.
+    """
+    if hwp is None:
+        return True
+    if 중단_요청됨():
+        return False
+    순회_시작()
+    직전_별표_위치 = None
+    적용수 = 0
+
+    while True:
+        if 중단_요청됨():
+            return False
+        hwp_run("MoveParaBegin")
+        문단_시작 = hwp.GetPos()
+        text = 현재문단_텍스트()
+
+        if text and text.strip():
+            marker, _ = leading_marker(text)
+            if marker == "*":
+                직전_별표_위치 = _별표_위치_실측(문단_시작, text)
+            elif marker == "**":
+                if 직전_별표_위치 is not None:
+                    결과 = _별표_정렬_적용(문단_시작, text, 직전_별표_위치)
+                    if 결과:
+                        적용수 += 1
+                        내어쓰기_변경문단.add(tuple(문단_시작[:2]))
+                직전_별표_위치 = None
+            else:
+                # 일반 본문이나 다른 구조 기호(※, -, □ 등)가 끼면 별표 연쇄를 끊는다
+                직전_별표_위치 = None
+        # 빈 문단(공백 줄)은 줄바꿈 여백이므로 직전_별표_위치를 유지한다.
+
+        if not 범위_다음_문단으로_진행():
+            break
+
+    if 적용수:
+        로그(f"별표(**) 정렬 완료 (적용 {적용수}건)")
+    return True
+
 def _mm_hwpunit(mm):
     """mm → HWPUNIT(반올림). 한/글 MiliToHwpUnit은 소수를 버려 예시 여백 4252가 4251로 들어갔다(2026-10-04)."""
     return int(round(float(mm) * 7200 / 25.4))
@@ -5757,6 +5921,8 @@ def 들여쓰기_공백_맞추기(목표_공백수):
     # 있었다(공문서_기호·문단위간격_찾기에서도 이미 같은 기호로 취급 중).
     # 오타로 들어간 경우에도 서식이 깨지지 않도록 별칭으로 남겨 둔다.
     "○": "ㅇ",
+    # 네모(ㅁ)는 □와 같은 문두기호로 취급한다.
+    "ㅁ": "□",
     # **(주석2)는 *(주석1)와 같은 대표 기호로 묶는다(별표 하나짜리 규칙을 그대로 씀).
     "**": "*",
     **{marker: "•" for marker in DOT_MARKERS if marker != "•"},
@@ -5905,8 +6071,12 @@ def 표준서식_문단_처리(문단_순번, 헤더_역할=None, 상속_기호_
     )
 
     # 자체 문장부호가 있는 경우에만 표준 선행공백으로 보정한다.
+    # **(주석2)는 둘째 별표가 *(주석1)의 별표와 같은 가로 위치에 오도록 선행 공백을 1칸 적게(공백수 - 1) 둔다.
     if 자체_기호_매칭 and not 표준서식_설정.get("복제_들여쓰기_유지"):
-        들여쓰기_공백_맞추기(자체_기호_매칭[1])
+        목표_공백수 = 자체_기호_매칭[1]
+        if text.lstrip().startswith("**"):
+            목표_공백수 = max(0, 목표_공백수 - 1)
+        들여쓰기_공백_맞추기(목표_공백수)
 
     if 표준서식_장평_사용:
         hwp_run("MoveParaBegin")
@@ -11461,6 +11631,191 @@ def 구조문단_간격_복원(원래값, 위간격=False):
     return 복원수
 
 
+def 셀_세로여백_읽기():
+    """캐럿이 있는 셀의 (셀 여백 사용 여부, 위, 아래) 원래 값(HWPUNIT). 실패 시 None."""
+    if hwp is None:
+        return None
+    try:
+        pset = hwp.HParameterSet.HShapeObject
+        hwp.HAction.GetDefault("TablePropertyDialog", pset.HSet)
+        cell = pset.ShapeTableCell
+        return int(cell.HasMargin), int(cell.MarginTop), int(cell.MarginBottom)
+    except Exception as e:
+        로그(f"셀 세로 여백 읽기 실패(무시): {e}")
+        return None
+
+
+def 셀_세로여백_현재선택(top_hwpunit=None, bottom_hwpunit=None, 원래값=None):
+    """캐럿이 있는 셀의 상하 안쪽 여백을 HWPUNIT으로 설정한다(원래값을 주면 그 값으로 복원)."""
+    if hwp is None:
+        return False
+    try:
+        pset = hwp.HParameterSet.HShapeObject
+        hwp.HAction.GetDefault("TablePropertyDialog", pset.HSet)
+        pset.HSet.SetItem("ShapeType", 3)
+        pset.HSet.SetItem("ShapeCellSize", 0)
+        if 원래값 is not None:
+            pset.ShapeTableCell.HasMargin = int(원래값[0])
+            pset.ShapeTableCell.MarginTop = int(원래값[1])
+            pset.ShapeTableCell.MarginBottom = int(원래값[2])
+        else:
+            pset.ShapeTableCell.HasMargin = 1
+            if top_hwpunit is not None:
+                pset.ShapeTableCell.MarginTop = int(top_hwpunit)
+            if bottom_hwpunit is not None:
+                pset.ShapeTableCell.MarginBottom = int(bottom_hwpunit)
+        return hwp.HAction.Execute("TablePropertyDialog", pset.HSet) is not False
+    except Exception as e:
+        로그(f"셀 세로 여백 적용 실패(무시): {e}")
+        return False
+
+
+def 표_셀_세로여백_일괄조정(스텝, 최소쪽=None, 원래값=None):
+    """최소쪽 이후의 표를 대상으로 셀 세로 여백(위·아래)을 원래 여백에 비례하여
+    스텝(1단계당 페이지맞춤_스텝_pt / 페이지맞춤_최대_pt 비율)만큼 축소한다.
+    실제로 값이 바뀐 셀 수를 반환한다.
+
+    원래값(dict)을 주면 처음 바꾸는 셀의 원래 여백(HasMargin, MarginTop, MarginBottom)을
+    셀 area 번호로 기록해 표_셀_세로여백_복원으로 되돌릴 수 있게 한다.
+    한 칸 표(제목·개요 상자)는 보호하여 건드리지 않는다.
+    """
+    if hwp is None or 중단_요청됨() or not 페이지맞춤_표셀세로여백_사용:
+        return 0
+    if not hasattr(hwp, 'HParameterSet'):
+        return 0
+    최대_pt = max(0.1, float(페이지맞춤_최대_pt))
+    스텝_pt = max(0.1, float(페이지맞춤_스텝_pt))
+    축소비율 = min(1.0, max(0.0, float(스텝) * (스텝_pt / 최대_pt)))
+    최소_hwpunit = max(0, int(round(페이지맞춤_표셀세로여백_최소_pt * 100)))
+
+    원위치 = None
+    try:
+        원위치 = hwp.GetPos()
+    except Exception:
+        pass
+
+    한칸영역 = set()
+    try:
+        목록 = 한칸표_영역_목록()
+        if 목록:
+            한칸영역 = set(목록)
+    except Exception:
+        pass
+
+    적용수 = 0
+    try:
+        묶음 = None
+        try:
+            묶음 = 표칸_묶음_키별()
+        except Exception:
+            묶음 = None
+
+        if 묶음 is not None:
+            for 키, 칸들 in 묶음.items():
+                if 중단_요청됨():
+                    break
+                if not 칸들:
+                    continue
+                if len(칸들) == 1 and 칸들[0][1] == "A1":
+                    continue
+                if 칸들[0][0] in 한칸영역:
+                    continue
+                첫칸 = 칸들[0][0]
+                try:
+                    hwp.SetPos(첫칸, 0, 0)
+                except Exception:
+                    continue
+                쪽 = 현재_페이지번호() if 최소쪽 is not None else None
+                if 최소쪽 is not None and 쪽 is not None and 쪽 < 최소쪽:
+                    continue
+                for area, 주소, 행 in 칸들:
+                    if 중단_요청됨():
+                        break
+                    try:
+                        hwp.SetPos(area, 0, 0)
+                    except Exception:
+                        continue
+                    현재 = 셀_세로여백_읽기()
+                    if 현재 is None:
+                        continue
+                    if 원래값 is not None:
+                        원래값.setdefault(area, 현재)
+                    원래 = 원래값.get(area, 현재) if 원래값 is not None else 현재
+                    원래_has, 원래_top, 원래_bottom = 원래
+                    새_top = max(최소_hwpunit, int(round(원래_top * (1.0 - 축소비율))))
+                    새_bottom = max(최소_hwpunit, int(round(원래_bottom * (1.0 - 축소비율))))
+                    if abs(새_top - 현재[1]) >= 5 or abs(새_bottom - 현재[2]) >= 5:
+                        if 셀_세로여백_현재선택(top_hwpunit=새_top, bottom_hwpunit=새_bottom):
+                            적용수 += 1
+        else:
+            area = 1
+            while True:
+                if 중단_요청됨():
+                    break
+                area += 1
+                try:
+                    hwp.SetPos(area, 0, 0)
+                except Exception:
+                    break
+                try:
+                    pos = hwp.GetPos()
+                    if pos[0] != area:
+                        break
+                except Exception:
+                    break
+                if area in 한칸영역:
+                    continue
+                쪽 = 현재_페이지번호() if 최소쪽 is not None else None
+                if 최소쪽 is not None and 쪽 is not None and 쪽 < 최소쪽:
+                    continue
+                현재 = 셀_세로여백_읽기()
+                if 현재 is None:
+                    continue
+                if 원래값 is not None:
+                    원래값.setdefault(area, 현재)
+                원래 = 원래값.get(area, 현재) if 원래값 is not None else 현재
+                원래_has, 원래_top, 원래_bottom = 원래
+                새_top = max(최소_hwpunit, int(round(원래_top * (1.0 - 축소비율))))
+                새_bottom = max(최소_hwpunit, int(round(원래_bottom * (1.0 - 축소비율))))
+                if abs(새_top - 현재[1]) >= 5 or abs(새_bottom - 현재[2]) >= 5:
+                    if 셀_세로여백_현재선택(top_hwpunit=새_top, bottom_hwpunit=새_bottom):
+                        적용수 += 1
+    finally:
+        if 원위치 is not None:
+            try:
+                hwp.SetPos(*원위치)
+            except Exception:
+                pass
+    return 적용수
+
+
+def 표_셀_세로여백_복원(원래값):
+    """표_셀_세로여백_일괄조정이 기록한 원래 여백으로 되돌린다."""
+    if hwp is None or not 원래값:
+        return 0
+    원위치 = None
+    try:
+        원위치 = hwp.GetPos()
+    except Exception:
+        pass
+    복원수 = 0
+    try:
+        for area, 값 in 원래값.items():
+            try:
+                hwp.SetPos(area, 0, 0)
+                if 셀_세로여백_현재선택(원래값=값):
+                    복원수 += 1
+            except Exception as e:
+                로그(f"셀 세로 여백 복원 실패(무시): {e}")
+    finally:
+        if 원위치 is not None:
+            try:
+                hwp.SetPos(*원위치)
+            except Exception:
+                pass
+    return 복원수
+
+
 # 목표 쪽 수에 닿은 뒤 묶음이 쪽 경계에 걸려 있으면 몇 단계까지 더 줄여 볼지.
 페이지맞춤_묶음확인_추가단계 = 4
 # 마지막 페이지 수 맞춤이 묶음 규칙까지 지키며 끝났는지(쪽 배치 재실행 생략용).
@@ -11525,21 +11880,19 @@ def 쪽맞춤_묶음분리_있음(최소쪽=None):
 
 
 def 보고서_페이지수_맞춤_시도(목표_페이지수):
-    """본문 줄간격은 그대로 둔 채 항목기호 문단의 간격만 1pt씩 줄여 실제
-    페이지 수를 목표에 맞춘다.
+    """본문 줄간격은 그대로 둔 채 항목기호 문단의 간격과 표의 셀 세로 여백을
+    단계별로 비례 축소하여 실제 페이지 수를 목표에 맞춘다.
 
-    먼저 '문단 아래 간격'을 줄이고, 그래도 안 되면(또는 줄일 아래 간격이
-    없으면) '문단 위 간격'을 줄인다. 표준서식은 항목 사이 간격을 문단 위
-    여백으로 주고 빈 줄도 지우므로, 아래 간격만으로는 줄일 여지가 없는
-    경우가 많다. 각각 페이지맞춤_최대_pt까지만 줄이며, 매 단계 실제 페이지
-    수를 다시 잰다.
+    먼저 '문단 아래 간격'과 표 셀 여백을 연동해 줄이고, 그래도 안 되면
+    '문단 위 간격'과 표 셀 여백을 줄인다. 각각 페이지맞춤_최대_pt까지만
+    줄이며, 매 단계 실제 페이지 수를 다시 잰다.
 
     묶음 규칙도 확인한다. 목표 쪽 수에 닿았을 때 쪽 경계에 걸린 묶음이
     없으면 그대로 끝낸다. 걸린 묶음이 있으면 몇 단계 더 줄여 보고, 끝내
     둘 다 만족하지 못하면 처음 목표에 닿았던 단계로 되돌려 둔다 — 그 뒤
     쪽 배치가 걸린 묶음 전체를 다음 쪽으로 옮긴다(사용자 결정: 마지막 쪽에
     본문 1줄만 남기는 것보다 묶음 전체를 옮기는 편을 택함).
-    목표 쪽 수에 한 번도 닿지 못하면 바꾼 간격을 모두 원래 값으로 되돌린다.
+    목표 쪽 수에 한 번도 닿지 못하면 바꾼 간격과 여백을 모두 원래 값으로 되돌린다.
     """
     global 쪽맞춤_묶음_확인됨, 쪽맞춤_묶음이동_결정
     쪽맞춤_묶음_확인됨 = False
@@ -11549,17 +11902,19 @@ def 보고서_페이지수_맞춤_시도(목표_페이지수):
     최대반복 = max(1, int(round(페이지맞춤_최대_pt / 페이지맞춤_스텝_pt)))
     최소쪽 = max(1, 목표_페이지수 - 페이지맞춤_뒤쪽범위_쪽수)
     로그(
-        f"페이지 수 맞춤 시도: 목표 {목표_페이지수}쪽 (문단 아래·위 간격 각각 최대 "
-        f"{페이지맞춤_최대_pt:g}pt 축소, {최소쪽}쪽부터만 검사, 묶음 규칙 확인)"
+        f"페이지 수 맞춤 시도: 목표 {목표_페이지수}쪽 (문단 아래·위 간격 및 표 셀 여백 최대 "
+        f"{페이지맞춤_최대_pt:g}pt 비례 축소, {최소쪽}쪽부터만 검사, 묶음 규칙 확인)"
     )
     원래값 = {False: {}, True: {}}
+    표셀_원래값 = {}
     적용기록 = []          # 적용한 단계 순서(위간격 여부) — 되돌린 뒤 다시 적용할 때 쓴다
     첫_도달 = None         # 처음 목표 쪽 수에 닿았을 때의 적용기록 길이
     추가단계 = 0
 
     def 원래대로():
         return (구조문단_간격_복원(원래값[True], 위간격=True)
-                + 구조문단_간격_복원(원래값[False]))
+                + 구조문단_간격_복원(원래값[False])
+                + 표_셀_세로여백_복원(표셀_원래값))
 
     for 위간격 in (False, True):
         이름 = "문단 위 간격" if 위간격 else "문단 아래 간격"
@@ -11568,8 +11923,13 @@ def 보고서_페이지수_맞춤_시도(목표_페이지수):
                 return False
             조정수 = 구조문단_간격_일괄조정(
                 -페이지맞춤_스텝_pt, 최소쪽=최소쪽, 위간격=위간격, 원래값=원래값[위간격])
-            if 조정수 == 0:
-                로그(f"페이지 수 맞춤: 더 줄일 {이름}이 있는 항목기호 문단이 없음")
+            표조정수 = 0
+            if 페이지맞춤_표셀세로여백_사용:
+                스텝 = len(적용기록) + 1
+                표조정수 = 표_셀_세로여백_일괄조정(
+                    스텝, 최소쪽=최소쪽, 원래값=표셀_원래값)
+            if 조정수 == 0 and 표조정수 == 0:
+                로그(f"페이지 수 맞춤: 더 줄일 {이름} 및 표 셀 여백이 없음")
                 break
             적용기록.append(위간격)
             마지막쪽, _ = 마지막쪽_화면줄수()
@@ -11580,7 +11940,7 @@ def 보고서_페이지수_맞춤_시도(목표_페이지수):
                 continue
             if not 쪽맞춤_묶음분리_있음(최소쪽=최소쪽):
                 쪽맞춤_묶음_확인됨 = True
-                로그(f"페이지 수 맞춤 완료: {이름} {회}단계({회 * 페이지맞춤_스텝_pt:g}pt) 축소로 "
+                로그(f"페이지 수 맞춤 완료: {이름} {회}단계({회 * 페이지맞춤_스텝_pt:g}pt, 표 셀 여백 연동) 축소로 "
                      f"{목표_페이지수}쪽 달성, 쪽 경계에 걸린 묶음 없음")
                 return True
             if 첫_도달 is None:
@@ -11599,8 +11959,8 @@ def 보고서_페이지수_맞춤_시도(목표_페이지수):
     if 첫_도달 is None:
         복원수 = 원래대로()
         로그(
-            f"페이지 수 맞춤 실패: 문단 아래·위 간격을 {페이지맞춤_최대_pt:g}pt까지 줄여도 "
-            f"목표({목표_페이지수}쪽) 미달 — 바꾼 간격 {복원수}곳을 원래 값으로 되돌림"
+            f"페이지 수 맞춤 실패: 문단 아래·위 간격 및 표 셀 여백을 최대 {페이지맞춤_최대_pt:g}pt까지 줄여도 "
+            f"목표({목표_페이지수}쪽) 미달 — 바꾼 간격·여백 {복원수}곳을 원래 값으로 되돌림"
         )
         return False
 
@@ -11609,9 +11969,11 @@ def 보고서_페이지수_맞춤_시도(목표_페이지수):
     원래대로()
     for 위간격 in 적용기록[:첫_도달]:
         구조문단_간격_일괄조정(-페이지맞춤_스텝_pt, 최소쪽=최소쪽, 위간격=위간격)
+    if 페이지맞춤_표셀세로여백_사용 and 첫_도달 > 0:
+        표_셀_세로여백_일괄조정(첫_도달, 최소쪽=최소쪽, 원래값=표셀_원래값)
     쪽맞춤_묶음이동_결정 = True
     로그(f"페이지 수 맞춤: 묶음 규칙을 함께 지키는 단계가 없어 처음 {목표_페이지수}쪽에 닿은 "
-         f"단계({첫_도달}pt)로 두고, 걸린 묶음은 쪽 배치에서 다음 쪽으로 옮김")
+         f"단계({첫_도달}단계)로 두고, 걸린 묶음은 쪽 배치에서 다음 쪽으로 옮김")
     return True
 
 
@@ -13874,6 +14236,11 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
     if 부연설명_단계_사용:
         if not stage('부연설명 들여쓰기', 부연설명_들여쓰기_전체_적용):
             return False
+    # 별표(**) 정렬: 앞선 내어쓰기·부연설명 여백 조정이 끝난 뒤 최종 보정한다.
+    # 바로 앞줄 *의 별표 위치에 **의 둘째 별표를 맞추며, 필요하면 앞 빈칸을 지운다.
+    if 작업_모드 in ('format', 'all') and stage_enabled(선택_세부작업, 'star_align'):
+        if not stage('별표(**) 정렬', 별표_정렬_전체_적용):
+            return False
     if 작업_모드 in ('spacing', 'all'):
         # 자간을 줄이거나 넓히면 문두기호 문장의 첫 줄 폭이 바뀌어
         # 내어쓰기 기준점이 어긋날 수 있다. 자간 변경이 있으면 내어쓰기를
@@ -13934,6 +14301,9 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
                     부모들 = set(내어쓰기_변경문단)
                     if not stage('자간 조정 후 부연설명 들여쓰기' + 접미,
                                  lambda: 부연설명_들여쓰기_전체_적용(부모대상=부모들)):
+                        return False
+                if stage_enabled(선택_세부작업, 'star_align') and 내어쓰기_변경문단:
+                    if not stage('자간 조정 후 별표(**) 정렬' + 접미, 별표_정렬_전체_적용):
                         return False
             else:
                 로그(f"[자간·내어쓰기 반복] 최대 {자간_내어쓰기_최대반복}회 도달, 반복 종료")
@@ -21057,9 +21427,9 @@ class HwpAutoDocFitGUI:
 # Main 실행부
 # ============================================================
 
-def _새창_맨앞으로(event):
+def _새창_맨앞으로(event_or_window):
     """웹 화면 뒤에 설정·검토 창이 숨지 않도록 새로 뜬 Tk 창을 앞으로 올린다."""
-    window = event.widget
+    window = getattr(event_or_window, "widget", event_or_window)
     try:
         if window.winfo_toplevel() is not window or window.overrideredirect():
             return
@@ -21067,7 +21437,7 @@ def _새창_맨앞으로(event):
         window.attributes("-topmost", True)
         window.after(300, lambda: window.winfo_exists() and window.attributes("-topmost", False))
         window.focus_force()
-    except tk.TclError:
+    except Exception:
         pass
 
 
@@ -21110,6 +21480,7 @@ def main():
     if tk_only or importlib.util.find_spec("webview") is None:
         root = TkinterDnD.Tk()
         HwpAutoDocFitGUI(root)
+        _새창_맨앞으로(root)
         root.mainloop()
         return
 

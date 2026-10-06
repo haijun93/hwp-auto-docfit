@@ -5,7 +5,7 @@
 
 **[Windows 실행 파일 내려받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/permalink/latest)** · [변경 사항](releases/) · [GitHub](https://github.com/haijun93/hwp-auto-docfit) · [GitLab](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
 
-현재 안내 기준: **1.70**(정식 버전). 처음에는 문서 한 개로 시험하고 결과를 확인해 주세요.
+현재 안내 기준: **1.72 Beta 3**(테스트 베타). 중요한 문서는 사본으로 먼저 시험하고 결과를 확인해 주세요.
 
 ## 어떤 결과가 나오나요?
 
@@ -353,3 +353,41 @@ PC를 옮길 때는 앱을 종료하고 이 폴더를 백업하세요. **서식 
 - [서식 복사 범위와 설계](FORMAT_COPY_DESIGN.md) · [원본 보존·재현 설계](STYLE_FIDELITY_DESIGN.md)
 
 `main`은 베타 배포 브랜치이고 `alpha`는 새 기능 시험 브랜치입니다.
+
+---
+
+## 참고 자료와 사용한 코드
+
+이 프로그램이 직접 쓰거나 함께 배포하는 외부 코드와, 규칙을 만들 때 참고한 자료입니다. 라이선스 전문은 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)에 있습니다.
+
+### 함께 쓰는 프로그램·코드
+
+| 이름 | 쓰는 곳 | 라이선스 |
+|---|---|---|
+| [kordoc](https://github.com/chrisryugj/kordoc) v4 (© 2026 chrisryugj, [GitLab](https://gitlab.aigov.go.kr/chrisryugj/kordoc)) | 고급 문서 도구, MD·DOC·DOCX·PDF 변환. 앱에 포함하지 않고 선택 시 `npx -y kordoc@^4`로 불러옵니다. kordoc이 추가로 불러오는 패키지·모델은 각자의 라이선스를 따릅니다. | MIT |
+| 한컴 한/글 자동화 보안 모듈 예제 (`MapoHwpAutoDocFitSecurity.dll`) | 한/글 COM 자동화 승인(`RegisterModule`). 한컴 예제 바이너리의 파일 이름만 바꿔 함께 배포합니다. | 한글과컴퓨터 예제 배포 조건 |
+| 한/글 2020 COM(HWPFrame.HwpObject) | 문서 열기·서식 적용·저장. 사용자 PC에 설치된 한/글을 씁니다(포함하지 않음). | 한/글 사용권 |
+| [pywin32](https://github.com/mhammond/pywin32) | 한/글 COM 연결 | PSF |
+| [tkinterdnd2](https://github.com/Eliav2/tkinterdnd2) | 파일 끌어다 놓기 | MIT |
+| [Pillow](https://python-pillow.org/) | 화면·예시 이미지 처리 | MIT-CMU(HPND) |
+| [defusedxml](https://github.com/tiran/defusedxml) | HWPX XML 안전 파싱 | PSF |
+| [pywebview](https://pywebview.flowrl.com/) | 웹 화면 창 | BSD-3-Clause |
+| [Flutter](https://flutter.dev/) | 새 화면(flutter_ui) | BSD-3-Clause |
+| [Noto Sans KR](https://fonts.google.com/noto/specimen/Noto+Sans+KR) | Flutter 화면 글꼴(`flutter_ui/assets`) | SIL OFL 1.1 |
+| [PyInstaller](https://pyinstaller.org/) | 실행 파일(exe) 빌드 | GPL-2.0(부트로더 예외) |
+| Python 표준 라이브러리·Tcl/Tk | 앱 실행 환경(exe에 포함) | PSF · Tcl/Tk License |
+
+### 규칙을 만들 때 참고한 자료
+
+- 국립국어원 [공공언어 바로 쓰기 자료](https://www.korean.go.kr/common/download.do?c_file_name=d2a561f4-ad8b-4400-826d-4e4e886e2c3d.pdf&file_path=etcData): 공공언어 교정 제안(금번 → 이번 등)
+- 국립국어원 [온라인가나다 답변](https://www.korean.go.kr/front/onlineQna/onlineQnaView.do?mn_id=90&pageIndex=1&qna_seq=328160)과 「한글 맞춤법」: 맞춤법 교정 제안
+- 행정안전부 「행정업무운영 편람」: 날짜·기간·시간 표기(2026. 3. 1.~6. 30.)
+- 행정안전부 개조식 보고서 작성 표준: 문두기호 계층(□ → ㅇ → - → ·/*)과 들여쓰기
+- 한/글 HWPX(OWPML) 문서 구조와 한/글 자동화(HwpAutomation) 공개 자료: HWPX 분석·서식 복사, COM 자동화
+
+교정 제안은 참고용이며 자료 전체를 담은 것이 아닙니다. 적용 전에 내용을 확인해 주세요.
+
+## 라이선스
+
+이 프로그램의 소스 코드는 **MIT 라이선스**를 따릅니다([LICENSE](LICENSE)).
+Copyright (c) 2026 haijun93 (마포구청 공혁준). 함께 쓰는 외부 구성 요소는 위 표와 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)의 각 라이선스를 따릅니다.

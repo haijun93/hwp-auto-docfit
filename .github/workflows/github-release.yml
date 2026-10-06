@@ -1,6 +1,6 @@
 # 태그(vX.Y-beta.N)를 푸시하면 GitHub 릴리스를 만든다(2026-10-04).
 # 그전에는 GitLab CI만 릴리스를 만들어 GitHub 릴리스가 v1.69-beta.3에 멈춰 있었다.
-# 노트는 releases/<태그>.md, exe는 태그 커밋의 release-assets/HWP_AutoDocFit.exe(CI 빌드 cherry-pick본)를 쓴다.
+# 노트는 releases/<태그>.md, 메인 exe는 태그 커밋의 release-assets/HWP_AutoDocFit.exe(CI 빌드 cherry-pick본)를 쓴다.
 name: GitHub release
 
 on:
@@ -29,7 +29,9 @@ jobs:
           else
             # GitHub는 첨부 파일 이름의 한글을 지우므로(default.txt가 됨) 영문 이름으로 올리고 한글은 표시 이름(#)으로 둔다.
             cp "release-assets/보고서 예시 파일(한번에 적용).txt" report-example-all-in-one.txt
-            gh release create "$TAG" release-assets/HWP_AutoDocFit.exe \
+            python3 -c "import zipfile, os; tag=os.environ.get('TAG', 'release'); z=zipfile.ZipFile(f'HWP_AutoDocFit-{tag}.zip', 'w', zipfile.ZIP_DEFLATED); z.write('release-assets/HWP_AutoDocFit.exe', 'HWP_AutoDocFit.exe'); os.path.exists('release-assets/보고서 예시 파일(한번에 적용).txt') and z.write('release-assets/보고서 예시 파일(한번에 적용).txt', '보고서 예시 파일(한번에 적용).txt'); z.close()"
+            gh release create "$TAG" "HWP_AutoDocFit-${TAG}.zip#HWP_AutoDocFit-${TAG}.zip (통합 압축팩)" \
+              release-assets/HWP_AutoDocFit.exe \
               "report-example-all-in-one.txt#보고서 예시 파일(한번에 적용).txt" \
               --title "$TITLE" --notes-file "$NOTE" --latest
           fi

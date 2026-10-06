@@ -28,3 +28,20 @@ SOFTWARE.
 
 Optional kordoc features can load additional packages and models. Their own
 license and notice files remain available in the installed kordoc package.
+
+## Other components
+
+| Component | Use | License |
+|---|---|---|
+| Hancom HWP automation security module sample (`MapoHwpAutoDocFitSecurity.dll`) | Approves HWP COM automation; Hancom sample binary renamed for this project | Hancom sample distribution terms |
+| pywin32 | HWP COM bridge | PSF |
+| tkinterdnd2 | Drag and drop | MIT |
+| Pillow | Images | MIT-CMU (HPND) |
+| defusedxml | Safe XML parsing | PSF |
+| pywebview | Web UI window | BSD-3-Clause |
+| Flutter | flutter_ui | BSD-3-Clause |
+| Noto Sans KR | flutter_ui font (see `flutter_ui/assets/OFL.txt`) | SIL Open Font License 1.1 |
+| PyInstaller | Executable build | GPL-2.0 with bootloader exception |
+| Python / Tcl/Tk runtime | Bundled in the executable | PSF / Tcl/Tk License |
+
+The HWP application itself (HWPFrame.HwpObject) is not bundled; the user's installed copy is used.

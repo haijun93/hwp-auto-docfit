@@ -34,7 +34,7 @@ echo [1/4] Installing build dependencies...
 "%PYTHON%" -m pip install --disable-pip-version-check -r requirements.txt pyinstaller
 if errorlevel 1 goto :fail
 
-echo [2/3] Building %APPNAME%.exe...
+echo [2/4] Building Flutter interface...
 powershell -NoProfile -ExecutionPolicy Bypass -File build_flutter.ps1
 if errorlevel 1 (
     echo.
@@ -42,6 +42,8 @@ if errorlevel 1 (
     echo [WARN] Continuing without it: the app will use the built-in WebView/Tk screen.
     echo.
 )
+
+echo [3/4] Building %APPNAME%.exe...
 "%PYTHON%" -m PyInstaller ^
     --noconfirm ^
     --clean ^
@@ -58,10 +60,22 @@ if errorlevel 1 (
     hwp-auto-docfit.py
 if errorlevel 1 goto :fail
 
+echo [4/4] Building 설치파일 초기화.exe (Cleanup ^& Reset Tool)...
+"%PYTHON%" -m PyInstaller ^
+    --noconfirm ^
+    --clean ^
+    --onefile ^
+    --windowed ^
+    --name "HWP_AutoDocFit_Reset" ^
+    hwp-auto-docfit-reset.py
+if errorlevel 1 goto :fail
+"%PYTHON%" -c "import shutil; shutil.move('dist/HWP_AutoDocFit_Reset.exe', 'dist/설치파일 초기화.exe')"
+
 echo.
 echo [OK] Build succeeded.
-echo Output file: dist\%APPNAME%.exe
-echo You can rename it to a Korean name manually in Explorer if you want.
+echo Output files:
+echo   - dist\%APPNAME%.exe (Main App)
+echo   - dist\설치파일 초기화.exe (Reset Tool)
 pause
 endlocal
 exit /b 0
