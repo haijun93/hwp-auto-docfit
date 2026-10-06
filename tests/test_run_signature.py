@@ -16,7 +16,8 @@ class RunSignatureTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tree = ast.parse(SOURCE.read_text(encoding='utf-8'))
-        cls.params = list(inspect.signature(runpy.run_path(str(SOURCE))['작업_실행']).parameters)
+        cls.namespace = runpy.run_path(str(SOURCE))
+        cls.params = list(inspect.signature(cls.namespace['작업_실행']).parameters)
 
     def _thread_args(self):
         for node in ast.walk(self.tree):
@@ -38,10 +39,18 @@ class RunSignatureTest(unittest.TestCase):
         self.assertEqual(ast.unparse(by_name['쪽범위']), '작업범위')
         self.assertEqual(ast.unparse(by_name['표준서식_세부']), '표준서식_세부_전달')
         self.assertEqual(ast.unparse(by_name['표준서식_문단위간격_pt']), '문단위간격_값')
+        self.assertEqual(ast.unparse(by_name['무결성보고서파일']), 'self.integrity_report_file_var.get()')
+        self.assertEqual(ast.unparse(by_name['최종검수파일']), 'self.final_review_file_var.get()')
 
     def test_new_parameters_are_only_appended_at_the_end(self):
-        self.assertEqual(self.params[-1], '준말_등록')
+        self.assertEqual(self.params[-3:], ['준말_등록', '무결성보고서파일', '최종검수파일'])
         self.assertEqual(self.params.index('시작_인덱스') + 1, self.params.index('준말_등록'))
+
+    def test_report_file_defaults_preserve_existing_behavior(self):
+        defaults = self.namespace['기본_설정']
+        self.assertFalse(defaults['log_file'])
+        self.assertTrue(defaults['integrity_report_file'])
+        self.assertTrue(defaults['final_review_file'])
 
 
 if __name__ == '__main__':

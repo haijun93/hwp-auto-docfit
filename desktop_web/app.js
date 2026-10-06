@@ -49,13 +49,21 @@ function openTools() {
 
 function updateFooter() {
   const toolsOpen = !$("toolsPage").hidden;
+  const nextReady = !toolsOpen && currentStep === 1 && Boolean(lastState?.count > 0) && !busy;
+  const startVisible = !toolsOpen && ((currentStep === 2) || (currentStep === 3 && !hasRun));
+  const startReady = startVisible && Boolean(lastState?.can_start) && !busy;
+  const nextJobReady = !toolsOpen && currentStep === 4 && hasRun && Boolean(lastState) && !lastState.running;
   $("backButton").hidden = !toolsOpen;
   $("toolsButton").hidden = toolsOpen || currentStep === 3 && Boolean(lastState?.running);
   $("nextButton").hidden = toolsOpen || currentStep !== 1;
-  $("nextButton").disabled = !(lastState?.count > 0);
-  $("startButton").hidden = toolsOpen || !((currentStep === 2) || (currentStep === 3 && !hasRun));
-  $("startButton").disabled = !(lastState?.can_start) || busy;
+  $("nextButton").disabled = !nextReady;
+  $("nextButton").classList.toggle("is-next-action", nextReady);
+  $("startButton").hidden = !startVisible;
+  $("startButton").disabled = !startReady;
+  $("startButton").classList.toggle("is-next-action", startReady);
   $("nextJobButton").hidden = toolsOpen || currentStep !== 4;
+  $("nextJobButton").disabled = !nextJobReady;
+  $("nextJobButton").classList.toggle("is-next-action", nextJobReady);
   $("stopButton").hidden = !lastState?.running;
   const hints = {
     1: lastState?.count ? `${lastState.count}개 문서 선택됨` : "문서를 선택하거나 텍스트를 입력하세요.",

@@ -180,6 +180,7 @@ _END_MARK_RE = re.compile(r"(?<=\.)[ \t\u3000]*끝\.[ \t\u3000]*$")
 _END_MARK_ALONE_RE = re.compile(r"^[ \t\u3000]*끝\.[ \t\u3000]*$")
 # 붙임 표시문: 줄 끝이 'n부.'(뒤에 '끝.'이 와도 됨)인 '붙임 …' 줄만 본다('붙임 자료를 참고하여'처럼 문장은 제외).
 _ATTACH_RE = re.compile(r"^([ \t\u3000]*붙임)([ \t\u3000]+)(?=[^ \t\u3000:：])(?=.*\d+\s*부\.(?:[ \t\u3000]*끝\.)?[ \t\u3000]*$)")
+_ATTACHMENT_LIST_HEADER_RE = re.compile(r"^([ \t\u00a0\u3000]*붙임)([ \t\u00a0\u3000]*)([:：]?)([ \t\u00a0\u3000]*)(?=\d+\.(?:\s|$))")
 _OFFICIAL_DATE_RE = re.compile(
     r"(?<![\d.])(\d{4}|[’']\d{2})\.[ \t\u3000]*(\d{1,2})\.[ \t\u3000]*(\d{1,2})(?=\.|\(|~|[ \t\u3000]|$)")
 
@@ -219,6 +220,16 @@ def normalize_official_spacing(text):
     if _END_MARK_ALONE_RE.match(text):
         return "  끝."
     return _END_MARK_RE.sub("  끝.", text, count=1)
+
+
+def normalize_attachment_list_header(text):
+    """번호 붙임 목록의 표시 뒤 공백을 편람 예시대로 두 타로 맞춘다."""
+    if not text:
+        return text
+    match = _ATTACHMENT_LIST_HEADER_RE.match(text)
+    if not match:
+        return text
+    return match.group(1) + match.group(3) + "  " + text[match.end():]
 
 # 6단계 계층(2026-10-04): 2단계 장(chapter) · 3단계 중제목(midtitle, 로마자) · 4단계 □(box) · 5단계 ㅇ(circle) · 6단계 -(dash).
 LEVELS = ("chapter", "midtitle", "box", "circle", "dash", "note")

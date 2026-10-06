@@ -7,7 +7,10 @@ import unittest
 from unittest.mock import Mock, patch
 import zipfile
 
-from docfit_core.attachment_block import find_blocks
+from docfit_core.attachment_block import (
+    find_blocks, find_trailing_numbered_blocks, is_numbered_header, is_numbered_item, numbered_item_offset,
+)
+from docfit_core.document_rules import normalize_attachment_list_header
 
 HP = 'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"'
 HS = 'xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"'
@@ -39,6 +42,29 @@ class BlockRuleTest(unittest.TestCase):
     def test_several_blocks_and_nested_start(self):
         texts = ['붙임: 가.', '끝.', '중간', '붙임 나. 끝.']
         self.assertEqual(find_blocks(texts), [(0, 1), (3, 3)])
+
+    def test_attachment_number_header_and_items(self):
+        header = '붙임 : 1. 지구 침공 세부 시행계획 1부.'
+        self.assertTrue(is_numbered_header(header))
+        self.assertTrue(is_numbered_item(header))
+        self.assertEqual(numbered_item_offset(header), header.index('1.'))
+        self.assertTrue(is_numbered_item('   2. 스케줄표 1부.'))
+        self.assertEqual(numbered_item_offset('   2. 스케줄표 1부.'), 3)
+        self.assertFalse(is_numbered_item('별첨 2. 스케줄표'))
+
+    def test_attachment_list_header_uses_official_two_spaces(self):
+        self.assertEqual(normalize_attachment_list_header('붙임:1. 계획서 1부.'), '붙임:  1. 계획서 1부.')
+        self.assertEqual(normalize_attachment_list_header('붙임  :   1. 계획서 1부.'), '붙임:  1. 계획서 1부.')
+        self.assertEqual(normalize_attachment_list_header('붙임     1. 계획서 1부.'), '붙임  1. 계획서 1부.')
+
+    def test_numbered_indent_only_targets_a_complete_attachment_list_at_document_end(self):
+        items = ['붙임: 1. 계획서 1부.', '   2. 스케줄표 1부.', '끝.']
+        self.assertEqual(find_trailing_numbered_blocks(items), [(0, 1)])
+        official_example = ['붙임  1. 서식승인 목록 1부.', '    2. 승인서식 2부.  끝.']
+        self.assertEqual(find_trailing_numbered_blocks(official_example), [(0, 1)])
+        self.assertEqual(find_trailing_numbered_blocks(items + ['본문']), [])
+        self.assertEqual(find_trailing_numbered_blocks(['붙임: 자료 1부.', '끝.']), [])
+        self.assertEqual(find_trailing_numbered_blocks(['붙임: 1. 계획서 1부.', '비번호 문장.', '끝.']), [])
 
 
 class DocumentTest(unittest.TestCase):
