@@ -38,12 +38,7 @@ release-windows:
     - cp "release-assets/보고서 예시 파일(한번에 적용).txt" "dist/보고서 예시 파일(한번에 적용).txt"
     - sha256sum dist/HWP_AutoDocFit.exe
     - |
-      if [ -f "release-assets/설치파일 초기화.exe" ]; then
-        cp "release-assets/설치파일 초기화.exe" "dist/설치파일 초기화.exe"
-        sha256sum "dist/설치파일 초기화.exe"
-      fi
-    - |
-      python -c "import zipfile, os; tag=os.environ.get('CI_COMMIT_TAG', 'release'); z=zipfile.ZipFile(f'dist/HWP_AutoDocFit-{tag}.zip', 'w', zipfile.ZIP_DEFLATED); z.write('dist/HWP_AutoDocFit.exe', 'HWP_AutoDocFit.exe'); os.path.exists('dist/설치파일 초기화.exe') and z.write('dist/설치파일 초기화.exe', '설치파일 초기화.exe'); os.path.exists('dist/보고서 예시 파일(한번에 적용).txt') and z.write('dist/보고서 예시 파일(한번에 적용).txt', '보고서 예시 파일(한번에 적용).txt'); z.close()"
+      python -c "import zipfile; tag=os.environ.get('CI_COMMIT_TAG', 'release'); z=zipfile.ZipFile(f'dist/HWP_AutoDocFit-{tag}.zip', 'w', zipfile.ZIP_DEFLATED); z.write('dist/HWP_AutoDocFit.exe', 'HWP_AutoDocFit.exe'); z.write('dist/보고서 예시 파일(한번에 적용).txt', '보고서 예시 파일(한번에 적용).txt'); z.close()"
       sha256sum "dist/HWP_AutoDocFit-$CI_COMMIT_TAG.zip"
     - |
       if [ -f "releases/$CI_COMMIT_TAG.md" ]; then
@@ -72,7 +67,15 @@ release-windows:
     - |
       curl --fail-with-body --request POST \
         --header "JOB-TOKEN: $CI_JOB_TOKEN" \
-        --data-urlencode "name=HWP_AutoDocFit-$CI_COMMIT_TAG.zip (통합 압축팩 - 3가지 파일 한 번에 다운로드)" \
+        --data-urlencode "name=HWP_AutoDocFit.exe" \
+        --data-urlencode "url=$CI_PROJECT_URL/-/jobs/$CI_JOB_ID/artifacts/raw/dist/HWP_AutoDocFit.exe" \
+        --data-urlencode "link_type=other" \
+        --data-urlencode "direct_asset_path=/HWP_AutoDocFit.exe" \
+        "$CI_API_V4_URL/projects/$CI_PROJECT_ID/releases/$CI_COMMIT_TAG/assets/links"
+    - |
+      curl --fail-with-body --request POST \
+        --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+        --data-urlencode "name=HWP_AutoDocFit-$CI_COMMIT_TAG.zip (프로그램과 예시 파일)" \
         --data-urlencode "url=$CI_PROJECT_URL/-/jobs/$CI_JOB_ID/artifacts/raw/dist/HWP_AutoDocFit-$CI_COMMIT_TAG.zip" \
         --data-urlencode "link_type=package" \
         --data-urlencode "direct_asset_path=/HWP_AutoDocFit-$CI_COMMIT_TAG.zip" \
@@ -80,6 +83,7 @@ release-windows:
   artifacts:
     name: "HWP_AutoDocFit-$CI_COMMIT_TAG"
     paths:
+      - "dist/HWP_AutoDocFit.exe"
       - "dist/HWP_AutoDocFit-$CI_COMMIT_TAG.zip"
       - "dist/보고서 예시 파일(한번에 적용).txt"
   rules:

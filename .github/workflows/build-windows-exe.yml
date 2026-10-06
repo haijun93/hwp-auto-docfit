@@ -56,28 +56,21 @@ jobs:
           --hidden-import PIL.ImageOps
           hwp-auto-docfit.py
 
-      - name: Build 설치파일 초기화.exe
-        run: |
-          python -m PyInstaller --noconfirm --clean --onefile --windowed --name HWP_AutoDocFit_Reset hwp-auto-docfit-reset.py
-          python -c "import shutil; shutil.move('dist/HWP_AutoDocFit_Reset.exe', 'dist/설치파일 초기화.exe')"
-
       - name: Upload exe artifacts
         uses: actions/upload-artifact@v4
         with:
           name: HWP_AutoDocFit-binaries
           path: |
             dist/HWP_AutoDocFit.exe
-            dist/설치파일 초기화.exe
           if-no-files-found: error
 
       - name: Commit built exes to release-assets
         shell: bash
         run: |
           cp dist/HWP_AutoDocFit.exe release-assets/HWP_AutoDocFit.exe
-          cp "dist/설치파일 초기화.exe" "release-assets/설치파일 초기화.exe"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add release-assets/HWP_AutoDocFit.exe "release-assets/설치파일 초기화.exe"
+          git add release-assets/HWP_AutoDocFit.exe
           if git diff --cached --quiet; then
             echo "No change in built exes; skipping commit."
           else
