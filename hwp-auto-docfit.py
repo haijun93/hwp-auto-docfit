@@ -5834,6 +5834,10 @@ def _부연설명_들여쓰기_적용(문단_시작, text, 목표_위치, 여분
                 raise RuntimeError("왼쪽여백 설정 실패")
         진단로그(f"[부연설명 들여쓰기] 목표 위치 {목표_위치}, 선행 폭 {w_lead} → "
                  f"왼쪽여백 {margin}{'(앞 공백 삭제)' if 공백_삭제됨 else ''}: {cur_text.strip()[:50]}")
+        # 앞 빈칸을 지우면 자기 글 시작 위치가 바뀌므로 내어쓰기를 새 위치에 맞게 다시 맞춘다.
+        if 공백_삭제됨 and 표준서식_내어쓰기_사용 and stage_enabled(선택_세부작업, 'hanging_indent'):
+            hwp.SetPos(*문단_시작)
+            문단_내어쓰기_적용(문단_시작, cur_text)
         return True
     except Exception as e:
         로그(f"부연설명 들여쓰기 적용 실패(무시): {e}")
