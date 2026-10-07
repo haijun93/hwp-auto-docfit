@@ -660,7 +660,8 @@ _표준서식_문단위간격_상태 = ParagraphSpacingTracker()
     "기호_규칙": [
         ("□", 0, "HY견고딕", 17, False, True),
         ("ㅇ", 1, "한컴돋움", 15, True, False),
-        ("-", 2, "휴먼명조", 14, False, False),
+        # - 앞 3칸: 기준 문서 '1) 보고서(계획서) 서식.hwpx'(사용자 지정 2026-10-08).
+        ("-", 3, "휴먼명조", 14, False, False),
         ("※", 3, "한컴돋움", 13, False, False),
         # *(주석1)의 대표 문두기호는 *이며(**는 여기로 합침), 기본값은 ※와 같다.
         ("*", 3, "한컴돋움", 13, False, False),
@@ -1203,6 +1204,7 @@ def 번들_리소스_폴더():
     "std_parspace_note": "0",
     # 설정 파일 판: 2 = 문단 위 여백 기본값 15/15/15/8/4/0pt(예전 기본값 20/15/15/10/3을 그대로 쓰던 파일은 새 값으로)
     "std_parspace_rev": 2,
+    "std_supplement_rev": 2,
     "std_parspace_return_percent": "150",
     # 제목 서식 부제(제목 글의 첫 쉼표 앞 글) 글자 크기 pt
     "std_title_subtitle_pt": "15",
@@ -4410,6 +4412,15 @@ def 설정_불러오기():
                     for 키 in (*예전값, "std_parspace_dash"):
                         설정[키] = 기본_설정[키]
             설정["std_parspace_rev"] = 2
+            # 부연설명 앞 빈칸 규칙(Beta 8)은 '부연설명 들여쓰기' 단계로 적용된다. 예전 설정 파일에 꺼진 채
+            # 저장된 값은 한 번만 켠다(판 2로 저장된 뒤에는 사용자가 끈 값을 그대로 둔다).
+            try:
+                부연판 = int(저장된값.get("std_supplement_rev", 1) or 1)
+            except (TypeError, ValueError):
+                부연판 = 1
+            if 부연판 < 2:
+                설정["std_supplement_indent"] = True
+            설정["std_supplement_rev"] = 2
             # 예전 기본값의 글꼴 이름 오타('한컴돋음' → '한컴돋움', 문두기호 • 기본 글꼴)를 바로잡는다.
             for 항목 in (설정.get("symbol_fonts") or {}).values():
                 if isinstance(항목, dict) and 항목.get("font") == "한컴돋음":
@@ -5565,7 +5576,9 @@ def _붙임목록_번호_내어쓰기_적용(문단_시작위치, text, 기준�
         marker_width = _캐럿위치_폭_실측(begin, marker_end)
         if marker_width is None or marker_width <= 0 or prefix_width is None:
             raise RuntimeError("번호 마커 폭 실측 실패")
-        target_left = 기준위치 - prefix_width + marker_width
+        # 한/글 내어쓰기는 첫 줄을 왼쪽여백에 그대로 두고 둘째 줄부터 |값|만큼 더 민다.
+        # 첫 줄 번호가 기준 번호 위치에 오도록 왼쪽여백을 잡고, 꺾인 줄은 번호 뒤 내용에 맞춘다.
+        target_left = 기준위치 - prefix_width
         target_indent = -marker_width
         action = hwp.CreateAction("ParagraphShape")
         params = action.CreateSet()
