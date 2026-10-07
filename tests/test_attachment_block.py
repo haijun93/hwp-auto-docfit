@@ -53,9 +53,10 @@ class BlockRuleTest(unittest.TestCase):
         self.assertFalse(is_numbered_item('별첨 2. 스케줄표'))
 
     def test_attachment_list_header_uses_official_two_spaces(self):
-        self.assertEqual(normalize_attachment_list_header('붙임:1. 계획서 1부.'), '붙임:  1. 계획서 1부.')
-        self.assertEqual(normalize_attachment_list_header('붙임  :   1. 계획서 1부.'), '붙임:  1. 계획서 1부.')
         self.assertEqual(normalize_attachment_list_header('붙임     1. 계획서 1부.'), '붙임  1. 계획서 1부.')
+        # 쌍점을 쓴 꼴은 사용자 기재 스타일 그대로 둔다.
+        for text in ('붙임 : 1. 계획서 1부.', '붙임: 1. 계획서 1부.', '붙임:1. 계획서 1부.'):
+            self.assertEqual(normalize_attachment_list_header(text), text)
 
     def test_numbered_indent_only_targets_a_complete_attachment_list_at_document_end(self):
         items = ['붙임: 1. 계획서 1부.', '   2. 스케줄표 1부.', '끝.']
