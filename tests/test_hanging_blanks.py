@@ -4,7 +4,7 @@ import runpy
 import unittest
 from unittest.mock import Mock, patch
 
-from docfit_core.hanging_rules import hanging_blank_count
+from docfit_core.hanging_rules import hanging_blank_count, is_parent_marker, is_supplement
 
 
 class BlankCountTest(unittest.TestCase):
@@ -12,13 +12,23 @@ class BlankCountTest(unittest.TestCase):
         self.assertEqual(hanging_blank_count("ㅇ 본문"), 1)
         self.assertEqual(hanging_blank_count("  ○ 본문"), 1)
         self.assertEqual(hanging_blank_count(" - 본문"), 3)
-        self.assertEqual(hanging_blank_count("※ 참고"), 5)
-        self.assertEqual(hanging_blank_count("* 주"), 5)
-        self.assertEqual(hanging_blank_count("** 주"), 5)
+        self.assertIsNone(hanging_blank_count("※ 참고"))      # 부연설명은 앞 기호 값에 연동
+        self.assertIsNone(hanging_blank_count("** 주"))
 
     def test_no_rule(self):
         for text in ("□ 제목", "일반 문장", "1. 항목", "", None):
             self.assertIsNone(hanging_blank_count(text), text)
+
+
+class SupplementTest(unittest.TestCase):
+    def test_roles(self):
+        for text in ("* 주", "** 주", "※ 참고"):
+            self.assertTrue(is_supplement(text), text)
+            self.assertFalse(is_parent_marker(text), text)
+        for text in ("ㅁ 제목", "□ 제목", "ㅇ 본문", "○ 본문", "- 세부"):
+            self.assertTrue(is_parent_marker(text), text)
+            self.assertFalse(is_supplement(text), text)
+        self.assertFalse(is_supplement("일반 문장"))
 
 
 class HangingValueTest(unittest.TestCase):
@@ -26,19 +36,27 @@ class HangingValueTest(unittest.TestCase):
     def setUpClass(cls):
         cls.ns = runpy.run_path(str(Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"))
 
-    def _value(self, text, widths):
+    def _value(self, text, widths, parent=None):
         fn = self.ns["_기호별_내어쓰기_값"]
         marker_end = self.ns["문장부호_마커_끝위치"](text)
         measured = lambda begin, count: widths.get(count)
         with patch.dict(fn.__globals__, {"_캐럿위치_폭_실측": measured, "복사_내어쓰기_규칙": lambda t: None}):
-            return fn((0, 0, 0), text), marker_end
+            return fn((0, 0, 0), text, parent), marker_end
 
     def test_blank_width_is_multiplied_by_rule(self):
-        # 기호 끝(1글자)까지 1000, 빈칸 1칸 폭 250 → ㅇ 1칸, - 3칸, ※ 5칸
+        # 기호 끝(1글자)까지 1000, 빈칸 1칸 폭 250 → ㅇ 1칸, - 3칸
         self.assertEqual(self._value("ㅇ 본문", {1: 1000, 2: 1250})[0], -1250)
         self.assertEqual(self._value("- 본문", {1: 800, 2: 1050})[0], -(800 + 3 * 250))
-        self.assertEqual(self._value("※ 참고", {1: 1000, 2: 1250})[0], -(1000 + 5 * 250))
-        self.assertEqual(self._value("** 참고", {2: 1400, 3: 1650})[0], -(1400 + 5 * 250))
+
+    def test_supplement_follows_parent_value_plus_two_blanks(self):
+        # 빈칸 폭 250: 앞 기호 값 -1250이면 -1250 - 500, ㅁ 뒤(-1700)와 ㅇ·- 뒤 값은 서로 다르다
+        self.assertEqual(self._value("※ 참고", {1: 900, 2: 1150}, parent=-1250)[0], -1750)
+        self.assertEqual(self._value("* 주", {1: 900, 2: 1150}, parent=-1700)[0], -2200)
+        self.assertEqual(self._value("** 주", {2: 1400, 3: 1650}, parent=-1250)[0], -1750)
+
+    def test_supplement_without_usable_parent_falls_back(self):
+        self.assertIsNone(self._value("※ 참고", {1: 900, 2: 1150})[0])
+        self.assertIsNone(self._value("※ 참고", {1: 900, 2: 1150}, parent=0)[0])
 
     def test_leading_blanks_are_included_in_marker_width(self):
         value, marker_end = self._value(" ㅇ 본문", {2: 1300, 3: 1550})
@@ -50,6 +68,37 @@ class HangingValueTest(unittest.TestCase):
         self.assertIsNone(self._value("ㅇ (개요) 본문", {1: 1000, 2: 1250})[0])  # 라벨 기준은 기존 규칙
         self.assertIsNone(self._value("□ 제목", {1: 1000, 2: 1250})[0])          # 규칙 없는 기호
         self.assertIsNone(self._value("ㅇ 본문", {})[0])                          # 실측 실패
+
+
+class SupplementLinkTest(unittest.TestCase):
+    def test_parent_value_reaches_the_next_supplements_only(self):
+        ns = runpy.run_path(str(Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"))
+        fn = ns["문단_내어쓰기_전체_갱신"]
+        texts = ["ㅁ 제목", "* 주1", "ㅇ 본문", "** 주2", "※ 참고", "일반 문장", "※ 고아"]
+        values = {0: -1700, 2: -1250}
+        state = {"i": 0}
+        hwp = Mock()
+        hwp.GetPos.side_effect = lambda: (0, state["i"], 0)
+        calls = []
+
+        def advance():
+            state["i"] += 1
+            return state["i"] < len(texts)
+
+        patches = {
+            "hwp": hwp, "hwp_run": Mock(), "순회_시작": Mock(), "중단_요청됨": lambda: False,
+            "현재_한칸표인가": lambda: False, "현재문단_텍스트": lambda: texts[state["i"]],
+            "_붙임목록_내어쓰기_대상수집": lambda: {}, "문단_내어쓰기_기준_오프셋": lambda t: 1,
+            "내어쓰기_기호선택_허용": lambda t: True, "_현재문단_내어쓰기_값": lambda: values[state["i"]],
+            "문단_내어쓰기_적용": lambda pos, text, **kw: calls.append((text, kw.get("부모_내어쓰기"))),
+            "범위_다음_문단으로_진행": advance,
+        }
+        with patch.dict(fn.__globals__, patches):
+            self.assertTrue(fn())
+        self.assertEqual(dict(calls)["* 주1"], -1700)       # ㅁ 뒤 부연설명
+        self.assertEqual(dict(calls)["** 주2"], -1250)      # ㅇ 뒤 부연설명
+        self.assertEqual(dict(calls)["※ 참고"], -1250)      # 부연설명이 이어져도 같은 부모
+        self.assertIsNone(dict(calls)["※ 고아"])            # 일반 문단이 끼면 연동 끊김
 
 
 class AttachmentAlignTest(unittest.TestCase):
