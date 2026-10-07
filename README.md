@@ -5,7 +5,7 @@
 
 **[Windows 실행 파일 내려받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/permalink/latest)** · [변경 사항](releases/) · [GitHub](https://github.com/haijun93/hwp-auto-docfit) · [GitLab](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
 
-현재 안내 기준: **1.72 Beta 7**(테스트 베타). 중요한 문서는 사본으로 먼저 시험하고 결과를 확인해 주세요.
+현재 안내 기준: **1.72 Beta 8**(테스트 베타). 중요한 문서는 사본으로 먼저 시험하고 결과를 확인해 주세요.
 
 ## 어떤 결과가 나오나요?
 
