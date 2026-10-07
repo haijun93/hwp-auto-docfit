@@ -1,4 +1,4 @@
-"""부연설명 들여쓰기는 위 문단의 '실측' 본문 시작 위치에 마커를 맞춘다(TODO 1순위)."""
+"""부연설명 앞 빈칸은 위 문단 유형별 칸 수를 따른다(기준 문서 '1) 보고서(계획서) 서식.hwpx')."""
 from pathlib import Path
 import runpy
 import unittest
@@ -10,75 +10,22 @@ class SupplementIndentTest(unittest.TestCase):
     def setUpClass(cls):
         cls.ns = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'hwp-auto-docfit.py'))
 
-    def _doc(self, left_margin=0):
-        applied = []
+    def test_blank_counts_follow_the_reference_document(self):
+        fn = self.ns['부연설명_앞빈칸_수']
+        self.assertEqual([fn('제목', m) for m in ('※', '*', '**')], [4, 5, 4])
+        self.assertEqual([fn('본문', m) for m in ('※', '*', '**')], [5, 6, 5])
+        self.assertEqual([fn('내용', m) for m in ('※', '*', '**')], [5, 6, 5])
+        self.assertEqual([fn(None, m) for m in ('※', '*', '**')], [3, 4, 3])
+        self.assertIsNone(fn('본문', 'ㅇ'))
 
-        class Action:
-            def CreateSet(self):
-                values = {}
-                return type('Set', (), {'SetItem': lambda self, k, v: values.__setitem__(k, v),
-                                        'values': values})()
-            def Execute(self, pset):
-                applied.append(dict(pset.values))
-                return True
-
-        class Doc:
-            pos = (0, 5, 0)
-            ParaShape = type('P', (), {'Item': lambda self, key: {'LeftMargin': left_margin}[key]})()
-            def GetPos(self):
-                return self.pos
-            def SetPos(self, *pos):
-                self.pos = tuple(pos)
-            def CreateAction(self, name):
-                return Action()
-        return Doc(), applied
-
-    def test_marker_lands_on_parent_text_start(self):
-        fn = self.ns['_부연설명_들여쓰기_적용']
-        doc, applied = self._doc()
-        with patch.dict(fn.__globals__, {
-            'hwp': doc, 'hwp_run': lambda cmd: True, '현재_한칸표인가': lambda: False,
-            '_캐럿위치_폭_실측': lambda start, n: 5000, '진단로그': Mock(), '로그': Mock(),
-        }):
-            # 선행 공백(실측 5000) 뒤 마커가 부모 본문 시작(15160)에 오도록 왼쪽여백 10160
-            self.assertTrue(fn((0, 5, 0), '    ※ (차량규격) 전기버스', 15160))
-        self.assertEqual(applied, [{'LeftMargin': 10160}])
-
-    def test_parent_text_start_includes_the_label(self):
-        """'ㅇ (핵심 내용) 본문'의 부연설명은 라벨 뒤가 아니라 '(핵심 내용)' 아래(기호 바로 뒤 글 시작)에 맞춘다."""
-        fn = self.ns['부모_본문시작_실측']
-        measured = []
-        doc, _ = self._doc(left_margin=700)
-        with patch.dict(fn.__globals__, {
-            'hwp': doc, '_캐럿위치_폭_실측': lambda start, n: measured.append(n) or 100 * n,
-        }):
-            self.assertEqual(fn((0, 5, 0), ' ㅇ (핵심 내용) 지자 선행 투입 → 함대 발진'), 700 + 300)
-            self.assertEqual(fn((0, 5, 0), ' ㅇ 운영시기: 정기회의 분기별 1회'), 700 + 300)
-            self.assertEqual(fn((0, 5, 0), '  - 항세기와 난세기가 교차'), 700 + 400)
-            self.assertEqual(fn((0, 5, 0), ' ㅇ 「도로교통법」 개정'), 700 + 400)   # 여는 낫표 다음 글자
-            self.assertIsNone(fn((0, 5, 0), '일반 문장'))
-        self.assertEqual(measured, [3, 3, 4, 4])
-        # 둘째 줄 내어쓰기 기준(라벨 뒤)은 그대로다.
-        self.assertEqual(self.ns['문단_내어쓰기_기준_오프셋'](' ㅇ (핵심 내용) 지자 선행 투입'), 11)
-
-    def test_no_leading_space_and_unchanged_margin(self):
-        fn = self.ns['_부연설명_들여쓰기_적용']
-        measure = Mock(side_effect=AssertionError('선행 공백이 없으면 재지 않음'))
-        doc, applied = self._doc(left_margin=1104)
-        with patch.dict(fn.__globals__, {
-            'hwp': doc, 'hwp_run': lambda cmd: True, '현재_한칸표인가': lambda: False,
-            '_캐럿위치_폭_실측': measure, '진단로그': Mock(), '로그': Mock(),
-        }):
-            self.assertFalse(fn((0, 5, 0), '※주의사항안내', 1104))   # 이미 같으면 바꾸지 않음
-        self.assertEqual(applied, [])
-
-    def test_only_supplements_of_changed_parents_are_refreshed(self):
+    def _run(self, texts, margins=None, 부모대상=None):
         fn = self.ns['부연설명_들여쓰기_전체_적용']
-        texts = ['ㅇ (개요) 본문', '※ 참고 1', '- 내용', '※ 참고 2']
         state = {'i': 0}
         done = []
+        margins = margins or {}
 
         class Doc:
+            ParaShape = type('P', (), {'Item': lambda self, key: margins.get(state['i'], 0)})()
             def GetPos(self):
                 return (0, state['i'], 0)
             def SetPos(self, *pos):
@@ -96,14 +43,41 @@ class SupplementIndentTest(unittest.TestCase):
             '순회_시작': lambda: state.__setitem__('i', 0),
             '현재문단_텍스트': lambda: texts[state['i']],
             '범위_다음_문단으로_진행': next_para, '부연설명_들여쓰기_사용': True,
-            '부모_본문시작_실측': lambda start, text: 1000 + start[1],
-            '_부연설명_들여쓰기_적용': lambda start, text, w: done.append((start[1], w)) or True,
+            '_부연설명_앞빈칸_적용': lambda start, text, n, left: done.append((start[1], n, left)) or True,
             '내어쓰기_변경문단': changed, '로그': Mock(), '진단로그': Mock(),
             '표준서식_설정': {},
         }):
-            self.assertTrue(fn(부모대상={(0, 2)}))
-        self.assertEqual(done, [(3, 1002)])      # '- 내용' 아래 부연설명만
-        self.assertEqual(changed, {(0, 3)})      # 다음 단어 분리 재검사 대상
+            self.assertTrue(fn(부모대상=부모대상))
+        return done, changed
+
+    def test_counts_by_parent_type(self):
+        texts = ['□ 제목', '※ 참고', '* 주', '** 주', ' ㅇ 본문', '※ 참고', '* 주',
+                 '   - 내용', '** 주', '  1. 번호 항목', '※ 참고']
+        done, changed = self._run(texts, margins={0: 0, 4: 300, 7: 600})
+        self.assertEqual(done, [(1, 4, 0), (2, 5, 0), (3, 4, 0), (5, 5, 300), (6, 6, 300),
+                                (8, 5, 600), (10, 3, None)])
+        self.assertIn((0, 10), changed)
+
+    def test_only_supplements_of_changed_parents_are_refreshed(self):
+        done, changed = self._run(['ㅇ (개요) 본문', '※ 참고 1', '- 내용', '※ 참고 2'], 부모대상={(0, 2)})
+        self.assertEqual(done, [(3, 5, 0)])
+        self.assertEqual(changed, {(0, 3)})
+
+    def test_apply_replaces_leading_blanks(self):
+        fn = self.ns['_부연설명_앞빈칸_적용']
+        calls = []
+        doc = Mock()
+        doc.ParaShape.Item.return_value = 0
+        with patch.dict(fn.__globals__, {
+            'hwp': doc, 'hwp_run': lambda cmd: calls.append(cmd) or True, '현재_한칸표인가': lambda: False,
+            '문단_범위_선택': lambda start, a, b: calls.append(('select', a, b)) or True,
+            '텍스트_삽입': lambda t: calls.append(('insert', t)), '현재문단_텍스트': lambda: '     * 주',
+            '표준서식_내어쓰기_사용': False, '진단로그': Mock(), '로그': Mock(),
+        }):
+            self.assertFalse(fn((0, 5, 0), '     * 주', 5, 0))       # 이미 5칸이면 그대로
+            self.assertTrue(fn((0, 5, 0), '  * 주', 5, 0))
+        self.assertIn(('select', 0, 2), calls)
+        self.assertIn(('insert', '     '), calls)
 
 
 if __name__ == '__main__':

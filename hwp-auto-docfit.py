@@ -5766,92 +5766,57 @@ def _캐럿위치_폭_실측(문단_시작, 글자수):
             pass
 
 
-def 부모_본문시작_실측(문단_시작, text):
-    """위 문단(제목/본문/내용) 글 첫 글자의 가로 위치 = 왼쪽여백 + 실측 폭.
-
-    글 첫 글자는 문두기호 바로 뒤 글자다. 괄호·콜론 라벨은 글에 포함하므로 'ㅇ (핵심 내용) 본문'에 딸린
-    부연설명은 '(핵심 내용)' 아래에 선다. 실측(2026-09-30, 삼채인.txt): 라벨 뒤 내어쓰기 위치에 맞추면
-    부연설명 왼쪽여백이 6cm를 넘고, 자기 콜론 라벨 내어쓰기까지 더해 둘째 줄이 쪽 오른쪽 끝에서 시작했다.
-    """
-    오프셋 = _여는낫표_건너뛰기(text, _문단_기호뒤_오프셋(text))
-    if not 오프셋 or 오프셋 <= 0:
-        return None
-    폭 = _캐럿위치_폭_실측(문단_시작, 오프셋)
-    if 폭 is None:
-        return None
-    hwp.SetPos(*문단_시작)
-    return int(hwp.ParaShape.Item("LeftMargin")) + 폭
+# 부연설명 앞 빈칸 수(문단 왼쪽 끝에서 센 칸 수, 사용자 지정 2026-10-07).
+# 기준 문서 '1) 보고서(계획서) 서식.hwpx': □ 아래 ※ 4·* 5·** 4칸, ㅇ·- 아래 ※ 5·* 6·** 5칸,
+# 번호 항목 아래 등 위에 제목/본문/내용이 없으면 ※ 3·* 4·** 3칸.
+# ※와 **는 같은 칸에서 시작하고 *는 한 칸 더 띄워 **의 둘째 별표가 *와 세로로 맞는다.
+부연설명_앞빈칸 = {
+    "제목": {"※": 4, "*": 5, "**": 4},
+    "본문": {"※": 5, "*": 6, "**": 5},
+    "내용": {"※": 5, "*": 6, "**": 5},
+    None: {"※": 3, "*": 4, "**": 3},
+}
 
 
-def _별표_현재위치_실측(문단_시작, text):
-    """*(주석1) 문단의 별표가 지금 서 있는 가로 위치 = 왼쪽여백 + 선행 공백 실측 폭. 실패하면 None.
-
-    위 제목/본문/내용에 맞추지 못한 *(표 주석, 부모 실측 실패 등)도 다음 줄 **의 기준으로 쓴다.
-    """
-    lead = _선행공백_길이(text)
-    폭 = _캐럿위치_폭_실측(문단_시작, lead) if lead > 0 else 0
-    if 폭 is None:
-        return None
-    hwp.SetPos(*문단_시작)
-    hwp_run("MoveParaBegin")
-    return int(hwp.ParaShape.Item("LeftMargin")) + 폭
+def 부연설명_앞빈칸_수(부모_유형, marker):
+    """위 문단 유형(제목/본문/내용/None)과 부연설명 기호로 앞 빈칸 수를 정한다. 규칙 밖이면 None."""
+    return 부연설명_앞빈칸.get(부모_유형, {}).get(marker)
 
 
-def _부연설명_들여쓰기_적용(문단_시작, text, 목표_위치, 여분_글자수=0):
-    """부연설명 문단의 왼쪽여백을 맞춰 마커가 목표_위치 칸에서 시작하게 한다.
-
-    여분_글자수는 마커 중 목표_위치보다 먼저 건너뛸 자기 자신의 글자 수다.
-    예: **(주석2)는 두 번째 별표를 앞줄 *(주석1)의 별표 위치에 맞추므로,
-    선행 공백 뒤 첫 번째 별표 1글자를 더 건너뛴다(여분_글자수=1).
+def _부연설명_앞빈칸_적용(문단_시작, text, 칸수, 왼쪽여백=None):
+    """부연설명 문단 앞 빈칸을 칸수만큼으로 바꾸고 왼쪽여백을 맞춘다.
 
     바뀌었으면 True, 이미 같으면 False, 실패하면 None.
     """
     if 현재_한칸표인가():
         return False
-    lead = _선행공백_길이(text) + 여분_글자수
-    w_lead = 0
-    if lead > 0:
-        w_lead = _캐럿위치_폭_실측(문단_시작, lead)
-        if w_lead is None:
-            로그(f"부연설명 들여쓰기 건너뜀(선행 공백 폭 실측 실패): {text.strip()[:40]}")
-            return None
-    필요_여백 = int(목표_위치) - int(w_lead)
-    공백_삭제됨 = False
-    cur_text = text
-    # **처럼 여분 글자가 있어 왼쪽여백이 음수가 되는 경우 앞 빈칸을 삭제해 맞춘다
-    while 필요_여백 < 0 and _선행공백_길이(cur_text) > 0 and 여분_글자수 > 0:
-        if cur_text and cur_text[0] in (" ", "\u00a0"):
-            if 문단_범위_선택(문단_시작, 0, 1) is False:
-                break
-            if hwp_run("Delete") is False:
-                break
-            공백_삭제됨 = True
-            hwp.SetPos(*문단_시작)
-            cur_text = 현재문단_텍스트()
-            lead = _선행공백_길이(cur_text) + 여분_글자수
-            w_lead = _캐럿위치_폭_실측(문단_시작, lead)
-            if w_lead is None:
-                break
-            필요_여백 = int(목표_위치) - int(w_lead)
-        else:
-            break
-    margin = max(0, 필요_여백)
+    lead = _선행공백_길이(text)
     try:
         hwp.SetPos(*문단_시작)
         hwp_run("MoveParaBegin")
         기존_여백 = int(hwp.ParaShape.Item("LeftMargin"))
-        if 기존_여백 == margin and not 공백_삭제됨:
+        빈칸_같음 = text[:lead] == " " * 칸수
+        여백_같음 = 왼쪽여백 is None or 기존_여백 == int(왼쪽여백)
+        if 빈칸_같음 and 여백_같음:
             return False
-        if 기존_여백 != margin:
+        if not 빈칸_같음:
+            if lead > 0:
+                if 문단_범위_선택(문단_시작, 0, lead) is False or hwp_run("Delete") is False:
+                    raise RuntimeError("앞 빈칸 삭제 실패")
+            hwp.SetPos(*문단_시작)
+            텍스트_삽입(" " * 칸수)
+        if not 여백_같음:
+            hwp.SetPos(*문단_시작)
             act = hwp.CreateAction("ParagraphShape")
             pset = act.CreateSet()
-            pset.SetItem("LeftMargin", margin)
+            pset.SetItem("LeftMargin", int(왼쪽여백))
             if act.Execute(pset) is False:
                 raise RuntimeError("왼쪽여백 설정 실패")
-        진단로그(f"[부연설명 들여쓰기] 목표 위치 {목표_위치}, 선행 폭 {w_lead} → "
-                 f"왼쪽여백 {margin}{'(앞 공백 삭제)' if 공백_삭제됨 else ''}: {cur_text.strip()[:50]}")
-        # 앞 빈칸을 지우면 자기 글 시작 위치가 바뀌므로 내어쓰기를 새 위치에 맞게 다시 맞춘다.
-        if 공백_삭제됨 and 표준서식_내어쓰기_사용 and stage_enabled(선택_세부작업, 'hanging_indent'):
+        hwp.SetPos(*문단_시작)
+        cur_text = 현재문단_텍스트()
+        진단로그(f"[부연설명 들여쓰기] 앞 빈칸 {lead} → {칸수}칸: {cur_text.strip()[:50]}")
+        # 앞 빈칸이 바뀌면 글 시작 위치도 바뀌므로 내어쓰기(Shift+Tab)를 다시 맞춘다.
+        if 표준서식_내어쓰기_사용 and stage_enabled(선택_세부작업, 'hanging_indent'):
             hwp.SetPos(*문단_시작)
             문단_내어쓰기_적용(문단_시작, cur_text)
         return True
@@ -5861,11 +5826,10 @@ def _부연설명_들여쓰기_적용(문단_시작, text, 목표_위치, 여분
 
 
 def 부연설명_들여쓰기_전체_적용(부모대상=None):
-    """각 부연설명(*, **, ※)을 바로 위 제목/본문/내용의 본문 첫 글자 위치에 맞춘다.
+    """각 부연설명(*, **, ※)의 앞 빈칸을 위 문단 유형별 칸 수로 맞춘다(부연설명_앞빈칸).
 
-    부모대상((리스트, 문단) 집합)을 주면 그 부모에 딸린 부연설명만 다시 맞춘다
-    (자간 조정 후 부모 내어쓰기가 바뀐 경우). 옮긴 부연설명은
-    내어쓰기_변경문단에 더해 다음 단어 분리 재검사 대상이 되게 한다.
+    왼쪽여백은 위 제목/본문/내용 문단과 같게 둔다. 부모대상((리스트, 문단) 집합)을 주면
+    그 부모에 딸린 부연설명만 다시 맞춘다. 옮긴 부연설명은 내어쓰기_변경문단에 더한다.
     """
     if not 부연설명_들여쓰기_사용:
         return True
@@ -5876,13 +5840,7 @@ def 부연설명_들여쓰기_전체_적용(부모대상=None):
     if 부모대상 is None:
         로그("부연설명(*, **, ※) 들여쓰기 적용 시작")
     순회_시작()
-    부모 = None        # (부모 문단 시작 위치, 텍스트)
-    부모_시작 = None   # 실측한 부모 본문 첫 글자 위치(필요할 때 한 번만 잰다)
-    # **(주석2)는 위 제목/본문/내용이 아니라 바로 앞줄의 *(주석1)를 기준으로
-    # 삼는다. 이번에 *를 목표 위치(부모_시작)에 정확히 맞췄을(또는 이미
-    # 그 자리였을) 때만 그 위치를 믿고 다음 줄이 **면 그대로 물려준다.
-    # 사이에 다른 문단(※ 포함)이 끼거나 확신할 수 없으면 즉시 비운다.
-    직전_별표_위치 = None
+    부모 = None        # (부모 문단 시작 위치, 유형)
     적용수 = 0
     while True:
         if 중단_요청됨():
@@ -5894,44 +5852,25 @@ def 부연설명_들여쓰기_전체_적용(부모대상=None):
         if text and text.strip():
             유형 = _부모문단_유형(text)
             if 유형 is not None:
-                부모 = (문단_시작, text)
-                부모_시작 = None
-                직전_별표_위치 = None
+                부모 = (문단_시작, 유형)
             elif _부연설명_문단인가(text):
                 marker, _ = leading_marker(text)
                 들여쓰기_선택 = 표준서식_설정.get("스타일_속성선택", {}).get(marker, {}).get("indent", True)
-                대상 = 부모 is not None and (부모대상 is None or tuple(부모[0][:2]) in 부모대상)
-                이번_별표_위치 = None
-                if marker == "**" and 직전_별표_위치 is not None and 들여쓰기_선택:
-                    # **의 두 번째 별표를 바로 앞줄 *의 별표 위치에 맞춘다(*와
-                    # **의 내어쓰기 기준위치는 같다. 여분_글자수=1로 첫 번째
-                    # 별표 1글자를 더 건너뛴다).
-                    결과 = _부연설명_들여쓰기_적용(문단_시작, text, 직전_별표_위치, 여분_글자수=1)
+                대상 = 부모대상 is None or (부모 is not None and tuple(부모[0][:2]) in 부모대상)
+                칸수 = 부연설명_앞빈칸_수(부모[1] if 부모 else None, marker)
+                if 대상 and 들여쓰기_선택 and 칸수 is not None:
+                    왼쪽여백 = None
+                    if 부모 is not None:
+                        hwp.SetPos(*부모[0])
+                        왼쪽여백 = int(hwp.ParaShape.Item("LeftMargin"))
+                    결과 = _부연설명_앞빈칸_적용(문단_시작, text, 칸수, 왼쪽여백)
                     if 결과:
                         적용수 += 1
                         내어쓰기_변경문단.add(tuple(문단_시작[:2]))
-                elif 대상 and 들여쓰기_선택:
-                    if 부모_시작 is None:
-                        부모_시작 = 부모_본문시작_실측(*부모)
-                    if 부모_시작:
-                        결과 = _부연설명_들여쓰기_적용(문단_시작, text, 부모_시작)
-                        if 결과:
-                            적용수 += 1
-                            내어쓰기_변경문단.add(tuple(문단_시작[:2]))
-                        if marker == "*" and 결과 is not None:
-                            # 방금 부모_시작에 맞췄거나(True) 이미 그 자리였다(False):
-                            # 두 경우 모두 이 문단의 * 위치는 부모_시작으로 확정됐다.
-                            이번_별표_위치 = 부모_시작
-                if marker == "*" and 이번_별표_위치 is None and 들여쓰기_선택:
-                    # 위 제목/본문/내용에 맞추지 않은 *(표 주석, 부모가 처리 범위 밖, 부모 실측 실패)도
-                    # 다음 줄 **의 둘째 별표를 맞출 기준이 되도록 지금 별표 위치를 잰다.
-                    이번_별표_위치 = _별표_현재위치_실측(문단_시작, text)
                 hwp.SetPos(*문단_시작)
-                직전_별표_위치 = 이번_별표_위치
             else:
-                # 제목/본문/내용도 부연설명도 아닌 일반 문단이 끼면 연결이 끊긴다.
+                # 제목/본문/내용도 부연설명도 아닌 일반 문단(번호 항목 등)이 끼면 연결이 끊긴다.
                 부모 = None
-                직전_별표_위치 = None
 
         if not 범위_다음_문단으로_진행():
             break
@@ -14469,7 +14408,7 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
             return False
     # 별표(**) 정렬: 앞선 내어쓰기·부연설명 여백 조정이 끝난 뒤 최종 보정한다.
     # 바로 앞줄 *의 별표 위치에 **의 둘째 별표를 맞추며, 필요하면 앞 빈칸을 지운다.
-    if 작업_모드 in ('format', 'all') and stage_enabled(선택_세부작업, 'star_align'):
+    if 작업_모드 in ('format', 'all') and not 부연설명_단계_사용 and stage_enabled(선택_세부작업, 'star_align'):
         if not stage('별표(**) 정렬', 별표_정렬_전체_적용):
             return False
     if 작업_모드 in ('spacing', 'all'):
