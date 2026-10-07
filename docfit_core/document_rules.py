@@ -223,13 +223,16 @@ def normalize_official_spacing(text):
 
 
 def normalize_attachment_list_header(text):
-    """번호 붙임 목록의 표시 뒤 공백을 편람 예시대로 두 타로 맞춘다."""
+    """번호 붙임 목록의 표시 뒤 공백을 편람 예시대로 두 타로 맞춘다.
+
+    쌍점을 쓴 '붙임 : 1.'·'붙임: 1.'은 사용자 기재 스타일이므로 그대로 둔다(사용자 지정 2026-10-08).
+    """
     if not text:
         return text
     match = _ATTACHMENT_LIST_HEADER_RE.match(text)
-    if not match:
+    if not match or match.group(3):
         return text
-    return match.group(1) + match.group(3) + "  " + text[match.end():]
+    return match.group(1) + "  " + text[match.end():]
 
 # 6단계 계층(2026-10-04): 2단계 장(chapter) · 3단계 중제목(midtitle, 로마자) · 4단계 □(box) · 5단계 ㅇ(circle) · 6단계 -(dash).
 LEVELS = ("chapter", "midtitle", "box", "circle", "dash", "note")
