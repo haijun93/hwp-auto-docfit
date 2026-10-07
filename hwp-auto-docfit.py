@@ -285,6 +285,7 @@ from docfit_core.pasted_text import clean_pasted_text, outline_pasted_text
 from docfit_core.labeled_text import label_outline_text, looks_labeled, parse_labeled_text
 from docfit_core.asterisk_superscript import mark_spans as 별표_위치
 from docfit_core.attachment_block import find_blocks as 붙임묶음_찾기
+from docfit_core.attachment_block import blank_line_plan as 붙임_앞빈줄_계획
 from docfit_core.attachment_block import (
     find_trailing_numbered_blocks as 끝붙임번호묶음_찾기,
     numbered_item_offset as 붙임번호_오프셋,
@@ -6414,12 +6415,19 @@ def 본문_컨트롤_문단번호():
     return result
 
 
-def 문두기호문장_사이_빈줄_삭제():
+def 문두기호문장_사이_빈줄_삭제(붙임_빈줄_넣기=False):
+    """문두기호 문장 사이·문서 끝 빈 줄과 붙임 앞 여분 빈 줄을 지운다.
+
+    붙임_빈줄_넣기=True이면 지우지 않고, 위에 글이 있는데 빈 줄이 없는 붙임 앞에 빈 줄 1줄만 넣는다.
+    문단을 늘리는 작업이라 문두기호 서식(앞 빈칸 맞춤)이 끝난 뒤에 따로 부른다(실측 2026-10-08:
+    앞에서 넣으면 뒤따르는 앞 빈칸 맞춤의 삭제가 일부 문단에서 실패해 빈칸이 늘었다).
+    """
     global 쪽범위_본문_문단
-    if not 문두기호문장_빈줄_삭제_사용 or hwp is None:
+    if hwp is None:
         return True
     original = hwp.GetPos()
     paragraphs = []
+    texts = []
     컨트롤문단 = 본문_컨트롤_문단번호()
     try:
         hwp_run('MoveDocBegin')
@@ -6434,22 +6442,43 @@ def 문두기호문장_사이_빈줄_삭제():
             end = hwp.GetPos()
             kind = 'other' if begin[1] in 컨트롤문단 else 빈문단_분류(text, begin, end)
             paragraphs.append((begin, end, kind))
+            texts.append(None if begin[1] in 컨트롤문단 else text)
             hwp.SetPos(*begin)
             hwp_run('MoveNextParaBegin')
             after = hwp.GetPos()
             if after == begin or after[0] != 0 or after[1] <= begin[1]:
                 break
 
-        targets = [index for index in 문두기호문장_사이_빈문단_찾기([p[2] for p in paragraphs])
-                   if index > 0 and 쪽범위_안인가(paragraphs[index][0])]
+        kinds = [p[2] for p in paragraphs]
+        targets = set()
+        붙임_삭제, 붙임_삽입 = 붙임_앞빈줄_계획(texts, kinds)
+        if 붙임_빈줄_넣기:
+            붙임_삭제 = []
+        else:
+            붙임_삽입 = []
+            if 문두기호문장_빈줄_삭제_사용:
+                targets.update(문두기호문장_사이_빈문단_찾기(kinds))
+        targets.update(붙임_삭제)
+        targets = {index for index in targets if index > 0 and 쪽범위_안인가(paragraphs[index][0])}
+        붙임_삽입 = [index for index in 붙임_삽입 if 쪽범위_안인가(paragraphs[index][0])]
         삭제수 = 0
-        # 뒤에서부터 지워야 앞 문단의 위치가 바뀌지 않는다. 빈 문단은 바로 앞
+        삽입수 = 0
+        # 뒤에서부터 고쳐야 앞 문단의 위치가 바뀌지 않는다. 빈 문단은 바로 앞
         # 문단 끝에 합쳐 지운다 — 뒤 문단에 합치면 문두기호 문장의 문단 모양이
-        # 빈 문단의 모양으로 바뀐다.
-        for index in reversed(targets):
+        # 빈 문단의 모양으로 바뀐다. 붙임 앞 빈 줄은 바로 앞 문단 끝에서 문단을 나눠 넣는다.
+        for index in sorted(targets | set(붙임_삽입), reverse=True):
             if 중단_요청됨():
                 return False
             prev_end = paragraphs[index - 1][1]
+            if index not in targets:
+                try:
+                    hwp.SetPos(*prev_end)
+                    if hwp_run('BreakPara') is False:
+                        raise RuntimeError('문단 나누기 실패')
+                    삽입수 += 1
+                except Exception as e:
+                    로그(f'붙임 앞 빈 줄 넣기 중 오류(건너뜀): {e}')
+                continue
             blank_end = paragraphs[index][1]
             try:
                 hwp.SetPos(*prev_end)
@@ -6461,12 +6490,16 @@ def 문두기호문장_사이_빈줄_삭제():
                 로그(f'문두기호 문장 사이 빈 줄 삭제 중 오류(건너뜀): {e}')
             finally:
                 hwp_run('Cancel')
-        if 삭제수 and 쪽범위_본문_문단 is not None:
-            # 지운 빈 문단은 모두 범위 안이라 그만큼 뒤 문단 번호가 당겨진다. 고정한 범위 끝을 같이
-            # 당기지 않으면 뒤 단계가 다음 쪽(범위 밖) 문단까지 고친다.
+        if (삭제수 or 삽입수) and 쪽범위_본문_문단 is not None:
+            # 지우거나 넣은 빈 문단은 모두 범위 안이라 그만큼 뒤 문단 번호가 바뀐다. 고정한 범위 끝을 같이
+            # 옮기지 않으면 뒤 단계가 다음 쪽(범위 밖) 문단까지 고친다.
             시작, 끝 = 쪽범위_본문_문단
-            쪽범위_본문_문단 = (시작, max(시작, 끝 - 삭제수))
-        로그(f'문두기호 문장 사이·문서 끝 빈 줄 삭제: {삭제수}개')
+            쪽범위_본문_문단 = (시작, max(시작, 끝 - 삭제수 + 삽입수))
+        if 붙임_빈줄_넣기:
+            if 삽입수:
+                로그(f'붙임 앞 빈 줄 넣기: {삽입수}개')
+        else:
+            로그(f'문두기호 문장 사이·문서 끝 빈 줄 삭제: {삭제수}개')
         return True
     finally:
         try:
@@ -8357,6 +8390,8 @@ def 표준서식_전체_적용():
         if not 다음_문단으로_진행():
             break
 
+    if not 문두기호문장_사이_빈줄_삭제(붙임_빈줄_넣기=True):
+        return False
     로그("표준서식적용 완료")
     return True
 

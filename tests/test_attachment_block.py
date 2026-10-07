@@ -11,6 +11,7 @@ from docfit_core.attachment_block import (
     find_blocks, find_trailing_numbered_blocks, is_numbered_header, is_numbered_item, numbered_item_offset,
 )
 from docfit_core.document_rules import normalize_attachment_list_header
+from docfit_core.attachment_block import blank_line_plan
 
 HP = 'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"'
 HS = 'xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"'
@@ -188,6 +189,26 @@ class DocumentTest(unittest.TestCase):
         with patch.dict(stage.__globals__, dict(env, 한글_문서_열기=opened)):
             self.assertTrue(stage(str(source), False, False, False, {}))
         opened.assert_not_called()
+
+
+
+class AttachmentBlankLineTest(unittest.TestCase):
+    def _plan(self, texts):
+        kinds = ["blank" if t == "" else "other" for t in texts]
+        return blank_line_plan(texts, kinds)
+
+    def test_inserts_one_blank_line_after_text(self):
+        self.assertEqual(self._plan(["ㅇ 본문", "붙임  계획서 1부.  끝."]), ([], [1]))
+
+    def test_keeps_a_single_blank_line(self):
+        self.assertEqual(self._plan(["ㅇ 본문", "", "붙임 : 1. 계획 1부.", "   2. 일정 1부.  끝."]), ([], []))
+
+    def test_leaves_only_one_of_many_blank_lines(self):
+        self.assertEqual(self._plan(["ㅇ 본문", "", "", "", "붙임: 1. 계획 1부.", "   2. 일정 1부.  끝."]), ([2, 1], []))
+
+    def test_no_text_above_or_not_an_attachment(self):
+        self.assertEqual(self._plan(["", "붙임  계획서 1부.  끝."]), ([], []))
+        self.assertEqual(self._plan(["ㅇ 본문", "붙임 자료를 참고하여 검토"]), ([], []))
 
 
 if __name__ == '__main__':
