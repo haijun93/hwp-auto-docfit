@@ -285,7 +285,10 @@ from docfit_core.pasted_text import clean_pasted_text, outline_pasted_text
 from docfit_core.labeled_text import label_outline_text, looks_labeled, parse_labeled_text
 from docfit_core.asterisk_superscript import mark_spans as 별표_위치
 from docfit_core.attachment_block import find_blocks as 붙임묶음_찾기
-from docfit_core.hanging_rules import hanging_blank_count as 기호별_내어쓰기_빈칸수
+from docfit_core.hanging_rules import (
+    hanging_blank_count as 기호별_내어쓰기_빈칸수,
+    is_supplement as 내어쓰기_부연설명인가,
+)
 from docfit_core.attachment_block import (
     find_trailing_numbered_blocks as 끝붙임번호묶음_찾기,
     numbered_item_offset as 붙임번호_오프셋,
@@ -366,7 +369,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리"
-APP_VERSION = "1.72 Beta 6"
+APP_VERSION = "1.72 Beta 7"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 GITHUB_UPDATE_API_URL = "https://api.github.com/repos/haijun93/hwp-auto-docfit/releases/latest"
@@ -1186,7 +1189,7 @@ def 번들_리소스_폴더():
     "std_dateinfo_bold": True,
     "std_symbols": True,
     "std_hanging_indent": True,
-    "std_supplement_indent": False,
+    "std_supplement_indent": True,
     "std_symbol_box_bold": False,
     "std_symbol_o_bold": True,
     "std_symbol_dash_bold": False,
@@ -5604,26 +5607,35 @@ def _붙임목록_번호_내어쓰기_적용(문단_시작위치, text, 기준�
 
 
 def _기호별_내어쓰기_값(begin, text):
-    """문두기호별 빈칸 규칙(ㅇ 1칸·- 3칸·*·**·※ 5칸)에 따른 내어쓰기 값(음수 HWPUNIT). 규칙 밖이면 None.
+    """문두기호별 빈칸 규칙에 따른 내어쓰기 값(음수 HWPUNIT). 규칙 밖이면 None.
 
-    기호 끝까지의 폭에 그 문단 글꼴의 빈칸 폭 × 칸 수를 더한다. 첫 줄 값이 0인 상태에서 호출한다.
-    복사한 서식의 내어쓰기 규칙이 있거나 라벨이 있는 ㅇ 문단은 기존 기준을 따른다.
+    ㅇ 1칸·- 3칸은 기호 끝까지의 폭에 그 문단 글꼴의 빈칸 폭 × 칸 수를 더한다.
+    부연설명(*·**·※)은 자기 글 시작 위치(기호와 뒤 빈칸 폭)에 맞춘다(칸을 더하지 않는다).
+    첫 줄 값이 0인 상태에서 호출한다. 복사한 서식의 내어쓰기 규칙이 있거나 라벨이 있는 ㅇ 문단은
+    기존 기준을 따른다. -와 부연설명은 콜론·괄호 라벨이 있어도 이 규칙을 쓴다.
     """
-    칸수 = 기호별_내어쓰기_빈칸수(text)
-    if not 칸수 or 복사_내어쓰기_규칙(text) is not None:
+    부연 = 내어쓰기_부연설명인가(text)
+    칸수 = 0 if 부연 else 기호별_내어쓰기_빈칸수(text)
+    if (not 부연 and not 칸수) or 복사_내어쓰기_규칙(text) is not None:
         return None
     marker_end = 문장부호_마커_끝위치(text)
     if marker_end is None or marker_end >= len(text) or text[marker_end] not in (" ", "\u00a0"):
         return None
+    글시작 = _문단_기호뒤_오프셋(text)
     # ㅇ(1칸)은 괄호·콜론 라벨이 있으면 라벨 뒤에 맞추는 기존 기준을 따른다.
-    # -·*·**·※는 라벨이 있어도 기호 끝 + 빈칸 N칸 규칙을 그대로 쓴다.
-    if 칸수 == 1 and _문단_본문시작_오프셋(text) != _문단_기호뒤_오프셋(text):
+    if 칸수 == 1 and (글시작 is None or _문단_본문시작_오프셋(text) != 글시작):
         return None
     marker_width = _캐럿위치_폭_실측(begin, marker_end)
     blank_end_width = _캐럿위치_폭_실측(begin, marker_end + 1)
     if marker_width is None or blank_end_width is None or blank_end_width <= marker_width:
         return None
-    return -(marker_width + 칸수 * (blank_end_width - marker_width))
+    blank_width = blank_end_width - marker_width
+    if 부연:
+        글시작_폭 = _캐럿위치_폭_실측(begin, 글시작) if 글시작 is not None else None
+        if 글시작_폭 is None:
+            return None
+        return -글시작_폭
+    return -(marker_width + 칸수 * blank_width)
 
 
 def 문단_내어쓰기_적용(문단_시작위치, text, 폰트크기_pt=None, 폰트=None, 굵게=None):
@@ -5881,6 +5893,10 @@ def _부연설명_들여쓰기_적용(문단_시작, text, 목표_위치, 여분
                 raise RuntimeError("왼쪽여백 설정 실패")
         진단로그(f"[부연설명 들여쓰기] 목표 위치 {목표_위치}, 선행 폭 {w_lead} → "
                  f"왼쪽여백 {margin}{'(앞 공백 삭제)' if 공백_삭제됨 else ''}: {cur_text.strip()[:50]}")
+        # 앞 빈칸을 지우면 자기 글 시작 위치가 바뀌므로 내어쓰기를 새 위치에 맞게 다시 맞춘다.
+        if 공백_삭제됨 and 표준서식_내어쓰기_사용 and stage_enabled(선택_세부작업, 'hanging_indent'):
+            hwp.SetPos(*문단_시작)
+            문단_내어쓰기_적용(문단_시작, cur_text)
         return True
     except Exception as e:
         로그(f"부연설명 들여쓰기 적용 실패(무시): {e}")
@@ -16972,7 +16988,7 @@ class HwpAutoDocFitGUI:
         elif key == "supplement_indent":
             체크 = ttk.Checkbutton(
                 parent,
-                text="부연설명 문단 전체를 위 문단에 맞추기 (선택)\n*, **, ※의 시작 위치를 위 문단의 본문 첫 글자 아래로 옮깁니다.\n‘내어쓰기’는 같은 문단의 둘째 줄 이후만 맞추므로 역할이 다릅니다.",
+                text="부연설명 문단 전체를 위 문단에 맞추기\n*, **, ※의 시작 위치를 위 문단의 본문 첫 글자 아래로 옮깁니다.\n‘내어쓰기’는 같은 문단의 둘째 줄 이후만 맞추므로 역할이 다릅니다.",
                 variable=self.std_bool_vars["std_supplement_indent"])
             체크.pack(anchor="w")
             if 주설정탭:
