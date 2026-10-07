@@ -1,7 +1,7 @@
 """문두기호별 내어쓰기 빈칸 규칙.
 
 - ㅇ·-: 둘째 줄 이후를 '기호 끝 + 빈칸 N칸' 위치에 맞춘다(ㅇ 1칸, - 3칸, 사용자 지정 2026-10-07).
-- 부연설명(*·**·※): 자기 글 시작 위치(기호와 뒤 빈칸)에 빈칸 2칸을 더한다(사용자 지정 2026-10-07).
+- 부연설명(*·**·※): 둘째 줄을 자기 글 시작 위치(기호와 뒤 빈칸 바로 다음)에 맞춘다(사용자 지정 2026-10-07).
 """
 
 from __future__ import annotations
@@ -9,7 +9,6 @@ from __future__ import annotations
 from .style_hierarchy import leading_marker
 
 HANGING_BLANKS = {"ㅇ": 1, "-": 3}
-SUPPLEMENT_EXTRA_BLANKS = 2
 SUPPLEMENT_MARKERS = frozenset({"*", "**", "※"})
 _ALIASES = {"○": "ㅇ", "☞": "ㅇ"}
 

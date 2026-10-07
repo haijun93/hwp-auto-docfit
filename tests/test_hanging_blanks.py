@@ -46,11 +46,11 @@ class HangingValueTest(unittest.TestCase):
         self.assertEqual(self._value("ㅇ 본문", {1: 1000, 2: 1250})[0], -1250)
         self.assertEqual(self._value("- 본문", {1: 800, 2: 1050})[0], -(800 + 3 * 250))
 
-    def test_supplement_is_own_text_start_plus_two_blanks(self):
-        # 빈칸 폭 250: 기호 끝 900, 글 시작 1150 → -(1150 + 2×250). 앞 문장과 무관하다.
-        self.assertEqual(self._value("※ 참고", {1: 900, 2: 1150})[0], -1650)
-        self.assertEqual(self._value("* 주", {1: 600, 2: 850})[0], -1350)
-        self.assertEqual(self._value("** 주", {2: 1400, 3: 1650})[0], -(1650 + 500))
+    def test_supplement_aligns_to_its_own_text_start(self):
+        # 기호 끝 900, 글 시작 1150 → 둘째 줄은 글 시작(-1150). 칸을 더하지 않는다.
+        self.assertEqual(self._value("※ 참고", {1: 900, 2: 1150})[0], -1150)
+        self.assertEqual(self._value("* 주", {1: 600, 2: 850})[0], -850)
+        self.assertEqual(self._value("** 주", {2: 1400, 3: 1650})[0], -1650)
 
     def test_leading_blanks_are_included_in_marker_width(self):
         value, marker_end = self._value(" ㅇ 본문", {2: 1300, 3: 1550})

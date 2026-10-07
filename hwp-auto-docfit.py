@@ -286,7 +286,6 @@ from docfit_core.labeled_text import label_outline_text, looks_labeled, parse_la
 from docfit_core.asterisk_superscript import mark_spans as 별표_위치
 from docfit_core.attachment_block import find_blocks as 붙임묶음_찾기
 from docfit_core.hanging_rules import (
-    SUPPLEMENT_EXTRA_BLANKS as 부연설명_추가_빈칸수,
     hanging_blank_count as 기호별_내어쓰기_빈칸수,
     is_supplement as 내어쓰기_부연설명인가,
 )
@@ -5553,13 +5552,13 @@ def _기호별_내어쓰기_값(begin, text):
     """문두기호별 빈칸 규칙에 따른 내어쓰기 값(음수 HWPUNIT). 규칙 밖이면 None.
 
     ㅇ 1칸·- 3칸은 기호 끝까지의 폭에 그 문단 글꼴의 빈칸 폭 × 칸 수를 더한다.
-    부연설명(*·**·※)은 자기 글 시작 위치(기호와 뒤 빈칸 폭)에 빈칸 2칸을 더한다.
+    부연설명(*·**·※)은 자기 글 시작 위치(기호와 뒤 빈칸 폭)에 맞춘다(칸을 더하지 않는다).
     첫 줄 값이 0인 상태에서 호출한다. 복사한 서식의 내어쓰기 규칙이 있거나 괄호·콜론 라벨이 있는
     문단은 기존 기준을 따른다.
     """
     부연 = 내어쓰기_부연설명인가(text)
-    칸수 = 부연설명_추가_빈칸수 if 부연 else 기호별_내어쓰기_빈칸수(text)
-    if not 칸수 or 복사_내어쓰기_규칙(text) is not None:
+    칸수 = 0 if 부연 else 기호별_내어쓰기_빈칸수(text)
+    if (not 부연 and not 칸수) or 복사_내어쓰기_규칙(text) is not None:
         return None
     marker_end = 문장부호_마커_끝위치(text)
     if marker_end is None or marker_end >= len(text) or text[marker_end] not in (" ", "\u00a0"):
@@ -5576,7 +5575,7 @@ def _기호별_내어쓰기_값(begin, text):
         글시작_폭 = _캐럿위치_폭_실측(begin, 글시작)
         if 글시작_폭 is None:
             return None
-        return -(글시작_폭 + 칸수 * blank_width)
+        return -글시작_폭
     return -(marker_width + 칸수 * blank_width)
 
 
