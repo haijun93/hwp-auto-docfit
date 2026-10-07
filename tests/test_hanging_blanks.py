@@ -63,8 +63,26 @@ class HangingValueTest(unittest.TestCase):
         self.assertIsNone(self._value("□ 제목", {1: 1000, 2: 1250})[0])          # 규칙 없는 기호
         self.assertIsNone(self._value("ㅇ 본문", {})[0])                          # 실측 실패
 
+    def test_labeled_non_circle_markers_still_use_blank_rule(self):
+        # 콜론·괄호 라벨이 있어도 -는 빈칸 규칙, 부연설명은 자기 글 시작 위치를 쓴다(ㅇ만 라벨 뒤 기준).
+        self.assertEqual(self._value("* 항세기: 기후 안정", {1: 1000, 2: 1250})[0], -1250)
+        self.assertEqual(self._value("** 난세기: 극단적 기후", {2: 1400, 3: 1650})[0], -1650)
+        self.assertEqual(self._value("- (가) 설명", {1: 800, 2: 1050})[0], -(800 + 3 * 250))
+        self.assertIsNone(self._value("ㅇ 항목: 설명", {1: 1000, 2: 1250})[0])
+
 
 class AttachmentAlignTest(unittest.TestCase):
+    def test_baseline_measure_sets_pos_with_three_values(self):
+        ns = runpy.run_path(str(Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"))
+        fn = ns["_붙임번호_기준위치_실측"]
+        hwp = Mock()
+        hwp.GetPos.return_value = (0, 3, 0)
+        hwp.ParaShape.Item.return_value = 0
+        with patch.dict(fn.__globals__, {"hwp": hwp, "hwp_run": Mock(), "_내어쓰기_값_설정": Mock()}):
+            fn((0, 3), "붙임  1. 항목 1부.")  # 수집 단계의 (리스트, 문단) 두 값 위치
+        for call in hwp.SetPos.call_args_list:
+            self.assertEqual(len(call.args), 3)
+
     def test_numbers_share_the_first_number_position(self):
         ns = runpy.run_path(str(Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"))
         fn = ns["문단_내어쓰기_전체_갱신"]

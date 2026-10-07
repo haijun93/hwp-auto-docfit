@@ -369,23 +369,31 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리"
-APP_VERSION = "1.72 Beta 5"
+APP_VERSION = "1.72 Beta 6"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
+GITHUB_UPDATE_API_URL = "https://api.github.com/repos/haijun93/hwp-auto-docfit/releases/latest"
 UPDATE_ASSET_NAME = "HWP_AutoDocFit.exe"
 _업데이트_허용_호스트 = "gitlab.aigov.go.kr"
+# GitHub 릴리스 파일은 github.com에서 githubusercontent.com 계열 주소로 넘어간다(리디렉션).
+_업데이트_허용_호스트들 = (_업데이트_허용_호스트, "api.github.com", "github.com")
+_업데이트_허용_호스트_접미사 = (".githubusercontent.com",)
 
 
 def _업데이트_URL_검증(url):
-    """업데이트 조회·다운로드 URL을 HTTPS GitLab 주소로 제한한다."""
+    """업데이트 조회·다운로드 URL을 HTTPS GitLab·GitHub 주소로 제한한다."""
     parsed = urllib.parse.urlparse(str(url))
-    if parsed.scheme != "https" or parsed.hostname != _업데이트_허용_호스트:
+    호스트 = (parsed.hostname or "").lower()
+    허용 = 호스트 in _업데이트_허용_호스트들 or any(
+        호스트.endswith(접미사) for 접미사 in _업데이트_허용_호스트_접미사
+    )
+    if parsed.scheme != "https" or not 허용:
         raise ValueError("허용되지 않은 업데이트 URL입니다.")
     return str(url)
 
 
-def _업데이트_HTTP_GET(url, headers, timeout):
-    """검증된 GitLab HTTPS URL만 직접 HTTPS 연결로 조회한다."""
+def _업데이트_HTTP_GET(url, headers, timeout, _남은_리디렉션=5):
+    """검증된 GitLab·GitHub HTTPS URL만 직접 HTTPS 연결로 조회한다(리디렉션도 매번 검증)."""
     parsed = urllib.parse.urlparse(_업데이트_URL_검증(url))
     연결 = http.client.HTTPSConnection(  # nosemgrep
         parsed.hostname, parsed.port or 443, timeout=timeout,
@@ -393,6 +401,13 @@ def _업데이트_HTTP_GET(url, headers, timeout):
     )
     연결.request("GET", parsed.path + (f"?{parsed.query}" if parsed.query else ""), headers=headers)
     응답 = 연결.getresponse()
+    if 응답.status in (301, 302, 303, 307, 308) and 응답.getheader("Location"):
+        다음 = urllib.parse.urljoin(str(url), 응답.getheader("Location"))
+        응답.read()
+        연결.close()
+        if _남은_리디렉션 <= 0:
+            raise RuntimeError("업데이트 주소의 리디렉션이 너무 많습니다.")
+        return _업데이트_HTTP_GET(다음, headers, timeout, _남은_리디렉션 - 1)
     if 응답.status >= 400:
         상태 = 응답.status
         응답.read()
@@ -407,9 +422,9 @@ def _버전_튜플(value):
     return tuple((숫자 + [0, 0, 0])[:3])
 
 
-def _최신_릴리스_조회(timeout=8):
+def _최신_릴리스_조회(timeout=8, api_url=None):
     try:
-        응답 = _업데이트_HTTP_GET(UPDATE_API_URL, {
+        응답 = _업데이트_HTTP_GET(api_url or UPDATE_API_URL, {
             "Accept": "application/json",
             "User-Agent": f"HWP-AutoDocFit/{APP_VERSION}",
         }, timeout)
@@ -423,15 +438,54 @@ def _최신_릴리스_조회(timeout=8):
         if exc.code == 404:
             return None
         raise
-    링크들 = 릴리스.get("assets", {}).get("links", [])
+    if not isinstance(릴리스, dict):
+        raise ValueError(f"릴리스 응답 형식이 올바르지 않습니다({type(릴리스).__name__}): {str(릴리스)[:80]}")
+    # GitLab은 assets가 {"links": [...]} 형태의 dict이고, GitHub 형식은 목록이다. 둘 다 받는다.
+    자산정보 = 릴리스.get("assets")
+    if isinstance(자산정보, dict):
+        링크들 = 자산정보.get("links") or []
+    elif isinstance(자산정보, list):
+        링크들 = 자산정보
+    else:
+        링크들 = []
     릴리스["assets"] = [
         {
             **링크,
-            "browser_download_url": 링크.get("direct_asset_url") or 링크.get("url"),
+            "browser_download_url": (
+                링크.get("direct_asset_url") or 링크.get("browser_download_url") or 링크.get("url")
+            ),
         }
-        for 링크 in 링크들
+        for 링크 in 링크들 if isinstance(링크, dict)
     ]
     return 릴리스
+
+
+def _최신_릴리스_통합_조회(timeout=8):
+    """GitLab과 GitHub를 모두 조회해 가장 높은 버전의 릴리스를 돌려준다.
+
+    한쪽만 실패하면 다른 쪽 결과를 쓰고, 둘 다 실패하면 오류를 낸다.
+    버전이 같으면 GitLab(사내 배포선)을 우선한다.
+    """
+    원본들 = (("GitLab", UPDATE_API_URL), ("GitHub", GITHUB_UPDATE_API_URL))
+    결과들, 오류들 = [], []
+    for 이름, 주소 in 원본들:
+        try:
+            릴리스 = _최신_릴리스_조회(timeout, api_url=주소)
+        except Exception as exc:
+            오류들.append(f"{이름}: {exc}")
+            continue
+        if 릴리스:
+            릴리스["update_source"] = 이름
+            결과들.append(릴리스)
+    if not 결과들:
+        if 오류들 and len(오류들) == len(원본들):
+            raise RuntimeError(" / ".join(오류들))
+        return None
+    최신 = 결과들[0]
+    for 후보 in 결과들[1:]:
+        if _버전_튜플(후보.get("tag_name") or 후보.get("name")) > _버전_튜플(최신.get("tag_name") or 최신.get("name")):
+            최신 = 후보
+    return 최신
 
 
 def _업데이트_자산_선택(릴리스):
@@ -5441,6 +5495,10 @@ def _붙임번호_기준위치_실측(문단_시작위치, text):
     offset = 붙임번호_오프셋(text)
     if offset is None:
         return None
+    # 수집 단계의 위치는 (리스트, 문단) 두 값뿐이다. SetPos는 (리스트, 문단, 위치) 세 값이 필요하다.
+    문단_시작위치 = tuple(문단_시작위치)[:3]
+    if len(문단_시작위치) == 2:
+        문단_시작위치 += (0,)
     original_pos = hwp.GetPos()
     begin = None
     original_indent = None
@@ -5553,8 +5611,8 @@ def _기호별_내어쓰기_값(begin, text):
 
     ㅇ 1칸·- 3칸은 기호 끝까지의 폭에 그 문단 글꼴의 빈칸 폭 × 칸 수를 더한다.
     부연설명(*·**·※)은 자기 글 시작 위치(기호와 뒤 빈칸 폭)에 맞춘다(칸을 더하지 않는다).
-    첫 줄 값이 0인 상태에서 호출한다. 복사한 서식의 내어쓰기 규칙이 있거나 괄호·콜론 라벨이 있는
-    문단은 기존 기준을 따른다.
+    첫 줄 값이 0인 상태에서 호출한다. 복사한 서식의 내어쓰기 규칙이 있거나 라벨이 있는 ㅇ 문단은
+    기존 기준을 따른다. -와 부연설명은 콜론·괄호 라벨이 있어도 이 규칙을 쓴다.
     """
     부연 = 내어쓰기_부연설명인가(text)
     칸수 = 0 if 부연 else 기호별_내어쓰기_빈칸수(text)
@@ -5564,7 +5622,8 @@ def _기호별_내어쓰기_값(begin, text):
     if marker_end is None or marker_end >= len(text) or text[marker_end] not in (" ", "\u00a0"):
         return None
     글시작 = _문단_기호뒤_오프셋(text)
-    if 글시작 is None or _문단_본문시작_오프셋(text) != 글시작:
+    # ㅇ(1칸)은 괄호·콜론 라벨이 있으면 라벨 뒤에 맞추는 기존 기준을 따른다.
+    if 칸수 == 1 and (글시작 is None or _문단_본문시작_오프셋(text) != 글시작):
         return None
     marker_width = _캐럿위치_폭_실측(begin, marker_end)
     blank_end_width = _캐럿위치_폭_실측(begin, marker_end + 1)
@@ -5572,7 +5631,7 @@ def _기호별_내어쓰기_값(begin, text):
         return None
     blank_width = blank_end_width - marker_width
     if 부연:
-        글시작_폭 = _캐럿위치_폭_실측(begin, 글시작)
+        글시작_폭 = _캐럿위치_폭_실측(begin, 글시작) if 글시작 is not None else None
         if 글시작_폭 is None:
             return None
         return -글시작_폭
@@ -16434,7 +16493,7 @@ class HwpAutoDocFitGUI:
 
         def 확인():
             try:
-                릴리스 = _최신_릴리스_조회()
+                릴리스 = _최신_릴리스_통합_조회()
             except Exception as exc:
                 # 네트워크가 없거나 GitLab이 응답하지 않아도 앱 사용은 막지 않는다.
                 if 수동:
