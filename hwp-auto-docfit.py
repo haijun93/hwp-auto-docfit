@@ -5492,6 +5492,10 @@ def _붙임번호_기준위치_실측(문단_시작위치, text):
     offset = 붙임번호_오프셋(text)
     if offset is None:
         return None
+    # 수집 단계의 위치는 (리스트, 문단) 두 값뿐이다. SetPos는 (리스트, 문단, 위치) 세 값이 필요하다.
+    문단_시작위치 = tuple(문단_시작위치)[:3]
+    if len(문단_시작위치) == 2:
+        문단_시작위치 += (0,)
     original_pos = hwp.GetPos()
     begin = None
     original_indent = None
@@ -5603,7 +5607,7 @@ def _기호별_내어쓰기_값(begin, text):
     """문두기호별 빈칸 규칙(ㅇ 1칸·- 3칸·*·**·※ 5칸)에 따른 내어쓰기 값(음수 HWPUNIT). 규칙 밖이면 None.
 
     기호 끝까지의 폭에 그 문단 글꼴의 빈칸 폭 × 칸 수를 더한다. 첫 줄 값이 0인 상태에서 호출한다.
-    복사한 서식의 내어쓰기 규칙이 있거나 괄호·콜론 라벨이 있는 문단은 기존 기준을 따른다.
+    복사한 서식의 내어쓰기 규칙이 있거나 라벨이 있는 ㅇ 문단은 기존 기준을 따른다.
     """
     칸수 = 기호별_내어쓰기_빈칸수(text)
     if not 칸수 or 복사_내어쓰기_규칙(text) is not None:
@@ -5611,7 +5615,9 @@ def _기호별_내어쓰기_값(begin, text):
     marker_end = 문장부호_마커_끝위치(text)
     if marker_end is None or marker_end >= len(text) or text[marker_end] not in (" ", "\u00a0"):
         return None
-    if _문단_본문시작_오프셋(text) != _문단_기호뒤_오프셋(text):
+    # ㅇ(1칸)은 괄호·콜론 라벨이 있으면 라벨 뒤에 맞추는 기존 기준을 따른다.
+    # -·*·**·※는 라벨이 있어도 기호 끝 + 빈칸 N칸 규칙을 그대로 쓴다.
+    if 칸수 == 1 and _문단_본문시작_오프셋(text) != _문단_기호뒤_오프셋(text):
         return None
     marker_width = _캐럿위치_폭_실측(begin, marker_end)
     blank_end_width = _캐럿위치_폭_실측(begin, marker_end + 1)
