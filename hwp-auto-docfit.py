@@ -288,7 +288,6 @@ from docfit_core.attachment_block import find_blocks as 붙임묶음_찾기
 from docfit_core.hanging_rules import (
     SUPPLEMENT_EXTRA_BLANKS as 부연설명_추가_빈칸수,
     hanging_blank_count as 기호별_내어쓰기_빈칸수,
-    is_parent_marker as 내어쓰기_부모기호인가,
     is_supplement as 내어쓰기_부연설명인가,
 )
 from docfit_core.attachment_block import (
@@ -5366,15 +5365,6 @@ def 재검사_영역인가(area):
     return 재검사_대상문단 is None or any(key[0] == area for key in 재검사_대상문단)
 
 
-def _현재문단_내어쓰기_값():
-    """캐럿이 있는 문단의 내어쓰기(첫 줄 값, 음수면 내어쓰기). 읽지 못하면 None."""
-    try:
-        hwp_run("MoveParaBegin")
-        return int(hwp.ParaShape.Item("Indentation"))
-    except Exception:
-        return None
-
-
 def 문단_내어쓰기_전체_갱신(대상문단=None):
     """최종 문자 서식/자간으로 본문 내어쓰기만 재계산한다.
 
@@ -5386,19 +5376,12 @@ def 문단_내어쓰기_전체_갱신(대상문단=None):
         return True
     붙임번호_대상 = _붙임목록_내어쓰기_대상수집()
     붙임번호_기준점들 = {}
-    직전_부모_내어쓰기 = None
     순회_시작()
     while True:
         if 중단_요청됨():
             return False
         hwp_run("MoveParaBegin")
         if 대상문단 is not None and tuple(hwp.GetPos()[:2]) not in 대상문단:
-            # 대상이 아닌 문단도 부연설명이 연동할 앞 기호 값은 읽어 둔다.
-            건너뛴글 = 현재문단_텍스트()
-            if 내어쓰기_부모기호인가(건너뛴글):
-                직전_부모_내어쓰기 = _현재문단_내어쓰기_값()
-            elif not (건너뛴글 and 내어쓰기_부연설명인가(건너뛴글)):
-                직전_부모_내어쓰기 = None
             if not 범위_다음_문단으로_진행():
                 break
             continue
@@ -5423,12 +5406,7 @@ def 문단_내어쓰기_전체_갱신(대상문단=None):
                 로그(f"[붙임 내어쓰기] 번호 정렬을 건너뜀: {text.strip()[:60]}")
         elif (문단_내어쓰기_기준_오프셋(text) is not None
                 and 내어쓰기_기호선택_허용(text)):
-            문단_내어쓰기_적용(hwp.GetPos(), text, 부모_내어쓰기=직전_부모_내어쓰기)
-        # 부연설명(*·**·※)은 바로 앞 ㅁ·ㅇ·- 문장의 내어쓰기 값에 연동한다. 다른 문단이 끼면 연동을 끊는다.
-        if 내어쓰기_부모기호인가(text):
-            직전_부모_내어쓰기 = _현재문단_내어쓰기_값()
-        elif not (text and 내어쓰기_부연설명인가(text)):
-            직전_부모_내어쓰기 = None
+            문단_내어쓰기_적용(hwp.GetPos(), text)
         if not 범위_다음_문단으로_진행():
             break
     return True
@@ -5571,11 +5549,11 @@ def _붙임목록_번호_내어쓰기_적용(문단_시작위치, text, 기준�
 
 
 
-def _기호별_내어쓰기_값(begin, text, 부모_내어쓰기=None):
+def _기호별_내어쓰기_값(begin, text):
     """문두기호별 빈칸 규칙에 따른 내어쓰기 값(음수 HWPUNIT). 규칙 밖이면 None.
 
     ㅇ 1칸·- 3칸은 기호 끝까지의 폭에 그 문단 글꼴의 빈칸 폭 × 칸 수를 더한다.
-    부연설명(*·**·※)은 바로 앞 ㅁ·ㅇ·- 문장의 내어쓰기 값(부모_내어쓰기, 음수)에 빈칸 2칸을 더한다.
+    부연설명(*·**·※)은 자기 글 시작 위치(기호와 뒤 빈칸 폭)에 빈칸 2칸을 더한다.
     첫 줄 값이 0인 상태에서 호출한다. 복사한 서식의 내어쓰기 규칙이 있거나 괄호·콜론 라벨이 있는
     문단은 기존 기준을 따른다.
     """
@@ -5583,12 +5561,11 @@ def _기호별_내어쓰기_값(begin, text, 부모_내어쓰기=None):
     칸수 = 부연설명_추가_빈칸수 if 부연 else 기호별_내어쓰기_빈칸수(text)
     if not 칸수 or 복사_내어쓰기_규칙(text) is not None:
         return None
-    if 부연 and (부모_내어쓰기 is None or int(부모_내어쓰기) >= -20):
-        return None
     marker_end = 문장부호_마커_끝위치(text)
     if marker_end is None or marker_end >= len(text) or text[marker_end] not in (" ", "\u00a0"):
         return None
-    if _문단_본문시작_오프셋(text) != _문단_기호뒤_오프셋(text):
+    글시작 = _문단_기호뒤_오프셋(text)
+    if 글시작 is None or _문단_본문시작_오프셋(text) != 글시작:
         return None
     marker_width = _캐럿위치_폭_실측(begin, marker_end)
     blank_end_width = _캐럿위치_폭_실측(begin, marker_end + 1)
@@ -5596,11 +5573,14 @@ def _기호별_내어쓰기_값(begin, text, 부모_내어쓰기=None):
         return None
     blank_width = blank_end_width - marker_width
     if 부연:
-        return int(부모_내어쓰기) - 칸수 * blank_width
+        글시작_폭 = _캐럿위치_폭_실측(begin, 글시작)
+        if 글시작_폭 is None:
+            return None
+        return -(글시작_폭 + 칸수 * blank_width)
     return -(marker_width + 칸수 * blank_width)
 
 
-def 문단_내어쓰기_적용(문단_시작위치, text, 폰트크기_pt=None, 폰트=None, 굵게=None, 부모_내어쓰기=None):
+def 문단_내어쓰기_적용(문단_시작위치, text, 폰트크기_pt=None, 폰트=None, 굵게=None):
     """실제 Shift+Tab 실행. 정렬/여백 보존, 반복 시 누적 방지, 실패 시 복원.
 
     글꼴·굵기·장평·자간·탭 폭은 한글이 계산한다. 긴 라벨로 기준점이
@@ -5627,7 +5607,7 @@ def 문단_내어쓰기_적용(문단_시작위치, text, 폰트크기_pt=None, 
         # 기존 내어쓰기를 지운 동일한 첫 줄 상태에서 매번 계산한다.
         _내어쓰기_값_설정(0)
         changed = True
-        규칙값 = _기호별_내어쓰기_값(begin, text, 부모_내어쓰기)
+        규칙값 = _기호별_내어쓰기_값(begin, text)
         if 규칙값 is not None:
             _내어쓰기_값_설정(규칙값)
             if 규칙값 != original_indent:
