@@ -285,6 +285,7 @@ from docfit_core.pasted_text import clean_pasted_text, outline_pasted_text
 from docfit_core.labeled_text import label_outline_text, looks_labeled, parse_labeled_text
 from docfit_core.asterisk_superscript import mark_spans as 별표_위치
 from docfit_core.attachment_block import find_blocks as 붙임묶음_찾기
+from docfit_core.hanging_rules import hanging_blank_count as 기호별_내어쓰기_빈칸수
 from docfit_core.attachment_block import (
     find_trailing_numbered_blocks as 끝붙임번호묶음_찾기,
     numbered_item_offset as 붙임번호_오프셋,
@@ -365,7 +366,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리"
-APP_VERSION = "1.72 Beta 4"
+APP_VERSION = "1.72 Beta 5"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 UPDATE_ASSET_NAME = "HWP_AutoDocFit.exe"
@@ -5387,7 +5388,7 @@ def 문단_내어쓰기_전체_갱신(대상문단=None):
             continue
         현재키 = tuple(hwp.GetPos()[:2])
         if 현재키 in 붙임번호_대상:
-            기준문단, 단계 = 붙임번호_대상[현재키]
+            기준문단, _ = 붙임번호_대상[현재키]
             기준키 = 기준문단[0]
             if 기준키 not in 붙임번호_기준점들:
                 붙임번호_기준점들[기준키] = _붙임번호_기준위치_실측(*기준문단)
@@ -5396,7 +5397,8 @@ def 문단_내어쓰기_전체_갱신(대상문단=None):
             기준값 = 붙임번호_기준점들[기준키]
             if 기준값 is None:
                 로그(f"[붙임 내어쓰기] 번호 기준을 측정하지 못했습니다: {text.strip()[:60]}")
-            elif not _붙임목록_번호_내어쓰기_적용(hwp.GetPos(), text, 기준값[0] + 단계 * 기준값[1]):
+            # 숫자와 점으로 된 어절은 다음 줄의 번호와 세로로 같은 위치다(계단식으로 밀지 않는다).
+            elif not _붙임목록_번호_내어쓰기_적용(hwp.GetPos(), text, 기준값[0]):
                 로그(f"[붙임 내어쓰기] 번호 정렬을 건너뜀: {text.strip()[:60]}")
         elif (문단_내어쓰기_기준_오프셋(text) is not None
                 and 내어쓰기_기호선택_허용(text)):
@@ -5407,7 +5409,7 @@ def 문단_내어쓰기_전체_갱신(대상문단=None):
 
 
 def _붙임목록_내어쓰기_대상수집():
-    """문서 맨 끝의 번호 붙임 묶음만 훑어 편람식 항목 단계별 들여쓰기 대상을 수집한다."""
+    """문서 맨 끝의 번호 붙임 묶음만 훑어 번호 세로 정렬 대상을 수집한다."""
     paragraphs = []
     original = hwp.GetPos()
     try:
@@ -5432,7 +5434,7 @@ def _붙임목록_내어쓰기_대상수집():
 
 
 def _붙임번호_기준위치_실측(문단_시작위치, text):
-    """첫 번호 위치와 편람의 2타 들여쓰기 폭을 글꼴 기준으로 실측한다."""
+    """첫 번호 위치(와 번호 앞 빈칸 폭)를 글꼴 기준으로 실측한다."""
     offset = 붙임번호_오프셋(text)
     if offset is None:
         return None
@@ -5481,7 +5483,7 @@ def _붙임번호_기준위치_실측(문단_시작위치, text):
 
 
 def _붙임목록_번호_내어쓰기_적용(문단_시작위치, text, 기준위치):
-    """번호 위치를 편람 계층(항목마다 2타 증가)에 맞추고 꺾인 줄은 내용에 맞춘다."""
+    """번호 위치를 기준 번호와 세로로 같게 맞추고 꺾인 줄은 내용에 맞춘다."""
     offset = 붙임번호_오프셋(text)
     if hwp is None or offset is None:
         return False
@@ -5543,6 +5545,27 @@ def _붙임목록_번호_내어쓰기_적용(문단_시작위치, text, 기준�
 
 
 
+def _기호별_내어쓰기_값(begin, text):
+    """문두기호별 빈칸 규칙(ㅇ 1칸·- 3칸·*·**·※ 5칸)에 따른 내어쓰기 값(음수 HWPUNIT). 규칙 밖이면 None.
+
+    기호 끝까지의 폭에 그 문단 글꼴의 빈칸 폭 × 칸 수를 더한다. 첫 줄 값이 0인 상태에서 호출한다.
+    복사한 서식의 내어쓰기 규칙이 있거나 괄호·콜론 라벨이 있는 문단은 기존 기준을 따른다.
+    """
+    칸수 = 기호별_내어쓰기_빈칸수(text)
+    if not 칸수 or 복사_내어쓰기_규칙(text) is not None:
+        return None
+    marker_end = 문장부호_마커_끝위치(text)
+    if marker_end is None or marker_end >= len(text) or text[marker_end] not in (" ", "\u00a0"):
+        return None
+    if _문단_본문시작_오프셋(text) != _문단_기호뒤_오프셋(text):
+        return None
+    marker_width = _캐럿위치_폭_실측(begin, marker_end)
+    blank_end_width = _캐럿위치_폭_실측(begin, marker_end + 1)
+    if marker_width is None or blank_end_width is None or blank_end_width <= marker_width:
+        return None
+    return -(marker_width + 칸수 * (blank_end_width - marker_width))
+
+
 def 문단_내어쓰기_적용(문단_시작위치, text, 폰트크기_pt=None, 폰트=None, 굵게=None):
     """실제 Shift+Tab 실행. 정렬/여백 보존, 반복 시 누적 방지, 실패 시 복원.
 
@@ -5570,6 +5593,13 @@ def 문단_내어쓰기_적용(문단_시작위치, text, 폰트크기_pt=None, 
         # 기존 내어쓰기를 지운 동일한 첫 줄 상태에서 매번 계산한다.
         _내어쓰기_값_설정(0)
         changed = True
+        규칙값 = _기호별_내어쓰기_값(begin, text)
+        if 규칙값 is not None:
+            _내어쓰기_값_설정(규칙값)
+            if 규칙값 != original_indent:
+                내어쓰기_변경문단.add(tuple(begin[:2]))
+            진단로그(f"[내어쓰기] 기호별 빈칸 규칙 값 {규칙값}: {text.strip()[:60]}")
+            return True
         hwp.SetPos(*begin)
         hwp_run("MoveLineEnd")
         line_end = hwp.GetPos()
