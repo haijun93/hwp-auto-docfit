@@ -1135,7 +1135,7 @@ def 번들_리소스_폴더():
     "std_dateinfo_bold": True,
     "std_symbols": True,
     "std_hanging_indent": True,
-    "std_supplement_indent": False,
+    "std_supplement_indent": True,
     "std_symbol_box_bold": False,
     "std_symbol_o_bold": True,
     "std_symbol_dash_bold": False,
@@ -16925,7 +16925,7 @@ class HwpAutoDocFitGUI:
         elif key == "supplement_indent":
             체크 = ttk.Checkbutton(
                 parent,
-                text="부연설명 문단 전체를 위 문단에 맞추기 (선택)\n*, **, ※의 시작 위치를 위 문단의 본문 첫 글자 아래로 옮깁니다.\n‘내어쓰기’는 같은 문단의 둘째 줄 이후만 맞추므로 역할이 다릅니다.",
+                text="부연설명 문단 전체를 위 문단에 맞추기\n*, **, ※의 시작 위치를 위 문단의 본문 첫 글자 아래로 옮깁니다.\n‘내어쓰기’는 같은 문단의 둘째 줄 이후만 맞추므로 역할이 다릅니다.",
                 variable=self.std_bool_vars["std_supplement_indent"])
             체크.pack(anchor="w")
             if 주설정탭:
