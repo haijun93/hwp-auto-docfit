@@ -420,13 +420,24 @@ def _최신_릴리스_조회(timeout=8):
         if exc.code == 404:
             return None
         raise
-    링크들 = 릴리스.get("assets", {}).get("links", [])
+    if not isinstance(릴리스, dict):
+        raise ValueError(f"릴리스 응답 형식이 올바르지 않습니다({type(릴리스).__name__}): {str(릴리스)[:80]}")
+    # GitLab은 assets가 {"links": [...]} 형태의 dict이고, GitHub 형식은 목록이다. 둘 다 받는다.
+    자산정보 = 릴리스.get("assets")
+    if isinstance(자산정보, dict):
+        링크들 = 자산정보.get("links") or []
+    elif isinstance(자산정보, list):
+        링크들 = 자산정보
+    else:
+        링크들 = []
     릴리스["assets"] = [
         {
             **링크,
-            "browser_download_url": 링크.get("direct_asset_url") or 링크.get("url"),
+            "browser_download_url": (
+                링크.get("direct_asset_url") or 링크.get("browser_download_url") or 링크.get("url")
+            ),
         }
-        for 링크 in 링크들
+        for 링크 in 링크들 if isinstance(링크, dict)
     ]
     return 릴리스
 
