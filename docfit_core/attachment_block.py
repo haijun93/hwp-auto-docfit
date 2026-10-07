@@ -73,6 +73,29 @@ def numbered_item_offset(text: str | None) -> int | None:
     return match.start("number") if match else None
 
 
+def blank_line_plan(texts: list, kinds: list) -> tuple[list[int], list[int]]:
+    """붙임 묶음 앞 빈 줄을 1줄로 맞출 계획: (지울 빈 문단 인덱스, 앞에 빈 줄을 넣을 붙임 문단 인덱스).
+
+    붙임 위에 글이 있으면 그 글과 붙임 사이에 빈 줄을 꼭 1줄 둔다(없으면 넣고, 여럿이면 1줄만 남긴다,
+    사용자 지정 2026-10-08). kinds의 'blank'가 빈 문단이며, 붙임 위에 글이 없으면 손대지 않는다.
+    """
+    delete: list[int] = []
+    insert: list[int] = []
+    for start, _ in find_blocks(texts):
+        k = start - 1
+        blanks = []
+        while k >= 0 and kinds[k] == "blank":
+            blanks.append(k)
+            k -= 1
+        if k < 0:
+            continue
+        if not blanks:
+            insert.append(start)
+        else:
+            delete.extend(blanks[1:])
+    return delete, insert
+
+
 def find_trailing_numbered_blocks(texts: list) -> list[tuple[int, int]]:
     """문서 끝에 놓인, 번호 붙임 항목이 둘 이상인 붙임~끝. 묶음을 찾는다."""
     last = max((i for i, text in enumerate(texts) if text and text.strip()), default=-1)
