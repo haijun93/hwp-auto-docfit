@@ -288,6 +288,7 @@ from docfit_core.attachment_block import find_blocks as 붙임묶음_찾기
 from docfit_core.hanging_rules import (
     hanging_blank_count as 기호별_내어쓰기_빈칸수,
     is_supplement as 내어쓰기_부연설명인가,
+    is_standalone_note as 단독_참고문단인가,
 )
 from docfit_core.attachment_block import (
     find_trailing_numbered_blocks as 끝붙임번호묶음_찾기,
@@ -5606,6 +5607,25 @@ def _붙임목록_번호_내어쓰기_적용(문단_시작위치, text, 기준�
 
 
 
+def _앞_비참고문단_텍스트(begin):
+    """같은 목록에서 바로 앞의 ※가 아닌 문단 텍스트(없으면 ''). 커서는 begin으로 돌려놓는다."""
+    if hwp is None:
+        return ""
+    try:
+        for 문단 in range(begin[1] - 1, -1, -1):
+            if hwp.SetPos(begin[0], 문단, 0) is False:
+                break
+            앞 = 현재문단_텍스트()
+            if not 앞.strip().startswith("※"):
+                return 앞
+        return ""
+    finally:
+        try:
+            hwp.SetPos(*begin)
+        except Exception:
+            pass
+
+
 def _기호별_내어쓰기_값(begin, text):
     """문두기호별 빈칸 규칙에 따른 내어쓰기 값(음수 HWPUNIT). 규칙 밖이면 None.
 
@@ -5613,9 +5633,14 @@ def _기호별_내어쓰기_값(begin, text):
     부연설명(*·**·※)은 자기 글 시작 위치(기호와 뒤 빈칸 폭)에 맞춘다(칸을 더하지 않는다).
     첫 줄 값이 0인 상태에서 호출한다. 복사한 서식의 내어쓰기 규칙이 있거나 라벨이 있는 ㅇ 문단은
     기존 기준을 따른다. -와 부연설명은 콜론·괄호 라벨이 있어도 이 규칙을 쓴다.
+    앞줄에 문두기호 문장이 없는 단독 ※는 보충설명이 아니므로 ㅇ와 같은 규칙(1칸)을 쓴다.
     """
     부연 = 내어쓰기_부연설명인가(text)
-    칸수 = 0 if 부연 else 기호별_내어쓰기_빈칸수(text)
+    if (부연 and text.strip().startswith("※")
+            and 단독_참고문단인가(text, _앞_비참고문단_텍스트(begin))):
+        부연, 칸수 = False, 1
+    else:
+        칸수 = 0 if 부연 else 기호별_내어쓰기_빈칸수(text)
     if (not 부연 and not 칸수) or 복사_내어쓰기_규칙(text) is not None:
         return None
     marker_end = 문장부호_마커_끝위치(text)

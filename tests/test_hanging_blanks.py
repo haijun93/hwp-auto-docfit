@@ -4,7 +4,7 @@ import runpy
 import unittest
 from unittest.mock import Mock, patch
 
-from docfit_core.hanging_rules import hanging_blank_count, is_supplement
+from docfit_core.hanging_rules import hanging_blank_count, is_standalone_note, is_supplement
 
 
 class BlankCountTest(unittest.TestCase):
@@ -28,18 +28,36 @@ class SupplementTest(unittest.TestCase):
             self.assertFalse(is_supplement(text), text)
         self.assertFalse(is_supplement("일반 문장"))
 
+    def test_standalone_note(self):
+        for previous in ("", None, "일반 문장"):
+            self.assertTrue(is_standalone_note("※ 참고", previous), previous)
+        for previous in ("ㅁ 제목", "ㅇ 본문", "- 세부", "* 주"):
+            self.assertFalse(is_standalone_note("※ 참고", previous), previous)
+        self.assertFalse(is_standalone_note("* 주", ""))
+
 
 class HangingValueTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.ns = runpy.run_path(str(Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"))
 
-    def _value(self, text, widths):
+    def _value(self, text, widths, previous="ㅇ 앞 문장"):
         fn = self.ns["_기호별_내어쓰기_값"]
         marker_end = self.ns["문장부호_마커_끝위치"](text)
         measured = lambda begin, count: widths.get(count)
-        with patch.dict(fn.__globals__, {"_캐럿위치_폭_실측": measured, "복사_내어쓰기_규칙": lambda t: None}):
+        patches = {"_캐럿위치_폭_실측": measured, "복사_내어쓰기_규칙": lambda t: None,
+                   "_앞_비참고문단_텍스트": lambda begin: previous}
+        with patch.dict(fn.__globals__, patches):
             return fn((0, 0, 0), text), marker_end
+
+    def test_standalone_note_uses_circle_rule(self):
+        # 앞줄에 문두기호 문장이 없는 ※는 ㅇ처럼 기호 끝 + 1칸(빈칸 폭 250)이다.
+        widths = {1: 900, 2: 1150}
+        self.assertEqual(self._value("※ 참고", widths, previous="")[0], -(900 + 250))
+        self.assertEqual(self._value("※ 참고", widths, previous="일반 문장")[0], -(900 + 250))
+        # 보충설명 ※는 자기 글 시작 위치, 라벨이 있는 단독 ※는 ㅇ처럼 기존 기준
+        self.assertEqual(self._value("※ 참고", widths, previous="- 세부")[0], -1150)
+        self.assertIsNone(self._value("※ 참고: 설명", widths, previous="")[0])
 
     def test_blank_width_is_multiplied_by_rule(self):
         # 기호 끝(1글자)까지 1000, 빈칸 1칸 폭 250 → ㅇ 1칸, - 3칸
