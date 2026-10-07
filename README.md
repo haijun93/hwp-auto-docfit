@@ -9,6 +9,10 @@
 
 ## 어떤 결과가 나오나요?
 
+<video src="docs/media/overview-demo.mp4" poster="docs/media/overview-demo-poster.png" controls muted width="100%"></video>
+
+[▶ 영상이 재생되지 않으면 여기를 눌러 보세요](docs/media/overview-demo.mp4)
+
 ### 1. 자간 정리 — 줄 끝에서 갈라진 단어를 한 줄로
 
 가장 많이 쓰는 기능입니다. 줄 끝에서 `거점(지 / 구)`, `수 / 립하여`처럼 갈라진 단어를 자간을 조금씩 조절해 한 줄에 모읍니다. 글 내용과 서식은 그대로 둡니다.
