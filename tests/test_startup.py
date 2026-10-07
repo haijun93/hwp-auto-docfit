@@ -211,6 +211,58 @@ class StartupTest(unittest.TestCase):
         with patch.dict(fetch_release.__globals__, {"_업데이트_HTTP_GET": raise_not_found}):
             self.assertIsNone(fetch_release())
 
+    def _updater_namespace(self, name):
+        source = Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"
+        return runpy.run_path(str(source), run_name=name)
+
+    def test_combined_check_picks_newest_of_gitlab_and_github(self):
+        ns = self._updater_namespace("combined_updater_test")
+        fetch = ns["_최신_릴리스_통합_조회"]
+
+        def fake(timeout=8, api_url=None):
+            if api_url == ns["UPDATE_API_URL"]:
+                return {"tag_name": "v1.72-beta.4", "assets": []}
+            return {"tag_name": "v1.72-beta.5", "assets": []}
+        with patch.dict(fetch.__globals__, {"_최신_릴리스_조회": fake}):
+            release = fetch()
+        self.assertEqual(release["tag_name"], "v1.72-beta.5")
+        self.assertEqual(release["update_source"], "GitHub")
+
+    def test_combined_check_survives_one_source_failing(self):
+        ns = self._updater_namespace("combined_updater_fail_test")
+        fetch = ns["_최신_릴리스_통합_조회"]
+
+        def fake(timeout=8, api_url=None):
+            if api_url == ns["UPDATE_API_URL"]:
+                raise OSError("unreachable")
+            return {"tag_name": "v1.73", "assets": []}
+        with patch.dict(fetch.__globals__, {"_최신_릴리스_조회": fake}):
+            self.assertEqual(fetch()["update_source"], "GitHub")
+
+        def both_fail(timeout=8, api_url=None):
+            raise OSError("unreachable")
+        with patch.dict(fetch.__globals__, {"_최신_릴리스_조회": both_fail}):
+            with self.assertRaises(RuntimeError):
+                fetch()
+
+    def test_update_url_allows_github_and_blocks_others(self):
+        validate = self._updater_namespace("update_url_test")["_업데이트_URL_검증"]
+        for ok in (
+            "https://api.github.com/repos/a/b/releases/latest",
+            "https://github.com/a/b/releases/download/v1/x.exe",
+            "https://release-assets.githubusercontent.com/x",
+            "https://gitlab.aigov.go.kr/api/v4/x",
+        ):
+            self.assertEqual(validate(ok), ok)
+        for bad in (
+            "http://github.com/x",
+            "https://evilgithub.com/x",
+            "https://github.com.evil.example/x",
+            "https://example.com/x",
+        ):
+            with self.assertRaises(ValueError):
+                validate(bad)
+
     def test_removed_cat_assets_do_not_require_pillow(self):
         source = Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"
         with patch.dict(sys.modules, {"PIL": None, "PIL.Image": None}):
