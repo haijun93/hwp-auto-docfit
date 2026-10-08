@@ -266,6 +266,7 @@ from docfit_core.stage_selection import STAGE_EXAMPLES, default_choice as stage_
 from docfit_core.stage_selection import TABLE_STAGE_KEYS as 표작업_키목록, without_tables as 표작업_제외
 from docfit_core.stage_selection import without_page_fit as 페이지맞춤_제외
 from docfit_core.page_fit_search import level_amounts as 쪽맞춤_레벨_줄임량, search_level as 쪽맞춤_레벨_탐색
+from docfit_core.page_fit_search import classify_reports as 쪽맞춤_문서유형_판정
 from docfit_core.stage_selection import CARD_OPTION_STAGES as 카드옵션_세부작업, card_option_from_stages as 카드옵션_판정
 from docfit_core.stage_selection import card_option_off_keys as 카드옵션_끈작업, card_option_stage_values as 카드옵션_세부작업값
 from docfit_core.stage_selection import card_option_turns_off as 카드옵션_끄는값
@@ -1131,6 +1132,8 @@ def 서식_기본값_전역_복원():
 # 쪽 수 맞춤을 대상 위치를 한 번만 조사한 뒤 줄임 정도(레벨)를 이분 탐색으로 찾는다. 끄면 기존처럼
 # 1단계씩 줄이며 매번 문서 전체를 다시 훑는다(실측: 단계당 15~34초, 문서당 6~15분). 결과가 어긋나면 기존 방식으로 되돌아간다.
 페이지맞춤_고속_사용 = True
+# 쪽 수 맞춤 전에 문서 유형(1쪽 보고서·심화보고서·취합보고서)을 판정해 1쪽 보고서는 보고서마다 1쪽에 담는다.
+쪽맞춤_유형판정_사용 = True
 
 문장부호_통계 = {"대상": 0, "성공": 0, "실패": 0}
 세트문장_통계 = {"대상": 0, "성공": 0, "실패": 0, "축소횟수": 0, "확대횟수": 0}
@@ -2325,7 +2328,9 @@ def 제목_유형판별(table, 빈칸허용=False):
     cells = 제목_셀들(table)
     if len(cells) not in (2, 3): return None
     rows, cols = int(table.get('rowCnt', '0')), int(table.get('colCnt', '0'))
-    if (len(cells) == 2 and (rows, cols) != (2, 1)) or (len(cells) == 3 and (rows, cols) != (2, 2)):
+    # 3행1열(제목 + 담당자 칸 2개, 실측: '마포문화재단 10월 주요 프로그램')도 유형3으로 본다(사용자 요청, 2026-10-09).
+    세줄 = len(cells) == 3 and (rows, cols) == (3, 1)
+    if (len(cells) == 2 and (rows, cols) != (2, 1)) or (len(cells) == 3 and (rows, cols) != (2, 2) and not 세줄):
         return None
     for c in cells:
         if any(제목_xml이름(x) in ('tbl', 'pic', 'ole', 'rect', 'fieldBegin') for x in c.iter()):
@@ -2334,10 +2339,11 @@ def 제목_유형판별(table, 빈칸허용=False):
     if len(ps) not in (1, 2): return None
     if any(re.match(r'^\s*[□ㅁㅇ○※*\-]', 제목_문자열(p)) for p in ps): return None
     정보칸_빔 = 빈칸허용 and not any(제목_문자열(c).strip() for c in cells[1:])
-    if len(cells) == 2:
-        # 유형3: 윗칸(부제+제목) / 아랫칸(담당자) 2행1열. 날짜 칸이 없다.
-        if (not 정보칸_빔 and not re.search(r'담당|과장|팀장|☎|전화|부서|작성', 제목_문자열(cells[1]))
-                and not _설정_담당자_글인가(제목_문자열(cells[1]))): return None
+    if len(cells) == 2 or 세줄:
+        # 유형3: 윗칸(부제+제목) / 아랫칸(담당자) 2행1열(또는 담당자 칸 2개인 3행1열). 날짜 칸이 없다.
+        for 칸 in cells[1:]:
+            if (not 정보칸_빔 and not _제목표_담당자.search(제목_문자열(칸))
+                    and not _설정_담당자_글인가(제목_문자열(칸))): return None
         return 3
     span = 제목_자식(cells[0], 'cellSpan')
     if span is None or span.get('colSpan') != '2': return None
@@ -2480,7 +2486,12 @@ def 제목_표서식_복사(table, sample, maps, 상자=False):
     for name in ('sz', 'inMargin', 'outMargin'):
         src, dst = 제목_자식(sample, name), 제목_자식(table, name)
         if src is not None and dst is not None: dst.attrib.update(src.attrib)
-    for cell, scell in zip(제목_셀들(table), 제목_셀들(sample)):
+    표본칸 = 제목_셀들(sample)
+    대상칸 = 제목_셀들(table)
+    # 예시보다 칸이 많은 제목 표(3행1열: 담당자 칸 2개)는 남는 칸에 예시의 마지막(담당자) 칸 서식을 입힌다.
+    if 표본칸 and len(대상칸) > len(표본칸) and not 상자:
+        표본칸 = 표본칸 + [표본칸[-1]] * (len(대상칸) - len(표본칸))
+    for cell, scell in zip(대상칸, 표본칸):
         cell.set('borderFillIDRef', maps['borderFills'][scell.get('borderFillIDRef')])
         cell.set('hasMargin', scell.get('hasMargin', '0'))
         for name in ('cellSz', 'cellMargin'):
@@ -12014,11 +12025,15 @@ def 표_셀_세로여백_일괄조정(스텝, 최소쪽=None, 원래값=None):
     return 적용수
 
 
-def _표_셀_대상_순회(최소쪽=None):
+def _표_셀_대상_순회(최소쪽=None, 문단범위=None):
     """쪽 수 맞춤이 셀 세로 여백을 줄일 표 셀의 area를 차례로 내준다(캐럿은 그 셀에 둔다).
 
-    최소쪽 이전 쪽의 표와 한 칸 표(제목·개요 상자)는 뺀다. 끝나면 캐럿을 원래 자리로 돌린다.
+    최소쪽 이전 쪽의 표와 한 칸 표(제목·개요 상자)는 뺀다. 문단범위를 주면 그 본문 문단에 놓인 표만 본다.
+    끝나면 캐럿을 원래 자리로 돌린다.
     """
+    def 범위안(키):
+        return 문단범위 is None or (bool(키) and 키[0] == 0 and 키[1] in 문단범위)
+
     원위치 = None
     try:
         원위치 = hwp.GetPos()
@@ -12050,7 +12065,7 @@ def _표_셀_대상_순회(최소쪽=None):
                     continue
                 if len(칸들) == 1 and 칸들[0][1] == "A1":
                     continue
-                if 칸들[0][0] in 한칸영역:
+                if 칸들[0][0] in 한칸영역 or not 범위안(키):
                     continue
                 첫칸 = 칸들[0][0]
                 try:
@@ -12084,7 +12099,7 @@ def _표_셀_대상_순회(최소쪽=None):
                         break
                 except Exception:
                     break
-                if area in 한칸영역:
+                if area in 한칸영역 or not 범위안(현재_표_키()):
                     continue
                 쪽 = 현재_페이지번호() if 최소쪽 is not None else None
                 if 최소쪽 is not None and 쪽 is not None and 쪽 < 최소쪽:
@@ -12188,7 +12203,7 @@ def 쪽맞춤_묶음분리_있음(최소쪽=None):
         hwp.SetPos(*original)
 
 
-def 쪽맞춤_대상_조사(최소쪽):
+def 쪽맞춤_대상_조사(최소쪽, 문단범위=None):
     """쪽 수 맞춤이 바꿀 문단·표 셀과 원래 값을 한 번만 모은다(값은 바꾸지 않는다).
 
     문단: {(list_id, para_id): [원래 아래 pt, 원래 위 pt]}, 셀: {area: (HasMargin, 위, 아래)}.
@@ -12203,7 +12218,8 @@ def 쪽맞춤_대상_조사(최소쪽):
         while not 중단_요청됨():
             시작위치 = hwp.GetPos()
             훑은수 += 1
-            if 시작위치[0] == 0 and not 현재_한칸표인가():
+            if (시작위치[0] == 0 and (문단범위 is None or 시작위치[1] in 문단범위)
+                    and not 현재_한칸표인가()):
                 쪽번호 = 현재_페이지번호()
                 if 쪽번호 is None or 쪽번호 >= 최소쪽:
                     if paragraph_level(현재문단_텍스트()) is not None:
@@ -12226,7 +12242,7 @@ def 쪽맞춤_대상_조사(최소쪽):
             pass
     셀 = {}
     if 페이지맞춤_표셀세로여백_사용 and hasattr(hwp, 'HParameterSet'):
-        for area in _표_셀_대상_순회(최소쪽):
+        for area in _표_셀_대상_순회(최소쪽, 문단범위):
             시작 = time.perf_counter()
             값 = 셀_세로여백_읽기()
             쪽맞춤_계측_더하기('표셀읽기', time.perf_counter() - 시작, 1)
@@ -12235,8 +12251,11 @@ def 쪽맞춤_대상_조사(최소쪽):
     return {'문단': 문단, '셀': 셀, '문단현재': {k: list(v) for k, v in 문단.items()}, '셀현재': dict(셀)}
 
 
-def 쪽맞춤_레벨_적용(조사, 레벨):
-    """조사한 문단·셀을 레벨만큼 줄인 절대값으로 맞춘다(레벨 0은 원래 값). 바뀐 곳만 쓴다."""
+def 쪽맞춤_레벨_적용(조사, 레벨, 위간격_0=False):
+    """조사한 문단·셀을 레벨만큼 줄인 절대값으로 맞춘다(레벨 0은 원래 값). 바뀐 곳만 쓴다.
+
+    위간격_0이면 문단 위 간격을 모두 0pt로 한다(1쪽 보고서 맞춤의 마지막 수단).
+    """
     아래줄임, 위줄임, 비율 = 쪽맞춤_레벨_줄임량(
         레벨, half=max(1, int(round(페이지맞춤_최대_pt / 페이지맞춤_스텝_pt))), step_pt=페이지맞춤_스텝_pt)
     원위치 = hwp.GetPos()
@@ -12248,6 +12267,8 @@ def 쪽맞춤_레벨_적용(조사, 레벨):
             for 칸, 원값, 줄임, 쓰기 in ((0, 원아래, 아래줄임, 문단_아래간격_적용_현재선택),
                                     (1, 원위, 위줄임, 문단_위간격_적용_현재선택)):
                 새값 = 원값 if 줄임 <= 0 else max(0.0, round(원값 - 줄임, 1))
+                if 위간격_0 and 칸 == 1:
+                    새값 = 0.0
                 if abs(새값 - 현재[칸]) < 0.05:
                     continue
                 hwp.SetPos(위치[0], 위치[1], 0)
@@ -12503,6 +12524,259 @@ def _보고서_페이지수_맞춤_시도_본체(목표_페이지수):
     return True
 
 
+# 문서 유형별 쪽 수 맞춤(사용자 규칙, 2026-10-09). 보고서 1개 = 제목 표 1개 + 계층체계 1개이고, 제목 표마다
+# 새 보고서다(붙임은 앞 보고서에 속한다). 1쪽 보고서는 모든 문장이 1쪽에 담겨야 하고, 1쪽 보고서를 묶은
+# 취합보고서는 각 보고서가 자기 1쪽 안에 들어가야 한다. 심화보고서(제목 1개, 1쪽 초과)는 기존처럼 마지막 쪽만 본다.
+# 담당자 칸: 부서명·직함·담당자 이름·내선/전화번호(3행1열 제목 표는 소속이 다른 두 담당자 칸, 사용자 설명 2026-10-09).
+_제목표_담당자 = re.compile(r'담당|과장|팀장|본부장|부장|☎|전화|내선|부서|작성|\d{2,4}-\d{4}')
+_제목표_날짜 = re.compile(r'[0-9]{2,4}\s*[.년/\-]\s*[0-9]{1,2}')
+
+
+def _칸_문단글들(area, 최대=6):
+    """표 칸(area)의 문단 글 목록. 칸으로 옮기지 못하면 None."""
+    hwp.SetPos(area, 0, 0)
+    if hwp.GetPos()[0] != area:
+        return None
+    글들 = []
+    for _ in range(최대):
+        이전 = hwp.GetPos()
+        글들.append(현재문단_텍스트())
+        hwp.SetPos(*이전)
+        hwp_run('MoveNextParaBegin')
+        지금 = hwp.GetPos()
+        # 칸의 마지막 문단에서는 같은 문단에 머문다(실측: 한 문단 칸을 여섯 번 읽음).
+        if 지금[0] != area or 지금[1] <= 이전[1]:
+            break
+    return 글들
+
+
+def 제목표인가_현재(표키):
+    """본문 표가 보고서 제목 표인지 한/글 화면에서 본다(보고서 경계 판정용).
+
+    칸이 2~3개이고 첫 칸이 제목, 나머지 칸 중 하나 이상이 담당자 칸(과장·팀장·☎ 등)이다. 2×2의 날짜 칸,
+    3행1열의 두 담당자 칸(실측: 마포문화재단), '- … -' 부제 줄(실측: 고용협력과)도 받는다. 제목 칸은
+    □·ㅇ 등 계층 기호로 시작하지 않는 1~3문단이고 '붙임'으로 시작하지 않는다. 날짜·담당자 칸이 모두 빈 표도 제목 표다.
+    """
+    범위 = 표_칸영역_범위(표키)
+    if not 범위 or 범위[1] - 범위[0] + 1 not in (2, 3):
+        return False
+    original = hwp.GetPos()
+    try:
+        칸글 = [_칸_문단글들(area) for area in range(범위[0], 범위[1] + 1)]
+    except Exception:
+        return False
+    finally:
+        hwp.SetPos(*original)
+    if any(글 is None for 글 in 칸글):
+        return False
+    제목 = [t.strip() for t in 칸글[0] if t.strip()]
+    if not 1 <= len(제목) <= 3 or any(re.match(r'^[□ㅁㅇ○※*]', t) for t in 제목):
+        return False
+    합 = ' '.join(제목)
+    if len(합) > 160 or 합.startswith('붙임'):
+        return False
+    정보 = [' '.join(글).strip() for 글 in 칸글[1:]]
+    if not any(정보):
+        return True
+    return any(_제목표_담당자.search(t) or _설정_담당자_글인가(t) for t in 정보)
+
+
+def _보고서_끝내용(시작문단, 끝문단, 표문단):
+    """보고서 문단 범위에서 마지막 내용: (끝 위치, None) 또는 표로 끝나면 (None, 표키). 없으면 (None, None)."""
+    for 번호 in range(끝문단, 시작문단 - 1, -1):
+        if 번호 in 표문단:
+            return None, 표문단[번호]
+        hwp.SetPos(0, 번호, 0)
+        if tuple(hwp.GetPos()[:2]) != (0, 번호):
+            continue
+        if 현재문단_텍스트().strip():
+            hwp_run('MoveParaEnd')
+            return tuple(hwp.GetPos()), None
+    return None, None
+
+
+def 쪽맞춤_보고서_끝쪽(끝):
+    """보고서 끝 내용의 (쪽, 그 쪽에 걸린 줄 수). 표로 끝나면 줄 수는 None, 모르면 (None, None)."""
+    위치, 표키 = 끝
+    if 표키 is not None:
+        범위 = 표_쪽범위(표키)
+        return (범위[1] if 범위 else None), None
+    if 위치 is None:
+        return None, None
+    원위치 = hwp.GetPos()
+    try:
+        hwp.SetPos(*위치)
+        쪽 = 현재_페이지번호()
+        hwp_run('MovePageBegin')
+        줄수 = 0
+        이전줄끝 = None
+        while not 중단_요청됨():
+            hwp_run('MoveLineEnd')
+            줄끝 = hwp.GetPos()
+            if 줄끝 == 이전줄끝 or 줄끝[0] != 0:
+                break
+            줄수 += 1
+            if (줄끝[1], 줄끝[2]) >= (위치[1], 위치[2]):
+                break
+            이전줄끝 = 줄끝
+            hwp_run('MoveNextChar')
+            if hwp.GetPos() == 줄끝:
+                break
+        return 쪽, 줄수
+    except Exception as e:
+        로그(f"보고서 끝 쪽 확인 실패(무시): {e}")
+        return None, None
+    finally:
+        try:
+            hwp.SetPos(*원위치)
+        except Exception:
+            pass
+
+
+def 쪽맞춤_보고서_목록(제목문단=None):
+    """제목 표마다 나눈 보고서 목록과 제목 표 문단 번호.
+
+    보고서: dict(문단범위, 끝, start, end, overflow, 제목). 첫 제목 표 앞 내용(표지 등)은 첫 보고서에 넣는다.
+    """
+    _표칸영역.clear()
+    표문단 = 본문_표_문단번호()
+    원위치 = hwp.GetPos()
+    try:
+        if 제목문단 is None:
+            제목문단 = sorted(번호 for 번호, 키 in 표문단.items() if 제목표인가_현재(키))
+        hwp_run('MoveDocEnd')
+        끝문단 = hwp.GetPos()[1] if hwp.GetPos()[0] == 0 else max(list(표문단) + [0])
+        시작들 = 제목문단 or [0]
+        if 시작들[0] != 0:
+            시작들 = [0] + 시작들[1:]
+        보고서 = []
+        for i, 시작 in enumerate(시작들):
+            끝 = (시작들[i + 1] - 1) if i + 1 < len(시작들) else 끝문단
+            hwp.SetPos(0, 시작, 0)
+            첫쪽 = 현재_페이지번호()
+            끝내용 = _보고서_끝내용(시작, 끝, 표문단)
+            끝쪽, 줄수 = 쪽맞춤_보고서_끝쪽(끝내용)
+            if 첫쪽 is None or 끝쪽 is None:
+                return None, 제목문단
+            보고서.append({'문단범위': range(시작, 끝 + 1), '끝': 끝내용, 'start': 첫쪽, 'end': 끝쪽,
+                         'overflow': 줄수 if 끝쪽 > 첫쪽 else 0})
+        return 보고서, 제목문단
+    finally:
+        try:
+            hwp.SetPos(*원위치)
+        except Exception:
+            pass
+
+
+def _쪽맞춤_줄간격_되돌리기(보관):
+    for pos, kind, value in 보관:
+        hwp.SetPos(*pos)
+        act = hwp.CreateAction('ParagraphShape')
+        pset = act.CreateSet()
+        pset.SetItem('LineSpacingType', kind)
+        pset.SetItem('LineSpacing', value)
+        act.Execute(pset)
+
+
+def 보고서_1쪽_맞춤(보고서, 번호=1):
+    """보고서 하나를 첫 쪽 안에 담는다. 성공하면 True, 못 하면 바꾼 값을 모두 되돌리고 False.
+
+    1) 문단 아래·위 간격과 표 셀 여백을 레벨 이분 탐색으로 줄인다. 2) 최대로 줄여도 넘치면 마지막 수단으로
+    문단 위 간격을 모두 0pt, 표 셀 여백을 최소로 하고, 그때 넘친 줄이 4줄 미만이면 줄간격을 160%까지 낮춘다.
+    """
+    목표쪽 = 보고서['start']
+    범위 = 보고서['문단범위']
+    시작 = time.perf_counter()
+    조사 = 쪽맞춤_대상_조사(1, 문단범위=범위)
+    로그(f"[쪽 수 맞춤] 보고서 {번호}({목표쪽}쪽): 1쪽 맞춤 대상 문단 {len(조사['문단'])}개·표 셀 {len(조사['셀'])}개 "
+         f"({time.perf_counter() - 시작:.1f}초)")
+    반레벨 = max(1, int(round(페이지맞춤_최대_pt / 페이지맞춤_스텝_pt)))
+    최대레벨 = 2 * 반레벨
+
+    def 끝쪽():
+        return 쪽맞춤_보고서_끝쪽(보고서['끝'])
+
+    def 측정(레벨):
+        if 중단_요청됨():
+            return None
+        쪽맞춤_레벨_적용(조사, 레벨)
+        return 끝쪽()[0]
+
+    줄간격보관 = []
+    완료 = False
+    try:
+        if 조사['문단'] or 조사['셀']:
+            결과 = 쪽맞춤_레벨_탐색(측정, 목표쪽, 최대레벨)
+            if 결과['status'] == 'ok':
+                쪽맞춤_레벨_적용(조사, 결과['level'])
+                if 끝쪽()[0] == 목표쪽:
+                    완료 = True
+                    로그(f"보고서 {번호} 1쪽 맞춤 완료: 레벨 {결과['level']} 축소(측정 {len(결과['measured'])}회)")
+                    return True
+        if 중단_요청됨():
+            return False
+        # 마지막 수단: 위 간격 0pt, 표 셀 여백 최소(최대 레벨의 아래 간격 축소는 그대로).
+        쪽맞춤_레벨_적용(조사, 최대레벨, 위간격_0=True)
+        쪽, 줄수 = 끝쪽()
+        if 쪽 == 목표쪽:
+            완료 = True
+            로그(f"보고서 {번호} 1쪽 맞춤 완료: 마지막 수단(문단 위 간격 0pt·표 셀 여백 최소)")
+            return True
+        if 쪽 == 목표쪽 + 1 and 줄수 is not None and 줄수 < 4:
+            hwp.SetPos(0, 범위.start, 0)
+            첫위치 = hwp.GetPos()
+            hwp.SetPos(0, 범위.stop - 1, 0)
+            줄간격보관 = 보고서_줄간격_보관(첫위치, hwp.GetPos()) or []
+            for 단계 in range(1, 11):
+                if 중단_요청됨() or not 보고서_줄간격_적용(줄간격보관, 단계):
+                    break
+                쪽, 줄수 = 끝쪽()
+                if 쪽 == 목표쪽:
+                    완료 = True
+                    로그(f"보고서 {번호} 1쪽 맞춤 완료: 마지막 수단(위 간격 0pt·표 셀 여백 최소) + 줄간격 "
+                         f"{단계 * 10}%p 축소(최소 {세트문장_최소줄간격_퍼센트}%)")
+                    return True
+        로그(f"보고서 {번호} 1쪽 맞춤 실패: 마지막 수단으로도 {목표쪽}쪽 안에 담지 못함(넘친 줄 {줄수}) — 원래 값으로 되돌림")
+        return False
+    finally:
+        if not 완료:
+            if 줄간격보관:
+                _쪽맞춤_줄간격_되돌리기(줄간격보관)
+            쪽맞춤_레벨_적용(조사, 0)
+
+
+def _문서유형별_쪽맞춤():
+    """문서 유형을 판정해 1쪽 보고서(취합보고서 안의 것 포함)를 1쪽에 담는다.
+
+    처리했으면 True. 심화보고서이거나 판정하지 못하면 False(기존 '마지막 쪽 당기기'를 쓴다).
+    """
+    보고서, 제목문단 = 쪽맞춤_보고서_목록()
+    if not 보고서:
+        로그("[문서 유형] 보고서 쪽 범위를 확인하지 못해 기존 방식으로 쪽 수를 맞춥니다.")
+        return False
+    유형, 대상 = 쪽맞춤_문서유형_판정(보고서, 페이지맞춤_최대남은줄수)
+    요약 = ", ".join(f"{i + 1}:{r['start']}~{r['end']}쪽" for i, r in enumerate(보고서[:12]))
+    로그(f"[문서 유형] {유형} — 제목 표 {len(제목문단)}개, 보고서 {len(보고서)}개({요약}"
+         f"{' …' if len(보고서) > 12 else ''}), 1쪽 맞춤 대상 {len(대상)}개")
+    if 유형 == '심화보고서':
+        return False
+    for 번호 in 대상:
+        if 중단_요청됨():
+            return True
+        # 앞 보고서를 줄이면 뒤 보고서의 쪽이 바뀌므로 매번 다시 잰다.
+        현재목록, _ = 쪽맞춤_보고서_목록(제목문단)
+        if not 현재목록 or 번호 >= len(현재목록):
+            break
+        항목 = 현재목록[번호]
+        if 항목['end'] <= 항목['start']:
+            로그(f"보고서 {번호 + 1}: 앞 보고서 조정 뒤 이미 1쪽 안에 들어감")
+            continue
+        if not 보고서_1쪽_맞춤(항목, 번호 + 1):
+            hwp.SetPos(0, 항목['문단범위'].start, 0)
+            검수_문제_기록(현재_처리파일, f"[1쪽 보고서 넘침] 보고서 {번호 + 1}이 {항목['start']}쪽 안에 담기지 않음")
+    return True
+
+
 def 보고서_페이지수_맞춤_전체_적용():
     """마지막 쪽에 몇 줄 안 되는 내용만 걸쳐 있으면(다음 쪽으로 밀려난
     상황), 문단 아래 간격을 줄여 앞쪽 쪽으로 당겨오도록 시도한다.
@@ -12521,6 +12795,15 @@ def 보고서_페이지수_맞춤_전체_적용():
         return True
     if 중단_요청됨():
         return False
+    if 쪽맞춤_유형판정_사용:
+        try:
+            처리됨 = _문서유형별_쪽맞춤()
+        except Exception as e:
+            로그(f"문서 유형 판정 실패(무시하고 기존 방식): {e}")
+            처리됨 = False
+        if 처리됨:
+            hwp_run('MoveDocBegin')
+            return True
     마지막쪽, 줄수 = 마지막쪽_화면줄수()
     if 마지막쪽 is None or 줄수 is None:
         로그("페이지 수 맞춤 건너뜀: 마지막 쪽 정보 확인 실패")

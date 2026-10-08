@@ -6,6 +6,26 @@
 """
 
 
+def classify_reports(reports, max_overflow_lines=4):
+    """문서 유형과 1쪽에 맞출 보고서 번호를 정한다(사용자 규칙, 2026-10-09).
+
+    reports: 보고서(제목 표 1개 + 계층체계 1개)마다 dict(start=첫 쪽, end=끝 쪽, overflow=끝 쪽에 걸린 줄 수|None).
+    돌려주는 값: (유형, [1쪽에 맞출 보고서 번호]). 유형은 '1쪽 보고서'·'심화보고서'·'취합보고서'.
+    끝 쪽으로 넘친 줄이 max_overflow_lines 이하인 2쪽짜리 보고서는 1쪽 보고서가 넘친 것으로 본다.
+    """
+    def spill(item):
+        return (item['end'] == item['start'] + 1 and item.get('overflow') is not None
+                and item['overflow'] <= max_overflow_lines)
+
+    if len(reports) <= 1:
+        if not reports or reports[0]['end'] <= reports[0]['start']:
+            return '1쪽 보고서', []
+        if spill(reports[0]):
+            return '1쪽 보고서', [0]
+        return '심화보고서', []
+    return '취합보고서', [i for i, item in enumerate(reports) if spill(item)]
+
+
 def level_amounts(level, half=10, step_pt=1.0):
     """레벨 → (아래 간격 줄임 pt, 위 간격 줄임 pt, 표 셀 여백 축소 비율)."""
     level = max(0, int(level))

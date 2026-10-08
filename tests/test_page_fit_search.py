@@ -1,6 +1,25 @@
 import unittest
 
-from docfit_core.page_fit_search import level_amounts, search_level
+from docfit_core.page_fit_search import classify_reports, level_amounts, search_level
+
+
+class ClassifyReportsTest(unittest.TestCase):
+    def report(self, start, end, overflow=None):
+        return {'start': start, 'end': end, 'overflow': overflow}
+
+    def test_single_page_report(self):
+        self.assertEqual(classify_reports([self.report(1, 1)]), ('1쪽 보고서', []))
+
+    def test_one_page_report_spilling_few_lines(self):
+        self.assertEqual(classify_reports([self.report(1, 2, 3)]), ('1쪽 보고서', [0]))
+
+    def test_long_single_report_is_deep_report(self):
+        self.assertEqual(classify_reports([self.report(1, 2, 20)])[0], '심화보고서')
+        self.assertEqual(classify_reports([self.report(1, 5, 2)])[0], '심화보고서')
+
+    def test_bundle_fits_only_spilled_one_page_reports(self):
+        reports = [self.report(1, 1), self.report(2, 3, 2), self.report(4, 7, 1), self.report(8, 9, None)]
+        self.assertEqual(classify_reports(reports), ('취합보고서', [1]))
 
 
 class LevelAmountsTest(unittest.TestCase):
