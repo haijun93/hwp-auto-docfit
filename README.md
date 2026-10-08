@@ -9,9 +9,9 @@
 
 ## 어떤 결과가 나오나요?
 
-[![프로그램 사용 시연 영상 (약 5분). 클릭하면 영상이 열립니다.](docs/media/overview-demo-poster.png)](docs/media/overview-demo.mp4)
+[![프로그램 사용 시연 영상 (약 5분). 클릭하면 고화질 영상이 열립니다.](docs/media/overview-demo.gif)](docs/media/overview-demo.mp4)
 
-**[▶ 시연 영상 보기 — 약 5분](docs/media/overview-demo.mp4)**
+**[▶ 고화질 영상으로 보기 — 약 5분](docs/media/overview-demo.mp4)**
 
 ### 1. 자간 정리 — 줄 끝에서 갈라진 단어를 한 줄로
 
