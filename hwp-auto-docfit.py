@@ -8403,7 +8403,16 @@ def 표준서식_전체_적용():
 괄호_축소_pt = 2
 괄호_라벨_볼드_사용 = True
 
-괄호_정규식 = re.compile(r"\(([^()]+)\)")
+# 문장 중간의 대괄호('[세부일정 붙임1]')도 소괄호와 같은 부연설명으로 보고 축소한다.
+괄호_정규식 = re.compile(r"\(([^()]+)\)|\[([^\[\]]+)\]")
+
+
+def 괄호_안쪽(match):
+    return match.group(1) if match.group(1) is not None else match.group(2)
+
+
+def 대괄호인가(match):
+    return match.group(0).startswith("[")
 괄호_범위라벨_정규식 = re.compile(r"^\s*\d+\s*[~～\-–—]\s*\d+\s*번?\s*$")
 
 # HWP 문단 앞에 섞일 수 있는 폭 없는 제어문자까지 문두 공백으로 취급한다.
@@ -8450,7 +8459,7 @@ def 세트후속_범위괄호_라벨인가(text, match, 세트후속문단=False
         return False
     if not 괄호_뒤_콜론인가(text, match.end()):
         return False
-    return bool(괄호_범위라벨_정규식.fullmatch(match.group(1)))
+    return bool(괄호_범위라벨_정규식.fullmatch(괄호_안쪽(match)))
 
 def 문단_범위_선택(문단_시작위치, 시작offset, 끝offset):
     """문단 안의 [시작offset, 끝offset) 구간을 한 번의 SelectText 호출로 선택한다.
@@ -8607,6 +8616,8 @@ def 문두_라벨_굵게_선반영(문단_시작위치, text):
 
         if "(" in text:
             for match in 괄호_정규식.finditer(text):
+                if 대괄호인가(match):
+                    continue
                 if 괄호_문두_라벨인가(text, match):
                     문단_범위_선택(문단_시작위치, match.start(), match.end())
                     문자모양_적용_현재선택(굵게=True)
@@ -8634,7 +8645,7 @@ def 괄호_및_라벨_텍스트_문단_처리(세트후속문단=False):
     # 서식 예시가 이 계층의 괄호를 줄이지 않았으면(0pt) 줄이지 않는다.
     축소_pt = 괄호_축소량_pt(text)
     축소_사용 = 괄호_축소_사용 and 축소_pt > 0
-    if not 괄호_라벨_볼드_사용 and (not 축소_사용 or "(" not in text):
+    if not 괄호_라벨_볼드_사용 and (not 축소_사용 or ("(" not in text and "[" not in text)):
         return 0
 
     문단_시작위치 = hwp.GetPos()
@@ -8670,12 +8681,14 @@ def 괄호_및_라벨_텍스트_문단_처리(세트후속문단=False):
     # --------------------------------------------------------
     # 2. 괄호 처리 (문두 라벨 괄호 굵게 / 본문 부연설명 괄호 축소)
     # --------------------------------------------------------
-    if "(" in text:
+    if "(" in text or "[" in text:
         for match in 괄호_정규식.finditer(text):
             앞부분 = text[:match.start()]
             시작_offset = match.start()
             끝_offset = match.end()
 
+            if 대괄호인가(match) and 괄호_문두_라벨인가(text, match):
+                continue
             범위_세트라벨 = 세트후속_범위괄호_라벨인가(
                 text, match, 세트후속문단=세트후속문단
             )
@@ -9138,7 +9151,13 @@ _단어_붙임표시 = frozenset(",，'\"‘’“”")
 # 날짜 내부의 마침표는 단어 경계로 취급하지 않는다.
 # 비정형 원문(예: 26.5.6.30.)도 숫자 묶음을 그대로 보존한다.
 _날짜_패턴 = r"[‘’'ʼ]?(?:[0-9]{4}|[0-9]{2})(?:\.[0-9]{1,2}){1,3}\."
+# 띄어 쓴 월·일 날짜와 기간('10. 19.~11. 18.', '2026. 10. 19.')도 하나의 어절로 본다.
+_띄운날짜_패턴 = r"(?:[0-9]{4}\. )?[0-9]{1,2}\. [0-9]{1,2}\."
+_띄운기간_패턴 = (r"(?<![0-9.])" + _띄운날짜_패턴
+               + r"(?: ?[~∼～] ?(?:" + _띄운날짜_패턴 + r"|[0-9]{1,2}\.))?")
+_띄운날짜어절 = re.compile(r"[0-9]+\.(?:[0-9]+\.)*(?:[~∼～][0-9]+\.)?|[~∼～]")
 _기간_단위 = re.compile(
+    _띄운기간_패턴 + r"|"
     r"(?<![0-9])(?:\(" + _날짜_패턴 + r"(?:[~∼～](?:" + _날짜_패턴 + r")?)?\)"
     r"|（" + _날짜_패턴 + r"(?:[~∼～](?:" + _날짜_패턴 + r")?)?）"
     r"|" + _날짜_패턴 + r")|[~∼～]"
@@ -9288,6 +9307,28 @@ def _단어모드_공백전까지(pos, 뒤로=False):
         pos = part[0] if 뒤로 else part[1]
 
 
+def _띄운날짜_어절_확장(before, after, stop_left, stop_right, 최대=3):
+    """경계 양쪽으로 빈칸 너머의 날짜 조각('10.', '19.~11.', '18.')을 최대 몇 개 더 붙인다.
+    실제로 한 기간인지는 어절_의미단위_범위(_기간_단위)가 가린다."""
+    for 뒤로, parts, stop in ((True, before, stop_left), (False, after, stop_right)):
+        for _ in range(최대):
+            if stop is None:
+                break
+            word, next_stop = _단어모드_공백전까지(stop[0] if 뒤로 else stop[1], 뒤로)
+            if word is None:
+                return None, None
+            text = ''.join(p[2] for p in (reversed(word) if 뒤로 else word))
+            if not word or not _띄운날짜어절.fullmatch(text):
+                break
+            parts = parts + [stop] + word
+            stop = next_stop
+        if 뒤로:
+            before = parts
+        else:
+            after = parts
+    return before, after
+
+
 def 단어모드_분리정보(anchor):
     start, boundary = 단어모드_줄범위(anchor)
     right = 단어모드_한글자(boundary)
@@ -9315,7 +9356,13 @@ def 단어모드_분리정보(anchor):
         return None
     # 경계가 걸친 어절이 '등'·'숫자,' 어절이면 공백 앞 어절까지 묶는다.
     현재어절 = ''.join(p[2] for p in reversed(before)) + ''.join(p[2] for p in after)
-    if stop_left is not None and 앞어절_묶음_후속인가(현재어절):
+    # 띄어 쓴 날짜 기간('10. 19.~11. 18.')은 빈칸을 넘어 한 어절로 묶는다.
+    날짜기간 = bool(_띄운날짜어절.fullmatch(현재어절))
+    if 날짜기간:
+        before, after = _띄운날짜_어절_확장(before, after, stop_left, stop_right)
+        if before is None:
+            return None
+    elif stop_left is not None and 앞어절_묶음_후속인가(현재어절):
         previous, _ = _단어모드_공백전까지(stop_left[0], True)
         if previous is None:
             return None
@@ -9323,7 +9370,7 @@ def 단어모드_분리정보(anchor):
             before = before + [stop_left] + previous
     # 경계가 걸친 어절 뒤에 '등'·'숫자,' 어절이 이어지면 그 어절까지 묶는다.
     뒤어절 = ''
-    if stop_left is None or not 앞어절_묶음_후속인가(현재어절):
+    if not 날짜기간 and (stop_left is None or not 앞어절_묶음_후속인가(현재어절)):
         if stop_right is not None:
             peek = 단어모드_한글자(stop_right[1])
             if peek and (peek[2] == '등' or peek[2].isdigit()):
@@ -9334,7 +9381,7 @@ def 단어모드_분리정보(anchor):
                 if 앞어절_묶음_후속인가(뒤어절):
                     after = after + [stop_right] + following
     # 열거 마지막 항목은 앞 항목('4,')까지 봐야 묶을지 정할 수 있다.
-    if 숫자끝_어절인가(현재어절) or 숫자끝_어절인가(뒤어절):
+    if not 날짜기간 and (숫자끝_어절인가(현재어절) or 숫자끝_어절인가(뒤어절)):
         before = _왼쪽_어절_추가(before)
     parts = list(reversed(before)) + after
     text = ''.join(part[2] for part in parts)
