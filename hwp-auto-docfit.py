@@ -265,6 +265,7 @@ from docfit_core.progress_guide import guide_key as 진행안내_키, guide_stat
 from docfit_core.stage_selection import STAGE_EXAMPLES, default_choice as stage_default, enabled as stage_enabled, stages_for_mode
 from docfit_core.stage_selection import TABLE_STAGE_KEYS as 표작업_키목록, without_tables as 표작업_제외
 from docfit_core.stage_selection import without_page_fit as 페이지맞춤_제외
+from docfit_core.page_fit_search import level_amounts as 쪽맞춤_레벨_줄임량, search_level as 쪽맞춤_레벨_탐색
 from docfit_core.stage_selection import CARD_OPTION_STAGES as 카드옵션_세부작업, card_option_from_stages as 카드옵션_판정
 from docfit_core.stage_selection import card_option_off_keys as 카드옵션_끈작업, card_option_stage_values as 카드옵션_세부작업값
 from docfit_core.stage_selection import card_option_turns_off as 카드옵션_끄는값
@@ -1127,6 +1128,9 @@ def 서식_기본값_전역_복원():
 # 문서 세로 조정(페이지 수 맞춤) 시 표 셀의 상하 안쪽 여백도 함께 비례 축소한다.
 페이지맞춤_표셀세로여백_사용 = True
 페이지맞춤_표셀세로여백_최소_pt = 0.0
+# 쪽 수 맞춤을 대상 위치를 한 번만 조사한 뒤 줄임 정도(레벨)를 이분 탐색으로 찾는다. 끄면 기존처럼
+# 1단계씩 줄이며 매번 문서 전체를 다시 훑는다(실측: 단계당 15~34초, 문서당 6~15분). 결과가 어긋나면 기존 방식으로 되돌아간다.
+페이지맞춤_고속_사용 = True
 
 문장부호_통계 = {"대상": 0, "성공": 0, "실패": 0}
 세트문장_통계 = {"대상": 0, "성공": 0, "실패": 0, "축소횟수": 0, "확대횟수": 0}
@@ -11797,6 +11801,12 @@ def 쪽맞춤_계측_단계문구(이름, 회, 차이, 단계초, 마지막쪽):
 
 
 def 쪽맞춤_계측_합계문구(값, 전체초, 결과):
+    # 고속 방식은 '문단합계'·'표합계'를 따로 재지 않으므로 세부 구간의 합으로 채운다.
+    값 = dict(값)
+    for 합계, 세부 in (('문단합계', ('문단순회', '문단쓰기')), ('표합계', ('표스캔', '표셀읽기', '표셀쓰기'))):
+        세부합 = sum(값.get(k, (0.0, 0))[0] for k in 세부)
+        if 값.get(합계, (0.0, 0))[0] < 세부합:
+            값[합계] = (세부합, 값.get(합계, (0.0, 0))[1])
     초 = lambda k: 값.get(k, (0.0, 0))[0]
     건 = lambda k: 값.get(k, (0.0, 0))[1]
     알려진 = sum(초(k) for k in ('문단합계', '표합계', '쪽측정', '묶음검사', '원복'))
@@ -11987,6 +11997,28 @@ def 표_셀_세로여백_일괄조정(스텝, 최소쪽=None, 원래값=None):
         쪽맞춤_계측_더하기('표셀쓰기', time.perf_counter() - 시작, 1)
         return 결과
 
+    적용수 = 0
+    for area in _표_셀_대상_순회(최소쪽):
+        현재 = 읽기_계측()
+        if 현재 is None:
+            continue
+        if 원래값 is not None:
+            원래값.setdefault(area, 현재)
+        원래 = 원래값.get(area, 현재) if 원래값 is not None else 현재
+        원래_has, 원래_top, 원래_bottom = 원래
+        새_top = max(최소_hwpunit, int(round(원래_top * (1.0 - 축소비율))))
+        새_bottom = max(최소_hwpunit, int(round(원래_bottom * (1.0 - 축소비율))))
+        if abs(새_top - 현재[1]) >= 5 or abs(새_bottom - 현재[2]) >= 5:
+            if 쓰기_계측(top_hwpunit=새_top, bottom_hwpunit=새_bottom):
+                적용수 += 1
+    return 적용수
+
+
+def _표_셀_대상_순회(최소쪽=None):
+    """쪽 수 맞춤이 셀 세로 여백을 줄일 표 셀의 area를 차례로 내준다(캐럿은 그 셀에 둔다).
+
+    최소쪽 이전 쪽의 표와 한 칸 표(제목·개요 상자)는 뺀다. 끝나면 캐럿을 원래 자리로 돌린다.
+    """
     원위치 = None
     try:
         원위치 = hwp.GetPos()
@@ -12002,7 +12034,6 @@ def 표_셀_세로여백_일괄조정(스텝, 최소쪽=None, 원래값=None):
     except Exception:
         pass
 
-    적용수 = 0
     try:
         묶음 = None
         try:
@@ -12036,18 +12067,7 @@ def 표_셀_세로여백_일괄조정(스텝, 최소쪽=None, 원래값=None):
                         hwp.SetPos(area, 0, 0)
                     except Exception:
                         continue
-                    현재 = 읽기_계측()
-                    if 현재 is None:
-                        continue
-                    if 원래값 is not None:
-                        원래값.setdefault(area, 현재)
-                    원래 = 원래값.get(area, 현재) if 원래값 is not None else 현재
-                    원래_has, 원래_top, 원래_bottom = 원래
-                    새_top = max(최소_hwpunit, int(round(원래_top * (1.0 - 축소비율))))
-                    새_bottom = max(최소_hwpunit, int(round(원래_bottom * (1.0 - 축소비율))))
-                    if abs(새_top - 현재[1]) >= 5 or abs(새_bottom - 현재[2]) >= 5:
-                        if 쓰기_계측(top_hwpunit=새_top, bottom_hwpunit=새_bottom):
-                            적용수 += 1
+                    yield area
         else:
             area = 1
             while True:
@@ -12069,25 +12089,13 @@ def 표_셀_세로여백_일괄조정(스텝, 최소쪽=None, 원래값=None):
                 쪽 = 현재_페이지번호() if 최소쪽 is not None else None
                 if 최소쪽 is not None and 쪽 is not None and 쪽 < 최소쪽:
                     continue
-                현재 = 읽기_계측()
-                if 현재 is None:
-                    continue
-                if 원래값 is not None:
-                    원래값.setdefault(area, 현재)
-                원래 = 원래값.get(area, 현재) if 원래값 is not None else 현재
-                원래_has, 원래_top, 원래_bottom = 원래
-                새_top = max(최소_hwpunit, int(round(원래_top * (1.0 - 축소비율))))
-                새_bottom = max(최소_hwpunit, int(round(원래_bottom * (1.0 - 축소비율))))
-                if abs(새_top - 현재[1]) >= 5 or abs(새_bottom - 현재[2]) >= 5:
-                    if 쓰기_계측(top_hwpunit=새_top, bottom_hwpunit=새_bottom):
-                        적용수 += 1
+                yield area
     finally:
         if 원위치 is not None:
             try:
                 hwp.SetPos(*원위치)
             except Exception:
                 pass
-    return 적용수
 
 
 def 표_셀_세로여백_복원(원래값):
@@ -12180,12 +12188,195 @@ def 쪽맞춤_묶음분리_있음(최소쪽=None):
         hwp.SetPos(*original)
 
 
+def 쪽맞춤_대상_조사(최소쪽):
+    """쪽 수 맞춤이 바꿀 문단·표 셀과 원래 값을 한 번만 모은다(값은 바꾸지 않는다).
+
+    문단: {(list_id, para_id): [원래 아래 pt, 원래 위 pt]}, 셀: {area: (HasMargin, 위, 아래)}.
+    """
+    문단 = {}
+    원위치 = hwp.GetPos()
+    순회_시작()
+    시작 = time.perf_counter()
+    훑은수 = 0
+    정체 = 0
+    try:
+        while not 중단_요청됨():
+            시작위치 = hwp.GetPos()
+            훑은수 += 1
+            if 시작위치[0] == 0 and not 현재_한칸표인가():
+                쪽번호 = 현재_페이지번호()
+                if 쪽번호 is None or 쪽번호 >= 최소쪽:
+                    if paragraph_level(현재문단_텍스트()) is not None:
+                        아래, 위 = 문단_아래간격_pt_현재문단(), 문단_위간격_pt_현재문단()
+                        if 아래 is not None and 위 is not None:
+                            문단[tuple(hwp.GetPos()[:2])] = [아래, 위]
+            if not 범위_다음_문단으로_진행():
+                break
+            if hwp.GetPos() == 시작위치:
+                정체 += 1
+                if 정체 >= 2:
+                    break
+            else:
+                정체 = 0
+    finally:
+        쪽맞춤_계측_더하기('문단순회', time.perf_counter() - 시작, 훑은수)
+        try:
+            hwp.SetPos(*원위치)
+        except Exception:
+            pass
+    셀 = {}
+    if 페이지맞춤_표셀세로여백_사용 and hasattr(hwp, 'HParameterSet'):
+        for area in _표_셀_대상_순회(최소쪽):
+            시작 = time.perf_counter()
+            값 = 셀_세로여백_읽기()
+            쪽맞춤_계측_더하기('표셀읽기', time.perf_counter() - 시작, 1)
+            if 값 is not None:
+                셀.setdefault(area, 값)
+    return {'문단': 문단, '셀': 셀, '문단현재': {k: list(v) for k, v in 문단.items()}, '셀현재': dict(셀)}
+
+
+def 쪽맞춤_레벨_적용(조사, 레벨):
+    """조사한 문단·셀을 레벨만큼 줄인 절대값으로 맞춘다(레벨 0은 원래 값). 바뀐 곳만 쓴다."""
+    아래줄임, 위줄임, 비율 = 쪽맞춤_레벨_줄임량(
+        레벨, half=max(1, int(round(페이지맞춤_최대_pt / 페이지맞춤_스텝_pt))), step_pt=페이지맞춤_스텝_pt)
+    원위치 = hwp.GetPos()
+    바꾼문단 = 바꾼셀 = 0
+    try:
+        문단시작 = time.perf_counter()
+        for 위치, (원아래, 원위) in 조사['문단'].items():
+            현재 = 조사['문단현재'][위치]
+            for 칸, 원값, 줄임, 쓰기 in ((0, 원아래, 아래줄임, 문단_아래간격_적용_현재선택),
+                                    (1, 원위, 위줄임, 문단_위간격_적용_현재선택)):
+                새값 = 원값 if 줄임 <= 0 else max(0.0, round(원값 - 줄임, 1))
+                if abs(새값 - 현재[칸]) < 0.05:
+                    continue
+                hwp.SetPos(위치[0], 위치[1], 0)
+                hwp_run('MoveParaBegin')
+                hwp_run('MoveSelParaEnd')
+                쓰기(새값)
+                hwp_run('Cancel')
+                현재[칸] = 새값
+                바꾼문단 += 1
+        쪽맞춤_계측_더하기('문단쓰기', time.perf_counter() - 문단시작, 바꾼문단)
+        최소_hwpunit = max(0, int(round(페이지맞춤_표셀세로여백_최소_pt * 100)))
+        셀시작 = time.perf_counter()
+        for area, 원래 in 조사['셀'].items():
+            if 비율 <= 0:
+                목표 = 원래
+            else:
+                목표 = (1, max(최소_hwpunit, int(round(원래[1] * (1.0 - 비율)))),
+                       max(최소_hwpunit, int(round(원래[2] * (1.0 - 비율)))))
+            현재 = 조사['셀현재'][area]
+            if 목표 == 현재 or (비율 > 0 and abs(목표[1] - 현재[1]) < 5 and abs(목표[2] - 현재[2]) < 5):
+                continue
+            hwp.SetPos(area, 0, 0)
+            성공 = (셀_세로여백_현재선택(원래값=원래) if 비율 <= 0
+                  else 셀_세로여백_현재선택(top_hwpunit=목표[1], bottom_hwpunit=목표[2]))
+            if 성공:
+                조사['셀현재'][area] = 목표
+                바꾼셀 += 1
+        쪽맞춤_계측_더하기('표셀쓰기', time.perf_counter() - 셀시작, 바꾼셀)
+    finally:
+        try:
+            hwp.SetPos(*원위치)
+        except Exception:
+            pass
+    return 바꾼문단, 바꾼셀
+
+
+def _보고서_페이지수_맞춤_고속(목표_페이지수):
+    """대상 조사 1회 + 레벨 이분 탐색으로 쪽 수를 맞춘다. 결과는 기존 방식과 같은 뜻의 True/False.
+
+    탐색이 어긋나면(측정 실패, 다시 잰 쪽 수가 다름) 원래 값으로 되돌리고 None을 돌려줘 기존 방식을 쓰게 한다.
+    """
+    global 쪽맞춤_묶음_확인됨, 쪽맞춤_묶음이동_결정
+    최소쪽 = max(1, 목표_페이지수 - 페이지맞춤_뒤쪽범위_쪽수)
+    반레벨 = max(1, int(round(페이지맞춤_최대_pt / 페이지맞춤_스텝_pt)))
+    최대레벨 = 2 * 반레벨
+    로그(f"페이지 수 맞춤 시도(고속): 목표 {목표_페이지수}쪽 (문단 아래·위 간격 및 표 셀 여백 최대 "
+         f"{페이지맞춤_최대_pt:g}pt, {최소쪽}쪽부터, 레벨 1~{최대레벨} 이분 탐색, 묶음 규칙 확인)")
+    시작 = time.perf_counter()
+    조사 = 쪽맞춤_대상_조사(최소쪽)
+    로그(f"[쪽 수 맞춤 고속] 대상 조사: 문단 {len(조사['문단'])}개·표 셀 {len(조사['셀'])}개 "
+         f"({time.perf_counter() - 시작:.1f}초)")
+    if not 조사['문단'] and not 조사['셀']:
+        로그("페이지 수 맞춤: 줄일 문단 간격 및 표 셀 여백이 없음")
+        return False
+
+    def 측정(레벨):
+        if 중단_요청됨():
+            return None
+        단계시작 = time.perf_counter()
+        바꾼문단, 바꾼셀 = 쪽맞춤_레벨_적용(조사, 레벨)
+        구간시작 = time.perf_counter()
+        마지막쪽, _ = 마지막쪽_화면줄수()
+        쪽맞춤_계측_더하기('쪽측정', time.perf_counter() - 구간시작, 1)
+        로그(f"[쪽 수 맞춤 고속] 레벨 {레벨}: {마지막쪽}쪽 (바꾼 간격 {바꾼문단}곳·셀 {바꾼셀}개, "
+             f"{time.perf_counter() - 단계시작:.1f}초)")
+        return 마지막쪽
+
+    def 묶음걸림(레벨):
+        쪽맞춤_레벨_적용(조사, 레벨)
+        구간시작 = time.perf_counter()
+        try:
+            return 쪽맞춤_묶음분리_있음(최소쪽=최소쪽)
+        finally:
+            쪽맞춤_계측_더하기('묶음검사', time.perf_counter() - 구간시작, 1)
+
+    완료 = False
+    try:
+        결과 = 쪽맞춤_레벨_탐색(측정, 목표_페이지수, 최대레벨, bundle_split=묶음걸림,
+                          extra_levels=페이지맞춤_묶음확인_추가단계)
+        if 결과['status'] == 'error':
+            if 중단_요청됨():
+                return False
+            로그("페이지 수 맞춤(고속): 쪽 번호 확인 실패 — 기존 방식으로 다시 시도")
+            return None
+        if 결과['status'] == 'fail':
+            로그(f"페이지 수 맞춤 실패: 문단 아래·위 간격 및 표 셀 여백을 최대 {페이지맞춤_최대_pt:g}pt까지 줄여도 "
+                 f"목표({목표_페이지수}쪽) 미달 — 바꾼 간격·여백을 원래 값으로 되돌림")
+            return False
+        레벨 = 결과['level']
+        쪽맞춤_레벨_적용(조사, 레벨)
+        마지막쪽, _ = 마지막쪽_화면줄수()
+        if 마지막쪽 is None or 마지막쪽 > 목표_페이지수:
+            로그(f"페이지 수 맞춤(고속): 레벨 {레벨}을 다시 재니 {마지막쪽}쪽 — 쪽 수가 레벨 순서대로 줄지 않아 "
+                 "기존 방식으로 다시 시도")
+            return None
+        아래, 위, _ = 쪽맞춤_레벨_줄임량(레벨, half=반레벨, step_pt=페이지맞춤_스텝_pt)
+        문구 = f"레벨 {레벨}(아래 간격 {아래:g}pt·위 간격 {위:g}pt, 표 셀 여백 연동, 측정 {len(결과['measured'])}회)"
+        완료 = True
+        if 결과['status'] == 'ok':
+            쪽맞춤_묶음_확인됨 = True
+            로그(f"페이지 수 맞춤 완료: {문구} 축소로 {목표_페이지수}쪽 달성, 쪽 경계에 걸린 묶음 없음")
+        else:
+            쪽맞춤_묶음이동_결정 = True
+            로그(f"페이지 수 맞춤: 묶음 규칙을 함께 지키는 레벨이 없어 처음 {목표_페이지수}쪽에 닿은 {문구}로 두고, "
+                 "걸린 묶음은 쪽 배치에서 다음 쪽으로 옮김")
+        return True
+    finally:
+        if not 완료:
+            구간시작 = time.perf_counter()
+            try:
+                쪽맞춤_레벨_적용(조사, 0)
+            finally:
+                쪽맞춤_계측_더하기('원복', time.perf_counter() - 구간시작)
+
+
 def 보고서_페이지수_맞춤_시도(목표_페이지수):
     """페이지 수 맞춤 본체를 부르며 구간별 소요 시간을 작업 로그에 남긴다(동작은 같다)."""
     쪽맞춤_계측_시작()
     시작 = time.perf_counter()
     결과 = False
     try:
+        if 페이지맞춤_고속_사용 and hwp is not None and 목표_페이지수 and 목표_페이지수 > 0:
+            try:
+                결과 = _보고서_페이지수_맞춤_고속(목표_페이지수)
+            except Exception as e:
+                로그(f"페이지 수 맞춤(고속) 오류: {e} — 기존 방식으로 다시 시도")
+                결과 = None
+            if 결과 is not None:
+                return 결과
         결과 = _보고서_페이지수_맞춤_시도_본체(목표_페이지수)
         return 결과
     finally:
