@@ -155,5 +155,98 @@ class PageFitFallbackTest(unittest.TestCase):
             self.assertFalse(g['쪽맞춤_묶음이동_결정'])
 
 
+class PageFitTimingTest(unittest.TestCase):
+    """쪽 수 맞춤 소요 시간 계측: 동작은 그대로, 단계마다 한 줄과 끝에 합계 한 줄만 로그로 남는다."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ns = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'hwp-auto-docfit.py'))
+
+    def test_helpers_only_record_while_active_and_report_differences(self):
+        g = self.ns
+        add, start, end = g['쪽맞춤_계측_더하기'], g['쪽맞춤_계측_시작'], g['쪽맞춤_계측_끝']
+        add('쪽측정', 5.0, 1)                       # 시작 전에는 기록하지 않는다.
+        start()
+        add('쪽측정', 1.5, 1)
+        before = g['쪽맞춤_계측_복사']()
+        add('쪽측정', 2.0, 1)
+        add('표스캔', 4.0)
+        diff = g['쪽맞춤_계측_차이'](before)
+        self.assertEqual(diff['쪽측정'], (2.0, 1))
+        self.assertEqual(diff['표스캔'], (4.0, 0))
+        self.assertEqual(end()['쪽측정'], [3.5, 2])
+        self.assertEqual(g['쪽맞춤_계측_끝'](), {})  # 끝낸 뒤에는 비어 있고 더 쌓지 않는다.
+        add('쪽측정', 9.0, 1)
+        self.assertEqual(g['쪽맞춤_계측값'], None)
+
+    def test_fit_logs_one_line_per_step_and_a_summary(self):
+        fn = self.ns['보고서_페이지수_맞춤_시도']
+        g = fn.__globals__
+        logs = []
+        pages = iter([4, 4, 4, 4, 4, 4])
+
+        def adjust(delta, 최소쪽=None, 위간격=False, 원래값=None):
+            g['쪽맞춤_계측_더하기']('문단순회', 0.5, 7)
+            g['쪽맞춤_계측_더하기']('문단쓰기', 0.25, 2)
+            return 2
+
+        with patch.dict(g, {
+            'hwp': object(), '중단_요청됨': lambda: False, '로그': logs.append,
+            '구조문단_간격_일괄조정': adjust, '구조문단_간격_복원': lambda values, 위간격=False: 0,
+            '마지막쪽_화면줄수': lambda: (next(pages, 4), 1),
+            '쪽맞춤_묶음분리_있음': lambda 최소쪽=None: False,
+            '페이지맞춤_최대_pt': 2.0, '페이지맞춤_스텝_pt': 1.0, '페이지맞춤_뒤쪽범위_쪽수': 2,
+            '페이지맞춤_묶음확인_추가단계': 4, '쪽맞춤_묶음_확인됨': False, '쪽맞춤_묶음이동_결정': False,
+        }):
+            self.assertFalse(fn(3))
+        steps = [m for m in logs if m.startswith('[쪽 수 맞춤 계측]')]
+        summary = [m for m in logs if m.startswith('[쪽 수 맞춤 계측 합계]')]
+        self.assertEqual(len(steps), 4)                 # 아래 간격 2단계 + 위 간격 2단계
+        self.assertIn('문단 간격', steps[0])
+        self.assertIn('순회 0.5', steps[0])
+        self.assertIn('훑은 문단 7개·바꾼 2곳', steps[0])
+        self.assertEqual(len(summary), 1)
+        self.assertIn('실패/원복', summary[0])
+        self.assertIn('쪽 측정 4회', summary[0])
+        self.assertIsNone(g['쪽맞춤_계측값'])           # 끝나면 계측이 꺼진다.
+
+    def test_table_margin_pass_records_scan_read_and_write(self):
+        fn = self.ns['표_셀_세로여백_일괄조정']
+        g = fn.__globals__
+
+        class Doc:
+            HParameterSet = object()
+            pos = (0, 0, 0)
+
+            def GetPos(self):
+                return self.pos
+
+            def SetPos(self, *pos):
+                self.pos = tuple(pos)
+
+        written = []
+        g['쪽맞춤_계측_시작']()
+        try:
+            with patch.dict(g, {
+                'hwp': Doc(), '중단_요청됨': lambda: False, '로그': Mock(),
+                '페이지맞춤_표셀세로여백_사용': True, '페이지맞춤_최대_pt': 10.0, '페이지맞춤_스텝_pt': 1.0,
+                '페이지맞춤_표셀세로여백_최소_pt': 0.0,
+                '한칸표_영역_목록': lambda: [],
+                '표칸_묶음_키별': lambda: {('k',): [(2, 'A1', 0), (3, 'B1', 0)]},
+                '현재_페이지번호': lambda: 5,
+                '셀_세로여백_읽기': lambda: (1, 500, 500),
+                '셀_세로여백_현재선택': lambda **kw: written.append(kw) or True,
+            }):
+                changed = fn(5, 최소쪽=1, 원래값={})
+            값 = g['쪽맞춤_계측값']
+        finally:
+            g['쪽맞춤_계측_끝']()
+        self.assertEqual(changed, 2)
+        self.assertEqual(len(written), 2)
+        self.assertEqual(값['표셀읽기'][1], 2)
+        self.assertEqual(값['표셀쓰기'][1], 2)
+        self.assertIn('표스캔', 값)
+
+
 if __name__ == '__main__':
     unittest.main()
