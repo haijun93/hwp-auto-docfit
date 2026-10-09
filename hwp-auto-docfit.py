@@ -2054,9 +2054,12 @@ def _예정_좌우여백():
         return None
     mm = (표준서식_설정 or {}).get('여백_mm') or {}
     try:
-        return tuple(int(round(float(mm[k]) * 7200 / 25.4)) for k in ('left', 'right'))
+        표준 = tuple(int(round(float(mm[k]) * 7200 / 25.4)) for k in ('left', 'right'))
     except (KeyError, TypeError, ValueError):
         return None
+    # 원본 여백이 더 좁으면 원본을 두므로(페이지_여백_설정과 같은 규칙) 그 값으로 본문 폭을 잰다.
+    원본 = _현재_쪽여백()
+    return (_표준_또는_원본여백("LeftMargin", 표준[0], 원본), _표준_또는_원본여백("RightMargin", 표준[1], 원본))
 
 
 def _최종_본문폭(section):
@@ -2500,7 +2503,16 @@ def 제목_표서식_복사(table, sample, maps, 상자=False):
         cell.set('hasMargin', scell.get('hasMargin', '0'))
         for name in ('cellSz', 'cellMargin'):
             src, dst = 제목_자식(scell, name), 제목_자식(cell, name)
-            if src is not None and dst is not None: dst.attrib.update(src.attrib)
+            if src is not None and dst is not None:
+                원래높이 = dst.get('height') if name == 'cellSz' else None
+                dst.attrib.update(src.attrib)
+                # 칸 높이는 원본과 예시 중 낮은 값을 둔다(최소 높이라 글이 더 필요하면 한/글이 늘린다). 예시의 높은 칸을
+                # 그대로 받으면 제목 표가 3mm 커져 큰 표가 다음 쪽으로 밀리고 원본 쪽 구성이 깨졌다(2026-10-09 실측).
+                try:
+                    if 원래높이 is not None and 0 < int(원래높이) < int(dst.get('height', '0')):
+                        dst.set('height', 원래높이)
+                except ValueError:
+                    pass
         sub, ssub = 제목_자식(cell, 'subList'), 제목_자식(scell, 'subList')
         sub.set('vertAlign', ssub.get('vertAlign', 'CENTER'))
         ps = [p for p in 제목_문단들(cell) if 제목_문자열(p).strip()]
@@ -6049,19 +6061,39 @@ def _mm_hwpunit(mm):
     return int(round(float(mm) * 7200 / 25.4))
 
 
+def _현재_쪽여백():
+    """지금 문서 첫 구역의 쪽 여백 {항목: HWPUNIT}. 모르면 None."""
+    if hwp is None:
+        return None
+    try:
+        pset = hwp.HParameterSet.HSecDef
+        hwp.HAction.GetDefault("PageSetup", pset.HSet)
+        return {k: int(getattr(pset.PageDef, k)) for k in
+                ("LeftMargin", "RightMargin", "TopMargin", "BottomMargin", "HeaderLen", "FooterLen")}
+    except Exception:
+        return None
+
+
+def _표준_또는_원본여백(항목, 표준값, 원본=None):
+    """표준 여백과 원본 여백 중 좁은 값. 원본 여백이 더 좁으면 원본을 둔다(사용자 결정, 2026-10-09:
+    여백을 넓히면 본문 폭이 줄어 원본 쪽 구성이 깨짐. 실측: 좌우 18mm → 20mm로 14쪽 문서가 17쪽)."""
+    원본 = _현재_쪽여백() if 원본 is None else 원본
+    if not 원본 or 항목 not in 원본 or 원본[항목] <= 0:
+        return 표준값
+    return min(표준값, 원본[항목])
+
+
 def 페이지_여백_설정(여백_mm):
     if hwp is None:
         return
     try:
+        원본 = _현재_쪽여백()
         act = hwp.HAction
         pset = hwp.HParameterSet.HSecDef
         act.GetDefault("PageSetup", pset.HSet)
-        pset.PageDef.LeftMargin = _mm_hwpunit(여백_mm["left"])
-        pset.PageDef.RightMargin = _mm_hwpunit(여백_mm["right"])
-        pset.PageDef.TopMargin = _mm_hwpunit(여백_mm["top"])
-        pset.PageDef.BottomMargin = _mm_hwpunit(여백_mm["bottom"])
-        pset.PageDef.HeaderLen = _mm_hwpunit(여백_mm["header"])
-        pset.PageDef.FooterLen = _mm_hwpunit(여백_mm["footer"])
+        for 항목, 키 in (("LeftMargin", "left"), ("RightMargin", "right"), ("TopMargin", "top"),
+                       ("BottomMargin", "bottom"), ("HeaderLen", "header"), ("FooterLen", "footer")):
+            setattr(pset.PageDef, 항목, _표준_또는_원본여백(항목, _mm_hwpunit(여백_mm[키]), 원본))
         if "gutter" in 여백_mm:
             pset.PageDef.GutterLen = _mm_hwpunit(여백_mm["gutter"])
         act.Execute("PageSetup", pset.HSet)
@@ -10795,13 +10827,13 @@ def 쪽보다_긴_묶음인가(문단들, counts):
     return bool(capacity) and sum(counts.values()) > capacity
 
 
-# 결과 문서에는 '쪽 나누기'(문단 앞 쪽 나눔)를 남기지 않는다(사용자 지시, 2026-10-09). 처리 시작과 저장 직전에 모든 작업이 끝난 뒤 저장
+# 결과 문서에는 '쪽 나누기'(문단 앞 쪽 나눔)를 남기지 않는다(사용자 지시, 2026-10-09). 보고서 경계(제목 표 앞)만 예외. 처리 시작과 저장 직전에 모든 작업이 끝난 뒤 저장
 # 직전에 한 번에 풀고, 처리 중에도 쪽 배치·보고서 쪽 맞춤이 쪽 나눔으로 묶음을 옮기지 않는다(줄간격·간격 조정만 쓴다).
 쪽나누기_사용 = False
 
 
-def 문서_쪽나누기_전체해제():
-    """본문 문단의 '문단 앞 쪽 나눔'(쪽 나누기)을 모두 푼다. 푼 개수(실패하면 None)."""
+def 문서_쪽나누기_전체해제(보존=()):
+    """본문 문단의 '문단 앞 쪽 나눔'(쪽 나누기)을 모두 푼다(보존에 든 문단 번호는 둔다). 푼 개수(실패하면 None)."""
     if hwp is None:
         return 0
     원위치 = hwp.GetPos()
@@ -10818,7 +10850,7 @@ def 문서_쪽나누기_전체해제():
             act = hwp.CreateAction('ParagraphShape')
             pset = act.CreateSet()
             act.GetDefault(pset)
-            if int(pset.Item('PagebreakBefore') or 0):
+            if 번호 not in 보존 and int(pset.Item('PagebreakBefore') or 0):
                 쪽나눔_설정((0, 번호, 0), False)
                 해제 += 1
             번호 += 1
@@ -12773,13 +12805,16 @@ def _쪽맞춤_줄간격_되돌리기(보관):
         act.Execute(pset)
 
 
-def 보고서_1쪽_맞춤(보고서, 번호=1, 목표쪽수=1):
+def 보고서_1쪽_맞춤(보고서, 번호=1, 목표쪽수=1, 원본줄간격=None, 원본줄자간=None):
     """보고서를 첫 쪽부터 목표쪽수 쪽 안에 담는다. 성공하면 True, 못 하면 바꾼 값을 모두 되돌리고 False.
 
     1) 문단 아래·위 간격과 표 셀 여백을 레벨 이분 탐색으로 줄인다(보고서 쪽 범위 안 묶음이 쪽 경계에 걸리지 않는
     레벨을 고른다). 2) 최대로 줄여도 넘치면 마지막 수단으로 문단 위 간격을 모두 0pt, 표 셀 여백을 최소로 하고,
-    그때 넘친 줄이 4줄 미만이면 줄간격을 160%까지 낮춘다(사용자 규칙, 2026-10-09).
+    그때 넘친 줄이 4줄 미만이면 줄간격을 160%까지 낮춘다(사용자 규칙, 2026-10-09). 3) 그래도 넘치고 원본의 줄간격이
+    더 좁았으면(원본줄간격: 원본 문단별 줄간격 목록) 문단마다 원본 값으로 되돌리고, 문단 수가 다르면 원본 대표 줄간격까지
+    낮춘다(사용자 결정, 2026-10-09: 결과의 쪽 구성은 원본과 같아야 한다).
     """
+    global 세트문장_최소줄간격_퍼센트
     목표쪽 = 보고서['start'] + max(1, 목표쪽수) - 1
     범위 = 보고서['문단범위']
     시작 = time.perf_counter()
@@ -12803,6 +12838,7 @@ def 보고서_1쪽_맞춤(보고서, 번호=1, 목표쪽수=1):
         return 쪽맞춤_묶음분리_있음(최소쪽=보고서['start'], 최대쪽=목표쪽)
 
     줄간격보관 = []
+    자간보관 = []
     완료 = False
     try:
         if 조사['문단'] or 조사['셀']:
@@ -12824,6 +12860,20 @@ def 보고서_1쪽_맞춤(보고서, 번호=1, 목표쪽수=1):
             완료 = True
             로그(f"보고서 {번호} {목표쪽수}쪽 맞춤 완료: 마지막 수단(문단 위 간격 0pt·표 셀 여백 최소)")
             return True
+        # 자간 초기화 등으로 원본보다 줄이 늘어난 문단은 마지막 줄 어절을 자간을 줄여 앞 줄로 당긴다(사용자 결정,
+        # 2026-10-09. 실측: 원본 1줄 '기간' 문단이 자간 0%로 2줄이 되어 큰 표가 다음 쪽으로 밀림).
+        if 원본줄자간 and len(원본줄자간) == len(범위) and not 중단_요청됨():
+            맞춘수 = 0
+            for 문단번호, (원줄, _) in zip(범위, 원본줄자간):
+                지금줄 = 문단_화면줄수(문단번호) if 원줄 else None
+                if 지금줄 and 지금줄 > 원줄 and 문단_줄수_원본맞춤(문단번호, 원줄):
+                    맞춘수 += 1
+            if 맞춘수:
+                쪽, 줄수 = 끝쪽()
+                if 쪽 is not None and 쪽 <= 목표쪽:
+                    완료 = True
+                    로그(f"보고서 {번호} {목표쪽수}쪽 맞춤 완료: 마지막 수단 + 줄이 늘어난 문단 {맞춘수}개를 어절 당김으로 원본 줄 수에 맞춤")
+                    return True
         if 쪽 == 목표쪽 + 1 and 줄수 is not None and 줄수 < 4:
             hwp.SetPos(0, 범위.start, 0)
             첫위치 = hwp.GetPos()
@@ -12838,13 +12888,231 @@ def 보고서_1쪽_맞춤(보고서, 번호=1, 목표쪽수=1):
                     로그(f"보고서 {번호} {목표쪽수}쪽 맞춤 완료: 마지막 수단(위 간격 0pt·표 셀 여백 최소) + 줄간격 "
                          f"{단계 * 10}%p 축소(최소 {세트문장_최소줄간격_퍼센트}%)")
                     return True
+        if 원본줄간격 and not 중단_요청됨():
+            if not 줄간격보관:
+                hwp.SetPos(0, 범위.start, 0)
+                첫위치 = hwp.GetPos()
+                hwp.SetPos(0, 범위.stop - 1, 0)
+                줄간격보관 = 보고서_줄간격_보관(첫위치, hwp.GetPos()) or []
+            if len(원본줄간격) == len(줄간격보관):
+                # 원본보다 넓어진 문단만 원본 줄간격으로 되돌린다(표를 담은 문단은 줄간격이 표 높이에 곱해져
+                # 분량을 크게 늘렸다. 실측: 145% → 160%).
+                바꾼수 = 0
+                for (pos, kind, value), (원형식, 원값) in zip(줄간격보관, 원본줄간격):
+                    if 원형식 == kind and 0 < 원값 < value:
+                        hwp.SetPos(*pos)
+                        act = hwp.CreateAction('ParagraphShape')
+                        pset = act.CreateSet()
+                        pset.SetItem('LineSpacingType', kind)
+                        pset.SetItem('LineSpacing', 원값)
+                        act.Execute(pset)
+                        바꾼수 += 1
+                쪽, 줄수 = 끝쪽()
+                if 쪽 is not None and 쪽 <= 목표쪽:
+                    완료 = True
+                    로그(f"보고서 {번호} {목표쪽수}쪽 맞춤 완료: 마지막 수단 + 넓어진 줄간격 {바꾼수}곳을 원본 값으로 되돌림")
+                    return True
+            try:
+                percent = hwp.LineSpacingMethod('Percent')
+            except Exception:
+                percent = 0
+            값들 = [v for k, v in 원본줄간격 if k == percent and v >= 100]
+            원본줄간격 = min(값들) if 값들 else None
+        if 원본줄간격 and 원본줄간격 < 세트문장_최소줄간격_퍼센트 and not 중단_요청됨():
+            if not 줄간격보관:
+                hwp.SetPos(0, 범위.start, 0)
+                첫위치 = hwp.GetPos()
+                hwp.SetPos(0, 범위.stop - 1, 0)
+                줄간격보관 = 보고서_줄간격_보관(첫위치, hwp.GetPos()) or []
+            기존하한 = 세트문장_최소줄간격_퍼센트
+            세트문장_최소줄간격_퍼센트 = int(원본줄간격)
+            try:
+                for 단계 in range(1, 16):
+                    if 중단_요청됨() or not 보고서_줄간격_적용(줄간격보관, 단계):
+                        break
+                    쪽, 줄수 = 끝쪽()
+                    if 쪽 is not None and 쪽 <= 목표쪽:
+                        완료 = True
+                        로그(f"보고서 {번호} {목표쪽수}쪽 맞춤 완료: 마지막 수단 + 줄간격을 원본 최소 줄간격 {원본줄간격}%까지 낮춤"
+                             f"({단계 * 10}%p)")
+                        return True
+            finally:
+                세트문장_최소줄간격_퍼센트 = 기존하한
         로그(f"보고서 {번호} {목표쪽수}쪽 맞춤 실패: 마지막 수단으로도 {목표쪽}쪽 안에 담지 못함(넘친 줄 {줄수}) — 원래 값으로 되돌림")
         return False
     finally:
         if not 완료:
             if 줄간격보관:
                 _쪽맞춤_줄간격_되돌리기(줄간격보관)
+            for 문단번호, 이전자간 in reversed(자간보관):
+                문단_자간_적용(문단번호, 이전자간)
             쪽맞춤_레벨_적용(조사, 0)
+
+
+_자간_항목 = ("SpacingHangul", "SpacingLatin", "SpacingHanja", "SpacingJapanese", "SpacingOther", "SpacingSymbol",
+            "SpacingUser")
+
+
+def 문단_화면줄수(번호):
+    """본문 문단의 화면줄 수(모르면 None)."""
+    원위치 = hwp.GetPos()
+    try:
+        hwp.SetPos(0, 번호, 0)
+        if tuple(hwp.GetPos()[:2]) != (0, 번호):
+            return None
+        hwp_run('MoveParaEnd')
+        끝 = hwp.GetPos()
+        hwp.SetPos(0, 번호, 0)
+        줄 = 0
+        이전 = None
+        while 줄 < 200:
+            hwp_run('MoveLineEnd')
+            줄끝 = hwp.GetPos()
+            if 줄끝 == 이전 or 줄끝[1] != 번호:
+                break
+            줄 += 1
+            if 줄끝[2] >= 끝[2]:
+                break
+            이전 = 줄끝
+            hwp_run('MoveNextChar')
+        return 줄
+    except Exception:
+        return None
+    finally:
+        try:
+            hwp.SetPos(*원위치)
+        except Exception:
+            pass
+
+
+def 문단_자간_읽기(번호):
+    """본문 문단 전체를 선택했을 때의 자간 {항목: 값}(섞여 있으면 한/글이 주는 값). 실패하면 None."""
+    원위치 = hwp.GetPos()
+    try:
+        hwp.SetPos(0, 번호, 0)
+        hwp_run('MoveParaBegin')
+        hwp_run('MoveSelParaEnd')
+        act = hwp.CreateAction('CharShape')
+        pset = act.CreateSet()
+        act.GetDefault(pset)
+        return {k: pset.Item(k) for k in _자간_항목}
+    except Exception:
+        return None
+    finally:
+        try:
+            hwp_run('Cancel')
+            hwp.SetPos(*원위치)
+        except Exception:
+            pass
+
+
+def 문단_자간_적용(번호, 자간):
+    """본문 문단 전체에 자간 {항목: 값}을 입힌다."""
+    원위치 = hwp.GetPos()
+    try:
+        hwp.SetPos(0, 번호, 0)
+        hwp_run('MoveParaBegin')
+        hwp_run('MoveSelParaEnd')
+        act = hwp.CreateAction('CharShape')
+        pset = act.CreateSet()
+        act.GetDefault(pset)
+        for k, v in 자간.items():
+            if v is not None:
+                pset.SetItem(k, v)
+        return act.Execute(pset) is not False
+    except Exception:
+        return False
+    finally:
+        try:
+            hwp_run('Cancel')
+            hwp.SetPos(*원위치)
+        except Exception:
+            pass
+
+
+def _문단_줄시작들(번호):
+    """본문 문단 화면줄마다 시작 위치 목록."""
+    원위치 = hwp.GetPos()
+    시작들 = []
+    try:
+        hwp.SetPos(0, 번호, 0)
+        hwp_run('MoveParaEnd')
+        끝 = hwp.GetPos()
+        hwp.SetPos(0, 번호, 0)
+        while len(시작들) < 200:
+            시작들.append(tuple(hwp.GetPos()))
+            hwp_run('MoveLineEnd')
+            줄끝 = hwp.GetPos()
+            if 줄끝[1] != 번호 or 줄끝[2] >= 끝[2]:
+                break
+            hwp_run('MoveNextChar')
+            if tuple(hwp.GetPos()) == tuple(줄끝):
+                break
+        return 시작들
+    finally:
+        try:
+            hwp.SetPos(*원위치)
+        except Exception:
+            pass
+
+
+def 문단_줄수_원본맞춤(번호, 원줄):
+    """원본보다 줄이 늘어난 문단에서 마지막 줄 어절을 자간을 줄여 앞 줄로 당겨 원본 줄 수에 맞춘다.
+
+    기존 '다음 단어 당김'(다음단어_당김_시도)을 쓰되, 자간 상한(기본 10%)과 당길 어절 길이(기본 5자) 제한을
+    본문 자간 최대치·20자까지 넓힌다(사용자 결정, 2026-10-09: 결과의 쪽 구성은 원본과 같아야 한다). 맞추면 True.
+    """
+    global 다음단어_당김_자간_최대_퍼센트, 문장부호_2줄_기준글자수
+    기존 = (다음단어_당김_자간_최대_퍼센트, 문장부호_2줄_기준글자수)
+    다음단어_당김_자간_최대_퍼센트 = max(기존[0], int(자간_최대시도_본문 or 0), 40)   # 실측: 15%로는 두 어절째를 못 당김
+    문장부호_2줄_기준글자수 = max(기존[1], 20)
+    try:
+        for _ in range(12):
+            if 중단_요청됨():
+                return False
+            시작들 = _문단_줄시작들(번호)
+            if len(시작들) <= 원줄:
+                return True
+            if len(시작들) < 2 or not 다음단어_당김_시도(시작들[-2], 다음단어_당김_자간_최대_퍼센트):
+                return False
+        return len(_문단_줄시작들(번호)) <= 원줄
+    finally:
+        다음단어_당김_자간_최대_퍼센트, 문장부호_2줄_기준글자수 = 기존
+
+
+def 보고서_새쪽_시작인가(시작문단):
+    """보고서 첫 문단(제목 표)이 새 쪽에서 시작하는지: 바로 앞 문단 끝보다 뒤 쪽에 있으면 True.
+
+    쪽첫줄_시작인가(MovePageBegin 비교)는 제목 표가 문단 중간 위치에 놓이면 쪽 첫머리에 있어도 False라
+    보고서 경계 쪽 나누기가 한 번도 들어가지 않았다(2026-10-09 실측).
+    """
+    if 시작문단 <= 0:
+        return True
+    원위치 = hwp.GetPos()
+    try:
+        hwp.SetPos(0, 시작문단, 0)
+        쪽 = 현재_페이지번호()
+        hwp.SetPos(0, 시작문단 - 1, 0)
+        hwp_run('MoveParaEnd')
+        앞쪽 = 현재_페이지번호()
+        return bool(쪽 and 앞쪽 and 쪽 > 앞쪽)
+    except Exception:
+        return False
+    finally:
+        try:
+            hwp.SetPos(*원위치)
+        except Exception:
+            pass
+
+
+def _대표_줄간격(목록):
+    """원본 줄간격 목록에서 가장 많이 쓰인 비율 줄간격(없으면 None)."""
+    try:
+        percent = hwp.LineSpacingMethod('Percent')
+    except Exception:
+        percent = 0
+    값들 = [value for kind, value in (목록 or []) if kind == percent and value > 0]
+    return max(set(값들), key=값들.count) if 값들 else None
 
 
 def 쪽맞춤_원본_보고서_기록():
@@ -12858,10 +13126,19 @@ def 쪽맞춤_원본_보고서_기록():
         보고서, 제목문단 = 쪽맞춤_보고서_목록()
         if not 보고서:
             return
-        쪽맞춤_원본_보고서 = [(r['end'] - r['start'] + 1, 쪽첫줄_시작인가((0, r['문단범위'].start, 0)))
-                          for r in 보고서]
+        def 줄간격목록(r):
+            try:
+                보관 = 보고서_줄간격_보관((0, r['문단범위'].start, 0), (0, r['문단범위'].stop - 1, 0)) or []
+            except Exception:
+                return None
+            return [(kind, value) for _, kind, value in 보관]
+        def 줄과자간(r):
+            return [(문단_화면줄수(번호), None) for 번호 in r['문단범위']]
+        쪽맞춤_원본_보고서 = [(r['end'] - r['start'] + 1, 보고서_새쪽_시작인가(r['문단범위'].start), 줄간격목록(r),
+                          줄과자간(r)) for r in 보고서]
         로그(f"[문서 유형] 원본 보고서 {len(보고서)}개(제목 표 {len(제목문단)}개), 보고서별 쪽 수 "
-             f"{[n for n, _ in 쪽맞춤_원본_보고서]} — 결과에서도 이 쪽 수 안에 담음")
+             f"{[x[0] for x in 쪽맞춤_원본_보고서]}, 대표 줄간격 {[_대표_줄간격(x[2]) for x in 쪽맞춤_원본_보고서]}% — "
+             "결과에서도 이 쪽 수 안에 담음")
     except Exception as e:
         로그(f"원본 보고서 쪽 수 기록 실패(무시): {e}")
     finally:
@@ -12905,8 +13182,8 @@ def _문서유형별_쪽맞춤():
     유형, 대상 = 쪽맞춤_문서유형_판정(보고서, 페이지맞춤_최대남은줄수)
     if 원본 is not None:
         유형 = ('취합보고서' if len(보고서) > 1 else '1쪽 보고서' if 원본[0][0] == 1 else '심화보고서')
-        목표 = {i: n for i, (n, _) in enumerate(원본)}
-        새쪽 = {i for i, (_, 첫줄) in enumerate(원본) if i and 첫줄}
+        목표 = {i: x[0] for i, x in enumerate(원본)}
+        새쪽 = {i for i, x in enumerate(원본) if i and x[1]}
     else:
         목표 = {i: 1 for i in 대상}
         # 1쪽 분량 보고서(두 쪽 이하)가 쪽 중간에서 시작하면 새 쪽에서 시작한다(사용자 결정, 2026-10-09).
@@ -12914,7 +13191,7 @@ def _문서유형별_쪽맞춤():
     요약 = ", ".join(f"{i + 1}:{r['start']}~{r['end']}쪽" for i, r in enumerate(보고서[:12]))
     로그(f"[문서 유형] {유형} — 제목 표 {len(제목문단)}개, 보고서 {len(보고서)}개({요약}"
          f"{' …' if len(보고서) > 12 else ''})"
-         f"{', 원본 쪽 수 ' + str([n for n, _ in 원본]) if 원본 else ''}")
+         f"{', 원본 쪽 수 ' + str([x[0] for x in 원본]) if 원본 else ''}")
     if 유형 == '심화보고서' and 원본 is None:
         return False
     for 번호 in range(len(보고서)):
@@ -12928,7 +13205,7 @@ def _문서유형별_쪽맞춤():
             break
         항목 = 현재목록[번호]
         위치 = (0, 항목['문단범위'].start, 0)
-        if 쪽나누기_사용 and 번호 in 새쪽 and not 쪽첫줄_시작인가(위치):
+        if 번호 in 새쪽 and not 보고서_새쪽_시작인가(항목['문단범위'].start):
             쪽나눔_설정(위치, True)
             쪽맞춤_보고서조정됨 = True
             로그(f"[문서 유형] 보고서 {번호 + 1}을 새 쪽에서 시작")
@@ -12942,7 +13219,8 @@ def _문서유형별_쪽맞춤():
             if 항목['end'] - 항목['start'] + 1 <= 목표[번호]:
                 로그(f"보고서 {번호 + 1}: 보고서 안 쪽 나눔을 풀어 {목표[번호]}쪽 안에 들어감")
                 continue
-        if 보고서_1쪽_맞춤(항목, 번호 + 1, 목표[번호]):
+        if 보고서_1쪽_맞춤(항목, 번호 + 1, 목표[번호], 원본[번호][2] if 원본 is not None else None,
+                       원본[번호][3] if 원본 is not None else None):
             쪽맞춤_보고서조정됨 = True
         else:
             hwp.SetPos(*위치)
@@ -16108,9 +16386,17 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
     if 작업_모드 != 'unify' and 보고서_페이지보호_전체해제() is False:
         return False
     if not 쪽나누기_사용:
-        푼수 = 문서_쪽나누기_전체해제()
+        # 보고서 경계(제목 표)의 쪽 나누기는 보고서가 원본처럼 새 쪽에서 시작하게 하므로 남긴다(사용자 결정, 2026-10-09).
+        보존 = set()
+        if 쪽맞춤_원본_보고서 or 쪽맞춤_보고서조정됨:
+            try:
+                _표칸영역.clear()
+                보존 = {번호 for 번호, 키 in 본문_표_문단번호().items() if 제목표인가_현재(키)}
+            except Exception as e:
+                로그(f"보고서 경계 확인 실패(무시): {e}")
+        푼수 = 문서_쪽나누기_전체해제(보존)
         if 푼수:
-            로그(f"저장 전 쪽 나누기 {푼수}개 해제")
+            로그(f"저장 전 쪽 나누기 {푼수}개 해제(보고서 경계 {len(보존)}곳은 유지)")
     저장파일 = 저장파일명(파일)
     단계표시("저장")
     상태(f"{파일명} : {총회차}회 처리 완료 / 최종 저장 중")
