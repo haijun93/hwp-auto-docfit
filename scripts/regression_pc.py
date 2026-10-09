@@ -24,9 +24,14 @@ sys.path.insert(0, str(ROOT))
 from docfit_core.stage_selection import default_choice, stages_for_mode, without_tables
 
 
-def 앱_불러오기():
+def 앱_불러오기(베타모드=False):
     ns = runpy.run_path(str(ROOT / 'hwp-auto-docfit.py'))
-    return ns['작업_실행'].__globals__
+    g = ns['작업_실행'].__globals__
+    if 베타모드:
+        # 알파 = 베타 + 새 기능. 알파 새 기능은 '알파_…_사용' 플래그로 감싸므로 모두 끄면 베타와 같은 동작이다.
+        for 이름 in [k for k in g if k.startswith('알파_') and k.endswith('_사용')]:
+            g[이름] = False
+    return g
 
 
 def 처리(g, 원본, 작업폴더, 표제외, 로그파일):
@@ -100,15 +105,18 @@ def main():
     parser.add_argument('documents', nargs='+')
     parser.add_argument('--exclude-tables', action='store_true', help="'표 제외'를 켠 것과 같게 처리")
     parser.add_argument('--out', help='결과 JSON 경로(기본: 표준 출력)')
+    parser.add_argument('--log-dir', help='문서별 작업 로그를 남길 폴더(처리 시간 계측 확인용)')
+    parser.add_argument('--beta-mode', action='store_true', help="알파 새 기능('알파_…_사용' 플래그)을 모두 끄고 베타 동작으로 처리")
     args = parser.parse_args()
 
-    g = 앱_불러오기()
+    g = 앱_불러오기(args.beta_mode)
     보고 = []
     for 문서 in args.documents:
         with tempfile.TemporaryDirectory(prefix='docfit_regression_') as 폴더, \
                 open(Path(폴더) / 'log.txt', 'w', encoding='utf-8') as 로그파일:
             사본, 결과, 초, 점수 = 처리(g, 문서, 폴더, args.exclude_tables, 로그파일)
-            항목 = {'document': Path(문서).name, 'seconds': 초, 'score': 점수, 'output_created': bool(결과)}
+            항목 = {'document': Path(문서).name, 'mode': 'beta' if args.beta_mode else 'alpha', 'seconds': 초,
+                  'score': 점수, 'output_created': bool(결과)}
             if 결과:
                 pythoncom.CoInitialize()
                 app = win32com.client.DispatchEx('HwpFrame.HwpObject')
@@ -126,6 +134,11 @@ def main():
                            'reports': {'original': 원, 'result': 결, 'different': 다른},
                            'page_breaks': {'original': 원나눔, 'result': 결나눔},
                            'layout_same': not 다른 and 원쪽 == 결쪽 and 결나눔 <= max(0, len(결) - 1)})
+            if args.log_dir:
+                로그파일.flush()
+                Path(args.log_dir).mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(Path(폴더) / 'log.txt',
+                                Path(args.log_dir) / f"{Path(문서).stem}-{항목['mode']}.log")
             보고.append(항목)
     text = json.dumps(보고, ensure_ascii=False, indent=2)
     if args.out:
