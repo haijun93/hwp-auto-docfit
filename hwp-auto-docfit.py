@@ -6388,7 +6388,11 @@ def 표준서식_hwpx_처리(source, target=None, selections=None):
 
     try:
         result = apply_batch(source, target, plan)
-    except (BatchUnsupported, UnsupportedPackage) as error:
+    except Exception as error:
+        # 미지원 구조(BatchUnsupported·UnsupportedPackage)뿐 아니라 예상 밖 오류(_rewrite_runs의 글자 보존 검사 등)도
+        # 기존 COM 경로로 돌린다. 알파 새 기능의 오류로 베타에서 되던 문서 처리가 실패하면 안 된다(2026-10-09 검토).
+        if not isinstance(error, (BatchUnsupported, UnsupportedPackage)):
+            로그(f'[알파 일괄 서식] 예상 밖 오류({type(error).__name__}) — 기존 COM 경로로 처리')
         로그(f'[알파 일괄 서식] 기존 COM 경로 사용: {error}')
         if target is not None:
             shutil.copyfile(source, target)
