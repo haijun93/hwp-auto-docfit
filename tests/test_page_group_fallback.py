@@ -90,10 +90,11 @@ class PageBreakHelperTest(unittest.TestCase):
         cls.ns = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'hwp-auto-docfit.py'))
 
     def tearDown(self):
-        self.ns['_묶음_쪽나눔_이동'].__globals__['쪽나누기_사용'] = False
+        self.ns['_묶음_쪽나눔_이동'].__globals__['쪽나누기_사용'] = True
 
-    def test_no_page_break_by_default(self):
-        # 결과 문서에 쪽 나누기를 남기지 않으므로(사용자 지시, 2026-10-09) 기본값에서는 쪽 나눔으로 옮기지 않는다.
+    def test_no_page_break_when_disabled(self):
+        # 쪽 나눔을 끄면(쪽나누기_사용=False) 쪽 나눔으로 옮기지 않는다. 기본은 켬(사용자 결정, 2026-10-09: 묶음 이동용은 허용).
+        self.ns['_묶음_쪽나눔_이동'].__globals__['쪽나누기_사용'] = False
         self.assertFalse(self.ns['_묶음_쪽나눔_이동']((0, 5, 0), [], {1: 1, 2: 1}, 'x'))
 
     def _move(self, front, capacity, after_counts):
