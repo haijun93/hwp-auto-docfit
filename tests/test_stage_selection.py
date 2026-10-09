@@ -58,8 +58,9 @@ class StageSelectionTest(unittest.TestCase):
         self.assertEqual((chosen["page_fit"], chosen["page_group"], chosen["body_spacing"]), (False, False, True))
 
     def test_every_card_option_links_to_stages_of_its_card(self):
-        # 카드 옵션 8개(자간 정리 2·서식 통일 3·한 번에 적용 3)는 모두 그 카드 세부 작업 목록의 작업과 연동한다.
-        self.assertEqual(len(CARD_OPTION_STAGES), 8)
+        # 카드 옵션 9개(자간 정리 2·서식 통일 4·한 번에 적용 3)는 모두 그 카드 세부 작업 목록의 작업과 연동한다.
+        self.assertEqual(len(CARD_OPTION_STAGES), 9)
+        self.assertEqual(card_option_keys("unify_keep_layout", "unify"), ("page_layout_keep",))
         for option, (modes, _, _) in CARD_OPTION_STAGES.items():
             self.assertTrue(card_option_keys(option, modes[0]), option)
         self.assertEqual(card_option_keys("spacing_exclude_tables", "spacing"),

@@ -1267,6 +1267,8 @@ def 번들_리소스_폴더():
     "unify_exclude_tables": False,
     "unify_exclude_spacing": False,
     "unify_exclude_pagefit": True,
+    # 서식 통일 카드의 '원본 쪽 구성 유지'(세부 작업 page_layout_keep과 연동, 기본 켬).
+    "unify_keep_layout": True,
     # 서식통일 뒤 '작업 결과 확인' 창(서식통일 5/5)을 띄울지. 기본 꺼짐(2026-10-04 사용자 요청).
     "unify_result_window": False,
     # '자간 정리' 카드의 '기존 자간 초기화'(세부 작업 01과 같은 값). None이면 저장된 세부 작업 구성을 따른다.
@@ -6162,6 +6164,8 @@ def _현재_쪽여백():
 def _표준_또는_원본여백(항목, 표준값, 원본=None):
     """표준 여백과 원본 여백 중 좁은 값. 원본 여백이 더 좁으면 원본을 둔다(사용자 결정, 2026-10-09:
     여백을 넓히면 본문 폭이 줄어 원본 쪽 구성이 깨짐. 실측: 좌우 18mm → 20mm로 14쪽 문서가 17쪽)."""
+    if 작업_모드 != 'unify':
+        return 표준값      # 원본 여백 유지는 쪽 구성 동일 원칙(서식 통일 전용)의 일부다
     원본 = _현재_쪽여백() if 원본 is None else 원본
     if not 원본 or 항목 not in 원본 or 원본[항목] <= 0:
         return 표준값
@@ -13358,8 +13362,10 @@ def 쪽맞춤_원본_보고서_기록():
     """처리 전 문서의 보고서별 쪽 수를 기록한다(결과에서도 보고서마다 이 쪽 수 안에 담는다)."""
     global 쪽맞춤_원본_보고서
     쪽맞춤_원본_보고서 = None
-    if not (쪽맞춤_유형판정_사용 and 페이지맞춤_문단간격_사용 and hwp is not None
-            and stage_enabled(선택_세부작업, 'page_fit', 작업_모드)):
+    # 쪽 구성 동일 원칙은 서식 통일에서만 쓴다(사용자 지정, 2026-10-09). 한 번에 적용·서식 적용은 문서 유형별
+    # 쪽 맞춤(1쪽 보고서는 1쪽)만 한다.
+    if not (작업_모드 == 'unify' and 쪽맞춤_유형판정_사용 and 페이지맞춤_문단간격_사용 and hwp is not None
+            and stage_enabled(선택_세부작업, 'page_layout_keep', 작업_모드)):
         return
     try:
         보고서, 제목문단 = 쪽맞춤_보고서_목록()
@@ -15730,8 +15736,9 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
         if stage_enabled(선택_세부작업, 'table_unify', 작업_모드):
             if not stage('표 서식통일', 서식통일_표_전체_적용):
                 return False
-        # 쪽 맞춤은 사용자가 세부 작업에서 켠 경우에만 서식통일 뒤에 실행한다.
-        if stage_enabled(선택_세부작업, 'page_fit', 작업_모드):
+        # 쪽 맞춤은 사용자가 세부 작업에서 켠 경우, 또는 '원본 쪽 구성 유지'를 켠 경우 서식통일 뒤에 실행한다.
+        if (stage_enabled(선택_세부작업, 'page_fit', 작업_모드)
+                or stage_enabled(선택_세부작업, 'page_layout_keep', 작업_모드)):
             return stage('문단 아래 간격 페이지 맞춤', 보고서_페이지수_맞춤_전체_적용)
         return True
     if (회차 == 1 and stage_enabled(선택_세부작업, 'style_unify')
@@ -16508,7 +16515,12 @@ def _문서_처리_본체(파일, index, total, 문장부호기능=True):
 
     # 보고서별 원본 쪽 수는 아무것도 고치기 전에 잰다(서식을 입힌 뒤 재면 이미 늘어난 쪽 수가 기준이 된다).
     단계시간_구간('원본 쪽 구성 기록')
-    쪽맞춤_원본_보고서_기록()
+    # TXT·MD·DOC·PDF는 원본에 쪽 구성이 없다(변환본은 서식 없는 글이라 기준이 될 수 없다). 쪽 구성 동일 원칙은
+    # HWP·HWPX 원본에만 적용한다(2026-10-09 실측: TXT 변환본 2쪽을 기준으로 잡아 '쪽 수 초과' 오판정).
+    if 확장자 in ('.hwp', '.hwpx'):
+        쪽맞춤_원본_보고서_기록()
+    else:
+        globals()['쪽맞춤_원본_보고서'] = None
 
     # 원본 배치의 쪽 범위를 수정 전에 고정한다. 페이지 보호 해제나 서식 변경
     # 이후에 계산하면 쪽이 밀려 사용자가 지정한 문단과 다른 문단을 처리하게 된다.
@@ -17515,8 +17527,9 @@ class HwpAutoDocFitGUI:
         self.unify_exclude_tables_var = tk.BooleanVar(value=bool(저장된_설정.get("unify_exclude_tables", False)))
         self.unify_exclude_spacing_var = tk.BooleanVar(value=bool(저장된_설정.get("unify_exclude_spacing", False)))
         self.unify_exclude_pagefit_var = tk.BooleanVar(value=bool(저장된_설정.get("unify_exclude_pagefit", True)))
+        self.unify_keep_layout_var = tk.BooleanVar(value=bool(저장된_설정.get("unify_keep_layout", True)))
         for 변수 in (self.exclude_tables_var, self.all_exclude_pagefit_var, self.unify_exclude_tables_var,
-                     self.unify_exclude_spacing_var, self.unify_exclude_pagefit_var):
+                     self.unify_exclude_spacing_var, self.unify_exclude_pagefit_var, self.unify_keep_layout_var):
             변수.trace_add("write", self._설정_변경됨)
             변수.trace_add("write", self._요약갱신)
         # '자간 정리' 카드의 '기존 자간 초기화'. 세부 작업 01(문서 전체 자간 초기화)과 같은 값이며 설정 파일에 저장한다.
@@ -17588,6 +17601,9 @@ class HwpAutoDocFitGUI:
                 # 켜면 문단 아래 간격 페이지 맞춤·관련 문단 페이지 배치를 뺀다.
                 self.unify_exclude_pagefit_check = 카드_체크(
                     "페이지 맞춤 제외", self.unify_exclude_pagefit_var, lambda: self._카드옵션_변경("unify"))
+                # 켜면 결과의 쪽 구성(보고서별 쪽 수·시작 쪽, 전체 쪽 수)을 원본과 같게 맞춘다.
+                self.unify_keep_layout_check = 카드_체크(
+                    "원본 쪽 구성 유지", self.unify_keep_layout_var, lambda: self._카드옵션_변경("unify"))
             if mode == "all":
                 # 끄면 기존 자간을 그대로 두고 서식만 입힌다(결과 파일 이름은 '서식적용').
                 self.include_spacing_check = tk.Checkbutton(
@@ -18429,7 +18445,8 @@ class HwpAutoDocFitGUI:
         elif mode == "unify":
             summary = "문두기호별로 문서에서 많이 쓰인 서식을 적용합니다."
             for 이름, 문구 in (("unify_exclude_tables_var", "표 제외"), ("unify_exclude_spacing_var", "자간 정리 제외"),
-                             ("unify_exclude_pagefit_var", "페이지 맞춤 제외")):
+                             ("unify_exclude_pagefit_var", "페이지 맞춤 제외"),
+                             ("unify_keep_layout_var", "원본 쪽 구성 유지")):
                 if hasattr(self, 이름) and getattr(self, 이름).get():
                     summary += f" · {문구}"
         elif mode == "format":
@@ -18590,6 +18607,7 @@ class HwpAutoDocFitGUI:
         "unify_exclude_tables": ("unify_exclude_tables_var", False),
         "unify_exclude_spacing": ("unify_exclude_spacing_var", False),
         "unify_exclude_pagefit": ("unify_exclude_pagefit_var", False),
+        "unify_keep_layout": ("unify_keep_layout_var", False),
         "all_include_spacing": ("include_spacing_var", False),
         "all_exclude_tables": ("exclude_tables_var", False),
         "all_exclude_pagefit": ("all_exclude_pagefit_var", False),
@@ -21715,7 +21733,8 @@ class HwpAutoDocFitGUI:
             for 키, 이름 in (("all_exclude_pagefit", "all_exclude_pagefit_var"),
                            ("unify_exclude_tables", "unify_exclude_tables_var"),
                            ("unify_exclude_spacing", "unify_exclude_spacing_var"),
-                           ("unify_exclude_pagefit", "unify_exclude_pagefit_var")):
+                           ("unify_exclude_pagefit", "unify_exclude_pagefit_var"),
+                           ("unify_keep_layout", "unify_keep_layout_var")):
                 설정값[키] = bool(getattr(self, 이름).get()) if hasattr(self, 이름) else False
             설정값["spacing_reset_existing"] = bool(self.stage_choices["spacing"].get("reset_spacing", True))
             설정값["active_format_profile"] = getattr(self, "_활성_서식_프로파일", "")

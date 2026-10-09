@@ -1029,6 +1029,7 @@ class _WorkspaceState extends State<Workspace> {
                     ('unify_exclude_tables', '표 제외', '기본 표 서식·표 서식통일을 빼요.'),
                     ('unify_exclude_spacing', '자간 정리 제외', '서식통일이 고친 문장의 자간은 그대로 둬요.'),
                     ('unify_exclude_pagefit', '페이지 맞춤 제외', '문단 아래 간격 페이지 맞춤을 빼요.'),
+                    ('unify_keep_layout', '원본 쪽 구성 유지', '보고서별 쪽 수·시작 쪽을 원본과 같게 맞춰요.'),
                   ]) ...[
                     Row(
                       children: [

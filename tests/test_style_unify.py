@@ -260,7 +260,7 @@ class UnifyModeTest(unittest.TestCase):
     def test_unify_mode_has_only_unify_stage_and_is_on(self):
         # 기본 표 서식(준말 '표')을 먼저 입히고, 쪽 맞춤은 서식통일 뒤 사용자가 켤 때만 실행한다.
         # 준말 변환·보고서 표준서식은 서식 통일에서 하지 않는다.
-        self.assertEqual([k for k, _ in stages_for_mode('unify')], ['table_style', 'style_unify', 'unify_spacing', 'table_unify', 'page_fit'])
+        self.assertEqual([k for k, _ in stages_for_mode('unify')], ['table_style', 'style_unify', 'unify_spacing', 'table_unify', 'page_fit', 'page_layout_keep'])
         self.assertTrue(default_choice('table_style', 'unify'))
         for key in ('abbreviation', 'standard_format'):
             self.assertFalse(default_choice(key, 'unify'), key)

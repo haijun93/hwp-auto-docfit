@@ -48,7 +48,7 @@ class WritingAidsGuiTest(unittest.TestCase):
                     # 페이지 맞춤 제외) / 한 번에 적용(+ 자간 조정 포함·표 제외·페이지 맞춤 제외)
                     self.assertEqual([b.cget("text") for b in app.mode_buttons],
                                      ["자간 정리", "기존 자간 초기화", "표 제외",
-                                      "서식 통일", "표 제외", "자간 정리 제외", "페이지 맞춤 제외",
+                                      "서식 통일", "표 제외", "자간 정리 제외", "페이지 맞춤 제외", "원본 쪽 구성 유지",
                                       "한 번에 적용", "자간 조정 포함", "표 제외", "페이지 맞춤 제외"])
                     for 이름 in ("all_exclude_pagefit_var", "unify_exclude_tables_var", "unify_exclude_spacing_var"):
                         self.assertFalse(getattr(app, 이름).get(), 이름)       # 기본 꺼짐
