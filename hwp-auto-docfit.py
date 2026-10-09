@@ -255,6 +255,10 @@ import win32com.client as win32
 import win32gui
 import win32con
 from defusedxml.ElementTree import fromstring as safe_xml_fromstring
+from docfit_core.batch_format import apply_batch, ParagraphStyle, BatchUnsupported
+from docfit_core.updater import (expected_sha256 as 업데이트_예상해시, install_script as 업데이트_교체스크립트,
+                                 leftover_files as 업데이트_잔여파일, verify_download as 업데이트_파일검증)
+from docfit_core.fidelity.package import UnsupportedPackage
 from docfit_core.style_hierarchy import DOT_MARKERS, DOCUMENT_TYPES, analyze_hierarchy, display_role, document_type as 문서유형_판정, hierarchy_summary, leading_marker, normalize_leading_dot, stored_role
 from docfit_core.style_unify import complement_ranges as 서식통일_범위분리, merge_adjacent as 서식통일_범위병합, parenthetical_spans as 서식통일_부연괄호, representative as 서식통일_최빈값
 from docfit_core.style_unify import dominant as 서식통일_우세값, hierarchy_levels as 서식통일_계층순서, looks_like_cover as 서식통일_표지판정, unify_marker as 서식통일_문두기호, vocabulary_fallback as 서식통일_문서어휘_대표
@@ -368,7 +372,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리"
-APP_VERSION = "1.72 Beta 10"
+APP_VERSION = "1.72 Beta 11"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 GITHUB_UPDATE_API_URL = "https://api.github.com/repos/haijun93/hwp-auto-docfit/releases/latest"
@@ -414,6 +418,38 @@ def _업데이트_HTTP_GET(url, headers, timeout, _남은_리디렉션=5):
         raise urllib.error.HTTPError(url, 상태, 응답.reason, 응답.headers, None)
     응답._docfit_connection = 연결
     return 응답
+
+
+def _업데이트_기록(내용):
+    """업데이트 과정을 설정 폴더의 updates\\update.log에 남긴다(실패해도 무시)."""
+    try:
+        폴더 = 설정_폴더() / "updates"
+        폴더.mkdir(parents=True, exist_ok=True)
+        with open(폴더 / "update.log", "a", encoding="utf-8") as f:
+            f.write(f"{_datetime.datetime.now():%Y-%m-%d %H:%M:%S} [{APP_VERSION}] {내용}\n")
+    except Exception:
+        pass
+
+
+def 업데이트_잔여정리():
+    """지난 업데이트가 남긴 구버전 백업('*.exe.old')과 내려받기 잔여물을 지운다(실행 중이면 다음에 다시 시도)."""
+    try:
+        실행폴더 = Path(sys.executable).resolve().parent
+        업데이트_폴더 = 설정_폴더() / "updates"
+        이름들 = [x.name for x in 실행폴더.iterdir()] if 실행폴더.is_dir() else []
+        업데이트_이름들 = [x.name for x in 업데이트_폴더.iterdir()] if 업데이트_폴더.is_dir() else []
+        old, stale = 업데이트_잔여파일(이름들, 업데이트_이름들)
+        지운 = 0
+        for 경로 in [실행폴더 / n for n in old] + [업데이트_폴더 / n for n in stale]:
+            try:
+                경로.unlink()
+                지운 += 1
+            except OSError:
+                pass
+        if 지운:
+            _업데이트_기록(f"지난 업데이트 잔여물 {지운}개 정리")
+    except Exception:
+        pass
 
 
 def _버전_튜플(value):
@@ -1265,6 +1301,8 @@ def 번들_리소스_폴더():
     "unify_exclude_tables": False,
     "unify_exclude_spacing": False,
     "unify_exclude_pagefit": True,
+    # 서식 통일 카드의 '원본 쪽 구성 유지'(세부 작업 page_layout_keep과 연동, 기본 켬).
+    "unify_keep_layout": True,
     # 서식통일 뒤 '작업 결과 확인' 창(서식통일 5/5)을 띄울지. 기본 꺼짐(2026-10-04 사용자 요청).
     "unify_result_window": False,
     # '자간 정리' 카드의 '기존 자간 초기화'(세부 작업 01과 같은 값). None이면 저장된 세부 작업 구성을 따른다.
@@ -4536,8 +4574,86 @@ _세부단계_단계매핑 = {
     "관련 문단 페이지 배치": "페이지 배치",
 }
 
+# 문서 처리 단계별 소요 시간 계측(알파 계획 W7-0, 2026-10-09). 동작은 바꾸지 않는다.
+# 단계가 바뀔 때마다(단계표시) 직전 구간의 시간을 이름별로 모아, 문서 하나가 끝나면 로그에 요약한다.
+# 실측: 전체 317.5초 중 쪽 수 맞춤은 약 67초뿐이고 나머지 약 250초가 어느 단계인지 몰랐다.
+_단계시간표 = None
+
+
+def 단계시간_시작():
+    global _단계시간표
+    지금 = time.perf_counter()
+    _단계시간표 = {'시작': 지금, '현재': '준비', '현재시작': 지금, '합': {}, '순서': []}
+
+
+def _단계시간_닫기(표, 지금):
+    이름 = 표.get('현재')
+    if 이름 is None:
+        return
+    누적 = 표['합'].get(이름)
+    if 누적 is None:
+        누적 = 표['합'][이름] = [0.0, 0]
+        표['순서'].append(이름)
+    누적[0] += 지금 - 표['현재시작']
+    누적[1] += 1
+    표['현재'] = None
+
+
+def 단계시간_구간(이름):
+    """직전 구간을 닫고 이름 구간을 시작한다. 계측 중이 아니면 아무것도 하지 않는다."""
+    표 = _단계시간표
+    if 표 is None or not 이름:
+        return
+    지금 = time.perf_counter()
+    _단계시간_닫기(표, 지금)
+    표['현재'], 표['현재시작'] = 이름, 지금
+
+
+def 단계시간_끝():
+    global _단계시간표
+    표, _단계시간표 = _단계시간표, None
+    if 표 is None:
+        return None
+    지금 = time.perf_counter()
+    _단계시간_닫기(표, 지금)
+    표['전체'] = 지금 - 표['시작']
+    return 표
+
+
+def 단계시간_분류(이름):
+    """단계 이름을 서식 / 내어쓰기 / 자간 / 쪽 맞춤 등 큰 분류로 묶는다(서식통일 안의 자간·쪽 맞춤은 서식통일에 포함)."""
+    이름 = str(이름)
+    if 이름 in ('준비', '열기', '변환') or '열기' in 이름 or '변환' in 이름:
+        return '열기·변환'
+    if '페이지' in 이름 or '쪽' in 이름:
+        return '쪽 맞춤·배치'
+    if '내어쓰기' in 이름 or '들여쓰기' in 이름 or '별표' in 이름:
+        return '내어쓰기 계열'
+    if '자간' in 이름 or '단어' in 이름 or '줄 병합' in 이름 or '마지막 줄' in 이름:
+        return '자간·줄 끝'
+    if '저장' in 이름 or '검수' in 이름 or '무결성' in 이름 or '규칙' in 이름:
+        return '저장·검수'
+    return '서식·기타'
+
+
+def 단계시간_요약줄(표, 파일명, 상위=10):
+    """계측 결과를 로그 줄 목록으로 만든다(순수 함수)."""
+    전체 = max(표.get('전체', 0.0), 1e-9)
+    분류합 = {}
+    for 이름, (초, _건) in 표['합'].items():
+        분류합[단계시간_분류(이름)] = 분류합.get(단계시간_분류(이름), 0.0) + 초
+    줄 = [f"[처리 시간 계측] {파일명}: 전체 {전체:.1f}초 (단계 {len(표['합'])}종)"]
+    줄.append("[처리 시간 계측] 분류별: " + " / ".join(
+        f"{이름} {초:.1f}초({초 / 전체:.0%})" for 이름, 초 in sorted(분류합.items(), key=lambda x: -x[1])))
+    오래 = sorted(표['합'].items(), key=lambda x: -x[1][0])[:상위]
+    줄.append("[처리 시간 계측] 오래 걸린 단계(상위 %d): " % len(오래) + " / ".join(
+        f"{이름} {초:.1f}초({초 / 전체:.0%}, {건}회)" for 이름, (초, 건) in 오래))
+    return 줄
+
+
 def 단계표시(단계명):
     """세부 단계명(또는 상위 절차명)을 받아 해당 상위 절차 칸을 켜도록 큐에 넣는다."""
+    단계시간_구간(단계명)
     상위 = _세부단계_단계매핑.get(단계명, 단계명)
     if 상위 in 진행단계_순서:
         gui_queue.put(("step", 상위))
@@ -6082,6 +6198,8 @@ def _현재_쪽여백():
 def _표준_또는_원본여백(항목, 표준값, 원본=None):
     """표준 여백과 원본 여백 중 좁은 값. 원본 여백이 더 좁으면 원본을 둔다(사용자 결정, 2026-10-09:
     여백을 넓히면 본문 폭이 줄어 원본 쪽 구성이 깨짐. 실측: 좌우 18mm → 20mm로 14쪽 문서가 17쪽)."""
+    if 작업_모드 != 'unify':
+        return 표준값      # 원본 여백 유지는 쪽 구성 동일 원칙(서식 통일 전용)의 일부다
     원본 = _현재_쪽여백() if 원본 is None else 원본
     if not 원본 or 항목 not in 원본 or 원본[항목] <= 0:
         return 표준값
@@ -6221,6 +6339,171 @@ def 본문형_일반문장인가(text):
     return 서식요소.is_body_sentence(text, 크기, 정렬)
 
 
+# 알파는 기본 보고서 서식을 XML에서 먼저 입힌다. 내어쓰기·쪽 배치는 실측한다.
+# 사용자 서식의 복사 속성은 아직 기존 경로로 처리해 미지원 속성을 잃지 않는다.
+알파_HWPX_일괄서식_사용 = True
+_표준서식_XML텍스트 = set()
+_표준서식_XML간격 = {}
+_알파_일괄서식_문서 = False
+
+
+def 알파_일괄서식_가능():
+    return bool(알파_HWPX_일괄서식_사용 and 작업_모드 in ('format', 'all')
+                and 표준서식_선행_사용 and 쪽범위_요청 is None
+                and stage_enabled(선택_세부작업, 'standard_format', 작업_모드)
+                and not any(표준서식_설정.get(key) for key in (
+                    '복사_문단모양', '계층_추가서식', '복제_본문서식',
+                    '복제_들여쓰기_유지', '복귀_간격', '제목뒤_간격')))
+
+
+_GDI_글꼴 = None
+
+
+def _GDI_글꼴인가(글꼴):
+    """Windows 글꼴(GDI) 목록에 있는지. 처음 한 번만 읽는다(한글 이름으로 비교된다)."""
+    global _GDI_글꼴
+    if _GDI_글꼴 is None:
+        이름들 = set()
+        hdc = win32gui.GetDC(0)
+        try:
+            win32gui.EnumFontFamilies(hdc, None, lambda lf, tm, ft, data: 이름들.add(lf.lfFaceName) or 1, None)
+        finally:
+            win32gui.ReleaseDC(0, hdc)
+        _GDI_글꼴 = 이름들
+    return 글꼴 in _GDI_글꼴
+
+
+def _알파_글꼴형식(글꼴):
+    """XML 일괄 서식에 쓸 글꼴 형식(TTF/HFT). 알 수 없으면 None(그 문단은 기존 COM 경로가 형식을 확인해 처리).
+
+    COM 경로는 TTF로 해 보고 실패하면 HFT로 다시 하지만 XML은 다시 해 볼 수 없다. 예전에는 늘 TTF로 넣어
+    한/글 전용 글꼴(휴먼명조·한양신명조 등 HFT, Windows 글꼴 목록에 없음)을 잘못된 형식으로 등록했다(2026-10-09 검토).
+    Windows 글꼴 목록에 있으면 TTF, 없으면 HFT로 본다(COM 경로가 다시 시도해 얻는 결과와 같다).
+    """
+    if not 글꼴:
+        return None
+    if _글꼴형식.get(글꼴):
+        return _글꼴형식[글꼴]
+    try:
+        return "TTF" if _GDI_글꼴인가(글꼴) else "HFT"
+    except Exception:
+        return None
+
+
+def _알파_라벨_굵게범위(text):
+    if not 괄호_라벨_볼드_사용 or 문두_라벨_굵게_제외_문단인가(text):
+        return ()
+    end = 문장부호_마커_끝위치(text)
+    if end is None:
+        return ()
+    while end < len(text) and text[end] in (' ', '\t'):
+        end += 1
+    rest = text[end:]
+    match = re.match(r'^([^\n\r:：]{1,25}?)[ \t]*([:：])[ \t]+(\S.*)$', rest)
+    if match and match.group(1).strip():
+        label = match.group(1).strip()
+        start = end + rest.find(label)
+        return ((start, start + len(label)),)
+    if '(' in text:
+        for match in 괄호_정규식.finditer(text):
+            if 괄호_문두_라벨인가(text, match):
+                return (match.span(),)
+    return ()
+
+
+def 표준서식_hwpx_처리(source, target=None, selections=None):
+    """기본 본문 서식을 XML에서 일괄 적용하고 COM 중복 적용을 막는다."""
+    global _알파_일괄서식_문서, _표준서식_XML텍스트, _표준서식_XML간격
+    if not 알파_일괄서식_가능():
+        return {} if target is None else 0
+    tracker = ParagraphSpacingTracker()
+
+    def plan(text, paragraph):
+        # 컨트롤 문단도 위계 상태에는 포함한다. 그 문단의 실제 서식은 COM에 맡긴다.
+        readable = _문단_본문글(paragraph) if text is None else text
+        readable = normalize_leading_dot(readable)
+        prev = None
+        if 표준서식_문단위간격_사용:
+            prev = tracker.spacing_for(readable, _표준서식_문단위간격_표(), 표준서식_문단위간격_복귀배율)
+            if not readable.strip():
+                tables = [x for x in paragraph.iter() if 제목_xml이름(x) == 'tbl']
+                if any(중제목_유형판별(x) for x in tables):
+                    tracker.spacing_for_level('midtitle', _표준서식_문단위간격_표(), 표준서식_문단위간격_복귀배율)
+        if text is None or not text.strip():
+            return None
+        rule = 표준서식_기호규칙_찾기(readable) if 표준서식_기호_사용 else None
+        if rule is None:
+            # 일반 본문·제목은 원래의 글자 모양을 보존한다.
+            return ParagraphStyle(text=readable, prev_pt=prev) if prev is not None else None
+        symbol, lead, font, size, paragraph_bold, marker_bold = rule
+        if readable.lstrip().startswith('**'):
+            lead = max(0, lead - 1)
+        formatted = ' ' * lead + readable.lstrip()
+        selected = 표준서식_설정.get('스타일_속성선택', {}).get(symbol, {})
+        글꼴형식 = _알파_글꼴형식(font) if selected.get('font', True) else None
+        if selected.get('font', True) and font and 글꼴형식 is None:
+            return None      # 글꼴 형식을 모르면 기존 COM 경로(TTF↔HFT 확인)로 처리한다
+        enabled = 표준서식_기호_굵게.get(symbol, True)
+        bold = bool(paragraph_bold and enabled)
+        spans = list(_알파_라벨_굵게범위(formatted))
+        if marker_bold and enabled and not bold:
+            spans.append((lead, lead + 1))
+        return ParagraphStyle(
+            text=formatted, font=font if selected.get('font', True) else None,
+            font_type=글꼴형식,
+            size_pt=size if selected.get('size', True) else None,
+            bold=bold if '복사_문단모양' in 표준서식_설정 else (True if bold else None),
+            ratio=표준서식_설정['기본_장평'] if 표준서식_장평_사용 else None,
+            line_percent=표준서식_설정['기본_줄간격_퍼센트'] if 표준서식_줄간격_사용 else None,
+            prev_pt=prev, bold_spans=tuple(spans))
+
+    try:
+        result = apply_batch(source, target, plan)
+    except Exception as error:
+        # 미지원 구조(BatchUnsupported·UnsupportedPackage)뿐 아니라 예상 밖 오류(_rewrite_runs의 글자 보존 검사 등)도
+        # 기존 COM 경로로 돌린다. 알파 새 기능의 오류로 베타에서 되던 문서 처리가 실패하면 안 된다(2026-10-09 검토).
+        if not isinstance(error, (BatchUnsupported, UnsupportedPackage)):
+            로그(f'[알파 일괄 서식] 예상 밖 오류({type(error).__name__}) — 기존 COM 경로로 처리')
+        로그(f'[알파 일괄 서식] 기존 COM 경로 사용: {error}')
+        if target is not None:
+            shutil.copyfile(source, target)
+            _표준서식_XML텍스트 = set()
+            _표준서식_XML간격 = {}
+            _알파_일괄서식_문서 = False
+        return {} if target is None else 0
+    if target is None:
+        return {'본문': list(range(result.applied))}
+    _표준서식_XML텍스트 = set(result.formatted_texts)
+    _표준서식_XML간격 = dict(result.paragraph_spacing)
+    _알파_일괄서식_문서 = bool(result.applied)
+    로그(f'[알파 일괄 서식] XML 적용 {result.applied}문단 / 기존 경로 {result.fallback}문단 / '
+         f'새 글자 모양 {result.char_styles}개·문단 모양 {result.paragraph_styles}개')
+    return result.applied
+
+
+def _알파_한줄문단인가(pos):
+    """현재 실제 조판이 한 줄이면 자간·짧은 마지막 줄 보정이 필요 없다.
+
+    오래된 XML lineseg나 글자 폭 추정값으로 문단을 제외하지 않는다.
+    컨트롤, 측정 실패는 기존 전수 검사로 돌린다.
+    """
+    if not _알파_일괄서식_문서 or pos[0] != 0:
+        return False
+    try:
+        hwp_run('MoveParaBegin')
+        begin = hwp.GetPos()
+        hwp_run('MoveParaEnd')
+        end = hwp.GetPos()
+        hwp_run('MoveLineBegin')
+        last_line = hwp.GetPos()
+        return (tuple(begin) == tuple(last_line) and tuple(begin[:2]) == tuple(pos[:2])
+                and tuple(end[:2]) == tuple(pos[:2]) and begin[2] == 0)
+    except Exception:
+        return False
+    finally:
+        hwp.SetPos(*pos)
+
+
 def 표준서식_문단_처리(문단_순번, 헤더_역할=None, 상속_기호_매칭=None):
     """현재 문단에 보고서 표준서식을 적용한다.
 
@@ -6261,11 +6544,21 @@ def 표준서식_문단_처리(문단_순번, 헤더_역할=None, 상속_기호_
     # 기호 서식 규칙이 없는 *·- 문단도 위계 추적에 포함해야 복귀를 판정할 수 있다.
     if 표준서식_문단위간격_사용 and not 표준서식_설정.get("복제_들여쓰기_유지"):
         간격_pt = 표준서식_문단위간격_찾기(text)
-        if 간격_pt is not None:
+        if 간격_pt is not None and not (
+                text.rstrip('\r\n') in _표준서식_XML텍스트
+                and _표준서식_XML간격.get(text.rstrip('\r\n')) == 간격_pt and hwp.GetPos()[0] == 0):
             hwp_run("MoveParaBegin")
             hwp_run("MoveSelParaEnd")
             문단_위간격_적용_현재선택(간격_pt)
             hwp_run("Cancel")
+    if (text.rstrip('\r\n') in _표준서식_XML텍스트 and hwp.GetPos()[0] == 0):
+        # 한/글 실측이 필요한 내어쓰기만 수행한다. 글자/문단 서식은 이미 확정했다.
+        if (표준서식_내어쓰기_사용 and not 최종_내어쓰기_예정
+                and 내어쓰기_기호선택_허용(text)
+                and 문단_내어쓰기_기준_오프셋(text) is not None):
+            hwp_run('MoveParaBegin')
+            문단_내어쓰기_적용(hwp.GetPos(), text)
+        return
     # 보고서 표준서식은 문장부호(□/ㅇ/-/※ 등)로 시작하는 문단만 대상으로
     # 한다. 제목·일자·일반 본문에는 장평/줄간격/폰트/내어쓰기를 적용하지
     # 않아 원문 서식을 보존한다.
@@ -10259,12 +10552,23 @@ def 본문_기존자간조정():
     순회_시작()
     직전위치 = None
     정체횟수 = 0
+    검사문단 = None
     while True:
         if 중단_요청됨():
             return False
         현재위치 = hwp.GetPos()
         if 쪽범위_끝지남(현재위치):
             return True
+        if (_알파_일괄서식_문서 and 현재위치[0] == 0
+                and tuple(현재위치[:2]) != 검사문단):
+            검사문단 = tuple(현재위치[:2])
+            if _알파_한줄문단인가(현재위치):
+                hwp_run('MoveParaEnd')
+                문단끝 = hwp.GetPos()
+                hwp_run('MoveNextChar')
+                if hwp.GetPos() == 문단끝:
+                    return True
+                continue
         if ((not 쪽범위_안인가(현재위치)) or (not 재검사_대상인가(현재위치))
                 or 표셀_자간_제외인가()):
             # 작업 쪽 범위 밖, 2차 이후 재검사 대상이 아닌 문단, '표 안 문장 제외'인
@@ -10832,9 +11136,12 @@ def 쪽보다_긴_묶음인가(문단들, counts):
     return bool(capacity) and sum(counts.values()) > capacity
 
 
-# 결과 문서에는 '쪽 나누기'(문단 앞 쪽 나눔)를 남기지 않는다(사용자 지시, 2026-10-09). 보고서 경계(제목 표 앞)만 예외. 처리 시작과 저장 직전에 모든 작업이 끝난 뒤 저장
-# 직전에 한 번에 풀고, 처리 중에도 쪽 배치·보고서 쪽 맞춤이 쪽 나눔으로 묶음을 옮기지 않는다(줄간격·간격 조정만 쓴다).
-쪽나누기_사용 = False
+# 결과 문서의 '쪽 나누기'(문단 앞 쪽 나눔)는 모든 작업이 끝난 뒤 저장 직전에 푼다(사용자 지시, 2026-10-09). 남기는 것은
+# 두 가지뿐이다: 보고서 경계(제목 표 앞)와, 쪽 배치가 줄간격으로 옮기지 못한 묶음을 다음 쪽에 보내려고 넣은 쪽 나눔
+# (사용자 결정, 2026-10-09: 표 제목 문장이 앞쪽에 홀로 남는 것을 막는다). 원문에 있던 쪽 나누기 등은 지운다.
+쪽나누기_사용 = True
+# 쪽 배치가 묶음을 옮기려고 넣은 쪽 나눔의 본문 문단 번호(저장 직전 해제에서 남긴다).
+쪽배치_쪽나눔문단 = set()
 
 
 def 문서_쪽나누기_전체해제(보존=()):
@@ -10904,6 +11211,8 @@ def _묶음_쪽나눔_이동(시작위치, 문단들, counts, summary, 표키=No
             쪽 = next(iter(new_counts))
             같은쪽 = bool(표쪽) and 표쪽[0] == 쪽 and (표까지만 or 표쪽[1] == 쪽)
         if 같은쪽:
+            if 시작위치[0] == 0:
+                쪽배치_쪽나눔문단.add(시작위치[1])
             로그(f'문장 묶음 쪽 나눔으로 다음 쪽 배치: {summary} '
                  f'(앞쪽 {counts[pages[0]]}줄/쪽당 약 {capacity}줄)')
             return True
@@ -12159,6 +12468,11 @@ def 표_셀_세로여백_일괄조정(스텝, 최소쪽=None, 원래값=None):
     return 적용수
 
 
+# 문서 유형별 쪽 맞춤 한 번 동안 쓰는 표 칸 묶음 캐시(None이면 쓰지 않음). 간격·여백·쪽 나눔만 바꾸므로 표 칸
+# 목록 번호(area)는 그동안 바뀌지 않는다. 예전에는 보고서마다 문서의 표 칸 전체를 다시 훑었다(2026-10-09).
+_쪽맞춤_표캐시 = None
+
+
 def _표_셀_대상_순회(최소쪽=None, 문단범위=None):
     """쪽 수 맞춤이 셀 세로 여백을 줄일 표 셀의 area를 차례로 내준다(캐럿은 그 셀에 둔다).
 
@@ -12175,20 +12489,25 @@ def _표_셀_대상_순회(최소쪽=None, 문단범위=None):
         pass
 
     계측_스캔시작 = time.perf_counter()
-    한칸영역 = set()
-    try:
-        목록 = 한칸표_영역_목록()
-        if 목록:
-            한칸영역 = set(목록)
-    except Exception:
-        pass
-
-    try:
-        묶음 = None
+    캐시 = _쪽맞춤_표캐시
+    if 캐시 is not None and '묶음' in 캐시:
+        한칸영역, 묶음 = 캐시['한칸'], 캐시['묶음']
+    else:
+        한칸영역 = set()
+        try:
+            목록 = 한칸표_영역_목록()
+            if 목록:
+                한칸영역 = set(목록)
+        except Exception:
+            pass
         try:
             묶음 = 표칸_묶음_키별()
         except Exception:
             묶음 = None
+        if 캐시 is not None:
+            캐시.update(한칸=한칸영역, 묶음=묶음)
+
+    try:
         쪽맞춤_계측_더하기('표스캔', time.perf_counter() - 계측_스캔시작)
 
         if 묶음 is not None:
@@ -12347,13 +12666,23 @@ def 쪽맞춤_대상_조사(최소쪽, 문단범위=None):
     """
     문단 = {}
     원위치 = hwp.GetPos()
-    순회_시작()
+    # 보고서 범위가 있으면 그 첫 문단부터 보고 범위를 지나면 멈춘다(예전에는 보고서마다 문서 전체를 처음부터 훑었다).
+    try:
+        if 문단범위 is None:
+            raise ValueError
+        hwp.SetPos(0, 문단범위.start, 0)
+        if tuple(hwp.GetPos()[:2]) != (0, 문단범위.start):
+            raise ValueError
+    except Exception:
+        순회_시작()
     시작 = time.perf_counter()
     훑은수 = 0
     정체 = 0
     try:
         while not 중단_요청됨():
             시작위치 = hwp.GetPos()
+            if 문단범위 is not None and 시작위치[0] == 0 and 시작위치[1] >= 문단범위.stop:
+                break
             훑은수 += 1
             if (시작위치[0] == 0 and (문단범위 is None or 시작위치[1] in 문단범위)
                     and not 현재_한칸표인가()):
@@ -12771,10 +13100,11 @@ def 쪽맞춤_보고서_끝쪽(끝):
             pass
 
 
-def 쪽맞춤_보고서_목록(제목문단=None):
+def 쪽맞춤_보고서_목록(제목문단=None, 대상=None):
     """제목 표마다 나눈 보고서 목록과 제목 표 문단 번호.
 
     보고서: dict(문단범위, 끝, start, end, overflow, 제목). 첫 제목 표 앞 내용(표지 등)은 첫 보고서에 넣는다.
+    대상(보고서 번호)을 주면 그 보고서의 쪽만 재고 나머지 자리는 None이다(쪽 측정이 보고서마다 반복되지 않게).
     """
     _표칸영역.clear()
     표문단 = 본문_표_문단번호()
@@ -12791,6 +13121,9 @@ def 쪽맞춤_보고서_목록(제목문단=None):
             시작들 = [0] + 시작들[1:]
         보고서 = []
         for i, 시작 in enumerate(시작들):
+            if 대상 is not None and i != 대상:
+                보고서.append(None)
+                continue
             끝 = (시작들[i + 1] - 1) if i + 1 < len(시작들) else 끝문단
             hwp.SetPos(0, 시작, 0)
             첫쪽 = 현재_페이지번호()
@@ -13133,8 +13466,10 @@ def 쪽맞춤_원본_보고서_기록():
     """처리 전 문서의 보고서별 쪽 수를 기록한다(결과에서도 보고서마다 이 쪽 수 안에 담는다)."""
     global 쪽맞춤_원본_보고서
     쪽맞춤_원본_보고서 = None
-    if not (쪽맞춤_유형판정_사용 and 페이지맞춤_문단간격_사용 and hwp is not None
-            and stage_enabled(선택_세부작업, 'page_fit', 작업_모드)):
+    # 쪽 구성 동일 원칙은 서식 통일에서만 쓴다(사용자 지정, 2026-10-09). 한 번에 적용·서식 적용은 문서 유형별
+    # 쪽 맞춤(1쪽 보고서는 1쪽)만 한다.
+    if not (작업_모드 == 'unify' and 쪽맞춤_유형판정_사용 and 페이지맞춤_문단간격_사용 and hwp is not None
+            and stage_enabled(선택_세부작업, 'page_layout_keep', 작업_모드)):
         return
     try:
         보고서, 제목문단 = 쪽맞춤_보고서_목록()
@@ -13186,10 +13521,13 @@ def _문서유형별_쪽맞춤():
     원본에서 1쪽이던 보고서가 결과에서 2쪽으로 퍼짐). 없으면 1쪽 보고서(넘친 줄 4줄 이하)만 1쪽에 맞춘다.
     처리했으면 True. 심화보고서이거나 판정하지 못하면 False(기존 '마지막 쪽 당기기'를 쓴다).
     """
+    global _쪽맞춤_표캐시
     쪽맞춤_바꾼문단.clear()
+    _쪽맞춤_표캐시 = {}
     try:
         return _문서유형별_쪽맞춤_본체()
     finally:
+        _쪽맞춤_표캐시 = None
         _쪽맞춤_바꾼문단_단어분리_재검사()
 
 
@@ -13240,9 +13578,9 @@ def _문서유형별_쪽맞춤_본체():
             return True
         if 번호 not in 목표 and 번호 not in 새쪽:
             continue
-        # 앞 보고서를 바꾸면 뒤 보고서의 쪽이 바뀌므로 매번 다시 잰다.
-        현재목록, _ = 쪽맞춤_보고서_목록(제목문단)
-        if not 현재목록 or 번호 >= len(현재목록):
+        # 앞 보고서를 바꾸면 뒤 보고서의 쪽이 바뀌므로 매번 다시 잰다(이 보고서만).
+        현재목록, _ = 쪽맞춤_보고서_목록(제목문단, 대상=번호)
+        if not 현재목록 or 번호 >= len(현재목록) or 현재목록[번호] is None:
             break
         항목 = 현재목록[번호]
         위치 = (0, 항목['문단범위'].start, 0)
@@ -13252,13 +13590,13 @@ def _문서유형별_쪽맞춤_본체():
             쪽나눔_설정(위치, True)
             쪽맞춤_보고서조정됨 = True
             로그(f"[문서 유형] 보고서 {번호 + 1}을 새 쪽에서 시작")
-            항목 = 쪽맞춤_보고서_목록(제목문단)[0][번호]
+            항목 = 쪽맞춤_보고서_목록(제목문단, 대상=번호)[0][번호]
         if 번호 not in 목표 or 항목['end'] - 항목['start'] + 1 <= 목표[번호]:
             continue
         # 쪽 배치가 넣은 보고서 안의 쪽 나눔은 걷어내고 다시 잰다(원본에는 없던 빈 쪽을 만든다).
         if _보고서_내부_쪽나눔_해제(항목):
             쪽맞춤_보고서조정됨 = True
-            항목 = 쪽맞춤_보고서_목록(제목문단)[0][번호]
+            항목 = 쪽맞춤_보고서_목록(제목문단, 대상=번호)[0][번호]
             if 항목['end'] - 항목['start'] + 1 <= 목표[번호]:
                 로그(f"보고서 {번호 + 1}: 보고서 안 쪽 나눔을 풀어 {목표[번호]}쪽 안에 들어감")
                 continue
@@ -14129,6 +14467,7 @@ def 본문_문장부호_처리():
     순회_시작()
     직전위치 = None
     정체횟수 = 0
+    검사문단 = None
 
     while hwp.GetPos() != 끝위치:
         if 중단_요청됨():
@@ -14136,6 +14475,16 @@ def 본문_문장부호_처리():
         현재위치 = hwp.GetPos()
         if 쪽범위_끝지남(현재위치):
             return True
+        if (_알파_일괄서식_문서 and 현재위치[0] == 0
+                and tuple(현재위치[:2]) != 검사문단):
+            검사문단 = tuple(현재위치[:2])
+            if _알파_한줄문단인가(현재위치):
+                hwp_run('MoveParaEnd')
+                문단끝 = hwp.GetPos()
+                hwp_run('MoveNextChar')
+                if hwp.GetPos() == 문단끝:
+                    return True
+                continue
         if ((not 쪽범위_안인가(현재위치)) or (not 재검사_대상인가(현재위치))
                 or 표셀_자간_제외인가()):
             # 작업 쪽 범위 밖, 2차 이후 재검사 대상이 아닌 문단, '표 안 문장 제외'인
@@ -15494,8 +15843,9 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
         if stage_enabled(선택_세부작업, 'table_unify', 작업_모드):
             if not stage('표 서식통일', 서식통일_표_전체_적용):
                 return False
-        # 쪽 맞춤은 사용자가 세부 작업에서 켠 경우에만 서식통일 뒤에 실행한다.
-        if stage_enabled(선택_세부작업, 'page_fit', 작업_모드):
+        # 쪽 맞춤은 사용자가 세부 작업에서 켠 경우, 또는 '원본 쪽 구성 유지'를 켠 경우 서식통일 뒤에 실행한다.
+        if (stage_enabled(선택_세부작업, 'page_fit', 작업_모드)
+                or stage_enabled(선택_세부작업, 'page_layout_keep', 작업_모드)):
             return stage('문단 아래 간격 페이지 맞춤', 보고서_페이지수_맞춤_전체_적용)
         return True
     if (회차 == 1 and stage_enabled(선택_세부작업, 'style_unify')
@@ -16159,8 +16509,25 @@ def 저장결과_규칙검수(파일, 저장파일, 결과창=True):
 
 
 def 문서_처리(파일, index, total, 문장부호기능=True):
+    """문서 처리 본체를 부르며 단계별 소요 시간을 작업 로그에 남긴다(동작은 같다)."""
+    단계시간_시작()
+    try:
+        return _문서_처리_본체(파일, index, total, 문장부호기능)
+    finally:
+        표 = 단계시간_끝()
+        if 표:
+            for 줄 in 단계시간_요약줄(표, Path(파일).name):
+                로그(줄)
+
+
+def _문서_처리_본체(파일, index, total, 문장부호기능=True):
     global hwp, 현재_처리파일, 한칸표_보호영역, 최종검수_문서목록
     global 쪽범위_본문_문단, 쪽범위_컨트롤영역, 쪽범위_실제, 기본표서식_적용됨
+    global _표준서식_XML텍스트, _알파_일괄서식_문서, _표준서식_XML간격
+    _표준서식_XML텍스트 = set()
+    _표준서식_XML간격 = {}
+    _알파_일괄서식_문서 = False
+    쪽배치_쪽나눔문단.clear()
     한칸표_보호영역 = set()
     기본표서식_적용됨 = False
     쪽범위_본문_문단 = None
@@ -16255,7 +16622,13 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
     비교보기_임베드_재확인()
 
     # 보고서별 원본 쪽 수는 아무것도 고치기 전에 잰다(서식을 입힌 뒤 재면 이미 늘어난 쪽 수가 기준이 된다).
-    쪽맞춤_원본_보고서_기록()
+    단계시간_구간('원본 쪽 구성 기록')
+    # TXT·MD·DOC·PDF는 원본에 쪽 구성이 없다(변환본은 서식 없는 글이라 기준이 될 수 없다). 쪽 구성 동일 원칙은
+    # HWP·HWPX 원본에만 적용한다(2026-10-09 실측: TXT 변환본 2쪽을 기준으로 잡아 '쪽 수 초과' 오판정).
+    if 확장자 in ('.hwp', '.hwpx'):
+        쪽맞춤_원본_보고서_기록()
+    else:
+        globals()['쪽맞춤_원본_보고서'] = None
 
     # 원본 배치의 쪽 범위를 수정 전에 고정한다. 페이지 보호 해제나 서식 변경
     # 이후에 계산하면 쪽이 밀려 사용자가 지정한 문단과 다른 문단을 처리하게 된다.
@@ -16287,6 +16660,9 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
     if (표준서식_사용 and 작업_모드 in ('format', 'all') and 쪽범위_요청 is None and 제목4종_사용
             and stage_enabled(선택_세부작업, 'pre_format', 작업_모드)):
         맨앞목록.append((True, '제목·개요 가로 크기', 제목개요폭_hwpx_처리, 'title_width.hwpx', '제목·개요 가로 크기'))
+    if 알파_일괄서식_가능():
+        맨앞목록.append((True, '본문 서식 일괄 적용', 표준서식_hwpx_처리,
+                        'body_format.hwpx', '보고서 표준서식'))
     if 맨앞목록:
         상태(f"{파일명} : " + " · ".join(항목[1] for 항목 in 맨앞목록))
         알림 = {}
@@ -16321,6 +16697,7 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
     if (작업_모드 in ('spacing', 'all') and 쪽범위_요청 is None
             and stage_enabled(선택_세부작업, 'reset_spacing', 작업_모드)):
         상태(f"{파일명} : 자간 초기화")
+        단계시간_구간('자간 초기화')
         if 문서_전체_자간_초기화() is False:
             return False
         자간초기화_완료 = True
@@ -16393,10 +16770,12 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
             상태(f"{파일명} : 일반 표 정밀 서식 복제")
             if 정밀표_선행적용() is False:
                 return False
+    단계시간_구간('한 칸 표 영역 조사')
     한칸표_보호영역 = 한칸표_영역_목록()
 
     # 기존 결과를 다시 입력했거나 원문 자체에 설정돼 있던 페이지 보호가
     # 페이지 판정을 왜곡하지 않도록 처리 시작 전에도 먼저 해제한다.
+    단계시간_구간('쪽 보호 해제')
     if 작업_모드 != 'unify' and 보고서_페이지보호_전체해제() is False:
         return False
 
@@ -16406,6 +16785,7 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
             and stage_enabled(선택_세부작업, 'reset_spacing', 작업_모드)
             and not 자간초기화_완료):
         상태(f"{파일명} : 자간 초기화")
+        단계시간_구간('자간 초기화')
         if 문서_전체_자간_초기화() is False:
             return False
 
@@ -16420,6 +16800,7 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
 
     # 각 검사는 최종 문단 모양이 확정된 뒤 실행되고 페이지 배치는 맨 마지막에
     # 실행된다. 검수라는 이름으로 같은 수정 함수를 다시 호출하지 않는다.
+    단계시간_구간('검수 집계')
     if 검수_사용:
         상태(f"{파일명} : 최종 검수 결과 집계")
         미해결수 = len([x for x in 검수_문제목록 if str(x.get('file')) == str(파일)])
@@ -16431,6 +16812,7 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
 
     # 중간 처리나 입력 문서에 있던 페이지 보호가 최종 HWPX에 남으면 이후
     # 편집 시 큰 문단 묶음이 다시 통째로 이동한다. 저장 직전에 항상 해제한다.
+    단계시간_구간('저장 준비(쪽 보호·쪽 나누기 해제)')
     if 작업_모드 != 'unify' and 보고서_페이지보호_전체해제() is False:
         return False
     if not 쪽나누기_사용:
@@ -16442,9 +16824,10 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
                 보존 = {번호 for 번호, 키 in 본문_표_문단번호().items() if 제목표인가_현재(키)}
             except Exception as e:
                 로그(f"보고서 경계 확인 실패(무시): {e}")
-        푼수 = 문서_쪽나누기_전체해제(보존)
-        if 푼수:
-            로그(f"저장 전 쪽 나누기 {푼수}개 해제(보고서 경계 {len(보존)}곳은 유지)")
+        묶음보존 = set(쪽배치_쪽나눔문단) - 보존
+        푼수 = 문서_쪽나누기_전체해제(보존 | 묶음보존)
+        if 푼수 or 묶음보존:
+            로그(f"저장 전 쪽 나누기 {푼수}개 해제(보고서 경계 {len(보존)}곳·쪽 배치 묶음 {len(묶음보존)}곳은 유지)")
     저장파일 = 저장파일명(파일)
     단계표시("저장")
     상태(f"{파일명} : {총회차}회 처리 완료 / 최종 저장 중")
@@ -16454,9 +16837,11 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
         raise RuntimeError(f"문서 저장에 실패했습니다: {저장파일}")
     로그(f"전체 처리 {총회차}회 완료")
     로그(f"저장 완료: {저장파일}")
+    단계시간_구간('저장 후 규칙 검수')
     최종규칙검사 = 저장결과_규칙검수(파일, 저장파일, 결과창=_결과창_띄우는가(total))
     if 최종규칙검사 is False:
         return False
+    단계시간_구간('무결성·숫자 대조')
     무결성 = None
     if 검수_사용 and 원본_구조 is not None:
         결과_구조 = inspect_hwpx(저장파일)
@@ -17251,8 +17636,9 @@ class HwpAutoDocFitGUI:
         self.unify_exclude_tables_var = tk.BooleanVar(value=bool(저장된_설정.get("unify_exclude_tables", False)))
         self.unify_exclude_spacing_var = tk.BooleanVar(value=bool(저장된_설정.get("unify_exclude_spacing", False)))
         self.unify_exclude_pagefit_var = tk.BooleanVar(value=bool(저장된_설정.get("unify_exclude_pagefit", True)))
+        self.unify_keep_layout_var = tk.BooleanVar(value=bool(저장된_설정.get("unify_keep_layout", True)))
         for 변수 in (self.exclude_tables_var, self.all_exclude_pagefit_var, self.unify_exclude_tables_var,
-                     self.unify_exclude_spacing_var, self.unify_exclude_pagefit_var):
+                     self.unify_exclude_spacing_var, self.unify_exclude_pagefit_var, self.unify_keep_layout_var):
             변수.trace_add("write", self._설정_변경됨)
             변수.trace_add("write", self._요약갱신)
         # '자간 정리' 카드의 '기존 자간 초기화'. 세부 작업 01(문서 전체 자간 초기화)과 같은 값이며 설정 파일에 저장한다.
@@ -17324,6 +17710,9 @@ class HwpAutoDocFitGUI:
                 # 켜면 문단 아래 간격 페이지 맞춤·관련 문단 페이지 배치를 뺀다.
                 self.unify_exclude_pagefit_check = 카드_체크(
                     "페이지 맞춤 제외", self.unify_exclude_pagefit_var, lambda: self._카드옵션_변경("unify"))
+                # 켜면 결과의 쪽 구성(보고서별 쪽 수·시작 쪽, 전체 쪽 수)을 원본과 같게 맞춘다.
+                self.unify_keep_layout_check = 카드_체크(
+                    "원본 쪽 구성 유지", self.unify_keep_layout_var, lambda: self._카드옵션_변경("unify"))
             if mode == "all":
                 # 끄면 기존 자간을 그대로 두고 서식만 입힌다(결과 파일 이름은 '서식적용').
                 self.include_spacing_check = tk.Checkbutton(
@@ -17510,6 +17899,9 @@ class HwpAutoDocFitGUI:
         root.bind("<Configure>", self._메인_크기조정, add="+")
         root.protocol("WM_DELETE_WINDOW", self.종료)
         root.after_idle(self._창_최소높이_보정)
+        if getattr(sys, "frozen", False):
+            # 지난 업데이트가 남긴 구버전 백업과 내려받기 잔여물을 정리한다(교체가 끝난 다음 실행에서).
+            threading.Thread(target=업데이트_잔여정리, daemon=True, name="update-cleanup").start()
         if getattr(sys, "frozen", False) and self.check_updates_on_start_var.get():
             root.after(1500, self._자동업데이트_확인_시작)
 
@@ -17593,65 +17985,97 @@ class HwpAutoDocFitGUI:
         ).start()
 
     def _자동업데이트_다운로드(self, 릴리스, 자산):
+        """'.part'로 받고 크기·EXE 머리·SHA-256(자산 digest 또는 릴리스 노트)을 확인한 뒤 확정한다."""
+        임시 = None
         try:
             업데이트_폴더 = 설정_폴더() / "updates"
             업데이트_폴더.mkdir(parents=True, exist_ok=True)
             버전 = re.sub(r"[^0-9A-Za-z._-]+", "_", str(릴리스.get("tag_name", "latest")))
             다운로드_경로 = 업데이트_폴더 / f"HWP_AutoDocFit-{버전}.exe"
+            임시 = 다운로드_경로.with_name(다운로드_경로.name + ".part")
             다운로드_URL = _업데이트_URL_검증(자산["browser_download_url"])
+            예상해시 = 업데이트_예상해시(릴리스, 자산)
             해시 = hashlib.sha256()
             크기 = 0
+            머리 = b""
             응답 = _업데이트_HTTP_GET(다운로드_URL,
                                     {"User-Agent": f"HWP-AutoDocFit/{APP_VERSION}"}, 30)
             try:
-                with open(다운로드_경로, "wb") as 출력:
+                with open(임시, "wb") as 출력:
                     while True:
                         조각 = 응답.read(1024 * 1024)
                         if not 조각:
                             break
+                        if len(머리) < 2:
+                            머리 += 조각[:2]
                         출력.write(조각)
                         해시.update(조각)
                         크기 += len(조각)
             finally:
                 응답._docfit_connection.close()
-            예상_크기 = int(자산.get("size") or 0)
-            if 크기 <= 0 or (예상_크기 and 크기 != 예상_크기):
-                raise RuntimeError("다운로드한 업데이트 파일 크기가 올바르지 않습니다.")
-            digest = str(자산.get("digest") or "")
-            if digest.startswith("sha256:") and 해시.hexdigest().lower() != digest[7:].lower():
-                raise RuntimeError("업데이트 파일의 SHA-256 검증에 실패했습니다.")
-            self.root.after(0, lambda: self._자동업데이트_설치(다운로드_경로))
+            문제 = 업데이트_파일검증(크기, 머리, 해시.hexdigest(), int(자산.get("size") or 0) or None, 예상해시)
+            if 문제:
+                raise RuntimeError(문제)
+            os.replace(임시, 다운로드_경로)
+            임시 = None
+            _업데이트_기록(f"내려받기 완료: {다운로드_경로.name} {크기:,}바이트, SHA-256 확인")
+            self.root.after(0, lambda: self._자동업데이트_설치(다운로드_경로, 예상해시))
         except Exception as exc:
+            _업데이트_기록(f"내려받기 실패: {exc}")
             try:
                 self.root.after(0, lambda 오류=str(exc): messagebox.showerror(
                     APP_NAME, f"자동 업데이트를 다운로드하지 못했습니다.\n\n{오류}", parent=self.root
                 ))
             except Exception:
                 pass
+        finally:
+            if 임시 is not None:
+                try:
+                    Path(임시).unlink()
+                except OSError:
+                    pass
 
-    def _자동업데이트_설치(self, 다운로드_경로):
+    def _자동업데이트_설치(self, 다운로드_경로, 예상해시=None):
+        """구버전을 '.old'로 바꾸고 신버전을 원래 이름으로 넣는 교체 스크립트를 띄운 뒤 앱을 끝낸다.
+
+        PyInstaller 단일 EXE는 부트로더(부모)와 Python(자식) 두 프로세스로 돈다. 예전에는 자식만 기다려 부모가 EXE를
+        잡고 있는 동안 복사가 실패했고, 그러면 내려받은 파일을 그 자리에서 실행해 구버전이 남았다(2026-10-09).
+        """
         현재_실행파일 = Path(sys.executable).resolve()
+        폴더 = 현재_실행파일.parent
+        try:
+            시험 = 폴더 / f".docfit_update_test_{os.getpid()}"
+            시험.write_bytes(b"")
+            시험.unlink()
+        except OSError:
+            _업데이트_기록(f"설치 폴더에 쓸 수 없음: {폴더}")
+            messagebox.showwarning(
+                APP_NAME,
+                f"설치 폴더에 쓸 권한이 없어 자동으로 바꿀 수 없습니다.\n{폴더}\n\n"
+                f"내려받은 새 버전으로 직접 바꿔 주세요:\n{다운로드_경로}",
+                parent=self.root,
+            )
+            try:
+                os.startfile(str(다운로드_경로.parent))
+            except Exception:
+                pass
+            return
         스크립트 = 다운로드_경로.with_suffix(".ps1")
-        스크립트.write_text(
-            "param([int]$OldPid,[string]$Downloaded,[string]$Target)\n"
-            "Wait-Process -Id $OldPid -ErrorAction SilentlyContinue\n"
-            "try {\n"
-            "    Copy-Item -LiteralPath $Downloaded -Destination $Target -Force -ErrorAction Stop\n"
-            "    Start-Process -FilePath $Target\n"
-            "    Remove-Item -LiteralPath $Downloaded -Force -ErrorAction SilentlyContinue\n"
-            "} catch {\n"
-            "    Start-Process -FilePath $Downloaded\n"
-            "} finally {\n"
-            "    Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue\n"
-            "}\n",
-            encoding="utf-8-sig",
-        )
+        스크립트.write_text(업데이트_교체스크립트(), encoding="utf-8-sig")
+        기다릴 = [os.getpid()]
+        try:
+            부모 = os.getppid()
+            if 부모 and 부모 != os.getpid():
+                기다릴.append(부모)
+        except Exception:
+            pass
         try:
             subprocess.Popen(
                 [
                     "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
-                    "-File", str(스크립트), "-OldPid", str(os.getpid()),
+                    "-File", str(스크립트), "-WaitPids", ",".join(str(x) for x in 기다릴),
                     "-Downloaded", str(다운로드_경로), "-Target", str(현재_실행파일),
+                    "-Log", str(다운로드_경로.parent / "update.log"), "-Sha256", str(예상해시 or ""),
                 ],
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
@@ -17661,6 +18085,7 @@ class HwpAutoDocFitGUI:
             except OSError:
                 pass
             raise
+        _업데이트_기록(f"교체 스크립트 시작: {현재_실행파일.name} ← {다운로드_경로.name}")
         self.closing = True
         self.root.destroy()
 
@@ -18165,7 +18590,8 @@ class HwpAutoDocFitGUI:
         elif mode == "unify":
             summary = "문두기호별로 문서에서 많이 쓰인 서식을 적용합니다."
             for 이름, 문구 in (("unify_exclude_tables_var", "표 제외"), ("unify_exclude_spacing_var", "자간 정리 제외"),
-                             ("unify_exclude_pagefit_var", "페이지 맞춤 제외")):
+                             ("unify_exclude_pagefit_var", "페이지 맞춤 제외"),
+                             ("unify_keep_layout_var", "원본 쪽 구성 유지")):
                 if hasattr(self, 이름) and getattr(self, 이름).get():
                     summary += f" · {문구}"
         elif mode == "format":
@@ -18326,6 +18752,7 @@ class HwpAutoDocFitGUI:
         "unify_exclude_tables": ("unify_exclude_tables_var", False),
         "unify_exclude_spacing": ("unify_exclude_spacing_var", False),
         "unify_exclude_pagefit": ("unify_exclude_pagefit_var", False),
+        "unify_keep_layout": ("unify_keep_layout_var", False),
         "all_include_spacing": ("include_spacing_var", False),
         "all_exclude_tables": ("exclude_tables_var", False),
         "all_exclude_pagefit": ("all_exclude_pagefit_var", False),
@@ -21451,7 +21878,8 @@ class HwpAutoDocFitGUI:
             for 키, 이름 in (("all_exclude_pagefit", "all_exclude_pagefit_var"),
                            ("unify_exclude_tables", "unify_exclude_tables_var"),
                            ("unify_exclude_spacing", "unify_exclude_spacing_var"),
-                           ("unify_exclude_pagefit", "unify_exclude_pagefit_var")):
+                           ("unify_exclude_pagefit", "unify_exclude_pagefit_var"),
+                           ("unify_keep_layout", "unify_keep_layout_var")):
                 설정값[키] = bool(getattr(self, 이름).get()) if hasattr(self, 이름) else False
             설정값["spacing_reset_existing"] = bool(self.stage_choices["spacing"].get("reset_spacing", True))
             설정값["active_format_profile"] = getattr(self, "_활성_서식_프로파일", "")

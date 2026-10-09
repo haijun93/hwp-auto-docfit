@@ -3,6 +3,7 @@ name: Build Windows exe
 on:
   push:
     branches:
+      - alpha
       - claude/affectionate-goldberg-ggln7c
   workflow_dispatch: {}
 
@@ -24,6 +25,12 @@ jobs:
 
       - name: Check Pillow image support
         run: python -c "from PIL import Image, ImageTk, ImageOps; print('Pillow', Image.__version__)"
+
+      - name: Validate alpha source and regression tests
+        if: github.ref == 'refs/heads/alpha'
+        run: |
+          python -m py_compile hwp-auto-docfit.py docfit_core/batch_format.py
+          python -m unittest discover -s tests
 
       - uses: subosito/flutter-action@v2
         with:
@@ -59,12 +66,13 @@ jobs:
       - name: Upload exe artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: HWP_AutoDocFit-binaries
+          name: ${{ github.ref_name == 'alpha' && 'HWP_AutoDocFit-alpha' || 'HWP_AutoDocFit-binaries' }}
           path: |
             dist/HWP_AutoDocFit.exe
           if-no-files-found: error
 
       - name: Commit built exes to release-assets
+        if: github.ref != 'refs/heads/alpha'
         shell: bash
         run: |
           cp dist/HWP_AutoDocFit.exe release-assets/HWP_AutoDocFit.exe

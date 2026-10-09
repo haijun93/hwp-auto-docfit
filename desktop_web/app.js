@@ -3,6 +3,7 @@ const CARD_OPTION_INPUTS = [
   ["unifyTables", "unify_exclude_tables", "unify"],
   ["unifySpacing", "unify_exclude_spacing", "unify"],
   ["unifyPagefit", "unify_exclude_pagefit", "unify"],
+  ["unifyKeepLayout", "unify_keep_layout", "unify"],
   ["allPagefit", "all_exclude_pagefit", "all"],
 ];
 const MODE_LABELS = {spacing:"자간 정리",unify:"서식 통일",format:"한 번에 적용 · 자간 조정 제외",all:"한 번에 적용"};

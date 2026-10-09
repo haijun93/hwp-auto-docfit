@@ -1,0 +1,389 @@
+{
+    "survey_date_kst":  "2026-10-09",
+    "source":  "https://raw.githubusercontent.com/hollobit/PAX/main/site/data/cases.json",
+    "retrieved_utc":  "2026-10-09T10:25:46.2581936Z",
+    "total_cases":  522,
+    "query":  "hwpx|hwp|한글.*편집|한/글|kordoc|rhwp|범피스|범정부오피스",
+    "matched_count":  47,
+    "local_head":  "8ab28c3",
+    "local_branch":  "alpha",
+    "scope":  "PAX metadata candidate search; no external application execution",
+    "candidates":  [
+                       {
+                           "id":  "719692c2c31da09f",
+                           "title":  "로컬 문서 검수 도구 공개 — 맞춤법·공공언어 검사",
+                           "link":  "https://www.threads.com/@chobu62/post/DbQJBY5D3hI",
+                           "case_url":  "https://github.com/obundh/gonggong-ax-local",
+                           "mirror_url":  null,
+                           "classification":  "인접 기능/편집 미확인"
+                       },
+                       {
+                           "id":  "de4b2dab339d69b7",
+                           "title":  "Anything(Docufinder) — 본문으로 찾는 오프라인 문서 검색기",
+                           "link":  "https://www.threads.com/@chris_gomdori/post/DZ49_V9DfJ_",
+                           "case_url":  "https://github.com/chrisryugj/Docufinder",
+                           "mirror_url":  "https://gitlab.aigov.go.kr/chrisryugj/Docufinder",
+                           "classification":  "인접 기능/편집 미확인"
+                       },
+                       {
+                           "id":  "e93a0e5c75f51a7b",
+                           "title":  "한글(HWP) 작업 효율화 프로그램 쉽다한글",
+                           "link":  "https://brojun.kr/sdhg",
+                           "case_url":  null,
+                           "mirror_url":  null,
+                           "classification":  "지원 확인 필요"
+                       },
+                       {
+                           "id":  "ea2bce110972762e",
+                           "title":  "공공기관 규정 MCP 생성기",
+                           "link":  "https://github.com/koul777/Public-Regulation-MCP-Builder",
+                           "case_url":  null,
+                           "mirror_url":  "https://gitlab.aigov.go.kr/kyci/public-regulation-mcp-builder",
+                           "classification":  "인접 기능/편집 미확인"
+                       },
+                       {
+                           "id":  "9d115930495a1e65",
+                           "title":  "공무원용 로컬 AI 에이전트 워크플레이스 개발",
+                           "link":  "https://www.threads.com/@koyou_ax/post/DacnKc9D_5i",
+                           "case_url":  "https://github.com/Kminer2053/gongmuwon",
+                           "mirror_url":  "https://gitlab.aigov.go.kr/Kminer2053/gongmuwon",
+                           "classification":  "생성·양식·가공"
+                       },
+                       {
+                           "id":  "7c63339c2722da03",
+                           "title":  "문서 리소스 추출기 — 공공 AX 로컬 시리즈 5",
+                           "link":  "https://www.threads.com/@chobu62/post/DbdWP6hj0TU",
+                           "case_url":  "https://github.com/obundh/gonggong-ax-local-5",
+                           "mirror_url":  null,
+                           "classification":  "인접 기능/편집 미확인"
+                       },
+                       {
+                           "id":  "8ff758ac1d5e40eb",
+                           "title":  "한국 문서 파싱 오픈소스 Kordoc, 문서 생산까지 확장",
+                           "link":  "https://www.threads.com/@chris_gomdori/post/DarG1dOE70_",
+                           "case_url":  "https://github.com/chrisryugj/kordoc",
+                           "mirror_url":  "https://gitlab.aigov.go.kr/chrisryugj/kordoc",
+                           "classification":  "직접 편집(지원 범위별 제약 있음)"
+                       },
+                       {
+                           "id":  "c46225d9c7efdb93",
+                           "title":  "금융규제 샌드박스 유사사례 검색 서비스 PoC",
+                           "link":  "https://yongjaeleee-financial-sandbox-similar-case-poc.hf.space/",
+                           "case_url":  null,
+                           "mirror_url":  null,
+                           "classification":  "인접 기능/편집 미확인"
+                       },
+                       {
+                           "id":  "e7949c7bc45ca8e6",
+                           "title":  "출장 여비 서류 자동화 오픈소스 — 신청서·명세서·복명서 일괄 생성",
+                           "link":  "https://github.com/kkhinlove-design/travel-expense-automation-kr",
+                           "case_url":  null,
+                           "mirror_url":  null,
+                           "classification":  "인접 기능/편집 미확인"
+                       },
+                       {
+                           "id":  "83bb0ac0ed9f576d",
+                           "title":  "OpenDART 전자공시 MCP — 83개 API를 15개 도구로",
+                           "link":  "https://github.com/chrisryugj/korean-dart-mcp",
+                           "case_url":  null,
+                           "mirror_url":  "https://gitlab.aigov.go.kr/chrisryugj/korean-dart-mcp",
+                           "classification":  "인접 기능/편집 미확인"
+                       },
+                       {
+                           "id":  "145a534a79c6fc53",
+                           "title":  "범정부오피스 — 공무원이 만든 공문서 편집 자동화 프로그램",
+                           "link":  "https://youtu.be/e5ltUQbRDAo",
+                           "case_url":  null,
+                           "mirror_url":  null,
+                           "classification":  "지원 확인 필요"
+                       },
+                       {
+                           "id":  "e18d5e018e0cd10d",
+                           "title":  "오토한글 — 브라우저·터미널용 HWP 편집 엔진",
+                           "link":  "https://github.com/kwakseongjae/auto-hwp",
+                           "case_url":  null,
+                           "mirror_url":  null,
+                           "classification":  "직접 편집(지원 범위별 제약 있음)"
+                       },
+                       {
+                           "id":  "8d17b8feee1af705",
+                           "title":  "전북교육청, 문서 취합·변환 도구 공식 배포",
+                           "link":  "https://www.jbe.go.kr/board/view.jbe?boardId=BBS_0000649\u0026menuCd=DOM_000000106011002001\u0026dataSid=1141429",
+                           "case_url":  null,
+                           "mirror_url":  null,
+                           "classification":  "지원 확인 필요"
+                       },
+                       {
+                           "id":  "3d07b6da99f5e1ed",
+                           "title":  "직제 기반 조직도 자동생성기 개발",
+                           "link":  "https://www.threads.com/@gongpenclaw/post/DcDcbJzAUTL",
+                           "case_url":  null,
+                           "mirror_url":  null,
+                           "classification":  "지원 확인 필요"
+                       },
+                       {
+                           "id":  "17ed2d7a88c03119",
+                           "title":  "Rekian — HWPX 공문서 재기안 에이전트 스킬셋",
+                           "link":  "https://gitlab.aigov.go.kr/publicpeasant/rekian-comwriter-library",
+                           "case_url":  null,
+                           "mirror_url":  null,
+                           "classification":  "직접 편집(지원 범위별 제약 있음)"
+                       },
+                       {
+                           "id":  "0b9d4e9c2beed197",
+                           "title":  "public-doc-to-hwpx — AI 초안을 공공기관 보고서 서식 HWPX로 만드는 스킬",
+                           "link":  "https://www.threads.com/@koyou_ax/post/DYUYmnJjiPY",
+                           "case_url":  "https://github.com/Kminer2053/public-doc-to-hwpx",
+                           "mirror_url":  null,
+                           "classification":  "생성·양식·가공"
+                       },
+                       {
+                           "id":  "ea8ce2a3d003400f",
+                           "title":  "KID — 공공문서 개인정보 자동 검출·마스킹 데스크톱 도구",
+                           "link":  "https://gitlab.aigov.go.kr/chanili2/KID",
+                           "case_url":  null,
+                           "mirror_url":  null,
+                           "classification":  "인접 기능/편집 미확인"
+                       },
+                       {
+                           "id":  "72209c4dc90a2188",
+                           "title":  "행안부 세출예산서 마크다운 저장소 — 나라예산 한눈에의 출발점",
+                           "link":  "https://gitlab.aigov.go.kr/AILab_Manager/moisbudget",
+                           "case_url":  null,
+                           "mirror_url":  null,
+                           "classification":  "인접 기능/편집 미확인"
+                       },
+                       {
+                           "id":  "847dfef5759dbcac",
+                           "title":  "HOP is Open HWP — HWP·HWPX를 여는 크로스플랫폼 오픈소스 편집기",
+                           "link":  "https://golbin.github.io/hop/",
+                           "case_url":  "https://github.com/golbin/hop",
+                           "mirror_url":  null,
+                           "classification":  "직접 편집(지원 범위별 제약 있음)"
+                       },
+                       {
+                           "id":  "539f90471f451d80",
+                           "title":  "hwpx-skill — AI 에이전트가 한글(HWPX) 문서를 만들고 고치는 Claude 스킬",
+                           "link":  "https://github.com/jkf87/hwpx-skill",
+                           "case_url":  null,
+                           "mirror_url":  null,
+                           "classification":  "직접 편집(지원 범위별 제약 있음)"
+                       },
+                       {
+                           "id":  "fa5ac519aca439f4",
+                           "title":  "학교정보 MCP — 학교 이름 하나로 급식·수행평가·학사일정을 모아 보는 도구",
+                           "link":  "https://www.threads.com/@chris_gomdori/post/DZwc6oCiQj0",
+                           "case_url":  "https://school.gomdori.app/",
+                           "mirror_url":  "https://github.com/chrisryugj/schoolinfo-mcp",
+                           "classification":  "인접 기능/편집 미확인"
+                       },
+                       {
+                           "id":  "d74a4f0d2a187720",
+                           "title":  "G2B Masters — 나라장터·국방전자조달 입찰정보 통합 검색",
+                           "link":  "https://electerior.co.kr/",
+                           "case_url":  null,
+                           "mirror_url":  null,
+                           "classification":  "인접 기능/편집 미확인"
+                       },
+                       {
+                           "id":  "3a211aec27b69d0a",
+                           "title":  "claw-hwp — 한컴 없이 Claude·Codex가 HWP/HWPX를 그대로 읽고 만들고 고치는 플러그인",
+                           "link":  "https://www.threads.com/@dohyun_kim468/post/Dbpd3oXidrF",
+                           "case_url":  "https://github.com/DoHyun468/claw-hwp",
+                           "mirror_url":  null,
+                           "classification":  "직접 편집(지원 범위별 제약 있음)"
+                       },
+                       {
+                           "id":  "7ad16f34cfb6cca7",
+                           "title":  "korean-munseo-diff — HWP·HWPX·PDF 개정 신구대비표를 로컬에서 초안 생성",
+                           "link":  "https://gitlab.aigov.go.kr/tyui22/korean-munseo-diff",
+                           "case_url":  null,
+                           "mirror_url":  null,
+                           "classification":  "인접 기능/편집 미확인"
+                       },
+                       {
+                           "id":  "b1650b0206b8342c",
+                           "title":  "어썸 메일 머지 — 엑셀 데이터를 한글 서식에 흘려 넣는 문서 자동화 도구",
+                           "link":  "https://gitlab.aigov.go.kr/levis7251/test",
+                           "case_url":  null,
+                           "mirror_url":  null,
+                           "classification":  "생성·양식·가공"
+                       },
+                       {
+                           "id":  "475ae4a2e200aa27",
+                           "title":  "전북교육 한글 서식도우미 — 보고서·기안문에 자주 쓰는 서식 작업 퀵패널",
+                           "link":  "https://gitlab.aigov.go.kr/kain9012/jb_quickpanel",
+                           "case_url":  null,
+                           "mirror_url":  null,
+                           "classification":  "지원 확인 필요"
+                       },
+                       {
+                           "id":  "0aaafa00490adad0",
+                           "title":  "국회요구자료 HWP 병합기 — 요구자료 파일을 의원별·날짜별로 정리·병합",
+                           "link":  "https://gitlab.aigov.go.kr/jinskysung/assembly-data-merger",
+                           "case_url":  null,
+                           "mirror_url":  null,
+                           "classification":  "생성·양식·가공"
+                       },
+                       {
+                           "id":  "e0bead338374d31a",
+                           "title":  "마크다운 변환기 — HWP·PDF·오피스 문서를 완전 오프라인으로 변환",
+                           "link":  "https://gitlab.aigov.go.kr/jaekyeong/markdown-converter",
+                           "case_url":  null,
+                           "mirror_url":  null,
+                           "classification":  "인접 기능/편집 미확인"
+                       },
+                       {
+                           "id":  "73bb12bf461ceb4c",
+                           "title":  "가짜일 킬러 — 엑셀 10종·한글 5종 반복 작업을 브라우저에서 끝내는 도구 모음",
+                           "link":  "https://fake.choshg.com/",
+                           "case_url":  null,
+                           "mirror_url":  null,
+                           "classification":  "생성·양식·가공"
+                       },
+                       {
+                           "id":  "fe2ce0f01fcc8bb0",
+                           "title":  "DocuAuto — 엑셀 데이터로 한글·파워포인트 문서를 대량 생성하는 웹·크롬 확장",
+                           "link":  "https://gitlab.aigov.go.kr/cadnehwan/docuauto",
+                           "case_url":  null,
+                           "mirror_url":  null,
+                           "classification":  "생성·양식·가공"
+                       },
+                       {
+                           "id":  "eabfc738053ad166",
+                           "title":  "HWP AI 에디터 — 완전 오프라인 로컬 LLM 결합 HWPX 편집기",
+                           "link":  "https://gitlab.aigov.go.kr/Ubermensch/hwpai",
+                           "case_url":  null,
+                           "mirror_url":  null,
+                           "classification":  "직접 편집(지원 범위별 제약 있음)"
+                       },
+                       {
+                           "id":  "c9a5f8edba7c5a14",
+                           "title":  "KIST hwpx 스킬 — 한글 보고서 자동 생성(기관 공식)",
+                           "link":  "https://gitlab.aigov.go.kr/kist-aix/hwpx",
+                           "case_url":  null,
+                           "mirror_url":  null,
+                           "classification":  "생성·양식·가공"
+                       },
+                       {
+                           "id":  "1e145932fab1b1f5",
+                           "title":  "문서 한방 출력 — 형식 혼합 일괄 인쇄 데스크톱 도구",
+                           "link":  "https://gitlab.aigov.go.kr/dovakin/batch-file-printer",
+                           "case_url":  null,
+                           "mirror_url":  null,
+                           "classification":  "인접 기능/편집 미확인"
+                       },
+                       {
+                           "id":  "a6834b493c566013",
+                           "title":  "릴리즈픽(ReleasePick) — 보도자료를 15분 만에 카드뉴스·인포그래픽으로 만드는 정책홍보 자동제작 시스템",
+                           "link":  "https://gitlab.aigov.go.kr/chaeun74/Releasepick",
+                           "case_url":  null,
+                           "mirror_url":  null,
+                           "classification":  "인접 기능/편집 미확인"
+                       },
+                       {
+                           "id":  "2ebfec74844ad120",
+                           "title":  "rhwp — 한컴 없이 브라우저에서 HWP를 열고 고치는 크롬 확장",
+                           "link":  "https://www.threads.com/@do.aiworks/post/DXMxS_mD6tq",
+                           "case_url":  "https://chromewebstore.google.com/detail/pgakpjflombjmehnebnbpnalhegaanag",
+                           "mirror_url":  null,
+                           "classification":  "직접 편집(지원 범위별 제약 있음)"
+                       },
+                       {
+                           "id":  "26e5c5b2268bf5ee",
+                           "title":  "HWPX 용량 줄이기 도우미 — 고해상도 삽입 이미지 자동 조정",
+                           "link":  "https://gitlab.aigov.go.kr/kimosed/hwpx-size-reduction-assistant",
+                           "case_url":  null,
+                           "mirror_url":  null,
+                           "classification":  "생성·양식·가공"
+                       },
+                       {
+                           "id":  "6cdb2a99b9fc3344",
+                           "title":  "타이니 PDF 에디터 — 광고 없는 무료 한글·이미지·PDF 병합 편집기",
+                           "link":  "https://gitlab.aigov.go.kr/soonpyo/tiny-pdf-editor",
+                           "case_url":  null,
+                           "mirror_url":  null,
+                           "classification":  "인접 기능/편집 미확인"
+                       },
+                       {
+                           "id":  "7c989a8fe8dda878",
+                           "title":  "NCS JD — 채용 공고문 근거 매칭과 직무기술서 초안",
+                           "link":  "https://gitlab.aigov.go.kr/kyci/ncs_jd",
+                           "case_url":  null,
+                           "mirror_url":  null,
+                           "classification":  "지원 확인 필요"
+                       },
+                       {
+                           "id":  "96added28c5e4ec7",
+                           "title":  "Liberaflow — 로컬 마크다운 노트 위에 AI 문서 작성·브라우저 자동화를 얹은 데스크톱 작업 공간",
+                           "link":  "https://liberaflow.com/",
+                           "case_url":  null,
+                           "mirror_url":  null,
+                           "classification":  "지원 확인 필요"
+                       },
+                       {
+                           "id":  "d141f5b3e0beb6a5",
+                           "title":  "내편공문 — 공문 오타·표현 검수와 기관 서식 재사용을 한곳에서 돕는 윈도우 문서 도구",
+                           "link":  "https://gitlab.aigov.go.kr/safety/naepyeon-gongmun",
+                           "case_url":  "https://naepyeon-gongmun.junggu2026.chatgpt.site",
+                           "mirror_url":  null,
+                           "classification":  "직접 편집(지원 범위별 제약 있음)"
+                       },
+                       {
+                           "id":  "abdd47a1c604d6d1",
+                           "title":  "문서 표-엑셀 변환 도구 — 통계연보·업무편람의 PDF·HWPX 표를 시트 하나씩 엑셀로 되돌리는 도구",
+                           "link":  "https://gitlab.aigov.go.kr/park613/pdf-hwp-table-to-excel",
+                           "case_url":  null,
+                           "mirror_url":  null,
+                           "classification":  "인접 기능/편집 미확인"
+                       },
+                       {
+                           "id":  "2349c4b45eb48e38",
+                           "title":  "지역사회보장계획 작성지원 플랫폼 — 제6기 시·군·구 계획을 절 단위로 써서 한글 문서로 내는 도구",
+                           "link":  "https://gitlab.aigov.go.kr/beaver21c/rssp_help",
+                           "case_url":  "https://beaver21c.github.io/rssp_help/",
+                           "mirror_url":  null,
+                           "classification":  "직접 편집(지원 범위별 제약 있음)"
+                       },
+                       {
+                           "id":  "ad435a193856fac5",
+                           "title":  "순찰일지 — 현장 사진을 올리면 순찰결과보고서 글과 한글(.hwpx) 파일이 나오는 도구",
+                           "link":  "https://www.threads.com/@patrol_jev/post/DdwA3okAV5I",
+                           "case_url":  "https://patrol.ai.kr",
+                           "mirror_url":  "https://github.com/patrol-jev/patrol-jev",
+                           "classification":  "생성·양식·가공"
+                       },
+                       {
+                           "id":  "471dabbd273eab34",
+                           "title":  "한글편집 후처리 도구 — 보고서의 자간·서식·문두기호를 한글 프로그램 자동 조작으로 한 번에 다듬는 데스크톱 앱",
+                           "link":  "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit",
+                           "case_url":  null,
+                           "mirror_url":  "https://github.com/haijun93/hwp-auto-docfit",
+                           "classification":  "본 프로젝트"
+                       },
+                       {
+                           "id":  "823f4a69ee26e703",
+                           "title":  "hwpx2html — 공공기관 한글 문서를 사람·검색·AI가 함께 읽는 단일 HTML로 바꿔 게시하는 변환기",
+                           "link":  "https://github.com/everydaymind/hwpx2html",
+                           "case_url":  null,
+                           "mirror_url":  null,
+                           "classification":  "인접 기능/편집 미확인"
+                       },
+                       {
+                           "id":  "bd4f97e0b96cb04d",
+                           "title":  "korean-report-hwpx — 메모를 기관 서식 공문서(보고서·보도자료) HWPX로 만드는 MCP",
+                           "link":  "https://github.com/UpstageAI/korean-report-hwpx",
+                           "case_url":  null,
+                           "mirror_url":  null,
+                           "classification":  "생성·양식·가공"
+                       },
+                       {
+                           "id":  "759627ae9b724f89",
+                           "title":  "새싹이의 농막 — 내부망용 오프라인 마크다운 편집기(한글·PDF 내보내기)",
+                           "link":  "https://gitlab.aigov.go.kr/soonkun/nongmark",
+                           "case_url":  null,
+                           "mirror_url":  null,
+                           "classification":  "생성·양식·가공"
+                       }
+                   ]
+}
