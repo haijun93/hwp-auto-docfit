@@ -256,6 +256,8 @@ import win32gui
 import win32con
 from defusedxml.ElementTree import fromstring as safe_xml_fromstring
 from docfit_core.batch_format import apply_batch, ParagraphStyle, BatchUnsupported
+from docfit_core.updater import (expected_sha256 as 업데이트_예상해시, install_script as 업데이트_교체스크립트,
+                                 leftover_files as 업데이트_잔여파일, verify_download as 업데이트_파일검증)
 from docfit_core.fidelity.package import UnsupportedPackage
 from docfit_core.style_hierarchy import DOT_MARKERS, DOCUMENT_TYPES, analyze_hierarchy, display_role, document_type as 문서유형_판정, hierarchy_summary, leading_marker, normalize_leading_dot, stored_role
 from docfit_core.style_unify import complement_ranges as 서식통일_범위분리, merge_adjacent as 서식통일_범위병합, parenthetical_spans as 서식통일_부연괄호, representative as 서식통일_최빈값
@@ -416,6 +418,38 @@ def _업데이트_HTTP_GET(url, headers, timeout, _남은_리디렉션=5):
         raise urllib.error.HTTPError(url, 상태, 응답.reason, 응답.headers, None)
     응답._docfit_connection = 연결
     return 응답
+
+
+def _업데이트_기록(내용):
+    """업데이트 과정을 설정 폴더의 updates\\update.log에 남긴다(실패해도 무시)."""
+    try:
+        폴더 = 설정_폴더() / "updates"
+        폴더.mkdir(parents=True, exist_ok=True)
+        with open(폴더 / "update.log", "a", encoding="utf-8") as f:
+            f.write(f"{_datetime.datetime.now():%Y-%m-%d %H:%M:%S} [{APP_VERSION}] {내용}\n")
+    except Exception:
+        pass
+
+
+def 업데이트_잔여정리():
+    """지난 업데이트가 남긴 구버전 백업('*.exe.old')과 내려받기 잔여물을 지운다(실행 중이면 다음에 다시 시도)."""
+    try:
+        실행폴더 = Path(sys.executable).resolve().parent
+        업데이트_폴더 = 설정_폴더() / "updates"
+        이름들 = [x.name for x in 실행폴더.iterdir()] if 실행폴더.is_dir() else []
+        업데이트_이름들 = [x.name for x in 업데이트_폴더.iterdir()] if 업데이트_폴더.is_dir() else []
+        old, stale = 업데이트_잔여파일(이름들, 업데이트_이름들)
+        지운 = 0
+        for 경로 in [실행폴더 / n for n in old] + [업데이트_폴더 / n for n in stale]:
+            try:
+                경로.unlink()
+                지운 += 1
+            except OSError:
+                pass
+        if 지운:
+            _업데이트_기록(f"지난 업데이트 잔여물 {지운}개 정리")
+    except Exception:
+        pass
 
 
 def _버전_튜플(value):
@@ -17865,6 +17899,9 @@ class HwpAutoDocFitGUI:
         root.bind("<Configure>", self._메인_크기조정, add="+")
         root.protocol("WM_DELETE_WINDOW", self.종료)
         root.after_idle(self._창_최소높이_보정)
+        if getattr(sys, "frozen", False):
+            # 지난 업데이트가 남긴 구버전 백업과 내려받기 잔여물을 정리한다(교체가 끝난 다음 실행에서).
+            threading.Thread(target=업데이트_잔여정리, daemon=True, name="update-cleanup").start()
         if getattr(sys, "frozen", False) and self.check_updates_on_start_var.get():
             root.after(1500, self._자동업데이트_확인_시작)
 
@@ -17948,65 +17985,98 @@ class HwpAutoDocFitGUI:
         ).start()
 
     def _자동업데이트_다운로드(self, 릴리스, 자산):
+        """'.part'로 받고 크기·EXE 머리·SHA-256(자산 digest 또는 릴리스 노트)을 확인한 뒤 확정한다."""
+        임시 = None
         try:
             업데이트_폴더 = 설정_폴더() / "updates"
             업데이트_폴더.mkdir(parents=True, exist_ok=True)
             버전 = re.sub(r"[^0-9A-Za-z._-]+", "_", str(릴리스.get("tag_name", "latest")))
             다운로드_경로 = 업데이트_폴더 / f"HWP_AutoDocFit-{버전}.exe"
+            임시 = 다운로드_경로.with_name(다운로드_경로.name + ".part")
             다운로드_URL = _업데이트_URL_검증(자산["browser_download_url"])
+            예상해시 = 업데이트_예상해시(릴리스, 자산)
             해시 = hashlib.sha256()
             크기 = 0
+            머리 = b""
             응답 = _업데이트_HTTP_GET(다운로드_URL,
                                     {"User-Agent": f"HWP-AutoDocFit/{APP_VERSION}"}, 30)
             try:
-                with open(다운로드_경로, "wb") as 출력:
+                with open(임시, "wb") as 출력:
                     while True:
                         조각 = 응답.read(1024 * 1024)
                         if not 조각:
                             break
+                        if len(머리) < 2:
+                            머리 += 조각[:2]
                         출력.write(조각)
                         해시.update(조각)
                         크기 += len(조각)
             finally:
                 응답._docfit_connection.close()
-            예상_크기 = int(자산.get("size") or 0)
-            if 크기 <= 0 or (예상_크기 and 크기 != 예상_크기):
-                raise RuntimeError("다운로드한 업데이트 파일 크기가 올바르지 않습니다.")
-            digest = str(자산.get("digest") or "")
-            if digest.startswith("sha256:") and 해시.hexdigest().lower() != digest[7:].lower():
-                raise RuntimeError("업데이트 파일의 SHA-256 검증에 실패했습니다.")
+            문제 = 업데이트_파일검증(크기, 머리, 해시.hexdigest(), int(자산.get("size") or 0) or None, 예상해시)
+            if 문제:
+                raise RuntimeError(문제)
+            os.replace(임시, 다운로드_경로)
+            임시 = None
+            _업데이트_기록(f"내려받기 완료: {다운로드_경로.name} {크기:,}바이트, SHA-256 "
+                         f"{'확인' if 예상해시 else '정보 없음(크기·EXE 머리만 확인)'}")
             self.root.after(0, lambda: self._자동업데이트_설치(다운로드_경로))
         except Exception as exc:
+            _업데이트_기록(f"내려받기 실패: {exc}")
             try:
                 self.root.after(0, lambda 오류=str(exc): messagebox.showerror(
                     APP_NAME, f"자동 업데이트를 다운로드하지 못했습니다.\n\n{오류}", parent=self.root
                 ))
             except Exception:
                 pass
+        finally:
+            if 임시 is not None:
+                try:
+                    Path(임시).unlink()
+                except OSError:
+                    pass
 
     def _자동업데이트_설치(self, 다운로드_경로):
+        """구버전을 '.old'로 바꾸고 신버전을 원래 이름으로 넣는 교체 스크립트를 띄운 뒤 앱을 끝낸다.
+
+        PyInstaller 단일 EXE는 부트로더(부모)와 Python(자식) 두 프로세스로 돈다. 예전에는 자식만 기다려 부모가 EXE를
+        잡고 있는 동안 복사가 실패했고, 그러면 내려받은 파일을 그 자리에서 실행해 구버전이 남았다(2026-10-09).
+        """
         현재_실행파일 = Path(sys.executable).resolve()
+        폴더 = 현재_실행파일.parent
+        try:
+            시험 = 폴더 / f".docfit_update_test_{os.getpid()}"
+            시험.write_bytes(b"")
+            시험.unlink()
+        except OSError:
+            _업데이트_기록(f"설치 폴더에 쓸 수 없음: {폴더}")
+            messagebox.showwarning(
+                APP_NAME,
+                f"설치 폴더에 쓸 권한이 없어 자동으로 바꿀 수 없습니다.\n{폴더}\n\n"
+                f"내려받은 새 버전으로 직접 바꿔 주세요:\n{다운로드_경로}",
+                parent=self.root,
+            )
+            try:
+                os.startfile(str(다운로드_경로.parent))
+            except Exception:
+                pass
+            return
         스크립트 = 다운로드_경로.with_suffix(".ps1")
-        스크립트.write_text(
-            "param([int]$OldPid,[string]$Downloaded,[string]$Target)\n"
-            "Wait-Process -Id $OldPid -ErrorAction SilentlyContinue\n"
-            "try {\n"
-            "    Copy-Item -LiteralPath $Downloaded -Destination $Target -Force -ErrorAction Stop\n"
-            "    Start-Process -FilePath $Target\n"
-            "    Remove-Item -LiteralPath $Downloaded -Force -ErrorAction SilentlyContinue\n"
-            "} catch {\n"
-            "    Start-Process -FilePath $Downloaded\n"
-            "} finally {\n"
-            "    Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue\n"
-            "}\n",
-            encoding="utf-8-sig",
-        )
+        스크립트.write_text(업데이트_교체스크립트(), encoding="utf-8-sig")
+        기다릴 = [os.getpid()]
+        try:
+            부모 = os.getppid()
+            if 부모 and 부모 != os.getpid():
+                기다릴.append(부모)
+        except Exception:
+            pass
         try:
             subprocess.Popen(
                 [
                     "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
-                    "-File", str(스크립트), "-OldPid", str(os.getpid()),
+                    "-File", str(스크립트), "-WaitPids", ",".join(str(x) for x in 기다릴),
                     "-Downloaded", str(다운로드_경로), "-Target", str(현재_실행파일),
+                    "-Log", str(다운로드_경로.parent / "update.log"),
                 ],
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
@@ -18016,6 +18086,7 @@ class HwpAutoDocFitGUI:
             except OSError:
                 pass
             raise
+        _업데이트_기록(f"교체 스크립트 시작: {현재_실행파일.name} ← {다운로드_경로.name}")
         self.closing = True
         self.root.destroy()
 
