@@ -12,7 +12,7 @@ Beta 13은 **자동 업데이트의 프로세스 대기·새 앱 시작 확인, 
 ## 어떤 결과가 나오나요?
 
 아래 기능 설명의 **전·후 비교 이미지에서 빨간색은 바뀌는 글자·서식·위치**입니다. 바뀌지 않는 부분은 검은색으로 표시합니다. 새 파일이나 검토 결과를 만드는 기능은 새로 생기는 정보를 빨간색으로 표시합니다.
-비교 이미지는 **Beta 13의 동작을 설명하는 가상 예시**이며 실제 처리 화면이나 성공 보장이 아닙니다. 설명용 빨간색이 실제 결과 문서에 적용되는 것은 아닙니다. 이미지를 누르면 크게 볼 수 있습니다.
+**자간 정리·한 번에 적용의 두 이미지는 `test4`의 「보고서 예시 파일(한번에 적용).txt」 사본을 Beta 13으로 실제 처리하고 한/글 자체 PDF 출력으로 만든 사례**입니다. 나머지는 기능 설명용 도해입니다. 빨간색은 이미지의 비교 표시이며 결과 HWPX에는 넣지 않았습니다. 이미지를 누르면 크게 볼 수 있습니다.
 
 [![프로그램 사용 시연 영상 (약 5분). 클릭하면 고화질 영상이 열립니다.](docs/media/overview-demo.gif)](docs/media/overview-demo.mp4)
 
@@ -20,19 +20,19 @@ Beta 13은 **자동 업데이트의 프로세스 대기·새 앱 시작 확인, 
 
 ### 1. 자간 정리 — 줄 끝에서 갈라진 단어를 한 줄로
 
-줄 끝에서 `수 / 립하여`, `담당 / 부서`처럼 갈라진 어절을 자간과 필요한 경우 장평을 조절해 앞줄 또는 뒷줄에 모으도록 시도합니다. 글 내용은 유지하고 글자 간격·폭과 줄 배치를 바꿉니다.
+줄 끝에서 `거점(지 / 구)`, `수 / 립하여`처럼 갈라진 어절을 자간과 필요한 경우 장평을 조절해 앞줄 또는 뒷줄에 모으도록 시도합니다. 글 내용은 유지하고 글자 간격·폭과 줄 배치를 바꿉니다.
 
-[![자간 정리 전후: 빨간 수립하여는 앞줄로, 담당부서는 뒷줄로 모이는 설명용 예시](docs/media/features/spacing.png)](docs/media/features/spacing.png)
+[![test4 문서의 실제 자간 정리 전후: 줄을 옮긴 어절만 빨간색으로 표시](docs/media/features/spacing.png)](docs/media/features/spacing.png)
 
-**[▶ 자간 정리 영상 보기 — 24초](docs/media/samchein/spacing-guide.mp4)** · [예제 파일 받기](docs/examples/samchein/삼채인.txt) · [바로 따라 하기](#examples)
+[실제 사례의 실행·원본 보존 기록](docs/media/features/test4-evidence.json) · **[▶ 이전 사례 영상 보기 — 24초](docs/media/samchein/spacing-guide.mp4)** · [예제 파일 받기](docs/examples/samchein/삼채인.txt) · [바로 따라 하기](#examples)
 
 ### 2. 한 번에 적용 — 텍스트 초안을 보고서 모양으로
 
 **기본 서식 또는 등록한 예시 서식**을 기준으로 제목·개요 표, 기호별 글꼴·간격, 내어쓰기, 자간·쪽 배치 등 선택한 작업을 실행합니다. 글꼴과 문단 간격이 바뀌므로 결과 쪽 수는 늘거나 줄 수 있습니다.
 
-[![한 번에 적용 전후: 빨간 제목·개요·기호·글자 모양이 보고서 서식으로 바뀌는 예시](docs/media/features/all-in-one.png)](docs/media/features/all-in-one.png)
+[![test4 문서의 실제 한 번에 적용 전후: 텍스트 초안과 제목·개요 표가 생성된 보고서의 실제 첫 쪽](docs/media/features/all-in-one.png)](docs/media/features/all-in-one.png)
 
-**[▶ 한 번에 적용 영상 보기 — 24초](docs/media/samchein/all-guide.mp4)**
+[실제 사례의 실행·원본 보존 기록](docs/media/features/test4-evidence.json) · **[▶ 이전 사례 영상 보기 — 24초](docs/media/samchein/all-guide.mp4)**
 
 > 영상은 **실제 한/글 처리 결과로 만든 단계별 안내 애니메이션**이며 앱 클릭 화면 녹화가 아닙니다. 재생되지 않으면 MP4를 내려받거나 아래 실습의 GIF 안내를 펼치세요. 예제는 **1.69 Beta 18**로 처리한 결과이며, 글꼴·설정에 따라 모양이 달라질 수 있습니다.
 
@@ -148,7 +148,7 @@ HWP·HWPX의 기본 편집에는 Node.js도 필요하지 않습니다.
 
 먼저 아래 이미지의 개요 문장을 보세요. 위에서는 `거점(지 / 구)`, `수 / 립하여`가 두 줄로 갈라지고, 아래에서는 각각 한 줄에 모입니다.
 
-[![자간 정리 설명용 전후 비교: 빨간 어절이 앞줄 또는 뒷줄로 모여 변경 자리를 확인](docs/media/features/spacing.png)](docs/media/features/spacing.png)
+[![test4 자간 정리 실제 전후: 줄을 옮긴 어절을 빨간색으로 확인](docs/media/features/spacing.png)](docs/media/features/spacing.png)
 
 이전 버전의 **실제 처리 결과**는 [거점(지구)·수립하여 전후 이미지](docs/media/samchein/spacing-comparison.png)에서 확인하세요. 이 실습의 실측값과 영상은 1.69 Beta 18 기준입니다.
 
@@ -172,7 +172,7 @@ HWP·HWPX의 기본 편집에는 Node.js도 필요하지 않습니다.
 
 README 맨 위의 전후 비교처럼 바꾸는 실습입니다. 아래 안내 이미지에서 **선택할 서식과 옵션**을 확인하세요. 실제 앱 화면이 아닌 설명용 이미지입니다.
 
-[![한 번에 적용 전후: 제목·개요·기호와 모양이 바뀌는 글자를 빨간색으로 표시](docs/media/features/all-in-one.png)](docs/media/features/all-in-one.png)
+[![test4 한 번에 적용 실제 전후: 제목·개요·기호와 모양이 바뀌는 글자를 빨간색으로 표시](docs/media/features/all-in-one.png)](docs/media/features/all-in-one.png)
 
 ![한 번에 적용 설정 안내: 기본 보고서 서식, 자간 조정 포함 켬, 표 제외 끔, 페이지 맞춤 제외 끔](docs/media/samchein/all-poster.png)
 
@@ -219,7 +219,7 @@ README 맨 위의 전후 비교처럼 바꾸는 실습입니다. 아래 안내 �
 갈라진 단어를 한 줄로 모으고 짧게 남은 마지막 줄을 줄이도록 시도합니다.
 안전 한도 안에서 조정하며, 모든 줄을 반드시 맞추는 기능은 아닙니다.
 
-[![자간 정리 효과 전후: 갈라진 빨간 어절의 줄 위치 변경](docs/media/features/spacing.png)](docs/media/features/spacing.png)
+[![test4 실제 자간 정리 효과: 이동한 어절의 줄 위치 변경](docs/media/features/spacing.png)](docs/media/features/spacing.png)
 
 - **기존 자간 초기화**: 이전 자간을 0%로 되돌린 뒤 정리합니다. 기존 조정값을 출발점으로 쓰려면 끄세요. 꺼도 이후 자간 정리는 실행됩니다.
 
@@ -254,7 +254,7 @@ README 맨 위의 전후 비교처럼 바꾸는 실습입니다. 아래 안내 �
 **서식 기준**에서 기본 서식이나 저장한 사용자 서식을 고릅니다.
 준말 변환, 보고서 서식, 제목·개요·표 정리와 자간 등의 선택된 작업을 순서대로 실행합니다.
 
-[![한 번에 적용 전후: 빨간 제목·개요·기호와 글자 모양을 보고서 기준으로 변경](docs/media/features/all-in-one.png)](docs/media/features/all-in-one.png)
+[![test4 한 번에 적용 실제 전후: 빨간 제목·개요·기호와 글자 모양을 보고서 기준으로 변경](docs/media/features/all-in-one.png)](docs/media/features/all-in-one.png)
 
 - **자간 조정 포함**: 끄면 예전의 **서식 적용** 방식으로 실행합니다. 전체 자간 정리 단계는 빠지지만, 예시 서식의 자간값 적용이나 **개요·한 칸 표 자간 조정** 등은 별도입니다. 자간이 전혀 변하지 않는다는 뜻은 아닙니다.
 - **표 제외**: 일반 표 관련 작업을 뺍니다. **제목·개요·중제목·붙임 서식 표는 별도 대상**이므로 함께 제외되지 않습니다.

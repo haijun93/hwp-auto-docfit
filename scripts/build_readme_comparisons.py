@@ -2,6 +2,7 @@
 
 중괄호로 둘러싼 글자만 빨간색으로 그린다. 위치·모양·내용 변경을 구분하며
 사용자 문서는 읽지 않는다. 실행: python scripts/build_readme_comparisons.py
+실제 사례 기록이 있는 자간 정리·한 번에 적용 이미지는 덮어쓰지 않는다.
 """
 from pathlib import Path
 import re
@@ -283,6 +284,12 @@ def render(c):
 
 if __name__ == '__main__':
     OUT.mkdir(parents=True, exist_ok=True)
+    generated = 0
     for comparison in CARDS:
+        if comparison['name'] in ('spacing', 'all-in-one') and (OUT / 'test4-evidence.json').is_file():
+            if not (OUT / (comparison['name'] + '.png')).is_file():
+                raise RuntimeError('실제 사례 이미지는 build_test4_comparisons.py로 재생성하세요.')
+            continue
         render(comparison)
-    print(f'{len(CARDS)}개 전후 비교 이미지 생성: {OUT}')
+        generated += 1
+    print(f'{generated}개 설명용 전후 비교 이미지 생성: {OUT}')

@@ -1,0 +1,143 @@
+{
+  "kind": "test4 원문 사본의 실제 앱 실행·한/글 PDF 렌더링; UI 녹화 아님",
+  "source_files": {
+    "보고서 예시 파일(한번에 적용)(일괄적용).hwpx": "cd13b2023fee40bf65a7ae08368107dc89e9b94bfa8cef97cdd4a0dfc143980f",
+    "보고서 예시 파일(한번에 적용)(작업로그-Beta12).log": "f9db07bbc1edd021c05f53afce18ab7a0eb1516188dc3d62c59fedde01c5fec6",
+    "보고서 예시 파일(한번에 적용).txt": "d7b22dac024cd0018d477f98ad1dc791abdc3abd8d1de63af140b1d22d771fc3"
+  },
+  "app_code_sha256": "4c7e90ac7f2e93bb1d29d68a75989639145bf432efedd9ac123936580a70b29a",
+  "runs": {
+    "all": {
+      "mode": "all",
+      "app_version": "1.72 Beta 13",
+      "hwp_version": "9, 6, 1, 10778",
+      "elapsed_seconds": 174.77,
+      "pages": {
+        "before": 2,
+        "after": 3
+      },
+      "source_sha256": "d7b22dac024cd0018d477f98ad1dc791abdc3abd8d1de63af140b1d22d771fc3",
+      "result_sha256": "7291ea7c8dbcc855d9890e45986b422391477d85acd81af6218254f8dd577d0b",
+      "source_unchanged": true,
+      "score": [
+        "작업 수행 점수: 100.0/100 / 판정 달성 / 보고서 파일 저장 안 함"
+      ],
+      "word_stats": {
+        "대상": 5,
+        "성공": 5,
+        "실패": 0
+      },
+      "short_stats": {
+        "대상": 2,
+        "성공": 2,
+        "실패": 0
+      },
+      "stage_choices": {
+        "abbreviation": true,
+        "standard_format": true,
+        "text_table_convert": true,
+        "reset_spacing": true,
+        "asterisk_superscript": true,
+        "attachment_font": true,
+        "pre_format": true,
+        "table_style": true,
+        "table_width": true,
+        "precise_table": true,
+        "normalize_space": true,
+        "punctuation_space": true,
+        "style_unify": false,
+        "parenthesis": true,
+        "table_format": true,
+        "hanging_indent": true,
+        "supplement_indent": true,
+        "star_align": true,
+        "body_spacing": true,
+        "short_line": true,
+        "control_spacing": true,
+        "control_short_line": true,
+        "word_check": true,
+        "control_word_check": true,
+        "page_fit": true,
+        "page_group": true
+      },
+      "options": {
+        "profile": "기본 보고서 서식",
+        "reset_spacing": true,
+        "exclude_tables": false,
+        "exclude_pagefit": false
+      },
+      "comparison": {
+        "image": "all-in-one.png",
+        "changed_glyphs": {
+          "before": 1371,
+          "after": 1255
+        },
+        "focus_words": [],
+        "pdf_pages": {
+          "before": 2,
+          "after": 3
+        },
+        "image_sha256": "52647efa9a0769cee6200ce2fc4736b379ea616d1b34e8d6fb1bbcd7fb23744d"
+      }
+    },
+    "spacing": {
+      "mode": "spacing",
+      "app_version": "1.72 Beta 13",
+      "hwp_version": "9, 6, 1, 10778",
+      "elapsed_seconds": 100.823,
+      "pages": {
+        "before": 2,
+        "after": 2
+      },
+      "source_sha256": "d7b22dac024cd0018d477f98ad1dc791abdc3abd8d1de63af140b1d22d771fc3",
+      "result_sha256": "8f0527cfb46b1a64898d98dd1b350673bd548b635b24378b6ea27637c3740ecf",
+      "source_unchanged": true,
+      "score": [
+        "작업 수행 점수: 100.0/100 / 판정 달성 / 보고서 파일 저장 안 함"
+      ],
+      "word_stats": {
+        "대상": 2,
+        "성공": 2,
+        "실패": 0
+      },
+      "short_stats": {
+        "대상": 0,
+        "성공": 0,
+        "실패": 0
+      },
+      "stage_choices": {
+        "reset_spacing": true,
+        "style_unify": false,
+        "body_spacing": true,
+        "short_line": true,
+        "control_spacing": true,
+        "control_short_line": true,
+        "word_check": true,
+        "control_word_check": true
+      },
+      "options": {
+        "profile": "기본 보고서 서식",
+        "reset_spacing": true,
+        "exclude_tables": false,
+        "exclude_pagefit": false
+      },
+      "comparison": {
+        "image": "spacing.png",
+        "changed_glyphs": {
+          "before": 10,
+          "after": 10
+        },
+        "focus_words": [
+          "거점(지구)",
+          "수립하여"
+        ],
+        "pdf_pages": {
+          "before": 2,
+          "after": 2
+        },
+        "image_sha256": "a643ae5695c15670c239c144cc9cf1aeb4d48167d80a08dc0a26a03c98182684"
+      }
+    }
+  },
+  "originals_unchanged": true
+}
