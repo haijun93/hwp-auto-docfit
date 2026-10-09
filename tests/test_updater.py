@@ -30,16 +30,20 @@ class VerifyDownloadTest(unittest.TestCase):
         self.assertIn("EXE", verify_download(10, b"<!DOCTYPE html>", ""))
         self.assertIn("SHA-256", verify_download(10, b"MZ", "0" * 64, None, H))
 
+    def test_missing_hash_fails_closed(self):
+        self.assertIn("SHA-256 정보가 없어", verify_download(10, b"MZ", H.lower(), 10, None))
+
 
 class InstallScriptTest(unittest.TestCase):
     def test_script_renames_old_retries_and_restores(self):
         s = install_script()
         self.assertLess(s.index("내려받은 신버전 파일이 없습니다"), s.index("Move-Item -LiteralPath $Target -Destination $Old"))
+        self.assertLess(s.index("Get-FileHash"), s.index("Move-Item -LiteralPath $Target -Destination $Old"))
         for 필수 in ("WaitPids", "$Target.old", "Move-Item -LiteralPath $Target -Destination $Old",
                     "Retry", "구버전 복구", "Start-Process -FilePath $Target", "Remove-Item -LiteralPath $Old"):
             self.assertIn(필수, s)
-        # 예전 방식(실패하면 내려받은 파일을 그 자리에서 실행해 구버전이 남음)은 교체를 시도하지 못한 경우에만 쓴다.
-        self.assertLess(s.index("Move-Item -LiteralPath $Old -Destination $Target"), s.index("Start-Process -FilePath $Downloaded"))
+        # 검증에 실패했을 수 있는 내려받은 파일은 어떤 경우에도 실행하지 않는다(보안 검토, 2026-10-09).
+        self.assertNotIn("Start-Process -FilePath $Downloaded", s)
 
 
 class LeftoverTest(unittest.TestCase):

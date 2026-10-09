@@ -32,14 +32,17 @@ def verify_download(size, head, sha256_hex, expected_size=None, expected_hash=No
         return f"파일 크기가 다릅니다(받은 {size:,}바이트, 예상 {int(expected_size):,}바이트)."
     if not bytes(head or b"").startswith(b"MZ"):
         return "실행 파일(EXE)이 아닙니다. 네트워크 오류 페이지를 받았을 수 있습니다."
-    if expected_hash and sha256_hex.lower() != expected_hash.lower():
+    # 보안(2026-10-09 검토): SHA-256을 확인할 수 없으면 설치하지 않는다(실패 시 닫힘).
+    if not expected_hash:
+        return "릴리스에 SHA-256 정보가 없어 안전을 위해 자동 업데이트를 중단했습니다."
+    if sha256_hex.lower() != expected_hash.lower():
         return "SHA-256 검증에 실패했습니다(파일이 손상되었거나 바뀌었습니다)."
     return None
 
 
 def install_script():
     """구버전을 신버전으로 교체하는 PowerShell 스크립트 본문(매개변수로 경로·PID를 받는다)."""
-    return r'''param([int[]]$WaitPids, [string]$Downloaded, [string]$Target, [string]$Log)
+    return r'''param([int[]]$WaitPids, [string]$Downloaded, [string]$Target, [string]$Log, [string]$Sha256)
 $ErrorActionPreference = 'Stop'
 function Write-Log([string]$m) { try { Add-Content -LiteralPath $Log -Value ("{0:yyyy-MM-dd HH:mm:ss} {1}" -f (Get-Date), $m) -Encoding UTF8 } catch {} }
 function Retry([scriptblock]$Action, [string]$What) {
@@ -56,6 +59,8 @@ try {
     if (-not (Test-Path -LiteralPath $Downloaded)) { throw '내려받은 신버전 파일이 없습니다.' }
     $head = [byte[]](Get-Content -LiteralPath $Downloaded -Encoding Byte -TotalCount 2)
     if ($head.Count -lt 2 -or $head[0] -ne 0x4D -or $head[1] -ne 0x5A) { throw '내려받은 파일이 EXE가 아닙니다.' }
+    # 앱이 검증한 뒤 교체하기 전에 파일이 바뀌지 않았는지 다시 확인한다(검증-사용 사이 바꿔치기 방지).
+    if (-not $Sha256 -or (Get-FileHash -LiteralPath $Downloaded -Algorithm SHA256).Hash -ne $Sha256.ToUpper()) { throw '내려받은 파일의 SHA-256이 검증 때와 다릅니다.' }
     if (Test-Path -LiteralPath $Old) { Retry { Remove-Item -LiteralPath $Old -Force } '이전 백업 삭제' }
     Retry { Move-Item -LiteralPath $Target -Destination $Old -Force } '구버전 이름 변경'
     $replaced = $true
@@ -75,8 +80,8 @@ try {
             Write-Log '구버전 복구, 구버전 실행'
         } catch { Write-Log "구버전 복구 실패: $($_.Exception.Message)" }
     }
+    # 검증에 실패했을 수 있는 내려받은 파일은 실행하지 않는다. 구버전만 다시 실행한다.
     if (Test-Path -LiteralPath $Target) { Start-Process -FilePath $Target }
-    elseif (Test-Path -LiteralPath $Downloaded) { Start-Process -FilePath $Downloaded }
 } finally {
     Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
 }

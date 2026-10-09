@@ -18018,9 +18018,8 @@ class HwpAutoDocFitGUI:
                 raise RuntimeError(문제)
             os.replace(임시, 다운로드_경로)
             임시 = None
-            _업데이트_기록(f"내려받기 완료: {다운로드_경로.name} {크기:,}바이트, SHA-256 "
-                         f"{'확인' if 예상해시 else '정보 없음(크기·EXE 머리만 확인)'}")
-            self.root.after(0, lambda: self._자동업데이트_설치(다운로드_경로))
+            _업데이트_기록(f"내려받기 완료: {다운로드_경로.name} {크기:,}바이트, SHA-256 확인")
+            self.root.after(0, lambda: self._자동업데이트_설치(다운로드_경로, 예상해시))
         except Exception as exc:
             _업데이트_기록(f"내려받기 실패: {exc}")
             try:
@@ -18036,7 +18035,7 @@ class HwpAutoDocFitGUI:
                 except OSError:
                     pass
 
-    def _자동업데이트_설치(self, 다운로드_경로):
+    def _자동업데이트_설치(self, 다운로드_경로, 예상해시=None):
         """구버전을 '.old'로 바꾸고 신버전을 원래 이름으로 넣는 교체 스크립트를 띄운 뒤 앱을 끝낸다.
 
         PyInstaller 단일 EXE는 부트로더(부모)와 Python(자식) 두 프로세스로 돈다. 예전에는 자식만 기다려 부모가 EXE를
@@ -18076,7 +18075,7 @@ class HwpAutoDocFitGUI:
                     "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
                     "-File", str(스크립트), "-WaitPids", ",".join(str(x) for x in 기다릴),
                     "-Downloaded", str(다운로드_경로), "-Target", str(현재_실행파일),
-                    "-Log", str(다운로드_경로.parent / "update.log"),
+                    "-Log", str(다운로드_경로.parent / "update.log"), "-Sha256", str(예상해시 or ""),
                 ],
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
