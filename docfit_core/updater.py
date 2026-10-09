@@ -42,7 +42,8 @@ def verify_download(size, head, sha256_hex, expected_size=None, expected_hash=No
 
 def install_script():
     """구버전을 신버전으로 교체하는 PowerShell 스크립트 본문(매개변수로 경로·PID를 받는다)."""
-    return r'''param([int[]]$WaitPids, [string]$Downloaded, [string]$Target, [string]$Log, [string]$Sha256)
+    return r'''param([string]$WaitPidList, [string]$Downloaded, [string]$Target, [string]$Log, [string]$Sha256,
+      [string]$StartedFlag, [string]$BusyFlag)
 $ErrorActionPreference = 'Stop'
 function Write-Log([string]$m) { try { Add-Content -LiteralPath $Log -Value ("{0:yyyy-MM-dd HH:mm:ss} {1}" -f (Get-Date), $m) -Encoding UTF8 } catch {} }
 function Retry([scriptblock]$Action, [string]$What) {
@@ -52,9 +53,16 @@ function Retry([scriptblock]$Action, [string]$What) {
 }
 $Old = "$Target.old"
 Write-Log "업데이트 시작: $Downloaded -> $Target"
+if ($BusyFlag) { try { Set-Content -LiteralPath $BusyFlag -Value $PID -Encoding UTF8 } catch {} }
+# PID 목록은 글자 하나로 받아 직접 나눈다(-File로 넘긴 '1,2'는 [int[]]가 아니라 숫자 12로 묶였다. Beta 12 리뷰 R1).
+$WaitPids = @()
+foreach ($t in ($WaitPidList -split '[^0-9]+')) { if ($t) { $WaitPids += [int]$t } }
+Write-Log ("대기 PID: " + ($WaitPids -join ', '))
 foreach ($p in $WaitPids) { if ($p -gt 0) { Wait-Process -Id $p -Timeout 120 -ErrorAction SilentlyContinue } }
+$stillRunning = @($WaitPids | Where-Object { $_ -gt 0 -and (Get-Process -Id $_ -ErrorAction SilentlyContinue) })
 $replaced = $false
 try {
+    if ($stillRunning.Count -gt 0) { throw ("앱이 아직 실행 중입니다(PID " + ($stillRunning -join ', ') + "). 교체하지 않습니다.") }
     # 신버전 파일이 없거나 EXE가 아니면 구버전을 건드리지 않는다(교체 전에 확인).
     if (-not (Test-Path -LiteralPath $Downloaded)) { throw '내려받은 신버전 파일이 없습니다.' }
     $head = [byte[]](Get-Content -LiteralPath $Downloaded -Encoding Byte -TotalCount 2)
@@ -67,8 +75,20 @@ try {
     Retry { Copy-Item -LiteralPath $Downloaded -Destination $Target -Force } '신버전 복사'
     if ((Get-Item -LiteralPath $Target).Length -ne (Get-Item -LiteralPath $Downloaded).Length) { throw '복사한 파일 크기가 다릅니다.' }
     Write-Log '교체 완료, 신버전 실행'
-    Start-Process -FilePath $Target
-    Start-Sleep -Seconds 2
+    if ($StartedFlag -and (Test-Path -LiteralPath $StartedFlag)) { Remove-Item -LiteralPath $StartedFlag -Force -ErrorAction SilentlyContinue }
+    $newProc = Start-Process -FilePath $Target -PassThru
+    # 새 버전이 실제로 켜졌는지(시작 확인 파일) 확인한 뒤에만 구버전 백업을 지운다(Beta 12 리뷰 R5).
+    if ($StartedFlag) {
+        $ok = $false
+        for ($i = 0; $i -lt 120; $i++) { if (Test-Path -LiteralPath $StartedFlag) { $ok = $true; break }; Start-Sleep -Milliseconds 500 }
+        if (-not $ok) {
+            Write-Log '신버전 시작 확인 실패(60초): 신버전을 끄고 구버전으로 되돌립니다.'
+            try { if ($newProc) { Stop-Process -Id $newProc.Id -Force -ErrorAction SilentlyContinue }; Get-Process | Where-Object { $_.Path -eq $Target } | Stop-Process -Force -ErrorAction SilentlyContinue } catch {}
+            Start-Sleep -Seconds 2
+            throw '신버전이 정상적으로 시작되지 않았습니다.'
+        }
+        Write-Log '신버전 시작 확인'
+    } else { Start-Sleep -Seconds 2 }
     try { Remove-Item -LiteralPath $Downloaded -Force } catch { Write-Log "내려받은 파일은 다음 실행 때 정리: $($_.Exception.Message)" }
     try { Remove-Item -LiteralPath $Old -Force } catch { Write-Log "구버전 백업은 다음 실행 때 정리: $($_.Exception.Message)" }
 } catch {
@@ -80,9 +100,10 @@ try {
             Write-Log '구버전 복구, 구버전 실행'
         } catch { Write-Log "구버전 복구 실패: $($_.Exception.Message)" }
     }
-    # 검증에 실패했을 수 있는 내려받은 파일은 실행하지 않는다. 구버전만 다시 실행한다.
-    if (Test-Path -LiteralPath $Target) { Start-Process -FilePath $Target }
+    # 검증에 실패했을 수 있는 내려받은 파일은 실행하지 않는다. 구버전만 다시 실행한다(앱이 아직 돌고 있으면 하지 않음).
+    if ($stillRunning.Count -eq 0 -and (Test-Path -LiteralPath $Target)) { Start-Process -FilePath $Target }
 } finally {
+    if ($BusyFlag) { Remove-Item -LiteralPath $BusyFlag -Force -ErrorAction SilentlyContinue }
     Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
 }
 '''
