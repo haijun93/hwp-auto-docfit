@@ -372,7 +372,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리"
-APP_VERSION = "1.72 Beta 12"
+APP_VERSION = "1.72 Beta 13"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 GITHUB_UPDATE_API_URL = "https://api.github.com/repos/haijun93/hwp-auto-docfit/releases/latest"
@@ -431,11 +431,27 @@ def _업데이트_기록(내용):
         pass
 
 
+UPDATE_STARTED_FLAG = "app_started.flag"   # 새 버전이 켜졌다는 신호(교체 스크립트가 확인 뒤 백업을 지운다)
+UPDATE_BUSY_FLAG = "update_busy.flag"      # 교체 스크립트가 도는 중(이때는 시작 정리가 백업을 지우지 않는다)
+
+
+def 업데이트_시작신호():
+    """실행 파일로 켜졌음을 교체 스크립트에 알린다(Beta 12 리뷰 R5)."""
+    try:
+        폴더 = 설정_폴더() / "updates"
+        폴더.mkdir(parents=True, exist_ok=True)
+        (폴더 / UPDATE_STARTED_FLAG).write_text(f"{APP_VERSION} {os.getpid()}", encoding="utf-8")
+    except Exception:
+        pass
+
+
 def 업데이트_잔여정리():
     """지난 업데이트가 남긴 구버전 백업('*.exe.old')과 내려받기 잔여물을 지운다(실행 중이면 다음에 다시 시도)."""
     try:
         실행폴더 = Path(sys.executable).resolve().parent
         업데이트_폴더 = 설정_폴더() / "updates"
+        if (업데이트_폴더 / UPDATE_BUSY_FLAG).exists():
+            return      # 교체 스크립트가 시작 확인을 기다리는 중: 구버전 백업을 지우면 되살릴 수 없다
         이름들 = [x.name for x in 실행폴더.iterdir()] if 실행폴더.is_dir() else []
         업데이트_이름들 = [x.name for x in 업데이트_폴더.iterdir()] if 업데이트_폴더.is_dir() else []
         old, stale = 업데이트_잔여파일(이름들, 업데이트_이름들)
@@ -4675,9 +4691,22 @@ class 문두보호_조정불가(RuntimeError):
     """
 
 
+# 문서 편집 세대: 글을 바꿀 수 있는 명령을 시도할 때마다(성공 여부와 관계없이) 올린다. 문단 글 캐시는 읽은 뒤
+# 세대가 바뀌었으면 쓰지 않는다(Beta 12 리뷰 R2: 지운 뒤 넣기만 실패하면 글은 바뀌었는데 수정 건수가 0이라
+# 캐시가 옛 글을 다음 규칙에 넘겼다).
+_문서_편집_세대 = 0
+
+
+def _문서_편집_시도():
+    global _문서_편집_세대
+    _문서_편집_세대 += 1
+
+
 def hwp_run(command):
     if hwp is None:
         raise RuntimeError("HWP 객체가 없습니다.")
+    if not (str(command).startswith("Move") or command in ("Cancel", "Select", "SelectAll")):
+        _문서_편집_시도()
     try:
         if command in ('CharShapeSpacingDecrease', 'CharShapeSpacingIncrease',
                        'CharShapeRatioDecrease', 'CharShapeRatioIncrease'):
@@ -5105,6 +5134,7 @@ def 작업창_닫기():
 def 텍스트_삽입(text):
     if not text or hwp is None:
         return
+    _문서_편집_시도()
     try:
         act = hwp.HAction
         pset = hwp.HParameterSet.HInsertText
@@ -14313,7 +14343,7 @@ def 문장부호_뒤_공백_보정_전체_적용():
 # COM 호출 약 7번). 순회하는 동안 한 번 읽은 글을 같은 문단의 다음 규칙이 다시 쓰고, 규칙이 글을 고치면 비운다.
 # 끄면(False) 베타와 같다.
 알파_문단글_캐시_사용 = True
-_문단글_캐시 = None      # None이면 캐시를 쓰지 않음, dict이면 {(리스트, 문단): 글}
+_문단글_캐시 = None      # None이면 캐시를 쓰지 않음, dict이면 {(리스트, 문단): (편집 세대, 글)}
 
 
 def _문단글_캐시_비우기():
@@ -14326,10 +14356,16 @@ def 현재문단_텍스트():
         try:
             hwp.Run("MoveParaBegin")      # 원래 함수처럼 커서를 문단 시작에 둔다
             키 = tuple(hwp.GetPos()[:2])
-            if 키 in _문단글_캐시:
-                return _문단글_캐시[키]
-            글 = _현재문단_텍스트_읽기()
-            _문단글_캐시[키] = 글
+            저장 = _문단글_캐시.get(키)
+            if 저장 is not None and 저장[0] == _문서_편집_세대:
+                return 저장[1]
+            세대 = _문서_편집_세대
+            글, 성공 = _현재문단_텍스트_읽기_상태()
+            if not 성공:
+                # 일시적 읽기 실패는 빈 문단으로 기억하지 않고 한 번 더 읽는다(Beta 12 리뷰 R4).
+                글, 성공 = _현재문단_텍스트_읽기_상태()
+            if 성공:
+                _문단글_캐시[키] = (세대, 글)
             return 글
         except Exception:
             return _현재문단_텍스트_읽기()
@@ -14337,6 +14373,11 @@ def 현재문단_텍스트():
 
 
 def _현재문단_텍스트_읽기():
+    return _현재문단_텍스트_읽기_상태()[0]
+
+
+def _현재문단_텍스트_읽기_상태():
+    """(문단 글, 읽기 성공 여부). 실패하면 ("", False) — 실제 빈 문단과 구별한다."""
     try:
         hwp.Run("MoveParaBegin")
         문단시작위치 = hwp.GetPos()
@@ -14348,13 +14389,13 @@ def _현재문단_텍스트_읽기():
             hwp.ReleaseScan()
         hwp.Run("Cancel")
         hwp.SetPos(문단시작위치[0], 문단시작위치[1], 문단시작위치[2])
-        return text or ""
+        return text or "", True
     except Exception:
         try:
             hwp.Run("Cancel")
         except Exception:
             pass
-        return ""
+        return "", False
 
 def 실제_엔터_포함(text):
     return ("\n" in text or "\r" in text) if text else False
@@ -17946,6 +17987,7 @@ class HwpAutoDocFitGUI:
         root.protocol("WM_DELETE_WINDOW", self.종료)
         root.after_idle(self._창_최소높이_보정)
         if getattr(sys, "frozen", False):
+            업데이트_시작신호()
             # 지난 업데이트가 남긴 구버전 백업과 내려받기 잔여물을 정리한다(교체가 끝난 다음 실행에서).
             threading.Thread(target=업데이트_잔여정리, daemon=True, name="update-cleanup").start()
         if getattr(sys, "frozen", False) and self.check_updates_on_start_var.get():
@@ -18119,9 +18161,11 @@ class HwpAutoDocFitGUI:
             subprocess.Popen(
                 [
                     "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
-                    "-File", str(스크립트), "-WaitPids", ",".join(str(x) for x in 기다릴),
+                    "-File", str(스크립트), "-WaitPidList", " ".join(str(x) for x in 기다릴),
                     "-Downloaded", str(다운로드_경로), "-Target", str(현재_실행파일),
                     "-Log", str(다운로드_경로.parent / "update.log"), "-Sha256", str(예상해시 or ""),
+                    "-StartedFlag", str(다운로드_경로.parent / UPDATE_STARTED_FLAG),
+                    "-BusyFlag", str(다운로드_경로.parent / UPDATE_BUSY_FLAG),
                 ],
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )

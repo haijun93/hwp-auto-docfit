@@ -64,6 +64,37 @@ class ParagraphTextCacheTest(unittest.TestCase):
         읽기()
         self.assertEqual(self.hwp.reads, 2)
 
+    def test_edit_attempt_invalidates_even_when_edit_partly_fails(self):
+        # R2: 지운 뒤 넣기만 실패해 수정 건수가 0이어도, 편집을 시도했으면 다음 읽기는 새로 읽는다.
+        self.g['_문단글_캐시'] = {}
+        읽기 = self.ns['현재문단_텍스트']
+        읽기()
+        self.ns['_문서_편집_시도']()          # hwp_run('Delete')·텍스트_삽입이 부르는 것과 같다
+        읽기()
+        self.assertEqual(self.hwp.reads, 2)
+
+    def test_hwp_run_delete_bumps_edit_generation_but_moves_do_not(self):
+        세대 = lambda: self.g['_문서_편집_세대']
+        시작 = 세대()
+        self.ns['hwp_run']('MoveLineEnd')
+        self.assertEqual(세대(), 시작)
+        self.ns['hwp_run']('Delete')
+        self.assertEqual(세대(), 시작 + 1)
+
+    def test_failed_read_is_not_cached_and_is_retried(self):
+        # R4: 일시적 읽기 실패를 빈 문단으로 기억하지 않는다.
+        self.g['_문단글_캐시'] = {}
+        원래 = self.hwp.GetText
+        실패 = {'남은': 1}
+        def 가끔_실패():
+            if 실패['남은']:
+                실패['남은'] -= 1
+                raise RuntimeError('일시 오류')
+            return 원래()
+        self.hwp.GetText = 가끔_실패
+        self.assertEqual(self.ns['현재문단_텍스트'](), '문단 3')
+        self.assertEqual(self.hwp.reads, 2)
+
     def test_without_cache_reads_every_time(self):
         self.g['_문단글_캐시'] = None
         읽기 = self.ns['현재문단_텍스트']
