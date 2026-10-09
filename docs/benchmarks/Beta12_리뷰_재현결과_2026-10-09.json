@@ -1,0 +1,42 @@
+{
+  "source_commit": "03fdccc44b3b54b0d0ea224e85953eea23f685b1",
+  "source_file_sha256": "25d176d43c7604e3c3ba8a91140855da1f90aba68d63482100122f9ad04e937a",
+  "scope": "synthetic fault injection and harmless PowerShell parameter binding; no user documents or real update execution",
+  "partial_mutation_cache": {
+    "before": "도토리 ,만두",
+    "returned_count": 0,
+    "actual_text": "도토리만두",
+    "cached_read": "도토리 ,만두"
+  },
+  "transient_read_failure_cache": {
+    "first": "",
+    "second": "",
+    "actual_text": "도토리 ,만두",
+    "read_attempts": 1
+  },
+  "powershell_pid_binding": {
+    "sent_argument": "123,456",
+    "expected_values": [
+      123,
+      456
+    ],
+    "actual": {
+      "count": 1,
+      "values": [
+        123456
+      ]
+    },
+    "exit_code": 0
+  },
+  "unverified_regression_pass": {
+    "input": [
+      {
+        "output_created": true,
+        "score": null,
+        "layout_same": null
+      }
+    ],
+    "require_same_layout": true,
+    "exit_code": 0
+  }
+}
