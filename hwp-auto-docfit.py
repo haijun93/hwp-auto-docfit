@@ -255,6 +255,8 @@ import win32com.client as win32
 import win32gui
 import win32con
 from defusedxml.ElementTree import fromstring as safe_xml_fromstring
+from docfit_core.batch_format import apply_batch, ParagraphStyle, BatchUnsupported
+from docfit_core.fidelity.package import UnsupportedPackage
 from docfit_core.style_hierarchy import DOT_MARKERS, DOCUMENT_TYPES, analyze_hierarchy, display_role, document_type as 문서유형_판정, hierarchy_summary, leading_marker, normalize_leading_dot, stored_role
 from docfit_core.style_unify import complement_ranges as 서식통일_범위분리, merge_adjacent as 서식통일_범위병합, parenthetical_spans as 서식통일_부연괄호, representative as 서식통일_최빈값
 from docfit_core.style_unify import dominant as 서식통일_우세값, hierarchy_levels as 서식통일_계층순서, looks_like_cover as 서식통일_표지판정, unify_marker as 서식통일_문두기호, vocabulary_fallback as 서식통일_문서어휘_대표
@@ -366,7 +368,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리"
-APP_VERSION = "1.72 Beta 9"
+APP_VERSION = "1.73 Alpha 1"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 GITHUB_UPDATE_API_URL = "https://api.github.com/repos/haijun93/hwp-auto-docfit/releases/latest"
@@ -6165,6 +6167,130 @@ def 본문형_일반문장인가(text):
     return 서식요소.is_body_sentence(text, 크기, 정렬)
 
 
+# 알파는 기본 보고서 서식을 XML에서 먼저 입힌다. 내어쓰기·쪽 배치는 실측한다.
+# 사용자 서식의 복사 속성은 아직 기존 경로로 처리해 미지원 속성을 잃지 않는다.
+알파_HWPX_일괄서식_사용 = True
+_표준서식_XML텍스트 = set()
+_표준서식_XML간격 = {}
+_알파_일괄서식_문서 = False
+
+
+def 알파_일괄서식_가능():
+    return bool(알파_HWPX_일괄서식_사용 and 작업_모드 in ('format', 'all')
+                and 표준서식_선행_사용 and 쪽범위_요청 is None
+                and stage_enabled(선택_세부작업, 'standard_format', 작업_모드)
+                and not any(표준서식_설정.get(key) for key in (
+                    '복사_문단모양', '계층_추가서식', '복제_본문서식',
+                    '복제_들여쓰기_유지', '복귀_간격', '제목뒤_간격')))
+
+
+def _알파_라벨_굵게범위(text):
+    if not 괄호_라벨_볼드_사용 or 문두_라벨_굵게_제외_문단인가(text):
+        return ()
+    end = 문장부호_마커_끝위치(text)
+    if end is None:
+        return ()
+    while end < len(text) and text[end] in (' ', '\t'):
+        end += 1
+    rest = text[end:]
+    match = re.match(r'^([^\n\r:：]{1,25}?)[ \t]*([:：])[ \t]+(\S.*)$', rest)
+    if match and match.group(1).strip():
+        label = match.group(1).strip()
+        start = end + rest.find(label)
+        return ((start, start + len(label)),)
+    if '(' in text:
+        for match in 괄호_정규식.finditer(text):
+            if 괄호_문두_라벨인가(text, match):
+                return (match.span(),)
+    return ()
+
+
+def 표준서식_hwpx_처리(source, target=None, selections=None):
+    """기본 본문 서식을 XML에서 일괄 적용하고 COM 중복 적용을 막는다."""
+    global _알파_일괄서식_문서, _표준서식_XML텍스트, _표준서식_XML간격
+    if not 알파_일괄서식_가능():
+        return {} if target is None else 0
+    tracker = ParagraphSpacingTracker()
+
+    def plan(text, paragraph):
+        # 컨트롤 문단도 위계 상태에는 포함한다. 그 문단의 실제 서식은 COM에 맡긴다.
+        readable = _문단_본문글(paragraph) if text is None else text
+        readable = normalize_leading_dot(readable)
+        prev = None
+        if 표준서식_문단위간격_사용:
+            prev = tracker.spacing_for(readable, _표준서식_문단위간격_표(), 표준서식_문단위간격_복귀배율)
+            if not readable.strip():
+                tables = [x for x in paragraph.iter() if 제목_xml이름(x) == 'tbl']
+                if any(중제목_유형판별(x) for x in tables):
+                    tracker.spacing_for_level('midtitle', _표준서식_문단위간격_표(), 표준서식_문단위간격_복귀배율)
+        if text is None or not text.strip():
+            return None
+        rule = 표준서식_기호규칙_찾기(readable) if 표준서식_기호_사용 else None
+        if rule is None:
+            # 일반 본문·제목은 원래의 글자 모양을 보존한다.
+            return ParagraphStyle(text=readable, prev_pt=prev) if prev is not None else None
+        symbol, lead, font, size, paragraph_bold, marker_bold = rule
+        if readable.lstrip().startswith('**'):
+            lead = max(0, lead - 1)
+        formatted = ' ' * lead + readable.lstrip()
+        selected = 표준서식_설정.get('스타일_속성선택', {}).get(symbol, {})
+        enabled = 표준서식_기호_굵게.get(symbol, True)
+        bold = bool(paragraph_bold and enabled)
+        spans = list(_알파_라벨_굵게범위(formatted))
+        if marker_bold and enabled and not bold:
+            spans.append((lead, lead + 1))
+        return ParagraphStyle(
+            text=formatted, font=font if selected.get('font', True) else None,
+            font_type=_글꼴형식.get(font),
+            size_pt=size if selected.get('size', True) else None,
+            bold=bold if '복사_문단모양' in 표준서식_설정 else (True if bold else None),
+            ratio=표준서식_설정['기본_장평'] if 표준서식_장평_사용 else None,
+            line_percent=표준서식_설정['기본_줄간격_퍼센트'] if 표준서식_줄간격_사용 else None,
+            prev_pt=prev, bold_spans=tuple(spans))
+
+    try:
+        result = apply_batch(source, target, plan)
+    except (BatchUnsupported, UnsupportedPackage) as error:
+        로그(f'[알파 일괄 서식] 기존 COM 경로 사용: {error}')
+        if target is not None:
+            shutil.copyfile(source, target)
+            _표준서식_XML텍스트 = set()
+            _표준서식_XML간격 = {}
+            _알파_일괄서식_문서 = False
+        return {} if target is None else 0
+    if target is None:
+        return {'본문': list(range(result.applied))}
+    _표준서식_XML텍스트 = set(result.formatted_texts)
+    _표준서식_XML간격 = dict(result.paragraph_spacing)
+    _알파_일괄서식_문서 = bool(result.applied)
+    로그(f'[알파 일괄 서식] XML 적용 {result.applied}문단 / 기존 경로 {result.fallback}문단 / '
+         f'새 글자 모양 {result.char_styles}개·문단 모양 {result.paragraph_styles}개')
+    return result.applied
+
+
+def _알파_한줄문단인가(pos):
+    """현재 실제 조판이 한 줄이면 자간·짧은 마지막 줄 보정이 필요 없다.
+
+    오래된 XML lineseg나 글자 폭 추정값으로 문단을 제외하지 않는다.
+    컨트롤, 측정 실패는 기존 전수 검사로 돌린다.
+    """
+    if not _알파_일괄서식_문서 or pos[0] != 0:
+        return False
+    try:
+        hwp_run('MoveParaBegin')
+        begin = hwp.GetPos()
+        hwp_run('MoveParaEnd')
+        end = hwp.GetPos()
+        hwp_run('MoveLineBegin')
+        last_line = hwp.GetPos()
+        return (tuple(begin) == tuple(last_line) and tuple(begin[:2]) == tuple(pos[:2])
+                and tuple(end[:2]) == tuple(pos[:2]) and begin[2] == 0)
+    except Exception:
+        return False
+    finally:
+        hwp.SetPos(*pos)
+
+
 def 표준서식_문단_처리(문단_순번, 헤더_역할=None, 상속_기호_매칭=None):
     """현재 문단에 보고서 표준서식을 적용한다.
 
@@ -6205,11 +6331,21 @@ def 표준서식_문단_처리(문단_순번, 헤더_역할=None, 상속_기호_
     # 기호 서식 규칙이 없는 *·- 문단도 위계 추적에 포함해야 복귀를 판정할 수 있다.
     if 표준서식_문단위간격_사용 and not 표준서식_설정.get("복제_들여쓰기_유지"):
         간격_pt = 표준서식_문단위간격_찾기(text)
-        if 간격_pt is not None:
+        if 간격_pt is not None and not (
+                text.rstrip('\r\n') in _표준서식_XML텍스트
+                and _표준서식_XML간격.get(text.rstrip('\r\n')) == 간격_pt and hwp.GetPos()[0] == 0):
             hwp_run("MoveParaBegin")
             hwp_run("MoveSelParaEnd")
             문단_위간격_적용_현재선택(간격_pt)
             hwp_run("Cancel")
+    if (text.rstrip('\r\n') in _표준서식_XML텍스트 and hwp.GetPos()[0] == 0):
+        # 한/글 실측이 필요한 내어쓰기만 수행한다. 글자/문단 서식은 이미 확정했다.
+        if (표준서식_내어쓰기_사용 and not 최종_내어쓰기_예정
+                and 내어쓰기_기호선택_허용(text)
+                and 문단_내어쓰기_기준_오프셋(text) is not None):
+            hwp_run('MoveParaBegin')
+            문단_내어쓰기_적용(hwp.GetPos(), text)
+        return
     # 보고서 표준서식은 문장부호(□/ㅇ/-/※ 등)로 시작하는 문단만 대상으로
     # 한다. 제목·일자·일반 본문에는 장평/줄간격/폰트/내어쓰기를 적용하지
     # 않아 원문 서식을 보존한다.
@@ -10203,12 +10339,23 @@ def 본문_기존자간조정():
     순회_시작()
     직전위치 = None
     정체횟수 = 0
+    검사문단 = None
     while True:
         if 중단_요청됨():
             return False
         현재위치 = hwp.GetPos()
         if 쪽범위_끝지남(현재위치):
             return True
+        if (_알파_일괄서식_문서 and 현재위치[0] == 0
+                and tuple(현재위치[:2]) != 검사문단):
+            검사문단 = tuple(현재위치[:2])
+            if _알파_한줄문단인가(현재위치):
+                hwp_run('MoveParaEnd')
+                문단끝 = hwp.GetPos()
+                hwp_run('MoveNextChar')
+                if hwp.GetPos() == 문단끝:
+                    return True
+                continue
         if ((not 쪽범위_안인가(현재위치)) or (not 재검사_대상인가(현재위치))
                 or 표셀_자간_제외인가()):
             # 작업 쪽 범위 밖, 2차 이후 재검사 대상이 아닌 문단, '표 안 문장 제외'인
@@ -13088,6 +13235,7 @@ def 본문_문장부호_처리():
     순회_시작()
     직전위치 = None
     정체횟수 = 0
+    검사문단 = None
 
     while hwp.GetPos() != 끝위치:
         if 중단_요청됨():
@@ -13095,6 +13243,16 @@ def 본문_문장부호_처리():
         현재위치 = hwp.GetPos()
         if 쪽범위_끝지남(현재위치):
             return True
+        if (_알파_일괄서식_문서 and 현재위치[0] == 0
+                and tuple(현재위치[:2]) != 검사문단):
+            검사문단 = tuple(현재위치[:2])
+            if _알파_한줄문단인가(현재위치):
+                hwp_run('MoveParaEnd')
+                문단끝 = hwp.GetPos()
+                hwp_run('MoveNextChar')
+                if hwp.GetPos() == 문단끝:
+                    return True
+                continue
         if ((not 쪽범위_안인가(현재위치)) or (not 재검사_대상인가(현재위치))
                 or 표셀_자간_제외인가()):
             # 작업 쪽 범위 밖, 2차 이후 재검사 대상이 아닌 문단, '표 안 문장 제외'인
@@ -15112,6 +15270,10 @@ def 저장결과_규칙검수(파일, 저장파일, 결과창=True):
 def 문서_처리(파일, index, total, 문장부호기능=True):
     global hwp, 현재_처리파일, 한칸표_보호영역, 최종검수_문서목록
     global 쪽범위_본문_문단, 쪽범위_컨트롤영역, 쪽범위_실제, 기본표서식_적용됨
+    global _표준서식_XML텍스트, _알파_일괄서식_문서, _표준서식_XML간격
+    _표준서식_XML텍스트 = set()
+    _표준서식_XML간격 = {}
+    _알파_일괄서식_문서 = False
     한칸표_보호영역 = set()
     기본표서식_적용됨 = False
     쪽범위_본문_문단 = None
@@ -15235,6 +15397,9 @@ def 문서_처리(파일, index, total, 문장부호기능=True):
     if (표준서식_사용 and 작업_모드 in ('format', 'all') and 쪽범위_요청 is None and 제목4종_사용
             and stage_enabled(선택_세부작업, 'pre_format', 작업_모드)):
         맨앞목록.append((True, '제목·개요 가로 크기', 제목개요폭_hwpx_처리, 'title_width.hwpx', '제목·개요 가로 크기'))
+    if 알파_일괄서식_가능():
+        맨앞목록.append((True, '본문 서식 일괄 적용', 표준서식_hwpx_처리,
+                        'body_format.hwpx', '보고서 표준서식'))
     if 맨앞목록:
         상태(f"{파일명} : " + " · ".join(항목[1] for 항목 in 맨앞목록))
         알림 = {}

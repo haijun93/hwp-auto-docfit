@@ -22,6 +22,14 @@
 
 ## 2. 개발 환경
 
+- `alpha` 소스는 **1.73 Alpha 1**: 기본 보고서 서식을 `docfit_core/batch_format.py`에서 XML 일괄 적용.
+  실행 범위·기존 경로 전환·Windows 비교 도구는 `docs/ALPHA_BATCH_FORMAT.md` 참고.
+  단순·유일한 본문만 XML 완료 대상으로 기록하고 문서마다 초기화한다. COM 표준서식 순회에서
+  글자·문단 모양의 중복 적용을 생략하되 내어쓰기와 위계 상태 추적은 유지한다.
+  한 줄 생략은 현재 한/글 조판을 측정한 본문에만 적용한다. XML lineseg로 추측하지 않는다.
+  사용자 서식의 복사 속성과 쪽 범위 작업은 기존 경로를 유지한다.
+  GitHub Windows 빌드는 alpha 아티팩트를 별도로 만들고 공식 릴리스 자산에는 커밋하지 않는다.
+
 - **Windows 전용**. 한/글 2020이 설치되어 있고 COM 객체 `HwpFrame.HwpObject`를 쓸 수 있어야 실제 문서 처리가 됩니다. 주 화면에는 WebView2 런타임이 필요하며, 사용할 수 없으면 기존 Tk 화면으로 대체합니다.
 - **Python 3.14** 가상환경: `.venv\Scripts\python.exe` (의존성: `requirements.txt` — pywin32, tkinterdnd2, defusedxml, pywebview)
 - 보안 모듈 `MapoHwpAutoDocFitSecurity.dll`이 `hwp-auto-docfit.py`와 같은 폴더에 있어야 합니다(한/글 자동화 보안 승인용, 앱이 최초 실행 시 등록).

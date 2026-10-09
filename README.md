@@ -7,6 +7,9 @@
 
 현재 안내 기준: **1.72 Beta 9**(테스트 베타). 중요한 문서는 사본으로 먼저 시험하고 결과를 확인해 주세요.
 
+개발 중인 **1.73 Alpha 1**은 기본 보고서의 서식을 HWPX에서 일괄 적용합니다.
+[알파 실행·다운로드·검증 안내](docs/ALPHA_BATCH_FORMAT.md)를 참고하세요.
+
 ## 어떤 결과가 나오나요?
 
 [![프로그램 사용 시연 영상 (약 5분). 클릭하면 고화질 영상이 열립니다.](docs/media/overview-demo.gif)](docs/media/overview-demo.mp4)
