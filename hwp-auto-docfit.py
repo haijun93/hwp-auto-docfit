@@ -5603,26 +5603,31 @@ def 문단_내어쓰기_전체_갱신(대상문단=None):
             if not 범위_다음_문단으로_진행():
                 break
             continue
-        현재키 = tuple(hwp.GetPos()[:2])
-        if 현재키 in 붙임번호_대상:
-            기준문단, _ = 붙임번호_대상[현재키]
-            기준키 = 기준문단[0]
-            if 기준키 not in 붙임번호_기준점들:
-                붙임번호_기준점들[기준키] = _붙임번호_기준위치_실측(*기준문단)
-                if 붙임번호_기준점들[기준키] is None:
-                    로그(f"[붙임 내어쓰기] 첫 번호 기준점 측정 실패: {기준문단[1].strip()[:60]}")
-            기준값 = 붙임번호_기준점들[기준키]
-            if 기준값 is None:
-                로그(f"[붙임 내어쓰기] 번호 기준을 측정하지 못했습니다: {text.strip()[:60]}")
-            # 숫자와 점으로 된 어절은 다음 줄의 번호와 세로로 같은 위치다(계단식으로 밀지 않는다).
-            elif not _붙임목록_번호_내어쓰기_적용(hwp.GetPos(), text, 기준값[0]):
-                로그(f"[붙임 내어쓰기] 번호 정렬을 건너뜀: {text.strip()[:60]}")
-        elif (문단_내어쓰기_기준_오프셋(text) is not None
-                and 내어쓰기_기호선택_허용(text)):
-            문단_내어쓰기_적용(hwp.GetPos(), text)
+        _내어쓰기_한문단(text, 붙임번호_대상, 붙임번호_기준점들)
         if not 범위_다음_문단으로_진행():
             break
     return True
+
+
+def _내어쓰기_한문단(text, 붙임번호_대상, 붙임번호_기준점들):
+    """커서가 있는 문단(문단 시작)의 내어쓰기를 계산해 적용한다(문단_내어쓰기_전체_갱신·문단 세트 공용)."""
+    현재키 = tuple(hwp.GetPos()[:2])
+    if 현재키 in 붙임번호_대상:
+        기준문단, _ = 붙임번호_대상[현재키]
+        기준키 = 기준문단[0]
+        if 기준키 not in 붙임번호_기준점들:
+            붙임번호_기준점들[기준키] = _붙임번호_기준위치_실측(*기준문단)
+            if 붙임번호_기준점들[기준키] is None:
+                로그(f"[붙임 내어쓰기] 첫 번호 기준점 측정 실패: {기준문단[1].strip()[:60]}")
+        기준값 = 붙임번호_기준점들[기준키]
+        if 기준값 is None:
+            로그(f"[붙임 내어쓰기] 번호 기준을 측정하지 못했습니다: {text.strip()[:60]}")
+        # 숫자와 점으로 된 어절은 다음 줄의 번호와 세로로 같은 위치다(계단식으로 밀지 않는다).
+        elif not _붙임목록_번호_내어쓰기_적용(hwp.GetPos(), text, 기준값[0]):
+            로그(f"[붙임 내어쓰기] 번호 정렬을 건너뜀: {text.strip()[:60]}")
+    elif (문단_내어쓰기_기준_오프셋(text) is not None
+            and 내어쓰기_기호선택_허용(text)):
+        문단_내어쓰기_적용(hwp.GetPos(), text)
 
 
 def _붙임목록_내어쓰기_대상수집():
@@ -5991,6 +5996,34 @@ def _부연설명_앞빈칸_적용(문단_시작, text, 칸수, 왼쪽여백=Non
         return None
 
 
+def _부연설명_한문단(문단_시작, text, 상태, 부모대상=None):
+    """부연설명 들여쓰기의 문단 하나 처리(상태['부모']에 위 제목/본문 문단을 이어 받는다). 적용했으면 True."""
+    결과 = False
+    if text and text.strip():
+        유형 = _부모문단_유형(text)
+        부모 = 상태.get('부모')
+        if 유형 is not None:
+            상태['부모'] = (문단_시작, 유형)
+        elif _부연설명_문단인가(text):
+            marker, _ = leading_marker(text)
+            들여쓰기_선택 = 표준서식_설정.get("스타일_속성선택", {}).get(marker, {}).get("indent", True)
+            대상 = 부모대상 is None or (부모 is not None and tuple(부모[0][:2]) in 부모대상)
+            칸수 = 부연설명_앞빈칸_수(부모[1] if 부모 else None, marker)
+            if 대상 and 들여쓰기_선택 and 칸수 is not None:
+                왼쪽여백 = None
+                if 부모 is not None:
+                    hwp.SetPos(*부모[0])
+                    왼쪽여백 = int(hwp.ParaShape.Item("LeftMargin"))
+                if _부연설명_앞빈칸_적용(문단_시작, text, 칸수, 왼쪽여백):
+                    결과 = True
+                    내어쓰기_변경문단.add(tuple(문단_시작[:2]))
+            hwp.SetPos(*문단_시작)
+        else:
+            # 제목/본문/내용도 부연설명도 아닌 일반 문단(번호 항목 등)이 끼면 연결이 끊긴다.
+            상태['부모'] = None
+    return 결과
+
+
 def 부연설명_들여쓰기_전체_적용(부모대상=None):
     """각 부연설명(*, **, ※)의 앞 빈칸을 위 문단 유형별 칸 수로 맞춘다(부연설명_앞빈칸).
 
@@ -6015,28 +6048,10 @@ def 부연설명_들여쓰기_전체_적용(부모대상=None):
         문단_시작 = hwp.GetPos()
         text = 현재문단_텍스트()
 
-        if text and text.strip():
-            유형 = _부모문단_유형(text)
-            if 유형 is not None:
-                부모 = (문단_시작, 유형)
-            elif _부연설명_문단인가(text):
-                marker, _ = leading_marker(text)
-                들여쓰기_선택 = 표준서식_설정.get("스타일_속성선택", {}).get(marker, {}).get("indent", True)
-                대상 = 부모대상 is None or (부모 is not None and tuple(부모[0][:2]) in 부모대상)
-                칸수 = 부연설명_앞빈칸_수(부모[1] if 부모 else None, marker)
-                if 대상 and 들여쓰기_선택 and 칸수 is not None:
-                    왼쪽여백 = None
-                    if 부모 is not None:
-                        hwp.SetPos(*부모[0])
-                        왼쪽여백 = int(hwp.ParaShape.Item("LeftMargin"))
-                    결과 = _부연설명_앞빈칸_적용(문단_시작, text, 칸수, 왼쪽여백)
-                    if 결과:
-                        적용수 += 1
-                        내어쓰기_변경문단.add(tuple(문단_시작[:2]))
-                hwp.SetPos(*문단_시작)
-            else:
-                # 제목/본문/내용도 부연설명도 아닌 일반 문단(번호 항목 등)이 끼면 연결이 끊긴다.
-                부모 = None
+        상태 = {'부모': 부모}
+        if _부연설명_한문단(문단_시작, text, 상태, 부모대상):
+            적용수 += 1
+        부모 = 상태['부모']
 
         if not 범위_다음_문단으로_진행():
             break
@@ -6132,6 +6147,25 @@ def _별표_정렬_적용(문단_시작, text, 목표_별표_위치):
         return None
 
 
+def _별표_한문단(문단_시작, text, 상태):
+    """별표(**) 정렬의 문단 하나 처리(상태['별표']에 바로 앞 * 문단의 별표 위치를 이어 받는다). 적용했으면 True."""
+    결과 = False
+    if text and text.strip():
+        marker, _ = leading_marker(text)
+        if marker == "*":
+            상태['별표'] = _별표_위치_실측(문단_시작, text)
+        elif marker == "**":
+            if 상태.get('별표') is not None and _별표_정렬_적용(문단_시작, text, 상태['별표']):
+                결과 = True
+                내어쓰기_변경문단.add(tuple(문단_시작[:2]))
+            상태['별표'] = None
+        else:
+            # 일반 본문이나 다른 구조 기호(※, -, □ 등)가 끼면 별표 연쇄를 끊는다
+            상태['별표'] = None
+    # 빈 문단(공백 줄)은 줄바꿈 여백이므로 상태['별표']를 유지한다.
+    return 결과
+
+
 def 별표_정렬_전체_적용():
     """문서 내 *(주석1) 바로 뒤에 오는 **(주석2)의 둘째 별표 위치를 *에 맞춘다.
 
@@ -6154,21 +6188,10 @@ def 별표_정렬_전체_적용():
         문단_시작 = hwp.GetPos()
         text = 현재문단_텍스트()
 
-        if text and text.strip():
-            marker, _ = leading_marker(text)
-            if marker == "*":
-                직전_별표_위치 = _별표_위치_실측(문단_시작, text)
-            elif marker == "**":
-                if 직전_별표_위치 is not None:
-                    결과 = _별표_정렬_적용(문단_시작, text, 직전_별표_위치)
-                    if 결과:
-                        적용수 += 1
-                        내어쓰기_변경문단.add(tuple(문단_시작[:2]))
-                직전_별표_위치 = None
-            else:
-                # 일반 본문이나 다른 구조 기호(※, -, □ 등)가 끼면 별표 연쇄를 끊는다
-                직전_별표_위치 = None
-        # 빈 문단(공백 줄)은 줄바꿈 여백이므로 직전_별표_위치를 유지한다.
+        상태 = {'별표': 직전_별표_위치}
+        if _별표_한문단(문단_시작, text, 상태):
+            적용수 += 1
+        직전_별표_위치 = 상태['별표']
 
         if not 범위_다음_문단으로_진행():
             break
@@ -10609,6 +10632,206 @@ def 본문_기존자간조정():
         hwp_run("MoveNextChar")
         if hwp.GetPos() == 줄끝:
             return True
+
+# ============================================================
+# 알파: 문단 세트 방식(2026-10-09, 사용자 요청)
+# 지금 방식은 공백 정규화·라벨/괄호·내어쓰기·부연설명·별표·자간·줄 병합을 단계마다 문서 전체로 한 번씩 돈다.
+# 세트 방식은 이 절차들을 두 세트로 묶어 문단 하나에 세트 전체를 차례로 적용한 뒤 다음 문단으로 간다.
+#   세트 1(글·서식): 공백 정규화 9규칙 → 문장부호 뒤 공백 → 라벨/괄호. 끝나면 문두기호 굵게 일관성(문서 전체를 본 뒤
+#                    정해지므로 자간보다 먼저) 한 번.
+#   세트 2(배치): 내어쓰기 → 부연설명 → 별표 정렬 → 자간·단어 분리 → 짧은 줄 병합. 자간이 바뀌면 그 문단만 내어쓰기를
+#                 다시 하고 자간을 재검사(최대 자간_내어쓰기_최대반복회, 2회차부터 다음 단어 당김 제외 — 기존 반복과 같은 규칙).
+# 표 서식·표 칸 자간·쪽 맞춤·배치처럼 문서 단위로 봐야 하는 단계는 기존대로 따로 돈다. 끄면(False) 베타와 같다.
+# ============================================================
+알파_문단세트_사용 = False   # 실측 효과 없음(2026-10-10): 시간 대부분이 줄마다 한/글에 재 보는 작업이라 순회를 묶어도 줄지 않음
+
+
+def 문단세트_가능(회차=1):
+    """세트 방식을 쓸 수 있는 조건(아니면 기존 단계별 방식)."""
+    return bool(알파_문단세트_사용 and 회차 == 1 and 작업_모드 == 'all' and 표준서식_사용
+                and 쪽범위_요청 is None and not stage_enabled(선택_세부작업, 'style_unify'))
+
+
+def 문단세트1_글서식_적용():
+    """세트 1: 문단마다 공백 정규화 → 문장부호 뒤 공백 → 라벨/괄호를 차례로 적용한다."""
+    global _문단글_캐시
+    if 중단_요청됨():
+        return False
+    공백 = stage_enabled(선택_세부작업, 'normalize_space')
+    문장부호 = stage_enabled(선택_세부작업, 'punctuation_space')
+    괄호 = stage_enabled(선택_세부작업, 'parenthesis') and (괄호_축소_사용 or 괄호_라벨_볼드_사용)
+    로그(f"[문단 세트 1] 시작(공백 정규화 {'O' if 공백 else 'X'}, 문장부호 뒤 공백 {'O' if 문장부호 else 'X'}, "
+         f"라벨/괄호 {'O' if 괄호 else 'X'})")
+    allreplace = 0
+    if 공백 and not (한칸표_보호영역 or 쪽범위_사용중()):
+        allreplace = 괄호_안쪽_공백_정리_AllReplace()
+    규칙들 = (문두_미음_기호_정리, 연도_따옴표_정리_문단_처리, 곧은따옴표_통일_문단_처리, 작은따옴표_통일_문단_처리,
+            날짜_구분자_정리_문단_처리, 괄호_안쪽_공백_정리_문단_처리, 쉼표_공백_정리_문단_처리,
+            단어사이_연속공백_정리_문단_처리, 공문_띄어쓰기_정리_문단_처리)
+    수정 = [0] * len(규칙들)
+    문장부호수 = 괄호수 = 방문 = 정체 = 0
+    활성_세트_들여쓰기 = None
+    _일관성_굵게_적용기호.clear()
+    일관성_후보 = []
+    _문단글_캐시 = {} if 알파_문단글_캐시_사용 else None
+    try:
+        순회_시작()
+        while True:
+            if 중단_요청됨():
+                return False
+            시작위치 = hwp.GetPos()
+            방문 += 1
+            if 공백:
+                for i, 규칙 in enumerate(규칙들):
+                    값 = 규칙() or 0
+                    if 값:
+                        _문단글_캐시_비우기()
+                    수정[i] += 값
+            if 문장부호 and 문장부호_뒤_공백_보정_문단_처리():
+                문장부호수 += 1
+                _문단글_캐시_비우기()
+            if 괄호:
+                text = 현재문단_텍스트()
+                세트후속문단 = False
+                if (괄호_라벨_볼드_사용 and 문두기호_굵게_일관성_사용
+                        and not 문두_라벨_굵게_제외_문단인가(text)):
+                    범위 = 일관성_굵게_머리말_범위(text)
+                    if 범위:
+                        일관성_후보.append((hwp.GetPos(), text, 범위))
+                if 활성_세트_들여쓰기 is not None and 세트문장_후속문단인가(활성_세트_들여쓰기, text):
+                    세트후속문단 = True
+                else:
+                    활성_세트_들여쓰기 = None
+                    if 세트문장_시작인가(text):
+                        활성_세트_들여쓰기 = 세트문장_선행들여쓰기_폭(text)
+                결과 = 괄호_및_라벨_텍스트_문단_처리(세트후속문단=세트후속문단)
+                if 결과:
+                    괄호수 += 결과
+            if not 범위_다음_문단으로_진행():
+                break
+            if hwp.GetPos() == 시작위치:
+                정체 += 1
+                if 정체 >= 2:
+                    break
+            else:
+                정체 = 0
+    finally:
+        _문단글_캐시 = None
+    일관성 = 0
+    for 위치, text, (시작, 끝) in 일관성_후보:
+        if 중단_요청됨():
+            return False
+        if 문두기호_키(text) not in _일관성_굵게_적용기호:
+            continue
+        try:
+            문단_범위_선택(위치, 시작, 끝)
+            문자모양_적용_현재선택(굵게=True)
+            hwp_run("Cancel")
+            일관성 += 1
+        except Exception as e:
+            로그(f"문두기호 굵게 일관성 적용 중 오류(무시): {e}")
+    로그(f"[문단 세트 1] 완료(방문 문단 {방문}개 / 괄호 AllReplace {allreplace}회 / 공백 규칙 수정 {sum(수정)}건 "
+         f"{수정} / 문장부호 뒤 공백 {문장부호수}건 / 라벨·괄호 {괄호수}건 / 굵게 일관성 {일관성}건)")
+    return True
+
+
+def _문단세트_줄순회(시작, 처리):
+    """본문 문단 하나의 화면줄마다 처리()를 부른다(기존 본문_기존자간조정·본문_문장부호_처리의 문단 안 부분)."""
+    hwp.SetPos(*시작)
+    직전 = None
+    정체 = 0
+    while not 중단_요청됨():
+        현재 = hwp.GetPos()
+        if 현재[0] != 시작[0] or 현재[1] != 시작[1]:
+            return True
+        if 현재 == 직전:
+            정체 += 1
+            if 정체 >= 2:
+                return True
+        else:
+            정체 = 0
+        직전 = 현재
+        if 처리() is False:
+            return False
+        hwp_run("MoveLineEnd")
+        줄끝 = hwp.GetPos()
+        hwp_run("MoveNextChar")
+        if hwp.GetPos() == 줄끝:
+            return True
+    return False
+
+
+def 문단세트2_배치_적용(문장부호기능=True, 부연설명_단계_사용=False):
+    """세트 2: 문단마다 내어쓰기 → 부연설명 → 별표 → 자간·단어 분리 → 짧은 줄 병합(자간이 바뀌면 그 문단만 반복)."""
+    global 다음단어_당김_사용
+    내어쓰기 = (표준서식_내어쓰기_사용 and stage_enabled(선택_세부작업, 'hanging_indent'))
+    별표 = (not 부연설명_단계_사용) and stage_enabled(선택_세부작업, 'star_align')
+    자간 = stage_enabled(선택_세부작업, 'body_spacing') or stage_enabled(선택_세부작업, 'word_check')
+    줄병합 = stage_enabled(선택_세부작업, 'short_line') and 문장부호기능
+    로그(f"[문단 세트 2] 시작(내어쓰기 {'O' if 내어쓰기 else 'X'}, 부연설명 {'O' if 부연설명_단계_사용 else 'X'}, "
+         f"별표 {'O' if 별표 else 'X'}, 자간 {'O' if 자간 else 'X'}, 줄 병합 {'O' if 줄병합 else 'X'})")
+    붙임번호_대상 = _붙임목록_내어쓰기_대상수집() if 내어쓰기 else {}
+    붙임번호_기준점들 = {}
+    부연상태, 별표상태 = {'부모': None}, {'별표': None}
+    방문 = 반복문단 = 부연수 = 별표수 = 정체 = 0
+    내어쓰기_변경문단.clear()
+    순회_시작()
+    try:
+        while True:
+            if 중단_요청됨():
+                return False
+            hwp_run("MoveParaBegin")
+            시작 = hwp.GetPos()
+            방문 += 1
+            text = 현재문단_텍스트()
+            한칸표 = 현재_한칸표인가()
+            if 내어쓰기 and not 한칸표:
+                hwp.SetPos(*시작)
+                _내어쓰기_한문단(text, 붙임번호_대상, 붙임번호_기준점들)
+            if 부연설명_단계_사용:
+                hwp.SetPos(*시작)
+                if _부연설명_한문단(시작, text, 부연상태):
+                    부연수 += 1
+            if 별표:
+                hwp.SetPos(*시작)
+                if _별표_한문단(시작, text, 별표상태):
+                    별표수 += 1
+            if 시작[0] == 0 and (자간 or 줄병합):
+                hwp.SetPos(*시작)
+                if not (쪽범위_안인가(시작) and 재검사_대상인가(시작)) or (
+                        _알파_일괄서식_문서 and _알파_한줄문단인가(시작)):
+                    pass
+                else:
+                    for 차수 in range(1, 자간_내어쓰기_최대반복 + 1):
+                        if 차수 > 1:
+                            다음단어_당김_사용 = False
+                            반복문단 += 1
+                        변경_전 = 자간_변경_횟수
+                        if 자간 and _문단세트_줄순회(시작, 자간자동조정) is False:
+                            return False
+                        if 줄병합 and _문단세트_줄순회(시작, 문장부호_줄병합_시도) is False:
+                            return False
+                        if 자간_변경_횟수 == 변경_전 or not 내어쓰기:
+                            break
+                        # 자간이 첫 줄 폭을 바꾸면 내어쓰기 기준점이 어긋날 수 있어 이 문단만 다시 맞춘다.
+                        hwp.SetPos(*시작)
+                        _내어쓰기_한문단(현재문단_텍스트(), 붙임번호_대상, 붙임번호_기준점들)
+                    다음단어_당김_사용 = True
+            hwp.SetPos(*시작)
+            if not 범위_다음_문단으로_진행():
+                break
+            if tuple(hwp.GetPos()) == tuple(시작):
+                정체 += 1
+                if 정체 >= 2:
+                    break
+            else:
+                정체 = 0
+    finally:
+        다음단어_당김_사용 = True
+    로그(f"[문단 세트 2] 완료(방문 문단 {방문}개 / 부연설명 {부연수}건 / 별표 {별표수}건 / "
+         f"자간 변경으로 다시 맞춘 문단 {반복문단}회)")
+    return True
+
 
 # ============================================================
 # 문장부호 판정 및 공백 보정
@@ -15898,7 +16121,14 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
             and not (작업_모드 in ('format', 'all') and 표준서식_사용)):
         if not stage('서식통일', 서식통일_전체_적용):
             return False
-    if 작업_모드 in ('format', 'all') and 표준서식_사용 and 회차 == 1:
+    # 알파: 문단 세트 방식(문단마다 여러 절차를 차례로 적용하고 문서는 한 번만 순회). 조건이 맞지 않으면 기존 방식.
+    세트모드 = 문단세트_가능(회차)
+    if 세트모드:
+        로그("[문단 세트] 공백·괄호(세트 1)와 내어쓰기·자간(세트 2)을 문단 단위로 한 번에 처리합니다.")
+    if 작업_모드 in ('format', 'all') and 표준서식_사용 and 회차 == 1 and 세트모드:
+        if not stage('문단 세트 1(공백·문장부호·라벨/괄호)', 문단세트1_글서식_적용):
+            return False
+    if 작업_모드 in ('format', 'all') and 표준서식_사용 and 회차 == 1 and not 세트모드:
         for key, name, action in (
             ('normalize_space', '공백 정규화', 문장내_공백_정규화_전체_적용),
             ('punctuation_space', '문장부호 뒤 공백 보정', 문장부호_뒤_공백_보정_전체_적용),
@@ -15910,6 +16140,7 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
         if stage_enabled(선택_세부작업, 'parenthesis') and (괄호_축소_사용 or 괄호_라벨_볼드_사용):
             if not stage('문두 라벨/괄호 서식', 괄호_텍스트_크기_축소_전체_적용):
                 return False
+    if 작업_모드 in ('format', 'all') and 표준서식_사용 and 회차 == 1:
         # 정밀 프로필·기본 표 서식(준말 '표')은 칸별 서식을 이미 입혔으므로 대표 머리글/본문 값으로 덮지 않는다.
         if (stage_enabled(선택_세부작업, 'table_format') and 표_헤더서식_사용 and not 활성_정밀표_프로필
                 and not 기본표서식_적용됨 and not stage('표 서식', 표_헤더서식_전체_적용)):
@@ -15927,7 +16158,8 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
             return False
     # 내어쓰기는 화면줄의 가로 폭과 줄바꿈을 바꿀 수 있으므로 자간·단어
     # 분리 검사를 수행하기 전에 최종 문단 모양을 먼저 확정한다.
-    if 작업_모드 in ('format', 'all') and 표준서식_사용 and 표준서식_내어쓰기_사용 and stage_enabled(선택_세부작업, 'hanging_indent'):
+    if (not 세트모드 and 작업_모드 in ('format', 'all') and 표준서식_사용 and 표준서식_내어쓰기_사용
+            and stage_enabled(선택_세부작업, 'hanging_indent')):
         if not stage('최종 서식 기준 내어쓰기', 문단_내어쓰기_전체_갱신):
             return False
     # 부연설명은 위 문단의 '실측' 본문 시작 위치에 맞추므로 최종 내어쓰기 뒤에
@@ -15935,15 +16167,27 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
     부연설명_단계_사용 = (작업_모드 in ('format', 'all') and 표준서식_사용
                       and stage_enabled(선택_세부작업, 'supplement_indent')
                       and 부연설명_들여쓰기_사용)
-    if 부연설명_단계_사용:
+    if 부연설명_단계_사용 and not 세트모드:
         if not stage('부연설명 들여쓰기', 부연설명_들여쓰기_전체_적용):
             return False
     # 별표(**) 정렬: 앞선 내어쓰기·부연설명 여백 조정이 끝난 뒤 최종 보정한다.
     # 바로 앞줄 *의 별표 위치에 **의 둘째 별표를 맞추며, 필요하면 앞 빈칸을 지운다.
-    if 작업_모드 in ('format', 'all') and not 부연설명_단계_사용 and stage_enabled(선택_세부작업, 'star_align'):
+    if (not 세트모드 and 작업_모드 in ('format', 'all') and not 부연설명_단계_사용
+            and stage_enabled(선택_세부작업, 'star_align')):
         if not stage('별표(**) 정렬', 별표_정렬_전체_적용):
             return False
-    if 작업_모드 in ('spacing', 'all'):
+    if 세트모드:
+        if not stage('문단 세트 2(내어쓰기·부연설명·별표·자간·줄 병합)',
+                     lambda: 문단세트2_배치_적용(문장부호기능, 부연설명_단계_사용)):
+            return False
+        if (stage_enabled(선택_세부작업, 'control_spacing')
+                or stage_enabled(선택_세부작업, 'control_word_check')):
+            if not stage('표/컨트롤 자간·단어 분리 조정', 컨트롤_내부_자간조정):
+                return False
+        if (stage_enabled(선택_세부작업, 'control_short_line') and 문장부호기능
+                and not stage('표/컨트롤 줄 병합', 컨트롤_내부_문장부호_처리)):
+            return False
+    if 작업_모드 in ('spacing', 'all') and not 세트모드:
         # 자간을 줄이거나 넓히면 문두기호 문장의 첫 줄 폭이 바뀌어
         # 내어쓰기 기준점이 어긋날 수 있다. 자간 변경이 있으면 내어쓰기를
         # 1회 다시 적용하고, 그 결과로 새로 생긴 단어 분리를 다시 검사한다.
