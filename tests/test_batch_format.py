@@ -286,7 +286,7 @@ class BatchComSelectionTests(unittest.TestCase):
     def test_app_processor_uses_actual_rules_and_preserves_heading_and_label_options(self):
         ns = app_functions('알파_일괄서식_가능', '_알파_라벨_굵게범위', '표준서식_hwpx_처리',
                            '표준서식_기호규칙_찾기', '문장부호_마커_끝위치',
-                           '문두_라벨_굵게_제외_문단인가', '괄호_문두_라벨인가', '_문단_본문글')
+                           '문두_라벨_굵게_제외_문단인가', '괄호_문두_라벨인가', '_문단_본문글', '_알파_글꼴형식')
         ns['DOT_MARKERS'] = DOT_MARKERS
         tree = ast.parse((Path(__file__).resolve().parents[1] / 'hwp-auto-docfit.py').read_text(encoding='utf-8'))
         wanted = {'표준서식_설정', '표준서식_기호_별칭', '문두라벨_기호설정', '표준서식_기호_굵게'}
@@ -305,7 +305,7 @@ class BatchComSelectionTests(unittest.TestCase):
                   _문두_무시문자_정규식=re.compile(r'[\s\u200b\u2060\ufeff]+'),
                   괄호_정규식=re.compile(r'\(([^()]+)\)|\[([^\[\]]+)\]'), 제목_xml이름=tag,
                   _표준서식_문단위간격_표=lambda: dict(chapter=15, midtitle=15, box=15, circle=8, dash=4, note=0),
-                  로그=Mock())
+                  _GDI_글꼴인가=lambda name: True, 로그=Mock())
         ns['표준서식_설정']['스타일_속성선택'] = {'-': {'font': False, 'size': False}}
         with tempfile.TemporaryDirectory() as folder:
             source, target = Path(folder) / 'in.hwpx', Path(folder) / 'out.hwpx'
@@ -388,6 +388,18 @@ class BatchComSelectionTests(unittest.TestCase):
         spacing.assert_called_once_with(15)
         character.assert_not_called()
 
+
+class AlphaFontTypeTests(unittest.TestCase):
+    """XML 일괄 서식의 글꼴 형식: 알려진 형식 우선, Windows 글꼴 목록에 있으면 TTF, 없으면 HFT(2026-10-09 검토)."""
+
+    def test_font_type_rule(self):
+        ns = app_functions('_알파_글꼴형식')
+        ns.update(_글꼴형식={'알려진글꼴': 'HFT'}, _GDI_글꼴인가=lambda name: name == '맑은 고딕')
+        f = ns['_알파_글꼴형식']
+        self.assertEqual(f('알려진글꼴'), 'HFT')
+        self.assertEqual(f('맑은 고딕'), 'TTF')
+        self.assertEqual(f('휴먼명조'), 'HFT')   # 한/글 전용 글꼴은 Windows 글꼴 목록에 없다
+        self.assertIsNone(f(None))
 
 if __name__ == '__main__':
     unittest.main()

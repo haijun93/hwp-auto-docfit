@@ -6322,6 +6322,40 @@ def 알파_일괄서식_가능():
                     '복제_들여쓰기_유지', '복귀_간격', '제목뒤_간격')))
 
 
+_GDI_글꼴 = None
+
+
+def _GDI_글꼴인가(글꼴):
+    """Windows 글꼴(GDI) 목록에 있는지. 처음 한 번만 읽는다(한글 이름으로 비교된다)."""
+    global _GDI_글꼴
+    if _GDI_글꼴 is None:
+        이름들 = set()
+        hdc = win32gui.GetDC(0)
+        try:
+            win32gui.EnumFontFamilies(hdc, None, lambda lf, tm, ft, data: 이름들.add(lf.lfFaceName) or 1, None)
+        finally:
+            win32gui.ReleaseDC(0, hdc)
+        _GDI_글꼴 = 이름들
+    return 글꼴 in _GDI_글꼴
+
+
+def _알파_글꼴형식(글꼴):
+    """XML 일괄 서식에 쓸 글꼴 형식(TTF/HFT). 알 수 없으면 None(그 문단은 기존 COM 경로가 형식을 확인해 처리).
+
+    COM 경로는 TTF로 해 보고 실패하면 HFT로 다시 하지만 XML은 다시 해 볼 수 없다. 예전에는 늘 TTF로 넣어
+    한/글 전용 글꼴(휴먼명조·한양신명조 등 HFT, Windows 글꼴 목록에 없음)을 잘못된 형식으로 등록했다(2026-10-09 검토).
+    Windows 글꼴 목록에 있으면 TTF, 없으면 HFT로 본다(COM 경로가 다시 시도해 얻는 결과와 같다).
+    """
+    if not 글꼴:
+        return None
+    if _글꼴형식.get(글꼴):
+        return _글꼴형식[글꼴]
+    try:
+        return "TTF" if _GDI_글꼴인가(글꼴) else "HFT"
+    except Exception:
+        return None
+
+
 def _알파_라벨_굵게범위(text):
     if not 괄호_라벨_볼드_사용 or 문두_라벨_굵게_제외_문단인가(text):
         return ()
@@ -6372,6 +6406,9 @@ def 표준서식_hwpx_처리(source, target=None, selections=None):
             lead = max(0, lead - 1)
         formatted = ' ' * lead + readable.lstrip()
         selected = 표준서식_설정.get('스타일_속성선택', {}).get(symbol, {})
+        글꼴형식 = _알파_글꼴형식(font) if selected.get('font', True) else None
+        if selected.get('font', True) and font and 글꼴형식 is None:
+            return None      # 글꼴 형식을 모르면 기존 COM 경로(TTF↔HFT 확인)로 처리한다
         enabled = 표준서식_기호_굵게.get(symbol, True)
         bold = bool(paragraph_bold and enabled)
         spans = list(_알파_라벨_굵게범위(formatted))
@@ -6379,7 +6416,7 @@ def 표준서식_hwpx_처리(source, target=None, selections=None):
             spans.append((lead, lead + 1))
         return ParagraphStyle(
             text=formatted, font=font if selected.get('font', True) else None,
-            font_type=_글꼴형식.get(font),
+            font_type=글꼴형식,
             size_pt=size if selected.get('size', True) else None,
             bold=bold if '복사_문단모양' in 표준서식_설정 else (True if bold else None),
             ratio=표준서식_설정['기본_장평'] if 표준서식_장평_사용 else None,
