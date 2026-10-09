@@ -106,6 +106,8 @@ def main():
     parser.add_argument('--exclude-tables', action='store_true', help="'표 제외'를 켠 것과 같게 처리")
     parser.add_argument('--out', help='결과 JSON 경로(기본: 표준 출력)')
     parser.add_argument('--log-dir', help='문서별 작업 로그를 남길 폴더(처리 시간 계측 확인용)')
+    parser.add_argument('--require-same-layout', action='store_true',
+                        help='쪽 구성(원본과 같음)을 합격 조건으로 쓴다(서식 통일의 원본 쪽 구성 유지 시험용)')
     parser.add_argument('--beta-mode', action='store_true', help="알파 새 기능('알파_…_사용' 플래그)을 모두 끄고 베타 동작으로 처리")
     args = parser.parse_args()
 
@@ -123,7 +125,8 @@ def main():
                 try:
                     app.RegisterModule(g['REGISTER_MODULE_NAME'], g['REGISTER_MODULE_VALUE'])
                     g.update(로그=lambda *a: None, 진단로그=lambda *a: None)
-                    원, 원쪽, 원나눔 = 쪽구성(g, app, 사본)
+                    # TXT·MD 등은 원본에 쪽 구성이 없어 결과만 잰다(쪽 구성 비교 없음).
+                    원, 원쪽, 원나눔 = (쪽구성(g, app, 사본) if 사본.suffix in ('.hwp', '.hwpx') else ([], None, 0))
                     결, 결쪽, 결나눔 = 쪽구성(g, app, 결과)
                 finally:
                     app.Quit()
@@ -133,7 +136,7 @@ def main():
                 항목.update({'pages': {'original': 원쪽, 'result': 결쪽},
                            'reports': {'original': 원, 'result': 결, 'different': 다른},
                            'page_breaks': {'original': 원나눔, 'result': 결나눔},
-                           'layout_same': not 다른 and 원쪽 == 결쪽 and 결나눔 <= max(0, len(결) - 1)})
+                           'layout_same': (None if 원쪽 is None else not 다른 and 원쪽 == 결쪽 and 결나눔 <= max(0, len(결) - 1))})
             if args.log_dir:
                 로그파일.flush()
                 Path(args.log_dir).mkdir(parents=True, exist_ok=True)
@@ -144,7 +147,9 @@ def main():
     if args.out:
         Path(args.out).write_text(text, encoding='utf-8')
     print(text)
-    return 0 if all(x.get('layout_same') for x in 보고) else 1
+    # 쪽 구성 동일은 서식 통일 전용 원칙이라(2026-10-09) --require-same-layout일 때만 합격 조건이다.
+    return 0 if all(x.get('output_created') and (not args.require_same_layout or x.get('layout_same') is not False)
+                    for x in 보고) else 1
 
 
 if __name__ == '__main__':
