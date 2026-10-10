@@ -376,7 +376,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리"
-APP_VERSION = "1.73 Alpha 1"
+APP_VERSION = "1.73"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 GITHUB_UPDATE_API_URL = "https://api.github.com/repos/haijun93/hwp-auto-docfit/releases/latest"
@@ -20902,7 +20902,7 @@ class HwpAutoDocFitGUI:
                 그림칸 = tk.Label(카드, image=그림, bg="#FFFFFF", cursor="hand2")
             else:
                 그림칸 = tk.Label(카드, text="예시 그림 없음\n\n'서식 예시 확인'을 누르면\n예시를 만들어 그림이 생겨요",
-                               width=32, height=20, bg="#EEF2F7", fg="#5B6475", cursor="hand2")
+                               width=26, height=20, wraplength=220, bg="#EEF2F7", fg="#5B6475", cursor="hand2")
             그림칸.pack(padx=6, pady=(6, 2))
             제목 = tk.Label(카드, text=("✔ " if 고름 else "") + 이름 + (f"\n{기관}" if 기관 else ""),
                           font=("맑은 고딕", 11, "bold"), bg="#FFFFFF", fg="#1E3A8A" if 고름 else "#111827",
