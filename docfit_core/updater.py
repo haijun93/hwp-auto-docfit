@@ -40,6 +40,19 @@ def verify_download(size, head, sha256_hex, expected_size=None, expected_hash=No
     return None
 
 
+def launch_environment(environ):
+    """업데이트 스크립트에 넘길 환경 변수: PyInstaller 단일 실행 파일의 내부 변수(_PYI_*, _MEIPASS2)를 뺀다.
+
+    구버전이 넘긴 이 변수가 남으면 같은 경로에 들어간 새 exe가 자신을 구버전의 자식 프로세스로 알고 이미 지워진
+    구버전 임시 폴더(_MEI…)에서 python312.dll을 찾다가 'Failed to load Python DLL'로 멈췄다(2026-10-10 사용자
+    업데이트 오류). PYINSTALLER_RESET_ENVIRONMENT=1은 새 exe가 언제나 새로 시작하게 한다.
+    """
+    env = {k: v for k, v in dict(environ).items()
+           if not k.upper().startswith("_PYI_") and k.upper() != "_MEIPASS2"}
+    env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    return env
+
+
 def install_script():
     """구버전을 신버전으로 교체하는 PowerShell 스크립트 본문(매개변수로 경로·PID를 받는다)."""
     return r'''param([string]$WaitPidList, [string]$Downloaded, [string]$Target, [string]$Log, [string]$Sha256,
@@ -52,6 +65,10 @@ function Retry([scriptblock]$Action, [string]$What) {
     }
 }
 $Old = "$Target.old"
+# PyInstaller 단일 실행 파일의 내부 변수를 지운다. 남아 있으면 새로 실행한 exe가 이미 지워진 구버전 임시 폴더에서
+# python312.dll을 찾다가 'Failed to load Python DLL'로 멈춘다(2026-10-10 업데이트 오류).
+Get-ChildItem Env: | Where-Object { $_.Name -like '_PYI_*' -or $_.Name -eq '_MEIPASS2' } | ForEach-Object { Remove-Item -LiteralPath ("Env:" + $_.Name) -ErrorAction SilentlyContinue }
+$env:PYINSTALLER_RESET_ENVIRONMENT = '1'
 Write-Log "업데이트 시작: $Downloaded -> $Target"
 if ($BusyFlag) { try { Set-Content -LiteralPath $BusyFlag -Value $PID -Encoding UTF8 } catch {} }
 # PID 목록은 글자 하나로 받아 직접 나눈다(-File로 넘긴 '1,2'는 [int[]]가 아니라 숫자 12로 묶였다. Beta 12 리뷰 R1).

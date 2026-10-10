@@ -339,7 +339,8 @@ class PipelineReviewTest(unittest.TestCase):
         # 제목·개요 가로 크기는 맨 앞(준말 변환과 같은 스냅숏)에서 맞추고, 글자 서식·제목/붙임·기본 표 서식·표 칸
         # 너비는 그 뒤 순서대로 한 번에 처리한다(스냅숏·다시 열기 1회).
         self.assertEqual(calls, [['제목·개요 가로 크기'],
-                                 ['별표 위첨자', '붙임 글꼴', '제목·개요', '중제목', '붙임', '기본 표 서식', '표 칸 너비']])
+                                 ['별표 위첨자', '붙임 글꼴', '제목·개요', '중제목', '붙임', '기본 표 서식', '표 칸 너비',
+                              '표 날짜 칸 한 줄']])
         self.assertTrue(seen['table_style_applied'])
 
     def _unify_plan(self, 검증만, extra, samples):
