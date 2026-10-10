@@ -310,8 +310,7 @@ class FormatElementsTest(unittest.TestCase):
         # 'ㅇ (개요) 본문': 기호 뒤 글 시작 = ㅇ(1500)+빈칸(750) = 2250, 라벨 뒤 = 7500 (15pt, 장평 100)
         text = "ㅇ (개요) 본문 문장입니다"
         marker, label = (0, 1), (2, 6)
-        # 라벨 뒤 기준은 폐지(2026-10-10): 예시가 라벨 뒤에 맞춰져 있어도 기호 뒤 기준으로 통일한다.
-        for indent, rule in ((-7500, "after_marker"), (-2250, "after_marker"), (-5000, "fixed"), (0, "none")):
+        for indent, rule in ((-7500, "after_label"), (-2250, "after_marker"), (-5000, "fixed"), (0, "none")):
             self.assertEqual(fe.hanging_rule(text, {"indent": indent, "size": 1500}, marker, label, 1), rule)
         self.assertEqual(self.group("ㅇ")["elements"]["hanging_rule"]["value"], "fixed")
 
@@ -369,7 +368,7 @@ class FormatElementsTest(unittest.TestCase):
                    "element_analysis": analysis}
         fe.apply_to_profile(profile)
         fmt, options = profile["format"], profile["options"]
-        self.assertEqual(fmt["내어쓰기_규칙"]["ㅇ"], "after_marker")      # 저장된 after_label은 기호 뒤로 읽는다
+        self.assertEqual(fmt["내어쓰기_규칙"]["ㅇ"], "after_label")
         self.assertNotIn("Indentation", fmt["복사_문단모양"]["ㅇ"])     # 규칙으로 계산하므로 첫 줄 값은 복사하지 않음
         self.assertTrue(options["std_hanging_indent"])
         self.assertTrue(options["paren_label_bold"])
@@ -378,7 +377,7 @@ class FormatElementsTest(unittest.TestCase):
         self.assertEqual(fmt["괄호_축소_pt"], 2.0)
         # 예시에 ㅇ만 있으면 같은 계층의 ○에도 같은 값을 둔다(○↔ㅇ 동등 기호, 2026-10-04).
         self.assertEqual(fmt["복귀_간격"], {"ㅇ": 2400, "○": 2400})
-        self.assertEqual(fmt["내어쓰기_규칙"]["○"], "after_marker")
+        self.assertEqual(fmt["내어쓰기_규칙"]["○"], "after_label")
         self.assertEqual(fmt["괄호_축소_기호별"]["ㅇ"], 2.0)          # 괄호 줄임은 계층마다 둔다
         self.assertEqual(fmt["제목뒤_간격"], 1400)
 
