@@ -349,6 +349,7 @@ from docfit_core import connector_tabs as 연결부호탭
 from docfit_core import colon_labels as 콜론라벨
 from docfit_core import spacing_reset as 자간초기화모듈
 from docfit_core import char_ranges as 글자구간모듈
+from docfit_core import text_edit as 글고치기모듈
 from docfit_core import format_elements as 서식요소
 from docfit_core.table_width import fit_table as 표너비_맞춤, is_target as 표너비_대상인가
 from docfit_core import (
@@ -9848,9 +9849,10 @@ def 라벨괄호_hwpx_처리(source, target=None, selections=None):
     styles = 글자구간모듈.CharStyles(header)
     전 = {n: 제목_문자열(roots[n]) for n in names}
     총, 굵게기호, 일관성_후보 = 0, set(), []
+    _, 여러칸표_문단 = 표안_문단_구분(roots.values())     # 한/글 경로처럼 여러 칸 표 안 문단은 다루지 않는다
     for n in names:
         활성_세트_들여쓰기 = None
-        for para in [x for x in roots[n].iter() if 제목_xml이름(x) == 'p']:
+        for para in [x for x in roots[n].iter() if 제목_xml이름(x) == 'p' and id(x) not in 여러칸표_문단]:
             text = 글자구간모듈.paragraph_text(para)
             if (괄호_라벨_볼드_사용 and 항목기호_굵게_일관성_사용 and not 문두_라벨_굵게_제외_문단인가(text)):
                 범위 = 일관성_굵게_머리말_범위(text)
@@ -9887,6 +9889,125 @@ def 라벨괄호_hwpx_처리(source, target=None, selections=None):
     _hwpx_안전_저장(contents, target)
     로그(f"문두 라벨 / 괄호 처리 완료(XML) (총 {총 + 일관성}건, 항목기호 굵게 일관성 {일관성}건)")
     return 총 + 일관성
+
+
+def 표안_문단_구분(roots):
+    """(한 칸 표 안 문단 id 집합, 여러 칸 표 안 문단 id 집합). 한/글 경로의 문단 순회(MoveParaEnd·MoveNextChar)는
+    본문과 한 칸 표 안 문단만 돌고 여러 칸 표 안 문단은 돌지 않는다(2026-10-11 test4 실측: 제목 표 날짜·담당자 칸,
+    일반 표 머리글 '구  분'은 손대지 않음). XML 글 규칙·라벨 처리도 같은 범위만 다룬다."""
+    한칸, 여러칸 = set(), set()
+    for root in roots:
+        for tbl in [x for x in root.iter() if 제목_xml이름(x) == 'tbl']:
+            대상 = 한칸 if tbl.get('rowCnt') == '1' and tbl.get('colCnt') == '1' else 여러칸
+            대상.update(id(x) for x in tbl.iter() if 제목_xml이름(x) == 'p')
+    return 한칸 - 여러칸, 여러칸
+
+
+def 공백규칙_글변환(text, 한칸표=False):
+    """문장 내 공백 정규화 10개 규칙을 한/글 경로(_문장내_공백_정규화_순회)와 같은 순서로 문단 글에 적용한다(순수 함수, 알파 1-c).
+
+    한칸표(1행 1열 표 안 문단)이면 문두 ㅁ·괄호 안 공백·쉼표·콜론·연속 공백 규칙을 건너뛴다(한/글 경로와 같음)."""
+    s = text or ""
+    if not s:
+        return s
+    if not 한칸표:
+        off = 문두_미음_기호_위치(s)
+        if off is not None:
+            s = s[:off] + "□" + s[off + 1:]
+    for m in reversed(list(YEAR_QUOTE_PATTERN.finditer(s))):
+        s = s[:m.start()] + "’" + s[m.end():]
+    for i, r in reversed(straight_double_quote_replacements(s)):
+        s = s[:i] + r + s[i + 1:]
+    for i, r in reversed(curly_single_quote_replacements(s)):
+        s = s[:i] + r + s[i + 1:]
+    s = normalize_date_range_marks(s)
+    if not 한칸표:
+        # 한/글 경로: 한 칸 표가 있는 문서는 문서 전체 바꾸기를 하지 않고, 문단 보정은 한 칸 표 안 문단을 건너뛴다.
+        s = 괄호_안쪽_공백_패턴.sub("", s)
+        for a, b in reversed(쉼표_공백_보정_대상(s) or []):
+            s = s[:a] + ", " + s[b:]
+        for a, b, 교체 in reversed(콜론_공백_보정_대상(s) or []):
+            s = s[:a] + (교체 or "") + s[b:]
+        for a, b in reversed(단어사이_연속공백_정리_대상(s) or []):
+            s = s[:a] + " " + s[b:]
+    공문 = normalize_official_spacing(s)
+    if normalize_attachment_list_header(s) != s:
+        공문 = normalize_attachment_list_header(공문)
+    return 공문
+
+
+def 문장부호뒤공백_글변환(text, 한칸표=False):
+    """항목기호 뒤 공백을 표준 반각 한 칸으로(문장부호_뒤_공백_보정_문단_처리와 같은 판정, 순수 함수)."""
+    if 한칸표 or not text:
+        return text
+    마커_끝 = 문장부호_마커_끝위치(text)
+    조치 = marker_space_fix(text, 마커_끝)
+    if 조치 is None:
+        return text
+    if 조치 == "replace":
+        return text[:마커_끝] + " " + text[마커_끝 + 1:]
+    return text[:마커_끝] + " " + text[마커_끝:]
+
+
+# 알파 1-c(2026-10-11): 공백 정규화·문장부호 뒤 공백(·서식통일이 꺼져 있으면 문두 라벨/괄호까지)을 지금 열린 문서의 HWPX에서
+# 한 번에 처리하고 다시 연다(한/글 문단별 수정 세 단계 대신). 끄면 예전 한/글 경로. 한 칸 표 보호·쪽 범위 작업은 예전 경로.
+알파_글규칙_XML_사용 = True
+_글규칙_XML_구성 = {"space": False, "punct": False, "label": False}
+
+
+def 글규칙_hwpx_처리(source, target=None, selections=None):
+    """_글규칙_XML_구성에 따라 공백 규칙 → 문장부호 뒤 공백 → 문두 라벨/괄호 서식을 모든 문단에 적용한다."""
+    구성 = dict(_글규칙_XML_구성)
+    with zipfile.ZipFile(source) as z:
+        contents = {n: z.read(n) for n in z.namelist()}
+    for name, data in contents.items():
+        if name.startswith('Contents/') and name.endswith('.xml'):
+            for _, pair in ET.iterparse(io.BytesIO(data), events=('start-ns',)):
+                if not re.fullmatch(r'ns\d+', pair[0]): XML_네임스페이스_등록(*pair)
+    names = sorted((n for n in contents if re.fullmatch(r'Contents/section\d+\.xml', n)),
+                   key=lambda n: int(re.search(r'section(\d+)', n).group(1)))
+    if selections is None:
+        return {n: [0] for n in names}
+    if not any(selections.values()):
+        if target is not None: shutil.copyfile(source, target)
+        return 0
+    roots = {n: safe_xml_fromstring(contents[n]) for n in names}
+    # 한 칸 표 안 문단은 공백·문장부호 규칙 일부를 건너뛰고(한칸표_보호영역), 여러 칸 표 안 문단은 다루지 않는다.
+    한칸표_문단, 여러칸표_문단 = 표안_문단_구분(roots.values())
+    공백수 = 기호수 = 0
+    for n in names:
+        for para in [x for x in roots[n].iter() if 제목_xml이름(x) == 'p' and id(x) not in 여러칸표_문단]:
+            글 = 글고치기모듈.paragraph_text(para)
+            새글 = 글
+            한칸 = id(para) in 한칸표_문단
+            if 구성["space"]:
+                새글 = 공백규칙_글변환(새글, 한칸표=한칸)
+            if 새글 != 글:
+                공백수 += 1
+            if 구성["punct"]:
+                기호뒤 = 문장부호뒤공백_글변환(새글, 한칸표=한칸)
+                기호수 += 기호뒤 != 새글
+                새글 = 기호뒤
+            if 새글 != 글:
+                글고치기모듈.apply_text(para, 새글)
+    for n in names:
+        contents[n] = ET.tostring(roots[n], encoding='utf-8', xml_declaration=True)
+    중간 = Path(str(target) + '.text.hwpx')
+    _hwpx_안전_저장(contents, 중간)
+    로그(f"글 규칙(XML): 공백 정규화 문단 {공백수}개 · 문장부호 뒤 공백 {기호수}개")
+    try:
+        if 구성["label"]:
+            결과 = 라벨괄호_hwpx_처리(중간, target, 라벨괄호_hwpx_처리(중간))
+            if not 결과:
+                shutil.copyfile(중간, target)
+        else:
+            shutil.copyfile(중간, target)
+    finally:
+        try:
+            중간.unlink()
+        except OSError:
+            pass
+    return 1
 
 
 def 현재문서_XML단계_적용(이름, 처리함수, 파일명):
@@ -17364,15 +17485,29 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
         if not stage('문단 세트 1(공백·문장부호·라벨/괄호)', 문단세트1_글서식_적용):
             return False
     if 작업_모드 in ('format', 'all') and 표준서식_사용 and 회차 == 1 and not 세트모드:
-        for key, name, action in (
-            ('normalize_space', '공백 정규화', 문장내_공백_정규화_전체_적용),
-            ('punctuation_space', '문장부호 뒤 공백 보정', 문장부호_뒤_공백_보정_전체_적용),
-            ('style_unify', '서식통일', 서식통일_전체_적용),
+        # 알파 1-c: 공백 정규화·문장부호 뒤 공백(·서식통일이 꺼져 있으면 라벨/괄호)을 XML 한 번으로.
+        라벨_사용 = stage_enabled(선택_세부작업, 'parenthesis') and (괄호_축소_사용 or 괄호_라벨_볼드_사용)
+        XML묶음 = {}
+        if 알파_글규칙_XML_사용 and 쪽범위_요청 is None:
+            XML묶음 = {"space": stage_enabled(선택_세부작업, 'normalize_space'),
+                     "punct": stage_enabled(선택_세부작업, 'punctuation_space'),
+                     "label": 라벨_사용 and not stage_enabled(선택_세부작업, 'style_unify')}
+            if any(XML묶음.values()):
+                _글규칙_XML_구성.update(XML묶음)
+                if not stage('공백·문장부호·라벨(XML)',
+                             lambda: 현재문서_XML단계_적용('공백·문장부호·라벨', 글규칙_hwpx_처리, 'text_rules.hwpx')):
+                    return False
+        for key, name, action, 묶음키 in (
+            ('normalize_space', '공백 정규화', 문장내_공백_정규화_전체_적용, 'space'),
+            ('punctuation_space', '문장부호 뒤 공백 보정', 문장부호_뒤_공백_보정_전체_적용, 'punct'),
+            ('style_unify', '서식통일', 서식통일_전체_적용, None),
             # 보고서 표준서식은 준말 변환 다음 다른 모든 단계보다 먼저 이미 입혔다(표준서식_선행_적용).
         ):
+            if XML묶음.get(묶음키):
+                continue
             if stage_enabled(선택_세부작업, key) and not stage(name, action):
                 return False
-        if stage_enabled(선택_세부작업, 'parenthesis') and (괄호_축소_사용 or 괄호_라벨_볼드_사용):
+        if 라벨_사용 and not XML묶음.get("label"):
             if not stage('문두 라벨/괄호 서식', 괄호_텍스트_크기_축소_전체_적용):
                 return False
     if 작업_모드 in ('format', 'all') and 표준서식_사용 and 회차 == 1:
