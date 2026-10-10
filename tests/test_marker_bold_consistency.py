@@ -57,7 +57,7 @@ class MarkerBoldConsistencyTest(unittest.TestCase):
             '문단_범위_선택': select, '문자모양_적용_현재선택': lambda **kw: None,
             'hwp_run': lambda cmd: True, '로그': Mock(), '진단로그': Mock(),
             '괄호_라벨_볼드_사용': True, '_일관성_굵게_적용기호': set(),
-            '문두기호_굵게_일관성_사용': enabled,
+            '항목기호_굵게_일관성_사용': enabled,
             '세트문장_시작인가': lambda t: False, '세트문장_후속문단인가': lambda *a: False,
         }):
             self.assertTrue(fn())
@@ -77,7 +77,7 @@ class MarkerBoldConsistencyTest(unittest.TestCase):
 
     def test_setting_defaults_on(self):
         self.assertIs(self.ns['기본_설정']['std_marker_bold_consistency'], True)
-        self.assertTrue(self.ns['문두기호_굵게_일관성_사용'])
+        self.assertTrue(self.ns['항목기호_굵게_일관성_사용'])
 
     def test_no_bold_label_for_marker_means_no_change(self):
         paragraphs = ['  - 조례제정 (무료 셔틀버스 운행에 관한 조례 제정)',

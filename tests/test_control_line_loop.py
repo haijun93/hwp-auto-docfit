@@ -116,7 +116,7 @@ class NumericCellTest(unittest.TestCase):
             self.assertFalse(self.check(text), text)
 
     def test_label_only_line_is_skipped_not_document_error(self):
-        # 문두기호·라벨만 있는 화면줄은 자간을 줄일 본문이 없다. 예전에는 hwp_run의 거절이 일반 오류라
+        # 항목기호·라벨만 있는 화면줄은 자간을 줄일 본문이 없다. 예전에는 hwp_run의 거절이 일반 오류라
         # 문서 전체가 실패했다(범정부오피스 인천 업무보고 서식, 한 번에 적용). 이제 그 줄만 건너뛴다.
         ns = self.ns
         doc = Mock()

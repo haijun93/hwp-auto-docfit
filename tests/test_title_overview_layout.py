@@ -139,7 +139,7 @@ class TitleOverviewLayoutTest(unittest.TestCase):
         return result
 
     def test_no_blank_line_before_first_marker_sentence(self):
-        # 제목·개요 표와 첫 문두기호 문장 사이는 문단 위 여백으로만 띄우고 빈 줄은 지운다.
+        # 제목·개요 표와 첫 항목기호 문장 사이는 문단 위 여백으로만 띄우고 빈 줄은 지운다.
         title, overview = self._tables()
         line = '<hp:p id="0" paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:t>{}</hp:t></hp:run></hp:p>'
         body = (self._table_p(title) + BLANK + self._table_p(overview) + BLANK + BLANK
@@ -148,7 +148,7 @@ class TitleOverviewLayoutTest(unittest.TestCase):
         fn = self.ns['제목_hwpx_처리']
         target = source.with_name('marker.hwpx')
         fn(source, target, fn(source))
-        # 문두기호 문장 사이 빈 줄은 이 단계가 아니라 표준서식의 빈 줄 삭제가 맡는다.
+        # 항목기호 문장 사이 빈 줄은 이 단계가 아니라 표준서식의 빈 줄 삭제가 맡는다.
         self.assertEqual(self._kinds(target), ['secPr', 'tbl', 'tbl', '□ 활용대상 : 전기버스 4대', 'blank',
                                                'ㅇ (개요) 본문'])
 
@@ -170,12 +170,12 @@ class TitleOverviewLayoutTest(unittest.TestCase):
         line = '<hp:p id="0" paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:t>{}</hp:t></hp:run></hp:p>'
         fn = self.ns['준말_hwpx_처리']
         with patch.dict(fn.__globals__, {'준말_등록표': merge_with_defaults({})}):
-            # 개요가 없으면 제목 표 뒤 빈 줄을 첫 문두기호 문장 앞까지 지운다.
+            # 개요가 없으면 제목 표 뒤 빈 줄을 첫 항목기호 문장 앞까지 지운다.
             source = self._doc(line.format('제목1: 지구 침공계획(안) 보고') + BLANK + line.format('ㅇ (목적) 보고'))
             target = source.with_name('title-only.hwpx')
             fn(source, target, fn(source))
             self.assertEqual(self._kinds(target), ['secPr', 'tbl', 'ㅇ (목적) 보고'])
-            # 빈 줄 다음이 문두기호 문장이 아니면(일반 글) 빈 줄을 그대로 둔다.
+            # 빈 줄 다음이 항목기호 문장이 아니면(일반 글) 빈 줄을 그대로 둔다.
             source = self._doc(line.format('제목1: 지구 침공계획(안) 보고') + BLANK + line.format('일반 안내 글'))
             target = source.with_name('title-plain.hwpx')
             fn(source, target, fn(source))

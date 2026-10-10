@@ -169,7 +169,7 @@ class UnifyEngineTests(unittest.TestCase):
             marks.assert_not_called()
 
     def test_markers_hidden_by_fixed_width_spaces_are_sampled(self):
-        # 한/글 GetText가 고정폭 빈칸을 빼서 'ㅇ본문'으로 돌려줘도 원문으로 문두기호를 찾는다.
+        # 한/글 GetText가 고정폭 빈칸을 빼서 'ㅇ본문'으로 돌려줘도 원문으로 항목기호를 찾는다.
         paragraphs = [(f'ㅇ본문{i}', '함초롬바탕', 1500, '#000000') for i in range(3)]
         paragraphs.append(('ㅇ붙여넣은문장', '한컴돋움', 1000, '#000000'))
         with self.document(paragraphs,

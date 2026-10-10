@@ -1338,7 +1338,7 @@ class _WorkspaceState extends State<Workspace> {
                     ),
                     const SizedBox(height: 4),
                     const Text(
-                      '제목·개요 표, 문두기호 문장, 표의 글꼴·크기·문단 모양을 분석해 새 서식으로 복제해요. '
+                      '제목·개요 표, 항목기호 문장, 표의 글꼴·크기·문단 모양을 분석해 새 서식으로 복제해요. '
                       '분석이 끝나면 이름과 세부값을 확인하는 창이 열리고, 저장하면 바로 이 서식을 써요.',
                       style: TextStyle(fontSize: 12, color: _muted, height: 1.5),
                       textAlign: TextAlign.center,
@@ -1444,7 +1444,7 @@ class _WorkspaceState extends State<Workspace> {
           ),
         ),
         const SizedBox(width: 8),
-        // 고른 서식을 예시 보고서(제목·개요·중제목·문두기호 문장·표·붙임)에 입혀 한/글로 미리 보여 준다.
+        // 고른 서식을 예시 보고서(제목·개요·중제목·항목기호 문장·표·붙임)에 입혀 한/글로 미리 보여 준다.
         Tooltip(
           message: '고른 서식을 입힌 예시 보고서를 한/글로 보여 줘요(서식마다 처음 한 번 1분쯤 걸려 만들고, 그다음부터는 보관한 예시를 바로 열어요)',
           child: TextButton(
@@ -1971,7 +1971,7 @@ class _WorkspaceState extends State<Workspace> {
             leading: const Icon(Icons.tune),
             title: const Text('전체 설정 열기'),
             subtitle: const Text(
-              '글꼴·문두기호·자간 한도 등 모든 값을 바꿔요.',
+              '글꼴·항목기호·자간 한도 등 모든 값을 바꿔요.',
               style: TextStyle(fontSize: 12, color: _muted),
             ),
             trailing: const Icon(Icons.open_in_new, size: 18),

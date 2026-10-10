@@ -64,7 +64,8 @@ def apply_reviewed_styles(profile, rows):
     fmt = updated["format"]
     fmt["스타일_속성선택"] = {}
     fmt["논리역할_규칙"] = {}
-    fmt["문두기호_역할"] = {}
+    fmt.pop("문두기호_역할", None)      # 예전 키(용어 변경 전)
+    fmt["항목기호_역할"] = {}
     # A marker can appear with several visual variants. The most frequent
     # reviewed variant is the deterministic application rule for that marker.
     chosen = {}
@@ -83,7 +84,7 @@ def apply_reviewed_styles(profile, rows):
         old[2], old[3] = item["font"], item["size_pt"]
         rules[marker] = old
         fmt["스타일_속성선택"][marker] = item["apply"]
-        fmt["문두기호_역할"][marker] = item["role"]
+        fmt["항목기호_역할"][marker] = item["role"]
         paragraph_shapes[marker] = {
             **paragraph_shapes.get(marker, {}),
             "LeftMargin": item["left_hwpunit"],

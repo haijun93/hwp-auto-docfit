@@ -124,7 +124,7 @@ class StartupTest(unittest.TestCase):
         self.assertEqual(doc.GetPos(), (0, 0, 0))
 
     def test_hanging_indent_basis_paren_labels_use_marker_colon_labels_use_body(self):
-        # 2026-10-10 개정: 괄호 라벨 '( )'은 라벨 뒤가 아니라 문두기호 뒤 첫 글자('('), 콜론 ':' 라벨은 현행(콜론 뒤 본문).
+        # 2026-10-10 개정: 괄호 라벨 '( )'은 라벨 뒤가 아니라 항목기호 뒤 첫 글자('('), 콜론 ':' 라벨은 현행(콜론 뒤 본문).
         source = Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"
         namespace = runpy.run_path(str(source), run_name="hanging_indent_offset_test")
         offset = namespace["문단_내어쓰기_기준_오프셋"]
@@ -132,7 +132,7 @@ class StartupTest(unittest.TestCase):
         self.assertEqual(offset(" ㅇ (개요) 본문"), 3)
         self.assertEqual(offset(" ㅇ (개요)「공유재산법 시행령」제75조"), 3)      # 라벨 뒤 낫표와 무관
         self.assertEqual(offset(" ㅇ (개요) 「공유재산법」에 따라"), 3)
-        # 문두기호 바로 뒤가 낫표이면(라벨 없음) '「'이 아니라 바로 다음 글자 '공'이 기준이다.
+        # 항목기호 바로 뒤가 낫표이면(라벨 없음) '「'이 아니라 바로 다음 글자 '공'이 기준이다.
         self.assertEqual(offset(" ㅇ 「공유재산법」에 따라"), 4)
         self.assertEqual(offset(" - 근거 : 『지방재정법』 제17조"), 9)           # 콜론 라벨: 현행 유지
         self.assertEqual(offset(" - (운영방식)“공용차량 조례”"), 3)

@@ -4,7 +4,7 @@
 문서에 정의된 모든 서식 요소(글꼴·문자 모양·문단 모양·스타일·테두리/배경·번호·탭)를
 해석하고, 본문·표·머리말에서 실제로 쓰인 횟수와 예문을 붙여 전체 목록을 만든다.
 
-본문 문단은 "문두기호 + 문단 모양 + 문자 모양 순서" 조합으로 묶는다. 같은 조합이면
+본문 문단은 "항목기호 + 문단 모양 + 문자 모양 순서" 조합으로 묶는다. 같은 조합이면
 한/글에서 같은 모양으로 보이므로, 조합 목록이 곧 문서가 쓰는 스타일 목록이다.
 
 ``build_style_sample``은 원본 header.xml을 그대로 두고 본문만 조합별 대표 문단과
@@ -332,7 +332,7 @@ def _table_info(tbl, chars):
 
 
 def _marker_class(marker: str) -> str:
-    """번호만 다른 문두기호(1. 2. / 가. 나. / ① ②)는 같은 기호로 본다."""
+    """번호만 다른 항목기호(1. 2. / 가. 나. / ① ②)는 같은 기호로 본다."""
     if not marker:
         return "(없음)"
     if re.match(r"[①-⑳]", marker):
@@ -703,7 +703,7 @@ def inventory_markdown(inv: dict) -> str:
         return mode if st["min"] == st["max"] else f"{mode} ({fmt.format(st['min'])}~{fmt.format(st['max'])})"
 
     out += ["", "## 4. 본문 스타일 유형", "",
-            "본문(표 밖) 문단을 문두기호·글꼴·크기·굵게·색·장평·정렬·왼쪽 여백으로 묶었습니다. "
+            "본문(표 밖) 문단을 항목기호·글꼴·크기·굵게·색·장평·정렬·왼쪽 여백으로 묶었습니다. "
             "자간·줄간격·내어쓰기는 문단마다 줄 맞춤으로 조금씩 달라서 최빈값(범위)으로 적습니다. "
             f"문단 모양 ID까지 따지면 {s['combos']}개 변형입니다.", "",
             "| # | 기호 | 역할 | 글자 | 정렬 | 내어쓰기 mm | 줄간격 % | 자간 % | 문단 위 pt | 부분 서식(문단 수) | 문단 수(변형) | 예문 |",
@@ -865,7 +865,7 @@ def build_style_sample(source, target, inventory: dict | None = None,
                 result = paragraph_style_type(para, defs)
                 if result:
                     typed[index] = result
-                    # 최빈 문단 모양은 기존 서식 분석(hwpx_서식_분석)처럼 문두기호 단위로 센다.
+                    # 최빈 문단 모양은 기존 서식 분석(hwpx_서식_분석)처럼 항목기호 단위로 센다.
                     type_stats.setdefault(result[1]["marker"], Counter())[_para_shape(result[1], defs)] += 1
 
         def score(index):

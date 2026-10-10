@@ -1,4 +1,4 @@
-"""문두기호 문장의 단어 뒤 *, ** 위첨자 규칙을 확인한다."""
+"""항목기호 문장의 단어 뒤 *, ** 위첨자 규칙을 확인한다."""
 import copy
 from pathlib import Path
 import runpy
@@ -103,7 +103,7 @@ class DocumentTest(unittest.TestCase):
         self.assertEqual(runs[1][1], runs[3][1])            # *와 **가 같은 위첨자 글자모양을 공유
         self.assertEqual(int(next(x for x in header.iter() if self.name(x) == 'charProperties').get('itemCnt')),
                          len([x for x in header.iter() if self.name(x) == 'charPr']))
-        # 문두기호로 쓴 * / **와 다른 문단은 그대로.
+        # 항목기호로 쓴 * / **와 다른 문단은 그대로.
         self.assertEqual(self._runs(section, 2), [('   * 양성자를 11차원으로 전개·가공하여 만든 초소형 지능체', '0')])
         self.assertEqual(self._runs(section, 3), [('  ** 1차 선발대 발진 후 2차 본대를 발진한다.', '0')])
         self.assertEqual(self._runs(section, 0), [('□ 보고 개요', '0')])
