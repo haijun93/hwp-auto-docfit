@@ -132,18 +132,21 @@ class LearnedTitleStyleTest(unittest.TestCase):
         run = next(r for r in title if self.name(r) == 'run')
         self.assertEqual(chars[run.get('charPrIDRef')].get('height'), '2700')
 
-    def test_one_by_one_title_tables_are_not_title_targets(self):
-        """1×1 제목 표(옛 유형3·4)는 삭제되어 제목 서식 대상이 아니다."""
+    def test_one_by_one_title_box_at_page_start_is_type4(self):
+        """1×1 제목 상자는 2×2 유형 판별(1~3) 대상은 아니지만, 쪽 첫머리의 제목다운 1×1 표는 유형 4로 인정한다
+        (사용자 요청, 2026-10-10: 중앙부처 보고서의 제목 상자)."""
         ns = self.ns
         _, sample = self._title2_sample()
         one = copy.deepcopy(sample)
         row2 = [r for r in one if self.name(r) == 'tr'][1]
         one.remove(row2)
         one.set('rowCnt', '1')
+        one.set('colCnt', '1')
         self.assertEqual(len(ns['제목_셀들'](one)), 1)
         self.assertIsNone(ns['제목_유형판별'](one))
+        self.assertTrue(ns['_한칸_제목표인가'](one))
         found = ns['제목_hwpx_처리'](self._hwpx(one))
-        self.assertEqual(found, {'Contents/section0.xml': []})
+        self.assertEqual(found, {'Contents/section0.xml': [(0, 4)]})
 
     def test_title_reference_has_two_by_two_samples_only(self):
         header, section = self.ns['제목_원본자료']()

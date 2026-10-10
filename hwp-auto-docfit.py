@@ -343,6 +343,7 @@ def XML_자식_추가(parent, prototype, tag=None, attrib=None):
     parent.append(child)
     return child
 from docfit_core.style_inventory import analyze_style_inventory, build_style_sample, inventory_markdown
+from docfit_core import report_header as 보고서머리
 from docfit_core import format_elements as 서식요소
 from docfit_core.table_width import fit_table as 표너비_맞춤, is_target as 표너비_대상인가
 from docfit_core import (
@@ -680,6 +681,11 @@ _표준서식_문단위간격_상태 = ParagraphSpacingTracker()
 # 선택한 서식 프로필이 예시 문서에서 보관한 서식 표(제목·개요·중제목·붙임) 예시.
 # {종류: {"header_xml", "table_xml"}}. 없는 종류는 내장 기준 표를 쓴다.
 활성_서식표_프로필 = None
+# 알파(2026-10-10): 선택한 서식 프로필이 예시 문서에서 배운 보고서 머리(제목·보고 주체·개요) 구성과 표기 틀.
+# 정부기관 보고서마다 제목(1×1 상자·2×2·2행1열·문단)과 보고 주체 표기("2026. 10. 7.  기관  부서",
+# "'26. 10. 7.(수)  /  과", "(날짜, 과장 홍길동, ☎…)")가 달라, 서식 복사 때 이 구성을 대상 문서에 그대로 옮긴다.
+알파_머리서식복사_사용 = True
+활성_머리서식_프로필 = None
 # 선택한 서식 프로필이 예시 보고서의 일반 표에서 배운 기본 표 서식(table_style). 있으면 준말 '표' 서식보다
 # 먼저 쓴다(2026-10-04 결정 5).
 활성_표서식_프로필 = None
@@ -1123,6 +1129,7 @@ def 서식_기본값_전역_복원():
     활성_정밀표_프로필 = None
     활성_서식표_프로필 = None
     활성_표서식_프로필 = None
+    globals()["활성_머리서식_프로필"] = None
     globals()["괄호_축소_pt"] = 2
 
 검수_사용 = False
@@ -1636,6 +1643,7 @@ def hwpx_서식_분석(path):
             any(k.startswith("midtitle") for k in profile["form_tables"]))
         profile["element_analysis"] = 요소분석
         서식요소.apply_to_profile(profile)
+        머리요약 = 보고서머리_프로필_반영(z, profile)
         표글자 = profile.get("table_format") or {}
         profile["summary"] = (
             f"대표 본문: {대표폰트} {대표크기:g}pt, 굵게 {'ON' if 대표굵게 else 'OFF'}\n"
@@ -1650,10 +1658,117 @@ def hwpx_서식_분석(path):
             + (f"\n일반 표 서식: {표서식_설명(profile['table_style'])}" if profile.get("table_style") else "")
             + (f"\n서식 표 예시: {', '.join(서식요소.FORM_LABELS[k] for k in profile['form_tables'])}"
                if profile["form_tables"] else "")
+            + (f"\n{머리요약}" if 머리요약 else "")
             + "\n\n" + hierarchy_summary(profile["style_hierarchy"])
             + "\n페이지 여백·장평·자간·줄간격·문단 모양과 셀별 표 서식을 함께 복제합니다."
         )
         return profile
+
+
+def 보고서머리_프로필_반영(z, profile):
+    """예시 HWPX의 보고서 머리(제목·보고 주체·개요) 구성을 프로필에 저장하고 요약 글을 돌려준다.
+
+    예전에는 '표 밖 첫 두 문단'을 제목·일자담당자로 보아, 제목이 표(1×1 상자) 안에 있는 중앙부처 보고서에서
+    작성일 줄을 제목으로, 개요를 일자담당자로 잘못 잡았다(korean-report-hwpx 129종 실측, 2026-10-10).
+    """
+    try:
+        names = sorted((n for n in z.namelist() if re.fullmatch(r"Contents/section\d+\.xml", n)),
+                       key=lambda n: int(re.search(r"section(\d+)", n).group(1)))
+        header_root = safe_xml_fromstring(z.read("Contents/header.xml"))
+        spec = 보고서머리.build_spec(header_root, safe_xml_fromstring(z.read(names[0])))
+    except Exception as exc:
+        로그(f"보고서 머리 분석 실패(무시): {exc}")
+        return ""
+    if not spec:
+        return ""
+    profile["report_header"] = spec
+    fmt = profile["format"]
+    title = spec["title"]
+    if title.get("char", {}).get("font"):
+        fmt["제목_문단"] = {"font": title["char"]["font"], "size_pt": title["char"]["size_pt"],
+                          "bold": bool(title["char"].get("bold"))}
+    문단정보 = [i for i in spec["info"] if i["container"] == "paragraph"]
+    if 문단정보 and 문단정보[0].get("char", {}).get("font"):
+        c = 문단정보[0]["char"]
+        fmt["일자담당자_문단"] = {"font": c["font"], "size_pt": c["size_pt"], "bold": bool(c.get("bold"))}
+    담는곳 = {"paragraph": "상자 없는 제목 문단"}.get(title["container"]) or (
+        title["container"].replace("table", "").replace("x", "×") + " 제목 표")
+    줄 = [f"보고서 머리: {담는곳} ({title['char'].get('font')} {title['char'].get('size_pt', 0):g}pt, "
+         f"{_정렬이름.get(title.get('align'), title.get('align') or '-')})"]
+    for i in spec["info"]:
+        위치 = "제목 표 칸" if i["container"] == "cell" else ("제목 위 문단" if i.get("position") == "before_title" else "제목 아래 문단")
+        줄.append(f"보고 주체({위치}): {i['text']}  → 틀 {i['template']}")
+    if spec.get("overview"):
+        줄.append("개요 상자: 있음(예시 상자 서식으로 복사)")
+    return "\n".join(줄)
+
+
+_정렬이름 = {"LEFT": "왼쪽", "RIGHT": "오른쪽", "CENTER": "가운데", "JUSTIFY": "양쪽", "DISTRIBUTE": "배분"}
+
+
+def 보고서머리_hwpx_처리(source, target=None, selections=None):
+    """서식 프로필의 보고서 머리(제목·보고 주체·개요) 구성과 표기 방식을 대상 문서에 옮긴다(알파, 2026-10-10).
+
+    대상의 제목 글·개요 글은 그대로 두고, 날짜·기관·부서·담당자 값은 예시의 표기 틀로 다시 쓴다.
+    제목 표 안 날짜 칸은 한 줄로 입력(lineWrap=SQUEEZE)으로 둔다.
+    """
+    spec = 활성_머리서식_프로필 if 알파_머리서식복사_사용 else None
+    with zipfile.ZipFile(source) as z:
+        contents = {n: z.read(n) for n in z.namelist()}
+    for name, data in contents.items():
+        if name.startswith('Contents/') and name.endswith('.xml'):
+            for _, pair in ET.iterparse(io.BytesIO(data), events=('start-ns',)):
+                if not re.fullmatch(r'ns\d+', pair[0]): XML_네임스페이스_등록(*pair)
+    header = safe_xml_fromstring(contents['Contents/header.xml'])
+    names = sorted((n for n in contents if re.fullmatch(r'Contents/section\d+\.xml', n)),
+                   key=lambda n: int(re.search(r'section(\d+)', n).group(1)))
+    first = names[0] if names else None
+    def 시작들(root):
+        # 여러 보고서를 묶은 문서: 보고서마다(제목 표마다) 머리를 맞춘다. 제목 표는 서식 적용과 같은 판정을 쓴다.
+        tables = [t for p in root for r in p for t in r if 제목_xml이름(t) == 'tbl']
+        제목표 = {id(tables[i]) for i, _ in 제목_대상찾기(root, header) if i < len(tables)}
+        return 보고서머리.report_starts(root, lambda t: id(t) in 제목표)
+
+    if selections is None:
+        if not spec or first is None:
+            return {}
+        root = safe_xml_fromstring(contents[first])
+        found = [i for i in 시작들(root) if 보고서머리.analyze(header, root, i)["title"]]
+        if len(found) > 1 and (spec.get("title") or {}).get("container") == "paragraph":
+            # 여러 보고서를 묶은 문서는 제목 표가 보고서 경계다(쪽 맞춤·쪽 나누기). 예시 제목이 상자 없는 문단이면
+            # 경계를 잃으므로 머리 서식 복사를 하지 않는다(2026-10-10).
+            로그(f"보고서 머리 서식 복사: 건너뜀(보고서 {len(found)}개 문서에 문단 제목 서식을 쓰면 보고서 경계가 사라짐)")
+            return {first: []}
+        return {first: found}
+    if not spec or not any(selections.values()):
+        if target is not None: shutil.copyfile(source, target)
+        return 0
+    root = safe_xml_fromstring(contents[first])
+    본문폭 = _구역_본문폭(root, None)
+    합계 = Counter()
+    병합 = {}
+
+    def 한번_병합(h, sample_header):
+        # 보고서가 여러 개여도 예시 서식 정의는 문서 header에 한 번만 더한다.
+        if 'maps' not in 병합:
+            병합['maps'] = 제목_참조병합(h, sample_header)
+        return 병합['maps']
+
+    # 뒤 보고서부터 바꿔 앞 보고서의 문단 번호가 흔들리지 않게 한다.
+    for start in sorted(시작들(root), reverse=True):
+        통계 = 보고서머리.apply_header(header, root, spec, 한번_병합, start=start,
+                                   fit_table=(lambda t: _서식표_가로맞춤(t, 본문폭, 비례=True)) if 본문폭 else None)
+        합계.update({k: v for k, v in 통계.items() if isinstance(v, int)})
+    if not 합계.get("applied"):
+        로그("보고서 머리 서식 복사: 바꿀 머리 없음")
+        shutil.copyfile(source, target)
+        return 0
+    contents[first] = ET.tostring(root, encoding='utf-8', xml_declaration=True)
+    contents['Contents/header.xml'] = ET.tostring(header, encoding='utf-8', xml_declaration=True)
+    _hwpx_안전_저장(contents, target)
+    로그(f"보고서 머리 서식 복사: 보고서 {합계['applied']}개 · 제목 {합계['title']}·보고 주체 {합계['info']}·개요 "
+         f"{합계['overview']}개를 예시 구성으로 맞춤(날짜 칸 한 줄 {합계['squeezed']}개)")
+    return 합계['applied']
 
 
 def 예시문서_기본이름(문단들):
@@ -1681,6 +1796,12 @@ def 예시문서_기본이름(문단들):
 def 한글파일_서식_분석(path):
     if Path(path).suffix.lower() == ".hwpx":
         return hwpx_서식_분석(path)
+    if Path(path).suffix.lower() == ".pdf":
+        # PDF 예시: kordoc으로 HWPX를 만든 뒤 PDF 서식을 옮겨 심고 분석한다(원본은 읽기만 함).
+        with tempfile.TemporaryDirectory(prefix="pdf_format_") as folder:
+            target = Path(folder) / "source.hwpx"
+            외부문서_hwpx로_변환(Path(path), ".pdf", target)
+            return hwpx_서식_분석(target)
     # 원본을 복사한 뒤 독립 한글 인스턴스에서 임시 HWPX로 변환한다.
     with tempfile.TemporaryDirectory(prefix="hwp_format_") as folder:
         source = Path(folder) / "source.hwp"
@@ -2384,6 +2505,64 @@ def 제목_문단들(cell):
 def 제목_문자열(e):
     return ''.join(x.text or '' for x in e.iter() if 제목_xml이름(x) == 't')
 
+# 1×1 제목 상자의 글자 크기 하한(pt). 개요·요약 상자(보통 13~15pt)와 가른다(korean-report-hwpx 제목 20pt,
+# 마포구청 제목 표 27pt 실측).
+한칸_제목_최소크기_pt = 16
+
+
+def _한칸_제목글인가(문단글들):
+    """1×1 표 칸 글이 제목다운지: 1~2문단, 4~160자, 계층 기호·붙임·참고·목차로 시작하지 않고 날짜·담당자 줄이 아니다."""
+    ps = [t.strip() for t in 문단글들 if t and t.strip()]
+    글 = ' '.join(ps)
+    if not 1 <= len(ps) <= 2 or not 6 <= len(re.sub(r'\s+', '', 글)) or len(글) > 160:
+        return False
+    # 문서 안 표시 상자('서면보고' 등)는 제목이 아니다(실측: 마포구청 회의 자료, 2026-10-10).
+    if re.fullmatch(r'[<〈【\[(]?\s*(서면|구두|대면)?\s*보\s*고\s*(사항|안건|자료)?\s*[>〉】\])]?|'
+                    r'[<〈【\[(]?\s*(참\s*고|별\s*첨|붙\s*임|요\s*약|개\s*요|목\s*차|안\s*건)\s*\d*\s*[>〉】\])]?', 글):
+        return False
+    if re.match(r'^\s*[□ㅁㅇ○※*\-•▪<〈]|^\s*(붙임|참고|목\s*차)', 글):
+        return False
+    return 보고서머리._looks_title(글)
+
+
+def _기타_제목표인가(table, header):
+    """여러 칸 장식 제목 상자(kordoc 개조식 3×3 등): 4행·4열 이하, 글이 있는 칸 중 제목다운 칸이 하나이고 글자가
+    한칸_제목_최소크기_pt 이상, 나머지 글 칸은 보고 주체(날짜·부서·담당자) 글뿐이다(유형 5, 2026-10-10)."""
+    try:
+        rows, cols = int(table.get('rowCnt', '0')), int(table.get('colCnt', '0'))
+    except ValueError:
+        return False
+    if rows * cols < 2 or rows > 4 or cols > 4:
+        return False
+    cells = 제목_셀들(table)
+    if any(제목_xml이름(x) in ('tbl', 'ole', 'fieldBegin') for c in cells for x in c.iter()):
+        return False
+    글칸 = [(c, [제목_문자열(p) for p in 제목_문단들(c)]) for c in cells]
+    글칸 = [(c, t) for c, t in 글칸 if any(x.strip() for x in t)]
+    제목칸 = [c for c, t in 글칸 if _한칸_제목글인가(t)]
+    if len(제목칸) != 1:
+        return False
+    나머지 = [' '.join(t).strip() for c, t in 글칸 if c is not 제목칸[0]]
+    if any(not 보고서머리.parse_info(x) for x in 나머지):
+        return False
+    return 보고서머리._Header(header).char_of(제목칸[0]).get('size_pt', 0) >= 한칸_제목_최소크기_pt
+
+
+def _한칸_제목표인가(table, header=None):
+    """제목다운 1×1 표. header를 주면 칸 글자 크기가 한칸_제목_최소크기_pt 이상인지도 본다(크기 기준을 만족했는지 돌려준다)."""
+    if (table.get('rowCnt'), table.get('colCnt')) != ('1', '1'):
+        return False
+    cells = 제목_셀들(table)
+    if len(cells) != 1 or any(제목_xml이름(x) in ('tbl', 'ole', 'rect', 'fieldBegin') for x in cells[0].iter()):
+        return False
+    if not _한칸_제목글인가([제목_문자열(p) for p in 제목_문단들(cells[0])]):
+        return False
+    if header is None:
+        return True
+    크기 = 보고서머리._Header(header).char_of(cells[0]).get('size_pt', 0)
+    return 크기 >= 한칸_제목_최소크기_pt
+
+
 def 제목_유형판별(table, 빈칸허용=False):
     """제목 표 유형. 1·2 = 2×2(제목+날짜·담당자, 부제 없음/있음), 3 = 2행1열(제목+담당자).
 
@@ -2398,8 +2577,10 @@ def 제목_유형판별(table, 빈칸허용=False):
     세줄 = len(cells) == 3 and (rows, cols) == (3, 1)
     if (len(cells) == 2 and (rows, cols) != (2, 1)) or (len(cells) == 3 and (rows, cols) != (2, 2) and not 세줄):
         return None
-    for c in cells:
-        if any(제목_xml이름(x) in ('tbl', 'pic', 'ole', 'rect', 'fieldBegin') for x in c.iter()):
+    for i, c in enumerate(cells):
+        # 제목 칸의 글 사이 그림(축제 이름 로고 등, 실측: 마포구청 회의 자료)은 제목의 일부로 본다(2026-10-10).
+        막는개체 = ('tbl', 'ole', 'rect', 'fieldBegin') if i == 0 else ('tbl', 'pic', 'ole', 'rect', 'fieldBegin')
+        if any(제목_xml이름(x) in 막는개체 for x in c.iter()):
             return None
     ps = [p for p in 제목_문단들(cells[0]) if 제목_문자열(p).strip()]
     if len(ps) not in (1, 2): return None
@@ -2421,25 +2602,50 @@ def 제목_유형판별(table, 빈칸허용=False):
 
 
 def 제목_대상찾기(section, header):
-    """쪽 첫부분의 제목 표(유형 1·2·3)를 판별한다.
+    """쪽 첫부분의 제목 표(유형 1·2·3, 1×1 제목 상자는 유형 4)를 판별한다.
 
     날짜·담당자 칸이 있는 2×2 표, 또는 담당자 칸이 있는 2행1열 표는 구조만으로
     제목으로 확정한다(글자크기·정렬 같은 시각 서식은 필요 없다). 1×1 표는 제목으로 보지 않는다.
     """
     result = []
     ordinal = 0
+    # 1×1 제목 상자(유형 4)는 쪽(구역) 첫머리에서만 본다: 앞에 글 문단이 없고(쪽 나누기 뒤 포함) 이 쪽에서 아직
+    # 제목을 찾지 않았을 때. 제목 바로 뒤의 1×1 개요 상자를 제목으로 오인하지 않는다(사용자 요청, 2026-10-10).
+    쪽첫머리 = True
+    직전제목 = False
     for p in section:
+        if p.get('pageBreak') == '1':
+            쪽첫머리 = True
+        표있음 = False
         for run in p:
             for table in run:
                 if 제목_xml이름(table) != 'tbl':
                     continue
+                표있음 = True
                 kind = 제목_유형판별(table)
+                # 1×1 제목 상자: 쪽 첫머리이거나, 글자가 제목 크기(16pt 이상)이고 바로 앞 표가 제목이 아닐 때
+                # (제목 바로 뒤 개요 상자 제외). 쪽 나누기 속성 없이 보고서를 이어 붙인 문서도 보고서마다 찾는다.
+                if not kind and _한칸_제목표인가(table) and (
+                        쪽첫머리 or (not 직전제목 and _한칸_제목표인가(table, header))):
+                    kind = 4
+                if not kind and (쪽첫머리 or not 직전제목) and _기타_제목표인가(table, header):
+                    kind = 5
+                찾음 = False
                 if kind:
                     cells = 제목_셀들(table)
-                    title = 제목_문자열(cells[0]).strip()
+                    # 장식 제목 상자(유형 5)는 제목이 첫 칸이 아닐 수 있어 표 전체 글로 본다.
+                    title = (제목_문자열(table) if kind == 5 else 제목_문자열(cells[0])).strip()
                     if title and len(title) <= 160 and not title.startswith('붙임'):
                         result.append((ordinal, kind))
+                        쪽첫머리 = False
+                        찾음 = True
+                직전제목 = 찾음
                 ordinal += 1
+        if not 표있음 and 제목_문자열(p).strip():
+            쪽첫머리 = False
+            # 제목 아래 보고 주체 줄(날짜·부서)은 제목과 개요 상자 사이에 올 수 있다.
+            if not 보고서머리.parse_info(제목_문자열(p).strip()):
+                직전제목 = False
     return result
 
 
@@ -2871,7 +3077,7 @@ def 제목_hwpx_처리(source, target=None, selections=None):
                 if re.fullmatch(r'Contents/section\d+\.xml', n)}
     if selections is None:
         return {n: 제목_대상찾기(root, header) for n, root in sections.items()}
-    if not any(kind in (1, 2, 3) for items in selections.values() for _, kind in items):
+    if not any(kind in (1, 2, 3, 4, 5) for items in selections.values() for _, kind in items):
         if target is not None: shutil.copyfile(source, target)
         return 0
     기준 = {}
@@ -2910,11 +3116,21 @@ def 제목_hwpx_처리(source, target=None, selections=None):
         본문폭 = _구역_본문폭(root, None)   # 쪽 정보가 없으면 폭을 바꾸지 않는다
         for index, kind in items:
             table = tables[index]
-            if 제목_유형판별(table) != kind:
+            현재종류 = (제목_유형판별(table) if kind not in (4, 5) else
+                     4 if kind == 4 and _한칸_제목표인가(table) else 5 if kind == 5 and _기타_제목표인가(table, header) else None)
+            if 현재종류 != kind:
                 raise RuntimeError('처리 중 제목 구조가 변경되어 제목 서식적용을 중단했습니다.')
             before = 제목_문자열(table)
+            if kind in (4, 5):
+                # 1×1·장식 제목 상자: 서식은 보고서 머리 서식 복사(예시 프로필)가 맡고, 여기서는 가로 크기만 맞춘다.
+                _서식표_가로맞춤(table, 본문폭, 비례=True)
+                if 제목_문자열(table) != before: raise RuntimeError('제목 텍스트 보존 검사 실패')
+                count += 1
+                continue
             sample, maps, 예시사용 = 기준표(f'title{kind}')
             제목_표서식_복사(table, sample, maps)
+            # 제목 표 칸 안 날짜("'26. 10. 10.(토)" 등)는 칸 너비와 관계없이 한 줄로 둔다(사용자 요청, 2026-10-10).
+            보고서머리.squeeze_date_cells(table)
             # 제목 표 가로 크기는 쪽 좌우 여백 사이 최대 폭으로 한다(기준 표 폭과 문서 여백이 달라도 맞춤).
             # 서식 프로필의 예시 표를 쓰면 열 비율은 예시대로 둔다.
             _서식표_가로맞춤(table, 본문폭, 비례=예시사용)
@@ -13278,6 +13494,10 @@ def 제목표인가_현재(표키):
     □·ㅇ 등 계층 기호로 시작하지 않는 1~3문단이고 '붙임'으로 시작하지 않는다. 날짜·담당자 칸이 모두 빈 표도 제목 표다.
     """
     범위 = 표_칸영역_범위(표키)
+    if 범위 and 범위[1] == 범위[0]:
+        return _한칸_제목표인가_현재(범위[0])
+    if 범위 and 4 <= 범위[1] - 범위[0] + 1 <= 16:
+        return _기타_제목표인가_현재(범위)
     if not 범위 or 범위[1] - 범위[0] + 1 not in (2, 3):
         return False
     original = hwp.GetPos()
@@ -13299,6 +13519,54 @@ def 제목표인가_현재(표키):
     if not any(정보):
         return True
     return any(_제목표_담당자.search(t) or _설정_담당자_글인가(t) for t in 정보)
+
+
+def _한칸_제목표인가_현재(area):
+    """한 칸 표(칸 목록 번호 area)가 1×1 제목 상자인지: 제목다운 글이고 글자가 한칸_제목_최소크기_pt 이상."""
+    original = hwp.GetPos()
+    try:
+        글들 = _칸_문단글들(area)
+        if not 글들 or not _한칸_제목글인가(글들):
+            return False
+        hwp.SetPos(area, 0, 0)
+        hwp_run('MoveSelParaEnd')
+        크기 = float(hwp.CharShape.Item('Height') or 0) / 100
+        hwp_run('Cancel')
+        return 크기 >= 한칸_제목_최소크기_pt
+    except Exception:
+        return False
+    finally:
+        try:
+            hwp.SetPos(*original)
+        except Exception:
+            pass
+
+
+def _기타_제목표인가_현재(범위):
+    """여러 칸 장식 제목 상자인지(화면 판정, _기타_제목표인가와 같은 기준)."""
+    original = hwp.GetPos()
+    try:
+        칸글 = [(area, _칸_문단글들(area)) for area in range(범위[0], 범위[1] + 1)]
+        if any(글 is None for _, 글 in 칸글):
+            return False
+        글칸 = [(a, 글) for a, 글 in 칸글 if any(t.strip() for t in 글)]
+        제목칸 = [a for a, 글 in 글칸 if _한칸_제목글인가(글)]
+        if len(제목칸) != 1:
+            return False
+        if any(not 보고서머리.parse_info(' '.join(글).strip()) for a, 글 in 글칸 if a != 제목칸[0]):
+            return False
+        hwp.SetPos(제목칸[0], 0, 0)
+        hwp_run('MoveSelParaEnd')
+        크기 = float(hwp.CharShape.Item('Height') or 0) / 100
+        hwp_run('Cancel')
+        return 크기 >= 한칸_제목_최소크기_pt
+    except Exception:
+        return False
+    finally:
+        try:
+            hwp.SetPos(*original)
+        except Exception:
+            pass
 
 
 def _보고서_끝내용(시작문단, 끝문단, 표문단):
@@ -14567,6 +14835,27 @@ def 문장부호_뒤_공백_보정_전체_적용():
 # 끄면(False) 베타와 같다.
 알파_문단글_캐시_사용 = True
 _문단글_캐시 = None      # None이면 캐시를 쓰지 않음, dict이면 {(리스트, 문단): (편집 세대, 글)}
+
+
+# 알파 C2(2026-10-10): 문단 글 캐시를 쪽 배치 단계와 저장 결과 검사에도 켠다. 프로파일 실측(기준 파일):
+# 저장 후 검수 13.3초 중 쪽 배치 최종 검사 10.1초, 그 대부분이 같은 문단 글을 묶음마다 다시 읽는 시간
+# (현재문단_텍스트 1회 약 22ms). 편집하면 편집 세대가 바뀌어 다시 읽으므로 결과는 같다. 끄면(False) 베타와 같다.
+알파_문단글_캐시_확대_사용 = True
+
+
+def 문단글_캐시_구간(함수):
+    """함수가 도는 동안만 문단 글 캐시를 켠다(이미 켜져 있으면 그대로 쓴다)."""
+    def 감싼(*args, **kwargs):
+        global _문단글_캐시
+        if not 알파_문단글_캐시_확대_사용 or _문단글_캐시 is not None:
+            return 함수(*args, **kwargs)
+        _문단글_캐시 = {}
+        try:
+            return 함수(*args, **kwargs)
+        finally:
+            _문단글_캐시 = None
+    감싼.__name__ = getattr(함수, '__name__', '문단글_캐시_구간')
+    return 감싼
 
 
 def _문단글_캐시_비우기():
@@ -16310,7 +16599,7 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
             return False
     if 작업_모드 in ('format', 'all') and 표준서식_사용 and 세트문장_같은쪽_사용 and stage_enabled(선택_세부작업, 'page_group'):
         조정_전 = 세트문장_통계.get('확대횟수', 0) + 세트문장_통계.get('축소횟수', 0)
-        if not stage('개별 문단 페이지 배치', 세트문장_같은쪽_전체_적용):
+        if not stage('개별 문단 페이지 배치', 문단글_캐시_구간(세트문장_같은쪽_전체_적용)):
             return False
         조정_후 = 세트문장_통계.get('확대횟수', 0) + 세트문장_통계.get('축소횟수', 0)
         # 문단 페이지 배치가 줄간격을 바꾸면 마지막 쪽이 넘치거나 줄어 쪽 수가
@@ -16345,7 +16634,7 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
                 # 보고서별 1쪽 맞춤은 전체 쪽 수가 같아도 보고서 안의 배치를 바꾼다(실측: 표 묶음 쪽 분리 4건이 남음).
                 로그(f"[쪽 수 재확인] 쪽 수 {전_쪽} → {후_쪽}"
                      f"{', 보고서별 1쪽 맞춤으로 배치 변경' if 쪽맞춤_보고서조정됨 else ''}: 문단 페이지 배치를 한 번 더 확인합니다.")
-                if not stage('개별 문단 페이지 배치 (재확인)', 세트문장_같은쪽_전체_적용):
+                if not stage('개별 문단 페이지 배치 (재확인)', 문단글_캐시_구간(세트문장_같은쪽_전체_적용)):
                     return False
                 # 쪽 배치가 묶음을 옮기며 맞춘 보고서를 다시 늘릴 수 있으므로, 원본 쪽 구성 맞춤을 마지막에 한 번 더
                 # 한다(사용자 원칙, 2026-10-09: 결과의 쪽 구성은 원본과 같아야 한다).
@@ -16673,8 +16962,30 @@ def 외부문서_hwpx로_변환(원본경로, 확장자, 대상경로):
             임시_md = Path(임시폴더) / f"{Path(원본경로).stem}.md"
             parse_document(str(원본경로), str(임시_md), output_format="markdown", ocr=(확장자 == ".pdf"))
             generate_hwpx(str(임시_md), "보고서", str(대상경로), image_dir=임시폴더)
+        if 확장자 == ".pdf":
+            PDF_서식_이식(원본경로, 대상경로)
         return
     raise ValueError(f"지원하지 않는 변환 형식입니다: {확장자}")
+
+
+# 알파(2026-10-10): kordoc은 PDF를 마크다운으로 바꿔 프리셋 서식으로 HWPX를 만들어 원본 서식이 사라진다.
+# PDF 글자마다 글꼴·크기·굵게·글자색·장평·배경색을 읽어 변환 HWPX에 다시 적용한다(docfit_core.pdf_style_transfer).
+# 실측(재경부 업무보고 PDF 17쪽): 짝지은 글자 기준 글꼴 0.3→99.9%, 크기 41→100%, 색 글자 0→100%, 배경색 1.1→100%.
+알파_PDF서식이식_사용 = True
+
+
+def PDF_서식_이식(원본경로, 대상경로):
+    if not 알파_PDF서식이식_사용:
+        return None
+    try:
+        from docfit_core.pdf_style_transfer import transfer_pdf_style
+        통계 = transfer_pdf_style(원본경로, 대상경로)
+        로그(f"[PDF 서식 이식] 글자 {통계['matched']}/{통계['pdf_chars']}개 짝지음, 글자 모양 {통계['new_char_shapes']}개·"
+             f"셀 배경 {통계['cells_filled']}칸 적용")
+        return 통계
+    except Exception as e:
+        로그(f"[PDF 서식 이식] 건너뜀(kordoc 변환 결과 그대로 사용): {e}")
+        return None
 
 
 def _박스그림표_한글표_삽입(행들):
@@ -16792,12 +17103,12 @@ def 저장결과_규칙검수(파일, 저장파일, 결과창=True):
             검사들['table_unify'] = lambda: 서식통일_표_전체_적용(검증만=True)
     if 검수_사용:
         if 작업_모드 in ('format', 'all') and stage_enabled(선택_세부작업, 'page_group'):
-            검사들['page_group'] = 보고서_페이지배치_최종검사
+            검사들['page_group'] = 문단글_캐시_구간(보고서_페이지배치_최종검사)
         if 작업_모드 in ('spacing', 'all'):
             if stage_enabled(선택_세부작업, 'word_check'):
-                검사들['word_check'] = 보고서_단어분리_최종검사
+                검사들['word_check'] = 문단글_캐시_구간(보고서_단어분리_최종검사)
             if stage_enabled(선택_세부작업, 'control_word_check'):
-                검사들['control_word_check'] = lambda: 보고서_단어분리_최종검사(컨트롤=True)
+                검사들['control_word_check'] = 문단글_캐시_구간(lambda: 보고서_단어분리_최종검사(컨트롤=True))
     if 중단_요청됨():
         return False
     if 검사들:
@@ -17057,6 +17368,8 @@ def _문서_처리_본체(파일, index, total, 문장부호기능=True):
             로그("쪽 범위 지정: 제목·개요·중제목·붙임 자동 서식(문서 전체 구조 변환)은 이번 작업에서 건너뜁니다.")
         elif stage_enabled(선택_세부작업, 'pre_format', 작업_모드):
             선행목록 += [
+                (bool(알파_머리서식복사_사용 and 활성_머리서식_프로필), '보고서 머리 서식 복사', 보고서머리_hwpx_처리,
+                 'report_header.hwpx', '제목·개요·붙임 선행 서식'),
                 (제목4종_사용, '제목·개요', 제목_hwpx_처리, 'title.hwpx', '제목·개요·붙임 선행 서식'),
                 (중제목_사용, '중제목', 중제목_hwpx_처리, 'midtitle.hwpx', '제목·개요·붙임 선행 서식'),
                 (붙임2종_사용, '붙임', 붙임_hwpx_처리, 'attachment.hwpx', '제목·개요·붙임 선행 서식'),
@@ -19506,6 +19819,7 @@ class HwpAutoDocFitGUI:
         활성_정밀표_프로필 = copy.deepcopy(profile.get("precise_tables"))
         활성_서식표_프로필 = copy.deepcopy(profile.get("form_tables")) or None
         활성_표서식_프로필 = copy.deepcopy(profile.get("table_style")) or None
+        globals()["활성_머리서식_프로필"] = copy.deepcopy(profile.get("report_header")) or None
         global 괄호_축소_pt
         괄호_축소_pt = float(profile["format"].get("괄호_축소_pt", 2) or 2)
         글꼴형식_등록(profile["format"].get("글꼴형식"))
@@ -21338,7 +21652,7 @@ class HwpAutoDocFitGUI:
     def _서식_복사하기(self):
         if self.running or getattr(self, "_서식분석중", False): return
         path = askopenfilename(parent=self.settings_toplevel, title="서식을 복사할 한글파일",
-                               filetypes=[("한글파일", "*.hwp *.hwpx")])
+                               filetypes=[("한글파일·PDF", "*.hwp *.hwpx *.pdf")])
         if not path: return
         self._서식_분석_시작(path, 이름묻기=True)
 
@@ -21393,7 +21707,7 @@ class HwpAutoDocFitGUI:
             items = self.root.tk.splitlist(event.data)
         except Exception:
             items = [event.data]
-        candidates = [str(item).strip() for item in items if Path(str(item).strip()).suffix.lower() in (".hwp", ".hwpx")]
+        candidates = [str(item).strip() for item in items if Path(str(item).strip()).suffix.lower() in (".hwp", ".hwpx", ".pdf")]
         if not candidates:
             messagebox.showwarning(APP_NAME, "HWP 또는 HWPX 예시 문서를 놓아 주세요.", parent=self.root)
             return
