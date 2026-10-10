@@ -44,7 +44,7 @@ class SavedTimeDialogTest(unittest.TestCase):
             app = types.SimpleNamespace(root=root, _절약초=425)
             window = types.MethodType(self.gui._절약_완료창, app)(1, 0)
             texts = [t for t in self._texts(window) if t]
-            self.assertIn('당신의 소중한 시간 07분 05초가 절약되었습니다.!', texts)
+            self.assertIn('당신의 소중한 시간 07분 05초가 절약되었습니다!', texts)
             self.assertNotIn('성공', ' '.join(texts))                 # 자세한 안내는 개발자 모드에서만
             self.assertTrue(hasattr(window, '_고양이'))
             window.destroy()
