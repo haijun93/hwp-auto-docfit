@@ -139,7 +139,7 @@ class FormatCopyStage1Test(unittest.TestCase):
         text = 'ㅇ (개요) 본문 문장'
         settings = dict(self.ns['표준서식_설정'])
         with patch.dict(fn.__globals__, {'표준서식_설정': dict(settings, 내어쓰기_규칙={})}):
-            self.assertEqual(fn(text), 7)            # 규칙 없음: 지금처럼 라벨 뒤
+            self.assertEqual(fn(text), 2)            # 규칙 없음: 괄호 라벨은 라벨 뒤가 아니라 기호 뒤 첫 글자(2026-10-10 개정)
         with patch.dict(fn.__globals__, {'표준서식_설정': dict(settings, 내어쓰기_규칙={'ㅇ': 'after_marker'})}):
             self.assertEqual(fn(text), 2)            # 예시가 기호 뒤 맞춤
         with patch.dict(fn.__globals__, {'표준서식_설정': dict(settings, 내어쓰기_규칙={'ㅇ': 'fixed'})}):
