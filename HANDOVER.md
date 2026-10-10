@@ -168,6 +168,7 @@ Flutter UI 빌드는 `powershell -File build_flutter.ps1`로 수행하며 `build
 2. 버전 올리기: `hwp-auto-docfit.py`의 `APP_VERSION`, `README.md` 5행, `website/index.html`(5곳), 새 릴리스 노트 `releases/vX.Y-beta.N.md`(SHA-256 자리는 `SHA256_PLACEHOLDER`).
    - 자동 업데이트는 버전 문자열의 숫자 3개로 비교합니다(`_버전_튜플`: "1.68 Beta 2" → (1, 68, 2)).
    - 그래서 1.69 다음 정식판은 '1.7'이 아니라 **'1.70'**입니다('1.7' → (1, 7, 0)은 1.69보다 낮아 기존 앱이 업데이트를 알리지 않음).
+2-1. **개선 효과 기록(사용자 원칙, 2026-10-10)**: 릴리스 노트에 "이전 버전 대비 개선 효과" 절을 두고, 같은 PC에서 번갈아 측정한 시간·점수·쪽 수·글자 훼손 건수를 적는다(알파는 베타 대비).
 3. 전체 테스트 통과 확인 → 커밋 → `git push github main` → `git push origin main`.
 4. **exe 빌드**: GitHub CI는 빌드 브랜치 `claude/affectionate-goldberg-ggln7c` 푸시 때만 돕니다. 배포용 실행 파일은 메인 `HWP_AutoDocFit.exe` 하나이며 설정 초기화 도구는 릴리스에 포함하지 않습니다.
    - 먼저 `git fetch github` 후 그 브랜치에만 있는 문서·스킬 변경(다른 세션이 남긴 `TODO.md` 등)이 있으면 `main`으로 가져옵니다(CI exe 커밋은 제외).
