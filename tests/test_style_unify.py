@@ -15,14 +15,14 @@ class StyleUnifyTest(unittest.TestCase):
 
     def test_font_and_size_modes_are_independent(self):
         fn = self.ns['서식통일_대표']
-        samples = [('휴먼명조', 1500), ('휴먼명조', 1200), ('휴먼명조', 1500),
+        samples = [('함초롬바탕', 1500), ('함초롬바탕', 1200), ('함초롬바탕', 1500),
                    ('굴림', 1500), ('굴림', 1200)]
         result = fn(samples)
-        self.assertEqual((result['font'], result['size']), (('휴먼명조', 3), (1500, 3)))
+        self.assertEqual((result['font'], result['size']), (('함초롬바탕', 3), (1500, 3)))
         self.assertEqual(result['marker_bold'], (None, 0))
         # 표본 두 개가 같으면 대표값으로 인정하고, 다르면(크기 1500 vs 1200) 판정을 보류한다.
         tied = fn(samples[:2])
-        self.assertEqual((tied['font'], tied['size']), (('휴먼명조', 2), (None, 0)))
+        self.assertEqual((tied['font'], tied['size']), (('함초롬바탕', 2), (None, 0)))
 
     def test_stage_is_opt_in_in_every_mode(self):
         for mode in ('spacing', 'format', 'all'):
@@ -102,7 +102,7 @@ class StyleUnifyTest(unittest.TestCase):
 
     def test_only_inconsistent_runs_are_selected_and_highlights_are_preserved(self):
         fn = self.ns['_서식통일_불일치_구간']
-        baseline = ('휴먼명조', 1500)
+        baseline = ('함초롬바탕', 1500)
         wrong = ('굴림', 1200)
         runs = (
             ((0, 0, 2), (0, 0, 5), baseline, 3),
@@ -177,7 +177,7 @@ class StyleUnifyTest(unittest.TestCase):
             doc = Path(temp) / 'sample.hwpx'
             source = Path(temp) / 'source.hwpx'
             with ZipFile(doc, 'w') as archive:
-                header = '''<?xml version="1.0" encoding="UTF-8"?><hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head"><hh:fontface lang="HANGUL"><hh:font id="0" face="휴먼명조"/><hh:font id="1" face="굴림"/></hh:fontface><hh:charProperties><hh:charPr id="0" height="1500"><hh:fontRef hangul="0"/></hh:charPr><hh:charPr id="1" height="1200"><hh:fontRef hangul="1"/></hh:charPr><hh:charPr id="2" height="1300"><hh:fontRef hangul="0"/></hh:charPr></hh:charProperties></hh:head>'''
+                header = '''<?xml version="1.0" encoding="UTF-8"?><hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head"><hh:fontface lang="HANGUL"><hh:font id="0" face="함초롬바탕"/><hh:font id="1" face="굴림"/></hh:fontface><hh:charProperties><hh:charPr id="0" height="1500"><hh:fontRef hangul="0"/></hh:charPr><hh:charPr id="1" height="1200"><hh:fontRef hangul="1"/></hh:charPr><hh:charPr id="2" height="1300"><hh:fontRef hangul="0"/></hh:charPr></hh:charProperties></hh:head>'''
                 section = '''<?xml version="1.0" encoding="UTF-8"?><hp:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p><hp:run charPrIDRef="0"><hp:t>ㅇ 기준서식 문장이 충분히 깁니다 기준서식 문장이 충분히 깁니다< hp:fwSpace/></hp:t></hp:run><hp:run charPrIDRef="1"><hp:t>이 짧은 부분만 다른 서식입니다 </hp:t></hp:run><hp:run charPrIDRef="2"><hp:t>(부연 괄호) 뒤</hp:t></hp:run></hp:p></hp:sec>'''
                 archive.writestr('Contents/header.xml', header)
                 archive.writestr('Contents/section0.xml', section.replace('< hp:', '<hp:'))
@@ -192,7 +192,7 @@ class StyleUnifyTest(unittest.TestCase):
                 sample = fn((0, 0, 0), 'ㅇ 기준서식 문장이 충분히 깁니다 기준서식 문장이 충분히 깁니다 이 짧은 부분만 다른 서식입니다 (부연 괄호) 뒤')
             self.assertIsNotNone(sample, diagnostics)
             shape = sample[0]
-            self.assertEqual(shape[0], '휴먼명조')
+            self.assertEqual(shape[0], '함초롬바탕')
             self.assertEqual(shape[1], 1500)
             # Inline aside split keeps the after-parenthesis body segment separate.
             self.assertEqual(len(shape[2]), 4)
@@ -211,7 +211,7 @@ class StyleUnifyTest(unittest.TestCase):
         from tempfile import TemporaryDirectory
         from zipfile import ZipFile
         header = ('<hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head"><hh:fontface lang="HANGUL">'
-                  '<hh:font id="0" face="휴먼명조"/><hh:font id="1" face="굴림"/></hh:fontface><hh:charProperties>'
+                  '<hh:font id="0" face="함초롬바탕"/><hh:font id="1" face="굴림"/></hh:fontface><hh:charProperties>'
                   '<hh:charPr id="0" height="1500"><hh:fontRef hangul="0"/></hh:charPr>'
                   '<hh:charPr id="1" height="1100"><hh:fontRef hangul="1"/></hh:charPr></hh:charProperties></hh:head>')
         body = "".join(f'<hp:run charPrIDRef="{char}"><hp:t>{text}</hp:t></hp:run>' for char, text in runs)
@@ -234,7 +234,7 @@ class StyleUnifyTest(unittest.TestCase):
         sample = self.sample_for([(0, lead), (1, '※ 일부 프로그램 상이')])
         self.assertIsNotNone(sample)
         shape, start, end = sample
-        self.assertEqual((shape[0], shape[1]), ('휴먼명조', 1500))
+        self.assertEqual((shape[0], shape[1]), ('함초롬바탕', 1500))
         body_end = len(lead.rstrip())
         self.assertEqual(end, (0, 0, body_end))
         self.assertTrue(all(run[1][2] <= body_end for run in shape[2]))
