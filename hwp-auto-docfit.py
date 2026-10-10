@@ -5331,7 +5331,9 @@ _내어쓰기_건너뛸_여는낫표 = "「『"
 def 복사_내어쓰기_규칙(text):
     """서식 복사한 예시 보고서에서 이 문단 계층의 내어쓰기 기준. 서식 복사가 아니거나 규칙이 없으면 None.
 
-    after_label(라벨 뒤 글 시작)·after_marker(기호 뒤 글 시작)·fixed(복사한 고정 값)·none(내어쓰기 없음).
+    after_marker(기호 뒤 글 시작)·fixed(복사한 고정 값)·none(내어쓰기 없음). 예전 프로필의 after_label(라벨 규칙)은
+    폐지돼(2026-10-10) 규칙 없음으로 읽는다: 기본 동작(콜론 라벨은 콜론 뒤 본문, 괄호 라벨은 기호 뒤)이 이전
+    after_label과 같은 결과다.
     """
     rules = 표준서식_설정.get("내어쓰기_규칙") or {}
     if not rules:
@@ -5341,7 +5343,7 @@ def 복사_내어쓰기_규칙(text):
     if rule is None and marker == "**":
         # ** 전용 규칙이 없으면 대표 기호 *의 내어쓰기 규칙을 그대로 상속한다.
         rule = rules.get("*")
-    return rule
+    return None if rule == "after_label" else rule
 
 
 def 문단_내어쓰기_기준_오프셋(text):
