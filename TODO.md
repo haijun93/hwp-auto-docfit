@@ -1128,6 +1128,15 @@ _(아직 없음 — 접근 후 채움)_
 
 ## 다음에 진행할 작업
 
+### 한 번에 적용: '자간 조정 포함' → '자간 정리 포함' 문구 변경 (사용자 요청, 2026-10-11)
+
+- 화면 문구를 다른 카드 이름('자간 정리')과 맞춘다. 설정 키(`all_include_spacing`)·동작은 그대로.
+- 바꿀 곳: Tk 화면 `hwp-auto-docfit.py`(`text="자간 조정 포함"`, 19503행 부근)·주석, Flutter `flutter_ui/lib/main.dart`(1083행 부근),
+  예전 웹 화면 `desktop_web/index.html`, `desktop_web_ui.py` 문서 문자열, 시험 `tests/test_writing_aids_gui.py`(화면 문구 확인),
+  안내 문서 `README.md`(설정 안내·표)·`HANDOVER.md`·`UI_DESIGN.md`, README 안내 그림을 만드는 `scripts/render_readme_demo.py`.
+  지난 릴리스 노트(`releases/`)와 시험 보고서는 그때 문구 그대로 둔다.
+- 확인: 한 번에 적용 카드·설정 창에서 새 문구, 켜고 끌 때 all/format 전환이 예전과 같은지.
+
 ### 앱 아이콘 변경 (사용자 요청, 2026-10-11, 설계 전)
 
 - **현재 상태**: 아이콘을 따로 지정하지 않는다. 실행 파일(`HWP_AutoDocFit.exe`)은 PyInstaller 기본 아이콘, 앱 창 제목 표시줄은 Tk 기본 깃털 아이콘이다(`build.bat`·GitHub 빌드에 `--icon` 없음, 앱에 `iconbitmap`/`iconphoto` 없음).
