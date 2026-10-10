@@ -159,7 +159,7 @@
   "element_analysis": { /* 서식 명세: 지금 구조 + 아래 항목 */
     "paragraph_groups": [{"marker": "ㅇ", "elements": {
         "font": …, "font_latin": …, "align": …, "line_type": …, "line": …, "break_unit": "KEEP_WORD",
-        "after_spaces": …, "hanging_rule": "after_label", "supplement_rule": null, …}}],
+        "after_spaces": …, "hanging_rule": "after_marker", "supplement_rule": null, …}}],
     "spacing_rules": {"title_to_overview": 0, "overview_to_first": 1200, "return_ratio": 1.5},
     "page": {…, "page_gutter": …, "page_number": {"position": "BOTTOM_CENTER", "format": "- 1 -", …}},
     "tables": {"styles": [ /* table_style 학습 결과 최대 3개 */ ]}
