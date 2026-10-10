@@ -34,8 +34,10 @@ ALIGN_TYPES = ("JUSTIFY", "LEFT", "RIGHT", "CENTER", "DISTRIBUTE", "DISTRIBUTE_S
 LINE_TYPES = ("PERCENT", "FIXED", "BETWEEN_LINES", "AT_LEAST")
 # 한글 줄 나눔 기준(breakSetting breakNonLatinWord): 어절 단위 / 글자 단위
 BREAK_TYPES = ("KEEP_WORD", "BREAK_WORD")
-# 내어쓰기 기준: 둘째 줄이 라벨 뒤 글 시작 / 기호 뒤 글 시작에 맞음, 고정 값, 내어쓰기 없음
-HANGING_RULES = ("after_label", "after_marker", "fixed", "none")
+# 내어쓰기 기준: 둘째 줄이 기호 뒤 글 시작에 맞음 / 고정 값 / 내어쓰기 없음(예전 '라벨 규칙'은 2026-10-10 폐지)
+HANGING_RULES = ("after_marker", "fixed", "none")
+# 예전 분석 결과·프로필에 남은 라벨 규칙. 폐지돼(2026-10-10) 규칙 없음(기본 동작)으로 읽고, 내어쓰기 켬 판정에는 센다.
+LEGACY_HANGING_RULES = ("after_label",)
 # 쪽 번호 컨트롤(hp:pageNum)에서 복사하는 속성: 위치(BOTTOM_CENTER 등)·번호 모양(DIGIT 등)·줄표 글자('-')
 PAGE_NUMBER_KEYS = ("pos", "formatType", "sideChar")
 # 문두기호 역할의 깊이(작을수록 상위). 깊은 항목 다음 얕은 항목이 오면 '계층 복귀'다.
@@ -50,7 +52,7 @@ CHOICE_LABELS = {
     "JUSTIFY": "양쪽", "LEFT": "왼쪽", "RIGHT": "오른쪽", "DISTRIBUTE": "배분", "DISTRIBUTE_SPACE": "나눔",
     "PERCENT": "글자에 따라(%)", "FIXED": "고정 값", "BETWEEN_LINES": "여백만 지정", "AT_LEAST": "최소",
     "KEEP_WORD": "어절", "BREAK_WORD": "글자",
-    "after_label": "라벨 뒤 글 시작", "after_marker": "기호 뒤 글 시작", "fixed": "고정 값", "none": "없음",
+    "after_marker": "기호 뒤 글 시작", "fixed": "고정 값", "none": "없음",
     "SOLID": "실선", "DASH": "파선", "DOT": "점선", "DASH_DOT": "일점쇄선", "DASH_DOT_DOT": "이점쇄선",
     "LONG_DASH": "긴 파선", "CIRCLE": "원형 점선", "DOUBLE_SLIM": "이중 실선",
     "SLIM_THICK": "얇고 굵은 이중선", "THICK_SLIM": "굵고 얇은 이중선", "SLIM_THICK_SLIM": "삼중선",
@@ -542,14 +544,8 @@ def hanging_rule(text, values, marker, label, after):
         return "none"
     size = values.get("size") or 1000
     ratio, spacing = values.get("ratio") or 100, values.get("spacing") or 0
-    candidates = {"after_marker": _prefix_width(text, marker[1] + after, size, ratio, spacing)}
-    if label:
-        end = label[1]
-        while end < len(text) and text[end] in _SPACES:
-            end += 1
-        candidates["after_label"] = _prefix_width(text, end, size, ratio, spacing)
-    rule, guess = min(candidates.items(), key=lambda item: abs(item[1] - amount))
-    return rule if abs(guess - amount) <= max(300, 0.15 * amount) else "fixed"
+    guess = _prefix_width(text, marker[1] + after, size, ratio, spacing)
+    return "after_marker" if abs(guess - amount) <= max(300, 0.15 * amount) else "fixed"
 
 
 def paragraph_values(p, index, *, with_marker=True):
@@ -1566,7 +1562,7 @@ def _fill_equivalent_markers(profile, analysis):
 def _apply_rules(profile, analysis):
     """글 길이에 따라 달라지는 것은 숫자 대신 규칙으로 복사한다(서식 복사 전면 복제 3단계).
 
-    - 내어쓰기 기준: 라벨 뒤·기호 뒤면 내어쓰기 규칙을 켜고 그 기준으로 계산하게 한다(첫 줄 값은 복사하지 않음).
+    - 내어쓰기 기준: 기호 뒤(예전 라벨 규칙 포함)면 내어쓰기 규칙을 켜고 그 기준으로 계산하게 한다(첫 줄 값은 복사하지 않음).
       고정 값·없음이면 규칙이 손대지 않고 복사한 첫 줄 값을 쓴다.
     - 괄호·콜론 라벨 굵게: 예시에서 라벨을 굵게 쓴 계층만 굵게 한다.
     - 괄호 안 글자 줄임: 예시에서 가장 많이 쓴 줄임 폭으로 괄호 부연설명 축소를 켠다.
@@ -1576,14 +1572,19 @@ def _apply_rules(profile, analysis):
     shapes = fmt.setdefault("복사_문단모양", {})
     rules, label_symbols, deltas = {}, {}, Counter()
     returns, shrink_by_marker = {}, {}
+    legacy_hanging = False
     for group in analysis.get("paragraph_groups", []):
         marker, elements = group["marker"], group["elements"]
         if not marker:
             continue
         rule = _value(elements, "hanging_rule")
-        if rule in HANGING_RULES:
+        if rule in LEGACY_HANGING_RULES:
+            legacy_hanging = True
+            if marker in shapes:
+                shapes[marker].pop("Indentation", None)
+        elif rule in HANGING_RULES:
             rules[marker] = rule
-            if rule in ("after_label", "after_marker") and marker in shapes:
+            if rule == "after_marker" and marker in shapes:
                 shapes[marker].pop("Indentation", None)
         bold = _value(elements, "label_bold")
         if bold is not None:
@@ -1597,7 +1598,7 @@ def _apply_rules(profile, analysis):
         if back is not None and normal is not None and abs(back - normal) > max(100, 0.1 * abs(normal)):
             returns[marker] = int(back)
     fmt["내어쓰기_규칙"] = rules
-    options["std_hanging_indent"] = any(r in ("after_label", "after_marker") for r in rules.values())
+    options["std_hanging_indent"] = legacy_hanging or any(r == "after_marker" for r in rules.values())
     if label_symbols:
         options["paren_label_bold"] = any(label_symbols.values())
         options["label_symbols"] = {**options.get("label_symbols", {}), **label_symbols}
