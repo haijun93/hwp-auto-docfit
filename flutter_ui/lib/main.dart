@@ -1453,6 +1453,15 @@ class _WorkspaceState extends State<Workspace> {
             child: const Text('서식 예시 확인'),
           ),
         ),
+        // 서식예시 폴더(C:\HWP_AUTODOCFIT\서식예시)를 연다. 예시 파일을 한/글에서 고쳐 저장하면 '한 번에 적용' 때 반영된다.
+        Tooltip(
+          message: '서식마다 예시 HWPX가 든 폴더를 열어요. 예시 파일을 고쳐 저장하면 다음 한 번에 적용 때 바뀐 서식이 반영돼요',
+          child: TextButton(
+            key: const Key('formatSamplesButton'),
+            onPressed: locked ? null : () => command('open_format_samples'),
+            child: const Text('서식예시 폴더'),
+          ),
+        ),
         Tooltip(
           message: '예시 보고서를 끌어다 놓아 서식 복제 · 이름 바꾸기 · 세부 수정 · 삭제',
           child: TextButton(

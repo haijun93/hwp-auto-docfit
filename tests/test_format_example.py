@@ -20,8 +20,9 @@ class FormatExampleTest(unittest.TestCase):
         self.dir = Path(self.tmp.name)
         # run_path가 돌려준 ns는 사본이므로, 메서드가 실제로 보는 전역을 바꿔 사용자 설정 폴더를 건드리지 않는다.
         self.globals = self.gui._서식예시_경로.__globals__
-        self.saved = {k: self.globals[k] for k in ('서식예시_폴더', '서식프로파일_폴더')}
+        self.saved = {k: self.globals[k] for k in ('서식예시_폴더', '서식예시_정보_폴더', '서식프로파일_폴더')}
         self.globals['서식예시_폴더'] = lambda: self.dir / 'format_examples'
+        self.globals['서식예시_정보_폴더'] = lambda: self.dir / 'format_info'
         self.globals['서식프로파일_폴더'] = lambda: self.dir / 'formats'
 
     def tearDown(self):
@@ -32,7 +33,7 @@ class FormatExampleTest(unittest.TestCase):
         app = types.SimpleNamespace(
             running=False, _프로파일들={'p1': {'name': '보고서', 'title_size': 20}}, _활성_서식_프로파일='p1',
             status_var=Mock(), 로그표시=Mock(), _경로_열기=Mock(), root=Mock(), **extra)
-        for name in ('_서식예시_경로', '_서식예시_확인', '_서식예시_완료', '_서식_삭제'):
+        for name in ('_서식예시_경로', '_서식예시_확인', '_서식예시_완료', '_서식_삭제', '_서식예시_원본사본', '_서식예시_기록'):
             setattr(app, name, types.MethodType(getattr(self.gui, name), app))
         return app
 
@@ -41,6 +42,7 @@ class FormatExampleTest(unittest.TestCase):
         self.assertTrue(str(example).startswith(str(self.dir)))
         example.parent.mkdir(parents=True, exist_ok=True)
         example.write_bytes(b'hwpx')
+        info.parent.mkdir(parents=True, exist_ok=True)
         info.write_text(json.dumps({'서명': signature}), encoding='utf-8')
         return example
 
@@ -88,7 +90,8 @@ class FormatExampleTest(unittest.TestCase):
 
     def test_default_format_has_own_example_name(self):
         app = self.fake()
-        self.assertEqual(app._서식예시_경로('')[0].name, '서식예시__기본.hwpx')
+        self.assertEqual(app._서식예시_경로('')[0].name, '기본 서식.hwpx')      # 서식예시 폴더의 기본 서식 예시
+        self.assertEqual(app._서식예시_경로('p1')[0].name, '보고서.hwpx')         # 서식 이름으로 짓는다
         self.assertNotEqual(self.ns['서식예시_서명']({}), self.ns['서식예시_서명']({'name': '보고서'}))
 
 

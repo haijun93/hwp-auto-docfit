@@ -39,7 +39,7 @@ def label_of(text: str):
 SPACE_EM = 0.5        # 빈칸 폭 추정(글자 크기 대비)
 
 
-def plan(label: str, target_em: float):
+def plan(label: str, target_em: float, allow_ratio: bool = True):
     """라벨을 target_em 폭으로 맞추는 계획 (글자 사이 빈칸 수, 자간 %, 장평 %)(순수 함수).
 
     사용자 규칙(2026-10-10): 조정 대상과 기준 라벨의 글자 수 홀짝이 다르고 자간만으로 맞출 수 있으면(예: 3자 → 4자)
@@ -57,11 +57,17 @@ def plan(label: str, target_em: float):
         while spaces > 1 and spaces * gaps * SPACE_EM > extra - 1e-6:
             spaces -= 1
     spaced = base + spaces * gaps * SPACE_EM
-    spacing, ratio = stretch(label, target_em, spaced_base=spaced)
+    inner = sum(char_em(c) for c in label[:-1])
+    if not allow_ratio and gaps > 0:
+        # 장평 늘리기를 쓰지 않으면(설정 '장평 줄이기 사용' 끔) 자간 한도를 넘는 폭은 글자 사이 빈칸으로 채운다.
+        while target_em - spaced > MAX_SPACING / 100 * inner + 1e-6:
+            spaces += 1
+            spaced = base + spaces * gaps * SPACE_EM
+    spacing, ratio = stretch(label, target_em, spaced_base=spaced, allow_ratio=allow_ratio)
     return spaces, spacing, ratio
 
 
-def stretch(label: str, target_em: float, spaced_base=None):
+def stretch(label: str, target_em: float, spaced_base=None, allow_ratio: bool = True):
     """라벨 글자의 폭 합을 target_em으로 늘리는 (자간 %, 장평 %). 이미 같거나 넓으면 (0, 100)(순수 함수).
 
     한/글 실측(2026-10-10): 자간은 장평을 적용한 글자 폭 기준이다. 자간은 마지막 글자를 뺀 글자에만 준다.
@@ -74,6 +80,8 @@ def stretch(label: str, target_em: float, spaced_base=None):
     gap = target_em - current
     if inner > 0 and gap <= MAX_SPACING / 100 * inner:
         return round(gap / inner * 100), 100
+    if not allow_ratio:
+        return (MAX_SPACING if inner > 0 else 0), 100      # 장평은 바꾸지 않는다
     spacing = MAX_SPACING if inner > 0 else 0
     fixed = current - base                       # 넣은 빈칸 폭(장평 영향 없음으로 본다)
     return spacing, min(MAX_RATIO, round((target_em - fixed) / (base + spacing / 100 * inner) * 100))
@@ -138,7 +146,7 @@ class _Chars:
         return new_id
 
 
-def align_colons(header_root, sections) -> dict:
+def align_colons(header_root, sections, allow_ratio: bool = True) -> dict:
     """모든 구역·칸의 콜론 라벨 묶음을 맞춘다. 통계를 돌려준다."""
     chars = _Chars(header_root)
     stats = {"groups": 0, "stretched": 0}
@@ -152,7 +160,7 @@ def align_colons(header_root, sections) -> dict:
             done = False
             for p, t, (s, e, colon) in group:
                 label = t.text[s:e]
-                spaces, spacing, ratio = plan(label, target)
+                spaces, spacing, ratio = plan(label, target, allow_ratio)
                 if (spaces, spacing, ratio) == (0, 0, 100):
                     continue
                 run = next(r for r in p if _tag(r) == "run" and t in list(r))

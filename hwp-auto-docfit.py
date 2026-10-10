@@ -265,6 +265,7 @@ from docfit_core.style_unify import dominant as 서식통일_우세값, hierarch
 from docfit_core.style_unify import attachment_heading as 서식통일_붙임제목, style_change_points as 서식통일_체계전환점
 from docfit_core.number_check import 숫자_대조
 from docfit_core import outline_ops
+from docfit_core import format_samples as 서식예시모듈
 from docfit_core.progress_guide import guide_key as 진행안내_키, guide_state as 진행안내_상태
 from docfit_core.stage_selection import STAGE_EXAMPLES, default_choice as stage_default, enabled as stage_enabled, stages_for_mode
 from docfit_core.stage_selection import TABLE_STAGE_KEYS as 표작업_키목록, without_tables as 표작업_제외
@@ -554,13 +555,20 @@ def _업데이트_자산_선택(릴리스):
 # ============================================================
 
 DLL_NAME = "MapoHwpAutoDocFitSecurity.dll"
-HWP_AUTOMATION_DIR = Path(r"C:\HwpAutomation")
-TARGET_DLL = HWP_AUTOMATION_DIR / DLL_NAME
+# 알파(2026-10-10 사용자 요청): 최상위 앱 폴더를 C:\HwpAutomation에서 C:\HWP_AUTODOCFIT로 바꾸고, 그 아래
+# '서식예시' 폴더에 서식마다 예시 HWPX를 둔다. 사용자가 예시 파일을 고치면 '한 번에 적용'을 시작할 때 바뀐 서식 값을
+# 설정에 옮긴다(서식예시모듈). 끄면 예전 폴더(C:\HwpAutomation)와 설정 폴더의 예시 보관 방식으로 돌아간다.
+알파_서식예시폴더_사용 = True
+HWP_AUTOMATION_DIR = 서식예시모듈.APP_HOME if 알파_서식예시폴더_사용 else 서식예시모듈.LEGACY_APP_HOME
+# 알파(2026-10-10 사용자 요청): 보안 모듈 DLL은 앱 폴더의 dll 하위 폴더에 HwpAutoDocFitSecurity.dll로 두고, 레지스트리 값
+# 이름도 HwpAutoDocFitSecurity로 바꾼다. 앱에 포함된 원본 DLL 파일 이름(DLL_NAME)은 그대로다.
+DLL_DIR = 서식예시모듈.app_subfolder(서식예시모듈.DLL_FOLDER_NAME, HWP_AUTOMATION_DIR) if 알파_서식예시폴더_사용 else HWP_AUTOMATION_DIR
+TARGET_DLL = DLL_DIR / (서식예시모듈.DLL_FILE if 알파_서식예시폴더_사용 else DLL_NAME)
 REGISTRY_PATH = r"Software\HNC\HwpAutomation\Modules"
 # 한/글은 RegisterModule의 두 번째 인자와
 # ...\HwpAutomation\Modules 아래 레지스트리 값 이름이 같아야 한다.
 # 공용 예제 이름 대신 이 프로젝트 전용 이름을 사용한다.
-REGISTRY_VALUE_NAME = "MapoHwpAutoDocFitSecurity"
+REGISTRY_VALUE_NAME = 서식예시모듈.REGISTRY_VALUE if 알파_서식예시폴더_사용 else 서식예시모듈.LEGACY_REGISTRY_VALUE
 REGISTER_MODULE_NAME = "FilePathCheckDLL"
 REGISTER_MODULE_VALUE = REGISTRY_VALUE_NAME
 
@@ -1164,6 +1172,9 @@ def 서식_기본값_전역_복원():
 # 이미 실패한 당김을 매 차수 반복해 시간만 쓴다.
 다음단어_당김_사용 = True
 단어_장평_추가축소_최대_단계 = 10  # 장평 100% -> 90%까지만(기존 15단계=85%에서 축소)
+# 장평 줄이기 사용(설정 'ratio_shrink', 기본 끔, 2026-10-10 사용자 규칙): 끄면 자간 조정 중 장평 축소(단어 분리 보정의
+# 장평 추가 축소·자간 한도 뒤 장평 단계 축소)와 콜론 라벨 정렬의 장평 늘리기를 쓰지 않고 자간·빈칸만 쓴다.
+장평_줄이기_사용 = False
 
 # 한 문단의 앞쪽 줄 수가 더 많거나 같으면 앞쪽 전체부터 해당 문단까지 축소.
 # 더 적으면 해당 문단 앞의 문단만 확대해 뒤쪽으로 이동. 단계당 10%p, 최대 6단계.
@@ -1227,6 +1238,8 @@ def 번들_리소스_폴더():
 
 기본_설정 = {
     "prevent_word_split": True,
+    # 장평 줄이기(가로 비율 축소)는 기본으로 끈다(2026-10-10 사용자 규칙). 끄면 자간 줄이기·늘리기만으로 조정한다.
+    "ratio_shrink": False,
     "punctuation": True,
     "punctuation_threshold": "5",
     "keep_punctuation_set_together": True,
@@ -1368,6 +1381,10 @@ def 서식프로파일_목록():
                 # 다시 만든다. 파일은 바꾸지 않는다(일반 표 서식처럼 예시가 다시 필요한 것은 예시를 다시 넣어야 함).
                 if data.get("element_analysis") and int(data.get("profile_version") or 0) < 5:
                     서식요소.apply_to_profile(data)
+                if path.stem == 기본서식_덮어쓰기_식별자:
+                    if 알파_서식예시폴더_사용:
+                        result[""] = data        # 기본 서식 예시 파일을 고쳐 바뀐 기본 서식
+                    continue
                 result[path.stem] = data
             except Exception as exc:
                 if _콘솔_출력_가능:
@@ -1797,14 +1814,24 @@ def 예시문서_기본이름(문단들):
     return "새 서식"
 
 
-def 한글파일_서식_분석(path):
+def _분석본_보관(hwpx, 보관):
+    """분석한 HWPX를 서식예시 폴더에 넣을 수 있게 보관 경로로 복사한다(보관이 없으면 하지 않음)."""
+    if 보관:
+        Path(보관).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(hwpx, 보관)
+
+
+def 한글파일_서식_분석(path, 보관=None):
+    """예시 문서(HWP·HWPX·PDF)를 분석한다. 보관을 주면 분석한 HWPX를 그 경로에 복사한다(서식예시 폴더용)."""
     if Path(path).suffix.lower() == ".hwpx":
+        _분석본_보관(path, 보관)
         return hwpx_서식_분석(path)
     if Path(path).suffix.lower() == ".pdf":
         # PDF 예시: kordoc으로 HWPX를 만든 뒤 PDF 서식을 옮겨 심고 분석한다(원본은 읽기만 함).
         with tempfile.TemporaryDirectory(prefix="pdf_format_") as folder:
             target = Path(folder) / "source.hwpx"
             외부문서_hwpx로_변환(Path(path), ".pdf", target)
+            _분석본_보관(target, 보관)
             return hwpx_서식_분석(target)
     # 원본을 복사한 뒤 독립 한글 인스턴스에서 임시 HWPX로 변환한다.
     with tempfile.TemporaryDirectory(prefix="hwp_format_") as folder:
@@ -1822,6 +1849,7 @@ def 한글파일_서식_분석(path):
                 raise RuntimeError("한글파일을 열지 못했습니다.")
             if not app.SaveAs(str(target), "HWPX", ""):
                 raise RuntimeError("HWPX 변환 실패. 한글에서 HWPX로 저장한 파일을 선택해 주세요.")
+            _분석본_보관(target, 보관)
             return hwpx_서식_분석(target)
         finally:
             if app is not None:
@@ -4197,7 +4225,7 @@ def 콜론라벨_hwpx_처리(source, target=None, selections=None):
         if target is not None: shutil.copyfile(source, target)
         return 0
     전 = {n: 제목_문자열(roots[n]) for n in names}
-    통계 = 콜론라벨.align_colons(header, [roots[n] for n in names])
+    통계 = 콜론라벨.align_colons(header, [roots[n] for n in names], allow_ratio=장평_줄이기_사용)
     # 짧은 라벨 글자 사이에 빈칸을 넣을 수 있으므로 빈칸을 뺀 글로 보존을 확인한다.
     if any(re.sub(r'\s', '', 제목_문자열(roots[n])) != re.sub(r'\s', '', 전[n]) for n in names):
         raise RuntimeError('콜론 라벨 정렬 중 글 보존 검사에 실패했습니다.')
@@ -4848,9 +4876,31 @@ def 설정_폴더():
 def 서식프로파일_폴더():
     return 설정_폴더() / "formats"
 
-def 서식예시_폴더():
-    """서식마다 만든 예시 파일(서식 예시 확인)을 보관하는 폴더."""
+def 서식예시_정보_폴더():
+    """서식 예시의 정보(해시·만든 때)와 비교 기준이 되는 원본 사본을 두는 설정 폴더."""
     return 설정_폴더() / "format_examples"
+
+def 서식예시_폴더():
+    """서식마다 예시 HWPX를 두는 폴더. 알파: 사용자가 직접 고칠 수 있는 C:\\HWP_AUTODOCFIT\\서식예시."""
+    if 알파_서식예시폴더_사용:
+        return 서식예시모듈.sample_folder(HWP_AUTOMATION_DIR)
+    return 서식예시_정보_폴더()
+
+def 번들_서식예시_찾기():
+    """앱에 포함해 배포하는 기본 서식 예시(resources/서식예시/기본 서식.hwpx). 없으면 None."""
+    후보_목록 = [프로그램_폴더() / "resources" / "서식예시" / 서식예시모듈.STANDARD_FILE]
+    번들_폴더 = 번들_리소스_폴더()
+    if 번들_폴더 is not None:
+        후보_목록.append(번들_폴더 / "resources" / "서식예시" / 서식예시모듈.STANDARD_FILE)
+    return next((경로 for 경로 in 후보_목록 if 경로.is_file()), None)
+
+def _json_파일_읽기(경로):
+    try:
+        return json.loads(Path(경로).read_text(encoding="utf-8")) if Path(경로).is_file() else {}
+    except Exception:
+        return {}
+
+기본서식_덮어쓰기_식별자 = "_standard"   # 기본 서식 예시를 사용자가 고쳐 바뀐 기본 서식(formats/_standard.json)
 
 # 서식 예시는 '한 번에 적용'(서식 + 자간 정리)으로 만든다(2026-10-04 사용자 요청: 예시 파일 자간 정리 미흡).
 서식예시_작업모드 = "all"
@@ -5188,7 +5238,7 @@ def 등록된_DLL_경로():
     return None
 
 def 레지스트리_등록():
-    HWP_AUTOMATION_DIR.mkdir(parents=True, exist_ok=True)
+    TARGET_DLL.parent.mkdir(parents=True, exist_ok=True)
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, REGISTRY_PATH) as key:
         winreg.SetValueEx(key, REGISTRY_VALUE_NAME, 0, winreg.REG_SZ, str(TARGET_DLL))
     로그("AutomationModule Registry 등록 완료")
@@ -5201,13 +5251,13 @@ def 보안모듈_초기화():
             f"\n\n{DLL_NAME}을 프로그램 폴더에서 찾을 수 없습니다.\n"
             f"위치: {프로그램_폴더() / DLL_NAME}"
         )
-    HWP_AUTOMATION_DIR.mkdir(parents=True, exist_ok=True)
+    TARGET_DLL.parent.mkdir(parents=True, exist_ok=True)
     if not TARGET_DLL.is_file():
         로그("AutomationModule DLL 최초 설치")
         shutil.copy2(source_dll, TARGET_DLL)
         로그(f"DLL 복사 완료: {TARGET_DLL}")
     else:
-        로그("C:\\HwpAutomation DLL 확인 완료")
+        로그(f"{TARGET_DLL.parent} DLL 확인 완료")
 
     registered_path = 등록된_DLL_경로()
     target_path = TARGET_DLL.resolve()
@@ -5223,7 +5273,36 @@ def 보안모듈_초기화():
         레지스트리_등록()
     else:
         로그("AutomationModule Registry 확인 완료")
+    이전_보안모듈_정리()
     로그("AutomationModule 초기화 완료")
+
+
+def 이전_보안모듈_정리():
+    """앱 폴더를 옮긴 뒤(C:\\HwpAutomation → C:\\HWP_AUTODOCFIT\\dll) 예전 폴더의 이 앱 DLL과 예전 레지스트리 값을 지운다.
+
+    예전 폴더는 비면 지우고 다른 파일이 있으면 남긴다. 한/글이 DLL을 쓰고 있어 지우지 못하면 다음 실행 때 다시
+    시도한다(무시). 예전 판(베타)을 다시 실행하면 그 판이 예전 폴더·값을 스스로 다시 만든다."""
+    예전폴더 = 서식예시모듈.LEGACY_APP_HOME
+    if TARGET_DLL.parent == 예전폴더:
+        return
+    try:
+        예전 = 예전폴더 / 서식예시모듈.LEGACY_DLL_FILE
+        if 예전.is_file():
+            예전.unlink()
+            로그(f"예전 보안 모듈 폴더 정리: {예전}")
+        if 예전폴더.is_dir() and not any(예전폴더.iterdir()):
+            예전폴더.rmdir()
+    except Exception as exc:
+        로그(f"예전 보안 모듈 정리 보류(무시): {exc}")
+    if REGISTRY_VALUE_NAME != 서식예시모듈.LEGACY_REGISTRY_VALUE:
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, REGISTRY_PATH, 0, winreg.KEY_ALL_ACCESS) as key:
+                winreg.DeleteValue(key, 서식예시모듈.LEGACY_REGISTRY_VALUE)
+            로그(f"예전 레지스트리 값 정리: {서식예시모듈.LEGACY_REGISTRY_VALUE}")
+        except FileNotFoundError:
+            pass
+        except Exception as exc:
+            로그(f"예전 레지스트리 값 정리 보류(무시): {exc}")
 
 # ============================================================
 # 상용구 파일저장 (HWP.IDO)
@@ -5244,6 +5323,42 @@ def 번들_상용구_파일_찾기():
         if 경로.is_file():
             return 경로
     return None
+
+
+def 글자상용구_폴더():
+    """앱 폴더의 글자 상용구(HWP.IDO) 보관 폴더(알파). 끄면 None."""
+    return 서식예시모듈.app_subfolder(서식예시모듈.CHAR_IDIOM_FOLDER_NAME, HWP_AUTOMATION_DIR) if 알파_서식예시폴더_사용 else None
+
+
+def 본문상용구_폴더():
+    """앱 폴더의 본문 상용구(한/글 IDIOM 폴더의 *.HWP) 보관 폴더(알파). 끄면 None."""
+    return 서식예시모듈.app_subfolder(서식예시모듈.BODY_IDIOM_FOLDER_NAME, HWP_AUTOMATION_DIR) if 알파_서식예시폴더_사용 else None
+
+
+def 번들_본문상용구_폴더():
+    """앱에 포함해 배포하는 본문 상용구 폴더(resources/IDIOM). 없으면 None."""
+    후보_목록 = [프로그램_폴더() / "resources" / "IDIOM"]
+    번들_폴더 = 번들_리소스_폴더()
+    if 번들_폴더 is not None:
+        후보_목록.append(번들_폴더 / "resources" / "IDIOM")
+    return next((경로 for 경로 in 후보_목록 if 경로.is_dir()), None)
+
+
+def 상용구_폴더_준비():
+    """앱 폴더에 글자상용구·본문상용구 폴더를 만들고, 비어 있으면 앱에 포함된 파일을 넣는다(사용자 파일은 덮어쓰지 않음)."""
+    글자, 본문 = 글자상용구_폴더(), 본문상용구_폴더()
+    if 글자 is None:
+        return
+    글자.mkdir(parents=True, exist_ok=True)
+    본문.mkdir(parents=True, exist_ok=True)
+    번들 = 번들_상용구_파일_찾기()
+    if 번들 is not None and not (글자 / 상용구_파일명).is_file():
+        shutil.copyfile(번들, 글자 / 상용구_파일명)
+    번들_본문 = 번들_본문상용구_폴더()
+    if 번들_본문 is not None:
+        for 파일 in 번들_본문.iterdir():
+            if 파일.is_file() and not (본문 / 파일.name).exists():
+                shutil.copyfile(파일, 본문 / 파일.name)
 
 
 def 상용구_전용폴더_찾기():
@@ -10511,6 +10626,8 @@ def 단어_장평_추가축소_시도(start, end, anchor, word_end, 최대시도
     다시 확인한다 — '자간 -4%, 장평 93%' 조합처럼, 자간을 극한까지
     밀어붙이는 대신 장평과 나눠 분담한다.
     """
+    if not 장평_줄이기_사용:
+        return False            # 장평 줄이기 끔(기본): 자간만으로 조정한다
     # 보관: 호출자가 같은 구간을 이미 읽고 원래 값으로 되돌려 둔 (자간, 장평)
     # runs. 넘겨받으면 같은 줄을 다시 글자별로 읽지 않는다.
     if 보관 is None:
@@ -11120,7 +11237,7 @@ def _자간자동조정_본체(최대시도=None):
             # 자간만으로 해결되지 않는 긴 어절은 현재 줄의 장평을 1%씩
             # 최대 15단계 보조 축소한다. 자간을 과도하게 30단계 이상
             # 누르는 것보다 글자 폭을 소폭 줄이는 편이 가독성이 안정적이다.
-            if 단어_장평축소횟수 < 15:
+            if 장평_줄이기_사용 and 단어_장평축소횟수 < 15:
                 hwp_run("Cancel")
                 hwp_run("MoveLineEnd")
                 hwp_run("MoveSelLineBegin")
@@ -18236,6 +18353,11 @@ def 작업_실행(
         else:
             로그_파일_경로 = None
         로그(f"프로그램 버전: {APP_VERSION} / 전체 처리 {작업_반복횟수}회 / 단어 분리 방지: {bool(단어분리방지)} / 본문 {본문재시도횟수}단계 / 표 {표재시도횟수}단계 / 줄간격 조정범위 {줄간격최소}~{줄간격최대}%")
+        try:
+            globals()["장평_줄이기_사용"] = bool(설정_불러오기().get("ratio_shrink", 기본_설정["ratio_shrink"]))
+        except Exception:
+            globals()["장평_줄이기_사용"] = 기본_설정["ratio_shrink"]
+        로그(f"장평 줄이기: {'사용' if 장평_줄이기_사용 else '안 함(자간 줄이기·늘리기만 사용)'}")
         로그(f"작업 로그 파일: {로그_파일_경로 or '(만들지 않음)'}")
         정리수 = 이전_작업_임시폴더_정리()
         if 정리수:
@@ -18755,6 +18877,7 @@ class HwpAutoDocFitGUI:
         self._활성_서식_프로파일 = str(저장된_설정.get("active_format_profile", ""))
         self._프로파일_콤보_이름목록 = ["profile_combo", "main_profile_combo"]
         self.prevent_word_split_var = tk.BooleanVar(value=bool(저장된_설정["prevent_word_split"]))
+        self.ratio_shrink_var = tk.BooleanVar(value=bool(저장된_설정.get("ratio_shrink", 기본_설정["ratio_shrink"])))
         self.punctuation_var = tk.BooleanVar(value=bool(저장된_설정["punctuation"]))
         self.punctuation_threshold_var = tk.StringVar(value=str(저장된_설정["punctuation_threshold"]))
         self.keep_punctuation_set_var = tk.BooleanVar(value=bool(저장된_설정["keep_punctuation_set_together"]))
@@ -18847,7 +18970,7 @@ class HwpAutoDocFitGUI:
         self.title_owner_var.trace_add("write", lambda *_: 제목_담당자_글_반영(self.title_owner_var.get()))
         self.title_owner_var.trace_add("write", self._설정_변경됨)
 
-        for 변수 in ([self.prevent_word_split_var, self.punctuation_var, self.punctuation_threshold_var, self.keep_punctuation_set_var,
+        for 변수 in ([self.prevent_word_split_var, self.ratio_shrink_var, self.punctuation_var, self.punctuation_threshold_var, self.keep_punctuation_set_var,
                      self.color_mark_on_var, self.color_var,
                      self.autoclose_var, self.unify_result_window_var,
                      self.stdformat_var, self.verify_var, self.integrity_report_file_var,
@@ -19013,6 +19136,10 @@ class HwpAutoDocFitGUI:
         # 고른 서식을 예시 보고서에 입혀 한/글로 미리 보여 준다(2026-10-04 사용자 요청).
         self.format_example_button = ttk.Button(format_quick, text="서식 예시 확인", command=self._서식예시_확인)
         self.format_example_button.pack(side="left", padx=(6, 0))
+        if 알파_서식예시폴더_사용:
+            # 서식예시 폴더(C:\\HWP_AUTODOCFIT\\서식예시)를 열어 예시 파일을 직접 고친다(알파, 2026-10-10).
+            self.format_samples_button = ttk.Button(format_quick, text="서식예시 폴더", command=self._서식예시_폴더_열기)
+            self.format_samples_button.pack(side="left", padx=(4, 0))
         self.format_drop_label = ttk.Label(
             format_quick,
             text="예시 HWP/HWPX를 여기에 놓으면 분석 후 바로 선택합니다",
@@ -19134,6 +19261,11 @@ class HwpAutoDocFitGUI:
         if self._활성_서식_프로파일 not in self._프로파일들:
             self._활성_서식_프로파일 = ""
         self._프로파일_전역반영(self._프로파일들[self._활성_서식_프로파일])
+        self._서식예시_폴더_준비()
+        try:
+            상용구_폴더_준비()
+        except Exception as exc:
+            self.로그표시(f"상용구 폴더를 준비하지 못했습니다: {exc}")
         self._설정창_생성()
         self._항상위_적용()
 
@@ -19417,6 +19549,10 @@ class HwpAutoDocFitGUI:
             체크 = ttk.Checkbutton(parent, text="줄 끝에서 단어가 끊기지 않게 정리하기", variable=self.prevent_word_split_var)
             체크.pack(anchor="w")
             ttk.Label(parent, text="04. 표·컨트롤 자간 조정에도 함께 적용됩니다.",
+                      style="Hint.TLabel", wraplength=610).pack(anchor="w", pady=(0, 2))
+            ttk.Checkbutton(parent, text="장평 줄이기 사용(글자 가로 비율을 줄여 단어를 한 줄에 모음)",
+                            variable=self.ratio_shrink_var).pack(anchor="w")
+            ttk.Label(parent, text="기본은 끔: 자간 줄이기·늘리기만으로 맞춥니다. 켜면 자간으로 부족할 때 장평을 90%까지 줄입니다.",
                       style="Hint.TLabel", wraplength=610).pack(anchor="w", pady=(0, 2))
             if 주설정탭:
                 self.prevent_word_split_check = 체크
@@ -20536,11 +20672,22 @@ class HwpAutoDocFitGUI:
             바뀐["organization"] = 기관
         else:
             바뀐.pop("organization", None)
+        예전예시, 정보경로 = self._서식예시_경로(identifier)
         try:
             self._서식_파일_저장(identifier, 바뀐)
         except Exception as exc:
             return f"서식 이름 저장 실패: {exc}"
         self._프로파일들[identifier] = 바뀐
+        if 알파_서식예시폴더_사용 and 예전예시.is_file():
+            새예시 = 예전예시.with_name(서식예시모듈.file_name_for(이름))
+            try:
+                if 새예시 != 예전예시 and not 새예시.exists():
+                    예전예시.rename(새예시)
+                    정보 = _json_파일_읽기(정보경로)
+                    정보["file"] = 새예시.name
+                    정보경로.write_text(json.dumps(정보, ensure_ascii=False, indent=2), encoding="utf-8")
+            except Exception as exc:
+                self.로그표시(f"서식예시 파일 이름을 바꾸지 못했습니다(서식은 바꿈): {exc}")
         self._프로파일_목록갱신()
         self.status_var.set(f"서식 이름을 '{이름}'(으)로 바꿨습니다.")
         return None
@@ -20556,7 +20703,8 @@ class HwpAutoDocFitGUI:
             경로 = 서식프로파일_폴더() / (identifier + ".json")
             if 경로.is_file():
                 경로.unlink()
-            for 예시 in self._서식예시_경로(identifier):      # 보관한 서식 예시도 함께 지운다
+            예시경로, 정보경로 = self._서식예시_경로(identifier)
+            for 예시 in (예시경로, 정보경로, self._서식예시_원본사본(정보경로)):   # 보관한 서식 예시도 함께 지운다
                 if 예시.is_file():
                     예시.unlink()
         except Exception as exc:
@@ -20572,10 +20720,143 @@ class HwpAutoDocFitGUI:
         return None
 
     def _서식예시_경로(self, identifier):
-        """서식마다 하나씩 보관하는 예시 파일과 그 정보 파일의 경로(설정 폴더 format_examples, 서식 식별자로 이름 짓는다)."""
+        """서식마다 하나씩 보관하는 예시 파일과 그 정보 파일의 경로.
+
+        알파(서식예시 폴더): 예시 파일은 C:\\HWP_AUTODOCFIT\\서식예시\\<서식 이름>.hwpx(기본 서식은 '기본 서식.hwpx'),
+        정보 파일은 설정 폴더 format_examples에 서식 식별자로 둔다. 끄면 둘 다 설정 폴더에 식별자로 둔다(예전 방식)."""
         이름 = re.sub(r'[\/:*?"<>|\s]+', "_", identifier or "").strip("_") or "_기본"
+        if not 알파_서식예시폴더_사용:
+            폴더 = 서식예시_폴더()
+            return 폴더 / f"서식예시_{이름}.hwpx", 폴더 / f"서식예시_{이름}.json"
+        정보경로 = 서식예시_정보_폴더() / f"서식예시_{이름}.json"
+        파일 = _json_파일_읽기(정보경로).get("file")
+        if not 파일:
+            profile = (getattr(self, "_프로파일들", None) or {}).get(identifier) or {}
+            파일 = 서식예시모듈.file_name_for(profile.get("name") or "", standard=not identifier)
+        return 서식예시_폴더() / 파일, 정보경로
+
+    def _서식예시_원본사본(self, 정보경로):
+        """사용자가 고치기 전 예시 파일의 사본(바뀐 값을 가려내는 비교 기준)."""
+        return Path(정보경로).with_suffix(".원본.hwpx")
+
+    def _서식예시_기록(self, 예시경로, 정보경로, 정보):
+        """지금 예시 파일을 비교 기준으로 삼는다: 원본 사본을 새로 두고 해시·파일 이름을 기록한다."""
+        정보경로 = Path(정보경로)
+        정보경로.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(예시경로, self._서식예시_원본사본(정보경로))
+        정보 = dict(정보, file=Path(예시경로).name, sha256=서식예시모듈.digest(예시경로),
+                  기록때=f"{_datetime.datetime.now():%Y-%m-%d %H:%M:%S}")
+        정보경로.write_text(json.dumps(정보, ensure_ascii=False, indent=2), encoding="utf-8")
+        return 정보
+
+    def _서식예시_원본_보관(self, identifier, 표본):
+        """새로 추가한 서식의 예시 문서(분석한 HWPX)를 서식예시 폴더에 넣는다. 같은 이름 파일이 있으면 번호를 붙인다."""
+        try:
+            예시경로, 정보경로 = self._서식예시_경로(identifier)
+            후보, 순번 = 예시경로, 2
+            while 후보.exists():
+                후보 = 예시경로.with_name(f"{예시경로.stem} ({순번}).hwpx")
+                순번 += 1
+            후보.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(표본, 후보)
+            self._서식예시_기록(후보, 정보경로, {"kind": "source", "식별자": identifier})
+            self.로그표시(f"서식예시 폴더에 예시 문서를 넣었습니다: {후보}")
+        except Exception as exc:
+            self.로그표시(f"서식예시 폴더에 예시 문서를 넣지 못했습니다(서식은 저장함): {exc}")
+
+    def _서식예시_폴더_준비(self):
+        """앱을 켤 때 서식예시 폴더를 만들고, 예전 설정 폴더의 예시를 옮기고, 기본 서식 예시가 없으면 넣는다.
+
+        기본 서식 예시 파일을 사용자가 지웠으면 고친 기본 서식(formats/_standard.json)도 지워 처음 기본 서식으로 되돌린다."""
+        if not 알파_서식예시폴더_사용:
+            return
+        try:
+            서식예시_폴더().mkdir(parents=True, exist_ok=True)
+        except Exception as exc:
+            self.로그표시(f"서식예시 폴더를 만들지 못했습니다: {서식예시_폴더()} ({exc})")
+            return
+        for 식별자 in list(self._프로파일들):
+            예시경로, 정보경로 = self._서식예시_경로(식별자)
+            예전 = 서식예시_정보_폴더() / 정보경로.with_suffix(".hwpx").name
+            if 예전 == 예시경로 or 예시경로.exists() or not 예전.is_file():
+                continue
+            try:
+                shutil.copyfile(예전, 예시경로)
+                self._서식예시_기록(예시경로, 정보경로, dict(_json_파일_읽기(정보경로), kind="generated"))
+                예전.unlink()
+            except Exception as exc:
+                self.로그표시(f"예전 서식 예시를 옮기지 못했습니다: {예전.name} ({exc})")
+        예시경로, 정보경로 = self._서식예시_경로("")
+        if 예시경로.is_file():
+            return
+        덮어쓰기 = 서식프로파일_폴더() / f"{기본서식_덮어쓰기_식별자}.json"
+        try:
+            if 덮어쓰기.is_file():
+                덮어쓰기.unlink()
+                self._프로파일들[""] = 기본_서식프로파일()
+                if not self._활성_서식_프로파일:
+                    self._프로파일_전역반영(self._프로파일들[""])
+                self.로그표시("기본 서식 예시 파일이 없어 기본 서식을 처음 값으로 되돌렸습니다.")
+            for 옛 in (정보경로, self._서식예시_원본사본(정보경로)):
+                if 옛.is_file():
+                    옛.unlink()
+            번들 = 번들_서식예시_찾기()
+            if 번들 is not None:
+                shutil.copyfile(번들, 예시경로)
+                self._서식예시_기록(예시경로, 정보경로, {"kind": "bundled", "식별자": ""})
+        except Exception as exc:
+            self.로그표시(f"기본 서식 예시를 넣지 못했습니다: {exc}")
+
+    def _서식예시_폴더_열기(self):
+        """서식예시 폴더를 탐색기로 연다(사용자가 예시 파일을 직접 고칠 수 있게)."""
+        self._서식예시_폴더_준비()
         폴더 = 서식예시_폴더()
-        return 폴더 / f"서식예시_{이름}.hwpx", 폴더 / f"서식예시_{이름}.json"
+        try:
+            폴더.mkdir(parents=True, exist_ok=True)
+            os.startfile(str(폴더))
+            self.status_var.set(f"서식예시 폴더를 열었습니다: {폴더}  (예시 파일을 고쳐 저장하면 '한 번에 적용' 때 반영됩니다)")
+        except Exception as exc:
+            self.status_var.set(f"서식예시 폴더를 열지 못했습니다: {exc}")
+
+    def _서식예시_동기화(self, identifier=None):
+        """고른 서식의 예시 파일이 사용자에 의해 바뀌었으면 바뀐 서식 값을 서식 설정에 옮긴다.
+
+        (옮긴 값 경로 목록, 로그 문장)을 돌려준다. 바뀌지 않았으면 ([], None). 예시 파일을 읽지 못하면 설정은 그대로 둔다."""
+        if not 알파_서식예시폴더_사용:
+            return [], None
+        identifier = self._활성_서식_프로파일 if identifier is None else identifier
+        profile = self._프로파일들.get(identifier)
+        if profile is None:
+            return [], None
+        예시경로, 정보경로 = self._서식예시_경로(identifier)
+        정보 = _json_파일_읽기(정보경로)
+        지금 = 서식예시모듈.digest(예시경로)
+        if 지금 is None or 지금 == 정보.get("sha256"):
+            return [], None
+        이름 = profile.get("name") or "기본 서식"
+        원본사본 = self._서식예시_원본사본(정보경로)
+        if not 원본사본.is_file():
+            self._서식예시_기록(예시경로, 정보경로, dict(정보, kind=정보.get("kind") or "user"))
+            return [], f"서식예시 '{예시경로.name}'를 '{이름}' 서식의 비교 기준으로 기록했습니다."
+        try:
+            기준 = 서식예시모듈.snapshot(hwpx_서식_분석(원본사본))
+            새값 = 서식예시모듈.snapshot(hwpx_서식_분석(예시경로))
+        except Exception as exc:
+            return [], f"서식예시 '{예시경로.name}'를 읽지 못해 서식 설정을 바꾸지 않았습니다: {exc}"
+        바뀐 = copy.deepcopy(profile)
+        옮김 = 서식예시모듈.merge_changes(바뀐, 기준, 새값)
+        if 옮김:
+            self._서식_파일_저장(identifier or 기본서식_덮어쓰기_식별자, 바뀐)
+            self._프로파일들[identifier] = 바뀐
+            if identifier == self._활성_서식_프로파일:
+                self._프로파일_전역반영(바뀐)
+                if hasattr(self, "std_bool_vars"):
+                    self._프로파일_선택()
+        self._서식예시_기록(예시경로, 정보경로, 정보)
+        if not 옮김:
+            return [], f"서식예시 '{예시경로.name}'가 바뀌었지만 서식 값은 그대로입니다(글 내용만 바뀜)."
+        return 옮김, (f"서식예시 '{예시경로.name}'에서 바뀐 서식 {len(옮김)}개를 '{이름}' 서식에 반영했습니다: "
+                     f"{서식예시모듈.describe(옮김)}")
 
     def _서식예시_확인(self):
         """지금 고른 서식을 예시 보고서에 입혀 한/글로 보여 준다('서식 예시 확인', 2026-10-04 사용자 요청).
@@ -20597,6 +20878,14 @@ class HwpAutoDocFitGUI:
             정보 = json.loads(정보경로.read_text(encoding="utf-8")) if 정보경로.is_file() else {}
         except Exception:
             정보 = {}
+        if 알파_서식예시폴더_사용 and 예시경로.is_file() and (
+                정보.get("kind") in ("source", "bundled", "user")
+                or (정보.get("sha256") and 서식예시모듈.digest(예시경로) != 정보.get("sha256"))):
+            # 사용자가 넣은 예시 문서·기본 서식 예시·사용자가 고친 예시는 새로 만들어 덮어쓰지 않고 그대로 연다.
+            self.로그표시(f"서식 예시 확인: 서식예시 폴더의 '{예시경로.name}'를 엽니다 — {예시경로}")
+            self.status_var.set(f"'{이름}' 서식 예시를 한/글로 열었습니다(고쳐 저장하면 '한 번에 적용' 때 반영).")
+            self._경로_열기(str(예시경로))
+            return
         if 예시경로.is_file() and 정보.get("서명") == 서명:
             self.로그표시(f"서식 예시 확인: 보관한 '{이름}' 서식 예시를 엽니다 — {예시경로}")
             self.status_var.set(f"'{이름}' 서식 예시를 한/글로 열었습니다.")
@@ -20669,10 +20958,12 @@ class HwpAutoDocFitGUI:
             예시경로 = Path(작업["예시경로"])
             예시경로.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(경로, 예시경로)
-            Path(작업["정보경로"]).write_text(json.dumps(
-                {"서명": 작업["서명"], "이름": 작업["이름"], "식별자": 작업["식별자"], "앱판": APP_VERSION,
-                 "만든때": f"{_datetime.datetime.now():%Y-%m-%d %H:%M:%S}"}, ensure_ascii=False, indent=2),
-                encoding="utf-8")
+            정보 = {"서명": 작업["서명"], "이름": 작업["이름"], "식별자": 작업["식별자"], "앱판": APP_VERSION,
+                  "만든때": f"{_datetime.datetime.now():%Y-%m-%d %H:%M:%S}"}
+            if 알파_서식예시폴더_사용:
+                self._서식예시_기록(예시경로, 작업["정보경로"], dict(정보, kind="generated"))
+            else:
+                Path(작업["정보경로"]).write_text(json.dumps(정보, ensure_ascii=False, indent=2), encoding="utf-8")
             경로 = 예시경로
         except Exception as exc:
             self.로그표시(f"서식 예시를 보관하지 못했습니다(이번 결과만 엽니다): {exc}")
@@ -22292,7 +22583,11 @@ class HwpAutoDocFitGUI:
         self.status_var.set("문서 서식을 분석하고 있습니다…")
         def worker():
             try:
-                result = 한글파일_서식_분석(path)
+                보관 = (Path(tempfile.mkdtemp(prefix="docfit_sample_")) / "sample.hwpx"
+                      if 알파_서식예시폴더_사용 else None)
+                result = 한글파일_서식_분석(path, 보관)
+                if 보관 is not None and 보관.is_file():
+                    result["_서식예시_원본"] = str(보관)     # 저장할 때 서식예시 폴더로 옮긴다(서식 JSON에는 넣지 않음)
                 result["name"] = name
                 if 기관:
                     result["organization"] = 기관
@@ -22316,6 +22611,14 @@ class HwpAutoDocFitGUI:
         self._서식_분석_시작(candidates[0], 이름묻기=False)
 
     def _서식_복사완료(self, profile=None, error=None):
+        표본 = profile.pop("_서식예시_원본", None) if isinstance(profile, dict) else None
+        try:
+            self._서식_복사완료_처리(profile, error, 표본)
+        finally:
+            if 표본:
+                shutil.rmtree(Path(표본).parent, ignore_errors=True)
+
+    def _서식_복사완료_처리(self, profile, error, 표본):
         self._서식분석중 = False
         self._서식분석_파일 = ""
         if getattr(self, "copy_format_button", None) is not None:
@@ -22348,6 +22651,8 @@ class HwpAutoDocFitGUI:
             messagebox.showerror(APP_NAME, f"서식 저장 실패\n{exc}", parent=parent)
             return
         self._프로파일들[identifier] = profile
+        if 표본:
+            self._서식예시_원본_보관(identifier, 표본)
         self._활성_서식_프로파일 = identifier
         self._프로파일_목록갱신()
         self._프로파일_선택()
@@ -22825,14 +23130,20 @@ class HwpAutoDocFitGUI:
         idiom_box.pack(fill="x", pady=(0, 12))
         ttk.Label(
             idiom_box,
-            text="앱에 포함된 상용구 파일(HWP.IDO)을 한/글의 상용구 전용 폴더에 저장합니다.\n"
+            text=("C:\\HWP_AUTODOCFIT\\글자상용구의 상용구 파일(HWP.IDO)과 본문상용구 폴더의 본문 상용구를\n"
+                  if 알파_서식예시폴더_사용 else "앱에 포함된 상용구 파일(HWP.IDO)을 ")
+                 + "한/글의 상용구 전용 폴더에 저장합니다.\n"
                  "(예: 한/글 2020 → %AppData%\\HNC\\User\\Hwp\\60)\n"
                  "진행 전에 한/글을 완전히 종료해 주세요.",
             style="Hint.TLabel",
             wraplength=650,
             justify="left",
         ).pack(anchor="w", pady=(0, 6))
-        ttk.Button(idiom_box, text="상용구 파일저장", command=self._상용구파일_저장_클릭).pack(anchor="w")
+        상용구_줄 = ttk.Frame(idiom_box)
+        상용구_줄.pack(anchor="w")
+        ttk.Button(상용구_줄, text="상용구 파일저장", command=self._상용구파일_저장_클릭).pack(side="left")
+        if 알파_서식예시폴더_사용:
+            ttk.Button(상용구_줄, text="앱 폴더 열기(C:\\HWP_AUTODOCFIT)", command=self._앱폴더_열기).pack(side="left", padx=(6, 0))
         container = tabs["spacing"]
         ttk.Label(container,
                   text=f"실행창의 ‘자간 정리 · 세부 작업’과 같은 {len(stages_for_mode('spacing'))}단계입니다. 여기서 켜고 끄면 세부 작업 창에도 그대로 반영됩니다.",
@@ -23079,6 +23390,7 @@ class HwpAutoDocFitGUI:
         try:
             설정값 = {
                 "prevent_word_split": bool(self.prevent_word_split_var.get()),
+                "ratio_shrink": bool(self.ratio_shrink_var.get()),
                 "punctuation": bool(self.punctuation_var.get()),
                 "punctuation_threshold": str(self.punctuation_threshold_var.get()),
                 "keep_punctuation_set_together": bool(self.keep_punctuation_set_var.get()),
@@ -23195,9 +23507,19 @@ class HwpAutoDocFitGUI:
             self._폰트목록_새로고침()
 
     def _상용구파일_저장_클릭(self):
-        """앱에 포함된 상용구 파일(HWP.IDO)을 한/글의 상용구 전용 폴더에 복사한다."""
+        """상용구 파일(HWP.IDO)과 본문 상용구(*.HWP)를 한/글의 상용구 전용 폴더에 복사한다.
+
+        알파: 앱 폴더(C:\\HWP_AUTODOCFIT)의 글자상용구·본문상용구 폴더 파일을 쓴다(사용자가 바꿔 둔 파일 포함).
+        글자상용구 폴더에 HWP.IDO가 없으면 앱에 포함된 파일을 쓴다."""
         부모창 = self.settings_toplevel or self.root
-        원본 = 번들_상용구_파일_찾기()
+        try:
+            상용구_폴더_준비()
+        except Exception as e:
+            self.로그표시(f"상용구 폴더 준비 실패(앱에 포함된 파일로 진행): {e}")
+        글자 = 글자상용구_폴더()
+        원본 = (글자 / 상용구_파일명) if 글자 is not None and (글자 / 상용구_파일명).is_file() else 번들_상용구_파일_찾기()
+        본문 = 본문상용구_폴더()
+        본문_파일들 = [f for f in 본문.iterdir() if f.is_file()] if 본문 is not None and 본문.is_dir() else []
         if 원본 is None:
             messagebox.showerror(
                 APP_NAME,
@@ -23229,14 +23551,28 @@ class HwpAutoDocFitGUI:
         try:
             대상_폴더.mkdir(parents=True, exist_ok=True)
             shutil.copy2(원본, 대상_경로)
+            if 본문_파일들:
+                (대상_폴더 / "IDIOM").mkdir(parents=True, exist_ok=True)
+                for 파일 in 본문_파일들:
+                    shutil.copy2(파일, 대상_폴더 / "IDIOM" / 파일.name)
         except Exception as e:
             messagebox.showerror(APP_NAME, f"상용구 파일 저장에 실패했습니다: {e}", parent=부모창)
             return
+        본문_안내 = f"\n본문 상용구 {len(본문_파일들)}개: {대상_폴더 / 'IDIOM'}" if 본문_파일들 else ""
         messagebox.showinfo(
             APP_NAME,
-            f"상용구 파일을 저장했습니다.\n{대상_경로}\n\n한/글을 다시 시작하면 적용됩니다.",
+            f"상용구 파일을 저장했습니다.\n{대상_경로}{본문_안내}\n\n한/글을 다시 시작하면 적용됩니다.",
             parent=부모창,
         )
+
+    def _앱폴더_열기(self):
+        """앱 폴더(C:\\HWP_AUTODOCFIT: dll·서식예시·글자상용구·본문상용구)를 탐색기로 연다."""
+        try:
+            상용구_폴더_준비()
+            HWP_AUTOMATION_DIR.mkdir(parents=True, exist_ok=True)
+            os.startfile(str(HWP_AUTOMATION_DIR))
+        except Exception as e:
+            messagebox.showerror(APP_NAME, f"앱 폴더를 열지 못했습니다: {e}", parent=self.settings_toplevel or self.root)
 
     def _설정_초기화_클릭(self):
         if self.running:
@@ -23251,6 +23587,7 @@ class HwpAutoDocFitGUI:
 
         self.always_on_top_var.set(기본_설정["always_on_top"])
         self.prevent_word_split_var.set(기본_설정["prevent_word_split"])
+        self.ratio_shrink_var.set(기본_설정["ratio_shrink"])
         self.punctuation_var.set(기본_설정["punctuation"])
         self.punctuation_threshold_var.set(기본_설정["punctuation_threshold"])
         self.keep_punctuation_set_var.set(기본_설정["keep_punctuation_set_together"])
@@ -23770,6 +24107,14 @@ class HwpAutoDocFitGUI:
         if mode in ("format", "all"):
             self.stdformat_var.set(True)
 
+        # 알파: 적용할 서식의 예시 파일(서식예시 폴더)을 사용자가 고쳤으면 바뀐 서식 값을 먼저 설정에 옮긴다.
+        서식예시_알림 = None
+        if mode in ("format", "all") and not getattr(self, "_서식예시_작업", None):
+            try:
+                _, 서식예시_알림 = self._서식예시_동기화()
+            except Exception as exc:
+                서식예시_알림 = f"서식예시 파일 검사 실패(서식 설정은 그대로): {exc}"
+
         # 중단 버튼으로 멈춘 작업과 같은 모드로 다시 실행하면, 이미 끝낸
         # 문서는 건너뛰고 그 다음 문서부터 이어서 진행한다. 모드가 다르면
         # 새 작업으로 보고 처음부터 다시 시작한다.
@@ -23794,6 +24139,8 @@ class HwpAutoDocFitGUI:
         self.로그표시("=" * 45)
         self.로그표시(f"{APP_NAME} 작업 시작 — {dict(spacing='자간조정', unify='서식통일', format='서식적용', all='일괄적용')[mode]}")
         self.로그표시(f"문서: {len(self.files)}개")
+        if 서식예시_알림:
+            self.로그표시(서식예시_알림)
         if 작업범위 is None:
             self.로그표시("작업 범위: 문서 전체")
         else:

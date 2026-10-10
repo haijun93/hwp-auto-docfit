@@ -44,7 +44,7 @@ def _node_major() -> int | None:
 
 
 def _local_kordoc() -> str | None:
-    """폐쇄망용 미리 설치한 kordoc 실행 파일(환경 변수 DOCFIT_KORDOC_BIN 또는 %APPDATA%\HwpAutoDocFit\kordoc)."""
+    r"""폐쇄망용 미리 설치한 kordoc 실행 파일(환경 변수 DOCFIT_KORDOC_BIN 또는 %APPDATA%\HwpAutoDocFit\kordoc)."""
     후보 = []
     if os.environ.get("DOCFIT_KORDOC_BIN"):
         후보.append(Path(os.environ["DOCFIT_KORDOC_BIN"]))

@@ -604,6 +604,13 @@ class DesktopWebBridge:
         self._tk(self.gui._서식예시_확인)
         return self.get_state()
 
+    def open_format_samples(self):
+        """서식예시 폴더(C:\\HWP_AUTODOCFIT\\서식예시)를 탐색기로 연다(알파). 예시 파일을 고치면 '한 번에 적용' 때 반영된다."""
+        opener = getattr(self.gui, "_서식예시_폴더_열기", None)
+        if opener is not None:
+            self._tk(opener)
+        return self.get_state()
+
     def set_option(self, name, value):
         """빠른 설정의 켜기·끄기 값을 바꾼다. 앱 설정 변수의 변경 감시가 설정 파일에 저장한다."""
         attribute = QUICK_OPTIONS.get(name)
@@ -689,7 +696,7 @@ class _BrowserApi:
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",
             "set_exclude_tables", "set_card_option",
             "set_drop_target", "add_format_file", "write_format_example", "rename_profile", "delete_profile",
-            "edit_profile", "show_format_example",
+            "edit_profile", "show_format_example", "open_format_samples",
         ):
             setattr(self, name, getattr(bridge, name))
 
