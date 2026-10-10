@@ -5,9 +5,9 @@
 
 **[Windows 실행 파일 내려받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/permalink/latest)** · [변경 사항](releases/) · [GitHub](https://github.com/haijun93/hwp-auto-docfit) · [GitLab](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
 
-현재 안내 기준: **1.72 Beta 13**(테스트 베타). 중요한 문서는 사본으로 먼저 시험하고 결과를 확인해 주세요.
+현재 안내 기준: **1.72 Beta 14**(테스트 베타, 핫픽스). 중요한 문서는 사본으로 먼저 시험하고 결과를 확인해 주세요.
 
-Beta 13은 **자동 업데이트의 프로세스 대기·새 앱 시작 확인, 편집 후 문단 글 다시 읽기**를 보완한 버전입니다. [이번 버전 변경 사항](releases/v1.72-beta.13.md)을 참고하세요.
+Beta 14는 핫픽스로, **괄호 라벨 `( )`이 있는 문장의 내어쓰기 기준**을 라벨 뒤 본문이 아니라 문두기호 뒤 첫 글자(`(`)로 바꿨습니다(콜론 `:` 라벨은 그대로). [이번 버전 변경 사항](releases/v1.72-beta.14.md)을 참고하세요. Beta 13은 **자동 업데이트의 프로세스 대기·새 앱 시작 확인, 편집 후 문단 글 다시 읽기**를 보완한 버전입니다.
 
 ## 어떤 결과가 나오나요?
 
