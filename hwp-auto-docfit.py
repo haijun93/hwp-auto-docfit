@@ -347,6 +347,7 @@ from docfit_core.style_inventory import analyze_style_inventory, build_style_sam
 from docfit_core import report_header as 보고서머리
 from docfit_core import connector_tabs as 연결부호탭
 from docfit_core import colon_labels as 콜론라벨
+from docfit_core import spacing_reset as 자간초기화모듈
 from docfit_core import format_elements as 서식요소
 from docfit_core.table_width import fit_table as 표너비_맞춤, is_target as 표너비_대상인가
 from docfit_core import (
@@ -4198,6 +4199,46 @@ def 연결부호탭_hwpx_처리(source, target=None, selections=None):
 
 
 알파_콜론라벨_정렬_사용 = True
+
+
+# 알파 1-a(2026-10-11): '한 번에 적용'의 자간 초기화를 XML 선행 단계에서 한다(한/글 방식 15.8초 → 1초 미만 목표).
+# 끄면 한/글로 문단마다 선택해 0%로 바꾸는 예전 방식이다. 자간 정리 모드·쪽 범위 작업은 언제나 예전 방식.
+알파_자간초기화_XML_사용 = True
+
+
+def 자간초기화_hwpx_처리(source, target=None, selections=None):
+    """문서 전체(표·글상자 안 포함) 본문 자간을 0%로 되돌린다. 항목기호·라벨 등 보호 구간은 그대로 둔다."""
+    with zipfile.ZipFile(source) as z:
+        contents = {n: z.read(n) for n in z.namelist()}
+    for name, data in contents.items():
+        if name.startswith('Contents/') and name.endswith('.xml'):
+            for _, pair in ET.iterparse(io.BytesIO(data), events=('start-ns',)):
+                if not re.fullmatch(r'ns\d+', pair[0]): XML_네임스페이스_등록(*pair)
+    header = safe_xml_fromstring(contents['Contents/header.xml'])
+    names = sorted((n for n in contents if re.fullmatch(r'Contents/section\d+\.xml', n)),
+                   key=lambda n: int(re.search(r'section(\d+)', n).group(1)))
+    roots = {n: safe_xml_fromstring(contents[n]) for n in names}
+    if selections is None:
+        return {n: [0] for n in names}
+    if not any(selections.values()):
+        if target is not None: shutil.copyfile(source, target)
+        return 0
+    전 = {n: 제목_문자열(roots[n]) for n in names}
+    통계 = 자간초기화모듈.reset_spacing(header, [roots[n] for n in names], lambda text: 자간보호_글자수(text) or 0)
+    if any(제목_문자열(roots[n]) != 전[n] for n in names):
+        raise RuntimeError('자간 초기화 중 글 보존 검사에 실패했습니다.')
+    if not 통계["runs"]:
+        shutil.copyfile(source, target)
+        로그("자간 초기화(XML): 자간이 남은 본문 없음")
+        return 0
+    for n in names:
+        contents[n] = ET.tostring(roots[n], encoding='utf-8', xml_declaration=True)
+    contents['Contents/header.xml'] = ET.tostring(header, encoding='utf-8', xml_declaration=True)
+    _hwpx_안전_저장(contents, target)
+    로그(f"자간 초기화(XML): 문단 {통계['paragraphs']}개 · 글 묶음 {통계['runs']}개를 0%로"
+        + (f"(보호 구간에서 나눔 {통계['split']}개)" if 통계['split'] else "")
+        + (f" · 컨트롤이 걸쳐 건너뜀 {통계['skipped']}개" if 통계['skipped'] else ""))
+    return 통계["paragraphs"]
 
 
 def 콜론라벨_hwpx_처리(source, target=None, selections=None):
@@ -10420,6 +10461,20 @@ _단어모드_장평필드 = tuple('Ratio' + name for name in
     ('Hangul', 'Latin', 'Hanja', 'Japanese', 'Other', 'Symbol', 'User'))
 
 
+def 자간보호_글자수(text):
+    """자간·장평 조정이 바꾸지 않는 문단 앞 글자 수(항목기호·라벨 등). 보호할 것이 없으면 None(순수 함수).
+
+    '(운영방식)'처럼 본문 없이 라벨만 있는 문단과 기호만 있는 문단은 문단 끝까지 보호한다.
+    한/글 경로(자간조정_본문범위)와 XML 자간 초기화(자간초기화_hwpx_처리)가 같은 규칙을 쓴다."""
+    offset = 문단_자간보호_선행부_오프셋(text)
+    marker_end = 문장부호_마커_끝위치(text)
+    if marker_end is not None and re.fullmatch(r'\s*[（(][^\r\n]+[)）]\s*[:：]?\s*', text[marker_end:]):
+        offset = len(text.rstrip('\r\n'))
+    if marker_end is not None and not text[marker_end:].strip():
+        offset = len(text.rstrip('\r\n'))
+    return offset
+
+
 def 자간조정_본문범위(start, end):
     """내어쓰기와 같은 기준으로 항목기호·라벨·후행 공백을 제외한다."""
     if start[:2] != end[:2]:
@@ -10428,13 +10483,7 @@ def 자간조정_본문범위(start, end):
     try:
         hwp.SetPos(start[0], start[1], 0)
         text = 현재문단_텍스트()
-        offset = 문단_자간보호_선행부_오프셋(text)
-        # '(운영방식)'처럼 본문 없이 라벨만 있는 문단은 라벨 끝까지 보호한다.
-        marker_end = 문장부호_마커_끝위치(text)
-        if marker_end is not None and re.fullmatch(r'\s*[（(][^\r\n]+[)）]\s*[:：]?\s*', text[marker_end:]):
-            offset = len(text.rstrip('\r\n'))
-        if marker_end is not None and not text[marker_end:].strip():
-            offset = len(text.rstrip('\r\n'))
+        offset = 자간보호_글자수(text)
         if offset is None:
             return start, end
         body = len(text[:offset].encode('utf-16-le')) // 2
@@ -18060,7 +18109,10 @@ def _문서_처리_본체(파일, index, total, 문장부호기능=True):
     # 복사한 자간이 0%로 지워진다. 쪽 범위 작업은 두 단계를 건너뛰므로 범위를
     # 고정한 뒤(아래) 초기화한다.
     자간초기화_완료 = False
-    if (작업_모드 in ('spacing', 'all') and 쪽범위_요청 is None
+    # 알파 1-a: '한 번에 적용'은 아래 XML 선행 단계 맨 앞에서 자간을 초기화한다(한/글 방식 생략).
+    자간초기화_XML_예정 = bool(알파_자간초기화_XML_사용 and 작업_모드 == 'all' and 표준서식_사용
+                           and 쪽범위_요청 is None and stage_enabled(선택_세부작업, 'reset_spacing', 작업_모드))
+    if (작업_모드 in ('spacing', 'all') and 쪽범위_요청 is None and not 자간초기화_XML_예정
             and stage_enabled(선택_세부작업, 'reset_spacing', 작업_모드)):
         상태(f"{파일명} : 자간 초기화")
         단계시간_구간('자간 초기화')
@@ -18078,6 +18130,9 @@ def _문서_처리_본체(파일, index, total, 문장부호기능=True):
     # 한 HWPX에 이어서 처리한 뒤 결과를 한 번만 연다. 쪽 범위 작업에서는 모두 건너뛴다.
     서식단계_사용 = 표준서식_사용 and 작업_모드 in ('format', 'all')
     선행목록 = []
+    if 자간초기화_XML_예정:
+        # 제목·개요 선행 서식과 일반 표 정밀 복제는 예시의 자간을 복사하므로 그보다 먼저 초기화한다.
+        선행목록.append((True, '자간 초기화', 자간초기화_hwpx_처리, 'spacing_reset.hwpx', '자간 초기화'))
     if 서식단계_사용 and 쪽범위_요청 is None:
         # 글자 서식 정리: 별표(*, **) 위첨자와 붙임~끝. 묶음의 글꼴·크기 통일(글자 모양만 바꿈).
         선행목록 += [
@@ -18138,6 +18193,8 @@ def _문서_처리_본체(파일, index, total, 문장부호기능=True):
         if 제목붙임_선행적용(작업파일경로, 현재문서_기준=문서_변경됨,
                             처리목록=tuple(선행목록), 변경알림=알림) is False:
             return False
+        if 자간초기화_XML_예정:
+            자간초기화_완료 = True
         문서_변경됨 = 문서_변경됨 or bool(알림.get('changed'))
         기본표서식_적용됨 = 기본표_포함
     if 표준서식_사용 and 작업_모드 in ('format', 'all'):
