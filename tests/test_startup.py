@@ -123,21 +123,23 @@ class StartupTest(unittest.TestCase):
             self.assertEqual([p[0][1] for p in collect((0, 1, 0))], [1, 2])
         self.assertEqual(doc.GetPos(), (0, 0, 0))
 
-    def test_hanging_indent_is_always_the_first_character_after_the_marker(self):
-        # 2026-10-10: 괄호·콜론 라벨 뒤 첫 글자 기준 폐지. 둘째 줄은 항상 문두기호 뒤 첫 글자(라벨이 있으면 라벨의 첫 글자)에 맞춘다.
+    def test_hanging_indent_treats_attached_open_quote_as_body_boundary(self):
         source = Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"
         namespace = runpy.run_path(str(source), run_name="hanging_indent_offset_test")
         offset = namespace["문단_내어쓰기_기준_오프셋"]
 
-        self.assertEqual(offset(" ㅇ (개요) 본문"), 3)                       # '('
-        self.assertEqual(offset(" ㅇ (개요)「공유재산법 시행령」제75조"), 3)      # 라벨 뒤 낫표와 무관
-        self.assertEqual(offset(" ㅇ (개요) 「공유재산법」에 따라"), 3)
-        # 문두기호 바로 뒤가 낫표이면(라벨 없음) '「'이 아니라 바로 다음 글자 '공'이 기준이다.
+        self.assertEqual(offset(" ㅇ (개요) 본문"), 8)
+        # 낫표로 시작하는 본문은 '「'이 아니라 바로 다음 글자 '공'이 기준이다.
+        self.assertEqual(offset(" ㅇ (개요)「공유재산법 시행령」제75조"), 8)
+        self.assertEqual(offset(" ㅇ (개요) 「공유재산법」에 따라"), 9)
         self.assertEqual(offset(" ㅇ 「공유재산법」에 따라"), 4)
-        self.assertEqual(offset(" - 근거 : 『지방재정법』 제17조"), 3)           # 콜론 라벨의 첫 글자 '근'
-        self.assertEqual(offset(" - (운영방식)“공용차량 조례”"), 3)
+        self.assertEqual(offset(" - 근거 : 『지방재정법』 제17조"), 9)
+        # 다른 인용부호는 기존처럼 부호 위치가 기준이다.
+        self.assertEqual(offset(" - (운영방식)“공용차량 조례”"), 9)
+        # 연도 괄호가 지명에 붙은 형태는 문두 라벨로 오인하지 않는다.
         self.assertEqual(offset(" ㅇ (2026)서울"), 3)
-        self.assertEqual(offset(" ㅇ 교육내용: 성희롱 예방교육"), 3)
+        # 짧은 콜론 라벨은 콜론 뒤가 기준이고, 문장 속 긴 콜론은 라벨이 아니다.
+        self.assertEqual(offset(" ㅇ 교육내용: 성희롱 예방교육"), 9)
         self.assertEqual(offset("    ** 이공학 학술연구기반구축 – 박사후연구원 등 지원 규모 : (’25)1,352명"), 7)
 
     def test_double_star_inherits_single_star_hanging_rule(self):
