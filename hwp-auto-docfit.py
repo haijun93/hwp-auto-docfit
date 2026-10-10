@@ -256,7 +256,7 @@ import win32gui
 import win32con
 from defusedxml.ElementTree import fromstring as safe_xml_fromstring
 from docfit_core.batch_format import apply_batch, ParagraphStyle, BatchUnsupported
-from docfit_core.updater import (expected_sha256 as 업데이트_예상해시, install_script as 업데이트_교체스크립트,
+from docfit_core.updater import (expected_sha256 as 업데이트_예상해시, install_script as 업데이트_교체스크립트, launch_environment as 업데이트_실행환경,
                                  leftover_files as 업데이트_잔여파일, verify_download as 업데이트_파일검증)
 from docfit_core.fidelity.package import UnsupportedPackage
 from docfit_core.style_hierarchy import DOT_MARKERS, DOCUMENT_TYPES, analyze_hierarchy, display_role, document_type as 문서유형_판정, hierarchy_summary, leading_marker, normalize_leading_dot, stored_role
@@ -372,7 +372,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리"
-APP_VERSION = "1.72 Beta 14"
+APP_VERSION = "1.72 Beta 15"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 GITHUB_UPDATE_API_URL = "https://api.github.com/repos/haijun93/hwp-auto-docfit/releases/latest"
@@ -2540,6 +2540,95 @@ def 제목_참조병합(header, source):
     return maps
 
 
+# 날짜: 연·월·일(’26. 10. 10. / 2026년 10월 10일 / 2026-10-10) 또는 요일이 붙은 월·일(10. 6.(화)).
+_제목_날짜 = re.compile(r"[’'‘`]?\d{2,4}\s*[.년/\-]\s*\d{1,2}\s*[.월/\-]\s*\d{1,2}"
+                    r"|\d{1,2}\s*[.월]\s*\d{1,2}\s*[.일]?\s*\(\s*[월화수목금토일]\s*\)")
+
+
+def 날짜칸인가(글):
+    """칸 글이 주로 날짜인지: 날짜가 있고, 날짜·요일·시간을 빼면 남는 글이 짧다(12자 이하)."""
+    글 = (글 or '').strip()
+    if not 글 or len(글) > 40:
+        return False
+    m = _제목_날짜.search(글)
+    if not m:
+        return False
+    나머지 = 글[:m.start()] + 글[m.end():]
+    나머지 = re.sub(r'\(\s*[월화수목금토일]\s*\)|[월화수목금토일]요일|\d{1,2}\s*:\s*\d{2}|[.\s~\-]', '', 나머지)
+    return len(나머지) <= 12
+
+
+def 표_날짜칸_한줄(table):
+    """표의 날짜 칸(주로 날짜인 칸)을 '한 줄로 입력'(lineWrap=SQUEEZE)으로 둔다. 바꾼 칸 수.
+
+    표 칸 안 날짜는 한 줄로 표기하는 것이 원칙이다(사용자 규칙, 2026-10-10). 칸 폭이 좁아도 한/글이 글자 폭을
+    줄여 한 줄을 지킨다. 안쪽 표는 그 표대로 따로 본다.
+    """
+    count = 0
+    for cell in (x for x in table.iter() if 제목_xml이름(x) == 'tc'):
+        sub = 제목_자식(cell, 'subList')
+        if sub is None or sub.get('lineWrap') == 'SQUEEZE':
+            continue
+        if any(제목_xml이름(x) == 'tbl' for x in sub.iter()):
+            continue
+        if 날짜칸인가(''.join(제목_문자열(q) for q in sub if 제목_xml이름(q) == 'p')):
+            sub.set('lineWrap', 'SQUEEZE')
+            count += 1
+    return count
+
+
+def 표날짜칸_hwpx_처리(source, target=None, selections=None):
+    """문서의 모든 표에서 날짜 칸을 한 줄로 입력으로 둔다(선행 서식 단계, 칸 글은 바꾸지 않음)."""
+    with zipfile.ZipFile(source) as z:
+        contents = {n: z.read(n) for n in z.namelist()}
+    for name, data in contents.items():
+        if name.startswith('Contents/') and name.endswith('.xml'):
+            for _, pair in ET.iterparse(io.BytesIO(data), events=('start-ns',)):
+                if not re.fullmatch(r'ns\d+', pair[0]): XML_네임스페이스_등록(*pair)
+    sections = {n: safe_xml_fromstring(data) for n, data in contents.items() if re.fullmatch(r'Contents/section\d+\.xml', n)}
+
+    def 대상(root):
+        return [i for i, t in enumerate(x for x in root.iter() if 제목_xml이름(x) == 'tbl')
+                if 표_날짜칸_한줄(copy.deepcopy(t))]
+
+    if selections is None:
+        return {n: 대상(root) for n, root in sections.items()}
+    if not any(items for items in selections.values()):
+        if target is not None: shutil.copyfile(source, target)
+        return 0
+    count = 0
+    for name, items in selections.items():
+        root = sections[name]
+        tables = [x for x in root.iter() if 제목_xml이름(x) == 'tbl']
+        for index in items:
+            before = _표_텍스트(tables[index])
+            count += 표_날짜칸_한줄(tables[index])
+            if _표_텍스트(tables[index]) != before:
+                raise RuntimeError('표 날짜 칸 한 줄 처리 중 표 내용 보존 검사에 실패했습니다.')
+        contents[name] = ET.tostring(root, encoding='utf-8', xml_declaration=True)
+    _hwpx_안전_저장(contents, target)
+    로그(f"표 날짜 칸 한 줄: {count}칸을 한 줄로 입력으로 지정")
+    return count
+
+
+def 제목_날짜칸_한줄(table):
+    """제목 표에서 날짜가 든 짧은 칸(첫 칸 제외)을 '한 줄로 입력'(lineWrap=SQUEEZE)으로 둔다. 바꾼 칸 수.
+
+    날짜 칸 폭이 좁으면 "’26. 10. 10.(토)"가 두 줄로 나뉘었다(2026-10-10 실측). 한 줄로 입력은 칸 폭에 맞춰
+    글자 폭을 줄여 한 줄을 지킨다.
+    """
+    count = 0
+    for cell in 제목_셀들(table)[1:]:
+        글 = 제목_문자열(cell).strip()
+        if not 글 or len(글) > 40 or not _제목_날짜.search(글):
+            continue
+        sub = 제목_자식(cell, 'subList')
+        if sub is not None and sub.get('lineWrap') != 'SQUEEZE':
+            sub.set('lineWrap', 'SQUEEZE')
+            count += 1
+    return count
+
+
 def 제목_표서식_복사(table, sample, maps, 상자=False):
     """제목 내용은 그대로 두고 원본 표·셀·문단·문자 서식만 복사한다.
 
@@ -2917,6 +3006,8 @@ def 제목_hwpx_처리(source, target=None, selections=None):
             before = 제목_문자열(table)
             sample, maps, 예시사용 = 기준표(f'title{kind}')
             제목_표서식_복사(table, sample, maps)
+            # 제목 표 날짜 칸(A2, "’26. 10. 10.(토)" 등)은 칸 너비와 관계없이 한 줄로 둔다(사용자 요청, 2026-10-10).
+            제목_날짜칸_한줄(table)
             # 제목 표 가로 크기는 쪽 좌우 여백 사이 최대 폭으로 한다(기준 표 폭과 문서 여백이 달라도 맞춤).
             # 서식 프로필의 예시 표를 쓰면 열 비율은 예시대로 둔다.
             _서식표_가로맞춤(table, 본문폭, 비례=예시사용)
@@ -4396,6 +4487,10 @@ def 정밀표_선행적용():
         target = folder / "after.hwpx"
         result = 정밀표_서식_적용(source, target, 활성_정밀표_프로필)
         if result["applied"]:
+            # 예시 표 서식을 덮어쓴 뒤에도 표 칸 날짜는 한 줄로 둔다.
+            날짜칸 = 표날짜칸_hwpx_처리(target)
+            if any(날짜칸.values()):
+                표날짜칸_hwpx_처리(target, target, 날짜칸)
             if 한글_문서_열기(hwp, target, "HWPX", "forceopen:true") is False:
                 raise RuntimeError("정밀 표 서식 결과를 열지 못했습니다.")
         로그(
@@ -16991,6 +17086,9 @@ def _문서_처리_본체(파일, index, total, 문장부호기능=True):
             로그("쪽 범위 지정: 표 칸 너비 맞춤(문서 전체 표 구조 변경)은 이번 작업에서 건너뜁니다.")
         else:
             선행목록.append((True, '표 칸 너비', 표너비_hwpx_처리, 'table_width.hwpx', '표 칸 너비'))
+    # 표 칸 안 날짜는 한 줄 표기가 원칙이다(사용자 규칙, 2026-10-10). 표 서식 단계들 뒤 맨 끝에서 지정한다.
+    if (서식단계_사용 or 작업_모드 == 'unify') and 쪽범위_요청 is None:
+        선행목록.append((True, '표 날짜 칸 한 줄', 표날짜칸_hwpx_처리, 'table_date.hwpx', '표 칸 너비'))
     if any(항목[0] for 항목 in 선행목록):
         상태(f"{파일명} : 글자·제목·표 선행 서식")
         알림 = {}
@@ -18316,6 +18414,7 @@ class HwpAutoDocFitGUI:
                     "-BusyFlag", str(다운로드_경로.parent / UPDATE_BUSY_FLAG),
                 ],
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                env=업데이트_실행환경(os.environ),
             )
         except Exception:
             try:
