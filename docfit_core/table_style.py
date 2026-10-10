@@ -233,7 +233,7 @@ def valid_style(style):
 
 
 def describe_style(style):
-    """화면에 보여 줄 짧은 설명(예: '표서식예시.hwpx 5×3 표, 머리글 한컴돋움 13pt 굵게 · 본문 함초롬바탕 12pt')."""
+    """화면에 보여 줄 짧은 설명(예: '표서식예시.hwpx 5×3 표, 머리글 한컴돋움 13pt 굵게 · 본문 휴먼명조 12pt')."""
     if not valid_style(style):
         return "알 수 없는 표 서식"
 
@@ -251,20 +251,20 @@ def describe_style(style):
 
 # 표서식예시.hwpx(5×3 행사 일정표)에서 배운 내장 기본값. 준말 '표'에 따로 학습한 서식이 없으면 쓴다.
 _DEFAULT_STYLE_DATA = (
-    "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"
+    "eNrtWstu20YU/RWD3RISh3rYJZoAtR6NANcGIqUbxzBG5EhkPOQQw1FkwwjQRQsU8KLookCBKovsgq66yK79Iyv/0Dt82KTqxgkl"
+    "pbY1Wki8w7nnzhyey7nk6Fx7SXjksUCzkK5FbMJtolna+19m8x9m84vX899+ml/MKu40PNV0jbNppFkNXbMZhYOarrkEO4QfJycA"
+    "Ycw9R7MODw0d6eaRfljT63oDfpv6tr4Dv1/qCE4hOEKmjmo6qh8dARyhEu/wXBsyDngwgqEB8WwXy2NbHmPqjWGUWquzP+g8hYaX"
+    "Cy2v9Lw7Ws7dXM69lnNHOfd2rz942tt9NujcClH/D4iPHEFjOffm8hPYXm4EO2oC924CkMqJOyTzuUxhS/sqiAwraex6lG6d+jSI"
+    "LGh89FxzhQitanU6nVZcHNjMr9iscsKrcLfxadU0EKrK+8tz7coLfZyXzTgBL+FyQtrgYoARudhh09SwSSAI3/MCAg37B/sdaBty"
+    "gk9acCfqkxBzLEh6Gvo/jmcRURy5W+IszDm1OGMnxElhvajFJhI5tauJ4xDbJ/2yzpSMxG7M34L31HOEK/tWkLnl+3JWjDLp/YUR"
+    "f64xuDd2F0D6B3u99qehCBYujTFkQjC/CNM+eLa71znu7/W+LYA1bsFyPDxmAaYfGM4HEZA1AkXu8knkJubUC2Jra4Rt0sqc2t1O"
+    "s7sNTi4Wttv6FxamoYuvr1l1AbhaTIDHkDewOKnEWENilNCjyoy7lRmmyoy7mxmfvvCoxFhVYtRWlhiqKlrvvb+sNm/SeYnxLCfx"
+    "m6RXV9K7L3XHg9NeQ2nvnqzsD056TSW9zXoPcSdUt61Ut2EP+XdCdjtKdpv1BP3/q+5VsrsQbxXAHht8u0QyBvuINcOQOwkUthIF"
+    "nxBdG7FAxB1BfOMJzcQqm0vK1MsUIB/c4fD9r7P5X+8uf76Y//69VHEyxcGgG4uk4w+J42SqSa8MdOkFIwYIvkfPBolHt/X14Pib"
+    "g8GTXktSE88ImptghJyFjAvYbM0SAobPcSSyZBEclPkd5h5OOyH5roD7fXFGSWpSIkCtI8b9tMH3HJrkjLROn2QRUY52yZNMcwrA"
+    "gSKvHHnAyQusyCtH3gsc4oBERPFXjj8m3HhTVpFXgrzozIfFRLFXjr1JpJRXjjuocLhELhQuyDByK3FiZUtLYuXulUlDlvyJdaXm"
+    "xEwvjzQgXhRi2wvGhYj5ePloC7HykQpxclEghizbUKFaM6+rtRGm0frKtVpOPbN3l2//vvzjx/mbP9egnsaieur3vlzbNPJWWq5t"
+    "GnmrLtc2jb+Vlmufj7zmLeSZN5JnFskzF8kzC+SZBfLqay/XNk16qyzXNou7h1muQRSBh5QcX/2xV73nVdsLn/VF7z9AQiDc"
 )
 
 

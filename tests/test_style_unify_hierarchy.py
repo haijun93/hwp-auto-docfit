@@ -52,8 +52,8 @@ class MarkerAndHierarchyTests(unittest.TestCase):
 
     def test_vocabulary_fallback_only_for_values_used_elsewhere(self):
         values = ["한컴돋움"] * 6 + ["한양중고딕"] * 4 + ["HY중고딕"] * 2
-        self.assertEqual(vocabulary_fallback(values, {"한컴돋움", "함초롬바탕"}), "한컴돋움")
-        self.assertIsNone(vocabulary_fallback(values, {"함초롬바탕"}))
+        self.assertEqual(vocabulary_fallback(values, {"한컴돋움", "휴먼명조"}), "한컴돋움")
+        self.assertIsNone(vocabulary_fallback(values, {"휴먼명조"}))
         self.assertIsNone(vocabulary_fallback(["가", "가", "나", "나"], {"가", "나"}))
 
     def test_attachment_headings(self):
@@ -64,9 +64,9 @@ class MarkerAndHierarchyTests(unittest.TestCase):
             self.assertEqual(attachment_heading(text), "", text)
 
     def test_style_change_point_needs_several_levels_switching_together(self):
-        body = [(i, ("함초롬바탕", 1500)) for i in range(0, 40, 2)]
+        body = [(i, ("휴먼명조", 1500)) for i in range(0, 40, 2)]
         annex = [(i, ("한컴돋움", 1300)) for i in range(40, 70, 2)]
-        dash_body = [(i, ("함초롬바탕", 1400)) for i in range(1, 40, 2)]
+        dash_body = [(i, ("휴먼명조", 1400)) for i in range(1, 40, 2)]
         dash_annex = [(i, ("한컴돋움", 1200)) for i in range(41, 70, 2)]
         points = style_change_points({"ㅇ": body + annex, "-": dash_body + dash_annex})
         self.assertEqual(points, [40])
@@ -76,9 +76,9 @@ class MarkerAndHierarchyTests(unittest.TestCase):
         pasted = body[:10] + [(21, ("한컴돋움", 1000)), (23, ("한컴돋움", 1000))] + body[10:]
         self.assertEqual(style_change_points({"ㅇ": pasted, "-": dash_body}), [])
         # 취합 문서의 한 부서 구간(전체의 20% 미만)은 체계가 아니라 통일할 예외다.
-        long_body = [(i, ("함초롬바탕", 1500)) for i in range(0, 200, 2)]
+        long_body = [(i, ("휴먼명조", 1500)) for i in range(0, 200, 2)]
         dept = [(i, ("한컴돋움", 1300)) for i in range(200, 212, 2)]
-        long_dash = [(i, ("함초롬바탕", 1400)) for i in range(1, 200, 2)]
+        long_dash = [(i, ("휴먼명조", 1400)) for i in range(1, 200, 2)]
         dept_dash = [(i, ("한컴돋움", 1200)) for i in range(201, 213, 2)]
         self.assertEqual(style_change_points({"ㅇ": long_body + dept, "-": long_dash + dept_dash}), [])
 
@@ -181,7 +181,7 @@ class UnifyEngineTests(unittest.TestCase):
             marks.assert_not_called()
 
     def test_cover_page_sentences_are_excluded(self):
-        paragraphs = [('ㅇ 표지 안내', '함초롬바탕', 2400, '#000000')]
+        paragraphs = [('ㅇ 표지 안내', '휴먼명조', 2400, '#000000')]
         paragraphs += [(f'ㅇ 본문 {i}', '한컴돋움', 1500, '#000000') for i in range(3)]
         with self.document(paragraphs, pages=[1, 2, 2, 2], cover=True) as (fn, writes, marks, _, _):
             self.assertTrue(fn())
@@ -193,7 +193,7 @@ class UnifyEngineTests(unittest.TestCase):
 
     def test_mixed_hanging_on_one_line_items_is_not_marked_red(self):
         # 실측(정책회의 자료): 한 줄 '-' 항목의 내어쓰기가 57:39로 갈려 103문장이 빨갛게 표시됐다.
-        paragraphs = [(f'- 항목 {i}', '함초롬바탕', 1400, '#000000',
+        paragraphs = [(f'- 항목 {i}', '휴먼명조', 1400, '#000000',
                        {'hanging_indent': i % 2 == 0, 'line_count': 1}) for i in range(8)]
         with self.document(paragraphs) as (fn, writes, marks, _, _):
             self.assertTrue(fn())
@@ -201,8 +201,8 @@ class UnifyEngineTests(unittest.TestCase):
             marks.assert_not_called()
 
     def test_each_format_system_keeps_its_own_representative(self):
-        # 본문(함초롬바탕 15pt)과 붙임(한컴돋움 13pt)은 서로 다른 체계다. 붙임 안의 예외만 고친다.
-        paragraphs = [(f'ㅇ 본문 {i}', '함초롬바탕', 1500, '#000000') for i in range(5)]
+        # 본문(휴먼명조 15pt)과 붙임(한컴돋움 13pt)은 서로 다른 체계다. 붙임 안의 예외만 고친다.
+        paragraphs = [(f'ㅇ 본문 {i}', '휴먼명조', 1500, '#000000') for i in range(5)]
         paragraphs += [(f'ㅇ 붙임 {i}', '한컴돋움', 1300, '#000000') for i in range(4)]
         paragraphs.append(('ㅇ 붙임 예외', '굴림', 1300, '#000000'))
         with self.document(paragraphs, boundaries=[(5, '붙임')]) as (fn, writes, marks, _, selection):
@@ -213,16 +213,16 @@ class UnifyEngineTests(unittest.TestCase):
         # 경계를 모르면 5:4로 갈려 대표 글꼴을 정할 수 없으므로 고치지 않고 빨간 표시한다.
         with self.document(paragraphs) as (fn, writes, marks, _, _):
             self.assertTrue(fn())
-            self.assertNotIn('함초롬바탕', [call.kwargs.get('폰트') for call in writes.call_args_list])
+            self.assertNotIn('휴먼명조', [call.kwargs.get('폰트') for call in writes.call_args_list])
             self.assertTrue(marks.called)
 
     def test_small_region_borrows_document_representative(self):
         # 붙임 영역에 ㅇ 문장이 하나뿐이면 문서 전체 ㅇ 대표값과 비교한다.
-        paragraphs = [(f'ㅇ 본문 {i}', '함초롬바탕', 1500, '#000000') for i in range(5)]
+        paragraphs = [(f'ㅇ 본문 {i}', '휴먼명조', 1500, '#000000') for i in range(5)]
         paragraphs.append(('ㅇ 붙임 하나', '굴림', 1500, '#000000'))
         with self.document(paragraphs, boundaries=[(5, '붙임')]) as (fn, writes, marks, _, _):
             self.assertTrue(fn())
-            self.assertEqual([call.kwargs.get('폰트') for call in writes.call_args_list], ['함초롬바탕'])
+            self.assertEqual([call.kwargs.get('폰트') for call in writes.call_args_list], ['휴먼명조'])
             marks.assert_not_called()
 
     def test_split_font_group_borrows_font_used_as_representative_elsewhere(self):
