@@ -76,7 +76,7 @@ class DocumentTest(unittest.TestCase):
         cls.parse = staticmethod(cls.ns['safe_xml_fromstring'])
         cls.name = staticmethod(cls.ns['제목_xml이름'])
 
-    def _doc(self, body, marker_face='휴먼명조'):
+    def _doc(self, body, marker_face='함초롬바탕'):
         """글자모양 0 = 바탕 10pt, 1 = ㅇ 문장(marker_face 15pt)."""
         ns = self.ns
         header, _ = ns['제목_원본자료']()
@@ -107,7 +107,7 @@ class DocumentTest(unittest.TestCase):
             + _p.__func__('붙임: 1. 지구 침공 세부 시행계획 1부.') + _p.__func__('2. 지자 개발 현황 1부.')
             + _p.__func__('끝.') + _p.__func__('뒤 문장'))
 
-    def _convert(self, body=None, symbol_rule=True, marker_face='휴먼명조'):
+    def _convert(self, body=None, symbol_rule=True, marker_face='함초롬바탕'):
         ns = self.ns
         fn = ns['붙임글꼴_hwpx_처리']
         source = self._doc(body or self.BODY, marker_face)
@@ -138,7 +138,7 @@ class DocumentTest(unittest.TestCase):
         for index in (2, 3, 4):     # 붙임~끝. 문장 전부: 표준서식 ㅇ 규칙(한컴돋움 15pt)
             self.assertEqual(self._look(header, section, index), [({'한컴돋움'}, 15.0)], index)
         # 묶음 밖 문장은 그대로다.
-        self.assertIn('휴먼명조', self._look(header, section, 0)[0][0])
+        self.assertIn('함초롬바탕', self._look(header, section, 0)[0][0])
         self.assertEqual(self._look(header, section, 0)[0][1], 15.0)
         self.assertEqual(self._look(header, section, 1)[0][1], 10.0)
         self.assertEqual(self._look(header, section, 5)[0][1], 10.0)
@@ -152,10 +152,10 @@ class DocumentTest(unittest.TestCase):
             self.assertIn('한컴돋움', {f.get('face') for f in ff})
 
     def test_without_symbol_rule_uses_the_documents_marker_sentences(self):
-        _, _, found, _, header, section = self._convert(symbol_rule=False, marker_face='휴먼명조')
+        _, _, found, _, header, section = self._convert(symbol_rule=False, marker_face='함초롬바탕')
         self.assertEqual(found, {'Contents/section0.xml': [(2, 4)]})
         for index in (2, 3, 4):
-            self.assertEqual(self._look(header, section, index), [({'휴먼명조'}, 15.0)], index)
+            self.assertEqual(self._look(header, section, index), [({'함초롬바탕'}, 15.0)], index)
 
     def test_second_run_finds_nothing_and_already_matching_block_is_skipped(self):
         ns = self.ns

@@ -126,7 +126,7 @@ class DefaultStyleTest(unittest.TestCase):
         self.assertEqual((style["rows"], style["cols"], style["header_rows"]), (5, 3, 1))
         text = describe_style(style)
         self.assertIn("한컴돋움 13pt 굵게", text)
-        self.assertIn("휴먼명조 12pt", text)
+        self.assertIn("함초롬바탕 12pt", text)
 
     def test_invalid_styles_are_rejected(self):
         style = default_style()
@@ -148,11 +148,11 @@ class ApplyTest(unittest.TestCase):
         self.assertEqual(read.side((0, 3), "rightBorder"), "NONE")
         self.assertEqual(read.side((0, 1), "leftBorder"), "SOLID")
         self.assertEqual(read.side((0, 2), "rightBorder"), "SOLID")
-        # 첫 본문 행은 위 이중선, 본문은 바탕색 없음·휴먼명조 12pt, 첫 열은 배분 정렬
+        # 첫 본문 행은 위 이중선, 본문은 바탕색 없음·함초롬바탕 12pt, 첫 열은 배분 정렬
         self.assertEqual(read.side((1, 2), "topBorder"), "DOUBLE_SLIM")
         self.assertEqual(read.side((2, 2), "topBorder"), "SOLID")
         self.assertIsNone(read.face_color((3, 1)))
-        self.assertEqual(read.font((3, 1))[:3], ("휴먼명조", 1200, False))
+        self.assertEqual(read.font((3, 1))[:3], ("함초롬바탕", 1200, False))
         self.assertEqual(read.align((3, 0)), "DISTRIBUTE")
         self.assertEqual(read.align((3, 2)), "CENTER")      # 숫자만 있는 본문 칸('3-2')은 예시 정렬
         self.assertEqual(read.side((4, 0), "leftBorder"), "NONE")
@@ -216,7 +216,7 @@ class ApplyTest(unittest.TestCase):
     def test_body_emphasis_color_and_bold_are_kept(self):
         table = _grid(3, 3, char=lambda r, c: 1 if (r, c) == (2, 1) else 0)
         _, read = _apply(table)
-        self.assertEqual(read.font((2, 1)), ("휴먼명조", 1200, True, "#FF0000"))
+        self.assertEqual(read.font((2, 1)), ("함초롬바탕", 1200, True, "#FF0000"))
 
     def test_two_row_header_is_detected_from_row_spans(self):
         cells = [(0, _cell(0, 0, "구분", rows=2)), (0, _cell(0, 1, "2026", cols=2)),
