@@ -46,11 +46,11 @@ class RunSignatureTest(unittest.TestCase):
         self.assertEqual(self.params[-3:], ['준말_등록', '무결성보고서파일', '최종검수파일'])
         self.assertEqual(self.params.index('시작_인덱스') + 1, self.params.index('준말_등록'))
 
-    def test_report_file_defaults_preserve_existing_behavior(self):
+    def test_report_files_are_off_by_default(self):
         defaults = self.namespace['기본_설정']
         self.assertFalse(defaults['log_file'])
-        self.assertTrue(defaults['integrity_report_file'])
-        self.assertTrue(defaults['final_review_file'])
+        self.assertFalse(defaults['integrity_report_file'])
+        self.assertFalse(defaults['final_review_file'])
 
 
 if __name__ == '__main__':
