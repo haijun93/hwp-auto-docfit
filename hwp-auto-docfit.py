@@ -24436,7 +24436,7 @@ class HwpAutoDocFitGUI:
         else:
             문구 = f"문서 {실패}개를 처리하지 못했습니다. 처리 기록을 확인해 주세요. (성공 {성공}개)"
         tk.Label(창, text=문구, bg="#FFFFFF", fg="#111827", font=("맑은 고딕", 14, "bold"),
-                 wraplength=440, justify="center").pack(padx=32, pady=(4, 16))
+                 wraplength=560, justify="center").pack(padx=32, pady=(4, 16))
         확인 = ttk.Button(창, text="확인", command=창.destroy)
         확인.pack(pady=(0, 22))
         창.bind("<Return>", lambda e: 창.destroy())
