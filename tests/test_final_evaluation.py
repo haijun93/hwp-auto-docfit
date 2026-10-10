@@ -150,7 +150,7 @@ class FinalEvaluationTest(unittest.TestCase):
                             for note in report["notes"]))
 
     def test_style_unify_without_sentences_is_not_applicable(self):
-        # 문두기호 문장이 없는 문서(서식·표만 있는 문서)의 서식통일 검수는 '해당 없음'이라 부분 달성 사유가 아니다.
+        # 항목기호 문장이 없는 문서(서식·표만 있는 문서)의 서식통일 검수는 '해당 없음'이라 부분 달성 사유가 아니다.
         with tempfile.TemporaryDirectory() as folder:
             output = Path(folder) / "result.hwpx"
             output.touch()

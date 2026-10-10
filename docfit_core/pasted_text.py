@@ -54,7 +54,7 @@ _MARKER_GLUE = re.compile(
     rf"[-*+][ \t]|[{_UNICODE_BULLETS}]|\d+[.)](?:[ \t]|[^\d\s])|#{{1,6}}[ \t]|[①-⑳])"
 )
 
-# 계층 구조 변환(outline_pasted_text)에서 쓰는 문두기호. 1단계는 원문에
+# 계층 구조 변환(outline_pasted_text)에서 쓰는 항목기호. 1단계는 원문에
 # 이미 "1." 같은 번호가 있으면 그대로 두고, 없을 때만 ㅁ을 붙인다.
 _OUTLINE_TIER_MARKERS = ("ㅁ", "ㅇ", "-", "•")
 _OUTLINE_ALREADY_NUMBERED = re.compile(r"^\d+[.)][ \t]")
@@ -209,7 +209,7 @@ def _outline_bullet_tier(raw_line: str) -> int:
 
 
 def outline_pasted_text(text: str) -> str:
-    """마크다운 계층 구조를 ㅁ/ㅇ/-/• 개조식 문두기호로 바꾼다.
+    """마크다운 계층 구조를 ㅁ/ㅇ/-/• 개조식 항목기호로 바꾼다.
 
     표제(``#``~``######``, 또는 들여쓰기 없는 "1. " 숫자 항목)는 1단계로
     보고 이미 번호가 있으면 그대로 두며(없으면 ㅁ을 붙임), 글머리 기호는
