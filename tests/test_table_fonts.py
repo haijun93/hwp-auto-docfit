@@ -14,7 +14,7 @@ class TableFontsTest(unittest.TestCase):
         fn = self.ns['표글꼴_적용']
         g = fn.__globals__
         with patch.dict(g, {'표_헤더서식_헤더_폰트': '한컴돋움', '표_헤더서식_헤더_크기': 13,
-                            '표_헤더서식_본문_폰트': '함초롬바탕', '표_헤더서식_본문_크기': 12}):
+                            '표_헤더서식_본문_폰트': '휴먼명조', '표_헤더서식_본문_크기': 12}):
             fn(fonts)
             return (g['표_헤더서식_헤더_폰트'], g['표_헤더서식_헤더_크기'],
                     g['표_헤더서식_본문_폰트'], g['표_헤더서식_본문_크기'])
@@ -27,13 +27,13 @@ class TableFontsTest(unittest.TestCase):
     def test_blank_or_invalid_values_keep_current(self):
         self.assertEqual(self.apply({'header': {'font': ' ', 'size': 'abc'},
                                      'body': {'size': '0'}}),
-                         ('한컴돋움', 13, '함초롬바탕', 12))
-        self.assertEqual(self.apply(None), ('한컴돋움', 13, '함초롬바탕', 12))
+                         ('한컴돋움', 13, '휴먼명조', 12))
+        self.assertEqual(self.apply(None), ('한컴돋움', 13, '휴먼명조', 12))
 
     def test_defaults_match_built_in_table_format(self):
         self.assertEqual(self.ns['기본_설정']['table_fonts'],
                          {'header': {'font': '한컴돋움', 'size': '13'},
-                          'body': {'font': '함초롬바탕', 'size': '12'}})
+                          'body': {'font': '휴먼명조', 'size': '12'}})
 
 
 if __name__ == '__main__':

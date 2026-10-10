@@ -365,15 +365,15 @@ class FormatCopyFidelityTest(unittest.TestCase):
         ns = self.ns
         header = ns['safe_xml_fromstring'](
             '<hh:head xmlns:hh="urn:h"><hh:fontface lang="HANGUL"><hh:font id="0" face="한양중고딕" type="HFT"/>'
-            '<hh:font id="1" face="함초롬바탕" type="TTF"/></hh:fontface><hh:fontface lang="LATIN">'
-            '<hh:font id="0" face="HCI Poppy" type="HFT"/><hh:font id="1" face="함초롬바탕" type="HFT"/>'
+            '<hh:font id="1" face="휴먼명조" type="TTF"/></hh:fontface><hh:fontface lang="LATIN">'
+            '<hh:font id="0" face="HCI Poppy" type="HFT"/><hh:font id="1" face="휴먼명조" type="HFT"/>'
             '</hh:fontface></hh:head>')
         found = ns['글꼴형식_모으기'](header)
-        self.assertEqual(found, {"한양중고딕": "HFT", "함초롬바탕": "TTF", "HCI Poppy": "HFT"})   # 같은 이름은 TTF 우선
-        table = {"함초롬바탕": "TTF"}
+        self.assertEqual(found, {"한양중고딕": "HFT", "휴먼명조": "TTF", "HCI Poppy": "HFT"})   # 같은 이름은 TTF 우선
+        table = {"휴먼명조": "TTF"}
         with patch.dict(ns['글꼴형식_등록'].__globals__, {'_글꼴형식': table}):
-            ns['글꼴형식_등록']({"한양중고딕": "HFT", "함초롬바탕": "HFT"})
-        self.assertEqual(table, {"함초롬바탕": "TTF", "한양중고딕": "HFT"})
+            ns['글꼴형식_등록']({"한양중고딕": "HFT", "휴먼명조": "HFT"})
+        self.assertEqual(table, {"휴먼명조": "TTF", "한양중고딕": "HFT"})
 
     def test_plain_sentences_take_example_body_format_only_for_body_sentences(self):
         # 기호 없는 문단은 본문 문장(빈칸 뺀 12자 이상·18pt 미만·가운데/오른쪽 정렬 아님·붙임 줄 아님)만 '일반 문장' 표본이자 적용 대상이다.
