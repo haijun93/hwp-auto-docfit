@@ -345,6 +345,7 @@ def XML_자식_추가(parent, prototype, tag=None, attrib=None):
 from docfit_core.style_inventory import analyze_style_inventory, build_style_sample, inventory_markdown
 from docfit_core import report_header as 보고서머리
 from docfit_core import connector_tabs as 연결부호탭
+from docfit_core import colon_labels as 콜론라벨
 from docfit_core import format_elements as 서식요소
 from docfit_core.table_width import fit_table as 표너비_맞춤, is_target as 표너비_대상인가
 from docfit_core import (
@@ -4166,6 +4167,49 @@ def 연결부호탭_hwpx_처리(source, target=None, selections=None):
     로그(f"연결 부호 탭 정렬: 묶음 {통계['groups']}개·문단 {통계['paragraphs']}개를 목차 점선(왼쪽 정렬 탭)으로 맞춤"
          + (f"(본문 폭 때문에 탭을 앞으로 당긴 묶음 {통계['pulled']}개)" if 통계.get('pulled') else ""))
     return 통계["paragraphs"]
+
+
+알파_콜론라벨_정렬_사용 = True
+
+
+def 콜론라벨_hwpx_처리(source, target=None, selections=None):
+    """연속된 '항목기호 + 짧은 라벨(10자 미만) + 콜론' 문장의 콜론을 세로로 맞춘다(알파, 2026-10-10 사용자 규칙).
+
+    가장 긴 라벨을 기준으로 짧은 라벨 글자의 자간(한도 50%까지)과 장평을 늘려 가로 길이를 맞춘다. 글은 바꾸지 않는다.
+    """
+    with zipfile.ZipFile(source) as z:
+        contents = {n: z.read(n) for n in z.namelist()}
+    for name, data in contents.items():
+        if name.startswith('Contents/') and name.endswith('.xml'):
+            for _, pair in ET.iterparse(io.BytesIO(data), events=('start-ns',)):
+                if not re.fullmatch(r'ns\d+', pair[0]): XML_네임스페이스_등록(*pair)
+    header = safe_xml_fromstring(contents['Contents/header.xml'])
+    names = sorted((n for n in contents if re.fullmatch(r'Contents/section\d+\.xml', n)),
+                   key=lambda n: int(re.search(r'section(\d+)', n).group(1)))
+    roots = {n: safe_xml_fromstring(contents[n]) for n in names}
+    if selections is None:
+        if not 알파_콜론라벨_정렬_사용:
+            return {n: [] for n in names}
+        return {n: list(range(sum(len(콜론라벨.groups_in(c)) for c in
+                                  [root] + [x for x in root.iter() if 제목_xml이름(x) == 'subList'])))
+                for n, root in roots.items()}
+    if not any(selections.values()):
+        if target is not None: shutil.copyfile(source, target)
+        return 0
+    전 = {n: 제목_문자열(roots[n]) for n in names}
+    통계 = 콜론라벨.align_colons(header, [roots[n] for n in names])
+    # 짧은 라벨 글자 사이에 빈칸을 넣을 수 있으므로 빈칸을 뺀 글로 보존을 확인한다.
+    if any(re.sub(r'\s', '', 제목_문자열(roots[n])) != re.sub(r'\s', '', 전[n]) for n in names):
+        raise RuntimeError('콜론 라벨 정렬 중 글 보존 검사에 실패했습니다.')
+    if not 통계.get("stretched"):
+        shutil.copyfile(source, target)
+        return 0
+    for n in names:
+        contents[n] = ET.tostring(roots[n], encoding='utf-8', xml_declaration=True)
+    contents['Contents/header.xml'] = ET.tostring(header, encoding='utf-8', xml_declaration=True)
+    _hwpx_안전_저장(contents, target)
+    로그(f"콜론 라벨 정렬: 묶음 {통계['groups']}개에서 짧은 라벨 {통계['stretched']}개를 늘려 콜론을 세로로 맞춤")
+    return 통계["stretched"]
 
 
 def 상자서식_hwpx_처리(source, target=None, selections=None):
@@ -17949,6 +17993,8 @@ def _문서_처리_본체(파일, index, total, 문장부호기능=True):
     # 연속된 연결 부호 문장(목차·일정표)은 한/글 목차 점선(왼쪽 정렬 탭)으로 맞춘다(알파, 2026-10-10).
     if 서식단계_사용 and 쪽범위_요청 is None and 알파_연결부호_탭정렬_사용:
         선행목록.append((True, '연결 부호 탭 정렬', 연결부호탭_hwpx_처리, 'connector_tab.hwpx', '표 칸 너비'))
+    if 서식단계_사용 and 쪽범위_요청 is None and 알파_콜론라벨_정렬_사용:
+        선행목록.append((True, '콜론 라벨 정렬', 콜론라벨_hwpx_처리, 'colon_label.hwpx', '표 칸 너비'))
     # 표 칸 안 날짜는 한 줄 표기가 원칙이다(사용자 규칙, 2026-10-10). 표 서식 단계들 뒤 맨 끝에서 지정한다.
     if (서식단계_사용 or 작업_모드 == 'unify') and 쪽범위_요청 is None:
         선행목록.append((True, '표 날짜 칸 한 줄', 표날짜칸_hwpx_처리, 'table_date.hwpx', '표 칸 너비'))
