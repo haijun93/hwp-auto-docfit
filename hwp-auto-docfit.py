@@ -348,6 +348,7 @@ from docfit_core import report_header as 보고서머리
 from docfit_core import connector_tabs as 연결부호탭
 from docfit_core import colon_labels as 콜론라벨
 from docfit_core import spacing_reset as 자간초기화모듈
+from docfit_core import char_ranges as 글자구간모듈
 from docfit_core import format_elements as 서식요소
 from docfit_core.table_width import fit_table as 표너비_맞춤, is_target as 표너비_대상인가
 from docfit_core import (
@@ -9768,9 +9769,142 @@ def 괄호_및_라벨_텍스트_문단_처리(세트후속문단=False):
 
     return 적용_횟수
 
+def 라벨괄호_계획(text, 세트후속문단=False, 크기=None):
+    """문단 글에서 굵게 할 문두 라벨과 줄일 부연설명 괄호 구간을 고른다(순수 함수, 알파 1-b).
+
+    괄호_및_라벨_텍스트_문단_처리(한/글 경로)와 같은 판정이다. 크기(시작, 끝) → 그 구간 글자 크기(pt, 모르면 None).
+    ([(시작, 끝, {"bold": True} | {"shrink_pt": n})], 문두 라벨을 굵게 했는지)를 돌려준다."""
+    구간, 라벨적용 = [], False
+    if not text:
+        return 구간, 라벨적용
+    축소_pt = 괄호_축소량_pt(text)
+    축소_사용 = 괄호_축소_사용 and 축소_pt > 0
+    if not 괄호_라벨_볼드_사용 and (not 축소_사용 or ("(" not in text and "[" not in text)):
+        return 구간, 라벨적용
+    if 괄호_라벨_볼드_사용 and 문장부호_시작인가(text) and not 문두_라벨_굵게_제외_문단인가(text):
+        마커_끝 = 문장부호_마커_끝위치(text)
+        if 마커_끝 is not None:
+            idx = 마커_끝
+            while idx < len(text) and text[idx] in (" ", "\t"):
+                idx += 1
+            if idx < len(text):
+                나머지 = text[idx:]
+                콜론_매치 = re.match(r"^([^\n\r:：]{1,25}?)[ \t]*([:：])[ \t]+(\S.*)$", 나머지)
+                if 콜론_매치 and 콜론_매치.group(1).strip():
+                    라벨_텍스트 = 콜론_매치.group(1).strip()
+                    라벨_시작 = idx + 나머지.find(라벨_텍스트)
+                    구간.append((라벨_시작, 라벨_시작 + len(라벨_텍스트), {"bold": True}))
+                    라벨적용 = True
+    if "(" in text or "[" in text:
+        for match in 괄호_정규식.finditer(text):
+            시작, 끝 = match.start(), match.end()
+            if 대괄호인가(match) and 괄호_문두_라벨인가(text, match):
+                continue
+            범위_세트라벨 = 세트후속_범위괄호_라벨인가(text, match, 세트후속문단=세트후속문단)
+            if 괄호_문두_라벨인가(text, match) or 범위_세트라벨:
+                if 괄호_문두_라벨인가(text, match) and 문두_라벨_굵게_제외_문단인가(text):
+                    continue
+                if not 괄호_라벨_볼드_사용:
+                    continue
+                구간.append((시작, 끝, {"bold": True}))
+                if 괄호_문두_라벨인가(text, match):
+                    라벨적용 = True
+                continue
+            if not 축소_사용:
+                continue
+            # 날짜 바로 뒤 요일 괄호('26. 10. 11.(일)')는 날짜의 일부라 줄이지 않는다(한/글 경로 결과와 같게, 2026-10-11 실측).
+            if re.fullmatch(r'[월화수목금토일]', 괄호_안쪽(match) or '') and re.search(r'\d\s*[.\-/]?\s*$', text[:시작]):
+                continue
+            크기 = 크기 or (lambda a, b: None)
+            주변_pt = 크기(시작 - 1, 시작) if 시작 > 0 else (크기(끝, 끝 + 1) if 끝 < len(text) else None)
+            괄호_pt = 크기(시작, 끝)
+            if 괄호_pt is not None and 주변_pt is not None and 괄호_pt < 주변_pt - 0.4:
+                continue
+            구간.append((시작, 끝, {"shrink_pt": 축소_pt}))
+    return 구간, 라벨적용
+
+
+# 알파 1-b(2026-10-11): 문두 라벨 굵게·부연설명 괄호 축소를 지금 열린 문서의 HWPX에서 한다(한/글 문단별 선택 대신).
+알파_라벨괄호_XML_사용 = False   # 실측(2026-10-11, test4): 216.4초 → 213.9초(−1.2%, 오차 수준). 다시 열기 비용과 비슷해 1-c 묶음 뒤 재판단
+
+
+def 라벨괄호_hwpx_처리(source, target=None, selections=None):
+    """모든 문단(표·글상자 안 포함)의 문두 라벨을 굵게, 부연설명 괄호 글자를 줄인다(라벨괄호_계획과 같은 판정)."""
+    with zipfile.ZipFile(source) as z:
+        contents = {n: z.read(n) for n in z.namelist()}
+    for name, data in contents.items():
+        if name.startswith('Contents/') and name.endswith('.xml'):
+            for _, pair in ET.iterparse(io.BytesIO(data), events=('start-ns',)):
+                if not re.fullmatch(r'ns\d+', pair[0]): XML_네임스페이스_등록(*pair)
+    header = safe_xml_fromstring(contents['Contents/header.xml'])
+    names = sorted((n for n in contents if re.fullmatch(r'Contents/section\d+\.xml', n)),
+                   key=lambda n: int(re.search(r'section(\d+)', n).group(1)))
+    roots = {n: safe_xml_fromstring(contents[n]) for n in names}
+    if selections is None:
+        return {n: [0] for n in names}
+    if not any(selections.values()):
+        if target is not None: shutil.copyfile(source, target)
+        return 0
+    styles = 글자구간모듈.CharStyles(header)
+    전 = {n: 제목_문자열(roots[n]) for n in names}
+    총, 굵게기호, 일관성_후보 = 0, set(), []
+    for n in names:
+        활성_세트_들여쓰기 = None
+        for para in [x for x in roots[n].iter() if 제목_xml이름(x) == 'p']:
+            text = 글자구간모듈.paragraph_text(para)
+            if (괄호_라벨_볼드_사용 and 항목기호_굵게_일관성_사용 and not 문두_라벨_굵게_제외_문단인가(text)):
+                범위 = 일관성_굵게_머리말_범위(text)
+                if 범위:
+                    일관성_후보.append((para, text, 범위))
+            세트후속 = False
+            if 활성_세트_들여쓰기 is not None and 세트문장_후속문단인가(활성_세트_들여쓰기, text):
+                세트후속 = True
+            else:
+                활성_세트_들여쓰기 = 세트문장_선행들여쓰기_폭(text) if 세트문장_시작인가(text) else None
+
+            def 크기(a, b, para=para):
+                값 = {styles.height_pt(글자구간모듈.char_id_at(para, i)) for i in range(max(0, a), b)}
+                값.discard(None)
+                return min(값) if 값 else None
+
+            구간, 라벨적용 = 라벨괄호_계획(text, 세트후속, 크기)
+            if 라벨적용:
+                굵게기호.add(항목기호_키(text))
+            총 += 글자구간모듈.apply_ranges(para, 구간, styles)
+    일관성 = 0
+    for para, text, (시작, 끝) in 일관성_후보:
+        if 항목기호_키(text) in 굵게기호:
+            일관성 += 글자구간모듈.apply_ranges(para, [(시작, 끝, {"bold": True})], styles)
+    if any(제목_문자열(roots[n]) != 전[n] for n in names):
+        raise RuntimeError('문두 라벨/괄호 서식 중 글 보존 검사에 실패했습니다.')
+    if not (총 + 일관성):
+        shutil.copyfile(source, target)
+        로그("문두 라벨/괄호 서식(XML): 바꿀 곳 없음")
+        return 0
+    for n in names:
+        contents[n] = ET.tostring(roots[n], encoding='utf-8', xml_declaration=True)
+    contents['Contents/header.xml'] = ET.tostring(header, encoding='utf-8', xml_declaration=True)
+    _hwpx_안전_저장(contents, target)
+    로그(f"문두 라벨 / 괄호 처리 완료(XML) (총 {총 + 일관성}건, 항목기호 굵게 일관성 {일관성}건)")
+    return 총 + 일관성
+
+
+def 현재문서_XML단계_적용(이름, 처리함수, 파일명):
+    """지금 열린 문서를 HWPX로 저장해 XML 처리기를 적용하고 결과를 다시 연다(알파 1-b). 실패하면 False."""
+    결과 = 제목붙임_선행적용(현재_처리파일 or '', 현재문서_기준=True, 처리목록=((True, 이름, 처리함수, 파일명),))
+    # 다시 연 문서는 문단 위치·글이 바뀌었을 수 있으므로 읽어 둔 문단 글·위치표를 버린다.
+    global _최근_문단글
+    _문단글_캐시_비우기()
+    _최근_문단글 = None
+    _문단_위치표_저장.clear()
+    return 결과 is not False
+
+
 def 괄호_텍스트_크기_축소_전체_적용():
     if 중단_요청됨():
         return False
+    if 알파_라벨괄호_XML_사용 and 쪽범위_요청 is None:
+        return 현재문서_XML단계_적용('문두 라벨/괄호 서식', 라벨괄호_hwpx_처리, 'label_paren.hwpx')
     로그("문두 라벨(콜론/괄호) 굵게 및 부연설명 괄호 크기 축소 처리 시작")
     순회_시작()
     총_적용_횟수 = 0
