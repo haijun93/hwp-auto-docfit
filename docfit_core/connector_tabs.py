@@ -49,6 +49,23 @@ def text_em(text: str) -> float:
     return sum(char_em(c) for c in text)
 
 
+def space_connector_ok(left: str, right: str) -> bool:
+    """여러 칸 빈칸을 연결 부호로 볼 수 있는지(순수 함수). test6 실문서에서 오판한 유형을 뺀다(2026-10-10).
+
+    - 글자 사이를 띄운 라벨('일    시: …'): 오른쪽 글 앞쪽(4자 안)에 콜론이 있다.
+    - 오른쪽 끝 부서 표시('제목      (총무과)'): 오른쪽 글이 괄호 하나로 된 표시다.
+    - 줄 채움 빈칸('주요행사: … 수상작      시상'): 왼쪽 글에 이미 콜론이 있다.
+    """
+    r = right.strip()
+    if re.match(r"^\S{0,3}\s*[:：]", r):
+        return False
+    if re.fullmatch(r"[(（\[][^()（）\[\]]{1,20}[)）\]]", r):
+        return False
+    if ":" in left or "：" in left:
+        return False
+    return True
+
+
 def split_connector(text: str):
     """문단 글에서 연결 부호가 하나 있으면 (왼쪽, 부호, 오른쪽), 없거나 둘 이상이면 None(순수 함수)."""
     found = list(CONNECTOR.finditer(text or ""))
@@ -60,6 +77,8 @@ def split_connector(text: str):
     m = found[0]
     left, right = text[:m.start()], text[m.end():]
     if not left.strip() or not right.strip():
+        return None
+    if not m.group(0).strip() and not space_connector_ok(left, right):
         return None
     return left.rstrip(" "), m.group(0), right.lstrip(" ")
 

@@ -29,6 +29,12 @@ class ConnectorTabsTest(unittest.TestCase):
         self.assertIsNone(CT.split_connector("두 칸  공백"))
         self.assertIsNone(CT.split_connector("앞 ..... 가운데 ----- 뒤"))      # 부호가 둘이면 바꾸지 않는다
 
+    def test_space_false_positives_from_real_documents(self):
+        # test6 실문서에서 잘못 잡은 유형(2026-10-10)
+        self.assertIsNone(CT.split_connector("∎ 일    시: 2026. 9. 21.(월) 8:30"))              # 글자 사이를 띄운 라벨
+        self.assertIsNone(CT.split_connector("1. 직원 대상 예방교육 실시      (총무과)"))          # 오른쪽 끝 부서 표시
+        self.assertIsNone(CT.split_connector("   - 주요행사: 태교 원데이클래스, 수상작      시상"))  # 줄 채움 빈칸
+
     def test_groups_split_by_kind_and_need_two_lines(self):
         root = section("가 ..... 1", "나 ....... 2", "다 ----- 3", "라 ----- 4", "외톨이 ...... 5", "보통 문장")
         groups = CT.groups_in(root)

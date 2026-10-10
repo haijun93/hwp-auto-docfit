@@ -10696,6 +10696,8 @@ def 연결부호_단위들(글):
     결과 = []
     글 = 글 or ""
     for m in _연결부호.finditer(글):
+        if not m.group(0).strip() and not 연결부호탭.space_connector_ok(글[:m.start()], 글[m.end():]):
+            continue            # 라벨 안 빈칸·부서 표시·줄 채움 빈칸은 연결 부호가 아니다
         왼 = m.start()
         if 왼 > 0 and 글[왼 - 1] == " " and not m.group(0).startswith(" "):
             왼 -= 1

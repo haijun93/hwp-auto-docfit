@@ -145,7 +145,9 @@ _TIME_HHMM = r"\d{1,2}:\d{2}"
 _WEEKDAY_PAREN = r"\((?:월|화|수|목|금|토|일)\)"
 
 _DATE_WEEKDAY_RE = re.compile(rf"({_DATE_CORE})\.?({_WEEKDAY_PAREN})\.?")
-_DATE_TRAILING_DOT_RE = re.compile(rf"(?<!\d)({_DATE_CORE})(?!\.)(?!\d)")
+# 날짜 끝 온점 채우기. '2026. 10. 4. 15:00'의 '10. 4. 15'처럼 앞 날짜의 점 바로 뒤에서 시작하거나 뒤가 시각(콜론)인
+# 숫자 묶음은 날짜가 아니다(실측: '15:00' → '15.:00' 훼손, test6 시험 P1, 2026-10-10).
+_DATE_TRAILING_DOT_RE = re.compile(rf"(?<!\d)(?<!\.)(?<!\.\s)(?<!\.\s\s)({_DATE_CORE})(?!\.)(?!\d)(?!\s*[:：])")
 _DATE_RANGE_SEP_RE = re.compile(
     rf"({_DATE_DOT})(\s*)[{_DASH_CHARS}](\s*)({_DATE_DOT}|{_DATE_MONTH_DAY})"
 )
