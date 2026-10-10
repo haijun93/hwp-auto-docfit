@@ -50,7 +50,9 @@ class HangingParenLabelTest(unittest.TestCase):
     def test_saved_rules_are_unchanged(self):
         text = 'ㅇ (개요) 본문 문장'
         self.assertEqual(self.offset(text, {'ㅇ': 'after_marker'}), 2)
-        self.assertEqual(self.offset(text, {'ㅇ': 'after_label'}), 2)        # 라벨 규칙: 괄호는 기호 뒤
+        # 폐지된 라벨 규칙(2026-10-10): 예전 프로필의 값은 규칙 없음으로 읽어 이전과 같은 결과를 낸다.
+        self.assertEqual(self.offset(text, {'ㅇ': 'after_label'}), 2)
+        self.assertEqual(self.offset('- 추진부서 : 문화경제과', {'-': 'after_label'}), 9)
         self.assertIsNone(self.offset(text, {'ㅇ': 'fixed'}))
         self.assertIsNone(self.offset(text, {'ㅇ': 'none'}))
 
