@@ -22,11 +22,15 @@ import winreg
 # 설정 상수 (hwp-auto-docfit.py와 일치)
 # ============================================================
 DLL_NAME = "MapoHwpAutoDocFitSecurity.dll"
-HWP_AUTOMATION_DIR = Path(r"C:\HwpAutomation")
-TARGET_DLL = HWP_AUTOMATION_DIR / DLL_NAME
+# 보안 모듈 DLL: 알파(2026-10-10)부터 C:\HWP_AUTODOCFIT\dll\HwpAutoDocFitSecurity.dll(레지스트리 값 HwpAutoDocFitSecurity),
+# 그 전에는 C:\HwpAutomation\MapoHwpAutoDocFitSecurity.dll(값 MapoHwpAutoDocFitSecurity). 둘 다 정리한다.
+HWP_AUTOMATION_DIR = Path(r"C:\HWP_AUTODOCFIT\dll")
+TARGET_DLL = HWP_AUTOMATION_DIR / "HwpAutoDocFitSecurity.dll"
+LEGACY_AUTOMATION_DIR = Path(r"C:\HwpAutomation")
 REGISTRY_PARENT = r"Software\HNC\HwpAutomation"
 REGISTRY_PATH = r"Software\HNC\HwpAutomation\Modules"
-REGISTRY_VALUE_NAME = "MapoHwpAutoDocFitSecurity"
+REGISTRY_VALUE_NAME = "HwpAutoDocFitSecurity"
+LEGACY_REGISTRY_VALUE_NAME = "MapoHwpAutoDocFitSecurity"
 
 
 def 설정_폴더_목록() -> list[Path]:
@@ -60,8 +64,14 @@ def 레지스트리_등록_확인() -> bool:
     """레지스트리에 보안 모듈이 등록되어 있는지 확인한다."""
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, REGISTRY_PATH, 0, winreg.KEY_READ) as key:
-            val, _ = winreg.QueryValueEx(key, REGISTRY_VALUE_NAME)
-            return bool(val)
+            for name in (REGISTRY_VALUE_NAME, LEGACY_REGISTRY_VALUE_NAME):
+                try:
+                    val, _ = winreg.QueryValueEx(key, name)
+                    if val:
+                        return True
+                except (FileNotFoundError, OSError):
+                    continue
+            return False
     except (FileNotFoundError, OSError):
         return False
 
@@ -72,12 +82,13 @@ def 레지스트리_제거() -> tuple[bool, str]:
     details = []
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, REGISTRY_PATH, 0, winreg.KEY_ALL_ACCESS) as key:
-            try:
-                winreg.DeleteValue(key, REGISTRY_VALUE_NAME)
-                removed = True
-                details.append(f"레지스트리 값 삭제 완료: HKCU\\{REGISTRY_PATH}\\{REGISTRY_VALUE_NAME}")
-            except FileNotFoundError:
-                details.append("레지스트리 값이 이미 존재하지 않습니다.")
+            for name in (REGISTRY_VALUE_NAME, LEGACY_REGISTRY_VALUE_NAME):
+                try:
+                    winreg.DeleteValue(key, name)
+                    removed = True
+                    details.append(f"레지스트리 값 삭제 완료: HKCU\\{REGISTRY_PATH}\\{name}")
+                except FileNotFoundError:
+                    details.append(f"레지스트리 값이 이미 존재하지 않습니다: {name}")
     except FileNotFoundError:
         details.append("레지스트리 키가 존재하지 않습니다.")
         return True, "\n".join(details)
@@ -107,30 +118,45 @@ def 레지스트리_제거() -> tuple[bool, str]:
     return True, "\n".join(details)
 
 
-def 보안_DLL_제거() -> tuple[bool, str]:
-    """C:\\HwpAutomation에 복사된 보안 모듈 DLL을 삭제하고 빈 폴더를 정리한다."""
-    details = []
-    if not TARGET_DLL.exists():
-        details.append(f"DLL 파일이 존재하지 않습니다: {TARGET_DLL}")
-    else:
+def _폴더의_DLL_제거(folder: Path, dll: Path, details: list) -> bool:
+    """한 폴더의 이 앱 DLL을 지우고, 폴더가 비면 폴더도 지운다(다른 파일·서식예시 폴더가 있으면 보존)."""
+    if dll.exists():
         try:
-            TARGET_DLL.unlink()
-            details.append(f"DLL 파일 삭제 완료: {TARGET_DLL}")
+            dll.unlink()
+            details.append(f"DLL 파일 삭제 완료: {dll}")
         except Exception as e:
-            return False, f"DLL 파일 삭제 실패 (한/글이 실행 중인지 확인하세요): {e}"
-
-    # HWP_AUTOMATION_DIR 폴더가 비어 있으면 폴더도 정리 (다른 파일이 있으면 보존)
-    if HWP_AUTOMATION_DIR.exists():
+            details.append(f"DLL 파일 삭제 실패 (한/글이 실행 중인지 확인하세요): {e}")
+            return False
+    if folder.exists():
         try:
-            items = list(HWP_AUTOMATION_DIR.iterdir())
+            items = list(folder.iterdir())
             if not items:
-                HWP_AUTOMATION_DIR.rmdir()
-                details.append(f"빈 폴더 삭제 완료: {HWP_AUTOMATION_DIR}")
+                folder.rmdir()
+                details.append(f"빈 폴더 삭제 완료: {folder}")
             else:
-                details.append(f"폴더 보존 (다른 파일 {len(items)}개 존재): {HWP_AUTOMATION_DIR}")
+                details.append(f"폴더 보존 (사용자 서식예시 등 다른 항목 {len(items)}개 존재): {folder}")
         except Exception as e:
             details.append(f"폴더 정리 실패(무시): {e}")
+    return True
 
+
+def 보안_DLL_제거() -> tuple[bool, str]:
+    """앱 폴더(C:\\HWP_AUTODOCFIT)와 예전 폴더(C:\\HwpAutomation)의 보안 모듈 DLL을 삭제하고 빈 폴더를 정리한다."""
+    details = []
+    if not TARGET_DLL.exists() and not (LEGACY_AUTOMATION_DIR / DLL_NAME).exists():
+        details.append(f"DLL 파일이 존재하지 않습니다: {TARGET_DLL}")
+    ok = _폴더의_DLL_제거(HWP_AUTOMATION_DIR, TARGET_DLL, details)
+    앱폴더 = HWP_AUTOMATION_DIR.parent
+    if 앱폴더.name.upper() == "HWP_AUTODOCFIT" and 앱폴더.is_dir() and not any(앱폴더.iterdir()):
+        try:
+            앱폴더.rmdir()
+            details.append(f"빈 폴더 삭제 완료: {앱폴더}")
+        except Exception as e:
+            details.append(f"폴더 정리 실패(무시): {e}")
+    if LEGACY_AUTOMATION_DIR != HWP_AUTOMATION_DIR:
+        ok = _폴더의_DLL_제거(LEGACY_AUTOMATION_DIR, LEGACY_AUTOMATION_DIR / DLL_NAME, details) and ok
+    if not ok:
+        return False, "\n".join(details)
     return True, "\n".join(details)
 
 
@@ -309,7 +335,7 @@ class ResetAppUI:
 
     def _상태_갱신(self):
         # DLL 상태
-        if TARGET_DLL.exists():
+        if TARGET_DLL.exists() or (LEGACY_AUTOMATION_DIR / DLL_NAME).exists():
             self.lbl_dll_status.config(text="● 파일 존재함 (삭제 대상)", fg="#DC2626")
             self.var_dll.set(True)
         else:

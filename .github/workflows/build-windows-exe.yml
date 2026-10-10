@@ -58,6 +58,8 @@ jobs:
           --collect-all webview
           --collect-all pythonnet
           --collect-all clr_loader
+          --collect-all pypdfium2
+          --collect-all pypdfium2_raw
           --hidden-import PIL.Image
           --hidden-import PIL.ImageTk
           --hidden-import PIL.ImageOps

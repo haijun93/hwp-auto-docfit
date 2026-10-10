@@ -3,3 +3,4 @@ tkinterdnd2
 Pillow
 defusedxml
 pywebview
+pypdfium2

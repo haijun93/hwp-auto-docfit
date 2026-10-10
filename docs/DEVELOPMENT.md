@@ -48,8 +48,22 @@ Flutter 화면 개발·빌드는 [flutter_ui/README.md](../flutter_ui/README.md)
 
 ### 한/글 자동화 보안 모듈
 
-프로그램은 보안 모듈 DLL을 `C:\HwpAutomation`에 복사하고 현재 사용자의
-`Software\HNC\HwpAutomation\Modules` 아래에 `MapoHwpAutoDocFitSecurity`라는 이름으로 등록합니다.
+프로그램은 보안 모듈 DLL을 `C:\HWP_AUTODOCFIT\dll\HwpAutoDocFitSecurity.dll`로 복사하고 현재 사용자의
+`Software\HNC\HwpAutomation\Modules` 아래에 `HwpAutoDocFitSecurity`라는 이름으로 등록합니다(알파, 2026-10-10).
+v1.72 베타까지는 `C:\HwpAutomation\MapoHwpAutoDocFitSecurity.dll`·값 이름 `MapoHwpAutoDocFitSecurity`였고,
+알파는 실행할 때 예전 DLL과 예전 레지스트리 값을 지웁니다(예전 베타를 다시 실행하면 그 판이 스스로 다시 만듭니다).
+앱에 포함된 원본 DLL 파일 이름(`MapoHwpAutoDocFitSecurity.dll`)과 빌드 설정은 그대로입니다.
+
+앱 폴더 `C:\HWP_AUTODOCFIT`의 하위 폴더:
+
+| 폴더 | 내용 |
+|---|---|
+| `dll` | 한/글 자동화 보안 모듈 DLL |
+| `서식예시` | 서식마다 예시 HWPX(기본 서식은 `기본 서식.hwpx`, 추가한 서식은 `<서식 이름>.hwpx`). 사용자가 한/글에서 고쳐 저장하면 '한 번에 적용'을 시작할 때 바뀐 서식 값만 서식 설정에 옮깁니다(`docfit_core/format_samples.py`). 비교 기준이 되는 원본 사본·해시는 `%APPDATA%\HwpAutoDocFit\format_examples`에 둡니다. 기본 서식 예시를 지우면 고친 기본 서식(`formats\_standard.json`)도 지워 처음 값으로 돌아갑니다 |
+| `글자상용구` | 한/글 글자 상용구 파일 `HWP.IDO`(없으면 앱에 포함된 파일을 넣음) |
+| `본문상용구` | 한/글 본문 상용구 파일(`IDIOM\*.HWP`). 설정 > 고급의 '상용구 파일저장'이 두 상용구 폴더의 파일을 한/글 전용 폴더(`%AppData%\HNC\User\Hwp\60`, `IDIOM`)로 복사합니다 |
+
+`알파_서식예시폴더_사용 = False`로 끄면 예전 폴더·이름·보관 방식으로 돌아갑니다.
 기관의 파일 쓰기·자동화·레지스트리 정책에 따라 차단될 수 있으므로 승인된 환경에서 실행하세요.
 
 현재 DLL은 한컴 예제 바이너리를 프로젝트 전용 파일명으로 바꾼 것입니다.

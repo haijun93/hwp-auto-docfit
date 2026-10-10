@@ -43,7 +43,7 @@ class SpacingIndentLoopTest(unittest.TestCase):
             '재검사_대상문단': None, '다음단어_당김_사용': True,
             '중단_요청됨': lambda: False, '단계표시': Mock(), '상태': Mock(), '로그': Mock(),
             'hwp_run': lambda cmd: True, '순회_시작': noop,
-            '본문_기존자간조정': spacing, '문단_내어쓰기_전체_갱신': indent,
+            '본문_기존자간조정': spacing, '연결부호_전체_맞춤': lambda: True, '문단_내어쓰기_전체_갱신': indent,
             '본문_문장부호_처리': noop, '컨트롤_내부_자간조정': noop,
             '컨트롤_내부_문장부호_처리': noop,
         }):

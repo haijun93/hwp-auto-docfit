@@ -57,6 +57,8 @@ echo [3/4] Building %APPNAME%.exe...
     --collect-all webview ^
     --collect-all pythonnet ^
     --collect-all clr_loader ^
+    --collect-all pypdfium2 ^
+    --collect-all pypdfium2_raw ^
     hwp-auto-docfit.py
 if errorlevel 1 goto :fail
 

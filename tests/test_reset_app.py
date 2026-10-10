@@ -36,7 +36,8 @@ class ResetAppTest(unittest.TestCase):
             dll_file.write_text("dummy dll", encoding="utf-8")
 
             with patch.object(reset_mod, "HWP_AUTOMATION_DIR", auto_dir), \
-                 patch.object(reset_mod, "TARGET_DLL", dll_file):
+                 patch.object(reset_mod, "TARGET_DLL", dll_file), \
+                 patch.object(reset_mod, "LEGACY_AUTOMATION_DIR", Path(temp_dir) / "legacy"):
                 self.assertTrue(dll_file.exists())
                 ok, msg = reset_mod.보안_DLL_제거()
                 self.assertTrue(ok)
@@ -54,7 +55,8 @@ class ResetAppTest(unittest.TestCase):
             other_file.write_text("keep this", encoding="utf-8")
 
             with patch.object(reset_mod, "HWP_AUTOMATION_DIR", auto_dir), \
-                 patch.object(reset_mod, "TARGET_DLL", dll_file):
+                 patch.object(reset_mod, "TARGET_DLL", dll_file), \
+                 patch.object(reset_mod, "LEGACY_AUTOMATION_DIR", Path(temp_dir) / "legacy"):
                 ok, msg = reset_mod.보안_DLL_제거()
                 self.assertTrue(ok)
                 self.assertFalse(dll_file.exists())
@@ -75,7 +77,8 @@ class ResetAppTest(unittest.TestCase):
         with patch.object(reset_mod, "winreg", mock_winreg):
             ok, msg = reset_mod.레지스트리_제거()
             self.assertTrue(ok)
-            mock_winreg.DeleteValue.assert_called_with(mock_key, "MapoHwpAutoDocFitSecurity")
+            mock_winreg.DeleteValue.assert_any_call(mock_key, "HwpAutoDocFitSecurity")
+            mock_winreg.DeleteValue.assert_any_call(mock_key, "MapoHwpAutoDocFitSecurity")
 
     def test_settings_folder_removal(self):
         with tempfile.TemporaryDirectory() as temp_dir:

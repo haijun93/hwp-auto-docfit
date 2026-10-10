@@ -265,6 +265,7 @@ from docfit_core.style_unify import dominant as 서식통일_우세값, hierarch
 from docfit_core.style_unify import attachment_heading as 서식통일_붙임제목, style_change_points as 서식통일_체계전환점
 from docfit_core.number_check import 숫자_대조
 from docfit_core import outline_ops
+from docfit_core import format_samples as 서식예시모듈
 from docfit_core.progress_guide import guide_key as 진행안내_키, guide_state as 진행안내_상태
 from docfit_core.stage_selection import STAGE_EXAMPLES, default_choice as stage_default, enabled as stage_enabled, stages_for_mode
 from docfit_core.stage_selection import TABLE_STAGE_KEYS as 표작업_키목록, without_tables as 표작업_제외
@@ -343,6 +344,9 @@ def XML_자식_추가(parent, prototype, tag=None, attrib=None):
     parent.append(child)
     return child
 from docfit_core.style_inventory import analyze_style_inventory, build_style_sample, inventory_markdown
+from docfit_core import report_header as 보고서머리
+from docfit_core import connector_tabs as 연결부호탭
+from docfit_core import colon_labels as 콜론라벨
 from docfit_core import format_elements as 서식요소
 from docfit_core.table_width import fit_table as 표너비_맞춤, is_target as 표너비_대상인가
 from docfit_core import (
@@ -372,7 +376,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리"
-APP_VERSION = "1.72 Beta 16"
+APP_VERSION = "1.73"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 GITHUB_UPDATE_API_URL = "https://api.github.com/repos/haijun93/hwp-auto-docfit/releases/latest"
@@ -551,13 +555,20 @@ def _업데이트_자산_선택(릴리스):
 # ============================================================
 
 DLL_NAME = "MapoHwpAutoDocFitSecurity.dll"
-HWP_AUTOMATION_DIR = Path(r"C:\HwpAutomation")
-TARGET_DLL = HWP_AUTOMATION_DIR / DLL_NAME
+# 알파(2026-10-10 사용자 요청): 최상위 앱 폴더를 C:\HwpAutomation에서 C:\HWP_AUTODOCFIT로 바꾸고, 그 아래
+# '서식예시' 폴더에 서식마다 예시 HWPX를 둔다. 사용자가 예시 파일을 고치면 '한 번에 적용'을 시작할 때 바뀐 서식 값을
+# 설정에 옮긴다(서식예시모듈). 끄면 예전 폴더(C:\HwpAutomation)와 설정 폴더의 예시 보관 방식으로 돌아간다.
+알파_서식예시폴더_사용 = True
+HWP_AUTOMATION_DIR = 서식예시모듈.APP_HOME if 알파_서식예시폴더_사용 else 서식예시모듈.LEGACY_APP_HOME
+# 알파(2026-10-10 사용자 요청): 보안 모듈 DLL은 앱 폴더의 dll 하위 폴더에 HwpAutoDocFitSecurity.dll로 두고, 레지스트리 값
+# 이름도 HwpAutoDocFitSecurity로 바꾼다. 앱에 포함된 원본 DLL 파일 이름(DLL_NAME)은 그대로다.
+DLL_DIR = 서식예시모듈.app_subfolder(서식예시모듈.DLL_FOLDER_NAME, HWP_AUTOMATION_DIR) if 알파_서식예시폴더_사용 else HWP_AUTOMATION_DIR
+TARGET_DLL = DLL_DIR / (서식예시모듈.DLL_FILE if 알파_서식예시폴더_사용 else DLL_NAME)
 REGISTRY_PATH = r"Software\HNC\HwpAutomation\Modules"
 # 한/글은 RegisterModule의 두 번째 인자와
 # ...\HwpAutomation\Modules 아래 레지스트리 값 이름이 같아야 한다.
 # 공용 예제 이름 대신 이 프로젝트 전용 이름을 사용한다.
-REGISTRY_VALUE_NAME = "MapoHwpAutoDocFitSecurity"
+REGISTRY_VALUE_NAME = 서식예시모듈.REGISTRY_VALUE if 알파_서식예시폴더_사용 else 서식예시모듈.LEGACY_REGISTRY_VALUE
 REGISTER_MODULE_NAME = "FilePathCheckDLL"
 REGISTER_MODULE_VALUE = REGISTRY_VALUE_NAME
 
@@ -680,6 +691,11 @@ _표준서식_문단위간격_상태 = ParagraphSpacingTracker()
 # 선택한 서식 프로필이 예시 문서에서 보관한 서식 표(제목·개요·중제목·붙임) 예시.
 # {종류: {"header_xml", "table_xml"}}. 없는 종류는 내장 기준 표를 쓴다.
 활성_서식표_프로필 = None
+# 알파(2026-10-10): 선택한 서식 프로필이 예시 문서에서 배운 보고서 머리(제목·보고 주체·개요) 구성과 표기 틀.
+# 정부기관 보고서마다 제목(1×1 상자·2×2·2행1열·문단)과 보고 주체 표기("2026. 10. 7.  기관  부서",
+# "'26. 10. 7.(수)  /  과", "(날짜, 과장 홍길동, ☎…)")가 달라, 서식 복사 때 이 구성을 대상 문서에 그대로 옮긴다.
+알파_머리서식복사_사용 = True
+활성_머리서식_프로필 = None
 # 선택한 서식 프로필이 예시 보고서의 일반 표에서 배운 기본 표 서식(table_style). 있으면 준말 '표' 서식보다
 # 먼저 쓴다(2026-10-04 결정 5).
 활성_표서식_프로필 = None
@@ -1123,6 +1139,7 @@ def 서식_기본값_전역_복원():
     활성_정밀표_프로필 = None
     활성_서식표_프로필 = None
     활성_표서식_프로필 = None
+    globals()["활성_머리서식_프로필"] = None
     globals()["괄호_축소_pt"] = 2
 
 검수_사용 = False
@@ -1155,6 +1172,9 @@ def 서식_기본값_전역_복원():
 # 이미 실패한 당김을 매 차수 반복해 시간만 쓴다.
 다음단어_당김_사용 = True
 단어_장평_추가축소_최대_단계 = 10  # 장평 100% -> 90%까지만(기존 15단계=85%에서 축소)
+# 장평 줄이기 사용(설정 'ratio_shrink', 기본 끔, 2026-10-10 사용자 규칙): 끄면 자간 조정 중 장평 축소(단어 분리 보정의
+# 장평 추가 축소·자간 한도 뒤 장평 단계 축소)와 콜론 라벨 정렬의 장평 늘리기를 쓰지 않고 자간·빈칸만 쓴다.
+장평_줄이기_사용 = False
 
 # 한 문단의 앞쪽 줄 수가 더 많거나 같으면 앞쪽 전체부터 해당 문단까지 축소.
 # 더 적으면 해당 문단 앞의 문단만 확대해 뒤쪽으로 이동. 단계당 10%p, 최대 6단계.
@@ -1218,6 +1238,8 @@ def 번들_리소스_폴더():
 
 기본_설정 = {
     "prevent_word_split": True,
+    # 장평 줄이기(가로 비율 축소)는 기본으로 끈다(2026-10-10 사용자 규칙). 끄면 자간 줄이기·늘리기만으로 조정한다.
+    "ratio_shrink": False,
     "punctuation": True,
     "punctuation_threshold": "5",
     "keep_punctuation_set_together": True,
@@ -1359,6 +1381,10 @@ def 서식프로파일_목록():
                 # 다시 만든다. 파일은 바꾸지 않는다(일반 표 서식처럼 예시가 다시 필요한 것은 예시를 다시 넣어야 함).
                 if data.get("element_analysis") and int(data.get("profile_version") or 0) < 5:
                     서식요소.apply_to_profile(data)
+                if path.stem == 기본서식_덮어쓰기_식별자:
+                    if 알파_서식예시폴더_사용:
+                        result[""] = data        # 기본 서식 예시 파일을 고쳐 바뀐 기본 서식
+                    continue
                 result[path.stem] = data
             except Exception as exc:
                 if _콘솔_출력_가능:
@@ -1638,6 +1664,7 @@ def hwpx_서식_분석(path):
             any(k.startswith("midtitle") for k in profile["form_tables"]))
         profile["element_analysis"] = 요소분석
         서식요소.apply_to_profile(profile)
+        머리요약 = 보고서머리_프로필_반영(z, profile)
         표글자 = profile.get("table_format") or {}
         profile["summary"] = (
             f"대표 본문: {대표폰트} {대표크기:g}pt, 굵게 {'ON' if 대표굵게 else 'OFF'}\n"
@@ -1652,10 +1679,117 @@ def hwpx_서식_분석(path):
             + (f"\n일반 표 서식: {표서식_설명(profile['table_style'])}" if profile.get("table_style") else "")
             + (f"\n서식 표 예시: {', '.join(서식요소.FORM_LABELS[k] for k in profile['form_tables'])}"
                if profile["form_tables"] else "")
+            + (f"\n{머리요약}" if 머리요약 else "")
             + "\n\n" + hierarchy_summary(profile["style_hierarchy"])
             + "\n페이지 여백·장평·자간·줄간격·문단 모양과 셀별 표 서식을 함께 복제합니다."
         )
         return profile
+
+
+def 보고서머리_프로필_반영(z, profile):
+    """예시 HWPX의 보고서 머리(제목·보고 주체·개요) 구성을 프로필에 저장하고 요약 글을 돌려준다.
+
+    예전에는 '표 밖 첫 두 문단'을 제목·일자담당자로 보아, 제목이 표(1×1 상자) 안에 있는 중앙부처 보고서에서
+    작성일 줄을 제목으로, 개요를 일자담당자로 잘못 잡았다(korean-report-hwpx 129종 실측, 2026-10-10).
+    """
+    try:
+        names = sorted((n for n in z.namelist() if re.fullmatch(r"Contents/section\d+\.xml", n)),
+                       key=lambda n: int(re.search(r"section(\d+)", n).group(1)))
+        header_root = safe_xml_fromstring(z.read("Contents/header.xml"))
+        spec = 보고서머리.build_spec(header_root, safe_xml_fromstring(z.read(names[0])))
+    except Exception as exc:
+        로그(f"보고서 머리 분석 실패(무시): {exc}")
+        return ""
+    if not spec:
+        return ""
+    profile["report_header"] = spec
+    fmt = profile["format"]
+    title = spec["title"]
+    if title.get("char", {}).get("font"):
+        fmt["제목_문단"] = {"font": title["char"]["font"], "size_pt": title["char"]["size_pt"],
+                          "bold": bool(title["char"].get("bold"))}
+    문단정보 = [i for i in spec["info"] if i["container"] == "paragraph"]
+    if 문단정보 and 문단정보[0].get("char", {}).get("font"):
+        c = 문단정보[0]["char"]
+        fmt["일자담당자_문단"] = {"font": c["font"], "size_pt": c["size_pt"], "bold": bool(c.get("bold"))}
+    담는곳 = {"paragraph": "상자 없는 제목 문단"}.get(title["container"]) or (
+        title["container"].replace("table", "").replace("x", "×") + " 제목 표")
+    줄 = [f"보고서 머리: {담는곳} ({title['char'].get('font')} {title['char'].get('size_pt', 0):g}pt, "
+         f"{_정렬이름.get(title.get('align'), title.get('align') or '-')})"]
+    for i in spec["info"]:
+        위치 = "제목 표 칸" if i["container"] == "cell" else ("제목 위 문단" if i.get("position") == "before_title" else "제목 아래 문단")
+        줄.append(f"보고 주체({위치}): {i['text']}  → 틀 {i['template']}")
+    if spec.get("overview"):
+        줄.append("개요 상자: 있음(예시 상자 서식으로 복사)")
+    return "\n".join(줄)
+
+
+_정렬이름 = {"LEFT": "왼쪽", "RIGHT": "오른쪽", "CENTER": "가운데", "JUSTIFY": "양쪽", "DISTRIBUTE": "배분"}
+
+
+def 보고서머리_hwpx_처리(source, target=None, selections=None):
+    """서식 프로필의 보고서 머리(제목·보고 주체·개요) 구성과 표기 방식을 대상 문서에 옮긴다(알파, 2026-10-10).
+
+    대상의 제목 글·개요 글은 그대로 두고, 날짜·기관·부서·담당자 값은 예시의 표기 틀로 다시 쓴다.
+    제목 표 안 날짜 칸은 한 줄로 입력(lineWrap=SQUEEZE)으로 둔다.
+    """
+    spec = 활성_머리서식_프로필 if 알파_머리서식복사_사용 else None
+    with zipfile.ZipFile(source) as z:
+        contents = {n: z.read(n) for n in z.namelist()}
+    for name, data in contents.items():
+        if name.startswith('Contents/') and name.endswith('.xml'):
+            for _, pair in ET.iterparse(io.BytesIO(data), events=('start-ns',)):
+                if not re.fullmatch(r'ns\d+', pair[0]): XML_네임스페이스_등록(*pair)
+    header = safe_xml_fromstring(contents['Contents/header.xml'])
+    names = sorted((n for n in contents if re.fullmatch(r'Contents/section\d+\.xml', n)),
+                   key=lambda n: int(re.search(r'section(\d+)', n).group(1)))
+    first = names[0] if names else None
+    def 시작들(root):
+        # 여러 보고서를 묶은 문서: 보고서마다(제목 표마다) 머리를 맞춘다. 제목 표는 서식 적용과 같은 판정을 쓴다.
+        tables = [t for p in root for r in p for t in r if 제목_xml이름(t) == 'tbl']
+        제목표 = {id(tables[i]) for i, _ in 제목_대상찾기(root, header) if i < len(tables)}
+        return 보고서머리.report_starts(root, lambda t: id(t) in 제목표)
+
+    if selections is None:
+        if not spec or first is None:
+            return {}
+        root = safe_xml_fromstring(contents[first])
+        found = [i for i in 시작들(root) if 보고서머리.analyze(header, root, i)["title"]]
+        if len(found) > 1 and (spec.get("title") or {}).get("container") == "paragraph":
+            # 여러 보고서를 묶은 문서는 제목 표가 보고서 경계다(쪽 맞춤·쪽 나누기). 예시 제목이 상자 없는 문단이면
+            # 경계를 잃으므로 머리 서식 복사를 하지 않는다(2026-10-10).
+            로그(f"보고서 머리 서식 복사: 건너뜀(보고서 {len(found)}개 문서에 문단 제목 서식을 쓰면 보고서 경계가 사라짐)")
+            return {first: []}
+        return {first: found}
+    if not spec or not any(selections.values()):
+        if target is not None: shutil.copyfile(source, target)
+        return 0
+    root = safe_xml_fromstring(contents[first])
+    본문폭 = _구역_본문폭(root, None)
+    합계 = Counter()
+    병합 = {}
+
+    def 한번_병합(h, sample_header):
+        # 보고서가 여러 개여도 예시 서식 정의는 문서 header에 한 번만 더한다.
+        if 'maps' not in 병합:
+            병합['maps'] = 제목_참조병합(h, sample_header)
+        return 병합['maps']
+
+    # 뒤 보고서부터 바꿔 앞 보고서의 문단 번호가 흔들리지 않게 한다.
+    for start in sorted(시작들(root), reverse=True):
+        통계 = 보고서머리.apply_header(header, root, spec, 한번_병합, start=start,
+                                   fit_table=(lambda t: _서식표_가로맞춤(t, 본문폭, 비례=True)) if 본문폭 else None)
+        합계.update({k: v for k, v in 통계.items() if isinstance(v, int)})
+    if not 합계.get("applied"):
+        로그("보고서 머리 서식 복사: 바꿀 머리 없음")
+        shutil.copyfile(source, target)
+        return 0
+    contents[first] = ET.tostring(root, encoding='utf-8', xml_declaration=True)
+    contents['Contents/header.xml'] = ET.tostring(header, encoding='utf-8', xml_declaration=True)
+    _hwpx_안전_저장(contents, target)
+    로그(f"보고서 머리 서식 복사: 보고서 {합계['applied']}개 · 제목 {합계['title']}·보고 주체 {합계['info']}·개요 "
+         f"{합계['overview']}개를 예시 구성으로 맞춤(날짜 칸 한 줄 {합계['squeezed']}개)")
+    return 합계['applied']
 
 
 def 예시문서_기본이름(문단들):
@@ -1680,9 +1814,25 @@ def 예시문서_기본이름(문단들):
     return "새 서식"
 
 
-def 한글파일_서식_분석(path):
+def _분석본_보관(hwpx, 보관):
+    """분석한 HWPX를 서식예시 폴더에 넣을 수 있게 보관 경로로 복사한다(보관이 없으면 하지 않음)."""
+    if 보관:
+        Path(보관).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(hwpx, 보관)
+
+
+def 한글파일_서식_분석(path, 보관=None):
+    """예시 문서(HWP·HWPX·PDF)를 분석한다. 보관을 주면 분석한 HWPX를 그 경로에 복사한다(서식예시 폴더용)."""
     if Path(path).suffix.lower() == ".hwpx":
+        _분석본_보관(path, 보관)
         return hwpx_서식_분석(path)
+    if Path(path).suffix.lower() == ".pdf":
+        # PDF 예시: kordoc으로 HWPX를 만든 뒤 PDF 서식을 옮겨 심고 분석한다(원본은 읽기만 함).
+        with tempfile.TemporaryDirectory(prefix="pdf_format_") as folder:
+            target = Path(folder) / "source.hwpx"
+            외부문서_hwpx로_변환(Path(path), ".pdf", target)
+            _분석본_보관(target, 보관)
+            return hwpx_서식_분석(target)
     # 원본을 복사한 뒤 독립 한글 인스턴스에서 임시 HWPX로 변환한다.
     with tempfile.TemporaryDirectory(prefix="hwp_format_") as folder:
         source = Path(folder) / "source.hwp"
@@ -1699,6 +1849,7 @@ def 한글파일_서식_분석(path):
                 raise RuntimeError("한글파일을 열지 못했습니다.")
             if not app.SaveAs(str(target), "HWPX", ""):
                 raise RuntimeError("HWPX 변환 실패. 한글에서 HWPX로 저장한 파일을 선택해 주세요.")
+            _분석본_보관(target, 보관)
             return hwpx_서식_분석(target)
         finally:
             if app is not None:
@@ -2386,6 +2537,64 @@ def 제목_문단들(cell):
 def 제목_문자열(e):
     return ''.join(x.text or '' for x in e.iter() if 제목_xml이름(x) == 't')
 
+# 1×1 제목 상자의 글자 크기 하한(pt). 개요·요약 상자(보통 13~15pt)와 가른다(korean-report-hwpx 제목 20pt,
+# 마포구청 제목 표 27pt 실측).
+한칸_제목_최소크기_pt = 16
+
+
+def _한칸_제목글인가(문단글들):
+    """1×1 표 칸 글이 제목다운지: 1~2문단, 4~160자, 계층 기호·붙임·참고·목차로 시작하지 않고 날짜·담당자 줄이 아니다."""
+    ps = [t.strip() for t in 문단글들 if t and t.strip()]
+    글 = ' '.join(ps)
+    if not 1 <= len(ps) <= 2 or not 6 <= len(re.sub(r'\s+', '', 글)) or len(글) > 160:
+        return False
+    # 문서 안 표시 상자('서면보고' 등)는 제목이 아니다(실측: 마포구청 회의 자료, 2026-10-10).
+    if re.fullmatch(r'[<〈【\[(]?\s*(서면|구두|대면)?\s*보\s*고\s*(사항|안건|자료)?\s*[>〉】\])]?|'
+                    r'[<〈【\[(]?\s*(참\s*고|별\s*첨|붙\s*임|요\s*약|개\s*요|목\s*차|안\s*건)\s*\d*\s*[>〉】\])]?', 글):
+        return False
+    if re.match(r'^\s*[□ㅁㅇ○※*\-•▪<〈]|^\s*(붙임|참고|목\s*차)', 글):
+        return False
+    return 보고서머리._looks_title(글)
+
+
+def _기타_제목표인가(table, header):
+    """여러 칸 장식 제목 상자(kordoc 개조식 3×3 등): 4행·4열 이하, 글이 있는 칸 중 제목다운 칸이 하나이고 글자가
+    한칸_제목_최소크기_pt 이상, 나머지 글 칸은 보고 주체(날짜·부서·담당자) 글뿐이다(유형 5, 2026-10-10)."""
+    try:
+        rows, cols = int(table.get('rowCnt', '0')), int(table.get('colCnt', '0'))
+    except ValueError:
+        return False
+    if rows * cols < 2 or rows > 4 or cols > 4:
+        return False
+    cells = 제목_셀들(table)
+    if any(제목_xml이름(x) in ('tbl', 'ole', 'fieldBegin') for c in cells for x in c.iter()):
+        return False
+    글칸 = [(c, [제목_문자열(p) for p in 제목_문단들(c)]) for c in cells]
+    글칸 = [(c, t) for c, t in 글칸 if any(x.strip() for x in t)]
+    제목칸 = [c for c, t in 글칸 if _한칸_제목글인가(t)]
+    if len(제목칸) != 1:
+        return False
+    나머지 = [' '.join(t).strip() for c, t in 글칸 if c is not 제목칸[0]]
+    if any(not 보고서머리.parse_info(x) for x in 나머지):
+        return False
+    return 보고서머리._Header(header).char_of(제목칸[0]).get('size_pt', 0) >= 한칸_제목_최소크기_pt
+
+
+def _한칸_제목표인가(table, header=None):
+    """제목다운 1×1 표. header를 주면 칸 글자 크기가 한칸_제목_최소크기_pt 이상인지도 본다(크기 기준을 만족했는지 돌려준다)."""
+    if (table.get('rowCnt'), table.get('colCnt')) != ('1', '1'):
+        return False
+    cells = 제목_셀들(table)
+    if len(cells) != 1 or any(제목_xml이름(x) in ('tbl', 'ole', 'rect', 'fieldBegin') for x in cells[0].iter()):
+        return False
+    if not _한칸_제목글인가([제목_문자열(p) for p in 제목_문단들(cells[0])]):
+        return False
+    if header is None:
+        return True
+    크기 = 보고서머리._Header(header).char_of(cells[0]).get('size_pt', 0)
+    return 크기 >= 한칸_제목_최소크기_pt
+
+
 def 제목_유형판별(table, 빈칸허용=False):
     """제목 표 유형. 1·2 = 2×2(제목+날짜·담당자, 부제 없음/있음), 3 = 2행1열(제목+담당자).
 
@@ -2400,8 +2609,10 @@ def 제목_유형판별(table, 빈칸허용=False):
     세줄 = len(cells) == 3 and (rows, cols) == (3, 1)
     if (len(cells) == 2 and (rows, cols) != (2, 1)) or (len(cells) == 3 and (rows, cols) != (2, 2) and not 세줄):
         return None
-    for c in cells:
-        if any(제목_xml이름(x) in ('tbl', 'pic', 'ole', 'rect', 'fieldBegin') for x in c.iter()):
+    for i, c in enumerate(cells):
+        # 제목 칸의 글 사이 그림(축제 이름 로고 등, 실측: 마포구청 회의 자료)은 제목의 일부로 본다(2026-10-10).
+        막는개체 = ('tbl', 'ole', 'rect', 'fieldBegin') if i == 0 else ('tbl', 'pic', 'ole', 'rect', 'fieldBegin')
+        if any(제목_xml이름(x) in 막는개체 for x in c.iter()):
             return None
     ps = [p for p in 제목_문단들(cells[0]) if 제목_문자열(p).strip()]
     if len(ps) not in (1, 2): return None
@@ -2423,25 +2634,50 @@ def 제목_유형판별(table, 빈칸허용=False):
 
 
 def 제목_대상찾기(section, header):
-    """쪽 첫부분의 제목 표(유형 1·2·3)를 판별한다.
+    """쪽 첫부분의 제목 표(유형 1·2·3, 1×1 제목 상자는 유형 4)를 판별한다.
 
     날짜·담당자 칸이 있는 2×2 표, 또는 담당자 칸이 있는 2행1열 표는 구조만으로
     제목으로 확정한다(글자크기·정렬 같은 시각 서식은 필요 없다). 1×1 표는 제목으로 보지 않는다.
     """
     result = []
     ordinal = 0
+    # 1×1 제목 상자(유형 4)는 쪽(구역) 첫머리에서만 본다: 앞에 글 문단이 없고(쪽 나누기 뒤 포함) 이 쪽에서 아직
+    # 제목을 찾지 않았을 때. 제목 바로 뒤의 1×1 개요 상자를 제목으로 오인하지 않는다(사용자 요청, 2026-10-10).
+    쪽첫머리 = True
+    직전제목 = False
     for p in section:
+        if p.get('pageBreak') == '1':
+            쪽첫머리 = True
+        표있음 = False
         for run in p:
             for table in run:
                 if 제목_xml이름(table) != 'tbl':
                     continue
+                표있음 = True
                 kind = 제목_유형판별(table)
+                # 1×1 제목 상자: 쪽 첫머리이거나, 글자가 제목 크기(16pt 이상)이고 바로 앞 표가 제목이 아닐 때
+                # (제목 바로 뒤 개요 상자 제외). 쪽 나누기 속성 없이 보고서를 이어 붙인 문서도 보고서마다 찾는다.
+                if not kind and _한칸_제목표인가(table) and (
+                        쪽첫머리 or (not 직전제목 and _한칸_제목표인가(table, header))):
+                    kind = 4
+                if not kind and (쪽첫머리 or not 직전제목) and _기타_제목표인가(table, header):
+                    kind = 5
+                찾음 = False
                 if kind:
                     cells = 제목_셀들(table)
-                    title = 제목_문자열(cells[0]).strip()
+                    # 장식 제목 상자(유형 5)는 제목이 첫 칸이 아닐 수 있어 표 전체 글로 본다.
+                    title = (제목_문자열(table) if kind == 5 else 제목_문자열(cells[0])).strip()
                     if title and len(title) <= 160 and not title.startswith('붙임'):
                         result.append((ordinal, kind))
+                        쪽첫머리 = False
+                        찾음 = True
+                직전제목 = 찾음
                 ordinal += 1
+        if not 표있음 and 제목_문자열(p).strip():
+            쪽첫머리 = False
+            # 제목 아래 보고 주체 줄(날짜·부서)은 제목과 개요 상자 사이에 올 수 있다.
+            if not 보고서머리.parse_info(제목_문자열(p).strip()):
+                직전제목 = False
     return result
 
 
@@ -2962,7 +3198,7 @@ def 제목_hwpx_처리(source, target=None, selections=None):
                 if re.fullmatch(r'Contents/section\d+\.xml', n)}
     if selections is None:
         return {n: 제목_대상찾기(root, header) for n, root in sections.items()}
-    if not any(kind in (1, 2, 3) for items in selections.values() for _, kind in items):
+    if not any(kind in (1, 2, 3, 4, 5) for items in selections.values() for _, kind in items):
         if target is not None: shutil.copyfile(source, target)
         return 0
     기준 = {}
@@ -3001,9 +3237,17 @@ def 제목_hwpx_처리(source, target=None, selections=None):
         본문폭 = _구역_본문폭(root, None)   # 쪽 정보가 없으면 폭을 바꾸지 않는다
         for index, kind in items:
             table = tables[index]
-            if 제목_유형판별(table) != kind:
+            현재종류 = (제목_유형판별(table) if kind not in (4, 5) else
+                     4 if kind == 4 and _한칸_제목표인가(table) else 5 if kind == 5 and _기타_제목표인가(table, header) else None)
+            if 현재종류 != kind:
                 raise RuntimeError('처리 중 제목 구조가 변경되어 제목 서식적용을 중단했습니다.')
             before = 제목_문자열(table)
+            if kind in (4, 5):
+                # 1×1·장식 제목 상자: 서식은 보고서 머리 서식 복사(예시 프로필)가 맡고, 여기서는 가로 크기만 맞춘다.
+                _서식표_가로맞춤(table, 본문폭, 비례=True)
+                if 제목_문자열(table) != before: raise RuntimeError('제목 텍스트 보존 검사 실패')
+                count += 1
+                continue
             sample, maps, 예시사용 = 기준표(f'title{kind}')
             제목_표서식_복사(table, sample, maps)
             # 제목 표 날짜 칸(A2, "’26. 10. 10.(토)" 등)은 칸 너비와 관계없이 한 줄로 둔다(사용자 요청, 2026-10-10).
@@ -3893,6 +4137,109 @@ def 제목개요폭_hwpx_처리(source, target=None, selections=None):
     return count
 
 
+알파_연결부호_탭정렬_사용 = True
+
+
+def 연결부호탭_hwpx_처리(source, target=None, selections=None):
+    """연속된 연결 부호 문장(목차·일정표)을 한/글 목차 점선처럼 채울 모양이 있는 왼쪽 정렬 탭으로 맞춘다(알파, 2026-10-10).
+
+    오른쪽 글의 첫 글자가 내어쓰기처럼 한 세로선에 서고, 점·선의 길이와 개수는 한/글이 줄마다 채운다.
+    여러 칸 빈칸 연결 부호는 채울 모양 없이 탭 위치만 맞춘다. 글자는 연결 부호만 탭으로 바뀐다.
+    """
+    with zipfile.ZipFile(source) as z:
+        contents = {n: z.read(n) for n in z.namelist()}
+    for name, data in contents.items():
+        if name.startswith('Contents/') and name.endswith('.xml'):
+            for _, pair in ET.iterparse(io.BytesIO(data), events=('start-ns',)):
+                if not re.fullmatch(r'ns\d+', pair[0]): XML_네임스페이스_등록(*pair)
+    header = safe_xml_fromstring(contents['Contents/header.xml'])
+    names = sorted((n for n in contents if re.fullmatch(r'Contents/section\d+\.xml', n)),
+                   key=lambda n: int(re.search(r'section(\d+)', n).group(1)))
+    roots = {n: safe_xml_fromstring(contents[n]) for n in names}
+    if selections is None:
+        if not 알파_연결부호_탭정렬_사용:
+            return {n: [] for n in names}
+        return {n: [i for i, _ in enumerate(
+            [g for c in [root] + [x for x in root.iter() if 제목_xml이름(x) == 'subList'] for g in 연결부호탭.groups_in(c)])]
+            for n, root in roots.items()}
+    if not any(selections.values()):
+        if target is not None: shutil.copyfile(source, target)
+        return 0
+    본문폭 = {n: _최종_본문폭(root) or _구역_본문폭(root) for n, root in roots.items()}
+    부모구역 = {}
+    for n, root in roots.items():
+        for x in root.iter():
+            if 제목_xml이름(x) == 'subList':
+                부모구역[id(x)] = n
+
+    def 폭(container):
+        if 제목_xml이름(container) != 'subList':
+            return next((본문폭[n] for n, r in roots.items() if r is container), 0)
+        cell = next((tc for r in roots.values() for tc in r.iter() if 제목_xml이름(tc) == 'tc' and container in list(tc)), None)
+        if cell is None:
+            return 0
+        sz, mg = 제목_자식(cell, 'cellSz'), 제목_자식(cell, 'cellMargin')
+        try:
+            return int(sz.get('width')) - (int(mg.get('left', 0)) + int(mg.get('right', 0)) if mg is not None else 0)
+        except (TypeError, ValueError, AttributeError):
+            return 0
+
+    통계 = 연결부호탭.align_connectors(header, [roots[n] for n in names], 폭)
+    if not 통계.get("paragraphs"):
+        shutil.copyfile(source, target)
+        return 0
+    for n in names:
+        contents[n] = ET.tostring(roots[n], encoding='utf-8', xml_declaration=True)
+    contents['Contents/header.xml'] = ET.tostring(header, encoding='utf-8', xml_declaration=True)
+    _hwpx_안전_저장(contents, target)
+    로그(f"연결 부호 탭 정렬: 묶음 {통계['groups']}개·문단 {통계['paragraphs']}개를 목차 점선(왼쪽 정렬 탭)으로 맞춤"
+         + (f"(본문 폭 때문에 탭을 앞으로 당긴 묶음 {통계['pulled']}개)" if 통계.get('pulled') else ""))
+    return 통계["paragraphs"]
+
+
+알파_콜론라벨_정렬_사용 = True
+
+
+def 콜론라벨_hwpx_처리(source, target=None, selections=None):
+    """연속된 '항목기호 + 짧은 라벨(10자 미만) + 콜론' 문장의 콜론을 세로로 맞춘다(알파, 2026-10-10 사용자 규칙).
+
+    가장 긴 라벨을 기준으로 짧은 라벨 글자의 자간(한도 50%까지)과 장평을 늘려 가로 길이를 맞춘다. 글은 바꾸지 않는다.
+    """
+    with zipfile.ZipFile(source) as z:
+        contents = {n: z.read(n) for n in z.namelist()}
+    for name, data in contents.items():
+        if name.startswith('Contents/') and name.endswith('.xml'):
+            for _, pair in ET.iterparse(io.BytesIO(data), events=('start-ns',)):
+                if not re.fullmatch(r'ns\d+', pair[0]): XML_네임스페이스_등록(*pair)
+    header = safe_xml_fromstring(contents['Contents/header.xml'])
+    names = sorted((n for n in contents if re.fullmatch(r'Contents/section\d+\.xml', n)),
+                   key=lambda n: int(re.search(r'section(\d+)', n).group(1)))
+    roots = {n: safe_xml_fromstring(contents[n]) for n in names}
+    if selections is None:
+        if not 알파_콜론라벨_정렬_사용:
+            return {n: [] for n in names}
+        return {n: list(range(sum(len(콜론라벨.groups_in(c)) for c in
+                                  [root] + [x for x in root.iter() if 제목_xml이름(x) == 'subList'])))
+                for n, root in roots.items()}
+    if not any(selections.values()):
+        if target is not None: shutil.copyfile(source, target)
+        return 0
+    전 = {n: 제목_문자열(roots[n]) for n in names}
+    통계 = 콜론라벨.align_colons(header, [roots[n] for n in names], allow_ratio=장평_줄이기_사용)
+    # 짧은 라벨 글자 사이에 빈칸을 넣을 수 있으므로 빈칸을 뺀 글로 보존을 확인한다.
+    if any(re.sub(r'\s', '', 제목_문자열(roots[n])) != re.sub(r'\s', '', 전[n]) for n in names):
+        raise RuntimeError('콜론 라벨 정렬 중 글 보존 검사에 실패했습니다.')
+    if not 통계.get("stretched"):
+        shutil.copyfile(source, target)
+        return 0
+    for n in names:
+        contents[n] = ET.tostring(roots[n], encoding='utf-8', xml_declaration=True)
+    contents['Contents/header.xml'] = ET.tostring(header, encoding='utf-8', xml_declaration=True)
+    _hwpx_안전_저장(contents, target)
+    로그(f"콜론 라벨 정렬: 묶음 {통계['groups']}개에서 짧은 라벨 {통계['stretched']}개를 늘려 콜론을 세로로 맞춤")
+    return 통계["stretched"]
+
+
 def 상자서식_hwpx_처리(source, target=None, selections=None):
     """서식 프로필의 한 칸 상자 예시로 문서의 짧은 한 칸 상자(‘< 핵심 추진과제 >’ 등) 서식을 맞춘다.
 
@@ -4529,9 +4876,31 @@ def 설정_폴더():
 def 서식프로파일_폴더():
     return 설정_폴더() / "formats"
 
-def 서식예시_폴더():
-    """서식마다 만든 예시 파일(서식 예시 확인)을 보관하는 폴더."""
+def 서식예시_정보_폴더():
+    """서식 예시의 정보(해시·만든 때)와 비교 기준이 되는 원본 사본을 두는 설정 폴더."""
     return 설정_폴더() / "format_examples"
+
+def 서식예시_폴더():
+    """서식마다 예시 HWPX를 두는 폴더. 알파: 사용자가 직접 고칠 수 있는 C:\\HWP_AUTODOCFIT\\서식예시."""
+    if 알파_서식예시폴더_사용:
+        return 서식예시모듈.sample_folder(HWP_AUTOMATION_DIR)
+    return 서식예시_정보_폴더()
+
+def 번들_서식예시_찾기():
+    """앱에 포함해 배포하는 기본 서식 예시(resources/서식예시/기본 서식.hwpx). 없으면 None."""
+    후보_목록 = [프로그램_폴더() / "resources" / "서식예시" / 서식예시모듈.STANDARD_FILE]
+    번들_폴더 = 번들_리소스_폴더()
+    if 번들_폴더 is not None:
+        후보_목록.append(번들_폴더 / "resources" / "서식예시" / 서식예시모듈.STANDARD_FILE)
+    return next((경로 for 경로 in 후보_목록 if 경로.is_file()), None)
+
+def _json_파일_읽기(경로):
+    try:
+        return json.loads(Path(경로).read_text(encoding="utf-8")) if Path(경로).is_file() else {}
+    except Exception:
+        return {}
+
+기본서식_덮어쓰기_식별자 = "_standard"   # 기본 서식 예시를 사용자가 고쳐 바뀐 기본 서식(formats/_standard.json)
 
 # 서식 예시는 '한 번에 적용'(서식 + 자간 정리)으로 만든다(2026-10-04 사용자 요청: 예시 파일 자간 정리 미흡).
 서식예시_작업모드 = "all"
@@ -4869,7 +5238,7 @@ def 등록된_DLL_경로():
     return None
 
 def 레지스트리_등록():
-    HWP_AUTOMATION_DIR.mkdir(parents=True, exist_ok=True)
+    TARGET_DLL.parent.mkdir(parents=True, exist_ok=True)
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, REGISTRY_PATH) as key:
         winreg.SetValueEx(key, REGISTRY_VALUE_NAME, 0, winreg.REG_SZ, str(TARGET_DLL))
     로그("AutomationModule Registry 등록 완료")
@@ -4882,13 +5251,13 @@ def 보안모듈_초기화():
             f"\n\n{DLL_NAME}을 프로그램 폴더에서 찾을 수 없습니다.\n"
             f"위치: {프로그램_폴더() / DLL_NAME}"
         )
-    HWP_AUTOMATION_DIR.mkdir(parents=True, exist_ok=True)
+    TARGET_DLL.parent.mkdir(parents=True, exist_ok=True)
     if not TARGET_DLL.is_file():
         로그("AutomationModule DLL 최초 설치")
         shutil.copy2(source_dll, TARGET_DLL)
         로그(f"DLL 복사 완료: {TARGET_DLL}")
     else:
-        로그("C:\\HwpAutomation DLL 확인 완료")
+        로그(f"{TARGET_DLL.parent} DLL 확인 완료")
 
     registered_path = 등록된_DLL_경로()
     target_path = TARGET_DLL.resolve()
@@ -4904,7 +5273,36 @@ def 보안모듈_초기화():
         레지스트리_등록()
     else:
         로그("AutomationModule Registry 확인 완료")
+    이전_보안모듈_정리()
     로그("AutomationModule 초기화 완료")
+
+
+def 이전_보안모듈_정리():
+    """앱 폴더를 옮긴 뒤(C:\\HwpAutomation → C:\\HWP_AUTODOCFIT\\dll) 예전 폴더의 이 앱 DLL과 예전 레지스트리 값을 지운다.
+
+    예전 폴더는 비면 지우고 다른 파일이 있으면 남긴다. 한/글이 DLL을 쓰고 있어 지우지 못하면 다음 실행 때 다시
+    시도한다(무시). 예전 판(베타)을 다시 실행하면 그 판이 예전 폴더·값을 스스로 다시 만든다."""
+    예전폴더 = 서식예시모듈.LEGACY_APP_HOME
+    if TARGET_DLL.parent == 예전폴더:
+        return
+    try:
+        예전 = 예전폴더 / 서식예시모듈.LEGACY_DLL_FILE
+        if 예전.is_file():
+            예전.unlink()
+            로그(f"예전 보안 모듈 폴더 정리: {예전}")
+        if 예전폴더.is_dir() and not any(예전폴더.iterdir()):
+            예전폴더.rmdir()
+    except Exception as exc:
+        로그(f"예전 보안 모듈 정리 보류(무시): {exc}")
+    if REGISTRY_VALUE_NAME != 서식예시모듈.LEGACY_REGISTRY_VALUE:
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, REGISTRY_PATH, 0, winreg.KEY_ALL_ACCESS) as key:
+                winreg.DeleteValue(key, 서식예시모듈.LEGACY_REGISTRY_VALUE)
+            로그(f"예전 레지스트리 값 정리: {서식예시모듈.LEGACY_REGISTRY_VALUE}")
+        except FileNotFoundError:
+            pass
+        except Exception as exc:
+            로그(f"예전 레지스트리 값 정리 보류(무시): {exc}")
 
 # ============================================================
 # 상용구 파일저장 (HWP.IDO)
@@ -4925,6 +5323,42 @@ def 번들_상용구_파일_찾기():
         if 경로.is_file():
             return 경로
     return None
+
+
+def 글자상용구_폴더():
+    """앱 폴더의 글자 상용구(HWP.IDO) 보관 폴더(알파). 끄면 None."""
+    return 서식예시모듈.app_subfolder(서식예시모듈.CHAR_IDIOM_FOLDER_NAME, HWP_AUTOMATION_DIR) if 알파_서식예시폴더_사용 else None
+
+
+def 본문상용구_폴더():
+    """앱 폴더의 본문 상용구(한/글 IDIOM 폴더의 *.HWP) 보관 폴더(알파). 끄면 None."""
+    return 서식예시모듈.app_subfolder(서식예시모듈.BODY_IDIOM_FOLDER_NAME, HWP_AUTOMATION_DIR) if 알파_서식예시폴더_사용 else None
+
+
+def 번들_본문상용구_폴더():
+    """앱에 포함해 배포하는 본문 상용구 폴더(resources/IDIOM). 없으면 None."""
+    후보_목록 = [프로그램_폴더() / "resources" / "IDIOM"]
+    번들_폴더 = 번들_리소스_폴더()
+    if 번들_폴더 is not None:
+        후보_목록.append(번들_폴더 / "resources" / "IDIOM")
+    return next((경로 for 경로 in 후보_목록 if 경로.is_dir()), None)
+
+
+def 상용구_폴더_준비():
+    """앱 폴더에 글자상용구·본문상용구 폴더를 만들고, 비어 있으면 앱에 포함된 파일을 넣는다(사용자 파일은 덮어쓰지 않음)."""
+    글자, 본문 = 글자상용구_폴더(), 본문상용구_폴더()
+    if 글자 is None:
+        return
+    글자.mkdir(parents=True, exist_ok=True)
+    본문.mkdir(parents=True, exist_ok=True)
+    번들 = 번들_상용구_파일_찾기()
+    if 번들 is not None and not (글자 / 상용구_파일명).is_file():
+        shutil.copyfile(번들, 글자 / 상용구_파일명)
+    번들_본문 = 번들_본문상용구_폴더()
+    if 번들_본문 is not None:
+        for 파일 in 번들_본문.iterdir():
+            if 파일.is_file() and not (본문 / 파일.name).exists():
+                shutil.copyfile(파일, 본문 / 파일.name)
 
 
 def 상용구_전용폴더_찾기():
@@ -5768,26 +6202,31 @@ def 문단_내어쓰기_전체_갱신(대상문단=None):
             if not 범위_다음_문단으로_진행():
                 break
             continue
-        현재키 = tuple(hwp.GetPos()[:2])
-        if 현재키 in 붙임번호_대상:
-            기준문단, _ = 붙임번호_대상[현재키]
-            기준키 = 기준문단[0]
-            if 기준키 not in 붙임번호_기준점들:
-                붙임번호_기준점들[기준키] = _붙임번호_기준위치_실측(*기준문단)
-                if 붙임번호_기준점들[기준키] is None:
-                    로그(f"[붙임 내어쓰기] 첫 번호 기준점 측정 실패: {기준문단[1].strip()[:60]}")
-            기준값 = 붙임번호_기준점들[기준키]
-            if 기준값 is None:
-                로그(f"[붙임 내어쓰기] 번호 기준을 측정하지 못했습니다: {text.strip()[:60]}")
-            # 숫자와 점으로 된 어절은 다음 줄의 번호와 세로로 같은 위치다(계단식으로 밀지 않는다).
-            elif not _붙임목록_번호_내어쓰기_적용(hwp.GetPos(), text, 기준값[0]):
-                로그(f"[붙임 내어쓰기] 번호 정렬을 건너뜀: {text.strip()[:60]}")
-        elif (문단_내어쓰기_기준_오프셋(text) is not None
-                and 내어쓰기_기호선택_허용(text)):
-            문단_내어쓰기_적용(hwp.GetPos(), text)
+        _내어쓰기_한문단(text, 붙임번호_대상, 붙임번호_기준점들)
         if not 범위_다음_문단으로_진행():
             break
     return True
+
+
+def _내어쓰기_한문단(text, 붙임번호_대상, 붙임번호_기준점들):
+    """커서가 있는 문단(문단 시작)의 내어쓰기를 계산해 적용한다(문단_내어쓰기_전체_갱신·문단 세트 공용)."""
+    현재키 = tuple(hwp.GetPos()[:2])
+    if 현재키 in 붙임번호_대상:
+        기준문단, _ = 붙임번호_대상[현재키]
+        기준키 = 기준문단[0]
+        if 기준키 not in 붙임번호_기준점들:
+            붙임번호_기준점들[기준키] = _붙임번호_기준위치_실측(*기준문단)
+            if 붙임번호_기준점들[기준키] is None:
+                로그(f"[붙임 내어쓰기] 첫 번호 기준점 측정 실패: {기준문단[1].strip()[:60]}")
+        기준값 = 붙임번호_기준점들[기준키]
+        if 기준값 is None:
+            로그(f"[붙임 내어쓰기] 번호 기준을 측정하지 못했습니다: {text.strip()[:60]}")
+        # 숫자와 점으로 된 어절은 다음 줄의 번호와 세로로 같은 위치다(계단식으로 밀지 않는다).
+        elif not _붙임목록_번호_내어쓰기_적용(hwp.GetPos(), text, 기준값[0]):
+            로그(f"[붙임 내어쓰기] 번호 정렬을 건너뜀: {text.strip()[:60]}")
+    elif (문단_내어쓰기_기준_오프셋(text) is not None
+            and 내어쓰기_기호선택_허용(text)):
+        문단_내어쓰기_적용(hwp.GetPos(), text)
 
 
 def _붙임목록_내어쓰기_대상수집():
@@ -6156,6 +6595,34 @@ def _부연설명_앞빈칸_적용(문단_시작, text, 칸수, 왼쪽여백=Non
         return None
 
 
+def _부연설명_한문단(문단_시작, text, 상태, 부모대상=None):
+    """부연설명 들여쓰기의 문단 하나 처리(상태['부모']에 위 제목/본문 문단을 이어 받는다). 적용했으면 True."""
+    결과 = False
+    if text and text.strip():
+        유형 = _부모문단_유형(text)
+        부모 = 상태.get('부모')
+        if 유형 is not None:
+            상태['부모'] = (문단_시작, 유형)
+        elif _부연설명_문단인가(text):
+            marker, _ = leading_marker(text)
+            들여쓰기_선택 = 표준서식_설정.get("스타일_속성선택", {}).get(marker, {}).get("indent", True)
+            대상 = 부모대상 is None or (부모 is not None and tuple(부모[0][:2]) in 부모대상)
+            칸수 = 부연설명_앞빈칸_수(부모[1] if 부모 else None, marker)
+            if 대상 and 들여쓰기_선택 and 칸수 is not None:
+                왼쪽여백 = None
+                if 부모 is not None:
+                    hwp.SetPos(*부모[0])
+                    왼쪽여백 = int(hwp.ParaShape.Item("LeftMargin"))
+                if _부연설명_앞빈칸_적용(문단_시작, text, 칸수, 왼쪽여백):
+                    결과 = True
+                    내어쓰기_변경문단.add(tuple(문단_시작[:2]))
+            hwp.SetPos(*문단_시작)
+        else:
+            # 제목/본문/내용도 부연설명도 아닌 일반 문단(번호 항목 등)이 끼면 연결이 끊긴다.
+            상태['부모'] = None
+    return 결과
+
+
 def 부연설명_들여쓰기_전체_적용(부모대상=None):
     """각 부연설명(*, **, ※)의 앞 빈칸을 위 문단 유형별 칸 수로 맞춘다(부연설명_앞빈칸).
 
@@ -6180,28 +6647,10 @@ def 부연설명_들여쓰기_전체_적용(부모대상=None):
         문단_시작 = hwp.GetPos()
         text = 현재문단_텍스트()
 
-        if text and text.strip():
-            유형 = _부모문단_유형(text)
-            if 유형 is not None:
-                부모 = (문단_시작, 유형)
-            elif _부연설명_문단인가(text):
-                marker, _ = leading_marker(text)
-                들여쓰기_선택 = 표준서식_설정.get("스타일_속성선택", {}).get(marker, {}).get("indent", True)
-                대상 = 부모대상 is None or (부모 is not None and tuple(부모[0][:2]) in 부모대상)
-                칸수 = 부연설명_앞빈칸_수(부모[1] if 부모 else None, marker)
-                if 대상 and 들여쓰기_선택 and 칸수 is not None:
-                    왼쪽여백 = None
-                    if 부모 is not None:
-                        hwp.SetPos(*부모[0])
-                        왼쪽여백 = int(hwp.ParaShape.Item("LeftMargin"))
-                    결과 = _부연설명_앞빈칸_적용(문단_시작, text, 칸수, 왼쪽여백)
-                    if 결과:
-                        적용수 += 1
-                        내어쓰기_변경문단.add(tuple(문단_시작[:2]))
-                hwp.SetPos(*문단_시작)
-            else:
-                # 제목/본문/내용도 부연설명도 아닌 일반 문단(번호 항목 등)이 끼면 연결이 끊긴다.
-                부모 = None
+        상태 = {'부모': 부모}
+        if _부연설명_한문단(문단_시작, text, 상태, 부모대상):
+            적용수 += 1
+        부모 = 상태['부모']
 
         if not 범위_다음_문단으로_진행():
             break
@@ -6297,6 +6746,25 @@ def _별표_정렬_적용(문단_시작, text, 목표_별표_위치):
         return None
 
 
+def _별표_한문단(문단_시작, text, 상태):
+    """별표(**) 정렬의 문단 하나 처리(상태['별표']에 바로 앞 * 문단의 별표 위치를 이어 받는다). 적용했으면 True."""
+    결과 = False
+    if text and text.strip():
+        marker, _ = leading_marker(text)
+        if marker == "*":
+            상태['별표'] = _별표_위치_실측(문단_시작, text)
+        elif marker == "**":
+            if 상태.get('별표') is not None and _별표_정렬_적용(문단_시작, text, 상태['별표']):
+                결과 = True
+                내어쓰기_변경문단.add(tuple(문단_시작[:2]))
+            상태['별표'] = None
+        else:
+            # 일반 본문이나 다른 구조 기호(※, -, □ 등)가 끼면 별표 연쇄를 끊는다
+            상태['별표'] = None
+    # 빈 문단(공백 줄)은 줄바꿈 여백이므로 상태['별표']를 유지한다.
+    return 결과
+
+
 def 별표_정렬_전체_적용():
     """문서 내 *(주석1) 바로 뒤에 오는 **(주석2)의 둘째 별표 위치를 *에 맞춘다.
 
@@ -6319,21 +6787,10 @@ def 별표_정렬_전체_적용():
         문단_시작 = hwp.GetPos()
         text = 현재문단_텍스트()
 
-        if text and text.strip():
-            marker, _ = leading_marker(text)
-            if marker == "*":
-                직전_별표_위치 = _별표_위치_실측(문단_시작, text)
-            elif marker == "**":
-                if 직전_별표_위치 is not None:
-                    결과 = _별표_정렬_적용(문단_시작, text, 직전_별표_위치)
-                    if 결과:
-                        적용수 += 1
-                        내어쓰기_변경문단.add(tuple(문단_시작[:2]))
-                직전_별표_위치 = None
-            else:
-                # 일반 본문이나 다른 구조 기호(※, -, □ 등)가 끼면 별표 연쇄를 끊는다
-                직전_별표_위치 = None
-        # 빈 문단(공백 줄)은 줄바꿈 여백이므로 직전_별표_위치를 유지한다.
+        상태 = {'별표': 직전_별표_위치}
+        if _별표_한문단(문단_시작, text, 상태):
+            적용수 += 1
+        직전_별표_위치 = 상태['별표']
 
         if not 범위_다음_문단으로_진행():
             break
@@ -10169,6 +10626,8 @@ def 단어_장평_추가축소_시도(start, end, anchor, word_end, 최대시도
     다시 확인한다 — '자간 -4%, 장평 93%' 조합처럼, 자간을 극한까지
     밀어붙이는 대신 장평과 나눠 분담한다.
     """
+    if not 장평_줄이기_사용:
+        return False            # 장평 줄이기 끔(기본): 자간만으로 조정한다
     # 보관: 호출자가 같은 구간을 이미 읽고 원래 값으로 되돌려 둔 (자간, 장평)
     # runs. 넘겨받으면 같은 줄을 다시 글자별로 읽지 않는다.
     if 보관 is None:
@@ -10332,6 +10791,139 @@ def 단어모드_마지막줄_짧은잔여인가(boundary):
     finally:
         hwp_run('Cancel')
         hwp.SetPos(*original)
+
+
+# 연결 부호(사용자 규칙, 2026-10-10): 왼쪽·오른쪽 어절을 뜻으로 잇는 부호는 세 가지다 — 점('......', '……'),
+# 선('------'), 여러 칸 빈칸('세부내용      3쪽'). 부호의 개수에는 뜻이 없다. '왼쪽 어절 + 연결 부호 + 오른쪽 어절'을
+# 한 어절(연결 단위)로 보고, 줄 경계에 걸치면 ① 부호 글자만 자간을 한도를 넘어 한/글 최대(-50%)까지 줄이고,
+# ② 그래도 안 되면 부호 개수를 끝에서부터 최소한으로 줄인다(2개는 남김). 둘 다 안 되면 원래대로 되돌린다.
+알파_연결부호_맞춤_사용 = True
+연결부호_최소개수 = 2
+_연결부호 = re.compile(r"[-‐‑–—―]{3,}|[.·∙•‥…]{3,}|(?<=\S) {3,}(?=\S)|(?<=\S)\u3000{2,}(?=\S)")
+
+
+def 연결부호_구간(글):
+    """글 안의 가장 긴 연결 부호 구간 (시작, 끝). 없으면 None(순수 함수)."""
+    찾음 = max(_연결부호.finditer(글 or ""), key=lambda m: m.end() - m.start(), default=None)
+    return (찾음.start(), 찾음.end()) if 찾음 else None
+
+
+def 연결부호_단위들(글):
+    """[(단위 시작, 부호 시작, 부호 끝, 단위 끝)]: 연결 부호와 양옆 어절(빈칸 하나는 건너 붙인다)(순수 함수)."""
+    결과 = []
+    글 = 글 or ""
+    for m in _연결부호.finditer(글):
+        if not m.group(0).strip() and not 연결부호탭.space_connector_ok(글[:m.start()], 글[m.end():]):
+            continue            # 라벨 안 빈칸·부서 표시·줄 채움 빈칸은 연결 부호가 아니다
+        왼 = m.start()
+        if 왼 > 0 and 글[왼 - 1] == " " and not m.group(0).startswith(" "):
+            왼 -= 1
+        while 왼 > 0 and not 글[왼 - 1].isspace():
+            왼 -= 1
+        오 = m.end()
+        if 오 < len(글) and 글[오] == " " and not m.group(0).endswith(" "):
+            오 += 1
+        while 오 < len(글) and not 글[오].isspace():
+            오 += 1
+        결과.append((왼, m.start(), m.end(), 오))
+    return 결과
+
+
+def 연결부호_전체_맞춤():
+    """본문 문단의 연결 단위가 줄 경계에 걸쳤으면 부호를 줄여 한 줄에 맞춘다."""
+    if not 알파_연결부호_맞춤_사용:
+        return True
+    통계 = {"대상": 0, "자간": 0, "개수": 0, "미해결": 0}
+    순회_시작()
+    while True:
+        if 중단_요청됨():
+            return False
+        위치 = hwp.GetPos()
+        if 위치[0] == 0:
+            글 = 현재문단_텍스트()
+            단위들 = 연결부호_단위들(글.rstrip("\r\n")) if 글 else []
+            if 단위들:
+                문단시작 = tuple(hwp.GetPos())
+                for 단위 in reversed(단위들):
+                    결과 = _연결단위_맞춤(문단시작, 단위)
+                    if 결과 is None:
+                        return False
+                    if 결과:
+                        통계["대상"] += 1
+                        통계[결과] += 1
+                hwp.SetPos(*문단시작)
+        if not 범위_다음_문단으로_진행():
+            break
+    if 통계["대상"]:
+        로그(f"[연결 부호] 줄에 걸친 연결 단위 {통계['대상']}개: 부호 자간 축소 {통계['자간']} / 개수 줄임 {통계['개수']} / "
+             f"미해결 {통계['미해결']}")
+    return True
+
+
+def _연결단위_맞춤(문단시작, 단위):
+    """한 연결 단위를 맞춘다. '자간'·'개수'·'미해결'(걸쳤던 단위), ''(걸치지 않음·대상 아님), None(중단)."""
+    단위시작, 부호시작, 부호끝, 단위끝 = 단위
+    try:
+        위치 = [문단_위치(문단시작, 단위시작), 문단_위치(문단시작, 부호시작),
+              문단_위치(문단시작, 부호끝, 끝쪽=True), 문단_위치(문단시작, 단위끝, 끝쪽=True)]
+    except RuntimeError:
+        return ""
+    a, cs, ce, b = ((문단시작[0], 문단시작[1], 문단시작[2] + x) for x in 위치)
+
+    def 한줄인가(끝):
+        return 단어모드_줄범위(a)[1][2] >= 끝[2]
+
+    if 한줄인가(b):
+        return ""
+    # 단위가 줄 하나보다 길면(줄 첫머리에서 시작해도 넘침) 맞출 수 없다.
+    if 단어모드_줄범위(a)[0][2] == a[2]:
+        return "미해결"
+    # ① 부호 글자만 자간을 한도 넘어 줄인다.
+    runs = 단어모드_자간보관(cs, ce)
+    if runs is not None:
+        상한 = 50 + min((v for _, _, vs in runs for v in vs), default=0)
+        바뀜 = 성공 = False
+
+        def 확인(step):
+            nonlocal 바뀜
+            바뀜 = True
+            단어모드_자간적용(runs, -step)
+            return 한줄인가(b)
+
+        try:
+            step = 최소_성공단계_탐색(max(0, 상한), 확인)
+            성공 = step is not None
+            if 성공:
+                진단로그(f"[연결 부호] 부호 자간 -{step}%(한도 초과 허용)로 한 줄에 맞춤")
+                return "자간"
+        except _단계탐색_중단:
+            return None
+        finally:
+            if 바뀜 and not 성공:
+                단어모드_자간적용(runs, 0)
+    # ② 부호 개수를 끝에서부터 하나씩 줄인다(2개는 남김).
+    지운 = []
+    끝 = b
+    부호수 = ce[2] - cs[2]
+    while 부호수 - len(지운) > 연결부호_최소개수:
+        if 중단_요청됨():
+            return None
+        자리 = (ce[0], ce[1], ce[2] - len(지운) - 1)
+        단어모드_범위선택(자리, (자리[0], 자리[1], 자리[2] + 1))
+        글자 = 현재선택영역_텍스트()
+        if not 글자 or hwp_run("Delete") is False:
+            hwp_run("Cancel")
+            break
+        지운.append(글자)
+        끝 = (끝[0], 끝[1], 끝[2] - 1)
+        if 한줄인가(끝):
+            진단로그(f"[연결 부호] 부호 {len(지운)}개 줄여 한 줄에 맞춤")
+            return "개수"
+    # 맞추지 못하면 지운 부호를 되돌린다.
+    if 지운:
+        hwp.SetPos(*(ce[0], ce[1], ce[2] - len(지운)))
+        텍스트_삽입("".join(reversed(지운)))
+    return "미해결"
 
 
 def 단어중간_줄바꿈방지(최대시도):
@@ -10645,7 +11237,7 @@ def _자간자동조정_본체(최대시도=None):
             # 자간만으로 해결되지 않는 긴 어절은 현재 줄의 장평을 1%씩
             # 최대 15단계 보조 축소한다. 자간을 과도하게 30단계 이상
             # 누르는 것보다 글자 폭을 소폭 줄이는 편이 가독성이 안정적이다.
-            if 단어_장평축소횟수 < 15:
+            if 장평_줄이기_사용 and 단어_장평축소횟수 < 15:
                 hwp_run("Cancel")
                 hwp_run("MoveLineEnd")
                 hwp_run("MoveSelLineBegin")
@@ -10785,6 +11377,206 @@ def 본문_기존자간조정():
         hwp_run("MoveNextChar")
         if hwp.GetPos() == 줄끝:
             return True
+
+# ============================================================
+# 알파: 문단 세트 방식(2026-10-09, 사용자 요청)
+# 지금 방식은 공백 정규화·라벨/괄호·내어쓰기·부연설명·별표·자간·줄 병합을 단계마다 문서 전체로 한 번씩 돈다.
+# 세트 방식은 이 절차들을 두 세트로 묶어 문단 하나에 세트 전체를 차례로 적용한 뒤 다음 문단으로 간다.
+#   세트 1(글·서식): 공백 정규화 9규칙 → 문장부호 뒤 공백 → 라벨/괄호. 끝나면 항목기호 굵게 일관성(문서 전체를 본 뒤
+#                    정해지므로 자간보다 먼저) 한 번.
+#   세트 2(배치): 내어쓰기 → 부연설명 → 별표 정렬 → 자간·단어 분리 → 짧은 줄 병합. 자간이 바뀌면 그 문단만 내어쓰기를
+#                 다시 하고 자간을 재검사(최대 자간_내어쓰기_최대반복회, 2회차부터 다음 단어 당김 제외 — 기존 반복과 같은 규칙).
+# 표 서식·표 칸 자간·쪽 맞춤·배치처럼 문서 단위로 봐야 하는 단계는 기존대로 따로 돈다. 끄면(False) 베타와 같다.
+# ============================================================
+알파_문단세트_사용 = False   # 실측 효과 없음(2026-10-10): 시간 대부분이 줄마다 한/글에 재 보는 작업이라 순회를 묶어도 줄지 않음
+
+
+def 문단세트_가능(회차=1):
+    """세트 방식을 쓸 수 있는 조건(아니면 기존 단계별 방식)."""
+    return bool(알파_문단세트_사용 and 회차 == 1 and 작업_모드 == 'all' and 표준서식_사용
+                and 쪽범위_요청 is None and not stage_enabled(선택_세부작업, 'style_unify'))
+
+
+def 문단세트1_글서식_적용():
+    """세트 1: 문단마다 공백 정규화 → 문장부호 뒤 공백 → 라벨/괄호를 차례로 적용한다."""
+    global _문단글_캐시
+    if 중단_요청됨():
+        return False
+    공백 = stage_enabled(선택_세부작업, 'normalize_space')
+    문장부호 = stage_enabled(선택_세부작업, 'punctuation_space')
+    괄호 = stage_enabled(선택_세부작업, 'parenthesis') and (괄호_축소_사용 or 괄호_라벨_볼드_사용)
+    로그(f"[문단 세트 1] 시작(공백 정규화 {'O' if 공백 else 'X'}, 문장부호 뒤 공백 {'O' if 문장부호 else 'X'}, "
+         f"라벨/괄호 {'O' if 괄호 else 'X'})")
+    allreplace = 0
+    if 공백 and not (한칸표_보호영역 or 쪽범위_사용중()):
+        allreplace = 괄호_안쪽_공백_정리_AllReplace()
+    규칙들 = (문두_미음_기호_정리, 연도_따옴표_정리_문단_처리, 곧은따옴표_통일_문단_처리, 작은따옴표_통일_문단_처리,
+            날짜_구분자_정리_문단_처리, 괄호_안쪽_공백_정리_문단_처리, 쉼표_공백_정리_문단_처리,
+            단어사이_연속공백_정리_문단_처리, 공문_띄어쓰기_정리_문단_처리)
+    수정 = [0] * len(규칙들)
+    문장부호수 = 괄호수 = 방문 = 정체 = 0
+    활성_세트_들여쓰기 = None
+    _일관성_굵게_적용기호.clear()
+    일관성_후보 = []
+    _문단글_캐시 = {} if 알파_문단글_캐시_사용 else None
+    try:
+        순회_시작()
+        while True:
+            if 중단_요청됨():
+                return False
+            시작위치 = hwp.GetPos()
+            방문 += 1
+            if 공백:
+                for i, 규칙 in enumerate(규칙들):
+                    값 = 규칙() or 0
+                    if 값:
+                        _문단글_캐시_비우기()
+                    수정[i] += 값
+            if 문장부호 and 문장부호_뒤_공백_보정_문단_처리():
+                문장부호수 += 1
+                _문단글_캐시_비우기()
+            if 괄호:
+                text = 현재문단_텍스트()
+                세트후속문단 = False
+                if (괄호_라벨_볼드_사용 and 항목기호_굵게_일관성_사용
+                        and not 문두_라벨_굵게_제외_문단인가(text)):
+                    범위 = 일관성_굵게_머리말_범위(text)
+                    if 범위:
+                        일관성_후보.append((hwp.GetPos(), text, 범위))
+                if 활성_세트_들여쓰기 is not None and 세트문장_후속문단인가(활성_세트_들여쓰기, text):
+                    세트후속문단 = True
+                else:
+                    활성_세트_들여쓰기 = None
+                    if 세트문장_시작인가(text):
+                        활성_세트_들여쓰기 = 세트문장_선행들여쓰기_폭(text)
+                결과 = 괄호_및_라벨_텍스트_문단_처리(세트후속문단=세트후속문단)
+                if 결과:
+                    괄호수 += 결과
+            if not 범위_다음_문단으로_진행():
+                break
+            if hwp.GetPos() == 시작위치:
+                정체 += 1
+                if 정체 >= 2:
+                    break
+            else:
+                정체 = 0
+    finally:
+        _문단글_캐시 = None
+    일관성 = 0
+    for 위치, text, (시작, 끝) in 일관성_후보:
+        if 중단_요청됨():
+            return False
+        if 항목기호_키(text) not in _일관성_굵게_적용기호:
+            continue
+        try:
+            문단_범위_선택(위치, 시작, 끝)
+            문자모양_적용_현재선택(굵게=True)
+            hwp_run("Cancel")
+            일관성 += 1
+        except Exception as e:
+            로그(f"항목기호 굵게 일관성 적용 중 오류(무시): {e}")
+    로그(f"[문단 세트 1] 완료(방문 문단 {방문}개 / 괄호 AllReplace {allreplace}회 / 공백 규칙 수정 {sum(수정)}건 "
+         f"{수정} / 문장부호 뒤 공백 {문장부호수}건 / 라벨·괄호 {괄호수}건 / 굵게 일관성 {일관성}건)")
+    return True
+
+
+def _문단세트_줄순회(시작, 처리):
+    """본문 문단 하나의 화면줄마다 처리()를 부른다(기존 본문_기존자간조정·본문_문장부호_처리의 문단 안 부분)."""
+    hwp.SetPos(*시작)
+    직전 = None
+    정체 = 0
+    while not 중단_요청됨():
+        현재 = hwp.GetPos()
+        if 현재[0] != 시작[0] or 현재[1] != 시작[1]:
+            return True
+        if 현재 == 직전:
+            정체 += 1
+            if 정체 >= 2:
+                return True
+        else:
+            정체 = 0
+        직전 = 현재
+        if 처리() is False:
+            return False
+        hwp_run("MoveLineEnd")
+        줄끝 = hwp.GetPos()
+        hwp_run("MoveNextChar")
+        if hwp.GetPos() == 줄끝:
+            return True
+    return False
+
+
+def 문단세트2_배치_적용(문장부호기능=True, 부연설명_단계_사용=False):
+    """세트 2: 문단마다 내어쓰기 → 부연설명 → 별표 → 자간·단어 분리 → 짧은 줄 병합(자간이 바뀌면 그 문단만 반복)."""
+    global 다음단어_당김_사용
+    내어쓰기 = (표준서식_내어쓰기_사용 and stage_enabled(선택_세부작업, 'hanging_indent'))
+    별표 = (not 부연설명_단계_사용) and stage_enabled(선택_세부작업, 'star_align')
+    자간 = stage_enabled(선택_세부작업, 'body_spacing') or stage_enabled(선택_세부작업, 'word_check')
+    줄병합 = stage_enabled(선택_세부작업, 'short_line') and 문장부호기능
+    로그(f"[문단 세트 2] 시작(내어쓰기 {'O' if 내어쓰기 else 'X'}, 부연설명 {'O' if 부연설명_단계_사용 else 'X'}, "
+         f"별표 {'O' if 별표 else 'X'}, 자간 {'O' if 자간 else 'X'}, 줄 병합 {'O' if 줄병합 else 'X'})")
+    붙임번호_대상 = _붙임목록_내어쓰기_대상수집() if 내어쓰기 else {}
+    붙임번호_기준점들 = {}
+    부연상태, 별표상태 = {'부모': None}, {'별표': None}
+    방문 = 반복문단 = 부연수 = 별표수 = 정체 = 0
+    내어쓰기_변경문단.clear()
+    순회_시작()
+    try:
+        while True:
+            if 중단_요청됨():
+                return False
+            hwp_run("MoveParaBegin")
+            시작 = hwp.GetPos()
+            방문 += 1
+            text = 현재문단_텍스트()
+            한칸표 = 현재_한칸표인가()
+            if 내어쓰기 and not 한칸표:
+                hwp.SetPos(*시작)
+                _내어쓰기_한문단(text, 붙임번호_대상, 붙임번호_기준점들)
+            if 부연설명_단계_사용:
+                hwp.SetPos(*시작)
+                if _부연설명_한문단(시작, text, 부연상태):
+                    부연수 += 1
+            if 별표:
+                hwp.SetPos(*시작)
+                if _별표_한문단(시작, text, 별표상태):
+                    별표수 += 1
+            if 시작[0] == 0 and (자간 or 줄병합):
+                hwp.SetPos(*시작)
+                if not (쪽범위_안인가(시작) and 재검사_대상인가(시작)) or (
+                        _알파_일괄서식_문서 and _알파_한줄문단인가(시작)):
+                    pass
+                else:
+                    for 차수 in range(1, 자간_내어쓰기_최대반복 + 1):
+                        if 차수 > 1:
+                            다음단어_당김_사용 = False
+                            반복문단 += 1
+                        변경_전 = 자간_변경_횟수
+                        if 자간 and _문단세트_줄순회(시작, 자간자동조정) is False:
+                            return False
+                        if 줄병합 and _문단세트_줄순회(시작, 문장부호_줄병합_시도) is False:
+                            return False
+                        if 자간_변경_횟수 == 변경_전 or not 내어쓰기:
+                            break
+                        # 자간이 첫 줄 폭을 바꾸면 내어쓰기 기준점이 어긋날 수 있어 이 문단만 다시 맞춘다.
+                        hwp.SetPos(*시작)
+                        _내어쓰기_한문단(현재문단_텍스트(), 붙임번호_대상, 붙임번호_기준점들)
+                    다음단어_당김_사용 = True
+            hwp.SetPos(*시작)
+            if not 범위_다음_문단으로_진행():
+                break
+            if tuple(hwp.GetPos()) == tuple(시작):
+                정체 += 1
+                if 정체 >= 2:
+                    break
+            else:
+                정체 = 0
+    finally:
+        다음단어_당김_사용 = True
+    로그(f"[문단 세트 2] 완료(방문 문단 {방문}개 / 부연설명 {부연수}건 / 별표 {별표수}건 / "
+         f"자간 변경으로 다시 맞춘 문단 {반복문단}회)")
+    return True
+
 
 # ============================================================
 # 문장부호 판정 및 공백 보정
@@ -10996,7 +11788,7 @@ def 현재문단_줄간격_퍼센트():
 
 
 def 항목기호_역할표():
-    """서식 프로필의 항목기호별 역할. 예전 프로필은 '문두기호_역할' 키로 저장했다(용어 변경, 2026-10-10)."""
+    """서식 프로필의 항목기호별 역할. 예전 프로필은 '항목기호_역할' 키로 저장했다(용어 변경, 2026-10-10)."""
     return 표준서식_설정.get("항목기호_역할") or 표준서식_설정.get("문두기호_역할") or {}
 
 
@@ -13206,6 +13998,10 @@ def 제목표인가_현재(표키):
     □·ㅇ 등 계층 기호로 시작하지 않는 1~3문단이고 '붙임'으로 시작하지 않는다. 날짜·담당자 칸이 모두 빈 표도 제목 표다.
     """
     범위 = 표_칸영역_범위(표키)
+    if 범위 and 범위[1] == 범위[0]:
+        return _한칸_제목표인가_현재(범위[0])
+    if 범위 and 4 <= 범위[1] - 범위[0] + 1 <= 16:
+        return _기타_제목표인가_현재(범위)
     if not 범위 or 범위[1] - 범위[0] + 1 not in (2, 3):
         return False
     original = hwp.GetPos()
@@ -13227,6 +14023,54 @@ def 제목표인가_현재(표키):
     if not any(정보):
         return True
     return any(_제목표_담당자.search(t) or _설정_담당자_글인가(t) for t in 정보)
+
+
+def _한칸_제목표인가_현재(area):
+    """한 칸 표(칸 목록 번호 area)가 1×1 제목 상자인지: 제목다운 글이고 글자가 한칸_제목_최소크기_pt 이상."""
+    original = hwp.GetPos()
+    try:
+        글들 = _칸_문단글들(area)
+        if not 글들 or not _한칸_제목글인가(글들):
+            return False
+        hwp.SetPos(area, 0, 0)
+        hwp_run('MoveSelParaEnd')
+        크기 = float(hwp.CharShape.Item('Height') or 0) / 100
+        hwp_run('Cancel')
+        return 크기 >= 한칸_제목_최소크기_pt
+    except Exception:
+        return False
+    finally:
+        try:
+            hwp.SetPos(*original)
+        except Exception:
+            pass
+
+
+def _기타_제목표인가_현재(범위):
+    """여러 칸 장식 제목 상자인지(화면 판정, _기타_제목표인가와 같은 기준)."""
+    original = hwp.GetPos()
+    try:
+        칸글 = [(area, _칸_문단글들(area)) for area in range(범위[0], 범위[1] + 1)]
+        if any(글 is None for _, 글 in 칸글):
+            return False
+        글칸 = [(a, 글) for a, 글 in 칸글 if any(t.strip() for t in 글)]
+        제목칸 = [a for a, 글 in 글칸 if _한칸_제목글인가(글)]
+        if len(제목칸) != 1:
+            return False
+        if any(not 보고서머리.parse_info(' '.join(글).strip()) for a, 글 in 글칸 if a != 제목칸[0]):
+            return False
+        hwp.SetPos(제목칸[0], 0, 0)
+        hwp_run('MoveSelParaEnd')
+        크기 = float(hwp.CharShape.Item('Height') or 0) / 100
+        hwp_run('Cancel')
+        return 크기 >= 한칸_제목_최소크기_pt
+    except Exception:
+        return False
+    finally:
+        try:
+            hwp.SetPos(*original)
+        except Exception:
+            pass
 
 
 def _보고서_끝내용(시작문단, 끝문단, 표문단):
@@ -14205,6 +15049,9 @@ def 단어사이_연속공백_정리_대상(text):
                 continue
             if any(처음 < i and 시작 < 끝 for 처음, 끝 in 공식2타):
                 continue
+            if (알파_연결부호_탭정렬_사용 and text[시작:i] == "	" and text.count("	") == 1
+                    and 시작 > 선행공백_길이 and i < n):
+                continue            # 연결 부호를 바꾼 탭·목차 탭(글 사이 탭 하나)은 정렬용이라 남긴다
             if i - 시작 > 1 or text[시작] != " ":
                 결과.append((시작, i))
         else:
@@ -14615,6 +15462,27 @@ def 문장부호_뒤_공백_보정_전체_적용():
 # 끄면(False) 베타와 같다.
 알파_문단글_캐시_사용 = True
 _문단글_캐시 = None      # None이면 캐시를 쓰지 않음, dict이면 {(리스트, 문단): (편집 세대, 글)}
+
+
+# 알파 C2(2026-10-10): 문단 글 캐시를 쪽 배치 단계와 저장 결과 검사에도 켠다. 프로파일 실측(기준 파일):
+# 저장 후 검수 13.3초 중 쪽 배치 최종 검사 10.1초, 그 대부분이 같은 문단 글을 묶음마다 다시 읽는 시간
+# (현재문단_텍스트 1회 약 22ms). 편집하면 편집 세대가 바뀌어 다시 읽으므로 결과는 같다. 끄면(False) 베타와 같다.
+알파_문단글_캐시_확대_사용 = True
+
+
+def 문단글_캐시_구간(함수):
+    """함수가 도는 동안만 문단 글 캐시를 켠다(이미 켜져 있으면 그대로 쓴다)."""
+    def 감싼(*args, **kwargs):
+        global _문단글_캐시
+        if not 알파_문단글_캐시_확대_사용 or _문단글_캐시 is not None:
+            return 함수(*args, **kwargs)
+        _문단글_캐시 = {}
+        try:
+            return 함수(*args, **kwargs)
+        finally:
+            _문단글_캐시 = None
+    감싼.__name__ = getattr(함수, '__name__', '문단글_캐시_구간')
+    return 감싼
 
 
 def _문단글_캐시_비우기():
@@ -16002,6 +16870,21 @@ def 절약시간_표시(분):
     시간, 나머지 = divmod(분, 60)
     return f"약 {시간}시간" + (f" {나머지}분" if 나머지 else "")
 
+def 절약시간_분초_표시(초):
+    """절약한 초를 '07분 05초' 꼴로 보여 준다(완료창 메시지용, 2026-10-11 사용자 요청)."""
+    분, 초 = divmod(max(0, int(round(초))), 60)
+    return f"{분:02d}분 {초:02d}초"
+
+
+def 번들_고양이_그림_찾기():
+    """완료창의 검은 고양이 그림(resources/black_cat.png, scripts/draw_black_cat.py로 그림). 없으면 None."""
+    후보_목록 = [프로그램_폴더() / "resources" / "black_cat.png"]
+    번들_폴더 = 번들_리소스_폴더()
+    if 번들_폴더 is not None:
+        후보_목록.append(번들_폴더 / "resources" / "black_cat.png")
+    return next((경로 for 경로 in 후보_목록 if 경로.is_file()), None)
+
+
 def 처리_쪽수_구하기():
     """이번에 처리한 문서의 쪽 수(쪽 범위를 지정했으면 그 범위의 쪽 수). 알 수 없으면 1."""
     try:
@@ -16290,7 +17173,14 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
             and not (작업_모드 in ('format', 'all') and 표준서식_사용)):
         if not stage('서식통일', 서식통일_전체_적용):
             return False
-    if 작업_모드 in ('format', 'all') and 표준서식_사용 and 회차 == 1:
+    # 알파: 문단 세트 방식(문단마다 여러 절차를 차례로 적용하고 문서는 한 번만 순회). 조건이 맞지 않으면 기존 방식.
+    세트모드 = 문단세트_가능(회차)
+    if 세트모드:
+        로그("[문단 세트] 공백·괄호(세트 1)와 내어쓰기·자간(세트 2)을 문단 단위로 한 번에 처리합니다.")
+    if 작업_모드 in ('format', 'all') and 표준서식_사용 and 회차 == 1 and 세트모드:
+        if not stage('문단 세트 1(공백·문장부호·라벨/괄호)', 문단세트1_글서식_적용):
+            return False
+    if 작업_모드 in ('format', 'all') and 표준서식_사용 and 회차 == 1 and not 세트모드:
         for key, name, action in (
             ('normalize_space', '공백 정규화', 문장내_공백_정규화_전체_적용),
             ('punctuation_space', '문장부호 뒤 공백 보정', 문장부호_뒤_공백_보정_전체_적용),
@@ -16302,6 +17192,7 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
         if stage_enabled(선택_세부작업, 'parenthesis') and (괄호_축소_사용 or 괄호_라벨_볼드_사용):
             if not stage('문두 라벨/괄호 서식', 괄호_텍스트_크기_축소_전체_적용):
                 return False
+    if 작업_모드 in ('format', 'all') and 표준서식_사용 and 회차 == 1:
         # 정밀 프로필·기본 표 서식(준말 '표')은 칸별 서식을 이미 입혔으므로 대표 머리글/본문 값으로 덮지 않는다.
         if (stage_enabled(선택_세부작업, 'table_format') and 표_헤더서식_사용 and not 활성_정밀표_프로필
                 and not 기본표서식_적용됨 and not stage('표 서식', 표_헤더서식_전체_적용)):
@@ -16319,7 +17210,8 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
             return False
     # 내어쓰기는 화면줄의 가로 폭과 줄바꿈을 바꿀 수 있으므로 자간·단어
     # 분리 검사를 수행하기 전에 최종 문단 모양을 먼저 확정한다.
-    if 작업_모드 in ('format', 'all') and 표준서식_사용 and 표준서식_내어쓰기_사용 and stage_enabled(선택_세부작업, 'hanging_indent'):
+    if (not 세트모드 and 작업_모드 in ('format', 'all') and 표준서식_사용 and 표준서식_내어쓰기_사용
+            and stage_enabled(선택_세부작업, 'hanging_indent')):
         if not stage('최종 서식 기준 내어쓰기', 문단_내어쓰기_전체_갱신):
             return False
     # 부연설명은 위 문단의 '실측' 본문 시작 위치에 맞추므로 최종 내어쓰기 뒤에
@@ -16327,15 +17219,27 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
     부연설명_단계_사용 = (작업_모드 in ('format', 'all') and 표준서식_사용
                       and stage_enabled(선택_세부작업, 'supplement_indent')
                       and 부연설명_들여쓰기_사용)
-    if 부연설명_단계_사용:
+    if 부연설명_단계_사용 and not 세트모드:
         if not stage('부연설명 들여쓰기', 부연설명_들여쓰기_전체_적용):
             return False
     # 별표(**) 정렬: 앞선 내어쓰기·부연설명 여백 조정이 끝난 뒤 최종 보정한다.
     # 바로 앞줄 *의 별표 위치에 **의 둘째 별표를 맞추며, 필요하면 앞 빈칸을 지운다.
-    if 작업_모드 in ('format', 'all') and not 부연설명_단계_사용 and stage_enabled(선택_세부작업, 'star_align'):
+    if (not 세트모드 and 작업_모드 in ('format', 'all') and not 부연설명_단계_사용
+            and stage_enabled(선택_세부작업, 'star_align')):
         if not stage('별표(**) 정렬', 별표_정렬_전체_적용):
             return False
-    if 작업_모드 in ('spacing', 'all'):
+    if 세트모드:
+        if not stage('문단 세트 2(내어쓰기·부연설명·별표·자간·줄 병합)',
+                     lambda: 문단세트2_배치_적용(문장부호기능, 부연설명_단계_사용)):
+            return False
+        if (stage_enabled(선택_세부작업, 'control_spacing')
+                or stage_enabled(선택_세부작업, 'control_word_check')):
+            if not stage('표/컨트롤 자간·단어 분리 조정', 컨트롤_내부_자간조정):
+                return False
+        if (stage_enabled(선택_세부작업, 'control_short_line') and 문장부호기능
+                and not stage('표/컨트롤 줄 병합', 컨트롤_내부_문장부호_처리)):
+            return False
+    if 작업_모드 in ('spacing', 'all') and not 세트모드:
         # 자간을 줄이거나 넓히면 항목기호 문장의 첫 줄 폭이 바뀌어
         # 내어쓰기 기준점이 어긋날 수 있다. 자간 변경이 있으면 내어쓰기를
         # 1회 다시 적용하고, 그 결과로 새로 생긴 단어 분리를 다시 검사한다.
@@ -16367,6 +17271,8 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
                 if (stage_enabled(선택_세부작업, 'body_spacing')
                         or stage_enabled(선택_세부작업, 'word_check')):
                     if not stage('본문 자간·단어 분리 조정' + 접미, 본문_기존자간조정):
+                        return False
+                    if 알파_연결부호_맞춤_사용 and not stage('연결 부호 맞춤' + 접미, 연결부호_전체_맞춤):
                         return False
                 if stage_enabled(선택_세부작업, 'short_line') and 문장부호기능 and not stage('짧은 마지막 줄 병합' + 접미, 본문_문장부호_처리):
                     return False
@@ -16417,7 +17323,7 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
             return False
     if 작업_모드 in ('format', 'all') and 표준서식_사용 and 세트문장_같은쪽_사용 and stage_enabled(선택_세부작업, 'page_group'):
         조정_전 = 세트문장_통계.get('확대횟수', 0) + 세트문장_통계.get('축소횟수', 0)
-        if not stage('개별 문단 페이지 배치', 세트문장_같은쪽_전체_적용):
+        if not stage('개별 문단 페이지 배치', 문단글_캐시_구간(세트문장_같은쪽_전체_적용)):
             return False
         조정_후 = 세트문장_통계.get('확대횟수', 0) + 세트문장_통계.get('축소횟수', 0)
         # 문단 페이지 배치가 줄간격을 바꾸면 마지막 쪽이 넘치거나 줄어 쪽 수가
@@ -16452,7 +17358,7 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
                 # 보고서별 1쪽 맞춤은 전체 쪽 수가 같아도 보고서 안의 배치를 바꾼다(실측: 표 묶음 쪽 분리 4건이 남음).
                 로그(f"[쪽 수 재확인] 쪽 수 {전_쪽} → {후_쪽}"
                      f"{', 보고서별 1쪽 맞춤으로 배치 변경' if 쪽맞춤_보고서조정됨 else ''}: 문단 페이지 배치를 한 번 더 확인합니다.")
-                if not stage('개별 문단 페이지 배치 (재확인)', 세트문장_같은쪽_전체_적용):
+                if not stage('개별 문단 페이지 배치 (재확인)', 문단글_캐시_구간(세트문장_같은쪽_전체_적용)):
                     return False
                 # 쪽 배치가 묶음을 옮기며 맞춘 보고서를 다시 늘릴 수 있으므로, 원본 쪽 구성 맞춤을 마지막에 한 번 더
                 # 한다(사용자 원칙, 2026-10-09: 결과의 쪽 구성은 원본과 같아야 한다).
@@ -16780,8 +17686,30 @@ def 외부문서_hwpx로_변환(원본경로, 확장자, 대상경로):
             임시_md = Path(임시폴더) / f"{Path(원본경로).stem}.md"
             parse_document(str(원본경로), str(임시_md), output_format="markdown", ocr=(확장자 == ".pdf"))
             generate_hwpx(str(임시_md), "보고서", str(대상경로), image_dir=임시폴더)
+        if 확장자 == ".pdf":
+            PDF_서식_이식(원본경로, 대상경로)
         return
     raise ValueError(f"지원하지 않는 변환 형식입니다: {확장자}")
+
+
+# 알파(2026-10-10): kordoc은 PDF를 마크다운으로 바꿔 프리셋 서식으로 HWPX를 만들어 원본 서식이 사라진다.
+# PDF 글자마다 글꼴·크기·굵게·글자색·장평·배경색을 읽어 변환 HWPX에 다시 적용한다(docfit_core.pdf_style_transfer).
+# 실측(재경부 업무보고 PDF 17쪽): 짝지은 글자 기준 글꼴 0.3→99.9%, 크기 41→100%, 색 글자 0→100%, 배경색 1.1→100%.
+알파_PDF서식이식_사용 = True
+
+
+def PDF_서식_이식(원본경로, 대상경로):
+    if not 알파_PDF서식이식_사용:
+        return None
+    try:
+        from docfit_core.pdf_style_transfer import transfer_pdf_style
+        통계 = transfer_pdf_style(원본경로, 대상경로)
+        로그(f"[PDF 서식 이식] 글자 {통계['matched']}/{통계['pdf_chars']}개 짝지음, 글자 모양 {통계['new_char_shapes']}개·"
+             f"셀 배경 {통계['cells_filled']}칸 적용")
+        return 통계
+    except Exception as e:
+        로그(f"[PDF 서식 이식] 건너뜀(kordoc 변환 결과 그대로 사용): {e}")
+        return None
 
 
 def _박스그림표_한글표_삽입(행들):
@@ -16899,12 +17827,12 @@ def 저장결과_규칙검수(파일, 저장파일, 결과창=True):
             검사들['table_unify'] = lambda: 서식통일_표_전체_적용(검증만=True)
     if 검수_사용:
         if 작업_모드 in ('format', 'all') and stage_enabled(선택_세부작업, 'page_group'):
-            검사들['page_group'] = 보고서_페이지배치_최종검사
+            검사들['page_group'] = 문단글_캐시_구간(보고서_페이지배치_최종검사)
         if 작업_모드 in ('spacing', 'all'):
             if stage_enabled(선택_세부작업, 'word_check'):
-                검사들['word_check'] = 보고서_단어분리_최종검사
+                검사들['word_check'] = 문단글_캐시_구간(보고서_단어분리_최종검사)
             if stage_enabled(선택_세부작업, 'control_word_check'):
-                검사들['control_word_check'] = lambda: 보고서_단어분리_최종검사(컨트롤=True)
+                검사들['control_word_check'] = 문단글_캐시_구간(lambda: 보고서_단어분리_최종검사(컨트롤=True))
     if 중단_요청됨():
         return False
     if 검사들:
@@ -17164,6 +18092,8 @@ def _문서_처리_본체(파일, index, total, 문장부호기능=True):
             로그("쪽 범위 지정: 제목·개요·중제목·붙임 자동 서식(문서 전체 구조 변환)은 이번 작업에서 건너뜁니다.")
         elif stage_enabled(선택_세부작업, 'pre_format', 작업_모드):
             선행목록 += [
+                (bool(알파_머리서식복사_사용 and 활성_머리서식_프로필), '보고서 머리 서식 복사', 보고서머리_hwpx_처리,
+                 'report_header.hwpx', '제목·개요·붙임 선행 서식'),
                 (제목4종_사용, '제목·개요', 제목_hwpx_처리, 'title.hwpx', '제목·개요·붙임 선행 서식'),
                 (중제목_사용, '중제목', 중제목_hwpx_처리, 'midtitle.hwpx', '제목·개요·붙임 선행 서식'),
                 (붙임2종_사용, '붙임', 붙임_hwpx_처리, 'attachment.hwpx', '제목·개요·붙임 선행 서식'),
@@ -17194,6 +18124,11 @@ def _문서_처리_본체(파일, index, total, 문장부호기능=True):
             로그("쪽 범위 지정: 표 칸 너비 맞춤(문서 전체 표 구조 변경)은 이번 작업에서 건너뜁니다.")
         else:
             선행목록.append((True, '표 칸 너비', 표너비_hwpx_처리, 'table_width.hwpx', '표 칸 너비'))
+    # 연속된 연결 부호 문장(목차·일정표)은 한/글 목차 점선(왼쪽 정렬 탭)으로 맞춘다(알파, 2026-10-10).
+    if 서식단계_사용 and 쪽범위_요청 is None and 알파_연결부호_탭정렬_사용:
+        선행목록.append((True, '연결 부호 탭 정렬', 연결부호탭_hwpx_처리, 'connector_tab.hwpx', '표 칸 너비'))
+    if 서식단계_사용 and 쪽범위_요청 is None and 알파_콜론라벨_정렬_사용:
+        선행목록.append((True, '콜론 라벨 정렬', 콜론라벨_hwpx_처리, 'colon_label.hwpx', '표 칸 너비'))
     # 표 칸 안 날짜는 한 줄 표기가 원칙이다(사용자 규칙, 2026-10-10). 표 서식 단계들 뒤 맨 끝에서 지정한다.
     if (서식단계_사용 or 작업_모드 == 'unify') and 쪽범위_요청 is None:
         선행목록.append((True, '표 날짜 칸 한 줄', 표날짜칸_hwpx_처리, 'table_date.hwpx', '표 칸 너비'))
@@ -17433,6 +18368,11 @@ def 작업_실행(
         else:
             로그_파일_경로 = None
         로그(f"프로그램 버전: {APP_VERSION} / 전체 처리 {작업_반복횟수}회 / 단어 분리 방지: {bool(단어분리방지)} / 본문 {본문재시도횟수}단계 / 표 {표재시도횟수}단계 / 줄간격 조정범위 {줄간격최소}~{줄간격최대}%")
+        try:
+            globals()["장평_줄이기_사용"] = bool(설정_불러오기().get("ratio_shrink", 기본_설정["ratio_shrink"]))
+        except Exception:
+            globals()["장평_줄이기_사용"] = 기본_설정["ratio_shrink"]
+        로그(f"장평 줄이기: {'사용' if 장평_줄이기_사용 else '안 함(자간 줄이기·늘리기만 사용)'}")
         로그(f"작업 로그 파일: {로그_파일_경로 or '(만들지 않음)'}")
         정리수 = 이전_작업_임시폴더_정리()
         if 정리수:
@@ -17952,6 +18892,7 @@ class HwpAutoDocFitGUI:
         self._활성_서식_프로파일 = str(저장된_설정.get("active_format_profile", ""))
         self._프로파일_콤보_이름목록 = ["profile_combo", "main_profile_combo"]
         self.prevent_word_split_var = tk.BooleanVar(value=bool(저장된_설정["prevent_word_split"]))
+        self.ratio_shrink_var = tk.BooleanVar(value=bool(저장된_설정.get("ratio_shrink", 기본_설정["ratio_shrink"])))
         self.punctuation_var = tk.BooleanVar(value=bool(저장된_설정["punctuation"]))
         self.punctuation_threshold_var = tk.StringVar(value=str(저장된_설정["punctuation_threshold"]))
         self.keep_punctuation_set_var = tk.BooleanVar(value=bool(저장된_설정["keep_punctuation_set_together"]))
@@ -18044,7 +18985,7 @@ class HwpAutoDocFitGUI:
         self.title_owner_var.trace_add("write", lambda *_: 제목_담당자_글_반영(self.title_owner_var.get()))
         self.title_owner_var.trace_add("write", self._설정_변경됨)
 
-        for 변수 in ([self.prevent_word_split_var, self.punctuation_var, self.punctuation_threshold_var, self.keep_punctuation_set_var,
+        for 변수 in ([self.prevent_word_split_var, self.ratio_shrink_var, self.punctuation_var, self.punctuation_threshold_var, self.keep_punctuation_set_var,
                      self.color_mark_on_var, self.color_var,
                      self.autoclose_var, self.unify_result_window_var,
                      self.stdformat_var, self.verify_var, self.integrity_report_file_var,
@@ -18210,6 +19151,13 @@ class HwpAutoDocFitGUI:
         # 고른 서식을 예시 보고서에 입혀 한/글로 미리 보여 준다(2026-10-04 사용자 요청).
         self.format_example_button = ttk.Button(format_quick, text="서식 예시 확인", command=self._서식예시_확인)
         self.format_example_button.pack(side="left", padx=(6, 0))
+        if 알파_서식예시폴더_사용:
+            # 키오스크에서 메뉴 사진을 보고 고르듯, 서식 예시의 첫 쪽 그림(스틸컷)을 보며 고른다(알파, 2026-10-10).
+            self.format_kiosk_button = ttk.Button(format_quick, text="썸네일로 선택", command=self._서식_키오스크_열기)
+            self.format_kiosk_button.pack(side="left", padx=(4, 0))
+            # 서식예시 폴더(C:\\HWP_AUTODOCFIT\\서식예시)를 열어 예시 파일을 직접 고친다(알파, 2026-10-10).
+            self.format_samples_button = ttk.Button(format_quick, text="서식예시 폴더", command=self._서식예시_폴더_열기)
+            self.format_samples_button.pack(side="left", padx=(4, 0))
         self.format_drop_label = ttk.Label(
             format_quick,
             text="예시 HWP/HWPX를 여기에 놓으면 분석 후 바로 선택합니다",
@@ -18331,6 +19279,11 @@ class HwpAutoDocFitGUI:
         if self._활성_서식_프로파일 not in self._프로파일들:
             self._활성_서식_프로파일 = ""
         self._프로파일_전역반영(self._프로파일들[self._활성_서식_프로파일])
+        self._서식예시_폴더_준비()
+        try:
+            상용구_폴더_준비()
+        except Exception as exc:
+            self.로그표시(f"상용구 폴더를 준비하지 못했습니다: {exc}")
         self._설정창_생성()
         self._항상위_적용()
 
@@ -18614,6 +19567,10 @@ class HwpAutoDocFitGUI:
             체크 = ttk.Checkbutton(parent, text="줄 끝에서 단어가 끊기지 않게 정리하기", variable=self.prevent_word_split_var)
             체크.pack(anchor="w")
             ttk.Label(parent, text="04. 표·컨트롤 자간 조정에도 함께 적용됩니다.",
+                      style="Hint.TLabel", wraplength=610).pack(anchor="w", pady=(0, 2))
+            ttk.Checkbutton(parent, text="장평 줄이기 사용(글자 가로 비율을 줄여 단어를 한 줄에 모음)",
+                            variable=self.ratio_shrink_var).pack(anchor="w")
+            ttk.Label(parent, text="기본은 끔: 자간 줄이기·늘리기만으로 맞춥니다. 켜면 자간으로 부족할 때 장평을 90%까지 줄입니다.",
                       style="Hint.TLabel", wraplength=610).pack(anchor="w", pady=(0, 2))
             if 주설정탭:
                 self.prevent_word_split_check = 체크
@@ -19430,6 +20387,7 @@ class HwpAutoDocFitGUI:
             총쪽 = sum(항목["쪽수"] for 항목 in self._결과목록)
             수작업분 = 총쪽 * 절약시간_쪽당_분.get(self._작업모드, 5.0)
             걸린분 = (time.monotonic() - (self._작업시작시각 or time.monotonic())) / 60
+            self._절약초 = max(0.0, (수작업분 - 걸린분) * 60)
             절약 = 절약시간_표시(수작업분 - 걸린분)
             self.stage_board.set_result_message(f"이번 작업을 통해 절약된 귀하의 시간은 총 {절약} 입니다.")
 
@@ -19617,6 +20575,7 @@ class HwpAutoDocFitGUI:
         활성_정밀표_프로필 = copy.deepcopy(profile.get("precise_tables"))
         활성_서식표_프로필 = copy.deepcopy(profile.get("form_tables")) or None
         활성_표서식_프로필 = copy.deepcopy(profile.get("table_style")) or None
+        globals()["활성_머리서식_프로필"] = copy.deepcopy(profile.get("report_header")) or None
         global 괄호_축소_pt
         괄호_축소_pt = float(profile["format"].get("괄호_축소_pt", 2) or 2)
         글꼴형식_등록(profile["format"].get("글꼴형식"))
@@ -19732,11 +20691,22 @@ class HwpAutoDocFitGUI:
             바뀐["organization"] = 기관
         else:
             바뀐.pop("organization", None)
+        예전예시, 정보경로 = self._서식예시_경로(identifier)
         try:
             self._서식_파일_저장(identifier, 바뀐)
         except Exception as exc:
             return f"서식 이름 저장 실패: {exc}"
         self._프로파일들[identifier] = 바뀐
+        if 알파_서식예시폴더_사용 and 예전예시.is_file():
+            새예시 = 예전예시.with_name(서식예시모듈.file_name_for(이름))
+            try:
+                if 새예시 != 예전예시 and not 새예시.exists():
+                    예전예시.rename(새예시)
+                    정보 = _json_파일_읽기(정보경로)
+                    정보["file"] = 새예시.name
+                    정보경로.write_text(json.dumps(정보, ensure_ascii=False, indent=2), encoding="utf-8")
+            except Exception as exc:
+                self.로그표시(f"서식예시 파일 이름을 바꾸지 못했습니다(서식은 바꿈): {exc}")
         self._프로파일_목록갱신()
         self.status_var.set(f"서식 이름을 '{이름}'(으)로 바꿨습니다.")
         return None
@@ -19752,7 +20722,8 @@ class HwpAutoDocFitGUI:
             경로 = 서식프로파일_폴더() / (identifier + ".json")
             if 경로.is_file():
                 경로.unlink()
-            for 예시 in self._서식예시_경로(identifier):      # 보관한 서식 예시도 함께 지운다
+            예시경로, 정보경로 = self._서식예시_경로(identifier)
+            for 예시 in (예시경로, 정보경로, self._서식예시_원본사본(정보경로)):   # 보관한 서식 예시도 함께 지운다
                 if 예시.is_file():
                     예시.unlink()
         except Exception as exc:
@@ -19768,10 +20739,232 @@ class HwpAutoDocFitGUI:
         return None
 
     def _서식예시_경로(self, identifier):
-        """서식마다 하나씩 보관하는 예시 파일과 그 정보 파일의 경로(설정 폴더 format_examples, 서식 식별자로 이름 짓는다)."""
+        """서식마다 하나씩 보관하는 예시 파일과 그 정보 파일의 경로.
+
+        알파(서식예시 폴더): 예시 파일은 C:\\HWP_AUTODOCFIT\\서식예시\\<서식 이름>.hwpx(기본 서식은 '기본 서식.hwpx'),
+        정보 파일은 설정 폴더 format_examples에 서식 식별자로 둔다. 끄면 둘 다 설정 폴더에 식별자로 둔다(예전 방식)."""
         이름 = re.sub(r'[\/:*?"<>|\s]+', "_", identifier or "").strip("_") or "_기본"
+        if not 알파_서식예시폴더_사용:
+            폴더 = 서식예시_폴더()
+            return 폴더 / f"서식예시_{이름}.hwpx", 폴더 / f"서식예시_{이름}.json"
+        정보경로 = 서식예시_정보_폴더() / f"서식예시_{이름}.json"
+        파일 = _json_파일_읽기(정보경로).get("file")
+        if not 파일:
+            profile = (getattr(self, "_프로파일들", None) or {}).get(identifier) or {}
+            파일 = 서식예시모듈.file_name_for(profile.get("name") or "", standard=not identifier)
+        return 서식예시_폴더() / 파일, 정보경로
+
+    def _서식예시_원본사본(self, 정보경로):
+        """사용자가 고치기 전 예시 파일의 사본(바뀐 값을 가려내는 비교 기준)."""
+        return Path(정보경로).with_suffix(".원본.hwpx")
+
+    def _서식예시_기록(self, 예시경로, 정보경로, 정보):
+        """지금 예시 파일을 비교 기준으로 삼는다: 원본 사본을 새로 두고 해시·파일 이름을 기록한다."""
+        정보경로 = Path(정보경로)
+        정보경로.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(예시경로, self._서식예시_원본사본(정보경로))
+        정보 = dict(정보, file=Path(예시경로).name, sha256=서식예시모듈.digest(예시경로),
+                  기록때=f"{_datetime.datetime.now():%Y-%m-%d %H:%M:%S}")
+        정보경로.write_text(json.dumps(정보, ensure_ascii=False, indent=2), encoding="utf-8")
+        return 정보
+
+    def _서식예시_원본_보관(self, identifier, 표본):
+        """새로 추가한 서식의 예시 문서(분석한 HWPX)를 서식예시 폴더에 넣는다. 같은 이름 파일이 있으면 번호를 붙인다."""
+        try:
+            예시경로, 정보경로 = self._서식예시_경로(identifier)
+            후보, 순번 = 예시경로, 2
+            while 후보.exists():
+                후보 = 예시경로.with_name(f"{예시경로.stem} ({순번}).hwpx")
+                순번 += 1
+            후보.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(표본, 후보)
+            self._서식예시_기록(후보, 정보경로, {"kind": "source", "식별자": identifier})
+            self.로그표시(f"서식예시 폴더에 예시 문서를 넣었습니다: {후보}")
+        except Exception as exc:
+            self.로그표시(f"서식예시 폴더에 예시 문서를 넣지 못했습니다(서식은 저장함): {exc}")
+
+    def _서식예시_폴더_준비(self):
+        """앱을 켤 때 서식예시 폴더를 만들고, 예전 설정 폴더의 예시를 옮기고, 기본 서식 예시가 없으면 넣는다.
+
+        기본 서식 예시 파일을 사용자가 지웠으면 고친 기본 서식(formats/_standard.json)도 지워 처음 기본 서식으로 되돌린다."""
+        if not 알파_서식예시폴더_사용:
+            return
+        try:
+            서식예시_폴더().mkdir(parents=True, exist_ok=True)
+        except Exception as exc:
+            self.로그표시(f"서식예시 폴더를 만들지 못했습니다: {서식예시_폴더()} ({exc})")
+            return
+        for 식별자 in list(self._프로파일들):
+            예시경로, 정보경로 = self._서식예시_경로(식별자)
+            예전 = 서식예시_정보_폴더() / 정보경로.with_suffix(".hwpx").name
+            if 예전 == 예시경로 or 예시경로.exists() or not 예전.is_file():
+                continue
+            try:
+                shutil.copyfile(예전, 예시경로)
+                self._서식예시_기록(예시경로, 정보경로, dict(_json_파일_읽기(정보경로), kind="generated"))
+                예전.unlink()
+            except Exception as exc:
+                self.로그표시(f"예전 서식 예시를 옮기지 못했습니다: {예전.name} ({exc})")
+        예시경로, 정보경로 = self._서식예시_경로("")
+        if 예시경로.is_file():
+            return
+        덮어쓰기 = 서식프로파일_폴더() / f"{기본서식_덮어쓰기_식별자}.json"
+        try:
+            if 덮어쓰기.is_file():
+                덮어쓰기.unlink()
+                self._프로파일들[""] = 기본_서식프로파일()
+                if not self._활성_서식_프로파일:
+                    self._프로파일_전역반영(self._프로파일들[""])
+                self.로그표시("기본 서식 예시 파일이 없어 기본 서식을 처음 값으로 되돌렸습니다.")
+            for 옛 in (정보경로, self._서식예시_원본사본(정보경로)):
+                if 옛.is_file():
+                    옛.unlink()
+            번들 = 번들_서식예시_찾기()
+            if 번들 is not None:
+                shutil.copyfile(번들, 예시경로)
+                self._서식예시_기록(예시경로, 정보경로, {"kind": "bundled", "식별자": ""})
+        except Exception as exc:
+            self.로그표시(f"기본 서식 예시를 넣지 못했습니다: {exc}")
+
+    def _서식_스틸컷(self, identifier, width=240, fmt="PNG"):
+        """서식의 예시 파일(서식예시 폴더) 첫 쪽 그림. 예시 파일이 없거나 그림이 없으면 None."""
+        if not 알파_서식예시폴더_사용:
+            return None
+        예시경로, _ = self._서식예시_경로(identifier)
+        return 서식예시모듈.still_cut(예시경로, width, fmt) if 예시경로.is_file() else None
+
+    def _서식_키오스크_고르기(self, identifier):
+        """키오스크 카드에서 고른 서식을 실행창 서식 선택과 같은 경로로 반영한다. 반영하면 True."""
+        ids = list(getattr(self, "_프로파일_ids", []) or [])
+        콤보 = getattr(self, "main_profile_combo", None)
+        if self.running or identifier not in ids or 콤보 is None:
+            return False
+        콤보.current(ids.index(identifier))
+        self._프로파일_선택(type("콤보선택", (), {"widget": 콤보})())
+        이름 = (self._프로파일들.get(identifier) or {}).get("name") or "기본 서식"
+        self.status_var.set(f"'{이름}' 서식을 골랐습니다.")
+        return True
+
+    def _서식_키오스크_열기(self):
+        """키오스크에서 메뉴 사진을 보며 고르듯, 서식마다 예시 첫 쪽 그림(스틸컷)과 이름을 카드로 늘어놓고 눌러 고르게 한다.
+
+        그림은 서식예시 폴더의 예시 HWPX 안 미리보기(Preview/PrvImage.png)를 쓴다(한/글을 열지 않음).
+        예시 파일이 아직 없는 서식은 글 카드로 보이고, '서식 예시 확인'으로 예시를 만들면 그림이 생긴다."""
+        if self.running:
+            self.status_var.set("작업이 끝난 뒤 서식을 골라 주세요.")
+            return
+        이전 = getattr(self, "_서식_키오스크_창", None)
+        if 이전 is not None:
+            try:
+                if 이전.winfo_exists():
+                    이전.destroy()
+            except Exception:
+                pass
+        창 = tk.Toplevel(self.root)
+        self._서식_키오스크_창 = 창
+        창.title("서식 고르기")
+        창.geometry("960x720")
+        창.transient(self.root)
+        창_맨앞으로(창)
+        ttk.Label(창, text="서식 고르기", font=("맑은 고딕", 14, "bold")).pack(anchor="w", padx=14, pady=(12, 0))
+        ttk.Label(창, text="예시 보고서 첫 쪽 그림을 보고 원하는 서식 카드를 누르세요. 누르면 바로 그 서식으로 바뀝니다.",
+                  style="Hint.TLabel").pack(anchor="w", padx=14, pady=(2, 8))
+        틀 = ttk.Frame(창)
+        틀.pack(fill="both", expand=True, padx=10)
+        캔버스 = tk.Canvas(틀, highlightthickness=0, bg="#F3F6FB")
+        막대 = ttk.Scrollbar(틀, orient="vertical", command=캔버스.yview)
+        캔버스.configure(yscrollcommand=막대.set)
+        막대.pack(side="right", fill="y")
+        캔버스.pack(side="left", fill="both", expand=True)
+        안쪽 = tk.Frame(캔버스, bg="#F3F6FB")
+        캔버스.create_window((0, 0), window=안쪽, anchor="nw")
+        안쪽.bind("<Configure>", lambda e: 캔버스.configure(scrollregion=캔버스.bbox("all")))
+        창.bind("<MouseWheel>", lambda e: 캔버스.yview_scroll(int(-e.delta / 120), "units"))
+        self._키오스크_그림들 = []
+        활성 = self._활성_서식_프로파일 or ""
+
+        def 고르기(identifier):
+            if self._서식_키오스크_고르기(identifier):
+                창.destroy()
+
+        for 번호, identifier in enumerate(list(getattr(self, "_프로파일_ids", []) or [])):
+            profile = self._프로파일들.get(identifier) or {}
+            이름 = str(profile.get("name") or "기본 서식")
+            기관 = str(profile.get("organization") or "").strip()
+            고름 = identifier == 활성
+            카드 = tk.Frame(안쪽, bg="#FFFFFF", highlightthickness=3,
+                          highlightbackground="#2563EB" if 고름 else "#D5DCE8", cursor="hand2")
+            카드.grid(row=번호 // 3, column=번호 % 3, padx=10, pady=10, sticky="n")
+            그림자료 = self._서식_스틸컷(identifier, 260)
+            if 그림자료:
+                그림 = tk.PhotoImage(data=base64.b64encode(그림자료).decode("ascii"))
+                self._키오스크_그림들.append(그림)
+                그림칸 = tk.Label(카드, image=그림, bg="#FFFFFF", cursor="hand2")
+            else:
+                그림칸 = tk.Label(카드, text="예시 그림 없음\n\n'서식 예시 확인'을 누르면\n예시를 만들어 그림이 생겨요",
+                               width=26, height=20, wraplength=220, bg="#EEF2F7", fg="#5B6475", cursor="hand2")
+            그림칸.pack(padx=6, pady=(6, 2))
+            제목 = tk.Label(카드, text=("✔ " if 고름 else "") + 이름 + (f"\n{기관}" if 기관 else ""),
+                          font=("맑은 고딕", 11, "bold"), bg="#FFFFFF", fg="#1E3A8A" if 고름 else "#111827",
+                          wraplength=250, cursor="hand2")
+            제목.pack(padx=6, pady=(0, 8))
+            for 위젯 in (카드, 그림칸, 제목):
+                위젯.bind("<Button-1>", lambda e, i=identifier: 고르기(i))
+        아래 = ttk.Frame(창)
+        아래.pack(fill="x", padx=14, pady=10)
+        ttk.Button(아래, text="닫기", command=창.destroy).pack(side="right")
+        ttk.Button(아래, text="서식예시 폴더 열기", command=self._서식예시_폴더_열기).pack(side="right", padx=6)
+
+    def _서식예시_폴더_열기(self):
+        """서식예시 폴더를 탐색기로 연다(사용자가 예시 파일을 직접 고칠 수 있게)."""
+        self._서식예시_폴더_준비()
         폴더 = 서식예시_폴더()
-        return 폴더 / f"서식예시_{이름}.hwpx", 폴더 / f"서식예시_{이름}.json"
+        try:
+            폴더.mkdir(parents=True, exist_ok=True)
+            os.startfile(str(폴더))
+            self.status_var.set(f"서식예시 폴더를 열었습니다: {폴더}  (예시 파일을 고쳐 저장하면 '한 번에 적용' 때 반영됩니다)")
+        except Exception as exc:
+            self.status_var.set(f"서식예시 폴더를 열지 못했습니다: {exc}")
+
+    def _서식예시_동기화(self, identifier=None):
+        """고른 서식의 예시 파일이 사용자에 의해 바뀌었으면 바뀐 서식 값을 서식 설정에 옮긴다.
+
+        (옮긴 값 경로 목록, 로그 문장)을 돌려준다. 바뀌지 않았으면 ([], None). 예시 파일을 읽지 못하면 설정은 그대로 둔다."""
+        if not 알파_서식예시폴더_사용:
+            return [], None
+        identifier = self._활성_서식_프로파일 if identifier is None else identifier
+        profile = self._프로파일들.get(identifier)
+        if profile is None:
+            return [], None
+        예시경로, 정보경로 = self._서식예시_경로(identifier)
+        정보 = _json_파일_읽기(정보경로)
+        지금 = 서식예시모듈.digest(예시경로)
+        if 지금 is None or 지금 == 정보.get("sha256"):
+            return [], None
+        이름 = profile.get("name") or "기본 서식"
+        원본사본 = self._서식예시_원본사본(정보경로)
+        if not 원본사본.is_file():
+            self._서식예시_기록(예시경로, 정보경로, dict(정보, kind=정보.get("kind") or "user"))
+            return [], f"서식예시 '{예시경로.name}'를 '{이름}' 서식의 비교 기준으로 기록했습니다."
+        try:
+            기준 = 서식예시모듈.snapshot(hwpx_서식_분석(원본사본))
+            새값 = 서식예시모듈.snapshot(hwpx_서식_분석(예시경로))
+        except Exception as exc:
+            return [], f"서식예시 '{예시경로.name}'를 읽지 못해 서식 설정을 바꾸지 않았습니다: {exc}"
+        바뀐 = copy.deepcopy(profile)
+        옮김 = 서식예시모듈.merge_changes(바뀐, 기준, 새값)
+        if 옮김:
+            self._서식_파일_저장(identifier or 기본서식_덮어쓰기_식별자, 바뀐)
+            self._프로파일들[identifier] = 바뀐
+            if identifier == self._활성_서식_프로파일:
+                self._프로파일_전역반영(바뀐)
+                if hasattr(self, "std_bool_vars"):
+                    self._프로파일_선택()
+        self._서식예시_기록(예시경로, 정보경로, 정보)
+        if not 옮김:
+            return [], f"서식예시 '{예시경로.name}'가 바뀌었지만 서식 값은 그대로입니다(글 내용만 바뀜)."
+        return 옮김, (f"서식예시 '{예시경로.name}'에서 바뀐 서식 {len(옮김)}개를 '{이름}' 서식에 반영했습니다: "
+                     f"{서식예시모듈.describe(옮김)}")
 
     def _서식예시_확인(self):
         """지금 고른 서식을 예시 보고서에 입혀 한/글로 보여 준다('서식 예시 확인', 2026-10-04 사용자 요청).
@@ -19793,6 +20986,14 @@ class HwpAutoDocFitGUI:
             정보 = json.loads(정보경로.read_text(encoding="utf-8")) if 정보경로.is_file() else {}
         except Exception:
             정보 = {}
+        if 알파_서식예시폴더_사용 and 예시경로.is_file() and (
+                정보.get("kind") in ("source", "bundled", "user")
+                or (정보.get("sha256") and 서식예시모듈.digest(예시경로) != 정보.get("sha256"))):
+            # 사용자가 넣은 예시 문서·기본 서식 예시·사용자가 고친 예시는 새로 만들어 덮어쓰지 않고 그대로 연다.
+            self.로그표시(f"서식 예시 확인: 서식예시 폴더의 '{예시경로.name}'를 엽니다 — {예시경로}")
+            self.status_var.set(f"'{이름}' 서식 예시를 한/글로 열었습니다(고쳐 저장하면 '한 번에 적용' 때 반영).")
+            self._경로_열기(str(예시경로))
+            return
         if 예시경로.is_file() and 정보.get("서명") == 서명:
             self.로그표시(f"서식 예시 확인: 보관한 '{이름}' 서식 예시를 엽니다 — {예시경로}")
             self.status_var.set(f"'{이름}' 서식 예시를 한/글로 열었습니다.")
@@ -19865,10 +21066,12 @@ class HwpAutoDocFitGUI:
             예시경로 = Path(작업["예시경로"])
             예시경로.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(경로, 예시경로)
-            Path(작업["정보경로"]).write_text(json.dumps(
-                {"서명": 작업["서명"], "이름": 작업["이름"], "식별자": 작업["식별자"], "앱판": APP_VERSION,
-                 "만든때": f"{_datetime.datetime.now():%Y-%m-%d %H:%M:%S}"}, ensure_ascii=False, indent=2),
-                encoding="utf-8")
+            정보 = {"서명": 작업["서명"], "이름": 작업["이름"], "식별자": 작업["식별자"], "앱판": APP_VERSION,
+                  "만든때": f"{_datetime.datetime.now():%Y-%m-%d %H:%M:%S}"}
+            if 알파_서식예시폴더_사용:
+                self._서식예시_기록(예시경로, 작업["정보경로"], dict(정보, kind="generated"))
+            else:
+                Path(작업["정보경로"]).write_text(json.dumps(정보, ensure_ascii=False, indent=2), encoding="utf-8")
             경로 = 예시경로
         except Exception as exc:
             self.로그표시(f"서식 예시를 보관하지 못했습니다(이번 결과만 엽니다): {exc}")
@@ -21449,7 +22652,7 @@ class HwpAutoDocFitGUI:
     def _서식_복사하기(self):
         if self.running or getattr(self, "_서식분석중", False): return
         path = askopenfilename(parent=self.settings_toplevel, title="서식을 복사할 한글파일",
-                               filetypes=[("한글파일", "*.hwp *.hwpx")])
+                               filetypes=[("한글파일·PDF", "*.hwp *.hwpx *.pdf")])
         if not path: return
         self._서식_분석_시작(path, 이름묻기=True)
 
@@ -21488,7 +22691,11 @@ class HwpAutoDocFitGUI:
         self.status_var.set("문서 서식을 분석하고 있습니다…")
         def worker():
             try:
-                result = 한글파일_서식_분석(path)
+                보관 = (Path(tempfile.mkdtemp(prefix="docfit_sample_")) / "sample.hwpx"
+                      if 알파_서식예시폴더_사용 else None)
+                result = 한글파일_서식_분석(path, 보관)
+                if 보관 is not None and 보관.is_file():
+                    result["_서식예시_원본"] = str(보관)     # 저장할 때 서식예시 폴더로 옮긴다(서식 JSON에는 넣지 않음)
                 result["name"] = name
                 if 기관:
                     result["organization"] = 기관
@@ -21504,7 +22711,7 @@ class HwpAutoDocFitGUI:
             items = self.root.tk.splitlist(event.data)
         except Exception:
             items = [event.data]
-        candidates = [str(item).strip() for item in items if Path(str(item).strip()).suffix.lower() in (".hwp", ".hwpx")]
+        candidates = [str(item).strip() for item in items if Path(str(item).strip()).suffix.lower() in (".hwp", ".hwpx", ".pdf")]
         if not candidates:
             messagebox.showwarning(APP_NAME, "HWP 또는 HWPX 예시 문서를 놓아 주세요.", parent=self.root)
             return
@@ -21512,6 +22719,14 @@ class HwpAutoDocFitGUI:
         self._서식_분석_시작(candidates[0], 이름묻기=False)
 
     def _서식_복사완료(self, profile=None, error=None):
+        표본 = profile.pop("_서식예시_원본", None) if isinstance(profile, dict) else None
+        try:
+            self._서식_복사완료_처리(profile, error, 표본)
+        finally:
+            if 표본:
+                shutil.rmtree(Path(표본).parent, ignore_errors=True)
+
+    def _서식_복사완료_처리(self, profile, error, 표본):
         self._서식분석중 = False
         self._서식분석_파일 = ""
         if getattr(self, "copy_format_button", None) is not None:
@@ -21544,6 +22759,8 @@ class HwpAutoDocFitGUI:
             messagebox.showerror(APP_NAME, f"서식 저장 실패\n{exc}", parent=parent)
             return
         self._프로파일들[identifier] = profile
+        if 표본:
+            self._서식예시_원본_보관(identifier, 표본)
         self._활성_서식_프로파일 = identifier
         self._프로파일_목록갱신()
         self._프로파일_선택()
@@ -22021,14 +23238,20 @@ class HwpAutoDocFitGUI:
         idiom_box.pack(fill="x", pady=(0, 12))
         ttk.Label(
             idiom_box,
-            text="앱에 포함된 상용구 파일(HWP.IDO)을 한/글의 상용구 전용 폴더에 저장합니다.\n"
+            text=("C:\\HWP_AUTODOCFIT\\글자상용구의 상용구 파일(HWP.IDO)과 본문상용구 폴더의 본문 상용구를\n"
+                  if 알파_서식예시폴더_사용 else "앱에 포함된 상용구 파일(HWP.IDO)을 ")
+                 + "한/글의 상용구 전용 폴더에 저장합니다.\n"
                  "(예: 한/글 2020 → %AppData%\\HNC\\User\\Hwp\\60)\n"
                  "진행 전에 한/글을 완전히 종료해 주세요.",
             style="Hint.TLabel",
             wraplength=650,
             justify="left",
         ).pack(anchor="w", pady=(0, 6))
-        ttk.Button(idiom_box, text="상용구 파일저장", command=self._상용구파일_저장_클릭).pack(anchor="w")
+        상용구_줄 = ttk.Frame(idiom_box)
+        상용구_줄.pack(anchor="w")
+        ttk.Button(상용구_줄, text="상용구 파일저장", command=self._상용구파일_저장_클릭).pack(side="left")
+        if 알파_서식예시폴더_사용:
+            ttk.Button(상용구_줄, text="앱 폴더 열기(C:\\HWP_AUTODOCFIT)", command=self._앱폴더_열기).pack(side="left", padx=(6, 0))
         container = tabs["spacing"]
         ttk.Label(container,
                   text=f"실행창의 ‘자간 정리 · 세부 작업’과 같은 {len(stages_for_mode('spacing'))}단계입니다. 여기서 켜고 끄면 세부 작업 창에도 그대로 반영됩니다.",
@@ -22275,6 +23498,7 @@ class HwpAutoDocFitGUI:
         try:
             설정값 = {
                 "prevent_word_split": bool(self.prevent_word_split_var.get()),
+                "ratio_shrink": bool(self.ratio_shrink_var.get()),
                 "punctuation": bool(self.punctuation_var.get()),
                 "punctuation_threshold": str(self.punctuation_threshold_var.get()),
                 "keep_punctuation_set_together": bool(self.keep_punctuation_set_var.get()),
@@ -22391,9 +23615,19 @@ class HwpAutoDocFitGUI:
             self._폰트목록_새로고침()
 
     def _상용구파일_저장_클릭(self):
-        """앱에 포함된 상용구 파일(HWP.IDO)을 한/글의 상용구 전용 폴더에 복사한다."""
+        """상용구 파일(HWP.IDO)과 본문 상용구(*.HWP)를 한/글의 상용구 전용 폴더에 복사한다.
+
+        알파: 앱 폴더(C:\\HWP_AUTODOCFIT)의 글자상용구·본문상용구 폴더 파일을 쓴다(사용자가 바꿔 둔 파일 포함).
+        글자상용구 폴더에 HWP.IDO가 없으면 앱에 포함된 파일을 쓴다."""
         부모창 = self.settings_toplevel or self.root
-        원본 = 번들_상용구_파일_찾기()
+        try:
+            상용구_폴더_준비()
+        except Exception as e:
+            self.로그표시(f"상용구 폴더 준비 실패(앱에 포함된 파일로 진행): {e}")
+        글자 = 글자상용구_폴더()
+        원본 = (글자 / 상용구_파일명) if 글자 is not None and (글자 / 상용구_파일명).is_file() else 번들_상용구_파일_찾기()
+        본문 = 본문상용구_폴더()
+        본문_파일들 = [f for f in 본문.iterdir() if f.is_file()] if 본문 is not None and 본문.is_dir() else []
         if 원본 is None:
             messagebox.showerror(
                 APP_NAME,
@@ -22425,14 +23659,28 @@ class HwpAutoDocFitGUI:
         try:
             대상_폴더.mkdir(parents=True, exist_ok=True)
             shutil.copy2(원본, 대상_경로)
+            if 본문_파일들:
+                (대상_폴더 / "IDIOM").mkdir(parents=True, exist_ok=True)
+                for 파일 in 본문_파일들:
+                    shutil.copy2(파일, 대상_폴더 / "IDIOM" / 파일.name)
         except Exception as e:
             messagebox.showerror(APP_NAME, f"상용구 파일 저장에 실패했습니다: {e}", parent=부모창)
             return
+        본문_안내 = f"\n본문 상용구 {len(본문_파일들)}개: {대상_폴더 / 'IDIOM'}" if 본문_파일들 else ""
         messagebox.showinfo(
             APP_NAME,
-            f"상용구 파일을 저장했습니다.\n{대상_경로}\n\n한/글을 다시 시작하면 적용됩니다.",
+            f"상용구 파일을 저장했습니다.\n{대상_경로}{본문_안내}\n\n한/글을 다시 시작하면 적용됩니다.",
             parent=부모창,
         )
+
+    def _앱폴더_열기(self):
+        """앱 폴더(C:\\HWP_AUTODOCFIT: dll·서식예시·글자상용구·본문상용구)를 탐색기로 연다."""
+        try:
+            상용구_폴더_준비()
+            HWP_AUTOMATION_DIR.mkdir(parents=True, exist_ok=True)
+            os.startfile(str(HWP_AUTOMATION_DIR))
+        except Exception as e:
+            messagebox.showerror(APP_NAME, f"앱 폴더를 열지 못했습니다: {e}", parent=self.settings_toplevel or self.root)
 
     def _설정_초기화_클릭(self):
         if self.running:
@@ -22447,6 +23695,7 @@ class HwpAutoDocFitGUI:
 
         self.always_on_top_var.set(기본_설정["always_on_top"])
         self.prevent_word_split_var.set(기본_설정["prevent_word_split"])
+        self.ratio_shrink_var.set(기본_설정["ratio_shrink"])
         self.punctuation_var.set(기본_설정["punctuation"])
         self.punctuation_threshold_var.set(기본_설정["punctuation_threshold"])
         self.keep_punctuation_set_var.set(기본_설정["keep_punctuation_set_together"])
@@ -22966,6 +24215,14 @@ class HwpAutoDocFitGUI:
         if mode in ("format", "all"):
             self.stdformat_var.set(True)
 
+        # 알파: 적용할 서식의 예시 파일(서식예시 폴더)을 사용자가 고쳤으면 바뀐 서식 값을 먼저 설정에 옮긴다.
+        서식예시_알림 = None
+        if mode in ("format", "all") and not getattr(self, "_서식예시_작업", None):
+            try:
+                _, 서식예시_알림 = self._서식예시_동기화()
+            except Exception as exc:
+                서식예시_알림 = f"서식예시 파일 검사 실패(서식 설정은 그대로): {exc}"
+
         # 중단 버튼으로 멈춘 작업과 같은 모드로 다시 실행하면, 이미 끝낸
         # 문서는 건너뛰고 그 다음 문서부터 이어서 진행한다. 모드가 다르면
         # 새 작업으로 보고 처음부터 다시 시작한다.
@@ -22990,6 +24247,8 @@ class HwpAutoDocFitGUI:
         self.로그표시("=" * 45)
         self.로그표시(f"{APP_NAME} 작업 시작 — {dict(spacing='자간조정', unify='서식통일', format='서식적용', all='일괄적용')[mode]}")
         self.로그표시(f"문서: {len(self.files)}개")
+        if 서식예시_알림:
+            self.로그표시(서식예시_알림)
         if 작업범위 is None:
             self.로그표시("작업 범위: 문서 전체")
         else:
@@ -23154,6 +24413,41 @@ class HwpAutoDocFitGUI:
         임시.lift()
         임시.focus_force()
         return 임시, 임시
+
+    def _절약_완료창(self, 성공, 실패):
+        """작업 완료창(개발자 모드 끔): 검은 고양이 그림과 '당신의 소중한 시간 00분 00초가 절약되었습니다!'만 보인다.
+
+        실패한 문서가 있으면 절약 시간 대신 처리하지 못한 문서 수를 알린다(자세한 내용은 처리 기록·개발자 모드)."""
+        창 = tk.Toplevel(self.root)
+        창.title(APP_NAME)
+        창.resizable(False, False)
+        창.configure(bg="#FFFFFF")
+        창.transient(self.root)
+        그림경로 = 번들_고양이_그림_찾기()
+        if 그림경로 is not None:
+            try:
+                그림 = tk.PhotoImage(file=str(그림경로))
+                창._고양이 = 그림            # 그림이 사라지지 않게 창에 붙잡아 둔다
+                tk.Label(창, image=그림, bg="#FFFFFF").pack(padx=40, pady=(24, 4))
+            except tk.TclError:
+                pass
+        if 실패 == 0:
+            문구 = f"당신의 소중한 시간 {절약시간_분초_표시(self._절약초 or 0)}가 절약되었습니다!"
+        else:
+            문구 = f"문서 {실패}개를 처리하지 못했습니다. 처리 기록을 확인해 주세요. (성공 {성공}개)"
+        tk.Label(창, text=문구, bg="#FFFFFF", fg="#111827", font=("맑은 고딕", 14, "bold"),
+                 wraplength=560, justify="center").pack(padx=32, pady=(4, 16))
+        확인 = ttk.Button(창, text="확인", command=창.destroy)
+        확인.pack(pady=(0, 22))
+        창.bind("<Return>", lambda e: 창.destroy())
+        창.bind("<Escape>", lambda e: 창.destroy())
+        창.update_idletasks()
+        x = 창.winfo_screenwidth() // 2 - 창.winfo_reqwidth() // 2
+        y = 창.winfo_screenheight() // 3 - 창.winfo_reqheight() // 3
+        창.geometry(f"+{max(0, x)}+{max(0, y)}")
+        창_맨앞으로(창)
+        확인.focus_set()
+        return 창
 
     def _알림(self, 함수, *args, **kwargs):
         """웹 화면 모드에서도 메시지 창이 보이도록 임시 부모로 띄운다."""
@@ -23582,6 +24876,7 @@ class HwpAutoDocFitGUI:
                     if self._안내키:
                         self._안내지남.add(self._안내키)
                     self._안내키 = "done" if item[2] == 0 else self._안내키
+                    self._절약초 = None
                     self._작업결과_표시(item[2] == 0)
                     최종검수 = item[6] if len(item) >= 8 else None
                     if 최종검수:
@@ -23594,7 +24889,11 @@ class HwpAutoDocFitGUI:
                     else:
                         self.status_var.set(f"처리 완료 · 성공 {item[1]}개 / 실패 {item[2]}개")
                     self.로그표시("=" * 45 + f"\n작업 완료 - 성공 {item[1]}개 / 실패 {item[2]}개\n" + "=" * 45)
-                    if not self.closing:
+                    if not self.closing and not self.developer_mode_var.get():
+                        # 개발자 모드가 꺼져 있으면 절약한 시간만 귀여운 검은 고양이와 함께 보여 준다(2026-10-11 사용자 요청).
+                        # 자세한 완료 안내(성공·실패 건수·세부 작업·최종 검수)는 개발자 모드에서만 보인다.
+                        self._절약_완료창(item[1], item[2])
+                    elif not self.closing:
                         안내문 = f"문서 처리가 완료되었습니다.\n\n성공: {item[1]}개\n실패: {item[2]}개"
                         if len(item) >= 6:
                             안내문 += (

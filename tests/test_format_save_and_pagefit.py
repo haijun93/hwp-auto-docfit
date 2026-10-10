@@ -65,7 +65,7 @@ class FormatSaveTest(unittest.TestCase):
         with patch.dict(fn.__globals__, {
             '단어모드_서식보관': reader, '단어모드_자간적용': lambda *a: None,
             '단어모드_장평적용': lambda *a: None, '최소_성공단계_탐색': lambda *a, **k: 3,
-            '진단로그': Mock(),
+            '진단로그': Mock(), '장평_줄이기_사용': True,
         }):
             self.assertTrue(fn((0, 0, 0), (0, 0, 3), (0, 0, 0), (0, 0, 9), 5, 보관=runs))
         reader.assert_not_called()
