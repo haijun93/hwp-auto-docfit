@@ -34,7 +34,7 @@ ALIGN_TYPES = ("JUSTIFY", "LEFT", "RIGHT", "CENTER", "DISTRIBUTE", "DISTRIBUTE_S
 LINE_TYPES = ("PERCENT", "FIXED", "BETWEEN_LINES", "AT_LEAST")
 # 한글 줄 나눔 기준(breakSetting breakNonLatinWord): 어절 단위 / 글자 단위
 BREAK_TYPES = ("KEEP_WORD", "BREAK_WORD")
-# 내어쓰기 기준: 둘째 줄이 라벨 뒤 글 시작 / 기호 뒤 글 시작에 맞음, 고정 값, 내어쓰기 없음
+# 내어쓰기 기준: 둘째 줄이 라벨 규칙(콜론 라벨이면 콜론 뒤 본문, 괄호 라벨 '( )'은 2026-10-10부터 기호 뒤) / 기호 뒤 글 시작에 맞음, 고정 값, 내어쓰기 없음
 HANGING_RULES = ("after_label", "after_marker", "fixed", "none")
 # 쪽 번호 컨트롤(hp:pageNum)에서 복사하는 속성: 위치(BOTTOM_CENTER 등)·번호 모양(DIGIT 등)·줄표 글자('-')
 PAGE_NUMBER_KEYS = ("pos", "formatType", "sideChar")
@@ -50,7 +50,7 @@ CHOICE_LABELS = {
     "JUSTIFY": "양쪽", "LEFT": "왼쪽", "RIGHT": "오른쪽", "DISTRIBUTE": "배분", "DISTRIBUTE_SPACE": "나눔",
     "PERCENT": "글자에 따라(%)", "FIXED": "고정 값", "BETWEEN_LINES": "여백만 지정", "AT_LEAST": "최소",
     "KEEP_WORD": "어절", "BREAK_WORD": "글자",
-    "after_label": "라벨 뒤 글 시작", "after_marker": "기호 뒤 글 시작", "fixed": "고정 값", "none": "없음",
+    "after_label": "라벨 규칙(콜론 라벨 뒤 본문, 괄호 라벨은 기호 뒤)", "after_marker": "기호 뒤 글 시작", "fixed": "고정 값", "none": "없음",
     "SOLID": "실선", "DASH": "파선", "DOT": "점선", "DASH_DOT": "일점쇄선", "DASH_DOT_DOT": "이점쇄선",
     "LONG_DASH": "긴 파선", "CIRCLE": "원형 점선", "DOUBLE_SLIM": "이중 실선",
     "SLIM_THICK": "얇고 굵은 이중선", "THICK_SLIM": "굵고 얇은 이중선", "SLIM_THICK_SLIM": "삼중선",
