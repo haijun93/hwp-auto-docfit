@@ -1,22 +1,141 @@
 # 한글편집 후처리
 
-다 쓴 한글 보고서의 **줄 끝 단어, 제각각인 글꼴, 내어쓰기, 쪽맞춤과 표 모양**을 정리하는 Windows 프로그램입니다.
-문서를 넣고 작업을 고르면 설치된 한/글을 자동으로 조작합니다. **원본은 덮어쓰지 않고, 결과를 새 HWPX 파일로 저장합니다.**
+### 보고서 마무리 30분, 버튼 한 번으로.
 
-**[Windows 실행 파일 내려받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/permalink/latest)** · [변경 사항](releases/) · [GitHub](https://github.com/haijun93/hwp-auto-docfit) · [GitLab](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
+줄 끝에서 갈라진 단어, 제각각인 글꼴, 삐뚤어진 내어쓰기, 한두 줄 넘친 마지막 쪽까지.
+**다 쓴 한글(HWP·HWPX) 보고서를 넣고 「정리 시작」만 누르세요.** 설치된 한/글을 자동으로 조작해 공문서 모양으로 다듬어 줍니다.
 
-현재 안내 기준: **1.72 Beta 16**(테스트 베타, 핫픽스). 중요한 문서는 사본으로 먼저 시험하고 결과를 확인해 주세요.
+**[⬇ Windows 실행 파일 내려받기 (무료)](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/permalink/latest)** · 현재 **v1.72 Beta 16** · [변경 사항](releases/) · [GitHub](https://github.com/haijun93/hwp-auto-docfit) · [GitLab](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
 
-Beta 16은 **본문 글자가 바뀌던 결함 두 가지를 고친 핫픽스**입니다. 고정폭 빈칸 같은 숨은 글자가 있는 문단에서 쉼표·콜론·따옴표 정리가 엉뚱한 글자를 지우던 문제(`275천원,` → `275천, ,`, `주민과의 대화` → `주민과의 ’화`)와, 날짜 정리가 시각을 날짜로 잘못 보던 문제(`2026. 10. 4. 15:00` → `15.:00`)를 고쳤습니다([변경 사항](releases/v1.72-beta.16.md)). 용어 **문두기호**는 **항목기호**로 바꿨습니다. Beta 15는 **자동 업데이트 뒤 새 버전이 "Failed to load Python DLL"로 켜지지 않던 오류**를 고치고 **표 칸 안 날짜를 한 줄로 표기**하는 핫픽스입니다([변경 사항](releases/v1.72-beta.15.md)). Beta 14는 핫픽스로, **괄호 라벨 `( )`이 있는 문장의 내어쓰기 기준**을 라벨 뒤 본문이 아니라 항목기호 뒤 첫 글자(`(`)로 바꿨습니다(콜론 `:` 라벨은 그대로). [이번 버전 변경 사항](releases/v1.72-beta.14.md)을 참고하세요. Beta 13은 **자동 업데이트의 프로세스 대기·새 앱 시작 확인, 편집 후 문단 글 다시 읽기**를 보완한 버전입니다.
+[![프로그램 사용 시연 영상 (약 5분). 클릭하면 고화질 영상이 열립니다.](docs/media/overview-demo.gif)](docs/media/overview-demo.mp4)
+
+**[▶ 5분 시연 영상 보기](docs/media/overview-demo.mp4)**
+
+---
+
+## 이런 분께 딱 맞습니다
+
+- 보고서를 다 썼는데 **줄 끝 단어가 `거점(지 / 구)`처럼 갈라져** 한 줄씩 자간을 만지고 있는 분
+- 여러 부서 자료를 모았더니 **□·ㅇ·- 글꼴과 크기가 제각각**인 취합 담당자
+- **마지막 쪽에 두 줄만 넘쳐** 문단 간격을 이리저리 줄이고 있는 분
+- 메모나 텍스트 초안을 **기관 보고서 양식으로 바로** 만들고 싶은 분
+
+## 사용법은 3단계
+
+| ① 넣기 | ② 고르기 | ③ 누르기 |
+|---|---|---|
+| 문서를 끌어다 놓기 | **자간 정리**(줄 끝만) 또는 **한 번에 적용**(보고서 모양까지) | **정리 시작** → 결과 파일 열기 |
+
+<table>
+<tr>
+<td width="50%" align="center"><b>자간 정리</b> — 실제 처리 화면<br><a href="docs/media/samchein/spacing-guide.mp4"><img src="docs/media/samchein/spacing-guide.gif" alt="자간 정리 실제 처리 과정"></a></td>
+<td width="50%" align="center"><b>한 번에 적용</b> — 실제 처리 화면<br><a href="docs/media/samchein/all-guide.mp4"><img src="docs/media/samchein/all-guide.gif" alt="한 번에 적용 실제 처리 과정"></a></td>
+</tr>
+</table>
+
+**원본은 절대 덮어쓰지 않습니다.** 결과는 같은 폴더에 새 HWPX 파일로 저장됩니다.
+
+---
+
+## 이렇게 달라집니다
+
+> 움직이는 그림은 **전 → 후**를 번갈아 보여 줍니다. **빨간색이 바뀌는 부분**입니다.
+
+### ✂️ 줄 끝 단어 갈라짐, 자동으로 한 줄에
+`거점(지 / 구)`, `수 / 립하여`처럼 갈라진 어절을 자간·장평을 살짝 조절해 한 줄에 모읍니다. **글은 한 글자도 바꾸지 않습니다.**
+
+![자간 정리 전후](docs/media/anim/spacing.gif)
+
+### 📄 텍스트 초안 → 보고서 양식, 한 번에
+제목·개요 표, 기호별 글꼴과 간격, 내어쓰기, 쪽 배치까지 한 번에. 우리 기관 예시 보고서를 등록하면 **그 서식 그대로** 복사합니다.
+
+![한 번에 적용 전후](docs/media/anim/all-in-one.gif)
+
+### 📏 내어쓰기, 둘째 줄까지 칼같이
+
+<table>
+<tr>
+<td width="50%" align="center">항목기호 뒤 글자에 맞춤<br><img src="docs/media/anim/hanging-indent.gif" alt="내어쓰기 전후"></td>
+<td width="50%" align="center">콜론 라벨은 콜론 뒤 본문에 맞춤<br><img src="docs/media/anim/hanging-indent-colon.gif" alt="콜론 라벨 내어쓰기 전후"></td>
+</tr>
+</table>
+
+### 📉 마지막 쪽 두 줄 넘침, 앞쪽으로 쏙
+
+<table>
+<tr>
+<td width="50%" align="center">넘친 몇 줄을 앞쪽에 담기<br><img src="docs/media/anim/page-fit.gif" alt="쪽 수 맞춤 전후"></td>
+<td width="50%" align="center">제목만 쪽 끝에 남지 않게<br><img src="docs/media/anim/page-group.gif" alt="쪽 묶음 전후"></td>
+</tr>
+</table>
+
+### 🎨 제각각인 서식, 대표 모양으로 통일
+`□`는 `□`끼리, `ㅇ`는 `ㅇ`끼리 비교해 **다른 것만** 골라 고칩니다.
+
+<table>
+<tr>
+<td width="50%" align="center">글꼴·크기·색 통일<br><img src="docs/media/anim/style-unify.gif" alt="서식 통일 전후"></td>
+<td width="50%" align="center">예시 보고서 서식 복사<br><img src="docs/media/anim/format-copy.gif" alt="서식 복사 전후"></td>
+</tr>
+</table>
+
+### 📊 표도 깔끔하게
+
+<table>
+<tr>
+<td width="33%" align="center">박스 문자 → 진짜 표<br><img src="docs/media/anim/table-convert.gif" alt="표 변환 전후"></td>
+<td width="33%" align="center">표 칸 너비 맞춤<br><img src="docs/media/anim/table-width.gif" alt="표 너비 전후"></td>
+<td width="33%" align="center">머리글·본문 서식<br><img src="docs/media/anim/table-format.gif" alt="표 서식 전후"></td>
+</tr>
+</table>
+
+### ✨ 자잘한 손질도 알아서
+
+<table>
+<tr>
+<td width="33%" align="center">짧은 마지막 줄 합치기<br><img src="docs/media/anim/short-line.gif" alt="짧은 줄 전후"></td>
+<td width="33%" align="center">쉼표·괄호·날짜 표기<br><img src="docs/media/anim/spacing-rules.gif" alt="띄어쓰기 규칙 전후"></td>
+<td width="33%" align="center">준말·라벨 → 제목·개요 표<br><img src="docs/media/anim/abbreviation.gif" alt="준말 전후"></td>
+</tr>
+<tr>
+<td align="center">문두 라벨 굵게<br><img src="docs/media/anim/labels.gif" alt="라벨 전후"></td>
+<td align="center">별표 주석 위첨자<br><img src="docs/media/anim/asterisk.gif" alt="별표 전후"></td>
+<td align="center">원본 쪽 구성 그대로<br><img src="docs/media/anim/original-layout.gif" alt="원본 쪽 구성 전후"></td>
+</tr>
+</table>
+
+표 칸 날짜는 **언제나 한 줄로**, `ㅁ → □`, 공문 날짜 표기(`2026. 10. 7.`)도 함께 정리합니다.
+
+---
+
+## 믿고 쓸 수 있도록
+
+- **원본 보존** — 언제나 사본으로 작업하고 결과는 새 파일로 저장합니다.
+- **내 PC 안에서만** — 문서 내용을 외부 서버로 보내지 않습니다.
+- **글자 보존 검사** — 처리 뒤 결과를 다시 열어 본문·표·그림이 그대로인지 검사합니다. Beta 16은 실제 34쪽 취합 문서에서 **본문 글자 변형 0건**을 확인했습니다.
+- **안전한 업데이트** — 새 버전은 SHA-256 해시를 확인한 뒤에만 설치하고, 문제가 있으면 이전 버전으로 되돌립니다.
+
+**필요한 것:** Windows 10·11(64비트) + 문서를 편집할 수 있는 **한컴오피스 한/글**(2020에서 검증). Python이나 별도 설치는 필요 없습니다.
+
+> 테스트 베타입니다. 중요한 문서는 사본으로 먼저 시험해 보세요.
+
+**[⬇ 지금 내려받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/permalink/latest)** · [▶ 예제 파일로 5분 체험하기](#examples) · [자세한 사용 설명서](#manual)
+
+---
+
+<a id="manual"></a>
+
+# 자세한 사용 설명서
+
+이번 버전에서 바뀐 점: **Beta 16**은 숨은 글자가 있는 문단과 날짜 뒤 시각(`15:00`)에서 본문 글자가 바뀌던 결함을 고친 핫픽스입니다([변경 사항](releases/v1.72-beta.16.md)). 용어 **문두기호**는 **항목기호**로 바꿨습니다.
+
+<details>
+<summary><b>기능별 자세한 설명과 옵션 위치 펼치기</b></summary>
 
 ## 어떤 결과가 나오나요?
 
 아래 기능 설명의 **전·후 비교 이미지에서 빨간색은 바뀌는 글자·서식·위치**입니다. 바뀌지 않는 부분은 검은색으로 표시합니다. 새 파일이나 검토 결과를 만드는 기능은 새로 생기는 정보를 빨간색으로 표시합니다.
 **자간 정리·한 번에 적용의 두 이미지는 `test4`의 「보고서 예시 파일(한번에 적용).txt」 사본을 Beta 13으로 실제 처리하고 한/글 자체 PDF 출력으로 만든 사례**입니다. 나머지는 기능 설명용 도해입니다. 빨간색은 이미지의 비교 표시이며 결과 HWPX에는 넣지 않았습니다. 이미지를 누르면 크게 볼 수 있습니다.
-
-[![프로그램 사용 시연 영상 (약 5분). 클릭하면 고화질 영상이 열립니다.](docs/media/overview-demo.gif)](docs/media/overview-demo.mp4)
-
-**[▶ 고화질 영상으로 보기 — 약 5분](docs/media/overview-demo.mp4)**
 
 ### 1. 자간 정리 — 줄 끝에서 갈라진 단어를 한 줄로
 
@@ -88,7 +207,7 @@ Beta 16은 **본문 글자가 바뀌던 결함 두 가지를 고친 핫픽스**�
 
 **자간 정리 또는 한 번에 적용 → 세부 작업 → 짧은 마지막 줄 병합**에서 선택하고, 설정에서 기준 글자 수를 확인합니다.
 
-처음이라면 **설치 → 예제 한 개 정리 → 결과 비교**까지만 해 보세요. 서식 등록이나 세부 설정은 나중에 사용해도 됩니다.
+</details>
 
 ## 필요한 곳부터 읽으세요
 
