@@ -344,6 +344,7 @@ def XML_자식_추가(parent, prototype, tag=None, attrib=None):
     return child
 from docfit_core.style_inventory import analyze_style_inventory, build_style_sample, inventory_markdown
 from docfit_core import report_header as 보고서머리
+from docfit_core import connector_tabs as 연결부호탭
 from docfit_core import format_elements as 서식요소
 from docfit_core.table_width import fit_table as 표너비_맞춤, is_target as 표너비_대상인가
 from docfit_core import (
@@ -4105,6 +4106,66 @@ def 제목개요폭_hwpx_처리(source, target=None, selections=None):
     로그(f"제목·개요 표 가로 크기 맞춤: {count}개 (쪽 좌우 여백 사이 최대 폭"
          + (", 표준서식 편집 여백 반영)" if _예정_좌우여백() else ")"))
     return count
+
+
+알파_연결부호_탭정렬_사용 = True
+
+
+def 연결부호탭_hwpx_처리(source, target=None, selections=None):
+    """연속된 연결 부호 문장(목차·일정표)을 한/글 목차 점선처럼 채울 모양이 있는 왼쪽 정렬 탭으로 맞춘다(알파, 2026-10-10).
+
+    오른쪽 글의 첫 글자가 내어쓰기처럼 한 세로선에 서고, 점·선의 길이와 개수는 한/글이 줄마다 채운다.
+    여러 칸 빈칸 연결 부호는 채울 모양 없이 탭 위치만 맞춘다. 글자는 연결 부호만 탭으로 바뀐다.
+    """
+    with zipfile.ZipFile(source) as z:
+        contents = {n: z.read(n) for n in z.namelist()}
+    for name, data in contents.items():
+        if name.startswith('Contents/') and name.endswith('.xml'):
+            for _, pair in ET.iterparse(io.BytesIO(data), events=('start-ns',)):
+                if not re.fullmatch(r'ns\d+', pair[0]): XML_네임스페이스_등록(*pair)
+    header = safe_xml_fromstring(contents['Contents/header.xml'])
+    names = sorted((n for n in contents if re.fullmatch(r'Contents/section\d+\.xml', n)),
+                   key=lambda n: int(re.search(r'section(\d+)', n).group(1)))
+    roots = {n: safe_xml_fromstring(contents[n]) for n in names}
+    if selections is None:
+        if not 알파_연결부호_탭정렬_사용:
+            return {n: [] for n in names}
+        return {n: [i for i, _ in enumerate(
+            [g for c in [root] + [x for x in root.iter() if 제목_xml이름(x) == 'subList'] for g in 연결부호탭.groups_in(c)])]
+            for n, root in roots.items()}
+    if not any(selections.values()):
+        if target is not None: shutil.copyfile(source, target)
+        return 0
+    본문폭 = {n: _최종_본문폭(root) or _구역_본문폭(root) for n, root in roots.items()}
+    부모구역 = {}
+    for n, root in roots.items():
+        for x in root.iter():
+            if 제목_xml이름(x) == 'subList':
+                부모구역[id(x)] = n
+
+    def 폭(container):
+        if 제목_xml이름(container) != 'subList':
+            return next((본문폭[n] for n, r in roots.items() if r is container), 0)
+        cell = next((tc for r in roots.values() for tc in r.iter() if 제목_xml이름(tc) == 'tc' and container in list(tc)), None)
+        if cell is None:
+            return 0
+        sz, mg = 제목_자식(cell, 'cellSz'), 제목_자식(cell, 'cellMargin')
+        try:
+            return int(sz.get('width')) - (int(mg.get('left', 0)) + int(mg.get('right', 0)) if mg is not None else 0)
+        except (TypeError, ValueError, AttributeError):
+            return 0
+
+    통계 = 연결부호탭.align_connectors(header, [roots[n] for n in names], 폭)
+    if not 통계.get("paragraphs"):
+        shutil.copyfile(source, target)
+        return 0
+    for n in names:
+        contents[n] = ET.tostring(roots[n], encoding='utf-8', xml_declaration=True)
+    contents['Contents/header.xml'] = ET.tostring(header, encoding='utf-8', xml_declaration=True)
+    _hwpx_안전_저장(contents, target)
+    로그(f"연결 부호 탭 정렬: 묶음 {통계['groups']}개·문단 {통계['paragraphs']}개를 목차 점선(왼쪽 정렬 탭)으로 맞춤"
+         + (f"(본문 폭 때문에 탭을 앞으로 당긴 묶음 {통계['pulled']}개)" if 통계.get('pulled') else ""))
+    return 통계["paragraphs"]
 
 
 def 상자서식_hwpx_처리(source, target=None, selections=None):
@@ -10571,6 +10632,137 @@ def 단어모드_마지막줄_짧은잔여인가(boundary):
         hwp.SetPos(*original)
 
 
+# 연결 부호(사용자 규칙, 2026-10-10): 왼쪽·오른쪽 어절을 뜻으로 잇는 부호는 세 가지다 — 점('......', '……'),
+# 선('------'), 여러 칸 빈칸('세부내용      3쪽'). 부호의 개수에는 뜻이 없다. '왼쪽 어절 + 연결 부호 + 오른쪽 어절'을
+# 한 어절(연결 단위)로 보고, 줄 경계에 걸치면 ① 부호 글자만 자간을 한도를 넘어 한/글 최대(-50%)까지 줄이고,
+# ② 그래도 안 되면 부호 개수를 끝에서부터 최소한으로 줄인다(2개는 남김). 둘 다 안 되면 원래대로 되돌린다.
+알파_연결부호_맞춤_사용 = True
+연결부호_최소개수 = 2
+_연결부호 = re.compile(r"[-‐‑–—―]{3,}|[.·∙•‥…]{3,}|(?<=\S) {3,}(?=\S)|(?<=\S)\u3000{2,}(?=\S)")
+
+
+def 연결부호_구간(글):
+    """글 안의 가장 긴 연결 부호 구간 (시작, 끝). 없으면 None(순수 함수)."""
+    찾음 = max(_연결부호.finditer(글 or ""), key=lambda m: m.end() - m.start(), default=None)
+    return (찾음.start(), 찾음.end()) if 찾음 else None
+
+
+def 연결부호_단위들(글):
+    """[(단위 시작, 부호 시작, 부호 끝, 단위 끝)]: 연결 부호와 양옆 어절(빈칸 하나는 건너 붙인다)(순수 함수)."""
+    결과 = []
+    글 = 글 or ""
+    for m in _연결부호.finditer(글):
+        왼 = m.start()
+        if 왼 > 0 and 글[왼 - 1] == " " and not m.group(0).startswith(" "):
+            왼 -= 1
+        while 왼 > 0 and not 글[왼 - 1].isspace():
+            왼 -= 1
+        오 = m.end()
+        if 오 < len(글) and 글[오] == " " and not m.group(0).endswith(" "):
+            오 += 1
+        while 오 < len(글) and not 글[오].isspace():
+            오 += 1
+        결과.append((왼, m.start(), m.end(), 오))
+    return 결과
+
+
+def 연결부호_전체_맞춤():
+    """본문 문단의 연결 단위가 줄 경계에 걸쳤으면 부호를 줄여 한 줄에 맞춘다."""
+    if not 알파_연결부호_맞춤_사용:
+        return True
+    통계 = {"대상": 0, "자간": 0, "개수": 0, "미해결": 0}
+    순회_시작()
+    while True:
+        if 중단_요청됨():
+            return False
+        위치 = hwp.GetPos()
+        if 위치[0] == 0:
+            글 = 현재문단_텍스트()
+            단위들 = 연결부호_단위들(글.rstrip("\r\n")) if 글 else []
+            if 단위들:
+                문단시작 = tuple(hwp.GetPos())
+                for 단위 in reversed(단위들):
+                    결과 = _연결단위_맞춤(문단시작, 단위)
+                    if 결과 is None:
+                        return False
+                    if 결과:
+                        통계["대상"] += 1
+                        통계[결과] += 1
+                hwp.SetPos(*문단시작)
+        if not 범위_다음_문단으로_진행():
+            break
+    if 통계["대상"]:
+        로그(f"[연결 부호] 줄에 걸친 연결 단위 {통계['대상']}개: 부호 자간 축소 {통계['자간']} / 개수 줄임 {통계['개수']} / "
+             f"미해결 {통계['미해결']}")
+    return True
+
+
+def _연결단위_맞춤(문단시작, 단위):
+    """한 연결 단위를 맞춘다. '자간'·'개수'·'미해결'(걸쳤던 단위), ''(걸치지 않음·대상 아님), None(중단)."""
+    단위시작, 부호시작, 부호끝, 단위끝 = 단위
+    try:
+        위치 = [문단_위치(문단시작, 단위시작), 문단_위치(문단시작, 부호시작),
+              문단_위치(문단시작, 부호끝, 끝쪽=True), 문단_위치(문단시작, 단위끝, 끝쪽=True)]
+    except RuntimeError:
+        return ""
+    a, cs, ce, b = ((문단시작[0], 문단시작[1], 문단시작[2] + x) for x in 위치)
+
+    def 한줄인가(끝):
+        return 단어모드_줄범위(a)[1][2] >= 끝[2]
+
+    if 한줄인가(b):
+        return ""
+    # 단위가 줄 하나보다 길면(줄 첫머리에서 시작해도 넘침) 맞출 수 없다.
+    if 단어모드_줄범위(a)[0][2] == a[2]:
+        return "미해결"
+    # ① 부호 글자만 자간을 한도 넘어 줄인다.
+    runs = 단어모드_자간보관(cs, ce)
+    if runs is not None:
+        상한 = 50 + min((v for _, _, vs in runs for v in vs), default=0)
+        바뀜 = 성공 = False
+
+        def 확인(step):
+            nonlocal 바뀜
+            바뀜 = True
+            단어모드_자간적용(runs, -step)
+            return 한줄인가(b)
+
+        try:
+            step = 최소_성공단계_탐색(max(0, 상한), 확인)
+            성공 = step is not None
+            if 성공:
+                진단로그(f"[연결 부호] 부호 자간 -{step}%(한도 초과 허용)로 한 줄에 맞춤")
+                return "자간"
+        except _단계탐색_중단:
+            return None
+        finally:
+            if 바뀜 and not 성공:
+                단어모드_자간적용(runs, 0)
+    # ② 부호 개수를 끝에서부터 하나씩 줄인다(2개는 남김).
+    지운 = []
+    끝 = b
+    부호수 = ce[2] - cs[2]
+    while 부호수 - len(지운) > 연결부호_최소개수:
+        if 중단_요청됨():
+            return None
+        자리 = (ce[0], ce[1], ce[2] - len(지운) - 1)
+        단어모드_범위선택(자리, (자리[0], 자리[1], 자리[2] + 1))
+        글자 = 현재선택영역_텍스트()
+        if not 글자 or hwp_run("Delete") is False:
+            hwp_run("Cancel")
+            break
+        지운.append(글자)
+        끝 = (끝[0], 끝[1], 끝[2] - 1)
+        if 한줄인가(끝):
+            진단로그(f"[연결 부호] 부호 {len(지운)}개 줄여 한 줄에 맞춤")
+            return "개수"
+    # 맞추지 못하면 지운 부호를 되돌린다.
+    if 지운:
+        hwp.SetPos(*(ce[0], ce[1], ce[2] - len(지운)))
+        텍스트_삽입("".join(reversed(지운)))
+    return "미해결"
+
+
 def 단어중간_줄바꿈방지(최대시도):
     """현재 화면줄을 처리하고 다음 경계는 호출자의 줄 순회에서 처리한다."""
     # '단어모드_분리정보'는 경계에서 양옆으로 공백을 만나면 즉시 멈추므로
@@ -14694,6 +14886,9 @@ def 단어사이_연속공백_정리_대상(text):
                 continue
             if any(처음 < i and 시작 < 끝 for 처음, 끝 in 공식2타):
                 continue
+            if (알파_연결부호_탭정렬_사용 and text[시작:i] == "	" and text.count("	") == 1
+                    and 시작 > 선행공백_길이 and i < n):
+                continue            # 연결 부호를 바꾼 탭·목차 탭(글 사이 탭 하나)은 정렬용이라 남긴다
             if i - 시작 > 1 or text[시작] != " ":
                 결과.append((시작, i))
         else:
@@ -16899,6 +17094,8 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
                         or stage_enabled(선택_세부작업, 'word_check')):
                     if not stage('본문 자간·단어 분리 조정' + 접미, 본문_기존자간조정):
                         return False
+                    if 알파_연결부호_맞춤_사용 and not stage('연결 부호 맞춤' + 접미, 연결부호_전체_맞춤):
+                        return False
                 if stage_enabled(선택_세부작업, 'short_line') and 문장부호기능 and not stage('짧은 마지막 줄 병합' + 접미, 본문_문장부호_처리):
                     return False
                 if (stage_enabled(선택_세부작업, 'control_spacing')
@@ -17749,6 +17946,9 @@ def _문서_처리_본체(파일, index, total, 문장부호기능=True):
             로그("쪽 범위 지정: 표 칸 너비 맞춤(문서 전체 표 구조 변경)은 이번 작업에서 건너뜁니다.")
         else:
             선행목록.append((True, '표 칸 너비', 표너비_hwpx_처리, 'table_width.hwpx', '표 칸 너비'))
+    # 연속된 연결 부호 문장(목차·일정표)은 한/글 목차 점선(왼쪽 정렬 탭)으로 맞춘다(알파, 2026-10-10).
+    if 서식단계_사용 and 쪽범위_요청 is None and 알파_연결부호_탭정렬_사용:
+        선행목록.append((True, '연결 부호 탭 정렬', 연결부호탭_hwpx_처리, 'connector_tab.hwpx', '표 칸 너비'))
     # 표 칸 안 날짜는 한 줄 표기가 원칙이다(사용자 규칙, 2026-10-10). 표 서식 단계들 뒤 맨 끝에서 지정한다.
     if (서식단계_사용 or 작업_모드 == 'unify') and 쪽범위_요청 is None:
         선행목록.append((True, '표 날짜 칸 한 줄', 표날짜칸_hwpx_처리, 'table_date.hwpx', '표 칸 너비'))
