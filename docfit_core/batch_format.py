@@ -65,6 +65,13 @@ class ParagraphStyle:
     line_percent: int | None = None
     prev_pt: float | None = None
     bold_spans: tuple = ()
+    # 알파 1-d(2026-10-11): 사용자 서식(예시 보고서 복사)의 계층 추가 서식과 복사한 문단 모양.
+    # char_extra: (("latin_font", 글꼴), ("latin_type", "TTF"|"HFT"), ("ratio", n), ("spacing", n), ("italic", True),
+    #              ("underline", "BOTTOM"|"CENTER"|"TOP"), ("color", "#RRGGBB"), ("shade", "#RRGGBB")) 중 필요한 것
+    # para_extra: (("align", "JUSTIFY"…), ("break_non_latin", "KEEP_WORD"|"BREAK_WORD"),
+    #              ("left"|"right"|"intent"|"prev"|"next", HWPX case 값), ("line_type", "PERCENT"…), ("line_value", n))
+    char_extra: tuple = ()
+    para_extra: tuple = ()
 
 
 @dataclass
@@ -131,6 +138,12 @@ class StylePool:
             return False
         if spec.prev_pt is not None and not any(tag(x) == "prev" for x in base.iter()):
             return False
+        para_keys = {k for k, _ in spec.para_extra}
+        need = {"left": "left", "right": "right", "intent": "intent", "prev": "prev", "next": "next",
+                "line_type": "lineSpacing", "line_value": "lineSpacing", "align": "align",
+                "break_non_latin": "breakSetting"}
+        if any(not any(tag(x) == need[k] for x in base.iter()) for k in para_keys):
+            return False
         for run in paragraph:
             if tag(run) != "run":
                 continue
@@ -139,6 +152,15 @@ class StylePool:
                 return False
             if spec.ratio is not None and child(shape, "ratio") is None:
                 return False
+            extra = dict(spec.char_extra)
+            if "ratio" in extra and child(shape, "ratio") is None:
+                return False
+            if "spacing" in extra and child(shape, "spacing") is None:
+                return False
+            if "latin_font" in extra:
+                ref = child(shape, "fontRef")
+                if ref is None or "latin" not in ref.attrib or "latin" not in self.fonts or not len(self.fonts["latin"]):
+                    return False
             if spec.font:
                 ref = child(shape, "fontRef")
                 if ref is None or not ref.attrib:
@@ -173,7 +195,7 @@ class StylePool:
         return found.get("id")
 
     def char(self, base_id, spec, force_bold):
-        key = (base_id, spec.font, spec.font_type, spec.size_pt, spec.bold, spec.ratio, force_bold)
+        key = (base_id, spec.font, spec.font_type, spec.size_pt, spec.bold, spec.ratio, force_bold, spec.char_extra)
         if key not in self.characters:
             source = self.sources["charProperties"][base_id]
             shape = copy.deepcopy(source)
@@ -197,14 +219,46 @@ class StylePool:
                     shape.insert(index, element)
             elif spec.bold is False and bold is not None:
                 shape.remove(bold)
+            self._char_extra(shape, dict(spec.char_extra))
             # 같은 기존 모양은 참조만 바꿔 불필요한 ID 증가를 막는다.
             comparable = copy.deepcopy(shape)
             comparable.set("id", base_id)
             self.characters[key] = base_id if ET.tostring(comparable) == ET.tostring(source) else self._append("charProperties", shape)
         return self.characters[key]
 
+    def _char_extra(self, shape, extra):
+        """계층 추가 서식(한/글 경로 계층_추가서식_값과 같은 항목)을 글자 모양에 입힌다."""
+        if not extra:
+            return
+        ns = shape.tag.rsplit("}", 1)[0] + "}"
+        if extra.get("latin_font"):
+            ref = child(shape, "fontRef")
+            ref.set("latin", self._font("latin", extra["latin_font"], extra.get("latin_type")))
+        for name in ("ratio", "spacing"):
+            if name in extra:
+                element = child(shape, name)
+                for lang in element.attrib:
+                    element.set(lang, str(extra[name]))
+        if extra.get("italic") and child(shape, "italic") is None:
+            index = next((i for i, x in enumerate(shape) if tag(x) in (
+                "bold", "underline", "strikeout", "outline", "shadow", "emboss", "engrave", "supscript", "subscript")),
+                len(shape))
+            shape.insert(index, type(shape)(ns + "italic", {}))
+        if extra.get("underline"):
+            line = child(shape, "underline")
+            if line is None:
+                index = next((i for i, x in enumerate(shape) if tag(x) in (
+                    "strikeout", "outline", "shadow", "emboss", "engrave", "supscript", "subscript")), len(shape))
+                line = type(shape)(ns + "underline", {"type": extra["underline"], "shape": "SOLID", "color": "#000000"})
+                shape.insert(index, line)
+            line.set("type", extra["underline"])
+        if extra.get("color"):
+            shape.set("textColor", extra["color"])
+        if extra.get("shade"):
+            shape.set("shadeColor", extra["shade"])
+
     def para(self, base_id, spec):
-        key = (base_id, spec.line_percent, spec.prev_pt)
+        key = (base_id, spec.line_percent, spec.prev_pt, spec.para_extra)
         if key not in self.paragraphs:
             source = self.sources["paraProperties"][base_id]
             shape = copy.deepcopy(source)
@@ -218,8 +272,22 @@ class StylePool:
                 if name == "prev" and spec.prev_pt is not None:
                     element.set("value", str(round(spec.prev_pt * 100) * multiplier))
                     element.set("unit", "HWPUNIT")
+                # 복사한 문단 모양: 여백·간격은 case에 HWPX 값, default에 두 배(한/글 COM 값과 같은 규칙).
+                if name in ("left", "right", "intent", "prev", "next") and name in extra:
+                    element.set("value", str(int(extra[name]) * multiplier))
+                    element.set("unit", "HWPUNIT")
+                if name == "lineSpacing" and "line_type" in extra:
+                    element.set("type", extra["line_type"])
+                    value = int(extra["line_value"])
+                    element.set("value", str(value if extra["line_type"] == "PERCENT" else value * multiplier))
+                    element.set("unit", "HWPUNIT")
+                if name == "align" and "align" in extra:
+                    element.set("horizontal", extra["align"])
+                if name == "breakSetting" and "break_non_latin" in extra:
+                    element.set("breakNonLatinWord", extra["break_non_latin"])
                 for sub in element:
                     walk(sub, multiplier)
+            extra = dict(spec.para_extra)
             walk(shape)
             self.paragraphs[key] = base_id if ET.tostring(shape) == ET.tostring(source) else self._append("paraProperties", shape)
         return self.paragraphs[key]

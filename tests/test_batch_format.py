@@ -226,7 +226,11 @@ def app_functions(*names):
     """Windows 앱을 임포트하지 않고 실제 함수 본문을 검사한다(COM 자체 검증 아님)."""
     path = Path(__file__).resolve().parents[1] / 'hwp-auto-docfit.py'
     tree = ast.parse(path.read_text(encoding='utf-8'))
-    nodes = [x for x in tree.body if isinstance(x, ast.FunctionDef) and x.name in names]
+    # 알파 1-d 보조 함수·상수는 사용자 서식 판정에 늘 필요하므로 함께 꺼낸다.
+    helpers = {'_사용자서식인가', '사용자서식_XML추가값'}
+    constants = {'알파_사용자서식_XML_사용', '_사용자서식_키', '_줄간격_종류_HWPX', '_문단여백_HWPX'}
+    nodes = [x for x in tree.body if (isinstance(x, ast.FunctionDef) and (x.name in names or x.name in helpers))
+             or (isinstance(x, ast.Assign) and any(isinstance(t, ast.Name) and t.id in constants for t in x.targets))]
     namespace = {'re': re}
     exec(compile(ast.Module(body=nodes, type_ignores=[]), str(path), 'exec'), namespace)
     return namespace
@@ -350,12 +354,16 @@ class BatchComSelectionTests(unittest.TestCase):
         ns.update(알파_HWPX_일괄서식_사용=True, 작업_모드='all', 표준서식_선행_사용=True,
                   쪽범위_요청=None, 선택_세부작업={}, 표준서식_설정={}, stage_enabled=stage_enabled)
         self.assertTrue(ns['알파_일괄서식_가능']())
-        for key, value in [('쪽범위_요청', (1, 2)), ('선택_세부작업', {'standard_format': False}),
-                           ('표준서식_설정', {'계층_추가서식': {'□': {'italic': True}}}), ('작업_모드', 'unify')]:
+        for key, value in [('쪽범위_요청', (1, 2)), ('선택_세부작업', {'standard_format': False}), ('작업_모드', 'unify')]:
             before = ns[key]
             ns[key] = value
             self.assertFalse(ns['알파_일괄서식_가능']())
             ns[key] = before
+        # 알파 1-d: 사용자 서식(계층 추가 서식 등)도 XML 경로. 플래그를 끄면 예전처럼 한/글 경로.
+        ns['표준서식_설정'] = {'계층_추가서식': {'□': {'italic': True}}}
+        self.assertTrue(ns['알파_일괄서식_가능']())
+        ns['알파_사용자서식_XML_사용'] = False
+        self.assertFalse(ns['알파_일괄서식_가능']())
 
     def test_xml_formatted_paragraph_does_not_repeat_com_typography(self):
         ns = app_functions('표준서식_문단_처리')

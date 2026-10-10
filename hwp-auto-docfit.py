@@ -4929,6 +4929,52 @@ def 서식예시_폴더():
         return 서식예시모듈.sample_folder(HWP_AUTOMATION_DIR)
     return 서식예시_정보_폴더()
 
+def 첫쪽_그림_만들기(hwpx, png, 해상도=100):
+    """예시 HWPX의 사본을 독립 한/글로 열어 첫 쪽을 PNG로 저장한다(미리보기 그림이 없는 예시의 썸네일용, 2026-10-11).
+
+    한/글 2018 등으로 저장한 HWPX는 Preview/PrvImage.png가 없다. 원본·예시 파일은 열지 않고 임시 사본만 연다.
+    성공하면 True, 실패하면 예외."""
+    with tempfile.TemporaryDirectory(prefix="docfit_thumb_") as folder:
+        사본 = Path(folder) / "sample.hwpx"
+        그림 = Path(folder) / "page.png"
+        shutil.copyfile(hwpx, 사본)
+        app = None
+        pythoncom.CoInitialize()
+        try:
+            보안모듈_초기화()
+            app = 한글_COM_인스턴스_생성(독립=True)
+            try:
+                app.XHwpWindows.Item(0).Visible = False
+            except Exception:
+                pass
+            if not app.RegisterModule(REGISTER_MODULE_NAME, REGISTER_MODULE_VALUE):
+                raise RuntimeError("한글 보안 모듈을 등록하지 못했습니다.")
+            if not 한글_문서_열기(app, 사본, "HWPX", "forceopen:true"):
+                raise RuntimeError("예시 문서를 열지 못했습니다.")
+            # 쪽 번호는 0부터(첫 쪽 = 0). 한/글 2020은 형식을 png로 줘도 확장자를 .bmp로 바꿔 BMP로 저장한다(2026-10-11 실측).
+            app.CreatePageImage(str(그림), 0, int(해상도), 24, "png")
+            만든것 = 그림 if 그림.is_file() else next(iter(sorted(Path(folder).glob("page.*"))), None)
+            if 만든것 is None:
+                raise RuntimeError("첫 쪽 그림을 만들지 못했습니다.")
+            from PIL import Image
+            image = Image.open(만든것).convert("RGB")
+            image.thumbnail((724, 1024))
+            Path(png).parent.mkdir(parents=True, exist_ok=True)
+            image.save(png)
+            return True
+        finally:
+            if app is not None:
+                try:
+                    app.Clear(1)
+                except Exception:
+                    pass
+                try:
+                    app.Quit()
+                except Exception:
+                    pass
+            pythoncom.CoUninitialize()
+
+
 def 번들_서식예시_찾기():
     """앱에 포함해 배포하는 기본 서식 예시(resources/서식예시/기본 서식.hwpx). 없으면 None."""
     후보_목록 = [프로그램_폴더() / "resources" / "서식예시" / 서식예시모듈.STANDARD_FILE]
@@ -7013,13 +7059,74 @@ _표준서식_XML간격 = {}
 _알파_일괄서식_문서 = False
 
 
+# 알파 1-d(2026-10-11): 사용자 서식(예시 보고서 복사)도 항목기호 문단은 XML에서 입힌다(복사한 문단 모양·계층 추가 서식).
+# 항목기호 없는 문단(제목·날짜·본문·세트 후속)과 내어쓰기·간격 규칙은 한/글 경로. 끄면 사용자 서식은 전부 한/글 경로.
+알파_사용자서식_XML_사용 = True
+_사용자서식_키 = ('복사_문단모양', '계층_추가서식', '복제_본문서식', '복제_들여쓰기_유지', '복귀_간격', '제목뒤_간격')
+
+
+def _사용자서식인가():
+    return any(표준서식_설정.get(key) for key in _사용자서식_키)
+
+
 def 알파_일괄서식_가능():
     return bool(알파_HWPX_일괄서식_사용 and 작업_모드 in ('format', 'all')
                 and 표준서식_선행_사용 and 쪽범위_요청 is None
                 and stage_enabled(선택_세부작업, 'standard_format', 작업_모드)
-                and not any(표준서식_설정.get(key) for key in (
-                    '복사_문단모양', '계층_추가서식', '복제_본문서식',
-                    '복제_들여쓰기_유지', '복귀_간격', '제목뒤_간격')))
+                and (알파_사용자서식_XML_사용 or not _사용자서식인가()))
+
+
+_줄간격_종류_HWPX = {0: "PERCENT", 1: "FIXED", 2: "BETWEEN_LINES", 3: "AT_LEAST"}
+_문단여백_HWPX = {"LeftMargin": "left", "RightMargin": "right", "Indentation": "intent",
+                 "PrevSpacing": "prev", "NextSpacing": "next"}
+
+
+def 사용자서식_XML추가값(symbol, rule_symbol):
+    """복사한 문단 모양·계층 추가 서식을 (글자 추가값, 문단 추가값) 튜플로(한/글 경로 복사_문단모양_적용·계층_추가서식_값과 같은
+    선택 규칙). XML로 확실히 옮길 수 없는 값(취소선 등)이 있으면 None(그 문단은 한/글 경로)."""
+    copied = 표준서식_설정.get("복사_문단모양", {}) or {}
+    extra = 표준서식_설정.get("계층_추가서식") or {}
+    para_values = copied.get(symbol if symbol in copied else rule_symbol) or {}
+    values = extra.get(symbol if symbol in extra else rule_symbol) or {}
+    selected = 표준서식_설정.get("스타일_속성선택", {}).get(rule_symbol, {})
+    para = {}
+    for key, value in para_values.items():
+        if key in ("LeftMargin", "Indentation") and selected.get("indent") is False: continue
+        if key in ("PrevSpacing", "NextSpacing") and selected.get("spacing") is False: continue
+        if key in ("LineSpacing", "LineSpacingType") and not 표준서식_줄간격_사용: continue
+        if key in ("PrevSpacing", "NextSpacing") and not 표준서식_문단위간격_사용: continue
+        if key in _문단여백_HWPX:
+            para[_문단여백_HWPX[key]] = int(value)
+        elif key == "LineSpacing":
+            종류 = _줄간격_종류_HWPX.get(int(para_values.get("LineSpacingType", 0) or 0))
+            if 종류 is None:
+                return None
+            para["line_type"], para["line_value"] = 종류, int(value)
+        elif key != "LineSpacingType":
+            return None
+    char = {}
+    if values.get("strikeout"):
+        return None
+    latin = values.get("font_latin")
+    if latin:
+        char["latin_font"], char["latin_type"] = latin, _글꼴형식.get(latin, "TTF")
+    if 표준서식_장평_사용 and values.get("ratio") is not None:
+        char["ratio"] = max(50, min(200, int(round(float(values["ratio"])))))
+    if 표준서식_장평_사용 and values.get("spacing") is not None:
+        char["spacing"] = max(-50, min(50, int(round(float(values["spacing"])))))
+    if values.get("italic"):
+        char["italic"] = True
+    if values.get("underline") in ("BOTTOM", "CENTER", "TOP"):
+        char["underline"] = values["underline"]
+    for key in ("color", "shade"):
+        color = str(values.get(key) or "")
+        if re.fullmatch(r"#[0-9A-Fa-f]{6}", color) and not (key == "color" and color.upper() == "#000000"):
+            char[key] = color.upper()
+    if values.get("align") in ("JUSTIFY", "LEFT", "RIGHT", "CENTER", "DISTRIBUTE", "DISTRIBUTE_SPACE"):
+        para["align"] = values["align"]
+    if values.get("break_word") in ("KEEP_WORD", "BREAK_WORD"):
+        para["break_non_latin"] = values["break_word"]
+    return tuple(sorted(char.items())), tuple(sorted(para.items()))
 
 
 _GDI_글꼴 = None
@@ -7089,7 +7196,8 @@ def 표준서식_hwpx_처리(source, target=None, selections=None):
         readable = _문단_본문글(paragraph) if text is None else text
         readable = normalize_leading_dot(readable)
         prev = None
-        if 표준서식_문단위간격_사용:
+        사용자서식 = _사용자서식인가()
+        if 표준서식_문단위간격_사용 and not 표준서식_설정.get("복제_들여쓰기_유지"):
             prev = tracker.spacing_for(readable, _표준서식_문단위간격_표(), 표준서식_문단위간격_복귀배율)
             if not readable.strip():
                 tables = [x for x in paragraph.iter() if 제목_xml이름(x) == 'tbl']
@@ -7099,12 +7207,20 @@ def 표준서식_hwpx_처리(source, target=None, selections=None):
             return None
         rule = 표준서식_기호규칙_찾기(readable) if 표준서식_기호_사용 else None
         if rule is None:
-            # 일반 본문·제목은 원래의 글자 모양을 보존한다.
+            # 일반 본문·제목은 원래의 글자 모양을 보존한다. 사용자 서식의 본문 서식 복제는 한/글 경로에 맡긴다.
+            if 사용자서식:
+                return None
             return ParagraphStyle(text=readable, prev_pt=prev) if prev is not None else None
         symbol, lead, font, size, paragraph_bold, marker_bold = rule
         if readable.lstrip().startswith('**'):
             lead = max(0, lead - 1)
-        formatted = ' ' * lead + readable.lstrip()
+        formatted = (readable if 표준서식_설정.get("복제_들여쓰기_유지")
+                     else ' ' * lead + readable.lstrip())
+        추가 = ((), ())
+        if 사용자서식:
+            추가 = 사용자서식_XML추가값(leading_marker(readable)[0], symbol)
+            if 추가 is None:
+                return None
         selected = 표준서식_설정.get('스타일_속성선택', {}).get(symbol, {})
         글꼴형식 = _알파_글꼴형식(font) if selected.get('font', True) else None
         if selected.get('font', True) and font and 글꼴형식 is None:
@@ -7113,7 +7229,8 @@ def 표준서식_hwpx_처리(source, target=None, selections=None):
         bold = bool(paragraph_bold and enabled)
         spans = list(_알파_라벨_굵게범위(formatted))
         if marker_bold and enabled and not bold:
-            spans.append((lead, lead + 1))
+            기호위치 = len(formatted) - len(formatted.lstrip())
+            spans.append((기호위치, 기호위치 + 1))
         return ParagraphStyle(
             text=formatted, font=font if selected.get('font', True) else None,
             font_type=글꼴형식,
@@ -7121,7 +7238,7 @@ def 표준서식_hwpx_처리(source, target=None, selections=None):
             bold=bold if '복사_문단모양' in 표준서식_설정 else (True if bold else None),
             ratio=표준서식_설정['기본_장평'] if 표준서식_장평_사용 else None,
             line_percent=표준서식_설정['기본_줄간격_퍼센트'] if 표준서식_줄간격_사용 else None,
-            prev_pt=prev, bold_spans=tuple(spans))
+            prev_pt=prev, bold_spans=tuple(spans), char_extra=추가[0], para_extra=추가[1])
 
     try:
         result = apply_batch(source, target, plan)
@@ -7224,6 +7341,11 @@ def 표준서식_문단_처리(문단_순번, 헤더_역할=None, 상속_기호_
                 and 문단_내어쓰기_기준_오프셋(text) is not None):
             hwp_run('MoveParaBegin')
             문단_내어쓰기_적용(hwp.GetPos(), text)
+        if 자체_기호_매칭 and _사용자서식인가():
+            # 알파 1-d: 서식 복사 간격 규칙(제목 뒤 첫 문장·계층 복귀)은 문단 순서 상태가 있어 한/글 경로에서 이어 간다.
+            hwp_run('MoveParaBegin')
+            실제기호, _ = leading_marker(text)
+            복사_간격_규칙_적용(실제기호 if 실제기호 in (표준서식_설정.get("복귀_간격") or {}) else 자체_기호_매칭[0], text)
         return
     # 보고서 표준서식은 문장부호(□/ㅇ/-/※ 등)로 시작하는 문단만 대상으로
     # 한다. 제목·일자·일반 본문에는 장평/줄간격/폰트/내어쓰기를 적용하지
@@ -10796,7 +10918,11 @@ def 단어모드_서식보관(start, end):
             return None
         nxt = _단어모드_다음위치(pos)
         if not nxt or nxt[2] > end[2]:
-            raise RuntimeError('서식 보관 중 문자 위치 확인 실패')
+            # 예전에는 예외로 문서 처리 전체가 멈췄다(2026-10-11 실측: 표 칸 '다음 단어 당김' 중). 부르는 곳은 모두
+            # None을 '이번 조정은 하지 않음'으로 처리하므로, 이 줄의 조정만 건너뛴다.
+            hwp_run('Cancel')
+            진단로그(f"[서식 보관] 문자 위치 확인 실패로 이 구간 조정을 건너뜀: {start}~{end}")
+            return None
         단어모드_범위선택(pos, nxt)
         pset = hwp.HParameterSet.HCharShape
         hwp.HAction.GetDefault('CharShape', pset.HSet)
@@ -18057,9 +18183,36 @@ def _박스그림표_한글표_삽입(행들):
     hwp_run("Cancel")
 
 
+# 선 문자 표의 줄은 테두리·칸 구분 문자로 시작한다. 정상 글을 지우지 않도록 '선 문자로 시작하는 줄'만 잔여물로 본다.
+_박스그림_줄시작 = re.compile(r'^\s*[┌├└│┃┏┣┗]')
+
+
+def _박스그림_줄인가(text):
+    return bool(_박스그림_줄시작.match(text or ''))
+
+
+def _박스그림_남은_문단(시작문단, 줄수):
+    """시작문단부터 줄수만큼 본문 문단 가운데 선 문자 표 줄이 남은 첫 문단 번호. 없으면 None."""
+    for 번호 in range(시작문단, 시작문단 + 줄수):
+        try:
+            hwp.SetPos(0, 번호, 0)
+        except Exception:
+            return None
+        if tuple(hwp.GetPos()[:2]) != (0, 번호):
+            return None
+        if _박스그림_줄인가(현재문단_텍스트()):
+            return 번호
+    return None
+
+
 def _박스그림표_교체(시작문단, 끝문단, 행들):
     """문단 [시작문단, 끝문단](둘 다 본문, list id 0) 구간의 텍스트를 지우고
-    그 자리에 실제 표를 삽입한다."""
+    그 자리에 실제 표를 삽입한다.
+
+    2026-10-11 실측: 한/글 범위 선택이 실제로 잡히지 않았는데 실패를 돌려주지 않아, 원래 선 문자 줄 8개가 그대로
+    남은 채 표만 들어간 결과가 있었다. 지운 뒤 선 문자 줄이 남았으면 문단 단위로 다시 지우고, 그래도 남으면 표를
+    넣지 않고 예외로 알린다(부르는 곳이 원래 글을 그대로 두고 건너뛴다)."""
+    줄수 = 끝문단 - 시작문단 + 1
     hwp.SetPos(0, 끝문단, 0)
     hwp_run('MoveParaEnd')
     끝위치 = hwp.GetPos()
@@ -18068,6 +18221,23 @@ def _박스그림표_교체(시작문단, 끝문단, 행들):
         raise RuntimeError('박스 그림 표 범위 선택 실패')
     if hwp_run('Delete') is False:
         raise RuntimeError('박스 그림 표 텍스트 삭제 실패')
+    hwp_run('Cancel')
+    남은 = _박스그림_남은_문단(시작문단, 줄수)
+    if 남은 is not None:
+        로그(f"텍스트 표(박스 그림) 변환: 원래 줄이 지워지지 않아 문단 단위로 다시 지웁니다({남은 + 1}번째 문단).")
+        for _ in range(줄수):
+            남은 = _박스그림_남은_문단(시작문단, 줄수)
+            if 남은 is None:
+                break
+            hwp.SetPos(0, 남은, 0)
+            hwp_run('MoveParaEnd')
+            문단끝 = hwp.GetPos()
+            다음 = (남은 + 1, 0) if 남은 < 시작문단 + 줄수 - 1 else (문단끝[1], 문단끝[2])
+            if hwp.SelectText(남은, 0, 다음[0], 다음[1]) is False or hwp_run('Delete') is False:
+                break
+            hwp_run('Cancel')
+        if _박스그림_남은_문단(시작문단, 줄수) is not None:
+            raise RuntimeError('박스 그림 표의 원래 줄을 지우지 못해 표를 넣지 않음')
     hwp.SetPos(0, 시작문단, 0)
     _박스그림표_한글표_삽입(행들)
 
@@ -18108,6 +18278,8 @@ def 박스그림_전체_적용():
             변환수 += 1
         except Exception as e:
             로그(f"텍스트 표(박스 그림) 변환 중 오류(건너뜀, {시작 + 1}~{끝 + 1}번째 문단): {e}")
+            # 선 문자 표가 글로 남았으므로 최종 검수에 알린다(예전에는 기록이 없어 점수에 반영되지 않았다).
+            검수_문제_기록(현재_처리파일, f"[박스 그림 표 변환 실패] {시작 + 1}~{끝 + 1}번째 문단: {e}")
             try:
                 hwp_run('Cancel')
             except Exception:
@@ -21049,7 +21221,8 @@ class HwpAutoDocFitGUI:
             if 경로.is_file():
                 경로.unlink()
             예시경로, 정보경로 = self._서식예시_경로(identifier)
-            for 예시 in (예시경로, 정보경로, self._서식예시_원본사본(정보경로)):   # 보관한 서식 예시도 함께 지운다
+            for 예시 in (예시경로, 정보경로, self._서식예시_원본사본(정보경로),
+                         self._서식예시_썸네일경로(정보경로)):   # 보관한 서식 예시·썸네일도 함께 지운다
                 if 예시.is_file():
                     예시.unlink()
         except Exception as exc:
@@ -21106,6 +21279,8 @@ class HwpAutoDocFitGUI:
             shutil.copyfile(표본, 후보)
             self._서식예시_기록(후보, 정보경로, {"kind": "source", "식별자": identifier})
             self.로그표시(f"서식예시 폴더에 예시 문서를 넣었습니다: {후보}")
+            if 서식예시모듈.still_cut(후보, 40) is None:
+                self._썸네일_만들기_시작([identifier])
         except Exception as exc:
             self.로그표시(f"서식예시 폴더에 예시 문서를 넣지 못했습니다(서식은 저장함): {exc}")
 
@@ -21153,11 +21328,76 @@ class HwpAutoDocFitGUI:
             self.로그표시(f"기본 서식 예시를 넣지 못했습니다: {exc}")
 
     def _서식_스틸컷(self, identifier, width=240, fmt="PNG"):
-        """서식의 예시 파일(서식예시 폴더) 첫 쪽 그림. 예시 파일이 없거나 그림이 없으면 None."""
+        """서식의 예시 파일(서식예시 폴더) 첫 쪽 그림. 예시 파일 안 미리보기 그림이 없으면 한/글로 만들어 둔 썸네일
+        (예시 파일이 바뀌지 않았을 때만). 둘 다 없으면 None."""
         if not 알파_서식예시폴더_사용:
             return None
-        예시경로, _ = self._서식예시_경로(identifier)
-        return 서식예시모듈.still_cut(예시경로, width, fmt) if 예시경로.is_file() else None
+        예시경로, 정보경로 = self._서식예시_경로(identifier)
+        if not 예시경로.is_file():
+            return None
+        그림 = 서식예시모듈.still_cut(예시경로, width, fmt)
+        if 그림 is None and self._썸네일_최신인가(예시경로, 정보경로):
+            그림 = 서식예시모듈.image_cut(self._서식예시_썸네일경로(정보경로), width, fmt)
+        return 그림
+
+    def _서식예시_썸네일경로(self, 정보경로):
+        return Path(정보경로).with_suffix(".thumb.png")
+
+    def _썸네일_최신인가(self, 예시경로, 정보경로):
+        그림 = self._서식예시_썸네일경로(정보경로)
+        return 그림.is_file() and _json_파일_읽기(정보경로).get("thumb_sha") == 서식예시모듈.digest(예시경로)
+
+    def _썸네일_필요한_서식(self):
+        """예시 파일은 있는데 미리보기 그림도, 최신 썸네일도 없는 서식 식별자 목록."""
+        필요 = []
+        for identifier in list(getattr(self, "_프로파일_ids", []) or []):
+            예시경로, 정보경로 = self._서식예시_경로(identifier)
+            if (예시경로.is_file() and 서식예시모듈.still_cut(예시경로, 40) is None
+                    and not self._썸네일_최신인가(예시경로, 정보경로)):
+                필요.append(identifier)
+        return 필요
+
+    def _썸네일_만들기_시작(self, 식별자들, 끝나면=None):
+        """미리보기 그림이 없는 예시의 첫 쪽 썸네일을 백그라운드에서 한/글로 만든다(작업 중이거나 이미 만드는 중이면 안 함)."""
+        if not 식별자들 or self.running or getattr(self, "_썸네일_만드는중", None):
+            return False
+        대상 = []
+        for identifier in 식별자들:
+            예시경로, 정보경로 = self._서식예시_경로(identifier)
+            대상.append((identifier, 예시경로, 정보경로))
+        self._썸네일_만드는중 = set(식별자들)
+        결과 = {"끝": False, "만듦": 0, "오류": []}
+
+        def 만들기():
+            for identifier, 예시경로, 정보경로 in 대상:
+                try:
+                    sha = 서식예시모듈.digest(예시경로)
+                    첫쪽_그림_만들기(예시경로, self._서식예시_썸네일경로(정보경로))
+                    정보 = _json_파일_읽기(정보경로)
+                    정보["thumb_sha"] = sha
+                    Path(정보경로).parent.mkdir(parents=True, exist_ok=True)
+                    Path(정보경로).write_text(json.dumps(정보, ensure_ascii=False, indent=2), encoding="utf-8")
+                    결과["만듦"] += 1
+                except Exception as exc:
+                    결과["오류"].append(f"{Path(예시경로).name}: {exc}")
+            결과["끝"] = True
+
+        # 작업 스레드에서는 Tk를 부르지 않고 화면 스레드가 끝났는지 살핀다.
+        def 살피기():
+            if not 결과["끝"]:
+                self.root.after(300, 살피기)
+                return
+            self._썸네일_만드는중 = None
+            if 결과["만듦"]:
+                self.로그표시(f"썸네일: 미리보기 그림이 없는 예시 {결과['만듦']}개의 첫 쪽 그림을 한/글로 만들었습니다.")
+            for 오류 in 결과["오류"]:
+                self.로그표시(f"썸네일을 만들지 못했습니다(글 카드로 보임): {오류}")
+            if 끝나면 is not None:
+                끝나면()
+
+        threading.Thread(target=만들기, daemon=True).start()
+        self.root.after(300, 살피기)
+        return True
 
     def _서식_키오스크_고르기(self, identifier):
         """키오스크 카드에서 고른 서식을 실행창 서식 선택과 같은 경로로 반영한다. 반영하면 True."""
@@ -21226,6 +21466,9 @@ class HwpAutoDocFitGUI:
                 그림 = tk.PhotoImage(data=base64.b64encode(그림자료).decode("ascii"))
                 self._키오스크_그림들.append(그림)
                 그림칸 = tk.Label(카드, image=그림, bg="#FFFFFF", cursor="hand2")
+            elif identifier in (getattr(self, "_썸네일_만드는중", None) or ()):
+                그림칸 = tk.Label(카드, text="썸네일 만드는 중…\n\n예시 문서의 첫 쪽을\n그림으로 만들고 있어요",
+                               width=26, height=20, wraplength=220, bg="#EEF2F7", fg="#1E3A8A", cursor="hand2")
             else:
                 그림칸 = tk.Label(카드, text="예시 그림 없음\n\n'서식 예시 확인'을 누르면\n예시를 만들어 그림이 생겨요",
                                width=26, height=20, wraplength=220, bg="#EEF2F7", fg="#5B6475", cursor="hand2")
@@ -21239,6 +21482,22 @@ class HwpAutoDocFitGUI:
         아래 = ttk.Frame(창)
         아래.pack(fill="x", padx=14, pady=10)
         ttk.Button(아래, text="닫기", command=창.destroy).pack(side="right")
+
+        def 다시그리기():
+            지금창 = getattr(self, "_서식_키오스크_창", None)
+            try:
+                if 지금창 is not None and 지금창.winfo_exists():
+                    self._서식_키오스크_열기()
+            except tk.TclError:
+                pass
+        # 미리보기 그림이 없는 예시(한/글 2018 저장본 등)는 한/글로 첫 쪽 썸네일을 만들어 다 되면 창을 다시 그린다.
+        if self._썸네일_만들기_시작(self._썸네일_필요한_서식(), 다시그리기):
+            self.status_var.set("미리보기 그림이 없는 서식의 썸네일을 만드는 중입니다(서식마다 처음 한 번).")
+            다시그리기_필요 = True
+        else:
+            다시그리기_필요 = False
+        if 다시그리기_필요:
+            창.after(50, 다시그리기)
         ttk.Button(아래, text="서식예시 폴더 열기", command=self._서식예시_폴더_열기).pack(side="right", padx=6)
 
     def _서식예시_폴더_열기(self):

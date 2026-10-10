@@ -610,6 +610,10 @@ class DesktopWebBridge:
         def collect():
             items = []
             still = getattr(self.gui, "_서식_스틸컷", None)
+            make = getattr(self.gui, "_썸네일_만들기_시작", None)
+            need = getattr(self.gui, "_썸네일_필요한_서식", None)
+            if make is not None and need is not None:
+                make(need())          # 미리보기 그림이 없는 예시는 백그라운드에서 썸네일을 만든다(다음에 열 때 보임)
             for item in self._profiles():
                 data = still(item["id"], 300, "JPEG") if still is not None else None
                 image = "data:image/jpeg;base64," + base64.b64encode(data).decode("ascii") if data else None
