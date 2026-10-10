@@ -1078,7 +1078,7 @@ def 서식_기본값_전역_복원():
 검수_사용 = False
 검수_문제목록 = []
 최종검수_문서목록 = []
-무결성보고서파일_사용 = True
+무결성보고서파일_사용 = False
 최종검수보고서파일_사용 = True
 현재_처리파일 = None
 단어중간_줄바꿈방지_사용 = False
@@ -1177,8 +1177,10 @@ def 번들_리소스_폴더():
     "stdformat": True,
     "verify": False,
     # 기록 탭의 보고서 파일 생성 옵션. 상세 진단 자체는 verify가 제어한다.
-    "integrity_report_file": True,
-    "final_review_file": True,
+    "integrity_report_file": False,
+    "final_review_file": False,
+    # 작업로그·무결성검사 JSON·최종검수 JSON은 사용자가 켜기 전까지 꺼 둔다(판 2부터).
+    "report_files_rev": 2,
     "two_pass_processing": False,
     "retry_body": "15",
     "retry_table": "5",
@@ -4439,6 +4441,17 @@ def 설정_불러오기():
             if 판 < 2 and isinstance(설정.get("label_symbols"), dict):
                 설정["label_symbols"] = {**설정["label_symbols"], "*": False, "**": False}
             설정["label_symbols_rev"] = 2
+            # 예전 설정 파일은 기본값이던 '켜짐'이 그대로 저장돼 있다. 사용자가 켠 값과 구별할 수 없으므로 한 번만
+            # 작업로그·무결성검사 JSON·최종검수 JSON을 끄고(판 2로 저장된 뒤에는 사용자가 다시 켠 값을 그대로 둔다).
+            try:
+                보고판 = int(저장된값.get("report_files_rev", 1) or 1)
+            except (TypeError, ValueError):
+                보고판 = 1
+            if 보고판 < 2:
+                설정["log_file"] = False
+                설정["integrity_report_file"] = False
+                설정["final_review_file"] = False
+            설정["report_files_rev"] = 2
             # 문단 위 여백을 예전 기본값 그대로 쓰던(사용자가 바꾸지 않은) 설정은 새 계층별 기본값으로 바꾼다.
             try:
                 간격판 = int(저장된값.get("std_parspace_rev", 1) or 1)
@@ -16950,8 +16963,8 @@ def 작업_실행(
     반복횟수=1,
     시작_인덱스=1,
     준말_등록=None,  # 화면이 위치 인자로 호출하므로 새 매개변수는 항상 맨 끝에만 추가한다.
-    무결성보고서파일=True,
-    최종검수파일=True,
+    무결성보고서파일=False,
+    최종검수파일=False,
 ):
     global 작업_모드, 문두라벨_기호설정
     global 표_자간조정_사용, 쪽범위_요청, 로그파일_사용
@@ -17534,9 +17547,9 @@ class HwpAutoDocFitGUI:
         self.stdformat_var = tk.BooleanVar(value=bool(저장된_설정["stdformat"]))
         self.verify_var = tk.BooleanVar(value=bool(저장된_설정["verify"]))
         self.integrity_report_file_var = tk.BooleanVar(
-            value=bool(저장된_설정.get("integrity_report_file", True)))
+            value=bool(저장된_설정.get("integrity_report_file", False)))
         self.final_review_file_var = tk.BooleanVar(
-            value=bool(저장된_설정.get("final_review_file", True)))
+            value=bool(저장된_설정.get("final_review_file", False)))
         self.two_pass_var = tk.BooleanVar(value=bool(저장된_설정.get("two_pass_processing", False)))
         self.table_spacing_var = tk.BooleanVar(value=bool(저장된_설정.get("table_spacing", True)))
         self.log_file_var = tk.BooleanVar(value=bool(저장된_설정.get("log_file", False)))
@@ -21733,14 +21746,14 @@ class HwpAutoDocFitGUI:
         ttk.Label(
             report_box,
             text="문서 탭의 ‘상세 진단 및 문서 무결성 검사’를 켰을 때 검사 결과를 저장합니다.\n"
-                 "끄면 검사는 수행해도 (무결성검사).json 파일은 만들지 않습니다.",
+                 "기본값은 꺼짐입니다. 끄면 검사는 수행해도 (무결성검사).json 파일은 만들지 않습니다.",
             style="Hint.TLabel", wraplength=680).pack(anchor="w", padx=(22, 0), pady=(2, 8))
         self.final_review_file_check = ttk.Checkbutton(
             report_box, text="최종검수 JSON 파일 만들기", variable=self.final_review_file_var)
         self.final_review_file_check.pack(anchor="w")
         ttk.Label(
             report_box,
-            text="작업 목표 기준의 평가 파일을 저장합니다. 끄더라도 앱 안의 완료 결과·점수 표시는 유지됩니다.",
+            text="기본값은 꺼짐입니다. 켜면 작업 목표 기준의 평가 파일을 저장합니다. 끄더라도 앱 안의 완료 결과·점수 표시는 유지됩니다.",
             style="Hint.TLabel", wraplength=680).pack(anchor="w", padx=(22, 0), pady=(2, 0))
         if self.running:
             self.integrity_report_file_check.config(state="disabled")
@@ -21859,6 +21872,7 @@ class HwpAutoDocFitGUI:
             설정값["abbreviations"] = 기존_설정.get("abbreviations", {})
             설정값["abbreviation_defaults"] = 기존_설정.get("abbreviation_defaults", True)
             설정값["label_symbols_rev"] = 2
+            설정값["report_files_rev"] = 2
             설정값["title_owner_text"] = (str(self.title_owner_var.get())
                                         if hasattr(self, "title_owner_var") else "")
             설정_저장(설정값)
