@@ -56,7 +56,7 @@ class TableUnifyTests(unittest.TestCase):
 
     def test_font_is_unified_across_tables_of_same_design_but_not_size(self):
         tables = [grid(i, [cell(100 * i + j, f'값{j}') for j in range(3)]) for i in range(3)]
-        tables.append(grid(3, [cell(400 + j, f'값{j}', font='휴먼명조', size=1100) for j in range(3)]))
+        tables.append(grid(3, [cell(400 + j, f'값{j}', font='함초롬바탕', size=1100) for j in range(3)]))
         fixes, summary = plan_table_fixes(tables)
         self.assertEqual({(f['field'], f['value']) for f in fixes}, {('font', '한컴돋움')})
         self.assertEqual(len(fixes), 3)
@@ -64,13 +64,13 @@ class TableUnifyTests(unittest.TestCase):
 
     def test_tables_of_different_design_keep_their_own_fonts(self):
         tables = [grid(i, [cell(100 * i + j, f'값{j}') for j in range(3)]) for i in range(3)]
-        tables.append(grid(3, [cell(400 + j, f'값{j}', font='휴먼명조', fill='8') for j in range(3)]))
+        tables.append(grid(3, [cell(400 + j, f'값{j}', font='함초롬바탕', fill='8') for j in range(3)]))
         self.assertEqual(plan_table_fixes(tables)[0], [])
 
     def test_table_sharing_one_cell_design_is_not_partly_changed(self):
         # 실측(정책회의 표 11): 다른 표들과 칸 모양 하나만 같은 표에서 그 열만 글꼴이 바뀌어
         # 표 안이 섞였다. 칸 모양 구성이 다른 표는 다른 양식으로 본다.
-        tables = [grid(i, [cell(100 * i + j, f'값{j}', font='휴먼명조') for j in range(3)]) for i in range(3)]
+        tables = [grid(i, [cell(100 * i + j, f'값{j}', font='함초롬바탕') for j in range(3)]) for i in range(3)]
         mixed_design = [cell(400 + j, f'지역{j}', fill='10') for j in range(3)]
         mixed_design += [cell(410 + j, f'품목{j}') for j in range(3)]
         tables.append(grid(3, mixed_design))
@@ -78,8 +78,8 @@ class TableUnifyTests(unittest.TestCase):
 
     def test_table_with_mixed_fonts_is_left_to_in_table_rule(self):
         tables = [grid(i, [cell(100 * i + j, f'값{j}') for j in range(3)]) for i in range(3)]
-        tables.append(grid(3, [cell(400, '값0', font='휴먼명조'), cell(401, '값1', font='굴림'),
-                               cell(402, '값2', font='휴먼명조')]))
+        tables.append(grid(3, [cell(400, '값0', font='함초롬바탕'), cell(401, '값1', font='굴림'),
+                               cell(402, '값2', font='함초롬바탕')]))
         self.assertEqual(plan_table_fixes(tables)[0], [])
 
     def test_heading_boxes_of_same_marker_are_unified_including_color(self):

@@ -113,7 +113,7 @@ class LearnedTitleStyleTest(unittest.TestCase):
         sub, title = [p for p in ns['제목_문단들'](cells[0]) if ns['제목_문자열'](p).strip()]
         self.assertEqual(look(sub), (1500, 'HY헤드라인M'))   # 부제(쉼표 앞 글) 15pt
         self.assertEqual(look(title), (2700, 'HY헤드라인M'))
-        self.assertEqual(look(ns['제목_문단들'](cells[1])[0]), (1200, '휴먼명조'))
+        self.assertEqual(look(ns['제목_문단들'](cells[1])[0]), (1200, '함초롬바탕'))
         self.assertEqual(ns['제목_자식'](out, 'sz').get('width'), '48758')
         self.assertEqual(ns['제목_유형판별'](out), 3)
 
