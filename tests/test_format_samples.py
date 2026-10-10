@@ -176,6 +176,46 @@ class SampleFolderAppTest(unittest.TestCase):
         self.assertEqual(app._서식예시_동기화(), ([], None))
 
 
+class KioskTest(unittest.TestCase):
+    """키오스크식 서식 고르기: 예시 HWPX의 첫 쪽 미리보기 그림을 스틸컷으로 쓰고, 카드를 누르면 그 서식을 고른다."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ns = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'hwp-auto-docfit.py'))
+        cls.gui = cls.ns['HwpAutoDocFitGUI']
+
+    def test_still_cut_reads_preview_image_without_hangul(self):
+        import io
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'sample.hwpx'
+            png = io.BytesIO()
+            Image.new('RGB', (724, 1024), 'white').save(png, format='PNG')
+            with zipfile.ZipFile(path, 'w') as z:
+                z.writestr('mimetype', 'application/hwp+zip')
+                z.writestr('Preview/PrvImage.png', png.getvalue())
+            cut = fs.still_cut(path, 300)
+            self.assertEqual(Image.open(io.BytesIO(cut)).size, (300, 424))
+            self.assertIsNone(fs.still_cut(Path(tmp) / 'none.hwpx'))
+            empty = Path(tmp) / 'empty.hwpx'
+            with zipfile.ZipFile(empty, 'w') as z:
+                z.writestr('mimetype', 'application/hwp+zip')
+            self.assertIsNone(fs.still_cut(empty))       # 미리보기가 없는 파일은 글 카드로 보인다
+
+    def test_card_click_selects_format_like_combo(self):
+        combo = Mock()
+        app = types.SimpleNamespace(running=False, _프로파일_ids=['', 'p1'], main_profile_combo=combo,
+                                    _프로파일들={'': {}, 'p1': {'name': '우리 기관'}}, _프로파일_선택=Mock(),
+                                    status_var=Mock())
+        pick = types.MethodType(self.gui._서식_키오스크_고르기, app)
+        self.assertTrue(pick('p1'))
+        combo.current.assert_called_once_with(1)
+        self.assertIs(app._프로파일_선택.call_args[0][0].widget, combo)
+        self.assertFalse(pick('없는 서식'))
+        app.running = True
+        self.assertFalse(pick(''))                       # 작업 중에는 바꾸지 않는다
+
+
 class AppFolderTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

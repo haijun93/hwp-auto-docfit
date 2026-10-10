@@ -16870,6 +16870,21 @@ def 절약시간_표시(분):
     시간, 나머지 = divmod(분, 60)
     return f"약 {시간}시간" + (f" {나머지}분" if 나머지 else "")
 
+def 절약시간_분초_표시(초):
+    """절약한 초를 '07분 05초' 꼴로 보여 준다(완료창 메시지용, 2026-10-11 사용자 요청)."""
+    분, 초 = divmod(max(0, int(round(초))), 60)
+    return f"{분:02d}분 {초:02d}초"
+
+
+def 번들_고양이_그림_찾기():
+    """완료창의 검은 고양이 그림(resources/black_cat.png, scripts/draw_black_cat.py로 그림). 없으면 None."""
+    후보_목록 = [프로그램_폴더() / "resources" / "black_cat.png"]
+    번들_폴더 = 번들_리소스_폴더()
+    if 번들_폴더 is not None:
+        후보_목록.append(번들_폴더 / "resources" / "black_cat.png")
+    return next((경로 for 경로 in 후보_목록 if 경로.is_file()), None)
+
+
 def 처리_쪽수_구하기():
     """이번에 처리한 문서의 쪽 수(쪽 범위를 지정했으면 그 범위의 쪽 수). 알 수 없으면 1."""
     try:
@@ -19137,6 +19152,9 @@ class HwpAutoDocFitGUI:
         self.format_example_button = ttk.Button(format_quick, text="서식 예시 확인", command=self._서식예시_확인)
         self.format_example_button.pack(side="left", padx=(6, 0))
         if 알파_서식예시폴더_사용:
+            # 키오스크에서 메뉴 사진을 보고 고르듯, 서식 예시의 첫 쪽 그림(스틸컷)을 보며 고른다(알파, 2026-10-10).
+            self.format_kiosk_button = ttk.Button(format_quick, text="그림으로 고르기", command=self._서식_키오스크_열기)
+            self.format_kiosk_button.pack(side="left", padx=(4, 0))
             # 서식예시 폴더(C:\\HWP_AUTODOCFIT\\서식예시)를 열어 예시 파일을 직접 고친다(알파, 2026-10-10).
             self.format_samples_button = ttk.Button(format_quick, text="서식예시 폴더", command=self._서식예시_폴더_열기)
             self.format_samples_button.pack(side="left", padx=(4, 0))
@@ -20369,6 +20387,7 @@ class HwpAutoDocFitGUI:
             총쪽 = sum(항목["쪽수"] for 항목 in self._결과목록)
             수작업분 = 총쪽 * 절약시간_쪽당_분.get(self._작업모드, 5.0)
             걸린분 = (time.monotonic() - (self._작업시작시각 or time.monotonic())) / 60
+            self._절약초 = max(0.0, (수작업분 - 걸린분) * 60)
             절약 = 절약시간_표시(수작업분 - 걸린분)
             self.stage_board.set_result_message(f"이번 작업을 통해 절약된 귀하의 시간은 총 {절약} 입니다.")
 
@@ -20806,6 +20825,95 @@ class HwpAutoDocFitGUI:
                 self._서식예시_기록(예시경로, 정보경로, {"kind": "bundled", "식별자": ""})
         except Exception as exc:
             self.로그표시(f"기본 서식 예시를 넣지 못했습니다: {exc}")
+
+    def _서식_스틸컷(self, identifier, width=240, fmt="PNG"):
+        """서식의 예시 파일(서식예시 폴더) 첫 쪽 그림. 예시 파일이 없거나 그림이 없으면 None."""
+        if not 알파_서식예시폴더_사용:
+            return None
+        예시경로, _ = self._서식예시_경로(identifier)
+        return 서식예시모듈.still_cut(예시경로, width, fmt) if 예시경로.is_file() else None
+
+    def _서식_키오스크_고르기(self, identifier):
+        """키오스크 카드에서 고른 서식을 실행창 서식 선택과 같은 경로로 반영한다. 반영하면 True."""
+        ids = list(getattr(self, "_프로파일_ids", []) or [])
+        콤보 = getattr(self, "main_profile_combo", None)
+        if self.running or identifier not in ids or 콤보 is None:
+            return False
+        콤보.current(ids.index(identifier))
+        self._프로파일_선택(type("콤보선택", (), {"widget": 콤보})())
+        이름 = (self._프로파일들.get(identifier) or {}).get("name") or "기본 서식"
+        self.status_var.set(f"'{이름}' 서식을 골랐습니다.")
+        return True
+
+    def _서식_키오스크_열기(self):
+        """키오스크에서 메뉴 사진을 보며 고르듯, 서식마다 예시 첫 쪽 그림(스틸컷)과 이름을 카드로 늘어놓고 눌러 고르게 한다.
+
+        그림은 서식예시 폴더의 예시 HWPX 안 미리보기(Preview/PrvImage.png)를 쓴다(한/글을 열지 않음).
+        예시 파일이 아직 없는 서식은 글 카드로 보이고, '서식 예시 확인'으로 예시를 만들면 그림이 생긴다."""
+        if self.running:
+            self.status_var.set("작업이 끝난 뒤 서식을 골라 주세요.")
+            return
+        이전 = getattr(self, "_서식_키오스크_창", None)
+        if 이전 is not None:
+            try:
+                if 이전.winfo_exists():
+                    이전.destroy()
+            except Exception:
+                pass
+        창 = tk.Toplevel(self.root)
+        self._서식_키오스크_창 = 창
+        창.title("서식 고르기")
+        창.geometry("960x720")
+        창.transient(self.root)
+        창_맨앞으로(창)
+        ttk.Label(창, text="서식 고르기", font=("맑은 고딕", 14, "bold")).pack(anchor="w", padx=14, pady=(12, 0))
+        ttk.Label(창, text="예시 보고서 첫 쪽 그림을 보고 원하는 서식 카드를 누르세요. 누르면 바로 그 서식으로 바뀝니다.",
+                  style="Hint.TLabel").pack(anchor="w", padx=14, pady=(2, 8))
+        틀 = ttk.Frame(창)
+        틀.pack(fill="both", expand=True, padx=10)
+        캔버스 = tk.Canvas(틀, highlightthickness=0, bg="#F3F6FB")
+        막대 = ttk.Scrollbar(틀, orient="vertical", command=캔버스.yview)
+        캔버스.configure(yscrollcommand=막대.set)
+        막대.pack(side="right", fill="y")
+        캔버스.pack(side="left", fill="both", expand=True)
+        안쪽 = tk.Frame(캔버스, bg="#F3F6FB")
+        캔버스.create_window((0, 0), window=안쪽, anchor="nw")
+        안쪽.bind("<Configure>", lambda e: 캔버스.configure(scrollregion=캔버스.bbox("all")))
+        창.bind("<MouseWheel>", lambda e: 캔버스.yview_scroll(int(-e.delta / 120), "units"))
+        self._키오스크_그림들 = []
+        활성 = self._활성_서식_프로파일 or ""
+
+        def 고르기(identifier):
+            if self._서식_키오스크_고르기(identifier):
+                창.destroy()
+
+        for 번호, identifier in enumerate(list(getattr(self, "_프로파일_ids", []) or [])):
+            profile = self._프로파일들.get(identifier) or {}
+            이름 = str(profile.get("name") or "기본 서식")
+            기관 = str(profile.get("organization") or "").strip()
+            고름 = identifier == 활성
+            카드 = tk.Frame(안쪽, bg="#FFFFFF", highlightthickness=3,
+                          highlightbackground="#2563EB" if 고름 else "#D5DCE8", cursor="hand2")
+            카드.grid(row=번호 // 3, column=번호 % 3, padx=10, pady=10, sticky="n")
+            그림자료 = self._서식_스틸컷(identifier, 260)
+            if 그림자료:
+                그림 = tk.PhotoImage(data=base64.b64encode(그림자료).decode("ascii"))
+                self._키오스크_그림들.append(그림)
+                그림칸 = tk.Label(카드, image=그림, bg="#FFFFFF", cursor="hand2")
+            else:
+                그림칸 = tk.Label(카드, text="예시 그림 없음\n\n'서식 예시 확인'을 누르면\n예시를 만들어 그림이 생겨요",
+                               width=32, height=20, bg="#EEF2F7", fg="#5B6475", cursor="hand2")
+            그림칸.pack(padx=6, pady=(6, 2))
+            제목 = tk.Label(카드, text=("✔ " if 고름 else "") + 이름 + (f"\n{기관}" if 기관 else ""),
+                          font=("맑은 고딕", 11, "bold"), bg="#FFFFFF", fg="#1E3A8A" if 고름 else "#111827",
+                          wraplength=250, cursor="hand2")
+            제목.pack(padx=6, pady=(0, 8))
+            for 위젯 in (카드, 그림칸, 제목):
+                위젯.bind("<Button-1>", lambda e, i=identifier: 고르기(i))
+        아래 = ttk.Frame(창)
+        아래.pack(fill="x", padx=14, pady=10)
+        ttk.Button(아래, text="닫기", command=창.destroy).pack(side="right")
+        ttk.Button(아래, text="서식예시 폴더 열기", command=self._서식예시_폴더_열기).pack(side="right", padx=6)
 
     def _서식예시_폴더_열기(self):
         """서식예시 폴더를 탐색기로 연다(사용자가 예시 파일을 직접 고칠 수 있게)."""
@@ -24306,6 +24414,41 @@ class HwpAutoDocFitGUI:
         임시.focus_force()
         return 임시, 임시
 
+    def _절약_완료창(self, 성공, 실패):
+        """작업 완료창(개발자 모드 끔): 검은 고양이 그림과 '당신의 소중한 시간 00분 00초가 절약되었습니다.!'만 보인다.
+
+        실패한 문서가 있으면 절약 시간 대신 처리하지 못한 문서 수를 알린다(자세한 내용은 처리 기록·개발자 모드)."""
+        창 = tk.Toplevel(self.root)
+        창.title(APP_NAME)
+        창.resizable(False, False)
+        창.configure(bg="#FFFFFF")
+        창.transient(self.root)
+        그림경로 = 번들_고양이_그림_찾기()
+        if 그림경로 is not None:
+            try:
+                그림 = tk.PhotoImage(file=str(그림경로))
+                창._고양이 = 그림            # 그림이 사라지지 않게 창에 붙잡아 둔다
+                tk.Label(창, image=그림, bg="#FFFFFF").pack(padx=40, pady=(24, 4))
+            except tk.TclError:
+                pass
+        if 실패 == 0:
+            문구 = f"당신의 소중한 시간 {절약시간_분초_표시(self._절약초 or 0)}가 절약되었습니다.!"
+        else:
+            문구 = f"문서 {실패}개를 처리하지 못했습니다. 처리 기록을 확인해 주세요. (성공 {성공}개)"
+        tk.Label(창, text=문구, bg="#FFFFFF", fg="#111827", font=("맑은 고딕", 14, "bold"),
+                 wraplength=440, justify="center").pack(padx=32, pady=(4, 16))
+        확인 = ttk.Button(창, text="확인", command=창.destroy)
+        확인.pack(pady=(0, 22))
+        창.bind("<Return>", lambda e: 창.destroy())
+        창.bind("<Escape>", lambda e: 창.destroy())
+        창.update_idletasks()
+        x = 창.winfo_screenwidth() // 2 - 창.winfo_reqwidth() // 2
+        y = 창.winfo_screenheight() // 3 - 창.winfo_reqheight() // 3
+        창.geometry(f"+{max(0, x)}+{max(0, y)}")
+        창_맨앞으로(창)
+        확인.focus_set()
+        return 창
+
     def _알림(self, 함수, *args, **kwargs):
         """웹 화면 모드에서도 메시지 창이 보이도록 임시 부모로 띄운다."""
         부모, 임시 = self._대화상자_부모()
@@ -24733,6 +24876,7 @@ class HwpAutoDocFitGUI:
                     if self._안내키:
                         self._안내지남.add(self._안내키)
                     self._안내키 = "done" if item[2] == 0 else self._안내키
+                    self._절약초 = None
                     self._작업결과_표시(item[2] == 0)
                     최종검수 = item[6] if len(item) >= 8 else None
                     if 최종검수:
@@ -24745,7 +24889,11 @@ class HwpAutoDocFitGUI:
                     else:
                         self.status_var.set(f"처리 완료 · 성공 {item[1]}개 / 실패 {item[2]}개")
                     self.로그표시("=" * 45 + f"\n작업 완료 - 성공 {item[1]}개 / 실패 {item[2]}개\n" + "=" * 45)
-                    if not self.closing:
+                    if not self.closing and not self.developer_mode_var.get():
+                        # 개발자 모드가 꺼져 있으면 절약한 시간만 귀여운 검은 고양이와 함께 보여 준다(2026-10-11 사용자 요청).
+                        # 자세한 완료 안내(성공·실패 건수·세부 작업·최종 검수)는 개발자 모드에서만 보인다.
+                        self._절약_완료창(item[1], item[2])
+                    elif not self.closing:
                         안내문 = f"문서 처리가 완료되었습니다.\n\n성공: {item[1]}개\n실패: {item[2]}개"
                         if len(item) >= 6:
                             안내문 += (

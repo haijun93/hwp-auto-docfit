@@ -122,3 +122,26 @@ def describe(changed: list[str], limit: int = 6) -> str:
         shown.append(_KEY_NAMES.get(head, head) + (f"·{rest}" if rest else ""))
     more = f" 외 {len(changed) - limit}개" if len(changed) > limit else ""
     return ", ".join(shown) + more
+
+
+PREVIEW_ENTRY = "Preview/PrvImage.png"   # 한/글이 HWPX를 저장할 때 넣는 첫 쪽 미리보기 그림
+
+
+def still_cut(path, width: int = 300, fmt: str = "PNG") -> bytes | None:
+    """서식 예시 HWPX의 첫 쪽 미리보기 그림을 width 폭으로 줄여 돌려준다(키오스크식 서식 고르기의 스틸컷).
+
+    한/글 없이 HWPX 안의 미리보기 그림만 읽는다. 파일·그림이 없거나 읽지 못하면 None."""
+    import io
+    import zipfile
+    try:
+        from PIL import Image
+        with zipfile.ZipFile(path) as z:
+            data = z.read(PREVIEW_ENTRY)
+        image = Image.open(io.BytesIO(data)).convert("RGB")
+        if image.width > width:
+            image = image.resize((width, max(1, round(image.height * width / image.width))), Image.LANCZOS)
+        out = io.BytesIO()
+        image.save(out, format=fmt, **({"quality": 85} if fmt.upper() == "JPEG" else {}))
+        return out.getvalue()
+    except Exception:
+        return None

@@ -85,7 +85,7 @@ class BrowserApiTests(unittest.TestCase):
         bridge.window = object()
         api = _BrowserApi(bridge)
         public = {name: getattr(api, name) for name in dir(api) if not name.startswith('_')}
-        self.assertEqual(len(public), 37)   # 알파: open_format_samples(서식예시 폴더 열기)
+        self.assertEqual(len(public), 38)   # 알파: open_format_samples(서식예시 폴더 열기), format_gallery(그림으로 고르기)
         self.assertTrue(all(callable(value) for value in public.values()))
         self.assertNotIn('gui', public)
         self.assertNotIn('window', public)
@@ -99,6 +99,16 @@ class BrowserApiTests(unittest.TestCase):
         gui._서식예시_확인 = lambda: called.append(True)
         _bridge(gui).show_format_example()
         self.assertEqual(called, [True])
+
+    def test_format_gallery_gives_still_cut_and_name_per_format(self):
+        # 키오스크식 서식 고르기: 서식마다 예시 첫 쪽 그림(data URI)과 이름을 돌려준다. 그림이 없으면 None.
+        gui = _FakeGui()
+        gui._서식_스틸컷 = lambda identifier, width, fmt: b'jpg' if identifier == '' else None
+        items = _bridge(gui).format_gallery()
+        self.assertTrue(items)
+        self.assertEqual(items[0]['image'], 'data:image/jpeg;base64,anBn')
+        self.assertTrue(all('name' in item and 'id' in item for item in items))
+        self.assertTrue(all(item['image'] is None for item in items[1:]))
 
     def test_state_lists_stages_profiles_and_options(self):
         state = _bridge(_FakeGui()).get_state()

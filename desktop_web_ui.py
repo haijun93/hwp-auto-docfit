@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import importlib.util
 import logging
 import os
@@ -604,6 +605,19 @@ class DesktopWebBridge:
         self._tk(self.gui._서식예시_확인)
         return self.get_state()
 
+    def format_gallery(self):
+        """키오스크식 서식 고르기: 서식마다 예시 첫 쪽 그림(스틸컷, JPEG data URI 또는 None)과 이름·기관·사용 중 여부."""
+        def collect():
+            items = []
+            still = getattr(self.gui, "_서식_스틸컷", None)
+            for item in self._profiles():
+                data = still(item["id"], 300, "JPEG") if still is not None else None
+                image = "data:image/jpeg;base64," + base64.b64encode(data).decode("ascii") if data else None
+                items.append(dict(item, image=image))
+            return items
+
+        return self._tk(collect)
+
     def open_format_samples(self):
         """서식예시 폴더(C:\\HWP_AUTODOCFIT\\서식예시)를 탐색기로 연다(알파). 예시 파일을 고치면 '한 번에 적용' 때 반영된다."""
         opener = getattr(self.gui, "_서식예시_폴더_열기", None)
@@ -696,7 +710,7 @@ class _BrowserApi:
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",
             "set_exclude_tables", "set_card_option",
             "set_drop_target", "add_format_file", "write_format_example", "rename_profile", "delete_profile",
-            "edit_profile", "show_format_example", "open_format_samples",
+            "edit_profile", "show_format_example", "open_format_samples", "format_gallery",
         ):
             setattr(self, name, getattr(bridge, name))
 

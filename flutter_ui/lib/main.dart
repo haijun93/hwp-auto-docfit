@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -1149,6 +1150,114 @@ class _WorkspaceState extends State<Workspace> {
     } catch (_) {}
   }
 
+  // 키오스크에서 메뉴 사진을 보고 고르듯, 서식마다 예시 보고서 첫 쪽 그림(스틸컷)과 이름을 카드로 보여 주고 눌러 고른다(알파).
+  Future<void> openKiosk() async {
+    Object? data;
+    try {
+      data = await widget.api('format_gallery', []);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('서식 그림을 불러오지 못했어요: $e')));
+      }
+      return;
+    }
+    if (!mounted || data is! List) return;
+    final items = data.whereType<Map>().toList();
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (ctx) => Dialog(
+        key: const Key('formatKioskDialog'),
+        insetPadding: const EdgeInsets.all(24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1000, maxHeight: 760),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('서식 고르기', style: Theme.of(ctx).textTheme.titleLarge),
+                const SizedBox(height: 4),
+                const Text('예시 보고서 첫 쪽 그림을 보고 원하는 서식 카드를 누르세요. 누르면 바로 그 서식으로 바뀌어요.'),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: GridView.extent(
+                    maxCrossAxisExtent: 240,
+                    childAspectRatio: 0.62,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 12,
+                    children: [for (final p in items) kioskCard(ctx, p)],
+                  ),
+                ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('닫기'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (picked != null && picked != '${state['profile'] ?? ''}') {
+      await command('set_profile', [picked]);
+    }
+  }
+
+  Widget kioskCard(BuildContext ctx, Map p) {
+    final active = p['active'] == true;
+    final image = p['image'];
+    final scheme = Theme.of(ctx).colorScheme;
+    Widget picture;
+    if (image is String && image.startsWith('data:image')) {
+      picture = Image.memory(
+        base64Decode(image.substring(image.indexOf(',') + 1)),
+        fit: BoxFit.contain,
+      );
+    } else {
+      picture = Container(
+        color: scheme.surfaceContainerHighest,
+        alignment: Alignment.center,
+        padding: const EdgeInsets.all(12),
+        child: const Text("예시 그림 없음\n'서식 예시 확인'을 누르면 그림이 생겨요", textAlign: TextAlign.center),
+      );
+    }
+    final organization = '${p['organization'] ?? ''}';
+    return Card(
+      key: Key('kioskCard-${p['id']}'),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: active ? scheme.primary : scheme.outlineVariant,
+          width: active ? 3 : 1,
+        ),
+      ),
+      child: InkWell(
+        onTap: () => Navigator.pop(ctx, '${p['id']}'),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(child: Padding(padding: const EdgeInsets.all(6), child: picture)),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 2, 8, 10),
+              child: Text(
+                '${active ? '✔ ' : ''}${p['title'] ?? p['name']}${organization.isNotEmpty ? '\n$organization' : ''}',
+                textAlign: TextAlign.center,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> openFormats() async {
     // 창이 열려 있는 동안 끌어 놓은 파일은 문서 목록이 아니라 서식 복제로 간다.
     await setDropTarget('format');
@@ -1444,6 +1553,14 @@ class _WorkspaceState extends State<Workspace> {
           ),
         ),
         const SizedBox(width: 8),
+        Tooltip(
+          message: '서식마다 예시 보고서 첫 쪽 그림을 보며 키오스크처럼 골라요',
+          child: TextButton(
+            key: const Key('formatKioskButton'),
+            onPressed: locked ? null : openKiosk,
+            child: const Text('그림으로 고르기'),
+          ),
+        ),
         // 고른 서식을 예시 보고서(제목·개요·중제목·항목기호 문장·표·붙임)에 입혀 한/글로 미리 보여 준다.
         Tooltip(
           message: '고른 서식을 입힌 예시 보고서를 한/글로 보여 줘요(서식마다 처음 한 번 1분쯤 걸려 만들고, 그다음부터는 보관한 예시를 바로 열어요)',
