@@ -177,7 +177,7 @@ Flutter UI 빌드는 `powershell -File build_flutter.ps1`로 수행하며 `build
    - 강제 푸시 없이 `git commit-tree "main^{tree}" -p github/claude/affectionate-goldberg-ggln7c -m "…"`로 main과 같은 내용의 커밋을 얹어 푸시합니다.
    - CI가 `Update built exes from CI run …` 커밋을 올리면(보통 5~10분) 그 커밋을 `main`에 cherry-pick.
 5. exe를 실제로 실행해 창 제목의 버전을 확인 → `sha256sum release-assets/HWP_AutoDocFit.exe` 값을 릴리스 노트에 대문자로 기록 → 커밋·푸시(두 원격).
-6. **태그**: `git tag -a vX.Y-beta.N -m "…"` → `git push github <태그>` → `git push origin <태그>`. GitLab CI(`release-windows`)가 메인 exe·시험용 텍스트·통합 압축팩을, GitHub 릴리스가 메인 exe·통합 압축팩을 자동 첨부합니다. 설정 초기화 exe는 배포하지 않습니다.
+6. **태그**: `git tag -a vX.Y-beta.N -m "…"` → `git push github <태그>` → `git push origin <태그>`. GitLab CI(`release-windows`)가 메인 exe·시험용 텍스트를(통합 압축팩은 GitLab 첨부 한도 100MB 때문에 GitHub에만, 2026-10-11), GitHub 릴리스가 메인 exe·통합 압축팩을 자동 첨부합니다. 설정 초기화 exe는 배포하지 않습니다.
 7. 확인: `https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest`가 새 태그를 가리키는지, 내려받은 exe 해시가 노트와 같은지.
 
 ---
