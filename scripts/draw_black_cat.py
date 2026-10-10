@@ -1,6 +1,6 @@
 """완료창 고양이 그림(resources/black_cat.png)을 그린다. 외부 그림 없이 직접 그려 저작권 걱정이 없다.
 
-화풍: 펜으로 그린 스케치(떨리는 선을 여러 번 겹침), 큰 동그란 눈, 나란히 앉아 귀엽게 웃는 흰 고양이와 검은 고양이(반달 눈·ω 입·볼 홍조),
+화풍: 펜으로 그린 스케치(떨리는 선을 여러 번 겹침), 큰 동그란 눈, 나란히 앉아 귀엽게 웃는 흰 고양이와 검은 고양이(크고 동그란 눈·ω 입·볼 홍조),
 바닥을 따라 길게 뻗은 꼬리(2026-10-11 사용자 요청 화풍). 같은 결과가 나오도록 난수 씨앗을 고정한다.
 사용: .venv\\Scripts\\python.exe scripts\\draw_black_cat.py
 """
@@ -97,7 +97,7 @@ BLUSH = (255, 140, 165, 150)
 
 
 def smile_face(img, cx, cy, line):
-    """귀엽게 웃는 얼굴: 반달 눈(^ ^), ω 입, 볼 홍조. line은 선 색(흰 고양이는 먹색, 검은 고양이는 흰색)."""
+    """귀엽게 웃는 얼굴: 크고 동그란 눈(반짝이), ω 입, 볼 홍조. line은 선 색(흰 고양이는 먹색, 검은 고양이는 흰색)."""
     from PIL import ImageFilter
     blush = Image.new("RGBA", img.size, (0, 0, 0, 0))
     bd = ImageDraw.Draw(blush)
@@ -105,9 +105,14 @@ def smile_face(img, cx, cy, line):
         bd.ellipse([P(bx - 9, cy + 9), P(bx + 9, cy + 17)], fill=BLUSH)
     img.alpha_composite(blush.filter(ImageFilter.GaussianBlur(2.2 * S)))
     d = ImageDraw.Draw(img)
-    for ex in (cx - 17, cx + 17):                  # 웃는 눈: 위로 볼록한 반달
-        pts = curve((ex - 10, cy + 3), (ex, cy - 11), (ex + 10, cy + 3))
-        d.line([P(x, y) for x, y in pts], fill=line, width=round(2.6 * S), joint="curve")
+    for ex in (cx - 21, cx + 21):                  # 크고 동그란 눈: 흰자 + 큰 눈동자 + 반짝이 세 개
+        ey = cy - 6
+        d.ellipse([P(ex - 19, ey - 19), P(ex + 19, ey + 19)], fill=PAPER)
+        stroke(d, ellipse_pts(ex, ey, 19, 19), width=1.9, passes=2, amount=0.5)
+        d.ellipse([P(ex - 14, ey - 12), P(ex + 14, ey + 16)], fill=INK)
+        d.ellipse([P(ex - 10, ey - 8), P(ex - 1, ey + 1)], fill=PAPER)
+        d.ellipse([P(ex + 4, ey + 6), P(ex + 9, ey + 11)], fill=PAPER)
+        d.ellipse([P(ex + 5, ey - 6), P(ex + 8, ey - 3)], fill=PAPER)
     d.polygon([P(cx - 3.5, cy + 14), P(cx + 3.5, cy + 14), P(cx, cy + 18)], fill=(255, 150, 170, 255))   # 분홍 코
     for side in (-1, 1):                           # ω 입
         pts = curve((cx, cy + 18), (cx + side * 3, cy + 26), (cx + side * 7, cy + 19))
