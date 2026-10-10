@@ -139,9 +139,11 @@ class FormatCopyStage1Test(unittest.TestCase):
         text = 'ㅇ (개요) 본문 문장'
         settings = dict(self.ns['표준서식_설정'])
         with patch.dict(fn.__globals__, {'표준서식_설정': dict(settings, 내어쓰기_규칙={})}):
-            self.assertEqual(fn(text), 7)            # 규칙 없음: 지금처럼 라벨 뒤
+            self.assertEqual(fn(text), 2)            # 규칙 없음: 기호 뒤(라벨의 첫 글자). 라벨 뒤 기준은 2026-10-10 폐지
         with patch.dict(fn.__globals__, {'표준서식_설정': dict(settings, 내어쓰기_규칙={'ㅇ': 'after_marker'})}):
             self.assertEqual(fn(text), 2)            # 예시가 기호 뒤 맞춤
+        with patch.dict(fn.__globals__, {'표준서식_설정': dict(settings, 내어쓰기_규칙={'ㅇ': 'after_label'})}):
+            self.assertEqual(fn(text), 2)            # 예전에 저장한 '라벨 뒤' 서식도 기호 뒤로 읽는다
         with patch.dict(fn.__globals__, {'표준서식_설정': dict(settings, 내어쓰기_규칙={'ㅇ': 'fixed'})}):
             self.assertIsNone(fn(text))              # 고정 값: 규칙이 손대지 않고 복사한 값을 씀
 
