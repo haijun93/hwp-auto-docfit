@@ -202,7 +202,7 @@ class StyleUnifyTest(unittest.TestCase):
             self.assertTrue(any(not run[4] and run[0][2] >= aside[1][2]
                                 for run in shape[2]))
             self.assertEqual(shape[3]['parenthetical_size_runs'][0][2], 1300)
-            # 대표 서식 범위에는 문두기호와 괄호 라벨도 포함한다.
+            # 대표 서식 범위에는 항목기호와 괄호 라벨도 포함한다.
             self.assertEqual(sample[1], (0, 0, 0))
             self.assertEqual(shape[2][0][0], (0, 0, 0))
 

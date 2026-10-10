@@ -113,7 +113,7 @@ def merge_adjacent(ranges):
 
 
 # ---- 문서 체계(계층) 판별 -------------------------------------------------
-# 번호가 매겨진 문두기호는 번호마다 따로 묶으면 표본이 하나씩밖에 없다. 같은 계열은
+# 번호가 매겨진 항목기호는 번호마다 따로 묶으면 표본이 하나씩밖에 없다. 같은 계열은
 # 하나의 그룹 기호로 모은다(예: '1.' '2.' '12.' → '1.', 'Ⅰ' 'Ⅱ' → 'Ⅰ').
 _CLASS_PATTERNS = (
     (re.compile(r"\d{1,2}[.．]?"), "1."),
@@ -137,7 +137,7 @@ _EXTRA_DOTS = frozenset("・")
 
 
 def marker_class(marker):
-    """문두기호를 번호와 무관한 그룹 기호로 바꾼다."""
+    """항목기호를 번호와 무관한 그룹 기호로 바꾼다."""
     if not marker:
         return ""
     if _PUA_CIRCLED.fullmatch(marker):
@@ -149,7 +149,7 @@ def marker_class(marker):
 
 
 def unify_marker(text):
-    """서식통일용 (그룹 기호, 역할, 실제 기호). 문두기호가 없으면 ('', '', '')."""
+    """서식통일용 (그룹 기호, 역할, 실제 기호). 항목기호가 없으면 ('', '', '')."""
     stripped = (text or "").lstrip(" \t\u00a0\u3000")
     marker, role = leading_marker(stripped)
     if not marker:

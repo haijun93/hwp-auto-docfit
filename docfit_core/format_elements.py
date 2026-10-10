@@ -1,6 +1,6 @@
 """서식 요소 전수 분석: 대표값 산출, 서식 표 예시 보관과 세부값 수정(한/글 COM 없음).
 
-문서의 문장을 문두기호 계층별로, 제목·개요·중제목·붙임 서식 표는 칸(A1·A2·B2 …)별로 나눠
+문서의 문장을 항목기호 계층별로, 제목·개요·중제목·붙임 서식 표는 칸(A1·A2·B2 …)별로 나눠
 글자·문단·칸 서식 요소마다 값을 모으고, 가장 많이 쓴 값을 대표값으로 정한다. 대표값마다
 표본 수·비율·다른 값 목록을 함께 남겨 서식 세부사항 창에서 확인하고 고칠 수 있게 한다.
 
@@ -40,7 +40,7 @@ HANGING_RULES = ("after_marker", "fixed", "none")
 LEGACY_HANGING_RULES = ("after_label",)
 # 쪽 번호 컨트롤(hp:pageNum)에서 복사하는 속성: 위치(BOTTOM_CENTER 등)·번호 모양(DIGIT 등)·줄표 글자('-')
 PAGE_NUMBER_KEYS = ("pos", "formatType", "sideChar")
-# 문두기호 역할의 깊이(작을수록 상위). 깊은 항목 다음 얕은 항목이 오면 '계층 복귀'다.
+# 항목기호 역할의 깊이(작을수록 상위). 깊은 항목 다음 얕은 항목이 오면 '계층 복귀'다.
 ROLE_DEPTH = {"중제목": 0, "소제목": 1, "본문": 2, "내용": 3, "부연설명": 4}
 VALIGN_TYPES = ("TOP", "CENTER", "BOTTOM")
 BORDER_TYPES = ("NONE", "SOLID", "DASH", "DOT", "DASH_DOT", "DASH_DOT_DOT", "LONG_DASH", "CIRCLE",
@@ -85,7 +85,7 @@ ELEMENT_SPECS = OrderedDict([
     ("break_word", ("줄 나눔 기준(한글)", "choice", BREAK_TYPES, True)),
     ("lead_spaces", ("기호 앞 빈칸 수", "int", None, True)),
     ("after_spaces", ("기호 뒤 빈칸 수", "int", None, True)),
-    ("marker_bold", ("문두기호 굵게", "bool", None, True)),
+    ("marker_bold", ("항목기호 굵게", "bool", None, True)),
     ("label_bold", ("괄호 라벨 굵게", "bool", None, True)),
     ("hanging", ("내어쓰기 적용(여러 줄 문장)", "bool", None, True)),
     ("paren_delta", ("괄호 안 글자 줄임", "pt", None, True)),
@@ -505,7 +505,7 @@ def _dominant(counter):
 # ----------------------------------------------------------------------------
 
 def _label_span(text, start):
-    """문두기호 뒤 '(라벨)'의 (시작, 끝). 없으면 None."""
+    """항목기호 뒤 '(라벨)'의 (시작, 끝). 없으면 None."""
     index = start
     while index < len(text) and text[index] in _SPACES:
         index += 1
@@ -718,7 +718,7 @@ def top_level_tables(roots):
 
 
 def is_body_sentence(text, size, align):
-    """문두기호 없는 문단이 본문 문장인가: 빈칸을 뺀 글자 12자 이상, 제목보다 작은 글자(18pt 미만), 가운데·오른쪽
+    """항목기호 없는 문단이 본문 문장인가: 빈칸을 뺀 글자 12자 이상, 제목보다 작은 글자(18pt 미만), 가운데·오른쪽
     정렬이 아니고 '붙임'으로 시작하지 않는 문단.
 
     제목·날짜·서명처럼 짧거나 가운데·오른쪽에 놓인 줄과 붙임 줄(붙임 글꼴 규칙이 따로 있음)은 본문 문장이 아니다.
@@ -731,7 +731,7 @@ def is_body_sentence(text, size, align):
 
 
 def _starts_body(group, text, values):
-    """본문이 시작되는 문단인가: 문두기호 문장이거나 본문 문장(is_body_sentence). 문두기호 없이 쓰는 보도자료
+    """본문이 시작되는 문단인가: 항목기호 문장이거나 본문 문장(is_body_sentence). 항목기호 없이 쓰는 보도자료
     본문도 본문으로 본다."""
     return bool(group) or is_body_sentence(text, values.get("size"), values.get("align"))
 
@@ -866,7 +866,7 @@ def analyze_format_elements(path, classify=None):
                 if len(first_paragraphs) < 2:
                     first_paragraphs.append({"font": values.get("font"), "size": values.get("size"),
                                              "bold": values.get("bold"), "text": text[:60]})
-                # 문두기호 없는 문단은 본문 문장만 '일반 문장' 표본으로 본다(제목·날짜 같은 줄은 섞지 않는다).
+                # 항목기호 없는 문단은 본문 문장만 '일반 문장' 표본으로 본다(제목·날짜 같은 줄은 섞지 않는다).
                 if group or is_body_sentence(text, values.get("size"), values.get("align")):
                     key = (group, role) if group else ("", "일반 문장")
                     entry = groups.setdefault(key, {"records": [], "samples": [], "order": len(groups)})
@@ -1303,7 +1303,7 @@ def group_title(group):
 # 요소마다 서식 적용에 쓰는 방식(세부사항 창 '적용 방식' 열, 서식 관리의 복제 범위 요약)
 MODE_VALUE, MODE_RULE, MODE_SHOW = "값 복사", "규칙 복사", "표시만"
 _RULE_KEYS = {"hanging_rule", "return_prev", "label_bold", "paren_delta"}
-# 문장(문두기호 계층)에서 아직 적용하지 않는 요소: 기호 앞·뒤 빈칸(공백 정규화와 겹침), 내어쓰기 여부(기준으로 대신함)
+# 문장(항목기호 계층)에서 아직 적용하지 않는 요소: 기호 앞·뒤 빈칸(공백 정규화와 겹침), 내어쓰기 여부(기준으로 대신함)
 _GROUP_SHOW_KEYS = {"lead_spaces", "after_spaces", "hanging"}
 _PAGE_SHOW_KEYS = {"page_width", "page_height", "page_landscape"}
 # 일반 표 칸: 칸 크기·칸 안 여백·문단 여백은 글에 따라 달라 복사하지 않는다(표 기본 안 여백은 복사).
@@ -1345,7 +1345,7 @@ def detail_nodes(analysis):
         nodes.append((("page",), None, "쪽 모양·여백"))
     groups = analysis.get("paragraph_groups", [])
     if groups:
-        nodes.append((("groups",), None, "문장 (문두기호 계층별)"))
+        nodes.append((("groups",), None, "문장 (항목기호 계층별)"))
         for number, group in enumerate(groups):
             nodes.append((("group", number), ("groups",), f"{group_title(group)} · {group['count']}문장"))
     forms = analysis.get("forms", {})
@@ -1414,7 +1414,7 @@ def _value(elements, key, default=None):
     return default if item is None else item["value"]
 
 
-# 문두기호 계층마다 글꼴·크기·굵게·문단 여백 밖에 더 복사하는 요소(계층_추가서식). 값은 분석값 그대로다.
+# 항목기호 계층마다 글꼴·크기·굵게·문단 여백 밖에 더 복사하는 요소(계층_추가서식). 값은 분석값 그대로다.
 EXTRA_KEYS = ("font_latin", "italic", "underline", "strikeout", "color", "shade", "ratio", "spacing",
               "align", "break_word")
 # 줄 간격 종류 → 한/글 COM LineSpacingType(실측 2026-10-04: 0 %, 1 고정, 2 여백만, 3 최소)
@@ -1424,10 +1424,10 @@ LINE_TYPE_CODES = {"PERCENT": 0, "FIXED": 1, "BETWEEN_LINES": 2, "AT_LEAST": 3}
 def apply_to_profile(profile):
     """서식 요소 분석(사용자 수정 포함)을 서식 적용에 쓰는 프로필 값에 반영한다.
 
-    문두기호 규칙(글꼴·크기·굵게·기호 굵게·기호 앞 빈칸), 기호별 문단 모양(여백·간격·모든 종류의 줄
+    항목기호 규칙(글꼴·크기·굵게·기호 굵게·기호 앞 빈칸), 기호별 문단 모양(여백·간격·모든 종류의 줄
     간격), 계층별 추가 서식(영문 글꼴·기울임·밑줄·취소선·글자색·음영·장평·자간·정렬·줄 나눔 기준),
     쪽 여백(제본 여백 포함)·용지 크기, 일반 표 머리글·본문 글자, 보관한 서식 표 예시를 대표값에 맞춘다.
-    이미 규칙이 있는 문두기호만 고친다(새 기호 규칙은 계층 분석이 정한다). 문단 모양 값은 HWPX case
+    이미 규칙이 있는 항목기호만 고친다(새 기호 규칙은 계층 분석이 정한다). 문단 모양 값은 HWPX case
     단위(실제 HWPUNIT) 그대로 둔다.
     """
     analysis = profile.get("element_analysis")
@@ -1500,14 +1500,14 @@ def apply_to_profile(profile):
     return profile
 
 
-# 문두기호 없는 본문 문장의 문단 모양·추가 서식 키(복사_문단모양·계층_추가서식).
+# 항목기호 없는 본문 문장의 문단 모양·추가 서식 키(복사_문단모양·계층_추가서식).
 PLAIN_KEY = "(일반 문장)"
 _SHAPE_NAMES = (("left", "LeftMargin"), ("right", "RightMargin"), ("indent", "Indentation"),
                 ("prev", "PrevSpacing"), ("next", "NextSpacing"))
 
 
 def _apply_plain_sentences(fmt, elements):
-    """예시의 본문 문장(문두기호 없음) 대표값을 일반 문장 서식으로 둔다: 글꼴·크기·굵게(본문_문단), 문단 모양
+    """예시의 본문 문장(항목기호 없음) 대표값을 일반 문장 서식으로 둔다: 글꼴·크기·굵게(본문_문단), 문단 모양
     (여백·간격·줄 간격), 추가 서식(영문 글꼴·장평·자간·정렬 등). 정리할 문서의 본문 문장(is_body_sentence)에만
     입힌다. 예전에는 문서 전체 최다 글꼴·줄 간격만 모든 기호 없는 문단(제목 줄 포함)에 입혔다(2026-10-04)."""
     font, size = _value(elements, "font"), _value(elements, "size")
@@ -1523,7 +1523,7 @@ def _apply_plain_sentences(fmt, elements):
         fmt.setdefault("계층_추가서식", {})[PLAIN_KEY] = extra
 
 
-# 같은 계층을 뜻하는 다른 모양의 문두기호(예시는 ○, 정리할 문서는 ㅇ를 쓰는 경우 등).
+# 같은 계층을 뜻하는 다른 모양의 항목기호(예시는 ○, 정리할 문서는 ㅇ를 쓰는 경우 등).
 EQUIVALENT_MARKERS = (("○", "ㅇ"), ("□", "ㅁ"))
 
 
@@ -1566,7 +1566,7 @@ def _apply_rules(profile, analysis):
       고정 값·없음이면 규칙이 손대지 않고 복사한 첫 줄 값을 쓴다.
     - 괄호·콜론 라벨 굵게: 예시에서 라벨을 굵게 쓴 계층만 굵게 한다.
     - 괄호 안 글자 줄임: 예시에서 가장 많이 쓴 줄임 폭으로 괄호 부연설명 축소를 켠다.
-    - 계층 복귀 간격, 제목·개요 표와 첫 문두기호 문장 사이 간격.
+    - 계층 복귀 간격, 제목·개요 표와 첫 항목기호 문장 사이 간격.
     """
     fmt, options = profile["format"], profile["options"]
     shapes = fmt.setdefault("복사_문단모양", {})
@@ -1644,7 +1644,7 @@ def sync_from_hierarchy(profile, before_styles):
 
 
 def sync_hierarchy(profile):
-    """세부사항에서 고친 문두기호 글꼴·크기·여백을 계층 검토 목록의 대표 항목에도 맞춘다."""
+    """세부사항에서 고친 항목기호 글꼴·크기·여백을 계층 검토 목록의 대표 항목에도 맞춘다."""
     hierarchy = profile.get("style_hierarchy") or {}
     for group in (profile.get("element_analysis") or {}).get("paragraph_groups", []):
         edited = {key: item["value"] for key, item in group["elements"].items() if item.get("edited")}

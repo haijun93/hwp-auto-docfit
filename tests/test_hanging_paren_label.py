@@ -45,7 +45,7 @@ class HangingParenLabelTest(unittest.TestCase):
     def test_year_parenthesis_and_plain_text_are_unchanged(self):
         self.assertEqual(self.offset(' ㅇ (2026)서울'), 3)
         self.assertEqual(self.offset('ㅇ 본문 문장입니다'), 2)
-        self.assertEqual(self.offset(' ㅇ 「공유재산법」에 따라'), 4)           # 문두기호 바로 뒤 낫표 다음 글자(현행)
+        self.assertEqual(self.offset(' ㅇ 「공유재산법」에 따라'), 4)           # 항목기호 바로 뒤 낫표 다음 글자(현행)
 
     def test_saved_rules_are_unchanged(self):
         text = 'ㅇ (개요) 본문 문장'

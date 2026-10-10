@@ -36,7 +36,7 @@ class StyleProfileEditTest(unittest.TestCase):
         self.assertEqual(edited["format"]["복사_문단모양"]["□"]["PrevSpacing"], 500)
         self.assertFalse(edited["format"]["스타일_속성선택"]["□"]["font"])
         self.assertFalse(edited["format"]["스타일_속성선택"]["□"]["spacing"])
-        self.assertEqual(edited["format"]["문두기호_역할"]["□"], "소제목")
+        self.assertEqual(edited["format"]["항목기호_역할"]["□"], "소제목")
         self.assertEqual(edited["options"]["symbol_fonts"]["□"]["font"], "고딕")
 
     def test_unselected_paragraph_fields_are_not_applied(self):
