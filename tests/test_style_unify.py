@@ -298,9 +298,23 @@ class UnifyModeTest(unittest.TestCase):
                             '중단_요청됨': lambda: False, '단계표시': Mock(), '상태': Mock(), '로그': Mock(),
                             '진단로그': Mock(), 'hwp_run': lambda *a: True, '순회_시작': lambda: None,
                             '표_셀_안쪽여백_전체_적용': lambda: True, '표_열너비_본문맞춤_전체_적용': lambda: True,
-                            '표_테두리_전체_적용': lambda: True}):
+                            '표_테두리_전체_적용': lambda: True, '알파_글규칙_XML_사용': False}):
             self.assertTrue(fn('문서.hwpx', 회차=1))
         self.assertEqual(calls, ['문장내_공백_정규화_전체_적용'])
+        # 알파 1-c: 글 규칙 XML이 켜져 있으면 한/글 공백 정규화 대신 XML 묶음을 한 번 부른다.
+        calls.clear()
+        xml_calls = []
+        with patch.dict(g, {**{n: (lambda n: lambda *a, **k: calls.append(n) or True)(n) for n in names},
+                            '작업_모드': 'format', '표준서식_사용': True, '선택_세부작업': {},
+                            'stage_enabled': lambda selection, key, mode=None: key in ('normalize_space', 'standard_format'),
+                            '중단_요청됨': lambda: False, '단계표시': Mock(), '상태': Mock(), '로그': Mock(),
+                            '진단로그': Mock(), 'hwp_run': lambda *a: True, '순회_시작': lambda: None,
+                            '표_셀_안쪽여백_전체_적용': lambda: True, '표_열너비_본문맞춤_전체_적용': lambda: True,
+                            '표_테두리_전체_적용': lambda: True, '알파_글규칙_XML_사용': True, '쪽범위_요청': None,
+                            '현재문서_XML단계_적용': lambda *a: xml_calls.append(a[0]) or True}):
+            self.assertTrue(fn('문서.hwpx', 회차=1))
+        self.assertEqual(calls, [])
+        self.assertEqual(xml_calls, ['공백·문장부호·라벨'])
 
     def test_leading_standard_format_defers_hanging_indent(self):
         fn = self.ns['표준서식_선행_적용']

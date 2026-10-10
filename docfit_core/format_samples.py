@@ -145,3 +145,18 @@ def still_cut(path, width: int = 300, fmt: str = "PNG") -> bytes | None:
         return out.getvalue()
     except Exception:
         return None
+
+
+def image_cut(png_path, width: int = 300, fmt: str = "PNG") -> bytes | None:
+    """PNG 파일(한/글로 만든 첫 쪽 그림)을 width 폭으로 줄여 돌려준다. 없거나 읽지 못하면 None."""
+    import io
+    try:
+        from PIL import Image
+        image = Image.open(png_path).convert("RGB")
+        if image.width > width:
+            image = image.resize((width, max(1, round(image.height * width / image.width))), Image.LANCZOS)
+        out = io.BytesIO()
+        image.save(out, format=fmt, **({"quality": 85} if fmt.upper() == "JPEG" else {}))
+        return out.getvalue()
+    except Exception:
+        return None

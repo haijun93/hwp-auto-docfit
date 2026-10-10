@@ -33,7 +33,8 @@ class FormatExampleTest(unittest.TestCase):
         app = types.SimpleNamespace(
             running=False, _프로파일들={'p1': {'name': '보고서', 'title_size': 20}}, _활성_서식_프로파일='p1',
             status_var=Mock(), 로그표시=Mock(), _경로_열기=Mock(), root=Mock(), **extra)
-        for name in ('_서식예시_경로', '_서식예시_확인', '_서식예시_완료', '_서식_삭제', '_서식예시_원본사본', '_서식예시_기록'):
+        for name in ('_서식예시_경로', '_서식예시_확인', '_서식예시_완료', '_서식_삭제', '_서식예시_원본사본', '_서식예시_기록',
+                     '_서식예시_썸네일경로'):
             setattr(app, name, types.MethodType(getattr(self.gui, name), app))
         return app
 

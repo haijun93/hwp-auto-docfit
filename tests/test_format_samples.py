@@ -216,6 +216,48 @@ class KioskTest(unittest.TestCase):
         self.assertFalse(pick(''))                       # 작업 중에는 바꾸지 않는다
 
 
+class ThumbnailTest(unittest.TestCase):
+    """미리보기 그림이 없는 예시(한/글 2018 저장본 등)는 한/글로 만든 첫 쪽 썸네일을 쓴다(2026-10-11)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ns = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'hwp-auto-docfit.py'))
+        cls.gui = cls.ns['HwpAutoDocFitGUI']
+
+    def test_thumbnail_used_only_while_sample_unchanged(self):
+        import io
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            sample = tmp / 'samples' / '보도자료.hwpx'
+            sample.parent.mkdir()
+            with zipfile.ZipFile(sample, 'w') as z:                 # 미리보기 그림 없는 HWPX
+                z.writestr('mimetype', 'application/hwp+zip')
+                z.writestr('Preview/PrvText.txt', '보도자료')
+            info = tmp / 'info' / '서식예시_p1.json'
+            info.parent.mkdir()
+            info.write_text(json.dumps({'file': sample.name}), encoding='utf-8')
+            g = self.gui._서식_스틸컷.__globals__
+            saved = {k: g[k] for k in ('서식예시_폴더', '서식예시_정보_폴더', '알파_서식예시폴더_사용')}
+            g.update(서식예시_폴더=lambda: sample.parent, 서식예시_정보_폴더=lambda: info.parent, 알파_서식예시폴더_사용=True)
+            try:
+                app = types.SimpleNamespace(_프로파일들={'p1': {'name': '보도자료'}}, _프로파일_ids=['p1'])
+                for name in ('_서식예시_경로', '_서식_스틸컷', '_서식예시_썸네일경로', '_썸네일_최신인가', '_썸네일_필요한_서식'):
+                    setattr(app, name, types.MethodType(getattr(self.gui, name), app))
+                self.assertIsNone(app._서식_스틸컷('p1'))
+                self.assertEqual(app._썸네일_필요한_서식(), ['p1'])
+                Image.new('RGB', (724, 1024), 'white').save(info.with_suffix('.thumb.png'))
+                info.write_text(json.dumps({'file': sample.name, 'thumb_sha': fs.digest(sample)}), encoding='utf-8')
+                self.assertIsNotNone(app._서식_스틸컷('p1', 200))       # 만든 썸네일을 쓴다
+                self.assertEqual(app._썸네일_필요한_서식(), [])
+                with zipfile.ZipFile(sample, 'a') as z:                # 사용자가 예시 파일을 고침
+                    z.writestr('Contents/new.xml', '<x/>')
+                self.assertIsNone(app._서식_스틸컷('p1'))              # 예전 썸네일은 쓰지 않는다
+                self.assertEqual(app._썸네일_필요한_서식(), ['p1'])
+            finally:
+                g.update(saved)
+
+
 class AppFolderTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
