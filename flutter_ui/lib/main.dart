@@ -1612,7 +1612,7 @@ class _WorkspaceState extends State<Workspace> {
               child: TextButton(
                 key: const Key('formatKioskButton'),
                 onPressed: locked ? null : openKiosk,
-                child: const Text('그림으로 고르기'),
+                child: const Text('썸네일로 선택'),
               ),
             ),
             // 고른 서식을 예시 보고서(제목·개요·중제목·항목기호 문장·표·붙임)에 입혀 한/글로 미리 보여 준다.

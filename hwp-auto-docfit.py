@@ -19153,7 +19153,7 @@ class HwpAutoDocFitGUI:
         self.format_example_button.pack(side="left", padx=(6, 0))
         if 알파_서식예시폴더_사용:
             # 키오스크에서 메뉴 사진을 보고 고르듯, 서식 예시의 첫 쪽 그림(스틸컷)을 보며 고른다(알파, 2026-10-10).
-            self.format_kiosk_button = ttk.Button(format_quick, text="그림으로 고르기", command=self._서식_키오스크_열기)
+            self.format_kiosk_button = ttk.Button(format_quick, text="썸네일로 선택", command=self._서식_키오스크_열기)
             self.format_kiosk_button.pack(side="left", padx=(4, 0))
             # 서식예시 폴더(C:\\HWP_AUTODOCFIT\\서식예시)를 열어 예시 파일을 직접 고친다(알파, 2026-10-10).
             self.format_samples_button = ttk.Button(format_quick, text="서식예시 폴더", command=self._서식예시_폴더_열기)

@@ -85,7 +85,7 @@ class BrowserApiTests(unittest.TestCase):
         bridge.window = object()
         api = _BrowserApi(bridge)
         public = {name: getattr(api, name) for name in dir(api) if not name.startswith('_')}
-        self.assertEqual(len(public), 38)   # 알파: open_format_samples(서식예시 폴더 열기), format_gallery(그림으로 고르기)
+        self.assertEqual(len(public), 38)   # 알파: open_format_samples(서식예시 폴더 열기), format_gallery(썸네일로 선택)
         self.assertTrue(all(callable(value) for value in public.values()))
         self.assertNotIn('gui', public)
         self.assertNotIn('window', public)
