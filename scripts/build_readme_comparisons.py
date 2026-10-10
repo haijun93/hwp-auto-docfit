@@ -51,11 +51,16 @@ CARDS = [
          [line('ㅇ 안내 자료를 배포'), line('{합니다.}', 25), line('마지막 줄: 4글자', size=25)],
          [line('ㅇ 안내 자료를 배포{합니다.}'), line('마지막 줄이 앞줄에 합쳐짐', size=25)],
          '예시는 기준을 4글자 이하로 설정한 경우입니다. 실행 기준은 설정에서 바꿉니다.'),
-    card('hanging-indent', '내어쓰기 | 둘째 줄부터 본문 시작에 맞춤',
+    card('hanging-indent', '내어쓰기 | 괄호 라벨은 기호 뒤에 맞춤',
          [line('ㅇ (대상) 주민 대상 교육을'), line('{실시하고 참여 결과를}'), line('{정리하여 공유합니다.}')],
-         [line('ㅇ (대상) 주민 대상 교육을'), line('{실시하고 참여 결과를}', 135),
-          line('{정리하여 공유합니다.}', 135)],
-         '빨간 줄의 시작 위치만 이동합니다. 기본은 라벨 뒤 본문, 사용자 서식은 해당 규칙을 따릅니다.'),
+         [line('ㅇ (대상) 주민 대상 교육을'), line('{실시하고 참여 결과를}'),
+          line('{정리하여 공유합니다.}')],
+         "괄호 라벨 뒤 본문 정렬은 폐지됐습니다. 둘째 줄부터 문두기호 뒤 첫 글자 '('에 맞춥니다."),
+    card('hanging-indent-colon', '내어쓰기 | 콜론 뒤 본문 정렬은 유지',
+         [line('ㅇ 대상: 주민 대상 교육을'), line('{실시하고 참여 결과를}'), line('{정리하여 공유합니다.}')],
+         [line('ㅇ 대상: 주민 대상 교육을'), line('{실시하고 참여 결과를}'),
+          line('{정리하여 공유합니다.}')],
+         "콜론 라벨은 기존대로 콜론 뒤 본문에 맞춥니다. '(방식) :'처럼 콜론이 있는 라벨도 같습니다."),
     card('page-fit', '쪽 수 맞춤 | 마지막 쪽에 조금 남은 글을 당김',
          [], [], '문단 간격 등을 조정해 당길 수 있는 경우의 예시입니다. 모든 문서를 한 쪽 줄이지는 않습니다.', 'page-fit'),
     card('page-group', '관련 문단 쪽 배치 | 제목과 내용을 함께',
@@ -220,7 +225,8 @@ def render(c):
     im = Image.new('RGB', (1440, 760), '#f3f6fa')
     d = ImageDraw.Draw(im)
     d.text((42, 25), c['title'], font=font(36, True), fill=INK)
-    d.text((42, 85), '1.72 Beta 13 기능 설명용 예시 · 실제 처리 화면 아님', font=font(23), fill=GRAY)
+    version = '1.72 Beta 14' if c['name'].startswith('hanging-indent') else '1.72 Beta 13'
+    d.text((42, 85), version + ' 기능 설명용 예시 · 실제 처리 화면 아님', font=font(23), fill=GRAY)
     for after, px, label in [(False, 40, '전 | 실행 전'), (True, 752, '후 | 선택한 작업 실행 후')]:
         d.rounded_rectangle((px, 137, px + 648, 625), radius=16, fill='white', outline='#d5deea', width=2)
         d.rounded_rectangle((px, 137, px + 648, 189), radius=16, fill='#e7edf5')
@@ -252,13 +258,14 @@ def render(c):
                 rich(d, px + 32, 225 + i * 70, entry['text'], entry['size'])
         else:
             for i, entry in enumerate(entries):
-                offset = d.textlength('ㅇ (대상) ', font=font(29)) if c['name'] == 'hanging-indent' and after and i > 0 else entry['x']
+                prefix = 'ㅇ 대상: ' if c['name'] == 'hanging-indent-colon' else 'ㅇ '
+                offset = d.textlength(prefix, font=font(29)) if c['name'].startswith('hanging-indent') and after and i > 0 else entry['x']
                 end = rich(d, px + 32 + offset, 225 + i * 70, entry['text'], entry['size'], entry['bold'])
                 if end > px + 620:
                     raise ValueError(f"패널 밖 텍스트: {c['name']}: {entry['text']}")
-            if c['name'] == 'hanging-indent' and after:
-                # 첫 줄 본문 시작과 이어지는 줄 시작을 함께 표시.
-                guide = px + 32 + d.textlength('ㅇ (대상) ', font=font(29))
+            if c['name'].startswith('hanging-indent') and after:
+                # 괄호는 기호 뒤, 콜론은 라벨 뒤 본문 시작을 표시.
+                guide = px + 32 + d.textlength(prefix, font=font(29))
                 for y in range(216, 430, 14):
                     d.line((guide, y, guide, y + 7), fill=RED, width=2)
         if c['name'] in ('all-in-one', 'abbreviation') and after:
