@@ -345,6 +345,7 @@ class DesktopWebBridge:
         "unify_exclude_spacing": ("unify_exclude_spacing_var", "unify"),
         "unify_exclude_pagefit": ("unify_exclude_pagefit_var", "unify"),
         "unify_keep_layout": ("unify_keep_layout_var", "unify"),
+        "unify_full_format": ("unify_full_format_var", "unify"),
     }
 
     def _card_options(self):

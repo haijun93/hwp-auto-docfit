@@ -80,6 +80,8 @@ def 작업_설정(s, 모드, 표제외_요청):
         세부작업 = without_page_fit(세부작업)
     if 모드 == 'unify' and 'page_layout_keep' in 세부작업:
         세부작업['page_layout_keep'] = bool(s.get('unify_keep_layout', 세부작업['page_layout_keep']))
+    if 모드 == 'unify' and 'unify_full_format' in 세부작업:
+        세부작업['unify_full_format'] = bool(s.get('unify_full_format', 세부작업['unify_full_format']))
     세부 = {k: bool(s[k]) for k in STD_KEYS if k in s}
     세부['std_title_subtitle_pt'] = s.get('std_title_subtitle_pt')
     세부['table_fonts'] = s.get('table_fonts', {})
