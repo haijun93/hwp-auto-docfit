@@ -3,6 +3,30 @@
 지금 당장 진행하지 않고 미뤄둔 기능 요청을 적어둔다. "나중에 작업해"라고
 명시적으로 요구받으면 그때 해당 항목을 꺼내 구현한다.
 
+## [긴급·미착수] 업데이트 확인 실패 "GitLab 403 Forbidden / GitHub 403 rate limit exceeded" 원인과 조치 (2026-10-11)
+
+화면: 설정의 "업데이트 확인"(수동) 클릭 시 `업데이트 정보를 확인하지 못했습니다. GitLab: HTTP Error 403: Forbidden / GitHub: HTTP Error 403: rate limit exceeded`.
+시작 시 자동 확인(`check_updates_on_start`)은 실패해도 아무것도 띄우지 않는다(`_자동업데이트_확인_시작`, 수동일 때만 오류 대화상자). 그래서 이 창은 수동 확인에서만 보인다.
+
+### 원인 분석
+코드 흐름: `_최신_릴리스_통합_조회`가 GitLab API(`UPDATE_API_URL = …/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest`)와 GitHub API(`api.github.com/repos/haijun93/hwp-auto-docfit/releases/latest`)를 **둘 다 인증 없이** 조회하고, 둘 다 실패해야 오류를 낸다(한쪽만 실패하면 다른 쪽 결과 사용). 즉 **두 곳이 동시에 403**이었다.
+1. **GitHub 403 "rate limit exceeded" — 확실한 원인(서버 메시지 그대로)**: 인증 없는 GitHub API는 **IP당 시간당 60회**다. 기관 PC들이 같은 외부 IP(NAT·프록시)를 쓰면 여러 사용자의 자동 확인(앱 시작 때마다) + 수동 확인 + 개발 PC의 다른 GitHub 호출이 합쳐져 한도를 쓴다. 앱은 결과를 저장·재사용하지 않고 남은 한도·재시도 시각(`X-RateLimit-Reset`)도 읽지 않는다.
+2. **GitLab 403 Forbidden — 원인 미확정(추정 후보)**: 코드는 403을 구분하지 않고 그대로 보여 준다. 후보 ① 프로젝트가 공개가 아니라서(`internal`/`private`) 인증 없는 API 호출을 서버가 막음, ② 릴리스 가시성이 "프로젝트 구성원만", ③ 기관 방화벽·WAF가 `/api/v4/` 경로 또는 `HWP-AutoDocFit/버전` User-Agent를 차단, ④ 인스턴스 정책(익명 API 제한). 브라우저로 README 링크(릴리스 페이지)가 열려도 API 경로는 다르게 막힐 수 있다. **PC에서 확인할 것**: 브라우저·`curl`로 `https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest` 응답(로그인 없이 403이면 ①②), 응답 본문의 메시지.
+3. 앱 쪽 약점(원인을 키움): ① 두 소스 모두 **API만** 사용(한도·인증 영향이 큼) ② 결과 캐시·백오프 없음 ③ 오류 문구가 기술적("HTTP Error 403")이라 사용자가 조치할 방법을 모름 ④ 시작 때마다 자동 확인 ⑤ 시스템 프록시 설정을 쓰지 않는 직접 HTTPS 연결(`_업데이트_HTTP_GET`, 보안 검사 때문에 의도된 구조).
+
+### 조치방안 (우선순위)
+1. **API 대신 정적 파일로 확인(권장, 근본 해결)**: 릴리스 때 `website/latest.json`(버전·exe 다운로드 주소·SHA-256·릴리스 노트 주소)을 함께 갱신해 GitLab Pages(사이트 `/latest.json`)와 GitHub(`raw`/Pages)에 올리고, 앱은 이 파일을 먼저 읽는다. 인증·API 한도와 무관하다. 릴리스 절차(HANDOVER §6)에 "latest.json 갱신" 단계 추가, 앱의 SHA-256 검증은 기존 방식(릴리스 노트/자산 digest)과 같은 값을 쓴다.
+2. **GitHub는 한도 없는 경로로 대체**: `https://github.com/haijun93/hwp-auto-docfit/releases/latest` 리디렉션의 `Location`에서 태그만 읽거나 `releases.atom`을 읽는다(둘 다 API 한도가 아님). 다운로드는 태그로 `releases/download/<tag>/HWP_AutoDocFit.exe`를 만들고 SHA-256은 릴리스 노트에서 읽는다. 허용 호스트(`github.com`)는 이미 목록에 있다.
+3. **GitLab 403 원인 해소(관리자 조치)**: 위 2번 확인 결과에 따라 ① 프로젝트·릴리스 가시성을 로그인 없이 읽을 수 있게 하거나 ② WAF에서 `/api/v4/projects/…/releases` GET 허용 또는 ③ 앱 전용 읽기 토큰은 **쓰지 않는다**(실행 파일에 비밀을 넣는 것은 안 됨). 안 풀리면 1번으로 GitLab Pages의 `latest.json`을 쓴다(Pages는 사이트 방문과 같은 권한).
+4. **빈도 줄이기·캐시**: 마지막 확인 시각·결과를 설정 폴더(`updates/last_check.json`)에 저장하고 자동 확인은 하루 1회로 제한, 수동 확인은 5분 안 재조회 시 저장한 결과 사용. 403 `rate limit`이면 `X-RateLimit-Reset` 시각을 저장해 그때까지 GitHub를 건너뛴다.
+5. **오류 문구 개선**: 403(한도) → "잠시 뒤 다시 확인하세요(약 N분 뒤 가능)", 403(권한) → "업데이트 서버에 접근할 수 없습니다. 기관 네트워크 정책을 확인하거나 아래 링크에서 직접 내려받으세요", 네트워크 오류 → 별도 문구. 대화상자에 **릴리스 페이지 열기** 버튼을 둔다(`PROJECT_URL`).
+6. 한쪽이 성공하면 이미 쓴다. 둘 다 실패해도 앱 사용에는 영향이 없다는 점을 문구에 덧붙인다.
+
+### 시험·반영
+- 단위 시험(순수 함수·가짜 응답): 403 한도(헤더 포함)·403 권한·404·정상·`latest.json` 정상/깨짐, 캐시·백오프. 시험 파일 `tests/test_update_check.py`(새로 만들거나 기존 업데이트 시험에 추가).
+- 베타 핫픽스 후보(자동 업데이트는 배포판의 핵심 경로라 알파에서만 시험하지 않고 `main`에도 반영). 반영 뒤 릴리스 때 `latest.json`을 함께 올리는 절차를 HANDOVER §6에 기록.
+- 사용자 PC 확인 대기: ① GitLab API 403 응답 본문 ② 같은 시간대 GitHub 한도 사용량(`curl -i https://api.github.com/rate_limit`) ③ 기관 외부 IP를 여러 PC가 공유하는지.
+
 ## [진행 중, 이어서 작업] 알파 개발 인수인계 — VS Code (2026-10-09)
 
 > 이 섹션이 알파 개발의 **최신 상태**다. 전체 계획은 `docs/알파_개발계획_2026-10-09.md`, 방향 근거는 `docs/종합검토_알파감마_개발방향_2026-10-09.md`.
