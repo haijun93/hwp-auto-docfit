@@ -254,6 +254,8 @@ Flutter UI 빌드는 `powershell -File build_flutter.ps1`로 수행하며 `build
 .\.venv\Scripts\python.exe hwp-auto-docfit.py
 # 전체 테스트 (약 3~4분, GUI 창이 잠깐 뜸)
 $env:PYTHONIOENCODING="utf-8"; .\.venv\Scripts\python.exe -m unittest discover -s tests
+# 약식 시험(핵심 기능, 문서별 5쪽 발췌본, 1회차) / 정식 시험(전체 문서·4가지 작업, 1회차). 문서 목록: %APPDATA%\HwpAutoDocFit	est_corpus.json
+.\.venv\Scripts\python.exe scripts	est_tier_pc.py --tier quick   # 또는 --tier full, --flag 이름=0 으로 대조
 # 문서 스타일 분석 보고서 + 예시 서식 만들기
 .\.venv\Scripts\python.exe scripts\style_inventory.py "문서.hwp" --out 결과폴더
 # 원격 상태
