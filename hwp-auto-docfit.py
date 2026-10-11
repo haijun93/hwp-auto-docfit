@@ -7676,6 +7676,9 @@ _서식통일_대표값_검토콜백 = None
 # 원본 HWPX 분석 결과(경로·수정 시각·크기가 같을 때 재사용)와 마무리 단계용 위치 기준 텍스트.
 _서식통일_HWPX_캐시 = {}
 _서식통일_위치텍스트_보관 = {}
+# 마무리 단계용 고친 문장의 계획 위치(문단 글 → 시작 위치). 서식 적용은 문단 수를 바꾸지 않으므로
+# 마무리에서 이 위치로 바로 가 글을 대조하고, 맞지 않는 문장만 예전처럼 문서를 순회해 찾는다.
+_서식통일_보류위치 = {}
 # 문서 헤더에서 읽은 글꼴 이름별 형식(TTF/HFT). 한/글 내장 HFT 글꼴(한양중고딕 등)을
 # TTF로 지정하면 한/글이 오류 없이 무시한다(실측: 정책회의 ※ 문장 8개 글꼴 미반영).
 _글꼴형식 = {}
@@ -9349,9 +9352,11 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
                 # 내어쓰기 → 자간 → 외톨이 당기기는 모든 문장의 서식을 맞춘 뒤 한 묶음으로 한다.
                 _서식통일_자간보류문단[item["text"].strip()] = item["expected_hanging"]
                 _서식통일_위치텍스트_보관[item["text"].strip()] = item["position_text"]
+                _서식통일_보류위치[item["text"].strip()] = item["start"]
             elif not 서식통일_빨간표시_사용:
                 _서식통일_자간보류문단[item["text"].strip()] = item["expected_hanging"]
                 _서식통일_위치텍스트_보관[item["text"].strip()] = item["position_text"]
+                _서식통일_보류위치[item["text"].strip()] = item["start"]
             교정수 += 1
             진단로그(f"[서식통일 문장] 완료 {item['start']}")
         if item["unresolved_fields"] and not 서식통일_빨간표시_사용:
@@ -9416,13 +9421,54 @@ def 서식통일_문장_마무리(시작, text, 내어쓰기):
     return True
 
 
+알파_서식통일_위치마무리_사용 = True   # 마무리 단계에서 고친 문장을 계획 위치로 바로 찾는다(꺼짐=문서 전체 순회)
+
+
+def _서식통일_마무리_위치로(대상):
+    """계획 위치로 바로 가서 글이 같은 문장을 마무리한다. 마무리한 수를 돌려준다(중단 요청이면 False).
+
+    서식 적용·내어쓰기·자간은 문단 수를 바꾸지 않아 계획 위치가 그대로 맞는다. 그래도 위치의 글이 열쇠와
+    다르면(다른 단계가 문단을 바꾼 경우) 그 문장은 대상에 남겨 예전 순회가 글로 찾게 한다.
+    """
+    조정수 = 0
+    위치순 = sorted((위치, key) for key, 위치 in _서식통일_보류위치.items() if key in 대상 and 위치)
+    for 위치, key in 위치순:
+        if 중단_요청됨():
+            return False
+        try:
+            if hwp.SetPos(*위치) is False:
+                continue
+            hwp_run("MoveParaBegin")
+            시작 = hwp.GetPos()
+            text = 현재문단_텍스트()
+        except Exception:
+            continue
+        if 시작[0] != 0 or text.strip() != key:
+            continue
+        원문 = _서식통일_위치텍스트_보관.get(key, text)
+        if _서식통일_공백제거(원문) != _서식통일_공백제거(text):
+            원문 = text
+        if 서식통일_문장_마무리(시작, 원문, bool(대상.pop(key))) is False:
+            return False
+        조정수 += 1
+    return 조정수
+
+
 def 서식통일_보류자간_재조정():
     """(표준 서식 없음) 서식통일이 고친 문장에 마무리 묶음을 적용한다."""
     if not _서식통일_자간보류문단:
         return True
+    단계표시("서식통일 마무리")
     대상 = dict(_서식통일_자간보류문단)
     조정수 = 0
-    hwp_run("MoveDocBegin")
+    if 알파_서식통일_위치마무리_사용:
+        조정수 = _서식통일_마무리_위치로(대상)
+        if 조정수 is False:
+            return False
+        if 대상:
+            진단로그(f"[서식통일] 계획 위치에서 찾지 못한 문장 {len(대상)}개는 문서를 순회해 찾음")
+    if 대상:
+        hwp_run("MoveDocBegin")
     while 대상:
         if 중단_요청됨():
             return False
@@ -17712,6 +17758,7 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
         _서식통일_문서대표프로필 = {}
         _서식통일_자간보류문단.clear()
         _서식통일_위치텍스트_보관.clear()
+        _서식통일_보류위치.clear()
     def stage(name, action):
         단계표시(name)
         상태(f"{파일명} [{회차}/{총회차}] : {name}")
