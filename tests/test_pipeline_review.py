@@ -408,6 +408,20 @@ class PipelineReviewTest(unittest.TestCase):
         _, applied = self._unify_plan(False, dict(base, 최종_내어쓰기_예정=False), samples)
         self.assertTrue(any(item['hanging_mismatch'] for item in applied if isinstance(item, dict)))
 
+    def test_unify_fixes_only_font_and_size_unless_full_format_is_on(self):
+        # 서식 통일 기본은 글꼴·크기만 맞춘다. 글자색이 다른 문장은 '전체 서식 맞추기'를 켰을 때만 고친다(2026-10-11).
+        normal = {'marker_bold': True, 'line_count': 2, 'color': '#000000'}
+        odd = {'marker_bold': True, 'line_count': 2, 'color': '#FF0000',
+               'color_runs': (((0, 3, 0), (0, 3, 3), '#FF0000', 3),)}
+        samples = [('ㅇ 하나', normal), ('ㅇ 둘', normal), ('ㅇ 셋', normal), ('ㅇ 넷', odd)]
+        base = {'작업_모드': 'unify', '표준서식_사용': False, '괄호_축소_사용': False, '최종_내어쓰기_예정': False}
+        _, applied = self._unify_plan(False, dict(base, 선택_세부작업=None), samples)
+        self.assertEqual([item for item in applied if isinstance(item, dict) and item['mismatch']], [])
+        _, applied = self._unify_plan(False, dict(base, 선택_세부작업={'unify_full_format': True}), samples)
+        fixed = [item for item in applied if isinstance(item, dict) and item['mismatch']]
+        self.assertEqual(len(fixed), 1)
+        self.assertTrue(fixed[0]['color_runs'])
+
 
 if __name__ == '__main__':
     unittest.main()

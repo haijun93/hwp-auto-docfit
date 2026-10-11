@@ -49,6 +49,7 @@ jobs:
           --clean
           --onefile
           --windowed
+          --icon resources/app_icon.ico
           --name HWP_AutoDocFit
           --add-data "MapoHwpAutoDocFitSecurity.dll;."
           --add-data "desktop_web;desktop_web"

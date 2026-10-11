@@ -6,16 +6,16 @@
 **다 쓴 한글(HWP·HWPX) 보고서를 넣고 「정리 시작」만 누르세요.** 설치된 한/글을 자동으로 조작해 공문서 모양으로 다듬어 줍니다.
 
 <p>
-<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/permalink/latest"><img alt="최신 버전" src="https://img.shields.io/badge/%EC%B5%9C%EC%8B%A0-v1.73.1-2563eb"></a>
+<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/permalink/latest"><img alt="최신 버전" src="https://img.shields.io/badge/%EC%B5%9C%EC%8B%A0-v1.74%20Beta%201-2563eb"></a>
 <img alt="무료" src="https://img.shields.io/badge/%EA%B0%80%EA%B2%A9-%EB%AC%B4%EB%A3%8C-16a34a">
 <img alt="Windows 10·11" src="https://img.shields.io/badge/Windows-10%C2%B711-0078d4">
 <img alt="한/글 2020" src="https://img.shields.io/badge/%ED%95%9C%2F%EA%B8%80-2020-0ea5e9">
 <img alt="문서 외부 전송 없음" src="https://img.shields.io/badge/%EB%AC%B8%EC%84%9C-%EC%99%B8%EB%B6%80%20%EC%A0%84%EC%86%A1%20%EC%97%86%EC%9D%8C-64748b">
 </p>
 
-## **[⬇ 무료로 내려받기 — v1.73.1](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/permalink/latest)**
+## **[⬇ 무료로 내려받기 — v1.74 Beta 1](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/permalink/latest)**
 
-설치 없이 실행 파일 하나로 시작합니다 · [변경 사항](releases/v1.73.1.md) · [GitHub](https://github.com/haijun93/hwp-auto-docfit) · [GitLab](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
+설치 없이 실행 파일 하나로 시작합니다 · [변경 사항](releases/v1.74-beta.1.md) · [GitHub](https://github.com/haijun93/hwp-auto-docfit) · [GitLab](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
 
 [![프로그램 사용 시연 영상 (약 5분). 클릭하면 고화질 영상이 열립니다.](docs/media/overview-demo.gif)](docs/media/overview-demo.mp4)
 
@@ -204,7 +204,7 @@
 
 ## 지금 바로 시작하세요
 
-**[⬇ 무료로 내려받기 (v1.73.1)](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/permalink/latest)** · [▶ 예제 파일로 5분 체험하기](#examples) · [자세한 사용 설명서](#manual)
+**[⬇ 무료로 내려받기 (v1.74 Beta 1)](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/permalink/latest)** · [▶ 예제 파일로 5분 체험하기](#examples) · [자세한 사용 설명서](#manual)
 
 ---
 
@@ -212,7 +212,7 @@
 
 # 자세한 사용 설명서
 
-이번 버전에서 바뀐 점: **v1.73.1**은 '한 번에 적용'의 서식 단계를 HWPX에서 직접 처리해 처리 시간을 줄이고(기본 서식 약 −17%, 예시 복사 서식 약 −23%, 결과는 같음), 선 문자 표 잔여물·처리 중단 결함을 고치고, 미리보기 그림 없는 예시도 썸네일을 만듭니다([변경 사항](releases/v1.73.1.md)).
+이번 버전에서 바뀐 점: **v1.74 Beta 1**은 '서식 통일'을 기본으로 글꼴·크기만 맞추고('전체 서식 맞추기' 옵션으로 예전 동작), 문서 조사·검수를 HWPX에서 한 번에 하고 고친 문장을 바로 찾아가 처리 시간을 줄입니다(예: 17쪽 문서 116 → 51초, 결과는 같은 설정이면 같음, [변경 사항](releases/v1.74-beta.1.md)).
 
 <details>
 <summary><b>기능별 자세한 설명과 옵션 위치 펼치기</b></summary>

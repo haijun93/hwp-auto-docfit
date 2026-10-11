@@ -379,7 +379,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리"
-APP_VERSION = "1.73.1"
+APP_VERSION = "1.74 Beta 1"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 GITHUB_UPDATE_API_URL = "https://api.github.com/repos/haijun93/hwp-auto-docfit/releases/latest"
@@ -1346,6 +1346,8 @@ def 번들_리소스_폴더():
     "unify_exclude_pagefit": True,
     # 서식 통일 카드의 '원본 쪽 구성 유지'(세부 작업 page_layout_keep과 연동, 기본 켬).
     "unify_keep_layout": True,
+    # 서식 통일 카드의 '전체 서식 맞추기'(세부 작업 unify_full_format과 연동, 기본 끔 = 글꼴·크기만 맞춤).
+    "unify_full_format": False,
     # 서식통일 뒤 '작업 결과 확인' 창(서식통일 5/5)을 띄울지. 기본 꺼짐(2026-10-04 사용자 요청).
     "unify_result_window": False,
     # '자간 정리' 카드의 '기존 자간 초기화'(세부 작업 01과 같은 값). None이면 저장된 세부 작업 구성을 따른다.
@@ -7674,6 +7676,9 @@ _서식통일_대표값_검토콜백 = None
 # 원본 HWPX 분석 결과(경로·수정 시각·크기가 같을 때 재사용)와 마무리 단계용 위치 기준 텍스트.
 _서식통일_HWPX_캐시 = {}
 _서식통일_위치텍스트_보관 = {}
+# 마무리 단계용 고친 문장의 계획 위치(문단 글 → 시작 위치). 서식 적용은 문단 수를 바꾸지 않으므로
+# 마무리에서 이 위치로 바로 가 글을 대조하고, 맞지 않는 문장만 예전처럼 문서를 순회해 찾는다.
+_서식통일_보류위치 = {}
 # 문서 헤더에서 읽은 글꼴 이름별 형식(TTF/HFT). 한/글 내장 HFT 글꼴(한양중고딕 등)을
 # TTF로 지정하면 한/글이 오류 없이 무시한다(실측: 정책회의 ※ 문장 8개 글꼴 미반영).
 _글꼴형식 = {}
@@ -8706,29 +8711,95 @@ def _서식통일_문단자간_조정(start, end):
     return True
 
 
-def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False):
-    global _서식통일_문서대표프로필, _서식통일_최종감사, 서식통일_괄호크기차이
-    if 중단_요청됨():
-        return False
-    범위표시 = (f"{쪽범위_실제[0]}~{쪽범위_실제[1]}쪽" if 쪽범위_실제 is not None
-               else "전체 문서")
-    기준설명 = ("최초 문서 표본에서 고정한 대표 프로필로 후속 변경을 재검증"
-               if 고정_프로필_재적용 else "항목기호·보고서 계층별 문서 표본에서 대표 서식 산출")
-    작업설명 = "저장 결과를 읽기 전용으로 검증" if 검증만 else "표준과 다른 구간만 보정"
-    if 검증만:
-        단계표시("서식통일 검수")
-    elif not 고정_프로필_재적용:
-        단계표시("서식통일 조사")
-    로그(f"서식통일 시작: 수정 범위 {범위표시}, {기준설명}, {작업설명}, "
-         "표준 문장은 무변경, 괄호(문두 라벨 제외)는 본문 크기 기준 -2pt, 자간 초기화 없음")
-    if (not 검증만 and (고정_프로필_재적용 or 작업_모드 != "unify")
-            and _서식통일_현재_HWPX() is not None):
-        # 앞선 단계(공백 정리·표준 서식 등)가 문서를 바꿨으면 디스크의 HWPX와 문단 번호·글자
-        # 위치가 다르다. 조사 전에 현재 상태를 스냅숏으로 저장해 원문·서식을 정확히 읽는다.
-        try:
-            _제목_임시hwpx_저장(Path(tempfile.mkdtemp(prefix="hwp_format_first_")) / "서식통일.hwpx")
-        except Exception as exc:
-            로그(f"[서식통일] 현재 상태 스냅숏 저장 실패 — 원문이 다른 문단은 건너뜀: {exc}")
+알파_서식통일_XML조사_사용 = True   # 서식통일 표본 조사를 한/글 문단 순회 대신 HWPX 스냅숏에서 한다(꺼짐=예전 순회)
+_서식통일_글꼴크기_필드 = ("font", "size", "marker_bold", "label_bold")
+
+
+def _서식통일_글꼴크기만():
+    """서식 통일 카드에서 '전체 서식 맞추기'를 켜지 않았으면 글꼴·크기만 맞춘다(2026-10-11 사용자 결정).
+
+    글꼴·크기에는 항목기호·라벨 굵게와 괄호 크기 규칙을 포함한다. 한 번에 적용·서식 적용의 서식통일은 그대로다.
+    """
+    return 작업_모드 == "unify" and not stage_enabled(선택_세부작업, "unify_full_format", 작업_모드)
+
+
+def _서식통일_글꼴크기_대표(대표):
+    """대표값에서 글꼴·크기(+항목기호·라벨 굵게)만 남긴 사본. 나머지 항목은 비교하지 않는다."""
+    if not 대표:
+        return 대표
+    return {키: 값 for 키, 값 in 대표.items() if 키 in _서식통일_글꼴크기_필드}
+
+
+def _서식통일_XML_조사():
+    """HWPX 스냅숏에서 표본을 모은다. 한/글은 문단 번호 대응 확인과 1쪽 끝 찾기에만 쓴다.
+
+    돌려주는 값은 _서식통일_COM_조사와 같다. 쓸 수 없으면 None(예전 순회로 대신한다).
+    """
+    if not 알파_서식통일_XML조사_사용:
+        return None
+    문서경로 = _서식통일_현재_HWPX()
+    if 문서경로 is None:
+        return None
+    try:
+        from docfit_core.style_inventory import _tag
+        문단들 = _서식통일_HWPX_분석(문서경로)["paragraphs"]
+        글들 = ["".join(_서식통일_run_text(run)[0] for run in para if _tag(run) == "run") for para in 문단들]
+        if not 문단들:
+            return None
+        # 한/글 본문 문단 번호와 HWPX 직속 문단 번호가 맞는지 확인한다(끝 번호 + 글이 있는 문단 3곳).
+        hwp_run("MoveDocEnd")
+        끝 = tuple(hwp.GetPos())
+        if 끝[0] != 0 or 끝[1] != len(문단들) - 1:
+            진단로그(f"[서식통일] 문단 번호가 HWPX와 맞지 않아(한/글 {끝[1] + 1}개, HWPX {len(문단들)}개) 예전 조사 방식으로 진행")
+            return None
+        글있음 = [번호 for 번호, 글 in enumerate(글들) if 글.strip()]
+        for 번호 in sorted({글있음[0], 글있음[len(글있음) // 2], 글있음[-1]}) if 글있음 else ():
+            hwp.SetPos(0, 번호, 0)
+            hwp_run("MoveParaBegin")
+            if _서식통일_공백제거(현재문단_텍스트()) != _서식통일_공백제거(글들[번호]):
+                진단로그(f"[서식통일] {번호 + 1}번째 문단 글이 HWPX와 달라 예전 조사 방식으로 진행")
+                return None
+        # 1쪽에 속한 문단(표지 판정용). 쪽 번호는 문단 순서대로 늘므로 이분 탐색으로 1쪽의 끝을 찾는다.
+        def 쪽(번호):
+            hwp.SetPos(0, 번호, 0)
+            hwp_run("MoveParaBegin")
+            return 현재_페이지번호()
+        첫쪽끝, 첫쪽끝위치 = False, len(문단들)
+        if 쪽(len(문단들) - 1) > 1:
+            첫쪽끝 = True
+            낮, 높 = 0, len(문단들) - 1
+            while 낮 < 높:
+                가운데 = (낮 + 높) // 2
+                if 쪽(가운데) > 1:
+                    높 = 가운데
+                else:
+                    낮 = 가운데 + 1
+            첫쪽끝위치 = 낮
+        표본, 문맥, 위치텍스트 = {}, {}, {}
+        직전기호 = None
+        for 번호, 글 in enumerate(글들):
+            if 중단_요청됨():
+                return False
+            pos = (0, 번호, 0)
+            marker = 서식통일_항목기호(글)[0] if 글.strip() else ""
+            if marker:
+                결과 = 서식통일_표본(pos, 글)
+                if 결과:
+                    표본.setdefault(marker, []).append(결과 + (글,))
+                    문맥[pos] = 직전기호
+                    위치텍스트[pos] = 글
+                직전기호 = marker
+            elif 글.strip():
+                직전기호 = None
+        hwp_run("MoveDocBegin")
+        return 표본, 문맥, 위치텍스트, list(range(첫쪽끝위치)), 첫쪽끝
+    except Exception as 오류:
+        진단로그(f"[서식통일] HWPX 조사 실패, 예전 조사 방식으로 진행: {오류}")
+        return None
+
+
+def _서식통일_COM_조사():
+    """본문 문단을 한/글로 하나씩 돌며 표본을 모은다(예전 방식). 중단하면 False."""
     표본 = {}
     # 쪽 범위는 수정 대상을 제한하지만, 대표서식은 같은 문서의 정상 문장까지
     # 포함해 산출해야 한다. 선택 쪽에서만 표본을 모으면 그 쪽의 이상 서식이
@@ -8766,6 +8837,45 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
             hwp.SetPos(*pos)
         if not 다음_문단으로_진행():
             break
+    return 표본, 문맥, 위치텍스트, 첫쪽문단, 첫쪽끝
+
+
+def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False):
+    global _서식통일_문서대표프로필, _서식통일_최종감사, 서식통일_괄호크기차이
+    if 중단_요청됨():
+        return False
+    범위표시 = (f"{쪽범위_실제[0]}~{쪽범위_실제[1]}쪽" if 쪽범위_실제 is not None
+               else "전체 문서")
+    기준설명 = ("최초 문서 표본에서 고정한 대표 프로필로 후속 변경을 재검증"
+               if 고정_프로필_재적용 else "항목기호·보고서 계층별 문서 표본에서 대표 서식 산출")
+    작업설명 = "저장 결과를 읽기 전용으로 검증" if 검증만 else "표준과 다른 구간만 보정"
+    글꼴크기만 = _서식통일_글꼴크기만()
+    if 검증만:
+        단계표시("서식통일 검수")
+    elif not 고정_프로필_재적용:
+        단계표시("서식통일 조사")
+    로그(f"서식통일 시작: 수정 범위 {범위표시}, {기준설명}, {작업설명}, "
+         "표준 문장은 무변경, 괄호(문두 라벨 제외)는 본문 크기 기준 -2pt, 자간 초기화 없음")
+    로그("[서식통일] 비교 범위: " + ("글꼴·크기(항목기호·라벨 굵게, 괄호 크기 포함)만 맞춤" if 글꼴크기만
+                                    else "전체 서식(글자색·기울임·밑줄·정렬·여백·위 간격·내어쓰기 포함)"))
+    if (not 검증만 and (고정_프로필_재적용 or 작업_모드 != "unify")
+            and _서식통일_현재_HWPX() is not None):
+        # 앞선 단계(공백 정리·표준 서식 등)가 문서를 바꿨으면 디스크의 HWPX와 문단 번호·글자
+        # 위치가 다르다. 조사 전에 현재 상태를 스냅숏으로 저장해 원문·서식을 정확히 읽는다.
+        try:
+            _제목_임시hwpx_저장(Path(tempfile.mkdtemp(prefix="hwp_format_first_")) / "서식통일.hwpx")
+        except Exception as exc:
+            로그(f"[서식통일] 현재 상태 스냅숏 저장 실패 — 원문이 다른 문단은 건너뜀: {exc}")
+    조사 = _서식통일_XML_조사()
+    XML조사 = 조사 is not None and 조사 is not False
+    if 조사 is None:
+        조사 = _서식통일_COM_조사()
+    if 조사 is False:
+        return False
+    표본, 문맥, 위치텍스트, 첫쪽문단, 첫쪽끝 = 조사
+    # 쪽 범위는 수정 대상을 제한하지만, 대표서식은 같은 문서의 정상 문장까지
+    # 포함해 산출해야 한다. 선택 쪽에서만 표본을 모으면 그 쪽의 이상 서식이
+    # 대표값으로 채택되어 검출이 0건이 되는 문제가 생긴다.
     # 1쪽이 표지(본문보다 확연히 큰 가운데 정렬 제목)이면 표본·수정 대상에서 뺀다.
     본문크기 = 서식통일_우세값(((모양[1], 1) for 항목들 in 표본.values()
                              for 모양, *_ in 항목들 if 모양[1]), ratio=0)
@@ -8959,6 +9069,8 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
             진단로그(f"[서식통일] '{marker}/{role}' 문장이 하나뿐이라 비교 대상이 없어 건너뜀: "
                      f"{항목들[0][3].strip()[:60]}")
             continue
+        if 글꼴크기만:
+            대표 = _서식통일_글꼴크기_대표(대표)
         글꼴, 글꼴수 = 대표["font"]
         크기, 크기수 = 대표["size"]
         색표준 = 대표.get("color", (None, 0))[0]
@@ -8997,6 +9109,8 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
                 현재내어쓰기 = None
             elif "hanging_indent" in 부가:
                 현재내어쓰기 = bool(부가["hanging_indent"])
+            elif 내어쓰기표준 is None:
+                현재내어쓰기 = None     # 비교 기준이 없으면 한/글에 물을 필요가 없다
             else:
                 현재내어쓰기 = _서식통일_내어쓰기_상태(문단시작, 원문)
             # 기준 미정 문단은 내어쓰기를 일부러 건너뛰고 빨간 표시로 보고하므로 불일치로 세지 않는다.
@@ -9007,7 +9121,7 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
                                and 내어쓰기표준 != 현재내어쓰기 and not 미판정필드)
             장평표준 = 대표.get("ratio", (None, 0))[0]
             장평_불일치 = 장평표준 is not None and 부가.get("ratio") not in (None, 장평표준)
-            위간격 = 위간격대표.get((그룹키, 문맥.get(tuple(시작))))
+            위간격 = None if 글꼴크기만 else 위간격대표.get((그룹키, 문맥.get(tuple(시작))))
             위간격_불일치 = 위간격 is not None and 부가.get("prev_spacing") != 위간격[0]
             # 글자색·음영: 문장 값이 대표값과 다르면 그 값을 쓴 구간만 대표값으로 바꾼다
             # (다른 색으로 강조한 낱말은 그대로 둔다). 대표값 미확정 문장은 빨간 표시가 우선이다.
@@ -9199,6 +9313,25 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
                  + ", ".join(f"{field} {count}" for field, count in 항목별.most_common()))
         return _서식통일_최종감사
 
+    if XML조사:
+        # XML 조사는 HWPX 글로 표본을 만들었다. 이어지는 자간·내어쓰기 단계는 한/글이 읽는 글을 열쇠로 쓰므로,
+        # 실제로 고칠 문장만 한/글에서 글을 다시 읽어 바꾼다(HWPX 글과 다르면 그 문장은 건드리지 않는다).
+        for item in 계획:
+            if not (item["mismatch"] or item["unresolved_fields"]):
+                continue
+            한글 = None
+            try:
+                hwp.SetPos(*item["start"])
+                hwp_run("MoveParaBegin")
+                한글 = 현재문단_텍스트()
+            except Exception:
+                pass
+            if 한글 is not None and _서식통일_공백제거(한글) == _서식통일_공백제거(item["position_text"]):
+                item["text"] = 한글
+            else:
+                진단로그(f"[서식통일] 한/글 글이 HWPX와 달라 이 문장은 건너뜀: {item['position_text'].strip()[:60]}")
+                item["mismatch"] = False
+                item["unresolved_fields"] = []
     # 4단계: 문서 순서로 한 문단의 서식 → 자간 → 내어쓰기를 끝낸다.
     로그("[서식통일] 4/5 문장별 자동 처리: 서식 → 자간 → 내어쓰기")
     if not 고정_프로필_재적용:
@@ -9219,9 +9352,11 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
                 # 내어쓰기 → 자간 → 외톨이 당기기는 모든 문장의 서식을 맞춘 뒤 한 묶음으로 한다.
                 _서식통일_자간보류문단[item["text"].strip()] = item["expected_hanging"]
                 _서식통일_위치텍스트_보관[item["text"].strip()] = item["position_text"]
+                _서식통일_보류위치[item["text"].strip()] = item["start"]
             elif not 서식통일_빨간표시_사용:
                 _서식통일_자간보류문단[item["text"].strip()] = item["expected_hanging"]
                 _서식통일_위치텍스트_보관[item["text"].strip()] = item["position_text"]
+                _서식통일_보류위치[item["text"].strip()] = item["start"]
             교정수 += 1
             진단로그(f"[서식통일 문장] 완료 {item['start']}")
         if item["unresolved_fields"] and not 서식통일_빨간표시_사용:
@@ -9286,13 +9421,54 @@ def 서식통일_문장_마무리(시작, text, 내어쓰기):
     return True
 
 
+알파_서식통일_위치마무리_사용 = True   # 마무리 단계에서 고친 문장을 계획 위치로 바로 찾는다(꺼짐=문서 전체 순회)
+
+
+def _서식통일_마무리_위치로(대상):
+    """계획 위치로 바로 가서 글이 같은 문장을 마무리한다. 마무리한 수를 돌려준다(중단 요청이면 False).
+
+    서식 적용·내어쓰기·자간은 문단 수를 바꾸지 않아 계획 위치가 그대로 맞는다. 그래도 위치의 글이 열쇠와
+    다르면(다른 단계가 문단을 바꾼 경우) 그 문장은 대상에 남겨 예전 순회가 글로 찾게 한다.
+    """
+    조정수 = 0
+    위치순 = sorted((위치, key) for key, 위치 in _서식통일_보류위치.items() if key in 대상 and 위치)
+    for 위치, key in 위치순:
+        if 중단_요청됨():
+            return False
+        try:
+            if hwp.SetPos(*위치) is False:
+                continue
+            hwp_run("MoveParaBegin")
+            시작 = hwp.GetPos()
+            text = 현재문단_텍스트()
+        except Exception:
+            continue
+        if 시작[0] != 0 or text.strip() != key:
+            continue
+        원문 = _서식통일_위치텍스트_보관.get(key, text)
+        if _서식통일_공백제거(원문) != _서식통일_공백제거(text):
+            원문 = text
+        if 서식통일_문장_마무리(시작, 원문, bool(대상.pop(key))) is False:
+            return False
+        조정수 += 1
+    return 조정수
+
+
 def 서식통일_보류자간_재조정():
     """(표준 서식 없음) 서식통일이 고친 문장에 마무리 묶음을 적용한다."""
     if not _서식통일_자간보류문단:
         return True
+    단계표시("서식통일 마무리")
     대상 = dict(_서식통일_자간보류문단)
     조정수 = 0
-    hwp_run("MoveDocBegin")
+    if 알파_서식통일_위치마무리_사용:
+        조정수 = _서식통일_마무리_위치로(대상)
+        if 조정수 is False:
+            return False
+        if 대상:
+            진단로그(f"[서식통일] 계획 위치에서 찾지 못한 문장 {len(대상)}개는 문서를 순회해 찾음")
+    if 대상:
+        hwp_run("MoveDocBegin")
     while 대상:
         if 중단_요청됨():
             return False
@@ -9320,7 +9496,7 @@ def 서식통일_보류자간_재조정():
 def _서식통일_표모형(제외문단=()):
     """HWPX의 표를 표 서식통일 판정용 모형으로 읽는다(읽기 전용).
 
-    한/글의 목록 번호는 문서 순서의 subList(표 칸·머리말·캡션 등) 순번 + 2다(실측: 교육부
+    한/글의 목록 번호는 문서 순서의 subList(표 칸·머리말·캡션 등) 순번 + 2다(실측: 업무계획 문서
     46개, 정책회의 1,179개가 COM 목록 수와 일치). 칸 글자 위치를 확신할 수 없는 문단(칸 안
     표·그림)은 비교에서 뺀다.
     """
@@ -17315,6 +17491,26 @@ def 번들_고양이_그림_찾기():
     return next((경로 for 경로 in 후보_목록 if 경로.is_file()), None)
 
 
+def 번들_앱아이콘_찾기():
+    """앱 아이콘(resources/app_icon.ico, scripts/make_app_icon.py로 고양이 그림에서 만듦). 없으면 None."""
+    후보_목록 = [프로그램_폴더() / "resources" / "app_icon.ico"]
+    번들_폴더 = 번들_리소스_폴더()
+    if 번들_폴더 is not None:
+        후보_목록.append(번들_폴더 / "resources" / "app_icon.ico")
+    return next((경로 for 경로 in 후보_목록 if 경로.is_file()), None)
+
+
+def _앱아이콘_적용(root):
+    """Tk 기본창과 이후 새 창(Toplevel) 모두의 제목 표시줄 아이콘을 앱 아이콘으로 바꾼다."""
+    아이콘 = 번들_앱아이콘_찾기()
+    if 아이콘 is None:
+        return
+    try:
+        root.iconbitmap(default=str(아이콘))
+    except Exception:
+        pass
+
+
 def 처리_쪽수_구하기():
     """이번에 처리한 문서의 쪽 수(쪽 범위를 지정했으면 그 범위의 쪽 수). 알 수 없으면 1."""
     try:
@@ -17562,6 +17758,7 @@ def _문서_처리_1회(파일명, 문장부호기능=True, 회차=1, 총회차=
         _서식통일_문서대표프로필 = {}
         _서식통일_자간보류문단.clear()
         _서식통일_위치텍스트_보관.clear()
+        _서식통일_보류위치.clear()
     def stage(name, action):
         단계표시(name)
         상태(f"{파일명} [{회차}/{총회차}] : {name}")
@@ -19517,8 +19714,10 @@ class HwpAutoDocFitGUI:
         self.unify_exclude_spacing_var = tk.BooleanVar(value=bool(저장된_설정.get("unify_exclude_spacing", False)))
         self.unify_exclude_pagefit_var = tk.BooleanVar(value=bool(저장된_설정.get("unify_exclude_pagefit", True)))
         self.unify_keep_layout_var = tk.BooleanVar(value=bool(저장된_설정.get("unify_keep_layout", True)))
+        self.unify_full_format_var = tk.BooleanVar(value=bool(저장된_설정.get("unify_full_format", False)))
         for 변수 in (self.exclude_tables_var, self.all_exclude_pagefit_var, self.unify_exclude_tables_var,
-                     self.unify_exclude_spacing_var, self.unify_exclude_pagefit_var, self.unify_keep_layout_var):
+                     self.unify_exclude_spacing_var, self.unify_exclude_pagefit_var, self.unify_keep_layout_var,
+                     self.unify_full_format_var):
             변수.trace_add("write", self._설정_변경됨)
             변수.trace_add("write", self._요약갱신)
         # '자간 정리' 카드의 '기존 자간 초기화'. 세부 작업 01(문서 전체 자간 초기화)과 같은 값이며 설정 파일에 저장한다.
@@ -19593,6 +19792,9 @@ class HwpAutoDocFitGUI:
                 # 켜면 결과의 쪽 구성(보고서별 쪽 수·시작 쪽, 전체 쪽 수)을 원본과 같게 맞춘다.
                 self.unify_keep_layout_check = 카드_체크(
                     "원본 쪽 구성 유지", self.unify_keep_layout_var, lambda: self._카드옵션_변경("unify"))
+                # 끄면(기본) 글꼴·크기만, 켜면 글자색·정렬·여백·위 간격·내어쓰기까지 전체 서식을 맞춘다.
+                self.unify_full_format_check = 카드_체크(
+                    "전체 서식 맞추기", self.unify_full_format_var, lambda: self._카드옵션_변경("unify"))
             if mode == "all":
                 # 끄면 기존 자간을 그대로 두고 서식만 입힌다(결과 파일 이름은 '서식적용').
                 self.include_spacing_check = tk.Checkbutton(
@@ -20491,7 +20693,8 @@ class HwpAutoDocFitGUI:
             summary = "항목기호별로 문서에서 많이 쓰인 서식을 적용합니다."
             for 이름, 문구 in (("unify_exclude_tables_var", "표 제외"), ("unify_exclude_spacing_var", "자간 정리 제외"),
                              ("unify_exclude_pagefit_var", "페이지 맞춤 제외"),
-                             ("unify_keep_layout_var", "원본 쪽 구성 유지")):
+                             ("unify_keep_layout_var", "원본 쪽 구성 유지"),
+                             ("unify_full_format_var", "전체 서식 맞추기")):
                 if hasattr(self, 이름) and getattr(self, 이름).get():
                     summary += f" · {문구}"
         elif mode == "format":
@@ -20653,6 +20856,7 @@ class HwpAutoDocFitGUI:
         "unify_exclude_spacing": ("unify_exclude_spacing_var", False),
         "unify_exclude_pagefit": ("unify_exclude_pagefit_var", False),
         "unify_keep_layout": ("unify_keep_layout_var", False),
+        "unify_full_format": ("unify_full_format_var", False),
         "all_include_spacing": ("include_spacing_var", False),
         "all_exclude_tables": ("exclude_tables_var", False),
         "all_exclude_pagefit": ("all_exclude_pagefit_var", False),
@@ -24133,7 +24337,8 @@ class HwpAutoDocFitGUI:
                            ("unify_exclude_tables", "unify_exclude_tables_var"),
                            ("unify_exclude_spacing", "unify_exclude_spacing_var"),
                            ("unify_exclude_pagefit", "unify_exclude_pagefit_var"),
-                           ("unify_keep_layout", "unify_keep_layout_var")):
+                           ("unify_keep_layout", "unify_keep_layout_var"),
+                           ("unify_full_format", "unify_full_format_var")):
                 설정값[키] = bool(getattr(self, 이름).get()) if hasattr(self, 이름) else False
             설정값["spacing_reset_existing"] = bool(self.stage_choices["spacing"].get("reset_spacing", True))
             설정값["active_format_profile"] = getattr(self, "_활성_서식_프로파일", "")
@@ -25616,6 +25821,7 @@ def main():
     tk_only = os.environ.get("HWP_AUTODOCFIT_UI", "").strip().lower() == "tk"
     if tk_only or importlib.util.find_spec("webview") is None:
         root = TkinterDnD.Tk()
+        _앱아이콘_적용(root)
         HwpAutoDocFitGUI(root)
         _새창_맨앞으로(root)
         root.mainloop()
@@ -25627,6 +25833,7 @@ def main():
     def tk_실행():
         try:
             root = TkinterDnD.Tk()
+            _앱아이콘_적용(root)
             gui = HwpAutoDocFitGUI(root)
             웹모드_기본창_숨김(root)
             보관.update(root=root, gui=gui)
@@ -25649,6 +25856,7 @@ def main():
         desktop_web_ui.APP_NAME = APP_NAME
         desktop_web_ui.APP_VERSION = APP_VERSION
         desktop_web_ui.STAGE_ORDER = 진행단계_순서
+        desktop_web_ui.APP_ICON = str(번들_앱아이콘_찾기() or "")
         if not desktop_web_ui.run_webview(보관["gui"]):
             보관["root"].after(0, lambda: 웹모드_기본창_복원(보관["root"]))
             tk_thread.join()

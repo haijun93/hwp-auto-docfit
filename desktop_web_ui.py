@@ -345,6 +345,7 @@ class DesktopWebBridge:
         "unify_exclude_spacing": ("unify_exclude_spacing_var", "unify"),
         "unify_exclude_pagefit": ("unify_exclude_pagefit_var", "unify"),
         "unify_keep_layout": ("unify_keep_layout_var", "unify"),
+        "unify_full_format": ("unify_full_format_var", "unify"),
     }
 
     def _card_options(self):
@@ -867,11 +868,14 @@ def run_webview(gui):
             daemon=True,
         ).start()
 
-    webview.start(initialize_webview, args=[window], gui="edgechromium", http_server=True)
+    # 창 아이콘: 지정하지 않으면 실행 파일(python.exe 또는 exe)의 아이콘을 쓴다.
+    아이콘 = {"icon": APP_ICON} if APP_ICON and Path(APP_ICON).is_file() else {}
+    webview.start(initialize_webview, args=[window], gui="edgechromium", http_server=True, **아이콘)
     return True
 
 
 # Application values are injected by the entry point after import.
 APP_VERSION = ""
 APP_NAME = ""
+APP_ICON = ""
 STAGE_ORDER = ("열기", "서식", "자간", "줄 병합", "페이지 배치", "저장")

@@ -1050,6 +1050,11 @@ class _WorkspaceState extends State<Workspace> {
                       '원본 쪽 구성 유지',
                       '보고서별 쪽 수·시작 쪽을 원본과 같게 맞춰요.'
                     ),
+                    (
+                      'unify_full_format',
+                      '전체 서식 맞추기',
+                      '글꼴·크기뿐 아니라 색·밑줄·정렬·여백·내어쓰기도 맞춰요.'
+                    ),
                   ]) ...[
                     Row(
                       children: [

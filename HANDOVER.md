@@ -110,6 +110,7 @@ Flutter UI 빌드는 `powershell -File build_flutter.ps1`로 수행하며 `build
 - 중제목 글 칸 자동 폭(2026-10-04 사용자 요청): 1행 2열 이상이고 첫 칸에 로마자 번호(Ⅰ·Ⅱ·I·V) 또는 아라비아 숫자 번호(1·01·1.)만 있고 2열 또는 3열에 글이 있는 표(`중제목_글칸들`)는 글 칸 폭을 글자 수에 비례해 맞춥니다(`_중제목_칸폭_맞춤`: 칸 글자 모양의 크기·장평·자간으로 한 줄 폭을 어림해 좌우 여백·여유를 더함, 넓히기와 줄이기 모두, 표 폭은 칸 폭의 합이며 쪽 본문 폭을 넘으면 글 칸을 줄여 줄바꿈). HY견고딕 20pt 등 중제목 서식은 지금처럼 로마자 번호 1행2열·1행3열(번호·빈칸·글) 표에만 입히고(`중제목_유형판별`), 숫자 번호 표와 번호·글·빈칸 같은 모양은 서식은 두고 폭만 맞춥니다(`중제목_대상찾기`의 유형 'fit'). 숫자 번호 표는 로마자 중제목 아래 소제목인 경우가 많기 때문입니다(실측: 인천 종합보고 서식). 이런 표는 기본 표 서식·표 머리글 서식 대상에서도 뺍니다.
 - 서식 관리(2026-10-04): 웹 화면 `서식 관리` 창(Flutter `openFormats`/`formatManager`, 상태 변경은 `stateVersion` 알림으로 다시 그림)에서 예시 보고서를 끌어 놓아 서식을 복제하고 `사용`·`세부 수정`·`이름 바꾸기`·`삭제`를 합니다. 브리지: `set_drop_target`(documents/format, 놓기 안내 문구도 바꿈), `receive_drop`(놓기 대상에 따라 `add_paths` 또는 `add_format_paths`), `add_format_file`, `write_format_example`, `rename_profile`·`delete_profile`(실패 이유는 응답 `notice`), `edit_profile`, 상태 `profiles`(title·organization·builtin·source·active)·`format_task`(busy·file)·`drop_target`. Tk 쪽 본체는 확인 없이 부르는 `_서식_이름_저장`·`_서식_삭제`·`_서식_파일에서_추가`·`_서식_수정하기(identifier)`이며, 웹 화면 모드(`_웹화면_모드`: Tk 기본 창 숨김)에서는 안내 상자 대신 상태 문구로 알리고 서식 검토 창은 `창_맨앞으로`로 띄웁니다(숨은 기본 창에 딸리면 보이지 않고 입력이 막힘).
 - 카드 옵션(2026-10-04, 서식 통일 '페이지 맞춤 제외'만 기본 켜짐, 설정에 저장): 서식 통일 카드 `unify_exclude_tables`(→ `without_tables`)·`unify_exclude_spacing`(→ `표준서식_세부['unify_exclude_spacing']` → 전역 `서식통일_자간조정_사용` 끔, `서식통일_문장_마무리`가 자간 조정·외톨이 당기기를 건너뜀)·`unify_exclude_pagefit`, 한 번에 적용 카드 `all_exclude_pagefit`. 페이지 맞춤 제외는 `stage_selection.without_page_fit`(`page_fit`·`page_group`)입니다. `작업시작`이 세부 작업 사본에 반영해 넘깁니다. Tk 체크는 `card_option_checks`(카드별, 배경색 갱신), 웹·Flutter는 `set_card_option`·`card_options`입니다.
+- **서식 통일 비교 범위(알파, 2026-10-11 사용자 결정)**: 서식 통일 카드는 기본으로 글꼴·크기(항목기호·라벨 굵게, 괄호 크기 포함)만 맞추고, 카드 옵션 `전체 서식 맞추기`(`unify_full_format`, 기본 끔)를 켜면 글자색·기울임·밑줄·정렬·여백·위 간격·내어쓰기까지 맞춥니다(한 번에 적용·서식 적용은 전체 서식). 표본 조사는 `_서식통일_XML_조사`가 HWPX에서 하고 어긋나면 예전 `_서식통일_COM_조사`로 되돌립니다(`알파_서식통일_XML조사_사용`). 자세한 내용·PC 측정 항목은 `docs/작업결과_2026-10-11.md`. 시험 `tests/test_unify_font_size_xml.py`. 알파에서 효과를 평가한 뒤 베타에 반영합니다.
 - 카드 옵션 ↔ 세부 작업 연동(2026-10-04 사용자 요청): 카드 옵션 8개(자간 정리 2·서식 통일 3·한 번에 적용 3)가 그 카드의 세부 작업과 서로 연동됩니다. 대응표는 `stage_selection.CARD_OPTION_STAGES`(자간 정리 표 제외 → `control_*` 3개, 서식 통일 표 제외 → `table_style`·`table_unify`, 자간 정리 제외 → 새 세부 작업 `unify_spacing`, 페이지 맞춤 제외 → `page_fit`(·`page_group`), 자간 조정 포함 → all 구성 자간 작업 7개, 한 번에 적용 표 제외·페이지 맞춤 제외 → all·format 두 구성). 옵션을 바꾸면 Tk 변수 감시 `_카드옵션_세부작업_반영`이 관련 작업을 모두 같이 켜고 끄며(다른 옵션이 끈 작업은 켜지 않음), 세부 작업 창·웹 `set_stage`·`reset_stages`·설정창 단계 체크에서 바꾸면 `_세부작업_옵션_맞춤`이 옵션을 맞춥니다('제외'는 관련 작업이 모두 꺼지면 켜짐, 끄는 쪽으로 바뀌면 같은 카드 다른 구성도 끔, all에서 자간 작업을 모두 끄면 format으로 바뀜). 시작할 때 `_카드옵션_연동_시작`이 켜 둔 제외 옵션을 우선 반영하고 나머지는 세부 작업에서 맞추므로, 서식 통일 쪽 맞춤 기본 꺼짐에 맞춰 `unify_exclude_pagefit` 기본값은 켜짐입니다. `unify_spacing`은 따로 도는 단계가 아니라 서식통일 안 자간 조정 여부이며 `작업_실행`이 `서식통일_자간조정_반영`에 함께 반영합니다.
 - 서식통일 뒤 '작업 결과 확인' 창(`_서식통일_결과_확인창`, 서식통일 5/5)은 설정 `unify_result_window`(기본 꺼짐, 전역 `서식통일_결과창_사용`, Tk `unify_result_window_var`, 설정창 '검토와 작업 완료')가 켜져 있고 문서가 하나일 때만 띄웁니다(`_결과창_띄우는가`). `작업_실행`은 `표준서식_세부['unify_result_window']`로 반영합니다(2026-10-04 사용자 요청).
 - 새로 만드는 제목 표의 담당자 칸(2×2 B2, 2행1열 A2 = 마지막 칸) 글은 설정 `title_owner_text`(기본 빈 글 = 기준 표 글 유지), 전역 `제목_담당자_글`입니다. Tk `title_owner_var`는 서식 프로필을 골라도 바꾸지 않는 사용자 고유 값이라 `std_parspace_vars`가 아닌 별도 변수이며, 바뀌면 `제목_담당자_글_반영`·저장합니다. `서식표_생성`이 `_칸_글_넣기`로 넣고, `제목_유형판별`은 이 글을 담당자 칸으로 인정합니다(`_설정_담당자_글인가`). 문서에 이미 있는 제목 표의 담당자 칸은 바꾸지 않습니다.
@@ -233,6 +234,9 @@ Flutter UI 빌드는 `powershell -File build_flutter.ps1`로 수행하며 `build
 
 ## 9. 다음에 할 일
 
+> 2026-10-11 인수인계: 진행 중인 작업과 확인 순서는 `docs/인수인계_2026-10-11.md`를 먼저 본다.
+
+
 1. **알파 버전 표기**: `main` 배포 뒤 `alpha`를 `main`에 맞추고 `APP_VERSION`을 `1.69 Alpha 1`로 올리기(사용자 확인 필요).
 2. `TODO.md`의 설계 제안(착수 전, 사용자 확인 필요):
    - 앱 UI/UX 개선(원본 보존 문구 상시 노출, 첫 실행 안내, "세부 작업"/"세부 설정" 명칭)
@@ -250,6 +254,8 @@ Flutter UI 빌드는 `powershell -File build_flutter.ps1`로 수행하며 `build
 .\.venv\Scripts\python.exe hwp-auto-docfit.py
 # 전체 테스트 (약 3~4분, GUI 창이 잠깐 뜸)
 $env:PYTHONIOENCODING="utf-8"; .\.venv\Scripts\python.exe -m unittest discover -s tests
+# 약식 시험(핵심 기능, 문서별 5쪽 발췌본, 1회차) / 정식 시험(전체 문서·4가지 작업, 1회차). 문서 목록: %APPDATA%\HwpAutoDocFit\test_corpus.json
+.\.venv\Scripts\python.exe scripts\test_tier_pc.py --tier quick   # 또는 --tier full, --flag 이름=0 으로 대조
 # 문서 스타일 분석 보고서 + 예시 서식 만들기
 .\.venv\Scripts\python.exe scripts\style_inventory.py "문서.hwp" --out 결과폴더
 # 원격 상태

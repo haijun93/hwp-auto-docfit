@@ -58,7 +58,7 @@ def 코드_정보():
     return {'commit': git('rev-parse', '--short', 'HEAD'), 'dirty': bool(git('status', '--porcelain', '--', '*.py'))}
 
 
-def 작업_설정(s, 모드, 표제외_요청):
+def 작업_설정(s, 모드, 표제외_요청, 전체서식_요청=None):
     """화면이 작업을 시작할 때와 같은 규칙으로 (모드, 세부 작업, 표준서식 세부, 표 제외 여부)를 만든다."""
     if 모드 is None:
         모드 = 'all' if s.get('all_include_spacing', True) else 'format'
@@ -80,6 +80,10 @@ def 작업_설정(s, 모드, 표제외_요청):
         세부작업 = without_page_fit(세부작업)
     if 모드 == 'unify' and 'page_layout_keep' in 세부작업:
         세부작업['page_layout_keep'] = bool(s.get('unify_keep_layout', 세부작업['page_layout_keep']))
+    if 모드 == 'unify' and 'unify_full_format' in 세부작업:
+        세부작업['unify_full_format'] = bool(s.get('unify_full_format', 세부작업['unify_full_format']))
+        if 전체서식_요청 is not None:
+            세부작업['unify_full_format'] = 전체서식_요청
     세부 = {k: bool(s[k]) for k in STD_KEYS if k in s}
     세부['std_title_subtitle_pt'] = s.get('std_title_subtitle_pt')
     세부['table_fonts'] = s.get('table_fonts', {})
@@ -88,7 +92,7 @@ def 작업_설정(s, 모드, 표제외_요청):
     return 모드, 세부작업, 세부, 표제외
 
 
-def 처리(g, 원본, 작업폴더, 모드, 표제외_요청, 로그파일):
+def 처리(g, 원본, 작업폴더, 모드, 표제외_요청, 로그파일, 전체서식_요청=None):
     """앱과 같은 설정으로 처리하고 (사본, 결과, 초, 점수, 설정 요약)을 돌려준다."""
     사본 = Path(작업폴더) / ('src' + Path(원본).suffix.lower())
     shutil.copyfile(원본, 사본)
@@ -103,7 +107,7 @@ def 처리(g, 원본, 작업폴더, 모드, 표제외_요청, 로그파일):
     g.update(로그=로그, 진단로그=로그, 상태=lambda *_: None, 단계표시=g.get('단계표시', lambda *_: None),
              _서식통일_최종결과_사용자확인=lambda *_: None)
     s = g['설정_불러오기']()
-    모드, 세부작업, 세부, 표제외 = 작업_설정(s, 모드, 표제외_요청)
+    모드, 세부작업, 세부, 표제외 = 작업_설정(s, 모드, 표제외_요청, 전체서식_요청)
     간격 = {k: int(s[k]) for k in PARSPACE_KEYS}
     시작 = time.time()
     g['작업_실행']([str(사본)], s["punctuation"], None, False, None, None, True, s["stdformat"], s["verify"],
@@ -179,6 +183,9 @@ def main():
     parser.add_argument('--log-dir', help='문서별 작업 로그를 남길 폴더(처리 시간 계측 확인용)')
     parser.add_argument('--flag', action='append', default=[], metavar='이름=0|1',
                         help='앱 전역 플래그를 켜고 끔(예: --flag 알파_문단세트_사용=0). 여러 번 줄 수 있음')
+    parser.add_argument('--unify-full-format', choices=('0', '1'),
+                        help="서식 통일 카드의 '전체 서식 맞추기'를 끔(0)/켬(1). 주지 않으면 저장된 설정")
+    parser.add_argument('--keep-dir', help='결과 문서를 남길 폴더(결과 비교용, 문서이름.hwpx)')
     parser.add_argument('--beta-mode', action='store_true', help="알파 새 기능 플래그('알파_…_사용')를 모두 끔")
     args = parser.parse_args()
 
@@ -198,7 +205,8 @@ def main():
     for 문서 in args.documents:
         with tempfile.TemporaryDirectory(prefix='docfit_regression_') as 폴더, \
                 open(Path(폴더) / 'log.txt', 'w', encoding='utf-8') as 로그파일:
-            사본, 결과, 초, 점수, 설정 = 처리(g, 문서, 폴더, args.mode, args.exclude_tables, 로그파일)
+            사본, 결과, 초, 점수, 설정 = 처리(g, 문서, 폴더, args.mode, args.exclude_tables, 로그파일,
+                                        None if args.unify_full_format is None else args.unify_full_format == '1')
             항목 = {'document': Path(문서).name,
                   'document_sha256': hashlib.sha256(Path(문서).read_bytes()).hexdigest()[:16],
                   **공통, 'settings': 설정, 'seconds': 초, 'score': 점수, 'output_created': bool(결과)}
@@ -224,6 +232,9 @@ def main():
                            'page_breaks': {'original': 원나눔, 'result': 결나눔},
                            'layout_same': None if 원쪽 is None else (not 다른 and 원쪽 == 결쪽)})
             항목['checks'], 항목['passed'] = 판정(항목, 요구)
+            if args.keep_dir and 결과:
+                Path(args.keep_dir).mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(결과, Path(args.keep_dir) / f"{Path(문서).stem}.hwpx")
             if args.log_dir:
                 로그파일.flush()
                 Path(args.log_dir).mkdir(parents=True, exist_ok=True)
