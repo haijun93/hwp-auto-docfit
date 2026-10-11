@@ -49,6 +49,7 @@ echo [3/4] Building %APPNAME%.exe...
     --clean ^
     --onefile ^
     --windowed ^
+    --icon "resources\app_icon.ico" ^
     --name "%APPNAME%" ^
     --add-data "MapoHwpAutoDocFitSecurity.dll;." ^
     --add-data "desktop_web;desktop_web" ^
@@ -68,6 +69,7 @@ echo [4/4] Building 설치파일 초기화.exe (Cleanup ^& Reset Tool)...
     --clean ^
     --onefile ^
     --windowed ^
+    --icon "resources\app_icon.ico" ^
     --name "HWP_AutoDocFit_Reset" ^
     hwp-auto-docfit-reset.py
 if errorlevel 1 goto :fail

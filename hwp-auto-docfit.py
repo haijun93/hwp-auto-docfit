@@ -17445,6 +17445,26 @@ def 번들_고양이_그림_찾기():
     return next((경로 for 경로 in 후보_목록 if 경로.is_file()), None)
 
 
+def 번들_앱아이콘_찾기():
+    """앱 아이콘(resources/app_icon.ico, scripts/make_app_icon.py로 고양이 그림에서 만듦). 없으면 None."""
+    후보_목록 = [프로그램_폴더() / "resources" / "app_icon.ico"]
+    번들_폴더 = 번들_리소스_폴더()
+    if 번들_폴더 is not None:
+        후보_목록.append(번들_폴더 / "resources" / "app_icon.ico")
+    return next((경로 for 경로 in 후보_목록 if 경로.is_file()), None)
+
+
+def _앱아이콘_적용(root):
+    """Tk 기본창과 이후 새 창(Toplevel) 모두의 제목 표시줄 아이콘을 앱 아이콘으로 바꾼다."""
+    아이콘 = 번들_앱아이콘_찾기()
+    if 아이콘 is None:
+        return
+    try:
+        root.iconbitmap(default=str(아이콘))
+    except Exception:
+        pass
+
+
 def 처리_쪽수_구하기():
     """이번에 처리한 문서의 쪽 수(쪽 범위를 지정했으면 그 범위의 쪽 수). 알 수 없으면 1."""
     try:
@@ -25754,6 +25774,7 @@ def main():
     tk_only = os.environ.get("HWP_AUTODOCFIT_UI", "").strip().lower() == "tk"
     if tk_only or importlib.util.find_spec("webview") is None:
         root = TkinterDnD.Tk()
+        _앱아이콘_적용(root)
         HwpAutoDocFitGUI(root)
         _새창_맨앞으로(root)
         root.mainloop()
@@ -25765,6 +25786,7 @@ def main():
     def tk_실행():
         try:
             root = TkinterDnD.Tk()
+            _앱아이콘_적용(root)
             gui = HwpAutoDocFitGUI(root)
             웹모드_기본창_숨김(root)
             보관.update(root=root, gui=gui)
@@ -25787,6 +25809,7 @@ def main():
         desktop_web_ui.APP_NAME = APP_NAME
         desktop_web_ui.APP_VERSION = APP_VERSION
         desktop_web_ui.STAGE_ORDER = 진행단계_순서
+        desktop_web_ui.APP_ICON = str(번들_앱아이콘_찾기() or "")
         if not desktop_web_ui.run_webview(보관["gui"]):
             보관["root"].after(0, lambda: 웹모드_기본창_복원(보관["root"]))
             tk_thread.join()
