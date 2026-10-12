@@ -94,7 +94,8 @@ class AppWiringTest(unittest.TestCase):
                                               '로그': lambda *a: None, '알파_AI답변변환_사용': True}):
             convert('answer.txt', '.txt', 'out.hwpx')
         self.assertEqual(len(captured), 1)
-        self.assertIn('□ 조경식재 및 시설물 철거 전문 업체', captured[0])
+        self.assertIn('네모: 조경식재 및 시설물 철거 전문 업체', captured[0])
+        self.assertTrue(looks_labeled(captured[0]))  # 저장된 제목·개요·문두기호 서식 적용 경로로 연결
         self.assertNotIn('**', captured[0])
 
 
@@ -107,7 +108,8 @@ class AppWiringTest(unittest.TestCase):
                                               '로그': lambda *a: None, '알파_AI답변변환_사용': True}):
             convert('answer.md', '.md', 'out.hwpx')
         self.assertEqual((len(captured), engine), (1, []))
-        self.assertIn('□ 조경식재 및 시설물 철거 전문 업체', captured[0])
+        self.assertIn('네모: 조경식재 및 시설물 철거 전문 업체', captured[0])
+        self.assertTrue(looks_labeled(captured[0]))  # 일반 목록이 아닌 프로필 기반 서식 블록으로 전달
 
     def test_md_file_with_image_still_goes_to_engine(self):
         convert = self.ns['외부문서_hwpx로_변환']
