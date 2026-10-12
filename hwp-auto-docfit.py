@@ -373,6 +373,7 @@ from docfit_core import (
     patch_document,
     render_preview,
     validate_hwpx,
+    open_hwpx_safely,
 )
 
 # ============================================================
@@ -1443,7 +1444,7 @@ def hwpx_서식_분석(path):
     def tag(e): return e.tag.rsplit("}", 1)[-1]
     def child(e, name):
         return next((x for x in e.iter() if tag(x) == name), None)
-    with zipfile.ZipFile(path) as z:
+    with open_hwpx_safely(path) as z:
         header = safe_xml_fromstring(z.read("Contents/header.xml"))
         fonts = {}
         for face in header.iter():
@@ -1740,7 +1741,7 @@ def 보고서머리_hwpx_처리(source, target=None, selections=None):
     제목 표 안 날짜 칸은 한 줄로 입력(lineWrap=SQUEEZE)으로 둔다.
     """
     spec = 활성_머리서식_프로필 if 알파_머리서식복사_사용 else None
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -2821,7 +2822,7 @@ def 표_날짜칸_한줄(table):
 
 def 표날짜칸_hwpx_처리(source, target=None, selections=None):
     """문서의 모든 표에서 날짜 칸을 한 줄로 입력으로 둔다(선행 서식 단계, 칸 글은 바꾸지 않음)."""
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -3029,7 +3030,7 @@ def 정밀표_서식_적용(source_path, target_path, precise_profile):
     """프로필 표를 구조·앵커로 매칭해 대상 HWPX에 셀별 서식을 적용한다."""
     if not precise_profile or not precise_profile.get("tables"):
         return {"applied": 0, "skipped": 0, "matches": []}
-    with zipfile.ZipFile(source_path) as archive:
+    with open_hwpx_safely(source_path) as archive:
         contents = {name: archive.read(name) for name in archive.namelist()}
     target_header = safe_xml_fromstring(contents["Contents/header.xml"])
     source_header = safe_xml_fromstring(precise_profile["header_xml"].encode("utf-8"))
@@ -3192,7 +3193,7 @@ def 제목_괄호부연_축소(header, table):
     return applied
 
 def 제목_hwpx_처리(source, target=None, selections=None):
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     # 기존 네임스페이스 접두사를 유지한다.
     for name, data in contents.items():
@@ -3317,7 +3318,7 @@ def _제목_임시hwpx_저장(경로):
     # SaveAs 직후 파일 쓰기가 완전히 끝날 때까지 짧게 확인한다.
     for _ in range(20):
         try:
-            with zipfile.ZipFile(경로, 'r') as z:
+            with open_hwpx_safely(경로) as z:
                 if 'Contents/header.xml' in z.namelist():
                     return 경로
         except (PermissionError, OSError, zipfile.BadZipFile):
@@ -3409,7 +3410,7 @@ def 제목4종_현재문서_적용(selections):
 
 
 def 붙임_hwpx_처리(source, target=None, selections=None):
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -3458,7 +3459,7 @@ def 붙임_hwpx_처리(source, target=None, selections=None):
     return count
 
 def 중제목_hwpx_처리(source, target=None, selections=None):
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -3820,7 +3821,7 @@ def 라벨_서식표_적용(source, target=None):
     표식 없는 문서는 파일을 건드리지 않는다. target이 없으면 source를 덮어쓴다.
     """
     target = source if target is None else target
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     if not any(m.encode('utf-8') in data for n, data in contents.items()
                if re.fullmatch(r'Contents/section\d+\.xml', n) for m in _라벨_표식.values()):
@@ -3994,7 +3995,7 @@ def 준말_hwpx_처리(source, target=None, selections=None):
     서식 표 본말은 콜론 뒤 글을 표 A1 칸에 넣고 준말 줄의 글을 지운다. 문구 본말은
     준말과 콜론을 본말로 바꾸고 나머지 글은 그대로 둔다. 본문(구역 바로 아래) 문단만 대상이다.
     """
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -4074,7 +4075,7 @@ def 제목개요폭_hwpx_처리(source, target=None, selections=None):
     표준서식이 편집 여백을 바꿀 예정이면 바뀐 뒤의 여백으로 잰다(_최종_본문폭). 제목·개요 서식 단계도 같은 폭으로
     다시 맞추므로 이미 맞으면 그 단계에서는 바뀌지 않는다. 이미 최대 폭인 표는 대상에서 뺀다.
     """
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -4152,7 +4153,7 @@ def 연결부호탭_hwpx_처리(source, target=None, selections=None):
     오른쪽 글의 첫 글자가 내어쓰기처럼 한 세로선에 서고, 점·선의 길이와 개수는 한/글이 줄마다 채운다.
     여러 칸 빈칸 연결 부호는 채울 모양 없이 탭 위치만 맞춘다. 글자는 연결 부호만 탭으로 바뀐다.
     """
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -4213,7 +4214,7 @@ def 연결부호탭_hwpx_처리(source, target=None, selections=None):
 
 def 자간초기화_hwpx_처리(source, target=None, selections=None):
     """문서 전체(표·글상자 안 포함) 본문 자간을 0%로 되돌린다. 항목기호·라벨 등 보호 구간은 그대로 둔다."""
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -4251,7 +4252,7 @@ def 콜론라벨_hwpx_처리(source, target=None, selections=None):
 
     가장 긴 라벨을 기준으로 짧은 라벨 글자의 자간(한도 50%까지)과 장평을 늘려 가로 길이를 맞춘다. 글은 바꾸지 않는다.
     """
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -4293,7 +4294,7 @@ def 상자서식_hwpx_처리(source, target=None, selections=None):
     모양이 달라 한 가지 예시로 덮지 않는다. 표·칸·문단·글자 서식만 바꾸고 글은 그대로 둔다.
     """
     예시 = _서식표_예시('box')
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -4350,7 +4351,7 @@ def 쪽번호_hwpx_처리(source, target=None, selections=None):
     쪽 번호가 없는 문서에는 넣지 않는다(2026-10-04 결정 4: 모양만 복사).
     """
     모양 = dict(표준서식_설정.get("쪽번호") or {})
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -4423,7 +4424,7 @@ def 기본표서식_hwpx_처리(source, target=None, selections=None):
     칸(B2·B3 …)의 문장을 길이와 관계없이 왼쪽 정렬한다(숫자·날짜 칸은 예시 정렬, docfit_core.table_style).
     """
     style = 기본표서식()
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -4474,7 +4475,7 @@ def 표너비_hwpx_처리(source, target=None, selections=None):
     제목·중제목·붙임 서식 표와 한 칸 상자는 서식 표 자체의 배치를 쓰므로 건드리지 않는다. 쪽 정보(pagePr)가
     없는 구역의 표도 폭을 알 수 없어 그대로 둔다.
     """
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -4558,7 +4559,7 @@ def _문단_별표_대상(p, header_super_ids):
 
 def 별표위첨자_hwpx_처리(source, target=None, selections=None):
     """항목기호 문장의 단어 뒤 * / **를 위첨자로 바꾼다(글은 그대로, 별표 글자모양에 위첨자만 더함)."""
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -4703,7 +4704,7 @@ def _본문기호_글꼴(header, paras):
 
 def 붙임글꼴_hwpx_처리(source, target=None, selections=None):
     """'붙임 …'부터 '끝.'까지 묶음의 모든 문장을 항목기호 ㅇ와 같은 글꼴 종류·크기로 맞춘다(글은 그대로)."""
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -7769,7 +7770,7 @@ def _서식통일_HWPX_분석(문서경로):
     key = (str(path), stat.st_mtime_ns, stat.st_size)
     if _서식통일_HWPX_캐시.get("key") == key:
         return _서식통일_HWPX_캐시["value"]
-    with ZipFile(path) as archive:
+    with open_hwpx_safely(path) as archive:
         header = ET.fromstring(archive.read("Contents/header.xml"))
         fonts = _parse_fonts(header)
         글꼴형식_등록(글꼴형식_모으기(header))
@@ -8713,7 +8714,7 @@ def _서식통일_문단자간_조정(start, end):
 
 
 알파_서식통일_XML조사_사용 = True   # 서식통일 표본 조사를 한/글 문단 순회 대신 HWPX 스냅숏에서 한다(꺼짐=예전 순회)
-_서식통일_글꼴크기_필드 = ("font", "size", "marker_bold", "label_bold")
+_서식통일_글꼴크기_필드 = ("font", "size")
 
 
 def _서식통일_글꼴크기만():
@@ -9076,8 +9077,8 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
         크기, 크기수 = 대표["size"]
         색표준 = 대표.get("color", (None, 0))[0]
         음영표준 = 대표.get("shade", (None, 0))[0]
-        문두굵게, 문두굵게수 = 대표["marker_bold"]
-        라벨굵게, 라벨굵게수 = 대표["label_bold"]
+        문두굵게, 문두굵게수 = 대표.get("marker_bold", (None, 0))
+        라벨굵게, 라벨굵게수 = 대표.get("label_bold", (None, 0))
         내어쓰기표준, 내어쓰기수 = 대표.get("hanging_indent", (None, 0))
         if 최종_내어쓰기_예정 and not 검증만:
             # 뒤의 '최종 서식 기준 내어쓰기' 단계가 항목기호 문장의 내어쓰기를 모두 다시 정한다.
@@ -10130,7 +10131,7 @@ def 라벨괄호_계획(text, 세트후속문단=False, 크기=None):
 
 def 라벨괄호_hwpx_처리(source, target=None, selections=None):
     """모든 문단(표·글상자 안 포함)의 문두 라벨을 굵게, 부연설명 괄호 글자를 줄인다(라벨괄호_계획과 같은 판정)."""
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -10257,7 +10258,7 @@ _글규칙_XML_구성 = {"space": False, "punct": False, "label": False}
 def 글규칙_hwpx_처리(source, target=None, selections=None):
     """_글규칙_XML_구성에 따라 공백 규칙 → 문장부호 뒤 공백 → 문두 라벨/괄호 서식을 모든 문단에 적용한다."""
     구성 = dict(_글규칙_XML_구성)
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -13285,7 +13286,7 @@ def 본문_쪽나눔_기억(표문단):
     try:
         from docfit_core.style_inventory import _sections
         문단들 = []
-        with zipfile.ZipFile(문서경로) as archive:
+        with open_hwpx_safely(문서경로) as archive:
             for name in _sections(archive):
                 문단들.extend(p for p in safe_xml_fromstring(archive.read(name)) if 제목_xml이름(p) == 'p')
     except Exception as e:
@@ -16649,7 +16650,7 @@ def 서식표_영역_목록(hwpx경로):
     가장 긴 글 문단이다(중제목 번호처럼 짧은 글로 확인하면 다른 표와 헷갈릴 수 있다).
     """
     from docfit_core.style_inventory import _sections
-    with zipfile.ZipFile(hwpx경로) as z:
+    with open_hwpx_safely(hwpx경로) as z:
         구역들 = [safe_xml_fromstring(z.read(name)) for name in _sections(z)]
     목록번호 = {}
     for root in 구역들:
@@ -19758,6 +19759,17 @@ class HwpAutoDocFitGUI:
         self.unify_exclude_pagefit_var = tk.BooleanVar(value=bool(저장된_설정.get("unify_exclude_pagefit", True)))
         self.unify_keep_layout_var = tk.BooleanVar(value=bool(저장된_설정.get("unify_keep_layout", True)))
         self.unify_full_format_var = tk.BooleanVar(value=bool(저장된_설정.get("unify_full_format", False)))
+        self.unify_quick_mode_var = tk.BooleanVar(value=not self.unify_full_format_var.get())
+        def sync_full_format(*_):
+            target = not self.unify_quick_mode_var.get()
+            if self.unify_full_format_var.get() != target:
+                self.unify_full_format_var.set(target)
+        def sync_quick_mode(*_):
+            target = not self.unify_full_format_var.get()
+            if self.unify_quick_mode_var.get() != target:
+                self.unify_quick_mode_var.set(target)
+        self.unify_quick_mode_var.trace_add("write", sync_full_format)
+        self.unify_full_format_var.trace_add("write", sync_quick_mode)
         for 변수 in (self.exclude_tables_var, self.all_exclude_pagefit_var, self.unify_exclude_tables_var,
                      self.unify_exclude_spacing_var, self.unify_exclude_pagefit_var, self.unify_keep_layout_var,
                      self.unify_full_format_var):
@@ -19837,7 +19849,7 @@ class HwpAutoDocFitGUI:
                     "원본 쪽 구성 유지", self.unify_keep_layout_var, lambda: self._카드옵션_변경("unify"))
                 # 끄면(기본) 글꼴·크기만, 켜면 글자색·정렬·여백·위 간격·내어쓰기까지 전체 서식을 맞춘다.
                 self.unify_full_format_check = 카드_체크(
-                    "전체 서식 맞추기", self.unify_full_format_var, lambda: self._카드옵션_변경("unify"))
+                    "퀵모드 (글꼴 종류·크기만)", self.unify_quick_mode_var, lambda: self._카드옵션_변경("unify"))
             if mode == "all":
                 # 끄면 기존 자간을 그대로 두고 서식만 입힌다(결과 파일 이름은 '서식적용').
                 self.include_spacing_check = tk.Checkbutton(
@@ -20899,7 +20911,7 @@ class HwpAutoDocFitGUI:
         "unify_exclude_spacing": ("unify_exclude_spacing_var", False),
         "unify_exclude_pagefit": ("unify_exclude_pagefit_var", False),
         "unify_keep_layout": ("unify_keep_layout_var", False),
-        "unify_full_format": ("unify_full_format_var", False),
+        "unify_quick_mode": ("unify_quick_mode_var", False),
         "all_include_spacing": ("include_spacing_var", False),
         "all_exclude_tables": ("exclude_tables_var", False),
         "all_exclude_pagefit": ("all_exclude_pagefit_var", False),

@@ -18,6 +18,7 @@ import random
 import re
 import zipfile
 from pathlib import Path
+from .hwpx import open_hwpx_safely
 
 from defusedxml import ElementTree as ET
 
@@ -377,7 +378,7 @@ def _public(value):
 
 def detect_header(path: str | Path) -> dict:
     """HWPX 머리 구성: {'title': {...}, 'info': [...], 'overview': {...}|None}."""
-    with zipfile.ZipFile(path) as z:
+    with open_hwpx_safely(path) as z:
         header_root = ET.fromstring(z.read("Contents/header.xml"))
         names = sorted(n for n in z.namelist() if re.fullmatch(r"Contents/section\d+\.xml", n))
         section = ET.fromstring(z.read(names[0]))

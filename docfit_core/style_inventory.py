@@ -23,7 +23,7 @@ from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
 
 from defusedxml import ElementTree as ET
 
-from .hwpx import validate_hwpx
+from .hwpx import open_hwpx_safely, validate_hwpx
 from .style_hierarchy import leading_marker
 
 HWPUNIT_PER_MM = 7200 / 25.4
@@ -406,7 +406,7 @@ def analyze_style_inventory(path) -> dict:
     """HWPX 파일에 정의·사용된 모든 스타일 요소를 분석한다."""
     path = Path(path)
     validate_hwpx(path)
-    with ZipFile(path) as z:
+    with open_hwpx_safely(path) as z:
         header = ET.fromstring(z.read("Contents/header.xml"))
         defs = parse_header(header)
         chars, paras = defs["chars"], defs["paras"]
@@ -839,7 +839,7 @@ def build_style_sample(source, target, inventory: dict | None = None,
     validate_hwpx(source)
     inventory = inventory or analyze_style_inventory(source)
     chars = inventory["definitions"]["chars"]
-    with ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         sections = _sections(z)
         first_name = sections[0]
         # 여러 구역이면 나머지 구역의 문단도 순서대로 후보에 넣는다. 파싱한 문단과

@@ -7,7 +7,7 @@ from zipfile import ZipFile
 
 from defusedxml.ElementTree import fromstring
 
-from .hwpx import validate_hwpx
+from .hwpx import open_hwpx_safely, validate_hwpx
 from .style_hierarchy import analyze_hierarchy, canonical_marker, display_role, leading_marker
 
 
@@ -88,7 +88,7 @@ def extract_review_paragraphs(path):
     """Extract ordered body and cell paragraphs; never modify the HWPX archive."""
     validate_hwpx(path)
     body, cells = [], []
-    with ZipFile(path) as archive:
+    with open_hwpx_safely(path) as archive:
         header = fromstring(archive.read("Contents/header.xml"))
         fonts = {}
         for group in header.iter():

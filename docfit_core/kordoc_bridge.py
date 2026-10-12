@@ -76,7 +76,13 @@ def _kordoc_command() -> list[str]:
     local = _local_kordoc()
     if local:
         return [local]
-    return [_npx_command(), "-y", KORDOC_PACKAGE]
+    if os.environ.get("DOCFIT_ALLOW_NPX_DOWNLOAD") != "1":
+        raise KordocUnavailableError(
+            "kordoc이 설치되어 있지 않습니다. 보안을 위해 실행 중 자동 다운로드는 기본 차단됩니다. "
+            "공식 Node.js/npm으로 kordoc을 미리 설치하거나, 신뢰할 수 있는 환경에서만 "
+            "DOCFIT_ALLOW_NPX_DOWNLOAD=1을 설정하세요."
+        )
+    return [_npx_command(), "--yes", "--ignore-scripts", KORDOC_PACKAGE]
 
 
 def _startupinfo():

@@ -22,6 +22,7 @@ import json
 import re
 import unicodedata
 import zipfile
+from .hwpx import open_hwpx_safely
 import zlib
 from pathlib import Path
 
@@ -128,7 +129,7 @@ def _section_names(archive):
 
 def learn_table_style(path, source_name=None):
     """HWPX 예시 문서의 표(칸이 가장 많은 일반 표)에서 기본 표 서식을 배운다."""
-    with zipfile.ZipFile(path) as archive:
+    with open_hwpx_safely(path) as archive:
         header = ET.fromstring(archive.read("Contents/header.xml"))
         sections = [ET.fromstring(archive.read(name)) for name in _section_names(archive)]
     tables = [t for root in sections for t in root.iter() if _tag(t) == "tbl" and is_grid_table(t)]

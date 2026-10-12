@@ -126,6 +126,14 @@ def validate_hwpx(path: str | Path, limits: HwpxLimits | None = None) -> dict:
         raise HwpxSecurityError("올바른 HWPX ZIP 문서가 아닙니다.") from exc
 
 
+def open_hwpx_safely(path: str | Path, mode: str = "r", *, limits: HwpxLimits | None = None) -> ZipFile:
+    """Open a validated HWPX archive for reading; writers remain ordinary ZipFile users."""
+    if mode not in {"r", "rb"}:
+        raise ValueError("open_hwpx_safely is read-only; use ZipFile for generated output")
+    validate_hwpx(path, limits)
+    return ZipFile(path, mode)
+
+
 def _own_text(element: ET.Element) -> str:
     parts: list[str] = []
 

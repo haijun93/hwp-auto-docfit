@@ -5,7 +5,7 @@ from unittest.mock import patch
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 from docfit_core import (HwpxSecurityError, compare_documents, export_markdown, inspect_hwpx,
-                        validate_and_inspect_hwpx, validate_hwpx)
+                        validate_and_inspect_hwpx, validate_hwpx, open_hwpx_safely)
 
 
 HEADER = b'<?xml version="1.0" encoding="UTF-8"?><hh:head xmlns:hh="urn:head" />'
@@ -24,6 +24,15 @@ def make_hwpx(path: Path, section: bytes = SECTION):
 
 
 class HwpxCoreTest(unittest.TestCase):
+    def test_safe_opener_validates_before_read_and_is_read_only(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "sample.hwpx"
+            make_hwpx(source)
+            with open_hwpx_safely(source) as archive:
+                self.assertIn("Contents/header.xml", archive.namelist())
+            with self.assertRaises(ValueError):
+                open_hwpx_safely(source, "w")
+
     def test_inspect_and_markdown_export(self):
         with tempfile.TemporaryDirectory() as folder:
             source = Path(folder) / "sample.hwpx"

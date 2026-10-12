@@ -1,0 +1,32 @@
+[
+  {
+    "name": "ChatGPT numbered answer",
+    "kind": "ai",
+    "text": "## 요약\n\n1. **핵심 원칙**: 원본은 보존합니다. [가이드](https://example.com) [1]\n2. 처리 순서\n   - 문서를 확인합니다.\n   - 결과를 검수합니다.\n\n> 참고: 예시입니다."
+  },
+  {
+    "name": "Gemini nested bullets",
+    "kind": "ai",
+    "text": "### 검토 결과\n\n* **장점**\n  * 처리 시간이 짧습니다.\n  * 반복 작업이 줄어듭니다.[2]\n* **주의사항**: 원본 사본으로 시험합니다."
+  },
+  {
+    "name": "Claude prose and sections",
+    "kind": "ai",
+    "text": "# 실행 계획\n\n아래 절차에 따라 진행합니다.\n\n## 1. 준비\n- 입력 파일을 확인합니다.\n- 백업을 만듭니다.\n\n## 2. 검증\n- 결과와 원문을 비교합니다."
+  },
+  {
+    "name": "GFM table and task list",
+    "kind": "ai",
+    "text": "## 점검표\n\n| 항목 | 상태 |\n|---|---|\n| 백업 | 완료 |\n| 검수 | 예정 |\n\n- [x] 원본 보존\n- [ ] 결과 확인\n\n> 주의: 실행 전 확인"
+  },
+  {
+    "name": "Code fence and inline markup",
+    "kind": "ai",
+    "text": "### 예시\n\n```text\n1. 첫 항목\n2. 둘째 항목\n```\n\n`Ctrl+S`로 저장하고 ~~삭제하지~~ 보존합니다."
+  },
+  {
+    "name": "Generic long Markdown",
+    "kind": "generic",
+    "text": "---\ntitle: 일반 문서\n---\n\n# 안내\n\n일반 설명 문단입니다. 여러 줄로 복사된 문장은 [링크](https://example.org)를 포함해도 읽을 수 있어야 합니다.\n\n![도식](https://example.org/a.png)\n\n별도 문단입니다."
+  }
+]

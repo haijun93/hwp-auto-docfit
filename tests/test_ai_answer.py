@@ -1,5 +1,6 @@
 """AI 답변(마크다운)을 복사한 그대로 개조식 항목기호 문서로 바꾼다(알파, 2026-10-12)."""
 from pathlib import Path
+import json
 import runpy
 import unittest
 from unittest.mock import patch
@@ -7,6 +8,7 @@ from unittest.mock import patch
 from docfit_core.ai_answer import (ai_answer_to_labeled_text, ai_answer_to_outline_text, looks_like_ai_answer,
                                    parse_ai_answer)
 from docfit_core.labeled_text import looks_labeled
+from docfit_core.pasted_text import clean_pasted_text
 
 FIXTURE = Path(__file__).resolve().parent / 'fixtures' / 'ai_answer_mapo_pots.txt'
 
@@ -22,6 +24,22 @@ class DetectionTest(unittest.TestCase):
 
 
 class ConversionTest(unittest.TestCase):
+    def test_markdown_variants_choose_route_and_remove_syntax(self):
+        cases = json.loads((Path(__file__).parent / "fixtures" / "markdown_eval_cases.json").read_text(encoding="utf-8"))
+        for case in cases:
+            with self.subTest(case=case["name"]):
+                source = case["text"]
+                converted = (ai_answer_to_labeled_text(source) if looks_like_ai_answer(source)
+                             else clean_pasted_text(source))
+                self.assertEqual(looks_like_ai_answer(source), case["kind"] == "ai")
+                for residue in ("**", "```", "](", "|---"):
+                    self.assertNotIn(residue, converted)
+                if case["name"] == "GFM table and task list":
+                    self.assertIn("[\uC644\uB8CC]", converted)
+                    self.assertIn("[\uBBF8\uC644\uB8CC]", converted)
+                    self.assertNotIn("[x]", converted)
+                    self.assertNotIn("[ ]", converted)
+
     def test_numbered_sections_become_boxes_and_nested_bullets_follow_depth(self):
         out = ai_answer_to_outline_text(FIXTURE.read_text(encoding='utf-8')).split('\n')
         self.assertIn('□ 조경식재 및 시설물 철거 전문 업체 (마포구 등록업체)', out)

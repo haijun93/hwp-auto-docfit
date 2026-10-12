@@ -30,6 +30,7 @@ _MD_HEADING = re.compile(r"^(#{1,6})[ \t]+(?=\S)(.*)$")
 _BULLET = re.compile(r"^([ \t]*)[-*+•‣◦▪·∙][ \t]+(?=\S)(.*)$")
 _NUMBERED = re.compile(r"^([ \t]*)(?:\d{1,3}[.)]|\(\d{1,3}\)|[가-하][.)]|[①-⑳])[ \t]+(?=\S)(.*)$")
 _BOLD_ONLY = re.compile(r"^\*\*([^*]+?)\*\*[ \t]*[:：]?$")
+_TASK_CHECKBOX = re.compile(r"\[([ xX])\][ \t]+")
 _NOTE_START = re.compile(r"^(?:※|ⓘ|[☞▶]|(?:참고|유의|주의|비고|알림)[ \t]*[:：])[ \t]*(.*)$")
 _SENTENCE_END = re.compile(r"[.!?…。]$|(?:다|요|음|함|임)\.?$")
 _STRONG_MD = re.compile(r"(\*\*|^#{1,6}[ \t]|^[ \t]*[-*+•◦▪][ \t]+\S|^[ \t]*[•◦▪][ \t]*$|^[ \t]*\d{1,3}[.)][ \t]+\S|【[^】]*】|\[\d{1,4}\])", re.M)
@@ -59,6 +60,7 @@ def _normalize_text(text: str) -> str:
 
 def _clean(text: str) -> str:
     cleaned = _EMOJI.sub("", _strip_inline_markup(text))
+    cleaned = _TASK_CHECKBOX.sub(lambda m: "[완료] " if m.group(1).strip() else "[미완료] ", cleaned)
     return re.sub(r"[ \t]{2,}", " ", cleaned).strip()
 
 
