@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import html
 import re
 
 from docfit_core.labeled_text import looks_labeled
@@ -33,11 +34,31 @@ _NOTE_START = re.compile(r"^(?:※|ⓘ|[☞▶]|(?:참고|유의|주의|비고|�
 _SENTENCE_END = re.compile(r"[.!?…。]$|(?:다|요|음|함|임)\.?$")
 _STRONG_MD = re.compile(r"(\*\*|^#{1,6}[ \t]|^[ \t]*[-*+][ \t]+\S|^[ \t]*\d{1,3}[.)][ \t]+\S|【[^】]*】|\[\d{1,4}\])", re.M)
 _ALREADY_REPORT = re.compile(r"^[ \t]*(?:□|ㅁ|ㅇ|○|※)[ \t]+\S", re.M)
-_HEADING_NUMBER = re.compile(r"^(?:\d{1,2}[.)]|[가-하][.)]|[Ⅰ-Ⅻ][.)]?|[IVX]{1,4}\.|\(\d{1,2}\))[ \t]+(?=\S)")
+# 서비스가 답변에 끼워 넣는 인용 표식: 제미나이 [cite: 1, 2]·[cite_start]·[cite_end], 챗GPT 【12†source】·contentReference[oaicite:0]{index=0}·사설 영역 문자
+_CITATION = re.compile(
+    r"[ \t]*(?:\[cite(?:_start|_end)?(?:[ \t]*:[^\]\n]*)?\]|\[source[^\]\n]*\]|:?contentReference\[[^\]\n]*\]\{[^}\n]*\}"
+    r"|【[^】\n]*】|[\ue000-\uf8ff]+(?:[^\ue000-\uf8ff\n]{0,40}[\ue000-\uf8ff]+)?|\[\d{1,3}(?:[ \t]*[,-][ \t]*\d{1,3})*\](?!\())")
+_HTML_BREAK = re.compile(r"<br\s*/?>", re.I)
+_HTML_TAG = re.compile(r"</?(?:b|strong|i|em|u|p|div|span|ul|ol|li|sup|sub|code|mark)\b[^>\n]*>", re.I)
+# 대화체 맺음·여는 말(문서 내용이 아니다): 마지막/첫 문단일 때만 뗀다.
+_CLOSER = re.compile(
+    r"(?:말씀해|알려\s*주|알려주|요청해|물어봐|문의해|도와\s*드(?:릴|리겠)|드릴까요|할까요|원하시|필요하시|궁금하|바랍니다만|"
+    r"let me know|feel free|would you like|do you want)", re.I)
+_OPENER = re.compile(r"^(?:물론(?:이죠|입니다)?|네|좋습니다|알겠습니다|안녕하세요|sure|certainly|of course)\b[,.!~\s]*", re.I)
+_HEADING_NUMBER = re.compile(r"^(?:\d{1,2}(?:\.\d{1,2})+\.?|\d{1,2}[.)]|[가-하][.)]|[Ⅰ-Ⅻ][.)]?|[IVX]{1,4}\.|\(\d{1,2}\))[ \t]+(?=\S)")
+
+
+def _normalize_text(text: str) -> str:
+    """인용 표식·HTML 줄바꿈·글자 참조를 정리한다(긴 글에도 안전하도록 줄 단위가 아닌 전체에 한 번)."""
+    text = _CITATION.sub("", text)
+    text = _HTML_BREAK.sub("\n", text)
+    text = _HTML_TAG.sub("", text)
+    return html.unescape(text)
 
 
 def _clean(text: str) -> str:
-    return _EMOJI.sub("", _strip_inline_markup(text)).strip()
+    cleaned = _EMOJI.sub("", _strip_inline_markup(text))
+    return re.sub(r"[ \t]{2,}", " ", cleaned).strip()
 
 
 def _heading_clean(text: str) -> str:
@@ -50,13 +71,13 @@ def looks_like_ai_answer(text: str) -> bool:
     text = text or ""
     if not text.strip() or looks_labeled(text) or _ALREADY_REPORT.search(text):
         return False
-    hits = _STRONG_MD.findall(text)
+    hits = _STRONG_MD.findall(text) + re.findall(r"\[cite[_:\]]|oaicite", text)
     return len(hits) >= 2
 
 
 def _split_elements(text: str) -> list[dict]:
     """줄을 요소(표제·글머리·번호·굵은 줄·표·문단·참고)로 나눈다."""
-    text = _strip_invisible(text)
+    text = _normalize_text(_strip_invisible(text))
     text = _ESCAPED_MD_CHAR.sub(r"\1", text)
     text = _MARKER_GLUE.sub("\n", text)
     elements: list[dict] = []
@@ -98,11 +119,9 @@ def _split_elements(text: str) -> list[dict]:
                 elements.append({"kind": "table", "rows": [row]})
             previous_blank = False
             continue
-        note = _NOTE_START.match(stripped_line)
+        note = _NOTE_START.match(stripped_line) or (_NOTE_START.match(_clean(stripped_line)) if quoted else None)
         if quoted or note:
-            body = _clean(note.group(1) if note and not quoted else stripped_line)
-            if note and quoted:
-                body = _clean(note.group(1))
+            body = _clean(note.group(1)) if note else _clean(stripped_line)
             if body:
                 elements.append({"kind": "note", "text": body})
             previous_blank = False
@@ -136,6 +155,34 @@ def _split_elements(text: str) -> list[dict]:
         else:
             elements.append({"kind": "para", "text": content, "after_blank": previous_blank})
         previous_blank = False
+    return _drop_chat_frame(elements)
+
+
+def _is_closer(element: dict) -> bool:
+    return (element["kind"] == "para" or (element["kind"] == "item" and element["indent"] == 0)) \
+        and len(element["text"]) <= 160 and bool(_CLOSER.search(element["text"]))
+
+
+def _trim_closer_sentence(element: dict) -> bool:
+    """문단 끝의 후속 제안 문장만 떼고, 남는 글이 있으면 True."""
+    sentences = re.split(r"(?<=[.!?。])\s+", element["text"])
+    if len(sentences) > 1 and _CLOSER.search(sentences[-1]):
+        element["text"] = " ".join(sentences[:-1])
+        return True
+    return False
+
+
+def _drop_chat_frame(elements: list[dict]) -> list[dict]:
+    """답변 앞뒤의 대화체 인사·후속 제안("더 필요하면 말씀해 주세요")은 문서 내용이 아니므로 뗀다. 본문 가운데는 건드리지 않는다."""
+    while len(elements) > 1 and elements[-1]["kind"] in ("para", "item"):
+        if _trim_closer_sentence(elements[-1]):
+            break
+        if not _is_closer(elements[-1]):
+            break
+        elements.pop()
+    if len(elements) > 1 and elements[0]["kind"] == "para" and len(elements[0]["text"]) <= 40 \
+            and _OPENER.match(elements[0]["text"]) and _SENTENCE_END.search(elements[0]["text"].rstrip("!~ ")):
+        elements.pop(0)
     return elements
 
 
@@ -277,7 +324,8 @@ def parse_ai_answer(text: str) -> list[dict]:
             indent_stack.append(e["indent"])
         depth = len(indent_stack) - 1
         tier = (base if has_heading else flat_base) + offset + depth
-        add_para(_marker(tier), e["text"])
+        add_para(_marker(tier), e["text"].rstrip(":：").rstrip() if _next_content(elements, index) and
+                 _next_content(elements, index)["kind"] == "item" and e["text"].endswith((":", "：")) else e["text"])
     return blocks
 
 
