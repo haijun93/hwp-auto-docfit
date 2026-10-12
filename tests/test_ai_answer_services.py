@@ -132,7 +132,7 @@ class RobustnessTest(unittest.TestCase):
 
 
 class MarkerSchemeTest(unittest.TestCase):
-    """단계 수에 따른 항목기호: 3단계 □ ㅇ -, 4단계 Ⅰ. □ ㅇ -, 5단계부터 1) 가) (1) (가) ① ㉮."""
+    """단계 수에 따른 항목기호: 3단계 □ ㅇ -, 4단계 Ⅰ. □ ㅇ -, 5단계부터 1. 가. 1) 가) (1) (가) ① ㉮."""
 
     @staticmethod
     def outline(depth, sections=2):
@@ -150,13 +150,14 @@ class MarkerSchemeTest(unittest.TestCase):
         self.assertIn('Ⅱ.', self.markers(4))
 
     def test_five_or_more_levels_use_government_markers(self):
-        self.assertEqual(self.markers(7)[:7], ['Ⅰ.', '□', 'ㅇ', '-', '1)', '가)', '(1)'])
-        self.assertEqual(self.markers(9)[6:9], ['(1)', '(가)', '①'])
+        self.assertEqual(self.markers(5)[:5], ['1.', '가.', '1)', '가)', '(1)'])
+        self.assertEqual(self.markers(8)[:8], ['1.', '가.', '1)', '가)', '(1)', '(가)', '①', '㉮'])
+        self.assertIn('2.', self.markers(5))
 
     def test_deep_numbers_restart_under_a_new_parent(self):
         text = '## 장\n- 가\n  - 나\n    - 다\n      - 라\n      - 라2\n    - 다2\n      - 라3\n'
         out = ai_answer_to_outline_text(text).splitlines()
-        self.assertEqual([l.split(' ')[0] for l in out if l and l[0] in '123'], ['1)', '2)', '1)'])
+        self.assertEqual([l.split(' ')[0] for l in out if l.startswith('(')], ['(1)', '(2)', '(1)'])
 
     def test_labeled_roundtrip_matches_outline_for_every_depth(self):
         for depth in range(1, 12):

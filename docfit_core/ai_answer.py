@@ -257,10 +257,12 @@ def _seq(chars: str, n: int, fmt: str) -> str:
     return fmt.format(chars[n - 1] if 1 <= n <= len(chars) else str(n))
 
 
-# 5단계부터 쓰는 정부문서(행정업무운영편람) 항목기호: 1) 가) (1) (가) ① ㉮ — 번호는 상위 항목이 바뀌면 처음부터 다시 센다.
-_DEEP_MARKERS = (
+# 5단계 이상 문서 전체가 쓰는 정부문서(행정업무운영편람) 항목기호: 1. 가. 1) 가) (1) (가) ① ㉮ — 번호는 상위 항목이 바뀌면 처음부터 다시 센다.
+_GOV_MARKERS = (
+    lambda n: f"{n}.",
+    lambda n: _seq(_HANGUL_SEQ, n, "{}.") ,
     lambda n: f"{n})",
-    lambda n: _seq(_HANGUL_SEQ, n, "{}"+")"),
+    lambda n: _seq(_HANGUL_SEQ, n, "{})"),
     lambda n: f"({n})",
     lambda n: _seq(_HANGUL_SEQ, n, "({})"),
     lambda n: _seq(_CIRCLED, n, "{}"),
@@ -271,7 +273,7 @@ _DEEP_MARKERS = (
 def apply_marker_scheme(blocks: list[dict]) -> None:
     """내용의 단계 수(가장 깊은 항목 단계)에 따라 항목기호를 정한다.
 
-    3단계 이하: □ ㅇ -   4단계: Ⅰ. □ ㅇ -   5단계 이상: Ⅰ. □ ㅇ - 다음에 1) 가) (1) (가) ① ㉮
+    3단계 이하: □ ㅇ -   4단계: Ⅰ. □ ㅇ -   5단계 이상: 정부문서 항목기호 1. 가. 1) 가) (1) (가) ① ㉮
     블록의 ``tier``(0이 최상위)를 읽어 ``marker``·``level``을 채운다. ※ 참고 줄은 단계가 없어 그대로 둔다.
     """
     paras = [b for b in blocks if b["kind"] == "para" and b.get("tier") is not None]
@@ -289,12 +291,10 @@ def apply_marker_scheme(blocks: list[dict]) -> None:
         n = counters[tier]
         if depth <= 3:
             marker = TIER_MARKERS[tier]
+        elif depth == 4:
+            marker = (_ROMAN[n - 1] + "." if n <= len(_ROMAN) else f"{n}.") if tier == 0 else ("Ⅰ.", "□", "ㅇ", "-")[tier]
         else:
-            ladder = ("Ⅰ.", "□", "ㅇ", "-")
-            if tier < len(ladder):
-                marker = (_ROMAN[n - 1] + "." if n <= len(_ROMAN) else f"{n}.") if tier == 0 else ladder[tier]
-            else:
-                marker = _DEEP_MARKERS[min(tier - len(ladder), len(_DEEP_MARKERS) - 1)](n)
+            marker = _GOV_MARKERS[min(tier, len(_GOV_MARKERS) - 1)](n)
         b["marker"] = b["level"] = marker
 
 
