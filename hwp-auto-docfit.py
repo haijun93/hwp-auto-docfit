@@ -381,7 +381,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리"
-APP_VERSION = "1.74 Beta 1"
+APP_VERSION = "1.75.1"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 GITHUB_UPDATE_API_URL = "https://api.github.com/repos/haijun93/hwp-auto-docfit/releases/latest"
@@ -20043,12 +20043,14 @@ class HwpAutoDocFitGUI:
         self._설정창_생성()
         self._항상위_적용()
 
+        self._queue_after_id = None
+        self._최소높이_after_id = None
         self._queue_after_id = root.after(100, self.queue_처리)
         root.bind("<Destroy>", self._루트_파괴시_예약취소, add="+")
         root.bind("<Control-o>", lambda e: self.파일선택())
         root.bind("<Configure>", self._메인_크기조정, add="+")
         root.protocol("WM_DELETE_WINDOW", self.종료)
-        root.after_idle(self._창_최소높이_보정)
+        self._최소높이_after_id = root.after_idle(self._창_최소높이_보정)
         if getattr(sys, "frozen", False):
             업데이트_시작신호()
             # 지난 업데이트가 남긴 구버전 백업과 내려받기 잔여물을 정리한다(교체가 끝난 다음 실행에서).
@@ -20262,6 +20264,9 @@ class HwpAutoDocFitGUI:
 
     def _창_최소높이_보정(self):
         """화면 해상도와 Windows 논리 배율을 반영한 최소 창 크기를 적용한다."""
+        self._최소높이_after_id = None
+        if self.closing or not self.root.winfo_exists():
+            return
         self.root.update_idletasks()
         screen_width, screen_height = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
         scale = getattr(self, "_ui_scale", 1.0)
@@ -20819,6 +20824,8 @@ class HwpAutoDocFitGUI:
 
     def _메인_크기조정(self, event=None):
         """창 크기가 바뀔 때 UI 밀도를 폭에 맞춰 조정한다."""
+        if self.closing or not self.root.winfo_exists():
+            return
         if event is not None and getattr(event, "widget", self.root) is not self.root:
             return
         예약 = getattr(self, "_반응형_예약", None)
@@ -20827,7 +20834,13 @@ class HwpAutoDocFitGUI:
                 self.root.after_cancel(예약)
             except tk.TclError:
                 pass
-        self._반응형_예약 = self.root.after(120, self._반응형_배치)
+        self._반응형_예약 = self.root.after(120, self._반응형_예약_실행)
+
+    def _반응형_예약_실행(self):
+        self._반응형_예약 = None
+        if self.closing or not self.root.winfo_exists():
+            return
+        self._반응형_배치()
 
     def _반응형_배치(self):
         self._반응형_예약 = None
@@ -25797,13 +25810,16 @@ class HwpAutoDocFitGUI:
     def _루트_파괴시_예약취소(self, event):
         if event.widget is not self.root:
             return
-        job = getattr(self, "_queue_after_id", None)
-        if job is not None:
+        self.closing = True
+        for 이름 in ("_queue_after_id", "_반응형_예약", "_최소높이_after_id"):
+            job = getattr(self, 이름, None)
+            if job is None:
+                continue
             try:
                 self.root.after_cancel(job)
             except tk.TclError:
                 pass
-            self._queue_after_id = None
+            setattr(self, 이름, None)
 
     def 종료(self):
         if self.closing:

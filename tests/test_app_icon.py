@@ -17,7 +17,8 @@ class AppIconTest(unittest.TestCase):
     def test_icon_file_has_small_and_large_sizes(self):
         아이콘 = self.ns['번들_앱아이콘_찾기']()
         self.assertIsNotNone(아이콘)
-        크기 = Image.open(아이콘).info['sizes']
+        with Image.open(아이콘) as 이미지:
+            크기 = 이미지.info['sizes']
         for n in (16, 32, 48, 256):
             self.assertIn((n, n), 크기)
 
