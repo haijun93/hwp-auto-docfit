@@ -4,7 +4,7 @@ import random
 import unittest
 
 from docfit_core.ai_answer import ai_answer_to_labeled_text, ai_answer_to_outline_text, looks_like_ai_answer, parse_ai_answer
-from docfit_core.labeled_text import looks_labeled, parse_labeled_text
+from docfit_core.labeled_text import looks_labeled, parse_labeled_text, render_blocks
 
 FIX = Path(__file__).resolve().parent / 'fixtures'
 ARTIFACTS = ('[cite', 'cite_start', 'oaicite', 'contentReference', '【', '†source', '**', '```', '| ---', '|---')
@@ -54,12 +54,12 @@ class ServiceStyleTest(unittest.TestCase):
         out = lines('claude')
         self.assertEqual(out[0], '제목: 문서 서식 자동화 도입 검토')
         self.assertEqual(out[1].split(':')[0], '개요')
-        self.assertIn('네모: 현황 분석', out)
-        self.assertIn('바: 서식 불일치', out)
-        self.assertIn('점: 글꼴이 문서마다 다름', out)
-        self.assertIn('원: 세부 사항', out)                    # 2.1 번호 뗌
+        self.assertIn('로마소제목: 현황 분석', out)             # 4단계 답변 → Ⅰ. □ ㅇ -
+        self.assertIn('원: 서식 불일치', out)
+        self.assertIn('바: 글꼴이 문서마다 다름', out)
+        self.assertIn('네모: 세부 사항', out)                  # 2.1 번호 뗌
         self.assertIn('당구: 시범 운영 후 확대합니다.', out)
-        self.assertIn('원: 도입을 권장합니다.', out)            # 결론 문장은 남기고 후속 제안 문장만 뗌
+        self.assertIn('네모: 도입을 권장합니다.', out)            # 결론 문장은 남기고 후속 제안 문장만 뗌
         self.assertFalse(any('알려주세요' in line for line in out))
 
     def test_outline_text_has_markers(self):
@@ -127,8 +127,43 @@ class RobustnessTest(unittest.TestCase):
             ai_answer_to_outline_text(raw)
 
     def test_deep_nesting_is_capped_to_last_marker(self):
-        out = ai_answer_to_outline_text('\n'.join('  ' * i + '- 깊이%d' % i for i in range(8)))
-        self.assertTrue(out.splitlines()[-1].startswith('•'))
+        out = ai_answer_to_outline_text('\n'.join('  ' * i + '- 깊이%d' % i for i in range(14)))
+        self.assertTrue(out.splitlines()[-1].startswith('㉮'))
+
+
+class MarkerSchemeTest(unittest.TestCase):
+    """단계 수에 따른 항목기호: 3단계 □ ㅇ -, 4단계 Ⅰ. □ ㅇ -, 5단계부터 1) 가) (1) (가) ① ㉮."""
+
+    @staticmethod
+    def outline(depth, sections=2):
+        body = '\n'.join('  ' * i + '- 항목%d' % i for i in range(depth - 1))
+        return ai_answer_to_outline_text('\n'.join(f'## 장{n}\n{body}\n- 형제' for n in range(sections)))
+
+    def markers(self, depth):
+        return [line.split(' ')[0] for line in self.outline(depth).splitlines() if line]
+
+    def test_three_levels(self):
+        self.assertEqual(self.markers(3), ['□', 'ㅇ', '-', 'ㅇ', '□', 'ㅇ', '-', 'ㅇ'])
+
+    def test_four_levels_use_roman_numerals(self):
+        self.assertEqual(self.markers(4)[:5], ['Ⅰ.', '□', 'ㅇ', '-', '□'])
+        self.assertIn('Ⅱ.', self.markers(4))
+
+    def test_five_or_more_levels_use_government_markers(self):
+        self.assertEqual(self.markers(7)[:7], ['Ⅰ.', '□', 'ㅇ', '-', '1)', '가)', '(1)'])
+        self.assertEqual(self.markers(9)[6:9], ['(1)', '(가)', '①'])
+
+    def test_deep_numbers_restart_under_a_new_parent(self):
+        text = '## 장\n- 가\n  - 나\n    - 다\n      - 라\n      - 라2\n    - 다2\n      - 라3\n'
+        out = ai_answer_to_outline_text(text).splitlines()
+        self.assertEqual([l.split(' ')[0] for l in out if l and l[0] in '123'], ['1)', '2)', '1)'])
+
+    def test_labeled_roundtrip_matches_outline_for_every_depth(self):
+        for depth in range(1, 12):
+            raw = self.outline(depth)
+            labeled = ai_answer_to_labeled_text('\n'.join(f'## 장{n}\n' + '\n'.join(
+                '  ' * i + '- 항목%d' % i for i in range(depth - 1)) + '\n- 형제' for n in range(2)))
+            self.assertEqual(render_blocks(parse_labeled_text(labeled)), raw, depth)
 
 
 if __name__ == '__main__':

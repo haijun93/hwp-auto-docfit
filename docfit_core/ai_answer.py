@@ -247,6 +247,57 @@ def _marker(tier: int) -> str:
     return TIER_MARKERS[min(tier, len(TIER_MARKERS) - 1)]
 
 
+_HANGUL_SEQ = "가나다라마바사아자차카타파하"
+_CIRCLED = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
+_CIRCLED_HANGUL = "㉮㉯㉰㉱㉲㉳㉴㉵㉶㉷㉸㉹㉺㉻"
+_ROMAN = "ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅪⅫ"
+
+
+def _seq(chars: str, n: int, fmt: str) -> str:
+    return fmt.format(chars[n - 1] if 1 <= n <= len(chars) else str(n))
+
+
+# 5단계부터 쓰는 정부문서(행정업무운영편람) 항목기호: 1) 가) (1) (가) ① ㉮ — 번호는 상위 항목이 바뀌면 처음부터 다시 센다.
+_DEEP_MARKERS = (
+    lambda n: f"{n})",
+    lambda n: _seq(_HANGUL_SEQ, n, "{}"+")"),
+    lambda n: f"({n})",
+    lambda n: _seq(_HANGUL_SEQ, n, "({})"),
+    lambda n: _seq(_CIRCLED, n, "{}"),
+    lambda n: _seq(_CIRCLED_HANGUL, n, "{}"),
+)
+
+
+def apply_marker_scheme(blocks: list[dict]) -> None:
+    """내용의 단계 수(가장 깊은 항목 단계)에 따라 항목기호를 정한다.
+
+    3단계 이하: □ ㅇ -   4단계: Ⅰ. □ ㅇ -   5단계 이상: Ⅰ. □ ㅇ - 다음에 1) 가) (1) (가) ① ㉮
+    블록의 ``tier``(0이 최상위)를 읽어 ``marker``·``level``을 채운다. ※ 참고 줄은 단계가 없어 그대로 둔다.
+    """
+    paras = [b for b in blocks if b["kind"] == "para" and b.get("tier") is not None]
+    if not paras:
+        return
+    depth = max(b["tier"] for b in paras) + 1
+    counters: dict[int, int] = {}
+    for b in blocks:
+        if b["kind"] != "para" or b.get("tier") is None:
+            continue
+        tier = b["tier"]
+        for deeper in [t for t in counters if t > tier]:
+            del counters[deeper]
+        counters[tier] = counters.get(tier, 0) + 1
+        n = counters[tier]
+        if depth <= 3:
+            marker = TIER_MARKERS[tier]
+        else:
+            ladder = ("Ⅰ.", "□", "ㅇ", "-")
+            if tier < len(ladder):
+                marker = (_ROMAN[n - 1] + "." if n <= len(_ROMAN) else f"{n}.") if tier == 0 else ladder[tier]
+            else:
+                marker = _DEEP_MARKERS[min(tier - len(ladder), len(_DEEP_MARKERS) - 1)](n)
+        b["marker"] = b["level"] = marker
+
+
 def parse_ai_answer(text: str) -> list[dict]:
     """AI 답변 글을 labeled_text 블록(title·box·para·table)으로 바꾼다."""
     elements = _split_elements(text)
@@ -280,9 +331,13 @@ def parse_ai_answer(text: str) -> list[dict]:
     seen_heading = False
     box_used = False
 
-    def add_para(marker: str, value: str) -> None:
+    def add_para(marker, value: str) -> None:
+        """marker가 정수면 단계(tier), 문자열이면 단계 없는 항목기호(※)."""
         if value:
-            blocks.append({"kind": "para", "marker": marker, "text": value, "level": marker})
+            if isinstance(marker, int):
+                blocks.append({"kind": "para", "marker": _marker(marker), "text": value, "level": _marker(marker), "tier": marker})
+            else:
+                blocks.append({"kind": "para", "marker": marker, "text": value, "level": marker})
 
     for index, e in enumerate(elements):
         kind = e["kind"]
@@ -291,7 +346,7 @@ def parse_ai_answer(text: str) -> list[dict]:
             base = e["rank"] + 1
             indent_stack, offset = [], 0
             if e["text"]:
-                add_para(_marker(e["rank"]), e["text"])
+                add_para(e["rank"], e["text"])
             continue
         if kind == "table":
             blocks.append({"kind": "table", "rows": [row for row in e["rows"] if any(row)]})
@@ -312,12 +367,12 @@ def parse_ai_answer(text: str) -> list[dict]:
                 continue
             tier = (base if seen_heading else 1) + offset
             if e["text"].endswith((":", "：")) and nxt is not None and nxt["kind"] == "item":
-                add_para(_marker(tier), e["text"])
+                add_para(tier, e["text"])
                 offset = max(offset, 0) + 1
                 indent_stack = []
                 continue
             offset = 0
-            add_para(_marker(tier), e["text"])
+            add_para(tier, e["text"])
             continue
         # 글머리·번호 항목: 서로 다른 들여쓰기의 순서로 깊이를 정한다.
         while indent_stack and indent_stack[-1] > e["indent"]:
@@ -326,8 +381,9 @@ def parse_ai_answer(text: str) -> list[dict]:
             indent_stack.append(e["indent"])
         depth = len(indent_stack) - 1
         tier = (base if has_heading else flat_base) + offset + depth
-        add_para(_marker(tier), e["text"].rstrip(":：").rstrip() if _next_content(elements, index) and
+        add_para(tier, e["text"].rstrip(":：").rstrip() if _next_content(elements, index) and
                  _next_content(elements, index)["kind"] == "item" and e["text"].endswith((":", "：")) else e["text"])
+    apply_marker_scheme(blocks)
     return blocks
 
 
@@ -345,8 +401,14 @@ def blocks_to_labeled_text(blocks: list[dict]) -> str:
         elif kind == "table":
             lines.extend("표: " + " | ".join(row) for row in block["rows"])
         elif kind == "para":
-            label = _LABEL_BY_MARKER.get(block["marker"])
-            lines.append(f"{label}: {block['text']}" if label else f"{block['marker']} {block['text']}")
+            marker = block["marker"]
+            label = _LABEL_BY_MARKER.get(marker)
+            if label:
+                lines.append(f"{label}: {block['text']}")
+            elif marker[:1] in _ROMAN and marker.endswith("."):
+                lines.append(f"로마소제목: {block['text']}")      # 번호는 라벨 해석기가 Ⅰ. Ⅱ. 로 매긴다
+            else:
+                lines.append(f"기호: {marker} {block['text']}")
     return "\n".join(lines).strip()
 
 
@@ -360,7 +422,8 @@ def blocks_to_plain_text(blocks: list[dict]) -> str:
         elif kind == "table":
             lines.extend(" | ".join(row) for row in block["rows"])
         elif kind == "para":
-            if block["marker"] == "□" and lines and lines[-1] != "":
+            if (block["marker"] == "□" or block["marker"][:1] in _ROMAN and block["marker"].endswith(".")) and lines \
+                    and lines[-1] != "":
                 lines.append("")
             lines.append(f"{block['marker']} {block['text']}")
     return "\n".join(lines).strip()

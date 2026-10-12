@@ -42,7 +42,7 @@ class ConversionTest(unittest.TestCase):
 
     def test_indent_width_does_not_matter_two_three_four_spaces_or_tab(self):
         template = '## 1. 업체\n* 오월\n{a}* 대표업종: 조경\n{b}* 세부: 상담\n* 윤스\n'
-        expected = ['□ 업체', 'ㅇ 오월', '- 대표업종: 조경', '• 세부: 상담', 'ㅇ 윤스']
+        expected = ['Ⅰ. 업체', '□ 오월', 'ㅇ 대표업종: 조경', '- 세부: 상담', '□ 윤스']   # 4단계 → Ⅰ. □ ㅇ -
         for a, b in (('  ', '    '), ('   ', '      '), ('    ', '        '), ('\t', '\t\t')):
             out = ai_answer_to_outline_text(template.format(a=a, b=b)).replace('\n\n', '\n').split('\n')
             self.assertEqual(out, expected, repr(a))
