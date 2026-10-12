@@ -26,9 +26,14 @@ def _format_coverage(analysis):
 
 QUICK_OPTIONS = {
     "autoclose": "autoclose_var",
+    "unify_result_window": "unify_result_window_var",
     "verify": "verify_var",
+    "integrity_report_file": "integrity_report_file_var",
+    "final_review_file": "final_review_file_var",
+    "log_file": "log_file_var",
     "check_updates": "check_updates_on_start_var",
     "developer_mode": "developer_mode_var",
+    "always_on_top": "always_on_top_var",
 }
 
 

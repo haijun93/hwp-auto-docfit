@@ -50,8 +50,14 @@ class _FakeGui:
         self.main_profile_combo = _Combo()
         self.selected_profiles = []
         self.autoclose_var = _Var(True)
+        self.unify_result_window_var = _Var(False)
         self.verify_var = _Var(False)
+        self.integrity_report_file_var = _Var(False)
+        self.final_review_file_var = _Var(False)
+        self.log_file_var = _Var(False)
         self.check_updates_on_start_var = _Var(True)
+        self.developer_mode_var = _Var(False)
+        self.always_on_top_var = _Var(True)
         self.include_spacing_var = _Var(True)
         self._결과목록 = [{"원본": r"C:\a\문서.hwp", "결과": r"C:\a\문서(자간조정).hwpx", "쪽수": 3}]
         self.opened = []
@@ -117,7 +123,11 @@ class BrowserApiTests(unittest.TestCase):
         self.assertEqual([item["key"] for item in state["stages"]],
                          [key for key, _ in stages_for_mode("spacing")])
         self.assertFalse(state["default_saved"])
-        self.assertEqual(state["options"], {"autoclose": True, "verify": False, "check_updates": True})
+        self.assertEqual(state["options"], {
+            "autoclose": True, "unify_result_window": False, "verify": False,
+            "integrity_report_file": False, "final_review_file": False, "log_file": False,
+            "check_updates": True, "developer_mode": False, "always_on_top": True,
+        })
         self.assertEqual(state["results"][0]["source"], "문서.hwp")
         self.assertEqual(state["results"][0]["pages"], 3)
 
@@ -188,6 +198,19 @@ class BrowserApiTests(unittest.TestCase):
             bridge.set_option("임의설정", True)
         self.assertEqual([(p["id"], p["name"]) for p in bridge._profiles()],
                          [("", "기본 서식"), ("abc", "[마포구] 보고서")])
+
+    def test_flutter_record_settings_update_saved_variables_and_lock_while_running(self):
+        gui = _FakeGui()
+        bridge = _bridge(gui)
+        for option in ("log_file", "integrity_report_file", "final_review_file"):
+            state = bridge.set_option(option, True)
+            self.assertTrue(state["options"][option])
+        self.assertTrue(gui.log_file_var.get())
+        self.assertTrue(gui.integrity_report_file_var.get())
+        self.assertTrue(gui.final_review_file_var.get())
+        gui.running = True
+        bridge.set_option("log_file", False)
+        self.assertTrue(gui.log_file_var.get())
 
     def test_all_card_runs_format_when_spacing_is_excluded(self):
         gui = _FakeGui()
