@@ -98,5 +98,27 @@ class AppWiringTest(unittest.TestCase):
         self.assertNotIn('**', captured[0])
 
 
+    def test_md_file_without_images_uses_outline_conversion_even_with_engine(self):
+        convert = self.ns['외부문서_hwpx로_변환']
+        captured, engine = [], []
+        with patch.dict(convert.__globals__, {'텍스트파일_읽기': lambda path: FIXTURE.read_text(encoding='utf-8'),
+                                              '텍스트_hwpx로_변환': lambda text, target: captured.append(text),
+                                              'generate_hwpx': lambda *a, **k: engine.append(a),
+                                              '로그': lambda *a: None, '알파_AI답변변환_사용': True}):
+            convert('answer.md', '.md', 'out.hwpx')
+        self.assertEqual((len(captured), engine), (1, []))
+        self.assertIn('□ 조경식재 및 시설물 철거 전문 업체', captured[0])
+
+    def test_md_file_with_image_still_goes_to_engine(self):
+        convert = self.ns['외부문서_hwpx로_변환']
+        captured, engine = [], []
+        with patch.dict(convert.__globals__, {'텍스트파일_읽기': lambda path: '# 제목\n- 가\n- 나\n![그림](a.png)\n',
+                                              '텍스트_hwpx로_변환': lambda text, target: captured.append(text),
+                                              'generate_hwpx': lambda *a, **k: engine.append(a),
+                                              '로그': lambda *a: None, '알파_AI답변변환_사용': True}):
+            convert('a.md', '.md', 'out.hwpx')
+        self.assertEqual((captured, len(engine)), ([], 1))
+
+
 if __name__ == '__main__':
     unittest.main()
