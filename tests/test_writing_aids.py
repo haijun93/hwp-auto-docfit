@@ -166,9 +166,9 @@ class ReplyDocumentTest(unittest.TestCase):
         self.assertEqual(wa.reply_title("(긴급) 민원 처리 현황 협조 요청"), "민원 처리 현황 자료 제출")
         self.assertEqual(wa.reply_title("교육 실적 자료 제출 요청"), "교육 실적 자료 제출")
         body = wa.reply_document("교육 실적 자료 제출 요청", "인재개발과", "인재개발과-12", "2025.7.1.",
-                                 contact="홍길동, 02-123-4567")
+                                 contact="홍길동, 0000-0000")
         self.assertIn("1. 관련: 인재개발과 인재개발과-12(2025. 7. 1.) 「교육 실적 자료 제출 요청」", body)
-        self.assertIn("교육 실적 자료를 붙임과 같이 제출합니다(문의: 홍길동, 02-123-4567).", body)
+        self.assertIn("교육 실적 자료를 붙임과 같이 제출합니다(문의: 홍길동, 0000-0000).", body)
         self.assertTrue(body.endswith("붙임  교육 실적 자료 1부.  끝."))
 
     def test_josa(self):

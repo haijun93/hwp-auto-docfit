@@ -3,11 +3,22 @@
 from __future__ import annotations
 
 import sys
+import os
 from pathlib import Path
 
 # Claude Desktop launches this file directly, so Python otherwise places only
 # the scripts directory on sys.path (not the repository root).
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+# MCP hosts may launch configured servers automatically at startup. Keep this
+# optional integration inert unless the user explicitly opts in.
+if os.environ.get("DOCFIT_MCP_ENABLED", "").strip() != "1":
+    print(
+        "HWP AutoDocFit MCP is disabled by default. Set DOCFIT_MCP_ENABLED=1 "
+        "only when you intentionally want to connect an MCP client.",
+        file=sys.stderr,
+    )
+    raise SystemExit(3)
 
 try:
     from mcp.server.fastmcp import FastMCP

@@ -55,7 +55,7 @@ class ConversionTest(unittest.TestCase):
         labeled = ai_answer_to_labeled_text(FIXTURE.read_text(encoding='utf-8')).split('\n')
         self.assertTrue(labeled[0].startswith('개요: 마포구청 나라장터'))
         self.assertIn('원: 오피스가든', labeled)                          # 번호 표제 아래 업체명은 원(ㅇ)
-        self.assertIn('바: 연락처: 1688-2052', labeled)
+        self.assertIn('바: 연락처: 0000-0000', labeled)
         self.assertTrue(looks_labeled('\n'.join(labeled)))
 
     def test_indent_width_does_not_matter_two_three_four_spaces_or_tab(self):
@@ -67,11 +67,11 @@ class ConversionTest(unittest.TestCase):
 
     def test_markdown_title_table_note_and_emoji(self):
         text = ('# 2026년 화분 철거 계획\n\n요약 문단입니다.\n\n## 1. 업체 현황\n| 업체 | 연락처 |\n|---|---|\n'
-                '| 오월 | 02-6351-2002 |\n\n> 참고: 견적은 별도 확인 [1]\n\n- 수의계약 가능 🌿\n')
+                '| 오월 | 0000-0000 |\n\n> 참고: 견적은 별도 확인 [1]\n\n- 수의계약 가능 🌿\n')
         blocks = parse_ai_answer(text)
         self.assertEqual([b['kind'] for b in blocks], ['title1', 'box', 'para', 'table', 'para', 'para'])
         self.assertEqual(blocks[0]['text'], '2026년 화분 철거 계획')
-        self.assertEqual(blocks[3]['rows'], [['업체', '연락처'], ['오월', '02-6351-2002']])
+        self.assertEqual(blocks[3]['rows'], [['업체', '연락처'], ['오월', '0000-0000']])
         self.assertEqual((blocks[4]['marker'], blocks[4]['text']), ('※', '견적은 별도 확인'))
         self.assertEqual((blocks[5]['marker'], blocks[5]['text']), ('ㅇ', '수의계약 가능'))
 

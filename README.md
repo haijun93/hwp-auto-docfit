@@ -6,7 +6,7 @@
 **다 쓴 한글(HWP·HWPX) 보고서를 넣고 「정리 시작」만 누르세요.** 설치된 한/글을 자동으로 조작해 공문서 모양으로 다듬어 줍니다.
 
 <p>
-<a href="#download"><img alt="현재 공개 버전 v1.75.1" src="https://img.shields.io/badge/%ED%98%84%EC%9E%AC%20%EA%B3%B5%EA%B0%9C-v1.75.1-2563eb"></a>
+<a href="#download"><img alt="현재 공개 버전 v1.75.2" src="https://img.shields.io/badge/%ED%98%84%EC%9E%AC%20%EA%B3%B5%EA%B0%9C-v1.75.2-2563eb"></a>
 <img alt="무료" src="https://img.shields.io/badge/%EA%B0%80%EA%B2%A9-%EB%AC%B4%EB%A3%8C-16a34a">
 <img alt="Windows 10·11" src="https://img.shields.io/badge/Windows-10%C2%B711-0078d4">
 <img alt="한/글 2020" src="https://img.shields.io/badge/%ED%95%9C%2F%EA%B8%80-2020-0ea5e9">
@@ -15,7 +15,7 @@
 
 <a id="download"></a>
 
-## ⬇ 무료 다운로드 — v1.75.1
+## ⬇ 무료 다운로드 — v1.75.2
 
 | 저장소 | 실행 파일 바로 받기 | 릴리스 페이지 |
 |---|---|---|
@@ -24,7 +24,7 @@
 
 두 저장소의 최신 릴리스는 배포 시점에 따라 잠시 다를 수 있습니다. 다운로드한 릴리스의 버전과 변경 사항을 확인한 뒤 사용하세요.
 
-설치 없이 실행 파일 하나로 시작합니다 · [v1.75.1 변경 사항](releases/v1.75.1.md) · [GitHub 저장소](https://github.com/haijun93/hwp-auto-docfit) · [GitLab 저장소](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
+설치 없이 실행 파일 하나로 시작합니다 · [v1.75.2 변경 사항](releases/v1.75.2.md) · [GitHub 저장소](https://github.com/haijun93/hwp-auto-docfit) · [GitLab 저장소](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
 
 [![프로그램 사용 시연 영상 (약 5분). 클릭하면 고화질 영상이 열립니다.](docs/media/overview-demo.gif)](docs/media/overview-demo.mp4)
 
@@ -221,7 +221,7 @@
 
 # 자세한 사용 설명서
 
-이번 버전은 **v1.75.1 정식 버전**입니다. AI 답변의 Markdown·복사 텍스트에 문서 서식을 적용하고, 서식 통일 퀵모드에서 글꼴·크기만 맞출 수 있습니다. 로컬 MCP는 내장 서식으로 HWPX를 만드는 초기 PoC이며 사용자 서식 프로필 적용, 한/글 COM 내어쓰기 후처리, ChatGPT 원격 연결은 아직 지원하지 않습니다. 창 종료 콜백과 아이콘 파일 처리, 한/글 COM 비교시험의 직렬화·진행 로그도 보강했습니다. 이번 릴리스는 성능 우위를 주장하지 않으며, Windows 한/글 COM 전체 문서 코퍼스 재시험은 검증 범위에 포함되지 않았습니다. [v1.75.1 변경 사항과 검증 범위](releases/v1.75.1.md)
+이번 버전은 **v1.75.2 정식 버전**입니다. v1.75.1의 기능을 유지하면서 Flutter 화면에 작업로그 보기·새로 고침·복사·지우기와 기록 파일 생성 옵션을 복원했습니다. 이 버전은 전체 UI의 Flutter 전환을 완료한 것은 아니며, 상세 설정과 일부 도구는 기존 Tk 창을 사용합니다. [v1.75.2 변경 사항과 검증 범위](releases/v1.75.2.md)
 
 <details>
 <summary><b>기능별 자세한 설명과 옵션 위치 펼치기</b></summary>
