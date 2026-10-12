@@ -32,12 +32,13 @@ _NUMBERED = re.compile(r"^([ \t]*)(?:\d{1,3}[.)]|\(\d{1,3}\)|[가-하][.)]|[①-
 _BOLD_ONLY = re.compile(r"^\*\*([^*]+?)\*\*[ \t]*[:：]?$")
 _NOTE_START = re.compile(r"^(?:※|ⓘ|[☞▶]|(?:참고|유의|주의|비고|알림)[ \t]*[:：])[ \t]*(.*)$")
 _SENTENCE_END = re.compile(r"[.!?…。]$|(?:다|요|음|함|임)\.?$")
-_STRONG_MD = re.compile(r"(\*\*|^#{1,6}[ \t]|^[ \t]*[-*+][ \t]+\S|^[ \t]*\d{1,3}[.)][ \t]+\S|【[^】]*】|\[\d{1,4}\])", re.M)
+_STRONG_MD = re.compile(r"(\*\*|^#{1,6}[ \t]|^[ \t]*[-*+•◦▪][ \t]+\S|^[ \t]*[•◦▪][ \t]*$|^[ \t]*\d{1,3}[.)][ \t]+\S|【[^】]*】|\[\d{1,4}\])", re.M)
 _ALREADY_REPORT = re.compile(r"^[ \t]*(?:□|ㅁ|ㅇ|○|※)[ \t]+\S", re.M)
 # 서비스가 답변에 끼워 넣는 인용 표식: 제미나이 [cite: 1, 2]·[cite_start]·[cite_end], 챗GPT 【12†source】·contentReference[oaicite:0]{index=0}·사설 영역 문자
 _CITATION = re.compile(
     r"[ \t]*(?:\[cite(?:_start|_end)?(?:[ \t]*:[^\]\n]*)?\]|\[source[^\]\n]*\]|:?contentReference\[[^\]\n]*\]\{[^}\n]*\}"
     r"|【[^】\n]*】|[\ue000-\uf8ff]+(?:[^\ue000-\uf8ff\n]{0,40}[\ue000-\uf8ff]+)?|\[\d{1,3}(?:[ \t]*[,-][ \t]*\d{1,3})*\](?!\())")
+_LONE_BULLET = re.compile(r"^([ \t]*)[•‣◦▪∙·][ \t]*\n+[ \t]*(?=\S)", re.M)
 _HTML_BREAK = re.compile(r"<br\s*/?>", re.I)
 _HTML_TAG = re.compile(r"</?(?:b|strong|i|em|u|p|div|span|ul|ol|li|sup|sub|code|mark)\b[^>\n]*>", re.I)
 # 대화체 맺음·여는 말(문서 내용이 아니다): 마지막/첫 문단일 때만 뗀다.
@@ -79,6 +80,7 @@ def _split_elements(text: str) -> list[dict]:
     """줄을 요소(표제·글머리·번호·굵은 줄·표·문단·참고)로 나눈다."""
     text = _normalize_text(_strip_invisible(text))
     text = _ESCAPED_MD_CHAR.sub(r"\1", text)
+    text = _LONE_BULLET.sub(r"\1• ", text)             # 화면 복사: 기호만 한 줄, 글은 다음 줄
     text = _MARKER_GLUE.sub("\n", text)
     elements: list[dict] = []
     fence = False

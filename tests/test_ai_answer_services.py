@@ -81,6 +81,26 @@ class ServiceStyleTest(unittest.TestCase):
                     self.assertIn(word, out, f'{name}: {word}')
 
 
+class ScreenCopyTest(unittest.TestCase):
+    """마크다운 기호 없이 화면에서 복사한 답변(기호만 한 줄, • ◦ 글머리, 번호 표제)."""
+
+    def test_lone_bullet_lines_join_next_line(self):
+        raw = '문서 자동화 도입 방안입니다.\n\n1. 추진 배경\n\n•\n현황: 수작업이 많습니다.\n•\n문제점: 검수 시간이 증가합니다.\n\n2. 기대 효과\n\n•\n시간 단축\n•\n오류 감소\n'
+        self.assertTrue(looks_like_ai_answer(raw))
+        out = ai_answer_to_labeled_text(raw).splitlines()
+        self.assertEqual(out[0], '개요: 문서 자동화 도입 방안입니다.')
+        self.assertIn('원: 현황: 수작업이 많습니다.', out)
+        self.assertIn('원: 오류 감소', out)
+        self.assertFalse(any('•' in line for line in out))
+
+    def test_dot_bullets_with_nested_circle(self):
+        raw = '추진 배경\n\n• 수작업 부담 증가\n• 서식 불일치\n   ◦ 글꼴 상이\n   ◦ 여백 상이\n\n기대 효과\n\n• 시간 단축\n'
+        self.assertTrue(looks_like_ai_answer(raw))
+        out = ai_answer_to_labeled_text(raw).splitlines()
+        self.assertEqual(out[0], '네모: 추진 배경')
+        self.assertIn('바: 글꼴 상이', out)
+
+
 class RobustnessTest(unittest.TestCase):
     PIECES = ['# 제목', '## 소제목', '### 세부', '1. 항목', '  - 중첩', '\t* 탭', '- 글머리', '**굵게**', '**1. 굵은 번호**', '> 인용',
               '| a | b |', '|---|---|', '```', '---', '일반 문장입니다.', '', '[cite: 1]', '【1†source】', '*', '-', '#', '**', '|',
