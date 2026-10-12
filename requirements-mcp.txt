@@ -1,0 +1,2 @@
+# Optional, isolated MCP server dependency. Pin the official Python SDK API line.
+mcp==1.30.0
