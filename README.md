@@ -6,23 +6,12 @@
 **다 쓴 한글(HWP·HWPX) 보고서를 넣고 「정리 시작」만 누르세요.** 설치된 한/글을 자동으로 조작해 공문서 모양으로 다듬어 줍니다.
 
 <p>
-<a href="#download"><img alt="현재 공개 베타 v1.74 Beta 1" src="https://img.shields.io/badge/%ED%98%84%EC%9E%AC%20%EA%B3%B5%EA%B0%9C%20%EB%B2%A0%ED%83%80-v1.74%20Beta%201-2563eb"></a>
+<img alt="현재 공개 베타 v1.74 Beta 1" src="https://img.shields.io/badge/%ED%98%84%EC%9E%AC%20%EA%B3%B5%EA%B0%9C%20%EB%B2%A0%ED%83%80-v1.74%20Beta%201-2563eb">
 <img alt="무료" src="https://img.shields.io/badge/%EA%B0%80%EA%B2%A9-%EB%AC%B4%EB%A3%8C-16a34a">
 <img alt="Windows 10·11" src="https://img.shields.io/badge/Windows-10%C2%B711-0078d4">
 <img alt="한/글 2020" src="https://img.shields.io/badge/%ED%95%9C%2F%EA%B8%80-2020-0ea5e9">
 <img alt="문서 외부 전송 없음" src="https://img.shields.io/badge/%EB%AC%B8%EC%84%9C-%EC%99%B8%EB%B6%80%20%EC%A0%84%EC%86%A1%20%EC%97%86%EC%9D%8C-64748b">
 </p>
-
-<a id="download"></a>
-
-## ⬇ 무료 다운로드 — v1.74 Beta 1
-
-| 저장소 | 실행 파일 바로 받기 | 릴리스 페이지 |
-|---|---|---|
-| GitHub | [HWP_AutoDocFit.exe 다운로드](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/HWP_AutoDocFit.exe) | [GitHub 최신 릴리스](https://github.com/haijun93/hwp-auto-docfit/releases/latest) |
-| GitLab | [HWP_AutoDocFit.exe 다운로드](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/permalink/latest/downloads/HWP_AutoDocFit.exe) | [GitLab 최신 릴리스](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/permalink/latest) |
-
-두 저장소의 최신 릴리스는 배포 시점에 따라 잠시 다를 수 있습니다. 다운로드한 릴리스의 버전과 변경 사항을 확인한 뒤 사용하세요.
 
 설치 없이 실행 파일 하나로 시작합니다 · [v1.74 Beta 1 변경 사항](releases/v1.74-beta.1.md) · [GitHub 저장소](https://github.com/haijun93/hwp-auto-docfit) · [GitLab 저장소](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
 
@@ -186,7 +175,7 @@
 
 <details><summary><b>정말 무료인가요?</b></summary>
 
-네. 실행 파일을 내려받아 바로 쓰면 됩니다. 결제·회원 가입이 없습니다.
+네. 실행 파일을 받아 바로 쓰면 됩니다. 결제·회원 가입이 없습니다.
 </details>
 
 <details><summary><b>문서가 외부로 나가지 않나요?</b></summary>
@@ -213,7 +202,7 @@
 
 ## 지금 바로 시작하세요
 
-**[⬇ GitHub에서 받기](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/HWP_AutoDocFit.exe)** · **[⬇ GitLab에서 받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/permalink/latest/downloads/HWP_AutoDocFit.exe)** · [▶ 예제 파일로 5분 체험하기](#examples) · [자세한 사용 설명서](#manual)
+[▶ 예제 파일로 5분 체험하기](#examples) · [자세한 사용 설명서](#manual)
 
 ---
 
@@ -237,7 +226,7 @@
 
 [![test4 문서의 실제 자간 정리 전후: 줄을 옮긴 어절만 빨간색으로 표시](docs/media/features/spacing.png)](docs/media/features/spacing.png)
 
-[실제 사례의 실행·원본 보존 기록](docs/media/features/test4-evidence.json) · **[▶ 이전 사례 영상 보기 — 24초](docs/media/samchein/spacing-guide.mp4)** · 예시 TXT: [GitHub](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/report-example-all-in-one.txt) · [GitLab](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/permalink/latest/downloads/report-example-all-in-one.txt) · [바로 따라 하기](#examples)
+[실제 사례의 실행·원본 보존 기록](docs/media/features/test4-evidence.json) · **[▶ 이전 사례 영상 보기 — 24초](docs/media/samchein/spacing-guide.mp4)** · [바로 따라 하기](#examples)
 
 ### 2. 한 번에 적용 — 텍스트 초안을 보고서 모양으로
 
@@ -335,15 +324,13 @@ NEO·다른 한/글 버전은 설치 환경에 따라 차이가 있으므로 사
 
 ### 실행 파일로 시작하기 — 일반 사용자
 
-1. 위의 **Windows 실행 파일 내려받기**를 누릅니다.
-2. 열린 릴리스 페이지의 첨부 파일에서 **`HWP_AutoDocFit.exe`**를 내려받습니다. `Source code`나 소스 ZIP은 개발용이므로 받지 않아도 됩니다.
-3. 내려받은 실행 파일을 보관할 폴더에 두고 두 번 클릭합니다.
-4. 앱이 열리면 아래의 **첫 문서 정리하기**를 따라 합니다.
+1. 배포받은 **`HWP_AutoDocFit.exe`** 실행 파일을 보관할 폴더에 두고 두 번 클릭합니다.
+2. 앱이 열리면 아래의 **첫 문서 정리하기**를 따라 합니다.
 
 **실행 파일 사용에는 Python 설치나 명령어 입력이 필요하지 않습니다.**
 HWP·HWPX의 기본 편집에는 Node.js도 필요하지 않습니다.
 
-> Windows나 기관 보안 프로그램이 실행을 막으면 출처와 기관 정책부터 확인하세요. 보안 기능을 끄거나 무조건 실행을 허용하지 마세요. 다운로드 페이지가 열리지 않으면 전산 담당자에게 접속 가능 여부를 문의하세요.
+> Windows나 기관 보안 프로그램이 실행을 막으면 출처와 기관 정책부터 확인하세요. 보안 기능을 끄거나 무조건 실행을 허용하지 마세요.
 
 <a id="quick-start"></a>
 
@@ -367,7 +354,7 @@ HWP·HWPX의 기본 편집에는 Node.js도 필요하지 않습니다.
 
 ### 실제 예제로 따라 하기: 보고서 예시 파일(한번에 적용).txt
 
-[보고서 예시 파일(한번에 적용).txt](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/report-example-all-in-one.txt)를 내려받아 저장하세요([GitLab에서 받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/permalink/latest/downloads/report-example-all-in-one.txt)도 가능). 삼체 문명을 소재로 한 가상 보고서이며 실제 행정문서가 아닙니다. 아래 두 실습은 **같은 TXT에서 각각 시작**합니다.
+`보고서 예시 파일(한번에 적용).txt`를 준비해 저장하세요. 삼체 문명을 소재로 한 가상 보고서이며 실제 행정문서가 아닙니다. 아래 두 실습은 **같은 TXT에서 각각 시작**합니다.
 
 **예제 1(자간 정리)부터** 해 보세요. 줄 끝만 고치는 가장 기본 기능입니다. **보고서 모양까지 바꾸려면 예제 2(한 번에 적용)**입니다. TXT에는 원래 서식이 없으므로 비교 이미지의 ‘전’은 앱이 한글 문서로 변환한 직후입니다.
 
@@ -379,7 +366,7 @@ HWP·HWPX의 기본 편집에는 Node.js도 필요하지 않습니다.
 
 이전 버전의 **실제 처리 결과**는 [거점(지구)·수립하여 전후 이미지](docs/media/samchein/spacing-comparison.png)에서 확인하세요. 이 실습의 실측값과 영상은 1.69 Beta 18 기준입니다.
 
-1. **문서 추가**에서 내려받은 `보고서 예시 파일(한번에 적용).txt`를 선택합니다.
+1. **문서 추가**에서 준비한 `보고서 예시 파일(한번에 적용).txt`를 선택합니다.
 2. **자간 정리**를 고릅니다. **기존 자간 초기화: 켬**, **표 제외: 끔**으로 둡니다.
 3. **정리 시작**을 누르고 결과 `보고서 예시 파일(한번에 적용)(자간조정).hwpx`를 엽니다.
 4. 첫 개요 문장의 **거점(지구)**와 **수립하여**가 줄 끝에서 나뉘지 않는지 확인합니다. 이 예시에서는 각각 -3%, -2% 자간으로 앞줄에 모였습니다. 제목·표를 보고서 양식으로 바꾸지는 않습니다.
@@ -655,14 +642,14 @@ JSON은 검사 내용을 담은 텍스트 파일입니다. 처음에는 앱의 �
 
 | 상황 | 먼저 확인할 것 |
 |---|---|
-| 다운로드가 안 돼요. | 선택한 GitHub 또는 GitLab 접속과 기관의 실행 파일 다운로드 정책을 확인하세요. 두 저장소의 릴리스 시점은 다를 수 있습니다. 소스 ZIP은 실행 파일의 대체품이 아닙니다. |
+| 실행 파일을 구하기 어려워요. | 기관의 실행 파일 반입 정책과 배포 담당자에게 문의하세요. 소스 ZIP은 실행 파일의 대체품이 아닙니다. |
 | 앱은 열리지만 문서를 처리하지 못해요. | 한/글에서 해당 문서를 직접 열고 편집할 수 있는지 확인하세요. 뷰어만 설치됐거나 자동화가 차단된 환경일 수 있습니다. |
 | **정리 시작**을 누를 수 없어요. | 처리할 문서가 목록에 있는지, 작업 방식을 골랐는지 확인하세요. |
 | 처리가 멈춘 것 같아요. | 처리 기록과 한/글의 확인 창을 살펴보세요. 다른 문서를 저장하지 않은 채 한/글 프로세스를 강제 종료하지 마세요. |
 | 서식을 골랐는데 적용되지 않아요. | **서식 통일**은 문서 자체가 기준입니다. 등록한 서식을 쓰려면 **한 번에 적용**을 선택하세요. |
 | 표나 쪽 배치가 예상과 달라요. | **표 제외**, **페이지 맞춤 제외**, **세부 작업**을 확인하고 원본으로 다시 시험하세요. |
 | 빨간 문장이 생겼어요. | 서식 통일에서 대표값을 확정하지 못한 표시일 수 있습니다. 처리 기록을 확인하고 해당 문장을 직접 검토하세요. |
-| 업데이트 뒤 `Failed to load Python DLL` 창이 떠요. | Beta 13·14의 업데이트 기능에 있던 문제입니다(Beta 15에서 수정). 다운로드 페이지에서 `HWP_AutoDocFit.exe`를 직접 받아 기존 파일과 바꾸면 다음 업데이트부터 정상입니다. |
+| 업데이트 뒤 `Failed to load Python DLL` 창이 떠요. | Beta 13·14의 업데이트 기능에 있던 문제입니다(Beta 15에서 수정). 배포 담당자에게 받은 `HWP_AutoDocFit.exe`로 기존 파일과 바꾸면 다음 업데이트부터 정상입니다. |
 | DOCX·PDF 변환에서 오류가 나요. | 선택형 문서 엔진이 필요한 기능입니다. [추가 설치 안내](docs/ADVANCED_USAGE.md#engine)를 확인하세요. |
 | 결과가 마음에 들지 않아요. | 원본은 그대로 있습니다. 기존 결과를 보관하려면 다른 이름으로 복사한 뒤, 원본을 대상으로 옵션을 줄여 다시 실행하세요. |
 
@@ -753,7 +740,7 @@ Tab·Shift+Tab으로 항목의 상하 관계를 정하며 작성합니다. 계�
 ### 업데이트와 설정 보관
 
 새 버전이 있으면 앱이 알립니다. 안내를 확인하고 업데이트하세요.
-알림이 오지 않으면 위의 다운로드 페이지에서 최신 배포판을 확인할 수 있습니다.
+알림이 오지 않으면 배포 담당자에게 최신 배포판을 확인하세요.
 
 **Beta 13부터** 업데이트는 실행 중인 앱의 프로세스들을 기다리고, 교체 후 새 앱이 시작됐는지 확인합니다. 새 앱 시작이 확인되지 않으면 이전 실행 파일로 되돌립니다. 업데이트는 설치돼 있던 이전 버전의 업데이트 기능이 수행합니다.
 
