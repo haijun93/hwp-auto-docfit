@@ -26,6 +26,17 @@ class _Combo:
         self.index = index
 
 
+class _LogText:
+    def __init__(self, value=""):
+        self.value = value
+
+    def get(self, start, end):
+        return self.value
+
+    def delete(self, start, end):
+        self.value = ""
+
+
 class _FakeGui:
     """Tk 없이 연결부 명령을 시험하기 위한 최소 앱 대역."""
 
@@ -62,6 +73,7 @@ class _FakeGui:
         self._결과목록 = [{"원본": r"C:\a\문서.hwp", "결과": r"C:\a\문서(자간조정).hwpx", "쪽수": 3}]
         self.opened = []
         self.stage_board = object()
+        self.log_text = _LogText()
 
     def _세부작업_기본값_저장(self, mode, 저장=True):
         self._세부작업_기본저장[mode] = bool(저장)
@@ -93,7 +105,7 @@ class BrowserApiTests(unittest.TestCase):
         bridge.window = object()
         api = _BrowserApi(bridge)
         public = {name: getattr(api, name) for name in dir(api) if not name.startswith('_')}
-        self.assertEqual(len(public), 38)   # 알파: open_format_samples(서식예시 폴더 열기), format_gallery(썸네일로 선택)
+        self.assertEqual(len(public), 40)   # UI 명령만 공개, 최근 추가: get_log·clear_log
         self.assertTrue(all(callable(value) for value in public.values()))
         self.assertNotIn('gui', public)
         self.assertNotIn('window', public)
@@ -198,6 +210,16 @@ class BrowserApiTests(unittest.TestCase):
             bridge.set_option("임의설정", True)
         self.assertEqual([(p["id"], p["name"]) for p in bridge._profiles()],
                          [("", "기본 서식"), ("abc", "[마포구] 보고서")])
+
+    def test_log_is_read_on_demand_and_clear_is_blocked_during_job(self):
+        gui = _FakeGui()
+        bridge = _bridge(gui)
+        gui.log_text.value = "첫 줄\n둘째 줄"
+        self.assertEqual(bridge.get_log(), "첫 줄\n둘째 줄")
+        self.assertEqual(bridge.clear_log(), "")
+        gui.log_text.value = "진행 중 기록"
+        gui.running = True
+        self.assertEqual(bridge.clear_log(), "진행 중 기록")
 
     def test_flutter_record_settings_update_saved_variables_and_lock_while_running(self):
         gui = _FakeGui()
