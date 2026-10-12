@@ -290,6 +290,7 @@ from docfit_core.korean_proofread import (
 )
 from docfit_core.pasted_text import clean_pasted_text, outline_pasted_text
 from docfit_core.labeled_text import label_outline_text, looks_labeled, parse_labeled_text
+from docfit_core.ai_answer import ai_answer_to_labeled_text, ai_answer_to_outline_text, looks_like_ai_answer
 from docfit_core.asterisk_superscript import mark_spans as 별표_위치
 from docfit_core.attachment_block import find_blocks as 붙임묶음_찾기
 from docfit_core.attachment_block import blank_line_plan as 붙임_앞빈줄_계획
@@ -18236,7 +18237,28 @@ def 라벨블록_한글삽입(한글, 블록들):
 ])
 
 
-def 텍스트_hwpx_단독변환(텍스트, 대상경로, 라벨_해석=True):
+# 알파(2026-10-12): 챗GPT·클로드·제미나이 답변을 복사한 그대로(마크다운 기호·번호 표제·글머리·표) 붙여넣거나 .txt로 저장해도
+# 항목기호(□ ㅇ - •) 개조식 문서로 바꿔 서식 적용이 되게 한다. 끄면 글을 그대로 넣는다. docfit_core/ai_answer.py
+알파_AI답변변환_사용 = True
+
+
+def AI답변_개조식_변환(텍스트, 라벨형식=False):
+    """AI 답변으로 보이면 (변환한 글, True), 아니면 (원문, False). 라벨형식=True면 제목:/개요:/네모:/원: 라벨 글로 바꾼다."""
+    if not 알파_AI답변변환_사용 or not looks_like_ai_answer(텍스트):
+        return 텍스트, False
+    try:
+        if 라벨형식:
+            변환 = ai_answer_to_labeled_text(텍스트)
+            if looks_labeled(변환):
+                return 변환, True
+        변환 = ai_answer_to_outline_text(텍스트)
+    except Exception as 오류:
+        로그(f"AI 답변 변환 실패(글을 그대로 넣음): {오류}")
+        return 텍스트, False
+    return (변환, True) if 변환.strip() else (텍스트, False)
+
+
+def 텍스트_hwpx_단독변환(텍스트, 대상경로, 라벨_해석=True, AI_변환=True):
     """'텍스트 붙여넣기'에서 저장 즉시 HWPX로 바꿀 때 쓰는, 배치 작업(작업_실행)과
     완전히 독립된 한/글 세션.
 
@@ -18246,6 +18268,10 @@ def 텍스트_hwpx_단독변환(텍스트, 대상경로, 라벨_해석=True):
     않는다. COM은 생성한 스레드에서 정리해야 하므로 반드시 전용 스레드
     (daemon Thread)에서만 호출한다.
     """
+    if AI_변환 and 라벨_해석 and not looks_labeled(텍스트):
+        텍스트, 변환됨 = AI답변_개조식_변환(텍스트, 라벨형식=True)
+        if 변환됨:
+            로그("AI 답변으로 보고 개조식(제목·개요·□ ㅇ - 항목)으로 변환해 문서를 만듭니다.")
     pythoncom.CoInitialize()
     단독_hwp = None
     서식표_후처리 = False
@@ -18312,7 +18338,11 @@ def 외부문서_hwpx로_변환(원본경로, 확장자, 대상경로):
     않으면 자리표시만 남고 이미지가 사라진다).
     """
     if 확장자 == ".txt":
-        텍스트_hwpx로_변환(텍스트파일_읽기(원본경로), 대상경로)
+        원문 = 텍스트파일_읽기(원본경로)
+        원문, 변환됨 = AI답변_개조식_변환(원문)
+        if 변환됨:
+            로그(f"AI 답변으로 보고 개조식 항목기호로 변환해 서식 작업에 넘깁니다: {Path(원본경로).name}")
+        텍스트_hwpx로_변환(원문, 대상경로)
         return
     if 확장자 == ".md":
         try:
@@ -18320,7 +18350,8 @@ def 외부문서_hwpx로_변환(원본경로, 확장자, 대상경로):
             return
         except KordocUnavailableError as e:
             로그(f"고급 문서 엔진을 쓸 수 없어 서식 없이 텍스트로만 변환합니다: {e}")
-            텍스트_hwpx로_변환(텍스트파일_읽기(원본경로), 대상경로)
+            원문, 변환됨 = AI답변_개조식_변환(텍스트파일_읽기(원본경로))
+            텍스트_hwpx로_변환(원문, 대상경로)
             return
     if 확장자 in (".doc", ".docx", ".pdf"):
         with tempfile.TemporaryDirectory(prefix="docfit_변환_") as 임시폴더:
@@ -22690,6 +22721,7 @@ class HwpAutoDocFitGUI:
         input_text.configure(yscrollcommand=scroll.set)
 
         status = tk.StringVar(value="텍스트를 붙여넣고 ‘문서로 추가’를 눌러 주세요.")
+        ai_convert_var = tk.BooleanVar(value=알파_AI답변변환_사용)
 
         def 기본이름(내용):
             for 줄 in 내용.splitlines():
@@ -22746,7 +22778,8 @@ class HwpAutoDocFitGUI:
                     messagebox.showinfo(APP_NAME, "다른 작업이 실행 중입니다. 완료 후 다시 시도해 주세요.",
                                         parent=window)
                     return
-                대상경로 = 겹치지않는경로(폴더, 기본이름(내용), ".hwpx")
+                AI변환 = bool(ai_convert_var.get())
+                대상경로 = 겹치지않는경로(폴더, 기본이름(AI답변_개조식_변환(내용)[0] if AI변환 else 내용), ".hwpx")
                 진행중["value"] = True
                 버튼상태("disabled")
                 status.set("HWPX로 변환하는 중입니다… (한/글이 잠시 열립니다)")
@@ -22754,12 +22787,15 @@ class HwpAutoDocFitGUI:
                 def 작업():
                     오류 = None
                     try:
-                        텍스트_hwpx_단독변환(내용, 대상경로)
+                        텍스트_hwpx_단독변환(내용, 대상경로, AI_변환=AI변환)
                     except Exception as e:
                         오류 = str(e)
                     self.root.after(0, 완료, 오류, 대상경로)
                 threading.Thread(target=작업, daemon=True, name="paste-add-hwpx").start()
                 return
+            내용, AI변환됨 = AI답변_개조식_변환(내용) if ai_convert_var.get() else (내용, False)
+            if AI변환됨:
+                status.set("AI 답변으로 보고 개조식 항목기호(□ ㅇ -)로 변환했습니다.")
             경로 = asksaveasfilename(
                 parent=window, title="텍스트를 저장할 위치",
                 initialfile=기본이름(내용) + ".txt", defaultextension=".txt",
@@ -22794,6 +22830,8 @@ class HwpAutoDocFitGUI:
         지우기_버튼.pack(side="left", padx=(6, 0))
         닫기_버튼 = ttk.Button(actions, text="닫기", command=닫기_요청)
         닫기_버튼.pack(side="right")
+        ttk.Checkbutton(body, text="AI 답변이면 구조를 개조식(제목·개요·□ ㅇ - 항목기호)으로 자동 변환",
+                        variable=ai_convert_var).pack(side="bottom", anchor="w", before=text_frame)
 
         try:
             붙여넣기 = window.clipboard_get()
@@ -22826,7 +22864,7 @@ class HwpAutoDocFitGUI:
                   font=("맑은 고딕", 12, "bold")).pack(anchor="w")
         ttk.Label(body,
                   text="‘한 번에 정리’는 마크다운 기호(**, #, - 등)를 지우고 보기 좋은 문장으로 바꾸고,\n"
-                       "‘개조식으로 변환’은 제목·글머리 기호의 계층 구조를 ㅁ/ㅇ/-/• 항목기호로 바꿉니다.\n"
+                       "‘개조식으로 변환’은 제목·번호·글머리·들여쓰기·표 구조를 읽어 제목·개요·□/ㅇ/-/• 항목기호로 바꿉니다(AI 답변은 복사한 그대로).\n"
                        "‘제목: / 네모: / 원: / 바:’ 라벨 형식은 라벨 그대로 바꿉니다(‘AI 프롬프트…’로 이 형식의 답을 받을 수 있음).",
                   style="Hint.TLabel", justify="left").pack(anchor="w", pady=(2, 8))
 
@@ -22883,6 +22921,9 @@ class HwpAutoDocFitGUI:
             원문 = input_text.get("1.0", "end-1c")
             if looks_labeled(원문):
                 변환실행(label_outline_text, "라벨 형식을 개조식으로 변환 완료")
+            elif 알파_AI답변변환_사용 and looks_like_ai_answer(원문):
+                # 표제·번호 표제·굵은 줄·들여쓰기 목록·표를 읽어 제목·개요·□ ㅇ - • 항목기호로 바꾼다(들여쓰기 칸 수와 무관).
+                변환실행(ai_answer_to_outline_text, "AI 답변 구조를 개조식으로 변환 완료")
             else:
                 변환실행(outline_pasted_text, "개조식 변환 완료")
 
