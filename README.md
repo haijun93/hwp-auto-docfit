@@ -20,7 +20,7 @@
 | 저장소 | 실행 파일 바로 받기 | 릴리스 페이지 |
 |---|---|---|
 | GitHub | [GitHub에서 HWP_AutoDocFit.exe 받기](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/HWP_AutoDocFit.exe) | [GitHub 최신 릴리스](https://github.com/haijun93/hwp-auto-docfit/releases/latest) |
-| GitLab | [GitLab에서 HWP_AutoDocFit.exe 받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/permalink/latest/downloads/HWP_AutoDocFit.exe) | [GitLab 최신 릴리스](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/permalink/latest) |
+| GitLab | [GitLab에서 HWP_AutoDocFit.exe 받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/v1.75.2/release-assets/HWP_AutoDocFit.exe?ref_type=tags) | [GitLab v1.75.2 태그 파일](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/tree/v1.75.2) |
 
 두 저장소의 최신 릴리스는 배포 시점에 따라 잠시 다를 수 있습니다. 다운로드한 릴리스의 버전과 변경 사항을 확인한 뒤 사용하세요.
 
@@ -213,7 +213,7 @@
 
 ## 지금 바로 시작하세요
 
-**[⬇ GitHub에서 받기](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/HWP_AutoDocFit.exe)** · **[⬇ GitLab에서 받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/permalink/latest/downloads/HWP_AutoDocFit.exe)** · [▶ 예제 파일로 5분 체험하기](#examples) · [자세한 사용 설명서](#manual)
+**[⬇ GitHub에서 받기](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/HWP_AutoDocFit.exe)** · **[⬇ GitLab에서 받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/v1.75.2/release-assets/HWP_AutoDocFit.exe?ref_type=tags)** · [▶ 예제 파일로 5분 체험하기](#examples) · [자세한 사용 설명서](#manual)
 
 ---
 
