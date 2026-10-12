@@ -18345,6 +18345,16 @@ def 외부문서_hwpx로_변환(원본경로, 확장자, 대상경로):
         텍스트_hwpx로_변환(원문, 대상경로)
         return
     if 확장자 == ".md":
+        # 이미지가 없는 AI 답변형 마크다운은 엔진 대신 개조식 변환을 먼저 쓴다(□ ㅇ - 항목기호 문서). 이미지가 있으면 엔진이 처리한다.
+        try:
+            원문 = 텍스트파일_읽기(원본경로)
+            변환문, 변환됨 = ("", False) if re.search(r"!\[[^\]]*\]\(", 원문) else AI답변_개조식_변환(원문)
+        except Exception:
+            변환문, 변환됨 = "", False
+        if 변환됨:
+            로그(f"AI 답변형 마크다운을 개조식 항목기호로 변환해 서식 작업에 넘깁니다: {Path(원본경로).name}")
+            텍스트_hwpx로_변환(변환문, 대상경로)
+            return
         try:
             generate_hwpx(str(원본경로), "보고서", str(대상경로), image_dir=Path(원본경로).parent)
             return
