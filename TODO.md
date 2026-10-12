@@ -57,6 +57,18 @@
 - 권장 순서: S1 → S2 → S3 → S5 → 나머지(S6·S7은 위험이 작고 바로 가능).
 - 미확인: Windows·한/글 실환경 동작, 실제 Vercel 프로젝트 설정, GitLab CI 보안 검사 결과, kordoc 내부 의존성, `flutter_ui` 웹뷰 설정.
 
+## [미착수] Anthropic OSS Scanner 신청으로 외부 보안성 검토 받기 (2026-10-12)
+대상: https://github.com/anthropics/oss-scanner (신청 = 이 저장소에 `projects/<이름>/project.yaml`을 추가하는 PR). 위의 "보안성 검토 발견 사항 S1~S9"와 별개로, 모델 기반 스캐너가 소스를 추가로 점검한다.
+
+- [ ] **0. 사전 확인(사용자)**: ① `red.anthropic.com/oss-scanner`의 선정 기준에 이 프로젝트가 해당하는지(소규모 공공기관 도구라 불확실; 안 되면 PR의 Context란에 사유 기재) ② 소속 기관이 소스·보고서를 외부 서비스에 넘기는 것을 허용하는지 ③ 신청자는 저장소 핵심 유지관리자(소유자 계정)여야 함 ④ 스캔 대상은 GitHub 공개 저장소 `haijun93/hwp-auto-docfit`(GitLab 내부 저장소는 불가).
+- [ ] **1. 리눅스 빌드 환경 준비(알파)**: 이 앱은 Windows·한/글 COM 의존이라 전체 빌드는 불가. 순수 파이썬 부분(`docfit_core/*`, `desktop_web_ui.py` 등)과 `scripts/linux_stub_test_runner.py` 시험만 도는 `.oss-scanner/Dockerfile` 작성(빌드 단계에서 `defusedxml` 등 의존성 모두 설치, 스캔 단계는 인터넷 없음). 컨테이너 안에서 시험이 통과하는지 확인(기준선: 실패 7·오류 15는 Tk/Windows 의존).
+- [ ] **2. `threat_model.md` 작성**: 신뢰할 수 없는 입력(사용자가 여는 HWPX/DOCX/PDF/MD/TXT, 붙여넣은 AI 답변, 업데이트 서버 응답, kordoc 출력), 범위 밖(한/글 자체, Windows, Tk), 심각도 기준(예: 압축 폭탄=중간, 업데이트 바꿔치기=높음, 로컬 전용 화면 오류=낮음), 알려진 발견 사항 S1~S9(`docs/보안성_검토_최고수준_2026-10-12.md`) 포함해 중복 보고를 줄임.
+- [ ] **3. `project.yaml` 작성**: `repo: https://github.com/haijun93/hwp-auto-docfit#main`, `primary_contact`는 **공개되므로 보안 전용 별칭 메일**(사용자 결정), `dockerfile: .oss-scanner/Dockerfile`, `threat_model: .oss-scanner/threat_model.md`. 필요하면 `pgp`(암호화 수신, `auto_ccs`와 병용 불가).
+- [ ] **4. 로컬 점검(사용자 PC, Docker 필요)**: `tools/validate.py`, `tools/check <이름>`(네트워크 없는 셸에서 시험 통과 확인). 이 클라우드 환경에는 Docker가 없어 확인하지 못한다.
+- [ ] **5. PR 제출(사용자)**: `anthropics/oss-scanner`를 포크해 `projects/<이름>/` 추가, PR 체크리스트 작성, **"OSS Scanner terms 수락" 항목에 반드시 체크**(안 하면 자동 검사 실패), 첫 PR에서 CLA 서명(봇 안내 문장을 답글로).
+- [ ] **6. 결과 처리**: 보고서(재현 방법·패치 제안, 모델 생성이라 사람 검토 없음)는 `primary_contact`로 온다. 오탐을 가려 알파에서 수정하고 시험을 추가한다. 빌드 실패 메일이 오면 Dockerfile을 고친다(저장소 안 Dockerfile은 PR 없이 수정 가능).
+- 참고: 신청 방법 요약은 대화 기록(2026-10-12)에 있으며 근거는 oss-scanner `README.md`, `CONTRIBUTING.md`, `.github/PULL_REQUEST_TEMPLATE.md`. 선정 기준 페이지는 확인하지 못했다.
+
 ## [진행 중, 이어서 작업] 알파 개발 인수인계 — VS Code (2026-10-09)
 
 > 이 섹션이 알파 개발의 **최신 상태**다. 전체 계획은 `docs/알파_개발계획_2026-10-09.md`, 방향 근거는 `docs/종합검토_알파감마_개발방향_2026-10-09.md`.
