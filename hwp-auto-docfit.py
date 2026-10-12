@@ -8394,10 +8394,11 @@ def _서식통일_미확정_항목(대표, text):
     """
     marker, label = _서식통일_문두요소_범위(text)
     fields = ["font", "size"]
-    if marker:
-        fields.append("marker_bold")
-    if label:
-        fields.append("label_bold")
+    if not _서식통일_글꼴크기만():
+        if marker:
+            fields.append("marker_bold")
+        if label:
+            fields.append("label_bold")
     return [field for field in fields if 대표.get(field, (None, 0))[0] is None]
 
 

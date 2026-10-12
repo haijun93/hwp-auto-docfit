@@ -69,6 +69,15 @@ class FontSizeOnlyTest(unittest.TestCase):
         self.assertEqual(대표['color'], ('#000000', 9))      # 원본은 바꾸지 않는다
         self.assertEqual(fn(None), None)
 
+    def test_quick_mode_does_not_mark_bold_fields_unresolved(self):
+        fn = self.ns['_서식통일_미확정_항목']
+        대표 = {'font': ('함초롬바탕', 9), 'size': (1500, 9)}
+        text = 'ㅇ 첫 번째 항목입니다.'
+        with patch.dict(self.g, {'작업_모드': 'unify', '선택_세부작업': None}):
+            self.assertEqual(fn(대표, text), [])
+        with patch.dict(self.g, {'작업_모드': 'unify', '선택_세부작업': {'unify_full_format': True}}):
+            self.assertEqual(fn(대표, text), ['marker_bold'])
+
 
 class XmlSurveyTest(unittest.TestCase):
     @classmethod
