@@ -449,6 +449,24 @@ class DesktopWebBridge:
         self._tk(lambda: (self.gui.log_window.deiconify(), self.gui.log_window.lift()), front=True)
         return True
 
+    def get_log(self):
+        """작업 로그 본문은 사용자가 열었을 때만 읽어 보낸다."""
+        def read():
+            widget = getattr(self.gui, "log_text", None)
+            return widget.get("1.0", "end-1c") if widget is not None else ""
+
+        return self._tk(read)
+
+    def clear_log(self):
+        """기록 창과 같은 규칙으로, 작업 중에는 로그를 지우지 않는다."""
+        def clear():
+            widget = getattr(self.gui, "log_text", None)
+            if widget is not None and not self.gui.running:
+                widget.delete("1.0", "end")
+            return widget.get("1.0", "end-1c") if widget is not None else ""
+
+        return self._tk(clear)
+
     def open_results(self):
         self._tk(self.gui._결과파일_열기, timeout=None, front=True)
         return True
@@ -727,7 +745,7 @@ class _BrowserApi:
         for name in (
             "get_state", "add_files", "add_folder", "add_paths", "remove_file",
             "clear_files", "set_mode", "set_range", "start", "stop",
-            "open_settings", "text_input", "open_stages", "open_log",
+            "open_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
             "open_results", "next_job", "run_tool", "open_result",
             "show_result", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",

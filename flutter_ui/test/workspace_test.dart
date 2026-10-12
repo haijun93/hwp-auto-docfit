@@ -498,6 +498,46 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('work log is rendered and managed by the Flutter dialog', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1024, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final calls = <String>[];
+    final state = initialState();
+    var logText = '처리 시작\n첫 단계 완료';
+    Future<Object?> api(String name, List<Object?> args) async {
+      calls.add(name);
+      if (name == 'get_log') return logText;
+      if (name == 'clear_log') {
+        logText = '';
+        return logText;
+      }
+      return Map<String, dynamic>.from(state);
+    }
+
+    await tester.pumpWidget(DocFitApp(api: api));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('작업 로그'));
+    await tester.pumpAndSettle();
+    expect(find.text('처리 시작\n첫 단계 완료'), findsOneWidget);
+    logText = '새로 추가된 로그';
+    await tester.tap(find.byKey(const Key('refreshLogButton')));
+    await tester.pumpAndSettle();
+    expect(find.text('새로 추가된 로그'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('clearLogButton')));
+    await tester.pumpAndSettle();
+    expect(find.text('아직 기록된 내용이 없어요.'), findsOneWidget);
+    expect(calls.where((name) => name == 'get_log').length, 2);
+    expect(calls, contains('clear_log'));
+    await tester.tap(find.text('닫기'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('disconnected UI never starts work', (tester) async {
     await tester.pumpWidget(
       DocFitApp(api: (method, args) async => throw StateError('offline')),
