@@ -1,4 +1,6 @@
 import unittest
+import tempfile
+from pathlib import Path
 from unittest import mock
 
 from desktop_web_ui import DesktopWebBridge, _BrowserApi
@@ -243,6 +245,7 @@ class BrowserApiTests(unittest.TestCase):
         # '한 번에 적용'의 '표 제외'(설정 all_exclude_tables)는 기본 꺼짐이고, 바꾸면 그 카드를 고른다.
         gui = _FakeGui()
         gui.selected_mode.set("spacing")
+        gui.unify_quick_mode_var = _Var(True)
         bridge = _bridge(gui)
         self.assertFalse(bridge.get_state()["exclude_tables"])   # 변수가 없으면 기본값 꺼짐
         gui.exclude_tables_var = _Var(False)
@@ -257,14 +260,17 @@ class BrowserApiTests(unittest.TestCase):
         # 서식 통일 '표 제외'·'자간 정리 제외'·'페이지 맞춤 제외', 한 번에 적용 '페이지 맞춤 제외'(모두 기본 꺼짐)
         gui = _FakeGui()
         gui.selected_mode.set("spacing")
+        gui.unify_quick_mode_var = _Var(True)
         bridge = _bridge(gui)
         self.assertEqual(bridge.get_state()["card_options"],
                          {"all_exclude_pagefit": False, "unify_exclude_tables": False,
                           "unify_exclude_spacing": False, "unify_exclude_pagefit": False,
-                          "unify_keep_layout": False, "unify_full_format": False})
+                          "unify_keep_layout": False, "unify_quick_mode": True})
         for name in ("all_exclude_pagefit_var", "unify_exclude_tables_var", "unify_exclude_spacing_var",
                      "unify_exclude_pagefit_var"):
             setattr(gui, name, _Var(False))
+        state = bridge.set_card_option("unify_quick_mode", False)
+        self.assertEqual((state["mode"], state["card_options"]["unify_quick_mode"]), ("unify", False))
         state = bridge.set_card_option("unify_exclude_spacing", True)
         self.assertEqual((state["mode"], state["card_options"]["unify_exclude_spacing"]), ("unify", True))
         state = bridge.set_card_option("all_exclude_pagefit", True)
@@ -274,7 +280,8 @@ class BrowserApiTests(unittest.TestCase):
         gui.running = True
         self.assertTrue(bridge.set_card_option("all_exclude_pagefit", False)["card_options"]["all_exclude_pagefit"])
 
-    def test_format_manager_profiles_drop_routing_and_edits(self):
+    @mock.patch("desktop_web_ui.Path.resolve", return_value=Path(r"C:\a\report.hwpx"))
+    def test_format_manager_profiles_drop_routing_and_edits(self, _resolve):
         # 서식 목록은 이름·기관·기본 서식 여부·예시 파일·사용 중 여부를 함께 준다.
         gui = _FakeGui()
         gui._프로파일들["abc"]["source"] = {"filename": "예시.hwpx"}
@@ -300,7 +307,7 @@ class BrowserApiTests(unittest.TestCase):
         self.assertIn("HWP 또는 HWPX", gui.status_var.get())
         bridge.set_drop_target("documents")
         bridge.receive_drop([r"C:\a\보고서.hwpx"])
-        self.assertEqual(added, [r"C:\a\보고서.hwpx"])
+        self.assertEqual(added, [r"C:\a\report.hwpx"])
         self.assertEqual(len(started), 1)
         # 이름 바꾸기·삭제가 안 되면 notice에 이유를 담는다.
         gui._서식_이름_저장 = lambda identifier, name, organization: "이미 사용 중인 서식 이름입니다." if name == "중복" else None

@@ -189,6 +189,8 @@ class DesktopWebBridge:
     def add_paths(self, paths):
         if not isinstance(paths, (list, tuple)):
             return self.get_state()
+        if len(paths) > 100:
+            return self.get_state()
 
         def add():
             if self.gui.running:
@@ -196,9 +198,20 @@ class DesktopWebBridge:
             added = 0
             for value in paths:
                 path = str(value or "").strip()
+                if len(path) > 32767:
+                    continue
                 if not path:
                     continue
                 try:
+                    candidate = Path(path)
+                    if candidate.is_symlink():
+                        continue
+                    candidate = candidate.resolve(strict=True)
+                    path = str(candidate)
+                    if candidate.is_file() and candidate.suffix.lower() not in {
+                        ".hwp", ".hwpx", ".txt", ".md", ".doc", ".docx", ".pdf"
+                    }:
+                        continue
                     if Path(path).is_dir():
                         added += self.gui.폴더추가(path)
                     elif self.gui.파일추가(path):
@@ -345,7 +358,7 @@ class DesktopWebBridge:
         "unify_exclude_spacing": ("unify_exclude_spacing_var", "unify"),
         "unify_exclude_pagefit": ("unify_exclude_pagefit_var", "unify"),
         "unify_keep_layout": ("unify_keep_layout_var", "unify"),
-        "unify_full_format": ("unify_full_format_var", "unify"),
+        "unify_quick_mode": ("unify_quick_mode_var", "unify"),
     }
 
     def _card_options(self):

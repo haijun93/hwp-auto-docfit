@@ -25,6 +25,7 @@ from zipfile import ZipFile
 from defusedxml import ElementTree as ET
 
 from .style_unify import parenthetical_spans, unify_marker
+from .hwpx import open_hwpx_safely
 
 LANGS = ("hangul", "latin", "hanja", "japanese", "other", "symbol", "user")
 HWPUNIT_PER_MM = 7200 / 25.4
@@ -812,7 +813,7 @@ def analyze_format_elements(path, classify=None):
     예시는 'samples'에 header 사본과 함께 담는다.
     """
     path = Path(path)
-    with ZipFile(path) as archive:
+    with open_hwpx_safely(path) as archive:
         header = ET.fromstring(archive.read("Contents/header.xml"))
         roots = [ET.fromstring(archive.read(name)) for name in _sections(archive)]
     index = HeaderIndex(header)

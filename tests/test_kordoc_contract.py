@@ -27,6 +27,19 @@ class KordocContractTest(unittest.TestCase):
             with patch.object(kb, "_node_major", return_value=20), patch.dict(os.environ, {"DOCFIT_KORDOC_BIN": str(exe)}):
                 self.assertEqual(kb._kordoc_command(), [str(exe)])
 
+    def test_npx_download_is_blocked_by_default(self):
+        with patch.object(kb, "_node_major", return_value=20), patch.object(kb, "_local_kordoc", return_value=None), \
+                patch.dict(os.environ, {"DOCFIT_ALLOW_NPX_DOWNLOAD": "0"}, clear=False):
+            with self.assertRaises(kb.KordocUnavailableError):
+                kb._kordoc_command()
+
+    def test_npx_requires_explicit_opt_in_and_disables_lifecycle_scripts(self):
+        with patch.object(kb, "_node_major", return_value=20), patch.object(kb, "_local_kordoc", return_value=None), \
+                patch.object(kb, "_npx_command", return_value="npx"), \
+                patch.dict(os.environ, {"DOCFIT_ALLOW_NPX_DOWNLOAD": "1"}, clear=False):
+            command = kb._kordoc_command()
+        self.assertEqual(command, ["npx", "--yes", "--ignore-scripts", kb.KORDOC_PACKAGE])
+
     def test_partial_patch_is_marked(self):
         with tempfile.TemporaryDirectory() as d:
             src = Path(d) / "a.hwpx"

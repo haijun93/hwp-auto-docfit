@@ -8,6 +8,7 @@ from .hwpx import (
     inspect_hwpx,
     validate_and_inspect_hwpx,
     validate_hwpx,
+    open_hwpx_safely,
 )
 from .kordoc_bridge import (
     KordocUnavailableError,
@@ -34,6 +35,7 @@ __all__ = [
     "inspect_hwpx",
     "validate_and_inspect_hwpx",
     "validate_hwpx",
+    "open_hwpx_safely",
     "KordocUnavailableError",
     "analyze_form",
     "analyze_tables",
