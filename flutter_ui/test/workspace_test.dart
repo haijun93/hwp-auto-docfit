@@ -3,24 +3,46 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:docfit_ui/main.dart';
 
 Map<String, dynamic> initialState() => <String, dynamic>{
-  'files': <Map<String, String>>[],
-  'mode': 'spacing',
-  'running': false,
-  'range': {'enabled': false, 'start': '1', 'end': '1'},
-  'results': [],
-  'stages': [
-    {'key': 'reset_spacing', 'label': '문서 전체 자간 초기화', 'example': '예: 1', 'on': true, 'default': true},
-    {'key': 'style_unify', 'label': '서식통일', 'example': '예: 2', 'on': false, 'default': false},
-  ],
-  'default_saved': false,
-  'profiles': [
-    {'id': '', 'name': '기본 서식'},
-    {'id': 'abc', 'name': '[마포구] 보고서'},
-  ],
-  'profile': '',
-  'options': {'autoclose': true, 'verify': false, 'check_updates': true},
-  'version': 'test',
-};
+      'files': <Map<String, String>>[],
+      'mode': 'spacing',
+      'running': false,
+      'range': {'enabled': false, 'start': '1', 'end': '1'},
+      'results': [],
+      'stages': [
+        {
+          'key': 'reset_spacing',
+          'label': '문서 전체 자간 초기화',
+          'example': '예: 1',
+          'on': true,
+          'default': true
+        },
+        {
+          'key': 'style_unify',
+          'label': '서식통일',
+          'example': '예: 2',
+          'on': false,
+          'default': false
+        },
+      ],
+      'default_saved': false,
+      'profiles': [
+        {'id': '', 'name': '기본 서식'},
+        {'id': 'abc', 'name': '[마포구] 보고서'},
+      ],
+      'profile': '',
+      'options': {
+        'autoclose': true,
+        'unify_result_window': false,
+        'verify': false,
+        'integrity_report_file': false,
+        'final_review_file': false,
+        'log_file': false,
+        'check_updates': true,
+        'developer_mode': false,
+        'always_on_top': true,
+      },
+      'version': 'test',
+    };
 
 void main() {
   for (final width in [420.0, 1024.0]) {
@@ -132,7 +154,9 @@ void main() {
     await tester.pump();
     expect(find.textContaining('올바르게 입력하세요'), findsOneWidget);
     final start = tester.widget<FilledButton>(
-      find.ancestor(of: find.text('정리 시작'), matching: find.byWidgetPredicate((w) => w is FilledButton)),
+      find.ancestor(
+          of: find.text('정리 시작'),
+          matching: find.byWidgetPredicate((w) => w is FilledButton)),
     );
     expect(start.onPressed, isNull);
 
@@ -142,11 +166,22 @@ void main() {
     await tester.tap(find.text('저장 뒤 결과 검수'));
     await tester.pumpAndSettle();
     expect(calls.last, ['set_option', 'verify', true]);
+    for (final option in [
+      ('작업로그 파일 만들기', 'log_file'),
+      ('무결성검사 JSON 파일 만들기', 'integrity_report_file'),
+      ('최종검수 JSON 파일 만들기', 'final_review_file'),
+    ]) {
+      await tester.ensureVisible(find.text(option.$1));
+      await tester.tap(find.text(option.$1));
+      await tester.pumpAndSettle();
+      expect(calls.last, ['set_option', option.$2, true]);
+    }
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('all card can exclude spacing and runs as format', (tester) async {
+  testWidgets('all card can exclude spacing and runs as format',
+      (tester) async {
     tester.view.physicalSize = const Size(1024, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -282,7 +317,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('작업 방식 선택'));
     await tester.pumpAndSettle();
-    expect(find.text('표 제외'), findsNWidgets(3));   // 자간 정리·서식 통일·한 번에 적용 카드
+    expect(find.text('표 제외'), findsNWidgets(3)); // 자간 정리·서식 통일·한 번에 적용 카드
+    await tester.ensureVisible(find.byKey(const Key('excludeTablesSwitch')));
     await tester.tap(find.byKey(const Key('excludeTablesSwitch')));
     await tester.pumpAndSettle();
     expect(calls.last, ['set_exclude_tables', true]);
@@ -320,7 +356,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(calls.last, ['set_card_option', 'unify_exclude_spacing', true]);
     expect(find.text('서식통일이 고친 문장의 자간은 그대로 둬요.'), findsOneWidget);
-    await tester.ensureVisible(find.byKey(const Key('allExcludePagefitSwitch')));
+    await tester
+        .ensureVisible(find.byKey(const Key('allExcludePagefitSwitch')));
     await tester.tap(find.byKey(const Key('allExcludePagefitSwitch')));
     await tester.pumpAndSettle();
     expect(calls.last, ['set_card_option', 'all_exclude_pagefit', true]);
@@ -340,9 +377,24 @@ void main() {
     ];
     state['mode'] = 'all';
     state['profiles'] = [
-      {'id': '', 'name': '기본 서식', 'title': '기본 서식', 'organization': '', 'builtin': true, 'source': '', 'active': true},
-      {'id': 'abc', 'name': '[마포구] 보고서', 'title': '보고서', 'organization': '마포구', 'builtin': false,
-       'source': '예시.hwpx', 'active': false},
+      {
+        'id': '',
+        'name': '기본 서식',
+        'title': '기본 서식',
+        'organization': '',
+        'builtin': true,
+        'source': '',
+        'active': true
+      },
+      {
+        'id': 'abc',
+        'name': '[마포구] 보고서',
+        'title': '보고서',
+        'organization': '마포구',
+        'builtin': false,
+        'source': '예시.hwpx',
+        'active': false
+      },
     ];
     state['format_task'] = {'busy': false, 'file': ''};
     Future<Object?> api(String name, List<Object?> args) async {
@@ -395,7 +447,8 @@ void main() {
     expect(find.text('예시 보고서: 예시.hwpx'), findsNothing);
     await tester.tap(find.byTooltip('닫기').last);
     await tester.pumpAndSettle();
-    expect(calls.any((c) => c[0] == 'set_drop_target' && c[1] == 'documents'), isTrue);
+    expect(calls.any((c) => c[0] == 'set_drop_target' && c[1] == 'documents'),
+        isTrue);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
@@ -428,7 +481,12 @@ void main() {
 
     state['running'] = false;
     state['results'] = [
-      {'name': '문서(자간조정).hwpx', 'path': r'C:\문서\문서(자간조정).hwpx', 'source': '문서.hwpx', 'pages': 3},
+      {
+        'name': '문서(자간조정).hwpx',
+        'path': r'C:\문서\문서(자간조정).hwpx',
+        'source': '문서.hwpx',
+        'pages': 3
+      },
     ];
     await tester.pump(const Duration(seconds: 1));
     await tester.pumpAndSettle();

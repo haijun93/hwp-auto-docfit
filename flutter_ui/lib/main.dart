@@ -2154,11 +2154,38 @@ class _WorkspaceState extends State<Workspace> {
                 '저장 뒤 결과 검수',
                 '본문·표·이미지가 원본과 같은지 다시 확인해요. 시간이 조금 더 걸려요.',
               ),
+              settingsLabel('기록 파일'),
+              optionSwitch(
+                'log_file',
+                '작업로그 파일 만들기',
+                '다음 작업부터 첫 문서와 같은 폴더에 처리 기록을 저장해요.',
+              ),
+              optionSwitch(
+                'integrity_report_file',
+                '무결성검사 JSON 파일 만들기',
+                '저장 뒤 결과 검수를 켰을 때 검사 세부 결과를 JSON으로 저장해요.',
+              ),
+              optionSwitch(
+                'final_review_file',
+                '최종검수 JSON 파일 만들기',
+                '작업 목표 기준의 최종 점수와 판정을 파일로 저장해요.',
+              ),
+              settingsLabel('완료 화면'),
+              optionSwitch(
+                'unify_result_window',
+                '서식 통일 결과 창 표시',
+                '끄더라도 결과는 작업 기록과 최종 검수에 남아요.',
+              ),
               settingsLabel('프로그램'),
               optionSwitch(
                 'check_updates',
                 '시작할 때 새 버전 확인',
                 '새 버전이 있으면 알려 드려요.',
+              ),
+              optionSwitch(
+                'always_on_top',
+                '앱 창을 항상 위에 표시',
+                '다른 창을 사용해도 앱을 앞에 유지해요.',
               ),
               optionSwitch(
                 'developer_mode',
