@@ -96,6 +96,7 @@ class PageBreakTableTests(unittest.TestCase):
                    f'<hp:p pageBreak="0"><hp:run>{table}</hp:run></hp:p></hs:sec>')
         path = Path(folder) / 'doc.hwpx'
         with zipfile.ZipFile(path, 'w') as archive:
+            archive.writestr('Contents/header.xml', '<hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head"/>')
             archive.writestr('Contents/section0.xml', section)
         return path
 

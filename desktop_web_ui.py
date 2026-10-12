@@ -26,9 +26,14 @@ def _format_coverage(analysis):
 
 QUICK_OPTIONS = {
     "autoclose": "autoclose_var",
+    "unify_result_window": "unify_result_window_var",
     "verify": "verify_var",
+    "integrity_report_file": "integrity_report_file_var",
+    "final_review_file": "final_review_file_var",
+    "log_file": "log_file_var",
     "check_updates": "check_updates_on_start_var",
     "developer_mode": "developer_mode_var",
+    "always_on_top": "always_on_top_var",
 }
 
 
@@ -189,6 +194,8 @@ class DesktopWebBridge:
     def add_paths(self, paths):
         if not isinstance(paths, (list, tuple)):
             return self.get_state()
+        if len(paths) > 100:
+            return self.get_state()
 
         def add():
             if self.gui.running:
@@ -196,9 +203,20 @@ class DesktopWebBridge:
             added = 0
             for value in paths:
                 path = str(value or "").strip()
+                if len(path) > 32767:
+                    continue
                 if not path:
                     continue
                 try:
+                    candidate = Path(path)
+                    if candidate.is_symlink():
+                        continue
+                    candidate = candidate.resolve(strict=True)
+                    path = str(candidate)
+                    if candidate.is_file() and candidate.suffix.lower() not in {
+                        ".hwp", ".hwpx", ".txt", ".md", ".doc", ".docx", ".pdf"
+                    }:
+                        continue
                     if Path(path).is_dir():
                         added += self.gui.폴더추가(path)
                     elif self.gui.파일추가(path):
@@ -345,7 +363,7 @@ class DesktopWebBridge:
         "unify_exclude_spacing": ("unify_exclude_spacing_var", "unify"),
         "unify_exclude_pagefit": ("unify_exclude_pagefit_var", "unify"),
         "unify_keep_layout": ("unify_keep_layout_var", "unify"),
-        "unify_full_format": ("unify_full_format_var", "unify"),
+        "unify_quick_mode": ("unify_quick_mode_var", "unify"),
     }
 
     def _card_options(self):
@@ -430,6 +448,24 @@ class DesktopWebBridge:
     def open_log(self):
         self._tk(lambda: (self.gui.log_window.deiconify(), self.gui.log_window.lift()), front=True)
         return True
+
+    def get_log(self):
+        """작업 로그 본문은 사용자가 열었을 때만 읽어 보낸다."""
+        def read():
+            widget = getattr(self.gui, "log_text", None)
+            return widget.get("1.0", "end-1c") if widget is not None else ""
+
+        return self._tk(read)
+
+    def clear_log(self):
+        """기록 창과 같은 규칙으로, 작업 중에는 로그를 지우지 않는다."""
+        def clear():
+            widget = getattr(self.gui, "log_text", None)
+            if widget is not None and not self.gui.running:
+                widget.delete("1.0", "end")
+            return widget.get("1.0", "end-1c") if widget is not None else ""
+
+        return self._tk(clear)
 
     def open_results(self):
         self._tk(self.gui._결과파일_열기, timeout=None, front=True)
@@ -709,7 +745,7 @@ class _BrowserApi:
         for name in (
             "get_state", "add_files", "add_folder", "add_paths", "remove_file",
             "clear_files", "set_mode", "set_range", "start", "stop",
-            "open_settings", "text_input", "open_stages", "open_log",
+            "open_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
             "open_results", "next_job", "run_tool", "open_result",
             "show_result", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",

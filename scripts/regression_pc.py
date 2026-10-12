@@ -11,6 +11,7 @@
 - 결과 JSON에는 문서 내용을 싣지 않고 버전·커밋·해시·설정·쪽 번호·점수·시간만 남긴다.
 """
 import argparse
+import ctypes
 import hashlib
 import json
 import re
@@ -20,6 +21,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 import pythoncom
@@ -27,6 +29,36 @@ import win32com.client
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+
+
+@contextmanager
+def 한글_COM_잠금(timeout_seconds):
+    """비교 시험 프로세스가 한/글 COM 서버를 동시에 두드리지 않도록 직렬화한다."""
+    if sys.platform != 'win32':
+        yield
+        return
+    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel32.CreateMutexW.restype = ctypes.c_void_p
+    kernel32.CreateMutexW.argtypes = (ctypes.c_void_p, ctypes.c_bool, ctypes.c_wchar_p)
+    kernel32.WaitForSingleObject.argtypes = (ctypes.c_void_p, ctypes.c_uint32)
+    kernel32.WaitForSingleObject.restype = ctypes.c_uint32
+    kernel32.ReleaseMutex.argtypes = (ctypes.c_void_p,)
+    kernel32.CloseHandle.argtypes = (ctypes.c_void_p,)
+    handle = kernel32.CreateMutexW(None, False, 'Local\\HwpAutoDocFitRegressionCOM')
+    if not handle:
+        raise OSError(ctypes.get_last_error(), '한/글 비교시험 잠금을 만들지 못했습니다')
+    try:
+        result = kernel32.WaitForSingleObject(handle, max(1, int(timeout_seconds * 1000)))
+        if result not in (0x00000000, 0x00000080):  # WAIT_OBJECT_0 / WAIT_ABANDONED
+            if result == 0x00000102:
+                raise TimeoutError(f'다른 비교시험이 한/글을 사용 중입니다({timeout_seconds}초 대기 초과)')
+            raise OSError(ctypes.get_last_error(), f'한/글 비교시험 잠금 대기 실패: {result:#x}')
+        try:
+            yield
+        finally:
+            kernel32.ReleaseMutex(handle)
+    finally:
+        kernel32.CloseHandle(handle)
 
 from docfit_core.stage_selection import default_choice, stages_for_mode, without_page_fit, without_tables
 
@@ -179,6 +211,8 @@ def main():
     parser.add_argument('--require-same-layout', action='store_true',
                         help='쪽 구성(원본과 같음)을 합격 조건으로 쓴다(서식 통일의 원본 쪽 구성 유지 시험용)')
     parser.add_argument('--min-score', type=float, default=100.0, help='합격 최소 점수(기본 100)')
+    parser.add_argument('--com-lock-timeout', type=int, default=1800,
+                        help='동시 비교시험 직렬화를 위한 한/글 COM 잠금 대기 제한(초)')
     parser.add_argument('--out', help='결과 JSON 경로(기본: 표준 출력)')
     parser.add_argument('--log-dir', help='문서별 작업 로그를 남길 폴더(처리 시간 계측 확인용)')
     parser.add_argument('--flag', action='append', default=[], metavar='이름=0|1',
@@ -203,27 +237,42 @@ def main():
     요구 = {'min_score': args.min_score, 'same_layout': args.require_same_layout}
     보고 = []
     for 문서 in args.documents:
+        print(f'[COM 비교] 문서 준비: {Path(문서).name}', flush=True)
         with tempfile.TemporaryDirectory(prefix='docfit_regression_') as 폴더, \
                 open(Path(폴더) / 'log.txt', 'w', encoding='utf-8') as 로그파일:
-            사본, 결과, 초, 점수, 설정 = 처리(g, 문서, 폴더, args.mode, args.exclude_tables, 로그파일,
-                                        None if args.unify_full_format is None else args.unify_full_format == '1')
+            print(f'[COM 비교] 문서 처리 시작: {Path(문서).name}', flush=True)
+            with 한글_COM_잠금(args.com_lock_timeout):
+                사본, 결과, 초, 점수, 설정 = 처리(
+                    g, 문서, 폴더, args.mode, args.exclude_tables, 로그파일,
+                    None if args.unify_full_format is None else args.unify_full_format == '1')
+            print(f'[COM 비교] 문서 처리 완료({초}초): {Path(문서).name}', flush=True)
             항목 = {'document': Path(문서).name,
                   'document_sha256': hashlib.sha256(Path(문서).read_bytes()).hexdigest()[:16],
                   **공통, 'settings': 설정, 'seconds': 초, 'score': 점수, 'output_created': bool(결과)}
             if 결과:
                 pythoncom.CoInitialize()
-                app = win32com.client.DispatchEx('HwpFrame.HwpObject')
+                app = None
                 try:
-                    app.RegisterModule(g['REGISTER_MODULE_NAME'], g['REGISTER_MODULE_VALUE'])
-                    g.update(로그=lambda *a: None, 진단로그=lambda *a: None)
-                    # TXT·MD 등은 원본에 쪽 구성이 없어 결과만 잰다(쪽 구성 비교 없음).
-                    if 사본.suffix in ('.hwp', '.hwpx'):
-                        원, 원쪽, 원나눔 = 쪽구성(g, app, 사본)
-                    else:
-                        원, 원쪽, 원나눔 = [], None, None
-                    결, 결쪽, 결나눔 = 쪽구성(g, app, 결과)
+                    print(f'[COM 비교] 쪽 구성 검사 시작: {Path(문서).name}', flush=True)
+                    with 한글_COM_잠금(args.com_lock_timeout):
+                        try:
+                            app = win32com.client.DispatchEx('HwpFrame.HwpObject')
+                            app.RegisterModule(g['REGISTER_MODULE_NAME'], g['REGISTER_MODULE_VALUE'])
+                            g.update(로그=lambda *a: None, 진단로그=lambda *a: None)
+                            # TXT·MD 등은 원본에 쪽 구성이 없어 결과만 잰다(쪽 구성 비교 없음).
+                            if 사본.suffix in ('.hwp', '.hwpx'):
+                                원, 원쪽, 원나눔 = 쪽구성(g, app, 사본)
+                            else:
+                                원, 원쪽, 원나눔 = [], None, None
+                            결, 결쪽, 결나눔 = 쪽구성(g, app, 결과)
+                        finally:
+                            try:
+                                if app is not None:
+                                    app.Quit()
+                            except Exception as exc:
+                                print(f'[COM 비교] 한/글 종료 중 오류: {exc}', flush=True)
+                    print(f'[COM 비교] 쪽 구성 검사 완료: {Path(문서).name}', flush=True)
                 finally:
-                    app.Quit()
                     pythoncom.CoUninitialize()
                 다른 = [i + 1 for i in range(max(len(원), len(결)))
                        if (원[i] if i < len(원) else None) != (결[i] if i < len(결) else None)]

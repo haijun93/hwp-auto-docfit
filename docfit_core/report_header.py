@@ -3,7 +3,7 @@
 정부기관 보고서 서식마다 머리가 다르다.
 - 제목: 1×1 상자 표(중앙부처 보고서), 2×2 표(제목+날짜·담당자 칸), 2행1열·3행1열 표, 상자 없는 제목 문단.
 - 보고 주체 정보: 제목 아래 오른쪽 문단 "2026. 10. 7.  기관  부서", 내부 결재 "'26. 10. 7.(수)  /  과",
-  담당자 행 "(2026. 10. 7., 과장 홍길동, ☎02-120-1234)", 제목 표 안의 날짜 칸·담당자 칸 등.
+  담당자 행 "(2026. 10. 7., 과장 홍길동, ☎0000-0000)", 제목 표 안의 날짜 칸·담당자 칸 등.
 - 개요: 제목 아래 한 칸 상자 표.
 
 ``parse_info``는 보고 주체 글을 값(날짜·기관·부서·직위·이름·전화)과 표기 틀(template)로 나누고,
@@ -18,6 +18,7 @@ import random
 import re
 import zipfile
 from pathlib import Path
+from .hwpx import open_hwpx_safely
 
 from defusedxml import ElementTree as ET
 
@@ -377,7 +378,7 @@ def _public(value):
 
 def detect_header(path: str | Path) -> dict:
     """HWPX 머리 구성: {'title': {...}, 'info': [...], 'overview': {...}|None}."""
-    with zipfile.ZipFile(path) as z:
+    with open_hwpx_safely(path) as z:
         header_root = ET.fromstring(z.read("Contents/header.xml"))
         names = sorted(n for n in z.namelist() if re.fullmatch(r"Contents/section\d+\.xml", n))
         section = ET.fromstring(z.read(names[0]))

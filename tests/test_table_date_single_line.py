@@ -15,7 +15,7 @@ class TableDateSingleLineTest(unittest.TestCase):
         날짜칸인가 = self.ns['날짜칸인가']
         for text in ("’26. 10. 10.(토)", "2026. 10. 10.", "2026년 10월 10일(토) 14:00", "26.10.10.", "10. 6.(화) 10:00 ~"):
             self.assertTrue(날짜칸인가(text), text)
-        for text in ("관광정책과장: 조희옥 ☎3153-8660", "구분", "",
+        for text in ("관광정책과장: 가명 ☎0000-0000", "구분", "",
                      "2026. 10. 10.부터 민원 안내 서비스를 시범 운영하여 대기 시간을 줄임"):
             self.assertFalse(날짜칸인가(text), text)
 

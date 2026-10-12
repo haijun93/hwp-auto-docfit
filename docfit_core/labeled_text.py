@@ -33,6 +33,7 @@ for names, spec in (
     (("숫자소제목", "소제목숫자"), ("para", "#1")),
     (("로마소제목", "소제목로마"), ("para", "#Ⅰ")),
     (("표",), ("table", "")),
+    (("기호",), ("literal", "")),   # 기호: 1) 내용 — 첫 낱말을 항목기호로 그대로 쓴다(AI 답변 5단계 이상)
     (("엔터", "빈줄"), ("blank", "")),
 ):
     for name in names:
@@ -96,6 +97,12 @@ def parse_labeled_text(text: str) -> list[dict]:
                 continue
             if not value:
                 continue
+            if kind == "literal":
+                head, _, rest = value.partition(" ")
+                if rest.strip():
+                    blocks.append({"kind": "para", "marker": head, "text": rest.strip(), "level": head})
+                    continue
+                kind, marker = "para", ""
             if kind in ("title", "title1", "title2", "box", "ref"):
                 blocks.append({"kind": kind, "text": value})
                 continue

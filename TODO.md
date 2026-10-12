@@ -3,6 +3,74 @@
 지금 당장 진행하지 않고 미뤄둔 기능 요청을 적어둔다. "나중에 작업해"라고
 명시적으로 요구받으면 그때 해당 항목을 꺼내 구현한다.
 
+## [검토 예정] 사용자 UI를 Flutter로 완전 전환
+
+- [ ] 현재 Flutter 화면이 Tkinter·pywebview 화면을 대체할 수 있는 범위를 전수 조사한다. 파일 선택/드래그앤드롭, 단계별 진행·취소, 설정·서식관리·기록·오류 대화상자, 접근성·고해상도, WebView2/기존 Tk 폴백, 한/글 COM 연동, 개발자 모드까지 화면·상태·IPC 단위로 목록화한다.
+- [ ] Flutter와 Python 간 통신 계약(JSON 스키마, 이벤트·오류·취소, 프로세스 수명, 로그 분리)을 정의하고, UI 코드에서 문서 처리 코어를 직접 호출하지 않도록 경계를 확인한다.
+- [ ] 기능별 동등성 표와 자동·수동 회귀시험을 마련한다. 기존 UI 대비 주요 사용자 흐름, 키보드/스크린리더 접근성, 장시간 작업 안정성, 패키징 크기·시작시간·메모리, WebView2 미설치 환경을 정량 비교한다.
+- [ ] 점진 전환·복귀 계획을 설계한다. Flutter 기본화 전까지 기존 Tk UI를 안전한 폴백으로 유지하고, 기능 플래그로 전환·롤백할 수 있게 한다. Windows + 한/글 2020 실기기 검증과 보안 검토를 통과한 뒤에만 전체 전환 여부를 결정한다.
+- 근거/현황: Flutter 화면(`flutter_ui/`, `desktop_web/flutter/`)은 이미 일부 구현되어 있으나, 저장소 구조상 Tkinter 백엔드 및 일부 pywebview 화면/폴백도 남아 있다. 따라서 단순 화면 이식이 아니라 기능 동등성·IPC·설치환경까지 포함한 전환성 검토가 선행되어야 한다.
+- 진행(2026-10-13, alpha): Flutter 설정 화면으로 작업로그·무결성검사·최종검수 JSON 생성, 서식통일 결과 창, 항상 위 표시 옵션을 연결했다. 기존 설정변수/자동저장 경로를 공유한다. 전체 설정 화면과 서식 세부 분석·검토 대화상자는 아직 Tk 창을 사용한다.
+- 진행(2026-10-13, alpha): `docs/FLUTTER_100_PERCENT_MIGRATION_DESIGN.md`에 화면별 잔여 Tk 경로·브리지 원칙·완료/1.75 승격 기준을 정리했다. 상세 작업 로그 조회·복사·지우기를 Flutter 다이얼로그로 이관했고, 로그 본문은 열 때만 읽는다. Flutter 위젯 12개와 Python 브리지/파일드롭 23개 테스트 및 웹 빌드는 통과했다. 아직 전체 이관이나 정식 베타 비교를 완료한 것은 아니므로 1.75 릴리스 전 전체 설정·세부 단계·서식 프로필·문서도구·비교/오류창 이관, Windows 실기기 검증, 정식 베타 대비 오류/비저하 비교가 남아 있다.
+
+## [긴급·미착수] 업데이트 확인 실패 "GitLab 403 Forbidden / GitHub 403 rate limit exceeded" 원인과 조치 (2026-10-11)
+
+화면: 설정의 "업데이트 확인"(수동) 클릭 시 `업데이트 정보를 확인하지 못했습니다. GitLab: HTTP Error 403: Forbidden / GitHub: HTTP Error 403: rate limit exceeded`.
+시작 시 자동 확인(`check_updates_on_start`)은 실패해도 아무것도 띄우지 않는다(`_자동업데이트_확인_시작`, 수동일 때만 오류 대화상자). 그래서 이 창은 수동 확인에서만 보인다.
+
+### 원인 분석
+코드 흐름: `_최신_릴리스_통합_조회`가 GitLab API(`UPDATE_API_URL = …/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest`)와 GitHub API(`api.github.com/repos/haijun93/hwp-auto-docfit/releases/latest`)를 **둘 다 인증 없이** 조회하고, 둘 다 실패해야 오류를 낸다(한쪽만 실패하면 다른 쪽 결과 사용). 즉 **두 곳이 동시에 403**이었다.
+1. **GitHub 403 "rate limit exceeded" — 확실한 원인(서버 메시지 그대로)**: 인증 없는 GitHub API는 **IP당 시간당 60회**다. 기관 PC들이 같은 외부 IP(NAT·프록시)를 쓰면 여러 사용자의 자동 확인(앱 시작 때마다) + 수동 확인 + 개발 PC의 다른 GitHub 호출이 합쳐져 한도를 쓴다. 앱은 결과를 저장·재사용하지 않고 남은 한도·재시도 시각(`X-RateLimit-Reset`)도 읽지 않는다.
+2. **GitLab 403 Forbidden — 원인 미확정(추정 후보)**: 코드는 403을 구분하지 않고 그대로 보여 준다. 후보 ① 프로젝트가 공개가 아니라서(`internal`/`private`) 인증 없는 API 호출을 서버가 막음, ② 릴리스 가시성이 "프로젝트 구성원만", ③ 기관 방화벽·WAF가 `/api/v4/` 경로 또는 `HWP-AutoDocFit/버전` User-Agent를 차단, ④ 인스턴스 정책(익명 API 제한). 브라우저로 README 링크(릴리스 페이지)가 열려도 API 경로는 다르게 막힐 수 있다. **PC에서 확인할 것**: 브라우저·`curl`로 `https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest` 응답(로그인 없이 403이면 ①②), 응답 본문의 메시지.
+3. 앱 쪽 약점(원인을 키움): ① 두 소스 모두 **API만** 사용(한도·인증 영향이 큼) ② 결과 캐시·백오프 없음 ③ 오류 문구가 기술적("HTTP Error 403")이라 사용자가 조치할 방법을 모름 ④ 시작 때마다 자동 확인 ⑤ 시스템 프록시 설정을 쓰지 않는 직접 HTTPS 연결(`_업데이트_HTTP_GET`, 보안 검사 때문에 의도된 구조).
+
+### 조치방안 (우선순위)
+1. **API 대신 정적 파일로 확인(권장, 근본 해결)**: 릴리스 때 `website/latest.json`(버전·exe 다운로드 주소·SHA-256·릴리스 노트 주소)을 함께 갱신해 GitLab Pages(사이트 `/latest.json`)와 GitHub(`raw`/Pages)에 올리고, 앱은 이 파일을 먼저 읽는다. 인증·API 한도와 무관하다. 릴리스 절차(HANDOVER §6)에 "latest.json 갱신" 단계 추가, 앱의 SHA-256 검증은 기존 방식(릴리스 노트/자산 digest)과 같은 값을 쓴다.
+2. **GitHub는 한도 없는 경로로 대체**: `https://github.com/haijun93/hwp-auto-docfit/releases/latest` 리디렉션의 `Location`에서 태그만 읽거나 `releases.atom`을 읽는다(둘 다 API 한도가 아님). 다운로드는 태그로 `releases/download/<tag>/HWP_AutoDocFit.exe`를 만들고 SHA-256은 릴리스 노트에서 읽는다. 허용 호스트(`github.com`)는 이미 목록에 있다.
+3. **GitLab 403 원인 해소(관리자 조치)**: 위 2번 확인 결과에 따라 ① 프로젝트·릴리스 가시성을 로그인 없이 읽을 수 있게 하거나 ② WAF에서 `/api/v4/projects/…/releases` GET 허용 또는 ③ 앱 전용 읽기 토큰은 **쓰지 않는다**(실행 파일에 비밀을 넣는 것은 안 됨). 안 풀리면 1번으로 GitLab Pages의 `latest.json`을 쓴다(Pages는 사이트 방문과 같은 권한).
+4. **빈도 줄이기·캐시**: 마지막 확인 시각·결과를 설정 폴더(`updates/last_check.json`)에 저장하고 자동 확인은 하루 1회로 제한, 수동 확인은 5분 안 재조회 시 저장한 결과 사용. 403 `rate limit`이면 `X-RateLimit-Reset` 시각을 저장해 그때까지 GitHub를 건너뛴다.
+5. **오류 문구 개선**: 403(한도) → "잠시 뒤 다시 확인하세요(약 N분 뒤 가능)", 403(권한) → "업데이트 서버에 접근할 수 없습니다. 기관 네트워크 정책을 확인하거나 아래 링크에서 직접 내려받으세요", 네트워크 오류 → 별도 문구. 대화상자에 **릴리스 페이지 열기** 버튼을 둔다(`PROJECT_URL`).
+6. 한쪽이 성공하면 이미 쓴다. 둘 다 실패해도 앱 사용에는 영향이 없다는 점을 문구에 덧붙인다.
+
+### 시험·반영
+- 단위 시험(순수 함수·가짜 응답): 403 한도(헤더 포함)·403 권한·404·정상·`latest.json` 정상/깨짐, 캐시·백오프. 시험 파일 `tests/test_update_check.py`(새로 만들거나 기존 업데이트 시험에 추가).
+- 베타 핫픽스 후보(자동 업데이트는 배포판의 핵심 경로라 알파에서만 시험하지 않고 `main`에도 반영). 반영 뒤 릴리스 때 `latest.json`을 함께 올리는 절차를 HANDOVER §6에 기록.
+- 사용자 PC 확인 대기: ① GitLab API 403 응답 본문 ② 같은 시간대 GitHub 한도 사용량(`curl -i https://api.github.com/rate_limit`) ③ 기관 외부 IP를 여러 PC가 공유하는지.
+
+## [미착수] 보안성 검토 발견 사항 S1~S9 처리 (2026-10-12, 상세: `docs/보안성_검토_최고수준_2026-10-12.md`)
+코드 읽기·검색 기반 검토 결과(실행 시험 없음). 새 기능은 알파에서 먼저 구현·시험한다. 번호는 보고서와 같다.
+
+- [ ] **S1 (높음) 업데이트 무결성 신뢰 근원 분리**: SHA-256이 exe와 같은 릴리스에서 와서 계정 탈취 시 함께 바뀔 수 있음.
+  exe 코드서명(Authenticode), 별도 경로의 서명된 `latest.json`(Ed25519, 공개키 앱 내장), 릴리스 계정 2단계 인증·권한 최소화.
+  (`docfit_core/updater.py` `expected_sha256`) — 위의 "업데이트 확인 403" 항목(정적 `latest.json`)과 함께 설계하면 중복이 없다.
+- [ ] **S2 (중간) 압축 해제 방어 공용화**: 크기·압축률 상한이 `docfit_core/hwpx.py`에만 있고 `ZipFile` 직접 열기 약 20곳에는 없음(압축 폭탄 → 메모리 고갈).
+  공용 `open_hwpx_safely()`를 만들어 모든 열기에 적용하고 폭탄 HWPX 시험을 추가.
+- [ ] **S3 (중간) kordoc 공급망**: 사전 설치본이 없으면 `npx -y kordoc@4.21.6`을 실행 시점에 받음(`docfit_core/kordoc_bridge.py:79`).
+  번들·사전 설치 + `package-lock.json` 무결성, npx 경로는 `--ignore-scripts`·`--no-install` 또는 명시 동의 뒤에만.
+- [ ] **S4 (중간) 업데이트 스크립트 바꿔치기**: 교체용 `.ps1`을 사용자 쓰기 가능 폴더에 쓰고 `-ExecutionPolicy Bypass`로 실행(`hwp-auto-docfit.py` ~20200).
+  내장 스크립트를 `-EncodedCommand`로 넘기거나 쓴 직후 해시 확인.
+- [ ] **S5 (중간) 빌드 파이프라인**: `.github/workflows/build-windows-exe.yml`의 액션을 커밋 SHA로 고정, `requirements.txt` 버전·해시 고정(`pip install --require-hashes`), `contents: write` 권한 최소화, 산출물 증명(attestation)·SBOM.
+- [ ] **S6 (낮음) WebView 화면 CSP**: `desktop_web/index.html`에 CSP 메타 추가(`default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'`), Flutter 화면도 검토.
+- [ ] **S7 (낮음) `add_paths` 경로 검증**: 확장자 허용 목록, 파일 존재, 심볼릭 링크 검사(`desktop_web_ui.py:189`).
+- [ ] **S8 (낮음) 임시 파일 정리 보장**: `NamedTemporaryFile(delete=False)` 계열(`docfit_core/korean_proofread.py:151` 등)을 `try/finally`로 삭제하고 종료 시 정리 확인.
+- [ ] **S9 (정보) `MapoHwpAutoDocFitSecurity.dll` 출처 문서화**: 출처·해시·소스를 `SECURITY.md`에 기재.
+- [ ] **소개 사이트(Vercel) 강화**: 인라인 스타일을 CSS로 옮겨 CSP에서 `'unsafe-inline'` 제거, Google Fonts 자체 호스팅, COOP/CORP/COEP·보안 헤더(`docs/Vercel_보안_검토_2026-10-12.md`의 `vercel.json` 초안),
+  Deployment Protection(Preview 인증)·Spend Management·2단계 인증, `/.well-known/security.txt`. 미리보기 보호는 GitHub/GitLab에 같은 기능이 없어 Vercel 쪽 설정(또는 GitLab Pages "구성원만")으로 한다.
+- 권장 순서: S1 → S2 → S3 → S5 → 나머지(S6·S7은 위험이 작고 바로 가능).
+- 미확인: Windows·한/글 실환경 동작, 실제 Vercel 프로젝트 설정, GitLab CI 보안 검사 결과, kordoc 내부 의존성, `flutter_ui` 웹뷰 설정.
+
+## [미착수] Anthropic OSS Scanner 신청으로 외부 보안성 검토 받기 (2026-10-12)
+대상: https://github.com/anthropics/oss-scanner (신청 = 이 저장소에 `projects/<이름>/project.yaml`을 추가하는 PR). 위의 "보안성 검토 발견 사항 S1~S9"와 별개로, 모델 기반 스캐너가 소스를 추가로 점검한다.
+
+- [ ] **0. 사전 확인(사용자)**: ① `red.anthropic.com/oss-scanner`의 선정 기준에 이 프로젝트가 해당하는지(소규모 공공기관 도구라 불확실; 안 되면 PR의 Context란에 사유 기재) ② 소속 기관이 소스·보고서를 외부 서비스에 넘기는 것을 허용하는지 ③ 신청자는 저장소 핵심 유지관리자(소유자 계정)여야 함 ④ 스캔 대상은 GitHub 공개 저장소 `haijun93/hwp-auto-docfit`(GitLab 내부 저장소는 불가).
+- [ ] **1. 리눅스 빌드 환경 준비(알파)**: 이 앱은 Windows·한/글 COM 의존이라 전체 빌드는 불가. 순수 파이썬 부분(`docfit_core/*`, `desktop_web_ui.py` 등)과 `scripts/linux_stub_test_runner.py` 시험만 도는 `.oss-scanner/Dockerfile` 작성(빌드 단계에서 `defusedxml` 등 의존성 모두 설치, 스캔 단계는 인터넷 없음). 컨테이너 안에서 시험이 통과하는지 확인(기준선: 실패 7·오류 15는 Tk/Windows 의존).
+- [ ] **2. `threat_model.md` 작성**: 신뢰할 수 없는 입력(사용자가 여는 HWPX/DOCX/PDF/MD/TXT, 붙여넣은 AI 답변, 업데이트 서버 응답, kordoc 출력), 범위 밖(한/글 자체, Windows, Tk), 심각도 기준(예: 압축 폭탄=중간, 업데이트 바꿔치기=높음, 로컬 전용 화면 오류=낮음), 알려진 발견 사항 S1~S9(`docs/보안성_검토_최고수준_2026-10-12.md`) 포함해 중복 보고를 줄임.
+- [ ] **3. `project.yaml` 작성**: `repo: https://github.com/haijun93/hwp-auto-docfit#main`, `primary_contact`는 **공개되므로 보안 전용 별칭 메일**(사용자 결정), `dockerfile: .oss-scanner/Dockerfile`, `threat_model: .oss-scanner/threat_model.md`. 필요하면 `pgp`(암호화 수신, `auto_ccs`와 병용 불가).
+- [ ] **4. 로컬 점검(사용자 PC, Docker 필요)**: `tools/validate.py`, `tools/check <이름>`(네트워크 없는 셸에서 시험 통과 확인). 이 클라우드 환경에는 Docker가 없어 확인하지 못한다.
+- [ ] **5. PR 제출(사용자)**: `anthropics/oss-scanner`를 포크해 `projects/<이름>/` 추가, PR 체크리스트 작성, **"OSS Scanner terms 수락" 항목에 반드시 체크**(안 하면 자동 검사 실패), 첫 PR에서 CLA 서명(봇 안내 문장을 답글로).
+- [ ] **6. 결과 처리**: 보고서(재현 방법·패치 제안, 모델 생성이라 사람 검토 없음)는 `primary_contact`로 온다. 오탐을 가려 알파에서 수정하고 시험을 추가한다. 빌드 실패 메일이 오면 Dockerfile을 고친다(저장소 안 Dockerfile은 PR 없이 수정 가능).
+- 참고: 신청 방법 요약은 대화 기록(2026-10-12)에 있으며 근거는 oss-scanner `README.md`, `CONTRIBUTING.md`, `.github/PULL_REQUEST_TEMPLATE.md`. 선정 기준 페이지는 확인하지 못했다.
+
 ## [진행 중, 이어서 작업] 알파 개발 인수인계 — VS Code (2026-10-09)
 
 > 이 섹션이 알파 개발의 **최신 상태**다. 전체 계획은 `docs/알파_개발계획_2026-10-09.md`, 방향 근거는 `docs/종합검토_알파감마_개발방향_2026-10-09.md`.
@@ -1126,6 +1194,24 @@ _(아직 없음 — 접근 후 채움)_
 - **상대 프로젝트와의 관계**: 둘 다 MCP면 AI가 `build_document`(생성) → `process_documents`(후처리)를 이어서 부르는
   흐름이 된다. 도구 설계는 그들의 `warnings` 반환 후 재시도 패턴을 참고.
 
+### 2026-10-12 추가 검토: Claude 답변 → 서식 적용 HWPX 생성
+
+**상태: 설계 검토 완료, 구현 미착수.** 상세 검토와 권장 구조는
+`docs/종합검토_알파감마_개발방향_2026-10-09.md` 및 작업 보고를 참고한다.
+
+- **목표 흐름**: Claude가 작성한 Markdown/텍스트 답변을 로컬 MCP 도구에 전달 → 답변 구조를 보존하며 새 HWPX 생성 → 선택한 서식 프로필·일괄 서식 적용 → Windows 로컬 한/글 COM으로 내어쓰기·조판 마무리 → 저장본 재검사 → 결과 경로와 처리 요약 반환. 원본 파일 덮어쓰기는 금지한다.
+- **실행 경계**: COM이 필요한 완성 작업은 한/글 2020이 설치된 사용자 Windows PC의 로컬 MCP 프로세스에서만 제공한다. 원격/클라우드 MCP 서버만으로 로컬 한/글 COM을 호출할 수 없다. 기존 감마(Windows 없는 환경) MCP와 이 로컬 COM MCP는 목적·실행환경을 분리해 혼합하지 않는다.
+- **재사용 후보**: `ai_answer.py`/`pasted_text.py`의 답변 구조 변환, 저장된 서식 프로필, `batch_format.py`의 제한된 XML 일괄 적용, 기존 COM 내어쓰기·최종검수 경로. 새 HWPX 생성·일괄 서식·COM 마무리가 하나의 검증된 서비스 경로로 연결된 상태는 아니므로 결합 전 지원 범위와 폴백 규칙을 설계한다.
+- **MCP 작업 인터페이스 초안**: 읽기 전용 `list_format_profiles`, `inspect_document`, `get_job_status`; 생성·처리 `create_hwpx_from_text`, `apply_document_format`, `finalize_with_hwp_com`; 제어 `confirm_and_start_job`, `cancel_job`, `get_result`. 장시간 작업은 `job_id` 발급과 상태 조회를 분리하고, 도구 호출 간 암묵적 세션 상태에 의존하지 않는다.
+- **안전 요구사항**: 허용 폴더 제한·경로 정규화·파일 형식/용량 제한, 원본 불변, 사용자 확인 후 COM 시작, 한/글 사용 중 충돌 방지, 취소·시간초과·중복요청 처리, 임시 파일 정리, 로그와 MCP stdout 분리. 기본 응답에는 문서 본문을 싣지 않고 결과 경로·단계·검수 요약·경고만 제공한다.
+- **단계별 할 일**:
+  1. Tk/전역 상태에 묶이지 않는 `docfit_core` 작업 서비스 경계를 만들고, 입력·프로필·출력 위치·단계 선택을 명시적인 데이터로 전달한다.
+  2. 대표 Markdown 사례로 새 HWPX 생성과 서식 프로필 적용만 하는 세로형 PoC를 만든다. 표·체크리스트·코드·인용·링크 등 지원/보존/평탄화 규칙과 경고를 확정한다.
+  3. 로컬 한/글 에이전트가 PoC 결과를 열어 내어쓰기·저장·재열기 검증을 수행하도록 연결한다. COM 실패 시 결과를 성공으로 보고하지 않는다.
+  4. 먼저 읽기 전용 MCP를 붙이고, 그다음 사용자 승인 기반 생성/처리 도구를 추가한다. stdio 프로토콜 출력과 로그를 분리하고 작업 취소·재시작·실패 복구를 시험한다.
+  5. Beta 기준 앱 처리와 같은 입력·프로필로 내용/표/서식/내어쓰기/오류율/처리시간을 비교한다. 실제 한/글 2020 시험 및 보안 검증이 끝날 때까지 베타 승격하지 않는다.
+- **선행 조건/결정**: MCP 호스트는 우선 Claude Desktop으로 한정할지, 감마 MCP와 별도 설치·버전·저장소로 둘지 결정한다. `hwp-auto-docfit.py` 직접 import에 의존하는 구현은 피하고, `mcp` 패키지 추가·패키징·업데이트 방식과 기관 PC 정책을 확인한다.
+
 ## 다음에 진행할 작업
 
 ### 한 번에 적용: '자간 조정 포함' → '자간 정리 포함' 문구 변경 (사용자 요청, 2026-10-11)
@@ -1415,3 +1501,9 @@ Tk `Text` 위젯 두 칸(아웃라인 입력 / 공문서 개조식 미리보기)
 문서" 목록에 바로 추가하는 기능인지, (b) 이 앱이 처리한 결과 요약을
 스티커 메모로 남기는 기능인지, (c) 완전히 다른 용도인지에 따라 필요한
 작업이 크게 달라짐.
+
+## MCP 구현 진행 (2026-10-13, alpha)
+
+- 목표: Claude/ChatGPT의 AI 답변을 사용자가 지정한 문서 서식으로 새 HWPX로 생성한다. 전체 설계와 연결 환경 차이는 `docs/MCP_INTEGRATION_DESIGN.md`를 참조.
+- 1차 PoC: 로컬 stdio MCP 서버에 내장 프리셋 목록과 답변 Markdown → 새 HWPX 생성 도구 구현. 출력 폴더 고정, 파일명 경로 차단, 입력 크기 제한, 덮어쓰기 방지, 생성 후 HWPX 재검사 적용. SDK는 선택 의존성 `requirements-mcp.txt`로 격리.
+- 미완료: 앱 사용자 저장 서식 프로필 적용, 한/글 COM 내어쓰기·최종검수, 장시간 job/cancel, 실기기 Claude/ChatGPT 연결·보안시험. ChatGPT는 원격 MCP/승인된 터널이 필요하며 이 로컬 stdio PoC에 직접 연결할 수 없다. 릴리스 조건 통과 전에 배포하지 않는다.

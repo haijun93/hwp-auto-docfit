@@ -128,7 +128,7 @@ class DateRangeMarksTest(unittest.TestCase):
         )
 
     def test_phone_numbers_are_not_touched(self):
-        text = "문의: 02-123-4567"
+        text = "문의: 0000-0000"
         self.assertEqual(normalize_date_range_marks(text), text)
 
     def test_law_citation_and_job_code_are_not_touched(self):

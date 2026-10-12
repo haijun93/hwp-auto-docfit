@@ -24,6 +24,7 @@ _UNICODE_BULLETS = "•‣◦▪·∙"
 _ASCII_BULLET = re.compile(r"^[-*+][ \t]+(?=\S)")
 _UNICODE_BULLET = re.compile(rf"^[{_UNICODE_BULLETS}][ \t]*(?=\S)")
 _NUMBERED_MARKER = re.compile(r"^(\d+[.)])(?:[ \t]+|(?=[^\d\s]))")
+_TASK_MARKER = re.compile(r"^[-*+][ \t]+\[([ xX])\][ \t]+(?=\S)(.*)$")
 _CIRCLED_NUMBER = re.compile(r"^([①-⑳])[ \t]*(?=\S)")
 _HEADING_MARKER = re.compile(r"^#{1,6}[ \t]+(?=\S)")
 _BLOCKQUOTE_MARKER = re.compile(r"^(?:[ \t]*>[ \t]?)+")
@@ -121,6 +122,14 @@ def _structural_marker(line: str) -> tuple[str, str]:
     line = _BLOCKQUOTE_MARKER.sub("", line)
     if _HEADING_MARKER.match(line):
         return "heading", _HEADING_MARKER.sub("", line).strip()
+    task = _TASK_MARKER.match(line)
+    if task:
+        status = "완료" if task.group(1).strip() else "미완료"
+        return "list", f"- [{status}] {task.group(2).strip()}"
+    task = _TASK_MARKER.match(line)
+    if task:
+        status = "완료" if task.group(1).strip() else "미완료"
+        return "list", f"[{status}] {task.group(2).strip()}"
     if _ASCII_BULLET.match(line):
         rest = _ASCII_BULLET.sub("", line).strip()
         return ("list", f"- {rest}") if rest else ("skip", "")

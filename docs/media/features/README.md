@@ -45,7 +45,7 @@ README에서 누르면 원본 크기로 열립니다.
 한/글과 등록된 자동화 보안 모듈, Pillow·pypdfium2가 필요합니다.
 
 ```powershell
-.venv\Scripts\python.exe scripts\build_test4_comparisons.py "C:\Users\haiju\OneDrive\바탕 화면\111\test4" --work "$env:TEMP\docfit-readme-new-run" --output docs\media\features
+.venv\Scripts\python.exe scripts\build_test4_comparisons.py "C:\path\to\test4" --work "$env:TEMP\docfit-readme-new-run" --output docs\media\features
 ```
 
 이미지에 쓰이는 원문 TXT를 별도 폴더에 복사하여 실행합니다. 한 번에 적용과

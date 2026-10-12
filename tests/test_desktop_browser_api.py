@@ -1,4 +1,6 @@
 import unittest
+import tempfile
+from pathlib import Path
 from unittest import mock
 
 from desktop_web_ui import DesktopWebBridge, _BrowserApi
@@ -22,6 +24,17 @@ class _Combo:
 
     def current(self, index):
         self.index = index
+
+
+class _LogText:
+    def __init__(self, value=""):
+        self.value = value
+
+    def get(self, start, end):
+        return self.value
+
+    def delete(self, start, end):
+        self.value = ""
 
 
 class _FakeGui:
@@ -48,12 +61,19 @@ class _FakeGui:
         self.main_profile_combo = _Combo()
         self.selected_profiles = []
         self.autoclose_var = _Var(True)
+        self.unify_result_window_var = _Var(False)
         self.verify_var = _Var(False)
+        self.integrity_report_file_var = _Var(False)
+        self.final_review_file_var = _Var(False)
+        self.log_file_var = _Var(False)
         self.check_updates_on_start_var = _Var(True)
+        self.developer_mode_var = _Var(False)
+        self.always_on_top_var = _Var(True)
         self.include_spacing_var = _Var(True)
         self._결과목록 = [{"원본": r"C:\a\문서.hwp", "결과": r"C:\a\문서(자간조정).hwpx", "쪽수": 3}]
         self.opened = []
         self.stage_board = object()
+        self.log_text = _LogText()
 
     def _세부작업_기본값_저장(self, mode, 저장=True):
         self._세부작업_기본저장[mode] = bool(저장)
@@ -85,7 +105,7 @@ class BrowserApiTests(unittest.TestCase):
         bridge.window = object()
         api = _BrowserApi(bridge)
         public = {name: getattr(api, name) for name in dir(api) if not name.startswith('_')}
-        self.assertEqual(len(public), 38)   # 알파: open_format_samples(서식예시 폴더 열기), format_gallery(썸네일로 선택)
+        self.assertEqual(len(public), 40)   # UI 명령만 공개, 최근 추가: get_log·clear_log
         self.assertTrue(all(callable(value) for value in public.values()))
         self.assertNotIn('gui', public)
         self.assertNotIn('window', public)
@@ -115,7 +135,11 @@ class BrowserApiTests(unittest.TestCase):
         self.assertEqual([item["key"] for item in state["stages"]],
                          [key for key, _ in stages_for_mode("spacing")])
         self.assertFalse(state["default_saved"])
-        self.assertEqual(state["options"], {"autoclose": True, "verify": False, "check_updates": True})
+        self.assertEqual(state["options"], {
+            "autoclose": True, "unify_result_window": False, "verify": False,
+            "integrity_report_file": False, "final_review_file": False, "log_file": False,
+            "check_updates": True, "developer_mode": False, "always_on_top": True,
+        })
         self.assertEqual(state["results"][0]["source"], "문서.hwp")
         self.assertEqual(state["results"][0]["pages"], 3)
 
@@ -187,6 +211,29 @@ class BrowserApiTests(unittest.TestCase):
         self.assertEqual([(p["id"], p["name"]) for p in bridge._profiles()],
                          [("", "기본 서식"), ("abc", "[마포구] 보고서")])
 
+    def test_log_is_read_on_demand_and_clear_is_blocked_during_job(self):
+        gui = _FakeGui()
+        bridge = _bridge(gui)
+        gui.log_text.value = "첫 줄\n둘째 줄"
+        self.assertEqual(bridge.get_log(), "첫 줄\n둘째 줄")
+        self.assertEqual(bridge.clear_log(), "")
+        gui.log_text.value = "진행 중 기록"
+        gui.running = True
+        self.assertEqual(bridge.clear_log(), "진행 중 기록")
+
+    def test_flutter_record_settings_update_saved_variables_and_lock_while_running(self):
+        gui = _FakeGui()
+        bridge = _bridge(gui)
+        for option in ("log_file", "integrity_report_file", "final_review_file"):
+            state = bridge.set_option(option, True)
+            self.assertTrue(state["options"][option])
+        self.assertTrue(gui.log_file_var.get())
+        self.assertTrue(gui.integrity_report_file_var.get())
+        self.assertTrue(gui.final_review_file_var.get())
+        gui.running = True
+        bridge.set_option("log_file", False)
+        self.assertTrue(gui.log_file_var.get())
+
     def test_all_card_runs_format_when_spacing_is_excluded(self):
         gui = _FakeGui()
         bridge = _bridge(gui)
@@ -243,6 +290,7 @@ class BrowserApiTests(unittest.TestCase):
         # '한 번에 적용'의 '표 제외'(설정 all_exclude_tables)는 기본 꺼짐이고, 바꾸면 그 카드를 고른다.
         gui = _FakeGui()
         gui.selected_mode.set("spacing")
+        gui.unify_quick_mode_var = _Var(True)
         bridge = _bridge(gui)
         self.assertFalse(bridge.get_state()["exclude_tables"])   # 변수가 없으면 기본값 꺼짐
         gui.exclude_tables_var = _Var(False)
@@ -257,14 +305,17 @@ class BrowserApiTests(unittest.TestCase):
         # 서식 통일 '표 제외'·'자간 정리 제외'·'페이지 맞춤 제외', 한 번에 적용 '페이지 맞춤 제외'(모두 기본 꺼짐)
         gui = _FakeGui()
         gui.selected_mode.set("spacing")
+        gui.unify_quick_mode_var = _Var(True)
         bridge = _bridge(gui)
         self.assertEqual(bridge.get_state()["card_options"],
                          {"all_exclude_pagefit": False, "unify_exclude_tables": False,
                           "unify_exclude_spacing": False, "unify_exclude_pagefit": False,
-                          "unify_keep_layout": False, "unify_full_format": False})
+                          "unify_keep_layout": False, "unify_quick_mode": True})
         for name in ("all_exclude_pagefit_var", "unify_exclude_tables_var", "unify_exclude_spacing_var",
                      "unify_exclude_pagefit_var"):
             setattr(gui, name, _Var(False))
+        state = bridge.set_card_option("unify_quick_mode", False)
+        self.assertEqual((state["mode"], state["card_options"]["unify_quick_mode"]), ("unify", False))
         state = bridge.set_card_option("unify_exclude_spacing", True)
         self.assertEqual((state["mode"], state["card_options"]["unify_exclude_spacing"]), ("unify", True))
         state = bridge.set_card_option("all_exclude_pagefit", True)
@@ -274,7 +325,8 @@ class BrowserApiTests(unittest.TestCase):
         gui.running = True
         self.assertTrue(bridge.set_card_option("all_exclude_pagefit", False)["card_options"]["all_exclude_pagefit"])
 
-    def test_format_manager_profiles_drop_routing_and_edits(self):
+    @mock.patch("desktop_web_ui.Path.resolve", return_value=Path(r"C:\a\report.hwpx"))
+    def test_format_manager_profiles_drop_routing_and_edits(self, _resolve):
         # 서식 목록은 이름·기관·기본 서식 여부·예시 파일·사용 중 여부를 함께 준다.
         gui = _FakeGui()
         gui._프로파일들["abc"]["source"] = {"filename": "예시.hwpx"}
@@ -300,7 +352,7 @@ class BrowserApiTests(unittest.TestCase):
         self.assertIn("HWP 또는 HWPX", gui.status_var.get())
         bridge.set_drop_target("documents")
         bridge.receive_drop([r"C:\a\보고서.hwpx"])
-        self.assertEqual(added, [r"C:\a\보고서.hwpx"])
+        self.assertEqual(added, [r"C:\a\report.hwpx"])
         self.assertEqual(len(started), 1)
         # 이름 바꾸기·삭제가 안 되면 notice에 이유를 담는다.
         gui._서식_이름_저장 = lambda identifier, name, organization: "이미 사용 중인 서식 이름입니다." if name == "중복" else None

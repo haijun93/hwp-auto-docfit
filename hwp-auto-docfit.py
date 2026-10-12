@@ -290,6 +290,7 @@ from docfit_core.korean_proofread import (
 )
 from docfit_core.pasted_text import clean_pasted_text, outline_pasted_text
 from docfit_core.labeled_text import label_outline_text, looks_labeled, parse_labeled_text
+from docfit_core.ai_answer import ai_answer_to_labeled_text, ai_answer_to_outline_text, looks_like_ai_answer
 from docfit_core.asterisk_superscript import mark_spans as 별표_위치
 from docfit_core.attachment_block import find_blocks as 붙임묶음_찾기
 from docfit_core.attachment_block import blank_line_plan as 붙임_앞빈줄_계획
@@ -372,6 +373,7 @@ from docfit_core import (
     patch_document,
     render_preview,
     validate_hwpx,
+    open_hwpx_safely,
 )
 
 # ============================================================
@@ -379,7 +381,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리"
-APP_VERSION = "1.74 Beta 1"
+APP_VERSION = "1.75.2"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 GITHUB_UPDATE_API_URL = "https://api.github.com/repos/haijun93/hwp-auto-docfit/releases/latest"
@@ -1442,7 +1444,7 @@ def hwpx_서식_분석(path):
     def tag(e): return e.tag.rsplit("}", 1)[-1]
     def child(e, name):
         return next((x for x in e.iter() if tag(x) == name), None)
-    with zipfile.ZipFile(path) as z:
+    with open_hwpx_safely(path) as z:
         header = safe_xml_fromstring(z.read("Contents/header.xml"))
         fonts = {}
         for face in header.iter():
@@ -1739,7 +1741,7 @@ def 보고서머리_hwpx_처리(source, target=None, selections=None):
     제목 표 안 날짜 칸은 한 줄로 입력(lineWrap=SQUEEZE)으로 둔다.
     """
     spec = 활성_머리서식_프로필 if 알파_머리서식복사_사용 else None
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -2820,7 +2822,7 @@ def 표_날짜칸_한줄(table):
 
 def 표날짜칸_hwpx_처리(source, target=None, selections=None):
     """문서의 모든 표에서 날짜 칸을 한 줄로 입력으로 둔다(선행 서식 단계, 칸 글은 바꾸지 않음)."""
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -3028,7 +3030,7 @@ def 정밀표_서식_적용(source_path, target_path, precise_profile):
     """프로필 표를 구조·앵커로 매칭해 대상 HWPX에 셀별 서식을 적용한다."""
     if not precise_profile or not precise_profile.get("tables"):
         return {"applied": 0, "skipped": 0, "matches": []}
-    with zipfile.ZipFile(source_path) as archive:
+    with open_hwpx_safely(source_path) as archive:
         contents = {name: archive.read(name) for name in archive.namelist()}
     target_header = safe_xml_fromstring(contents["Contents/header.xml"])
     source_header = safe_xml_fromstring(precise_profile["header_xml"].encode("utf-8"))
@@ -3191,7 +3193,7 @@ def 제목_괄호부연_축소(header, table):
     return applied
 
 def 제목_hwpx_처리(source, target=None, selections=None):
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     # 기존 네임스페이스 접두사를 유지한다.
     for name, data in contents.items():
@@ -3316,7 +3318,7 @@ def _제목_임시hwpx_저장(경로):
     # SaveAs 직후 파일 쓰기가 완전히 끝날 때까지 짧게 확인한다.
     for _ in range(20):
         try:
-            with zipfile.ZipFile(경로, 'r') as z:
+            with open_hwpx_safely(경로) as z:
                 if 'Contents/header.xml' in z.namelist():
                     return 경로
         except (PermissionError, OSError, zipfile.BadZipFile):
@@ -3408,7 +3410,7 @@ def 제목4종_현재문서_적용(selections):
 
 
 def 붙임_hwpx_처리(source, target=None, selections=None):
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -3457,7 +3459,7 @@ def 붙임_hwpx_처리(source, target=None, selections=None):
     return count
 
 def 중제목_hwpx_처리(source, target=None, selections=None):
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -3819,7 +3821,7 @@ def 라벨_서식표_적용(source, target=None):
     표식 없는 문서는 파일을 건드리지 않는다. target이 없으면 source를 덮어쓴다.
     """
     target = source if target is None else target
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     if not any(m.encode('utf-8') in data for n, data in contents.items()
                if re.fullmatch(r'Contents/section\d+\.xml', n) for m in _라벨_표식.values()):
@@ -3993,7 +3995,7 @@ def 준말_hwpx_처리(source, target=None, selections=None):
     서식 표 본말은 콜론 뒤 글을 표 A1 칸에 넣고 준말 줄의 글을 지운다. 문구 본말은
     준말과 콜론을 본말로 바꾸고 나머지 글은 그대로 둔다. 본문(구역 바로 아래) 문단만 대상이다.
     """
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -4073,7 +4075,7 @@ def 제목개요폭_hwpx_처리(source, target=None, selections=None):
     표준서식이 편집 여백을 바꿀 예정이면 바뀐 뒤의 여백으로 잰다(_최종_본문폭). 제목·개요 서식 단계도 같은 폭으로
     다시 맞추므로 이미 맞으면 그 단계에서는 바뀌지 않는다. 이미 최대 폭인 표는 대상에서 뺀다.
     """
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -4151,7 +4153,7 @@ def 연결부호탭_hwpx_처리(source, target=None, selections=None):
     오른쪽 글의 첫 글자가 내어쓰기처럼 한 세로선에 서고, 점·선의 길이와 개수는 한/글이 줄마다 채운다.
     여러 칸 빈칸 연결 부호는 채울 모양 없이 탭 위치만 맞춘다. 글자는 연결 부호만 탭으로 바뀐다.
     """
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -4212,7 +4214,7 @@ def 연결부호탭_hwpx_처리(source, target=None, selections=None):
 
 def 자간초기화_hwpx_처리(source, target=None, selections=None):
     """문서 전체(표·글상자 안 포함) 본문 자간을 0%로 되돌린다. 항목기호·라벨 등 보호 구간은 그대로 둔다."""
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -4250,7 +4252,7 @@ def 콜론라벨_hwpx_처리(source, target=None, selections=None):
 
     가장 긴 라벨을 기준으로 짧은 라벨 글자의 자간(한도 50%까지)과 장평을 늘려 가로 길이를 맞춘다. 글은 바꾸지 않는다.
     """
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -4292,7 +4294,7 @@ def 상자서식_hwpx_처리(source, target=None, selections=None):
     모양이 달라 한 가지 예시로 덮지 않는다. 표·칸·문단·글자 서식만 바꾸고 글은 그대로 둔다.
     """
     예시 = _서식표_예시('box')
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -4349,7 +4351,7 @@ def 쪽번호_hwpx_처리(source, target=None, selections=None):
     쪽 번호가 없는 문서에는 넣지 않는다(2026-10-04 결정 4: 모양만 복사).
     """
     모양 = dict(표준서식_설정.get("쪽번호") or {})
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -4422,7 +4424,7 @@ def 기본표서식_hwpx_처리(source, target=None, selections=None):
     칸(B2·B3 …)의 문장을 길이와 관계없이 왼쪽 정렬한다(숫자·날짜 칸은 예시 정렬, docfit_core.table_style).
     """
     style = 기본표서식()
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -4473,7 +4475,7 @@ def 표너비_hwpx_처리(source, target=None, selections=None):
     제목·중제목·붙임 서식 표와 한 칸 상자는 서식 표 자체의 배치를 쓰므로 건드리지 않는다. 쪽 정보(pagePr)가
     없는 구역의 표도 폭을 알 수 없어 그대로 둔다.
     """
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -4557,7 +4559,7 @@ def _문단_별표_대상(p, header_super_ids):
 
 def 별표위첨자_hwpx_처리(source, target=None, selections=None):
     """항목기호 문장의 단어 뒤 * / **를 위첨자로 바꾼다(글은 그대로, 별표 글자모양에 위첨자만 더함)."""
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -4702,7 +4704,7 @@ def _본문기호_글꼴(header, paras):
 
 def 붙임글꼴_hwpx_처리(source, target=None, selections=None):
     """'붙임 …'부터 '끝.'까지 묶음의 모든 문장을 항목기호 ㅇ와 같은 글꼴 종류·크기로 맞춘다(글은 그대로)."""
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -7768,7 +7770,7 @@ def _서식통일_HWPX_분석(문서경로):
     key = (str(path), stat.st_mtime_ns, stat.st_size)
     if _서식통일_HWPX_캐시.get("key") == key:
         return _서식통일_HWPX_캐시["value"]
-    with ZipFile(path) as archive:
+    with open_hwpx_safely(path) as archive:
         header = ET.fromstring(archive.read("Contents/header.xml"))
         fonts = _parse_fonts(header)
         글꼴형식_등록(글꼴형식_모으기(header))
@@ -8392,10 +8394,11 @@ def _서식통일_미확정_항목(대표, text):
     """
     marker, label = _서식통일_문두요소_범위(text)
     fields = ["font", "size"]
-    if marker:
-        fields.append("marker_bold")
-    if label:
-        fields.append("label_bold")
+    if not _서식통일_글꼴크기만():
+        if marker:
+            fields.append("marker_bold")
+        if label:
+            fields.append("label_bold")
     return [field for field in fields if 대표.get(field, (None, 0))[0] is None]
 
 
@@ -8712,7 +8715,7 @@ def _서식통일_문단자간_조정(start, end):
 
 
 알파_서식통일_XML조사_사용 = True   # 서식통일 표본 조사를 한/글 문단 순회 대신 HWPX 스냅숏에서 한다(꺼짐=예전 순회)
-_서식통일_글꼴크기_필드 = ("font", "size", "marker_bold", "label_bold")
+_서식통일_글꼴크기_필드 = ("font", "size")
 
 
 def _서식통일_글꼴크기만():
@@ -9075,8 +9078,8 @@ def 서식통일_전체_적용(고정_프로필_재적용=False, 검증만=False
         크기, 크기수 = 대표["size"]
         색표준 = 대표.get("color", (None, 0))[0]
         음영표준 = 대표.get("shade", (None, 0))[0]
-        문두굵게, 문두굵게수 = 대표["marker_bold"]
-        라벨굵게, 라벨굵게수 = 대표["label_bold"]
+        문두굵게, 문두굵게수 = 대표.get("marker_bold", (None, 0))
+        라벨굵게, 라벨굵게수 = 대표.get("label_bold", (None, 0))
         내어쓰기표준, 내어쓰기수 = 대표.get("hanging_indent", (None, 0))
         if 최종_내어쓰기_예정 and not 검증만:
             # 뒤의 '최종 서식 기준 내어쓰기' 단계가 항목기호 문장의 내어쓰기를 모두 다시 정한다.
@@ -10129,7 +10132,7 @@ def 라벨괄호_계획(text, 세트후속문단=False, 크기=None):
 
 def 라벨괄호_hwpx_처리(source, target=None, selections=None):
     """모든 문단(표·글상자 안 포함)의 문두 라벨을 굵게, 부연설명 괄호 글자를 줄인다(라벨괄호_계획과 같은 판정)."""
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -10256,7 +10259,7 @@ _글규칙_XML_구성 = {"space": False, "punct": False, "label": False}
 def 글규칙_hwpx_처리(source, target=None, selections=None):
     """_글규칙_XML_구성에 따라 공백 규칙 → 문장부호 뒤 공백 → 문두 라벨/괄호 서식을 모든 문단에 적용한다."""
     구성 = dict(_글규칙_XML_구성)
-    with zipfile.ZipFile(source) as z:
+    with open_hwpx_safely(source) as z:
         contents = {n: z.read(n) for n in z.namelist()}
     for name, data in contents.items():
         if name.startswith('Contents/') and name.endswith('.xml'):
@@ -13284,7 +13287,7 @@ def 본문_쪽나눔_기억(표문단):
     try:
         from docfit_core.style_inventory import _sections
         문단들 = []
-        with zipfile.ZipFile(문서경로) as archive:
+        with open_hwpx_safely(문서경로) as archive:
             for name in _sections(archive):
                 문단들.extend(p for p in safe_xml_fromstring(archive.read(name)) if 제목_xml이름(p) == 'p')
     except Exception as e:
@@ -16648,7 +16651,7 @@ def 서식표_영역_목록(hwpx경로):
     가장 긴 글 문단이다(중제목 번호처럼 짧은 글로 확인하면 다른 표와 헷갈릴 수 있다).
     """
     from docfit_core.style_inventory import _sections
-    with zipfile.ZipFile(hwpx경로) as z:
+    with open_hwpx_safely(hwpx경로) as z:
         구역들 = [safe_xml_fromstring(z.read(name)) for name in _sections(z)]
     목록번호 = {}
     for root in 구역들:
@@ -18236,7 +18239,28 @@ def 라벨블록_한글삽입(한글, 블록들):
 ])
 
 
-def 텍스트_hwpx_단독변환(텍스트, 대상경로, 라벨_해석=True):
+# 알파(2026-10-12): 챗GPT·클로드·제미나이 답변을 복사한 그대로(마크다운 기호·번호 표제·글머리·표) 붙여넣거나 .txt로 저장해도
+# 항목기호(□ ㅇ - •) 개조식 문서로 바꿔 서식 적용이 되게 한다. 끄면 글을 그대로 넣는다. docfit_core/ai_answer.py
+알파_AI답변변환_사용 = True
+
+
+def AI답변_개조식_변환(텍스트, 라벨형식=False):
+    """AI 답변으로 보이면 (변환한 글, True), 아니면 (원문, False). 라벨형식=True면 제목:/개요:/네모:/원: 라벨 글로 바꾼다."""
+    if not 알파_AI답변변환_사용 or not looks_like_ai_answer(텍스트):
+        return 텍스트, False
+    try:
+        if 라벨형식:
+            변환 = ai_answer_to_labeled_text(텍스트)
+            if looks_labeled(변환):
+                return 변환, True
+        변환 = ai_answer_to_outline_text(텍스트)
+    except Exception as 오류:
+        로그(f"AI 답변 변환 실패(글을 그대로 넣음): {오류}")
+        return 텍스트, False
+    return (변환, True) if 변환.strip() else (텍스트, False)
+
+
+def 텍스트_hwpx_단독변환(텍스트, 대상경로, 라벨_해석=True, AI_변환=True):
     """'텍스트 붙여넣기'에서 저장 즉시 HWPX로 바꿀 때 쓰는, 배치 작업(작업_실행)과
     완전히 독립된 한/글 세션.
 
@@ -18246,6 +18270,10 @@ def 텍스트_hwpx_단독변환(텍스트, 대상경로, 라벨_해석=True):
     않는다. COM은 생성한 스레드에서 정리해야 하므로 반드시 전용 스레드
     (daemon Thread)에서만 호출한다.
     """
+    if AI_변환 and 라벨_해석 and not looks_labeled(텍스트):
+        텍스트, 변환됨 = AI답변_개조식_변환(텍스트, 라벨형식=True)
+        if 변환됨:
+            로그("AI 답변으로 보고 개조식(제목·개요·□ ㅇ - 항목)으로 변환해 문서를 만듭니다.")
     pythoncom.CoInitialize()
     단독_hwp = None
     서식표_후처리 = False
@@ -18312,15 +18340,32 @@ def 외부문서_hwpx로_변환(원본경로, 확장자, 대상경로):
     않으면 자리표시만 남고 이미지가 사라진다).
     """
     if 확장자 == ".txt":
-        텍스트_hwpx로_변환(텍스트파일_읽기(원본경로), 대상경로)
+        원문 = 텍스트파일_읽기(원본경로)
+        # 복사한 AI 답변은 단순 기호문자 대신 라벨 블록으로 변환한다.
+        # 그래야 텍스트_hwpx로_변환이 제목·개요·표를 스타일 표로 넣고 저장된 서식을 적용한다.
+        원문, 변환됨 = AI답변_개조식_변환(원문, 라벨형식=True)
+        if 변환됨:
+            로그(f"AI 답변으로 보고 개조식 항목기호로 변환해 서식 작업에 넘깁니다: {Path(원본경로).name}")
+        텍스트_hwpx로_변환(원문, 대상경로)
         return
     if 확장자 == ".md":
+        # 이미지가 없는 AI 답변형 마크다운은 엔진 대신 라벨 블록으로 변환해 서식 적용 경로에 넘긴다. 이미지가 있으면 엔진이 처리한다.
+        try:
+            원문 = 텍스트파일_읽기(원본경로)
+            변환문, 변환됨 = ("", False) if re.search(r"!\[[^\]]*\]\(", 원문) else AI답변_개조식_변환(원문, 라벨형식=True)
+        except Exception:
+            변환문, 변환됨 = "", False
+        if 변환됨:
+            로그(f"AI 답변형 마크다운을 개조식 항목기호로 변환해 서식 작업에 넘깁니다: {Path(원본경로).name}")
+            텍스트_hwpx로_변환(변환문, 대상경로)
+            return
         try:
             generate_hwpx(str(원본경로), "보고서", str(대상경로), image_dir=Path(원본경로).parent)
             return
         except KordocUnavailableError as e:
             로그(f"고급 문서 엔진을 쓸 수 없어 서식 없이 텍스트로만 변환합니다: {e}")
-            텍스트_hwpx로_변환(텍스트파일_읽기(원본경로), 대상경로)
+            원문, 변환됨 = AI답변_개조식_변환(텍스트파일_읽기(원본경로))
+            텍스트_hwpx로_변환(원문, 대상경로)
             return
     if 확장자 in (".doc", ".docx", ".pdf"):
         with tempfile.TemporaryDirectory(prefix="docfit_변환_") as 임시폴더:
@@ -19715,6 +19760,17 @@ class HwpAutoDocFitGUI:
         self.unify_exclude_pagefit_var = tk.BooleanVar(value=bool(저장된_설정.get("unify_exclude_pagefit", True)))
         self.unify_keep_layout_var = tk.BooleanVar(value=bool(저장된_설정.get("unify_keep_layout", True)))
         self.unify_full_format_var = tk.BooleanVar(value=bool(저장된_설정.get("unify_full_format", False)))
+        self.unify_quick_mode_var = tk.BooleanVar(value=not self.unify_full_format_var.get())
+        def sync_full_format(*_):
+            target = not self.unify_quick_mode_var.get()
+            if self.unify_full_format_var.get() != target:
+                self.unify_full_format_var.set(target)
+        def sync_quick_mode(*_):
+            target = not self.unify_full_format_var.get()
+            if self.unify_quick_mode_var.get() != target:
+                self.unify_quick_mode_var.set(target)
+        self.unify_quick_mode_var.trace_add("write", sync_full_format)
+        self.unify_full_format_var.trace_add("write", sync_quick_mode)
         for 변수 in (self.exclude_tables_var, self.all_exclude_pagefit_var, self.unify_exclude_tables_var,
                      self.unify_exclude_spacing_var, self.unify_exclude_pagefit_var, self.unify_keep_layout_var,
                      self.unify_full_format_var):
@@ -19794,7 +19850,7 @@ class HwpAutoDocFitGUI:
                     "원본 쪽 구성 유지", self.unify_keep_layout_var, lambda: self._카드옵션_변경("unify"))
                 # 끄면(기본) 글꼴·크기만, 켜면 글자색·정렬·여백·위 간격·내어쓰기까지 전체 서식을 맞춘다.
                 self.unify_full_format_check = 카드_체크(
-                    "전체 서식 맞추기", self.unify_full_format_var, lambda: self._카드옵션_변경("unify"))
+                    "퀵모드 (글꼴 종류·크기만)", self.unify_quick_mode_var, lambda: self._카드옵션_변경("unify"))
             if mode == "all":
                 # 끄면 기존 자간을 그대로 두고 서식만 입힌다(결과 파일 이름은 '서식적용').
                 self.include_spacing_check = tk.Checkbutton(
@@ -19987,12 +20043,14 @@ class HwpAutoDocFitGUI:
         self._설정창_생성()
         self._항상위_적용()
 
+        self._queue_after_id = None
+        self._최소높이_after_id = None
         self._queue_after_id = root.after(100, self.queue_처리)
         root.bind("<Destroy>", self._루트_파괴시_예약취소, add="+")
         root.bind("<Control-o>", lambda e: self.파일선택())
         root.bind("<Configure>", self._메인_크기조정, add="+")
         root.protocol("WM_DELETE_WINDOW", self.종료)
-        root.after_idle(self._창_최소높이_보정)
+        self._최소높이_after_id = root.after_idle(self._창_최소높이_보정)
         if getattr(sys, "frozen", False):
             업데이트_시작신호()
             # 지난 업데이트가 남긴 구버전 백업과 내려받기 잔여물을 정리한다(교체가 끝난 다음 실행에서).
@@ -20206,6 +20264,9 @@ class HwpAutoDocFitGUI:
 
     def _창_최소높이_보정(self):
         """화면 해상도와 Windows 논리 배율을 반영한 최소 창 크기를 적용한다."""
+        self._최소높이_after_id = None
+        if self.closing or not self.root.winfo_exists():
+            return
         self.root.update_idletasks()
         screen_width, screen_height = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
         scale = getattr(self, "_ui_scale", 1.0)
@@ -20763,6 +20824,8 @@ class HwpAutoDocFitGUI:
 
     def _메인_크기조정(self, event=None):
         """창 크기가 바뀔 때 UI 밀도를 폭에 맞춰 조정한다."""
+        if self.closing or not self.root.winfo_exists():
+            return
         if event is not None and getattr(event, "widget", self.root) is not self.root:
             return
         예약 = getattr(self, "_반응형_예약", None)
@@ -20771,7 +20834,13 @@ class HwpAutoDocFitGUI:
                 self.root.after_cancel(예약)
             except tk.TclError:
                 pass
-        self._반응형_예약 = self.root.after(120, self._반응형_배치)
+        self._반응형_예약 = self.root.after(120, self._반응형_예약_실행)
+
+    def _반응형_예약_실행(self):
+        self._반응형_예약 = None
+        if self.closing or not self.root.winfo_exists():
+            return
+        self._반응형_배치()
 
     def _반응형_배치(self):
         self._반응형_예약 = None
@@ -20856,7 +20925,7 @@ class HwpAutoDocFitGUI:
         "unify_exclude_spacing": ("unify_exclude_spacing_var", False),
         "unify_exclude_pagefit": ("unify_exclude_pagefit_var", False),
         "unify_keep_layout": ("unify_keep_layout_var", False),
-        "unify_full_format": ("unify_full_format_var", False),
+        "unify_quick_mode": ("unify_quick_mode_var", False),
         "all_include_spacing": ("include_spacing_var", False),
         "all_exclude_tables": ("exclude_tables_var", False),
         "all_exclude_pagefit": ("all_exclude_pagefit_var", False),
@@ -22690,6 +22759,7 @@ class HwpAutoDocFitGUI:
         input_text.configure(yscrollcommand=scroll.set)
 
         status = tk.StringVar(value="텍스트를 붙여넣고 ‘문서로 추가’를 눌러 주세요.")
+        ai_convert_var = tk.BooleanVar(value=알파_AI답변변환_사용)
 
         def 기본이름(내용):
             for 줄 in 내용.splitlines():
@@ -22746,7 +22816,8 @@ class HwpAutoDocFitGUI:
                     messagebox.showinfo(APP_NAME, "다른 작업이 실행 중입니다. 완료 후 다시 시도해 주세요.",
                                         parent=window)
                     return
-                대상경로 = 겹치지않는경로(폴더, 기본이름(내용), ".hwpx")
+                AI변환 = bool(ai_convert_var.get())
+                대상경로 = 겹치지않는경로(폴더, 기본이름(AI답변_개조식_변환(내용)[0] if AI변환 else 내용), ".hwpx")
                 진행중["value"] = True
                 버튼상태("disabled")
                 status.set("HWPX로 변환하는 중입니다… (한/글이 잠시 열립니다)")
@@ -22754,12 +22825,15 @@ class HwpAutoDocFitGUI:
                 def 작업():
                     오류 = None
                     try:
-                        텍스트_hwpx_단독변환(내용, 대상경로)
+                        텍스트_hwpx_단독변환(내용, 대상경로, AI_변환=AI변환)
                     except Exception as e:
                         오류 = str(e)
                     self.root.after(0, 완료, 오류, 대상경로)
                 threading.Thread(target=작업, daemon=True, name="paste-add-hwpx").start()
                 return
+            내용, AI변환됨 = AI답변_개조식_변환(내용) if ai_convert_var.get() else (내용, False)
+            if AI변환됨:
+                status.set("AI 답변으로 보고 개조식 항목기호(□ ㅇ -)로 변환했습니다.")
             경로 = asksaveasfilename(
                 parent=window, title="텍스트를 저장할 위치",
                 initialfile=기본이름(내용) + ".txt", defaultextension=".txt",
@@ -22794,6 +22868,8 @@ class HwpAutoDocFitGUI:
         지우기_버튼.pack(side="left", padx=(6, 0))
         닫기_버튼 = ttk.Button(actions, text="닫기", command=닫기_요청)
         닫기_버튼.pack(side="right")
+        ttk.Checkbutton(body, text="AI 답변이면 구조를 개조식(제목·개요·□ ㅇ - 항목기호)으로 자동 변환",
+                        variable=ai_convert_var).pack(side="bottom", anchor="w", before=text_frame)
 
         try:
             붙여넣기 = window.clipboard_get()
@@ -22826,7 +22902,7 @@ class HwpAutoDocFitGUI:
                   font=("맑은 고딕", 12, "bold")).pack(anchor="w")
         ttk.Label(body,
                   text="‘한 번에 정리’는 마크다운 기호(**, #, - 등)를 지우고 보기 좋은 문장으로 바꾸고,\n"
-                       "‘개조식으로 변환’은 제목·글머리 기호의 계층 구조를 ㅁ/ㅇ/-/• 항목기호로 바꿉니다.\n"
+                       "‘개조식으로 변환’은 제목·번호·글머리·들여쓰기·표 구조를 읽어 제목·개요·□/ㅇ/-/• 항목기호로 바꿉니다(AI 답변은 복사한 그대로).\n"
                        "‘제목: / 네모: / 원: / 바:’ 라벨 형식은 라벨 그대로 바꿉니다(‘AI 프롬프트…’로 이 형식의 답을 받을 수 있음).",
                   style="Hint.TLabel", justify="left").pack(anchor="w", pady=(2, 8))
 
@@ -22883,6 +22959,9 @@ class HwpAutoDocFitGUI:
             원문 = input_text.get("1.0", "end-1c")
             if looks_labeled(원문):
                 변환실행(label_outline_text, "라벨 형식을 개조식으로 변환 완료")
+            elif 알파_AI답변변환_사용 and looks_like_ai_answer(원문):
+                # 표제·번호 표제·굵은 줄·들여쓰기 목록·표를 읽어 제목·개요·□ ㅇ - • 항목기호로 바꾼다(들여쓰기 칸 수와 무관).
+                변환실행(ai_answer_to_outline_text, "AI 답변 구조를 개조식으로 변환 완료")
             else:
                 변환실행(outline_pasted_text, "개조식 변환 완료")
 
@@ -25731,13 +25810,16 @@ class HwpAutoDocFitGUI:
     def _루트_파괴시_예약취소(self, event):
         if event.widget is not self.root:
             return
-        job = getattr(self, "_queue_after_id", None)
-        if job is not None:
+        self.closing = True
+        for 이름 in ("_queue_after_id", "_반응형_예약", "_최소높이_after_id"):
+            job = getattr(self, 이름, None)
+            if job is None:
+                continue
             try:
                 self.root.after_cancel(job)
             except tk.TclError:
                 pass
-            self._queue_after_id = None
+            setattr(self, 이름, None)
 
     def 종료(self):
         if self.closing:

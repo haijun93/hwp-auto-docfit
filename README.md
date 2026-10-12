@@ -6,16 +6,25 @@
 **다 쓴 한글(HWP·HWPX) 보고서를 넣고 「정리 시작」만 누르세요.** 설치된 한/글을 자동으로 조작해 공문서 모양으로 다듬어 줍니다.
 
 <p>
-<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/permalink/latest"><img alt="최신 버전" src="https://img.shields.io/badge/%EC%B5%9C%EC%8B%A0-v1.74%20Beta%201-2563eb"></a>
+<a href="#download"><img alt="현재 공개 버전 v1.75.2" src="https://img.shields.io/badge/%ED%98%84%EC%9E%AC%20%EA%B3%B5%EA%B0%9C-v1.75.2-2563eb"></a>
 <img alt="무료" src="https://img.shields.io/badge/%EA%B0%80%EA%B2%A9-%EB%AC%B4%EB%A3%8C-16a34a">
 <img alt="Windows 10·11" src="https://img.shields.io/badge/Windows-10%C2%B711-0078d4">
 <img alt="한/글 2020" src="https://img.shields.io/badge/%ED%95%9C%2F%EA%B8%80-2020-0ea5e9">
 <img alt="문서 외부 전송 없음" src="https://img.shields.io/badge/%EB%AC%B8%EC%84%9C-%EC%99%B8%EB%B6%80%20%EC%A0%84%EC%86%A1%20%EC%97%86%EC%9D%8C-64748b">
 </p>
 
-## **[⬇ 무료로 내려받기 — v1.74 Beta 1](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/permalink/latest)**
+<a id="download"></a>
 
-설치 없이 실행 파일 하나로 시작합니다 · [변경 사항](releases/v1.74-beta.1.md) · [GitHub](https://github.com/haijun93/hwp-auto-docfit) · [GitLab](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
+## ⬇ 무료 다운로드 — v1.75.2
+
+| 저장소 | 실행 파일 바로 받기 | 릴리스 페이지 |
+|---|---|---|
+| GitHub | [GitHub에서 HWP_AutoDocFit.exe 받기](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/HWP_AutoDocFit.exe) | [GitHub 최신 릴리스](https://github.com/haijun93/hwp-auto-docfit/releases/latest) |
+| GitLab | [GitLab에서 HWP_AutoDocFit.exe 받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/permalink/latest/downloads/HWP_AutoDocFit.exe) | [GitLab 최신 릴리스](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/permalink/latest) |
+
+두 저장소의 최신 릴리스는 배포 시점에 따라 잠시 다를 수 있습니다. 다운로드한 릴리스의 버전과 변경 사항을 확인한 뒤 사용하세요.
+
+설치 없이 실행 파일 하나로 시작합니다 · [v1.75.2 변경 사항](releases/v1.75.2.md) · [GitHub 저장소](https://github.com/haijun93/hwp-auto-docfit) · [GitLab 저장소](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
 
 [![프로그램 사용 시연 영상 (약 5분). 클릭하면 고화질 영상이 열립니다.](docs/media/overview-demo.gif)](docs/media/overview-demo.mp4)
 
@@ -27,7 +36,7 @@
 
 | ⏱ 아끼는 시간 | 🚀 처리 속도 | ✅ 글자 보존 | 🔒 개인정보 |
 |:---:|:---:|:---:|:---:|
-| 3쪽 보고서 한 건에 **약 21분**<br><sub>손으로 정리할 때(쪽당 8분 추정) 대비</sub> | Beta 11보다 **약 9% 빨라짐**<br><sub>같은 PC·같은 문서 실측(249.5초 → 227.5초)</sub> | 34쪽 실제 취합 문서<br>**본문 글자 변형 0건** | 문서를 **외부로 보내지 않음**<br><sub>내 PC 안에서만 처리</sub> |
+| 3쪽 보고서 한 건에 **약 21분**<br><sub>손으로 정리할 때(쪽당 8분 추정) 대비</sub> | v1.73.1 대비 **최대 약 56% 단축**<br><sub>17쪽 서식 통일 실측(116.2초 → 51.2초)</sub> | 34쪽 실제 취합 문서<br>**본문 글자 변형 0건** | 문서를 **외부로 보내지 않음**<br><sub>내 PC 안에서만 처리</sub> |
 
 ---
 
@@ -204,7 +213,7 @@
 
 ## 지금 바로 시작하세요
 
-**[⬇ 무료로 내려받기 (v1.74 Beta 1)](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/permalink/latest)** · [▶ 예제 파일로 5분 체험하기](#examples) · [자세한 사용 설명서](#manual)
+**[⬇ GitHub에서 받기](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/HWP_AutoDocFit.exe)** · **[⬇ GitLab에서 받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/permalink/latest/downloads/HWP_AutoDocFit.exe)** · [▶ 예제 파일로 5분 체험하기](#examples) · [자세한 사용 설명서](#manual)
 
 ---
 
@@ -212,7 +221,7 @@
 
 # 자세한 사용 설명서
 
-이번 버전에서 바뀐 점: **v1.74 Beta 1**은 '서식 통일'을 기본으로 글꼴·크기만 맞추고('전체 서식 맞추기' 옵션으로 예전 동작), 문서 조사·검수를 HWPX에서 한 번에 하고 고친 문장을 바로 찾아가 처리 시간을 줄입니다(예: 17쪽 문서 116 → 51초, 결과는 같은 설정이면 같음, [변경 사항](releases/v1.74-beta.1.md)).
+이번 버전은 **v1.75.2 정식 버전**입니다. v1.75.1의 기능을 유지하면서 Flutter 화면에 작업로그 보기·새로 고침·복사·지우기와 기록 파일 생성 옵션을 복원했습니다. 이 버전은 전체 UI의 Flutter 전환을 완료한 것은 아니며, 상세 설정과 일부 도구는 기존 Tk 창을 사용합니다. [v1.75.2 변경 사항과 검증 범위](releases/v1.75.2.md)
 
 <details>
 <summary><b>기능별 자세한 설명과 옵션 위치 펼치기</b></summary>
@@ -228,7 +237,7 @@
 
 [![test4 문서의 실제 자간 정리 전후: 줄을 옮긴 어절만 빨간색으로 표시](docs/media/features/spacing.png)](docs/media/features/spacing.png)
 
-[실제 사례의 실행·원본 보존 기록](docs/media/features/test4-evidence.json) · **[▶ 이전 사례 영상 보기 — 24초](docs/media/samchein/spacing-guide.mp4)** · [보고서 예시 파일(한번에 적용).txt](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/v1.72-beta.13/downloads/report-example-all-in-one.txt) · [바로 따라 하기](#examples)
+[실제 사례의 실행·원본 보존 기록](docs/media/features/test4-evidence.json) · **[▶ 이전 사례 영상 보기 — 24초](docs/media/samchein/spacing-guide.mp4)** · 예시 TXT: [GitHub](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/report-example-all-in-one.txt) · [GitLab](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/permalink/latest/downloads/report-example-all-in-one.txt) · [바로 따라 하기](#examples)
 
 ### 2. 한 번에 적용 — 텍스트 초안을 보고서 모양으로
 
@@ -358,7 +367,7 @@ HWP·HWPX의 기본 편집에는 Node.js도 필요하지 않습니다.
 
 ### 실제 예제로 따라 하기: 보고서 예시 파일(한번에 적용).txt
 
-[보고서 예시 파일(한번에 적용).txt](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/v1.72-beta.13/downloads/report-example-all-in-one.txt)를 내려받아 저장하세요. 삼체 문명을 소재로 한 가상 보고서이며 실제 행정문서가 아닙니다. 아래 두 실습은 **같은 TXT에서 각각 시작**합니다.
+[보고서 예시 파일(한번에 적용).txt](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/report-example-all-in-one.txt)를 내려받아 저장하세요([GitLab에서 받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/permalink/latest/downloads/report-example-all-in-one.txt)도 가능). 삼체 문명을 소재로 한 가상 보고서이며 실제 행정문서가 아닙니다. 아래 두 실습은 **같은 TXT에서 각각 시작**합니다.
 
 **예제 1(자간 정리)부터** 해 보세요. 줄 끝만 고치는 가장 기본 기능입니다. **보고서 모양까지 바꾸려면 예제 2(한 번에 적용)**입니다. TXT에는 원래 서식이 없으므로 비교 이미지의 ‘전’은 앱이 한글 문서로 변환한 직후입니다.
 
@@ -646,7 +655,7 @@ JSON은 검사 내용을 담은 텍스트 파일입니다. 처음에는 앱의 �
 
 | 상황 | 먼저 확인할 것 |
 |---|---|
-| 다운로드가 안 돼요. | GitLab 접속과 기관의 실행 파일 다운로드 정책을 확인하세요. 소스 ZIP은 실행 파일의 대체품이 아닙니다. |
+| 다운로드가 안 돼요. | 선택한 GitHub 또는 GitLab 접속과 기관의 실행 파일 다운로드 정책을 확인하세요. 두 저장소의 릴리스 시점은 다를 수 있습니다. 소스 ZIP은 실행 파일의 대체품이 아닙니다. |
 | 앱은 열리지만 문서를 처리하지 못해요. | 한/글에서 해당 문서를 직접 열고 편집할 수 있는지 확인하세요. 뷰어만 설치됐거나 자동화가 차단된 환경일 수 있습니다. |
 | **정리 시작**을 누를 수 없어요. | 처리할 문서가 목록에 있는지, 작업 방식을 골랐는지 확인하세요. |
 | 처리가 멈춘 것 같아요. | 처리 기록과 한/글의 확인 창을 살펴보세요. 다른 문서를 저장하지 않은 채 한/글 프로세스를 강제 종료하지 마세요. |

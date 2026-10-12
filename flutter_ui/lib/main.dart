@@ -431,7 +431,7 @@ class _WorkspaceState extends State<Workspace> {
           ),
           IconButton(
             tooltip: '작업 로그',
-            onPressed: busy ? null : () => command('open_log'),
+            onPressed: () => showLog(),
             icon: const Icon(Icons.receipt_long_outlined),
           ),
           // 문서 도구는 설정의 개발자 모드를 켜야 보인다.
@@ -1886,7 +1886,7 @@ class _WorkspaceState extends State<Workspace> {
                 ),
               const SizedBox(height: 16),
               TextButton.icon(
-                onPressed: () => command('open_log'),
+                onPressed: showLog,
                 icon: const Icon(Icons.receipt_long_outlined),
                 label: const Text('상세 작업 로그'),
               ),
@@ -2106,6 +2106,124 @@ class _WorkspaceState extends State<Workspace> {
 
   // ---- 설정 서랍 ----------------------------------------------------
 
+  Future<void> showLog() async {
+    String logText;
+    try {
+      final value = await widget.api('get_log', const []);
+      logText = value is String ? value : '';
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('작업 로그를 불러오지 못했어요: $e')),
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.receipt_long_outlined, color: _blue),
+              SizedBox(width: 10),
+              Text('작업 로그'),
+            ],
+          ),
+          content: SizedBox(
+            width: 760,
+            height: 420,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: const Color(0xfff8fafc),
+                border: Border.all(color: _line),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Scrollbar(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(14),
+                  child: SelectableText(
+                    logText.isEmpty ? '아직 기록된 내용이 없어요.' : logText,
+                    key: const Key('flutterLogContents'),
+                    style: const TextStyle(
+                      fontFamily: 'Consolas',
+                      fontSize: 12,
+                      height: 1.5,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton.icon(
+              key: const Key('copyLogButton'),
+              onPressed: logText.isEmpty
+                  ? null
+                  : () async {
+                      await Clipboard.setData(ClipboardData(text: logText));
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('작업 로그를 복사했어요.')),
+                        );
+                      }
+                    },
+              icon: const Icon(Icons.copy_outlined),
+              label: const Text('복사'),
+            ),
+            TextButton.icon(
+              key: const Key('refreshLogButton'),
+              onPressed: () async {
+                try {
+                  final value = await widget.api('get_log', const []);
+                  if (dialogContext.mounted) {
+                    setDialogState(
+                        () => logText = value is String ? value : '');
+                  }
+                } catch (_) {
+                  if (dialogContext.mounted) {
+                    ScaffoldMessenger.of(dialogContext).showSnackBar(
+                      const SnackBar(content: Text('로그를 새로 불러오지 못했어요.')),
+                    );
+                  }
+                }
+              },
+              icon: const Icon(Icons.refresh),
+              label: const Text('새로 고침'),
+            ),
+            TextButton.icon(
+              key: const Key('clearLogButton'),
+              onPressed: running
+                  ? null
+                  : () async {
+                      try {
+                        final value = await widget.api('clear_log', const []);
+                        if (dialogContext.mounted) {
+                          setDialogState(
+                              () => logText = value is String ? value : '');
+                        }
+                      } catch (_) {
+                        if (dialogContext.mounted) {
+                          ScaffoldMessenger.of(dialogContext).showSnackBar(
+                            const SnackBar(content: Text('로그를 지우지 못했어요.')),
+                          );
+                        }
+                      }
+                    },
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('지우기'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('닫기'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget settingsDrawer() => Drawer(
         width: 400,
         backgroundColor: Colors.white,
@@ -2154,11 +2272,38 @@ class _WorkspaceState extends State<Workspace> {
                 '저장 뒤 결과 검수',
                 '본문·표·이미지가 원본과 같은지 다시 확인해요. 시간이 조금 더 걸려요.',
               ),
+              settingsLabel('기록 파일'),
+              optionSwitch(
+                'log_file',
+                '작업로그 파일 만들기',
+                '다음 작업부터 첫 문서와 같은 폴더에 처리 기록을 저장해요.',
+              ),
+              optionSwitch(
+                'integrity_report_file',
+                '무결성검사 JSON 파일 만들기',
+                '저장 뒤 결과 검수를 켰을 때 검사 세부 결과를 JSON으로 저장해요.',
+              ),
+              optionSwitch(
+                'final_review_file',
+                '최종검수 JSON 파일 만들기',
+                '작업 목표 기준의 최종 점수와 판정을 파일로 저장해요.',
+              ),
+              settingsLabel('완료 화면'),
+              optionSwitch(
+                'unify_result_window',
+                '서식 통일 결과 창 표시',
+                '끄더라도 결과는 작업 기록과 최종 검수에 남아요.',
+              ),
               settingsLabel('프로그램'),
               optionSwitch(
                 'check_updates',
                 '시작할 때 새 버전 확인',
                 '새 버전이 있으면 알려 드려요.',
+              ),
+              optionSwitch(
+                'always_on_top',
+                '앱 창을 항상 위에 표시',
+                '다른 창을 사용해도 앱을 앞에 유지해요.',
               ),
               optionSwitch(
                 'developer_mode',
