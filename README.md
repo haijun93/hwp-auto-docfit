@@ -5,26 +5,7 @@
 줄 끝에서 갈라진 단어, 제각각인 글꼴, 삐뚤어진 내어쓰기, 한두 줄 넘친 마지막 쪽까지.
 **다 쓴 한글(HWP·HWPX) 보고서를 넣고 「정리 시작」만 누르세요.** 설치된 한/글을 자동으로 조작해 공문서 모양으로 다듬어 줍니다.
 
-<p>
-<a href="#download"><img alt="현재 공개 버전 v1.75.2" src="https://img.shields.io/badge/%ED%98%84%EC%9E%AC%20%EA%B3%B5%EA%B0%9C-v1.75.2-2563eb"></a>
-<img alt="무료" src="https://img.shields.io/badge/%EA%B0%80%EA%B2%A9-%EB%AC%B4%EB%A3%8C-16a34a">
-<img alt="Windows 10·11" src="https://img.shields.io/badge/Windows-10%C2%B711-0078d4">
-<img alt="한/글 2020" src="https://img.shields.io/badge/%ED%95%9C%2F%EA%B8%80-2020-0ea5e9">
-<img alt="문서 외부 전송 없음" src="https://img.shields.io/badge/%EB%AC%B8%EC%84%9C-%EC%99%B8%EB%B6%80%20%EC%A0%84%EC%86%A1%20%EC%97%86%EC%9D%8C-64748b">
-</p>
 
-<a id="download"></a>
-
-## ⬇ 무료 다운로드 — v1.75.2
-
-| 저장소 | 실행 파일 바로 받기 | 릴리스 페이지 |
-|---|---|---|
-| GitHub | [GitHub에서 HWP_AutoDocFit.exe 받기](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/HWP_AutoDocFit.exe) | [GitHub 최신 릴리스](https://github.com/haijun93/hwp-auto-docfit/releases/latest) |
-| GitLab | [GitLab에서 HWP_AutoDocFit.exe 받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/v1.75.2/release-assets/HWP_AutoDocFit.exe?ref_type=tags) | [GitLab v1.75.2 태그 파일](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/tree/v1.75.2) |
-
-두 저장소의 최신 릴리스는 배포 시점에 따라 잠시 다를 수 있습니다. 다운로드한 릴리스의 버전과 변경 사항을 확인한 뒤 사용하세요.
-
-설치 없이 실행 파일 하나로 시작합니다 · [v1.75.2 변경 사항](releases/v1.75.2.md) · [GitHub 저장소](https://github.com/haijun93/hwp-auto-docfit) · [GitLab 저장소](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
 
 [![프로그램 사용 시연 영상 (약 5분). 클릭하면 고화질 영상이 열립니다.](docs/media/overview-demo.gif)](docs/media/overview-demo.mp4)
 
