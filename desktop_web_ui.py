@@ -7,6 +7,7 @@ import importlib.util
 import logging
 import os
 import subprocess
+import shutil
 import threading
 from concurrent.futures import Future, TimeoutError
 from pathlib import Path
@@ -16,6 +17,7 @@ from docfit_core.progress_guide import guide_state
 from docfit_core.stage_selection import STAGE_EXAMPLES, default_choice, stages_for_mode
 from docfit_app.api_contract import response
 from docfit_app.app_state import STAGE_ORDER
+from docfit_core.kordoc_bridge import SUPPORTED_INPUT_EXTENSIONS
 
 # 화면에서 바로 켜고 끄는 공통 설정(이름 → 앱의 Tk 변수 속성). 값을 바꾸면 앱이 설정 파일에 저장한다.
 def _format_coverage(analysis):
@@ -55,6 +57,7 @@ class DesktopWebBridge:
         self._request_lock = threading.Lock()
         self._requests = set()
         self._closed = False
+        self.conversion_target = "hwpx"
 
     def _shutdown(self):
         """Tk 종료 시 대기·실행 중 요청의 호출자를 종료 오류로 해제한다."""
@@ -208,7 +211,7 @@ class DesktopWebBridge:
                     for item in getattr(gui, "_결과목록", [])
                 ],
                 "default_saved": bool(gui._세부작업_기본저장.get(mode, False)),
-                "stages": self._stages(mode),
+                "stages": [] if mode == "file_format" else self._stages(mode),
                 "profiles": self._profiles(),
                 "profile": getattr(gui, "_활성_서식_프로파일", ""),
                 "format_task": self._format_task(),
@@ -223,11 +226,41 @@ class DesktopWebBridge:
                     getattr(gui, "_안내키", None),
                     getattr(gui, "_안내지남", ()),
                 ),
-                "can_start": bool(gui.files) and not gui.running,
+                "conversion_target": self.conversion_target,
+                "conversion_targets": self._conversion_targets(gui.files),
+                "can_start": self._can_start(mode, gui.files, gui.running),
                 "version": APP_VERSION,
             }
 
         return self._tk(snapshot)
+
+    def _can_start(self, mode, files, running):
+        if not files or running:
+            return False
+        suffixes = [Path(path).suffix.lower() for path in files]
+        if mode == "file_format":
+            targets = {item["format"]: item for item in self._conversion_targets(files)}
+            return all(suffix in SUPPORTED_INPUT_EXTENSIONS for suffix in suffixes) and bool(
+                targets.get(self.conversion_target, {}).get("enabled")
+            )
+        return all(suffix in {".hwp", ".hwpx", ".txt", ".md", ".doc", ".docx", ".pdf"}
+                   for suffix in suffixes)
+
+    @staticmethod
+    def _conversion_targets(files):
+        suffixes = [Path(path).suffix.lower() for path in files]
+        valid = bool(suffixes) and all(suffix in SUPPORTED_INPUT_EXTENSIONS for suffix in suffixes)
+        pandoc_ready = bool(shutil.which("pandoc.exe") or shutil.which("pandoc"))
+        return [
+            {"format": "hwpx", "label": "HWPX", "enabled": valid,
+             "reason": "kordoc 지원 입력" if valid else "kordoc 지원 형식만 가능"},
+            {"format": "pdf", "label": "PDF", "enabled": valid,
+             "reason": "한/글 COM 필요" if valid else "kordoc 지원 형식만 가능"},
+            {"format": "docx", "label": "DOCX", "enabled": valid and pandoc_ready,
+             "reason": "Pandoc 사용" if pandoc_ready else "Pandoc 설치 필요"},
+            {"format": "epub", "label": "EPUB", "enabled": valid and pandoc_ready,
+             "reason": "Pandoc 사용" if pandoc_ready else "Pandoc 설치 필요"},
+        ]
 
     def add_files(self):
         self._tk(self.gui.파일선택, timeout=None, front=True)
@@ -259,9 +292,9 @@ class DesktopWebBridge:
                         continue
                     candidate = candidate.resolve(strict=True)
                     path = str(candidate)
-                    if candidate.is_file() and candidate.suffix.lower() not in {
-                        ".hwp", ".hwpx", ".txt", ".md", ".doc", ".docx", ".pdf"
-                    }:
+                    if candidate.is_file() and candidate.suffix.lower() not in (
+                        set(SUPPORTED_INPUT_EXTENSIONS) | {".txt", ".md", ".doc"}
+                    ):
                         continue
                     if Path(path).is_dir():
                         added += self.gui.폴더추가(path)
@@ -305,7 +338,7 @@ class DesktopWebBridge:
     def set_mode(self, mode):
         """작업 카드를 고른다. 카드는 세 장이며 '한 번에 적용'(all)은 '자간 조정 포함'을 끄면
         서식 적용(format)으로 실행한다. 예전 화면이 보내는 format은 자간 조정을 끈 한 번에 적용이다."""
-        if mode not in {"spacing", "unify", "format", "all"}:
+        if mode not in {"spacing", "unify", "format", "all", "file_format"}:
             raise ValueError("지원하지 않는 작업 방식입니다.")
 
         def select():
@@ -321,6 +354,16 @@ class DesktopWebBridge:
             self._mode_selected()
 
         self._tk(select)
+        return self.get_state()
+
+    def set_conversion_target(self, target):
+        target = str(target or "").lower()
+        if target not in {"hwpx", "pdf", "docx", "epub"}:
+            raise ValueError("결과 형식은 HWPX, PDF, DOCX 또는 EPUB만 선택할 수 있습니다.")
+        def update():
+            if not self.gui.running:
+                self.conversion_target = target
+        self._tk(update)
         return self.get_state()
 
     def set_include_spacing(self, on):
@@ -455,8 +498,12 @@ class DesktopWebBridge:
         return self.get_state()
 
     def start(self, mode, range_enabled=False, start="1", end="1"):
-        if mode not in {"spacing", "unify", "format", "all"}:
+        if mode not in {"spacing", "unify", "format", "all", "file_format"}:
             raise ValueError("지원하지 않는 작업 방식입니다.")
+
+        if mode == "file_format":
+            self._tk(lambda: self.gui.파일포맷_변경_시작(self.conversion_target))
+            return self.get_state()
 
         def begin():
             if self.gui.running:
@@ -832,6 +879,7 @@ class _BrowserApi:
             "set_exclude_tables", "set_card_option",
             "set_drop_target", "add_format_file", "write_format_example", "rename_profile", "delete_profile",
             "edit_profile", "show_format_example", "open_format_samples", "format_gallery",
+            "set_conversion_target",
         ):
             setattr(self, name, getattr(bridge, name))
 

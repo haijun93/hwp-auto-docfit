@@ -17984,7 +17984,8 @@ def 문서_전체_자간_초기화():
         return False
 
 
-지원_확장자 = (".hwp", ".hwpx", ".txt", ".md", ".doc", ".docx", ".pdf")
+지원_확장자 = (".hwp", ".hwpx", ".txt", ".md", ".doc", ".docx", ".pdf",
+              ".hml", ".xls", ".xlsx", ".pptx", ".png", ".jpg", ".jpeg", ".webp")
 
 
 def 바이너리_HWP_파일인가(path):
@@ -24652,9 +24653,11 @@ class HwpAutoDocFitGUI:
             title="처리할 문서를 선택하세요.",
             initialdir=os.getcwd(),
             filetypes=[
-                ("지원하는 모든 문서", "*.hwp *.hwpx *.txt *.md *.doc *.docx *.pdf"),
-                ("한/글 파일", "*.hwp *.hwpx"), ("HWP 파일", "*.hwp"), ("HWPX 파일", "*.hwpx"),
+                ("지원하는 모든 문서", "*.hwp *.hwpx *.hml *.pdf *.xls *.xlsx *.docx *.pptx *.png *.jpg *.jpeg *.webp *.txt *.md *.doc"),
+                ("kordoc 변환 형식", "*.hwp *.hwpx *.hml *.pdf *.xls *.xlsx *.docx *.pptx *.png *.jpg *.jpeg *.webp"),
+                ("한/글 파일", "*.hwp *.hwpx *.hml"), ("HWP 파일", "*.hwp"), ("HWPX 파일", "*.hwpx"),
                 ("텍스트/Markdown", "*.txt *.md"), ("MS Word", "*.doc *.docx"), ("PDF", "*.pdf"),
+                ("Excel", "*.xls *.xlsx"), ("PowerPoint", "*.pptx"), ("이미지", "*.png *.jpg *.jpeg *.webp"),
             ]
         )
         if not files:
@@ -24994,6 +24997,93 @@ class HwpAutoDocFitGUI:
     def _단계_강조(self, 단계):
         if hasattr(self, 'stage_board'):
             self.stage_board.activate(단계)
+
+    def 파일포맷_변경_시작(self, target_format="hwpx"):
+        """kordoc 지원 문서는 HWPX로, HWPX는 한/글 COM으로 PDF로 변환한다."""
+        from docfit_core.file_conversion import (
+            convert_to_pandoc_format, convert_to_pdf, output_path_for,
+        )
+        from docfit_core.kordoc_bridge import SUPPORTED_INPUT_EXTENSIONS, convert_to_hwpx
+
+        if self.running or not self.files:
+            return
+        target_format = str(target_format or "").lower()
+        if target_format not in {"hwpx", "pdf", "docx", "epub"}:
+            raise ValueError("결과 형식은 HWPX, PDF, DOCX 또는 EPUB만 선택할 수 있습니다.")
+        files = list(self.files)
+        if any(Path(path).suffix.lower() not in SUPPORTED_INPUT_EXTENSIONS for path in files):
+            raise ValueError("kordoc이 지원하는 입력 형식만 변환할 수 있습니다.")
+
+        self.running = True
+        self.closing = False
+        중단_event.clear()
+        self.selected_mode.set("file_format")
+        self._결과_초기화(결과목록도_지우기=True)
+        self._안내키, self._안내지남 = None, set()
+        self.status_var.set(f"파일포맷 변경 중 · {len(files)}개")
+        self._안내_설정(0)
+        self.버튼_작업중()
+        self.로그표시("")
+        self.로그표시(f"파일포맷 변경 시작 · {len(files)}개 · 결과 {target_format.upper()}")
+
+        def worker():
+            successes, failures = 0, 0
+            app = None
+            com_initialized = False
+            try:
+                if target_format == "pdf":
+                    pythoncom.CoInitialize()
+                    com_initialized = True
+                    app = 한글_COM_인스턴스_생성(독립=True)
+                    try:
+                        app.RegisterModule(REGISTER_MODULE_NAME, REGISTER_MODULE_VALUE)
+                    except Exception:
+                        pass
+                    try:
+                        app.Visible = False
+                    except Exception:
+                        pass
+                for source_text in files:
+                    if 중단_event.is_set():
+                        break
+                    source = Path(source_text)
+                    try:
+                        target = output_path_for(source, target_format)
+                        if target_format == "hwpx":
+                            convert_to_hwpx(source, target)
+                        elif target_format in {"docx", "epub"}:
+                            convert_to_pandoc_format(source, target)
+                        else:
+                            convert_to_pdf(app, source, target)
+                        successes += 1
+                        gui_queue.put(("saved", str(source), str(target), None))
+                        로그(f"파일포맷 변경 완료: {source.name} → {target.name}")
+                    except Exception as exc:
+                        failures += 1
+                        if app is not None:
+                            try:
+                                app.Run("FileClose")
+                            except Exception:
+                                pass
+                        gui_queue.put(("document_error", str(source), str(exc)))
+                        로그(f"파일포맷 변경 실패: {source.name} — {exc}")
+                if 중단_event.is_set():
+                    gui_queue.put(("file_conversion_stopped", successes, failures))
+                else:
+                    gui_queue.put(("file_conversion_finished", successes, failures))
+            except Exception as exc:
+                gui_queue.put(("fatal_error", str(exc)))
+            finally:
+                if app is not None:
+                    try:
+                        app.Quit()
+                    except Exception:
+                        pass
+                if com_initialized:
+                    pythoncom.CoUninitialize()
+
+        self.worker = threading.Thread(target=worker, daemon=True, name="file-format-conversion")
+        self.worker.start()
 
     def 작업시작(self, mode="all"):
         if getattr(self, "_서식분석중", False):
@@ -25647,6 +25737,28 @@ class HwpAutoDocFitGUI:
                 elif event == "document_error":
                     self.stage_board.finish("오류")
                     self.로그표시(f"문서 처리 실패: {item[1]}\n{item[2]}")
+                elif event == "file_conversion_stopped":
+                    self.running = False
+                    self._안내_설정(0)
+                    self.버튼_대기중()
+                    self.stage_board.finish("중단")
+                    self.status_var.set(f"변환 중단 · 성공 {item[1]}개 / 실패 {item[2]}개")
+                    if not self.closing:
+                        messagebox.showinfo(APP_NAME, self.status_var.get(), parent=self.root)
+                elif event == "file_conversion_finished":
+                    self.running = False
+                    self._안내_설정(0)
+                    self.버튼_대기중()
+                    self.stage_board.finish("완료" if item[2] == 0 else "오류")
+                    if self._결과목록:
+                        self.open_result_button.config(state="normal")
+                        first = Path(self._결과목록[0]["결과"]).name
+                        self.footer_note_var.set(f"[변환 결과] : {first} 외 {len(self._결과목록) - 1}개")
+                        self.footer_note.configure(style="Result.TLabel")
+                    self.status_var.set(f"변환 완료 · 성공 {item[1]}개 / 실패 {item[2]}개")
+                    self.로그표시("=" * 45 + f"\n{self.status_var.get()}\n" + "=" * 45)
+                    if not self.closing:
+                        messagebox.showinfo(APP_NAME, self.status_var.get(), parent=self.root)
                 elif event in ("stopped", "finished") and getattr(self, "_서식예시_작업", None):
                     self._서식예시_완료(item, 중단=event == "stopped")
                 elif event == "stopped":

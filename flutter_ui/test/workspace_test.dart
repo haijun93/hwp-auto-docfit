@@ -7,6 +7,14 @@ import 'package:docfit_ui/main.dart';
 Map<String, dynamic> initialState() => <String, dynamic>{
       'files': <Map<String, String>>[],
       'mode': 'spacing',
+  'can_start': true,
+  'conversion_target': 'hwpx',
+  'conversion_targets': [
+    {'format': 'hwpx', 'label': 'HWPX', 'enabled': true, 'reason': 'kordoc 지원 입력'},
+    {'format': 'pdf', 'label': 'PDF', 'enabled': true, 'reason': '한/글 COM 필요'},
+    {'format': 'docx', 'label': 'DOCX', 'enabled': true, 'reason': 'Pandoc 사용'},
+    {'format': 'epub', 'label': 'EPUB', 'enabled': true, 'reason': 'Pandoc 사용'},
+  ],
       'running': false,
       'range': {'enabled': false, 'start': '1', 'end': '1'},
       'results': [],
@@ -63,6 +71,7 @@ void main() {
           state['files'] = [
             {'name': '문서.hwpx', 'folder': r'C:\문서'},
           ];
+          state['can_start'] = true;
         }
         if (name == 'set_mode') state['mode'] = args.first;
         if (name == 'start') {
@@ -718,6 +727,44 @@ void main() {
       find.widgetWithText(FilledButton, '작업 방식 선택'),
     );
     expect(button.onPressed, isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('file format mode shows radial output targets and selects PDF', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1024, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final calls = <List<Object?>>[];
+    final state = initialState();
+    state['files'] = [
+      {'name': 'report.pdf', 'folder': r'C:\Docs'},
+    ];
+    Future<Object?> api(String name, List<Object?> args) async {
+      if (name != 'get_state') calls.add([name, ...args]);
+      if (name == 'set_mode') state['mode'] = args.first;
+      if (name == 'set_conversion_target') {
+        state['conversion_target'] = args.first;
+      }
+      return Map<String, dynamic>.from(state);
+    }
+
+    await tester.pumpWidget(DocFitApp(api: api));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('작업 방식 선택'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('파일포맷 변경'));
+    await tester.tap(find.text('파일포맷 변경').first);
+    await tester.pumpAndSettle();
+    expect(find.text('변환할 포맷을 고르세요'), findsOneWidget);
+    expect(find.text('DOCX'), findsOneWidget);
+    await tester.tap(find.text('PDF').last);
+    await tester.pumpAndSettle();
+    expect(calls.last.first, 'set_conversion_target');
+    expect(calls.last.last, 'pdf');
+    expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
 }

@@ -85,7 +85,7 @@ class _WorkspaceState extends State<Workspace> {
   String? formatNotice;
 
   static const tabs = ['문서 선택', '작업 방식', '진행 과정', '결과 확인'];
-  // (내부 모드, 이름, 설명, 아이콘, 결과 파일 접미사). 카드는 세 장이며, 서식 적용(format)은
+  // (내부 모드, 이름, 설명, 아이콘, 결과 파일 접미사). 서식 적용(format)은
   // '한 번에 적용' 카드에서 '자간 조정 포함'을 끈 것이다.
   static const modes = [
     (
@@ -109,6 +109,13 @@ class _WorkspaceState extends State<Workspace> {
       Icons.auto_awesome_rounded,
       '일괄적용',
     ),
+    (
+      'file_format',
+      '파일포맷 변경',
+      'HWP·PDF·Office·이미지를 kordoc으로 읽어 HWPX로 만들거나, HWPX를 PDF로 바꿔요.',
+      Icons.swap_horiz_rounded,
+      'HWPX변경',
+    ),
   ];
 
   bool get running => state['running'] == true;
@@ -119,6 +126,16 @@ class _WorkspaceState extends State<Workspace> {
   List get profiles => state['profiles'] as List? ?? [];
   Map get quickOptions => state['options'] as Map? ?? {};
   String get mode => state['mode'] as String? ?? 'spacing';
+  String get conversionTarget =>
+      state['conversion_target'] as String? ?? 'hwpx';
+  List get conversionTargets =>
+      state['conversion_targets'] as List? ?? const [];
+  bool get conversionTargetEnabled => conversionTargets.any(
+    (item) =>
+        item is Map &&
+        item['format'] == conversionTarget &&
+        item['enabled'] == true,
+  );
   String get cardMode => mode == 'format' ? 'all' : mode;
   bool get includeSpacing => state['include_spacing'] != false;
   // '자간 정리' 카드의 '기존 자간 초기화'(세부 작업 01과 같은 값).
@@ -132,6 +149,8 @@ class _WorkspaceState extends State<Workspace> {
       (state['card_options'] as Map? ?? const {})[key] == true;
   String get modeTitle => mode == 'format'
       ? '한 번에 적용(자간 조정 제외)'
+      : mode == 'file_format'
+      ? '파일포맷 변경'
       : modes.firstWhere((m) => m.$1 == mode, orElse: () => modes.first).$2;
   int get stagesOn => stages.where((s) => s['on'] == true).length;
   bool get stagesChanged => stages.any((s) => s['on'] != s['default']);
@@ -153,7 +172,9 @@ class _WorkspaceState extends State<Workspace> {
       !locked &&
       state['engine_ready'] != false &&
       files.isNotEmpty &&
-      rangeError == null;
+      (mode == 'file_format'
+          ? state['can_start'] == true && conversionTargetEnabled
+          : rangeError == null && state['can_start'] == true);
 
   @override
   void initState() {
@@ -259,9 +280,136 @@ class _WorkspaceState extends State<Workspace> {
     if (mounted && running) setState(() => tab = 2);
   }
 
+  Widget conversionPanel() {
+    Map targetInfo(String format) => conversionTargets.cast<Map>().firstWhere(
+      (item) => item['format'] == format,
+      orElse: () => {
+        'format': format,
+        'label': format.toUpperCase(),
+        'enabled': false,
+        'reason': '지원하지 않는 입력 형식',
+      },
+    );
+    Widget option(String target, IconData icon) {
+      final info = targetInfo(target);
+      final title = '${info['label'] ?? target.toUpperCase()}';
+      final detail = '${info['reason'] ?? ''}';
+      final enabled = info['enabled'] == true;
+      final selected = conversionTarget == target;
+      return Semantics(
+        button: true,
+        selected: selected,
+        enabled: enabled && !locked,
+        label: '$title 변환${enabled ? '' : ', $detail'}',
+        child: Opacity(
+          opacity: enabled ? 1 : .42,
+          child: Material(
+            color: selected ? const Color(0xffeaf1ff) : Colors.white,
+            shape: CircleBorder(
+              side: BorderSide(
+                color: selected ? _blue : _line,
+                width: selected ? 2.5 : 1.5,
+              ),
+            ),
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: !enabled || locked
+                  ? null
+                  : () => command('set_conversion_target', [target]),
+              child: SizedBox(
+                width: 88,
+                height: 88,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(icon, color: selected ? _blue : _muted, size: 24),
+                    const SizedBox(height: 3),
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: selected ? _blue : _ink,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return panel(
+      Column(
+        children: [
+          sectionTitle(
+            Icons.radio_button_checked,
+            '변환할 포맷을 고르세요',
+            '파일을 추가한 뒤 원형 선택지에서 결과 형식을 선택해요. 원본은 그대로 보존됩니다.',
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: 300,
+            height: 270,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Container(
+                  width: 230,
+                  height: 230,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: const Color(0xffdbe5f2),
+                      width: 2,
+                    ),
+                  ),
+                ),
+                Positioned(top: 0, child: option('hwpx', Icons.description_outlined)),
+                Positioned(right: 0, child: option('docx', Icons.article_outlined)),
+                Positioned(bottom: 0, child: option('epub', Icons.menu_book_outlined)),
+                Positioned(left: 0, child: option('pdf', Icons.picture_as_pdf_outlined)),
+                Container(
+                  width: 78,
+                  height: 78,
+                  decoration: const BoxDecoration(
+                    color: Color(0xfff4f7fb),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.swap_vert_rounded, color: _blue),
+                      Text('출력', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            '입력: HWP·HWPX·HML·PDF·XLS·XLSX·DOCX·PPTX·PNG·JPG·WebP  →  HWPX·PDF·DOCX·EPUB',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, color: _muted),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            '서식·쪽 배치는 변환 엔진과 원본에 따라 달라질 수 있어요. 중요한 문서는 결과를 확인해 주세요.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 11, color: _faint),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> openDiagramEditor() async {
     if (quickOptions['developer_mode'] != true ||
-        quickOptions['diagram_editor_enabled'] != true) return;
+        quickOptions['diagram_editor_enabled'] != true) {
+      return;
+    }
     try {
       await widget.api('diagram_list', const []); // Python 서비스에서 기능 플래그를 재검사한다.
       if (!mounted) return;
@@ -943,8 +1091,8 @@ class _WorkspaceState extends State<Workspace> {
           heading('어떻게 정리할까요?', '작업을 고르면 아래에서 세부 작업과 범위를 바로 조정할 수 있어요.'),
           LayoutBuilder(
             builder: (context, box) {
-              final columns = box.maxWidth >= 900
-                  ? 3
+              final columns = box.maxWidth >= 1200
+                  ? 4
                   : box.maxWidth >= 620
                       ? 2
                       : 1;
@@ -963,6 +1111,9 @@ class _WorkspaceState extends State<Workspace> {
             },
           ),
           const SizedBox(height: 20),
+          if (mode == 'file_format')
+            conversionPanel()
+          else ...[
           if (usesProfile) ...[
             panel(
               Column(
@@ -983,6 +1134,7 @@ class _WorkspaceState extends State<Workspace> {
           stagePanel(),
           const SizedBox(height: 16),
           rangePanel(),
+          ],
         ],
       );
 
@@ -991,7 +1143,9 @@ class _WorkspaceState extends State<Workspace> {
   ) {
     final selected = cardMode == m.$1;
     final isAll = m.$1 == 'all';
-    final suffix = isAll && !includeSpacing ? '서식적용' : m.$5;
+    final suffix = m.$1 == 'file_format'
+        ? (conversionTarget == 'pdf' ? 'PDF변경' : 'HWPX변경')
+        : isAll && !includeSpacing ? '서식적용' : m.$5;
     return Material(
       color: selected ? const Color(0xffeaf1ff) : Colors.white,
       shape: RoundedRectangleBorder(
@@ -1349,7 +1503,7 @@ class _WorkspaceState extends State<Workspace> {
       context: context,
       builder: (ctx) => ValueListenableBuilder<int>(
         valueListenable: stateVersion,
-        builder: (ctx, _, __) => formatManager(ctx),
+        builder: (ctx, _, _) => formatManager(ctx),
       ),
     );
     await setDropTarget('documents');
@@ -2101,7 +2255,9 @@ class _WorkspaceState extends State<Workspace> {
                       ? Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 12),
                           child: Text(
-                            '${files.length}개 문서 · $modeTitle · $rangeLabel · 세부 작업 $stagesOn/${stages.length}',
+                            mode == 'file_format'
+                                ? '${files.length}개 문서 · $modeTitle · ${conversionTarget.toUpperCase()}로 변환'
+                                : '${files.length}개 문서 · $modeTitle · $rangeLabel · 세부 작업 $stagesOn/${stages.length}',
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             textAlign: TextAlign.right,
@@ -2126,7 +2282,7 @@ class _WorkspaceState extends State<Workspace> {
                   FilledButton.icon(
                     onPressed: canStart ? startJob : null,
                     icon: const Icon(Icons.play_arrow_rounded),
-                    label: const Text('정리 시작'),
+                    label: Text(mode == 'file_format' ? '변환 시작' : '정리 시작'),
                   ),
                 if (tab == 2)
                   FilledButton(

@@ -1,5 +1,17 @@
 # 작업 예정 목록
 
+## [진행 중·alpha] 파일포맷 변경 (2026-10-13)
+
+- [x] 네 번째 작업 카드와 원형 출력 형식 선택 UI를 추가한다.
+- [x] kordoc 입력 형식의 Markdown 파싱을 통해 HWPX/PDF/DOCX/EPUB 변환 경로를 연결한다.
+- [x] 원본 보존, 출력 경로 충돌 방지, PDF 서명 검사, Pandoc 명령 인자 검증 시험을 추가한다.
+- [x] 저장소 전체 Python 시험 1,030건(1 skip) 통과(2026-10-13).
+- [x] Flutter 전체 시험 28건(1 skip), 변환/API/도형·설정 집중시험 38건(1 skip) 통과(2026-10-13).
+- [ ] Windows 한/글 2020 COM 및 kordoc/Pandoc 설치 환경에서 HWPX·PDF·DOCX·EPUB 실문서 변환을 확인한다.
+- [ ] Flutter Windows 실기기에서 원형 선택 UI·접근성·작업 진행/취소를 확인한다.
+- 분석기: Flutter 변경 파일 오류 0건. 실제 Windows 앱 실행 확인과 별개다.
+- 한계: PDF·이미지 변환은 kordoc 파싱/OCR 결과를 바탕으로 재생성하며 원본 배치를 보존하지 않는다. DOCX·EPUB는 Pandoc이 필요하다.
+
 ## [진행 중·alpha] tldraw 업무 흐름도 편집기
 
 - [x] 개발자 모드 + 별도 OFF 기능 플래그로 Flutter 네이티브 화면과 Python 서비스 양쪽 접근 차단.

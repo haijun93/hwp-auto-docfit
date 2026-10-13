@@ -105,7 +105,7 @@ class BrowserApiTests(unittest.TestCase):
         bridge.window = object()
         api = _BrowserApi(bridge)
         public = {name: getattr(api, name) for name in dir(api) if not name.startswith('_')}
-        self.assertEqual(len(public), 46)   # 전체 설정 조회·저장 추가, GUI/서비스 객체 자체는 비공개
+        self.assertEqual(len(public), 47)   # 변환 대상 선택 추가, GUI/서비스 객체 자체는 비공개
         self.assertTrue(all(callable(value) for value in public.values()))
         self.assertNotIn('gui', public)
         self.assertNotIn('window', public)
@@ -251,6 +251,34 @@ class BrowserApiTests(unittest.TestCase):
         self.assertEqual((state["mode"], state["include_spacing"]), ("format", False))
         gui.running = True
         self.assertEqual(bridge.set_include_spacing(True)["mode"], "format")
+
+    def test_file_format_mode_supports_kordoc_inputs_and_pdf_only_for_hwpx(self):
+        gui = _FakeGui()
+        bridge = _bridge(gui)
+        gui.files = [str(Path("report.xlsx"))]
+        state = bridge.set_mode("file_format")
+        self.assertEqual(state["mode"], "file_format")
+        self.assertEqual(state["stages"], [])
+        self.assertTrue(state["can_start"])
+        self.assertEqual(state["conversion_target"], "hwpx")
+        self.assertTrue(bridge.set_conversion_target("pdf")["can_start"])
+        gui.files = [str(Path("report.hwpx"))]
+        self.assertTrue(bridge.get_state()["can_start"])
+        called = []
+        gui.파일포맷_변경_시작 = lambda target: called.append(target)
+        bridge.start("file_format")
+        self.assertEqual(called, ["pdf"])
+
+    def test_file_format_rejects_unsupported_target_and_normal_mode_input(self):
+        gui = _FakeGui()
+        gui.files = [str(Path("archive.zip"))]
+        bridge = _bridge(gui)
+        bridge.set_mode("file_format")
+        self.assertFalse(bridge.get_state()["can_start"])
+        with self.assertRaises(ValueError):
+            bridge.set_conversion_target("mp3")
+        bridge.set_mode("spacing")
+        self.assertFalse(bridge.get_state()["can_start"])
 
     def test_spacing_card_toggles_existing_spacing_reset(self):
         # '자간 정리' 카드의 '기존 자간 초기화'는 세부 작업 01(reset_spacing)과 같은 값이다.

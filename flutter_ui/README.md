@@ -7,6 +7,8 @@ Python/한글 COM 처리부는 `DesktopWebBridge`를 통해 연결합니다.
 서식통일 결과 창, 항상 위 표시를 포함한 자주 쓰는 설정을 바꿀 수 있습니다.
 전체 설정과 일부 서식 분석·검토 대화상자는 아직 Tk 창을 사용하며, 단계적으로 이관합니다.
 
+알파에는 네 번째 **파일포맷 변경** 작업이 있습니다. 파일 선택 후 원형 메뉴에서 HWPX/PDF/DOCX/EPUB를 고릅니다. 입력은 kordoc 지원 HWP/HWPX/HML/PDF/XLS/XLSX/DOCX/PPTX/PNG/JPG/JPEG/WebP입니다. DOCX·EPUB는 kordoc 및 Pandoc, PDF 출력은 한/글 2020 COM도 필요합니다. 변환은 Markdown 기반으로 내용을 재생성하므로 원본 페이지·서식 보존을 보장하지 않습니다. [Kordoc 사용 형식](https://github.com/chrisryugj/kordoc/blob/main/docs/usage.md)과 결과 문서를 확인하세요.
+
 1.74 Alpha 3은 설정 서랍의 `준말 등록·관리`에서 조회·검색·등록·수정·삭제,
 기본 준말 사용 여부를 Flutter로 제공합니다. 학습된 표 서식을 보존하며 표 서식 학습은 기존 전체 설정에서 합니다.
 새 기능은 `lib/features/abbreviations`, API·모델은 `lib/core`로 분리했습니다.

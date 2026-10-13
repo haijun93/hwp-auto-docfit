@@ -21,9 +21,18 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from docfit_core.hwpx import validate_hwpx
+
 KORDOC_VERSION = "4.21.6"
 KORDOC_PACKAGE = f"kordoc@{KORDOC_VERSION}"
 NODE_MIN_MAJOR = 20
+
+# kordoc v4.21.6의 상세 사용법(지원 포맷 표)에 명시된 입력 형식.
+# 일반 정리 파이프라인의 지원_확장자와 분리해, kordoc 전용 파일포맷 변경에서만 사용한다.
+SUPPORTED_INPUT_EXTENSIONS = frozenset({
+    ".hwp", ".hwpx", ".hml", ".pdf", ".xls", ".xlsx", ".docx", ".pptx",
+    ".png", ".jpg", ".jpeg", ".webp",
+})
 
 
 class KordocUnavailableError(RuntimeError):
@@ -129,6 +138,52 @@ def parse_document(source: str | Path, target: str | Path, *, output_format: str
         args.append("--ocr")
     run_kordoc(args)
     return Path(target)
+
+
+def convert_to_hwpx(source: str | Path, target: str | Path, *, preset: str = "보고서") -> Path:
+    """kordoc이 지원하는 문서를 Markdown으로 파싱한 뒤 HWPX로 생성한다.
+
+    임시 산출물은 시스템 임시 폴더에만 두고 원본은 수정하지 않는다.
+    결과 경로는 호출자가 충돌 없는 새 파일로 지정해야 한다.
+    """
+    source, target = Path(source), Path(target)
+    if source.is_symlink() or not source.is_file():
+        raise ValueError("변환 원본이 일반 파일이 아니거나 심볼릭 링크입니다.")
+    if source.suffix.lower() not in SUPPORTED_INPUT_EXTENSIONS:
+        raise ValueError(f"kordoc이 지원하지 않는 입력 형식입니다: {source.suffix or '(확장자 없음)'}")
+    if target.suffix.lower() != ".hwpx":
+        raise ValueError("HWPX 결과 파일 확장자는 .hwpx여야 합니다.")
+    if source.resolve() == target.resolve():
+        raise ValueError("원본 파일을 덮어쓸 수 없습니다.")
+    if target.exists():
+        raise FileExistsError(f"결과 파일이 이미 있습니다: {target.name}")
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="docfit_kordoc_convert_") as folder:
+        temp_dir = Path(folder)
+        markdown = temp_dir / "document.md"
+        parse_document(source, markdown, output_format="markdown", ocr=source.suffix.lower() == ".pdf")
+        if not markdown.is_file():
+            raise RuntimeError("kordoc 파싱 결과 Markdown 파일이 생성되지 않았습니다.")
+        # 같은 볼륨에 임시 결과를 두어 OneDrive/다른 드라이브에서도 원자적으로
+        # 최종 이름을 확보할 수 있게 한다. hard link가 기존 결과를 덮어쓰지 않는다.
+        with tempfile.NamedTemporaryFile(prefix=".docfit_", suffix=".hwpx", dir=target.parent, delete=False) as stream:
+            generated = Path(stream.name)
+        generated.unlink()
+        try:
+            generate_hwpx(markdown, preset, generated, image_dir=temp_dir)
+            if not generated.is_file() or generated.stat().st_size == 0:
+                raise RuntimeError("kordoc이 유효한 HWPX 결과를 생성하지 못했습니다.")
+            try:
+                validate_hwpx(generated)
+            except (OSError, ValueError) as exc:
+                raise RuntimeError(f"kordoc 결과가 올바른 HWPX 문서가 아닙니다: {exc}") from exc
+            os.link(generated, target)
+        finally:
+            generated.unlink(missing_ok=True)
+    if not target.is_file() or target.stat().st_size == 0:
+        raise RuntimeError("kordoc이 유효한 HWPX 결과를 생성하지 못했습니다.")
+    return target
 
 
 def export_advanced_markdown(source: str | Path, pages: str | None = None) -> Path:

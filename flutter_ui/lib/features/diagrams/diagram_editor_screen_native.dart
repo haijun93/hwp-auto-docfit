@@ -68,15 +68,19 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
       await controller.setBackgroundColor(const Color(0xfff4f7fb));
       subscriptions.add(controller.webMessage.listen(handleMessage));
       await controller.loadUrl('http://127.0.0.1:${server!.port}/index.html');
-      if (mounted) setState(() {
-        initialized = true;
-        busy = false;
-      });
+      if (mounted) {
+        setState(() {
+          initialized = true;
+          busy = false;
+        });
+      }
     } catch (error) {
-      if (mounted) setState(() {
-        failure = '$error';
-        busy = false;
-      });
+      if (mounted) {
+        setState(() {
+          failure = '$error';
+          busy = false;
+        });
+      }
     }
   }
 
@@ -101,7 +105,7 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
           'png' => 'image/png',
           _ => 'application/octet-stream',
         })
-        ..set(HttpHeaders.xContentTypeOptionsHeader, 'nosniff')
+        ..set('X-Content-Type-Options', 'nosniff')
         ..set('Content-Security-Policy', "default-src 'self' data: blob:; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
       request.response.add(data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes));
       await request.response.close();
@@ -137,10 +141,12 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
           if (mounted) setState(() => dirty = message['value'] == true);
           break;
         case 'template_applied':
-          if (mounted) setState(() {
-            name = '${message['name'] ?? '업무 흐름도'}';
-            dirty = true;
-          });
+          if (mounted) {
+            setState(() {
+              name = '${message['name'] ?? '업무 흐름도'}';
+              dirty = true;
+            });
+          }
           break;
         case 'request_new':
           if (await confirmDiscard()) {
@@ -264,9 +270,15 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
   @override
   Widget build(BuildContext context) => PopScope(
     canPop: !dirty,
-    onPopInvokedWithResult: (didPop, result) async { if (!didPop && await confirmDiscard() && mounted) Navigator.pop(context); },
+    onPopInvokedWithResult: (didPop, result) async {
+      if (!didPop && await confirmDiscard() && context.mounted) {
+        Navigator.pop(context);
+      }
+    },
     child: Scaffold(
-      appBar: AppBar(title: Text(name), leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: () async { if (await confirmDiscard() && mounted) Navigator.pop(context); })),
+      appBar: AppBar(title: Text(name), leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: () async {
+        if (await confirmDiscard() && context.mounted) Navigator.pop(context);
+      })),
       body: failure != null ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text('편집기를 시작하지 못했어요.\n$failure'))) :
         Stack(children: [if (initialized) Webview(controller), if (busy) const Center(child: CircularProgressIndicator())]),
     ),
