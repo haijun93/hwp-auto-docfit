@@ -70,7 +70,7 @@ class _FakeGui:
         self.developer_mode_var = _Var(False)
         self.always_on_top_var = _Var(True)
         self.include_spacing_var = _Var(True)
-        self._결과목록 = [{"원본": r"C:\a\문서.hwp", "결과": r"C:\a\문서(자간조정).hwpx", "쪽수": 3}]
+        self._결과목록 = [{"원본": str(Path("test-documents") / "문서.hwp"), "결과": str(Path("test-documents") / "문서(자간조정).hwpx"), "쪽수": 3}]
         self.opened = []
         self.stage_board = object()
         self.log_text = _LogText()
@@ -370,7 +370,7 @@ class BrowserApiTests(unittest.TestCase):
         bridge = _bridge(gui)
         with mock.patch("desktop_web_ui.os.path.isfile", return_value=True):
             bridge.open_result(0)
-        self.assertEqual(gui.opened, [r"C:\a\문서(자간조정).hwpx"])
+        self.assertEqual(gui.opened, [str(Path("test-documents") / "문서(자간조정).hwpx")])
         bridge.open_result(5)
         self.assertIn("찾을 수 없습니다", gui.status_var.get())
         with mock.patch("desktop_web_ui.os.path.isfile", return_value=True), \

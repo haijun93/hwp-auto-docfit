@@ -19,7 +19,7 @@ import re
 from docfit_core.labeled_text import looks_labeled
 from docfit_core.pasted_text import (
     _BLOCKQUOTE_MARKER, _CODE_FENCE, _HR_LINE, _MARKER_GLUE, _TABLE_ROW, _TABLE_SEPARATOR, _strip_inline_markup,
-    _strip_invisible, _ESCAPED_MD_CHAR,
+    _strip_invisible, _ESCAPED_MD_CHAR, _remove_citations_preserving_markup, _split_glued_markers,
 )
 
 TIER_MARKERS = ("□", "ㅇ", "-", "•")
@@ -28,7 +28,10 @@ _LABEL_BY_MARKER = {"□": "네모", "ㅇ": "원", "-": "바", "•": "점", "�
 _EMOJI = re.compile("[\U0001F300-\U0001FAFF☀-➿️‍]")
 _MD_HEADING = re.compile(r"^(#{1,6})[ \t]+(?=\S)(.*)$")
 _BULLET = re.compile(r"^([ \t]*)[-*+•‣◦▪·∙][ \t]+(?=\S)(.*)$")
-_NUMBERED = re.compile(r"^([ \t]*)(?:\d{1,3}[.)]|\(\d{1,3}\)|[가-하][.)]|[①-⑳])[ \t]+(?=\S)(.*)$")
+_NUMBER_TOKEN = (r"\d{1,3}(?:\.\d{1,3}){1,7}\.?|\d{1,3}[.)]|"
+                 r"\((?:\d{1,3}|[가나다라마바사아자차카타파하])\)|"
+                 r"[가나다라마바사아자차카타파하][.)]|[①-⑳㉮-㉻]|[Ⅰ-Ⅻ][.)]?|[IVX]{1,4}[.)]")
+_NUMBERED = re.compile(r"^([ \t]*)(?P<number>" + _NUMBER_TOKEN + r")[ \t]+(?=\S)(?P<body>.*)$", re.M)
 _BOLD_ONLY = re.compile(r"^\*\*([^*]+?)\*\*[ \t]*[:：]?$")
 _TASK_CHECKBOX = re.compile(r"\[([ xX])\][ \t]+")
 _NOTE_START = re.compile(r"^(?:※|ⓘ|[☞▶]|(?:참고|유의|주의|비고|알림)[ \t]*[:：])[ \t]*(.*)$")
@@ -47,12 +50,28 @@ _CLOSER = re.compile(
     r"(?:말씀해|알려\s*주|알려주|요청해|물어봐|문의해|도와\s*드(?:릴|리겠)|드릴까요|할까요|원하시|필요하시|궁금하|바랍니다만|"
     r"let me know|feel free|would you like|do you want)", re.I)
 _OPENER = re.compile(r"^(?:물론(?:이죠|입니다)?|네|좋습니다|알겠습니다|안녕하세요|sure|certainly|of course)\b[,.!~\s]*", re.I)
-_HEADING_NUMBER = re.compile(r"^(?:\d{1,2}(?:\.\d{1,2})+\.?|\d{1,2}[.)]|[가-하][.)]|[Ⅰ-Ⅻ][.)]?|[IVX]{1,4}\.|\(\d{1,2}\))[ \t]+(?=\S)")
+_HEADING_NUMBER = re.compile(r"^(?:" + _NUMBER_TOKEN + r")[ \t]+(?=\S)")
+
+
+def _number_shape(token: str) -> int:
+    if re.fullmatch(r"\d+(?:\.\d+)+\.?", token):
+        return len(token.rstrip(".").split(".")) - 1
+    if re.match(r"[Ⅰ-ⅫIVX]", token):
+        return -1
+    if token.startswith("("):
+        return 4 if token[1:-1].isdigit() else 5
+    if token in _CIRCLED:
+        return 6
+    if token in _CIRCLED_HANGUL:
+        return 7
+    if token.endswith(")"):
+        return 2 if token[:-1].isdigit() else 3
+    return 0 if token[:-1].isdigit() else 1
 
 
 def _normalize_text(text: str) -> str:
     """인용 표식·HTML 줄바꿈·글자 참조를 정리한다(긴 글에도 안전하도록 줄 단위가 아닌 전체에 한 번)."""
-    text = _CITATION.sub("", text)
+    text = _remove_citations_preserving_markup(text, _CITATION)
     text = _HTML_BREAK.sub("\n", text)
     text = _HTML_TAG.sub("", text)
     return html.unescape(text)
@@ -71,10 +90,12 @@ def _heading_clean(text: str) -> str:
 
 def looks_like_ai_answer(text: str) -> bool:
     """붙여넣은 글이 AI 채팅 답변(마크다운 구조)처럼 보이는지. 라벨 형식·이미 □ ㅇ 항목기호인 글은 아니다."""
-    text = text or ""
+    text = _strip_invisible(text or "")
     if not text.strip() or looks_labeled(text) or _ALREADY_REPORT.search(text):
         return False
-    hits = _STRONG_MD.findall(text) + re.findall(r"\[cite[_:\]]|oaicite", text)
+    hits = {match.start() for match in _STRONG_MD.finditer(text)}
+    hits.update(match.start() for match in _NUMBERED.finditer(text))
+    hits.update(match.start() for match in re.finditer(r"^[ \t]*>[ \t]*\S|\[cite[_:\]]|oaicite", text, re.M))
     return len(hits) >= 2
 
 
@@ -83,7 +104,7 @@ def _split_elements(text: str) -> list[dict]:
     text = _normalize_text(_strip_invisible(text))
     text = _ESCAPED_MD_CHAR.sub(r"\1", text)
     text = _LONE_BULLET.sub(r"\1• ", text)             # 화면 복사: 기호만 한 줄, 글은 다음 줄
-    text = _MARKER_GLUE.sub("\n", text)
+    text = _split_glued_markers(text)
     elements: list[dict] = []
     fence = False
     previous_blank = True
@@ -139,12 +160,15 @@ def _split_elements(text: str) -> list[dict]:
             continue
         if numbered:
             elements.append({"kind": "item", "indent": len(numbered.group(1).expandtabs(4)),
-                             "text": _clean(numbered.group(2)), "numbered": True, "after_blank": previous_blank})
+                             "text": _clean(numbered.group("body")), "numbered": True,
+                             "number_shape": _number_shape(numbered.group("number")), "after_blank": previous_blank})
             previous_blank = False
             continue
         bold = _BOLD_ONLY.match(stripped_line)
         if bold:
-            elements.append({"kind": "heading", "key": ("bold", 0), "text": _heading_clean(bold.group(1)).rstrip(":："),
+            numbered_heading = _NUMBERED.match(bold.group(1))
+            key = ("num", _number_shape(numbered_heading.group("number"))) if numbered_heading else ("bold", 0)
+            elements.append({"kind": "heading", "key": key, "text": _heading_clean(bold.group(1)).rstrip(":："),
                              "after_blank": previous_blank})
             previous_blank = False
             continue
@@ -210,7 +234,7 @@ def _classify(elements: list[dict]) -> None:
         if followed and all(len(elements[i]["text"]) <= 120 for i in numbered):
             for i in numbered:
                 if _is_short_title(elements[i]["text"]) or i in followed:
-                    elements[i].update(kind="heading", key=("num", 0), after_blank=True)
+                    elements[i].update(kind="heading", key=("num", elements[i].get("number_shape", 0)), after_blank=True)
     for i, e in enumerate(elements):
         if e["kind"] != "para" or not e.get("after_blank", True) or not _is_short_title(e["text"]):
             continue
@@ -224,20 +248,22 @@ def _classify(elements: list[dict]) -> None:
 def _rank_headings(elements: list[dict]) -> None:
     """표제마다 순위(0이 가장 큼)를 붙인다. 같은 모양은 같은 순위, 새 모양은 한 단계 아래."""
     kinds_present = {e["key"][0] for e in elements if e["kind"] == "heading"}
-    alias = next((kind for kind in ("num", "bold") if kind in kinds_present), None)
+    alias = next((e["key"] for e in elements if e["kind"] == "heading" and e["key"][0] == "num"), None)
+    if alias is None and "bold" in kinds_present:
+        alias = ("bold", 0)
     stack: list[tuple] = []
     for e in elements:
         if e["kind"] != "heading":
             continue
         key = e["key"]
         if key[0] == "plain" and alias:
-            key = (alias, 0)
+            key = alias
         elif key[0] == "plain" and "md" in kinds_present:
             key = ("md", 99)
         if key in stack:
             del stack[stack.index(key) + 1:]
-        elif key[0] == "md":
-            while stack and stack[-1][0] == "md" and stack[-1][1] >= key[1]:
+        elif key[0] in ("md", "num"):
+            while stack and stack[-1][0] == key[0] and stack[-1][1] >= key[1]:
                 stack.pop()
             stack.append(key)
         else:
@@ -327,7 +353,7 @@ def parse_ai_answer(text: str) -> list[dict]:
     first_body = next((e for e in elements if e["kind"] in ("para", "item", "table", "note")), None)
     flat_base = 1 if first_body is not None and first_body["kind"] == "para" else 0
     base = 0
-    indent_stack: list[int] = []
+    indent_stack: list[tuple[int, int]] = []
     offset = 0
     intro = not has_heading
     seen_heading = False
@@ -377,10 +403,11 @@ def parse_ai_answer(text: str) -> list[dict]:
             add_para(tier, e["text"])
             continue
         # 글머리·번호 항목: 서로 다른 들여쓰기의 순서로 깊이를 정한다.
-        while indent_stack and indent_stack[-1] > e["indent"]:
+        item_key = (e["indent"], e.get("number_shape", 0))
+        while indent_stack and indent_stack[-1] > item_key:
             indent_stack.pop()
-        if not indent_stack or indent_stack[-1] < e["indent"]:
-            indent_stack.append(e["indent"])
+        if not indent_stack or indent_stack[-1] < item_key:
+            indent_stack.append(item_key)
         depth = len(indent_stack) - 1
         tier = (base if has_heading else flat_base) + offset + depth
         add_para(tier, e["text"].rstrip(":：").rstrip() if _next_content(elements, index) and

@@ -51,3 +51,15 @@
 5. 신규 native EXE/IPC·Web/native 성능 비교는 아직 없으며 [기술 검증 문서](FLUTTER_NATIVE_FEASIBILITY.md)에 미실시로 표시한다.
 
 실제 COM 문서 처리 결과·성능·최종 EXE 안전성을 검증한 것으로 해석하면 안 된다. 전체 설정/프로필 상세/검토 화면까지 Flutter로 완전히 이전한 상태도 아니다.
+
+## Alpha 4 후속 안정화 (2026-10-13)
+
+Linux 시험에서 실제 Tk/TkDND·pywebview·defusedxml을 사용하도록 변경했다. Windows registry는 키 미존재로 표현하며 GUI 시험 파일은 임시 폴더로 격리한다. 경로 fixture를 플랫폼 독립적으로 고쳤다.
+
+- 원래 실패·오류 22시험: 실제 Xvfb/Tk에서 22개 전부 통과, skip 0.
+- 전체: 986개 중 983통과, 실패/오류 0, 기존 skip 3(선택 MCP SDK·Windows 절전/PowerShell).
+- 관련 78시험의 headless 실행: 62통과, GUI skip 16, 실패/오류 0.
+- Flutter 소스는 이번 변경에서 수정하지 않았다. 앞서 수행한 analyze/25위젯 시험 통과 기록을 유지한다.
+- Windows COM·WebView2·EXE 및 새 GitHub GUI CI 실행 결과는 확인하지 않았다.
+
+상세 수정과 한계는 [22건 해결 기록](TEST_FAILURES_22_ASSESSMENT_2026-10-13.md)을 본다. Flutter 전체 전환 완료를 의미하지 않는다.

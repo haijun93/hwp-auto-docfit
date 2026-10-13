@@ -1,5 +1,9 @@
 # 실패·오류 22건의 해결 가능성 검토
 
+## 최종 해결 결과 — 1.74 Alpha 4
+
+**기존 실패·오류 22개 시험을 실제 Tk/Xvfb 환경에서 모두 통과했다.** 해당 22개를 skip으로 바꾸거나 기대값을 삭제하지 않았다. 전체 986시험도 실패·오류 없이 완료했다. 아래 초기 분류·중간 결과는 수정 전 기록이다.
+
 ## 판단
 
 **해결 불가능한 문제가 아니다.** 이전 “기존 기준선과 동일”이라는 표현은 새 실패가 추가되지 않았다는 의미이며, 22건을 해결할 수 없거나 무시해도 된다는 의미가 아니다.
@@ -51,3 +55,34 @@
 - 경로 가정 실패 3건은 그대로 남았다.
 
 원문 로그: `/tmp/docfit-22-recheck.log`. 이번 재검사는 분류 근거를 강화했으며 22건을 모두 수정 완료한 결과는 아니다.
+
+## Alpha 4의 실제 수정 (2026-10-13)
+
+위 절은 수정 전 원인 조사와 중간 재검사 기록이다. Alpha 4에서는 다음을 실제 코드에 반영했다.
+
+- Linux 실행기는 Windows 모듈만 대체한다. 실제 Tk/TkDND·pywebview·defusedxml을 사용하고 레지스트리 키 조회는 미존재 예외를 반환한다.
+- 경로 fixture와 예상 경로를 `Path` 조합으로 작성하여 Windows/Linux 모두 동일한 의미를 검증한다. 파일명·DLL 하위 폴더·등록 이름·출력 열기 검증은 유지했다.
+- GUI 시험에 실제 디스플레이 가용성 검사를 적용하고, 화면을 사용할 수 있을 때는 실제 위젯 시험을 실행한다. 시험이 생성하는 예시/상용구/DLL 경로는 각 시험의 임시 폴더로 분리했다.
+- Tk 시험 teardown은 예약 작업만 Tcl 수준에서 취소한 뒤 위젯/명령을 정상 파괴한다. 자식 위젯의 Tcl 명령을 중복 삭제하지 않는다.
+- 작업 폴더에 Debian Xvfb를 준비하여 실제 GUI 시험을 수행했다. 시스템 설정이나 사용자 문서 원본을 바꾸지 않았다.
+- `.github/workflows/test-linux-gui.yml`에 실제 Xvfb 전체 시험을 추가했다. GitHub CI 실행 성공은 아직 확인하지 않았으며 로컬 실행 결과와 구분한다.
+
+재현 명령(의존성과 Xvfb 설치 필요):
+
+```bash
+xvfb-run -a python scripts/linux_stub_test_runner.py discover -s tests
+```
+
+Windows는 기존 `python -m unittest discover -s tests`를 사용한다. 이번 수정은 Linux에서 Windows COM이 실행된다는 의미가 아니다. 별도 실제 한/글/Windows 검증은 계속 필요하다.
+
+### 최종 검증 결과
+
+| 실행 | 결과 | 시간 |
+| --- | --- | --- |
+| 원래 실패·오류 22개 직접 재실행 (실제 GUI) | 22통과, 실패/오류/skip 0 | 38.581초 |
+| 전체 986시험 (실제 GUI) | 983통과, 실패/오류 0, skip 3 | 176.239초 |
+| 관련 78시험 (디스플레이 없음) | 62통과, 실패/오류 0, GUI skip 16 | 38.200초 |
+
+전체 시험의 skip 3개는 기존 선택 MCP SDK 미설치, Windows 절전 방지, 실제 Windows PowerShell 시험이다. 원래 문제 22건에는 skip이 없다. 실제 Tk/TkDND 창·변수·Treeview·Listbox·확인/취소와 저장 시험을 실행했다. WebView2 브라우저 자체와 한/글 COM 실동작·EXE 검증은 미실시다.
+
+최종 로그: `/tmp/docfit-alpha4-original22-tests.log`, `/tmp/docfit-alpha4-final-tests.log`, `/tmp/docfit-alpha4-headless-tests.log`.

@@ -1544,3 +1544,11 @@ Tk `Text` 위젯 두 칸(아웃라인 입력 / 공문서 개조식 미리보기)
 - 목표: Claude/ChatGPT의 AI 답변을 사용자가 지정한 문서 서식으로 새 HWPX로 생성한다. 전체 설계와 연결 환경 차이는 `docs/MCP_INTEGRATION_DESIGN.md`를 참조.
 - 1차 PoC: 로컬 stdio MCP 서버에 내장 프리셋 목록과 답변 Markdown → 새 HWPX 생성 도구 구현. 출력 폴더 고정, 파일명 경로 차단, 입력 크기 제한, 덮어쓰기 방지, 생성 후 HWPX 재검사 적용. SDK는 선택 의존성 `requirements-mcp.txt`로 격리.
 - 미완료: 앱 사용자 저장 서식 프로필 적용, 한/글 COM 내어쓰기·최종검수, 장시간 job/cancel, 실기기 Claude/ChatGPT 연결·보안시험. ChatGPT는 원격 MCP/승인된 터널이 필요하며 이 로컬 stdio PoC에 직접 연결할 수 없다. 릴리스 조건 통과 전에 배포하지 않는다.
+
+## [진행] 1.74 Alpha 4 — 기준선 실패·오류 22건 해결
+
+- [x] Tk/TkDND·pywebview·XML 실제 모듈 사용, Linux 레지스트리 미존재 표현.
+- [x] 플랫폼 독립 경로 시험, GUI 임시 작업 폴더·디스플레이 가용성·timer teardown.
+- [x] 실제 Xvfb GUI 시험 환경과 Linux GUI CI 추가.
+- [x] 원래 실패/오류 22개 모두 통과(건너뜀 0), 전체 986시험 실패/오류 0·기존 skip 3 기록.
+- [ ] Windows WebView2·한/글 COM·EXE 실문서 검증.

@@ -1,4 +1,6 @@
 """작성 도우미·AI 프롬프트 창과 기관 서식 표시(A3) GUI 스모크 테스트."""
+from tests.gui_support import gui_root
+
 from pathlib import Path
 import os
 import runpy
@@ -13,7 +15,7 @@ class WritingAidsGuiTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="hwp-docfit-aids-") as folder:
             with patch.dict(os.environ, {"APPDATA": folder}):
                 ns = runpy.run_path(str(source), run_name="aids_ui_test")
-                root = ns["TkinterDnD"].Tk()
+                root = gui_root(ns['TkinterDnD'].Tk, ns)
                 root.withdraw()
                 errors = []
                 root.report_callback_exception = lambda *args: errors.append(args)

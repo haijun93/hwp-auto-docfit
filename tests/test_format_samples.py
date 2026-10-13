@@ -37,7 +37,7 @@ class MergeChangesTest(unittest.TestCase):
         self.assertEqual(fs.file_name_for("", standard=True), "기본 서식.hwpx")
         self.assertEqual(fs.file_name_for('A/B:C*'), "A_B_C.hwpx")
         self.assertEqual(fs.file_name_for("기본 서식"), "기본 서식 (사용자).hwpx")
-        self.assertEqual(fs.sample_folder(Path(r"C:\HWP_AUTODOCFIT")), Path(r"C:\HWP_AUTODOCFIT\서식예시"))
+        self.assertEqual(fs.sample_folder(Path(r"C:\HWP_AUTODOCFIT")), Path(r"C:\HWP_AUTODOCFIT") / "서식예시")
         self.assertIn("외 1개", fs.describe(["format/a", "format/b"], limit=1))
 
 
@@ -266,7 +266,7 @@ class AppFolderTest(unittest.TestCase):
     def test_dll_lives_in_dll_subfolder_with_new_registry_name(self):
         ns = self.ns
         self.assertEqual(ns['HWP_AUTOMATION_DIR'], Path(r"C:\HWP_AUTODOCFIT"))
-        self.assertEqual(ns['TARGET_DLL'], Path(r"C:\HWP_AUTODOCFIT\dll\HwpAutoDocFitSecurity.dll"))
+        self.assertEqual(ns['TARGET_DLL'], Path(r"C:\HWP_AUTODOCFIT") / "dll" / "HwpAutoDocFitSecurity.dll")
         self.assertEqual(ns['REGISTRY_VALUE_NAME'], "HwpAutoDocFitSecurity")
         self.assertEqual(ns['REGISTER_MODULE_VALUE'], ns['REGISTRY_VALUE_NAME'])   # 한/글은 두 이름이 같아야 한다
         self.assertEqual(ns['DLL_NAME'], "MapoHwpAutoDocFitSecurity.dll")        # 앱에 포함된 원본 파일 이름

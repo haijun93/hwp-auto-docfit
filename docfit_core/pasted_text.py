@@ -10,6 +10,7 @@ turns that raw paste back into plain, readable paragraphs.
 
 from __future__ import annotations
 
+import html
 import re
 
 _INVISIBLE_MAP = str.maketrans({
@@ -33,8 +34,8 @@ _CODE_FENCE = re.compile(r"^```")
 _TABLE_ROW = re.compile(r"^\|?.*\|.*\|?$")
 _TABLE_SEPARATOR = re.compile(r"^\|?[ \t]*:?-{2,}:?[ \t]*(\|[ \t]*:?-{2,}:?[ \t]*)*\|?$")
 
-_BOLD_ITALIC = re.compile(r"(\*\*\*|___)(?=\S)(.+?)(?<=\S)\1")
-_BOLD = re.compile(r"(\*\*|__)(?=\S)(.+?)(?<=\S)\1")
+_BOLD_ITALIC = re.compile(r"(\*\*\*|___)[ \t]*(?=\S)(.+?)(?<=\S)[ \t]*\1")
+_BOLD = re.compile(r"(\*\*|__)[ \t]*(?=\S)(.+?)(?<=\S)[ \t]*\1")
 _ITALIC = re.compile(r"(?<!\w)(\*|_)(?=[^\s*_])(.+?)(?<=[^\s*_])\1(?!\w)")
 _STRIKE = re.compile(r"~~(?=\S)(.+?)(?<=\S)~~")
 _INLINE_CODE = re.compile(r"`([^`\n]+)`")
@@ -54,6 +55,23 @@ _MARKER_GLUE = re.compile(
     rf"(?<=[{_SENTENCE_END}]) (?="
     rf"[-*+][ \t]|[{_UNICODE_BULLETS}]|\d+[.)](?:[ \t]|[^\d\s])|#{{1,6}}[ \t]|[①-⑳])"
 )
+_DATE_TEXT = re.compile(r"(?<!\d)\d{4}\.[ \t]*\d{1,2}\.[ \t]*\d{1,2}\.?(?!\d)")
+
+
+def _split_glued_markers(text: str) -> str:
+    """복사로 붙은 목록은 나누되 공문 날짜의 마침표/숫자는 보호한다."""
+    dates = list(_DATE_TEXT.finditer(text))
+    index = 0
+
+    def split(match):
+        nonlocal index
+        while index < len(dates) and dates[index].end() <= match.start():
+            index += 1
+        if index < len(dates) and dates[index].start() <= match.start() < dates[index].end():
+            return match.group()
+        return "\n"
+
+    return _MARKER_GLUE.sub(split, text)
 
 # 계층 구조 변환(outline_pasted_text)에서 쓰는 항목기호. 1단계는 원문에
 # 이미 "1." 같은 번호가 있으면 그대로 두고, 없을 때만 ㅁ을 붙인다.
@@ -97,14 +115,28 @@ def _unflatten_outline(text: str) -> str:
 
 
 def _strip_invisible(text: str) -> str:
+    # 렌더링된 인용 기호가 &gt; 또는 &#62;로 복사돼도 구조 기호로 읽는다.
+    text = html.unescape(text)
     text = text.translate(_INVISIBLE_MAP)
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     return _ESCAPED_MD_CHAR.sub(r"\1", text)
 
 
+def _remove_citations_preserving_markup(text: str, pattern: re.Pattern) -> str:
+    """각주 양쪽 강조 기호가 합쳐져 다른 강조 문법으로 읽히지 않게 한다."""
+    def remove(match):
+        before = text[match.start() - 1:match.start()] if match.start() else ""
+        after = text[match.end():match.end() + 1]
+        # **본문**[2]**.** → **본문**<임시 경계>**.**
+        # 경계는 강조를 벗긴 뒤 제거해 본문에 새 공백을 넣지 않는다.
+        return "\u200b" if before in ("*", "_") and before == after else ""
+
+    return pattern.sub(remove, text)
+
+
 def _strip_inline_markup(line: str) -> str:
-    line = _CITATION_TAG.sub("", line)
-    line = _CITATION_NUMBER.sub("", line)
+    line = _remove_citations_preserving_markup(line, _CITATION_TAG)
+    line = _remove_citations_preserving_markup(line, _CITATION_NUMBER)
     line = _INLINE_CODE.sub(r"\1", line)
     line = _IMAGE.sub(r"\1", line)
     line = _LINK.sub(r"\1", line)
@@ -112,7 +144,7 @@ def _strip_inline_markup(line: str) -> str:
     line = _BOLD.sub(r"\2", line)
     line = _ITALIC.sub(r"\2", line)
     line = _STRIKE.sub(r"\1", line)
-    return line
+    return line.translate(_INVISIBLE_MAP)
 
 
 def _structural_marker(line: str) -> tuple[str, str]:
@@ -136,6 +168,8 @@ def _structural_marker(line: str) -> tuple[str, str]:
     if _UNICODE_BULLET.match(line):
         rest = _UNICODE_BULLET.sub("", line).strip()
         return ("list", f"- {rest}") if rest else ("skip", "")
+    if _DATE_TEXT.match(line):
+        return "text", line
     match = _NUMBERED_MARKER.match(line)
     if match:
         rest = _NUMBERED_MARKER.sub("", line).strip()
@@ -163,7 +197,7 @@ def clean_pasted_text(text: str) -> str:
         return ""
 
     text = _strip_invisible(text)
-    text = _MARKER_GLUE.sub("\n", text)
+    text = _split_glued_markers(text)
 
     paragraphs: list[str] = []
     current: list[str] = []
@@ -237,7 +271,7 @@ def outline_pasted_text(text: str) -> str:
         text = _unflatten_outline(text)
 
     text = _strip_invisible(text)
-    text = _MARKER_GLUE.sub("\n", text)
+    text = _split_glued_markers(text)
 
     # 표제·글머리 기호는 (clean_pasted_text와 마찬가지로) 그 줄만으로 바로
     # 완결된 항목이 된다 — 다음 줄이 기호 없는 문장이라도 거기 이어붙이지
@@ -274,7 +308,7 @@ def outline_pasted_text(text: str) -> str:
             flush()
             items.append((0, _HEADING_MARKER.sub("", no_quote).strip()))
             continue
-        if raw_line == stripped and _UNINDENTED_NUMBER.match(no_quote):
+        if raw_line == stripped and _UNINDENTED_NUMBER.match(no_quote) and not _DATE_TEXT.match(no_quote):
             # 들여쓰기 없는 숫자 항목만 1단계로 본다(들여쓰기가 있으면 하위
             # 순서 목록일 수 있어 글머리 기호와 똑같이 깊이로 판단한다).
             flush()
