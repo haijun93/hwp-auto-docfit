@@ -18,7 +18,8 @@ GUI 시험은 실제 디스플레이/Xvfb가 필요하며 COM만 stub으로 대�
 전체 설정은 Flutter 화면과 공통 서비스로 전환했다. 프로필 상세·문서 도구는 아직 Tk 경로가 남아 있다.
 Alpha 6 네이티브 시제품은 Windows runner·독립 백엔드·인증 IPC를 추가했다. COM 연결 및 Windows 검증은 미완료다.
 [네이티브 계획](docs/FLUTTER_NATIVE_MIGRATION_PLAN.md)과 [시험 기록](docs/FLUTTER_NATIVE_TEST_REPORT.md)을 확인한다.
-Alpha 6 전체 Python 1,011시험 실패·오류 0(기존 skip 3), Flutter 28시험·웹 Release 통과.
+Alpha 6 후속 보안 수정 전체 Python 1,014시험 실패·오류 0(기존 skip 3), Flutter 28시험·웹 Release 통과.
+MCP 출력 경쟁 조건·예약 장치 이름, HWPX 중복 ZIP 항목을 보완했다. [전체 보안 검토](docs/FULL_CODE_SECURITY_REVIEW_ALPHA6_2026-10-13.md)를 확인한다.
 최신 확인 사항은 [Flutter 시험 보고서](docs/FLUTTER_TEST_REPORT.md), [전환 계획](docs/FLUTTER_MIGRATION_PLAN.md)을 본다.
 `docfit_app`은 UI 독립 서비스이며 기존 문서 처리/COM 파이프라인은 재작성하지 않았다.
 EXE 빌드는 Flutter 검사·자산 검증 실패 시 중단한다. 런타임 비상 Tk 경로는 유지한다.

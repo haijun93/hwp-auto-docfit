@@ -1,0 +1,108 @@
+{
+  "beta1": {
+    "escaped_gemini": [
+      {
+        "input_chars": 50,
+        "multiplier": 1,
+        "median_ms": 0.02
+      },
+      {
+        "input_chars": 1019,
+        "multiplier": 20,
+        "median_ms": 0.461
+      },
+      {
+        "input_chars": 5099,
+        "multiplier": 100,
+        "median_ms": 3.324
+      }
+    ],
+    "version_and_decimal": [
+      {
+        "input_chars": 35,
+        "multiplier": 1,
+        "median_ms": 0.026
+      },
+      {
+        "input_chars": 719,
+        "multiplier": 20,
+        "median_ms": 0.381
+      },
+      {
+        "input_chars": 3599,
+        "multiplier": 100,
+        "median_ms": 2.521
+      }
+    ],
+    "contact_unit": [
+      {
+        "input_chars": 49,
+        "multiplier": 1,
+        "median_ms": 0.016
+      },
+      {
+        "input_chars": 999,
+        "multiplier": 20,
+        "median_ms": 0.471
+      },
+      {
+        "input_chars": 4999,
+        "multiplier": 100,
+        "median_ms": 2.44
+      }
+    ]
+  },
+  "alpha6": {
+    "escaped_gemini": [
+      {
+        "input_chars": 50,
+        "multiplier": 1,
+        "median_ms": 0.034
+      },
+      {
+        "input_chars": 1019,
+        "multiplier": 20,
+        "median_ms": 1.06
+      },
+      {
+        "input_chars": 5099,
+        "multiplier": 100,
+        "median_ms": 4.903
+      }
+    ],
+    "version_and_decimal": [
+      {
+        "input_chars": 35,
+        "multiplier": 1,
+        "median_ms": 0.027
+      },
+      {
+        "input_chars": 719,
+        "multiplier": 20,
+        "median_ms": 0.706
+      },
+      {
+        "input_chars": 3599,
+        "multiplier": 100,
+        "median_ms": 3.569
+      }
+    ],
+    "contact_unit": [
+      {
+        "input_chars": 49,
+        "multiplier": 1,
+        "median_ms": 0.028
+      },
+      {
+        "input_chars": 999,
+        "multiplier": 20,
+        "median_ms": 0.549
+      },
+      {
+        "input_chars": 4999,
+        "multiplier": 100,
+        "median_ms": 4.146
+      }
+    ]
+  }
+}

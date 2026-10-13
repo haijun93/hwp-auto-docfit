@@ -1,0 +1,203 @@
+{
+  "scope": "preprocessing only; no HWP/COM document creation",
+  "cases": [
+    {
+      "case": "ChatGPT numbered answer",
+      "expected_route": "ai",
+      "actual_route": "AI answer → labeled blocks",
+      "route_matches": true,
+      "markdown_residue": [],
+      "scaling": [
+        {
+          "multiplier": 1,
+          "input_chars": 117,
+          "output_chars": 79,
+          "median_ms": 14.969,
+          "chars_per_second": 7816,
+          "peak_python_bytes": 4822
+        },
+        {
+          "multiplier": 5,
+          "input_chars": 593,
+          "output_chars": 399,
+          "median_ms": 48.05,
+          "chars_per_second": 12341,
+          "peak_python_bytes": 13701
+        },
+        {
+          "multiplier": 20,
+          "input_chars": 2378,
+          "output_chars": 1599,
+          "median_ms": 84.046,
+          "chars_per_second": 28294,
+          "peak_python_bytes": 52606
+        }
+      ]
+    },
+    {
+      "case": "Gemini nested bullets",
+      "expected_route": "ai",
+      "actual_route": "AI answer → labeled blocks",
+      "route_matches": true,
+      "markdown_residue": [],
+      "scaling": [
+        {
+          "multiplier": 1,
+          "input_chars": 84,
+          "output_chars": 72,
+          "median_ms": 3.548,
+          "chars_per_second": 23676,
+          "peak_python_bytes": 3475
+        },
+        {
+          "multiplier": 5,
+          "input_chars": 428,
+          "output_chars": 364,
+          "median_ms": 14.599,
+          "chars_per_second": 29318,
+          "peak_python_bytes": 7553
+        },
+        {
+          "multiplier": 20,
+          "input_chars": 1718,
+          "output_chars": 1459,
+          "median_ms": 51.992,
+          "chars_per_second": 33043,
+          "peak_python_bytes": 42965
+        }
+      ]
+    },
+    {
+      "case": "Claude prose and sections",
+      "expected_route": "ai",
+      "actual_route": "AI answer → labeled blocks",
+      "route_matches": true,
+      "markdown_residue": [],
+      "scaling": [
+        {
+          "multiplier": 1,
+          "input_chars": 90,
+          "output_chars": 92,
+          "median_ms": 4.406,
+          "chars_per_second": 20426,
+          "peak_python_bytes": 3497
+        },
+        {
+          "multiplier": 5,
+          "input_chars": 458,
+          "output_chars": 449,
+          "median_ms": 17.484,
+          "chars_per_second": 26195,
+          "peak_python_bytes": 9225
+        },
+        {
+          "multiplier": 20,
+          "input_chars": 1838,
+          "output_chars": 1799,
+          "median_ms": 65.71,
+          "chars_per_second": 27971,
+          "peak_python_bytes": 60613
+        }
+      ]
+    },
+    {
+      "case": "GFM table and task list",
+      "expected_route": "ai",
+      "actual_route": "AI answer → labeled blocks",
+      "route_matches": true,
+      "markdown_residue": [],
+      "scaling": [
+        {
+          "multiplier": 1,
+          "input_chars": 93,
+          "output_chars": 81,
+          "median_ms": 5.32,
+          "chars_per_second": 17481,
+          "peak_python_bytes": 4263
+        },
+        {
+          "multiplier": 5,
+          "input_chars": 473,
+          "output_chars": 409,
+          "median_ms": 16.92,
+          "chars_per_second": 27956,
+          "peak_python_bytes": 11069
+        },
+        {
+          "multiplier": 20,
+          "input_chars": 1898,
+          "output_chars": 1639,
+          "median_ms": 72.988,
+          "chars_per_second": 26004,
+          "peak_python_bytes": 55757
+        }
+      ]
+    },
+    {
+      "case": "Code fence and inline markup",
+      "expected_route": "ai",
+      "actual_route": "AI answer → labeled blocks",
+      "route_matches": true,
+      "markdown_residue": [],
+      "scaling": [
+        {
+          "multiplier": 1,
+          "input_chars": 68,
+          "output_chars": 57,
+          "median_ms": 3.695,
+          "chars_per_second": 18403,
+          "peak_python_bytes": 4165
+        },
+        {
+          "multiplier": 5,
+          "input_chars": 348,
+          "output_chars": 289,
+          "median_ms": 13.046,
+          "chars_per_second": 26675,
+          "peak_python_bytes": 7786
+        },
+        {
+          "multiplier": 20,
+          "input_chars": 1398,
+          "output_chars": 1159,
+          "median_ms": 52.289,
+          "chars_per_second": 26736,
+          "peak_python_bytes": 32559
+        }
+      ]
+    },
+    {
+      "case": "Generic long Markdown",
+      "expected_route": "generic",
+      "actual_route": "generic Markdown → cleaned text",
+      "route_matches": true,
+      "markdown_residue": [],
+      "scaling": [
+        {
+          "multiplier": 1,
+          "input_chars": 145,
+          "output_chars": 82,
+          "median_ms": 3.772,
+          "chars_per_second": 38437,
+          "peak_python_bytes": 3547
+        },
+        {
+          "multiplier": 5,
+          "input_chars": 733,
+          "output_chars": 475,
+          "median_ms": 19.922,
+          "chars_per_second": 36793,
+          "peak_python_bytes": 9427
+        },
+        {
+          "multiplier": 20,
+          "input_chars": 2938,
+          "output_chars": 1900,
+          "median_ms": 53.941,
+          "chars_per_second": 54467,
+          "peak_python_bytes": 46208
+        }
+      ]
+    }
+  ]
+}
