@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:docfit_ui/main.dart';
@@ -535,6 +537,174 @@ void main() {
     await tester.tap(find.text('닫기'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets(
+      'settings opens the Flutter abbreviation manager without a Tk command',
+      (tester) async {
+    tester.view.physicalSize = const Size(1024, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final calls = <String>[];
+    Future<Object?> api(String name, List<Object?> args) async {
+      calls.add(name);
+      if (name == 'get_abbreviations') {
+        return {
+          'api_version': 1,
+          'ok': true,
+          'error': null,
+          'data': {
+            'entries': [],
+            'format_kinds': {'title1': '제목 서식1'},
+            'use_defaults': true,
+            'running': false,
+          }
+        };
+      }
+      return initialState();
+    }
+
+    await tester.pumpWidget(DocFitApp(api: api));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('설정'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('준말 등록·관리'), 300,
+        scrollable: find.byType(Scrollable).last);
+    await tester.tap(find.text('준말 등록·관리'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('abbreviationManagerDialog')), findsOneWidget);
+    expect(calls.where((name) => name != 'get_state'), ['get_abbreviations']);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  for (final resetMethod in ['add_files', 'next_job']) {
+    testWidgets('$resetMethod resets the previous document page range', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1024, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final state = initialState();
+      state['files'] = [
+        {'name': '이전.hwpx', 'path': r'C:\문서\이전.hwpx'},
+      ];
+      state['range'] = {'enabled': true, 'start': '5', 'end': '7'};
+      final calls = <List<Object?>>[];
+      Future<Object?> api(String name, List<Object?> args) async {
+        if (name != 'get_state') calls.add([name, ...args]);
+        if (name == resetMethod) {
+          state['files'] = resetMethod == 'next_job'
+              ? []
+              : [
+                  {'name': '새문서.hwpx', 'path': r'C:\문서\새문서.hwpx'}
+                ];
+          state['range'] = {'enabled': false, 'start': '1', 'end': '1'};
+        } else if (name == 'add_files') {
+          state['files'] = [
+            {'name': '새문서.hwpx', 'path': r'C:\문서\새문서.hwpx'},
+          ];
+        }
+        if (name == 'start') state['running'] = true;
+        return Map<String, dynamic>.from(state);
+      }
+
+      await tester.pumpWidget(DocFitApp(api: api));
+      await tester.pumpAndSettle();
+      if (resetMethod == 'next_job') {
+        await tester.tap(find.text('결과 확인').first);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('새 작업 시작'));
+        await tester.pumpAndSettle();
+      }
+      await tester.tap(find.text('문서 추가'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('작업 방식 선택'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('정리 시작'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(calls.last, ['start', 'spacing', false, '1', '1']);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
+
+  testWidgets('unchanged backend polls preserve an unfinished page range edit',
+      (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1024, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final state = initialState();
+    state['files'] = [
+      {'name': '문서.hwpx'}
+    ];
+    state['range'] = {'enabled': true, 'start': '1', 'end': '9'};
+    await tester.pumpWidget(DocFitApp(
+      api: (name, args) async => Map<String, dynamic>.from(state),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('작업 방식 선택'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.widgetWithText(TextField, '시작 쪽'));
+    await tester.enterText(find.widgetWithText(TextField, '시작 쪽'), '');
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+    expect(
+        tester
+            .widget<TextField>(find.widgetWithText(TextField, '시작 쪽'))
+            .controller!
+            .text,
+        '');
+    expect(find.textContaining('올바르게 입력하세요'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('a delayed poll cannot replace a newer command result', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1024, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final state = initialState();
+    state['files'] = [
+      {'name': '문서.hwpx'}
+    ];
+    final delayedPoll = Completer<Object?>();
+    var holdPoll = false;
+    final calls = <List<Object?>>[];
+    Future<Object?> api(String name, List<Object?> args) async {
+      if (name == 'get_state' && holdPoll) {
+        holdPoll = false;
+        return delayedPoll.future;
+      }
+      if (name != 'get_state') calls.add([name, ...args]);
+      if (name == 'set_mode') state['mode'] = args.first;
+      if (name == 'start') state['running'] = true;
+      return Map<String, dynamic>.from(state);
+    }
+
+    await tester.pumpWidget(DocFitApp(api: api));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('작업 방식 선택'));
+    await tester.pumpAndSettle();
+    final oldState = Map<String, dynamic>.from(state);
+    holdPoll = true;
+    await tester.pump(const Duration(seconds: 1));
+    await tester.ensureVisible(find.text('서식 통일'));
+    await tester.tap(find.text('서식 통일'));
+    await tester.pumpAndSettle();
+    delayedPoll.complete(oldState);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tap(find.text('정리 시작'));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(calls.last, ['start', 'unify', false, '1', '1']);
     await tester.pumpWidget(const SizedBox());
   });
 

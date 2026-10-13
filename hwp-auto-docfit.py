@@ -381,7 +381,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리"
-APP_VERSION = "1.74 Alpha 2"
+APP_VERSION = "1.74 Alpha 3"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 GITHUB_UPDATE_API_URL = "https://api.github.com/repos/haijun93/hwp-auto-docfit/releases/latest"
@@ -20350,6 +20350,14 @@ class HwpAutoDocFitGUI:
             if 주설정탭:
                 self.table_spacing_check = 체크
 
+    def _준말_서비스(self):
+        """Flutter·Tk가 같은 설정 파일과 UI 독립 준말 서비스를 사용한다."""
+        from docfit_app.abbreviation_service import AbbreviationService
+        from docfit_app.settings_service import SettingsService
+        if not hasattr(self, "_준말서비스"):
+            self._준말서비스 = AbbreviationService(SettingsService(설정_파일_경로))
+        return self._준말서비스
+
     def _서식정리_항목_상세(self, parent, key, *, 주설정탭):
         """'서식 정리'·'내어쓰기' 세부 설정 탭과 세부 작업 창이 함께 쓰는
         항목별 상세 위젯. _자간정리_항목_상세와 동일한 방식으로 동작한다.
@@ -20357,16 +20365,12 @@ class HwpAutoDocFitGUI:
         def 준말창_열기():
             from docfit_core.abbreviation_dialog import open_abbreviation_dialog
 
-            def 저장(등록표):
-                설정 = 설정_불러오기()
-                설정["abbreviations"] = 준말_등록표_정리(등록표)
-                설정_저장(설정)
-            def 기본_저장(사용):
-                설정 = 설정_불러오기()
-                설정["abbreviation_defaults"] = bool(사용)
-                설정_저장(설정)
-            open_abbreviation_dialog(parent.winfo_toplevel(), lambda: 설정_불러오기().get("abbreviations", {}), 저장,
-                                     lambda: 설정_불러오기().get("abbreviation_defaults", True), 기본_저장)
+            서비스 = self._준말_서비스()
+            open_abbreviation_dialog(
+                parent.winfo_toplevel(), 서비스.user_entries,
+                lambda 등록표: 서비스.replace_entries(등록표, running=self.running),
+                서비스.defaults_enabled,
+                lambda 사용: 서비스.set_defaults(사용, running=self.running))
         if key == "pre_format":
             title_auto = ttk.Checkbutton(parent, text="제목 모양 자동 정리 · 제목표가 있을 때",
                                           variable=self.std_bool_vars["std_title_auto"])

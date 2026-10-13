@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'bridge.dart' as bridge;
+import 'core/api/abbreviation_api.dart';
+import 'features/abbreviations/abbreviation_manager.dart';
 
-typedef ApiCall = Future<Object?> Function(String, List<Object?>);
+export 'core/api/abbreviation_api.dart' show ApiCall;
 
 void main() => runApp(const DocFitApp());
 
@@ -67,6 +69,7 @@ class _WorkspaceState extends State<Workspace> {
   Map<String, dynamic> state = {};
   int tab = 0;
   bool busy = false, polling = false, wasRunning = false, stagesOpen = false;
+  int commandVersion = 0;
   String? error;
   Timer? timer;
   final scaffoldKey = GlobalKey<ScaffoldState>();
@@ -162,10 +165,17 @@ class _WorkspaceState extends State<Workspace> {
     super.dispose();
   }
 
-  void apply(Map next) {
+  void apply(Map next, {bool syncRange = false}) {
+    final previousRange = state['range'] as Map? ?? {};
+    final range = next['range'] as Map? ?? {};
+    final rangeChanged = ['enabled', 'start', 'end']
+        .any((key) => previousRange[key] != range[key]);
+    final documentsChanged =
+        jsonEncode(state['files'] ?? []) != jsonEncode(next['files'] ?? []);
     state = Map<String, dynamic>.from(next);
-    final range = state['range'] as Map? ?? {};
-    if (!rangeLoaded && range.isNotEmpty) {
+    // 입력 중인 값은 유지하되, 문서 변경·새 작업·백엔드 범위 변경은 반영한다.
+    if (range.isNotEmpty &&
+        (!rangeLoaded || syncRange || rangeChanged || documentsChanged)) {
       rangeLoaded = true;
       rangeOn = range['enabled'] == true;
       rangeStart.text = '${range['start'] ?? 1}';
@@ -181,25 +191,30 @@ class _WorkspaceState extends State<Workspace> {
   }
 
   Future<void> refresh() async {
-    if (polling) return;
+    if (polling || busy) return;
     polling = true;
+    final version = commandVersion;
     try {
       final next = await widget.api('get_state', []);
-      if (mounted && next is Map) {
+      if (mounted && version == commandVersion && next is Map) {
         setState(() {
           apply(next);
           error = null;
         });
       }
     } catch (_) {
-      if (mounted) setState(() => error = '앱과 연결하지 못했어요. 잠시 후 다시 확인합니다.');
+      if (mounted && version == commandVersion) {
+        setState(() => error = '앱과 연결하지 못했어요. 잠시 후 다시 확인합니다.');
+      }
     } finally {
       polling = false;
     }
   }
 
   Future<void> command(String method, [List<Object?> args = const []]) async {
-    if (busy) return;
+    if (!mounted || busy) return;
+    // 명령 전 시작된 조회는 명령 결과보다 오래된 상태일 수 있다.
+    commandVersion++;
     setState(() {
       busy = true;
       error = null;
@@ -210,7 +225,7 @@ class _WorkspaceState extends State<Workspace> {
         final notice = response['notice'];
         setState(() {
           formatNotice = notice is String && notice.isNotEmpty ? notice : null;
-          apply(response);
+          apply(response, syncRange: method == 'next_job');
         });
         if (formatNotice != null) {
           ScaffoldMessenger.of(context)
@@ -2321,6 +2336,17 @@ class _WorkspaceState extends State<Workspace> {
                 ),
                 trailing: const Icon(Icons.open_in_new, size: 18),
                 onTap: locked ? null : () => command('open_settings'),
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.text_fields_rounded),
+                title: const Text('준말 등록·관리'),
+                subtitle: const Text('준말과 본말을 검색하고 등록·수정·삭제해요.'),
+                onTap: locked
+                    ? null
+                    : () => showDialog<void>(
+                        context: context,
+                        builder: (_) => AbbreviationManager(api: widget.api)),
               ),
               ListTile(
                 contentPadding: EdgeInsets.zero,

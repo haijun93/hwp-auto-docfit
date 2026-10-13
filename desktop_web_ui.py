@@ -14,6 +14,7 @@ from types import SimpleNamespace
 
 from docfit_core.progress_guide import guide_state
 from docfit_core.stage_selection import STAGE_EXAMPLES, default_choice, stages_for_mode
+from docfit_app.api_contract import response
 
 # 화면에서 바로 켜고 끄는 공통 설정(이름 → 앱의 Tk 변수 속성). 값을 바꾸면 앱이 설정 파일에 저장한다.
 def _format_coverage(analysis):
@@ -50,13 +51,47 @@ class DesktopWebBridge:
         # 창에 끌어 놓은 파일을 어디에 넣을지: documents(정리할 문서 목록) 또는 format(예시 서식 복제).
         # 화면의 '서식 관리' 창이 열려 있는 동안 format이다.
         self.drop_target = "documents"
+        self._request_lock = threading.Lock()
+        self._requests = set()
+        self._closed = False
+
+    def _shutdown(self):
+        """Tk 종료 시 대기·실행 중 요청의 호출자를 종료 오류로 해제한다."""
+        with self._request_lock:
+            self._closed = True
+            if self.tk_stopped is not None:
+                self.tk_stopped.set()
+            for request in self._requests:
+                if not request.done():
+                    request.set_exception(RuntimeError("앱이 종료 중입니다."))
+            self._requests.clear()
 
     def _tk(self, callback, timeout=120, front=False):
         result = Future()
+        with self._request_lock:
+            if self._closed or (self.tk_stopped is not None and self.tk_stopped.is_set()):
+                raise RuntimeError("앱이 종료 중입니다.")
+            self._requests.add(result)
+
+        def complete(value=None, error=None):
+            with self._request_lock:
+                self._requests.discard(result)
+                # 종료가 먼저 호출자를 해제했으면 callback의 결과를 다시 쓰지 않는다.
+                if not result.done():
+                    if error is not None:
+                        result.set_exception(error)
+                    else:
+                        result.set_result(value)
 
         def run():
-            if result.cancelled():
-                return
+            with self._request_lock:
+                # 시간 초과·종료 후 큐에 남은 callback은 실행하지 않는다.
+                if result.done():
+                    self._requests.discard(result)
+                    return
+                if not result.set_running_or_notify_cancel():
+                    self._requests.discard(result)
+                    return
             if front:
                 try:
                     # 파일 선택 등 기본 창을 부모로 쓰는 대화상자가 웹 화면 뒤에 뜨지 않게 한다.
@@ -65,17 +100,27 @@ class DesktopWebBridge:
                 except Exception:
                     pass
             try:
-                result.set_result(callback())
+                complete(value=callback())
             except BaseException as exc:
-                result.set_exception(exc)
+                complete(error=exc)
 
         try:
             self.gui.root.after(0, run)
         except Exception as exc:
+            complete(error=RuntimeError("앱이 종료 중입니다."))
             raise RuntimeError("앱이 종료 중입니다.") from exc
         try:
             return result.result(timeout=timeout)
         except TimeoutError as exc:
+            # callback 자체가 낸 TimeoutError를 큐 응답 시간 초과로 바꾸지 않는다.
+            with self._request_lock:
+                if result.done():
+                    return result.result()
+                cancelled = result.cancel()
+                if cancelled:
+                    self._requests.discard(result)
+            if not cancelled:
+                raise RuntimeError("명령이 이미 실행 중입니다. 중복 실행하지 말고 진행 상태를 확인해 주세요.") from exc
             raise RuntimeError("앱 응답 시간이 초과되었습니다.") from exc
 
     def _stages(self, mode):
@@ -467,6 +512,19 @@ class DesktopWebBridge:
 
         return self._tk(clear)
 
+    def get_abbreviations(self):
+        return self._tk(lambda: response(lambda: self.gui._준말_서비스().snapshot(running=self.gui.running)))
+
+    def save_abbreviation(self, key, kind, value, original_key=""):
+        return self._tk(lambda: response(lambda: self.gui._준말_서비스().save(
+            key, kind, value, original_key, running=self.gui.running)))
+
+    def delete_abbreviation(self, key):
+        return self._tk(lambda: response(lambda: self.gui._준말_서비스().delete(key, running=self.gui.running)))
+
+    def set_abbreviation_defaults(self, enabled):
+        return self._tk(lambda: response(lambda: self.gui._준말_서비스().set_defaults(enabled, running=self.gui.running)))
+
     def open_results(self):
         self._tk(self.gui._결과파일_열기, timeout=None, front=True)
         return True
@@ -735,7 +793,13 @@ class DesktopWebBridge:
             return closed
 
         # 작업 중이면 종료 확인 창이 떠서 사용자의 답을 기다린다.
-        return self._tk(close, timeout=None, front=True)
+        try:
+            return self._tk(close, timeout=None, front=True)
+        except RuntimeError:
+            # 종료 callback이 root.destroy를 호출하면 자신의 Future도 종료된다.
+            if self.tk_stopped is not None and self.tk_stopped.is_set():
+                return True
+            raise
 
 
 class _BrowserApi:
@@ -746,6 +810,7 @@ class _BrowserApi:
             "get_state", "add_files", "add_folder", "add_paths", "remove_file",
             "clear_files", "set_mode", "set_range", "start", "stop",
             "open_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
+            "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults",
             "open_results", "next_job", "run_tool", "open_result",
             "show_result", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",
@@ -872,7 +937,7 @@ def run_webview(gui):
     original_destroy = gui.root.destroy
 
     def tracked_destroy():
-        tk_stopped.set()
+        bridge._shutdown()
         original_destroy()
 
     gui.root.destroy = tracked_destroy

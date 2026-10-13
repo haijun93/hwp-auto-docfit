@@ -71,6 +71,26 @@
 - [ ] **6. 결과 처리**: 보고서(재현 방법·패치 제안, 모델 생성이라 사람 검토 없음)는 `primary_contact`로 온다. 오탐을 가려 알파에서 수정하고 시험을 추가한다. 빌드 실패 메일이 오면 Dockerfile을 고친다(저장소 안 Dockerfile은 PR 없이 수정 가능).
 - 참고: 신청 방법 요약은 대화 기록(2026-10-12)에 있으며 근거는 oss-scanner `README.md`, `CONTRIBUTING.md`, `.github/PULL_REQUEST_TEMPLATE.md`. 선정 기준 페이지는 확인하지 못했다.
 
+## [진행] 1.74 Alpha 3 안정화 + Flutter 전환 (2026-10-13)
+
+- [x] Beta 1과 기존 Alpha 2 코드/기준선 검토. 기존 alpha 이력 보존.
+- [x] `_tk` 대기 요청 취소, 종료 시 해제, 실행 중 시간 초과 구분, 종료 확인 취소 회귀 시험.
+- [x] 새 문서/새 작업 쪽 범위 초기화, 입력 중 범위 보존, 명령 뒤 오래된 poll 응답 배제.
+- [x] Flutter 준말 조회·검색·CRUD·기본값 선택, 타입 API/모델/기능 모듈 분리.
+- [x] Tk/Flutter 공통 준말·설정 서비스, 다른 설정/학습한 표 서식 보존·원자 저장·실패 처리.
+- [x] 잘못된 준말 서식 값(list/dict) 때문에 등록표 전체가 실패하는 문제 방어.
+- [x] Flutter 누락 패키지 방지: 로컬/CI 검사·웹 빌드·자산 검증 실패 시 EXE 빌드 중단.
+- [x] `FLUTTER_MIGRATION_AUDIT/PLAN`, `FLUTTER_ARCHITECTURE/API_CONTRACT/TEST_REPORT/NATIVE_FEASIBILITY` 문서.
+- [ ] Windows+한/글 2020에서 파일 선택·드롭·준말/Tk 호환·처리·중단·종료·원본 무결성/EXE 검증.
+- [ ] 전체 설정 79개와 단계별 수치를 Flutter 스키마/서비스로 이전.
+- [ ] 서식 상세/복제 범위·준말 표 학습·문서 검토/보조 창 이전.
+- [ ] Tk 변수 기반 파일/프로필/작업 상태 분리, 진행 이벤트·재연결 계약.
+- [ ] Windows native 시제품 및 동일 PC Web/native 실측 후 채택 여부 판단.
+
+사용자 확인: 1.75.1·1.75.2 회수 원인은 Flutter UI 제거 및 MCP 시험 기능의 잘못된 구현이었다.
+해당 백업 브랜치를 병합하지 않으며 이번 작업에서 Flutter를 제거하거나 MCP를 확대·자동 활성화하지 않는다.
+상세 실행 결과와 미실시 항목은 `docs/FLUTTER_TEST_REPORT.md`에 기록한다.
+
 ## [상태] v1.75.1·v1.75.2 회수 — main을 v1.74 Beta 1로 복구 (사용자 결정, 2026-10-13)
 v1.75.1·v1.75.2에 오류가 있어 릴리스를 삭제하고 `main`을 v1.74 Beta 1(731a520)로 되돌렸다. 최신 배포는 **v1.74 Beta 1**이다.
 

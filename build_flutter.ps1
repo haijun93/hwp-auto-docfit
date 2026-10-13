@@ -8,10 +8,18 @@ if (-not (Get-Command $flutter -ErrorAction SilentlyContinue)) {
 }
 Push-Location (Join-Path $PSScriptRoot 'flutter_ui')
 try {
-    & $flutter pub get
+    & $flutter pub get --enforce-lockfile
     if ($LASTEXITCODE -ne 0) { throw 'Flutter dependencies failed.' }
+    & $flutter analyze --no-pub
+    if ($LASTEXITCODE -ne 0) { throw 'Flutter analysis failed.' }
+    & $flutter test --no-pub
+    if ($LASTEXITCODE -ne 0) { throw 'Flutter tests failed.' }
     $webOutput = Join-Path $PSScriptRoot 'desktop_web\flutter'
-    & $flutter build web --release --no-web-resources-cdn --no-wasm-dry-run "--output=$webOutput"
+    & $flutter build web --release --no-pub --no-web-resources-cdn --no-wasm-dry-run "--output=$webOutput"
     if ($LASTEXITCODE -ne 0) { throw 'Flutter web build failed.' }
     Copy-Item -LiteralPath 'assets\OFL.txt' -Destination '..\desktop_web\flutter\FONT-LICENSE.txt'
+    $python = Join-Path $PSScriptRoot '.venv\Scripts\python.exe'
+    if (-not (Test-Path -LiteralPath $python)) { $python = 'python' }
+    & $python (Join-Path $PSScriptRoot 'scripts\verify_flutter_bundle.py') $webOutput
+    if ($LASTEXITCODE -ne 0) { throw 'Flutter bundle verification failed.' }
 } finally { Pop-Location }

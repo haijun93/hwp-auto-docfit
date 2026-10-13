@@ -36,6 +36,12 @@ class RegistryTest(unittest.TestCase):
         self.assertEqual(clean_key(' 제목1 '), '제목1')
         self.assertEqual(clean_key('두 어절'), '')
 
+    def test_malformed_format_values_are_ignored_without_crashing(self):
+        raw = {"목록": {"type": "format", "value": []},
+               "객체": {"type": "format", "value": {}},
+               "정상": {"type": "text", "value": "문구"}}
+        self.assertEqual(normalize(raw), {"정상": {"type": "text", "value": "문구"}})
+
     def test_match_requires_colon_after_first_word(self):
         """빈칸을 뺀 첫 어절이 준말이고 바로 뒤에 콜론이 있어야 바꾼다(준말과 콜론 사이 빈칸은 허용)."""
         self.assertEqual(match_line('제목1: 지구 침공계획(안) 보고', REGISTRY), ('제목1', '지구 침공계획(안) 보고', 5))

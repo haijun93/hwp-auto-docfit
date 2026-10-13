@@ -7,6 +7,14 @@
 
 ## 1. 한눈에 보기
 
+2026-10-13 안정화 작업: 개발판 **1.74 Alpha 3**, 공개 베타 **1.74 Beta 1**.
+Flutter UI를 유지하고 MCP 기능은 이번 변경에서 확대·활성화하지 않았다.
+요청 수명/종료·새 작업 범위·오래된 poll 응답을 수정했으며, 준말 관리를 Flutter와 공통 서비스로 옮겼다.
+전체 설정·프로필 상세·문서 도구는 아직 Tk 경로가 남아 있다.
+최신 확인 사항은 [Flutter 시험 보고서](docs/FLUTTER_TEST_REPORT.md), [전환 계획](docs/FLUTTER_MIGRATION_PLAN.md)을 본다.
+`docfit_app`은 UI 독립 서비스이며 기존 문서 처리/COM 파이프라인은 재작성하지 않았다.
+EXE 빌드는 Flutter 검사·자산 검증 실패 시 중단한다. 런타임 비상 Tk 경로는 유지한다.
+
 | 항목 | 현재 값 |
 |---|---|
 | 제품 | 한/글 2020 문서(HWP/HWPX)를 공문서 규칙에 맞게 자동 후처리하는 Windows 데스크톱 앱(Python·Tkinter 백엔드 + pywebview/WebView2 UI) |

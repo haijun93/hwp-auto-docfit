@@ -99,7 +99,8 @@ XML 파싱은 `defusedxml`을 사용하고 `hwp-auto-docfit.py`의 CRLF 줄바�
 
 완료되면 `dist\HWP_AutoDocFit.exe`가 생성됩니다.
 빌드에는 의존 패키지 설치가 포함되므로 최초 실행 시 네트워크가 필요할 수 있습니다.
-Flutter SDK가 없으면 새 Flutter 화면 빌드를 건너뛰고 기존 화면으로 빌드를 계속합니다.
+Flutter SDK가 없거나 검사·테스트·웹 빌드·자산 검증이 실패하면 EXE 빌드를 중단합니다.
+Flutter 화면이 누락된 패키지를 만들지 않으며, 런타임의 기존 WebView/Tk 비상 복구 경로는 유지합니다.
 `desktop_web`·`resources`·자동화 DLL 등 필요한 리소스는 빌드 스크립트가 포함합니다.
 
 코드·단위 테스트뿐 아니라 빌드된 EXE를 실제로 실행해 창 제목의 버전과 문서 처리 결과를 확인하세요.

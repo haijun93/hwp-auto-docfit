@@ -105,7 +105,7 @@ class BrowserApiTests(unittest.TestCase):
         bridge.window = object()
         api = _BrowserApi(bridge)
         public = {name: getattr(api, name) for name in dir(api) if not name.startswith('_')}
-        self.assertEqual(len(public), 40)   # UI 명령만 공개, 최근 추가: get_log·clear_log
+        self.assertEqual(len(public), 44)   # 준말 서비스 4개 추가, GUI/서비스 객체 자체는 비공개
         self.assertTrue(all(callable(value) for value in public.values()))
         self.assertNotIn('gui', public)
         self.assertNotIn('window', public)

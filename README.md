@@ -15,6 +15,10 @@
 
 설치 없이 실행 파일 하나로 시작합니다 · [v1.74 Beta 1 변경 사항](releases/v1.74-beta.1.md) · [GitHub 저장소](https://github.com/haijun93/hwp-auto-docfit) · [GitLab 저장소](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
 
+개발 중인 **1.74 Alpha 3**은 요청·종료·쪽 범위 안정화와 Flutter 준말 관리를 추가합니다.
+[알파 변경 사항](releases/v1.74-alpha.3.md) · [전환 현황](docs/FLUTTER_MIGRATION_AUDIT.md) · [시험 보고서](docs/FLUTTER_TEST_REPORT.md).
+공개 베타 표기는 그대로이며, 전체 UI 전환과 Windows 실문서 검증은 진행 중입니다.
+
 [![프로그램 사용 시연 영상 (약 5분). 클릭하면 고화질 영상이 열립니다.](docs/media/overview-demo.gif)](docs/media/overview-demo.mp4)
 
 **[▶ 5분 시연 영상 보기](docs/media/overview-demo.mp4)**
