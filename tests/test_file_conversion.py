@@ -139,6 +139,34 @@ class FileConversionTests(unittest.TestCase):
             self.assertTrue(target.read_bytes().startswith(b"%PDF-"))
             self.assertEqual(source.read_bytes(), b"pdf source")
 
+    def test_hwpx_pdf_direct_route_never_calls_external_parser_and_clears_session(self):
+        class App:
+            cleared = False
+
+            def Open(self, path, fmt, options):
+                self.opened = path
+                self.format = fmt
+                return True
+
+            def SaveAs(self, path, fmt, options):
+                Path(path).write_bytes(b"%PDF-1.7\n")
+                return True
+
+            def Clear(self, flag):
+                self.cleared = flag == 1
+
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "source.hwpx"
+            source.write_bytes(b"original")
+            target = Path(folder) / "new-folder" / "result.pdf"
+            app = App()
+            with mock.patch("docfit_core.kordoc_bridge.convert_to_hwpx", side_effect=AssertionError("external parser called")):
+                self.assertEqual(convert_to_pdf(app, source, target), target.resolve())
+            self.assertTrue(target.is_file())
+            self.assertTrue(app.cleared)
+            self.assertEqual(app.format, "HWPX")
+            self.assertEqual(source.read_bytes(), b"original")
+
     def test_pandoc_route_uses_kordoc_markdown_and_safe_argument_list(self):
         with tempfile.TemporaryDirectory() as folder:
             source = Path(folder) / "report.pdf"

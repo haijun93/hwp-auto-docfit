@@ -1,58 +1,64 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:docfit_ui/main.dart';
 
 Map<String, dynamic> initialState() => <String, dynamic>{
-      'files': <Map<String, String>>[],
-      'mode': 'spacing',
+  'files': <Map<String, String>>[],
+  'mode': 'spacing',
   'can_start': true,
   'conversion_target': 'hwpx',
   'conversion_targets': [
-    {'format': 'hwpx', 'label': 'HWPX', 'enabled': true, 'reason': 'kordoc 지원 입력'},
+    {
+      'format': 'hwpx',
+      'label': 'HWPX',
+      'enabled': true,
+      'reason': 'kordoc 지원 입력',
+    },
     {'format': 'pdf', 'label': 'PDF', 'enabled': true, 'reason': '한/글 COM 필요'},
     {'format': 'docx', 'label': 'DOCX', 'enabled': true, 'reason': 'Pandoc 사용'},
     {'format': 'epub', 'label': 'EPUB', 'enabled': true, 'reason': 'Pandoc 사용'},
   ],
-      'running': false,
-      'range': {'enabled': false, 'start': '1', 'end': '1'},
-      'results': [],
-      'stages': [
-        {
-          'key': 'reset_spacing',
-          'label': '문서 전체 자간 초기화',
-          'example': '예: 1',
-          'on': true,
-          'default': true
-        },
-        {
-          'key': 'style_unify',
-          'label': '서식통일',
-          'example': '예: 2',
-          'on': false,
-          'default': false
-        },
-      ],
-      'default_saved': false,
-      'profiles': [
-        {'id': '', 'name': '기본 서식'},
-        {'id': 'abc', 'name': '[마포구] 보고서'},
-      ],
-      'profile': '',
-      'options': {
-        'autoclose': true,
-        'unify_result_window': false,
-        'verify': false,
-        'integrity_report_file': false,
-        'final_review_file': false,
-        'log_file': false,
-        'check_updates': true,
-        'developer_mode': false,
-        'always_on_top': true,
-      },
-      'version': 'test',
-    };
+  'running': false,
+  'range': {'enabled': false, 'start': '1', 'end': '1'},
+  'results': [],
+  'stages': [
+    {
+      'key': 'reset_spacing',
+      'label': '문서 전체 자간 초기화',
+      'example': '예: 1',
+      'on': true,
+      'default': true,
+    },
+    {
+      'key': 'style_unify',
+      'label': '서식통일',
+      'example': '예: 2',
+      'on': false,
+      'default': false,
+    },
+  ],
+  'default_saved': false,
+  'profiles': [
+    {'id': '', 'name': '기본 서식'},
+    {'id': 'abc', 'name': '[마포구] 보고서'},
+  ],
+  'profile': '',
+  'options': {
+    'autoclose': true,
+    'unify_result_window': false,
+    'verify': false,
+    'integrity_report_file': false,
+    'final_review_file': false,
+    'log_file': false,
+    'check_updates': true,
+    'developer_mode': false,
+    'always_on_top': true,
+  },
+  'version': 'test',
+};
 
 void main() {
   for (final width in [420.0, 1024.0]) {
@@ -166,8 +172,9 @@ void main() {
     expect(find.textContaining('올바르게 입력하세요'), findsOneWidget);
     final start = tester.widget<FilledButton>(
       find.ancestor(
-          of: find.text('정리 시작'),
-          matching: find.byWidgetPredicate((w) => w is FilledButton)),
+        of: find.text('정리 시작'),
+        matching: find.byWidgetPredicate((w) => w is FilledButton),
+      ),
     );
     expect(start.onPressed, isNull);
 
@@ -191,8 +198,9 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('all card can exclude spacing and runs as format',
-      (tester) async {
+  testWidgets('all card can exclude spacing and runs as format', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1024, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -367,8 +375,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(calls.last, ['set_card_option', 'unify_exclude_spacing', true]);
     expect(find.text('서식통일이 고친 문장의 자간은 그대로 둬요.'), findsOneWidget);
-    await tester
-        .ensureVisible(find.byKey(const Key('allExcludePagefitSwitch')));
+    await tester.ensureVisible(
+      find.byKey(const Key('allExcludePagefitSwitch')),
+    );
     await tester.tap(find.byKey(const Key('allExcludePagefitSwitch')));
     await tester.pumpAndSettle();
     expect(calls.last, ['set_card_option', 'all_exclude_pagefit', true]);
@@ -395,7 +404,7 @@ void main() {
         'organization': '',
         'builtin': true,
         'source': '',
-        'active': true
+        'active': true,
       },
       {
         'id': 'abc',
@@ -404,7 +413,7 @@ void main() {
         'organization': '마포구',
         'builtin': false,
         'source': '예시.hwpx',
-        'active': false
+        'active': false,
       },
     ];
     state['format_task'] = {'busy': false, 'file': ''};
@@ -458,8 +467,10 @@ void main() {
     expect(find.text('예시 보고서: 예시.hwpx'), findsNothing);
     await tester.tap(find.byTooltip('닫기').last);
     await tester.pumpAndSettle();
-    expect(calls.any((c) => c[0] == 'set_drop_target' && c[1] == 'documents'),
-        isTrue);
+    expect(
+      calls.any((c) => c[0] == 'set_drop_target' && c[1] == 'documents'),
+      isTrue,
+    );
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
@@ -496,7 +507,7 @@ void main() {
         'name': '문서(자간조정).hwpx',
         'path': r'C:\문서\문서(자간조정).hwpx',
         'source': '문서.hwpx',
-        'pages': 3
+        'pages': 3,
       },
     ];
     await tester.pump(const Duration(seconds: 1));
@@ -550,43 +561,50 @@ void main() {
   });
 
   testWidgets(
-      'settings opens the Flutter abbreviation manager without a Tk command',
-      (tester) async {
-    tester.view.physicalSize = const Size(1024, 900);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    final calls = <String>[];
-    Future<Object?> api(String name, List<Object?> args) async {
-      calls.add(name);
-      if (name == 'get_abbreviations') {
-        return {
-          'api_version': 1,
-          'ok': true,
-          'error': null,
-          'data': {
-            'entries': [],
-            'format_kinds': {'title1': '제목 서식1'},
-            'use_defaults': true,
-            'running': false,
-          }
-        };
+    'settings opens the Flutter abbreviation manager without a Tk command',
+    (tester) async {
+      tester.view.physicalSize = const Size(1024, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final calls = <String>[];
+      Future<Object?> api(String name, List<Object?> args) async {
+        calls.add(name);
+        if (name == 'get_abbreviations') {
+          return {
+            'api_version': 1,
+            'ok': true,
+            'error': null,
+            'data': {
+              'entries': [],
+              'format_kinds': {'title1': '제목 서식1'},
+              'use_defaults': true,
+              'running': false,
+            },
+          };
+        }
+        return initialState();
       }
-      return initialState();
-    }
 
-    await tester.pumpWidget(DocFitApp(api: api));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('설정'));
-    await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('준말 등록·관리'), 300,
-        scrollable: find.byType(Scrollable).last);
-    await tester.tap(find.text('준말 등록·관리'));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('abbreviationManagerDialog')), findsOneWidget);
-    expect(calls.where((name) => name != 'get_state'), ['get_abbreviations']);
-    await tester.pumpWidget(const SizedBox());
-  });
+      await tester.pumpWidget(DocFitApp(api: api));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('설정'));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('준말 등록·관리'),
+        300,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await tester.tap(find.text('준말 등록·관리'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('abbreviationManagerDialog')),
+        findsOneWidget,
+      );
+      expect(calls.where((name) => name != 'get_state'), ['get_abbreviations']);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
 
   for (final resetMethod in ['add_files', 'next_job']) {
     testWidgets('$resetMethod resets the previous document page range', (
@@ -608,7 +626,7 @@ void main() {
           state['files'] = resetMethod == 'next_job'
               ? []
               : [
-                  {'name': '새문서.hwpx', 'path': r'C:\문서\새문서.hwpx'}
+                  {'name': '새문서.hwpx', 'path': r'C:\문서\새문서.hwpx'},
                 ];
           state['range'] = {'enabled': false, 'start': '1', 'end': '1'};
         } else if (name == 'add_files') {
@@ -640,38 +658,39 @@ void main() {
     });
   }
 
-  testWidgets('unchanged backend polls preserve an unfinished page range edit',
-      (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(1024, 900);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    final state = initialState();
-    state['files'] = [
-      {'name': '문서.hwpx'}
-    ];
-    state['range'] = {'enabled': true, 'start': '1', 'end': '9'};
-    await tester.pumpWidget(DocFitApp(
-      api: (name, args) async => Map<String, dynamic>.from(state),
-    ));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('작업 방식 선택'));
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.widgetWithText(TextField, '시작 쪽'));
-    await tester.enterText(find.widgetWithText(TextField, '시작 쪽'), '');
-    await tester.pump(const Duration(seconds: 1));
-    await tester.pumpAndSettle();
-    expect(
+  testWidgets(
+    'unchanged backend polls preserve an unfinished page range edit',
+    (tester) async {
+      tester.view.physicalSize = const Size(1024, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final state = initialState();
+      state['files'] = [
+        {'name': '문서.hwpx'},
+      ];
+      state['range'] = {'enabled': true, 'start': '1', 'end': '9'};
+      await tester.pumpWidget(
+        DocFitApp(api: (name, args) async => Map<String, dynamic>.from(state)),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('작업 방식 선택'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.widgetWithText(TextField, '시작 쪽'));
+      await tester.enterText(find.widgetWithText(TextField, '시작 쪽'), '');
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(
         tester
             .widget<TextField>(find.widgetWithText(TextField, '시작 쪽'))
             .controller!
             .text,
-        '');
-    expect(find.textContaining('올바르게 입력하세요'), findsOneWidget);
-    await tester.pumpWidget(const SizedBox());
-  });
+        '',
+      );
+      expect(find.textContaining('올바르게 입력하세요'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
 
   testWidgets('a delayed poll cannot replace a newer command result', (
     tester,
@@ -682,7 +701,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     final state = initialState();
     state['files'] = [
-      {'name': '문서.hwpx'}
+      {'name': '문서.hwpx'},
     ];
     final delayedPoll = Completer<Object?>();
     var holdPoll = false;
@@ -767,4 +786,223 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets('file format screen explains unavailable converters', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1024, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final state = initialState();
+    state['files'] = [
+      {'name': 'report.xlsx', 'folder': r'C:\Docs'},
+    ];
+    state['conversion_targets'] = [
+      {
+        'format': 'hwpx',
+        'label': 'HWPX',
+        'enabled': false,
+        'reason': 'kordoc 4.21.30 설치 필요 (Node.js 20+)',
+      },
+      {
+        'format': 'pdf',
+        'label': 'PDF',
+        'enabled': false,
+        'reason': 'kordoc 4.21.30 설치 필요 (Node.js 20+)',
+      },
+      {
+        'format': 'docx',
+        'label': 'DOCX',
+        'enabled': false,
+        'reason': 'kordoc 4.21.30 설치 필요 (Node.js 20+)',
+      },
+      {
+        'format': 'epub',
+        'label': 'EPUB',
+        'enabled': false,
+        'reason': 'kordoc 4.21.30 설치 필요 (Node.js 20+)',
+      },
+    ];
+    state['can_start'] = false;
+    Future<Object?> api(String name, List<Object?> args) async {
+      if (name == 'set_mode') state['mode'] = args.first;
+      return Map<String, dynamic>.from(state);
+    }
+
+    await tester.pumpWidget(DocFitApp(api: api));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('작업 방식 선택'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('파일포맷 변경'));
+    await tester.tap(find.text('파일포맷 변경').first);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const Key('conversionPrerequisiteNotice')),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<Text>(find.byKey(const Key('conversionPrerequisiteNotice')))
+          .data,
+      contains('kordoc 4.21.30 설치 필요'),
+    );
+    final button = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, '변환 시작'),
+    );
+    expect(button.onPressed, isNull);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  for (final width in [420.0, 1024.0]) {
+    testWidgets(
+      'floating format picker cancels and commits only a chosen format at $width',
+      (tester) async {
+        tester.view.physicalSize = Size(width, 700);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final state = initialState();
+        final choices = <Object?>[];
+        state['files'] = [
+          {'name': 'report.hwpx', 'folder': r'C:\Docs'},
+        ];
+        Future<Object?> api(String method, List<Object?> args) async {
+          if (method == 'set_mode') state['mode'] = args.first;
+          if (method == 'set_conversion_target') {
+            choices.add(args.first);
+            state['conversion_target'] = args.first;
+          }
+          return Map<String, dynamic>.from(state);
+        }
+
+        await tester.pumpWidget(DocFitApp(api: api));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('작업 방식 선택'));
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('파일포맷 변경'));
+        await tester.tap(find.text('파일포맷 변경').first);
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const Key('floatingConversionPicker')),
+          findsOneWidget,
+        );
+        await tester.tap(find.byKey(const Key('cancelConversionPicker')));
+        await tester.pumpAndSettle();
+        expect(choices, isEmpty);
+        expect(find.byKey(const Key('floatingConversionPicker')), findsNothing);
+        await tester.ensureVisible(
+          find.byKey(const Key('openConversionPicker')),
+        );
+        await tester.tap(find.byKey(const Key('openConversionPicker')));
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        expect(choices, isEmpty);
+        await tester.tap(find.byKey(const Key('openConversionPicker')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.descendant(
+            of: find.byKey(const Key('conversionSlice-pdf')),
+            matching: find.text('PDF'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(choices, ['pdf']);
+        expect(find.byKey(const Key('floatingConversionPicker')), findsNothing);
+        expect(find.text('선택한 결과 형식: PDF'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+  }
+
+  testWidgets(
+    'native document drop opens one floating picker without reopening on polls',
+    (tester) async {
+      final state = initialState();
+      state['mode'] = 'file_format';
+      Future<Object?> api(String method, List<Object?> args) async =>
+          Map<String, dynamic>.from(state);
+      await tester.pumpWidget(DocFitApp(api: api));
+      await tester.pumpAndSettle();
+      state['files'] = [
+        {'name': 'report.hwpx', 'folder': r'C:\Docs'},
+      ];
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('floatingConversionPicker')), findsOneWidget);
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('floatingConversionPicker')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('cancelConversionPicker')));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('floatingConversionPicker')), findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  testWidgets(
+    'unavailable or invalidated floating choices never change the target',
+    (tester) async {
+      tester.view.physicalSize = const Size(1024, 820);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final state = initialState();
+      state['mode'] = 'file_format';
+      state['files'] = [
+        {'name': 'report.hwpx', 'folder': r'C:\Docs'},
+      ];
+      state['conversion_targets'] = [
+        {
+          'format': 'hwpx',
+          'label': 'HWPX',
+          'enabled': false,
+          'reason': '엔진 설치 필요',
+        },
+        {
+          'format': 'pdf',
+          'label': 'PDF',
+          'enabled': true,
+          'reason': '한/글 내장 PDF',
+        },
+      ];
+      final choices = <Object?>[];
+      Future<Object?> api(String method, List<Object?> args) async {
+        if (method == 'set_conversion_target') choices.add(args.first);
+        return Map<String, dynamic>.from(state);
+      }
+
+      await tester.pumpWidget(DocFitApp(api: api));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('HWPX').first);
+      await tester.pumpAndSettle();
+      expect(choices, isEmpty);
+      expect(find.byKey(const Key('floatingConversionPicker')), findsOneWidget);
+      state['conversion_targets'] = [
+        {
+          'format': 'pdf',
+          'label': 'PDF',
+          'enabled': false,
+          'reason': '문서를 다시 선택하세요',
+        },
+      ];
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('PDF').last);
+      await tester.pumpAndSettle();
+      expect(choices, isEmpty);
+      // Clicking outside the floating window is also a non-mutating cancel.
+      await tester.tapAt(const Offset(2, 2));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('floatingConversionPicker')), findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
 }

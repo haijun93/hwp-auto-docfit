@@ -83,6 +83,9 @@ def convert_hwpx_to_pdf(app, source: str | Path, target: str | Path) -> Path:
         raise ValueError("PDF 변환 원본은 일반 HWPX 파일이어야 합니다.")
     if target.suffix.lower() != ".pdf" or target.exists():
         raise ValueError("PDF 결과 경로가 잘못되었거나 이미 존재합니다.")
+    source = source.resolve(strict=True)
+    target = target.resolve()
+    target.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(prefix="docfit_pdf_", suffix=".pdf", dir=target.parent, delete=False) as stream:
         temporary = Path(stream.name)
     # 한/글의 SaveAs가 이미 존재하는 빈 파일에 덮어쓰기 질문을 띄우지 않도록
@@ -105,7 +108,14 @@ def convert_hwpx_to_pdf(app, source: str | Path, target: str | Path) -> Path:
     finally:
         if opened:
             try:
-                app.Run("FileClose")
+                # 변환 전용 COM 세션에서 문서만 비운다. PDF 저장 후 일부 한/글
+                # 버전의 FileClose가 저장 질문을 띄워 작업을 멈추는 것을 방지한다.
+                app.Clear(1)
+            except AttributeError:
+                try:
+                    app.Run("FileClose")
+                except Exception:
+                    pass
             except Exception:
                 pass
         try:
@@ -115,7 +125,7 @@ def convert_hwpx_to_pdf(app, source: str | Path, target: str | Path) -> Path:
 
 
 def convert_to_pdf(app, source: str | Path, target: str | Path) -> Path:
-    """kordoc 입력 문서는 HWPX 중간 산출물을 거쳐 PDF로 렌더링한다."""
+    """HWPX는 직접 PDF 저장, 다른 입력은 kordoc HWPX 중간 산출물로 렌더링한다."""
     import tempfile
 
     from docfit_core.kordoc_bridge import SUPPORTED_INPUT_EXTENSIONS, convert_to_hwpx

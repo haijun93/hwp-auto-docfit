@@ -7,6 +7,8 @@
 
 ## 1. 한눈에 보기
 
+2026-10-14 개발판 **1.74 Alpha 7**: 파일포맷 선택을 앱 내부의 별도 플로팅 도넛 창으로 변경했다. HWPX→PDF는 기존 필수 환경인 한/글 COM의 내장 저장을 직접 사용하며 Node.js/kordoc/Pandoc/PDF 프린터를 추가 설치하지 않는다. 다른 입력·출력의 도구 의존성은 별도다. 준비 상태 조회는 Tk 밖에서 수행하고 30초 캐시한다. [구현·검증 기록](docs/ALPHA7_FLOATING_CONVERSION_2026-10-14.md)을 먼저 확인한다. Flutter 변경 후 생성 자산을 다시 빌드해야 실행 화면에 반영된다. 전체 설정 화면은 Flutter지만 프로필 상세·일부 문서 도구 및 네이티브 COM 이관은 여전히 별도 잔여 작업이다.
+
 2026-10-13 안정화 작업: 개발판 **1.74 Alpha 6**, 공개 베타 **1.74 Beta 1**.
 Flutter UI를 유지하고 MCP 기능은 이번 변경에서 확대·활성화하지 않았다.
 Alpha 5는 숫자/코드/문의 본문 보존, 공통 원자 설정 저장, ZIP 입력 제한 및 직함·이름 의미단위를 보완했다.
@@ -107,7 +109,7 @@ Flutter UI 빌드는 `powershell -File build_flutter.ps1`로 수행하며 `build
 | 한 번에 적용(자간 조정 제외) | `format` | `(서식적용).hwpx` |
 | 한 번에 적용 | `all` | `(일괄적용).hwpx` |
 
-알파에는 위 문서 정리 카드와 별도로 네 번째 `file_format` 작업이 있다. `docfit_core.kordoc_bridge.SUPPORTED_INPUT_EXTENSIONS`의 kordoc 입력을 HWPX로 변환하고, PDF는 kordoc 파싱/OCR 후 HWPX 중간 산출물과 한/글 COM을 거쳐 PDF로 렌더링한다. DOCX·EPUB는 kordoc Markdown 파싱과 별도 설치 Pandoc을 사용한다. Flutter 화면의 원형 선택은 HWPX/PDF/DOCX/EPUB 출력 선택 UI다. 지원 입력은 HWP/HWPX/HML, PDF, XLS/XLSX, DOCX/PPTX, PNG/JPG/JPEG/WebP. 원본은 보존하지만 변환은 레이아웃 충실 복원이 아니며, OCR·표·글꼴·쪽 배치 결과를 확인해야 한다. Pandoc이 없거나 한/글 COM을 사용할 수 없으면 해당 출력은 불가능하다. `tests/test_file_conversion.py`, `tests/test_desktop_browser_api.py`, `flutter_ui/test/workspace_test.dart`를 참고한다. 전체 Python 1,029건(1 skip), Flutter 28건(1 skip), 변환/API/도형 서비스 집중시험 37건(1 skip) 통과(2026-10-13). 실제 Windows 한/글 2020 COM·kordoc/Pandoc 파일 변환은 아직 실문서 시험하지 않았으므로 해당 확인 전 배포하지 않는다.
+알파에는 위 문서 정리 카드와 별도로 네 번째 `file_format` 작업이 있다. HWPX→PDF는 한/글 내장 COM 저장을 직접 사용하며 추가 변환기를 설치하지 않는다. 다른 입력은 `docfit_core.kordoc_bridge.SUPPORTED_INPUT_EXTENSIONS`의 kordoc 파싱 후 HWPX로 변환하고, PDF는 중간 HWPX를 한/글 COM으로 렌더링한다. DOCX·EPUB는 kordoc Markdown 파싱과 별도 설치 Pandoc을 사용한다. Flutter의 별도 플로팅 도넛 창에서 HWPX/PDF/DOCX/EPUB를 선택한다. 지원 입력은 HWP/HWPX/HML, PDF, XLS/XLSX, DOCX/PPTX, PNG/JPG/JPEG/WebP. 원본은 보존하지만 재생성 경로의 레이아웃 충실 복원은 보장하지 않는다. Python 전체 1,038건(1 skip), Flutter 34건(skip 0) 통과(2026-10-14). 합성 HWPX 사본의 실제 한/글 PDF 저장과 실제 kordoc HWPX 생성/재변환을 확인했으며, DOCX/EPUB 실문서 출력·다양한 OCR·수동 UI 전 구간 검증은 남아 있다. 자세한 범위는 [Alpha 7 기록](docs/ALPHA7_FLOATING_CONVERSION_2026-10-14.md)을 본다. 이번 변경은 알파 소스 반영이며 공개 EXE 배포는 아니다.
 
 - 카드는 자간 정리·서식 통일·한 번에 적용 세 장입니다. 한 번에 적용 카드의 `자간 조정 포함`(설정 `all_include_spacing`, 기본 켜짐)을 끄면 내부 작업 유형 `format`으로 실행합니다. 내부 유형 4가지와 세부 작업 저장값(`stage_choices`)은 그대로이며, Tk는 `selected_mode`(내부 유형)와 `card_mode_var`(카드 표시), 웹·Flutter는 `include_spacing` 상태와 `set_include_spacing` 명령을 씁니다. 그 아래 `표 제외`(설정 `all_exclude_tables`, 기본 꺼짐, Tk `exclude_tables_var`, 웹·Flutter `exclude_tables` 상태와 `set_exclude_tables` 명령)를 켜면 `작업시작`이 세부 작업을 `stage_selection.without_tables`로 바꿔(`TABLE_STAGE_KEYS`를 모두 끔) 넘기고 표자간조정도 끄고 넘깁니다. 제목·개요·중제목·붙임 서식 표(`pre_format`)는 그대로입니다.
 - 자간 정리 카드의 `기존 자간 초기화`(설정 `spacing_reset_existing`, 기본 켜짐)는 세부 작업 01 `reset_spacing`(`stage_choices["spacing"]`)과 같은 값입니다. Tk는 `reset_spacing_var`(설정창 자간 정리 탭과 공유, `_요약갱신`이 세부 작업 값에 맞춤), 웹·Flutter는 `reset_spacing` 상태와 `set_reset_spacing` 명령을 씁니다. 설정값이 None(예전 설정 파일)이면 저장된 세부 작업 구성을 따릅니다. 한 번에 적용의 자간 초기화는 별도 세부 작업으로 남아 있습니다. 같은 카드의 `표 제외`(기본 꺼짐, 2026-10-04 `표 내 자간 정리`에서 이름과 방향을 바꿈)는 설정 `table_spacing`의 반대 값입니다. Tk 체크는 `onvalue=False, offvalue=True`로 같은 변수 `table_spacing_var`를 씁니다. 설정 `table_spacing`(설정창 '표 서식 내 문장도 자간조정하기', 전역 `표_자간조정_사용`)과 같은 값이며, Tk `table_spacing_var`, 웹·Flutter `table_spacing` 상태와 `set_table_spacing` 명령을 씁니다. 끄면 `표셀_자간_제외인가`가 표 칸을 자간 초기화·자간 조정·줄 병합·단어 검사에서 뺍니다.

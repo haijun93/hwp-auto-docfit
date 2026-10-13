@@ -1,12 +1,12 @@
 """Optional bridge to the MIT-licensed kordoc v4 document engine.
 
-The desktop editor remains fully functional without Node.js.  Advanced
-conversion/generation features are enabled when Node 20+ and npx are present.
+The desktop editor and direct HWPX-to-PDF remain functional without Node.js.
+Advanced parsing/generation uses Node 20+ and an explicitly installed engine.
 
 2026-10-10 실행 계약 정리(벤치마킹 kordoc 폐쇄망 설치 문서 참고):
 - 버전 범위(^4) 대신 정확한 버전을 고정한다(실행 시점마다 다른 버전이 받아지지 않게).
 - Node.js 20 이상을 확인한다(kordoc 4.21.x의 engines 조건).
-- 폐쇄망: DOCFIT_KORDOC_BIN 또는 설정 폴더의 kordoc 설치본이 있으면 그것을 먼저 쓰고, 없을 때만 npx로 받는다.
+- 폐쇄망: DOCFIT_KORDOC_BIN 또는 설정 폴더의 설치본을 우선한다. npx 다운로드는 명시적 허용 시에만 사용한다.
 - patch의 반환 코드 2(일부 미적용)는 성공과 구분해 결과 이름에 표시한다.
 """
 
@@ -23,11 +23,11 @@ from typing import Any
 
 from docfit_core.hwpx import validate_hwpx
 
-KORDOC_VERSION = "4.21.6"
+KORDOC_VERSION = "4.21.30"
 KORDOC_PACKAGE = f"kordoc@{KORDOC_VERSION}"
 NODE_MIN_MAJOR = 20
 
-# kordoc v4.21.6의 상세 사용법(지원 포맷 표)에 명시된 입력 형식.
+# kordoc v4.21.30의 상세 사용법(지원 포맷 표)에 명시된 입력 형식.
 # 일반 정리 파이프라인의 지원_확장자와 분리해, kordoc 전용 파일포맷 변경에서만 사용한다.
 SUPPORTED_INPUT_EXTENSIONS = frozenset({
     ".hwp", ".hwpx", ".hml", ".pdf", ".xls", ".xlsx", ".docx", ".pptx",
@@ -40,7 +40,7 @@ class KordocUnavailableError(RuntimeError):
 
 
 def _node_major() -> int | None:
-    node = shutil.which("node.exe") or shutil.which("node")
+    node = _node_executable()
     if not node:
         return None
     try:
@@ -52,6 +52,10 @@ def _node_major() -> int | None:
         return None
 
 
+def _node_executable() -> str | None:
+    return shutil.which("node.exe") or shutil.which("node")
+
+
 def _local_kordoc() -> str | None:
     r"""폐쇄망용 미리 설치한 kordoc 실행 파일(환경 변수 DOCFIT_KORDOC_BIN 또는 %APPDATA%\HwpAutoDocFit\kordoc)."""
     후보 = []
@@ -61,17 +65,58 @@ def _local_kordoc() -> str | None:
     if appdata:
         bin_dir = Path(appdata) / "HwpAutoDocFit" / "kordoc" / "node_modules" / ".bin"
         후보 += [bin_dir / "kordoc.cmd", bin_dir / "kordoc"]
+    on_path = shutil.which("kordoc.cmd") or shutil.which("kordoc")
+    if on_path:
+        후보.append(Path(on_path))
     return next((str(x) for x in 후보 if x.is_file()), None)
 
 
-def _npx_command() -> str:
+def _npx_command() -> list[str]:
     command = shutil.which("npx.cmd") or shutil.which("npx")
     if not command:
         raise KordocUnavailableError(
             f"고급 문서 엔진을 사용하려면 Node.js {NODE_MIN_MAJOR} 이상이 필요합니다. "
             "https://nodejs.org 에서 LTS 버전을 설치해 주세요."
         )
-    return command
+    path = Path(command)
+    if path.suffix.lower() in {".cmd", ".bat"}:
+        # npm이 제공하는 JS 진입점을 Node에 인자 배열로 전달해
+        # Windows 배치 래퍼에서 문서 경로가 셸 문법으로 해석되는 일을 피한다.
+        node = _node_executable()
+        candidates = (
+            path.parent / "node_modules" / "npm" / "bin" / "npx-cli.js",
+            path.parent / "node_modules" / "npm" / "bin" / "npx.js",
+        )
+        script = next((candidate for candidate in candidates if candidate.is_file()), None)
+        if not node or script is None:
+            raise KordocUnavailableError(
+                "Windows npx 실행 파일의 JavaScript 진입점을 찾지 못했습니다. "
+                "Node.js를 복구 설치한 뒤 다시 실행해 주세요."
+            )
+        return [node, str(script)]
+    return [command]
+
+
+def _local_kordoc_command(path: str) -> list[str]:
+    executable = Path(path)
+    if executable.suffix.lower() in {".cmd", ".bat"}:
+        node = _node_executable()
+        candidates = (
+            executable.parent.parent / "kordoc" / "dist" / "cli.js",  # local .bin
+            executable.parent / "node_modules" / "kordoc" / "dist" / "cli.js",  # global npm
+        )
+        cli = next((candidate for candidate in candidates if candidate.is_file()), None)
+        if not node or cli is None:
+            raise KordocUnavailableError(
+                f"설치된 kordoc 실행 파일을 확인할 수 없습니다: {executable}"
+            )
+        return [node, str(cli)]
+    if executable.suffix.lower() in {".js", ".mjs", ".cjs"}:
+        node = _node_executable()
+        if not node:
+            raise KordocUnavailableError(f"kordoc 실행에 Node.js {NODE_MIN_MAJOR}+가 필요합니다.")
+        return [node, str(executable)]
+    return [path]
 
 
 def _kordoc_command() -> list[str]:
@@ -84,14 +129,53 @@ def _kordoc_command() -> list[str]:
         )
     local = _local_kordoc()
     if local:
-        return [local]
+        return _local_kordoc_command(local)
     if os.environ.get("DOCFIT_ALLOW_NPX_DOWNLOAD") != "1":
         raise KordocUnavailableError(
             "kordoc이 설치되어 있지 않습니다. 보안을 위해 실행 중 자동 다운로드는 기본 차단됩니다. "
             "공식 Node.js/npm으로 kordoc을 미리 설치하거나, 신뢰할 수 있는 환경에서만 "
             "DOCFIT_ALLOW_NPX_DOWNLOAD=1을 설정하세요."
         )
-    return [_npx_command(), "--yes", "--ignore-scripts", KORDOC_PACKAGE]
+    return [*_npx_command(), "--yes", "--ignore-scripts", KORDOC_PACKAGE]
+
+
+def engine_status() -> dict[str, str | bool]:
+    """UI preflight: report a locally installed, explicitly downloadable kordoc engine."""
+    local = _local_kordoc()
+    if not local and os.environ.get("DOCFIT_ALLOW_NPX_DOWNLOAD") != "1":
+        # 사용할 엔진이 없는 경우 버전 조회 프로세스를 매번 실행할 필요가 없다.
+        return {
+            "available": False,
+            "reason": f"kordoc {KORDOC_VERSION} 설치 필요 (Node.js {NODE_MIN_MAJOR}+)"
+            if _node_executable() else f"Node.js {NODE_MIN_MAJOR}+ 설치 필요",
+        }
+    major = _node_major()
+    if major is None:
+        return {
+            "available": False,
+            "reason": f"Node.js {NODE_MIN_MAJOR}+ 설치 필요",
+        }
+    if major < NODE_MIN_MAJOR:
+        return {
+            "available": False,
+            "reason": f"Node.js {NODE_MIN_MAJOR}+ 필요 (현재 {major})",
+        }
+    if local:
+        try:
+            _local_kordoc_command(local)
+        except KordocUnavailableError as exc:
+            return {"available": False, "reason": str(exc)}
+        return {"available": True, "reason": "로컬 kordoc 준비됨"}
+    if os.environ.get("DOCFIT_ALLOW_NPX_DOWNLOAD") == "1":
+        try:
+            _npx_command()
+        except KordocUnavailableError as exc:
+            return {"available": False, "reason": str(exc)}
+        return {"available": True, "reason": f"kordoc {KORDOC_VERSION} (첫 실행 시 다운로드)"}
+    return {
+        "available": False,
+        "reason": f"kordoc {KORDOC_VERSION} 설치 필요 (Node.js {NODE_MIN_MAJOR}+)",
+    }
 
 
 def _startupinfo():

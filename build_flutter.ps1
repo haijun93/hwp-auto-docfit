@@ -10,7 +10,10 @@ Push-Location (Join-Path $PSScriptRoot 'flutter_ui')
 try {
     & $flutter pub get --enforce-lockfile
     if ($LASTEXITCODE -ne 0) { throw 'Flutter dependencies failed.' }
-    & $flutter analyze --no-pub
+    # Run the same SDK's analyzer directly. Flutter's LSP wrapper can truncate
+    # JSON messages on Windows paths; do not weaken or skip analysis on failure.
+    $dart = Join-Path (Split-Path (Get-Command $flutter).Source -Parent) 'dart.bat'
+    & $dart analyze --fatal-infos
     if ($LASTEXITCODE -ne 0) { throw 'Flutter analysis failed.' }
     & $flutter test --no-pub
     if ($LASTEXITCODE -ne 0) { throw 'Flutter tests failed.' }

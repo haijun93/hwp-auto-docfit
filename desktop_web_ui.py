@@ -9,6 +9,7 @@ import os
 import subprocess
 import shutil
 import threading
+import time
 from concurrent.futures import Future, TimeoutError
 from pathlib import Path
 from types import SimpleNamespace
@@ -58,6 +59,9 @@ class DesktopWebBridge:
         self._requests = set()
         self._closed = False
         self.conversion_target = "hwpx"
+        self._conversion_prerequisites_checked = 0.0
+        self._conversion_prerequisites_cache = None
+        self._conversion_prerequisites_lock = threading.Lock()
 
     def _shutdown(self):
         """Tk 종료 시 대기·실행 중 요청의 호출자를 종료 오류로 해제한다."""
@@ -227,19 +231,27 @@ class DesktopWebBridge:
                     getattr(gui, "_안내지남", ()),
                 ),
                 "conversion_target": self.conversion_target,
-                "conversion_targets": self._conversion_targets(gui.files),
-                "can_start": self._can_start(mode, gui.files, gui.running),
+                "conversion_targets": [],
+                "can_start": self._can_start(mode, gui.files, gui.running) if mode != "file_format" else False,
                 "version": APP_VERSION,
             }
 
-        return self._tk(snapshot)
+        state = self._tk(snapshot)
+        if state["mode"] == "file_format":
+            # 외부 도구 버전 조회를 Tk 이벤트 루프에서 실행하면 화면이 멈춘다.
+            # GUI 상태를 읽은 뒤 WebView 요청 스레드에서 준비 상태를 확인한다.
+            files = [item["path"] for item in state["files"]]
+            targets = self._conversion_targets(files)
+            state["conversion_targets"] = targets
+            state["can_start"] = self._can_start(state["mode"], files, state["running"], targets)
+        return state
 
-    def _can_start(self, mode, files, running):
+    def _can_start(self, mode, files, running, conversion_targets=None):
         if not files or running:
             return False
         suffixes = [Path(path).suffix.lower() for path in files]
         if mode == "file_format":
-            targets = {item["format"]: item for item in self._conversion_targets(files)}
+            targets = {item["format"]: item for item in (conversion_targets or self._conversion_targets(files))}
             return all(suffix in SUPPORTED_INPUT_EXTENSIONS for suffix in suffixes) and bool(
                 targets.get(self.conversion_target, {}).get("enabled")
             )
@@ -247,19 +259,61 @@ class DesktopWebBridge:
                    for suffix in suffixes)
 
     @staticmethod
-    def _conversion_targets(files):
+    def _hwp_com_available():
+        """한/글을 띄우지 않고 COM ProgID 등록만 확인한다."""
+        if os.name != "nt":
+            return False
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, "HwpFrame.HwpObject"):
+                return True
+        except (ImportError, OSError):
+            return False
+
+    def _conversion_prerequisites(self):
+        with self._conversion_prerequisites_lock:
+            now = time.monotonic()
+            cached = self._conversion_prerequisites_cache
+            if cached is not None and now - self._conversion_prerequisites_checked < 30:
+                return cached
+            from docfit_core.kordoc_bridge import engine_status
+            pandoc_path = shutil.which("pandoc.exe") or shutil.which("pandoc")
+            self._conversion_prerequisites_cache = {
+                "kordoc": engine_status(),
+                "pandoc": bool(pandoc_path),
+                "hwp_com": self._hwp_com_available(),
+            }
+            self._conversion_prerequisites_checked = time.monotonic()
+            return self._conversion_prerequisites_cache
+
+    def _conversion_targets(self, files):
         suffixes = [Path(path).suffix.lower() for path in files]
         valid = bool(suffixes) and all(suffix in SUPPORTED_INPUT_EXTENSIONS for suffix in suffixes)
-        pandoc_ready = bool(shutil.which("pandoc.exe") or shutil.which("pandoc"))
+        prerequisites = self._conversion_prerequisites()
+        kordoc = prerequisites["kordoc"]
+        kordoc_ready = bool(kordoc.get("available"))
+        pandoc_ready = prerequisites["pandoc"]
+        hwp_ready = prerequisites["hwp_com"]
+        # HWPX는 한/글이 직접 PDF로 저장한다. 다른 입력만 kordoc 중간 변환이 필요하다.
+        pdf_needs_kordoc = any(suffix != ".hwpx" for suffix in suffixes)
+        pdf_ready = hwp_ready and (not pdf_needs_kordoc or kordoc_ready)
+        invalid_reason = "kordoc 지원 형식만 가능"
+        engine_reason = str(kordoc.get("reason") or "kordoc 사용 불가")
         return [
-            {"format": "hwpx", "label": "HWPX", "enabled": valid,
-             "reason": "kordoc 지원 입력" if valid else "kordoc 지원 형식만 가능"},
-            {"format": "pdf", "label": "PDF", "enabled": valid,
-             "reason": "한/글 COM 필요" if valid else "kordoc 지원 형식만 가능"},
-            {"format": "docx", "label": "DOCX", "enabled": valid and pandoc_ready,
-             "reason": "Pandoc 사용" if pandoc_ready else "Pandoc 설치 필요"},
-            {"format": "epub", "label": "EPUB", "enabled": valid and pandoc_ready,
-             "reason": "Pandoc 사용" if pandoc_ready else "Pandoc 설치 필요"},
+            {"format": "hwpx", "label": "HWPX", "enabled": valid and kordoc_ready,
+             "reason": invalid_reason if not valid else engine_reason},
+            {"format": "pdf", "label": "PDF", "enabled": valid and pdf_ready,
+             "reason": invalid_reason if not valid else
+                      "한/글 PDF 저장 기능을 사용할 수 없습니다" if not hwp_ready else
+                      engine_reason if pdf_needs_kordoc and not kordoc_ready else
+                      "한/글 내장 PDF 저장 사용 · 추가 변환기 설치 없음" if not pdf_needs_kordoc else
+                      "kordoc + 한/글 COM 준비됨"},
+            {"format": "docx", "label": "DOCX", "enabled": valid and kordoc_ready and pandoc_ready,
+             "reason": invalid_reason if not valid else engine_reason if not kordoc_ready else
+                      "Pandoc 설치 필요" if not pandoc_ready else "kordoc + Pandoc 준비됨"},
+            {"format": "epub", "label": "EPUB", "enabled": valid and kordoc_ready and pandoc_ready,
+             "reason": invalid_reason if not valid else engine_reason if not kordoc_ready else
+                      "Pandoc 설치 필요" if not pandoc_ready else "kordoc + Pandoc 준비됨"},
         ]
 
     def add_files(self):

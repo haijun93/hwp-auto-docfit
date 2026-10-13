@@ -252,9 +252,14 @@ class BrowserApiTests(unittest.TestCase):
         gui.running = True
         self.assertEqual(bridge.set_include_spacing(True)["mode"], "format")
 
-    def test_file_format_mode_supports_kordoc_inputs_and_pdf_only_for_hwpx(self):
+    def test_file_format_mode_supports_kordoc_inputs_and_pdf_output(self):
         gui = _FakeGui()
         bridge = _bridge(gui)
+        bridge._conversion_prerequisites = lambda: {
+            "kordoc": {"available": True, "reason": "kordoc 4.21.30 설치 확인"},
+            "pandoc": True,
+            "hwp_com": True,
+        }
         gui.files = [str(Path("report.xlsx"))]
         state = bridge.set_mode("file_format")
         self.assertEqual(state["mode"], "file_format")
@@ -271,14 +276,83 @@ class BrowserApiTests(unittest.TestCase):
 
     def test_file_format_rejects_unsupported_target_and_normal_mode_input(self):
         gui = _FakeGui()
-        gui.files = [str(Path("archive.zip"))]
         bridge = _bridge(gui)
+        bridge._conversion_prerequisites = lambda: {
+            "kordoc": {"available": True, "reason": "kordoc 4.21.30 설치 확인"},
+            "pandoc": False,
+            "hwp_com": True,
+        }
+        gui.files = [str(Path("archive.zip"))]
         bridge.set_mode("file_format")
         self.assertFalse(bridge.get_state()["can_start"])
         with self.assertRaises(ValueError):
             bridge.set_conversion_target("mp3")
         bridge.set_mode("spacing")
         self.assertFalse(bridge.get_state()["can_start"])
+
+    def test_file_conversion_preflight_disables_missing_dependencies_with_reason(self):
+        gui = _FakeGui()
+        gui.files = [str(Path("report.xlsx"))]
+        bridge = _bridge(gui)
+        bridge._conversion_prerequisites = lambda: {
+            "kordoc": {"available": False, "reason": "kordoc 4.21.30 설치 필요 (Node.js 20+)"},
+            "pandoc": False,
+            "hwp_com": True,
+        }
+        state = bridge.set_mode("file_format")
+        self.assertFalse(state["can_start"])
+        targets = {target["format"]: target for target in state["conversion_targets"]}
+        self.assertFalse(targets["hwpx"]["enabled"])
+        self.assertIn("kordoc 4.21.30 설치 필요", targets["hwpx"]["reason"])
+        self.assertFalse(targets["pdf"]["enabled"])
+        self.assertIn("kordoc 4.21.30 설치 필요", targets["pdf"]["reason"])
+        self.assertFalse(targets["docx"]["enabled"])
+
+    def test_hwpx_pdf_needs_no_kordoc_node_or_pandoc(self):
+        gui = _FakeGui()
+        gui.files = ["report.hwpx", "second.HWPX"]
+        bridge = _bridge(gui)
+        bridge._conversion_prerequisites = lambda: {
+            "kordoc": {"available": False, "reason": "Node.js 설치 필요"},
+            "pandoc": False,
+            "hwp_com": True,
+        }
+        bridge.set_mode("file_format")
+        state = bridge.set_conversion_target("pdf")
+        self.assertTrue(state["can_start"])
+        pdf = next(item for item in state["conversion_targets"] if item["format"] == "pdf")
+        self.assertIn("추가 변환기 설치 없음", pdf["reason"])
+        gui.files.append("sheet.xlsx")
+        self.assertFalse(bridge.get_state()["can_start"])
+        gui.files = ["report.hwpx"]
+        bridge._conversion_prerequisites = lambda: {
+            "kordoc": {"available": False, "reason": "Node.js 설치 필요"},
+            "pandoc": False,
+            "hwp_com": False,
+        }
+        self.assertFalse(bridge.get_state()["can_start"])
+
+    def test_conversion_preflight_runs_outside_tk_callback(self):
+        gui = _FakeGui()
+        gui.files = ["report.hwpx"]
+        gui.selected_mode.set("file_format")
+        bridge = _bridge(gui)
+        in_tk = [False]
+
+        def tk(callback):
+            in_tk[0] = True
+            try:
+                return callback()
+            finally:
+                in_tk[0] = False
+
+        def prerequisites():
+            self.assertFalse(in_tk[0])
+            return {"kordoc": {"available": False}, "pandoc": False, "hwp_com": True}
+
+        bridge._tk = tk
+        bridge._conversion_prerequisites = prerequisites
+        self.assertTrue(bridge.set_conversion_target("pdf")["can_start"])
 
     def test_spacing_card_toggles_existing_spacing_reset(self):
         # '자간 정리' 카드의 '기존 자간 초기화'는 세부 작업 01(reset_spacing)과 같은 값이다.

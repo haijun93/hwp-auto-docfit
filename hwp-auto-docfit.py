@@ -381,7 +381,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리"
-APP_VERSION = "1.74 Alpha 6"
+APP_VERSION = "1.74 Alpha 7"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 GITHUB_UPDATE_API_URL = "https://api.github.com/repos/haijun93/hwp-auto-docfit/releases/latest"
@@ -24999,7 +24999,7 @@ class HwpAutoDocFitGUI:
             self.stage_board.activate(단계)
 
     def 파일포맷_변경_시작(self, target_format="hwpx"):
-        """kordoc 지원 문서는 HWPX로, HWPX는 한/글 COM으로 PDF로 변환한다."""
+        """HWPX→PDF는 한/글 내장 저장, 그 외 변환은 필요한 문서 엔진을 사용한다."""
         from docfit_core.file_conversion import (
             convert_to_pandoc_format, convert_to_pdf, output_path_for,
         )
@@ -25035,10 +25035,8 @@ class HwpAutoDocFitGUI:
                     pythoncom.CoInitialize()
                     com_initialized = True
                     app = 한글_COM_인스턴스_생성(독립=True)
-                    try:
-                        app.RegisterModule(REGISTER_MODULE_NAME, REGISTER_MODULE_VALUE)
-                    except Exception:
-                        pass
+                    if app.RegisterModule(REGISTER_MODULE_NAME, REGISTER_MODULE_VALUE) is False:
+                        raise RuntimeError("앱에 포함된 한/글 보안 모듈을 등록하지 못했습니다.")
                     try:
                         app.Visible = False
                     except Exception:
@@ -25062,7 +25060,7 @@ class HwpAutoDocFitGUI:
                         failures += 1
                         if app is not None:
                             try:
-                                app.Run("FileClose")
+                                app.Clear(1)
                             except Exception:
                                 pass
                         gui_queue.put(("document_error", str(source), str(exc)))
@@ -25076,6 +25074,7 @@ class HwpAutoDocFitGUI:
             finally:
                 if app is not None:
                     try:
+                        app.Clear(1)
                         app.Quit()
                     except Exception:
                         pass
