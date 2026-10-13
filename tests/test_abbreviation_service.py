@@ -136,7 +136,10 @@ class AbbreviationServiceTests(unittest.TestCase):
             result = response(lambda: self.service.set_defaults(False))
         self.assertEqual(result["error"]["code"], "SETTINGS_WRITE_FAILED")
         self.assertEqual(self.path.read_bytes(), original)
-        self.assertEqual(list(self.path.parent.iterdir()), [self.path])
+        # The persistent process-lock sidecar must remain: unlinking a locked
+        # inode would allow another writer to acquire a different lock.
+        self.assertEqual(set(self.path.parent.iterdir()),
+                         {self.path, self.path.with_name(self.path.name + '.lock')})
 
     def test_browser_api_returns_versioned_json_and_structured_job_error(self):
         gui = SimpleNamespace(root=SimpleNamespace(after=lambda _delay, callback: callback()),

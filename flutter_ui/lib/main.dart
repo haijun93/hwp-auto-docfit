@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'bridge.dart' as bridge;
 import 'core/api/abbreviation_api.dart';
 import 'features/abbreviations/abbreviation_manager.dart';
+import 'features/settings/settings_dialog.dart';
 
 export 'core/api/abbreviation_api.dart' show ApiCall;
 
@@ -147,7 +148,11 @@ class _WorkspaceState extends State<Workspace> {
 
   String get rangeLabel =>
       rangeOn ? '${rangeStart.text.trim()}~${rangeEnd.text.trim()}쪽' : '문서 전체';
-  bool get canStart => !locked && files.isNotEmpty && rangeError == null;
+  bool get canStart =>
+      !locked &&
+      state['engine_ready'] != false &&
+      files.isNotEmpty &&
+      rangeError == null;
 
   @override
   void initState() {
@@ -361,7 +366,9 @@ class _WorkspaceState extends State<Workspace> {
                                 leading: const Icon(Icons.wifi_off_rounded),
                                 title: Text(error!),
                                 trailing: IconButton(
-                                  onPressed: refresh,
+                                  onPressed: state['native_backend'] == true
+                                      ? () => command('restart_backend')
+                                      : refresh,
                                   tooltip: '다시 연결',
                                   icon: const Icon(Icons.refresh),
                                 ),
@@ -2335,7 +2342,15 @@ class _WorkspaceState extends State<Workspace> {
                   style: TextStyle(fontSize: 12, color: _muted),
                 ),
                 trailing: const Icon(Icons.open_in_new, size: 18),
-                onTap: locked ? null : () => command('open_settings'),
+                onTap: locked
+                    ? null
+                    : () async {
+                        final saved = await showDialog<bool>(
+                            context: context,
+                            barrierDismissible: false,
+                            builder: (_) => SettingsDialog(api: widget.api));
+                        if (saved == true) await refresh();
+                      },
               ),
               ListTile(
                 contentPadding: EdgeInsets.zero,

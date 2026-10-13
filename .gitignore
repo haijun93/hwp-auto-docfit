@@ -16,3 +16,5 @@ flutter_ui/.dart_tool/
 flutter_ui/.flutter-plugins*
 desktop_web/flutter/
 scratch/
+
+dist-native*/

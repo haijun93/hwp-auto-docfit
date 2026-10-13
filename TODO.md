@@ -1563,3 +1563,10 @@ Tk `Text` 위젯 두 칸(아웃라인 입력 / 공문서 개조식 미리보기)
 - [x] 최종 전체 997시험: 994통과, 실패/오류 0, 기존 skip 3.
 - [ ] Windows 실문서에서 새 의미단위·설정·COM 저장 및 EXE 검증.
 - [ ] 전체 Flutter 잔여 화면/서비스·진행 이벤트 및 실제 코퍼스 성능 측정.
+
+## [진행] Flutter Windows 네이티브 전환
+
+상태와 완료 조건: [네이티브 단계별 계획](docs/FLUTTER_NATIVE_MIGRATION_PLAN.md). 독립 백엔드·IPC·설정 화면을 구현했으며 COM 연결과 Windows 실기기 검증은 남아 있다.
+
+- [x] Alpha 6 전체 Python 1,011시험 실패·오류 0, 기존 skip 3. Flutter 28시험·정적 검사·웹 Release 통과.
+- [x] 백엔드 강제 종료 후 명시적 재시작·설정 보존 통합 시험.

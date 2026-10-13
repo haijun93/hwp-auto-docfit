@@ -15,7 +15,7 @@
 
 설치 없이 실행 파일 하나로 시작합니다 · [v1.74 Beta 1 변경 사항](releases/v1.74-beta.1.md) · [GitHub 저장소](https://github.com/haijun93/hwp-auto-docfit) · [GitLab 저장소](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
 
-개발 중인 **1.74 Alpha 5**는 숫자·본문 보존, 공통 원자 설정 저장, ZIP 입력 제한·최적화, 직함·이름 의미단위를 보완합니다.
+이전 **1.74 Alpha 5**는 숫자·본문 보존, 공통 원자 설정 저장, ZIP 입력 제한·최적화, 직함·이름 의미단위를 보완합니다.
 [알파 변경 사항](releases/v1.74-alpha.5.md) · [전환 현황](docs/FLUTTER_MIGRATION_AUDIT.md) · [시험 보고서](docs/FLUTTER_TEST_REPORT.md).
 공개 베타 표기는 그대로이며, 전체 UI 전환과 Windows 실문서 검증은 진행 중입니다.
 
@@ -806,3 +806,5 @@ PC를 옮길 때는 앱을 종료하고 이 폴더를 백업하세요. **서식 
 
 이 프로그램의 소스 코드는 **MIT 라이선스**를 따릅니다([LICENSE](LICENSE)).
 Copyright (c) 2026 haijun93 (마포구청 공혁준). 함께 쓰는 외부 구성 요소는 위 표와 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)의 각 라이선스를 따릅니다.
+
+개발판 **1.74 Alpha 6**는 전체 설정 Flutter 화면과 Windows 네이티브 시제품 기반을 추가했습니다. 독립 Python 백엔드·인증 IPC·문서 입력 및 HWPX 분석을 구현했으며 실제 HWP 처리 엔진 연결과 Windows 검증은 남아 있습니다. [전환 현황](docs/FLUTTER_NATIVE_AUDIT.md)을 확인하세요.

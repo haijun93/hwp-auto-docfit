@@ -1,3 +1,5 @@
+> 2026-10-13 Alpha 6 갱신: 전체 설정은 스키마 기반 Flutter 화면으로 이전했다. 아래 기록은 이전 단계의 결과다. 최신 네이티브 범위와 미완료 항목은 [네이티브 계획](FLUTTER_NATIVE_MIGRATION_PLAN.md), [시험 기록](FLUTTER_NATIVE_TEST_REPORT.md)을 기준으로 한다.
+
 # 1.74 알파 안정화 및 Flutter 전환 계획
 
 기준일 2026-10-13. 기존 alpha 이력을 보존하고 Alpha 3에서 진행한다. 공개 베타는 1.74 Beta 1이다. 사용자 확인에 따라 Flutter UI 제거 및 MCP 테스트 기능 확대·자동 활성화는 제외한다.

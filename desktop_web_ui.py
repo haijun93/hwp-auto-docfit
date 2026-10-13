@@ -15,6 +15,7 @@ from types import SimpleNamespace
 from docfit_core.progress_guide import guide_state
 from docfit_core.stage_selection import STAGE_EXAMPLES, default_choice, stages_for_mode
 from docfit_app.api_contract import response
+from docfit_app.app_state import STAGE_ORDER
 
 # 화면에서 바로 켜고 끄는 공통 설정(이름 → 앱의 Tk 변수 속성). 값을 바꾸면 앱이 설정 파일에 저장한다.
 def _format_coverage(analysis):
@@ -476,6 +477,20 @@ class DesktopWebBridge:
         self._tk(self.gui.작업중단)
         return self.get_state()
 
+    def _configuration(self):
+        from docfit_app.configuration_service import ConfigurationService
+        return ConfigurationService(self.gui._준말_서비스().settings)
+
+    def get_settings(self):
+        return self._tk(lambda: response(lambda: self._configuration().snapshot(running=self.gui.running)))
+
+    def save_settings(self, values, revision):
+        def save():
+            self._configuration().save(values, revision, running=self.gui.running)
+            self.gui._Flutter설정_반영(values)
+            return self._configuration().snapshot(running=self.gui.running)
+        return self._tk(lambda: response(save))
+
     def open_settings(self):
         self._tk(self.gui.설정창_열기, timeout=None, front=True)
         return True
@@ -809,7 +824,7 @@ class _BrowserApi:
         for name in (
             "get_state", "add_files", "add_folder", "add_paths", "remove_file",
             "clear_files", "set_mode", "set_range", "start", "stop",
-            "open_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
+            "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
             "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults",
             "open_results", "next_job", "run_tool", "open_result",
             "show_result", "set_stage", "reset_stages", "set_stage_default",
@@ -979,4 +994,3 @@ def run_webview(gui):
 APP_VERSION = ""
 APP_NAME = ""
 APP_ICON = ""
-STAGE_ORDER = ("열기", "서식", "자간", "줄 병합", "페이지 배치", "저장")

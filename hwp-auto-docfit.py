@@ -381,7 +381,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리"
-APP_VERSION = "1.74 Alpha 5"
+APP_VERSION = "1.74 Alpha 6"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 GITHUB_UPDATE_API_URL = "https://api.github.com/repos/haijun93/hwp-auto-docfit/releases/latest"
@@ -1241,120 +1241,8 @@ def 번들_리소스_폴더():
 
 설정_파일명 = "settings.json"
 
-기본_설정 = {
-    "prevent_word_split": True,
-    # 장평 줄이기(가로 비율 축소)는 기본으로 끈다(2026-10-10 사용자 규칙). 끄면 자간 줄이기·늘리기만으로 조정한다.
-    "ratio_shrink": False,
-    "punctuation": True,
-    "punctuation_threshold": "5",
-    "keep_punctuation_set_together": True,
-    "color_mark_on": False,
-    "color": "blue",
-    "autoclose": False,
-    "stdformat": True,
-    "verify": False,
-    # 기록 탭의 보고서 파일 생성 옵션. 상세 진단 자체는 verify가 제어한다.
-    "integrity_report_file": False,
-    "final_review_file": False,
-    # 작업로그·무결성검사 JSON·최종검수 JSON은 사용자가 켜기 전까지 꺼 둔다(판 2부터).
-    "report_files_rev": 2,
-    "two_pass_processing": False,
-    "retry_body": "15",
-    "retry_table": "5",
-    "linespacing_min": "160",
-    "linespacing_max": "200",
-    # 문두 라벨 굵게에서 뺄 기호(False). 별표(*, **)는 2026-10-03부터 기본으로 뺀다.
-    "label_symbols": {"□": False, "※": False, "*": False, "**": False},
-    # 설정 파일 판: 2 = 별표(*, **) 라벨 굵게 기본값 끔을 반영한 설정(예전 파일은 불러올 때 한 번 끈다)
-    "label_symbols_rev": 2,
-    "paren_shrink": True,
-    "paren_label_bold": True,
-    "std_margin": True,
-    "std_ratio": True,
-    "std_linespacing": True,
-    "std_title": True,
-    "std_title_auto": True,
-    "std_attachment_auto": True,
-    "std_midtitle_auto": True,
-    "std_midtitle_bold": True,
-    "abbreviations": {},
-    "abbreviation_defaults": True,
-    "std_title_bold": True,
-    "std_dateinfo": True,
-    "std_dateinfo_bold": True,
-    "std_symbols": True,
-    "std_hanging_indent": True,
-    "std_supplement_indent": True,
-    "std_symbol_box_bold": False,
-    "std_symbol_o_bold": True,
-    "std_symbol_dash_bold": False,
-    "std_symbol_note_bold": False,
-    # 같은 항목기호의 라벨이 굵게 되면 다른 문단의 머리말도 굵게 맞춤
-    "std_marker_bold_consistency": True,
-    "std_parspace": True,
-    # 항목기호 문장 사이에 빈 줄로 띄운 간격 삭제(문단 위 여백으로 대신함)
-    "std_remove_blank_lines": True,
-    "std_parspace_chapter": "15",
-    "std_parspace_midtitle": "15",
-    "std_parspace_box": "15",
-    "std_parspace_circle": "8",
-    "std_parspace_dash": "4",
-    "std_parspace_note": "0",
-    # 설정 파일 판: 2 = 문단 위 여백 기본값 15/15/15/8/4/0pt(예전 기본값 20/15/15/10/3을 그대로 쓰던 파일은 새 값으로)
-    "std_parspace_rev": 2,
-    "std_supplement_rev": 2,
-    "std_parspace_return_percent": "150",
-    # 제목 서식 부제(제목 글의 첫 쉼표 앞 글) 글자 크기 pt
-    "std_title_subtitle_pt": "15",
-    # 새로 만드는 제목 서식 표의 담당자 칸(2×2 표 B2, 2행1열 표 A2) 글. 비우면 기준 표의 글을 그대로 둔다.
-    "title_owner_text": "",
-    "std_table_header": True,
-    "active_format_profile": "",
-    "review_document_kind": "보고서",
-    "review_reading_purpose": "상세 설명용",
-    "symbol_fonts": {
-        "□": {"font": "HY견고딕", "size": "17"},
-        "ㅇ": {"font": "한컴돋움", "size": "15"},
-        "-": {"font": "휴먼명조", "size": "14"},
-        "※": {"font": "한컴돋움", "size": "13"},
-        # *(대표 기호, **는 *로 합침)의 기본값은 ※와 동일하다.
-        "*": {"font": "한컴돋움", "size": "13"},
-        "•": {"font": "한컴돋움", "size": "13"},
-    },
-    # 표 머리글(첫 행)·본문(나머지 행) 글꼴·크기. 문장기호별 글꼴처럼 서식
-    # 프로파일보다 우선하는 개인 설정이다.
-    "table_fonts": {
-        "header": {"font": "한컴돋움", "size": "13"},
-        "body": {"font": "휴먼명조", "size": "12"},
-    },
-    "hwp_font_folder": "",
-    "paste_add_folder": "",
-    "always_on_top": True,
-    "check_updates_on_start": True,
-    "table_spacing": True,
-    "log_file": False,
-    # 개발자 모드: 켜야 문서 도구(문서 구조 검토·맞춤법·작성 도우미·Markdown·고급 문서 도구 등) 메뉴가 보인다.
-    "developer_mode": False,
-    # '한 번에 적용' 카드의 '자간 조정 포함'. 끄면 기존 자간을 두고 서식만 입히는 서식 적용(format)으로 실행한다.
-    "all_include_spacing": True,
-    # 한 번에 적용의 '표 제외': 켜면 표 관련 세부 작업을 모두 빼고 표 칸 안 문장도 자간 작업에서 뺀다.
-    "all_exclude_tables": False,
-    # 한 번에 적용의 '페이지 맞춤 제외': 켜면 문단 아래 간격 페이지 맞춤·관련 문단 페이지 배치를 뺀다.
-    "all_exclude_pagefit": False,
-    # 서식 통일 카드의 '표 제외'·'자간 정리 제외'·'페이지 맞춤 제외'. 세부 작업과 연동되며, 서식 통일의 쪽 맞춤은
-    # 세부 작업 기본값이 꺼짐이라 '페이지 맞춤 제외'만 기본 켜짐이다.
-    "unify_exclude_tables": False,
-    "unify_exclude_spacing": False,
-    "unify_exclude_pagefit": True,
-    # 서식 통일 카드의 '원본 쪽 구성 유지'(세부 작업 page_layout_keep과 연동, 기본 켬).
-    "unify_keep_layout": True,
-    # 서식 통일 카드의 '전체 서식 맞추기'(세부 작업 unify_full_format과 연동, 기본 끔 = 글꼴·크기만 맞춤).
-    "unify_full_format": False,
-    # 서식통일 뒤 '작업 결과 확인' 창(서식통일 5/5)을 띄울지. 기본 꺼짐(2026-10-04 사용자 요청).
-    "unify_result_window": False,
-    # '자간 정리' 카드의 '기존 자간 초기화'(세부 작업 01과 같은 값). None이면 저장된 세부 작업 구성을 따른다.
-    "spacing_reset_existing": None,
-}
+from docfit_app.settings_schema import DEFAULTS as _설정_기본값
+기본_설정 = copy.deepcopy(_설정_기본값)
 
 
 # 첨부 버전의 서식값을 기본 서식으로 고정한다.
@@ -5041,51 +4929,11 @@ def 설정_불러오기():
                 설정["stage_choices"] = 저장된값["stage_choices"]
             설정["abbreviations"] = 준말_등록표_정리(저장된값.get("abbreviations"))
             설정["abbreviation_defaults"] = bool(저장된값.get("abbreviation_defaults", True))
-            # 예전 설정 파일은 별표(*, **) 문두 라벨 굵게가 켜진 채 저장돼 있다. 기본값을 끔으로 바꾼 뒤 한 번만
-            # 끄고(판 2로 저장된 뒤에는 사용자가 다시 켠 값을 그대로 둔다).
-            try:
-                판 = int(저장된값.get("label_symbols_rev", 1) or 1)
-            except (TypeError, ValueError):
-                판 = 1
-            if 판 < 2 and isinstance(설정.get("label_symbols"), dict):
-                설정["label_symbols"] = {**설정["label_symbols"], "*": False, "**": False}
-            설정["label_symbols_rev"] = 2
-            # 예전 설정 파일은 기본값이던 '켜짐'이 그대로 저장돼 있다. 사용자가 켠 값과 구별할 수 없으므로 한 번만
-            # 작업로그·무결성검사 JSON·최종검수 JSON을 끄고(판 2로 저장된 뒤에는 사용자가 다시 켠 값을 그대로 둔다).
-            try:
-                보고판 = int(저장된값.get("report_files_rev", 1) or 1)
-            except (TypeError, ValueError):
-                보고판 = 1
-            if 보고판 < 2:
-                설정["log_file"] = False
-                설정["integrity_report_file"] = False
-                설정["final_review_file"] = False
-            설정["report_files_rev"] = 2
-            # 문단 위 여백을 예전 기본값 그대로 쓰던(사용자가 바꾸지 않은) 설정은 새 계층별 기본값으로 바꾼다.
-            try:
-                간격판 = int(저장된값.get("std_parspace_rev", 1) or 1)
-            except (TypeError, ValueError):
-                간격판 = 1
-            if 간격판 < 2:
-                예전값 = {"std_parspace_chapter": "20", "std_parspace_midtitle": "15", "std_parspace_box": "15",
-                        "std_parspace_circle": "10", "std_parspace_note": "3"}
-                if all(str(설정.get(키, 값)).strip() == 값 for 키, 값 in 예전값.items()):
-                    for 키 in (*예전값, "std_parspace_dash"):
-                        설정[키] = 기본_설정[키]
-            설정["std_parspace_rev"] = 2
-            # 부연설명 앞 빈칸 규칙(Beta 8)은 '부연설명 들여쓰기' 단계로 적용된다. 예전 설정 파일에 꺼진 채
-            # 저장된 값은 한 번만 켠다(판 2로 저장된 뒤에는 사용자가 끈 값을 그대로 둔다).
-            try:
-                부연판 = int(저장된값.get("std_supplement_rev", 1) or 1)
-            except (TypeError, ValueError):
-                부연판 = 1
-            if 부연판 < 2:
-                설정["std_supplement_indent"] = True
-            설정["std_supplement_rev"] = 2
-            # 예전 기본값의 글꼴 이름 오타('한컴돋음' → '한컴돋움', 항목기호 • 기본 글꼴)를 바로잡는다.
-            for 항목 in (설정.get("symbol_fonts") or {}).values():
-                if isinstance(항목, dict) and 항목.get("font") == "한컴돋음":
-                    항목["font"] = "한컴돋움"
+            from docfit_app.settings_migrations import migrate
+            migrated = migrate(저장된값)
+            for key in 기본_설정:
+                if key not in ('abbreviations', 'abbreviation_defaults') and key in migrated:
+                    설정[key] = migrated[key]
     except Exception as e:
         if _콘솔_출력_가능:
             print(f"설정 불러오기 실패(기본값 사용): {e}")
@@ -24407,7 +24255,45 @@ class HwpAutoDocFitGUI:
         for key, var in getattr(self, "indent_stage_vars", {}).items():
             var.set(self.stage_choices["format"].get(key, True))
 
+    def _Flutter설정_반영(self, values):
+        from docfit_app.settings_schema import VARIABLE_BINDINGS
+        self._설정_반영중 = True
+        previous_mode = self.selected_mode.get()
+        try:
+            for key, value in values.items():
+                parts = key.split('.')
+                root = parts[0]
+                if len(parts) == 3 and root in ('symbol_fonts', 'table_fonts'):
+                    group = self.symbol_font_vars if root == 'symbol_fonts' else self.table_font_vars
+                    variable = group.get(parts[1], {}).get(parts[2])
+                elif len(parts) == 2 and root == 'label_symbols':
+                    variable = self.label_symbol_vars.get(parts[1])
+                else:
+                    variable = getattr(self, VARIABLE_BINDINGS.get(root, ''), None)
+                    if variable is None:
+                        variable = self.std_bool_vars.get(root, self.std_parspace_vars.get(root))
+                if root == 'unify_full_format':
+                    self.unify_quick_mode_var.set(not bool(value))
+                elif variable is not None:
+                    variable.set(value)
+                elif root in ('review_document_kind', 'review_reading_purpose'):
+                    setattr(self, root, value)
+                if root == 'spacing_reset_existing':
+                    self.stage_choices['spacing']['reset_spacing'] = bool(value)
+                    self.reset_spacing_var.set(bool(value))
+            self.selected_mode.set(self._한번에_모드() if previous_mode in ('all','format') else previous_mode)
+            self._요약갱신()
+            self._항상위_적용()
+        finally:
+            self._설정_반영중 = False
+        # Do not rewrite all settings: the service already saved only changed fields.
+        saved = 설정_불러오기()
+        기호글꼴_적용(saved)
+        표글꼴_적용(saved.get('table_fonts'))
+
     def _설정_변경됨(self, *args):
+        if getattr(self, "_설정_반영중", False):
+            return
         try:
             설정값 = {
                 "prevent_word_split": bool(self.prevent_word_split_var.get()),

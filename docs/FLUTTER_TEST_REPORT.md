@@ -1,3 +1,5 @@
+> 2026-10-13 Alpha 6 갱신: 전체 설정은 스키마 기반 Flutter 화면으로 이전했다. 아래 기록은 이전 단계의 결과다. 최신 네이티브 범위와 미완료 항목은 [네이티브 계획](FLUTTER_NATIVE_MIGRATION_PLAN.md), [시험 기록](FLUTTER_NATIVE_TEST_REPORT.md)을 기준으로 한다.
+
 # Flutter 전환·1.74 Alpha 3 안정화 시험 보고서
 
 2026-10-13. Linux 클라우드, Python 3.12.14, Flutter 3.47.5, Dart 3.13.4. 시작 alpha는 `4e1c391`, 비교 베타는 `016b6be`다. 사용자 문서 원본은 처리하지 않았다. 테스트는 임시 설정 파일/합성 HWPX/모의 API를 사용한다.

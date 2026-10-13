@@ -9,6 +9,7 @@ from threading import RLock
 from weakref import WeakValueDictionary
 
 from .api_contract import ServiceError
+from docfit_infra.storage.process_lock import ProcessLock
 
 
 _PATH_LOCKS = WeakValueDictionary()
@@ -38,6 +39,15 @@ class SettingsService:
                 raise ServiceError("SETTINGS_READ_FAILED", "설정 파일을 읽지 못했습니다. 기존 파일을 확인해 주세요.") from exc
 
     def update(self, change):
+        with self._lock:
+            path = self._path
+            try:
+                with ProcessLock(path.with_name(path.name + '.lock')):
+                    return self._update(change)
+            except OSError as exc:
+                raise ServiceError('SETTINGS_WRITE_FAILED', '설정 저장 잠금을 확보하지 못했습니다. 다시 시도해 주세요.') from exc
+
+    def _update(self, change):
         with self._lock:
             settings = self.read()
             updated = deepcopy(settings)
