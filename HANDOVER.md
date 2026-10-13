@@ -7,8 +7,10 @@
 
 ## 1. 한눈에 보기
 
-2026-10-13 안정화 작업: 개발판 **1.74 Alpha 4**, 공개 베타 **1.74 Beta 1**.
+2026-10-13 안정화 작업: 개발판 **1.74 Alpha 5**, 공개 베타 **1.74 Beta 1**.
 Flutter UI를 유지하고 MCP 기능은 이번 변경에서 확대·활성화하지 않았다.
+Alpha 5는 숫자/코드/문의 본문 보존, 공통 원자 설정 저장, ZIP 입력 제한 및 직함·이름 의미단위를 보완했다.
+결과: [Alpha 5 개선 기록](docs/ALPHA5_IMPROVEMENTS_2026-10-13.md) — 최종 997시험 실패/오류 0.
 Alpha 4는 실제 Tk/TkDND·pywebview를 쓰는 Linux 시험과 플랫폼 경로 시험을 보완했다.
 GUI 시험은 실제 디스플레이/Xvfb가 필요하며 COM만 stub으로 대체한다.
 최종 결과는 [22건 해결 기록](docs/TEST_FAILURES_22_ASSESSMENT_2026-10-13.md)의 Alpha 4 절을 확인한다.

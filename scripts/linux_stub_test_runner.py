@@ -20,4 +20,19 @@ for name in ('winreg', 'pythoncom', 'win32com', 'win32com.client', 'win32gui', '
 # Tests that need registry data replace these functions explicitly.
 sys.modules['winreg'].OpenKey.side_effect = FileNotFoundError("Windows registry unavailable")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-unittest.main(module=None, argv=['x'] + sys.argv[1:])
+require_gui = '--require-gui' in sys.argv
+if require_gui:
+    sys.argv.remove('--require-gui')
+
+
+class GuiRequiredResult(unittest.TextTestResult):
+    def addSkip(self, test, reason):
+        if require_gui and any(term in reason.lower() for term in ('display', 'gui', 'tkinter', '화면')):
+            error = AssertionError(f"GUI execution required; unexpected skip: {reason}")
+            self.addFailure(test, (AssertionError, error, None))
+        else:
+            super().addSkip(test, reason)
+
+
+runner = unittest.TextTestRunner(resultclass=GuiRequiredResult)
+unittest.main(module=None, argv=['x'] + sys.argv[1:], testRunner=runner)

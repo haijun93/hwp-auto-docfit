@@ -405,7 +405,6 @@ def _mode(counter, default=None):
 def analyze_style_inventory(path) -> dict:
     """HWPX 파일에 정의·사용된 모든 스타일 요소를 분석한다."""
     path = Path(path)
-    validate_hwpx(path)
     with open_hwpx_safely(path) as z:
         header = ET.fromstring(z.read("Contents/header.xml"))
         defs = parse_header(header)
@@ -836,7 +835,6 @@ def build_style_sample(source, target, inventory: dict | None = None,
     원본 header.xml과 쪽 설정(secPr)·머리말·꼬리말은 그대로 둬 ID 참조가 유지된다.
     """
     source, target = Path(source), Path(target)
-    validate_hwpx(source)
     inventory = inventory or analyze_style_inventory(source)
     chars = inventory["definitions"]["chars"]
     with open_hwpx_safely(source) as z:

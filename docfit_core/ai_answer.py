@@ -19,7 +19,7 @@ import re
 from docfit_core.labeled_text import looks_labeled
 from docfit_core.pasted_text import (
     _BLOCKQUOTE_MARKER, _CODE_FENCE, _HR_LINE, _MARKER_GLUE, _TABLE_ROW, _TABLE_SEPARATOR, _strip_inline_markup,
-    _strip_invisible, _ESCAPED_MD_CHAR, _remove_citations_preserving_markup, _split_glued_markers,
+    _strip_invisible, _ESCAPED_MD_CHAR, _remove_citations_preserving_markup, _split_glued_markers, _outside_code,
 )
 
 TIER_MARKERS = ("□", "ㅇ", "-", "•")
@@ -70,6 +70,10 @@ def _number_shape(token: str) -> int:
 
 
 def _normalize_text(text: str) -> str:
+    return _outside_code(text, _normalize_text_plain)
+
+
+def _normalize_text_plain(text: str) -> str:
     """인용 표식·HTML 줄바꿈·글자 참조를 정리한다(긴 글에도 안전하도록 줄 단위가 아닌 전체에 한 번)."""
     text = _remove_citations_preserving_markup(text, _CITATION)
     text = _HTML_BREAK.sub("\n", text)
@@ -78,14 +82,38 @@ def _normalize_text(text: str) -> str:
 
 
 def _clean(text: str) -> str:
+    return _outside_code(text, _clean_plain, unwrap_inline=True)
+
+
+def _clean_plain(text: str) -> str:
     cleaned = _EMOJI.sub("", _strip_inline_markup(text))
     cleaned = _TASK_CHECKBOX.sub(lambda m: "[완료] " if m.group(1).strip() else "[미완료] ", cleaned)
     return re.sub(r"[ \t]{2,}", " ", cleaned).strip()
 
 
-def _heading_clean(text: str) -> str:
+def _heading_clean(text: str, context="") -> str:
     """표제 글: 앞의 번호(1. 가. Ⅰ.)는 항목기호가 대신하므로 뗀다."""
-    return _HEADING_NUMBER.sub("", _clean(text), count=1)
+    cleaned = _clean(text)
+    match = _HEADING_NUMBER.match(cleaned)
+    if match and re.fullmatch(r"\d+(?:\.\d+)+", match.group().strip()):
+        if not context or not _numbered_in_context(cleaned, context):
+            return cleaned  # Ambiguous decimal/version: preserve it.
+    return _HEADING_NUMBER.sub("", cleaned, count=1)
+
+
+def _numbered_in_context(line, text):
+    match = _NUMBERED.match(line)
+    if not match:
+        return None
+    token = match.group('number')
+    if re.fullmatch(r"\d+(?:\.\d+)+", token):
+        if re.match(r'(?:버전|금액|원(?:\s|$)|만원|억원|%|kg\b)', match.group('body')):
+            return None
+        parent = token.rsplit('.', 1)[0]
+        before = text.split(line, 1)[0]
+        if not re.search(r"(?m)^[ \t]*(?:#{1,6}[ \t]+)?(?:\*\*)?" + re.escape(parent) + r"[.)]?[ \t]+", before):
+            return None
+    return match
 
 
 def looks_like_ai_answer(text: str) -> bool:
@@ -94,17 +122,18 @@ def looks_like_ai_answer(text: str) -> bool:
     if not text.strip() or looks_labeled(text) or _ALREADY_REPORT.search(text):
         return False
     hits = {match.start() for match in _STRONG_MD.finditer(text)}
-    hits.update(match.start() for match in _NUMBERED.finditer(text))
+    hits.update(match.start() for match in _NUMBERED.finditer(text)
+                if _numbered_in_context(match.group(), text))
     hits.update(match.start() for match in re.finditer(r"^[ \t]*>[ \t]*\S|\[cite[_:\]]|oaicite", text, re.M))
     return len(hits) >= 2
 
 
-def _split_elements(text: str) -> list[dict]:
+def _split_elements(text: str, strip_chat_frame=False) -> list[dict]:
     """줄을 요소(표제·글머리·번호·굵은 줄·표·문단·참고)로 나눈다."""
     text = _normalize_text(_strip_invisible(text))
-    text = _ESCAPED_MD_CHAR.sub(r"\1", text)
+    text = _outside_code(text, lambda value: _ESCAPED_MD_CHAR.sub(r"\1", value))
     text = _LONE_BULLET.sub(r"\1• ", text)             # 화면 복사: 기호만 한 줄, 글은 다음 줄
-    text = _split_glued_markers(text)
+    text = _outside_code(text, _split_glued_markers)
     elements: list[dict] = []
     fence = False
     previous_blank = True
@@ -131,7 +160,7 @@ def _split_elements(text: str) -> list[dict]:
         stripped_line = line.strip()
         heading = _MD_HEADING.match(stripped_line)
         if heading and not quoted:
-            elements.append({"kind": "heading", "key": ("md", len(heading.group(1))), "text": _heading_clean(heading.group(2)),
+            elements.append({"kind": "heading", "key": ("md", len(heading.group(1))), "text": _heading_clean(heading.group(2), text),
                              "after_blank": previous_blank})
             previous_blank = False
             continue
@@ -152,7 +181,7 @@ def _split_elements(text: str) -> list[dict]:
             previous_blank = False
             continue
         bullet = _BULLET.match(line)
-        numbered = _NUMBERED.match(line)
+        numbered = _numbered_in_context(line, text)
         if bullet:
             elements.append({"kind": "item", "indent": len(bullet.group(1).expandtabs(4)),
                              "text": _clean(bullet.group(2)), "numbered": False})
@@ -165,10 +194,10 @@ def _split_elements(text: str) -> list[dict]:
             previous_blank = False
             continue
         bold = _BOLD_ONLY.match(stripped_line)
-        if bold:
+        if bold and not _SENTENCE_END.search(_clean(bold.group(1))):
             numbered_heading = _NUMBERED.match(bold.group(1))
             key = ("num", _number_shape(numbered_heading.group("number"))) if numbered_heading else ("bold", 0)
-            elements.append({"kind": "heading", "key": key, "text": _heading_clean(bold.group(1)).rstrip(":："),
+            elements.append({"kind": "heading", "key": key, "text": _heading_clean(bold.group(1), text).rstrip(":："),
                              "after_blank": previous_blank})
             previous_blank = False
             continue
@@ -183,7 +212,7 @@ def _split_elements(text: str) -> list[dict]:
         else:
             elements.append({"kind": "para", "text": content, "after_blank": previous_blank})
         previous_blank = False
-    return _drop_chat_frame(elements)
+    return _drop_chat_frame(elements) if strip_chat_frame else elements
 
 
 def _is_closer(element: dict) -> bool:
@@ -326,9 +355,9 @@ def apply_marker_scheme(blocks: list[dict]) -> None:
         b["marker"] = b["level"] = marker
 
 
-def parse_ai_answer(text: str) -> list[dict]:
+def parse_ai_answer(text: str, *, strip_chat_frame=False) -> list[dict]:
     """AI 답변 글을 labeled_text 블록(title·box·para·table)으로 바꾼다."""
-    elements = _split_elements(text)
+    elements = _split_elements(text, strip_chat_frame=strip_chat_frame)
     if not elements:
         return []
     _classify(elements)
@@ -458,9 +487,9 @@ def blocks_to_plain_text(blocks: list[dict]) -> str:
     return "\n".join(lines).strip()
 
 
-def ai_answer_to_labeled_text(text: str) -> str:
-    return blocks_to_labeled_text(parse_ai_answer(text))
+def ai_answer_to_labeled_text(text: str, *, strip_chat_frame=False) -> str:
+    return blocks_to_labeled_text(parse_ai_answer(text, strip_chat_frame=strip_chat_frame))
 
 
-def ai_answer_to_outline_text(text: str) -> str:
-    return blocks_to_plain_text(parse_ai_answer(text))
+def ai_answer_to_outline_text(text: str, *, strip_chat_frame=False) -> str:
+    return blocks_to_plain_text(parse_ai_answer(text, strip_chat_frame=strip_chat_frame))

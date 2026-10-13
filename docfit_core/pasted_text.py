@@ -59,6 +59,10 @@ _DATE_TEXT = re.compile(r"(?<!\d)\d{4}\.[ \t]*\d{1,2}\.[ \t]*\d{1,2}\.?(?!\d)")
 
 
 def _split_glued_markers(text: str) -> str:
+    return _outside_code(text, _split_glued_markers_plain)
+
+
+def _split_glued_markers_plain(text: str) -> str:
     """복사로 붙은 목록은 나누되 공문 날짜의 마침표/숫자는 보호한다."""
     dates = list(_DATE_TEXT.finditer(text))
     index = 0
@@ -114,7 +118,27 @@ def _unflatten_outline(text: str) -> str:
     return "\n".join(lines)
 
 
+_CODE_PROTECTED = re.compile(r"(?ms)^```[^\n]*\n.*?(?:^```[^\n]*(?:\n|$)|\Z)|`[^`\n]+`")
+
+
+def _outside_code(text, transform, *, unwrap_inline=False):
+    # Process independent spans, so literal code never enters markup/citation rules.
+    pieces = []
+    offset = 0
+    for match in _CODE_PROTECTED.finditer(text):
+        pieces.append(transform(text[offset:match.start()]))
+        code = match.group()
+        pieces.append(code[1:-1] if unwrap_inline and not code.startswith('```') else code)
+        offset = match.end()
+    pieces.append(transform(text[offset:]))
+    return ''.join(pieces)
+
+
 def _strip_invisible(text: str) -> str:
+    return _outside_code(text, _strip_invisible_plain)
+
+
+def _strip_invisible_plain(text: str) -> str:
     # 렌더링된 인용 기호가 &gt; 또는 &#62;로 복사돼도 구조 기호로 읽는다.
     text = html.unescape(text)
     text = text.translate(_INVISIBLE_MAP)
@@ -135,6 +159,10 @@ def _remove_citations_preserving_markup(text: str, pattern: re.Pattern) -> str:
 
 
 def _strip_inline_markup(line: str) -> str:
+    return _outside_code(line, _strip_inline_markup_plain, unwrap_inline=True)
+
+
+def _strip_inline_markup_plain(line: str) -> str:
     line = _remove_citations_preserving_markup(line, _CITATION_TAG)
     line = _remove_citations_preserving_markup(line, _CITATION_NUMBER)
     line = _INLINE_CODE.sub(r"\1", line)

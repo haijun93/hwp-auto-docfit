@@ -63,3 +63,7 @@ Linux 시험에서 실제 Tk/TkDND·pywebview·defusedxml을 사용하도록 변
 - Windows COM·WebView2·EXE 및 새 GitHub GUI CI 실행 결과는 확인하지 않았다.
 
 상세 수정과 한계는 [22건 해결 기록](TEST_FAILURES_22_ASSESSMENT_2026-10-13.md)을 본다. Flutter 전체 전환 완료를 의미하지 않는다.
+
+## Alpha 5 리뷰 반영
+
+최종 Linux 실제 GUI 시험 997개 중 994통과, 실패/오류 0, 기존 환경 제한 skip 3이다. `--require-gui`는 GUI skip을 실패로 처리한다. Flutter 코드는 변경하지 않았으며 Windows COM/WebView2/EXE와 전체 전환은 미완료다. 코드/설정/ZIP/의미단위 검증은 [개선 기록](ALPHA5_IMPROVEMENTS_2026-10-13.md)에 기록했다.

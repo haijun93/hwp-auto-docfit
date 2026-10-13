@@ -381,7 +381,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리"
-APP_VERSION = "1.74 Alpha 4"
+APP_VERSION = "1.74 Alpha 5"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 GITHUB_UPDATE_API_URL = "https://api.github.com/repos/haijun93/hwp-auto-docfit/releases/latest"
@@ -5093,14 +5093,11 @@ def 설정_불러오기():
 
 def 설정_저장(설정):
     try:
-        폴더 = 설정_폴더()
-        폴더.mkdir(parents=True, exist_ok=True)
-        with open(설정_파일_경로(), "w", encoding="utf-8") as f:
-            json.dump(설정, f, ensure_ascii=False, indent=2)
+        from docfit_app.settings_service import SettingsService
+        SettingsService(설정_파일_경로).update(lambda current: current.update(설정))
         return True
     except Exception as e:
-        if _콘솔_출력_가능:
-            print(f"설정 저장 실패(무시): {e}")
+        로그(f"설정 저장 실패: {e}")
         return False
 
 # ============================================================
@@ -10742,15 +10739,22 @@ _기간_단위 = re.compile(
     r"|" + _날짜_패턴 + r")|[~∼～]"
 )
 
+from docfit_core.semantic_units import STAFF_PREFIX, staff_role_name_ranges
+
+
 def 의미단위_범위(text):
-    """날짜·괄호 기간·물결표를 각각 독립된 의미 단위로 보존한다."""
+    """날짜·기간·직함:이름을 독립된 의미 단위로 보존한다."""
     result = []
     offset = 0
-    for match in _기간_단위.finditer(text):
+    protected = sorted([match.span() for match in _기간_단위.finditer(text)]
+                       + staff_role_name_ranges(text))
+    for start, end in protected:
+        if start < offset:
+            continue
         result.extend((a + offset, b + offset)
-                      for a, b in 일반_의미단위_범위(text[offset:match.start()]))
-        result.append(match.span())
-        offset = match.end()
+                      for a, b in 일반_의미단위_범위(text[offset:start]))
+        result.append((start, end))
+        offset = end
     result.extend((a + offset, b + offset)
                   for a, b in 일반_의미단위_범위(text[offset:]))
     return result
@@ -10908,11 +10912,66 @@ def _띄운날짜_어절_확장(before, after, stop_left, stop_right, 최대=3):
     return before, after
 
 
+def _직함이름_어절_확장(before, after, stop_left, stop_right):
+    original = before, after
+    word = ''.join(p[2] for p in reversed(before)) + ''.join(p[2] for p in after)
+    if stop_left is not None and not STAFF_PREFIX.fullmatch(word):
+        last = 단어모드_한글자(stop_left[0], True)
+        if word in (':', '：') or (last and last[2] in (':', '：')):
+            previous, gap = _단어모드_공백전까지(stop_left[0], True)
+            if previous:
+                before = before + [stop_left] + previous
+                if ''.join(p[2] for p in reversed(previous)) in (':', '：') and gap is not None:
+                    title, _ = _단어모드_공백전까지(gap[0], True)
+                    if title:
+                        before = before + [gap] + title
+    combined = ''.join(p[2] for p in reversed(before)) + ''.join(p[2] for p in after)
+    if STAFF_PREFIX.fullmatch(combined.strip()) or combined.strip() in (':', '：'):
+        for _ in range(2):
+            if stop_right is None:
+                break
+            following, gap = _단어모드_공백전까지(stop_right[1])
+            if not following:
+                break
+            after = after + [stop_right] + following
+            stop_right = gap
+            candidate = ''.join(p[2] for p in reversed(before)) + ''.join(p[2] for p in after)
+            if staff_role_name_ranges(candidate):
+                break
+    text = ''.join(p[2] for p in reversed(before)) + ''.join(p[2] for p in after)
+    cut = sum(len(p[2]) for p in before)
+    return (before, after) if any(a < cut < b for a, b in staff_role_name_ranges(text)) else original
+
+
 def 단어모드_분리정보(anchor):
     start, boundary = 단어모드_줄범위(anchor)
     right = 단어모드_한글자(boundary)
     if not right or not right[2]:
         return None
+    before, stop_left = _단어모드_공백전까지(boundary, True)
+    after, stop_right = _단어모드_공백전까지(boundary)
+    if before is None or after is None:
+        return None
+    staff_before, staff_after = _직함이름_어절_확장(before, after, stop_left, stop_right)
+    if 중단_요청됨():
+        return None
+    staff_parts = list(reversed(staff_before)) + staff_after
+    staff_text = ''.join(part[2] for part in staff_parts)
+    staff_cut = sum(len(part[2]) for part in staff_before)
+    for a, b in staff_role_name_ranges(staff_text):
+        if a < staff_cut < b:
+            positions = [0]
+            for part in staff_parts:
+                positions.append(positions[-1] + len(part[2]))
+            if a not in positions or b not in positions:
+                continue
+            selected = staff_parts[positions.index(a):positions.index(b)]
+            _, next_end = 단어모드_줄범위(right[1])
+            if next_end[2] <= boundary[2]:
+                return None
+            return (start, boundary, selected[0][0], selected[-1][1],
+                    sum(len(t) for p, q, t in selected if p[2] >= start[2] and q[2] <= boundary[2]),
+                    sum(len(t) for p, q, t in selected if p[2] >= boundary[2] and q[2] <= next_end[2]))
     if any(c.isspace() for c in right[2]):
         # 공백에서 줄이 바뀐 경우는 다음 어절이 '등' 또는 '숫자,'일 때만
         # 분리 후보다(실제로 묶이는지는 어절_의미단위_범위가 가린다).
@@ -10925,12 +10984,6 @@ def 단어모드_분리정보(anchor):
     if next_end[2] <= boundary[2]:
         return None
     # 공백/실제 개행/컨트롤 경계를 넘지 않는 구간의 실제 HWP 위치를 보관.
-    before, stop_left = _단어모드_공백전까지(boundary, True)
-    if before is None:
-        return None
-    after, stop_right = _단어모드_공백전까지(boundary)
-    if after is None:
-        return None
     if not before and not after:
         return None
     # 경계가 걸친 어절이 '등'·'숫자,' 어절이면 공백 앞 어절까지 묶는다.
@@ -11004,6 +11057,7 @@ def 붙임의미단위_줄분리인가():
         단어모드_범위선택(info[2], info[3])
         text = 현재선택영역_텍스트()
         return (bool(_기간_단위.search(text))
+                or bool(staff_role_name_ranges(text))
                 or any(ch in _단어_붙임표시 or ch in '(（' for ch in text)
                 or any(앞어절_묶음_후속인가(word) for word in text.split(' ')[1:]))
     finally:

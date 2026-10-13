@@ -6,14 +6,22 @@ import os
 from pathlib import Path
 import tempfile
 from threading import RLock
+from weakref import WeakValueDictionary
 
 from .api_contract import ServiceError
 
 
+_PATH_LOCKS = WeakValueDictionary()
+_PATH_LOCKS_GUARD = RLock()
+
+
 class SettingsService:
     def __init__(self, path):
-        self._path = path
-        self._lock = RLock()
+        resolved = Path(path() if callable(path) else path).resolve()
+        self._path = resolved
+        key = os.path.normcase(str(resolved))
+        with _PATH_LOCKS_GUARD:
+            self._lock = _PATH_LOCKS.setdefault(key, RLock())
 
     def read(self):
         with self._lock:
