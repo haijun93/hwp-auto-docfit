@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'bridge.dart' as bridge;
 import 'core/api/abbreviation_api.dart';
 import 'features/abbreviations/abbreviation_manager.dart';
+import 'features/diagrams/diagram_editor_screen.dart';
 import 'features/settings/settings_dialog.dart';
 
 export 'core/api/abbreviation_api.dart' show ApiCall;
@@ -258,6 +259,25 @@ class _WorkspaceState extends State<Workspace> {
     if (mounted && running) setState(() => tab = 2);
   }
 
+  Future<void> openDiagramEditor() async {
+    if (quickOptions['developer_mode'] != true ||
+        quickOptions['diagram_editor_enabled'] != true) return;
+    try {
+      await widget.api('diagram_list', const []); // Python 서비스에서 기능 플래그를 재검사한다.
+      if (!mounted) return;
+      await Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => DiagramEditorScreen(api: widget.api),
+      ));
+      await refresh();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('도형 편집기를 열지 못했어요: $e')),
+        );
+      }
+    }
+  }
+
   /// Ctrl+Enter: 문서 선택 화면에서는 다음 단계로, 작업 방식 화면에서는 바로 시작한다.
   void primaryShortcut() {
     if (tab == 0 && !locked && files.isNotEmpty) {
@@ -462,8 +482,19 @@ class _WorkspaceState extends State<Workspace> {
               tooltip: '문서 도구',
               enabled: !locked,
               icon: const Icon(Icons.handyman_outlined),
-              onSelected: (v) => command('run_tool', [v]),
-              itemBuilder: (_) => const [
+              onSelected: (v) {
+                if (v == 'diagram_editor') {
+                  openDiagramEditor();
+                } else {
+                  command('run_tool', [v]);
+                }
+              },
+              itemBuilder: (_) => [
+                if (quickOptions['diagram_editor_enabled'] == true)
+                  const PopupMenuItem(
+                    value: 'diagram_editor',
+                    child: Text('도형·업무 흐름도 편집기'),
+                  ),
                 PopupMenuItem(value: 'review', child: Text('문서 검토')),
                 PopupMenuItem(value: 'proofread', child: Text('공공언어 교정')),
                 PopupMenuItem(value: 'outline', child: Text('문서 구조 편집')),

@@ -32,7 +32,7 @@ LABELS = {
  'review_reading_purpose':'검토 목적', 'symbol_fonts':'항목기호 글꼴', 'table_fonts':'표 글꼴',
  'hwp_font_folder':'한글 글꼴 폴더', 'paste_add_folder':'붙여넣기 문서 저장 폴더', 'always_on_top':'항상 위에 표시',
  'check_updates_on_start':'시작할 때 업데이트 확인', 'table_spacing':'표 안 자간 정리', 'log_file':'작업 로그 파일 저장',
- 'developer_mode':'문서 도구 표시', 'all_include_spacing':'한 번에 적용: 자간 포함',
+ 'developer_mode':'문서 도구 표시', 'diagram_editor_enabled':'tldraw 도형 편집기 사용', 'all_include_spacing':'한 번에 적용: 자간 포함',
  'all_exclude_tables':'한 번에 적용: 표 제외', 'all_exclude_pagefit':'한 번에 적용: 페이지 맞춤 제외',
  'unify_exclude_tables':'서식 통일: 표 제외', 'unify_exclude_spacing':'서식 통일: 자간 제외',
  'unify_exclude_pagefit':'서식 통일: 페이지 맞춤 제외', 'unify_keep_layout':'서식 통일: 원본 쪽 구성 유지',
@@ -67,6 +67,7 @@ def fields():
         result.append({'key':key, 'label':label, 'type':'boolean' if isinstance(default,bool) or default is None
                        else 'number' if numeric else 'text', 'default':True if default is None else default,
                        'group':'글꼴' if root in {'symbol_fonts','table_fonts'} else
+                       '개발자 도구' if root in {'developer_mode','diagram_editor_enabled'} else
                        '표준서식' if root.startswith('std_') or root in {'label_symbols','title_owner_text'} else '작업·프로그램'})
     return result
 

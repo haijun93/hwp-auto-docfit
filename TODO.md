@@ -1,5 +1,23 @@
 # 작업 예정 목록
 
+## [진행 중·alpha] tldraw 업무 흐름도 편집기
+
+- [x] 개발자 모드 + 별도 OFF 기능 플래그로 Flutter 네이티브 화면과 Python 서비스 양쪽 접근 차단.
+- [x] 로컬 bundle/WebView2, JSON snapshot 저장·열기·삭제, PNG 내보내기, 공공업무 흐름 예시 10종.
+- [ ] Node 22.12+·Flutter 3.47.5 Windows CI와 WebView2 실기기에서 빌드·메시지·한국어 폰트·PNG를 검증한다.
+- [ ] tldraw SDK의 제품 사용권 조건을 확인한다. 허가 전에는 정식·베타 릴리스에 포함하지 않는다.
+- [ ] 미리보기/검색/즐겨찾기/사용자 템플릿, 편집기 단위/E2E 테스트를 추가한다.
+- [ ] 한/글 2020 COM의 안전한 PNG 삽입·결과 검수·재편집 개체 식별을 사본 문서로 검증하고 별도 설계대로 구현한다.
+- [ ] HWP 삽입/재편집은 미구현이며 기존 문서 처리 엔진은 이번 단계에서 수정하지 않았다.
+- 근거: `docs/TLDRAW_FEATURE_AUDIT.md`, `docs/TLDRAW_ARCHITECTURE.md`, `docs/TLDRAW_TEMPLATE_SPEC.md`, `docs/TLDRAW_HWP_INSERTION.md`, `docs/TLDRAW_TEST_REPORT.md`.
+
+## [검토 반영·alpha] 소스코드 재구조화
+
+- [x] Alpha 6 기준 계층/IPC/성능 병목 검토 보고서를 현행화했다.
+- [ ] IPC 동기 호출에 job_id/취소/진행 이벤트를 설계하고, Flutter 네이티브 UI에 실제 문서 처리 엔진을 연결한다.
+- [ ] `main.dart`와 `hwp-auto-docfit.py`를 기능별로 점진 분리한다. 기존 COM·문서 정확도 회귀를 우선한다.
+- 근거: `docs/CODE_RESTRUCTURING_REVIEW_ALPHA6_2026-10-13.md`.
+
 지금 당장 진행하지 않고 미뤄둔 기능 요청을 적어둔다. "나중에 작업해"라고
 명시적으로 요구받으면 그때 해당 항목을 꺼내 구현한다.
 

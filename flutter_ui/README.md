@@ -28,3 +28,15 @@ Linux 클라우드에서도 Web 검증은 가능합니다. SDK는 Windows CI와 
 `ANALYZER_STATE_LOCATION_OVERRIDE`를 쓰기 가능한 경로로 지정합니다.
 `dart --suppress-analytics format lib test`로 분석 데이터 디렉터리 쓰기 없이 포맷할 수 있습니다.
 Windows 네이티브 EXE·WebView2·HWP COM 동작은 Windows+한/글 2020에서 별도 검증합니다.
+
+## tldraw 업무 흐름도 편집기 (alpha 개발 전용)
+
+`developer_mode`와 `diagram_editor_enabled`를 모두 켠 네이티브 Flutter Windows 앱에서만 메뉴가 보입니다.
+루트에서 `build_native.ps1`을 실행하면 Node.js 22.12+, npm lockfile의 React/tldraw 번들,
+Flutter 3.47.5 및 Windows WebView2 runner를 함께 검사·빌드합니다. 편집기 JS/CSS/폰트는 로컬 Flutter asset에 포함됩니다.
+10개 업무 예시를 편집하고 JSON을 `%APPDATA%\HwpAutoDocFit\diagrams`에 저장하거나 PNG를 내보낼 수 있습니다.
+
+이것은 **기술 시제품**입니다. HWP/HWPX 삽입과 재편집은 아직 구현하지 않았습니다.
+tldraw SDK는 MIT 라이선스가 아니며 정식/베타/일반 사용자 배포에는 별도 사용권이 필요합니다.
+사용권 승인 및 Windows 실기기 검증 전에는 배포 빌드에서 이 기능을 활성화하지 않습니다.
+[현재 구조·라이선스 감사](../docs/TLDRAW_FEATURE_AUDIT.md) · [HWP 삽입 후속 설계](../docs/TLDRAW_HWP_INSERTION.md)

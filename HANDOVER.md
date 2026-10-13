@@ -24,6 +24,8 @@ MCP 출력 경쟁 조건·예약 장치 이름, HWPX 중복 ZIP 항목을 보완
 `docfit_app`은 UI 독립 서비스이며 기존 문서 처리/COM 파이프라인은 재작성하지 않았다.
 EXE 빌드는 Flutter 검사·자산 검증 실패 시 중단한다. 런타임 비상 Tk 경로는 유지한다.
 
+2026-10-13 후속 작업: GitHub `alpha` 8b83fc8까지의 커밋을 검토한 뒤, 최신 alpha에 tldraw 개발 시제품을 추가하는 중이다. 기존 alpha worktree의 미추적 `scripts/benchmark_paragraph_bundle.py`는 그대로 보존한다. 편집기는 개발자 모드와 `diagram_editor_enabled`가 둘 다 켜져야 하며, SDK의 제품 사용권을 확인하기 전에는 배포 금지다. Node 22.12+와 Windows Flutter/WebView2 시험은 아직 필요하고, 한/글 COM 삽입은 미구현이다. [tldraw 시험 보고서](docs/TLDRAW_TEST_REPORT.md), [구조 재검토](docs/CODE_RESTRUCTURING_REVIEW_ALPHA6_2026-10-13.md)를 확인한다.
+
 | 항목 | 현재 값 |
 |---|---|
 | 제품 | 한/글 2020 문서(HWP/HWPX)를 공문서 규칙에 맞게 자동 후처리하는 Windows 데스크톱 앱(Python·Tkinter 백엔드 + pywebview/WebView2 UI) |

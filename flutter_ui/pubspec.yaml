@@ -3,11 +3,12 @@ description: HWP AutoDocFit alpha desktop interface
 publish_to: none
 version: 1.0.0+1
 environment:
-  sdk: '>=3.6.0 <4.0.0'
+  sdk: '>=3.12.0 <4.0.0'
 dependencies:
   file_selector: ^1.1.0
   flutter:
     sdk: flutter
+  webview_flutter_windows: 1.2.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -18,3 +19,5 @@ flutter:
     - family: NotoSansKR
       fonts:
         - asset: assets/NotoSansKR.ttf
+  assets:
+    - assets/diagram_editor/

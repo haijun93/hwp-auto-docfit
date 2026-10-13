@@ -18,3 +18,4 @@ desktop_web/flutter/
 scratch/
 
 dist-native*/
+node_modules/

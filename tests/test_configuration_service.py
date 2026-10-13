@@ -20,6 +20,9 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(result['values']['retry_body'],'7')
         self.assertEqual(self.store.read()['symbol_fonts']['□']['size'],'18')
         self.assertEqual(result['values']['symbol_fonts.□.font'],'HY견고딕')
+        self.assertFalse(snapshot['values']['diagram_editor_enabled'])
+        self.service.save({'diagram_editor_enabled':True},self.service.snapshot()['revision'])
+        self.assertTrue(self.service.snapshot()['values']['diagram_editor_enabled'])
 
     def test_other_settings_preserved_and_stale_draft_rejected(self):
         self.store.update(lambda data:data.update({'custom':42,'abbreviations':{'요약':{'type':'text','value':'문구'}}}))

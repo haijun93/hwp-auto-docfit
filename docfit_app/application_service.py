@@ -8,6 +8,7 @@ from docfit_app.api_contract import ServiceError, response
 from docfit_app.configuration_service import ConfigurationService
 from docfit_app.settings_service import SettingsService
 from docfit_app.settings_schema import DEFAULTS
+from docfit_app.diagram_service import DiagramService
 from docfit_app.settings_migrations import migrate
 from docfit_core.hwpx import validate_and_inspect_hwpx
 from docfit_app.app_state import STAGE_ORDER, AppState
@@ -19,6 +20,7 @@ class ApplicationService:
         self.store = SettingsService(settings_path)
         self.configuration = ConfigurationService(self.store)
         self.abbreviations = AbbreviationService(self.store)
+        self.diagrams = DiagramService(Path(settings_path).parent, self.store)
         self.data = AppState()
         self.lock = threading.RLock()
 
@@ -34,13 +36,15 @@ class ApplicationService:
                 'progress':{'steps':list(STAGE_ORDER),'active':None,'visited':[],'outcome':None,'detail':''},
                 'stages':[{'key':k,'label':label,'enabled':self.data.stages.get((self.data.mode,k),default_choice(k,self.data.mode)),
                            'default':default_choice(k,self.data.mode)} for k,label in stages_for_mode(self.data.mode)],
-                'can_start':False,'capabilities':['documents.inspect','settings','abbreviations']}
+                'can_start':False,'capabilities':['documents.inspect','settings','abbreviations'] +
+                (['diagrams'] if self.diagrams.enabled() else [])}
 
     def dispatch(self, method, args):
         counts = {'handshake':0,'get_state':0,'get_settings':0,'save_settings':2,
                   'get_abbreviations':0,'save_abbreviation':4,'delete_abbreviation':1,
                   'set_abbreviation_defaults':1,'add_paths':1,'remove_file':1,
                   'clear_files':0,'set_mode':1,'inspect_document':1,'get_log':0,'clear_log':0,'shutdown':0}
+        counts.update({'diagram_list':0,'diagram_load':1,'diagram_save':3,'diagram_delete':1})
         if method not in counts:
             raise ServiceError('NOT_AVAILABLE','이 네이티브 시제품에서는 해당 기능을 아직 사용할 수 없습니다.')
         if len(args)!=counts[method]:
@@ -49,7 +53,8 @@ class ApplicationService:
             raise ServiceError('BACKEND_CLOSING','백엔드가 종료 중입니다.')
         if method=='handshake':
             return {'protocol_version':1,'backend_version':'1.74 Native Prototype 1',
-                    'capabilities':['documents.inspect','settings','abbreviations'],'engine_ready':False}
+                    'capabilities':['documents.inspect','settings','abbreviations'] +
+                    (['diagrams'] if self.diagrams.enabled() else []),'engine_ready':False}
         if method=='get_state': return self.state()
         if method=='get_settings': return response(self.configuration.snapshot)
         if method=='save_settings': return response(lambda:self.configuration.save(*args))
@@ -86,6 +91,10 @@ class ApplicationService:
             _,inspection=validate_and_inspect_hwpx(path)
             return asdict(inspection)
         if method=='get_log' or method=='clear_log': return ''
+        if method=='diagram_list': return self.diagrams.list()
+        if method=='diagram_load': return self.diagrams.load(*args)
+        if method=='diagram_save': return self.diagrams.save(*args)
+        if method=='diagram_delete': return self.diagrams.delete(*args)
         if method=='shutdown': self.data.closing=True;return {'closed':True}
         raise ServiceError('NOT_AVAILABLE','이 네이티브 시제품에서는 해당 기능을 아직 사용할 수 없습니다.')
 
