@@ -977,7 +977,8 @@ _정밀표_글같음 = _engine_resolve('docfit_engine.formatter', '_정밀표_�
 _제목_임시hwpx_저장 = _engine_resolve('docfit_engine.formatter', '_제목_임시hwpx_저장', globals())
 
 
-_작업_임시폴더_접두어 = ("hwp_format_first_", "hwp_precise_table_", "docfit_외부문서_", "hwp_table_guard_")
+_작업_임시폴더_접두어 = ("hwp_format_first_", "hwp_precise_table_", "docfit_외부문서_", "hwp_table_guard_",
+                   "docfit_hwp_to_hwpx_", "docfit_sample_")  # 오류·중단으로 남은 문서 사본도 다음 실행 때 정리
 
 
 이전_작업_임시폴더_정리 = _engine_resolve('docfit_engine.formatter', '이전_작업_임시폴더_정리', globals())

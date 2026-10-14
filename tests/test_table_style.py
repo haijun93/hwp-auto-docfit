@@ -8,6 +8,7 @@ from defusedxml import ElementTree as ET
 
 from docfit_core.table_style import (HeaderPool, apply_table_style, default_style, describe_style,
                                      is_grid_table, learn_from_table, learn_table_style, valid_style)
+from tests.temp_support import tracked_tempdir
 
 HP_URI = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 HP = f'xmlns:hp="{HP_URI}"'
@@ -302,7 +303,7 @@ class LearnTest(unittest.TestCase):
     def test_learning_a_styled_table_gives_the_same_style(self):
         table = _grid(5, 4)
         header, _ = _apply(table)
-        folder = Path(tempfile.mkdtemp(prefix="docfit-table-style-"))
+        folder = Path(tracked_tempdir(self, "docfit-table-style-"))
         path = folder / "예시.hwpx"
         section = ET.fromstring(f'<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" {HP}>'
                                 f'<hp:p id="0" paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"/></hp:p></hs:sec>')
@@ -322,7 +323,7 @@ class LearnTest(unittest.TestCase):
         self.assertEqual(read.align((2, 0)), "DISTRIBUTE")
 
     def test_document_without_grid_table_is_rejected(self):
-        folder = Path(tempfile.mkdtemp(prefix="docfit-table-style-"))
+        folder = Path(tracked_tempdir(self, "docfit-table-style-"))
         path = folder / "빈문서.hwpx"
         with zipfile.ZipFile(path, "w") as archive:
             archive.writestr("Contents/header.xml", ET.tostring(_header(), encoding="utf-8"))

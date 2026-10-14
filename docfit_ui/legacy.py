@@ -4319,18 +4319,23 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     self.format_drop_label.configure(text=f"분석 중 · {Path(path).name}")
                 self.status_var.set("문서 서식을 분석하고 있습니다…")
                 def worker():
+                    보관 = None
                     try:
                         보관 = (Path(tempfile.mkdtemp(prefix="docfit_sample_")) / "sample.hwpx"
                               if 알파_서식예시폴더_사용 else None)
                         result = 한글파일_서식_분석(path, 보관)
                         if 보관 is not None and 보관.is_file():
                             result["_서식예시_원본"] = str(보관)     # 저장할 때 서식예시 폴더로 옮긴다(서식 JSON에는 넣지 않음)
+                            보관 = None                             # 이후 정리는 _서식_복사완료가 맡는다
                         result["name"] = name
                         if 기관:
                             result["organization"] = 기관
                         gui_queue.put(("format_copied", result))
                     except Exception as exc:
                         gui_queue.put(("format_copy_error", str(exc)))
+                    finally:
+                        if 보관 is not None:   # 표본을 만들지 못했거나 분석이 실패하면 빈 임시 폴더를 남기지 않는다
+                            shutil.rmtree(보관.parent, ignore_errors=True)
                 threading.Thread(target=worker, daemon=True).start()
 
             def 서식파일_드롭(self, event):

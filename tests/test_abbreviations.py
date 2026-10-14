@@ -2,6 +2,7 @@
 import copy
 from pathlib import Path
 import runpy
+import shutil
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -157,7 +158,9 @@ class DocumentConversionTest(unittest.TestCase):
         fill = copy.deepcopy(next(iter(borders))); fill.set('id', '1')
         borders.insert(0, fill)
         section = f'<hs:sec {HS} {HP}>{body}</hs:sec>'.encode('utf-8')
-        out = Path(tempfile.mkdtemp(prefix='docfit-abbr-')) / 'in.hwpx'
+        folder = Path(tempfile.mkdtemp(prefix='docfit-abbr-'))
+        self.addCleanup(shutil.rmtree, folder, ignore_errors=True)
+        out = folder / 'in.hwpx'
         with zipfile.ZipFile(out, 'w') as z:
             z.writestr('mimetype', 'application/hwp+zip')
             z.writestr('Contents/header.xml', ns['ET'].tostring(header, encoding='utf-8', xml_declaration=True))
