@@ -101,8 +101,17 @@ class DesktopWebBridge:
                 if not result.set_running_or_notify_cancel():
                     self._requests.discard(result)
                     return
+            temporary_host = False
             if front:
                 try:
+                    if getattr(self.gui.root, "_docfit_hidden_backend", False):
+                        self.gui.root.overrideredirect(True)
+                        self.gui.root.attributes("-alpha", 0.0)
+                        self.gui.root.attributes("-topmost", True)
+                        self.gui.root.minsize(1, 1)
+                        self.gui.root.geometry("1x1+0+0")
+                        self.gui.root.deiconify()
+                        temporary_host = True
                     # 파일 선택 등 기본 창을 부모로 쓰는 대화상자가 웹 화면 뒤에 뜨지 않게 한다.
                     self.gui.root.lift()
                     self.gui.root.focus_force()
@@ -112,9 +121,23 @@ class DesktopWebBridge:
                 complete(value=callback())
             except BaseException as exc:
                 complete(error=exc)
+            finally:
+                if temporary_host:
+                    try:
+                        self.gui.root.withdraw()
+                        self.gui.root.attributes("-topmost", False)
+                        self.gui.root.attributes("-alpha", 1.0)
+                        self.gui.root.overrideredirect(False)
+                        self.gui.root.minsize(*self.gui.root._docfit_min_size)
+                    except Exception:
+                        pass
 
         try:
-            self.gui.root.after(0, run)
+            callbacks = getattr(self.gui, "_bridge_callbacks", None)
+            if callbacks is not None:
+                callbacks.put(run)
+            else:
+                self.gui.root.after(0, run)
         except Exception as exc:
             complete(error=RuntimeError("앱이 종료 중입니다."))
             raise RuntimeError("앱이 종료 중입니다.") from exc
@@ -260,6 +283,7 @@ class DesktopWebBridge:
                 "profiles": self._profiles(),
                 "profile": self._profile_state().active_profile_id,
                 "format_task": self._format_task(),
+                "pending_dialog": self._pending_dialog(),
                 "drop_target": self.drop_target,
                 "options": {
                     name: bool(getattr(gui, attribute).get())
@@ -669,6 +693,148 @@ class DesktopWebBridge:
 
         return self._tk(clear)
 
+    def _pending_dialog(self):
+        pending = getattr(self.gui, "_flutter_dialog", None)
+        if not pending:
+            return None
+        return {key: pending[key] for key in ("id", "title", "message", "confirm", "choices", "fields")}
+
+    def get_pending_dialog(self):
+        return self._tk(self._pending_dialog)
+
+    def resolve_dialog(self, identifier, accepted, selection=None, fields=None):
+        def resolve():
+            pending = getattr(self.gui, "_flutter_dialog", None)
+            if pending and pending["id"] == identifier and isinstance(accepted, bool):
+                allowed = {item["id"] for item in pending["choices"]}
+                if selection is not None and (not isinstance(selection, list) or any(item not in allowed for item in selection)):
+                    raise ValueError("검토 항목을 다시 선택해 주세요.")
+                allowed_fields = {item["id"] for item in pending["fields"]}
+                if fields is not None and (not isinstance(fields, dict) or any(key not in allowed_fields or not isinstance(value, str) for key, value in fields.items())):
+                    raise ValueError("검토 값을 확인해 주세요.")
+                pending["selection"] = selection if selection is not None else list(allowed)
+                pending["values"] = fields or {}
+                pending["answer"] = accepted
+                pending["done"].set(True)
+        self._tk(resolve)
+        return {"ok": True}
+
+    def document_tool(self, name, payload):
+        from docfit_app.document_tools_service import DocumentToolsService
+        def execute():
+            settings = self.gui._준말_서비스().settings
+            service = DocumentToolsService(settings._path.parent)
+            if name == "add_text":
+                if self.gui.running:
+                    from docfit_app.api_contract import ServiceError
+                    raise ServiceError("JOB_RUNNING", "작업 완료 후 문서를 추가해 주세요.")
+                result = service.command(name, payload)
+                self.gui.파일추가(result["path"])
+                return result
+            return service.command(name, payload)
+        if name != "add_text":
+            folder = self._tk(lambda: self.gui._준말_서비스().settings._path.parent)
+            return response(lambda: DocumentToolsService(folder).command(name, payload))
+        return self._tk(lambda: response(execute))
+
+    def stage_config(self, action, payload):
+        def execute():
+            if self.gui.running:
+                return
+            mode = self.gui.selected_mode.get()
+            choices = self.gui.stage_choices[mode]
+            if action == "all":
+                if not isinstance(payload.get("enabled"), bool):
+                    raise ValueError("작업 선택 값을 확인해 주세요.")
+                for key in choices:
+                    choices[key] = payload["enabled"]
+            elif action == "defaults":
+                for key in choices:
+                    choices[key] = default_choice(key, mode)
+            else:
+                raise ValueError("지원하지 않는 단계 명령입니다.")
+            self._stages_changed(mode)
+        self._tk(execute)
+        return self.get_state()
+
+    def format_profile(self, action, payload):
+        from copy import deepcopy
+        from hashlib import sha256
+        import json
+        import uuid
+        from docfit_core import format_elements as elements
+        from docfit_app.api_contract import ServiceError
+        def execute():
+            if not isinstance(payload, dict):
+                raise ServiceError("INVALID_INPUT", "서식 입력을 확인해 주세요.")
+            identifier = payload.get("id", "")
+            profiles = self._profile_state().profiles
+            if identifier not in profiles:
+                raise ServiceError("NOT_FOUND", "서식을 다시 선택해 주세요.")
+            original = profiles[identifier]
+            revision = sha256(json.dumps(original, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+            profile = deepcopy(original)
+            analysis = profile.setdefault("element_analysis", {})
+            if not analysis and not identifier:
+                import sys
+                source = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / "resources" / "서식예시" / "기본 서식.hwpx"
+                if source.is_file():
+                    analysis = elements.analyze_format_elements(source)
+                    profile["element_analysis"] = analysis
+            if action in ("save", "restore"):
+                if self.gui.running:
+                    raise ServiceError("JOB_RUNNING", "작업 중에는 서식을 수정할 수 없습니다.")
+                if payload.get("revision") != revision:
+                    raise ServiceError("PROFILE_CONFLICT", "서식이 바뀌었습니다. 다시 불러와 주세요.")
+                edits = payload.get("edits", [])
+                if not isinstance(edits, list) or len(edits) > 2000:
+                    raise ServiceError("INVALID_INPUT", "서식 수정 목록을 확인해 주세요.")
+                if action == "restore" and not edits:
+                    edits = [{"path": list(path), "key": key} for path, _, _ in elements.detail_nodes(analysis)
+                             for key, item in elements.element_map(analysis, path).items()
+                             if "analyzed" in item and elements.element_editable(key)]
+                if edits:
+                    try:
+                        for edit in edits:
+                            path, key = tuple(edit["path"]), edit["key"]
+                            item = elements.element_map(analysis, path).get(key)
+                            if item is None or not elements.element_editable(key):
+                                raise ValueError("수정할 수 없는 요소입니다.")
+                            value = (item.get("analyzed", item["value"]) if action == "restore"
+                                     else elements.parse_value(key, edit["value"]))
+                            elements.set_value(analysis, path, key, value)
+                        elements.apply_to_profile(profile)
+                    except (ValueError, KeyError, TypeError) as exc:
+                        raise ServiceError("INVALID_STYLE", str(exc)) from exc
+                    if not identifier:
+                        identifier = uuid.uuid4().hex
+                        profile["name"] = profile.get("name", "기본 서식") + " (사용자 수정)"
+                    try:
+                        self.gui._서식_파일_저장(identifier, profile)
+                    except OSError as exc:
+                        raise ServiceError("PROFILE_SAVE_FAILED", "서식 파일을 저장하지 못했습니다.") from exc
+                    profiles[identifier] = profile
+                    self.gui._활성_서식_프로파일 = identifier
+                    self.gui._프로파일_목록갱신()
+                    self.gui._프로파일_선택()
+                    self.invalidate_format_coverage(identifier)
+                    revision = sha256(json.dumps(profile, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+            elif action != "get":
+                raise ServiceError("INVALID_ACTION", "지원하지 않는 서식 명령입니다.")
+            nodes = []
+            for path, parent, label in elements.detail_nodes(analysis):
+                fields = []
+                for key, item in elements.element_map(analysis, path).items():
+                    fields.append({"key": key, "label": elements.element_label(key),
+                        "value": elements.format_value(key, item.get("value")),
+                        "editable": elements.element_editable(key),
+                        "choices": elements.element_choices(key)})
+                if fields:
+                    nodes.append({"path": list(path), "label": label, "fields": fields})
+            return {"id": identifier, "name": profile.get("name"), "revision": revision,
+                    "coverage": self._cached_coverage(identifier, analysis), "nodes": nodes}
+        return self._tk(lambda: response(execute))
+
     def table_template(self, action, payload):
         from docfit_app.table_template_service import TableTemplateService
         def execute():
@@ -951,6 +1117,22 @@ class DesktopWebBridge:
         """OS 창 닫기 전에 기존 앱의 종료 확인·작업 중단 절차를 수행한다."""
         if self.tk_stopped is not None and self.tk_stopped.is_set():
             return True
+        def defer_confirmation():
+            if not (getattr(self.gui.root, "_docfit_hidden_backend", False) and self.gui.running):
+                return False
+            if not getattr(self, "_close_prompt_queued", False):
+                self._close_prompt_queued = True
+                def ask_after_os_close_returns():
+                    try:
+                        self.gui.종료()
+                    finally:
+                        self._close_prompt_queued = False
+                self.gui.root.after(0, ask_after_os_close_returns)
+            return True
+        # Veto the OS close immediately, then show Flutter's confirmation.
+        # Holding the native closing event until JS answers can block WebView.
+        if getattr(self.gui, "_bridge_callbacks", None) is not None and self._tk(defer_confirmation):
+            return False
         def close():
             try:
                 if not self.gui.root.winfo_exists():
@@ -985,7 +1167,7 @@ class _BrowserApi:
             "get_state", "add_files", "add_folder", "add_paths", "remove_file",
             "clear_files", "set_mode", "set_range", "start", "stop",
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
-            "table_template", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults",
+            "get_pending_dialog", "resolve_dialog", "format_profile", "document_tool", "stage_config", "table_template", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults",
             "open_results", "next_job", "run_tool", "open_result",
             "show_result", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",

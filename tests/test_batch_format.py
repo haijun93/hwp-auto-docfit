@@ -226,6 +226,10 @@ def app_functions(*names):
     """Windows 앱을 임포트하지 않고 실제 함수 본문을 검사한다(COM 자체 검증 아님)."""
     path = Path(__file__).resolve().parents[1] / 'hwp-auto-docfit.py'
     tree = ast.parse(path.read_text(encoding='utf-8'))
+    # Source ownership moved; retain the same AST-level behavior checks.
+    for module in sorted((path.parent / 'docfit_engine').glob('*.py')):
+        owned = ast.parse(module.read_text(encoding='utf-8'))
+        tree.body.extend(node for node in ast.walk(owned) if isinstance(node, ast.FunctionDef) and node.name != '_install')
     # 알파 1-d 보조 함수·상수는 사용자 서식 판정에 늘 필요하므로 함께 꺼낸다.
     helpers = {'_사용자서식인가', '사용자서식_XML추가값'}
     constants = {'알파_사용자서식_XML_사용', '_사용자서식_키', '_줄간격_종류_HWPX', '_문단여백_HWPX'}

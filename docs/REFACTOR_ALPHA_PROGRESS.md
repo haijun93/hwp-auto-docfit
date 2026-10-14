@@ -1,7 +1,7 @@
 # 알파 리팩터링 진행 기록
 
 ## 적용 범위
-- Phase 1 기반 보강 완료, Phase 2 기반 구현·Linux 검증 완료. Phase 3~5는 미완료.
+- Phase 1 기반 보강 완료, Phase 2 기반 구현·Linux 검증 완료. Phase 3~5는 Alpha 8에서 소스 구현·Linux 검증 완료(Windows 실측 검증 별도).
 - 기존 시각 편집기 미커밋 작업은 보존하며 별도 검증 대상으로 유지.
 - 개발 지시와 단계별 게이트는 REFACTOR_SPEC.md에 기록.
 
@@ -53,3 +53,7 @@
 - 최종 실행 단계 옵션 연결을 포함한 알파 7 통합본 전체 검사: 1,050개, 통과 1,047개, 실패·오류 0개, 건너뜀 3개.
 - 통합본 compile, Linux import_check, CRLF(26,097줄, 단독 LF 0개) 확인.
 - Phase 3~5와 Windows 실제 COM·Flutter 검증은 미완료.
+
+## Alpha 8 후속 완료
+
+Phase 3~5 구현 및 최종 검증은 [완료 보고서](REFACTOR_PHASE3_5_ALPHA8.md)를 참고한다. 위 미완료·시험 수치는 이전 단계의 이력이다.

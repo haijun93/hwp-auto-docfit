@@ -9,6 +9,9 @@ import 'bridge.dart' as bridge;
 import 'core/api/abbreviation_api.dart';
 import 'features/abbreviations/abbreviation_manager.dart';
 import 'features/formats/table_template_panel.dart';
+import 'features/formats/profile_editor.dart';
+import 'features/tools/document_tools_workspace.dart';
+import 'features/tools/backend_dialog.dart';
 import 'features/conversion/floating_format_picker.dart';
 import 'features/diagrams/diagram_editor_screen.dart';
 import 'features/settings/settings_dialog.dart';
@@ -89,6 +92,7 @@ class _WorkspaceState extends State<Workspace> {
   // 서식 관리에서 안 된 이유(이름 중복 등)를 창 안에 보여 준다.
   String? formatNotice;
   int formatSection = 0;
+  bool backendDialogOpen = false;
 
   static const tabs = ['문서 선택', '작업 방식', '진행 과정', '결과 확인'];
   // (내부 모드, 이름, 설명, 아이콘, 결과 파일 접미사). 서식 적용(format)은
@@ -232,10 +236,20 @@ class _WorkspaceState extends State<Workspace> {
         openConversionPicker();
       }
     });
+    checkBackendDialog();
   }
 
   Future<void> refresh() async {
-    if (polling || busy) return;
+    if (polling) return;
+    if (busy) {
+      try {
+        final pending = await widget.api('get_pending_dialog', []);
+        if (mounted && pending is Map && pending['id'] is String) {
+          checkBackendDialog(pending);
+        }
+      } catch (_) {}
+      return;
+    }
     polling = true;
     final version = commandVersion;
     try {
@@ -666,7 +680,7 @@ class _WorkspaceState extends State<Workspace> {
             if (v == 'diagram_editor') {
               openDiagramEditor();
             } else {
-              command('run_tool', [v]);
+              openTools(v);
             }
           },
           itemBuilder: (_) => [
@@ -965,7 +979,7 @@ class _WorkspaceState extends State<Workspace> {
         label: const Text('폴더 추가'),
       ),
       OutlinedButton.icon(
-        onPressed: locked ? null : () => command('text_input'),
+        onPressed: locked ? null : () => openTools('convert'),
         icon: const Icon(Icons.edit_note),
         label: const Text('텍스트 입력'),
       ),
@@ -1540,6 +1554,118 @@ class _WorkspaceState extends State<Workspace> {
     );
   }
 
+  void checkBackendDialog([Object? incoming]) {
+    final pending = incoming ?? state['pending_dialog'];
+    if (backendDialogOpen || pending is! Map || pending['id'] is! String) {
+      return;
+    }
+    backendDialogOpen = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => BackendDialog(api: widget.api, data: pending),
+      );
+      backendDialogOpen = false;
+      if (mounted) await refresh();
+    });
+  }
+
+  Future<void> openTools(String name) async {
+    final mapped =
+        {'polish': 'clean', 'paste': 'convert', 'writing': 'amount'}[name] ??
+        name;
+    final path = files.isNotEmpty
+        ? '${(files.first as Map)['path'] ?? ''}'
+        : '';
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => DocumentToolsWorkspace(
+          api: widget.api,
+          initial: mapped,
+          initialPath: path,
+        ),
+      ),
+    );
+    await refresh();
+  }
+
+  Future<void> openProfile(String identifier) async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => ProfileEditor(api: widget.api, identifier: identifier),
+    );
+    await refresh();
+  }
+
+  Future<void> showStages() async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => ValueListenableBuilder<int>(
+        valueListenable: stateVersion,
+        builder: (_, _, _) => AlertDialog(
+          title: const Text('세부 작업 선택'),
+          content: SizedBox(
+            width: 620,
+            height: 480,
+            child: ListView(
+              children: [
+                for (final stage in state['stages'] as List? ?? [])
+                  CheckboxListTile(
+                    title: Text('${stage['label']}'),
+                    value: stage['on'] == true || stage['enabled'] == true,
+                    onChanged: locked
+                        ? null
+                        : (value) => command('set_stage', [
+                            stage['key'],
+                            value == true,
+                          ]),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: locked
+                  ? null
+                  : () => command('stage_config', [
+                      'all',
+                      {'enabled': true},
+                    ]),
+              child: const Text('전체 선택'),
+            ),
+            TextButton(
+              onPressed: locked
+                  ? null
+                  : () => command('stage_config', [
+                      'all',
+                      {'enabled': false},
+                    ]),
+              child: const Text('전체 해제'),
+            ),
+            TextButton(
+              onPressed: locked
+                  ? null
+                  : () => command('stage_config', ['defaults', {}]),
+              child: const Text('기본값 복원'),
+            ),
+            TextButton(
+              onPressed: locked
+                  ? null
+                  : () => command('set_stage_default', [true]),
+              child: const Text('현재 구성을 기본값으로'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('닫기'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> openFormats() async {
     // 창이 열려 있는 동안 끌어 놓은 파일은 문서 목록이 아니라 서식 복제로 간다.
     await setDropTarget('format');
@@ -1672,9 +1798,7 @@ class _WorkspaceState extends State<Workspace> {
                 ),
               TextButton(
                 key: Key('editFormat-${p['id']}'),
-                onPressed: locked
-                    ? null
-                    : () => command('edit_profile', [p['id']]),
+                onPressed: locked ? null : () => openProfile('${p['id']}'),
                 child: const Text('세부 수정'),
               ),
               if (!builtin) ...[
@@ -2037,7 +2161,7 @@ class _WorkspaceState extends State<Workspace> {
                   label: const Text('처음 기본값으로'),
                 ),
                 TextButton.icon(
-                  onPressed: locked ? null : () => command('open_stages'),
+                  onPressed: locked ? null : showStages,
                   icon: const Icon(Icons.tune, size: 18),
                   label: const Text('단계별 수치 조정'),
                 ),

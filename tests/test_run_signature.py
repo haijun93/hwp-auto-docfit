@@ -15,7 +15,7 @@ SOURCE = Path(__file__).resolve().parents[1] / 'hwp-auto-docfit.py'
 class RunSignatureTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.tree = ast.parse(SOURCE.read_text(encoding='utf-8'))
+        cls.tree = ast.parse((SOURCE.parent / 'docfit_ui' / 'legacy.py').read_text(encoding='utf-8'))
         cls.namespace = runpy.run_path(str(SOURCE))
         cls.params = list(inspect.signature(cls.namespace['작업_실행']).parameters)
 

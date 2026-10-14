@@ -26,15 +26,19 @@ class ApplicationService:
 
     def state(self):
         settings = {**DEFAULTS, **migrate(self.store.read())}
+        saved_stages=settings.get('stage_choices',{})
+        if not isinstance(saved_stages,dict):saved_stages={}
+        selected=saved_stages.get(self.data.mode,{})
+        if not isinstance(selected,dict):selected={}
         return {'files':[{'path':p,'name':Path(p).name,'folder':str(Path(p).parent)} for p in self.data.files],
                 'count':len(self.data.files),'native_backend':True,'mode':self.data.mode,'running':False,'engine_ready':False,
                 'status':'문서 분석·설정 시제품', 'version':'1.74 Native Prototype 1',
-                'include_spacing':settings['all_include_spacing'], 'reset_spacing':True,
+                'include_spacing':settings['all_include_spacing'], 'reset_spacing':self.data.stages.get(('spacing','reset_spacing'),settings.get('spacing_reset_existing') if settings.get('spacing_reset_existing') is not None else True),
                 'table_spacing':settings['table_spacing'], 'exclude_tables':settings['all_exclude_tables'],
-                'card_options':{},'range':self.data.range,'results':[], 'options':settings,
-                'profiles':[], 'profile':'','default_saved':False,'format_task':None,
+                'card_options':{**{key:bool(settings.get(key)) for key in ('unify_exclude_tables','unify_exclude_spacing','unify_exclude_pagefit','unify_keep_layout','unify_full_format','all_include_spacing','all_exclude_tables','all_exclude_pagefit')},'spacing_exclude_tables':not settings['table_spacing'],'spacing_reset_existing':bool(settings['spacing_reset_existing']) if settings.get('spacing_reset_existing') is not None else True},'range':self.data.range,'results':[], 'options':settings,
+                'profiles':[], 'profile':'','default_saved':self.data.mode in saved_stages,'format_task':None,
                 'progress':{'steps':list(STAGE_ORDER),'active':None,'visited':[],'outcome':None,'detail':''},
-                'stages':[{'key':k,'label':label,'enabled':self.data.stages.get((self.data.mode,k),default_choice(k,self.data.mode)),
+                'stages':[{'key':k,'label':label,'enabled':self.data.stages.get((self.data.mode,k),selected.get(k,default_choice(k,self.data.mode))),
                            'default':default_choice(k,self.data.mode)} for k,label in stages_for_mode(self.data.mode)],
                 'can_start':False,'capabilities':['documents.inspect','settings','abbreviations'] +
                 (['diagrams'] if self.diagrams.enabled() else [])}
@@ -44,7 +48,8 @@ class ApplicationService:
                   'get_abbreviations':0,'save_abbreviation':4,'delete_abbreviation':1,
                   'set_abbreviation_defaults':1,'add_paths':1,'remove_file':1,
                   'clear_files':0,'set_mode':1,'inspect_document':1,'get_log':0,'clear_log':0,'shutdown':0}
-        counts.update({'table_template':2})
+        counts.update({'table_template':2,'document_tool':2,'get_pending_dialog':0,'stage_config':2,'set_stage':2,'set_stage_default':1})
+        counts.update({'set_option':2,'set_include_spacing':1,'set_reset_spacing':1,'set_table_spacing':1,'set_exclude_tables':1,'set_range':3,'set_card_option':2})
         counts.update({'diagram_list':0,'diagram_load':1,'diagram_save':3,'diagram_delete':1})
         if method not in counts:
             raise ServiceError('NOT_AVAILABLE','이 네이티브 시제품에서는 해당 기능을 아직 사용할 수 없습니다.')
@@ -56,9 +61,88 @@ class ApplicationService:
             return {'protocol_version':1,'backend_version':'1.74 Native Prototype 1',
                     'capabilities':['documents.inspect','settings','abbreviations'] +
                     (['diagrams'] if self.diagrams.enabled() else []),'engine_ready':False}
+        if method=='set_card_option':
+            name,value=args
+            allowed={'spacing_reset_existing','spacing_exclude_tables','unify_exclude_tables','unify_exclude_spacing','unify_exclude_pagefit',
+                     'unify_keep_layout','unify_full_format','all_include_spacing','all_exclude_tables','all_exclude_pagefit'}
+            if name not in allowed or not isinstance(value,bool):raise ServiceError('INVALID_OPTION','카드 옵션을 확인해 주세요.')
+            if name=='spacing_exclude_tables':key,value='table_spacing',not value
+            else:key=name
+            self.store.update(lambda current:current.update({key:value}))
+            if name=='spacing_reset_existing':self.data.stages[('spacing','reset_spacing')]=value
+            if name=='all_include_spacing' and self.data.mode in ('all','format'):
+                self.data.mode='all' if value else 'format'
+            return self.state()
+        if method=='set_range':
+            enabled,start,end=args
+            if not isinstance(enabled,bool) or not isinstance(start,str) or not isinstance(end,str):
+                raise ServiceError('INVALID_RANGE','쪽 범위를 확인해 주세요.')
+            if enabled and (not start.isdigit() or not 1<=int(start)<=99999 or (end and (not end.isdigit() or not int(start)<=int(end)<=99999))):
+                raise ServiceError('INVALID_RANGE','시작·끝 쪽 번호를 확인해 주세요.')
+            self.data.range={'enabled':enabled,'start':start,'end':end}
+            return self.state()
+        if method in ('set_option','set_include_spacing','set_reset_spacing','set_table_spacing','set_exclude_tables'):
+            mapping={'set_include_spacing':'all_include_spacing','set_reset_spacing':'spacing_reset_existing',
+                     'set_table_spacing':'table_spacing','set_exclude_tables':'all_exclude_tables'}
+            if method=='set_option':
+                key,value=args
+                key={'check_updates':'check_updates_on_start'}.get(key,key)
+                if key not in ('autoclose','unify_result_window','verify','integrity_report_file','final_review_file','log_file','check_updates_on_start','developer_mode','always_on_top'):
+                    raise ServiceError('INVALID_OPTION','설정 항목을 확인해 주세요.')
+            else:key,value=mapping[method],args[0]
+            if not isinstance(value,bool):raise ServiceError('INVALID_OPTION','설정 값을 확인해 주세요.')
+            self.store.update(lambda current:current.update({key:value}))
+            if method=='set_reset_spacing':self.data.stages[('spacing','reset_spacing')]=value
+            if method=='set_include_spacing' and self.data.mode in ('all','format'):
+                self.data.mode='all' if value else 'format'
+            return self.state()
+        if method in ('stage_config','set_stage','set_stage_default'):
+            mode=self.data.mode
+            if method=='set_stage':
+                key,on=args
+                if key not in dict(stages_for_mode(mode)) or not isinstance(on,bool):
+                    raise ServiceError('INVALID_STAGE','단계 선택을 확인해 주세요.')
+                self.data.stages[(mode,key)]=on
+            elif method=='stage_config':
+                action,payload=args
+                if action not in ('all','defaults') or not isinstance(payload,dict):
+                    raise ServiceError('INVALID_STAGE','단계 선택을 확인해 주세요.')
+                if action=='all' and not isinstance(payload.get('enabled'),bool):
+                    raise ServiceError('INVALID_STAGE','단계 선택을 확인해 주세요.')
+                for key,_ in stages_for_mode(mode):
+                    self.data.stages[(mode,key)]=payload['enabled'] if action=='all' else default_choice(key,mode)
+            else:
+                if not isinstance(args[0],bool):raise ServiceError('INVALID_STAGE','기본값 저장 여부를 확인해 주세요.')
+                prior=self.store.read().get('stage_choices',{})
+                prior=prior.get(mode,{}) if isinstance(prior,dict) else {}
+                selection={key:self.data.stages.get((mode,key),prior.get(key,default_choice(key,mode))) for key,_ in stages_for_mode(mode)}
+                def save(current):
+                    choices=current.get('stage_choices',{})
+                    if not isinstance(choices,dict):choices={}
+                    if args[0]:choices[mode]=selection
+                    else:choices.pop(mode,None)
+                    current['stage_choices']=choices
+                self.store.update(save)
+            if method!='set_stage_default':
+                persisted=self.store.read().get('stage_choices',{})
+                if isinstance(persisted,dict) and isinstance(persisted.get(mode),dict):
+                    selection={key:self.data.stages.get((mode,key),persisted[mode].get(key,default_choice(key,mode))) for key,_ in stages_for_mode(mode)}
+                    def refresh_saved(current):
+                        current.setdefault('stage_choices',{})[mode]=selection
+                    self.store.update(refresh_saved)
+            return self.state()
+        if method=='document_tool':
+            from docfit_app.document_tools_service import DocumentToolsService
+            def execute():
+                result=DocumentToolsService(self.store._path.parent).command(*args)
+                if args[0]=='add_text':
+                    self.data.files.append(result['path'])
+                return result
+            return response(execute)
         if method=='table_template':
             from docfit_app.table_template_service import TableTemplateService
             return response(lambda:TableTemplateService(self.abbreviations).command(*args))
+        if method=='get_pending_dialog': return None
         if method=='get_state': return self.state()
         if method=='get_settings': return response(self.configuration.snapshot)
         if method=='save_settings': return response(lambda:self.configuration.save(*args))

@@ -419,6 +419,12 @@ void main() {
     state['format_task'] = {'busy': false, 'file': ''};
     Future<Object?> api(String name, List<Object?> args) async {
       if (name != 'get_state') calls.add([name, ...args]);
+      if (name == 'format_profile') {
+        return {
+          'ok': true,
+          'data': {'id': 'abc', 'name': '보고서', 'revision': 'r', 'nodes': []},
+        };
+      }
       if (name == 'rename_profile' && args[1] == '중복') {
         return {...state, 'notice': '이미 사용 중인 서식 이름입니다.'};
       }
@@ -457,7 +463,11 @@ void main() {
     expect(calls.last, ['set_profile', 'abc']);
     await tester.tap(find.byKey(const Key('editFormat-abc')));
     await tester.pumpAndSettle();
-    expect(calls.last, ['edit_profile', 'abc']);
+    expect(calls.last.first, 'format_profile');
+    expect(calls.last[1], 'get');
+    expect(find.textContaining('편집할 분석 자료가 없습니다'), findsOneWidget);
+    await tester.tap(find.text('닫기'));
+    await tester.pumpAndSettle();
     // 삭제는 확인한 뒤에만 한다.
     await tester.tap(find.byKey(const Key('deleteFormat-abc')));
     await tester.pumpAndSettle();

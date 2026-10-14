@@ -139,3 +139,22 @@ Flutter 화면이 누락된 패키지를 만들지 않으며, 런타임의 기�
 - `hwp-auto-docfit.py`: 기존 속성 파사드 및 실행 시 옵션 스냅샷. CRLF 유지.
 - `docfit_engine/`·`docfit_ui/` 전체 추출과 Flutter 도구 일원화는 후속 단계.
 - Linux 회귀 검사는 Windows 모듈 대체/실제 Tk를 사용하며 실제 한/글 COM 검증을 대신하지 않는다.
+
+
+## Alpha 8 코드 구조 및 검증
+
+- `hwp-auto-docfit.py`: CRLF 부트스트랩과 기존 이름 re-export. 외부 스크립트의 import/runpy 계약 유지.
+- `docfit_engine/`: 보안 등록·COM·자간·서식·쪽 배치·파이프라인. `runtime.py`는 기존 세션 전역과 monkeypatch 호환을 유지하는 명시적 바인더이며 전역 상태의 완전 제거를 뜻하지 않는다.
+- `docfit_ui/legacy.py`: Tk 폴백. `scheduler.py`: 소유 스레드 큐 펌프. 외부 RPC 스레드는 Tk 콜백을 직접 등록하지 않는다.
+- `docfit_core/app_state.py`, `config_store.py`: 정형 상태·옵션과 설정 마이그레이션.
+- `desktop_web_ui.py`: JSON 명령/값만 공개. 프로필 revision 검사, 단계 설정, Flutter 확인 요청을 중개한다.
+- `docfit_app/document_tools_service.py`: 공통 작성 도구, CAS 초안 저장, 선택 교정 사본, 작업 사본 기반 고급 도구와 상태 조회.
+- `flutter_ui/lib/features/`: 프로필·기본 데이터 표·문서 도구·확인 화면. 현재 운영은 Flutter 웹/WebView2이며 별도 네이티브 COM 이관 완료를 뜻하지 않는다.
+- `build.bat`: 동적 로드되는 engine/ui/core/app을 collect-submodules로 포함. Flutter 자산 검사 유지.
+
+기본 DLL 경로에 복사 또는 등록이 실패하면 `%LOCALAPPDATA%\HwpAutoDocFit\modules`에 폴백한다.
+Windows에서는 저장소 루트 `.venv\Scripts\python.exe`, `PYTHONIOENCODING=utf-8`로 compile/import/unittest를 실행한다.
+현재 Linux 클라우드에서는 `.venv/bin/python`과 실제 Tk/Xvfb를 사용하고 COM/winreg만 대체한다.
+Linux 전체 검사는 `DISPLAY=:91 .venv/bin/python scripts/linux_stub_test_runner.py --require-gui discover -s tests`이다.
+Windows 한/글 실측, WebView2 포커스와 EXE 패키징은 Windows 환경에서 별도 확인해야 한다.
+결과는 [Phase 3~5 보고서](REFACTOR_PHASE3_5_ALPHA8.md)에 기록한다.

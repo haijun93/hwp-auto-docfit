@@ -7,6 +7,15 @@
 
 ## 1. 한눈에 보기
 
+2026-10-14 **1.74 Alpha 8**: Phase 3~5 소스 구현 및 Linux 회귀 검증.
+본체는 약 3,310줄 부트스트랩·호환 파사드이며 `docfit_engine/`에 COM·서식·자간·쪽 배치·파이프라인,
+`docfit_ui/`에 Tk 폴백과 소유 스레드 메시지 펌프를 분리했다.
+프로필 상세, 세부 단계, 문서·작성 도구 및 실행 중 확인은 Flutter 내부에서 처리한다.
+현재 운영 경로는 **Flutter 웹 + WebView2 + 숨긴 Tk/COM 백엔드**다.
+Windows 네이티브 별도 시제품은 여전히 `engine_ready=false`이며 Windows 실측·EXE 검증은 남아 있다.
+최신 범위와 검증 수치는 [Phase 3~5 보고서](docs/REFACTOR_PHASE3_5_ALPHA8.md)를 기준으로 한다.
+아래 Alpha 7 이하의 미완료 설명과 시험 건수는 당시 기록이다.
+
 2026-10-14 개발판 **1.74 Alpha 7**: 파일포맷 선택을 앱 내부의 별도 플로팅 도넛 창으로 변경했다. HWPX→PDF는 기존 필수 환경인 한/글 COM의 내장 저장을 직접 사용하며 Node.js/kordoc/Pandoc/PDF 프린터를 추가 설치하지 않는다. 다른 입력·출력의 도구 의존성은 별도다. 준비 상태 조회는 Tk 밖에서 수행하고 30초 캐시한다. [구현·검증 기록](docs/ALPHA7_FLOATING_CONVERSION_2026-10-14.md)을 먼저 확인한다. Flutter 변경 후 생성 자산을 다시 빌드해야 실행 화면에 반영된다. 전체 설정 화면은 Flutter지만 프로필 상세·일부 문서 도구 및 네이티브 COM 이관은 여전히 별도 잔여 작업이다.
 
 2026-10-13 안정화 작업: 개발판 **1.74 Alpha 6**, 공개 베타 **1.74 Beta 1**.
@@ -69,14 +78,17 @@ Flutter 서식 관리의 기본 데이터 표 학습·초기화를 추가했다.
 
 알파 리팩터링: `docfit_core/app_state.py`에 Tk 상태와 연결되는 `AppState`·`RunOptions`,
 `docfit_core/config_store.py`에 순수 설정 마이그레이션 및 공통 원자 저장 파사드를 둔다.
-기존 GUI 속성은 호환 프로퍼티로 유지한다. 엔진·Tk UI 전체 분리와 Flutter 도구 일원화는 아직 미완료다.
+기존 GUI 속성은 호환 프로퍼티로 유지한다. Phase 3~5 구조와 잔여 Windows 검증은 Alpha 8 보고서를 참고한다.
 진행 기록은 [REFACTOR_ALPHA_PROGRESS.md](docs/REFACTOR_ALPHA_PROGRESS.md)를 확인한다.
 
 | 경로 | 역할 |
 |---|---|
-| `hwp-auto-docfit.py` (약 15,000줄) | 앱 본체. COM 자동화 파이프라인, 서식 분석, GUI 전체. **CRLF 줄바꿈**, 식별자·주석 대부분 한국어 |
+| `hwp-auto-docfit.py` (약 3,310줄) | 부트스트랩·상수·호환 심볼 re-export. **CRLF 유지** |
+| `docfit_engine/` | security, com_driver, spacing, formatter, page_fit, pipeline 및 호환 세션 바인더 runtime |
+| `docfit_ui/` | 레거시 Tk 폴백과 GUI 소유 스레드 RPC 큐 펌프 |
+| `docfit_app/document_tools_service.py` | UI 독립 아웃라이너·붙여넣기·작성/검토·교정 사본·비동기 고급 도구 |
 | `desktop_web_ui.py`, `desktop_web/` | WebView2 키오스크 UI와 Tk 백엔드 연결, 반응형 화면 리소스 |
-| `flutter_ui/`, `build_flutter.ps1` | 새 알파 Flutter Material 3 화면. 빌드하면 `desktop_web/flutter/`를 우선 사용하며, 상세 설정은 기존 Tk 창을 연결. SDK 위치·검사는 `flutter_ui/README.md` 참고 |
+| `flutter_ui/`, `build_flutter.ps1` | 새 알파 Flutter Material 3 화면. 빌드하면 `desktop_web/flutter/`를 우선 사용하며, 상세 설정·프로필·도구·실행 확인은 Flutter 내부에서 처리. SDK 위치·검사는 `flutter_ui/README.md` 참고 |
 | `docfit_core/hwpx.py` | HWPX 안전 검사(ZIP bomb·경로 조작), 구조 파싱, Markdown 내보내기, 무결성 비교 |
 | `docfit_core/stage_selection.py` | 작업 유형별 세부 작업(단계) 목록과 기본 선택값 |
 | `docfit_core/abbreviations.py`, `abbreviation_dialog.py` | 준말 등록표(첫 어절 판별 `match_line`, 줄 변환용 `line_registry`)와 준말 등록·관리 창(표 서식 학습 버튼 포함) |

@@ -47,3 +47,7 @@
 - Phase 1 기반 보강 완료. Phase 2 구현 및 알파 7 통합 Linux 검증 완료. Phase 3~5 미완료.
 - 계층 정렬 검색 제거, 요약 경고, 동일 문단 순차 패치 소스맵 재구축 구현.
 - ZIP Data Descriptor는 명시적으로 거부하는 정책 채택.
+
+## Alpha 8 실행 결과
+
+Phase 3~5 소스 구현을 반영했다. 최종 시험·번들 결과와 Windows 검증 한계는 [완료 보고서](docs/REFACTOR_PHASE3_5_ALPHA8.md)에 기록한다. 별도 Windows 네이티브 시제품의 COM 엔진 구현은 이 Flutter 웹 통합과 구분한다.
