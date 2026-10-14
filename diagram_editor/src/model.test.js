@@ -28,7 +28,7 @@ test('invalid coordinates, duplicate identities and dangling links are rejected'
 test('SVG escapes untrusted text and caps raster size',()=>{
  const a=node('<script>alert("x")</script>',0,0);
  const output=svg(document({nodes:[a],edges:[]}));
- assert.ok(output.source.includes('&lt;script&gt;'));assert.ok(!output.source.includes('<script>'));
+ assert.match(output.source,/&lt;script&gt;/);assert.doesNotMatch(output.source,/<script/i);
  assert.throws(()=>svg(document({nodes:[a,node('far',50000,0)],edges:[]})));
 });
 test('supported legacy templates convert without editing the source snapshot',()=>{
