@@ -1,3 +1,4 @@
+import '../flows/edit_save_state.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -29,6 +30,7 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
   HttpServer? server;
   Set<String> assets = {};
   bool initialized = false;
+  final saveState = EditSaveState();
   bool dirty = false;
   bool busy = true;
   String? diagramId;
@@ -170,6 +172,7 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
     }
     if (message is! Map) return;
     final type = message['type'];
+    if (saveState.saving && type != 'dirty' && type != 'editor_error') return;
     try {
       switch (type) {
         case 'ready':
@@ -186,7 +189,12 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
           }
           break;
         case 'dirty':
-          if (mounted) setState(() => dirty = message['value'] == true);
+          if (mounted) {
+            setState(() {
+              saveState.event(message['generation'], message['value'] == true);
+              dirty = saveState.dirty;
+            });
+          }
           break;
         case 'template_applied':
           if (mounted) {
@@ -215,16 +223,29 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
           break;
         case 'save_document':
           final id = diagramId ?? _newId();
-          final saved = await storage('save', {
-            'id': id,
-            'name': message['name'],
-            'snapshot': message['snapshot'],
-          });
-          if (saved is! Map) throw Exception('도형 저장 응답이 올바르지 않습니다.');
+          final targetGeneration = saveState.begin(message['generation']);
+          if (mounted) setState(() {});
+          Object? saved;
+          try {
+            saved = await storage('save', {
+              'id': id,
+              'name': message['name'],
+              'snapshot': message['snapshot'],
+            });
+            if (saved is! Map ||
+                saved["id"] is! String ||
+                saved["name"] is! String) {
+              throw Exception("도형 저장 응답이 올바르지 않습니다.");
+            }
+          } catch (_) {
+            saveState.complete(targetGeneration, success: false);
+            rethrow;
+          }
+          saveState.complete(targetGeneration, success: true);
           diagramId = saved['id'] as String;
           name = saved['name'] as String;
-          post({'type': 'mark_saved'});
-          if (mounted) setState(() => dirty = false);
+          post({'type': 'mark_saved', 'generation': targetGeneration});
+          if (mounted) setState(() => dirty = saveState.dirty);
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('도형 문서를 이 PC에 저장했어요.')),
@@ -448,9 +469,12 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
 
   @override
   Widget build(BuildContext context) => PopScope(
-    canPop: !dirty,
+    canPop: !dirty && !saveState.saving,
     onPopInvokedWithResult: (didPop, result) async {
-      if (!didPop && await confirmDiscard() && context.mounted) {
+      if (!didPop &&
+          !saveState.saving &&
+          await confirmDiscard() &&
+          context.mounted) {
         Navigator.pop(context);
       }
     },
@@ -460,7 +484,9 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () async {
-            if (await confirmDiscard() && context.mounted) {
+            if (!saveState.saving &&
+                await confirmDiscard() &&
+                context.mounted) {
               Navigator.pop(context);
             }
           },

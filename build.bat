@@ -1,5 +1,6 @@
 @echo off
 setlocal
+set "PYTHONIOENCODING=utf-8"
 
 cd /d "%~dp0"
 
@@ -39,27 +40,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0build_flutter.ps1"
 if errorlevel 1 goto :fail
 
 echo [3/4] Building %APPNAME%.exe...
-"%PYTHON%" -m PyInstaller ^
-    --noconfirm ^
-    --clean ^
-    --onefile ^
-    --windowed ^
-    --icon "resources\app_icon.ico" ^
-    --name "%APPNAME%" ^
-    --add-data "MapoHwpAutoDocFitSecurity.dll;." ^
-    --add-data "desktop_web;desktop_web" ^
-    --add-data "resources;resources" ^
-    --collect-submodules docfit_engine ^
-    --collect-submodules docfit_ui ^
-    --collect-submodules docfit_core ^
-    --collect-submodules docfit_app ^
-    --collect-all tkinterdnd2 ^
-    --collect-all webview ^
-    --collect-all pythonnet ^
-    --collect-all clr_loader ^
-    --collect-all pypdfium2 ^
-    --collect-all pypdfium2_raw ^
-    "hwp-auto-docfit.py"
+"%PYTHON%" -m PyInstaller --noconfirm --clean "HWP_AutoDocFit.spec"
 if errorlevel 1 goto :fail
 
 echo [4/4] Building 설치파일 초기화.exe (Cleanup ^& Reset Tool)...

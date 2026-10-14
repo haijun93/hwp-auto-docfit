@@ -76,8 +76,9 @@ class WritingAidsGuiTest(unittest.TestCase):
                     captured = {}
 
                     class _Thread:
-                        def __init__(self, target=None, args=(), daemon=None):
+                        def __init__(self, target=None, args=(), daemon=None, kwargs=None):
                             captured["args"] = args
+                            captured["kwargs"] = kwargs
 
                         def start(self):
                             pass
@@ -85,6 +86,8 @@ class WritingAidsGuiTest(unittest.TestCase):
                     app.files = [str(Path(folder) / "문서.hwpx")]
                     with patch.object(threading, "Thread", _Thread):
                         app.작업시작(app.selected_mode.get())
+                    self.assertIs(captured["kwargs"]["context"], app._run_context)
+                    self.assertIs(captured["kwargs"]["callbacks"], app._run_context.callbacks)
                     args = captured["args"]
                     self.assertFalse(args[22])                       # 표자간조정
                     self.assertTrue(all(args[25][k] is False for k in ns["표작업_키목록"]))
@@ -119,6 +122,8 @@ class WritingAidsGuiTest(unittest.TestCase):
                                          (False, False), 유형)
                     with patch.object(threading, "Thread", _Thread):
                         app.작업시작(app.selected_mode.get())
+                    self.assertIs(captured["kwargs"]["context"], app._run_context)
+                    self.assertIs(captured["kwargs"]["callbacks"], app._run_context.callbacks)
                     args = captured["args"]
                     self.assertEqual((args[25]["page_fit"], args[25]["page_group"]), (False, False))
                     self.assertTrue(args[22])                        # 표는 그대로
@@ -142,6 +147,8 @@ class WritingAidsGuiTest(unittest.TestCase):
                     self.assertTrue(app.stage_choices["unify"]["style_unify"])
                     with patch.object(threading, "Thread", _Thread):
                         app.작업시작("unify")
+                    self.assertIs(captured["kwargs"]["context"], app._run_context)
+                    self.assertIs(captured["kwargs"]["callbacks"], app._run_context.callbacks)
                     args = captured["args"]
                     self.assertEqual(args[18], "unify")
                     self.assertEqual((args[25]["table_style"], args[25]["table_unify"], args[25]["page_fit"]),

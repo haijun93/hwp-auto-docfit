@@ -207,6 +207,14 @@ python -m pip install pywin32 tkinterdnd2
 ============================================================
 """
 
+# Frozen smoke test runs before GUI/COM bootstrap and reports missing packages.
+import sys as _selftest_sys
+if __name__ == "__main__" and "--self-test" in _selftest_sys.argv:
+    from docfit_app.self_test import check as _packaging_check, finish as _packaging_finish
+    _packaging_result = _packaging_check()
+    if not _packaging_result["ok"]:
+        raise SystemExit(_packaging_finish(_packaging_result))
+
 from docfit_engine.runtime import resolve as _engine_resolve
 from docfit_engine.pipeline import PipelineCallbacks
 
@@ -355,7 +363,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리"
-APP_VERSION = "1.74 Alpha 8"
+APP_VERSION = "1.74 Alpha 9"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 GITHUB_UPDATE_API_URL = "https://api.github.com/repos/haijun93/hwp-auto-docfit/releases/latest"
@@ -3307,4 +3315,6 @@ def main():
             raise
 
 if __name__ == "__main__":
+    if "--self-test" in _selftest_sys.argv:
+        raise SystemExit(_packaging_finish(_packaging_result, globals()))
     main()

@@ -6100,6 +6100,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     self.로그표시("자간 정리 제외: 서식통일이 고친 문장의 자간 조정·외톨이 글자 당기기를 하지 않습니다.")
                 표준서식_세부_전달["unify_exclude_spacing"] = 자간제외
 
+                from docfit_engine.runtime import session_for
+                self._run_context = session_for(globals()).new_context(
+                    options=self.state.options, profile=표준서식_세부_전달, cancellation=중단_event)
                 self.worker = threading.Thread(
                     target=작업_실행,
                     args=(
@@ -6135,6 +6138,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         self.integrity_report_file_var.get(),
                         self.final_review_file_var.get(),
                     ),
+                    kwargs={"context": self._run_context, "callbacks": self._run_context.callbacks},
                     daemon=True
                 )
                 self.worker.start()

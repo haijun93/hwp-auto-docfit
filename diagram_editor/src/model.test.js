@@ -47,3 +47,20 @@ test('arbitrary HTML fields are discarded and text remains data',()=>{
  const graph=document(template('general'));graph.nodes[0].dangerouslySetInnerHTML={__html:'<script/>'};
  assert.equal(validate(graph).nodes[0].dangerouslySetInnerHTML,undefined);
 });
+test('400 Korean characters stay in the safe interior and export bounds of every shape',async()=>{
+ const {computeNodeAutoFitBox,layoutGraph,getDiagramBounds,textWidth,PADDING_X,PADDING_Y,LINE_HEIGHT,edgeLabelBox}=await import('./model.js');
+ for(const shape of ['rectangle','diamond','ellipse','text']){
+  const original=node('한글 문장과 긴어절'.repeat(40),-50,20,shape);
+  const graph=layoutGraph({nodes:[original],edges:[]}),n=graph.nodes[0],box=computeNodeAutoFitBox(n),bounds=getDiagramBounds(graph);
+  assert.ok(box.lines.length>1);
+  for(const line of box.lines)assert.ok(textWidth(line)+2*PADDING_X<=n.width*box.factor+.001);
+  assert.ok(box.lines.length*LINE_HEIGHT+2*PADDING_Y<=n.height*box.factor+.001);
+  assert.ok(n.position.x>=bounds.x+20&&n.position.y>=bounds.y+20);
+  assert.ok(n.position.x+n.width<=bounds.x+bounds.width-20+.001);
+  assert.ok(n.position.y+n.height<=bounds.y+bounds.height-20+.001);
+ }
+ const a=node('A',0,0),b=node('B',0,180),e=edge(a.id,b.id,'매우 긴 분기 설명 '.repeat(25));
+ const graph=layoutGraph({nodes:[a,b],edges:[e]}),box=edgeLabelBox(e,graph.nodes),bounds=getDiagramBounds(graph);
+ assert.ok(box.y-box.height/2>=bounds.y+20-.001);
+ assert.ok(box.y+box.height/2<=bounds.y+bounds.height-20+.001);
+});

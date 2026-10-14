@@ -22,3 +22,6 @@ node_modules/
 
 # Repository-local virtual environment (directory or Linux symlink)
 /.venv
+
+# Shared, reviewed PyInstaller build specification
+!/HWP_AutoDocFit.spec

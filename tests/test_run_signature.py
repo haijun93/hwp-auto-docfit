@@ -17,7 +17,7 @@ class RunSignatureTest(unittest.TestCase):
     def setUpClass(cls):
         cls.tree = ast.parse((SOURCE.parent / 'docfit_ui' / 'legacy.py').read_text(encoding='utf-8'))
         cls.namespace = runpy.run_path(str(SOURCE))
-        cls.params = list(inspect.signature(cls.namespace['작업_실행']).parameters)
+        cls.params = [name for name, p in inspect.signature(cls.namespace['작업_실행']).parameters.items() if p.kind != inspect.Parameter.KEYWORD_ONLY]
 
     def _thread_args(self):
         for node in ast.walk(self.tree):
@@ -45,6 +45,11 @@ class RunSignatureTest(unittest.TestCase):
     def test_new_parameters_are_only_appended_at_the_end(self):
         self.assertEqual(self.params[-3:], ['준말_등록', '무결성보고서파일', '최종검수파일'])
         self.assertEqual(self.params.index('시작_인덱스') + 1, self.params.index('준말_등록'))
+
+    def test_context_and_callbacks_are_keyword_only(self):
+        parameters = inspect.signature(self.namespace['작업_실행']).parameters
+        for name in ('context', 'callbacks'):
+            self.assertEqual(parameters[name].kind, inspect.Parameter.KEYWORD_ONLY)
 
     def test_report_files_are_off_by_default(self):
         defaults = self.namespace['기본_설정']

@@ -1,11 +1,12 @@
-## [수정 필요] Alpha 8 커밋 리뷰 7497338
+## [반영·alpha] Alpha 9 — Alpha 8 커밋 리뷰 7497338 수정
 
-- [ ] R1/P1: CI 동적 engine/ui 모듈 수집과 EXE smoke test.
-- [ ] R2/P1: 흐름도 저장 ACK가 이후 편집의 dirty 상태를 해제하지 않도록 버전 계약 추가.
-- [ ] R3/P1: 아웃라이너 지연 응답/연속 작업의 최신 입력 덮어쓰기 방지.
-- [ ] R4/P2: 초안 저장 응답의 text/revision을 잠금 안에서 확정.
-- [ ] R5/P2: 긴 라벨·분기 설명의 PNG 출력 잘림 방지.
-- 근거: docs/CODE_REVIEW_ALPHA8_7497338.md. 기능 수정은 아직 미반영.
+- [x] R1/P1: CI 동적 engine/ui 모듈 수집과 EXE smoke test.
+- [x] R2/P1: 흐름도 저장 ACK가 이후 편집의 dirty 상태를 해제하지 않도록 버전 계약 추가.
+- [x] R3/P1: 아웃라이너 지연 응답/연속 작업의 최신 입력 덮어쓰기 방지.
+- [x] R4/P2: 초안 저장 응답의 text/revision을 잠금 안에서 확정.
+- [x] R5/P2: 긴 라벨·분기 설명의 PNG 출력 잘림 방지.
+- [x] RunContext 작업 상태 격리 및 실제 PipelineCallbacks 주입·단계 오류 보고.
+- 근거: docs/REVIEW_FIXES_ALPHA9.md. Windows EXE/COM 실기기 검증은 별도 유지.
 
 ## [반영·alpha] 일반 모드 업무 흐름도 / 개발자 tldraw 분리 (2026-10-14)
 

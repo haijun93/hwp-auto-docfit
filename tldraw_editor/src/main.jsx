@@ -23,6 +23,7 @@ const templates = {
   complaint: { name: '민원 처리' },
 };
 let dirty = false;
+let editGeneration = 0;
 
 function send(message) {
   const host = window.chrome?.webview;
@@ -106,19 +107,19 @@ function App() {
           editor.deleteShapes([...editor.getSelectedShapeIds()]);
           setName('새 업무 흐름도');
           dirty = false;
-          send({ type: 'dirty', value: false });
+          send({ type: 'dirty', value: false, generation: ++editGeneration });
           send({ type: 'document_new' });
           break;
         case 'mark_saved':
-          dirty = false;
-          send({ type: 'dirty', value: false });
+          dirty = message.generation !== editGeneration;
+          send({ type: 'dirty', value: dirty, generation: editGeneration });
           break;
         case 'load':
           if (!message.snapshot || typeof message.name !== 'string') throw new Error('문서 데이터가 올바르지 않습니다.');
           loadSnapshot(editor.store, message.snapshot);
           setName(message.name);
           dirty = false;
-          send({ type: 'dirty', value: false });
+          send({ type: 'dirty', value: false, generation: ++editGeneration });
           editor.zoomToFit({ animation: { duration: 0 } });
           send({ type: 'document_loaded', id: message.id });
           break;
@@ -129,7 +130,7 @@ function App() {
           const { document, session } = getSnapshot(editor.store);
           const saveName = typeof message.name === 'string' ? message.name : name;
           setName(saveName);
-          send({ type: 'save_document', id: message.id ?? null, name: saveName, snapshot: { document, session } });
+          send({ type: 'save_document', id: message.id ?? null, name: saveName, generation: editGeneration, snapshot: { document, session } });
           break;
         }
         case 'export_png': {
@@ -198,7 +199,7 @@ function App() {
       editor.zoomToFit({ animation: { duration: 0 } });
       const cleanup = editor.store.listen(() => {
         dirty = true;
-        send({ type: 'dirty', value: true });
+        send({ type: 'dirty', value: true, generation: ++editGeneration });
       }, { source: 'user', scope: 'document' });
       send({ type: 'ready', protocol_version: 1 });
       return cleanup;

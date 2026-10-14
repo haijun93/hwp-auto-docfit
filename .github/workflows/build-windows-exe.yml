@@ -13,6 +13,10 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      PYTHONIOENCODING: utf-8
+      DOCFIT_TEST_PYTHON: ${{ github.workspace }}/.venv/Scripts/python.exe
+      DOCFIT_TEST_REPO: ${{ github.workspace }}
     steps:
       - uses: actions/checkout@v4
 
@@ -21,16 +25,19 @@ jobs:
           python-version: "3.12"
 
       - name: Install build dependencies
-        run: python -m pip install --disable-pip-version-check -r requirements.txt pyinstaller
+        run: |
+          python -m venv .venv
+          & ".\.venv\Scripts\python.exe" -m pip install --disable-pip-version-check -r "requirements.txt" pyinstaller
 
       - name: Check Pillow image support
-        run: python -c "from PIL import Image, ImageTk, ImageOps; print('Pillow', Image.__version__)"
+        run: |
+          & ".\.venv\Scripts\python.exe" -c "from PIL import Image, ImageTk, ImageOps; print('Pillow', Image.__version__)"
 
       - name: Validate alpha source and regression tests
         if: github.ref == 'refs/heads/alpha'
         run: |
-          python -m py_compile hwp-auto-docfit.py docfit_core/batch_format.py
-          python -m unittest discover -s tests
+          & ".\.venv\Scripts\python.exe" -m py_compile "hwp-auto-docfit.py" "docfit_core/batch_format.py"
+          & ".\.venv\Scripts\python.exe" -m unittest discover -s "tests"
 
       - uses: subosito/flutter-action@v2
         with:
@@ -42,29 +49,19 @@ jobs:
         shell: pwsh
         run: ./build_flutter.ps1
 
-      - name: Build HWP_AutoDocFit.exe
-        run: >
-          python -m PyInstaller
-          --noconfirm
-          --clean
-          --onefile
-          --windowed
-          --icon resources/app_icon.ico
-          --name HWP_AutoDocFit
-          --add-data "MapoHwpAutoDocFitSecurity.dll;."
-          --add-data "desktop_web;desktop_web"
-          --add-data "resources;resources"
-          --collect-all tkinterdnd2
-          --collect-all PIL
-          --collect-all webview
-          --collect-all pythonnet
-          --collect-all clr_loader
-          --collect-all pypdfium2
-          --collect-all pypdfium2_raw
-          --hidden-import PIL.Image
-          --hidden-import PIL.ImageTk
-          --hidden-import PIL.ImageOps
-          hwp-auto-docfit.py
+      - name: Build EXE using shared packaging specification
+        run: |
+          & ".\.venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean "HWP_AutoDocFit.spec"
+
+      - name: Smoke test frozen modules without GUI or COM
+        shell: pwsh
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP "docfit-self-test.json"
+          $process = Start-Process -FilePath ".\dist\HWP_AutoDocFit.exe" -ArgumentList @("--self-test", "--self-test-report", ('"' + $report + '"')) -PassThru
+          if (-not $process.WaitForExit(30000)) { $process.Kill(); throw "EXE self-test timed out" }
+          if ($process.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $report)) { throw "EXE self-test failed" }
+          $result = Get-Content -Raw -LiteralPath $report | ConvertFrom-Json
+          if (-not $result.ok) { throw "EXE module imports failed" }
 
       - name: Upload exe artifacts
         uses: actions/upload-artifact@v4

@@ -39,7 +39,7 @@ export function validate(snapshot) {
   if(!text(n.id,100)||!n.id||ids.has(n.id)||!finite(n.position?.x)||!finite(n.position?.y)||!text(n.data?.label)||!['rectangle','diamond','ellipse','text'].includes(n.data.shape)||!Object.hasOwn(COLORS,n.data.color))throw new Error('도형 데이터가 올바르지 않습니다.');
   ids.add(n.id);
   const w=n.width??220,h=n.height??90;
-  if(!finite(w)||!finite(h)||w<30||h<30||w>2000||h>2000)throw new Error('도형 크기가 올바르지 않습니다.');
+  if(!finite(w)||!finite(h)||w<30||h<30||w>100000||h>100000)throw new Error('도형 크기가 올바르지 않습니다.');
   return {...node(n.data.label,n.position.x,n.position.y,n.data.shape,n.data.color,n.id),width:w,height:h};
  });
  const nodeIds=new Set(ids);
@@ -97,23 +97,79 @@ export function anchor(n,side) {
  return side==='top'?[x+w/2,y]:side==='bottom'?[x+w/2,y+h]:side==='left'?[x,y+h/2]:[x+w,y+h/2];
 }
 const esc = s => String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
-export function svg(snapshot) {
- const {nodes,edges}=validate(snapshot);
+export const FONT_SIZE=16, LINE_HEIGHT=24, PADDING_X=16, PADDING_Y=12, BLEED=20;
+export const FONT='16px "Malgun Gothic", "Noto Sans KR", sans-serif';
+let measuringContext;
+export function textWidth(value) {
+ if(typeof document!=='undefined'){
+  measuringContext??=document.createElement('canvas').getContext('2d');
+  if(measuringContext){measuringContext.font=FONT;return measuringContext.measureText(value).width;}
+ }
+ // Conservative non-browser fallback for model validation/tests.
+ return Array.from(value).reduce((sum,c)=>sum+(/\p{Mark}/u.test(c)?0:/\p{Extended_Pictographic}/u.test(c)?32:16),0);
+}
+export function wrapKoreanAwareText(value,maxWidth) {
+ const result=[];
+ for(const paragraph of String(value).split('\n')){
+  if(!paragraph){result.push('');continue;}
+  let line='';
+  // Keep words when they fit; split long Korean/Latin tokens by Unicode code point.
+  for(const token of paragraph.match(/\S+\s*|\s+/gu)??[]){
+   if(line&&textWidth(line+token)>maxWidth){result.push(line.trimEnd());line='';}
+   for(const character of token){
+    if(line&&textWidth(line+character)>maxWidth){result.push(line.trimEnd());line='';}
+    line+=character;
+   }
+  }
+  result.push(line.trimEnd());
+ }
+ return result.length?result:[''];
+}
+export function computeNodeAutoFitBox(n) {
+ const factor=n.data.shape==='diamond'?.5:n.data.shape==='ellipse'?.7:1;
+ const minWidth=Math.max(120,n.width??220),maxWidth=Math.max(360,minWidth);
+ const lines=wrapKoreanAwareText(n.data.label,Math.max(32,Math.floor(maxWidth*factor-2*PADDING_X)));
+ const longest=Math.max(0,...lines.map(textWidth));
+ const width=Math.max(minWidth,Math.ceil((longest+2*PADDING_X)/factor));
+ const height=Math.max(n.height??90,Math.ceil((lines.length*LINE_HEIGHT+2*PADDING_Y)/factor));
+ return {width,height,lines,lineHeight:LINE_HEIGHT,factor,textWidth:longest,textHeight:lines.length*LINE_HEIGHT};
+}
+export function layoutGraph(graph) {
+ return {...graph,nodes:graph.nodes.map(n=>{const box=computeNodeAutoFitBox(n);return {...n,width:box.width,height:box.height};})};
+}
+export function edgeLabelBox(e,nodes) {
+ const a=nodes.find(n=>n.id===e.source),b=nodes.find(n=>n.id===e.target);
+ const [x1,y1]=anchor(a,e.sourceHandle),[x2,y2]=anchor(b,e.targetHandle);
+ const lines=wrapKoreanAwareText(e.label??'',240);
+ const width=Math.max(...lines.map(textWidth),0)+16,height=lines.length*LINE_HEIGHT+12;
+ return {x:(x1+x2)/2,y:(y1+y2)/2,width,height,lines};
+}
+export function getDiagramBounds(graph) {
+ const {nodes,edges}=layoutGraph(graph);
  if(!nodes.length)throw new Error('내보낼 도형이 없습니다.');
- const minX=Math.min(...nodes.map(n=>n.position.x))-40,minY=Math.min(...nodes.map(n=>n.position.y))-40;
- const width=Math.max(...nodes.map(n=>n.position.x+n.width))-minX+40,height=Math.max(...nodes.map(n=>n.position.y+n.height))-minY+40;
+ const boxes=nodes.map(n=>({x:n.position.x,y:n.position.y,width:n.width,height:n.height}));
+ for(const e of edges)if(e.label){const b=edgeLabelBox(e,nodes);boxes.push({...b,x:b.x-b.width/2,y:b.y-b.height/2});}
+ const x=Math.min(...boxes.map(b=>b.x))-BLEED,y=Math.min(...boxes.map(b=>b.y))-BLEED;
+ const width=Math.max(...boxes.map(b=>b.x+b.width))-x+BLEED,height=Math.max(...boxes.map(b=>b.y+b.height))-y+BLEED;
  if(width*height>12_000_000||width>8000||height>8000)throw new Error('이미지가 너무 큽니다. 도형 배치를 줄여 주세요.');
- const label=(str,x,y)=>String(str).split('\n').flatMap(line=>Array.from(line).reduce((a,c,i)=>(i%20===0?a.push(c):a[a.length-1]+=c,a),[])).map((line,i,all)=>'<text x="'+x+'" y="'+(y+(i-(all.length-1)/2)*22)+'" text-anchor="middle" dominant-baseline="central" font-size="16" font-family="Malgun Gothic, Noto Sans KR, sans-serif" fill="#172b4d">'+esc(line)+'</text>').join('');
+ return {x,y,width,height};
+}
+function svgLines(lines,x,y) {
+ return lines.map((line,i)=>'<text xml:space="preserve" x="'+x+'" y="'+(y+(i-(lines.length-1)/2)*LINE_HEIGHT)+'" text-anchor="middle" dominant-baseline="central" font-size="16" font-family="Malgun Gothic, Noto Sans KR, sans-serif" fill="#172b4d">'+esc(line)+'</text>').join('');
+}
+export function svg(snapshot) {
+ const graph=layoutGraph(validate(snapshot)),{nodes,edges}=graph,bounds=getDiagramBounds(graph);
  const drawnEdges=edges.map(e=>{
   const a=nodes.find(n=>n.id===e.source),b=nodes.find(n=>n.id===e.target),[x1,y1]=anchor(a,e.sourceHandle),[x2,y2]=anchor(b,e.targetHandle);
   const horizontal=['left','right'].includes(e.sourceHandle);
   const d=horizontal?'M '+x1+' '+y1+' H '+((x1+x2)/2)+' V '+y2+' H '+x2:'M '+x1+' '+y1+' V '+((y1+y2)/2)+' H '+x2+' V '+y2;
-  return '<path d="'+d+'" fill="none" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>'+label(e.label,(x1+x2)/2+12,(y1+y2)/2-14);
+  const label=edgeLabelBox(e,nodes);
+  return '<path d="'+d+'" fill="none" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>'+(e.label?'<rect x="'+(label.x-label.width/2)+'" y="'+(label.y-label.height/2)+'" width="'+label.width+'" height="'+label.height+'" fill="white"/>'+svgLines(label.lines,label.x,label.y):'');
  }).join('');
  const drawnNodes=nodes.map(n=>{
   const {x,y}=n.position,w=n.width,h=n.height,c=COLORS[n.data.color];
   const shape=n.data.shape==='text'?'':n.data.shape==='diamond'?'<polygon points="'+(x+w/2)+','+y+' '+(x+w)+','+(y+h/2)+' '+(x+w/2)+','+(y+h)+' '+x+','+(y+h/2)+'"':n.data.shape==='ellipse'?'<ellipse cx="'+(x+w/2)+'" cy="'+(y+h/2)+'" rx="'+w/2+'" ry="'+h/2+'"':'<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" rx="8"';
-  return (shape?shape+' fill="'+c+'" stroke="#475569" stroke-width="2"/>':'')+label(n.data.label,x+w/2,y+h/2);
+  return (shape?shape+' fill="'+c+'" stroke="#475569" stroke-width="2"/>':'')+svgLines(computeNodeAutoFitBox(n).lines,x+w/2,y+h/2);
  }).join('');
- return {width,height,source:'<svg xmlns="http://www.w3.org/2000/svg" width="'+width+'" height="'+height+'" viewBox="'+minX+' '+minY+' '+width+' '+height+'"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/></marker></defs><rect x="'+minX+'" y="'+minY+'" width="'+width+'" height="'+height+'" fill="white"/>'+drawnEdges+drawnNodes+'</svg>'};
+ return {width:bounds.width,height:bounds.height,source:'<svg xmlns="http://www.w3.org/2000/svg" width="'+bounds.width+'" height="'+bounds.height+'" viewBox="'+bounds.x+' '+bounds.y+' '+bounds.width+' '+bounds.height+'"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/></marker></defs><rect x="'+bounds.x+'" y="'+bounds.y+'" width="'+bounds.width+'" height="'+bounds.height+'" fill="white"/>'+drawnEdges+drawnNodes+'</svg>'};
 }

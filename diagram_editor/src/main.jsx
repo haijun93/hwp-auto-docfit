@@ -1,9 +1,9 @@
 import React,{useRef,useState,useEffect,createContext,useContext} from 'react';
 import {createRoot} from 'react-dom/client';
-import {ReactFlow,ReactFlowProvider,Background,Controls,MiniMap,Handle,Position,ConnectionMode,applyNodeChanges,applyEdgeChanges,NodeResizer} from '@xyflow/react';
+import {ReactFlow,ReactFlowProvider,Background,Controls,MiniMap,Handle,Position,ConnectionMode,applyNodeChanges,applyEdgeChanges,NodeResizer,BaseEdge,useReactFlow} from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import './style.css';
-import {FORMAT,COLORS,templates,template,node,edge,id,decode,validate,svg} from './model.js';
+import {FORMAT,COLORS,templates,template,node,edge,id,decode,validate,svg,layoutGraph,computeNodeAutoFitBox,edgeLabelBox,LINE_HEIGHT} from './model.js';
 
 function send(message){
  const host=window.chrome?.webview;
@@ -11,28 +11,44 @@ function send(message){
  else if(host)host.postMessage(JSON.stringify(message));
 }
 const HistoryContext=createContext(()=>{});
-function FlowNode({data,selected}){
+function FlowNode({data,selected,width,height}){
+ const box=computeNodeAutoFitBox({data,width,height});
  const resizeStart=useContext(HistoryContext);
  return <><NodeResizer onResizeStart={resizeStart} isVisible={selected} minWidth={80} minHeight={50}/>
   {Object.entries(Position).map(([key,value])=><Handle key={key} id={value} type="source" position={value}/>)}
-  <div className={'node-body '+data.shape} style={{background:COLORS[data.color]}}>{data.shape==='diamond'&&<svg className="diamond-background" viewBox="0 0 220 90" preserveAspectRatio="none"><polygon points="110,2 218,45 110,88 2,45" fill={COLORS[data.color]} stroke="#475569" strokeWidth="2"/></svg>}<span>{data.label}</span></div></>;
+  <div className={'node-body '+data.shape} style={{background:COLORS[data.color]}}>{data.shape==='diamond'&&<svg className="diamond-background" viewBox="0 0 220 90" preserveAspectRatio="none"><polygon points="110,2 218,45 110,88 2,45" fill={COLORS[data.color]} stroke="#475569" strokeWidth="2"/></svg>}<span className="node-lines">{box.lines.map((line,i)=><span key={i} style={{display:'block',height:LINE_HEIGHT}}>{line||'\u00a0'}</span>)}</span></div></>;
 }
+function FlowEdge(props){
+ const flow=useReactFlow(),nodes=flow.getNodes(),a=nodes.find(n=>n.id===props.source),b=nodes.find(n=>n.id===props.target);
+ if(!a||!b)return null;
+ const e={...props,sourceHandle:props.sourcePosition,targetHandle:props.targetPosition};
+ const box=edgeLabelBox(e,nodes);
+ const horizontal=['left','right'].includes(props.sourcePosition);
+ const {sourceX:x1,sourceY:y1,targetX:x2,targetY:y2}=props;
+ const path=horizontal?'M '+x1+' '+y1+' H '+((x1+x2)/2)+' V '+y2+' H '+x2:'M '+x1+' '+y1+' V '+((y1+y2)/2)+' H '+x2+' V '+y2;
+ return <><BaseEdge id={props.id} path={path} markerEnd={props.markerEnd} style={props.style}/>
+ {props.label&&<g><rect x={box.x-box.width/2} y={box.y-box.height/2} width={box.width} height={box.height} fill="white"/>
+ {box.lines.map((line,i)=><text xmlSpace="preserve" key={i} x={box.x} y={box.y+(i-(box.lines.length-1)/2)*LINE_HEIGHT} textAnchor="middle" dominantBaseline="central" style={{fontSize:16,fontFamily:'"Malgun Gothic","Noto Sans KR",sans-serif'}}>{line}</text>)}</g>}</>;
+}
+const edgeTypes={smoothstep:FlowEdge};
 const nodeTypes={flow:FlowNode};
 function App(){
  const [graph,setGraph]=useState({nodes:[],edges:[]}),[name,setName]=useState('새 업무 흐름도'),[busy,setBusy]=useState(false),[status,setStatus]=useState('도형을 추가하고 연결점을 끌어 연결하세요.');
  const flow=useRef(null),current=useRef(graph),history=useRef([]),future=useRef([]),nameRef=useRef(name);
  current.current=graph;nameRef.current=name;
- const mark=()=>send({type:'dirty',value:true});
+ const generation=useRef(0),savedGeneration=useRef(0);
+ const mark=()=>{generation.current++;send({type:'dirty',value:true,generation:generation.current});};
  const checkpoint=()=>{history.current.push(structuredClone(current.current));if(history.current.length>80)history.current.shift();future.current=[];};
- const commit=(next,record=true)=>{if(record)checkpoint();current.current=next;setGraph(next);mark();};
+ const commit=(next,record=true)=>{if(record)checkpoint();next=layoutGraph(next);current.current=next;setGraph(next);mark();};
  const undo=(redo=false)=>{
   const stack=redo?future:history,other=redo?history:future;if(!stack.current.length)return;
   other.current.push(structuredClone(current.current));const next=stack.current.pop();current.current=next;setGraph(next);mark();
  };
  const fit=()=>setTimeout(()=>flow.current?.fitView({padding:.18}),30);
  const replace=(next,title,dirty)=>{
-  current.current=next;setGraph(next);setName(title);history.current=[];future.current=[];
-  send({type:'dirty',value:dirty});fit();
+  next=layoutGraph(next);current.current=next;setGraph(next);setName(title);history.current=[];future.current=[];
+  generation.current++;if(!dirty)savedGeneration.current=generation.current;
+  send({type:'dirty',value:dirty,generation:generation.current});fit();
  };
  const snapshot=()=>validate({format:FORMAT,version:1,...current.current});
  const handle=useRef(null);
@@ -41,7 +57,10 @@ function App(){
   try{
    switch(message.type){
     case 'new':replace({nodes:[],edges:[]},'새 업무 흐름도',false);send({type:'document_new'});break;
-    case 'mark_saved':send({type:'dirty',value:false});setStatus('저장했습니다.');break;
+    case 'mark_saved':
+     if(Number.isInteger(message.generation))savedGeneration.current=Math.max(savedGeneration.current,message.generation);
+     send({type:'dirty',value:generation.current>savedGeneration.current,generation:generation.current});
+     setStatus(generation.current>savedGeneration.current?'추가 변경사항을 저장해 주세요.':'저장했습니다.');break;
     case 'load':{
      const loaded=decode(message.snapshot);
      replace({nodes:loaded.nodes,edges:loaded.edges},message.name,loaded.converted);
@@ -53,7 +72,7 @@ function App(){
     }
     case 'save':{
      const nextName=message.name??nameRef.current;setName(nextName);
-     send({type:'save_document',id:message.id??null,name:nextName,snapshot:snapshot()});break;
+     send({type:'save_document',id:message.id??null,name:nextName,generation:generation.current,snapshot:snapshot()});break;
     }
     case 'export_png':{
      setBusy(true);
@@ -114,11 +133,12 @@ function App(){
     {selectedEdge&&<label>연결선 설명<input aria-label="연결선 설명" maxLength={300} value={selectedEdge.label??''} onChange={e=>commit({...graph,edges:graph.edges.map(v=>v.id===selectedEdge.id?{...v,label:e.target.value}:v)})}/></label>}
     <p>연결점을 끌어 도형 연결<br/>Shift+선택: 여러 도형<br/>Delete: 선택 삭제<br/>Ctrl+휠: 확대·축소</p>
    </aside>
-   <main><ReactFlow nodes={graph.nodes} edges={graph.edges} nodeTypes={nodeTypes} connectionMode={ConnectionMode.Loose} snapToGrid snapGrid={[10,10]}
+   <main><ReactFlow nodes={graph.nodes} edges={graph.edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} connectionMode={ConnectionMode.Loose} snapToGrid snapGrid={[10,10]}
     onInit={instance=>{flow.current=instance;send({type:'ready',protocol_version:1,editor:FORMAT});}}
     onNodesChange={changes=>{
      const edits=changes.filter(c=>c.type!=='select'&&!(c.type==='dimensions'&&!c.resizing));
-     const next={...current.current,nodes:applyNodeChanges(changes,current.current.nodes)};
+     let next={...current.current,nodes:applyNodeChanges(changes,current.current.nodes)};
+     if(changes.some(c=>c.type==='dimensions'&&(c.resizing!==undefined||c.setAttributes)))next=layoutGraph(next);
      current.current=next;setGraph(next);if(edits.length)mark();
     }}
     onEdgesChange={changes=>{const next={...current.current,edges:applyEdgeChanges(changes,current.current.edges)};current.current=next;setGraph(next);if(changes.some(c=>c.type!=='select'))mark();}}

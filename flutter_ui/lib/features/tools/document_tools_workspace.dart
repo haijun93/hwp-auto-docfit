@@ -26,6 +26,9 @@ class _ToolsState extends State<DocumentToolsWorkspace> {
   late String mode;
   String revision = '', saved = '', status = '';
   bool busy = false, closing = false;
+  int _inputRevision = 0, _queuedOperations = 0;
+  String _observedInput = '';
+  Future<void> _pendingOp = Future.value();
   Timer? autosave;
   List<int>? visible;
   List proofreadIssues = [];
@@ -58,6 +61,7 @@ class _ToolsState extends State<DocumentToolsWorkspace> {
   void initState() {
     super.initState();
     mode = modes.containsKey(widget.initial) ? widget.initial : 'clean';
+    input.addListener(_recordInput);
     path.text = widget.initialPath;
     load();
   }
@@ -65,6 +69,7 @@ class _ToolsState extends State<DocumentToolsWorkspace> {
   @override
   void dispose() {
     autosave?.cancel();
+    input.removeListener(_recordInput);
     input.dispose();
     output.dispose();
     path.dispose();
@@ -73,6 +78,13 @@ class _ToolsState extends State<DocumentToolsWorkspace> {
     otherPath.dispose();
     pages.dispose();
     super.dispose();
+  }
+
+  void _recordInput() {
+    if (_observedInput != input.text) {
+      _observedInput = input.text;
+      _inputRevision++;
+    }
   }
 
   bool get dirty => mode == 'outline' && input.text != saved;
@@ -118,6 +130,11 @@ class _ToolsState extends State<DocumentToolsWorkspace> {
   }
 
   Future<bool> save() async {
+    if (_queuedOperations > 0) {
+      autosave?.cancel();
+      autosave = Timer(const Duration(milliseconds: 800), () => save());
+      return false;
+    }
     if (busy || !dirty) return !dirty;
     final snapshot = input.text;
     setState(() => busy = true);
@@ -133,7 +150,7 @@ class _ToolsState extends State<DocumentToolsWorkspace> {
           status = '초안 저장됨';
         });
       }
-      return true;
+      return !dirty;
     } catch (e) {
       if (mounted) setState(() => status = '$e');
       return false;
@@ -147,7 +164,27 @@ class _ToolsState extends State<DocumentToolsWorkspace> {
     }
   }
 
-  Future<void> edit(String action, {bool up = false}) async {
+  Future<void> edit(String action, {bool up = false}) {
+    if (!mounted || busy || closing) return Future.value();
+    autosave?.cancel();
+    setState(() => _queuedOperations++);
+    final next = _pendingOp.then((_) => _editOne(action, up: up)).whenComplete(
+      () {
+        if (mounted) {
+          setState(() => _queuedOperations--);
+        } else {
+          _queuedOperations--;
+        }
+      },
+    );
+    _pendingOp = next.catchError((Object error) {
+      if (mounted) setState(() => status = '$error');
+    });
+    return _pendingOp;
+  }
+
+  Future<void> _editOne(String action, {bool up = false}) async {
+    if (!mounted || mode != 'outline') return;
     if (busy) return;
     autosave?.cancel();
     String note = '';
@@ -171,6 +208,7 @@ class _ToolsState extends State<DocumentToolsWorkspace> {
       note = value;
     }
     try {
+      final requestRevision = _inputRevision;
       final data = await call('outline.$action', {
         'text': input.text,
         'index': index,
@@ -178,6 +216,11 @@ class _ToolsState extends State<DocumentToolsWorkspace> {
         'note': note,
       });
       if (!mounted) return;
+      if (mode != 'outline' || _inputRevision != requestRevision) {
+        setState(() => status = '추가 입력을 보존했습니다. 해당 작업을 다시 실행해 주세요.');
+        changed();
+        return;
+      }
       setState(() {
         input.text = '${data['text']}';
         final row = (data['index'] as num?)?.toInt() ?? 0;
@@ -322,7 +365,10 @@ class _ToolsState extends State<DocumentToolsWorkspace> {
   Future<void> leave() async {
     if (closing) return;
     autosave?.cancel();
+    await _pendingOp;
+    if (!mounted || busy) return;
     if (dirty && !await save()) return;
+    if (dirty) return;
     if (mounted) {
       setState(() => closing = true);
       Navigator.pop(context);
@@ -429,7 +475,7 @@ class _ToolsState extends State<DocumentToolsWorkspace> {
 
   @override
   Widget build(BuildContext context) => PopScope(
-    canPop: closing || !dirty,
+    canPop: closing || (!dirty && _queuedOperations == 0 && !busy),
     onPopInvokedWithResult: (didPop, _) {
       if (!didPop) leave();
     },

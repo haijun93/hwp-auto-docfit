@@ -42,12 +42,12 @@ class DocumentToolsService:
                     raise ServiceError('DRAFT_CONFLICT','다른 창에서 초안이 바뀌었습니다. 다시 불러와 주세요.')
                 temporary=None
                 try:
-                    with tempfile.NamedTemporaryFile(dir=self.folder,mode='w',encoding='utf-8',delete=False) as stream:
-                        temporary=Path(stream.name);stream.write(text);stream.flush();os.fsync(stream.fileno())
+                    with tempfile.NamedTemporaryFile(dir=self.folder,mode='wb',delete=False) as stream:
+                        temporary=Path(stream.name);stream.write(text.encode('utf-8'));stream.flush();os.fsync(stream.fileno())
                     os.replace(temporary,self.draft)
                 finally:
                     if temporary:temporary.unlink(missing_ok=True)
-            return self.outline('load',{})
+                return {'text':text,'revision':sha256(text.encode('utf-8')).hexdigest()}
         if action=='export': return {'text':outline_ops.export_markdown(lines)}
         if action=='filter':return {'visible':sorted(outline_ops.filter_visible(lines,str(payload.get('query',''))))}
         index=payload.get('index',0)

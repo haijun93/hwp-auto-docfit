@@ -144,13 +144,18 @@ Flutter 화면이 누락된 패키지를 만들지 않으며, 런타임의 기�
 ## Alpha 8 코드 구조 및 검증
 
 - `hwp-auto-docfit.py`: CRLF 부트스트랩과 기존 이름 re-export. 외부 스크립트의 import/runpy 계약 유지.
-- `docfit_engine/`: 보안 등록·COM·자간·서식·쪽 배치·파이프라인. `runtime.py`는 기존 세션 전역과 monkeypatch 호환을 유지하는 명시적 바인더이며 전역 상태의 완전 제거를 뜻하지 않는다.
+- `docfit_engine/`: 보안 등록·COM·자간·서식·쪽 배치·파이프라인. `context.py`의 RunContext가 옵션·프로필·캐시·COM 세션 상태를 작업별로 소유한다. `runtime.py`는 함수를 작업별 상태 사전에 바인딩하며 GUI는 context/callbacks를 명시적으로 전달한다. 루트 함수의 기존 monkeypatch 호환 경계는 유지한다.
 - `docfit_ui/legacy.py`: Tk 폴백. `scheduler.py`: 소유 스레드 큐 펌프. 외부 RPC 스레드는 Tk 콜백을 직접 등록하지 않는다.
 - `docfit_core/app_state.py`, `config_store.py`: 정형 상태·옵션과 설정 마이그레이션.
 - `desktop_web_ui.py`: JSON 명령/값만 공개. 프로필 revision 검사, 단계 설정, Flutter 확인 요청을 중개한다.
 - `docfit_app/document_tools_service.py`: 공통 작성 도구, CAS 초안 저장, 선택 교정 사본, 작업 사본 기반 고급 도구와 상태 조회.
 - `flutter_ui/lib/features/`: 프로필·기본 데이터 표·문서 도구·확인 화면. 현재 운영은 Flutter 웹/WebView2이며 별도 네이티브 COM 이관 완료를 뜻하지 않는다.
-- `build.bat`: 동적 로드되는 engine/ui/core/app을 collect-submodules로 포함. Flutter 자산 검사 유지.
+- `HWP_AutoDocFit.spec`: 로컬 build.bat과 CI의 공통 패키징 정의. engine/ui/core/app 하위 모듈을 수집한다. Flutter 자산 검사 유지.
+- `docfit_app/self_test.py`: `--self-test [--self-test-report PATH]` 모듈·실제 부트스트랩 심볼 검사. GUI/COM 생성 없이 종료하며 CI는 동결 EXE를 30초 제한으로 검사한다.
+- `PipelineCallbacks`: log/status/progress 및 on_stage_enter/exit/error, event 포트. 실제 문서 단계에서 호출하며 UI 위젯을 엔진에 전달하지 않는다.
+- 비동기 편집: 흐름도 snapshot 세대와 ACK 세대를 구분하고 아웃라이너 변경 RPC를 직렬화한다. 지연 응답은 최신 입력 revision을 덮어쓰지 않는다.
+- 일반 흐름도: model.js의 공통 글자 측정·자동 크기·안전 여백·줄바꿈을 화면과 PNG 양쪽에서 사용한다.
+- 상세 구현·검증: [Alpha 9](REVIEW_FIXES_ALPHA9.md).
 
 기본 DLL 경로에 복사 또는 등록이 실패하면 `%LOCALAPPDATA%\HwpAutoDocFit\modules`에 폴백한다.
 Windows에서는 저장소 루트 `.venv\Scripts\python.exe`, `PYTHONIOENCODING=utf-8`로 compile/import/unittest를 실행한다.

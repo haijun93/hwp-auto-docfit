@@ -95,6 +95,24 @@ def main():
             page.evaluate("send({type:'save',name:'크기 복원'})")
             page.wait_for_function("messages.filter(m=>m.type==='save_document').length===3")
             assert page.evaluate("messages.findLast(m=>m.type==='save_document').snapshot.nodes[0].width") == 220
+            page.evaluate("send({type:'new'})")
+            frame.locator(".react-flow__node").wait_for(state="detached")
+            frame.get_by_role("button", name="처리 추가", exact=True).click()
+            frame.get_by_label("도형 내용").fill("한글" * 200)
+            frame.locator(".react-flow__controls-fitview").click()
+            page.evaluate("send({type:'save',name:'긴 문장'})")
+            page.wait_for_function("messages.filter(m=>m.type==='save_document').length===4")
+            snapshot = page.evaluate("messages.findLast(m=>m.type==='save_document').snapshot")
+            rect = frame.locator(".react-flow__node").first.bounding_box()
+            scale = rect["width"] / snapshot["nodes"][0]["width"]
+            spans = frame.locator(".node-lines > span")
+            assert spans.count() > 1
+            for index in range(spans.count()):
+                box = spans.nth(index).bounding_box()
+                assert box["x"] >= rect["x"] + 14 * scale
+                assert box["x"] + box["width"] <= rect["x"] + rect["width"] - 14 * scale
+                assert box["y"] >= rect["y"] + 10 * scale
+                assert box["y"] + box["height"] <= rect["y"] + rect["height"] - 10 * scale
             page.evaluate("send({type:'export_png'})")
             page.wait_for_function("messages.some(m=>m.type==='export_png')", timeout=30000)
             png = base64.b64decode(page.evaluate("messages.findLast(m=>m.type==='export_png').base64"))
@@ -105,7 +123,7 @@ def main():
             assert all(url.startswith((f"http://127.0.0.1:{server.server_port}/", f"blob:http://127.0.0.1:{server.server_port}/")) for url in requests), requests
             page.screenshot(path="/tmp/docfit-flow-editor.png")
             print(json.dumps({"templates": 10, "decision_nodes": 6, "decision_edges": 6,
-                              "round_trip": True, "undo_redo": True, "png_size": [width, height],
+                              "round_trip": True, "undo_redo": True, "long_korean_safe": True, "png_size": [width, height],
                               "external_requests": 0, "page_errors": failures}, ensure_ascii=False))
             browser.close()
     finally:

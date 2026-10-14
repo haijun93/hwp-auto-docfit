@@ -1,3 +1,4 @@
+import 'edit_save_state.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:js_interop';
@@ -20,6 +21,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
   late final JSFunction listener;
   String name = '새 업무 흐름도';
   String? identity;
+  final saveState = EditSaveState();
   bool dirty = false, ready = false, busy = false;
   @override
   void initState() {
@@ -96,7 +98,12 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
       return;
     }
     if (type == 'dirty') {
-      if (mounted) setState(() => dirty = message['value'] == true);
+      if (mounted) {
+        setState(() {
+          saveState.event(message['generation'], message['value'] == true);
+          dirty = saveState.dirty;
+        });
+      }
       return;
     }
     if (type == 'template_applied') {
@@ -142,16 +149,29 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
                 16,
                 (_) => Random.secure().nextInt(256),
               ).map((v) => v.toRadixString(16).padLeft(2, '0')).join();
-          final result = await storage('save', {
-            'id': selectedId,
-            'name': message['name'],
-            'snapshot': message['snapshot'],
-          });
-          if (result is! Map) throw Exception('저장 응답을 확인해 주세요.');
+          final targetGeneration = saveState.begin(message['generation']);
+          if (mounted) setState(() {});
+          Object? result;
+          try {
+            result = await storage('save', {
+              'id': selectedId,
+              'name': message['name'],
+              'snapshot': message['snapshot'],
+            });
+            if (result is! Map ||
+                result["id"] is! String ||
+                result["name"] is! String) {
+              throw Exception("저장 응답을 확인해 주세요.");
+            }
+          } catch (_) {
+            saveState.complete(targetGeneration, success: false);
+            rethrow;
+          }
+          saveState.complete(targetGeneration, success: true);
           identity = result['id'] as String;
           name = result['name'] as String;
-          dirty = false;
-          post({'type': 'mark_saved'});
+          dirty = saveState.dirty;
+          post({'type': 'mark_saved', 'generation': targetGeneration});
           notice('흐름도를 이 PC에 저장했어요.');
           break;
         case 'request_png':
@@ -306,9 +326,12 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
 
   @override
   Widget build(BuildContext context) => PopScope(
-    canPop: !dirty,
+    canPop: !dirty && !saveState.saving,
     onPopInvokedWithResult: (didPop, result) async {
-      if (!didPop && await confirmDiscard() && context.mounted) {
+      if (!didPop &&
+          !saveState.saving &&
+          await confirmDiscard() &&
+          context.mounted) {
         Navigator.pop(context);
       }
     },
@@ -318,7 +341,9 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () async {
-            if (await confirmDiscard() && context.mounted) {
+            if (!saveState.saving &&
+                await confirmDiscard() &&
+                context.mounted) {
               Navigator.pop(context);
             }
           },

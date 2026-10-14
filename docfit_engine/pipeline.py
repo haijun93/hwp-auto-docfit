@@ -8,31 +8,25 @@ from docfit_engine.runtime import bind_function, bind_class
 from dataclasses import dataclass
 from typing import Callable
 
+def _noop(*args):
+    pass
+
 @dataclass(frozen=True)
 class PipelineCallbacks:
-    log: Callable[[str], None]
-    status: Callable[[str], None]
-    progress: Callable[[str], None]
+    log: Callable[[str], None] = _noop
+    status: Callable[[str], None] = _noop
+    progress: Callable[[str], None] = _noop
+    on_stage_enter: Callable[[str], None] = _noop
+    on_stage_exit: Callable[[str, bool], None] = _noop
+    on_stage_error: Callable[[str, BaseException], None] = _noop
+    event: object = None
 
 def _install(*, _docfit_namespace, _docfit_symbol):
     global 쪽범위_계산, 문서_처리_1회, _문서_처리_1회, 로그, 진단로그, 상태, 단계표시, 문서_처리, _문서_처리_본체, 절전_방지, 작업_실행
     if _docfit_symbol == '로그':
         def 로그(message):
-            global 로그_파일_경로
-            기록 = str(message)
-            if _콘솔_출력_가능:
-                try:
-                    print(기록)
-                except Exception:
-                    pass
-            if 로그파일_사용 and 로그_파일_경로:
-                try:
-                    with 로그_파일_잠금:
-                        with open(로그_파일_경로, "a", encoding="utf-8") as 로그파일:
-                            로그파일.write(f"{_datetime.datetime.now():%Y-%m-%d %H:%M:%S.%f} {기록}\n")
-                except Exception:
-                    pass
-            gui_queue.put(("log", 기록))
+            from docfit_engine.context import current_context
+            current_context().callbacks.log(str(message))
         return bind_function(로그, _docfit_namespace)
     if _docfit_symbol == '진단로그':
         def 진단로그(message):
@@ -41,7 +35,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
         return bind_function(진단로그, _docfit_namespace)
     if _docfit_symbol == '상태':
         def 상태(message):
-            gui_queue.put(("status", str(message)))
+            from docfit_engine.context import current_context
+            current_context().callbacks.status(str(message))
         return bind_function(상태, _docfit_namespace)
     if _docfit_symbol == '단계표시':
         def 단계표시(단계명):
@@ -49,7 +44,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             단계시간_구간(단계명)
             상위 = _세부단계_단계매핑.get(단계명, 단계명)
             if 상위 in 진행단계_순서:
-                gui_queue.put(("step", 상위))
+                from docfit_engine.context import current_context
+                current_context().callbacks.progress(상위)
             # 진행 화면의 친절한 단계 안내 문장도 함께 바꾼다.
             gui_queue.put(("guide", 단계명))
         return bind_function(단계표시, _docfit_namespace)
@@ -878,11 +874,20 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 _서식통일_위치텍스트_보관.clear()
                 _서식통일_보류위치.clear()
             def stage(name, action):
-                단계표시(name)
-                상태(f"{파일명} [{회차}/{총회차}] : {name}")
-                hwp_run('Cancel')
-                순회_시작()
-                return action() is not False
+                from docfit_engine.context import current_context
+                callbacks = current_context().callbacks
+                callbacks.on_stage_enter(name)
+                try:
+                    단계표시(name)
+                    상태(f"{파일명} [{회차}/{총회차}] : {name}")
+                    hwp_run('Cancel')
+                    순회_시작()
+                    result = action() is not False
+                except BaseException as error:
+                    callbacks.on_stage_error(name, error)
+                    raise
+                callbacks.on_stage_exit(name, result)
+                return result
             def 최종_서식통일_검증():
                 # 서식통일이 기준인 경우(표준서식 없음)에만, 서식통일 뒤의 자간·내어쓰기 반복이 바꾼 문장을
                 # 처음 대표값으로 다시 맞춘다. 표준서식이 기준이면 괄호 -2pt·최종 내어쓰기·부연설명 단계가

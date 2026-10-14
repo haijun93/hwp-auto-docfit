@@ -8,7 +8,7 @@ from docfit_engine.security import install_security_dll
 
 
 class EngineExtractionTest(unittest.TestCase):
-    def test_com_driver_binding_keeps_session_globals_live(self):
+    def test_compatibility_export_executes_with_private_context_globals(self):
         class Driver:
             def Open(self, *args): return args
         first, second = {'__name__': 'first'}, {'__name__': 'second'}
@@ -16,6 +16,9 @@ class EngineExtractionTest(unittest.TestCase):
         b = resolve('docfit_engine.com_driver', '한글_문서_열기', second)
         self.assertIs(a.__globals__, first)
         self.assertIs(b.__globals__, second)
+        from docfit_engine.runtime import session_for
+        context = session_for(first).new_context()
+        self.assertIsNot(context.function('한글_문서_열기').__globals__, first)
         self.assertEqual(a(Driver(), 'file', 'HWPX'), ('file', 'HWPX', ''))
 
     def test_security_registration_failure_uses_localappdata(self):
