@@ -202,14 +202,71 @@ def column_ratios(table):
     return [sum(row[c] for row in found) / len(found) for c in range(cols)]
 
 
-def fit_table(table, body_width, index: HeaderIndex) -> bool:
-    """표 폭을 본문 폭에 맞추고 열 너비를 칸 글자 수 비율(다단 머리글 제외, 본문 행별 비율의 평균)로 나눈다. 바꿨으면 True."""
+_RESERVE_MIN_SIZE = 1600
+
+
+def _plan_with_empty_columns(cells, cols, weights, floors, total):
+    """모든 칸이 빈 열(점선 칸·장식 칸·빈 비고 열)은 원래 너비 비율을 지키고, 나머지 폭만 글자 수 비율로 나눈다.
+
+    빈 열은 글자 수가 0이라 최소 폭으로 줄어, '2026 추진실적 ……(8. 31. 현재)' 같은 장식 표의 점선 칸이
+    사라지고 글 칸이 넓어져 모양이 깨졌다(test6 문화경제국 문서).
+    """
+    original = [0] * cols
+    empty = [True] * cols
+    for tc, col, _, span in cells:
+        if span == 1 and 0 <= col < cols:
+            original[col] = max(original[col], _int(_child(tc, "cellSz").get("width")))
+        if "".join(paragraph_texts(tc)).strip():
+            for c in range(max(0, col), min(cols, col + span)):
+                empty[c] = False
+    keep = [c for c in range(cols) if empty[c] and original[c] > 0]
+    if not keep or len(keep) == cols or not sum(original):
+        return plan_widths(weights, cap_floors(floors, total), total)
+    kept = {c: int(original[c] * total / sum(original)) for c in keep}
+    rest = total - sum(kept.values())
+    others = [c for c in range(cols) if c not in kept]
+    share = [weights[c] for c in others]
+    share = [x / sum(share) for x in share] if sum(share) else [1 / len(others)] * len(others)
+    widths = [0] * cols
+    for c, width in zip(others, plan_widths(share, cap_floors([floors[c] for c in others], rest), rest)):
+        widths[c] = width
+    for c, width in kept.items():
+        widths[c] = width
+    return widths
+
+
+def host_reserve(paragraph, table, index: HeaderIndex) -> int:
+    """글자처럼 놓인 표 앞에 같은 문단에서 차지하는 폭(HWPUNIT): 표 앞 글(빈칸 포함)과 문단의 양수 왼쪽·오른쪽 여백·첫 줄 들여쓰기.
+
+    예: '   '(빈칸 셋) 뒤에 놓인 표를 본문 폭 그대로 넓히면 빈칸 폭만큼 줄을 넘쳐 한/글이 표를 용지 밖으로 밀었다
+    (test6 문화경제국 문서 '총 계 | 노래연습장 …' 표). 표가 글과 따로 놓이면(treatAsChar 아님) 0이다.
+    """
+    pos = _child(table, "pos")
+    if paragraph is None or pos is None or pos.get("treatAsChar") != "1":
+        return 0
+    para = index.para(paragraph.get("paraPrIDRef")) or {}
+    reserve = sum(max(0, int(para.get(key) or 0)) for key in ("left", "right", "indent"))
+    for run in (x for x in paragraph if _tag(x) == "run"):
+        values = index.char(run.get("charPrIDRef")) or {}
+        # 표준서식이 나중에 본문 글자를 키우므로(최대 16pt) 표 앞 글 폭은 그 크기로 넉넉히 잡는다.
+        size = max(values.get("size", 1000), _RESERVE_MIN_SIZE) * values.get("ratio", 100) / 100
+        for child in run:
+            if child is table:
+                return reserve
+            if _tag(child) == "t":
+                text = (child.text or "") + "".join(c.tail or "" for c in child)
+                reserve += int(sum(0.5 if ch.isspace() or _half_width(ch) else 1.0 for ch in text) * size)
+    return reserve
+
+
+def fit_table(table, body_width, index: HeaderIndex, reserve: int = 0) -> bool:
+    """표 폭을 본문 폭(표 앞 글·문단 여백 reserve를 뺀 폭)에 맞추고 열 너비를 칸 글자 수 비율로 나눈다. 바꿨으면 True."""
     if not body_width or not is_target(table):
         return False
     cells = _cells(table)
     cols = _int(table.get("colCnt"))
     out = _child(table, "outMargin")
-    total = int(body_width) - ((_int(out.get("left")) + _int(out.get("right"))) if out is not None else 0)
+    total = int(body_width) - ((_int(out.get("left")) + _int(out.get("right"))) if out is not None else 0) - max(0, reserve)
     if total <= cols * 300:
         return False
     weights = column_ratios(table)
@@ -233,8 +290,7 @@ def fit_table(table, body_width, index: HeaderIndex) -> bool:
                     char = max(char, width * (1.08 if values["bold"] else 1.0))
         floors[col] = max(floors[col], int(longest_word(tc) * (char or 1000) * 1.1) + side + 200)
     # 최소 폭이 표 폭을 넘치면 긴 글자 묶음(날짜 범위·주소 등) 열부터 깎아 다른 열 몫을 빼앗지 않게 한다.
-    floors = cap_floors(floors, total)
-    widths = plan_widths(weights, floors, total)
+    widths = _plan_with_empty_columns(cells, cols, weights, floors, total)
     for tc, col, _, span in cells:
         _child(tc, "cellSz").set("width", str(sum(widths[col:col + span])))
         for p in cell_paragraphs(tc):

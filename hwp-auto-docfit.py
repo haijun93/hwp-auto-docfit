@@ -334,7 +334,7 @@ from docfit_core import spacing_reset as 자간초기화모듈
 from docfit_core import char_ranges as 글자구간모듈
 from docfit_core import text_edit as 글고치기모듈
 from docfit_core import format_elements as 서식요소
-from docfit_core.table_width import fit_table as 표너비_맞춤, is_target as 표너비_대상인가
+from docfit_core.table_width import fit_table as 표너비_맞춤, host_reserve as 표너비_앞자리, is_target as 표너비_대상인가
 from docfit_core import (
     KordocUnavailableError,
     analyze_form,

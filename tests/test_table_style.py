@@ -154,7 +154,8 @@ class ApplyTest(unittest.TestCase):
         self.assertEqual(read.side((2, 2), "topBorder"), "SOLID")
         self.assertIsNone(read.face_color((3, 1)))
         self.assertEqual(read.font((3, 1))[:3], ("휴먼명조", 1200, False))
-        self.assertEqual(read.align((3, 0)), "DISTRIBUTE")
+        # 예시 첫 열은 배분 정렬이지만 숫자 글('3-0')은 흩어지므로 가운데 정렬로 둔다.
+        self.assertEqual(read.align((3, 0)), "CENTER")
         self.assertEqual(read.align((3, 2)), "CENTER")      # 숫자만 있는 본문 칸('3-2')은 예시 정렬
         self.assertEqual(read.side((4, 0), "leftBorder"), "NONE")
         self.assertEqual(read.side((4, 3), "rightBorder"), "NONE")
@@ -181,7 +182,7 @@ class ApplyTest(unittest.TestCase):
             self.assertEqual(read.align(pos), "LEFT", pos)
         for pos in ((1, 2), (2, 2), (3, 2), (0, 1), (0, 2)):
             self.assertEqual(read.align(pos), "CENTER", pos)
-        self.assertEqual(read.align((2, 0)), "DISTRIBUTE")
+        self.assertEqual(read.align((2, 0)), "DISTRIBUTE")   # 짧은 한글 머리말('소요 기간')은 예시의 배분 정렬
         # 사용자가 배운 서식은 예시 정렬을 그대로 따른다(문장 왼쪽 정렬은 내장 기본값에만).
         learned = default_style()
         for cell in learned["cells"]:
@@ -320,7 +321,7 @@ class LearnTest(unittest.TestCase):
         _, read = _apply(_grid(3, 3), learned)
         self.assertEqual(read.face_color((0, 1)), "#DFE6F7")
         self.assertEqual(read.side((0, 0), "leftBorder"), "NONE")
-        self.assertEqual(read.align((2, 0)), "DISTRIBUTE")
+        self.assertEqual(read.align((2, 0)), "CENTER")   # 숫자 글('2-0')은 배분 정렬하지 않는다
 
     def test_document_without_grid_table_is_rejected(self):
         folder = Path(tracked_tempdir(self, "docfit-table-style-"))
@@ -409,6 +410,14 @@ class PrecisionRegressionTest(unittest.TestCase):
                 service.command("reset", {}, running=True)
             reset = service.command("reset", {})
             self.assertEqual(reset["preview"]["rows"], default_style()["rows"])
+
+class SpreadLabelTest(unittest.TestCase):
+    def test_distribute_only_for_short_hangul_labels(self):
+        from docfit_core.table_style import _spread_label
+        for text in ('구 분', '총 계', '시설명'):
+            self.assertTrue(_spread_label(text), text)
+        for text in ('332', '2026 추진실적', '(8. 31. 현재)', '노래연습장 영업주 안전교육', 'A'):
+            self.assertFalse(_spread_label(text), text)
 
 
 if __name__ == "__main__":

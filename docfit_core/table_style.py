@@ -480,6 +480,15 @@ def _fits_one_line(paragraph, tc, table, height, ratio):
     return needed * ratio / 100 <= width
 
 
+_SPREAD_ALIGNS = ("DISTRIBUTE", "DISTRIBUTE_SPACE")
+
+
+def _spread_label(text):
+    """배분 정렬이 어울리는 칸 글: 빈칸을 뺀 한글만 2~6자('구 분', '총 계', '시 설 명')."""
+    letters = re.sub(r"\s", "", text or "")
+    return 2 <= len(letters) <= 6 and all("가" <= ch <= "힣" for ch in letters)
+
+
 def apply_table_style(pool, table):
     """표 하나에 기본 표 서식을 적용하고 서식을 바꾼 칸 수를 돌려준다."""
     style = pool.style
@@ -529,6 +538,8 @@ def apply_table_style(pool, table):
             # 본문 문장 정렬(text_align)이 있으면 길이와 관계없이 입힌다. 숫자·날짜 칸은 예시 정렬을 따른다.
             sentence = bool(text_align) and not _number_like(_text(paragraph).strip())
             align = text_align if sentence else base.get("align")
+            if align in _SPREAD_ALIGNS and not _spread_label(_text(paragraph)):
+                align = "CENTER"   # 배분 정렬은 짧은 한글 머리말에만(숫자 '332'·'2026 추진실적'은 글자가 흩어진다)
             if align and paragraph.get("paraPrIDRef") is not None and (
                     sentence or base_role == "header"
                     or _fits_one_line(paragraph, tc, table, spec["height"], ratio)):

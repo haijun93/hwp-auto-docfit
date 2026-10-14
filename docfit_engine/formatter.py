@@ -3422,13 +3422,15 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             for name, items in selections.items():
                 root = sections[name]
                 found = 표들(root)
+                놓인문단 = {id(t): p for p in root for r in p for t in r if 제목_xml이름(t) == 'tbl'}
                 본문폭 = _구역_본문폭(root, None)
                 for number in items:
                     table = found[number]
                     if not 대상인가(table):
                         raise RuntimeError('처리 중 표 구조가 바뀌어 표 칸 너비 맞춤을 중단했습니다.')
                     before = _표_텍스트(table)
-                    if 표너비_맞춤(table, 본문폭, index):
+                    # 표 앞 글(빈칸)·문단 여백만큼 빼야 넓힌 표가 줄을 넘쳐 용지 밖으로 밀리지 않는다.
+                    if 표너비_맞춤(table, 본문폭, index, reserve=표너비_앞자리(놓인문단.get(id(table)), table, index)):
                         count += 1
                     if _표_텍스트(table) != before:
                         raise RuntimeError('표 칸 너비 맞춤 중 표 내용 보존 검사에 실패했습니다.')
