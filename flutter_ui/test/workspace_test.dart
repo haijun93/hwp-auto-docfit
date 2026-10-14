@@ -126,11 +126,10 @@ void main() {
       expect(find.textContaining('1개 문서 · 서식 통일 · 문서 전체'), findsOneWidget);
       await tester.tap(find.text('정리 시작'));
       await tester.pump(const Duration(milliseconds: 300));
-      expect(calls.where((s) => s != 'get_state'), [
-        'add_files',
-        'set_mode',
-        'start',
-      ]);
+      expect(
+        calls.where((s) => s != 'get_state' && s != 'enable_close_guard'),
+        ['add_files', 'set_mode', 'start'],
+      );
       expect(find.text('문서를 정리하고 있어요'), findsOneWidget);
       await tester.tap(find.text(width >= 1000 ? '문서 선택' : '1. 문서 선택').first);
       await tester.pump(const Duration(milliseconds: 300));
@@ -633,7 +632,12 @@ void main() {
         find.byKey(const Key('abbreviationManagerDialog')),
         findsOneWidget,
       );
-      expect(calls.where((name) => name != 'get_state'), ['get_abbreviations']);
+      expect(
+        calls.where(
+          (name) => name != 'get_state' && name != 'enable_close_guard',
+        ),
+        ['get_abbreviations'],
+      );
       await tester.pumpWidget(const SizedBox());
     },
   );

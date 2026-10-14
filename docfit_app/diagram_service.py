@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 import re
 import tempfile
+from hashlib import sha256
+from docfit_infra.storage.process_lock import ProcessLock
 
 from docfit_app.api_contract import ServiceError
 from docfit_app.settings_migrations import migrate
@@ -64,16 +66,30 @@ class DiagramService:
         try:
             if path.is_symlink() or path.stat().st_size > _MAX_SNAPSHOT_BYTES + 16_384:
                 raise ServiceError("DIAGRAM_INVALID", "도형 파일 크기나 경로가 올바르지 않습니다.")
-            item = json.loads(path.read_text(encoding="utf-8"))
+            raw = path.read_bytes()
+            item = json.loads(raw.decode("utf-8"))
         except FileNotFoundError as exc:
             raise ServiceError("DIAGRAM_NOT_FOUND", "저장된 도형 문서를 찾지 못했습니다.") from exc
         except (OSError, ValueError) as exc:
             raise ServiceError("DIAGRAM_READ_FAILED", "도형 문서를 읽지 못했습니다.") from exc
         if not isinstance(item, dict) or not isinstance(item.get("snapshot"), dict):
             raise ServiceError("DIAGRAM_INVALID", "도형 문서 형식이 올바르지 않습니다.")
+        item["revision"] = sha256(raw).hexdigest()
         return item
 
-    def save(self, diagram_id, name, snapshot):
+    def save(self, diagram_id, name, snapshot, expected_revision=None):
+        self.require_enabled()
+        path = self._document_path(diagram_id)
+        with ProcessLock(path.with_suffix(".lock")):
+            current = self.load(diagram_id) if path.exists() else None
+            if ((current is None and expected_revision is not None)
+                    or (current is not None and expected_revision != current["revision"])):
+                raise ServiceError("DIAGRAM_CONFLICT", "다른 편집자가 문서를 변경했습니다. 새 문서로 저장하거나 다시 열어 주세요.")
+            result = self._save_locked(diagram_id, name, snapshot)
+            result["revision"] = self.load(diagram_id)["revision"]
+            return result
+
+    def _save_locked(self, diagram_id, name, snapshot):
         self.require_enabled()
         path = self._document_path(diagram_id)
         if self.root.is_symlink():
@@ -122,6 +138,10 @@ class DiagramService:
     def delete(self, diagram_id):
         self.require_enabled()
         path = self._document_path(diagram_id)
+        with ProcessLock(path.with_suffix(".lock")):
+            return self._delete_locked(path)
+
+    def _delete_locked(self, path):
         try:
             if path.is_symlink():
                 raise ServiceError("DIAGRAM_INVALID", "도형 저장 경로가 올바르지 않습니다.")

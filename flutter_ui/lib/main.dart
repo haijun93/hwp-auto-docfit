@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 
 import 'bridge.dart' as bridge;
 import 'core/api/abbreviation_api.dart';
+import 'core/close_guards.dart';
 import 'features/abbreviations/abbreviation_manager.dart';
 import 'features/formats/table_template_panel.dart';
 import 'features/formats/profile_editor.dart';
@@ -94,6 +95,7 @@ class _WorkspaceState extends State<Workspace> {
   String? formatNotice;
   int formatSection = 0;
   bool backendDialogOpen = false;
+  bool appClosing = false;
 
   static const tabs = ['문서 선택', '작업 방식', '진행 과정', '결과 확인'];
   // (내부 모드, 이름, 설명, 아이콘, 결과 파일 접미사). 서식 적용(format)은
@@ -130,7 +132,8 @@ class _WorkspaceState extends State<Workspace> {
   ];
 
   bool get running => state['running'] == true;
-  bool get locked => busy || running || state.isEmpty || error != null;
+  bool get locked =>
+      appClosing || busy || running || state.isEmpty || error != null;
   List get files => state['files'] as List? ?? [];
   List get results => state['results'] as List? ?? [];
   List get stages => state['stages'] as List? ?? [];
@@ -190,8 +193,17 @@ class _WorkspaceState extends State<Workspace> {
   @override
   void initState() {
     super.initState();
+    unawaited(_enableCloseGuard());
     refresh();
     timer = Timer.periodic(const Duration(seconds: 1), (_) => refresh());
+  }
+
+  Future<void> _enableCloseGuard() async {
+    try {
+      await widget.api('enable_close_guard', []);
+    } catch (_) {
+      /* Older preview hosts have no OS window. */
+    }
   }
 
   @override
@@ -560,78 +572,87 @@ class _WorkspaceState extends State<Workspace> {
   );
 
   @override
-  Widget build(BuildContext context) => CallbackShortcuts(
-    bindings: {
-      const SingleActivator(LogicalKeyboardKey.keyO, control: true): () {
-        if (!locked) command('add_files');
+  Widget build(BuildContext context) => _closeLock(
+    CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyO, control: true): () {
+          if (!locked) command('add_files');
+        },
+        const SingleActivator(LogicalKeyboardKey.enter, control: true):
+            primaryShortcut,
+        const SingleActivator(LogicalKeyboardKey.f1): showHelp,
       },
-      const SingleActivator(LogicalKeyboardKey.enter, control: true):
-          primaryShortcut,
-      const SingleActivator(LogicalKeyboardKey.f1): showHelp,
-    },
-    child: Focus(
-      autofocus: true,
-      child: Scaffold(
-        key: scaffoldKey,
-        endDrawer: settingsDrawer(),
-        appBar: appBar(),
-        body: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, layout) => Row(
-              children: [
-                if (layout.maxWidth >= 1000) sidebar(),
-                Expanded(
-                  child: Column(
-                    children: [
-                      if (busy) const LinearProgressIndicator(minHeight: 2),
-                      if (error != null)
-                        Material(
-                          color: const Color(0xfffff1da),
-                          child: ListTile(
-                            leading: const Icon(Icons.wifi_off_rounded),
-                            title: Text(error!),
-                            trailing: IconButton(
-                              onPressed: state['native_backend'] == true
-                                  ? () => command('restart_backend')
-                                  : refresh,
-                              tooltip: '다시 연결',
-                              icon: const Icon(Icons.refresh),
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
+          key: scaffoldKey,
+          endDrawer: settingsDrawer(),
+          appBar: appBar(),
+          body: SafeArea(
+            child: LayoutBuilder(
+              builder: (context, layout) => Row(
+                children: [
+                  if (layout.maxWidth >= 1000) sidebar(),
+                  Expanded(
+                    child: Column(
+                      children: [
+                        if (busy) const LinearProgressIndicator(minHeight: 2),
+                        if (error != null)
+                          Material(
+                            color: const Color(0xfffff1da),
+                            child: ListTile(
+                              leading: const Icon(Icons.wifi_off_rounded),
+                              title: Text(error!),
+                              trailing: IconButton(
+                                onPressed: state['native_backend'] == true
+                                    ? () => command('restart_backend')
+                                    : refresh,
+                                tooltip: '다시 연결',
+                                icon: const Icon(Icons.refresh),
+                              ),
                             ),
                           ),
-                        ),
-                      if (layout.maxWidth < 1000) topTabs(),
-                      Expanded(
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-                          child: Center(
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 960),
-                              child: AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 160),
-                                child: KeyedSubtree(
-                                  key: ValueKey(tab),
-                                  child: [
-                                    documents,
-                                    options,
-                                    progress,
-                                    outcome,
-                                  ][tab](),
+                        if (layout.maxWidth < 1000) topTabs(),
+                        Expanded(
+                          child: SingleChildScrollView(
+                            padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+                            child: Center(
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  maxWidth: 960,
+                                ),
+                                child: AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 160),
+                                  child: KeyedSubtree(
+                                    key: ValueKey(tab),
+                                    child: [
+                                      documents,
+                                      options,
+                                      progress,
+                                      outcome,
+                                    ][tab](),
+                                  ),
                                 ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                      bottomBar(),
-                    ],
+                        bottomBar(),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
       ),
     ),
+  );
+
+  Widget _closeLock(Widget child) => ExcludeFocus(
+    excluding: appClosing,
+    child: AbsorbPointer(absorbing: appClosing, child: child),
   );
 
   PreferredSizeWidget appBar() => AppBar(
@@ -1570,6 +1591,12 @@ class _WorkspaceState extends State<Workspace> {
 
   void checkBackendDialog([Object? incoming]) {
     final pending = incoming ?? state['pending_dialog'];
+    if (pending is Map && pending['kind'] == 'app_close') {
+      if (!appClosing && !backendDialogOpen) {
+        unawaited(_prepareHostClose(pending));
+      }
+      return;
+    }
     if (backendDialogOpen || pending is! Map || pending['id'] is! String) {
       return;
     }
@@ -1584,6 +1611,30 @@ class _WorkspaceState extends State<Workspace> {
       backendDialogOpen = false;
       if (mounted) await refresh();
     });
+  }
+
+  Future<void> _prepareHostClose(Map request) async {
+    setState(() => appClosing = true);
+    var accepted = false;
+    try {
+      accepted = !busy && await CloseGuards.prepareAll();
+      // An unregistered dialog may hold edits or a pending RPC: fail closed.
+      accepted =
+          accepted && mounted && ModalRoute.of(context)?.isCurrent == true;
+      final result = await widget.api('resolve_dialog', [
+        request['id'],
+        accepted,
+      ]);
+      accepted = accepted && result is Map && result['accepted'] == true;
+    } catch (_) {
+      accepted = false;
+    }
+    if (mounted && !accepted) {
+      setState(() => appClosing = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('종료를 취소했습니다. 저장 중이면 완료 후 다시 닫아 주세요.')),
+      );
+    }
   }
 
   Future<void> openTools(String name) async {

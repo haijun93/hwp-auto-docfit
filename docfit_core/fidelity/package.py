@@ -14,7 +14,8 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import Path
-import shutil
+import os
+import tempfile
 import struct
 import zlib
 from ..hwpx import HwpxLimits, HwpxSecurityError
@@ -221,16 +222,31 @@ def build_package(snapshot: PackageSnapshot, replacements: dict) -> bytes:
     return bytes(out)
 
 
+def _publish_new(data: bytes, target: Path) -> str:
+    """Publish a private temporary inode without replacing any existing name."""
+    if target.exists() or target.is_symlink():
+        raise FileExistsError(f"결과 파일이 이미 존재합니다: {target}")
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="wb", dir=target.parent, prefix=".docfit-", delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.link(temporary, target)  # Atomic, exclusive publication (also on NTFS).
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+    return sha256(data).hexdigest()
+
+
 def write_package(snapshot: PackageSnapshot, replacements: dict, target) -> str:
     """패키지를 target에 쓰고 결과 SHA-256을 돌려준다. 원본 경로에는 쓰지 않는다."""
     target = Path(target)
     if target.resolve() == Path(snapshot.path).resolve():
         raise ValueError("원본 파일에 덮어쓸 수 없습니다.")
     data = build_package(snapshot, replacements)
-    temp = target.with_name(target.name + ".tmp")
-    temp.write_bytes(data)
-    temp.replace(target)
-    return sha256(data).hexdigest()
+    return _publish_new(data, target)
 
 
 def copy_exact(source, target) -> dict:
@@ -238,8 +254,8 @@ def copy_exact(source, target) -> dict:
     source, target = Path(source), Path(target)
     if target.resolve() == source.resolve():
         raise ValueError("원본과 같은 경로에는 복제할 수 없습니다.")
-    original = sha256(source.read_bytes()).hexdigest()
-    shutil.copyfile(source, target)
-    copied = sha256(target.read_bytes()).hexdigest()
+    data = source.read_bytes()
+    original = sha256(data).hexdigest()
+    copied = _publish_new(data, target)
     return {"source_sha256": original, "result_sha256": copied, "identical": original == copied,
             "verdict": "검증된 완전 일치" if original == copied else "실패"}

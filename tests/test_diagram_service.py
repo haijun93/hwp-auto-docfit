@@ -74,9 +74,9 @@ class DiagramServiceTests(unittest.TestCase):
 
     def test_failed_overwrite_preserves_previous_document(self):
         self.enable()
-        self.service.save(self.diagram_id, "first", self.snapshot)
+        saved = self.service.save(self.diagram_id, "first", self.snapshot)
         with self.assertRaises(ServiceError):
-            self.service.save(self.diagram_id, "second", {"bad": object()})
+            self.service.save(self.diagram_id, "second", {"bad": object()}, saved["revision"])
         self.assertEqual(self.service.load(self.diagram_id)["name"], "first")
         self.assertFalse(list(self.service.root.glob("*.tmp")))
 
@@ -103,6 +103,11 @@ class DiagramServiceTests(unittest.TestCase):
         saved = app.dispatch("diagram_save", [self.diagram_id, "업무", self.snapshot])
         self.assertEqual(app.dispatch("diagram_load", [self.diagram_id])["snapshot"], self.snapshot)
         self.assertEqual(saved["id"], self.diagram_id)
+        updated = app.dispatch("diagram_save", [self.diagram_id, "수정", self.snapshot, saved["revision"]])
+        self.assertNotEqual(updated["revision"], saved["revision"])
+        with self.assertRaises(ServiceError) as caught:
+            app.dispatch("diagram_save", [self.diagram_id, "오래된 수정", self.snapshot, saved["revision"]])
+        self.assertEqual(caught.exception.code, "DIAGRAM_CONFLICT")
 
 
 if __name__ == "__main__":

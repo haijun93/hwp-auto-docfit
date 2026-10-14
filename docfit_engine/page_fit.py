@@ -4294,7 +4294,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             실측(2026-09-30): 2×2·2행1열 제목 표와 1행 붙임 표는 한 칸 표가 아니라서 1행이 머리글
             서식(한컴돋움 13pt)으로 덮여 제목 27pt·붙임 17pt가 사라졌다. 현재 문서를 HWPX로 스냅샷
             저장해 구조로 판별하고, 한/글에서 칸 글이 같은지 확인된 표만 돌려준다. 묶음(표칸_묶음_키별)이
-            있고 서식 표 모양(칸 2~3개)의 표가 없으면 저장하지 않는다. 판별에 실패하면 빈 집합이다.
+            있고 서식 표 모양(칸 2~3개)의 표가 없으면 저장하지 않는다. 판별 실패·위치 불일치는
+            보호 대상이 없다는 뜻이 아니므로 예외로 작업을 중단한다.
             스냅샷은 지금 편집 문서가 되어 한/글이 잡고 있으므로 다음 실행 때 정리한다.
             """
             # 장식 표·캡션 달린 표는 디자인표_영역_목록(장식만=True)이 따로 보호한다. 여기서는 예전처럼
@@ -4308,8 +4309,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 표들 = 서식표_영역_목록(경로, 장식만=True) if 장식만 else 서식표_영역_목록(경로)
             except Exception as e:
                 shutil.rmtree(folder, ignore_errors=True)
-                로그(f"서식 표 판별 실패(표 서식을 모든 표에 적용): {e}")
-                return set()
+                raise RuntimeError("표의 보호 영역을 확인하지 못해 문서 수정을 중단합니다.") from e
             보호 = set()
             for 영역들, (area, 순번, 글) in 표들:
                 # 목록 번호가 어긋나면 다른 표를 빼게 되므로, 칸 문단 글자가 HWPX와 같은지 확인한다.
@@ -4322,7 +4322,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 if 같은칸:
                     보호.update(영역들)
                 else:
-                    진단로그(f"[서식 표 제외] 칸 위치를 확인하지 못해 표 서식을 적용합니다: {글.strip()[:40]}")
+                    hwp_run("Cancel")
+                    raise RuntimeError("표의 칸 위치가 일치하지 않아 문서 수정을 중단합니다.")
             hwp_run("Cancel")
             return 보호
         return bind_function(서식표_보호영역_조사, _docfit_namespace)

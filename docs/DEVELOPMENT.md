@@ -172,3 +172,15 @@ Windows 한/글 실측, WebView2 포커스와 EXE 패키징은 Windows 환경에
 - tldraw는 기존 `tldraw_editor/`·`features/diagrams/`·`DiagramService`를 유지. 개발자 모드와 별도 옵션이 모두 필요하며 `diagrams/` 데이터를 사용한다.
 - `scripts/build_flow_editor.ps1`이 고정 의존성 설치·모델 시험·번들·라이선스 고지를 생성하며 웹/네이티브 빌드에서 호출한다. Node 22.12+ 필요.
 - 일반 편집기는 런타임 CDN·외부 서비스 없이 로컬 자산 사용. 기존 tldraw SDK 제품 사용권 과제는 그대로 유지한다.
+
+
+### Alpha 11 저장·종료 보호 계약
+
+- fidelity 출력은 기존 결과를 덮어쓰지 않는다. 하드링크를 지원하지 않는 파일시스템의 오류는 명시적으로 처리한다.
+- FlowService/DiagramService 기존 문서 저장에는 load/save 응답의 revision이 필요하다.
+  문서별 프로세스 잠금 안에서 비교·쓰기·응답을 확정하며 충돌은 사본 저장으로 복구한다.
+- Flutter core/close_guards.dart의 CloseLease는 편집 화면 dispose까지 종료를 보류한다.
+  DesktopWebBridge.enable_close_guard → app_close 폴링 → resolve_dialog 승인 순서이며,
+  native closing 콜백에서 JavaScript를 동기 대기하지 않는다.
+- kordoc 버전별 .install.lock 파일은 제거하지 않는다. 설치 완료를 잠금 안에서 재검사한다.
+- 검증·Windows 실기기 한계: docs/FINAL_REVIEW_FIXES_ALPHA11.md.

@@ -1,3 +1,4 @@
+import '../../core/close_guards.dart';
 import '../flows/edit_save_state.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -33,13 +34,22 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
   final saveState = EditSaveState();
   bool dirty = false;
   bool busy = true;
-  String? diagramId;
+  String? diagramId, revision;
   String name = '새 업무 흐름도';
   String? failure;
+
+  late final CloseLease _closeLease;
+  Future<bool> _prepareHostClose() async {
+    if (saveState.saving || busy || !canCloseEditor(context)) return false;
+    if (!await confirmDiscard() || !mounted) return false;
+    Navigator.of(context).pop();
+    return true;
+  }
 
   @override
   void initState() {
     super.initState();
+    _closeLease = CloseGuards.register(_prepareHostClose);
     initialize();
   }
 
@@ -152,7 +162,12 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
     return widget.api('diagram_$action', switch (action) {
       'list' => const [],
       'load' || 'delete' => [payload['id']],
-      _ => [payload['id'], payload['name'], payload['snapshot']],
+      _ => [
+        payload['id'],
+        payload['name'],
+        payload['snapshot'],
+        payload['revision'],
+      ],
     });
   }
 
@@ -180,6 +195,7 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
             final loaded = await storage('load', {'id': diagramId});
             if (loaded is! Map) throw Exception('저장된 도형 문서 응답이 올바르지 않습니다.');
             name = loaded['name'] as String;
+            revision = loaded['revision'] as String;
             post({
               'type': 'load',
               'id': diagramId,
@@ -207,6 +223,7 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
         case 'request_new':
           if (await confirmDiscard()) {
             diagramId = null;
+            revision = null;
             name = '새 업무 흐름도';
             dirty = false;
             post({'type': 'new'});
@@ -231,10 +248,12 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
               'id': id,
               'name': message['name'],
               'snapshot': message['snapshot'],
+              'revision': revision,
             });
             if (saved is! Map ||
                 saved["id"] is! String ||
-                saved["name"] is! String) {
+                saved["name"] is! String ||
+                saved['revision'] is! String) {
               throw Exception("도형 저장 응답이 올바르지 않습니다.");
             }
           } catch (_) {
@@ -243,6 +262,7 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
           }
           saveState.complete(targetGeneration, success: true);
           diagramId = saved['id'] as String;
+          revision = saved['revision'] as String;
           name = saved['name'] as String;
           post({'type': 'mark_saved', 'generation': targetGeneration});
           if (mounted) setState(() => dirty = saveState.dirty);
@@ -271,6 +291,7 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
       }
     } catch (error) {
       if (mounted) {
+        setState(() {});
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('도형 작업을 완료하지 못했어요: $error')));
@@ -305,7 +326,7 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
         false;
   }
 
-  Future<void> saveDocument() async {
+  Future<void> saveDocument({bool asCopy = false}) async {
     final input = TextEditingController(text: name);
     final selected = await showDialog<String>(
       context: context,
@@ -331,6 +352,10 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
     );
     input.dispose();
     if (selected == null || selected.isEmpty) return;
+    if (asCopy) {
+      diagramId = null;
+      revision = null;
+    }
     name = selected;
     post({'type': 'save', 'id': diagramId, 'name': name});
   }
@@ -401,6 +426,7 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
         await storage('delete', {'id': selected['delete']});
         if (diagramId == selected['delete']) {
           diagramId = null;
+          revision = null;
           if (mounted) setState(() => dirty = true);
         }
       }
@@ -410,6 +436,7 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
     final loaded = await storage('load', {'id': selected['id']});
     if (loaded is! Map) throw Exception('저장된 도형 문서 응답이 올바르지 않습니다.');
     diagramId = selected['id'] as String;
+    revision = loaded['revision'] as String;
     name = loaded['name'] as String;
     post({
       'type': 'load',
@@ -481,6 +508,15 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
     child: Scaffold(
       appBar: AppBar(
         title: Text(name),
+        actions: [
+          IconButton(
+            tooltip: '사본으로 저장',
+            icon: const Icon(Icons.copy),
+            onPressed: initialized && !busy && !saveState.saving
+                ? () => saveDocument(asCopy: true)
+                : null,
+          ),
+        ],
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () async {
@@ -510,6 +546,7 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
 
   @override
   void dispose() {
+    _closeLease.release();
     for (final subscription in subscriptions) {
       unawaited(subscription.cancel());
     }

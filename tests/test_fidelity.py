@@ -241,6 +241,7 @@ class FidelityTest(unittest.TestCase):
         self.assertEqual(verdict["layers"][1]["status"], "failed")
         # 바꾼 파트 안에서 허용하지 않은 속성이 바뀐 경우
         section = result.read("Contents/section0.xml").replace(b'rowCnt="1"', b'rowCnt="2"')
+        tampered = self.folder / "tampered_attributes.hwpx"
         write_package(result, {"Contents/section0.xml": section}, tampered)
         verdict = verify_patch(self.snapshot, tampered, report)
         self.assertEqual(verdict["layers"][2]["status"], "failed")
