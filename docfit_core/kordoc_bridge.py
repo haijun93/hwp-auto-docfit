@@ -15,6 +15,7 @@ from __future__ import annotations
 import difflib
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -209,6 +210,50 @@ def run_kordoc(arguments: list[str], timeout: int = 600,
 
 def engine_version() -> str:
     return run_kordoc(["--version"], timeout=120).stdout.strip()
+
+
+def check_engine_contract() -> dict[str, Any]:
+    """Check the installed engine explicitly without changing legacy Path APIs."""
+    major = _node_major()
+    if major is None or major < NODE_MIN_MAJOR:
+        raise KordocUnavailableError(f"Node.js {NODE_MIN_MAJOR} 이상이 필요합니다.")
+    observed = engine_version()
+    match = re.search(r"(?<![\d.])(\d+\.\d+\.\d+)(?![\d.])", observed)
+    version = match.group(1) if match else None
+    if version != KORDOC_VERSION:
+        raise KordocUnavailableError(
+            f"kordoc 버전 불일치: 필요 {KORDOC_VERSION}, 설치 {observed!r}")
+    return {"engine": "kordoc", "version": version, "node_major": major,
+            "compatible": True}
+
+
+def run_kordoc_result(arguments: list[str], timeout: int = 600) -> dict[str, Any]:
+    """Version-checked structured result; exit 2 always means partial success.
+
+    Existing run_kordoc and Path-returning facades remain compatible.
+    """
+    contract = check_engine_contract()
+    completed = run_kordoc(arguments, timeout=timeout)
+    try:
+        payload = json.loads(completed.stdout)
+    except (ValueError, TypeError):
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {"data": payload}
+
+    def items(key):
+        value = payload.get(key, [])
+        return value if isinstance(value, list) else [value]
+
+    warnings = items("warnings")
+    if completed.stderr.strip():
+        warnings.append(completed.stderr.strip())
+    skipped = items("skipped")
+    partial = completed.returncode == 2 or bool(skipped)
+    return {"status": "partial" if partial else "complete",
+            "returncode": completed.returncode, "engine": contract,
+            "warnings": warnings, "skipped": skipped, "result": payload,
+            "stdout": completed.stdout}
 
 
 def parse_document(source: str | Path, target: str | Path, *, output_format: str = "markdown",

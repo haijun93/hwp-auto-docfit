@@ -16,7 +16,6 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
 from pathlib import Path
 import re
 
@@ -110,7 +109,7 @@ def _set_text(source_map, p, op):
     return edits, None
 
 
-def apply_patch(source, plan, target=None, *, allow_partial=False, native=None) -> dict:
+def apply_patch(source, plan, target=None, *, allow_partial=False, native=None, source_provenance=None) -> dict:
     """계획을 적용해 target에 쓰고 결과 보고서를 돌려준다. target이 없으면 검사만 한다(dry run)."""
     from .verify import verify_patch
 
@@ -127,7 +126,11 @@ def apply_patch(source, plan, target=None, *, allow_partial=False, native=None) 
     validate_hwpx(snapshot.path)
     report = {"source": snapshot.path, "source_sha256": snapshot.sha256, "applied": [], "skipped": [],
               "changed_parts": [], "layout_invalidated": [], "warnings": [], "format_rule": "first_run"}
-    maps, edits, targeted = {}, defaultdict(list), set()
+    if source_provenance is not None:
+        if not isinstance(source_provenance, dict):
+            raise PatchError("source_provenance는 딕셔너리여야 합니다.")
+        report["source_provenance"] = dict(source_provenance)
+    maps = {}
     for number, op in enumerate(plan["operations"]):
         part, path, kind = op.get("part"), op.get("object"), op.get("op")
         if kind not in ("replace_text", "set_paragraph_text"):
@@ -147,9 +150,6 @@ def apply_patch(source, plan, target=None, *, allow_partial=False, native=None) 
         if p is None or p.local != "p":
             report["skipped"].append({"index": number, "reason": f"문단을 찾지 못했습니다: {path}"})
             continue
-        if (part, path) in targeted:
-            report["skipped"].append({"index": number, "reason": "같은 문단을 한 계획에서 두 번 고칠 수 없습니다."})
-            continue
         new = op.get("new")
         if isinstance(new, str) and _CONTROL.search(new):
             report["skipped"].append({"index": number, "reason": "줄바꿈·탭 같은 제어 문자는 넣을 수 없습니다."})
@@ -159,34 +159,28 @@ def apply_patch(source, plan, target=None, *, allow_partial=False, native=None) 
         if reason:
             report["skipped"].append({"index": number, "reason": reason})
             continue
-        targeted.add((part, path))
-        edits[part].extend(found)
+        changes = list(found)
         cache = p.child("linesegarray")
         if cache:
-            edits[part].append((cache[0].start, cache[0].end, b""))
+            changes.append((cache[0].start, cache[0].end, b""))
             report["layout_invalidated"].append({"part": part, "object": path})
-        after = (op["new"] if kind == "set_paragraph_text"
-                 else before.replace(op["old"], op["new"]) if before.count(op["old"]) == 1 else None)
+        changes.sort()
+        for (_, end, _), (start, _, _) in zip(changes, changes[1:]):
+            if start < end:
+                raise PatchError(f"{part}: 고칠 구간이 겹칩니다.")
+        # Each operation addresses the result of the preceding operation.
+        # Reverse byte edits preserve offsets within this operation; rebuilding
+        # immediately also supports length-changing edits in the same paragraph.
+        out = bytearray(source_map.data)
+        for start, end, replacement in reversed(changes):
+            out[start:end] = replacement
+        updated = build_source_map(part, bytes(out))
+        after = updated.paragraph_text(updated.by_path[path])
+        maps[part] = updated
         report["applied"].append({"index": number, "op": kind, "part": part, "object": path,
                                   "before": before, "after": after})
-    replacements = {}
-    for part, changes in edits.items():
-        data = maps[part].data
-        changes.sort()
-        for (a_start, a_end, _), (b_start, _, _) in zip(changes, changes[1:]):
-            if b_start < a_end:
-                raise PatchError(f"{part}: 고칠 구간이 겹칩니다.")
-        out, cursor = bytearray(), 0
-        for start, end, replacement in changes:
-            out += data[cursor:start] + replacement
-            cursor = end
-        out += data[cursor:]
-        result = bytes(out)
-        new_map = build_source_map(part, result)       # 형식이 깨지면 여기서 멈춘다
-        for item in report["applied"]:
-            if item["part"] == part and item["after"] is None:
-                item["after"] = new_map.paragraph_text(new_map.by_path[item["object"]])
-        replacements[part] = result
+    replacements = {part: source_map.data for part, source_map in maps.items()
+                    if source_map.data != snapshot.read(part)}
     report["changed_parts"] = sorted(replacements)
     if replacements:
         report["warnings"] += [message for name, message in _DERIVED.items() if name in snapshot.entries]

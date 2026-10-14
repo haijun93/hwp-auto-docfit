@@ -19,3 +19,6 @@ scratch/
 
 dist-native*/
 node_modules/
+
+# Repository-local virtual environment (directory or Linux symlink)
+/.venv

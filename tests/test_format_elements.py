@@ -191,6 +191,38 @@ class FormatElementsTest(unittest.TestCase):
         record = fe.sample_record(sample)
         self.assertEqual(record["cells"]["A1"]["paras"][0]["size"], 2700)
 
+    def test_full_sample_preserves_four_non_summary_style_distinctions(self):
+        variants = (
+            ('<hh:spacing hangul="0" latin="-10"/>', '<hh:spacing hangul="0" latin="10"/>'),
+            ('<hh:underline type="BOTTOM" color="#FF0000"/>',
+             '<hh:underline type="BOTTOM" color="#0000FF"/>'),
+            ('<hh:gradation angle="0"><hh:color value="#FFFFFF"/></hh:gradation>',
+             '<hh:gradation angle="90"><hh:color value="#FFFFFF"/></hh:gradation>'),
+            ('<hh:winBrush faceColor="#FFFFFF"/>', '<hh:winBrush faceColor="none"/>'),
+        )
+        table = ET.fromstring((f'<hp:tbl {NS} borderFillIDRef="1"><hp:tr><hp:tc>'
+                              '<hp:subList><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">'
+                              '<hp:t>내용</hp:t></hp:run></hp:p></hp:subList>'
+                              '</hp:tc></hp:tr></hp:tbl>').encode())
+        for left, right in variants:
+            copies = []
+            for detail in (left, right):
+                header = ET.fromstring((f'<hh:head {NS}><hh:refList>'
+                    '<hh:charProperties><hh:charPr id="0">' + detail +
+                    '</hh:charPr></hh:charProperties><hh:borderFills>'
+                    '<hh:borderFill id="1">' + detail + '</hh:borderFill>'
+                    '</hh:borderFills><hh:paraProperties><hh:paraPr id="0"/>'
+                    '</hh:paraProperties></hh:refList></hh:head>').encode())
+                sample = fe.extract_sample(header, table)
+                copied = fe.apply_sample_edits(sample)
+                # Full-copy XML is authoritative; display summaries are deliberately
+                # not used to reconstruct these source attributes.
+                before = ET.fromstring(sample["header_xml"].encode())
+                after = ET.fromstring(copied["header_xml"].encode())
+                self.assertEqual(ET.tostring(before), ET.tostring(after))
+                copies.append(copied["header_xml"])
+            self.assertNotEqual(*copies)
+
     def test_cell_edit_clones_shared_shapes(self):
         sample = self.analysis["samples"]["title1"]
         edited = fe.apply_sample_edits(sample, {"border_left": "SOLID|0.4 mm|#FF0000"}, {

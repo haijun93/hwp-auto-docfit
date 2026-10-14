@@ -9,6 +9,10 @@ GUI 시험은 실제 디스플레이 또는 Xvfb가 필요하다. 한/글 COM �
     python3 scripts/linux_stub_test_runner.py tests.test_stage_timing
 """
 import sys
+# Initialize the real host MIME registry before Windows-only modules are stubbed.
+# Otherwise lazy HTTP MIME detection imports the fake winreg on Linux.
+import mimetypes
+mimetypes.init()
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock

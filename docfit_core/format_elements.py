@@ -968,7 +968,11 @@ _DROP_GROUPS = ("styles", "numberings", "bullets", "memoProperties", "trackChang
 
 
 def extract_sample(header, table):
-    """표 하나와, 그 표가 쓰는 모양만 남긴 header 사본을 문자열로 보관한다."""
+    """표 하나와, 그 표가 쓰는 모양만 남긴 header 사본을 문자열로 보관한다.
+
+    복제의 기준은 이 원본 XML이다. char_values/border_fill_values의 화면용
+    대표값으로 재생성하면 언어별 자간·밑줄색·그러데이션·흰색 음영이 손실된다.
+    """
     used = {"borderFills": set(), "charProperties": set(), "paraProperties": set(), "tabProperties": set()}
     for element in table.iter():
         if element.get("borderFillIDRef") is not None:

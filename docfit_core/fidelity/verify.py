@@ -113,5 +113,15 @@ def verify_patch(source, result, patch_report=None, native=None) -> dict:
     notes = []
     if layers[-1]["status"] == "not_run":
         notes.append("한/글에서 열어 보는 검사는 하지 않았습니다.")
+    provenance = (patch_report or {}).get("source_provenance", {})
+    converted = (provenance.get("original_format") == "hwp"
+                 and provenance.get("converted_format") == "hwpx")
+    package_verdict = verdict
+    if converted:
+        notes.append("보존 비교 기준은 변환된 HWPX이며, 원본 HWP 바이너리 일치를 의미하지 않습니다.")
+        if verdict not in ("실패", "부분 적용"):
+            verdict = "변환 후 패치(원본 바이너리 불일치)"
     return {"layers": layers, "verdict": verdict, "notes": notes,
+            "package_verdict": package_verdict,
+            "preservation_scope": "converted_hwpx" if converted else "source_package",
             "changed_parts": sorted(changed), "result_sha256": output.sha256}

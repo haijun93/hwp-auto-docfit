@@ -110,6 +110,9 @@ class PackageSnapshot:
             end = position + 46 + name_len + extra_len + comment_len2
             raw_name = data[position + 46:position + 46 + name_len]
             name = raw_name.decode("utf-8" if flags & 0x800 else "cp437")
+            if flags & 0x8:
+                raise UnsupportedPackage(
+                    f"ZIP Data Descriptor(bit 3) 항목은 원문 보존 쓰기를 지원하지 않습니다: {name}")
             if flags & 0x1:
                 raise UnsupportedPackage(f"암호화된 항목은 지원하지 않습니다: {name}")
             if 0xFFFFFFFF in (csize, usize, offset) or disk_start:
