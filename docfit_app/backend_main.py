@@ -26,7 +26,14 @@ def main():
                                   'backend_version':'1.74 Native Prototype 1'}),flush=True)
                 # Parent owns stdin; exiting Flutter closes it even if shutdown RPC is lost.
                 def parent_closed():
-                    sys.stdin.buffer.read()
+                    # Do not hold BufferedReader's lock across a blocking pipe
+                    # read. Windows interpreter shutdown may otherwise wait for
+                    # that daemon reader until the parent closes its stdin.
+                    try:
+                        while os.read(sys.stdin.fileno(), 4096):
+                            pass
+                    except OSError:
+                        pass
                     app.data.closing=True
                     server.shutdown()
                 threading.Thread(target=parent_closed,daemon=True).start()

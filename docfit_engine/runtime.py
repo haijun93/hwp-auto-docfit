@@ -73,7 +73,8 @@ class EngineSession:
                 defaults = {"실행모드": options.effective_mode,
                             "표자간조정": options.effective_table_spacing,
                             "자동닫기": options.autoclose, "검수": options.verify_result,
-                            "쪽범위": active.state.get("쪽범위_요청")}
+                            "쪽범위": active.state.get("쪽범위_요청"),
+                            "세부작업_선택": options.resolve_stages({})}
                 if active.profile:
                     defaults["표준서식_세부"] = active.profile
                 for key, value in defaults.items():
@@ -84,15 +85,27 @@ class EngineSession:
         # Job entrypoints isolate container state; GUI uses an explicit
         # per-run context and never holds the adapter lock across an execution.
         with self.lock:
+            origin = dict(self.namespace)
             context = self.new_context(callbacks=callbacks, isolate=(name == '작업_실행'), legacy=True)
+            before = dict(context.state)
         try:
             return context.invoke(name, *args, **kwargs)
         finally:
+            # Publish only what this call rebound (or the clones it owns while
+            # nobody else rebound the key), so a concurrent UI-thread update to
+            # another global is never reverted by this call's start snapshot.
+            missing = object()
             with self.lock:
                 for key, value in context.state.items():
                     if key.startswith("__") or key in self.templates or key in ("gui_queue", "_docfit_engine_session"):
                         continue
-                    self.namespace[key] = value
+                    current = self.namespace.get(key, missing)
+                    if before.get(key, missing) is not value:
+                        self.namespace[key] = value
+                    elif key in context.synced and current is context.synced[key]:
+                        self.namespace[key] = value  # replace this call's own mid-call sync
+                    elif value is not origin.get(key, missing) and current is origin.get(key, missing):
+                        self.namespace[key] = value
 
 
 def session_for(namespace):

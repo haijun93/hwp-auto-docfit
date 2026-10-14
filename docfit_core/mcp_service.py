@@ -8,6 +8,7 @@ format profiles and Hancom COM finalization are deliberately separate phases.
 from __future__ import annotations
 
 import os
+import ntpath
 import re
 import shutil
 import tempfile
@@ -18,6 +19,13 @@ from docfit_core.kordoc_bridge import PRESET_NAMES, generate_hwpx
 
 MAX_INPUT_CHARS = 1_000_000
 _SAFE_NAME = re.compile(r"^[\w가-힣][\w가-힣 .()_-]{0,79}$", re.UNICODE)
+
+
+def _reserved_name(name):
+    # ntpath provides Windows rules on every test platform. The fallback is
+    # needed only on Python versions predating isreserved (before 3.13).
+    check = getattr(ntpath, "isreserved", None)
+    return check(name) if check is not None else PureWindowsPath(name).is_reserved()
 
 
 def output_directory() -> Path:
@@ -54,7 +62,7 @@ def create_hwpx_from_ai_answer(
         raise ValueError("파일 이름은 문자열이어야 합니다.")
     filename = filename.strip()
     if (not _SAFE_NAME.fullmatch(filename) or filename in {".", ".."}
-            or PureWindowsPath(filename + ".hwpx").is_reserved()):
+            or _reserved_name(filename + ".hwpx")):
         raise ValueError("파일 이름에는 경로가 아닌 1~80자의 안전한 이름을 입력해 주세요.")
 
     output_dir = output_directory()

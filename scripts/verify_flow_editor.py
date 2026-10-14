@@ -10,8 +10,10 @@ import json
 from pathlib import Path
 import struct
 import threading
+import tempfile
 
 from playwright.sync_api import sync_playwright
+from browser_qa import launch_browser
 
 ROOT = Path(__file__).resolve().parents[1] / "flutter_ui" / "assets"
 HOST = b"""<!doctype html><html><body style="margin:0"><iframe id="editor"
@@ -45,7 +47,7 @@ def main():
     thread.start()
     try:
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(executable_path="/usr/bin/chromium", args=["--no-sandbox"])
+            browser = launch_browser(playwright)
             page = browser.new_page(viewport={"width": 1280, "height": 900})
             failures = []
             requests = []
@@ -121,7 +123,7 @@ def main():
             assert width > 500 and height > 500
             assert not failures, failures
             assert all(url.startswith((f"http://127.0.0.1:{server.server_port}/", f"blob:http://127.0.0.1:{server.server_port}/")) for url in requests), requests
-            page.screenshot(path="/tmp/docfit-flow-editor.png")
+            page.screenshot(path=str(Path(tempfile.gettempdir()) / "docfit-flow-editor.png"))
             print(json.dumps({"templates": 10, "decision_nodes": 6, "decision_edges": 6,
                               "round_trip": True, "undo_redo": True, "long_korean_safe": True, "png_size": [width, height],
                               "external_requests": 0, "page_errors": failures}, ensure_ascii=False))

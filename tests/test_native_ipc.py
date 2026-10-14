@@ -48,7 +48,10 @@ class NativeIpcTests(unittest.TestCase):
         self.assertTrue(result['result']['ok'])
         self.assertEqual(self.request('get_settings')['result']['data']['values']['retry_body'],'7')
         self.assertTrue(self.request('shutdown')['success'])
+        # RPC shutdown must finish even while the parent-owned pipe is open.
+        self.assertFalse(self.process.stdin.closed)
         self.process.wait(timeout=5)
+        self.assertEqual(self.process.returncode,0,self.process.stderr.read().decode('utf-8',errors='replace'))
 
     def test_duplicate_version_and_unknown_method_are_rejected(self):
         self.assertTrue(self.request('get_state',request_id='same')['success'])

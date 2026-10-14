@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from docfit_app.application_service import ApplicationService
 from playwright.sync_api import sync_playwright
+from browser_qa import launch_browser
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -46,7 +47,7 @@ def main():
         threading.Thread(target=server.serve_forever, daemon=True).start()
         try:
             with sync_playwright() as playwright:
-                browser = playwright.chromium.launch(executable_path="/usr/bin/chromium", args=["--no-sandbox"])
+                browser = launch_browser(playwright)
                 page = browser.new_page(viewport={"width": 1280, "height": 900}, accept_downloads=True)
                 failures = []
                 page.on("pageerror", lambda exc: failures.append(str(exc)))
@@ -92,7 +93,7 @@ def main():
                 page.wait_for_timeout(300)
                 assert app.flows.list() == []
                 assert not failures, failures
-                page.screenshot(path="/tmp/docfit-flutter-general-flow.png")
+                page.screenshot(path=str(Path(tempfile.gettempdir()) / "docfit-flutter-general-flow.png"))
                 print(json.dumps({"general_mode": True, "flutter_iframe": True, "real_python_save": True,
                                   "png_export": True, "reopen_delete": True, "tldraw_storage_created": False, "page_errors": failures}))
                 browser.close()

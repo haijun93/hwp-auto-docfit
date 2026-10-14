@@ -71,6 +71,7 @@ class RunContext:
         self.functions = {}
         self.templates = {}
         self.legacy_source = None
+        self.synced = {}  # values the legacy adapter pushed into legacy_source
         if options is not None:
             self.state["작업_모드"] = options.effective_mode
             self.state["표_자간조정_사용"] = options.effective_table_spacing
@@ -146,6 +147,7 @@ class RunContext:
             for key, value in self.state.items():
                 if key not in self.templates and not key.startswith("__") and key not in ("gui_queue", "_docfit_engine_session"):
                     source[key] = value
+                    self.synced[key] = value
             before = dict(source)
             try:
                 return callback(*args, **kwargs)

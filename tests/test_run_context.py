@@ -123,3 +123,17 @@ class RunContextTest(unittest.TestCase):
             callbacks=PipelineCallbacks())
         self.assertTrue(self.ns["문서_처리_1회"]("test.hwpx", context=context))
         self.assertIsNot(context.function("문서_처리_1회").__globals__, self.session.namespace)
+
+    def test_context_options_resolve_stages_when_no_selection_is_supplied(self):
+        from types import SimpleNamespace
+        context = self.session.new_context(
+            options=RunOptions(mode="all", reset_spacing=False, exclude_tables=True),
+            state={"중단_요청됨": lambda: True, "보안모듈_초기화": lambda: None,
+                   "원본_뷰어_분리": lambda: None, "작업창_분리": lambda: None,
+                   "설정_불러오기": lambda: {},
+                   "pythoncom": SimpleNamespace(CoInitialize=lambda: None, CoUninitialize=lambda: None)})
+        self.ns["작업_실행"]([], context=context, 준말_등록={})
+        stages = context.state["선택_세부작업"]
+        self.assertFalse(stages["reset_spacing"])
+        self.assertFalse(stages["table_style"])
+        self.assertFalse(stages["control_spacing"])

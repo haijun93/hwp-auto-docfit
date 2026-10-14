@@ -16,7 +16,7 @@ class DocumentToolsTest(unittest.TestCase):
         self.assertEqual(self.service.command('outline.load',{})['text'],saved['text'])
         with self.assertRaises(ServiceError):
             self.service.command('outline.save',{'text':'stale','revision':original['revision']})
-        self.assertEqual(Path(self.temp.name,'outliner_draft.md').read_text(),saved['text'])
+        self.assertEqual(Path(self.temp.name,'outliner_draft.md').read_text(encoding='utf-8'),saved['text'])
 
     def test_outline_move_toggle_note_and_export_preserve_content(self):
         text='# 첫 항목\n# 둘째 항목'

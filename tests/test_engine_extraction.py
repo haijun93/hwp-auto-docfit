@@ -37,7 +37,7 @@ class EngineExtractionTest(unittest.TestCase):
     def test_com_driver_has_no_gui_imports(self):
         import ast
         path=Path(__file__).parents[1]/'docfit_engine'/'com_driver.py'
-        for node in ast.walk(ast.parse(path.read_text())):
+        for node in ast.walk(ast.parse(path.read_text(encoding='utf-8'))):
             if isinstance(node,ast.Import):
                 self.assertFalse(any(alias.name.startswith('tkinter') for alias in node.names))
             elif isinstance(node,ast.ImportFrom):

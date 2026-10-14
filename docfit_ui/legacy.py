@@ -5831,13 +5831,22 @@ def _install(*, _docfit_namespace, _docfit_symbol):
 
                 return (self.compare_left_frame.winfo_id(), self.compare_right_frame.winfo_id())
 
+            def _실행_창핸들(self, name):
+                """실행 중이면 그 실행 컨텍스트의 한/글 창 핸들을, 아니면 호환 전역값을 돌려준다."""
+                실행 = getattr(self, "_run_context", None)
+                if 실행 is not None and self.running:
+                    return 실행.state.get(name)
+                return globals().get(name)
+
             def _비교_왼쪽_리사이즈(self, event):
-                if 원본_hwp_hwnd:
-                    창_임베드_크기조정(원본_hwp_hwnd, self.compare_left_frame.winfo_id())
+                hwnd = self._실행_창핸들("원본_hwp_hwnd")
+                if hwnd:
+                    창_임베드_크기조정(hwnd, self.compare_left_frame.winfo_id())
 
             def _비교_오른쪽_리사이즈(self, event):
-                if 작업_hwp_hwnd:
-                    창_임베드_크기조정(작업_hwp_hwnd, self.compare_right_frame.winfo_id())
+                hwnd = self._실행_창핸들("작업_hwp_hwnd")
+                if hwnd:
+                    창_임베드_크기조정(hwnd, self.compare_right_frame.winfo_id())
 
             def _비교창_닫기시도(self):
                 if self.running:
@@ -6152,7 +6161,10 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 self.로그표시("사용자가 작업 중단을 요청했습니다.")
 
             def _서식통일_대표값_검토_요청(self, kind, payload):
-                요청 = {"payload": payload, "done": threading.Event(), "approved": False}
+                from docfit_engine.context import current_context
+                실행 = current_context()
+                요청 = {"payload": payload, "done": threading.Event(), "approved": False,
+                      "profile": None if 실행 is None else 실행.state.get("_서식통일_문서대표프로필")}
                 event = f"style_unify_{kind}_review"
                 gui_queue.put((event, 요청))
                 while not 요청["done"].wait(0.1):
@@ -6250,9 +6262,14 @@ def _install(*, _docfit_namespace, _docfit_symbol):
 
             def _서식통일_대표서식_검토창(self, 요청):
                 """표본 조사값을 보여 주고 적용 전 문서별 표준값을 편집하게 한다."""
+                # 엔진은 실행 컨텍스트마다 대표 프로필을 따로 가진다. 요청에 실린 그 객체를 읽고 고쳐야
+                # 사용자가 고친 값이 실제 작업에 반영된다(실행 밖 호환 경로에서만 전역값을 쓴다).
+                대표프로필 = 요청.get("profile")
+                if 대표프로필 is None:
+                    대표프로필 = _서식통일_문서대표프로필
                 if getattr(self.root, "_docfit_hidden_backend", False):
                     fields, mapping = [], {}
-                    for index, (key, values) in enumerate(_서식통일_문서대표프로필.items()):
+                    for index, (key, values) in enumerate(대표프로필.items()):
                         for field, pair in values.items():
                             if field not in ("font", "size", "marker_bold", "label_bold", "italic", "underline"):
                                 continue
@@ -6286,8 +6303,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                                     raise ValueError("글꼴 이름이 너무 깁니다.")
                                 updates.append((key, field, value))
                             for key, field, value in updates:
-                                prior = _서식통일_문서대표프로필[key][field]
-                                _서식통일_문서대표프로필[key][field] = (value, prior[1])
+                                prior = 대표프로필[key][field]
+                                대표프로필[key][field] = (value, prior[1])
                             break
                         except (ValueError, KeyError, TypeError) as exc:
                             self._알림(messagebox.showerror, APP_NAME, str(exc))
@@ -6311,21 +6328,21 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 stars = [key for key in 그룹별_표본 if key[0] in ("*", "**")]
                 star_sizes = []
                 for key in stars:
-                    profile = _서식통일_문서대표프로필.get(key, {})
+                    profile = 대표프로필.get(key, {})
                     value = profile.get("size", (None, 0))[0]
                     if value is not None:
                         star_sizes.append(f"{key[0]} {value / 100:g}pt")
-                if any(key[0] == "※" and any(v[0] is None for v in _서식통일_문서대표프로필.get(key, {}).values())
+                if any(key[0] == "※" and any(v[0] is None for v in 대표프로필.get(key, {}).values())
                        for key in 그룹별_표본):
                     note = "※ 대표값이 불명확합니다. *·** 계열의 크기 유사성은 참고 후보일 뿐이며, 자동 선택하지 않습니다."
                     if star_sizes:
                         note += " 후보: " + ", ".join(star_sizes)
                     ttk.Label(host, text=note, foreground="#9a3412", wraplength=850).pack(anchor="w", pady=(0, 8))
                     ambiguous = next(key for key in 그룹별_표본 if key[0] == "※"
-                                     and any(v[0] is None for v in _서식통일_문서대표프로필.get(key, {}).values()))
+                                     and any(v[0] is None for v in 대표프로필.get(key, {}).values()))
                     candidate_keys = [key for key in stars
-                                      if _서식통일_문서대표프로필.get(key, {}).get("font", (None, 0))[0] is not None
-                                      or _서식통일_문서대표프로필.get(key, {}).get("size", (None, 0))[0] is not None]
+                                      if 대표프로필.get(key, {}).get("font", (None, 0))[0] is not None
+                                      or 대표프로필.get(key, {}).get("size", (None, 0))[0] is not None]
                     if candidate_keys:
                         choice_row = ttk.Frame(host)
                         choice_row.pack(fill="x", pady=(0, 8))
@@ -6336,7 +6353,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
 
                         def use_candidate():
                             selected = candidate_keys[max(0, choice.current())]
-                            source = _서식통일_문서대표프로필.get(selected, {})
+                            source = 대표프로필.get(selected, {})
                             for field, control in editors.get(ambiguous, {}).items():
                                 value = source.get(field, (None, 0))[0]
                                 if field == "font":
@@ -6371,7 +6388,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     frame = ttk.LabelFrame(body, text=f"{marker}  ·  {role}  ·  표본 {len(항목들)}개", padding=8)
                     frame.grid(row=row, column=0, sticky="ew", padx=4, pady=4)
                     body.grid_columnconfigure(0, weight=1)
-                    profile = _서식통일_문서대표프로필.get(key, {})
+                    profile = 대표프로필.get(key, {})
                     editors[key] = {}
                     for col, (field, label) in enumerate(필드):
                         ttk.Label(frame, text=label).grid(row=0, column=col, sticky="w", padx=4)
@@ -6398,7 +6415,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 def finish(approved):
                     if approved:
                         for key, controls in editors.items():
-                            prior = _서식통일_문서대표프로필.get(key, {})
+                            prior = 대표프로필.get(key, {})
                             updated = dict(prior)
                             for field, control in controls.items():
                                 raw = control.get().strip()
@@ -6420,7 +6437,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                                 else:
                                     value = raw == "적용"
                                 updated[field] = (value, old_count)
-                            _서식통일_문서대표프로필[key] = updated
+                            대표프로필[key] = updated
                     요청["approved"] = approved
                     요청["done"].set()
                     window.destroy()

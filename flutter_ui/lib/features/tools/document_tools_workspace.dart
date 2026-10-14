@@ -26,6 +26,8 @@ class _ToolsState extends State<DocumentToolsWorkspace> {
   late String mode;
   String revision = '', saved = '', status = '';
   bool busy = false, closing = false;
+  bool _loading = false;
+  int _loadVersion = 0;
   int _inputRevision = 0, _queuedOperations = 0;
   String _observedInput = '';
   Future<void> _pendingOp = Future.value();
@@ -107,17 +109,27 @@ class _ToolsState extends State<DocumentToolsWorkspace> {
 
   Future<void> load() async {
     if (mode != 'outline') return;
+    final version = ++_loadVersion;
+    final inputRevision = _inputRevision;
+    autosave?.cancel();
+    setState(() => _loading = true);
     try {
       final data = await call('outline.load', {});
-      if (mounted) {
+      if (mounted && mode == 'outline' && version == _loadVersion) {
         setState(() {
-          input.text = '${data['text']}';
-          saved = input.text;
+          if (_inputRevision == inputRevision) {
+            input.text = '${data['text']}';
+          } else {
+            status = '불러오는 동안 바뀐 입력을 보존했습니다.';
+          }
+          saved = '${data['text']}';
           revision = '${data['revision']}';
         });
       }
     } catch (e) {
-      if (mounted) setState(() => status = '$e');
+      if (mounted && version == _loadVersion) setState(() => status = '$e');
+    } finally {
+      if (mounted && version == _loadVersion) setState(() => _loading = false);
     }
   }
 
@@ -130,6 +142,7 @@ class _ToolsState extends State<DocumentToolsWorkspace> {
   }
 
   Future<bool> save() async {
+    if (_loading) return false;
     if (_queuedOperations > 0) {
       autosave?.cancel();
       autosave = Timer(const Duration(milliseconds: 800), () => save());
@@ -165,7 +178,7 @@ class _ToolsState extends State<DocumentToolsWorkspace> {
   }
 
   Future<void> edit(String action, {bool up = false}) {
-    if (!mounted || busy || closing) return Future.value();
+    if (!mounted || busy || closing || _loading) return Future.value();
     autosave?.cancel();
     setState(() => _queuedOperations++);
     final next = _pendingOp.then((_) => _editOne(action, up: up)).whenComplete(
@@ -367,8 +380,12 @@ class _ToolsState extends State<DocumentToolsWorkspace> {
     autosave?.cancel();
     await _pendingOp;
     if (!mounted || busy) return;
-    if (dirty && !await save()) return;
-    if (dirty) return;
+    // While a draft is loading the field is read-only, so nothing typed can be
+    // lost; save() refuses during loading and must not trap the user here.
+    if (!_loading) {
+      if (dirty && !await save()) return;
+      if (dirty) return;
+    }
     if (mounted) {
       setState(() => closing = true);
       Navigator.pop(context);
@@ -415,6 +432,7 @@ class _ToolsState extends State<DocumentToolsWorkspace> {
     onKeyEvent: key,
     child: TextField(
       controller: input,
+      readOnly: _loading,
       onChanged: (_) => changed(),
       maxLines: null,
       expands: true,
@@ -497,7 +515,7 @@ class _ToolsState extends State<DocumentToolsWorkspace> {
                 for (final item in modes.entries)
                   DropdownMenuItem(value: item.key, child: Text(item.value)),
               ],
-              onChanged: busy
+              onChanged: busy || _loading
                   ? null
                   : (value) async {
                       if (value == null) return;
@@ -609,7 +627,7 @@ class _ToolsState extends State<DocumentToolsWorkspace> {
               runSpacing: 4,
               children: [
                 FilledButton(
-                  onPressed: busy ? null : run,
+                  onPressed: busy || _loading ? null : run,
                   child: Text(mode == 'outline' ? '개조식 내보내기' : '실행 / 미리보기'),
                 ),
                 if (mode == 'outline') ...[

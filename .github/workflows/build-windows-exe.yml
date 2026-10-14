@@ -24,6 +24,10 @@ jobs:
         with:
           python-version: "3.12"
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - name: Install build dependencies
         run: |
           python -m venv .venv
@@ -57,7 +61,7 @@ jobs:
         shell: pwsh
         run: |
           $report = Join-Path $env:RUNNER_TEMP "docfit-self-test.json"
-          $process = Start-Process -FilePath ".\dist\HWP_AutoDocFit.exe" -ArgumentList @("--self-test", "--self-test-report", ('"' + $report + '"')) -PassThru
+          $process = Start-Process -FilePath ".\dist\HWP_AutoDocFit.exe" -ArgumentList @("--self-test", "--self-test-report", ('"' + $report + '"')) -WindowStyle Hidden -PassThru
           if (-not $process.WaitForExit(30000)) { $process.Kill(); throw "EXE self-test timed out" }
           if ($process.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $report)) { throw "EXE self-test failed" }
           $result = Get-Content -Raw -LiteralPath $report | ConvertFrom-Json
