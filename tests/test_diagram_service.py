@@ -43,6 +43,23 @@ class DiagramServiceTests(unittest.TestCase):
         self.service.delete(self.diagram_id)
         self.assertEqual(self.service.list(), [])
 
+    def test_disabling_developer_mode_blocks_all_operations_even_with_editor_enabled(self):
+        self.enable()
+        self.service.save(self.diagram_id, "보존할 도형", self.snapshot)
+        self.settings.update(lambda values: values.update({"developer_mode": False}))
+        for operation in (
+            self.service.list,
+            lambda: self.service.load(self.diagram_id),
+            lambda: self.service.save(self.diagram_id, "수정 금지", self.snapshot),
+            lambda: self.service.delete(self.diagram_id),
+        ):
+            with self.subTest(operation=operation):
+                with self.assertRaises(ServiceError) as caught:
+                    operation()
+                self.assertEqual(caught.exception.code, "DIAGRAMS_DISABLED")
+        self.enable()
+        self.assertEqual(self.service.load(self.diagram_id)["name"], "보존할 도형")
+
     def test_rejects_traversal_invalid_data_and_oversized_snapshots(self):
         self.enable()
         with self.assertRaises(ServiceError):
