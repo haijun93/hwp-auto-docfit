@@ -130,3 +130,12 @@ Flutter 화면이 누락된 패키지를 만들지 않으며, 런타임의 기�
 - [원본 보존·재현 설계](../STYLE_FIDELITY_DESIGN.md)
 - [릴리스 노트](../releases/)
 - [프로젝트 소개 웹사이트 소스](../website/)
+
+## 알파 리팩터링 상태
+
+- `docfit_core/app_state.py`: GUI 위젯과 독립된 실행 옵션·상태.
+- `docfit_core/config_store.py`: 순수 설정 마이그레이션과 기존 원자 JSON 저장 연결.
+- `desktop_web_ui.py`: 프로파일 coverage 캐시, AppState 접근 및 레거시 호스트 호환.
+- `hwp-auto-docfit.py`: 기존 속성 파사드 및 실행 시 옵션 스냅샷. CRLF 유지.
+- `docfit_engine/`·`docfit_ui/` 전체 추출과 Flutter 도구 일원화는 후속 단계.
+- Linux 회귀 검사는 Windows 모듈 대체/실제 Tk를 사용하며 실제 한/글 COM 검증을 대신하지 않는다.

@@ -63,6 +63,11 @@ EXE 빌드는 Flutter 검사·자산 검증 실패 시 중단한다. 런타임 �
 
 ## 3. 코드 구조
 
+알파 리팩터링: `docfit_core/app_state.py`에 Tk 상태와 연결되는 `AppState`·`RunOptions`,
+`docfit_core/config_store.py`에 순수 설정 마이그레이션 및 공통 원자 저장 파사드를 둔다.
+기존 GUI 속성은 호환 프로퍼티로 유지한다. 엔진·Tk UI 전체 분리와 Flutter 도구 일원화는 아직 미완료다.
+진행 기록은 [REFACTOR_ALPHA_PROGRESS.md](docs/REFACTOR_ALPHA_PROGRESS.md)를 확인한다.
+
 | 경로 | 역할 |
 |---|---|
 | `hwp-auto-docfit.py` (약 15,000줄) | 앱 본체. COM 자동화 파이프라인, 서식 분석, GUI 전체. **CRLF 줄바꿈**, 식별자·주석 대부분 한국어 |
