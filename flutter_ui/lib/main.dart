@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'bridge.dart' as bridge;
 import 'core/api/abbreviation_api.dart';
 import 'features/abbreviations/abbreviation_manager.dart';
+import 'features/formats/table_template_panel.dart';
 import 'features/conversion/floating_format_picker.dart';
 import 'features/diagrams/diagram_editor_screen.dart';
 import 'features/settings/settings_dialog.dart';
@@ -87,6 +88,7 @@ class _WorkspaceState extends State<Workspace> {
   final stateVersion = ValueNotifier<int>(0);
   // 서식 관리에서 안 된 이유(이름 중복 등)를 창 안에 보여 준다.
   String? formatNotice;
+  int formatSection = 0;
 
   static const tabs = ['문서 선택', '작업 방식', '진행 과정', '결과 확인'];
   // (내부 모드, 이름, 설명, 아이콘, 결과 파일 접미사). 서식 적용(format)은
@@ -1732,124 +1734,149 @@ class _WorkspaceState extends State<Workspace> {
                 ],
               ),
               const SizedBox(height: 12),
-              Container(
-                key: const Key('formatDropZone'),
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  color: _blueSoft,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(
-                    color: const Color(0xff93c5fd),
-                    width: 1.5,
-                  ),
+              SegmentedButton<int>(
+                segments: const [
+                  ButtonSegment(value: 0, label: Text('문단 계층')),
+                  ButtonSegment(value: 1, label: Text('제목/개요 서식 표')),
+                  ButtonSegment(value: 2, label: Text('기본 데이터 표')),
+                ],
+                selected: {formatSection},
+                onSelectionChanged: (selection) {
+                  formatSection = selection.first;
+                  stateVersion.value++;
+                },
+              ),
+              const SizedBox(height: 12),
+              if (formatSection == 2)
+                Flexible(
+                  child: TableTemplatePanel(api: widget.api, running: running),
+                )
+              else ...[
+                Text(
+                  formatSection == 0
+                      ? '프로파일의 세부 수정에서 문단 계층의 글꼴·크기·들여쓰기를 관리합니다.'
+                      : '프로파일의 예시 보기와 세부 수정에서 제목·개요 표의 칸별 서식을 관리합니다.',
                 ),
-                child: Column(
-                  children: [
-                    const Icon(
-                      Icons.file_copy_outlined,
-                      size: 30,
-                      color: _blue,
+                const SizedBox(height: 12),
+                Container(
+                  key: const Key('formatDropZone'),
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: _blueSoft,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: const Color(0xff93c5fd),
+                      width: 1.5,
                     ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      '예시 보고서(HWP·HWPX)를 이 창에 끌어다 놓으세요',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
+                  ),
+                  child: Column(
+                    children: [
+                      const Icon(
+                        Icons.file_copy_outlined,
+                        size: 30,
+                        color: _blue,
                       ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      '제목·개요 표, 항목기호 문장, 표의 글꼴·크기·문단 모양을 분석해 새 서식으로 복제해요. '
-                      '분석이 끝나면 이름과 세부값을 확인하는 창이 열리고, 저장하면 바로 이 서식을 써요.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: _muted,
-                        height: 1.5,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      alignment: WrapAlignment.center,
-                      children: [
-                        FilledButton.icon(
-                          key: const Key('addFormatFile'),
-                          onPressed: locked || analyzing
-                              ? null
-                              : () => command('add_format_file'),
-                          icon: const Icon(
-                            Icons.folder_open_outlined,
-                            size: 18,
-                          ),
-                          label: const Text('파일에서 고르기'),
+                      const SizedBox(height: 8),
+                      const Text(
+                        '예시 보고서(HWP·HWPX)를 이 창에 끌어다 놓으세요',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
                         ),
-                        OutlinedButton.icon(
-                          key: const Key('writeFormatExample'),
-                          onPressed: locked || analyzing
-                              ? null
-                              : () => command('write_format_example'),
-                          icon: const Icon(Icons.edit_note_rounded, size: 18),
-                          label: const Text('예시 직접 작성'),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        '제목·개요 표, 항목기호 문장, 표의 글꼴·크기·문단 모양을 분석해 새 서식으로 복제해요. '
+                        '분석이 끝나면 이름과 세부값을 확인하는 창이 열리고, 저장하면 바로 이 서식을 써요.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _muted,
+                          height: 1.5,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        alignment: WrapAlignment.center,
+                        children: [
+                          FilledButton.icon(
+                            key: const Key('addFormatFile'),
+                            onPressed: locked || analyzing
+                                ? null
+                                : () => command('add_format_file'),
+                            icon: const Icon(
+                              Icons.folder_open_outlined,
+                              size: 18,
+                            ),
+                            label: const Text('파일에서 고르기'),
+                          ),
+                          OutlinedButton.icon(
+                            key: const Key('writeFormatExample'),
+                            onPressed: locked || analyzing
+                                ? null
+                                : () => command('write_format_example'),
+                            icon: const Icon(Icons.edit_note_rounded, size: 18),
+                            label: const Text('예시 직접 작성'),
+                          ),
+                        ],
+                      ),
+                      if (analyzing) ...[
+                        const SizedBox(height: 14),
+                        const LinearProgressIndicator(minHeight: 3),
+                        const SizedBox(height: 6),
+                        Text(
+                          '서식 분석 중 · $file',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: _blue,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ],
-                    ),
-                    if (analyzing) ...[
-                      const SizedBox(height: 14),
-                      const LinearProgressIndicator(minHeight: 3),
-                      const SizedBox(height: 6),
-                      Text(
-                        '서식 분석 중 · $file',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: _blue,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
                     ],
-                  ],
+                  ),
                 ),
-              ),
-              if (formatNotice != null) ...[
-                const SizedBox(height: 8),
+                if (formatNotice != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    formatNotice!,
+                    style: const TextStyle(
+                      color: Color(0xffdc2626),
+                      fontSize: 12,
+                    ),
+                  ),
+                ] else if (!analyzing && status.contains('서식')) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    status,
+                    style: const TextStyle(color: _muted, fontSize: 12),
+                  ),
+                ],
+                const SizedBox(height: 16),
                 Text(
-                  formatNotice!,
+                  '서식 목록 (${profiles.length}개)',
                   style: const TextStyle(
-                    color: Color(0xffdc2626),
+                    fontWeight: FontWeight.w700,
+                    color: _faint,
                     fontSize: 12,
                   ),
                 ),
-              ] else if (!analyzing && status.contains('서식')) ...[
                 const SizedBox(height: 8),
-                Text(
-                  status,
-                  style: const TextStyle(color: _muted, fontSize: 12),
+                Flexible(
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [for (final p in profiles) formatRow(p as Map)],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  '사용 중인 서식은 한 번에 적용(서식 적용) 작업에서 써요. 기본 서식은 지울 수 없고, 세부 수정하면 새 서식으로 저장돼요.',
+                  style: TextStyle(fontSize: 12, color: _faint),
                 ),
               ],
-              const SizedBox(height: 16),
-              Text(
-                '서식 목록 (${profiles.length}개)',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: _faint,
-                  fontSize: 12,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Flexible(
-                child: ListView(
-                  shrinkWrap: true,
-                  children: [for (final p in profiles) formatRow(p as Map)],
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                '사용 중인 서식은 한 번에 적용(서식 적용) 작업에서 써요. 기본 서식은 지울 수 없고, 세부 수정하면 새 서식으로 저장돼요.',
-                style: TextStyle(fontSize: 12, color: _faint),
-              ),
             ],
           ),
         ),

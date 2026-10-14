@@ -669,6 +669,24 @@ class DesktopWebBridge:
 
         return self._tk(clear)
 
+    def table_template(self, action, payload):
+        from docfit_app.table_template_service import TableTemplateService
+        def execute():
+            if action != "get":
+                self.gui._준말_서비스()._editable(self.gui.running)
+            data = dict(payload) if isinstance(payload, dict) else payload
+            if action == "learn" and isinstance(data, dict) and not data.get("path"):
+                from tkinter import filedialog
+                path = filedialog.askopenfilename(parent=self.gui.root,
+                    title="기본 데이터 표 서식 학습", filetypes=[("HWPX 문서", "*.hwpx")])
+                if not path:
+                    return TableTemplateService(self.gui._준말_서비스()).snapshot()
+                data["path"] = path
+            result = TableTemplateService(self.gui._준말_서비스()).command(
+                action, data, running=self.gui.running)
+            return result
+        return self._tk(lambda: response(execute), front=action == "learn")
+
     def get_abbreviations(self):
         return self._tk(lambda: response(lambda: self.gui._준말_서비스().snapshot(running=self.gui.running)))
 
@@ -967,7 +985,7 @@ class _BrowserApi:
             "get_state", "add_files", "add_folder", "add_paths", "remove_file",
             "clear_files", "set_mode", "set_range", "start", "stop",
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
-            "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults",
+            "table_template", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults",
             "open_results", "next_job", "run_tool", "open_result",
             "show_result", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",

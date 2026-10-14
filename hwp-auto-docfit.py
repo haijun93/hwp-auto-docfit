@@ -2916,6 +2916,8 @@ def _정밀표_글같음(first, second):
 
 def 정밀표_서식_적용(source_path, target_path, precise_profile):
     """프로필 표를 구조·앵커로 매칭해 대상 HWPX에 셀별 서식을 적용한다."""
+    if Path(source_path).resolve() == Path(target_path).resolve():
+        raise ValueError("원본 문서에는 정밀 표 서식을 덮어쓸 수 없습니다.")
     if not precise_profile or not precise_profile.get("tables"):
         return {"applied": 0, "skipped": 0, "matches": []}
     with open_hwpx_safely(source_path) as archive:
@@ -2930,6 +2932,7 @@ def 정밀표_서식_적용(source_path, target_path, precise_profile):
 
     before_text = []
     matches = []
+    fallbacks = []
     ordinal = 0
     for name in sorted(n for n in contents if re.fullmatch(r"Contents/section\d+\.xml", n)):
         root = safe_xml_fromstring(contents[name])
@@ -2939,6 +2942,21 @@ def 정밀표_서식_적용(source_path, target_path, precise_profile):
             target_signature = _표_서명(table, ordinal)
             scored = [(_정밀표_매칭점수(target_signature, signature), signature, sample)
                       for signature, sample in source_tables]
+            from docfit_core.format_elements import ambiguous_table_match
+            if ambiguous_table_match(scored):
+                from docfit_core.table_style import HeaderPool, apply_table_style, default_style, is_grid_table, valid_style
+                fallback = globals().get("활성_표서식_프로필")
+                fallback = fallback if valid_style(fallback) else default_style()
+                applied_fallback = _기본표서식_대상인가(table)
+                if applied_fallback:
+                    apply_table_style(HeaderPool(target_header, fallback), table)
+                    changed = True
+                fallbacks.append({"target": ordinal, "reason": "ambiguous_match",
+                                  "applied": applied_fallback})
+                로그(f"정밀 표 {ordinal + 1}: 후보 점수가 모호하여 정밀 복제 생략"
+                   + (" · 기본 표 서식 적용" if applied_fallback else " · 특수 표 원형 유지"))
+                ordinal += 1
+                continue
             score, signature, sample = max(scored, key=lambda item: item[0])
             # 행·열 또는 셀 수가 같은 표만 적용해 무관한 레이아웃 훼손을 방지한다.
             compatible = ((target_signature["rows"], target_signature["cols"])
@@ -2975,7 +2993,7 @@ def 정밀표_서식_적용(source_path, target_path, precise_profile):
     with zipfile.ZipFile(target_path, "w", zipfile.ZIP_DEFLATED) as archive:
         for name, data in contents.items():
             archive.writestr(name, data, compress_type=zipfile.ZIP_STORED if name == "mimetype" else zipfile.ZIP_DEFLATED)
-    return {"applied": len(matches), "skipped": ordinal - len(matches), "matches": matches}
+    return {"applied": len(matches), "skipped": ordinal - len(matches), "matches": matches, "fallbacks": fallbacks}
 
 
 

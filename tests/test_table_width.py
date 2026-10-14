@@ -144,3 +144,16 @@ class TableWidthTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class MultiRowHeaderRatiosTest(unittest.TestCase):
+    def test_second_header_row_does_not_distort_body_ratios(self):
+        from docfit_core.table_style import header_row_count
+        table = _table([
+            [_cell('구분', 0, 0, row_span=2), _cell('묶음', 1, 0, col_span=2)],
+            [_cell('아주긴머리글입니다', 1, 1), _cell('짧음', 2, 1)],
+            [_cell('가나', 0, 2), _cell('다라', 1, 2), _cell('마바', 2, 2)],
+        ], 3)
+        self.assertEqual(header_row_count(table), 2)
+        for value in column_ratios(table):
+            self.assertAlmostEqual(value, 1/3)

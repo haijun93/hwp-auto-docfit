@@ -7,6 +7,7 @@
   칸 배경이 그림(사진 등)이면 칸 내용이므로 선만 바꾸고 그림 채우기는 그대로 둔다.
 - 글자: 칸 글자 모양을 복제해 글꼴(언어별)·크기·장평·자간을 예시 값으로 바꾸고, 예시가 굵으면 굵게를
   더한다(글자색·밑줄 같은 강조와 본문 칸의 기존 굵게는 그대로 둔다).
+  서로 다른 글자 모양의 Run이 섞인 문단은 베이스 글꼴·크기만 맞춰 강조 대비·첨자를 보존한다.
 - 정렬: 머리글과 한 줄에 들어가는 짧은 문단만 예시 정렬로 바꾸고, 여러 줄 긴 글은 원래 정렬을 둔다.
   내장 기본값은 본문 칸(2행부터) 가운데 첫 열이 아닌 칸(B2·B3 …)의 문장을 왼쪽 정렬한다(칸의 text_align).
   왼쪽 정렬은 여러 줄 글에도 어색하지 않으므로 길이와 관계없이 입히고, 숫자·날짜만 있는 칸은 예시 정렬을 둔다.
@@ -110,7 +111,7 @@ def is_grid_table(table):
     return any(starts.count(row) >= 2 for row in range(head, rows))
 
 
-def _header_rows(table):
+def header_row_count(table):
     """머리글 행 수: 첫 행 칸 중 가장 긴 행 병합(첫 행이 두 행에 걸친 머리글이면 2). 본문 행은 하나 이상 남긴다.
 
     모든 행에 걸친 칸(비교표의 가운데 구분 칸 등)은 머리글 높이로 보지 않는다.
@@ -119,6 +120,10 @@ def _header_rows(table):
     spans = [_position(tc)[2] for tc in _cells(table) if _position(tc)[0] == 0 and _position(tc)[2] < rows]
     return max(1, min(max(spans or [1]), rows - 1))
 
+
+
+# Compatibility for older callers.
+_header_rows = header_row_count
 
 def _section_names(archive):
     names = [n for n in archive.namelist() if re.fullmatch(r"Contents/section\d+\.xml", n)]
@@ -383,8 +388,8 @@ class HeaderPool:
         self._fonts[key] = found.get("id")
         return self._fonts[key]
 
-    def char(self, base_id, spec_key):
-        key = (base_id, spec_key)
+    def char(self, base_id, spec_key, *, preserve_emphasis=False):
+        key = (base_id, spec_key, preserve_emphasis)
         if key in self._chars:
             return self._chars[key]
         spec = self.style["chars"][spec_key]
@@ -399,11 +404,11 @@ class HeaderPool:
                 font_id = self.font(lang, font_xml)
                 if font_id is not None and lang in ref.attrib:
                     ref.set(lang, font_id)
-        for name in ("ratio", "spacing"):
+        for name in (() if preserve_emphasis else ("ratio", "spacing")):
             target = _child(clone, name)
             if target is not None and spec.get(name):
                 target.attrib.update({k: v for k, v in spec[name].items() if k in target.attrib})
-        if spec.get("bold") and _child(clone, "bold") is None:
+        if not preserve_emphasis and spec.get("bold") and _child(clone, "bold") is None:
             bold = type(clone)(_ns(clone) + "bold", {})
             index = next((i for i, x in enumerate(clone) if _tag(x) in _BOLD_BEFORE), len(clone))
             clone.insert(index, bold)
@@ -516,8 +521,11 @@ def apply_table_style(pool, table):
         ratio = int((spec.get("ratio") or {}).get("hangul", "100"))
         text_align = base.get("text_align") if base_role != "header" else None
         for paragraph in _paragraphs(tc):
-            for run in (r for r in paragraph if _tag(r) == "run"):
-                run.set("charPrIDRef", pool.char(run.get("charPrIDRef"), base["char"]))
+            runs = [r for r in paragraph if _tag(r) == "run"]
+            mixed = len({r.get("charPrIDRef") for r in runs}) > 1
+            for run in runs:
+                run.set("charPrIDRef", pool.char(run.get("charPrIDRef"), base["char"],
+                                               preserve_emphasis=mixed))
             # 본문 문장 정렬(text_align)이 있으면 길이와 관계없이 입힌다. 숫자·날짜 칸은 예시 정렬을 따른다.
             sentence = bool(text_align) and not _number_like(_text(paragraph).strip())
             align = text_align if sentence else base.get("align")

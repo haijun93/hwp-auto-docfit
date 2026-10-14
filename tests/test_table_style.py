@@ -332,5 +332,83 @@ class LearnTest(unittest.TestCase):
             learn_table_style(path)
 
 
+class PrecisionRegressionTest(unittest.TestCase):
+    def test_mixed_runs_keep_relative_bold_color_underline_and_supscript(self):
+        header = _header()
+        table = _grid(3, 3)
+        paragraph = next(x for x in table.iter() if _tag(x) == "p")
+        run = next(x for x in paragraph if _tag(x) == "run")
+        import copy
+        emphasized = copy.deepcopy(run)
+        emphasized.set("charPrIDRef", "1")
+        paragraph.append(emphasized)
+        chars = {x.get("id"): x for x in header.iter() if _tag(x) == "charPr"}
+        next(x for x in chars["1"] if _tag(x) == "underline").set("type", "BOTTOM")
+        chars["1"].append(ET.fromstring('<hh:supscript xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head"/>'))
+        style = default_style()  # header sample is bold; it must not erase contrast
+        apply_table_style(HeaderPool(header, style), table)
+        result = {x.get("id"): x for x in header.iter() if _tag(x) == "charPr"}
+        plain, accent = [result[x.get("charPrIDRef")] for x in paragraph if _tag(x) == "run"]
+        self.assertIsNone(next((x for x in plain if _tag(x) == "bold"), None))
+        self.assertIsNotNone(next((x for x in accent if _tag(x) == "bold"), None))
+        self.assertEqual(accent.get("textColor"), "#FF0000")
+        self.assertEqual(next(x for x in accent if _tag(x) == "underline").get("type"), "BOTTOM")
+        self.assertIsNotNone(next((x for x in accent if _tag(x) == "supscript"), None))
+        self.assertEqual(plain.get("height"), accent.get("height"))
+
+    def test_gradient_angle_and_explicit_white_survive_learning_and_application(self):
+        for angle in ("0", "90"):
+            header = _header()
+            fill = next(x for x in header.iter() if _tag(x) == "borderFill")
+            brush = ET.fromstring(f'<hc:fillBrush xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">'
+                f'<hc:gradation type="LINEAR" angle="{angle}"><hc:color value="#FFFFFF"/>'
+                '<hc:color value="#0000FF"/></hc:gradation></hc:fillBrush>')
+            fill.append(brush)
+            style = learn_from_table(header, _grid(3, 3))
+            target_header = _header()
+            target = _grid(4, 3)
+            apply_table_style(HeaderPool(target_header, style), target)
+            fills = {x.get("id"): x for x in target_header.iter() if _tag(x) == "borderFill"}
+            cell = next(x for x in target.iter() if _tag(x) == "tc")
+            copied = fills[cell.get("borderFillIDRef")]
+            grad = next(x for x in copied.iter() if _tag(x) == "gradation")
+            self.assertEqual(grad.get("angle"), angle)
+            self.assertEqual(next(iter(grad)).get("value"), "#FFFFFF")
+            self.assertNotEqual(copied.get("id"), "1")
+
+    def test_explicit_white_and_none_brushes_are_not_collapsed(self):
+        for color in ("#FFFFFF", "none"):
+            header = _header()
+            fill = next(x for x in header.iter() if _tag(x) == "borderFill")
+            fill.append(ET.fromstring('<hc:fillBrush xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">'
+                f'<hc:winBrush faceColor="{color}" hatchColor="#123456" alpha="0"/></hc:fillBrush>'))
+            style = learn_from_table(header, _grid(3, 3))
+            target_header, target = _header(), _grid(3, 3)
+            apply_table_style(HeaderPool(target_header, style), target)
+            self.assertEqual(Reader(target_header, target).face_color((0, 0)), color)
+
+    def test_shared_service_keeps_abbreviation_contract_and_refuses_running_changes(self):
+        from docfit_app.abbreviation_service import AbbreviationService
+        from docfit_app.settings_service import SettingsService
+        from docfit_app.table_template_service import TableTemplateService
+        from docfit_app.api_contract import ServiceError
+        from docfit_core.abbreviations import table_style_of
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "example.hwpx"
+            with zipfile.ZipFile(source, "w") as archive:
+                archive.writestr("Contents/header.xml", ET.tostring(_header()))
+                archive.writestr("Contents/section0.xml", ET.tostring(_grid(3, 3)))
+            original = source.read_bytes()
+            abbreviations = AbbreviationService(SettingsService(Path(folder) / "settings.json"))
+            service = TableTemplateService(abbreviations)
+            service.command("learn", {"path": str(source)})
+            self.assertEqual(table_style_of(abbreviations.user_entries())["rows"], 3)
+            self.assertEqual(source.read_bytes(), original)
+            with self.assertRaises(ServiceError):
+                service.command("reset", {}, running=True)
+            reset = service.command("reset", {})
+            self.assertEqual(reset["preview"]["rows"], default_style()["rows"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -456,3 +456,12 @@ class FormatElementsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AmbiguousTableMatchTest(unittest.TestCase):
+    def test_tie_and_ordinal_only_difference_are_ambiguous(self):
+        shape = {"rows": 4, "cols": 3, "cell_count": 12}
+        self.assertTrue(fe.ambiguous_table_match([(190, shape, None), (190, shape, None)]))
+        self.assertTrue(fe.ambiguous_table_match([(190, shape, None), (182, shape, None)]))
+        self.assertFalse(fe.ambiguous_table_match([(190, shape, None), (150, shape, None)]))
+        self.assertFalse(fe.ambiguous_table_match([(190, shape, None)]))

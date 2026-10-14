@@ -3,7 +3,7 @@
 글자 수는 칸 안 문단에서 앞뒤 빈칸을 뺀 글자 수(글자 사이 빈칸 포함)다. 칸에 문단이 여럿이면 가장 긴
 문단으로 센다. 예: A1 '도  시'(4자), B1 '마 을 여  행'(8자)이면 두 열 너비는 1:2다.
 
-행이 둘 이상이면 1행(머리글)은 빼고, 2행부터 마지막 행까지 행마다 열별 글자 수 비율을 구한 뒤 그 평균
+행이 둘 이상이면 첫 행의 rowSpan으로 판별한 머리글 전체를 빼고, 본문 첫 행부터 마지막 행까지 행마다 열별 글자 수 비율을 구한 뒤 그 평균
 비율을 모든 행에 똑같이 적용한다(행마다 따로 맞추지 않는다). 병합 칸은 글자 수를 걸친 열에 똑같이 나눠
 세고, 세로 병합 칸은 걸친 행마다 센다. 표 전체 폭은 쪽 좌우 여백 사이 최대 폭(본문 폭 − 표 바깥 여백)이다.
 
@@ -17,6 +17,7 @@ from __future__ import annotations
 import re
 
 from .format_elements import HeaderIndex, cell_paragraphs, run_text
+from .table_style import header_row_count
 
 _OBJECTS = {"tbl", "pic", "ole", "equation", "rect", "ellipse", "line", "arc", "polygon", "curve",
             "connectLine", "container", "textart", "chart", "video"}
@@ -146,11 +147,12 @@ def _grid(cells, rows):
 
 
 def column_ratios(table):
-    """열 너비 비율. 1행(머리글)을 빼고 2행부터 마지막 행까지 행마다 칸 글자 수 비율을 구해 평균한다.
+    """열 너비 비율. 공통 header_row_count로 머리글 전체를 빼고 본문 첫 행부터 마지막 행까지 행마다 칸 글자 수 비율을 구해 평균한다.
 
     여러 열에 걸친 칸은 글자 수를 걸친 열에 똑같이 나눈다. 빈 칸이 있는 행(비고 칸이 빈 행, 일정표의 막대
     칸 등)은 그 열을 0으로 만들어 비율을 흐리므로, 모든 칸에 글이 있는 행이 있으면 그 행들로만 정한다.
-    그런 행이 없으면 글이 있는 행 모두로, 그것도 없으면(행이 하나뿐이거나 2행 이후가 모두 빔) 1행으로
+    다단 머리글 표의 본문이 빈 막대 칸이면 기존처럼 하위 머리글을 보조 기준으로 쓴다.
+    그 밖에는 글이 있는 본문 행 모두로, 그것도 없으면 1행으로
     정한다. 정할 수 없으면 None.
     """
     cells = _cells(table)
@@ -173,7 +175,12 @@ def column_ratios(table):
                 found.append([v / total for v in values])
         return found
 
-    found = (ratios(range(1, rows), True) or ratios(range(1, rows), False)
+    head = header_row_count(table)
+    found = (ratios(range(head, rows), True)
+             # Empty Gantt bars carry no usable body proportions; retain the
+             # existing lower-header fallback instead of collapsing time columns.
+             or (ratios(range(1, head), True) if head > 1 else [])
+             or ratios(range(head, rows), False)
              or ratios([0], True) or ratios([0], False))
     if not found:
         return None
@@ -181,7 +188,7 @@ def column_ratios(table):
 
 
 def fit_table(table, body_width, index: HeaderIndex) -> bool:
-    """표 폭을 본문 폭에 맞추고 열 너비를 칸 글자 수 비율(2행부터 행별 비율의 평균)로 나눈다. 바꿨으면 True."""
+    """표 폭을 본문 폭에 맞추고 열 너비를 칸 글자 수 비율(다단 머리글 제외, 본문 행별 비율의 평균)로 나눈다. 바꿨으면 True."""
     if not body_width or not is_target(table):
         return False
     cells = _cells(table)

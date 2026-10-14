@@ -63,6 +63,10 @@ EXE 빌드는 Flutter 검사·자산 검증 실패 시 중단한다. 런타임 �
 
 ## 3. 코드 구조
 
+표 템플릿 후속 개선: 공통 다단 헤더 판별, 혼합 Run 강조 보존, 모호한 정밀 표 폴백,
+Flutter 서식 관리의 기본 데이터 표 학습·초기화를 추가했다.
+[표 템플릿 검증 기록](docs/TABLE_TEMPLATE_PRECISION_ALPHA.md)을 확인한다.
+
 알파 리팩터링: `docfit_core/app_state.py`에 Tk 상태와 연결되는 `AppState`·`RunOptions`,
 `docfit_core/config_store.py`에 순수 설정 마이그레이션 및 공통 원자 저장 파사드를 둔다.
 기존 GUI 속성은 호환 프로퍼티로 유지한다. 엔진·Tk UI 전체 분리와 Flutter 도구 일원화는 아직 미완료다.
@@ -77,7 +81,7 @@ EXE 빌드는 Flutter 검사·자산 검증 실패 시 중단한다. 런타임 �
 | `docfit_core/stage_selection.py` | 작업 유형별 세부 작업(단계) 목록과 기본 선택값 |
 | `docfit_core/abbreviations.py`, `abbreviation_dialog.py` | 준말 등록표(첫 어절 판별 `match_line`, 줄 변환용 `line_registry`)와 준말 등록·관리 창(표 서식 학습 버튼 포함) |
 | `docfit_core/table_style.py` | 기본 표 서식(준말 `표`의 본말): 예시 표 위치별 서식 학습(`learn_table_style`)·적용(`apply_table_style`), 내장 기본값 |
-| `docfit_core/table_width.py` | 표 칸 너비: 칸 글자 수 비율(1행 제외, 2행부터 행별 비율 평균)로 열 너비를 나누고 표 폭을 본문 폭에 맞춤(`fit_table`) |
+| `docfit_core/table_width.py` | 표 칸 너비: 칸 글자 수 비율(다단 머리글 제외, 본문 행별 비율 평균)로 열 너비를 나누고 표 폭을 본문 폭에 맞춤(`fit_table`) |
 | `docfit_core/style_hierarchy.py` | 항목기호(□·ㅇ·-·※ 등) 판별, 들여쓰기 기반 계층 분석 |
 | `docfit_core/style_inventory.py` | **문서 스타일 전수 분석**(정의/사용, 스타일 유형, 위첨자·글자색·음영, 표 종류)과 **예시 서식 HWPX 생성** |
 | `docfit_core/fidelity/`, `scripts/fidelity.py` | **원본 보존 경로**(`STYLE_FIDELITY_DESIGN.md` 첫 구현 범위): HWPX 무손실 보관·최소 변경 쓰기, 요소·속성 전수 목록과 해석 범위, 원문 위치 맵, 내용만 바꾸는 패치, 다층 검증. 공문서 후처리와 실행 경로가 분리되어 있다 |

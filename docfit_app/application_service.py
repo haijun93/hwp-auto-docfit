@@ -44,6 +44,7 @@ class ApplicationService:
                   'get_abbreviations':0,'save_abbreviation':4,'delete_abbreviation':1,
                   'set_abbreviation_defaults':1,'add_paths':1,'remove_file':1,
                   'clear_files':0,'set_mode':1,'inspect_document':1,'get_log':0,'clear_log':0,'shutdown':0}
+        counts.update({'table_template':2})
         counts.update({'diagram_list':0,'diagram_load':1,'diagram_save':3,'diagram_delete':1})
         if method not in counts:
             raise ServiceError('NOT_AVAILABLE','이 네이티브 시제품에서는 해당 기능을 아직 사용할 수 없습니다.')
@@ -55,6 +56,9 @@ class ApplicationService:
             return {'protocol_version':1,'backend_version':'1.74 Native Prototype 1',
                     'capabilities':['documents.inspect','settings','abbreviations'] +
                     (['diagrams'] if self.diagrams.enabled() else []),'engine_ready':False}
+        if method=='table_template':
+            from docfit_app.table_template_service import TableTemplateService
+            return response(lambda:TableTemplateService(self.abbreviations).command(*args))
         if method=='get_state': return self.state()
         if method=='get_settings': return response(self.configuration.snapshot)
         if method=='save_settings': return response(lambda:self.configuration.save(*args))
