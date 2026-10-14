@@ -61,6 +61,28 @@ Map<String, dynamic> initialState() => <String, dynamic>{
 };
 
 void main() {
+  testWidgets(
+    'general flow editor is visible while tldraw remains developer-only',
+    (tester) async {
+      final state = initialState();
+      Future<Object?> api(String name, List<Object?> args) async => state;
+      await tester.pumpWidget(DocFitApp(api: api));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('업무 흐름도'), findsOneWidget);
+      expect(find.byTooltip('문서 도구'), findsNothing);
+      state['options']['developer_mode'] = true;
+      state['options']['diagram_editor_enabled'] = true;
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('업무 흐름도'), findsOneWidget);
+      expect(find.byTooltip('문서 도구'), findsOneWidget);
+      await tester.tap(find.byTooltip('문서 도구'));
+      await tester.pumpAndSettle();
+      expect(find.text('tldraw 편집기 (개발자 전용)'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
   for (final width in [420.0, 1024.0]) {
     testWidgets('navigation and scoped commands at width $width', (
       tester,

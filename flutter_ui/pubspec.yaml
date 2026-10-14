@@ -8,6 +8,7 @@ dependencies:
   file_selector: ^1.1.0
   flutter:
     sdk: flutter
+  web: ^1.1.1
   webview_flutter_windows: 1.2.0
 dev_dependencies:
   flutter_test:
@@ -20,4 +21,7 @@ flutter:
       fonts:
         - asset: assets/NotoSansKR.ttf
   assets:
+    - assets/flow_editor/
+    - assets/flow_editor/assets/
     - assets/diagram_editor/
+    - assets/diagram_editor/assets/

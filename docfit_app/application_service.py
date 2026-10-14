@@ -9,6 +9,7 @@ from docfit_app.configuration_service import ConfigurationService
 from docfit_app.settings_service import SettingsService
 from docfit_app.settings_schema import DEFAULTS
 from docfit_app.diagram_service import DiagramService
+from docfit_app.flow_service import FlowService
 from docfit_app.settings_migrations import migrate
 from docfit_core.hwpx import validate_and_inspect_hwpx
 from docfit_app.app_state import STAGE_ORDER, AppState
@@ -21,6 +22,7 @@ class ApplicationService:
         self.configuration = ConfigurationService(self.store)
         self.abbreviations = AbbreviationService(self.store)
         self.diagrams = DiagramService(Path(settings_path).parent, self.store)
+        self.flows = FlowService(Path(settings_path).parent, self.store)
         self.data = AppState()
         self.lock = threading.RLock()
 
@@ -40,7 +42,7 @@ class ApplicationService:
                 'progress':{'steps':list(STAGE_ORDER),'active':None,'visited':[],'outcome':None,'detail':''},
                 'stages':[{'key':k,'label':label,'enabled':self.data.stages.get((self.data.mode,k),selected.get(k,default_choice(k,self.data.mode))),
                            'default':default_choice(k,self.data.mode)} for k,label in stages_for_mode(self.data.mode)],
-                'can_start':False,'capabilities':['documents.inspect','settings','abbreviations'] +
+                'can_start':False,'capabilities':['documents.inspect','settings','abbreviations','flows'] +
                 (['diagrams'] if self.diagrams.enabled() else [])}
 
     def dispatch(self, method, args):
@@ -50,6 +52,7 @@ class ApplicationService:
                   'clear_files':0,'set_mode':1,'inspect_document':1,'get_log':0,'clear_log':0,'shutdown':0}
         counts.update({'table_template':2,'document_tool':2,'get_pending_dialog':0,'stage_config':2,'set_stage':2,'set_stage_default':1})
         counts.update({'set_option':2,'set_include_spacing':1,'set_reset_spacing':1,'set_table_spacing':1,'set_exclude_tables':1,'set_range':3,'set_card_option':2})
+        counts.update({'flow_editor':2})
         counts.update({'diagram_list':0,'diagram_load':1,'diagram_save':3,'diagram_delete':1})
         if method not in counts:
             raise ServiceError('NOT_AVAILABLE','이 네이티브 시제품에서는 해당 기능을 아직 사용할 수 없습니다.')
@@ -59,7 +62,7 @@ class ApplicationService:
             raise ServiceError('BACKEND_CLOSING','백엔드가 종료 중입니다.')
         if method=='handshake':
             return {'protocol_version':1,'backend_version':'1.74 Native Prototype 1',
-                    'capabilities':['documents.inspect','settings','abbreviations'] +
+                    'capabilities':['documents.inspect','settings','abbreviations','flows'] +
                     (['diagrams'] if self.diagrams.enabled() else []),'engine_ready':False}
         if method=='set_card_option':
             name,value=args
@@ -179,6 +182,15 @@ class ApplicationService:
             _,inspection=validate_and_inspect_hwpx(path)
             return asdict(inspection)
         if method=='get_log' or method=='clear_log': return ''
+        if method=='flow_editor':
+            action,payload=args
+            if not isinstance(payload,dict):raise ServiceError('INVALID_INPUT','입력을 확인해 주세요.')
+            if action=='export_png':return self.flows.export_png(payload.get('base64'))
+            if action=='list':return self.flows.list()
+            if action=='load':return self.flows.load(payload.get('id'))
+            if action=='save':return self.flows.save(payload.get('id'),payload.get('name'),payload.get('snapshot'))
+            if action=='delete':return self.flows.delete(payload.get('id'))
+            raise ServiceError('INVALID_ACTION','흐름도 작업을 확인해 주세요.')
         if method=='diagram_list': return self.diagrams.list()
         if method=='diagram_load': return self.diagrams.load(*args)
         if method=='diagram_save': return self.diagrams.save(*args)

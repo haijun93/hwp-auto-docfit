@@ -158,3 +158,12 @@ Windows에서는 저장소 루트 `.venv\Scripts\python.exe`, `PYTHONIOENCODING=
 Linux 전체 검사는 `DISPLAY=:91 .venv/bin/python scripts/linux_stub_test_runner.py --require-gui discover -s tests`이다.
 Windows 한/글 실측, WebView2 포커스와 EXE 패키징은 Windows 환경에서 별도 확인해야 한다.
 결과는 [Phase 3~5 보고서](REFACTOR_PHASE3_5_ALPHA8.md)에 기록한다.
+
+
+### 일반 흐름도와 개발자 tldraw
+
+- 일반 편집기: `diagram_editor/` React Flow(MIT), `docfit_app/flow_service.py`, Flutter `features/flows/`.
+- 일반 모드 버튼은 개발자 옵션과 독립. 저장 API는 `flow_editor(action,payload)`, 데이터는 `flows/`.
+- tldraw는 기존 `tldraw_editor/`·`features/diagrams/`·`DiagramService`를 유지. 개발자 모드와 별도 옵션이 모두 필요하며 `diagrams/` 데이터를 사용한다.
+- `scripts/build_flow_editor.ps1`이 고정 의존성 설치·모델 시험·번들·라이선스 고지를 생성하며 웹/네이티브 빌드에서 호출한다. Node 22.12+ 필요.
+- 일반 편집기는 런타임 CDN·외부 서비스 없이 로컬 자산 사용. 기존 tldraw SDK 제품 사용권 과제는 그대로 유지한다.

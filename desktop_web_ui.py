@@ -719,6 +719,51 @@ class DesktopWebBridge:
         self._tk(resolve)
         return {"ok": True}
 
+    def flow_editor(self, action, payload):
+        from docfit_app.flow_service import FlowService
+        from docfit_app.api_contract import ServiceError
+        if not isinstance(payload, dict):
+            raise ServiceError("INVALID_INPUT", "입력을 확인해 주세요.")
+        store = self._tk(lambda: self.gui._준말_서비스().settings)
+        service = FlowService(store._path.parent, store)
+        if action == "export_png":
+            import os
+            import tempfile
+            from tkinter import filedialog
+            data = service.png_bytes(payload.get("base64"))
+            raw_name = payload.get("name", "업무 흐름도")
+            name = "".join(c for c in str(raw_name)[:120] if c.isalnum() or c in " _-") or "업무 흐름도"
+            selected = self._tk(lambda: filedialog.asksaveasfilename(
+                parent=self.gui.root, title="흐름도 PNG 저장", initialfile=name + ".png",
+                defaultextension=".png", filetypes=[("PNG 이미지", "*.png")],
+            ), front=True)
+            if not selected:
+                return {"cancelled": True}
+            target = Path(selected)
+            if target.suffix.lower() != ".png":
+                raise ServiceError("INVALID_PATH", "PNG 파일로 저장해 주세요.")
+            temporary = None
+            try:
+                with tempfile.NamedTemporaryFile(dir=target.parent, suffix=".tmp", delete=False) as stream:
+                    temporary = Path(stream.name)
+                    stream.write(data)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.replace(temporary, target)
+            finally:
+                if temporary is not None:
+                    temporary.unlink(missing_ok=True)
+            return {"path": str(target)}
+        if action == "list":
+            return service.list()
+        if action == "load":
+            return service.load(payload.get("id"))
+        if action == "save":
+            return service.save(payload.get("id"), payload.get("name"), payload.get("snapshot"))
+        if action == "delete":
+            return service.delete(payload.get("id"))
+        raise ServiceError("INVALID_ACTION", "흐름도 작업을 확인해 주세요.")
+
     def document_tool(self, name, payload):
         from docfit_app.document_tools_service import DocumentToolsService
         def execute():
@@ -1167,7 +1212,7 @@ class _BrowserApi:
             "get_state", "add_files", "add_folder", "add_paths", "remove_file",
             "clear_files", "set_mode", "set_range", "start", "stop",
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
-            "get_pending_dialog", "resolve_dialog", "format_profile", "document_tool", "stage_config", "table_template", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults",
+            "get_pending_dialog", "resolve_dialog", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults",
             "open_results", "next_job", "run_tool", "open_result",
             "show_result", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",

@@ -14,6 +14,7 @@ import 'features/tools/document_tools_workspace.dart';
 import 'features/tools/backend_dialog.dart';
 import 'features/conversion/floating_format_picker.dart';
 import 'features/diagrams/diagram_editor_screen.dart';
+import 'features/flows/flow_editor_screen.dart';
 import 'features/settings/settings_dialog.dart';
 
 export 'core/api/abbreviation_api.dart' show ApiCall;
@@ -454,6 +455,14 @@ class _WorkspaceState extends State<Workspace> {
     );
   }
 
+  Future<void> openFlowEditor() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => FlowEditorScreen(api: widget.api),
+      ),
+    );
+  }
+
   Future<void> openDiagramEditor() async {
     if (quickOptions['developer_mode'] != true ||
         quickOptions['diagram_editor_enabled'] != true) {
@@ -670,6 +679,11 @@ class _WorkspaceState extends State<Workspace> {
         onPressed: () => showLog(),
         icon: const Icon(Icons.receipt_long_outlined),
       ),
+      IconButton(
+        tooltip: '업무 흐름도',
+        onPressed: locked ? null : openFlowEditor,
+        icon: const Icon(Icons.account_tree_outlined),
+      ),
       // 문서 도구는 설정의 개발자 모드를 켜야 보인다.
       if (quickOptions['developer_mode'] == true)
         PopupMenuButton<String>(
@@ -687,7 +701,7 @@ class _WorkspaceState extends State<Workspace> {
             if (quickOptions['diagram_editor_enabled'] == true)
               const PopupMenuItem(
                 value: 'diagram_editor',
-                child: Text('도형·업무 흐름도 편집기'),
+                child: Text('tldraw 편집기 (개발자 전용)'),
               ),
             PopupMenuItem(value: 'review', child: Text('문서 검토')),
             PopupMenuItem(value: 'proofread', child: Text('공공언어 교정')),

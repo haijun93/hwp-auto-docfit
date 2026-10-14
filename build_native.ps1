@@ -9,6 +9,7 @@ $Bundle = Join-Path $OutputPath "prototype"
 if (Test-Path $Bundle) { throw "Prototype output already exists. Choose a new -Output directory." }
 Push-Location $Root
 try {
+    & (Join-Path $Root 'scripts\build_flow_editor.ps1') -Npm $Npm
     $NodeVersion = (& node --version).TrimStart('v')
     if ([version]$NodeVersion -lt [version]'22.12.0') {
         throw "The tldraw editor build requires Node.js 22.12.0 or newer. Found $NodeVersion."

@@ -1,3 +1,11 @@
+## [반영·alpha] 일반 모드 업무 흐름도 / 개발자 tldraw 분리 (2026-10-14)
+
+- [x] 일반 모드에 React Flow(MIT) 기반 업무 흐름도 편집기 제공. 기존 tldraw는 개발자 모드에서 선택 사용.
+- [x] 예시 서식 10종, 도형·연결선·내용 편집, 크기·배치·정렬, 실행 취소/다시 실행, 저장·복원·PNG 내보내기.
+- [x] Flutter 웹/Windows 경로 및 일반 흐름도 전용 저장 API 연결. tldraw API의 개발자 전용 조건 유지.
+- [ ] Windows WebView2 실기기 입력·파일 선택·PNG 저장·장시간 실행 검증.
+- 기록: `docs/GENERAL_FLOW_EDITOR_ALPHA8.md`. 아래 tldraw 개발 과제는 별도로 유지한다.
+
 # 작업 예정 목록
 
 ## [반영·alpha] 플로팅 파일포맷 선택·HWPX 직접 PDF 저장 (2026-10-14)
