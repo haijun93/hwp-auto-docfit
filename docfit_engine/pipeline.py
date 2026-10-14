@@ -63,7 +63,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
         return bind_function(문서_처리, _docfit_namespace)
     if _docfit_symbol == '_문서_처리_본체':
         def _문서_처리_본체(파일, index, total, 문장부호기능=True):
-            global hwp, 현재_처리파일, 한칸표_보호영역, 최종검수_문서목록
+            global hwp, 현재_처리파일, 한칸표_보호영역, 디자인표_보호영역, 최종검수_문서목록
             global 쪽범위_본문_문단, 쪽범위_컨트롤영역, 쪽범위_실제, 기본표서식_적용됨
             global _표준서식_XML텍스트, _알파_일괄서식_문서, _표준서식_XML간격
             _표준서식_XML텍스트 = set()
@@ -71,6 +71,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             _알파_일괄서식_문서 = False
             쪽배치_쪽나눔문단.clear()
             한칸표_보호영역 = set()
+            디자인표_보호영역 = set()
             기본표서식_적용됨 = False
             쪽범위_본문_문단 = None
             쪽범위_컨트롤영역 = set()
@@ -332,6 +333,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         return False
             단계시간_구간('한 칸 표 영역 조사')
             한칸표_보호영역 = 한칸표_영역_목록()
+            디자인표_보호영역 = 디자인표_영역_목록()
+            if 디자인표_보호영역:
+                로그(f"사용자가 꾸민 장식 표 보호: 칸 영역 {len(디자인표_보호영역)}개(서식·자간·찾아 바꾸기 제외)")
 
             # 기존 결과를 다시 입력했거나 원문 자체에 설정돼 있던 페이지 보호가
             # 페이지 판정을 왜곡하지 않도록 처리 시작 전에도 먼저 해제한다.

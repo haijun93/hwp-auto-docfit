@@ -1635,7 +1635,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             로그(f"[문단 세트 1] 시작(공백 정규화 {'O' if 공백 else 'X'}, 문장부호 뒤 공백 {'O' if 문장부호 else 'X'}, "
                  f"라벨/괄호 {'O' if 괄호 else 'X'})")
             allreplace = 0
-            if 공백 and not (한칸표_보호영역 or 쪽범위_사용중()):
+            if 공백 and not (한칸표_보호영역 or 디자인표_보호영역 or 쪽범위_사용중()):
                 allreplace = 괄호_안쪽_공백_정리_AllReplace()
             규칙들 = (문두_미음_기호_정리, 연도_따옴표_정리_문단_처리, 곧은따옴표_통일_문단_처리, 작은따옴표_통일_문단_처리,
                     날짜_구분자_정리_문단_처리, 괄호_안쪽_공백_정리_문단_처리, 쉼표_공백_정리_문단_처리,
@@ -1991,6 +1991,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
     if _docfit_symbol == '표셀_자간_제외인가':
         def 표셀_자간_제외인가():
             """'표 서식 내 문장도 자간조정하기'가 꺼져 있고 커서가 표 셀 안이면 True."""
+            if hwp is not None and 디자인표_보호영역 and hwp.GetPos()[0] in 디자인표_보호영역:
+                return True   # 사용자가 꾸민 장식 표 칸은 자간·줄 작업을 하지 않는다
             return (not 표_자간조정_사용) and 현재_표셀인가()
         return bind_function(표셀_자간_제외인가, _docfit_namespace)
     if _docfit_symbol == '컨트롤_줄병합_대상인가':

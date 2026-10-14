@@ -93,6 +93,28 @@ def _is_arrow_cell(tc):
     return bool(text) and all(ch in _ARROWS for ch in text)
 
 
+def is_design_table(table):
+    """사용자가 문서에 맞게 꾸민 장식 표인가: 글 없는 칸(점선·여백 칸)이 있고, 글 있는 칸이 모두 첫 행에서
+    모든 행을 덮는 한 줄짜리 표('2026 추진실적 ……… (8. 31. 현재)' 막대 표).
+
+    이런 표는 데이터 표가 아니라 문서 디자인이므로 어떤 표 서식·너비·자간 작업도 하지 않는다(사용자 규칙,
+    2026-10-15).
+    """
+    rows, cols = _size(table)
+    cells = _cells(table)
+    if cols < 2 or not cells:
+        return False
+    texts = [(tc, "".join(_text(tc).split())) for tc in cells]
+    if all(text for _, text in texts) or not any(text for _, text in texts):
+        return False
+    for tc, text in texts:
+        if text:
+            row, _, span, _ = _position(tc)
+            if row != 0 or span < max(1, rows):
+                return False
+    return True
+
+
 def is_grid_table(table):
     """기본 표 서식 대상 모양인가: 2행 2열 이상이고, 칸 안에 다른 표가 없고, 화살표만 든 칸(흐름도)이 없고,
     본문 행에 칸이 둘 이상인 표.
@@ -101,7 +123,7 @@ def is_grid_table(table):
     상자라 데이터 표 서식을 입히지 않는다(실측: 실제 기관 업무계획 문서).
     """
     rows, cols = _size(table)
-    if rows < 2 or cols < 2:
+    if rows < 2 or cols < 2 or is_design_table(table):
         return False
     cells = _cells(table)
     if any(_tag(x) == "tbl" for tc in cells for x in tc.iter()) or any(map(_is_arrow_cell, cells)):

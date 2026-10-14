@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 
 from .format_elements import HeaderIndex, cell_paragraphs, run_text
-from .table_style import header_row_count
+from .table_style import header_row_count, is_design_table
 
 _OBJECTS = {"tbl", "pic", "ole", "equation", "rect", "ellipse", "line", "arc", "polygon", "curve",
             "connectLine", "container", "textart", "chart", "video"}
@@ -82,7 +82,7 @@ def is_target(table):
     """비례 너비를 적용할 표인지: 가로로 칸 둘 이상, 개체 없음, 절대 너비, 칸 정보 완전, 글 있음."""
     cols = _int(table.get("colCnt"))
     size = _child(table, "sz")
-    if cols < 2 or size is None or (size.get("widthRelTo") or "ABSOLUTE") != "ABSOLUTE":
+    if cols < 2 or size is None or (size.get("widthRelTo") or "ABSOLUTE") != "ABSOLUTE" or is_design_table(table):
         return False
     cells = _cells(table)
     if not cells:
@@ -255,8 +255,30 @@ def host_reserve(paragraph, table, index: HeaderIndex) -> int:
                 return reserve
             if _tag(child) == "t":
                 text = (child.text or "") + "".join(c.tail or "" for c in child)
-                reserve += int(sum(0.5 if ch.isspace() or _half_width(ch) else 1.0 for ch in text) * size)
+                # 한/글 빈칸 폭은 글꼴마다 달라 전각으로 넉넉히 잡는다(모자라면 표가 다음 줄로 밀려 용지 밖으로 나간다).
+                reserve += int(sum(0.6 if _half_width(ch) and not ch.isspace() else 1.0 for ch in text) * size)
     return reserve
+
+
+def _scale_to_fit(table, cells, total):
+    """캡션('(단위: 개소)')이 달린 표는 작성자가 꾸민 모양이라 열을 다시 나누지 않는다. 쪽 폭을 넘칠 때만
+    모든 열을 같은 비율로 줄여 넣는다(캡션은 표 오른쪽 끝선에 맞춘 정렬 그대로 따라온다)."""
+    size = _child(table, "sz")
+    current = _int(size.get("width"))
+    if not current or current <= total:
+        return False
+    ratio = total / current
+    for tc, _, _, _ in cells:
+        cell = _child(tc, "cellSz")
+        cell.set("width", str(int(_int(cell.get("width")) * ratio)))
+        for p in cell_paragraphs(tc):
+            for cache in [x for x in p if _tag(x) == "linesegarray"]:
+                p.remove(cache)
+    size.set("width", str(total))
+    caption = _child(table, "caption")
+    if caption is not None and caption.get("lastWidth"):
+        caption.set("lastWidth", str(total))
+    return True
 
 
 def fit_table(table, body_width, index: HeaderIndex, reserve: int = 0) -> bool:
@@ -269,6 +291,8 @@ def fit_table(table, body_width, index: HeaderIndex, reserve: int = 0) -> bool:
     total = int(body_width) - ((_int(out.get("left")) + _int(out.get("right"))) if out is not None else 0) - max(0, reserve)
     if total <= cols * 300:
         return False
+    if _child(table, "caption") is not None:
+        return _scale_to_fit(table, cells, total)
     weights = column_ratios(table)
     if weights is None:
         return False

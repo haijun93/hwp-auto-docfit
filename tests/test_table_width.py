@@ -37,15 +37,25 @@ def _widths(table):
 
 
 class TableWidthTest(unittest.TestCase):
-    def test_empty_decoration_columns_keep_their_share(self):
+    def test_captioned_table_keeps_its_design_and_only_shrinks_to_fit(self):
+        # '(단위: 개소)' 캡션이 달린 표: 열을 다시 나누지 않고, 넘칠 때만 같은 비율로 줄인다.
+        rows = [[_cell('총 계', 0, 0, width=6000), _cell('노래연습장', 1, 0, width=4000)],
+                [_cell('332', 0, 1, width=6000), _cell('175', 1, 1, width=4000)]]
+        wide = _table(rows, 2, '<hp:caption side="TOP" lastWidth="10000"/>')
+        next(x for x in wide if x.tag.endswith('}sz')).set('width', '10000')
+        index = HeaderIndex(HEADER)
+        self.assertFalse(fit_table(wide, 40000, index))          # 들어가면 그대로
+        self.assertTrue(fit_table(wide, 8566, index))            # 넘치면 비율 그대로 축소
+        self.assertEqual(_widths(wide)[0], [4800, 3200])
+
+    def test_design_bar_table_is_left_untouched(self):
         # test6 문화경제국 '2026 추진실적 ……(8. 31. 현재)' 막대 표: 빈 점선 칸이 최소 폭으로 줄어 모양이 깨졌다.
         rows = [[_cell('2026 추진실적', 0, 0, width=13425), _cell('', 1, 0, width=22339),
                  _cell('(8. 31. 현재)', 2, 0, width=11676)]]
         table = _table(rows, 3)
-        self.assertTrue(fit_table(table, 48000, HeaderIndex(HEADER)))
-        widths = _widths(table)[0]
-        total = sum(widths)
-        self.assertAlmostEqual(widths[1] / total, 22339 / (13425 + 22339 + 11676), places=2)
+        # 사용자가 꾸민 장식 표는 너비를 전혀 바꾸지 않는다(사용자 규칙).
+        self.assertFalse(fit_table(table, 48000, HeaderIndex(HEADER)))
+        self.assertEqual(_widths(table)[0], [13425, 22339, 11676])
 
     def test_inline_table_after_spaces_leaves_room_for_them(self):
         # test6 문화경제국 문서: '   '(빈칸 셋) 뒤 글자처럼 놓인 표를 본문 폭 그대로 넓히면 줄을 넘쳐 용지 밖으로 밀렸다.
@@ -56,10 +66,10 @@ class TableWidthTest(unittest.TestCase):
         para[1].append(table)
         index = HeaderIndex(HEADER)
         reserve = host_reserve(para, table, index)
-        self.assertEqual(reserve, 2400)          # 빈칸 셋 × 반각 0.5 × 16pt(나중에 커질 본문 크기)
+        self.assertEqual(reserve, 4800)          # 빈칸 셋 × 전각 × 16pt(나중에 커질 본문 크기)
         self.assertTrue(fit_table(table, 40000, index, reserve=reserve))
         width = int(next(x for x in table if x.tag.endswith('}sz')).get('width'))
-        self.assertEqual(width, 40000 - 566 - 2400)   # 본문 폭 − 바깥 여백 − 표 앞 빈칸
+        self.assertEqual(width, 40000 - 566 - 4800)   # 본문 폭 − 바깥 여백 − 표 앞 빈칸
         # 글과 따로 놓인 표는 앞 글을 세지 않는다.
         floating = _table(rows, 2, '<hp:pos treatAsChar="0"/>')
         self.assertEqual(host_reserve(para, floating, index), 0)
