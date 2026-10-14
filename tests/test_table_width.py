@@ -36,6 +36,32 @@ def _widths(table):
 
 
 class TableWidthTest(unittest.TestCase):
+    def test_row_spanning_labels_are_not_a_multi_row_header(self):
+        # test6 '(서식)' 양식 표: 첫 행 칸 셋이 두 행에 걸쳐 있을 뿐 아래 열을 묶는 머리글이 없다.
+        # 둘째 행까지 머리글로 빼면 근거 법규 칸(글이 가장 많음)이 너비 계산에서 빠져 좁아지고 글자가 겹쳤다.
+        bullets = '● 최상위 근거법규(~ 법 제00조) ● 최하위 근거법규(~ 조례 제00조)'
+        rows = [
+            [_cell('설치근거', 0, 0, row_span=2), _cell(bullets, 1, 0, row_span=2),
+             _cell('유형', 2, 0, row_span=2), _cell('상설/비상설', 3, 0)],
+            [_cell('법령상 강행/임의', 3, 1)],
+            [_cell('설치일자', 0, 2), _cell('2000. 00. 00.', 1, 2), _cell('위원장', 2, 2), _cell('위원 중 호선', 3, 2)],
+            [_cell('설치목적/기능', 0, 3, row_span=2), _cell('•', 1, 3, row_span=2), _cell('위원수', 2, 3),
+             _cell('(정원) 16명~20명 (현원) 18명', 3, 3)],
+            [_cell('임기', 2, 4), _cell('2년(1회 연임)', 3, 4)],
+        ]
+        ratios = column_ratios(_table(rows, 4))
+        self.assertGreater(ratios[1], ratios[0])   # 근거 법규 열이 이름 열보다 좁아지지 않는다
+
+    def test_grouped_two_row_header_still_skips_both_header_rows(self):
+        # 진짜 다단 머리글: 첫 행 '2026년' 칸이 아래 두 열(월)을 묶는다. 본문 행으로만 비율을 정한다.
+        rows = [
+            [_cell('구분', 0, 0, row_span=2), _cell('2026년', 1, 0, col_span=2)],
+            [_cell('1월', 1, 1), _cell('2월', 2, 1)],
+            [_cell('아주 긴 사업 이름을 적은 칸', 0, 2), _cell('●', 1, 2), _cell('●', 2, 2)],
+        ]
+        ratios = column_ratios(_table(rows, 3))
+        self.assertGreater(ratios[0], ratios[1] * 3)
+
     def test_single_row_follows_character_count_including_inner_spaces(self):
         # '도  시' = 4자, '마 을 여  행' = 8자 → 1:2
         table = _table([[_cell('도  시', 0, 0), _cell(' 마 을 여  행 ', 1, 0)]], 2)

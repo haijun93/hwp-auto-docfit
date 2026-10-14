@@ -146,6 +146,21 @@ def _grid(cells, rows):
     return grid
 
 
+def _grouped_header(cells):
+    """첫 행에 아래 행의 여러 열을 묶는 머리글 칸(열 병합 2 이상, 행 병합 1)이 있으면 다단 머리글이다.
+
+    첫 행 칸이 두 행에 걸쳐 있기만 한 표(예: '설치근거 | 근거 법규 목록 | 유형 | 상설/비상설' 아래에
+    '법령상 강행/임의'가 오는 양식 표)는 다단 머리글이 아니다. 이런 표의 둘째 행까지 머리글로 빼면
+    글이 많은 칸이 너비 계산에서 빠져 그 열이 좁아지고 글자가 겹친다.
+    """
+    for tc, _col, row, span in cells:
+        if row == 0 and span > 1:
+            size = _child(tc, "cellSpan")
+            if (max(1, _int(size.get("rowSpan"), 1)) if size is not None else 1) == 1:
+                return True
+    return False
+
+
 def column_ratios(table):
     """열 너비 비율. 공통 header_row_count로 머리글 전체를 빼고 본문 첫 행부터 마지막 행까지 행마다 칸 글자 수 비율을 구해 평균한다.
 
@@ -175,7 +190,7 @@ def column_ratios(table):
                 found.append([v / total for v in values])
         return found
 
-    head = header_row_count(table)
+    head = header_row_count(table) if _grouped_header(cells) else 1
     found = (ratios(range(head, rows), True)
              # Empty Gantt bars carry no usable body proportions; retain the
              # existing lower-header fallback instead of collapsing time columns.
