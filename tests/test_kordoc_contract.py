@@ -53,9 +53,11 @@ class KordocContractTest(unittest.TestCase):
                 kb._kordoc_command()
 
     def test_npx_requires_explicit_opt_in_and_disables_lifecycle_scripts(self):
+        # 인터넷이 되는 PC에서 폐쇄망 모드를 끄고 명시적으로 허용한 경우에만 npx를 쓴다.
         with patch.object(kb, "_node_major", return_value=20), patch.object(kb, "_local_kordoc", return_value=None), \
+                patch.object(kb, "_bundled_runtime", return_value=None), \
                 patch.object(kb, "_npx_command", return_value=["node.exe", "npx-cli.js"]), \
-                patch.dict(os.environ, {"DOCFIT_ALLOW_NPX_DOWNLOAD": "1"}, clear=False):
+                patch.dict(os.environ, {"DOCFIT_ALLOW_NPX_DOWNLOAD": "1", "DOCFIT_OFFLINE": "0"}, clear=False):
             command = kb._kordoc_command()
         self.assertEqual(command, ["node.exe", "npx-cli.js", "--yes", "--ignore-scripts", kb.KORDOC_PACKAGE])
 
@@ -63,10 +65,13 @@ class KordocContractTest(unittest.TestCase):
         with patch.object(kb, "_node_major", return_value=20), \
                 patch.object(kb, "_node_executable", return_value="node.exe"), \
                 patch.object(kb, "_local_kordoc", return_value=None), \
+                patch.object(kb, "_bundled_runtime", return_value=None), \
+                patch.object(kb.kordoc_runtime, "bundled_pack", return_value=None), \
                 patch.dict(os.environ, {"DOCFIT_ALLOW_NPX_DOWNLOAD": "0"}, clear=False):
             status = kb.engine_status()
         self.assertFalse(status["available"])
-        self.assertIn("4.21.30", status["reason"])
+        # 무엇을 어디에 두면 되는지 알린다.
+        self.assertIn(kb.kordoc_runtime.RUNTIME_PACK_NAME, status["reason"])
 
     def test_missing_engine_preflight_does_not_spawn_version_process(self):
         with patch.object(kb, "_node_major", side_effect=AssertionError("version subprocess")), \

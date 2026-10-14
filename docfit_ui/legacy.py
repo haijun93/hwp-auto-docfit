@@ -819,6 +819,17 @@ def _install(*, _docfit_namespace, _docfit_symbol):
 
 
             def _자동업데이트_확인_시작(self, 수동=False):
+                from docfit_core.network_policy import offline_mode
+                if offline_mode():
+                    # 폐쇄망 모드: 외부 서버에 접속하지 않는다. 새 버전은 담당자가 전달한 실행 파일로 바꾼다.
+                    if 수동:
+                        self._알림(messagebox.showinfo, APP_NAME,
+                                   "폐쇄망 모드에서는 인터넷으로 업데이트를 확인하지 않습니다.\n\n"
+                                   "새 버전은 담당자가 전달한 실행 파일로 바꿔 주세요. 인터넷이 되는 PC라면 "
+                                   "설정에서 '폐쇄망 모드'를 끄면 업데이트를 확인할 수 있습니다.",
+                                   parent=self.settings_toplevel or self.root)
+                        self.status_var.set("폐쇄망 모드: 업데이트 확인을 하지 않았어요.")
+                    return
                 if 수동:
                     버튼 = getattr(self, "update_button", None)
                     if 버튼 is not None:
@@ -5682,18 +5693,16 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 ttk.Button(generate_frame, text="HWPX 생성…", command=generate_tool).pack(side="left")
                 requirement_frame = ttk.LabelFrame(body, text="고급 문서 도구 필수 구성", padding=10)
                 requirement_frame.pack(fill="x", pady=(12, 0))
+                from docfit_core.kordoc_bridge import engine_status
+                from docfit_core.kordoc_runtime import RUNTIME_PACK_NAME
                 ttk.Label(
                     requirement_frame,
-                    text=("고급 문서 도구를 실행하려면 Node.js 18 이상이 설치되어 있어야 합니다. "
-                          "설치 후 앱을 다시 실행해 주세요. 기존 문서 편집 기능은 Node.js 없이도 사용할 수 있습니다."),
+                    text=("고급 문서 도구는 앱과 함께 배포하는 kordoc 꾸러미로 인터넷 없이 동작합니다. "
+                          f"실행 파일과 같은 폴더에 {RUNTIME_PACK_NAME}을 두세요. "
+                          f"지금 상태: {engine_status()['reason']}"),
                     style="Hint.TLabel",
-                    wraplength=410,
+                    wraplength=520,
                 ).pack(side="left", fill="x", expand=True)
-                ttk.Button(
-                    requirement_frame,
-                    text="Node.js LTS 받기",
-                    command=lambda: webbrowser.open("https://nodejs.org/ko/download"),
-                ).pack(side="right", padx=(10, 0))
                 window.protocol("WM_DELETE_WINDOW", lambda: (setattr(self, "advanced_tools_toplevel", None), window.destroy()))
 
             def 목록지우기(self):

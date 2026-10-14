@@ -537,7 +537,7 @@ class _ToolsState extends State<DocumentToolsWorkspace> {
               ),
             if (mode == 'advanced') ...[
               const Text(
-                '미리 설치한 Node.js 20+와 고정 버전 kordoc을 사용합니다. 원본 대신 작업 사본을 처리합니다.',
+                '앱과 함께 배포하는 kordoc 꾸러미로 인터넷 없이 동작합니다. 원본 대신 작업 사본을 처리합니다.',
               ),
               DropdownButtonFormField<String>(
                 initialValue: advancedAction,

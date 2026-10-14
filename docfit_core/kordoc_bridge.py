@@ -22,7 +22,9 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from docfit_core import kordoc_runtime
 from docfit_core.hwpx import validate_hwpx
+from docfit_core.network_policy import offline_environment, offline_mode
 
 KORDOC_VERSION = "4.21.30"
 KORDOC_PACKAGE = f"kordoc@{KORDOC_VERSION}"
@@ -34,6 +36,14 @@ SUPPORTED_INPUT_EXTENSIONS = frozenset({
     ".hwp", ".hwpx", ".hml", ".pdf", ".xls", ".xlsx", ".docx", ".pptx",
     ".png", ".jpg", ".jpeg", ".webp",
 })
+
+
+# 글자 인식(OCR)이 있어야 읽을 수 있는 그림 입력.
+IMAGE_INPUT_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".webp"})
+OCR_UNAVAILABLE_MESSAGE = (
+    "그림 파일(JPG·PNG 등)은 글자 인식(OCR)이 필요한데, 폐쇄망용 kordoc 꾸러미에는 OCR 모델이 "
+    "포함되어 있지 않습니다. HWP·HWPX·PDF·Office 문서를 사용해 주세요."
+)
 
 
 class KordocUnavailableError(RuntimeError):
@@ -53,7 +63,17 @@ def _node_major() -> int | None:
         return None
 
 
+def _bundled_runtime(install: bool = False) -> tuple[str, str] | None:
+    """앱과 함께 배포한 Node.js+kordoc 꾸러미. install=True면 실행 파일 옆 ZIP을 풀어서라도 준비한다."""
+    if install:
+        return kordoc_runtime.ensure_runtime(KORDOC_VERSION)
+    return kordoc_runtime.find_runtime(KORDOC_VERSION)
+
+
 def _node_executable() -> str | None:
+    runtime = _bundled_runtime()
+    if runtime:
+        return runtime[0]
     return shutil.which("node.exe") or shutil.which("node")
 
 
@@ -121,7 +141,10 @@ def _local_kordoc_command(path: str) -> list[str]:
 
 
 def _kordoc_command() -> list[str]:
-    """실행 명령: 미리 설치한 kordoc이 있으면 그것, 없으면 고정 버전을 npx로."""
+    """실행 명령: 앱 꾸러미 → 미리 설치한 kordoc → (온라인 모드에서 명시 허용 시) npx."""
+    runtime = _bundled_runtime(install=True)
+    if runtime:
+        return list(runtime)
     major = _node_major()
     if major is None or major < NODE_MIN_MAJOR:
         raise KordocUnavailableError(
@@ -131,24 +154,36 @@ def _kordoc_command() -> list[str]:
     local = _local_kordoc()
     if local:
         return _local_kordoc_command(local)
-    if os.environ.get("DOCFIT_ALLOW_NPX_DOWNLOAD") != "1":
+    if offline_mode() or os.environ.get("DOCFIT_ALLOW_NPX_DOWNLOAD") != "1":
         raise KordocUnavailableError(
-            "kordoc이 설치되어 있지 않습니다. 보안을 위해 실행 중 자동 다운로드는 기본 차단됩니다. "
-            "공식 Node.js/npm으로 kordoc을 미리 설치하거나, 신뢰할 수 있는 환경에서만 "
-            "DOCFIT_ALLOW_NPX_DOWNLOAD=1을 설정하세요."
+            "kordoc이 준비되어 있지 않습니다. 실행 파일과 같은 폴더에 "
+            f"{kordoc_runtime.RUNTIME_PACK_NAME}(앱과 함께 배포하는 kordoc 꾸러미)를 두면 "
+            "인터넷 없이 바로 사용할 수 있습니다."
         )
     return [*_npx_command(), "--yes", "--ignore-scripts", KORDOC_PACKAGE]
 
 
+def ocr_available() -> bool:
+    """그림·스캔 쪽 글자 인식을 쓸 수 있는지. 앱 꾸러미는 OCR 엔진을 담지 않고,
+    폐쇄망에서는 미리 넣어 둔 OCR 모델이 있어야 한다."""
+    if _bundled_runtime() or kordoc_runtime.bundled_pack():
+        return False
+    return not offline_mode() or kordoc_runtime.ocr_models_present()
+
+
 def engine_status() -> dict[str, str | bool]:
-    """UI preflight: report a locally installed, explicitly downloadable kordoc engine."""
+    """UI preflight: report a bundled, locally installed or explicitly downloadable kordoc engine."""
+    if _bundled_runtime():
+        return {"available": True, "reason": f"앱에 포함된 kordoc {KORDOC_VERSION} 준비됨"}
+    if kordoc_runtime.bundled_pack():
+        return {"available": True, "reason": f"kordoc {KORDOC_VERSION} 꾸러미 준비됨(처음 쓸 때 설치)"}
     local = _local_kordoc()
-    if not local and os.environ.get("DOCFIT_ALLOW_NPX_DOWNLOAD") != "1":
+    npx_allowed = not offline_mode() and os.environ.get("DOCFIT_ALLOW_NPX_DOWNLOAD") == "1"
+    if not local and not npx_allowed:
         # 사용할 엔진이 없는 경우 버전 조회 프로세스를 매번 실행할 필요가 없다.
         return {
             "available": False,
-            "reason": f"kordoc {KORDOC_VERSION} 설치 필요 (Node.js {NODE_MIN_MAJOR}+)"
-            if _node_executable() else f"Node.js {NODE_MIN_MAJOR}+ 설치 필요",
+            "reason": f"kordoc 꾸러미 필요 ({kordoc_runtime.RUNTIME_PACK_NAME}을 실행 파일 옆에 두세요)",
         }
     major = _node_major()
     if major is None:
@@ -167,7 +202,7 @@ def engine_status() -> dict[str, str | bool]:
         except KordocUnavailableError as exc:
             return {"available": False, "reason": str(exc)}
         return {"available": True, "reason": "로컬 kordoc 준비됨"}
-    if os.environ.get("DOCFIT_ALLOW_NPX_DOWNLOAD") == "1":
+    if npx_allowed:
         try:
             _npx_command()
         except KordocUnavailableError as exc:
@@ -191,8 +226,13 @@ def _startupinfo():
 def run_kordoc(arguments: list[str], timeout: int = 600,
                 acceptable_codes: tuple[int, ...] = (0, 2)) -> subprocess.CompletedProcess[str]:
     command = [*_kordoc_command(), *map(str, arguments)]
+    # 폐쇄망 모드에서는 kordoc의 모델 내려받기·npm 접속·onnxruntime 원격 전송을 막는다.
+    env = offline_environment() if offline_mode() else dict(os.environ)
+    env.setdefault("ORT_DISABLE_TELEMETRY", "1")
+    env["KORDOC_MODEL_CACHE"] = str(kordoc_runtime.model_cache_dir())
     completed = subprocess.run(
         command,
+        env=env,
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -214,6 +254,7 @@ def engine_version() -> str:
 
 def check_engine_contract() -> dict[str, Any]:
     """Check the installed engine explicitly without changing legacy Path APIs."""
+    _bundled_runtime(install=True)
     major = _node_major()
     if major is None or major < NODE_MIN_MAJOR:
         raise KordocUnavailableError(f"Node.js {NODE_MIN_MAJOR} 이상이 필요합니다.")
@@ -280,6 +321,9 @@ def convert_to_hwpx(source: str | Path, target: str | Path, *, preset: str = "�
         raise ValueError("변환 원본이 일반 파일이 아니거나 심볼릭 링크입니다.")
     if source.suffix.lower() not in SUPPORTED_INPUT_EXTENSIONS:
         raise ValueError(f"kordoc이 지원하지 않는 입력 형식입니다: {source.suffix or '(확장자 없음)'}")
+    ocr = ocr_available()
+    if source.suffix.lower() in IMAGE_INPUT_EXTENSIONS and not ocr:
+        raise KordocUnavailableError(OCR_UNAVAILABLE_MESSAGE)
     if target.suffix.lower() != ".hwpx":
         raise ValueError("HWPX 결과 파일 확장자는 .hwpx여야 합니다.")
     if source.resolve() == target.resolve():
@@ -291,7 +335,7 @@ def convert_to_hwpx(source: str | Path, target: str | Path, *, preset: str = "�
     with tempfile.TemporaryDirectory(prefix="docfit_kordoc_convert_") as folder:
         temp_dir = Path(folder)
         markdown = temp_dir / "document.md"
-        parse_document(source, markdown, output_format="markdown", ocr=source.suffix.lower() == ".pdf")
+        parse_document(source, markdown, output_format="markdown", ocr=ocr and source.suffix.lower() == ".pdf")
         if not markdown.is_file():
             raise RuntimeError("kordoc 파싱 결과 Markdown 파일이 생성되지 않았습니다.")
         # 같은 볼륨에 임시 결과를 두어 OneDrive/다른 드라이브에서도 원자적으로

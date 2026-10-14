@@ -18,7 +18,7 @@ from docfit_core.progress_guide import guide_state
 from docfit_core.stage_selection import STAGE_EXAMPLES, default_choice, stages_for_mode
 from docfit_app.api_contract import response
 from docfit_app.app_state import STAGE_ORDER
-from docfit_core.kordoc_bridge import SUPPORTED_INPUT_EXTENSIONS
+from docfit_core.kordoc_bridge import IMAGE_INPUT_EXTENSIONS, SUPPORTED_INPUT_EXTENSIONS
 from docfit_core.file_conversion import HANCOM_PDF_DIRECT, IMAGE_FORMATS
 
 # 화면에서 바로 켜고 끄는 공통 설정(이름 → 앱의 Tk 변수 속성). 값을 바꾸면 앱이 설정 파일에 저장한다.
@@ -344,8 +344,10 @@ class DesktopWebBridge:
                 return cached
             from docfit_core.kordoc_bridge import engine_status
             pandoc_path = shutil.which("pandoc.exe") or shutil.which("pandoc")
+            from docfit_core.kordoc_bridge import ocr_available
             self._conversion_prerequisites_cache = {
                 "kordoc": engine_status(),
+                "ocr": ocr_available(),
                 "pandoc": bool(pandoc_path),
                 "hwp_com": self._hwp_com_available(),
             }
@@ -360,11 +362,16 @@ class DesktopWebBridge:
         kordoc_ready = bool(kordoc.get("available"))
         pandoc_ready = prerequisites["pandoc"]
         hwp_ready = prerequisites["hwp_com"]
+        engine_reason = str(kordoc.get("reason") or "kordoc 사용 불가")
+        # 그림 입력은 글자 인식(OCR)이 필요하다. 폐쇄망 꾸러미에는 OCR이 없으므로 미리 막고 이유를 보인다.
+        if valid and kordoc_ready and not prerequisites.get("ocr", True) and any(
+                suffix in IMAGE_INPUT_EXTENSIONS for suffix in suffixes):
+            kordoc_ready = False
+            engine_reason = "그림 파일은 글자 인식(OCR)이 필요해 변환할 수 없습니다(폐쇄망 꾸러미에 OCR 미포함)"
         # HWP·HWPX는 한/글이 직접 PDF로 저장한다. 다른 입력만 kordoc 중간 변환이 필요하다.
         pdf_needs_kordoc = any(suffix not in HANCOM_PDF_DIRECT for suffix in suffixes)
         pdf_ready = hwp_ready and (not pdf_needs_kordoc or kordoc_ready)
         invalid_reason = "kordoc 지원 형식만 가능"
-        engine_reason = str(kordoc.get("reason") or "kordoc 사용 불가")
         pdf_reason = (invalid_reason if not valid else
                       "한/글 PDF 저장 기능을 사용할 수 없습니다" if not hwp_ready else
                       engine_reason if pdf_needs_kordoc and not kordoc_ready else

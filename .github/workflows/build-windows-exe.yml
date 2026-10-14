@@ -67,12 +67,18 @@ jobs:
           $result = Get-Content -Raw -LiteralPath $report | ConvertFrom-Json
           if (-not $result.ok) { throw "EXE module imports failed" }
 
+      - name: Build offline kordoc runtime pack
+        shell: pwsh
+        run: ./scripts/build_kordoc_runtime.ps1 -Output dist/HWP_AutoDocFit_kordoc_runtime.zip
+
       - name: Upload exe artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ github.ref_name == 'alpha' && 'HWP_AutoDocFit-alpha' || 'HWP_AutoDocFit-binaries' }}
           path: |
             dist/HWP_AutoDocFit.exe
+            dist/HWP_AutoDocFit_kordoc_runtime.zip
+            dist/HWP_AutoDocFit_kordoc_runtime.zip.sha256
           if-no-files-found: error
 
       - name: Commit built exes to release-assets

@@ -89,6 +89,8 @@ DEFAULTS = {
     "paste_add_folder": "",
     "always_on_top": True,
     "check_updates_on_start": True,
+    # 폐쇄망(인터넷이 안 되는 PC) 모드. 켜면 업데이트 확인·kordoc 모델 내려받기 등 외부 접속을 하지 않는다.
+    "offline_mode": True,
     "table_spacing": True,
     "log_file": False,
     # 개발자 모드: 켜야 문서 도구(문서 구조 검토·맞춤법·작성 도우미·Markdown·고급 문서 도구 등) 메뉴가 보인다.
