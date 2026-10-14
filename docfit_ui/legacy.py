@@ -1415,6 +1415,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         self.std_detail_checks.append(체크)
 
             def _세부작업_열기(self, mode, save_default=None):
+                if mode not in self.stage_choices:
+                    return  # 파일포맷 변경 등 세부 작업이 없는 작업
                 titles = {"spacing": "자간 정리", "unify": "서식 통일", "format": "한 번에 적용(자간 조정 제외)",
                           "all": "한 번에 적용"}
                 dialog = tk.Toplevel(self.root)
@@ -1483,6 +1485,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
 
             def _세부작업_기본값_저장(self, mode, 저장=True):
                 """작업 유형의 세부 작업 구성을 다음 실행에도 쓰도록 저장한다. 저장=False면 저장값을 지운다."""
+                if mode not in self.stage_choices:
+                    return
                 self._세부작업_기본저장[mode] = bool(저장)
                 저장값 = 설정_불러오기()
                 저장된_세부작업 = 저장값.get("stage_choices", {})
@@ -1505,6 +1509,11 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 if not hasattr(self, "options_summary"):
                     return
                 mode = self.selected_mode.get()
+                if mode not in self.stage_choices:
+                    # 파일포맷 변경은 세부 작업이 없는 변환 작업이다(세부 작업 표를 찾지 않는다).
+                    self.options_summary.configure(
+                        text="문서를 다른 파일 형식으로 바꿔 새 파일로 저장합니다. 원본은 바꾸지 않습니다.")
+                    return
                 if mode == "spacing":
                     summary = ("줄 끝의 끊긴 단어와 자간을 정리합니다." if 초기화
                                else "기존 자간을 초기화하지 않고 그 위에서 줄 끝의 끊긴 단어를 정리합니다.")
@@ -5868,17 +5877,17 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     self.stage_board.activate(단계)
 
             def 파일포맷_변경_시작(self, target_format='hwpx'):
-                """HWPX→PDF는 한/글 내장 저장, 그 외 변환은 필요한 문서 엔진을 사용한다."""
+                """HWP·HWPX→PDF·그림은 한/글 내장 저장, 그 외 변환은 필요한 문서 엔진을 사용한다."""
                 from docfit_core.file_conversion import (
-                    convert_to_pandoc_format, convert_to_pdf, output_path_for,
+                    IMAGE_FORMATS, convert_to_images, convert_to_pandoc_format, convert_to_pdf, output_path_for,
                 )
                 from docfit_core.kordoc_bridge import SUPPORTED_INPUT_EXTENSIONS, convert_to_hwpx
 
                 if self.running or not self.files:
                     return
                 target_format = str(target_format or "").lower()
-                if target_format not in {"hwpx", "pdf", "docx", "epub"}:
-                    raise ValueError("결과 형식은 HWPX, PDF, DOCX 또는 EPUB만 선택할 수 있습니다.")
+                if target_format not in {"hwpx", "pdf", "docx", "epub", *IMAGE_FORMATS}:
+                    raise ValueError("결과 형식은 HWPX, PDF, DOCX, EPUB, JPG 또는 PNG만 선택할 수 있습니다.")
                 files = list(self.files)
                 if any(Path(path).suffix.lower() not in SUPPORTED_INPUT_EXTENSIONS for path in files):
                     raise ValueError("kordoc이 지원하는 입력 형식만 변환할 수 있습니다.")
@@ -5900,7 +5909,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     app = None
                     com_initialized = False
                     try:
-                        if target_format == "pdf":
+                        if target_format == "pdf" or target_format in IMAGE_FORMATS:
                             pythoncom.CoInitialize()
                             com_initialized = True
                             app = 한글_COM_인스턴스_생성(독립=True)
@@ -5920,6 +5929,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                                     convert_to_hwpx(source, target)
                                 elif target_format in {"docx", "epub"}:
                                     convert_to_pandoc_format(source, target)
+                                elif target_format in IMAGE_FORMATS:
+                                    target = convert_to_images(app, source, target)
                                 else:
                                     convert_to_pdf(app, source, target)
                                 successes += 1

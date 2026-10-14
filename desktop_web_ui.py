@@ -19,6 +19,7 @@ from docfit_core.stage_selection import STAGE_EXAMPLES, default_choice, stages_f
 from docfit_app.api_contract import response
 from docfit_app.app_state import STAGE_ORDER
 from docfit_core.kordoc_bridge import SUPPORTED_INPUT_EXTENSIONS
+from docfit_core.file_conversion import HANCOM_PDF_DIRECT, IMAGE_FORMATS
 
 # 화면에서 바로 켜고 끄는 공통 설정(이름 → 앱의 Tk 변수 속성). 값을 바꾸면 앱이 설정 파일에 저장한다.
 def _format_coverage(analysis):
@@ -359,26 +360,31 @@ class DesktopWebBridge:
         kordoc_ready = bool(kordoc.get("available"))
         pandoc_ready = prerequisites["pandoc"]
         hwp_ready = prerequisites["hwp_com"]
-        # HWPX는 한/글이 직접 PDF로 저장한다. 다른 입력만 kordoc 중간 변환이 필요하다.
-        pdf_needs_kordoc = any(suffix != ".hwpx" for suffix in suffixes)
+        # HWP·HWPX는 한/글이 직접 PDF로 저장한다. 다른 입력만 kordoc 중간 변환이 필요하다.
+        pdf_needs_kordoc = any(suffix not in HANCOM_PDF_DIRECT for suffix in suffixes)
         pdf_ready = hwp_ready and (not pdf_needs_kordoc or kordoc_ready)
         invalid_reason = "kordoc 지원 형식만 가능"
         engine_reason = str(kordoc.get("reason") or "kordoc 사용 불가")
-        return [
-            {"format": "hwpx", "label": "HWPX", "enabled": valid and kordoc_ready,
-             "reason": invalid_reason if not valid else engine_reason},
-            {"format": "pdf", "label": "PDF", "enabled": valid and pdf_ready,
-             "reason": invalid_reason if not valid else
+        pdf_reason = (invalid_reason if not valid else
                       "한/글 PDF 저장 기능을 사용할 수 없습니다" if not hwp_ready else
                       engine_reason if pdf_needs_kordoc and not kordoc_ready else
                       "한/글 내장 PDF 저장 사용 · 추가 변환기 설치 없음" if not pdf_needs_kordoc else
-                      "kordoc + 한/글 COM 준비됨"},
+                      "kordoc + 한/글 COM 준비됨")
+        # 그림은 한/글 PDF 저장본을 쪽마다 렌더링하므로 PDF와 준비 조건이 같다.
+        image_reason = (pdf_reason if not (valid and pdf_ready) else
+                        "한/글 PDF 저장 후 쪽마다 그림 저장 · 여러 쪽은 폴더로 저장")
+        return [
+            {"format": "hwpx", "label": "HWPX", "enabled": valid and kordoc_ready,
+             "reason": invalid_reason if not valid else engine_reason},
+            {"format": "pdf", "label": "PDF", "enabled": valid and pdf_ready, "reason": pdf_reason},
             {"format": "docx", "label": "DOCX", "enabled": valid and kordoc_ready and pandoc_ready,
              "reason": invalid_reason if not valid else engine_reason if not kordoc_ready else
                       "Pandoc 설치 필요" if not pandoc_ready else "kordoc + Pandoc 준비됨"},
             {"format": "epub", "label": "EPUB", "enabled": valid and kordoc_ready and pandoc_ready,
              "reason": invalid_reason if not valid else engine_reason if not kordoc_ready else
                       "Pandoc 설치 필요" if not pandoc_ready else "kordoc + Pandoc 준비됨"},
+            *({"format": kind, "label": kind.upper(), "enabled": valid and pdf_ready, "reason": image_reason}
+              for kind in IMAGE_FORMATS),
         ]
 
     def add_files(self):
@@ -477,8 +483,8 @@ class DesktopWebBridge:
 
     def set_conversion_target(self, target):
         target = str(target or "").lower()
-        if target not in {"hwpx", "pdf", "docx", "epub"}:
-            raise ValueError("결과 형식은 HWPX, PDF, DOCX 또는 EPUB만 선택할 수 있습니다.")
+        if target not in {"hwpx", "pdf", "docx", "epub", *IMAGE_FORMATS}:
+            raise ValueError("결과 형식은 HWPX, PDF, DOCX, EPUB, JPG 또는 PNG만 선택할 수 있습니다.")
         def update():
             if not self.gui.running:
                 self.conversion_target = target
@@ -621,6 +627,13 @@ class DesktopWebBridge:
             raise ValueError("지원하지 않는 작업 방식입니다.")
 
         if mode == "file_format":
+            # 화면은 준비되지 않은 형식의 시작 버튼을 끄지만, 늦게 온 요청도 여기서 막는다.
+            files = self._tk(lambda: list(self.gui.files))
+            targets = {item["format"]: item for item in self._conversion_targets(files)}
+            chosen = targets.get(self.conversion_target)
+            if files and (chosen is None or not chosen.get("enabled")):
+                reason = (chosen or {}).get("reason") or "지원하지 않는 결과 형식입니다"
+                raise ValueError(f"{self.conversion_target.upper()} 변환을 시작할 수 없습니다: {reason}")
             self._tk(lambda: self.gui.파일포맷_변경_시작(self.conversion_target))
             return self.get_state()
 
@@ -787,6 +800,8 @@ class DesktopWebBridge:
             if self.gui.running:
                 return
             mode = self.gui.selected_mode.get()
+            if mode not in self.gui.stage_choices:
+                return  # 파일포맷 변경에는 세부 작업이 없다
             choices = self.gui.stage_choices[mode]
             if action == "all":
                 if not isinstance(payload.get("enabled"), bool):
@@ -976,7 +991,7 @@ class DesktopWebBridge:
         def reset():
             gui = self.gui
             mode = gui.selected_mode.get()
-            if gui.running:
+            if gui.running or mode not in gui.stage_choices:
                 return
             gui.stage_choices[mode] = {key: default_choice(key, mode) for key, _ in stages_for_mode(mode)}
             if gui._세부작업_기본저장.get(mode):

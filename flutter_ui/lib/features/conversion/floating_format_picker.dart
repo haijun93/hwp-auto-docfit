@@ -26,7 +26,7 @@ class FloatingFormatPicker extends StatefulWidget {
 
 class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
   String? hovered;
-  static const formats = ['hwpx', 'docx', 'epub', 'pdf'];
+  static const formats = ['hwpx', 'docx', 'epub', 'pdf', 'jpg', 'png'];
   static const accent = Color(0xff7664ec);
 
   Map info(String format) => widget.targets.firstWhere(
@@ -43,6 +43,7 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
     'pdf' => Icons.picture_as_pdf_outlined,
     'docx' => Icons.article_outlined,
     'epub' => Icons.menu_book_outlined,
+    'jpg' || 'png' => Icons.image_outlined,
     _ => Icons.description_outlined,
   };
 
@@ -80,7 +81,7 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
                             final enabled = target['enabled'] == true;
                             final hot = hovered == format;
                             final selected = widget.selected == format;
-                            final angle = -math.pi / 2 + i * math.pi / 2;
+                            final angle = -math.pi / 2 + i * 2 * math.pi / formats.length;
                             final label =
                                 center +
                                 Offset(math.cos(angle), math.sin(angle)) *
@@ -91,7 +92,7 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
                                 ? const Color(0xff25324a)
                                 : const Color(0xff8a94a6);
                             return ClipPath(
-                              clipper: _SliceClipper(index: i),
+                              clipper: _SliceClipper(index: i, count: formats.length),
                               child: Material(
                                 color: hot && enabled
                                     ? accent
@@ -237,8 +238,8 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
 }
 
 class _SliceClipper extends CustomClipper<Path> {
-  const _SliceClipper({required this.index});
-  final int index;
+  const _SliceClipper({required this.index, required this.count});
+  final int index, count;
 
   @override
   Path getClip(Size size) {
@@ -246,8 +247,10 @@ class _SliceClipper extends CustomClipper<Path> {
     final outer = math.min(size.width, size.height) / 2 - 8;
     final inner = outer * .43;
     const gap = .025;
-    final start = -math.pi * .75 + index * math.pi / 2 + gap;
-    const sweep = math.pi / 2 - gap * 2;
+    // 조각 수에 맞춰 같은 각도로 나눈다. 각 조각은 라벨 각도를 가운데에 둔다.
+    final step = 2 * math.pi / count;
+    final start = -math.pi / 2 - step / 2 + index * step + gap;
+    final sweep = step - gap * 2;
     final end = start + sweep;
     return Path()
       ..moveTo(
@@ -274,7 +277,8 @@ class _SliceClipper extends CustomClipper<Path> {
   }
 
   @override
-  bool shouldReclip(_SliceClipper oldClipper) => oldClipper.index != index;
+  bool shouldReclip(_SliceClipper oldClipper) =>
+      oldClipper.index != index || oldClipper.count != count;
 }
 
 class _RingShadow extends CustomPainter {

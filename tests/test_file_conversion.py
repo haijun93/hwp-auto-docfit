@@ -5,7 +5,7 @@ from unittest import mock
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from docfit_core.file_conversion import (
-    convert_hwpx_to_pdf, convert_to_pandoc_format, convert_to_pdf, output_path_for,
+    convert_hwpx_to_pdf, convert_to_images, convert_to_pandoc_format, convert_to_pdf, output_path_for,
 )
 from docfit_core.kordoc_bridge import SUPPORTED_INPUT_EXTENSIONS, convert_to_hwpx
 
@@ -191,6 +191,77 @@ class FileConversionTests(unittest.TestCase):
             self.assertIn("--to=epub3", args)
             self.assertFalse(run_mock.call_args.kwargs["shell"])
             self.assertEqual(source.read_bytes(), b"original")
+
+    def test_hwp_pdf_direct_route_opens_hwp_without_external_parser(self):
+        class App:
+            def Open(self, path, fmt, options):
+                self.format = fmt
+                return True
+
+            def SaveAs(self, path, fmt, options):
+                Path(path).write_bytes(b"%PDF-1.7\n")
+                return True
+
+            def Clear(self, flag):
+                pass
+
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "report.hwp"
+            source.write_bytes(b"original")
+            app = App()
+            with mock.patch("docfit_core.kordoc_bridge.convert_to_hwpx",
+                            side_effect=AssertionError("external parser called")):
+                convert_to_pdf(app, source, Path(folder) / "report.pdf")
+            self.assertEqual(app.format, "HWP")
+            self.assertEqual(source.read_bytes(), b"original")
+
+    @staticmethod
+    def _pdf_app(pages):
+        from PIL import Image
+
+        class App:
+            def Open(self, *_args):
+                return True
+
+            def SaveAs(self, path, *_args):
+                images = [Image.new("RGB", (200, 280), color) for color in ("white", "gray", "black")[:pages]]
+                images[0].save(path, "PDF", save_all=True, append_images=images[1:])
+                return True
+
+            def Clear(self, flag):
+                pass
+
+        return App()
+
+    def test_image_conversion_saves_each_page_in_a_new_folder(self):
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "report.hwpx"
+            source.write_bytes(b"original")
+            target = output_path_for(source, "jpg")
+            self.assertEqual(target.name, "report(JPG변경).jpg")
+            result = convert_to_images(self._pdf_app(3), source, target)
+            self.assertEqual(result, Path(folder) / "report(JPG변경)")
+            pages = sorted(result.iterdir())
+            self.assertEqual([page.name for page in pages],
+                             [f"report(JPG변경)-00{index}.jpg" for index in (1, 2, 3)])
+            with Image.open(pages[1]) as image:
+                self.assertEqual(image.format, "JPEG")
+            self.assertEqual(source.read_bytes(), b"original")
+            # 같은 이름의 결과 폴더가 있으면 다음 번호 이름을 고른다.
+            self.assertEqual(output_path_for(source, "jpg").name, "report(JPG변경) (2).jpg")
+
+    def test_single_page_image_is_one_png_file_and_never_overwrites(self):
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "memo.hwpx"
+            source.write_bytes(b"original")
+            target = output_path_for(source, "png")
+            self.assertEqual(convert_to_images(self._pdf_app(1), source, target), target)
+            with Image.open(target) as image:
+                self.assertEqual(image.format, "PNG")
+            with self.assertRaises(ValueError):
+                convert_to_images(self._pdf_app(1), source, target)
 
 
 if __name__ == "__main__":

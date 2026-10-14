@@ -10,24 +10,30 @@ from pathlib import Path
 
 from docfit_core.kordoc_bridge import SUPPORTED_INPUT_EXTENSIONS
 
+# 그림 결과 형식(확장자 → Pillow 저장 형식). 한/글 PDF 저장본을 쪽마다 렌더링한다.
+IMAGE_FORMATS = {"jpg": "JPEG", "png": "PNG"}
+IMAGE_DPI = 150
+MAX_IMAGE_PAGES = 500
+MAX_IMAGE_SIDE = 6000
+
 
 def output_path_for(source: str | Path, target_format: str) -> Path:
     """원본 옆에 덮어쓰지 않는 결과 경로를 고른다."""
     source = Path(source)
     suffix = str(target_format or "").strip().lower().lstrip(".")
-    if suffix not in {"hwpx", "pdf", "docx", "epub"}:
-        raise ValueError("지원하는 결과 형식은 HWPX, PDF, DOCX 또는 EPUB입니다.")
+    if suffix not in {"hwpx", "pdf", "docx", "epub", *IMAGE_FORMATS}:
+        raise ValueError("지원하는 결과 형식은 HWPX, PDF, DOCX, EPUB, JPG 또는 PNG입니다.")
     if source.is_symlink() or not source.is_file():
         raise ValueError("원본이 일반 파일이 아니거나 심볼릭 링크입니다.")
     if source.suffix.lower() not in SUPPORTED_INPUT_EXTENSIONS:
         raise ValueError(f"kordoc이 지원하지 않는 입력 형식입니다: {source.suffix or '(확장자 없음)'}")
 
     stem = source.stem
-    marker = {"pdf": "(PDF변경)", "hwpx": "(HWPX변경)",
-              "docx": "(DOCX변경)", "epub": "(EPUB변경)"}[suffix]
+    marker = f"({suffix.upper()}변경)"
     candidate = source.with_name(f"{stem}{marker}.{suffix}")
     index = 2
-    while candidate.exists():
+    # 여러 쪽 그림은 확장자를 뺀 같은 이름의 폴더에 저장하므로 폴더 이름도 비어 있어야 한다.
+    while candidate.exists() or (suffix in IMAGE_FORMATS and candidate.with_suffix("").exists()):
         candidate = source.with_name(f"{stem}{marker} ({index}).{suffix}")
         index += 1
     return candidate
@@ -76,11 +82,16 @@ def convert_to_pandoc_format(source: str | Path, target: str | Path,
     return target
 
 
+# 한/글이 직접 열어 PDF로 저장하는 입력 형식(확장자 → 한/글 Open 형식 이름).
+HANCOM_PDF_DIRECT = {".hwpx": "HWPX", ".hwp": "HWP"}
+
+
 def convert_hwpx_to_pdf(app, source: str | Path, target: str | Path) -> Path:
-    """한/글 COM으로 HWPX를 PDF로 저장하고 PDF 서명·무덮어쓰기를 확인한다."""
+    """한/글 COM으로 HWPX·HWP를 PDF로 저장하고 PDF 서명·무덮어쓰기를 확인한다."""
     source, target = Path(source), Path(target)
-    if source.is_symlink() or not source.is_file() or source.suffix.lower() != ".hwpx":
-        raise ValueError("PDF 변환 원본은 일반 HWPX 파일이어야 합니다.")
+    open_format = HANCOM_PDF_DIRECT.get(source.suffix.lower())
+    if source.is_symlink() or not source.is_file() or open_format is None:
+        raise ValueError("PDF 변환 원본은 일반 HWPX 또는 HWP 파일이어야 합니다.")
     if target.suffix.lower() != ".pdf" or target.exists():
         raise ValueError("PDF 결과 경로가 잘못되었거나 이미 존재합니다.")
     source = source.resolve(strict=True)
@@ -93,8 +104,8 @@ def convert_hwpx_to_pdf(app, source: str | Path, target: str | Path) -> Path:
     temporary.unlink()
     opened = False
     try:
-        if app.Open(str(source), "HWPX", "") is False:
-            raise RuntimeError("한/글이 HWPX 문서를 열지 못했습니다.")
+        if app.Open(str(source), open_format, "") is False:
+            raise RuntimeError(f"한/글이 {open_format} 문서를 열지 못했습니다.")
         opened = True
         if app.SaveAs(str(temporary), "PDF", "") is False:
             raise RuntimeError("한/글이 PDF로 저장하지 못했습니다.")
@@ -125,7 +136,7 @@ def convert_hwpx_to_pdf(app, source: str | Path, target: str | Path) -> Path:
 
 
 def convert_to_pdf(app, source: str | Path, target: str | Path) -> Path:
-    """HWPX는 직접 PDF 저장, 다른 입력은 kordoc HWPX 중간 산출물로 렌더링한다."""
+    """HWPX·HWP는 직접 PDF 저장, 다른 입력은 kordoc HWPX 중간 산출물로 렌더링한다."""
     import tempfile
 
     from docfit_core.kordoc_bridge import SUPPORTED_INPUT_EXTENSIONS, convert_to_hwpx
@@ -133,10 +144,77 @@ def convert_to_pdf(app, source: str | Path, target: str | Path) -> Path:
     source, target = Path(source), Path(target)
     if source.suffix.lower() not in SUPPORTED_INPUT_EXTENSIONS:
         raise ValueError("kordoc이 지원하지 않는 입력 형식입니다.")
-    if source.suffix.lower() == ".hwpx":
+    if source.suffix.lower() in HANCOM_PDF_DIRECT:
         return convert_hwpx_to_pdf(app, source, target)
     target.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="docfit_pdf_source_") as folder:
         intermediate = Path(folder) / "source.hwpx"
         convert_to_hwpx(source, intermediate)
         return convert_hwpx_to_pdf(app, intermediate, target)
+
+
+def convert_to_images(app, source: str | Path, target: str | Path, *, dpi: int = IMAGE_DPI) -> Path:
+    """한/글로 PDF를 만든 뒤 쪽마다 JPG·PNG 그림으로 저장한다.
+
+    한 쪽 문서는 target 파일 하나, 여러 쪽 문서는 target에서 확장자를 뺀 새 폴더에
+    '이름-001.jpg'처럼 쪽 번호를 붙여 저장하고 그 경로를 돌려준다. 기존 파일은 덮어쓰지 않는다.
+    """
+    import pypdfium2 as pdfium
+
+    source, target = Path(source), Path(target)
+    kind = target.suffix.lower().lstrip(".")
+    if kind not in IMAGE_FORMATS:
+        raise ValueError("그림 결과 형식은 JPG 또는 PNG만 사용할 수 있습니다.")
+    folder = target.with_suffix("")
+    if target.exists() or folder.exists():
+        raise ValueError("그림 결과 경로가 이미 존재합니다.")
+    created: list[Path] = []
+    made_folder = False
+    with tempfile.TemporaryDirectory(prefix="docfit_image_") as work:
+        pdf = convert_to_pdf(app, source, Path(work) / "render.pdf")
+        document = pdfium.PdfDocument(str(pdf))
+        try:
+            count = len(document)
+            if count == 0:
+                raise RuntimeError("그림으로 바꿀 쪽이 없습니다.")
+            if count > MAX_IMAGE_PAGES:
+                raise RuntimeError(f"그림 변환은 {MAX_IMAGE_PAGES}쪽까지 지원합니다(현재 {count}쪽).")
+            if count == 1:
+                outputs = [target]
+            else:
+                folder.mkdir(parents=True, exist_ok=False)
+                made_folder = True
+                outputs = [folder / f"{target.stem}-{index:03d}.{kind}" for index in range(1, count + 1)]
+            try:
+                for index, output in enumerate(outputs):
+                    page = document[index]
+                    try:
+                        width, height = page.get_size()
+                        scale = min(dpi / 72, MAX_IMAGE_SIDE / max(width, height, 1))
+                        bitmap = page.render(scale=scale)
+                        try:
+                            image = bitmap.to_pil()
+                            if kind == "jpg":
+                                image = image.convert("RGB")
+                            with output.open("xb") as stream:
+                                created.append(output)
+                                if kind == "jpg":
+                                    image.save(stream, IMAGE_FORMATS[kind], quality=92)
+                                else:
+                                    image.save(stream, IMAGE_FORMATS[kind], optimize=True)
+                        finally:
+                            bitmap.close()
+                    finally:
+                        page.close()
+            except BaseException:
+                for output in created:
+                    output.unlink(missing_ok=True)
+                if made_folder:
+                    try:
+                        folder.rmdir()
+                    except OSError:
+                        pass
+                raise
+        finally:
+            document.close()
+    return target if count == 1 else folder
