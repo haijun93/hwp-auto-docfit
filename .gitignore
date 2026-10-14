@@ -25,3 +25,6 @@ node_modules/
 
 # Shared, reviewed PyInstaller build specification
 !/HWP_AutoDocFit.spec
+
+# 설정 미리보기 생성 자료(scripts/preview_settings.py)
+flutter_ui/tool/settings_preview_data.dart
