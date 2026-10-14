@@ -1,3 +1,12 @@
+## [수정 필요] bf955f1 전체 최종 검토 F1~F5
+
+- [ ] F1/P1: fidelity 고정 .tmp 별칭을 통한 원본 쓰기 차단, 임시 파일 독점 생성·기존 대상 보존.
+- [ ] F2/P1: OS 창 닫기와 Flutter 미저장/저장 대기 상태 연결, 비동기 종료 확인 및 Windows X/Alt+F4 회귀.
+- [ ] F3/P2: 표 보호 판별 실패를 빈 보호 목록과 구분, 오류 시 표 수정 중단/보수적 제외.
+- [ ] F4/P2: 흐름도·tldraw 다중 편집자의 문서별 잠금+expected_revision 충돌 검사와 UI 연결.
+- [ ] F5/P2: kordoc 런타임 버전별 프로세스 설치 잠금, 이미 완성된 유효 설치를 삭제하지 않고 재사용.
+- 근거: docs/FINAL_CODE_REVIEW_BF955F1.md. 이전 Alpha 10 R1~R5 해결 상태와 구분하며 아직 기능 미수정.
+
 ## [반영·alpha] Alpha 10 갱신 코드 리뷰 6ac66ef
 
 - [x] R1/P1: 추적되지 않는 settings_preview_data.dart 의존성 제거/사전 생성, 새 clone의 CI 분석 통과.
