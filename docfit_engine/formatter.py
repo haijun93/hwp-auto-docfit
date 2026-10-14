@@ -1802,9 +1802,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             줄여 한 줄을 지킨다. 안쪽 표는 그 표대로 따로 본다.
             """
             count = 0
-            if 디자인표인가(table):
-                return 0   # 사용자가 꾸민 장식 표는 그대로 둔다
-            for cell in (x for x in table.iter() if 제목_xml이름(x) == 'tc'):
+            from docfit_core.table_style import iter_unprotected_cells
+            for cell in iter_unprotected_cells(table):
                 sub = 제목_자식(cell, 'subList')
                 if sub is None or sub.get('lineWrap') == 'SQUEEZE':
                     continue

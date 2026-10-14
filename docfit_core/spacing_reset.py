@@ -74,11 +74,11 @@ def reset_spacing(header_root, sections, protect_of) -> dict:
     통계 {"paragraphs": 바꾼 문단 수, "runs": 바꾼 run 수, "split": 나눈 run 수, "skipped": 걸쳐서 건너뛴 run 수}."""
     chars = _Chars(header_root)
     stats = {"paragraphs": 0, "runs": 0, "split": 0, "skipped": 0}
-    from .table_style import is_design_table
+    from .table_style import is_protected_table
     for root in sections:
         # 사용자가 꾸민 표(장식 막대 표·'(단위: 개소)' 캡션이 달린 표)는 자간을 그대로 둔다(사용자 규칙, 2026-10-15).
         kept = {id(p) for t in root.iter() if _tag(t) == "tbl"
-                and (is_design_table(t) or any(_tag(c) == "caption" for c in t))
+                and is_protected_table(t)
                 for p in t.iter() if _tag(p) == "p"}
         for p in [x for x in root.iter() if _tag(x) == "p" and id(x) not in kept]:
             runs = [r for r in p if _tag(r) == "run"]

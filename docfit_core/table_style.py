@@ -115,6 +115,23 @@ def is_design_table(table):
     return True
 
 
+def is_protected_table(table):
+    """장식·캡션 표는 사용자 디자인으로 보호한다(안쪽 표·캡션 문단 포함)."""
+    return is_design_table(table) or _child(table, "caption") is not None
+
+
+def iter_unprotected_cells(table):
+    """Yield cells recursively, stopping at every protected table boundary."""
+    pending = [table]
+    while pending:
+        element = pending.pop()
+        if _tag(element) == "tbl" and is_protected_table(element):
+            continue
+        if _tag(element) == "tc":
+            yield element
+        pending.extend(reversed(list(element)))
+
+
 def is_grid_table(table):
     """기본 표 서식 대상 모양인가: 2행 2열 이상이고, 칸 안에 다른 표가 없고, 화살표만 든 칸(흐름도)이 없고,
     본문 행에 칸이 둘 이상인 표.

@@ -41,14 +41,17 @@ def build(output, profile_json=None):
         def read(self):
             return {}
     data = profile_nodes(profile_json) if profile_json else ConfigurationService(Store()).snapshot()
-    (ROOT / 'flutter_ui' / 'tool' / 'settings_preview_data.dart').write_text(
-        "// 생성 파일: scripts/preview_settings.py\nconst previewSettingsJson = r'''"
-        + json.dumps(data, ensure_ascii=False) + "''';\n", encoding='utf-8')
-    flutter = os.environ.get('FLUTTER') or str(Path(os.environ['LOCALAPPDATA']) / 'DocFitTools/flutter/bin/flutter.bat')
-    subprocess.run([flutter, 'build', 'web', '--release', '--no-pub', '--no-web-resources-cdn',
-                    '--no-wasm-dry-run', '-t', 'tool/profile_preview.dart' if profile_json else 'tool/settings_preview.dart',
-                    f'--output={output}'],
-                   cwd=ROOT / 'flutter_ui', check=True, shell=os.name == 'nt')
+    flutter = os.environ.get("FLUTTER") or str(Path(os.environ["LOCALAPPDATA"]) / "DocFitTools/flutter/bin/flutter.bat")
+    # Never write sample/profile content into tracked Dart source. Both entrypoints
+    # have public defaults and receive custom data only for this temporary build.
+    with tempfile.TemporaryDirectory(prefix="docfit_preview_build_") as folder:
+        defines = Path(folder) / "defines.json"
+        key = "DOCFIT_PREVIEW_PROFILE" if profile_json else "DOCFIT_PREVIEW_SETTINGS"
+        defines.write_text(json.dumps({key: json.dumps(data, ensure_ascii=False)}, ensure_ascii=False), encoding="utf-8")
+        subprocess.run([flutter, "build", "web", "--release", "--no-pub", "--no-web-resources-cdn",
+                        "--no-wasm-dry-run", "--dart-define-from-file=" + str(defines),
+                        "-t", "tool/profile_preview.dart" if profile_json else "tool/settings_preview.dart",
+                        f"--output={output}"], cwd=ROOT / "flutter_ui", check=True, shell=os.name == "nt")
 
 
 def capture(web, categories, sizes, prefix='settings'):

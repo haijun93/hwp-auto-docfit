@@ -216,7 +216,7 @@ class _ProfileEditorState extends State<ProfileEditor> {
         width: 180,
         child: TextFormField(
           key: ValueKey('$generation:$path:${field['key']}'),
-          initialValue: '${field['value']}',
+          initialValue: value,
           enabled: editable,
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
           decoration: InputDecoration(

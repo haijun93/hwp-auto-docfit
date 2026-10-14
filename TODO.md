@@ -1,11 +1,11 @@
-## [수정 필요] Alpha 10 갱신 코드 리뷰 6ac66ef
+## [반영·alpha] Alpha 10 갱신 코드 리뷰 6ac66ef
 
-- [ ] R1/P1: 추적되지 않는 settings_preview_data.dart 의존성 제거/사전 생성, 새 clone의 CI 분석 통과.
-- [ ] R2/P1: 병합 칸+빈 열의 너비가 0이 되는 계산 수정, 모든 열/병합 칸의 양수 폭 검증.
-- [ ] R3/P2: 프로필 요소 왕복 시 edits의 텍스트 값 표시·미리보기·저장 값 일치.
-- [ ] R4/P2: 캡션 표의 날짜 칸 lineWrap 보호, 표 경계별 재귀 판정.
-- [ ] R5/P2: 일반 표 안 중첩 장식/캡션 표의 COM 보호 영역 전수 수집.
-- 근거: docs/CODE_REVIEW_ALPHA10_6ac66ef.md. 기능 수정은 아직 미반영.
+- [x] R1/P1: 추적되지 않는 settings_preview_data.dart 의존성 제거/사전 생성, 새 clone의 CI 분석 통과.
+- [x] R2/P1: 병합 칸+빈 열의 너비가 0이 되는 계산 수정, 모든 열/병합 칸의 양수 폭 검증.
+- [x] R3/P2: 프로필 요소 왕복 시 edits의 텍스트 값 표시·미리보기·저장 값 일치.
+- [x] R4/P2: 캡션 표의 날짜 칸 lineWrap 보호, 표 경계별 재귀 판정.
+- [x] R5/P2: 일반 표 안 중첩 장식/캡션 표의 COM 보호 영역 전수 수집.
+- 근거: docs/REVIEW_FIXES_6ac66ef.md. Windows COM/EXE 실기기 검증은 별도 유지.
 
 ## [반영·alpha] Alpha 9 — Alpha 8 커밋 리뷰 7497338 수정
 

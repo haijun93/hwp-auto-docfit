@@ -222,7 +222,23 @@ def _plan_with_empty_columns(cells, cols, weights, floors, total):
     keep = [c for c in range(cols) if empty[c] and original[c] > 0]
     if not keep or len(keep) == cols or not sum(original):
         return plan_widths(weights, cap_floors(floors, total), total)
-    kept = {c: int(original[c] * total / sum(original)) for c in keep}
+    # A complete physical row includes merged widths. Single-column samples
+    # alone are a partial denominator and can give all space to an empty column.
+    row_widths, row_coverage = {}, {}
+    for tc, col, row, span in cells:
+        width = _int(_child(tc, "cellSz").get("width"))
+        if col < 0 or col + span > cols or width <= 0:
+            return None
+        row_widths[row] = row_widths.get(row, 0) + width
+        covered = row_coverage.setdefault(row, [0] * cols)
+        for c in range(col, col + span):
+            covered[c] += 1
+    complete = [row_widths[row] for row, cover in row_coverage.items()
+                if all(count == 1 for count in cover)]
+    if not complete:
+        return None  # Uncertain geometry: preserve the original table.
+    original_total = max(sum(original), max(complete))
+    kept = {c: int(original[c] * total / original_total) for c in keep}
     rest = total - sum(kept.values())
     others = [c for c in range(cols) if c not in kept]
     share = [weights[c] for c in others]
@@ -315,6 +331,9 @@ def fit_table(table, body_width, index: HeaderIndex, reserve: int = 0) -> bool:
         floors[col] = max(floors[col], int(longest_word(tc) * (char or 1000) * 1.1) + side + 200)
     # 최소 폭이 표 폭을 넘치면 긴 글자 묶음(날짜 범위·주소 등) 열부터 깎아 다른 열 몫을 빼앗지 않게 한다.
     widths = _plan_with_empty_columns(cells, cols, weights, floors, total)
+    if (widths is None or any(width <= 0 for width in widths) or sum(widths) != total
+            or any(col < 0 or col + span > cols for _, col, _, span in cells)):
+        return False  # Never write collapsed cells or a partial width plan.
     for tc, col, _, span in cells:
         _child(tc, "cellSz").set("width", str(sum(widths[col:col + span])))
         for p in cell_paragraphs(tc):

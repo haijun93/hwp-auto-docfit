@@ -4254,6 +4254,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             가장 긴 글 문단이다(중제목 번호처럼 짧은 글로 확인하면 다른 표와 헷갈릴 수 있다).
             """
             from docfit_core.style_inventory import _sections
+            from docfit_core.table_style import is_protected_table
             with open_hwpx_safely(hwpx경로) as z:
                 구역들 = [safe_xml_fromstring(z.read(name)) for name in _sections(z)]
             목록번호 = {}
@@ -4263,15 +4264,18 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         목록번호[id(item)] = len(목록번호) + 2
             결과 = []
             for root in 구역들:
-                for table in [t for p in root for run in p for t in run if 제목_xml이름(t) == 'tbl']:
-                    장식 = 디자인표인가(table) or 제목_자식(table, 'caption') is not None
+                for table in (t for t in root.iter() if 제목_xml이름(t) == 'tbl'):
+                    장식 = is_protected_table(table)
                     if 장식만 and not 장식:
                         continue
                     if not (장식 or 제목_유형판별(table, 빈칸허용=True) or 중제목_글칸들(table) or 붙임_유형판별(table)):
                         continue
                     영역들, 확인 = [], None
-                    for cell in 제목_셀들(table):
-                        sub = 제목_자식(cell, 'subList')
+                    # Protect descendant cells and caption lists together with
+                    # the enclosing design, including nested ordinary tables.
+                    sublists = ([x for x in table.iter() if 제목_xml이름(x) == 'subList'] if 장식
+                                else [제목_자식(cell, 'subList') for cell in 제목_셀들(table)])
+                    for sub in sublists:
                         if sub is None or id(sub) not in 목록번호:
                             continue
                         영역들.append(목록번호[id(sub)])
