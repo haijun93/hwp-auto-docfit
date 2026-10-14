@@ -62,6 +62,7 @@ class DesktopWebBridge:
         self._conversion_prerequisites_checked = 0.0
         self._conversion_prerequisites_cache = None
         self._conversion_prerequisites_lock = threading.Lock()
+        self._coverage_cache = {}
 
     def _shutdown(self):
         """Tk 종료 시 대기·실행 중 요청의 호출자를 종료 오류로 해제한다."""
@@ -144,12 +145,52 @@ class DesktopWebBridge:
             for key, label in stages_for_mode(mode)
         ]
 
+    def _profile_state(self):
+        from docfit_core.app_state import AppState
+        if isinstance(getattr(self.gui, "state", None), AppState):
+            return self.gui.state
+        # Compatibility for third-party legacy GUI hosts; real GUI owns AppState.
+        gui = self.gui
+        state = AppState()
+        try:
+            state.profiles = gui._프로파일들 or {}
+            state.profile_ids = gui._프로파일_ids or []
+            state.active_profile_id = gui._활성_서식_프로파일
+        except AttributeError:
+            pass
+        try:
+            state.analyzing_format = gui._서식분석중
+            state.analyzing_file = gui._서식분석_파일
+        except AttributeError:
+            pass
+        return state
+
+    def _cached_coverage(self, identifier, analysis):
+        if not analysis:
+            self._coverage_cache.pop(identifier, None)
+            return None
+        cached = self._coverage_cache.get(identifier)
+        if cached is None or cached[0] is not analysis:
+            cached = (analysis, _format_coverage(analysis))
+            self._coverage_cache[identifier] = cached
+        from copy import deepcopy
+        return deepcopy(cached[1])
+
+    def invalidate_format_coverage(self, identifier=None):
+        if identifier is None:
+            self._coverage_cache.clear()
+        else:
+            self._coverage_cache.pop(identifier, None)
+
     def _profiles(self):
         """서식 목록: 표시 이름(기관 포함), 이름·기관, 기본 서식 여부, 예시 파일 이름, 사용 중 여부."""
         gui = self.gui
-        profiles = getattr(gui, "_프로파일들", {}) or {}
-        ids = getattr(gui, "_프로파일_ids", None) or list(profiles)
-        active = getattr(gui, "_활성_서식_프로파일", "")
+        state = self._profile_state()
+        profiles = state.profiles
+        ids = state.profile_ids or list(profiles)
+        active = state.active_profile_id
+        for stale in self._coverage_cache.keys() - profiles.keys():
+            self._coverage_cache.pop(stale, None)
         items = []
         for identifier in ids:
             profile = profiles.get(identifier) or {}
@@ -166,14 +207,14 @@ class DesktopWebBridge:
                 "source": str(source.get("filename") or "") if isinstance(source, dict) else "",
                 "active": identifier == active,
                 # 예시 보고서에서 분석한 서식 요소 가운데 정리에 쓰는 수(서식 관리 창의 복제 범위 요약)
-                "coverage": _format_coverage(analysis) if analysis else None,
+                "coverage": self._cached_coverage(identifier, analysis),
             })
         return items
 
     def _format_task(self):
         gui = self.gui
-        return {"busy": bool(getattr(gui, "_서식분석중", False)),
-                "file": str(getattr(gui, "_서식분석_파일", "") or "")}
+        state = self._profile_state()
+        return {"busy": bool(state.analyzing_format), "file": str(state.analyzing_file or "")}
 
     def get_state(self):
         def snapshot():
@@ -217,7 +258,7 @@ class DesktopWebBridge:
                 "default_saved": bool(gui._세부작업_기본저장.get(mode, False)),
                 "stages": [] if mode == "file_format" else self._stages(mode),
                 "profiles": self._profiles(),
-                "profile": getattr(gui, "_활성_서식_프로파일", ""),
+                "profile": self._profile_state().active_profile_id,
                 "format_task": self._format_task(),
                 "drop_target": self.drop_target,
                 "options": {
@@ -730,7 +771,7 @@ class DesktopWebBridge:
         """서식 적용에 쓸 서식(프로파일)을 고른다. 기존 콤보 선택과 같은 경로로 반영한다."""
         def select():
             gui = self.gui
-            ids = list(getattr(gui, "_프로파일_ids", []) or [])
+            ids = list(self._profile_state().profile_ids or [])
             combo = getattr(gui, "main_profile_combo", None)
             if gui.running or identifier not in ids or combo is None:
                 return
@@ -763,7 +804,7 @@ class DesktopWebBridge:
 
         def start():
             gui = self.gui
-            if gui.running or getattr(gui, "_서식분석중", False):
+            if gui.running or self._profile_state().analyzing_format:
                 gui.status_var.set("작업이나 서식 분석이 끝난 뒤 다시 놓아 주세요.")
                 return
             if not candidates:

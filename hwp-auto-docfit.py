@@ -19402,6 +19402,93 @@ class LiveStageBoard(tk.Canvas):
 
 class HwpAutoDocFitGUI:
 
+    @property
+    def state(self):
+        from docfit_core.app_state import AppState
+        if "_app_state" not in self.__dict__:
+            self._app_state = AppState()
+        return self._app_state
+
+    @property
+    def files(self):
+        return self.state.files
+
+    @files.setter
+    def files(self, value):
+        self.state.files = value
+
+    @property
+    def running(self):
+        return self.state.running
+
+    @running.setter
+    def running(self, value):
+        self.state.running = value
+
+    @property
+    def stage_choices(self):
+        return self.state.stage_choices
+
+    @stage_choices.setter
+    def stage_choices(self, value):
+        self.state.stage_choices = value
+
+    @property
+    def _세부작업_기본저장(self):
+        return self.state.default_saved
+
+    @_세부작업_기본저장.setter
+    def _세부작업_기본저장(self, value):
+        self.state.default_saved = value
+
+    @property
+    def _프로파일들(self):
+        return self.state.profiles
+
+    @_프로파일들.setter
+    def _프로파일들(self, value):
+        self.state.profiles = value
+
+    @property
+    def _프로파일_ids(self):
+        return self.state.profile_ids
+
+    @_프로파일_ids.setter
+    def _프로파일_ids(self, value):
+        self.state.profile_ids = value
+
+    @property
+    def _활성_서식_프로파일(self):
+        return self.state.active_profile_id
+
+    @_활성_서식_프로파일.setter
+    def _활성_서식_프로파일(self, value):
+        self.state.active_profile_id = value
+
+    @property
+    def _서식분석중(self):
+        return self.state.analyzing_format
+
+    @_서식분석중.setter
+    def _서식분석중(self, value):
+        self.state.analyzing_format = value
+
+    @property
+    def _서식분석_파일(self):
+        return self.state.analyzing_file
+
+    @_서식분석_파일.setter
+    def _서식분석_파일(self, value):
+        self.state.analyzing_file = value
+
+    @property
+    def _결과목록(self):
+        return self.state.results
+
+    @_결과목록.setter
+    def _결과목록(self, value):
+        self.state.results = value
+
     FOOTER_NOTE_DEFAULT = "정리된 HWPX는 원본 폴더에 저장되며, 같은 이름의 기존 결과를 바꿉니다."
 
     def __init__(self, root):
@@ -25215,7 +25302,16 @@ class HwpAutoDocFitGUI:
             표제외, 쪽맞춤제외 = self.exclude_tables_var.get(), self.all_exclude_pagefit_var.get()
         else:
             표제외 = 쪽맞춤제외 = False
-        세부작업 = dict(self.stage_choices[mode])
+        from docfit_core.app_state import RunOptions
+        self.state.options = RunOptions(
+            mode=mode, include_spacing=bool(self.include_spacing_var.get()),
+            reset_spacing=bool(self.stage_choices[mode].get("reset_spacing", True)),
+            table_spacing=bool(self.table_spacing_var.get()), exclude_tables=bool(표제외),
+            verify_result=bool(self.verify_var.get()), autoclose=bool(self.autoclose_var.get()),
+            developer_mode=bool(self.developer_mode_var.get()),
+            page_range=(f"{self.range_start_var.get()}-{self.range_end_var.get()}"
+                        if self.range_mode_var.get() == "pages" else ""))
+        세부작업 = self.state.options.resolve_stages(self.stage_choices)
         # 서식 통일의 '자간 정리 제외'는 세부 작업 '서식통일 문장 자간 정리'를 끈 것과 같다(서로 연동).
         자간제외 = mode == "unify" and (bool(self.unify_exclude_spacing_var.get())
                                      or not stage_enabled(세부작업, "unify_spacing", mode))
