@@ -2482,7 +2482,16 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             header = safe_xml_fromstring(contents['Contents/header.xml'])
             sections = {n: safe_xml_fromstring(data) for n, data in contents.items() if re.fullmatch(r'Contents/section\d+\.xml', n)}
             if selections is None:
-                return {n: 중제목_대상찾기(root) for n, root in sections.items()}
+                found = {n: 중제목_대상찾기(root) for n, root in sections.items()}
+                for name, root in sections.items():
+                    for index, p in enumerate(root):
+                        if 제목_xml이름(p) != 'p':
+                            continue
+                        texts = _문단_일반글(p)
+                        heading = roman_heading_match(''.join(t.text or '' for t in texts)) if texts else None
+                        if heading:
+                            found[name].append((index, ('text', *heading)))
+                return found
             if not any(items for items in selections.values()):
                 if target is not None: shutil.copyfile(source, target)
                 return 0
@@ -2509,10 +2518,37 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 return 기준[kind]
 
             count = 0
+            new_cache, ids = {}, _문서_표번호(sections)
             for name, items in selections.items():
                 root = sections[name]
                 tables = [t for p in root for r in p for t in r if 제목_xml이름(t) == 'tbl']
                 for index, kind in items:
+                    if isinstance(kind, tuple) and kind[:1] == ('text',):
+                        p = root[index]
+                        texts = _문단_일반글(p)
+                        current = roman_heading_match(''.join(t.text or '' for t in texts)) if texts else None
+                        if current is None or ('text', *current) != kind:
+                            raise RuntimeError('처리 중 로마자 중제목이 변경되어 서식적용을 중단했습니다.')
+                        numeral, title = current
+                        table = 서식표_생성(header, 'midtitle', title, new_cache, numeral, _구역_본문폭(root))
+                        _서식표_글_확인('midtitle', table, title, numeral)
+                        _서식표_번호_부여(table, ids)
+                        base_char = next((r.get('charPrIDRef', '0') for r in p if 제목_xml이름(r) == 'run'), '0')
+                        for run in [r for r in p if 제목_xml이름(r) == 'run']:
+                            for t in [t for t in run if 제목_xml이름(t) == 't']:
+                                run.remove(t)
+                            if not len(run):
+                                p.remove(run)
+                        for seg in [c for c in p if 제목_xml이름(c) == 'linesegarray']:
+                            p.remove(seg)
+                        holder = XML_자식_추가(p, p, tag='{http://www.hancom.co.kr/hwpml/2011/paragraph}run',
+                                            attrib={'charPrIDRef': base_char})
+                        holder.append(table)
+                        XML_자식_추가(holder, p, tag='{http://www.hancom.co.kr/hwpml/2011/paragraph}t')
+                        p.set('paraPrIDRef', '0')
+                        p.set('styleIDRef', '0')
+                        count += 1
+                        continue
                     table = tables[index]
                     현재 = 중제목_유형판별(table) or ('fit' if 중제목_글칸들(table) else None)
                     if 현재 != kind:

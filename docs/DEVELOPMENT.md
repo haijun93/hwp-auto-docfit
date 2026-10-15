@@ -184,3 +184,13 @@ Windows 한/글 실측, WebView2 포커스와 EXE 패키징은 Windows 환경에
   native closing 콜백에서 JavaScript를 동기 대기하지 않는다.
 - kordoc 버전별 .install.lock 파일은 제거하지 않는다. 설치 완료를 잠금 안에서 재검사한다.
 - 검증·Windows 실기기 한계: docs/FINAL_REVIEW_FIXES_ALPHA11.md.
+
+
+### Alpha 12/13 MD 및 로마자 중제목
+
+- .md는 명시적 문서 모드로 AI 공문서 블록 파서를 공유한다. 코드의 #는 목차가 아니며,
+  이미지 있는 문서는 기존 이미지 보존 엔진 경로를 유지한다.
+- 배치 텍스트 변환은 라벨을 실제 문단·표로 삽입한다. 저장 성공 뒤 COM 파일을 해제하고 제목 표식을 후처리한다.
+- docfit_core/roman_heading.py는 로N / Unicode 로마자 일반 제목을 판별한다.
+  기존 중제목 선행 서식이 이를 3칸 표로 변환하며 일반 준말의 콜론 규칙은 바꾸지 않는다.
+- 명시적 MD 로마자 번호는 원문 번호를 보존한다. 상세 및 푸시 대기 상태는 docs/ROMAN_HEADING_ALPHA13.md 참고.

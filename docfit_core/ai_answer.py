@@ -17,6 +17,7 @@ import html
 import re
 
 from docfit_core.labeled_text import looks_labeled
+from docfit_core.roman_heading import match_heading as roman_heading_match
 from docfit_core.pasted_text import (
     _BLOCKQUOTE_MARKER, _CODE_FENCE, _HR_LINE, _MARKER_GLUE, _TABLE_ROW, _TABLE_SEPARATOR, _strip_inline_markup,
     _strip_invisible, _ESCAPED_MD_CHAR, _remove_citations_preserving_markup, _split_glued_markers, _outside_code,
@@ -187,7 +188,7 @@ def _split_elements(text: str, strip_chat_frame=False) -> list[dict]:
         heading = _MD_HEADING.match(stripped_line)
         if heading and not quoted:
             elements.append({"kind": "heading", "key": ("md", len(heading.group(1))), "text": _heading_clean(heading.group(2), text),
-                             "after_blank": previous_blank})
+                             "after_blank": previous_blank, "source_heading": heading.group(2)})
             previous_blank = False
             continue
         if not quoted and _TABLE_ROW.match(stripped_line) and stripped_line.count("|") >= 2:
@@ -410,6 +411,10 @@ def parse_ai_answer(text: str, *, strip_chat_frame=False, markdown_document=Fals
                     e["rank"] = max(0, e["rank"] - 1)
     if title_text:
         blocks.append({"kind": "title1", "text": title_text})
+    roman_sections = markdown_document and any(
+        e["kind"] == "heading" and e.get("rank") == 0
+        and roman_heading_match(_clean(e.get("source_heading", "")))
+        for e in elements)
     has_heading = any(e["kind"] == "heading" for e in elements)
     # 표제가 없으면 글머리가 □부터 시작한다. 다만 글머리 앞에 설명 문단이 있으면 그 문단 아래 목록이라 ㅇ부터 시작한다.
     first_body = next((e for e in elements if e["kind"] in ("para", "item", "table", "note")), None)
@@ -433,10 +438,15 @@ def parse_ai_answer(text: str, *, strip_chat_frame=False, markdown_document=Fals
         kind = e["kind"]
         if kind == "heading":
             seen_heading = True
-            base = e["rank"] + 1
+            roman = roman_heading_match(_clean(e.get("source_heading", ""))) if roman_sections and e["rank"] == 0 else None
+            rank = max(0, e["rank"] - int(bool(roman_sections)))
+            base = 0 if roman else rank + 1
             indent_stack, offset = [], 0
-            if e["text"]:
-                add_para(e["rank"], e["text"])
+            if roman:
+                add_para(roman[0] + ".", roman[1])
+                blocks[-1]["preserve_marker"] = True
+            elif e["text"]:
+                add_para(rank, e["text"])
             continue
         if kind == "table":
             blocks.append({"kind": "table", "rows": [row for row in e["rows"] if any(row)]})
@@ -496,7 +506,7 @@ def blocks_to_labeled_text(blocks: list[dict]) -> str:
             label = _LABEL_BY_MARKER.get(marker)
             if label:
                 lines.append(f"{label}: {block['text']}")
-            elif marker[:1] in _ROMAN and marker.endswith("."):
+            elif marker[:1] in _ROMAN and marker.endswith(".") and not block.get("preserve_marker"):
                 lines.append(f"로마소제목: {block['text']}")      # 번호는 라벨 해석기가 Ⅰ. Ⅱ. 로 매긴다
             else:
                 lines.append(f"기호: {marker} {block['text']}")
