@@ -11,6 +11,11 @@
 원격 Alpha 15는 별도로 보존한다. tldraw SDK 생성 자산을 제외하고 동결 EXE에서 비활성화한다.
 release/1.74-beta.2에서 전체 회귀 검사와 새 Windows EXE 빌드 후 main 승격·태그를 진행한다.
 기존 release-assets EXE는 이번 버전으로 검증되지 않았으므로 재배포하지 않는다.
+Beta 2 재검증: Python 기존 전체 1,158개(통과 1,155·조건부 제외 3),
+신규 배포 정책 2개 통과. Flutter 57개 통과, 웹 Release 빌드·오프라인 자산 검사 통과.
+Windows 전용 모듈을 대체한 import_check 및 본체 CRLF 3,324줄 유지 확인.
+새 Windows CI: https://github.com/haijun93/hwp-auto-docfit/actions/runs/38825514094
+빌드 결과와 Windows 실기기 검증을 확인하기 전에는 공개 태그를 만들지 않는다.
 현재 github·origin은 모두 GitHub를 가리키며 GitLab 반영으로 간주하지 않는다.
 
 
