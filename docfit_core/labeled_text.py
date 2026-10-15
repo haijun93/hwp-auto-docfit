@@ -42,6 +42,7 @@ for names, spec in (
 _LABEL_LINE = re.compile(r"^\s*(?:[-*•]\s*)?\**\s*([가-힣0-9]{1,6})\s*\**\s*[:：]\s?(.*)$")
 _KEY_VALUE = re.compile(r"^\s*([^:：\s][^:：]{0,11}?)\s*[:：]\s*(\S.*)$")
 ROMAN = "ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅪⅫ"
+BEOMGOV_DIRECTIVE = "#!범정부오피스"
 # 세부 내용(라벨 없는 "키: 값")의 항목기호: 가장 가까운 상위 항목보다 한 단계 아래
 _CHILD = {"□": "ㅇ", "#1": "ㅇ", "#Ⅰ": "□", "ㅇ": "-", "-": "•", "•": "•", "※": "-", "*": "-", "**": "-"}
 
@@ -56,7 +57,10 @@ def _label_of(line: str):
 
 def looks_labeled(text: str) -> bool:
     """줄머리 라벨이 두 줄 이상이고, 그중 계층 라벨(제목·네모·원 등)이 있으면 라벨 형식."""
-    hits = [_label_of(line) for line in (text or "").splitlines()]
+    lines = (text or "").lstrip("\ufeff").splitlines()
+    if next((line.strip() for line in lines if line.strip()), "") == BEOMGOV_DIRECTIVE:
+        return True  # 명시적인 호환 입력은 표 한 줄만 있어도 실제 표로 만든다.
+    hits = [_label_of(line) for line in lines]
     hits = [h for h in hits if h]
     return len(hits) >= 2 and any(h[1][0] in ("title", "title1", "title2", "para", "box") for h in hits)
 
@@ -67,30 +71,54 @@ def _table_cells(value: str) -> list[str]:
     elif "\t" in value:
         parts = value.split("\t")
     else:
-        parts = re.split(r"\s+[:：]\s+|[:：](?=\s)", value, maxsplit=1)
-    return [p.strip() for p in parts]
+        # 시각·URL의 콜론은 보존하고, 공백이 붙은 구분자 전체를 나눈다.
+        # 빈 셀도 유지한다. \\:는 셀 안의 문자 콜론이다.
+        parts = re.split(r"(?<!\\)(?:[:：](?=\s|$)|(?<=\s)[:：])", value)
+    return [p.strip().replace(r"\:", ":").replace(r"\：", "：") for p in parts]
 
 
-def parse_labeled_text(text: str) -> list[dict]:
+def parse_labeled_text(text: str, *, dialect: str = "docfit") -> list[dict]:
+    """기존 라벨 또는 명시적 범정부오피스 호환 문법을 공통 렌더러 블록으로 해석한다.
+
+    ``#!범정부오피스``를 첫 줄에 넣거나 dialect="beomgov"를 지정한다.
+    호환 모드의 소제목은 번호 칸 + 제목 칸의 실제 표로 만든다.
+    """
+    if dialect not in ("docfit", "beomgov"):
+        raise ValueError("지원하는 입력 문법은 docfit, beomgov입니다.")
+    lines = (text or "").lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    first = next((i for i, line in enumerate(lines) if line.strip()), None)
+    if first is not None and lines[first].strip() == BEOMGOV_DIRECTIVE:
+        dialect = "beomgov"
+        del lines[first]
     blocks: list[dict] = []
     parent = "□"
     numbers = {"#1": 0, "#Ⅰ": 0}
-    for raw in (text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+    fence = None
+    for raw in lines:
         line = raw.strip()
+        mark = re.match(r"^(`{3,}|~{3,})", line)
+        if mark and (fence is None or (mark[1][0] == fence[0] and len(mark[1]) >= len(fence))):
+            fence = mark[1] if fence is None else None
+            continue
+        if fence:
+            blocks.append({"kind": "para", "marker": "", "text": raw, "level": ""})
+            continue
         if not line:
             if blocks and blocks[-1]["kind"] != "blank":
                 blocks.append({"kind": "blank"})
             continue
         label = _label_of(line)
         if label:
-            _, (kind, marker), value = label
+            name, (kind, marker), value = label
+            if dialect == "beomgov" and name == "소제목":
+                kind, marker = "para", "#1"
             if kind == "blank":
                 if blocks and blocks[-1]["kind"] != "blank":
                     blocks.append({"kind": "blank"})
                 continue
             if kind == "table":
                 cells = _table_cells(value)
-                if blocks and blocks[-1]["kind"] == "table":
+                if blocks and blocks[-1]["kind"] == "table" and not blocks[-1].get("role"):
                     blocks[-1]["rows"].append(cells)
                 else:
                     blocks.append({"kind": "table", "rows": [cells]})
@@ -113,7 +141,11 @@ def parse_labeled_text(text: str) -> list[dict]:
                 else:
                     n = numbers[marker]
                     shown = (ROMAN[n - 1] if n <= len(ROMAN) else str(n)) + "."
-                blocks.append({"kind": "para", "marker": shown, "text": value, "level": marker})
+                if dialect == "beomgov":
+                    blocks.append({"kind": "table", "rows": [[shown.rstrip("."), value]],
+                                   "role": "heading", "level": marker})
+                else:
+                    blocks.append({"kind": "para", "marker": shown, "text": value, "level": marker})
                 parent = marker
                 continue
             blocks.append({"kind": "para", "marker": marker, "text": value, "level": marker})
