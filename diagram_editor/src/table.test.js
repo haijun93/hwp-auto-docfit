@@ -40,3 +40,29 @@ test('diagram nodes keep optional font, size, bold and color; old documents stay
  assert.deepEqual(nodeTextStyle(node('나',0,0).data),{});
  assert.throws(()=>validate({format:FORMAT,version:1,nodes:[{...a,data:{...a.data,size:'big'}}],edges:[]}));
 });
+test('flow grows downward, runs vertically, and borders follow hangul types',async()=>{
+ const t=await import('./table.js');
+ let f=t.resizeFlowRows(t.flowTable(3),3);
+ assert.equal(f.steps[0].details.length,3);
+ assert.equal(t.validateTable({...f,direction:'vertical',arrow:'▼'}).direction,'vertical');
+ assert.throws(()=>t.validateTable({...f,direction:'vertical',arrow:'➜'}));
+ f=t.setBorder(f,'line',{type:'DASH_DOT',width:'0.5 mm'});
+ assert.equal(t.validateTable(f).borders.line.type,'DASH_DOT');
+ assert.throws(()=>t.validateTable(t.setBorder(f,'line',{type:'WAVY'})));
+ assert.match(t.cssBorder({type:'NONE',width:'0.1 mm',color:'#000000'}),/dotted/);   // 투명선은 안내선
+ assert.match(t.cssBorder({type:'DOUBLE_SLIM',width:'0.5 mm',color:'#000000'}),/double/);
+ // 예전 흐름표(date 하나)도 읽는다
+ assert.deepEqual(t.flowDetails({title:'가',date:'1월'},2),['1월','']);
+});
+test('org chart and decorative bar tables validate and export',async()=>{
+ const t=await import('./table.js');
+ const org=t.resizeOrg(t.orgTable(4),6);
+ assert.equal(org.units.length,6);
+ assert.equal(t.exportSpec(org).kind,'org');
+ assert.throws(()=>t.validateTable(t.resizeOrg(t.orgTable(1),0)&&{...org,units:[]}));
+ const bar=t.barTable();
+ assert.equal(t.exportSpec(bar).title,'2026 추진실적');
+ const grid=t.setBorder(t.gridTable(2,2),'outer',{type:'DOUBLE_SLIM'});
+ assert.equal(t.exportSpec(grid).borders.outer.type,'DOUBLE_SLIM');           // 직접 고른 테두리만 보낸다
+ assert.equal(t.exportSpec(t.gridTable(2,2)).borders,undefined);
+});

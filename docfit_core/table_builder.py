@@ -1,4 +1,9 @@
-"""표/다이어그램 편집기에서 만든 흐름표·기본 표를 한/글 HWPX 문서로 만든다(알파, 2026-10-15).
+"""표/다이어그램 편집기에서 만든 흐름표·기본 표·조직표·장식표를 한/글 HWPX 문서로 만든다(알파, 2026-10-15).
+
+조직표(조직표.hwpx)·장식표(장식표.hwpx)도 같은 폴더를 학습했다. 칸 테두리는 경계선 지도(_Edges)로 정해
+조직표의 연결선(세로선·가로 버스)처럼 칸 테두리로 그린 선도 정확히 잇는다. 테두리 종류·굵기·색은 한/글과 같은
+12종(실선·파선·점선·일점쇄선·이중선·삼중선·투명선 …)에서 고른다. 흐름표는 세부 칸을 세로로 늘리거나(1~5줄)
+세로 방향(단계를 위에서 아래로)으로 만들 수 있다.
 
 흐름표 모양은 '표 다이어그램 연습/추진일정 흐름표.hwpx'를 학습했다.
 - 두 행: 위 행은 단계 이름(굵게, 바탕 #DFE6F7), 아래 행은 일정(흰 바탕). 두 행 사이만 이중선(0.5mm).
@@ -28,12 +33,16 @@ HC = "http://www.hancom.co.kr/hwpml/2011/core"
 
 # 편집기에서 고를 수 있는 글꼴(공문서에 흔한 글꼴). 바탕 문서에 없는 글꼴은 글꼴 목록에 더한다.
 FONTS = ("한컴돋움", "휴먼명조", "HY견고딕", "HY헤드라인M", "함초롬돋움", "함초롬바탕", "돋움", "맑은 고딕", "나눔고딕", "굴림")
-ARROWS = ("➜", "⇨", "▶", "→", "➡")
-MAX_FLOW_STEPS, MAX_ROWS, MAX_COLS, MAX_TEXT = 12, 40, 12, 200
+ARROWS = ("➜", "⇨", "▶", "▷", "→", "⇒", "➡", "➤", "►", "≫")
+DOWN_ARROWS = ("▼", "⇩", "↓", "▽", "⬇", "⇓")
+MAX_FLOW_STEPS, MAX_FLOW_ROWS, MAX_ROWS, MAX_COLS, MAX_TEXT, MAX_ORG = 12, 5, 40, 12, 200, 8
+# 한/글 테두리 종류(HWPX)·굵기. NONE은 투명선.
+BORDER_TYPES = ("SOLID", "DASH", "LONG_DASH", "DOT", "CIRCLE", "DASH_DOT", "DASH_DOT_DOT", "DOUBLE_SLIM", "SLIM_THICK",
+                "THICK_SLIM", "SLIM_THICK_SLIM", "NONE")
+BORDER_WIDTHS = ("0.1 mm", "0.12 mm", "0.15 mm", "0.2 mm", "0.25 mm", "0.3 mm", "0.4 mm", "0.5 mm", "0.6 mm", "0.7 mm",
+                 "1.0 mm", "1.5 mm", "2.0 mm", "3.0 mm")
 
 # 학습한 흐름표 모양(추진일정 흐름표.hwpx).
-FLOW_LINE = {"color": "#4C4C4C", "width": "0.4 mm"}
-FLOW_SPLIT = {"type": "DOUBLE_SLIM", "width": "0.5 mm", "color": "#4C4C4C"}
 FLOW_DEFAULTS = {
     "step": {"font": "한컴돋움", "size": 12, "bold": True, "color": "#000000", "fill": "#DFE6F7"},
     "date": {"font": "한컴돋움", "size": 12, "bold": False, "color": "#000000", "fill": "#FFFFFF"},
@@ -43,8 +52,30 @@ GRID_DEFAULTS = {
     "head": {"font": "한컴돋움", "size": 13, "bold": True, "color": "#000000", "fill": "#E7EEF8"},
     "body": {"font": "휴먼명조", "size": 12, "bold": False, "color": "#000000", "fill": ""},
 }
+# 학습한 조직표(조직표.hwpx)·장식표(장식표.hwpx).
+ORG_DEFAULTS = {
+    "root": {"font": "한컴돋움", "size": 15, "bold": True, "color": "#000000", "fill": "#DFE6F7"},
+    "unit": {"font": "한컴돋움", "size": 13, "bold": True, "color": "#000000", "fill": "#FFFFFF"},
+    "detail": {"font": "한컴돋움", "size": 11, "bold": False, "color": "#000000", "fill": ""},
+}
+BAR_DEFAULTS = {
+    "title": {"font": "한컴돋움", "size": 15, "bold": True, "color": "#000000", "fill": ""},
+    "note": {"font": "한컴돋움", "size": 13, "bold": True, "color": "#000000", "fill": ""},
+}
+BORDER_DEFAULTS = {
+    "flow": {"line": {"type": "SOLID", "width": "0.4 mm", "color": "#4C4C4C"},
+             "split": {"type": "DOUBLE_SLIM", "width": "0.5 mm", "color": "#4C4C4C"}},
+    "grid": {"outer": {"type": "SOLID", "width": "0.4 mm", "color": "#000000"},
+             "inner": {"type": "SOLID", "width": "0.12 mm", "color": "#000000"}},
+    "org": {"box": {"type": "SOLID", "width": "0.4 mm", "color": "#000000"},
+            "link": {"type": "SOLID", "width": "0.4 mm", "color": "#000000"}},
+    "bar": {"box": {"type": "SOLID", "width": "0.4 mm", "color": "#000000"},
+            "line": {"type": "DASH", "width": "0.4 mm", "color": "#000000"}},
+}
 ARROW_RATIO = 0.0385
 ROW_HEIGHT = 3326
+# 장식표 열 폭 비율(학습: 13425·1368·22339·1078·11676).
+BAR_RATIOS = (13425, 1368, 22339, 1078, 11676)
 
 
 class TableSpecError(ValueError):
@@ -84,24 +115,48 @@ def _style(value, default):
             "color": color.upper(), "fill": fill.upper()}
 
 
+def _styles(value, defaults):
+    value = value if isinstance(value, dict) else {}
+    return {role: _style(value.get(role), default) for role, default in defaults.items()}
+
+
+def _borders(value, kind):
+    value = value if isinstance(value, dict) else {}
+    result = {}
+    for part, default in BORDER_DEFAULTS[kind].items():
+        item = {**default, **(value.get(part) if isinstance(value.get(part), dict) else {})}
+        if item["type"] not in BORDER_TYPES or item["width"] not in BORDER_WIDTHS \
+                or not re.fullmatch(r"#[0-9A-Fa-f]{6}", str(item["color"])):
+            raise TableSpecError("테두리(종류·굵기·색)를 확인해 주세요.")
+        result[part] = (item["type"], item["width"], str(item["color"]).upper())
+    return result
+
+
 def normalize(spec):
-    """편집기 표 정보를 검증해 정리한다. 흐름표 {'kind':'flow','steps':[{title,date}],'arrow','styles'},
-    기본 표 {'kind':'grid','rows':[[글,…],…],'header_rows','styles'}."""
+    """편집기 표 정보를 검증해 정리한다. 종류: 흐름표(flow)·기본 표(grid)·조직표(org)·장식표(bar)."""
     if not isinstance(spec, dict):
         raise TableSpecError("표 정보를 확인해 주세요.")
     kind = spec.get("kind")
-    styles = spec.get("styles") if isinstance(spec.get("styles"), dict) else {}
     if kind == "flow":
         steps = spec.get("steps")
         if not isinstance(steps, list) or not 2 <= len(steps) <= MAX_FLOW_STEPS:
             raise TableSpecError(f"흐름표 단계는 2~{MAX_FLOW_STEPS}칸입니다.")
-        arrow = spec.get("arrow", ARROWS[0])
-        if arrow not in ARROWS:
+        direction = "vertical" if spec.get("direction") == "vertical" else "horizontal"
+        arrows = DOWN_ARROWS if direction == "vertical" else ARROWS
+        arrow = spec.get("arrow", arrows[0])
+        if arrow not in arrows:
             raise TableSpecError("화살표 모양을 확인해 주세요.")
-        return {"kind": "flow", "arrow": arrow,
-                "steps": [{"title": _text(s.get("title")) if isinstance(s, dict) else _text(None),
-                           "date": _text(s.get("date")) if isinstance(s, dict) else _text(None)} for s in steps],
-                "styles": {role: _style(styles.get(role), default) for role, default in FLOW_DEFAULTS.items()}}
+        rows = spec.get("rows", 1)
+        if not isinstance(rows, int) or not 1 <= rows <= MAX_FLOW_ROWS:
+            raise TableSpecError(f"세부 칸은 1~{MAX_FLOW_ROWS}줄입니다.")
+        clean = []
+        for s in steps:
+            s = s if isinstance(s, dict) else {}
+            details = s.get("details") if isinstance(s.get("details"), list) else [s.get("date")]
+            clean.append({"title": _text(s.get("title")),
+                          "details": [_text(details[i]) if i < len(details) else "" for i in range(rows)]})
+        return {"kind": "flow", "direction": direction, "arrow": arrow, "rows": rows, "steps": clean,
+                "styles": _styles(spec.get("styles"), FLOW_DEFAULTS), "borders": _borders(spec.get("borders"), "flow")}
     if kind == "grid":
         rows = spec.get("rows")
         if not isinstance(rows, list) or not 1 <= len(rows) <= MAX_ROWS:
@@ -112,12 +167,26 @@ def normalize(spec):
         header_rows = spec.get("header_rows", 1)
         if not isinstance(header_rows, int) or not 0 <= header_rows <= min(2, len(rows)):
             raise TableSpecError("머리글 행 수를 확인해 주세요.")
+        styles = spec.get("styles") if isinstance(spec.get("styles"), dict) else {}
         return {"kind": "grid", "header_rows": header_rows,
                 "rows": [[_text(r[c]) if c < len(r) else "" for c in range(cols)] for r in rows],
                 "use_basic_style": spec.get("use_basic_style", True) is not False,
-                "styles": {role: _style(styles.get(role), default) for role, default in GRID_DEFAULTS.items()},
-                "custom": {role: isinstance(styles.get(role), dict) for role in GRID_DEFAULTS}}
-    raise TableSpecError("표 종류는 흐름표 또는 기본 표입니다.")
+                "styles": _styles(styles, GRID_DEFAULTS),
+                "custom": {role: isinstance(styles.get(role), dict) for role in GRID_DEFAULTS},
+                "borders": _borders(spec.get("borders"), "grid"),
+                "custom_border": isinstance(spec.get("borders"), dict)}
+    if kind == "org":
+        units = spec.get("units")
+        if not isinstance(units, list) or not 1 <= len(units) <= MAX_ORG:
+            raise TableSpecError(f"조직표 부서는 1~{MAX_ORG}개입니다.")
+        return {"kind": "org", "root": _text(spec.get("root")),
+                "units": [{"title": _text(u.get("title")) if isinstance(u, dict) else "",
+                           "detail": _text(u.get("detail")) if isinstance(u, dict) else ""} for u in units],
+                "styles": _styles(spec.get("styles"), ORG_DEFAULTS), "borders": _borders(spec.get("borders"), "org")}
+    if kind == "bar":
+        return {"kind": "bar", "title": _text(spec.get("title")), "note": _text(spec.get("note")),
+                "styles": _styles(spec.get("styles"), BAR_DEFAULTS), "borders": _borders(spec.get("borders"), "bar")}
+    raise TableSpecError("표 종류를 확인해 주세요(흐름표·기본 표·조직표·장식표).")
 
 
 # ---- header(글꼴·글자·테두리·문단 모양) -------------------------------------------------------------
@@ -225,6 +294,22 @@ class _Header:
         self._borders[key] = self._append("borderFills", clone)
         return self._borders[key]
 
+    def reborder(self, border_id, sides):
+        """테두리/배경 border_id의 바탕은 두고 네 변만 sides({'top': (종류, 굵기, 색), …})로 바꾼 복제 ID."""
+        key = ("reborder", border_id, tuple(sorted(sides.items())))
+        if key in self._borders:
+            return self._borders[key]
+        source = next((x for x in self.groups["borderFills"] if x.get("id") == border_id), None)
+        if source is None:
+            return border_id
+        clone = copy.deepcopy(source)
+        for name, (kind, width, color) in sides.items():
+            line = _child(clone, name + "Border")
+            if line is not None:
+                line.attrib.update({"type": kind, "width": width, "color": color})
+        self._borders[key] = self._append("borderFills", clone)
+        return self._borders[key]
+
     def center_para(self):
         if self._para is None:
             source = next(x for x in self.groups["paraProperties"] if x.get("id") == "0")
@@ -284,31 +369,166 @@ def _split(total, parts):
     return base
 
 
+class _Edges:
+    """칸 경계선 지도. h[(행 경계, 열)]·v[(행, 열 경계)] = (종류, 굵기, 색). 칸 테두리는 이 지도에서 읽는다."""
+
+    def __init__(self):
+        self.h, self.v = {}, {}
+
+    def box(self, r0, c0, r1, c1, line):
+        """r0~r1행·c0~c1열(끝 포함) 상자의 네 변."""
+        for c in range(c0, c1 + 1):
+            self.h[(r0, c)] = line
+            self.h[(r1 + 1, c)] = line
+        for r in range(r0, r1 + 1):
+            self.v[(r, c0)] = line
+            self.v[(r, c1 + 1)] = line
+
+    def sides(self, r0, c0, rowspan=1, colspan=1):
+        none = ("NONE", "0.1 mm", "#000000")
+        return {"top": self.h.get((r0, c0), none), "bottom": self.h.get((r0 + rowspan, c0), none),
+                "left": self.v.get((r0, c0), none), "right": self.v.get((r0, c0 + colspan), none)}
+
+
+def _grid_cells(table, rows, cols, widths, heights, cells, pool, para, empty_char, edges):
+    """cells: {(행,열): dict(rowspan, colspan, text, char, fill, margin)} — 덮이지 않은 나머지 칸은 빈 칸."""
+    covered = set()
+    for (r, c), cell in cells.items():
+        for dr in range(cell.get("rowspan", 1)):
+            for dc in range(cell.get("colspan", 1)):
+                covered.add((r + dr, c + dc))
+    for r in range(rows):
+        tr = _element(table, "tr")
+        for c in range(cols):
+            cell = cells.get((r, c))
+            if cell is None and (r, c) in covered:
+                continue
+            cell = cell or {}
+            rs, cs = cell.get("rowspan", 1), cell.get("colspan", 1)
+            border = pool.border(edges.sides(r, c, rs, cs), cell.get("fill", ""))
+            _cell(tr, col=c, row=r, rowspan=rs, colspan=cs, width=sum(widths[c:c + cs]),
+                  height=sum(heights[r:r + rs]), border=border, para=para, char=cell.get("char", empty_char),
+                  text=cell.get("text", ""), margin=cell.get("margin", (141, 141, 141, 141)))
+
+
 def build_flow(run, spec, pool, body_width):
-    n = len(spec["steps"])
-    styles = spec["styles"]
+    if spec["direction"] == "vertical":
+        return _build_flow_vertical(run, spec, pool, body_width)
+    n, rows = len(spec["steps"]), spec["rows"]
+    styles, b = spec["styles"], spec["borders"]
     arrow_w = int(round(body_width * ARROW_RATIO))
     step_ws = _split(body_width - arrow_w * (n - 1), n)
-    line = ("SOLID", FLOW_LINE["width"], FLOW_LINE["color"])
-    split = (FLOW_SPLIT["type"], FLOW_SPLIT["width"], FLOW_SPLIT["color"])
-    step_border = pool.border({"left": line, "right": line, "top": line, "bottom": split}, styles["step"]["fill"])
-    date_border = pool.border({"left": line, "right": line, "top": split, "bottom": line}, styles["date"]["fill"])
-    arrow_border = pool.border({"left": line, "right": line}, styles["arrow"]["fill"])
+    widths = []
+    for i in range(n):
+        widths.append(step_ws[i])
+        if i < n - 1:
+            widths.append(arrow_w)
     para = pool.center_para()
     chars = {role: pool.char(styles[role], -7) for role in styles}
-    table = _table(run, 2, 2 * n - 1, body_width, ROW_HEIGHT * 2, pool.border({}))
+    heights = [ROW_HEIGHT] * (1 + rows)
+    edges = _Edges()
+    cells = {}
     margin = (0, 0, 283, 283)
-    first = _element(table, "tr")
     for i, step in enumerate(spec["steps"]):
-        _cell(first, col=2 * i, row=0, width=step_ws[i], height=ROW_HEIGHT, border=step_border, para=para,
-              char=chars["step"], text=step["title"], margin=margin)
+        c = 2 * i
+        edges.box(0, c, rows, c, b["line"])
+        for r in range(rows):                       # 단계 이름 아래 경계는 구분선, 세부 칸 사이는 상자 선
+            edges.h[(r + 1, c)] = b["split"] if r == 0 else b["line"]
+        cells[(0, c)] = {"text": step["title"], "char": chars["step"], "fill": styles["step"]["fill"], "margin": margin}
+        for r, value in enumerate(step["details"], 1):
+            cells[(r, c)] = {"text": value, "char": chars["date"], "fill": styles["date"]["fill"], "margin": margin}
         if i < n - 1:
-            _cell(first, col=2 * i + 1, row=0, rowspan=2, width=arrow_w, height=ROW_HEIGHT * 2, border=arrow_border,
-                  para=para, char=chars["arrow"], text=spec["arrow"], margin=margin)
-    second = _element(table, "tr")
+            cells[(0, c + 1)] = {"rowspan": 1 + rows, "text": spec["arrow"], "char": chars["arrow"],
+                                 "fill": styles["arrow"]["fill"], "margin": margin}
+    table = _table(run, 1 + rows, len(widths), body_width, sum(heights), pool.border({}))
+    _grid_cells(table, 1 + rows, len(widths), widths, heights, cells, pool, para, chars["date"], edges)
+    return table
+
+
+def _build_flow_vertical(run, spec, pool, body_width):
+    """세로 흐름표: 단계마다 한 행(왼쪽 단계 이름 + 오른쪽 세부 칸), 단계 사이에 아래 화살표 행."""
+    n, rows = len(spec["steps"]), spec["rows"]
+    styles, b = spec["styles"], spec["borders"]
+    title_w = int(body_width * (0.34 if rows == 1 else 0.26))
+    widths = [title_w, *_split(body_width - title_w, rows)]
+    para = pool.center_para()
+    chars = {role: pool.char(styles[role], -7) for role in styles}
+    heights = []
+    edges, cells = _Edges(), {}
     for i, step in enumerate(spec["steps"]):
-        _cell(second, col=2 * i, row=1, width=step_ws[i], height=ROW_HEIGHT, border=date_border, para=para,
-              char=chars["date"], text=step["date"], margin=margin)
+        r = 2 * i
+        heights.append(ROW_HEIGHT)
+        edges.box(r, 0, r, rows, b["line"])
+        edges.v[(r, 1)] = b["split"]
+        for k in range(2, rows + 1):
+            edges.v[(r, k)] = b["line"]
+        cells[(r, 0)] = {"text": step["title"], "char": chars["step"], "fill": styles["step"]["fill"]}
+        for k, value in enumerate(step["details"], 1):
+            cells[(r, k)] = {"text": value, "char": chars["date"], "fill": styles["date"]["fill"]}
+        if i < n - 1:
+            heights.append(1600)
+            cells[(r + 1, 0)] = {"colspan": 1 + rows, "text": spec["arrow"], "char": chars["arrow"],
+                                 "fill": styles["arrow"]["fill"], "margin": (0, 0, 0, 0)}
+    table = _table(run, len(heights), 1 + rows, body_width, sum(heights), pool.border({}))
+    _grid_cells(table, len(heights), 1 + rows, widths, heights, cells, pool, para, chars["date"], edges)
+    return table
+
+
+def build_org(run, spec, pool, body_width):
+    """조직표: 윗 상자 → 세로선 → 가로 버스 → 부서 상자(→ 아래 설명). 선은 칸 테두리로 그린다(학습: 조직표.hwpx)."""
+    units, styles, b = spec["units"], spec["styles"], spec["borders"]
+    n = len(units)
+    cols = 4 * n                                     # 부서마다 [여백, 상자 왼쪽, 상자 오른쪽, 여백]
+    slots = _split(body_width, n)
+    widths = []
+    for slot in slots:                              # 여백 10%·상자 80%(가운데 열 경계가 상자 가운데)
+        gap = int(slot * 0.1)
+        half = (slot - 2 * gap) // 2
+        widths += [gap, half, slot - 2 * gap - half, gap]
+    has_detail = any(u["detail"] for u in units)
+    heights = [2800, 900, 900, 2600] + ([2400] if has_detail else [])
+    chars = {role: pool.char(styles[role], -5) for role in styles}
+    para = pool.center_para()
+    edges, cells = _Edges(), {}
+    center = 2 * n                                  # 표 가운데 열 경계
+    # 윗 상자: 부서가 홀수면 가운데 부서 상자와 같은 폭, 짝수면 가운데 두 부서 사이에 걸친 폭.
+    first, last = (center - 1, center) if n % 2 else (center - 2, center + 1)
+    edges.box(0, first, 0, last, b["box"])
+    cells[(0, first)] = {"colspan": last - first + 1, "text": spec["root"], "char": chars["root"],
+                         "fill": styles["root"]["fill"]}
+    edges.v[(1, center)] = b["link"]                # 윗 상자 아래로 내려오는 세로선
+    if n > 1:
+        for c in range(2, 4 * (n - 1) + 2):          # 첫 부서 가운데 ~ 끝 부서 가운데를 잇는 가로 버스
+            edges.h[(2, c)] = b["link"]
+    for i, unit in enumerate(units):
+        left = 4 * i + 1
+        edges.v[(2, left + 1)] = b["link"]           # 버스에서 부서 상자로 내려가는 세로선
+        edges.box(3, left, 3, left + 1, b["box"])
+        cells[(3, left)] = {"colspan": 2, "text": unit["title"], "char": chars["unit"], "fill": styles["unit"]["fill"]}
+        if has_detail:
+            cells[(4, left)] = {"colspan": 2, "text": unit["detail"], "char": chars["detail"],
+                                "fill": styles["detail"]["fill"], "margin": (141, 141, 283, 141)}
+    table = _table(run, len(heights), cols, body_width, sum(heights), pool.border({}))
+    _grid_cells(table, len(heights), cols, widths, heights, cells, pool, para, chars["detail"], edges)
+    return table
+
+
+def build_bar(run, spec, pool, body_width):
+    """장식표 '2026 추진실적 ……(8. 31. 현재)': 왼쪽 글 상자, 가운데 점선, 오른쪽 글(학습: 장식표.hwpx)."""
+    styles, b = spec["styles"], spec["borders"]
+    total = sum(BAR_RATIOS)
+    widths = [int(body_width * r / total) for r in BAR_RATIOS]
+    widths[2] += body_width - sum(widths)
+    heights = [1682, 1415]
+    chars = {role: pool.char(styles[role]) for role in styles}
+    para = pool.center_para()
+    edges = _Edges()
+    edges.box(0, 0, 1, 0, b["box"])
+    edges.h[(1, 2)] = b["line"]                     # 두 행 사이 가운데 점선
+    cells = {(0, 0): {"rowspan": 2, "text": spec["title"], "char": chars["title"], "fill": styles["title"]["fill"]},
+             (0, 4): {"rowspan": 2, "text": spec["note"], "char": chars["note"], "fill": styles["note"]["fill"]}}
+    table = _table(run, 2, 5, body_width, sum(heights), pool.border({}))
+    _grid_cells(table, 2, 5, widths, heights, cells, pool, para, chars["note"], edges)
     return table
 
 
@@ -334,19 +554,27 @@ def build_grid(run, spec, pool, body_width):
 
 
 def _override(table, spec, pool):
-    """기본 표 서식을 입힌 뒤, 사용자가 직접 고른 글자 서식·바탕을 머리글·본문 칸에 덧입힌다."""
+    """기본 표 서식을 입힌 뒤, 사용자가 직접 고른 글자 서식·바탕·테두리를 덧입힌다."""
     head = spec["header_rows"]
+    rows, cols = int(table.get("rowCnt")), int(table.get("colCnt"))
     for tc in (x for x in table.iter() if _tag(x) == "tc"):
         addr = _child(tc, "cellAddr")
-        role = "head" if int(addr.get("rowAddr", "0")) < head else "body"
-        if not spec["custom"][role]:
-            continue
-        style = spec["styles"][role]
-        char = pool.char(style)
-        for run in (x for x in tc.iter() if _tag(x) == "run"):
-            run.set("charPrIDRef", char)
-        if style["fill"]:
-            tc.set("borderFillIDRef", pool.refill(tc.get("borderFillIDRef"), style["fill"]))
+        r, c = int(addr.get("rowAddr", "0")), int(addr.get("colAddr", "0"))
+        role = "head" if r < head else "body"
+        if spec["custom"][role]:
+            style = spec["styles"][role]
+            char = pool.char(style)
+            for run in (x for x in tc.iter() if _tag(x) == "run"):
+                run.set("charPrIDRef", char)
+            if style["fill"]:
+                tc.set("borderFillIDRef", pool.refill(tc.get("borderFillIDRef"), style["fill"]))
+        if spec["custom_border"]:
+            outer, inner = spec["borders"]["outer"], spec["borders"]["inner"]
+            span = _child(tc, "cellSpan")
+            rs, cs = int(span.get("rowSpan", "1")), int(span.get("colSpan", "1"))
+            sides = {"top": outer if r == 0 else inner, "bottom": outer if r + rs >= rows else inner,
+                     "left": outer if c == 0 else inner, "right": outer if c + cs >= cols else inner}
+            tc.set("borderFillIDRef", pool.reborder(tc.get("borderFillIDRef"), sides))
 
 
 def build_table_hwpx(spec, base_path, target_path, *, basic_style=None):
@@ -387,6 +615,10 @@ def build_table_hwpx(spec, base_path, target_path, *, basic_style=None):
     run = _element(holder, "run", charPrIDRef=0)
     if spec["kind"] == "flow":
         build_flow(run, spec, pool, body_width)
+    elif spec["kind"] == "org":
+        build_org(run, spec, pool, body_width)
+    elif spec["kind"] == "bar":
+        build_bar(run, spec, pool, body_width)
     else:
         table = build_grid(run, spec, pool, body_width)
         style = basic_style if spec["use_basic_style"] and valid_style(basic_style) else None
@@ -415,4 +647,8 @@ def build_table_hwpx(spec, base_path, target_path, *, basic_style=None):
 def _preview_text(spec):
     if spec["kind"] == "flow":
         return (" " + spec["arrow"] + " ").join(s["title"] for s in spec["steps"])
+    if spec["kind"] == "org":
+        return spec["root"] + "\n" + "  ".join(u["title"] for u in spec["units"])
+    if spec["kind"] == "bar":
+        return spec["title"] + " … " + spec["note"]
     return "\n".join("\t".join(row) for row in spec["rows"])

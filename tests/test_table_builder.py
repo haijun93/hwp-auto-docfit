@@ -73,6 +73,57 @@ class TableBuilderTest(unittest.TestCase):
         body_char = next(x for x in cells[2].iter() if tag(x) == "run").get("charPrIDRef")
         self.assertNotEqual(body_char, next(x for x in head.iter() if tag(x) == "run").get("charPrIDRef"))
 
+    def border_of(self, header, cell):
+        fill = next(x for x in header.iter() if tag(x) == "borderFill" and x.get("id") == cell.get("borderFillIDRef"))
+        return {side: (next(x for x in fill if tag(x) == side + "Border").get("type"))
+                for side in ("left", "right", "top", "bottom")}
+
+    def test_flow_grows_downward_and_can_run_vertically(self):
+        steps = [{"title": f"단계 {i}", "details": [f"{i}월", "담당"]} for i in range(3)]
+        _, _, table = self.build({"kind": "flow", "rows": 2, "steps": steps})
+        self.assertEqual((table.get("rowCnt"), table.get("colCnt")), ("3", "5"))      # 단계 + 세부 2줄
+        arrows = [c for c in table.iter() if tag(c) == "tc" and "".join(t.text or "" for t in c.iter() if tag(t) == "t") == "➜"]
+        self.assertTrue(all(next(x for x in c if tag(x) == "cellSpan").get("rowSpan") == "3" for c in arrows))
+        header, _, table = self.build({"kind": "flow", "direction": "vertical", "rows": 2, "steps": steps, "arrow": "▼"})
+        self.assertEqual((table.get("rowCnt"), table.get("colCnt")), ("5", "3"))      # 단계 3행 + 화살표 2행
+        down = [c for c in table.iter() if tag(c) == "tc" and "▼" in "".join(t.text or "" for t in c.iter() if tag(t) == "t")]
+        self.assertEqual(len(down), 2)
+        with self.assertRaises(TableSpecError):
+            normalize({"kind": "flow", "direction": "vertical", "steps": steps, "arrow": "➜"})   # 세로는 아래 화살표만
+
+    def test_border_types_follow_hangul(self):
+        spec = {"kind": "grid", "rows": [["가", "나"], ["다", "라"]], "header_rows": 1,
+                "borders": {"outer": {"type": "DOUBLE_SLIM", "width": "0.5 mm", "color": "#000000"},
+                            "inner": {"type": "NONE", "width": "0.1 mm", "color": "#000000"}}}
+        header, _, table = self.build(spec, default_style())
+        cells = [x for x in table.iter() if tag(x) == "tc"]
+        first = self.border_of(header, cells[0])
+        self.assertEqual((first["left"], first["top"], first["right"], first["bottom"]),
+                         ("DOUBLE_SLIM", "DOUBLE_SLIM", "NONE", "NONE"))               # 바깥 이중선, 안쪽 투명선
+        with self.assertRaises(TableSpecError):
+            normalize({**spec, "borders": {"outer": {"type": "WAVY"}}})
+
+    def test_org_chart_draws_links_with_cell_borders(self):
+        spec = {"kind": "org", "root": "문화경제국",
+                "units": [{"title": "관광정책과", "detail": "관광정책팀"}, {"title": "지역경제과"}, {"title": "문화예술과"}]}
+        header, _, table = self.build(spec)
+        self.assertEqual((table.get("rowCnt"), table.get("colCnt")), ("5", "12"))
+        cells = [x for x in table.iter() if tag(x) == "tc"]
+        texts = ["".join(t.text or "" for t in c.iter() if tag(t) == "t") for c in cells]
+        self.assertIn("문화경제국", texts)
+        root = cells[texts.index("문화경제국")]
+        self.assertEqual(next(x for x in root if tag(x) == "cellAddr").get("colAddr"), "5")   # 가운데 부서 위
+        self.assertTrue(is_user_designed_table(table))                                        # 조직표로 보호
+        widths = {int(next(x for x in c if tag(x) == "cellSz").get("width")) for c in cells}
+        self.assertTrue(all(w > 0 for w in widths))
+
+    def test_bar_table_matches_learned_layout(self):
+        header, _, table = self.build({"kind": "bar", "title": "2026 추진실적", "note": "( 8. 31. 현재 )"})
+        self.assertEqual((table.get("rowCnt"), table.get("colCnt")), ("2", "5"))
+        self.assertTrue(is_user_designed_table(table))
+        middle = [c for c in table.iter() if tag(c) == "tc" and next(x for x in c if tag(x) == "cellAddr").get("colAddr") == "2"]
+        self.assertEqual(self.border_of(header, middle[0])["bottom"], "DASH")
+
     def test_invalid_specs_are_rejected(self):
         for bad in ({"kind": "flow", "steps": [{"title": "하나"}]},
                     flow(13),

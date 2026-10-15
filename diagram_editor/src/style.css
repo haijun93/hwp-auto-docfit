@@ -51,3 +51,40 @@ label.check{display:flex!important;align-items:center;gap:6px}label.check input{
 .col-tools button,.row-tools button{width:22px;height:22px;padding:0;font-size:12px}
 .style-row label.size{white-space:nowrap}
 .flow-step textarea.cell{resize:none;min-height:0;margin:0;font:inherit;line-height:1.35;overflow:hidden}
+/* 도형 갤러리·색 견본·연결선·표 종류(2026-10-16) */
+.shape-group{margin-bottom:6px}.shape-group summary{cursor:pointer;font-size:12px;color:#475569;padding:4px 0;font-weight:600}
+.shape-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:3px}
+.shape-grid button{margin:0;padding:3px;display:flex;align-items:center;justify-content:center;height:30px}
+.tool-row{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0}.tool-row button{flex:1 1 auto;margin:0!important;width:auto!important;padding:6px 4px;font-size:12px}
+.color-row{margin-top:8px;font-size:12px}.color-row>span{display:block;margin-bottom:4px;color:#475569}
+.swatches{display:flex;flex-wrap:wrap;gap:3px;align-items:center}
+.swatch{width:16px!important;height:16px;padding:0!important;margin:0!important;border:1px solid #cbd5e1;border-radius:3px;display:inline-block!important}
+.swatch.on{outline:2px solid #2563eb;outline-offset:1px}
+.swatch.none{background:linear-gradient(135deg,#fff 45%,#ef4444 47%,#ef4444 53%,#fff 55%)}
+.swatches input[type=color]{width:24px!important;height:20px;padding:0;margin:0!important;border:0}
+.border-part{margin-bottom:10px}.border-part b{font-size:12px;color:#334155}
+.border-sample{height:0;margin-top:6px}
+.node-body{position:relative;display:flex;align-items:center;justify-content:center;border:0!important;background:transparent!important;padding:0}
+.shape-svg{position:absolute;inset:0;overflow:visible}
+.node-lines{position:relative;white-space:pre;text-align:center}
+.react-flow__node-flow{width:auto;height:auto}
+.flow-strip.vertical{display:flex;flex-direction:column;gap:0;max-width:720px}
+.flow-strip.vertical .flow-step{flex-direction:row}
+.flow-strip.vertical .flow-step .cell{flex:1}
+.flow-strip.vertical .flow-step .cell.step{flex:0 0 32%}
+.flow-strip.vertical .flow-arrow{height:34px}
+.flow-strip.vertical .flow-arrow .insert{bottom:auto;right:-34px}
+.flow-step .cell{border:0}
+.org{display:flex;flex-direction:column;align-items:center;max-width:960px;margin:0 auto}
+.org-root input{text-align:center;padding:12px 18px;border-radius:0;min-width:180px}
+.org-stem{height:26px;width:0}
+.org-units{display:grid;width:100%}
+.org-unit{display:flex;flex-direction:column;align-items:center}
+.org-bus{height:0;align-self:stretch}
+.org-drop{height:24px;width:0}
+.org-unit input{text-align:center;padding:10px 6px;width:80%;border-radius:0}
+.org-unit textarea{width:80%;border:0;text-align:center;resize:none;background:transparent;margin-top:6px}
+.bar{display:flex;align-items:center;gap:14px;max-width:900px}
+.bar input:first-child{padding:10px 16px;border-radius:0;min-width:180px;text-align:center}
+.bar-line{flex:1;height:0}
+.bar input:last-child{border:0;text-align:center;min-width:160px;background:transparent}
