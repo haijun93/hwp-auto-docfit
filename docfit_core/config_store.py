@@ -23,7 +23,11 @@ def migrate_settings(settings, defaults):
         if all(str(result.get(k,v)).strip()==v for k,v in prior.items()):
             for key in (*prior,'std_parspace_dash'):result[key]=defaults[key]
     if old('std_supplement_rev'):result['std_supplement_indent']=True
-    for key in ('label_symbols_rev','report_files_rev','std_parspace_rev','std_supplement_rev'):result[key]=2
+    # 줄 간격 최솟값 기본 160% -> 140%(사용자 지시, 2026-10-15). 예전 기본값 그대로인 설정만 옮긴다.
+    if old('linespacing_min_rev') and str(result.get('linespacing_min','160')).strip()=='160':
+        result['linespacing_min']=defaults['linespacing_min']
+    for key in ('label_symbols_rev','report_files_rev','std_parspace_rev','std_supplement_rev',
+                'linespacing_min_rev'):result[key]=2
     fonts=result.get('symbol_fonts',{})
     if isinstance(fonts,dict):
         for spec in fonts.values():

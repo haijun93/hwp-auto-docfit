@@ -494,7 +494,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             단어분리방지=False,
             실행모드='all',
             라벨기호설정=None,
-            줄간격최소=160,
+            줄간격최소=140,
             줄간격최대=200,
             표자간조정=True,
             쪽범위=None,

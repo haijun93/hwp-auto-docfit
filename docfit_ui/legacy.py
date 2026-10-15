@@ -6066,8 +6066,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 try:
                     줄간격최소값 = max(10, int(self.linespacing_min_var.get()))
                 except Exception:
-                    줄간격최소값 = 160
-                    self.linespacing_min_var.set("160")
+                    줄간격최소값 = 140
+                    self.linespacing_min_var.set("140")
 
                 try:
                     줄간격최대값 = max(10, int(self.linespacing_max_var.get()))

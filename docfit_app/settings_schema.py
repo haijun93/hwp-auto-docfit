@@ -19,7 +19,7 @@ DEFAULTS = {
     "two_pass_processing": False,
     "retry_body": "15",
     "retry_table": "5",
-    "linespacing_min": "160",
+    "linespacing_min": "140",
     "linespacing_max": "200",
     # 문두 라벨 굵게에서 뺄 기호(False). 별표(*, **)는 2026-10-03부터 기본으로 뺀다.
     "label_symbols": {"□": False, "※": False, "*": False, "**": False},

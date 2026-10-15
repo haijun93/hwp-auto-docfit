@@ -58,3 +58,13 @@ class ConfigStoreTest(unittest.TestCase):
         self.assertEqual(original, {"std_parspace_rev": 1})
         custom = migrate_settings({"std_parspace_rev": 1, "std_parspace_circle": "12"}, DEFAULTS)
         self.assertEqual(custom["std_parspace_circle"], "12")
+
+    def test_line_spacing_floor_moves_from_old_default_only(self):
+        # 줄 간격 최솟값 기본 160% -> 140%(사용자 지시, 2026-10-15): 예전 기본값만 옮기고 직접 고친 값은 둔다.
+        from docfit_core.config_store import migrate_settings
+        from docfit_app.settings_schema import DEFAULTS
+        self.assertEqual(DEFAULTS["linespacing_min"], "140")
+        self.assertEqual(migrate_settings({"linespacing_min": "160"}, DEFAULTS)["linespacing_min"], "140")
+        self.assertEqual(migrate_settings({"linespacing_min": "150"}, DEFAULTS)["linespacing_min"], "150")
+        moved = migrate_settings({"linespacing_min": "160"}, DEFAULTS)
+        self.assertEqual(migrate_settings({**moved, "linespacing_min": "160"}, DEFAULTS)["linespacing_min"], "160")

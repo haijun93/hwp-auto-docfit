@@ -4347,7 +4347,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 return
             if hwp is None:
                 return
-            # 줄간격 조정은 160~200% 범위를 벗어날 수 없다.
+            # 줄간격 조정은 설정 범위(기본 140~200%)를 벗어날 수 없다.
             퍼센트 = max(세트문장_최소줄간격_퍼센트, min(세트문장_최대줄간격_퍼센트, 퍼센트))
             try:
                 act = hwp.HAction
