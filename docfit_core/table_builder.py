@@ -98,7 +98,7 @@ def _text(value):
 def _style(value, default):
     value = value if isinstance(value, dict) else {}
     font = value.get("font", default["font"])
-    if font not in FONTS:
+    if font not in FONTS and font not in _installed_fonts():
         raise TableSpecError("고를 수 있는 글꼴이 아닙니다.")
     try:
         size = float(value.get("size", default["size"]))
@@ -113,6 +113,15 @@ def _style(value, default):
             raise TableSpecError("색은 #RRGGBB 형식이어야 합니다.")
     return {"font": font, "size": round(size * 2) / 2, "bold": bool(value.get("bold", default["bold"])),
             "color": color.upper(), "fill": fill.upper()}
+
+
+def _installed_fonts():
+    """한/글 전용 폴더·Windows에서 찾은 글꼴 이름(docfit_core.hangul_fonts). 찾지 못하면 빈 집합."""
+    try:
+        from .hangul_fonts import names
+        return set(names())
+    except Exception:
+        return set()
 
 
 def _styles(value, defaults):

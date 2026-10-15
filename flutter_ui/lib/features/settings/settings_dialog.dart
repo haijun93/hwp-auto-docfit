@@ -38,6 +38,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
   /// 마지막으로 바꾼 설정(한/글 조판 미리보기에서 그 설정이 닿는 문단을 강조한다).
   String? lastKey;
 
+  /// 이 PC에서 찾은 글꼴(한/글 전용 폴더 + Windows, docfit_core.hangul_fonts). 한국어 이름·한/글 글꼴 먼저.
+  List<String> fontNames = const [];
+  Map fontSummary = const {};
+
   late final CloseLease _closeLease;
   Future<bool> _prepareHostClose() async {
     if (busy || !canCloseEditor(context)) return false;
@@ -52,6 +56,30 @@ class _SettingsDialogState extends State<SettingsDialog> {
     super.initState();
     _closeLease = CloseGuards.register(_prepareHostClose);
     load();
+    _loadFonts();
+  }
+
+  Future<void> _loadFonts() async {
+    try {
+      final result = await widget.api('hangul_fonts', ['list']);
+      if (result is! Map || !mounted) return;
+      final fonts = [
+        for (final f in (result['fonts'] as List? ?? [])) f as Map,
+      ];
+      bool korean(String s) => RegExp('[가-힣]').hasMatch(s);
+      final names = [
+        for (final f in fonts)
+          if (korean('${f['name']}')) '${f['name']}',
+        for (final f in fonts)
+          if (!korean('${f['name']}')) '${f['name']}',
+      ];
+      setState(() {
+        fontNames = names;
+        fontSummary = result;
+      });
+    } catch (_) {
+      /* 글꼴 목록이 없으면 직접 입력만 한다 */
+    }
   }
 
   @override
@@ -242,6 +270,56 @@ class _SettingsDialogState extends State<SettingsDialog> {
         }),
       ),
     );
+    if (!number && key.endsWith('.font') && fontNames.isNotEmpty) {
+      // 한/글이 쓰는 글꼴(이 PC에서 자동으로 찾은 목록)에서 고른다. 직접 입력도 그대로 된다.
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          box,
+          const SizedBox(width: 6),
+          PopupMenuButton<String>(
+            tooltip: '이 PC 글꼴에서 고르기',
+            enabled: !locked,
+            icon: const Icon(Icons.font_download_outlined, color: Kiosk.blue),
+            itemBuilder: (context) => [
+              for (final name in fontNames)
+                PopupMenuItem(
+                  value: name,
+                  height: 36,
+                  child: Text(name, style: TextStyle(fontFamily: name)),
+                ),
+            ],
+            onSelected: (name) => setState(() {
+              inputs[key]?.text = name;
+              changed[key] = name;
+              lastKey = key;
+            }),
+          ),
+        ],
+      );
+    }
+    if (!number && key == 'hwp_font_folder' && fontSummary.isNotEmpty) {
+      final dirs = [
+        for (final d in (fontSummary['hangul_dirs'] as List? ?? [])) '$d',
+      ];
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          box,
+          const SizedBox(height: 6),
+          SizedBox(
+            width: 420,
+            child: Text(
+              dirs.isEmpty
+                  ? '한/글 전용 글꼴 폴더를 찾지 못했어요. Windows 글꼴 ${fontSummary['total'] ?? 0}종을 써요.'
+                  : '자동 인식: 한/글 전용 글꼴 ${fontSummary['hangul_count'] ?? 0}종 · 전체 ${fontSummary['total'] ?? 0}종\n${dirs.join('\n')}',
+              style: Kiosk.caption,
+            ),
+          ),
+        ],
+      );
+    }
     if (!number) return box;
     Widget step(IconData icon, double delta, String label) =>
         IconButton.filledTonal(

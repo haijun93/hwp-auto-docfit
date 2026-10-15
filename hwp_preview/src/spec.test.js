@@ -22,7 +22,7 @@ test('항목기호 문단은 한/글 단위(pt×100, 내어쓰기 pt×200)로 �
  assert.equal(para.props.koreanBreakUnit,0);               // 어절 단위 줄 나눔
 });
 test('여백은 HWPUNIT, 값은 범위를 벗어나지 않는다',()=>{
- const ops=plan({page:{left:20,right:20,top:12.7,bottom:12.7},paragraphs:[{text:'가',char:{size:999,font:'없는 글꼴',color:'red'}}]},measure);
+ const ops=plan({page:{left:20,right:20,top:12.7,bottom:12.7},paragraphs:[{text:'가',char:{size:999,font:'bad"font',color:'red'}}]},measure);
  assert.equal(ops[0].def.marginLeft,Math.round(20*7200/25.4));
  const run=ops[1].runs[0].props;
  assert.equal(run.fontSize,4000);
@@ -43,4 +43,11 @@ test('입력 한도와 기본값',()=>{
  assert.equal(many.length,30);
  assert.deepEqual(normalizeChar({}),{font:'한컴돋움',size:13,bold:false,spacing:0,ratio:100,color:'#000000'});
  assert.equal(charProps(normalizeChar({size:12.5})).fontSize,1250);
+});
+test('설치된 한/글 글꼴 이름도 쓰고, 명세에서 쓰는 글꼴을 모은다',async()=>{
+ const {fontsOf}=await import('./spec.js');
+ const ops=plan({paragraphs:[{text:'가',char:{font:'한컴 윤고딕 230'}},{text:'나',char:{font:'x"<script>'}}]},measure);
+ assert.equal(ops[1].runs[0].props.fontName,'한컴 윤고딕 230');
+ assert.equal(ops[2].runs[0].props.fontName,'한컴돋움');     // 이상한 이름은 기본 글꼴
+ assert.deepEqual(fontsOf({paragraphs:[{char:{font:'휴먼명조'},markerChar:{font:'HY견고딕'}}],table:{header:{font:'한컴돋움'}}}).sort(),['HY견고딕','한컴돋움','휴먼명조'].sort());
 });

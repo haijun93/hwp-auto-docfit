@@ -6,7 +6,7 @@ import './style.css';
 import {FORMAT,PALETTE,templates,template,node,edge,id,decode,validate,svg,layoutGraph,computeNodeAutoFitBox,edgeLabelBox,LINE_HEIGHT,nodeFont,nodePaint,edgePath,EDGE_DEFAULT} from './model.js';
 import {SHAPE_GROUPS,SHAPES,LINE_SHAPES,shapePath,DASHES,MARKERS,dashArray} from './shapes.js';
 import {sampleMindmap,mindmapGraph,addChild,addSibling,removeNode,updateNode,moveNode,findNode} from './mindmap.js';
-import {FONTS,ARROWS,DOWN_ARROWS,FLOW_PRESETS,MAX_FLOW_STEPS,MAX_FLOW_ROWS,MAX_ROWS,MAX_COLS,MAX_ORG,ROLE_NAMES,BORDER_TYPES,BORDER_WIDTHS,BORDER_NAMES,
+import {FONTS,registerFonts,ARROWS,DOWN_ARROWS,FLOW_PRESETS,MAX_FLOW_STEPS,MAX_FLOW_ROWS,MAX_ROWS,MAX_COLS,MAX_ORG,ROLE_NAMES,BORDER_TYPES,BORDER_WIDTHS,BORDER_NAMES,
  flowTable,gridTable,orgTable,barTable,flowDetails,resizeFlow,resizeFlowRows,insertStep,removeStep,resizeGrid,insertRow,removeRow,insertCol,removeCol,resizeOrg,
  setStyle,setBorder,exportSpec,cssOf,cssBorder} from './table.js';
 
@@ -214,7 +214,23 @@ const ROLE_SETS={flow:['step','date','arrow'],grid:['head','body'],org:['root','
 const BORDER_PARTS={flow:['line','split'],grid:['outer','inner'],org:['box','link'],bar:['box','line']};
 const newTables=()=>({flow:flowTable(5),grid:gridTable(4,4),org:orgTable(4),bar:barTable()});
 
+/** 앱(상위 창 docfitCall)에서 이 PC의 글꼴 목록을 받아 글꼴 고르기에 더한다(한국어 이름·한/글 글꼴 먼저). */
+function useInstalledFonts(){
+ const [,setCount]=useState(FONTS.length);
+ useEffect(()=>{
+  const call=window.parent!==window?window.parent.docfitCall:null;
+  if(typeof call!=='function')return;
+  call('hangul_fonts',JSON.stringify(['list'])).then(text=>{
+   const fonts=JSON.parse(text)?.fonts??[];
+   const korean=n=>/[가-힣]/.test(n);
+   const ordered=[...fonts.filter(f=>korean(f.name)),...fonts.filter(f=>!korean(f.name))].map(f=>f.name);
+   setCount(registerFonts(ordered).length);
+  }).catch(()=>{});
+ },[]);
+}
+
 function App(){
+ useInstalledFonts();
  const [graph,setGraph]=useState({nodes:[],edges:[]}),[name,setName]=useState('새 '+TITLE),[busy,setBusy]=useState(false),[status,setStatus]=useState('도형을 추가하고 연결점을 끌어 연결하세요.');
  const [mode,setMode]=useState('diagram'),[role,setRole]=useState({flow:'step',grid:'head',org:'root',bar:'title'});
  const [mmSelected,setMmSelected]=useState(null);

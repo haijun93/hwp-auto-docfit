@@ -3,7 +3,7 @@
 // Flutter 설정·서식 요소 화면이 같은 출처 iframe으로 띄우고 postMessage로 명세를 보낸다. 외부 접속 없음.
 import init,{HwpDocument} from '@rhwp/core';
 import wasmUrl from '@rhwp/core/rhwp_bg.wasm?url';
-import {plan,cssFont,normalizeChar} from './spec.js';
+import {plan,cssFont,normalizeChar,fontsOf} from './spec.js';
 import './style.css';
 
 let ctx=null,lastFont='';
@@ -104,8 +104,37 @@ function lineCounts(doc,result){
  return result.paras.map((op,i)=>{try{return JSON.parse(doc.getLineInfo(0,i,op.text.length)).lineCount;}catch{return null;}});
 }
 
+// 한/글 전용 글꼴(휴먼명조·한컴돋움 …)은 Windows에 설치되지 않아 브라우저가 모른다. 앱(상위 창 docfitCall)에서
+// 글꼴 파일을 받아 FontFace로 올린 뒤 조판한다. 받지 못하면 대체 글꼴로 그린다.
+let hangulFonts=null;const loaded=new Map();
+async function call(method,args){
+ const fn=window.parent!==window?window.parent.docfitCall:null;
+ if(typeof fn!=='function')return null;
+ return JSON.parse(await fn(method,JSON.stringify(args)));
+}
+/** 브라우저가 이미 쓸 수 있는 글꼴인가: 없는 글꼴(대체 글꼴)과 글자 폭이 다르면 있다(한/글이 글꼴을 등록해 둔 PC가 많다). */
+function browserKnows(name){
+ const sample='가나다라 공익활동 Wg123';
+ return ['serif','sans-serif'].some(g=>measure(`20px "${name}", ${g}`,sample)!==measure(`20px ${g}`,sample));
+}
+async function ensureFonts(names){
+ try{
+  if(hangulFonts===null){const list=await call('hangul_fonts',['list']);hangulFonts=new Set((list?.fonts??[]).filter(f=>f.source==='hangul').map(f=>f.name));}
+  await Promise.all(names.filter(n=>hangulFonts.has(n)&&!browserKnows(n)).map(name=>{
+   if(!loaded.has(name))loaded.set(name,(async()=>{
+    const data=await call('hangul_fonts',['data',{name}]);
+    if(!data?.base64)return false;
+    const bytes=Uint8Array.from(atob(data.base64),c=>c.charCodeAt(0));
+    const face=new FontFace(name,bytes);await face.load();document.fonts.add(face);lastFont='';return true;
+   })().catch(()=>false));
+   return loaded.get(name);
+  }));
+ }catch{/* 글꼴을 못 받아도 대체 글꼴로 그린다 */}
+}
+
 async function render(spec,requestId){
  await ready;
+ await ensureFonts(fontsOf(spec));
  const started=performance.now();
  const doc=HwpDocument.createEmpty();
  try{

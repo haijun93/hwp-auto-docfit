@@ -1001,6 +1001,25 @@ class DesktopWebBridge:
                     "coverage": self._cached_coverage(identifier, analysis), "nodes": nodes}
         return self._tk(lambda: response(execute))
 
+    def hangul_fonts(self, action, payload=None):
+        """한/글이 쓰는 글꼴(한/글 전용 폴더 + Windows 글꼴) 목록과, 미리보기가 쓸 글꼴 파일(base64).
+
+        웹 화면은 한/글 전용 글꼴(휴먼명조·한컴돋움 …)을 모르므로 미리보기가 이 파일을 받아 FontFace로 올린다.
+        """
+        import base64
+        from docfit_core import hangul_fonts
+        if action == "list":
+            return {"fonts": [{"name": e["name"], "source": e["source"]} for e in hangul_fonts.catalog()],
+                    **hangul_fonts.summary()}
+        if action == "data":
+            name = str((payload or {}).get("name") or "")[:80]
+            path = hangul_fonts.font_file(name)
+            # 미리보기용이라 너무 큰 글꼴(한컴돋움 약 24MB 등)은 보내지 않는다(대체 글꼴로 그린다).
+            if path is None or path.stat().st_size > 15 * 1024 * 1024:
+                return {"name": name, "base64": None}
+            return {"name": name, "base64": base64.b64encode(path.read_bytes()).decode("ascii")}
+        raise ValueError("지원하지 않는 글꼴 작업입니다.")
+
     def idioms(self, action, payload):
         """설정의 글자 상용구·본문 상용구 관리(docfit_app.idiom_service). 한/글이 읽는 사용자 폴더 파일을 고친다."""
         import sys
@@ -1413,7 +1432,7 @@ class _BrowserApi:
             "get_state", "add_files", "add_folder", "add_paths", "remove_file",
             "clear_files", "set_mode", "set_range", "start", "stop",
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
-            "get_pending_dialog", "resolve_dialog", "enable_close_guard", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults",
+            "get_pending_dialog", "resolve_dialog", "enable_close_guard", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults",
             "open_results", "next_job", "run_tool", "open_result",
             "show_result", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",

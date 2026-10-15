@@ -4,6 +4,13 @@
 //  조직표(조직표) 위 상자에서 세로선 → 가로 버스 → 아래 부서 상자(칸 테두리로 그린 선)
 //  장식표(장식표) '2026 추진실적 ……(8. 31. 현재)': 왼쪽 글 상자, 가운데 점선, 오른쪽 날짜
 export const FONTS=['한컴돋움','휴먼명조','HY견고딕','HY헤드라인M','함초롬돋움','함초롬바탕','돋움','맑은 고딕','나눔고딕','굴림'];
+// 이 PC에서 찾은 글꼴(한/글 전용 폴더 + Windows, docfit_core.hangul_fonts)을 목록에 더한다. 문서를 다른 PC에서도
+// 열 수 있게, 검증은 목록 대신 안전한 글꼴 이름 형식(따옴표·꺾쇠 없는 40자 이하)을 본다.
+export const isFontName=v=>typeof v==='string'&&(FONTS.includes(v)||/^[^"'<>\;{}]{1,40}$/.test(v));
+export function registerFonts(names){
+ for(const name of names)if(isFontName(name)&&!FONTS.includes(name))FONTS.push(name);
+ return FONTS;
+}
 // 흐름표 화살표: 가로 방향과 세로 방향.
 export const ARROWS=['➜','⇨','▶','▷','→','⇒','➡','➤','►','≫'];
 export const DOWN_ARROWS=['▼','⇩','↓','▽','⬇','⇓'];
@@ -136,7 +143,7 @@ const text=v=>typeof v==='string'&&v.length<=MAX_TEXT&&!/[\u0000-\u0008\u000b\u0
 const hex=v=>typeof v==='string'&&/^#[0-9A-Fa-f]{6}$/.test(v);
 function style(value,fallback){
  const s={...fallback,...(value??{})};
- if(!FONTS.includes(s.font)||typeof s.size!=='number'||!(s.size>=6&&s.size<=40)||typeof s.bold!=='boolean'||!hex(s.color)||(s.fill&&!hex(s.fill)))
+ if(!isFontName(s.font)||typeof s.size!=='number'||!(s.size>=6&&s.size<=40)||typeof s.bold!=='boolean'||!hex(s.color)||(s.fill&&!hex(s.fill)))
   throw new Error('글자 서식(글꼴·크기·색)을 확인해 주세요.');
  return {font:s.font,size:s.size,bold:s.bold,color:s.color,fill:s.fill||''};
 }

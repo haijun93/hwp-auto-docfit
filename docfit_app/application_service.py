@@ -52,7 +52,7 @@ class ApplicationService:
                   'clear_files':0,'set_mode':1,'inspect_document':1,'get_log':0,'clear_log':0,'shutdown':0}
         counts.update({'table_template':2,'document_tool':2,'get_pending_dialog':0,'stage_config':2,'set_stage':2,'set_stage_default':1})
         counts.update({'set_option':2,'set_include_spacing':1,'set_reset_spacing':1,'set_table_spacing':1,'set_exclude_tables':1,'set_range':3,'set_card_option':2})
-        counts.update({'flow_editor':2,'idioms':2})
+        counts.update({'flow_editor':2,'idioms':2,'hangul_fonts':2})
         counts.update({'diagram_list':0,'diagram_load':1,'diagram_save':3,'diagram_delete':1})
         if method not in counts:
             raise ServiceError('NOT_AVAILABLE','이 네이티브 시제품에서는 해당 기능을 아직 사용할 수 없습니다.')
@@ -142,6 +142,10 @@ class ApplicationService:
                     self.data.files.append(result['path'])
                 return result
             return response(execute)
+        if method=='hangul_fonts':
+            from docfit_core import hangul_fonts
+            if args[0]=='list':return {'fonts':[{'name':e['name'],'source':e['source']} for e in hangul_fonts.catalog()],**hangul_fonts.summary()}
+            raise ServiceError('NOT_AVAILABLE','이 네이티브 시제품에서는 글꼴 파일을 내주지 않습니다.')
         if method=='idioms':
             from docfit_app.idiom_service import IdiomService
             app_copy=Path(__file__).resolve().parents[1]/'resources'/'HWP.IDO'

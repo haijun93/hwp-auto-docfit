@@ -2,7 +2,7 @@
 // 배치는 자동(가운데 주제 좌우로 가지를 나눠 펼침)이고, 그린 결과는 일반 도형·연결선(model.js)으로 바꿔
 // 화면·PNG 내보내기를 같이 쓴다.
 import {SHAPES} from './shapes.js';
-import {FONTS} from './table.js';
+import {isFontName} from './table.js';
 const MAX_NODES=300,MAX_TEXT=200;
 // 가지 색(1단계 가지마다 돌아가며).
 export const BRANCH_COLORS=['#3B82F6','#16A34A','#EA580C','#7C3AED','#DC2626','#CA8A04','#0891B2','#DB2777'];
@@ -58,7 +58,7 @@ export function validateMindmap(map){
   for(const k of ['fill','stroke','textColor'])if(s[k]!==undefined){if(!(hex(s[k])||(k!=='textColor'&&s[k]==='none')))throw new Error('가지 색을 확인해 주세요.');style[k]=s[k];}
   if(s.size!==undefined){if(typeof s.size!=='number'||!(s.size>=6&&s.size<=40))throw new Error('가지 글자 크기를 확인해 주세요.');style.size=s.size;}
   if(s.bold!==undefined){if(typeof s.bold!=='boolean')throw new Error('가지 굵게 값을 확인해 주세요.');style.bold=s.bold;}
-  if(s.font!==undefined){if(!FONTS.includes(s.font))throw new Error('가지 글꼴을 확인해 주세요.');style.font=s.font;}
+  if(s.font!==undefined){if(!isFontName(s.font))throw new Error('가지 글꼴을 확인해 주세요.');style.font=s.font;}
   return {id:n.id,text:n.text,style,children:n.children.map(check)};
  };
  const layout=['both','right','down'].includes(map.layout)?map.layout:'both';

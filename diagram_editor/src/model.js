@@ -1,7 +1,7 @@
 // Application-owned flow document model. React Flow (MIT) renders this model.
 // 도형은 PPT처럼 40여 종(shapes.js), 바탕색·테두리색·굵기·선 모양·글자 서식을 도형마다 정한다.
 // 연결선은 꺾은선·직선·곡선, 색·굵기·선 모양, 양 끝 화살표 모양을 고른다. 예전 문서(도형 4종·색 이름)도 그대로 연다.
-import {FONTS,validateTable} from './table.js';
+import {FONTS,isFontName,validateTable} from './table.js';
 import {SHAPES,LINE_SHAPES,shapePath,textFactor,DASHES,MARKERS,dashArray,markerSvg} from './shapes.js';
 import {validateMindmap,mindmapGraph} from './mindmap.js';
 export const FORMAT = 'docfit-flow';
@@ -78,7 +78,7 @@ export function edgeStyle(data){
 export const TEXT_FONTS=FONTS;
 export function nodeTextStyle(data){
  const style={};
- if(data.font!==undefined){if(!FONTS.includes(data.font))throw new Error('도형 글꼴을 확인해 주세요.');style.font=data.font;}
+ if(data.font!==undefined){if(!isFontName(data.font))throw new Error('도형 글꼴을 확인해 주세요.');style.font=data.font;}
  if(data.size!==undefined){if(typeof data.size!=='number'||!(data.size>=6&&data.size<=40))throw new Error('도형 글꼴 크기를 확인해 주세요.');style.size=data.size;}
  if(data.bold!==undefined){if(typeof data.bold!=='boolean')throw new Error('도형 굵게 값을 확인해 주세요.');style.bold=data.bold;}
  if(data.textColor!==undefined){if(!hex(data.textColor))throw new Error('도형 글자색을 확인해 주세요.');style.textColor=data.textColor;}

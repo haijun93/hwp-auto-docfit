@@ -13,7 +13,8 @@ const ALIGN={left:'left',center:'center',right:'right',justify:'justify','왼쪽
 const mm=v=>Math.round(v*7200/25.4);
 const clamp=(v,lo,hi,fallback)=>Number.isFinite(v)?Math.min(hi,Math.max(lo,v)):fallback;
 const str=(v,max)=>typeof v==='string'?v.slice(0,max).replace(/[\u0000-\u0008\u000b-\u001f]/g,''):'';
-const font=v=>FONTS.includes(v)?v:null;
+// 기본 목록 밖이라도 한/글·Windows에서 찾은 글꼴 이름(따옴표·꺾쇠 없는 40자 이하)은 쓴다(docfit_core.hangul_fonts).
+const font=v=>FONTS.includes(v)||(typeof v==='string'&&/^[^"'<>\;{}]{1,40}$/.test(v))?v:null;
 
 export function normalizeChar(c={},base={}){
  return {font:font(c.font)??base.font??'한컴돋움',size:clamp(+c.size,6,40,base.size??13),bold:typeof c.bold==='boolean'?c.bold:(base.bold??false),
@@ -72,3 +73,12 @@ export function charProps(c){
  return {fontName:c.font,fontSize:Math.round(c.size*100),bold:!!c.bold,textColor:c.color,spacings:seven(c.spacing),ratios:seven(c.ratio)};
 }
 export function cssFont(c){return (c.bold?'bold ':'')+Math.round(c.size*4/3)+'px "'+c.font+'"';}
+
+/** 명세가 쓰는 글꼴 이름들(한/글 전용 글꼴을 미리 올릴 때 쓴다). */
+export function fontsOf(spec){
+ const names=new Set();
+ const add=c=>{if(c&&typeof c.font==='string')names.add(c.font);};
+ for(const p of spec?.paragraphs??[]){add(p.char);add(p.markerChar);}
+ add(spec?.table?.header);add(spec?.table?.body);
+ return [...names];
+}

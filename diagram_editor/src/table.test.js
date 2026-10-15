@@ -28,7 +28,8 @@ test('text styles are validated and only chosen grid roles are exported',()=>{
  const spec=exportSpec(g);
  assert.deepEqual(Object.keys(spec.styles),['head']);
  assert.equal(spec.styles.head.font,'HY견고딕');
- assert.throws(()=>validateTable(setStyle(g,'body',{font:'없는 글꼴'})));
+ assert.throws(()=>validateTable(setStyle(g,'body',{font:'x"<y'})));
+ assert.equal(validateTable(setStyle(g,'body',{font:'한컴 윤고딕 230'})).styles.body.font,'한컴 윤고딕 230');   // 이 PC에서 찾은 글꼴 이름
  assert.throws(()=>validateTable(setStyle(g,'body',{size:99})));
  assert.throws(()=>validateTable(setStyle(g,'body',{color:'red'})));
 });
