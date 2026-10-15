@@ -117,6 +117,34 @@ def is_design_table(table):
     return True
 
 
+def is_diagram_table(table):
+    """칸 테두리를 선으로 써서 그린 그림 표(조직도·여백 칸으로 꾸민 참고 상자)인가.
+
+    예시('표 다이어그램 연습' 조직표, 2026-10-15 학습): 문화경제국 조직도는 5행 18열 66칸 중 글 칸 13개,
+    첫 행 13칸 중 글 칸 1개다. 데이터 표·빈 양식 표는 첫 행(머리글)이 글로 차 있어 해당하지 않는다.
+    기준: 칸 8개 이상, 글 칸이 35% 이하, 빈 칸 6개 이상, 첫 행 칸의 절반 이상이 비어 있음.
+    실측: 실제 기관 문서 30개 표 461개에서 조직도·참고 상자·장식 막대 표만 걸렸다.
+    """
+    cells = _cells(table)
+    if len(cells) < 8:
+        return False
+    texts = ["".join(_text(tc).split()) for tc in cells]
+    filled = sum(1 for text in texts if text)
+    first = [text for tc, text in zip(cells, texts) if _position(tc)[0] == 0]
+    return (filled <= len(cells) * 0.35 and len(cells) - filled >= 6
+            and sum(1 for text in first if text) * 2 < len(first))
+
+
+def is_flow_table(table):
+    """화살표만 든 칸으로 단계를 이은 흐름표('공고 및 접수 ➜ 1차 서류평가 ➜ …' 추진 일정, 2026-10-15 학습)."""
+    return any(map(_is_arrow_cell, _cells(table)))
+
+
+def is_drawn_table(table):
+    """데이터가 아니라 모양으로 뜻을 전하는 표(장식 막대 표·조직도·흐름표). 칸 너비·서식을 바꾸면 그림이 깨진다."""
+    return is_design_table(table) or is_diagram_table(table) or is_flow_table(table)
+
+
 def has_unit_caption(table):
     """'(단위: 개소)'처럼 단위를 적은 캡션이 달린 표인가. '<표 1> 추진 현황' 같은 일반 캡션 표는 데이터 표로 본다."""
     caption = _child(table, "caption")
@@ -124,9 +152,9 @@ def has_unit_caption(table):
 
 
 def is_user_designed_table(table):
-    """사용자가 꾸민 표(장식 막대 표·단위 캡션 표)인가. 이런 표는 서식·너비 재배분·자간 작업을 하지 않는다
-    (사용자 규칙, 2026-10-15). 모든 단계가 이 판정 하나를 쓴다."""
-    return is_design_table(table) or has_unit_caption(table)
+    """사용자가 꾸민 표(장식 막대 표·조직도·흐름표·단위 캡션 표)인가. 이런 표는 서식·너비 재배분·자간 작업을
+    하지 않는다(사용자 규칙, 2026-10-15). 모든 단계가 이 판정 하나를 쓴다."""
+    return is_drawn_table(table) or has_unit_caption(table)
 
 
 def protected_tables(root):
@@ -163,10 +191,10 @@ def is_grid_table(table):
     상자라 데이터 표 서식을 입히지 않는다(실측: 실제 기관 업무계획 문서).
     """
     rows, cols = _size(table)
-    if rows < 2 or cols < 2 or is_design_table(table):
+    if rows < 2 or cols < 2 or is_drawn_table(table):
         return False
     cells = _cells(table)
-    if any(_tag(x) == "tbl" for tc in cells for x in tc.iter()) or any(map(_is_arrow_cell, cells)):
+    if any(_tag(x) == "tbl" for tc in cells for x in tc.iter()):
         return False
     head = _header_rows(table)
     starts = [_position(tc)[0] for tc in cells]

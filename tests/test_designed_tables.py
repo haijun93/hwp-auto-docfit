@@ -146,6 +146,25 @@ class DesignedTableTest(unittest.TestCase):
         tables = [t for t in section.iter() if t.tag.endswith('}tbl')]
         self.assertEqual(protected_tables(section), {id(tables[0]), id(tables[1])})
 
+    def test_learned_org_chart_and_flow_tables_are_user_designs(self):
+        # '표 다이어그램 연습' 학습(2026-10-15): 칸 테두리로 그린 조직도와 화살표 흐름표는 데이터 표가 아니다.
+        from docfit_core.table_style import is_diagram_table, is_flow_table
+        empty = lambda c, r: cell('', c, r)
+        org = fromstring(table([[empty(0, 0), empty(1, 0), cell('문화경제국', 2, 0), empty(3, 0), empty(4, 0)],
+                                [empty(c, 1) for c in range(5)],
+                                [cell('관광정책과', 0, 2), empty(1, 2), cell('지역경제과', 2, 2), empty(3, 2),
+                                 cell('문화예술과', 4, 2)]], 5))
+        flow = fromstring(table([[cell('공고 및 접수', 0, 0), cell('➜', 1, 0, 2), cell('서류평가', 2, 0)],
+                                 [cell('9. 14.', 0, 1), cell('10. 7.', 2, 1)]], 3))
+        self.assertTrue(is_diagram_table(org) and is_user_designed_table(org))
+        self.assertFalse(is_grid_table(org))   # 예시 표 학습·기본 표 서식 대상이 아니다
+        self.assertTrue(is_flow_table(flow) and is_user_designed_table(flow))
+        # 빈 양식 표(머리글은 차 있고 본문이 빈 표)는 여전히 데이터 표다.
+        form = fromstring(table([[cell('구 분', 0, 0), cell('성 명', 1, 0), cell('연락처', 2, 0)]]
+                                + [[empty(c, r) for c in range(3)] for r in (1, 2, 3)], 3))
+        self.assertFalse(is_diagram_table(form) or is_user_designed_table(form))
+        self.assertTrue(is_grid_table(form))
+
     def test_spacing_reset_keeps_designed_and_captioned_tables(self):
         header = fromstring(f'<hh:head {NS}><hh:charProperties>'
                             '<hh:charPr id="1" height="1100"><hh:spacing hangul="10"/></hh:charPr>'

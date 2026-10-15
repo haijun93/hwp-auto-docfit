@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 
 from .format_elements import HeaderIndex, cell_paragraphs, run_text
-from .table_style import has_unit_caption, header_row_count, is_design_table
+from .table_style import has_unit_caption, header_row_count, is_drawn_table
 
 _OBJECTS = {"tbl", "pic", "ole", "equation", "rect", "ellipse", "line", "arc", "polygon", "curve",
             "connectLine", "container", "textart", "chart", "video"}
@@ -82,7 +82,7 @@ def is_target(table):
     """비례 너비를 적용할 표인지: 가로로 칸 둘 이상, 개체 없음, 절대 너비, 칸 정보 완전, 글 있음."""
     cols = _int(table.get("colCnt"))
     size = _child(table, "sz")
-    if cols < 2 or size is None or (size.get("widthRelTo") or "ABSOLUTE") != "ABSOLUTE" or is_design_table(table):
+    if cols < 2 or size is None or (size.get("widthRelTo") or "ABSOLUTE") != "ABSOLUTE" or is_drawn_table(table):
         return False
     cells = _cells(table)
     if not cells:
