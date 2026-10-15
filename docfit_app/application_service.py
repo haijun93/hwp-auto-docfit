@@ -56,7 +56,7 @@ class ApplicationService:
         counts.update({'diagram_list':0,'diagram_load':1,'diagram_save':3,'diagram_delete':1})
         if method not in counts:
             raise ServiceError('NOT_AVAILABLE','이 네이티브 시제품에서는 해당 기능을 아직 사용할 수 없습니다.')
-        if len(args)!=counts[method]:
+        if not (method == 'diagram_save' and len(args) in (3, 4)) and len(args)!=counts[method]:
             raise ServiceError('INVALID_INPUT','입력 항목 수를 확인해 주세요.')
         if self.data.closing and method != 'shutdown':
             raise ServiceError('BACKEND_CLOSING','백엔드가 종료 중입니다.')
@@ -188,7 +188,7 @@ class ApplicationService:
             if action=='export_png':return self.flows.export_png(payload.get('base64'))
             if action=='list':return self.flows.list()
             if action=='load':return self.flows.load(payload.get('id'))
-            if action=='save':return self.flows.save(payload.get('id'),payload.get('name'),payload.get('snapshot'))
+            if action=='save':return self.flows.save(payload.get('id'),payload.get('name'),payload.get('snapshot'),payload.get('revision'))
             if action=='delete':return self.flows.delete(payload.get('id'))
             raise ServiceError('INVALID_ACTION','흐름도 작업을 확인해 주세요.')
         if method=='diagram_list': return self.diagrams.list()

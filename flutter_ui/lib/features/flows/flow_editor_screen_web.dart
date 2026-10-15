@@ -1,3 +1,4 @@
+import '../../core/close_guards.dart';
 import 'edit_save_state.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -20,12 +21,21 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
   late final web.HTMLIFrameElement frame;
   late final JSFunction listener;
   String name = '새 업무 흐름도';
-  String? identity;
+  String? identity, revision;
   final saveState = EditSaveState();
   bool dirty = false, ready = false, busy = false;
+  late final CloseLease _closeLease;
+  Future<bool> _prepareHostClose() async {
+    if (saveState.saving || busy || !canCloseEditor(context)) return false;
+    if (!await confirmDiscard() || !mounted) return false;
+    Navigator.of(context).pop();
+    return true;
+  }
+
   @override
   void initState() {
     super.initState();
+    _closeLease = CloseGuards.register(_prepareHostClose);
     viewType = 'docfit-flow-${DateTime.now().microsecondsSinceEpoch}';
     frame = web.HTMLIFrameElement()
       ..src = Uri.base
@@ -126,6 +136,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
         case 'request_new':
           if (await confirmDiscard()) {
             identity = null;
+            revision = null;
             name = '새 업무 흐름도';
             dirty = false;
             post({'type': 'new'});
@@ -157,10 +168,12 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
               'id': selectedId,
               'name': message['name'],
               'snapshot': message['snapshot'],
+              'revision': revision,
             });
             if (result is! Map ||
                 result["id"] is! String ||
-                result["name"] is! String) {
+                result["name"] is! String ||
+                result['revision'] is! String) {
               throw Exception("저장 응답을 확인해 주세요.");
             }
           } catch (_) {
@@ -169,6 +182,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
           }
           saveState.complete(targetGeneration, success: true);
           identity = result['id'] as String;
+          revision = result['revision'] as String;
           name = result['name'] as String;
           dirty = saveState.dirty;
           post({'type': 'mark_saved', 'generation': targetGeneration});
@@ -202,6 +216,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
       notice('흐름도 작업에 실패했어요: $error');
     } finally {
       busy = false;
+      if (mounted) setState(() {});
     }
   }
 
@@ -213,7 +228,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
     }
   }
 
-  Future<void> save() async {
+  Future<void> save({bool asCopy = false}) async {
     final input = TextEditingController(text: name);
     final selected = await showHostDialog<String>(
       context: context,
@@ -239,6 +254,10 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
     );
     input.dispose();
     if (selected != null && selected.isNotEmpty) {
+      if (asCopy) {
+        identity = null;
+        revision = null;
+      }
       post({'type': 'save', 'id': identity, 'name': selected});
     }
   }
@@ -305,6 +324,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
         await storage('delete', {'id': result['delete']});
         if (identity == result['delete']) {
           identity = null;
+          revision = null;
           dirty = true;
         }
       }
@@ -314,6 +334,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
     final loaded = await storage('load', {'id': result['id']});
     if (loaded is! Map) throw Exception('흐름도 응답을 확인해 주세요.');
     identity = loaded['id'] as String;
+    revision = loaded['revision'] as String;
     name = loaded['name'] as String;
     dirty = false;
     post({
@@ -338,6 +359,15 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
     child: Scaffold(
       appBar: AppBar(
         title: Text(name),
+        actions: [
+          IconButton(
+            tooltip: '사본으로 저장',
+            icon: const Icon(Icons.copy),
+            onPressed: ready && !busy && !saveState.saving
+                ? () => save(asCopy: true)
+                : null,
+          ),
+        ],
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () async {
@@ -359,6 +389,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
   );
   @override
   void dispose() {
+    _closeLease.release();
     web.window.removeEventListener('message', listener);
     super.dispose();
   }

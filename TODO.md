@@ -1,3 +1,31 @@
+## [반영·alpha] Alpha 12/13 — MD 계층·로마자 중제목
+
+- [x] MD #~###### 및 # # / # ## 목차 해석, ※ 주석으로 인한 감지 누락 방지.
+- [x] MD 제목·본문 표 실제 삽입 및 날짜·금액·붙임 보존.
+- [x] 로1 / Ⅰ 일반 문단을 예시의 3칸 중제목 표로 변환, 반복 실행 중복 생성 방지.
+- [x] MD의 Ⅰ~Ⅴ 및 부분 장 번호 보존, 하위 목차 계층 연결.
+- [x] Alpha 12/13 기능 커밋을 github·origin alpha로 푸시(최초 인증 오류 후 재시도 성공).
+- 근거: docs/MARKDOWN_DOCUMENT_ALPHA12.md, docs/ROMAN_HEADING_ALPHA13.md.
+  Windows COM 조판·WebView2·EXE 실기기 검증은 별도 유지.
+
+## [반영·alpha] Alpha 11 — bf955f1 전체 최종 검토 F1~F5
+
+- [x] F1/P1: fidelity 고정 .tmp 별칭을 통한 원본 쓰기 차단, 임시 파일 독점 생성·기존 대상 보존.
+- [x] F2/P1: OS 창 닫기와 Flutter 미저장/저장 대기 상태 연결, 비동기 종료 확인·회귀 검증(Windows X/Alt+F4 실기기 검증은 별도).
+- [x] F3/P2: 표 보호 판별 실패를 빈 보호 목록과 구분, 오류 시 후속 문서 수정 중단.
+- [x] F4/P2: 흐름도·tldraw 다중 편집자의 문서별 잠금+expected_revision 충돌 검사와 UI 연결.
+- [x] F5/P2: kordoc 런타임 버전별 프로세스 설치 잠금, 이미 완성된 유효 설치를 삭제하지 않고 재사용.
+- 근거: docs/FINAL_CODE_REVIEW_BF955F1.md. 수정 근거: docs/FINAL_REVIEW_FIXES_ALPHA11.md. Windows COM·WebView2·EXE 실기기 검증은 별도.
+
+## [반영·alpha] Alpha 10 갱신 코드 리뷰 6ac66ef
+
+- [x] R1/P1: 추적되지 않는 settings_preview_data.dart 의존성 제거/사전 생성, 새 clone의 CI 분석 통과.
+- [x] R2/P1: 병합 칸+빈 열의 너비가 0이 되는 계산 수정, 모든 열/병합 칸의 양수 폭 검증.
+- [x] R3/P2: 프로필 요소 왕복 시 edits의 텍스트 값 표시·미리보기·저장 값 일치.
+- [x] R4/P2: 캡션 표의 날짜 칸 lineWrap 보호, 표 경계별 재귀 판정.
+- [x] R5/P2: 일반 표 안 중첩 장식/캡션 표의 COM 보호 영역 전수 수집.
+- 근거: docs/REVIEW_FIXES_6ac66ef.md. Windows COM/EXE 실기기 검증은 별도 유지.
+
 ## [반영·alpha] Alpha 9 — Alpha 8 커밋 리뷰 7497338 수정
 
 - [x] R1/P1: CI 동적 engine/ui 모듈 수집과 EXE smoke test.

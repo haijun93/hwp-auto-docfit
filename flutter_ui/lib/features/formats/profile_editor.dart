@@ -1,3 +1,4 @@
+import '../../core/close_guards.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -108,9 +109,19 @@ class _ProfileEditorState extends State<ProfileEditor> {
   int generation = 0;
   int selected = 0;
   final Map<String, Map> edits = {};
+  late final CloseLease _closeLease;
+  Future<bool> _prepareHostClose() async {
+    if (busy || !canCloseEditor(context)) return false;
+    if (edits.isNotEmpty && !await confirmHostDiscard(context)) return false;
+    if (!mounted) return false;
+    Navigator.of(context).pop();
+    return true;
+  }
+
   @override
   void initState() {
     super.initState();
+    _closeLease = CloseGuards.register(_prepareHostClose);
     request('get');
   }
 
@@ -146,6 +157,12 @@ class _ProfileEditorState extends State<ProfileEditor> {
     } finally {
       if (mounted) setState(() => busy = false);
     }
+  }
+
+  @override
+  void dispose() {
+    _closeLease.release();
+    super.dispose();
   }
 
   List<Map> get _nodes => [
@@ -216,7 +233,7 @@ class _ProfileEditorState extends State<ProfileEditor> {
         width: 180,
         child: TextFormField(
           key: ValueKey('$generation:$path:${field['key']}'),
-          initialValue: '${field['value']}',
+          initialValue: value,
           enabled: editable,
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
           decoration: InputDecoration(

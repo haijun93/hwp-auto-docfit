@@ -21,6 +21,8 @@ import shutil
 import sys
 import uuid
 import zipfile
+import re
+from docfit_infra.storage.process_lock import ProcessLock
 from pathlib import Path, PurePosixPath
 
 RUNTIME_FOLDER_NAME = "kordoc-runtime"
@@ -98,6 +100,15 @@ def _safe_member(name: str) -> PurePosixPath:
 
 
 def install_pack(pack: str | Path, version: str, root: str | Path | None = None) -> Path:
+    """Serialize first installation across callers and reuse the winner."""
+    if not re.fullmatch(r"\d+\.\d+\.\d+", version):
+        raise RuntimePackError("kordoc 버전 형식이 올바르지 않습니다.")
+    root = Path(root) if root is not None else installed_root()
+    with ProcessLock(root / (version + ".install.lock")):
+        return _install_pack_locked(pack, version, root)
+
+
+def _install_pack_locked(pack, version, root):
     """꾸러미 ZIP을 검사한 뒤 root/<version>에 원자적으로 푼다. 이미 있으면 그대로 쓴다."""
     pack = Path(pack)
     root = Path(root) if root is not None else installed_root()

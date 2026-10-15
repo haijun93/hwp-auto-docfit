@@ -15,14 +15,14 @@ class FlowService(DiagramService):
         # This editor uses React Flow (MIT); tldraw gates remain in DiagramService.
         pass
 
-    def save(self, diagram_id, name, snapshot):
+    def save(self, diagram_id, name, snapshot, expected_revision=None):
         if not isinstance(snapshot, dict) or snapshot.get("format") != "docfit-flow" or snapshot.get("version") != 1:
             raise ServiceError("INVALID_FLOW", "일반 흐름도 형식을 확인해 주세요.")
         if not isinstance(snapshot.get("nodes"), list) or not isinstance(snapshot.get("edges"), list):
             raise ServiceError("INVALID_FLOW", "도형과 연결선 목록을 확인해 주세요.")
         if len(snapshot["nodes"]) > 1000 or len(snapshot["edges"]) > 2000:
             raise ServiceError("FLOW_LIMIT", "도형 또는 연결선 수가 제한을 넘습니다.")
-        return super().save(diagram_id, name, snapshot)
+        return super().save(diagram_id, name, snapshot, expected_revision)
 
 
     @staticmethod

@@ -87,7 +87,7 @@ class OfflineRuntimeTests(unittest.TestCase):
                 kr.install_pack(pack, VERSION, self.root / "install")
         self.assertFalse((self.root / "escape.txt").exists())
         self.assertFalse((self.root / "install" / VERSION).exists())
-        self.assertEqual([p.name for p in (self.root / "install").iterdir()], [])  # 반쯤 푼 폴더도 남기지 않는다
+        self.assertEqual([p.name for p in (self.root / "install").iterdir() if p.suffix != ".lock"], [])  # 반쯤 푼 폴더도 남기지 않는다
 
     def test_offline_mode_never_downloads_with_npx(self):
         with mock.patch.dict(os.environ, {"DOCFIT_ALLOW_NPX_DOWNLOAD": "1"}), \

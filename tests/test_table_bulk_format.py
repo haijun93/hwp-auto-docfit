@@ -155,12 +155,12 @@ class TableBulkFormatTest(unittest.TestCase):
         }):
             return fn(groups), len(saved)
 
-    def test_guard_protects_only_tables_whose_cell_text_matches(self):
+    def test_guard_protects_all_verified_table_cells(self):
         checks = [([2, 3, 4], (2, 0, '지구 침공계획(안) 보고')), ([8, 9], (9, 0, '붙임 자료'))]
-        texts = {(2, 0): '지구 침공계획(안)  보고\r\n', (9, 0): '다른 글'}
+        texts = {(2, 0): '지구 침공계획(안)  보고\r\n', (9, 0): '붙임 자료'}
         groups = {(0, 0, 0): [(2, 'A1', 1), (3, 'A2', 2), (4, 'B2', 2)]}
-        self.assertEqual(self._guard(groups, checks, texts), ({2, 3, 4}, 1))
-        self.assertEqual(self._guard(None, checks, texts), ({2, 3, 4}, 1))
+        self.assertEqual(self._guard(groups, checks, texts), ({2, 3, 4, 8, 9}, 1))
+        self.assertEqual(self._guard(None, checks, texts), ({2, 3, 4, 8, 9}, 1))
 
     def test_guard_skips_snapshot_without_format_table_shapes(self):
         groups = {(0, 0, 0): [(2, 'A1', 1), (3, 'B1', 1), (4, 'A2', 2), (5, 'B2', 2)]}

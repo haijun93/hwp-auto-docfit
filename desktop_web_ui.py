@@ -56,6 +56,7 @@ class DesktopWebBridge:
         # 창에 끌어 놓은 파일을 어디에 넣을지: documents(정리할 문서 목록) 또는 format(예시 서식 복제).
         # 화면의 '서식 관리' 창이 열려 있는 동안 format이다.
         self.drop_target = "documents"
+        self._document_drop_revision = 0
         self._request_lock = threading.Lock()
         self._requests = set()
         self._closed = False
@@ -64,6 +65,9 @@ class DesktopWebBridge:
         self._conversion_prerequisites_cache = None
         self._conversion_prerequisites_lock = threading.Lock()
         self._coverage_cache = {}
+        self._close_lock = threading.Lock()
+        self._close_protocol = False
+        self._close_request = None
 
     def _shutdown(self):
         """Tk 종료 시 대기·실행 중 요청의 호출자를 종료 오류로 해제한다."""
@@ -286,6 +290,7 @@ class DesktopWebBridge:
                 "format_task": self._format_task(),
                 "pending_dialog": self._pending_dialog(),
                 "drop_target": self.drop_target,
+                "document_drop_revision": self._document_drop_revision,
                 "options": {
                     name: bool(getattr(gui, attribute).get())
                     for name, attribute in QUICK_OPTIONS.items()
@@ -402,7 +407,7 @@ class DesktopWebBridge:
         self._tk(self.gui._폴더선택, timeout=None, front=True)
         return self.get_state()
 
-    def add_paths(self, paths):
+    def add_paths(self, paths, *, from_drop=False):
         if not isinstance(paths, (list, tuple)):
             return self.get_state()
         if len(paths) > 100:
@@ -435,6 +440,8 @@ class DesktopWebBridge:
                 except (OSError, ValueError):
                     continue
             if added:
+                if from_drop:
+                    self._document_drop_revision += 1
                 self.gui.status_var.set(f"{added}개 추가 · 총 {len(self.gui.files)}개 문서")
                 self.gui.로그표시(f"{added}개 문서 추가")
 
@@ -716,13 +723,44 @@ class DesktopWebBridge:
     def _pending_dialog(self):
         pending = getattr(self.gui, "_flutter_dialog", None)
         if not pending:
-            return None
+            with self._close_lock:
+                return dict(self._close_request) if self._close_request else None
         return {key: pending[key] for key in ("id", "title", "message", "confirm", "choices", "fields")}
 
     def get_pending_dialog(self):
         return self._tk(self._pending_dialog)
 
+    def enable_close_guard(self):
+        with self._close_lock:
+            self._close_protocol = True
+        return {"ok": True}
+
     def resolve_dialog(self, identifier, accepted, selection=None, fields=None):
+        with self._close_lock:
+            host_close = self._close_request is not None and self._close_request["id"] == identifier
+            if host_close:
+                if not isinstance(accepted, bool):
+                    raise ValueError("종료 응답을 확인해 주세요.")
+                self._close_request = None
+        if host_close:
+            if not accepted:
+                return {"accepted": False}
+            def finish_close():
+                # The original OS event was vetoed; the watcher must now destroy
+                # the host after Tk stops (unlike the legacy synchronous close).
+                self.user_closing = False
+                self.gui.종료()
+                try:
+                    closed = not bool(self.gui.root.winfo_exists())
+                except Exception:
+                    closed = True  # Tk commands no longer exist after destroy.
+                return {"accepted": closed or bool(getattr(self.gui, "closing", False))}
+            try:
+                return self._tk(finish_close, timeout=None)
+            except RuntimeError:
+                if self.tk_stopped is not None and self.tk_stopped.is_set():
+                    return {"accepted": True}
+                raise
         def resolve():
             pending = getattr(self.gui, "_flutter_dialog", None)
             if pending and pending["id"] == identifier and isinstance(accepted, bool):
@@ -779,7 +817,7 @@ class DesktopWebBridge:
         if action == "load":
             return service.load(payload.get("id"))
         if action == "save":
-            return service.save(payload.get("id"), payload.get("name"), payload.get("snapshot"))
+            return service.save(payload.get("id"), payload.get("name"), payload.get("snapshot"), payload.get("revision"))
         if action == "delete":
             return service.delete(payload.get("id"))
         raise ServiceError("INVALID_ACTION", "흐름도 작업을 확인해 주세요.")
@@ -1072,7 +1110,7 @@ class DesktopWebBridge:
         """창에 끌어 놓은 파일: '서식 관리' 창이 열려 있으면 예시 서식 복제, 아니면 문서 목록에 추가."""
         if self.drop_target == "format":
             return self.add_format_paths(paths)
-        return self.add_paths(paths)
+        return self.add_paths(paths, from_drop=True)
 
     def add_format_file(self):
         """예시 보고서 파일을 골라 서식을 복제한다."""
@@ -1184,6 +1222,12 @@ class DesktopWebBridge:
         """OS 창 닫기 전에 기존 앱의 종료 확인·작업 중단 절차를 수행한다."""
         if self.tk_stopped is not None and self.tk_stopped.is_set():
             return True
+        with self._close_lock:
+            if self._close_protocol:
+                if self._close_request is None:
+                    import uuid
+                    self._close_request = {"id": uuid.uuid4().hex, "kind": "app_close"}
+                return False  # Never block the native closing event for JS.
         def defer_confirmation():
             if not (getattr(self.gui.root, "_docfit_hidden_backend", False) and self.gui.running):
                 return False
@@ -1234,7 +1278,7 @@ class _BrowserApi:
             "get_state", "add_files", "add_folder", "add_paths", "remove_file",
             "clear_files", "set_mode", "set_range", "start", "stop",
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
-            "get_pending_dialog", "resolve_dialog", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults",
+            "get_pending_dialog", "resolve_dialog", "enable_close_guard", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults",
             "open_results", "next_job", "run_tool", "open_result",
             "show_result", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",

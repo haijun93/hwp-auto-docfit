@@ -1,3 +1,4 @@
+import '../../core/close_guards.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -59,9 +60,18 @@ class _ToolsState extends State<DocumentToolsWorkspace> {
     'prompt': 'AI 공문서 요청문',
     'advanced': '고급 구조 분석·비교·생성',
   };
+  late final CloseLease _closeLease;
+  Future<bool> _prepareHostClose() async {
+    if (busy || _queuedOperations > 0 || _loading) return false;
+    if (!canCloseEditor(context)) return false;
+    await leave();
+    return true;
+  }
+
   @override
   void initState() {
     super.initState();
+    _closeLease = CloseGuards.register(_prepareHostClose);
     mode = modes.containsKey(widget.initial) ? widget.initial : 'clean';
     input.addListener(_recordInput);
     path.text = widget.initialPath;
@@ -70,6 +80,7 @@ class _ToolsState extends State<DocumentToolsWorkspace> {
 
   @override
   void dispose() {
+    _closeLease.release();
     autosave?.cancel();
     input.removeListener(_recordInput);
     input.dispose();

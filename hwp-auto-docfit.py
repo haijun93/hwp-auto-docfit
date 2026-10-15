@@ -301,6 +301,7 @@ from docfit_core.korean_proofread import (
 )
 from docfit_core.pasted_text import clean_pasted_text, outline_pasted_text
 from docfit_core.labeled_text import label_outline_text, looks_labeled, parse_labeled_text
+from docfit_core.roman_heading import match_heading as roman_heading_match
 from docfit_core.ai_answer import ai_answer_to_labeled_text, ai_answer_to_outline_text, looks_like_ai_answer
 from docfit_core.asterisk_superscript import mark_spans as 별표_위치
 from docfit_core.attachment_block import find_blocks as 붙임묶음_찾기
@@ -364,7 +365,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리"
-APP_VERSION = "1.74 Alpha 10"
+APP_VERSION = "1.74 Alpha 14"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 GITHUB_UPDATE_API_URL = "https://api.github.com/repos/haijun93/hwp-auto-docfit/releases/latest"

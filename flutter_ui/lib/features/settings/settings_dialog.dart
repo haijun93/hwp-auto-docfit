@@ -1,3 +1,4 @@
+import '../../core/close_guards.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -23,14 +24,25 @@ class _SettingsDialogState extends State<SettingsDialog> {
   String? error;
   String category = guideCategories.first.id;
 
+  late final CloseLease _closeLease;
+  Future<bool> _prepareHostClose() async {
+    if (busy || !canCloseEditor(context)) return false;
+    if (changed.isNotEmpty && !await confirmHostDiscard(context)) return false;
+    if (!mounted) return false;
+    Navigator.of(context).pop();
+    return true;
+  }
+
   @override
   void initState() {
     super.initState();
+    _closeLease = CloseGuards.register(_prepareHostClose);
     load();
   }
 
   @override
   void dispose() {
+    _closeLease.release();
     search.dispose();
     for (final input in inputs.values) {
       input.dispose();

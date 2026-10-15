@@ -17,6 +17,7 @@ import html
 import re
 
 from docfit_core.labeled_text import looks_labeled
+from docfit_core.roman_heading import match_heading as roman_heading_match
 from docfit_core.pasted_text import (
     _BLOCKQUOTE_MARKER, _CODE_FENCE, _HR_LINE, _MARKER_GLUE, _TABLE_ROW, _TABLE_SEPARATOR, _strip_inline_markup,
     _strip_invisible, _ESCAPED_MD_CHAR, _remove_citations_preserving_markup, _split_glued_markers, _outside_code,
@@ -116,9 +117,35 @@ def _numbered_in_context(line, text):
     return match
 
 
-def looks_like_ai_answer(text: str) -> bool:
+def _markdown_headings(text: str) -> str:
+    """Normalize spaced hash groups and closing ATX marks outside code."""
+    pattern = re.compile(r"(?m)^([ ]{0,3})(#{1,6}(?:[ \t]+#{1,6})*)[ \t]+(\S.*)$")
+    def normalize(value):
+        def replace(match):
+            hashes = match[2].replace(" ", "").replace("\t", "")
+            if len(hashes) > 6:
+                return match[0]
+            body = re.sub(r"[ \t]+#+[ \t]*$", "", match[3])
+            return match[1] + hashes + " " + body
+        return pattern.sub(replace, value)
+    return _outside_code(text, normalize)
+
+
+def _has_markdown_heading(text: str) -> bool:
+    fenced = False
+    for line in text.splitlines():
+        if _CODE_FENCE.match(line.strip()):
+            fenced = not fenced
+        elif not fenced and _MD_HEADING.match(line.strip()):
+            return True
+    return False
+
+
+def looks_like_ai_answer(text: str, *, markdown_document=False) -> bool:
     """붙여넣은 글이 AI 채팅 답변(마크다운 구조)처럼 보이는지. 라벨 형식·이미 □ ㅇ 항목기호인 글은 아니다."""
     text = _strip_invisible(text or "")
+    if markdown_document and _has_markdown_heading(_markdown_headings(text)):
+        return True  # Explicit .md headings outrank notes/already-report heuristics.
     if not text.strip() or looks_labeled(text) or _ALREADY_REPORT.search(text):
         return False
     hits = {match.start() for match in _STRONG_MD.finditer(text)}
@@ -161,7 +188,7 @@ def _split_elements(text: str, strip_chat_frame=False) -> list[dict]:
         heading = _MD_HEADING.match(stripped_line)
         if heading and not quoted:
             elements.append({"kind": "heading", "key": ("md", len(heading.group(1))), "text": _heading_clean(heading.group(2), text),
-                             "after_blank": previous_blank})
+                             "after_blank": previous_blank, "source_heading": heading.group(2)})
             previous_blank = False
             continue
         if not quoted and _TABLE_ROW.match(stripped_line) and stripped_line.count("|") >= 2:
@@ -355,21 +382,28 @@ def apply_marker_scheme(blocks: list[dict]) -> None:
         b["marker"] = b["level"] = marker
 
 
-def parse_ai_answer(text: str, *, strip_chat_frame=False) -> list[dict]:
+def parse_ai_answer(text: str, *, strip_chat_frame=False, markdown_document=False) -> list[dict]:
     """AI 답변 글을 labeled_text 블록(title·box·para·table)으로 바꾼다."""
+    if markdown_document:
+        text = _markdown_headings(text)
     elements = _split_elements(text, strip_chat_frame=strip_chat_frame)
     if not elements:
         return []
     _classify(elements)
     _rank_headings(elements)
+    if markdown_document:
+        levels = sorted({e["key"][1] for e in elements if e["kind"] == "heading" and e["key"][0] == "md"})
+        for e in elements:
+            if e["kind"] == "heading" and e["key"][0] == "md":
+                e["rank"] = levels.index(e["key"][1])
     blocks: list[dict] = []
     # 문서 제목: 맨 앞의 단 하나뿐인 최상위 마크다운 표제(# 제목) 또는 굵은 첫 줄
     first = elements[0]
     title_text = None
-    if first["kind"] == "heading" and first["key"][0] in ("md", "bold") and first.get("rank") == 0:
+    if first["kind"] == "heading" and first["key"][0] in ("md", "bold") and first.get("rank") == 0 and (not markdown_document or first["key"] == ("md", 1)):
         same = [e for e in elements if e["kind"] == "heading" and e.get("rank") == 0 and e["key"] == first["key"]]
         others = [e for e in elements if e["kind"] == "heading" and e is not first]
-        if len(same) == 1 and others:
+        if len(same) == 1 and (others or markdown_document):
             title_text = first["text"]
             elements = elements[1:]
             for e in elements:
@@ -377,6 +411,10 @@ def parse_ai_answer(text: str, *, strip_chat_frame=False) -> list[dict]:
                     e["rank"] = max(0, e["rank"] - 1)
     if title_text:
         blocks.append({"kind": "title1", "text": title_text})
+    roman_sections = markdown_document and any(
+        e["kind"] == "heading" and e.get("rank") == 0
+        and roman_heading_match(_clean(e.get("source_heading", "")))
+        for e in elements)
     has_heading = any(e["kind"] == "heading" for e in elements)
     # 표제가 없으면 글머리가 □부터 시작한다. 다만 글머리 앞에 설명 문단이 있으면 그 문단 아래 목록이라 ㅇ부터 시작한다.
     first_body = next((e for e in elements if e["kind"] in ("para", "item", "table", "note")), None)
@@ -400,10 +438,15 @@ def parse_ai_answer(text: str, *, strip_chat_frame=False) -> list[dict]:
         kind = e["kind"]
         if kind == "heading":
             seen_heading = True
-            base = e["rank"] + 1
+            roman = roman_heading_match(_clean(e.get("source_heading", ""))) if roman_sections and e["rank"] == 0 else None
+            rank = max(0, e["rank"] - int(bool(roman_sections)))
+            base = 0 if roman else rank + 1
             indent_stack, offset = [], 0
-            if e["text"]:
-                add_para(e["rank"], e["text"])
+            if roman:
+                add_para(roman[0] + ".", roman[1])
+                blocks[-1]["preserve_marker"] = True
+            elif e["text"]:
+                add_para(rank, e["text"])
             continue
         if kind == "table":
             blocks.append({"kind": "table", "rows": [row for row in e["rows"] if any(row)]})
@@ -463,7 +506,7 @@ def blocks_to_labeled_text(blocks: list[dict]) -> str:
             label = _LABEL_BY_MARKER.get(marker)
             if label:
                 lines.append(f"{label}: {block['text']}")
-            elif marker[:1] in _ROMAN and marker.endswith("."):
+            elif marker[:1] in _ROMAN and marker.endswith(".") and not block.get("preserve_marker"):
                 lines.append(f"로마소제목: {block['text']}")      # 번호는 라벨 해석기가 Ⅰ. Ⅱ. 로 매긴다
             else:
                 lines.append(f"기호: {marker} {block['text']}")
@@ -487,9 +530,9 @@ def blocks_to_plain_text(blocks: list[dict]) -> str:
     return "\n".join(lines).strip()
 
 
-def ai_answer_to_labeled_text(text: str, *, strip_chat_frame=False) -> str:
-    return blocks_to_labeled_text(parse_ai_answer(text, strip_chat_frame=strip_chat_frame))
+def ai_answer_to_labeled_text(text: str, *, strip_chat_frame=False, markdown_document=False) -> str:
+    return blocks_to_labeled_text(parse_ai_answer(text, strip_chat_frame=strip_chat_frame, markdown_document=markdown_document))
 
 
-def ai_answer_to_outline_text(text: str, *, strip_chat_frame=False) -> str:
-    return blocks_to_plain_text(parse_ai_answer(text, strip_chat_frame=strip_chat_frame))
+def ai_answer_to_outline_text(text: str, *, strip_chat_frame=False, markdown_document=False) -> str:
+    return blocks_to_plain_text(parse_ai_answer(text, strip_chat_frame=strip_chat_frame, markdown_document=markdown_document))

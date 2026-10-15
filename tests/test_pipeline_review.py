@@ -51,6 +51,7 @@ class PipelineReviewTest(unittest.TestCase):
             '쪽범위_계산': lambda *a: calls.append('range') or True,
             '표준서식_선행_적용': lambda *a: calls.append('format') or None,
             '한칸표_영역_목록': lambda: set(),
+            '디자인표_영역_목록': lambda: set(),
             '보고서_페이지보호_전체해제': lambda: calls.append('clear') or True,
             '문서_처리_1회': lambda *a: calls.append('pass') or True,
             '처리_쪽수_구하기': lambda: 1,
@@ -68,6 +69,19 @@ class PipelineReviewTest(unittest.TestCase):
             result, calls, _ = self._process_document(source)
         self.assertTrue(result)
         self.assertEqual(calls, ['open', 'range', 'format', 'clear', 'pass', 'clear'])
+
+    def test_protection_analysis_failure_never_reaches_spacing_or_document_pass(self):
+        modify = Mock()
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / 'source.hwpx'
+            source.touch()
+            with self.assertRaisesRegex(RuntimeError, 'protection unavailable'):
+                self._process_document(source, {
+                    '디자인표_영역_목록': Mock(side_effect=RuntimeError('protection unavailable')),
+                    '보고서_페이지보호_전체해제': modify,
+                    '문서_처리_1회': modify,
+                })
+        modify.assert_not_called()
 
     def test_empty_page_range_does_not_modify_document(self):
         with tempfile.TemporaryDirectory() as folder:

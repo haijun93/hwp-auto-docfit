@@ -55,7 +55,7 @@ _MARKER_GLUE = re.compile(
     rf"(?<=[{_SENTENCE_END}]) (?="
     rf"[-*+][ \t]|[{_UNICODE_BULLETS}]|\d+[.)](?:[ \t]|[^\d\s])|#{{1,6}}[ \t]|[①-⑳])"
 )
-_DATE_TEXT = re.compile(r"(?<!\d)\d{4}\.[ \t]*\d{1,2}\.[ \t]*\d{1,2}\.?(?!\d)")
+_DATE_TEXT = re.compile(r"(?<!\d)\d{4}\.[ \t]*\d{1,2}\.(?:[ \t]*\d{1,2}\.?)?(?!\d)")
 
 
 def _split_glued_markers(text: str) -> str:

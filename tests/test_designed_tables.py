@@ -1,5 +1,9 @@
 """사용자가 꾸민 표(장식 막대 표·캡션 달린 표)는 서식·너비·자간 작업에서 그대로 둔다(사용자 규칙, 2026-10-15)."""
 import unittest
+import runpy
+import tempfile
+import zipfile
+from pathlib import Path
 
 from defusedxml.ElementTree import fromstring
 
@@ -33,6 +37,89 @@ PLAIN = ('<hp:caption side="TOP"><hp:subList><hp:p><hp:run charPrIDRef="1"><hp:t
 
 
 class DesignedTableTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.ns = runpy.run_path(str(Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"), run_name="import_check")
+
+    def _captioned_dates(self):
+        return fromstring(table([[cell("시작일", 0, 0), cell("종료일", 1, 0)],
+                                 [cell("2026. 10. 14.", 0, 1), cell("2026. 10. 15.", 1, 1)]],
+                                2, UNIT))
+
+    def _nested(self, inner, protect_outer=False):
+        from docfit_core.table_style import _cells, _child
+        outer = fromstring(DATA)
+        if protect_outer:
+            outer.insert(0, fromstring(UNIT.replace('<hp:caption ', f'<hp:caption {NS} ', 1)))
+        sub = _child(_cells(outer)[0], "subList")
+        sub[0][0].append(inner)
+        return outer
+
+    def _records(self, table_element):
+        from defusedxml.ElementTree import tostring
+        section = fromstring(f'<hp:sec {NS}><hp:p><hp:run/></hp:p></hp:sec>')
+        section[0][0].append(table_element)
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "nested.hwpx"
+            with zipfile.ZipFile(path, "w") as archive:
+                archive.writestr("Contents/header.xml", "<head/>")
+                archive.writestr("Contents/section0.xml", tostring(section))
+            return self.ns["서식표_영역_목록"](path, 장식만=True)
+
+    def test_captioned_dates_are_not_squeezed(self):
+        from defusedxml.ElementTree import tostring
+        protected = self._captioned_dates()
+        before = tostring(protected)
+        self.assertEqual(self.ns["표_날짜칸_한줄"](protected), 0)
+        self.assertEqual(tostring(protected), before)
+
+    def test_dates_skip_nested_designs_but_process_ordinary_cells(self):
+        from defusedxml.ElementTree import tostring
+        protected = self._captioned_dates()
+        before = tostring(protected)
+        outer = self._nested(protected)
+        from docfit_core.table_style import _cells, _child
+        _child(_cells(outer)[-1], "subList")[0][0][0].text = "2026. 10. 14."
+        self.assertEqual(self.ns["표_날짜칸_한줄"](outer), 1)
+        self.assertEqual(tostring(protected), before)
+
+    def test_nested_bar_protection_does_not_include_ordinary_parent_cells(self):
+        records = self._records(self._nested(fromstring(BAR)))
+        protected = {area for areas, _ in records for area in areas}
+        self.assertEqual(protected, set(range(3, 9)))
+
+    def test_nested_protection_is_consumed_by_the_spacing_engine(self):
+        from docfit_engine.runtime import session_for
+        protected = {area for areas, _ in self._records(self._nested(fromstring(BAR))) for area in areas}
+        class Hwp:
+            area = 3
+            def GetPos(self):
+                return (self.area, 0, 0)
+        hwp = Hwp()
+        context = session_for(self.ns).new_context(state={
+            "hwp": hwp, "디자인표_보호영역": protected, "표_자간조정_사용": True})
+        for area in protected:
+            hwp.area = area
+            self.assertTrue(self.ns["표셀_자간_제외인가"](context=context))
+        hwp.area = 2
+        self.assertFalse(self.ns["표셀_자간_제외인가"](context=context))
+
+    def test_nested_caption_table_has_its_own_protection(self):
+        records = self._records(self._nested(self._captioned_dates()))
+        protected = {area for areas, _ in records for area in areas}
+        self.assertEqual(protected, set(range(3, 8)))   # 안쪽 표의 캡션 목록(3) + 칸 4개
+
+    def test_caption_text_list_is_protected_with_the_table(self):
+        protected_table = self._captioned_dates()   # 캡션 '(단위: 개소)' 목록(2) + 칸 4개
+        records = self._records(protected_table)
+        protected = {area for areas, _ in records for area in areas}
+        self.assertEqual(protected, set(range(2, 7)))
+
+    def test_protected_parent_includes_ordinary_nested_cells(self):
+        records = self._records(self._nested(fromstring(DATA), protect_outer=True))
+        protected = {area for areas, _ in records for area in areas}
+        self.assertEqual(protected, set(range(2, 11)))   # 바깥 캡션(2) + 바깥 칸 4개 + 안쪽 칸 4개
+
     def test_bar_table_is_design_and_not_styled(self):
         bar = fromstring(BAR)
         self.assertTrue(is_design_table(bar))

@@ -37,6 +37,40 @@ def _widths(table):
 
 
 class TableWidthTest(unittest.TestCase):
+    def test_merged_text_columns_and_empty_column_keep_positive_widths(self):
+        rows = [[_cell("분류 제목", 0, 0, width=2000, col_span=2), _cell("", 2, 0, width=1000)],
+                [_cell("내용 문장이 들어 있는 병합 셀", 0, 1, width=2000, col_span=2), _cell("", 2, 1, width=1000)]]
+        table = _table(rows, 3)
+        next(x for x in table if x.tag.endswith("}sz")).set("width", "3000")
+        self.assertTrue(fit_table(table, 10000, HeaderIndex(HEADER)))
+        rows = _widths(table)
+        self.assertEqual(rows[0], rows[1])
+        self.assertAlmostEqual(rows[0][1], 9434 / 3, delta=1)
+        self.assertAlmostEqual(rows[0][0], 9434 * 2 / 3, delta=1)
+        self.assertTrue(all(width > 0 for row in rows for width in row))
+        self.assertTrue(all(sum(row) == 9434 for row in rows))
+
+    def test_mixed_merged_header_and_body_preserve_empty_column_ratio(self):
+        rows = [[_cell("큰 제목", 0, 0, width=3000, col_span=2), _cell("", 2, 0, width=1000)],
+                [_cell("본문", 0, 1, width=1000), _cell("긴 내용 문장", 1, 1, width=2000),
+                 _cell("", 2, 1, width=1000)]]
+        table = _table(rows, 3)
+        self.assertTrue(fit_table(table, 12566, HeaderIndex(HEADER)))
+        widths = _widths(table)
+        self.assertEqual(widths[0][1], 3000)  # Empty column retains 1/4, not the whole width.
+        self.assertEqual(widths[0][0], sum(widths[1][:2]))
+        self.assertEqual(sum(widths[1]), 12000)
+        self.assertTrue(all(width > 0 for row in widths for width in row))
+
+    def test_uncertain_empty_column_geometry_is_preserved(self):
+        from defusedxml.ElementTree import tostring
+        table = _table([[_cell("제목", 0, 0, width=2000, col_span=2), _cell("", 2, 0)],
+                        [_cell("본문", 0, 1, width=2000, col_span=2), _cell("", 2, 1)]], 4)
+        self.assertTrue(is_target(table))
+        before = tostring(table)
+        self.assertFalse(fit_table(table, 10000, HeaderIndex(HEADER)))
+        self.assertEqual(tostring(table), before)
+
     def test_captioned_table_keeps_its_design_and_only_shrinks_to_fit(self):
         # '(단위: 개소)' 캡션이 달린 표: 열을 다시 나누지 않고, 넘칠 때만 같은 비율로 줄인다.
         rows = [[_cell('총 계', 0, 0, width=6000), _cell('노래연습장', 1, 0, width=4000)],

@@ -172,3 +172,35 @@ Windows 한/글 실측, WebView2 포커스와 EXE 패키징은 Windows 환경에
 - tldraw는 기존 `tldraw_editor/`·`features/diagrams/`·`DiagramService`를 유지. 개발자 모드와 별도 옵션이 모두 필요하며 `diagrams/` 데이터를 사용한다.
 - `scripts/build_flow_editor.ps1`이 고정 의존성 설치·모델 시험·번들·라이선스 고지를 생성하며 웹/네이티브 빌드에서 호출한다. Node 22.12+ 필요.
 - 일반 편집기는 런타임 CDN·외부 서비스 없이 로컬 자산 사용. 기존 tldraw SDK 제품 사용권 과제는 그대로 유지한다.
+
+
+### Alpha 11 저장·종료 보호 계약
+
+- fidelity 출력은 기존 결과를 덮어쓰지 않는다. 하드링크를 지원하지 않는 파일시스템의 오류는 명시적으로 처리한다.
+- FlowService/DiagramService 기존 문서 저장에는 load/save 응답의 revision이 필요하다.
+  문서별 프로세스 잠금 안에서 비교·쓰기·응답을 확정하며 충돌은 사본 저장으로 복구한다.
+- Flutter core/close_guards.dart의 CloseLease는 편집 화면 dispose까지 종료를 보류한다.
+  DesktopWebBridge.enable_close_guard → app_close 폴링 → resolve_dialog 승인 순서이며,
+  native closing 콜백에서 JavaScript를 동기 대기하지 않는다.
+- kordoc 버전별 .install.lock 파일은 제거하지 않는다. 설치 완료를 잠금 안에서 재검사한다.
+- 검증·Windows 실기기 한계: docs/FINAL_REVIEW_FIXES_ALPHA11.md.
+
+
+### Alpha 12/13 MD 및 로마자 중제목
+
+- .md는 명시적 문서 모드로 AI 공문서 블록 파서를 공유한다. 코드의 #는 목차가 아니며,
+  이미지 있는 문서는 기존 이미지 보존 엔진 경로를 유지한다.
+- 배치 텍스트 변환은 라벨을 실제 문단·표로 삽입한다. 저장 성공 뒤 COM 파일을 해제하고 제목 표식을 후처리한다.
+- docfit_core/roman_heading.py는 로N / Unicode 로마자 일반 제목을 판별한다.
+  기존 중제목 선행 서식이 이를 3칸 표로 변환하며 일반 준말의 콜론 규칙은 바꾸지 않는다.
+- 명시적 MD 로마자 번호는 원문 번호를 보존한다. 상세 및 원격 반영 기록은 docs/ROMAN_HEADING_ALPHA13.md 참고.
+
+
+### Alpha 14 문서 드롭 이후 2단계 자동 이동
+
+- DesktopWebBridge.receive_drop → add_paths(from_drop=True) 경로에서 실제 추가 수가 양수일 때만
+  document_drop_revision을 증가시킨다. 일반 파일 선택·준말/서식 관리 드롭에는 이 신호를 만들지 않는다.
+- Flutter는 증가한 revision과 비어 있지 않은 문서 목록을 확인하여 2단계 작업 방식으로 이동한다.
+  같은 revision의 반복 폴링, 거부된 드롭 및 작업 중에는 자동 이동하지 않는다.
+- 파일포맷 모드는 기존 플로팅 결과 형식 선택을 유지한다.
+- 신규 회귀: Python 드롭 수락/거부 계약, Flutter 420px·1280px 자동 이동/재이동 방지.

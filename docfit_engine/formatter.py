@@ -1802,10 +1802,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             줄여 한 줄을 지킨다. 안쪽 표는 그 표대로 따로 본다.
             """
             count = 0
-            # 사용자가 꾸민 표(장식 막대 표·단위 캡션 표)는 안에 든 표까지 그대로 둔다(사용자 규칙, 2026-10-15).
-            막힌칸 = {id(c) for t in table.iter() if 제목_xml이름(t) == 'tbl' and 사용자표인가(t)
-                     for c in t.iter() if 제목_xml이름(c) == 'tc'}
-            for cell in (x for x in table.iter() if 제목_xml이름(x) == 'tc' and id(x) not in 막힌칸):
+            from docfit_core.table_style import iter_unprotected_cells
+            for cell in iter_unprotected_cells(table):
                 sub = 제목_자식(cell, 'subList')
                 if sub is None or sub.get('lineWrap') == 'SQUEEZE':
                     continue
@@ -2489,7 +2487,16 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             header = safe_xml_fromstring(contents['Contents/header.xml'])
             sections = {n: safe_xml_fromstring(data) for n, data in contents.items() if re.fullmatch(r'Contents/section\d+\.xml', n)}
             if selections is None:
-                return {n: 중제목_대상찾기(root) for n, root in sections.items()}
+                found = {n: 중제목_대상찾기(root) for n, root in sections.items()}
+                for name, root in sections.items():
+                    for index, p in enumerate(root):
+                        if 제목_xml이름(p) != 'p':
+                            continue
+                        texts = _문단_일반글(p)
+                        heading = roman_heading_match(''.join(t.text or '' for t in texts)) if texts else None
+                        if heading:
+                            found[name].append((index, ('text', *heading)))
+                return found
             if not any(items for items in selections.values()):
                 if target is not None: shutil.copyfile(source, target)
                 return 0
@@ -2516,10 +2523,37 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 return 기준[kind]
 
             count = 0
+            new_cache, ids = {}, _문서_표번호(sections)
             for name, items in selections.items():
                 root = sections[name]
                 tables = [t for p in root for r in p for t in r if 제목_xml이름(t) == 'tbl']
                 for index, kind in items:
+                    if isinstance(kind, tuple) and kind[:1] == ('text',):
+                        p = root[index]
+                        texts = _문단_일반글(p)
+                        current = roman_heading_match(''.join(t.text or '' for t in texts)) if texts else None
+                        if current is None or ('text', *current) != kind:
+                            raise RuntimeError('처리 중 로마자 중제목이 변경되어 서식적용을 중단했습니다.')
+                        numeral, title = current
+                        table = 서식표_생성(header, 'midtitle', title, new_cache, numeral, _구역_본문폭(root))
+                        _서식표_글_확인('midtitle', table, title, numeral)
+                        _서식표_번호_부여(table, ids)
+                        base_char = next((r.get('charPrIDRef', '0') for r in p if 제목_xml이름(r) == 'run'), '0')
+                        for run in [r for r in p if 제목_xml이름(r) == 'run']:
+                            for t in [t for t in run if 제목_xml이름(t) == 't']:
+                                run.remove(t)
+                            if not len(run):
+                                p.remove(run)
+                        for seg in [c for c in p if 제목_xml이름(c) == 'linesegarray']:
+                            p.remove(seg)
+                        holder = XML_자식_추가(p, p, tag='{http://www.hancom.co.kr/hwpml/2011/paragraph}run',
+                                            attrib={'charPrIDRef': base_char})
+                        holder.append(table)
+                        XML_자식_추가(holder, p, tag='{http://www.hancom.co.kr/hwpml/2011/paragraph}t')
+                        p.set('paraPrIDRef', '0')
+                        p.set('styleIDRef', '0')
+                        count += 1
+                        continue
                     table = tables[index]
                     현재 = 중제목_유형판별(table) or ('fit' if 중제목_글칸들(table) else None)
                     if 현재 != kind:
@@ -9172,6 +9206,16 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             """현재 hwp에 새 빈 문서를 만들어 텍스트를 문단 단위로 넣고 HWPX로 저장한다."""
             if hwp.Run("FileNew") is False:
                 raise RuntimeError("빈 문서를 만들지 못했습니다.")
+            if looks_labeled(텍스트):
+                블록들 = parse_labeled_text(텍스트)
+                라벨블록_한글삽입(hwp, 블록들)
+                if hwp.SaveAs(str(대상경로), "HWPX", "") is False:
+                    raise RuntimeError("텍스트를 HWPX로 저장하지 못했습니다.")
+                if any(b["kind"] in _라벨_블록_종류 for b in 블록들):
+                    if hwp.Clear(1) is False:
+                        raise RuntimeError("서식 표 후처리를 위해 작업 문서를 닫지 못했습니다.")
+                    라벨_서식표_적용(대상경로)
+                return
             줄들 = 텍스트.replace("\r\n", "\n").replace("\r", "\n").split("\n")
             for 순번, 줄 in enumerate(줄들):
                 if 줄:
@@ -9235,16 +9279,16 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     글쓰기(f"{블록['marker']} {블록['text']}".strip())
         return bind_function(라벨블록_한글삽입, _docfit_namespace)
     if _docfit_symbol == 'AI답변_개조식_변환':
-        def AI답변_개조식_변환(텍스트, 라벨형식=False):
+        def AI답변_개조식_변환(텍스트, 라벨형식=False, 마크다운문서=False):
             """AI 답변으로 보이면 (변환한 글, True), 아니면 (원문, False). 라벨형식=True면 제목:/개요:/네모:/원: 라벨 글로 바꾼다."""
-            if not 알파_AI답변변환_사용 or not looks_like_ai_answer(텍스트):
+            if (not 마크다운문서 and not 알파_AI답변변환_사용) or not looks_like_ai_answer(텍스트, markdown_document=마크다운문서):
                 return 텍스트, False
             try:
                 if 라벨형식:
-                    변환 = ai_answer_to_labeled_text(텍스트)
+                    변환 = ai_answer_to_labeled_text(텍스트, markdown_document=마크다운문서)
                     if looks_labeled(변환):
                         return 변환, True
-                변환 = ai_answer_to_outline_text(텍스트)
+                변환 = ai_answer_to_outline_text(텍스트, markdown_document=마크다운문서)
             except Exception as 오류:
                 로그(f"AI 답변 변환 실패(글을 그대로 넣음): {오류}")
                 return 텍스트, False
@@ -9343,7 +9387,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 # 이미지가 없는 AI 답변형 마크다운은 엔진 대신 라벨 블록으로 변환해 서식 적용 경로에 넘긴다. 이미지가 있으면 엔진이 처리한다.
                 try:
                     원문 = 텍스트파일_읽기(원본경로)
-                    변환문, 변환됨 = ("", False) if re.search(r"!\[[^\]]*\]\(", 원문) else AI답변_개조식_변환(원문, 라벨형식=True)
+                    변환문, 변환됨 = ("", False) if re.search(r"!\[[^\]]*\]\(", 원문) else AI답변_개조식_변환(원문, 라벨형식=True, 마크다운문서=True)
                 except Exception:
                     변환문, 변환됨 = "", False
                 if 변환됨:
