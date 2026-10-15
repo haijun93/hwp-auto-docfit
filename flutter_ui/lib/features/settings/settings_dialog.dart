@@ -4,6 +4,9 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../core/api/abbreviation_api.dart';
+import '../preview/hwp_typeset_preview.dart';
+import '../preview/typeset_spec.dart';
+import 'doc_preview.dart';
 import 'idiom_panel.dart';
 import 'kiosk_theme.dart';
 import 'setting_guides.dart';
@@ -31,6 +34,9 @@ class _SettingsDialogState extends State<SettingsDialog> {
   bool busy = true;
   String? error;
   String category = guideCategories.first.id;
+
+  /// 마지막으로 바꾼 설정(한/글 조판 미리보기에서 그 설정이 닿는 문단을 강조한다).
+  String? lastKey;
 
   late final CloseLease _closeLease;
   Future<bool> _prepareHostClose() async {
@@ -178,7 +184,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
     input.text = next == next.roundToDouble()
         ? next.toStringAsFixed(0)
         : next.toStringAsFixed(1);
-    setState(() => changed[key] = input.text);
+    setState(() {
+      changed[key] = input.text;
+      lastKey = key;
+    });
   }
 
   Widget _control(Map field, bool locked) {
@@ -193,7 +202,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
           value: _value(key) == true,
           onChanged: locked
               ? null
-              : (value) => setState(() => changed[key] = value),
+              : (value) => setState(() {
+                  changed[key] = value;
+                  lastKey = key;
+                }),
         ),
       );
     }
@@ -224,7 +236,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
             borderSide: BorderSide.none,
           ),
         ),
-        onChanged: (value) => setState(() => changed[key] = value),
+        onChanged: (value) => setState(() {
+          changed[key] = value;
+          lastKey = key;
+        }),
       ),
     );
     if (!number) return box;
@@ -542,6 +557,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
                             ),
                             const SizedBox(width: 12),
                             Expanded(child: _body(visible, locked, query)),
+                            if (_showsTypeset(query)) ...[
+                              const SizedBox(width: 12),
+                              SizedBox(width: 400, child: _typesetPane()),
+                            ],
                           ],
                         ),
                 ),
@@ -605,6 +624,104 @@ class _SettingsDialogState extends State<SettingsDialog> {
       ),
     );
   }
+
+  /// 문서 모양에 닿는 분류에서만 한/글 조판 미리보기를 옆에 둔다(상용구·앱 정보·작업 카드 제외).
+  bool _showsTypeset(String query) =>
+      snapshot != null &&
+      (query.isNotEmpty ||
+          const {
+            'report',
+            'paragraph',
+            'sentence',
+            'table',
+            'font',
+          }.contains(category));
+
+  /// 옆 칸은 좁아 글자가 작으므로 넓은 창에 같은 조판을 크게 보인다.
+  Future<void> _zoomTypeset() => showDialog<void>(
+    context: context,
+    builder: (context) => Dialog(
+      backgroundColor: Kiosk.canvas,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: SizedBox(
+        width: math.min(980, MediaQuery.sizeOf(context).width - 48),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text('한/글 조판 미리보기', style: Kiosk.title),
+                  ),
+                  IconButton(
+                    tooltip: '닫기',
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              HwpTypesetPreview(
+                key: const ValueKey('settings-typeset-zoom'),
+                spec: settingsSpec(_value, focusKey: lastKey),
+                fallback: const SizedBox.shrink(),
+                minHeight: 300,
+                maxHeight: 760,
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+
+  /// 지금 값(저장 전 변경 포함)으로 보고서 한 토막을 rhwp 조판 엔진으로 그린다.
+  Widget _typesetPane() => ListView(
+    padding: const EdgeInsets.only(bottom: 16),
+    children: [
+      Container(
+        padding: const EdgeInsets.all(16),
+        decoration: Kiosk.cardBox(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text('한/글 조판 미리보기', style: Kiosk.cardTitle),
+                ),
+                TextButton.icon(
+                  onPressed: _zoomTypeset,
+                  icon: const Icon(Icons.zoom_in_rounded),
+                  label: const Text('크게 보기'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              lastKey == null
+                  ? '설정을 바꾸면 한/글에서 어떻게 보일지 바로 다시 그려요.'
+                  : '방금 바꾼 설정이 닿는 문단을 노랗게 표시했어요.',
+              style: Kiosk.caption,
+            ),
+            const SizedBox(height: 12),
+            HwpTypesetPreview(
+              key: const ValueKey('settings-typeset'),
+              spec: settingsSpec(_value, focusKey: lastKey),
+              fallback: const DocPaper(
+                caption: '이 환경에서는 한/글 조판 미리보기를 쓸 수 없어요.',
+                children: [],
+              ),
+              minHeight: 140,
+            ),
+          ],
+        ),
+      ),
+    ],
+  );
 
   /// 오른쪽 내용: 설정 값 목록, 또는 상용구·앱 정보 관리 화면(검색 중이면 설정 값 목록).
   Widget _body(List<Map> visible, bool locked, String query) {

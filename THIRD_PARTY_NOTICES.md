@@ -40,6 +40,7 @@ license and notice files remain available in the installed kordoc package.
 | defusedxml | Safe XML parsing | PSF |
 | pywebview | Web UI window | BSD-3-Clause |
 | Flutter | flutter_ui | BSD-3-Clause |
+| rhwp (`@rhwp/core` 0.8.7, Edward Kim, https://github.com/edwardkim/rhwp) | Settings/format-element HWP typesetting preview (WASM, `flutter_ui/assets/hwp_preview`; bundled Rust crate notices in its `THIRD_PARTY_NOTICES.txt`) | MIT |
 | Noto Sans KR | flutter_ui font (see `flutter_ui/assets/OFL.txt`) | SIL Open Font License 1.1 |
 | PyInstaller | Executable build | GPL-2.0 with bootloader exception |
 | Python / Tcl/Tk runtime | Bundled in the executable | PSF / Tcl/Tk License |

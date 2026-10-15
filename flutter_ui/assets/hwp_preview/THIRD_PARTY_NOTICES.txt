@@ -1,0 +1,56 @@
+@rhwp/core 0.8.7 (MIT) — https://github.com/edwardkim/rhwp
+MIT License
+
+Copyright (c) 2025-2026 Edward Kim
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+## Third-Party Licenses
+
+이 패키지는 다음 오픈소스 Rust 크레이트를 WASM으로 컴파일하여 포함합니다.
+
+| 크레이트 | 라이선스 |
+|---------|---------|
+| wasm-bindgen / web-sys / js-sys | MIT OR Apache-2.0 |
+| quick-xml | MIT |
+| cfb | MIT |
+| flate2 | MIT OR Apache-2.0 |
+| encoding_rs | (Apache-2.0 OR MIT) AND BSD-3-Clause |
+| usvg / svg2pdf | Apache-2.0 OR MIT |
+| pdf-writer | MIT OR Apache-2.0 |
+| unicode-segmentation / unicode-width | MIT OR Apache-2.0 |
+| image | MIT OR Apache-2.0 |
+
+전체 목록: [THIRD_PARTY_LICENSES.md](https://github.com/edwardkim/rhwp/blob/main/THIRD_PARTY_LICENSES.md)
+
+> 모든 의존성은 MIT 라이선스와 호환됩니다.
+
+## Notice
+
+본 제품은 한글과컴퓨터의 한글 문서 파일(.hwp) 공개 문서를 참고하여 개발하였습니다.
+
+## Trademark
+
+"한글", "한컴", "HWP", "HWPX"는 주식회사 한글과컴퓨터의 등록 상표입니다.
+본 패키지는 한글과컴퓨터와 제휴, 후원, 승인 관계가 없는 독립적인 오픈소스 프로젝트입니다.
+
+## License
+
+MIT

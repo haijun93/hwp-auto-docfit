@@ -7,6 +7,7 @@ if (-not (Get-Command $flutter -ErrorAction SilentlyContinue)) {
     else { throw 'Flutter SDK not found. Set FLUTTER_SDK or add flutter to PATH.' }
 }
 & (Join-Path $PSScriptRoot 'scripts\build_flow_editor.ps1')
+& (Join-Path $PSScriptRoot 'scripts\build_hwp_preview.ps1')
 Push-Location (Join-Path $PSScriptRoot 'flutter_ui')
 try {
     & $flutter pub get --enforce-lockfile

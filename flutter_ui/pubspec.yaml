@@ -25,3 +25,5 @@ flutter:
     - assets/flow_editor/assets/
     - assets/diagram_editor/
     - assets/diagram_editor/assets/
+    - assets/hwp_preview/
+    - assets/hwp_preview/assets/
