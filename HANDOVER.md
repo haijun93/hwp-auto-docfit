@@ -7,6 +7,13 @@
 
 ## 1. 한눈에 보기
 
+2026-10-15: 1.74 Beta 2 배포 준비. 검증된 Alpha 14(3df5f28) 기준이며
+원격 Alpha 15는 별도로 보존한다. tldraw SDK 생성 자산을 제외하고 동결 EXE에서 비활성화한다.
+release/1.74-beta.2에서 전체 회귀 검사와 새 Windows EXE 빌드 후 main 승격·태그를 진행한다.
+기존 release-assets EXE는 이번 버전으로 검증되지 않았으므로 재배포하지 않는다.
+현재 github·origin은 모두 GitHub를 가리키며 GitLab 반영으로 간주하지 않는다.
+
+
 2026-10-15 **1.74 Alpha 14**: 처리 문서를 드래그앤드롭하여 실제 추가하면
 다음 상태 조회에서 2단계 작업 방식 화면으로 자동 전환한다.
 DesktopWebBridge의 document_drop_revision은 성공한 문서 드롭 때만 증가한다.

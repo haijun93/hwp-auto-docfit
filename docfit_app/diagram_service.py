@@ -2,6 +2,7 @@
 from datetime import datetime, timezone
 import json
 import os
+import sys
 from pathlib import Path
 import re
 import tempfile
@@ -23,6 +24,9 @@ class DiagramService:
         self.settings_store = settings_store
 
     def enabled(self):
+        # Beta binaries exclude the SDK until its product license is confirmed.
+        if getattr(sys, "frozen", False):
+            return False
         settings = migrate(self.settings_store.read())
         return settings.get("developer_mode") is True and settings.get("diagram_editor_enabled") is True
 
