@@ -98,7 +98,7 @@ class FileConversionTests(unittest.TestCase):
             source.write_bytes(b"original")
             target = Path(folder) / "report.pdf"
             app = App()
-            self.assertEqual(convert_hwpx_to_pdf(app, source, target), target)
+            self.assertTrue(convert_hwpx_to_pdf(app, source, target).samefile(target))
             self.assertTrue(app.assert_target_absent)
             self.assertTrue(target.read_bytes().startswith(b"%PDF-"))
             self.assertEqual(source.read_bytes(), b"original")
@@ -133,7 +133,7 @@ class FileConversionTests(unittest.TestCase):
 
             app = App()
             with mock.patch("docfit_core.kordoc_bridge.convert_to_hwpx", side_effect=fake_hwpx):
-                self.assertEqual(convert_to_pdf(app, source, target), target)
+                self.assertTrue(convert_to_pdf(app, source, target).samefile(target))
             self.assertTrue(app.assert_exists_during_open)
             self.assertIsNone(app.opened)
             self.assertTrue(target.read_bytes().startswith(b"%PDF-"))
