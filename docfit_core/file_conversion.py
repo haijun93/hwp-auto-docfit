@@ -26,7 +26,7 @@ def output_path_for(source: str | Path, target_format: str) -> Path:
     if source.is_symlink() or not source.is_file():
         raise ValueError("원본이 일반 파일이 아니거나 심볼릭 링크입니다.")
     if source.suffix.lower() not in SUPPORTED_INPUT_EXTENSIONS:
-        raise ValueError(f"kordoc이 지원하지 않는 입력 형식입니다: {source.suffix or '(확장자 없음)'}")
+        raise ValueError(f"변환할 수 없는 입력 형식입니다: {source.suffix or '(확장자 없음)'}")
 
     stem = source.stem
     marker = f"({suffix.upper()}변경)"
@@ -46,7 +46,7 @@ def convert_to_pandoc_format(source: str | Path, target: str | Path,
 
     source, target = Path(source), Path(target)
     if source.is_symlink() or not source.is_file() or source.suffix.lower() not in SUPPORTED_INPUT_EXTENSIONS:
-        raise ValueError("kordoc이 지원하는 일반 파일만 변환할 수 있습니다.")
+        raise ValueError("지원하는 문서 파일만 변환할 수 있습니다.")
     if target.suffix.lower() not in {".docx", ".epub"} or target.exists():
         raise ValueError("결과 경로가 잘못되었거나 이미 존재합니다.")
     pandoc = pandoc_executable or shutil.which("pandoc.exe") or shutil.which("pandoc")
@@ -59,7 +59,7 @@ def convert_to_pandoc_format(source: str | Path, target: str | Path,
         markdown = temp_dir / "document.md"
         parse_document(source, markdown, output_format="markdown", ocr=source.suffix.lower() == ".pdf")
         if not markdown.is_file():
-            raise RuntimeError("kordoc 파싱 결과 Markdown 파일이 생성되지 않았습니다.")
+            raise RuntimeError("문서를 읽은 결과가 만들어지지 않았습니다.")
         with tempfile.NamedTemporaryFile(prefix=".docfit_", suffix=target.suffix.lower(), dir=target.parent, delete=False) as stream:
             temp_output = Path(stream.name)
         temp_output.unlink()
@@ -143,7 +143,7 @@ def convert_to_pdf(app, source: str | Path, target: str | Path) -> Path:
 
     source, target = Path(source), Path(target)
     if source.suffix.lower() not in SUPPORTED_INPUT_EXTENSIONS:
-        raise ValueError("kordoc이 지원하지 않는 입력 형식입니다.")
+        raise ValueError("변환할 수 없는 입력 형식입니다.")
     if source.suffix.lower() in HANCOM_PDF_DIRECT:
         return convert_hwpx_to_pdf(app, source, target)
     target.parent.mkdir(parents=True, exist_ok=True)

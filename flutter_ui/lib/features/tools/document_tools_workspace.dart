@@ -548,7 +548,7 @@ class _ToolsState extends State<DocumentToolsWorkspace> {
               ),
             if (mode == 'advanced') ...[
               const Text(
-                '앱과 함께 배포하는 kordoc 꾸러미로 인터넷 없이 동작합니다. 원본 대신 작업 사본을 처리합니다.',
+                '앱에 포함된 변환 엔진으로 인터넷 없이 동작합니다. 원본 대신 작업 사본을 처리합니다.',
               ),
               DropdownButtonFormField<String>(
                 initialValue: advancedAction,

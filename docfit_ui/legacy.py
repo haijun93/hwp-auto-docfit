@@ -5542,7 +5542,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     initialdir=os.getcwd(),
                     filetypes=[
                         ("지원하는 모든 문서", "*.hwp *.hwpx *.hml *.pdf *.xls *.xlsx *.docx *.pptx *.png *.jpg *.jpeg *.webp *.txt *.md *.doc"),
-                        ("kordoc 변환 형식", "*.hwp *.hwpx *.hml *.pdf *.xls *.xlsx *.docx *.pptx *.png *.jpg *.jpeg *.webp"),
+                        ("변환할 수 있는 문서", "*.hwp *.hwpx *.hml *.pdf *.xls *.xlsx *.docx *.pptx *.png *.jpg *.jpeg *.webp"),
                         ("한/글 파일", "*.hwp *.hwpx *.hml"), ("HWP 파일", "*.hwp"), ("HWPX 파일", "*.hwpx"),
                         ("텍스트/Markdown", "*.txt *.md"), ("MS Word", "*.doc *.docx"), ("PDF", "*.pdf"),
                         ("Excel", "*.xls *.xlsx"), ("PowerPoint", "*.pptx"), ("이미지", "*.png *.jpg *.jpeg *.webp"),
@@ -5619,7 +5619,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         self.advanced_tools_toplevel = None
                 window = tk.Toplevel(self.root)
                 self.advanced_tools_toplevel = window
-                window.title("고급 문서 도구 · kordoc v4")
+                window.title("고급 문서 도구")
                 window.geometry("620x570")
                 window.resizable(True, True)
                 window.transient(self.root)
@@ -5629,7 +5629,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 engine_text = tk.StringVar(value="문서 엔진 확인 중…")
                 ttk.Label(body, textvariable=engine_text, style="Hint.TLabel").pack(anchor="w", pady=(2, 12))
                 def check_engine():
-                    try: value = f"kordoc {kordoc_engine_version()} · Node.js 선택형 연동"
+                    try: value = f"문서 변환 엔진 {kordoc_engine_version()} 준비됨"
                     except Exception as exc: value = str(exc)
                     self.root.after(0, lambda: engine_text.set(value))
                 threading.Thread(target=check_engine, daemon=True).start()
@@ -5700,7 +5700,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 from docfit_core.kordoc_runtime import RUNTIME_PACK_NAME
                 ttk.Label(
                     requirement_frame,
-                    text=("고급 문서 도구는 앱과 함께 배포하는 kordoc 꾸러미로 인터넷 없이 동작합니다. "
+                    text=("고급 문서 도구는 앱에 포함된 변환 엔진으로 인터넷 없이 동작합니다. "
                           f"실행 파일과 같은 폴더에 {RUNTIME_PACK_NAME}을 두세요. "
                           f"지금 상태: {engine_status()['reason']}"),
                     style="Hint.TLabel",
@@ -5907,7 +5907,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     raise ValueError("결과 형식은 HWPX, PDF, DOCX, EPUB, JPG 또는 PNG만 선택할 수 있습니다.")
                 files = list(self.files)
                 if any(Path(path).suffix.lower() not in SUPPORTED_INPUT_EXTENSIONS for path in files):
-                    raise ValueError("kordoc이 지원하는 입력 형식만 변환할 수 있습니다.")
+                    raise ValueError("지원하는 입력 형식만 변환할 수 있습니다.")
 
                 self.running = True
                 self.closing = False

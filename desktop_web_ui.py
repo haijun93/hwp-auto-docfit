@@ -390,7 +390,7 @@ class DesktopWebBridge:
         kordoc_ready = bool(kordoc.get("available"))
         pandoc_ready = prerequisites["pandoc"]
         hwp_ready = prerequisites["hwp_com"]
-        engine_reason = str(kordoc.get("reason") or "kordoc 사용 불가")
+        engine_reason = str(kordoc.get("reason") or "변환 엔진을 사용할 수 없습니다")
         # 그림 입력은 글자 인식(OCR)이 필요하다. 폐쇄망 꾸러미에는 OCR이 없으므로 미리 막고 이유를 보인다.
         if valid and kordoc_ready and not prerequisites.get("ocr", True) and any(
                 suffix in IMAGE_INPUT_EXTENSIONS for suffix in suffixes):
@@ -399,12 +399,12 @@ class DesktopWebBridge:
         # HWP·HWPX는 한/글이 직접 PDF로 저장한다. 다른 입력만 kordoc 중간 변환이 필요하다.
         pdf_needs_kordoc = any(suffix not in HANCOM_PDF_DIRECT for suffix in suffixes)
         pdf_ready = hwp_ready and (not pdf_needs_kordoc or kordoc_ready)
-        invalid_reason = "kordoc 지원 형식만 가능"
+        invalid_reason = "변환할 수 없는 파일 형식이 있습니다"
         pdf_reason = (invalid_reason if not valid else
                       "한/글 PDF 저장 기능을 사용할 수 없습니다" if not hwp_ready else
                       engine_reason if pdf_needs_kordoc and not kordoc_ready else
                       "한/글 내장 PDF 저장 사용 · 추가 변환기 설치 없음" if not pdf_needs_kordoc else
-                      "kordoc + 한/글 COM 준비됨")
+                      "변환 엔진 + 한/글 PDF 저장 준비됨")
         # 그림은 한/글 PDF 저장본을 쪽마다 렌더링하므로 PDF와 준비 조건이 같다.
         image_reason = (pdf_reason if not (valid and pdf_ready) else
                         "한/글 PDF 저장 후 쪽마다 그림 저장 · 여러 쪽은 폴더로 저장")
@@ -414,10 +414,10 @@ class DesktopWebBridge:
             {"format": "pdf", "label": "PDF", "enabled": valid and pdf_ready, "reason": pdf_reason},
             {"format": "docx", "label": "DOCX", "enabled": valid and kordoc_ready and pandoc_ready,
              "reason": invalid_reason if not valid else engine_reason if not kordoc_ready else
-                      "Pandoc 설치 필요" if not pandoc_ready else "kordoc + Pandoc 준비됨"},
+                      "Pandoc 설치 필요" if not pandoc_ready else "변환 엔진 + Pandoc 준비됨"},
             {"format": "epub", "label": "EPUB", "enabled": valid and kordoc_ready and pandoc_ready,
              "reason": invalid_reason if not valid else engine_reason if not kordoc_ready else
-                      "Pandoc 설치 필요" if not pandoc_ready else "kordoc + Pandoc 준비됨"},
+                      "Pandoc 설치 필요" if not pandoc_ready else "변환 엔진 + Pandoc 준비됨"},
             *({"format": kind, "label": kind.upper(), "enabled": valid and pdf_ready, "reason": image_reason}
               for kind in IMAGE_FORMATS),
         ]

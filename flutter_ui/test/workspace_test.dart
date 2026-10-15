@@ -817,8 +817,14 @@ void main() {
     expect(find.text('DOCX'), findsOneWidget);
     await tester.tap(find.text('PDF').last);
     await tester.pumpAndSettle();
-    expect(calls.last.first, 'set_conversion_target');
-    expect(calls.last.last, 'pdf');
+    // 형식을 고르면 '변환 시작'을 누르지 않아도 바로 변환을 시작한다(사용자 지시, 2026-10-15).
+    final picked = calls.indexWhere(
+      (call) => call.first == 'set_conversion_target',
+    );
+    expect(picked, isNot(-1));
+    expect(calls[picked].last, 'pdf');
+    expect(calls.length, greaterThan(picked + 1));
+    expect(calls[picked + 1].take(2), ['start', 'file_format']);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });

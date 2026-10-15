@@ -102,7 +102,7 @@ def _safe_member(name: str) -> PurePosixPath:
 def install_pack(pack: str | Path, version: str, root: str | Path | None = None) -> Path:
     """Serialize first installation across callers and reuse the winner."""
     if not re.fullmatch(r"\d+\.\d+\.\d+", version):
-        raise RuntimePackError("kordoc 버전 형식이 올바르지 않습니다.")
+        raise RuntimePackError("변환 엔진 버전 형식이 올바르지 않습니다.")
     root = Path(root) if root is not None else installed_root()
     with ProcessLock(root / (version + ".install.lock")):
         return _install_pack_locked(pack, version, root)
@@ -118,23 +118,23 @@ def _install_pack_locked(pack, version, root):
     try:
         archive = zipfile.ZipFile(pack)
     except (OSError, zipfile.BadZipFile) as exc:
-        raise RuntimePackError(f"kordoc 꾸러미를 열 수 없습니다: {pack.name}") from exc
+        raise RuntimePackError(f"변환 엔진 꾸러미를 열 수 없습니다: {pack.name}") from exc
     with archive:
         members = archive.infolist()
         if len(members) > MAX_PACK_FILES:
-            raise RuntimePackError("kordoc 꾸러미의 파일 수가 너무 많습니다.")
+            raise RuntimePackError("변환 엔진 꾸러미의 파일 수가 너무 많습니다.")
         if sum(member.file_size for member in members) > MAX_PACK_BYTES:
-            raise RuntimePackError("kordoc 꾸러미의 압축 해제 크기가 너무 큽니다.")
+            raise RuntimePackError("변환 엔진 꾸러미의 압축 해제 크기가 너무 큽니다.")
         names = {str(_safe_member(member.filename)).rstrip("/") for member in members}
         if MANIFEST_NAME not in names:
-            raise RuntimePackError("kordoc 꾸러미에 runtime.json이 없습니다.")
+            raise RuntimePackError("변환 엔진 꾸러미에 runtime.json이 없습니다.")
         try:
             manifest = json.loads(archive.read(MANIFEST_NAME).decode("utf-8"))
         except (KeyError, ValueError) as exc:
-            raise RuntimePackError("kordoc 꾸러미의 runtime.json을 읽을 수 없습니다.") from exc
+            raise RuntimePackError("변환 엔진 꾸러미의 runtime.json을 읽을 수 없습니다.") from exc
         if not isinstance(manifest, dict) or manifest.get("kordoc") != version:
             raise RuntimePackError(
-                f"kordoc 꾸러미 버전이 다릅니다(필요 {version}, 꾸러미 {manifest.get('kordoc') if isinstance(manifest, dict) else '?'}).")
+                f"변환 엔진 꾸러미 버전이 다릅니다(필요 {version}, 꾸러미 {manifest.get('kordoc') if isinstance(manifest, dict) else '?'}).")
         root.mkdir(parents=True, exist_ok=True)
         staging = root / f".installing-{uuid.uuid4().hex}"
         try:
@@ -148,7 +148,7 @@ def _install_pack_locked(pack, version, root):
                 with archive.open(member) as source, target.open("xb") as output:
                     shutil.copyfileobj(source, output, 1024 * 1024)
             if not runtime_in(staging, version):
-                raise RuntimePackError("kordoc 꾸러미에 node 또는 kordoc 실행 파일이 없습니다.")
+                raise RuntimePackError("변환 엔진 꾸러미에 실행 파일이 없습니다.")
             if destination.exists():
                 shutil.rmtree(destination, ignore_errors=True)
             os.replace(staging, destination)

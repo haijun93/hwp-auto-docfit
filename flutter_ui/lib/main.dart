@@ -428,6 +428,8 @@ class _WorkspaceState extends State<Workspace> {
       return;
     }
     await command('set_conversion_target', [picked]);
+    // 결과 형식을 고르면 '변환 시작'을 기다리지 않고 바로 변환한다(사용자 지시, 2026-10-15).
+    if (mounted && mode == 'file_format' && canStart) await startJob();
   }
 
   Widget conversionPanel() {
@@ -442,7 +444,7 @@ class _WorkspaceState extends State<Workspace> {
           sectionTitle(
             Icons.swap_horiz_rounded,
             '선택한 결과 형식: ${conversionTarget.toUpperCase()}',
-            '포맷 선택창에서 결과 형식을 고른 뒤 변환을 시작하세요.',
+            '결과 형식을 고르면 바로 변환을 시작해요.',
           ),
           const SizedBox(height: 16),
           Listener(

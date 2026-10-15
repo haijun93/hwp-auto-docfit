@@ -227,7 +227,7 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
           ),
           const SizedBox(height: 8),
           const Text(
-            '포맷을 클릭해 선택 · 가운데 또는 Esc로 취소',
+            '포맷을 누르면 바로 변환을 시작해요 · 가운데 또는 Esc로 취소',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 11, color: Color(0xff64748b)),
           ),
