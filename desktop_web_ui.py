@@ -14,7 +14,7 @@ from concurrent.futures import Future, TimeoutError
 from pathlib import Path
 from types import SimpleNamespace
 
-from docfit_core.progress_guide import guide_state
+from docfit_core.progress_guide import guide_state, progress_view
 from docfit_core.stage_selection import STAGE_EXAMPLES, default_choice, stages_for_mode
 from docfit_app.api_contract import response
 from docfit_app.app_state import STAGE_ORDER
@@ -244,6 +244,27 @@ class DesktopWebBridge:
         state = self._profile_state()
         return {"busy": bool(state.analyzing_format), "file": str(state.analyzing_file or "")}
 
+    def _live_progress(self, gui, mode):
+        started = getattr(gui, "_작업시작시각", None)
+        ended = getattr(gui, "_작업종료시각", None)
+        elapsed = None
+        if started is not None:
+            elapsed = max(0.0, (time.monotonic() if gui.running or ended is None else ended) - started)
+        return progress_view(
+            mode,
+            getattr(gui, "_안내키", None),
+            getattr(gui, "_안내지남", ()),
+            selection=getattr(gui, "_진행_세부작업", None),
+            running=bool(gui.running),
+            files=list(gui.files),
+            doc=getattr(gui, "_진행문서", None),
+            results=[{"source": Path(item.get("원본", "")).name, "name": Path(item.get("결과", "")).name}
+                     for item in getattr(gui, "_결과목록", [])],
+            failures=getattr(gui, "_실패목록", {}),
+            target=self.conversion_target,
+            elapsed=elapsed,
+        )
+
     def get_state(self):
         def snapshot():
             gui = self.gui
@@ -301,6 +322,8 @@ class DesktopWebBridge:
                     getattr(gui, "_안내키", None),
                     getattr(gui, "_안내지남", ()),
                 ),
+                # 기능별 맞춤 진행 화면(알파): 단계·문서 대기열·경과 시간을 한 번에 보낸다.
+                "live": self._live_progress(gui, mode),
                 "conversion_target": self.conversion_target,
                 "conversion_targets": [],
                 "can_start": self._can_start(mode, gui.files, gui.running) if mode != "file_format" else False,

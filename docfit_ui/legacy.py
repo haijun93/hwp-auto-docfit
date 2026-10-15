@@ -720,6 +720,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 self.STEP_ACTIVE_FG = "white"
                 self.step_boxes = {}  # 이전 설정 코드와의 호환
                 self._안내키, self._안내지남 = None, set()   # 진행 화면 단계 안내 상태
+                # 맞춤 진행 화면(알파): 지금 문서 (순번, 전체), 실패한 원본 {경로: 이유}, 이번 작업의 실제 세부 작업
+                self._진행문서, self._실패목록, self._진행_세부작업 = None, {}, None
+                self._작업종료시각 = None
                 self.stage_board = LiveStageBoard(status_frame)
                 self.stage_board.pack(fill="x", pady=(2, 0))
                 # '03 진행 상황' 바로 아래 결과 줄: 결과 버튼 두 개(작업 결과가 나오기 전에는 비활성)와,
@@ -5912,6 +5915,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 self.selected_mode.set("file_format")
                 self._결과_초기화(결과목록도_지우기=True)
                 self._안내키, self._안내지남 = None, set()
+                self._진행문서, self._실패목록, self._진행_세부작업 = None, {}, None
+                self._작업시작시각, self._작업종료시각 = time.monotonic(), None
                 self.status_var.set(f"파일포맷 변경 중 · {len(files)}개")
                 self._안내_설정(0)
                 self.버튼_작업중()
@@ -5933,10 +5938,11 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                                 app.Visible = False
                             except Exception:
                                 pass
-                        for source_text in files:
+                        for number, source_text in enumerate(files, 1):
                             if 중단_event.is_set():
                                 break
                             source = Path(source_text)
+                            gui_queue.put(("doc_begin", number, len(files), source.name))
                             try:
                                 target = output_path_for(source, target_format)
                                 if target_format == "hwpx":
@@ -6021,6 +6027,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 self._결과_초기화(결과목록도_지우기=not 이어서_진행)   # 이어서 진행할 때는 이전 결과 기록을 남긴다
                 if not 이어서_진행:
                     self._작업시작시각 = time.monotonic()
+                    self._실패목록 = {}
+                self._진행문서, self._작업종료시각 = None, None
                 self._작업모드 = mode
                 self.버튼_작업중()
 
@@ -6134,6 +6142,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     self.로그표시("자간 정리 제외: 서식통일이 고친 문장의 자간 조정·외톨이 글자 당기기를 하지 않습니다.")
                 표준서식_세부_전달["unify_exclude_spacing"] = 자간제외
 
+                self._진행_세부작업 = dict(세부작업)   # 진행 화면이 끈 단계를 목록에서 뺄 때 쓴다
                 from docfit_engine.runtime import session_for
                 self._run_context = session_for(globals()).new_context(
                     options=self.state.options, profile=표준서식_세부_전달, cancellation=중단_event)
@@ -6724,14 +6733,18 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                                 if self._안내키:
                                     self._안내지남.add(self._안내키)
                                 self._안내키 = key
+                        elif event == "doc_begin":
+                            self._진행문서 = (int(item[1]), int(item[2]))
                         elif event == "progress":
                             pass  # 긴 진행 바는 없앴다. 단계 표시(LiveStageBoard)가 진행 상황을 보여 준다.
                         elif event == "saved":
                             self._결과목록.append({"원본": item[1], "결과": item[2], "쪽수": item[3]})
                         elif event == "document_error":
+                            self._실패목록[str(item[1])] = str(item[2])
                             self.stage_board.finish("오류")
                             self.로그표시(f"문서 처리 실패: {item[1]}\n{item[2]}")
                         elif event == "file_conversion_stopped":
+                            self._작업종료시각 = time.monotonic()
                             self.running = False
                             self._안내_설정(0)
                             self.버튼_대기중()
@@ -6740,6 +6753,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                             if not self.closing:
                                 self._알림(messagebox.showinfo, APP_NAME, self.status_var.get(), parent=self.root)
                         elif event == "file_conversion_finished":
+                            self._작업종료시각 = time.monotonic()
                             self.running = False
                             self._안내_설정(0)
                             self.버튼_대기중()
@@ -6756,6 +6770,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         elif event in ("stopped", "finished") and getattr(self, "_서식예시_작업", None):
                             self._서식예시_완료(item, 중단=event == "stopped")
                         elif event == "stopped":
+                            self._작업종료시각 = time.monotonic()
                             self.running = False
                             self._안내_설정(0)
                             self.버튼_대기중()
@@ -6775,6 +6790,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                             if not self.closing:
                                 self._알림(messagebox.showinfo, APP_NAME, 안내, parent=self.root)
                         elif event == "finished":
+                            self._작업종료시각 = time.monotonic()
                             self.running = False
                             self._안내_설정(0)   # 작업이 끝나면 강조를 기본값으로 되돌린다.
                             self.버튼_대기중()

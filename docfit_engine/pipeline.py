@@ -63,6 +63,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
         return bind_function(문서_처리, _docfit_namespace)
     if _docfit_symbol == '_문서_처리_본체':
         def _문서_처리_본체(파일, index, total, 문장부호기능=True):
+            gui_queue.put(("doc_begin", index, total, Path(str(파일)).name))   # 진행 화면의 문서 순번
             global hwp, 현재_처리파일, 한칸표_보호영역, 디자인표_보호영역, 디자인표_확인, 최종검수_문서목록
             global 쪽범위_본문_문단, 쪽범위_컨트롤영역, 쪽범위_실제, 기본표서식_적용됨
             global _표준서식_XML텍스트, _알파_일괄서식_문서, _표준서식_XML간격

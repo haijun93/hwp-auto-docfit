@@ -16,6 +16,7 @@ import 'features/tools/backend_dialog.dart';
 import 'features/conversion/floating_format_picker.dart';
 import 'features/diagrams/diagram_editor_screen.dart';
 import 'features/flows/flow_editor_screen.dart';
+import 'features/progress/live_progress.dart';
 import 'features/settings/settings_dialog.dart';
 
 export 'core/api/abbreviation_api.dart' show ApiCall;
@@ -2321,6 +2322,22 @@ class _WorkspaceState extends State<Workspace> {
   // ---- 3. 진행 과정 -------------------------------------------------
 
   Widget progress() {
+    // 기능별 맞춤 진행 화면(알파). 예전 엔진처럼 live 값이 없으면 아래 단계 목록 화면을 그대로 쓴다.
+    final live = state['live'];
+    if (live is Map && live.isNotEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          heading(
+            running || live['finished'] == true
+                ? '${live['title']}'
+                : '진행 상황을 확인하세요',
+            '${live['message'] ?? ''}',
+          ),
+          panel(LiveProgress(live: live, onShowLog: showLog)),
+        ],
+      );
+    }
     final guide = state['guide'] as Map? ?? {};
     final steps = guide['steps'] as List? ?? [];
     final current = guide['current'] as int?;
