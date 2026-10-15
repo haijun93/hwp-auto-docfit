@@ -5,6 +5,7 @@ import runpy
 import tempfile
 import unittest
 import zipfile
+from tests.temp_support import tracked_tempdir
 
 
 class LearnedTitleStyleTest(unittest.TestCase):
@@ -73,7 +74,7 @@ class LearnedTitleStyleTest(unittest.TestCase):
         p = ns['XML_자식_추가'](section, section, tag=pt + 'p', attrib={'id': '0', 'paraPrIDRef': '0', 'styleIDRef': '0'})
         run = ns['XML_자식_추가'](p, section, tag=pt + 'run', attrib={'charPrIDRef': '0'})
         run.append(table)
-        out = Path(tempfile.mkdtemp(prefix='docfit-title-')) / 'in.hwpx'
+        out = Path(tracked_tempdir(self, 'docfit-title-')) / 'in.hwpx'
         with zipfile.ZipFile(out, 'w') as z:
             z.writestr('mimetype', 'application/hwp+zip')
             z.writestr('Contents/header.xml', ns['ET'].tostring(header, encoding='utf-8', xml_declaration=True))

@@ -1,12 +1,26 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'bridge.dart' as bridge;
+import 'core/api/abbreviation_api.dart';
+import 'core/close_guards.dart';
+import 'features/abbreviations/abbreviation_manager.dart';
+import 'features/formats/table_template_panel.dart';
+import 'features/formats/profile_editor.dart';
+import 'features/tools/document_tools_workspace.dart';
+import 'features/tools/backend_dialog.dart';
+import 'features/conversion/floating_format_picker.dart';
+import 'features/diagrams/diagram_editor_screen.dart';
+import 'features/flows/flow_editor_screen.dart';
+import 'features/progress/live_progress.dart';
+import 'features/settings/settings_dialog.dart';
+import 'features/stages/stage_board.dart';
 
-typedef ApiCall = Future<Object?> Function(String, List<Object?>);
+export 'core/api/abbreviation_api.dart' show ApiCall;
 
 void main() => runApp(const DocFitApp());
 
@@ -25,35 +39,35 @@ class DocFitApp extends StatelessWidget {
   final ApiCall api;
   @override
   Widget build(BuildContext context) => MaterialApp(
-        title: '한글편집 후처리',
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          useMaterial3: true,
-          fontFamily: 'NotoSansKR',
-          colorScheme: ColorScheme.fromSeed(seedColor: _blue),
-          scaffoldBackgroundColor: const Color(0xfff6f8fb),
-          filledButtonTheme: FilledButtonThemeData(
-            style: FilledButton.styleFrom(
-              minimumSize: const Size(48, 52),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-            ),
-          ),
-          outlinedButtonTheme: OutlinedButtonThemeData(
-            style: OutlinedButton.styleFrom(
-              minimumSize: const Size(48, 48),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-            ),
-          ),
-          inputDecorationTheme: const InputDecorationTheme(
-            border: OutlineInputBorder(),
+    title: '한글편집 후처리',
+    debugShowCheckedModeBanner: false,
+    theme: ThemeData(
+      useMaterial3: true,
+      fontFamily: 'NotoSansKR',
+      colorScheme: ColorScheme.fromSeed(seedColor: _blue),
+      scaffoldBackgroundColor: const Color(0xfff6f8fb),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          minimumSize: const Size(48, 52),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
           ),
         ),
-        home: Workspace(api: api),
-      );
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size(48, 48),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+      ),
+      inputDecorationTheme: const InputDecorationTheme(
+        border: OutlineInputBorder(),
+      ),
+    ),
+    home: Workspace(api: api),
+  );
 }
 
 class Workspace extends StatefulWidget {
@@ -67,8 +81,11 @@ class _WorkspaceState extends State<Workspace> {
   Map<String, dynamic> state = {};
   int tab = 0;
   bool busy = false, polling = false, wasRunning = false, stagesOpen = false;
+  int commandVersion = 0;
   String? error;
   Timer? timer;
+  bool _conversionPickerOpen = false;
+  Offset? _conversionAnchor;
   final scaffoldKey = GlobalKey<ScaffoldState>();
   // 쪽 범위는 화면에서 바로 입력하고, 시작할 때 앱에 넘긴다.
   final rangeStart = TextEditingController(text: '1');
@@ -78,9 +95,12 @@ class _WorkspaceState extends State<Workspace> {
   final stateVersion = ValueNotifier<int>(0);
   // 서식 관리에서 안 된 이유(이름 중복 등)를 창 안에 보여 준다.
   String? formatNotice;
+  int formatSection = 0;
+  bool backendDialogOpen = false;
+  bool appClosing = false;
 
   static const tabs = ['문서 선택', '작업 방식', '진행 과정', '결과 확인'];
-  // (내부 모드, 이름, 설명, 아이콘, 결과 파일 접미사). 카드는 세 장이며, 서식 적용(format)은
+  // (내부 모드, 이름, 설명, 아이콘, 결과 파일 접미사). 서식 적용(format)은
   // '한 번에 적용' 카드에서 '자간 조정 포함'을 끈 것이다.
   static const modes = [
     (
@@ -104,16 +124,34 @@ class _WorkspaceState extends State<Workspace> {
       Icons.auto_awesome_rounded,
       '일괄적용',
     ),
+    (
+      'file_format',
+      '파일포맷 변경',
+      '문서를 HWPX·PDF·DOCX·EPUB·JPG·PNG로 바꿔요. HWP·HWPX→PDF·그림은 한/글 내장 저장 기능을 사용해요.',
+      Icons.swap_horiz_rounded,
+      'HWPX변경',
+    ),
   ];
 
   bool get running => state['running'] == true;
-  bool get locked => busy || running || state.isEmpty || error != null;
+  bool get locked =>
+      appClosing || busy || running || state.isEmpty || error != null;
   List get files => state['files'] as List? ?? [];
   List get results => state['results'] as List? ?? [];
   List get stages => state['stages'] as List? ?? [];
   List get profiles => state['profiles'] as List? ?? [];
   Map get quickOptions => state['options'] as Map? ?? {};
   String get mode => state['mode'] as String? ?? 'spacing';
+  String get conversionTarget =>
+      state['conversion_target'] as String? ?? 'hwpx';
+  List get conversionTargets =>
+      state['conversion_targets'] as List? ?? const [];
+  bool get conversionTargetEnabled => conversionTargets.any(
+    (item) =>
+        item is Map &&
+        item['format'] == conversionTarget &&
+        item['enabled'] == true,
+  );
   String get cardMode => mode == 'format' ? 'all' : mode;
   bool get includeSpacing => state['include_spacing'] != false;
   // '자간 정리' 카드의 '기존 자간 초기화'(세부 작업 01과 같은 값).
@@ -127,6 +165,8 @@ class _WorkspaceState extends State<Workspace> {
       (state['card_options'] as Map? ?? const {})[key] == true;
   String get modeTitle => mode == 'format'
       ? '한 번에 적용(자간 조정 제외)'
+      : mode == 'file_format'
+      ? '파일포맷 변경'
       : modes.firstWhere((m) => m.$1 == mode, orElse: () => modes.first).$2;
   int get stagesOn => stages.where((s) => s['on'] == true).length;
   bool get stagesChanged => stages.any((s) => s['on'] != s['default']);
@@ -144,13 +184,28 @@ class _WorkspaceState extends State<Workspace> {
 
   String get rangeLabel =>
       rangeOn ? '${rangeStart.text.trim()}~${rangeEnd.text.trim()}쪽' : '문서 전체';
-  bool get canStart => !locked && files.isNotEmpty && rangeError == null;
+  bool get canStart =>
+      !locked &&
+      state['engine_ready'] != false &&
+      files.isNotEmpty &&
+      (mode == 'file_format'
+          ? state['can_start'] == true && conversionTargetEnabled
+          : rangeError == null && state['can_start'] == true);
 
   @override
   void initState() {
     super.initState();
+    unawaited(_enableCloseGuard());
     refresh();
     timer = Timer.periodic(const Duration(seconds: 1), (_) => refresh());
+  }
+
+  Future<void> _enableCloseGuard() async {
+    try {
+      await widget.api('enable_close_guard', []);
+    } catch (_) {
+      /* Older preview hosts have no OS window. */
+    }
   }
 
   @override
@@ -162,10 +217,23 @@ class _WorkspaceState extends State<Workspace> {
     super.dispose();
   }
 
-  void apply(Map next) {
+  void apply(Map next, {bool syncRange = false}) {
+    final documentDropped =
+        (next['document_drop_revision'] as num? ?? 0) >
+        (state['document_drop_revision'] as num? ?? 0);
+    final previousRange = state['range'] as Map? ?? {};
+    final range = next['range'] as Map? ?? {};
+    final rangeChanged = [
+      'enabled',
+      'start',
+      'end',
+    ].any((key) => previousRange[key] != range[key]);
+    final documentsChanged =
+        jsonEncode(state['files'] ?? []) != jsonEncode(next['files'] ?? []);
     state = Map<String, dynamic>.from(next);
-    final range = state['range'] as Map? ?? {};
-    if (!rangeLoaded && range.isNotEmpty) {
+    // 입력 중인 값은 유지하되, 문서 변경·새 작업·백엔드 범위 변경은 반영한다.
+    if (range.isNotEmpty &&
+        (!rangeLoaded || syncRange || rangeChanged || documentsChanged)) {
       rangeLoaded = true;
       rangeOn = range['enabled'] == true;
       rangeStart.text = '${range['start'] ?? 1}';
@@ -176,30 +244,52 @@ class _WorkspaceState extends State<Workspace> {
     wasRunning = running;
     // 열린 '서식 관리' 창은 이 화면을 다 그린 뒤 다시 그린다(그리는 도중에 알리면 안 됨).
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) stateVersion.value++;
+      if (!mounted) return;
+      stateVersion.value++;
+      if (files.isNotEmpty &&
+          !locked &&
+          (documentDropped || (documentsChanged && mode == 'file_format'))) {
+        setState(() => tab = 1);
+        if (mode == 'file_format') openConversionPicker();
+      }
     });
+    checkBackendDialog();
   }
 
   Future<void> refresh() async {
     if (polling) return;
+    if (busy) {
+      try {
+        final pending = await widget.api('get_pending_dialog', []);
+        if (mounted && pending is Map && pending['id'] is String) {
+          checkBackendDialog(pending);
+        }
+      } catch (_) {}
+      return;
+    }
     polling = true;
+    final version = commandVersion;
     try {
       final next = await widget.api('get_state', []);
-      if (mounted && next is Map) {
+      if (mounted && version == commandVersion && next is Map) {
         setState(() {
           apply(next);
           error = null;
         });
       }
     } catch (_) {
-      if (mounted) setState(() => error = '앱과 연결하지 못했어요. 잠시 후 다시 확인합니다.');
+      if (mounted && version == commandVersion) {
+        setState(() => error = '앱과 연결하지 못했어요. 잠시 후 다시 확인합니다.');
+      }
     } finally {
       polling = false;
     }
   }
 
   Future<void> command(String method, [List<Object?> args = const []]) async {
-    if (busy) return;
+    if (!mounted || busy) return;
+    // 명령 전 시작된 조회는 명령 결과보다 오래된 상태일 수 있다.
+    commandVersion++;
     setState(() {
       busy = true;
       error = null;
@@ -210,17 +300,19 @@ class _WorkspaceState extends State<Workspace> {
         final notice = response['notice'];
         setState(() {
           formatNotice = notice is String && notice.isNotEmpty ? notice : null;
-          apply(response);
+          apply(response, syncRange: method == 'next_job');
         });
         if (formatNotice != null) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text(formatNotice!)));
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(formatNotice!)));
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('작업을 실행하지 못했어요: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('작업을 실행하지 못했어요: $e')));
       }
     } finally {
       if (mounted) setState(() => busy = false);
@@ -236,6 +328,180 @@ class _WorkspaceState extends State<Workspace> {
       rangeEnd.text.trim(),
     ]);
     if (mounted && running) setState(() => tab = 2);
+  }
+
+  Future<void> openConversionPicker() async {
+    if (!mounted || locked || _conversionPickerOpen) return;
+    _conversionPickerOpen = true;
+    String? picked;
+    try {
+      picked = await showGeneralDialog<String>(
+        context: context,
+        barrierDismissible: true,
+        barrierLabel: '포맷 선택창 닫기',
+        barrierColor: const Color(0x480f172a),
+        transitionDuration: const Duration(milliseconds: 160),
+        pageBuilder: (dialogContext, animation, secondaryAnimation) =>
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final width = math.min(360.0, constraints.maxWidth - 24);
+                final height = math.min(470.0, constraints.maxHeight - 24);
+                final anchor =
+                    _conversionAnchor ??
+                    Offset(constraints.maxWidth / 2, constraints.maxHeight / 2);
+                final left = (anchor.dx - width / 2).clamp(
+                  12.0,
+                  math.max(12.0, constraints.maxWidth - width - 12),
+                );
+                final top = (anchor.dy - height / 2).clamp(
+                  12.0,
+                  math.max(12.0, constraints.maxHeight - height - 12),
+                );
+                return Stack(
+                  children: [
+                    Positioned(
+                      left: left.toDouble(),
+                      top: top.toDouble(),
+                      width: width,
+                      height: height,
+                      child: CallbackShortcuts(
+                        bindings: {
+                          const SingleActivator(
+                            LogicalKeyboardKey.escape,
+                          ): () =>
+                              Navigator.of(dialogContext).pop(),
+                        },
+                        child: Focus(
+                          autofocus: true,
+                          child: Material(
+                            color: const Color(0xfff6f7fc),
+                            borderRadius: BorderRadius.circular(28),
+                            elevation: 16,
+                            child: SingleChildScrollView(
+                              padding: const EdgeInsets.all(12),
+                              child: ValueListenableBuilder<int>(
+                                valueListenable: stateVersion,
+                                builder: (context, _, _) =>
+                                    FloatingFormatPicker(
+                                      key: const Key(
+                                        'floatingConversionPicker',
+                                      ),
+                                      targets: conversionTargets
+                                          .whereType<Map>()
+                                          .map(
+                                            (item) => {
+                                              ...item,
+                                              'enabled':
+                                                  item['enabled'] == true &&
+                                                  !locked,
+                                            },
+                                          )
+                                          .toList(),
+                                      selected: conversionTarget,
+                                      fileCount: files.length,
+                                      onSelected: (format) => Navigator.of(
+                                        dialogContext,
+                                      ).pop(format),
+                                      onCancel: () =>
+                                          Navigator.of(dialogContext).pop(),
+                                    ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+        transitionBuilder: (context, animation, secondaryAnimation, child) =>
+            FadeTransition(opacity: animation, child: child),
+      );
+    } finally {
+      _conversionPickerOpen = false;
+    }
+    if (!mounted || picked == null || locked) return;
+    if (!conversionTargets.any(
+      (item) =>
+          item is Map && item['format'] == picked && item['enabled'] == true,
+    )) {
+      return;
+    }
+    await command('set_conversion_target', [picked]);
+    // 결과 형식을 고르면 '변환 시작'을 기다리지 않고 바로 변환한다(사용자 지시, 2026-10-15).
+    if (mounted && mode == 'file_format' && canStart) await startJob();
+  }
+
+  Widget conversionPanel() {
+    final target = conversionTargets.whereType<Map>().firstWhere(
+      (item) => item['format'] == conversionTarget,
+      orElse: () => {'reason': '변환할 문서를 추가하세요.'},
+    );
+    return panel(
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          sectionTitle(
+            Icons.swap_horiz_rounded,
+            '선택한 결과 형식: ${conversionTarget.toUpperCase()}',
+            '결과 형식을 고르면 바로 변환을 시작해요.',
+          ),
+          const SizedBox(height: 16),
+          Listener(
+            onPointerDown: (event) => _conversionAnchor = event.position,
+            child: OutlinedButton.icon(
+              key: const Key('openConversionPicker'),
+              onPressed: locked ? null : openConversionPicker,
+              icon: const Icon(Icons.donut_large_rounded),
+              label: const Text('변환 포맷 선택'),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            '${target['reason'] ?? ''}',
+            key: const Key('conversionSummaryNotice'),
+            style: const TextStyle(fontSize: 12, color: _muted),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            '원본을 보존하고 결과를 원본 폴더에 새 파일로 저장해요.',
+            style: TextStyle(fontSize: 12, color: _faint),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> openFlowEditor() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => FlowEditorScreen(api: widget.api),
+      ),
+    );
+  }
+
+  Future<void> openDiagramEditor() async {
+    if (quickOptions['developer_mode'] != true ||
+        quickOptions['diagram_editor_enabled'] != true) {
+      return;
+    }
+    try {
+      await widget.api('diagram_list', const []); // Python 서비스에서 기능 플래그를 재검사한다.
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => DiagramEditorScreen(api: widget.api),
+        ),
+      );
+      await refresh();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('도형 편집기를 열지 못했어요: $e')));
+      }
+    }
   }
 
   /// Ctrl+Enter: 문서 선택 화면에서는 다음 단계로, 작업 방식 화면에서는 바로 시작한다.
@@ -265,120 +531,265 @@ class _WorkspaceState extends State<Workspace> {
         child: Material(type: MaterialType.transparency, child: child),
       );
   Widget heading(String title, String subtitle) => Padding(
-        padding: const EdgeInsets.only(bottom: 24),
+    padding: const EdgeInsets.only(bottom: 24),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: Theme.of(
+            context,
+          ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 10),
+        Text(subtitle, style: const TextStyle(color: _muted, height: 1.6)),
+      ],
+    ),
+  );
+  Widget sectionTitle(IconData icon, String title, String subtitle) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: _blueSoft,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(icon, size: 20, color: _blue),
+      ),
+      const SizedBox(width: 14),
+      Expanded(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               title,
-              style: Theme.of(context)
-                  .textTheme
-                  .headlineMedium
-                  ?.copyWith(fontWeight: FontWeight.w700),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
             ),
-            const SizedBox(height: 10),
-            Text(subtitle, style: const TextStyle(color: _muted, height: 1.6)),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: const TextStyle(fontSize: 13, color: _muted, height: 1.5),
+            ),
           ],
         ),
-      );
-  Widget sectionTitle(IconData icon, String title, String subtitle) => Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: _blueSoft,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, size: 20, color: _blue),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style:
-                      const TextStyle(fontSize: 13, color: _muted, height: 1.5),
-                ),
-              ],
-            ),
-          ),
-        ],
-      );
+      ),
+    ],
+  );
 
   @override
-  Widget build(BuildContext context) => CallbackShortcuts(
-        bindings: {
-          const SingleActivator(LogicalKeyboardKey.keyO, control: true): () {
-            if (!locked) command('add_files');
-          },
-          const SingleActivator(LogicalKeyboardKey.enter, control: true):
-              primaryShortcut,
-          const SingleActivator(LogicalKeyboardKey.f1): showHelp,
+  Widget build(BuildContext context) => _closeLock(
+    CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyO, control: true): () {
+          if (!locked) command('add_files');
         },
-        child: Focus(
-          autofocus: true,
-          child: Scaffold(
-            key: scaffoldKey,
-            endDrawer: settingsDrawer(),
-            appBar: appBar(),
-            body: SafeArea(
-              child: LayoutBuilder(
-                builder: (context, layout) => Row(
-                  children: [
-                    if (layout.maxWidth >= 1000) sidebar(),
-                    Expanded(
-                      child: Column(
-                        children: [
-                          if (busy) const LinearProgressIndicator(minHeight: 2),
-                          if (error != null)
-                            Material(
-                              color: const Color(0xfffff1da),
-                              child: ListTile(
-                                leading: const Icon(Icons.wifi_off_rounded),
-                                title: Text(error!),
-                                trailing: IconButton(
-                                  onPressed: refresh,
-                                  tooltip: '다시 연결',
-                                  icon: const Icon(Icons.refresh),
-                                ),
+        const SingleActivator(LogicalKeyboardKey.enter, control: true):
+            primaryShortcut,
+        const SingleActivator(LogicalKeyboardKey.f1): showHelp,
+      },
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
+          key: scaffoldKey,
+          endDrawer: settingsDrawer(),
+          appBar: appBar(),
+          body: SafeArea(
+            child: LayoutBuilder(
+              builder: (context, layout) => Row(
+                children: [
+                  if (layout.maxWidth >= 1000) sidebar(),
+                  Expanded(
+                    child: Column(
+                      children: [
+                        if (busy) const LinearProgressIndicator(minHeight: 2),
+                        if (error != null)
+                          Material(
+                            color: const Color(0xfffff1da),
+                            child: ListTile(
+                              leading: const Icon(Icons.wifi_off_rounded),
+                              title: Text(error!),
+                              trailing: IconButton(
+                                onPressed: state['native_backend'] == true
+                                    ? () => command('restart_backend')
+                                    : refresh,
+                                tooltip: '다시 연결',
+                                icon: const Icon(Icons.refresh),
                               ),
                             ),
-                          if (layout.maxWidth < 1000) topTabs(),
-                          Expanded(
-                            child: SingleChildScrollView(
-                              padding:
-                                  const EdgeInsets.fromLTRB(20, 12, 20, 32),
-                              child: Center(
-                                child: ConstrainedBox(
-                                  constraints:
-                                      const BoxConstraints(maxWidth: 960),
-                                  child: AnimatedSwitcher(
-                                    duration: const Duration(milliseconds: 160),
-                                    child: KeyedSubtree(
-                                      key: ValueKey(tab),
-                                      child: [
-                                        documents,
-                                        options,
-                                        progress,
-                                        outcome,
-                                      ][tab](),
-                                    ),
+                          ),
+                        if (layout.maxWidth < 1000) topTabs(),
+                        Expanded(
+                          child: SingleChildScrollView(
+                            padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+                            child: Center(
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  maxWidth: 960,
+                                ),
+                                child: AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 160),
+                                  child: KeyedSubtree(
+                                    key: ValueKey(tab),
+                                    child: [
+                                      documents,
+                                      options,
+                                      progress,
+                                      outcome,
+                                    ][tab](),
                                   ),
                                 ),
                               ),
                             ),
                           ),
-                          bottomBar(),
-                        ],
+                        ),
+                        bottomBar(),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+
+  Widget _closeLock(Widget child) => ExcludeFocus(
+    excluding: appClosing,
+    child: AbsorbPointer(absorbing: appClosing, child: child),
+  );
+
+  PreferredSizeWidget appBar() => AppBar(
+    backgroundColor: Colors.white,
+    surfaceTintColor: Colors.transparent,
+    toolbarHeight: 72,
+    automaticallyImplyLeading: false,
+    title: Row(
+      children: [
+        Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: _ink,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Icon(
+            Icons.description_rounded,
+            color: Colors.white,
+            size: 23,
+          ),
+        ),
+        const SizedBox(width: 12),
+        const Flexible(
+          child: Text(
+            '한글편집 후처리',
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -.8,
+            ),
+          ),
+        ),
+      ],
+    ),
+    actions: [
+      IconButton(
+        tooltip: '사용 방법 (F1)',
+        onPressed: showHelp,
+        icon: const Icon(Icons.help_outline_rounded),
+      ),
+      IconButton(
+        tooltip: '작업 로그',
+        onPressed: () => showLog(),
+        icon: const Icon(Icons.receipt_long_outlined),
+      ),
+      IconButton(
+        tooltip: '표/다이어그램',
+        onPressed: locked ? null : openFlowEditor,
+        icon: const Icon(Icons.table_chart_outlined),
+      ),
+      // 문서 도구는 설정의 개발자 모드를 켜야 보인다.
+      if (quickOptions['developer_mode'] == true)
+        PopupMenuButton<String>(
+          tooltip: '문서 도구',
+          enabled: !locked,
+          icon: const Icon(Icons.handyman_outlined),
+          onSelected: (v) {
+            if (v == 'diagram_editor') {
+              openDiagramEditor();
+            } else {
+              openTools(v);
+            }
+          },
+          itemBuilder: (_) => [
+            if (quickOptions['diagram_editor_enabled'] == true)
+              const PopupMenuItem(
+                value: 'diagram_editor',
+                child: Text('tldraw 편집기 (개발자 전용)'),
+              ),
+            PopupMenuItem(value: 'review', child: Text('문서 검토')),
+            PopupMenuItem(value: 'proofread', child: Text('공공언어 교정')),
+            PopupMenuItem(value: 'outline', child: Text('문서 구조 편집')),
+            PopupMenuItem(value: 'writing', child: Text('작성 도우미')),
+            PopupMenuItem(value: 'markdown', child: Text('Markdown 내보내기')),
+            PopupMenuItem(value: 'advanced', child: Text('고급 문서 도구')),
+          ],
+        ),
+      IconButton(
+        tooltip: '설정',
+        onPressed: () => scaffoldKey.currentState?.openEndDrawer(),
+        icon: const Icon(Icons.settings_outlined),
+      ),
+      const SizedBox(width: 12),
+    ],
+  );
+
+  /// 단계 메뉴에 붙이는 한 줄 요약. 어느 화면에서든 지금 상태를 알 수 있게 한다.
+  String tabHint(int i) => switch (i) {
+    0 => files.isEmpty ? '문서를 추가하세요' : '${files.length}개 문서',
+    1 => '$modeTitle · $rangeLabel',
+    2 => running ? '진행 중' : (results.isEmpty ? '대기 중' : '끝남'),
+    _ => results.isEmpty ? '결과 없음' : '${results.length}개 저장',
+  };
+
+  Widget topTabs() => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+    child: Row(
+      children: List.generate(
+        tabs.length,
+        (i) => Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 3),
+            child: Tooltip(
+              message: tabHint(i),
+              child: TextButton(
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  backgroundColor: tab == i
+                      ? const Color(0xffe4edff)
+                      : Colors.transparent,
+                  foregroundColor: tab == i ? _blueDeep : _muted,
+                ),
+                onPressed: () => setState(() => tab = i),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (i == 2 && running) ...[
+                      const SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    Flexible(
+                      child: Text(
+                        '${i + 1}. ${tabs[i]}',
+                        textAlign: TextAlign.center,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],
@@ -387,313 +798,189 @@ class _WorkspaceState extends State<Workspace> {
             ),
           ),
         ),
-      );
-
-  PreferredSizeWidget appBar() => AppBar(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.transparent,
-        toolbarHeight: 72,
-        automaticallyImplyLeading: false,
-        title: Row(
-          children: [
-            Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                color: _ink,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.description_rounded,
-                color: Colors.white,
-                size: 23,
-              ),
-            ),
-            const SizedBox(width: 12),
-            const Flexible(
-              child: Text(
-                '한글편집 후처리',
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -.8,
-                ),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          IconButton(
-            tooltip: '사용 방법 (F1)',
-            onPressed: showHelp,
-            icon: const Icon(Icons.help_outline_rounded),
-          ),
-          IconButton(
-            tooltip: '작업 로그',
-            onPressed: busy ? null : () => command('open_log'),
-            icon: const Icon(Icons.receipt_long_outlined),
-          ),
-          // 문서 도구는 설정의 개발자 모드를 켜야 보인다.
-          if (quickOptions['developer_mode'] == true)
-            PopupMenuButton<String>(
-              tooltip: '문서 도구',
-              enabled: !locked,
-              icon: const Icon(Icons.handyman_outlined),
-              onSelected: (v) => command('run_tool', [v]),
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'review', child: Text('문서 검토')),
-                PopupMenuItem(value: 'proofread', child: Text('공공언어 교정')),
-                PopupMenuItem(value: 'outline', child: Text('문서 구조 편집')),
-                PopupMenuItem(value: 'writing', child: Text('작성 도우미')),
-                PopupMenuItem(value: 'markdown', child: Text('Markdown 내보내기')),
-                PopupMenuItem(value: 'advanced', child: Text('고급 문서 도구')),
-              ],
-            ),
-          IconButton(
-            tooltip: '설정',
-            onPressed: () => scaffoldKey.currentState?.openEndDrawer(),
-            icon: const Icon(Icons.settings_outlined),
-          ),
-          const SizedBox(width: 12),
-        ],
-      );
-
-  /// 단계 메뉴에 붙이는 한 줄 요약. 어느 화면에서든 지금 상태를 알 수 있게 한다.
-  String tabHint(int i) => switch (i) {
-        0 => files.isEmpty ? '문서를 추가하세요' : '${files.length}개 문서',
-        1 => '$modeTitle · $rangeLabel',
-        2 => running ? '진행 중' : (results.isEmpty ? '대기 중' : '끝남'),
-        _ => results.isEmpty ? '결과 없음' : '${results.length}개 저장',
-      };
-
-  Widget topTabs() => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        child: Row(
-          children: List.generate(
-            tabs.length,
-            (i) => Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 3),
-                child: Tooltip(
-                  message: tabHint(i),
-                  child: TextButton(
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      backgroundColor: tab == i
-                          ? const Color(0xffe4edff)
-                          : Colors.transparent,
-                      foregroundColor: tab == i ? _blueDeep : _muted,
-                    ),
-                    onPressed: () => setState(() => tab = i),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (i == 2 && running) ...[
-                          const SizedBox(
-                            width: 12,
-                            height: 12,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                          const SizedBox(width: 6),
-                        ],
-                        Flexible(
-                          child: Text(
-                            '${i + 1}. ${tabs[i]}',
-                            textAlign: TextAlign.center,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
+      ),
+    ),
+  );
 
   Widget sidebar() => Container(
-        width: 232,
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          border: Border(right: BorderSide(color: Color(0xffe8edf4))),
+    width: 232,
+    decoration: const BoxDecoration(
+      color: Colors.white,
+      border: Border(right: BorderSide(color: Color(0xffe8edf4))),
+    ),
+    padding: const EdgeInsets.fromLTRB(20, 32, 20, 24),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(left: 12, bottom: 22),
+          child: Text(
+            '작업 순서',
+            style: TextStyle(
+              fontSize: 12,
+              color: _faint,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ),
-        padding: const EdgeInsets.fromLTRB(20, 32, 20, 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Padding(
-              padding: EdgeInsets.only(left: 12, bottom: 22),
-              child: Text(
-                '작업 순서',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: _faint,
-                  fontWeight: FontWeight.w700,
+        for (var i = 0; i < tabs.length; i++)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Material(
+              color: tab == i ? _blueSoft : Colors.transparent,
+              borderRadius: BorderRadius.circular(14),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () => setState(() => tab = i),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: 12,
+                  ),
+                  child: Row(
+                    children: [
+                      Text(
+                        '0${i + 1}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: tab == i ? _blue : const Color(0xffa5afbd),
+                        ),
+                      ),
+                      const SizedBox(width: 13),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              tabs[i],
+                              style: TextStyle(
+                                fontWeight: tab == i
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                                color: tab == i
+                                    ? _blueDeep
+                                    : const Color(0xff66748a),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              tabHint(i),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: _faint,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (i == 2 && running)
+                        const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      else if (tab == i)
+                        const Icon(
+                          Icons.arrow_forward_rounded,
+                          size: 16,
+                          color: _blue,
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),
-            for (var i = 0; i < tabs.length; i++)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Material(
-                  color: tab == i ? _blueSoft : Colors.transparent,
-                  borderRadius: BorderRadius.circular(14),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(14),
-                    onTap: () => setState(() => tab = i),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 12,
-                        horizontal: 12,
-                      ),
-                      child: Row(
-                        children: [
-                          Text(
-                            '0${i + 1}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: tab == i ? _blue : const Color(0xffa5afbd),
-                            ),
-                          ),
-                          const SizedBox(width: 13),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  tabs[i],
-                                  style: TextStyle(
-                                    fontWeight: tab == i
-                                        ? FontWeight.w700
-                                        : FontWeight.w500,
-                                    color: tab == i
-                                        ? _blueDeep
-                                        : const Color(0xff66748a),
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  tabHint(i),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: _faint,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          if (i == 2 && running)
-                            const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          else if (tab == i)
-                            const Icon(
-                              Icons.arrow_forward_rounded,
-                              size: 16,
-                              color: _blue,
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
+          ),
+        const Spacer(),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: _mintSoft,
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.verified_user_outlined, color: _mint, size: 24),
+              SizedBox(height: 12),
+              Text(
+                '원본은 그대로 둬요',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
               ),
-            const Spacer(),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: _mintSoft,
-                borderRadius: BorderRadius.circular(18),
+              SizedBox(height: 6),
+              Text(
+                '결과는 원본 폴더에 새 파일로 저장돼요.',
+                style: TextStyle(fontSize: 11, color: Color(0xff738299)),
               ),
-              child: const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.verified_user_outlined, color: _mint, size: 24),
-                  SizedBox(height: 12),
-                  Text(
-                    '원본은 그대로 둬요',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-                  ),
-                  SizedBox(height: 6),
-                  Text(
-                    '결과는 원본 폴더에 새 파일로 저장돼요.',
-                    style: TextStyle(fontSize: 11, color: Color(0xff738299)),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              '${state['version'] ?? '연결 중'}',
-              style: const TextStyle(fontSize: 10, color: _faint),
-            ),
-          ],
+            ],
+          ),
         ),
-      );
+        const SizedBox(height: 20),
+        Text(
+          '${state['version'] ?? '연결 중'}',
+          style: const TextStyle(fontSize: 10, color: _faint),
+        ),
+      ],
+    ),
+  );
 
   // ---- 1. 문서 선택 -------------------------------------------------
 
   Widget documents() => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (files.isEmpty) ...[welcome(), const SizedBox(height: 24)],
-          dropZone(compact: files.isNotEmpty),
-          if (files.isNotEmpty) ...[
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Text(
-                  '선택한 문서 ${files.length}개',
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-                const Spacer(),
-                TextButton.icon(
-                  onPressed: locked ? null : () => command('clear_files'),
-                  icon: const Icon(Icons.delete_sweep_outlined, size: 18),
-                  label: const Text('전체 비우기'),
-                ),
-              ],
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      if (files.isEmpty) ...[welcome(), const SizedBox(height: 24)],
+      dropZone(compact: files.isNotEmpty),
+      if (files.isNotEmpty) ...[
+        const SizedBox(height: 20),
+        Row(
+          children: [
+            Text(
+              '선택한 문서 ${files.length}개',
+              style: const TextStyle(fontWeight: FontWeight.w700),
             ),
-            const SizedBox(height: 8),
-            panel(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-              Column(
-                children: List.generate(
-                  files.length,
-                  (i) => ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: fileBadge('${files[i]['name'] ?? ''}'),
-                    title: Text(
-                      files[i]['name'] ?? '',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    subtitle: Text(
-                      '${files[i]['folder'] ?? ''}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12, color: _faint),
-                    ),
-                    trailing: IconButton(
-                      tooltip: '목록에서 제거',
-                      onPressed:
-                          locked ? null : () => command('remove_file', [i]),
-                      icon: const Icon(Icons.close),
-                    ),
-                  ),
+            const Spacer(),
+            TextButton.icon(
+              onPressed: locked ? null : () => command('clear_files'),
+              icon: const Icon(Icons.delete_sweep_outlined, size: 18),
+              label: const Text('전체 비우기'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        panel(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          Column(
+            children: List.generate(
+              files.length,
+              (i) => ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: fileBadge('${files[i]['name'] ?? ''}'),
+                title: Text(
+                  files[i]['name'] ?? '',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(
+                  '${files[i]['folder'] ?? ''}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12, color: _faint),
+                ),
+                trailing: IconButton(
+                  tooltip: '목록에서 제거',
+                  onPressed: locked ? null : () => command('remove_file', [i]),
+                  icon: const Icon(Icons.close),
                 ),
               ),
             ),
-          ],
-        ],
-      );
+          ),
+        ),
+      ],
+    ],
+  );
 
   Widget fileBadge(String name) {
     final dot = name.lastIndexOf('.');
@@ -718,227 +1005,232 @@ class _WorkspaceState extends State<Workspace> {
   }
 
   Widget addButtons() => Wrap(
-        spacing: 12,
-        runSpacing: 12,
-        alignment: WrapAlignment.center,
-        children: [
-          FilledButton.icon(
-            onPressed: locked ? null : () => command('add_files'),
-            icon: const Icon(Icons.add),
-            label: const Text('문서 추가'),
-          ),
-          OutlinedButton.icon(
-            onPressed: locked ? null : () => command('add_folder'),
-            icon: const Icon(Icons.folder_open),
-            label: const Text('폴더 추가'),
-          ),
-          OutlinedButton.icon(
-            onPressed: locked ? null : () => command('text_input'),
-            icon: const Icon(Icons.edit_note),
-            label: const Text('텍스트 입력'),
-          ),
-        ],
-      );
+    spacing: 12,
+    runSpacing: 12,
+    alignment: WrapAlignment.center,
+    children: [
+      FilledButton.icon(
+        onPressed: locked ? null : () => command('add_files'),
+        icon: const Icon(Icons.add),
+        label: const Text('문서 추가'),
+      ),
+      OutlinedButton.icon(
+        onPressed: locked ? null : () => command('add_folder'),
+        icon: const Icon(Icons.folder_open),
+        label: const Text('폴더 추가'),
+      ),
+      OutlinedButton.icon(
+        onPressed: locked ? null : () => openTools('convert'),
+        icon: const Icon(Icons.edit_note),
+        label: const Text('텍스트 입력'),
+      ),
+    ],
+  );
 
   /// 문서가 없으면 크게, 이미 있으면 한 줄로 줄여 목록이 잘 보이게 한다.
   Widget dropZone({required bool compact}) => panel(
-        padding: EdgeInsets.all(compact ? 18 : 24),
-        compact
-            ? LayoutBuilder(
-                builder: (context, box) {
-                  const hint = Text(
-                    '문서를 더 끌어다 놓거나 추가할 수 있어요.',
-                    style: TextStyle(color: _muted),
-                  );
-                  return box.maxWidth >= 760
-                      ? Row(
-                          children: [
-                            const Icon(Icons.upload_file_rounded, color: _blue),
-                            const SizedBox(width: 12),
-                            const Expanded(child: hint),
-                            addButtons(),
-                          ],
-                        )
-                      : Column(
-                          children: [
-                            const Icon(Icons.upload_file_rounded, color: _blue),
-                            const SizedBox(height: 8),
-                            hint,
-                            const SizedBox(height: 14),
-                            addButtons(),
-                          ],
-                        );
-                },
-              )
-            : Column(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(15),
-                    decoration: BoxDecoration(
-                      color: _blueSoft,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const Icon(
-                      Icons.upload_file_rounded,
-                      size: 34,
-                      color: _blue,
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  const Text(
-                    '정리할 문서를 여기에 끌어다 놓으세요',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 19),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'HWP·HWPX 파일이나 폴더를 넣을 수 있어요. 여러 개를 한 번에 넣어도 돼요.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Color(0xff738299), fontSize: 13),
-                  ),
-                  const SizedBox(height: 24),
-                  addButtons(),
-                  const SizedBox(height: 14),
-                  const Text(
-                    '단축키 Ctrl+O로 문서를 바로 추가할 수 있어요.',
-                    style: TextStyle(fontSize: 12, color: _faint),
-                  ),
-                ],
-              ),
-      );
-
-  Widget welcome() => LayoutBuilder(
-        builder: (context, layout) => Container(
-          padding: EdgeInsets.all(layout.maxWidth < 500 ? 24 : 34),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(28),
-            gradient: const LinearGradient(
-              colors: [Color(0xffeaf0ff), Color(0xffedf8f5)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-          ),
-          child: Row(
+    padding: EdgeInsets.all(compact ? 18 : 24),
+    compact
+        ? LayoutBuilder(
+            builder: (context, box) {
+              const hint = Text(
+                '문서를 더 끌어다 놓거나 추가할 수 있어요.',
+                style: TextStyle(color: _muted),
+              );
+              return box.maxWidth >= 760
+                  ? Row(
+                      children: [
+                        const Icon(Icons.upload_file_rounded, color: _blue),
+                        const SizedBox(width: 12),
+                        const Expanded(child: hint),
+                        addButtons(),
+                      ],
+                    )
+                  : Column(
+                      children: [
+                        const Icon(Icons.upload_file_rounded, color: _blue),
+                        const SizedBox(height: 8),
+                        hint,
+                        const SizedBox(height: 14),
+                        addButtons(),
+                      ],
+                    );
+            },
+          )
+        : Column(
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '3 단계면 끝나요',
-                      style: TextStyle(
-                        fontSize: layout.maxWidth < 500 ? 26 : 32,
-                        fontWeight: FontWeight.w800,
-                        height: 1.35,
-                        letterSpacing: -1.2,
-                        color: _ink,
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-                    for (final (n, text) in const [
-                      ('1', '정리할 문서를 넣어요.'),
-                      ('2', '작업 방식을 고르고 필요하면 세부 작업을 조정해요.'),
-                      ('3', '정리 시작을 누르면 결과가 새 파일로 저장돼요.'),
-                    ])
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            CircleAvatar(
-                              radius: 11,
-                              backgroundColor: Colors.white,
-                              child: Text(
-                                n,
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  color: _blue,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                text,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  height: 1.5,
-                                  color: Color(0xff4b5f7c),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                  ],
+              Container(
+                padding: const EdgeInsets.all(15),
+                decoration: BoxDecoration(
+                  color: _blueSoft,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Icon(
+                  Icons.upload_file_rounded,
+                  size: 34,
+                  color: _blue,
                 ),
               ),
-              if (layout.maxWidth >= 580)
-                const SizedBox(
-                    width: 210, height: 210, child: DocumentArtwork()),
+              const SizedBox(height: 18),
+              const Text(
+                '정리할 문서를 여기에 끌어다 놓으세요',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 19),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'HWP·HWPX 파일이나 폴더를 넣을 수 있어요. 여러 개를 한 번에 넣어도 돼요.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Color(0xff738299), fontSize: 13),
+              ),
+              const SizedBox(height: 24),
+              addButtons(),
+              const SizedBox(height: 14),
+              const Text(
+                '단축키 Ctrl+O로 문서를 바로 추가할 수 있어요.',
+                style: TextStyle(fontSize: 12, color: _faint),
+              ),
             ],
           ),
+  );
+
+  Widget welcome() => LayoutBuilder(
+    builder: (context, layout) => Container(
+      padding: EdgeInsets.all(layout.maxWidth < 500 ? 24 : 34),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        gradient: const LinearGradient(
+          colors: [Color(0xffeaf0ff), Color(0xffedf8f5)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
-      );
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '3 단계면 끝나요',
+                  style: TextStyle(
+                    fontSize: layout.maxWidth < 500 ? 26 : 32,
+                    fontWeight: FontWeight.w800,
+                    height: 1.35,
+                    letterSpacing: -1.2,
+                    color: _ink,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                for (final (n, text) in const [
+                  ('1', '정리할 문서를 넣어요.'),
+                  ('2', '작업 방식을 고르고 필요하면 세부 작업을 조정해요.'),
+                  ('3', '정리 시작을 누르면 결과가 새 파일로 저장돼요.'),
+                ])
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        CircleAvatar(
+                          radius: 11,
+                          backgroundColor: Colors.white,
+                          child: Text(
+                            n,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: _blue,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            text,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              height: 1.5,
+                              color: Color(0xff4b5f7c),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (layout.maxWidth >= 580)
+            const SizedBox(width: 210, height: 210, child: DocumentArtwork()),
+        ],
+      ),
+    ),
+  );
 
   // ---- 2. 작업 방식 -------------------------------------------------
 
   Widget options() => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          heading('어떻게 정리할까요?', '작업을 고르면 아래에서 세부 작업과 범위를 바로 조정할 수 있어요.'),
-          LayoutBuilder(
-            builder: (context, box) {
-              final columns = box.maxWidth >= 900
-                  ? 3
-                  : box.maxWidth >= 620
-                      ? 2
-                      : 1;
-              return Wrap(
-                spacing: 16,
-                runSpacing: 16,
-                children: modes
-                    .map(
-                      (m) => SizedBox(
-                        width: (box.maxWidth - 16 * (columns - 1)) / columns,
-                        child: modeCard(m),
-                      ),
-                    )
-                    .toList(),
-              );
-            },
-          ),
-          const SizedBox(height: 20),
-          if (usesProfile) ...[
-            panel(
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  sectionTitle(
-                    Icons.style_outlined,
-                    '서식 기준',
-                    '서식 적용 단계에서 이 서식의 글꼴·문단·표 모양을 사용해요.',
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      heading('어떻게 정리할까요?', '작업을 고르면 아래에서 세부 작업과 범위를 바로 조정할 수 있어요.'),
+      LayoutBuilder(
+        builder: (context, box) {
+          final columns = box.maxWidth >= 1200
+              ? 4
+              : box.maxWidth >= 620
+              ? 2
+              : 1;
+          return Wrap(
+            spacing: 16,
+            runSpacing: 16,
+            children: modes
+                .map(
+                  (m) => SizedBox(
+                    width: (box.maxWidth - 16 * (columns - 1)) / columns,
+                    child: modeCard(m),
                   ),
-                  const SizedBox(height: 16),
-                  profilePicker(),
-                ],
-              ),
+                )
+                .toList(),
+          );
+        },
+      ),
+      const SizedBox(height: 20),
+      if (mode == 'file_format')
+        conversionPanel()
+      else ...[
+        if (usesProfile) ...[
+          panel(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                sectionTitle(
+                  Icons.style_outlined,
+                  '서식 기준',
+                  '서식 적용 단계에서 이 서식의 글꼴·문단·표 모양을 사용해요.',
+                ),
+                const SizedBox(height: 16),
+                profilePicker(),
+              ],
             ),
-            const SizedBox(height: 16),
-          ],
-          stagePanel(),
+          ),
           const SizedBox(height: 16),
-          rangePanel(),
         ],
-      );
+        stagePanel(),
+        const SizedBox(height: 16),
+        rangePanel(),
+      ],
+    ],
+  );
 
-  Widget modeCard(
-    (String, String, String, IconData, String) m,
-  ) {
+  Widget modeCard((String, String, String, IconData, String) m) {
     final selected = cardMode == m.$1;
     final isAll = m.$1 == 'all';
-    final suffix = isAll && !includeSpacing ? '서식적용' : m.$5;
+    final suffix = m.$1 == 'file_format'
+        ? '${conversionTarget.toUpperCase()}변경'
+        : isAll && !includeSpacing
+        ? '서식적용'
+        : m.$5;
     return Material(
       color: selected ? const Color(0xffeaf1ff) : Colors.white,
       shape: RoundedRectangleBorder(
@@ -953,7 +1245,17 @@ class _WorkspaceState extends State<Workspace> {
         selected: selected,
         button: true,
         child: InkWell(
-          onTap: locked ? null : () => command('set_mode', [m.$1]),
+          onTapDown: (details) => _conversionAnchor = details.globalPosition,
+          onTap: locked
+              ? null
+              : () async {
+                  await command('set_mode', [m.$1]);
+                  if (mounted &&
+                      mode == 'file_format' &&
+                      m.$1 == 'file_format') {
+                    await openConversionPicker();
+                  }
+                },
           child: Padding(
             padding: const EdgeInsets.all(20),
             child: Column(
@@ -1038,22 +1340,22 @@ class _WorkspaceState extends State<Workspace> {
                     (
                       'unify_exclude_spacing',
                       '자간 정리 제외',
-                      '서식통일이 고친 문장의 자간은 그대로 둬요.'
+                      '서식통일이 고친 문장의 자간은 그대로 둬요.',
                     ),
                     (
                       'unify_exclude_pagefit',
                       '페이지 맞춤 제외',
-                      '문단 아래 간격 페이지 맞춤을 빼요.'
+                      '문단 아래 간격 페이지 맞춤을 빼요.',
                     ),
                     (
                       'unify_keep_layout',
                       '원본 쪽 구성 유지',
-                      '보고서별 쪽 수·시작 쪽을 원본과 같게 맞춰요.'
+                      '보고서별 쪽 수·시작 쪽을 원본과 같게 맞춰요.',
                     ),
                     (
                       'unify_full_format',
                       '전체 서식 맞추기',
-                      '글꼴·크기뿐 아니라 색·밑줄·정렬·여백·내어쓰기도 맞춰요.'
+                      '글꼴·크기뿐 아니라 색·밑줄·정렬·여백·내어쓰기도 맞춰요.',
                     ),
                   ]) ...[
                     Row(
@@ -1074,8 +1376,10 @@ class _WorkspaceState extends State<Workspace> {
                       ],
                     ),
                     if (cardOption(o.$1))
-                      Text(o.$3,
-                          style: const TextStyle(fontSize: 12, color: _faint)),
+                      Text(
+                        o.$3,
+                        style: const TextStyle(fontSize: 12, color: _faint),
+                      ),
                   ],
                 ],
                 if (isAll) ...[
@@ -1140,10 +1444,10 @@ class _WorkspaceState extends State<Workspace> {
                         value: cardOption('all_exclude_pagefit'),
                         onChanged: locked
                             ? null
-                            : (on) => command(
-                                  'set_card_option',
-                                  ['all_exclude_pagefit', on],
-                                ),
+                            : (on) => command('set_card_option', [
+                                'all_exclude_pagefit',
+                                on,
+                              ]),
                       ),
                     ],
                   ),
@@ -1182,8 +1486,9 @@ class _WorkspaceState extends State<Workspace> {
       data = await widget.api('format_gallery', []);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('서식 그림을 불러오지 못했어요: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('서식 그림을 불러오지 못했어요: $e')));
       }
       return;
     }
@@ -1204,7 +1509,8 @@ class _WorkspaceState extends State<Workspace> {
                 Text('서식 고르기', style: Theme.of(ctx).textTheme.titleLarge),
                 const SizedBox(height: 4),
                 const Text(
-                    '예시 보고서 첫 쪽 그림을 보고 원하는 서식 카드를 누르세요. 누르면 바로 그 서식으로 바뀌어요.'),
+                  '예시 보고서 첫 쪽 그림을 보고 원하는 서식 카드를 누르세요. 누르면 바로 그 서식으로 바뀌어요.',
+                ),
                 const SizedBox(height: 12),
                 Expanded(
                   child: GridView.extent(
@@ -1248,8 +1554,10 @@ class _WorkspaceState extends State<Workspace> {
         color: scheme.surfaceContainerHighest,
         alignment: Alignment.center,
         padding: const EdgeInsets.all(12),
-        child: const Text("예시 그림 없음\n'서식 예시 확인'을 누르면 그림이 생겨요",
-            textAlign: TextAlign.center),
+        child: const Text(
+          "예시 그림 없음\n'서식 예시 확인'을 누르면 그림이 생겨요",
+          textAlign: TextAlign.center,
+        ),
       );
     }
     final organization = '${p['organization'] ?? ''}';
@@ -1269,8 +1577,8 @@ class _WorkspaceState extends State<Workspace> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(
-                child:
-                    Padding(padding: const EdgeInsets.all(6), child: picture)),
+              child: Padding(padding: const EdgeInsets.all(6), child: picture),
+            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(8, 2, 8, 10),
               child: Text(
@@ -1287,6 +1595,148 @@ class _WorkspaceState extends State<Workspace> {
     );
   }
 
+  void checkBackendDialog([Object? incoming]) {
+    final pending = incoming ?? state['pending_dialog'];
+    if (pending is Map && pending['kind'] == 'app_close') {
+      if (!appClosing && !backendDialogOpen) {
+        unawaited(_prepareHostClose(pending));
+      }
+      return;
+    }
+    if (backendDialogOpen || pending is! Map || pending['id'] is! String) {
+      return;
+    }
+    backendDialogOpen = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => BackendDialog(api: widget.api, data: pending),
+      );
+      backendDialogOpen = false;
+      if (mounted) await refresh();
+    });
+  }
+
+  Future<void> _prepareHostClose(Map request) async {
+    setState(() => appClosing = true);
+    var accepted = false;
+    try {
+      accepted = !busy && await CloseGuards.prepareAll();
+      // An unregistered dialog may hold edits or a pending RPC: fail closed.
+      accepted =
+          accepted && mounted && ModalRoute.of(context)?.isCurrent == true;
+      final result = await widget.api('resolve_dialog', [
+        request['id'],
+        accepted,
+      ]);
+      accepted = accepted && result is Map && result['accepted'] == true;
+    } catch (_) {
+      accepted = false;
+    }
+    if (mounted && !accepted) {
+      setState(() => appClosing = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('종료를 취소했습니다. 저장 중이면 완료 후 다시 닫아 주세요.')),
+      );
+    }
+  }
+
+  Future<void> openTools(String name) async {
+    final mapped =
+        {'polish': 'clean', 'paste': 'convert', 'writing': 'amount'}[name] ??
+        name;
+    final path = files.isNotEmpty
+        ? '${(files.first as Map)['path'] ?? ''}'
+        : '';
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => DocumentToolsWorkspace(
+          api: widget.api,
+          initial: mapped,
+          initialPath: path,
+        ),
+      ),
+    );
+    await refresh();
+  }
+
+  Future<void> openProfile(String identifier) async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => ProfileEditor(api: widget.api, identifier: identifier),
+    );
+    await refresh();
+  }
+
+  Future<void> showStages() async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => ValueListenableBuilder<int>(
+        valueListenable: stateVersion,
+        builder: (_, _, _) => AlertDialog(
+          title: const Text('세부 작업 선택'),
+          content: SizedBox(
+            width: 620,
+            height: 480,
+            child: ListView(
+              children: [
+                for (final stage in state['stages'] as List? ?? [])
+                  CheckboxListTile(
+                    title: Text('${stage['label']}'),
+                    value: stage['on'] == true || stage['enabled'] == true,
+                    onChanged: locked
+                        ? null
+                        : (value) => command('set_stage', [
+                            stage['key'],
+                            value == true,
+                          ]),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: locked
+                  ? null
+                  : () => command('stage_config', [
+                      'all',
+                      {'enabled': true},
+                    ]),
+              child: const Text('전체 선택'),
+            ),
+            TextButton(
+              onPressed: locked
+                  ? null
+                  : () => command('stage_config', [
+                      'all',
+                      {'enabled': false},
+                    ]),
+              child: const Text('전체 해제'),
+            ),
+            TextButton(
+              onPressed: locked
+                  ? null
+                  : () => command('stage_config', ['defaults', {}]),
+              child: const Text('기본값 복원'),
+            ),
+            TextButton(
+              onPressed: locked
+                  ? null
+                  : () => command('set_stage_default', [true]),
+              child: const Text('현재 구성을 기본값으로'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('닫기'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> openFormats() async {
     // 창이 열려 있는 동안 끌어 놓은 파일은 문서 목록이 아니라 서식 복제로 간다.
     await setDropTarget('format');
@@ -1296,7 +1746,7 @@ class _WorkspaceState extends State<Workspace> {
       context: context,
       builder: (ctx) => ValueListenableBuilder<int>(
         valueListenable: stateVersion,
-        builder: (ctx, _, __) => formatManager(ctx),
+        builder: (ctx, _, _) => formatManager(ctx),
       ),
     );
     await setDropTarget('documents');
@@ -1330,7 +1780,8 @@ class _WorkspaceState extends State<Workspace> {
           FilledButton(
             key: const Key('confirmDeleteFormat'),
             style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xffdc2626)),
+              backgroundColor: const Color(0xffdc2626),
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('삭제'),
           ),
@@ -1373,14 +1824,19 @@ class _WorkspaceState extends State<Workspace> {
                       style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
                     if (organization.isNotEmpty)
-                      Text('· $organization',
-                          style: const TextStyle(color: _muted, fontSize: 12)),
+                      Text(
+                        '· $organization',
+                        style: const TextStyle(color: _muted, fontSize: 12),
+                      ),
                     if (active)
-                      const Text('사용 중',
-                          style: TextStyle(
-                              color: _blue,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700)),
+                      const Text(
+                        '사용 중',
+                        style: TextStyle(
+                          color: _blue,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                   ],
                 ),
                 const SizedBox(height: 2),
@@ -1406,14 +1862,14 @@ class _WorkspaceState extends State<Workspace> {
               if (!active)
                 TextButton(
                   key: Key('useFormat-${p['id']}'),
-                  onPressed:
-                      locked ? null : () => command('set_profile', [p['id']]),
+                  onPressed: locked
+                      ? null
+                      : () => command('set_profile', [p['id']]),
                   child: const Text('사용'),
                 ),
               TextButton(
                 key: Key('editFormat-${p['id']}'),
-                onPressed:
-                    locked ? null : () => command('edit_profile', [p['id']]),
+                onPressed: locked ? null : () => openProfile('${p['id']}'),
                 child: const Text('세부 수정'),
               ),
               if (!builtin) ...[
@@ -1425,7 +1881,8 @@ class _WorkspaceState extends State<Workspace> {
                 TextButton(
                   key: Key('deleteFormat-${p['id']}'),
                   style: TextButton.styleFrom(
-                      foregroundColor: const Color(0xffdc2626)),
+                    foregroundColor: const Color(0xffdc2626),
+                  ),
                   onPressed: locked ? null : () => deleteFormat(p),
                   child: const Text('삭제'),
                 ),
@@ -1456,9 +1913,13 @@ class _WorkspaceState extends State<Workspace> {
                   const Icon(Icons.style_outlined, color: _blue),
                   const SizedBox(width: 10),
                   const Expanded(
-                    child: Text('서식 관리',
-                        style: TextStyle(
-                            fontSize: 20, fontWeight: FontWeight.w800)),
+                    child: Text(
+                      '서식 관리',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
                   ),
                   IconButton(
                     tooltip: '닫기',
@@ -1468,102 +1929,149 @@ class _WorkspaceState extends State<Workspace> {
                 ],
               ),
               const SizedBox(height: 12),
-              Container(
-                key: const Key('formatDropZone'),
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  color: _blueSoft,
-                  borderRadius: BorderRadius.circular(18),
-                  border:
-                      Border.all(color: const Color(0xff93c5fd), width: 1.5),
+              SegmentedButton<int>(
+                segments: const [
+                  ButtonSegment(value: 0, label: Text('문단 계층')),
+                  ButtonSegment(value: 1, label: Text('제목/개요 서식 표')),
+                  ButtonSegment(value: 2, label: Text('기본 데이터 표')),
+                ],
+                selected: {formatSection},
+                onSelectionChanged: (selection) {
+                  formatSection = selection.first;
+                  stateVersion.value++;
+                },
+              ),
+              const SizedBox(height: 12),
+              if (formatSection == 2)
+                Flexible(
+                  child: TableTemplatePanel(api: widget.api, running: running),
+                )
+              else ...[
+                Text(
+                  formatSection == 0
+                      ? '프로파일의 세부 수정에서 문단 계층의 글꼴·크기·들여쓰기를 관리합니다.'
+                      : '프로파일의 예시 보기와 세부 수정에서 제목·개요 표의 칸별 서식을 관리합니다.',
                 ),
-                child: Column(
-                  children: [
-                    const Icon(Icons.file_copy_outlined,
-                        size: 30, color: _blue),
-                    const SizedBox(height: 8),
-                    const Text(
-                      '예시 보고서(HWP·HWPX)를 이 창에 끌어다 놓으세요',
-                      style:
-                          TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
-                      textAlign: TextAlign.center,
+                const SizedBox(height: 12),
+                Container(
+                  key: const Key('formatDropZone'),
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: _blueSoft,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: const Color(0xff93c5fd),
+                      width: 1.5,
                     ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      '제목·개요 표, 항목기호 문장, 표의 글꼴·크기·문단 모양을 분석해 새 서식으로 복제해요. '
-                      '분석이 끝나면 이름과 세부값을 확인하는 창이 열리고, 저장하면 바로 이 서식을 써요.',
-                      style:
-                          TextStyle(fontSize: 12, color: _muted, height: 1.5),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      alignment: WrapAlignment.center,
-                      children: [
-                        FilledButton.icon(
-                          key: const Key('addFormatFile'),
-                          onPressed: locked || analyzing
-                              ? null
-                              : () => command('add_format_file'),
-                          icon:
-                              const Icon(Icons.folder_open_outlined, size: 18),
-                          label: const Text('파일에서 고르기'),
+                  ),
+                  child: Column(
+                    children: [
+                      const Icon(
+                        Icons.file_copy_outlined,
+                        size: 30,
+                        color: _blue,
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        '예시 보고서(HWP·HWPX)를 이 창에 끌어다 놓으세요',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
                         ),
-                        OutlinedButton.icon(
-                          key: const Key('writeFormatExample'),
-                          onPressed: locked || analyzing
-                              ? null
-                              : () => command('write_format_example'),
-                          icon: const Icon(Icons.edit_note_rounded, size: 18),
-                          label: const Text('예시 직접 작성'),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        '제목·개요 표, 항목기호 문장, 표의 글꼴·크기·문단 모양을 분석해 새 서식으로 복제해요. '
+                        '분석이 끝나면 이름과 세부값을 확인하는 창이 열리고, 저장하면 바로 이 서식을 써요.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _muted,
+                          height: 1.5,
                         ),
-                      ],
-                    ),
-                    if (analyzing) ...[
-                      const SizedBox(height: 14),
-                      const LinearProgressIndicator(minHeight: 3),
-                      const SizedBox(height: 6),
-                      Text(
-                        '서식 분석 중 · $file',
-                        style: const TextStyle(
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        alignment: WrapAlignment.center,
+                        children: [
+                          FilledButton.icon(
+                            key: const Key('addFormatFile'),
+                            onPressed: locked || analyzing
+                                ? null
+                                : () => command('add_format_file'),
+                            icon: const Icon(
+                              Icons.folder_open_outlined,
+                              size: 18,
+                            ),
+                            label: const Text('파일에서 고르기'),
+                          ),
+                          OutlinedButton.icon(
+                            key: const Key('writeFormatExample'),
+                            onPressed: locked || analyzing
+                                ? null
+                                : () => command('write_format_example'),
+                            icon: const Icon(Icons.edit_note_rounded, size: 18),
+                            label: const Text('예시 직접 작성'),
+                          ),
+                        ],
+                      ),
+                      if (analyzing) ...[
+                        const SizedBox(height: 14),
+                        const LinearProgressIndicator(minHeight: 3),
+                        const SizedBox(height: 6),
+                        Text(
+                          '서식 분석 중 · $file',
+                          style: const TextStyle(
                             fontSize: 12,
                             color: _blue,
-                            fontWeight: FontWeight.w600),
-                      ),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
-              if (formatNotice != null) ...[
-                const SizedBox(height: 8),
-                Text(formatNotice!,
+                if (formatNotice != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    formatNotice!,
                     style: const TextStyle(
-                        color: Color(0xffdc2626), fontSize: 12)),
-              ] else if (!analyzing && status.contains('서식')) ...[
-                const SizedBox(height: 8),
-                Text(status,
-                    style: const TextStyle(color: _muted, fontSize: 12)),
-              ],
-              const SizedBox(height: 16),
-              Text(
-                '서식 목록 (${profiles.length}개)',
-                style: const TextStyle(
-                    fontWeight: FontWeight.w700, color: _faint, fontSize: 12),
-              ),
-              const SizedBox(height: 8),
-              Flexible(
-                child: ListView(
-                  shrinkWrap: true,
-                  children: [for (final p in profiles) formatRow(p as Map)],
+                      color: Color(0xffdc2626),
+                      fontSize: 12,
+                    ),
+                  ),
+                ] else if (!analyzing && status.contains('서식')) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    status,
+                    style: const TextStyle(color: _muted, fontSize: 12),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                Text(
+                  '서식 목록 (${profiles.length}개)',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: _faint,
+                    fontSize: 12,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                '사용 중인 서식은 한 번에 적용(서식 적용) 작업에서 써요. 기본 서식은 지울 수 없고, 세부 수정하면 새 서식으로 저장돼요.',
-                style: TextStyle(fontSize: 12, color: _faint),
-              ),
+                const SizedBox(height: 8),
+                Flexible(
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [for (final p in profiles) formatRow(p as Map)],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  '사용 중인 서식은 한 번에 적용(서식 적용) 작업에서 써요. 기본 서식은 지울 수 없고, 세부 수정하면 새 서식으로 저장돼요.',
+                  style: TextStyle(fontSize: 12, color: _faint),
+                ),
+              ],
             ],
           ),
         ),
@@ -1685,27 +2193,19 @@ class _WorkspaceState extends State<Workspace> {
           if (stagesOpen) ...[
             const SizedBox(height: 12),
             const Divider(),
-            for (var i = 0; i < stages.length; i++)
-              CheckboxListTile(
-                contentPadding: EdgeInsets.zero,
-                controlAffinity: ListTileControlAffinity.leading,
-                value: stages[i]['on'] == true,
-                onChanged: locked
-                    ? null
-                    : (v) =>
-                        command('set_stage', [stages[i]['key'], v == true]),
-                title: Text('${i + 1}. ${stages[i]['label']}'),
-                subtitle: Text(
-                  '${stages[i]['example'] ?? ''}',
-                  style: const TextStyle(fontSize: 12, color: _muted),
-                ),
-              ),
+            const SizedBox(height: 8),
+            StageBoard(
+              stages: stages,
+              locked: locked,
+              onToggle: (key, on) => command('set_stage', [key, on]),
+            ),
             const Divider(),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               value: saved,
-              onChanged:
-                  locked ? null : (v) => command('set_stage_default', [v]),
+              onChanged: locked
+                  ? null
+                  : (v) => command('set_stage_default', [v]),
               title: const Text('다음 실행에도 이 구성 사용'),
               subtitle: Text(
                 saved ? '바꾸는 즉시 저장돼요.' : '끄면 이번 실행에만 적용하고, 다음에는 처음 기본값으로 시작해요.',
@@ -1723,7 +2223,7 @@ class _WorkspaceState extends State<Workspace> {
                   label: const Text('처음 기본값으로'),
                 ),
                 TextButton.icon(
-                  onPressed: locked ? null : () => command('open_stages'),
+                  onPressed: locked ? null : showStages,
                   icon: const Icon(Icons.tune, size: 18),
                   label: const Text('단계별 수치 조정'),
                 ),
@@ -1791,8 +2291,10 @@ class _WorkspaceState extends State<Workspace> {
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
                   problem,
-                  style:
-                      const TextStyle(color: Color(0xffdc2626), fontSize: 13),
+                  style: const TextStyle(
+                    color: Color(0xffdc2626),
+                    fontSize: 13,
+                  ),
                 ),
               ),
           ],
@@ -1802,18 +2304,34 @@ class _WorkspaceState extends State<Workspace> {
   }
 
   Widget pageField(TextEditingController controller, String label) => TextField(
-        controller: controller,
-        enabled: !locked,
-        keyboardType: TextInputType.number,
-        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-        decoration: InputDecoration(labelText: label, suffixText: '쪽'),
-        onChanged: (_) => setState(() {}),
-        onSubmitted: (_) => primaryShortcut(),
-      );
+    controller: controller,
+    enabled: !locked,
+    keyboardType: TextInputType.number,
+    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+    decoration: InputDecoration(labelText: label, suffixText: '쪽'),
+    onChanged: (_) => setState(() {}),
+    onSubmitted: (_) => primaryShortcut(),
+  );
 
   // ---- 3. 진행 과정 -------------------------------------------------
 
   Widget progress() {
+    // 기능별 맞춤 진행 화면(알파). 예전 엔진처럼 live 값이 없으면 아래 단계 목록 화면을 그대로 쓴다.
+    final live = state['live'];
+    if (live is Map && live.isNotEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          heading(
+            running || live['finished'] == true
+                ? '${live['title']}'
+                : '진행 상황을 확인하세요',
+            '${live['message'] ?? ''}',
+          ),
+          panel(LiveProgress(live: live, onShowLog: showLog)),
+        ],
+      );
+    }
     final guide = state['guide'] as Map? ?? {};
     final steps = guide['steps'] as List? ?? [];
     final current = guide['current'] as int?;
@@ -1822,8 +2340,8 @@ class _WorkspaceState extends State<Workspace> {
     final ratio = steps.isEmpty
         ? 0.0
         : finished
-            ? 1.0
-            : done.length / steps.length;
+        ? 1.0
+        : done.length / steps.length;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1831,8 +2349,8 @@ class _WorkspaceState extends State<Workspace> {
           running
               ? '문서를 정리하고 있어요'
               : finished
-                  ? '정리가 끝났어요'
-                  : '진행 상황을 확인하세요',
+              ? '정리가 끝났어요'
+              : '진행 상황을 확인하세요',
           '${guide['message'] ?? '작업을 시작하면 지금 하는 일을 여기에서 알려 드려요.'}',
         ),
         panel(
@@ -1886,7 +2404,7 @@ class _WorkspaceState extends State<Workspace> {
                 ),
               const SizedBox(height: 16),
               TextButton.icon(
-                onPressed: () => command('open_log'),
+                onPressed: showLog,
                 icon: const Icon(Icons.receipt_long_outlined),
                 label: const Text('상세 작업 로그'),
               ),
@@ -1897,308 +2415,474 @@ class _WorkspaceState extends State<Workspace> {
     );
   }
 
-  Widget guideStep(int index, String text,
-          {required bool active, required bool finished}) =>
-      Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: active ? _blueSoft : Colors.transparent,
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Row(
-          children: [
-            CircleAvatar(
-              radius: 14,
-              backgroundColor: active
-                  ? _blue
-                  : finished
-                      ? const Color(0xffdff3ee)
-                      : const Color(0xffedf2f7),
-              child: active && running
-                  ? const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white),
-                    )
-                  : finished
-                      ? const Icon(Icons.check, size: 16, color: _mint)
-                      : Text(
-                          '${index + 1}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: active ? Colors.white : _muted,
-                          ),
-                        ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Text(
-                text,
-                style: TextStyle(
-                  height: 1.5,
-                  fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-                  color: active
-                      ? _blueDeep
-                      : finished
-                          ? const Color(0xff475569)
-                          : const Color(0xff94a3b8),
+  Widget guideStep(
+    int index,
+    String text, {
+    required bool active,
+    required bool finished,
+  }) => Container(
+    margin: const EdgeInsets.only(bottom: 8),
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    decoration: BoxDecoration(
+      color: active ? _blueSoft : Colors.transparent,
+      borderRadius: BorderRadius.circular(14),
+    ),
+    child: Row(
+      children: [
+        CircleAvatar(
+          radius: 14,
+          backgroundColor: active
+              ? _blue
+              : finished
+              ? const Color(0xffdff3ee)
+              : const Color(0xffedf2f7),
+          child: active && running
+              ? const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : finished
+              ? const Icon(Icons.check, size: 16, color: _mint)
+              : Text(
+                  '${index + 1}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: active ? Colors.white : _muted,
+                  ),
                 ),
-              ),
-            ),
-          ],
         ),
-      );
+        const SizedBox(width: 14),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(
+              height: 1.5,
+              fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+              color: active
+                  ? _blueDeep
+                  : finished
+                  ? const Color(0xff475569)
+                  : const Color(0xff94a3b8),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 
   // ---- 4. 결과 확인 -------------------------------------------------
 
   Widget outcome() => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          heading(
-              '작업 결과를 확인하세요', '${state['status'] ?? '작업이 끝나면 저장된 문서가 표시됩니다.'}'),
-          panel(
-            Column(
-              children: [
-                Icon(
-                  results.isEmpty
-                      ? Icons.inbox_outlined
-                      : Icons.task_alt_rounded,
-                  size: 56,
-                  color: _blue,
-                ),
-                const SizedBox(height: 18),
-                Text(
-                  results.isEmpty
-                      ? '아직 저장된 결과가 없어요.'
-                      : '저장된 결과 ${results.length}개 · 원본은 그대로 있어요.',
-                ),
-                const SizedBox(height: 8),
-                for (var i = 0; i < results.length; i++)
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.description_outlined),
-                    title: Text(
-                      '${results[i]['name'] ?? ''}',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    subtitle: Text(
-                      [
-                        if ('${results[i]['source'] ?? ''}'.isNotEmpty)
-                          '원본: ${results[i]['source']}',
-                        if (results[i]['pages'] != null)
-                          '${results[i]['pages']}쪽',
-                      ].join(' · '),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12, color: _faint),
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          tooltip: '한/글로 열기',
-                          onPressed:
-                              busy ? null : () => command('open_result', [i]),
-                          icon: const Icon(Icons.open_in_new),
-                        ),
-                        IconButton(
-                          tooltip: '폴더에서 보기',
-                          onPressed:
-                              busy ? null : () => command('show_result', [i]),
-                          icon: const Icon(Icons.folder_open_outlined),
-                        ),
-                      ],
-                    ),
-                  ),
-                const SizedBox(height: 20),
-                FilledButton.icon(
-                  onPressed: results.isEmpty || busy
-                      ? null
-                      : () => command('open_results'),
-                  icon: const Icon(Icons.open_in_new),
-                  label: Text(results.length > 1 ? '결과 모두 열기' : '결과 파일 열기'),
-                ),
-              ],
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      heading('작업 결과를 확인하세요', '${state['status'] ?? '작업이 끝나면 저장된 문서가 표시됩니다.'}'),
+      panel(
+        Column(
+          children: [
+            Icon(
+              results.isEmpty ? Icons.inbox_outlined : Icons.task_alt_rounded,
+              size: 56,
+              color: _blue,
             ),
-          ),
-        ],
-      );
+            const SizedBox(height: 18),
+            Text(
+              results.isEmpty
+                  ? '아직 저장된 결과가 없어요.'
+                  : '저장된 결과 ${results.length}개 · 원본은 그대로 있어요.',
+            ),
+            const SizedBox(height: 8),
+            for (var i = 0; i < results.length; i++)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.description_outlined),
+                title: Text(
+                  '${results[i]['name'] ?? ''}',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(
+                  [
+                    if ('${results[i]['source'] ?? ''}'.isNotEmpty)
+                      '원본: ${results[i]['source']}',
+                    if (results[i]['pages'] != null) '${results[i]['pages']}쪽',
+                  ].join(' · '),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12, color: _faint),
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: '결과 파일 열기',
+                      onPressed: busy
+                          ? null
+                          : () => command('open_result', [i]),
+                      icon: const Icon(Icons.open_in_new),
+                    ),
+                    IconButton(
+                      tooltip: '폴더에서 보기',
+                      onPressed: busy
+                          ? null
+                          : () => command('show_result', [i]),
+                      icon: const Icon(Icons.folder_open_outlined),
+                    ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: results.isEmpty || busy
+                  ? null
+                  : () => command('open_results'),
+              icon: const Icon(Icons.open_in_new),
+              label: Text(results.length > 1 ? '결과 모두 열기' : '결과 파일 열기'),
+            ),
+          ],
+        ),
+      ),
+    ],
+  );
 
   // ---- 하단 실행 막대 ------------------------------------------------
 
   Widget bottomBar() => Container(
-        color: Colors.white,
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+    color: Colors.white,
+    padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
           children: [
-            Row(
-              children: [
-                if (tab > 0)
-                  TextButton(
-                    onPressed: () => setState(() => tab--),
-                    child: const Text('이전'),
-                  ),
-                // 시작 전에 무엇을 어떻게 정리할지 한 줄로 다시 보여 준다.
-                Expanded(
-                  child: tab == 1 && files.isNotEmpty
-                      ? Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          child: Text(
-                            '${files.length}개 문서 · $modeTitle · $rangeLabel · 세부 작업 $stagesOn/${stages.length}',
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.right,
-                            style: const TextStyle(fontSize: 13, color: _muted),
-                          ),
-                        )
-                      : const SizedBox(),
-                ),
-                if (running)
-                  TextButton(
-                    onPressed: busy ? null : () => command('stop'),
-                    child: const Text('작업 중단'),
-                  ),
-                if (tab == 0)
-                  FilledButton(
-                    onPressed: locked || files.isEmpty
-                        ? null
-                        : () => setState(() => tab = 1),
-                    child: const Text('작업 방식 선택'),
-                  ),
-                if (tab == 1)
-                  FilledButton.icon(
-                    onPressed: canStart ? startJob : null,
-                    icon: const Icon(Icons.play_arrow_rounded),
-                    label: const Text('정리 시작'),
-                  ),
-                if (tab == 2)
-                  FilledButton(
-                    onPressed: () => setState(() => tab = 3),
-                    child: const Text('결과 확인'),
-                  ),
-                if (tab == 3)
-                  FilledButton(
-                    onPressed: locked
-                        ? null
-                        : () async {
-                            await command('next_job');
-                            if (mounted) setState(() => tab = 0);
-                          },
-                    child: const Text('새 작업 시작'),
-                  ),
-              ],
+            if (tab > 0)
+              TextButton(
+                onPressed: () => setState(() => tab--),
+                child: const Text('이전'),
+              ),
+            // 시작 전에 무엇을 어떻게 정리할지 한 줄로 다시 보여 준다.
+            Expanded(
+              child: tab == 1 && files.isNotEmpty
+                  ? Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Text(
+                        mode == 'file_format'
+                            ? '${files.length}개 문서 · $modeTitle · ${conversionTarget.toUpperCase()}로 변환'
+                            : '${files.length}개 문서 · $modeTitle · $rangeLabel · 세부 작업 $stagesOn/${stages.length}',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(fontSize: 13, color: _muted),
+                      ),
+                    )
+                  : const SizedBox(),
             ),
-            const SizedBox(height: 8),
-            Text(
-              tab < 2
-                  ? '원본을 보존하고 결과를 별도 파일로 저장해요  ·  Ctrl+Enter로 다음 단계'
-                  : '원본을 보존하고 결과를 별도 파일로 저장해요  ·  ${state['version'] ?? '알파'}',
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 11, color: _muted),
-            ),
+            if (running)
+              TextButton(
+                onPressed: busy ? null : () => command('stop'),
+                child: const Text('작업 중단'),
+              ),
+            if (tab == 0)
+              FilledButton(
+                onPressed: locked || files.isEmpty
+                    ? null
+                    : () => setState(() => tab = 1),
+                child: const Text('작업 방식 선택'),
+              ),
+            if (tab == 1)
+              FilledButton.icon(
+                onPressed: canStart ? startJob : null,
+                icon: const Icon(Icons.play_arrow_rounded),
+                label: Text(mode == 'file_format' ? '변환 시작' : '정리 시작'),
+              ),
+            if (tab == 2)
+              FilledButton(
+                onPressed: () => setState(() => tab = 3),
+                child: const Text('결과 확인'),
+              ),
+            if (tab == 3)
+              FilledButton(
+                onPressed: locked
+                    ? null
+                    : () async {
+                        await command('next_job');
+                        if (mounted) setState(() => tab = 0);
+                      },
+                child: const Text('새 작업 시작'),
+              ),
           ],
         ),
-      );
+        const SizedBox(height: 8),
+        Text(
+          tab < 2
+              ? '원본을 보존하고 결과를 별도 파일로 저장해요  ·  Ctrl+Enter로 다음 단계'
+              : '원본을 보존하고 결과를 별도 파일로 저장해요  ·  ${state['version'] ?? '알파'}',
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 11, color: _muted),
+        ),
+      ],
+    ),
+  );
 
   // ---- 설정 서랍 ----------------------------------------------------
 
-  Widget settingsDrawer() => Drawer(
-        width: 400,
-        backgroundColor: Colors.white,
-        child: SafeArea(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+  Future<void> showLog() async {
+    String logText;
+    try {
+      final value = await widget.api('get_log', const []);
+      logText = value is String ? value : '';
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('작업 로그를 불러오지 못했어요: $e')));
+      }
+      return;
+    }
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Row(
             children: [
-              Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      '설정',
-                      style:
-                          TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+              Icon(Icons.receipt_long_outlined, color: _blue),
+              SizedBox(width: 10),
+              Text('작업 로그'),
+            ],
+          ),
+          content: SizedBox(
+            width: 760,
+            height: 420,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: const Color(0xfff8fafc),
+                border: Border.all(color: _line),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Scrollbar(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(14),
+                  child: SelectableText(
+                    logText.isEmpty ? '아직 기록된 내용이 없어요.' : logText,
+                    key: const Key('flutterLogContents'),
+                    style: const TextStyle(
+                      fontFamily: 'Consolas',
+                      fontSize: 12,
+                      height: 1.5,
                     ),
                   ),
-                  IconButton(
-                    tooltip: '닫기',
-                    onPressed: () => scaffoldKey.currentState?.closeEndDrawer(),
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Text(
-                running
-                    ? '작업 중에는 설정을 바꿀 수 없어요.'
-                    : '자주 바꾸는 설정만 모았어요. 바꾸면 바로 저장돼요.',
-                style: const TextStyle(color: _muted, fontSize: 13),
-              ),
-              settingsLabel('서식 기준'),
-              profilePicker(),
-              const SizedBox(height: 6),
-              const Text(
-                '서식 적용·한 번에 적용 작업에서 사용해요.',
-                style: TextStyle(fontSize: 12, color: _faint),
-              ),
-              settingsLabel('작업 뒤 처리'),
-              optionSwitch(
-                'autoclose',
-                '작업이 끝나면 한/글 문서 창 닫기',
-                '여러 문서를 처리할 때 창이 쌓이지 않아요.',
-              ),
-              optionSwitch(
-                'verify',
-                '저장 뒤 결과 검수',
-                '본문·표·이미지가 원본과 같은지 다시 확인해요. 시간이 조금 더 걸려요.',
-              ),
-              settingsLabel('프로그램'),
-              optionSwitch(
-                'check_updates',
-                '시작할 때 새 버전 확인',
-                '새 버전이 있으면 알려 드려요.',
-              ),
-              optionSwitch(
-                'developer_mode',
-                '개발자 모드',
-                '켜면 문서 검토·공공언어 교정·작성 도우미 등 문서 도구 메뉴가 나타나요.',
-              ),
-              settingsLabel('더 보기'),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.tune),
-                title: const Text('전체 설정 열기'),
-                subtitle: const Text(
-                  '글꼴·항목기호·자간 한도 등 모든 값을 바꿔요.',
-                  style: TextStyle(fontSize: 12, color: _muted),
                 ),
-                trailing: const Icon(Icons.open_in_new, size: 18),
-                onTap: locked ? null : () => command('open_settings'),
               ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.help_outline_rounded),
-                title: const Text('사용 방법과 단축키'),
-                onTap: showHelp,
+            ),
+          ),
+          actions: [
+            TextButton.icon(
+              key: const Key('copyLogButton'),
+              onPressed: logText.isEmpty
+                  ? null
+                  : () async {
+                      await Clipboard.setData(ClipboardData(text: logText));
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('작업 로그를 복사했어요.')),
+                        );
+                      }
+                    },
+              icon: const Icon(Icons.copy_outlined),
+              label: const Text('복사'),
+            ),
+            TextButton.icon(
+              key: const Key('refreshLogButton'),
+              onPressed: () async {
+                try {
+                  final value = await widget.api('get_log', const []);
+                  if (dialogContext.mounted) {
+                    setDialogState(
+                      () => logText = value is String ? value : '',
+                    );
+                  }
+                } catch (_) {
+                  if (dialogContext.mounted) {
+                    ScaffoldMessenger.of(dialogContext).showSnackBar(
+                      const SnackBar(content: Text('로그를 새로 불러오지 못했어요.')),
+                    );
+                  }
+                }
+              },
+              icon: const Icon(Icons.refresh),
+              label: const Text('새로 고침'),
+            ),
+            TextButton.icon(
+              key: const Key('clearLogButton'),
+              onPressed: running
+                  ? null
+                  : () async {
+                      try {
+                        final value = await widget.api('clear_log', const []);
+                        if (dialogContext.mounted) {
+                          setDialogState(
+                            () => logText = value is String ? value : '',
+                          );
+                        }
+                      } catch (_) {
+                        if (dialogContext.mounted) {
+                          ScaffoldMessenger.of(dialogContext).showSnackBar(
+                            const SnackBar(content: Text('로그를 지우지 못했어요.')),
+                          );
+                        }
+                      }
+                    },
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('지우기'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('닫기'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget settingsDrawer() => Drawer(
+    width: 400,
+    backgroundColor: Colors.white,
+    child: SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  '설정',
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+                ),
+              ),
+              IconButton(
+                tooltip: '닫기',
+                onPressed: () => scaffoldKey.currentState?.closeEndDrawer(),
+                icon: const Icon(Icons.close),
               ),
             ],
           ),
-        ),
-      );
+          const SizedBox(height: 6),
+          Text(
+            running ? '작업 중에는 설정을 바꿀 수 없어요.' : '자주 바꾸는 설정만 모았어요. 바꾸면 바로 저장돼요.',
+            style: const TextStyle(color: _muted, fontSize: 13),
+          ),
+          settingsLabel('서식 기준'),
+          profilePicker(),
+          const SizedBox(height: 6),
+          const Text(
+            '서식 적용·한 번에 적용 작업에서 사용해요.',
+            style: TextStyle(fontSize: 12, color: _faint),
+          ),
+          settingsLabel('작업 뒤 처리'),
+          optionSwitch(
+            'autoclose',
+            '작업이 끝나면 한/글 문서 창 닫기',
+            '여러 문서를 처리할 때 창이 쌓이지 않아요.',
+          ),
+          optionSwitch(
+            'verify',
+            '저장 뒤 결과 검수',
+            '본문·표·이미지가 원본과 같은지 다시 확인해요. 시간이 조금 더 걸려요.',
+          ),
+          settingsLabel('기록 파일'),
+          optionSwitch(
+            'log_file',
+            '작업로그 파일 만들기',
+            '다음 작업부터 첫 문서와 같은 폴더에 처리 기록을 저장해요.',
+          ),
+          optionSwitch(
+            'integrity_report_file',
+            '무결성검사 JSON 파일 만들기',
+            '저장 뒤 결과 검수를 켰을 때 검사 세부 결과를 JSON으로 저장해요.',
+          ),
+          optionSwitch(
+            'final_review_file',
+            '최종검수 JSON 파일 만들기',
+            '작업 목표 기준의 최종 점수와 판정을 파일로 저장해요.',
+          ),
+          settingsLabel('완료 화면'),
+          optionSwitch(
+            'unify_result_window',
+            '서식 통일 결과 창 표시',
+            '끄더라도 결과는 작업 기록과 최종 검수에 남아요.',
+          ),
+          settingsLabel('프로그램'),
+          optionSwitch('check_updates', '시작할 때 새 버전 확인', '새 버전이 있으면 알려 드려요.'),
+          optionSwitch(
+            'always_on_top',
+            '앱 창을 항상 위에 표시',
+            '다른 창을 사용해도 앱을 앞에 유지해요.',
+          ),
+          optionSwitch(
+            'developer_mode',
+            '개발자 모드',
+            '켜면 문서 검토·공공언어 교정·작성 도우미 등 문서 도구 메뉴가 나타나요.',
+          ),
+          settingsLabel('더 보기'),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.tune),
+            title: const Text('전체 설정 열기'),
+            subtitle: const Text(
+              '글꼴·항목기호·자간 한도 등 모든 값을 바꿔요.',
+              style: TextStyle(fontSize: 12, color: _muted),
+            ),
+            trailing: const Icon(Icons.open_in_new, size: 18),
+            onTap: locked
+                ? null
+                : () async {
+                    final saved = await showDialog<bool>(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (_) => SettingsDialog(api: widget.api),
+                    );
+                    if (saved == true) await refresh();
+                  },
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.text_fields_rounded),
+            title: const Text('준말 등록·관리'),
+            subtitle: const Text('준말과 본말을 검색하고 등록·수정·삭제해요.'),
+            onTap: locked
+                ? null
+                : () => showDialog<void>(
+                    context: context,
+                    builder: (_) => AbbreviationManager(api: widget.api),
+                  ),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.help_outline_rounded),
+            title: const Text('사용 방법과 단축키'),
+            onTap: showHelp,
+          ),
+        ],
+      ),
+    ),
+  );
 
   Widget settingsLabel(String text) => Padding(
-        padding: const EdgeInsets.only(top: 28, bottom: 10),
-        child: Text(
-          text,
-          style: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            color: _faint,
-          ),
-        ),
-      );
+    padding: const EdgeInsets.only(top: 28, bottom: 10),
+    child: Text(
+      text,
+      style: const TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w700,
+        color: _faint,
+      ),
+    ),
+  );
 
   Widget optionSwitch(String name, String title, String subtitle) =>
       SwitchListTile(
@@ -2215,46 +2899,49 @@ class _WorkspaceState extends State<Workspace> {
       );
 
   void showHelp() => showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('사용 방법'),
-          content: const SizedBox(
-            width: 420,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('1. 문서 선택에서 HWP·HWPX 문서나 폴더를 넣어요. 창에 끌어다 놓아도 돼요.'),
-                SizedBox(height: 8),
-                Text('2. 작업 방식에서 작업을 고르고, 필요하면 세부 작업과 쪽 범위를 조정해요.'),
-                SizedBox(height: 8),
-                Text('3. 정리 시작을 누르면 진행 과정이 보이고, 끝나면 결과 확인으로 넘어가요.'),
-                SizedBox(height: 16),
-                Text(
-                  '원본 문서는 바꾸지 않아요. 결과는 원본 폴더에 새 파일로 저장돼요.',
-                  style: TextStyle(color: _mint, fontWeight: FontWeight.w600),
-                ),
-                SizedBox(height: 16),
-                Text('단축키', style: TextStyle(fontWeight: FontWeight.w700)),
-                SizedBox(height: 6),
-                Text('Ctrl+O  문서 추가\nCtrl+Enter  다음 단계 · 정리 시작\nF1  사용 방법'),
-              ],
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('사용 방법'),
+      content: const SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('1. 문서 선택에서 HWP·HWPX 문서나 폴더를 넣어요. 창에 끌어다 놓아도 돼요.'),
+            SizedBox(height: 8),
+            Text('2. 작업 방식에서 작업을 고르고, 필요하면 세부 작업과 쪽 범위를 조정해요.'),
+            SizedBox(height: 8),
+            Text('3. 정리 시작을 누르면 진행 과정이 보이고, 끝나면 결과 확인으로 넘어가요.'),
+            SizedBox(height: 16),
+            Text(
+              '원본 문서는 바꾸지 않아요. 결과는 원본 폴더에 새 파일로 저장돼요.',
+              style: TextStyle(color: _mint, fontWeight: FontWeight.w600),
             ),
-          ),
-          actions: [
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('확인'),
-            ),
+            SizedBox(height: 16),
+            Text('단축키', style: TextStyle(fontWeight: FontWeight.w700)),
+            SizedBox(height: 6),
+            Text('Ctrl+O  문서 추가\nCtrl+Enter  다음 단계 · 정리 시작\nF1  사용 방법'),
           ],
         ),
-      );
+      ),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('확인'),
+        ),
+      ],
+    ),
+  );
 }
 
 /// 서식 이름·기관 이름을 고치는 창. 입력 상자는 창이 완전히 닫힐 때 정리한다.
 class RenameFormatDialog extends StatefulWidget {
-  const RenameFormatDialog(
-      {super.key, required this.name, required this.organization});
+  const RenameFormatDialog({
+    super.key,
+    required this.name,
+    required this.organization,
+  });
   final String name, organization;
   @override
   State<RenameFormatDialog> createState() => _RenameFormatDialogState();
@@ -2273,142 +2960,146 @@ class _RenameFormatDialogState extends State<RenameFormatDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-        title: const Text('서식 이름 바꾸기'),
-        content: SizedBox(
-          width: 380,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  key: const Key('formatNameField'),
-                  controller: name,
-                  autofocus: true,
-                  decoration: const InputDecoration(labelText: '서식 이름'),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  key: const Key('formatOrganizationField'),
-                  controller: organization,
-                  decoration: const InputDecoration(
-                    labelText: '기관 이름 (선택)',
-                    helperText: '비워 두면 기관 없이 보여요.',
-                  ),
-                ),
-              ],
+    title: const Text('서식 이름 바꾸기'),
+    content: SizedBox(
+      width: 380,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              key: const Key('formatNameField'),
+              controller: name,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: '서식 이름'),
             ),
-          ),
+            const SizedBox(height: 12),
+            TextField(
+              key: const Key('formatOrganizationField'),
+              controller: organization,
+              decoration: const InputDecoration(
+                labelText: '기관 이름 (선택)',
+                helperText: '비워 두면 기관 없이 보여요.',
+              ),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context), child: const Text('취소')),
-          FilledButton(
-            onPressed: () => Navigator.pop(
-                context, (name.text.trim(), organization.text.trim())),
-            child: const Text('저장'),
-          ),
-        ],
-      );
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('취소'),
+      ),
+      FilledButton(
+        onPressed: () => Navigator.pop(context, (
+          name.text.trim(),
+          organization.text.trim(),
+        )),
+        child: const Text('저장'),
+      ),
+    ],
+  );
 }
 
 class DocumentArtwork extends StatelessWidget {
   const DocumentArtwork({super.key});
   @override
   Widget build(BuildContext context) => ExcludeSemantics(
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            Container(
-              width: 185,
-              height: 185,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                color: Color(0x55ffffff),
-              ),
-            ),
-            Transform.rotate(
-              angle: -.14,
-              child: Container(
-                width: 121,
-                height: 158,
-                decoration: BoxDecoration(
-                  color: const Color(0xffb9cdef),
-                  borderRadius: BorderRadius.circular(18),
-                ),
-              ),
-            ),
-            Transform.translate(
-              offset: const Offset(13, -5),
-              child: Transform.rotate(
-                angle: .08,
-                child: Container(
-                  width: 120,
-                  height: 158,
-                  padding: const EdgeInsets.all(19),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(18),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x152b527e),
-                        blurRadius: 24,
-                        offset: Offset(0, 12),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 28,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          color: const Color(0xffe7efff),
-                          borderRadius: BorderRadius.circular(9),
-                        ),
-                        child: const Icon(
-                          Icons.format_align_left_rounded,
-                          color: _blue,
-                          size: 17,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      for (final w in [78.0, 65.0, 78.0, 43.0])
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 9),
-                          child: Container(
-                            width: w,
-                            height: 5,
-                            decoration: BoxDecoration(
-                              color: const Color(0xffe8edf5),
-                              borderRadius: BorderRadius.circular(3),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              right: 17,
-              bottom: 18,
-              child: Container(
-                width: 49,
-                height: 49,
-                decoration: BoxDecoration(
-                  color: _mint,
-                  borderRadius: BorderRadius.circular(17),
-                  border: Border.all(color: const Color(0xffecf6f2), width: 4),
-                ),
-                child: const Icon(
-                  Icons.check_rounded,
-                  color: Colors.white,
-                  size: 28,
-                ),
-              ),
-            ),
-          ],
+    child: Stack(
+      alignment: Alignment.center,
+      children: [
+        Container(
+          width: 185,
+          height: 185,
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            color: Color(0x55ffffff),
+          ),
         ),
-      );
+        Transform.rotate(
+          angle: -.14,
+          child: Container(
+            width: 121,
+            height: 158,
+            decoration: BoxDecoration(
+              color: const Color(0xffb9cdef),
+              borderRadius: BorderRadius.circular(18),
+            ),
+          ),
+        ),
+        Transform.translate(
+          offset: const Offset(13, -5),
+          child: Transform.rotate(
+            angle: .08,
+            child: Container(
+              width: 120,
+              height: 158,
+              padding: const EdgeInsets.all(19),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(18),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x152b527e),
+                    blurRadius: 24,
+                    offset: Offset(0, 12),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: const Color(0xffe7efff),
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                    child: const Icon(
+                      Icons.format_align_left_rounded,
+                      color: _blue,
+                      size: 17,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  for (final w in [78.0, 65.0, 78.0, 43.0])
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 9),
+                      child: Container(
+                        width: w,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          color: const Color(0xffe8edf5),
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          right: 17,
+          bottom: 18,
+          child: Container(
+            width: 49,
+            height: 49,
+            decoration: BoxDecoration(
+              color: _mint,
+              borderRadius: BorderRadius.circular(17),
+              border: Border.all(color: const Color(0xffecf6f2), width: 4),
+            ),
+            child: const Icon(
+              Icons.check_rounded,
+              color: Colors.white,
+              size: 28,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 }

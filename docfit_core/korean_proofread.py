@@ -10,7 +10,7 @@ from zipfile import ZipFile
 
 from defusedxml import ElementTree as ET
 
-from .hwpx import validate_hwpx
+from .hwpx import open_hwpx_safely, validate_hwpx
 
 
 @dataclass(frozen=True)
@@ -94,7 +94,7 @@ def scan_hwpx(path, excluded=()):
     """Return grouped candidates with counts and a short in-document context."""
     validation = validate_hwpx(path)
     found = {}
-    with ZipFile(path) as archive:
+    with open_hwpx_safely(path) as archive:
         for section in validation["section_names"]:
             root = ET.fromstring(archive.read(section))
             for nodes in _paragraph_nodes(root):
@@ -151,7 +151,7 @@ def apply_approved_hwpx(source, destination, approved_rule_ids, excluded=()):
         with tempfile.NamedTemporaryFile(prefix="docfit_proofread_", suffix=".hwpx",
                                          dir=destination.parent, delete=False) as handle:
             temporary = Path(handle.name)
-        with ZipFile(source) as original, ZipFile(temporary, "w") as output:
+        with open_hwpx_safely(source) as original, ZipFile(temporary, "w") as output:
             sections = set(validation["section_names"])
             for info in original.infolist():
                 data = original.read(info.filename)

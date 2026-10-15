@@ -183,7 +183,7 @@ CARD_OPTION_STAGES = {
     "unify_exclude_spacing": (("unify",), ("unify_spacing",), True),
     "unify_exclude_pagefit": (("unify",), PAGE_FIT_STAGE_KEYS, True),
     "unify_keep_layout": (("unify",), ("page_layout_keep",), False),
-    "unify_full_format": (("unify",), ("unify_full_format",), False),
+    "unify_quick_mode": (("unify",), ("unify_full_format",), True),
     "all_include_spacing": (("all",), SPACING_STAGE_KEYS, False),
     "all_exclude_tables": (("all", "format"), TABLE_STAGE_KEYS, True),
     "all_exclude_pagefit": (("all", "format"), PAGE_FIT_STAGE_KEYS, True),

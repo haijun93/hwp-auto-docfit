@@ -5,7 +5,7 @@ from unittest.mock import patch
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 from docfit_core import (HwpxSecurityError, compare_documents, export_markdown, inspect_hwpx,
-                        validate_and_inspect_hwpx, validate_hwpx)
+                        validate_and_inspect_hwpx, validate_hwpx, open_hwpx_safely)
 
 
 HEADER = b'<?xml version="1.0" encoding="UTF-8"?><hh:head xmlns:hh="urn:head" />'
@@ -24,6 +24,15 @@ def make_hwpx(path: Path, section: bytes = SECTION):
 
 
 class HwpxCoreTest(unittest.TestCase):
+    def test_safe_opener_validates_before_read_and_is_read_only(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "sample.hwpx"
+            make_hwpx(source)
+            with open_hwpx_safely(source) as archive:
+                self.assertIn("Contents/header.xml", archive.namelist())
+            with self.assertRaises(ValueError):
+                open_hwpx_safely(source, "w")
+
     def test_inspect_and_markdown_export(self):
         with tempfile.TemporaryDirectory() as folder:
             source = Path(folder) / "sample.hwpx"
@@ -181,3 +190,26 @@ class HwpxCoreTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class HwpxSecurityAuditTests(unittest.TestCase):
+    def test_duplicate_zip_members_are_rejected(self):
+        import warnings
+        with tempfile.TemporaryDirectory() as folder:
+            source=Path(folder)/'duplicate.hwpx'
+            make_hwpx(source)
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore',UserWarning)
+                with ZipFile(source,'a') as archive:
+                    archive.writestr('Contents/section0.xml',SECTION)
+            with self.assertRaises(HwpxSecurityError):
+                validate_hwpx(source)
+
+    def test_external_entity_cannot_read_local_file(self):
+        with tempfile.TemporaryDirectory() as folder:
+            secret=Path(folder)/'private.txt';secret.write_text('must not leak')
+            source=Path(folder)/'entity.hwpx'
+            xml=('<!DOCTYPE sec [<!ENTITY steal SYSTEM "'+secret.as_uri()+'">]>'
+                 '<sec><p><run><t>&steal;</t></run></p></sec>').encode()
+            make_hwpx(source,xml)
+            with self.assertRaises(HwpxSecurityError):
+                inspect_hwpx(source)

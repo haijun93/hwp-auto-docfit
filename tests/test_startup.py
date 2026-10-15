@@ -1,4 +1,6 @@
 """Verify the Windows GUI can start without processing a document."""
+from tests.gui_support import gui_root
+
 
 import os
 from pathlib import Path
@@ -55,7 +57,7 @@ class StartupTest(unittest.TestCase):
 
     def test_final_save_clears_page_protection(self):
         source = Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"
-        text = source.read_text(encoding="utf-8")
+        text = (source.parent / "docfit_engine" / "pipeline.py").read_text(encoding="utf-8")
         clear_call = text.index("보고서_페이지보호_전체해제() is False:",
                                 text.index("# 선택한 처리 회차가 끝난 뒤"))
         save_call = text.index("저장결과 = hwp.SaveAs", clear_call)
@@ -314,7 +316,7 @@ class StartupTest(unittest.TestCase):
             with patch.dict(os.environ, {"APPDATA": settings_dir}):
                 namespace = runpy.run_path(str(source), run_name="startup_test")
                 self.assertEqual(namespace["APP_NAME"], "한글편집 후처리")
-                root = namespace["TkinterDnD"].Tk()
+                root = gui_root(namespace['TkinterDnD'].Tk, namespace)
                 root.withdraw()
                 callback_errors = []
                 root.report_callback_exception = lambda *args: callback_errors.append(args)
@@ -343,7 +345,7 @@ class StartupTest(unittest.TestCase):
             before = document.read_bytes()
             with patch.dict(os.environ, {"APPDATA": folder}):
                 namespace = runpy.run_path(str(source), run_name="document_review_ui_test")
-                root = namespace["TkinterDnD"].Tk()
+                root = gui_root(namespace['TkinterDnD'].Tk, namespace)
                 root.withdraw()
                 errors = []
                 root.report_callback_exception = lambda *args: errors.append(args)

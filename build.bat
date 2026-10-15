@@ -1,5 +1,6 @@
 @echo off
 setlocal
+set "PYTHONIOENCODING=utf-8"
 
 cd /d "%~dp0"
 
@@ -35,32 +36,11 @@ echo [1/4] Installing build dependencies...
 if errorlevel 1 goto :fail
 
 echo [2/4] Building Flutter interface...
-powershell -NoProfile -ExecutionPolicy Bypass -File build_flutter.ps1
-if errorlevel 1 (
-    echo.
-    echo [WARN] Flutter UI was not built ^(Flutter SDK missing or build error^).
-    echo [WARN] Continuing without it: the app will use the built-in WebView/Tk screen.
-    echo.
-)
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0build_flutter.ps1"
+if errorlevel 1 goto :fail
 
 echo [3/4] Building %APPNAME%.exe...
-"%PYTHON%" -m PyInstaller ^
-    --noconfirm ^
-    --clean ^
-    --onefile ^
-    --windowed ^
-    --icon "resources\app_icon.ico" ^
-    --name "%APPNAME%" ^
-    --add-data "MapoHwpAutoDocFitSecurity.dll;." ^
-    --add-data "desktop_web;desktop_web" ^
-    --add-data "resources;resources" ^
-    --collect-all tkinterdnd2 ^
-    --collect-all webview ^
-    --collect-all pythonnet ^
-    --collect-all clr_loader ^
-    --collect-all pypdfium2 ^
-    --collect-all pypdfium2_raw ^
-    hwp-auto-docfit.py
+"%PYTHON%" -m PyInstaller --noconfirm --clean "HWP_AutoDocFit.spec"
 if errorlevel 1 goto :fail
 
 echo [4/4] Building 설치파일 초기화.exe (Cleanup ^& Reset Tool)...
@@ -71,7 +51,7 @@ echo [4/4] Building 설치파일 초기화.exe (Cleanup ^& Reset Tool)...
     --windowed ^
     --icon "resources\app_icon.ico" ^
     --name "HWP_AutoDocFit_Reset" ^
-    hwp-auto-docfit-reset.py
+    "hwp-auto-docfit-reset.py"
 if errorlevel 1 goto :fail
 "%PYTHON%" -c "import shutil; shutil.move('dist/HWP_AutoDocFit_Reset.exe', 'dist/설치파일 초기화.exe')"
 

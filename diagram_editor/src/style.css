@@ -1,0 +1,90 @@
+html,body,#root{width:100%;height:100%;margin:0;overflow:hidden;font-family:"Malgun Gothic","Noto Sans KR",sans-serif;color:#172b4d}
+*{box-sizing:border-box}.editor-shell{height:100%;display:flex;flex-direction:column;background:#f8fafc}header{display:flex;align-items:center;gap:14px;padding:10px 16px;background:white;border-bottom:1px solid #cbd5e1;flex-wrap:wrap}.document-name{font-size:13px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}nav{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}button,select,input,textarea{font:inherit;font-size:13px;border:1px solid #94a3b8;border-radius:6px;padding:8px;background:white;color:#172b4d}button{cursor:pointer}button:hover{background:#e0ecff}button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid #2563eb}button:disabled{opacity:.5}.workspace{display:flex;flex:1;min-height:0}aside{width:210px;padding:12px;overflow:auto;background:white;border-right:1px solid #cbd5e1}aside button{display:block;width:100%;margin-bottom:8px}h2{font-size:14px}aside label{display:block;font-size:13px;margin-top:12px}aside textarea,aside input,aside select{width:100%;margin-top:6px}aside textarea{min-height:110px}aside p{font-size:12px;line-height:1.8;color:#475569}main{flex:1;min-width:0}.react-flow__node-flow{width:220px;height:90px}.node-body{width:100%;height:100%;border:2px solid #475569;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:12px;text-align:center;white-space:pre-wrap;overflow-wrap:anywhere;overflow:hidden}.node-body.diamond{clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%);border-radius:0;outline:2px solid #475569;padding:18px 45px}.node-body.ellipse{border-radius:50%}.node-body.text{border:0;background:transparent!important}.react-flow__handle{width:10px;height:10px;background:#2563eb}.react-flow__edge-text{font-size:13px}footer{padding:6px 12px;border-top:1px solid #cbd5e1;font-size:12px;background:white}@media(max-width:650px){aside{width:155px;padding:8px}header{padding:8px}.document-name{display:none}nav{margin-left:0}}
+
+.node-body.diamond{position:relative;clip-path:none;outline:0;border:0;background:transparent!important}.diamond-background{position:absolute;inset:0;width:100%;height:100%}.node-body.diamond span{position:relative}
+
+.node-body,.node-body.diamond{padding:0}.node-lines{white-space:pre;font-size:16px;line-height:24px;font-family:"Malgun Gothic","Noto Sans KR",sans-serif}
+
+/* 표/다이어그램: 탭·표 만들기(2026-10-15). 기존 편집기 색(#2563eb 강조, #cbd5e1 선)을 그대로 쓴다. */
+.mode-tabs{display:flex;gap:4px;background:#eef2f7;border-radius:10px;padding:3px}
+.mode-tabs button{border:0;background:transparent;padding:7px 14px;border-radius:8px;font-weight:600;color:#475569}
+.mode-tabs button.active{background:white;color:#1d4ed8;box-shadow:0 1px 3px rgba(15,23,42,.12)}
+nav button.primary{background:#2563eb;color:white;border-color:#2563eb;font-weight:700}
+nav button.primary:hover{background:#1d4ed8}
+.flow-layer{width:100%;height:100%}
+.presets{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-bottom:10px}
+.presets button,.role-tabs button{margin:0;padding:7px 0}
+.presets button.active,.role-tabs button.active{background:#2563eb;color:white;border-color:#2563eb}
+.role-tabs{display:flex;gap:4px;margin-bottom:8px}.role-tabs button{flex:1;display:block}
+.stepper-row{display:flex;align-items:center;justify-content:space-between;font-size:13px;margin:8px 0}
+.stepper{display:inline-flex;align-items:center;gap:4px}
+.stepper button{width:30px;height:30px;padding:0;margin:0;display:inline-block}
+.stepper output,.stepper input{width:46px;text-align:center;font-weight:700}
+aside .stepper input{width:52px;margin-top:0}
+.text-style{border:1px solid #e2e8f0;border-radius:10px;padding:8px 10px;margin:0 0 10px}
+.text-style legend{font-size:12px;color:#64748b;padding:0 4px}
+.style-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px}
+.style-row label{margin-top:0!important;display:flex;align-items:center;gap:6px}
+.style-row label.size{flex-wrap:nowrap}
+.toggle{margin:0!important;display:inline-block!important;width:auto!important}
+.toggle.on{background:#1d4ed8;color:white;border-color:#1d4ed8}
+.color input[type=color]{width:34px!important;height:28px;padding:2px;margin:0!important}
+.mini{width:auto!important;display:inline-block!important;margin:0!important;padding:4px 6px;font-size:12px}
+label.check{display:flex!important;align-items:center;gap:6px}label.check input{width:auto!important;margin:0!important}
+.table-canvas{height:100%;overflow:auto;padding:32px;background:#f8fafc}
+.hint{font-size:12px;color:#64748b;margin-top:16px}
+.flow-strip{display:grid;align-items:stretch;min-width:min-content}
+.flow-step{position:relative;display:flex;flex-direction:column;border:2px solid #4c4c4c;background:white;min-width:110px}
+.flow-step .cell{border:0;border-radius:0;text-align:center;padding:14px 6px;width:100%}
+.flow-step .cell.step{border-bottom:4px double #4c4c4c}
+.flow-step .remove{position:absolute;top:-12px;right:-12px;width:24px;height:24px;padding:0;border-radius:50%;opacity:0;transition:opacity .15s}
+.flow-step:hover .remove,.flow-step:focus-within .remove{opacity:1}
+.flow-arrow{position:relative;display:flex;align-items:center;justify-content:center;background:transparent!important}
+.flow-arrow .insert{position:absolute;bottom:-34px;width:24px;height:24px;padding:0;border-radius:50%;opacity:0;transition:opacity .15s}
+.flow-arrow:hover .insert,.flow-arrow:focus-within .insert{opacity:1}
+.grid-preview{border-collapse:collapse;background:white;min-width:60%}
+.grid-preview td{border:1px solid #334155;padding:0;min-width:80px}
+.grid-preview .cell{border:0;border-radius:0;width:100%;text-align:center;padding:10px 6px}
+.grid-preview th{font-weight:400;padding:2px}
+.col-tools,.row-tools{display:inline-flex;gap:2px;opacity:.35;transition:opacity .15s}
+.grid-preview th:hover .col-tools,.grid-preview th:hover .row-tools,.col-tools:focus-within,.row-tools:focus-within{opacity:1}
+.col-tools button,.row-tools button{width:22px;height:22px;padding:0;font-size:12px}
+.style-row label.size{white-space:nowrap}
+.flow-step textarea.cell{resize:none;min-height:0;margin:0;font:inherit;line-height:1.35;overflow:hidden}
+/* 도형 갤러리·색 견본·연결선·표 종류(2026-10-16) */
+.shape-group{margin-bottom:6px}.shape-group summary{cursor:pointer;font-size:12px;color:#475569;padding:4px 0;font-weight:600}
+.shape-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:3px}
+.shape-grid button{margin:0;padding:3px;display:flex;align-items:center;justify-content:center;height:30px}
+.tool-row{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0}.tool-row button{flex:1 1 auto;margin:0!important;width:auto!important;padding:6px 4px;font-size:12px}
+.color-row{margin-top:8px;font-size:12px}.color-row>span{display:block;margin-bottom:4px;color:#475569}
+.swatches{display:flex;flex-wrap:wrap;gap:3px;align-items:center}
+.swatch{width:16px!important;height:16px;padding:0!important;margin:0!important;border:1px solid #cbd5e1;border-radius:3px;display:inline-block!important}
+.swatch.on{outline:2px solid #2563eb;outline-offset:1px}
+.swatch.none{background:linear-gradient(135deg,#fff 45%,#ef4444 47%,#ef4444 53%,#fff 55%)}
+.swatches input[type=color]{width:24px!important;height:20px;padding:0;margin:0!important;border:0}
+.border-part{margin-bottom:10px}.border-part b{font-size:12px;color:#334155}
+.border-sample{height:0;margin-top:6px}
+.node-body{position:relative;display:flex;align-items:center;justify-content:center;border:0!important;background:transparent!important;padding:0}
+.shape-svg{position:absolute;inset:0;overflow:visible}
+.node-lines{position:relative;white-space:pre;text-align:center}
+.react-flow__node-flow{width:auto;height:auto}
+.flow-strip.vertical{display:flex;flex-direction:column;gap:0;max-width:720px}
+.flow-strip.vertical .flow-step{flex-direction:row}
+.flow-strip.vertical .flow-step .cell{flex:1}
+.flow-strip.vertical .flow-step .cell.step{flex:0 0 32%}
+.flow-strip.vertical .flow-arrow{height:34px}
+.flow-strip.vertical .flow-arrow .insert{bottom:auto;right:-34px}
+.flow-step .cell{border:0}
+.org{display:flex;flex-direction:column;align-items:center;max-width:960px;margin:0 auto}
+.org-root input{text-align:center;padding:12px 18px;border-radius:0;min-width:180px}
+.org-stem{height:26px;width:0}
+.org-units{display:grid;width:100%}
+.org-unit{display:flex;flex-direction:column;align-items:center}
+.org-bus{height:0;align-self:stretch}
+.org-drop{height:24px;width:0}
+.org-unit input{text-align:center;padding:10px 6px;width:80%;border-radius:0}
+.org-unit textarea{width:80%;border:0;text-align:center;resize:none;background:transparent;margin-top:6px}
+.bar{display:flex;align-items:center;gap:14px;max-width:900px}
+.bar input:first-child{padding:10px 16px;border-radius:0;min-width:180px;text-align:center}
+.bar-line{flex:1;height:0}
+.bar input:last-child{border:0;text-align:center;min-width:160px;background:transparent}

@@ -16,3 +16,15 @@ flutter_ui/.dart_tool/
 flutter_ui/.flutter-plugins*
 desktop_web/flutter/
 scratch/
+
+dist-native*/
+node_modules/
+
+# Repository-local virtual environment (directory or Linux symlink)
+/.venv
+
+# Shared, reviewed PyInstaller build specification
+!/HWP_AutoDocFit.spec
+
+# 구버전 미리보기 생성 자료(현재 진입점에서는 사용하지 않음, 개인 자료 추적 방지)
+flutter_ui/tool/settings_preview_data.dart

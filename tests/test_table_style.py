@@ -8,6 +8,7 @@ from defusedxml import ElementTree as ET
 
 from docfit_core.table_style import (HeaderPool, apply_table_style, default_style, describe_style,
                                      is_grid_table, learn_from_table, learn_table_style, valid_style)
+from tests.temp_support import tracked_tempdir
 
 HP_URI = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 HP = f'xmlns:hp="{HP_URI}"'
@@ -153,7 +154,8 @@ class ApplyTest(unittest.TestCase):
         self.assertEqual(read.side((2, 2), "topBorder"), "SOLID")
         self.assertIsNone(read.face_color((3, 1)))
         self.assertEqual(read.font((3, 1))[:3], ("휴먼명조", 1200, False))
-        self.assertEqual(read.align((3, 0)), "DISTRIBUTE")
+        # 예시 첫 열은 배분 정렬이지만 숫자 글('3-0')은 흩어지므로 가운데 정렬로 둔다.
+        self.assertEqual(read.align((3, 0)), "CENTER")
         self.assertEqual(read.align((3, 2)), "CENTER")      # 숫자만 있는 본문 칸('3-2')은 예시 정렬
         self.assertEqual(read.side((4, 0), "leftBorder"), "NONE")
         self.assertEqual(read.side((4, 3), "rightBorder"), "NONE")
@@ -180,7 +182,7 @@ class ApplyTest(unittest.TestCase):
             self.assertEqual(read.align(pos), "LEFT", pos)
         for pos in ((1, 2), (2, 2), (3, 2), (0, 1), (0, 2)):
             self.assertEqual(read.align(pos), "CENTER", pos)
-        self.assertEqual(read.align((2, 0)), "DISTRIBUTE")
+        self.assertEqual(read.align((2, 0)), "DISTRIBUTE")   # 짧은 한글 머리말('소요 기간')은 예시의 배분 정렬
         # 사용자가 배운 서식은 예시 정렬을 그대로 따른다(문장 왼쪽 정렬은 내장 기본값에만).
         learned = default_style()
         for cell in learned["cells"]:
@@ -302,7 +304,7 @@ class LearnTest(unittest.TestCase):
     def test_learning_a_styled_table_gives_the_same_style(self):
         table = _grid(5, 4)
         header, _ = _apply(table)
-        folder = Path(tempfile.mkdtemp(prefix="docfit-table-style-"))
+        folder = Path(tracked_tempdir(self, "docfit-table-style-"))
         path = folder / "예시.hwpx"
         section = ET.fromstring(f'<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" {HP}>'
                                 f'<hp:p id="0" paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"/></hp:p></hs:sec>')
@@ -319,10 +321,10 @@ class LearnTest(unittest.TestCase):
         _, read = _apply(_grid(3, 3), learned)
         self.assertEqual(read.face_color((0, 1)), "#DFE6F7")
         self.assertEqual(read.side((0, 0), "leftBorder"), "NONE")
-        self.assertEqual(read.align((2, 0)), "DISTRIBUTE")
+        self.assertEqual(read.align((2, 0)), "CENTER")   # 숫자 글('2-0')은 배분 정렬하지 않는다
 
     def test_document_without_grid_table_is_rejected(self):
-        folder = Path(tempfile.mkdtemp(prefix="docfit-table-style-"))
+        folder = Path(tracked_tempdir(self, "docfit-table-style-"))
         path = folder / "빈문서.hwpx"
         with zipfile.ZipFile(path, "w") as archive:
             archive.writestr("Contents/header.xml", ET.tostring(_header(), encoding="utf-8"))
@@ -330,6 +332,92 @@ class LearnTest(unittest.TestCase):
                              f'<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" {HP}/>')
         with self.assertRaises(ValueError):
             learn_table_style(path)
+
+
+class PrecisionRegressionTest(unittest.TestCase):
+    def test_mixed_runs_keep_relative_bold_color_underline_and_supscript(self):
+        header = _header()
+        table = _grid(3, 3)
+        paragraph = next(x for x in table.iter() if _tag(x) == "p")
+        run = next(x for x in paragraph if _tag(x) == "run")
+        import copy
+        emphasized = copy.deepcopy(run)
+        emphasized.set("charPrIDRef", "1")
+        paragraph.append(emphasized)
+        chars = {x.get("id"): x for x in header.iter() if _tag(x) == "charPr"}
+        next(x for x in chars["1"] if _tag(x) == "underline").set("type", "BOTTOM")
+        chars["1"].append(ET.fromstring('<hh:supscript xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head"/>'))
+        style = default_style()  # header sample is bold; it must not erase contrast
+        apply_table_style(HeaderPool(header, style), table)
+        result = {x.get("id"): x for x in header.iter() if _tag(x) == "charPr"}
+        plain, accent = [result[x.get("charPrIDRef")] for x in paragraph if _tag(x) == "run"]
+        self.assertIsNone(next((x for x in plain if _tag(x) == "bold"), None))
+        self.assertIsNotNone(next((x for x in accent if _tag(x) == "bold"), None))
+        self.assertEqual(accent.get("textColor"), "#FF0000")
+        self.assertEqual(next(x for x in accent if _tag(x) == "underline").get("type"), "BOTTOM")
+        self.assertIsNotNone(next((x for x in accent if _tag(x) == "supscript"), None))
+        self.assertEqual(plain.get("height"), accent.get("height"))
+
+    def test_gradient_angle_and_explicit_white_survive_learning_and_application(self):
+        for angle in ("0", "90"):
+            header = _header()
+            fill = next(x for x in header.iter() if _tag(x) == "borderFill")
+            brush = ET.fromstring(f'<hc:fillBrush xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">'
+                f'<hc:gradation type="LINEAR" angle="{angle}"><hc:color value="#FFFFFF"/>'
+                '<hc:color value="#0000FF"/></hc:gradation></hc:fillBrush>')
+            fill.append(brush)
+            style = learn_from_table(header, _grid(3, 3))
+            target_header = _header()
+            target = _grid(4, 3)
+            apply_table_style(HeaderPool(target_header, style), target)
+            fills = {x.get("id"): x for x in target_header.iter() if _tag(x) == "borderFill"}
+            cell = next(x for x in target.iter() if _tag(x) == "tc")
+            copied = fills[cell.get("borderFillIDRef")]
+            grad = next(x for x in copied.iter() if _tag(x) == "gradation")
+            self.assertEqual(grad.get("angle"), angle)
+            self.assertEqual(next(iter(grad)).get("value"), "#FFFFFF")
+            self.assertNotEqual(copied.get("id"), "1")
+
+    def test_explicit_white_and_none_brushes_are_not_collapsed(self):
+        for color in ("#FFFFFF", "none"):
+            header = _header()
+            fill = next(x for x in header.iter() if _tag(x) == "borderFill")
+            fill.append(ET.fromstring('<hc:fillBrush xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">'
+                f'<hc:winBrush faceColor="{color}" hatchColor="#123456" alpha="0"/></hc:fillBrush>'))
+            style = learn_from_table(header, _grid(3, 3))
+            target_header, target = _header(), _grid(3, 3)
+            apply_table_style(HeaderPool(target_header, style), target)
+            self.assertEqual(Reader(target_header, target).face_color((0, 0)), color)
+
+    def test_shared_service_keeps_abbreviation_contract_and_refuses_running_changes(self):
+        from docfit_app.abbreviation_service import AbbreviationService
+        from docfit_app.settings_service import SettingsService
+        from docfit_app.table_template_service import TableTemplateService
+        from docfit_app.api_contract import ServiceError
+        from docfit_core.abbreviations import table_style_of
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "example.hwpx"
+            with zipfile.ZipFile(source, "w") as archive:
+                archive.writestr("Contents/header.xml", ET.tostring(_header()))
+                archive.writestr("Contents/section0.xml", ET.tostring(_grid(3, 3)))
+            original = source.read_bytes()
+            abbreviations = AbbreviationService(SettingsService(Path(folder) / "settings.json"))
+            service = TableTemplateService(abbreviations)
+            service.command("learn", {"path": str(source)})
+            self.assertEqual(table_style_of(abbreviations.user_entries())["rows"], 3)
+            self.assertEqual(source.read_bytes(), original)
+            with self.assertRaises(ServiceError):
+                service.command("reset", {}, running=True)
+            reset = service.command("reset", {})
+            self.assertEqual(reset["preview"]["rows"], default_style()["rows"])
+
+class SpreadLabelTest(unittest.TestCase):
+    def test_distribute_only_for_short_hangul_labels(self):
+        from docfit_core.table_style import _spread_label
+        for text in ('구 분', '총 계', '시설명'):
+            self.assertTrue(_spread_label(text), text)
+        for text in ('332', '2026 추진실적', '(8. 31. 현재)', '노래연습장 영업주 안전교육', 'A'):
+            self.assertFalse(_spread_label(text), text)
 
 
 if __name__ == "__main__":

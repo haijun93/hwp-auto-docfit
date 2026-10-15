@@ -22,6 +22,7 @@ import io
 import re
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
+from .hwpx import open_hwpx_safely
 
 from defusedxml import ElementTree as ET
 
@@ -289,7 +290,7 @@ def _style_of(attr, in_cell):
 
 def transfer(pdf_chars: list, hwpx_in: str | Path, hwpx_out: str | Path) -> dict:
     """pdf_chars(pdf_characters 결과)의 서식을 hwpx_in에 옮겨 hwpx_out으로 저장. 통계를 돌려준다."""
-    with ZipFile(hwpx_in) as z:
+    with open_hwpx_safely(hwpx_in) as z:
         infos = z.infolist()
         data = {i.filename: z.read(i.filename) for i in infos}
     names = sorted(n for n in data if re.match(r"Contents/section\d+\.xml$", n))

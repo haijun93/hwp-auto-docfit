@@ -1,4 +1,6 @@
 """서식 예시 직접 편집 추가(TODO 6순위): 기본 이름 규칙과 서식 이름 바꾸기."""
+from tests.gui_support import gui_root
+
 from pathlib import Path
 import json
 import os
@@ -25,7 +27,7 @@ class ExampleProfileTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='hwp-docfit-profile-') as folder:
             with patch.dict(os.environ, {'APPDATA': folder}):
                 ns = runpy.run_path(str(source), run_name='profile_ui_test')
-                root = ns['TkinterDnD'].Tk()
+                root = gui_root(ns['TkinterDnD'].Tk, ns)
                 root.withdraw()
                 errors = []
                 root.report_callback_exception = lambda *args: errors.append(args)

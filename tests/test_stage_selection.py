@@ -61,7 +61,7 @@ class StageSelectionTest(unittest.TestCase):
         # 카드 옵션 10개(자간 정리 2·서식 통일 5·한 번에 적용 3)는 모두 그 카드 세부 작업 목록의 작업과 연동한다.
         self.assertEqual(len(CARD_OPTION_STAGES), 10)
         self.assertEqual(card_option_keys("unify_keep_layout", "unify"), ("page_layout_keep",))
-        self.assertEqual(card_option_keys("unify_full_format", "unify"), ("unify_full_format",))
+        self.assertEqual(card_option_keys("unify_quick_mode", "unify"), ("unify_full_format",))
         for option, (modes, _, _) in CARD_OPTION_STAGES.items():
             self.assertTrue(card_option_keys(option, modes[0]), option)
         self.assertEqual(card_option_keys("spacing_exclude_tables", "spacing"),
@@ -82,6 +82,10 @@ class StageSelectionTest(unittest.TestCase):
         self.assertEqual(card_option_stage_values("unify_exclude_tables", False, {}, "unify"),
                          {"table_style": True, "table_unify": True})
         self.assertEqual(card_option_stage_values("spacing_reset_existing", False, {}, "spacing"), {"reset_spacing": False})
+        self.assertEqual(card_option_stage_values("unify_quick_mode", True, {}, "unify"),
+                         {"unify_full_format": False})
+        self.assertEqual(card_option_stage_values("unify_quick_mode", False, {}, "unify"),
+                         {"unify_full_format": True})
         # '표 제외'를 켠 채 '자간 조정 포함'을 켜면 표·컨트롤 자간 작업은 꺼 둔다.
         values = card_option_stage_values("all_include_spacing", True, {"all_exclude_tables": True}, "all")
         self.assertTrue(values["body_spacing"] and values["reset_spacing"] and values["word_check"])

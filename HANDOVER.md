@@ -7,6 +7,108 @@
 
 ## 1. 한눈에 보기
 
+2026-10-15 **1.74 Alpha 15**: 사용자가 꾸민 표(장식 막대·단위 캡션·조직도·흐름표) 보호 정리, 기능별 맞춤 진행 화면(iPhone 콘셉트),
+줄 간격 최솟값 140%, 파일포맷 즉시 변환·kordoc 문구 제거, 표/다이어그램(흐름표·기본 표 → 한/글 문서, 글자 서식),
+설정의 글자·본문 상용구 관리(`docfit_core/hwp_idioms.py`, 한/글 사용자 폴더 HWP.IDO를 직접 고치고 매번 백업), 개발자 표시.
+베타 대비 개선 기록은 [Alpha 15 기록](docs/ALPHA15_RELEASE_NOTES.md).
+
+2026-10-15 **1.74 Alpha 14**: 처리 문서를 드래그앤드롭하여 실제 추가하면
+다음 상태 조회에서 2단계 작업 방식 화면으로 자동 전환한다.
+DesktopWebBridge의 document_drop_revision은 성공한 문서 드롭 때만 증가한다.
+중복·지원하지 않는 파일·작업 중 거부 및 서식 복제 드롭은 이동 신호를 만들지 않는다.
+같은 상태를 반복 조회하거나 사용자가 1단계로 돌아가도 재전환하지 않는다.
+파일포맷 모드의 기존 결과 형식 선택창은 유지한다.
+Python 1,158개(통과 1,155·조건부 제외 3), Flutter 57개·정적 분석 통과.
+웹 번들 재빌드·자산 검사 및 Chromium에서 Python 브리지의 수락된 드롭 신호→2단계 전환 확인.
+
+
+2026-10-15 **1.74 Alpha 13**:
+첨부 전/후 예시에 따라 로1 추진근거·Ⅰ 추진근거 일반 문단을 번호·빈칸·제목의
+중제목 표로 변환한다. MD의 명시적 로마자 장 번호와 하위 목차도 보존한다.
+Python 1,157개(통과 1,154·조건부 제외 3), 정적 검사·import_check·소스 자가진단 통과.
+상세: docs/ROMAN_HEADING_ALPHA13.md.
+Alpha 12 커밋 2f0f9e9 및 Alpha 13 기능 커밋 1aec182를 원격 alpha로 푸시했다.
+최초 시도는 GitHub 인증 오류였으나 후속 재시도에서 성공했으며 github·origin 순으로 처리했다.
+Windows COM 실기기 조판은 별도 검증이다.
+
+
+2026-10-15 **1.74 Alpha 12**: 명시적 MD 문서의 #~###### 목차를 AI 붙여넣기와 같은
+공문서 계층 블록으로 해석한다. ※ 주석·AI 자동 감지 설정 때문에 MD 목차를 건너뛰지 않는다.
+공백이 끼인 # # / # ## 표제도 처리하며 날짜(연·월), 금액·표·붙임 내용을 보존한다.
+배치 텍스트 변환도 라벨 글을 그대로 적지 않고 실제 문단/표로 삽입하고 파일을 놓은 뒤 표식을 후처리한다.
+Python 1,153개(통과 1,150·조건부 제외 3), 첨부 MD 표 4개 구조·핵심 내용 보존 확인.
+Windows COM 실제 생성·조판 확인은 별도다. docs/MARKDOWN_DOCUMENT_ALPHA12.md 참고.
+
+
+2026-10-14 **1.74 Alpha 11**: 최종 검토 F1~F5 소스 수정 및 Linux 회귀 검증.
+fidelity 비덮어쓰기 확정, 비동기 호스트 종료/편집 화면 보호, 표 보호 판별 오류 중단,
+흐름도·tldraw 문서 revision 충돌 감지/사본 복구, 런타임 설치 프로세스 잠금을 구현했다.
+[수정·검증 보고서](docs/FINAL_REVIEW_FIXES_ALPHA11.md)를 현재 기준으로 확인한다.
+Python 1,146개(통과 1,143·조건부 제외 3), Flutter 55개, 흐름도 모델 6개 통과.
+Windows COM·WebView2 X/Alt+F4·동결 EXE 실기기 검증은 별도 유지한다.
+
+
+2026-10-14 **bf955f1 전체 최종 검토**: 이전 Alpha 10 R1~R5 수정은 유지되지만,
+확장 검토에서 **잔여 P1 2건·P2 3건(F1~F5)**을 확인했다.
+fidelity 고정 임시 이름의 원본 별칭 쓰기, 호스트 종료의 미저장 상태 누락,
+표 보호 조사 실패 시 보호 해제, 다중 편집자 흐름도 충돌, 런타임 첫 설치 경합이 대상이다.
+[전체 최종 검토 보고서](docs/FINAL_CODE_REVIEW_BF955F1.md)를 우선 확인한다.
+Python 1,132개(조건부 제외 3), Flutter 49개, 흐름도 모델 6개와 정적 분석은 통과했으며,
+별도 경계 재현 결과와 실제 Windows 검증 한계를 보고서에 구분했다. 이번 검토에서 기능 코드는 수정하지 않았다.
+
+2026-10-14 **Alpha 10 후속 수정**: 6ac66ef/f22bc22 리뷰 P1 2건·P2 3건을 수정했다.
+미리보기 도구의 추적 가능한 기본 자료와 임시 빌드 정의, 병합 칸 너비의 양수/전체 폭 검증,
+프로필 요소 왕복 값 보존, 캡션 날짜 칸 및 중첩 보호 영역을 보강했다.
+Python 1,132개(통과 1,129·조건부 제외 3·실패/오류 0), Flutter 49개 통과.
+Flutter/dart 분석 지적 0개, 운영 웹 번들 재빌드·자산 검사 통과.
+[수정·검증 보고서](docs/REVIEW_FIXES_6ac66ef.md)를 기준으로 한다.
+Windows 한/글 COM·WebView2·동결 EXE 실기기 검증은 별도다.
+
+2026-10-14 **1.74 Alpha 9**: 7497338/287aa0d 리뷰 R1~R5 수정 및 실행 컨텍스트·콜백 연결.
+공통 `HWP_AutoDocFit.spec`, 부트스트랩까지 확인하는 `--self-test`, 저장 세대/입력 revision,
+잠금 내부 초안 revision 확정, 화면·PNG 공통 자동 레이아웃을 구현했다.
+`docfit_engine/context.py`는 RunOptions·프로필·캐시·취소 포트와 콜백을 작업별로 격리한다.
+GUI 작업은 명시적 컨텍스트를 전달하며 기존 루트 함수의 monkeypatch 호환 경계는 유지한다.
+[Alpha 9 수정·검증 보고서](docs/REVIEW_FIXES_ALPHA9.md)를 기준으로 한다.
+Python 1,085개(통과 1,082·조건부 제외 3·실패/오류 0), Flutter 44개, 흐름도 모델 6개 통과.
+최종 웹 번들·실제 Python 저장소 왕복 처리와 저장 응답 중 추가 입력 보존을 Chromium에서 확인했다.
+Windows 한/글 COM·WebView2·동결 EXE 실기기 검증은 별도이며 소스 시험 통과와 구분한다.
+
+2026-10-14 Alpha 8 후속: 일반 모드에 **React Flow(MIT) 업무 흐름도**를 추가했다.
+기존 tldraw는 삭제하지 않고 개발자 모드 + 별도 사용 옵션에서만 선택 가능하다.
+일반 흐름도는 `flows/`, tldraw 문서는 `diagrams/`로 분리해 기존 데이터를 보존한다.
+현재 범위·시험은 [일반 흐름도 구현 보고서](docs/GENERAL_FLOW_EDITOR_ALPHA8.md)를 확인한다.
+
+2026-10-14 **1.74 Alpha 8**: Phase 3~5 소스 구현 및 Linux 회귀 검증.
+본체는 약 3,310줄 부트스트랩·호환 파사드이며 `docfit_engine/`에 COM·서식·자간·쪽 배치·파이프라인,
+`docfit_ui/`에 Tk 폴백과 소유 스레드 메시지 펌프를 분리했다.
+프로필 상세, 세부 단계, 문서·작성 도구 및 실행 중 확인은 Flutter 내부에서 처리한다.
+현재 운영 경로는 **Flutter 웹 + WebView2 + 숨긴 Tk/COM 백엔드**다.
+Windows 네이티브 별도 시제품은 여전히 `engine_ready=false`이며 Windows 실측·EXE 검증은 남아 있다.
+최신 범위와 검증 수치는 [Phase 3~5 보고서](docs/REFACTOR_PHASE3_5_ALPHA8.md)를 기준으로 한다.
+아래 Alpha 7 이하의 미완료 설명과 시험 건수는 당시 기록이다.
+
+2026-10-14 개발판 **1.74 Alpha 7**: 파일포맷 선택을 앱 내부의 별도 플로팅 도넛 창으로 변경했다. HWPX→PDF는 기존 필수 환경인 한/글 COM의 내장 저장을 직접 사용하며 Node.js/kordoc/Pandoc/PDF 프린터를 추가 설치하지 않는다. 다른 입력·출력의 도구 의존성은 별도다. 준비 상태 조회는 Tk 밖에서 수행하고 30초 캐시한다. [구현·검증 기록](docs/ALPHA7_FLOATING_CONVERSION_2026-10-14.md)을 먼저 확인한다. Flutter 변경 후 생성 자산을 다시 빌드해야 실행 화면에 반영된다. 전체 설정 화면은 Flutter지만 프로필 상세·일부 문서 도구 및 네이티브 COM 이관은 여전히 별도 잔여 작업이다.
+
+2026-10-13 안정화 작업: 개발판 **1.74 Alpha 6**, 공개 베타 **1.74 Beta 1**.
+Flutter UI를 유지하고 MCP 기능은 이번 변경에서 확대·활성화하지 않았다.
+Alpha 5는 숫자/코드/문의 본문 보존, 공통 원자 설정 저장, ZIP 입력 제한 및 직함·이름 의미단위를 보완했다.
+결과: [Alpha 5 개선 기록](docs/ALPHA5_IMPROVEMENTS_2026-10-13.md) — 최종 997시험 실패/오류 0.
+Alpha 4는 실제 Tk/TkDND·pywebview를 쓰는 Linux 시험과 플랫폼 경로 시험을 보완했다.
+GUI 시험은 실제 디스플레이/Xvfb가 필요하며 COM만 stub으로 대체한다.
+최종 결과는 [22건 해결 기록](docs/TEST_FAILURES_22_ASSESSMENT_2026-10-13.md)의 Alpha 4 절을 확인한다.
+요청 수명/종료·새 작업 범위·오래된 poll 응답을 수정했으며, 준말 관리를 Flutter와 공통 서비스로 옮겼다.
+전체 설정은 Flutter 화면과 공통 서비스로 전환했다. 프로필 상세·문서 도구는 아직 Tk 경로가 남아 있다.
+Alpha 6 네이티브 시제품은 Windows runner·독립 백엔드·인증 IPC를 추가했다. COM 연결 및 Windows 검증은 미완료다.
+[네이티브 계획](docs/FLUTTER_NATIVE_MIGRATION_PLAN.md)과 [시험 기록](docs/FLUTTER_NATIVE_TEST_REPORT.md)을 확인한다.
+Alpha 6 후속 보안 수정 전체 Python 1,014시험 실패·오류 0(기존 skip 3), Flutter 28시험·웹 Release 통과.
+MCP 출력 경쟁 조건·예약 장치 이름, HWPX 중복 ZIP 항목을 보완했다. [전체 보안 검토](docs/FULL_CODE_SECURITY_REVIEW_ALPHA6_2026-10-13.md)를 확인한다.
+최신 확인 사항은 [Flutter 시험 보고서](docs/FLUTTER_TEST_REPORT.md), [전환 계획](docs/FLUTTER_MIGRATION_PLAN.md)을 본다.
+`docfit_app`은 UI 독립 서비스이며 기존 문서 처리/COM 파이프라인은 재작성하지 않았다.
+EXE 빌드는 Flutter 검사·자산 검증 실패 시 중단한다. 런타임 비상 Tk 경로는 유지한다.
+
+2026-10-13 후속 작업: GitHub `alpha` 8b83fc8까지의 커밋을 검토한 뒤, 최신 alpha에 tldraw 개발 시제품을 추가하는 중이다. 기존 alpha worktree의 미추적 `scripts/benchmark_paragraph_bundle.py`는 그대로 보존한다. 편집기는 개발자 모드와 `diagram_editor_enabled`가 둘 다 켜져야 하며, SDK의 제품 사용권을 확인하기 전에는 배포 금지다. Node 22.12+와 Windows Flutter/WebView2 시험은 아직 필요하고, 한/글 COM 삽입은 미구현이다. [tldraw 시험 보고서](docs/TLDRAW_TEST_REPORT.md), [구조 재검토](docs/CODE_RESTRUCTURING_REVIEW_ALPHA6_2026-10-13.md)를 확인한다.
+
 | 항목 | 현재 값 |
 |---|---|
 | 제품 | 한/글 2020 문서(HWP/HWPX)를 공문서 규칙에 맞게 자동 후처리하는 Windows 데스크톱 앱(Python·Tkinter 백엔드 + pywebview/WebView2 UI) |
@@ -42,16 +144,28 @@
 
 ## 3. 코드 구조
 
+표 템플릿 후속 개선: 공통 다단 헤더 판별, 혼합 Run 강조 보존, 모호한 정밀 표 폴백,
+Flutter 서식 관리의 기본 데이터 표 학습·초기화를 추가했다.
+[표 템플릿 검증 기록](docs/TABLE_TEMPLATE_PRECISION_ALPHA.md)을 확인한다.
+
+알파 리팩터링: `docfit_core/app_state.py`에 Tk 상태와 연결되는 `AppState`·`RunOptions`,
+`docfit_core/config_store.py`에 순수 설정 마이그레이션 및 공통 원자 저장 파사드를 둔다.
+기존 GUI 속성은 호환 프로퍼티로 유지한다. Phase 3~5 구조와 잔여 Windows 검증은 Alpha 8 보고서를 참고한다.
+진행 기록은 [REFACTOR_ALPHA_PROGRESS.md](docs/REFACTOR_ALPHA_PROGRESS.md)를 확인한다.
+
 | 경로 | 역할 |
 |---|---|
-| `hwp-auto-docfit.py` (약 15,000줄) | 앱 본체. COM 자동화 파이프라인, 서식 분석, GUI 전체. **CRLF 줄바꿈**, 식별자·주석 대부분 한국어 |
+| `hwp-auto-docfit.py` (약 3,310줄) | 부트스트랩·상수·호환 심볼 re-export. **CRLF 유지** |
+| `docfit_engine/` | security, com_driver, spacing, formatter, page_fit, pipeline 및 호환 세션 바인더 runtime |
+| `docfit_ui/` | 레거시 Tk 폴백과 GUI 소유 스레드 RPC 큐 펌프 |
+| `docfit_app/document_tools_service.py` | UI 독립 아웃라이너·붙여넣기·작성/검토·교정 사본·비동기 고급 도구 |
 | `desktop_web_ui.py`, `desktop_web/` | WebView2 키오스크 UI와 Tk 백엔드 연결, 반응형 화면 리소스 |
-| `flutter_ui/`, `build_flutter.ps1` | 새 알파 Flutter Material 3 화면. 빌드하면 `desktop_web/flutter/`를 우선 사용하며, 상세 설정은 기존 Tk 창을 연결. SDK 위치·검사는 `flutter_ui/README.md` 참고 |
+| `flutter_ui/`, `build_flutter.ps1` | 새 알파 Flutter Material 3 화면. 빌드하면 `desktop_web/flutter/`를 우선 사용하며, 상세 설정·프로필·도구·실행 확인은 Flutter 내부에서 처리. SDK 위치·검사는 `flutter_ui/README.md` 참고 |
 | `docfit_core/hwpx.py` | HWPX 안전 검사(ZIP bomb·경로 조작), 구조 파싱, Markdown 내보내기, 무결성 비교 |
 | `docfit_core/stage_selection.py` | 작업 유형별 세부 작업(단계) 목록과 기본 선택값 |
 | `docfit_core/abbreviations.py`, `abbreviation_dialog.py` | 준말 등록표(첫 어절 판별 `match_line`, 줄 변환용 `line_registry`)와 준말 등록·관리 창(표 서식 학습 버튼 포함) |
 | `docfit_core/table_style.py` | 기본 표 서식(준말 `표`의 본말): 예시 표 위치별 서식 학습(`learn_table_style`)·적용(`apply_table_style`), 내장 기본값 |
-| `docfit_core/table_width.py` | 표 칸 너비: 칸 글자 수 비율(1행 제외, 2행부터 행별 비율 평균)로 열 너비를 나누고 표 폭을 본문 폭에 맞춤(`fit_table`) |
+| `docfit_core/table_width.py` | 표 칸 너비: 칸 글자 수 비율(다단 머리글 제외, 본문 행별 비율 평균)로 열 너비를 나누고 표 폭을 본문 폭에 맞춤(`fit_table`) |
 | `docfit_core/style_hierarchy.py` | 항목기호(□·ㅇ·-·※ 등) 판별, 들여쓰기 기반 계층 분석 |
 | `docfit_core/style_inventory.py` | **문서 스타일 전수 분석**(정의/사용, 스타일 유형, 위첨자·글자색·음영, 표 종류)과 **예시 서식 HWPX 생성** |
 | `docfit_core/fidelity/`, `scripts/fidelity.py` | **원본 보존 경로**(`STYLE_FIDELITY_DESIGN.md` 첫 구현 범위): HWPX 무손실 보관·최소 변경 쓰기, 요소·속성 전수 목록과 해석 범위, 원문 위치 맵, 내용만 바꾸는 패치, 다층 검증. 공문서 후처리와 실행 경로가 분리되어 있다 |
@@ -88,6 +202,8 @@ Flutter UI 빌드는 `powershell -File build_flutter.ps1`로 수행하며 `build
 | 한 번에 적용(자간 조정 제외) | `format` | `(서식적용).hwpx` |
 | 한 번에 적용 | `all` | `(일괄적용).hwpx` |
 
+알파에는 위 문서 정리 카드와 별도로 네 번째 `file_format` 작업이 있다. HWPX→PDF는 한/글 내장 COM 저장을 직접 사용하며 추가 변환기를 설치하지 않는다. 다른 입력은 `docfit_core.kordoc_bridge.SUPPORTED_INPUT_EXTENSIONS`의 kordoc 파싱 후 HWPX로 변환하고, PDF는 중간 HWPX를 한/글 COM으로 렌더링한다. DOCX·EPUB는 kordoc Markdown 파싱과 별도 설치 Pandoc을 사용한다. Flutter의 별도 플로팅 도넛 창에서 HWPX/PDF/DOCX/EPUB를 선택한다. 지원 입력은 HWP/HWPX/HML, PDF, XLS/XLSX, DOCX/PPTX, PNG/JPG/JPEG/WebP. 원본은 보존하지만 재생성 경로의 레이아웃 충실 복원은 보장하지 않는다. Python 전체 1,038건(1 skip), Flutter 34건(skip 0) 통과(2026-10-14). 합성 HWPX 사본의 실제 한/글 PDF 저장과 실제 kordoc HWPX 생성/재변환을 확인했으며, DOCX/EPUB 실문서 출력·다양한 OCR·수동 UI 전 구간 검증은 남아 있다. 자세한 범위는 [Alpha 7 기록](docs/ALPHA7_FLOATING_CONVERSION_2026-10-14.md)을 본다. 이번 변경은 알파 소스 반영이며 공개 EXE 배포는 아니다.
+
 - 카드는 자간 정리·서식 통일·한 번에 적용 세 장입니다. 한 번에 적용 카드의 `자간 조정 포함`(설정 `all_include_spacing`, 기본 켜짐)을 끄면 내부 작업 유형 `format`으로 실행합니다. 내부 유형 4가지와 세부 작업 저장값(`stage_choices`)은 그대로이며, Tk는 `selected_mode`(내부 유형)와 `card_mode_var`(카드 표시), 웹·Flutter는 `include_spacing` 상태와 `set_include_spacing` 명령을 씁니다. 그 아래 `표 제외`(설정 `all_exclude_tables`, 기본 꺼짐, Tk `exclude_tables_var`, 웹·Flutter `exclude_tables` 상태와 `set_exclude_tables` 명령)를 켜면 `작업시작`이 세부 작업을 `stage_selection.without_tables`로 바꿔(`TABLE_STAGE_KEYS`를 모두 끔) 넘기고 표자간조정도 끄고 넘깁니다. 제목·개요·중제목·붙임 서식 표(`pre_format`)는 그대로입니다.
 - 자간 정리 카드의 `기존 자간 초기화`(설정 `spacing_reset_existing`, 기본 켜짐)는 세부 작업 01 `reset_spacing`(`stage_choices["spacing"]`)과 같은 값입니다. Tk는 `reset_spacing_var`(설정창 자간 정리 탭과 공유, `_요약갱신`이 세부 작업 값에 맞춤), 웹·Flutter는 `reset_spacing` 상태와 `set_reset_spacing` 명령을 씁니다. 설정값이 None(예전 설정 파일)이면 저장된 세부 작업 구성을 따릅니다. 한 번에 적용의 자간 초기화는 별도 세부 작업으로 남아 있습니다. 같은 카드의 `표 제외`(기본 꺼짐, 2026-10-04 `표 내 자간 정리`에서 이름과 방향을 바꿈)는 설정 `table_spacing`의 반대 값입니다. Tk 체크는 `onvalue=False, offvalue=True`로 같은 변수 `table_spacing_var`를 씁니다. 설정 `table_spacing`(설정창 '표 서식 내 문장도 자간조정하기', 전역 `표_자간조정_사용`)과 같은 값이며, Tk `table_spacing_var`, 웹·Flutter `table_spacing` 상태와 `set_table_spacing` 명령을 씁니다. 끄면 `표셀_자간_제외인가`가 표 칸을 자간 초기화·자간 조정·줄 병합·단어 검사에서 뺍니다.
 
@@ -111,6 +227,7 @@ Flutter UI 빌드는 `powershell -File build_flutter.ps1`로 수행하며 `build
 - 서식 관리(2026-10-04): 웹 화면 `서식 관리` 창(Flutter `openFormats`/`formatManager`, 상태 변경은 `stateVersion` 알림으로 다시 그림)에서 예시 보고서를 끌어 놓아 서식을 복제하고 `사용`·`세부 수정`·`이름 바꾸기`·`삭제`를 합니다. 브리지: `set_drop_target`(documents/format, 놓기 안내 문구도 바꿈), `receive_drop`(놓기 대상에 따라 `add_paths` 또는 `add_format_paths`), `add_format_file`, `write_format_example`, `rename_profile`·`delete_profile`(실패 이유는 응답 `notice`), `edit_profile`, 상태 `profiles`(title·organization·builtin·source·active)·`format_task`(busy·file)·`drop_target`. Tk 쪽 본체는 확인 없이 부르는 `_서식_이름_저장`·`_서식_삭제`·`_서식_파일에서_추가`·`_서식_수정하기(identifier)`이며, 웹 화면 모드(`_웹화면_모드`: Tk 기본 창 숨김)에서는 안내 상자 대신 상태 문구로 알리고 서식 검토 창은 `창_맨앞으로`로 띄웁니다(숨은 기본 창에 딸리면 보이지 않고 입력이 막힘).
 - 카드 옵션(2026-10-04, 서식 통일 '페이지 맞춤 제외'만 기본 켜짐, 설정에 저장): 서식 통일 카드 `unify_exclude_tables`(→ `without_tables`)·`unify_exclude_spacing`(→ `표준서식_세부['unify_exclude_spacing']` → 전역 `서식통일_자간조정_사용` 끔, `서식통일_문장_마무리`가 자간 조정·외톨이 당기기를 건너뜀)·`unify_exclude_pagefit`, 한 번에 적용 카드 `all_exclude_pagefit`. 페이지 맞춤 제외는 `stage_selection.without_page_fit`(`page_fit`·`page_group`)입니다. `작업시작`이 세부 작업 사본에 반영해 넘깁니다. Tk 체크는 `card_option_checks`(카드별, 배경색 갱신), 웹·Flutter는 `set_card_option`·`card_options`입니다.
 - **서식 통일 비교 범위(알파, 2026-10-11 사용자 결정)**: 서식 통일 카드는 기본으로 글꼴·크기(항목기호·라벨 굵게, 괄호 크기 포함)만 맞추고, 카드 옵션 `전체 서식 맞추기`(`unify_full_format`, 기본 끔)를 켜면 글자색·기울임·밑줄·정렬·여백·위 간격·내어쓰기까지 맞춥니다(한 번에 적용·서식 적용은 전체 서식). 표본 조사는 `_서식통일_XML_조사`가 HWPX에서 하고 어긋나면 예전 `_서식통일_COM_조사`로 되돌립니다(`알파_서식통일_XML조사_사용`). 자세한 내용·PC 측정 항목은 `docs/작업결과_2026-10-11.md`. 시험 `tests/test_unify_font_size_xml.py`. 알파에서 효과를 평가한 뒤 베타에 반영합니다.
+- **AI 답변 복사 그대로 개조식 변환(알파, 2026-10-12)**: `docfit_core/ai_answer.py`가 챗GPT·클로드·제미나이 답변의 마크다운 구조(표제·번호 표제·굵은 줄·글머리·들여쓰기·표·인용)를 제목·개요·□ ㅇ - • ※ 항목기호로 바꿉니다(들여쓰기 칸 수 무관, 문장은 고치지 않음). `텍스트 붙여넣기` 문서 추가·`.txt` 작업 파일·`붙여넣은 텍스트 정리`의 `개조식으로 변환`에 연결(`알파_AI답변변환_사용`). 시험 `tests/test_ai_answer.py`, 사례 `tests/fixtures/ai_answer_mapo_pots.txt`, 자세한 내용 `docs/작업결과_2026-10-11.md`.
 - 카드 옵션 ↔ 세부 작업 연동(2026-10-04 사용자 요청): 카드 옵션 8개(자간 정리 2·서식 통일 3·한 번에 적용 3)가 그 카드의 세부 작업과 서로 연동됩니다. 대응표는 `stage_selection.CARD_OPTION_STAGES`(자간 정리 표 제외 → `control_*` 3개, 서식 통일 표 제외 → `table_style`·`table_unify`, 자간 정리 제외 → 새 세부 작업 `unify_spacing`, 페이지 맞춤 제외 → `page_fit`(·`page_group`), 자간 조정 포함 → all 구성 자간 작업 7개, 한 번에 적용 표 제외·페이지 맞춤 제외 → all·format 두 구성). 옵션을 바꾸면 Tk 변수 감시 `_카드옵션_세부작업_반영`이 관련 작업을 모두 같이 켜고 끄며(다른 옵션이 끈 작업은 켜지 않음), 세부 작업 창·웹 `set_stage`·`reset_stages`·설정창 단계 체크에서 바꾸면 `_세부작업_옵션_맞춤`이 옵션을 맞춥니다('제외'는 관련 작업이 모두 꺼지면 켜짐, 끄는 쪽으로 바뀌면 같은 카드 다른 구성도 끔, all에서 자간 작업을 모두 끄면 format으로 바뀜). 시작할 때 `_카드옵션_연동_시작`이 켜 둔 제외 옵션을 우선 반영하고 나머지는 세부 작업에서 맞추므로, 서식 통일 쪽 맞춤 기본 꺼짐에 맞춰 `unify_exclude_pagefit` 기본값은 켜짐입니다. `unify_spacing`은 따로 도는 단계가 아니라 서식통일 안 자간 조정 여부이며 `작업_실행`이 `서식통일_자간조정_반영`에 함께 반영합니다.
 - 서식통일 뒤 '작업 결과 확인' 창(`_서식통일_결과_확인창`, 서식통일 5/5)은 설정 `unify_result_window`(기본 꺼짐, 전역 `서식통일_결과창_사용`, Tk `unify_result_window_var`, 설정창 '검토와 작업 완료')가 켜져 있고 문서가 하나일 때만 띄웁니다(`_결과창_띄우는가`). `작업_실행`은 `표준서식_세부['unify_result_window']`로 반영합니다(2026-10-04 사용자 요청).
 - 새로 만드는 제목 표의 담당자 칸(2×2 B2, 2행1열 A2 = 마지막 칸) 글은 설정 `title_owner_text`(기본 빈 글 = 기준 표 글 유지), 전역 `제목_담당자_글`입니다. Tk `title_owner_var`는 서식 프로필을 골라도 바꾸지 않는 사용자 고유 값이라 `std_parspace_vars`가 아닌 별도 변수이며, 바뀌면 `제목_담당자_글_반영`·저장합니다. `서식표_생성`이 `_칸_글_넣기`로 넣고, `제목_유형판별`은 이 글을 담당자 칸으로 인정합니다(`_설정_담당자_글인가`). 문서에 이미 있는 제목 표의 담당자 칸은 바꾸지 않습니다.
@@ -144,7 +261,7 @@ Flutter UI 빌드는 `powershell -File build_flutter.ps1`로 수행하며 `build
 - 작업로그 파일·무결성검사 JSON·최종검수 JSON은 기본 꺼짐(2026-10-10 사용자 지시). 기본값 `log_file`·`integrity_report_file`·`final_review_file`=False. 예전 설정 파일에는 켜짐이 그대로 저장돼 있어 `설정_불러오기`가 `report_files_rev`<2이면 한 번만 끈다(저장 뒤에는 사용자가 켠 값을 유지). 테스트 `tests/test_report_files_default_off.py`.
 - 내어쓰기·붙임 번호 정렬(2026-10-07): Beta 5~7의 '기호 끝 + 빈칸 N칸(ㅇ 1칸·- 3칸)' 내어쓰기 규칙은 사용자 의도(항목기호 **앞** 빈칸 수)를 잘못 해석한 것이라 Beta 8에서 걷어내고 종전 Shift+Tab 기준으로 되돌렸습니다(사용자 지시). 부연설명(*·**·※) `부연설명 들여쓰기` 단계는 위 문단 글 시작 위치 실측 대신, 기준 문서 `111\test2\1) 보고서(계획서) 서식.hwpx`대로 문단 앞 빈칸 수를 맞춥니다(`부연설명_앞빈칸`: □ 아래 ※4·*5·**4, ㅇ·- 아래 ※5·*6·**5, 위에 제목/본문/내용이 없으면 ※3·*4·**3, 왼쪽여백은 위 문단과 같게). 칸 수가 **의 둘째 별표 정렬을 겸하므로 이 단계를 쓰면 별표(**) 정렬 단계는 건너뜁니다. 테스트 `tests/test_supplement_indent.py`. 붙임~끝. 번호 목록은 모든 번호가 첫 번호와 세로로 같은 위치입니다(Beta 4의 2타 계단식 폐지). 테스트 `tests/test_attachment_align.py`. 붙임 묶음 위에 글이 있으면 그 사이 빈 줄을 꼭 1줄로 맞춥니다(2026-10-08 사용자 지정, `attachment_block.blank_line_plan`). 여분 빈 줄은 표준서식 첫머리 빈 줄 정리에서 지우고, 빠진 빈 줄은 항목기호 서식이 끝난 뒤(`항목기호문장_사이_빈줄_삭제(붙임_빈줄_넣기=True)`) 넣습니다. 앞에서 넣으면 뒤따르는 앞 빈칸 맞춤의 삭제가 일부 문단에서 실패해 빈칸이 늘었습니다. 한/글 실측 확인은 Windows에서 필요합니다. 부연설명의 첫 줄을 앞 문장의 글 시작 위치에 맞추는 `부연설명 들여쓰기` 단계(`std_supplement_indent`)는 다시 기본 켜짐입니다(서식 복사 프로필은 기존대로 끔).
 - 로마자 중제목 쪽 배치(2026-10-04): 1행 2~3칸에 첫 칸이 로마자 번호뿐인 표(`로마자_중제목_표인가`) + 뒤 □ + 첫 ㅇ 단위(딸린 -·*)는 쪼갤 수 없는 하나의 논리 묶음입니다(`중제목_묶음_문단`). □ 묶음 배치(`소제목묶음_같은쪽_시도`의 `머리`)는 중제목 표를 묶음 맨 앞 단위로 보고 줄간격·쪽 나눔을 중제목부터 적용합니다(□ 앞 쪽 나눔은 중제목만 앞쪽에 남김). 그 뒤에도 문단 페이지 배치(`세트문장_같은쪽_전체_적용`)는 □ 묶음과 첫 ㅇ 단위 배치가 끝난 뒤 이 묶음이 두 쪽에 걸쳤으면(`중제목_외톨이_정리`) 뒤 □의 쪽 나눔을 먼저 풀어 보고, 소제목처럼 줄 수가 많은 쪽으로 줄간격을 당기거나 밀고, 안 되면 중제목 앞에서 쪽을 나눈 뒤 □ 묶음을 다시 배치합니다. 중제목 표는 앞 문장의 표 묶음으로 보지 않으며(`보고서_표묶음_수집`), 최종 쪽 배치 검사는 `[중제목 묶음 쪽 분리]`를 봅니다. 테스트 `tests/test_page_group_table.py`.
-- 쪽 배치 보완(2026-10-04, 사용자 지적 'Ⅱ 추진 계획 … ㅇ (2단계)가 1쪽에 있어야 하는데 2쪽으로 밀림'): ① 앞쪽 단위가 많아 당기기로 한 □ 묶음(앞쪽에 □와 ㅇ 단위가 함께 있음)은 못 당겨도 묶음 전체를 뒤로 밀지 않고 ㅇ 단위 경계에서 나눕니다(`소제목묶음_같은쪽_시도`의 `당김만`, 최종 검사·쪽 수 맞춤은 `소제목묶음_단위경계_앞쪽우선`이면 위반으로 보지 않음). □만 앞쪽 끝에 홀로 남았으면 예전처럼 밉니다. ② 당기기는 줄간격이 최소(160%)라 안 되면 그 쪽 문단 위 간격을 10%씩 최대 50%까지 줄여 봅니다(`_묶음_위간격_축소_당김`, 실패하면 복원). ③ □ 묶음의 마지막 ㅇ 뒤에 표가 오면(그 ㅇ는 표 제목 문장) 묶음 전체 규칙을 쓰지 않고 ㅇ 단위·표 묶음 배치에 맡깁니다(`소제목묶음_뒤_표인가`). ④ 쪽 수 맞춤의 묶음 걸림 검사(`쪽맞춤_묶음분리_있음`)도 로마자 중제목 묶음을 봅니다(쪽 수 맞춤이 문단 위 간격을 줄여 중제목 묶음을 쪼개던 문제).
+- 쪽 배치 보완(2026-10-04, 사용자 지적 'Ⅱ 추진 계획 … ㅇ (2단계)가 1쪽에 있어야 하는데 2쪽으로 밀림'): ① 앞쪽 단위가 많아 당기기로 한 □ 묶음(앞쪽에 □와 ㅇ 단위가 함께 있음)은 못 당겨도 묶음 전체를 뒤로 밀지 않고 ㅇ 단위 경계에서 나눕니다(`소제목묶음_같은쪽_시도`의 `당김만`, 최종 검사·쪽 수 맞춤은 `소제목묶음_단위경계_앞쪽우선`이면 위반으로 보지 않음). □만 앞쪽 끝에 홀로 남았으면 예전처럼 밉니다. ② 당기기는 줄간격이 최소(설정 최솟값, 2026-10-15부터 기본 140%)라 안 되면 그 쪽 문단 위 간격을 10%씩 최대 50%까지 줄여 봅니다(`_묶음_위간격_축소_당김`, 실패하면 복원). ③ □ 묶음의 마지막 ㅇ 뒤에 표가 오면(그 ㅇ는 표 제목 문장) 묶음 전체 규칙을 쓰지 않고 ㅇ 단위·표 묶음 배치에 맡깁니다(`소제목묶음_뒤_표인가`). ④ 쪽 수 맞춤의 묶음 걸림 검사(`쪽맞춤_묶음분리_있음`)도 로마자 중제목 묶음을 봅니다(쪽 수 맞춤이 문단 위 간격을 줄여 중제목 묶음을 쪼개던 문제).
 - 문단 위 여백 기본값(2026-10-05): 2단계 장 15 · 3단계 중제목 15(본문 'Ⅰ.' 문단과 표 첫 칸 로마자 중제목 표 문단) · 4단계 □ 15 · 5단계 ㅇ 8 · 6단계 - 4 · 그 밖 항목기호(*·※·• 등) 0pt(`std_parspace_chapter/midtitle/box/circle/dash/note`). 예전 기본값(20/15/15/10/3)을 그대로 쓰던 설정 파일은 `std_parspace_rev` 2로 불러올 때 새 값으로 바뀝니다. 장·중제목은 복귀 배율을 곱하지 않습니다(`HEADING_LEVELS`). **단위 주의**: COM `ParaShape`의 PrevSpacing·NextSpacing은 실제 HWPUNIT의 두 배라 `문단_위간격_적용_현재선택`·`문단_아래간격_적용_현재선택`은 `PointToHwpUnit(pt) * 2`로 쓰고 읽을 때 2로 나눕니다. 그전에는 기본 문단 위 여백이 절반(□ 15 → 7.5pt)으로 들어갔습니다.
 - 계층 6단계·문서 유형(2026-10-04, `docfit_core/style_hierarchy.py`): 1 제목 · 2 장(`제1장`·`2장`·`제2편`·`Chapter 3`) · 3 중제목(Ⅰ, 표 첫 칸 로마자 포함) · 4 소제목(□) · 5 ㅇ · 6 - (+ 부연설명). `document_type`이 A형(1~6 모두)·B형(장 없이 1·3~6)·C형(장·중제목 없이 1·4~6)·기타(보도자료·답변자료 등)를 정해 서식 분석 요약과 '계층별 문서 스타일 검토' 창에 보여 줍니다(중제목 표가 있는 서식은 중제목이 있는 것으로 봄). 장 서식: 문두가 문서마다 달라(제1장·제2장) 기호 대신 역할로 찾습니다(`표준서식_기호규칙_찾기`). 기본은 `표준서식_설정['장_규칙']`(HY헤드라인M 20pt 굵게), 예시 문서에 장이 있으면 `논리역할_규칙['장']`과 `복사_문단모양['(장)']`으로 배웁니다.
 - 프로필에 `organization`(기관)을 넣으면 목록에 `[기관] 이름`으로 묶여 보입니다.
@@ -234,7 +351,7 @@ Flutter UI 빌드는 `powershell -File build_flutter.ps1`로 수행하며 `build
 
 ## 9. 다음에 할 일
 
-> 2026-10-11 인수인계: 진행 중인 작업과 확인 순서는 `docs/인수인계_2026-10-11.md`를 먼저 본다.
+> 2026-10-12 인수인계: 현재 상태와 다음 할 일은 `docs/인수인계_2026-10-12.md`를 먼저 본다(10-11 문서의 서식 통일 개편은 v1.74 Beta 1로 배포 완료).
 
 
 1. **알파 버전 표기**: `main` 배포 뒤 `alpha`를 `main`에 맞추고 `APP_VERSION`을 `1.69 Alpha 1`로 올리기(사용자 확인 필요).

@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import Mock
+from pathlib import Path
+import tempfile
 
 from desktop_web_ui import DesktopWebBridge, _bind_file_drop, _FILE_DROP_SCRIPT
 
@@ -12,6 +14,28 @@ class DropEvent:
 
 
 class FileDropTests(TestCase):
+    def test_only_successful_document_drop_advances_navigation_revision(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'report.md'
+            path.write_text('# title', encoding='utf-8')
+            gui = Mock(running=False, files=[])
+            gui.파일추가.return_value = True
+            bridge = DesktopWebBridge(gui)
+            bridge._tk = lambda callback: callback()
+            bridge.get_state = Mock(return_value={})
+            bridge.receive_drop([str(path)])
+            self.assertEqual(bridge._document_drop_revision, 1)
+            gui.파일추가.return_value = False
+            bridge.receive_drop([str(path)])
+            bridge.receive_drop([str(path.with_suffix('.missing'))])
+            self.assertEqual(bridge._document_drop_revision, 1)
+            gui.파일추가.return_value = True
+            bridge.add_paths([str(path)])
+            self.assertEqual(bridge._document_drop_revision, 1)
+            gui.running = True
+            bridge.receive_drop([str(path)])
+            self.assertEqual(bridge._document_drop_revision, 1)
+
     def bind(self):
         event = DropEvent()
         window = SimpleNamespace(dom=SimpleNamespace(document=SimpleNamespace(
@@ -36,7 +60,7 @@ class FileDropTests(TestCase):
         bridge = DesktopWebBridge(Mock())
         bridge.add_paths, bridge.add_format_paths = Mock(), Mock()
         bridge.receive_drop([r'C:\예시.hwpx'])
-        bridge.add_paths.assert_called_once_with([r'C:\예시.hwpx'])
+        bridge.add_paths.assert_called_once_with([r'C:\예시.hwpx'], from_drop=True)
         bridge.drop_target = 'format'
         bridge.receive_drop([r'C:\예시.hwpx'])
         bridge.add_format_paths.assert_called_once_with([r'C:\예시.hwpx'])

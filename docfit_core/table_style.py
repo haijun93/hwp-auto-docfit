@@ -7,6 +7,7 @@
   칸 배경이 그림(사진 등)이면 칸 내용이므로 선만 바꾸고 그림 채우기는 그대로 둔다.
 - 글자: 칸 글자 모양을 복제해 글꼴(언어별)·크기·장평·자간을 예시 값으로 바꾸고, 예시가 굵으면 굵게를
   더한다(글자색·밑줄 같은 강조와 본문 칸의 기존 굵게는 그대로 둔다).
+  서로 다른 글자 모양의 Run이 섞인 문단은 베이스 글꼴·크기만 맞춰 강조 대비·첨자를 보존한다.
 - 정렬: 머리글과 한 줄에 들어가는 짧은 문단만 예시 정렬로 바꾸고, 여러 줄 긴 글은 원래 정렬을 둔다.
   내장 기본값은 본문 칸(2행부터) 가운데 첫 열이 아닌 칸(B2·B3 …)의 문장을 왼쪽 정렬한다(칸의 text_align).
   왼쪽 정렬은 여러 줄 글에도 어색하지 않으므로 길이와 관계없이 입히고, 숫자·날짜만 있는 칸은 예시 정렬을 둔다.
@@ -22,6 +23,7 @@ import json
 import re
 import unicodedata
 import zipfile
+from .hwpx import open_hwpx_safely
 import zlib
 from pathlib import Path
 
@@ -91,6 +93,96 @@ def _is_arrow_cell(tc):
     return bool(text) and all(ch in _ARROWS for ch in text)
 
 
+def is_design_table(table):
+    """사용자가 문서에 맞게 꾸민 장식 표인가: 글 없는 칸(점선·여백 칸)이 있고, 글 있는 칸이 모두 첫 행에서
+    모든 행을 덮는 한 줄짜리 표('2026 추진실적 ……… (8. 31. 현재)' 막대 표).
+
+    이런 표는 데이터 표가 아니라 문서 디자인이므로 어떤 표 서식·너비·자간 작업도 하지 않는다(사용자 규칙,
+    2026-10-15).
+    """
+    rows, cols = _size(table)
+    cells = _cells(table)
+    # 1행 표는 '글 칸이 모든 행을 덮는다'가 늘 참이라 빈칸 하나만 있어도 장식 표가 된다(결재란·구분 표 오판).
+    # 막대 표는 점선 칸 위아래 두 행으로 그리므로 2행 이상만 본다.
+    if rows < 2 or cols < 2 or not cells:
+        return False
+    texts = [(tc, "".join(_text(tc).split())) for tc in cells]
+    if all(text for _, text in texts) or not any(text for _, text in texts):
+        return False
+    for tc, text in texts:
+        if text:
+            row, _, span, _ = _position(tc)
+            if row != 0 or span < max(1, rows):
+                return False
+    return True
+
+
+def is_diagram_table(table):
+    """칸 테두리를 선으로 써서 그린 그림 표(조직도·여백 칸으로 꾸민 참고 상자)인가.
+
+    예시('표 다이어그램 연습' 조직표, 2026-10-15 학습): 문화경제국 조직도는 5행 18열 66칸 중 글 칸 13개,
+    첫 행 13칸 중 글 칸 1개다. 데이터 표·빈 양식 표는 첫 행(머리글)이 글로 차 있어 해당하지 않는다.
+    기준: 칸 8개 이상, 글 칸이 35% 이하, 빈 칸 6개 이상, 첫 행 칸의 절반 이상이 비어 있음.
+    실측: 실제 기관 문서 30개 표 461개에서 조직도·참고 상자·장식 막대 표만 걸렸다.
+    """
+    cells = _cells(table)
+    if len(cells) < 8:
+        return False
+    texts = ["".join(_text(tc).split()) for tc in cells]
+    filled = sum(1 for text in texts if text)
+    first = [text for tc, text in zip(cells, texts) if _position(tc)[0] == 0]
+    return (filled <= len(cells) * 0.35 and len(cells) - filled >= 6
+            and sum(1 for text in first if text) * 2 < len(first))
+
+
+def is_flow_table(table):
+    """화살표만 든 칸으로 단계를 이은 흐름표('공고 및 접수 ➜ 1차 서류평가 ➜ …' 추진 일정, 2026-10-15 학습)."""
+    return any(map(_is_arrow_cell, _cells(table)))
+
+
+def is_drawn_table(table):
+    """데이터가 아니라 모양으로 뜻을 전하는 표(장식 막대 표·조직도·흐름표). 칸 너비·서식을 바꾸면 그림이 깨진다."""
+    return is_design_table(table) or is_diagram_table(table) or is_flow_table(table)
+
+
+def has_unit_caption(table):
+    """'(단위: 개소)'처럼 단위를 적은 캡션이 달린 표인가. '<표 1> 추진 현황' 같은 일반 캡션 표는 데이터 표로 본다."""
+    caption = _child(table, "caption")
+    return caption is not None and "단위" in "".join(_text(caption).split())
+
+
+def is_user_designed_table(table):
+    """사용자가 꾸민 표(장식 막대 표·조직도·흐름표·단위 캡션 표)인가. 이런 표는 서식·너비 재배분·자간 작업을
+    하지 않는다(사용자 규칙, 2026-10-15). 모든 단계가 이 판정 하나를 쓴다."""
+    return is_drawn_table(table) or has_unit_caption(table)
+
+
+def protected_tables(root):
+    """root 안에서 사용자가 꾸민 표와 그 안에 든 표 전부의 id 집합(바깥 표를 건너뛰어도 안쪽 표를 고치지 않게)."""
+    protected = set()
+    for table in root.iter():
+        if _tag(table) == "tbl" and id(table) not in protected and is_user_designed_table(table):
+            protected.update(id(t) for t in table.iter() if _tag(t) == "tbl")
+    return protected
+
+
+def is_protected_table(table):
+    """사용자가 꾸민 표(장식 막대 표·단위 캡션 표)는 보호한다(안쪽 표·캡션 문단 포함). is_user_designed_table과 같다."""
+    return is_user_designed_table(table)
+
+
+def iter_unprotected_cells(table):
+    """Yield cells recursively, stopping at every protected table boundary."""
+    pending = [table]
+    while pending:
+        element = pending.pop()
+        if _tag(element) == "tbl" and is_protected_table(element):
+            continue
+        if _tag(element) == "tc":
+            yield element
+        pending.extend(reversed(list(element)))
+
+
 def is_grid_table(table):
     """기본 표 서식 대상 모양인가: 2행 2열 이상이고, 칸 안에 다른 표가 없고, 화살표만 든 칸(흐름도)이 없고,
     본문 행에 칸이 둘 이상인 표.
@@ -99,17 +191,17 @@ def is_grid_table(table):
     상자라 데이터 표 서식을 입히지 않는다(실측: 실제 기관 업무계획 문서).
     """
     rows, cols = _size(table)
-    if rows < 2 or cols < 2:
+    if rows < 2 or cols < 2 or is_drawn_table(table):
         return False
     cells = _cells(table)
-    if any(_tag(x) == "tbl" for tc in cells for x in tc.iter()) or any(map(_is_arrow_cell, cells)):
+    if any(_tag(x) == "tbl" for tc in cells for x in tc.iter()):
         return False
     head = _header_rows(table)
     starts = [_position(tc)[0] for tc in cells]
     return any(starts.count(row) >= 2 for row in range(head, rows))
 
 
-def _header_rows(table):
+def header_row_count(table):
     """머리글 행 수: 첫 행 칸 중 가장 긴 행 병합(첫 행이 두 행에 걸친 머리글이면 2). 본문 행은 하나 이상 남긴다.
 
     모든 행에 걸친 칸(비교표의 가운데 구분 칸 등)은 머리글 높이로 보지 않는다.
@@ -118,6 +210,10 @@ def _header_rows(table):
     spans = [_position(tc)[2] for tc in _cells(table) if _position(tc)[0] == 0 and _position(tc)[2] < rows]
     return max(1, min(max(spans or [1]), rows - 1))
 
+
+
+# Compatibility for older callers.
+_header_rows = header_row_count
 
 def _section_names(archive):
     names = [n for n in archive.namelist() if re.fullmatch(r"Contents/section\d+\.xml", n)]
@@ -128,7 +224,7 @@ def _section_names(archive):
 
 def learn_table_style(path, source_name=None):
     """HWPX 예시 문서의 표(칸이 가장 많은 일반 표)에서 기본 표 서식을 배운다."""
-    with zipfile.ZipFile(path) as archive:
+    with open_hwpx_safely(path) as archive:
         header = ET.fromstring(archive.read("Contents/header.xml"))
         sections = [ET.fromstring(archive.read(name)) for name in _section_names(archive)]
     tables = [t for root in sections for t in root.iter() if _tag(t) == "tbl" and is_grid_table(t)]
@@ -382,8 +478,8 @@ class HeaderPool:
         self._fonts[key] = found.get("id")
         return self._fonts[key]
 
-    def char(self, base_id, spec_key):
-        key = (base_id, spec_key)
+    def char(self, base_id, spec_key, *, preserve_emphasis=False):
+        key = (base_id, spec_key, preserve_emphasis)
         if key in self._chars:
             return self._chars[key]
         spec = self.style["chars"][spec_key]
@@ -398,11 +494,11 @@ class HeaderPool:
                 font_id = self.font(lang, font_xml)
                 if font_id is not None and lang in ref.attrib:
                     ref.set(lang, font_id)
-        for name in ("ratio", "spacing"):
+        for name in (() if preserve_emphasis else ("ratio", "spacing")):
             target = _child(clone, name)
             if target is not None and spec.get(name):
                 target.attrib.update({k: v for k, v in spec[name].items() if k in target.attrib})
-        if spec.get("bold") and _child(clone, "bold") is None:
+        if not preserve_emphasis and spec.get("bold") and _child(clone, "bold") is None:
             bold = type(clone)(_ns(clone) + "bold", {})
             index = next((i for i, x in enumerate(clone) if _tag(x) in _BOLD_BEFORE), len(clone))
             clone.insert(index, bold)
@@ -474,6 +570,15 @@ def _fits_one_line(paragraph, tc, table, height, ratio):
     return needed * ratio / 100 <= width
 
 
+_SPREAD_ALIGNS = ("DISTRIBUTE", "DISTRIBUTE_SPACE")
+
+
+def _spread_label(text):
+    """배분 정렬이 어울리는 칸 글: 빈칸을 뺀 한글만 2~6자('구 분', '총 계', '시 설 명')."""
+    letters = re.sub(r"\s", "", text or "")
+    return 2 <= len(letters) <= 6 and all("가" <= ch <= "힣" for ch in letters)
+
+
 def apply_table_style(pool, table):
     """표 하나에 기본 표 서식을 적용하고 서식을 바꾼 칸 수를 돌려준다."""
     style = pool.style
@@ -515,11 +620,16 @@ def apply_table_style(pool, table):
         ratio = int((spec.get("ratio") or {}).get("hangul", "100"))
         text_align = base.get("text_align") if base_role != "header" else None
         for paragraph in _paragraphs(tc):
-            for run in (r for r in paragraph if _tag(r) == "run"):
-                run.set("charPrIDRef", pool.char(run.get("charPrIDRef"), base["char"]))
+            runs = [r for r in paragraph if _tag(r) == "run"]
+            mixed = len({r.get("charPrIDRef") for r in runs}) > 1
+            for run in runs:
+                run.set("charPrIDRef", pool.char(run.get("charPrIDRef"), base["char"],
+                                               preserve_emphasis=mixed))
             # 본문 문장 정렬(text_align)이 있으면 길이와 관계없이 입힌다. 숫자·날짜 칸은 예시 정렬을 따른다.
             sentence = bool(text_align) and not _number_like(_text(paragraph).strip())
             align = text_align if sentence else base.get("align")
+            if align in _SPREAD_ALIGNS and not _spread_label(_text(paragraph)):
+                align = "CENTER"   # 배분 정렬은 짧은 한글 머리말에만(숫자 '332'·'2026 추진실적'은 글자가 흩어진다)
             if align and paragraph.get("paraPrIDRef") is not None and (
                     sentence or base_role == "header"
                     or _fits_one_line(paragraph, tc, table, spec["height"], ratio)):

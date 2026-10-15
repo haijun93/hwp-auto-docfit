@@ -10,6 +10,7 @@ import unittest
 import zipfile
 import zlib
 from unittest.mock import patch
+from tests.temp_support import tracked_tempdir
 
 
 class MidTitleFormatTest(unittest.TestCase):
@@ -69,7 +70,7 @@ class MidTitleFormatTest(unittest.TestCase):
             run = ns['XML_자식_추가'](p, section, tag='{http://www.hancom.co.kr/hwpml/2011/paragraph}run',
                                   attrib={'charPrIDRef': '0'})
             run.append(table)
-        out = Path(tempfile.mkdtemp(prefix='docfit-mid-')) / 'in.hwpx'
+        out = Path(tracked_tempdir(self, 'docfit-mid-')) / 'in.hwpx'
         with zipfile.ZipFile(out, 'w') as z:
             z.writestr('mimetype', 'application/hwp+zip')
             z.writestr('Contents/header.xml', ns['ET'].tostring(header, encoding='utf-8', xml_declaration=True))

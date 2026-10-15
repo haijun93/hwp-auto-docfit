@@ -1,4 +1,6 @@
 """작성 도우미·AI 프롬프트 창과 기관 서식 표시(A3) GUI 스모크 테스트."""
+from tests.gui_support import gui_root
+
 from pathlib import Path
 import os
 import runpy
@@ -13,7 +15,7 @@ class WritingAidsGuiTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="hwp-docfit-aids-") as folder:
             with patch.dict(os.environ, {"APPDATA": folder}):
                 ns = runpy.run_path(str(source), run_name="aids_ui_test")
-                root = ns["TkinterDnD"].Tk()
+                root = gui_root(ns['TkinterDnD'].Tk, ns)
                 root.withdraw()
                 errors = []
                 root.report_callback_exception = lambda *args: errors.append(args)
@@ -49,7 +51,7 @@ class WritingAidsGuiTest(unittest.TestCase):
                     self.assertEqual([b.cget("text") for b in app.mode_buttons],
                                      ["자간 정리", "기존 자간 초기화", "표 제외",
                                       "서식 통일", "표 제외", "자간 정리 제외", "페이지 맞춤 제외", "원본 쪽 구성 유지",
-                                      "전체 서식 맞추기",
+                                      "퀵모드 (글꼴 종류·크기만)",
                                       "한 번에 적용", "자간 조정 포함", "표 제외", "페이지 맞춤 제외"])
                     for 이름 in ("all_exclude_pagefit_var", "unify_exclude_tables_var", "unify_exclude_spacing_var"):
                         self.assertFalse(getattr(app, 이름).get(), 이름)       # 기본 꺼짐
@@ -74,8 +76,9 @@ class WritingAidsGuiTest(unittest.TestCase):
                     captured = {}
 
                     class _Thread:
-                        def __init__(self, target=None, args=(), daemon=None):
+                        def __init__(self, target=None, args=(), daemon=None, kwargs=None):
                             captured["args"] = args
+                            captured["kwargs"] = kwargs
 
                         def start(self):
                             pass
@@ -83,6 +86,8 @@ class WritingAidsGuiTest(unittest.TestCase):
                     app.files = [str(Path(folder) / "문서.hwpx")]
                     with patch.object(threading, "Thread", _Thread):
                         app.작업시작(app.selected_mode.get())
+                    self.assertIs(captured["kwargs"]["context"], app._run_context)
+                    self.assertIs(captured["kwargs"]["callbacks"], app._run_context.callbacks)
                     args = captured["args"]
                     self.assertFalse(args[22])                       # 표자간조정
                     self.assertTrue(all(args[25][k] is False for k in ns["표작업_키목록"]))
@@ -117,6 +122,8 @@ class WritingAidsGuiTest(unittest.TestCase):
                                          (False, False), 유형)
                     with patch.object(threading, "Thread", _Thread):
                         app.작업시작(app.selected_mode.get())
+                    self.assertIs(captured["kwargs"]["context"], app._run_context)
+                    self.assertIs(captured["kwargs"]["callbacks"], app._run_context.callbacks)
                     args = captured["args"]
                     self.assertEqual((args[25]["page_fit"], args[25]["page_group"]), (False, False))
                     self.assertTrue(args[22])                        # 표는 그대로
@@ -140,6 +147,8 @@ class WritingAidsGuiTest(unittest.TestCase):
                     self.assertTrue(app.stage_choices["unify"]["style_unify"])
                     with patch.object(threading, "Thread", _Thread):
                         app.작업시작("unify")
+                    self.assertIs(captured["kwargs"]["context"], app._run_context)
+                    self.assertIs(captured["kwargs"]["callbacks"], app._run_context.callbacks)
                     args = captured["args"]
                     self.assertEqual(args[18], "unify")
                     self.assertEqual((args[25]["table_style"], args[25]["table_unify"], args[25]["page_fit"]),

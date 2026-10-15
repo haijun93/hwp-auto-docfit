@@ -1,0 +1,1714 @@
+{
+  "tool": "Bandit",
+  "version": "bandit 1.9.4\n  python version = 3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+  "metrics": {
+    "CONFIDENCE.HIGH": 233,
+    "CONFIDENCE.LOW": 0,
+    "CONFIDENCE.MEDIUM": 9,
+    "CONFIDENCE.UNDEFINED": 0,
+    "SEVERITY.HIGH": 0,
+    "SEVERITY.LOW": 242,
+    "SEVERITY.MEDIUM": 0,
+    "SEVERITY.UNDEFINED": 0,
+    "loc": 37948,
+    "nosec": 0,
+    "skipped_tests": 0
+  },
+  "errors": [],
+  "findings": [
+    {
+      "path": "./desktop_web_ui.py",
+      "line": 9,
+      "rule": "B404",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./desktop_web_ui.py",
+      "line": 101,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./desktop_web_ui.py",
+      "line": 570,
+      "rule": "B607",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./desktop_web_ui.py",
+      "line": 570,
+      "rule": "B603",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./desktop_web_ui.py",
+      "line": 974,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./docfit_app/configuration_service.py",
+      "line": 16,
+      "rule": "B105",
+      "severity": "LOW",
+      "confidence": "MEDIUM"
+    },
+    {
+      "path": "./docfit_app/settings_schema.py",
+      "line": 19,
+      "rule": "B105",
+      "severity": "LOW",
+      "confidence": "MEDIUM"
+    },
+    {
+      "path": "./docfit_app/settings_schema.py",
+      "line": 130,
+      "rule": "B105",
+      "severity": "LOW",
+      "confidence": "MEDIUM"
+    },
+    {
+      "path": "./docfit_core/ai_answer.py",
+      "line": 31,
+      "rule": "B105",
+      "severity": "LOW",
+      "confidence": "MEDIUM"
+    },
+    {
+      "path": "./docfit_core/kordoc_bridge.py",
+      "line": 19,
+      "rule": "B404",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./docfit_core/kordoc_bridge.py",
+      "line": 38,
+      "rule": "B603",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./docfit_core/kordoc_bridge.py",
+      "line": 100,
+      "rule": "B603",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./docfit_core/report_header.py",
+      "line": 635,
+      "rule": "B311",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit-reset.py",
+      "line": 15,
+      "rule": "B404",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit-reset.py",
+      "line": 53,
+      "rule": "B607",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit-reset.py",
+      "line": 53,
+      "rule": "B603",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit-reset.py",
+      "line": 105,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit-reset.py",
+      "line": 115,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 230,
+      "rule": "B404",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 439,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 453,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 476,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 1030,
+      "rule": "B112",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 1752,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 1779,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 1860,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 4840,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 4861,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 4865,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 4961,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 4968,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 5407,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 5433,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 5438,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 5486,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 5591,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 5604,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 5678,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 5683,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 5688,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 5701,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 5708,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 5714,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 5759,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 6076,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 6183,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 6240,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 6244,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 6308,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 6372,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 6469,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 6473,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 7396,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 7496,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 7596,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 7890,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 7894,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 8289,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 8320,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 8344,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 9175,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 9292,
+      "rule": "B112",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 9662,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 9914,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 10245,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 10251,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 10384,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 10390,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 10443,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 10449,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 10509,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 10515,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 11769,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 11791,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 11800,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 12272,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 12285,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 12661,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 12812,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 13170,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 13618,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 13686,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 13834,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 13864,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 13972,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 13985,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 14010,
+      "rule": "B112",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 14020,
+      "rule": "B112",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 14049,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 14060,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 14075,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 14191,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 14254,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 14556,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 14583,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 14635,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 14676,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 14867,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 14888,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 14912,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 14938,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 14987,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 15210,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 15298,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 15303,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 15395,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 15400,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 15501,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 15506,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 15597,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 15602,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 15739,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 15744,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 15782,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 15787,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 15875,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 15950,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 16125,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 16147,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 16171,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 16277,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 16311,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 16324,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 16487,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 16543,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 16820,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 16876,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 16932,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 17015,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 17094,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 17132,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 17170,
+      "rule": "B112",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 17192,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 17415,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 17430,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 17515,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 17982,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 18186,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 18215,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 18219,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 18223,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 18429,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 18925,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 19239,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 20002,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 20007,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 20082,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 20112,
+      "rule": "B606",
+      "severity": "LOW",
+      "confidence": "MEDIUM"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 20113,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 20123,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 20126,
+      "rule": "B607",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 20126,
+      "rule": "B603",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 20158,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 20972,
+      "rule": "B606",
+      "severity": "LOW",
+      "confidence": "MEDIUM"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 20974,
+      "rule": "B404",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 20975,
+      "rule": "B607",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 20975,
+      "rule": "B603",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 21593,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 21675,
+      "rule": "B606",
+      "severity": "LOW",
+      "confidence": "MEDIUM"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 21890,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 23240,
+      "rule": "B606",
+      "severity": "LOW",
+      "confidence": "MEDIUM"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 23872,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 23895,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 23901,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 24368,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 24481,
+      "rule": "B606",
+      "severity": "LOW",
+      "confidence": "MEDIUM"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 24843,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 24848,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./hwp-auto-docfit.py",
+      "line": 25792,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/benchmark_corpus.py",
+      "line": 124,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/benchmark_corpus.py",
+      "line": 128,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/benchmark_vs_alternatives.py",
+      "line": 28,
+      "rule": "B404",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/benchmark_vs_alternatives.py",
+      "line": 120,
+      "rule": "B603",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/build_readme_demo.py",
+      "line": 16,
+      "rule": "B404",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/build_readme_demo.py",
+      "line": 92,
+      "rule": "B607",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/build_readme_demo.py",
+      "line": 92,
+      "rule": "B603",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/build_test4_comparisons.py",
+      "line": 291,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/compare_versions_pc.py",
+      "line": 26,
+      "rule": "B404",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/compare_versions_pc.py",
+      "line": 78,
+      "rule": "B311",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/compare_versions_pc.py",
+      "line": 106,
+      "rule": "B607",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/compare_versions_pc.py",
+      "line": 106,
+      "rule": "B603",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/compare_versions_pc.py",
+      "line": 187,
+      "rule": "B603",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/fidelity.py",
+      "line": 56,
+      "rule": "B110",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/regression_pc.py",
+      "line": 19,
+      "rule": "B404",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/regression_pc.py",
+      "line": 55,
+      "rule": "B607",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/regression_pc.py",
+      "line": 55,
+      "rule": "B603",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/render_readme_demo.py",
+      "line": 10,
+      "rule": "B404",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/render_readme_demo.py",
+      "line": 153,
+      "rule": "B603",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_file_drop.py",
+      "line": 45,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_file_drop.py",
+      "line": 48,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_file_drop.py",
+      "line": 61,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_file_drop.py",
+      "line": 63,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_file_drop.py",
+      "line": 64,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_file_drop.py",
+      "line": 65,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_pipeline_review.py",
+      "line": 61,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_pipeline_review.py",
+      "line": 62,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_pipeline_review.py",
+      "line": 65,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_pipeline_review.py",
+      "line": 66,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_pipeline_review.py",
+      "line": 71,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_pipeline_review.py",
+      "line": 74,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_pipeline_review.py",
+      "line": 75,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_pipeline_review.py",
+      "line": 76,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_pipeline_review.py",
+      "line": 78,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_pipeline_review.py",
+      "line": 80,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_pipeline_review.py",
+      "line": 81,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_pipeline_review.py",
+      "line": 93,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_pipeline_review.py",
+      "line": 94,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_pipeline_review.py",
+      "line": 95,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_pipeline_review.py",
+      "line": 96,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_unify_auto.py",
+      "line": 74,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_unify_auto.py",
+      "line": 76,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_unify_auto.py",
+      "line": 82,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_unify_auto.py",
+      "line": 83,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_unify_auto.py",
+      "line": 85,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_unify_auto.py",
+      "line": 86,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_unify_auto.py",
+      "line": 87,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_unify_auto.py",
+      "line": 88,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_unify_auto.py",
+      "line": 90,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_unify_auto.py",
+      "line": 91,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_unify_auto.py",
+      "line": 92,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_unify_auto.py",
+      "line": 94,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_unify_auto.py",
+      "line": 95,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_unify_auto.py",
+      "line": 96,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_unify_elements.py",
+      "line": 67,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_unify_elements.py",
+      "line": 76,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_unify_elements.py",
+      "line": 82,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_unify_elements.py",
+      "line": 84,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_unify_elements.py",
+      "line": 85,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_unify_elements.py",
+      "line": 86,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_unify_elements.py",
+      "line": 87,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_unify_elements.py",
+      "line": 91,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_unify_elements.py",
+      "line": 93,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_unify_elements.py",
+      "line": 94,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_unify_elements.py",
+      "line": 95,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_unify_elements.py",
+      "line": 96,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_unify_elements.py",
+      "line": 98,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_unify_elements.py",
+      "line": 99,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/smoke_unify_elements.py",
+      "line": 101,
+      "rule": "B101",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/test_tier_pc.py",
+      "line": 22,
+      "rule": "B404",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/test_tier_pc.py",
+      "line": 192,
+      "rule": "B603",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/visual_regression.py",
+      "line": 8,
+      "rule": "B404",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    },
+    {
+      "path": "./scripts/visual_regression.py",
+      "line": 34,
+      "rule": "B603",
+      "severity": "LOW",
+      "confidence": "HIGH"
+    }
+  ]
+}

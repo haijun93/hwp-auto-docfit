@@ -1,7 +1,242 @@
+## [반영·alpha] Alpha 12/13 — MD 계층·로마자 중제목
+
+- [x] MD #~###### 및 # # / # ## 목차 해석, ※ 주석으로 인한 감지 누락 방지.
+- [x] MD 제목·본문 표 실제 삽입 및 날짜·금액·붙임 보존.
+- [x] 로1 / Ⅰ 일반 문단을 예시의 3칸 중제목 표로 변환, 반복 실행 중복 생성 방지.
+- [x] MD의 Ⅰ~Ⅴ 및 부분 장 번호 보존, 하위 목차 계층 연결.
+- [x] Alpha 12/13 기능 커밋을 github·origin alpha로 푸시(최초 인증 오류 후 재시도 성공).
+- 근거: docs/MARKDOWN_DOCUMENT_ALPHA12.md, docs/ROMAN_HEADING_ALPHA13.md.
+  Windows COM 조판·WebView2·EXE 실기기 검증은 별도 유지.
+
+## [반영·alpha] Alpha 11 — bf955f1 전체 최종 검토 F1~F5
+
+- [x] F1/P1: fidelity 고정 .tmp 별칭을 통한 원본 쓰기 차단, 임시 파일 독점 생성·기존 대상 보존.
+- [x] F2/P1: OS 창 닫기와 Flutter 미저장/저장 대기 상태 연결, 비동기 종료 확인·회귀 검증(Windows X/Alt+F4 실기기 검증은 별도).
+- [x] F3/P2: 표 보호 판별 실패를 빈 보호 목록과 구분, 오류 시 후속 문서 수정 중단.
+- [x] F4/P2: 흐름도·tldraw 다중 편집자의 문서별 잠금+expected_revision 충돌 검사와 UI 연결.
+- [x] F5/P2: kordoc 런타임 버전별 프로세스 설치 잠금, 이미 완성된 유효 설치를 삭제하지 않고 재사용.
+- 근거: docs/FINAL_CODE_REVIEW_BF955F1.md. 수정 근거: docs/FINAL_REVIEW_FIXES_ALPHA11.md. Windows COM·WebView2·EXE 실기기 검증은 별도.
+
+## [반영·alpha] Alpha 10 갱신 코드 리뷰 6ac66ef
+
+- [x] R1/P1: 추적되지 않는 settings_preview_data.dart 의존성 제거/사전 생성, 새 clone의 CI 분석 통과.
+- [x] R2/P1: 병합 칸+빈 열의 너비가 0이 되는 계산 수정, 모든 열/병합 칸의 양수 폭 검증.
+- [x] R3/P2: 프로필 요소 왕복 시 edits의 텍스트 값 표시·미리보기·저장 값 일치.
+- [x] R4/P2: 캡션 표의 날짜 칸 lineWrap 보호, 표 경계별 재귀 판정.
+- [x] R5/P2: 일반 표 안 중첩 장식/캡션 표의 COM 보호 영역 전수 수집.
+- 근거: docs/REVIEW_FIXES_6ac66ef.md. Windows COM/EXE 실기기 검증은 별도 유지.
+
+## [반영·alpha] Alpha 9 — Alpha 8 커밋 리뷰 7497338 수정
+
+- [x] R1/P1: CI 동적 engine/ui 모듈 수집과 EXE smoke test.
+- [x] R2/P1: 흐름도 저장 ACK가 이후 편집의 dirty 상태를 해제하지 않도록 버전 계약 추가.
+- [x] R3/P1: 아웃라이너 지연 응답/연속 작업의 최신 입력 덮어쓰기 방지.
+- [x] R4/P2: 초안 저장 응답의 text/revision을 잠금 안에서 확정.
+- [x] R5/P2: 긴 라벨·분기 설명의 PNG 출력 잘림 방지.
+- [x] RunContext 작업 상태 격리 및 실제 PipelineCallbacks 주입·단계 오류 보고.
+- 근거: docs/REVIEW_FIXES_ALPHA9.md. Windows EXE/COM 실기기 검증은 별도 유지.
+
+## [반영·alpha] 일반 모드 업무 흐름도 / 개발자 tldraw 분리 (2026-10-14)
+
+- [x] 일반 모드에 React Flow(MIT) 기반 업무 흐름도 편집기 제공. 기존 tldraw는 개발자 모드에서 선택 사용.
+- [x] 예시 서식 10종, 도형·연결선·내용 편집, 크기·배치·정렬, 실행 취소/다시 실행, 저장·복원·PNG 내보내기.
+- [x] Flutter 웹/Windows 경로 및 일반 흐름도 전용 저장 API 연결. tldraw API의 개발자 전용 조건 유지.
+- [ ] Windows WebView2 실기기 입력·파일 선택·PNG 저장·장시간 실행 검증.
+- 기록: `docs/GENERAL_FLOW_EDITOR_ALPHA8.md`. 아래 tldraw 개발 과제는 별도로 유지한다.
+
 # 작업 예정 목록
+
+## [반영·alpha] 플로팅 파일포맷 선택·HWPX 직접 PDF 저장 (2026-10-14)
+
+- [x] Filee를 참고한 별도 플로팅 도넛 선택창. 카드 선택·파일 추가 시 열기, 포맷 선택 시 반영, 가운데·Esc·바깥 클릭으로 취소, 반복 폴링 중 중복 열림 방지.
+- [x] HWPX→PDF의 한/글 COM 직접 저장 경로는 Node.js/kordoc/Pandoc이 없어도 활성화. 별도 PDF 변환기·프린터 추가 설치 없음.
+- [x] 독립 COM 문서 정리는 `Clear(1)`로 저장 질문에 의한 정지를 방지. 시험용 문서 사본으로 실제 PDF 생성·본문·원본 해시 보존 확인.
+- [x] kordoc 4.21.30 실행 계약, Windows 배치 래퍼 대신 Node JS 진입점 사용, 기본 실행 중 다운로드 차단, 준비 상태 조회를 Tk 밖으로 이동하고 캐시.
+- [ ] DOCX·EPUB 실문서 출력과 PDF/이미지 OCR 품질은 kordoc/Pandoc이 갖춰진 환경에서 추가 검증한다.
+- [ ] 네이티브 Flutter runner의 COM 연결·잔여 Tk 대화상자 이관은 별도 작업. 이번 선택창은 앱 내부 Flutter 팝업이며 시스템 전체 드래그 감시/앱 바깥 최상위 창은 아니다.
+- 근거·최종 시험 결과: `docs/ALPHA7_FLOATING_CONVERSION_2026-10-14.md`.
+
+## [진행 중·alpha] 파일포맷 변경 (2026-10-13)
+
+- [x] 네 번째 작업 카드와 원형 출력 형식 선택 UI를 추가한다.
+- [x] kordoc 입력 형식의 Markdown 파싱을 통해 HWPX/PDF/DOCX/EPUB 변환 경로를 연결한다.
+- [x] 원본 보존, 출력 경로 충돌 방지, PDF 서명 검사, Pandoc 명령 인자 검증 시험을 추가한다.
+- [x] 저장소 전체 Python 시험 1,030건(1 skip) 통과(2026-10-13).
+- [x] Flutter 전체 시험 28건(1 skip), 변환/API/도형·설정 집중시험 38건(1 skip) 통과(2026-10-13).
+- [ ] Windows 한/글 2020 COM 및 kordoc/Pandoc 설치 환경에서 HWPX·PDF·DOCX·EPUB 실문서 변환을 확인한다.
+- [ ] Flutter Windows 실기기에서 원형 선택 UI·접근성·작업 진행/취소를 확인한다.
+- 분석기: Flutter 변경 파일 오류 0건. 실제 Windows 앱 실행 확인과 별개다.
+- 한계: PDF·이미지 변환은 kordoc 파싱/OCR 결과를 바탕으로 재생성하며 원본 배치를 보존하지 않는다. DOCX·EPUB는 Pandoc이 필요하다.
+
+## [진행 중·alpha] tldraw 업무 흐름도 편집기
+
+- [x] 개발자 모드 + 별도 OFF 기능 플래그로 Flutter 네이티브 화면과 Python 서비스 양쪽 접근 차단.
+- [x] 로컬 bundle/WebView2, JSON snapshot 저장·열기·삭제, PNG 내보내기, 공공업무 흐름 예시 10종.
+- [ ] Node 22.12+·Flutter 3.47.5 Windows CI와 WebView2 실기기에서 빌드·메시지·한국어 폰트·PNG를 검증한다.
+- [ ] tldraw SDK의 제품 사용권 조건을 확인한다. 허가 전에는 정식·베타 릴리스에 포함하지 않는다.
+- [ ] 미리보기/검색/즐겨찾기/사용자 템플릿, 편집기 단위/E2E 테스트를 추가한다.
+- [ ] 한/글 2020 COM의 안전한 PNG 삽입·결과 검수·재편집 개체 식별을 사본 문서로 검증하고 별도 설계대로 구현한다.
+- [ ] HWP 삽입/재편집은 미구현이며 기존 문서 처리 엔진은 이번 단계에서 수정하지 않았다.
+- 근거: `docs/TLDRAW_FEATURE_AUDIT.md`, `docs/TLDRAW_ARCHITECTURE.md`, `docs/TLDRAW_TEMPLATE_SPEC.md`, `docs/TLDRAW_HWP_INSERTION.md`, `docs/TLDRAW_TEST_REPORT.md`.
+
+## [검토 반영·alpha] 소스코드 재구조화
+
+- [x] Alpha 6 기준 계층/IPC/성능 병목 검토 보고서를 현행화했다.
+- [ ] IPC 동기 호출에 job_id/취소/진행 이벤트를 설계하고, Flutter 네이티브 UI에 실제 문서 처리 엔진을 연결한다.
+- [ ] `main.dart`와 `hwp-auto-docfit.py`를 기능별로 점진 분리한다. 기존 COM·문서 정확도 회귀를 우선한다.
+- 근거: `docs/CODE_RESTRUCTURING_REVIEW_ALPHA6_2026-10-13.md`.
 
 지금 당장 진행하지 않고 미뤄둔 기능 요청을 적어둔다. "나중에 작업해"라고
 명시적으로 요구받으면 그때 해당 항목을 꺼내 구현한다.
+
+## [예정] 오메가 버전 신설 — MCP 전용 (2026-10-13)
+
+- [ ] MCP 전용 **오메가(Omega) 버전**을 새로 만든다.
+- [ ] 오메가의 MCP 전용 실행·기능 범위, 버전/브랜치·배포 정책과 테스트 기준을 설계한다.
+- [ ] 기존 MCP 시험 기능의 잘못된 구현을 검토하고, 오메가에서 수정·검증한다.
+- 사용자 요청: 오메가는 MCP 전용 버전이다. 현재 1.74 알파 안정화·Flutter 전환과 별도의 예정 작업으로 관리한다.
+
+## [검토 예정] 사용자 UI를 Flutter로 완전 전환
+
+- [ ] 현재 Flutter 화면이 Tkinter·pywebview 화면을 대체할 수 있는 범위를 전수 조사한다. 파일 선택/드래그앤드롭, 단계별 진행·취소, 설정·서식관리·기록·오류 대화상자, 접근성·고해상도, WebView2/기존 Tk 폴백, 한/글 COM 연동, 개발자 모드까지 화면·상태·IPC 단위로 목록화한다.
+- [ ] Flutter와 Python 간 통신 계약(JSON 스키마, 이벤트·오류·취소, 프로세스 수명, 로그 분리)을 정의하고, UI 코드에서 문서 처리 코어를 직접 호출하지 않도록 경계를 확인한다.
+- [ ] 기능별 동등성 표와 자동·수동 회귀시험을 마련한다. 기존 UI 대비 주요 사용자 흐름, 키보드/스크린리더 접근성, 장시간 작업 안정성, 패키징 크기·시작시간·메모리, WebView2 미설치 환경을 정량 비교한다.
+- [ ] 점진 전환·복귀 계획을 설계한다. Flutter 기본화 전까지 기존 Tk UI를 안전한 폴백으로 유지하고, 기능 플래그로 전환·롤백할 수 있게 한다. Windows + 한/글 2020 실기기 검증과 보안 검토를 통과한 뒤에만 전체 전환 여부를 결정한다.
+- 근거/현황: Flutter 화면(`flutter_ui/`, `desktop_web/flutter/`)은 이미 일부 구현되어 있으나, 저장소 구조상 Tkinter 백엔드 및 일부 pywebview 화면/폴백도 남아 있다. 따라서 단순 화면 이식이 아니라 기능 동등성·IPC·설치환경까지 포함한 전환성 검토가 선행되어야 한다.
+- 진행(2026-10-13, alpha): Flutter 설정 화면으로 작업로그·무결성검사·최종검수 JSON 생성, 서식통일 결과 창, 항상 위 표시 옵션을 연결했다. 기존 설정변수/자동저장 경로를 공유한다. 전체 설정 화면과 서식 세부 분석·검토 대화상자는 아직 Tk 창을 사용한다.
+- 진행(2026-10-13, alpha): `docs/FLUTTER_100_PERCENT_MIGRATION_DESIGN.md`에 화면별 잔여 Tk 경로·브리지 원칙·완료/1.75 승격 기준을 정리했다. 상세 작업 로그 조회·복사·지우기를 Flutter 다이얼로그로 이관했고, 로그 본문은 열 때만 읽는다. Flutter 위젯 12개와 Python 브리지/파일드롭 23개 테스트 및 웹 빌드는 통과했다. 아직 전체 이관이나 정식 베타 비교를 완료한 것은 아니므로 1.75 릴리스 전 전체 설정·세부 단계·서식 프로필·문서도구·비교/오류창 이관, Windows 실기기 검증, 정식 베타 대비 오류/비저하 비교가 남아 있다.
+
+## [긴급·미착수] 업데이트 확인 실패 "GitLab 403 Forbidden / GitHub 403 rate limit exceeded" 원인과 조치 (2026-10-11)
+
+화면: 설정의 "업데이트 확인"(수동) 클릭 시 `업데이트 정보를 확인하지 못했습니다. GitLab: HTTP Error 403: Forbidden / GitHub: HTTP Error 403: rate limit exceeded`.
+시작 시 자동 확인(`check_updates_on_start`)은 실패해도 아무것도 띄우지 않는다(`_자동업데이트_확인_시작`, 수동일 때만 오류 대화상자). 그래서 이 창은 수동 확인에서만 보인다.
+
+### 원인 분석
+코드 흐름: `_최신_릴리스_통합_조회`가 GitLab API(`UPDATE_API_URL = …/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest`)와 GitHub API(`api.github.com/repos/haijun93/hwp-auto-docfit/releases/latest`)를 **둘 다 인증 없이** 조회하고, 둘 다 실패해야 오류를 낸다(한쪽만 실패하면 다른 쪽 결과 사용). 즉 **두 곳이 동시에 403**이었다.
+1. **GitHub 403 "rate limit exceeded" — 확실한 원인(서버 메시지 그대로)**: 인증 없는 GitHub API는 **IP당 시간당 60회**다. 기관 PC들이 같은 외부 IP(NAT·프록시)를 쓰면 여러 사용자의 자동 확인(앱 시작 때마다) + 수동 확인 + 개발 PC의 다른 GitHub 호출이 합쳐져 한도를 쓴다. 앱은 결과를 저장·재사용하지 않고 남은 한도·재시도 시각(`X-RateLimit-Reset`)도 읽지 않는다.
+2. **GitLab 403 Forbidden — 원인 미확정(추정 후보)**: 코드는 403을 구분하지 않고 그대로 보여 준다. 후보 ① 프로젝트가 공개가 아니라서(`internal`/`private`) 인증 없는 API 호출을 서버가 막음, ② 릴리스 가시성이 "프로젝트 구성원만", ③ 기관 방화벽·WAF가 `/api/v4/` 경로 또는 `HWP-AutoDocFit/버전` User-Agent를 차단, ④ 인스턴스 정책(익명 API 제한). 브라우저로 README 링크(릴리스 페이지)가 열려도 API 경로는 다르게 막힐 수 있다. **PC에서 확인할 것**: 브라우저·`curl`로 `https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest` 응답(로그인 없이 403이면 ①②), 응답 본문의 메시지.
+3. 앱 쪽 약점(원인을 키움): ① 두 소스 모두 **API만** 사용(한도·인증 영향이 큼) ② 결과 캐시·백오프 없음 ③ 오류 문구가 기술적("HTTP Error 403")이라 사용자가 조치할 방법을 모름 ④ 시작 때마다 자동 확인 ⑤ 시스템 프록시 설정을 쓰지 않는 직접 HTTPS 연결(`_업데이트_HTTP_GET`, 보안 검사 때문에 의도된 구조).
+
+### 조치방안 (우선순위)
+1. **API 대신 정적 파일로 확인(권장, 근본 해결)**: 릴리스 때 `website/latest.json`(버전·exe 다운로드 주소·SHA-256·릴리스 노트 주소)을 함께 갱신해 GitLab Pages(사이트 `/latest.json`)와 GitHub(`raw`/Pages)에 올리고, 앱은 이 파일을 먼저 읽는다. 인증·API 한도와 무관하다. 릴리스 절차(HANDOVER §6)에 "latest.json 갱신" 단계 추가, 앱의 SHA-256 검증은 기존 방식(릴리스 노트/자산 digest)과 같은 값을 쓴다.
+2. **GitHub는 한도 없는 경로로 대체**: `https://github.com/haijun93/hwp-auto-docfit/releases/latest` 리디렉션의 `Location`에서 태그만 읽거나 `releases.atom`을 읽는다(둘 다 API 한도가 아님). 다운로드는 태그로 `releases/download/<tag>/HWP_AutoDocFit.exe`를 만들고 SHA-256은 릴리스 노트에서 읽는다. 허용 호스트(`github.com`)는 이미 목록에 있다.
+3. **GitLab 403 원인 해소(관리자 조치)**: 위 2번 확인 결과에 따라 ① 프로젝트·릴리스 가시성을 로그인 없이 읽을 수 있게 하거나 ② WAF에서 `/api/v4/projects/…/releases` GET 허용 또는 ③ 앱 전용 읽기 토큰은 **쓰지 않는다**(실행 파일에 비밀을 넣는 것은 안 됨). 안 풀리면 1번으로 GitLab Pages의 `latest.json`을 쓴다(Pages는 사이트 방문과 같은 권한).
+4. **빈도 줄이기·캐시**: 마지막 확인 시각·결과를 설정 폴더(`updates/last_check.json`)에 저장하고 자동 확인은 하루 1회로 제한, 수동 확인은 5분 안 재조회 시 저장한 결과 사용. 403 `rate limit`이면 `X-RateLimit-Reset` 시각을 저장해 그때까지 GitHub를 건너뛴다.
+5. **오류 문구 개선**: 403(한도) → "잠시 뒤 다시 확인하세요(약 N분 뒤 가능)", 403(권한) → "업데이트 서버에 접근할 수 없습니다. 기관 네트워크 정책을 확인하거나 아래 링크에서 직접 내려받으세요", 네트워크 오류 → 별도 문구. 대화상자에 **릴리스 페이지 열기** 버튼을 둔다(`PROJECT_URL`).
+6. 한쪽이 성공하면 이미 쓴다. 둘 다 실패해도 앱 사용에는 영향이 없다는 점을 문구에 덧붙인다.
+
+### 시험·반영
+- 단위 시험(순수 함수·가짜 응답): 403 한도(헤더 포함)·403 권한·404·정상·`latest.json` 정상/깨짐, 캐시·백오프. 시험 파일 `tests/test_update_check.py`(새로 만들거나 기존 업데이트 시험에 추가).
+- 베타 핫픽스 후보(자동 업데이트는 배포판의 핵심 경로라 알파에서만 시험하지 않고 `main`에도 반영). 반영 뒤 릴리스 때 `latest.json`을 함께 올리는 절차를 HANDOVER §6에 기록.
+- 사용자 PC 확인 대기: ① GitLab API 403 응답 본문 ② 같은 시간대 GitHub 한도 사용량(`curl -i https://api.github.com/rate_limit`) ③ 기관 외부 IP를 여러 PC가 공유하는지.
+
+## [미착수] 보안성 검토 발견 사항 S1~S9 처리 (2026-10-12, 상세: `docs/보안성_검토_최고수준_2026-10-12.md`)
+코드 읽기·검색 기반 검토 결과(실행 시험 없음). 새 기능은 알파에서 먼저 구현·시험한다. 번호는 보고서와 같다.
+
+- [ ] **S1 (높음) 업데이트 무결성 신뢰 근원 분리**: SHA-256이 exe와 같은 릴리스에서 와서 계정 탈취 시 함께 바뀔 수 있음.
+  exe 코드서명(Authenticode), 별도 경로의 서명된 `latest.json`(Ed25519, 공개키 앱 내장), 릴리스 계정 2단계 인증·권한 최소화.
+  (`docfit_core/updater.py` `expected_sha256`) — 위의 "업데이트 확인 403" 항목(정적 `latest.json`)과 함께 설계하면 중복이 없다.
+- [ ] **S2 (중간) 압축 해제 방어 공용화**: 크기·압축률 상한이 `docfit_core/hwpx.py`에만 있고 `ZipFile` 직접 열기 약 20곳에는 없음(압축 폭탄 → 메모리 고갈).
+  공용 `open_hwpx_safely()`를 만들어 모든 열기에 적용하고 폭탄 HWPX 시험을 추가.
+- [ ] **S3 (중간) kordoc 공급망**: 사전 설치본이 없으면 `npx -y kordoc@4.21.6`을 실행 시점에 받음(`docfit_core/kordoc_bridge.py:79`).
+  번들·사전 설치 + `package-lock.json` 무결성, npx 경로는 `--ignore-scripts`·`--no-install` 또는 명시 동의 뒤에만.
+- [ ] **S4 (중간) 업데이트 스크립트 바꿔치기**: 교체용 `.ps1`을 사용자 쓰기 가능 폴더에 쓰고 `-ExecutionPolicy Bypass`로 실행(`hwp-auto-docfit.py` ~20200).
+  내장 스크립트를 `-EncodedCommand`로 넘기거나 쓴 직후 해시 확인.
+- [ ] **S5 (중간) 빌드 파이프라인**: `.github/workflows/build-windows-exe.yml`의 액션을 커밋 SHA로 고정, `requirements.txt` 버전·해시 고정(`pip install --require-hashes`), `contents: write` 권한 최소화, 산출물 증명(attestation)·SBOM.
+- [ ] **S6 (낮음) WebView 화면 CSP**: `desktop_web/index.html`에 CSP 메타 추가(`default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'`), Flutter 화면도 검토.
+- [ ] **S7 (낮음) `add_paths` 경로 검증**: 확장자 허용 목록, 파일 존재, 심볼릭 링크 검사(`desktop_web_ui.py:189`).
+- [ ] **S8 (낮음) 임시 파일 정리 보장**: `NamedTemporaryFile(delete=False)` 계열(`docfit_core/korean_proofread.py:151` 등)을 `try/finally`로 삭제하고 종료 시 정리 확인.
+- [ ] **S9 (정보) `MapoHwpAutoDocFitSecurity.dll` 출처 문서화**: 출처·해시·소스를 `SECURITY.md`에 기재.
+- [ ] **소개 사이트(Vercel) 강화**: 인라인 스타일을 CSS로 옮겨 CSP에서 `'unsafe-inline'` 제거, Google Fonts 자체 호스팅, COOP/CORP/COEP·보안 헤더(`docs/Vercel_보안_검토_2026-10-12.md`의 `vercel.json` 초안),
+  Deployment Protection(Preview 인증)·Spend Management·2단계 인증, `/.well-known/security.txt`. 미리보기 보호는 GitHub/GitLab에 같은 기능이 없어 Vercel 쪽 설정(또는 GitLab Pages "구성원만")으로 한다.
+- 권장 순서: S1 → S2 → S3 → S5 → 나머지(S6·S7은 위험이 작고 바로 가능).
+- 미확인: Windows·한/글 실환경 동작, 실제 Vercel 프로젝트 설정, GitLab CI 보안 검사 결과, kordoc 내부 의존성, `flutter_ui` 웹뷰 설정.
+
+## [미착수] Anthropic OSS Scanner 신청으로 외부 보안성 검토 받기 (2026-10-12)
+대상: https://github.com/anthropics/oss-scanner (신청 = 이 저장소에 `projects/<이름>/project.yaml`을 추가하는 PR). 위의 "보안성 검토 발견 사항 S1~S9"와 별개로, 모델 기반 스캐너가 소스를 추가로 점검한다.
+
+- [ ] **0. 사전 확인(사용자)**: ① `red.anthropic.com/oss-scanner`의 선정 기준에 이 프로젝트가 해당하는지(소규모 공공기관 도구라 불확실; 안 되면 PR의 Context란에 사유 기재) ② 소속 기관이 소스·보고서를 외부 서비스에 넘기는 것을 허용하는지 ③ 신청자는 저장소 핵심 유지관리자(소유자 계정)여야 함 ④ 스캔 대상은 GitHub 공개 저장소 `haijun93/hwp-auto-docfit`(GitLab 내부 저장소는 불가).
+- [ ] **1. 리눅스 빌드 환경 준비(알파)**: 이 앱은 Windows·한/글 COM 의존이라 전체 빌드는 불가. 순수 파이썬 부분(`docfit_core/*`, `desktop_web_ui.py` 등)과 `scripts/linux_stub_test_runner.py` 시험만 도는 `.oss-scanner/Dockerfile` 작성(빌드 단계에서 `defusedxml` 등 의존성 모두 설치, 스캔 단계는 인터넷 없음). 컨테이너 안에서 시험이 통과하는지 확인(기준선: 실패 7·오류 15는 Tk/Windows 의존).
+- [ ] **2. `threat_model.md` 작성**: 신뢰할 수 없는 입력(사용자가 여는 HWPX/DOCX/PDF/MD/TXT, 붙여넣은 AI 답변, 업데이트 서버 응답, kordoc 출력), 범위 밖(한/글 자체, Windows, Tk), 심각도 기준(예: 압축 폭탄=중간, 업데이트 바꿔치기=높음, 로컬 전용 화면 오류=낮음), 알려진 발견 사항 S1~S9(`docs/보안성_검토_최고수준_2026-10-12.md`) 포함해 중복 보고를 줄임.
+- [ ] **3. `project.yaml` 작성**: `repo: https://github.com/haijun93/hwp-auto-docfit#main`, `primary_contact`는 **공개되므로 보안 전용 별칭 메일**(사용자 결정), `dockerfile: .oss-scanner/Dockerfile`, `threat_model: .oss-scanner/threat_model.md`. 필요하면 `pgp`(암호화 수신, `auto_ccs`와 병용 불가).
+- [ ] **4. 로컬 점검(사용자 PC, Docker 필요)**: `tools/validate.py`, `tools/check <이름>`(네트워크 없는 셸에서 시험 통과 확인). 이 클라우드 환경에는 Docker가 없어 확인하지 못한다.
+- [ ] **5. PR 제출(사용자)**: `anthropics/oss-scanner`를 포크해 `projects/<이름>/` 추가, PR 체크리스트 작성, **"OSS Scanner terms 수락" 항목에 반드시 체크**(안 하면 자동 검사 실패), 첫 PR에서 CLA 서명(봇 안내 문장을 답글로).
+- [ ] **6. 결과 처리**: 보고서(재현 방법·패치 제안, 모델 생성이라 사람 검토 없음)는 `primary_contact`로 온다. 오탐을 가려 알파에서 수정하고 시험을 추가한다. 빌드 실패 메일이 오면 Dockerfile을 고친다(저장소 안 Dockerfile은 PR 없이 수정 가능).
+- 참고: 신청 방법 요약은 대화 기록(2026-10-12)에 있으며 근거는 oss-scanner `README.md`, `CONTRIBUTING.md`, `.github/PULL_REQUEST_TEMPLATE.md`. 선정 기준 페이지는 확인하지 못했다.
+
+## [진행] 1.74 Alpha 3 안정화 + Flutter 전환 (2026-10-13)
+
+- [x] Beta 1과 기존 Alpha 2 코드/기준선 검토. 기존 alpha 이력 보존.
+- [x] `_tk` 대기 요청 취소, 종료 시 해제, 실행 중 시간 초과 구분, 종료 확인 취소 회귀 시험.
+- [x] 새 문서/새 작업 쪽 범위 초기화, 입력 중 범위 보존, 명령 뒤 오래된 poll 응답 배제.
+- [x] Flutter 준말 조회·검색·CRUD·기본값 선택, 타입 API/모델/기능 모듈 분리.
+- [x] Tk/Flutter 공통 준말·설정 서비스, 다른 설정/학습한 표 서식 보존·원자 저장·실패 처리.
+- [x] 잘못된 준말 서식 값(list/dict) 때문에 등록표 전체가 실패하는 문제 방어.
+- [x] Flutter 누락 패키지 방지: 로컬/CI 검사·웹 빌드·자산 검증 실패 시 EXE 빌드 중단.
+- [x] `FLUTTER_MIGRATION_AUDIT/PLAN`, `FLUTTER_ARCHITECTURE/API_CONTRACT/TEST_REPORT/NATIVE_FEASIBILITY` 문서.
+- [ ] Windows+한/글 2020에서 파일 선택·드롭·준말/Tk 호환·처리·중단·종료·원본 무결성/EXE 검증.
+- [ ] 전체 설정 79개와 단계별 수치를 Flutter 스키마/서비스로 이전.
+- [ ] 서식 상세/복제 범위·준말 표 학습·문서 검토/보조 창 이전.
+- [ ] Tk 변수 기반 파일/프로필/작업 상태 분리, 진행 이벤트·재연결 계약.
+- [ ] Windows native 시제품 및 동일 PC Web/native 실측 후 채택 여부 판단.
+
+사용자 확인: 1.75.1·1.75.2 회수 원인은 Flutter UI 제거 및 MCP 시험 기능의 잘못된 구현이었다.
+해당 백업 브랜치를 병합하지 않으며 이번 작업에서 Flutter를 제거하거나 MCP를 확대·자동 활성화하지 않는다.
+상세 실행 결과와 미실시 항목은 `docs/FLUTTER_TEST_REPORT.md`에 기록한다.
+
+## [상태] v1.75.1·v1.75.2 회수 — main을 v1.74 Beta 1로 복구 (사용자 결정, 2026-10-13)
+v1.75.1·v1.75.2에 오류가 있어 릴리스를 삭제하고 `main`을 v1.74 Beta 1(731a520)로 되돌렸다. 최신 배포는 **v1.74 Beta 1**이다.
+
+- 되돌리기 전 `main`(13842b8, v1.75.2 포함)은 GitHub 브랜치 `backup/main-before-v1.74-reset-2026-10-12`에 보관. 1.75의 Flutter 로그 화면·MCP 옵트인·COM/Tk 종료 수정 등을 되살릴 때 여기서 가져오되, **오류 원인을 먼저 찾은 뒤** 선별해 알파에서 시험하고 반영한다.
+- `alpha`에는 1.75 코드가 들어 있지 않다(1.74 Alpha 2 기준). 알파→main 병합 때 위 백업 브랜치를 통째로 병합하지 않는다.
+- [ ] 사용자 PC에서 GitHub·GitLab의 `v1.75.1`·`v1.75.2` **태그 삭제**(`git push origin :refs/tags/v1.75.1 :refs/tags/v1.75.2`, GitLab도 동일)와 남은 릴리스 삭제 — 클라우드에서는 태그 푸시가 막혀 못 한다. 2026-10-13 확인 시 GitHub에는 두 태그와 v1.75.2 릴리스가 남아 있었다.
+- [ ] GitLab `main`도 v1.74 Beta 1(+README 정리 016b6be)로 복구(`git push --force-with-lease`), 앱 업데이트 확인이 v1.75를 최신으로 보지 않는지 확인(릴리스 삭제 전에 v1.75.2를 받은 사용자는 구버전으로 내려가지 않으므로 별도 안내 필요).
+- [ ] v1.75.1·v1.75.2의 오류 내용 기록(어떤 증상인지 사용자 확인 필요)과 재발 방지 시험.
+- 2026-10-13 `main` README의 다운로드 링크 삭제(016b6be)는 복구 뒤 다시 적용했다.
+
+## [미착수·알파·개발자 모드 전용] tldraw 도형 편집기 + 공공기관 업무 흐름도 템플릿 → HWP/HWPX 삽입 (사용자 지시서, 2026-10-13)
+목표 흐름: 템플릿 선택 → tldraw 편집 → 미리보기 → PNG 내보내기 → 한/글 문서 삽입 → 원본 저장 → 재편집·교체. 기존 문서 자동 서식 처리는 그대로 둔다.
+
+**원칙**: ① alpha 브랜치에서만 ② 개발자 모드에서만 표시(UI 숨김 + Python 서비스 계층에서도 기능 플래그 검사해 비활성 시 명령 차단) ③ 기능 플래그 기본 OFF ④ 기존 문서 처리 엔진 변경 금지 ⑤ 독립 모듈 ⑥ Flutter를 기본 UI로, tldraw는 Flutter 안의 전용 WebView2에 표시 ⑦ tldraw SDK·리소스는 로컬 포함(CDN 금지, 외부 전송·자동 동기화 금지, 로컬 파일 접근 최소화) ⑧ 원본 문서 보호·결과는 별도 파일. 실행하지 못한 시험은 "미실행"으로 표시하고, Windows·한/글 2020 없이 검증 못 한 기능을 완료로 보고하지 않는다.
+> 현재 상태 메모: 앱은 Flutter(WebView2) + Python/Tk 백엔드 하이브리드이다(Flutter 구현 범위는 아래 "Flutter 구현 현황" 참고). 지시서의 "Flutter Windows 네이티브"는 아직 아니므로 **독립 모듈**로 만들어 이후 네이티브 전환 때 그대로 재사용한다. 개발자 모드(`developer_mode_var`)는 이미 있고 Flutter 설정 서랍에서 켠다 — 구조 재사용.
+
+- [ ] **0. 사전 조사**: AGENTS.md·HANDOVER.md·README.md·TODO.md, `flutter_ui/`, `desktop_web_ui.py`, `hwp-auto-docfit.py`, `docfit_core/`, 기존 개발자 모드·기능 플래그, HWP COM 그림 삽입 기능, Windows 패키징 구조. **tldraw SDK 라이선스·배포 조건 확인 후 문서화**(상용/기관 배포 조건 주의), Flutter WebView 연결, 오프라인 tldraw 실행, PNG 내보내기 확인.
+- [ ] **1. 개발자 메뉴·플래그**: 개발자 도구 > 도형 및 다이어그램 편집기(새 다이어그램·업무 흐름도 템플릿·저장된 다이어그램 열기·최근 작업), 문서 삽입 테스트(현재 문서에 삽입·위치/크기 설정·삽입 결과 검수), tldraw 개발자 설정(기능 활성화·편집기 진단·원본 데이터 관리·로그 확인).
+- [ ] **2. tldraw 편집기**(`tldraw_editor/`): 사각형·둥근 사각형·원·다이아몬드·화살표·연결선·텍스트·색상·선 굵기·글자 크기·복사/붙여넣기·정렬/간격·그룹·실행 취소/다시·확대/축소·화면 맞춤·전체 선택·삭제·PNG 내보내기·원본 저장/불러오기. 기본 기능을 재사용하고 별도 도형 엔진은 만들지 않는다.
+  - Flutter↔tldraw 메시지 브리지(JSON, 요청 ID·명령명·데이터·성공 여부·오류 코드): createDiagram, loadDiagram, saveDiagram, loadTemplate, exportPng, exportSvg, fitToContent, getDiagramInfo, checkUnsavedChanges. 잘못된/허용 안 된 명령은 실행하지 않는다.
+- [ ] **3. 업무 흐름도 템플릿 10종**(편집 가능한 예시이며 법정 절차·기관별 결재 규정을 확정적으로 표현하지 않는다): ① 일반 행정업무 처리(접수→검토→결재→시행→완료) ② 민원 처리(접수→담당자 배정→검토→처리→결과 통보) ③ 계약 및 발주(수요 발생→발주 검토→계약 방법 결정→계약→검사·검수) ④ 수의계약 검토(대상 확인→금액·사유 검토→적정성 판단→계약 진행) ⑤ 예산 집행(집행 계획→예산 확인→품의→지출 원인행위→지급) ⑥ 지방보조금 관리(공모·신청→심사→교부→사업 수행→정산→사후관리) ⑦ 공사 관리(계획→설계→발주→착공→준공 검사→대금 지급) ⑧ 인허가 처리(신청→요건 검토→보완 여부 판단→승인·반려→통보) ⑨ 보고 및 결재(자료 작성→담당 검토→팀장 검토→부서장 결재→시행) ⑩ 사고·민원 대응(상황 접수→긴급성 판단→조치→보고→사후관리).
+  - 템플릿 정보: ID·이름·설명·업무 분류·기본 도형·연결선·색상·기본 문구·권장 페이지 방향·버전. 카드형 갤러리(업무 유형 필터·검색·썸네일·선택·새 다이어그램·사용자 템플릿 저장·최근 사용·즐겨찾기).
+  - 디자인: 흰 배경, 절제된 파랑·회색, 가독성 높은 한글 글꼴, 일정한 간격·방향, 그림자·장식 배제, 흑백 인쇄에서도 구분, A4 세로·가로 출력 크기.
+  - 조건 분기: 결정 단계는 다이아몬드, 연결선 레이블('예'/'아니오'/'적정'/'부적정'), 분기·연결 관계 자유 수정.
+  - **확장 권장: 담당 주체별 스윔레인(Swimlane)** — 부서별 책임·업무 인계가 보이는 지방보조금 집행 등(개념 예시, 실제 절차는 사업·적용 규정에 맞게 조정).
+- [ ] **4. 저장·관리**: `diagrams/diagram-NNN/{metadata.json, document.tldr, preview.png, export.png}`(파일명은 예시; 실제 SDK 직렬화 API와 호환되는 형식을 검증해 결정). 새로 만들기·이름 변경·저장·다른 이름으로 저장·복제·삭제·검색·최근 작업·사용자 템플릿 등록·백업/복원, 데이터 버전 관리, **임시 파일 작성 후 원자적 교체**(실패 시 기존 데이터 보존).
+- [ ] **5. HWP/HWPX 삽입(1차는 PNG)**: Python 엔진이 한/글 2020 COM으로 삽입. 옵션: 대상 문서·위치(현재 커서/지정 책갈피/지정 문단 뒤 중 안정적으로 검증된 것만 활성화)·너비·높이·비율 유지·문단 정렬·본문 배치·캡션·그림 번호·페이지 방향에 맞춘 크기·결과 경로. 문서 보호: 원본 덮어쓰기 금지, 삽입 전후 원본 SHA-256 기록·재확인, 오류 시 임시 파일 정리, 실패를 정상 완료로 표시 금지. 결과 검수: 그림 존재·크기·위치·이미지 손상·저장 성공·다시 열기·원본 보존, 쪽수/배치가 바뀌면 알림.
+- [ ] **6. 재편집·교체**: 삽입 그림과 tldraw 원본 연결(다이어그램 ID·원본 경로·대상 문서·문서 내 개체 식별 정보·삽입 시각·이미지 해시·버전). 수정→PNG 재생성→기존 삽입 그림 식별→교체→검증. **COM에서 개체를 안정적으로 식별·교체할 수 있는지 먼저 검증**하고, 불확실하면 자동 교체 없이 새 그림 삽입 또는 사용자 확인 방식. 한/글 안에서 개별 도형을 직접 수정하는 기능은 별도 고급 기능으로 분리(개발 초기는 PNG 삽입 + 원본 보존 우선).
+- [ ] **7. 구조(권장)**: Python `docfit_app/diagrams/{diagram_service, template_service, diagram_repository, image_export_service, hwp_insert_service, diagram_models}.py`, Flutter `flutter_ui/lib/features/diagrams/{diagram_screen, diagram_editor, template_gallery, diagram_repository, diagram_models, diagram_controller}.dart` + `widgets/`, 웹 `tldraw_editor/src/{app,bridge,templates,export,storage}`. 기존 프로젝트와 중복되지 않게 조정.
+- [ ] **8. 시험**: Flutter(개발자 모드에서만 메뉴·플래그 OFF 차단·템플릿 목록/선택·미저장 경고·편집기 오류 표시), tldraw(템플릿 10종 로딩·도형/연결선·한글 텍스트·저장 후 재열기·PNG·빈/복잡한 다이어그램·네트워크 없이 실행), Python(저장/불러오기·경로 검증·파일명 중복·이미지 검증·원본 보호·COM 오류·삽입 검증), 통합(Windows+한/글 2020: 개발자 모드→템플릿→문구 수정→PNG→삽입→저장→다시 열기→원본 재열기→수정 후 재삽입→원본 무결성).
+- [ ] **9. 단계**: Phase 0 기술 검증 → 1 기본 편집기(메뉴·플래그·편집기·저장·PNG) → 2 템플릿(10종·갤러리·검색·사용자 템플릿·분기) → 3 문서 삽입(서비스·COM·위치/크기·보호·검수) → 4 재편집·안정화(연결·재삽입·오류 복구·회귀·개발자 모드 배포 검증). 기능 단위 커밋, 테스트 결과 기록, 새 라이브러리 라이선스 확인, 외부 네트워크 의존성 추가 금지.
+- [ ] **10. 산출물**: `docs/TLDRAW_FEATURE_AUDIT.md`, `TLDRAW_ARCHITECTURE.md`, `TLDRAW_TEMPLATE_SPEC.md`, `TLDRAW_HWP_INSERTION.md`, `TLDRAW_TEST_REPORT.md` + README·HANDOVER·TODO 갱신.
+- **첫 개발 세션 지시**: ① alpha 확인 ② 개발자 모드·플래그 확인 ③ tldraw 편집기 프로젝트 생성 ④ Flutter에서 편집기 실행 ⑤ 기본 도형 연결 ⑥ PNG 내보내기 ⑦ '일반 행정업무 처리' 템플릿 ⑧ '민원 처리' 템플릿 ⑨ 템플릿 저장·불러오기 시험 ⑩ HWP COM 삽입 계획 작성.
+- **성공 기준**: 개발자 모드에서 편집기 실행 / 템플릿 10종 사용 / 도형·문구·연결선 자유 편집 / 저장·재열기 / HWP·HWPX에 삽입 / 원본으로 재편집 / 기존 기능·정식 배포에 영향 없음.
+- 클라우드 한계: tldraw 편집기 빌드는 Node(npm)와 외부 패키지 다운로드가 필요하다(이 환경의 네트워크 허용 여부 확인 필요). 한/글 COM 삽입·Flutter Windows 실행 시험은 사용자 PC에서만 가능.
+
+## [미착수·검토] 소스코드 재구조화 + 성능 개선 추진 (검토 보고, 2026-10-13)
+정적 구조 검토이며 실행 프로파일링·Windows 한/글 2020 실측은 하지 않았다. 구체적 병목과 개선율은 개발하며 검증한다. **파일을 나눈다고 빨라지지는 않는다 — COM 호출 수, 문서 열기·저장 횟수, XML 처리량, 중복 연산을 측정한 뒤 개선한다.**
+
+- 목표 구분(한 번에 하지 않는다): ① 유지보수성(대형 파일·복잡한 의존을 기능별 모듈로) ② 실행 성능(불필요한 COM 호출·반복 분석·UI 상태 조회 감소) ③ 안정성(Flutter·Python 프로세스/스레드/작업 상태 명확화).
+- 대상: `hwp-auto-docfit.py`(약 15,000줄+, GUI·처리 파이프라인 혼재) → 실행 진입점·서비스·처리 엔진 분리 / `desktop_web_ui.py`(약 882줄, Tk 상태 연결) → 독립 서비스 호출용 어댑터로 축소, Tk 직접 의존 제거 / `flutter_ui/lib/main.dart`(약 2,415줄) → 기능별 모듈 분리 / `docfit_core/stage_selection.py` → UI 공통 규칙 엔진 / `docfit_core/batch_format.py` → 검증된 경우 COM 호출 감소에 활용 / `docfit_core/` 기존 모듈은 보존하고 경계만 정리(일괄 이동 금지, 필요한 부분부터 추출).
+- 계층: Flutter(표현) ⇄ 버전 관리되는 로컬 IPC ⇄ Python Application(명령·작업 관리·설정·프로필·검증) ⇄ Domain(서식 규칙·단계·문서 모델·검수) ⇄ Infrastructure(HWP COM·HWPX ZIP/XML·저장·로그). 권장 디렉터리: `flutter_ui/lib/{app,core/{ipc,models,state},features/{documents,processing,settings,format_profiles,abbreviations,results},shared}`, `docfit_app/{backend_main.py,api,services,jobs,state}`, `docfit_infra/{com,storage,ipc,diagnostics}`, `benchmarks/`.
+- 성능 개선 순서: **P0 측정 체계**(열기·구조 분석·서식 적용·저장·최종 검수 시간, 문서별 COM 호출 수, HWPX XML 처리 시간; 같은 시험 문서로 전후 비교) → **P1 COM 호출 최소화**(반복 문단·서식 조회 감소, 적용 가능한 HWPX는 `batch_format.py` XML 일괄 경로 확대 — **XML과 COM 결과가 같다는 검증 없이 경로 전환 금지**) → **P1 분석 결과 재사용**(여러 단계 중복 분석 조사, 작업 단위 캐시 + 문서 변경 후 무효화 규칙 명확화) → **P2 Flutter↔Python 통신**(`get_state()`가 파일 목록·모드·진행·프로필·설정·결과를 한 번에 반환하고 Flutter가 1초마다 재조회하는 구조 → 변경 이벤트 방식, 진행률 변경마다 전체 전송 금지; 실제 병목인지 응답 크기·호출 시간 측정 먼저) → **P2 작업 큐와 COM 분리**(요청은 작업 큐, COM은 전용 스레드에서 직렬화, HWPX 순수 분석만 독립성 확인 후 병렬화 — COM 무조건 병렬화 금지).
+- 피할 것: 15,000줄 메인 파일 일괄 분해 / Flutter 전환과 처리 알고리즘 전면 재작성 동시 진행 / COM 무분별 병렬화 / 무효화 검증 없는 캐시 / 모든 기능을 거대한 IPC 명령 하나로 묶기 / 속도를 이유로 원본 무결성 검사·최종 검수 생략. 정확성과 속도가 충돌하면 정확성 우선.
+- 단계: 1 성능 기준선·의존성 분석(병목·결합 확인) → 2 Python 서비스·상태 분리(Tk 없이 백엔드 실행) → 3 Flutter 모듈화·IPC(네이티브 UI에서 주요 기능 실행) → 4 COM·XML·캐시 최적화(측정 가능한 개선) → 5 회귀 테스트·배포 정비.
+- 평가 지표: 전체 처리 시간(같은 문서 전후), COM 호출 수(단계별), 문서 열기·저장 횟수, 최대 메모리, UI 응답성(처리 중 입력 반응·화면 갱신), 결과 일치율(기존 결과와 구조·서식 비교), 원본 보존(처리 전후 SHA-256). 목표 수치는 기준선 측정 뒤 정한다(특정 개선율 보장 불가).
+- 권고: 새 기능 개발보다 **서비스 계층 분리와 성능 측정 체계**를 먼저 마련 → 이후 Flutter 전환과 성능 개선을 서로 독립적으로 시험할 수 있다.
+- 우선순위: GUI·작업 제어 분리 → `desktop_web_ui.py`의 Tk 의존 제거 → `main.dart` 모듈화 → 독립 Python 백엔드·IPC → COM·분석 병목 측정 → 측정 기반 선택적 최적화 → 회귀 테스트·Windows 배포 검증. (기존 "Flutter UI 전체 전환 검토" 항목과 함께 본다. 위 tldraw 기능은 이 구조 위에 독립 모듈로 얹는다.)
+
+## [참고] Flutter 구현 현황 — v1.74 Beta 1 기준 (2026-10-13)
+- Flutter 완료: 화면 골격(상단 탭·사이드바·환영 화면·단축키), 문서 목록(추가·삭제·비우기·끌어놓기), 작업 방식 카드(자간 정리·서식 통일·한 번에 적용, 카드 옵션 포함), 서식 고르기(썸네일 갤러리·목록·이름 바꾸기·삭제·서식 파일 추가), 쪽 범위, 진행 표시·안내 단계, 결과 영역, 하단 실행/중단 바, 빠른 설정 서랍 4개(자동 닫기·검수·시작 때 업데이트 확인·개발자 모드), 세부 작업 선택 상태.
+- Flutter 미구현(버튼이 Tk 창을 연다): 설정 창 전체, 세부 작업 창, 작업 로그 창, 결과 열기·폴더 보기, 서식 세부사항·구조 확인·예시 확인/작성, 문서 도구 6종(문서 검토·공공언어 교정·문서 구조 편집·작성 도우미·Markdown 내보내기·고급 문서 도구), 텍스트 붙여넣기·붙여넣기 정리·AI 프롬프트 창, 서식통일 검토 창 3종(대표서식·적용영역·결과 확인), 교정 제외 관리, 절약 완료창. 연결 메서드 38개 중 37개를 Flutter가 사용(`add_paths`만 끌어놓기용).
+- 전환 부담이 큰 곳: 설정·서식 세부사항 창(항목 많고 한/글 처리와 얽힘), 서식통일 검토 창 3종(작업 도중 사용자 응답을 기다리는 대화형), 문서 도구 6종(각각 독립 앱 수준).
 
 ## [진행 중, 이어서 작업] 알파 개발 인수인계 — VS Code (2026-10-09)
 
@@ -1126,6 +1361,24 @@ _(아직 없음 — 접근 후 채움)_
 - **상대 프로젝트와의 관계**: 둘 다 MCP면 AI가 `build_document`(생성) → `process_documents`(후처리)를 이어서 부르는
   흐름이 된다. 도구 설계는 그들의 `warnings` 반환 후 재시도 패턴을 참고.
 
+### 2026-10-12 추가 검토: Claude 답변 → 서식 적용 HWPX 생성
+
+**상태: 설계 검토 완료, 구현 미착수.** 상세 검토와 권장 구조는
+`docs/종합검토_알파감마_개발방향_2026-10-09.md` 및 작업 보고를 참고한다.
+
+- **목표 흐름**: Claude가 작성한 Markdown/텍스트 답변을 로컬 MCP 도구에 전달 → 답변 구조를 보존하며 새 HWPX 생성 → 선택한 서식 프로필·일괄 서식 적용 → Windows 로컬 한/글 COM으로 내어쓰기·조판 마무리 → 저장본 재검사 → 결과 경로와 처리 요약 반환. 원본 파일 덮어쓰기는 금지한다.
+- **실행 경계**: COM이 필요한 완성 작업은 한/글 2020이 설치된 사용자 Windows PC의 로컬 MCP 프로세스에서만 제공한다. 원격/클라우드 MCP 서버만으로 로컬 한/글 COM을 호출할 수 없다. 기존 감마(Windows 없는 환경) MCP와 이 로컬 COM MCP는 목적·실행환경을 분리해 혼합하지 않는다.
+- **재사용 후보**: `ai_answer.py`/`pasted_text.py`의 답변 구조 변환, 저장된 서식 프로필, `batch_format.py`의 제한된 XML 일괄 적용, 기존 COM 내어쓰기·최종검수 경로. 새 HWPX 생성·일괄 서식·COM 마무리가 하나의 검증된 서비스 경로로 연결된 상태는 아니므로 결합 전 지원 범위와 폴백 규칙을 설계한다.
+- **MCP 작업 인터페이스 초안**: 읽기 전용 `list_format_profiles`, `inspect_document`, `get_job_status`; 생성·처리 `create_hwpx_from_text`, `apply_document_format`, `finalize_with_hwp_com`; 제어 `confirm_and_start_job`, `cancel_job`, `get_result`. 장시간 작업은 `job_id` 발급과 상태 조회를 분리하고, 도구 호출 간 암묵적 세션 상태에 의존하지 않는다.
+- **안전 요구사항**: 허용 폴더 제한·경로 정규화·파일 형식/용량 제한, 원본 불변, 사용자 확인 후 COM 시작, 한/글 사용 중 충돌 방지, 취소·시간초과·중복요청 처리, 임시 파일 정리, 로그와 MCP stdout 분리. 기본 응답에는 문서 본문을 싣지 않고 결과 경로·단계·검수 요약·경고만 제공한다.
+- **단계별 할 일**:
+  1. Tk/전역 상태에 묶이지 않는 `docfit_core` 작업 서비스 경계를 만들고, 입력·프로필·출력 위치·단계 선택을 명시적인 데이터로 전달한다.
+  2. 대표 Markdown 사례로 새 HWPX 생성과 서식 프로필 적용만 하는 세로형 PoC를 만든다. 표·체크리스트·코드·인용·링크 등 지원/보존/평탄화 규칙과 경고를 확정한다.
+  3. 로컬 한/글 에이전트가 PoC 결과를 열어 내어쓰기·저장·재열기 검증을 수행하도록 연결한다. COM 실패 시 결과를 성공으로 보고하지 않는다.
+  4. 먼저 읽기 전용 MCP를 붙이고, 그다음 사용자 승인 기반 생성/처리 도구를 추가한다. stdio 프로토콜 출력과 로그를 분리하고 작업 취소·재시작·실패 복구를 시험한다.
+  5. Beta 기준 앱 처리와 같은 입력·프로필로 내용/표/서식/내어쓰기/오류율/처리시간을 비교한다. 실제 한/글 2020 시험 및 보안 검증이 끝날 때까지 베타 승격하지 않는다.
+- **선행 조건/결정**: MCP 호스트는 우선 Claude Desktop으로 한정할지, 감마 MCP와 별도 설치·버전·저장소로 둘지 결정한다. `hwp-auto-docfit.py` 직접 import에 의존하는 구현은 피하고, `mcp` 패키지 추가·패키징·업데이트 방식과 기관 PC 정책을 확인한다.
+
 ## 다음에 진행할 작업
 
 ### 한 번에 적용: '자간 조정 포함' → '자간 정리 포함' 문구 변경 (사용자 요청, 2026-10-11)
@@ -1415,3 +1668,45 @@ Tk `Text` 위젯 두 칸(아웃라인 입력 / 공문서 개조식 미리보기)
 문서" 목록에 바로 추가하는 기능인지, (b) 이 앱이 처리한 결과 요약을
 스티커 메모로 남기는 기능인지, (c) 완전히 다른 용도인지에 따라 필요한
 작업이 크게 달라짐.
+
+## MCP 구현 진행 (2026-10-13, alpha)
+
+- 목표: Claude/ChatGPT의 AI 답변을 사용자가 지정한 문서 서식으로 새 HWPX로 생성한다. 전체 설계와 연결 환경 차이는 `docs/MCP_INTEGRATION_DESIGN.md`를 참조.
+- 1차 PoC: 로컬 stdio MCP 서버에 내장 프리셋 목록과 답변 Markdown → 새 HWPX 생성 도구 구현. 출력 폴더 고정, 파일명 경로 차단, 입력 크기 제한, 덮어쓰기 방지, 생성 후 HWPX 재검사 적용. SDK는 선택 의존성 `requirements-mcp.txt`로 격리.
+- 미완료: 앱 사용자 저장 서식 프로필 적용, 한/글 COM 내어쓰기·최종검수, 장시간 job/cancel, 실기기 Claude/ChatGPT 연결·보안시험. ChatGPT는 원격 MCP/승인된 터널이 필요하며 이 로컬 stdio PoC에 직접 연결할 수 없다. 릴리스 조건 통과 전에 배포하지 않는다.
+
+## [진행] 1.74 Alpha 4 — 기준선 실패·오류 22건 해결
+
+- [x] Tk/TkDND·pywebview·XML 실제 모듈 사용, Linux 레지스트리 미존재 표현.
+- [x] 플랫폼 독립 경로 시험, GUI 임시 작업 폴더·디스플레이 가용성·timer teardown.
+- [x] 실제 Xvfb GUI 시험 환경과 Linux GUI CI 추가.
+- [x] 원래 실패/오류 22개 모두 통과(건너뜀 0), 전체 986시험 실패/오류 0·기존 skip 3 기록.
+- [ ] Windows WebView2·한/글 COM·EXE 실문서 검증.
+
+## [완료] 1.74 Alpha 5 — 재리뷰 반영
+
+- [x] 버전·소수/코드 인덱스/공문 문의 문장 보존 회귀.
+- [x] 설정 경로별 공유 잠금, 앱 저장 통합·원자 교체·실패 시 기존 파일 보존.
+- [x] snapshot 입력/해제 제한, ZIP 중복 검사 최적화, 서식 분석 중복 validate 제거.
+- [x] 실제 GUI preflight 및 GUI skip 실패 CI 정책.
+- [x] 직함:이름 의미단위를 COM 줄 나눔/의미단위 검사에 연결.
+- [x] 최종 전체 997시험: 994통과, 실패/오류 0, 기존 skip 3.
+- [ ] Windows 실문서에서 새 의미단위·설정·COM 저장 및 EXE 검증.
+- [ ] 전체 Flutter 잔여 화면/서비스·진행 이벤트 및 실제 코퍼스 성능 측정.
+
+## [진행] Flutter Windows 네이티브 전환
+
+상태와 완료 조건: [네이티브 단계별 계획](docs/FLUTTER_NATIVE_MIGRATION_PLAN.md). 독립 백엔드·IPC·설정 화면을 구현했으며 COM 연결과 Windows 실기기 검증은 남아 있다.
+
+- [x] Alpha 6 전체 Python 1,011시험 실패·오류 0, 기존 skip 3. Flutter 28시험·정적 검사·웹 Release 통과.
+- [x] 백엔드 강제 종료 후 명시적 재시작·설정 보존 통합 시험.
+
+## [완료] Alpha 6 후속 전체 소스·보안 검토
+
+- [x] 구문·이름 오류 검사, 운영/도구 Python 96파일 보안 정적 검사.
+- [x] MCP 출력 경쟁 조건·예약 장치 이름 및 HWPX 중복 항목 보완.
+- [x] 전체 1,014시험 실패·오류 0, 기존 skip 3.
+- [x] Beta 1 정리 결과·전처리 시간 비교 및 근거 보관.
+- [ ] Windows 전체 의존성·서명·COM 파서 및 바이너리 실기기 검증.
+- [ ] 로컬 IPC 접속 슬롯 악용 대응·비동기 분석 자원 제한.
+- [ ] 서명된 릴리스·Python hash lock 및 로그 민감 정보 마스킹 검토.

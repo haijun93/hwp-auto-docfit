@@ -61,13 +61,22 @@ class FontSizeOnlyTest(unittest.TestCase):
             with patch.dict(self.g, {'작업_모드': mode, '선택_세부작업': None}):
                 self.assertFalse(fn(), mode)
 
-    def test_representative_keeps_font_size_and_bold_only(self):
+    def test_quick_mode_representative_contains_only_font_and_size(self):
         fn = self.ns['_서식통일_글꼴크기_대표']
         대표 = {'font': ('함초롬바탕', 9), 'size': (1500, 9), 'marker_bold': (False, 9), 'label_bold': (True, 3),
               'color': ('#000000', 9), 'align': ('LEFT', 9), 'hanging_indent': (True, 4), 'italic': (False, 9)}
-        self.assertEqual(sorted(fn(대표)), ['font', 'label_bold', 'marker_bold', 'size'])
+        self.assertEqual(sorted(fn(대표)), ['font', 'size'])
         self.assertEqual(대표['color'], ('#000000', 9))      # 원본은 바꾸지 않는다
         self.assertEqual(fn(None), None)
+
+    def test_quick_mode_does_not_mark_bold_fields_unresolved(self):
+        fn = self.ns['_서식통일_미확정_항목']
+        대표 = {'font': ('함초롬바탕', 9), 'size': (1500, 9)}
+        text = 'ㅇ 첫 번째 항목입니다.'
+        with patch.dict(self.g, {'작업_모드': 'unify', '선택_세부작업': None}):
+            self.assertEqual(fn(대표, text), [])
+        with patch.dict(self.g, {'작업_모드': 'unify', '선택_세부작업': {'unify_full_format': True}}):
+            self.assertEqual(fn(대표, text), ['marker_bold'])
 
 
 class XmlSurveyTest(unittest.TestCase):

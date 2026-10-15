@@ -1,12 +1,12 @@
 """Optional bridge to the MIT-licensed kordoc v4 document engine.
 
-The desktop editor remains fully functional without Node.js.  Advanced
-conversion/generation features are enabled when Node 20+ and npx are present.
+The desktop editor and direct HWPX-to-PDF remain functional without Node.js.
+Advanced parsing/generation uses Node 20+ and an explicitly installed engine.
 
 2026-10-10 실행 계약 정리(벤치마킹 kordoc 폐쇄망 설치 문서 참고):
 - 버전 범위(^4) 대신 정확한 버전을 고정한다(실행 시점마다 다른 버전이 받아지지 않게).
 - Node.js 20 이상을 확인한다(kordoc 4.21.x의 engines 조건).
-- 폐쇄망: DOCFIT_KORDOC_BIN 또는 설정 폴더의 kordoc 설치본이 있으면 그것을 먼저 쓰고, 없을 때만 npx로 받는다.
+- 폐쇄망: DOCFIT_KORDOC_BIN 또는 설정 폴더의 설치본을 우선한다. npx 다운로드는 명시적 허용 시에만 사용한다.
 - patch의 반환 코드 2(일부 미적용)는 성공과 구분해 결과 이름에 표시한다.
 """
 
@@ -15,15 +15,35 @@ from __future__ import annotations
 import difflib
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
 
-KORDOC_VERSION = "4.21.6"
+from docfit_core import kordoc_runtime
+from docfit_core.hwpx import validate_hwpx
+from docfit_core.network_policy import offline_environment, offline_mode
+
+KORDOC_VERSION = "4.21.30"
 KORDOC_PACKAGE = f"kordoc@{KORDOC_VERSION}"
 NODE_MIN_MAJOR = 20
+
+# kordoc v4.21.30의 상세 사용법(지원 포맷 표)에 명시된 입력 형식.
+# 일반 정리 파이프라인의 지원_확장자와 분리해, kordoc 전용 파일포맷 변경에서만 사용한다.
+SUPPORTED_INPUT_EXTENSIONS = frozenset({
+    ".hwp", ".hwpx", ".hml", ".pdf", ".xls", ".xlsx", ".docx", ".pptx",
+    ".png", ".jpg", ".jpeg", ".webp",
+})
+
+
+# 글자 인식(OCR)이 있어야 읽을 수 있는 그림 입력.
+IMAGE_INPUT_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".webp"})
+OCR_UNAVAILABLE_MESSAGE = (
+    "그림 파일(JPG·PNG 등)은 글자 인식(OCR)이 필요한데, 폐쇄망용 변환 엔진에는 OCR 모델이 "
+    "포함되어 있지 않습니다. HWP·HWPX·PDF·Office 문서를 사용해 주세요."
+)
 
 
 class KordocUnavailableError(RuntimeError):
@@ -31,7 +51,7 @@ class KordocUnavailableError(RuntimeError):
 
 
 def _node_major() -> int | None:
-    node = shutil.which("node.exe") or shutil.which("node")
+    node = _node_executable()
     if not node:
         return None
     try:
@@ -43,6 +63,20 @@ def _node_major() -> int | None:
         return None
 
 
+def _bundled_runtime(install: bool = False) -> tuple[str, str] | None:
+    """앱과 함께 배포한 Node.js+kordoc 꾸러미. install=True면 실행 파일 옆 ZIP을 풀어서라도 준비한다."""
+    if install:
+        return kordoc_runtime.ensure_runtime(KORDOC_VERSION)
+    return kordoc_runtime.find_runtime(KORDOC_VERSION)
+
+
+def _node_executable() -> str | None:
+    runtime = _bundled_runtime()
+    if runtime:
+        return runtime[0]
+    return shutil.which("node.exe") or shutil.which("node")
+
+
 def _local_kordoc() -> str | None:
     r"""폐쇄망용 미리 설치한 kordoc 실행 파일(환경 변수 DOCFIT_KORDOC_BIN 또는 %APPDATA%\HwpAutoDocFit\kordoc)."""
     후보 = []
@@ -52,31 +86,132 @@ def _local_kordoc() -> str | None:
     if appdata:
         bin_dir = Path(appdata) / "HwpAutoDocFit" / "kordoc" / "node_modules" / ".bin"
         후보 += [bin_dir / "kordoc.cmd", bin_dir / "kordoc"]
+    on_path = shutil.which("kordoc.cmd") or shutil.which("kordoc")
+    if on_path:
+        후보.append(Path(on_path))
     return next((str(x) for x in 후보 if x.is_file()), None)
 
 
-def _npx_command() -> str:
+def _npx_command() -> list[str]:
     command = shutil.which("npx.cmd") or shutil.which("npx")
     if not command:
         raise KordocUnavailableError(
             f"고급 문서 엔진을 사용하려면 Node.js {NODE_MIN_MAJOR} 이상이 필요합니다. "
             "https://nodejs.org 에서 LTS 버전을 설치해 주세요."
         )
-    return command
+    path = Path(command)
+    if path.suffix.lower() in {".cmd", ".bat"}:
+        # npm이 제공하는 JS 진입점을 Node에 인자 배열로 전달해
+        # Windows 배치 래퍼에서 문서 경로가 셸 문법으로 해석되는 일을 피한다.
+        node = _node_executable()
+        candidates = (
+            path.parent / "node_modules" / "npm" / "bin" / "npx-cli.js",
+            path.parent / "node_modules" / "npm" / "bin" / "npx.js",
+        )
+        script = next((candidate for candidate in candidates if candidate.is_file()), None)
+        if not node or script is None:
+            raise KordocUnavailableError(
+                "Windows npx 실행 파일의 JavaScript 진입점을 찾지 못했습니다. "
+                "Node.js를 복구 설치한 뒤 다시 실행해 주세요."
+            )
+        return [node, str(script)]
+    return [command]
+
+
+def _local_kordoc_command(path: str) -> list[str]:
+    executable = Path(path)
+    if executable.suffix.lower() in {".cmd", ".bat"}:
+        node = _node_executable()
+        candidates = (
+            executable.parent.parent / "kordoc" / "dist" / "cli.js",  # local .bin
+            executable.parent / "node_modules" / "kordoc" / "dist" / "cli.js",  # global npm
+        )
+        cli = next((candidate for candidate in candidates if candidate.is_file()), None)
+        if not node or cli is None:
+            raise KordocUnavailableError(
+                f"설치된 문서 변환 엔진을 확인할 수 없습니다: {executable}"
+            )
+        return [node, str(cli)]
+    if executable.suffix.lower() in {".js", ".mjs", ".cjs"}:
+        node = _node_executable()
+        if not node:
+            raise KordocUnavailableError(f"문서 변환 엔진 실행에 Node.js {NODE_MIN_MAJOR}+가 필요합니다.")
+        return [node, str(executable)]
+    return [path]
 
 
 def _kordoc_command() -> list[str]:
-    """실행 명령: 미리 설치한 kordoc이 있으면 그것, 없으면 고정 버전을 npx로."""
+    """실행 명령: 앱 꾸러미 → 미리 설치한 kordoc → (온라인 모드에서 명시 허용 시) npx."""
+    runtime = _bundled_runtime(install=True)
+    if runtime:
+        return list(runtime)
     major = _node_major()
     if major is None or major < NODE_MIN_MAJOR:
         raise KordocUnavailableError(
-            f"고급 문서 엔진(kordoc {KORDOC_VERSION})은 Node.js {NODE_MIN_MAJOR} 이상이 필요합니다"
+            f"문서 변환 엔진은 Node.js {NODE_MIN_MAJOR} 이상이 필요합니다"
             f"{f'(지금 {major})' if major else ''}. https://nodejs.org 에서 LTS 버전을 설치해 주세요."
         )
     local = _local_kordoc()
     if local:
-        return [local]
-    return [_npx_command(), "-y", KORDOC_PACKAGE]
+        return _local_kordoc_command(local)
+    if offline_mode() or os.environ.get("DOCFIT_ALLOW_NPX_DOWNLOAD") != "1":
+        raise KordocUnavailableError(
+            "문서 변환 엔진이 준비되어 있지 않습니다. 실행 파일과 같은 폴더에 "
+            f"{kordoc_runtime.RUNTIME_PACK_NAME}(앱과 함께 배포하는 변환 엔진 꾸러미)를 두면 "
+            "인터넷 없이 바로 사용할 수 있습니다."
+        )
+    return [*_npx_command(), "--yes", "--ignore-scripts", KORDOC_PACKAGE]
+
+
+def ocr_available() -> bool:
+    """그림·스캔 쪽 글자 인식을 쓸 수 있는지. 앱 꾸러미는 OCR 엔진을 담지 않고,
+    폐쇄망에서는 미리 넣어 둔 OCR 모델이 있어야 한다."""
+    if _bundled_runtime() or kordoc_runtime.bundled_pack():
+        return False
+    return not offline_mode() or kordoc_runtime.ocr_models_present()
+
+
+def engine_status() -> dict[str, str | bool]:
+    """UI preflight: report a bundled, locally installed or explicitly downloadable kordoc engine."""
+    if _bundled_runtime():
+        return {"available": True, "reason": f"앱에 포함된 변환 엔진 준비됨"}
+    if kordoc_runtime.bundled_pack():
+        return {"available": True, "reason": f"변환 엔진 꾸러미 준비됨(처음 쓸 때 설치)"}
+    local = _local_kordoc()
+    npx_allowed = not offline_mode() and os.environ.get("DOCFIT_ALLOW_NPX_DOWNLOAD") == "1"
+    if not local and not npx_allowed:
+        # 사용할 엔진이 없는 경우 버전 조회 프로세스를 매번 실행할 필요가 없다.
+        return {
+            "available": False,
+            "reason": f"변환 엔진 꾸러미 필요 ({kordoc_runtime.RUNTIME_PACK_NAME}을 실행 파일 옆에 두세요)",
+        }
+    major = _node_major()
+    if major is None:
+        return {
+            "available": False,
+            "reason": f"Node.js {NODE_MIN_MAJOR}+ 설치 필요",
+        }
+    if major < NODE_MIN_MAJOR:
+        return {
+            "available": False,
+            "reason": f"Node.js {NODE_MIN_MAJOR}+ 필요 (현재 {major})",
+        }
+    if local:
+        try:
+            _local_kordoc_command(local)
+        except KordocUnavailableError as exc:
+            return {"available": False, "reason": str(exc)}
+        return {"available": True, "reason": "변환 엔진 준비됨"}
+    if npx_allowed:
+        try:
+            _npx_command()
+        except KordocUnavailableError as exc:
+            return {"available": False, "reason": str(exc)}
+        return {"available": True, "reason": f"변환 엔진(첫 실행 시 다운로드)"}
+    return {
+        "available": False,
+        "reason": f"변환 엔진 설치 필요 (Node.js {NODE_MIN_MAJOR}+)",
+    }
 
 
 def _startupinfo():
@@ -91,8 +226,13 @@ def _startupinfo():
 def run_kordoc(arguments: list[str], timeout: int = 600,
                 acceptable_codes: tuple[int, ...] = (0, 2)) -> subprocess.CompletedProcess[str]:
     command = [*_kordoc_command(), *map(str, arguments)]
+    # 폐쇄망 모드에서는 kordoc의 모델 내려받기·npm 접속·onnxruntime 원격 전송을 막는다.
+    env = offline_environment() if offline_mode() else dict(os.environ)
+    env.setdefault("ORT_DISABLE_TELEMETRY", "1")
+    env["KORDOC_MODEL_CACHE"] = str(kordoc_runtime.model_cache_dir())
     completed = subprocess.run(
         command,
+        env=env,
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -103,13 +243,58 @@ def run_kordoc(arguments: list[str], timeout: int = 600,
     )
     # patch는 일부 미적용 항목이 있으면 2를 반환하지만 결과 파일은 정상 생성한다.
     if completed.returncode not in acceptable_codes:
-        message = (completed.stderr or completed.stdout or "kordoc 실행 실패").strip()
+        message = (completed.stderr or completed.stdout or "문서 변환 실패").strip()
         raise RuntimeError(message)
     return completed
 
 
 def engine_version() -> str:
     return run_kordoc(["--version"], timeout=120).stdout.strip()
+
+
+def check_engine_contract() -> dict[str, Any]:
+    """Check the installed engine explicitly without changing legacy Path APIs."""
+    _bundled_runtime(install=True)
+    major = _node_major()
+    if major is None or major < NODE_MIN_MAJOR:
+        raise KordocUnavailableError(f"Node.js {NODE_MIN_MAJOR} 이상이 필요합니다.")
+    observed = engine_version()
+    match = re.search(r"(?<![\d.])(\d+\.\d+\.\d+)(?![\d.])", observed)
+    version = match.group(1) if match else None
+    if version != KORDOC_VERSION:
+        raise KordocUnavailableError(
+            f"변환 엔진 버전 불일치: 필요 {KORDOC_VERSION}, 설치 {observed!r}")
+    return {"engine": "kordoc", "version": version, "node_major": major,
+            "compatible": True}
+
+
+def run_kordoc_result(arguments: list[str], timeout: int = 600) -> dict[str, Any]:
+    """Version-checked structured result; exit 2 always means partial success.
+
+    Existing run_kordoc and Path-returning facades remain compatible.
+    """
+    contract = check_engine_contract()
+    completed = run_kordoc(arguments, timeout=timeout)
+    try:
+        payload = json.loads(completed.stdout)
+    except (ValueError, TypeError):
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {"data": payload}
+
+    def items(key):
+        value = payload.get(key, [])
+        return value if isinstance(value, list) else [value]
+
+    warnings = items("warnings")
+    if completed.stderr.strip():
+        warnings.append(completed.stderr.strip())
+    skipped = items("skipped")
+    partial = completed.returncode == 2 or bool(skipped)
+    return {"status": "partial" if partial else "complete",
+            "returncode": completed.returncode, "engine": contract,
+            "warnings": warnings, "skipped": skipped, "result": payload,
+            "stdout": completed.stdout}
 
 
 def parse_document(source: str | Path, target: str | Path, *, output_format: str = "markdown",
@@ -123,6 +308,55 @@ def parse_document(source: str | Path, target: str | Path, *, output_format: str
         args.append("--ocr")
     run_kordoc(args)
     return Path(target)
+
+
+def convert_to_hwpx(source: str | Path, target: str | Path, *, preset: str = "보고서") -> Path:
+    """kordoc이 지원하는 문서를 Markdown으로 파싱한 뒤 HWPX로 생성한다.
+
+    임시 산출물은 시스템 임시 폴더에만 두고 원본은 수정하지 않는다.
+    결과 경로는 호출자가 충돌 없는 새 파일로 지정해야 한다.
+    """
+    source, target = Path(source), Path(target)
+    if source.is_symlink() or not source.is_file():
+        raise ValueError("변환 원본이 일반 파일이 아니거나 심볼릭 링크입니다.")
+    if source.suffix.lower() not in SUPPORTED_INPUT_EXTENSIONS:
+        raise ValueError(f"변환할 수 없는 입력 형식입니다: {source.suffix or '(확장자 없음)'}")
+    ocr = ocr_available()
+    if source.suffix.lower() in IMAGE_INPUT_EXTENSIONS and not ocr:
+        raise KordocUnavailableError(OCR_UNAVAILABLE_MESSAGE)
+    if target.suffix.lower() != ".hwpx":
+        raise ValueError("HWPX 결과 파일 확장자는 .hwpx여야 합니다.")
+    if source.resolve() == target.resolve():
+        raise ValueError("원본 파일을 덮어쓸 수 없습니다.")
+    if target.exists():
+        raise FileExistsError(f"결과 파일이 이미 있습니다: {target.name}")
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="docfit_kordoc_convert_") as folder:
+        temp_dir = Path(folder)
+        markdown = temp_dir / "document.md"
+        parse_document(source, markdown, output_format="markdown", ocr=ocr and source.suffix.lower() == ".pdf")
+        if not markdown.is_file():
+            raise RuntimeError("문서를 읽은 결과가 만들어지지 않았습니다.")
+        # 같은 볼륨에 임시 결과를 두어 OneDrive/다른 드라이브에서도 원자적으로
+        # 최종 이름을 확보할 수 있게 한다. hard link가 기존 결과를 덮어쓰지 않는다.
+        with tempfile.NamedTemporaryFile(prefix=".docfit_", suffix=".hwpx", dir=target.parent, delete=False) as stream:
+            generated = Path(stream.name)
+        generated.unlink()
+        try:
+            generate_hwpx(markdown, preset, generated, image_dir=temp_dir)
+            if not generated.is_file() or generated.stat().st_size == 0:
+                raise RuntimeError("변환 엔진이 올바른 HWPX 결과를 만들지 못했습니다.")
+            try:
+                validate_hwpx(generated)
+            except (OSError, ValueError) as exc:
+                raise RuntimeError(f"변환 결과가 올바른 HWPX 문서가 아닙니다: {exc}") from exc
+            os.link(generated, target)
+        finally:
+            generated.unlink(missing_ok=True)
+    if not target.is_file() or target.stat().st_size == 0:
+        raise RuntimeError("변환 엔진이 올바른 HWPX 결과를 만들지 못했습니다.")
+    return target
 
 
 def export_advanced_markdown(source: str | Path, pages: str | None = None) -> Path:

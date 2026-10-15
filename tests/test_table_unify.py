@@ -42,6 +42,18 @@ class TableUnifyTests(unittest.TestCase):
         fixes, _ = plan_table_fixes([grid(0, cells)])
         self.assertEqual([(f['area'], f['field'], f['value']) for f in fixes], [(21, 'size', 1300)])
 
+    def test_font_cleanup_does_not_flatten_mixed_run_emphasis(self):
+        cells = [cell(i, '본문 내용입니다') for i in range(8)]
+        mixed = cell(30, '본문내용강조', font='굴림')
+        mixed['paras'][0]['runs'] = [
+            (0, 5, '굴림', 1300, '#000000', False),
+            (5, 6, '굴림', 1300, '#FF0000', True),
+        ]
+        fixes, _ = plan_table_fixes([grid(0, cells + [mixed])])
+        self.assertTrue(fixes)
+        self.assertTrue(all(fix['field'] == 'font' for fix in fixes))
+        self.assertEqual(mixed['paras'][0]['runs'][1][4:], ('#FF0000', True))
+
     def test_header_row_is_compared_separately(self):
         header = [cell(i, f'구분{i}', bold=True, header=True, fill='3') for i in range(5)]
         header.append(cell(9, '안굵음', bold=False, header=True, fill='3'))

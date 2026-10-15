@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 import zipfile
 
 from docfit_core.asterisk_superscript import applies_to, mark_spans
+from tests.temp_support import tracked_tempdir
 
 HP = 'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"'
 HS = 'xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"'
@@ -50,7 +51,7 @@ class DocumentTest(unittest.TestCase):
         base = copy.deepcopy(next(iter(chars))); base.set('id', '0'); base.set('height', '1500')
         chars.insert(0, base)
         section = f'<hs:sec {HS} {HP}>{body}</hs:sec>'.encode('utf-8')
-        out = Path(tempfile.mkdtemp(prefix='docfit-sup-')) / 'in.hwpx'
+        out = Path(tracked_tempdir(self, 'docfit-sup-')) / 'in.hwpx'
         with zipfile.ZipFile(out, 'w') as z:
             z.writestr('mimetype', 'application/hwp+zip')
             z.writestr('Contents/header.xml', ns['ET'].tostring(header, encoding='utf-8', xml_declaration=True))

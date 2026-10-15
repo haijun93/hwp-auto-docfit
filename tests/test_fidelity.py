@@ -1,6 +1,7 @@
 """원본 보존 경로: 무손실 보관·최소 변경 쓰기·원문 위치 맵·내용 패치·다층 검증·해석 범위."""
 from pathlib import Path
 import shutil
+import io
 import tempfile
 import unittest
 import zipfile
@@ -80,6 +81,23 @@ class FidelityTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             write_package(self.snapshot, {}, self.source)
 
+    def test_streaming_zip_descriptor_is_explicitly_refused(self):
+        class StreamingBuffer(io.BytesIO):
+            def seekable(self):
+                return False
+
+            def seek(self, *args):
+                raise io.UnsupportedOperation("streaming")
+
+        stream = StreamingBuffer()
+        with zipfile.ZipFile(stream, "w") as archive:
+            archive.writestr("mimetype", "application/hwp+zip")
+        path = self.folder / "streaming.hwpx"
+        path.write_bytes(stream.getvalue())
+        from docfit_core.fidelity.package import UnsupportedPackage
+        with self.assertRaisesRegex(UnsupportedPackage, "Data Descriptor"):
+            PackageSnapshot.load(path)
+
     def test_copy_exact_and_binary_hwp(self):
         report = copy_exact(self.source, self.folder / "copy.hwpx")
         self.assertEqual(report["verdict"], "검증된 완전 일치")
@@ -139,6 +157,28 @@ class FidelityTest(unittest.TestCase):
         # 바깥 문단(표가 든 문단)의 줄 배치 캐시는 그대로다.
         self.assertTrue(result.by_path["/p[1]"].child("linesegarray"))
 
+    def test_sequential_length_changing_edits_rebuild_offsets(self):
+        target = self.folder / "sequential.hwpx"
+        changes = [
+            ("/p[0]", "9월", "2026년 10월"),
+            ("/p[0]", "계획", "정비 추진 계획"),
+            ("/p[2]", "B", "긴 이름<C>"),
+            ("/p[2]", "사업", "완료"),
+        ]
+        report = apply_patch(self.snapshot, self.plan(*[
+            {"op": "replace_text", "part": "Contents/section0.xml",
+             "object": path, "old": old, "new": new}
+            for path, old, new in changes]), target)
+        self.assertEqual(report["status"], "complete", report)
+        self.assertEqual(report["verdict"], "허용한 변화만 확인", report)
+        result = self.section(target)
+        self.assertEqual(result.paragraph_text(result.by_path["/p[0]"]),
+                         "첫째 문단 2026년 10월 정비 추진 계획(참고)")
+        self.assertEqual(result.paragraph_text(result.by_path["/p[2]"]),
+                         "A & 긴 이름<C> 완료")
+        self.assertEqual(len(report["layout_invalidated"]), 2)
+        self.assertEqual(self.source.read_bytes(), self.snapshot.data)
+
     def test_strict_mode_does_not_write_partial_results(self):
         target = self.folder / "strict.hwpx"
         good = {"op": "replace_text", "part": "Contents/section0.xml", "object": "/p[0]", "old": "9월", "new": "10월"}
@@ -175,6 +215,17 @@ class FidelityTest(unittest.TestCase):
             apply_patch(self.snapshot, {"operations": []})
 
     # ---- 검증 --------------------------------------------------------------
+    def test_converted_binary_provenance_does_not_claim_binary_fidelity(self):
+        target = self.folder / "converted-patched.hwpx"
+        report = apply_patch(self.snapshot, self.plan(
+            {"op": "replace_text", "part": "Contents/section0.xml",
+             "object": "/p[0]", "old": "9월", "new": "10월"}), target,
+            source_provenance={"original_format": "hwp", "converted_format": "hwpx",
+                               "conversion_engine": "COM"})
+        self.assertEqual(report["verdict"], "변환 후 패치(원본 바이너리 불일치)")
+        self.assertEqual(report["verification"]["package_verdict"], "허용한 변화만 확인")
+        self.assertEqual(report["verification"]["preservation_scope"], "converted_hwpx")
+
     def test_verify_detects_unexpected_changes(self):
         target = self.folder / "patched3.hwpx"
         report = apply_patch(self.snapshot, self.plan(
@@ -190,6 +241,7 @@ class FidelityTest(unittest.TestCase):
         self.assertEqual(verdict["layers"][1]["status"], "failed")
         # 바꾼 파트 안에서 허용하지 않은 속성이 바뀐 경우
         section = result.read("Contents/section0.xml").replace(b'rowCnt="1"', b'rowCnt="2"')
+        tampered = self.folder / "tampered_attributes.hwpx"
         write_package(result, {"Contents/section0.xml": section}, tampered)
         verdict = verify_patch(self.snapshot, tampered, report)
         self.assertEqual(verdict["layers"][2]["status"], "failed")

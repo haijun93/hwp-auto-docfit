@@ -1,19 +1,27 @@
 # 한글편집 후처리
 
+알파 개발 안내: [표·문서 서식 학습과 범정부오피스 호환 마크다운](docs/STYLE_LEARNING_AND_BEOMGOV_MARKDOWN.md).
+`#!범정부오피스` 라벨 입력으로 숫자·로마자 소제목 표와 콜론 구분 표를 만들고,
+`scripts/learn_style_corpus.py`로 HWPX 자료의 유형·출처·평가군을 정리할 수 있습니다.
+
 ### 보고서 마무리 30분, 버튼 한 번으로.
 
 줄 끝에서 갈라진 단어, 제각각인 글꼴, 삐뚤어진 내어쓰기, 한두 줄 넘친 마지막 쪽까지.
 **다 쓴 한글(HWP·HWPX) 보고서를 넣고 「정리 시작」만 누르세요.** 설치된 한/글을 자동으로 조작해 공문서 모양으로 다듬어 줍니다.
 
 <p>
-<img alt="최신 버전" src="https://img.shields.io/badge/%EC%B5%9C%EC%8B%A0-v1.74%20Beta%201-2563eb">
+<img alt="현재 공개 베타 v1.74 Beta 1" src="https://img.shields.io/badge/%ED%98%84%EC%9E%AC%20%EA%B3%B5%EA%B0%9C%20%EB%B2%A0%ED%83%80-v1.74%20Beta%201-2563eb">
 <img alt="무료" src="https://img.shields.io/badge/%EA%B0%80%EA%B2%A9-%EB%AC%B4%EB%A3%8C-16a34a">
 <img alt="Windows 10·11" src="https://img.shields.io/badge/Windows-10%C2%B711-0078d4">
 <img alt="한/글 2020" src="https://img.shields.io/badge/%ED%95%9C%2F%EA%B8%80-2020-0ea5e9">
 <img alt="문서 외부 전송 없음" src="https://img.shields.io/badge/%EB%AC%B8%EC%84%9C-%EC%99%B8%EB%B6%80%20%EC%A0%84%EC%86%A1%20%EC%97%86%EC%9D%8C-64748b">
 </p>
 
-설치 없이 실행 파일 하나로 시작합니다 · [변경 사항](releases/v1.74-beta.1.md) · [GitHub](https://github.com/haijun93/hwp-auto-docfit) · [GitLab](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
+설치 없이 실행 파일 하나로 시작합니다 · [v1.74 Beta 1 변경 사항](releases/v1.74-beta.1.md) · [GitHub 저장소](https://github.com/haijun93/hwp-auto-docfit) · [GitLab 저장소](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
+
+이전 **1.74 Alpha 5**는 숫자·본문 보존, 공통 원자 설정 저장, ZIP 입력 제한·최적화, 직함·이름 의미단위를 보완합니다.
+[알파 변경 사항](docs/ALPHA7_FLOATING_CONVERSION_2026-10-14.md) · [전환 현황](docs/FLUTTER_MIGRATION_AUDIT.md) · [시험 보고서](docs/FLUTTER_TEST_REPORT.md).
+공개 베타 표기는 그대로이며, 전체 UI 전환과 Windows 실문서 검증은 진행 중입니다.
 
 [![프로그램 사용 시연 영상 (약 5분). 클릭하면 고화질 영상이 열립니다.](docs/media/overview-demo.gif)](docs/media/overview-demo.mp4)
 
@@ -25,7 +33,7 @@
 
 | ⏱ 아끼는 시간 | 🚀 처리 속도 | ✅ 글자 보존 | 🔒 개인정보 |
 |:---:|:---:|:---:|:---:|
-| 3쪽 보고서 한 건에 **약 21분**<br><sub>손으로 정리할 때(쪽당 8분 추정) 대비</sub> | Beta 11보다 **약 9% 빨라짐**<br><sub>같은 PC·같은 문서 실측(249.5초 → 227.5초)</sub> | 34쪽 실제 취합 문서<br>**본문 글자 변형 0건** | 문서를 **외부로 보내지 않음**<br><sub>내 PC 안에서만 처리</sub> |
+| 3쪽 보고서 한 건에 **약 21분**<br><sub>손으로 정리할 때(쪽당 8분 추정) 대비</sub> | v1.73.1 대비 **최대 약 56% 단축**<br><sub>17쪽 서식 통일 실측(116.2초 → 51.2초)</sub> | 34쪽 실제 취합 문서<br>**본문 글자 변형 0건** | 문서를 **외부로 보내지 않음**<br><sub>내 PC 안에서만 처리</sub> |
 
 ---
 
@@ -412,7 +420,7 @@ README 맨 위의 전후 비교처럼 바꾸는 실습입니다. 아래 안내 �
 
 <a id="choose-mode"></a>
 
-## 3. 세 가지 작업 중 무엇을 고를까요?
+## 3. 기본 문서 정리 작업 중 무엇을 고를까요?
 
 | 원하는 일 | 고를 작업 | 기준 |
 |---|---|---|
@@ -420,13 +428,21 @@ README 맨 위의 전후 비교처럼 바꾸는 실습입니다. 아래 안내 �
 | 여러 사람이 쓴 문서에서 유독 다른 글꼴·크기 등을 맞추고 싶어요. | **서식 통일** | 같은 역할의 문장들이 많이 사용한 서식 |
 | 정해진 보고서 양식으로 바꾸고 마무리까지 하고 싶어요. | **한 번에 적용** | 기본 서식 또는 내가 등록한 예시 서식 |
 
+### 알파 시험 기능: 파일포맷 변경
+
+알파 빌드에는 별도의 **파일포맷 변경** 카드가 있습니다. 입력 파일을 추가하고 카드를 선택하면 별도 플로팅 도넛 창이 열립니다. HWPX·PDF·DOCX·EPUB 중 결과 형식을 고르면 창이 닫히고 선택이 반영됩니다. `변환 시작`으로 실행하며, 가운데 취소·Esc·창 바깥 클릭은 기존 선택을 유지합니다. `변환 포맷 선택` 버튼으로 다시 열 수 있습니다. 모든 경로에서 원본을 덮어쓰지 않습니다.
+
+**HWPX → PDF는 한/글 내장 저장을 직접 사용합니다.** 앱의 기존 필수 환경인 한/글 2020 COM 외에 Node.js·kordoc·Pandoc·PDF 프린터를 추가 설치하지 않아도 됩니다. 한/글 자체가 앱에 내장된 것은 아닙니다.
+
+나머지 입력은 HWP/HWPX/HML, PDF, XLS/XLSX, DOCX/PPTX 및 PNG/JPG/JPEG/WebP입니다. HWPX 출력은 Node.js 20 이상과 사전 설치된 kordoc을, HWPX 이외 입력의 PDF 출력은 kordoc 파싱 후 한/글 COM 렌더링을 사용합니다. 실행 중 kordoc 자동 다운로드는 기본 차단되어 있습니다. DOCX·EPUB 출력에는 kordoc과 별도 설치된 Pandoc이 필요하며 도구가 없으면 선택이 비활성화됩니다. 이런 재생성 경로는 표·글꼴·페이지 배치가 원본과 다를 수 있고 텍스트층 없는 PDF는 OCR 품질에 영향을 받으므로 결과를 확인해야 합니다. 이 기능은 아직 알파 시험 단계이며 베타 공개 기능으로 안내하지 않습니다. [화면과 검증 결과](docs/ALPHA7_FLOATING_CONVERSION_2026-10-14.md)를 확인하세요.
+
 **자간**은 글자 사이 간격, **서식**은 글꼴·크기·색·문단 간격·표 모양 등을 뜻합니다.
 **내어쓰기**는 둘째 줄부터의 시작 위치를 맞추는 방식입니다. 기본 기준은 괄호 라벨이면 항목기호 뒤 `(`, 콜론 라벨이면 콜론 뒤 본문 첫 글자입니다.
 
 처음에는 위 실습의 옵션으로 시작하세요. 아래 설명은 결과를 조절하고 싶을 때만 펼쳐 읽으면 됩니다.
 
 <details>
-<summary>세 가지 작업의 옵션과 차이 자세히 보기</summary>
+<summary>세 가지 문서 정리 작업의 옵션과 차이 자세히 보기</summary>
 
 ### 자간 정리
 
@@ -802,3 +818,5 @@ PC를 옮길 때는 앱을 종료하고 이 폴더를 백업하세요. **서식 
 
 이 프로그램의 소스 코드는 **MIT 라이선스**를 따릅니다([LICENSE](LICENSE)).
 Copyright (c) 2026 haijun93 (마포구청 공혁준). 함께 쓰는 외부 구성 요소는 위 표와 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)의 각 라이선스를 따릅니다.
+
+개발판 **1.74 Alpha 7**은 플로팅 파일포맷 선택과 HWPX 직접 PDF 저장을 제공합니다. 전체 설정은 Flutter 화면이며 Windows 네이티브 시제품 기반에는 독립 Python 백엔드·인증 IPC·문서 입력 및 HWPX 분석이 있습니다. 네이티브 runner의 실제 HWP 처리 엔진 연결과 일부 Tk 대화상자 이관은 남아 있습니다. [전환 현황](docs/FLUTTER_NATIVE_AUDIT.md)과 [Alpha 7 검증 결과](docs/ALPHA7_FLOATING_CONVERSION_2026-10-14.md)를 확인하세요.
