@@ -52,6 +52,18 @@ jobs:
           Get-Content -LiteralPath "windows-tests.log" -Tail 200
           exit $testExit
 
+      - name: Publish regression diagnostics on failure
+        if: failure()
+        shell: pwsh
+        run: |
+          if (Test-Path -LiteralPath "windows-tests.log") {
+            $details = (Get-Content -LiteralPath "windows-tests.log" -Tail 160) -join "`n"
+            $escaped = $details.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error title=Windows regression details::$escaped"
+          } else {
+            Write-Output "::error title=Windows regression details::No test log produced; failure occurred before unittest started."
+          }
+
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
