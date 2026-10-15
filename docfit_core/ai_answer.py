@@ -116,9 +116,35 @@ def _numbered_in_context(line, text):
     return match
 
 
-def looks_like_ai_answer(text: str) -> bool:
+def _markdown_headings(text: str) -> str:
+    """Normalize spaced hash groups and closing ATX marks outside code."""
+    pattern = re.compile(r"(?m)^([ ]{0,3})(#{1,6}(?:[ \t]+#{1,6})*)[ \t]+(\S.*)$")
+    def normalize(value):
+        def replace(match):
+            hashes = match[2].replace(" ", "").replace("\t", "")
+            if len(hashes) > 6:
+                return match[0]
+            body = re.sub(r"[ \t]+#+[ \t]*$", "", match[3])
+            return match[1] + hashes + " " + body
+        return pattern.sub(replace, value)
+    return _outside_code(text, normalize)
+
+
+def _has_markdown_heading(text: str) -> bool:
+    fenced = False
+    for line in text.splitlines():
+        if _CODE_FENCE.match(line.strip()):
+            fenced = not fenced
+        elif not fenced and _MD_HEADING.match(line.strip()):
+            return True
+    return False
+
+
+def looks_like_ai_answer(text: str, *, markdown_document=False) -> bool:
     """붙여넣은 글이 AI 채팅 답변(마크다운 구조)처럼 보이는지. 라벨 형식·이미 □ ㅇ 항목기호인 글은 아니다."""
     text = _strip_invisible(text or "")
+    if markdown_document and _has_markdown_heading(_markdown_headings(text)):
+        return True  # Explicit .md headings outrank notes/already-report heuristics.
     if not text.strip() or looks_labeled(text) or _ALREADY_REPORT.search(text):
         return False
     hits = {match.start() for match in _STRONG_MD.finditer(text)}
@@ -355,21 +381,28 @@ def apply_marker_scheme(blocks: list[dict]) -> None:
         b["marker"] = b["level"] = marker
 
 
-def parse_ai_answer(text: str, *, strip_chat_frame=False) -> list[dict]:
+def parse_ai_answer(text: str, *, strip_chat_frame=False, markdown_document=False) -> list[dict]:
     """AI 답변 글을 labeled_text 블록(title·box·para·table)으로 바꾼다."""
+    if markdown_document:
+        text = _markdown_headings(text)
     elements = _split_elements(text, strip_chat_frame=strip_chat_frame)
     if not elements:
         return []
     _classify(elements)
     _rank_headings(elements)
+    if markdown_document:
+        levels = sorted({e["key"][1] for e in elements if e["kind"] == "heading" and e["key"][0] == "md"})
+        for e in elements:
+            if e["kind"] == "heading" and e["key"][0] == "md":
+                e["rank"] = levels.index(e["key"][1])
     blocks: list[dict] = []
     # 문서 제목: 맨 앞의 단 하나뿐인 최상위 마크다운 표제(# 제목) 또는 굵은 첫 줄
     first = elements[0]
     title_text = None
-    if first["kind"] == "heading" and first["key"][0] in ("md", "bold") and first.get("rank") == 0:
+    if first["kind"] == "heading" and first["key"][0] in ("md", "bold") and first.get("rank") == 0 and (not markdown_document or first["key"] == ("md", 1)):
         same = [e for e in elements if e["kind"] == "heading" and e.get("rank") == 0 and e["key"] == first["key"]]
         others = [e for e in elements if e["kind"] == "heading" and e is not first]
-        if len(same) == 1 and others:
+        if len(same) == 1 and (others or markdown_document):
             title_text = first["text"]
             elements = elements[1:]
             for e in elements:
@@ -487,9 +520,9 @@ def blocks_to_plain_text(blocks: list[dict]) -> str:
     return "\n".join(lines).strip()
 
 
-def ai_answer_to_labeled_text(text: str, *, strip_chat_frame=False) -> str:
-    return blocks_to_labeled_text(parse_ai_answer(text, strip_chat_frame=strip_chat_frame))
+def ai_answer_to_labeled_text(text: str, *, strip_chat_frame=False, markdown_document=False) -> str:
+    return blocks_to_labeled_text(parse_ai_answer(text, strip_chat_frame=strip_chat_frame, markdown_document=markdown_document))
 
 
-def ai_answer_to_outline_text(text: str, *, strip_chat_frame=False) -> str:
-    return blocks_to_plain_text(parse_ai_answer(text, strip_chat_frame=strip_chat_frame))
+def ai_answer_to_outline_text(text: str, *, strip_chat_frame=False, markdown_document=False) -> str:
+    return blocks_to_plain_text(parse_ai_answer(text, strip_chat_frame=strip_chat_frame, markdown_document=markdown_document))

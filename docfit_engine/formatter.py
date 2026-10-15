@@ -9162,6 +9162,16 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             """현재 hwp에 새 빈 문서를 만들어 텍스트를 문단 단위로 넣고 HWPX로 저장한다."""
             if hwp.Run("FileNew") is False:
                 raise RuntimeError("빈 문서를 만들지 못했습니다.")
+            if looks_labeled(텍스트):
+                블록들 = parse_labeled_text(텍스트)
+                라벨블록_한글삽입(hwp, 블록들)
+                if hwp.SaveAs(str(대상경로), "HWPX", "") is False:
+                    raise RuntimeError("텍스트를 HWPX로 저장하지 못했습니다.")
+                if any(b["kind"] in _라벨_블록_종류 for b in 블록들):
+                    if hwp.Clear(1) is False:
+                        raise RuntimeError("서식 표 후처리를 위해 작업 문서를 닫지 못했습니다.")
+                    라벨_서식표_적용(대상경로)
+                return
             줄들 = 텍스트.replace("\r\n", "\n").replace("\r", "\n").split("\n")
             for 순번, 줄 in enumerate(줄들):
                 if 줄:
@@ -9225,16 +9235,16 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     글쓰기(f"{블록['marker']} {블록['text']}".strip())
         return bind_function(라벨블록_한글삽입, _docfit_namespace)
     if _docfit_symbol == 'AI답변_개조식_변환':
-        def AI답변_개조식_변환(텍스트, 라벨형식=False):
+        def AI답변_개조식_변환(텍스트, 라벨형식=False, 마크다운문서=False):
             """AI 답변으로 보이면 (변환한 글, True), 아니면 (원문, False). 라벨형식=True면 제목:/개요:/네모:/원: 라벨 글로 바꾼다."""
-            if not 알파_AI답변변환_사용 or not looks_like_ai_answer(텍스트):
+            if (not 마크다운문서 and not 알파_AI답변변환_사용) or not looks_like_ai_answer(텍스트, markdown_document=마크다운문서):
                 return 텍스트, False
             try:
                 if 라벨형식:
-                    변환 = ai_answer_to_labeled_text(텍스트)
+                    변환 = ai_answer_to_labeled_text(텍스트, markdown_document=마크다운문서)
                     if looks_labeled(변환):
                         return 변환, True
-                변환 = ai_answer_to_outline_text(텍스트)
+                변환 = ai_answer_to_outline_text(텍스트, markdown_document=마크다운문서)
             except Exception as 오류:
                 로그(f"AI 답변 변환 실패(글을 그대로 넣음): {오류}")
                 return 텍스트, False
@@ -9333,7 +9343,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 # 이미지가 없는 AI 답변형 마크다운은 엔진 대신 라벨 블록으로 변환해 서식 적용 경로에 넘긴다. 이미지가 있으면 엔진이 처리한다.
                 try:
                     원문 = 텍스트파일_읽기(원본경로)
-                    변환문, 변환됨 = ("", False) if re.search(r"!\[[^\]]*\]\(", 원문) else AI답변_개조식_변환(원문, 라벨형식=True)
+                    변환문, 변환됨 = ("", False) if re.search(r"!\[[^\]]*\]\(", 원문) else AI답변_개조식_변환(원문, 라벨형식=True, 마크다운문서=True)
                 except Exception:
                     변환문, 변환됨 = "", False
                 if 변환됨:
