@@ -18,6 +18,7 @@ import 'features/diagrams/diagram_editor_screen.dart';
 import 'features/flows/flow_editor_screen.dart';
 import 'features/progress/live_progress.dart';
 import 'features/settings/settings_dialog.dart';
+import 'features/stages/stage_board.dart';
 
 export 'core/api/abbreviation_api.dart' show ApiCall;
 
@@ -2192,21 +2193,12 @@ class _WorkspaceState extends State<Workspace> {
           if (stagesOpen) ...[
             const SizedBox(height: 12),
             const Divider(),
-            for (var i = 0; i < stages.length; i++)
-              CheckboxListTile(
-                contentPadding: EdgeInsets.zero,
-                controlAffinity: ListTileControlAffinity.leading,
-                value: stages[i]['on'] == true,
-                onChanged: locked
-                    ? null
-                    : (v) =>
-                          command('set_stage', [stages[i]['key'], v == true]),
-                title: Text('${i + 1}. ${stages[i]['label']}'),
-                subtitle: Text(
-                  '${stages[i]['example'] ?? ''}',
-                  style: const TextStyle(fontSize: 12, color: _muted),
-                ),
-              ),
+            const SizedBox(height: 8),
+            StageBoard(
+              stages: stages,
+              locked: locked,
+              onToggle: (key, on) => command('set_stage', [key, on]),
+            ),
             const Divider(),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,

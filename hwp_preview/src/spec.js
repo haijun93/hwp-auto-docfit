@@ -4,7 +4,7 @@
 // { page:{left,right,top,bottom}(mm),
 //   paragraphs:[{ text, marker, indent(앞 칸 수), hanging(bool), label(굵게 할 앞부분 글),
 //                 char:{font,size(pt),bold,spacing(%),ratio(%),color}, markerChar:{font,size,bold},
-//                 para:{line(%),before(pt),align}, focus(bool) }],
+//                 para:{line(%),before(pt),align,breakUnit('word'|'char')}, focus(bool) }],
 //   table:{ rows:[[글]], header:{font,size,bold,fill}, body:{font,size,bold}, focus } }
 // 단위(rhwp 실측, 한/글 HWP5와 같음): 글자 크기·문단 위 간격 = pt×100, 내어쓰기 = pt×200, 여백 = HWPUNIT(1mm≈283.46).
 export const FONTS=['한컴돋움','휴먼명조','HY견고딕','HY헤드라인M','함초롬돋움','함초롬바탕','돋움','바탕','굴림','맑은 고딕','나눔고딕'];
@@ -47,7 +47,7 @@ export function plan(spec,measure){
   }else runs.push({start:prefix.length,end:text.length,props:charProps(ch)});
   const para=p.para??{};
   const props={alignment:ALIGN[para.align]??'justify',lineSpacing:clamp(+para.line,50,500,160),lineSpacingType:'Percent',
-   spacingBefore:Math.round(clamp(+para.before,0,100,0)*100),spacingAfter:0,koreanBreakUnit:0,marginLeft:0,indent:0};
+   spacingBefore:Math.round(clamp(+para.before,0,100,0)*100),spacingAfter:0,koreanBreakUnit:para.breakUnit==='char'?1:0,marginLeft:0,indent:0};
   // 한/글 내어쓰기: 둘째 줄부터 항목기호 뒤 첫 글자 자리에서 시작(앞 칸 + 기호 + 빈칸 폭).
   if(p.hanging!==false&&prefix&&measure){
    const px=measure(cssFont(mk),prefix);

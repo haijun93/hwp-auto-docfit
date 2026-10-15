@@ -21,6 +21,10 @@ test('항목기호 문단은 한/글 단위(pt×100, 내어쓰기 pt×200)로 �
  assert.equal(para.props.indent,-Math.round(30*0.75*200)); // 앞 칸+기호+빈칸 3글자 폭 30px
  assert.equal(para.props.koreanBreakUnit,0);               // 어절 단위 줄 나눔
 });
+test('세부 작업 미리보기는 글자 단위 줄 나눔도 그린다',()=>{
+ const ops=plan({paragraphs:[{text:'가나다',para:{breakUnit:'char'}}]},measure);
+ assert.equal(ops[1].props.koreanBreakUnit,1);
+});
 test('여백은 HWPUNIT, 값은 범위를 벗어나지 않는다',()=>{
  const ops=plan({page:{left:20,right:20,top:12.7,bottom:12.7},paragraphs:[{text:'가',char:{size:999,font:'bad"font',color:'red'}}]},measure);
  assert.equal(ops[0].def.marginLeft,Math.round(20*7200/25.4));

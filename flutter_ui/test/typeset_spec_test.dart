@@ -56,4 +56,22 @@ void main() {
     final table = elementSpec(['table', 'header'], '표 머리글', {'size': '14pt'})!;
     expect(((table['table'] as Map)['header'] as Map)['size'], 14);
   });
+
+  test('stage spec shows each stage before and after', () {
+    Map para(String key, bool applied, [int at = 0]) =>
+        (stageSpec(key, applied: applied)!['paragraphs'] as List)[at] as Map;
+    // 자간: 전에는 글자 단위로 갈라지고, 뒤에는 어절 단위 + 자간 조정.
+    expect((para('body_spacing', false)['para'] as Map)['breakUnit'], 'char');
+    expect((para('body_spacing', true)['para'] as Map)['breakUnit'], isNull);
+    expect(para('body_spacing', true)['focus'], isTrue);
+    // 서식통일: 다른 글꼴 한 문단만 다수 서식으로 맞춘다.
+    expect((para('style_unify', false, 1)['char'] as Map)['font'], '굴림');
+    expect((para('style_unify', true, 1)['char'] as Map)['font'], '한컴돋움');
+    // 쪽 맞춤 마지막 수단: 줄 간격 최솟값 140%.
+    expect((para('page_fit', true, 1)['para'] as Map)['line'], 140);
+    expect(para('hanging_indent', false)['hanging'], isFalse);
+    final table = stageSpec('table_style', applied: true)!['table'] as Map;
+    expect((table['header'] as Map)['fill'], '#EEF1F5');
+    expect(stageSpec('asterisk_superscript', applied: true), isNull);
+  });
 }
