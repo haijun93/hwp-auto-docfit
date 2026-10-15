@@ -9240,7 +9240,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 pset.Text = 내용
                 act.Execute("InsertText", pset.HSet)
 
-            def 표넣기(행들):
+            def 표넣기(행들, 소제목=False):
                 열수 = max(len(행) for 행 in 행들)
                 act = 한글.HAction
                 pset = 한글.HParameterSet.HTableCreation
@@ -9250,6 +9250,17 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 pset.WidthType = 0   # 단 너비에 맞춤(2는 임의 너비라 글자 폭만큼 좁아진다)
                 pset.HeightType = 0  # 자동 높이
                 pset.TableProperties.TreatAsChar = 1
+                if 소제목 and 열수 == 2:
+                    # 번호 칸은 좁게, 제목 칸은 글 길이만큼. 현재 용지 본문 폭을 넘지 않는다.
+                    page = 한글.HParameterSet.HSecDef
+                    act.GetDefault("PageSetup", page.HSet)
+                    전체폭 = int(page.PageDef.PaperWidth - page.PageDef.LeftMargin - page.PageDef.RightMargin)
+                    번호폭 = min(전체폭 // 4, max(1600, len(행들[0][0]) * 900))
+                    제목폭 = min(전체폭 - 번호폭, max(3000, len(행들[0][1]) * 900 + 1200))
+                    pset.WidthType = 2
+                    pset.CreateItemArray("ColWidth", 2)
+                    pset.ColWidth.SetItem(0, 번호폭)
+                    pset.ColWidth.SetItem(1, 제목폭)
                 act.Execute("TableCreate", pset.HSet)
                 칸들 = [칸 for 행 in 행들 for 칸 in (행 + [""] * (열수 - len(행)))]
                 for 순번, 칸 in enumerate(칸들):
@@ -9274,7 +9285,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 elif 종류 in ("title", "ref"):
                     표넣기([[블록["text"] if 종류 != "ref" else f"참고  {블록['text']}"]])
                 elif 종류 == "table":
-                    표넣기(블록["rows"])
+                    표넣기(블록["rows"], 소제목=블록.get("role") == "heading")
                 else:
                     글쓰기(f"{블록['marker']} {블록['text']}".strip())
         return bind_function(라벨블록_한글삽입, _docfit_namespace)
@@ -9387,6 +9398,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 # 이미지가 없는 AI 답변형 마크다운은 엔진 대신 라벨 블록으로 변환해 서식 적용 경로에 넘긴다. 이미지가 있으면 엔진이 처리한다.
                 try:
                     원문 = 텍스트파일_읽기(원본경로)
+                    if looks_labeled(원문):
+                        텍스트_hwpx로_변환(원문, 대상경로)
+                        return
                     변환문, 변환됨 = ("", False) if re.search(r"!\[[^\]]*\]\(", 원문) else AI답변_개조식_변환(원문, 라벨형식=True, 마크다운문서=True)
                 except Exception:
                     변환문, 변환됨 = "", False

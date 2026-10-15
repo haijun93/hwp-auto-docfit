@@ -74,6 +74,16 @@ class MarkdownAppTests(unittest.TestCase):
         self.assertIn('네모: 추진개요', captured[0])
         self.assertIn('표: 절사 | -9,000', captured[0])
 
+    def test_explicit_beomgov_md_bypasses_generic_markdown_engine(self):
+        fn = self.ns['외부문서_hwpx로_변환']
+        text = '#!범정부오피스\n소제목: 개요\n표: 항목 : 값'
+        renderer, engine = Mock(), Mock(side_effect=AssertionError('호환 입력을 일반 엔진에 넘기면 안 됨'))
+        with patch.dict(fn.__globals__, {'텍스트파일_읽기': lambda p: text,
+             '텍스트_hwpx로_변환': renderer, 'generate_hwpx': engine}):
+            fn('draft.md', '.md', 'work.hwpx')
+        renderer.assert_called_once_with(text, 'work.hwpx')
+        engine.assert_not_called()
+
     def test_semantic_blocks_are_inserted_as_real_tables_then_post_processed(self):
         fn = self.ns['텍스트_hwpx로_변환']
         doc, insert, post = Mock(), Mock(), Mock()
