@@ -56,6 +56,7 @@ class DesktopWebBridge:
         # 창에 끌어 놓은 파일을 어디에 넣을지: documents(정리할 문서 목록) 또는 format(예시 서식 복제).
         # 화면의 '서식 관리' 창이 열려 있는 동안 format이다.
         self.drop_target = "documents"
+        self._document_drop_revision = 0
         self._request_lock = threading.Lock()
         self._requests = set()
         self._closed = False
@@ -289,6 +290,7 @@ class DesktopWebBridge:
                 "format_task": self._format_task(),
                 "pending_dialog": self._pending_dialog(),
                 "drop_target": self.drop_target,
+                "document_drop_revision": self._document_drop_revision,
                 "options": {
                     name: bool(getattr(gui, attribute).get())
                     for name, attribute in QUICK_OPTIONS.items()
@@ -405,7 +407,7 @@ class DesktopWebBridge:
         self._tk(self.gui._폴더선택, timeout=None, front=True)
         return self.get_state()
 
-    def add_paths(self, paths):
+    def add_paths(self, paths, *, from_drop=False):
         if not isinstance(paths, (list, tuple)):
             return self.get_state()
         if len(paths) > 100:
@@ -438,6 +440,8 @@ class DesktopWebBridge:
                 except (OSError, ValueError):
                     continue
             if added:
+                if from_drop:
+                    self._document_drop_revision += 1
                 self.gui.status_var.set(f"{added}개 추가 · 총 {len(self.gui.files)}개 문서")
                 self.gui.로그표시(f"{added}개 문서 추가")
 
@@ -1106,7 +1110,7 @@ class DesktopWebBridge:
         """창에 끌어 놓은 파일: '서식 관리' 창이 열려 있으면 예시 서식 복제, 아니면 문서 목록에 추가."""
         if self.drop_target == "format":
             return self.add_format_paths(paths)
-        return self.add_paths(paths)
+        return self.add_paths(paths, from_drop=True)
 
     def add_format_file(self):
         """예시 보고서 파일을 골라 서식을 복제한다."""

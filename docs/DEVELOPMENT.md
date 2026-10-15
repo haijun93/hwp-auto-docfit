@@ -194,3 +194,13 @@ Windows 한/글 실측, WebView2 포커스와 EXE 패키징은 Windows 환경에
 - docfit_core/roman_heading.py는 로N / Unicode 로마자 일반 제목을 판별한다.
   기존 중제목 선행 서식이 이를 3칸 표로 변환하며 일반 준말의 콜론 규칙은 바꾸지 않는다.
 - 명시적 MD 로마자 번호는 원문 번호를 보존한다. 상세 및 원격 반영 기록은 docs/ROMAN_HEADING_ALPHA13.md 참고.
+
+
+### Alpha 14 문서 드롭 이후 2단계 자동 이동
+
+- DesktopWebBridge.receive_drop → add_paths(from_drop=True) 경로에서 실제 추가 수가 양수일 때만
+  document_drop_revision을 증가시킨다. 일반 파일 선택·준말/서식 관리 드롭에는 이 신호를 만들지 않는다.
+- Flutter는 증가한 revision과 비어 있지 않은 문서 목록을 확인하여 2단계 작업 방식으로 이동한다.
+  같은 revision의 반복 폴링, 거부된 드롭 및 작업 중에는 자동 이동하지 않는다.
+- 파일포맷 모드는 기존 플로팅 결과 형식 선택을 유지한다.
+- 신규 회귀: Python 드롭 수락/거부 계약, Flutter 420px·1280px 자동 이동/재이동 방지.

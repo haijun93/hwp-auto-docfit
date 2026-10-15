@@ -216,6 +216,9 @@ class _WorkspaceState extends State<Workspace> {
   }
 
   void apply(Map next, {bool syncRange = false}) {
+    final documentDropped =
+        (next['document_drop_revision'] as num? ?? 0) >
+        (state['document_drop_revision'] as num? ?? 0);
     final previousRange = state['range'] as Map? ?? {};
     final range = next['range'] as Map? ?? {};
     final rangeChanged = [
@@ -241,12 +244,11 @@ class _WorkspaceState extends State<Workspace> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       stateVersion.value++;
-      if (documentsChanged &&
-          mode == 'file_format' &&
-          files.isNotEmpty &&
-          !locked) {
+      if (files.isNotEmpty &&
+          !locked &&
+          (documentDropped || (documentsChanged && mode == 'file_format'))) {
         setState(() => tab = 1);
-        openConversionPicker();
+        if (mode == 'file_format') openConversionPicker();
       }
     });
     checkBackendDialog();
