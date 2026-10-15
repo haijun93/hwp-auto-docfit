@@ -77,8 +77,8 @@ def main():
                 page.goto(f'http://127.0.0.1:{server.server_port}/')
                 page.wait_for_function('window.qaReady===true', timeout=60000)
                 page.locator('flt-semantics-placeholder').evaluate('element=>element.click()')
-                page.get_by_role('button', name='업무 흐름도', exact=True).click()
-                frame = page.frame_locator('iframe[title="업무 흐름도 편집기"]')
+                page.get_by_role('button', name='표/다이어그램', exact=True).click()
+                frame = page.frame_locator('iframe[title="표/다이어그램 편집기"]')
                 frame.get_by_role('button', name='처리 추가', exact=True).click()
                 frame.get_by_label('도형 내용').fill('첫 저장')
 
@@ -112,7 +112,7 @@ def main():
                 assert frame.get_by_label('도형 내용').input_value() == '종료 확인용 미저장 입력'
                 host['pending'] = {'id': 'close-discard', 'kind': 'app_close'}
                 page.get_by_role('button', name='변경사항 버리기', exact=True).click()
-                page.locator('iframe[title="업무 흐름도 편집기"]').wait_for(state='detached')
+                page.locator('iframe[title="표/다이어그램 편집기"]').wait_for(state='detached')
                 page.wait_for_timeout(500)
                 assert host['answers'] == [False, True], host
                 assert app.flows.load(original['id'])['name'] == '다른 편집자의 최신본'

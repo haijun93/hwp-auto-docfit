@@ -812,10 +812,10 @@ class DesktopWebBridge:
             import tempfile
             from tkinter import filedialog
             data = service.png_bytes(payload.get("base64"))
-            raw_name = payload.get("name", "업무 흐름도")
-            name = "".join(c for c in str(raw_name)[:120] if c.isalnum() or c in " _-") or "업무 흐름도"
+            raw_name = payload.get("name", "표/다이어그램")
+            name = "".join(c for c in str(raw_name)[:120] if c.isalnum() or c in " _-") or "표 다이어그램"
             selected = self._tk(lambda: filedialog.asksaveasfilename(
-                parent=self.gui.root, title="흐름도 PNG 저장", initialfile=name + ".png",
+                parent=self.gui.root, title="표/다이어그램 PNG 저장", initialfile=name + ".png",
                 defaultextension=".png", filetypes=[("PNG 이미지", "*.png")],
             ), front=True)
             if not selected:
@@ -831,6 +831,44 @@ class DesktopWebBridge:
                     stream.flush()
                     os.fsync(stream.fileno())
                 os.replace(temporary, target)
+            finally:
+                if temporary is not None:
+                    temporary.unlink(missing_ok=True)
+            return {"path": str(target)}
+        if action == "export_hwpx":
+            # 표/다이어그램 편집기의 흐름표·기본 표를 한/글 HWPX 문서로 저장한다(docfit_core.table_builder).
+            import os
+            import sys
+            import tempfile
+            from tkinter import filedialog
+            from docfit_core.table_builder import TableSpecError, build_table_hwpx, normalize
+            from docfit_app.table_template_service import TableTemplateService
+            try:
+                normalize(payload.get("spec"))
+            except TableSpecError as exc:
+                raise ServiceError("INVALID_TABLE", str(exc)) from exc
+            raw_name = payload.get("name", "표")
+            name = "".join(c for c in str(raw_name)[:120] if c.isalnum() or c in " _-") or "표"
+            selected = self._tk(lambda: filedialog.asksaveasfilename(
+                parent=self.gui.root, title="표 HWPX 저장", initialfile=name + ".hwpx",
+                defaultextension=".hwpx", filetypes=[("한/글 문서", "*.hwpx")],
+            ), front=True)
+            if not selected:
+                return {"cancelled": True}
+            target = Path(selected)
+            if target.suffix.lower() != ".hwpx":
+                raise ServiceError("INVALID_PATH", "HWPX 파일로 저장해 주세요.")
+            base = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / "resources" / "서식예시" / "기본 서식.hwpx"
+            # 기본 표는 앱의 기본 표 서식(준말 '표', 예시 표 학습 결과)을 그대로 입힌다.
+            basic = self._tk(lambda: TableTemplateService(self.gui._준말_서비스()).snapshot().get("preview"))
+            temporary = None
+            try:
+                with tempfile.NamedTemporaryFile(dir=target.parent, suffix=".tmp", delete=False) as stream:
+                    temporary = Path(stream.name)
+                build_table_hwpx(payload.get("spec"), base, temporary, basic_style=basic)
+                os.replace(temporary, target)
+            except TableSpecError as exc:
+                raise ServiceError("INVALID_TABLE", str(exc)) from exc
             finally:
                 if temporary is not None:
                     temporary.unlink(missing_ok=True)

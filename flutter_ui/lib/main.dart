@@ -704,9 +704,9 @@ class _WorkspaceState extends State<Workspace> {
         icon: const Icon(Icons.receipt_long_outlined),
       ),
       IconButton(
-        tooltip: '업무 흐름도',
+        tooltip: '표/다이어그램',
         onPressed: locked ? null : openFlowEditor,
-        icon: const Icon(Icons.account_tree_outlined),
+        icon: const Icon(Icons.table_chart_outlined),
       ),
       // 문서 도구는 설정의 개발자 모드를 켜야 보인다.
       if (quickOptions['developer_mode'] == true)

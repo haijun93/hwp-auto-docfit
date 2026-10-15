@@ -20,7 +20,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
   late final String viewType;
   late final web.HTMLIFrameElement frame;
   late final JSFunction listener;
-  String name = '새 업무 흐름도';
+  String name = '새 표/다이어그램';
   String? identity, revision;
   final saveState = EditSaveState();
   bool dirty = false, ready = false, busy = false;
@@ -41,7 +41,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
       ..src = Uri.base
           .resolve('assets/assets/flow_editor/index.html')
           .toString()
-      ..title = '업무 흐름도 편집기'
+      ..title = '표/다이어그램 편집기'
       ..setAttribute('sandbox', 'allow-scripts allow-same-origin')
       ..style.border = '0'
       ..style.width = '100%'
@@ -137,7 +137,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
           if (await confirmDiscard()) {
             identity = null;
             revision = null;
-            name = '새 업무 흐름도';
+            name = '새 표/다이어그램';
             dirty = false;
             post({'type': 'new'});
           }
@@ -186,10 +186,19 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
           name = result['name'] as String;
           dirty = saveState.dirty;
           post({'type': 'mark_saved', 'generation': targetGeneration});
-          notice('흐름도를 이 PC에 저장했어요.');
+          notice('표/다이어그램을 이 PC에 저장했어요.');
           break;
         case 'request_png':
           post({'type': 'export_png'});
+          break;
+        case 'export_hwpx':
+          // 표/다이어그램의 흐름표·기본 표를 한/글 문서로 저장한다(검증은 Python table_builder).
+          final spec = message['spec'];
+          if (spec is! Map) throw Exception('표 정보를 확인해 주세요.');
+          final saved = await storage('export_hwpx', {'spec': spec, 'name': name});
+          if (saved is Map && saved['path'] is String) {
+            notice('한/글 문서로 저장했어요: ${saved['path']}');
+          }
           break;
         case 'export_png':
           final encoded = message['base64'];
@@ -213,7 +222,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
       }
       if (mounted) setState(() {});
     } catch (error) {
-      notice('흐름도 작업에 실패했어요: $error');
+      notice('표/다이어그램 작업에 실패했어요: $error');
     } finally {
       busy = false;
       if (mounted) setState(() {});
@@ -233,7 +242,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
     final selected = await showHostDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('흐름도 저장'),
+        title: const Text('표/다이어그램 저장'),
         content: TextField(
           controller: input,
           autofocus: true,
@@ -268,12 +277,12 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
     final result = await showHostDialog<Map>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('저장된 흐름도'),
+        title: const Text('저장된 표/다이어그램'),
         content: SizedBox(
           width: 520,
           height: 360,
           child: list.isEmpty
-              ? const Center(child: Text('저장된 흐름도가 없어요.'))
+              ? const Center(child: Text('저장된 표/다이어그램이 없어요.'))
               : ListView(
                   children: [
                     for (final item in list)
@@ -306,7 +315,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
       final approved = await showHostDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('흐름도 삭제'),
+          title: const Text('표/다이어그램 삭제'),
           content: Text('${result['name']}을 삭제할까요?'),
           actions: [
             TextButton(
@@ -332,7 +341,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
     }
     if (!await confirmDiscard()) return;
     final loaded = await storage('load', {'id': result['id']});
-    if (loaded is! Map) throw Exception('흐름도 응답을 확인해 주세요.');
+    if (loaded is! Map) throw Exception('표/다이어그램 응답을 확인해 주세요.');
     identity = loaded['id'] as String;
     revision = loaded['revision'] as String;
     name = loaded['name'] as String;

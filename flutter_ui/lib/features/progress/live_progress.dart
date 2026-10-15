@@ -64,7 +64,8 @@ class _LiveProgressState extends State<LiveProgress>
   int _tip = 0;
   int _tipTicks = 0;
   int _elapsedBase = 0;
-  DateTime _elapsedAt = DateTime.now();
+  // 엔진 값을 받은 뒤 지난 초(1초 타이머 횟수). 벽시계를 쓰지 않아 화면이 느려도 숫자가 튀지 않는다.
+  int _sinceSync = 0;
   bool _reduceMotion = false;
 
   Map get live => widget.live;
@@ -84,6 +85,7 @@ class _LiveProgressState extends State<LiveProgress>
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       setState(() {
+        if (running) _sinceSync++;
         if (running && tips.length > 1 && ++_tipTicks >= 6) {
           _tipTicks = 0;
           _tip = (_tip + 1) % tips.length;
@@ -108,7 +110,7 @@ class _LiveProgressState extends State<LiveProgress>
 
   void _syncElapsed() {
     _elapsedBase = (live['elapsed'] as num?)?.toInt() ?? 0;
-    _elapsedAt = DateTime.now();
+    _sinceSync = 0;
   }
 
   void _syncMotion() {
@@ -121,9 +123,7 @@ class _LiveProgressState extends State<LiveProgress>
     }
   }
 
-  int get _elapsed => running
-      ? _elapsedBase + DateTime.now().difference(_elapsedAt).inSeconds
-      : _elapsedBase;
+  int get _elapsed => running ? _elapsedBase + _sinceSync : _elapsedBase;
 
   Duration _d(int ms) =>
       _reduceMotion ? Duration.zero : Duration(milliseconds: ms);

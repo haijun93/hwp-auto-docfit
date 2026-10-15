@@ -66,8 +66,8 @@ def main():
                 page.goto(f"http://127.0.0.1:{server.server_port}/")
                 page.wait_for_function("window.qaReady===true", timeout=60000)
                 page.locator("flt-semantics-placeholder").evaluate("element=>element.click()")
-                page.get_by_role("button", name="업무 흐름도", exact=True).click()
-                frame = page.frame_locator('iframe[title="업무 흐름도 편집기"]')
+                page.get_by_role("button", name="표/다이어그램", exact=True).click()
+                frame = page.frame_locator('iframe[title="표/다이어그램 편집기"]')
                 frame.get_by_role("button", name="처리 추가", exact=True).click()
                 frame.get_by_label("도형 내용").fill("일반 모드 실제 저장")
                 frame.get_by_role("button", name="저장", exact=True).click()
@@ -84,7 +84,7 @@ def main():
                 assert persisted != current
                 page.mouse.click(28, 28)
                 page.get_by_role("button", name="계속 편집", exact=True).wait_for()
-                assert page.locator('iframe[title="업무 흐름도 편집기"]').count() == 1
+                assert page.locator('iframe[title="표/다이어그램 편집기"]').count() == 1
                 page.get_by_role("button", name="계속 편집", exact=True).click()
                 assert frame.get_by_label("도형 내용").input_value() == current
                 assert not failures, failures

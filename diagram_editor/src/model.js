@@ -1,4 +1,5 @@
 // Application-owned flow document model. React Flow (MIT) renders this model.
+import {FONTS,validateTable} from './table.js';
 export const FORMAT = 'docfit-flow';
 export const COLORS = {blue:'#dbeafe',green:'#dcfce7',orange:'#ffedd5',yellow:'#fef9c3',white:'#ffffff'};
 export const templates = {
@@ -38,9 +39,11 @@ export function validate(snapshot) {
  const nodes=snapshot.nodes.map(n=>{
   if(!text(n.id,100)||!n.id||ids.has(n.id)||!finite(n.position?.x)||!finite(n.position?.y)||!text(n.data?.label)||!['rectangle','diamond','ellipse','text'].includes(n.data.shape)||!Object.hasOwn(COLORS,n.data.color))throw new Error('도형 데이터가 올바르지 않습니다.');
   ids.add(n.id);
+  const style=nodeTextStyle(n.data);
   const w=n.width??220,h=n.height??90;
   if(!finite(w)||!finite(h)||w<30||h<30||w>100000||h>100000)throw new Error('도형 크기가 올바르지 않습니다.');
-  return {...node(n.data.label,n.position.x,n.position.y,n.data.shape,n.data.color,n.id),width:w,height:h};
+  const made=node(n.data.label,n.position.x,n.position.y,n.data.shape,n.data.color,n.id);
+  return {...made,data:{...made.data,...style},width:w,height:h};
  });
  const nodeIds=new Set(ids);
  const edges=snapshot.edges.map(e=>{
@@ -50,7 +53,23 @@ export function validate(snapshot) {
   if(!handles.includes(e.sourceHandle)||!handles.includes(e.targetHandle))throw new Error('연결 위치를 확인해 주세요.');
   return edge(e.source,e.target,e.label??'',e.id,e.sourceHandle,e.targetHandle);
  });
- return {format:FORMAT,version:1,nodes,edges};
+ const table=snapshot.table==null?undefined:validateTable(snapshot.table);
+ return table?{format:FORMAT,version:1,nodes,edges,table}:{format:FORMAT,version:1,nodes,edges};
+}
+/** 도형 글자 서식(선택): font(글꼴), size(pt), bold, textColor. 값이 없으면 예전 기본(맑은 고딕 12pt). */
+export const TEXT_FONTS=FONTS;
+export function nodeTextStyle(data){
+ const style={};
+ if(data.font!==undefined){if(!FONTS.includes(data.font))throw new Error('도형 글꼴을 확인해 주세요.');style.font=data.font;}
+ if(data.size!==undefined){if(typeof data.size!=='number'||!(data.size>=6&&data.size<=40))throw new Error('도형 글꼴 크기를 확인해 주세요.');style.size=data.size;}
+ if(data.bold!==undefined){if(typeof data.bold!=='boolean')throw new Error('도형 굵게 값을 확인해 주세요.');style.bold=data.bold;}
+ if(data.textColor!==undefined){if(typeof data.textColor!=='string'||!/^#[0-9A-Fa-f]{6}$/.test(data.textColor))throw new Error('도형 글자색을 확인해 주세요.');style.textColor=data.textColor;}
+ return style;
+}
+export function nodeFont(data={}){
+ const px=Math.round((data.size??12)*4/3);
+ return {px,lineHeight:Math.round(px*1.5),weight:data.bold?700:400,family:'"'+(data.font??'맑은 고딕')+'", "Malgun Gothic", "Noto Sans KR", sans-serif',color:data.textColor??'#172b4d',
+  css:(data.bold?'700 ':'')+px+'px "'+(data.font??'맑은 고딕')+'", "Malgun Gothic", "Noto Sans KR", sans-serif'};
 }
 function rich(value) {
  if(typeof value?.text==='string')return value.text;
@@ -100,15 +119,16 @@ const esc = s => String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 export const FONT_SIZE=16, LINE_HEIGHT=24, PADDING_X=16, PADDING_Y=12, BLEED=20;
 export const FONT='16px "Malgun Gothic", "Noto Sans KR", sans-serif';
 let measuringContext;
-export function textWidth(value) {
+export function textWidth(value,font=FONT,px=FONT_SIZE) {
  if(typeof document!=='undefined'){
   measuringContext??=document.createElement('canvas').getContext('2d');
-  if(measuringContext){measuringContext.font=FONT;return measuringContext.measureText(value).width;}
+  if(measuringContext){measuringContext.font=font;return measuringContext.measureText(value).width;}
  }
  // Conservative non-browser fallback for model validation/tests.
- return Array.from(value).reduce((sum,c)=>sum+(/\p{Mark}/u.test(c)?0:/\p{Extended_Pictographic}/u.test(c)?32:16),0);
+ return Array.from(value).reduce((sum,c)=>sum+(/\p{Mark}/u.test(c)?0:/\p{Extended_Pictographic}/u.test(c)?px*2:px),0);
 }
-export function wrapKoreanAwareText(value,maxWidth) {
+export function wrapKoreanAwareText(value,maxWidth,font=FONT,px=FONT_SIZE) {
+ const textWidth=line=>measure(line,font,px);
  const result=[];
  for(const paragraph of String(value).split('\n')){
   if(!paragraph){result.push('');continue;}
@@ -125,14 +145,16 @@ export function wrapKoreanAwareText(value,maxWidth) {
  }
  return result.length?result:[''];
 }
+const measure=(value,font,px)=>textWidth(value,font,px);
 export function computeNodeAutoFitBox(n) {
+ const f=nodeFont(n.data);
  const factor=n.data.shape==='diamond'?.5:n.data.shape==='ellipse'?.7:1;
  const minWidth=Math.max(120,n.width??220),maxWidth=Math.max(360,minWidth);
- const lines=wrapKoreanAwareText(n.data.label,Math.max(32,Math.floor(maxWidth*factor-2*PADDING_X)));
- const longest=Math.max(0,...lines.map(textWidth));
+ const lines=wrapKoreanAwareText(n.data.label,Math.max(32,Math.floor(maxWidth*factor-2*PADDING_X)),f.css,f.px);
+ const longest=Math.max(0,...lines.map(line=>textWidth(line,f.css,f.px)));
  const width=Math.max(minWidth,Math.ceil((longest+2*PADDING_X)/factor));
- const height=Math.max(n.height??90,Math.ceil((lines.length*LINE_HEIGHT+2*PADDING_Y)/factor));
- return {width,height,lines,lineHeight:LINE_HEIGHT,factor,textWidth:longest,textHeight:lines.length*LINE_HEIGHT};
+ const height=Math.max(n.height??90,Math.ceil((lines.length*f.lineHeight+2*PADDING_Y)/factor));
+ return {width,height,lines,lineHeight:f.lineHeight,factor,textWidth:longest,textHeight:lines.length*f.lineHeight,font:f};
 }
 export function layoutGraph(graph) {
  return {...graph,nodes:graph.nodes.map(n=>{const box=computeNodeAutoFitBox(n);return {...n,width:box.width,height:box.height};})};
@@ -154,8 +176,8 @@ export function getDiagramBounds(graph) {
  if(width*height>12_000_000||width>8000||height>8000)throw new Error('이미지가 너무 큽니다. 도형 배치를 줄여 주세요.');
  return {x,y,width,height};
 }
-function svgLines(lines,x,y) {
- return lines.map((line,i)=>'<text xml:space="preserve" x="'+x+'" y="'+(y+(i-(lines.length-1)/2)*LINE_HEIGHT)+'" text-anchor="middle" dominant-baseline="central" font-size="16" font-family="Malgun Gothic, Noto Sans KR, sans-serif" fill="#172b4d">'+esc(line)+'</text>').join('');
+function svgLines(lines,x,y,f=nodeFont()) {
+ return lines.map((line,i)=>'<text xml:space="preserve" x="'+x+'" y="'+(y+(i-(lines.length-1)/2)*f.lineHeight)+'" text-anchor="middle" dominant-baseline="central" font-size="'+f.px+'" font-weight="'+f.weight+'" font-family="'+esc(f.family.replaceAll('"',''))+'" fill="'+f.color+'">'+esc(line)+'</text>').join('');
 }
 export function svg(snapshot) {
  const graph=layoutGraph(validate(snapshot)),{nodes,edges}=graph,bounds=getDiagramBounds(graph);
@@ -169,7 +191,7 @@ export function svg(snapshot) {
  const drawnNodes=nodes.map(n=>{
   const {x,y}=n.position,w=n.width,h=n.height,c=COLORS[n.data.color];
   const shape=n.data.shape==='text'?'':n.data.shape==='diamond'?'<polygon points="'+(x+w/2)+','+y+' '+(x+w)+','+(y+h/2)+' '+(x+w/2)+','+(y+h)+' '+x+','+(y+h/2)+'"':n.data.shape==='ellipse'?'<ellipse cx="'+(x+w/2)+'" cy="'+(y+h/2)+'" rx="'+w/2+'" ry="'+h/2+'"':'<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" rx="8"';
-  return (shape?shape+' fill="'+c+'" stroke="#475569" stroke-width="2"/>':'')+svgLines(computeNodeAutoFitBox(n).lines,x+w/2,y+h/2);
+  return (shape?shape+' fill="'+c+'" stroke="#475569" stroke-width="2"/>':'')+svgLines(computeNodeAutoFitBox(n).lines,x+w/2,y+h/2,nodeFont(n.data));
  }).join('');
  return {width:bounds.width,height:bounds.height,source:'<svg xmlns="http://www.w3.org/2000/svg" width="'+bounds.width+'" height="'+bounds.height+'" viewBox="'+bounds.x+' '+bounds.y+' '+bounds.width+' '+bounds.height+'"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/></marker></defs><rect x="'+bounds.x+'" y="'+bounds.y+'" width="'+bounds.width+'" height="'+bounds.height+'" fill="white"/>'+drawnEdges+drawnNodes+'</svg>'};
 }

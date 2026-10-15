@@ -186,6 +186,9 @@ class ApplicationService:
             action,payload=args
             if not isinstance(payload,dict):raise ServiceError('INVALID_INPUT','입력을 확인해 주세요.')
             if action=='export_png':return self.flows.export_png(payload.get('base64'))
+            if action=='export_hwpx':
+                base=Path(__file__).resolve().parents[1]/'resources'/'서식예시'/'기본 서식.hwpx'
+                return self.flows.export_hwpx(payload.get('spec'),base)
             if action=='list':return self.flows.list()
             if action=='load':return self.flows.load(payload.get('id'))
             if action=='save':return self.flows.save(payload.get('id'),payload.get('name'),payload.get('snapshot'),payload.get('revision'))

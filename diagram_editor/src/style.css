@@ -4,3 +4,50 @@ html,body,#root{width:100%;height:100%;margin:0;overflow:hidden;font-family:"Mal
 .node-body.diamond{position:relative;clip-path:none;outline:0;border:0;background:transparent!important}.diamond-background{position:absolute;inset:0;width:100%;height:100%}.node-body.diamond span{position:relative}
 
 .node-body,.node-body.diamond{padding:0}.node-lines{white-space:pre;font-size:16px;line-height:24px;font-family:"Malgun Gothic","Noto Sans KR",sans-serif}
+
+/* 표/다이어그램: 탭·표 만들기(2026-10-15). 기존 편집기 색(#2563eb 강조, #cbd5e1 선)을 그대로 쓴다. */
+.mode-tabs{display:flex;gap:4px;background:#eef2f7;border-radius:10px;padding:3px}
+.mode-tabs button{border:0;background:transparent;padding:7px 14px;border-radius:8px;font-weight:600;color:#475569}
+.mode-tabs button.active{background:white;color:#1d4ed8;box-shadow:0 1px 3px rgba(15,23,42,.12)}
+nav button.primary{background:#2563eb;color:white;border-color:#2563eb;font-weight:700}
+nav button.primary:hover{background:#1d4ed8}
+.flow-layer{width:100%;height:100%}
+.presets{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-bottom:10px}
+.presets button,.role-tabs button{margin:0;padding:7px 0}
+.presets button.active,.role-tabs button.active{background:#2563eb;color:white;border-color:#2563eb}
+.role-tabs{display:flex;gap:4px;margin-bottom:8px}.role-tabs button{flex:1;display:block}
+.stepper-row{display:flex;align-items:center;justify-content:space-between;font-size:13px;margin:8px 0}
+.stepper{display:inline-flex;align-items:center;gap:4px}
+.stepper button{width:30px;height:30px;padding:0;margin:0;display:inline-block}
+.stepper output,.stepper input{width:46px;text-align:center;font-weight:700}
+aside .stepper input{width:52px;margin-top:0}
+.text-style{border:1px solid #e2e8f0;border-radius:10px;padding:8px 10px;margin:0 0 10px}
+.text-style legend{font-size:12px;color:#64748b;padding:0 4px}
+.style-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px}
+.style-row label{margin-top:0!important;display:flex;align-items:center;gap:6px}
+.style-row label.size{flex-wrap:nowrap}
+.toggle{margin:0!important;display:inline-block!important;width:auto!important}
+.toggle.on{background:#1d4ed8;color:white;border-color:#1d4ed8}
+.color input[type=color]{width:34px!important;height:28px;padding:2px;margin:0!important}
+.mini{width:auto!important;display:inline-block!important;margin:0!important;padding:4px 6px;font-size:12px}
+label.check{display:flex!important;align-items:center;gap:6px}label.check input{width:auto!important;margin:0!important}
+.table-canvas{height:100%;overflow:auto;padding:32px;background:#f8fafc}
+.hint{font-size:12px;color:#64748b;margin-top:16px}
+.flow-strip{display:grid;align-items:stretch;min-width:min-content}
+.flow-step{position:relative;display:flex;flex-direction:column;border:2px solid #4c4c4c;background:white;min-width:110px}
+.flow-step .cell{border:0;border-radius:0;text-align:center;padding:14px 6px;width:100%}
+.flow-step .cell.step{border-bottom:4px double #4c4c4c}
+.flow-step .remove{position:absolute;top:-12px;right:-12px;width:24px;height:24px;padding:0;border-radius:50%;opacity:0;transition:opacity .15s}
+.flow-step:hover .remove,.flow-step:focus-within .remove{opacity:1}
+.flow-arrow{position:relative;display:flex;align-items:center;justify-content:center;background:transparent!important}
+.flow-arrow .insert{position:absolute;bottom:-34px;width:24px;height:24px;padding:0;border-radius:50%;opacity:0;transition:opacity .15s}
+.flow-arrow:hover .insert,.flow-arrow:focus-within .insert{opacity:1}
+.grid-preview{border-collapse:collapse;background:white;min-width:60%}
+.grid-preview td{border:1px solid #334155;padding:0;min-width:80px}
+.grid-preview .cell{border:0;border-radius:0;width:100%;text-align:center;padding:10px 6px}
+.grid-preview th{font-weight:400;padding:2px}
+.col-tools,.row-tools{display:inline-flex;gap:2px;opacity:.35;transition:opacity .15s}
+.grid-preview th:hover .col-tools,.grid-preview th:hover .row-tools,.col-tools:focus-within,.row-tools:focus-within{opacity:1}
+.col-tools button,.row-tools button{width:22px;height:22px;padding:0;font-size:12px}
+.style-row label.size{white-space:nowrap}
+.flow-step textarea.cell{resize:none;min-height:0;margin:0;font:inherit;line-height:1.35;overflow:hidden}

@@ -43,6 +43,22 @@ class FlowService(DiagramService):
             raise ServiceError("INVALID_PNG", "PNG 이미지 크기가 제한을 넘습니다.")
         return data
 
+    def export_hwpx(self, spec, base_path, basic_style=None):
+        """표/다이어그램 편집기의 흐름표·기본 표를 HWPX로 만들어 내보내기 폴더에 둔다(docfit_core.table_builder)."""
+        import uuid
+        from docfit_core.table_builder import TableSpecError, build_table_hwpx
+        folder = self.root / "exports"
+        if self.root.is_symlink() or folder.is_symlink():
+            raise ServiceError("DIAGRAM_PATH_INVALID", "표 저장 폴더 경로가 올바르지 않습니다.")
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / (uuid.uuid4().hex + ".hwpx")
+        try:
+            build_table_hwpx(spec, base_path, path, basic_style=basic_style)
+        except TableSpecError as exc:
+            path.unlink(missing_ok=True)
+            raise ServiceError("INVALID_TABLE", str(exc)) from exc
+        return {"path": str(path)}
+
     def export_png(self, encoded):
         import uuid
         data = self.png_bytes(encoded)

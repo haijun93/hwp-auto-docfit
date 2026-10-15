@@ -64,7 +64,8 @@ void main() {
     await _pump(tester, _spacing());
     expect(find.text('본문 자간'), findsWidgets); // 아일랜드와 타임라인
     expect(find.text('2/3'), findsOneWidget);
-    expect(find.text('1분 15초 경과'), findsOneWidget);
+    // 엔진이 보낸 75초 + 화면이 1.2초 동안 센 1초(1초 타이머 횟수로 세어 벽시계와 무관).
+    expect(find.text('1분 16초 경과'), findsOneWidget);
     expect(find.text('단계 1/3'), findsOneWidget);
     expect(find.text('50%'), findsOneWidget);
     expect(

@@ -68,13 +68,13 @@ void main() {
       Future<Object?> api(String name, List<Object?> args) async => state;
       await tester.pumpWidget(DocFitApp(api: api));
       await tester.pumpAndSettle();
-      expect(find.byTooltip('업무 흐름도'), findsOneWidget);
+      expect(find.byTooltip('표/다이어그램'), findsOneWidget);
       expect(find.byTooltip('문서 도구'), findsNothing);
       state['options']['developer_mode'] = true;
       state['options']['diagram_editor_enabled'] = true;
       await tester.pump(const Duration(seconds: 2));
       await tester.pumpAndSettle();
-      expect(find.byTooltip('업무 흐름도'), findsOneWidget);
+      expect(find.byTooltip('표/다이어그램'), findsOneWidget);
       expect(find.byTooltip('문서 도구'), findsOneWidget);
       await tester.tap(find.byTooltip('문서 도구'));
       await tester.pumpAndSettle();
