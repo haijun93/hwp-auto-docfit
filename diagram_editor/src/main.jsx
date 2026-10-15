@@ -4,7 +4,7 @@ import {ReactFlow,ReactFlowProvider,Background,Controls,MiniMap,Handle,Position,
 import '@xyflow/react/dist/style.css';
 import './style.css';
 import {FORMAT,PALETTE,templates,template,node,edge,id,decode,validate,svg,layoutGraph,computeNodeAutoFitBox,edgeLabelBox,LINE_HEIGHT,nodeFont,nodePaint,edgePath,EDGE_DEFAULT} from './model.js';
-import {SHAPE_GROUPS,SHAPES,LINE_SHAPES,shapePath,DASHES,MARKERS,dashArray,markerSvg} from './shapes.js';
+import {SHAPE_GROUPS,SHAPES,LINE_SHAPES,shapePath,DASHES,MARKERS,dashArray} from './shapes.js';
 import {sampleMindmap,mindmapGraph,addChild,addSibling,removeNode,updateNode,moveNode,findNode} from './mindmap.js';
 import {FONTS,ARROWS,DOWN_ARROWS,FLOW_PRESETS,MAX_FLOW_STEPS,MAX_FLOW_ROWS,MAX_ROWS,MAX_COLS,MAX_ORG,ROLE_NAMES,BORDER_TYPES,BORDER_WIDTHS,BORDER_NAMES,
  flowTable,gridTable,orgTable,barTable,flowDetails,resizeFlow,resizeFlowRows,insertStep,removeStep,resizeGrid,insertRow,removeRow,insertCol,removeCol,resizeOrg,
@@ -19,6 +19,19 @@ function send(message){
 const HistoryContext=createContext(()=>{});
 const safeId=v=>String(v).replace(/[^A-Za-z0-9_-]/g,'');
 
+/** 화살표 머리(<marker>)를 React 요소로 그린다(HTML 문자열을 끼워 넣지 않는다). */
+function Marker({id:markerId,kind,color}){
+ if(!kind||kind==='none')return null;
+ const ref=kind==='circle'||kind==='diamond'?5:9;
+ return <marker id={markerId} viewBox="0 0 10 10" refX={ref} refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
+  {kind==='arrow'&&<path d="M 0 0 L 10 5 L 0 10 z" fill={color}/>}
+  {kind==='open'&&<path d="M 1 1 L 9 5 L 1 9" fill="none" stroke={color} strokeWidth="1.6"/>}
+  {kind==='stealth'&&<path d="M 0 0 L 10 5 L 0 10 L 3 5 z" fill={color}/>}
+  {kind==='diamond'&&<path d="M 0 5 L 5 0 L 10 5 L 5 10 z" fill={color}/>}
+  {kind==='circle'&&<circle cx="5" cy="5" r="4" fill={color}/>}
+ </marker>;
+}
+
 /** 도형 노드: PPT 도형 경로를 SVG로 그리고 글을 가운데에 얹는다. 선 도형은 화살표 머리를 붙인다. */
 function FlowNode({id:nodeId,data,selected,width,height}){
  const box=computeNodeAutoFitBox({data,width,height}),f=nodeFont(data),p=nodePaint(data);
@@ -26,12 +39,11 @@ function FlowNode({id:nodeId,data,selected,width,height}){
  const w=width??220,h=height??90,inset=Math.max(1,p.width/2+1),line=LINE_SHAPES.has(data.shape);
  const key='n'+safeId(nodeId);
  const start=data.lineStart??p.startDefault,end=p.end;
- const defs=line?markerSvg(key+'s',start,p.stroke)+markerSvg(key+'e',end,p.stroke):'';
  return <><NodeResizer onResizeStart={resizeStart} isVisible={selected} minWidth={line?20:40} minHeight={line?10:30}/>
   {Object.entries(Position).map(([k,value])=><Handle key={k} id={value} type="source" position={value}/>)}
   <div className={'node-body shape-'+data.shape} style={{width:w,height:h}}>
    <svg className="shape-svg" width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden="true">
-    {defs&&<defs dangerouslySetInnerHTML={{__html:defs}}/>}
+    {line&&<defs><Marker id={key+'s'} kind={start} color={p.stroke}/><Marker id={key+'e'} kind={end} color={p.stroke}/></defs>}
     {data.shape!=='text'&&<path d={shapePath(data.shape,inset,inset,Math.max(1,w-2*inset),Math.max(1,h-2*inset))} fill={p.fill} fillRule="evenodd"
      stroke={p.stroke} strokeWidth={p.width} strokeDasharray={p.dash||undefined} strokeLinejoin="round"
      markerStart={line&&start!=='none'?`url(#${key}s)`:undefined} markerEnd={line&&end!=='none'?`url(#${key}e)`:undefined}/>}
@@ -49,8 +61,7 @@ function FlowEdge(props){
  const e={...props,sourceHandle:props.sourcePosition,targetHandle:props.targetPosition};
  const box=edgeLabelBox(e,nodes);
  const path=edgePath(props.sourceX,props.sourceY,props.targetX,props.targetY,props.sourcePosition,props.targetPosition,s.line);
- const defs=markerSvg(key+'s',s.start,s.color)+markerSvg(key+'e',s.end,s.color);
- return <>{defs&&<defs dangerouslySetInnerHTML={{__html:defs}}/>}
+ return <><defs><Marker id={key+'s'} kind={s.start} color={s.color}/><Marker id={key+'e'} kind={s.end} color={s.color}/></defs>
   <BaseEdge id={props.id} path={path} markerStart={s.start!=='none'?`url(#${key}s)`:undefined} markerEnd={s.end!=='none'?`url(#${key}e)`:undefined}
    style={{stroke:s.color,strokeWidth:props.selected?s.width+1.5:s.width,strokeDasharray:dashArray(s.dash)||undefined}}/>
   {props.label&&<g><rect x={box.x-box.width/2} y={box.y-box.height/2} width={box.width} height={box.height} fill="white"/>
@@ -64,7 +75,7 @@ function ShapeIcon({shape}){
  const line=LINE_SHAPES.has(shape),key='i'+shape;
  const end=shape==='arrowLine'||shape==='doubleArrowLine'?'arrow':'none',start=shape==='doubleArrowLine'?'arrow':'none';
  return <svg width="26" height="20" viewBox="0 0 26 20" aria-hidden="true">
-  {line&&<defs dangerouslySetInnerHTML={{__html:markerSvg(key+'s',start,'#334155')+markerSvg(key+'e',end,'#334155')}}/>}
+  {line&&<defs><Marker id={key+'s'} kind={start} color="#334155"/><Marker id={key+'e'} kind={end} color="#334155"/></defs>}
   {shape==='text'?<text x="13" y="15" textAnchor="middle" fontSize="13" fill="#334155">가</text>
    :<path d={shapePath(shape,2,2,22,16)} fill={line?'none':'#dbeafe'} fillRule="evenodd" stroke="#334155" strokeWidth="1.3"
      markerStart={start!=='none'?`url(#${key}s)`:undefined} markerEnd={end!=='none'?`url(#${key}e)`:undefined}/>}
