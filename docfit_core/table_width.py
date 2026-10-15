@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 
 from .format_elements import HeaderIndex, cell_paragraphs, run_text
-from .table_style import header_row_count, is_design_table
+from .table_style import has_unit_caption, header_row_count, is_design_table
 
 _OBJECTS = {"tbl", "pic", "ole", "equation", "rect", "ellipse", "line", "arc", "polygon", "curve",
             "connectLine", "container", "textart", "chart", "video"}
@@ -260,6 +260,25 @@ def host_reserve(paragraph, table, index: HeaderIndex) -> int:
     return reserve
 
 
+def _boundaries(cells, cols):
+    """칸 너비로 열 경계 x 좌표(0 … 표 폭)를 푼다. 병합 칸만으로 정해지지 않거나 서로 어긋나면 None."""
+    edges = {0: 0}
+    spans = [(col, col + span, _int(_child(tc, "cellSz").get("width"))) for tc, col, _, span in cells]
+    changed = True
+    while changed:
+        changed = False
+        for left, right, width in spans:
+            if left in edges and right not in edges:
+                edges[right], changed = edges[left] + width, True
+            elif right in edges and left not in edges:
+                edges[left], changed = edges[right] - width, True
+    if any(i not in edges for i in range(cols + 1)):
+        return None
+    if any(edges[right] - edges[left] != width for left, right, width in spans):
+        return None
+    return edges
+
+
 def _scale_to_fit(table, cells, total):
     """캡션('(단위: 개소)')이 달린 표는 작성자가 꾸민 모양이라 열을 다시 나누지 않는다. 쪽 폭을 넘칠 때만
     모든 열을 같은 비율로 줄여 넣는다(캡션은 표 오른쪽 끝선에 맞춘 정렬 그대로 따라온다)."""
@@ -268,9 +287,17 @@ def _scale_to_fit(table, cells, total):
     if not current or current <= total:
         return False
     ratio = total / current
-    for tc, _, _, _ in cells:
+    # 칸마다 따로 버리면 병합 칸과 나뉜 칸의 오른쪽 선이 1단위씩 어긋나고 행 합이 표 폭보다 작아진다.
+    # 열 경계를 한 번만 반올림해 모든 칸이 같은 경계를 쓰게 한다.
+    edges = _boundaries(cells, _int(table.get("colCnt")))
+    if edges is not None:
+        edges = {i: (total if x == current else int(round(x * ratio))) for i, x in edges.items()}
+    for tc, col, _, span in cells:
         cell = _child(tc, "cellSz")
-        cell.set("width", str(int(_int(cell.get("width")) * ratio)))
+        if edges is not None:
+            cell.set("width", str(edges[col + span] - edges[col]))
+        else:
+            cell.set("width", str(int(_int(cell.get("width")) * ratio)))
         for p in cell_paragraphs(tc):
             for cache in [x for x in p if _tag(x) == "linesegarray"]:
                 p.remove(cache)
@@ -291,7 +318,7 @@ def fit_table(table, body_width, index: HeaderIndex, reserve: int = 0) -> bool:
     total = int(body_width) - ((_int(out.get("left")) + _int(out.get("right"))) if out is not None else 0) - max(0, reserve)
     if total <= cols * 300:
         return False
-    if _child(table, "caption") is not None:
+    if has_unit_caption(table):
         return _scale_to_fit(table, cells, total)
     weights = column_ratios(table)
     if weights is None:

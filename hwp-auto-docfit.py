@@ -314,6 +314,7 @@ from docfit_core.abbreviations import line_registry as 준말_줄변환표, tabl
 from docfit_core.abbreviations import excluded_reason as 준말_제외사유
 from docfit_core.table_style import HeaderPool as 표서식_저장소, apply_table_style as 표서식_적용, describe_style as 표서식_설명, is_design_table as 디자인표인가, is_grid_table as 표서식_모양인가
 from docfit_core.table_style import learn_from_table as 표서식_한표학습, valid_style as 표서식_유효
+from docfit_core.table_style import has_unit_caption as 단위캡션표인가, is_user_designed_table as 사용자표인가, protected_tables as 보호표_목록
 from docfit_core.text_table import find_box_tables
 from docfit_core import writing_aids, ai_prompts
 from docfit_core.writing_aids import refresh_dates as 날짜_현행화
@@ -2859,6 +2860,7 @@ _문장부호_줄병합_시도_본체 = _engine_resolve('docfit_engine.page_fit'
 
 한칸표_보호영역 = set()
 디자인표_보호영역 = set()
+디자인표_확인 = []   # 디자인표_보호영역 표마다 (목록 번호들, 확인할 칸 글): 번호가 밀렸는지 볼 때 쓴다
 
 현재_한칸표인가 = _engine_resolve('docfit_engine.page_fit', '현재_한칸표인가', globals())
 
@@ -2873,6 +2875,8 @@ _문장부호_줄병합_시도_본체 = _engine_resolve('docfit_engine.page_fit'
 
 한칸표_영역_목록 = _engine_resolve('docfit_engine.page_fit', '한칸표_영역_목록', globals())
 디자인표_영역_목록 = _engine_resolve('docfit_engine.page_fit', '디자인표_영역_목록', globals())
+디자인표_보호영역_갱신 = _engine_resolve('docfit_engine.page_fit', '디자인표_보호영역_갱신', globals())
+_문서에_표_있음 = _engine_resolve('docfit_engine.page_fit', '_문서에_표_있음', globals())
 
 표_헤더서식_현재셀_처리 = _engine_resolve('docfit_engine.page_fit', '표_헤더서식_현재셀_처리', globals())
 
@@ -2890,6 +2894,7 @@ _문장부호_줄병합_시도_본체 = _engine_resolve('docfit_engine.page_fit'
 
 
 서식표_보호영역_조사 = _engine_resolve('docfit_engine.page_fit', '서식표_보호영역_조사', globals())
+_서식표_칸_확인 = _engine_resolve('docfit_engine.page_fit', '_서식표_칸_확인', globals())
 
 
 표_헤더서식_전체_적용 = _engine_resolve('docfit_engine.page_fit', '표_헤더서식_전체_적용', globals())

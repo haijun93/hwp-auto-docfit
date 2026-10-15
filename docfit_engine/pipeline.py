@@ -63,7 +63,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
         return bind_function(문서_처리, _docfit_namespace)
     if _docfit_symbol == '_문서_처리_본체':
         def _문서_처리_본체(파일, index, total, 문장부호기능=True):
-            global hwp, 현재_처리파일, 한칸표_보호영역, 디자인표_보호영역, 최종검수_문서목록
+            global hwp, 현재_처리파일, 한칸표_보호영역, 디자인표_보호영역, 디자인표_확인, 최종검수_문서목록
             global 쪽범위_본문_문단, 쪽범위_컨트롤영역, 쪽범위_실제, 기본표서식_적용됨
             global _표준서식_XML텍스트, _알파_일괄서식_문서, _표준서식_XML간격
             _표준서식_XML텍스트 = set()
@@ -72,6 +72,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             쪽배치_쪽나눔문단.clear()
             한칸표_보호영역 = set()
             디자인표_보호영역 = set()
+            디자인표_확인 = []
             기본표서식_적용됨 = False
             쪽범위_본문_문단 = None
             쪽범위_컨트롤영역 = set()
@@ -359,6 +360,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             for 회차 in range(1, 총회차 + 1):
                 if 중단_요청됨():
                     return False
+                # 앞 단계·앞 회차에서 표·글상자가 생기거나 없어져 목록 번호가 밀렸으면 다시 조사한다.
+                디자인표_보호영역_갱신()
                 if 문서_처리_1회(파일명, 문장부호기능, 회차, 총회차) is False:
                     return False
 

@@ -102,7 +102,9 @@ def is_design_table(table):
     """
     rows, cols = _size(table)
     cells = _cells(table)
-    if cols < 2 or not cells:
+    # 1행 표는 '글 칸이 모든 행을 덮는다'가 늘 참이라 빈칸 하나만 있어도 장식 표가 된다(결재란·구분 표 오판).
+    # 막대 표는 점선 칸 위아래 두 행으로 그리므로 2행 이상만 본다.
+    if rows < 2 or cols < 2 or not cells:
         return False
     texts = [(tc, "".join(_text(tc).split())) for tc in cells]
     if all(text for _, text in texts) or not any(text for _, text in texts):
@@ -113,6 +115,27 @@ def is_design_table(table):
             if row != 0 or span < max(1, rows):
                 return False
     return True
+
+
+def has_unit_caption(table):
+    """'(단위: 개소)'처럼 단위를 적은 캡션이 달린 표인가. '<표 1> 추진 현황' 같은 일반 캡션 표는 데이터 표로 본다."""
+    caption = _child(table, "caption")
+    return caption is not None and "단위" in "".join(_text(caption).split())
+
+
+def is_user_designed_table(table):
+    """사용자가 꾸민 표(장식 막대 표·단위 캡션 표)인가. 이런 표는 서식·너비 재배분·자간 작업을 하지 않는다
+    (사용자 규칙, 2026-10-15). 모든 단계가 이 판정 하나를 쓴다."""
+    return is_design_table(table) or has_unit_caption(table)
+
+
+def protected_tables(root):
+    """root 안에서 사용자가 꾸민 표와 그 안에 든 표 전부의 id 집합(바깥 표를 건너뛰어도 안쪽 표를 고치지 않게)."""
+    protected = set()
+    for table in root.iter():
+        if _tag(table) == "tbl" and id(table) not in protected and is_user_designed_table(table):
+            protected.update(id(t) for t in table.iter() if _tag(t) == "tbl")
+    return protected
 
 
 def is_grid_table(table):

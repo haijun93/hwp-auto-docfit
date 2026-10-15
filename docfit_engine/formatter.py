@@ -1802,9 +1802,10 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             줄여 한 줄을 지킨다. 안쪽 표는 그 표대로 따로 본다.
             """
             count = 0
-            if 디자인표인가(table):
-                return 0   # 사용자가 꾸민 장식 표는 그대로 둔다
-            for cell in (x for x in table.iter() if 제목_xml이름(x) == 'tc'):
+            # 사용자가 꾸민 표(장식 막대 표·단위 캡션 표)는 안에 든 표까지 그대로 둔다(사용자 규칙, 2026-10-15).
+            막힌칸 = {id(c) for t in table.iter() if 제목_xml이름(t) == 'tbl' and 사용자표인가(t)
+                     for c in t.iter() if 제목_xml이름(c) == 'tc'}
+            for cell in (x for x in table.iter() if 제목_xml이름(x) == 'tc' and id(x) not in 막힌칸):
                 sub = 제목_자식(cell, 'subList')
                 if sub is None or sub.get('lineWrap') == 'SQUEEZE':
                     continue
@@ -1827,8 +1828,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             sections = {n: safe_xml_fromstring(data) for n, data in contents.items() if re.fullmatch(r'Contents/section\d+\.xml', n)}
 
             def 대상(root):
+                보호 = 보호표_목록(root)
                 return [i for i, t in enumerate(x for x in root.iter() if 제목_xml이름(x) == 'tbl')
-                        if 표_날짜칸_한줄(copy.deepcopy(t))]
+                        if id(t) not in 보호 and 표_날짜칸_한줄(copy.deepcopy(t))]
 
             if selections is None:
                 return {n: 대상(root) for n, root in sections.items()}
@@ -1839,7 +1841,10 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             for name, items in selections.items():
                 root = sections[name]
                 tables = [x for x in root.iter() if 제목_xml이름(x) == 'tbl']
+                보호 = 보호표_목록(root)
                 for index in items:
+                    if id(tables[index]) in 보호:
+                        continue
                     before = _표_텍스트(tables[index])
                     count += 표_날짜칸_한줄(tables[index])
                     if _표_텍스트(tables[index]) != before:
@@ -2045,10 +2050,11 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             for name in sorted(n for n in contents if re.fullmatch(r"Contents/section\d+\.xml", n)):
                 root = safe_xml_fromstring(contents[name])
                 changed = False
+                보호 = 보호표_목록(root)
                 for table in (element for element in root.iter() if 제목_xml이름(element) == "tbl"):
                     before_text.append(_표_텍스트(table))
-                    if 디자인표인가(table) or 제목_자식(table, 'caption') is not None:
-                        ordinal += 1   # 사용자가 꾸민 장식 표·캡션 달린 표는 정밀 복제하지 않는다
+                    if id(table) in 보호:
+                        ordinal += 1   # 사용자가 꾸민 표(안에 든 표 포함)는 정밀 복제하지 않는다
                         continue
                     target_signature = _표_서명(table, ordinal)
                     scored = [(_정밀표_매칭점수(target_signature, signature), signature, sample)
@@ -3337,8 +3343,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
     if _docfit_symbol == '_기본표서식_대상인가':
         def _기본표서식_대상인가(table):
             """2행 2열 이상 일반 표만 대상이다. 제목(준말로 만든 빈 정보 칸 제목 표 포함)·중제목·붙임 서식 표는 뺀다."""
-            # '(단위: 개소)' 같은 캡션이 달린 표는 작성자가 꾸민 표라 서식을 입히지 않는다(사용자 규칙, 2026-10-15).
-            return bool(표서식_모양인가(table) and 제목_자식(table, 'caption') is None and not (
+            # '(단위: 개소)' 같은 단위 캡션이 달린 표는 작성자가 꾸민 표라 서식을 입히지 않는다(사용자 규칙, 2026-10-15).
+            # '<표 1> 추진 현황' 같은 일반 캡션 표는 베타처럼 데이터 표로 서식을 입힌다.
+            return bool(표서식_모양인가(table) and not 단위캡션표인가(table) and not (
                 제목_유형판별(table, 빈칸허용=True) or 중제목_글칸들(table) or 붙임_유형판별(table)))
         return bind_function(_기본표서식_대상인가, _docfit_namespace)
     if _docfit_symbol == '기본표서식_hwpx_처리':
@@ -3369,7 +3376,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 # (서식 요소 분석의 데이터 표와 같은 기준, 2026-10-04).
                 순서 = sorted(sections, key=lambda n: int(re.search(r'(\d+)\.xml$', n).group(1)))
                 머리표 = {id(t) for t in 서식요소.head_block_tables([sections[n] for n in 순서], header)}
-                return {n: [i for i, t in enumerate(표들(root)) if _기본표서식_대상인가(t) and id(t) not in 머리표]
+                # 사용자가 꾸민 표 안에 든 표도 그대로 둔다.
+                제외 = 머리표.union(*(보호표_목록(root) for root in sections.values()))
+                return {n: [i for i, t in enumerate(표들(root)) if _기본표서식_대상인가(t) and id(t) not in 제외]
                         for n, root in sections.items()}
             if style is None or not any(items for items in selections.values()):
                 if target is not None: shutil.copyfile(source, target)

@@ -4,7 +4,8 @@ import unittest
 from defusedxml.ElementTree import fromstring
 
 from docfit_core.spacing_reset import reset_spacing
-from docfit_core.table_style import is_design_table, is_grid_table
+from docfit_core.table_style import (has_unit_caption, is_design_table, is_grid_table, is_user_designed_table,
+                                     protected_tables)
 
 NS = ('xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" '
       'xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head"')
@@ -25,6 +26,10 @@ def table(rows, cols, extra=''):
 BAR = table([[cell('2026 추진실적', 0, 0, 2), cell('', 1, 0), cell('', 2, 0), cell('( 8. 31. 현재 )', 3, 0, 2)],
              [cell('', 1, 1), cell('', 2, 1)]], 4)
 DATA = table([[cell('구 분', 0, 0), cell('노래연습장', 1, 0)], [cell('332', 0, 1), cell('', 1, 1)]], 2)
+UNIT = ('<hp:caption side="TOP"><hp:subList><hp:p><hp:run charPrIDRef="1"><hp:t>(단위: 개소)</hp:t></hp:run></hp:p>'
+        '</hp:subList></hp:caption>')
+PLAIN = ('<hp:caption side="TOP"><hp:subList><hp:p><hp:run charPrIDRef="1"><hp:t>&lt;표 1&gt; 추진 현황</hp:t>'
+         '</hp:run></hp:p></hp:subList></hp:caption>')
 
 
 class DesignedTableTest(unittest.TestCase):
@@ -36,11 +41,29 @@ class DesignedTableTest(unittest.TestCase):
     def test_data_table_with_an_empty_cell_is_still_a_data_table(self):
         self.assertFalse(is_design_table(fromstring(DATA)))
 
+    def test_one_row_table_with_blank_cell_is_not_design(self):
+        # 1행 표는 '글 칸이 모든 행을 덮는다'가 늘 참이라 결재란·구분 표가 장식 표로 오판됐다.
+        self.assertFalse(is_design_table(fromstring(table([[cell('구 분', 0, 0), cell('내 용', 1, 0), cell('', 2, 0)]], 3))))
+
+    def test_only_unit_captions_mark_a_user_designed_table(self):
+        unit = fromstring(DATA.replace('colCnt="2">', 'colCnt="2">' + UNIT, 1))
+        plain = fromstring(DATA.replace('colCnt="2">', 'colCnt="2">' + PLAIN, 1))
+        self.assertTrue(has_unit_caption(unit) and is_user_designed_table(unit))
+        self.assertFalse(has_unit_caption(plain) or is_user_designed_table(plain))
+
+    def test_tables_inside_a_designed_table_are_protected(self):
+        inner = table([[cell('가', 0, 0), cell('나', 1, 0)], [cell('1', 0, 1), cell('2', 1, 1)]], 2)
+        outer = DATA.replace('colCnt="2">', 'colCnt="2">' + UNIT, 1).replace('<hp:t>332</hp:t>', inner, 1)
+        section = fromstring(f'<hp:sec {NS}><hp:p><hp:run>{outer}</hp:run></hp:p>'
+                             f'<hp:p><hp:run>{DATA}</hp:run></hp:p></hp:sec>')
+        tables = [t for t in section.iter() if t.tag.endswith('}tbl')]
+        self.assertEqual(protected_tables(section), {id(tables[0]), id(tables[1])})
+
     def test_spacing_reset_keeps_designed_and_captioned_tables(self):
         header = fromstring(f'<hh:head {NS}><hh:charProperties>'
                             '<hh:charPr id="1" height="1100"><hh:spacing hangul="10"/></hh:charPr>'
                             '</hh:charProperties></hh:head>')
-        captioned = DATA.replace('rowCnt="2" colCnt="2">', 'rowCnt="2" colCnt="2"><hp:caption side="TOP"/>', 1)
+        captioned = DATA.replace('rowCnt="2" colCnt="2">', 'rowCnt="2" colCnt="2">' + UNIT, 1)
         section = fromstring(f'<hp:sec {NS}><hp:p><hp:run charPrIDRef="1">{BAR}</hp:run></hp:p>'
                              f'<hp:p><hp:run charPrIDRef="1">{captioned}</hp:run></hp:p>'
                              f'<hp:p><hp:run charPrIDRef="1"><hp:t>본문 글</hp:t></hp:run></hp:p></hp:sec>')

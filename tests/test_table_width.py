@@ -41,7 +41,8 @@ class TableWidthTest(unittest.TestCase):
         # '(단위: 개소)' 캡션이 달린 표: 열을 다시 나누지 않고, 넘칠 때만 같은 비율로 줄인다.
         rows = [[_cell('총 계', 0, 0, width=6000), _cell('노래연습장', 1, 0, width=4000)],
                 [_cell('332', 0, 1, width=6000), _cell('175', 1, 1, width=4000)]]
-        wide = _table(rows, 2, '<hp:caption side="TOP" lastWidth="10000"/>')
+        wide = _table(rows, 2, '<hp:caption side="TOP" lastWidth="10000"><hp:subList><hp:p><hp:run>'
+                               '<hp:t>(단위: 개소)</hp:t></hp:run></hp:p></hp:subList></hp:caption>')
         next(x for x in wide if x.tag.endswith('}sz')).set('width', '10000')
         index = HeaderIndex(HEADER)
         self.assertFalse(fit_table(wide, 40000, index))          # 들어가면 그대로
@@ -50,12 +51,40 @@ class TableWidthTest(unittest.TestCase):
 
     def test_design_bar_table_is_left_untouched(self):
         # test6 문화경제국 '2026 추진실적 ……(8. 31. 현재)' 막대 표: 빈 점선 칸이 최소 폭으로 줄어 모양이 깨졌다.
-        rows = [[_cell('2026 추진실적', 0, 0, width=13425), _cell('', 1, 0, width=22339),
-                 _cell('(8. 31. 현재)', 2, 0, width=11676)]]
+        # 실제 문서처럼 글 칸이 두 행을 덮고 가운데 점선 칸이 위아래 두 행이다.
+        rows = [[_cell('2026 추진실적', 0, 0, width=13425, row_span=2), _cell('', 1, 0, width=22339),
+                 _cell('(8. 31. 현재)', 2, 0, width=11676, row_span=2)], [_cell('', 1, 1, width=22339)]]
         table = _table(rows, 3)
         # 사용자가 꾸민 장식 표는 너비를 전혀 바꾸지 않는다(사용자 규칙).
         self.assertFalse(fit_table(table, 48000, HeaderIndex(HEADER)))
         self.assertEqual(_widths(table)[0], [13425, 22339, 11676])
+
+    def test_one_row_table_with_blank_cell_is_not_a_design_table(self):
+        # 1행 표는 빈칸이 있어도 장식 표가 아니다(결재란·구분 표가 너비 맞춤에서 빠지던 오판).
+        table = _table([[_cell('구 분', 0, 0), _cell('내 용', 1, 0), _cell('', 2, 0)]], 3)
+        self.assertTrue(is_target(table))
+
+    def test_plain_caption_table_is_fitted_like_any_data_table(self):
+        # '<표 1> 추진 현황' 같은 일반 캡션 표는 베타처럼 열을 글자 수 비율로 다시 나눈다.
+        rows = [[_cell('구 분', 0, 0, width=6000), _cell('노래연습장 현황', 1, 0, width=4000)],
+                [_cell('총계', 0, 1, width=6000), _cell('노래연습장 현황', 1, 1, width=4000)]]
+        table = _table(rows, 2, '<hp:caption side="TOP"><hp:subList><hp:p><hp:run><hp:t>&lt;표 1&gt; 추진 현황'
+                                '</hp:t></hp:run></hp:p></hp:subList></hp:caption>')
+        self.assertTrue(fit_table(table, 20000, HeaderIndex(HEADER)))
+        first, second = _widths(table)[1]
+        self.assertGreater(second, first)
+
+    def test_unit_caption_shrink_keeps_merged_borders_aligned(self):
+        # 칸마다 따로 버리면 병합 칸(10000)과 나뉜 칸(6001+3999)의 오른쪽 선이 1단위 어긋났다.
+        rows = [[_cell('제목', 0, 0, width=10000, col_span=2)],
+                [_cell('332', 0, 1, width=6001), _cell('175', 1, 1, width=3999)]]
+        table = _table(rows, 2, '<hp:caption side="TOP"><hp:subList><hp:p><hp:run><hp:t>(단위: 개소)'
+                                '</hp:t></hp:run></hp:p></hp:subList></hp:caption>')
+        next(x for x in table if x.tag.endswith('}sz')).set('width', '10000')
+        self.assertTrue(fit_table(table, 8566 + 566, HeaderIndex(HEADER)))
+        merged, split = _widths(table)
+        self.assertEqual(merged[0], sum(split))
+        self.assertEqual(merged[0], 8566)
 
     def test_inline_table_after_spaces_leaves_room_for_them(self):
         # test6 문화경제국 문서: '   '(빈칸 셋) 뒤 글자처럼 놓인 표를 본문 폭 그대로 넓히면 줄을 넘쳐 용지 밖으로 밀렸다.
