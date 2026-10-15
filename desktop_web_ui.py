@@ -1001,6 +1001,80 @@ class DesktopWebBridge:
                     "coverage": self._cached_coverage(identifier, analysis), "nodes": nodes}
         return self._tk(lambda: response(execute))
 
+    def idioms(self, action, payload):
+        """설정의 글자 상용구·본문 상용구 관리(docfit_app.idiom_service). 한/글이 읽는 사용자 폴더 파일을 고친다."""
+        import sys
+        from docfit_app.api_contract import ServiceError
+        from docfit_app.idiom_service import IdiomService
+        from docfit_core.format_samples import CHAR_IDIOM_FOLDER_NAME, app_subfolder
+        from docfit_core.hwp_idioms import IDO_NAME
+
+        def app_copy():
+            folder_copy = app_subfolder(CHAR_IDIOM_FOLDER_NAME) / IDO_NAME
+            bundled = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / "resources" / IDO_NAME
+            return folder_copy if folder_copy.is_file() else bundled
+
+        def execute():
+            service = IdiomService(app_copy=app_copy())
+            data = dict(payload) if isinstance(payload, dict) else payload
+            if action == "open_body":
+                import os
+                key = str((data or {}).get("key") or "")
+                snapshot = service.snapshot()
+                if not snapshot.get("available") or key not in {item["key"] for item in snapshot["body"]}:
+                    raise ServiceError("INVALID_IDIOM", "본문 상용구를 찾지 못했어요.")
+                from docfit_core.hwp_idioms import IdiomStore
+                path = IdiomStore(snapshot["folder"]).body_path(key)
+                if not path.is_file():
+                    raise ServiceError("INVALID_IDIOM", "이 본문 상용구의 문서 파일이 없어요.")
+                os.startfile(str(path))   # 한/글에서 열어 내용을 고친다
+                return snapshot
+            if action == "add_body" and isinstance(data, dict):
+                if not data.get("path"):
+                    from tkinter import filedialog
+                    picked = self._tk(lambda: filedialog.askopenfilename(
+                        parent=self.gui.root, title="본문 상용구로 쓸 문서",
+                        filetypes=[("한/글 문서", "*.hwp *.hwpx")]), front=True)
+                    if not picked:
+                        return service.snapshot()
+                    data["path"] = picked
+                source = Path(str(data["path"]))
+                if source.suffix.lower() == ".hwpx" and source.is_file():
+                    # 한/글 본문 상용구는 HWP 문서라 한/글로 바꿔 넣는다.
+                    import tempfile
+                    with tempfile.TemporaryDirectory(prefix="docfit_idiom_") as folder:
+                        converted = Path(folder) / (source.stem + ".hwp")
+                        self._hwpx_to_hwp(source, converted)
+                        data["path"] = str(converted)
+                        return service.command(action, data)
+            return service.command(action, data)
+        return response(execute)
+
+    def _hwpx_to_hwp(self, source, target):
+        """한/글 COM(별도 인스턴스)으로 HWPX를 HWP로 저장한다."""
+        import pythoncom
+        import win32com.client
+        from docfit_core.format_samples import REGISTRY_VALUE
+        pythoncom.CoInitialize()
+        app = None
+        try:
+            app = win32com.client.DispatchEx("HWPFrame.HwpObject")
+            app.RegisterModule("FilePathCheckDLL", REGISTRY_VALUE)
+            try:
+                app.Visible = False
+            except Exception:
+                pass
+            if not app.Open(str(source), "HWPX", "forceopen:true") or not app.SaveAs(str(target), "HWP", ""):
+                raise RuntimeError("한/글로 HWP 문서를 만들지 못했어요.")
+        finally:
+            if app is not None:
+                try:
+                    app.Clear(1)
+                    app.Quit()
+                except Exception:
+                    pass
+            pythoncom.CoUninitialize()
+
     def table_template(self, action, payload):
         from docfit_app.table_template_service import TableTemplateService
         def execute():
@@ -1339,7 +1413,7 @@ class _BrowserApi:
             "get_state", "add_files", "add_folder", "add_paths", "remove_file",
             "clear_files", "set_mode", "set_range", "start", "stop",
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
-            "get_pending_dialog", "resolve_dialog", "enable_close_guard", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults",
+            "get_pending_dialog", "resolve_dialog", "enable_close_guard", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults",
             "open_results", "next_job", "run_tool", "open_result",
             "show_result", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",

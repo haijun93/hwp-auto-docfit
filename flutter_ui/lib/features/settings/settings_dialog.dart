@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../core/api/abbreviation_api.dart';
+import 'idiom_panel.dart';
 import 'kiosk_theme.dart';
 import 'setting_guides.dart';
 
@@ -14,6 +15,13 @@ class SettingsDialog extends StatefulWidget {
   @override
   State<SettingsDialog> createState() => _SettingsDialogState();
 }
+
+// 설정 값 목록이 아닌 관리 화면 분류(상용구·앱 정보, 2026-10-15).
+const _panelCategories = [
+  GuideCategory('idiom_text', '글자 상용구', '준말 → 글자', Icons.short_text_rounded),
+  GuideCategory('idiom_body', '본문 상용구', '준말 → 문서 서식', Icons.article_outlined),
+  GuideCategory('about', '앱 정보', '개발자 도토리만두', Icons.info_outline_rounded),
+];
 
 class _SettingsDialogState extends State<SettingsDialog> {
   Map? snapshot;
@@ -378,7 +386,12 @@ class _SettingsDialogState extends State<SettingsDialog> {
                       ),
                     ),
                     if (!compact)
-                      Text('${item.subtitle} · $count개', style: Kiosk.caption),
+                      Text(
+                        count < 0
+                            ? item.subtitle
+                            : '${item.subtitle} · $count개',
+                        style: Kiosk.caption,
+                      ),
                   ],
                 ),
               ),
@@ -501,10 +514,12 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                 children: [
                                   for (final c in categories)
                                     _categoryTile(c, counts[c.id] ?? 0, true),
+                                  for (final c in _panelCategories)
+                                    _categoryTile(c, -1, true),
                                 ],
                               ),
                             ),
-                            Expanded(child: _list(visible, locked, query)),
+                            Expanded(child: _body(visible, locked, query)),
                           ],
                         )
                       : Row(
@@ -516,11 +531,17 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                 children: [
                                   for (final c in categories)
                                     _categoryTile(c, counts[c.id] ?? 0, false),
+                                  const Padding(
+                                    padding: EdgeInsets.fromLTRB(6, 8, 0, 8),
+                                    child: Text('관리', style: Kiosk.caption),
+                                  ),
+                                  for (final c in _panelCategories)
+                                    _categoryTile(c, -1, false),
                                 ],
                               ),
                             ),
                             const SizedBox(width: 12),
-                            Expanded(child: _list(visible, locked, query)),
+                            Expanded(child: _body(visible, locked, query)),
                           ],
                         ),
                 ),
@@ -541,6 +562,8 @@ class _SettingsDialogState extends State<SettingsDialog> {
                   spacing: 10,
                   runSpacing: 10,
                   children: [
+                    const Text('개발자 도토리만두', style: Kiosk.caption),
+                    const SizedBox(width: 12),
                     Text(
                       changed.isEmpty
                           ? '바꾼 설정이 없어요'
@@ -581,6 +604,30 @@ class _SettingsDialogState extends State<SettingsDialog> {
         ),
       ),
     );
+  }
+
+  /// 오른쪽 내용: 설정 값 목록, 또는 상용구·앱 정보 관리 화면(검색 중이면 설정 값 목록).
+  Widget _body(List<Map> visible, bool locked, String query) {
+    if (query.isEmpty && category == 'idiom_text') {
+      return IdiomPanel(
+        key: const ValueKey('idiom-text'),
+        api: widget.api,
+        body: false,
+        locked: snapshot?['running'] == true,
+      );
+    }
+    if (query.isEmpty && category == 'idiom_body') {
+      return IdiomPanel(
+        key: const ValueKey('idiom-body'),
+        api: widget.api,
+        body: true,
+        locked: snapshot?['running'] == true,
+      );
+    }
+    if (query.isEmpty && category == 'about') {
+      return AppInfoPanel(version: snapshot?['version'] as String?);
+    }
+    return _list(visible, locked, query);
   }
 
   Widget _list(List<Map> visible, bool locked, String query) {
