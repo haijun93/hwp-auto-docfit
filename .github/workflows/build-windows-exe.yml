@@ -41,7 +41,16 @@ jobs:
       - name: Validate source and regression tests
         run: |
           & ".\.venv\Scripts\python.exe" -m py_compile "hwp-auto-docfit.py" "docfit_core/batch_format.py"
-          & ".\.venv\Scripts\python.exe" -m unittest discover -s "tests"
+          & ".\.venv\Scripts\python.exe" -m unittest discover -s "tests" *> "windows-tests.log"
+          $testExit = $LASTEXITCODE
+          if ($testExit -ne 0) {
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value '### Windows regression failure'
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value '```text'
+            Get-Content -LiteralPath "windows-tests.log" -Tail 200 | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value '```'
+          }
+          Get-Content -LiteralPath "windows-tests.log" -Tail 200
+          exit $testExit
 
       - uses: subosito/flutter-action@v2
         with:
