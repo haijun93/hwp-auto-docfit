@@ -193,4 +193,4 @@ Windows 한/글 실측, WebView2 포커스와 EXE 패키징은 Windows 환경에
 - 배치 텍스트 변환은 라벨을 실제 문단·표로 삽입한다. 저장 성공 뒤 COM 파일을 해제하고 제목 표식을 후처리한다.
 - docfit_core/roman_heading.py는 로N / Unicode 로마자 일반 제목을 판별한다.
   기존 중제목 선행 서식이 이를 3칸 표로 변환하며 일반 준말의 콜론 규칙은 바꾸지 않는다.
-- 명시적 MD 로마자 번호는 원문 번호를 보존한다. 상세 및 푸시 대기 상태는 docs/ROMAN_HEADING_ALPHA13.md 참고.
+- 명시적 MD 로마자 번호는 원문 번호를 보존한다. 상세 및 원격 반영 기록은 docs/ROMAN_HEADING_ALPHA13.md 참고.

@@ -1,10 +1,10 @@
-## [구현·원격 푸시 대기] Alpha 12/13 — MD 계층·로마자 중제목
+## [반영·alpha] Alpha 12/13 — MD 계층·로마자 중제목
 
 - [x] MD #~###### 및 # # / # ## 목차 해석, ※ 주석으로 인한 감지 누락 방지.
 - [x] MD 제목·본문 표 실제 삽입 및 날짜·금액·붙임 보존.
 - [x] 로1 / Ⅰ 일반 문단을 예시의 3칸 중제목 표로 변환, 반복 실행 중복 생성 방지.
 - [x] MD의 Ⅰ~Ⅴ 및 부분 장 번호 보존, 하위 목차 계층 연결.
-- [ ] GitHub 인증 연결 복원 후 Alpha 12/13 커밋을 github·origin alpha로 푸시하고 원격 해시 확인.
+- [x] Alpha 12/13 기능 커밋을 github·origin alpha로 푸시(최초 인증 오류 후 재시도 성공).
 - 근거: docs/MARKDOWN_DOCUMENT_ALPHA12.md, docs/ROMAN_HEADING_ALPHA13.md.
   Windows COM 조판·WebView2·EXE 실기기 검증은 별도 유지.
 

@@ -32,9 +32,9 @@
 
 ## 원격 반영 상태
 
-- 앞선 MD 개선(Alpha 12)은 로컬 커밋 2f0f9e9로 보관했다.
-- 이 세션에서 GitHub 푸시는 could not read Username for 'https://github.com'으로 실패했다.
-  환경 상태 조회에도 사용할 수 있는 GitHub 인증 연결이 없었다.
-- 원격 alpha 조회값은 6c861466557047c0e11e78fc0227e02e711eb253이며,
-  Alpha 12/13 로컬 커밋은 GitHub 인증 연결 복원 후 순서대로 푸시하고 원격 해시를 재확인해야 한다.
-  인증값을 추측하거나 원격 URL을 바꿔 우회하지 않았다.
+- MD 개선(Alpha 12) 커밋: 2f0f9e9. 로마자 개선(Alpha 13) 기능 커밋: 1aec182.
+- 최초 푸시는 GitHub 인증 오류로 실패했고 당시 원격 alpha는 6c86146이었다.
+  인증값을 추측하거나 원격 URL을 바꾸지 않고 후속 재시도했으며 정상 푸시됐다.
+- github에 6c86146..1aec182 갱신 성공, 이어 origin에서도 Everything up-to-date를 확인했다.
+  두 원격 이름은 현재 동일한 GitHub URL을 가리키며 별도 GitLab 미러 푸시를 의미하지 않는다.
+- 이 문서 상태 동기화는 기능 커밋 뒤 별도 문서 커밋으로 수행한다.
