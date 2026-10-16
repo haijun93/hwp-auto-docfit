@@ -10,7 +10,8 @@
 3) A0에 복제한 서식으로 '한 번에 적용'(기본)을 돌린다.
 4) 결과를 A와 문서 순서대로 대조한다: 글, 문단 모양(정렬·여백·간격·줄 간격·줄 나눔), 글자 모양(글꼴·크기·굵게·
    기울임·밑줄·색·음영·장평·자간·위첨자), 표(행·열·크기·칸 크기·칸 여백·테두리 내용), 쪽 설정.
-불일치 0이 합격이다. 원본은 읽기만 하며 처리는 모두 임시 사본으로 한다. 예시마다 새 프로세스로 처리한다.
+불일치 0이 합격이다. 원본이 손으로 맞춘 쪽별 줄 간격·낱말 자간과 한 줄 문단의 내어쓰기는 재연 기준에서 빼고
+뺀 수만 따로 적는다(2026-10-17 사용자 결정). 원본은 읽기만 하며 처리는 모두 임시 사본으로 한다. 예시마다 새 프로세스로 처리한다.
 결과 폴더에 예시별 결과 HWPX·작업 로그·불일치 목록(.txt)과 summary.json을 남긴다.
 """
 from __future__ import annotations
@@ -178,7 +179,9 @@ def load(path):
                                 else:
                                     runs.append((shape, t))
                                 text += t
-                items.append(("P", text, paras.get(child.get("paraPrIDRef")), runs))
+                cache = child.find(P + "linesegarray")
+                line_count = len(cache) if cache is not None else None
+                items.append(("P", text, paras.get(child.get("paraPrIDRef")), runs, line_count))
                 for run in child.findall(P + "run"):
                     walk(run)
             elif child.tag == P + "tbl":
@@ -209,8 +212,45 @@ def _diff(a, b):
     return {k: (da.get(k), db.get(k)) for k in set(da) | set(db) if da.get(k) != db.get(k)}
 
 
+# 재연 기준에서 빼는 손 조정(2026-10-17 사용자 결정): 쪽마다 다른 줄 간격과 낱말 자간. 한 줄 문단의 내어쓰기는
+# 화면이 같으므로 비교하지 않는다(원본의 줄 배치 정보 lineseg로 줄 수를 센다).
+EXCLUDED_PARA = ("ls",)
+EXCLUDED_CHAR = ("spacing",)
+
+
+def _normalized(x, line_count):
+    """비교용 문단: 제외 항목을 뺀 문단 모양과, 제외 항목을 뺀 뒤 모양이 같은 run을 합친 글자 구간."""
+    para = tuple((k, v) for k, v in (x[2] or ()) if k not in EXCLUDED_PARA
+                 and not (k == "intent" and line_count is not None and line_count <= 1))
+    runs = []
+    for shape, text in x[3]:
+        shape = tuple((k, v) for k, v in (shape or ()) if k not in EXCLUDED_CHAR)
+        if runs and runs[-1][0] == shape:
+            runs[-1] = (shape, runs[-1][1] + text)
+        else:
+            runs.append((shape, text))
+    return ("P", x[1], para, runs)
+
+
+def _excluded(x, y):
+    """제외한 손 조정 종류(원본 x와 결과 y가 다른 것만)."""
+    found = []
+    px, py = dict(x[2] or ()), dict(y[2] or ())
+    if px.get("ls") != py.get("ls"):
+        found.append("줄 간격")
+    if px.get("intent") != py.get("intent") and x[4] is not None and x[4] <= 1:
+        found.append("한 줄 문단 내어쓰기")
+    sx = [dict(c or ()).get("spacing") for c, t in x[3] for _ in t]
+    sy = [dict(c or ()).get("spacing") for c, t in y[3] for _ in t]
+    if sx != sy:
+        found.append("자간")
+    return found
+
+
 def compare(original, result):
-    """(불일치 수, 사람이 읽을 목록)."""
+    """(불일치 수, 사람이 읽을 목록). 손 조정 제외 항목은 따로 센다."""
+    from collections import Counter
+    excluded = Counter()
     a, b = load(original), load(result)
     key = lambda x: (x[0], x[1] if x[0] == "P" else "")
     lines, count = [f"항목 수 원본 {len(a)} / 결과 {len(b)}"], 0
@@ -223,6 +263,9 @@ def compare(original, result):
             continue
         for i, j in zip(range(i1, i2), range(j1, j2)):
             x, y = a[i], b[j]
+            if x[0] == "P":
+                excluded.update(_excluded(x, y))
+                x, y = _normalized(x, x[4]), _normalized(y, x[4])
             if x == y:
                 continue
             count += 1
@@ -252,6 +295,8 @@ def compare(original, result):
                                      + (" 테두리 다름" if ca[4] != cb[4] else ""))
             else:
                 lines.append(f"## 쪽 설정 {x} / {y}")
+    if excluded:
+        lines.append("재연 기준에서 뺀 손 조정(문단 수): " + ", ".join(f"{k} {v}" for k, v in excluded.most_common()))
     lines.append(f"불일치 {count}")
     return count, lines
 
