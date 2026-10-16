@@ -6,16 +6,16 @@
 **다 쓴 한글(HWP·HWPX) 보고서를 넣고 「정리 시작」만 누르세요.** 설치된 한/글을 자동으로 조작해 공문서 모양으로 다듬어 줍니다.
 
 <p>
-<img alt="현재 공개 베타 v1.76.0" src="https://img.shields.io/badge/%ED%98%84%EC%9E%AC%20%EA%B3%B5%EA%B0%9C%20%EB%B2%A0%ED%83%80-v1.76.0-2563eb">
+<img alt="현재 공개 베타 v1.76.1" src="https://img.shields.io/badge/%ED%98%84%EC%9E%AC%20%EA%B3%B5%EA%B0%9C%20%EB%B2%A0%ED%83%80-v1.76.1-2563eb">
 <img alt="무료" src="https://img.shields.io/badge/%EA%B0%80%EA%B2%A9-%EB%AC%B4%EB%A3%8C-16a34a">
 <img alt="Windows 10·11" src="https://img.shields.io/badge/Windows-10%C2%B711-0078d4">
 <img alt="한/글 2020" src="https://img.shields.io/badge/%ED%95%9C%2F%EA%B8%80-2020-0ea5e9">
 <img alt="문서 외부 전송 없음" src="https://img.shields.io/badge/%EB%AC%B8%EC%84%9C-%EC%99%B8%EB%B6%80%20%EC%A0%84%EC%86%A1%20%EC%97%86%EC%9D%8C-64748b">
 </p>
 
-설치 없이 실행 파일 하나로 시작합니다 · [v1.76.0 변경 사항](releases/v1.76.0.md) · [GitHub 저장소](https://github.com/haijun93/hwp-auto-docfit) · [GitLab 저장소](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
+설치 없이 실행 파일 하나로 시작합니다 · [v1.76.1 변경 사항](releases/v1.76.1.md) · [GitHub 저장소](https://github.com/haijun93/hwp-auto-docfit) · [GitLab 저장소](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
 
-**v1.76.0**은 새 화면(Flutter)과 함께 **파일포맷 변경**, **표/다이어그램 만들기**, **상용구 관리**, **한/글 조판 미리보기**를 정식으로 담은 베타입니다. 기본은 **폐쇄망 모드**라 앱이 스스로 외부 서버에 접속하지 않습니다.
+**v1.76.1**은 새 화면(Flutter)과 함께 **파일포맷 변경**, **표/다이어그램 만들기**, **상용구 관리**, **한/글 조판 미리보기**를 정식으로 담은 베타입니다. 기본은 **폐쇄망 모드**라 앱이 스스로 외부 서버에 접속하지 않습니다.
 
 [![프로그램 사용 시연 영상 (약 5분). 클릭하면 고화질 영상이 열립니다.](docs/media/overview-demo.gif)](docs/media/overview-demo.mp4)
 
@@ -66,7 +66,7 @@
 
 ---
 
-## 🆕 v1.76.0에서 새로워진 점
+## 🆕 v1.76.1에서 새로워진 점
 
 ### 🔁 파일포맷 변경 — 고르면 바로 변환
 문서를 넣고 **파일포맷 변경**에서 결과 형식(HWPX·PDF·DOCX·EPUB·JPG·PNG)을 고르면 **그 즉시 변환을 시작**합니다. 문서를 끌어다 놓으면 자동으로 작업 방식 단계로 넘어갑니다.
@@ -217,7 +217,7 @@ HWP·HWPX → PDF·그림은 **한/글 내장 저장 기능**을 씁니다. 한/
 
 # 자세한 사용 설명서
 
-이번 버전에서 바뀐 점: **v1.76.0**은 파일포맷 변경(고르면 바로 변환), 표/다이어그램 만들기, 상용구 관리, 한/글 조판 미리보기, 기능별 진행 화면, 사용자가 꾸민 표 보호를 더했습니다([변경 사항](releases/v1.76.0.md)). '서식 통일'은 v1.74부터 기본으로 글꼴·크기만 맞춥니다('전체 서식 맞추기' 옵션으로 전체 서식).
+이번 버전에서 바뀐 점: **v1.76.1**은 파일포맷 변경(고르면 바로 변환), 표/다이어그램 만들기, 상용구 관리, 한/글 조판 미리보기, 기능별 진행 화면, 사용자가 꾸민 표 보호를 더했습니다([변경 사항](releases/v1.76.1.md)). '서식 통일'은 v1.74부터 기본으로 글꼴·크기만 맞춥니다('전체 서식 맞추기' 옵션으로 전체 서식).
 
 <details>
 <summary><b>기능별 자세한 설명과 옵션 위치 펼치기</b></summary>

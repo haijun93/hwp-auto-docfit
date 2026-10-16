@@ -6,6 +6,7 @@ on:
       - alpha
       - release/1.74-beta.2
       - release/1.76.0
+      - release/1.76.1
       - claude/affectionate-goldberg-ggln7c
   workflow_dispatch: {}
 
