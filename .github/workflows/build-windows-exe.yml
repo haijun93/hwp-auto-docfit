@@ -5,6 +5,7 @@ on:
     branches:
       - alpha
       - release/1.74-beta.2
+      - release/1.76.0
       - claude/affectionate-goldberg-ggln7c
   workflow_dispatch: {}
 
@@ -88,6 +89,10 @@ jobs:
           $result = Get-Content -Raw -LiteralPath $report | ConvertFrom-Json
           if (-not $result.ok) { throw "EXE module imports failed" }
 
+      - name: Verify visible frozen EXE version window
+        run: |
+          & ".\.venv\Scripts\python.exe" "scripts/smoke_windows_exe.py" --exe "dist/HWP_AutoDocFit.exe" --report "dist/windows-ui-smoke.json"
+
       - name: Build offline kordoc runtime pack
         shell: pwsh
         run: ./scripts/build_kordoc_runtime.ps1 -Output dist/HWP_AutoDocFit_kordoc_runtime.zip
@@ -98,6 +103,7 @@ jobs:
           name: ${{ github.ref_name == 'alpha' && 'HWP_AutoDocFit-alpha' || 'HWP_AutoDocFit-binaries' }}
           path: |
             dist/HWP_AutoDocFit.exe
+            dist/windows-ui-smoke.json
             dist/HWP_AutoDocFit_kordoc_runtime.zip
             dist/HWP_AutoDocFit_kordoc_runtime.zip.sha256
           if-no-files-found: error
@@ -107,13 +113,14 @@ jobs:
         shell: bash
         run: |
           mkdir -p release-assets
+          cp dist/windows-ui-smoke.json release-assets/windows-ui-smoke.json
           cp dist/HWP_AutoDocFit.exe release-assets/HWP_AutoDocFit.exe
           cp dist/HWP_AutoDocFit_kordoc_runtime.zip* release-assets/
           git rev-parse HEAD > release-assets/build-source.txt
           sha256sum release-assets/HWP_AutoDocFit.exe release-assets/HWP_AutoDocFit_kordoc_runtime.zip > release-assets/SHA256SUMS
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -f release-assets/HWP_AutoDocFit.exe release-assets/HWP_AutoDocFit_kordoc_runtime.zip release-assets/HWP_AutoDocFit_kordoc_runtime.zip.sha256 release-assets/build-source.txt release-assets/SHA256SUMS
+          git add -f release-assets/windows-ui-smoke.json release-assets/HWP_AutoDocFit.exe release-assets/HWP_AutoDocFit_kordoc_runtime.zip release-assets/HWP_AutoDocFit_kordoc_runtime.zip.sha256 release-assets/build-source.txt release-assets/SHA256SUMS
           if git diff --cached --quiet; then
             echo "No change in built exes; skipping commit."
           else
