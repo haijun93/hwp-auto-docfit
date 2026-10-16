@@ -16,6 +16,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify fresh build provenance
+        run: |
+          test -s release-assets/build-source.txt
+          SOURCE=$(cat release-assets/build-source.txt)
+          git merge-base --is-ancestor "$SOURCE" HEAD
+          git diff --exit-code "$SOURCE" HEAD -- . ':(exclude)release-assets' ':(exclude)releases' ':(exclude)HANDOVER.md' ':(exclude)README.md' ':(exclude)website'
+          sha256sum --check release-assets/SHA256SUMS
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -32,6 +41,8 @@ jobs:
             python3 -c "import zipfile, os; tag=os.environ.get('TAG', 'release'); z=zipfile.ZipFile(f'HWP_AutoDocFit-{tag}.zip', 'w', zipfile.ZIP_DEFLATED); z.write('release-assets/HWP_AutoDocFit.exe', 'HWP_AutoDocFit.exe'); os.path.exists('release-assets/보고서 예시 파일(한번에 적용).txt') and z.write('release-assets/보고서 예시 파일(한번에 적용).txt', '보고서 예시 파일(한번에 적용).txt'); z.close()"
             gh release create "$TAG" "HWP_AutoDocFit-${TAG}.zip#HWP_AutoDocFit-${TAG}.zip (통합 압축팩)" \
               release-assets/HWP_AutoDocFit.exe \
+              release-assets/HWP_AutoDocFit_kordoc_runtime.zip \
+              release-assets/SHA256SUMS \
               "report-example-all-in-one.txt#보고서 예시 파일(한번에 적용).txt" \
               --title "$TITLE" --notes-file "$NOTE" --latest
           fi
