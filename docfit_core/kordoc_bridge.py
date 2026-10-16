@@ -41,8 +41,8 @@ SUPPORTED_INPUT_EXTENSIONS = frozenset({
 # 글자 인식(OCR)이 있어야 읽을 수 있는 그림 입력.
 IMAGE_INPUT_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".webp"})
 OCR_UNAVAILABLE_MESSAGE = (
-    "그림 파일(JPG·PNG 등)은 글자 인식(OCR)이 필요한데, 폐쇄망용 변환 엔진에는 OCR 모델이 "
-    "포함되어 있지 않습니다. HWP·HWPX·PDF·Office 문서를 사용해 주세요."
+    "이미지 글자 인식(OCR) 엔진 또는 한국어 모델이 준비되지 않았습니다. "
+    "OCR이 내장된 최신 실행 파일을 사용해 주세요."
 )
 
 
@@ -164,9 +164,23 @@ def _kordoc_command() -> list[str]:
 
 
 def ocr_available() -> bool:
-    """그림·스캔 쪽 글자 인식을 쓸 수 있는지. 앱 꾸러미는 OCR 엔진을 담지 않고,
-    폐쇄망에서는 미리 넣어 둔 OCR 모델이 있어야 한다."""
-    if _bundled_runtime() or kordoc_runtime.bundled_pack():
+    """내장 OCR 의존성·한국어 모델 또는 설치 가능한 OCR 꾸러미 준비 상태."""
+    runtime = _bundled_runtime()
+    if runtime:
+        root = Path(runtime[1]).parents[4]
+        if kordoc_runtime.ocr_models_present() and all(
+                (root / "app" / "node_modules" / name / "package.json").is_file()
+                for name in ("onnxruntime-node", "sharp")):
+            return True
+    pack = kordoc_runtime.bundled_pack()
+    if pack:
+        import zipfile
+        try:
+            with zipfile.ZipFile(pack) as archive:
+                return json.loads(archive.read("runtime.json")).get("ocr") == "ppocr-korean-v5"
+        except (OSError, ValueError, KeyError, AttributeError, zipfile.BadZipFile):
+            return False
+    if runtime:
         return False
     return not offline_mode() or kordoc_runtime.ocr_models_present()
 
@@ -335,9 +349,12 @@ def convert_to_hwpx(source: str | Path, target: str | Path, *, preset: str = "�
     with tempfile.TemporaryDirectory(prefix="docfit_kordoc_convert_") as folder:
         temp_dir = Path(folder)
         markdown = temp_dir / "document.md"
-        parse_document(source, markdown, output_format="markdown", ocr=ocr and source.suffix.lower() == ".pdf")
+        parse_document(source, markdown, output_format="markdown",
+                       ocr=ocr and source.suffix.lower() in IMAGE_INPUT_EXTENSIONS | {".pdf"})
         if not markdown.is_file():
             raise RuntimeError("문서를 읽은 결과가 만들어지지 않았습니다.")
+        if source.suffix.lower() in IMAGE_INPUT_EXTENSIONS and not markdown.read_text(encoding="utf-8").strip():
+            raise RuntimeError("이미지에서 인식된 글자가 없습니다. 해상도·회전·글자 대비를 확인해 주세요.")
         # 같은 볼륨에 임시 결과를 두어 OneDrive/다른 드라이브에서도 원자적으로
         # 최종 이름을 확보할 수 있게 한다. hard link가 기존 결과를 덮어쓰지 않는다.
         with tempfile.NamedTemporaryFile(prefix=".docfit_", suffix=".hwpx", dir=target.parent, delete=False) as stream:

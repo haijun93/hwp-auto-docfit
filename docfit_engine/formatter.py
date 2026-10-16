@@ -9416,6 +9416,10 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     원문, 변환됨 = AI답변_개조식_변환(텍스트파일_읽기(원본경로))
                     텍스트_hwpx로_변환(원문, 대상경로)
                     return
+            from docfit_core.file_conversion import IMAGE_INPUT_EXTENSIONS, convert_image_to_hwpx
+            if 확장자 in IMAGE_INPUT_EXTENSIONS:
+                convert_image_to_hwpx(원본경로, 대상경로)
+                return
             if 확장자 in (".doc", ".docx", ".pdf"):
                 with tempfile.TemporaryDirectory(prefix="docfit_변환_") as 임시폴더:
                     임시_md = Path(임시폴더) / f"{Path(원본경로).stem}.md"

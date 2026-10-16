@@ -8,6 +8,7 @@ on:
       - release/1.76.0
       - release/1.76.1
       - release/1.76.2
+      - release/1.76.3
       - claude/affectionate-goldberg-ggln7c
   workflow_dispatch: {}
 
@@ -113,19 +114,40 @@ jobs:
             dist/HWP_AutoDocFit_kordoc_runtime.zip.sha256
           if-no-files-found: error
 
-      - name: Commit built exes to release-assets
+      - name: Stage binary in draft release (Git objects have a 100MiB limit)
+        if: startsWith(github.ref, 'refs/heads/release/')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(".venv/Scripts/python.exe" -c "from scripts.smoke_windows_exe import version_from_source; print(version_from_source('hwp-auto-docfit.py'))")
+          TAG="v$VERSION"
+          if gh release view "$TAG" --json isDraft >/dev/null 2>&1; then
+            test "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = true || { echo "Published tag must not be overwritten"; exit 1; }
+          else
+            gh release create "$TAG" --draft --target "$GITHUB_SHA" --title "HWP AutoDocFit $VERSION" --notes "빌드 검증 후 게시 예정"
+          fi
+          gh release upload "$TAG" dist/HWP_AutoDocFit.exe --clobber
+
+      - name: Commit build provenance and verification records
         if: github.ref != 'refs/heads/alpha'
         shell: bash
         run: |
           mkdir -p release-assets
           cp dist/windows-ui-smoke.json release-assets/windows-ui-smoke.json
-          cp dist/HWP_AutoDocFit.exe release-assets/HWP_AutoDocFit.exe
-          cp dist/HWP_AutoDocFit_kordoc_runtime.zip* release-assets/
           git rev-parse HEAD > release-assets/build-source.txt
-          sha256sum release-assets/HWP_AutoDocFit.exe > release-assets/SHA256SUMS
+          sha256sum dist/HWP_AutoDocFit.exe | sed 's|dist/|release-assets/|' > release-assets/SHA256SUMS
+          if [[ "$GITHUB_REF" == refs/heads/release/* ]]; then
+            VERSION=$(".venv/Scripts/python.exe" -c "from scripts.smoke_windows_exe import version_from_source; print(version_from_source('hwp-auto-docfit.py'))")
+            printf '{"delivery":"github-draft-release","tag":"v%s","source":"%s","run":"%s"}\n' "$VERSION" "$GITHUB_SHA" "$GITHUB_RUN_ID" > release-assets/build-delivery.json
+            git rm --ignore-unmatch release-assets/HWP_AutoDocFit.exe release-assets/HWP_AutoDocFit_kordoc_runtime.zip release-assets/HWP_AutoDocFit_kordoc_runtime.zip.sha256
+          else
+            cp dist/HWP_AutoDocFit.exe release-assets/HWP_AutoDocFit.exe
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -f release-assets/windows-ui-smoke.json release-assets/HWP_AutoDocFit.exe release-assets/HWP_AutoDocFit_kordoc_runtime.zip release-assets/HWP_AutoDocFit_kordoc_runtime.zip.sha256 release-assets/build-source.txt release-assets/SHA256SUMS
+          git add -f release-assets/windows-ui-smoke.json release-assets/build-source.txt release-assets/SHA256SUMS
+          if test -f release-assets/build-delivery.json; then git add -f release-assets/build-delivery.json; fi
           if git diff --cached --quiet; then
             echo "No change in built exes; skipping commit."
           else

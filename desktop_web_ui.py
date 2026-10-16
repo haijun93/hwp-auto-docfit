@@ -18,7 +18,7 @@ from docfit_core.progress_guide import guide_state, progress_view
 from docfit_core.stage_selection import STAGE_EXAMPLES, default_choice, stages_for_mode
 from docfit_app.api_contract import response
 from docfit_app.app_state import STAGE_ORDER
-from docfit_core.kordoc_bridge import IMAGE_INPUT_EXTENSIONS
+from docfit_core.file_conversion import IMAGE_INPUT_EXTENSIONS
 from docfit_core.file_conversion import CONVERSION_INPUTS as SUPPORTED_INPUT_EXTENSIONS, CONVERSION_OUTPUTS
 from docfit_core.file_conversion import HANCOM_PDF_DIRECT, IMAGE_FORMATS
 

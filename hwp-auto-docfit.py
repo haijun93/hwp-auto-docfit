@@ -365,7 +365,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리"
-APP_VERSION = "1.76.2"
+APP_VERSION = "1.76.3"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 GITHUB_UPDATE_API_URL = "https://api.github.com/repos/haijun93/hwp-auto-docfit/releases/latest"
@@ -3078,7 +3078,7 @@ _문서_처리_1회 = _engine_resolve('docfit_engine.pipeline', '_문서_처리_
 
 
 지원_확장자 = (".hwp", ".hwpx", ".txt", ".md", ".doc", ".docx", ".pdf",
-              ".hml", ".xls", ".xlsx", ".pptx", ".png", ".jpg", ".jpeg", ".webp")
+              ".hml", ".xls", ".xlsx", ".pptx", ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", ".gif")
 
 
 바이너리_HWP_파일인가 = _engine_resolve('docfit_engine.formatter', '바이너리_HWP_파일인가', globals())

@@ -1,7 +1,7 @@
 // 마인드맵: 가운데 주제에서 가지를 뻗는 나무 구조. 가지마다 PPT 도형·색·글자 서식을 고른다.
-// 배치는 자동(가운데 주제 좌우로 가지를 나눠 펼침)이고, 그린 결과는 일반 도형·연결선(model.js)으로 바꿔
-// 화면·PNG 내보내기를 같이 쓴다.
-import {SHAPES} from './shapes.js';
+// 자동 배치를 시작점으로 사용하며 수동 위치·부모 연결·선 모양은 문서에 보존한다.
+// 화면·PNG 내보내기는 같은 도형·연결선을 사용한다.
+import {SHAPES,DASHES,MARKERS} from './shapes.js';
 import {isFontName} from './table.js';
 const MAX_NODES=300,MAX_TEXT=200;
 // 가지 색(1단계 가지마다 돌아가며).
@@ -22,11 +22,19 @@ export function findNode(map,id){let found=null;walk(map.root,(n,p)=>{if(n.id===
 const clone=map=>structuredClone(map);
 export function addChild(map,parentId,text='새 가지'){
  const next=clone(map),hit=findNode(next,parentId);if(!hit)return {map,id:null};
- const n=mindmapNode(text);hit.node.children.push(n);return {map:next,id:n.id};
+ const n=mindmapNode(text);
+ if(hit.node.position){
+  n.position={x:hit.node.position.x+270,y:hit.node.position.y+90*hit.node.children.length};
+  const used=[];walk(next.root,v=>{if(v.position)used.push(v.position);});
+  while(used.some(p=>Math.abs(p.x-n.position.x)<210&&Math.abs(p.y-n.position.y)<80))n.position.y+=90;
+ }
+ hit.node.children.push(n);return {map:next,id:n.id};
 }
 export function addSibling(map,id,text='새 가지'){
  const next=clone(map),hit=findNode(next,id);if(!hit?.parent)return addChild(map,id,text);
- const n=mindmapNode(text);const i=hit.parent.children.findIndex(c=>c.id===id);hit.parent.children.splice(i+1,0,n);return {map:next,id:n.id};
+ const n=mindmapNode(text);const i=hit.parent.children.findIndex(c=>c.id===id);
+ if(hit.node.position)n.position={x:hit.node.position.x,y:hit.node.position.y+100};
+ hit.parent.children.splice(i+1,0,n);return {map:next,id:n.id};
 }
 export function removeNode(map,id){
  const next=clone(map),hit=findNode(next,id);if(!hit?.parent)return map;
@@ -36,6 +44,9 @@ export function updateNode(map,id,patch){
  const next=clone(map),hit=findNode(next,id);if(!hit)return map;
  if(patch.text!==undefined)hit.node.text=patch.text;
  if(patch.style)hit.node.style={...hit.node.style,...patch.style};
+ if(patch.position)hit.node.position={...patch.position};
+ if(patch.size)hit.node.size={...patch.size};
+ if(patch.edge)hit.node.edge={...hit.node.edge,...patch.edge};
  return next;
 }
 /** 가지 순서 옮기기(같은 부모 안에서 위·아래). */
@@ -59,7 +70,27 @@ export function validateMindmap(map){
   if(s.size!==undefined){if(typeof s.size!=='number'||!(s.size>=6&&s.size<=40))throw new Error('가지 글자 크기를 확인해 주세요.');style.size=s.size;}
   if(s.bold!==undefined){if(typeof s.bold!=='boolean')throw new Error('가지 굵게 값을 확인해 주세요.');style.bold=s.bold;}
   if(s.font!==undefined){if(!isFontName(s.font))throw new Error('가지 글꼴을 확인해 주세요.');style.font=s.font;}
-  return {id:n.id,text:n.text,style,children:n.children.map(check)};
+  const extra={};
+  if(n.size!==undefined){
+   if(!Number.isFinite(n.size?.width)||!Number.isFinite(n.size?.height)||n.size.width<40||n.size.height<30||n.size.width>4000||n.size.height>4000)throw new Error('가지 크기를 확인해 주세요.');
+   extra.size={width:n.size.width,height:n.size.height};
+  }
+  if(n.position!==undefined){
+   if(!Number.isFinite(n.position?.x)||!Number.isFinite(n.position?.y)||Math.abs(n.position.x)>1000000||Math.abs(n.position.y)>1000000)throw new Error('가지 위치를 확인해 주세요.');
+   extra.position={x:n.position.x,y:n.position.y};
+  }
+  if(n.edge!==undefined){
+   const e=n.edge;if(!e||typeof e!=='object')throw new Error('가지 연결선을 확인해 주세요.');
+   extra.edge={hidden:e.hidden===true};
+   if(e.label!==undefined){if(typeof e.label!=='string'||e.label.length>300)throw new Error('연결선 설명을 확인해 주세요.');extra.edge.label=e.label;}
+   for(const k of ['sourceHandle','targetHandle'])if(e[k]!==undefined){if(!['left','right','top','bottom'].includes(e[k]))throw new Error('연결점을 확인해 주세요.');extra.edge[k]=e[k];}
+   if(e.style!==undefined){
+    const st=e.style;
+    if(!st||!['step','straight','curve'].includes(st.line)||!hex(st.color)||!Number.isFinite(st.width)||st.width<0.5||st.width>10||!DASHES.some(([k])=>k===st.dash)||!MARKERS.some(([k])=>k===st.start)||!MARKERS.some(([k])=>k===st.end))throw new Error('연결선 모양을 확인해 주세요.');
+    extra.edge.style={line:st.line,color:st.color,width:st.width,dash:st.dash,start:st.start,end:st.end};
+   }
+  }
+  return {id:n.id,text:n.text,style,...extra,children:n.children.map(check)};
  };
  const layout=['both','right','down'].includes(map.layout)?map.layout:'both';
  return {root:check(map.root),layout};
@@ -78,7 +109,7 @@ export function mindmapGraph(map){
    :depth===1?{shape:'roundRect',fill:color,stroke:color,textColor:'#FFFFFF',bold:true,size:13}
    :{shape:'roundRect',fill:'#FFFFFF',stroke:color,textColor:'#172b4d',size:12};
   const st={...base,...s};
-  nodes.push({id:n.id,type:'flow',position:{x,y},width:depth===0?W+40:W,height:depth===0?H+16:H,
+  nodes.push({id:n.id,type:'flow',position:n.position?{...n.position}:{x,y},width:n.size?.width??(depth===0?W+40:W),height:n.size?.height??(depth===0?H+16:H),
    data:{label:n.text,shape:st.shape,color:'white',fill:st.fill,stroke:st.stroke,strokeWidth:2,textColor:st.textColor,size:st.size,bold:!!st.bold,...(st.font?{font:st.font}:{})}});
  };
  const rec=(n,x,top,depth,color,dir,parent)=>{
@@ -112,7 +143,7 @@ export function mindmapGraph(map){
    n.children.forEach((c,i)=>{const cc=depth===0?BRANCH_COLORS[i%BRANCH_COLORS.length]:color;recDown(c,cursor,y+H+GAP_X,depth+1,cc,n.id);cursor+=widthOf(c)+GAP_X/2;});
   };
   recDown(root,0,0,0,'#1D4ED8',null);
-  return {nodes,edges};
+  return finishGraph(map,nodes,edges);
  }
  const rootSpan=Math.max(leaves(root),1)*(H+GAP_Y);
  place(root,0,rootSpan/2-H/2,0,'#1D4ED8','right');
@@ -127,5 +158,33 @@ export function mindmapGraph(map){
   }
  };
  side(right,'right');side(left,'left');
- return {nodes,edges};
+ return finishGraph(map,nodes,edges);
+}
+
+/** Move a branch and descendants; a root move or cycle is invalid. */
+export function reparentNode(map,id,parentId,handles={}){
+ const next=clone(map),hit=findNode(next,id),parent=findNode(next,parentId);
+ if(!hit?.parent||!parent||findNode({root:hit.node},parentId))throw new Error('자기 자신이나 하위 가지에 연결할 수 없습니다.');
+ hit.parent.children=hit.parent.children.filter(n=>n.id!==id);
+ parent.node.children.push(hit.node);
+ hit.node.edge={...hit.node.edge,...handles,hidden:false};return next;
+}
+/** Freeze visible placement before dragging so other branches stay in place. */
+export function positionMindmap(map,positions){
+ const next=clone(map),display=mindmapGraph(map),byId=new Map(display.nodes.map(n=>[n.id,n.position]));
+ walk(next.root,n=>{n.position={...(positions[n.id]??byId.get(n.id))};});return next;
+}
+export function autoLayoutMindmap(map,layout=map.layout){
+ const next=clone(map);next.layout=layout;walk(next.root,n=>{delete n.position;});return next;
+}
+function finishGraph(map,nodes,edges){
+ const byId=new Map();walk(map.root,n=>byId.set(n.id,n));
+ return {nodes,edges:edges.filter(e=>!byId.get(e.target)?.edge?.hidden).map(e=>{
+  const saved=byId.get(e.target)?.edge??{};
+  const a=nodes.find(n=>n.id===e.source),b=nodes.find(n=>n.id===e.target);
+  const horizontal=Math.abs(b.position.x-a.position.x)>=Math.abs(b.position.y-a.position.y);
+  const sides=horizontal?(b.position.x>=a.position.x?['right','left']:['left','right']):(b.position.y>=a.position.y?['bottom','top']:['top','bottom']);
+  const styled=saved.style?{data:{...saved.style},style:{stroke:saved.style.color,strokeWidth:saved.style.width},markerEnd:{type:'arrowclosed',color:saved.style.color}}:{};
+  return {...e,...styled,label:saved.label??'',sourceHandle:saved.sourceHandle??sides[0],targetHandle:saved.targetHandle??sides[1]};
+ })};
 }

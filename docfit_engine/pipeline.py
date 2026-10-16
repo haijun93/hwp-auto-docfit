@@ -922,6 +922,19 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 if stage_enabled(선택_세부작업, 'table_unify', 작업_모드):
                     if not stage('표 서식통일', 서식통일_표_전체_적용):
                         return False
+                # 카드의 '자간 정리 제외' 해제는 서식 변경 문장뿐 아니라 본문 전체 검사다.
+                # 대표 서식과 같다는 이유로 줄 끝 어절 분리/외톨이 글자 검사를 생략하지 않는다.
+                if (서식통일_자간조정_사용
+                        and stage_enabled(선택_세부작업, 'unify_spacing', 작업_모드)):
+                    if not stage('본문 자간·단어 분리 조정', 본문_기존자간조정):
+                        return False
+                    if 문장부호기능 and not stage('짧은 마지막 줄 병합', 본문_문장부호_처리):
+                        return False
+                    if 표_자간조정_사용:
+                        if not stage('표/컨트롤 자간·단어 분리 조정', 컨트롤_내부_자간조정):
+                            return False
+                        if 문장부호기능 and not stage('표/컨트롤 줄 병합', 컨트롤_내부_문장부호_처리):
+                            return False
                 # 쪽 맞춤은 사용자가 세부 작업에서 켠 경우, 또는 '원본 쪽 구성 유지'를 켠 경우 서식통일 뒤에 실행한다.
                 if (stage_enabled(선택_세부작업, 'page_fit', 작업_모드)
                         or stage_enabled(선택_세부작업, 'page_layout_keep', 작업_모드)):

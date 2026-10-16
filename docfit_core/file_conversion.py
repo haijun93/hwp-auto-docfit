@@ -10,6 +10,8 @@ from pathlib import Path
 
 from docfit_core.kordoc_bridge import SUPPORTED_INPUT_EXTENSIONS
 
+IMAGE_INPUT_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", ".gif"})
+
 # 그림 결과 형식(확장자 → Pillow 저장 형식). 한/글 PDF 저장본을 쪽마다 렌더링한다.
 IMAGE_FORMATS = {"jpg": "JPEG", "png": "PNG"}
 IMAGE_DPI = 150
@@ -45,7 +47,7 @@ def convert_to_pandoc_format(source: str | Path, target: str | Path,
     from docfit_core.kordoc_bridge import parse_document
 
     source, target = Path(source), Path(target)
-    if source.is_symlink() or not source.is_file() or source.suffix.lower() not in SUPPORTED_INPUT_EXTENSIONS:
+    if source.is_symlink() or not source.is_file() or source.suffix.lower() not in CONVERSION_INPUTS:
         raise ValueError("지원하는 문서 파일만 변환할 수 있습니다.")
     if target.suffix.lower() not in {".docx", ".epub"} or target.exists():
         raise ValueError("결과 경로가 잘못되었거나 이미 존재합니다.")
@@ -57,7 +59,12 @@ def convert_to_pandoc_format(source: str | Path, target: str | Path,
     with tempfile.TemporaryDirectory(prefix="docfit_pandoc_convert_") as folder:
         temp_dir = Path(folder)
         markdown = temp_dir / "document.md"
-        parse_document(source, markdown, output_format="markdown", ocr=source.suffix.lower() == ".pdf")
+        if source.suffix.lower() in IMAGE_INPUT_EXTENSIONS | TEXT_INPUTS:
+            intermediate = temp_dir / "source.hwpx"
+            convert_input_to_hwpx(source, intermediate)
+            parse_document(intermediate, markdown, output_format="markdown")
+        else:
+            parse_document(source, markdown, output_format="markdown", ocr=source.suffix.lower() == ".pdf")
         if not markdown.is_file():
             raise RuntimeError("문서를 읽은 결과가 만들어지지 않았습니다.")
         with tempfile.NamedTemporaryFile(prefix=".docfit_", suffix=target.suffix.lower(), dir=target.parent, delete=False) as stream:
@@ -253,7 +260,7 @@ def convert_hwp_to_hwpx(app, source: str | Path, target: str | Path) -> Path:
 
 
 TEXT_INPUTS = frozenset({".txt", ".md"})
-CONVERSION_INPUTS = SUPPORTED_INPUT_EXTENSIONS | TEXT_INPUTS
+CONVERSION_INPUTS = SUPPORTED_INPUT_EXTENSIONS | TEXT_INPUTS | IMAGE_INPUT_EXTENSIONS
 CONVERSION_OUTPUTS = frozenset({"hwpx", "pdf", "docx", "epub", "jpg", "png", "txt", "md"})
 
 
@@ -263,6 +270,8 @@ def convert_input_to_hwpx(source: str | Path, target: str | Path) -> Path:
     from docfit_core.kordoc_bridge import convert_to_hwpx, generate_hwpx
     from docfit_core.hwpx import validate_hwpx
     source, target = Path(source), Path(target)
+    if source.suffix.lower() in IMAGE_INPUT_EXTENSIONS:
+        return convert_image_to_hwpx(source, target)
     if source.suffix.lower() not in TEXT_INPUTS:
         return convert_to_hwpx(source, target)
     if source.is_symlink() or not source.is_file() or source.stat().st_size > 16 * 1024 * 1024:
@@ -297,6 +306,69 @@ def convert_input_to_hwpx(source: str | Path, target: str | Path) -> Path:
             os.link(temporary, target)
         finally:
             temporary.unlink(missing_ok=True)
+    return target
+
+
+def convert_image_to_hwpx(source: str | Path, target: str | Path) -> Path:
+    """Normalize image frames, parse with kordoc Korean OCR, generate editable HWPX.
+
+    Animated GIF/multipage TIFF frames are processed in order (maximum 100).
+    OCR reconstructs text; it cannot guarantee the original scan's typography.
+    """
+    import warnings
+    from PIL import Image, ImageOps
+    from docfit_core.hwpx import validate_hwpx
+    from docfit_core.kordoc_bridge import ocr_available, parse_document, generate_hwpx, KordocUnavailableError, OCR_UNAVAILABLE_MESSAGE
+    source, target = Path(source), Path(target)
+    if (source.suffix.lower() not in IMAGE_INPUT_EXTENSIONS or source.is_symlink()
+            or not source.is_file() or source.stat().st_size > 64 * 1024 * 1024):
+        raise ValueError("64MB 이하의 일반 이미지 파일을 선택해 주세요.")
+    if target.suffix.lower() != ".hwpx" or target.exists() or target.is_symlink():
+        raise ValueError("새 HWPX 결과 경로를 선택해 주세요.")
+    if not ocr_available():
+        raise KordocUnavailableError(OCR_UNAVAILABLE_MESSAGE)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="docfit_ocr_") as folder:
+        work = Path(folder)
+        texts = []
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(source) as image:
+                count = getattr(image, "n_frames", 1)
+                if count > 100:
+                    raise ValueError("이미지는 파일당 100프레임까지 변환할 수 있습니다.")
+                total_pixels = 0
+                for index in range(count):
+                    image.seek(index)
+                    pixels = image.width * image.height
+                    total_pixels += pixels
+                    if pixels > 30_000_000 or total_pixels > 120_000_000:
+                        raise ValueError("이미지 해상도가 제한을 넘습니다(프레임 3천만, 전체 1억 2천만 화소).")
+                    with ImageOps.exif_transpose(image) as oriented:
+                        with oriented.convert("RGBA") as rgba:
+                            with Image.new("RGB", rgba.size, "white") as rgb:
+                                rgb.paste(rgba, mask=rgba.getchannel("A"))
+                                normalized = work / f"frame-{index + 1:03d}.png"
+                                rgb.save(normalized, "PNG")
+                    parsed = work / f"frame-{index + 1:03d}.md"
+                    parse_document(normalized, parsed, ocr=True)
+                    text = parsed.read_text(encoding="utf-8").strip()
+                    if not text:
+                        raise RuntimeError(f"{index + 1}번째 이미지에서 글자를 인식하지 못했습니다. 해상도·회전·대비를 확인해 주세요.")
+                    texts.append(text)
+        markdown = work / "document.md"
+        markdown.write_text("\n\n---\n\n".join(texts), encoding="utf-8")
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=target.parent, suffix=".hwpx", delete=False) as stream:
+                temporary = Path(stream.name)
+            temporary.unlink()
+            generate_hwpx(markdown, "보고서", temporary, image_dir=work)
+            validate_hwpx(temporary)
+            os.link(temporary, target)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
     return target
 
 

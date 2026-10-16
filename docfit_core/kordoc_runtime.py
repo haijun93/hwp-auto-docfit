@@ -54,6 +54,10 @@ def installed_root() -> Path:
 
 def model_cache_dir() -> Path:
     """kordoc OCR·수식 모델 위치(폐쇄망에서는 'kordoc models --import'로 미리 넣는다)."""
+    for root in (app_directory() / RUNTIME_FOLDER_NAME, installed_root() / "4.21.30",
+                 user_installed_root() / "4.21.30"):
+        if all((root / "models" / "ppocr" / name).is_file() for name in ("det.onnx", "rec_korean.onnx", "rec_korean.yml")):
+            return root / "models"
     base = os.environ.get("APPDATA") or os.environ.get("LOCALAPPDATA")
     return (Path(base) if base else Path.home() / ".hwp_auto_docfit") / "HwpAutoDocFit" / "kordoc-models"
 
@@ -117,8 +121,6 @@ def _install_pack_locked(pack, version, root):
     pack = Path(pack)
     root = Path(root) if root is not None else installed_root()
     destination = root / version
-    if runtime_in(destination, version):
-        return destination
     try:
         archive = zipfile.ZipFile(pack)
     except (OSError, zipfile.BadZipFile) as exc:
@@ -139,6 +141,10 @@ def _install_pack_locked(pack, version, root):
         if not isinstance(manifest, dict) or manifest.get("kordoc") != version:
             raise RuntimePackError(
                 f"변환 엔진 꾸러미 버전이 다릅니다(필요 {version}, 꾸러미 {manifest.get('kordoc') if isinstance(manifest, dict) else '?'}).")
+        if runtime_in(destination, version):
+            installed = json.loads((destination / MANIFEST_NAME).read_text(encoding="utf-8-sig"))
+            if installed.get("bundle_revision") == manifest.get("bundle_revision"):
+                return destination
         root.mkdir(parents=True, exist_ok=True)
         staging = root / f".installing-{uuid.uuid4().hex}"
         try:

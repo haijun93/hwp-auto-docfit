@@ -5,7 +5,7 @@ import '@xyflow/react/dist/style.css';
 import './style.css';
 import {FORMAT,PALETTE,templates,template,node,edge,id,decode,validate,svg,layoutGraph,computeNodeAutoFitBox,edgeLabelBox,LINE_HEIGHT,nodeFont,nodePaint,edgePath,EDGE_DEFAULT} from './model.js';
 import {SHAPE_GROUPS,SHAPES,LINE_SHAPES,shapePath,DASHES,MARKERS,dashArray} from './shapes.js';
-import {sampleMindmap,mindmapGraph,addChild,addSibling,removeNode,updateNode,moveNode,findNode} from './mindmap.js';
+import {sampleMindmap,mindmapGraph,addChild,addSibling,removeNode,updateNode,moveNode,findNode,positionMindmap,reparentNode,autoLayoutMindmap} from './mindmap.js';
 import {FONTS,registerFonts,ARROWS,DOWN_ARROWS,FLOW_PRESETS,MAX_FLOW_STEPS,MAX_FLOW_ROWS,MAX_ROWS,MAX_COLS,MAX_ORG,ROLE_NAMES,BORDER_TYPES,BORDER_WIDTHS,BORDER_NAMES,
  flowTable,gridTable,orgTable,barTable,flowDetails,resizeFlow,resizeFlowRows,insertStep,removeStep,resizeGrid,insertRow,removeRow,insertCol,removeCol,resizeOrg,
  setStyle,setBorder,exportSpec,cssOf,cssBorder} from './table.js';
@@ -338,6 +338,7 @@ function App(){
     const copies=clipboard.current.map(n=>({...n,id:id(),position:{x:n.position.x+40,y:n.position.y+40},selected:true}));
     commit({...current.current,nodes:[...current.current.nodes.map(n=>({...n,selected:false})),...copies]});}
    if(mode==='mindmap'&&mindmap&&mmSelected){
+    if(['Tab','Enter'].includes(e.key)&&mmGraphCount(current.current.mindmap)>=300){e.preventDefault();setStatus('가지는 문서당 300개까지입니다.');return;}
     if(e.key==='Tab'){e.preventDefault();const r=addChild(mindmap,mmSelected);changeMindmap(r.map,r.id);}
     else if(e.key==='Enter'){e.preventDefault();const r=addSibling(mindmap,mmSelected);changeMindmap(r.map,r.id);}
     else if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();if(mmSelected!==mindmap.root.id)changeMindmap(removeNode(mindmap,mmSelected),mindmap.root.id);}
@@ -370,10 +371,10 @@ function App(){
   try{send({type:'export_hwpx',name:nameRef.current,spec:exportSpec(table)});}
   catch(error){setStatus(error.message);}
  };
- // 마인드맵: 자동 배치한 도형·연결선을 같은 화면에 그린다(끌어 옮기기 대신 가지 순서·배치로 정리).
+ // 마인드맵: 수동 위치와 계층 연결을 화면·내보내기에 함께 반영한다.
  const mmGraph=mode==='mindmap'&&mindmap?layoutGraph(mindmapGraph(mindmap)):null;
  const mmNode=mindmap&&mmSelected?findNode(mindmap,mmSelected)?.node:null;
- const shownNodes=mmGraph?mmGraph.nodes.map(n=>({...n,selected:n.id===mmSelected,draggable:false,connectable:false})):graph.nodes;
+ const shownNodes=mmGraph?mmGraph.nodes.map(n=>({...n,selected:n.id===mmSelected,draggable:true,connectable:true})):graph.nodes;
  const shownEdges=mmGraph?mmGraph.edges:graph.edges;
  const tabs=[['diagram','다이어그램'],['mindmap','마인드맵'],['flow','흐름표'],['grid','기본 표'],['org','조직표'],['bar','장식표']];
  const canvas=mode==='diagram'||mode==='mindmap';
@@ -408,14 +409,18 @@ function App(){
     <p>연결점을 끌어 도형 연결<br/>Shift+선택: 여러 도형<br/>Ctrl+C/V 복사·붙여넣기, Ctrl+D 복제<br/>Delete: 선택 삭제 · Ctrl+휠: 확대·축소</p>
    </aside>}
    {mode==='mindmap'&&mindmap&&<aside><h2>마인드맵</h2>
-    <Select label="배치" value={mindmap.layout} options={[['both','가운데에서 좌우로'],['right','오른쪽으로'],['down','위에서 아래로(조직도형)']]} onChange={layout=>{changeMindmap({...mindmap,layout});fit();}}/>
+    <Select label="배치" value={mindmap.layout} options={[['both','가운데에서 좌우로'],['right','오른쪽으로'],['down','위에서 아래로(조직도형)']]} onChange={layout=>{changeMindmap(autoLayoutMindmap(mindmap,layout));fit();}}/>
+    <button onClick={()=>{changeMindmap(autoLayoutMindmap(mindmap));fit();}}>자동 정렬 (수동 위치 초기화)</button>
+    <p>도형을 끌어 이동 · 연결점을 끌어 부모 변경<br/>하위 가지는 단계 제한 없이 추가 (문서당 300개)</p>
     {mmNode?<><h2>선택 가지</h2>
      <label>내용<textarea aria-label="가지 내용" maxLength={200} value={mmNode.text} onChange={e=>changeMindmap(updateNode(mindmap,mmSelected,{text:e.target.value}))}/></label>
-     <div className="tool-row"><button onClick={()=>{const r=addChild(mindmap,mmSelected);changeMindmap(r.map,r.id);}}>＋ 하위 가지 (Tab)</button>
-      <button onClick={()=>{const r=addSibling(mindmap,mmSelected);changeMindmap(r.map,r.id);}}>＋ 같은 단계 (Enter)</button></div>
+     <div className="tool-row"><button disabled={mmGraph.nodes.length>=300} onClick={()=>{const r=addChild(mindmap,mmSelected);changeMindmap(r.map,r.id);}}>＋ 하위 가지 (Tab)</button>
+      <button disabled={mmGraph.nodes.length>=300} onClick={()=>{const r=addSibling(mindmap,mmSelected);changeMindmap(r.map,r.id);}}>＋ 같은 단계 (Enter)</button></div>
      <div className="tool-row"><button disabled={mmSelected===mindmap.root.id} onClick={()=>changeMindmap(moveNode(mindmap,mmSelected,-1))}>▲ 위로</button>
       <button disabled={mmSelected===mindmap.root.id} onClick={()=>changeMindmap(moveNode(mindmap,mmSelected,1))}>▼ 아래로</button>
       <button disabled={mmSelected===mindmap.root.id} onClick={()=>changeMindmap(removeNode(mindmap,mmSelected),mindmap.root.id)}>지우기</button></div>
+     {mmSelected!==mindmap.root.id&&<><label>연결선 설명<input aria-label="가지 연결선 설명" maxLength={300} value={mmNode.edge?.label??''} onChange={e=>changeMindmap(updateNode(mindmap,mmSelected,{edge:{label:e.target.value}}))}/></label><button onClick={()=>changeMindmap(updateNode(mindmap,mmSelected,{edge:{hidden:!mmNode.edge?.hidden}}))}>{mmNode.edge?.hidden?'부모 연결선 표시':'부모 연결선 삭제 (가지 유지)'}</button></>}
+     {mmSelected!==mindmap.root.id&&<EdgeStyleControls value={mmNode.edge?.style??mmGraph.edges.find(e=>e.target===mmSelected)?.data??EDGE_DEFAULT} onChange={style=>changeMindmap(updateNode(mindmap,mmSelected,{edge:{style}}))}/>}
      {(()=>{const shown=mmGraph?.nodes.find(n=>n.id===mmSelected)?.data??{};return <>
       <fieldset className="text-style"><legend>가지 모양</legend>
        <Select label="도형" value={shown.shape??'roundRect'} options={[...SHAPES.entries()].filter(([k])=>!LINE_SHAPES.has(k))} onChange={shape=>changeMindmap(updateNode(mindmap,mmSelected,{style:{shape}}))}/>
@@ -449,11 +454,20 @@ function App(){
     <button onClick={()=>undo()}>실행 취소 (Ctrl+Z)</button>
    </aside>}
    <main><div className="flow-layer" style={{display:canvas?'block':'none'}}><ReactFlow nodes={shownNodes} edges={shownEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} connectionMode={ConnectionMode.Loose} snapToGrid snapGrid={[10,10]}
-    nodesDraggable={mode==='diagram'} nodesConnectable={mode==='diagram'} elementsSelectable
+    nodesDraggable={canvas} nodesConnectable={canvas} elementsSelectable
     onInit={instance=>{flow.current=instance;send({type:'ready',protocol_version:1,editor:FORMAT});}}
     onNodeClick={(_,n)=>{if(mode==='mindmap')setMmSelected(n.id);}}
     onPaneClick={()=>{if(mode==='mindmap')setMmSelected(null);}}
     onNodesChange={changes=>{
+     if(mode==='mindmap'){
+      const positions=Object.fromEntries(changes.filter(c=>c.type==='position'&&c.position).map(c=>[c.id,c.position]));
+      const dimensions=changes.filter(c=>c.type==='dimensions'&&c.dimensions&&(c.resizing!==undefined||c.setAttributes));
+      if(Object.keys(positions).length||dimensions.length){
+       let map=positionMindmap(current.current.mindmap,positions);
+       for(const c of dimensions)map=updateNode(map,c.id,{size:c.dimensions});
+       const next={...current.current,mindmap:map};current.current=next;setGraph(next);mark();
+      }return;
+     }
      if(mode!=='diagram')return;
      const edits=changes.filter(c=>c.type!=='select'&&!(c.type==='dimensions'&&!c.resizing));
      let next={...current.current,nodes:applyNodeChanges(changes,current.current.nodes)};
@@ -462,7 +476,10 @@ function App(){
     }}
     onEdgesChange={changes=>{if(mode!=='diagram')return;const next={...current.current,edges:applyEdgeChanges(changes,current.current.edges)};current.current=next;setGraph(next);if(changes.some(c=>c.type!=='select'))mark();}}
     onNodeDragStart={()=>checkpoint()} onBeforeDelete={async()=>{if(mode!=='diagram')return false;checkpoint();return true;}}
-    onConnect={connection=>commit({...current.current,edges:[...current.current.edges,edge(connection.source,connection.target,'',id(),connection.sourceHandle,connection.targetHandle,{...EDGE_DEFAULT})]})}
+    onConnect={connection=>{
+     if(mode==='mindmap'){try{changeMindmap(reparentNode(positionMindmap(current.current.mindmap,{}),connection.target,connection.source,{sourceHandle:connection.sourceHandle,targetHandle:connection.targetHandle}));}catch(error){setStatus(error.message);}return;}
+     commit({...current.current,edges:[...current.current.edges,edge(connection.source,connection.target,'',id(),connection.sourceHandle,connection.targetHandle,{...EDGE_DEFAULT})]});
+    }}
     onSelectionDragStart={()=>checkpoint()} onNodeDoubleClick={()=>{setStatus('왼쪽 내용 입력에서 수정하세요.');}}
     fitView deleteKeyCode={mode==='diagram'?['Backspace','Delete']:null}><Background gap={20}/><Controls/><MiniMap/></ReactFlow></div>
     {mode==='flow'&&table&&<FlowTableView table={table} onChange={changeTable}/>}
@@ -472,4 +489,5 @@ function App(){
   </div><footer role="status">{status} · 로컬 저장</footer>
  </div></HistoryContext.Provider>;
 }
+function mmGraphCount(map){let count=0,stack=[map.root];while(stack.length){const node=stack.pop();count++;stack.push(...node.children);}return count;}
 createRoot(document.getElementById('root')).render(<ReactFlowProvider><App/></ReactFlowProvider>);

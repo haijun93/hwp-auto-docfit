@@ -2,7 +2,7 @@
 # - Node.js: 고정 버전 공식 Windows ZIP을 SHA-256으로 확인한 뒤 node.exe만 담는다.
 # - kordoc: kordoc_pack/package-lock.json(무결성 해시 포함)으로 npm ci. AI OCR 모델용 선택 의존성은 빼고,
 #   설치 스크립트는 실행하지 않는다.
-# 빌드 PC에만 인터넷이 필요하다. 만든 꾸러미는 실행 파일과 같은 폴더에 두면 앱이 인터넷 없이 사용한다.
+# 빌드 PC에만 인터넷이 필요하다. 만든 꾸러미를 EXE에 내장하여 사용 PC에서는 다운로드하지 않는다.
 param(
     [string]$Output = (Join-Path $PSScriptRoot '..\release-assets\HWP_AutoDocFit_kordoc_runtime.zip')
 )
@@ -42,6 +42,26 @@ try {
         & $node $npm ci --omit=optional --ignore-scripts --no-audit --no-fund
         if ($LASTEXITCODE -ne 0) { throw 'npm ci failed' }
     } finally { Pop-Location }
+    # OCR dependencies are locked separately: do not install unrelated transformer/formula models.
+    $ocr = Join-Path $work 'ocr'
+    New-Item -ItemType Directory -Path $ocr | Out-Null
+    Copy-Item -LiteralPath (Join-Path $root 'kordoc_ocr_pack\package.json'), (Join-Path $root 'kordoc_ocr_pack\package-lock.json') -Destination $ocr
+    Push-Location $ocr
+    try {
+        & $node $npm ci --include=optional --ignore-scripts --no-audit --no-fund
+        if ($LASTEXITCODE -ne 0) { throw 'OCR npm ci failed' }
+    } finally { Pop-Location }
+    # The npm ONNX package carries other platforms too; retain Windows x64 CPU only.
+    $ortBin = Join-Path $ocr 'node_modules\onnxruntime-node\bin'
+    Get-ChildItem -LiteralPath $ortBin -Recurse -File |
+        Where-Object { $_.FullName -notmatch '\\win32\\x64\\' } | Remove-Item -Force
+    Get-ChildItem -LiteralPath (Join-Path $ocr 'node_modules') -Force |
+        Where-Object { $_.Name -ne '.package-lock.json' -and $_.Name -ne '.bin' } |
+        Copy-Item -Destination (Join-Path $app 'node_modules') -Recurse -Force
+    $models = Join-Path $stage 'models\ppocr'
+    & $python (Join-Path $PSScriptRoot 'download_ocr_models.py') $models
+    if ($LASTEXITCODE -ne 0) { throw 'OCR model checksum/download failed' }
+    Copy-Item -LiteralPath (Join-Path $root 'resources\licenses\PaddleOCR-LICENSE.txt') -Destination $models
     # 실행에 필요 없는 소스 지도·형식 정의는 뺀다(라이선스 파일은 남긴다).
     # (PowerShell 5.1의 -LiteralPath와 -Include 조합은 거르지 않고 모든 파일을 넘기므로 이름으로 직접 거른다.)
     Get-ChildItem -LiteralPath (Join-Path $app 'node_modules') -Recurse -File |
@@ -52,7 +72,7 @@ try {
     $observed = (& $node $cli --version | Out-String).Trim()
     if ($observed -notmatch [regex]::Escape($KordocVersion)) { throw "kordoc version check failed: $observed" }
 
-    $manifest = [ordered]@{ kordoc = $KordocVersion; node = $NodeVersion; node_sha256 = $NodeSha256 } | ConvertTo-Json
+    $manifest = [ordered]@{ kordoc = $KordocVersion; node = $NodeVersion; node_sha256 = $NodeSha256; bundle_revision = 'ocr-1'; ocr = 'ppocr-korean-v5' } | ConvertTo-Json
     [IO.File]::WriteAllText((Join-Path $stage 'runtime.json'), $manifest, (New-Object Text.UTF8Encoding($false)))
 
     $outputPath = [IO.Path]::GetFullPath($Output)

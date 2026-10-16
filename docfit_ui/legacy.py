@@ -5541,8 +5541,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     title="처리할 문서를 선택하세요.",
                     initialdir=os.getcwd(),
                     filetypes=[
-                        ("지원하는 모든 문서", "*.hwp *.hwpx *.hml *.pdf *.xls *.xlsx *.docx *.pptx *.png *.jpg *.jpeg *.webp *.txt *.md *.doc"),
-                        ("변환할 수 있는 문서", "*.hwp *.hwpx *.hml *.pdf *.xls *.xlsx *.docx *.pptx *.png *.jpg *.jpeg *.webp *.txt *.md"),
+                        ("지원하는 모든 문서", "*.hwp *.hwpx *.hml *.pdf *.xls *.xlsx *.docx *.pptx *.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff *.gif *.txt *.md *.doc"),
+                        ("변환할 수 있는 문서", "*.hwp *.hwpx *.hml *.pdf *.xls *.xlsx *.docx *.pptx *.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff *.gif *.txt *.md"),
                         ("한/글 파일", "*.hwp *.hwpx *.hml"), ("HWP 파일", "*.hwp"), ("HWPX 파일", "*.hwpx"),
                         ("텍스트/Markdown", "*.txt *.md"), ("MS Word", "*.doc *.docx"), ("PDF", "*.pdf"),
                         ("Excel", "*.xls *.xlsx"), ("PowerPoint", "*.pptx"), ("이미지", "*.png *.jpg *.jpeg *.webp"),

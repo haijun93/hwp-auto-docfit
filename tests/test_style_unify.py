@@ -280,7 +280,7 @@ class UnifyModeTest(unittest.TestCase):
         names = ['서식통일_전체_적용', '표준서식_전체_적용', '본문_기존자간조정', '문단_내어쓰기_전체_갱신',
                  '문장내_공백_정규화_전체_적용', '컨트롤_내부_자간조정', '표_헤더서식_전체_적용']
         with patch.dict(g, {**{n: track(n) for n in names},
-                            '작업_모드': 'unify', '표준서식_사용': False, '선택_세부작업': {'style_unify': True},
+                            '작업_모드': 'unify', '표준서식_사용': False, '선택_세부작업': {'style_unify': True, 'unify_spacing': False},
                             '중단_요청됨': lambda: False, '단계표시': Mock(), '상태': Mock(), '로그': Mock(),
                             'hwp_run': lambda *a: True, '순회_시작': lambda: None}):
             self.assertTrue(fn('문서.hwpx', 회차=1))
