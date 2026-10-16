@@ -1,5 +1,9 @@
 # 한글편집 후처리
 
+> **다운로드 일시 중지 — 2026-10-16**
+> 핫픽스 검증·릴리즈 전까지 GitHub·GitLab의 프로그램 배포를 중지합니다.
+> 기존 버전 EXE·배포 압축파일을 내려받거나 재배포하지 마세요. 소스코드 공개는 유지합니다.
+
 ### 보고서 마무리 30분, 버튼 한 번으로.
 
 줄 끝에서 갈라진 단어, 제각각인 글꼴, 삐뚤어진 내어쓰기, 한두 줄 넘친 마지막 쪽까지.
@@ -13,15 +17,15 @@
 <img alt="문서 외부 전송 없음" src="https://img.shields.io/badge/%EB%AC%B8%EC%84%9C-%EC%99%B8%EB%B6%80%20%EC%A0%84%EC%86%A1%20%EC%97%86%EC%9D%8C-64748b">
 </p>
 
-## ⬇ 최신 정식 버전 다운로드 — v1.76.4
+## ⏸ 프로그램 다운로드 일시 중지
 
-**[최신 릴리즈와 전체 첨부 파일 보기](https://github.com/haijun93/hwp-auto-docfit/releases/latest)**
+핫픽스 검증과 릴리즈가 끝난 뒤 다운로드를 다시 안내합니다. 이전 버전으로 우회 다운로드하지 마세요.
 
 | 파일 | 다운로드 및 용도 |
 |---|---|
-| 프로그램 | **[HWP_AutoDocFit.exe 바로 받기](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/HWP_AutoDocFit.exe)** — Windows 10·11 64비트, 한/글 2020 필요 |
-| 프로그램·예시 압축팩 | [HWP_AutoDocFit-v1.76.4.zip](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.76.4/HWP_AutoDocFit-v1.76.4.zip) — 압축을 풀어 실행 |
-| 체크섬 | [SHA256SUMS](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/SHA256SUMS) — EXE 파일의 SHA256 확인 |
+| 프로그램 | 다운로드 중지 |
+| 프로그램·예시 압축팩 | 다운로드 중지 |
+| 체크섬 | 핫픽스 게시 시 새 파일과 함께 안내 |
 
 **변환 런타임은 EXE에 포함되어 있어 별도로 받을 필요가 없습니다.** 첫 실행 때 내장 ZIP과 변환 엔진을 `C:\HWP_AUTODOCFIT`에 저장합니다. 쓰기 권한이 없으면 `%LOCALAPPDATA%\HwpAutoDocFit`에 저장하며 온라인 다운로드는 하지 않습니다.
 
