@@ -10,6 +10,7 @@ class FloatingFormatPicker extends StatefulWidget {
     required this.targets,
     required this.selected,
     required this.fileCount,
+    required this.fileNames,
     required this.onSelected,
     required this.onCancel,
   });
@@ -17,6 +18,7 @@ class FloatingFormatPicker extends StatefulWidget {
   final List<Map> targets;
   final String selected;
   final int fileCount;
+  final List<String> fileNames;
   final ValueChanged<String> onSelected;
   final VoidCallback onCancel;
 
@@ -184,38 +186,41 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
                         child: InkWell(
                           key: const Key('cancelConversionPicker'),
                           onTap: widget.onCancel,
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                '${widget.fileCount}개 파일',
-                                style: const TextStyle(
-                                  fontSize: 12,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  widget.fileCount > 1
+                                      ? '첫 파일 · ${widget.fileCount}개'
+                                      : '${widget.fileCount}개 파일',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Color(0xff64748b),
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                _SourceFileName(
+                                  name: widget.fileNames.isEmpty
+                                      ? '원본 파일'
+                                      : widget.fileNames.first,
+                                ),
+                                const SizedBox(height: 8),
+                                const Icon(
+                                  Icons.close_rounded,
+                                  size: 19,
                                   color: Color(0xff64748b),
                                 ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                '${activeInfo['label']}',
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w800,
+                                const Text(
+                                  '취소',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Color(0xff64748b),
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 8),
-                              const Icon(
-                                Icons.close_rounded,
-                                size: 19,
-                                color: Color(0xff64748b),
-                              ),
-                              const Text(
-                                '취소',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Color(0xff64748b),
-                                ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -226,6 +231,12 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
             },
           ),
           const SizedBox(height: 12),
+          Text(
+            '변환 결과: ${activeInfo['label']}',
+            key: const Key('conversionSelectedOutput'),
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 4),
           Text(
             '${activeInfo['reason'] ?? ''}',
             key: const Key('conversionPrerequisiteNotice'),
@@ -292,6 +303,53 @@ class _SliceClipper extends CustomClipper<Path> {
   @override
   bool shouldReclip(_SliceClipper oldClipper) =>
       oldClipper.index != index || oldClipper.count != count;
+}
+
+/// Keep the source extension visible while ellipsizing only the file stem.
+class _SourceFileName extends StatelessWidget {
+  const _SourceFileName({required this.name});
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    final filename = name.split(RegExp(r'[/\\]')).last;
+    final dot = filename.lastIndexOf('.');
+    final stem = dot > 0 ? filename.substring(0, dot) : filename;
+    final extension = dot > 0 ? filename.substring(dot) : '';
+    return Tooltip(
+      message: filename,
+      excludeFromSemantics: true,
+      child: Semantics(
+        key: const Key('conversionSourceName'),
+        label: filename,
+        child: ExcludeSemantics(
+          child: DefaultTextStyle(
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: Color(0xff25324a),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Flexible(
+                  child: Text(
+                    stem,
+                    key: const Key('conversionSourceStem'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    softWrap: false,
+                  ),
+                ),
+                if (extension.isNotEmpty)
+                  Text(extension, key: const Key('conversionSourceExtension')),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _RingShadow extends CustomPainter {

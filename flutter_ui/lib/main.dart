@@ -399,6 +399,10 @@ class _WorkspaceState extends State<Workspace> {
                                           .toList(),
                                       selected: conversionTarget,
                                       fileCount: files.length,
+                                      fileNames: [
+                                        for (final file in files.whereType<Map>())
+                                          '${file['name'] ?? file['path'] ?? ''}',
+                                      ],
                                       onSelected: (format) => Navigator.of(
                                         dialogContext,
                                       ).pop(format),
