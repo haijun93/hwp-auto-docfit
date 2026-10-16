@@ -444,7 +444,30 @@ class _IdiomPanelState extends State<IdiomPanel> {
   }
 }
 
-/// 설정의 '앱 정보': 개발자와 버전.
+/// 함께 쓰는 프로그램·코드(이름, 쓰는 곳, 라이선스). 자세한 고지는 THIRD_PARTY_NOTICES.md(2026-10-17 사용자 요청).
+const thirdPartyComponents = [
+  ('kordoc 4.21.30 (chrisryugj)', '문서 변환 엔진(PDF·DOCX·이미지 → HWPX 등)', 'MIT'),
+  ('Node.js 22.23.3', 'kordoc 실행 런타임(EXE 내장)', 'MIT'),
+  ('pdf.js (pdfjs-dist 4.10.38)', 'PDF 글자 읽기', 'Apache-2.0'),
+  ('PP-OCRv5 한국어 모델 (PaddlePaddle)', '이미지·스캔 PDF 한국어 글자 인식', 'Apache-2.0'),
+  ('ONNX Runtime 1.30.0', 'OCR 모델 실행', 'MIT'),
+  ('sharp 0.35.5 · libvips', 'OCR 이미지 처리', 'Apache-2.0 · LGPL-3.0'),
+  ('PDFium (@hyzyla/pdfium 2.1.13)', '스캔 PDF 쪽 그림 만들기', 'MIT · BSD-3-Clause'),
+  ('rhwp (@rhwp/core 0.8.7, Edward Kim)', '설정 화면 한/글 조판 미리보기', 'MIT'),
+  ('React Flow (@xyflow/react 12.12.0) · React', '업무 흐름도·마인드맵 편집', 'MIT'),
+  ('Flutter', '앱 화면', 'BSD-3-Clause'),
+  ('Noto Sans KR', '앱 화면 글꼴', 'SIL OFL 1.1'),
+  ('Python · Tcl/Tk', '앱 실행 런타임(EXE 내장)', 'PSF · Tcl/Tk'),
+  ('pywin32', '한/글 COM 자동화 연결', 'PSF'),
+  ('pywebview · pythonnet', '앱 창(WebView2) 연결', 'BSD-3-Clause · MIT'),
+  ('tkinterdnd2', '파일 끌어다 놓기', 'MIT'),
+  ('Pillow', '그림 처리', 'MIT-CMU'),
+  ('defusedxml', '안전한 XML 읽기', 'PSF'),
+  ('PyInstaller', 'EXE 만들기', 'GPL-2.0 (부트로더 예외)'),
+  ('한/글 자동화 보안 모듈 예시(한컴)', '한/글 COM 자동화 승인', '한컴 예제 배포 조건'),
+];
+
+/// 설정의 '앱 정보': 개발자와 버전, 함께 쓰는 프로그램·코드.
 class AppInfoPanel extends StatelessWidget {
   const AppInfoPanel({super.key, this.version});
   final String? version;
@@ -465,7 +488,55 @@ class AppInfoPanel extends StatelessWidget {
           ],
         ),
       ),
+      const SizedBox(height: 16),
+      Container(
+        padding: const EdgeInsets.all(24),
+        decoration: Kiosk.cardBox(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('함께 쓰는 프로그램·코드', style: Kiosk.cardTitle),
+            const SizedBox(height: 6),
+            const Text(
+              '이 앱은 아래 공개 프로그램과 코드를 함께 씁니다. 한/글 프로그램은 포함하지 않고 PC에 설치된 한/글을 씁니다. '
+              '자세한 저작권·라이선스 고지는 THIRD_PARTY_NOTICES.md에 있습니다.',
+              style: Kiosk.caption,
+            ),
+            const SizedBox(height: 14),
+            for (final (name, use, license) in thirdPartyComponents)
+              _component(name, use, license),
+          ],
+        ),
+      ),
     ],
+  );
+
+  Widget _component(String name, String use, String license) => Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          flex: 5,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                name,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: Kiosk.ink,
+                ),
+              ),
+              Text(use, style: Kiosk.caption),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(flex: 2, child: Text(license, style: Kiosk.body)),
+      ],
+    ),
   );
 
   Widget _line(String label, String value) => Padding(
