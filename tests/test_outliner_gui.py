@@ -1,4 +1,6 @@
 """아웃라이너 창(TODO 5순위): 단축키로 이동·완료·메모·접기·검색, 닫을 때 자동 저장 후 이어 쓰기."""
+from tests.gui_support import gui_root
+
 from pathlib import Path
 import os
 import runpy
@@ -14,7 +16,7 @@ class OutlinerGuiTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="hwp-docfit-outliner-") as folder:
             with patch.dict(os.environ, {"APPDATA": folder}):
                 ns = runpy.run_path(str(source), run_name="outliner_ui_test")
-                root = ns["TkinterDnD"].Tk()
+                root = gui_root(ns['TkinterDnD'].Tk, ns)
                 root.withdraw()
                 errors = []
                 root.report_callback_exception = lambda *args: errors.append(args)

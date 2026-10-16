@@ -1,4 +1,6 @@
 """'상용구 파일저장' 기능: 번들 HWP.IDO를 한/글 전용 폴더로 복사하는 로직을 검증한다."""
+from tests.gui_support import gui_root
+
 
 import os
 from pathlib import Path
@@ -54,7 +56,7 @@ class IdiomFileSaveTest(unittest.TestCase):
             hwp_root.mkdir(parents=True)
             with patch.dict(os.environ, {"APPDATA": appdata}):
                 namespace = runpy.run_path(str(SOURCE), run_name="idiom_save_click_test")
-                root = namespace["TkinterDnD"].Tk()
+                root = gui_root(namespace['TkinterDnD'].Tk, namespace)
                 root.withdraw()
                 try:
                     app = namespace["HwpAutoDocFitGUI"](root)
@@ -81,7 +83,7 @@ class IdiomFileSaveTest(unittest.TestCase):
             기존_경로.write_text("사용자가 이미 등록한 상용구", encoding="utf-8")
             with patch.dict(os.environ, {"APPDATA": appdata}):
                 namespace = runpy.run_path(str(SOURCE), run_name="idiom_overwrite_click_test")
-                root = namespace["TkinterDnD"].Tk()
+                root = gui_root(namespace['TkinterDnD'].Tk, namespace)
                 root.withdraw()
                 try:
                     app = namespace["HwpAutoDocFitGUI"](root)

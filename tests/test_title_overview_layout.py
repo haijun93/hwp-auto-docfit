@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 import zipfile
+from tests.temp_support import tracked_tempdir
 
 HS = 'xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"'
 HP = 'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"'
@@ -40,7 +41,7 @@ class TitleOverviewLayoutTest(unittest.TestCase):
         para = copy.deepcopy(next(iter(paras))); para.set('id', '0')
         paras.insert(0, para)
         section = f'<hs:sec {HS} {HP}>{SEC.format(land=land)}{body}</hs:sec>'
-        path = Path(tempfile.mkdtemp(prefix='docfit-title-layout-')) / 'in.hwpx'
+        path = Path(tracked_tempdir(self, 'docfit-title-layout-')) / 'in.hwpx'
         with zipfile.ZipFile(path, 'w') as z:
             z.writestr('mimetype', 'application/hwp+zip')
             z.writestr('Contents/header.xml', self.ns['ET'].tostring(header, encoding='utf-8', xml_declaration=True))

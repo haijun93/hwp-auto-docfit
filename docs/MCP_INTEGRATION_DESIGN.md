@@ -11,7 +11,7 @@ Claude 또는 ChatGPT에서 작성·선택한 답변을 MCP 도구에 전달해 
 
 ## 1차 PoC (현재 구현)
 
-- 기본은 비활성화한다. MCP 호스트가 서버를 자동 실행하더라도 도구가 노출되지 않도록 `DOCFIT_MCP_ENABLED=1`을 명시한 경우에만 `python scripts/mcp_server.py`가 stdio 서버로 시작한다.
+- 실행: `python scripts/mcp_server.py`, 전송은 stdio.
 - 도구 `list_format_presets`: 현재 제공하는 내장 생성 프리셋 목록만 반환.
 - 도구 `create_document_from_ai_answer`: Markdown 답변, 내장 프리셋, 출력 파일명을 받아 새 HWPX를 만든다. 입력은 1,000,000자 이하이며 출력 폴더는 기본 `Documents/HwpAutoDocFit/MCP-Output` 또는 `DOCFIT_MCP_OUTPUT_DIR`로 고정한다. 도구 인자로 임의의 입력/출력 경로는 받지 않는다. 동일 파일명 덮어쓰기는 거부한다.
 - 생성은 기존 `kordoc_bridge.generate_hwpx`를 사용하며, 결과를 `inspect_hwpx`로 다시 열어 검증한다. 생성 실패/검증 실패면 불완전한 출력물을 지운다. AI 답변 원문은 임시 Markdown 파일로만 전달하고 임시 폴더는 종료 시 삭제한다.

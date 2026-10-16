@@ -37,7 +37,7 @@ class McpDocumentServiceTests(unittest.TestCase):
             result = mcp_service.create_hwpx_from_ai_answer("# 제목\n본문", "보고서", "결과 문서")
 
         self.assertTrue(result["ok"])
-        self.assertEqual(Path(result["path"]), self.output / "결과 문서.hwpx")
+        self.assertTrue(Path(result["path"]).samefile(self.output / "결과 문서.hwpx"))
         self.assertTrue(Path(result["path"]).is_file())
         self.assertEqual(result["paragraph_count"], 2)
         self.assertIn("아직 연결되지 않았습니다", result["next_step"])
@@ -47,6 +47,9 @@ class McpDocumentServiceTests(unittest.TestCase):
             (" ", "보고서", "ok"),
             ("내용", "unknown", "ok"),
             ("내용", "보고서", "../escape"),
+            ("내용", "보고서", "NUL"),
+            ("내용", "보고서", "CON.report"),
+            ("내용", "보고서", "COM1"),
             ("x" * (mcp_service.MAX_INPUT_CHARS + 1), "보고서", "ok"),
         ):
             with self.subTest(args=args[:2]), self.assertRaises(ValueError):
@@ -58,6 +61,21 @@ class McpDocumentServiceTests(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             mcp_service.create_hwpx_from_ai_answer("내용", "보고서", "existing")
         self.assertEqual(existing.read_bytes(), b"keep")
+
+    def test_racing_output_creation_is_never_overwritten_or_deleted(self):
+        self.output.mkdir()
+        target=self.output/'race.hwpx'
+        def generate(_markdown,_preset,staged):
+            # Another writer creates the final file after the early exists check.
+            target.write_bytes(b'other writer document')
+            Path(staged).write_bytes(b'generated')
+        inspection=SimpleNamespace(paragraph_count=1,table_count=0,image_count=0,
+                                   text_sha256='abc',warnings=[])
+        with patch.object(mcp_service,'generate_hwpx',side_effect=generate), \
+             patch.object(mcp_service,'inspect_hwpx',return_value=inspection):
+            with self.assertRaises(FileExistsError):
+                mcp_service.create_hwpx_from_ai_answer('내용','보고서','race')
+        self.assertEqual(target.read_bytes(),b'other writer document')
 
     def test_failed_generation_removes_partial_output(self):
         def fail(_markdown, _preset, target):

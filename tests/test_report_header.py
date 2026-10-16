@@ -43,7 +43,7 @@ SECPR = '<hp:secPr id="sp"/>'
 class InfoTests(unittest.TestCase):
     def test_roundtrip_of_government_bylines(self):
         for text in ("2026. 10. 7.  재정경제부  디지털정책과", "'26. 10. 7.(수)  /  디지털정책과",
-                     "(2026. 10. 7., 과장 홍길동, ☎0000-0000)", "2026년 10월 7일(수) 디지털정책과",
+                     "(2026. 10. 7., 과장 홍길동, ☎02-120-1234)", "2026년 10월 7일(수) 디지털정책과",
                      "문화예술과장 김○○ / 담당 이○○ (☎ 1234)", "문화경제국 문화예술과", "’26. 3. 5.(목) 경제정책국"):
             parsed = RH.parse_info(text)
             self.assertIsNotNone(parsed, text)
@@ -54,7 +54,7 @@ class InfoTests(unittest.TestCase):
         values = RH.parse_info("2025. 3. 2.  행정안전부  자치행정과")["fields"]
         self.assertEqual(RH.render_info(sample["template"], sample["date_format"], values),
                          "'25. 3. 2.(일)  /  행정안전부  /  자치행정과")
-        person = RH.parse_info("(2026. 10. 7., 과장 홍길동, ☎0000-0000)")
+        person = RH.parse_info("(2026. 10. 7., 과장 홍길동, ☎02-120-1234)")
         self.assertEqual(RH.render_info(person["template"], person["date_format"], values),
                          "(2025. 3. 2., 행정안전부 자치행정과)")
 

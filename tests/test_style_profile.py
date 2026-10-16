@@ -139,5 +139,33 @@ class StyleProfileTest(unittest.TestCase):
         self.assertEqual(result["applied"], 0)
 
 
+class AmbiguousPreciseTableTest(unittest.TestCase):
+    def test_duplicate_candidates_fall_back_without_copying_geometry(self):
+        import copy
+        from test_table_style import _header, _grid
+        from defusedxml import ElementTree as ET
+        namespace = runpy.run_path(str(Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"),
+                                   run_name="ambiguous_precise_test")
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "source.hwpx"
+            target = Path(folder) / "result.hwpx"
+            header = _header()
+            ref = next(x for x in header.iter() if x.tag.endswith('}refList'))
+            ref.append(ET.fromstring('<hh:tabProperties xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" itemCnt="0"/>'))
+            with ZipFile(source, "w", ZIP_DEFLATED) as archive:
+                archive.writestr("Contents/header.xml", ET.tostring(header))
+                archive.writestr("Contents/section0.xml", ET.tostring(_grid(3, 3)))
+            profile = namespace["hwpx_서식_분석"](source)["precise_tables"]
+            duplicate = copy.deepcopy(profile["tables"][0])
+            duplicate["ordinal"] += 1
+            profile["tables"].append(duplicate)
+            result = namespace["정밀표_서식_적용"](source, target, profile)
+            self.assertEqual(result["applied"], 0)
+            self.assertEqual(result["fallbacks"][0]["reason"], "ambiguous_match")
+            self.assertTrue(result["fallbacks"][0]["applied"])
+            with self.assertRaises(ValueError):
+                namespace["정밀표_서식_적용"](source, source, profile)
+
+
 if __name__ == "__main__":
     unittest.main()

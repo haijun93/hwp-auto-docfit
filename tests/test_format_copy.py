@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 import zipfile
 
 from docfit_core import format_elements as fe
+from tests.temp_support import tracked_tempdir
 
 HS = 'xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"'
 HP = 'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"'
@@ -63,7 +64,7 @@ class FormatCopyStage1Test(unittest.TestCase):
         body = ('<hp:p id="0" paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:t>ㅇ 앞 문장</hp:t></hp:run></hp:p>'
                 '<hp:p id="0" paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0">'
                 + ns['ET'].tostring(box, encoding='unicode') + '<hp:t/></hp:run></hp:p>')
-        folder = Path(tempfile.mkdtemp(prefix='docfit-box-'))
+        folder = Path(tracked_tempdir(self, 'docfit-box-'))
         source = folder / 'in.hwpx'
         with zipfile.ZipFile(source, 'w') as z:
             z.writestr('mimetype', 'application/hwp+zip')
@@ -89,7 +90,7 @@ class FormatCopyStage1Test(unittest.TestCase):
 
     def test_example_analysis_learns_general_table_but_not_title_table(self):
         from tests import test_format_elements as fx
-        folder = Path(tempfile.mkdtemp(prefix='docfit-table-profile-'))
+        folder = Path(tracked_tempdir(self, 'docfit-table-profile-'))
         analyze = self.ns['hwpx_서식_분석']
         # 제목 표(2×2)와 개요 표만 있는 예시: 제목 표를 일반 표 서식으로 배우지 않는다.
         only_title = folder / 'title.hwpx'
@@ -166,7 +167,7 @@ class FormatCopyStage1Test(unittest.TestCase):
 
     def test_element_modes_and_coverage(self):
         from tests import test_format_elements as fx
-        folder = Path(tempfile.mkdtemp(prefix='docfit-coverage-'))
+        folder = Path(tracked_tempdir(self, 'docfit-coverage-'))
         path = folder / 'example.hwpx'
         with zipfile.ZipFile(path, 'w') as z:
             z.writestr('mimetype', 'application/hwp+zip')
@@ -186,7 +187,7 @@ class FormatCopyStage1Test(unittest.TestCase):
         import json
         import os
         from tests import test_format_elements as fx
-        folder = Path(tempfile.mkdtemp(prefix='docfit-profile-load-'))
+        folder = Path(tracked_tempdir(self, 'docfit-profile-load-'))
         example = folder / 'example.hwpx'
         with zipfile.ZipFile(example, 'w') as z:
             z.writestr('mimetype', 'application/hwp+zip')
@@ -207,7 +208,7 @@ class FormatCopyStage1Test(unittest.TestCase):
     def test_page_number_shape_is_copied_only_where_page_numbers_exist(self):
         ns = self.ns
         fn = ns['쪽번호_hwpx_처리']
-        folder = Path(tempfile.mkdtemp(prefix='docfit-pagenum-'))
+        folder = Path(tracked_tempdir(self, 'docfit-pagenum-'))
         header, _ = ns['제목_원본자료']()
         number = '<hp:p id="0" paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:ctrl>' \
                  '<hp:pageNum pos="TOP_RIGHT" formatType="ROMAN_SMALL" sideChar=""/></hp:ctrl></hp:run></hp:p>'

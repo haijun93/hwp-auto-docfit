@@ -92,7 +92,10 @@ def validate_hwpx(path: str | Path, limits: HwpxLimits | None = None) -> dict:
             names: set[str] = set()
             for info in infos:
                 _safe_member_name(info)
-                names.add(info.filename.replace("\\", "/"))
+                normalized_name = info.filename.replace("\\", "/")
+                if normalized_name in names:
+                    raise HwpxSecurityError(f"중복 압축 항목입니다: {info.filename}")
+                names.add(normalized_name)
                 if info.file_size > limits.max_file_size:
                     raise HwpxSecurityError(
                         f"압축 내부 파일이 너무 큽니다: {info.filename} ({info.file_size:,}바이트)"

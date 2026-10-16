@@ -1,0 +1,50 @@
+{
+  "dependencies": [
+    {
+      "name": "bottle",
+      "version": "0.13.4",
+      "vulns": []
+    },
+    {
+      "name": "defusedxml",
+      "version": "0.7.1",
+      "vulns": []
+    },
+    {
+      "name": "pillow",
+      "version": "12.3.0",
+      "vulns": []
+    },
+    {
+      "name": "pip",
+      "version": "26.2.1",
+      "vulns": []
+    },
+    {
+      "name": "proxy-tools",
+      "version": "0.1.0",
+      "vulns": []
+    },
+    {
+      "name": "pypdfium2",
+      "version": "5.14.0",
+      "vulns": []
+    },
+    {
+      "name": "pywebview",
+      "version": "6.2.1",
+      "vulns": []
+    },
+    {
+      "name": "tkinterdnd2",
+      "version": "0.6.4",
+      "vulns": []
+    },
+    {
+      "name": "typing-extensions",
+      "version": "4.16.0",
+      "vulns": []
+    }
+  ],
+  "fixes": []
+}

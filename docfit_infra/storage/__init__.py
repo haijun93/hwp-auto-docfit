@@ -1,0 +1,1 @@
+"""Safe local storage primitives."""

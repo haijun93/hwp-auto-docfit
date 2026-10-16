@@ -1,0 +1,29 @@
+name: Linux core and real Tk regression
+
+on:
+  push:
+    branches: [alpha]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install virtual display and real GUI dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb xauth
+          python -m pip install Pillow==12.3.0 defusedxml==0.7.1 pypdfium2==5.14.0 tkinterdnd2==0.6.4 pywebview==6.2.1
+      - name: Require a working real TkDND display
+        run: xvfb-run -a python -c "from tkinterdnd2 import TkinterDnD; root = TkinterDnD.Tk(); root.update(); root.destroy()"
+      - name: Run full suite with real Tk widgets
+        run: xvfb-run -a python scripts/linux_stub_test_runner.py --require-gui discover -s tests

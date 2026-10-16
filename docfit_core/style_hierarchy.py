@@ -96,10 +96,10 @@ def analyze_hierarchy(paragraphs):
     optional prev_spacing.  No pagination is inferred from XML alone.
     """
     records = []
-    for item in paragraphs:
+    for idx, item in enumerate(paragraphs):
         marker, marker_role = leading_marker(item.get("text", ""))
         indent = int(item.get("left", 0)) + int(item.get("indent", 0))
-        records.append({**item, "marker": marker, "marker_role": marker_role,
+        records.append({**item, "index": idx, "marker": marker, "marker_role": marker_role,
                         "indent_hwpunit": indent})
     marked = [r for r in records if r["marker_role"]]
     role_indent = {
@@ -159,7 +159,7 @@ def analyze_hierarchy(paragraphs):
     variants = []
     for (role, marker), items in sorted(styles.items(), key=lambda kv:
                                        (ROLE_ORDER.index(kv[0][0]) if kv[0][0] in ROLE_ORDER else 9,
-                                        min(records.index(item) for item in kv[1]))):
+                                        min(item["index"] for item in kv[1]))):
         primary = _most_common(Counter((x.get("font"), x.get("size_pt"),
                                         x["indent_hwpunit"], x.get("left", 0),
                                         x.get("indent", 0)) for x in items))

@@ -100,12 +100,14 @@ def _lang_values(e, cast=int):
 
 
 def _shade(value):
+    """화면 요약 전용(영문 자간·밑줄색·그러데이션 각도·흰색 음영 축약됨). 서식 복제/패치 경로에서 사용 금지."""
     """글자 음영색. 'none'과 흰색은 음영 없음(None)으로 본다."""
     value = (value or "none").upper()
     return None if value in ("NONE", "#FFFFFF") else value
 
 
 def _parse_char(e, fonts):
+    """화면 요약 전용(영문 자간·밑줄색·그러데이션 각도·흰색 음영 축약됨). 서식 복제/패치 경로에서 사용 금지."""
     ref = _lang_values(_first(e, "fontRef"), str)
     underline = _first(e, "underline")
     strike = _first(e, "strikeout")
@@ -169,6 +171,7 @@ def _parse_para(e):
 
 
 def _parse_border_fill(e):
+    """화면 요약 전용(영문 자간·밑줄색·그러데이션 각도·흰색 음영 축약됨). 서식 복제/패치 경로에서 사용 금지."""
     sides = {}
     for side in ("leftBorder", "rightBorder", "topBorder", "bottomBorder", "diagonal"):
         x = _first(e, side)
@@ -405,7 +408,6 @@ def _mode(counter, default=None):
 def analyze_style_inventory(path) -> dict:
     """HWPX 파일에 정의·사용된 모든 스타일 요소를 분석한다."""
     path = Path(path)
-    validate_hwpx(path)
     with open_hwpx_safely(path) as z:
         header = ET.fromstring(z.read("Contents/header.xml"))
         defs = parse_header(header)
@@ -836,7 +838,6 @@ def build_style_sample(source, target, inventory: dict | None = None,
     원본 header.xml과 쪽 설정(secPr)·머리말·꼬리말은 그대로 둬 ID 참조가 유지된다.
     """
     source, target = Path(source), Path(target)
-    validate_hwpx(source)
     inventory = inventory or analyze_style_inventory(source)
     chars = inventory["definitions"]["chars"]
     with open_hwpx_safely(source) as z:

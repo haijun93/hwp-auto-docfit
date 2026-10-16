@@ -4,7 +4,8 @@ import unittest
 from defusedxml.ElementTree import fromstring
 
 from docfit_core.format_elements import HeaderIndex
-from docfit_core.table_width import cap_floors, column_ratios, fit_table, is_target, longest_word, plan_widths
+from docfit_core.table_width import (cap_floors, column_ratios, fit_table, host_reserve, is_target, longest_word,
+                                     plan_widths)
 
 NS = 'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head"'
 # 글자 크기 10pt(1000), 장평 100, 자간 0
@@ -36,6 +37,132 @@ def _widths(table):
 
 
 class TableWidthTest(unittest.TestCase):
+    def test_merged_text_columns_and_empty_column_keep_positive_widths(self):
+        rows = [[_cell("분류 제목", 0, 0, width=2000, col_span=2), _cell("", 2, 0, width=1000)],
+                [_cell("내용 문장이 들어 있는 병합 셀", 0, 1, width=2000, col_span=2), _cell("", 2, 1, width=1000)]]
+        table = _table(rows, 3)
+        next(x for x in table if x.tag.endswith("}sz")).set("width", "3000")
+        self.assertTrue(fit_table(table, 10000, HeaderIndex(HEADER)))
+        rows = _widths(table)
+        self.assertEqual(rows[0], rows[1])
+        self.assertAlmostEqual(rows[0][1], 9434 / 3, delta=1)
+        self.assertAlmostEqual(rows[0][0], 9434 * 2 / 3, delta=1)
+        self.assertTrue(all(width > 0 for row in rows for width in row))
+        self.assertTrue(all(sum(row) == 9434 for row in rows))
+
+    def test_mixed_merged_header_and_body_preserve_empty_column_ratio(self):
+        rows = [[_cell("큰 제목", 0, 0, width=3000, col_span=2), _cell("", 2, 0, width=1000)],
+                [_cell("본문", 0, 1, width=1000), _cell("긴 내용 문장", 1, 1, width=2000),
+                 _cell("", 2, 1, width=1000)]]
+        table = _table(rows, 3)
+        self.assertTrue(fit_table(table, 12566, HeaderIndex(HEADER)))
+        widths = _widths(table)
+        self.assertEqual(widths[0][1], 3000)  # Empty column retains 1/4, not the whole width.
+        self.assertEqual(widths[0][0], sum(widths[1][:2]))
+        self.assertEqual(sum(widths[1]), 12000)
+        self.assertTrue(all(width > 0 for row in widths for width in row))
+
+    def test_uncertain_empty_column_geometry_is_preserved(self):
+        from defusedxml.ElementTree import tostring
+        table = _table([[_cell("제목", 0, 0, width=2000, col_span=2), _cell("", 2, 0)],
+                        [_cell("본문", 0, 1, width=2000, col_span=2), _cell("", 2, 1)]], 4)
+        self.assertTrue(is_target(table))
+        before = tostring(table)
+        self.assertFalse(fit_table(table, 10000, HeaderIndex(HEADER)))
+        self.assertEqual(tostring(table), before)
+
+    def test_captioned_table_keeps_its_design_and_only_shrinks_to_fit(self):
+        # '(단위: 개소)' 캡션이 달린 표: 열을 다시 나누지 않고, 넘칠 때만 같은 비율로 줄인다.
+        rows = [[_cell('총 계', 0, 0, width=6000), _cell('노래연습장', 1, 0, width=4000)],
+                [_cell('332', 0, 1, width=6000), _cell('175', 1, 1, width=4000)]]
+        wide = _table(rows, 2, '<hp:caption side="TOP" lastWidth="10000"><hp:subList><hp:p><hp:run>'
+                               '<hp:t>(단위: 개소)</hp:t></hp:run></hp:p></hp:subList></hp:caption>')
+        next(x for x in wide if x.tag.endswith('}sz')).set('width', '10000')
+        index = HeaderIndex(HEADER)
+        self.assertFalse(fit_table(wide, 40000, index))          # 들어가면 그대로
+        self.assertTrue(fit_table(wide, 8566, index))            # 넘치면 비율 그대로 축소
+        self.assertEqual(_widths(wide)[0], [4800, 3200])
+
+    def test_design_bar_table_is_left_untouched(self):
+        # test6 문화경제국 '2026 추진실적 ……(8. 31. 현재)' 막대 표: 빈 점선 칸이 최소 폭으로 줄어 모양이 깨졌다.
+        # 실제 문서처럼 글 칸이 두 행을 덮고 가운데 점선 칸이 위아래 두 행이다.
+        rows = [[_cell('2026 추진실적', 0, 0, width=13425, row_span=2), _cell('', 1, 0, width=22339),
+                 _cell('(8. 31. 현재)', 2, 0, width=11676, row_span=2)], [_cell('', 1, 1, width=22339)]]
+        table = _table(rows, 3)
+        # 사용자가 꾸민 장식 표는 너비를 전혀 바꾸지 않는다(사용자 규칙).
+        self.assertFalse(fit_table(table, 48000, HeaderIndex(HEADER)))
+        self.assertEqual(_widths(table)[0], [13425, 22339, 11676])
+
+    def test_one_row_table_with_blank_cell_is_not_a_design_table(self):
+        # 1행 표는 빈칸이 있어도 장식 표가 아니다(결재란·구분 표가 너비 맞춤에서 빠지던 오판).
+        table = _table([[_cell('구 분', 0, 0), _cell('내 용', 1, 0), _cell('', 2, 0)]], 3)
+        self.assertTrue(is_target(table))
+
+    def test_plain_caption_table_is_fitted_like_any_data_table(self):
+        # '<표 1> 추진 현황' 같은 일반 캡션 표는 베타처럼 열을 글자 수 비율로 다시 나눈다.
+        rows = [[_cell('구 분', 0, 0, width=6000), _cell('노래연습장 현황', 1, 0, width=4000)],
+                [_cell('총계', 0, 1, width=6000), _cell('노래연습장 현황', 1, 1, width=4000)]]
+        table = _table(rows, 2, '<hp:caption side="TOP"><hp:subList><hp:p><hp:run><hp:t>&lt;표 1&gt; 추진 현황'
+                                '</hp:t></hp:run></hp:p></hp:subList></hp:caption>')
+        self.assertTrue(fit_table(table, 20000, HeaderIndex(HEADER)))
+        first, second = _widths(table)[1]
+        self.assertGreater(second, first)
+
+    def test_unit_caption_shrink_keeps_merged_borders_aligned(self):
+        # 칸마다 따로 버리면 병합 칸(10000)과 나뉜 칸(6001+3999)의 오른쪽 선이 1단위 어긋났다.
+        rows = [[_cell('제목', 0, 0, width=10000, col_span=2)],
+                [_cell('332', 0, 1, width=6001), _cell('175', 1, 1, width=3999)]]
+        table = _table(rows, 2, '<hp:caption side="TOP"><hp:subList><hp:p><hp:run><hp:t>(단위: 개소)'
+                                '</hp:t></hp:run></hp:p></hp:subList></hp:caption>')
+        next(x for x in table if x.tag.endswith('}sz')).set('width', '10000')
+        self.assertTrue(fit_table(table, 8566 + 566, HeaderIndex(HEADER)))
+        merged, split = _widths(table)
+        self.assertEqual(merged[0], sum(split))
+        self.assertEqual(merged[0], 8566)
+
+    def test_inline_table_after_spaces_leaves_room_for_them(self):
+        # test6 문화경제국 문서: '   '(빈칸 셋) 뒤 글자처럼 놓인 표를 본문 폭 그대로 넓히면 줄을 넘쳐 용지 밖으로 밀렸다.
+        rows = [[_cell('총 계', 0, 0), _cell('노래연습장', 1, 0)], [_cell('332', 0, 1), _cell('175', 1, 1)]]
+        table = _table(rows, 2, '<hp:pos treatAsChar="1" horzRelTo="PARA"/>')
+        para = fromstring(f'<hp:p {NS} paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>   </hp:t></hp:run>'
+                          '<hp:run charPrIDRef="0"></hp:run></hp:p>')
+        para[1].append(table)
+        index = HeaderIndex(HEADER)
+        reserve = host_reserve(para, table, index)
+        self.assertEqual(reserve, 4800)          # 빈칸 셋 × 전각 × 16pt(나중에 커질 본문 크기)
+        self.assertTrue(fit_table(table, 40000, index, reserve=reserve))
+        width = int(next(x for x in table if x.tag.endswith('}sz')).get('width'))
+        self.assertEqual(width, 40000 - 566 - 4800)   # 본문 폭 − 바깥 여백 − 표 앞 빈칸
+        # 글과 따로 놓인 표는 앞 글을 세지 않는다.
+        floating = _table(rows, 2, '<hp:pos treatAsChar="0"/>')
+        self.assertEqual(host_reserve(para, floating, index), 0)
+
+    def test_row_spanning_labels_are_not_a_multi_row_header(self):
+        # test6 '(서식)' 양식 표: 첫 행 칸 셋이 두 행에 걸쳐 있을 뿐 아래 열을 묶는 머리글이 없다.
+        # 둘째 행까지 머리글로 빼면 근거 법규 칸(글이 가장 많음)이 너비 계산에서 빠져 좁아지고 글자가 겹쳤다.
+        bullets = '● 최상위 근거법규(~ 법 제00조) ● 최하위 근거법규(~ 조례 제00조)'
+        rows = [
+            [_cell('설치근거', 0, 0, row_span=2), _cell(bullets, 1, 0, row_span=2),
+             _cell('유형', 2, 0, row_span=2), _cell('상설/비상설', 3, 0)],
+            [_cell('법령상 강행/임의', 3, 1)],
+            [_cell('설치일자', 0, 2), _cell('2000. 00. 00.', 1, 2), _cell('위원장', 2, 2), _cell('위원 중 호선', 3, 2)],
+            [_cell('설치목적/기능', 0, 3, row_span=2), _cell('•', 1, 3, row_span=2), _cell('위원수', 2, 3),
+             _cell('(정원) 16명~20명 (현원) 18명', 3, 3)],
+            [_cell('임기', 2, 4), _cell('2년(1회 연임)', 3, 4)],
+        ]
+        ratios = column_ratios(_table(rows, 4))
+        self.assertGreater(ratios[1], ratios[0])   # 근거 법규 열이 이름 열보다 좁아지지 않는다
+
+    def test_grouped_two_row_header_still_skips_both_header_rows(self):
+        # 진짜 다단 머리글: 첫 행 '2026년' 칸이 아래 두 열(월)을 묶는다. 본문 행으로만 비율을 정한다.
+        rows = [
+            [_cell('구분', 0, 0, row_span=2), _cell('2026년', 1, 0, col_span=2)],
+            [_cell('1월', 1, 1), _cell('2월', 2, 1)],
+            [_cell('아주 긴 사업 이름을 적은 칸', 0, 2), _cell('●', 1, 2), _cell('●', 2, 2)],
+        ]
+        ratios = column_ratios(_table(rows, 3))
+        self.assertGreater(ratios[0], ratios[1] * 3)
+
     def test_single_row_follows_character_count_including_inner_spaces(self):
         # '도  시' = 4자, '마 을 여  행' = 8자 → 1:2
         table = _table([[_cell('도  시', 0, 0), _cell(' 마 을 여  행 ', 1, 0)]], 2)
@@ -144,3 +271,16 @@ class TableWidthTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class MultiRowHeaderRatiosTest(unittest.TestCase):
+    def test_second_header_row_does_not_distort_body_ratios(self):
+        from docfit_core.table_style import header_row_count
+        table = _table([
+            [_cell('구분', 0, 0, row_span=2), _cell('묶음', 1, 0, col_span=2)],
+            [_cell('아주긴머리글입니다', 1, 1), _cell('짧음', 2, 1)],
+            [_cell('가나', 0, 2), _cell('다라', 1, 2), _cell('마바', 2, 2)],
+        ], 3)
+        self.assertEqual(header_row_count(table), 2)
+        for value in column_ratios(table):
+            self.assertAlmostEqual(value, 1/3)

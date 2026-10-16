@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import tkinter as tk
+from copy import deepcopy
 from tkinter import filedialog, messagebox, ttk
 
 from .abbreviations import DEFAULT_ENTRIES, FORMAT_KINDS, TABLE_KEY, TYPE_LABELS, describe, normalize, upsert
@@ -14,6 +15,7 @@ def open_abbreviation_dialog(parent, load, save, load_defaults=None, save_defaul
 
     창 객체를 돌려준다."""
     entries = normalize(load())
+    saved_entries = deepcopy(entries)
     window = tk.Toplevel(parent)
     window.title("준말 등록·관리")
     window.geometry("640x470")
@@ -35,7 +37,11 @@ def open_abbreviation_dialog(parent, load, save, load_defaults=None, save_defaul
 
     def defaults_changed():
         if save_defaults is not None:
-            save_defaults(bool(defaults_var.get()))
+            try:
+                save_defaults(bool(defaults_var.get()))
+            except Exception as exc:
+                defaults_var.set(not defaults_var.get())
+                status.set(f"기본 준말 설정 저장 실패: {exc}")
         refresh()   # 기본 준말을 끄면 기본 표 서식 표시도 바뀐다.
 
     ttk.Checkbutton(body, text="기본 준말 사용 (제목1·제목2·개요·붙임·로1~로10·표, 아래 등록이 같은 준말이면 등록이 우선)",
@@ -90,8 +96,17 @@ def open_abbreviation_dialog(parent, load, save, load_defaults=None, save_defaul
             format_box.grid(row=1, column=1, columnspan=3, sticky="w", padx=(6, 0), pady=(8, 0))
 
     def persist():
-        save(dict(entries))
+        nonlocal entries, saved_entries
+        try:
+            save(dict(entries))
+        except Exception as exc:
+            entries = deepcopy(saved_entries)
+            status.set(f"준말 저장 실패: {exc}")
+            refresh()
+            return False
+        saved_entries = deepcopy(entries)
         refresh()
+        return True
 
     def add():
         nonlocal entries
@@ -101,9 +116,9 @@ def open_abbreviation_dialog(parent, load, save, load_defaults=None, save_defaul
         status.set(error)
         if not error:
             entries = updated
-            persist()
-            key_var.set("")
-            text_var.set("")
+            if persist():
+                key_var.set("")
+                text_var.set("")
 
     def remove():
         selected = tree.selection()
@@ -144,8 +159,7 @@ def open_abbreviation_dialog(parent, load, save, load_defaults=None, save_defaul
             return False
         entries[TABLE_KEY] = {"type": "format", "value": "table", "style": style}
         status.set("")
-        persist()
-        return True
+        return persist()
 
     def reset_table():
         """준말 '표'를 내장 기본 표 서식(표서식예시.hwpx에서 배운 값)으로 되돌린다."""

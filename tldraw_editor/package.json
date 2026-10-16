@@ -1,0 +1,22 @@
+{
+  "name": "hwp-autodocfit-diagram-editor",
+  "private": true,
+  "version": "0.1.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "type": "module",
+  "scripts": {
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@tldraw/assets": "5.5.2",
+    "@vitejs/plugin-react": "4.7.0",
+    "react": "19.2.1",
+    "react-dom": "19.2.1",
+    "tldraw": "5.5.2"
+  },
+  "devDependencies": {
+    "vite": "6.4.3"
+  }
+}

@@ -1,0 +1,38 @@
+name: Build Flutter Windows native prototype
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.5'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+          cache: npm
+          cache-dependency-path: tldraw_editor/package-lock.json
+      - name: Install backend build dependencies
+        run: python -m pip install -r requirements.txt pyinstaller
+      - name: Test independent services and protocol
+        run: python -m unittest tests.test_configuration_service tests.test_native_ipc tests.test_process_lock
+      - name: Build separate prototype bundle
+        shell: pwsh
+        run: ./build_native.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HWP_AutoDocFit-native-prototype
+          path: |
+            dist-native/prototype/
+            dist-native/SHA256SUMS.txt
+          if-no-files-found: error

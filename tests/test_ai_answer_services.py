@@ -15,7 +15,7 @@ def load(name):
 
 
 def lines(name):
-    return ai_answer_to_labeled_text(load(name)).splitlines()
+    return ai_answer_to_labeled_text(load(name), strip_chat_frame=True).splitlines()
 
 
 class ServiceStyleTest(unittest.TestCase):
@@ -114,8 +114,10 @@ class RobustnessTest(unittest.TestCase):
             out = ai_answer_to_labeled_text(raw)
             ai_answer_to_outline_text(raw)
             looks_like_ai_answer(raw)
-            for artifact in ('[cite', '†source'):
-                self.assertNotIn(artifact, out)
+            # Literal code may contain citation-looking text; protection is intentional.
+            if '```' not in raw and '`' not in raw:
+                for artifact in ('[cite', '†source'):
+                    self.assertNotIn(artifact, out)
             if out.strip():
                 self.assertTrue(looks_labeled(out) or len(blocks) >= 1)
             self.assertEqual(ai_answer_to_labeled_text(raw), out)   # 결정적

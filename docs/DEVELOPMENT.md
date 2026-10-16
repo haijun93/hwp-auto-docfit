@@ -99,7 +99,8 @@ XML 파싱은 `defusedxml`을 사용하고 `hwp-auto-docfit.py`의 CRLF 줄바�
 
 완료되면 `dist\HWP_AutoDocFit.exe`가 생성됩니다.
 빌드에는 의존 패키지 설치가 포함되므로 최초 실행 시 네트워크가 필요할 수 있습니다.
-Flutter SDK가 없으면 새 Flutter 화면 빌드를 건너뛰고 기존 화면으로 빌드를 계속합니다.
+Flutter SDK가 없거나 검사·테스트·웹 빌드·자산 검증이 실패하면 EXE 빌드를 중단합니다.
+Flutter 화면이 누락된 패키지를 만들지 않으며, 런타임의 기존 WebView/Tk 비상 복구 경로는 유지합니다.
 `desktop_web`·`resources`·자동화 DLL 등 필요한 리소스는 빌드 스크립트가 포함합니다.
 
 코드·단위 테스트뿐 아니라 빌드된 EXE를 실제로 실행해 창 제목의 버전과 문서 처리 결과를 확인하세요.
@@ -129,3 +130,77 @@ Flutter SDK가 없으면 새 Flutter 화면 빌드를 건너뛰고 기존 화면
 - [원본 보존·재현 설계](../STYLE_FIDELITY_DESIGN.md)
 - [릴리스 노트](../releases/)
 - [프로젝트 소개 웹사이트 소스](../website/)
+
+## 알파 리팩터링 상태
+
+- `docfit_core/app_state.py`: GUI 위젯과 독립된 실행 옵션·상태.
+- `docfit_core/config_store.py`: 순수 설정 마이그레이션과 기존 원자 JSON 저장 연결.
+- `desktop_web_ui.py`: 프로파일 coverage 캐시, AppState 접근 및 레거시 호스트 호환.
+- `hwp-auto-docfit.py`: 기존 속성 파사드 및 실행 시 옵션 스냅샷. CRLF 유지.
+- `docfit_engine/`·`docfit_ui/` 전체 추출과 Flutter 도구 일원화는 후속 단계.
+- Linux 회귀 검사는 Windows 모듈 대체/실제 Tk를 사용하며 실제 한/글 COM 검증을 대신하지 않는다.
+
+
+## Alpha 8 코드 구조 및 검증
+
+- `hwp-auto-docfit.py`: CRLF 부트스트랩과 기존 이름 re-export. 외부 스크립트의 import/runpy 계약 유지.
+- `docfit_engine/`: 보안 등록·COM·자간·서식·쪽 배치·파이프라인. `context.py`의 RunContext가 옵션·프로필·캐시·COM 세션 상태를 작업별로 소유한다. `runtime.py`는 함수를 작업별 상태 사전에 바인딩하며 GUI는 context/callbacks를 명시적으로 전달한다. 루트 함수의 기존 monkeypatch 호환 경계는 유지한다.
+- `docfit_ui/legacy.py`: Tk 폴백. `scheduler.py`: 소유 스레드 큐 펌프. 외부 RPC 스레드는 Tk 콜백을 직접 등록하지 않는다.
+- `docfit_core/app_state.py`, `config_store.py`: 정형 상태·옵션과 설정 마이그레이션.
+- `desktop_web_ui.py`: JSON 명령/값만 공개. 프로필 revision 검사, 단계 설정, Flutter 확인 요청을 중개한다.
+- `docfit_app/document_tools_service.py`: 공통 작성 도구, CAS 초안 저장, 선택 교정 사본, 작업 사본 기반 고급 도구와 상태 조회.
+- `flutter_ui/lib/features/`: 프로필·기본 데이터 표·문서 도구·확인 화면. 현재 운영은 Flutter 웹/WebView2이며 별도 네이티브 COM 이관 완료를 뜻하지 않는다.
+- `HWP_AutoDocFit.spec`: 로컬 build.bat과 CI의 공통 패키징 정의. engine/ui/core/app 하위 모듈을 수집한다. Flutter 자산 검사 유지.
+- `docfit_app/self_test.py`: `--self-test [--self-test-report PATH]` 모듈·실제 부트스트랩 심볼 검사. GUI/COM 생성 없이 종료하며 CI는 동결 EXE를 30초 제한으로 검사한다.
+- `PipelineCallbacks`: log/status/progress 및 on_stage_enter/exit/error, event 포트. 실제 문서 단계에서 호출하며 UI 위젯을 엔진에 전달하지 않는다.
+- 비동기 편집: 흐름도 snapshot 세대와 ACK 세대를 구분하고 아웃라이너 변경 RPC를 직렬화한다. 지연 응답은 최신 입력 revision을 덮어쓰지 않는다.
+- 일반 흐름도: model.js의 공통 글자 측정·자동 크기·안전 여백·줄바꿈을 화면과 PNG 양쪽에서 사용한다.
+- 상세 구현·검증: [Alpha 9](REVIEW_FIXES_ALPHA9.md).
+
+기본 DLL 경로에 복사 또는 등록이 실패하면 `%LOCALAPPDATA%\HwpAutoDocFit\modules`에 폴백한다.
+Windows에서는 저장소 루트 `.venv\Scripts\python.exe`, `PYTHONIOENCODING=utf-8`로 compile/import/unittest를 실행한다.
+현재 Linux 클라우드에서는 `.venv/bin/python`과 실제 Tk/Xvfb를 사용하고 COM/winreg만 대체한다.
+Linux 전체 검사는 `DISPLAY=:91 .venv/bin/python scripts/linux_stub_test_runner.py --require-gui discover -s tests`이다.
+Windows 한/글 실측, WebView2 포커스와 EXE 패키징은 Windows 환경에서 별도 확인해야 한다.
+결과는 [Phase 3~5 보고서](REFACTOR_PHASE3_5_ALPHA8.md)에 기록한다.
+
+
+### 일반 흐름도와 개발자 tldraw
+
+- 일반 편집기: `diagram_editor/` React Flow(MIT), `docfit_app/flow_service.py`, Flutter `features/flows/`.
+- 일반 모드 버튼은 개발자 옵션과 독립. 저장 API는 `flow_editor(action,payload)`, 데이터는 `flows/`.
+- tldraw는 기존 `tldraw_editor/`·`features/diagrams/`·`DiagramService`를 유지. 개발자 모드와 별도 옵션이 모두 필요하며 `diagrams/` 데이터를 사용한다.
+- `scripts/build_flow_editor.ps1`이 고정 의존성 설치·모델 시험·번들·라이선스 고지를 생성하며 웹/네이티브 빌드에서 호출한다. Node 22.12+ 필요.
+- 일반 편집기는 런타임 CDN·외부 서비스 없이 로컬 자산 사용. 기존 tldraw SDK 제품 사용권 과제는 그대로 유지한다.
+
+
+### Alpha 11 저장·종료 보호 계약
+
+- fidelity 출력은 기존 결과를 덮어쓰지 않는다. 하드링크를 지원하지 않는 파일시스템의 오류는 명시적으로 처리한다.
+- FlowService/DiagramService 기존 문서 저장에는 load/save 응답의 revision이 필요하다.
+  문서별 프로세스 잠금 안에서 비교·쓰기·응답을 확정하며 충돌은 사본 저장으로 복구한다.
+- Flutter core/close_guards.dart의 CloseLease는 편집 화면 dispose까지 종료를 보류한다.
+  DesktopWebBridge.enable_close_guard → app_close 폴링 → resolve_dialog 승인 순서이며,
+  native closing 콜백에서 JavaScript를 동기 대기하지 않는다.
+- kordoc 버전별 .install.lock 파일은 제거하지 않는다. 설치 완료를 잠금 안에서 재검사한다.
+- 검증·Windows 실기기 한계: docs/FINAL_REVIEW_FIXES_ALPHA11.md.
+
+
+### Alpha 12/13 MD 및 로마자 중제목
+
+- .md는 명시적 문서 모드로 AI 공문서 블록 파서를 공유한다. 코드의 #는 목차가 아니며,
+  이미지 있는 문서는 기존 이미지 보존 엔진 경로를 유지한다.
+- 배치 텍스트 변환은 라벨을 실제 문단·표로 삽입한다. 저장 성공 뒤 COM 파일을 해제하고 제목 표식을 후처리한다.
+- docfit_core/roman_heading.py는 로N / Unicode 로마자 일반 제목을 판별한다.
+  기존 중제목 선행 서식이 이를 3칸 표로 변환하며 일반 준말의 콜론 규칙은 바꾸지 않는다.
+- 명시적 MD 로마자 번호는 원문 번호를 보존한다. 상세 및 원격 반영 기록은 docs/ROMAN_HEADING_ALPHA13.md 참고.
+
+
+### Alpha 14 문서 드롭 이후 2단계 자동 이동
+
+- DesktopWebBridge.receive_drop → add_paths(from_drop=True) 경로에서 실제 추가 수가 양수일 때만
+  document_drop_revision을 증가시킨다. 일반 파일 선택·준말/서식 관리 드롭에는 이 신호를 만들지 않는다.
+- Flutter는 증가한 revision과 비어 있지 않은 문서 목록을 확인하여 2단계 작업 방식으로 이동한다.
+  같은 revision의 반복 폴링, 거부된 드롭 및 작업 중에는 자동 이동하지 않는다.
+- 파일포맷 모드는 기존 플로팅 결과 형식 선택을 유지한다.
+- 신규 회귀: Python 드롭 수락/거부 계약, Flutter 420px·1280px 자동 이동/재이동 방지.

@@ -27,12 +27,12 @@ class ThreeRowTitleTableTest(unittest.TestCase):
         return header, section, table
 
     def test_three_row_title_is_type3(self):
-        _, _, table = self.three_row(['마포문화재단 경영본부장:가명가☎0000', '마포문화재단 예술본부장:가명나☎0000'])
+        _, _, table = self.three_row(['마포문화재단 경영본부장:오세인☎3274-8603', '마포문화재단 예술본부장:이선아☎3274-8511'])
         self.assertEqual(self.ns['제목_유형판별'](table), 3)
         self.assertEqual(self.ns['서식표_종류판별'](table), 'title3')
 
     def test_three_row_without_owner_is_not_title(self):
-        _, _, table = self.three_row(['마포문화재단 경영본부장:가명가☎0000', '일반 내용 칸'])
+        _, _, table = self.three_row(['마포문화재단 경영본부장:오세인☎3274-8603', '일반 내용 칸'])
         self.assertIsNone(self.ns['제목_유형판별'](table))
 
     def test_extra_owner_cell_gets_owner_format(self):

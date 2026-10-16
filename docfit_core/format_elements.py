@@ -968,7 +968,11 @@ _DROP_GROUPS = ("styles", "numberings", "bullets", "memoProperties", "trackChang
 
 
 def extract_sample(header, table):
-    """표 하나와, 그 표가 쓰는 모양만 남긴 header 사본을 문자열로 보관한다."""
+    """표 하나와, 그 표가 쓰는 모양만 남긴 header 사본을 문자열로 보관한다.
+
+    복제의 기준은 이 원본 XML이다. char_values/border_fill_values의 화면용
+    대표값으로 재생성하면 언어별 자간·밑줄색·그러데이션·흰색 음영이 손실된다.
+    """
     used = {"borderFills": set(), "charProperties": set(), "paraProperties": set(), "tabProperties": set()}
     for element in table.iter():
         if element.get("borderFillIDRef") is not None:
@@ -1693,3 +1697,19 @@ def summary_lines(analysis, limit=12):
     if analysis.get("tables", {}).get("count"):
         lines.append(f"일반 표 {analysis['tables']['count']}개")
     return lines
+
+
+def ambiguous_table_match(scored, margin=10.0):
+    """Do not resolve equally plausible templates using document order alone.
+
+    Entries are (score, signature, sample). The legacy ordinal bonus is at most
+    ten points; candidates within that margin with the same structure require
+    explicit selection instead of silently transplanting special formatting.
+    """
+    ranked = sorted(scored, key=lambda item: item[0], reverse=True)
+    if len(ranked) < 2:
+        return False
+    first = ranked[0]
+    shape = lambda signature: tuple(signature.get(k) for k in ("rows", "cols", "cell_count"))
+    return any(first[0] - other[0] <= margin and shape(first[1]) == shape(other[1])
+               for other in ranked[1:])

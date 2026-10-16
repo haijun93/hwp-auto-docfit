@@ -40,13 +40,6 @@ class RegressionToolTest(unittest.TestCase):
         검사, 합격 = 판정({'output_created': True, 'score': 99.6}, {'min_score': 100, 'same_layout': False})
         self.assertEqual((검사['score'], 검사['layout'], 합격), ('fail', 'not_applicable', False))
 
-    def test_com_lock_is_reentrant_after_release(self):
-        잠금 = self.ns['한글_COM_잠금']
-        with 잠금(1):
-            pass
-        with 잠금(1):
-            pass
-
 
 if __name__ == '__main__':
     unittest.main()

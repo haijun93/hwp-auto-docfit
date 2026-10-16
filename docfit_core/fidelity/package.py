@@ -14,9 +14,11 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import Path
-import shutil
+import os
+import tempfile
 import struct
 import zlib
+from ..hwpx import HwpxLimits, HwpxSecurityError
 
 LOCAL_SIG = b"PK\x03\x04"
 CENTRAL_SIG = b"PK\x01\x02"
@@ -60,18 +62,25 @@ class PackageSnapshot:
     entries: "OrderedDict[str, ZipEntry]" = field(default_factory=OrderedDict)
     prefix: bytes = b""            # 첫 로컬 레코드 앞 바이트
     eocd: bytes = b""              # 끝 레코드(주석 포함) 원본
+    limits: HwpxLimits = field(default_factory=HwpxLimits)
     central_order: list = field(default_factory=list)   # 중앙 디렉터리의 항목 순서
 
     @classmethod
-    def load(cls, path) -> "PackageSnapshot":
+    def load(cls, path, *, limits=None) -> "PackageSnapshot":
         path = Path(path)
-        data = path.read_bytes()
+        limits = limits or HwpxLimits()
+        if path.stat().st_size > limits.max_total_size:
+            raise HwpxSecurityError("원본 패키지 파일 크기가 제한을 넘습니다.")
+        with path.open('rb') as stream:
+            data = stream.read(limits.max_total_size + 1)
+        if len(data) > limits.max_total_size:
+            raise HwpxSecurityError("원본 패키지 파일 크기가 제한을 넘습니다.")
         digest = sha256(data).hexdigest()
         if data[:8] == CFB_SIG:
             return cls(str(path), data, digest, "hwp")
         if data[:4] != LOCAL_SIG:
             return cls(str(path), data, digest, "unknown")
-        snapshot = cls(str(path), data, digest, "hwpx")
+        snapshot = cls(str(path), data, digest, "hwpx", limits=limits)
         snapshot._parse_zip()
         return snapshot
 
@@ -89,7 +98,11 @@ class PackageSnapshot:
         if index + 22 + comment_len != len(data) or cd_offset + cd_size != index:
             raise UnsupportedPackage("ZIP 끝 레코드 위치가 맞지 않습니다(뒤에 덧붙은 자료가 있음).")
         self.eocd = data[index:]
+        if total > self.limits.max_entries:
+            raise HwpxSecurityError("압축 항목 수가 제한을 넘습니다.")
         records, position = [], cd_offset
+        seen = set()
+        total_size = 0
         for _ in range(total):
             if data[position:position + 4] != CENTRAL_SIG:
                 raise UnsupportedPackage("중앙 디렉터리 레코드가 손상되었습니다.")
@@ -98,12 +111,23 @@ class PackageSnapshot:
             end = position + 46 + name_len + extra_len + comment_len2
             raw_name = data[position + 46:position + 46 + name_len]
             name = raw_name.decode("utf-8" if flags & 0x800 else "cp437")
+            if flags & 0x8:
+                raise UnsupportedPackage(
+                    f"ZIP Data Descriptor(bit 3) 항목은 원문 보존 쓰기를 지원하지 않습니다: {name}")
             if flags & 0x1:
                 raise UnsupportedPackage(f"암호화된 항목은 지원하지 않습니다: {name}")
             if 0xFFFFFFFF in (csize, usize, offset) or disk_start:
                 raise UnsupportedPackage(f"ZIP64 항목은 지원하지 않습니다: {name}")
-            if name in {r[0] for r in records}:
+            if usize > self.limits.max_file_size:
+                raise HwpxSecurityError(f"압축 내부 파일 크기가 제한을 넘습니다: {name}")
+            total_size += usize
+            if total_size > self.limits.max_total_size:
+                raise HwpxSecurityError("압축 해제 총 크기가 제한을 넘습니다.")
+            if usize and (not csize or usize / csize > self.limits.max_compression_ratio):
+                raise HwpxSecurityError(f"비정상 압축률입니다: {name}")
+            if name in seen:
                 raise UnsupportedPackage(f"같은 이름의 압축 항목이 둘 있습니다: {name}")
+            seen.add(name)
             records.append((name, data[position:end], flags, method, crc, csize, usize, offset))
             position = end
         if position != index:
@@ -137,7 +161,10 @@ class PackageSnapshot:
         if entry.method == 0:
             content = raw
         elif entry.method == 8:
-            content = zlib.decompressobj(-15).decompress(raw)
+            decompressor = zlib.decompressobj(-15)
+            content = decompressor.decompress(raw, min(entry.size, self.limits.max_file_size) + 1)
+            if decompressor.unconsumed_tail or not decompressor.eof or len(content) > entry.size:
+                raise HwpxSecurityError(f"압축 해제 길이가 제한 또는 선언된 크기를 넘습니다: {name}")
         else:
             raise UnsupportedPackage(f"지원하지 않는 압축 방식({entry.method}): {name}")
         if zlib.crc32(content) & 0xFFFFFFFF != entry.crc or len(content) != entry.size:
@@ -195,16 +222,31 @@ def build_package(snapshot: PackageSnapshot, replacements: dict) -> bytes:
     return bytes(out)
 
 
+def _publish_new(data: bytes, target: Path) -> str:
+    """Publish a private temporary inode without replacing any existing name."""
+    if target.exists() or target.is_symlink():
+        raise FileExistsError(f"결과 파일이 이미 존재합니다: {target}")
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="wb", dir=target.parent, prefix=".docfit-", delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.link(temporary, target)  # Atomic, exclusive publication (also on NTFS).
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+    return sha256(data).hexdigest()
+
+
 def write_package(snapshot: PackageSnapshot, replacements: dict, target) -> str:
     """패키지를 target에 쓰고 결과 SHA-256을 돌려준다. 원본 경로에는 쓰지 않는다."""
     target = Path(target)
     if target.resolve() == Path(snapshot.path).resolve():
         raise ValueError("원본 파일에 덮어쓸 수 없습니다.")
     data = build_package(snapshot, replacements)
-    temp = target.with_name(target.name + ".tmp")
-    temp.write_bytes(data)
-    temp.replace(target)
-    return sha256(data).hexdigest()
+    return _publish_new(data, target)
 
 
 def copy_exact(source, target) -> dict:
@@ -212,8 +254,8 @@ def copy_exact(source, target) -> dict:
     source, target = Path(source), Path(target)
     if target.resolve() == source.resolve():
         raise ValueError("원본과 같은 경로에는 복제할 수 없습니다.")
-    original = sha256(source.read_bytes()).hexdigest()
-    shutil.copyfile(source, target)
-    copied = sha256(target.read_bytes()).hexdigest()
+    data = source.read_bytes()
+    original = sha256(data).hexdigest()
+    copied = _publish_new(data, target)
     return {"source_sha256": original, "result_sha256": copied, "identical": original == copied,
             "verdict": "검증된 완전 일치" if original == copied else "실패"}

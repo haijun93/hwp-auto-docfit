@@ -1,6 +1,6 @@
 Option Explicit
 
-Dim fso, shell, projectDir, pythonw, appScript, command, pythonInstall
+Dim fso, shell, projectDir, pythonw, appScript, command
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set shell = CreateObject("WScript.Shell")
 
@@ -10,13 +10,10 @@ appScript = fso.BuildPath(projectDir, "hwp-auto-docfit.py")
 
 If fso.FileExists(pythonw) Then
     ' Use project virtual environment
+ElseIf fso.FileExists("C:\Users\haiju\AppData\Local\Programs\Python\Python314\pythonw.exe") Then
+    pythonw = "C:\Users\haiju\AppData\Local\Programs\Python\Python314\pythonw.exe"
 Else
-    pythonInstall = fso.BuildPath(shell.ExpandEnvironmentStrings("%LOCALAPPDATA%"), "Programs\Python\Python314\pythonw.exe")
-    If fso.FileExists(pythonInstall) Then
-        pythonw = pythonInstall
-    Else
-        pythonw = "pythonw.exe"
-    End If
+    pythonw = "pythonw.exe"
 End If
 
 If Not fso.FileExists(appScript) Then

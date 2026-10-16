@@ -75,7 +75,7 @@ def normalize(entries) -> dict[str, dict]:
         if not key or not isinstance(spec, dict):
             continue
         kind, value = spec.get("type"), spec.get("value")
-        if kind == "format" and value in FORMAT_KINDS:
+        if kind == "format" and isinstance(value, str) and value in FORMAT_KINDS:
             if value == "midtitle" and not roman_of_key(key):
                 continue  # 번호를 알 수 없는 중제목 준말은 쓸 수 없다.
             result[key] = {"type": "format", "value": value}

@@ -1,0 +1,20 @@
+# Single packaging definition shared by build.bat and Windows CI.
+from PyInstaller.utils.hooks import collect_all, collect_submodules
+from pathlib import Path
+root = Path(SPECPATH)
+datas = [(str(root / 'MapoHwpAutoDocFitSecurity.dll'), '.'),
+         (str(root / 'desktop_web'), 'desktop_web'),
+         (str(root / 'resources'), 'resources')]
+binaries, hiddenimports = [], []
+for package in ('docfit_core', 'docfit_engine', 'docfit_app', 'docfit_ui'):
+    hiddenimports += collect_submodules(package)
+for package in ('tkinterdnd2', 'PIL', 'webview', 'pythonnet', 'clr_loader', 'pypdfium2', 'pypdfium2_raw'):
+    data, binary, imports = collect_all(package)
+    datas += data
+    binaries += binary
+    hiddenimports += imports
+a = Analysis([str(root / 'hwp-auto-docfit.py')], pathex=[str(root)],
+             binaries=binaries, datas=datas, hiddenimports=hiddenimports)
+pyz = PYZ(a.pure)
+exe = EXE(pyz, a.scripts, a.binaries, a.datas, name='HWP_AutoDocFit',
+          console=False, icon=str(root / 'resources' / 'app_icon.ico'))

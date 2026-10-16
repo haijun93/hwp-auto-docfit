@@ -1,4 +1,6 @@
 """서식 관리: 예시 보고서로 복제한 서식의 이름 바꾸기·삭제·세부 수정을 확인 없이 부르는 본체와 웹 화면 모드 동작."""
+from tests.gui_support import gui_root
+
 import json
 import os
 from pathlib import Path
@@ -14,7 +16,7 @@ class FormatManagerTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="hwp-docfit-formats-") as folder:
             with patch.dict(os.environ, {"APPDATA": folder}):
                 ns = runpy.run_path(str(source), run_name="format_manager_test")
-                root = ns["TkinterDnD"].Tk()
+                root = gui_root(ns['TkinterDnD'].Tk, ns)
                 root.withdraw()                      # 웹 화면 모드처럼 Tk 기본 창을 숨긴다
                 try:
                     app = ns["HwpAutoDocFitGUI"](root)

@@ -12,6 +12,7 @@ from docfit_core.attachment_block import (
 )
 from docfit_core.document_rules import normalize_attachment_list_header
 from docfit_core.attachment_block import blank_line_plan
+from tests.temp_support import tracked_tempdir
 
 HP = 'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"'
 HS = 'xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"'
@@ -91,7 +92,7 @@ class DocumentTest(unittest.TestCase):
             ref.set(lang, by_name.get(marker_face, next(iter(by_name.values()))))
         chars.insert(1, marker)
         section = f'<hs:sec {HS} {HP}>{body}</hs:sec>'.encode('utf-8')
-        out = Path(tempfile.mkdtemp(prefix='docfit-att-')) / 'in.hwpx'
+        out = Path(tracked_tempdir(self, 'docfit-att-')) / 'in.hwpx'
         with zipfile.ZipFile(out, 'w') as z:
             z.writestr('mimetype', 'application/hwp+zip')
             z.writestr('Contents/header.xml', ns['ET'].tostring(header, encoding='utf-8', xml_declaration=True))
