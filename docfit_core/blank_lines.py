@@ -13,6 +13,9 @@
 
 from __future__ import annotations
 
+import copy
+from collections import Counter
+
 from defusedxml import ElementTree as ET
 
 from .style_unify import unify_marker
@@ -74,6 +77,44 @@ def slots(section, table_kind):
     return found
 
 
+def after_tables(section, table_kind, kinds=("midtitle",)):
+    """중제목 표 바로 다음(빈 줄 건너뜀) 글 문단마다 (문단, 'after|역할')."""
+    paragraphs = [p for p in section if _tag(p) == "p"]
+    found, last = [], None
+    for p in paragraphs:
+        if is_blank(p):
+            continue
+        objects = _objects(p)
+        if objects and not _text(p).strip():
+            last = role(p, table_kind)
+            continue
+        if last in kinds:
+            found.append((p, f"after|{last}"))
+        last = None
+    return found
+
+
+def _prev_value(para):
+    """문단 모양의 문단 위 간격(HWPX case 값). hp:switch가 있으면 case 값."""
+    for case in (x for x in para.iter() if _tag(x) == "case"):
+        for e in case.iter():
+            if _tag(e) == "prev":
+                return int(e.get("value") or 0)
+    e = next((x for x in para.iter() if _tag(x) == "prev"), None)
+    return int(e.get("value") or 0) if e is not None else None
+
+
+def _set_prev(para, value):
+    """문단 위 간격을 value(case 값)로 둔다. hp:default 쪽은 두 배 값이다(HWPX 저장 관례)."""
+    def walk(node, factor):
+        for child in node:
+            name = _tag(child)
+            if name == "prev":
+                child.set("value", str(int(value) * factor))
+            walk(child, 2 if name == "default" else factor)
+    walk(para, 1)
+
+
 def _refs(header):
     groups = {}
     for name in ("fontfaces", "borderFills", "tabProperties", "charProperties", "paraProperties"):
@@ -116,7 +157,17 @@ def learn(header, sections, table_kind) -> dict:
                            "border": ET.tostring(fill, encoding="unicode") if fill is not None else None,
                            "char_border": ET.tostring(char_fill, encoding="unicode") if char_fill is not None else None,
                            "tab": ET.tostring(tab, encoding="unicode") if tab is not None else None}
-    return {"version": 1, "slots": result} if result else {}
+    after = {}
+    for section in sections:
+        for p, key in after_tables(section, table_kind):
+            para = _by_id(groups["paraProperties"], p.get("paraPrIDRef"))
+            value = _prev_value(para) if para is not None else None
+            if value is not None:
+                after.setdefault(key, Counter())[value] += 1
+    after = {k: c.most_common(1)[0][0] for k, c in after.items()}
+    if not result and not after:
+        return {}
+    return {"version": 1, "slots": result, "after": after}
 
 
 def _lookup(learned, key):
@@ -166,13 +217,35 @@ def _clone(template, xml):
 
 
 def apply(header, sections, learned, table_kind) -> int:
-    """정리할 문서의 빈 줄에 예시의 같은 자리 빈 줄 모양을 입힌다. 바꾼 빈 줄 수."""
-    if not (learned or {}).get("slots"):
+    """정리할 문서의 빈 줄에 예시의 같은 자리 빈 줄 모양을, 중제목 표 다음 첫 문장에 예시의 문단 위 간격을 입힌다.
+    바꾼 문단 수."""
+    if not (learned or {}).get("slots") and not (learned or {}).get("after"):
         return 0
     groups = _refs(header)
     if any(groups[name] is None for name in ("fontfaces", "charProperties", "paraProperties")):
         return 0
     made, count = {}, 0
+    # 중제목(Ⅰ 추진 배경) 다음 첫 문장의 문단 위 간격: 예시는 □의 보통 간격(11pt)보다 좁게(7.5pt) 둔다.
+    gaps = (learned or {}).get("after") or {}
+    shapes = {}
+    for section in sections:
+        for p, key in after_tables(section, table_kind):
+            if key not in gaps:
+                continue
+            base = p.get("paraPrIDRef")
+            if (base, key) not in shapes:
+                source = _by_id(groups["paraProperties"], base)
+                if source is None:
+                    continue
+                if _prev_value(source) == gaps[key]:
+                    shapes[(base, key)] = base
+                else:
+                    clone = copy.deepcopy(source)
+                    _set_prev(clone, gaps[key])
+                    shapes[(base, key)] = _append(groups["paraProperties"], clone)
+            if shapes[(base, key)] != base:
+                p.set("paraPrIDRef", shapes[(base, key)])
+                count += 1
     for section in sections:
         for p, key in slots(section, table_kind):
             item = _lookup(learned, key)

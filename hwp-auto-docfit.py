@@ -721,6 +721,7 @@ from docfit_app.settings_schema import DEFAULTS as _설정_기본값
 
 
 서식프로파일_목록 = _engine_resolve('docfit_engine.formatter', '서식프로파일_목록', globals())
+_제목뒤간격_다시재기 = _engine_resolve('docfit_engine.formatter', '_제목뒤간격_다시재기', globals())
 
 
 _표_텍스트 = _engine_resolve('docfit_engine.formatter', '_표_텍스트', globals())

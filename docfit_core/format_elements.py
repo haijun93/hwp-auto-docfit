@@ -881,6 +881,10 @@ def analyze_format_elements(path, classify=None):
                     if kind == "box" and previous_kind and previous_kind.startswith("title"):
                         kind = "overview"
                     previous_kind = kind
+                    if not (kind and (kind.startswith("title") or kind == "overview")):
+                        # 제목·개요 표와 첫 문장 사이에 중제목 표(Ⅰ 추진 배경)·일반 표가 있으면 그 표 높이까지 간격으로 재어
+                        # 중제목 아래 첫 □의 문단 위 간격이 31pt로 벌어졌다(사용자 신고, 2026-10-17). 이때는 재지 않는다.
+                        title_bottom = None
                     if kind in FORM_KINDS:
                         forms[kind].append((table, _record_table(table, index)))
                         if kind.startswith("title") or kind == "overview":
