@@ -21,7 +21,9 @@
 
 □ 검증 및 한계
 ㅇ Python 신규 회귀 검사 9개·Flutter 69개·JS 모델 15개·Flutter 정적 분석 통과.
-ㅇ 전체 Python 최종 수치 및 웹 번들 검증은 HANDOVER.md에 기록함.
+ㅇ 최신 병합본 Python 전체 1,207개(통과 1,202·조건부 제외 5) 및 웹 Release 번들·자산 검사 통과.
+ㅇ Chromium에서 표 payload와 마인드맵 PNG 복사 이벤트를 확인함.
+ㅇ import_check와 본체 CRLF 3,329줄 유지 확인.
 ㅇ 실제 Windows 한/글 2020 클립보드 수용과 COM 조판은 이 Linux 환경에서 실행하지 못함.
 ㅇ HTML 붙여넣기의 테두리·배치는 한/글 HTML 해석에 따라 차이가 생길 수 있음.
 ㅇ HWPX 저장 기능은 정밀 표 내보내기 경로로 유지함.

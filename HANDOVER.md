@@ -7,6 +7,19 @@
 
 ## 1. 한눈에 보기
 
+2026-10-16 (한국시간): 최신 원격 v1.76.0(f7f8db45)을 보존하고 alpha에
+표·다이어그램 Windows 클립보드 복사 및 한/글 내장 HWP→HWPX 변환을 추가했다.
+표는 CF_HTML+Unicode, 자유 도형·마인드맵은 DIB+PNG로 복사한다.
+tldraw 메뉴·설정·SDK 생성 자산을 제외하고 동결 앱에서 활성화를 차단한다.
+Python 1,207개(통과 1,202·조건부 제외 5), Flutter 69개, JS 모델 15개 통과.
+정적 분석·웹 Release 빌드·자산 검사·import_check 및 본체 CRLF 3,329줄 유지 확인.
+Chromium에서 표 복사 payload 및 마인드맵 PNG 복사 이벤트를 확인했다.
+실제 Windows 한/글 2020 클립보드 붙여넣기와 COM 저장은 별도 실기기 검증이다.
+상세: docs/CLIPBOARD_HWP_IMPLEMENTATION_2026-10-16.md.
+기존 Beta 2 Windows CI 38826653364는 모든 단계가 통과했고 EXE·런타임 SHA256도 확인했다.
+그동안 main이 v1.76.0으로 갱신되어 구 Beta 2 EXE를 최신 main에 덮어쓰거나 공개 태그로 배포하지 않았다.
+
+
 2026-10-16 **v1.76.0 베타**: Alpha 15 이후(세부 작업 화면·한/글 글꼴 자동 인식·PDF 방식 비교 포함)를 main에 병합해 배포.
 다른 세션의 1.74 Beta 2 준비(tldraw 생성 자산 제외·동결 EXE 비활성, CI 출처 검증·kordoc 꾸러미 첨부)는 그대로 받아들였고 Beta 2 태그는 만들지 않았다.
 GitLab(origin) main은 1.75.2에서 갈라져 있어 사용자 지시로 건드리지 않는다(태그만 푸시). 이전 버전 대비 측정은 releases/v1.76.0.md.
