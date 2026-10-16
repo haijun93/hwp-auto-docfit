@@ -7,10 +7,26 @@
 
 ## 1. 한눈에 보기
 
+2026-10-16 **v1.76.0 베타**: Alpha 15 이후(세부 작업 화면·한/글 글꼴 자동 인식·PDF 방식 비교 포함)를 main에 병합해 배포.
+다른 세션의 1.74 Beta 2 준비(tldraw 생성 자산 제외·동결 EXE 비활성, CI 출처 검증·kordoc 꾸러미 첨부)는 그대로 받아들였고 Beta 2 태그는 만들지 않았다.
+GitLab(origin) main은 1.75.2에서 갈라져 있어 사용자 지시로 건드리지 않는다(태그만 푸시). 이전 버전 대비 측정은 releases/v1.76.0.md.
+
 2026-10-15 **1.74 Alpha 15**: 사용자가 꾸민 표(장식 막대·단위 캡션·조직도·흐름표) 보호 정리, 기능별 맞춤 진행 화면(iPhone 콘셉트),
 줄 간격 최솟값 140%, 파일포맷 즉시 변환·kordoc 문구 제거, 표/다이어그램(흐름표·기본 표 → 한/글 문서, 글자 서식),
 설정의 글자·본문 상용구 관리(`docfit_core/hwp_idioms.py`, 한/글 사용자 폴더 HWP.IDO를 직접 고치고 매번 백업), 개발자 표시.
 베타 대비 개선 기록은 [Alpha 15 기록](docs/ALPHA15_RELEASE_NOTES.md).
+
+2026-10-15: 1.74 Beta 2 배포 준비. 검증된 Alpha 14(3df5f28) 기준이며
+원격 Alpha 15는 별도로 보존한다. tldraw SDK 생성 자산을 제외하고 동결 EXE에서 비활성화한다.
+release/1.74-beta.2에서 전체 회귀 검사와 새 Windows EXE 빌드 후 main 승격·태그를 진행한다.
+기존 release-assets EXE는 이번 버전으로 검증되지 않았으므로 재배포하지 않는다.
+Beta 2 재검증: Python 기존 전체 1,158개(통과 1,155·조건부 제외 3),
+신규 배포 정책 2개 통과. Flutter 57개 통과, 웹 Release 빌드·오프라인 자산 검사 통과.
+Windows 전용 모듈을 대체한 import_check 및 본체 CRLF 3,324줄 유지 확인.
+새 Windows CI: https://github.com/haijun93/hwp-auto-docfit/actions/runs/38825514094
+빌드 결과와 Windows 실기기 검증을 확인하기 전에는 공개 태그를 만들지 않는다.
+현재 github·origin은 모두 GitHub를 가리키며 GitLab 반영으로 간주하지 않는다.
+
 
 2026-10-15 **1.74 Alpha 14**: 처리 문서를 드래그앤드롭하여 실제 추가하면
 다음 상태 조회에서 2단계 작업 방식 화면으로 자동 전환한다.

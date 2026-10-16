@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - alpha
+      - release/1.74-beta.2
       - claude/affectionate-goldberg-ggln7c
   workflow_dispatch: {}
 
@@ -37,11 +38,31 @@ jobs:
         run: |
           & ".\.venv\Scripts\python.exe" -c "from PIL import Image, ImageTk, ImageOps; print('Pillow', Image.__version__)"
 
-      - name: Validate alpha source and regression tests
-        if: github.ref == 'refs/heads/alpha'
+      - name: Validate source and regression tests
         run: |
           & ".\.venv\Scripts\python.exe" -m py_compile "hwp-auto-docfit.py" "docfit_core/batch_format.py"
-          & ".\.venv\Scripts\python.exe" -m unittest discover -s "tests"
+          & ".\.venv\Scripts\python.exe" -m unittest discover -s "tests" *> "windows-tests.log"
+          $testExit = $LASTEXITCODE
+          if ($testExit -ne 0) {
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value '### Windows regression failure'
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value '```text'
+            Get-Content -LiteralPath "windows-tests.log" -Tail 200 | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value '```'
+          }
+          Get-Content -LiteralPath "windows-tests.log" -Tail 200
+          exit $testExit
+
+      - name: Publish regression diagnostics on failure
+        if: failure()
+        shell: pwsh
+        run: |
+          if (Test-Path -LiteralPath "windows-tests.log") {
+            $details = (Get-Content -LiteralPath "windows-tests.log" -Tail 160) -join "`n"
+            $escaped = $details.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error title=Windows regression details::$escaped"
+          } else {
+            Write-Output "::error title=Windows regression details::No test log produced; failure occurred before unittest started."
+          }
 
       - uses: subosito/flutter-action@v2
         with:
@@ -85,10 +106,14 @@ jobs:
         if: github.ref != 'refs/heads/alpha'
         shell: bash
         run: |
+          mkdir -p release-assets
           cp dist/HWP_AutoDocFit.exe release-assets/HWP_AutoDocFit.exe
+          cp dist/HWP_AutoDocFit_kordoc_runtime.zip* release-assets/
+          git rev-parse HEAD > release-assets/build-source.txt
+          sha256sum release-assets/HWP_AutoDocFit.exe release-assets/HWP_AutoDocFit_kordoc_runtime.zip > release-assets/SHA256SUMS
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add release-assets/HWP_AutoDocFit.exe
+          git add -f release-assets/HWP_AutoDocFit.exe release-assets/HWP_AutoDocFit_kordoc_runtime.zip release-assets/HWP_AutoDocFit_kordoc_runtime.zip.sha256 release-assets/build-source.txt release-assets/SHA256SUMS
           if git diff --cached --quiet; then
             echo "No change in built exes; skipping commit."
           else

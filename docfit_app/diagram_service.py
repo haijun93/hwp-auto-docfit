@@ -24,6 +24,7 @@ class DiagramService:
         self.settings_store = settings_store
 
     def enabled(self):
+        # Beta binaries exclude the SDK until its product license is confirmed.
         if getattr(sys, "frozen", False):
             return False
         settings = migrate(self.settings_store.read())
