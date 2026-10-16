@@ -6,29 +6,29 @@
 **다 쓴 한글(HWP·HWPX) 보고서를 넣고 「정리 시작」만 누르세요.** 설치된 한/글을 자동으로 조작해 공문서 모양으로 다듬어 줍니다.
 
 <p>
-<img alt="현재 공개 베타 v1.76.3" src="https://img.shields.io/badge/%ED%98%84%EC%9E%AC%20%EA%B3%B5%EA%B0%9C%20%EB%B2%A0%ED%83%80-v1.76.3-2563eb">
+<img alt="현재 정식 버전 v1.76.4" src="https://img.shields.io/badge/%ED%98%84%EC%9E%AC%20%EA%B3%B5%EA%B0%9C%20%EC%A0%95%EC%8B%9D-v1.76.4-2563eb">
 <img alt="무료" src="https://img.shields.io/badge/%EA%B0%80%EA%B2%A9-%EB%AC%B4%EB%A3%8C-16a34a">
 <img alt="Windows 10·11" src="https://img.shields.io/badge/Windows-10%C2%B711-0078d4">
 <img alt="한/글 2020" src="https://img.shields.io/badge/%ED%95%9C%2F%EA%B8%80-2020-0ea5e9">
 <img alt="문서 외부 전송 없음" src="https://img.shields.io/badge/%EB%AC%B8%EC%84%9C-%EC%99%B8%EB%B6%80%20%EC%A0%84%EC%86%A1%20%EC%97%86%EC%9D%8C-64748b">
 </p>
 
-## ⬇ 최신 베타 다운로드 — v1.76.3
+## ⬇ 최신 정식 버전 다운로드 — v1.76.4
 
 **[최신 릴리즈와 전체 첨부 파일 보기](https://github.com/haijun93/hwp-auto-docfit/releases/latest)**
 
 | 파일 | 다운로드 및 용도 |
 |---|---|
 | 프로그램 | **[HWP_AutoDocFit.exe 바로 받기](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/HWP_AutoDocFit.exe)** — Windows 10·11 64비트, 한/글 2020 필요 |
-| 프로그램·예시 압축팩 | [HWP_AutoDocFit-v1.76.3.zip](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.76.3/HWP_AutoDocFit-v1.76.3.zip) — 압축을 풀어 실행 |
+| 프로그램·예시 압축팩 | [HWP_AutoDocFit-v1.76.4.zip](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.76.4/HWP_AutoDocFit-v1.76.4.zip) — 압축을 풀어 실행 |
 | 체크섬 | [SHA256SUMS](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/SHA256SUMS) — EXE 파일의 SHA256 확인 |
 
 **변환 런타임은 EXE에 포함되어 있어 별도로 받을 필요가 없습니다.** 첫 실행 때 내장 ZIP과 변환 엔진을 `C:\HWP_AUTODOCFIT`에 저장합니다. 쓰기 권한이 없으면 `%LOCALAPPDATA%\HwpAutoDocFit`에 저장하며 온라인 다운로드는 하지 않습니다.
 
-설치 없이 실행 파일 하나로 시작합니다 · [v1.76.3 변경 사항](releases/v1.76.3.md) · [GitHub 저장소](https://github.com/haijun93/hwp-auto-docfit) · [GitLab 저장소](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
+설치 없이 실행 파일 하나로 시작합니다 · [v1.76.4 변경 사항](releases/v1.76.4.md) · [GitHub 저장소](https://github.com/haijun93/hwp-auto-docfit) · [GitLab 저장소](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
 
-**v1.76.3**은 새 화면(Flutter)과 함께 **파일포맷 변경**, **표/다이어그램 만들기**, **상용구 관리**, **한/글 조판 미리보기**를 정식으로 담은 베타입니다. 기본은 **폐쇄망 모드**라 앱이 스스로 외부 서버에 접속하지 않습니다.
-이번 패치는 **이미지→HWPX OCR 변환**, **마인드맵 자유 배치·계층 편집**, **서식 통일의 자간 정리 누락 수정**을 반영합니다. 한국어 OCR 모델도 EXE에 내장합니다. TXT·MD 변환과 HWPX→TXT·MD도 유지합니다. 표·그림 복사와 HWP→HWPX 직접 변환도 유지합니다. 일반 표/다이어그램은 유지하며 tldraw 메뉴·설정·SDK 자산은 제외합니다.
+**v1.76.4**은 새 화면(Flutter)과 함께 **파일포맷 변경**, **표/다이어그램 만들기**, **상용구 관리**, **한/글 조판 미리보기**를 포함한 정식 버전입니다. 기본은 **폐쇄망 모드**라 앱이 스스로 외부 서버에 접속하지 않습니다.
+이번 정식 버전은 **변환 선택창의 원본 파일명 표시·확장자 유지**와 **HWP→HWPX/PDF/PNG/JPG 설치 판정 보완**을 추가합니다. 이전 버전의 **이미지→HWPX OCR 변환**, **마인드맵 자유 배치·계층 편집**, **서식 통일의 자간 정리 누락 수정**을 반영합니다. 한국어 OCR 모델도 EXE에 내장합니다. TXT·MD 변환과 HWPX→TXT·MD도 유지합니다. 표·그림 복사와 HWP→HWPX 직접 변환도 유지합니다. 일반 표/다이어그램은 유지하며 tldraw 메뉴·설정·SDK 자산은 제외합니다.
 
 [![프로그램 사용 시연 영상 (약 5분). 클릭하면 고화질 영상이 열립니다.](docs/media/overview-demo.gif)](docs/media/overview-demo.mp4)
 
@@ -38,7 +38,7 @@
 
 ## 숫자로 보는 효과
 
-아래 수치와 기존 시연 자료는 기록된 이전 버전 기준입니다. v1.76.3의 신규 복사·변환 기능에 대한 속도 개선율을 뜻하지 않습니다.
+아래 수치와 기존 시연 자료는 기록된 이전 버전 기준입니다. v1.76.4의 신규 복사·변환 기능에 대한 속도 개선율을 뜻하지 않습니다.
 
 | ⏱ 아끼는 시간 | 🚀 처리 속도 | ✅ 글자 보존 | 🔒 개인정보 |
 |:---:|:---:|:---:|:---:|
@@ -236,7 +236,7 @@ HWP·HWPX → PDF·그림도 **한/글 내장 저장 기능**을 씁니다. 한/
 
 # 자세한 사용 설명서
 
-이번 버전에서 바뀐 점: **v1.76.3**은 파일포맷 변경(고르면 바로 변환), 표/다이어그램 만들기, 상용구 관리, 한/글 조판 미리보기, 기능별 진행 화면, 사용자가 꾸민 표 보호를 더했습니다([변경 사항](releases/v1.76.3.md)). '서식 통일'은 v1.74부터 기본으로 글꼴·크기만 맞춥니다('전체 서식 맞추기' 옵션으로 전체 서식).
+이번 버전에서 바뀐 점: **v1.76.4**은 파일포맷 변경(고르면 바로 변환), 표/다이어그램 만들기, 상용구 관리, 한/글 조판 미리보기, 기능별 진행 화면, 사용자가 꾸민 표 보호를 더했습니다([변경 사항](releases/v1.76.4.md)). '서식 통일'은 v1.74부터 기본으로 글꼴·크기만 맞춥니다('전체 서식 맞추기' 옵션으로 전체 서식).
 
 <details>
 <summary><b>기능별 자세한 설명과 옵션 위치 펼치기</b></summary>
@@ -837,7 +837,7 @@ PC를 옮길 때는 앱을 종료하고 이 폴더를 백업하세요. **서식 
 - [개발 인수인계](HANDOVER.md) · [UI 설계](UI_DESIGN.md) · [작업 목록](TODO.md)
 - [서식 복사 범위와 설계](FORMAT_COPY_DESIGN.md) · [원본 보존·재현 설계](STYLE_FIDELITY_DESIGN.md)
 
-`main`은 베타 배포 브랜치이고 `alpha`는 새 기능 시험 브랜치입니다.
+`main`은 정식 배포 브랜치이고 `alpha`는 새 기능 시험 브랜치입니다.
 
 ---
 

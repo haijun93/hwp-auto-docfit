@@ -29,7 +29,7 @@ git remote add origin https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit.git
 ```
 
 이미 저장소가 있다면 다시 복제하거나 원격을 중복 추가하지 말고 `git remote -v`로 확인하세요.
-`main`은 베타 배포선, `alpha`는 새 기능 개발선입니다.
+`main`은 정식 배포선, `alpha`는 새 기능 개발선입니다.
 브랜치를 바꾸기 전 기존 수정사항을 확인하고 보존하세요.
 
 ## 3. 가상환경 만들고 실행하기
@@ -109,9 +109,11 @@ Flutter 화면이 누락된 패키지를 만들지 않으며, 런타임의 기�
 
 정확한 브랜치 병합·CI 빌드·태그 절차는 [인수인계서의 배포 절차](../HANDOVER.md)를 따릅니다.
 
-- 사용자 요청이 있을 때만 커밋·푸시합니다.
-- 원격 반영 순서는 **GitHub(`github`) → GitLab(`origin`)**입니다.
-- Windows 실행 파일은 GitHub 빌드 작업을 거쳐 준비하며 GitLab 태그 파이프라인이 공식 릴리스 자산으로 게시합니다.
+- 작업 완료 후 커밋·푸시합니다. 공개 릴리스는 사용자 요청에 따라 진행합니다.
+- 원격 반영 순서는 `github` → `origin`입니다. 실제 목적지는 `git remote -v`로 확인하며 두 이름이 같은 GitHub 주소이면 GitLab에 반영된 것으로 보고하지 않습니다.
+- Windows 실행 파일은 `release/<버전>` 빌드 작업에서 새로 생성하고 EXE 자체 검사·실제 창 버전·내장 OCR 검증을 통과해야 합니다.
+- v1.76.3부터 100MiB를 넘는 EXE는 Git 객체 대신 GitHub draft release에 보관합니다. 빌드 출처·SHA256 검증 기록을 main에 반영한 뒤 새 태그로 게시합니다.
+- GitLab 배포는 별도 인증·게시 확인이 필요하며 GitHub 공개만으로 완료로 간주하지 않습니다.
 - GitLab의 Linux 검사만으로 Windows COM·GUI 동작까지 검증됐다고 보지 않습니다.
 
 앱은 GitLab 최신 릴리스를 확인하고 사용자 확인 후 업데이트 파일을 받아 실행 파일을 교체합니다.

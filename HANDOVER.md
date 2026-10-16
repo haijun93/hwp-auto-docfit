@@ -7,6 +7,9 @@
 
 ## 1. 한눈에 보기
 
+2026-10-16: 사용자 지시로 v1.76.4 정식 배포 준비. 원본 파일명 표시 및 HWP 변환 판정 보완 포함.
+release/1.76.4에서 새 Windows EXE를 빌드·검증하고 main 승격 및 새 태그로 게시한다.
+
 2026-10-16 후속 알파: 파일 변환 원형 선택 UI 중앙에 원본 파일명을 표시함.
 긴 이름은 파일명 부분만 말줄임하고 원본 확장자는 유지하며 전체 이름은 툴팁으로 제공함.
 여러 파일은 첫 파일명·전체 개수 표시, 선택한 출력 형식은 원 아래 별도 안내.
@@ -369,7 +372,7 @@ Flutter UI 빌드는 `powershell -File build_flutter.ps1`로 수행하며 `build
 
 ---
 
-## 6. 배포 절차 (베타)
+## 6. 배포 절차 (정식·베타)
 
 1. `alpha` → `main` 병합(보통 fast-forward). 충돌 시 `TODO.md`는 완료 기록이 더 많은 쪽 기준으로 정리.
 2. 버전 올리기: `hwp-auto-docfit.py`의 `APP_VERSION`, `README.md` 5행, `website/index.html`(5곳), 새 릴리스 노트 `releases/vX.Y-beta.N.md`(SHA-256 자리는 `SHA256_PLACEHOLDER`).
@@ -377,8 +380,8 @@ Flutter UI 빌드는 `powershell -File build_flutter.ps1`로 수행하며 `build
    - 그래서 1.69 다음 정식판은 '1.7'이 아니라 **'1.70'**입니다('1.7' → (1, 7, 0)은 1.69보다 낮아 기존 앱이 업데이트를 알리지 않음).
 2-1. **개선 효과 기록(사용자 원칙, 2026-10-10)**: 릴리스 노트에 "이전 버전 대비 개선 효과" 절을 두고, 같은 PC에서 번갈아 측정한 시간·점수·쪽 수·글자 훼손 건수를 적는다(알파는 베타 대비).
 3. 전체 테스트 통과 확인 → 커밋 → `git push github main` → `git push origin main`.
-4. **exe 빌드**: CI는 alpha·release/1.76.3 및 기존 빌드 브랜치를 지원한다.
-   - 검증할 소스 커밋을 release/1.76.3에 강제 푸시 없이 올린다.
+4. **exe 빌드**: CI는 alpha·release/1.76.4 및 기존 빌드 브랜치를 지원한다.
+   - 검증할 소스 커밋을 release/1.76.4에 강제 푸시 없이 올린다.
    - CI가 EXE를 해당 버전의 draft release 자산으로 업로드하고 출처·전달 정보·SHA256·창/OCR 보고서를 release-assets에 커밋한다.
    - v1.76.3부터 EXE/런타임 ZIP은 Git에 새로 기록하지 않는다(100MiB 파일 제한). tag 워크플로가 draft EXE를 내려받아 해시를 검사한 뒤 통합 ZIP과 함께 게시한다.
    - 해당 산출물 커밋을 main에 fast-forward한다. 동시 main 변경은 먼저 검토한다.
