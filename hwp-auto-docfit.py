@@ -960,6 +960,8 @@ _정밀표_매칭점수 = _engine_resolve('docfit_engine.formatter', '_정밀표
 
 
 _정밀표_셀서식_복사 = _engine_resolve('docfit_engine.formatter', '_정밀표_셀서식_복사', globals())
+_정밀표_글자위치_복사 = _engine_resolve('docfit_engine.formatter', '_정밀표_글자위치_복사', globals())
+_표_글_그대로 = _engine_resolve('docfit_engine.formatter', '_표_글_그대로', globals())
 
 
 _정밀표_같은표만 = _engine_resolve('docfit_engine.formatter', '_정밀표_같은표만', globals())

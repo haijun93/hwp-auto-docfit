@@ -15,7 +15,7 @@ from collections import Counter
 
 from defusedxml import ElementTree as ET
 
-from .style_unify import unify_marker
+from .style_unify import parenthetical_spans, unify_marker
 
 _AFTER_BOLD = ("underline", "strikeout", "outline", "shadow", "emboss", "engrave", "supscript", "subscript")
 
@@ -249,3 +249,41 @@ def apply(header, sections, learned) -> int:
                 for cache_el in [x for x in p if _tag(x) == "linesegarray"]:
                     p.remove(cache_el)
     return count
+
+
+def overview_paren_delta(header, sections, table_kind):
+    """개요 상자(제목 표 바로 다음 1×1 상자) 문단에서 괄호 안 글자를 바깥보다 줄인 폭(pt). 괄호가 없으면 None.
+
+    서식 분석의 괄호 줄임은 항목기호 문장만 재서, 항목기호 없는 개요 글의 '(지구)' 줄임을 배우지 못했다
+    (서식 재연 시험, 2026-10-17).
+    """
+    info = _Header(header)
+    inside, outside = Counter(), Counter()
+    for section in sections:
+        previous = None
+        for p in (x for x in section if _tag(x) == "p"):
+            tables = [t for r in p if _tag(r) == "run" for t in r if _tag(t) == "tbl"]
+            if not tables:
+                if "".join("".join(t.itertext()) for r in p if _tag(r) == "run" for t in r if _tag(t) == "t").strip():
+                    previous = None
+                continue
+            for table in tables:
+                kind = table_kind(table) or ""
+                if kind == "box" and (previous or "").startswith("title"):
+                    for q in (x for x in table.iter() if _tag(x) == "p"):
+                        runs = _simple_runs(q) or []
+                        text = "".join(t for _, t in runs)
+                        spans = parenthetical_spans(text, (), include_trailing=True)
+                        position = 0
+                        for run, part in runs:
+                            sig = info.signature(run.get("charPrIDRef"))
+                            for offset, letter in enumerate(part):
+                                if sig is None or letter.isspace():
+                                    continue
+                                where = position + offset
+                                (inside if any(a <= where < b for a, b in spans) else outside)[sig[2]] += 1
+                            position += len(part)
+                previous = kind
+    if not inside or not outside:
+        return None
+    return round((outside.most_common(1)[0][0] - inside.most_common(1)[0][0]) / 100, 1)

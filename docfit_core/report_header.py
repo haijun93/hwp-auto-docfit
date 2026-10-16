@@ -293,8 +293,15 @@ def _tag(e) -> str:
     return e.tag.rsplit("}", 1)[-1]
 
 
+# 고정폭 빈칸·묶음 빈칸은 글자로 읽고(_text) 다시 쓸 때 요소로 되돌린다(_set_text). 예전에는 빼고 읽어 담당자 칸
+# '담당관[고정폭]:[고정폭]◎◎◎'을 다시 쓰면 고정폭 빈칸이 사라졌다(서식 재연 시험, 2026-10-17).
+_SPACE_CHARS = {"fwSpace": "\u2007", "nbSpace": "\u00a0"}
+_SPACE_TAGS = {v: k for k, v in _SPACE_CHARS.items()}
+
+
 def _text(e) -> str:
-    return "".join((t.text or "") + "".join((c.tail or "") for c in t) for t in e.iter() if _tag(t) == "t")
+    return "".join((t.text or "") + "".join(_SPACE_CHARS.get(_tag(c), "") + (c.tail or "") for c in t)
+                   for t in e.iter() if _tag(t) == "t")
 
 
 _META_LABELS = re.compile(r"문서번호|결재|공개여부|방침번호|보도시점|배포|수신|경유|기관 로고|^보도(참고)?자료$")
@@ -599,7 +606,12 @@ def _set_text(p, text):
             p.remove(r)
     ns = keep.tag.rsplit("}", 1)[0] + "}"
     t = type(keep)(ns + "t", {})
-    t.text = text
+    pieces = re.split("([" + "".join(_SPACE_TAGS) + "])", text)
+    t.text = pieces[0]
+    for mark, tail in zip(pieces[1::2], pieces[2::2]):
+        space = type(keep)(ns + _SPACE_TAGS[mark], {})
+        space.tail = tail
+        t.append(space)
     keep.append(t)
     return True
 
