@@ -317,6 +317,13 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             # 표 칸 안 날짜는 한 줄 표기가 원칙이다(사용자 규칙, 2026-10-10). 표 서식 단계들 뒤 맨 끝에서 지정한다.
             if (서식단계_사용 or 작업_모드 == 'unify') and 쪽범위_요청 is None:
                 선행목록.append((True, '표 날짜 칸 한 줄', 표날짜칸_hwpx_처리, 'table_date.hwpx', '표 칸 너비'))
+            # 예시 서식이 배운 빈 줄(간격용 줄) 모양은 제목·표 서식이 모두 정해진 뒤 맨 끝에 입힌다(서식 재연 시험).
+            if (서식단계_사용 and 쪽범위_요청 is None and 표준서식_설정.get("빈줄_서식")
+                    and stage_enabled(선택_세부작업, 'standard_format', 작업_모드)):
+                선행목록.append((True, '빈 줄 서식', 빈줄서식_hwpx_처리, 'blank_lines.hwpx', '제목·개요·붙임 선행 서식'))
+            if (서식단계_사용 and 쪽범위_요청 is None and 표준서식_설정.get("강조_낱말")
+                    and stage_enabled(선택_세부작업, 'standard_format', 작업_모드)):
+                선행목록.append((True, '강조 낱말', 강조낱말_hwpx_처리, 'emphasis.hwpx', '제목·개요·붙임 선행 서식'))
             if any(항목[0] for 항목 in 선행목록):
                 상태(f"{파일명} : 글자·제목·표 선행 서식")
                 알림 = {}

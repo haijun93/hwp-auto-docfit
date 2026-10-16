@@ -3274,6 +3274,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         continue
                     if any(처음 < i and 시작 < 끝 for 처음, 끝 in 공식2타):
                         continue
+                    if i >= n:
+                        continue            # 문단 끝 빈칸은 보이지 않으므로 글을 바꾸지 않는다(서식 재연 시험, 2026-10-16)
                     if (알파_연결부호_탭정렬_사용 and text[시작:i] == "	" and text.count("	") == 1
                             and 시작 > 선행공백_길이 and i < n):
                         continue            # 연결 부호를 바꾼 탭·목차 탭(글 사이 탭 하나)은 정렬용이라 남긴다

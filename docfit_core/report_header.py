@@ -205,8 +205,8 @@ _ORDER = ("org", "office", "dept", "rank", "name", "phone") + tuple(
     f"{k}{n}" for n in (2, 3, 4) for k in ("dept", "rank", "name", "phone"))
 
 
-def render_info(template: str, date_format: str | None, fields: dict) -> str:
-    """틀에 값을 채운다.
+def render_info(template: str, date_format: str | None, fields: dict, claimed=()) -> str:
+    """틀에 값을 채운다. claimed: 같은 머리의 다른 보고 주체 틀이 쓰는 값 이름(여기에 덧붙이지 않는다).
 
     구분자(공백 2칸 이상, /, |, 쉼표)로 나뉜 묶음 단위로 본다. 묶음의 칸이 모두 비면 묶음과 구분자를 함께 뺀다
     (예: '☎{phone}'의 ☎도 함께). 틀에 없는 값(예: 틀은 날짜·부서뿐인데 대상에 이름이 있음)은 버리지 않고
@@ -230,7 +230,7 @@ def render_info(template: str, date_format: str | None, fields: dict) -> str:
     body = template[len(lead):len(template) - len(tail)] if tail else template[len(lead):]
     pieces = re.split("(" + _SEP + ")", body)
     groups, seps = pieces[0::2], pieces[1::2]
-    used = set(re.findall(r"\{([a-z0-9]+)\}", template))
+    used = set(re.findall(r"\{([a-z0-9]+)\}", template)) | set(claimed)
     if "{dept}장" in template and "rank" in fields:
         used.add("rank")
     # 틀에 없는 값: 조직(기관·실국·부서)과 사람(직위 이름 ☎전화) 묶음으로 만든다.
@@ -338,6 +338,18 @@ class _Header:
                 best, size = run, n
         return dict(self.chars.get(best.get("charPrIDRef"), {})) if best is not None else {}
 
+    def title_char_of(self, element):
+        """제목 글자 모양: 두 글자 이상인 run 가운데 가장 큰 글자. 부제(작은 글자)가 본제목보다 길거나 본제목이
+        '(안)' 등으로 run이 나뉘면 가장 긴 run은 부제가 되어 제목 표가 중제목 표보다 작게 잡혔다(서식 재연 시험)."""
+        best = None
+        for run in (x for x in element.iter() if _tag(x) == "run"):
+            if len(re.sub(r"\s+", "", _text(run))) < 2:
+                continue
+            ch = self.chars.get(run.get("charPrIDRef"), {})
+            if best is None or ch.get("size_pt", 0) > best.get("size_pt", 0):
+                best = ch
+        return dict(best) if best is not None else self.char_of(element)
+
 
 def _cells(table):
     out = []
@@ -345,6 +357,14 @@ def _cells(table):
         addr = next((x for x in tc if _tag(x) == "cellAddr"), None)
         out.append(((int(addr.get("rowAddr", 0)), int(addr.get("colAddr", 0))) if addr is not None else (0, 0), tc))
     return out
+
+
+def _is_roman_heading_table(table) -> bool:
+    """1행 2~3칸이고 첫 칸이 로마자 번호뿐인 중제목 표."""
+    if table.get("rowCnt") != "1" or table.get("colCnt") not in ("2", "3"):
+        return False
+    cells = _cells(table)
+    return bool(cells) and bool(re.fullmatch(r"[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩIVX]+\s*\.?", _text(cells[0][1]).strip()))
 
 
 def _top_elements(section, limit=14):
@@ -394,6 +414,8 @@ def analyze(header_root, section, start: int = 0) -> dict:
     for kind, e, p in items:
         if kind == "p" and _BODY_START.match(_text(e)):
             break
+        if kind == "tbl" and _is_roman_heading_table(e):
+            break        # 표로 쓴 로마자 중제목(Ⅰ | 추진 배경)도 본문 시작이다(예전에는 이 표를 제목으로 잡았다)
         head.append((kind, e, p))
     candidates = []          # (글자 크기, 순서, 제목 정보)
     for order, (kind, e, p) in enumerate(head):
@@ -401,7 +423,7 @@ def analyze(header_root, section, start: int = 0) -> dict:
             text = _text(e).strip()
             if parse_info(text) and len(text) < 80 and not _looks_title(text):
                 continue
-            ch = header.char_of(e)
+            ch = header.title_char_of(e)
             candidates.append((ch.get("size_pt", 0), -order, {
                 "container": "paragraph", "text": text, "char": ch,
                 "align": header.paras.get(e.get("paraPrIDRef"), {}).get("align"), "order": order,
@@ -424,11 +446,14 @@ def analyze(header_root, section, start: int = 0) -> dict:
             if any(_META_LABELS.search(t) for t in texts if t) and not _looks_title(max(texts, key=len)):
                 continue
             # 제목 칸: 글자가 가장 큰 칸
-            best = max(cells, key=lambda c: (header.char_of(c[1]).get("size_pt", 0), len(_text(c[1]))))
+            # 제목 칸: 제목다운 글(날짜·전화만인 보고 주체 칸이 아님) 가운데 글자가 가장 큰 칸. 서식이 없는 문서(모두 같은
+            # 크기)에서는 가장 긴 칸인 담당자 칸이 뽑혀 제목 표가 개요 상자에 졌다(서식 해제 재연 시험, 2026-10-16).
+            best = max(cells, key=lambda c: (_looks_title(_text(c[1])), header.title_char_of(c[1]).get("size_pt", 0),
+                                             len(_text(c[1]))))
             text = _text(best[1]).strip()
             if not text:
                 continue
-            ch = header.char_of(best[1])
+            ch = header.title_char_of(best[1])
             fill = header.fills.get(best[1].get("borderFillIDRef"), {})
             para = next((x for x in best[1].iter() if _tag(x) == "p"), None)
             candidates.append((ch.get("size_pt", 0), -order, {
@@ -659,7 +684,8 @@ def target_summary(header_root, section, start: int = 0) -> dict:
             fields.setdefault(k, v)
     return {"title": [_text(p).strip() for p in _paragraphs_with_text(title["_el"])] if title else [],
             "fields": fields,
-            "overview": [_text(p).strip() for p in _paragraphs_with_text(found["overview"]["_el"])] if found["overview"] else []}
+            # 개요 글은 줄 앞뒤 빈칸까지 그대로 옮긴다(' - 문단 여백…'의 앞 빈칸이 사라졌다, 서식 재연 시험 2026-10-16).
+            "overview": [_text(p) for p in _paragraphs_with_text(found["overview"]["_el"])] if found["overview"] else []}
 
 
 def apply_header(header_root, section, spec: dict, merge_refs, fit_table=None, start: int = 0) -> dict:
@@ -698,6 +724,11 @@ def apply_header(header_root, section, spec: dict, merge_refs, fit_table=None, s
     sample_header = ET.fromstring(spec["header_xml"])
     maps = merge_refs(header_root, sample_header)
     sample_info = spec.get("info") or []
+
+    def claimed(info):
+        # 날짜 칸 틀('{date}')에 담당자 칸 틀이 쓰는 부서·전화를 덧붙이지 않는다(기본 서식 재연 시험, 2026-10-16).
+        return {k for other in sample_info if other is not info
+                for k in re.findall(r"\{([a-z0-9]+)\}", other.get("template") or "")}
     new_blocks, written = [], {"title": 0, "info": 0, "overview": 0, "squeezed": 0}
     for block in spec["blocks"]:
         p = ET.fromstring(block["xml"])
@@ -716,7 +747,7 @@ def apply_header(header_root, section, spec: dict, merge_refs, fit_table=None, s
                     if info.get("container") == "cell" and info.get("in_title_table"):
                         tc = next((c for a, c in _cells(table) if list(a) == info["cell"]), None)
                         paras = _paragraphs_with_text(tc) if tc is not None else []
-                        text = render_info(info["template"], info.get("date_format"), fields) if fields else ""
+                        text = render_info(info["template"], info.get("date_format"), fields, claimed(info)) if fields else ""
                         if paras:
                             _set_text(paras[0], text)
                             for extra in paras[1:]:
@@ -765,7 +796,7 @@ def apply_header(header_root, section, spec: dict, merge_refs, fit_table=None, s
             info = sample_info[block["info_index"]] if block.get("info_index") is not None else None
             if not info or not fields:
                 continue
-            text = render_info(info["template"], info.get("date_format"), fields)
+            text = render_info(info["template"], info.get("date_format"), fields, claimed(info))
             if not text:
                 continue
             _set_text(p, text)
