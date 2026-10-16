@@ -270,6 +270,9 @@ def _markdown_table(rows: list[list[str]]) -> str:
         return ""
     width = max(len(row) for row in rows)
     normalized = [row + [""] * (width - len(row)) for row in rows]
+    normalized = [[cell.replace("\\", "\\\\").replace("|", "\\|")
+                   .replace("\r\n", "\n").replace("\r", "\n").replace("\n", "<br>")
+                   for cell in row] for row in normalized]
     lines = ["| " + " | ".join(normalized[0]) + " |"]
     lines.append("| " + " | ".join(["---"] * width) + " |")
     lines.extend("| " + " | ".join(row) + " |" for row in normalized[1:])

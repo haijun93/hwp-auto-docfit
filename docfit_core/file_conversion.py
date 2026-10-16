@@ -269,7 +269,10 @@ def convert_input_to_hwpx(source: str | Path, target: str | Path) -> Path:
         raise ValueError("16MB 이하의 일반 TXT·MD 파일을 선택해 주세요.")
     if target.suffix.lower() != ".hwpx" or target.exists() or target.is_symlink():
         raise ValueError("새 HWPX 결과 경로를 선택해 주세요.")
-    raw = source.read_bytes()
+    with source.open("rb") as stream:
+        raw = stream.read(16 * 1024 * 1024 + 1)
+    if len(raw) > 16 * 1024 * 1024:
+        raise ValueError("TXT·MD 파일 크기가 16MB를 초과합니다.")
     if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
         text = raw.decode("utf-16")
     else:
@@ -278,7 +281,9 @@ def convert_input_to_hwpx(source: str | Path, target: str | Path) -> Path:
         except UnicodeDecodeError:
             text = raw.decode("cp949")
     if source.suffix.lower() == ".txt":
-        text = "\n".join(re.sub(r"([\\`*_{}\[\]<>#!|])", r"\\\1", line) + "  " for line in text.splitlines())
+        import string
+        pattern = "([" + re.escape(string.punctuation) + "])"
+        text = "\n".join(re.sub(pattern, r"\\\1", line) + "  " for line in text.splitlines())
     target.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="docfit_text_") as folder:
         markdown = Path(folder) / "source.md"

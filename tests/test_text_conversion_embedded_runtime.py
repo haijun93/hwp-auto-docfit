@@ -93,3 +93,24 @@ class TextRenderingTests(unittest.TestCase):
                     self.assertEqual(source.read_bytes(),original)
                     magic=target.read_bytes()
                     self.assertTrue(magic.startswith({"pdf":b"%PDF-","png":b"\x89PNG","jpg":b"\xff\xd8"}[output]))
+
+
+class TextMarkupPreservationTests(unittest.TestCase):
+    def test_markdown_table_keeps_cell_pipes_and_line_breaks(self):
+        from docfit_core.hwpx import _markdown_table
+        rendered = _markdown_table([["항목", "본문"], ["A|B", "첫 줄\n둘째 줄"]])
+        self.assertIn("A\\|B", rendered)
+        self.assertIn("첫 줄<br>둘째 줄", rendered)
+
+    def test_plain_text_punctuation_is_not_converted_to_markdown_lists(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source=Path(folder)/"source.txt";source.write_text("1. 접수\n- 참고\n+ 추가",encoding="utf-8")
+            fixture=Path(__file__).resolve().parents[1]/"resources/서식예시/기본 서식.hwpx"
+            def generate(markdown,preset,output):
+                text=Path(markdown).read_text(encoding="utf-8")
+                self.assertIn(r"1\. 접수",text)
+                self.assertIn(r"\- 참고",text)
+                self.assertIn(r"\+ 추가",text)
+                shutil.copyfile(fixture,output)
+            with patch("docfit_core.kordoc_bridge.generate_hwpx",side_effect=generate):
+                fc.convert_input_to_hwpx(source,source.with_suffix(".hwpx"))

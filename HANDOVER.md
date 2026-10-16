@@ -11,7 +11,7 @@
 런타임 ZIP과 SHA256을 resources에 생성한 뒤 EXE에 포함하며 첫 실행에
 C:\HWP_AUTODOCFIT에 자동 저장·설치한다. 권한 실패 시 사용자 LocalAppData로 대체한다.
 별도 다운로드·온라인 설치가 필요하지 않다. 기존 사이드카 검색은 호환용으로 유지한다.
-Python 1,213개(통과 1,208·조건부 제외 5), Flutter 71개, 정적 분석 통과.
+Python 1,215개(통과 1,210·조건부 제외 5), Flutter 71개, 정적 분석 통과.
 실제 엔진의 TXT·MD→HWPX→TXT·MD 왕복과 가짜 한/글+실제 PDF 렌더러의 6개 출력 경로 검증.
 Windows CI는 별도 ZIP 없는 EXE 첫 실행·C 경로 저장·내장 Node/CLI 실행·HWPX 생성을 검사한다.
 
