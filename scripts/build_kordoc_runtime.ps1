@@ -1,6 +1,6 @@
 # 폐쇄망 배포용 kordoc 꾸러미(HWP_AutoDocFit_kordoc_runtime.zip)를 만든다.
 # - Node.js: 고정 버전 공식 Windows ZIP을 SHA-256으로 확인한 뒤 node.exe만 담는다.
-# - kordoc: kordoc_pack/package-lock.json(무결성 해시 포함)으로 npm ci. AI OCR 모델용 선택 의존성은 빼고,
+# - kordoc/OCR: 각각의 lockfile과 모델 SHA256을 확인하여 폐쇄망 실행 의존성을 포함하고,
 #   설치 스크립트는 실행하지 않는다.
 # 빌드 PC에만 인터넷이 필요하다. 만든 꾸러미를 EXE에 내장하여 사용 PC에서는 다운로드하지 않는다.
 param(
@@ -74,6 +74,9 @@ try {
 
     $manifest = [ordered]@{ kordoc = $KordocVersion; node = $NodeVersion; node_sha256 = $NodeSha256; bundle_revision = 'ocr-1'; ocr = 'ppocr-korean-v5' } | ConvertTo-Json
     [IO.File]::WriteAllText((Join-Path $stage 'runtime.json'), $manifest, (New-Object Text.UTF8Encoding($false)))
+
+    & $python (Join-Path $PSScriptRoot 'verify_runtime_ocr.py') $stage
+    if ($LASTEXITCODE -ne 0) { throw 'Packaged offline OCR functional test failed' }
 
     $outputPath = [IO.Path]::GetFullPath($Output)
     New-Item -ItemType Directory -Force -Path (Split-Path $outputPath) | Out-Null

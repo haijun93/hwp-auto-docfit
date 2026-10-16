@@ -77,6 +77,19 @@ class ImageConversionTests(unittest.TestCase):
 
 
 class RuntimeUpgradeTests(unittest.TestCase):
+    def test_validation_scripts_import_project_modules_from_an_unrelated_directory(self):
+        import subprocess
+        import sys
+        with tempfile.TemporaryDirectory() as folder:
+            for name in ("smoke_windows_exe.py", "verify_runtime_ocr.py"):
+                script = str(ROOT / "scripts" / name)
+                code = ("import runpy; runpy.run_path(" + repr(script) +
+                        ",run_name='import_check'); import docfit_core.network_policy; "
+                        "from scripts.verify_runtime_ocr import verify_ocr")
+                result = subprocess.run([sys.executable, "-I", "-c", code], cwd=folder,
+                                        capture_output=True, text=True, encoding="utf-8")
+                self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_same_kordoc_version_old_pack_upgrades_to_ocr_revision(self):
         from tests.test_offline_runtime import make_pack, VERSION
         with tempfile.TemporaryDirectory() as folder:
