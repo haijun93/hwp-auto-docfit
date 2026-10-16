@@ -545,7 +545,10 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 self.reset_spacing_var.trace_add("write", self._자간초기화_값변경)
                 self.spacing_enabled_var = tk.BooleanVar(value=bool(저장된_설정.get("spacing_enabled", True)))
                 self.spacing_page_fit_var = tk.BooleanVar(value=bool(저장된_설정.get("spacing_page_fit", False)))
-                for 변수 in (self.spacing_enabled_var, self.spacing_page_fit_var):
+                self.instant_run_on_drop_var = tk.BooleanVar(value=bool(저장된_설정.get("instant_run_on_drop", True)))
+                self.auto_open_result_var = tk.BooleanVar(value=bool(저장된_설정.get("auto_open_result", True)))
+                for 변수 in (self.spacing_enabled_var, self.spacing_page_fit_var,
+                             self.instant_run_on_drop_var, self.auto_open_result_var):
                     변수.trace_add("write", self._설정_변경됨)
                     변수.trace_add("write", self._요약갱신)
                 # '자간 정리' 카드의 '표 제외'는 설정 table_spacing(표 안 문장 자간조정)의 반대 값이다. 바꾸면 카드 요약
@@ -4395,6 +4398,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 try:
                     self._서식_복사완료_처리(profile, error, 표본)
                 finally:
+                    self._quick_registration = False
                     if 표본:
                         shutil.rmtree(Path(표본).parent, ignore_errors=True)
 
@@ -4438,7 +4442,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 self._활성_서식_프로파일 = identifier
                 self._프로파일_목록갱신()
                 self._프로파일_선택()
-                self.selected_mode.set(self._한번에_모드())
+                if not (getattr(self, "_quick_registration", False) and self.state.user_overrode_mode):
+                    self.selected_mode.set(self._한번에_모드())
                 if hasattr(self, "format_drop_label"):
                     self.format_drop_label.configure(text=f"적용 준비 완료 · {profile['name']}")
                 self.status_var.set(f"새 문서 서식 추가: {profile['name']}")
@@ -5266,6 +5271,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     설정값["spacing_reset_existing"] = bool(self.stage_choices["spacing"].get("reset_spacing", True))
                     설정값["spacing_enabled"] = bool(self.spacing_enabled_var.get())
                     설정값["spacing_page_fit"] = bool(self.spacing_page_fit_var.get())
+                    설정값["instant_run_on_drop"] = bool(self.instant_run_on_drop_var.get())
+                    설정값["auto_open_result"] = bool(self.auto_open_result_var.get())
                     설정값["active_format_profile"] = getattr(self, "_활성_서식_프로파일", "")
                     기존_설정 = 설정_불러오기()
                     기존_세부작업 = 기존_설정.get("stage_choices", {})

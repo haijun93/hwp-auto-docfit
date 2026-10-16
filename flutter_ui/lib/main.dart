@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart' show kIsWeb, listEquals;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'bridge.dart' as bridge;
 import 'core/api/abbreviation_api.dart';
 import 'core/close_guards.dart';
+import 'core/drop_events.dart';
 import 'features/abbreviations/abbreviation_manager.dart';
 import 'features/formats/table_template_panel.dart';
 import 'features/formats/profile_editor.dart';
@@ -84,6 +86,128 @@ class _WorkspaceState extends State<Workspace> {
   int commandVersion = 0;
   String? error;
   Timer? timer;
+  void Function()? stopWatchingDrops;
+  bool dropRefreshQueued = false;
+  bool settingsVisible = false;
+  Timer? autoRunTimer;
+  Timer? autoRunTicker;
+  String? autoRunToken;
+  DateTime? autoRunDeadline;
+  final ignoredDropTokens = <String>{};
+  final profileDropKey = GlobalKey();
+  List<double>? lastProfileBounds;
+  String? lastQuickNotice;
+
+  void cancelAutoLocally() {
+    if (autoRunToken != null) ignoredDropTokens.add(autoRunToken!);
+    if (ignoredDropTokens.length > 100) {
+      ignoredDropTokens.remove(ignoredDropTokens.first);
+    }
+    autoRunTimer?.cancel();
+    autoRunTicker?.cancel();
+    autoRunToken = null;
+  }
+
+  void syncAutoRun() {
+    final pending = state['zero_click'] as Map? ?? const {};
+    final token = pending['token'];
+    if (pending['pending'] != true ||
+        running ||
+        state['instant_run_on_drop'] == false) {
+      cancelAutoLocally();
+      return;
+    }
+    if (token is! String ||
+        ignoredDropTokens.contains(token) ||
+        token == autoRunToken) {
+      return;
+    }
+    cancelAutoLocally();
+    autoRunToken = token;
+    final delay = (pending['remaining_ms'] as num? ?? 2500).toInt().clamp(
+      0,
+      2500,
+    );
+    autoRunDeadline = DateTime.now().add(Duration(milliseconds: delay));
+    autoRunTicker = Timer.periodic(const Duration(milliseconds: 100), (_) {
+      if (mounted) setState(() {});
+    });
+    autoRunTimer = Timer(Duration(milliseconds: delay + 40), () async {
+      if (!mounted || autoRunToken != token || busy || !canStart) {
+        cancelAutoLocally();
+        return;
+      }
+      autoRunTicker?.cancel();
+      await command('start_zero_click', [token]);
+      if (mounted && running) setState(() => tab = 2);
+    });
+  }
+
+  Widget autoRunBar() {
+    final pending = state['zero_click'] as Map? ?? const {};
+    final remaining = math.max(
+      0,
+      autoRunDeadline?.difference(DateTime.now()).inMilliseconds ?? 0,
+    );
+    return Material(
+      key: const Key('zeroClickCountdown'),
+      color: const Color(0xffeaf1ff),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: [
+            LinearProgressIndicator(value: remaining / 2500),
+            Wrap(
+              alignment: WrapAlignment.center,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(
+                  '📄 ${pending['file_name'] ?? ''} · $modeTitle 자동 시작 (${(remaining / 1000).toStringAsFixed(1)}초)',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                TextButton(
+                  key: const Key('pauseAutoRun'),
+                  onPressed: () => command('cancel_zero_click'),
+                  child: const Text('일시정지'),
+                ),
+                TextButton(
+                  key: const Key('editAutoRunOptions'),
+                  onPressed: () {
+                    command('cancel_zero_click');
+                    setState(() => tab = 1);
+                  },
+                  child: const Text('옵션 변경'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void reportProfileBounds() {
+    if (!kIsWeb || !mounted) return;
+    final box = profileDropKey.currentContext?.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return;
+    final point = box.localToGlobal(Offset.zero);
+    final bounds = [
+      point.dx,
+      point.dy,
+      point.dx + box.size.width,
+      point.dy + box.size.height,
+    ];
+    if (listEquals(bounds, lastProfileBounds)) return;
+    lastProfileBounds = bounds;
+    unawaited(
+      widget
+          .api('set_profile_drop_bounds', [bounds])
+          .then((_) {})
+          .catchError((_) {}),
+    );
+  }
+
   bool _conversionPickerOpen = false;
   Offset? _conversionAnchor;
   final scaffoldKey = GlobalKey<ScaffoldState>();
@@ -201,6 +325,12 @@ class _WorkspaceState extends State<Workspace> {
   @override
   void initState() {
     super.initState();
+    stopWatchingDrops = watchDocumentDrops(() {
+      if (!mounted) return;
+      commandVersion++;
+      dropRefreshQueued = true;
+      unawaited(refresh());
+    });
     unawaited(_enableCloseGuard());
     refresh();
     timer = Timer.periodic(const Duration(seconds: 1), (_) => refresh());
@@ -216,6 +346,8 @@ class _WorkspaceState extends State<Workspace> {
 
   @override
   void dispose() {
+    stopWatchingDrops?.call();
+    cancelAutoLocally();
     timer?.cancel();
     stateVersion.dispose();
     rangeStart.dispose();
@@ -237,6 +369,7 @@ class _WorkspaceState extends State<Workspace> {
     final documentsChanged =
         jsonEncode(state['files'] ?? []) != jsonEncode(next['files'] ?? []);
     state = Map<String, dynamic>.from(next);
+    syncAutoRun();
     // 입력 중인 값은 유지하되, 문서 변경·새 작업·백엔드 범위 변경은 반영한다.
     if (range.isNotEmpty &&
         (!rangeLoaded || syncRange || rangeChanged || documentsChanged)) {
@@ -252,6 +385,14 @@ class _WorkspaceState extends State<Workspace> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       stateVersion.value++;
+      reportProfileBounds();
+      final quickNotice = state['quick_notice'] as Map? ?? const {};
+      if (quickNotice['id'] is String && quickNotice['id'] != lastQuickNotice) {
+        lastQuickNotice = quickNotice['id'] as String;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('${quickNotice['message']}')));
+      }
       if (files.isNotEmpty &&
           !locked &&
           (documentDropped || (documentsChanged && mode == 'file_format'))) {
@@ -274,6 +415,7 @@ class _WorkspaceState extends State<Workspace> {
       return;
     }
     polling = true;
+    dropRefreshQueued = false;
     final version = commandVersion;
     try {
       final next = await widget.api('get_state', []);
@@ -289,11 +431,14 @@ class _WorkspaceState extends State<Workspace> {
       }
     } finally {
       polling = false;
+      if (mounted && dropRefreshQueued && !busy) unawaited(refresh());
     }
   }
 
   Future<void> command(String method, [List<Object?> args = const []]) async {
     if (!mounted || busy) return;
+    final cancelPending = method != 'start_zero_click' && autoRunToken != null;
+    if (cancelPending) cancelAutoLocally();
     // 명령 전 시작된 조회는 명령 결과보다 오래된 상태일 수 있다.
     commandVersion++;
     setState(() {
@@ -301,6 +446,9 @@ class _WorkspaceState extends State<Workspace> {
       error = null;
     });
     try {
+      if (cancelPending && method != 'cancel_zero_click') {
+        await widget.api('cancel_zero_click', []);
+      }
       final response = await widget.api(method, args);
       if (mounted && response is Map) {
         final notice = response['notice'];
@@ -322,6 +470,7 @@ class _WorkspaceState extends State<Workspace> {
       }
     } finally {
       if (mounted) setState(() => busy = false);
+      if (mounted && dropRefreshQueued) unawaited(refresh());
     }
   }
 
@@ -588,83 +737,98 @@ class _WorkspaceState extends State<Workspace> {
   );
 
   @override
-  Widget build(BuildContext context) => _closeLock(
-    CallbackShortcuts(
-      bindings: {
-        const SingleActivator(LogicalKeyboardKey.keyO, control: true): () {
-          if (!locked) command('add_files');
+  Widget build(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) => reportProfileBounds());
+    return _closeLock(
+      CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.keyO, control: true): () {
+            if (!locked) command('add_files');
+          },
+          const SingleActivator(LogicalKeyboardKey.enter, control: true):
+              primaryShortcut,
+          const SingleActivator(LogicalKeyboardKey.f1): showHelp,
         },
-        const SingleActivator(LogicalKeyboardKey.enter, control: true):
-            primaryShortcut,
-        const SingleActivator(LogicalKeyboardKey.f1): showHelp,
-      },
-      child: Focus(
-        autofocus: true,
-        child: Scaffold(
-          key: scaffoldKey,
-          endDrawer: settingsDrawer(),
-          appBar: appBar(),
-          body: SafeArea(
-            child: LayoutBuilder(
-              builder: (context, layout) => Row(
-                children: [
-                  if (layout.maxWidth >= 1000) sidebar(),
-                  Expanded(
-                    child: Column(
-                      children: [
-                        if (busy) const LinearProgressIndicator(minHeight: 2),
-                        if (error != null)
-                          Material(
-                            color: const Color(0xfffff1da),
-                            child: ListTile(
-                              leading: const Icon(Icons.wifi_off_rounded),
-                              title: Text(error!),
-                              trailing: IconButton(
-                                onPressed: state['native_backend'] == true
-                                    ? () => command('restart_backend')
-                                    : refresh,
-                                tooltip: '다시 연결',
-                                icon: const Icon(Icons.refresh),
+        child: Focus(
+          autofocus: true,
+          child: Scaffold(
+            key: scaffoldKey,
+            endDrawer: settingsDrawer(),
+            onEndDrawerChanged: (open) {
+              settingsVisible = open;
+              if (state['doc_hints'] is Map) {
+                unawaited(setDropTarget('documents'));
+              }
+            },
+            appBar: appBar(),
+            body: SafeArea(
+              child: LayoutBuilder(
+                builder: (context, layout) => Row(
+                  children: [
+                    if (layout.maxWidth >= 1000) sidebar(),
+                    Expanded(
+                      child: Column(
+                        children: [
+                          if (busy) const LinearProgressIndicator(minHeight: 2),
+                          if (error != null)
+                            Material(
+                              color: const Color(0xfffff1da),
+                              child: ListTile(
+                                leading: const Icon(Icons.wifi_off_rounded),
+                                title: Text(error!),
+                                trailing: IconButton(
+                                  onPressed: state['native_backend'] == true
+                                      ? () => command('restart_backend')
+                                      : refresh,
+                                  tooltip: '다시 연결',
+                                  icon: const Icon(Icons.refresh),
+                                ),
                               ),
                             ),
-                          ),
-                        if (layout.maxWidth < 1000) topTabs(),
-                        Expanded(
-                          child: SingleChildScrollView(
-                            padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-                            child: Center(
-                              child: ConstrainedBox(
-                                constraints: const BoxConstraints(
-                                  maxWidth: 960,
-                                ),
-                                child: AnimatedSwitcher(
-                                  duration: const Duration(milliseconds: 160),
-                                  child: KeyedSubtree(
-                                    key: ValueKey(tab),
-                                    child: [
-                                      documents,
-                                      options,
-                                      progress,
-                                      outcome,
-                                    ][tab](),
+                          if (layout.maxWidth < 1000) topTabs(),
+                          Expanded(
+                            child: SingleChildScrollView(
+                              padding: const EdgeInsets.fromLTRB(
+                                20,
+                                12,
+                                20,
+                                32,
+                              ),
+                              child: Center(
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 960,
+                                  ),
+                                  child: AnimatedSwitcher(
+                                    duration: const Duration(milliseconds: 160),
+                                    child: KeyedSubtree(
+                                      key: ValueKey(tab),
+                                      child: [
+                                        documents,
+                                        options,
+                                        progress,
+                                        outcome,
+                                      ][tab](),
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                        bottomBar(),
-                      ],
+                          if (autoRunToken != null) autoRunBar(),
+                          bottomBar(),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
         ),
       ),
-    ),
-  );
+    );
+  }
 
   Widget _closeLock(Widget child) => ExcludeFocus(
     excluding: appClosing,
@@ -706,6 +870,22 @@ class _WorkspaceState extends State<Workspace> {
       ],
     ),
     actions: [
+      Tooltip(
+        message: 'HWP/HWPX 예시를 여기에 놓으면 새 서식으로 등록·선택해요.',
+        child: SizedBox(
+          key: profileDropKey,
+          width: 132,
+          child: ActionChip(
+            key: const Key('quickProfileDropBadge'),
+            avatar: const Icon(Icons.style_outlined, size: 18),
+            label: Text(
+              '${profiles.whereType<Map>().where((p) => p['id'] == state['profile']).firstOrNull?['name'] ?? '기본 보고서 서식'}',
+              overflow: TextOverflow.ellipsis,
+            ),
+            onPressed: locked ? null : openFormats,
+          ),
+        ),
+      ),
       IconButton(
         tooltip: '사용 방법 (F1)',
         onPressed: showHelp,
@@ -745,7 +925,10 @@ class _WorkspaceState extends State<Workspace> {
         ),
       IconButton(
         tooltip: '설정',
-        onPressed: () => scaffoldKey.currentState?.openEndDrawer(),
+        onPressed: () async {
+          if (autoRunToken != null) await command('cancel_zero_click');
+          if (mounted) scaffoldKey.currentState?.openEndDrawer();
+        },
         icon: const Icon(Icons.settings_outlined),
       ),
       const SizedBox(width: 12),
@@ -1223,7 +1406,21 @@ class _WorkspaceState extends State<Workspace> {
         ],
         stagePanel(),
         const SizedBox(height: 16),
-        rangePanel(),
+        if (state['doc_hints'] is! Map ||
+            docHints['show_page_range'] == true ||
+            rangeOn ||
+            manualPageRange)
+          rangePanel()
+        else
+          ActionChip(
+            label: const Text('쪽 범위 지정'),
+            onPressed: locked
+                ? null
+                : () {
+                    command('cancel_zero_click');
+                    setState(() => manualPageRange = true);
+                  },
+          ),
       ],
     ],
   );
@@ -1291,226 +1488,29 @@ class _WorkspaceState extends State<Workspace> {
                 ),
                 const SizedBox(height: 10),
                 Text(m.$3, style: const TextStyle(height: 1.6)),
-                if (m.$1 == 'spacing') ...[
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          '자간 정리',
-                          style: TextStyle(fontWeight: FontWeight.w600),
-                        ),
+                if (selected && files.isNotEmpty && state['doc_hints'] is Map)
+                  Tooltip(
+                    message: '${docHints['reason'] ?? ''}',
+                    child: Chip(
+                      label: Text(
+                        state['user_overrode_mode'] == true
+                            ? '직접 선택'
+                            : '✨ 문서 자동 맞춤',
                       ),
-                      Switch(
-                        key: const Key('spacingEnabledSwitch'),
-                        value: spacingEnabled,
-                        onChanged: locked
-                            ? null
-                            : (on) => command('set_card_option', [
-                                'spacing_enabled',
-                                on,
-                              ]),
-                      ),
-                    ],
+                    ),
                   ),
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          '페이지 맞춤',
-                          style: TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                      Switch(
-                        key: const Key('spacingPageFitSwitch'),
-                        value: spacingPageFit,
-                        onChanged: locked
-                            ? null
-                            : (on) => command('set_card_option', [
-                                'spacing_page_fit',
-                                on,
-                              ]),
-                      ),
-                    ],
-                  ),
-                  if (!spacingEnabled)
-                    Text(
-                      spacingPageFit
-                          ? '자간·장평·줄 병합은 그대로 두고 문단·표의 세로 간격과 페이지 배치만 조정해요.'
-                          : '자간 정리 또는 페이지 맞춤을 하나 이상 켜 주세요.',
-                      style: const TextStyle(fontSize: 12, color: _faint),
+                if (m.$1 != 'file_format' && state['doc_hints'] is Map)
+                  ActionChip(
+                    key: Key('${m.$1}SummaryPill'),
+                    label: Text(
+                      m.$1 == 'spacing' && !spacingEnabled && spacingPageFit
+                          ? '페이지 맞춤만 ▾'
+                          : '기본 설정 ▾',
                     ),
-                  // 끄면 문서에 이미 있는 자간을 0%로 되돌리지 않고 그 위에서 정리한다.
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          '기존 자간 초기화',
-                          style: TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                      Switch(
-                        key: const Key('resetSpacingSwitch'),
-                        value: resetSpacing,
-                        onChanged: locked || !spacingEnabled
-                            ? null
-                            : (on) => command('set_reset_spacing', [on]),
-                      ),
-                    ],
-                  ),
-                  if (spacingEnabled && !resetSpacing)
-                    const Text(
-                      '문서에 있던 자간은 그대로 두고 그 위에서 정리해요.',
-                      style: TextStyle(fontSize: 12, color: _faint),
-                    ),
-                  // '표 제외'를 켜면 표 칸 안 문장은 자간 정리 대상에서 뺀다(설정 table_spacing의 반대 값).
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          '표 제외',
-                          style: TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                      Switch(
-                        key: const Key('tableSpacingSwitch'),
-                        value: !tableSpacing,
-                        onChanged: locked || !spacingEnabled
-                            ? null
-                            : (on) => command('set_table_spacing', [!on]),
-                      ),
-                    ],
-                  ),
-                  if (!tableSpacing)
-                    const Text(
-                      '표 칸 안 문장은 자간 정리에서 빼요.',
-                      style: TextStyle(fontSize: 12, color: _faint),
-                    ),
-                ],
-                if (m.$1 == 'unify') ...[
-                  const SizedBox(height: 8),
-                  for (final o in const [
-                    ('unify_exclude_tables', '표 제외', '기본 표 서식·표 서식통일을 빼요.'),
-                    (
-                      'unify_exclude_spacing',
-                      '자간 정리 제외',
-                      '서식통일이 고친 문장의 자간은 그대로 둬요.',
-                    ),
-                    (
-                      'unify_exclude_pagefit',
-                      '페이지 맞춤 제외',
-                      '문단 아래 간격 페이지 맞춤을 빼요.',
-                    ),
-                    (
-                      'unify_keep_layout',
-                      '원본 쪽 구성 유지',
-                      '보고서별 쪽 수·시작 쪽을 원본과 같게 맞춰요.',
-                    ),
-                    (
-                      'unify_full_format',
-                      '전체 서식 맞추기',
-                      '글꼴·크기뿐 아니라 색·밑줄·정렬·여백·내어쓰기도 맞춰요.',
-                    ),
-                  ]) ...[
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            o.$2,
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                        Switch(
-                          key: Key('${o.$1}Switch'),
-                          value: cardOption(o.$1),
-                          onChanged: locked
-                              ? null
-                              : (on) => command('set_card_option', [o.$1, on]),
-                        ),
-                      ],
-                    ),
-                    if (cardOption(o.$1))
-                      Text(
-                        o.$3,
-                        style: const TextStyle(fontSize: 12, color: _faint),
-                      ),
-                  ],
-                ],
-                if (isAll) ...[
-                  const SizedBox(height: 8),
-                  // 끄면 기존 자간은 그대로 두고 서식만 적용한다(서식 적용).
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          '자간 조정 포함',
-                          style: TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                      Switch(
-                        key: const Key('includeSpacingSwitch'),
-                        value: includeSpacing,
-                        onChanged: locked
-                            ? null
-                            : (on) => command('set_include_spacing', [on]),
-                      ),
-                    ],
-                  ),
-                  if (!includeSpacing)
-                    const Text(
-                      '기존 자간은 그대로 두고 서식만 적용해요.',
-                      style: TextStyle(fontSize: 12, color: _faint),
-                    ),
-                  // 켜면 표 관련 작업을 모두 빼고 정리한다(제목·개요 서식 표는 정리).
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          '표 제외',
-                          style: TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                      Switch(
-                        key: const Key('excludeTablesSwitch'),
-                        value: excludeTables,
-                        onChanged: locked
-                            ? null
-                            : (on) => command('set_exclude_tables', [on]),
-                      ),
-                    ],
-                  ),
-                  if (excludeTables)
-                    const Text(
-                      '표 관련 작업은 모두 빼고 정리해요. 제목·개요 서식 표는 정리해요.',
-                      style: TextStyle(fontSize: 12, color: _faint),
-                    ),
-                  // 켜면 문단 아래 간격 페이지 맞춤·관련 문단 페이지 배치를 뺀다.
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          '페이지 맞춤 제외',
-                          style: TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                      Switch(
-                        key: const Key('allExcludePagefitSwitch'),
-                        value: cardOption('all_exclude_pagefit'),
-                        onChanged: locked
-                            ? null
-                            : (on) => command('set_card_option', [
-                                'all_exclude_pagefit',
-                                on,
-                              ]),
-                      ),
-                    ],
-                  ),
-                  if (cardOption('all_exclude_pagefit'))
-                    const Text(
-                      '문단 아래 간격 페이지 맞춤·관련 문단 페이지 배치를 빼요.',
-                      style: TextStyle(fontSize: 12, color: _faint),
-                    ),
-                ],
+                    onPressed: locked ? null : () => openModeOptions(m.$1),
+                  )
+                else if (m.$1 != 'file_format')
+                  modeOptions(m.$1),
                 const SizedBox(height: 12),
                 Text(
                   '결과: 문서이름($suffix).hwpx',
@@ -1524,17 +1524,257 @@ class _WorkspaceState extends State<Workspace> {
     );
   }
 
+  Map get docHints => state['doc_hints'] as Map? ?? const {};
+  bool get showTableOptions => docHints['show_table_option'] != false;
+  bool manualPageRange = false;
+
+  Widget modeOptions(String optionMode) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      if (optionMode == 'spacing') ...[
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                '자간 정리',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            Switch(
+              key: const Key('spacingEnabledSwitch'),
+              value: spacingEnabled,
+              onChanged: locked
+                  ? null
+                  : (on) => command('set_card_option', ['spacing_enabled', on]),
+            ),
+          ],
+        ),
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                '페이지 맞춤',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            Switch(
+              key: const Key('spacingPageFitSwitch'),
+              value: spacingPageFit,
+              onChanged: locked
+                  ? null
+                  : (on) =>
+                        command('set_card_option', ['spacing_page_fit', on]),
+            ),
+          ],
+        ),
+        if (!spacingEnabled)
+          Text(
+            spacingPageFit
+                ? '자간·장평·줄 병합은 그대로 두고 문단·표의 세로 간격과 페이지 배치만 조정해요.'
+                : '자간 정리 또는 페이지 맞춤을 하나 이상 켜 주세요.',
+            style: const TextStyle(fontSize: 12, color: _faint),
+          ),
+        // 끄면 문서에 이미 있는 자간을 0%로 되돌리지 않고 그 위에서 정리한다.
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                '기존 자간 초기화',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            Switch(
+              key: const Key('resetSpacingSwitch'),
+              value: resetSpacing,
+              onChanged: locked || !spacingEnabled
+                  ? null
+                  : (on) => command('set_reset_spacing', [on]),
+            ),
+          ],
+        ),
+        if (spacingEnabled && !resetSpacing)
+          const Text(
+            '문서에 있던 자간은 그대로 두고 그 위에서 정리해요.',
+            style: TextStyle(fontSize: 12, color: _faint),
+          ),
+        // '표 제외'를 켜면 표 칸 안 문장은 자간 정리 대상에서 뺀다(설정 table_spacing의 반대 값).
+        if (showTableOptions)
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  '표 제외',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+              Switch(
+                key: const Key('tableSpacingSwitch'),
+                value: !tableSpacing,
+                onChanged: locked || !spacingEnabled
+                    ? null
+                    : (on) => command('set_table_spacing', [!on]),
+              ),
+            ],
+          ),
+        if (!tableSpacing)
+          const Text(
+            '표 칸 안 문장은 자간 정리에서 빼요.',
+            style: TextStyle(fontSize: 12, color: _faint),
+          ),
+      ],
+      if (optionMode == 'unify') ...[
+        const SizedBox(height: 8),
+        for (final o in const [
+          ('unify_exclude_tables', '표 제외', '기본 표 서식·표 서식통일을 빼요.'),
+          ('unify_exclude_spacing', '자간 정리 제외', '서식통일이 고친 문장의 자간은 그대로 둬요.'),
+          ('unify_exclude_pagefit', '페이지 맞춤 제외', '문단 아래 간격 페이지 맞춤을 빼요.'),
+          ('unify_keep_layout', '원본 쪽 구성 유지', '보고서별 쪽 수·시작 쪽을 원본과 같게 맞춰요.'),
+          (
+            'unify_full_format',
+            '전체 서식 맞추기',
+            '글꼴·크기뿐 아니라 색·밑줄·정렬·여백·내어쓰기도 맞춰요.',
+          ),
+        ].where((o) => o.$1 != 'unify_exclude_tables' || showTableOptions)) ...[
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  o.$2,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+              Switch(
+                key: Key('${o.$1}Switch'),
+                value: cardOption(o.$1),
+                onChanged: locked
+                    ? null
+                    : (on) => command('set_card_option', [o.$1, on]),
+              ),
+            ],
+          ),
+          if (cardOption(o.$1))
+            Text(o.$3, style: const TextStyle(fontSize: 12, color: _faint)),
+        ],
+      ],
+      if (optionMode == 'all') ...[
+        const SizedBox(height: 8),
+        // 끄면 기존 자간은 그대로 두고 서식만 적용한다(서식 적용).
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                '자간 조정 포함',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            Switch(
+              key: const Key('includeSpacingSwitch'),
+              value: includeSpacing,
+              onChanged: locked
+                  ? null
+                  : (on) => command('set_include_spacing', [on]),
+            ),
+          ],
+        ),
+        if (!includeSpacing)
+          const Text(
+            '기존 자간은 그대로 두고 서식만 적용해요.',
+            style: TextStyle(fontSize: 12, color: _faint),
+          ),
+        // 켜면 표 관련 작업을 모두 빼고 정리한다(제목·개요 서식 표는 정리).
+        if (showTableOptions)
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  '표 제외',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+              Switch(
+                key: const Key('excludeTablesSwitch'),
+                value: excludeTables,
+                onChanged: locked
+                    ? null
+                    : (on) => command('set_exclude_tables', [on]),
+              ),
+            ],
+          ),
+        if (excludeTables)
+          const Text(
+            '표 관련 작업은 모두 빼고 정리해요. 제목·개요 서식 표는 정리해요.',
+            style: TextStyle(fontSize: 12, color: _faint),
+          ),
+        // 켜면 문단 아래 간격 페이지 맞춤·관련 문단 페이지 배치를 뺀다.
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                '페이지 맞춤 제외',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            Switch(
+              key: const Key('allExcludePagefitSwitch'),
+              value: cardOption('all_exclude_pagefit'),
+              onChanged: locked
+                  ? null
+                  : (on) =>
+                        command('set_card_option', ['all_exclude_pagefit', on]),
+            ),
+          ],
+        ),
+        if (cardOption('all_exclude_pagefit'))
+          const Text(
+            '문단 아래 간격 페이지 맞춤·관련 문단 페이지 배치를 빼요.',
+            style: TextStyle(fontSize: 12, color: _faint),
+          ),
+      ],
+    ],
+  );
+
+  Future<void> openModeOptions(String optionMode) async {
+    await command('cancel_zero_click');
+    if (!mounted) return;
+    await setDropTarget('manual_documents');
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: ValueListenableBuilder<int>(
+            valueListenable: stateVersion,
+            builder: (_, _, _) => modeOptions(optionMode),
+          ),
+        ),
+      ),
+    );
+    await setDropTarget('documents');
+  }
+
   // ---- 서식 관리: 예시 보고서를 끌어다 놓아 서식 복제, 이름 바꾸기·세부 수정·삭제 ----
   Map get formatTask => state['format_task'] as Map? ?? const {};
 
   Future<void> setDropTarget(String target) async {
+    if (autoRunToken != null) {
+      cancelAutoLocally();
+      await widget.api('cancel_zero_click', []);
+    }
     try {
-      await widget.api('set_drop_target', [target]);
+      await widget.api('set_drop_target', [
+        target == 'documents' && settingsVisible ? 'manual_documents' : target,
+      ]);
     } catch (_) {}
   }
 
   // 키오스크에서 메뉴 사진을 보고 고르듯, 서식마다 예시 보고서 첫 쪽 그림(스틸컷)과 이름을 카드로 보여 주고 눌러 고른다(알파).
   Future<void> openKiosk() async {
+    if (autoRunToken != null) await command('cancel_zero_click');
+    if (!mounted) return;
     Object? data;
     try {
       data = await widget.api('format_gallery', []);
@@ -1698,6 +1938,10 @@ class _WorkspaceState extends State<Workspace> {
   }
 
   Future<void> openTools(String name) async {
+    if (autoRunToken != null) await command('cancel_zero_click');
+    if (!mounted) return;
+    if (state['doc_hints'] is Map) await setDropTarget('manual_documents');
+    if (!mounted) return;
     final mapped =
         {'polish': 'clean', 'paste': 'convert', 'writing': 'amount'}[name] ??
         name;
@@ -1713,6 +1957,7 @@ class _WorkspaceState extends State<Workspace> {
         ),
       ),
     );
+    if (state['doc_hints'] is Map) await setDropTarget('documents');
     await refresh();
   }
 
@@ -2363,7 +2608,16 @@ class _WorkspaceState extends State<Workspace> {
     keyboardType: TextInputType.number,
     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
     decoration: InputDecoration(labelText: label, suffixText: '쪽'),
-    onChanged: (_) => setState(() {}),
+    onChanged: (_) {
+      if (autoRunToken != null) {
+        cancelAutoLocally();
+        commandVersion++;
+        unawaited(
+          widget.api('cancel_zero_click', []).then((_) {}).catchError((_) {}),
+        );
+      }
+      setState(() {});
+    },
     onSubmitted: (_) => primaryShortcut(),
   );
 
@@ -2838,6 +3092,16 @@ class _WorkspaceState extends State<Workspace> {
             style: TextStyle(fontSize: 12, color: _faint),
           ),
           settingsLabel('작업 뒤 처리'),
+          optionSwitch(
+            'instant_run_on_drop',
+            '파일 하나를 놓으면 자동 시작',
+            '2.5초 동안 일시정지하거나 옵션을 바꿀 수 있어요.',
+          ),
+          optionSwitch(
+            'auto_open_result',
+            '단일 문서 결과 자동 열기',
+            '처리가 성공하면 완성된 HWPX를 열어요.',
+          ),
           optionSwitch(
             'autoclose',
             '작업이 끝나면 한/글 문서 창 닫기',

@@ -10,6 +10,8 @@ import subprocess
 import shutil
 import threading
 import time
+import uuid
+import re
 from concurrent.futures import Future, TimeoutError
 from pathlib import Path
 from types import SimpleNamespace
@@ -32,6 +34,8 @@ def _format_coverage(analysis):
 
 
 QUICK_OPTIONS = {
+    "instant_run_on_drop": "instant_run_on_drop_var",
+    "auto_open_result": "auto_open_result_var",
     "autoclose": "autoclose_var",
     "unify_result_window": "unify_result_window_var",
     "verify": "verify_var",
@@ -72,6 +76,7 @@ class DesktopWebBridge:
 
     def _shutdown(self):
         """Tk 종료 시 대기·실행 중 요청의 호출자를 종료 오류로 해제한다."""
+        self._cancel_pending_drop()
         with self._request_lock:
             self._closed = True
             if self.tk_stopped is not None:
@@ -80,6 +85,100 @@ class DesktopWebBridge:
                 if not request.done():
                     request.set_exception(RuntimeError("앱이 종료 중입니다."))
             self._requests.clear()
+
+    def _ux(self):
+        from docfit_core.app_state import AppState
+        if not hasattr(self, "_ux_data"):
+            self._ux_data = self.gui.state if isinstance(getattr(self.gui, "state", None), AppState) else AppState()
+        return self._ux_data
+
+    def _quick_option(self, name):
+        variable = getattr(self.gui, QUICK_OPTIONS[name], None)
+        return True if variable is None else bool(variable.get())
+
+    def _cancel_pending_drop(self):
+        self._ux().zero_click = {}
+
+    def _update_document_hints(self):
+        from docfit_core.doc_inspector import inspect_documents
+        ux = self._ux()
+        ux.doc_hints = inspect_documents(list(self.gui.files))
+        if not self.gui.files:
+            ux.user_overrode_mode = False
+        elif not ux.user_overrode_mode and not self.gui.running:
+            mode = ux.doc_hints["recommended_mode"]
+            self.gui.selected_mode.set("format" if mode == "all" and not self._include_spacing() else mode)
+            self._mode_selected()
+            self.gui.status_var.set(ux.doc_hints["reason"])
+
+    def _zero_click_snapshot(self):
+        pending = self._ux().zero_click
+        if pending and time.monotonic() > pending["deadline"] + 5:
+            self._cancel_pending_drop()
+            pending = {}
+        if not pending:
+            return {"pending": False}
+        return {"pending": True, "token": pending["token"], "file_name": Path(pending["files"][0]).name,
+                "mode": pending["mode"], "remaining_ms": max(0, int((pending["deadline"] - time.monotonic()) * 1000))}
+
+    def cancel_zero_click(self):
+        self._tk(self._cancel_pending_drop)
+        return self.get_state()
+
+    def start_zero_click(self, token):
+        def begin():
+            pending = self._ux().zero_click
+            if not pending or token != pending["token"]:
+                return
+            if time.monotonic() < pending["deadline"]:
+                return
+            valid = (tuple(self.gui.files) == pending["files"] and self.gui.selected_mode.get() == pending["mode"]
+                     and time.monotonic() <= pending["deadline"] + 5
+                     and not self.gui.running and not self._profile_state().analyzing_format
+                     and self._quick_option("instant_run_on_drop") and self._can_start(pending["mode"], self.gui.files, False))
+            self._cancel_pending_drop()  # 요청 토큰을 실행 전에 소모(중복·지연 호출 방어).
+            if valid:
+                self.gui.작업시작(pending["mode"])
+                self._auto_open_armed = bool(self.gui.running and len(self.gui.files) == 1)
+        self._tk(begin)
+        return self.get_state()
+
+    def set_profile_drop_bounds(self, bounds):
+        import math
+        if not isinstance(bounds, (list, tuple)) or len(bounds) != 4 or any(
+                isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in bounds):
+            raise ValueError("서식 배지 영역이 올바르지 않습니다.")
+        self._profile_drop_bounds = tuple(bounds)
+        if self.window is not None and hasattr(self.window, "run_js"):
+            self.window.run_js(f"window.docfitProfileDropRect = {list(bounds)!r};")
+        return True
+
+    def quick_register_and_activate_profile(self, path):
+        path = Path(str(path))
+        if path.is_symlink() or not path.is_file() or path.suffix.lower() not in {".hwp", ".hwpx"}:
+            return self._with_notice("HWP 또는 HWPX 예시 파일을 놓아 주세요.")
+        def register():
+            self._cancel_pending_drop()
+            if self.gui.running or self._profile_state().analyzing_format:
+                return "작업이나 서식 분석이 끝난 뒤 다시 놓아 주세요."
+            name = re.sub(r"[_\s]+", " ", path.stem).strip()[:120] or "새 서식"
+            parts = re.split(r"[_\s]+", path.stem, maxsplit=1)
+            organization = (parts[0][:60] if len(parts) == 2 and parts[0].endswith(
+                ("구", "시", "군", "청", "공사", "공단", "연구원")) else None)
+            self._quick_watch = {"ids": set(self._profile_state().profiles), "name": name}
+            self._quick_notice = {"id": uuid.uuid4().hex, "message": f"{name} · 서식 분석 중"}
+            self.gui._quick_registration = True
+            try:
+                self.gui._서식_분석_시작(str(path.resolve()), 이름묻기=False, 기본이름=name, 기관=organization)
+            except Exception:
+                self.gui._quick_registration = False
+                self._quick_watch = None
+                raise
+            return f"{name} · 서식 분석 후 자동으로 등록·선택합니다."
+        return self._with_notice(self._tk(register))
+
+    def drop_format_file(self, path):
+        return self.quick_register_and_activate_profile(path)
 
     def _tk(self, callback, timeout=120, front=False):
         result = Future()
@@ -270,13 +369,32 @@ class DesktopWebBridge:
         def snapshot():
             gui = self.gui
             mode = gui.selected_mode.get()
+            watched = getattr(self, "_quick_watch", None)
+            if watched and not self._profile_state().analyzing_format:
+                active = self._profile_state().active_profile_id
+                self._quick_notice = {"id": uuid.uuid4().hex, "message": (
+                    f"{watched['name']} · 새 서식을 등록하고 선택했어요." if active not in watched["ids"]
+                    else "서식을 등록하지 못했어요. 처리 상태를 확인해 주세요.")}
+                self._quick_watch = None
+            auto_open = False
+            if getattr(self, "_auto_open_armed", False) and not gui.running:
+                self._auto_open_armed = False
+                auto_open = (self._quick_option("auto_open_result") and len(getattr(gui, "_결과목록", [])) == 1
+                             and Path(self._result_path(0)).suffix.lower() == ".hwpx")
             return {
+                "_open_completed_result": auto_open,
                 "files": [
                     {"name": Path(path).name, "path": path, "folder": str(Path(path).parent)}
                     for path in gui.files
                 ],
                 "count": len(gui.files),
                 "mode": mode,
+                "quick_notice": getattr(self, "_quick_notice", {}),
+                "doc_hints": dict(self._ux().doc_hints),
+                "user_overrode_mode": self._ux().user_overrode_mode,
+                "zero_click": self._zero_click_snapshot(),
+                "instant_run_on_drop": self._quick_option("instant_run_on_drop"),
+                "auto_open_result": self._quick_option("auto_open_result"),
                 "include_spacing": self._include_spacing(),
                 "reset_spacing": self._reset_spacing(),
                 "table_spacing": self._table_spacing(),
@@ -332,6 +450,11 @@ class DesktopWebBridge:
             }
 
         state = self._tk(snapshot)
+        if state.pop("_open_completed_result", False):
+            try:
+                self.open_result(0)
+            except OSError:
+                logging.getLogger(__name__).warning("결과 자동 열기 실패", exc_info=True)
         if state["mode"] == "file_format":
             # 외부 도구 버전 조회를 Tk 이벤트 루프에서 실행하면 화면이 멈춘다.
             # GUI 상태를 읽은 뒤 WebView 요청 스레드에서 준비 상태를 확인한다.
@@ -445,10 +568,12 @@ class DesktopWebBridge:
 
     def add_files(self):
         self._tk(self.gui.파일선택, timeout=None, front=True)
+        self._tk(self._update_document_hints)
         return self.get_state()
 
     def add_folder(self):
         self._tk(self.gui._폴더선택, timeout=None, front=True)
+        self._tk(self._update_document_hints)
         return self.get_state()
 
     def add_paths(self, paths, *, from_drop=False):
@@ -460,6 +585,8 @@ class DesktopWebBridge:
         def add():
             if self.gui.running:
                 return
+            self._cancel_pending_drop()
+            was_empty = not self.gui.files
             added = 0
             for value in paths:
                 path = str(value or "").strip()
@@ -488,6 +615,14 @@ class DesktopWebBridge:
                     self._document_drop_revision += 1
                 self.gui.status_var.set(f"{added}개 추가 · 총 {len(self.gui.files)}개 문서")
                 self.gui.로그표시(f"{added}개 문서 추가")
+                self._update_document_hints()
+                mode = self.gui.selected_mode.get()
+                if (from_drop and was_empty and len(paths) == 1 and added == 1 and len(self.gui.files) == 1
+                        and Path(str(paths[0])).is_file() and mode != "file_format"
+                        and self._quick_option("instant_run_on_drop") and not self._profile_state().analyzing_format
+                        and self._can_start(mode, self.gui.files, False)):
+                    self._ux().zero_click = {"token": uuid.uuid4().hex, "files": tuple(self.gui.files),
+                                             "mode": mode, "deadline": time.monotonic() + 2.5}
 
         self._tk(add)
         return self.get_state()
@@ -502,12 +637,14 @@ class DesktopWebBridge:
                 self.gui.file_list.selection_clear(0, "end")
                 self.gui.file_list.selection_set(index_value)
                 self.gui._선택삭제()
+                self._update_document_hints()
 
         self._tk(remove)
         return self.get_state()
 
     def clear_files(self):
         self._tk(self.gui.목록지우기)
+        self._tk(self._update_document_hints)
         return self.get_state()
 
     def _include_spacing(self):
@@ -527,6 +664,8 @@ class DesktopWebBridge:
         def select():
             if self.gui.running:
                 return
+            self._ux().user_overrode_mode = True
+            self._cancel_pending_drop()
             internal = mode
             if mode in ("all", "format"):
                 variable = getattr(self.gui, "include_spacing_var", None)
@@ -711,6 +850,7 @@ class DesktopWebBridge:
             self.gui._범위_끝직접설정 = bool(range_enabled)
             self.gui._범위_상태_갱신()
             self.gui.작업시작(mode)
+            self._auto_open_armed = bool(self.gui.running and len(self.gui.files) == 1 and mode != "file_format")
 
         self._tk(begin)
         return self.get_state()
@@ -1256,7 +1396,7 @@ class DesktopWebBridge:
     # ---- 서식 관리(예시 보고서로 서식 복제·이름 바꾸기·세부 수정·삭제) ----
     def set_drop_target(self, target):
         """끌어 놓은 파일을 넣을 곳을 바꾼다: documents(문서 목록) 또는 format(예시 서식 복제)."""
-        if target not in ("documents", "format"):
+        if target not in ("documents", "manual_documents", "format", "quick_format"):
             raise ValueError("지원하지 않는 놓기 대상입니다.")
         self.drop_target = target
         window = self.window
@@ -1289,10 +1429,19 @@ class DesktopWebBridge:
         self._tk(start)
         return self.get_state()
 
-    def receive_drop(self, paths):
+    def receive_drop(self, paths, client_x=None, client_y=None):
         """창에 끌어 놓은 파일: '서식 관리' 창이 열려 있으면 예시 서식 복제, 아니면 문서 목록에 추가."""
         if self.drop_target == "format":
             return self.add_format_paths(paths)
+        bounds = getattr(self, "_profile_drop_bounds", None)
+        on_badge = (bounds is not None and isinstance(client_x, (int, float)) and isinstance(client_y, (int, float)))
+        if on_badge:
+            left, top, right, bottom = bounds
+            on_badge = left <= client_x < right and top <= client_y < bottom
+        if self.drop_target == "quick_format" or on_badge:
+            return self.quick_register_and_activate_profile(paths[0]) if len(paths) == 1 else self._with_notice("예시 서식은 한 개씩 놓아 주세요.")
+        if self.drop_target == "manual_documents":
+            return self.add_paths(paths, from_drop=False)
         return self.add_paths(paths, from_drop=True)
 
     def add_format_file(self):
@@ -1372,6 +1521,8 @@ class DesktopWebBridge:
             if self.gui.running:
                 return
             self.gui.목록지우기()
+            self._cancel_pending_drop()
+            self._update_document_hints()
             self.gui._결과_초기화()
             self.gui._안내키, self.gui._안내지남 = None, set()
             self.gui.status_var.set("새 문서를 선택하세요.")
@@ -1453,11 +1604,32 @@ class DesktopWebBridge:
             raise
 
 
+def _cancel_before_edit(method):
+    """설정·문서·서식 변경은 같은 Tk 큐에서 예약 토큰을 먼저 무효화한다."""
+    from functools import wraps
+    @wraps(method)
+    def call(self, *args, **kwargs):
+        self._tk(self._cancel_pending_drop)
+        return method(self, *args, **kwargs)
+    return call
+
+
+for _edit_name in (
+    "add_files", "add_folder", "remove_file", "clear_files", "set_range", "start", "set_profile",
+    "set_include_spacing", "set_reset_spacing", "set_table_spacing", "set_exclude_tables", "set_card_option",
+    "set_stage", "reset_stages", "set_option", "save_settings", "set_drop_target", "add_format_file",
+    "add_format_paths", "get_settings", "next_job", "text_input",
+    "open_settings", "open_stages", "stage_config", "format_profile", "rename_profile", "delete_profile",
+):
+    setattr(DesktopWebBridge, _edit_name, _cancel_before_edit(getattr(DesktopWebBridge, _edit_name)))
+
+
 class _BrowserApi:
     """Expose commands only: pywebview recursively inspects public attributes."""
 
     def __init__(self, bridge):
         for name in (
+            "cancel_zero_click", "start_zero_click", "quick_register_and_activate_profile", "drop_format_file", "set_profile_drop_bounds",
             "get_state", "add_files", "add_folder", "add_paths", "remove_file",
             "clear_files", "set_mode", "set_range", "start", "stop",
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
@@ -1491,7 +1663,7 @@ _FILE_DROP_SCRIPT = """
   const overlay = document.createElement('div');
   overlay.id = 'docfit-file-drop';
   overlay.textContent = window.docfitDropText || '여기에 놓으면 문서 목록에 추가됩니다';
-  overlay.style.cssText = 'display:none;position:fixed;inset:16px;z-index:2147483647;'
+  overlay.style.cssText = 'display:none;position:fixed;box-sizing:border-box;inset:16px;z-index:2147483647;'
     + 'pointer-events:none;align-items:center;justify-content:center;border:3px dashed #2563eb;'
     + 'border-radius:24px;background:rgba(239,246,255,.94);color:#1e40af;'
     + 'font:600 20px sans-serif;text-align:center;padding:24px;';
@@ -1506,6 +1678,10 @@ _FILE_DROP_SCRIPT = """
   document.addEventListener('dragover', e => {
     if (!files(e)) return;
     e.preventDefault(); e.dataTransfer.dropEffect = 'copy';
+    const r = window.docfitProfileDropRect;
+    const badge = r && e.clientX >= r[0] && e.clientX < r[2] && e.clientY >= r[1] && e.clientY < r[3];
+    overlay.textContent = badge ? '➕ 여기에 놓아 새 서식으로 바로 등록·적용' : (window.docfitDropText || '여기에 놓으면 문서 목록에 추가됩니다');
+    Object.assign(overlay.style, badge ? {left:r[0]+'px', top:r[1]+'px', right:'auto', bottom:'auto', width:(r[2]-r[0])+'px', height:(r[3]-r[1])+'px', fontSize:'9px',padding:'2px'} : {left:'0',top:'0',right:'0',bottom:'0',width:'auto',height:'auto',fontSize:'20px',padding:'24px'});
     overlay.style.display = 'flex';
   }, true);
   document.addEventListener('dragleave', () => {
@@ -1533,7 +1709,12 @@ def _bind_file_drop(web_window, bridge):
             paths = [item.get("pywebviewFullPath") for item in files if isinstance(item, dict)]
             paths = [path for path in paths if path]
             if paths:
-                bridge.receive_drop(paths)
+                if event.get("clientX") is not None and event.get("clientY") is not None:
+                    bridge.receive_drop(paths, client_x=event["clientX"], client_y=event["clientY"])
+                else:
+                    bridge.receive_drop(paths)
+                # 프런트엔드가 다음 폴링 주기를 기다리지 않고 최신 상태를 다시 읽게 한다.
+                web_window.run_js("window.dispatchEvent(new Event('docfit-documents-dropped'));")
             elif files:
                 bridge._tk(lambda: bridge.gui.status_var.set(
                     "드롭한 파일 경로를 읽지 못했습니다. 문서 선택 버튼을 이용해 주세요."))

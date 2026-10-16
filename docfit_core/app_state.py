@@ -66,3 +66,6 @@ class AppState:
     results: list = field(default_factory=list)
     stage_choices: dict = field(default_factory=dict)
     default_saved: dict = field(default_factory=dict)
+    doc_hints: dict = field(default_factory=dict)
+    zero_click: dict = field(default_factory=dict)
+    user_overrode_mode: bool = False

@@ -90,7 +90,7 @@ class ApplicationService:
             if method=='set_option':
                 key,value=args
                 key={'check_updates':'check_updates_on_start'}.get(key,key)
-                if key not in ('autoclose','unify_result_window','verify','integrity_report_file','final_review_file','log_file','check_updates_on_start','developer_mode','always_on_top'):
+                if key not in ('instant_run_on_drop','auto_open_result','autoclose','unify_result_window','verify','integrity_report_file','final_review_file','log_file','check_updates_on_start','developer_mode','always_on_top'):
                     raise ServiceError('INVALID_OPTION','설정 항목을 확인해 주세요.')
             else:key,value=mapping[method],args[0]
             if not isinstance(value,bool):raise ServiceError('INVALID_OPTION','설정 값을 확인해 주세요.')

@@ -1,5 +1,7 @@
-﻿// 카드 옵션 체크(요소 id, 상태 card_options 키, 보이는 카드)
+// 카드 옵션 체크(요소 id, 상태 card_options 키, 보이는 카드)
 const CARD_OPTION_INPUTS = [
+  ["spacingEnabled", "spacing_enabled", "spacing"],
+  ["spacingPageFit", "spacing_page_fit", "spacing"],
   ["unifyTables", "unify_exclude_tables", "unify"],
   ["unifySpacing", "unify_exclude_spacing", "unify"],
   ["unifyPagefit", "unify_exclude_pagefit", "unify"],
@@ -216,11 +218,17 @@ function render(state) {
     const num = Number(tab.dataset.step);
     tab.classList.toggle("complete",(num===1 && state.count>0) || (num===2 && hasRun) || (num===3 && hasRun && !state.running));
   });
+  syncZeroClick(state);
+  updateContextOptions(state);
   updateFooter();
   if (hasRun && !state.running && currentStep === 3 && /처리 완료|중단/.test(state.status || "")) navigate(4);
 }
 
 async function callApi(method,...args) {
+  if (method !== "start_zero_click" && autoToken) {
+    cancelAutoLocal();
+    if (method !== "cancel_zero_click") await window.pywebview?.api.cancel_zero_click();
+  }
   if (!window.pywebview?.api) return null;
   try {
     const result = await window.pywebview.api[method](...args);
@@ -326,3 +334,71 @@ async function sync() {
 }
 window.addEventListener("pywebviewready",()=>{sync();window.setInterval(sync,650);});
 
+
+let autoToken = null, autoTimer = null, autoTicker = null;
+const ignoredTokens = new Set();
+let manualRange = false;
+function cancelAutoLocal() {
+  if (autoToken) ignoredTokens.add(autoToken);
+  clearTimeout(autoTimer); clearInterval(autoTicker); autoToken = null;
+  $("zeroClickBar").hidden = true;
+}
+function syncZeroClick(state) {
+  const pending = state.zero_click || {};
+  if (!pending.pending || state.running) { cancelAutoLocal(); return; }
+  if (!pending.token || pending.token === autoToken || ignoredTokens.has(pending.token)) return;
+  cancelAutoLocal(); autoToken = pending.token;
+  const token = autoToken, delay = Math.max(0, Math.min(2500, pending.remaining_ms ?? 2500));
+  const deadline = Date.now() + delay;
+  $("zeroClickBar").hidden = false;
+  const tick = () => {
+    const remaining = Math.max(0, deadline - Date.now());
+    $("zeroClickProgress").value = remaining;
+    $("zeroClickLabel").textContent = `${pending.file_name} · ${MODE_LABELS[pending.mode] || pending.mode} 자동 시작 (${(remaining / 1000).toFixed(1)}초)`;
+  };
+  tick(); autoTicker = setInterval(tick, 100);
+  autoTimer = setTimeout(async () => {
+    if (token !== autoToken || busy || !lastState?.can_start) { cancelAutoLocal(); return; }
+    clearInterval(autoTicker);
+    const result = await callApi("start_zero_click", token);
+    if (result?.running) { hasRun = true; navigate(3); }
+  }, delay + 40);
+}
+function updateContextOptions(state) {
+  const hints = state.doc_hints || {};
+  $("instantRunOnDrop").checked = state.instant_run_on_drop !== false;
+  $("autoOpenResult").checked = state.auto_open_result !== false;
+  $("quickProfileBadge").textContent = "📋 " + ((state.profiles || []).find(p => p.id === state.profile)?.name || "현재 서식") + " ▾";
+  const noTables = hints.show_table_option === false;
+  for (const id of ["tableSpacingOption", "unifyTablesOption", "excludeTablesOption"]) {
+    if (noTables) $(id).hidden = true;
+  }
+  $("rangeBox").hidden = hints.show_page_range === false && !state.range?.enabled && !manualRange;
+  $("rangeReveal").hidden = !$("rangeBox").hidden;
+  $("autoModeHint").textContent = state.doc_hints ? (state.user_overrode_mode ? "직접 선택" : "✨ 문서 자동 맞춤 · " + (hints.reason || "")) : "";
+  $("autoModeHint").title = hints.reason || "";
+  $("resetSpacing").disabled ||= state.card_options?.spacing_enabled === false;
+  $("tableSpacing").disabled ||= state.card_options?.spacing_enabled === false;
+  const rect = $("quickProfileBadge").getBoundingClientRect();
+  window.docfitProfileDropRect = [rect.left, rect.top, rect.right, rect.bottom];
+  const bounds = window.docfitProfileDropRect;
+  if (JSON.stringify(bounds) !== window.lastProfileDropBounds) {
+    window.lastProfileDropBounds = JSON.stringify(bounds);
+    Promise.resolve(window.pywebview?.api.set_profile_drop_bounds?.(bounds)).catch(() => {});
+  }
+}
+$("optionsSummary").addEventListener("click", () => {
+  callApi("cancel_zero_click");
+  $("quickOptionsPanel").hidden = !$("quickOptionsPanel").hidden;
+  $("optionsSummary").setAttribute("aria-expanded", String(!$("quickOptionsPanel").hidden));
+});
+$("rangeReveal").addEventListener("click", () => { manualRange = true; callApi("cancel_zero_click"); updateContextOptions(lastState); });
+$("pauseAutoRun").addEventListener("click", () => callApi("cancel_zero_click"));
+$("editAutoOptions").addEventListener("click", () => { callApi("cancel_zero_click"); navigate(2); });
+$("quickProfileBadge").addEventListener("click", () => callApi("open_settings"));
+
+for (const [id, key] of [["instantRunOnDrop", "instant_run_on_drop"], ["autoOpenResult", "auto_open_result"]]) $(id).addEventListener("change", () => callApi("set_option", key, $(id).checked));
+
+window.addEventListener("docfit-documents-dropped", sync);
+
+window.addEventListener("resize", () => { if(lastState) updateContextOptions(lastState); });

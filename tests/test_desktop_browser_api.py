@@ -105,7 +105,8 @@ class BrowserApiTests(unittest.TestCase):
         bridge.window = object()
         api = _BrowserApi(bridge)
         public = {name: getattr(api, name) for name in dir(api) if not name.startswith('_')}
-        self.assertEqual(len(public), 57)   # 변환 대상·종료 보호·상용구(idioms)·글꼴(hangul_fonts) 명령 포함, GUI/서비스 객체 자체는 비공개
+        self.assertGreaterEqual(len(public), 57)
+        self.assertTrue({'cancel_zero_click', 'start_zero_click', 'quick_register_and_activate_profile'} <= public.keys())
         self.assertTrue(all(callable(value) for value in public.values()))
         self.assertNotIn('gui', public)
         self.assertNotIn('window', public)

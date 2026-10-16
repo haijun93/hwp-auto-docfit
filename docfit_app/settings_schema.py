@@ -118,9 +118,13 @@ DEFAULTS = {
     "spacing_reset_existing": None,
     "spacing_enabled": True,
     "spacing_page_fit": False,
+    "instant_run_on_drop": True,
+    "auto_open_result": True,
 }
 
 VARIABLE_BINDINGS = {'prevent_word_split': 'prevent_word_split_var',
+ 'instant_run_on_drop': 'instant_run_on_drop_var',
+ 'auto_open_result': 'auto_open_result_var',
  'spacing_enabled': 'spacing_enabled_var',
  'spacing_page_fit': 'spacing_page_fit_var',
  'ratio_shrink': 'ratio_shrink_var',
