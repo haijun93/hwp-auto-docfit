@@ -355,15 +355,21 @@ class DesktopWebBridge:
 
     @staticmethod
     def _hwp_com_available():
-        """한/글을 띄우지 않고 COM ProgID 등록만 확인한다."""
+        """한/글을 띄우지 않고 기본·32비트·64비트 COM 등록 보기를 확인한다."""
         if os.name != "nt":
             return False
         try:
             import winreg
-            with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, "HwpFrame.HwpObject"):
-                return True
-        except (ImportError, OSError):
+        except ImportError:
             return False
+        for view in dict.fromkeys((0, winreg.KEY_WOW64_32KEY, winreg.KEY_WOW64_64KEY)):
+            try:
+                with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, "HwpFrame.HwpObject",
+                                    0, winreg.KEY_READ | view):
+                    return True
+            except OSError:
+                continue
+        return False
 
     def _conversion_prerequisites(self):
         with self._conversion_prerequisites_lock:
