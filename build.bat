@@ -39,6 +39,9 @@ echo [2/4] Building Flutter interface...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0build_flutter.ps1"
 if errorlevel 1 goto :fail
 
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\build_kordoc_runtime.ps1" -Output "%~dp0resources\HWP_AutoDocFit_kordoc_runtime.zip"
+if errorlevel 1 goto :fail
+
 echo [3/4] Building %APPNAME%.exe...
 "%PYTHON%" -m PyInstaller --noconfirm --clean "HWP_AutoDocFit.spec"
 if errorlevel 1 goto :fail

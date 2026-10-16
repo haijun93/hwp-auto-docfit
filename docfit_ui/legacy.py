@@ -5542,7 +5542,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     initialdir=os.getcwd(),
                     filetypes=[
                         ("지원하는 모든 문서", "*.hwp *.hwpx *.hml *.pdf *.xls *.xlsx *.docx *.pptx *.png *.jpg *.jpeg *.webp *.txt *.md *.doc"),
-                        ("변환할 수 있는 문서", "*.hwp *.hwpx *.hml *.pdf *.xls *.xlsx *.docx *.pptx *.png *.jpg *.jpeg *.webp"),
+                        ("변환할 수 있는 문서", "*.hwp *.hwpx *.hml *.pdf *.xls *.xlsx *.docx *.pptx *.png *.jpg *.jpeg *.webp *.txt *.md"),
                         ("한/글 파일", "*.hwp *.hwpx *.hml"), ("HWP 파일", "*.hwp"), ("HWPX 파일", "*.hwpx"),
                         ("텍스트/Markdown", "*.txt *.md"), ("MS Word", "*.doc *.docx"), ("PDF", "*.pdf"),
                         ("Excel", "*.xls *.xlsx"), ("PowerPoint", "*.pptx"), ("이미지", "*.png *.jpg *.jpeg *.webp"),
@@ -5896,17 +5896,17 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             def 파일포맷_변경_시작(self, target_format='hwpx'):
                 """HWP·HWPX→PDF·그림은 한/글 내장 저장, 그 외 변환은 필요한 문서 엔진을 사용한다."""
                 from docfit_core.file_conversion import (
-                    IMAGE_FORMATS, convert_hwp_to_hwpx, convert_to_images, convert_to_pandoc_format, convert_to_pdf, output_path_for,
+                    IMAGE_FORMATS, CONVERSION_INPUTS, CONVERSION_OUTPUTS, convert_input_to_hwpx, convert_hwpx_to_text, convert_hwp_to_hwpx, convert_to_images, convert_to_pandoc_format, convert_to_pdf, output_path_for,
                 )
                 from docfit_core.kordoc_bridge import SUPPORTED_INPUT_EXTENSIONS, convert_to_hwpx
 
                 if self.running or not self.files:
                     return
                 target_format = str(target_format or "").lower()
-                if target_format not in {"hwpx", "pdf", "docx", "epub", *IMAGE_FORMATS}:
-                    raise ValueError("결과 형식은 HWPX, PDF, DOCX, EPUB, JPG 또는 PNG만 선택할 수 있습니다.")
+                if target_format not in CONVERSION_OUTPUTS:
+                    raise ValueError("결과 형식은 HWPX, PDF, DOCX, EPUB, JPG, PNG, TXT 또는 MD만 선택할 수 있습니다.")
                 files = list(self.files)
-                if any(Path(path).suffix.lower() not in SUPPORTED_INPUT_EXTENSIONS for path in files):
+                if any(Path(path).suffix.lower() not in CONVERSION_INPUTS for path in files):
                     raise ValueError("지원하는 입력 형식만 변환할 수 있습니다.")
 
                 self.running = True
@@ -5949,7 +5949,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                                     if source.suffix.lower() == ".hwp":
                                         convert_hwp_to_hwpx(app, source, target)
                                     else:
-                                        convert_to_hwpx(source, target)
+                                        convert_input_to_hwpx(source, target)
+                                elif target_format in {"txt", "md"}:
+                                    convert_hwpx_to_text(source, target)
                                 elif target_format in {"docx", "epub"}:
                                     convert_to_pandoc_format(source, target)
                                 elif target_format in IMAGE_FORMATS:

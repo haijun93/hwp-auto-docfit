@@ -43,9 +43,13 @@ def app_directory() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-def installed_root() -> Path:
+def user_installed_root() -> Path:
     base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
     return (Path(base) if base else Path.home() / ".hwp_auto_docfit") / "HwpAutoDocFit" / RUNTIME_FOLDER_NAME
+
+
+def installed_root() -> Path:
+    return deployment_home() / RUNTIME_FOLDER_NAME if sys.platform == "win32" and getattr(sys, "frozen", False) else user_installed_root()
 
 
 def model_cache_dir() -> Path:
@@ -77,7 +81,7 @@ def runtime_in(folder: Path, version: str) -> tuple[str, str] | None:
 
 
 def find_runtime(version: str) -> tuple[str, str] | None:
-    for folder in (app_directory() / RUNTIME_FOLDER_NAME, installed_root() / version):
+    for folder in (app_directory() / RUNTIME_FOLDER_NAME, installed_root() / version, user_installed_root() / version):
         found = runtime_in(folder, version)
         if found:
             return found
@@ -85,7 +89,7 @@ def find_runtime(version: str) -> tuple[str, str] | None:
 
 
 def bundled_pack() -> Path | None:
-    pack = app_directory() / RUNTIME_PACK_NAME
+    pack = embedded_pack() or (app_directory() / RUNTIME_PACK_NAME)
     return pack if pack.is_file() else None
 
 
@@ -163,6 +167,8 @@ def ensure_runtime(version: str) -> tuple[str, str] | None:
     found = find_runtime(version)
     if found:
         return found
+    if embedded_pack() is not None:
+        return deploy_embedded_runtime(version)
     pack = bundled_pack()
     if pack is None:
         return None
@@ -175,3 +181,63 @@ OCR_MODEL_FILES = ("det.onnx", "rec_korean.onnx", "rec_korean.yml")
 def ocr_models_present() -> bool:
     folder = model_cache_dir() / "ppocr"
     return all((folder / name).is_file() and (folder / name).stat().st_size > 0 for name in OCR_MODEL_FILES)
+
+
+def embedded_pack() -> Path | None:
+    if not getattr(sys, "frozen", False):
+        return None
+    folder = Path(getattr(sys, "_MEIPASS", app_directory())) / "resources"
+    pack = folder / RUNTIME_PACK_NAME
+    return pack if pack.is_file() else None
+
+
+def deployment_home() -> Path:
+    return Path(r"C:\HWP_AUTODOCFIT") if sys.platform == "win32" else user_installed_root().parent
+
+
+def deploy_embedded_runtime(version: str) -> tuple[str, str] | None:
+    """Copy the embedded, checksum-verified pack and install it without a network."""
+    import hashlib
+    import tempfile
+    pack = embedded_pack()
+    if pack is None:
+        return None
+    checksum = pack.with_name(pack.name + ".sha256")
+    expected = checksum.read_text(encoding="utf-8").split()[0].lower()
+    if not re.fullmatch(r"[0-9a-f]{64}", expected):
+        raise RuntimePackError("내장 변환 엔진 체크섬이 올바르지 않습니다.")
+    with pack.open("rb") as stream:
+        if hashlib.file_digest(stream, "sha256").hexdigest() != expected:
+            raise RuntimePackError("내장 변환 엔진 꾸러미의 SHA256이 일치하지 않습니다.")
+    for home in dict.fromkeys([deployment_home(), user_installed_root().parent]):
+        try:
+            if home.is_symlink() or (getattr(home, "is_junction", lambda: False)()):
+                raise RuntimePackError("변환 엔진 저장 폴더가 링크입니다.")
+            home.mkdir(parents=True, exist_ok=True)
+            destination = home / RUNTIME_PACK_NAME
+            with ProcessLock(home / ".runtime-deploy.lock"):
+                if destination.is_symlink():
+                    raise RuntimePackError("변환 엔진 ZIP 저장 경로가 링크입니다.")
+                matches = False
+                if destination.is_file():
+                    with destination.open("rb") as stream:
+                        matches = hashlib.file_digest(stream, "sha256").hexdigest() == expected
+                if not matches:
+                    temporary = None
+                    try:
+                        with tempfile.NamedTemporaryFile(dir=home, delete=False) as stream:
+                            temporary = Path(stream.name)
+                            with pack.open("rb") as source:
+                                shutil.copyfileobj(source, stream, 1024 * 1024)
+                            stream.flush()
+                            os.fsync(stream.fileno())
+                        os.replace(temporary, destination)
+                    finally:
+                        if temporary is not None:
+                            temporary.unlink(missing_ok=True)
+            root = home / RUNTIME_FOLDER_NAME
+            return runtime_in(install_pack(destination, version, root=root), version)
+        except (PermissionError, OSError):
+            if home == user_installed_root().parent:
+                raise
+    return None

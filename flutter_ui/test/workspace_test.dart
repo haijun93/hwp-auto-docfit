@@ -61,27 +61,26 @@ Map<String, dynamic> initialState() => <String, dynamic>{
 };
 
 void main() {
-  testWidgets(
-    'general editor is visible and excluded tldraw has no menu',
-    (tester) async {
-      final state = initialState();
-      Future<Object?> api(String name, List<Object?> args) async => state;
-      await tester.pumpWidget(DocFitApp(api: api));
-      await tester.pumpAndSettle();
-      expect(find.byTooltip('표/다이어그램'), findsOneWidget);
-      expect(find.byTooltip('문서 도구'), findsNothing);
-      state['options']['developer_mode'] = true;
-      state['options']['diagram_editor_enabled'] = true;
-      await tester.pump(const Duration(seconds: 2));
-      await tester.pumpAndSettle();
-      expect(find.byTooltip('표/다이어그램'), findsOneWidget);
-      expect(find.byTooltip('문서 도구'), findsOneWidget);
-      await tester.tap(find.byTooltip('문서 도구'));
-      await tester.pumpAndSettle();
-      expect(find.text('tldraw 편집기 (개발자 전용)'), findsNothing);
-      await tester.pumpWidget(const SizedBox());
-    },
-  );
+  testWidgets('general editor is visible and excluded tldraw has no menu', (
+    tester,
+  ) async {
+    final state = initialState();
+    Future<Object?> api(String name, List<Object?> args) async => state;
+    await tester.pumpWidget(DocFitApp(api: api));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('표/다이어그램'), findsOneWidget);
+    expect(find.byTooltip('문서 도구'), findsNothing);
+    state['options']['developer_mode'] = true;
+    state['options']['diagram_editor_enabled'] = true;
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('표/다이어그램'), findsOneWidget);
+    expect(find.byTooltip('문서 도구'), findsOneWidget);
+    await tester.tap(find.byTooltip('문서 도구'));
+    await tester.pumpAndSettle();
+    expect(find.text('tldraw 편집기 (개발자 전용)'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
 
   for (final width in [420.0, 1024.0]) {
     testWidgets('navigation and scoped commands at width $width', (
@@ -823,6 +822,102 @@ void main() {
     );
     expect(picked, isNot(-1));
     expect(calls[picked].last, 'pdf');
+    expect(calls.length, greaterThan(picked + 1));
+    expect(calls[picked + 1].take(2), ['start', 'file_format']);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('HWPX exports TXT through the radial picker', (tester) async {
+    tester.view.physicalSize = const Size(1024, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final calls = <List<Object?>>[];
+    final state = initialState();
+    (state['conversion_targets'] as List).add({
+      'format': 'txt',
+      'label': 'TXT',
+      'enabled': true,
+      'reason': 'HWPX 글 추출',
+    });
+    state['files'] = [
+      {'name': 'report.hwpx', 'folder': r'C:\Docs'},
+    ];
+    Future<Object?> api(String name, List<Object?> args) async {
+      if (name != 'get_state') calls.add([name, ...args]);
+      if (name == 'set_mode') state['mode'] = args.first;
+      if (name == 'set_conversion_target') {
+        state['conversion_target'] = args.first;
+      }
+      return Map<String, dynamic>.from(state);
+    }
+
+    await tester.pumpWidget(DocFitApp(api: api));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('작업 방식 선택'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('파일포맷 변경'));
+    await tester.tap(find.text('파일포맷 변경').first);
+    await tester.pumpAndSettle();
+    expect(find.text('변환할 포맷을 고르세요'), findsOneWidget);
+    expect(find.text('DOCX'), findsOneWidget);
+    await tester.tap(find.text('TXT').last);
+    await tester.pumpAndSettle();
+    // 형식을 고르면 '변환 시작'을 누르지 않아도 바로 변환을 시작한다(사용자 지시, 2026-10-15).
+    final picked = calls.indexWhere(
+      (call) => call.first == 'set_conversion_target',
+    );
+    expect(picked, isNot(-1));
+    expect(calls[picked].last, 'txt');
+    expect(calls.length, greaterThan(picked + 1));
+    expect(calls[picked + 1].take(2), ['start', 'file_format']);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('HWPX exports MD through the radial picker', (tester) async {
+    tester.view.physicalSize = const Size(1024, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final calls = <List<Object?>>[];
+    final state = initialState();
+    (state['conversion_targets'] as List).add({
+      'format': 'md',
+      'label': 'MD',
+      'enabled': true,
+      'reason': 'HWPX 글 추출',
+    });
+    state['files'] = [
+      {'name': 'report.hwpx', 'folder': r'C:\Docs'},
+    ];
+    Future<Object?> api(String name, List<Object?> args) async {
+      if (name != 'get_state') calls.add([name, ...args]);
+      if (name == 'set_mode') state['mode'] = args.first;
+      if (name == 'set_conversion_target') {
+        state['conversion_target'] = args.first;
+      }
+      return Map<String, dynamic>.from(state);
+    }
+
+    await tester.pumpWidget(DocFitApp(api: api));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('작업 방식 선택'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('파일포맷 변경'));
+    await tester.tap(find.text('파일포맷 변경').first);
+    await tester.pumpAndSettle();
+    expect(find.text('변환할 포맷을 고르세요'), findsOneWidget);
+    expect(find.text('DOCX'), findsOneWidget);
+    await tester.tap(find.text('MD').last);
+    await tester.pumpAndSettle();
+    // 형식을 고르면 '변환 시작'을 누르지 않아도 바로 변환을 시작한다(사용자 지시, 2026-10-15).
+    final picked = calls.indexWhere(
+      (call) => call.first == 'set_conversion_target',
+    );
+    expect(picked, isNot(-1));
+    expect(calls[picked].last, 'md');
     expect(calls.length, greaterThan(picked + 1));
     expect(calls[picked + 1].take(2), ['start', 'file_format']);
     expect(tester.takeException(), isNull);

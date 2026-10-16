@@ -5,6 +5,9 @@ root = Path(SPECPATH)
 datas = [(str(root / 'MapoHwpAutoDocFitSecurity.dll'), '.'),
          (str(root / 'desktop_web'), 'desktop_web'),
          (str(root / 'resources'), 'resources')]
+pack = root / 'resources' / 'HWP_AutoDocFit_kordoc_runtime.zip'
+if not pack.is_file() or not pack.with_name(pack.name + '.sha256').is_file():
+    raise RuntimeError('Build the embedded offline runtime before PyInstaller packaging')
 binaries, hiddenimports = [], []
 for package in ('docfit_core', 'docfit_engine', 'docfit_app', 'docfit_ui'):
     hiddenimports += collect_submodules(package)

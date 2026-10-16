@@ -52,7 +52,7 @@ class FileFormatModeTests(unittest.TestCase):
     def test_hwp_and_hwpx_offer_pdf_and_images_without_kordoc(self):
         self.bridge.set_mode('file_format')
         targets = {item['format']: item for item in self.bridge.get_state()['conversion_targets']}
-        self.assertEqual(set(targets), {'hwpx', 'pdf', 'docx', 'epub', 'jpg', 'png'})
+        self.assertEqual(set(targets), {'hwpx', 'pdf', 'docx', 'epub', 'jpg', 'png', 'txt', 'md'})
         self.assertTrue(targets['pdf']['enabled'])
         self.assertTrue(targets['jpg']['enabled'] and targets['png']['enabled'])
         self.assertFalse(targets['hwpx']['enabled'])

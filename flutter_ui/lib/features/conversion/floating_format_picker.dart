@@ -26,7 +26,16 @@ class FloatingFormatPicker extends StatefulWidget {
 
 class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
   String? hovered;
-  static const formats = ['hwpx', 'docx', 'epub', 'pdf', 'jpg', 'png'];
+  static const formats = [
+    'hwpx',
+    'docx',
+    'epub',
+    'pdf',
+    'jpg',
+    'png',
+    'txt',
+    'md',
+  ];
   static const accent = Color(0xff7664ec);
 
   Map info(String format) => widget.targets.firstWhere(
@@ -81,7 +90,8 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
                             final enabled = target['enabled'] == true;
                             final hot = hovered == format;
                             final selected = widget.selected == format;
-                            final angle = -math.pi / 2 + i * 2 * math.pi / formats.length;
+                            final angle =
+                                -math.pi / 2 + i * 2 * math.pi / formats.length;
                             final label =
                                 center +
                                 Offset(math.cos(angle), math.sin(angle)) *
@@ -92,7 +102,10 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
                                 ? const Color(0xff25324a)
                                 : const Color(0xff8a94a6);
                             return ClipPath(
-                              clipper: _SliceClipper(index: i, count: formats.length),
+                              clipper: _SliceClipper(
+                                index: i,
+                                count: formats.length,
+                              ),
                               child: Material(
                                 color: hot && enabled
                                     ? accent

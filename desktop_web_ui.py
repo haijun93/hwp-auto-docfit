@@ -18,7 +18,8 @@ from docfit_core.progress_guide import guide_state, progress_view
 from docfit_core.stage_selection import STAGE_EXAMPLES, default_choice, stages_for_mode
 from docfit_app.api_contract import response
 from docfit_app.app_state import STAGE_ORDER
-from docfit_core.kordoc_bridge import IMAGE_INPUT_EXTENSIONS, SUPPORTED_INPUT_EXTENSIONS
+from docfit_core.kordoc_bridge import IMAGE_INPUT_EXTENSIONS
+from docfit_core.file_conversion import CONVERSION_INPUTS as SUPPORTED_INPUT_EXTENSIONS, CONVERSION_OUTPUTS
 from docfit_core.file_conversion import HANCOM_PDF_DIRECT, IMAGE_FORMATS
 
 # 화면에서 바로 켜고 끄는 공통 설정(이름 → 앱의 Tk 변수 속성). 값을 바꾸면 앱이 설정 파일에 저장한다.
@@ -420,10 +421,12 @@ class DesktopWebBridge:
             {"format": "hwpx", "label": "HWPX", "enabled": valid and hwpx_ready,
              "reason": hwpx_reason},
             {"format": "pdf", "label": "PDF", "enabled": valid and pdf_ready, "reason": pdf_reason},
-            {"format": "docx", "label": "DOCX", "enabled": valid and kordoc_ready and pandoc_ready,
+            *({"format": kind, "label": kind.upper(), "enabled": valid and all(s == ".hwpx" for s in suffixes),
+               "reason": "HWPX의 글·표 추출 · 외부 도구 불필요" if valid and all(s == ".hwpx" for s in suffixes) else "TXT·MD 결과는 HWPX 입력에서 지원합니다"} for kind in ("txt", "md")),
+            {"format": "docx", "label": "DOCX", "enabled": valid and kordoc_ready and pandoc_ready and not any(s in {".txt", ".md"} for s in suffixes),
              "reason": invalid_reason if not valid else engine_reason if not kordoc_ready else
                       "Pandoc 설치 필요" if not pandoc_ready else "변환 엔진 + Pandoc 준비됨"},
-            {"format": "epub", "label": "EPUB", "enabled": valid and kordoc_ready and pandoc_ready,
+            {"format": "epub", "label": "EPUB", "enabled": valid and kordoc_ready and pandoc_ready and not any(s in {".txt", ".md"} for s in suffixes),
              "reason": invalid_reason if not valid else engine_reason if not kordoc_ready else
                       "Pandoc 설치 필요" if not pandoc_ready else "변환 엔진 + Pandoc 준비됨"},
             *({"format": kind, "label": kind.upper(), "enabled": valid and pdf_ready, "reason": image_reason}
@@ -528,8 +531,8 @@ class DesktopWebBridge:
 
     def set_conversion_target(self, target):
         target = str(target or "").lower()
-        if target not in {"hwpx", "pdf", "docx", "epub", *IMAGE_FORMATS}:
-            raise ValueError("결과 형식은 HWPX, PDF, DOCX, EPUB, JPG 또는 PNG만 선택할 수 있습니다.")
+        if target not in CONVERSION_OUTPUTS:
+            raise ValueError("결과 형식은 HWPX, PDF, DOCX, EPUB, JPG, PNG, TXT 또는 MD만 선택할 수 있습니다.")
         def update():
             if not self.gui.running:
                 self.conversion_target = target

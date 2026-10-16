@@ -7,6 +7,7 @@ on:
       - release/1.74-beta.2
       - release/1.76.0
       - release/1.76.1
+      - release/1.76.2
       - claude/affectionate-goldberg-ggln7c
   workflow_dispatch: {}
 
@@ -76,6 +77,10 @@ jobs:
         shell: pwsh
         run: ./build_flutter.ps1
 
+      - name: Build embedded offline runtime
+        shell: pwsh
+        run: ./scripts/build_kordoc_runtime.ps1 -Output resources/HWP_AutoDocFit_kordoc_runtime.zip
+
       - name: Build EXE using shared packaging specification
         run: |
           & ".\.venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean "HWP_AutoDocFit.spec"
@@ -85,18 +90,17 @@ jobs:
         run: |
           $report = Join-Path $env:RUNNER_TEMP "docfit-self-test.json"
           $process = Start-Process -FilePath ".\dist\HWP_AutoDocFit.exe" -ArgumentList @("--self-test", "--self-test-report", ('"' + $report + '"')) -WindowStyle Hidden -PassThru
-          if (-not $process.WaitForExit(30000)) { $process.Kill(); throw "EXE self-test timed out" }
+          if (-not $process.WaitForExit(60000)) { $process.Kill(); throw "EXE self-test timed out" }
           if ($process.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $report)) { throw "EXE self-test failed" }
           $result = Get-Content -Raw -LiteralPath $report | ConvertFrom-Json
           if (-not $result.ok) { throw "EXE module imports failed" }
 
       - name: Verify visible frozen EXE version window
         run: |
-          & ".\.venv\Scripts\python.exe" "scripts/smoke_windows_exe.py" --exe "dist/HWP_AutoDocFit.exe" --report "dist/windows-ui-smoke.json"
+          & ".\.venv\Scripts\python.exe" "scripts/smoke_windows_exe.py" --exe "dist/HWP_AutoDocFit.exe" --report "dist/windows-ui-smoke.json" --embedded-runtime
 
-      - name: Build offline kordoc runtime pack
-        shell: pwsh
-        run: ./scripts/build_kordoc_runtime.ps1 -Output dist/HWP_AutoDocFit_kordoc_runtime.zip
+      - name: Collect runtime build evidence
+        run: Copy-Item "resources/HWP_AutoDocFit_kordoc_runtime.zip*" -Destination "dist"
 
       - name: Upload exe artifacts
         uses: actions/upload-artifact@v4
@@ -118,7 +122,7 @@ jobs:
           cp dist/HWP_AutoDocFit.exe release-assets/HWP_AutoDocFit.exe
           cp dist/HWP_AutoDocFit_kordoc_runtime.zip* release-assets/
           git rev-parse HEAD > release-assets/build-source.txt
-          sha256sum release-assets/HWP_AutoDocFit.exe release-assets/HWP_AutoDocFit_kordoc_runtime.zip > release-assets/SHA256SUMS
+          sha256sum release-assets/HWP_AutoDocFit.exe > release-assets/SHA256SUMS
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -f release-assets/windows-ui-smoke.json release-assets/HWP_AutoDocFit.exe release-assets/HWP_AutoDocFit_kordoc_runtime.zip release-assets/HWP_AutoDocFit_kordoc_runtime.zip.sha256 release-assets/build-source.txt release-assets/SHA256SUMS

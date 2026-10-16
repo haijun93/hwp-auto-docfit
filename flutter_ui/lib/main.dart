@@ -127,7 +127,7 @@ class _WorkspaceState extends State<Workspace> {
     (
       'file_format',
       '파일포맷 변경',
-      '문서를 HWPX·PDF·DOCX·EPUB·JPG·PNG로 바꿔요. HWP·HWPX→PDF·그림은 한/글 내장 저장 기능을 사용해요.',
+      'TXT·MD를 HWPX·PDF·그림으로, HWPX를 TXT·MD로도 바꿔요. 변환 도구는 앱에 포함되어 있어요.',
       Icons.swap_horiz_rounded,
       'HWPX변경',
     ),

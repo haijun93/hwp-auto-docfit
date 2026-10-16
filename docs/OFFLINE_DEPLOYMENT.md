@@ -1,49 +1,29 @@
-# 폐쇄망(인터넷이 안 되는 PC) 배포 안내
+# 폐쇄망 배포 — v1.76.2
 
-이 앱은 기본으로 **폐쇄망 모드**로 동작합니다. 앱이 스스로 외부 서버에 접속하지 않습니다.
+Windows 배포 EXE에 Node.js 22.23.3 및 kordoc 4.21.30 런타임을 포함합니다.
+사용자는 HWP_AutoDocFit_kordoc_runtime.zip을 따로 받지 않습니다.
 
-## 무엇이 인터넷 없이 되나요
+## 첫 실행
 
-| 기능 | 필요한 것 | 인터넷 |
-|---|---|---|
-| 자간 정리·서식 통일·서식 적용·한 번에 적용 | 한컴오피스 한글 | 필요 없음 |
-| HWP·HWPX → PDF·JPG·PNG 변환 | 한컴오피스 한글 | 필요 없음 |
-| PDF·Office·HWP → HWPX 변환, AI 답변 HWPX 생성, 고급 문서 도구 | kordoc 꾸러미 | 필요 없음 |
-| 그림 파일(JPG·PNG)·스캔 쪽 글자 인식(OCR) | OCR 모델(꾸러미에 없음) | 아래 참고 |
-| 업데이트 확인 | 인터넷 | 폐쇄망 모드에서는 하지 않음 |
+1. HWP_AutoDocFit.exe를 실행합니다.
+2. 내장 ZIP의 SHA256을 확인한 뒤 C:\HWP_AUTODOCFIT에 자동 저장합니다.
+3. 같은 경로의 kordoc-runtime/4.21.30에 안전하게 압축을 풉니다.
+4. 쓰기 권한이 없으면 %LOCALAPPDATA%\HwpAutoDocFit으로 대체합니다.
+5. 설치된 엔진은 다음 실행부터 재사용하며, 첫 설치에도 온라인 접속은 필요하지 않습니다.
 
-kordoc은 문서를 PC 안에서만 처리합니다. 문서를 외부 서버로 보내지 않습니다.
+사용자 원본 문서는 설치 경로로 이동하지 않습니다. 변환 결과는 원본 옆에 새 이름으로 생성합니다.
+기존의 실행 파일 옆 ZIP·설치 폴더 검색은 이전 배포 호환용으로 유지합니다.
 
-## 배포 방법
+## 지원과 별도 도구
 
-빌드(CI) 결과물 두 개를 **같은 폴더**에 두고 전달합니다.
+- TXT·MD→HWPX는 내장 엔진, PDF·PNG·JPG는 내장 엔진과 설치된 한/글을 사용합니다.
+- HWPX→TXT·MD는 내장 분석기를 사용합니다. 글꼴·쪽 배치·그림은 텍스트 결과에 포함되지 않습니다.
+- HWP→HWPX 및 HWP·HWPX→PDF·그림은 설치된 한/글을 사용합니다.
+- DOCX·EPUB 출력용 Pandoc은 별도 도구입니다.
+- OCR 모델은 포함하지 않습니다. 그림·스캔 문서의 글자 인식은 준비 상태에 따라 제한됩니다.
 
-```
-HWP_AutoDocFit.exe
-HWP_AutoDocFit_kordoc_runtime.zip   (Node.js 22.23.3 + kordoc 4.21.30, 약 43MB)
-```
+## 개발·빌드
 
-- 앱은 kordoc 기능을 처음 쓸 때 꾸러미를 `%LOCALAPPDATA%\HwpAutoDocFit\kordoc-runtime\4.21.30`에 풀어 둡니다(약 20초, 한 번만).
-- 사용자 폴더에서 실행 파일을 막는 PC라면 꾸러미를 풀어 실행 파일 옆 `kordoc-runtime` 폴더로 두세요. 앱은 이 폴더를 설치 없이 바로 씁니다.
-- 꾸러미의 SHA-256은 함께 만들어지는 `.sha256` 파일과 비교해 확인합니다.
-
-## 꾸러미 만들기(인터넷이 되는 빌드 PC)
-
-```powershell
-./scripts/build_kordoc_runtime.ps1            # release-assets\HWP_AutoDocFit_kordoc_runtime.zip
-```
-
-- Node.js 공식 ZIP을 SHA-256으로 확인하고, kordoc은 `kordoc_pack/package-lock.json`의 무결성 해시로 `npm ci` 합니다.
-- AI OCR용 선택 의존성(onnxruntime 등, 약 500MB)과 설치 스크립트는 넣지 않습니다.
-
-## 설정
-
-- **폐쇄망 모드**(설정 → 네트워크, 기본 켬): 업데이트 확인, kordoc 모델 내려받기, npx 내려받기를 하지 않습니다.
-  kordoc은 `KORDOC_OFFLINE=1`, `ORT_DISABLE_TELEMETRY=1`로 실행합니다.
-- 관리용 환경 변수 `DOCFIT_OFFLINE=1/0`은 설정값보다 우선합니다.
-
-## OCR이 꼭 필요하면
-
-OCR은 기본 꾸러미에 없습니다. 인터넷이 되는 PC에서 kordoc 전체 설치와 `kordoc models --export <폴더>`로
-모델을 내보낸 뒤, 폐쇄망 PC의 `%APPDATA%\HwpAutoDocFit\kordoc-models`에 `kordoc models --import`로 넣는 방식이
-kordoc이 제공하는 방법입니다(앱 꾸러미만으로는 지원하지 않음).
+Windows의 build.bat과 CI가 scripts/build_kordoc_runtime.ps1을 먼저 실행해 resources에 꾸러미와 SHA256을 만듭니다.
+공식 Node.js ZIP 체크섬과 npm 잠금 파일 무결성을 검증하고 PyInstaller가 꾸러미를 EXE에 포함합니다.
+네트워크는 빌드 PC에서만 의존성을 준비할 때 사용합니다. 런타임 ZIP은 개발·빌드 증거로 남기며 사용자 릴리즈의 필수 별도 다운로드로 첨부하지 않습니다.

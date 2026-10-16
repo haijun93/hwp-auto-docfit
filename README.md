@@ -6,30 +6,29 @@
 **다 쓴 한글(HWP·HWPX) 보고서를 넣고 「정리 시작」만 누르세요.** 설치된 한/글을 자동으로 조작해 공문서 모양으로 다듬어 줍니다.
 
 <p>
-<img alt="현재 공개 베타 v1.76.1" src="https://img.shields.io/badge/%ED%98%84%EC%9E%AC%20%EA%B3%B5%EA%B0%9C%20%EB%B2%A0%ED%83%80-v1.76.1-2563eb">
+<img alt="현재 공개 베타 v1.76.2" src="https://img.shields.io/badge/%ED%98%84%EC%9E%AC%20%EA%B3%B5%EA%B0%9C%20%EB%B2%A0%ED%83%80-v1.76.2-2563eb">
 <img alt="무료" src="https://img.shields.io/badge/%EA%B0%80%EA%B2%A9-%EB%AC%B4%EB%A3%8C-16a34a">
 <img alt="Windows 10·11" src="https://img.shields.io/badge/Windows-10%C2%B711-0078d4">
 <img alt="한/글 2020" src="https://img.shields.io/badge/%ED%95%9C%2F%EA%B8%80-2020-0ea5e9">
 <img alt="문서 외부 전송 없음" src="https://img.shields.io/badge/%EB%AC%B8%EC%84%9C-%EC%99%B8%EB%B6%80%20%EC%A0%84%EC%86%A1%20%EC%97%86%EC%9D%8C-64748b">
 </p>
 
-## ⬇ 최신 베타 다운로드 — v1.76.1
+## ⬇ 최신 베타 다운로드 — v1.76.2
 
 **[최신 릴리즈와 전체 첨부 파일 보기](https://github.com/haijun93/hwp-auto-docfit/releases/latest)**
 
 | 파일 | 다운로드 및 용도 |
 |---|---|
 | 프로그램 | **[HWP_AutoDocFit.exe 바로 받기](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/HWP_AutoDocFit.exe)** — Windows 10·11 64비트, 한/글 2020 필요 |
-| 프로그램·예시 압축팩 | [HWP_AutoDocFit-v1.76.1.zip](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.76.1/HWP_AutoDocFit-v1.76.1.zip) — 압축을 풀어 실행 |
-| 오프라인 변환 런타임 | [HWP_AutoDocFit_kordoc_runtime.zip](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/HWP_AutoDocFit_kordoc_runtime.zip) — 외부 형식 변환이 필요할 때 EXE와 같은 폴더에 보관 |
-| 체크섬 | [SHA256SUMS](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/SHA256SUMS) — EXE·런타임 파일의 SHA256 확인 |
+| 프로그램·예시 압축팩 | [HWP_AutoDocFit-v1.76.2.zip](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.76.2/HWP_AutoDocFit-v1.76.2.zip) — 압축을 풀어 실행 |
+| 체크섬 | [SHA256SUMS](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/SHA256SUMS) — EXE 파일의 SHA256 확인 |
 
-프로그램·예시 압축팩에는 오프라인 런타임이 포함되어 있지 않습니다. **기본 문서 정리와 HWP→HWPX 직접 변환에는 런타임을 따로 받을 필요가 없습니다.**
+**변환 런타임은 EXE에 포함되어 있어 별도로 받을 필요가 없습니다.** 첫 실행 때 내장 ZIP과 변환 엔진을 `C:\HWP_AUTODOCFIT`에 저장합니다. 쓰기 권한이 없으면 `%LOCALAPPDATA%\HwpAutoDocFit`에 저장하며 온라인 다운로드는 하지 않습니다.
 
-설치 없이 실행 파일 하나로 시작합니다 · [v1.76.1 변경 사항](releases/v1.76.1.md) · [GitHub 저장소](https://github.com/haijun93/hwp-auto-docfit) · [GitLab 저장소](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
+설치 없이 실행 파일 하나로 시작합니다 · [v1.76.2 변경 사항](releases/v1.76.2.md) · [GitHub 저장소](https://github.com/haijun93/hwp-auto-docfit) · [GitLab 저장소](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
 
-**v1.76.1**은 새 화면(Flutter)과 함께 **파일포맷 변경**, **표/다이어그램 만들기**, **상용구 관리**, **한/글 조판 미리보기**를 정식으로 담은 베타입니다. 기본은 **폐쇄망 모드**라 앱이 스스로 외부 서버에 접속하지 않습니다.
-이번 패치는 **표·그림 복사 → 한/글에서 Ctrl+V**, **HWP→HWPX 직접 변환**을 추가합니다. 일반 표/다이어그램은 유지하며 tldraw 메뉴·설정·SDK 자산은 제외합니다.
+**v1.76.2**은 새 화면(Flutter)과 함께 **파일포맷 변경**, **표/다이어그램 만들기**, **상용구 관리**, **한/글 조판 미리보기**를 정식으로 담은 베타입니다. 기본은 **폐쇄망 모드**라 앱이 스스로 외부 서버에 접속하지 않습니다.
+이번 패치는 **TXT·MD→HWPX·PDF·PNG·JPG**, **HWPX→TXT·MD**, **오프라인 런타임 EXE 내장**을 추가합니다. 표·그림 복사와 HWP→HWPX 직접 변환도 유지합니다. 일반 표/다이어그램은 유지하며 tldraw 메뉴·설정·SDK 자산은 제외합니다.
 
 [![프로그램 사용 시연 영상 (약 5분). 클릭하면 고화질 영상이 열립니다.](docs/media/overview-demo.gif)](docs/media/overview-demo.mp4)
 
@@ -39,7 +38,7 @@
 
 ## 숫자로 보는 효과
 
-아래 수치와 기존 시연 자료는 기록된 이전 버전 기준입니다. v1.76.1의 신규 복사·변환 기능에 대한 속도 개선율을 뜻하지 않습니다.
+아래 수치와 기존 시연 자료는 기록된 이전 버전 기준입니다. v1.76.2의 신규 복사·변환 기능에 대한 속도 개선율을 뜻하지 않습니다.
 
 | ⏱ 아끼는 시간 | 🚀 처리 속도 | ✅ 글자 보존 | 🔒 개인정보 |
 |:---:|:---:|:---:|:---:|
@@ -85,7 +84,8 @@
 ## 🆕 v1.76 계열에서 새로워진 점
 
 ### 🔁 파일포맷 변경 — 고르면 바로 변환
-문서를 넣고 **파일포맷 변경**에서 결과 형식(HWPX·PDF·DOCX·EPUB·JPG·PNG)을 고르면 **그 즉시 변환을 시작**합니다. 문서를 끌어다 놓으면 자동으로 작업 방식 단계로 넘어갑니다.
+문서를 넣고 **파일포맷 변경**에서 결과 형식(HWPX·PDF·DOCX·EPUB·JPG·PNG·TXT·MD)을 고르면 **그 즉시 변환을 시작**합니다. 문서를 끌어다 놓으면 자동으로 작업 방식 단계로 넘어갑니다.
+TXT·MD도 HWPX·PDF·JPG·PNG로 변환하고 HWPX의 글·표를 TXT·MD로 내보낼 수 있습니다. TXT·MD 내보내기에는 글꼴·쪽 배치·그림이 유지되지 않습니다.
 **HWP → HWPX**는 한/글 내장 저장으로 변환해 원본 옆에 `(HWPX변경)` 사본을 만듭니다. 외부 변환 엔진은 필요하지 않습니다.
 HWP·HWPX → PDF·그림도 **한/글 내장 저장 기능**을 씁니다. 한/글 의존 방식과 독자 조판 엔진(rhwp) 방식을 실제 문서 7종으로 비교해, 쪽 구성이 원본과 같고 실패가 없는 한/글 방식을 채택했습니다([비교 기록](docs/PDF_ENGINE_BENCHMARK_2026-10-16.md)).
 
@@ -112,7 +112,7 @@ HWP·HWPX → PDF·그림도 **한/글 내장 저장 기능**을 씁니다. 한/
 ### 그 밖에
 - **쪽 맞춤 마지막 수단**의 줄 간격 최솟값을 160%에서 **140%**로 낮춰, 넘친 줄을 더 잘 당겨 옵니다.
 - **AI 답변·Markdown → 개조식 문서**: 챗GPT·제미나이·클로드 답변을 복사해 붙이면 제목·개요·□ ㅇ - 항목기호와 실제 표로 바꿉니다. 로마자 중제목(Ⅰ·Ⅱ)과 범정부오피스 라벨 입력도 지원합니다.
-- **폐쇄망 모드(기본)**: 앱이 스스로 외부에 접속하지 않습니다. 문서 변환용 kordoc 꾸러미를 함께 두면 인터넷 없이 변환합니다([폐쇄망 배포 안내](docs/OFFLINE_DEPLOYMENT.md)).
+- **폐쇄망 모드(기본)**: 앱이 스스로 외부에 접속하지 않습니다. 변환 런타임이 EXE에 포함되어 별도 다운로드 없이 변환합니다([폐쇄망 배포 안내](docs/OFFLINE_DEPLOYMENT.md)).
 - 개발자 정보(도토리만두)를 설정 → 앱 정보에서 볼 수 있습니다.
 
 ---
@@ -236,7 +236,7 @@ HWP·HWPX → PDF·그림도 **한/글 내장 저장 기능**을 씁니다. 한/
 
 # 자세한 사용 설명서
 
-이번 버전에서 바뀐 점: **v1.76.1**은 파일포맷 변경(고르면 바로 변환), 표/다이어그램 만들기, 상용구 관리, 한/글 조판 미리보기, 기능별 진행 화면, 사용자가 꾸민 표 보호를 더했습니다([변경 사항](releases/v1.76.1.md)). '서식 통일'은 v1.74부터 기본으로 글꼴·크기만 맞춥니다('전체 서식 맞추기' 옵션으로 전체 서식).
+이번 버전에서 바뀐 점: **v1.76.2**은 파일포맷 변경(고르면 바로 변환), 표/다이어그램 만들기, 상용구 관리, 한/글 조판 미리보기, 기능별 진행 화면, 사용자가 꾸민 표 보호를 더했습니다([변경 사항](releases/v1.76.2.md)). '서식 통일'은 v1.74부터 기본으로 글꼴·크기만 맞춥니다('전체 서식 맞추기' 옵션으로 전체 서식).
 
 <details>
 <summary><b>기능별 자세한 설명과 옵션 위치 펼치기</b></summary>
@@ -354,7 +354,7 @@ NEO·다른 한/글 버전은 설치 환경에 따라 차이가 있으므로 사
 2. 앱이 열리면 아래의 **첫 문서 정리하기**를 따라 합니다.
 
 **실행 파일 사용에는 Python 설치나 명령어 입력이 필요하지 않습니다.**
-HWP·HWPX의 기본 편집에는 Node.js도 필요하지 않습니다.
+HWP·HWPX의 기본 편집과 변환에 Node.js를 별도로 설치할 필요는 없습니다.
 
 > Windows나 기관 보안 프로그램이 실행을 막으면 출처와 기관 정책부터 확인하세요. 보안 기능을 끄거나 무조건 실행을 허용하지 마세요.
 
@@ -448,13 +448,16 @@ README 맨 위의 전후 비교처럼 바꾸는 실습입니다. 아래 안내 �
 
 ### 파일포맷 변경
 
-문서를 추가하고 **파일포맷 변경** 카드를 고르면 결과 형식을 고르는 둥근 메뉴가 열립니다. HWPX·PDF·DOCX·EPUB·JPG·PNG 중 하나를 누르면 **그 즉시 변환을 시작**합니다. 가운데 취소·Esc·창 바깥 클릭은 아무것도 바꾸지 않습니다. 모든 경로에서 원본을 덮어쓰지 않습니다.
+문서를 추가하고 **파일포맷 변경** 카드를 고르면 결과 형식을 고르는 둥근 메뉴가 열립니다. HWPX·PDF·DOCX·EPUB·JPG·PNG·TXT·MD 중 하나를 누르면 **그 즉시 변환을 시작**합니다. 가운데 취소·Esc·창 바깥 클릭은 아무것도 바꾸지 않습니다. 모든 경로에서 원본을 덮어쓰지 않습니다.
 
 | 변환 | 쓰는 도구 | 추가 설치 |
 |---|---|---|
 | HWP → HWPX | 한/글 내장 저장 | 없음(한/글만 있으면 됨) |
 | HWP·HWPX → PDF·JPG·PNG | 한/글 내장 저장 | 없음(한/글만 있으면 됨) |
-| PDF·DOCX·PPTX·XLSX·그림 → HWPX | kordoc 꾸러미(앱과 같은 폴더) | 꾸러미 파일 |
+| TXT·MD → HWPX | EXE 내장 변환 엔진 | 없음 |
+| TXT·MD → PDF·JPG·PNG | 내장 엔진 + 한/글 저장 | 없음(한/글 필요) |
+| HWPX → TXT·MD | 내장 HWPX 분석기 | 없음 |
+| PDF·DOCX·PPTX·XLSX → HWPX | EXE 내장 변환 엔진 | 없음 |
 | → DOCX·EPUB | kordoc + Pandoc | Pandoc 별도 설치 |
 
 도구가 없는 형식은 메뉴에서 흐리게 표시되고 이유를 알려 줍니다. 재생성 경로는 표·글꼴·쪽 배치가 원본과 다를 수 있고, 글자층이 없는 PDF·그림은 글자 인식(OCR) 품질에 따라 결과가 달라지므로 꼭 확인하세요.
@@ -690,7 +693,7 @@ JSON은 검사 내용을 담은 텍스트 파일입니다. 처음에는 앱의 �
 | 표나 쪽 배치가 예상과 달라요. | **표 제외**, **페이지 맞춤 제외**, **세부 작업**을 확인하고 원본으로 다시 시험하세요. |
 | 빨간 문장이 생겼어요. | 서식 통일에서 대표값을 확정하지 못한 표시일 수 있습니다. 처리 기록을 확인하고 해당 문장을 직접 검토하세요. |
 | 업데이트 뒤 `Failed to load Python DLL` 창이 떠요. | Beta 13·14의 업데이트 기능에 있던 문제입니다(Beta 15에서 수정). 배포 담당자에게 받은 `HWP_AutoDocFit.exe`로 기존 파일과 바꾸면 다음 업데이트부터 정상입니다. |
-| DOCX·PDF 변환에서 오류가 나요. | HWP → HWPX와 HWP·HWPX → PDF·그림은 한/글만 있으면 됩니다. 외부 형식 변환에는 kordoc 꾸러미가 필요하며 DOCX·EPUB 출력에는 Pandoc도 필요합니다. [폐쇄망 배포 안내](docs/OFFLINE_DEPLOYMENT.md)를 확인하세요. |
+| DOCX·PDF 변환에서 오류가 나요. | HWP → HWPX와 HWP·HWPX → PDF·그림은 한/글만 있으면 됩니다. 외부 형식 변환 엔진은 EXE에 포함됩니다. DOCX·EPUB 출력에는 Pandoc 별도 설치가 필요합니다. [폐쇄망 배포 안내](docs/OFFLINE_DEPLOYMENT.md)를 확인하세요. |
 | 결과가 마음에 들지 않아요. | 원본은 그대로 있습니다. 기존 결과를 보관하려면 다른 이름으로 복사한 뒤, 원본을 대상으로 옵션을 줄여 다시 실행하세요. |
 
 해결되지 않으면 [GitHub 이슈](https://github.com/haijun93/hwp-auto-docfit/issues) 또는 [GitLab 이슈](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/issues)에 다음 정보를 남겨 주세요.
@@ -798,7 +801,7 @@ Windows 빌드·실행 창 버전 검사 및 공개 배포 파일 해시 검증�
 
 - **HWP·HWPX**: 기본 대상입니다. 한/글 설치가 필요합니다.
 - **TXT·MD**: 한/글 문서로 변환해 처리합니다. AI 답변을 복사한 글과 Markdown 제목(#)·표는 개조식 항목기호와 실제 표로 바꿉니다.
-- **DOC·DOCX·PPTX·XLSX·PDF·그림**: kordoc 꾸러미(`HWP_AutoDocFit_kordoc_runtime.zip`을 실행 파일과 같은 폴더에 둠)로 변환합니다.
+- **DOC·DOCX·PPTX·XLSX·PDF·그림**: EXE에 포함된 변환 엔진으로 처리합니다. 별도 런타임 ZIP 다운로드는 필요하지 않습니다.
 - **PDF·스캔 문서**: 원래 편집 구조나 서식이 완전히 복구되는 것은 아닙니다. OCR·변환 결과를 확인하세요.
 
 엔진 설치와 제한사항은 [고급 문서 도구](docs/ADVANCED_USAGE.md#engine)와 [폐쇄망 배포 안내](docs/OFFLINE_DEPLOYMENT.md)에 정리했습니다.
@@ -844,7 +847,7 @@ PC를 옮길 때는 앱을 종료하고 이 폴더를 백업하세요. **서식 
 
 | 이름 | 쓰는 곳 | 라이선스 |
 |---|---|---|
-| [kordoc](https://github.com/chrisryugj/kordoc) v4 (© 2026 chrisryugj, [GitLab](https://gitlab.aigov.go.kr/chrisryugj/kordoc)) | 파일포맷 변경·고급 문서 도구의 DOC·DOCX·PDF 등 변환. 별도 꾸러미(Node.js 포함)로 배포하며, kordoc이 쓰는 패키지·모델은 각자의 라이선스를 따릅니다. | MIT |
+| [kordoc](https://github.com/chrisryugj/kordoc) v4 (© 2026 chrisryugj, [GitLab](https://gitlab.aigov.go.kr/chrisryugj/kordoc)) | 파일포맷 변경·고급 문서 도구의 DOC·DOCX·PDF 등 변환. EXE에 Node.js와 함께 포함하며, kordoc이 쓰는 패키지·모델은 각자의 라이선스를 따릅니다. | MIT |
 | [rhwp](https://github.com/edwardkim/rhwp) (`@rhwp/core` 0.8.7, Edward Kim) | 설정·서식 요소·세부 작업의 한/글 조판 미리보기(WASM) | MIT |
 | [React](https://react.dev/) · [React Flow(@xyflow/react)](https://reactflow.dev/) · [Vite](https://vite.dev/) | 표/다이어그램 편집기, 미리보기 빌드 | MIT |
 | 한컴 한/글 자동화 보안 모듈 예제 (`MapoHwpAutoDocFitSecurity.dll`) | 한/글 COM 자동화 승인(`RegisterModule`). 한컴 예제 바이너리의 파일 이름만 바꿔 함께 배포합니다. | 한글과컴퓨터 예제 배포 조건 |

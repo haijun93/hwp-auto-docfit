@@ -3,6 +3,9 @@ import argparse
 import ast
 import ctypes
 import json
+import hashlib
+import os
+import tempfile
 from pathlib import Path
 import subprocess
 import time
@@ -23,6 +26,7 @@ def main():
     parser.add_argument("--exe",required=True)
     parser.add_argument("--source",default="hwp-auto-docfit.py")
     parser.add_argument("--report",required=True)
+    parser.add_argument("--embedded-runtime",action="store_true")
     args=parser.parse_args()
     exe=Path(args.exe).resolve();version=version_from_source(args.source)
     kernel=ctypes.WinDLL("kernel32",use_last_error=True)
@@ -43,14 +47,36 @@ def main():
             if kernel.QueryFullProcessImageNameW(handle,0,name,ctypes.byref(size)) and Path(name.value).resolve()==exe:
                 found.append({"title":title,"pid":pid})
         finally:kernel.CloseHandle(handle)
-    process=subprocess.Popen([str(exe)])
+    launch_env = dict(os.environ)
+    launch_env["DOCFIT_OFFLINE"] = "1"
+    if args.embedded_runtime and (exe.parent / "HWP_AutoDocFit_kordoc_runtime.zip").exists():
+        raise RuntimeError("Embedded runtime smoke must run without a sidecar ZIP")
+    process=subprocess.Popen([str(exe)],env=launch_env)
     try:
-        deadline=time.monotonic()+60
+        deadline=time.monotonic()+120
         while time.monotonic()<deadline and not found:
             win32gui.EnumWindows(inspect,None)
             if process.poll() is not None and not found:break
             time.sleep(.5)
         result={"ok":bool(found),"version":version,"windows":found}
+        if found and args.embedded_runtime:
+            home=Path(r"C:\HWP_AUTODOCFIT")
+            pack=home/"HWP_AutoDocFit_kordoc_runtime.zip"
+            expected=Path("resources/HWP_AutoDocFit_kordoc_runtime.zip.sha256").read_text().split()[0]
+            with pack.open("rb") as stream:
+                assert hashlib.file_digest(stream,"sha256").hexdigest()==expected
+            engine_version=json.loads(Path("kordoc_pack/package.json").read_text())["dependencies"]["kordoc"]
+            runtime=home/"kordoc-runtime"/engine_version
+            node=runtime/"node/node.exe";cli=runtime/"app/node_modules/kordoc/dist/cli.js"
+            observed=subprocess.run([str(node),str(cli),"--version"],check=True,capture_output=True,text=True,timeout=30).stdout.strip()
+            assert engine_version in observed
+            with tempfile.TemporaryDirectory() as folder:
+                markdown=Path(folder)/"offline.md";output=Path(folder)/"offline.hwpx"
+                markdown.write_text("# 내장 변환 시험\n\n한글 본문",encoding="utf-8")
+                subprocess.run([str(node),str(cli),"generate",str(markdown),"-o",str(output),"--preset","report","--silent"],check=True,timeout=60,env=launch_env)
+                assert output.is_file() and output.stat().st_size>0
+            result["embedded_runtime"]={"ok":True,"path":str(runtime),"version":observed,"sidecar_required":False}
+
         Path(args.report).write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding="utf-8")
         if not found:raise RuntimeError("Frozen EXE did not show the expected version window")
         print(json.dumps(result,ensure_ascii=False))

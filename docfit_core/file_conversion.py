@@ -21,11 +21,11 @@ def output_path_for(source: str | Path, target_format: str) -> Path:
     """원본 옆에 덮어쓰지 않는 결과 경로를 고른다."""
     source = Path(source)
     suffix = str(target_format or "").strip().lower().lstrip(".")
-    if suffix not in {"hwpx", "pdf", "docx", "epub", *IMAGE_FORMATS}:
-        raise ValueError("지원하는 결과 형식은 HWPX, PDF, DOCX, EPUB, JPG 또는 PNG입니다.")
+    if suffix not in CONVERSION_OUTPUTS:
+        raise ValueError("지원하는 결과 형식은 HWPX, PDF, DOCX, EPUB, JPG, PNG, TXT 또는 MD입니다.")
     if source.is_symlink() or not source.is_file():
         raise ValueError("원본이 일반 파일이 아니거나 심볼릭 링크입니다.")
-    if source.suffix.lower() not in SUPPORTED_INPUT_EXTENSIONS:
+    if source.suffix.lower() not in CONVERSION_INPUTS:
         raise ValueError(f"변환할 수 없는 입력 형식입니다: {source.suffix or '(확장자 없음)'}")
 
     stem = source.stem
@@ -142,14 +142,14 @@ def convert_to_pdf(app, source: str | Path, target: str | Path) -> Path:
     from docfit_core.kordoc_bridge import SUPPORTED_INPUT_EXTENSIONS, convert_to_hwpx
 
     source, target = Path(source), Path(target)
-    if source.suffix.lower() not in SUPPORTED_INPUT_EXTENSIONS:
+    if source.suffix.lower() not in CONVERSION_INPUTS:
         raise ValueError("변환할 수 없는 입력 형식입니다.")
     if source.suffix.lower() in HANCOM_PDF_DIRECT:
         return convert_hwpx_to_pdf(app, source, target)
     target.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="docfit_pdf_source_") as folder:
         intermediate = Path(folder) / "source.hwpx"
-        convert_to_hwpx(source, intermediate)
+        convert_input_to_hwpx(source, intermediate)
         return convert_hwpx_to_pdf(app, intermediate, target)
 
 
@@ -250,3 +250,74 @@ def convert_hwp_to_hwpx(app, source: str | Path, target: str | Path) -> Path:
             except Exception:
                 pass
         temporary.unlink(missing_ok=True)
+
+
+TEXT_INPUTS = frozenset({".txt", ".md"})
+CONVERSION_INPUTS = SUPPORTED_INPUT_EXTENSIONS | TEXT_INPUTS
+CONVERSION_OUTPUTS = frozenset({"hwpx", "pdf", "docx", "epub", "jpg", "png", "txt", "md"})
+
+
+def convert_input_to_hwpx(source: str | Path, target: str | Path) -> Path:
+    """Render Markdown/text without sending plain text to a document parser."""
+    import re
+    from docfit_core.kordoc_bridge import convert_to_hwpx, generate_hwpx
+    from docfit_core.hwpx import validate_hwpx
+    source, target = Path(source), Path(target)
+    if source.suffix.lower() not in TEXT_INPUTS:
+        return convert_to_hwpx(source, target)
+    if source.is_symlink() or not source.is_file() or source.stat().st_size > 16 * 1024 * 1024:
+        raise ValueError("16MB 이하의 일반 TXT·MD 파일을 선택해 주세요.")
+    if target.suffix.lower() != ".hwpx" or target.exists() or target.is_symlink():
+        raise ValueError("새 HWPX 결과 경로를 선택해 주세요.")
+    raw = source.read_bytes()
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+        text = raw.decode("utf-16")
+    else:
+        try:
+            text = raw.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            text = raw.decode("cp949")
+    if source.suffix.lower() == ".txt":
+        text = "\n".join(re.sub(r"([\\`*_{}\[\]<>#!|])", r"\\\1", line) + "  " for line in text.splitlines())
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="docfit_text_") as folder:
+        markdown = Path(folder) / "source.md"
+        markdown.write_text(text, encoding="utf-8")
+        with tempfile.NamedTemporaryFile(dir=target.parent, suffix=".hwpx", delete=False) as stream:
+            temporary = Path(stream.name)
+        temporary.unlink()
+        try:
+            generate_hwpx(markdown, "보고서", temporary)
+            validate_hwpx(temporary)
+            os.link(temporary, target)
+        finally:
+            temporary.unlink(missing_ok=True)
+    return target
+
+
+def convert_hwpx_to_text(source: str | Path, target: str | Path) -> Path:
+    """Export ordered paragraphs/tables using the safe HWPX parser, without COM."""
+    from docfit_core.hwpx import inspect_hwpx, to_markdown
+    source, target = Path(source), Path(target)
+    if source.suffix.lower() != ".hwpx" or source.is_symlink() or not source.is_file():
+        raise ValueError("일반 HWPX 원본을 선택해 주세요.")
+    if target.suffix.lower() not in TEXT_INPUTS or target.exists() or target.is_symlink():
+        raise ValueError("새 TXT·MD 결과 경로를 선택해 주세요.")
+    document = inspect_hwpx(source)
+    if target.suffix.lower() == ".md":
+        text = to_markdown(document)
+    else:
+        text = "\n\n".join("\n".join("\t".join(row) for row in block.rows) if block.rows is not None else block.text for block in document.blocks)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=target.parent, delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(text)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.link(temporary, target)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+    return target
