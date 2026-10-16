@@ -1,10 +1,16 @@
 {
   "ok": true,
-  "version": "1.76.1",
+  "version": "1.76.2",
   "windows": [
     {
-      "title": "한글편집 후처리 · v1.76.1",
-      "pid": 6172
+      "title": "한글편집 후처리 · v1.76.2",
+      "pid": 5176
     }
-  ]
+  ],
+  "embedded_runtime": {
+    "ok": true,
+    "path": "C:\\HWP_AUTODOCFIT\\kordoc-runtime\\4.21.30",
+    "version": "4.21.30",
+    "sidecar_required": false
+  }
 }
