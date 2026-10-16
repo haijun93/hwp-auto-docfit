@@ -292,6 +292,7 @@ function App(){
      const nextName=message.name??nameRef.current;setName(nextName);
      send({type:'save_document',id:message.id??null,name:nextName,generation:generation.current,snapshot:snapshot()});break;
     }
+    case 'copy_png':
     case 'export_png':{
      setBusy(true);
      const doc=snapshot();
@@ -302,7 +303,7 @@ function App(){
       const context=canvas.getContext('2d');context.scale(1.5,1.5);context.drawImage(bitmap,0,0);
       const base64=canvas.toDataURL('image/png').split(',')[1];
       if(base64.length>28*1024*1024)throw new Error('PNG 크기가 제한을 넘습니다.');
-      send({type:'export_png',name:nameRef.current,base64});
+      send({type:message.type==='copy_png'?'copy_result':'export_png',kind:'png',name:nameRef.current,base64});
      }finally{URL.revokeObjectURL(url);setBusy(false);}
      break;
     }
@@ -384,9 +385,10 @@ function App(){
    <button onClick={()=>send({type:'request_list'})}>열기·삭제</button>
    <button onClick={()=>send({type:'request_save'})}>저장</button>
    {canvas?<>
+    <button disabled={busy} onClick={()=>handle.current({type:'copy_png'})}>그림 복사 (한/글 붙여넣기)</button>
     <button disabled={busy} onClick={()=>send({type:'request_png'})}>{busy?'PNG 변환 중…':'PNG 내보내기'}</button>
     {mode==='diagram'&&<select aria-label="예시 서식" value="" onChange={e=>send({type:'request_template',template:e.target.value})}><option value="">예시 서식</option>{Object.entries(templates).map(([key,t])=><option key={key} value={key}>{t.name}</option>)}</select>}
-   </>:<button className="primary" onClick={exportHwpx}>한/글 문서로 저장</button>}
+   </>:<><button onClick={()=>send({type:'copy_result',kind:'table',spec:table})}>표 복사 (한/글 붙여넣기)</button><button className="primary" onClick={exportHwpx}>한/글 문서로 저장</button></>}
   </nav></header>
   <div className="workspace">
    {mode==='diagram'&&<aside>

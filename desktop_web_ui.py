@@ -406,11 +406,19 @@ class DesktopWebBridge:
                       "한/글 내장 PDF 저장 사용 · 추가 변환기 설치 없음" if not pdf_needs_kordoc else
                       "변환 엔진 + 한/글 PDF 저장 준비됨")
         # 그림은 한/글 PDF 저장본을 쪽마다 렌더링하므로 PDF와 준비 조건이 같다.
+        hwpx_needs_kordoc = any(suffix != ".hwp" for suffix in suffixes)
+        hwpx_needs_com = any(suffix == ".hwp" for suffix in suffixes)
+        hwpx_ready = (not hwpx_needs_kordoc or kordoc_ready) and (not hwpx_needs_com or hwp_ready)
+        hwpx_reason = (invalid_reason if not valid else
+                       "한/글 HWP 저장 기능을 사용할 수 없습니다" if hwpx_needs_com and not hwp_ready else
+                       engine_reason if hwpx_needs_kordoc and not kordoc_ready else
+                       "한/글 내장 HWP→HWPX 저장 · 원본 보존" if not hwpx_needs_kordoc else
+                       "변환 준비됨")
         image_reason = (pdf_reason if not (valid and pdf_ready) else
                         "한/글 PDF 저장 후 쪽마다 그림 저장 · 여러 쪽은 폴더로 저장")
         return [
-            {"format": "hwpx", "label": "HWPX", "enabled": valid and kordoc_ready,
-             "reason": invalid_reason if not valid else engine_reason},
+            {"format": "hwpx", "label": "HWPX", "enabled": valid and hwpx_ready,
+             "reason": hwpx_reason},
             {"format": "pdf", "label": "PDF", "enabled": valid and pdf_ready, "reason": pdf_reason},
             {"format": "docx", "label": "DOCX", "enabled": valid and kordoc_ready and pandoc_ready,
              "reason": invalid_reason if not valid else engine_reason if not kordoc_ready else
@@ -807,6 +815,9 @@ class DesktopWebBridge:
             raise ServiceError("INVALID_INPUT", "입력을 확인해 주세요.")
         store = self._tk(lambda: self.gui._준말_서비스().settings)
         service = FlowService(store._path.parent, store)
+        if action == "copy_result":
+            from docfit_app.clipboard_service import copy_result
+            return self._tk(lambda: copy_result(payload))
         if action == "export_png":
             import os
             import tempfile

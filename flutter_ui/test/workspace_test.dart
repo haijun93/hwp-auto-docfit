@@ -62,7 +62,7 @@ Map<String, dynamic> initialState() => <String, dynamic>{
 
 void main() {
   testWidgets(
-    'general flow editor is visible while tldraw remains developer-only',
+    'general editor is visible and excluded tldraw has no menu',
     (tester) async {
       final state = initialState();
       Future<Object?> api(String name, List<Object?> args) async => state;
@@ -78,7 +78,7 @@ void main() {
       expect(find.byTooltip('문서 도구'), findsOneWidget);
       await tester.tap(find.byTooltip('문서 도구'));
       await tester.pumpAndSettle();
-      expect(find.text('tldraw 편집기 (개발자 전용)'), findsOneWidget);
+      expect(find.text('tldraw 편집기 (개발자 전용)'), findsNothing);
       await tester.pumpWidget(const SizedBox());
     },
   );

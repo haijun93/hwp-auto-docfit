@@ -37,7 +37,7 @@ class McpDocumentServiceTests(unittest.TestCase):
             result = mcp_service.create_hwpx_from_ai_answer("# 제목\n본문", "보고서", "결과 문서")
 
         self.assertTrue(result["ok"])
-        self.assertEqual(Path(result["path"]), self.output / "결과 문서.hwpx")
+        self.assertTrue(Path(result["path"]).samefile(self.output / "결과 문서.hwpx"))
         self.assertTrue(Path(result["path"]).is_file())
         self.assertEqual(result["paragraph_count"], 2)
         self.assertIn("아직 연결되지 않았습니다", result["next_step"])
