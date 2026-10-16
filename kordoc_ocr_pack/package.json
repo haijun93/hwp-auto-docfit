@@ -1,1 +1,1 @@
-{"name":"docfit-kordoc-offline-ocr","private":true,"dependencies":{"onnxruntime-node":"1.30.0","sharp":"0.35.5"}}
+{"name":"docfit-kordoc-offline-ocr","private":true,"dependencies":{"@hyzyla/pdfium":"2.1.13","onnxruntime-node":"1.30.0","sharp":"0.35.5"}}

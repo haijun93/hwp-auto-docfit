@@ -98,7 +98,15 @@ jobs:
 
       - name: Verify visible frozen EXE version window
         run: |
-          & ".\.venv\Scripts\python.exe" "scripts/smoke_windows_exe.py" --exe "dist/HWP_AutoDocFit.exe" --report "dist/windows-ui-smoke.json" --embedded-runtime
+          & ".\.venv\Scripts\python.exe" "scripts/smoke_windows_exe.py" --exe "dist/HWP_AutoDocFit.exe" --report "dist/windows-ui-smoke.json" --embedded-runtime *> "windows-smoke.log"
+          $smokeExit = $LASTEXITCODE
+          Get-Content -LiteralPath "windows-smoke.log" -Tail 120
+          if ($smokeExit -ne 0) {
+            $details = (Get-Content -LiteralPath "windows-smoke.log" -Tail 120) -join "`n"
+            $escaped = $details.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error title=Frozen EXE OCR diagnostics::$escaped"
+          }
+          exit $smokeExit
 
       - name: Collect runtime build evidence
         run: Copy-Item "resources/HWP_AutoDocFit_kordoc_runtime.zip*" -Destination "dist"
@@ -124,6 +132,7 @@ jobs:
           TAG="v$VERSION"
           if gh release view "$TAG" --json isDraft >/dev/null 2>&1; then
             test "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = true || { echo "Published tag must not be overwritten"; exit 1; }
+            gh release edit "$TAG" --target "$GITHUB_SHA"
           else
             gh release create "$TAG" --draft --target "$GITHUB_SHA" --title "HWP AutoDocFit $VERSION" --notes "빌드 검증 후 게시 예정"
           fi

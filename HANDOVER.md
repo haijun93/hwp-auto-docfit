@@ -359,9 +359,10 @@ Flutter UI 빌드는 `powershell -File build_flutter.ps1`로 수행하며 `build
    - 그래서 1.69 다음 정식판은 '1.7'이 아니라 **'1.70'**입니다('1.7' → (1, 7, 0)은 1.69보다 낮아 기존 앱이 업데이트를 알리지 않음).
 2-1. **개선 효과 기록(사용자 원칙, 2026-10-10)**: 릴리스 노트에 "이전 버전 대비 개선 효과" 절을 두고, 같은 PC에서 번갈아 측정한 시간·점수·쪽 수·글자 훼손 건수를 적는다(알파는 베타 대비).
 3. 전체 테스트 통과 확인 → 커밋 → `git push github main` → `git push origin main`.
-4. **exe 빌드**: CI는 alpha·release/1.76.1 및 기존 빌드 브랜치를 지원한다.
-   - main과 같은 커밋을 release/1.76.1에 강제 푸시 없이 올린다.
-   - CI가 EXE·런타임·출처·SHA256·창 버전 보고서를 release-assets에 커밋한다.
+4. **exe 빌드**: CI는 alpha·release/1.76.3 및 기존 빌드 브랜치를 지원한다.
+   - 검증할 소스 커밋을 release/1.76.3에 강제 푸시 없이 올린다.
+   - CI가 EXE를 해당 버전의 draft release 자산으로 업로드하고 출처·전달 정보·SHA256·창/OCR 보고서를 release-assets에 커밋한다.
+   - v1.76.3부터 EXE/런타임 ZIP은 Git에 새로 기록하지 않는다(100MiB 파일 제한). tag 워크플로가 draft EXE를 내려받아 해시를 검사한 뒤 통합 ZIP과 함께 게시한다.
    - 해당 산출물 커밋을 main에 fast-forward한다. 동시 main 변경은 먼저 검토한다.
 5. CI에서 EXE를 실제 실행해 보이는 창의 버전을 확인한다(windows-ui-smoke.json).
    산출물 출처·SHA256을 검증하고 릴리스 노트에 EXE SHA256을 대문자로 기록한다.
