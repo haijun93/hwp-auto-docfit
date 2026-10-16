@@ -16,6 +16,7 @@
 설치 없이 실행 파일 하나로 시작합니다 · [v1.76.1 변경 사항](releases/v1.76.1.md) · [GitHub 저장소](https://github.com/haijun93/hwp-auto-docfit) · [GitLab 저장소](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
 
 **v1.76.1**은 새 화면(Flutter)과 함께 **파일포맷 변경**, **표/다이어그램 만들기**, **상용구 관리**, **한/글 조판 미리보기**를 정식으로 담은 베타입니다. 기본은 **폐쇄망 모드**라 앱이 스스로 외부 서버에 접속하지 않습니다.
+이번 패치는 표·그림 복사와 HWP→HWPX 직접 변환을 추가하며 tldraw SDK는 배포에서 제외합니다.
 
 [![프로그램 사용 시연 영상 (약 5분). 클릭하면 고화질 영상이 열립니다.](docs/media/overview-demo.gif)](docs/media/overview-demo.mp4)
 
@@ -66,7 +67,7 @@
 
 ---
 
-## 🆕 v1.76.1에서 새로워진 점
+## 🆕 v1.76 계열에서 새로워진 점
 
 ### 🔁 파일포맷 변경 — 고르면 바로 변환
 문서를 넣고 **파일포맷 변경**에서 결과 형식(HWPX·PDF·DOCX·EPUB·JPG·PNG)을 고르면 **그 즉시 변환을 시작**합니다. 문서를 끌어다 놓으면 자동으로 작업 방식 단계로 넘어갑니다.

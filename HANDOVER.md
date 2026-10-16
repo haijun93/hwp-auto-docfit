@@ -7,6 +7,14 @@
 
 ## 1. 한눈에 보기
 
+2026-10-16 (한국시간): v1.76.1 베타. CI 38830970085에서 최신 소스로
+Windows EXE·오프라인 런타임을 새로 빌드했다. 전체 검사·EXE 자가진단 및
+실제로 보이는 창의 ‘한글편집 후처리 · v1.76.1’을 확인하고 두 파일 SHA256을 검증했다.
+출처 110b97ff, 산출물 a2244217. 릴리스 노트에 EXE 해시를 기록했다.
+v1.76.0 공개 태그·자산은 보존한다. 실제 한/글 붙여넣기·COM 문서 조판은 별도 검증이다.
+현재 두 원격 이름은 모두 GitHub이며 GitLab 배포 완료로 간주하지 않는다.
+
+
 2026-10-16: 다른 작업이 먼저 공개한 v1.76.0 태그·자산을 보존한다.
 최신 표·그림 복사와 HWP→HWPX를 포함한 배포는 v1.76.1로 구분한다.
 release/1.76.1에서 새 EXE를 빌드하며 이전 EXE를 버전만 바꿔 배포하지 않는다.
@@ -148,7 +156,7 @@ EXE 빌드는 Flutter 검사·자산 검증 실패 시 중단한다. 런타임 �
 | 항목 | 현재 값 |
 |---|---|
 | 제품 | 한/글 2020 문서(HWP/HWPX)를 공문서 규칙에 맞게 자동 후처리하는 Windows 데스크톱 앱(Python·Tkinter 백엔드 + pywebview/WebView2 UI) |
-| 최신 배포 | **v1.72 Beta 3** (2026-10-06, 테스트 베타) — `*`·`**` 내어쓰기·정렬, `□`·`ㅁ` 항목기호 통일, 페이지 맞춤 보완 |
+| 최신 배포 | **v1.76.1 베타** (2026-10-16) — 표·그림 복사, HWP→HWPX 직접 변환, tldraw 제외 |
 | 직전 배포 | v1.70 (2026-10-05, 첫 정식 버전) — 앱 이름 '한글편집 후처리', 문단 위 여백 기본값 15/15/15/8/4/0pt, 계층 검토 창 장·중제목·여백 보완 |
 | 브랜치 | `main` = 베타(배포선), `alpha` = 새 기능 시험판 |
 | 원격 | `github` = 원본(https://github.com/haijun93/hwp-auto-docfit), `origin` = GitLab 백업(gitlab.aigov.go.kr/haijun93/hwp_autodocfit) |
@@ -326,11 +334,13 @@ Flutter UI 빌드는 `powershell -File build_flutter.ps1`로 수행하며 `build
    - 그래서 1.69 다음 정식판은 '1.7'이 아니라 **'1.70'**입니다('1.7' → (1, 7, 0)은 1.69보다 낮아 기존 앱이 업데이트를 알리지 않음).
 2-1. **개선 효과 기록(사용자 원칙, 2026-10-10)**: 릴리스 노트에 "이전 버전 대비 개선 효과" 절을 두고, 같은 PC에서 번갈아 측정한 시간·점수·쪽 수·글자 훼손 건수를 적는다(알파는 베타 대비).
 3. 전체 테스트 통과 확인 → 커밋 → `git push github main` → `git push origin main`.
-4. **exe 빌드**: GitHub CI는 빌드 브랜치 `claude/affectionate-goldberg-ggln7c` 푸시 때만 돕니다. 배포용 실행 파일은 메인 `HWP_AutoDocFit.exe` 하나이며 설정 초기화 도구는 릴리스에 포함하지 않습니다.
-   - 먼저 `git fetch github` 후 그 브랜치에만 있는 문서·스킬 변경(다른 세션이 남긴 `TODO.md` 등)이 있으면 `main`으로 가져옵니다(CI exe 커밋은 제외).
-   - 강제 푸시 없이 `git commit-tree "main^{tree}" -p github/claude/affectionate-goldberg-ggln7c -m "…"`로 main과 같은 내용의 커밋을 얹어 푸시합니다.
-   - CI가 `Update built exes from CI run …` 커밋을 올리면(보통 5~10분) 그 커밋을 `main`에 cherry-pick.
-5. exe를 실제로 실행해 창 제목의 버전을 확인 → `sha256sum release-assets/HWP_AutoDocFit.exe` 값을 릴리스 노트에 대문자로 기록 → 커밋·푸시(두 원격).
+4. **exe 빌드**: CI는 alpha·release/1.76.1 및 기존 빌드 브랜치를 지원한다.
+   - main과 같은 커밋을 release/1.76.1에 강제 푸시 없이 올린다.
+   - CI가 EXE·런타임·출처·SHA256·창 버전 보고서를 release-assets에 커밋한다.
+   - 해당 산출물 커밋을 main에 fast-forward한다. 동시 main 변경은 먼저 검토한다.
+5. CI에서 EXE를 실제 실행해 보이는 창의 버전을 확인한다(windows-ui-smoke.json).
+   산출물 출처·SHA256을 검증하고 릴리스 노트에 EXE SHA256을 대문자로 기록한다.
+   실제 한/글 문서의 붙여넣기·COM 조판은 별도 검증으로 구분한다.
 6. **태그**: `git tag -a vX.Y-beta.N -m "…"` → `git push github <태그>` → `git push origin <태그>`. GitLab CI(`release-windows`)가 메인 exe·시험용 텍스트를(통합 압축팩은 GitLab 첨부 한도 100MB 때문에 GitHub에만, 2026-10-11), GitHub 릴리스가 메인 exe·통합 압축팩을 자동 첨부합니다. 설정 초기화 exe는 배포하지 않습니다.
 7. 확인: `https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest`가 새 태그를 가리키는지, 내려받은 exe 해시가 노트와 같은지.
 
