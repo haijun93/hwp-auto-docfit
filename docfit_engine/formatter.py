@@ -491,7 +491,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 "first_cell": _표_텍스트(cells[0])[:120] if cells else "",
                 "first_row": " | ".join(_표_텍스트(cell) for cell in first_row_cells)[:500],
                 # 표 글 전체(빈칸 뺌)의 지문: 칸 구성이 같은 두 표(교육부 '< 지역교육 혁신모델 >' 상자 둘)를 가린다.
-                "text_key": hashlib.sha1(re.sub(r"\s", "", _표_글_그대로(table)).encode("utf-8")).hexdigest()[:16],
+                "text_key": hashlib.sha256(re.sub(r"\s", "", _표_글_그대로(table)).encode("utf-8")).hexdigest()[:16],
             }
         return bind_function(_표_서명, _docfit_namespace)
     if _docfit_symbol == '_정밀표_프로필_추출':
