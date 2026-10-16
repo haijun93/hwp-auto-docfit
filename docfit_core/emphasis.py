@@ -124,6 +124,49 @@ def learn(header, sections) -> list:
                             fonts[lang] = ET.tostring(font, encoding="unicode")
                 found.append({"marker": group, "text": word, "font": sig[0] if sig[0] != main[0] else None,
                               "bold": sig[1], "size_delta": sig[2] - main_size, "fonts": fonts})
+    return found + learn_colors(header, sections)
+
+
+def learn_colors(header, sections) -> list:
+    """문서 대부분과 다른 글자색(예시의 파란 표시 글)을 배운다. 문단 전체가 그 색이면 문단 글 전체(whole),
+    일부면 그 낱말을 열쇠로 둔다. 항목기호만 있는 run·한 글자는 배우지 않는다(다른 문단에 번지지 않게)."""
+    info = _Header(header)
+    colors, paragraphs = Counter(), []
+    for section in sections:
+        for p in (x for x in section if _tag(x) == "p"):
+            runs = _simple_runs(p)
+            if not runs:
+                continue
+            painted = [(run, text, (info.chars.get(run.get("charPrIDRef")).get("textColor") or "#000000").upper()
+                        if info.chars.get(run.get("charPrIDRef")) is not None else None) for run, text in runs]
+            for _, text, color in painted:
+                if color:
+                    colors[color] += len(text.strip())
+            paragraphs.append(painted)
+    if not colors:
+        return []
+    main = colors.most_common(1)[0][0]
+    found, seen = [], set()
+    for painted in paragraphs:
+        full = "".join(t for _, t, _ in painted)
+        group, marker_end = _marker_end(full)
+        odd = {c for _, t, c in painted if t.strip() and c and c != main}
+        if not odd:
+            continue
+        if len(odd) == 1 and all(c != main for _, t, c in painted if t.strip()):
+            entry = {"kind": "color", "marker": group, "text": full.strip(), "color": odd.pop(), "whole": True}
+        else:
+            for _, text, color in painted:
+                word = text.strip()
+                if color in (None, main) or len(word) < 2 or word == unify_marker(word)[2]:
+                    continue
+                if (group, word, color) not in seen:
+                    seen.add((group, word, color))
+                    found.append({"kind": "color", "marker": group, "text": word, "color": color, "whole": False})
+            continue
+        if (group, entry["text"]) not in seen:
+            seen.add((group, entry["text"]))
+            found.append(entry)
     return found
 
 
@@ -162,6 +205,14 @@ def _styled(info, base_id, entry, cache):
     if source is None or info.char_group is None:
         return base_id
     clone = copy.deepcopy(source)
+    if entry.get("kind") == "color":
+        clone.set("textColor", entry["color"])
+        clone.set("id", str(1 + max(int(x.get("id")) for x in info.char_group)))
+        info.char_group.append(clone)
+        info.char_group.set("itemCnt", str(len(info.char_group)))
+        info.chars[clone.get("id")] = clone
+        cache[key] = clone.get("id")
+        return cache[key]
     clone.set("height", str(max(100, int(source.get("height") or 1000) + int(entry.get("size_delta") or 0))))
     if entry.get("font"):
         ref = _child(clone, "fontRef")
@@ -231,12 +282,17 @@ def apply(header, sections, learned) -> int:
                 continue
             full = "".join(t for _, t in runs)
             group, marker_end = _marker_end(full)
-            entries = [e for e in learned if e.get("marker") == group]
-            if not group or not entries:
+            entries = [e for e in learned if e.get("marker") == group and (group or e.get("kind") == "color")]
+            if not entries:
                 continue
             spans = []
             for entry in entries:
-                at = full.find(entry["text"], marker_end)
+                if entry.get("whole"):
+                    if full.strip() != entry["text"]:
+                        continue
+                    at = full.index(entry["text"])
+                else:
+                    at = full.find(entry["text"], marker_end)
                 if at < 0 or any(at < y and x < at + len(entry["text"]) for x, y, _ in spans):
                     continue
                 spans.append((at, at + len(entry["text"]), entry))

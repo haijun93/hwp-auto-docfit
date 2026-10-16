@@ -4766,7 +4766,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             if 규칙 in ("fixed", "none"):
                 return None
             if 규칙 == "after_marker":
-                return _여는낫표_건너뛰기(text, _문단_기호뒤_오프셋(text))
+                # 콜론 라벨은 예시 규칙과 관계없이 콜론 뒤 본문 첫 글자 기준(불변 규칙, 2026-10-17). 콜론이 없으면
+                # 기본 판정도 기호 뒤(괄호 라벨은 '(')라 예전 결과와 같다.
+                return _여는낫표_건너뛰기(text, _문단_본문시작_오프셋(text))
             return _여는낫표_건너뛰기(text, _문단_본문시작_오프셋(text))
         return bind_function(문단_내어쓰기_기준_오프셋, _docfit_namespace)
     if _docfit_symbol == '_여는낫표_건너뛰기':
@@ -8787,6 +8789,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     s = s[:a] + (교체 or "") + s[b:]
                 for a, b in reversed(단어사이_연속공백_정리_대상(s) or []):
                     s = s[:a] + " " + s[b:]
+                낫표 = 항목기호_낫표_빈칸_구간(s)
+                if 낫표:
+                    s = s[:낫표[0]] + s[낫표[1]:]     # ' ㅇ 「법령」' → ' ㅇ「법령」'(사용자 규칙 2026-10-17)
             공문 = normalize_official_spacing(s)
             if normalize_attachment_list_header(s) != s:
                 공문 = normalize_attachment_list_header(공문)

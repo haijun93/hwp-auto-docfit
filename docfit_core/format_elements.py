@@ -727,6 +727,10 @@ def is_body_sentence(text, size, align):
     줄지 않게, 2026-10-04). 글자 수는 빈칸을 빼고 세어 공백 정리 전후로 판정이 바뀌지 않게 한다.
     """
     body = (text or "").strip()
+    # 붙임 목록의 둘째 줄부터('2.「…」 개정(안).  끝.', '2. 계획서 1부.')도 붙임 줄이다. 예전에는 본문 문장으로 보아
+    # 대표 본문 서식(굵게)이 입혀졌다(2026-10-17 사용자 신고).
+    if re.match(r"\d+\.", body) and re.search(r"(\d+\s*부\.|끝\.)$", body):
+        return False
     return (len(re.sub(r"\s", "", body)) >= 12 and not body.startswith("붙임")
             and (size or 0) < TITLE_TABLE_SIZE and align not in ("CENTER", "RIGHT"))
 

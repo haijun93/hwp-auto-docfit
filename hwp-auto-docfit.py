@@ -2729,6 +2729,8 @@ _콜론_한글인가 = _engine_resolve('docfit_engine.page_fit', '_콜론_한글
 
 
 콜론_공백_정리_문단_처리 = _engine_resolve('docfit_engine.page_fit', '콜론_공백_정리_문단_처리', globals())
+항목기호_낫표_빈칸_구간 = _engine_resolve('docfit_engine.page_fit', '항목기호_낫표_빈칸_구간', globals())
+항목기호_낫표_빈칸_정리_문단_처리 = _engine_resolve('docfit_engine.page_fit', '항목기호_낫표_빈칸_정리_문단_처리', globals())
 
 
 # v1.10 함수명을 호출하는 기존 경로와의 호환성 유지
