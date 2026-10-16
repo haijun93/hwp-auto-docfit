@@ -7,6 +7,15 @@
 
 ## 1. 한눈에 보기
 
+2026-10-16 (한국시간): v1.76.2 베타 배포. Windows CI 38846968673 전체 통과.
+별도 ZIP 없이 EXE 첫 실행으로 C:\HWP_AUTODOCFIT에 런타임 저장·설치,
+내장 Node/kordoc 4.21.30 실행과 HWPX 생성, 실제 창 v1.76.2 표시를 확인했다.
+출처 bee89091, 산출물 12b0f57c. EXE SHA256은 릴리스 노트와 일치한다.
+Python 1,215개(통과 1,210·조건부 제외 5), Flutter 71개 및 실제 엔진 왕복 확인.
+EXE는 103,046,385바이트이며 런타임을 내장하여 사용자 별도 다운로드가 없다.
+실제 한/글 문서의 PDF·그림 조판은 별도 실기기 검증 대상으로 유지한다.
+
+
 2026-10-16: v1.76.2 개발·배포 준비. TXT·MD→HWPX/PDF/PNG/JPG 및 HWPX→TXT/MD 추가.
 런타임 ZIP과 SHA256을 resources에 생성한 뒤 EXE에 포함하며 첫 실행에
 C:\HWP_AUTODOCFIT에 자동 저장·설치한다. 권한 실패 시 사용자 LocalAppData로 대체한다.
@@ -165,7 +174,7 @@ EXE 빌드는 Flutter 검사·자산 검증 실패 시 중단한다. 런타임 �
 | 항목 | 현재 값 |
 |---|---|
 | 제품 | 한/글 2020 문서(HWP/HWPX)를 공문서 규칙에 맞게 자동 후처리하는 Windows 데스크톱 앱(Python·Tkinter 백엔드 + pywebview/WebView2 UI) |
-| 최신 배포 | **v1.76.1 베타** (2026-10-16) — 표·그림 복사, HWP→HWPX 직접 변환, tldraw 제외 |
+| 최신 배포 | **v1.76.2 베타** (2026-10-16) — TXT·MD 변환, HWPX 텍스트 추출, 런타임 EXE 내장 |
 | 직전 배포 | v1.70 (2026-10-05, 첫 정식 버전) — 앱 이름 '한글편집 후처리', 문단 위 여백 기본값 15/15/15/8/4/0pt, 계층 검토 창 장·중제목·여백 보완 |
 | 브랜치 | `main` = 베타(배포선), `alpha` = 새 기능 시험판 |
 | 원격 | `github` = 원본(https://github.com/haijun93/hwp-auto-docfit), `origin` = GitLab 백업(gitlab.aigov.go.kr/haijun93/hwp_autodocfit) |
