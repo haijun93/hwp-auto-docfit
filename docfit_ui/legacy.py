@@ -5896,7 +5896,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             def 파일포맷_변경_시작(self, target_format='hwpx'):
                 """HWP·HWPX→PDF·그림은 한/글 내장 저장, 그 외 변환은 필요한 문서 엔진을 사용한다."""
                 from docfit_core.file_conversion import (
-                    IMAGE_FORMATS, convert_to_images, convert_to_pandoc_format, convert_to_pdf, output_path_for,
+                    IMAGE_FORMATS, convert_hwp_to_hwpx, convert_to_images, convert_to_pandoc_format, convert_to_pdf, output_path_for,
                 )
                 from docfit_core.kordoc_bridge import SUPPORTED_INPUT_EXTENSIONS, convert_to_hwpx
 
@@ -5928,7 +5928,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     app = None
                     com_initialized = False
                     try:
-                        if target_format == "pdf" or target_format in IMAGE_FORMATS:
+                        if target_format == "pdf" or target_format in IMAGE_FORMATS or (target_format == "hwpx" and any(Path(f).suffix.lower() == ".hwp" for f in files)):
                             pythoncom.CoInitialize()
                             com_initialized = True
                             app = 한글_COM_인스턴스_생성(독립=True)
@@ -5946,7 +5946,10 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                             try:
                                 target = output_path_for(source, target_format)
                                 if target_format == "hwpx":
-                                    convert_to_hwpx(source, target)
+                                    if source.suffix.lower() == ".hwp":
+                                        convert_hwp_to_hwpx(app, source, target)
+                                    else:
+                                        convert_to_hwpx(source, target)
                                 elif target_format in {"docx", "epub"}:
                                     convert_to_pandoc_format(source, target)
                                 elif target_format in IMAGE_FORMATS:

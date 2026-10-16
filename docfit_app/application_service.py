@@ -193,6 +193,9 @@ class ApplicationService:
         if method=='flow_editor':
             action,payload=args
             if not isinstance(payload,dict):raise ServiceError('INVALID_INPUT','입력을 확인해 주세요.')
+            if action=='copy_result':
+                from docfit_app.clipboard_service import copy_result
+                return copy_result(payload)
             if action=='export_png':return self.flows.export_png(payload.get('base64'))
             if action=='export_hwpx':
                 base=Path(__file__).resolve().parents[1]/'resources'/'서식예시'/'기본 서식.hwpx'

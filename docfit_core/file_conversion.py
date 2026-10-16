@@ -218,3 +218,35 @@ def convert_to_images(app, source: str | Path, target: str | Path, *, dpi: int =
         finally:
             document.close()
     return target if count == 1 else folder
+
+
+def convert_hwp_to_hwpx(app, source: str | Path, target: str | Path) -> Path:
+    """한/글 내장 저장으로 HWP를 HWPX 사본으로 변환한다. 외부 변환기 불필요."""
+    from docfit_core.hwpx import validate_hwpx
+    source, target = Path(source), Path(target)
+    if source.is_symlink() or not source.is_file() or source.suffix.lower() != ".hwp":
+        raise ValueError("일반 HWP 원본 파일을 선택해 주세요.")
+    if target.suffix.lower() != ".hwpx" or target.exists() or target.is_symlink():
+        raise ValueError("HWPX 결과 경로가 잘못되었거나 이미 존재합니다.")
+    source, target = source.resolve(strict=True), target.resolve()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(prefix="docfit_hwp_", suffix=".hwpx", dir=target.parent, delete=False) as stream:
+        temporary = Path(stream.name)
+    temporary.unlink()
+    opened = False
+    try:
+        opened = True  # Failed Open may still leave a partial COM document.
+        if app.Open(str(source), "HWP", "forceopen:true") is False:
+            raise RuntimeError("한/글에서 HWP 원본을 열지 못했습니다.")
+        if app.SaveAs(str(temporary), "HWPX", "") is False:
+            raise RuntimeError("한/글에서 HWPX 저장을 완료하지 못했습니다.")
+        validate_hwpx(temporary)
+        os.link(temporary, target)
+        return target
+    finally:
+        if opened:
+            try:
+                app.Run("FileClose")
+            except Exception:
+                pass
+        temporary.unlink(missing_ok=True)

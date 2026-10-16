@@ -40,7 +40,7 @@ LABELS = {
  'unify_full_format':'서식 통일: 전체 서식 맞춤', 'unify_result_window':'서식 통일 결과 창 표시',
  'spacing_reset_existing':'기존 자간 초기화',
 }
-EXCLUDED = {'abbreviations', 'active_format_profile'} | {k for k in DEFAULTS if k.endswith('_rev')}
+EXCLUDED = {'abbreviations', 'active_format_profile', 'diagram_editor_enabled'} | {k for k in DEFAULTS if k.endswith('_rev')}
 
 
 def leaves(values, prefix=''):

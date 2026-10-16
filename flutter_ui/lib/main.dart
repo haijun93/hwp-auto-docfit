@@ -725,11 +725,6 @@ class _WorkspaceState extends State<Workspace> {
             }
           },
           itemBuilder: (_) => [
-            if (quickOptions['diagram_editor_enabled'] == true)
-              const PopupMenuItem(
-                value: 'diagram_editor',
-                child: Text('tldraw 편집기 (개발자 전용)'),
-              ),
             PopupMenuItem(value: 'review', child: Text('문서 검토')),
             PopupMenuItem(value: 'proofread', child: Text('공공언어 교정')),
             PopupMenuItem(value: 'outline', child: Text('문서 구조 편집')),

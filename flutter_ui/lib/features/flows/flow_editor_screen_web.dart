@@ -188,6 +188,16 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
           post({'type': 'mark_saved', 'generation': targetGeneration});
           notice('표/다이어그램을 이 PC에 저장했어요.');
           break;
+        case 'copy_result':
+          final copied = await storage('copy_result', {
+            'kind': message['kind'],
+            if (message['spec'] != null) 'spec': message['spec'],
+            if (message['base64'] != null) 'base64': message['base64'],
+          });
+          if (copied is Map && copied['copied'] == true) {
+            notice('복사했어요. 한/글 2020에서 Ctrl+V로 붙여넣으세요.');
+          }
+          break;
         case 'request_png':
           post({'type': 'export_png'});
           break;
