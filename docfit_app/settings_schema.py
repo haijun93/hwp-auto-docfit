@@ -116,9 +116,13 @@ DEFAULTS = {
     "unify_result_window": False,
     # '자간 정리' 카드의 '기존 자간 초기화'(세부 작업 01과 같은 값). None이면 저장된 세부 작업 구성을 따른다.
     "spacing_reset_existing": None,
+    "spacing_enabled": True,
+    "spacing_page_fit": False,
 }
 
 VARIABLE_BINDINGS = {'prevent_word_split': 'prevent_word_split_var',
+ 'spacing_enabled': 'spacing_enabled_var',
+ 'spacing_page_fit': 'spacing_page_fit_var',
  'ratio_shrink': 'ratio_shrink_var',
  'punctuation': 'punctuation_var',
  'punctuation_threshold': 'punctuation_threshold_var',

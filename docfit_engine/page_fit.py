@@ -2484,7 +2484,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     return True
                 # 자간 초기화 등으로 원본보다 줄이 늘어난 문단은 마지막 줄 어절을 자간을 줄여 앞 줄로 당긴다(사용자 결정,
                 # 2026-10-09. 실측: 원본 1줄 '기간' 문단이 자간 0%로 2줄이 되어 큰 표가 다음 쪽으로 밀림).
-                if 원본줄자간 and len(원본줄자간) == len(범위) and not 중단_요청됨():
+                자간_허용 = 작업_모드 != 'spacing' or any(stage_enabled(선택_세부작업, key, 작업_모드)
+                                                    for key in ('body_spacing', 'word_check'))
+                if 자간_허용 and 원본줄자간 and len(원본줄자간) == len(범위) and not 중단_요청됨():
                     맞춘수 = 0
                     for 문단번호, (원줄, _) in zip(범위, 원본줄자간):
                         지금줄 = 문단_화면줄수(문단번호) if 원줄 else None
@@ -2682,6 +2684,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             본문 자간 최대치·20자까지 넓힌다(사용자 결정, 2026-10-09: 결과의 쪽 구성은 원본과 같아야 한다). 맞추면 True.
             """
             global 다음단어_당김_자간_최대_퍼센트, 문장부호_2줄_기준글자수
+            if 작업_모드 == 'spacing' and not any(stage_enabled(선택_세부작업, key, 작업_모드)
+                                              for key in ('body_spacing', 'word_check')):
+                return False
             기존 = (다음단어_당김_자간_최대_퍼센트, 문장부호_2줄_기준글자수)
             다음단어_당김_자간_최대_퍼센트 = max(기존[0], int(자간_최대시도_본문 or 0), 40)   # 실측: 15%로는 두 어절째를 못 당김
             문장부호_2줄_기준글자수 = max(기존[1], 20)

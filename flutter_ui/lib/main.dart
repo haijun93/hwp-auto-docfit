@@ -157,6 +157,9 @@ class _WorkspaceState extends State<Workspace> {
   // '자간 정리' 카드의 '기존 자간 초기화'(세부 작업 01과 같은 값).
   bool get resetSpacing => state['reset_spacing'] != false;
   bool get tableSpacing => state['table_spacing'] != false;
+  bool get spacingEnabled =>
+      (state['card_options'] as Map? ?? const {})['spacing_enabled'] != false;
+  bool get spacingPageFit => cardOption('spacing_page_fit');
   // '한 번에 적용'의 '표 제외'(설정 all_exclude_tables, 기본 꺼짐).
   bool get excludeTables => state['exclude_tables'] == true;
   // 카드 옵션(한 번에 적용 '페이지 맞춤 제외', 서식 통일 '표 제외'·'자간 정리 제외'·'페이지 맞춤 제외').
@@ -165,6 +168,8 @@ class _WorkspaceState extends State<Workspace> {
       (state['card_options'] as Map? ?? const {})[key] == true;
   String get modeTitle => mode == 'format'
       ? '한 번에 적용(자간 조정 제외)'
+      : mode == 'spacing' && !spacingEnabled && spacingPageFit
+      ? '페이지 맞춤만'
       : mode == 'file_format'
       ? '파일포맷 변경'
       : modes.firstWhere((m) => m.$1 == mode, orElse: () => modes.first).$2;
@@ -188,6 +193,7 @@ class _WorkspaceState extends State<Workspace> {
       !locked &&
       state['engine_ready'] != false &&
       files.isNotEmpty &&
+      (mode != 'spacing' || spacingEnabled || spacingPageFit) &&
       (mode == 'file_format'
           ? state['can_start'] == true && conversionTargetEnabled
           : rangeError == null && state['can_start'] == true);
@@ -1227,6 +1233,8 @@ class _WorkspaceState extends State<Workspace> {
     final isAll = m.$1 == 'all';
     final suffix = m.$1 == 'file_format'
         ? '${conversionTarget.toUpperCase()}변경'
+        : m.$1 == 'spacing' && !spacingEnabled && spacingPageFit
+        ? '페이지맞춤만'
         : isAll && !includeSpacing
         ? '서식적용'
         : m.$5;
@@ -1285,6 +1293,53 @@ class _WorkspaceState extends State<Workspace> {
                 Text(m.$3, style: const TextStyle(height: 1.6)),
                 if (m.$1 == 'spacing') ...[
                   const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          '자간 정리',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      Switch(
+                        key: const Key('spacingEnabledSwitch'),
+                        value: spacingEnabled,
+                        onChanged: locked
+                            ? null
+                            : (on) => command('set_card_option', [
+                                'spacing_enabled',
+                                on,
+                              ]),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          '페이지 맞춤',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      Switch(
+                        key: const Key('spacingPageFitSwitch'),
+                        value: spacingPageFit,
+                        onChanged: locked
+                            ? null
+                            : (on) => command('set_card_option', [
+                                'spacing_page_fit',
+                                on,
+                              ]),
+                      ),
+                    ],
+                  ),
+                  if (!spacingEnabled)
+                    Text(
+                      spacingPageFit
+                          ? '자간·장평·줄 병합은 그대로 두고 문단·표의 세로 간격과 페이지 배치만 조정해요.'
+                          : '자간 정리 또는 페이지 맞춤을 하나 이상 켜 주세요.',
+                      style: const TextStyle(fontSize: 12, color: _faint),
+                    ),
                   // 끄면 문서에 이미 있는 자간을 0%로 되돌리지 않고 그 위에서 정리한다.
                   Row(
                     children: [
@@ -1297,13 +1352,13 @@ class _WorkspaceState extends State<Workspace> {
                       Switch(
                         key: const Key('resetSpacingSwitch'),
                         value: resetSpacing,
-                        onChanged: locked
+                        onChanged: locked || !spacingEnabled
                             ? null
                             : (on) => command('set_reset_spacing', [on]),
                       ),
                     ],
                   ),
-                  if (!resetSpacing)
+                  if (spacingEnabled && !resetSpacing)
                     const Text(
                       '문서에 있던 자간은 그대로 두고 그 위에서 정리해요.',
                       style: TextStyle(fontSize: 12, color: _faint),
@@ -1320,7 +1375,7 @@ class _WorkspaceState extends State<Workspace> {
                       Switch(
                         key: const Key('tableSpacingSwitch'),
                         value: !tableSpacing,
-                        onChanged: locked
+                        onChanged: locked || !spacingEnabled
                             ? null
                             : (on) => command('set_table_spacing', [!on]),
                       ),

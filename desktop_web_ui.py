@@ -344,6 +344,10 @@ class DesktopWebBridge:
     def _can_start(self, mode, files, running, conversion_targets=None):
         if not files or running:
             return False
+        if mode == "spacing":
+            options = self._card_options()
+            if not options["spacing_enabled"] and not options["spacing_page_fit"]:
+                return False
         suffixes = [Path(path).suffix.lower() for path in files]
         if mode == "file_format":
             targets = {item["format"]: item for item in (conversion_targets or self._conversion_targets(files))}
@@ -626,6 +630,8 @@ class DesktopWebBridge:
     # '자간 정리 제외'·'페이지 맞춤 제외'. 설정 파일에 저장되며, 바꾸면 앱의 변수 감시가 그 카드의 관련 세부 작업을
     # 같이 켜고 끈다(서식 통일의 쪽 맞춤은 세부 작업 기본값이 꺼짐이라 '페이지 맞춤 제외'가 기본 켜짐).
     _CARD_OPTIONS = {
+        "spacing_enabled": ("spacing_enabled_var", "spacing"),
+        "spacing_page_fit": ("spacing_page_fit_var", "spacing"),
         "all_exclude_pagefit": ("all_exclude_pagefit_var", "all"),
         "unify_exclude_tables": ("unify_exclude_tables_var", "unify"),
         "unify_exclude_spacing": ("unify_exclude_spacing_var", "unify"),
@@ -638,7 +644,7 @@ class DesktopWebBridge:
         result = {}
         for key, (name, _) in self._CARD_OPTIONS.items():
             variable = getattr(self.gui, name, None)
-            result[key] = False if variable is None else bool(variable.get())
+            result[key] = (key == "spacing_enabled") if variable is None else bool(variable.get())
         return result
 
     def set_card_option(self, key, on):
@@ -694,6 +700,9 @@ class DesktopWebBridge:
         def begin():
             if self.gui.running:
                 return
+            options = self._card_options()
+            if mode == "spacing" and not options["spacing_enabled"] and not options["spacing_page_fit"]:
+                raise ValueError("자간 정리 또는 페이지 맞춤을 하나 이상 켜 주세요.")
             self.gui.selected_mode.set(mode)
             self.gui.range_mode_var.set("pages" if range_enabled else "all")
             self.gui.page_range_var.set(bool(range_enabled))

@@ -410,7 +410,8 @@ class BrowserApiTests(unittest.TestCase):
         gui.unify_quick_mode_var = _Var(True)
         bridge = _bridge(gui)
         self.assertEqual(bridge.get_state()["card_options"],
-                         {"all_exclude_pagefit": False, "unify_exclude_tables": False,
+                         {"spacing_enabled": True, "spacing_page_fit": False,
+                          "all_exclude_pagefit": False, "unify_exclude_tables": False,
                           "unify_exclude_spacing": False, "unify_exclude_pagefit": False,
                           "unify_keep_layout": False, "unify_quick_mode": True})
         for name in ("all_exclude_pagefit_var", "unify_exclude_tables_var", "unify_exclude_spacing_var",
