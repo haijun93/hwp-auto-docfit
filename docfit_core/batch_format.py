@@ -65,6 +65,7 @@ class ParagraphStyle:
     line_percent: int | None = None
     prev_pt: float | None = None
     bold_spans: tuple = ()
+    plain_spans: tuple = ()      # 굵게 하지 않을 구간(본문은 굵게·기호는 보통인 예시, 2026-10-17)
     # 알파 1-d(2026-10-11): 사용자 서식(예시 보고서 복사)의 계층 추가 서식과 복사한 문단 모양.
     # char_extra: (("latin_font", 글꼴), ("latin_type", "TTF"|"HFT"), ("ratio", n), ("spacing", n), ("italic", True),
     #              ("underline", "BOTTOM"|"CENTER"|"TOP"), ("color", "#RRGGBB"), ("shade", "#RRGGBB")) 중 필요한 것
@@ -355,7 +356,7 @@ def _rewrite_runs(paragraph, spec, pool):
             local = new_prefix - global_start
             text = text[:local] + spec.text[new_prefix] + text[local + 1:]
         cuts = {0, len(text)}
-        for a, b in spec.bold_spans:
+        for a, b in spec.bold_spans + spec.plain_spans:
             cuts.update(max(0, min(len(text), x - global_start)) for x in (a, b))
         ordered = sorted(cuts)
         for a, b in zip(ordered, ordered[1:]):
@@ -364,7 +365,10 @@ def _rewrite_runs(paragraph, spec, pool):
             clone = copy.deepcopy(run)
             clone[0].text = text[a:b]
             force = any(lo <= global_start + a and global_start + b <= hi for lo, hi in spec.bold_spans)
-            clone.set("charPrIDRef", pool.char(run.get("charPrIDRef"), run_spec(run, global_start + a), force))
+            piece_spec = run_spec(run, global_start + a)
+            if any(lo <= global_start + a and global_start + b <= hi for lo, hi in spec.plain_spans):
+                piece_spec, force = replace(piece_spec, bold=False), False
+            clone.set("charPrIDRef", pool.char(run.get("charPrIDRef"), piece_spec, force))
             built.append(clone)
     for run in runs:
         paragraph.remove(run)

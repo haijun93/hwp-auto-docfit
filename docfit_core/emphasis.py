@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import copy
+import re
 from collections import Counter
 
 from defusedxml import ElementTree as ET
@@ -80,6 +81,11 @@ def _main(runs, info):
     return main, size
 
 
+def _key(text):
+    """문장 비교 열쇠: 빈칸을 뺀 글(공백 규칙이 빈칸을 바꿔도 같은 문장으로 본다)."""
+    return re.sub(r"\s", "", text or "")
+
+
 def _marker_end(text):
     group, _, raw = unify_marker(text.strip())
     lead = len(text) - len(text.lstrip())
@@ -109,7 +115,7 @@ def learn(header, sections) -> list:
                 word = text.strip()
                 if not word or sig is None or sig[:2] == main or start < marker_end:
                     continue
-                key = (group, word)
+                key = (group, full.strip(), word)
                 if key in seen:
                     continue
                 seen.add(key)
@@ -122,8 +128,11 @@ def learn(header, sections) -> list:
                         font = next((f for f in face if f.get("id") == ident), None) if face is not None else None
                         if font is not None:
                             fonts[lang] = ET.tostring(font, encoding="unicode")
+                # 강조는 그 문장 안에서만 입힌다(context). 예전에는 같은 계층의 같은 낱말 모두에 입혀, 한 문장에서
+                # 굵게 쓴 '학교'가 다른 문장의 '학교'까지 굵게 했다(교육부 업무계획 재연 시험, 2026-10-17).
                 found.append({"marker": group, "text": word, "font": sig[0] if sig[0] != main[0] else None,
-                              "bold": sig[1], "size_delta": sig[2] - main_size, "fonts": fonts})
+                              "bold": sig[1], "size_delta": sig[2] - main_size, "fonts": fonts,
+                              "context": _key(full)})
     return found + learn_colors(header, sections)
 
 
@@ -160,9 +169,10 @@ def learn_colors(header, sections) -> list:
                 word = text.strip()
                 if color in (None, main) or len(word) < 2 or word == unify_marker(word)[2]:
                     continue
-                if (group, word, color) not in seen:
-                    seen.add((group, word, color))
-                    found.append({"kind": "color", "marker": group, "text": word, "color": color, "whole": False})
+                if (group, full.strip(), word, color) not in seen:
+                    seen.add((group, full.strip(), word, color))
+                    found.append({"kind": "color", "marker": group, "text": word, "color": color, "whole": False,
+                                  "context": _key(full)})
             continue
         if (group, entry["text"]) not in seen:
             seen.add((group, entry["text"]))
@@ -282,7 +292,8 @@ def apply(header, sections, learned) -> int:
                 continue
             full = "".join(t for _, t in runs)
             group, marker_end = _marker_end(full)
-            entries = [e for e in learned if e.get("marker") == group and (group or e.get("kind") == "color")]
+            entries = [e for e in learned if e.get("marker") == group and (group or e.get("kind") == "color")
+                       and e.get("context") in (None, _key(full))]
             if not entries:
                 continue
             spans = []

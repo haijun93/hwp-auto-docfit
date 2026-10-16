@@ -45,6 +45,43 @@ def paragraph_text(p) -> str:
     return "".join(_get(s) for s in _segments(p))
 
 
+_SPACE_ELEMENTS = ("fwSpace", "nbSpace")
+
+
+def drop_spaces_at(p, position: int, end: int | None = None) -> int:
+    """글 위치 position~end(고정폭 빈칸을 세지 않는 위치, end가 없으면 position)에 있는 고정폭·묶음 빈칸 요소를 지운다. 지운 수.
+
+    항목기호 뒤 빈칸 규칙용(2026-10-17): 'ㅇ[고정폭][고정폭]본문'은 GetText·paragraph_text에서 'ㅇ본문'으로 보여
+    일반 빈칸을 하나 더 넣어 빈칸이 3칸이 됐다. 기호 바로 뒤의 고정폭 빈칸을 지우면 규칙이 일반 빈칸 1칸으로 맞춘다.
+    """
+    removed, count = 0, 0
+    for r in p:
+        if _tag(r) != "run":
+            continue
+        for t in r:
+            if _tag(t) != "t":
+                continue
+            count += len(t.text or "")
+            for c in list(t):
+                if position <= count <= (position if end is None else end) and _tag(c) in _SPACE_ELEMENTS:
+                    tail = c.tail or ""
+                    index = list(t).index(c)
+                    if index:
+                        prev = t[index - 1]
+                        prev.tail = (prev.tail or "") + tail
+                    else:
+                        t.text = (t.text or "") + tail
+                    t.remove(c)
+                    removed += 1
+                    count += len(tail)
+                    continue
+                count += len(c.tail or "")
+    if removed:
+        for cache in [x for x in p if _tag(x) == "linesegarray"]:
+            p.remove(cache)
+    return removed
+
+
 def apply_text(p, new_text: str) -> bool:
     """문단 p의 글을 new_text로 바꾼다(차이만 반영). 바꿨으면 True. 글 조각이 없으면 False."""
     segs = _segments(p)

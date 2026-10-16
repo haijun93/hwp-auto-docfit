@@ -33,5 +33,29 @@ class MarkerBracketTest(unittest.TestCase):
             globals_['표준서식_설정'] = saved
 
 
+class MarkerFixedSpaceTest(unittest.TestCase):
+    """항목기호 뒤 고정폭 빈칸(교육부 업무계획 'ㅇ[고정폭][고정폭]본문'): 지우고 일반 빈칸 1칸으로 맞춘다(2026-10-17)."""
+
+    def paragraph(self, inner):
+        from defusedxml import ElementTree as ET
+        return ET.fromstring('<p xmlns="http://www.hancom.co.kr/hwpml/2011/paragraph">' + inner + '</p>')
+
+    def test_fixed_spaces_after_marker_are_removed_only_there(self):
+        from docfit_core import text_edit as T
+        p = self.paragraph('<run><t> ㅇ<fwSpace/><fwSpace/>국가 담당관<fwSpace/>:<fwSpace/>홍</t></run>')
+        self.assertEqual(T.drop_spaces_at(p, 2, 2), 2)
+        self.assertEqual(T.paragraph_text(p), ' ㅇ국가 담당관:홍')
+        self.assertEqual(sum(1 for c in p.iter() if c.tag.endswith('fwSpace')), 2)   # 담당관 칸 정렬용은 그대로
+
+    def test_fixed_spaces_after_a_normal_space_and_across_runs(self):
+        from docfit_core import text_edit as T
+        p = self.paragraph('<run><t> ㅇ <fwSpace/>국가</t></run>')
+        self.assertEqual(T.drop_spaces_at(p, 2, 3), 1)
+        self.assertEqual(T.paragraph_text(p), ' ㅇ 국가')
+        p = self.paragraph('<run><t> ㅇ</t></run><run><t><fwSpace/>국가</t></run>')
+        self.assertEqual(T.drop_spaces_at(p, 2, 2), 1)
+        self.assertEqual(T.paragraph_text(p), ' ㅇ국가')
+
+
 if __name__ == '__main__':
     unittest.main()

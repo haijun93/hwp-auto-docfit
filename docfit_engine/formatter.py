@@ -490,6 +490,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 "cell_count": len(cells),
                 "first_cell": _표_텍스트(cells[0])[:120] if cells else "",
                 "first_row": " | ".join(_표_텍스트(cell) for cell in first_row_cells)[:500],
+                # 표 글 전체(빈칸 뺌)의 지문: 칸 구성이 같은 두 표(교육부 '< 지역교육 혁신모델 >' 상자 둘)를 가린다.
+                "text_key": hashlib.sha1(re.sub(r"\s", "", _표_글_그대로(table)).encode("utf-8")).hexdigest()[:16],
             }
         return bind_function(_표_서명, _docfit_namespace)
     if _docfit_symbol == '_정밀표_프로필_추출':
@@ -2194,6 +2196,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 None, target_signature["first_row"], source_signature["first_row"]
             ).ratio()
             score += max(0, 10 - abs(target_signature["ordinal"] - source_signature["ordinal"]) * 2)
+            if target_signature.get("text_key") and target_signature.get("text_key") == source_signature.get("text_key"):
+                score += 60   # 글이 똑같은 표(같은 표): 칸 구성이 같은 다른 표와 모호하지 않게(2026-10-17 재연 시험)
             return round(score, 2)
         return bind_function(_정밀표_매칭점수, _docfit_namespace)
     if _docfit_symbol == '_정밀표_셀서식_복사':
@@ -5867,7 +5871,14 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 if marker_bold and enabled and not bold:
                     기호위치 = len(formatted) - len(formatted.lstrip())
                     spans.append((기호위치, 기호위치 + 1))
+                보통 = ()
+                if bold and symbol in (표준서식_설정.get("기호_보통") or ()):
+                    기호위치 = len(formatted) - len(formatted.lstrip())
+                    끝 = 기호위치 + len(symbol)
+                    끝 += len(formatted[끝:]) - len(formatted[끝:].lstrip(' \t'))   # 기호 뒤 빈칸도 보통('□ ')
+                    보통 = ((기호위치, 끝),)
                 return ParagraphStyle(
+                    plain_spans=보통,
                     text=formatted, font=font if selected.get('font', True) else None,
                     font_type=글꼴형식,
                     size_pt=size if selected.get('size', True) else None,
@@ -6113,6 +6124,16 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     문단_시작 = hwp.GetPos()
                     문단_범위_선택(문단_시작, 공백수, 공백수 + 1)
                     문자모양_적용_현재선택(굵게=True)
+                    hwp_run("Cancel")
+                # 예시가 본문은 굵게·기호는 보통으로 썼으면 기호만 보통으로 되돌린다(2026-10-17, XML 경로와 같음).
+                elif 자체_기호_매칭 and 문단굵게 and 기호 in (표준서식_설정.get("기호_보통") or ()):
+                    hwp_run("MoveParaBegin")
+                    문단_시작 = hwp.GetPos()
+                    기호위치 = len(현재_text) - len(현재_text.lstrip())
+                    끝 = 기호위치 + len(기호)
+                    끝 += len(현재_text[끝:]) - len(현재_text[끝:].lstrip(' \t'))   # 기호 뒤 빈칸도 보통
+                    문단_범위_선택(문단_시작, 기호위치, 끝)
+                    문자모양_적용_현재선택(굵게=False)
                     hwp_run("Cancel")
         return bind_function(표준서식_문단_처리, _docfit_namespace)
     if _docfit_symbol == '빈문단_분류':
@@ -8834,6 +8855,12 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             for n in names:
                 for para in [x for x in roots[n].iter() if 제목_xml이름(x) == 'p' and id(x) not in 여러칸표_문단]:
                     글 = 글고치기모듈.paragraph_text(para)
+                    if 구성["punct"] and not id(para) in 한칸표_문단:
+                        # 항목기호 바로 뒤 고정폭 빈칸은 지우고 아래 규칙이 일반 빈칸 1칸으로 맞춘다(사용자 규칙 검사, 2026-10-17)
+                        마커_끝 = 문장부호_마커_끝위치(글)
+                        빈칸끝 = 마커_끝 + len(글[마커_끝:]) - len(글[마커_끝:].lstrip()) if 마커_끝 is not None else None
+                        if 마커_끝 is not None and 글고치기모듈.drop_spaces_at(para, 마커_끝, 빈칸끝):
+                            기호수 += 1
                     새글 = 글
                     한칸 = id(para) in 한칸표_문단
                     if 구성["space"]:

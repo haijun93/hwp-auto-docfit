@@ -2,7 +2,8 @@
 
 사용: .venv\\Scripts\\python.exe scripts\\format_fidelity_pc.py [예시.hwpx ...] [--out 결과폴더] [--mode all]
 
-예시를 주지 않으면 C:\\HWP_AUTODOCFIT\\서식예시 폴더의 HWPX 전부를 쓴다. 예시마다
+예시를 주지 않으면 C:\\HWP_AUTODOCFIT\\서식예시 폴더의 HWPX·HWP 전부를 쓴다. HWP 예시는 한/글로 HWPX 사본을 만들어
+그 사본을 원본 A로 삼는다(HWP 원본은 읽기만 한다). 예시마다
 1) 예시 A를 서식으로 복제한다(앱의 서식 분석·선택 경로: _서식_분석_시작 → _프로파일_전역반영 → _프로파일_선택).
 2) A의 서식 해제본 A0을 만든다: 글·문단 순서·표 구조·개체는 두고, 모든 문단(본문·표 칸)·글자 모양을 바탕글
    모양으로, 표 테두리를 기본 실선·칸 너비를 균등·칸 높이와 여백을 기본값으로, 쪽 여백을 한/글 기본값으로 되돌린다.
@@ -313,24 +314,46 @@ def run_one(example: Path, target: Path, out: Path, mode: str) -> dict:
             "version": g.get("APP_VERSION")}
 
 
+def convert_hwp(source: Path, target: Path) -> None:
+    """HWP 예시를 앱과 같은 방식(교정용_hwpx_준비, 독립 한/글)으로 HWPX 사본으로 만든다."""
+    sys.path.insert(0, str(ROOT))
+    sys.path.insert(0, str(ROOT / "scripts"))
+    os.chdir(ROOT)
+    import pythoncom
+    pythoncom.CoInitialize()
+    import regression_pc as rp
+    g = rp.앱_불러오기()
+    with tempfile.TemporaryDirectory(prefix="fidelity_hwp_") as folder:
+        copied = Path(folder) / ("src" + source.suffix.lower())
+        shutil.copyfile(source, copied)
+        shutil.copyfile(g["교정용_hwpx_준비"](copied, folder), target)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("examples", nargs="*", type=Path)
     parser.add_argument("--out", type=Path)
     parser.add_argument("--mode", default="all", choices=("all", "format"))
     parser.add_argument("--one", nargs=2, type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--convert", nargs=2, type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     out = args.out or Path(tempfile.mkdtemp(prefix="format_fidelity_"))
     out.mkdir(parents=True, exist_ok=True)
+    if args.convert:
+        convert_hwp(*args.convert)
+        return 0
     if args.one:
         print(json.dumps(run_one(args.one[0], args.one[1], out, args.mode), ensure_ascii=False))
         return 0
-    examples = args.examples or sorted(SAMPLE_FOLDER.glob("*.hwpx"))
+    examples = args.examples or sorted(p for p in SAMPLE_FOLDER.iterdir() if p.suffix.lower() in (".hwpx", ".hwp"))
     results = []
     for example in examples:
         copy_dir = Path(tempfile.mkdtemp(prefix="format_fidelity_src_"))
-        original = copy_dir / example.name          # 원본은 읽기만 한다
-        shutil.copyfile(example, original)
+        original = copy_dir / (example.stem + ".hwpx")          # 원본은 읽기만 한다
+        if example.suffix.lower() == ".hwp":
+            subprocess.run([sys.executable, __file__, "--convert", str(example), str(original)], check=True)
+        else:
+            shutil.copyfile(example, original)
         stripped = copy_dir / f"{example.stem}(서식해제).hwpx"
         strip_format(original, stripped)
         started = time.time()

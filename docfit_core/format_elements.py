@@ -1465,6 +1465,12 @@ def apply_to_profile(profile):
             rules[index] = (rule[0], _value(elements, "lead_spaces", rule[1]), font,
                             size / 100 if size else rule[3], bold,
                             bool(marker_bold) and not bold if marker_bold is not None else rule[5])
+            if bold and marker_bold is False:
+                # 본문은 굵게, 기호는 보통(교육부 업무계획 '□ 교육·돌봄…': 기호만 보통) — 기호를 굵게 바꾸지 않는다(2026-10-17).
+                plain = fmt.setdefault("기호_보통", [])
+                for same in {marker, {"□": "ㅁ", "ㅁ": "□", "ㅇ": "○", "○": "ㅇ"}.get(marker, marker)}:
+                    if same not in plain:
+                        plain.append(same)
             if marker in _RULE_BOLD_OPTION:
                 # 이 설정은 문단 굵게와 기호만 굵게를 함께 허용하는 문이다. 기호만 굵게 쓴 예시에서 문단 굵게(False)로
                 # 닫으면 기호 굵게까지 빠졌다(2026-10-04 범정부오피스 병무 서식).
