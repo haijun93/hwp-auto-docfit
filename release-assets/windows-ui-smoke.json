@@ -1,12 +1,18 @@
 {
   "ok": true,
-  "version": "1.76.2",
+  "version": "1.76.3",
   "windows": [
     {
-      "title": "한글편집 후처리 · v1.76.2",
-      "pid": 5176
+      "title": "한글편집 후처리 · v1.76.3",
+      "pid": 1624
     }
   ],
+  "offline_ocr": {
+    "ok": true,
+    "recognized": "공원 안내판 철거 계획",
+    "model": "PP-OCRv5 Korean",
+    "scanned_pdf": true
+  },
   "embedded_runtime": {
     "ok": true,
     "path": "C:\\HWP_AUTODOCFIT\\kordoc-runtime\\4.21.30",
