@@ -947,6 +947,7 @@ _제목_날짜 = re.compile(r"[’'‘`]?\d{2,4}\s*[.년/\-]\s*\d{1,2}\s*[.월/\
 표날짜칸_hwpx_처리 = _engine_resolve('docfit_engine.formatter', '표날짜칸_hwpx_처리', globals())
 빈줄서식_hwpx_처리 = _engine_resolve('docfit_engine.formatter', '빈줄서식_hwpx_처리', globals())
 강조낱말_hwpx_처리 = _engine_resolve('docfit_engine.formatter', '강조낱말_hwpx_처리', globals())
+개요첫칸_hwpx_처리 = _engine_resolve('docfit_engine.formatter', '개요첫칸_hwpx_처리', globals())
 
 
 제목_날짜칸_한줄 = _engine_resolve('docfit_engine.formatter', '제목_날짜칸_한줄', globals())
