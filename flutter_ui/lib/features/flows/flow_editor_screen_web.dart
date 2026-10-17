@@ -146,9 +146,31 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
           final result = await storage('catalog_export', {
             'id': templateId,
             'name': message['name'] ?? '표 서식',
+            'cell_edits': message['cell_edits'] is Map
+                ? message['cell_edits']
+                : <String, Object?>{},
+            'structure_edits': message['structure_edits'] is List
+                ? message['structure_edits']
+                : <Object?>[],
           });
           if (result is Map && result['path'] is String) {
             notice('표 서식을 HWPX로 저장했어요: ${result['path']}');
+          }
+          break;
+        case 'copy_catalog':
+          final templateId = message['id'];
+          if (templateId is! String) throw Exception('한/글에 복사할 표 모양을 선택해 주세요.');
+          final result = await storage('catalog_copy', {
+            'id': templateId,
+            'cell_edits': message['cell_edits'] is Map
+                ? message['cell_edits']
+                : <String, Object?>{},
+            'structure_edits': message['structure_edits'] is List
+                ? message['structure_edits']
+                : <Object?>[],
+          });
+          if (result is Map && result['copied'] == true) {
+            notice('원본 표 서식과 병합을 유지해 한/글 클립보드에 복사했어요. 한/글에서 Ctrl+V로 붙여넣으세요.');
           }
           break;
         case 'request_new':

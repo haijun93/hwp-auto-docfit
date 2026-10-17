@@ -56,31 +56,31 @@ def main():
             page.goto(f"http://127.0.0.1:{server.server_port}/host.html")
             page.wait_for_function("messages.some(m=>m.type==='ready')")
             frame = page.frame_locator("#editor")
-            page.evaluate("send({type:'apply_template',template:'complaint'})")
+            page.evaluate("send({type:'apply_template',template:'horizontal'})")
             frame.locator(".react-flow__node").first.wait_for()
-            assert frame.locator(".react-flow__node").count() == 6
-            assert frame.locator(".react-flow__edge").count() == 6
+            assert frame.locator(".react-flow__node").count() == 8
+            assert frame.locator(".react-flow__edge").count() == 8
             frame.locator(".react-flow__node").first.click()
             frame.get_by_label("도형 내용").fill("민원 접수 <검증>")
-            frame.get_by_label("도형 배경").select_option("green")
+            frame.locator('button[aria-label="바탕색 #16A34A"]').click()
             page.evaluate("send({type:'save',name:'브라우저 회귀'})")
             page.wait_for_function("messages.some(m=>m.type==='save_document')")
             saved = page.evaluate("messages.findLast(m=>m.type==='save_document')")
             assert any(n["data"]["label"] == "민원 접수 <검증>" for n in saved["snapshot"]["nodes"])
-            assert any(n["data"]["color"] == "green" and n["data"]["label"] == "민원 접수 <검증>" for n in saved["snapshot"]["nodes"])
+            assert any(n["data"]["fill"] == "#16A34A" and n["data"]["label"] == "민원 접수 <검증>" for n in saved["snapshot"]["nodes"])
             assert saved["snapshot"]["format"] == "docfit-flow"
             page.evaluate("send({type:'new'})")
             page.wait_for_timeout(100)
             assert frame.locator(".react-flow__node").count() == 0
             page.evaluate("snapshot=>send({type:'load',name:'복원',snapshot})", saved["snapshot"])
             page.wait_for_function("messages.some(m=>m.type==='document_loaded')")
-            assert frame.locator(".react-flow__node").count() == 6
+            assert frame.locator(".react-flow__node").count() == 8
             frame.get_by_role("button", name="처리 추가", exact=True).click()
-            assert frame.locator(".react-flow__node").count() == 7
+            assert frame.locator(".react-flow__node").count() == 9
             frame.get_by_role("button", name="실행 취소 (Ctrl+Z)", exact=True).click()
-            assert frame.locator(".react-flow__node").count() == 6
+            assert frame.locator(".react-flow__node").count() == 8
             frame.get_by_role("button", name="다시 실행 (Ctrl+Y)", exact=True).click()
-            assert frame.locator(".react-flow__node").count() == 7
+            assert frame.locator(".react-flow__node").count() == 9
             frame.locator(".react-flow__node").first.click()
             handle = frame.locator(".react-flow__node").first.locator(".react-flow__resize-control.handle.bottom.right")
             bounds = handle.bounding_box()
@@ -121,11 +121,24 @@ def main():
             assert png[:8] == b"\x89PNG\r\n\x1a\n"
             width, height = struct.unpack(">II", png[16:24])
             assert width > 500 and height > 500
+            frame.get_by_role("tab", name="표 서식 모음").click()
+            page.evaluate("send({type:'catalog_data',data:{category_count:1,template_count:1,categories:[{id:'0',name:'부연설명',templates:[{id:'0:1',name:'부연설명 · 모양 1',rows:2,cols:2,cells:[['표 제목','설명'],['항목','내용']]}]}]}})")
+            frame.get_by_label("1행 1번째 칸").fill("직접 편집")
+            frame.get_by_role("button", name="선택한 표 한/글에 복사", exact=True).click()
+            page.wait_for_function("messages.some(m=>m.type==='copy_catalog')")
+            copied = page.evaluate("messages.findLast(m=>m.type==='copy_catalog')")
+            assert copied["id"] == "0:1"
+            assert copied["cell_edits"]["0:0"] == "직접 편집"
+            frame.get_by_role("button", name="수정 표 HWPX 저장", exact=True).click()
+            page.wait_for_function("messages.some(m=>m.type==='export_catalog')")
+            exported = page.evaluate("messages.findLast(m=>m.type==='export_catalog')")
+            assert exported["cell_edits"]["0:0"] == "직접 편집"
             assert not failures, failures
             assert all(url.startswith((f"http://127.0.0.1:{server.server_port}/", f"blob:http://127.0.0.1:{server.server_port}/")) for url in requests), requests
             page.screenshot(path=str(Path(tempfile.gettempdir()) / "docfit-flow-editor.png"))
             print(json.dumps({"templates": 10, "decision_nodes": 6, "decision_edges": 6,
-                              "round_trip": True, "undo_redo": True, "long_korean_safe": True, "png_size": [width, height],
+                              "round_trip": True, "undo_redo": True, "catalog_table_edit": True,
+                              "long_korean_safe": True, "png_size": [width, height],
                               "external_requests": 0, "page_errors": failures}, ensure_ascii=False))
             browser.close()
     finally:

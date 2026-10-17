@@ -1021,6 +1021,11 @@ class DesktopWebBridge:
         if action == "catalog_list":
             from docfit_core.table_catalog import list_catalog
             return list_catalog()
+        if action == "catalog_copy":
+            template_id = payload.get("id")
+            if not isinstance(template_id, str) or len(template_id) > 32:
+                raise ServiceError("INVALID_INPUT", "한/글에 복사할 표 모양을 다시 선택해 주세요.")
+            return self._tk(lambda: service.copy_catalog(template_id, cell_edits=payload.get("cell_edits"), structure_edits=payload.get("structure_edits")))
         if action == "catalog_export":
             from docfit_core.table_catalog import export_template
             from docfit_app.api_contract import ServiceError
@@ -1045,7 +1050,7 @@ class DesktopWebBridge:
             try:
                 with tempfile.NamedTemporaryFile(dir=target.parent, suffix=".hwpx", delete=False) as stream:
                     temporary = Path(stream.name)
-                export_template(template_id, temporary)
+                export_template(template_id, temporary, cell_edits=payload.get("cell_edits"), structure_edits=payload.get("structure_edits"))
                 os.replace(temporary, target)
             finally:
                 if temporary is not None:

@@ -97,4 +97,7 @@ label.check{display:flex!important;align-items:center;gap:6px}label.check input{
 .catalog-table-scroll{max-height:calc(100vh - 350px);overflow:auto}
 .catalog-table-scroll table{border-collapse:collapse;background:white;min-width:60%;margin:20px auto}
 .catalog-table-scroll td{border:1px solid #94a3b8;padding:8px 12px;min-width:60px;max-width:220px;white-space:pre-wrap}
+.catalog-cell{width:100%;min-width:70px;min-height:32px;padding:5px 6px;border:1px dashed transparent;border-radius:4px;background:transparent;color:inherit;font:inherit;text-align:inherit;white-space:pre-wrap}
+.catalog-cell:hover,.catalog-cell:focus{border-color:#2563eb;background:#eff6ff;outline:none}
+.catalog-structure-tools{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:12px 0}.catalog-structure-tools span{margin-left:auto;color:#526071;font-size:13px}
 .catalog-preview-card>.primary{margin-top:8px}

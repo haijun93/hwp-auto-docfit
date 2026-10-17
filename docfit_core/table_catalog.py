@@ -60,17 +60,45 @@ def _top_tables(paragraph):
     return found
 
 
+def _cell_text_nodes(cell):
+    found = []
+
+    def walk(node):
+        for child in list(node):
+            if child.tag == _HP + "tbl":
+                continue
+            if child.tag == _HP + "t":
+                found.append(child)
+            else:
+                walk(child)
+
+    walk(cell)
+    return found
+
+
+def _cell_runs(cell):
+    found = []
+
+    def walk(node):
+        for child in list(node):
+            if child.tag == _HP + "tbl":
+                continue
+            if child.tag == _HP + "run":
+                found.append(child)
+            else:
+                walk(child)
+
+    walk(cell)
+    return found
+
+
 def _table_preview(table) -> dict:
     rows = []
-    for row in table.findall(_HP + "tr")[:12]:
+    for row in table.findall(_HP + "tr")[:40]:
         cells = []
-        for cell in row.findall(_HP + "tc")[:12]:
+        for cell in row.findall(_HP + "tc")[:30]:
             # Avoid text from a nested table leaking into the containing cell's label.
-            parts = []
-            for node in cell.iter(_HP + "t"):
-                parent_text = node.text or ""
-                if parent_text:
-                    parts.append(parent_text)
+            parts = [node.text or "" for node in _cell_text_nodes(cell)]
             cells.append(" ".join("".join(parts).split())[:80])
         rows.append(cells)
     return {
@@ -189,9 +217,129 @@ def _section_properties_paragraph(root):
     return None
 
 
+def _apply_cell_edits(table, edits: dict) -> None:
+    """Apply text-only edits to selected cells while retaining their HWPX formatting tree."""
+    rows = table.findall(_HP + "tr")
+    for key, value in edits.items():
+        match = re.fullmatch(r"(\d{1,3}):(\d{1,3})", str(key))
+        if (not match or not isinstance(value, str) or len(value) > 2000 or
+                re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", value)):
+            raise ValueError("표 칸 수정 정보를 확인해 주세요.")
+        row_index, cell_index = map(int, match.groups())
+        if row_index >= len(rows):
+            raise ValueError("수정할 표 행을 찾을 수 없습니다.")
+        cells = rows[row_index].findall(_HP + "tc")
+        if cell_index >= len(cells):
+            raise ValueError("수정할 표 칸을 찾을 수 없습니다.")
+        cell = cells[cell_index]
+        text_nodes = _cell_text_nodes(cell)
+        if not text_nodes:
+            runs = _cell_runs(cell)
+            run = runs[0] if runs else None
+            if run is None:
+                paragraph = next(cell.iter(_HP + "p"), None)
+                if paragraph is None:
+                    raise ValueError("선택한 칸에 입력 가능한 글자 영역이 없습니다.")
+                run = type(paragraph)(_HP + "run", {"charPrIDRef": "0"})
+                paragraph.append(run)
+            text_node = type(run)(_HP + "t")
+            run.append(text_node)
+            text_nodes = [text_node]
+        text_nodes[0].text = value
+        for node in text_nodes[1:]:
+            node.text = ""
+
+
+def _apply_structure_edits(table, operations: list) -> None:
+    """Append/remove native HWPX rows and columns by cloning formatted cells."""
+    if not isinstance(operations, list) or len(operations) > 100:
+        raise ValueError("표 구조 수정 정보가 올바르지 않습니다.")
+    for operation in operations:
+        if operation not in ("add_row", "delete_row", "add_column", "delete_column"):
+            raise ValueError("지원하지 않는 표 구조 수정입니다.")
+        rows = table.findall(_HP + "tr")
+        row_count = len(rows)
+        col_count = int(table.get("colCnt", "0"))
+        if operation == "add_row":
+            if row_count >= 100:
+                raise ValueError("표는 최대 100행까지 추가할 수 있습니다.")
+            if not rows:
+                raise ValueError("행이 없는 표에는 행을 추가할 수 없습니다.")
+            source = rows[-1]
+            clone = copy.deepcopy(source)
+            for cell in clone.findall(_HP + "tc"):
+                span = cell.find(_HP + "cellSpan")
+                if span is not None and int(span.get("rowSpan", "1")) != 1:
+                    raise ValueError("마지막 행의 세로 병합 셀을 해제한 뒤 행을 추가해 주세요.")
+                address = cell.find(_HP + "cellAddr")
+                if address is not None:
+                    address.set("rowAddr", str(row_count))
+                for node in cell.iter(_HP + "t"):
+                    node.text = ""
+            table.insert(list(table).index(rows[-1]) + 1, clone)
+            table.set("rowCnt", str(row_count + 1))
+        elif operation == "delete_row":
+            if row_count <= 1:
+                raise ValueError("표에는 최소 한 행이 있어야 합니다.")
+            last = rows[-1]
+            for row in rows[:-1]:
+                for cell in row.findall(_HP + "tc"):
+                    span = cell.find(_HP + "cellSpan")
+                    address = cell.find(_HP + "cellAddr")
+                    if span is not None and address is not None:
+                        if int(span.get("rowSpan", "1")) > 1 and int(address.get("rowAddr", "0")) + int(span.get("rowSpan", "1")) > row_count - 1:
+                            raise ValueError("마지막 행과 세로 병합된 셀은 먼저 병합을 해제해 주세요.")
+            table.remove(last)
+            table.set("rowCnt", str(row_count - 1))
+        else:
+            if not rows or not col_count:
+                raise ValueError("열이 없는 표입니다.")
+            if operation == "add_column":
+                if col_count >= 50:
+                    raise ValueError("표는 최대 50열까지 추가할 수 있습니다.")
+                for row in rows:
+                    cells = row.findall(_HP + "tc")
+                    if not cells:
+                        raise ValueError("빈 행에는 열을 추가할 수 없습니다.")
+                    last = cells[-1]
+                    span = last.find(_HP + "cellSpan")
+                    clone = copy.deepcopy(last)
+                    if span is not None:
+                        old_col_span = max(1, int(span.get("colSpan", "1")))
+                        span.set("colSpan", "1")
+                        span.set("rowSpan", "1")
+                        size = clone.find(_HP + "cellSz")
+                        if size is not None and old_col_span > 1:
+                            size.set("width", str(max(1, int(size.get("width", "1")) // old_col_span)))
+                    address = clone.find(_HP + "cellAddr")
+                    if address is not None:
+                        address.set("colAddr", str(col_count))
+                    for node in clone.iter(_HP + "t"):
+                        node.text = ""
+                    row.append(clone)
+                table.set("colCnt", str(col_count + 1))
+            else:
+                if col_count <= 1:
+                    raise ValueError("표에는 최소 한 열이 있어야 합니다.")
+                for row in rows:
+                    cells = row.findall(_HP + "tc")
+                    if not cells:
+                        raise ValueError("열이 없는 행은 삭제할 수 없습니다.")
+                    last = cells[-1]
+                    span = last.find(_HP + "cellSpan")
+                    if span is not None and (int(span.get("colSpan", "1")) != 1 or int(span.get("rowSpan", "1")) != 1):
+                        raise ValueError("마지막 열의 병합 셀은 먼저 병합을 해제해 주세요.")
+                    row.remove(last)
+                table.set("colCnt", str(col_count - 1))
+
+
 def export_template(template_id: str, output_path: str | Path,
-                    catalog_path: str | Path | None = None) -> Path:
-    """원본 HWPX의 셀 서식·테두리·병합을 보존해 선택한 표만 든 HWPX를 만든다."""
+                    catalog_path: str | Path | None = None, *,
+                    cell_edits: dict | None = None,
+                    structure_edits: list | None = None) -> Path:
+    """원본 HWPX 표 구조·셀 서식·테두리·병합을 보존하고 요청한 칸 글만 바꿔 저장한다."""
+    if cell_edits is not None and (not isinstance(cell_edits, dict) or len(cell_edits) > 1000):
+        raise ValueError("표 칸 수정 정보가 올바르지 않습니다.")
     source = Path(catalog_path or default_catalog_path())
     record = _find_template(_scan(source), str(template_id))
     target = Path(output_path)
@@ -206,6 +354,16 @@ def export_template(template_id: str, output_path: str | Path,
         source_paragraph = paragraphs[record["paragraph_index"]]
         tables = _top_tables(source_paragraph)
         output_paragraph = _paragraph_with_table(source_paragraph, record["table_index"])
+        if structure_edits:
+            selected_tables = _top_tables(output_paragraph)
+            if len(selected_tables) != 1:
+                raise ValueError("선택한 표를 편집할 수 없습니다.")
+            _apply_structure_edits(selected_tables[0], structure_edits)
+        if cell_edits:
+            selected_tables = _top_tables(output_paragraph)
+            if len(selected_tables) != 1:
+                raise ValueError("선택한 표를 편집할 수 없습니다.")
+            _apply_cell_edits(selected_tables[0], cell_edits)
         properties = _section_properties_paragraph(root)
 
         for section_name in _section_names(archive):

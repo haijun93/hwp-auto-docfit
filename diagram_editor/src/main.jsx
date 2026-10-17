@@ -233,7 +233,7 @@ function App(){
  useInstalledFonts();
  const [graph,setGraph]=useState({nodes:[],edges:[]}),[name,setName]=useState('새 '+TITLE),[busy,setBusy]=useState(false),[status,setStatus]=useState('도형을 추가하고 연결점을 끌어 연결하세요.');
  const [mode,setMode]=useState('diagram'),[role,setRole]=useState({flow:'step',grid:'head',org:'root',bar:'title'});
- const [catalog,setCatalog]=useState(null),[catalogCategory,setCatalogCategory]=useState(''),[catalogTemplate,setCatalogTemplate]=useState('');
+ const [catalog,setCatalog]=useState(null),[catalogCategory,setCatalogCategory]=useState(''),[catalogTemplate,setCatalogTemplate]=useState(''),[catalogEdits,setCatalogEdits]=useState({}),[catalogStructure,setCatalogStructure]=useState({});
  const [mmSelected,setMmSelected]=useState(null);
  // 도형 묶음 펼침 상태(도형을 넣어도 펼친 묶음이 접히지 않게 기억한다).
  const [openGroups,setOpenGroups]=useState(()=>new Set(['사각형','기본 도형','선']));
@@ -268,7 +268,7 @@ function App(){
   setStatus({flow:'칸 수를 고르고 칸 글을 바로 고치세요. 다 되면 ‘한/글 문서로 저장’을 누르세요.',grid:'행·열을 늘리거나 줄이고 칸 글을 고치세요.',
    org:'윗 상자와 부서 이름을 고치고 부서 수를 정하세요.',bar:'왼쪽 글과 오른쪽 날짜를 고치세요.',
    mindmap:'가지를 고르고 Tab=하위 가지, Enter=같은 단계 가지, Delete=지우기.',
-   catalog:'서식 이름과 모양을 고른 뒤 한/글 문서로 저장하세요.'}[next]??'도형을 추가하고 연결점을 끌어 연결하세요.');
+   catalog:'표 모양을 선택하고 칸 글을 편집한 뒤 한/글에 직접 복사하세요. 원본 표의 병합과 셀 서식은 그대로 유지됩니다.'}[next]??'도형을 추가하고 연결점을 끌어 연결하세요.');
   if(next==='diagram'||next==='mindmap')fit();
  };
  const handle=useRef(null);
@@ -294,7 +294,7 @@ function App(){
     case 'catalog_data':{
      const data=message.data;
      if(!data||!Array.isArray(data.categories))throw new Error('표 서식 목록을 확인할 수 없습니다.');
-     setCatalog(data);
+     setCatalog(data);setCatalogEdits({});
      const first=data.categories[0];setCatalogCategory(first?.id??'');setCatalogTemplate(first?.templates?.[0]?.id??'');
      setStatus(`${data.category_count??data.categories.length}개 서식 이름 · ${data.template_count??0}개 표 모양`);break;
     }
@@ -383,9 +383,44 @@ function App(){
  };
  const selectedCatalogCategory=catalog?.categories?.find(item=>item.id===catalogCategory);
  const selectedCatalogTemplate=selectedCatalogCategory?.templates?.find(item=>item.id===catalogTemplate);
+ const selectedCatalogEdits=selectedCatalogTemplate?(catalogEdits[selectedCatalogTemplate.id]??{}):{};
+ const selectedCatalogStructure=selectedCatalogTemplate?(catalogStructure[selectedCatalogTemplate.id]??[]):[];
+ const catalogGrid=selectedCatalogTemplate?selectedCatalogStructure.reduce((grid,op)=>{
+  if(op==='add_row'&&grid.length)grid.push(grid.at(-1).map(()=>''));
+  else if(op==='delete_row'&&grid.length>1)grid.pop();
+  else if(op==='add_column')grid.forEach(row=>row.push(''));
+  else if(op==='delete_column'&&grid[0]?.length>1)grid.forEach(row=>row.pop());
+  return grid;
+ },selectedCatalogTemplate.cells.map(row=>[...row])):[];
+ const setCatalogCell=(row,col,value)=>{
+  if(!selectedCatalogTemplate)return;
+  const key=`${row}:${col}`,next={...selectedCatalogEdits};
+  if(value===catalogGrid[row]?.[col])delete next[key];else next[key]=value;
+  setCatalogEdits({...catalogEdits,[selectedCatalogTemplate.id]:next});
+  mark();
+ };
+ const changeCatalogStructure=operation=>{
+  if(!selectedCatalogTemplate)return;
+  if(operation==='delete_row'){
+   const removedRow=catalogGrid.length-1;
+   const next={...selectedCatalogEdits};Object.keys(next).filter(key=>key.startsWith(`${removedRow}:`)).forEach(key=>delete next[key]);
+   setCatalogEdits({...catalogEdits,[selectedCatalogTemplate.id]:next});
+  }else if(operation==='delete_column'){
+   const next={...selectedCatalogEdits};Object.keys(next).filter(key=>{
+    const [row,col]=key.split(':').map(Number);return col===(catalogGrid[row]?.length??1)-1;
+   }).forEach(key=>delete next[key]);
+   setCatalogEdits({...catalogEdits,[selectedCatalogTemplate.id]:next});
+  }
+  setCatalogStructure({...catalogStructure,[selectedCatalogTemplate.id]:[...selectedCatalogStructure,operation]});
+  mark();
+ };
  const exportCatalog=()=>{
   if(!selectedCatalogTemplate){setStatus('먼저 저장할 표 모양을 선택하세요.');return;}
-  send({type:'export_catalog',id:selectedCatalogTemplate.id,name:selectedCatalogTemplate.name});
+  send({type:'export_catalog',id:selectedCatalogTemplate.id,name:selectedCatalogTemplate.name,cell_edits:selectedCatalogEdits,structure_edits:selectedCatalogStructure});
+ };
+ const copyCatalog=()=>{
+  if(!selectedCatalogTemplate){setStatus('먼저 복사할 표 모양을 선택하세요.');return;}
+  send({type:'copy_catalog',id:selectedCatalogTemplate.id,cell_edits:selectedCatalogEdits,structure_edits:selectedCatalogStructure});
  };
  // 마인드맵: 수동 위치와 계층 연결을 화면·내보내기에 함께 반영한다.
  const mmGraph=mode==='mindmap'&&mindmap?layoutGraph(mindmapGraph(mindmap)):null;
@@ -401,7 +436,7 @@ function App(){
    <button onClick={()=>send({type:'request_new'})}>새 문서</button>
    <button onClick={()=>send({type:'request_list'})}>열기·삭제</button>
    <button onClick={()=>send({type:'request_save'})}>저장</button>
-   {mode==='catalog'?<><button onClick={()=>send({type:'request_catalog'})}>목록 새로고침</button><button className="primary" disabled={!selectedCatalogTemplate||busy} onClick={exportCatalog}>선택한 표 HWPX 저장</button></>:canvas?<>
+   {mode==='catalog'?<><button onClick={()=>send({type:'request_catalog'})}>목록 새로고침</button><button className="primary" disabled={!selectedCatalogTemplate||busy} onClick={copyCatalog}>선택한 표 한/글에 복사</button><button disabled={!selectedCatalogTemplate||busy} onClick={exportCatalog}>수정 표 HWPX 저장</button></>:canvas?<>
     <button disabled={busy} onClick={()=>handle.current({type:'copy_png'})}>그림 복사 (한/글 붙여넣기)</button>
     <button disabled={busy} onClick={()=>send({type:'request_png'})}>{busy?'PNG 변환 중…':'PNG 내보내기'}</button>
     {mode==='diagram'&&<select aria-label="예시 서식" value="" onChange={e=>send({type:'request_template',template:e.target.value})}><option value="">예시 서식</option>{Object.entries(templates).map(([key,t])=><option key={key} value={key}>{t.name}</option>)}</select>}
@@ -507,10 +542,11 @@ function App(){
     fitView deleteKeyCode={mode==='diagram'?['Backspace','Delete']:null}><Background gap={20}/><Controls/><MiniMap/></ReactFlow></div>
     {mode==='catalog'&&<div className="catalog-preview"><div className="catalog-preview-card">
      <h2>{selectedCatalogTemplate?.name??'표 서식을 선택하세요'}</h2>
-     {selectedCatalogTemplate?<><p>{selectedCatalogTemplate.rows}행 × {selectedCatalogTemplate.cols}열 · 문서에 담긴 표 구조 미리보기</p>
-      <div className="catalog-table-scroll"><table><tbody>{selectedCatalogTemplate.cells.map((row,r)=><tr key={r}>{row.map((cell,c)=><td key={c}>{cell||' '}</td>)}</tr>)}</tbody></table></div>
-      <p className="hint">이 화면은 표 구조 미리보기입니다. 저장한 HWPX에는 원본의 셀 병합·테두리·글꼴·색 등 서식이 보존됩니다.</p>
-      <button className="primary" onClick={exportCatalog}>선택한 표를 한/글 문서로 저장</button></>:<p>{catalog?'왼쪽에서 서식 이름과 표 모양을 선택하세요.':'표 서식 목록을 불러오는 중…'}</p>}
+     {selectedCatalogTemplate?<><p>{catalogGrid.length}행 × {catalogGrid[0]?.length??0}열 · 문서에 담긴 표 구조 미리보기</p>
+      <div className="catalog-structure-tools"><button onClick={()=>changeCatalogStructure('add_row')}>＋ 행 추가</button><button onClick={()=>changeCatalogStructure('delete_row')}>− 마지막 행 삭제</button><button onClick={()=>changeCatalogStructure('add_column')}>＋ 열 추가</button><button onClick={()=>changeCatalogStructure('delete_column')}>− 마지막 열 삭제</button><span>현재 {catalogGrid.length}행 × {catalogGrid[0]?.length??0}열</span></div>
+      <div className="catalog-table-scroll"><table><tbody>{catalogGrid.map((row,r)=><tr key={r}>{row.map((cell,c)=><td key={c}><input className="catalog-cell" aria-label={`${r+1}행 ${c+1}번째 칸`} maxLength={2000} value={selectedCatalogEdits[`${r}:${c}`]??cell} onChange={e=>setCatalogCell(r,c,e.target.value)}/></td>)}</tr>)}</tbody></table></div>
+      <p className="hint">셀을 직접 수정하고 행·열을 추가하거나 마지막 행·열을 삭제할 수 있습니다. 추가 셀은 해당 끝 셀의 한/글 서식을 이어받는 네이티브 표 셀입니다. 병합된 마지막 셀은 구조 보호를 위해 추가·삭제가 제한될 수 있습니다.</p>
+      <div className="tool-row"><button className="primary" onClick={copyCatalog}>선택한 표 한/글에 복사</button><button onClick={exportCatalog}>수정 표 HWPX 저장</button></div></>:<p>{catalog?'왼쪽에서 서식 이름과 표 모양을 선택하세요.':'표 서식 목록을 불러오는 중…'}</p>}
     </div></div>}
     {mode==='flow'&&table&&<FlowTableView table={table} onChange={changeTable}/>}
     {mode==='grid'&&table&&<GridTableView table={table} onChange={changeTable}/>}

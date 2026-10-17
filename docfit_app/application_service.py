@@ -193,6 +193,17 @@ class ApplicationService:
         if method=='flow_editor':
             action,payload=args
             if not isinstance(payload,dict):raise ServiceError('INVALID_INPUT','입력을 확인해 주세요.')
+            if action=='catalog_list':
+                from docfit_core.table_catalog import list_catalog
+                return list_catalog()
+            if action=='catalog_export':
+                template_id=payload.get('id')
+                if not isinstance(template_id,str) or len(template_id)>32:raise ServiceError('INVALID_INPUT','저장할 표 서식을 다시 선택해 주세요.')
+                return self.flows.export_catalog(template_id,cell_edits=payload.get('cell_edits'),structure_edits=payload.get('structure_edits'))
+            if action=='catalog_copy':
+                template_id=payload.get('id')
+                if not isinstance(template_id,str) or len(template_id)>32:raise ServiceError('INVALID_INPUT','복사할 표 서식을 다시 선택해 주세요.')
+                return self.flows.copy_catalog(template_id,cell_edits=payload.get('cell_edits'),structure_edits=payload.get('structure_edits'))
             if action=='copy_result':
                 from docfit_app.clipboard_service import copy_result
                 return copy_result(payload)
