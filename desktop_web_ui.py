@@ -34,8 +34,6 @@ def _format_coverage(analysis):
 
 
 QUICK_OPTIONS = {
-    "instant_run_on_drop": "instant_run_on_drop_var",
-    "auto_open_result": "auto_open_result_var",
     "autoclose": "autoclose_var",
     "unify_result_window": "unify_result_window_var",
     "verify": "verify_var",
@@ -112,35 +110,17 @@ class DesktopWebBridge:
             self.gui.status_var.set(ux.doc_hints["reason"])
 
     def _zero_click_snapshot(self):
-        pending = self._ux().zero_click
-        if pending and time.monotonic() > pending["deadline"] + 5:
-            self._cancel_pending_drop()
-            pending = {}
-        if not pending:
-            return {"pending": False}
-        return {"pending": True, "token": pending["token"], "file_name": Path(pending["files"][0]).name,
-                "mode": pending["mode"], "remaining_ms": max(0, int((pending["deadline"] - time.monotonic()) * 1000))}
+        # 문서 추가는 목록 등록만 한다. 작업은 사용자가 직접 시작한다.
+        self._cancel_pending_drop()
+        return {"pending": False}
 
     def cancel_zero_click(self):
         self._tk(self._cancel_pending_drop)
         return self.get_state()
 
     def start_zero_click(self, token):
-        def begin():
-            pending = self._ux().zero_click
-            if not pending or token != pending["token"]:
-                return
-            if time.monotonic() < pending["deadline"]:
-                return
-            valid = (tuple(self.gui.files) == pending["files"] and self.gui.selected_mode.get() == pending["mode"]
-                     and time.monotonic() <= pending["deadline"] + 5
-                     and not self.gui.running and not self._profile_state().analyzing_format
-                     and self._quick_option("instant_run_on_drop") and self._can_start(pending["mode"], self.gui.files, False))
-            self._cancel_pending_drop()  # 요청 토큰을 실행 전에 소모(중복·지연 호출 방어).
-            if valid:
-                self.gui.작업시작(pending["mode"])
-                self._auto_open_armed = bool(self.gui.running and len(self.gui.files) == 1)
-        self._tk(begin)
+        # 이전 프런트엔드나 저장 설정에서 온 지연 실행 요청도 무시한다.
+        self._tk(self._cancel_pending_drop)
         return self.get_state()
 
     def set_profile_drop_bounds(self, bounds):
@@ -376,13 +356,8 @@ class DesktopWebBridge:
                     f"{watched['name']} · 새 서식을 등록하고 선택했어요." if active not in watched["ids"]
                     else "서식을 등록하지 못했어요. 처리 상태를 확인해 주세요.")}
                 self._quick_watch = None
-            auto_open = False
-            if getattr(self, "_auto_open_armed", False) and not gui.running:
-                self._auto_open_armed = False
-                auto_open = (self._quick_option("auto_open_result") and len(getattr(gui, "_결과목록", [])) == 1
-                             and Path(self._result_path(0)).suffix.lower() == ".hwpx")
             return {
-                "_open_completed_result": auto_open,
+                "_open_completed_result": False,
                 "files": [
                     {"name": Path(path).name, "path": path, "folder": str(Path(path).parent)}
                     for path in gui.files
@@ -393,8 +368,8 @@ class DesktopWebBridge:
                 "doc_hints": dict(self._ux().doc_hints),
                 "user_overrode_mode": self._ux().user_overrode_mode,
                 "zero_click": self._zero_click_snapshot(),
-                "instant_run_on_drop": self._quick_option("instant_run_on_drop"),
-                "auto_open_result": self._quick_option("auto_open_result"),
+                "instant_run_on_drop": False,
+                "auto_open_result": False,
                 "include_spacing": self._include_spacing(),
                 "reset_spacing": self._reset_spacing(),
                 "table_spacing": self._table_spacing(),
@@ -402,6 +377,9 @@ class DesktopWebBridge:
                 "card_options": self._card_options(),
                 "status": gui.status_var.get(),
                 "running": bool(gui.running),
+                "completion": dict(getattr(gui, "_flutter_completion", {}) or {}),
+                "format_review": dict(getattr(gui, "_flutter_format_review", {}) or {}),
+                "failures": dict(getattr(gui, "_실패목록", {}) or {}),
                 "range": {
                     "enabled": gui.range_mode_var.get() == "pages",
                     "start": gui.range_start_var.get(),
@@ -586,7 +564,6 @@ class DesktopWebBridge:
             if self.gui.running:
                 return
             self._cancel_pending_drop()
-            was_empty = not self.gui.files
             added = 0
             for value in paths:
                 path = str(value or "").strip()
@@ -616,13 +593,7 @@ class DesktopWebBridge:
                 self.gui.status_var.set(f"{added}개 추가 · 총 {len(self.gui.files)}개 문서")
                 self.gui.로그표시(f"{added}개 문서 추가")
                 self._update_document_hints()
-                mode = self.gui.selected_mode.get()
-                if (from_drop and was_empty and len(paths) == 1 and added == 1 and len(self.gui.files) == 1
-                        and Path(str(paths[0])).is_file() and mode != "file_format"
-                        and self._quick_option("instant_run_on_drop") and not self._profile_state().analyzing_format
-                        and self._can_start(mode, self.gui.files, False)):
-                    self._ux().zero_click = {"token": uuid.uuid4().hex, "files": tuple(self.gui.files),
-                                             "mode": mode, "deadline": time.monotonic() + 2.5}
+                self._cancel_pending_drop()
 
         self._tk(add)
         return self.get_state()
@@ -833,7 +804,11 @@ class DesktopWebBridge:
             if files and (chosen is None or not chosen.get("enabled")):
                 reason = (chosen or {}).get("reason") or "지원하지 않는 결과 형식입니다"
                 raise ValueError(f"{self.conversion_target.upper()} 변환을 시작할 수 없습니다: {reason}")
-            self._tk(lambda: self.gui.파일포맷_변경_시작(self.conversion_target))
+            def begin_conversion():
+                self.gui._flutter_completion = {}
+                self.gui._flutter_format_review = {}
+                self.gui.파일포맷_변경_시작(self.conversion_target)
+            self._tk(begin_conversion)
             return self.get_state()
 
         def begin():
@@ -849,8 +824,9 @@ class DesktopWebBridge:
             self.gui.range_end_var.set(str(end or start or "1"))
             self.gui._범위_끝직접설정 = bool(range_enabled)
             self.gui._범위_상태_갱신()
+            self.gui._flutter_completion = {}
+            self.gui._flutter_format_review = {}
             self.gui.작업시작(mode)
-            self._auto_open_armed = bool(self.gui.running and len(self.gui.files) == 1 and mode != "file_format")
 
         self._tk(begin)
         return self.get_state()

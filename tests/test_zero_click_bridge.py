@@ -19,8 +19,6 @@ class ZeroClickBridgeTests(unittest.TestCase):
         self.path.write_text('# 추진 계획\nㅇ 내용', encoding='utf-8')
         self.gui = _FakeGui()
         self.gui.로그표시 = Mock()
-        self.gui.instant_run_on_drop_var = _Var(True)
-        self.gui.auto_open_result_var = _Var(True)
         self.gui.파일추가 = lambda p: self.gui.files.append(p) or True
         self.gui.목록지우기 = self.gui.files.clear
         self.gui.작업시작 = Mock(side_effect=lambda mode: setattr(self.gui, 'running', True))
@@ -39,32 +37,24 @@ class ZeroClickBridgeTests(unittest.TestCase):
         self.assertFalse(self.bridge.get_state()['user_overrode_mode'])
         self.assertEqual(self.drop()['mode'], 'all')
 
-    def test_token_deadline_and_exactly_once_execution(self):
-        with patch('desktop_web_ui.time.monotonic', return_value=100):
-            state = self.drop()
-            token = state['zero_click']['token']
-            self.bridge.start_zero_click(token)
-            self.gui.작업시작.assert_not_called()
-        with patch('desktop_web_ui.time.monotonic', return_value=103):
-            self.bridge.start_zero_click('wrong')
-            self.gui.작업시작.assert_not_called()
-            self.bridge.start_zero_click(token)
-            self.bridge.start_zero_click(token)
-        self.gui.작업시작.assert_called_once_with('all')
+    def test_file_drop_and_legacy_execution_token_never_start_work(self):
+        state = self.drop()
+        self.assertFalse(state['zero_click']['pending'])
+        self.assertFalse(state['instant_run_on_drop'])
+        self.bridge.start_zero_click('old-token')
+        self.bridge.start_zero_click('legacy-token')
+        self.gui.작업시작.assert_not_called()
         json.dumps(state)
 
-    def test_manual_edit_cancel_additional_drop_and_disabled_setting_do_not_run(self):
+    def test_manual_edits_and_repeated_drop_remain_manual(self):
         for edit in (lambda: self.bridge.cancel_zero_click(), lambda: self.bridge.set_mode('spacing'),
                      lambda: self.bridge.set_option('verify', True), lambda: self.bridge.add_paths([str(self.path)], from_drop=True)):
             self.gui.files.clear()
-            with patch('desktop_web_ui.time.monotonic', return_value=100):
-                token = self.drop()['zero_click']['token']
+            self.assertFalse(self.drop()['zero_click']['pending'])
             edit()
-            with patch('desktop_web_ui.time.monotonic', return_value=103):
-                self.bridge.start_zero_click(token)
+            self.bridge.start_zero_click('legacy-token')
             self.gui.작업시작.assert_not_called()
         self.gui.files.clear()
-        self.gui.instant_run_on_drop_var.set(False)
         self.assertFalse(self.drop()['zero_click']['pending'])
 
     def test_multidrop_and_picker_add_are_manual(self):
@@ -73,11 +63,9 @@ class ZeroClickBridgeTests(unittest.TestCase):
         self.gui.files.clear()
         self.assertFalse(self.bridge.add_paths([str(self.path)])['zero_click']['pending'])
 
-    def test_expired_token_or_active_profile_analysis_cannot_start(self):
-        with patch('desktop_web_ui.time.monotonic', return_value=100):
-            token = self.drop()['zero_click']['token']
-        with patch('desktop_web_ui.time.monotonic', return_value=110):
-            self.bridge.start_zero_click(token)
+    def test_legacy_token_or_active_profile_analysis_cannot_start(self):
+        self.assertFalse(self.drop()['zero_click']['pending'])
+        self.bridge.start_zero_click('legacy-token')
         self.gui.작업시작.assert_not_called()
         self.gui.files.clear()
         self.gui._서식분석중 = True
@@ -135,12 +123,10 @@ class ZeroClickBridgeTests(unittest.TestCase):
         self.assertEqual(self.gui._서식_분석_시작.call_args.kwargs['기관'], '마포구')
         self.assertEqual(self.gui.files, [])
 
-    def test_single_success_auto_opens_once_but_failure_or_disabled_does_not(self):
-        for enabled, results in ((True, [{'결과': 'done.hwpx'}]), (False, [{'결과': 'done.hwpx'}]), (True, [])):
-            self.gui.auto_open_result_var.set(enabled)
+    def test_completed_result_is_never_opened_automatically(self):
+        for results in (([{'결과': 'done.hwpx'}]), []):
             self.gui._결과목록 = results
-            self.bridge._auto_open_armed = True
             with patch.object(self.bridge, 'open_result') as opened:
-                self.bridge.get_state()
-                self.bridge.get_state()
-            self.assertEqual(opened.call_count, int(enabled and bool(results)))
+                state = self.bridge.get_state()
+            self.assertFalse(state['auto_open_result'])
+            opened.assert_not_called()

@@ -545,10 +545,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 self.reset_spacing_var.trace_add("write", self._자간초기화_값변경)
                 self.spacing_enabled_var = tk.BooleanVar(value=bool(저장된_설정.get("spacing_enabled", True)))
                 self.spacing_page_fit_var = tk.BooleanVar(value=bool(저장된_설정.get("spacing_page_fit", False)))
-                self.instant_run_on_drop_var = tk.BooleanVar(value=bool(저장된_설정.get("instant_run_on_drop", True)))
-                self.auto_open_result_var = tk.BooleanVar(value=bool(저장된_설정.get("auto_open_result", True)))
-                for 변수 in (self.spacing_enabled_var, self.spacing_page_fit_var,
-                             self.instant_run_on_drop_var, self.auto_open_result_var):
+                for 변수 in (self.spacing_enabled_var, self.spacing_page_fit_var):
                     변수.trace_add("write", self._설정_변경됨)
                     변수.trace_add("write", self._요약갱신)
                 # '자간 정리' 카드의 '표 제외'는 설정 table_spacing(표 안 문장 자간조정)의 반대 값이다. 바꾸면 카드 요약
@@ -5271,8 +5268,6 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     설정값["spacing_reset_existing"] = bool(self.stage_choices["spacing"].get("reset_spacing", True))
                     설정값["spacing_enabled"] = bool(self.spacing_enabled_var.get())
                     설정값["spacing_page_fit"] = bool(self.spacing_page_fit_var.get())
-                    설정값["instant_run_on_drop"] = bool(self.instant_run_on_drop_var.get())
-                    설정값["auto_open_result"] = bool(self.auto_open_result_var.get())
                     설정값["active_format_profile"] = getattr(self, "_활성_서식_프로파일", "")
                     기존_설정 = 설정_불러오기()
                     기존_세부작업 = 기존_설정.get("stage_choices", {})
@@ -6708,6 +6703,11 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                                     self._서식통일_대표서식_검토창(item[1])
                                 elif event == "style_unify_regions_review":
                                     self._서식통일_적용영역_검토창(item[1])
+                                elif getattr(self.root, "_docfit_hidden_backend", False):
+                                    # Flutter에서는 별도 검수창 대신 4단계 결과 패널에 표시한다.
+                                    self._flutter_format_review = dict(item[1].get("payload") or {})
+                                    item[1]["approved"] = True
+                                    item[1]["done"].set()
                                 else:
                                     self._서식통일_결과_확인창(item[1])
                             except Exception as exc:
@@ -6793,8 +6793,13 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                             self.버튼_대기중()
                             self.stage_board.finish("중단")
                             self.status_var.set(f"변환 중단 · 성공 {item[1]}개 / 실패 {item[2]}개")
+                            self._flutter_completion = {
+                                "message": self.status_var.get(),
+                                "details": [],
+                            }
                             if not self.closing:
-                                self._알림(messagebox.showinfo, APP_NAME, self.status_var.get(), parent=self.root)
+                                if not getattr(self.root, "_docfit_hidden_backend", False):
+                                    self._알림(messagebox.showinfo, APP_NAME, self.status_var.get(), parent=self.root)
                         elif event == "file_conversion_finished":
                             self._작업종료시각 = time.monotonic()
                             self.running = False
@@ -6808,8 +6813,13 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                                 self.footer_note.configure(style="Result.TLabel")
                             self.status_var.set(f"변환 완료 · 성공 {item[1]}개 / 실패 {item[2]}개")
                             self.로그표시("=" * 45 + f"\n{self.status_var.get()}\n" + "=" * 45)
+                            self._flutter_completion = {
+                                "message": self.status_var.get(),
+                                "details": [],
+                            }
                             if not self.closing:
-                                self._알림(messagebox.showinfo, APP_NAME, self.status_var.get(), parent=self.root)
+                                if not getattr(self.root, "_docfit_hidden_backend", False):
+                                    self._알림(messagebox.showinfo, APP_NAME, self.status_var.get(), parent=self.root)
                         elif event in ("stopped", "finished") and getattr(self, "_서식예시_작업", None):
                             self._서식예시_완료(item, 중단=event == "stopped")
                         elif event == "stopped":
@@ -6830,8 +6840,10 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                                 안내 = "작업이 중단되었습니다."
                             self.status_var.set(안내)
                             self.로그표시("=" * 45 + f"\n{안내}\n" + "=" * 45)
+                            self._flutter_completion = {"message": 안내, "details": []}
                             if not self.closing:
-                                self._알림(messagebox.showinfo, APP_NAME, 안내, parent=self.root)
+                                if not getattr(self.root, "_docfit_hidden_backend", False):
+                                    self._알림(messagebox.showinfo, APP_NAME, 안내, parent=self.root)
                         elif event == "finished":
                             self._작업종료시각 = time.monotonic()
                             self.running = False
@@ -6841,6 +6853,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                             if self._안내키:
                                 self._안내지남.add(self._안내키)
                             self._안내키 = "done" if item[2] == 0 else self._안내키
+                            절약한_시간 = 절약시간_분초_표시(self._절약초 or 0)
                             self._절약초 = None
                             self._작업결과_표시(item[2] == 0)
                             최종검수 = item[6] if len(item) >= 8 else None
@@ -6854,11 +6867,24 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                             else:
                                 self.status_var.set(f"처리 완료 · 성공 {item[1]}개 / 실패 {item[2]}개")
                             self.로그표시("=" * 45 + f"\n작업 완료 - 성공 {item[1]}개 / 실패 {item[2]}개\n" + "=" * 45)
+                            상세 = [f"성공 {item[1]}개 · 실패 {item[2]}개"]
+                            if len(item) >= 6:
+                                상세.append(f"세부 작업 {item[3]}건 · 성공 {item[4]}건 · 실패 {item[5]}건")
+                            if not item[2]:
+                                상세.append(f"예상 절약 시간 {절약한_시간}")
+                            if 최종검수:
+                                상세.append(f"최종 검수 점수 {최종검수['score']:.1f}/100 · {최종검수['verdict']}")
+                                상세.extend(f"확인 사항: {항목}" for 항목 in 최종검수.get("blockers", []))
+                            self._flutter_completion = {
+                                "message": self.status_var.get(),
+                                "details": 상세,
+                                "report": item[7] if 최종검수 and len(item) >= 8 else None,
+                            }
                             if not self.closing and not self.developer_mode_var.get():
                                 # 개발자 모드가 꺼져 있으면 절약한 시간만 귀여운 검은 고양이와 함께 보여 준다(2026-10-11 사용자 요청).
                                 # 자세한 완료 안내(성공·실패 건수·세부 작업·최종 검수)는 개발자 모드에서만 보인다.
                                 self._절약_완료창(item[1], item[2])
-                            elif not self.closing:
+                            elif not self.closing and not getattr(self.root, "_docfit_hidden_backend", False):
                                 안내문 = f"문서 처리가 완료되었습니다.\n\n성공: {item[1]}개\n실패: {item[2]}개"
                                 if len(item) >= 6:
                                     안내문 += (
@@ -6887,8 +6913,13 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                             self.stage_board.finish("오류")
                             self.status_var.set("오류 발생 · 처리 기록을 확인해 주세요")
                             self.로그표시(f"치명적 오류:\n{item[1]}")
+                            self._flutter_completion = {
+                                "message": self.status_var.get(),
+                                "details": [str(item[1])],
+                            }
                             if not self.closing:
-                                self._알림(messagebox.showerror, APP_NAME, f"작업 중 오류가 발생했습니다.\n\n{item[1]}")
+                                if not getattr(self.root, "_docfit_hidden_backend", False):
+                                    self._알림(messagebox.showerror, APP_NAME, f"작업 중 오류가 발생했습니다.\n\n{item[1]}")
                 except queue.Empty:
                     pass
                 except Exception as exc:

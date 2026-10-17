@@ -82,110 +82,16 @@ class Workspace extends StatefulWidget {
 class _WorkspaceState extends State<Workspace> {
   Map<String, dynamic> state = {};
   int tab = 0;
-  bool busy = false, polling = false, wasRunning = false, stagesOpen = false;
+  bool busy = false, polling = false, wasRunning = false;
   int commandVersion = 0;
   String? error;
   Timer? timer;
   void Function()? stopWatchingDrops;
   bool dropRefreshQueued = false;
   bool settingsVisible = false;
-  Timer? autoRunTimer;
-  Timer? autoRunTicker;
-  String? autoRunToken;
-  DateTime? autoRunDeadline;
-  final ignoredDropTokens = <String>{};
   final profileDropKey = GlobalKey();
   List<double>? lastProfileBounds;
   String? lastQuickNotice;
-
-  void cancelAutoLocally() {
-    if (autoRunToken != null) ignoredDropTokens.add(autoRunToken!);
-    if (ignoredDropTokens.length > 100) {
-      ignoredDropTokens.remove(ignoredDropTokens.first);
-    }
-    autoRunTimer?.cancel();
-    autoRunTicker?.cancel();
-    autoRunToken = null;
-  }
-
-  void syncAutoRun() {
-    final pending = state['zero_click'] as Map? ?? const {};
-    final token = pending['token'];
-    if (pending['pending'] != true ||
-        running ||
-        state['instant_run_on_drop'] == false) {
-      cancelAutoLocally();
-      return;
-    }
-    if (token is! String ||
-        ignoredDropTokens.contains(token) ||
-        token == autoRunToken) {
-      return;
-    }
-    cancelAutoLocally();
-    autoRunToken = token;
-    final delay = (pending['remaining_ms'] as num? ?? 2500).toInt().clamp(
-      0,
-      2500,
-    );
-    autoRunDeadline = DateTime.now().add(Duration(milliseconds: delay));
-    autoRunTicker = Timer.periodic(const Duration(milliseconds: 100), (_) {
-      if (mounted) setState(() {});
-    });
-    autoRunTimer = Timer(Duration(milliseconds: delay + 40), () async {
-      if (!mounted || autoRunToken != token || busy || !canStart) {
-        cancelAutoLocally();
-        return;
-      }
-      autoRunTicker?.cancel();
-      await command('start_zero_click', [token]);
-      if (mounted && running) setState(() => tab = 2);
-    });
-  }
-
-  Widget autoRunBar() {
-    final pending = state['zero_click'] as Map? ?? const {};
-    final remaining = math.max(
-      0,
-      autoRunDeadline?.difference(DateTime.now()).inMilliseconds ?? 0,
-    );
-    return Material(
-      key: const Key('zeroClickCountdown'),
-      color: const Color(0xffeaf1ff),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          children: [
-            LinearProgressIndicator(value: remaining / 2500),
-            Wrap(
-              alignment: WrapAlignment.center,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                Text(
-                  '📄 ${pending['file_name'] ?? ''} · $modeTitle 자동 시작 (${(remaining / 1000).toStringAsFixed(1)}초)',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                TextButton(
-                  key: const Key('pauseAutoRun'),
-                  onPressed: () => command('cancel_zero_click'),
-                  child: const Text('일시정지'),
-                ),
-                TextButton(
-                  key: const Key('editAutoRunOptions'),
-                  onPressed: () {
-                    command('cancel_zero_click');
-                    setState(() => tab = 1);
-                  },
-                  child: const Text('옵션 변경'),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   void reportProfileBounds() {
     if (!kIsWeb || !mounted) return;
@@ -347,7 +253,6 @@ class _WorkspaceState extends State<Workspace> {
   @override
   void dispose() {
     stopWatchingDrops?.call();
-    cancelAutoLocally();
     timer?.cancel();
     stateVersion.dispose();
     rangeStart.dispose();
@@ -369,7 +274,6 @@ class _WorkspaceState extends State<Workspace> {
     final documentsChanged =
         jsonEncode(state['files'] ?? []) != jsonEncode(next['files'] ?? []);
     state = Map<String, dynamic>.from(next);
-    syncAutoRun();
     // 입력 중인 값은 유지하되, 문서 변경·새 작업·백엔드 범위 변경은 반영한다.
     if (range.isNotEmpty &&
         (!rangeLoaded || syncRange || rangeChanged || documentsChanged)) {
@@ -379,7 +283,7 @@ class _WorkspaceState extends State<Workspace> {
       rangeEnd.text = '${range['end'] ?? 1}';
     }
     // 작업이 끝나면 진행 화면에서 결과 화면으로 넘어간다.
-    if (wasRunning && !running && tab == 2 && results.isNotEmpty) tab = 3;
+    if (wasRunning && !running && tab == 2) tab = 3;
     wasRunning = running;
     // 열린 '서식 관리' 창은 이 화면을 다 그린 뒤 다시 그린다(그리는 도중에 알리면 안 됨).
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -437,8 +341,6 @@ class _WorkspaceState extends State<Workspace> {
 
   Future<void> command(String method, [List<Object?> args = const []]) async {
     if (!mounted || busy) return;
-    final cancelPending = method != 'start_zero_click' && autoRunToken != null;
-    if (cancelPending) cancelAutoLocally();
     // 명령 전 시작된 조회는 명령 결과보다 오래된 상태일 수 있다.
     commandVersion++;
     setState(() {
@@ -446,9 +348,6 @@ class _WorkspaceState extends State<Workspace> {
       error = null;
     });
     try {
-      if (cancelPending && method != 'cancel_zero_click') {
-        await widget.api('cancel_zero_click', []);
-      }
       final response = await widget.api(method, args);
       if (mounted && response is Map) {
         final notice = response['notice'];
@@ -536,34 +435,30 @@ class _WorkspaceState extends State<Workspace> {
                               padding: const EdgeInsets.all(12),
                               child: ValueListenableBuilder<int>(
                                 valueListenable: stateVersion,
-                                builder: (context, _, _) =>
-                                    FloatingFormatPicker(
-                                      key: const Key(
-                                        'floatingConversionPicker',
-                                      ),
-                                      targets: conversionTargets
-                                          .whereType<Map>()
-                                          .map(
-                                            (item) => {
-                                              ...item,
-                                              'enabled':
-                                                  item['enabled'] == true &&
-                                                  !locked,
-                                            },
-                                          )
-                                          .toList(),
-                                      selected: conversionTarget,
-                                      fileCount: files.length,
-                                      fileNames: [
-                                        for (final file in files.whereType<Map>())
-                                          '${file['name'] ?? file['path'] ?? ''}',
-                                      ],
-                                      onSelected: (format) => Navigator.of(
-                                        dialogContext,
-                                      ).pop(format),
-                                      onCancel: () =>
-                                          Navigator.of(dialogContext).pop(),
-                                    ),
+                                builder: (context, _, _) => FloatingFormatPicker(
+                                  key: const Key('floatingConversionPicker'),
+                                  targets: conversionTargets
+                                      .whereType<Map>()
+                                      .map(
+                                        (item) => {
+                                          ...item,
+                                          'enabled':
+                                              item['enabled'] == true &&
+                                              !locked,
+                                        },
+                                      )
+                                      .toList(),
+                                  selected: conversionTarget,
+                                  fileCount: files.length,
+                                  fileNames: [
+                                    for (final file in files.whereType<Map>())
+                                      '${file['name'] ?? file['path'] ?? ''}',
+                                  ],
+                                  onSelected: (format) =>
+                                      Navigator.of(dialogContext).pop(format),
+                                  onCancel: () =>
+                                      Navigator.of(dialogContext).pop(),
+                                ),
                               ),
                             ),
                           ),
@@ -815,7 +710,6 @@ class _WorkspaceState extends State<Workspace> {
                               ),
                             ),
                           ),
-                          if (autoRunToken != null) autoRunBar(),
                           bottomBar(),
                         ],
                       ),
@@ -926,7 +820,6 @@ class _WorkspaceState extends State<Workspace> {
       IconButton(
         tooltip: '설정',
         onPressed: () async {
-          if (autoRunToken != null) await command('cancel_zero_click');
           if (mounted) scaffoldKey.currentState?.openEndDrawer();
         },
         icon: const Icon(Icons.settings_outlined),
@@ -1406,21 +1299,7 @@ class _WorkspaceState extends State<Workspace> {
         ],
         stagePanel(),
         const SizedBox(height: 16),
-        if (state['doc_hints'] is! Map ||
-            docHints['show_page_range'] == true ||
-            rangeOn ||
-            manualPageRange)
-          rangePanel()
-        else
-          ActionChip(
-            label: const Text('쪽 범위 지정'),
-            onPressed: locked
-                ? null
-                : () {
-                    command('cancel_zero_click');
-                    setState(() => manualPageRange = true);
-                  },
-          ),
+        rangePanel(),
       ],
     ],
   );
@@ -1499,18 +1378,7 @@ class _WorkspaceState extends State<Workspace> {
                       ),
                     ),
                   ),
-                if (m.$1 != 'file_format' && state['doc_hints'] is Map)
-                  ActionChip(
-                    key: Key('${m.$1}SummaryPill'),
-                    label: Text(
-                      m.$1 == 'spacing' && !spacingEnabled && spacingPageFit
-                          ? '페이지 맞춤만 ▾'
-                          : '기본 설정 ▾',
-                    ),
-                    onPressed: locked ? null : () => openModeOptions(m.$1),
-                  )
-                else if (m.$1 != 'file_format')
-                  modeOptions(m.$1),
+                if (selected && m.$1 != 'file_format') modeOptions(m.$1),
                 const SizedBox(height: 12),
                 Text(
                   '결과: 문서이름($suffix).hwpx',
@@ -1525,8 +1393,7 @@ class _WorkspaceState extends State<Workspace> {
   }
 
   Map get docHints => state['doc_hints'] as Map? ?? const {};
-  bool get showTableOptions => docHints['show_table_option'] != false;
-  bool manualPageRange = false;
+  bool get showTableOptions => true;
 
   Widget modeOptions(String optionMode) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1734,36 +1601,10 @@ class _WorkspaceState extends State<Workspace> {
     ],
   );
 
-  Future<void> openModeOptions(String optionMode) async {
-    await command('cancel_zero_click');
-    if (!mounted) return;
-    await setDropTarget('manual_documents');
-    if (!mounted) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: ValueListenableBuilder<int>(
-            valueListenable: stateVersion,
-            builder: (_, _, _) => modeOptions(optionMode),
-          ),
-        ),
-      ),
-    );
-    await setDropTarget('documents');
-  }
-
   // ---- 서식 관리: 예시 보고서를 끌어다 놓아 서식 복제, 이름 바꾸기·세부 수정·삭제 ----
   Map get formatTask => state['format_task'] as Map? ?? const {};
 
   Future<void> setDropTarget(String target) async {
-    if (autoRunToken != null) {
-      cancelAutoLocally();
-      await widget.api('cancel_zero_click', []);
-    }
     try {
       await widget.api('set_drop_target', [
         target == 'documents' && settingsVisible ? 'manual_documents' : target,
@@ -1773,7 +1614,6 @@ class _WorkspaceState extends State<Workspace> {
 
   // 키오스크에서 메뉴 사진을 보고 고르듯, 서식마다 예시 보고서 첫 쪽 그림(스틸컷)과 이름을 카드로 보여 주고 눌러 고른다(알파).
   Future<void> openKiosk() async {
-    if (autoRunToken != null) await command('cancel_zero_click');
     if (!mounted) return;
     Object? data;
     try {
@@ -1938,7 +1778,6 @@ class _WorkspaceState extends State<Workspace> {
   }
 
   Future<void> openTools(String name) async {
-    if (autoRunToken != null) await command('cancel_zero_click');
     if (!mounted) return;
     if (state['doc_hints'] is Map) await setDropTarget('manual_documents');
     if (!mounted) return;
@@ -2467,68 +2306,49 @@ class _WorkspaceState extends State<Workspace> {
       Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          InkWell(
-            borderRadius: BorderRadius.circular(12),
-            onTap: () => setState(() => stagesOpen = !stagesOpen),
-            child: Row(
-              children: [
-                Expanded(
-                  child: sectionTitle(
-                    Icons.checklist_rounded,
-                    '세부 작업  $stagesOn/${stages.length}',
-                    stagesChanged
-                        ? '처음 기본값과 다르게 조정했어요.${saved ? ' 다음 실행에도 이 구성을 써요.' : ''}'
-                        : '실행 순서대로 표시해요. 끄면 그 단계는 건너뛰어요.',
-                  ),
-                ),
-                Icon(
-                  stagesOpen ? Icons.expand_less : Icons.expand_more,
-                  color: _muted,
-                  semanticLabel: stagesOpen ? '세부 작업 접기' : '세부 작업 펼치기',
-                ),
-              ],
+          sectionTitle(
+            Icons.checklist_rounded,
+            '세부 작업  $stagesOn/${stages.length}',
+            stagesChanged
+                ? '처음 기본값과 다르게 조정했어요.${saved ? ' 다음 실행에도 이 구성을 써요.' : ''}'
+                : '모든 세부 작업을 표시해요. 끄면 그 단계는 건너뛰어요.',
+          ),
+          const SizedBox(height: 12),
+          const Divider(),
+          const SizedBox(height: 8),
+          StageBoard(
+            stages: stages,
+            locked: locked,
+            onToggle: (key, on) => command('set_stage', [key, on]),
+          ),
+          const Divider(),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: saved,
+            onChanged: locked ? null : (v) => command('set_stage_default', [v]),
+            title: const Text('다음 실행에도 이 구성 사용'),
+            subtitle: Text(
+              saved ? '바꾸는 즉시 저장돼요.' : '끄면 이번 실행에만 적용하고, 다음에는 처음 기본값으로 시작해요.',
+              style: const TextStyle(fontSize: 12, color: _muted),
             ),
           ),
-          if (stagesOpen) ...[
-            const SizedBox(height: 12),
-            const Divider(),
-            const SizedBox(height: 8),
-            StageBoard(
-              stages: stages,
-              locked: locked,
-              onToggle: (key, on) => command('set_stage', [key, on]),
-            ),
-            const Divider(),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              value: saved,
-              onChanged: locked
-                  ? null
-                  : (v) => command('set_stage_default', [v]),
-              title: const Text('다음 실행에도 이 구성 사용'),
-              subtitle: Text(
-                saved ? '바꾸는 즉시 저장돼요.' : '끄면 이번 실행에만 적용하고, 다음에는 처음 기본값으로 시작해요.',
-                style: const TextStyle(fontSize: 12, color: _muted),
+          Wrap(
+            spacing: 8,
+            children: [
+              TextButton.icon(
+                onPressed: locked || !stagesChanged
+                    ? null
+                    : () => command('reset_stages'),
+                icon: const Icon(Icons.restart_alt, size: 18),
+                label: const Text('처음 기본값으로'),
               ),
-            ),
-            Wrap(
-              spacing: 8,
-              children: [
-                TextButton.icon(
-                  onPressed: locked || !stagesChanged
-                      ? null
-                      : () => command('reset_stages'),
-                  icon: const Icon(Icons.restart_alt, size: 18),
-                  label: const Text('처음 기본값으로'),
-                ),
-                TextButton.icon(
-                  onPressed: locked ? null : showStages,
-                  icon: const Icon(Icons.tune, size: 18),
-                  label: const Text('단계별 수치 조정'),
-                ),
-              ],
-            ),
-          ],
+              TextButton.icon(
+                onPressed: locked ? null : showStages,
+                icon: const Icon(Icons.tune, size: 18),
+                label: const Text('단계별 수치 조정'),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -2608,16 +2428,7 @@ class _WorkspaceState extends State<Workspace> {
     keyboardType: TextInputType.number,
     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
     decoration: InputDecoration(labelText: label, suffixText: '쪽'),
-    onChanged: (_) {
-      if (autoRunToken != null) {
-        cancelAutoLocally();
-        commandVersion++;
-        unawaited(
-          widget.api('cancel_zero_click', []).then((_) {}).catchError((_) {}),
-        );
-      }
-      setState(() {});
-    },
+    onChanged: (_) => setState(() {}),
     onSubmitted: (_) => primaryShortcut(),
   );
 
@@ -2788,6 +2599,99 @@ class _WorkspaceState extends State<Workspace> {
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       heading('작업 결과를 확인하세요', '${state['status'] ?? '작업이 끝나면 저장된 문서가 표시됩니다.'}'),
+      if (completion.isNotEmpty ||
+          formatReview.isNotEmpty ||
+          failures.isNotEmpty)
+        panel(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              sectionTitle(
+                Icons.fact_check_outlined,
+                '작업 메시지와 검수 결과',
+                '완료 안내와 확인이 필요한 내용을 이 화면에서 확인할 수 있어요.',
+              ),
+              if ('${completion['message'] ?? ''}'.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 14),
+                  child: Text(
+                    '${completion['message']}',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              for (final line in completion['details'] as List? ?? const [])
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text('• $line', style: const TextStyle(color: _muted)),
+                ),
+              if (completion['report'] is String &&
+                  '${completion['report']}'.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    '검수 보고서: ${completion['report']}',
+                    style: const TextStyle(color: _muted),
+                  ),
+                ),
+              if (failures.isNotEmpty) ...[
+                const Padding(
+                  padding: EdgeInsets.only(top: 14),
+                  child: Text(
+                    '실패한 문서',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                for (final entry in failures.entries)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 5),
+                    child: Text(
+                      '• ${entry.key}: ${entry.value}',
+                      style: const TextStyle(color: Color(0xffb42318)),
+                    ),
+                  ),
+              ],
+              if (formatReview.isNotEmpty) ...[
+                const Padding(
+                  padding: EdgeInsets.only(top: 14),
+                  child: Text(
+                    '서식 통일 저장 후 검수',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                Text(
+                  '${_formatReviewStatus(formatReview['status'])} · 검사 문장 ${formatReview['checked'] ?? 0}개 · 불일치 ${(formatReview['issues'] as List? ?? const []).length}개 · 판정 보류 ${(formatReview['not_checkable'] as List? ?? const []).length}개',
+                  style: const TextStyle(color: _muted),
+                ),
+                for (final item in formatReview['issues'] as List? ?? const [])
+                  Text(
+                    '• ${item['text'] ?? item}',
+                    style: const TextStyle(color: Color(0xffb42318)),
+                  ),
+                for (final item
+                    in formatReview['not_checkable'] as List? ?? const [])
+                  Text(
+                    '• 판정 보류: ${item['marker'] ?? ''} / ${item['role'] ?? ''} · ${(item['fields'] as List? ?? const []).join(', ')}',
+                    style: const TextStyle(color: _muted),
+                  ),
+                for (final item
+                    in formatReview['unresolved'] as List? ?? const [])
+                  Text(
+                    '• 대표값 미확정: ${item['text'] ?? ''} · ${(item['fields'] as List? ?? const []).join(', ')}',
+                    style: const TextStyle(color: Color(0xffb42318)),
+                  ),
+                if ('${formatReview['error'] ?? ''}'.isNotEmpty)
+                  Text(
+                    '검수 오류: ${formatReview['error']}',
+                    style: const TextStyle(color: Color(0xffb42318)),
+                  ),
+              ],
+            ],
+          ),
+        ),
+      if (completion.isNotEmpty ||
+          formatReview.isNotEmpty ||
+          failures.isNotEmpty)
+        const SizedBox(height: 16),
       panel(
         Column(
           children: [
@@ -2855,6 +2759,19 @@ class _WorkspaceState extends State<Workspace> {
       ),
     ],
   );
+
+  Map get completion => state['completion'] as Map? ?? const {};
+  Map get formatReview => state['format_review'] as Map? ?? const {};
+  Map get failures => state['failures'] as Map? ?? const {};
+
+  String _formatReviewStatus(Object? status) => switch (status) {
+    'passed' => '검수 통과',
+    'failed' => '불일치 남음',
+    'incomplete' => '일부 판정 보류',
+    'error' => '검수 오류',
+    'not_applicable' => '검사할 문장 없음',
+    _ => '${status ?? '결과 확인'}',
+  };
 
   // ---- 하단 실행 막대 ------------------------------------------------
 
@@ -3092,16 +3009,6 @@ class _WorkspaceState extends State<Workspace> {
             style: TextStyle(fontSize: 12, color: _faint),
           ),
           settingsLabel('작업 뒤 처리'),
-          optionSwitch(
-            'instant_run_on_drop',
-            '파일 하나를 놓으면 자동 시작',
-            '2.5초 동안 일시정지하거나 옵션을 바꿀 수 있어요.',
-          ),
-          optionSwitch(
-            'auto_open_result',
-            '단일 문서 결과 자동 열기',
-            '처리가 성공하면 완성된 HWPX를 열어요.',
-          ),
           optionSwitch(
             'autoclose',
             '작업이 끝나면 한/글 문서 창 닫기',

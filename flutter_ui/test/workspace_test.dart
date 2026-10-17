@@ -532,6 +532,26 @@ void main() {
     expect(find.text('문서를 정리하고 있어요'), findsOneWidget);
 
     state['running'] = false;
+    state['completion'] = {
+      'message': '처리 완료 · 성공 1개 / 실패 0개',
+      'details': ['예상 절약 시간 00분 20초'],
+    };
+    state['format_review'] = {
+      'status': 'failed',
+      'checked': 3,
+      'issues': [
+        {'text': '[저장 결과] 확인 필요'},
+      ],
+      'not_checkable': [],
+      'unresolved': [],
+    };
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+    expect(find.text('처리 완료 · 성공 1개 / 실패 0개'), findsOneWidget);
+    expect(find.textContaining('예상 절약 시간 00분 20초'), findsOneWidget);
+    expect(find.textContaining('불일치 1개'), findsOneWidget);
+    expect(find.text('아직 저장된 결과가 없어요.'), findsOneWidget);
+
     state['results'] = [
       {
         'name': '문서(자간조정).hwpx',
