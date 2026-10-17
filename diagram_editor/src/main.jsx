@@ -8,7 +8,9 @@ import {SHAPE_GROUPS,SHAPES,LINE_SHAPES,shapePath,DASHES,MARKERS,dashArray} from
 import {sampleMindmap,mindmapGraph,addChild,addSibling,removeNode,updateNode,moveNode,findNode,positionMindmap,reparentNode,autoLayoutMindmap} from './mindmap.js';
 import {FONTS,registerFonts,ARROWS,DOWN_ARROWS,FLOW_PRESETS,MAX_FLOW_STEPS,MAX_FLOW_ROWS,MAX_ROWS,MAX_COLS,MAX_ORG,ROLE_NAMES,BORDER_TYPES,BORDER_WIDTHS,BORDER_NAMES,
  flowTable,gridTable,orgTable,barTable,flowDetails,resizeFlow,resizeFlowRows,insertStep,removeStep,resizeGrid,insertRow,removeRow,insertCol,removeCol,resizeOrg,
- setStyle,setBorder,exportSpec,cssOf,cssBorder} from './table.js';
+ setStyle,setBorder,exportSpec,cssOf,cssBorder,
+ CATALOG_SCOPES,buildCatalogGrid,applyCatalogStructure,setCatalogCellText,setCatalogStyle,setCatalogBorder,buildCatalogEdits,
+ isTaskTable,isFixedCalloutCategory,resizeTaskGrid} from './table.js';
 
 const TITLE='표/다이어그램';
 function send(message){
@@ -209,10 +211,11 @@ function BarTableView({table,onChange}){
  </div><p className="hint">보고서 소제목 옆 실적 기준일 표시처럼 쓰는 장식 막대예요(학습: 장식표.hwpx).</p></div>;
 }
 
-const TABLE_KINDS=['flow','grid','org','bar'];
-const ROLE_SETS={flow:['step','date','arrow'],grid:['head','body'],org:['root','unit','detail'],bar:['title','note']};
-const BORDER_PARTS={flow:['line','split'],grid:['outer','inner'],org:['box','link'],bar:['box','line']};
-const newTables=()=>({flow:flowTable(5),grid:gridTable(4,4),org:orgTable(4),bar:barTable()});
+const TABLE_KINDS=['flow','grid'];
+const AVAILABLE_MODES=new Set(['diagram','mindmap','flow','grid']);
+const ROLE_SETS={flow:['step','date','arrow'],grid:['head','body']};
+const BORDER_PARTS={flow:['line','split'],grid:['outer','inner']};
+const newTables=()=>({flow:flowTable(5),grid:gridTable(4,4)});
 
 /** 앱(상위 창 docfitCall)에서 이 PC의 글꼴 목록을 받아 글꼴 고르기에 더한다(한국어 이름·한/글 글꼴 먼저). */
 function useInstalledFonts(){
@@ -232,8 +235,9 @@ function useInstalledFonts(){
 function App(){
  useInstalledFonts();
  const [graph,setGraph]=useState({nodes:[],edges:[]}),[name,setName]=useState('새 '+TITLE),[busy,setBusy]=useState(false),[status,setStatus]=useState('도형을 추가하고 연결점을 끌어 연결하세요.');
- const [mode,setMode]=useState('diagram'),[role,setRole]=useState({flow:'step',grid:'head',org:'root',bar:'title'});
- const [catalog,setCatalog]=useState(null),[catalogCategory,setCatalogCategory]=useState(''),[catalogTemplate,setCatalogTemplate]=useState(''),[catalogEdits,setCatalogEdits]=useState({}),[catalogStructure,setCatalogStructure]=useState({});
+ const [mode,setMode]=useState('diagram'),[role,setRole]=useState({flow:'step',grid:'head'});
+ const [catalog,setCatalog]=useState(null),[catalogCategory,setCatalogCategory]=useState(''),[catalogTemplate,setCatalogTemplate]=useState(''),[catalogStates,setCatalogStates]=useState({});
+ const [catalogCellSel,setCatalogCellSel]=useState({r:0,c:0}),[catalogScope,setCatalogScope]=useState('cell'),[catalogCustomBorder,setCatalogCustomBorder]=useState(false);
  const [mmSelected,setMmSelected]=useState(null);
  // 도형 묶음 펼침 상태(도형을 넣어도 펼친 묶음이 접히지 않게 기억한다).
  const [openGroups,setOpenGroups]=useState(()=>new Set(['사각형','기본 도형','선']));
@@ -253,7 +257,9 @@ function App(){
   next=layoutGraph(next);current.current=next;setGraph(next);setName(title);history.current=[];future.current=[];
   generation.current++;if(!dirty)savedGeneration.current=generation.current;
   send({type:'dirty',value:dirty,generation:generation.current});fit();
-  if(next.table)setMode(next.table.kind);else if(next.mindmap&&!next.nodes.length)setMode('mindmap');
+  if(next.table&&TABLE_KINDS.includes(next.table.kind))setMode(next.table.kind);
+  else if(next.table)setMode('diagram');
+  else if(next.mindmap&&!next.nodes.length)setMode('mindmap');
  };
  const snapshot=()=>validate({format:FORMAT,version:1,...current.current});
  const table=TABLE_KINDS.includes(mode)?(graph.table?.kind===mode?graph.table:tables.current[mode]):null;
@@ -261,14 +267,16 @@ function App(){
  const mindmap=graph.mindmap??null;
  const changeMindmap=(next,select)=>{commit({...current.current,mindmap:next});if(select!==undefined)setMmSelected(select);};
  const switchMode=next=>{
+  if(!AVAILABLE_MODES.has(next)){
+   setStatus(next==='catalog'?'표 서식 모음은 현재 알파 버전에서 비활성화되어 있습니다.':'조직표와 장식표는 현재 알파 버전에서 사용할 수 없습니다.');
+   return;
+  }
   setMode(next);
-  if(next==='catalog')send({type:'request_catalog'});
   if(TABLE_KINDS.includes(next)&&current.current.table?.kind!==next){current.current={...current.current,table:tables.current[next]};setGraph(current.current);}
   if(next==='mindmap'&&!current.current.mindmap){current.current={...current.current,mindmap:sampleMindmap()};setGraph(current.current);}
   setStatus({flow:'칸 수를 고르고 칸 글을 바로 고치세요. 다 되면 ‘한/글 문서로 저장’을 누르세요.',grid:'행·열을 늘리거나 줄이고 칸 글을 고치세요.',
-   org:'윗 상자와 부서 이름을 고치고 부서 수를 정하세요.',bar:'왼쪽 글과 오른쪽 날짜를 고치세요.',
    mindmap:'가지를 고르고 Tab=하위 가지, Enter=같은 단계 가지, Delete=지우기.',
-   catalog:'표 모양을 선택하고 칸 글을 편집한 뒤 한/글에 직접 복사하세요. 원본 표의 병합과 셀 서식은 그대로 유지됩니다.'}[next]??'도형을 추가하고 연결점을 끌어 연결하세요.');
+   }[next]??'도형을 추가하고 연결점을 끌어 연결하세요.');
   if(next==='diagram'||next==='mindmap')fit();
  };
  const handle=useRef(null);
@@ -292,11 +300,8 @@ function App(){
      send({type:'template_applied',template:message.template,name:value.name});break;
     }
     case 'catalog_data':{
-     const data=message.data;
-     if(!data||!Array.isArray(data.categories))throw new Error('표 서식 목록을 확인할 수 없습니다.');
-     setCatalog(data);setCatalogEdits({});
-     const first=data.categories[0];setCatalogCategory(first?.id??'');setCatalogTemplate(first?.templates?.[0]?.id??'');
-     setStatus(`${data.category_count??data.categories.length}개 서식 이름 · ${data.template_count??0}개 표 모양`);break;
+     setStatus('표 서식 모음은 현재 알파 버전에서 비활성화되어 있습니다.');
+     send({type:'editor_error',message:'표 서식 모음은 현재 알파 버전에서 비활성화되어 있습니다.'});break;
     }
     case 'save':{
      const nextName=message.name??nameRef.current;setName(nextName);
@@ -335,13 +340,48 @@ function App(){
   const copies=items.map(n=>({...structuredClone(n),id:id(),position:{x:n.position.x+30,y:n.position.y+30},selected:true}));
   commit({...current.current,nodes:[...current.current.nodes.map(n=>({...n,selected:false})),...copies]});
  };
+ const selectedCatalogCategory=catalog?.categories?.find(item=>item.id===catalogCategory);
+ const selectedCatalogTemplate=selectedCatalogCategory?.templates?.find(item=>item.id===catalogTemplate);
+ const currentCatalogEntry=selectedCatalogTemplate?(catalogStates[selectedCatalogTemplate.id]??{grid:buildCatalogGrid(selectedCatalogTemplate),ops:[],history:[],future:[]}):{grid:[],ops:[],history:[],future:[]};
+ const catalogGrid=currentCatalogEntry.grid;
+ const selectedCatalogStructure=currentCatalogEntry.ops;
+ const catalogColCount=catalogGrid.length?Math.max(1,...catalogGrid.map(r=>r.reduce((s,cell)=>s+(cell.colSpan??1),0))):0;
+ const safeSelR=Math.min(catalogCellSel.r,Math.max(0,catalogGrid.length-1));
+ const safeSelC=Math.min(catalogCellSel.c,Math.max(0,(catalogGrid[safeSelR]?.length??1)-1));
+ const activeCatalogCell=catalogGrid[safeSelR]?.[safeSelC]??catalogGrid[0]?.[0]??null;
+ const isStepTemplate=selectedCatalogTemplate?isTaskTable(selectedCatalogTemplate.id,selectedCatalogCategory?.name):false;
+ const isFixedCategory=selectedCatalogCategory?isFixedCalloutCategory(selectedCatalogCategory.name,selectedCatalogTemplate?.id):false;
+ const currentCatalogSteps=isStepTemplate&&catalogGrid[0]?Math.max(2,Math.min(6,Math.round(catalogGrid[0].length/4))):3;
+ const changeCatalogSteps=targetSteps=>{
+  if(!selectedCatalogTemplate)return;
+  try{
+   const res=resizeTaskGrid(catalogGrid,targetSteps);
+   updateCatalogEntry(res.grid,res.ops,true);
+  }catch(error){setStatus(error.message);}
+ };
+ const updateCatalogEntry=(nextGrid,nextOps=selectedCatalogStructure,record=true)=>{
+  if(!selectedCatalogTemplate)return;
+  const prevHistory=record?[...currentCatalogEntry.history.slice(-49),{grid:structuredClone(catalogGrid),ops:structuredClone(selectedCatalogStructure)}]:currentCatalogEntry.history;
+  setCatalogStates({...catalogStates,[selectedCatalogTemplate.id]:{grid:nextGrid,ops:nextOps,history:prevHistory,future:record?[]:currentCatalogEntry.future}});
+  mark();
+ };
+ const undoCatalog=(redo=false)=>{
+  if(!selectedCatalogTemplate)return;
+  const stack=redo?currentCatalogEntry.future:currentCatalogEntry.history;
+  if(!stack.length)return;
+  const popped=stack[stack.length-1];
+  const nextHistory=redo?[...currentCatalogEntry.history,{grid:structuredClone(catalogGrid),ops:structuredClone(selectedCatalogStructure)}]:currentCatalogEntry.history.slice(0,-1);
+  const nextFuture=redo?currentCatalogEntry.future.slice(0,-1):[...currentCatalogEntry.future,{grid:structuredClone(catalogGrid),ops:structuredClone(selectedCatalogStructure)}];
+  setCatalogStates({...catalogStates,[selectedCatalogTemplate.id]:{grid:popped.grid,ops:popped.ops,history:nextHistory,future:nextFuture}});
+  mark();
+ };
  useEffect(()=>{
   const keys=e=>{
    if(['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)||e.target.isContentEditable)return;
    const ctrl=e.ctrlKey||e.metaKey,k=e.key.toLowerCase();
    if(ctrl&&k==='s'){e.preventDefault();send({type:'request_save'});}
-   if(ctrl&&k==='z'){e.preventDefault();undo(e.shiftKey);}
-   if(ctrl&&k==='y'){e.preventDefault();undo(true);}
+   if(ctrl&&k==='z'){e.preventDefault();mode==='catalog'?undoCatalog(e.shiftKey):undo(e.shiftKey);}
+   if(ctrl&&k==='y'){e.preventDefault();mode==='catalog'?undoCatalog(true):undo(true);}
    if(mode==='diagram'&&ctrl&&k==='d'){e.preventDefault();duplicate();}
    if(mode==='diagram'&&ctrl&&k==='c'){clipboard.current=structuredClone(current.current.nodes.filter(n=>n.selected));}
    if(mode==='diagram'&&ctrl&&k==='v'&&clipboard.current?.length){e.preventDefault();
@@ -381,54 +421,64 @@ function App(){
   try{send({type:'export_hwpx',name:nameRef.current,spec:exportSpec(table)});}
   catch(error){setStatus(error.message);}
  };
- const selectedCatalogCategory=catalog?.categories?.find(item=>item.id===catalogCategory);
- const selectedCatalogTemplate=selectedCatalogCategory?.templates?.find(item=>item.id===catalogTemplate);
- const selectedCatalogEdits=selectedCatalogTemplate?(catalogEdits[selectedCatalogTemplate.id]??{}):{};
- const selectedCatalogStructure=selectedCatalogTemplate?(catalogStructure[selectedCatalogTemplate.id]??[]):[];
- const catalogGrid=selectedCatalogTemplate?selectedCatalogStructure.reduce((grid,op)=>{
-  if(op==='add_row'&&grid.length)grid.push(grid.at(-1).map(()=>''));
-  else if(op==='delete_row'&&grid.length>1)grid.pop();
-  else if(op==='add_column')grid.forEach(row=>row.push(''));
-  else if(op==='delete_column'&&grid[0]?.length>1)grid.forEach(row=>row.pop());
-  return grid;
- },selectedCatalogTemplate.cells.map(row=>[...row])):[];
  const setCatalogCell=(row,col,value)=>{
   if(!selectedCatalogTemplate)return;
-  const key=`${row}:${col}`,next={...selectedCatalogEdits};
-  if(value===catalogGrid[row]?.[col])delete next[key];else next[key]=value;
-  setCatalogEdits({...catalogEdits,[selectedCatalogTemplate.id]:next});
-  mark();
+  updateCatalogEntry(setCatalogCellText(catalogGrid,row,col,value),selectedCatalogStructure,false);
  };
  const changeCatalogStructure=operation=>{
   if(!selectedCatalogTemplate)return;
-  if(operation==='delete_row'){
-   const removedRow=catalogGrid.length-1;
-   const next={...selectedCatalogEdits};Object.keys(next).filter(key=>key.startsWith(`${removedRow}:`)).forEach(key=>delete next[key]);
-   setCatalogEdits({...catalogEdits,[selectedCatalogTemplate.id]:next});
-  }else if(operation==='delete_column'){
-   const next={...selectedCatalogEdits};Object.keys(next).filter(key=>{
-    const [row,col]=key.split(':').map(Number);return col===(catalogGrid[row]?.length??1)-1;
-   }).forEach(key=>delete next[key]);
-   setCatalogEdits({...catalogEdits,[selectedCatalogTemplate.id]:next});
-  }
-  setCatalogStructure({...catalogStructure,[selectedCatalogTemplate.id]:[...selectedCatalogStructure,operation]});
-  mark();
+  try{
+   const res=applyCatalogStructure(catalogGrid,selectedCatalogStructure,operation);
+   updateCatalogEntry(res.grid,res.ops,true);
+  }catch(error){setStatus(error.message);}
+ };
+ const resizeCatalogRows=targetRows=>{
+  if(targetRows>catalogGrid.length)changeCatalogStructure('add_row');
+  else if(targetRows<catalogGrid.length)changeCatalogStructure('delete_row');
+ };
+ const resizeCatalogCols=targetCols=>{
+  if(targetCols>catalogColCount)changeCatalogStructure('add_column');
+  else if(targetCols<catalogColCount)changeCatalogStructure('delete_column');
+ };
+ const changeCatalogStyle=patch=>{
+  if(!selectedCatalogTemplate)return;
+  try{updateCatalogEntry(setCatalogStyle(catalogGrid,catalogScope,{r:safeSelR,c:safeSelC},patch),selectedCatalogStructure,true);}
+  catch(error){setStatus(error.message);}
+ };
+ const changeCatalogBorderTable=nextBorderTable=>{
+  if(!selectedCatalogTemplate||!activeCatalogCell)return;
+  try{
+   const curOuter=activeCatalogCell.borders.top,curInner=activeCatalogCell.borders.bottom;
+   const nextOuter=nextBorderTable.borders.outer,nextInner=nextBorderTable.borders.inner;
+   let nextGrid=catalogGrid;
+   if(JSON.stringify(curOuter)!==JSON.stringify(nextOuter))nextGrid=setCatalogBorder(nextGrid,catalogScope,{r:safeSelR,c:safeSelC},'outer',nextOuter);
+   if(JSON.stringify(curInner)!==JSON.stringify(nextInner))nextGrid=setCatalogBorder(nextGrid,catalogScope,{r:safeSelR,c:safeSelC},'inner',nextInner);
+   updateCatalogEntry(nextGrid,selectedCatalogStructure,true);
+  }catch(error){setStatus(error.message);}
+ };
+ const resetCatalogTemplate=()=>{
+  if(!selectedCatalogTemplate)return;
+  updateCatalogEntry(buildCatalogGrid(selectedCatalogTemplate),[],true);
+  setStatus('선택한 표 모양을 원래 서식으로 되돌렸습니다.');
  };
  const exportCatalog=()=>{
   if(!selectedCatalogTemplate){setStatus('먼저 저장할 표 모양을 선택하세요.');return;}
-  send({type:'export_catalog',id:selectedCatalogTemplate.id,name:selectedCatalogTemplate.name,cell_edits:selectedCatalogEdits,structure_edits:selectedCatalogStructure});
+  const {cell_edits,style_edits}=buildCatalogEdits(catalogGrid);
+  send({type:'export_catalog',id:selectedCatalogTemplate.id,name:selectedCatalogTemplate.name,cell_edits,structure_edits:selectedCatalogStructure,style_edits});
  };
  const copyCatalog=()=>{
   if(!selectedCatalogTemplate){setStatus('먼저 복사할 표 모양을 선택하세요.');return;}
-  send({type:'copy_catalog',id:selectedCatalogTemplate.id,cell_edits:selectedCatalogEdits,structure_edits:selectedCatalogStructure});
+  const {cell_edits,style_edits}=buildCatalogEdits(catalogGrid);
+  send({type:'copy_catalog',id:selectedCatalogTemplate.id,cell_edits,structure_edits:selectedCatalogStructure,style_edits});
  };
  // 마인드맵: 수동 위치와 계층 연결을 화면·내보내기에 함께 반영한다.
  const mmGraph=mode==='mindmap'&&mindmap?layoutGraph(mindmapGraph(mindmap)):null;
  const mmNode=mindmap&&mmSelected?findNode(mindmap,mmSelected)?.node:null;
  const shownNodes=mmGraph?mmGraph.nodes.map(n=>({...n,selected:n.id===mmSelected,draggable:true,connectable:true})):graph.nodes;
  const shownEdges=mmGraph?mmGraph.edges:graph.edges;
- const tabs=[['diagram','다이어그램'],['mindmap','마인드맵'],['flow','흐름표'],['grid','기본 표'],['org','조직표'],['bar','장식표'],['catalog','표 서식 모음']];
+ const tabs=[['diagram','다이어그램'],['mindmap','마인드맵'],['flow','흐름표'],['grid','기본 표']];
  const canvas=mode==='diagram'||mode==='mindmap';
+ const scopeLabel=CATALOG_SCOPES.find(([k])=>k===catalogScope)?.[1]??'선택 칸';
  return <HistoryContext.Provider value={checkpoint}><div className="editor-shell">
   <header><strong>{TITLE}</strong><span className="document-name">{name}</span>
    <div className="mode-tabs" role="tablist" aria-label="만들 것">{tabs.map(([key,label])=><button key={key} role="tab" aria-selected={mode===key} className={mode===key?'active':''} onClick={()=>switchMode(key)}>{label}</button>)}</div>
@@ -482,12 +532,31 @@ function App(){
     </>:<p>가지를 눌러 고르세요.</p>}
     <button onClick={()=>undo()}>실행 취소 (Ctrl+Z)</button>
    </aside>}
-   {mode==='catalog'&&<aside className="catalog-menu">
-    <h2>서식 이름</h2>
-    {!catalog&&<p>표 서식 목록을 불러오는 중…</p>}
-    {catalog?.categories?.map(category=><button key={category.id} className={catalogCategory===category.id?'active':''} aria-pressed={catalogCategory===category.id} onClick={()=>{setCatalogCategory(category.id);setCatalogTemplate(category.templates[0]?.id??'');}}>{category.name}<small>{category.templates.length}개 모양</small></button>)}
-    {selectedCatalogCategory&&<><h2>표 모양</h2>{selectedCatalogCategory.templates.map(template=><button key={template.id} className={catalogTemplate===template.id?'active':''} aria-pressed={catalogTemplate===template.id} onClick={()=>setCatalogTemplate(template.id)}>{template.name}<small>{template.rows}행 × {template.cols}열</small></button>)}</>}
-    {catalog&&<p>{catalog.template_count}개 표 모양을 원본의 셀 서식 그대로 HWPX로 저장합니다.</p>}
+   {mode==='catalog'&&<aside>
+    <div className="catalog-menu">
+     <h2>서식 이름</h2>
+     {!catalog&&<p>표 서식 목록을 불러오는 중…</p>}
+     {catalog?.categories?.map(category=><button key={category.id} className={catalogCategory===category.id?'active':''} aria-pressed={catalogCategory===category.id} onClick={()=>{setCatalogCategory(category.id);setCatalogTemplate(category.templates[0]?.id??'');setCatalogCellSel({r:0,c:0});}}>{category.name}<small>{category.templates.length}개 모양</small></button>)}
+     {selectedCatalogCategory&&<><h2>표 모양</h2>{selectedCatalogCategory.templates.map(template=><button key={template.id} className={catalogTemplate===template.id?'active':''} aria-pressed={catalogTemplate===template.id} onClick={()=>{setCatalogTemplate(template.id);setCatalogCellSel({r:0,c:0});}}>{template.name}<small>{template.rows}행 × {template.cols}열</small></button>)}</>}
+    </div>
+    {selectedCatalogTemplate&&activeCatalogCell&&<>
+     {isStepTemplate ? <>
+      <h2>단계(과제) 수</h2>
+      <div className="presets">{FLOW_PRESETS.map(n=><button key={n} className={currentCatalogSteps===n?'active':''} aria-pressed={currentCatalogSteps===n} onClick={()=>changeCatalogSteps(n)}>{n}칸</button>)}</div>
+      <Stepper label="단계(과제) 수" value={currentCatalogSteps} min={2} max={6} onChange={changeCatalogSteps}/>
+     </> : (!isFixedCategory && <>
+      <h2>표 크기</h2>
+      <Stepper label="행(가로줄)" value={catalogGrid.length} min={1} max={100} onChange={resizeCatalogRows}/>
+      <Stepper label="열(세로줄)" value={catalogColCount} min={1} max={50} onChange={resizeCatalogCols}/>
+     </>)}
+     <label className="check"><input type="checkbox" checked={catalogCustomBorder} onChange={e=>setCatalogCustomBorder(e.target.checked)}/>테두리 직접 고르기</label>
+     <h2>편집 범위 ({ safeSelR+1 }행 { safeSelC+1 }칸)</h2>
+     <div className="role-tabs">{CATALOG_SCOPES.map(([k,n])=><button key={k} className={catalogScope===k?'active':''} onClick={()=>setCatalogScope(k)}>{n}</button>)}</div>
+     <TextStyleControls fill label={scopeLabel+' 서식'} value={activeCatalogCell.style} onChange={changeCatalogStyle}/>
+     {catalogCustomBorder&&<BorderControls table={{kind:'grid',borders:{outer:activeCatalogCell.borders.top,inner:activeCatalogCell.borders.bottom}}} parts={['outer','inner']} onChange={changeCatalogBorderTable}/>}
+     <div className="tool-row"><button onClick={resetCatalogTemplate}>원래 서식으로</button><button onClick={()=>undoCatalog()}>실행 취소 (Ctrl+Z)</button></div>
+    </>}
+    {catalog&&<p>{catalog.template_count}개 표 모양을 기본 표처럼 자유 편집해 HWPX로 저장하거나 복사합니다.</p>}
    </aside>}
    {TABLE_KINDS.includes(mode)&&table&&<aside>
     {mode==='flow'&&<><h2>방향</h2>
@@ -542,11 +611,39 @@ function App(){
     fitView deleteKeyCode={mode==='diagram'?['Backspace','Delete']:null}><Background gap={20}/><Controls/><MiniMap/></ReactFlow></div>
     {mode==='catalog'&&<div className="catalog-preview"><div className="catalog-preview-card">
      <h2>{selectedCatalogTemplate?.name??'표 서식을 선택하세요'}</h2>
-     {selectedCatalogTemplate?<><p>{catalogGrid.length}행 × {catalogGrid[0]?.length??0}열 · 문서에 담긴 표 구조 미리보기</p>
-      <div className="catalog-structure-tools"><button onClick={()=>changeCatalogStructure('add_row')}>＋ 행 추가</button><button onClick={()=>changeCatalogStructure('delete_row')}>− 마지막 행 삭제</button><button onClick={()=>changeCatalogStructure('add_column')}>＋ 열 추가</button><button onClick={()=>changeCatalogStructure('delete_column')}>− 마지막 열 삭제</button><span>현재 {catalogGrid.length}행 × {catalogGrid[0]?.length??0}열</span></div>
-      <div className="catalog-table-scroll"><table><tbody>{catalogGrid.map((row,r)=><tr key={r}>{row.map((cell,c)=><td key={c}><input className="catalog-cell" aria-label={`${r+1}행 ${c+1}번째 칸`} maxLength={2000} value={selectedCatalogEdits[`${r}:${c}`]??cell} onChange={e=>setCatalogCell(r,c,e.target.value)}/></td>)}</tr>)}</tbody></table></div>
-      <p className="hint">셀을 직접 수정하고 행·열을 추가하거나 마지막 행·열을 삭제할 수 있습니다. 추가 셀은 해당 끝 셀의 한/글 서식을 이어받는 네이티브 표 셀입니다. 병합된 마지막 셀은 구조 보호를 위해 추가·삭제가 제한될 수 있습니다.</p>
-      <div className="tool-row"><button className="primary" onClick={copyCatalog}>선택한 표 한/글에 복사</button><button onClick={exportCatalog}>수정 표 HWPX 저장</button></div></>:<p>{catalog?'왼쪽에서 서식 이름과 표 모양을 선택하세요.':'표 서식 목록을 불러오는 중…'}</p>}
+     {selectedCatalogTemplate?<><p>{catalogGrid.length}행 × {catalogColCount}열 · {isStepTemplate?'단계별 정보단위+연결단위 연동 편집':isFixedCategory?'고정 서식 요소 편집 및 복사':'기본 표 자유 편집 (행·열 끼우기, 글자·바탕·테두리 서식, 병합 미리보기)'}</p>
+      <div className="catalog-structure-tools">
+       {isStepTemplate ? <>
+        <span style={{marginRight:6,fontWeight:600}}>과제 수:</span>
+        {FLOW_PRESETS.map(n=><button key={n} className={currentCatalogSteps===n?'active':''} onClick={()=>changeCatalogSteps(n)}>{n}단계</button>)}
+        <span>현재 {currentCatalogSteps}단계 ({catalogGrid.length}행 × {catalogColCount}열) · 선택: {safeSelR+1}행 {safeSelC+1}칸</span>
+       </> : (!isFixedCategory ? <>
+        <button onClick={()=>changeCatalogStructure('add_row')}>＋ 행 추가</button>
+        <button onClick={()=>changeCatalogStructure('delete_row')}>− 마지막 행 삭제</button>
+        <button onClick={()=>changeCatalogStructure('add_column')}>＋ 열 추가</button>
+        <button onClick={()=>changeCatalogStructure('delete_column')}>− 마지막 열 삭제</button>
+        <span>현재 {catalogGrid.length}행 × {catalogColCount}열 · 선택: {safeSelR+1}행 {safeSelC+1}칸</span>
+       </> : <>
+        <span>고정 서식 ({catalogGrid.length}행 × {catalogColCount}열) · 원하는 칸을 눌러 글자·서식을 편집하거나 복사·저장하세요.</span>
+       </>)}
+      </div>
+      <div className="catalog-table-scroll"><table className="grid-preview catalog-grid-preview">
+       {(!isStepTemplate && !isFixedCategory) && <thead><tr><th/>{Array.from({length:catalogColCount},(_,c)=><th key={c}><span className="col-tools">
+        <button title="왼쪽에 열 끼우기" aria-label={(c+1)+'열 앞에 열 끼우기'} disabled={catalogColCount>=50} onClick={()=>changeCatalogStructure({op:'insert_column',index:c})}>+</button>
+        <button title="이 열 빼기" aria-label={(c+1)+'열 빼기'} disabled={catalogColCount<=1} onClick={()=>changeCatalogStructure({op:'delete_column',index:c})}>×</button></span></th>)}</tr></thead>}
+       <tbody>{catalogGrid.map((row,r)=><tr key={r}>
+        {(!isStepTemplate && !isFixedCategory) && <th><span className="row-tools">
+         <button title="위에 행 끼우기" aria-label={(r+1)+'행 위에 행 끼우기'} disabled={catalogGrid.length>=100} onClick={()=>changeCatalogStructure({op:'insert_row',index:r})}>+</button>
+         <button title="이 행 빼기" aria-label={(r+1)+'행 빼기'} disabled={catalogGrid.length<=1} onClick={()=>changeCatalogStructure({op:'delete_row',index:r})}>×</button></span></th>}
+        {row.map((cell,c)=><td key={c} rowSpan={cell.rowSpan} colSpan={cell.colSpan} className={safeSelR===r&&safeSelC===c?'selected-cell':''}
+         style={{background:cell.style.fill||'white',borderTop:cssBorder(cell.borders.top),borderBottom:cssBorder(cell.borders.bottom),borderLeft:cssBorder(cell.borders.left),borderRight:cssBorder(cell.borders.right)}}
+         onClick={()=>setCatalogCellSel({r,c})}>
+         <input className="catalog-cell" aria-label={`${r+1}행 ${c+1}번째 칸`} maxLength={2000} value={cell.text}
+          onFocus={()=>setCatalogCellSel({r,c})}
+          style={{...cssOf(cell.style),background:'transparent',textAlign:cell.align==='LEFT'?'left':cell.align==='RIGHT'?'right':'center'}}
+          onChange={e=>setCatalogCell(r,c,e.target.value)}/></td>)}</tr>)}</tbody></table></div>
+      <p className="hint">칸을 눌러 글을 바로 고치고, 행·열 머리의 +/×로 원하는 자리에 행·열을 끼우거나 뺍니다. 왼쪽에서 선택 칸·행·열·표 전체의 글꼴·크기·굵게·글자색·바탕색과 테두리(한/글 12종)도 자유롭게 바꿀 수 있어요. 투명선은 한/글 화면처럼 빨간 점선으로 보입니다.</p>
+      <button className="primary" onClick={exportCatalog}>이 표 모양을 HWPX로 저장</button></>:<p>{catalog?'왼쪽에서 서식 이름과 표 모양을 선택하세요.':'표 서식 목록을 불러오는 중…'}</p>}
     </div></div>}
     {mode==='flow'&&table&&<FlowTableView table={table} onChange={changeTable}/>}
     {mode==='grid'&&table&&<GridTableView table={table} onChange={changeTable}/>}

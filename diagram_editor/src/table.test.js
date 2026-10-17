@@ -67,3 +67,82 @@ test('org chart and decorative bar tables validate and export',async()=>{
  assert.equal(t.exportSpec(grid).borders.outer.type,'DOUBLE_SLIM');           // 직접 고른 테두리만 보낸다
  assert.equal(t.exportSpec(t.gridTable(2,2)).borders,undefined);
 });
+test('catalog table free editing: structure, cell text, styles, and borders export cleanly',async()=>{
+ const t=await import('./table.js');
+ const tpl={
+  id:'1:1',rows:2,cols:2,
+  cells:[['제목','설명'],['항목','내용']],
+  cell_meta:[
+   [{text:'제목',colAddr:0,rowAddr:0,colSpan:1,rowSpan:1,align:'CENTER',style:{font:'맑은 고딕',size:11,bold:true,color:'#000000',fill:'#DFE6F7'},borders:{top:{type:'SOLID',width:'0.4 mm',color:'#000000'},bottom:{type:'SOLID',width:'0.12 mm',color:'#000000'},left:{type:'NONE',width:'0.12 mm',color:'#000000'},right:{type:'SOLID',width:'0.12 mm',color:'#000000'}}},
+    {text:'설명',colAddr:1,rowAddr:0,colSpan:1,rowSpan:1,align:'LEFT',style:{font:'맑은 고딕',size:10,bold:false,color:'#000000',fill:'transparent'},borders:{top:{type:'SOLID',width:'0.4 mm',color:'#000000'},bottom:{type:'SOLID',width:'0.12 mm',color:'#000000'},left:{type:'SOLID',width:'0.12 mm',color:'#000000'},right:{type:'NONE',width:'0.12 mm',color:'#000000'}}}],
+   [{text:'항목',colAddr:0,rowAddr:1,colSpan:1,rowSpan:1,align:'CENTER',style:{font:'맑은 고딕',size:10,bold:false,color:'#000000',fill:'transparent'},borders:{top:{type:'SOLID',width:'0.12 mm',color:'#000000'},bottom:{type:'SOLID',width:'0.4 mm',color:'#000000'},left:{type:'NONE',width:'0.12 mm',color:'#000000'},right:{type:'SOLID',width:'0.12 mm',color:'#000000'}}},
+    {text:'내용',colAddr:1,rowAddr:1,colSpan:1,rowSpan:1,align:'LEFT',style:{font:'맑은 고딕',size:10,bold:false,color:'#000000',fill:'transparent'},borders:{top:{type:'SOLID',width:'0.12 mm',color:'#000000'},bottom:{type:'SOLID',width:'0.4 mm',color:'#000000'},left:{type:'SOLID',width:'0.12 mm',color:'#000000'},right:{type:'NONE',width:'0.12 mm',color:'#000000'}}}]
+  ]
+ };
+ let grid=t.buildCatalogGrid(tpl),ops=[];
+ assert.equal(grid.length,2);
+ assert.equal(grid[0].length,2);
+ ({grid,ops}=t.applyCatalogStructure(grid,ops,{op:'insert_row',index:1}));
+ assert.equal(grid.length,3);
+ ({grid,ops}=t.applyCatalogStructure(grid,ops,{op:'insert_column',index:1}));
+ assert.equal(grid[0].length,3);
+ grid=t.setCatalogCellText(grid,1,1,'중간 삽입 칸');
+ grid=t.setCatalogStyle(grid,'cell',{r:0,c:0},{font:'HY견고딕',size:14,bold:true,color:'#FFFFFF',fill:'#1F4E79'});
+ grid=t.setCatalogBorder(grid,'all',{r:0,c:0},'outer',{type:'DOUBLE_SLIM',width:'0.5 mm',color:'#1F4E79'});
+ const edits=t.buildCatalogEdits(grid);
+ assert.equal(edits.cell_edits['1:1'],'중간 삽입 칸');
+ assert.equal(edits.style_edits['0:0'].font,'HY견고딕');
+ assert.equal(edits.style_edits['0:0'].fill,'#1F4E79');
+ assert.equal(edits.style_edits['0:0'].borders.top.type,'DOUBLE_SLIM');
+ assert.equal(edits.style_edits['2:2'].borders.bottom.type,'DOUBLE_SLIM');
+});
+
+test('task table (0:1 분야별과제표) steps resizing (2~6 steps) preserves width and sets ops',async()=>{
+ const t=await import('./table.js');
+ assert.equal(t.isTaskTable('0:1','분야별과제표'),true);
+ assert.equal(t.isTaskTable('1:1','추진일정'),false);
+ assert.equal(t.isFixedCalloutCategory('부연설명','2:1'),true);
+ assert.equal(t.isFixedCalloutCategory('라벨 서식','3:1'),true);
+ assert.equal(t.isFixedCalloutCategory('분야별과제표','0:1'),false);
+
+ // Mock 0:1 3-row grid (3 original steps)
+ const makeCell=(r,c,w,txt)=>({row:r,col:c,colSpan:1,rowSpan:1,width:w,text:txt,origText:txt,style:{},borders:{}});
+ const row0=[
+  makeCell(0,0,1415,''),makeCell(0,1,12232,'과제1'),makeCell(0,2,1415,''),makeCell(0,3,566,''),
+  makeCell(0,4,1415,''),makeCell(0,5,12232,'과제2'),makeCell(0,6,1415,''),makeCell(0,7,566,''),
+  makeCell(0,8,1415,''),makeCell(0,9,12232,'과제3'),makeCell(0,10,1415,''),makeCell(0,11,283,'')
+ ];
+ const row1=[
+  makeCell(1,0,1415,''),makeCell(1,2,1415,''),makeCell(1,3,566,''),
+  makeCell(1,4,1415,''),makeCell(1,6,1415,''),makeCell(1,7,566,''),
+  makeCell(1,8,1415,''),makeCell(1,10,1415,''),makeCell(1,11,283,'')
+ ];
+ const row2=[
+  {...makeCell(2,0,15062,'• 과제1 세부'),colSpan:3},makeCell(2,3,566,''),
+  {...makeCell(2,4,15062,'• 과제2 세부'),colSpan:3},makeCell(2,7,566,''),
+  {...makeCell(2,8,15062,'• 과제3 세부'),colSpan:3},makeCell(2,11,283,'')
+ ];
+ const originalGrid=[row0,row1,row2];
+
+ // Test resize to 4 steps
+ const res4=t.resizeTaskGrid(originalGrid,4);
+ assert.equal(res4.grid[0].length,16); // 4 steps * 4 cols
+ assert.equal(res4.grid[1].length,12); // 4 steps * 3 cols
+ assert.equal(res4.grid[2].length,8);  // 4 steps * 2 cols
+ assert.deepEqual(res4.ops,[{op:'resize_steps',steps:4}]);
+ assert.equal(res4.grid[0][1].text,'과제1');
+ assert.equal(res4.grid[0][13].text,'과제 4');
+ assert.equal(res4.grid[2][6].text,'• 과제 4 세부내용');
+
+ // Test total width of row 0 is 46601
+ const totalW=res4.grid[0].reduce((sum,c)=>sum+c.width,0);
+ assert.equal(totalW,46601);
+
+ // Test resize to 2 steps
+ const res2=t.resizeTaskGrid(originalGrid,2);
+ assert.equal(res2.grid[0].length,8);
+ assert.equal(res2.grid[0][1].text,'과제1');
+ assert.equal(res2.grid[0][5].text,'과제2');
+ const totalW2=res2.grid[0].reduce((sum,c)=>sum+c.width,0);
+ assert.equal(totalW2,46601);
+});

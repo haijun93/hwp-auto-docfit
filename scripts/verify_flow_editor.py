@@ -75,11 +75,12 @@ def main():
             page.evaluate("snapshot=>send({type:'load',name:'복원',snapshot})", saved["snapshot"])
             page.wait_for_function("messages.some(m=>m.type==='document_loaded')")
             assert frame.locator(".react-flow__node").count() == 8
+            frame.locator("summary", has_text="순서도").click()
             frame.get_by_role("button", name="처리 추가", exact=True).click()
             assert frame.locator(".react-flow__node").count() == 9
-            frame.get_by_role("button", name="실행 취소 (Ctrl+Z)", exact=True).click()
+            frame.get_by_role("button", name="↶ 취소", exact=True).click()
             assert frame.locator(".react-flow__node").count() == 8
-            frame.get_by_role("button", name="다시 실행 (Ctrl+Y)", exact=True).click()
+            frame.get_by_role("button", name="↷ 다시", exact=True).click()
             assert frame.locator(".react-flow__node").count() == 9
             frame.locator(".react-flow__node").first.click()
             handle = frame.locator(".react-flow__node").first.locator(".react-flow__resize-control.handle.bottom.right")
@@ -93,7 +94,7 @@ def main():
             page.wait_for_function("messages.filter(m=>m.type==='save_document').length===2")
             resized = page.evaluate("messages.findLast(m=>m.type==='save_document').snapshot.nodes[0].width")
             assert resized > 220, resized
-            frame.get_by_role("button", name="실행 취소 (Ctrl+Z)", exact=True).click()
+            frame.get_by_role("button", name="↶ 취소", exact=True).click()
             page.evaluate("send({type:'save',name:'크기 복원'})")
             page.wait_for_function("messages.filter(m=>m.type==='save_document').length===3")
             assert page.evaluate("messages.findLast(m=>m.type==='save_document').snapshot.nodes[0].width") == 220
@@ -121,23 +122,20 @@ def main():
             assert png[:8] == b"\x89PNG\r\n\x1a\n"
             width, height = struct.unpack(">II", png[16:24])
             assert width > 500 and height > 500
-            frame.get_by_role("tab", name="표 서식 모음").click()
-            page.evaluate("send({type:'catalog_data',data:{category_count:1,template_count:1,categories:[{id:'0',name:'부연설명',templates:[{id:'0:1',name:'부연설명 · 모양 1',rows:2,cols:2,cells:[['표 제목','설명'],['항목','내용']]}]}]}})")
-            frame.get_by_label("1행 1번째 칸").fill("직접 편집")
-            frame.get_by_role("button", name="선택한 표 한/글에 복사", exact=True).click()
-            page.wait_for_function("messages.some(m=>m.type==='copy_catalog')")
-            copied = page.evaluate("messages.findLast(m=>m.type==='copy_catalog')")
-            assert copied["id"] == "0:1"
-            assert copied["cell_edits"]["0:0"] == "직접 편집"
-            frame.get_by_role("button", name="수정 표 HWPX 저장", exact=True).click()
-            page.wait_for_function("messages.some(m=>m.type==='export_catalog')")
-            exported = page.evaluate("messages.findLast(m=>m.type==='export_catalog')")
-            assert exported["cell_edits"]["0:0"] == "직접 편집"
+            tabs = frame.get_by_role("tab")
+            assert [tabs.nth(i).inner_text() for i in range(tabs.count())] == ["다이어그램", "마인드맵", "흐름표", "기본 표"]
+            for removed in ("조직표", "장식표", "표 서식 모음"):
+                assert frame.get_by_role("tab", name=removed).count() == 0
+            page.evaluate("send({type:'catalog_data',data:{categories:[]}})")
+            page.wait_for_function("messages.some(m=>m.type==='editor_error'&&m.message.includes('비활성화'))")
+            assert frame.locator(".catalog-menu").count() == 0
             assert not failures, failures
+
             assert all(url.startswith((f"http://127.0.0.1:{server.server_port}/", f"blob:http://127.0.0.1:{server.server_port}/")) for url in requests), requests
             page.screenshot(path=str(Path(tempfile.gettempdir()) / "docfit-flow-editor.png"))
             print(json.dumps({"templates": 10, "decision_nodes": 6, "decision_edges": 6,
-                              "round_trip": True, "undo_redo": True, "catalog_table_edit": True,
+                              "round_trip": True, "undo_redo": True, "removed_table_modes_hidden": True,
+                              "catalog_disabled": True,
                               "long_korean_safe": True, "png_size": [width, height],
                               "external_requests": 0, "page_errors": failures}, ensure_ascii=False))
             browser.close()

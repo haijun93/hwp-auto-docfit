@@ -40,6 +40,19 @@ class FlowServiceTests(unittest.TestCase):
             app.dispatch("flow_editor", ["save", {"id": self.identity, "name": "invalid", "snapshot": {"document": {}}}])
         self.assertEqual(app.dispatch("flow_editor", ["load", {"id": self.identity}])["name"], "일반")
 
+    def test_alpha_disables_catalog_and_removed_table_kinds_at_service_boundary(self):
+        service = FlowService(self.folder, self.store)
+        for action in (service.export_catalog, service.copy_catalog):
+            with self.assertRaisesRegex(ServiceError, "비활성화"):
+                action("0:1")
+        for kind in ("org", "bar"):
+            with self.assertRaises(ServiceError) as caught:
+                service.export_hwpx({"kind": kind}, self.folder / "unused.hwpx")
+            self.assertEqual(caught.exception.code, "TABLE_KIND_DISABLED")
+        app = ApplicationService(self.folder / "settings.json")
+        with self.assertRaisesRegex(ServiceError, "비활성화"):
+            app.dispatch("flow_editor", ["catalog_list", {}])
+
     def test_browser_bridge_routes_general_editor_without_developer_flag(self):
         bridge = DesktopWebBridge.__new__(DesktopWebBridge)
         bridge.gui = SimpleNamespace(_준말_서비스=lambda: SimpleNamespace(settings=self.store))

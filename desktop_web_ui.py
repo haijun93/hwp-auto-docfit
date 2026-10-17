@@ -990,8 +990,11 @@ class DesktopWebBridge:
             from tkinter import filedialog
             from docfit_core.table_builder import TableSpecError, build_table_hwpx, normalize
             from docfit_app.table_template_service import TableTemplateService
+            spec = payload.get("spec")
+            if not isinstance(spec, dict) or spec.get("kind") not in {"flow", "grid"}:
+                raise ServiceError("TABLE_KIND_DISABLED", "알파 버전에서는 흐름표와 기본 표만 만들 수 있습니다.")
             try:
-                normalize(payload.get("spec"))
+                normalize(spec)
             except TableSpecError as exc:
                 raise ServiceError("INVALID_TABLE", str(exc)) from exc
             raw_name = payload.get("name", "표")
@@ -1012,7 +1015,7 @@ class DesktopWebBridge:
             try:
                 with tempfile.NamedTemporaryFile(dir=target.parent, suffix=".tmp", delete=False) as stream:
                     temporary = Path(stream.name)
-                build_table_hwpx(payload.get("spec"), base, temporary, basic_style=basic)
+                build_table_hwpx(spec, base, temporary, basic_style=basic)
                 os.replace(temporary, target)
             except TableSpecError as exc:
                 raise ServiceError("INVALID_TABLE", str(exc)) from exc
@@ -1021,43 +1024,11 @@ class DesktopWebBridge:
                     temporary.unlink(missing_ok=True)
             return {"path": str(target)}
         if action == "catalog_list":
-            from docfit_core.table_catalog import list_catalog
-            return list_catalog()
+            raise ServiceError("FEATURE_DISABLED", "표 서식 모음은 현재 알파 버전에서 비활성화되어 있습니다.")
         if action == "catalog_copy":
-            template_id = payload.get("id")
-            if not isinstance(template_id, str) or len(template_id) > 32:
-                raise ServiceError("INVALID_INPUT", "한/글에 복사할 표 모양을 다시 선택해 주세요.")
-            return self._tk(lambda: service.copy_catalog(template_id, cell_edits=payload.get("cell_edits"), structure_edits=payload.get("structure_edits")))
+            raise ServiceError("FEATURE_DISABLED", "표 서식 모음은 현재 알파 버전에서 비활성화되어 있습니다.")
         if action == "catalog_export":
-            from docfit_core.table_catalog import export_template
-            from docfit_app.api_contract import ServiceError
-            import os
-            import tempfile
-            from tkinter import filedialog
-            template_id = payload.get("id")
-            if not isinstance(template_id, str) or len(template_id) > 32:
-                raise ServiceError("INVALID_INPUT", "저장할 표 서식을 다시 선택해 주세요.")
-            raw_name = payload.get("name", "표 서식")
-            name = "".join(c for c in str(raw_name)[:120] if c.isalnum() or c in " _-()") or "표 서식"
-            selected = self._tk(lambda: filedialog.asksaveasfilename(
-                parent=self.gui.root, title="표 서식 HWPX 저장", initialfile=name + ".hwpx",
-                defaultextension=".hwpx", filetypes=[("한/글 문서", "*.hwpx")],
-            ), front=True)
-            if not selected:
-                return {"cancelled": True}
-            target = Path(selected)
-            if target.suffix.lower() != ".hwpx":
-                raise ServiceError("INVALID_PATH", ".hwpx 파일로 저장해 주세요.")
-            temporary = None
-            try:
-                with tempfile.NamedTemporaryFile(dir=target.parent, suffix=".hwpx", delete=False) as stream:
-                    temporary = Path(stream.name)
-                export_template(template_id, temporary, cell_edits=payload.get("cell_edits"), structure_edits=payload.get("structure_edits"))
-                os.replace(temporary, target)
-            finally:
-                if temporary is not None:
-                    temporary.unlink(missing_ok=True)
-            return {"path": str(target)}
+            raise ServiceError("FEATURE_DISABLED", "표 서식 모음은 현재 알파 버전에서 비활성화되어 있습니다.")
         if action == "list":
             return service.list()
         if action == "load":

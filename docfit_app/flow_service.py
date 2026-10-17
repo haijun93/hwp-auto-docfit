@@ -47,6 +47,8 @@ class FlowService(DiagramService):
         """표/다이어그램 편집기의 흐름표·기본 표를 HWPX로 만들어 내보내기 폴더에 둔다(docfit_core.table_builder)."""
         import uuid
         from docfit_core.table_builder import TableSpecError, build_table_hwpx
+        if not isinstance(spec, dict) or spec.get("kind") not in {"flow", "grid"}:
+            raise ServiceError("TABLE_KIND_DISABLED", "알파 버전에서는 흐름표와 기본 표만 만들 수 있습니다.")
         folder = self.root / "exports"
         if self.root.is_symlink() or folder.is_symlink():
             raise ServiceError("DIAGRAM_PATH_INVALID", "표 저장 폴더 경로가 올바르지 않습니다.")
@@ -66,38 +68,13 @@ class FlowService(DiagramService):
         folder.mkdir(parents=True, exist_ok=True)
         return folder
 
-    def export_catalog(self, template_id, *, cell_edits=None, structure_edits=None):
-        """Save a native table copy with requested text and row/column edits."""
-        import uuid
-        from docfit_core.table_catalog import export_template
-        folder = self._catalog_export_folder()
-        path = folder / (uuid.uuid4().hex + ".hwpx")
-        try:
-            export_template(template_id, path, cell_edits=cell_edits, structure_edits=structure_edits)
-        except (ValueError, OSError) as exc:
-            path.unlink(missing_ok=True)
-            raise ServiceError("CATALOG_EXPORT_FAILED", "표 서식을 HWPX로 내보내지 못했습니다.") from exc
-        return {"path": str(path)}
+    def export_catalog(self, template_id, *, cell_edits=None, structure_edits=None, style_edits=None):
+        """Save a native table copy with requested text, row/column, and style/border edits."""
+        raise ServiceError("FEATURE_DISABLED", "표 서식 모음은 현재 알파 버전에서 비활성화되어 있습니다.")
 
-    def copy_catalog(self, template_id, *, cell_edits=None, structure_edits=None):
+    def copy_catalog(self, template_id, *, cell_edits=None, structure_edits=None, style_edits=None):
         """Publish a selected template through Hancom's native clipboard format."""
-        import tempfile
-        from docfit_core.table_catalog import export_template
-        folder = self._catalog_export_folder()
-        temporary = None
-        try:
-            with tempfile.NamedTemporaryFile(dir=folder, suffix=".hwpx", delete=False) as stream:
-                temporary = __import__("pathlib").Path(stream.name)
-            export_template(template_id, temporary, cell_edits=cell_edits, structure_edits=structure_edits)
-            from docfit_app.native_table_clipboard import copy_hwpx_document
-            return copy_hwpx_document(temporary)
-        except ServiceError:
-            raise
-        except (ValueError, OSError) as exc:
-            raise ServiceError("CATALOG_COPY_FAILED", "선택한 표 서식을 복사하지 못했습니다.") from exc
-        finally:
-            if temporary is not None:
-                temporary.unlink(missing_ok=True)
+        raise ServiceError("FEATURE_DISABLED", "표 서식 모음은 현재 알파 버전에서 비활성화되어 있습니다.")
 
     def export_png(self, encoded):
         import uuid

@@ -208,3 +208,272 @@ export function cssBorder(b){
  const px=Math.max(1,Math.round(parseFloat(b.width)*3.78*(css==='double'?2.2:1)));
  return `${Math.max(css==='double'?3:1,px)}px ${css} ${b.color}`;
 }
+
+// ---- 표 서식 모음(catalog) 자유 편집: 기본 표·흐름표·조직표·장식표의 행/열 끼우기·서식·테두리 편집 적용 ----
+export const CATALOG_SCOPES=[['cell','선택 칸'],['row','현재 행'],['col','현재 열'],['all','표 전체']];
+const CATALOG_DEFAULT_STYLE={font:'한컴돋움',size:11,bold:false,color:'#000000',fill:''};
+const CATALOG_DEFAULT_SIDE={type:'SOLID',width:'0.12 mm',color:'#000000'};
+const CATALOG_DEFAULT_BORDERS={top:{...CATALOG_DEFAULT_SIDE},bottom:{...CATALOG_DEFAULT_SIDE},left:{...CATALOG_DEFAULT_SIDE},right:{...CATALOG_DEFAULT_SIDE}};
+
+/** 내장 HWPX 표 서식 정보(cells + cell_meta)를 자유 편집 가능한 격자 상태로 만든다. */
+export function buildCatalogGrid(template){
+ if(!template||!Array.isArray(template.cells))return [];
+ const metaRows=Array.isArray(template.cell_meta)?template.cell_meta:[];
+ return template.cells.map((row,r)=>row.map((val,c)=>{
+  const m=metaRows[r]?.[c]??{};
+  const rawStyle={...CATALOG_DEFAULT_STYLE,...(m.style??{})};
+  if(!isFontName(rawStyle.font))rawStyle.font='한컴돋움';
+  if(typeof rawStyle.size!=='number'||!(rawStyle.size>=6&&rawStyle.size<=40))rawStyle.size=11;
+  if(!hex(rawStyle.color))rawStyle.color='#000000';
+  if(rawStyle.fill&&!hex(rawStyle.fill))rawStyle.fill='';
+  const st=style(rawStyle,CATALOG_DEFAULT_STYLE);
+  const bd=Object.fromEntries(['top','bottom','left','right'].map(side=>{
+   const b={...CATALOG_DEFAULT_SIDE,...(m.borders?.[side]??{})};
+   return [side,{type:BORDER_KEYS.has(b.type)?b.type:'SOLID',width:BORDER_WIDTHS.includes(b.width)?b.width:'0.12 mm',color:hex(b.color)?b.color.toUpperCase():'#000000'}];
+  }));
+  const txt=typeof val==='string'?val:String(val??'');
+  return {
+   row:Number.isInteger(m.row)?m.row:r,
+   col:Number.isInteger(m.col)?m.col:c,
+   rowSpan:Math.max(1,Number.isInteger(m.rowSpan)?m.rowSpan:1),
+   colSpan:Math.max(1,Number.isInteger(m.colSpan)?m.colSpan:1),
+   align:['LEFT','CENTER','RIGHT','JUSTIFY'].includes(m.align)?m.align:'CENTER',
+   text:txt,origText:txt,
+   style:copy(st),origStyle:copy(st),
+   borders:copy(bd),origBorders:copy(bd),
+   customStyle:false,customBorders:false,
+  };
+ }));
+}
+
+function cloneCatalogCell(cell,patch={}){
+ return {
+  ...copy(cell),
+  text:'',origText:null,
+  ...patch,
+ };
+}
+
+/** 표 서식 모음에 행·열 추가/끼우기/삭제를 적용한다(병합 보호 검사 포함). */
+export function applyCatalogStructure(grid,ops=[],operation){
+ if(!Array.isArray(grid)||!grid.length)return {grid:[],ops};
+ const rowCount=grid.length;
+ const colCount=Math.max(1,...grid.map(r=>r.reduce((sum,cell)=>sum+(cell.colSpan??1),0)));
+ let opName,targetIdx,recordedOp;
+ if(operation==='add_row'){opName='insert_row';targetIdx=rowCount;recordedOp='add_row';}
+ else if(operation==='delete_row'){opName='delete_row';targetIdx=rowCount-1;recordedOp='delete_row';}
+ else if(operation==='add_column'){opName='insert_column';targetIdx=colCount;recordedOp='add_column';}
+ else if(operation==='delete_column'){opName='delete_column';targetIdx=colCount-1;recordedOp='delete_column';}
+ else if(typeof operation==='object'&&operation){
+  opName=operation.op;targetIdx=operation.index;
+  if(opName==='insert_row'&&targetIdx===rowCount)recordedOp='add_row';
+  else if(opName==='delete_row'&&targetIdx===rowCount-1)recordedOp='delete_row';
+  else if(opName==='insert_column'&&targetIdx===colCount)recordedOp='add_column';
+  else if(opName==='delete_column'&&targetIdx===colCount-1)recordedOp='delete_column';
+  else recordedOp={op:opName,index:targetIdx};
+ }else throw new Error('지원하지 않는 표 구조 수정입니다.');
+
+ if(opName==='insert_row'){
+  if(rowCount>=100)throw new Error('표는 최대 100행까지 추가할 수 있습니다.');
+  if(targetIdx<0||targetIdx>rowCount)throw new Error('행 추가 위치를 확인해 주세요.');
+  if(targetIdx===rowCount){
+   const last=grid[rowCount-1];
+   if(last.some(c=>(c.rowSpan??1)!==1))throw new Error('마지막 행의 세로 병합 셀을 해제한 뒤 행을 추가해 주세요.');
+   const cloned=last.map(c=>cloneCatalogCell(c,{row:rowCount,rowSpan:1}));
+   return {grid:[...grid.map(r=>r.map(copy)),cloned],ops:[...ops,recordedOp]};
+  }
+  for(let r=0;r<targetIdx;r++){
+   for(const c of grid[r])if(r+(c.rowSpan??1)>targetIdx)throw new Error('세로 병합된 셀 구간 사이에는 행을 끼울 수 없습니다.');
+  }
+  const source=grid[targetIdx];
+  const cloned=source.map(c=>cloneCatalogCell(c,{row:targetIdx,rowSpan:1}));
+  const next=grid.map((r,ri)=>r.map(c=>({...copy(c),row:ri>=targetIdx?c.row+1:c.row})));
+  next.splice(targetIdx,0,cloned);
+  return {grid:next,ops:[...ops,recordedOp]};
+ }
+ if(opName==='delete_row'){
+  if(rowCount<=1)throw new Error('표에는 최소 한 행이 있어야 합니다.');
+  if(targetIdx<0||targetIdx>=rowCount)throw new Error('삭제할 표 행을 찾을 수 없습니다.');
+  if(grid[targetIdx].some(c=>(c.rowSpan??1)>1))throw new Error('세로 병합된 셀이 포함된 행은 먼저 병합을 해제해 주세요.');
+  for(let r=0;r<targetIdx;r++){
+   for(const c of grid[r])if(r+(c.rowSpan??1)>targetIdx)throw new Error(targetIdx===rowCount-1?'마지막 행과 세로 병합된 셀은 먼저 병합을 해제해 주세요.':'세로 병합된 셀이 포함된 행은 먼저 병합을 해제해 주세요.');
+  }
+  const next=grid.filter((_,ri)=>ri!==targetIdx).map((r,ri)=>r.map(c=>({...copy(c),row:ri})));
+  return {grid:next,ops:[...ops,recordedOp]};
+ }
+ if(opName==='insert_column'){
+  if(colCount>=50)throw new Error('표는 최대 50열까지 추가할 수 있습니다.');
+  if(targetIdx<0||targetIdx>colCount)throw new Error('열 추가 위치를 확인해 주세요.');
+  if(targetIdx===colCount){
+   const next=grid.map(row=>{
+    const last=row[row.length-1];
+    return [...row.map(copy),cloneCatalogCell(last,{col:colCount,colSpan:1,rowSpan:1})];
+   });
+   return {grid:next,ops:[...ops,recordedOp]};
+  }
+  const next=grid.map(row=>{
+   let insertPos=row.findIndex(c=>c.col>=targetIdx);
+   if(insertPos<0)insertPos=row.length-1;
+   const ref=row[insertPos];
+   const cloned=cloneCatalogCell(ref,{col:targetIdx,colSpan:1,rowSpan:1});
+   const copied=row.map((c,ci)=>({...copy(c),col:ci>=insertPos&&c.col>=targetIdx?c.col+1:c.col}));
+   copied.splice(insertPos,0,cloned);
+   return copied;
+  });
+  return {grid:next,ops:[...ops,recordedOp]};
+ }
+ if(opName==='delete_column'){
+  if(colCount<=1||grid.some(r=>r.length<=1))throw new Error('표에는 최소 한 열이 있어야 합니다.');
+  if(targetIdx<0||targetIdx>=colCount)throw new Error('삭제할 표 열을 찾을 수 없습니다.');
+  if(targetIdx===colCount-1){
+   for(const row of grid){
+    const last=row[row.length-1];
+    if((last.colSpan??1)!==1||(last.rowSpan??1)!==1)throw new Error('마지막 열의 병합 셀은 먼저 병합을 해제해 주세요.');
+   }
+   return {grid:grid.map(r=>r.slice(0,-1).map(copy)),ops:[...ops,recordedOp]};
+  }
+  const next=grid.map(row=>{
+   let pos=row.findIndex(c=>c.col===targetIdx);
+   if(pos<0&&targetIdx<row.length)pos=targetIdx;
+   if(pos<0)throw new Error('병합된 열은 먼저 병합을 해제해 주세요.');
+   const chosen=row[pos];
+   if((chosen.colSpan??1)!==1||(chosen.rowSpan??1)!==1)throw new Error('병합 셀이 포함된 열은 먼저 병합을 해제해 주세요.');
+   return row.filter((_,ci)=>ci!==pos).map(c=>({...copy(c),col:c.col>targetIdx?c.col-1:c.col}));
+  });
+  return {grid:next,ops:[...ops,recordedOp]};
+ }
+ throw new Error('지원하지 않는 표 구조 수정입니다.');
+}
+
+export function setCatalogCellText(grid,r,c,value){
+ if(typeof value!=='string'||value.length>2000||/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value))return grid;
+ return grid.map((row,ri)=>ri===r?row.map((cell,ci)=>ci===c?{...copy(cell),text:value}:cell):row);
+}
+
+function inCatalogScope(grid,scope,selected,ri,ci){
+ const selR=selected?.r??0,selC=selected?.c??0;
+ if(scope==='all')return true;
+ if(scope==='row')return ri===selR;
+ if(scope==='col'){
+  const targetCol=grid[selR]?.[selC]?.col??selC;
+  return (grid[ri]?.[ci]?.col??ci)===targetCol;
+ }
+ return ri===selR&&ci===selC;
+}
+
+/** 표 서식 모음에서 선택 범위(칸·행·열·전체)의 글자 서식·바탕색을 바꾼다. */
+export function setCatalogStyle(grid,scope,selected,patch){
+ return grid.map((row,ri)=>row.map((cell,ci)=>{
+  if(!inCatalogScope(grid,scope,selected,ri,ci))return cell;
+  const nextStyle=style({...cell.style,...patch},cell.style);
+  return {...copy(cell),style:nextStyle,customStyle:true};
+ }));
+}
+
+/** 표 서식 모음에서 선택 범위(칸·행·열·전체)의 테두리(바깥 선·안쪽 선)를 바꾼다. */
+export function setCatalogBorder(grid,scope,selected,part,patch){
+ const matched=[];
+ grid.forEach((row,ri)=>row.forEach((cell,ci)=>{if(inCatalogScope(grid,scope,selected,ri,ci))matched.push({ri,ci,cell});}));
+ if(!matched.length)return grid;
+ const minR=Math.min(...matched.map(m=>m.ri)),maxR=Math.max(...matched.map(m=>m.ri+(m.cell.rowSpan??1)-1));
+ const minC=Math.min(...matched.map(m=>m.cell.col??m.ci)),maxC=Math.max(...matched.map(m=>(m.cell.col??m.ci)+(m.cell.colSpan??1)-1));
+ const single=matched.length===1;
+ return grid.map((row,ri)=>row.map((cell,ci)=>{
+  if(!inCatalogScope(grid,scope,selected,ri,ci))return cell;
+  const c0=cell.col??ci,c1=c0+(cell.colSpan??1)-1,r0=ri,r1=ri+(cell.rowSpan??1)-1;
+  const nextBorders=copy(cell.borders);
+  for(const side of ['top','bottom','left','right']){
+   const isOuter=side==='top'?r0===minR:side==='bottom'?r1>=maxR:side==='left'?c0===minC:c1>=maxC;
+   if(single||(part==='outer'&&isOuter)||(part==='inner'&&!isOuter)){
+    const merged={...nextBorders[side],...patch};
+    if(!BORDER_KEYS.has(merged.type)||!BORDER_WIDTHS.includes(merged.width)||!hex(merged.color))throw new Error('테두리(종류·굵기·색)를 확인해 주세요.');
+    nextBorders[side]={type:merged.type,width:merged.width,color:merged.color.toUpperCase()};
+   }
+  }
+  return {...copy(cell),borders:nextBorders,customBorders:true};
+ }));
+}
+
+/** 편집된 표 서식 모음 격자에서 Python으로 보낼 cell_edits와 style_edits를 추출한다. */
+export function buildCatalogEdits(grid){
+ const cell_edits={},style_edits={};
+ if(!Array.isArray(grid))return {cell_edits,style_edits};
+ grid.forEach((row,r)=>row.forEach((cell,c)=>{
+  const key=`${r}:${c}`;
+  if(cell.origText===null?cell.text!=='':cell.text!==cell.origText){
+   cell_edits[key]=cell.text;
+  }
+  if(cell.customStyle||cell.customBorders){
+   const patch={};
+   if(cell.customStyle){
+    if(cell.style.font!==cell.origStyle.font||cell.style.size!==cell.origStyle.size||cell.style.bold!==cell.origStyle.bold||cell.style.color!==cell.origStyle.color){
+     patch.font=cell.style.font;patch.size=cell.style.size;patch.bold=cell.style.bold;patch.color=cell.style.color;
+    }
+    if(cell.style.fill!==cell.origStyle.fill)patch.fill=cell.style.fill;
+   }
+   if(cell.customBorders)patch.borders=copy(cell.borders);
+   if(Object.keys(patch).length)style_edits[key]=patch;
+  }
+ }));
+ return {cell_edits,style_edits};
+}
+
+export const isTaskTable=(templateId,categoryName)=>
+ templateId==='0:1'||categoryName==='분야별과제표';
+
+export const isFixedCalloutCategory=(categoryName,templateId)=>
+ categoryName==='부연설명'||categoryName==='라벨 서식'||
+ (typeof templateId==='string'&&(templateId.startsWith('2:')||templateId.startsWith('3:')));
+
+/** 분야별과제표의 단계(과제) 수를 2~6개로 늘리거나 줄인다 (정보단위 세트+연결단위 세트). */
+export function resizeTaskGrid(grid,targetSteps){
+ const n=Math.max(2,Math.min(6,targetSteps));
+ if(!Array.isArray(grid)||grid.length<3)return {grid,ops:[]};
+ const r0=grid[0],r1=grid[1],r2=grid[2];
+ const origN=Math.max(1,Math.floor(r0.length/4));
+
+ const totalW=46601;
+ const connW=(n-1)*566+283;
+ const remW=totalW-connW;
+ const stepBase=Math.floor(remW/n);
+ const stepRem=remW%n;
+ const stepWidths=Array.from({length:n},(_,i)=>stepBase+(i===n-1?stepRem:0));
+ const centerWidths=stepWidths.map(sw=>sw-2830);
+
+ const nextR0=[],nextR1=[],nextR2=[];
+ for(let i=0;i<n;i++){
+  const srcI=Math.min(i,origN-1);
+  const isLast=i===n-1;
+
+  // Row 0
+  const c0=i<origN?copy(r0[i*4]):cloneCatalogCell(r0[srcI*4],{text:'',origText:''});
+  const c1=i<origN?copy(r0[i*4+1]):cloneCatalogCell(r0[srcI*4+1],{text:`과제 ${i+1}`,origText:null});
+  const c2=i<origN?copy(r0[i*4+2]):cloneCatalogCell(r0[srcI*4+2],{text:'',origText:''});
+  const c3=i<origN?copy(r0[i*4+3]):cloneCatalogCell(r0[srcI*4+3],{text:'',origText:''});
+
+  c0.col=i*4;c0.width=1415;
+  c1.col=i*4+1;c1.width=centerWidths[i];
+  c2.col=i*4+2;c2.width=1415;
+  c3.col=i*4+3;c3.width=isLast?283:566;
+  nextR0.push(c0,c1,c2,c3);
+
+  // Row 1
+  const r1c0=i<origN?copy(r1[i*3]):cloneCatalogCell(r1[srcI*3],{text:'',origText:''});
+  const r1c1=i<origN?copy(r1[i*3+1]):cloneCatalogCell(r1[srcI*3+1],{text:'',origText:''});
+  const r1c2=i<origN?copy(r1[i*3+2]):cloneCatalogCell(r1[srcI*3+2],{text:'',origText:''});
+
+  r1c0.col=i*4;r1c0.width=1415;
+  r1c1.col=i*4+2;r1c1.width=1415;
+  r1c2.col=i*4+3;r1c2.width=isLast?283:566;
+  nextR1.push(r1c0,r1c1,r1c2);
+
+  // Row 2
+  const r2c0=i<origN?copy(r2[i*2]):cloneCatalogCell(r2[srcI*2],{text:`• 과제 ${i+1} 세부내용`,origText:null});
+  const r2c1=i<origN?copy(r2[i*2+1]):cloneCatalogCell(r2[srcI*2+1],{text:'',origText:''});
+
+  r2c0.col=i*4;r2c0.width=stepWidths[i];
+  r2c1.col=i*4+3;r2c1.width=isLast?283:566;
+  nextR2.push(r2c0,r2c1);
+ }
+  return {grid:[nextR0,nextR1,nextR2],ops:[{op:'resize_steps',steps:n}]};
+}

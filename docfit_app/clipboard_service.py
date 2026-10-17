@@ -11,7 +11,10 @@ def copy_result(payload):
         raise ServiceError("CLIPBOARD_UNAVAILABLE", "한/글 붙여넣기 복사는 Windows에서 사용할 수 있습니다.")
     import win32clipboard as clipboard
     if payload.get("kind") == "table":
-        html, text = table_html(payload.get("spec"))
+        spec = payload.get("spec")
+        if not isinstance(spec, dict) or spec.get("kind") not in {"flow", "grid"}:
+            raise ServiceError("TABLE_KIND_DISABLED", "알파 버전에서는 흐름표와 기본 표만 복사할 수 있습니다.")
+        html, text = table_html(spec)
         formats = [(clipboard.RegisterClipboardFormat("HTML Format"), cf_html(html)), (13, text)]
         result = "table"
     elif payload.get("kind") == "png":

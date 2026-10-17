@@ -92,7 +92,7 @@ def 작업_설정(s, 모드, 표제외_요청, 전체서식_요청=None):
     return 모드, 세부작업, 세부, 표제외
 
 
-def 처리(g, 원본, 작업폴더, 모드, 표제외_요청, 로그파일, 전체서식_요청=None):
+def 처리(g, 원본, 작업폴더, 모드, 표제외_요청, 로그파일, 전체서식_요청=None, 검수_강제=None):
     """앱과 같은 설정으로 처리하고 (사본, 결과, 초, 점수, 설정 요약)을 돌려준다."""
     사본 = Path(작업폴더) / ('src' + Path(원본).suffix.lower())
     shutil.copyfile(원본, 사본)
@@ -107,6 +107,9 @@ def 처리(g, 원본, 작업폴더, 모드, 표제외_요청, 로그파일, 전�
     g.update(로그=로그, 진단로그=로그, 상태=lambda *_: None, 단계표시=g.get('단계표시', lambda *_: None),
              _서식통일_최종결과_사용자확인=lambda *_: None)
     s = g['설정_불러오기']()
+    if 검수_강제 is not None:
+        # 비교시험에서만 검수를 강제하고 사용자 설정 파일은 변경하지 않는다.
+        s['verify'] = bool(검수_강제)
     모드, 세부작업, 세부, 표제외 = 작업_설정(s, 모드, 표제외_요청, 전체서식_요청)
     간격 = {k: int(s[k]) for k in PARSPACE_KEYS}
     시작 = time.time()
@@ -179,6 +182,8 @@ def main():
     parser.add_argument('--require-same-layout', action='store_true',
                         help='쪽 구성(원본과 같음)을 합격 조건으로 쓴다(서식 통일의 원본 쪽 구성 유지 시험용)')
     parser.add_argument('--min-score', type=float, default=100.0, help='합격 최소 점수(기본 100)')
+    parser.add_argument('--verify', action='store_true',
+                        help='이번 시험에서만 저장 결과 상세 검수를 켠다(사용자 설정 파일은 변경하지 않음)')
     parser.add_argument('--out', help='결과 JSON 경로(기본: 표준 출력)')
     parser.add_argument('--log-dir', help='문서별 작업 로그를 남길 폴더(처리 시간 계측 확인용)')
     parser.add_argument('--flag', action='append', default=[], metavar='이름=0|1',
@@ -206,7 +211,8 @@ def main():
         with tempfile.TemporaryDirectory(prefix='docfit_regression_') as 폴더, \
                 open(Path(폴더) / 'log.txt', 'w', encoding='utf-8') as 로그파일:
             사본, 결과, 초, 점수, 설정 = 처리(g, 문서, 폴더, args.mode, args.exclude_tables, 로그파일,
-                                        None if args.unify_full_format is None else args.unify_full_format == '1')
+                                        None if args.unify_full_format is None else args.unify_full_format == '1',
+                                        True if args.verify else None)
             항목 = {'document': Path(문서).name,
                   'document_sha256': hashlib.sha256(Path(문서).read_bytes()).hexdigest()[:16],
                   **공통, 'settings': 설정, 'seconds': 초, 'score': 점수, 'output_created': bool(결과)}
