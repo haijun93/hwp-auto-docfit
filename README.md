@@ -23,6 +23,7 @@
 | 파일 | 다운로드 및 용도 |
 |---|---|
 | 프로그램 | **[HWP_AutoDocFit.exe 바로 받기](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/HWP_AutoDocFit.exe)** — Windows 10·11 64비트, 한/글 2020 필요 |
+| GitLab 프로그램 미러 | [HWP_AutoDocFit.exe 내려받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/v1.77.0/downloads/HWP_AutoDocFit.exe) — GitLab 릴리즈 자산 |
 | 프로그램·예시 압축팩 | [HWP_AutoDocFit-v1.77.0.zip](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.77.0/HWP_AutoDocFit-v1.77.0.zip) — 압축을 풀어 실행 |
 | 체크섬 | [SHA256SUMS](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/SHA256SUMS) — EXE 파일의 SHA256 확인 |
 
