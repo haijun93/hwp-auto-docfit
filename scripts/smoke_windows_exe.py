@@ -71,6 +71,13 @@ def main():
             engine_version=json.loads(Path("kordoc_pack/package.json").read_text())["dependencies"]["kordoc"]
             runtime=home/"kordoc-runtime"/engine_version
             node=runtime/"node/node.exe";cli=runtime/"app/node_modules/kordoc/dist/cli.js"
+            # Startup deploys the verified embedded runtime on a daemon thread so
+            # the UI can appear first. Do not race that extraction in this smoke test.
+            runtime_deadline=time.monotonic()+180
+            while time.monotonic()<runtime_deadline and not (node.is_file() and cli.is_file()):
+                time.sleep(.5)
+            if not (node.is_file() and cli.is_file()):
+                raise FileNotFoundError(f"Embedded runtime deployment did not finish: {runtime}")
             observed=subprocess.run([str(node),str(cli),"--version"],check=True,capture_output=True,text=True,timeout=30).stdout.strip()
             assert engine_version in observed
             with tempfile.TemporaryDirectory() as folder:

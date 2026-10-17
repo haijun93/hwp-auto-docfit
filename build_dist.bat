@@ -9,7 +9,7 @@ if not exist "%PYTHON%" (
   exit /b 1
 )
 
-for /f %%V in ('"%PYTHON%" "scripts\read_app_version.py"') do set "VERSION=%%V"
+for /f %%V in ('%PYTHON% scripts\read_app_version.py') do set "VERSION=%%V"
 if not defined VERSION (
   echo [FAIL] Could not read APP_VERSION.
   exit /b 1
@@ -18,6 +18,7 @@ set "ISCC="
 for /f "delims=" %%I in ('where ISCC.exe 2^>nul') do if not defined ISCC set "ISCC=%%I"
 if not defined ISCC if exist "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" set "ISCC=%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe"
 if not defined ISCC if exist "%ProgramFiles%\Inno Setup 6\ISCC.exe" set "ISCC=%ProgramFiles%\Inno Setup 6\ISCC.exe"
+if not defined ISCC if exist "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" set "ISCC=%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"
 
 echo [1/6] Building Flutter assets...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0build_flutter.ps1"

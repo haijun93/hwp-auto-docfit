@@ -1,5 +1,15 @@
 param([string]$FlutterSdk = $env:FLUTTER_SDK)
 $ErrorActionPreference = 'Stop'
+$toolRoot = Join-Path $env:LOCALAPPDATA 'DocFitTools'
+$compatibleNode = Get-ChildItem -LiteralPath $toolRoot -Directory -Filter 'node-v*-win-x64' -ErrorAction SilentlyContinue |
+    Where-Object {
+        $_.Name -match '^node-v(?<version>\d+\.\d+\.\d+)-win-x64$' -and
+        [version]$Matches.version -ge [version]'22.12.0' -and
+        (Test-Path -LiteralPath (Join-Path $_.FullName 'node.exe'))
+    } |
+    Sort-Object { [version]($_.Name -replace '^node-v([\d.]+)-win-x64$', '$1') } -Descending |
+    Select-Object -First 1
+if ($compatibleNode) { $env:Path = "$($compatibleNode.FullName);$env:Path" }
 $flutter = if ($FlutterSdk) { Join-Path $FlutterSdk 'bin\flutter.bat' } else { 'flutter' }
 if (-not (Get-Command $flutter -ErrorAction SilentlyContinue)) {
     $localSdk = Join-Path $env:LOCALAPPDATA 'DocFitTools\flutter\bin\flutter.bat'
