@@ -1,10 +1,10 @@
 {
   "ok": true,
-  "version": "1.76.4",
+  "version": "1.76.5",
   "windows": [
     {
-      "title": "한글편집 후처리 · v1.76.4",
-      "pid": 8592
+      "title": "한글편집 후처리 · v1.76.5",
+      "pid": 7532
     }
   ],
   "offline_ocr": {
