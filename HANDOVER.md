@@ -13,6 +13,9 @@
 새 기능·릴리스마다 반드시 돌린다(사용자 지시). 원본이 손으로 맞춘 쪽별 줄 간격·낱말 자간·한 줄 문단 내어쓰기는 기준에서 뺀다.
 불변 규칙: ㅇ 내어쓰기(본문 첫 글자·괄호 라벨은 (·콜론 라벨은 콜론 뒤), 항목기호 뒤 「는 붙임, 개요 A1 첫 빈칸 1칸,
 표 두 글자 칸 빈칸 1칸, 사용자가 꾸민 표에는 글 규칙 미적용. 릴리스 때 README.md도 반드시 갱신한다.
+배포 기록: CI 실행 38988698498(소스 ef32cd9), EXE SHA256 056e3a48…ab0c. 이 PC에서 github.com git 연결이 막혀(TLS 거부,
+api.github.com은 정상) 커밋·태그를 Git Data API로 로컬과 같은 SHA로 재생성해 올렸다. GitLab main은 GitHub main으로 미러했고
+그전 GitLab 전용 이력(18b3f96까지 32커밋)은 origin의 backup/gitlab-main-20261017에 있다. Actions는 v1.76.5 빌드를 위해 다시 켰다.
 
 2026-10-16 다운로드 중지: 사용자 지시로 저장소 공개를 유지하며 핫픽스 전 배포 중지.
 GitHub 기존 릴리즈 26개 초안 전환·Actions 비활성, GitLab Releases 멤버 전용·CI/CD/Package registry 비활성.
