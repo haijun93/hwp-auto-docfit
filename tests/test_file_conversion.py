@@ -117,7 +117,7 @@ class FileConversionTests(unittest.TestCase):
                 return Path(intermediate)
 
             with mock.patch("docfit_core.file_conversion.convert_input_to_hwpx", side_effect=to_hwpx) as converter:
-                self.assertEqual(convert_to_pdf(App(), source, target), target)
+                self.assertTrue(convert_to_pdf(App(), source, target).samefile(target))
             self.assertEqual(converter.call_args.args[0], source)
             self.assertTrue(target.read_bytes().startswith(b"%PDF-"))
 
