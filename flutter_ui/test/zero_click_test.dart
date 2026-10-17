@@ -30,7 +30,7 @@ void main() {
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
-      final state = quickState(countdown: true);
+      final state = quickState();
       final calls = <String>[];
       Future<Object?> api(String method, List<Object?> args) async {
         calls.add(method);

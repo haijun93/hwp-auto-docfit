@@ -133,6 +133,24 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
     busy = true;
     try {
       switch (type) {
+        case 'request_catalog':
+          final result = await storage('catalog_list');
+          if (result is! Map || result['categories'] is! List) {
+            throw Exception('표 서식 목록을 읽지 못했습니다.');
+          }
+          post({'type': 'catalog_data', 'data': result});
+          break;
+        case 'export_catalog':
+          final templateId = message['id'];
+          if (templateId is! String) throw Exception('저장할 표 서식을 선택해 주세요.');
+          final result = await storage('catalog_export', {
+            'id': templateId,
+            'name': message['name'] ?? '표 서식',
+          });
+          if (result is Map && result['path'] is String) {
+            notice('표 서식을 HWPX로 저장했어요: ${result['path']}');
+          }
+          break;
         case 'request_new':
           if (await confirmDiscard()) {
             identity = null;
@@ -205,7 +223,10 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
           // 표/다이어그램의 흐름표·기본 표를 한/글 문서로 저장한다(검증은 Python table_builder).
           final spec = message['spec'];
           if (spec is! Map) throw Exception('표 정보를 확인해 주세요.');
-          final saved = await storage('export_hwpx', {'spec': spec, 'name': name});
+          final saved = await storage('export_hwpx', {
+            'spec': spec,
+            'name': name,
+          });
           if (saved is Map && saved['path'] is String) {
             notice('한/글 문서로 저장했어요: ${saved['path']}');
           }

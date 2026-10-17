@@ -1018,6 +1018,39 @@ class DesktopWebBridge:
                 if temporary is not None:
                     temporary.unlink(missing_ok=True)
             return {"path": str(target)}
+        if action == "catalog_list":
+            from docfit_core.table_catalog import list_catalog
+            return list_catalog()
+        if action == "catalog_export":
+            from docfit_core.table_catalog import export_template
+            from docfit_app.api_contract import ServiceError
+            import os
+            import tempfile
+            from tkinter import filedialog
+            template_id = payload.get("id")
+            if not isinstance(template_id, str) or len(template_id) > 32:
+                raise ServiceError("INVALID_INPUT", "저장할 표 서식을 다시 선택해 주세요.")
+            raw_name = payload.get("name", "표 서식")
+            name = "".join(c for c in str(raw_name)[:120] if c.isalnum() or c in " _-()") or "표 서식"
+            selected = self._tk(lambda: filedialog.asksaveasfilename(
+                parent=self.gui.root, title="표 서식 HWPX 저장", initialfile=name + ".hwpx",
+                defaultextension=".hwpx", filetypes=[("한/글 문서", "*.hwpx")],
+            ), front=True)
+            if not selected:
+                return {"cancelled": True}
+            target = Path(selected)
+            if target.suffix.lower() != ".hwpx":
+                raise ServiceError("INVALID_PATH", ".hwpx 파일로 저장해 주세요.")
+            temporary = None
+            try:
+                with tempfile.NamedTemporaryFile(dir=target.parent, suffix=".hwpx", delete=False) as stream:
+                    temporary = Path(stream.name)
+                export_template(template_id, temporary)
+                os.replace(temporary, target)
+            finally:
+                if temporary is not None:
+                    temporary.unlink(missing_ok=True)
+            return {"path": str(target)}
         if action == "list":
             return service.list()
         if action == "load":

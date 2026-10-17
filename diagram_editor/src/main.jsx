@@ -233,6 +233,7 @@ function App(){
  useInstalledFonts();
  const [graph,setGraph]=useState({nodes:[],edges:[]}),[name,setName]=useState('새 '+TITLE),[busy,setBusy]=useState(false),[status,setStatus]=useState('도형을 추가하고 연결점을 끌어 연결하세요.');
  const [mode,setMode]=useState('diagram'),[role,setRole]=useState({flow:'step',grid:'head',org:'root',bar:'title'});
+ const [catalog,setCatalog]=useState(null),[catalogCategory,setCatalogCategory]=useState(''),[catalogTemplate,setCatalogTemplate]=useState('');
  const [mmSelected,setMmSelected]=useState(null);
  // 도형 묶음 펼침 상태(도형을 넣어도 펼친 묶음이 접히지 않게 기억한다).
  const [openGroups,setOpenGroups]=useState(()=>new Set(['사각형','기본 도형','선']));
@@ -261,11 +262,13 @@ function App(){
  const changeMindmap=(next,select)=>{commit({...current.current,mindmap:next});if(select!==undefined)setMmSelected(select);};
  const switchMode=next=>{
   setMode(next);
+  if(next==='catalog')send({type:'request_catalog'});
   if(TABLE_KINDS.includes(next)&&current.current.table?.kind!==next){current.current={...current.current,table:tables.current[next]};setGraph(current.current);}
   if(next==='mindmap'&&!current.current.mindmap){current.current={...current.current,mindmap:sampleMindmap()};setGraph(current.current);}
   setStatus({flow:'칸 수를 고르고 칸 글을 바로 고치세요. 다 되면 ‘한/글 문서로 저장’을 누르세요.',grid:'행·열을 늘리거나 줄이고 칸 글을 고치세요.',
    org:'윗 상자와 부서 이름을 고치고 부서 수를 정하세요.',bar:'왼쪽 글과 오른쪽 날짜를 고치세요.',
-   mindmap:'가지를 고르고 Tab=하위 가지, Enter=같은 단계 가지, Delete=지우기.'}[next]??'도형을 추가하고 연결점을 끌어 연결하세요.');
+   mindmap:'가지를 고르고 Tab=하위 가지, Enter=같은 단계 가지, Delete=지우기.',
+   catalog:'서식 이름과 모양을 고른 뒤 한/글 문서로 저장하세요.'}[next]??'도형을 추가하고 연결점을 끌어 연결하세요.');
   if(next==='diagram'||next==='mindmap')fit();
  };
  const handle=useRef(null);
@@ -287,6 +290,13 @@ function App(){
     case 'apply_template':{
      const value=template(message.template);commit({...current.current,nodes:value.nodes,edges:value.edges});setName(value.name);setMode('diagram');fit();
      send({type:'template_applied',template:message.template,name:value.name});break;
+    }
+    case 'catalog_data':{
+     const data=message.data;
+     if(!data||!Array.isArray(data.categories))throw new Error('표 서식 목록을 확인할 수 없습니다.');
+     setCatalog(data);
+     const first=data.categories[0];setCatalogCategory(first?.id??'');setCatalogTemplate(first?.templates?.[0]?.id??'');
+     setStatus(`${data.category_count??data.categories.length}개 서식 이름 · ${data.template_count??0}개 표 모양`);break;
     }
     case 'save':{
      const nextName=message.name??nameRef.current;setName(nextName);
@@ -371,12 +381,18 @@ function App(){
   try{send({type:'export_hwpx',name:nameRef.current,spec:exportSpec(table)});}
   catch(error){setStatus(error.message);}
  };
+ const selectedCatalogCategory=catalog?.categories?.find(item=>item.id===catalogCategory);
+ const selectedCatalogTemplate=selectedCatalogCategory?.templates?.find(item=>item.id===catalogTemplate);
+ const exportCatalog=()=>{
+  if(!selectedCatalogTemplate){setStatus('먼저 저장할 표 모양을 선택하세요.');return;}
+  send({type:'export_catalog',id:selectedCatalogTemplate.id,name:selectedCatalogTemplate.name});
+ };
  // 마인드맵: 수동 위치와 계층 연결을 화면·내보내기에 함께 반영한다.
  const mmGraph=mode==='mindmap'&&mindmap?layoutGraph(mindmapGraph(mindmap)):null;
  const mmNode=mindmap&&mmSelected?findNode(mindmap,mmSelected)?.node:null;
  const shownNodes=mmGraph?mmGraph.nodes.map(n=>({...n,selected:n.id===mmSelected,draggable:true,connectable:true})):graph.nodes;
  const shownEdges=mmGraph?mmGraph.edges:graph.edges;
- const tabs=[['diagram','다이어그램'],['mindmap','마인드맵'],['flow','흐름표'],['grid','기본 표'],['org','조직표'],['bar','장식표']];
+ const tabs=[['diagram','다이어그램'],['mindmap','마인드맵'],['flow','흐름표'],['grid','기본 표'],['org','조직표'],['bar','장식표'],['catalog','표 서식 모음']];
  const canvas=mode==='diagram'||mode==='mindmap';
  return <HistoryContext.Provider value={checkpoint}><div className="editor-shell">
   <header><strong>{TITLE}</strong><span className="document-name">{name}</span>
@@ -385,7 +401,7 @@ function App(){
    <button onClick={()=>send({type:'request_new'})}>새 문서</button>
    <button onClick={()=>send({type:'request_list'})}>열기·삭제</button>
    <button onClick={()=>send({type:'request_save'})}>저장</button>
-   {canvas?<>
+   {mode==='catalog'?<><button onClick={()=>send({type:'request_catalog'})}>목록 새로고침</button><button className="primary" disabled={!selectedCatalogTemplate||busy} onClick={exportCatalog}>선택한 표 HWPX 저장</button></>:canvas?<>
     <button disabled={busy} onClick={()=>handle.current({type:'copy_png'})}>그림 복사 (한/글 붙여넣기)</button>
     <button disabled={busy} onClick={()=>send({type:'request_png'})}>{busy?'PNG 변환 중…':'PNG 내보내기'}</button>
     {mode==='diagram'&&<select aria-label="예시 서식" value="" onChange={e=>send({type:'request_template',template:e.target.value})}><option value="">예시 서식</option>{Object.entries(templates).map(([key,t])=><option key={key} value={key}>{t.name}</option>)}</select>}
@@ -430,6 +446,13 @@ function App(){
       <TextStyleControls label="가지 글자" value={{font:shown.font,size:shown.size,bold:shown.bold,textColor:shown.textColor}} onChange={patch=>changeMindmap(updateNode(mindmap,mmSelected,{style:patch}))}/></>;})()}
     </>:<p>가지를 눌러 고르세요.</p>}
     <button onClick={()=>undo()}>실행 취소 (Ctrl+Z)</button>
+   </aside>}
+   {mode==='catalog'&&<aside className="catalog-menu">
+    <h2>서식 이름</h2>
+    {!catalog&&<p>표 서식 목록을 불러오는 중…</p>}
+    {catalog?.categories?.map(category=><button key={category.id} className={catalogCategory===category.id?'active':''} aria-pressed={catalogCategory===category.id} onClick={()=>{setCatalogCategory(category.id);setCatalogTemplate(category.templates[0]?.id??'');}}>{category.name}<small>{category.templates.length}개 모양</small></button>)}
+    {selectedCatalogCategory&&<><h2>표 모양</h2>{selectedCatalogCategory.templates.map(template=><button key={template.id} className={catalogTemplate===template.id?'active':''} aria-pressed={catalogTemplate===template.id} onClick={()=>setCatalogTemplate(template.id)}>{template.name}<small>{template.rows}행 × {template.cols}열</small></button>)}</>}
+    {catalog&&<p>{catalog.template_count}개 표 모양을 원본의 셀 서식 그대로 HWPX로 저장합니다.</p>}
    </aside>}
    {TABLE_KINDS.includes(mode)&&table&&<aside>
     {mode==='flow'&&<><h2>방향</h2>
@@ -482,6 +505,13 @@ function App(){
     }}
     onSelectionDragStart={()=>checkpoint()} onNodeDoubleClick={()=>{setStatus('왼쪽 내용 입력에서 수정하세요.');}}
     fitView deleteKeyCode={mode==='diagram'?['Backspace','Delete']:null}><Background gap={20}/><Controls/><MiniMap/></ReactFlow></div>
+    {mode==='catalog'&&<div className="catalog-preview"><div className="catalog-preview-card">
+     <h2>{selectedCatalogTemplate?.name??'표 서식을 선택하세요'}</h2>
+     {selectedCatalogTemplate?<><p>{selectedCatalogTemplate.rows}행 × {selectedCatalogTemplate.cols}열 · 문서에 담긴 표 구조 미리보기</p>
+      <div className="catalog-table-scroll"><table><tbody>{selectedCatalogTemplate.cells.map((row,r)=><tr key={r}>{row.map((cell,c)=><td key={c}>{cell||' '}</td>)}</tr>)}</tbody></table></div>
+      <p className="hint">이 화면은 표 구조 미리보기입니다. 저장한 HWPX에는 원본의 셀 병합·테두리·글꼴·색 등 서식이 보존됩니다.</p>
+      <button className="primary" onClick={exportCatalog}>선택한 표를 한/글 문서로 저장</button></>:<p>{catalog?'왼쪽에서 서식 이름과 표 모양을 선택하세요.':'표 서식 목록을 불러오는 중…'}</p>}
+    </div></div>}
     {mode==='flow'&&table&&<FlowTableView table={table} onChange={changeTable}/>}
     {mode==='grid'&&table&&<GridTableView table={table} onChange={changeTable}/>}
     {mode==='org'&&table&&<OrgTableView table={table} onChange={changeTable}/>}

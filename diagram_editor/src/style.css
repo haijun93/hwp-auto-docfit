@@ -88,3 +88,13 @@ label.check{display:flex!important;align-items:center;gap:6px}label.check input{
 .bar input:first-child{padding:10px 16px;border-radius:0;min-width:180px;text-align:center}
 .bar-line{flex:1;height:0}
 .bar input:last-child{border:0;text-align:center;min-width:160px;background:transparent}
+.catalog-menu{overflow:auto;max-height:calc(100vh - 150px)}
+.catalog-menu>button{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;text-align:left;margin:3px 0;padding:8px 10px}
+.catalog-menu>button.active{border-color:#2563eb;background:#eff6ff;color:#1d4ed8}
+.catalog-menu>button small{font-size:11px;color:#64748b;white-space:nowrap}
+.catalog-preview{height:100%;overflow:auto;padding:32px;background:#f8fafc}
+.catalog-preview-card{max-width:1000px;margin:0 auto;background:white;border:1px solid #e2e8f0;border-radius:12px;padding:24px;box-shadow:0 4px 16px #0f172a0a}
+.catalog-table-scroll{max-height:calc(100vh - 350px);overflow:auto}
+.catalog-table-scroll table{border-collapse:collapse;background:white;min-width:60%;margin:20px auto}
+.catalog-table-scroll td{border:1px solid #94a3b8;padding:8px 12px;min-width:60px;max-width:220px;white-space:pre-wrap}
+.catalog-preview-card>.primary{margin-top:8px}

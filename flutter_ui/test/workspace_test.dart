@@ -321,8 +321,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('작업 방식 선택'));
     await tester.pumpAndSettle();
-    // '표 제외'(기본 꺼짐)를 켜면 table_spacing을 끈다(표 제외는 세 카드에 모두 있다).
-    expect(find.text('표 제외'), findsNWidgets(3));
+    // 선택한 자간 정리 카드의 '표 제외'를 켜면 table_spacing을 끈다.
+    expect(find.text('표 제외'), findsOneWidget);
     await tester.tap(find.byKey(const Key('tableSpacingSwitch')));
     await tester.pumpAndSettle();
     expect(calls.last, ['set_table_spacing', false]);
@@ -356,7 +356,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('작업 방식 선택'));
     await tester.pumpAndSettle();
-    expect(find.text('표 제외'), findsNWidgets(3)); // 자간 정리·서식 통일·한 번에 적용 카드
+    expect(find.text('표 제외'), findsOneWidget); // 선택한 카드의 옵션만 표시
     await tester.ensureVisible(find.byKey(const Key('excludeTablesSwitch')));
     await tester.tap(find.byKey(const Key('excludeTablesSwitch')));
     await tester.pumpAndSettle();
@@ -383,6 +383,7 @@ void main() {
       if (name == 'set_card_option') {
         (state['card_options'] as Map)[args[0]] = args[1];
       }
+      if (name == 'set_mode') state['mode'] = args.first;
       return Map<String, dynamic>.from(state);
     }
 
@@ -395,6 +396,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(calls.last, ['set_card_option', 'unify_exclude_spacing', true]);
     expect(find.text('서식통일이 고친 문장의 자간은 그대로 둬요.'), findsOneWidget);
+    await tester.tap(find.text('한 번에 적용').first);
+    await tester.pumpAndSettle();
     await tester.ensureVisible(
       find.byKey(const Key('allExcludePagefitSwitch')),
     );
