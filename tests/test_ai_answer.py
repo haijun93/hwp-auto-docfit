@@ -108,13 +108,14 @@ class AppWiringTest(unittest.TestCase):
         convert = self.ns['외부문서_hwpx로_변환']
         captured = []
         with patch.dict(convert.__globals__, {'텍스트파일_읽기': lambda path: FIXTURE.read_text(encoding='utf-8'),
-                                              '텍스트_hwpx로_변환': lambda text, target: captured.append(text),
+                                              '텍스트_hwpx로_변환': lambda text, target: captured.append(text) or True,
                                               '로그': lambda *a: None, '알파_AI답변변환_사용': True}):
-            convert('answer.txt', '.txt', 'out.hwpx')
+            opened = convert('answer.txt', '.txt', 'out.hwpx')
         self.assertEqual(len(captured), 1)
         self.assertIn('네모: 조경식재 및 시설물 철거 전문 업체', captured[0])
         self.assertTrue(looks_labeled(captured[0]))  # 저장된 제목·개요·문두기호 서식 적용 경로로 연결
         self.assertNotIn('**', captured[0])
+        self.assertTrue(opened)  # 변환 결과를 현재 한글 문서가 계속 사용하므로 같은 파일을 중복 Open하지 않는다
 
 
     def test_md_file_without_images_uses_outline_conversion_even_with_engine(self):

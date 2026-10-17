@@ -163,8 +163,18 @@ class TableBulkFormatTest(unittest.TestCase):
         self.assertEqual(self._guard(None, checks, texts), ({2, 3, 4, 8, 9}, 1))
 
     def test_guard_skips_snapshot_without_format_table_shapes(self):
-        groups = {(0, 0, 0): [(2, 'A1', 1), (3, 'B1', 1), (4, 'A2', 2), (5, 'B2', 2)]}
+        groups = {(0, 0, 0): [(2, 'A1', 1), (3, 'B1', 1), (4, 'C1', 1),
+                             (5, 'A2', 2), (6, 'B2', 2), (7, 'C2', 2)]}
         self.assertEqual(self._guard(groups, [([2], (2, 0, '글'))], {(2, 0): '글'}), (set(), 0))
+
+    def test_guard_includes_two_by_two_title_table_shape(self):
+        # 2×2 제목 표(A1·B1·A2·B2)는 과거 빠른 모양 검사에서 제외되어
+        # 뒤의 표 머리글 서식이 제목을 덮어쓸 수 있었다.
+        cells = [(2, 'A1', 1), (3, 'B1', 1), (4, 'A2', 2), (5, 'B2', 2)]
+        groups = {(0, 0, 0): cells}
+        checks = [([2, 3, 4, 5], (2, 0, '삼체 문명 존속을 위한 지구 이주 계획'))]
+        texts = {(2, 0): '삼체 문명 존속을 위한 지구 이주 계획'}
+        self.assertEqual(self._guard(groups, checks, texts), ({2, 3, 4, 5}, 1))
 
 
 if __name__ == '__main__':

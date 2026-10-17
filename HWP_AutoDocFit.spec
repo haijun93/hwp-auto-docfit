@@ -19,5 +19,16 @@ for package in ('tkinterdnd2', 'PIL', 'webview', 'pythonnet', 'clr_loader', 'pyp
 a = Analysis([str(root / 'hwp-auto-docfit.py')], pathex=[str(root)],
              binaries=binaries, datas=datas, hiddenimports=hiddenimports)
 pyz = PYZ(a.pure)
-exe = EXE(pyz, a.scripts, a.binaries, a.datas, name='HWP_AutoDocFit',
-          console=False, icon=str(root / 'resources' / 'app_icon.ico'))
+from PyInstaller.building.splash import Splash
+splash = Splash(str(root / 'resources' / 'splash.png'),
+                binaries=a.binaries,
+                datas=a.datas,
+                text_pos=None,
+                always_on_top=True)
+portable = EXE(pyz, a.scripts, splash, splash.binaries, a.binaries, a.datas,
+               name='HWP_AutoDocFit', console=False,
+               icon=str(root / 'resources' / 'app_icon.ico'))
+installer_exe = EXE(pyz, a.scripts, [], name='HWP_AutoDocFit',
+                     console=False, icon=str(root / 'resources' / 'app_icon.ico'),
+                     exclude_binaries=True)
+installer_bundle = COLLECT(installer_exe, a.binaries, a.datas, name='HWP_AutoDocFit')

@@ -40,6 +40,25 @@ class RegressionToolTest(unittest.TestCase):
         검사, 합격 = 판정({'output_created': True, 'score': 99.6}, {'min_score': 100, 'same_layout': False})
         self.assertEqual((검사['score'], 검사['layout'], 합격), ('fail', 'not_applicable', False))
 
+    def test_title_label_is_an_independent_release_gate(self):
+        판정 = self.ns['판정']
+        항목 = {'output_created': True, 'score': 100.0, 'title_check_required': True,
+              'title_content_preserved': False}
+        검사, 합격 = 판정(항목, {'min_score': 100, 'same_layout': False})
+        self.assertEqual((검사['score'], 검사['title_content'], 합격), ('pass', 'fail', False))
+
+    def test_title_result_probe_handles_subtitle_split_and_whitespace(self):
+        from unittest.mock import patch
+        검사 = self.ns['제목_결과검사']
+        with patch.dict(검사.__globals__, {
+            'detect_header': lambda _: {'title': {'text': '지구 이주·점령 계획(안) 보고'}}
+        }):
+            self.assertTrue(검사('삼체 문명 존속을 위한, 지구 이주·점령 계획(안) 보고', 'result.hwpx'))
+        with patch.dict(검사.__globals__, {
+            'detect_header': lambda _: {'title': None}
+        }):
+            self.assertFalse(검사('삼체 문명 존속을 위한, 지구 이주·점령 계획(안) 보고', 'result.hwpx'))
+
 
 if __name__ == '__main__':
     unittest.main()

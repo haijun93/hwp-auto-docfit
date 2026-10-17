@@ -5,8 +5,7 @@ import 'kiosk_theme.dart';
 
 /// 설정의 '글자 상용구'·'본문 상용구' 관리(알파, 2026-10-15).
 ///
-/// 한/글이 실제로 읽는 상용구 파일(%APPDATA%\HNC\User\Hwp\<버전>\HWP.IDO)을 고친다. 추가·수정·삭제는 누르는
-/// 즉시 저장되고, 저장할 때마다 이전 파일을 백업한다. 한/글을 다시 열면 반영된다.
+/// 기본 설정은 사용자가 직접 편집하는 글자상용구.hwpx / 본문상용구.hwpx다.
 class IdiomPanel extends StatefulWidget {
   const IdiomPanel({
     super.key,
@@ -226,6 +225,7 @@ class _IdiomPanelState extends State<IdiomPanel> {
   Widget build(BuildContext context) {
     final locked = busy || widget.locked;
     final available = data['available'] != false;
+    final directConfig = data['source'] == 'hwpx';
     final query = search.text.trim();
     final all = entries;
     final visible = [
@@ -246,21 +246,50 @@ class _IdiomPanelState extends State<IdiomPanel> {
             children: [
               Text(widget.body ? '본문 상용구' : '글자 상용구', style: Kiosk.cardTitle),
               const SizedBox(height: 6),
-              Text(
-                widget.body
+            Text(
+                directConfig
+                    ? '준말 표식(# + 준말) 다음 줄부터 본말을 입력합니다. 다음 항목도 같은 방식으로 이어 쓰세요. 문서 구조와 서식은 한/글에서 자유롭게 편집할 수 있어요.'
+                    : widget.body
                     ? '준말을 치고 Alt+I를 누르면 미리 만들어 둔 문서(표·서식)가 통째로 들어가요. HWP·HWPX 문서를 골라 추가하세요.'
                     : '준말을 치고 Alt+I를 누르면 본말 글자로 바뀌어요. 예: ㅁ → □, ㅇ123 → ①②③',
                 style: Kiosk.body,
               ),
               const SizedBox(height: 4),
               Text(
-                available
+                directConfig
+                    ? '${(data['config_files'] as Map?)?[widget.body ? 'body' : 'text'] ?? ''}  ·  아래 버튼으로 한/글에서 직접 열어 수정하세요.'
+                    : available
                     ? '한/글이 쓰는 상용구 파일을 바로 고쳐요. 저장할 때마다 이전 파일을 백업하고, 한/글을 다시 열면 반영돼요.'
                     : '${data['reason'] ?? '상용구 파일을 불러오는 중이에요.'}',
                 style: Kiosk.caption,
               ),
+              if (directConfig) ...[
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 8,
+                  children: [
+                    KioskPrimaryButton(
+                      label: '한/글에서 설정 문서 열기',
+                      onPressed: locked ? null : () => request('open_config', {
+                        'kind': widget.body ? 'body' : 'text',
+                      }),
+                    ),
+                    KioskSecondaryButton(
+                      label: '한/글 상용구에 반영',
+                      onPressed: locked ? null : () => request(
+                        'apply_hwpx',
+                        const {},
+                        'HWPX 상용구를 한/글에 반영했어요. 한/글을 다시 시작해 적용하세요.',
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text('반영 전에 한/글을 종료하세요. 기존 상용구 파일은 자동 백업됩니다.', style: Kiosk.caption),
+              ],
               const SizedBox(height: 16),
-              Row(
+              if (!directConfig) Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   SizedBox(
@@ -336,7 +365,7 @@ class _IdiomPanelState extends State<IdiomPanel> {
                 ),
               ),
             ),
-            if (!widget.body) ...[
+            if (!widget.body && !directConfig) ...[
               const SizedBox(width: 10),
               KioskSecondaryButton(
                 label: '앱 기본 상용구 가져오기',
@@ -368,7 +397,8 @@ class _IdiomPanelState extends State<IdiomPanel> {
   }
 
   Widget _row(int index, Map item, bool locked) {
-    final value = '${item[widget.body ? 'title' : 'value']}';
+    final directConfig = data['source'] == 'hwpx';
+    final value = '${widget.body && !directConfig ? item['title'] : item['value']}';
     return Container(
       key: ValueKey('idiom-row-${widget.body}-$index'),
       margin: const EdgeInsets.only(bottom: 6),
@@ -420,7 +450,7 @@ class _IdiomPanelState extends State<IdiomPanel> {
                 style: TextStyle(color: Kiosk.red, fontSize: 12),
               ),
             ),
-          if (widget.body)
+          if (widget.body && !directConfig)
             IconButton(
               tooltip: '한/글에서 열기',
               onPressed: locked || item['has_file'] != true
@@ -428,16 +458,18 @@ class _IdiomPanelState extends State<IdiomPanel> {
                   : () => request('open_body', {'key': item['key']}),
               icon: const Icon(Icons.open_in_new_rounded),
             ),
-          IconButton(
-            tooltip: '고치기',
-            onPressed: locked ? null : () => edit(index),
-            icon: const Icon(Icons.edit_outlined),
-          ),
-          IconButton(
-            tooltip: '삭제',
-            onPressed: locked ? null : () => remove(index),
-            icon: const Icon(Icons.delete_outline_rounded),
-          ),
+          if (!directConfig) ...[
+            IconButton(
+              tooltip: '고치기',
+              onPressed: locked ? null : () => edit(index),
+              icon: const Icon(Icons.edit_outlined),
+            ),
+            IconButton(
+              tooltip: '삭제',
+              onPressed: locked ? null : () => remove(index),
+              icon: const Icon(Icons.delete_outline_rounded),
+            ),
+          ],
         ],
       ),
     );

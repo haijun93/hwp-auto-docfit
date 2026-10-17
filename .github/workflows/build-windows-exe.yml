@@ -12,6 +12,7 @@ on:
       - release/1.76.4
       - release/1.76.5
       - release/1.77.0
+      - release/1.78.0
       - claude/affectionate-goldberg-ggln7c
   workflow_dispatch: {}
 

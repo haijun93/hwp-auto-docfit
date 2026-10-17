@@ -365,7 +365,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리"
-APP_VERSION = "1.77.0"
+APP_VERSION = "1.78.0"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 GITHUB_UPDATE_API_URL = "https://api.github.com/repos/haijun93/hwp-auto-docfit/releases/latest"
@@ -3269,19 +3269,111 @@ _새창_맨앞으로 = _engine_resolve('docfit_ui.legacy', '_새창_맨앞으로
 웹모드_기본창_복원 = _engine_resolve('docfit_ui.legacy', '웹모드_기본창_복원', globals())
 
 
+_APP_MUTEX_HANDLE = None
+
+
+def _닫기_스플래시():
+    try:
+        import pyi_splash
+        if pyi_splash.is_alive():
+            pyi_splash.close()
+    except Exception:
+        pass
+
+
+def _단일_인스턴스_확인():
+    """앱이 이미 실행 중인지 Windows Named Mutex로 확인하고 기존 창을 활성화한다."""
+    global _APP_MUTEX_HANDLE
+    if sys.platform != "win32":
+        return True
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.windll.kernel32
+        user32 = ctypes.windll.user32
+        ERROR_ALREADY_EXISTS = 183
+
+        kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
+        kernel32.CreateMutexW.restype = wintypes.HANDLE
+        kernel32.GetLastError.restype = wintypes.DWORD
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+        user32.IsWindowVisible.argtypes = [wintypes.HWND]
+        user32.IsWindowVisible.restype = wintypes.BOOL
+        user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
+        user32.GetWindowTextLengthW.restype = ctypes.c_int
+        user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+        user32.GetWindowTextW.restype = ctypes.c_int
+        user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+        user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+        user32.EnumWindows.argtypes = [ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM), wintypes.LPARAM]
+        user32.EnumWindows.restype = wintypes.BOOL
+
+        mutex_name = "Global\\HWP_AutoDocFit_SingleInstance_Mutex"
+        handle = kernel32.CreateMutexW(None, False, mutex_name)
+        if not handle:
+            # Global 네임스페이스 접근 제한 시 Local 네임스페이스로 폴백
+            mutex_name = "Local\\HWP_AutoDocFit_SingleInstance_Mutex"
+            handle = kernel32.CreateMutexW(None, False, mutex_name)
+
+        last_error = kernel32.GetLastError()
+        if handle and last_error == ERROR_ALREADY_EXISTS:
+            _닫기_스플래시()
+            # 이미 실행 중인 창을 찾아 앞으로 가져오기
+            WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+            def enum_cb(hwnd, _lparam):
+                if user32.IsWindowVisible(hwnd):
+                    length = user32.GetWindowTextLengthW(hwnd)
+                    if length > 0:
+                        buff = ctypes.create_unicode_buffer(length + 1)
+                        user32.GetWindowTextW(hwnd, buff, length + 1)
+                        text = buff.value
+                        if APP_NAME in text or "한글편집" in text:
+                            user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                            user32.SetForegroundWindow(hwnd)
+                            return False
+                return True
+
+            try:
+                user32.EnumWindows(WNDENUMPROC(enum_cb), 0)
+            except Exception:
+                pass
+            if handle:
+                kernel32.CloseHandle(handle)
+            return False
+
+        _APP_MUTEX_HANDLE = handle
+        return True
+    except Exception:
+        _닫기_스플래시()
+        return True
+
+
 def main():
     import importlib.util
 
+    if not _단일_인스턴스_확인():
+        return
+
     if getattr(_selftest_sys, "frozen", False):
-        from docfit_core.kordoc_runtime import deploy_embedded_runtime
-        from docfit_core.kordoc_bridge import KORDOC_VERSION
-        deploy_embedded_runtime(KORDOC_VERSION)
+        def _배경_런타임_배포():
+            try:
+                from docfit_core.kordoc_runtime import deploy_embedded_runtime
+                from docfit_core.kordoc_bridge import KORDOC_VERSION
+                deploy_embedded_runtime(KORDOC_VERSION)
+            except Exception:
+                pass
+
+        threading.Thread(target=_배경_런타임_배포, name="kordoc-deploy", daemon=True).start()
 
     # WebView2가 있으면 반응형 웹 화면을 주 UI로 사용하고, 문서 처리·설정 창은
     # 기존 Tk 백엔드에 연결한다. WebView 초기화 문제 진단·복구 시 환경변수로
     # 기존 화면을 선택할 수 있고, 연결 패키지가 없을 때도 Tk 화면으로 돌아간다.
     tk_only = os.environ.get("HWP_AUTODOCFIT_UI", "").strip().lower() == "tk"
     if tk_only or importlib.util.find_spec("webview") is None:
+        _닫기_스플래시()
         root = TkinterDnD.Tk()
         _앱아이콘_적용(root)
         HwpAutoDocFitGUI(root)
@@ -3308,8 +3400,10 @@ def main():
     tk_thread = threading.Thread(target=tk_실행, name="hwp-tk-event-loop", daemon=True)
     tk_thread.start()
     if not 준비됨.wait(30):
+        _닫기_스플래시()
         raise RuntimeError("앱 인터페이스를 시작하지 못했습니다.")
     if "오류" in 보관:
+        _닫기_스플래시()
         raise RuntimeError("앱 인터페이스를 시작하지 못했습니다.") from 보관["오류"]
 
     try:
@@ -3320,9 +3414,11 @@ def main():
         desktop_web_ui.STAGE_ORDER = 진행단계_순서
         desktop_web_ui.APP_ICON = str(번들_앱아이콘_찾기() or "")
         if not desktop_web_ui.run_webview(보관["gui"]):
+            _닫기_스플래시()
             보관["root"].after(0, lambda: 웹모드_기본창_복원(보관["root"]))
             tk_thread.join()
     except Exception as 오류:
+        _닫기_스플래시()
         def 기존화면_안내(시작오류):
             messagebox.showwarning(
                 APP_NAME,

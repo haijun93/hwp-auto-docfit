@@ -4383,7 +4383,11 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             """
             # 장식 표·캡션 달린 표는 디자인표_영역_목록(장식만=True)이 따로 보호한다. 여기서는 예전처럼
             # 서식 표 모양(칸 2~3개)의 표가 없으면 스냅샷을 만들지 않는다.
-            모양 = ({'A1', 'A2', 'B2'}, {'A1', 'A2'}, {'A1', 'B1'}, {'A1', 'B1', 'C1'})
+            # 2×2 제목 표(A1·B1·A2·B2)는 일반 표 모양과 달라 기존 사전 검사에서
+            # 보호 스냅샷 대상에서 빠졌었다. 이후 표 머리글 단계가 첫 행 제목을
+            # 본문 글꼴·크기로 덮어쓸 수 있으므로 이 형태도 반드시 구조 판별한다.
+            모양 = ({'A1', 'A2', 'B2'}, {'A1', 'A2'}, {'A1', 'B1'},
+                    {'A1', 'B1', 'C1'}, {'A1', 'B1', 'A2', 'B2'})
             if not 장식만 and 묶음 is not None and not any({주소 for _, 주소, _ in 칸들} in 모양 for 칸들 in 묶음.values()):
                 return set()
             folder = Path(tempfile.mkdtemp(prefix='hwp_table_guard_'))

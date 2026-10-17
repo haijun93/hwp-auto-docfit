@@ -79,6 +79,43 @@ void main() {
     expect(find.text('문서 골라 추가'), findsOneWidget);
   });
 
+  testWidgets('HWPX 설정 문서는 직접 열어 수정하고 별도 추가·편집 UI를 숨긴다', (tester) async {
+    tester.view.physicalSize = const Size(1000, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final calls = <List<Object?>>[];
+    Future<Object?> api(String method, List<Object?> args) async {
+      calls.add([method, ...args]);
+      return _ok({
+        'available': true,
+        'source': 'hwpx',
+        'config_files': {
+          'text': r'C:\HWP_AUTODOCFIT\글자상용구\글자상용구.hwpx',
+          'body': r'C:\HWP_AUTODOCFIT\본문상용구\본문상용구.hwpx',
+        },
+        'text': [
+          {'key': 'ㅁ', 'value': '□', 'attr': 0},
+        ],
+        'body': [],
+      });
+    }
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: IdiomPanel(api: api, body: false, locked: false)),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('한/글에서 설정 문서 열기'), findsOneWidget);
+    expect(find.text('추가'), findsNothing);
+    expect(find.byTooltip('고치기'), findsNothing);
+    expect(find.byTooltip('삭제'), findsNothing);
+    await tester.tap(find.text('한/글에서 설정 문서 열기'));
+    await tester.pumpAndSettle();
+    expect(calls.last[1], 'open_config');
+    expect((calls.last[2] as Map)['kind'], 'text');
+  });
+
   testWidgets('앱 정보에 개발자를 보여 준다', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(

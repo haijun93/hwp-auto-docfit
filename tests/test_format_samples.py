@@ -314,6 +314,10 @@ class AppFolderTest(unittest.TestCase):
                 g.update(saved)
             self.assertEqual((home / '글자상용구' / 'HWP.IDO').read_bytes(), b'[HWPIDIOM]')
             self.assertEqual((home / '본문상용구' / 'a0000000.HWP').read_bytes(), b'user')
+            from docfit_core.hwpx_idioms import parse_hwpx
+            self.assertEqual(parse_hwpx(home / '글자상용구' / '글자상용구.hwpx')[0],
+                             {'key': 'ㅁ', 'value': '□'})
+            self.assertEqual(parse_hwpx(home / '본문상용구' / '본문상용구.hwpx')[0]['key'], 'ㅂㄱ')
 
 
 if __name__ == '__main__':

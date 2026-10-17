@@ -93,7 +93,8 @@ class MarkdownAppTests(unittest.TestCase):
         post.side_effect = lambda *a: events.append('style')
         with patch.dict(fn.__globals__, {'hwp': doc, '라벨블록_한글삽입': insert,
                                         '라벨_서식표_적용': post, '텍스트_삽입': Mock(side_effect=AssertionError('literal labels leaked'))}):
-            fn(ai_answer_to_labeled_text(SAMPLE, markdown_document=True), 'work.hwpx')
+            opened = fn(ai_answer_to_labeled_text(SAMPLE, markdown_document=True), 'work.hwpx')
+        self.assertFalse(opened)  # 라벨 후처리를 위해 COM 문서를 닫았으므로 pipeline이 다시 열어야 함
         self.assertEqual(events, ['save', 'release', 'style'])
         blocks = insert.call_args.args[1]
         self.assertTrue(any(b['kind'] == 'table' for b in blocks))
@@ -108,6 +109,21 @@ class MarkdownAppTests(unittest.TestCase):
                 fn('제목: 제목\n네모: 내용', 'work.hwpx')
         doc.Clear.assert_not_called()
         post.assert_not_called()
+
+    def test_mixed_labeled_report_keeps_the_saved_document_open(self):
+        fn = self.ns['텍스트_hwpx로_변환']
+        doc, inserted = Mock(), []
+        doc.Run.return_value = True
+        doc.SaveAs.return_value = True
+        with patch.dict(fn.__globals__, {
+            'hwp': doc,
+            '텍스트_삽입': lambda line: inserted.append(line),
+            'hwp_run': lambda *_: True,
+        }):
+            opened = fn('제목 : 계획 보고\n\n개요 : 추진 개요\n\n□ 추진 배경', 'work.hwpx')
+        self.assertTrue(opened)
+        self.assertEqual(inserted[0], '제목 : 계획 보고')
+        doc.Clear.assert_not_called()
 
     def test_labels_mixed_with_report_lines_are_inserted_line_by_line(self):
         # v1.76 회귀: 제목:/개요: 라벨에 □ ㅇ - * 줄이 섞인 TXT를 라벨 해석기로 넘겨 항목이 한 문단으로 합쳐졌다.

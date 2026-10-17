@@ -4468,12 +4468,27 @@ def _install(*, _docfit_namespace, _docfit_symbol):
         return bind_function(번들_본문상용구_폴더, _docfit_namespace)
     if _docfit_symbol == '상용구_폴더_준비':
         def 상용구_폴더_준비():
-            """앱 폴더에 글자상용구·본문상용구 폴더를 만들고, 비어 있으면 앱에 포함된 파일을 넣는다(사용자 파일은 덮어쓰지 않음)."""
+            """상용구 HWPX 설정 파일을 준비한다(사용자 파일은 절대 덮어쓰지 않음).
+
+            한/글 호환용 HWP.IDO/IDIOM 사본도 기존 사용자를 위해 유지한다.
+            새 설정의 원본은 각각 글자상용구.hwpx와 본문상용구.hwpx다.
+            """
             글자, 본문 = 글자상용구_폴더(), 본문상용구_폴더()
             if 글자 is None:
                 return
             글자.mkdir(parents=True, exist_ok=True)
             본문.mkdir(parents=True, exist_ok=True)
+            try:
+                from docfit_core.hwpx_idioms import create_default_configs
+                기본문서_후보 = [프로그램_폴더() / "resources" / "서식예시" / "기본 서식.hwpx"]
+                번들_폴더 = 번들_리소스_폴더()
+                if 번들_폴더 is not None:
+                    기본문서_후보.append(번들_폴더 / "resources" / "서식예시" / "기본 서식.hwpx")
+                기본문서 = next((후보 for 후보 in 기본문서_후보 if 후보.is_file()), None)
+                if 기본문서 is not None:
+                    create_default_configs(HWP_AUTOMATION_DIR, 기본문서)
+            except Exception as e:
+                로그(f"상용구 HWPX 기본 파일 준비 실패(기존 상용구는 유지): {e}")
             번들 = 번들_상용구_파일_찾기()
             if 번들 is not None and not (글자 / 상용구_파일명).is_file():
                 shutil.copyfile(번들, 글자 / 상용구_파일명)
@@ -9570,7 +9585,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     if hwp.Clear(1) is False:
                         raise RuntimeError("서식 표 후처리를 위해 작업 문서를 닫지 못했습니다.")
                     라벨_서식표_적용(대상경로)
-                return
+                    return False  # 후처리 대상으로 COM 문서를 닫았음
+                return True
             줄들 = 텍스트.replace("\r\n", "\n").replace("\r", "\n").split("\n")
             for 순번, 줄 in enumerate(줄들):
                 if 줄:
@@ -9579,6 +9595,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     hwp_run("BreakPara")
             if hwp.SaveAs(str(대상경로), "HWPX", "") is False:
                 raise RuntimeError("텍스트를 HWPX로 저장하지 못했습니다.")
+            return True  # SaveAs 후 현재 한글 문서가 대상 HWPX를 계속 편집 중
         return bind_function(텍스트_hwpx로_변환, _docfit_namespace)
     if _docfit_symbol == '라벨블록_한글삽입':
         def 라벨블록_한글삽입(한글, 블록들):
@@ -9747,40 +9764,40 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 원문, 변환됨 = AI답변_개조식_변환(원문, 라벨형식=True)
                 if 변환됨:
                     로그(f"AI 답변으로 보고 개조식 항목기호로 변환해 서식 작업에 넘깁니다: {Path(원본경로).name}")
-                텍스트_hwpx로_변환(원문, 대상경로)
-                return
+                문서열림 = 텍스트_hwpx로_변환(원문, 대상경로)
+                # 텍스트_hwpx로_변환은 현재 한글 문서에서 FileNew→SaveAs를 수행한다.
+                # 호출 뒤 이미 대상 HWPX가 활성 문서이므로 pipeline에서 같은 파일을 다시
+                # Open하면 중복 문서/활성 창 혼선이 생길 수 있다. True는 "대상 문서가 열려 있음".
+                return bool(문서열림)
             if 확장자 == ".md":
                 # 이미지가 없는 AI 답변형 마크다운은 엔진 대신 라벨 블록으로 변환해 서식 적용 경로에 넘긴다. 이미지가 있으면 엔진이 처리한다.
                 try:
                     원문 = 텍스트파일_읽기(원본경로)
                     if looks_labeled(원문):
-                        텍스트_hwpx로_변환(원문, 대상경로)
-                        return
+                        return bool(텍스트_hwpx로_변환(원문, 대상경로))
                     변환문, 변환됨 = ("", False) if re.search(r"!\[[^\]]*\]\(", 원문) else AI답변_개조식_변환(원문, 라벨형식=True, 마크다운문서=True)
                 except Exception:
                     변환문, 변환됨 = "", False
                 if 변환됨:
                     로그(f"AI 답변형 마크다운을 개조식 항목기호로 변환해 서식 작업에 넘깁니다: {Path(원본경로).name}")
-                    텍스트_hwpx로_변환(변환문, 대상경로)
-                    return
+                    return bool(텍스트_hwpx로_변환(변환문, 대상경로))
                 try:
                     generate_hwpx(str(원본경로), "보고서", str(대상경로), image_dir=Path(원본경로).parent)
-                    return
+                    return False
                 except KordocUnavailableError as e:
                     로그(f"고급 문서 엔진을 쓸 수 없어 서식 없이 텍스트로만 변환합니다: {e}")
                     원문, 변환됨 = AI답변_개조식_변환(텍스트파일_읽기(원본경로))
-                    텍스트_hwpx로_변환(원문, 대상경로)
-                    return
+                    return bool(텍스트_hwpx로_변환(원문, 대상경로))
             from docfit_core.file_conversion import IMAGE_INPUT_EXTENSIONS, convert_image_to_hwpx
             if 확장자 in IMAGE_INPUT_EXTENSIONS:
                 convert_image_to_hwpx(원본경로, 대상경로)
-                return
+                return False
             # 파일 추가·독립 변환에서 허용한 오피스 입력을 후처리에서도 동일하게 받는다.
             # TXT/MD의 기존 한/글 라벨 경로와 PDF 서식 이식은 위·아래 분기를 유지한다.
             from docfit_core.kordoc_bridge import SUPPORTED_INPUT_EXTENSIONS, convert_to_hwpx
             if 확장자 in SUPPORTED_INPUT_EXTENSIONS - {".docx", ".pdf", ".hwp", ".hwpx"}:
                 convert_to_hwpx(원본경로, 대상경로)
-                return
+                return False
             if 확장자 in (".doc", ".docx", ".pdf"):
                 with tempfile.TemporaryDirectory(prefix="docfit_변환_") as 임시폴더:
                     임시_md = Path(임시폴더) / f"{Path(원본경로).stem}.md"
@@ -9788,7 +9805,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     generate_hwpx(str(임시_md), "보고서", str(대상경로), image_dir=임시폴더)
                 if 확장자 == ".pdf":
                     PDF_서식_이식(원본경로, 대상경로)
-                return
+                return False
             raise ValueError(f"지원하지 않는 변환 형식입니다: {확장자}")
         return bind_function(외부문서_hwpx로_변환, _docfit_namespace)
     if _docfit_symbol == 'PDF_서식_이식':

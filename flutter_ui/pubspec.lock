@@ -321,7 +321,7 @@ packages:
     dependency: "direct main"
     description:
       name: webview_flutter_windows
-      sha256: 5e1222be978b408b7f4297eec7ff6048000de92f29dbb6cbd04155c11d53677c
+      sha256: "5e1222be978b408b7f4297eec7ff6048000de92f29dbb6cbd04155c11d53677c"
       url: "https://pub.dev"
     source: hosted
     version: "1.2.0"

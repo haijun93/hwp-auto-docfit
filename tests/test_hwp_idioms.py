@@ -6,7 +6,7 @@ from pathlib import Path
 
 from docfit_app.api_contract import ServiceError
 from docfit_app.idiom_service import IdiomService
-from docfit_core import hwp_idioms
+from docfit_core import hwp_idioms, hwpx_idioms
 
 BUNDLED = Path(__file__).resolve().parents[1] / "resources" / "HWP.IDO"
 
@@ -35,6 +35,28 @@ class IdiomFileTest(unittest.TestCase):
         self.assertEqual(len(hwp_idioms.validate_entries([{"key": "*", "value": "※"}, {"key": "*", "value": "＊"}])), 2)
         items = hwp_idioms.validate_entries([{"key": "ㅁ", "value": "□\n여러 줄"}])
         self.assertEqual(items[0].value, "□\n여러 줄")
+
+    def test_hwpx_config_template_round_trip_and_preserves_existing_file(self):
+        base = Path(__file__).resolve().parents[1] / "resources" / "서식예시" / "기본 서식.hwpx"
+        with tempfile.TemporaryDirectory() as temp:
+            target = Path(temp) / "글자상용구.hwpx"
+            entries = [{"key": "ㅁ", "value": "□"}, {"key": "ㅂㄱ", "value": "첫째 줄\n둘째 줄"}]
+            hwpx_idioms.create_template(base, target, entries)
+            self.assertEqual(hwpx_idioms.parse_hwpx(target), entries)
+            before = target.read_bytes()
+            hwpx_idioms.create_template(base, target, [{"key": "다른", "value": "덮어쓰기 금지"}])
+            self.assertEqual(target.read_bytes(), before)
+
+    def test_hwpx_config_parser_rejects_duplicate_and_empty_values(self):
+        base = Path(__file__).resolve().parents[1] / "resources" / "서식예시" / "기본 서식.hwpx"
+        with tempfile.TemporaryDirectory() as temp:
+            target = Path(temp) / "invalid.hwpx"
+            with self.assertRaises(hwpx_idioms.HwpxIdiomError):
+                hwpx_idioms.create_template(base, target, [{"key": "가", "value": ""}])
+            with self.assertRaises(hwpx_idioms.HwpxIdiomError):
+                hwpx_idioms.create_template(base, target, [
+                    {"key": "가", "value": "하나"}, {"key": "가", "value": "둘"},
+                ])
 
 
 class IdiomServiceTest(unittest.TestCase):
@@ -95,6 +117,44 @@ class IdiomServiceTest(unittest.TestCase):
         self.assertFalse(service.snapshot()["available"])
         with self.assertRaises(ServiceError):
             service.command("save_text", {"entries": []})
+
+    def test_hwpx_files_are_authoritative_and_not_edited_through_separate_form(self):
+        base = Path(__file__).resolve().parents[1] / "resources" / "서식예시" / "기본 서식.hwpx"
+        root = self.folder / "HWP_AUTODOCFIT"
+        text_path = root / "글자상용구" / "글자상용구.hwpx"
+        body_path = root / "본문상용구" / "본문상용구.hwpx"
+        hwpx_idioms.create_template(base, text_path, [{"key": "ㄱ", "value": "그러므로"}])
+        hwpx_idioms.create_template(base, body_path, [{"key": "ㅂㄱ", "value": "첫 문단\n둘째 문단"}])
+        service = IdiomService(self.hangul, app_copy=BUNDLED, config_root=root)
+        result = service.snapshot()
+        self.assertEqual(result["source"], "hwpx")
+        self.assertEqual(result["text"][0]["value"], "그러므로")
+        self.assertEqual(result["body"][0]["value"], "첫 문단\n둘째 문단")
+        with self.assertRaises(ServiceError) as error:
+            service.command("save_text", {"entries": []})
+        self.assertEqual(error.exception.code, "EDIT_HWPX_DIRECTLY")
+
+    def test_apply_hwpx_exports_text_and_body_entries_with_backups(self):
+        base = Path(__file__).resolve().parents[1] / "resources" / "서식예시" / "기본 서식.hwpx"
+        root = self.folder / "HWP_AUTODOCFIT"
+        hwpx_idioms.create_template(base, root / "글자상용구" / "글자상용구.hwpx", [
+            {"key": "ㅁ", "value": "□"},
+        ])
+        hwpx_idioms.create_template(base, root / "본문상용구" / "본문상용구.hwpx", [
+            {"key": "ㅂㄱ", "value": "첫 문단\n둘째 문단"},
+        ])
+        service = IdiomService(self.hangul, app_copy=BUNDLED, config_root=root)
+
+        def converter(text, output):
+            Path(output).write_text(text, encoding="utf-8")
+
+        service.apply_hwpx(converter)
+        stored = hwp_idioms.parse((self.hangul / "HWP.IDO").read_bytes())
+        self.assertEqual([(item.key, item.value) for item in stored.text], [("ㅁ", "□")])
+        self.assertEqual([(item.key, item.value) for item in stored.body], [("ㅂㄱ", "ㅂㄱ")])
+        self.assertEqual((self.hangul / "IDIOM" / hwp_idioms.body_file_name("ㅂㄱ")).read_text(encoding="utf-8"),
+                         "첫 문단\n둘째 문단")
+        self.assertEqual(len(list((self.hangul / "docfit-backup").iterdir())), 1)
 
 
 if __name__ == "__main__":

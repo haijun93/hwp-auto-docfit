@@ -1190,14 +1190,44 @@ class DesktopWebBridge:
             return folder_copy if folder_copy.is_file() else bundled
 
         def execute():
-            service = IdiomService(app_copy=app_copy())
+            service = IdiomService(app_copy=app_copy(), config_root=Path(r"C:\HWP_AUTODOCFIT"))
             data = dict(payload) if isinstance(payload, dict) else payload
+            if action == "open_config":
+                import os
+                snapshot = service.snapshot()
+                kind = str((data or {}).get("kind") or "text")
+                key = "body" if kind == "body" else "text"
+                path = Path(snapshot.get("config_files", {}).get(key, ""))
+                if snapshot.get("source") != "hwpx" or not path.is_file():
+                    raise ServiceError("INVALID_IDIOM", "상용구 HWPX 설정 문서를 찾지 못했어요.")
+                os.startfile(str(path))
+                return snapshot
+            if action == "apply_hwpx":
+                from docfit_core.hwpx_idioms import create_template
+
+                snapshot = service.snapshot()
+                config = Path(snapshot.get("config_files", {}).get("body", ""))
+
+                def convert_body(text, output):
+                    if not config.is_file():
+                        raise ServiceError("CONFIG_MISSING", "본문상용구 HWPX 설정 문서가 없습니다.")
+                    source = Path(output).with_suffix(".hwpx")
+                    create_template(config, source, [{"key": "본문", "value": text}])
+                    self._hwpx_to_hwp(source, output)
+
+                return service.apply_hwpx(convert_body)
             if action == "open_body":
                 import os
                 key = str((data or {}).get("key") or "")
                 snapshot = service.snapshot()
                 if not snapshot.get("available") or key not in {item["key"] for item in snapshot["body"]}:
                     raise ServiceError("INVALID_IDIOM", "본문 상용구를 찾지 못했어요.")
+                if snapshot.get("source") == "hwpx":
+                    path = Path(snapshot["config_files"]["body"])
+                    if not path.is_file():
+                        raise ServiceError("INVALID_IDIOM", "본문상용구 HWPX 설정 문서를 찾지 못했어요.")
+                    os.startfile(str(path))
+                    return snapshot
                 from docfit_core.hwp_idioms import IdiomStore
                 path = IdiomStore(snapshot["folder"]).body_path(key)
                 if not path.is_file():
@@ -1779,9 +1809,18 @@ def run_webview(gui):
         except Exception:
             pass
 
-    window.events.loaded += lambda *_args: bind_file_drop(window)
+    def _dismiss_splash():
+        try:
+            import pyi_splash
+            if pyi_splash.is_alive():
+                pyi_splash.close()
+        except Exception:
+            pass
+
+    window.events.loaded += lambda *_args: (_dismiss_splash(), bind_file_drop(window))
 
     def initialize_webview(web_window):
+        _dismiss_splash()
         threading.Thread(
             target=stop_webview_when_app_exits,
             args=(web_window,),

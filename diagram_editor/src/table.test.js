@@ -146,3 +146,5 @@ test('task table (0:1 분야별과제표) steps resizing (2~6 steps) preserves w
  const totalW2=res2.grid[0].reduce((sum,c)=>sum+c.width,0);
  assert.equal(totalW2,46601);
 });
+
+

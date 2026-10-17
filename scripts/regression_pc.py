@@ -29,6 +29,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from docfit_core.stage_selection import default_choice, stages_for_mode, without_page_fit, without_tables
+from docfit_core.report_header import detect_header
 
 STD_KEYS = ["std_margin", "std_ratio", "std_linespacing", "std_title", "std_title_bold", "std_title_auto",
             "std_attachment_auto", "std_midtitle_auto", "std_midtitle_bold", "std_dateinfo", "std_dateinfo_bold",
@@ -37,6 +38,43 @@ STD_KEYS = ["std_margin", "std_ratio", "std_linespacing", "std_title", "std_titl
             "std_supplement_indent", "std_parspace", "std_table_header"]
 PARSPACE_KEYS = ("std_parspace_chapter", "std_parspace_midtitle", "std_parspace_box", "std_parspace_circle",
                  "std_parspace_dash", "std_parspace_note", "std_parspace_return_percent")
+_TITLE_LABEL = re.compile(r"^\s*(?:제목|제목1|제목2|제목서식1|제목서식2)\s*[:：]\s*(\S.*)$")
+
+
+def 제목라벨_본문(경로):
+    """TXT/MD 원문의 명시적 제목 라벨 값을 돌려준다(이 회귀 사례의 제목 누락을 점수와 분리 검출)."""
+    path = Path(경로)
+    if path.suffix.lower() not in ('.txt', '.md'):
+        return None
+    for encoding in ('utf-8-sig', 'cp949'):
+        try:
+            text = path.read_text(encoding=encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+    else:
+        return None
+    for line in text.splitlines():
+        match = _TITLE_LABEL.match(line)
+        if match:
+            return match.group(1).strip()
+    return None
+
+
+def 제목_결과검사(원문제목, 결과경로):
+    """결과에 입력 제목이 있는지 확인한다. 형식 점수는 제목 누락을 보지 않으므로 별도로 검사한다."""
+    if not 원문제목:
+        return None
+    try:
+        title = (detect_header(결과경로) or {}).get('title') or {}
+        actual = re.sub(r"\s+", "", str(title.get('text') or ''))
+        expected = re.sub(r"\s+", "", 원문제목)
+        # 제목1은 첫 쉼표를 기준으로 부제와 제목 칸으로 분리되므로 둘 중 긴 부분을 확인한다.
+        parts = [re.sub(r"\s+", "", part) for part in re.split(r"[,，]", 원문제목) if part.strip()]
+        probe = max(parts, key=len) if parts else expected
+        return bool(actual and probe and probe in actual)
+    except Exception:
+        return False
 
 
 def 앱_불러오기(베타모드=False):
@@ -170,6 +208,9 @@ def 판정(항목, 요구):
     else:
         검사['layout'] = 'pass' if 항목['layout_same'] else 'fail'
     필수 = ['output', 'score'] + (['layout'] if 요구['same_layout'] else [])
+    if 항목.get('title_check_required'):
+        검사['title_content'] = 'pass' if 항목.get('title_content_preserved') else 'fail'
+        필수.append('title_content')
     return 검사, all(검사[k] == 'pass' for k in 필수)
 
 
@@ -216,6 +257,10 @@ def main():
             항목 = {'document': Path(문서).name,
                   'document_sha256': hashlib.sha256(Path(문서).read_bytes()).hexdigest()[:16],
                   **공통, 'settings': 설정, 'seconds': 초, 'score': 점수, 'output_created': bool(결과)}
+            원문제목 = 제목라벨_본문(문서)
+            if 원문제목:
+                항목.update({'title_check_required': True,
+                             'title_content_preserved': 제목_결과검사(원문제목, 결과) if 결과 else False})
             if 결과:
                 pythoncom.CoInitialize()
                 app = win32com.client.DispatchEx('HwpFrame.HwpObject')

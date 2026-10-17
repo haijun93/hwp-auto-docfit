@@ -36,6 +36,32 @@ const _blueSoft = Color(0xffedf3ff);
 const _mint = Color(0xff287c72);
 const _mintSoft = Color(0xfff3f8f7);
 
+({Color surface, Color selectedSurface, Color accent}) _modeColors(
+  String mode,
+) => switch (mode) {
+  'spacing' => (
+    surface: const Color(0xfff0f5ff),
+    selectedSurface: const Color(0xffe3edff),
+    accent: const Color(0xff3b6fb6),
+  ),
+  'unify' => (
+    surface: const Color(0xffeff8f5),
+    selectedSurface: const Color(0xffdef1ea),
+    accent: const Color(0xff2f8273),
+  ),
+  'all' => (
+    surface: const Color(0xfffff7eb),
+    selectedSurface: const Color(0xffffedcf),
+    accent: const Color(0xffa86a1f),
+  ),
+  'file_format' => (
+    surface: const Color(0xfff4f1ff),
+    selectedSurface: const Color(0xffeae4ff),
+    accent: const Color(0xff7656a8),
+  ),
+  _ => (surface: Colors.white, selectedSurface: _blueSoft, accent: _blue),
+};
+
 class DocFitApp extends StatelessWidget {
   const DocFitApp({super.key, this.api = bridge.callApi});
   final ApiCall api;
@@ -1306,6 +1332,7 @@ class _WorkspaceState extends State<Workspace> {
 
   Widget modeCard((String, String, String, IconData, String) m) {
     final selected = cardMode == m.$1;
+    final colors = _modeColors(m.$1);
     final isAll = m.$1 == 'all';
     final suffix = m.$1 == 'file_format'
         ? '${conversionTarget.toUpperCase()}변경'
@@ -1315,11 +1342,14 @@ class _WorkspaceState extends State<Workspace> {
         ? '서식적용'
         : m.$5;
     return Material(
-      color: selected ? const Color(0xffeaf1ff) : Colors.white,
+      key: Key('modeCard-${m.$1}'),
+      color: selected ? colors.selectedSurface : colors.surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
         side: BorderSide(
-          color: selected ? _blue : _line,
+          color: selected
+              ? colors.accent
+              : colors.accent.withValues(alpha: 0.28),
           width: selected ? 2 : 1,
         ),
       ),
@@ -1346,7 +1376,7 @@ class _WorkspaceState extends State<Workspace> {
               children: [
                 Row(
                   children: [
-                    Icon(m.$4, color: _blue),
+                    Icon(m.$4, color: colors.accent),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
@@ -1361,7 +1391,7 @@ class _WorkspaceState extends State<Workspace> {
                       selected
                           ? Icons.check_circle
                           : Icons.radio_button_unchecked,
-                      color: selected ? _blue : const Color(0xffcbd5e1),
+                      color: selected ? colors.accent : const Color(0xffcbd5e1),
                     ),
                   ],
                 ),
@@ -1373,9 +1403,7 @@ class _WorkspaceState extends State<Workspace> {
                     state['user_overrode_mode'] != true)
                   Tooltip(
                     message: '${docHints['reason'] ?? ''}',
-                    child: Chip(
-                      label: const Text('✨ 문서 자동 맞춤'),
-                    ),
+                    child: Chip(label: const Text('✨ 문서 자동 맞춤')),
                   ),
                 if (selected && m.$1 != 'file_format') modeOptions(m.$1),
                 const SizedBox(height: 12),

@@ -139,6 +139,46 @@ void main() {
     });
   }
 
+  testWidgets('four work-mode cards use distinct soft theme colors', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final state = initialState()
+      ..['files'] = [
+        {'name': '문서.hwpx', 'folder': r'C:\문서'},
+      ];
+    Future<Object?> api(String name, List<Object?> args) async => state;
+
+    await tester.pumpWidget(DocFitApp(api: api));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('작업 방식 선택'));
+    await tester.pumpAndSettle();
+
+    final expected = <String, Color>{
+      'spacing': const Color(0xffe3edff),
+      'unify': const Color(0xffeff8f5),
+      'all': const Color(0xfffff7eb),
+      'file_format': const Color(0xfff4f1ff),
+    };
+    final actual = <Color>{};
+    for (final entry in expected.entries) {
+      final card = tester.widget<Material>(
+        find.byKey(Key('modeCard-${entry.key}')),
+      );
+      actual.add(card.color!);
+      if (entry.key == 'spacing') {
+        expect(card.color, const Color(0xffe3edff)); // 선택된 카드
+      } else {
+        expect(card.color, entry.value);
+      }
+    }
+    expect(actual.length, 4);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('stages, page range and quick settings change in place', (
     tester,
   ) async {

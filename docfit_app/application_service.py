@@ -149,7 +149,7 @@ class ApplicationService:
         if method=='idioms':
             from docfit_app.idiom_service import IdiomService
             app_copy=Path(__file__).resolve().parents[1]/'resources'/'HWP.IDO'
-            return response(lambda:IdiomService(app_copy=app_copy).command(*args))
+            return response(lambda:IdiomService(app_copy=app_copy, config_root=Path(r"C:\HWP_AUTODOCFIT")).command(*args))
         if method=='table_template':
             from docfit_app.table_template_service import TableTemplateService
             return response(lambda:TableTemplateService(self.abbreviations).command(*args))
