@@ -311,6 +311,11 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     로그("쪽 범위 지정: 표 칸 너비 맞춤(문서 전체 표 구조 변경)은 이번 작업에서 건너뜁니다.")
                 else:
                     선행목록.append((True, '표 칸 너비', 표너비_hwpx_처리, 'table_width.hwpx', '표 칸 너비'))
+                    if 기본표_포함:
+                        # 기본 표 서식은 한 줄에 드는 짧은 칸만 예시 정렬로 바꾼다. 칸 너비를 맞추기 전에는 좁아서 여러 줄로
+                        # 보던 칸이 넓어진 뒤 한 줄이 되면 정렬을 다시 정한다(텍스트 표 변환 칸이 양쪽 정렬로 남던 문제, 2026-10-17).
+                        선행목록.append((True, '기본 표 서식 정렬 재확인', 기본표서식_hwpx_처리, 'table_style_align.hwpx',
+                                     '표 칸 너비'))
             # 연속된 연결 부호 문장(목차·일정표)은 한/글 목차 점선(왼쪽 정렬 탭)으로 맞춘다(알파, 2026-10-10).
             if 서식단계_사용 and 쪽범위_요청 is None and 알파_연결부호_탭정렬_사용:
                 선행목록.append((True, '연결 부호 탭 정렬', 연결부호탭_hwpx_처리, 'connector_tab.hwpx', '표 칸 너비'))
@@ -908,6 +913,18 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     raise
                 callbacks.on_stage_exit(name, result)
                 return result
+            def 최종_내어쓰기_확인():
+                # 양쪽 정렬 첫 줄은 기호 뒤 빈칸이 줄의 여유만큼 늘어난다. 내어쓰기를 잰 뒤 첫 줄 내용(다음 단어 당김·
+                # 단어 분리 재검사 등)이 바뀌면 늘어난 폭이 달라져 둘째 줄이 기준 글자와 어긋났다(실측: 'ㅇ 난세기 예보 시…'
+                # 문서 -5992, 기준 글자 실측 -6480). 모든 조정이 끝난 뒤 한 번 더 재서 다른 문단만 고친다(2026-10-17).
+                if (작업_모드 in ('format', 'all') and 표준서식_사용 and 표준서식_내어쓰기_사용
+                        and stage_enabled(선택_세부작업, 'hanging_indent')):
+                    if not stage('최종 내어쓰기 재확인', 문단_내어쓰기_전체_갱신):
+                        return False
+                    if 내어쓰기_변경문단:
+                        로그(f"[최종 내어쓰기 재확인] 첫 줄 배치가 바뀐 {len(내어쓰기_변경문단)}개 문단의 내어쓰기를 다시 맞춤")
+                return True
+
             def 최종_서식통일_검증():
                 # 서식통일이 기준인 경우(표준서식 없음)에만, 서식통일 뒤의 자간·내어쓰기 반복이 바꾼 문장을
                 # 처음 대표값으로 다시 맞춘다. 표준서식이 기준이면 괄호 -2pt·최종 내어쓰기·부연설명 단계가
@@ -1143,6 +1160,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     if not 쪽맞춤_보고서조정됨 and not (페이지맞춤_문단간격_사용 and 전_쪽 and 전_쪽 > 1
                             and 남은줄 is not None and 남은줄 <= 페이지맞춤_최대남은줄수):
                         진단로그(f"[쪽 수 재확인] 마지막 쪽({전_쪽}쪽) {남은줄}줄: 페이지 수 맞춤 불필요")
+                        if not 최종_내어쓰기_확인():
+                            return False
                         hwp_run('MoveDocBegin')
                         return True
                     로그("[쪽 수 재확인] 문단 페이지 배치가 줄간격을 바꿔 페이지 수 맞춤을 다시 확인합니다.")
@@ -1162,6 +1181,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         if 쪽맞춤_원본_보고서 and 쪽맞춤_유형판정_사용:
                             if not stage('보고서 쪽 구성 최종 확인', _문서유형별_쪽맞춤):
                                 return False
+            if not 최종_내어쓰기_확인():
+                return False
             hwp_run('MoveDocBegin')
             return True
         return bind_function(_문서_처리_1회, _docfit_namespace)

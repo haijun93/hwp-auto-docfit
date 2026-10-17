@@ -5083,6 +5083,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 hwp.SetPos(*begin)
                 hwp_run("MoveLineEnd")
                 end = hwp.GetPos()
+                # 양쪽 정렬 첫 줄은 빈칸이 늘어난다. 줄 끝에서 바로 SetPos로 옮기면 한/글이 늘기 전 글자 위치로 Shift+Tab을 계산하므로(둘째 줄이 기준 글자보다 왼쪽), 이동 명령으로 줄 배치를 먼저 반영시킨다.
+                hwp_run("MoveParaBegin")
                 units = len(text[:offset].encode("utf-16-le")) // 2
                 target = (begin[0], begin[1], begin[2] + units)
                 if end[:2] != begin[:2] or target[2] >= end[2]:
@@ -5207,6 +5209,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 hwp.SetPos(*begin)
                 hwp_run("MoveLineEnd")
                 line_end = hwp.GetPos()
+                # 양쪽 정렬 첫 줄은 빈칸이 늘어난다. 줄 끝에서 바로 SetPos로 옮기면 한/글이 늘기 전 글자 위치로 Shift+Tab을 계산하므로(둘째 줄이 기준 글자보다 왼쪽), 이동 명령으로 줄 배치를 먼저 반영시킨다.
+                hwp_run("MoveParaBegin")
                 # 한글 위치값은 UTF-16 코드 단위. 보조평면 문자도 올바르게 이동.
                 units = len(text[:offset].encode("utf-16-le")) // 2
                 target = (begin[0], begin[1], begin[2] + units)
@@ -5288,6 +5292,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 hwp.SetPos(*begin)
                 hwp_run("MoveLineEnd")
                 line_end = hwp.GetPos()
+                # 양쪽 정렬 첫 줄은 빈칸이 늘어난다. 줄 끝에서 바로 SetPos로 옮기면 한/글이 늘기 전 글자 위치로 Shift+Tab을 계산하므로(둘째 줄이 기준 글자보다 왼쪽), 이동 명령으로 줄 배치를 먼저 반영시킨다.
+                hwp_run("MoveParaBegin")
                 text = 현재문단_텍스트()
                 units = len(text[:글자수].encode("utf-16-le")) // 2
                 target = (begin[0], begin[1], begin[2] + units)

@@ -2,7 +2,7 @@
 
 사용: .venv\\Scripts\\python.exe scripts\\format_fidelity_pc.py [예시.hwpx ...] [--out 결과폴더] [--mode all]
 
-예시를 주지 않으면 C:\\HWP_AUTODOCFIT\\서식예시 폴더의 HWPX·HWP 전부를 쓴다. HWP 예시는 한/글로 HWPX 사본을 만들어
+예시를 주지 않으면 C:\\HWP_AUTODOCFIT\\테스트예시 폴더(시험 전용, 저장소에 넣지 않음)의 HWPX·HWP 전부를 쓴다. HWP 예시는 한/글로 HWPX 사본을 만들어
 그 사본을 원본 A로 삼는다(HWP 원본은 읽기만 한다). 예시마다
 1) 예시 A를 서식으로 복제한다(앱의 서식 분석·선택 경로: _서식_분석_시작 → _프로파일_전역반영 → _프로파일_선택).
 2) A의 서식 해제본 A0을 만든다: 글·문단 순서·표 구조·개체는 두고, 모든 문단(본문·표 칸)·글자 모양을 바탕글
@@ -33,7 +33,8 @@ from pathlib import Path
 from defusedxml import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
-SAMPLE_FOLDER = Path(r"C:\HWP_AUTODOCFIT\서식예시")
+# 시험 전용 예시는 앱의 서식예시 폴더와 따로, 이 PC에만 둔다(저장소에 넣지 않음, 사용자 지시 2026-10-17).
+SAMPLE_FOLDER = Path(r"C:\HWP_AUTODOCFIT\테스트예시")
 H = "{http://www.hancom.co.kr/hwpml/2011/head}"
 P = "{http://www.hancom.co.kr/hwpml/2011/paragraph}"
 
@@ -216,11 +217,63 @@ def _diff(a, b):
 # 화면이 같으므로 비교하지 않는다(원본의 줄 배치 정보 lineseg로 줄 수를 센다).
 EXCLUDED_PARA = ("ls",)
 EXCLUDED_CHAR = ("spacing",)
+# 문단 하나에만 준 손 간격: 원본에서 같은 계층(항목기호) 대표값과 다른 문단 위·아래 간격·내어쓰기·왼쪽 여백(사용자 결정 2026-10-17).
+HAND_KEYS = ("prev", "next", "intent", "left")
 
 
-def _normalized(x, line_count):
+def _group(text):
+    import re
+    m = re.match(r"\s*(\*{1,2}|[□■ㅁㅇ○●◦※•·▪▶◆◇☞\-–]|\d{1,2}\.|[가-하]\.|\(\d{1,2}\)|[①-⑳])", text or "")
+    return {"ㅁ": "□", "○": "ㅇ"}.get(m.group(1), m.group(1)) if m else ""
+
+
+_DEPTH = {"□": 1, "ㅇ": 2, "-": 3, "–": 3, "*": 4, "**": 4, "※": 4}
+
+
+def _contexts(items):
+    """원본 문단 번호 → 자리(계층, 계층 복귀 문단인가). 복귀는 바로 앞 항목 문장이 더 깊은 계층일 때."""
+    out, previous = {}, None
+    for index, x in enumerate(items):
+        if x[0] != "P" or not x[1].strip():
+            continue
+        group = _group(x[1])
+        depth = _DEPTH.get(group)
+        out[index] = (group, bool(depth and previous and previous > depth))
+        if depth:
+            previous = depth
+    return out
+
+
+def _level_values(items):
+    """자리별 대표값 {(계층, 복귀, 항목): 값|None}. 같은 자리 문단이 둘 이상일 때만, 최다값이 다른 값보다 많을 때만
+    대표값이고 동률이면 None(대표를 정할 수 없어 그 자리 값은 모두 손 조정으로 본다)."""
+    from collections import Counter, defaultdict
+    seen = defaultdict(Counter)
+    for index, (group, ret) in _contexts(items).items():
+        for k, v in (items[index][2] or ()):
+            if k in HAND_KEYS:
+                seen[(group, ret, k)][v] += 1
+    reps = {}
+    for key, c in seen.items():
+        if sum(c.values()) < 2:
+            continue
+        top = c.most_common(2)
+        reps[key] = top[0][0] if len(top) == 1 or top[0][1] > top[1][1] else None
+    return reps
+
+
+def _hand_keys(x, levels, context):
+    """원본 문단 x에서 손으로 준 값으로 보는 문단 모양 항목(자리 대표값과 다르거나 대표값을 정할 수 없음)."""
+    if context is None:
+        return set()
+    group, ret = context
+    return {k for k, v in (x[2] or ()) if k in HAND_KEYS and (group, ret, k) in levels
+            and levels[(group, ret, k)] != v}
+
+
+def _normalized(x, line_count, hand=()):
     """비교용 문단: 제외 항목을 뺀 문단 모양과, 제외 항목을 뺀 뒤 모양이 같은 run을 합친 글자 구간."""
-    para = tuple((k, v) for k, v in (x[2] or ()) if k not in EXCLUDED_PARA
+    para = tuple((k, v) for k, v in (x[2] or ()) if k not in EXCLUDED_PARA and k not in hand
                  and not (k == "intent" and line_count is not None and line_count <= 1))
     runs = []
     for shape, text in x[3]:
@@ -232,10 +285,12 @@ def _normalized(x, line_count):
     return ("P", x[1], para, runs)
 
 
-def _excluded(x, y):
+def _excluded(x, y, hand=()):
     """제외한 손 조정 종류(원본 x와 결과 y가 다른 것만)."""
     found = []
     px, py = dict(x[2] or ()), dict(y[2] or ())
+    if any(px.get(k) != py.get(k) for k in hand):
+        found.append("문단 하나에만 준 간격·여백")
     if px.get("ls") != py.get("ls"):
         found.append("줄 간격")
     if px.get("intent") != py.get("intent") and x[4] is not None and x[4] <= 1:
@@ -252,6 +307,8 @@ def compare(original, result):
     from collections import Counter
     excluded = Counter()
     a, b = load(original), load(result)
+    levels = _level_values(a)
+    contexts = _contexts(a)
     key = lambda x: (x[0], x[1] if x[0] == "P" else "")
     lines, count = [f"항목 수 원본 {len(a)} / 결과 {len(b)}"], 0
     for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, [key(x) for x in a], [key(x) for x in b],
@@ -264,8 +321,9 @@ def compare(original, result):
         for i, j in zip(range(i1, i2), range(j1, j2)):
             x, y = a[i], b[j]
             if x[0] == "P":
-                excluded.update(_excluded(x, y))
-                x, y = _normalized(x, x[4]), _normalized(y, x[4])
+                hand = _hand_keys(x, levels, contexts.get(i))
+                excluded.update(_excluded(x, y, hand))
+                x, y = _normalized(x, x[4], hand), _normalized(y, x[4], hand)
             if x == y:
                 continue
             count += 1
