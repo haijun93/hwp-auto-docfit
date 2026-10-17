@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections import Counter
 import copy
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import io
 from pathlib import Path
 import re
@@ -65,6 +65,7 @@ class ParagraphStyle:
     line_percent: int | None = None
     prev_pt: float | None = None
     bold_spans: tuple = ()
+    plain_spans: tuple = ()      # 굵게 하지 않을 구간(본문은 굵게·기호는 보통인 예시, 2026-10-17)
     # 알파 1-d(2026-10-11): 사용자 서식(예시 보고서 복사)의 계층 추가 서식과 복사한 문단 모양.
     # char_extra: (("latin_font", 글꼴), ("latin_type", "TTF"|"HFT"), ("ratio", n), ("spacing", n), ("italic", True),
     #              ("underline", "BOTTOM"|"CENTER"|"TOP"), ("color", "#RRGGBB"), ("shade", "#RRGGBB")) 중 필요한 것
@@ -194,6 +195,15 @@ class StylePool:
             group.set("fontCnt", str(len(group)))
         return found.get("id")
 
+    def signature(self, char_id):
+        """(한글 글꼴 ID, 굵게, 크기 HWPUNIT). 문단 안 강조 run을 가리는 데 쓴다."""
+        shape = self.sources["charProperties"].get(char_id)
+        if shape is None:
+            return None
+        ref = child(shape, "fontRef")
+        return (ref.get("hangul") if ref is not None else None, child(shape, "bold") is not None,
+                int(shape.get("height") or 0))
+
     def char(self, base_id, spec, force_bold):
         key = (base_id, spec.font, spec.font_type, spec.size_pt, spec.bold, spec.ratio, force_bold, spec.char_extra)
         if key not in self.characters:
@@ -301,6 +311,30 @@ def _rewrite_runs(paragraph, spec, pool):
     new_prefix = len(spec.text) - len(spec.text.lstrip())
     if len(original.lstrip()) != len(spec.text.lstrip()):
         raise ValueError("본문 글자 수를 바꾸는 계획은 적용할 수 없습니다.")
+    # 문단 안 강조(일부 낱말만 굵게·다른 글꼴)는 서식이다. 글자 수가 가장 많은 글꼴·굵게를 기본 글자로 보고, 그와 다른
+    # run은 자기 글꼴·굵게를 두고 크기만 기본 글자와의 차이를 유지해 옮긴다. 예전에는 모든 run에 계층 서식을 입혀
+    # 예시의 '[중요 부분은 진하게 또는 한컴돋움(진하게)]' 강조가 사라졌다(서식 재연 시험, 2026-10-16). 기호는 계층 서식.
+    weights, sizes = Counter(), Counter()
+    for run in runs:
+        sig = pool.signature(run.get("charPrIDRef"))
+        if sig is not None:
+            weights[sig[:2]] += len((run[0].text or "").strip())
+            sizes[sig] += len((run[0].text or "").strip())
+    main = weights.most_common(1)[0][0] if weights else None
+    main_size = max((sig for sig in sizes if sig[:2] == main), key=sizes.get, default=(None, None, None))[2]
+    body = spec.text[new_prefix:]
+    marker_end = new_prefix + (len(body.split(None, 1)[0]) if body.strip() else 0)
+
+    def run_spec(run, start):
+        sig = pool.signature(run.get("charPrIDRef"))
+        if sig is None or main is None or sig[:2] == main or start < marker_end:
+            return spec
+        size = spec.size_pt
+        if size is not None and main_size:
+            size = round(size + (sig[2] - main_size) / 100, 1)
+        return replace(spec, font=None, font_type=None, bold=None, size_pt=size,
+                       char_extra=tuple((k, v) for k, v in spec.char_extra if k in ("color", "shade")))
+
     position = 0
     built = []
     leading_added = False
@@ -322,7 +356,7 @@ def _rewrite_runs(paragraph, spec, pool):
             local = new_prefix - global_start
             text = text[:local] + spec.text[new_prefix] + text[local + 1:]
         cuts = {0, len(text)}
-        for a, b in spec.bold_spans:
+        for a, b in spec.bold_spans + spec.plain_spans:
             cuts.update(max(0, min(len(text), x - global_start)) for x in (a, b))
         ordered = sorted(cuts)
         for a, b in zip(ordered, ordered[1:]):
@@ -331,7 +365,10 @@ def _rewrite_runs(paragraph, spec, pool):
             clone = copy.deepcopy(run)
             clone[0].text = text[a:b]
             force = any(lo <= global_start + a and global_start + b <= hi for lo, hi in spec.bold_spans)
-            clone.set("charPrIDRef", pool.char(run.get("charPrIDRef"), spec, force))
+            piece_spec = run_spec(run, global_start + a)
+            if any(lo <= global_start + a and global_start + b <= hi for lo, hi in spec.plain_spans):
+                piece_spec, force = replace(piece_spec, bold=False), False
+            clone.set("charPrIDRef", pool.char(run.get("charPrIDRef"), piece_spec, force))
             built.append(clone)
     for run in runs:
         paragraph.remove(run)

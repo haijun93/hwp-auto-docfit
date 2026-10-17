@@ -365,7 +365,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리"
-APP_VERSION = "1.76.4"
+APP_VERSION = "1.76.5"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 GITHUB_UPDATE_API_URL = "https://api.github.com/repos/haijun93/hwp-auto-docfit/releases/latest"
@@ -721,6 +721,7 @@ from docfit_app.settings_schema import DEFAULTS as _설정_기본값
 
 
 서식프로파일_목록 = _engine_resolve('docfit_engine.formatter', '서식프로파일_목록', globals())
+_제목뒤간격_다시재기 = _engine_resolve('docfit_engine.formatter', '_제목뒤간격_다시재기', globals())
 
 
 _표_텍스트 = _engine_resolve('docfit_engine.formatter', '_표_텍스트', globals())
@@ -944,6 +945,10 @@ _제목_날짜 = re.compile(r"[’'‘`]?\d{2,4}\s*[.년/\-]\s*\d{1,2}\s*[.월/\
 
 
 표날짜칸_hwpx_처리 = _engine_resolve('docfit_engine.formatter', '표날짜칸_hwpx_처리', globals())
+두글자칸_hwpx_처리 = _engine_resolve('docfit_engine.formatter', '두글자칸_hwpx_처리', globals())
+빈줄서식_hwpx_처리 = _engine_resolve('docfit_engine.formatter', '빈줄서식_hwpx_처리', globals())
+강조낱말_hwpx_처리 = _engine_resolve('docfit_engine.formatter', '강조낱말_hwpx_처리', globals())
+개요첫칸_hwpx_처리 = _engine_resolve('docfit_engine.formatter', '개요첫칸_hwpx_처리', globals())
 
 
 제목_날짜칸_한줄 = _engine_resolve('docfit_engine.formatter', '제목_날짜칸_한줄', globals())
@@ -956,6 +961,8 @@ _정밀표_매칭점수 = _engine_resolve('docfit_engine.formatter', '_정밀표
 
 
 _정밀표_셀서식_복사 = _engine_resolve('docfit_engine.formatter', '_정밀표_셀서식_복사', globals())
+_정밀표_글자위치_복사 = _engine_resolve('docfit_engine.formatter', '_정밀표_글자위치_복사', globals())
+_표_글_그대로 = _engine_resolve('docfit_engine.formatter', '_표_글_그대로', globals())
 
 
 _정밀표_같은표만 = _engine_resolve('docfit_engine.formatter', '_정밀표_같은표만', globals())
@@ -1979,6 +1986,7 @@ _문두_무시문자_정규식 = re.compile(r"[\s\u200b\u2060\ufeff]+")
 선택범위_현재크기_pt = _engine_resolve('docfit_engine.formatter', '선택범위_현재크기_pt', globals())
 
 괄호_축소량_pt = _engine_resolve('docfit_engine.formatter', '괄호_축소량_pt', globals())
+대괄호_축소_제외 = _engine_resolve('docfit_engine.formatter', '대괄호_축소_제외', globals())
 
 
 괄호_텍스트_크기_축소_현재선택 = _engine_resolve('docfit_engine.formatter', '괄호_텍스트_크기_축소_현재선택', globals())
@@ -2721,6 +2729,8 @@ _콜론_한글인가 = _engine_resolve('docfit_engine.page_fit', '_콜론_한글
 
 
 콜론_공백_정리_문단_처리 = _engine_resolve('docfit_engine.page_fit', '콜론_공백_정리_문단_처리', globals())
+항목기호_낫표_빈칸_구간 = _engine_resolve('docfit_engine.page_fit', '항목기호_낫표_빈칸_구간', globals())
+항목기호_낫표_빈칸_정리_문단_처리 = _engine_resolve('docfit_engine.page_fit', '항목기호_낫표_빈칸_정리_문단_처리', globals())
 
 
 # v1.10 함수명을 호출하는 기존 경로와의 호환성 유지

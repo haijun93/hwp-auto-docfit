@@ -118,6 +118,8 @@ def marker_space_fix(text, marker_end):
     next_char = text[marker_end]
     if next_char == " ":
         return None
+    if next_char == "「":
+        return None      # 항목기호 뒤 여는 낫표는 빈칸 없이 붙인다(' ㅇ「법령」', 사용자 규칙 2026-10-17)
     if next_char in _MARKER_SPACE_ALTERNATES:
         return "replace"
     return "insert"

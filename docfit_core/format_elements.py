@@ -727,6 +727,10 @@ def is_body_sentence(text, size, align):
     줄지 않게, 2026-10-04). 글자 수는 빈칸을 빼고 세어 공백 정리 전후로 판정이 바뀌지 않게 한다.
     """
     body = (text or "").strip()
+    # 붙임 목록의 둘째 줄부터('2.「…」 개정(안).  끝.', '2. 계획서 1부.')도 붙임 줄이다. 예전에는 본문 문장으로 보아
+    # 대표 본문 서식(굵게)이 입혀졌다(2026-10-17 사용자 신고).
+    if re.match(r"\d+\.", body) and re.search(r"(\d+\s*부\.|끝\.)$", body):
+        return False
     return (len(re.sub(r"\s", "", body)) >= 12 and not body.startswith("붙임")
             and (size or 0) < TITLE_TABLE_SIZE and align not in ("CENTER", "RIGHT"))
 
@@ -881,6 +885,10 @@ def analyze_format_elements(path, classify=None):
                     if kind == "box" and previous_kind and previous_kind.startswith("title"):
                         kind = "overview"
                     previous_kind = kind
+                    if not (kind and (kind.startswith("title") or kind == "overview")):
+                        # 제목·개요 표와 첫 문장 사이에 중제목 표(Ⅰ 추진 배경)·일반 표가 있으면 그 표 높이까지 간격으로 재어
+                        # 중제목 아래 첫 □의 문단 위 간격이 31pt로 벌어졌다(사용자 신고, 2026-10-17). 이때는 재지 않는다.
+                        title_bottom = None
                     if kind in FORM_KINDS:
                         forms[kind].append((table, _record_table(table, index)))
                         if kind.startswith("title") or kind == "overview":
@@ -1457,6 +1465,12 @@ def apply_to_profile(profile):
             rules[index] = (rule[0], _value(elements, "lead_spaces", rule[1]), font,
                             size / 100 if size else rule[3], bold,
                             bool(marker_bold) and not bold if marker_bold is not None else rule[5])
+            if bold and marker_bold is False:
+                # 본문은 굵게, 기호는 보통(교육부 업무계획 '□ 교육·돌봄…': 기호만 보통) — 기호를 굵게 바꾸지 않는다(2026-10-17).
+                plain = fmt.setdefault("기호_보통", [])
+                for same in {marker, {"□": "ㅁ", "ㅁ": "□", "ㅇ": "○", "○": "ㅇ"}.get(marker, marker)}:
+                    if same not in plain:
+                        plain.append(same)
             if marker in _RULE_BOLD_OPTION:
                 # 이 설정은 문단 굵게와 기호만 굵게를 함께 허용하는 문이다. 기호만 굵게 쓴 예시에서 문단 굵게(False)로
                 # 닫으면 기호 굵게까지 빠졌다(2026-10-04 범정부오피스 병무 서식).

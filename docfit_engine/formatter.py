@@ -6,7 +6,7 @@ see docfit_engine.runtime. This module does not import the application bootstrap
 from docfit_engine.runtime import bind_function, bind_class
 
 def _install(*, _docfit_namespace, _docfit_symbol):
-    global _표준서식_문단위간격_표, 기본_계층_스타일, 표준서식_문단위간격_찾기, 기호글꼴_적용, 표글꼴_적용, _hwp_설치폴더_후보_레지스트리, _hwp_설치폴더_후보_공통경로, 한글_폰트_폴더_자동감지, _ttf_패밀리이름, 한글_폰트_목록, 한컴_번들_폰트_폴더_목록, 한글_폰트_목록_전체, 서식_기본값_전역_복원, 프로그램_폴더, 번들_리소스_폴더, 기본_서식프로파일, 서식프로파일_목록, _표_텍스트, _표_서명, _정밀표_프로필_추출, hwpx_서식_분석, 보고서머리_프로필_반영, 보고서머리_hwpx_처리, 예시문서_기본이름, _분석본_보관, 한글파일_서식_분석, 교정용_hwpx_준비, 분석용_hwpx_준비, 스타일분석_파일생성, 스타일분석_요약, 서식프로파일_표시이름, 문서_markdown_내보내기, 복사_문단모양_적용, 계층_추가서식_값, 복사_간격_규칙_적용, 계층_추가서식_적용, 개요붙임_원본자료, 붙임_유형판별, 붙임_대상찾기, 중제목_글칸들, 중제목_유형판별, 중제목_대상찾기, 중제목_원본자료, _구역_본문폭, _예정_좌우여백, _최종_본문폭, _빈_문단인가, _문단사이_빈줄_삭제, _문단_본문글, _서식표_뒤_빈줄_삭제, _서식표_가로맞춤, _중제목_번호굵게_적용, 중제목_표서식_복사, _중제목_글자치수, _중제목_문단폭, _중제목_칸폭_맞춤, 개요_표인가, 제목_xml이름, 제목_자식, 제목_셀들, 제목_문단들, 제목_문자열, _한칸_제목글인가, _기타_제목표인가, _한칸_제목표인가, 제목_유형판별, 제목_대상찾기, 서식표_종류판별, _서식표_예시, 제목2행1열_원본자료, 제목_원본자료, 제목_참조병합, 날짜칸인가, 표_날짜칸_한줄, 표날짜칸_hwpx_처리, 제목_날짜칸_한줄, 제목_표서식_복사, _정밀표_매칭점수, _정밀표_셀서식_복사, _정밀표_같은표만, _정밀표_글같음, 정밀표_서식_적용, 제목_문단_가운데정렬, 제목_괄호부연_축소, 제목_hwpx_처리, _제목_임시hwpx_저장, 이전_작업_임시폴더_정리, _제목_임시폴더_정리, 서식구조_조사, 제목4종_현재문서_조사, 제목4종_현재문서_적용, 붙임_hwpx_처리, 중제목_hwpx_처리, 제목_부제_크기_해석, 제목_부제_크기_반영, 제목_담당자_글_반영, _설정_담당자_글인가, _서식표_기준, 제목_부제_크기, _칸_글_지우기, _칸_날짜_현행화, _빈칸_서식_참조_변환, _칸_글_넣기, 서식표_생성, _제목개요_빈줄_정리, _서식표_글, _서식표_글_확인, 라벨_서식표_적용, _문서_표번호, _서식표_번호_부여, _hwpx_안전_저장, _문단_일반글, _문단_준말_판별, _문단_준말_제외사유, _문단_글_바꾸기, 준말_hwpx_처리, 제목개요폭_hwpx_처리, 연결부호탭_hwpx_처리, 콜론라벨_hwpx_처리, 상자서식_hwpx_처리, 쪽번호_hwpx_처리, 준말_사용표_만들기, 준말_선행적용, 기본표서식, _기본표서식_대상인가, 기본표서식_hwpx_처리, 표너비_hwpx_처리, 기본표서식_선행적용, _위첨자_글자모양, _문단_별표_대상, 별표위첨자_hwpx_처리, 별표위첨자_선행적용, _한글_글꼴표, _글꼴_확보, _글자모양_글꼴크기, _본문기호_글꼴, 붙임글꼴_hwpx_처리, 글자서식_선행적용, 붙임2종_현재문서_조사, 제목붙임_선행적용, 정밀표_선행적용, 붙임2종_현재문서_적용, 설정_폴더, 서식프로파일_폴더, 서식예시_정보_폴더, 서식예시_폴더, 첫쪽_그림_만들기, 번들_서식예시_찾기, _json_파일_읽기, 서식예시_서명, 설정_파일_경로, 설정_불러오기, 설정_저장, 진행률, 단계시간_시작, _단계시간_닫기, 단계시간_구간, 단계시간_끝, 단계시간_분류, 단계시간_요약줄, 단계초기화, 중단_요청됨, _문서_편집_시도, hwp_run, _문두보호_줄건너뜀, 번들_상용구_파일_찾기, 글자상용구_폴더, 본문상용구_폴더, 번들_본문상용구_폴더, 상용구_폴더_준비, 상용구_전용폴더_찾기, 텍스트_삽입, 문자모양_적용_현재선택, _다른_글꼴형식으로_재실행, 문단_줄간격_적용_현재선택, HwpUnit_pt, HwpUnit_mm, 문단_위간격_적용_현재선택, 문단_아래간격_pt_현재문단, 문단_아래간격_적용_현재선택, 텍스트_너비_em, _문단_공백_건너뛰기, 복사_내어쓰기_규칙, 문단_내어쓰기_기준_오프셋, _여는낫표_건너뛰기, _문단_기호뒤_오프셋, _문단_본문시작_오프셋, 문단_자간보호_선행부_오프셋, 문단_내어쓰기_적용_현재선택, _반각전각_폭배수, 문단_선행부_폭_HWPUNIT, _내어쓰기_값_설정, 내어쓰기_기호선택_허용, 재검사_대상인가, 재검사_영역인가, 문단_내어쓰기_전체_갱신, _내어쓰기_한문단, _붙임목록_내어쓰기_대상수집, _붙임번호_기준위치_실측, _붙임목록_번호_내어쓰기_적용, 문단_내어쓰기_적용, _부모문단_유형, _부연설명_문단인가, _선행공백_길이, _캐럿위치_폭_실측, 부연설명_앞빈칸_수, _부연설명_앞빈칸_적용, _부연설명_한문단, 부연설명_들여쓰기_전체_적용, _별표_위치_실측, _별표_정렬_적용, _별표_한문단, 별표_정렬_전체_적용, _mm_hwpunit, _현재_쪽여백, _표준_또는_원본여백, 페이지_여백_설정, 용지_다르면_알림, 들여쓰기_공백_맞추기, 표준서식_기호규칙_찾기, 본문형_일반문장인가, _사용자서식인가, 알파_일괄서식_가능, 사용자서식_XML추가값, _GDI_글꼴인가, _알파_글꼴형식, _알파_라벨_굵게범위, 표준서식_hwpx_처리, _알파_한줄문단인가, 표준서식_문단_처리, 빈문단_분류, 항목기호문장_사이_빈문단_찾기, 본문_컨트롤_문단번호, 항목기호문장_사이_빈줄_삭제, 글꼴형식_모으기, 글꼴형식_등록, _서식통일_문두요소_범위, _서식통일_글자모양, _서식통일_공백제거, _서식통일_HWPX_분석, _서식통일_run_text, _서식통일_XML문단, _서식통일_위치텍스트, _서식통일_음영값, 서식통일_표본, _서식통일_그룹키, _서식통일_현재_HWPX, _서식통일_불일치_구간, _서식통일_부연괄호_불일치_구간, _서식통일_굵기_불일치_구간, 서식통일_대표, _서식통일_표지인가, _서식통일_제목표_표본, _서식통일_체계경계, _서식통일_참고표_이웃대표_보완, _서식통일_대표값_사용자검토, _서식통일_적용영역_사용자검토, 서식통일_결과창_반영, _결과창_띄우는가, _서식통일_최종결과_사용자확인, _서식통일_미확정_항목, _서식통일_미확정_빨간표시, _서식통일_문단앞간격_적용, _서식통일_내어쓰기_필요, _서식통일_내어쓰기_상태, _서식통일_문단서식_적용, _서식통일_글자요소_적용, _서식통일_색값, _서식통일_색_적용, _서식통일_문단내어쓰기_적용, _서식통일_문단자간_조정, _서식통일_글꼴크기만, _서식통일_글꼴크기_대표, _서식통일_XML_조사, _서식통일_COM_조사, 서식통일_전체_적용, 서식통일_자간조정_반영, 서식통일_문장_마무리, _서식통일_마무리_위치로, 서식통일_보류자간_재조정, _서식통일_표모형, 서식통일_표_전체_적용, 표준서식_전체_적용, 괄호_안쪽, 대괄호인가, 괄호_문두_라벨인가, 괄호_뒤_콜론인가, 세트후속_범위괄호_라벨인가, 문단_범위_선택, 선택범위_현재크기_pt, 괄호_축소량_pt, 괄호_텍스트_크기_축소_현재선택, 문두_라벨_굵게_제외_문단인가, 항목기호_키, 일관성_굵게_머리말_범위, 문두_라벨_굵게_선반영, 괄호_및_라벨_텍스트_문단_처리, 라벨괄호_계획, 라벨괄호_hwpx_처리, 표안_문단_구분, 공백규칙_글변환, 문장부호뒤공백_글변환, 글규칙_hwpx_처리, 현재문서_XML단계_적용, 괄호_텍스트_크기_축소_전체_적용, _셀_안쪽여백_단계축소, 표_셀_안쪽여백_전체_적용, 본문_가용너비_mm, 표_전체너비_mm, 현재셀_너비_mm, 표_열너비_순서대로_설정, 표_열너비_본문맞춤_시도, 표_열너비_본문맞춤_전체_적용, 표_셀_테두리_적용, 표_테두리_삼선표_적용, 표_테두리_전체_적용, 넓은_표칸_줄인가, 컨트롤_내부_자간조정, 한칸표_자간조정, 컨트롤_내부_문장부호_처리, 끝위치추출, 다음_문단으로_진행, 쪽표시, 절약시간_표시, 절약시간_분초_표시, 번들_고양이_그림_찾기, 번들_앱아이콘_찾기, _앱아이콘_적용, 처리_쪽수_구하기, 쪽범위_사용중, 쪽범위_안인가, 쪽범위_끝지남, 순회_시작, 범위_다음_문단으로_진행, 현재_표셀인가, 숫자_표칸인가, 표셀_자간_제외인가, 컨트롤_줄병합_대상인가, 쪽범위_계산, 저장파일명, 표준서식_선행_적용, 문서_처리_1회, _문서_처리_1회, 문서_전체_자간_초기화, 바이너리_HWP_파일인가, 텍스트파일_읽기, 텍스트_hwpx로_변환, 라벨블록_한글삽입, AI답변_개조식_변환, 텍스트_hwpx_단독변환, 외부문서_hwpx로_변환, PDF_서식_이식, _박스그림표_한글표_삽입, _박스그림_줄인가, _박스그림_남은_문단, _박스그림표_교체, 박스그림_전체_적용, 저장결과_규칙검수
+    global _표준서식_문단위간격_표, 기본_계층_스타일, 표준서식_문단위간격_찾기, 기호글꼴_적용, 표글꼴_적용, _hwp_설치폴더_후보_레지스트리, _hwp_설치폴더_후보_공통경로, 한글_폰트_폴더_자동감지, _ttf_패밀리이름, 한글_폰트_목록, 한컴_번들_폰트_폴더_목록, 한글_폰트_목록_전체, 서식_기본값_전역_복원, 프로그램_폴더, 번들_리소스_폴더, 기본_서식프로파일, 서식프로파일_목록, _제목뒤간격_다시재기, _표_텍스트, _표_서명, _정밀표_프로필_추출, hwpx_서식_분석, 보고서머리_프로필_반영, 보고서머리_hwpx_처리, 예시문서_기본이름, _분석본_보관, 한글파일_서식_분석, 교정용_hwpx_준비, 분석용_hwpx_준비, 스타일분석_파일생성, 스타일분석_요약, 서식프로파일_표시이름, 문서_markdown_내보내기, 복사_문단모양_적용, 계층_추가서식_값, 복사_간격_규칙_적용, 계층_추가서식_적용, 개요붙임_원본자료, 붙임_유형판별, 붙임_대상찾기, 중제목_글칸들, 중제목_유형판별, 중제목_대상찾기, 중제목_원본자료, _구역_본문폭, _예정_좌우여백, _최종_본문폭, _빈_문단인가, _문단사이_빈줄_삭제, _문단_본문글, _서식표_뒤_빈줄_삭제, _서식표_가로맞춤, _중제목_번호굵게_적용, 중제목_표서식_복사, _중제목_글자치수, _중제목_문단폭, _중제목_칸폭_맞춤, 개요_표인가, 제목_xml이름, 제목_자식, 제목_셀들, 제목_문단들, 제목_문자열, _한칸_제목글인가, _기타_제목표인가, _한칸_제목표인가, 제목_유형판별, 제목_대상찾기, 서식표_종류판별, _서식표_예시, 제목2행1열_원본자료, 제목_원본자료, 제목_참조병합, 날짜칸인가, 표_날짜칸_한줄, 표날짜칸_hwpx_처리, 두글자칸_hwpx_처리, 빈줄서식_hwpx_처리, 강조낱말_hwpx_처리, 개요첫칸_hwpx_처리, 제목_날짜칸_한줄, 제목_표서식_복사, _정밀표_매칭점수, _정밀표_셀서식_복사, _정밀표_글자위치_복사, _표_글_그대로, _정밀표_같은표만, _정밀표_글같음, 정밀표_서식_적용, 제목_문단_가운데정렬, 제목_괄호부연_축소, 제목_hwpx_처리, _제목_임시hwpx_저장, 이전_작업_임시폴더_정리, _제목_임시폴더_정리, 서식구조_조사, 제목4종_현재문서_조사, 제목4종_현재문서_적용, 붙임_hwpx_처리, 중제목_hwpx_처리, 제목_부제_크기_해석, 제목_부제_크기_반영, 제목_담당자_글_반영, _설정_담당자_글인가, _서식표_기준, 제목_부제_크기, _칸_글_지우기, _칸_날짜_현행화, _빈칸_서식_참조_변환, _칸_글_넣기, 서식표_생성, _제목개요_빈줄_정리, _서식표_글, _서식표_글_확인, 라벨_서식표_적용, _문서_표번호, _서식표_번호_부여, _hwpx_안전_저장, _문단_일반글, _문단_준말_판별, _문단_준말_제외사유, _문단_글_바꾸기, 준말_hwpx_처리, 제목개요폭_hwpx_처리, 연결부호탭_hwpx_처리, 콜론라벨_hwpx_처리, 상자서식_hwpx_처리, 쪽번호_hwpx_처리, 준말_사용표_만들기, 준말_선행적용, 기본표서식, _기본표서식_대상인가, 기본표서식_hwpx_처리, 표너비_hwpx_처리, 기본표서식_선행적용, _위첨자_글자모양, _문단_별표_대상, 별표위첨자_hwpx_처리, 별표위첨자_선행적용, _한글_글꼴표, _글꼴_확보, _글자모양_글꼴크기, _본문기호_글꼴, 붙임글꼴_hwpx_처리, 글자서식_선행적용, 붙임2종_현재문서_조사, 제목붙임_선행적용, 정밀표_선행적용, 붙임2종_현재문서_적용, 설정_폴더, 서식프로파일_폴더, 서식예시_정보_폴더, 서식예시_폴더, 첫쪽_그림_만들기, 번들_서식예시_찾기, _json_파일_읽기, 서식예시_서명, 설정_파일_경로, 설정_불러오기, 설정_저장, 진행률, 단계시간_시작, _단계시간_닫기, 단계시간_구간, 단계시간_끝, 단계시간_분류, 단계시간_요약줄, 단계초기화, 중단_요청됨, _문서_편집_시도, hwp_run, _문두보호_줄건너뜀, 번들_상용구_파일_찾기, 글자상용구_폴더, 본문상용구_폴더, 번들_본문상용구_폴더, 상용구_폴더_준비, 상용구_전용폴더_찾기, 텍스트_삽입, 문자모양_적용_현재선택, _다른_글꼴형식으로_재실행, 문단_줄간격_적용_현재선택, HwpUnit_pt, HwpUnit_mm, 문단_위간격_적용_현재선택, 문단_아래간격_pt_현재문단, 문단_아래간격_적용_현재선택, 텍스트_너비_em, _문단_공백_건너뛰기, 복사_내어쓰기_규칙, 문단_내어쓰기_기준_오프셋, _여는낫표_건너뛰기, _문단_기호뒤_오프셋, _문단_본문시작_오프셋, 문단_자간보호_선행부_오프셋, 문단_내어쓰기_적용_현재선택, _반각전각_폭배수, 문단_선행부_폭_HWPUNIT, _내어쓰기_값_설정, 내어쓰기_기호선택_허용, 재검사_대상인가, 재검사_영역인가, 문단_내어쓰기_전체_갱신, _내어쓰기_한문단, _붙임목록_내어쓰기_대상수집, _붙임번호_기준위치_실측, _붙임목록_번호_내어쓰기_적용, 문단_내어쓰기_적용, _부모문단_유형, _부연설명_문단인가, _선행공백_길이, _캐럿위치_폭_실측, 부연설명_앞빈칸_수, _부연설명_앞빈칸_적용, _부연설명_한문단, 부연설명_들여쓰기_전체_적용, _별표_위치_실측, _별표_정렬_적용, _별표_한문단, 별표_정렬_전체_적용, _mm_hwpunit, _현재_쪽여백, _표준_또는_원본여백, 페이지_여백_설정, 용지_다르면_알림, 들여쓰기_공백_맞추기, 표준서식_기호규칙_찾기, 본문형_일반문장인가, _사용자서식인가, 알파_일괄서식_가능, 사용자서식_XML추가값, _GDI_글꼴인가, _알파_글꼴형식, _알파_라벨_굵게범위, 표준서식_hwpx_처리, _알파_한줄문단인가, 표준서식_문단_처리, 빈문단_분류, 항목기호문장_사이_빈문단_찾기, 본문_컨트롤_문단번호, 항목기호문장_사이_빈줄_삭제, 글꼴형식_모으기, 글꼴형식_등록, _서식통일_문두요소_범위, _서식통일_글자모양, _서식통일_공백제거, _서식통일_HWPX_분석, _서식통일_run_text, _서식통일_XML문단, _서식통일_위치텍스트, _서식통일_음영값, 서식통일_표본, _서식통일_그룹키, _서식통일_현재_HWPX, _서식통일_불일치_구간, _서식통일_부연괄호_불일치_구간, _서식통일_굵기_불일치_구간, 서식통일_대표, _서식통일_표지인가, _서식통일_제목표_표본, _서식통일_체계경계, _서식통일_참고표_이웃대표_보완, _서식통일_대표값_사용자검토, _서식통일_적용영역_사용자검토, 서식통일_결과창_반영, _결과창_띄우는가, _서식통일_최종결과_사용자확인, _서식통일_미확정_항목, _서식통일_미확정_빨간표시, _서식통일_문단앞간격_적용, _서식통일_내어쓰기_필요, _서식통일_내어쓰기_상태, _서식통일_문단서식_적용, _서식통일_글자요소_적용, _서식통일_색값, _서식통일_색_적용, _서식통일_문단내어쓰기_적용, _서식통일_문단자간_조정, _서식통일_글꼴크기만, _서식통일_글꼴크기_대표, _서식통일_XML_조사, _서식통일_COM_조사, 서식통일_전체_적용, 서식통일_자간조정_반영, 서식통일_문장_마무리, _서식통일_마무리_위치로, 서식통일_보류자간_재조정, _서식통일_표모형, 서식통일_표_전체_적용, 표준서식_전체_적용, 괄호_안쪽, 대괄호인가, 괄호_문두_라벨인가, 괄호_뒤_콜론인가, 세트후속_범위괄호_라벨인가, 문단_범위_선택, 선택범위_현재크기_pt, 괄호_축소량_pt, 대괄호_축소_제외, 괄호_텍스트_크기_축소_현재선택, 문두_라벨_굵게_제외_문단인가, 항목기호_키, 일관성_굵게_머리말_범위, 문두_라벨_굵게_선반영, 괄호_및_라벨_텍스트_문단_처리, 라벨괄호_계획, 라벨괄호_hwpx_처리, 표안_문단_구분, 공백규칙_글변환, 문장부호뒤공백_글변환, 글규칙_hwpx_처리, 현재문서_XML단계_적용, 괄호_텍스트_크기_축소_전체_적용, _셀_안쪽여백_단계축소, 표_셀_안쪽여백_전체_적용, 본문_가용너비_mm, 표_전체너비_mm, 현재셀_너비_mm, 표_열너비_순서대로_설정, 표_열너비_본문맞춤_시도, 표_열너비_본문맞춤_전체_적용, 표_셀_테두리_적용, 표_테두리_삼선표_적용, 표_테두리_전체_적용, 넓은_표칸_줄인가, 컨트롤_내부_자간조정, 한칸표_자간조정, 컨트롤_내부_문장부호_처리, 끝위치추출, 다음_문단으로_진행, 쪽표시, 절약시간_표시, 절약시간_분초_표시, 번들_고양이_그림_찾기, 번들_앱아이콘_찾기, _앱아이콘_적용, 처리_쪽수_구하기, 쪽범위_사용중, 쪽범위_안인가, 쪽범위_끝지남, 순회_시작, 범위_다음_문단으로_진행, 현재_표셀인가, 숫자_표칸인가, 표셀_자간_제외인가, 컨트롤_줄병합_대상인가, 쪽범위_계산, 저장파일명, 표준서식_선행_적용, 문서_처리_1회, _문서_처리_1회, 문서_전체_자간_초기화, 바이너리_HWP_파일인가, 텍스트파일_읽기, 텍스트_hwpx로_변환, 라벨블록_한글삽입, AI답변_개조식_변환, 텍스트_hwpx_단독변환, 외부문서_hwpx로_변환, PDF_서식_이식, _박스그림표_한글표_삽입, _박스그림_줄인가, _박스그림_남은_문단, _박스그림표_교체, 박스그림_전체_적용, 저장결과_규칙검수
     if _docfit_symbol == '_표준서식_문단위간격_표':
         def _표준서식_문단위간격_표():
             return {"chapter": 표준서식_문단위간격_chapter_pt,
@@ -431,6 +431,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         # 다시 만든다. 파일은 바꾸지 않는다(일반 표 서식처럼 예시가 다시 필요한 것은 예시를 다시 넣어야 함).
                         if data.get("element_analysis") and int(data.get("profile_version") or 0) < 5:
                             서식요소.apply_to_profile(data)
+                        if int(data.get("gap_rev") or 0) < 2 and fmt.get("제목뒤_간격") is not None:
+                            _제목뒤간격_다시재기(path, data)
                         if path.stem == 기본서식_덮어쓰기_식별자:
                             if 알파_서식예시폴더_사용:
                                 result[""] = data        # 기본 서식 예시 파일을 고쳐 바뀐 기본 서식
@@ -441,6 +443,36 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                             print(f"서식 파일 제외: {path.name}: {exc}")
             return result
         return bind_function(서식프로파일_목록, _docfit_namespace)
+    if _docfit_symbol == '_제목뒤간격_다시재기':
+        def _제목뒤간격_다시재기(path, data):
+            """예전 분석의 '제목·개요 표 아래~첫 문장 간격'을 서식예시 파일에서 다시 잰다(한 번만, 프로필 파일에 저장).
+
+            예전 분석은 개요 상자와 첫 □ 사이의 중제목 표(Ⅰ 추진 배경)까지 간격으로 재어, 중제목 아래 첫 □의 문단 위
+            간격이 31pt로 벌어졌다(사용자 신고, 2026-10-17, 기본 서식.hwpx). 예시 파일이 없으면 이 값만 버리고 기본
+            문단 위 여백 규칙을 쓴다.
+            """
+            fmt = data["format"]
+            표준 = path.stem == 기본서식_덮어쓰기_식별자
+            예시 = 서식예시_폴더() / (서식예시모듈.STANDARD_FILE if 표준 else 서식예시모듈.file_name_for(data.get("name")))
+            새값 = None
+            try:
+                if 예시.is_file():
+                    새값 = (서식요소.analyze_format_elements(예시, 서식표_종류판별).get("spacing_rules") or {}).get(
+                        "overview_to_first")
+            except Exception as exc:
+                진단로그(f"제목 아래 간격 다시 재기 실패(값을 버림): {path.name}: {exc}")
+            if 새값 is None:
+                fmt.pop("제목뒤_간격", None)
+            else:
+                fmt["제목뒤_간격"] = int(새값)
+            data["gap_rev"] = 2
+            try:
+                임시 = path.with_suffix(".tmp")
+                임시.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+                os.replace(임시, path)
+            except OSError as exc:
+                진단로그(f"제목 아래 간격 보정 저장 실패(불러올 때마다 다시 보정): {path.name}: {exc}")
+        return bind_function(_제목뒤간격_다시재기, _docfit_namespace)
     if _docfit_symbol == '_표_텍스트':
         def _표_텍스트(element):
             return " ".join("".join(t.itertext()).strip() for t in element.iter()
@@ -458,6 +490,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 "cell_count": len(cells),
                 "first_cell": _표_텍스트(cells[0])[:120] if cells else "",
                 "first_row": " | ".join(_표_텍스트(cell) for cell in first_row_cells)[:500],
+                # 표 글 전체(빈칸 뺌)의 지문: 칸 구성이 같은 두 표(교육부 '< 지역교육 혁신모델 >' 상자 둘)를 가린다.
+                "text_key": hashlib.sha256(re.sub(r"\s", "", _표_글_그대로(table)).encode("utf-8")).hexdigest()[:16],
             }
         return bind_function(_표_서명, _docfit_namespace)
     if _docfit_symbol == '_정밀표_프로필_추출':
@@ -508,6 +542,12 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 aliases = {"ㅁ": "□", "○": "ㅇ", "☞": "ㅇ", "*": "※", "→": "※"}
                 count = 0
                 margins = False
+                빈줄_종류 = []   # 본문 문단마다 blank·marker·other — 예시가 항목기호 문장 사이 빈 줄을 쓰는지 본다
+                빈줄_줄간격 = Counter()   # 빈 줄의 줄 간격(%)은 본문과 따로 배운다
+                별표_정렬표 = Counter()   # '*' 다음 '**' 문장: 둘째 별표를 첫째 별표 아래에 맞췄는지(앞 빈칸 한 칸 적음)
+                앞_별표 = None
+                개체 = {"tbl", "pic", "rect", "ellipse", "line", "container", "equation", "ole", "polygon", "curve",
+                      "arc", "textart", "connectLine"}
                 sections = sorted((n for n in z.namelist() if re.fullmatch(r"Contents/section\d+\.xml", n)),
                                   key=lambda n: int(re.search(r"section(\d+)", n).group(1)))
                 for name in sections:
@@ -529,7 +569,23 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                             text = "".join("".join(t.itertext()) for t in run if tag(t) == "t")
                             if text.strip(): runs.append((run, text))
                         text = "".join(t for _, t in runs).lstrip()
+                        if any(tag(e) in 개체 for e in para.iter()):
+                            빈줄_종류.append("other")
+                        elif not text:
+                            빈줄_종류.append("blank")
+                            빈pp = paras.get(para.get("paraPrIDRef"))
+                            빈ls = child(빈pp, "lineSpacing") if 빈pp is not None else None
+                            if 빈ls is not None and 빈ls.get("type") == "PERCENT":
+                                빈줄_줄간격[float(빈ls.get("value"))] += 1
+                        else:
+                            빈줄_종류.append("marker" if 보고서_문단역할(text) else "other")
                         if not text: continue
+                        원문 = "".join(t for _, t in runs)
+                        앞칸 = len(원문) - len(원문.lstrip())
+                        if text.startswith("**") and 앞_별표 is not None:
+                            별표_정렬표[앞칸 + 1 == 앞_별표] += 1
+                        앞_별표 = 앞칸 if text.startswith("*") and not text.startswith("**") else (
+                            앞_별표 if text.startswith("**") else None)
                         count += 1
                         symbol = aliases.get(text[0], text[0])
                         # 가장 긴 텍스트 런을 사용해 짧은 라벨 강조가 본문 서식을 압도하지 않도록 한다.
@@ -618,6 +674,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 if ratios: fmt["기본_장평"] = ratios.most_common(1)[0][0]
                 if letter_spacings: fmt["기본_자간"] = letter_spacings.most_common(1)[0][0]
                 if spacing: fmt["기본_줄간격_퍼센트"] = spacing.most_common(1)[0][0]
+                if 빈줄_줄간격: fmt["빈줄_줄간격_퍼센트"] = 빈줄_줄간격.most_common(1)[0][0]
+                if 별표_정렬표: fmt["별표_정렬"] = 별표_정렬표.most_common(1)[0][0]
                 if first_styles:
                     font, size, bold = first_styles[0]
                     fmt["제목_문단"] = {"font": font, "size_pt": size, "bold": bold}
@@ -697,7 +755,18 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         "PrevSpacing": item["prev_spacing_typical"] or 0,
                     })
                 fmt["복제_들여쓰기_유지"] = True
+                # 빈 줄(간격용 줄)의 모양을 자리별로 배운다(docfit_core.blank_lines).
+                from docfit_core import blank_lines
+                빈줄 = blank_lines.learn(header, [safe_xml_fromstring(section_payloads[n]) for n in sections], 서식표_종류판별)
+                if 빈줄:
+                    fmt["빈줄_서식"] = 빈줄
+                # 항목기호 문장 안 강조 낱말(일부 낱말만 굵게·다른 글꼴)도 배운다(docfit_core.emphasis, 2026-10-16 사용자 결정).
+                from docfit_core import emphasis
+                강조 = emphasis.learn(header, [safe_xml_fromstring(section_payloads[n]) for n in sections])
+                if 강조:
+                    fmt["강조_낱말"] = 강조
                 profile["profile_version"] = 5
+                profile["gap_rev"] = 2        # 제목 아래 간격을 중제목 표를 건너 재지 않는 분석(2026-10-17)
                 profile["storage_format"] = "json"
                 profile["source"] = {"filename": Path(path).name, "paragraphs_analyzed": count,
                                      "body_style_fallback": 본문_대체출처}
@@ -707,6 +776,10 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 # 복사한 글자 강조/문단 여백을 다른 후처리로 덮지 않는다.
                 profile["options"].update(paren_shrink=False, paren_label_bold=False,
                                            std_hanging_indent=False, std_supplement_indent=False)
+                # 예시가 항목기호 문장 사이(또는 문서 끝)에 빈 줄을 두었으면 그 빈 줄도 서식이다. 빈 줄 삭제를 켜 두면
+                # 예시 자신에 서식을 입혀도 빈 줄이 사라져 원본과 달라졌다(서식 재연 시험, 2026-10-16).
+                if 항목기호문장_사이_빈문단_찾기(빈줄_종류):
+                    profile["options"]["std_remove_blank_lines"] = False
                 profile["form_tables"] = dict(요소분석.pop("samples"))
                 # 중제목을 표 첫 칸의 로마자 숫자로 쓴 문서도 중제목(3단계)이 있는 것으로 보고 문서 유형(A·B·C형)을 정한다.
                 profile["style_hierarchy"]["document_type"] = 문서유형_판정(
@@ -714,6 +787,11 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     any(k.startswith("midtitle") for k in profile["form_tables"]))
                 profile["element_analysis"] = 요소분석
                 서식요소.apply_to_profile(profile)
+                # 항목기호 없는 개요 상자 글의 괄호 줄임도 예시에서 배운다(무기호 문단 '' 계층).
+                개요_줄임 = emphasis.overview_paren_delta(header, [safe_xml_fromstring(section_payloads[n]) for n in sections],
+                                                       서식표_종류판별)
+                if 개요_줄임 is not None:
+                    fmt.setdefault("괄호_축소_기호별", {})[""] = 개요_줄임
                 머리요약 = 보고서머리_프로필_반영(z, profile)
                 표글자 = profile.get("table_format") or {}
                 profile["summary"] = (
@@ -1852,6 +1930,172 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             로그(f"표 날짜 칸 한 줄: {count}칸을 한 줄로 입력으로 지정")
             return count
         return bind_function(표날짜칸_hwpx_처리, _docfit_namespace)
+    if _docfit_symbol == '두글자칸_hwpx_처리':
+        def 두글자칸_hwpx_처리(source, target=None, selections=None):
+            """표 칸 글이 한글 두 글자뿐이고 사이에 빈칸이 없으면 빈칸 1칸을 넣는다('구분' → '구 분', 사용자 규칙 2026-10-17).
+
+            숫자·영문이 섞인 칸('10'·'1부')과 제목·중제목·붙임 서식 표, 사용자가 꾸민 표는 건드리지 않는다.
+            """
+            with open_hwpx_safely(source) as z:
+                contents = {n: z.read(n) for n in z.namelist()}
+            for name, data in contents.items():
+                if name.startswith('Contents/') and name.endswith('.xml'):
+                    for _, pair in ET.iterparse(io.BytesIO(data), events=('start-ns',)):
+                        if not re.fullmatch(r'ns\d+', pair[0]): XML_네임스페이스_등록(*pair)
+            sections = {n: safe_xml_fromstring(data) for n, data in contents.items()
+                        if re.fullmatch(r'Contents/section\d+\.xml', n)}
+
+            def 대상(root):
+                """(글 요소, 첫 글자 뒤 위치) 목록. 두 글자가 한 글 요소에 함께 있을 때만."""
+                보호 = 보호표_목록(root)
+                결과 = []
+                for table in (x for x in root.iter() if 제목_xml이름(x) == 'tbl'):
+                    if id(table) in 보호 or 서식표_종류판별(table):
+                        continue
+                    for cell in 제목_셀들(table):
+                        if not re.fullmatch(r'\s*[가-힣]{2}\s*', 제목_문자열(cell)):
+                            continue
+                        ts = [t for t in cell.iter() if 제목_xml이름(t) == 't' and (t.text or '').strip()]
+                        if len(ts) == 1 and not len(ts[0]) and re.search(r'[가-힣]{2}', ts[0].text):
+                            결과.append((ts[0], re.search(r'[가-힣]{2}', ts[0].text).start() + 1))
+                return 결과
+
+            if selections is None:
+                return {n: list(range(len(대상(root)))) for n, root in sections.items()}
+            if not any(items for items in selections.values()):
+                if target is not None: shutil.copyfile(source, target)
+                return 0
+            count = 0
+            for name, root in sections.items():
+                for t, at in 대상(root):
+                    t.text = t.text[:at] + ' ' + t.text[at:]
+                    count += 1
+                contents[name] = ET.tostring(root, encoding='utf-8', xml_declaration=True)
+            _hwpx_안전_저장(contents, target)
+            로그(f"표 두 글자 칸: {count}칸의 두 글자 사이에 빈칸 1칸")
+            return count
+        return bind_function(두글자칸_hwpx_처리, _docfit_namespace)
+    if _docfit_symbol == '빈줄서식_hwpx_처리':
+        def 빈줄서식_hwpx_처리(source, target=None, selections=None):
+            """서식 프로필이 예시에서 배운 빈 줄 모양을 같은 자리(앞뒤 요소)의 빈 줄에 입힌다(선행 서식 단계)."""
+            from docfit_core import blank_lines
+            배운값 = (표준서식_설정 or {}).get("빈줄_서식") or {}
+            with open_hwpx_safely(source) as z:
+                contents = {n: z.read(n) for n in z.namelist()}
+            for name, data in contents.items():
+                if name.startswith('Contents/') and name.endswith('.xml'):
+                    for _, pair in ET.iterparse(io.BytesIO(data), events=('start-ns',)):
+                        if not re.fullmatch(r'ns\d+', pair[0]): XML_네임스페이스_등록(*pair)
+            names = sorted((n for n in contents if re.fullmatch(r'Contents/section\d+\.xml', n)),
+                           key=lambda n: int(re.search(r'section(\d+)', n).group(1)))
+            roots = {n: safe_xml_fromstring(contents[n]) for n in names}
+            if selections is None:
+                return {n: [i for i, _ in enumerate(blank_lines.slots(roots[n], 서식표_종류판별))] if 배운값 else []
+                        for n in names}
+            if not any(items for items in selections.values()):
+                if target is not None: shutil.copyfile(source, target)
+                return 0
+            header = safe_xml_fromstring(contents['Contents/header.xml'])
+            전 = {n: 제목_문자열(roots[n]) for n in names}
+            count = blank_lines.apply(header, [roots[n] for n in names], 배운값, 서식표_종류판별)
+            if any(제목_문자열(roots[n]) != 전[n] for n in names):
+                raise RuntimeError('빈 줄 서식 처리 중 글 보존 검사에 실패했습니다.')
+            for n in names:
+                contents[n] = ET.tostring(roots[n], encoding='utf-8', xml_declaration=True)
+            contents['Contents/header.xml'] = ET.tostring(header, encoding='utf-8', xml_declaration=True)
+            _hwpx_안전_저장(contents, target)
+            로그(f"빈 줄 서식: 예시와 같은 자리 빈 줄 {count}개에 예시 빈 줄 모양을 입힘")
+            return count
+        return bind_function(빈줄서식_hwpx_처리, _docfit_namespace)
+    if _docfit_symbol == '개요첫칸_hwpx_처리':
+        def 개요첫칸_hwpx_처리(source, target=None, selections=None):
+            """개요 표(제목 표 바로 다음 1×1 상자) A1 칸 본문의 첫 글자 앞에 빈칸 1칸을 둔다(사용자 서식 규칙, 2026-10-17).
+
+            첫 글자 앞에 이미 빈칸이 있으면 그대로 둔다(2칸이 되지 않게). 빈 문단은 건드리지 않는다.
+            """
+            with open_hwpx_safely(source) as z:
+                contents = {n: z.read(n) for n in z.namelist()}
+            for name, data in contents.items():
+                if name.startswith('Contents/') and name.endswith('.xml'):
+                    for _, pair in ET.iterparse(io.BytesIO(data), events=('start-ns',)):
+                        if not re.fullmatch(r'ns\d+', pair[0]): XML_네임스페이스_등록(*pair)
+            names = sorted((n for n in contents if re.fullmatch(r'Contents/section\d+\.xml', n)),
+                           key=lambda n: int(re.search(r'section(\d+)', n).group(1)))
+            roots = {n: safe_xml_fromstring(contents[n]) for n in names}
+
+            def 대상문단(root):
+                결과, 앞표 = [], None
+                for p in (x for x in root if 제목_xml이름(x) == 'p'):
+                    표들 = [t for r in p if 제목_xml이름(r) == 'run' for t in r if 제목_xml이름(t) == 'tbl']
+                    if not 표들:
+                        if 제목_문자열(p).strip():
+                            앞표 = None        # 글 문단이 끼면 제목 표와 이어진 개요가 아니다(빈 줄은 건너뜀)
+                        continue
+                    for 표 in 표들:
+                        종류 = 서식표_종류판별(표) or ''
+                        if 종류 == 'box' and (앞표 or '').startswith('title'):
+                            칸 = 제목_셀들(표)[0]
+                            sub = 제목_자식(칸, 'subList')
+                            for q in (x for x in (sub if sub is not None else ()) if 제목_xml이름(x) == 'p'):
+                                글 = 제목_문자열(q)
+                                if 글.strip() and not 글[0].isspace():
+                                    결과.append(q)
+                        앞표 = 종류
+                return 결과
+
+            if selections is None:
+                return {n: list(range(len(대상문단(roots[n])))) for n in names}
+            if not any(items for items in selections.values()):
+                if target is not None: shutil.copyfile(source, target)
+                return 0
+            count = 0
+            for n in names:
+                for q in 대상문단(roots[n]):
+                    t = next((t for r in q if 제목_xml이름(r) == 'run' for t in r
+                              if 제목_xml이름(t) == 't' and (t.text or '').strip()), None)
+                    if (t is None or not (t.text or '').lstrip() or t.text != t.text.lstrip()
+                            or 제목_문자열(q).index(t.text.strip()[0]) != 0):
+                        continue           # 첫 글자가 이 글 요소의 맨 앞이 아닌 복잡한 문단은 두지 않고 그대로 둔다
+                    t.text = ' ' + t.text
+                    for cache in [x for x in q if 제목_xml이름(x) == 'linesegarray']:
+                        q.remove(cache)
+                    count += 1
+                contents[n] = ET.tostring(roots[n], encoding='utf-8', xml_declaration=True)
+            _hwpx_안전_저장(contents, target)
+            로그(f"개요 표 첫 빈칸: 개요 A1 칸 문단 {count}개의 첫 글자 앞에 빈칸 1칸")
+            return count
+        return bind_function(개요첫칸_hwpx_처리, _docfit_namespace)
+    if _docfit_symbol == '강조낱말_hwpx_처리':
+        def 강조낱말_hwpx_처리(source, target=None, selections=None):
+            """서식 프로필이 예시에서 배운 강조 낱말을 같은 계층 문장의 같은 낱말에 입힌다(선행 서식 단계)."""
+            from docfit_core import emphasis
+            배운값 = (표준서식_설정 or {}).get("강조_낱말") or []
+            with open_hwpx_safely(source) as z:
+                contents = {n: z.read(n) for n in z.namelist()}
+            for name, data in contents.items():
+                if name.startswith('Contents/') and name.endswith('.xml'):
+                    for _, pair in ET.iterparse(io.BytesIO(data), events=('start-ns',)):
+                        if not re.fullmatch(r'ns\d+', pair[0]): XML_네임스페이스_등록(*pair)
+            names = sorted((n for n in contents if re.fullmatch(r'Contents/section\d+\.xml', n)),
+                           key=lambda n: int(re.search(r'section(\d+)', n).group(1)))
+            if selections is None:
+                return {n: ([0] if 배운값 else []) for n in names}
+            if not any(items for items in selections.values()):
+                if target is not None: shutil.copyfile(source, target)
+                return 0
+            roots = {n: safe_xml_fromstring(contents[n]) for n in names}
+            header = safe_xml_fromstring(contents['Contents/header.xml'])
+            전 = {n: 제목_문자열(roots[n]) for n in names}
+            count = emphasis.apply(header, [roots[n] for n in names], 배운값)
+            if any(제목_문자열(roots[n]) != 전[n] for n in names):
+                raise RuntimeError('강조 낱말 처리 중 글 보존 검사에 실패했습니다.')
+            for n in names:
+                contents[n] = ET.tostring(roots[n], encoding='utf-8', xml_declaration=True)
+            contents['Contents/header.xml'] = ET.tostring(header, encoding='utf-8', xml_declaration=True)
+            _hwpx_안전_저장(contents, target)
+            로그(f"강조 낱말: 서식 예시의 강조 낱말 {count}곳에 같은 강조를 입힘")
+            return count
+        return bind_function(강조낱말_hwpx_처리, _docfit_namespace)
     if _docfit_symbol == '제목_날짜칸_한줄':
         def 제목_날짜칸_한줄(table):
             """제목 표에서 날짜가 든 짧은 칸(첫 칸 제외)을 '한 줄로 입력'(lineWrap=SQUEEZE)으로 둔다. 바꾼 칸 수.
@@ -1952,6 +2196,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 None, target_signature["first_row"], source_signature["first_row"]
             ).ratio()
             score += max(0, 10 - abs(target_signature["ordinal"] - source_signature["ordinal"]) * 2)
+            if target_signature.get("text_key") and target_signature.get("text_key") == source_signature.get("text_key"):
+                score += 60   # 글이 똑같은 표(같은 표): 칸 구성이 같은 다른 표와 모호하지 않게(2026-10-17 재연 시험)
             return round(score, 2)
         return bind_function(_정밀표_매칭점수, _docfit_namespace)
     if _docfit_symbol == '_정밀표_셀서식_복사':
@@ -2000,6 +2246,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         target_para.set("paraPrIDRef", maps["paraProperties"].get(para_ref, para_ref))
                     source_runs = [run for run in source_para if 제목_xml이름(run) == "run"]
                     target_runs = [run for run in target_para if 제목_xml이름(run) == "run"]
+                    if _정밀표_글자위치_복사(target_para, source_runs, target_runs, maps):
+                        continue
                     for run_index, target_run in enumerate(target_runs):
                         if not source_runs:
                             break
@@ -2008,6 +2256,53 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         if char_ref is not None:
                             target_run.set("charPrIDRef", maps["charProperties"].get(char_ref, char_ref))
         return bind_function(_정밀표_셀서식_복사, _docfit_namespace)
+    if _docfit_symbol == '_표_글_그대로':
+        def _표_글_그대로(table):
+            """표의 글을 빈칸까지 그대로 이어 붙인 문자열(보존 검사용). run이 글자 위치로 나뉘어도 같다."""
+            return "".join("".join(t.itertext()) for t in table.iter() if 제목_xml이름(t) == "t")
+        return bind_function(_표_글_그대로, _docfit_namespace)
+    if _docfit_symbol == '_정밀표_글자위치_복사':
+        def _정밀표_글자위치_복사(target_para, source_runs, target_runs, maps):
+            """칸 문단 글이 예시와 같으면 예시 run 경계대로 나눠 글자 모양을 글자 위치에 맞춰 옮긴다. 옮겼으면 True.
+
+            run 순서로 짝지으면 run 수가 다를 때 모양이 엇갈렸다: 예시 개요 '…새로운|거점|(지구)|…'(5개)를
+            '…거점|(지구)|…'(3개)에 입히면 '(지구)' 뒤 글 전체가 13pt가 됐다(서식 재연 시험, 2026-10-17).
+            글 요소 하나에 글만 든 run(빈칸 묶음·컨트롤 없음)일 때만 다룬다.
+            """
+            def 단순글(run):
+                ts = [x for x in run if 제목_xml이름(x) == "t"]
+                if len(ts) != len(run) or len(ts) > 1 or (ts and len(ts[0])):
+                    return None
+                return (ts[0].text or "") if ts else ""
+            source_texts = [단순글(r) for r in source_runs]
+            target_texts = [단순글(r) for r in target_runs]
+            if not target_runs or None in source_texts or None in target_texts:
+                return False
+            if "".join(source_texts) != "".join(target_texts) or not "".join(target_texts):
+                return False
+            template = target_runs[0]
+            index = list(target_para).index(template)
+            for run in target_runs:
+                target_para.remove(run)
+            made = 0
+            for source_run, text in zip(source_runs, source_texts):
+                if not text:
+                    continue
+                run = copy.deepcopy(template)
+                for child in list(run):
+                    run.remove(child)
+                t = type(template)(template.tag.rsplit("}", 1)[0] + "}t", {})
+                t.text = text
+                run.append(t)
+                char_ref = source_run.get("charPrIDRef")
+                if char_ref is not None:
+                    run.set("charPrIDRef", maps["charProperties"].get(char_ref, char_ref))
+                target_para.insert(index + made, run)
+                made += 1
+            for cache in [x for x in target_para if 제목_xml이름(x) == "linesegarray"]:
+                target_para.remove(cache)
+            return True
+        return bind_function(_정밀표_글자위치_복사, _docfit_namespace)
     if _docfit_symbol == '_정밀표_같은표만':
         def _정밀표_같은표만(table, signature):
             """정밀 복제를 같은 표(첫 칸 글이 같은 예시 표)에만 할 표인가: 한 칸 표와 서식 표(제목·중제목·붙임·한 칸 상자).
@@ -2050,7 +2345,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 changed = False
                 보호 = 보호표_목록(root)
                 for table in (element for element in root.iter() if 제목_xml이름(element) == "tbl"):
-                    before_text.append(_표_텍스트(table))
+                    before_text.append(_표_글_그대로(table))
                     if id(table) in 보호:
                         ordinal += 1   # 사용자가 꾸민 표(안에 든 표 포함)는 정밀 복제하지 않는다
                         continue
@@ -2102,7 +2397,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             after_text = []
             for name in sorted(n for n in contents if re.fullmatch(r"Contents/section\d+\.xml", n)):
                 root = safe_xml_fromstring(contents[name])
-                after_text.extend(_표_텍스트(table) for table in root.iter() if 제목_xml이름(table) == "tbl")
+                after_text.extend(_표_글_그대로(table) for table in root.iter() if 제목_xml이름(table) == "tbl")
             if before_text != after_text:
                 raise RuntimeError("정밀 표 서식 적용 중 표 내용 보존 검사에 실패했습니다.")
             with zipfile.ZipFile(target_path, "w", zipfile.ZIP_DEFLATED) as archive:
@@ -4475,7 +4770,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             if 규칙 in ("fixed", "none"):
                 return None
             if 규칙 == "after_marker":
-                return _여는낫표_건너뛰기(text, _문단_기호뒤_오프셋(text))
+                # 콜론 라벨은 예시 규칙과 관계없이 콜론 뒤 본문 첫 글자 기준(불변 규칙, 2026-10-17). 콜론이 없으면
+                # 기본 판정도 기호 뒤(괄호 라벨은 '(')라 예전 결과와 같다.
+                return _여는낫표_건너뛰기(text, _문단_본문시작_오프셋(text))
             return _여는낫표_건너뛰기(text, _문단_본문시작_오프셋(text))
         return bind_function(문단_내어쓰기_기준_오프셋, _docfit_namespace)
     if _docfit_symbol == '_여는낫표_건너뛰기':
@@ -4786,6 +5083,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 hwp.SetPos(*begin)
                 hwp_run("MoveLineEnd")
                 end = hwp.GetPos()
+                # 양쪽 정렬 첫 줄은 빈칸이 늘어난다. 줄 끝에서 바로 SetPos로 옮기면 한/글이 늘기 전 글자 위치로 Shift+Tab을 계산하므로(둘째 줄이 기준 글자보다 왼쪽), 이동 명령으로 줄 배치를 먼저 반영시킨다.
+                hwp_run("MoveParaBegin")
                 units = len(text[:offset].encode("utf-16-le")) // 2
                 target = (begin[0], begin[1], begin[2] + units)
                 if end[:2] != begin[:2] or target[2] >= end[2]:
@@ -4910,6 +5209,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 hwp.SetPos(*begin)
                 hwp_run("MoveLineEnd")
                 line_end = hwp.GetPos()
+                # 양쪽 정렬 첫 줄은 빈칸이 늘어난다. 줄 끝에서 바로 SetPos로 옮기면 한/글이 늘기 전 글자 위치로 Shift+Tab을 계산하므로(둘째 줄이 기준 글자보다 왼쪽), 이동 명령으로 줄 배치를 먼저 반영시킨다.
+                hwp_run("MoveParaBegin")
                 # 한글 위치값은 UTF-16 코드 단위. 보조평면 문자도 올바르게 이동.
                 units = len(text[:offset].encode("utf-16-le")) // 2
                 target = (begin[0], begin[1], begin[2] + units)
@@ -4991,6 +5292,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 hwp.SetPos(*begin)
                 hwp_run("MoveLineEnd")
                 line_end = hwp.GetPos()
+                # 양쪽 정렬 첫 줄은 빈칸이 늘어난다. 줄 끝에서 바로 SetPos로 옮기면 한/글이 늘기 전 글자 위치로 Shift+Tab을 계산하므로(둘째 줄이 기준 글자보다 왼쪽), 이동 명령으로 줄 배치를 먼저 반영시킨다.
+                hwp_run("MoveParaBegin")
                 text = 현재문단_텍스트()
                 units = len(text[:글자수].encode("utf-16-le")) // 2
                 target = (begin[0], begin[1], begin[2] + units)
@@ -5246,6 +5549,10 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 return True
             if 중단_요청됨():
                 return False
+            if (표준서식_설정 or {}).get("별표_정렬") is False:
+                # 예시를 복사한 서식에서 예시가 ** 문장을 * 아래에 맞추지 않았으면 그대로 둔다(서식 재연 시험, 2026-10-16).
+                로그("별표(**) 정렬: 서식 예시가 둘째 별표를 맞추지 않아 건너뜀")
+                return True
             순회_시작()
             직전_별표_위치 = None
             적용수 = 0
@@ -5570,7 +5877,14 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 if marker_bold and enabled and not bold:
                     기호위치 = len(formatted) - len(formatted.lstrip())
                     spans.append((기호위치, 기호위치 + 1))
+                보통 = ()
+                if bold and symbol in (표준서식_설정.get("기호_보통") or ()):
+                    기호위치 = len(formatted) - len(formatted.lstrip())
+                    끝 = 기호위치 + len(symbol)
+                    끝 += len(formatted[끝:]) - len(formatted[끝:].lstrip(' \t'))   # 기호 뒤 빈칸도 보통('□ ')
+                    보통 = ((기호위치, 끝),)
                 return ParagraphStyle(
+                    plain_spans=보통,
                     text=formatted, font=font if selected.get('font', True) else None,
                     font_type=글꼴형식,
                     size_pt=size if selected.get('size', True) else None,
@@ -5647,7 +5961,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 if 표준서식_줄간격_사용:
                     hwp_run("MoveParaBegin")
                     hwp_run("MoveSelParaEnd")
-                    문단_줄간격_적용_현재선택(표준서식_설정["기본_줄간격_퍼센트"])
+                    # 예시가 빈 줄에 따로 쓴 줄 간격이 있으면 그 값(예시 빈 줄 170%·본문 160%)
+                    문단_줄간격_적용_현재선택(표준서식_설정.get("빈줄_줄간격_퍼센트") or 표준서식_설정["기본_줄간격_퍼센트"])
                     hwp_run("Cancel")
                 return
 
@@ -5815,6 +6130,16 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     문단_시작 = hwp.GetPos()
                     문단_범위_선택(문단_시작, 공백수, 공백수 + 1)
                     문자모양_적용_현재선택(굵게=True)
+                    hwp_run("Cancel")
+                # 예시가 본문은 굵게·기호는 보통으로 썼으면 기호만 보통으로 되돌린다(2026-10-17, XML 경로와 같음).
+                elif 자체_기호_매칭 and 문단굵게 and 기호 in (표준서식_설정.get("기호_보통") or ()):
+                    hwp_run("MoveParaBegin")
+                    문단_시작 = hwp.GetPos()
+                    기호위치 = len(현재_text) - len(현재_text.lstrip())
+                    끝 = 기호위치 + len(기호)
+                    끝 += len(현재_text[끝:]) - len(현재_text[끝:].lstrip(' \t'))   # 기호 뒤 빈칸도 보통
+                    문단_범위_선택(문단_시작, 기호위치, 끝)
+                    문자모양_적용_현재선택(굵게=False)
                     hwp_run("Cancel")
         return bind_function(표준서식_문단_처리, _docfit_namespace)
     if _docfit_symbol == '빈문단_분류':
@@ -8078,8 +8403,22 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 기호 = 서식통일_항목기호(text)[0]
                 if 기호 in 기호별:
                     return float(기호별[기호] or 0)
+                if not 기호:
+                    # 항목기호 없는 문단(개요 상자 글 등)은 예시가 줄인 근거가 없으면 줄이지 않는다. 대표 폭으로 줄이면
+                    # 예시 자신도 재연하지 못했다(서식 재연 시험, 2026-10-16).
+                    return 0.0
             return float(괄호_축소_pt)
         return bind_function(괄호_축소량_pt, _docfit_namespace)
+    if _docfit_symbol == '대괄호_축소_제외':
+        def 대괄호_축소_제외():
+            """예시를 복사한 서식(계층별 괄호 줄임 값이 있음)이면 대괄호 [ ] 안 글자는 줄이지 않는다.
+
+            서식 분석은 둥근 괄호의 글자 크기만 재서 줄임 값을 배운다. 예시에서 '[중요 부분은 …]'처럼 줄이지 않은
+            대괄호까지 같은 폭으로 줄여 예시 자신에 서식을 입혀도 원본과 달라졌다(서식 재연 시험, 2026-10-16).
+            기본 서식은 예전처럼 대괄호도 줄인다.
+            """
+            return bool((표준서식_설정 or {}).get("괄호_축소_기호별"))
+        return bind_function(대괄호_축소_제외, _docfit_namespace)
     if _docfit_symbol == '괄호_텍스트_크기_축소_현재선택':
         def 괄호_텍스트_크기_축소_현재선택(축소_pt=None):
             if hwp is None:
@@ -8287,6 +8626,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
 
                     if not 축소_사용:
                         continue
+                    if 대괄호인가(match) and 대괄호_축소_제외():
+                        continue
 
                     if 시작_offset > 0:
                         주변_pt = 선택범위_현재크기_pt(문단_시작위치, 시작_offset - 1, 시작_offset)
@@ -8359,6 +8700,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                             라벨적용 = True
                         continue
                     if not 축소_사용:
+                        continue
+                    if 대괄호인가(match) and 대괄호_축소_제외():
                         continue
                     # 날짜 바로 뒤 요일 괄호('26. 10. 11.(일)')는 날짜의 일부라 줄이지 않는다(한/글 경로 결과와 같게, 2026-10-11 실측).
                     if re.fullmatch(r'[월화수목금토일]', 괄호_안쪽(match) or '') and re.search(r'\d\s*[.\-/]?\s*$', text[:시작]):
@@ -8473,6 +8816,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     s = s[:a] + (교체 or "") + s[b:]
                 for a, b in reversed(단어사이_연속공백_정리_대상(s) or []):
                     s = s[:a] + " " + s[b:]
+                낫표 = 항목기호_낫표_빈칸_구간(s)
+                if 낫표:
+                    s = s[:낫표[0]] + s[낫표[1]:]     # ' ㅇ 「법령」' → ' ㅇ「법령」'(사용자 규칙 2026-10-17)
             공문 = normalize_official_spacing(s)
             if normalize_attachment_list_header(s) != s:
                 공문 = normalize_attachment_list_header(공문)
@@ -8515,6 +8861,12 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             for n in names:
                 for para in [x for x in roots[n].iter() if 제목_xml이름(x) == 'p' and id(x) not in 여러칸표_문단]:
                     글 = 글고치기모듈.paragraph_text(para)
+                    if 구성["punct"] and not id(para) in 한칸표_문단:
+                        # 항목기호 바로 뒤 고정폭 빈칸은 지우고 아래 규칙이 일반 빈칸 1칸으로 맞춘다(사용자 규칙 검사, 2026-10-17)
+                        마커_끝 = 문장부호_마커_끝위치(글)
+                        빈칸끝 = 마커_끝 + len(글[마커_끝:]) - len(글[마커_끝:].lstrip()) if 마커_끝 is not None else None
+                        if 마커_끝 is not None and 글고치기모듈.drop_spaces_at(para, 마커_끝, 빈칸끝):
+                            기호수 += 1
                     새글 = 글
                     한칸 = id(para) in 한칸표_문단
                     if 구성["space"]:
@@ -9206,7 +9558,10 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             """현재 hwp에 새 빈 문서를 만들어 텍스트를 문단 단위로 넣고 HWPX로 저장한다."""
             if hwp.Run("FileNew") is False:
                 raise RuntimeError("빈 문서를 만들지 못했습니다.")
-            if looks_labeled(텍스트):
+            from docfit_core.labeled_text import mixes_report_lines
+            # 제목:/개요: 라벨에 □ ㅇ - * 항목 줄이 섞인 TXT는 v1.73처럼 줄마다 넣고 준말 단계가 라벨을 서식 표로 바꾼다.
+            # 라벨 해석기에 넘기면 항목이 한 문단으로 합쳐지고 '* 용어:' 주석이 'ㅇ (* 용어)'로 바뀌었다(v1.76 회귀).
+            if looks_labeled(텍스트) and not mixes_report_lines(텍스트):
                 블록들 = parse_labeled_text(텍스트)
                 라벨블록_한글삽입(hwp, 블록들)
                 if hwp.SaveAs(str(대상경로), "HWPX", "") is False:

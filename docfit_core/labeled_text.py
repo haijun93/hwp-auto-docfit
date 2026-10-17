@@ -65,6 +65,20 @@ def looks_labeled(text: str) -> bool:
     return len(hits) >= 2 and any(h[1][0] in ("title", "title1", "title2", "para", "box") for h in hits)
 
 
+# 이미 개조식으로 쓴 줄(□ ㅇ - * ※ …)과 박스 그림 표 줄. 라벨 해석기는 라벨 없는 줄을 앞 항목에 이어 붙이므로
+# 이런 줄이 섞인 글을 라벨로 해석하면 항목이 한 문단으로 합쳐지고 '* 용어: 설명'이 'ㅇ (* 용어)'로 바뀐다.
+_REPORT_LINE = re.compile(r"^(?:[□■◇◆ㅇ○●◦※•▶┌├└│┃┏┣┗]|\*{1,2}\s|[-–]\s)")
+
+
+def mixes_report_lines(text: str) -> bool:
+    """라벨 없는 개조식 항목 줄이나 박스 그림 표 줄이 있으면 True(라벨 해석기 대신 줄마다 그대로 넣을 글)."""
+    for line in (text or "").lstrip("﻿").splitlines():
+        stripped = line.strip()
+        if stripped and _label_of(stripped) is None and _REPORT_LINE.match(stripped):
+            return True
+    return False
+
+
 def _table_cells(value: str) -> list[str]:
     if "|" in value:
         parts = value.strip().strip("|").split("|")

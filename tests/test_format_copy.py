@@ -268,6 +268,7 @@ class FormatCopyFidelityTest(unittest.TestCase):
             self.assertEqual(fn('□ 사업개요 (헤드라인M, 16p)'), 0.0)
             self.assertEqual(fn('ㅇ 본문 (참고)'), 2.0)            # ○와 같은 계층
             self.assertEqual(fn('- 내용 (참고)'), 2.0)             # 예시에 없는 계층은 대표 줄임 폭
+            self.assertEqual(fn('개요 상자 글 (참고)'), 0.0)       # 항목기호 없는 문단은 예시 근거가 없으면 그대로
         with patch.dict(fn.__globals__, {'표준서식_설정': {}, '괄호_축소_pt': 2}):
             self.assertEqual(fn('□ 기본 서식'), 2.0)
 

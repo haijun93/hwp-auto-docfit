@@ -108,3 +108,17 @@ class MarkdownAppTests(unittest.TestCase):
                 fn('제목: 제목\n네모: 내용', 'work.hwpx')
         doc.Clear.assert_not_called()
         post.assert_not_called()
+
+    def test_labels_mixed_with_report_lines_are_inserted_line_by_line(self):
+        # v1.76 회귀: 제목:/개요: 라벨에 □ ㅇ - * 줄이 섞인 TXT를 라벨 해석기로 넘겨 항목이 한 문단으로 합쳐졌다.
+        fn = self.ns['텍스트_hwpx로_변환']
+        doc, insert, written = Mock(), Mock(), []
+        doc.SaveAs.return_value = True
+        text = ('제목 : 계획(안) 보고\n\n개요 : 보고드림.\n\n□ 추진 배경\n  ㅇ (상황) 환경 반복\n'
+                '    - 항세기*가 교차\n    * 항세기: 안정된 시기\n  ┌──┬──┐\n  │ 구분 │ 내용 │')
+        with patch.dict(fn.__globals__, {'hwp': doc, '라벨블록_한글삽입': insert, '라벨_서식표_적용': Mock(),
+                                        '텍스트_삽입': written.append, 'hwp_run': Mock()}):
+            fn(text, 'work.hwpx')
+        insert.assert_not_called()
+        self.assertIn('    * 항세기: 안정된 시기', written)
+        self.assertIn('  ㅇ (상황) 환경 반복', written)

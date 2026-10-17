@@ -1,8 +1,7 @@
 # 한글편집 후처리
 
-> **다운로드 일시 중지 — 2026-10-16**
-> 핫픽스 검증·릴리즈 전까지 GitHub·GitLab의 프로그램 배포를 중지합니다.
-> 기존 버전 EXE·배포 압축파일을 내려받거나 재배포하지 마세요. 소스코드 공개는 유지합니다.
+> **v1.76.5 핫픽스로 다운로드 재개 — 2026-10-17**
+> 서식 적용 오류를 고친 v1.76.5만 내려받으세요. v1.76.4 이하 EXE·압축파일은 배포를 중지했으며 내려받거나 재배포하지 마세요.
 
 ### 보고서 마무리 30분, 버튼 한 번으로.
 
@@ -10,28 +9,28 @@
 **다 쓴 한글(HWP·HWPX) 보고서를 넣고 「정리 시작」만 누르세요.** 설치된 한/글을 자동으로 조작해 공문서 모양으로 다듬어 줍니다.
 
 <p>
-<img alt="현재 정식 버전 v1.76.4" src="https://img.shields.io/badge/%ED%98%84%EC%9E%AC%20%EA%B3%B5%EA%B0%9C%20%EC%A0%95%EC%8B%9D-v1.76.4-2563eb">
+<img alt="현재 정식 버전 v1.76.5" src="https://img.shields.io/badge/%ED%98%84%EC%9E%AC%20%EA%B3%B5%EA%B0%9C%20%EC%A0%95%EC%8B%9D-v1.76.5-2563eb">
 <img alt="무료" src="https://img.shields.io/badge/%EA%B0%80%EA%B2%A9-%EB%AC%B4%EB%A3%8C-16a34a">
 <img alt="Windows 10·11" src="https://img.shields.io/badge/Windows-10%C2%B711-0078d4">
 <img alt="한/글 2020" src="https://img.shields.io/badge/%ED%95%9C%2F%EA%B8%80-2020-0ea5e9">
 <img alt="문서 외부 전송 없음" src="https://img.shields.io/badge/%EB%AC%B8%EC%84%9C-%EC%99%B8%EB%B6%80%20%EC%A0%84%EC%86%A1%20%EC%97%86%EC%9D%8C-64748b">
 </p>
 
-## ⏸ 프로그램 다운로드 일시 중지
+## ⬇ 최신 정식 버전 다운로드 — v1.76.5
 
-핫픽스 검증과 릴리즈가 끝난 뒤 다운로드를 다시 안내합니다. 이전 버전으로 우회 다운로드하지 마세요.
+**[최신 릴리즈와 전체 첨부 파일 보기](https://github.com/haijun93/hwp-auto-docfit/releases/latest)**
 
 | 파일 | 다운로드 및 용도 |
 |---|---|
-| 프로그램 | 다운로드 중지 |
-| 프로그램·예시 압축팩 | 다운로드 중지 |
-| 체크섬 | 핫픽스 게시 시 새 파일과 함께 안내 |
+| 프로그램 | **[HWP_AutoDocFit.exe 바로 받기](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/HWP_AutoDocFit.exe)** — Windows 10·11 64비트, 한/글 2020 필요 |
+| 프로그램·예시 압축팩 | [HWP_AutoDocFit-v1.76.5.zip](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.76.5/HWP_AutoDocFit-v1.76.5.zip) — 압축을 풀어 실행 |
+| 체크섬 | [SHA256SUMS](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/SHA256SUMS) — EXE 파일의 SHA256 확인 |
 
 **변환 런타임은 EXE에 포함되어 있어 별도로 받을 필요가 없습니다.** 첫 실행 때 내장 ZIP과 변환 엔진을 `C:\HWP_AUTODOCFIT`에 저장합니다. 쓰기 권한이 없으면 `%LOCALAPPDATA%\HwpAutoDocFit`에 저장하며 온라인 다운로드는 하지 않습니다.
 
-설치 없이 실행 파일 하나로 시작합니다 · [v1.76.4 변경 사항](releases/v1.76.4.md) · [GitHub 저장소](https://github.com/haijun93/hwp-auto-docfit) · [GitLab 저장소](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
+설치 없이 실행 파일 하나로 시작합니다 · [v1.76.5 변경 사항](releases/v1.76.5.md) · [GitHub 저장소](https://github.com/haijun93/hwp-auto-docfit) · [GitLab 저장소](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
 
-**v1.76.4**은 새 화면(Flutter)과 함께 **파일포맷 변경**, **표/다이어그램 만들기**, **상용구 관리**, **한/글 조판 미리보기**를 포함한 정식 버전입니다. 기본은 **폐쇄망 모드**라 앱이 스스로 외부 서버에 접속하지 않습니다.
+**v1.76.5**은 새 화면(Flutter)과 함께 **파일포맷 변경**, **표/다이어그램 만들기**, **상용구 관리**, **한/글 조판 미리보기**를 포함한 정식 버전입니다. 기본은 **폐쇄망 모드**라 앱이 스스로 외부 서버에 접속하지 않습니다.
 이번 정식 버전은 **변환 선택창의 원본 파일명 표시·확장자 유지**와 **HWP→HWPX/PDF/PNG/JPG 설치 판정 보완**을 추가합니다. 이전 버전의 **이미지→HWPX OCR 변환**, **마인드맵 자유 배치·계층 편집**, **서식 통일의 자간 정리 누락 수정**을 반영합니다. 한국어 OCR 모델도 EXE에 내장합니다. TXT·MD 변환과 HWPX→TXT·MD도 유지합니다. 표·그림 복사와 HWP→HWPX 직접 변환도 유지합니다. 일반 표/다이어그램은 유지하며 tldraw 메뉴·설정·SDK 자산은 제외합니다.
 
 [![프로그램 사용 시연 영상 (약 5분). 클릭하면 고화질 영상이 열립니다.](docs/media/overview-demo.gif)](docs/media/overview-demo.mp4)
@@ -42,7 +41,7 @@
 
 ## 숫자로 보는 효과
 
-아래 수치와 기존 시연 자료는 기록된 이전 버전 기준입니다. v1.76.4의 신규 복사·변환 기능에 대한 속도 개선율을 뜻하지 않습니다.
+아래 수치와 기존 시연 자료는 기록된 이전 버전 기준입니다. v1.76.5의 신규 복사·변환 기능에 대한 속도 개선율을 뜻하지 않습니다.
 
 | ⏱ 아끼는 시간 | 🚀 처리 속도 | ✅ 글자 보존 | 🔒 개인정보 |
 |:---:|:---:|:---:|:---:|
@@ -240,7 +239,7 @@ HWP·HWPX → PDF·그림도 **한/글 내장 저장 기능**을 씁니다. 한/
 
 # 자세한 사용 설명서
 
-이번 버전에서 바뀐 점: **v1.76.4**은 파일포맷 변경(고르면 바로 변환), 표/다이어그램 만들기, 상용구 관리, 한/글 조판 미리보기, 기능별 진행 화면, 사용자가 꾸민 표 보호를 더했습니다([변경 사항](releases/v1.76.4.md)). '서식 통일'은 v1.74부터 기본으로 글꼴·크기만 맞춥니다('전체 서식 맞추기' 옵션으로 전체 서식).
+이번 버전에서 바뀐 점: **v1.76.5**은 서식 적용 오류를 바로잡은 핫픽스입니다(TXT 문단 합침, 중제목 아래 간격, 서식 복사 재연). 그 밖의 기능은 v1.76.4와 같습니다: 파일포맷 변경(고르면 바로 변환), 표/다이어그램 만들기, 상용구 관리, 한/글 조판 미리보기, 기능별 진행 화면, 사용자가 꾸민 표 보호를 더했습니다([변경 사항](releases/v1.76.5.md)). '서식 통일'은 v1.74부터 기본으로 글꼴·크기만 맞춥니다('전체 서식 맞추기' 옵션으로 전체 서식).
 
 <details>
 <summary><b>기능별 자세한 설명과 옵션 위치 펼치기</b></summary>

@@ -14,11 +14,13 @@ import re
 
 from .connector_tabs import char_em
 
-LABEL = re.compile(r"^(\s*(?:[-‐–□■ㅇ○◦●•·∙※*▪▶◆◇☞]|\d{1,2}[.)]|[가-하][.)]|\(\d{1,2}\)|[①-⑳])\s*)([^:：\s][^:：]{0,7}?)\s*([:：])")
+LABEL = re.compile(r"^(\s*(?:(?:\*{1,2}|[-‐–□■ㅇ○◦●•·∙※▪▶◆◇☞])|\d{1,2}[.)]|[가-하][.)]|\(\d{1,2}\)|[①-⑳])\s*)([^:：\s][^:：]{0,7}?)\s*([:：])")
 MAX_LABEL = 7          # 항목기호와 콜론 사이 글자 수 상한(미만만 대상, 사용자 규칙 2026-10-10)
 MAX_SPACING = 50       # 한/글 자간 최대(%)
-LONG_LABEL = re.compile(r"^\s*(?:[-‐–□■ㅇ○◦●•·∙※*▪▶◆◇☞]|\d{1,2}[.)]|[가-하][.)]|\(\d{1,2}\)|[①-⑳])\s*[^:：\s][^:：]{6,19}[:：]")
+LONG_LABEL = re.compile(r"^\s*(?:(?:\*{1,2}|[-‐–□■ㅇ○◦●•·∙※▪▶◆◇☞])|\d{1,2}[.)]|[가-하][.)]|\(\d{1,2}\)|[①-⑳])\s*[^:：\s][^:：]{6,19}[:：]")
 MAX_RATIO = 200        # 한/글 장평 최대(%)
+# 항목기호 '**'(주석2)는 기호 전체다. 예전에는 별표 하나만 기호로 보고 둘째 별표를 라벨에 넣어, '* 항세기:'·'** 난세기:'의
+# 라벨 폭이 달라 보여 '항 세 기'로 늘렸다(서식 재연 시험, 2026-10-16).
 
 
 def _tag(e) -> str:
@@ -87,12 +89,27 @@ def stretch(label: str, target_em: float, spaced_base=None, allow_ratio: bool = 
     return spacing, min(MAX_RATIO, round((target_em - fixed) / (base + spacing / 100 * inner) * 100))
 
 
-def _single_t(p):
-    ts = [t for r in p if _tag(r) == "run" for t in r if _tag(t) == "t"]
-    with_text = [t for t in ts if (t.text or "") or len(t)]
-    if len(with_text) != 1 or len(with_text[0]):
-        return None
-    return with_text[0]
+class _Joined:
+    """문단의 글 run을 이어 붙인 글(groups_in이 돌려주는 글 자리, .text로 읽는다)."""
+
+    def __init__(self, text):
+        self.text = text
+
+
+def _simple_runs(p):
+    """[(run, 글)]. 모든 run이 글 요소 하나(안에 다른 요소 없음)만 가질 때. 아니면 None.
+
+    예전에는 문단 글이 글 요소 하나일 때만 다뤄, 서식 일괄 적용·라벨 굵게가 run을 나눈 문단(' ', '- ', '단장', ': …')은
+    콜론을 맞추지 못했다(2026-10-17 서식 재연 시험에서 발견).
+    """
+    out = []
+    for run in (r for r in p if _tag(r) == "run"):
+        if not len(run):
+            continue
+        if any(_tag(x) != "t" for x in run) or len(run) != 1 or len(run[0]):
+            return None
+        out.append((run, run[0].text or ""))
+    return out if any(text for _, text in out) else None
 
 
 def groups_in(container):
@@ -101,7 +118,8 @@ def groups_in(container):
     for p in list(container):
         if _tag(p) != "p":
             continue
-        t = _single_t(p)
+        runs = _simple_runs(p)
+        t = _Joined("".join(text for _, text in runs)) if runs else None
         found = label_of(t.text) if t is not None else None
         if found and not any(_tag(x) == "tbl" for x in p.iter()):
             run.append((p, t, found))
@@ -163,44 +181,37 @@ def align_colons(header_root, sections, allow_ratio: bool = True) -> dict:
                 spaces, spacing, ratio = plan(label, target, allow_ratio)
                 if (spaces, spacing, ratio) == (0, 0, 100):
                     continue
-                run = next(r for r in p if _tag(r) == "run" and t in list(r))
-                if any(_tag(x) != "t" for x in run):
-                    continue            # 구역 정의·컨트롤이 든 run은 나누지 않는다
-                base = run.get("charPrIDRef")
-                text = t.text
-                parent = p
-                index = list(parent).index(run)
+                runs = _simple_runs(p)
+                if not runs:
+                    continue
                 사이 = " " * spaces
-                늘린 = chars.stretched(base, spacing, ratio)
-                끝글자 = chars.stretched(base, 0, ratio)
+                letters = [(ch, run.get("charPrIDRef")) for run, text in runs for ch in text]
                 # 글자 사이에 빈칸(필요하면), 자간은 마지막 글자를 뺀 라벨 글자에, 장평은 라벨 전체에.
-                pieces = [(text[:s], base)]
-                for i, ch in enumerate(label):
-                    if i < len(label) - 1:
-                        pieces.append((ch, 늘린))
+                pieces = []
+                for i, (ch, cid) in enumerate(letters):
+                    if s <= i < e - 1:
+                        pieces.append((ch, chars.stretched(cid, spacing, ratio)))
                         if 사이:
-                            pieces.append((사이, base))
+                            pieces.append((사이, cid))
+                    elif i == e - 1:
+                        pieces.append((ch, chars.stretched(cid, 0, ratio)))
                     else:
-                        pieces.append((ch, 끝글자))
-                pieces.append((text[e:], base))
+                        pieces.append((ch, cid))
                 merged = []
                 for piece, cid in pieces:
-                    if not piece:
-                        continue
                     if merged and merged[-1][1] == cid:
                         merged[-1] = (merged[-1][0] + piece, cid)
                     else:
                         merged.append((piece, cid))
-                parent.remove(run)
+                template = runs[0][0]
+                index = list(p).index(template)
+                for old, _ in runs:
+                    p.remove(old)
                 for offset, (piece, cid) in enumerate(merged):
-                    new = copy.deepcopy(run)
-                    for child in list(new):
-                        new.remove(child)
-                    new_t = type(t)(t.tag, dict(t.attrib))
-                    new_t.text = piece
-                    new.append(new_t)
+                    new = copy.deepcopy(template)
+                    new[0].text = piece
                     new.set("charPrIDRef", cid)
-                    parent.insert(index + offset, new)
+                    p.insert(index + offset, new)
                 for cache in [x for x in p if _tag(x) == "linesegarray"]:
                     p.remove(cache)
                 stats["stretched"] += 1

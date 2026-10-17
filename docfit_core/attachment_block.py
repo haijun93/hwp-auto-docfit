@@ -11,8 +11,8 @@ from __future__ import annotations
 import re
 
 _START = re.compile(r"^\s*붙임")
-_ITEM = re.compile(r"^(?P<indent>[ \t\u00a0\u3000]*)(?P<number>\d+)\.(?=\s|$)")
-_HEADER = re.compile(r"^(?P<indent>[ \t\u00a0\u3000]*)붙임(?P<gap>[ \t\u00a0\u3000]*)(?P<colon>[:：]?)(?P<after>[ \t\u00a0\u3000]*)(?P<item>\d+\.(?=\s|$).*)$")
+_ITEM = re.compile(r"^(?P<indent>[ \t\u00a0\u3000]*)(?P<number>\d+)\.(?=\s|$|「)")
+_HEADER = re.compile(r"^(?P<indent>[ \t\u00a0\u3000]*)붙임(?P<gap>[ \t\u00a0\u3000]*)(?P<colon>[:：]?)(?P<after>[ \t\u00a0\u3000]*)(?P<item>\d+\.(?=\s|$|「).*)$")
 MAX_LINES = 30  # 묶음이 이보다 길면 붙임 목록이 아니라고 본다.
 
 
