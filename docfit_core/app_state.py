@@ -1,7 +1,7 @@
 """Widget-free document state and processing option resolution."""
 from dataclasses import dataclass, field
 from typing import Literal
-from .stage_selection import default_choice, stages_for_mode, without_tables
+from .stage_selection import SPACING_STAGE_KEYS, default_choice, stages_for_mode, without_tables
 
 
 @dataclass
@@ -15,6 +15,8 @@ class RunOptions:
     autoclose: bool = False
     developer_mode: bool = False
     page_range: str = ""
+    spacing_enabled: bool = True
+    spacing_page_fit: bool = False
 
     def __post_init__(self):
         if self.mode not in ("spacing", "unify", "format", "all"):
@@ -35,6 +37,13 @@ class RunOptions:
                   for key, _ in stages_for_mode(mode)}
         if "reset_spacing" in result:
             result["reset_spacing"] = self.reset_spacing
+        if mode == "spacing":
+            # 자간 기능을 끄면 초기화·줄 병합·표/컨트롤·대표 서식 보정까지 실행하지 않는다.
+            if not self.spacing_enabled:
+                for key in (*SPACING_STAGE_KEYS, "style_unify"):
+                    result[key] = False
+            for key in ("page_fit", "page_group"):
+                result[key] = self.spacing_page_fit and bool(selected.get(key, True))
         if self.exclude_tables:
             result = without_tables(result)
         if not self.effective_table_spacing:
@@ -57,3 +66,6 @@ class AppState:
     results: list = field(default_factory=list)
     stage_choices: dict = field(default_factory=dict)
     default_saved: dict = field(default_factory=dict)
+    doc_hints: dict = field(default_factory=dict)
+    zero_click: dict = field(default_factory=dict)
+    user_overrode_mode: bool = False

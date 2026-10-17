@@ -39,6 +39,10 @@ LABELS = {
  'unify_exclude_pagefit':'서식 통일: 페이지 맞춤 제외', 'unify_keep_layout':'서식 통일: 원본 쪽 구성 유지',
  'unify_full_format':'서식 통일: 전체 서식 맞춤', 'unify_result_window':'서식 통일 결과 창 표시',
  'spacing_reset_existing':'기존 자간 초기화',
+ 'spacing_enabled':'자간 정리: 자간 기능 사용',
+ 'spacing_page_fit':'자간 정리: 페이지 맞춤',
+ 'instant_run_on_drop':'파일 하나를 놓으면 2.5초 후 자동 실행',
+ 'auto_open_result':'단일 문서 처리 후 결과 자동 열기',
 }
 EXCLUDED = {'abbreviations', 'active_format_profile', 'diagram_editor_enabled'} | {k for k in DEFAULTS if k.endswith('_rev')}
 

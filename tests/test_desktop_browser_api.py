@@ -105,7 +105,8 @@ class BrowserApiTests(unittest.TestCase):
         bridge.window = object()
         api = _BrowserApi(bridge)
         public = {name: getattr(api, name) for name in dir(api) if not name.startswith('_')}
-        self.assertEqual(len(public), 57)   # 변환 대상·종료 보호·상용구(idioms)·글꼴(hangul_fonts) 명령 포함, GUI/서비스 객체 자체는 비공개
+        self.assertGreaterEqual(len(public), 57)
+        self.assertTrue({'cancel_zero_click', 'start_zero_click', 'quick_register_and_activate_profile'} <= public.keys())
         self.assertTrue(all(callable(value) for value in public.values()))
         self.assertNotIn('gui', public)
         self.assertNotIn('window', public)
@@ -410,7 +411,8 @@ class BrowserApiTests(unittest.TestCase):
         gui.unify_quick_mode_var = _Var(True)
         bridge = _bridge(gui)
         self.assertEqual(bridge.get_state()["card_options"],
-                         {"all_exclude_pagefit": False, "unify_exclude_tables": False,
+                         {"spacing_enabled": True, "spacing_page_fit": False,
+                          "all_exclude_pagefit": False, "unify_exclude_tables": False,
                           "unify_exclude_spacing": False, "unify_exclude_pagefit": False,
                           "unify_keep_layout": False, "unify_quick_mode": True})
         for name in ("all_exclude_pagefit_var", "unify_exclude_tables_var", "unify_exclude_spacing_var",

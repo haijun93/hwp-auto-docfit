@@ -63,7 +63,9 @@ def main():
                 page.locator("flt-semantics-placeholder").evaluate("element=>element.click()")
                 page.get_by_role("button", name="표/다이어그램", exact=True).click()
                 frame = page.frame_locator('iframe[title="표/다이어그램 편집기"]')
-                frame.get_by_role("button", name="처리 추가", exact=True).click()
+                # The current palette defaults to the basic shapes; flowchart
+                # process shapes live in a collapsed group, not the old toolbar.
+                frame.get_by_role("button", name="사각형 추가", exact=True).click()
                 frame.get_by_label("도형 내용").fill("일반 모드 실제 저장")
                 frame.get_by_role("button", name="저장", exact=True).click()
                 page.get_by_role("textbox", name="문서 이름").fill("일반 모드 QA")

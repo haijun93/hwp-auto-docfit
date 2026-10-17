@@ -1,1 +1,5 @@
 hwp-auto-docfit.py text eol=crlf
+diagram_editor/index.html text eol=lf
+hwp_preview/index.html text eol=lf
+flutter_ui/assets/flow_editor/index.html text eol=lf
+flutter_ui/assets/hwp_preview/index.html text eol=lf

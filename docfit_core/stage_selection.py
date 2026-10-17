@@ -118,7 +118,7 @@ _MODE_STAGES = {
         "table_format", "single_cell_spacing", "hanging_indent", "supplement_indent", "star_align", "page_fit", "page_group"),
     # 서식통일은 예외 문단별 서식→자간→내어쓰기 처리이며 전체 자간 단계는 돌리지 않는다.
     "spacing": ("reset_spacing", "style_unify", "body_spacing", "short_line", "control_spacing",
-                "control_short_line", "word_check", "control_word_check"),
+                "control_short_line", "word_check", "control_word_check", "page_fit", "page_group"),
     # 개요·한 칸 표 자간 조정(single_cell_spacing)은 서식 전용이다.
     "all": _FIRST_STAGES + (
         "text_table_convert", "reset_spacing", "asterisk_superscript", "attachment_font", "pre_format",
@@ -139,6 +139,8 @@ def default_choice(key, mode=None):
 
     '서식 통일' 작업 유형에서는 서식통일이 곧 작업 자체라 켜져 있다.
     """
+    if mode == "spacing" and key in ("page_fit", "page_group"):
+        return False
     if mode == "unify":
         return key in ("style_unify", "unify_spacing", "table_unify", "table_style", "page_layout_keep")
     return key not in DEFAULT_OFF
@@ -177,6 +179,8 @@ SPACING_STAGE_KEYS = tuple(key for key, _ in SPACING_STAGES)
 # 자간 정리의 '표 제외'는 설정 table_spacing의 반대 값이다. 한 번에 적용의 두 구성(자간 조정 포함 all·제외 format)은
 # '표 제외'·'페이지 맞춤 제외'를 함께 쓰고, '자간 조정 포함'은 all 구성의 자간 작업과 연동한다.
 CARD_OPTION_STAGES = {
+    "spacing_enabled": (("spacing",), SPACING_STAGE_KEYS, False),
+    "spacing_page_fit": (("spacing",), PAGE_FIT_STAGE_KEYS, False),
     "spacing_reset_existing": (("spacing",), ("reset_spacing",), False),
     "spacing_exclude_tables": (("spacing",), TABLE_STAGE_KEYS, True),
     "unify_exclude_tables": (("unify",), TABLE_STAGE_KEYS, True),

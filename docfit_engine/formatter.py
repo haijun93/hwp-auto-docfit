@@ -9775,6 +9775,12 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             if 확장자 in IMAGE_INPUT_EXTENSIONS:
                 convert_image_to_hwpx(원본경로, 대상경로)
                 return
+            # 파일 추가·독립 변환에서 허용한 오피스 입력을 후처리에서도 동일하게 받는다.
+            # TXT/MD의 기존 한/글 라벨 경로와 PDF 서식 이식은 위·아래 분기를 유지한다.
+            from docfit_core.kordoc_bridge import SUPPORTED_INPUT_EXTENSIONS, convert_to_hwpx
+            if 확장자 in SUPPORTED_INPUT_EXTENSIONS - {".docx", ".pdf", ".hwp", ".hwpx"}:
+                convert_to_hwpx(원본경로, 대상경로)
+                return
             if 확장자 in (".doc", ".docx", ".pdf"):
                 with tempfile.TemporaryDirectory(prefix="docfit_변환_") as 임시폴더:
                     임시_md = Path(임시폴더) / f"{Path(원본경로).stem}.md"

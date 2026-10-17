@@ -359,7 +359,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             # 기존 결과를 다시 입력했거나 원문 자체에 설정돼 있던 페이지 보호가
             # 페이지 판정을 왜곡하지 않도록 처리 시작 전에도 먼저 해제한다.
             단계시간_구간('쪽 보호 해제')
-            if 작업_모드 != 'unify' and 보고서_페이지보호_전체해제() is False:
+            페이지보호_해제 = (작업_모드 != 'unify' and (작업_모드 != 'spacing' or any(
+                stage_enabled(선택_세부작업, key, 작업_모드) for key in ('page_fit', 'page_group'))))
+            if 페이지보호_해제 and 보고서_페이지보호_전체해제() is False:
                 return False
 
             # 잔여 자간(이전 실행/수동 편집으로 남은 값)이 있으면 압축 여유가
@@ -398,9 +400,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             # 중간 처리나 입력 문서에 있던 페이지 보호가 최종 HWPX에 남으면 이후
             # 편집 시 큰 문단 묶음이 다시 통째로 이동한다. 저장 직전에 항상 해제한다.
             단계시간_구간('저장 준비(쪽 보호·쪽 나누기 해제)')
-            if 작업_모드 != 'unify' and 보고서_페이지보호_전체해제() is False:
+            if 페이지보호_해제 and 보고서_페이지보호_전체해제() is False:
                 return False
-            if not 쪽나누기_사용:
+            if not 쪽나누기_사용 and (작업_모드 != 'spacing' or 페이지보호_해제):
                 # 보고서 경계(제목 표)의 쪽 나누기는 보고서가 원본처럼 새 쪽에서 시작하게 하므로 남긴다(사용자 결정, 2026-10-09).
                 보존 = set()
                 if 쪽맞춤_원본_보고서 or 쪽맞춤_보고서조정됨:
@@ -1130,12 +1132,12 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 return False
             # 문단 아래 간격 조정은 세로 배치를 다시 바꾼다. 개별 문단이 쪽 사이에
             # 갈라졌는지는 이 단계가 끝난 뒤 마지막으로 처리해야 결과가 재오염되지 않는다.
-            쪽수맞춤_사용 = (작업_모드 in ('format', 'all') and 표준서식_사용
-                           and stage_enabled(선택_세부작업, 'page_fit'))
+            페이지작업_모드 = 작업_모드 == 'spacing' or (작업_모드 in ('format', 'all') and 표준서식_사용)
+            쪽수맞춤_사용 = 페이지작업_모드 and stage_enabled(선택_세부작업, 'page_fit', 작업_모드)
             if 쪽수맞춤_사용:
                 if not stage('문단 아래 간격 페이지 맞춤', 보고서_페이지수_맞춤_전체_적용):
                     return False
-            if 작업_모드 in ('format', 'all') and 표준서식_사용 and 세트문장_같은쪽_사용 and stage_enabled(선택_세부작업, 'page_group'):
+            if 페이지작업_모드 and 세트문장_같은쪽_사용 and stage_enabled(선택_세부작업, 'page_group', 작업_모드):
                 조정_전 = 세트문장_통계.get('확대횟수', 0) + 세트문장_통계.get('축소횟수', 0)
                 if not stage('개별 문단 페이지 배치', 문단글_캐시_구간(세트문장_같은쪽_전체_적용)):
                     return False
