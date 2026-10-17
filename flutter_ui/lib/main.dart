@@ -1367,15 +1367,14 @@ class _WorkspaceState extends State<Workspace> {
                 ),
                 const SizedBox(height: 10),
                 Text(m.$3, style: const TextStyle(height: 1.6)),
-                if (selected && files.isNotEmpty && state['doc_hints'] is Map)
+                if (selected &&
+                    files.isNotEmpty &&
+                    state['doc_hints'] is Map &&
+                    state['user_overrode_mode'] != true)
                   Tooltip(
                     message: '${docHints['reason'] ?? ''}',
                     child: Chip(
-                      label: Text(
-                        state['user_overrode_mode'] == true
-                            ? '직접 선택'
-                            : '✨ 문서 자동 맞춤',
-                      ),
+                      label: const Text('✨ 문서 자동 맞춤'),
                     ),
                   ),
                 if (selected && m.$1 != 'file_format') modeOptions(m.$1),

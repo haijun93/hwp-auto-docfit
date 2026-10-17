@@ -54,7 +54,8 @@ void main() {
       await tester.pump(const Duration(seconds: 3));
       expect(calls, isNot(contains('start_zero_click')));
       expect(state['mode'], 'unify');
-      expect(find.text('직접 선택'), findsOneWidget);
+      expect(find.text('직접 선택'), findsNothing);
+      expect(find.text('✨ 문서 자동 맞춤'), findsNothing);
       await tester.pumpWidget(const SizedBox());
     },
   );

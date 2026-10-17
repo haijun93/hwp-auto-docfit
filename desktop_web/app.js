@@ -375,8 +375,8 @@ function updateContextOptions(state) {
   }
   $("rangeBox").hidden = hints.show_page_range === false && !state.range?.enabled && !manualRange;
   $("rangeReveal").hidden = !$("rangeBox").hidden;
-  $("autoModeHint").textContent = state.doc_hints ? (state.user_overrode_mode ? "직접 선택" : "✨ 문서 자동 맞춤 · " + (hints.reason || "")) : "";
-  $("autoModeHint").title = hints.reason || "";
+  $("autoModeHint").textContent = state.doc_hints && !state.user_overrode_mode ? "✨ 문서 자동 맞춤 · " + (hints.reason || "") : "";
+  $("autoModeHint").title = state.user_overrode_mode ? "" : (hints.reason || "");
   $("resetSpacing").disabled ||= state.card_options?.spacing_enabled === false;
   $("tableSpacing").disabled ||= state.card_options?.spacing_enabled === false;
   const rect = $("quickProfileBadge").getBoundingClientRect();
