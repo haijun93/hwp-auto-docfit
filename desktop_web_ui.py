@@ -483,12 +483,13 @@ class DesktopWebBridge:
             if cached is not None and now - self._conversion_prerequisites_checked < 30:
                 return cached
             from docfit_core.kordoc_bridge import engine_status
+            from docfit_core.kordoc_runtime import pandoc_available
             pandoc_path = shutil.which("pandoc.exe") or shutil.which("pandoc")
             from docfit_core.kordoc_bridge import ocr_available
             self._conversion_prerequisites_cache = {
                 "kordoc": engine_status(),
                 "ocr": ocr_available(),
-                "pandoc": bool(pandoc_path),
+                "pandoc": bool(pandoc_path) or pandoc_available(),
                 "hwp_com": self._hwp_com_available(),
             }
             self._conversion_prerequisites_checked = time.monotonic()
@@ -528,18 +529,19 @@ class DesktopWebBridge:
                        "변환 준비됨")
         image_reason = (pdf_reason if not (valid and pdf_ready) else
                         "한/글 PDF 저장 후 쪽마다 그림 저장 · 여러 쪽은 폴더로 저장")
+        pandoc_only = all(suffix in {".html", ".htm", ".md", ".txt"} for suffix in suffixes)
+        pandoc_targets_ready = pandoc_ready and (kordoc_ready or pandoc_only)
+        text_targets_ready = (all(suffix == ".hwpx" for suffix in suffixes) or
+                              pandoc_ready and (kordoc_ready or pandoc_only))
         return [
             {"format": "hwpx", "label": "HWPX", "enabled": valid and hwpx_ready,
              "reason": hwpx_reason},
             {"format": "pdf", "label": "PDF", "enabled": valid and pdf_ready, "reason": pdf_reason},
-            *({"format": kind, "label": kind.upper(), "enabled": valid and all(s == ".hwpx" for s in suffixes),
-               "reason": "HWPX의 글·표 추출 · 외부 도구 불필요" if valid and all(s == ".hwpx" for s in suffixes) else "TXT·MD 결과는 HWPX 입력에서 지원합니다"} for kind in ("txt", "md")),
-            {"format": "docx", "label": "DOCX", "enabled": valid and kordoc_ready and pandoc_ready and not any(s in {".txt", ".md"} for s in suffixes),
-             "reason": invalid_reason if not valid else engine_reason if not kordoc_ready else
-                      "Pandoc 설치 필요" if not pandoc_ready else "변환 엔진 + Pandoc 준비됨"},
-            {"format": "epub", "label": "EPUB", "enabled": valid and kordoc_ready and pandoc_ready and not any(s in {".txt", ".md"} for s in suffixes),
-             "reason": invalid_reason if not valid else engine_reason if not kordoc_ready else
-                      "Pandoc 설치 필요" if not pandoc_ready else "변환 엔진 + Pandoc 준비됨"},
+            *({"format": kind, "label": kind.upper(), "enabled": valid and text_targets_ready,
+               "reason": invalid_reason if not valid else engine_reason if not text_targets_ready and not kordoc_ready else "텍스트 추출 준비됨"} for kind in ("txt", "md")),
+            *({"format": kind, "label": kind.upper(), "enabled": valid and pandoc_targets_ready,
+               "reason": invalid_reason if not valid else engine_reason if not kordoc_ready and not pandoc_only else
+                        "내장 Pandoc을 사용할 수 없음" if not pandoc_ready else "내장 Pandoc 준비됨"} for kind in ("docx", "epub", "html")),
             *({"format": kind, "label": kind.upper(), "enabled": valid and pdf_ready, "reason": image_reason}
               for kind in IMAGE_FORMATS),
         ]
@@ -652,7 +654,7 @@ class DesktopWebBridge:
     def set_conversion_target(self, target):
         target = str(target or "").lower()
         if target not in CONVERSION_OUTPUTS:
-            raise ValueError("결과 형식은 HWPX, PDF, DOCX, EPUB, JPG, PNG, TXT 또는 MD만 선택할 수 있습니다.")
+            raise ValueError("결과 형식은 HWPX, PDF, DOCX, EPUB, HTML, JPG, PNG, TXT 또는 MD만 선택할 수 있습니다.")
         def update():
             if not self.gui.running:
                 self.conversion_target = target

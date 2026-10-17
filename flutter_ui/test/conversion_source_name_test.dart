@@ -21,6 +21,7 @@ Widget picker(
             targets: const [
               {'format': 'hwpx', 'label': 'HWPX', 'enabled': true},
               {'format': 'pdf', 'label': 'PDF', 'enabled': true},
+              {'format': 'html', 'label': 'HTML', 'enabled': true},
             ],
             onSelected: (_) {},
             onCancel: () {},
@@ -32,6 +33,40 @@ Widget picker(
 }
 
 void main() {
+  testWidgets('HTML format is selectable in the round format picker', (
+    tester,
+  ) async {
+    String? selected;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 340,
+            child: FloatingFormatPicker(
+              fileNames: const ['source.html'],
+              fileCount: 1,
+              selected: 'hwpx',
+              targets: const [
+                {'format': 'hwpx', 'label': 'HWPX', 'enabled': true},
+                {'format': 'html', 'label': 'HTML', 'enabled': true},
+              ],
+              onSelected: (format) => selected = format,
+              onCancel: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const Key('conversionSlice-html')),
+        matching: find.text('HTML'),
+      ),
+    );
+    expect(selected, 'html');
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('center shows original short name and original extension', (
     tester,
   ) async {

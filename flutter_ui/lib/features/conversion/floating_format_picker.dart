@@ -32,6 +32,7 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
     'hwpx',
     'docx',
     'epub',
+    'html',
     'pdf',
     'jpg',
     'png',

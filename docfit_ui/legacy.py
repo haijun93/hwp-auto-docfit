@@ -5569,10 +5569,10 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     title="처리할 문서를 선택하세요.",
                     initialdir=os.getcwd(),
                     filetypes=[
-                        ("지원하는 모든 문서", "*.hwp *.hwpx *.hml *.pdf *.xls *.xlsx *.docx *.pptx *.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff *.gif *.txt *.md *.doc"),
-                        ("변환할 수 있는 문서", "*.hwp *.hwpx *.hml *.pdf *.xls *.xlsx *.docx *.pptx *.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff *.gif *.txt *.md"),
+                        ("지원하는 모든 문서", "*.hwp *.hwpx *.hml *.pdf *.xls *.xlsx *.docx *.pptx *.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff *.gif *.html *.htm *.txt *.md *.doc"),
+                        ("변환할 수 있는 문서", "*.hwp *.hwpx *.hml *.pdf *.xls *.xlsx *.docx *.pptx *.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff *.gif *.html *.htm *.txt *.md"),
                         ("한/글 파일", "*.hwp *.hwpx *.hml"), ("HWP 파일", "*.hwp"), ("HWPX 파일", "*.hwpx"),
-                        ("텍스트/Markdown", "*.txt *.md"), ("MS Word", "*.doc *.docx"), ("PDF", "*.pdf"),
+                        ("텍스트/Markdown/HTML", "*.html *.htm *.txt *.md"), ("MS Word", "*.doc *.docx"), ("PDF", "*.pdf"),
                         ("Excel", "*.xls *.xlsx"), ("PowerPoint", "*.pptx"), ("이미지", "*.png *.jpg *.jpeg *.webp"),
                     ]
                 )
@@ -5932,7 +5932,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     return
                 target_format = str(target_format or "").lower()
                 if target_format not in CONVERSION_OUTPUTS:
-                    raise ValueError("결과 형식은 HWPX, PDF, DOCX, EPUB, JPG, PNG, TXT 또는 MD만 선택할 수 있습니다.")
+                    raise ValueError("결과 형식은 HWPX, PDF, DOCX, EPUB, HTML, JPG, PNG, TXT 또는 MD만 선택할 수 있습니다.")
                 files = list(self.files)
                 if any(Path(path).suffix.lower() not in CONVERSION_INPUTS for path in files):
                     raise ValueError("지원하는 입력 형식만 변환할 수 있습니다.")
@@ -5978,9 +5978,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                                         convert_hwp_to_hwpx(app, source, target)
                                     else:
                                         convert_input_to_hwpx(source, target)
-                                elif target_format in {"txt", "md"}:
+                                elif target_format in {"txt", "md"} and source.suffix.lower() == ".hwpx":
                                     convert_hwpx_to_text(source, target)
-                                elif target_format in {"docx", "epub"}:
+                                elif target_format in {"txt", "md", "docx", "epub", "html"}:
                                     convert_to_pandoc_format(source, target)
                                 elif target_format in IMAGE_FORMATS:
                                     target = convert_to_images(app, source, target)

@@ -19,7 +19,8 @@ Windows 배포 EXE에 Node.js 22.23.3 및 kordoc 4.21.30 런타임을 포함합�
 - TXT·MD→HWPX는 내장 엔진, PDF·PNG·JPG는 내장 엔진과 설치된 한/글을 사용합니다.
 - HWPX→TXT·MD는 내장 분석기를 사용합니다. 글꼴·쪽 배치·그림은 텍스트 결과에 포함되지 않습니다.
 - HWP→HWPX 및 HWP·HWPX→PDF·그림은 설치된 한/글을 사용합니다.
-- DOCX·EPUB 출력용 Pandoc은 별도 도구입니다.
+- DOCX·EPUB·HTML·TXT·MD 출력용 Pandoc 3.12.1 Windows x64도 앱 내장 런타임에 포함됩니다. 첫 변환 시 런타임 ZIP을 로컬로 풀어 실행하며 네트워크나 사용자 별도 설치를 요구하지 않습니다. HTML 입력은 HWPX·PDF·DOCX·EPUB·HTML·그림·텍스트로 변환할 수 있습니다.
+- Pandoc 공식 배포 ZIP은 SHA-256 `6ef431cb20b2c24a0371fc19200dc49d452be54b1b5c9239f3462841ef53e587`로 빌드 시 검증합니다. 재배포 런타임에는 `COPYING.rtf`와 `COPYRIGHT.txt`를 함께 포함합니다.
 - OCR 모델은 포함하지 않습니다. 그림·스캔 문서의 글자 인식은 준비 상태에 따라 제한됩니다.
 
 ## 개발·빌드

@@ -28,6 +28,7 @@ from pathlib import Path, PurePosixPath
 RUNTIME_FOLDER_NAME = "kordoc-runtime"
 RUNTIME_PACK_NAME = "HWP_AutoDocFit_kordoc_runtime.zip"
 MANIFEST_NAME = "runtime.json"
+KORDOC_RUNTIME_VERSION = "4.21.30"
 MAX_PACK_FILES = 20_000
 MAX_PACK_BYTES = 700 * 1024 * 1024
 
@@ -89,6 +90,67 @@ def find_runtime(version: str) -> tuple[str, str] | None:
         found = runtime_in(folder, version)
         if found:
             return found
+    return None
+
+
+def pandoc_in(folder: Path) -> Path | None:
+    """Return the bundled Pandoc executable when this runtime contains it."""
+    try:
+        manifest = json.loads((folder / MANIFEST_NAME).read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return None
+    executable = folder / "pandoc" / "pandoc.exe"
+    if isinstance(manifest, dict) and manifest.get("pandoc") and executable.is_file():
+        return executable
+    return None
+
+
+def pandoc_available() -> bool:
+    """Check bundled/installed Pandoc without extracting the runtime archive."""
+    roots = (app_directory() / RUNTIME_FOLDER_NAME,
+             installed_root() / KORDOC_RUNTIME_VERSION,
+             user_installed_root() / KORDOC_RUNTIME_VERSION)
+    if any(pandoc_in(root) for root in roots):
+        return True
+    pack = bundled_pack()
+    if pack is not None:
+        try:
+            with zipfile.ZipFile(pack) as archive:
+                manifest = json.loads(archive.read(MANIFEST_NAME).decode("utf-8"))
+            if (isinstance(manifest, dict) and manifest.get("pandoc")
+                    and "pandoc/pandoc.exe" in archive.namelist()):
+                return True
+        except (OSError, ValueError, KeyError, zipfile.BadZipFile):
+            pass
+    return False
+
+
+def ensure_pandoc() -> str | None:
+    """Find bundled Pandoc, extracting the offline runtime pack if necessary."""
+    for root in (app_directory() / RUNTIME_FOLDER_NAME,
+                 installed_root() / KORDOC_RUNTIME_VERSION,
+                 user_installed_root() / KORDOC_RUNTIME_VERSION):
+        found = pandoc_in(root)
+        if found:
+            return str(found)
+    try:
+        # ensure_runtime intentionally reuses any working kordoc installation;
+        # explicitly refresh it here if it predates the Pandoc-enabled bundle.
+        pack = embedded_pack()
+        if pack is not None:
+            deploy_embedded_runtime(KORDOC_RUNTIME_VERSION)
+        else:
+            pack = bundled_pack()
+            if pack is not None:
+                install_pack(pack, KORDOC_RUNTIME_VERSION)
+    except (OSError, RuntimePackError):
+        return None
+    for root in (app_directory() / RUNTIME_FOLDER_NAME,
+                 installed_root() / KORDOC_RUNTIME_VERSION,
+                 user_installed_root() / KORDOC_RUNTIME_VERSION):
+        found = pandoc_in(root)
+        if found:
+            return str(found)
     return None
 
 

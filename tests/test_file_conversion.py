@@ -5,7 +5,8 @@ from unittest import mock
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from docfit_core.file_conversion import (
-    convert_hwpx_to_pdf, convert_to_images, convert_to_pandoc_format, convert_to_pdf, output_path_for,
+    CONVERSION_INPUTS, convert_hwpx_to_pdf, convert_input_to_hwpx, convert_to_images,
+    convert_to_pandoc_format, convert_to_pdf, output_path_for,
 )
 from docfit_core.kordoc_bridge import SUPPORTED_INPUT_EXTENSIONS, convert_to_hwpx
 
@@ -19,6 +20,106 @@ class FileConversionTests(unittest.TestCase):
             self.assertEqual(first.name, "report(HWPX변경).hwpx")
             first.touch()
             self.assertEqual(output_path_for(source, "hwpx").name, "report(HWPX변경) (2).hwpx")
+
+    def test_html_input_and_output_format_are_available(self):
+        from docfit_core.file_conversion import CONVERSION_OUTPUTS
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "source.html"
+            source.write_text("<h1>Example</h1>", encoding="utf-8")
+            self.assertIn(".html", CONVERSION_INPUTS)
+            self.assertIn(".htm", CONVERSION_INPUTS)
+            self.assertIn("html", CONVERSION_OUTPUTS)
+            self.assertEqual(output_path_for(source, "html").suffix, ".html")
+
+    def test_html_to_html_uses_pandoc_without_kordoc_parser(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "source.html"
+            source.write_text("<h1>Safe input</h1>", encoding="utf-8")
+            target = Path(folder) / "result.html"
+
+            def run(args, **kwargs):
+                self.assertIn("--from=html", args)
+                self.assertIn("--to=html5", args)
+                self.assertIn("--standalone", args)
+                self.assertIn("--embed-resources", args)
+                Path(args[args.index("--output") + 1]).write_text("<!DOCTYPE html><h1>Safe input</h1>", encoding="utf-8")
+                return mock.Mock(returncode=0, stdout="", stderr="")
+
+            with (mock.patch("docfit_core.kordoc_bridge.parse_document", side_effect=AssertionError("HTML should be parsed directly")),
+                  mock.patch("docfit_core.file_conversion.subprocess.run", side_effect=run)):
+                self.assertEqual(convert_to_pandoc_format(source, target, "bundled-pandoc"), target)
+            self.assertIn("Safe input", target.read_text(encoding="utf-8"))
+
+    def test_html_input_converts_to_document_and_text_targets(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "source.html"
+            source.write_text("<h1>Round trip</h1>", encoding="utf-8")
+            for extension, expected in (("docx", "docx"), ("epub", "epub3"),
+                                        ("md", "markdown"), ("txt", "plain")):
+                target = Path(folder) / f"result.{extension}"
+
+                def run(args, **kwargs):
+                    self.assertIn("--from=html", args)
+                    self.assertIn(f"--to={expected}", args)
+                    Path(args[args.index("--output") + 1]).write_text("converted", encoding="utf-8")
+                    return mock.Mock(returncode=0, stdout="", stderr="")
+
+                with mock.patch("docfit_core.file_conversion.subprocess.run", side_effect=run):
+                    self.assertEqual(convert_to_pandoc_format(source, target, "bundled-pandoc"), target)
+                self.assertEqual(target.read_text(encoding="utf-8"), "converted")
+
+    def test_html_to_hwpx_uses_pandoc_markdown_then_generator(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "source.html"
+            source.write_text("<h1>Report</h1>", encoding="utf-8")
+            target = Path(folder) / "result.hwpx"
+
+            def run(args, **kwargs):
+                self.assertIn("--from=html", args)
+                self.assertIn("--to=markdown", args)
+                Path(args[args.index("--output") + 1]).write_text("# Report", encoding="utf-8")
+                return mock.Mock(returncode=0, stdout="", stderr="")
+
+            def generate(markdown, _preset, output, **_kwargs):
+                self.assertEqual(Path(markdown).read_text(encoding="utf-8"), "# Report")
+                with ZipFile(output, "w", ZIP_DEFLATED) as archive:
+                    archive.writestr("Contents/header.xml", "<hh:head xmlns:hh='urn:head'/>")
+                    archive.writestr("Contents/section0.xml", "<hs:sec xmlns:hs='urn:section'/>")
+
+            with (mock.patch("docfit_core.file_conversion._pandoc_executable", return_value="bundled-pandoc"),
+                  mock.patch("docfit_core.file_conversion.subprocess.run", side_effect=run),
+                  mock.patch("docfit_core.kordoc_bridge.generate_hwpx", side_effect=generate)):
+                self.assertEqual(convert_input_to_hwpx(source, target), target)
+            self.assertTrue(target.is_file())
+
+    def test_html_can_convert_to_pdf_through_hwpx_and_hwp_com(self):
+        class App:
+            def Open(self, path, fmt, _options):
+                self.opened = Path(path)
+                self.format = fmt
+                return True
+
+            def SaveAs(self, path, fmt, _options):
+                Path(path).write_bytes(b"%PDF-1.7\\n")
+                self.output_format = fmt
+                return True
+
+            def Clear(self, _flag):
+                pass
+
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "source.html"
+            source.write_text("<h1>Report</h1>", encoding="utf-8")
+            target = Path(folder) / "result.pdf"
+
+            def to_hwpx(_source, intermediate):
+                Path(intermediate).write_bytes(b"HWPX")
+                return Path(intermediate)
+
+            with mock.patch("docfit_core.file_conversion.convert_input_to_hwpx", side_effect=to_hwpx) as converter:
+                self.assertEqual(convert_to_pdf(App(), source, target), target)
+            self.assertEqual(converter.call_args.args[0], source)
+            self.assertTrue(target.read_bytes().startswith(b"%PDF-"))
 
     def test_pdf_output_path_supports_any_kordoc_input(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -191,6 +292,28 @@ class FileConversionTests(unittest.TestCase):
             self.assertIn("--to=epub3", args)
             self.assertFalse(run_mock.call_args.kwargs["shell"])
             self.assertEqual(source.read_bytes(), b"original")
+
+    def test_pandoc_route_uses_bundled_executable_without_system_install(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "report.pdf"
+            source.write_bytes(b"original")
+            target = Path(folder) / "report.docx"
+
+            def parse(_source, markdown, **_kwargs):
+                Path(markdown).write_text("# Report", encoding="utf-8")
+
+            def run(args, **kwargs):
+                Path(args[args.index("--output") + 1]).write_bytes(b"DOCX")
+                return mock.Mock(returncode=0, stdout="", stderr="")
+
+            with (mock.patch("docfit_core.kordoc_bridge.parse_document", side_effect=parse),
+                  mock.patch("docfit_core.kordoc_runtime.ensure_pandoc", return_value="runtime/pandoc/pandoc.exe"),
+                  mock.patch("docfit_core.file_conversion.shutil.which", return_value=None),
+                  mock.patch("docfit_core.file_conversion.subprocess.run", side_effect=run) as run_mock):
+                self.assertEqual(convert_to_pandoc_format(source, target), target)
+
+            self.assertEqual(run_mock.call_args.args[0][0], "runtime/pandoc/pandoc.exe")
+            self.assertTrue(target.is_file())
 
     def test_hwp_pdf_direct_route_opens_hwp_without_external_parser(self):
         class App:

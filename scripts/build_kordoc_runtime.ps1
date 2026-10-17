@@ -10,6 +10,8 @@ $ErrorActionPreference = 'Stop'
 $NodeVersion = '22.23.3'
 $NodeSha256 = '2b0ff57b049cda1bbcea2240eec20467018713c1efe1f7360c2681859b90ed71'
 $KordocVersion = '4.21.30'
+$PandocVersion = '3.12.1'
+$PandocSha256 = '6ef431cb20b2c24a0371fc19200dc49d452be54b1b5c9239f3462841ef53e587'
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $python = Join-Path $root '.venv\Scripts\python.exe'
@@ -27,11 +29,27 @@ try {
     $actual = (Get-FileHash -LiteralPath $nodeZip -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actual -ne $NodeSha256) { throw "Node.js ZIP SHA-256 mismatch: $actual" }
 
+    $pandocZipName = "pandoc-$PandocVersion-windows-x86_64.zip"
+    $pandocZip = Join-Path $cacheDir $pandocZipName
+    if (-not (Test-Path -LiteralPath $pandocZip) -or
+        (Get-FileHash -LiteralPath $pandocZip -Algorithm SHA256 -ErrorAction SilentlyContinue).Hash.ToLowerInvariant() -ne $PandocSha256) {
+        New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
+        Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/jgm/pandoc/releases/download/$PandocVersion/$pandocZipName" -OutFile $pandocZip
+    }
+    $pandocActual = (Get-FileHash -LiteralPath $pandocZip -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($pandocActual -ne $PandocSha256) { throw "Pandoc ZIP SHA-256 mismatch: $pandocActual" }
+
     $stage = Join-Path $work 'pack'
-    New-Item -ItemType Directory -Path (Join-Path $stage 'node'), (Join-Path $stage 'app') | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $stage 'node'), (Join-Path $stage 'app'), (Join-Path $stage 'pandoc') | Out-Null
     Expand-Archive -LiteralPath $nodeZip -DestinationPath (Join-Path $work 'node-zip')
     $nodeDir = Join-Path $work "node-zip\node-v$NodeVersion-win-x64"
     Copy-Item -LiteralPath (Join-Path $nodeDir 'node.exe'), (Join-Path $nodeDir 'LICENSE') -Destination (Join-Path $stage 'node')
+    Expand-Archive -LiteralPath $pandocZip -DestinationPath (Join-Path $work 'pandoc-zip')
+    $pandocDir = Join-Path $work "pandoc-zip\pandoc-$PandocVersion"
+    Copy-Item -LiteralPath (Join-Path $pandocDir 'pandoc.exe'), (Join-Path $pandocDir 'COPYING.rtf'), (Join-Path $pandocDir 'COPYRIGHT.txt') -Destination (Join-Path $stage 'pandoc')
+    $pandoc = Join-Path $stage 'pandoc\pandoc.exe'
+    $pandocObserved = (& $pandoc --version | Select-Object -First 1).Trim()
+    if ($pandocObserved -notmatch [regex]::Escape($PandocVersion)) { throw "Pandoc version check failed: $pandocObserved" }
     $app = Join-Path $stage 'app'
     Copy-Item -LiteralPath (Join-Path $root 'kordoc_pack\package.json'), (Join-Path $root 'kordoc_pack\package-lock.json') -Destination $app
 
@@ -72,11 +90,13 @@ try {
     $observed = (& $node $cli --version | Out-String).Trim()
     if ($observed -notmatch [regex]::Escape($KordocVersion)) { throw "kordoc version check failed: $observed" }
 
-    $manifest = [ordered]@{ kordoc = $KordocVersion; node = $NodeVersion; node_sha256 = $NodeSha256; bundle_revision = 'ocr-1'; ocr = 'ppocr-korean-v5' } | ConvertTo-Json
+    $manifest = [ordered]@{ kordoc = $KordocVersion; node = $NodeVersion; node_sha256 = $NodeSha256; bundle_revision = 'ocr-pandoc-1'; ocr = 'ppocr-korean-v5'; pandoc = $PandocVersion; pandoc_sha256 = $PandocSha256; pandoc_license = 'GPL-2.0-or-later' } | ConvertTo-Json
     [IO.File]::WriteAllText((Join-Path $stage 'runtime.json'), $manifest, (New-Object Text.UTF8Encoding($false)))
 
     & $python (Join-Path $PSScriptRoot 'verify_runtime_ocr.py') $stage
     if ($LASTEXITCODE -ne 0) { throw 'Packaged offline OCR functional test failed' }
+    & $python (Join-Path $PSScriptRoot 'verify_runtime_pandoc.py') $stage
+    if ($LASTEXITCODE -ne 0) { throw 'Packaged offline Pandoc HTML/DOCX/EPUB functional test failed' }
 
     $outputPath = [IO.Path]::GetFullPath($Output)
     New-Item -ItemType Directory -Force -Path (Split-Path $outputPath) | Out-Null
@@ -87,7 +107,7 @@ try {
     $hash = (Get-FileHash -LiteralPath $outputPath -Algorithm SHA256).Hash.ToLowerInvariant()
     [IO.File]::WriteAllText("$outputPath.sha256", "$hash  $(Split-Path $outputPath -Leaf)`n", (New-Object Text.UTF8Encoding($false)))
     $size = [math]::Round((Get-Item -LiteralPath $outputPath).Length / 1MB, 1)
-    Write-Host "kordoc runtime pack: $outputPath ($size MB, kordoc $observed, node $NodeVersion, sha256 $hash)"
+    Write-Host "kordoc runtime pack: $outputPath ($size MB, kordoc $observed, node $NodeVersion, $pandocObserved, sha256 $hash)"
 } finally {
     Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
 }

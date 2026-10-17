@@ -24,7 +24,7 @@ def output_path_for(source: str | Path, target_format: str) -> Path:
     source = Path(source)
     suffix = str(target_format or "").strip().lower().lstrip(".")
     if suffix not in CONVERSION_OUTPUTS:
-        raise ValueError("지원하는 결과 형식은 HWPX, PDF, DOCX, EPUB, JPG, PNG, TXT 또는 MD입니다.")
+        raise ValueError("지원하는 결과 형식은 HWPX, PDF, DOCX, EPUB, HTML, JPG, PNG, TXT 또는 MD입니다.")
     if source.is_symlink() or not source.is_file():
         raise ValueError("원본이 일반 파일이 아니거나 심볼릭 링크입니다.")
     if source.suffix.lower() not in CONVERSION_INPUTS:
@@ -41,40 +41,61 @@ def output_path_for(source: str | Path, target_format: str) -> Path:
     return candidate
 
 
+def _pandoc_executable(explicit: str | None = None) -> str:
+    pandoc = explicit
+    if not pandoc:
+        from docfit_core.kordoc_runtime import ensure_pandoc
+        pandoc = ensure_pandoc()
+    pandoc = pandoc or shutil.which("pandoc.exe") or shutil.which("pandoc")
+    if not pandoc:
+        raise RuntimeError("내장 Pandoc을 사용할 수 없습니다. 앱 설치 파일이 손상되지 않았는지 확인해 주세요.")
+    return pandoc
+
+
 def convert_to_pandoc_format(source: str | Path, target: str | Path,
                              pandoc_executable: str | None = None) -> Path:
-    """kordoc Markdown 파싱 후 Pandoc으로 DOCX/EPUB를 생성한다."""
+    """Convert supported sources to DOCX, EPUB, or standalone HTML with Pandoc."""
     from docfit_core.kordoc_bridge import parse_document
 
     source, target = Path(source), Path(target)
     if source.is_symlink() or not source.is_file() or source.suffix.lower() not in CONVERSION_INPUTS:
         raise ValueError("지원하는 문서 파일만 변환할 수 있습니다.")
-    if target.suffix.lower() not in {".docx", ".epub"} or target.exists():
+    if target.suffix.lower() not in {".docx", ".epub", ".html", ".htm", ".md", ".txt"} or target.exists():
         raise ValueError("결과 경로가 잘못되었거나 이미 존재합니다.")
-    pandoc = pandoc_executable or shutil.which("pandoc.exe") or shutil.which("pandoc")
-    if not pandoc:
-        raise RuntimeError("DOCX·EPUB 변환에는 Pandoc이 필요합니다. pandoc.org의 Windows 설치판을 설치해 주세요.")
+    pandoc = _pandoc_executable(pandoc_executable)
 
     target.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="docfit_pandoc_convert_") as folder:
         temp_dir = Path(folder)
         markdown = temp_dir / "document.md"
-        if source.suffix.lower() in IMAGE_INPUT_EXTENSIONS | TEXT_INPUTS:
+        source_suffix = source.suffix.lower()
+        if source_suffix in HTML_INPUTS | TEXT_INPUTS and source.stat().st_size > 16 * 1024 * 1024:
+            raise ValueError("HTML·TXT·MD 파일은 16MB 이하만 변환할 수 있습니다.")
+        output_format = {".epub": "epub3", ".html": "html5", ".htm": "html5",
+                         ".docx": "docx", ".md": "markdown", ".txt": "plain"}[target.suffix.lower()]
+        if source_suffix in HTML_INPUTS | TEXT_INPUTS:
+            input_format = "html" if source_suffix in HTML_INPUTS else "markdown"
+            source_arg = str(source.resolve(strict=True))
+            resource_path = str(temp_dir)
+            markdown = None
+        elif source_suffix in IMAGE_INPUT_EXTENSIONS:
             intermediate = temp_dir / "source.hwpx"
             convert_input_to_hwpx(source, intermediate)
             parse_document(intermediate, markdown, output_format="markdown")
+            input_format, source_arg, resource_path = "markdown", str(markdown), str(temp_dir)
         else:
-            parse_document(source, markdown, output_format="markdown", ocr=source.suffix.lower() == ".pdf")
-        if not markdown.is_file():
+            parse_document(source, markdown, output_format="markdown", ocr=source_suffix == ".pdf")
+            input_format, source_arg, resource_path = "markdown", str(markdown), str(temp_dir)
+        if markdown is not None and not markdown.is_file():
             raise RuntimeError("문서를 읽은 결과가 만들어지지 않았습니다.")
         with tempfile.NamedTemporaryFile(prefix=".docfit_", suffix=target.suffix.lower(), dir=target.parent, delete=False) as stream:
             temp_output = Path(stream.name)
         temp_output.unlink()
-        output_format = "epub3" if target.suffix.lower() == ".epub" else "docx"
         try:
             completed = subprocess.run(
-                [pandoc, str(markdown), "--from=markdown", f"--to={output_format}",
-                 f"--resource-path={temp_dir}", "--output", str(temp_output)],
+                [pandoc, source_arg, f"--from={input_format}", f"--to={output_format}",
+                 *( ["--standalone", "--embed-resources"] if target.suffix.lower() in {".html", ".htm"} else [] ),
+                 f"--resource-path={resource_path}", "--output", str(temp_output)],
                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
                 shell=False,
             )
@@ -260,8 +281,9 @@ def convert_hwp_to_hwpx(app, source: str | Path, target: str | Path) -> Path:
 
 
 TEXT_INPUTS = frozenset({".txt", ".md"})
-CONVERSION_INPUTS = SUPPORTED_INPUT_EXTENSIONS | TEXT_INPUTS | IMAGE_INPUT_EXTENSIONS
-CONVERSION_OUTPUTS = frozenset({"hwpx", "pdf", "docx", "epub", "jpg", "png", "txt", "md"})
+HTML_INPUTS = frozenset({".html", ".htm"})
+CONVERSION_INPUTS = SUPPORTED_INPUT_EXTENSIONS | TEXT_INPUTS | IMAGE_INPUT_EXTENSIONS | HTML_INPUTS
+CONVERSION_OUTPUTS = frozenset({"hwpx", "pdf", "docx", "epub", "html", "jpg", "png", "txt", "md"})
 
 
 def convert_input_to_hwpx(source: str | Path, target: str | Path) -> Path:
@@ -272,6 +294,18 @@ def convert_input_to_hwpx(source: str | Path, target: str | Path) -> Path:
     source, target = Path(source), Path(target)
     if source.suffix.lower() in IMAGE_INPUT_EXTENSIONS:
         return convert_image_to_hwpx(source, target)
+    if source.suffix.lower() in HTML_INPUTS:
+        if source.is_symlink() or not source.is_file() or source.stat().st_size > 16 * 1024 * 1024:
+            raise ValueError("HTML 파일은 16MB 이하의 일반 파일이어야 합니다.")
+        pandoc = _pandoc_executable()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="docfit_html_") as folder:
+            markdown = Path(folder) / "source.md"
+            subprocess.run([pandoc, str(source.resolve(strict=True)), "--from=html", "--to=markdown",
+                            f"--resource-path={folder}", "--output", str(markdown)],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           timeout=600, check=True, shell=False)
+            return convert_input_to_hwpx(markdown, target)
     if source.suffix.lower() not in TEXT_INPUTS:
         return convert_to_hwpx(source, target)
     if source.is_symlink() or not source.is_file() or source.stat().st_size > 16 * 1024 * 1024:

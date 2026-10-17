@@ -66,6 +66,24 @@ class OfflineRuntimeTests(unittest.TestCase):
         self.assertEqual(kb._kordoc_command(), [node, cli])
         self.assertFalse(kb.ocr_available())
 
+    def test_pandoc_bundle_is_detected_and_installed_offline(self):
+        old_pack = make_pack(self.root / "old-runtime.zip")
+        kr.install_pack(old_pack, VERSION)
+        self.assertIsNone(kr.pandoc_in(kr.installed_root() / VERSION))
+        pack = self.app / kr.RUNTIME_PACK_NAME
+        with zipfile.ZipFile(pack, "w") as archive:
+            archive.writestr("runtime.json", json.dumps({
+                "kordoc": VERSION, "node": "22.23.3", "bundle_revision": "ocr-pandoc-1",
+                "pandoc": "3.12.1",
+            }))
+            archive.writestr("node/node.exe", b"MZ fake node")
+            archive.writestr("app/node_modules/kordoc/dist/cli.js", "console.log('4.21.30')")
+            archive.writestr("pandoc/pandoc.exe", b"MZ fake pandoc")
+        self.assertTrue(kr.pandoc_available())
+        executable = kr.ensure_pandoc()
+        self.assertEqual(Path(executable).name, "pandoc.exe")
+        self.assertTrue(Path(executable).is_file())
+
     def test_runtime_folder_next_to_app_is_used_without_installing(self):
         folder = self.app / kr.RUNTIME_FOLDER_NAME
         with zipfile.ZipFile(make_pack(self.root / "p.zip")) as archive:

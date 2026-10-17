@@ -20,6 +20,7 @@ Map<String, dynamic> initialState() => <String, dynamic>{
     {'format': 'pdf', 'label': 'PDF', 'enabled': true, 'reason': '한/글 COM 필요'},
     {'format': 'docx', 'label': 'DOCX', 'enabled': true, 'reason': 'Pandoc 사용'},
     {'format': 'epub', 'label': 'EPUB', 'enabled': true, 'reason': 'Pandoc 사용'},
+    {'format': 'html', 'label': 'HTML', 'enabled': true, 'reason': 'Pandoc 사용'},
   ],
   'running': false,
   'range': {'enabled': false, 'start': '1', 'end': '1'},

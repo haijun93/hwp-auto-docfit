@@ -275,6 +275,23 @@ class BrowserApiTests(unittest.TestCase):
         bridge.start("file_format")
         self.assertEqual(called, ["pdf"])
 
+    def test_html_can_be_selected_as_input_and_output_format(self):
+        gui = _FakeGui()
+        gui.files = [str(Path("report.html"))]
+        bridge = _bridge(gui)
+        bridge._conversion_prerequisites = lambda: {
+            "kordoc": {"available": True, "reason": "kordoc ready"},
+            "pandoc": True,
+            "hwp_com": True,
+            "ocr": True,
+        }
+        bridge.set_mode("file_format")
+        targets = {item["format"]: item for item in bridge.get_state()["conversion_targets"]}
+        self.assertTrue(targets["html"]["enabled"])
+        self.assertTrue(targets["docx"]["enabled"])
+        self.assertTrue(targets["epub"]["enabled"])
+        self.assertTrue(bridge.set_conversion_target("html")["can_start"])
+
     def test_file_format_rejects_unsupported_target_and_normal_mode_input(self):
         gui = _FakeGui()
         bridge = _bridge(gui)
