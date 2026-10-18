@@ -423,6 +423,36 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             저장결과 = hwp.SaveAs(Path=저장파일, Format="HWPX", arg="")
             if 저장결과 is False:
                 raise RuntimeError(f"문서 저장에 실패했습니다: {저장파일}")
+            # XML 표준 일괄서식의 문단 여백은 이후 자간·쪽맞춤·COM 재확인에서
+            # 다시 덮일 수 있다. 저장된 산출물에서 기준 HWPX의 left/intent를
+            # 마지막으로 복원해 실제 결과 파일의 내어쓰기 값을 보증한다.
+            if (작업_모드 in ('format', 'all') and 표준서식_사용 and 표준서식_내어쓰기_사용
+                    and 알파_일괄서식_가능()):
+                임시결과 = None
+                try:
+                    기준서식 = Path(서식예시_폴더()) / "기본 서식.hwpx"
+                    if 기준서식.is_file():
+                        from uuid import uuid4
+                        from docfit_core.xml_hanging_indent import restore_reference_indent_geometry
+                        임시결과 = Path(저장파일).with_name(
+                            f".{Path(저장파일).stem}.reference-indent-{uuid4().hex}.hwpx")
+                        복원결과 = restore_reference_indent_geometry(저장파일, 기준서식, 임시결과)
+                        if 복원결과['repaired']:
+                            # 한/글 COM이 SaveAs 결과를 열어 파일 잠금을 유지하므로,
+                            # 임시 산출물을 완성한 뒤 문서를 닫고 원자적으로 교체·재개방한다.
+                            hwp_run('FileClose')
+                            임시결과.replace(저장파일)
+                            if 한글_문서_열기(hwp, 저장파일, 'HWPX', 'forceopen:true') is False:
+                                raise RuntimeError("복원된 저장 결과를 한/글에서 다시 열지 못했습니다.")
+                        elif 임시결과.exists():
+                            임시결과.unlink()
+                        로그(f"[저장 결과 내어쓰기 기준 복원] 기준 문단 {복원결과['checked']}개 / "
+                             f"실제 복원 {복원결과['repaired']}개")
+                except Exception as error:
+                    if 임시결과 is not None and 임시결과.exists():
+                        임시결과.unlink()
+                    로그(f"[저장 결과 내어쓰기 기준 복원 실패] {error}")
+                    raise RuntimeError("저장 결과의 기준 내어쓰기 복원에 실패하여 결과 검수를 중단합니다.") from error
             로그(f"전체 처리 {총회차}회 완료")
             로그(f"저장 완료: {저장파일}")
             단계시간_구간('저장 후 규칙 검수')

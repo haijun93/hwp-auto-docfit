@@ -78,9 +78,13 @@ def _paragraph_margins(para_pr: ET.Element) -> tuple[int | None, int | None]:
     return None, None
 
 
-def inspect_hanging_indent(path: str | Path) -> dict:
-    """Inspect marker paragraph geometry; flag negative-first-line-only shapes."""
+def inspect_hanging_indent(path: str | Path, reference_path: str | Path | None = None) -> dict:
+    """Inspect marker geometry, optionally comparing exact pairs with a reference HWPX."""
     source = Path(path)
+    reference_pairs = {}
+    if reference_path is not None:
+        from .xml_hanging_indent import reference_marker_indent_pairs
+        reference_pairs = reference_marker_indent_pairs(reference_path)
     with ZipFile(source) as archive:
         header = ET.fromstring(archive.read("Contents/header.xml"))
         para_styles = {
@@ -109,6 +113,24 @@ def inspect_hanging_indent(path: str | Path) -> dict:
                 left, indent = _paragraph_margins(para_pr)
                 if left is None or indent is None:
                     findings.append(ParagraphFinding(text, para_id, left, indent, "fail", "left/indent values unavailable"))
+                elif reference_pairs:
+                    from .xml_hanging_indent import reference_hanging_indent_pair
+                    expected = reference_hanging_indent_pair(text, reference_pairs)
+                    if expected is not None and (left, indent) == expected:
+                        findings.append(ParagraphFinding(text, para_id, left, indent, "pass", "matches reference HWPX"))
+                    elif expected is not None:
+                        findings.append(ParagraphFinding(
+                            text, para_id, left, indent, "fail",
+                            f"reference mismatch: expected left={expected[0]}, intent={expected[1]}"))
+                    elif TOP_LEVEL_MARKER.match(text):
+                        if left == 0 and indent == 0:
+                            findings.append(ParagraphFinding(text, para_id, left, indent, "pass"))
+                        else:
+                            findings.append(ParagraphFinding(text, para_id, left, indent, "fail", "top-level ㅁ/□ heading must have no paragraph indent"))
+                    elif indent < 0 and left > 0 and left + indent >= 0:
+                        findings.append(ParagraphFinding(text, para_id, left, indent, "pass"))
+                    else:
+                        findings.append(ParagraphFinding(text, para_id, left, indent, "fail", "reference style unavailable and safe hanging geometry missing"))
                 elif TOP_LEVEL_MARKER.match(text):
                     if left == 0 and indent == 0:
                         findings.append(ParagraphFinding(text, para_id, left, indent, "pass"))
@@ -128,5 +150,7 @@ def inspect_hanging_indent(path: str | Path) -> dict:
         "checked_count": len(findings),
         "failed_count": len(failures),
         "findings": [asdict(finding) for finding in findings],
-        "scope": "HWPX marker paragraph left-margin/first-line-indent geometry; visual rendering not assessed",
+        "scope": ("HWPX marker paragraph left-margin/first-line-indent geometry; exact reference values compared"
+                  if reference_pairs else
+                  "HWPX marker paragraph left-margin/first-line-indent geometry; visual rendering not assessed"),
     }

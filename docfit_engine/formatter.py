@@ -5051,6 +5051,11 @@ def _install(*, _docfit_namespace, _docfit_symbol):
     if _docfit_symbol == '_내어쓰기_한문단':
         def _내어쓰기_한문단(text, 붙임번호_대상, 붙임번호_기준점들):
             """커서가 있는 문단(문단 시작)의 내어쓰기를 계산해 적용한다(문단_내어쓰기_전체_갱신·문단 세트 공용)."""
+            정규키 = (text or '').lstrip(' \t\u00a0\u3000').rstrip('\r\n')
+            if (_알파_일괄서식_문서 and any(
+                    item.lstrip(' \t\u00a0\u3000').rstrip('\r\n') == 정규키
+                    for item in _표준서식_XML텍스트)):
+                return  # XML 기준 HWPX의 문단 여백을 COM 재계산으로 덮지 않는다.
             현재키 = tuple(hwp.GetPos()[:2])
             if re.match(r'^\s*(?:ㅁ|□)\s+\S', text or ''):
                 # 최상위 항목 제목(ㅁ/□)은 하위 설명 문장처럼 매달지 않는다.
@@ -5434,10 +5439,15 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             """부연설명 들여쓰기의 문단 하나 처리(상태['부모']에 위 제목/본문 문단을 이어 받는다). 적용했으면 True."""
             결과 = False
             if text and text.strip():
+                정규키 = text.lstrip(' \t\u00a0\u3000').rstrip('\r\n')
                 유형 = _부모문단_유형(text)
                 부모 = 상태.get('부모')
                 if 유형 is not None:
                     상태['부모'] = (문단_시작, 유형)
+                elif (_알파_일괄서식_문서 and any(
+                        item.lstrip(' \t\u00a0\u3000').rstrip('\r\n') == 정규키
+                        for item in _표준서식_XML텍스트)):
+                    return False  # XML 단계에서 이미 항목별 공백·여백을 확정했다.
                 elif _부연설명_문단인가(text):
                     marker, _ = leading_marker(text)
                     들여쓰기_선택 = 표준서식_설정.get("스타일_속성선택", {}).get(marker, {}).get("indent", True)
@@ -5585,6 +5595,12 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             """별표(**) 정렬의 문단 하나 처리(상태['별표']에 바로 앞 * 문단의 별표 위치를 이어 받는다). 적용했으면 True."""
             결과 = False
             if text and text.strip():
+                정규키 = text.lstrip(' \t\u00a0\u3000').rstrip('\r\n')
+                if (_알파_일괄서식_문서 and any(
+                        item.lstrip(' \t\u00a0\u3000').rstrip('\r\n') == 정규키
+                        for item in _표준서식_XML텍스트)):
+                    상태['별표'] = None
+                    return False  # XML 기준 이후 COM 별표 정렬이 문단 여백을 덮지 않게 한다.
                 marker, _ = leading_marker(text)
                 if marker == "*":
                     상태['별표'] = _별표_위치_실측(문단_시작, text)
@@ -5898,8 +5914,14 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             if not 알파_일괄서식_가능():
                 return {} if target is None else 0
             tracker = ParagraphSpacingTracker()
+            def _xml_문단_키(value):
+                return (value or '').lstrip(' \t\u00a0\u3000').rstrip('\r\n')
+
+            _xml_내어쓰기_기준쌍 = None
+            _xml_내어쓰기_기준확인 = False
 
             def plan(text, paragraph):
+                nonlocal _xml_내어쓰기_기준쌍, _xml_내어쓰기_기준확인
                 # 컨트롤 문단도 위계 상태에는 포함한다. 그 문단의 실제 서식은 COM에 맡긴다.
                 readable = _문단_본문글(paragraph) if text is None else text
                 readable = normalize_leading_dot(readable)
@@ -5945,6 +5967,67 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     끝 = 기호위치 + len(symbol)
                     끝 += len(formatted[끝:]) - len(formatted[끝:].lstrip(' \t'))   # 기호 뒤 빈칸도 보통('□ ')
                     보통 = ((기호위치, 끝),)
+                문단추가 = dict(추가[1])
+                if (globals().get('표준서식_내어쓰기_사용', False)
+                        and selected.get('indent', True)
+                        and not (사용자서식 and ('left' in 문단추가 or 'intent' in 문단추가))):
+                    from docfit_core.xml_hanging_indent import (
+                        hanging_indent_pair, reference_hanging_indent_pair,
+                        reference_marker_indent_pairs,
+                    )
+                    from pathlib import Path
+                    if not _xml_내어쓰기_기준확인:
+                        _xml_내어쓰기_기준확인 = True
+                        candidates = []
+                        sample_folder = globals().get('서식예시_폴더')
+                        if callable(sample_folder):
+                            try:
+                                candidates.append(Path(sample_folder()) / '기본 서식.hwpx')
+                            except Exception:
+                                pass
+                        app_home = globals().get('HWP_AUTOMATION_DIR')
+                        if app_home:
+                            candidates.append(Path(app_home) / '서식예시' / '기본 서식.hwpx')
+                        program_folder = globals().get('프로그램_폴더')
+                        if callable(program_folder):
+                            try:
+                                candidates.append(Path(program_folder()) / 'resources' / '서식예시' / '기본 서식.hwpx')
+                            except Exception:
+                                pass
+                        bundle_folder = globals().get('번들_리소스_폴더')
+                        if callable(bundle_folder):
+                            try:
+                                bundle = bundle_folder()
+                                if bundle:
+                                    candidates.append(Path(bundle) / 'resources' / '서식예시' / '기본 서식.hwpx')
+                            except Exception:
+                                pass
+                        try:
+                            candidates.append(Path(__file__).resolve().parent / 'resources' / '서식예시' / '기본 서식.hwpx')
+                        except Exception:
+                            pass
+                        reference = next((item for item in candidates if item.is_file()), None)
+                        if reference is not None:
+                            try:
+                                _xml_내어쓰기_기준쌍 = reference_marker_indent_pairs(reference)
+                                로그(f'[알파 XML 내어쓰기] 기준 서식 {reference} / '
+                                     f'기호·라벨 대표값 {len(_xml_내어쓰기_기준쌍)}개')
+                            except Exception as error:
+                                로그(f'[알파 XML 내어쓰기] 기준 서식 분석 실패, 폭 계산 폴백: {error}')
+                    내어쓰기쌍 = (
+                        reference_hanging_indent_pair(formatted, _xml_내어쓰기_기준쌍)
+                        if _xml_내어쓰기_기준쌍
+                        else None
+                    )
+                    if 내어쓰기쌍 is None:
+                        내어쓰기쌍 = hanging_indent_pair(
+                            formatted,
+                            size_pt=(size if selected.get('size', True) and size else 15.0),
+                            ratio=(표준서식_설정['기본_장평'] if 표준서식_장평_사용 else 100),
+                            spacing=(표준서식_설정.get('기본_자간', 0) or 0),
+                        )
+                    if 내어쓰기쌍 is not None:
+                        문단추가['left'], 문단추가['intent'] = 내어쓰기쌍
                 return ParagraphStyle(
                     plain_spans=보통,
                     text=formatted, font=font if selected.get('font', True) else None,
@@ -5953,7 +6036,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     bold=bold if '복사_문단모양' in 표준서식_설정 else (True if bold else None),
                     ratio=표준서식_설정['기본_장평'] if 표준서식_장평_사용 else None,
                     line_percent=표준서식_설정['기본_줄간격_퍼센트'] if 표준서식_줄간격_사용 else None,
-                    prev_pt=prev, bold_spans=tuple(spans), char_extra=추가[0], para_extra=추가[1])
+                    prev_pt=prev, bold_spans=tuple(spans), char_extra=추가[0],
+                    para_extra=tuple(sorted(문단추가.items())))
 
             try:
                 result = apply_batch(source, target, plan)
@@ -6044,19 +6128,20 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             if 표준서식_문단위간격_사용 and not 표준서식_설정.get("복제_들여쓰기_유지"):
                 간격_pt = 표준서식_문단위간격_찾기(text)
                 if 간격_pt is not None and not (
-                        text.rstrip('\r\n') in _표준서식_XML텍스트
-                        and _표준서식_XML간격.get(text.rstrip('\r\n')) == 간격_pt and hwp.GetPos()[0] == 0):
+                        any(item.lstrip(' \t\u00a0\u3000').rstrip('\r\n') == text.lstrip(' \t\u00a0\u3000').rstrip('\r\n')
+                            for item in _표준서식_XML텍스트)
+                        and next((value for item, value in _표준서식_XML간격.items()
+                                  if item.lstrip(' \t\u00a0\u3000').rstrip('\r\n') == text.lstrip(' \t\u00a0\u3000').rstrip('\r\n')),
+                                 None) == 간격_pt and hwp.GetPos()[0] == 0):
                     hwp_run("MoveParaBegin")
                     hwp_run("MoveSelParaEnd")
                     문단_위간격_적용_현재선택(간격_pt)
                     hwp_run("Cancel")
-            if (text.rstrip('\r\n') in _표준서식_XML텍스트 and hwp.GetPos()[0] == 0):
-                # 한/글 실측이 필요한 내어쓰기만 수행한다. 글자/문단 서식은 이미 확정했다.
-                if (표준서식_내어쓰기_사용 and not 최종_내어쓰기_예정
-                        and 내어쓰기_기호선택_허용(text)
-                        and 문단_내어쓰기_기준_오프셋(text) is not None):
-                    hwp_run('MoveParaBegin')
-                    문단_내어쓰기_적용(hwp.GetPos(), text)
+            if (any(item.lstrip(' \t\u00a0\u3000').rstrip('\r\n') == text.lstrip(' \t\u00a0\u3000').rstrip('\r\n')
+                    for item in _표준서식_XML텍스트) and hwp.GetPos()[0] == 0):
+                # XML 배치 경로는 기준 HWPX의 기호별 left/intent까지 이미 확정했다.
+                # 다시 COM Shift+Tab을 적용하면 글자폭 추정 산식이 기준값을 덮어써서
+                # 기호별 위치가 달라진다(2026-10-19 회귀 원인 수정).
                 if 자체_기호_매칭 and _사용자서식인가():
                     # 알파 1-d: 서식 복사 간격 규칙(제목 뒤 첫 문장·계층 복귀)은 문단 순서 상태가 있어 한/글 경로에서 이어 간다.
                     hwp_run('MoveParaBegin')
@@ -6203,6 +6288,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 최종_문단_기준위치 = hwp.GetPos()
                 최종_문단_text = 현재문단_텍스트()
                 if (표준서식_내어쓰기_사용 and 선택.get("indent", True) and not 최종_내어쓰기_예정
+                        and not any(item.lstrip(' \t\u00a0\u3000').rstrip('\r\n')
+                                    == 최종_문단_text.lstrip(' \t\u00a0\u3000').rstrip('\r\n')
+                                    for item in _표준서식_XML텍스트)
                         and 문단_내어쓰기_기준_오프셋(최종_문단_text) is not None):
                     문단_내어쓰기_적용(
                         최종_문단_기준위치, 최종_문단_text,

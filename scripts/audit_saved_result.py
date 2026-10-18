@@ -22,7 +22,20 @@ def main():
     if args.output.resolve() in {document, args.source.resolve() if args.source else document}:
         raise ValueError('Audit output must be separate from the input documents')
     digest = hashlib.sha256(document.read_bytes()).hexdigest()
-    checks = {'hanging_indent_geometry': inspect_hanging_indent(document)}
+    reference = None
+    try:
+        sample_folder = ns.get('서식예시_폴더')
+        if callable(sample_folder):
+            candidate = Path(sample_folder()) / '기본 서식.hwpx'
+            if candidate.is_file():
+                reference = candidate
+    except Exception:
+        reference = None
+    if reference is None:
+        candidate = root / 'resources' / '서식예시' / '기본 서식.hwpx'
+        if candidate.is_file():
+            reference = candidate
+    checks = {'hanging_indent_geometry': inspect_hanging_indent(document, reference)}
     app = ns['win32'].DispatchEx('HwpFrame.HwpObject')
     try:
         if not app.RegisterModule(ns['REGISTER_MODULE_NAME'], ns['REGISTER_MODULE_VALUE']):
