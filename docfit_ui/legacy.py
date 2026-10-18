@@ -556,6 +556,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 choose.grid(row=1, column=0, sticky="ew", pady=6)
                 self.choose_frame = choose
                 self.mode_buttons = []
+                # 설정 화면은 지연 생성되므로, 화면 생성 전 상태 갱신에서도
+                # 버튼 목록을 안전하게 순회할 수 있도록 빈 목록으로 시작한다.
+                self.preset_buttons = []
                 self.mode_cards = {}
                 self.card_option_checks = {}   # 카드별 옵션 체크(선택한 카드 배경색을 같이 바꾼다)
                 for i, (title, mode, desc) in enumerate((
@@ -5782,9 +5785,22 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 self._결과_초기화()
                 self._안내_설정(1)
 
+            def _작업방식_버튼상태(self, state):
+                widgets = list(getattr(self, "mode_buttons", ()))
+                widgets.extend(getattr(self, "file_buttons", ()))
+                widgets.extend(getattr(self, "preset_buttons", ()))
+                for name in ("tools_button", "proofread_button", "stage_details_button", "reset_button", "update_button"):
+                    widget = getattr(self, name, None)
+                    if widget is not None:
+                        widgets.append(widget)
+                for widget in widgets:
+                    try:
+                        widget.configure(state=state)
+                    except tk.TclError:
+                        pass
+
             def 버튼_작업중(self):
-                for widget in self.mode_buttons + self.file_buttons + self.preset_buttons + [self.tools_button, self.proofread_button, self.stage_details_button, self.reset_button, self.update_button]:
-                    widget.configure(state="disabled")
+                self._작업방식_버튼상태("disabled")
                 self.profile_combo.config(state="disabled")
                 self.main_profile_combo.config(state="disabled")
                 self.copy_format_button.config(state="disabled")
@@ -5823,8 +5839,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 self.final_review_file_check.config(state="disabled")
 
             def 버튼_대기중(self):
-                for widget in self.mode_buttons + self.file_buttons + self.preset_buttons + [self.tools_button, self.proofread_button, self.stage_details_button, self.reset_button, self.update_button]:
-                    widget.configure(state="normal")
+                self._작업방식_버튼상태("normal")
                 self._요약갱신()
                 self.profile_combo.config(state="readonly")
                 self.main_profile_combo.config(state="readonly")
@@ -6040,6 +6055,12 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 if not self.files:
                     self._알림(messagebox.showwarning, APP_NAME, "먼저 문서(HWP/HWPX/TXT/MD/DOC(X)/PDF)를 선택하거나 끌어다 놓으세요.", parent=self.root)
                     return
+
+                # 첫 화면은 설정 UI 생성을 미뤄 빠르게 띄우되, 실제 작업 직전에는
+                # 작업 중 상태 제어에서 참조하는 설정 위젯을 한 번 생성해 둔다.
+                if self.settings_toplevel is None or not self.settings_toplevel.winfo_exists():
+                    self._설정창_생성()
+                    self.settings_toplevel.withdraw()
 
                 범위_확인, 작업범위 = self._작업범위_읽기()
                 if not 범위_확인:
