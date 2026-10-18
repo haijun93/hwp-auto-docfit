@@ -17,7 +17,11 @@ from defusedxml import ElementTree as ET
 HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 HH = "http://www.hancom.co.kr/hwpml/2011/head"
 NS = {"hp": HP, "hh": HH}
-MARKER = re.compile(r"^\s*(?:[□ㅁㅇ○●◦▪▫■◆◇※*-]+|\d+[.)])\s*\S")
+MARKER = re.compile(
+    r"^\s*(?:□|ㅁ|ㅇ|○|●|◦|▪|▫|■|◆|◇|※|\*\*?|-|\d+[.)])"
+    r"(?:\s+|(?=[(\[（]))\S"
+)
+TOP_LEVEL_MARKER = re.compile(r"^\s*(?:ㅁ|□)\s+\S")
 
 
 @dataclass
@@ -105,6 +109,12 @@ def inspect_hanging_indent(path: str | Path) -> dict:
                 left, indent = _paragraph_margins(para_pr)
                 if left is None or indent is None:
                     findings.append(ParagraphFinding(text, para_id, left, indent, "fail", "left/indent values unavailable"))
+                elif TOP_LEVEL_MARKER.match(text):
+                    if left == 0 and indent == 0:
+                        findings.append(ParagraphFinding(text, para_id, left, indent, "pass"))
+                    else:
+                        findings.append(ParagraphFinding(
+                            text, para_id, left, indent, "fail", "top-level ㅁ/□ heading must have no paragraph indent"))
                 elif indent >= 0:
                     findings.append(ParagraphFinding(text, para_id, left, indent, "fail", "required hanging indent is missing"))
                 elif left <= 0 or left + indent < 0:

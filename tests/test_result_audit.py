@@ -54,6 +54,9 @@ class ResultAuditTest(unittest.TestCase):
             'hwp': doc, 'hwp_run': doc.run, '순회_시작': lambda: doc.SetPos(0, 0, 0),
             '중단_요청됨': lambda: False, '쪽범위_끝지남': lambda p: False,
             '현재_페이지번호': lambda: 2, '현재_처리파일': 'sample.hwpx',
+            # This audit test covers word-split detection, not COM table enumeration.
+            # Keep the fake document's control list bounded like a real HWP document.
+            '한칸표_영역_목록': lambda: set(),
             # 줄 중간(1)에서 시작해 갈라진 단어 — 칸 폭보다 긴 단어가 아니다.
             '단어모드_분리정보': lambda p: (p, (0, 0, 2), (0, 0, 1), (0, 0, 4), 1, 2),
             '단어모드_범위선택': lambda *args: None,
@@ -88,6 +91,7 @@ class ResultAuditTest(unittest.TestCase):
             'hwp': doc, 'hwp_run': doc.run, '순회_시작': lambda: doc.SetPos(0, 0, 0),
             '중단_요청됨': lambda: False, '쪽범위_끝지남': lambda p: False,
             '현재_페이지번호': lambda: 1, '현재_처리파일': 'sample.hwpx',
+            '한칸표_영역_목록': lambda: set(),
             # 줄 첫머리(0)에서 시작한 8자 단어가 5자 줄을 넘침
             '단어모드_분리정보': lambda p: (p, (0, 0, 5), p, (0, 0, 8), 5, 3),
             '단어모드_범위선택': lambda *args: None,
@@ -129,6 +133,7 @@ class ResultAuditTest(unittest.TestCase):
             'hwp': doc, 'hwp_run': doc.run, '순회_시작': lambda: doc.SetPos(0, 0, 9),
             '중단_요청됨': lambda: False, '쪽범위_끝지남': lambda p: False,
             '현재_페이지번호': lambda: 1, '현재_처리파일': 'sample.hwpx',
+            '한칸표_영역_목록': lambda: set(),
             '단어모드_분리정보': lambda p: None, '진단로그': Mock(),
         }):
             result = fn()

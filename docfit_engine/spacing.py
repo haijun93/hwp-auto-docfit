@@ -1926,7 +1926,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     continue
                 if not 재검사_영역인가(area):
                     continue
-                if 표셀_자간_제외인가():
+                현재영역_한칸표 = area in 한칸표영역
+                if (표셀_자간_제외인가()
+                        and not (현재영역_한칸표 and area not in (디자인표_보호영역 or set()))):
                     진단로그(f"[표 안 문장 제외] 영역 {area}: 자간 조정 안 함")
                     continue
                 if 숫자_표칸인가():
@@ -1978,7 +1980,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         continue
                     if 쪽범위_사용중() and area not in 쪽범위_컨트롤영역:
                         continue
-                    if 표셀_자간_제외인가():
+                    if area in (디자인표_보호영역 or set()):
                         진단로그(f"[표 안 문장 제외] 영역 {area}: 자간 조정 안 함")
                         continue
                     while True:

@@ -4322,7 +4322,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
         def 단계시간_시작():
             global _단계시간표
             지금 = time.perf_counter()
-            _단계시간표 = {'시작': 지금, '현재': '준비', '현재시작': 지금, '합': {}, '순서': []}
+            _단계시간표 = {'시작': 지금, '현재': '준비', '현재시작': 지금, '합': {}, '순서': [], '기록': []}
         return bind_function(단계시간_시작, _docfit_namespace)
     if _docfit_symbol == '_단계시간_닫기':
         def _단계시간_닫기(표, 지금):
@@ -4333,8 +4333,10 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             if 누적 is None:
                 누적 = 표['합'][이름] = [0.0, 0]
                 표['순서'].append(이름)
-            누적[0] += 지금 - 표['현재시작']
+            소요 = 지금 - 표['현재시작']
+            누적[0] += 소요
             누적[1] += 1
+            표.setdefault('기록', []).append((이름, 소요))
             표['현재'] = None
         return bind_function(_단계시간_닫기, _docfit_namespace)
     if _docfit_symbol == '단계시간_구간':
@@ -4387,6 +4389,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             오래 = sorted(표['합'].items(), key=lambda x: -x[1][0])[:상위]
             줄.append("[처리 시간 계측] 오래 걸린 단계(상위 %d): " % len(오래) + " / ".join(
                 f"{이름} {초:.1f}초({초 / 전체:.0%}, {건}회)" for 이름, (초, 건) in 오래))
+            기록 = 표.get('기록') or [(이름, 표['합'][이름][0]) for 이름 in 표.get('순서', [])]
+            줄.append("[처리 시간 단계별] " + " -> ".join(
+                f"{번호:02d} {이름} {초:.2f}초" for 번호, (이름, 초) in enumerate(기록, 1)))
             return 줄
         return bind_function(단계시간_요약줄, _docfit_namespace)
     if _docfit_symbol == '단계초기화':
@@ -5047,6 +5052,11 @@ def _install(*, _docfit_namespace, _docfit_symbol):
         def _내어쓰기_한문단(text, 붙임번호_대상, 붙임번호_기준점들):
             """커서가 있는 문단(문단 시작)의 내어쓰기를 계산해 적용한다(문단_내어쓰기_전체_갱신·문단 세트 공용)."""
             현재키 = tuple(hwp.GetPos()[:2])
+            if re.match(r'^\s*(?:ㅁ|□)\s+\S', text or ''):
+                # 최상위 항목 제목(ㅁ/□)은 하위 설명 문장처럼 매달지 않는다.
+                # 기존 값도 초기화해 앞선 단계에서 적용된 들여쓰기가 남지 않게 한다.
+                _내어쓰기_여백쌍_설정(0, 0)
+                return
             if 현재키 in 붙임번호_대상:
                 기준문단, _ = 붙임번호_대상[현재키]
                 기준키 = 기준문단[0]
@@ -5173,8 +5183,15 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     raise RuntimeError("번호 마커 폭 실측 실패")
                 # 한/글 내어쓰기는 첫 줄을 왼쪽여백에 그대로 두고 둘째 줄부터 |값|만큼 더 민다.
                 # 첫 줄 번호가 기준 번호 위치에 오도록 왼쪽여백을 잡고, 꺾인 줄은 번호 뒤 내용에 맞춘다.
-                target_left = 기준위치 - prefix_width
+                # 첫 줄 시작은 LeftMargin+Indentation, 번호 글자는 그 뒤 offset만큼
+                # 진행한 위치다. 따라서 LeftMargin은 기준 번호 위치 + 번호 폭에서
+                # 번호 앞 공백/라벨 폭을 빼야 한다. 기준 위치에서 prefix만 빼면
+                # `2.`처럼 prefix가 마커 폭과 같은 문단에서 왼쪽 여백이 음수로
+                # 뒤집히고, 저장된 HWPX의 left+intent가 음수가 된다.
+                target_left = 기준위치 + marker_width - prefix_width
                 target_indent = -marker_width
+                if target_left <= 0 or target_left + target_indent < 0:
+                    raise RuntimeError("붙임 번호 첫 줄 위치가 본문 왼쪽 경계를 벗어남")
                 action = hwp.CreateAction("ParagraphShape")
                 params = action.CreateSet()
                 params.SetItem("LeftMargin", target_left)

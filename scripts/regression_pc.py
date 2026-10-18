@@ -130,7 +130,7 @@ def 작업_설정(s, 모드, 표제외_요청, 전체서식_요청=None):
     return 모드, 세부작업, 세부, 표제외
 
 
-def 처리(g, 원본, 작업폴더, 모드, 표제외_요청, 로그파일, 전체서식_요청=None, 검수_강제=None):
+def 처리(g, 원본, 작업폴더, 모드, 표제외_요청, 로그파일, 전체서식_요청=None, 검수_강제=None, live_log_path=None):
     """앱과 같은 설정으로 처리하고 (사본, 결과, 초, 점수, 설정 요약)을 돌려준다."""
     사본 = Path(작업폴더) / ('src' + Path(원본).suffix.lower())
     shutil.copyfile(원본, 사본)
@@ -139,6 +139,11 @@ def 처리(g, 원본, 작업폴더, 모드, 표제외_요청, 로그파일, 전�
     def 로그(*a):
         s = ' '.join(str(x) for x in a)
         로그파일.write(s + '\n')
+        로그파일.flush()
+        if live_log_path:
+            with open(live_log_path, 'a', encoding='utf-8') as live_log:
+                live_log.write(s + '\n')
+                live_log.flush()
         if '작업 수행 점수' in s:
             점수줄.append(s.strip())
 
@@ -249,11 +254,18 @@ def main():
     요구 = {'min_score': args.min_score, 'same_layout': args.require_same_layout}
     보고 = []
     for 문서 in args.documents:
+        print(f"[START] {Path(문서).name}", flush=True)
         with tempfile.TemporaryDirectory(prefix='docfit_regression_') as 폴더, \
                 open(Path(폴더) / 'log.txt', 'w', encoding='utf-8') as 로그파일:
+            live_log_path = None
+            if args.log_dir:
+                Path(args.log_dir).mkdir(parents=True, exist_ok=True)
+                live_log_path = Path(args.log_dir) / f"{Path(문서).stem}.log"
+                live_log_path.write_text('', encoding='utf-8')
             사본, 결과, 초, 점수, 설정 = 처리(g, 문서, 폴더, args.mode, args.exclude_tables, 로그파일,
                                         None if args.unify_full_format is None else args.unify_full_format == '1',
-                                        True if args.verify else None)
+                                        True if args.verify else None, live_log_path)
+            print(f"[PROCESS_DONE] {Path(문서).name} ({초}s; output={bool(결과)})", flush=True)
             항목 = {'document': Path(문서).name,
                   'document_sha256': hashlib.sha256(Path(문서).read_bytes()).hexdigest()[:16],
                   **공통, 'settings': 설정, 'seconds': 초, 'score': 점수, 'output_created': bool(결과)}
@@ -261,6 +273,11 @@ def main():
             if 원문제목:
                 항목.update({'title_check_required': True,
                              'title_content_preserved': 제목_결과검사(원문제목, 결과) if 결과 else False})
+            # Keep the generated artifact as soon as processing completes. Later COM page-layout
+            # inspection may be slow or time out, but must not erase the only output evidence.
+            if args.keep_dir and 결과:
+                Path(args.keep_dir).mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(결과, Path(args.keep_dir) / f"{Path(문서).stem}.hwpx")
             if 결과:
                 pythoncom.CoInitialize()
                 app = win32com.client.DispatchEx('HwpFrame.HwpObject')
@@ -269,10 +286,13 @@ def main():
                     g.update(로그=lambda *a: None, 진단로그=lambda *a: None)
                     # TXT·MD 등은 원본에 쪽 구성이 없어 결과만 잰다(쪽 구성 비교 없음).
                     if 사본.suffix in ('.hwp', '.hwpx'):
+                        print(f"[PAGE_AUDIT_START] original {Path(문서).name}", flush=True)
                         원, 원쪽, 원나눔 = 쪽구성(g, app, 사본)
                     else:
                         원, 원쪽, 원나눔 = [], None, None
+                    print(f"[PAGE_AUDIT_START] result {Path(문서).name}", flush=True)
                     결, 결쪽, 결나눔 = 쪽구성(g, app, 결과)
+                    print(f"[PAGE_AUDIT_DONE] {Path(문서).name}", flush=True)
                 finally:
                     app.Quit()
                     pythoncom.CoUninitialize()
@@ -283,14 +303,12 @@ def main():
                            'page_breaks': {'original': 원나눔, 'result': 결나눔},
                            'layout_same': None if 원쪽 is None else (not 다른 and 원쪽 == 결쪽)})
             항목['checks'], 항목['passed'] = 판정(항목, 요구)
-            if args.keep_dir and 결과:
-                Path(args.keep_dir).mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(결과, Path(args.keep_dir) / f"{Path(문서).stem}.hwpx")
             if args.log_dir:
                 로그파일.flush()
                 Path(args.log_dir).mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(Path(폴더) / 'log.txt', Path(args.log_dir) / f"{Path(문서).stem}.log")
             보고.append(항목)
+            print(f"[DONE] {Path(문서).name}: {'PASS' if 항목['passed'] else 'FAIL'}", flush=True)
     text = json.dumps(보고, ensure_ascii=False, indent=2)
     if args.out:
         Path(args.out).write_text(text, encoding='utf-8')

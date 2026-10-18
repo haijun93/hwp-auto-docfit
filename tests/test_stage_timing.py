@@ -71,14 +71,17 @@ class StageTimingTest(unittest.TestCase):
 
     def test_summary_lines_report_total_groups_and_top_stages(self):
         표 = {'전체': 100.0, '순서': ['서식통일', '개별 문단 페이지 배치', '저장'],
-              '합': {'서식통일': [40.0, 1], '개별 문단 페이지 배치': [50.0, 2], '저장': [10.0, 1]}}
+              '합': {'서식통일': [40.0, 1], '개별 문단 페이지 배치': [50.0, 2], '저장': [10.0, 1]},
+              '기록': [('서식통일', 40.0), ('개별 문단 페이지 배치', 25.0),
+                       ('개별 문단 페이지 배치', 25.0), ('저장', 10.0)]}
         줄 = self.ns['단계시간_요약줄'](표, '보고서.hwp')
-        self.assertEqual(len(줄), 3)
+        self.assertEqual(len(줄), 4)
         self.assertIn('보고서.hwp: 전체 100.0초 (단계 3종)', 줄[0])
         self.assertTrue(줄[1].startswith('[처리 시간 계측] 분류별: 쪽 맞춤·배치 50.0초(50%)'))
         self.assertIn('서식·기타 40.0초(40%)', 줄[1])
         self.assertIn('개별 문단 페이지 배치 50.0초(50%, 2회)', 줄[2])
         self.assertLess(줄[2].index('개별 문단 페이지 배치'), 줄[2].index('서식통일'))   # 오래 걸린 순
+        self.assertTrue(줄[3].startswith('[처리 시간 단계별] 01 서식통일 40.00초 -> 02 개별 문단 페이지 배치 25.00초'))
 
     def test_wrapper_logs_the_summary_and_turns_measuring_off(self):
         g = self.g
@@ -93,7 +96,7 @@ class StageTimingTest(unittest.TestCase):
 
         with patch.dict(g, {'_문서_처리_본체': body, '로그': logs.append}):
             self.assertTrue(g['문서_처리']('C:/문서/보고서.hwp', 1, 1))
-        self.assertEqual(len(logs), 3)
+        self.assertEqual(len(logs), 4)
         self.assertIn('보고서.hwp: 전체 10.0초', logs[0])
         self.assertIsNone(g['_단계시간표'])
 
@@ -109,7 +112,7 @@ class StageTimingTest(unittest.TestCase):
         with patch.dict(g, {'_문서_처리_본체': body, '로그': logs.append}):
             with self.assertRaises(RuntimeError):
                 g['문서_처리']('보고서.hwp', 1, 1)
-        self.assertEqual(len(logs), 3)
+        self.assertEqual(len(logs), 4)
         self.assertIsNone(g['_단계시간표'])
 
 

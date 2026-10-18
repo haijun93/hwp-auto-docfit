@@ -175,6 +175,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             # 줄 첫머리부터 넘치는 칸 폭보다 긴 단어는 문제 대신 적용 제외로 적는다.
             exempt = []
             areas = []
+            one_cell_areas = set(한칸표_영역_목록())
             try:
                 if 컨트롤:
                     area = 2
@@ -184,8 +185,11 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         hwp.SetPos(area, 0, 0)
                         if hwp.GetPos()[0] != area:
                             break
+                        table_excluded = 표셀_자간_제외인가()
+                        one_cell_body = (area in one_cell_areas
+                                         and area not in (디자인표_보호영역 or set()))
                         if ((not 쪽범위_사용중() or area in 쪽범위_컨트롤영역)
-                                and not 표셀_자간_제외인가() and not 숫자_표칸인가()):
+                                and (not table_excluded or one_cell_body) and not 숫자_표칸인가()):
                             areas.append(area)
                         area += 1
                 else:
@@ -234,7 +238,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                                 word = 현재선택영역_텍스트()
                                 hwp_run('Cancel')
                                 message = f'[저장 결과 단어 분리] {word!r}'
-                                issues.append({'text': message, 'page': page, 'position': pos})
+                                issues.append({'text': message, 'page': page, 'position': pos,
+                                               'area': area, 'line_boundary': boundary,
+                                               'word_start': info[2], 'word_end': info[3]})
                                 hwp.SetPos(*pos)
                                 검수_문제_기록(현재_처리파일, message)
                         hwp.SetPos(*boundary)

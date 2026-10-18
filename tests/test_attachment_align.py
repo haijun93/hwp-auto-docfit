@@ -2,10 +2,21 @@
 from pathlib import Path
 import runpy
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 
 class AttachmentAlignTest(unittest.TestCase):
+    def test_top_level_ㅁ_and_square_headings_clear_hanging_indent(self):
+        ns = runpy.run_path(str(Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"))
+        fn = ns["_내어쓰기_한문단"]
+        hwp = Mock()
+        hwp.GetPos.return_value = (0, 7, 0)
+        reset = Mock()
+        with patch.dict(fn.__globals__, {"hwp": hwp, "_내어쓰기_여백쌍_설정": reset}):
+            for marker in ("ㅁ", "□"):
+                fn(f"{marker} 추진 배경", {}, {})
+        self.assertEqual(reset.call_args_list, [call(0, 0), call(0, 0)])
+
     def test_baseline_measure_sets_pos_with_three_values(self):
         ns = runpy.run_path(str(Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"))
         fn = ns["_붙임번호_기준위치_실측"]
@@ -43,6 +54,40 @@ class AttachmentAlignTest(unittest.TestCase):
         with patch.dict(fn.__globals__, patches):
             self.assertTrue(fn())
         self.assertEqual(applied, [5000, 5000, 5000])
+
+    def test_numbered_attachment_uses_compensated_left_margin(self):
+        ns = runpy.run_path(str(Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"))
+        fn = ns["_붙임목록_번호_내어쓰기_적용"]
+        hwp = Mock()
+        hwp.GetPos.return_value = (0, 4, 0)
+        hwp.SetPos.return_value = True
+        current = {"Indentation": 0, "LeftMargin": 0}
+        hwp.ParaShape.Item.side_effect = lambda key: current[key]
+        params = Mock()
+        pending = {}
+        params.SetItem.side_effect = lambda key, value: pending.__setitem__(key, value)
+        action = Mock()
+        action.CreateSet.return_value = params
+        action.Execute.side_effect = lambda _: current.update(pending) or True
+        hwp.CreateAction.return_value = action
+        diagnostics = []
+        patches = {
+            "hwp": hwp,
+            "hwp_run": Mock(),
+            "붙임번호_오프셋": lambda _: 4,
+            # The first item has a label before its number: prefix (label+gap)=2100,
+            # full prefix+number=3600, so the number marker itself is 1500 wide.
+            "_캐럿위치_폭_실측": lambda _pos, end: 2100 if end == 4 else 3600,
+            "내어쓰기_변경문단": set(),
+            "진단로그": lambda message: diagnostics.append(message),
+            "로그": lambda message: diagnostics.append(message),
+        }
+        with patch.dict(fn.__globals__, patches):
+            self.assertTrue(fn((0, 4, 0), "붙임: 1. 세부 시행계획 1부.", 5000))
+        assigned = {call.args[0]: call.args[1] for call in params.SetItem.call_args_list}
+        self.assertEqual(assigned["LeftMargin"], 6500)
+        self.assertEqual(assigned["Indentation"], -3600)
+        self.assertGreaterEqual(assigned["LeftMargin"] + assigned["Indentation"], 0)
 
 
 if __name__ == "__main__":
