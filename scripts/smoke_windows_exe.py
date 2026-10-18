@@ -30,6 +30,8 @@ def main():
     parser.add_argument("--source",default="hwp-auto-docfit.py")
     parser.add_argument("--report",required=True)
     parser.add_argument("--embedded-runtime",action="store_true")
+    parser.add_argument("--smart-launcher",action="store_true",help="accept the cached app_main.exe child of this launcher")
+    parser.add_argument("--require-launcher-splash",action="store_true",help="fail unless the first-run splash is visible")
     args=parser.parse_args()
     exe=Path(args.exe).resolve();version=version_from_source(args.source)
     kernel=ctypes.WinDLL("kernel32",use_last_error=True)
@@ -38,6 +40,7 @@ def main():
     kernel.QueryFullProcessImageNameW.argtypes=[wintypes.HANDLE,wintypes.DWORD,wintypes.LPWSTR,ctypes.POINTER(wintypes.DWORD)]
     kernel.CloseHandle.argtypes=[wintypes.HANDLE]
     found=[]
+    splash_state={"ready_ms":None}
     def inspect(hwnd,_):
         if not win32gui.IsWindowVisible(hwnd):return
         title=win32gui.GetWindowText(hwnd)
@@ -47,21 +50,38 @@ def main():
         if not handle:return
         try:
             name=ctypes.create_unicode_buffer(32768);size=wintypes.DWORD(len(name))
-            if kernel.QueryFullProcessImageNameW(handle,0,name,ctypes.byref(size)) and Path(name.value).resolve()==exe:
-                found.append({"title":title,"pid":pid})
+            if kernel.QueryFullProcessImageNameW(handle,0,name,ctypes.byref(size)):
+                image=Path(name.value).resolve()
+                matches=image==exe
+                if args.smart_launcher:
+                    cache_root=(Path(os.environ["LOCALAPPDATA"])/"HWP_AutoDocFit").resolve()
+                    matches=matches or (image.name.lower()=="app_main.exe" and image.parent.parent==cache_root and image.parent.name.startswith("app_v"))
+                if matches:found.append({"title":title,"pid":pid,"image":str(image)})
         finally:kernel.CloseHandle(handle)
+    def inspect_splash(hwnd,_):
+        if splash_state["ready_ms"] is not None or not win32gui.IsWindowVisible(hwnd):return
+        title=win32gui.GetWindowText(hwnd)
+        if "실행 준비" not in title:return
+        _,pid=win32process.GetWindowThreadProcessId(hwnd)
+        if pid==process.pid:
+            splash_state["ready_ms"]=round((time.perf_counter()-process_started)*1000,2)
     launch_env = dict(os.environ)
     launch_env["DOCFIT_OFFLINE"] = "1"
     if args.embedded_runtime and (exe.parent / "HWP_AutoDocFit_kordoc_runtime.zip").exists():
         raise RuntimeError("Embedded runtime smoke must run without a sidecar ZIP")
+    process_started=time.perf_counter()
     process=subprocess.Popen([str(exe)],env=launch_env)
     try:
         deadline=time.monotonic()+120
         while time.monotonic()<deadline and not found:
+            if args.require_launcher_splash:win32gui.EnumWindows(inspect_splash,None)
             win32gui.EnumWindows(inspect,None)
-            if process.poll() is not None and not found:break
-            time.sleep(.5)
-        result={"ok":bool(found),"version":version,"windows":found}
+            if process.poll() is not None and not found and not args.smart_launcher:break
+            time.sleep(.05)
+        result={"ok":bool(found),"version":version,"windows":found,
+                "window_ready_ms":round((time.perf_counter()-process_started)*1000,2) if found else None,
+                "smart_launcher":bool(args.smart_launcher),
+                "first_run_splash_ms":splash_state["ready_ms"]}
         if found and args.embedded_runtime:
             home=Path(r"C:\HWP_AUTODOCFIT")
             pack=home/"HWP_AutoDocFit_kordoc_runtime.zip"
@@ -91,6 +111,8 @@ def main():
 
         Path(args.report).write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding="utf-8")
         if not found:raise RuntimeError("Frozen EXE did not show the expected version window")
+        if args.require_launcher_splash and splash_state["ready_ms"] is None:
+            raise RuntimeError("Smart launcher did not show its first-run splash")
         print(json.dumps(result,ensure_ascii=False))
     except Exception as error:
         result=locals().get("result",{"version":version,"windows":found})
@@ -98,7 +120,10 @@ def main():
         Path(args.report).write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding="utf-8")
         raise
     finally:
-        subprocess.run(["taskkill","/PID",str(process.pid),"/T","/F"],capture_output=True,timeout=15)
+        process_ids={process.pid}
+        process_ids.update(item["pid"] for item in found)
+        for pid in process_ids:
+            subprocess.run(["taskkill","/PID",str(pid),"/T","/F"],capture_output=True,timeout=15)
     return 0
 
 

@@ -523,4 +523,10 @@ git fetch github; git log --oneline -3 github/main; git log --oneline -3 github/
 
 ## 최신 상태(2026-10-18): v1.78.0 정식 릴리즈 검증
 
+릴리즈 후보 최종 검수 기준은 [docs/RELEASE_TEST_PROCEDURE.md](docs/RELEASE_TEST_PROCEDURE.md) 참조. 서식 원본과 재연 결과물의 일치 여부만 최종 적합 판정에 사용한다.
+
 현재 작업은 `release/1.78.0` 브랜치에서 진행한다. 작업 내용, 검증 결과, 현재 남은 배포 게이트는 [docs/HANDOVER_2026-10-18.md](docs/HANDOVER_2026-10-18.md)를 먼저 확인한다. 다운로드 중지 지침은 [docs/DOWNLOAD_HOLD_2026-10-16.md](docs/DOWNLOAD_HOLD_2026-10-16.md)를 유지하며, 과거 릴리즈를 다시 공개하지 않는다.
+
+## 후속 알파 작업(2026-10-18): 캐시형 포터블 런처
+
+구현·빌드·검증 내용은 [docs/SMART_CACHING_LAUNCHER.md](docs/SMART_CACHING_LAUNCHER.md)를 확인한다. 최종 릴리즈 서식 검수 기준은 [docs/RELEASE_TEST_PROCEDURE.md](docs/RELEASE_TEST_PROCEDURE.md)이며, 원본 서식과 재연 결과물의 일치 여부만 최종 합격 판정에 쓴다. 로컬 Windows 실측에서 캐시 재사용은 확인했으나 0.1초 스플래시와 1.5초 앱 창 표시 목표는 미달이다. 성능 목표 달성으로 표현하거나 정식 릴리즈로 간주하지 않는다.

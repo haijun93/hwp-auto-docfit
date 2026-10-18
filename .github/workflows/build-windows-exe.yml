@@ -109,7 +109,8 @@ jobs:
         shell: pwsh
         run: |
           $report = Join-Path $env:RUNNER_TEMP "docfit-self-test.json"
-          $process = Start-Process -FilePath ".\dist\HWP_AutoDocFit.exe" -ArgumentList @("--self-test", "--self-test-report", ('"' + $report + '"')) -WindowStyle Hidden -PassThru
+          $app = ".\dist\HWP_AutoDocFit\HWP_AutoDocFit.exe"
+          $process = Start-Process -FilePath $app -ArgumentList @("--self-test", "--self-test-report", ('"' + $report + '"')) -WindowStyle Hidden -PassThru
           if (-not $process.WaitForExit(60000)) { $process.Kill(); throw "EXE self-test timed out" }
           if ($process.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $report)) { throw "EXE self-test failed" }
           $result = Get-Content -Raw -LiteralPath $report | ConvertFrom-Json
@@ -117,7 +118,7 @@ jobs:
 
       - name: Verify visible frozen EXE version window
         run: |
-          & ".\.venv\Scripts\python.exe" "scripts/smoke_windows_exe.py" --exe "dist/HWP_AutoDocFit.exe" --report "dist/windows-ui-smoke.json" --embedded-runtime *> "windows-smoke.log"
+          & ".\.venv\Scripts\python.exe" "scripts/smoke_windows_exe.py" --exe "dist/HWP_AutoDocFit/HWP_AutoDocFit.exe" --report "dist/windows-ui-smoke.json" --embedded-runtime *> "windows-smoke.log"
           $smokeExit = $LASTEXITCODE
           Get-Content -LiteralPath "windows-smoke.log" -Tail 120
           if ($smokeExit -ne 0) {
@@ -126,6 +127,20 @@ jobs:
             Write-Output "::error title=Frozen EXE OCR diagnostics::$escaped"
           }
           exit $smokeExit
+
+      - name: Build smart-caching single-file portable launcher
+        shell: pwsh
+        run: |
+          $version = & ".\.venv\Scripts\python.exe" scripts\read_app_version.py
+          & ".\.venv\Scripts\python.exe" scripts\build_smart_launcher.py --version $version
+          if ($LASTEXITCODE -ne 0) { throw "Smart launcher build failed with exit code $LASTEXITCODE." }
+          if (-not (Test-Path -LiteralPath "dist\HWP_AutoDocFit.exe")) { throw 'Smart portable launcher was not created.' }
+
+      - name: Smoke test smart launcher self-test argument forwarding
+        shell: pwsh
+        run: |
+          & ".\.venv\Scripts\python.exe" scripts\smoke_smart_launcher.py --report "dist/smart-launcher-startup.json" --target-cache-ms 1500
+          if ($LASTEXITCODE -ne 0) { throw "Smart launcher cold/warm smoke test failed with exit code $LASTEXITCODE." }
 
       - name: Collect runtime build evidence
         run: Copy-Item "resources/HWP_AutoDocFit_kordoc_runtime.zip*" -Destination "dist"
@@ -138,6 +153,7 @@ jobs:
             dist/HWP_AutoDocFit.exe
             dist/HWP_AutoDocFit_v*_Setup.exe
             dist/windows-ui-smoke.json
+            dist/smart-launcher-startup.json
             dist/HWP_AutoDocFit_kordoc_runtime.zip
             dist/HWP_AutoDocFit_kordoc_runtime.zip.sha256
           if-no-files-found: error
@@ -167,6 +183,7 @@ jobs:
           mkdir -p release-assets
           VERSION=$(".venv/Scripts/python.exe" -c "from scripts.smoke_windows_exe import version_from_source; print(version_from_source('hwp-auto-docfit.py'))")
           cp dist/windows-ui-smoke.json release-assets/windows-ui-smoke.json
+          cp dist/smart-launcher-startup.json release-assets/smart-launcher-startup.json
           git rev-parse HEAD > release-assets/build-source.txt
           sha256sum dist/HWP_AutoDocFit.exe "dist/HWP_AutoDocFit_v${VERSION}_Setup.exe" | sed 's|dist/|release-assets/|' > release-assets/SHA256SUMS
           if [[ "$GITHUB_REF" == refs/heads/release/* ]]; then
@@ -177,7 +194,7 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -f release-assets/windows-ui-smoke.json release-assets/build-source.txt release-assets/SHA256SUMS
+          git add -f release-assets/windows-ui-smoke.json release-assets/smart-launcher-startup.json release-assets/build-source.txt release-assets/SHA256SUMS
           if test -f release-assets/build-delivery.json; then git add -f release-assets/build-delivery.json; fi
           if git diff --cached --quiet; then
             echo "No change in built exes; skipping commit."

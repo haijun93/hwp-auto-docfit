@@ -1,0 +1,106 @@
+import hashlib
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+import time
+import uuid
+import unittest
+import zipfile
+
+from scripts.build_smart_launcher import build, find_csc, make_payload
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class SmartLauncherBuildTest(unittest.TestCase):
+    def test_payload_is_manifested_and_app_exe_is_renamed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle = root / "bundle"
+            bundle.mkdir()
+            (bundle / "HWP_AutoDocFit.exe").write_bytes(b"app executable")
+            (bundle / "nested").mkdir()
+            (bundle / "nested" / "library.dll").write_bytes(b"library")
+            archive = root / "payload.zip"
+
+            payload_hash, manifest = make_payload(bundle, archive, "9.99.99-test")
+
+            self.assertEqual(len(payload_hash), 64)
+            self.assertEqual(payload_hash, hashlib.sha256(archive.read_bytes()).hexdigest())
+            self.assertTrue(zipfile.is_zipfile(archive))
+            with zipfile.ZipFile(archive) as zipped:
+                self.assertEqual(set(zipped.namelist()), {"app_main.exe", "nested/library.dll"})
+                self.assertEqual(zipped.read("app_main.exe"), b"app executable")
+                self.assertIsNone(zipped.testzip())
+            manifest_text = manifest.read_text(encoding="utf-8")
+            self.assertIn(f"P\t{payload_hash}\n", manifest_text)
+            self.assertIn("F\t", manifest_text)
+            self.assertIn("\tapp_main.exe\n", manifest_text)
+
+    def test_launcher_implements_safe_extract_cache_and_mutex_handoff(self):
+        source = (ROOT / "launcher" / "smart_launcher.cs").read_text(encoding="utf-8")
+        app_source = (ROOT / "hwp-auto-docfit.py").read_text(encoding="utf-8")
+        build_source = (ROOT / "build_dist.bat").read_text(encoding="utf-8")
+
+        for token in (
+            "CacheIsValid", "ExtractPayload", "SafeCombine", "SHA256.Create()",
+            "Directory.Move(staging, finalPath)", "CleanupOldCaches", "ProcessStartInfo",
+            "SetForegroundWindow", r'mutexName = "Global\\" + MutexSuffix',
+        ):
+            self.assertIn(token, source)
+        self.assertIn("DOCFIT_LAUNCHER_HANDOFF_EVENT", app_source)
+        self.assertIn("WaitForSingleObject(handle, 45000)", app_source)
+        self.assertIn("CreateMutexW(None, True, mutex_name)", app_source)
+        self.assertIn("scripts\\build_smart_launcher.py", build_source)
+
+    @unittest.skipUnless(os.name == "nt", "Windows launcher integration test")
+    def test_compiled_launcher_forwards_arguments_and_hands_off_mutex(self):
+        csc = find_csc()
+        fixture = ROOT / "tests" / "fixtures" / "smart_launcher_child.cs"
+        version = "9.98.0-test" + uuid.uuid4().hex[:8]
+        cache_path = None
+        with tempfile.TemporaryDirectory(prefix="docfit-launcher-integration-") as temporary:
+            root = Path(temporary)
+            bundle = root / "bundle"
+            bundle.mkdir()
+            child = bundle / "HWP_AutoDocFit.exe"
+            subprocess.run([str(csc), "/nologo", "/target:exe", f"/out:{child}", str(fixture)], check=True)
+            launcher = root / "HWP_AutoDocFit.exe"
+            payload_hash, _ = build(bundle, launcher, version)
+            cache_name = "app_v" + version.replace(" ", "_") + "_" + payload_hash[:12]
+            cache_path = Path(os.environ["LOCALAPPDATA"]) / "HWP_AutoDocFit" / cache_name
+            test_cache = cache_path
+            cache_parent = Path(os.environ["LOCALAPPDATA"]) / "HWP_AutoDocFit"
+            self.addCleanup(lambda: shutil.rmtree(test_cache) if test_cache.exists() and test_cache.parent == cache_parent else None)
+
+            report = root / "report path with spaces.json"
+            subprocess.run(
+                [str(launcher), "--self-test", "--self-test-report", str(report), "argument with spaces"],
+                check=True, timeout=30,
+            )
+            self.assertEqual(report.read_text(encoding="utf-8"), '{"ok":true}')
+            marker_time = (cache_path / ".docfit-complete").stat().st_mtime_ns
+            warm_start = time.perf_counter()
+            subprocess.run(
+                [str(launcher), "--self-test", "--self-test-report", str(report), "argument with spaces"],
+                check=True, timeout=30,
+            )
+            cached_ms = (time.perf_counter() - warm_start) * 1000
+            self.assertEqual((cache_path / ".docfit-complete").stat().st_mtime_ns, marker_time)
+
+            handoff_report = root / "mutex handoff.json"
+            subprocess.run([str(launcher), "--handoff-report", str(handoff_report)], check=True, timeout=10)
+            deadline = time.monotonic() + 5
+            while not handoff_report.exists() and time.monotonic() < deadline:
+                time.sleep(0.05)
+            self.assertEqual(handoff_report.read_text(encoding="utf-8"), '{"handoff":true}')
+            time.sleep(1.1)  # let the fixture release its mutex and executable image handle
+            self.assertGreater(cached_ms, 0)
+
+
+
+if __name__ == "__main__":
+    unittest.main()

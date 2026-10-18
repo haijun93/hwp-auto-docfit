@@ -7,14 +7,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class DistributionBuildTest(unittest.TestCase):
-    def test_spec_has_separate_onefile_splash_and_onedir_targets(self):
+    def test_spec_builds_onedir_bundle_for_installer_and_smart_launcher(self):
         spec = (ROOT / "HWP_AutoDocFit.spec").read_text(encoding="utf-8")
         self.assertIn("installer_exe = EXE", spec)
         self.assertIn("COLLECT(installer_exe, a.binaries, a.datas", spec)
-        self.assertIn("portable = EXE", spec)
-        self.assertIn("Splash(", spec)
-        self.assertIn("always_on_top=True", spec)
-        self.assertIn("text_pos=None", spec)
+        self.assertNotIn("portable = EXE", spec)
+        self.assertNotIn("Splash(", spec)
 
     def test_installer_is_per_user_and_has_shortcuts_and_mutex(self):
         iss = (ROOT / "installer" / "setup.iss").read_text(encoding="utf-8")
@@ -28,7 +26,8 @@ class DistributionBuildTest(unittest.TestCase):
 
     def test_unified_build_script_emits_versioned_portable_and_setup(self):
         build = (ROOT / "build_dist.bat").read_text(encoding="utf-8")
-        self.assertIn("Onefile and installer Onedir from one analysis", build)
+        self.assertIn("Onedir app bundle for the installer and cached portable launcher", build)
+        self.assertIn("scripts\\build_smart_launcher.py", build)
         self.assertIn("HWP_AutoDocFit_v%VERSION%_Portable.exe", build)
         self.assertIn("HWP_AutoDocFit_v%VERSION%_Setup.exe", build)
         self.assertRegex(build, re.compile(r"where ISCC\.exe", re.IGNORECASE))
@@ -40,6 +39,12 @@ class DistributionBuildTest(unittest.TestCase):
         entrypoint = source.rindex('if __name__ == "__main__":')
         self.assertLess(selftest_guard, mutex_check)
         self.assertLess(mutex_check, entrypoint)
+
+    def test_release_test_procedure_makes_format_fidelity_the_only_final_acceptance_gate(self):
+        procedure = (ROOT / "docs" / "RELEASE_TEST_PROCEDURE.md").read_text(encoding="utf-8")
+        self.assertIn("최종 검수 기준: 서식 재연 일치", procedure)
+        self.assertIn("불일치가 하나라도 있으면 최종 검수 불합격", procedure)
+        self.assertIn("최종 릴리즈 적합 판정은 위 서식 재연 일치 여부만으로 내린다", procedure)
 
 
 if __name__ == "__main__":

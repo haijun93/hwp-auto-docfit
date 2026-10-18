@@ -3310,14 +3310,36 @@ def _단일_인스턴스_확인():
         user32.EnumWindows.argtypes = [ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM), wintypes.LPARAM]
         user32.EnumWindows.restype = wintypes.BOOL
 
-        mutex_name = "Global\\HWP_AutoDocFit_SingleInstance_Mutex"
-        handle = kernel32.CreateMutexW(None, False, mutex_name)
+        launcher_mutex_name = os.environ.get("DOCFIT_LAUNCHER_MUTEX_NAME", "")
+        mutex_name = launcher_mutex_name or "Global\\HWP_AutoDocFit_SingleInstance_Mutex"
+        handle = kernel32.CreateMutexW(None, True, mutex_name)
         if not handle:
             # Global 네임스페이스 접근 제한 시 Local 네임스페이스로 폴백
-            mutex_name = "Local\\HWP_AutoDocFit_SingleInstance_Mutex"
-            handle = kernel32.CreateMutexW(None, False, mutex_name)
+            mutex_name = launcher_mutex_name or "Local\\HWP_AutoDocFit_SingleInstance_Mutex"
+            handle = kernel32.CreateMutexW(None, True, mutex_name)
 
         last_error = kernel32.GetLastError()
+        handoff_event = os.environ.pop("DOCFIT_LAUNCHER_HANDOFF_EVENT", "")
+        if handle and last_error == ERROR_ALREADY_EXISTS and handoff_event:
+            kernel32.OpenEventW.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR]
+            kernel32.OpenEventW.restype = wintypes.HANDLE
+            kernel32.SetEvent.argtypes = [wintypes.HANDLE]
+            kernel32.SetEvent.restype = wintypes.BOOL
+            kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+            kernel32.WaitForSingleObject.restype = wintypes.DWORD
+            event_handle = kernel32.OpenEventW(0x0002, False, handoff_event)  # EVENT_MODIFY_STATE
+            if not event_handle or not kernel32.SetEvent(event_handle):
+                if event_handle:
+                    kernel32.CloseHandle(event_handle)
+                kernel32.CloseHandle(handle)
+                return False
+            kernel32.CloseHandle(event_handle)
+            wait_result = kernel32.WaitForSingleObject(handle, 45000)
+            if wait_result in (0x00000000, 0x00000080):  # WAIT_OBJECT_0 / WAIT_ABANDONED
+                _APP_MUTEX_HANDLE = handle
+                return True
+            kernel32.CloseHandle(handle)
+            return False
         if handle and last_error == ERROR_ALREADY_EXISTS:
             _닫기_스플래시()
             # 이미 실행 중인 창을 찾아 앞으로 가져오기

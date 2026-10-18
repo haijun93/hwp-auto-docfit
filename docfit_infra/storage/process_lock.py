@@ -15,8 +15,8 @@ class ProcessLock:
         self.path.parent.mkdir(parents=True,exist_ok=True)
         descriptor=os.open(self.path,os.O_RDWR|os.O_CREAT,0o600)
         self.stream=os.fdopen(descriptor,'r+b')
-        if self.path.stat().st_size==0:
-            self.stream.write(b'\0');self.stream.flush()
+        # Empty lock files work for both flock and msvcrt byte-range locks.
+        # Pre-writing a byte here races when two callers create the file at once.
         self.stream.seek(0)
         try:
             if os.name=='nt':

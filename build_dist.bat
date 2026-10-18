@@ -28,24 +28,27 @@ echo [2/6] Preparing embedded offline runtime...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\build_kordoc_runtime.ps1" -Output "%~dp0resources\HWP_AutoDocFit_kordoc_runtime.zip"
 if errorlevel 1 goto :fail
 
-echo [3/6] Building portable Onefile and installer Onedir from one analysis...
+echo [3/6] Building Onedir app bundle for the installer and cached portable launcher...
 "%PYTHON%" -m PyInstaller --noconfirm --clean "HWP_AutoDocFit.spec"
+if errorlevel 1 goto :fail
+echo [4/7] Building single-file smart-caching portable launcher...
+"%PYTHON%" scripts\build_smart_launcher.py --version "%VERSION%"
 if errorlevel 1 goto :fail
 copy /y "dist\HWP_AutoDocFit.exe" "dist\HWP_AutoDocFit_v%VERSION%_Portable.exe" >nul
 if errorlevel 1 goto :fail
 
 if not defined ISCC (
-  echo [4/6] Inno Setup ISCC.exe not found; portable build completed, installer skipped.
+  echo [5/7] Inno Setup ISCC.exe not found; portable build completed, installer skipped.
   echo Install Inno Setup 6 to also build the Setup.exe distribution.
   exit /b 0
 )
 
-echo [5/6] Building per-user installer...
+echo [6/7] Building per-user installer...
 set "DOCFIT_VERSION=%VERSION%"
 "%ISCC%" /Qp "installer\setup.iss"
 if errorlevel 1 goto :fail
 
-echo [6/6] Verifying output files...
+echo [7/7] Verifying output files...
 if not exist "dist\HWP_AutoDocFit_v%VERSION%_Portable.exe" goto :missing
 if not exist "dist\HWP_AutoDocFit_v%VERSION%_Setup.exe" goto :missing
 echo [OK] dist\HWP_AutoDocFit_v%VERSION%_Portable.exe

@@ -45,6 +45,10 @@ if errorlevel 1 goto :fail
 echo [3/4] Building %APPNAME%.exe...
 "%PYTHON%" -m PyInstaller --noconfirm --clean "HWP_AutoDocFit.spec"
 if errorlevel 1 goto :fail
+for /f %%V in ('%PYTHON% scripts\read_app_version.py') do set "VERSION=%%V"
+if not defined VERSION goto :fail
+"%PYTHON%" scripts\build_smart_launcher.py --version "%VERSION%"
+if errorlevel 1 goto :fail
 
 echo [4/4] Building 설치파일 초기화.exe (Cleanup ^& Reset Tool)...
 "%PYTHON%" -m PyInstaller ^
