@@ -49,12 +49,23 @@ class SmartLauncherBuildTest(unittest.TestCase):
             "CacheIsValid", "ExtractPayload", "SafeCombine", "SHA256.Create()",
             "Directory.Move(staging, finalPath)", "CleanupOldCaches", "ProcessStartInfo",
             "SetForegroundWindow", r'mutexName = "Global\\" + MutexSuffix',
+            'GetManifestResourceStream("DocFitSplash")', "new SplashForm(manifest.Version)",
         ):
             self.assertIn(token, source)
         self.assertIn("DOCFIT_LAUNCHER_HANDOFF_EVENT", app_source)
         self.assertIn("WaitForSingleObject(handle, 45000)", app_source)
         self.assertIn("CreateMutexW(None, True, mutex_name)", app_source)
         self.assertIn("scripts\\build_smart_launcher.py", build_source)
+
+    def test_ci_enforces_warm_ui_startup_target(self):
+        workflow = (ROOT / ".github" / "workflows" / "build-windows-exe.yml").read_text(encoding="utf-8")
+        smoke = (ROOT / "scripts" / "smoke_smart_launcher.py").read_text(encoding="utf-8")
+        self.assertIn("--target-cache-ms 1500 --target-splash-ms 100 @targetGate", workflow)
+        self.assertIn("refs/heads/release/*", workflow)
+        self.assertIn("@('--require-target')", workflow)
+        self.assertIn('"warm_ui_first_within_target"', smoke)
+        self.assertIn('"warm_ui_second_within_target"', smoke)
+        self.assertIn('"cold_ui_splash_within_target"', smoke)
 
     @unittest.skipUnless(os.name == "nt", "Windows launcher integration test")
     def test_compiled_launcher_forwards_arguments_and_hands_off_mutex(self):
@@ -76,6 +87,16 @@ class SmartLauncherBuildTest(unittest.TestCase):
             cache_parent = Path(os.environ["LOCALAPPDATA"]) / "HWP_AutoDocFit"
             self.addCleanup(lambda: shutil.rmtree(test_cache) if test_cache.exists() and test_cache.parent == cache_parent else None)
 
+            # First non-self-test launch exercises the embedded native splash
+            # resource and cold extraction, then transfers the mutex to the child.
+            handoff_report = root / "mutex handoff.json"
+            subprocess.run([str(launcher), "--handoff-report", str(handoff_report)], check=True, timeout=30)
+            deadline = time.monotonic() + 5
+            while not handoff_report.exists() and time.monotonic() < deadline:
+                time.sleep(0.05)
+            self.assertEqual(handoff_report.read_text(encoding="utf-8"), '{"handoff":true}')
+            self.assertTrue((cache_path / ".docfit-complete").is_file())
+
             report = root / "report path with spaces.json"
             subprocess.run(
                 [str(launcher), "--self-test", "--self-test-report", str(report), "argument with spaces"],
@@ -91,14 +112,8 @@ class SmartLauncherBuildTest(unittest.TestCase):
             cached_ms = (time.perf_counter() - warm_start) * 1000
             self.assertEqual((cache_path / ".docfit-complete").stat().st_mtime_ns, marker_time)
 
-            handoff_report = root / "mutex handoff.json"
-            subprocess.run([str(launcher), "--handoff-report", str(handoff_report)], check=True, timeout=10)
-            deadline = time.monotonic() + 5
-            while not handoff_report.exists() and time.monotonic() < deadline:
-                time.sleep(0.05)
-            self.assertEqual(handoff_report.read_text(encoding="utf-8"), '{"handoff":true}')
-            time.sleep(1.1)  # let the fixture release its mutex and executable image handle
             self.assertGreater(cached_ms, 0)
+            time.sleep(1.1)  # let the fixture release its mutex and executable image handle
 
 
 

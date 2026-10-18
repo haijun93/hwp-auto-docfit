@@ -51,6 +51,9 @@ def main() -> int:
     parser.add_argument("--report", type=Path, default=ROOT / "dist" / "smart-launcher-startup.json")
     parser.add_argument("--timeout", type=int, default=180)
     parser.add_argument("--target-cache-ms", type=float, default=1500)
+    parser.add_argument("--target-splash-ms", type=float, default=100)
+    parser.add_argument("--require-target", action="store_true",
+                        help="return failure unless both warm UI launches meet the target")
     args = parser.parse_args()
     exe = args.exe.resolve()
     version, payload_hash = _manifest_identity(args.manifest.resolve())
@@ -97,14 +100,32 @@ def main() -> int:
         "cached_start_within_target": warm_ms <= args.target_cache_ms,
         "cold_ui_window_ready_ms": cold_ui.get("window_ready_ms") if cold_ui else None,
         "cold_ui_splash_visible_ms": cold_ui.get("first_run_splash_ms") if cold_ui else None,
+        "cold_ui_splash_within_target": bool(
+            cold_ui and cold_ui.get("first_run_splash_ms") is not None
+            and cold_ui["first_run_splash_ms"] <= args.target_splash_ms
+        ),
         "warm_ui_first_ms": ui_reports[0].get("window_ready_ms"),
         "warm_ui_second_ms": ui_reports[1].get("window_ready_ms"),
+        "warm_ui_first_within_target": (ui_reports[0].get("window_ready_ms") or float("inf")) <= args.target_cache_ms,
         "warm_ui_second_within_target": (ui_reports[1].get("window_ready_ms") or float("inf")) <= args.target_cache_ms,
         "cache_hit_marker_unchanged": True,
     }
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(result, ensure_ascii=False))
+    if args.require_target and not all((
+        result["cold_ui_splash_within_target"],
+        result["warm_ui_first_within_target"],
+        result["warm_ui_second_within_target"],
+    )):
+        print(
+            "Smart launcher startup target not met: "
+            f"splash target={args.target_splash_ms:.0f} ms, observed={result['cold_ui_splash_visible_ms']}; "
+            f"warm UI target={args.target_cache_ms:.0f} ms, "
+            f"first={result['warm_ui_first_ms']}, second={result['warm_ui_second_ms']}",
+            file=sys.stderr,
+        )
+        return 2
     return 0
 
 

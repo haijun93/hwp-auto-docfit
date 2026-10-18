@@ -64,7 +64,7 @@ internal static class SmartLauncher
                 if (!selfTest)
                 {
                     Application.EnableVisualStyles();
-                    splash = new SplashForm();
+                    splash = new SplashForm(manifest.Version);
                     splash.Show();
                     Application.DoEvents();
                 }
@@ -372,21 +372,48 @@ internal static class SmartLauncher
     private sealed class SplashForm : Form
     {
         private readonly Label label;
+        private readonly Label versionLabel;
         private readonly ProgressBar bar;
 
-        public SplashForm()
+        public SplashForm(string version)
         {
             Text = AppTitle + " - 실행 준비";
-            FormBorderStyle = FormBorderStyle.FixedDialog;
+            FormBorderStyle = FormBorderStyle.FixedSingle;
             StartPosition = FormStartPosition.CenterScreen;
             MaximizeBox = false;
             MinimizeBox = false;
             ShowInTaskbar = true;
             TopMost = true;
-            Width = 440;
-            Height = 138;
-            label = new Label { Left = 22, Top = 20, Width = 380, Height = 32, Text = "최초 실행 자료를 준비하고 있습니다." };
-            bar = new ProgressBar { Left = 22, Top = 62, Width = 380, Height = 20, Minimum = 0, Maximum = 100 };
+            ClientSize = new System.Drawing.Size(500, 260);
+            using (Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("DocFitSplash"))
+            {
+                if (stream == null) throw new InvalidDataException("스플래시 이미지 리소스를 찾지 못했습니다.");
+                using (var image = System.Drawing.Image.FromStream(stream))
+                    BackgroundImage = new System.Drawing.Bitmap(image);
+            }
+            BackgroundImageLayout = ImageLayout.Stretch;
+            versionLabel = new Label
+            {
+                Left = 34, Top = 77, Width = 240, Height = 23,
+                BackColor = System.Drawing.Color.White,
+                ForeColor = System.Drawing.Color.FromArgb(83, 104, 145),
+                Font = new System.Drawing.Font("Malgun Gothic", 8.5f),
+                Text = "HWP_AutoDocFit · v" + version
+            };
+            label = new Label
+            {
+                Left = 34, Top = 194, Width = 430, Height = 22,
+                BackColor = System.Drawing.Color.Transparent,
+                ForeColor = System.Drawing.Color.FromArgb(83, 104, 145),
+                Font = new System.Drawing.Font("Malgun Gothic", 8.5f),
+                Text = "최초 실행 자료를 준비하고 있습니다."
+            };
+            bar = new ProgressBar
+            {
+                Left = 34, Top = 170, Width = 432, Height = 8,
+                Minimum = 0, Maximum = 100, Style = ProgressBarStyle.Continuous
+            };
+            Controls.Add(versionLabel);
             Controls.Add(label);
             Controls.Add(bar);
         }

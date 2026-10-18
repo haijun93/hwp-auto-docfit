@@ -75,7 +75,14 @@ def find_csc() -> Path:
     raise FileNotFoundError(".NET Framework csc.exe was not found; install .NET Framework 4.x developer tools.")
 
 
-def compile_launcher(payload_zip: Path, manifest: Path, output_exe: Path, version: str, icon: Path) -> None:
+def compile_launcher(
+    payload_zip: Path,
+    manifest: Path,
+    output_exe: Path,
+    version: str,
+    icon: Path,
+    splash: Path,
+) -> None:
     if os.name != "nt":
         raise OSError("smart portable launcher compilation requires Windows")
     work = output_exe.parent / "smart-launcher-compiler"
@@ -90,10 +97,13 @@ def compile_launcher(payload_zip: Path, manifest: Path, output_exe: Path, versio
     parts = version_match.group(1).split(".")
     numeric_version = ".".join((parts + ["0", "0", "0", "0"])[:4])
     source = ROOT / "launcher" / "smart_launcher.cs"
+    if not splash.is_file():
+        raise FileNotFoundError(f"native launcher splash image not found: {splash}")
     command = [
         str(csc), "/nologo", "/codepage:65001", "/target:winexe", "/optimize+", "/platform:anycpu",
         f"/out:{output_exe}", f"/win32icon:{icon}",
         f"/resource:{payload_zip},DocFitPayload", f"/resource:{manifest},DocFitManifest",
+        f"/resource:{splash},DocFitSplash",
         "/reference:System.Windows.Forms.dll", "/reference:System.IO.Compression.dll",
         "/reference:System.Core.dll", str(source),
     ]
@@ -117,7 +127,10 @@ def build(bundle: Path, output_exe: Path, version: str) -> tuple[str, Path]:
         raise ValueError("version must be a single non-empty line")
     payload = output_exe.parent / "smart-launcher-build" / "payload.zip"
     payload_hash, manifest = make_payload(bundle.resolve(), payload, version)
-    compile_launcher(payload, manifest, output_exe.resolve(), version, ROOT / "resources" / "app_icon.ico")
+    compile_launcher(
+        payload, manifest, output_exe.resolve(), version,
+        ROOT / "resources" / "app_icon.ico", ROOT / "resources" / "splash.png",
+    )
     return payload_hash, output_exe.resolve()
 
 

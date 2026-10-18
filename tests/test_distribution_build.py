@@ -32,6 +32,16 @@ class DistributionBuildTest(unittest.TestCase):
         self.assertIn("HWP_AutoDocFit_v%VERSION%_Setup.exe", build)
         self.assertRegex(build, re.compile(r"where ISCC\.exe", re.IGNORECASE))
 
+    def test_github_and_gitlab_release_assets_distinguish_portable_and_setup(self):
+        build = (ROOT / ".github" / "workflows" / "build-windows-exe.yml").read_text(encoding="utf-8")
+        release = (ROOT / ".github" / "workflows" / "github-release.yml").read_text(encoding="utf-8")
+        gitlab = (ROOT / ".gitlab-ci.yml").read_text(encoding="utf-8")
+        for source in (build, release, gitlab):
+            self.assertIn("HWP_AutoDocFit_v${VERSION}_Portable.exe", source)
+            self.assertIn("HWP_AutoDocFit_v${VERSION}_Setup.exe", source)
+        self.assertIn("PORTABLE (Portable, no installation)", gitlab)
+        self.assertIn("SETUP (Installer)", gitlab)
+
     def test_self_test_guard_precedes_gui_mutex_and_main(self):
         source = (ROOT / "hwp-auto-docfit.py").read_text(encoding="utf-8")
         selftest_guard = source.index('if __name__ == "__main__" and "--self-test" in _selftest_sys.argv:')
@@ -42,7 +52,8 @@ class DistributionBuildTest(unittest.TestCase):
 
     def test_release_test_procedure_makes_format_fidelity_the_only_final_acceptance_gate(self):
         procedure = (ROOT / "docs" / "RELEASE_TEST_PROCEDURE.md").read_text(encoding="utf-8")
-        self.assertIn("최종 검수 기준: 서식 재연 일치", procedure)
+        self.assertIn("서식재연검수절차", procedure)
+        self.assertIn("서식 원본과 재연된 검수 결과물의 일치 여부만", procedure)
         self.assertIn("불일치가 하나라도 있으면 최종 검수 불합격", procedure)
         self.assertIn("최종 릴리즈 적합 판정은 위 서식 재연 일치 여부만으로 내린다", procedure)
 

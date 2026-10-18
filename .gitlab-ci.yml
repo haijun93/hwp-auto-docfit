@@ -33,20 +33,20 @@ release-windows:
   script:
     - mkdir -p dist
     - |
-      if [ -f release-assets/HWP_AutoDocFit.exe ]; then
-        cp release-assets/HWP_AutoDocFit.exe dist/HWP_AutoDocFit.exe
-      else
+      VERSION=${CI_COMMIT_TAG#v}
+      PORTABLE="HWP_AutoDocFit_v${VERSION}_Portable.exe"
+      SETUP="HWP_AutoDocFit_v${VERSION}_Setup.exe"
+      for asset in "$PORTABLE" "$SETUP" SHA256SUMS; do
         curl --fail --location --retry 3 --retry-all-errors \
-          "https://github.com/haijun93/hwp-auto-docfit/releases/download/$CI_COMMIT_TAG/HWP_AutoDocFit.exe" \
-          --output dist/HWP_AutoDocFit.exe
-        curl --fail --location --retry 3 --retry-all-errors \
-          "https://github.com/haijun93/hwp-auto-docfit/releases/download/$CI_COMMIT_TAG/SHA256SUMS" \
-          --output dist/SHA256SUMS
-        expected=$(awk '$2 ~ /HWP_AutoDocFit\.exe$/ {print $1; exit}' dist/SHA256SUMS)
-        actual=$(sha256sum dist/HWP_AutoDocFit.exe | awk '{print $1}')
+          "https://github.com/haijun93/hwp-auto-docfit/releases/download/$CI_COMMIT_TAG/$asset" \
+          --output "dist/$asset"
+      done
+      for asset in "$PORTABLE" "$SETUP"; do
+        expected=$(awk -v name="$asset" '$2 ~ ("/" name "$" ) || $2 == name {print $1; exit}' dist/SHA256SUMS)
+        actual=$(sha256sum "dist/$asset" | awk '{print $1}')
         test -n "$expected" && test "$actual" = "$expected"
-      fi
-      test -s dist/HWP_AutoDocFit.exe
+      done
+      test -s "dist/$PORTABLE" && test -s "dist/$SETUP"
     # 한 번에 적용 시험용 보고서 예시(텍스트)도 함께 내려받게 한다(2026-10-04 사용자 요청).
     - cp "release-assets/보고서 예시 파일(한번에 적용).txt" "dist/보고서 예시 파일(한번에 적용).txt"
     - sha256sum dist/HWP_AutoDocFit.exe
@@ -79,16 +79,26 @@ release-windows:
     - |
       curl --fail-with-body --request POST \
         --header "JOB-TOKEN: $CI_JOB_TOKEN" \
-        --data-urlencode "name=HWP_AutoDocFit.exe" \
-        --data-urlencode "url=$CI_PROJECT_URL/-/jobs/$CI_JOB_ID/artifacts/raw/dist/HWP_AutoDocFit.exe" \
+        --data-urlencode "name=$PORTABLE (Portable, no installation)" \
+        --data-urlencode "url=$CI_PROJECT_URL/-/jobs/$CI_JOB_ID/artifacts/raw/dist/$PORTABLE" \
         --data-urlencode "link_type=other" \
-        --data-urlencode "direct_asset_path=/HWP_AutoDocFit.exe" \
+        --data-urlencode "direct_asset_path=/$PORTABLE" \
+        "$CI_API_V4_URL/projects/$CI_PROJECT_ID/releases/$CI_COMMIT_TAG/assets/links"
+    - |
+      curl --fail-with-body --request POST \
+        --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+        --data-urlencode "name=$SETUP (Installer)" \
+        --data-urlencode "url=$CI_PROJECT_URL/-/jobs/$CI_JOB_ID/artifacts/raw/dist/$SETUP" \
+        --data-urlencode "link_type=other" \
+        --data-urlencode "direct_asset_path=/$SETUP" \
         "$CI_API_V4_URL/projects/$CI_PROJECT_ID/releases/$CI_COMMIT_TAG/assets/links"
   artifacts:
     name: "HWP_AutoDocFit-$CI_COMMIT_TAG"
     paths:
-      - "dist/HWP_AutoDocFit.exe"
+      - "dist/HWP_AutoDocFit_v*_Portable.exe"
+      - "dist/HWP_AutoDocFit_v*_Setup.exe"
       - "dist/보고서 예시 파일(한번에 적용).txt"
+      - dist/SHA256SUMS
     expire_in: never
   rules:
     - if: '$CI_COMMIT_TAG'

@@ -1,6 +1,6 @@
 # 태그(vX.Y-beta.N)를 푸시하면 GitHub 릴리스를 만든다(2026-10-04).
 # 그전에는 GitLab CI만 릴리스를 만들어 GitHub 릴리스가 v1.69-beta.3에 멈춰 있었다.
-# 노트는 releases/<태그>.md, 메인 exe는 태그 커밋의 release-assets/HWP_AutoDocFit.exe(CI 빌드 cherry-pick본)를 쓴다.
+# 노트는 releases/<태그>.md를 사용한다. 새 배포는 버전이 표시된 포터블·설치형 EXE를 별도 첨부한다.
 name: GitHub release
 
 on:
@@ -30,13 +30,14 @@ jobs:
           if test -f release-assets/build-delivery.json; then
             test "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = true
             test "$(gh release view "$TAG" --json targetCommitish --jq .targetCommitish)" = "$SOURCE"
-            gh release download "$TAG" --pattern HWP_AutoDocFit.exe --dir release-assets
-            if jq -e '.installer == true' release-assets/build-delivery.json >/dev/null; then
-              VERSION="${TAG#v}"
-              SETUP="HWP_AutoDocFit_v${VERSION}_Setup.exe"
-              gh release download "$TAG" --pattern "$SETUP" --dir release-assets
-              test -s "release-assets/$SETUP"
-            fi
+            VERSION="${TAG#v}"
+            PORTABLE="HWP_AutoDocFit_v${VERSION}_Portable.exe"
+            SETUP="HWP_AutoDocFit_v${VERSION}_Setup.exe"
+            jq -e '.portable == true and .installer == true' release-assets/build-delivery.json >/dev/null
+            gh release download "$TAG" --pattern "$PORTABLE" --dir release-assets
+            gh release download "$TAG" --pattern "$SETUP" --dir release-assets
+            test -s "release-assets/$PORTABLE"
+            test -s "release-assets/$SETUP"
           fi
           sha256sum --check release-assets/SHA256SUMS
       - name: Create release
@@ -52,14 +53,11 @@ jobs:
           else
             # GitHub는 첨부 파일 이름의 한글을 지우므로(default.txt가 됨) 영문 이름으로 올리고 한글은 표시 이름(#)으로 둔다.
             cp "release-assets/보고서 예시 파일(한번에 적용).txt" report-example-all-in-one.txt
-            python3 -c "import zipfile, os; tag=os.environ.get('TAG', 'release'); z=zipfile.ZipFile(f'HWP_AutoDocFit-{tag}.zip', 'w', zipfile.ZIP_DEFLATED); z.write('release-assets/HWP_AutoDocFit.exe', 'HWP_AutoDocFit.exe'); os.path.exists('release-assets/보고서 예시 파일(한번에 적용).txt') and z.write('release-assets/보고서 예시 파일(한번에 적용).txt', '보고서 예시 파일(한번에 적용).txt'); z.close()"
             if test -f release-assets/build-delivery.json; then
-              gh release upload "$TAG" "HWP_AutoDocFit-${TAG}.zip" release-assets/SHA256SUMS "report-example-all-in-one.txt#보고서 예시 파일(한번에 적용).txt" --clobber
-              if jq -e '.installer == true' release-assets/build-delivery.json >/dev/null; then
-                gh release upload "$TAG" "release-assets/HWP_AutoDocFit_v${TAG#v}_Setup.exe" --clobber
-              fi
+              gh release upload "$TAG" release-assets/SHA256SUMS "report-example-all-in-one.txt#보고서 예시 파일(한번에 적용).txt" --clobber
               gh release edit "$TAG" --draft=false --title "$TITLE" --notes-file "$NOTE" --latest
             else
+              python3 -c "import zipfile, os; tag=os.environ.get('TAG', 'release'); z=zipfile.ZipFile(f'HWP_AutoDocFit-{tag}.zip', 'w', zipfile.ZIP_DEFLATED); z.write('release-assets/HWP_AutoDocFit.exe', 'HWP_AutoDocFit.exe'); os.path.exists('release-assets/보고서 예시 파일(한번에 적용).txt') and z.write('release-assets/보고서 예시 파일(한번에 적용).txt', '보고서 예시 파일(한번에 적용).txt'); z.close()"
               gh release create "$TAG" "HWP_AutoDocFit-${TAG}.zip" release-assets/HWP_AutoDocFit.exe release-assets/SHA256SUMS "report-example-all-in-one.txt#보고서 예시 파일(한번에 적용).txt" --title "$TITLE" --notes-file "$NOTE" --latest
             fi
           fi

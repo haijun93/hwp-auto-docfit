@@ -323,6 +323,8 @@ class StartupTest(unittest.TestCase):
                 try:
                     app = namespace["HwpAutoDocFitGUI"](root)
                     self.assertIn("한글편집 후처리", root.title())
+                    self.assertIsNone(app.settings_toplevel, "설정 창은 첫 화면 초기화 중 만들지 않아야 함")
+                    app.설정창_열기()
                     root.update()
                     self.assertTrue(root.winfo_children())
                     self.assertEqual(callback_errors, [])

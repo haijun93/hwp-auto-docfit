@@ -135,11 +135,14 @@ jobs:
           & ".\.venv\Scripts\python.exe" scripts\build_smart_launcher.py --version $version
           if ($LASTEXITCODE -ne 0) { throw "Smart launcher build failed with exit code $LASTEXITCODE." }
           if (-not (Test-Path -LiteralPath "dist\HWP_AutoDocFit.exe")) { throw 'Smart portable launcher was not created.' }
+          Copy-Item -LiteralPath "dist\HWP_AutoDocFit.exe" -Destination "dist\HWP_AutoDocFit_v${version}_Portable.exe" -Force
 
       - name: Smoke test smart launcher self-test argument forwarding
         shell: pwsh
         run: |
-          & ".\.venv\Scripts\python.exe" scripts\smoke_smart_launcher.py --report "dist/smart-launcher-startup.json" --target-cache-ms 1500
+          $targetGate = @()
+          if ($env:GITHUB_REF -like 'refs/heads/release/*') { $targetGate = @('--require-target') }
+          & ".\.venv\Scripts\python.exe" scripts\smoke_smart_launcher.py --report "dist/smart-launcher-startup.json" --target-cache-ms 1500 --target-splash-ms 100 @targetGate
           if ($LASTEXITCODE -ne 0) { throw "Smart launcher cold/warm smoke test failed with exit code $LASTEXITCODE." }
 
       - name: Collect runtime build evidence
@@ -150,7 +153,7 @@ jobs:
         with:
           name: ${{ github.ref_name == 'alpha' && 'HWP_AutoDocFit-alpha' || 'HWP_AutoDocFit-binaries' }}
           path: |
-            dist/HWP_AutoDocFit.exe
+            dist/HWP_AutoDocFit_v*_Portable.exe
             dist/HWP_AutoDocFit_v*_Setup.exe
             dist/windows-ui-smoke.json
             dist/smart-launcher-startup.json
@@ -166,7 +169,9 @@ jobs:
         run: |
           VERSION=$(".venv/Scripts/python.exe" -c "from scripts.smoke_windows_exe import version_from_source; print(version_from_source('hwp-auto-docfit.py'))")
           TAG="v$VERSION"
+          PORTABLE="dist/HWP_AutoDocFit_v${VERSION}_Portable.exe"
           SETUP="dist/HWP_AutoDocFit_v${VERSION}_Setup.exe"
+          test -s "$PORTABLE"
           test -s "$SETUP"
           if gh release view "$TAG" --json isDraft >/dev/null 2>&1; then
             test "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = true || { echo "Published tag must not be overwritten"; exit 1; }
@@ -174,7 +179,7 @@ jobs:
           else
             gh release create "$TAG" --draft --target "$GITHUB_SHA" --title "HWP AutoDocFit $VERSION" --notes "빌드 검증 후 게시 예정"
           fi
-          gh release upload "$TAG" dist/HWP_AutoDocFit.exe "$SETUP" --clobber
+          gh release upload "$TAG" "$PORTABLE" "$SETUP" --clobber
 
       - name: Commit build provenance and verification records
         if: github.ref != 'refs/heads/alpha'
@@ -185,9 +190,9 @@ jobs:
           cp dist/windows-ui-smoke.json release-assets/windows-ui-smoke.json
           cp dist/smart-launcher-startup.json release-assets/smart-launcher-startup.json
           git rev-parse HEAD > release-assets/build-source.txt
-          sha256sum dist/HWP_AutoDocFit.exe "dist/HWP_AutoDocFit_v${VERSION}_Setup.exe" | sed 's|dist/|release-assets/|' > release-assets/SHA256SUMS
+          sha256sum "dist/HWP_AutoDocFit_v${VERSION}_Portable.exe" "dist/HWP_AutoDocFit_v${VERSION}_Setup.exe" | sed 's|dist/|release-assets/|' > release-assets/SHA256SUMS
           if [[ "$GITHUB_REF" == refs/heads/release/* ]]; then
-            printf '{"delivery":"github-draft-release","installer":true,"tag":"v%s","source":"%s","run":"%s"}\n' "$VERSION" "$GITHUB_SHA" "$GITHUB_RUN_ID" > release-assets/build-delivery.json
+            printf '{"delivery":"github-draft-release","portable":true,"installer":true,"tag":"v%s","source":"%s","run":"%s"}\n' "$VERSION" "$GITHUB_SHA" "$GITHUB_RUN_ID" > release-assets/build-delivery.json
             git rm --ignore-unmatch release-assets/HWP_AutoDocFit.exe release-assets/HWP_AutoDocFit_kordoc_runtime.zip release-assets/HWP_AutoDocFit_kordoc_runtime.zip.sha256
           else
             cp dist/HWP_AutoDocFit.exe release-assets/HWP_AutoDocFit.exe

@@ -22,15 +22,15 @@
 
 | 파일 | 다운로드 및 용도 |
 |---|---|
-| 프로그램 | **[HWP_AutoDocFit.exe 바로 받기](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/HWP_AutoDocFit.exe)** — Windows 10·11 64비트, 한/글 2020 필요 |
-| 설치형 | [HWP_AutoDocFit_v1.78.0_Setup.exe](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/HWP_AutoDocFit_v1.78.0_Setup.exe) — 현재 사용자만 설치, 시작 메뉴·선택적 바탕화면 바로가기 |
-| GitLab 프로그램 미러 | [HWP_AutoDocFit.exe 내려받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/v1.78.0/downloads/HWP_AutoDocFit.exe) — GitLab 릴리즈 자산 |
+| 포터블용 (무설치) | **[HWP_AutoDocFit.exe 바로 받기](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/HWP_AutoDocFit.exe)** — 설치 마법사 없이 실행 파일을 직접 사용합니다. Windows 10·11 64비트, 한/글 2020 필요 |
+| 설치용 (Setup) | [HWP_AutoDocFit_v1.78.0_Setup.exe](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/HWP_AutoDocFit_v1.78.0_Setup.exe) — 현재 사용자 영역에 설치하고 시작 메뉴 바로가기를 만듭니다. 제거할 때는 Windows 앱 제거 기능을 사용합니다. |
+| GitLab 포터블용 미러 | [HWP_AutoDocFit.exe 내려받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/v1.78.0/downloads/HWP_AutoDocFit.exe) — GitLab 릴리즈 자산 |
 | 프로그램·예시 압축팩 | [HWP_AutoDocFit-v1.78.0.zip](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.78.0/HWP_AutoDocFit-v1.78.0.zip) — 압축을 풀어 실행 |
 | 체크섬 | [SHA256SUMS](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/SHA256SUMS) — 배포 파일 SHA256 확인 |
 
 **변환 런타임은 EXE에 포함되어 있어 별도로 받을 필요가 없습니다.** 첫 실행 때 내장 ZIP과 변환 엔진을 `C:\HWP_AUTODOCFIT`에 저장합니다. 쓰기 권한이 없으면 `%LOCALAPPDATA%\HwpAutoDocFit`에 저장하며 온라인 다운로드는 하지 않습니다.
 
-포터블 EXE 또는 설치형 중 원하는 방식으로 시작할 수 있습니다 · [v1.78.0 변경 사항](releases/v1.78.0.md) · [GitHub 저장소](https://github.com/haijun93/hwp-auto-docfit) · [GitLab 저장소](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
+**포터블용**은 설치 없이 실행 파일을 직접 쓰려는 경우, **설치용**은 시작 메뉴에서 실행하고 Windows 앱 제거로 정리하려는 경우에 선택하세요. 두 배포판은 릴리즈 첨부 파일과 체크섬에서 각각 구분합니다. · [v1.78.0 변경 사항](releases/v1.78.0.md) · [GitHub 저장소](https://github.com/haijun93/hwp-auto-docfit) · [GitLab 저장소](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
 
 **v1.78.0**은 상용구를 별도 설정 화면이 아닌 HWPX 파일로 직접 관리하고, 문서 추가·작업 방식 선택·결과 확인 흐름을 명확히 합니다. 실행 파일은 포터블과 사용자 설치형으로 제공됩니다. 기본은 **폐쇄망 모드**라 앱이 스스로 외부 서버에 접속하지 않습니다. 자세한 내용은 [변경 사항](releases/v1.78.0.md)을 확인하세요.
 

@@ -811,7 +811,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     상용구_폴더_준비()
                 except Exception as exc:
                     self.로그표시(f"상용구 폴더를 준비하지 못했습니다: {exc}")
-                self._설정창_생성()
+                # 설정 창에는 수많은 위젯을 만들기 때문에 첫 화면 표시를 늦출 수 있다.
+                # 설정 버튼을 누를 때 설정창_열기()가 필요 시 생성하도록 지연한다.
                 self._항상위_적용()
 
                 self._queue_after_id = root.after(100, self.queue_처리)
@@ -2171,10 +2172,16 @@ def _install(*, _docfit_namespace, _docfit_symbol):
 
             def _프로파일_선택(self, event=None):
                 if self.running: return
-                콤보 = event.widget if event is not None and isinstance(event.widget, ttk.Combobox) else self.profile_combo
+                콤보 = event.widget if event is not None and isinstance(event.widget, ttk.Combobox) else getattr(
+                    self, "profile_combo", self.main_profile_combo)
                 self._활성_서식_프로파일 = self._프로파일_ids[콤보.current()]
                 profile = self._프로파일들[self._활성_서식_프로파일]
                 self._프로파일_전역반영(profile)
+                # 설정창은 첫 화면을 빠르게 띄우기 위해 지연 생성한다. 메인 창의
+                # 서식 선택이나 설정창 없는 호출에서는 앱 전역 프로필만 반영한다.
+                if self.settings_toplevel is None or not self.settings_toplevel.winfo_exists():
+                    self._프로파일_목록갱신()
+                    return
                 options = profile["options"]
                 for key, var in {**self.std_bool_vars, **self.std_parspace_vars}.items():
                     var.set(options.get(key, 기본_설정[key]))
@@ -5132,7 +5139,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 )
                 self.update_button.pack(side="right")
 
-                self.settings_toplevel.withdraw()
+                if self.settings_toplevel is not None and self.settings_toplevel.winfo_exists():
+                    self.settings_toplevel.withdraw()
 
             def _설정탭_상태_갱신(self):
                 """작업 중에는 '처리 기록' 탭만 쓸 수 있게 하고, 작업이 끝나면 모든 탭을 연다."""
@@ -6057,7 +6065,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
 
                 self.running = True
 
-                self.settings_toplevel.withdraw()
+                if self.settings_toplevel is not None and self.settings_toplevel.winfo_exists():
+                    self.settings_toplevel.withdraw()
                 self.closing = False
                 중단_event.clear()
                 self._결과_초기화(결과목록도_지우기=not 이어서_진행)   # 이어서 진행할 때는 이전 결과 기록을 남긴다
