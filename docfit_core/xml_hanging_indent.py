@@ -15,8 +15,6 @@ from pathlib import Path
 import re
 import tempfile
 import unicodedata
-from xml.sax.saxutils import escape as xml_escape
-
 from defusedxml import ElementTree as ET
 
 from .attachment_block import (
