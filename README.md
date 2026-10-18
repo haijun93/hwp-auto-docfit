@@ -1,7 +1,7 @@
 # 한글편집 후처리
 
-> **v1.77.0 공개 — 2026-10-17**
-> 최신 버전은 표/다이어그램 기능을 흐름표·기본 표 중심으로 정리하고, 조직표·장식표를 제거했으며 표 서식 모음은 비활성화했습니다.
+> **v1.78.0 공개 — 2026-10-18**
+> HWPX 상용구 직접 편집, Zero-Click 작업 흐름 개선, 시작 피드백·중복 실행 방지와 포터블/설치형 배포를 포함합니다.
 
 ### 보고서 마무리 30분, 버튼 한 번으로.
 
@@ -9,29 +9,30 @@
 **다 쓴 한글(HWP·HWPX) 보고서를 넣고 「정리 시작」만 누르세요.** 설치된 한/글을 자동으로 조작해 공문서 모양으로 다듬어 줍니다.
 
 <p>
-<img alt="현재 정식 버전 v1.77.0" src="https://img.shields.io/badge/%ED%98%84%EC%9E%AC%20%EA%B3%B5%EA%B0%9C%20%EC%A0%95%EC%8B%9D-v1.77.0-2563eb">
+<img alt="현재 정식 버전 v1.78.0" src="https://img.shields.io/badge/%ED%98%84%EC%9E%AC%20%EA%B3%B5%EA%B0%9C%20%EC%A0%95%EC%8B%9D-v1.78.0-2563eb">
 <img alt="무료" src="https://img.shields.io/badge/%EA%B0%80%EA%B2%A9-%EB%AC%B4%EB%A3%8C-16a34a">
 <img alt="Windows 10·11" src="https://img.shields.io/badge/Windows-10%C2%B711-0078d4">
 <img alt="한/글 2020" src="https://img.shields.io/badge/%ED%95%9C%2F%EA%B8%80-2020-0ea5e9">
 <img alt="문서 외부 전송 없음" src="https://img.shields.io/badge/%EB%AC%B8%EC%84%9C-%EC%99%B8%EB%B6%80%20%EC%A0%84%EC%86%A1%20%EC%97%86%EC%9D%8C-64748b">
 </p>
 
-## ⬇ 최신 정식 버전 다운로드 — v1.77.0
+## ⬇ 최신 정식 버전 다운로드 — v1.78.0
 
 **[최신 릴리즈와 전체 첨부 파일 보기](https://github.com/haijun93/hwp-auto-docfit/releases/latest)**
 
 | 파일 | 다운로드 및 용도 |
 |---|---|
 | 프로그램 | **[HWP_AutoDocFit.exe 바로 받기](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/HWP_AutoDocFit.exe)** — Windows 10·11 64비트, 한/글 2020 필요 |
-| GitLab 프로그램 미러 | [HWP_AutoDocFit.exe 내려받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/v1.77.0/downloads/HWP_AutoDocFit.exe) — GitLab 릴리즈 자산 |
-| 프로그램·예시 압축팩 | [HWP_AutoDocFit-v1.77.0.zip](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.77.0/HWP_AutoDocFit-v1.77.0.zip) — 압축을 풀어 실행 |
-| 체크섬 | [SHA256SUMS](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/SHA256SUMS) — EXE 파일의 SHA256 확인 |
+| 설치형 | [HWP_AutoDocFit_v1.78.0_Setup.exe](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/HWP_AutoDocFit_v1.78.0_Setup.exe) — 현재 사용자만 설치, 시작 메뉴·선택적 바탕화면 바로가기 |
+| GitLab 프로그램 미러 | [HWP_AutoDocFit.exe 내려받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/v1.78.0/downloads/HWP_AutoDocFit.exe) — GitLab 릴리즈 자산 |
+| 프로그램·예시 압축팩 | [HWP_AutoDocFit-v1.78.0.zip](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.78.0/HWP_AutoDocFit-v1.78.0.zip) — 압축을 풀어 실행 |
+| 체크섬 | [SHA256SUMS](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/SHA256SUMS) — 배포 파일 SHA256 확인 |
 
 **변환 런타임은 EXE에 포함되어 있어 별도로 받을 필요가 없습니다.** 첫 실행 때 내장 ZIP과 변환 엔진을 `C:\HWP_AUTODOCFIT`에 저장합니다. 쓰기 권한이 없으면 `%LOCALAPPDATA%\HwpAutoDocFit`에 저장하며 온라인 다운로드는 하지 않습니다.
 
-설치 없이 실행 파일 하나로 시작합니다 · [v1.77.0 변경 사항](releases/v1.77.0.md) · [GitHub 저장소](https://github.com/haijun93/hwp-auto-docfit) · [GitLab 저장소](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
+포터블 EXE 또는 설치형 중 원하는 방식으로 시작할 수 있습니다 · [v1.78.0 변경 사항](releases/v1.78.0.md) · [GitHub 저장소](https://github.com/haijun93/hwp-auto-docfit) · [GitLab 저장소](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
 
-**v1.77.0**은 Flutter 화면과 파일포맷 변환 개선을 포함합니다. 표/다이어그램에는 흐름표·기본 표만 표시되며 조직표·장식표는 제거되고, 표 서식 모음은 비활성화됩니다. 상세 내용은 [변경 사항](releases/v1.77.0.md)을 확인하세요. 기본은 **폐쇄망 모드**라 앱이 스스로 외부 서버에 접속하지 않습니다.
+**v1.78.0**은 상용구를 별도 설정 화면이 아닌 HWPX 파일로 직접 관리하고, 문서 추가·작업 방식 선택·결과 확인 흐름을 명확히 합니다. 실행 파일은 포터블과 사용자 설치형으로 제공됩니다. 기본은 **폐쇄망 모드**라 앱이 스스로 외부 서버에 접속하지 않습니다. 자세한 내용은 [변경 사항](releases/v1.78.0.md)을 확인하세요.
 
 [![프로그램 사용 시연 영상 (약 5분). 클릭하면 고화질 영상이 열립니다.](docs/media/overview-demo.gif)](docs/media/overview-demo.mp4)
 

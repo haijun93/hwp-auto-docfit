@@ -520,3 +520,7 @@ $env:PYTHONIOENCODING="utf-8"; .\.venv\Scripts\python.exe -m unittest discover -
 # 원격 상태
 git fetch github; git log --oneline -3 github/main; git log --oneline -3 github/alpha
 ```
+
+## 최신 상태(2026-10-18): v1.78.0 정식 릴리즈 검증
+
+현재 작업은 `release/1.78.0` 브랜치에서 진행한다. 작업 내용, 검증 결과, 현재 남은 배포 게이트는 [docs/HANDOVER_2026-10-18.md](docs/HANDOVER_2026-10-18.md)를 먼저 확인한다. 다운로드 중지 지침은 [docs/DOWNLOAD_HOLD_2026-10-16.md](docs/DOWNLOAD_HOLD_2026-10-16.md)를 유지하며, 과거 릴리즈를 다시 공개하지 않는다.
