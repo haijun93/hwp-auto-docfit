@@ -99,10 +99,12 @@ def inspect_hanging_indent(path: str | Path, reference_path: str | Path | None =
         if not section_names or not para_styles:
             raise ValueError("HWPX has no readable section or paragraph-style table")
         findings: list[ParagraphFinding] = []
+        all_paragraphs: list[tuple[str, ET.Element, str]] = []
         for section_name in section_names:
             section = ET.fromstring(archive.read(section_name))
             for paragraph in section.findall(".//hp:p", NS):
                 text = _text(paragraph)
+                all_paragraphs.append((text, paragraph, paragraph.get("paraPrIDRef", "")))
                 if not text.strip() or not MARKER.match(text):
                     continue
                 para_id = paragraph.get("paraPrIDRef", "")
@@ -143,6 +145,31 @@ def inspect_hanging_indent(path: str | Path, reference_path: str | Path | None =
                     findings.append(ParagraphFinding(text, para_id, left, indent, "fail", "negative indent has no compensating left margin"))
                 else:
                     findings.append(ParagraphFinding(text, para_id, left, indent, "pass"))
+        from .attachment_block import find_trailing_numbered_blocks, numbered_item_offset
+        from .xml_hanging_indent import _char_size_pt, prefix_width_hwpunit
+        for start, end in find_trailing_numbered_blocks([item[0] for item in all_paragraphs]):
+            origins: list[tuple[str, str, int]] = []
+            for text, paragraph, para_id in all_paragraphs[start:end + 1]:
+                style = para_styles.get(para_id)
+                offset = numbered_item_offset(text)
+                if style is None or offset is None:
+                    continue
+                left, indent = _paragraph_margins(style)
+                if left is None or indent is None:
+                    continue
+                origin = left + indent + prefix_width_hwpunit(
+                    text, offset, size_pt=_char_size_pt(header, paragraph)
+                )
+                origins.append((text, para_id, origin))
+            if len(origins) != end - start + 1:
+                findings.append(ParagraphFinding(
+                    all_paragraphs[start][0], all_paragraphs[start][2], None, None,
+                    "fail", "attachment number position could not be measured"))
+            elif max(item[2] for item in origins) - min(item[2] for item in origins) > 100:
+                findings.append(ParagraphFinding(
+                    origins[0][0], origins[0][1], None, None, "fail",
+                    "attachment numbers are not vertically aligned: "
+                    + ", ".join(str(item[2]) for item in origins)))
     failures = [finding for finding in findings if finding.status != "pass"]
     return {
         "status": "pass" if findings and not failures else "fail",
@@ -150,7 +177,7 @@ def inspect_hanging_indent(path: str | Path, reference_path: str | Path | None =
         "checked_count": len(findings),
         "failed_count": len(failures),
         "findings": [asdict(finding) for finding in findings],
-        "scope": ("HWPX marker paragraph left-margin/first-line-indent geometry; exact reference values compared"
+        "scope": ("HWPX marker paragraph left-margin/first-line-indent geometry and trailing attachment-number alignment; exact reference values compared"
                   if reference_pairs else
-                  "HWPX marker paragraph left-margin/first-line-indent geometry; visual rendering not assessed"),
+                  "HWPX marker paragraph left-margin/first-line-indent geometry and trailing attachment-number alignment; visual rendering not assessed"),
     }

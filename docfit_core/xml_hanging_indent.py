@@ -20,6 +20,7 @@ from defusedxml import ElementTree as ET
 from .attachment_block import (
     find_blocks as find_attachment_blocks,
     find_trailing_numbered_blocks,
+    is_start as is_attachment_start,
     numbered_item_offset,
 )
 from .batch_format import (
@@ -269,6 +270,8 @@ def _reference_marker_key(text: str) -> str | None:
         marker = "-"
     elif stripped.startswith("※"):
         marker = "※"
+    elif stripped[0] in OFFICIAL_SYMBOLS and (len(stripped) == 1 or stripped[1].isspace()):
+        marker = stripped[0]
     else:
         return None
     offset = marker_end_offset(text)
@@ -282,8 +285,36 @@ def _reference_marker_key(text: str) -> str | None:
     return marker
 
 
+def _reference_exact_key(text: str) -> str | None:
+    """Keep a source paragraph's deliberate geometry when its wording is reproduced."""
+    if not text or not (_reference_marker_key(text) or numbered_item_offset(text) is not None
+                        or is_attachment_start(text)):
+        return None
+    return "text:" + re.sub(r"\s+", " ", text).strip()
+
+
+def _paragraph_visible_text(paragraph) -> str:
+    text = plain_text(paragraph)
+    if text is not None:
+        return text
+    parts = []
+    for node in paragraph.iter():
+        kind = tag(node)
+        if kind == "t":
+            if node.text:
+                parts.append(node.text)
+            for child in node:
+                if tag(child) in {"fwSpace", "nbSpace"}:
+                    parts.append(" ")
+                if child.tail:
+                    parts.append(child.tail)
+        elif kind == "tab":
+            parts.append("\t")
+    return "".join(parts)
+
+
 def reference_marker_indent_pairs(path: str | Path) -> dict[str, tuple[int, int]]:
-    """기준 HWPX의 항목별 대표 case `(left, intent)`를 빈도 최빈값으로 추출한다.
+    """Extract marker defaults and unambiguous exact-paragraph geometry from HWPX.
 
     기본 서식은 기호·콜론 라벨별로 실제 여백 값이 다르므로 일반 글자폭 산식으로
     재구성하지 않는다. 저장된 case 값을 그대로 참조한다. 반환값은 키별 최빈값이며
@@ -307,13 +338,10 @@ def reference_marker_indent_pairs(path: str | Path) -> dict[str, tuple[int, int]
         for section_name in section_names:
             section = ET.fromstring(archive.read(section_name))
             for paragraph in section.findall(".//hp:p", namespaces):
-                text = "".join(
-                    (node.text or "")
-                    for node in paragraph.iter()
-                    if node.tag.rsplit("}", 1)[-1] == "t"
-                )
+                text = _paragraph_visible_text(paragraph)
                 key = _reference_marker_key(text)
-                if key is None:
+                exact_key = _reference_exact_key(text)
+                if key is None and exact_key is None:
                     continue
                 style = styles.get(paragraph.get("paraPrIDRef", ""))
                 if style is None:
@@ -335,12 +363,19 @@ def reference_marker_indent_pairs(path: str | Path) -> dict[str, tuple[int, int]
                     pair = (int(values["left"]), int(values["intent"]))
                 except (KeyError, TypeError, ValueError):
                     continue
-                samples.setdefault(key, []).append(pair)
-                if ":label:" in key:
-                    samples.setdefault(key.split(":label:", 1)[0] + ":label", []).append(pair)
+                if exact_key is not None:
+                    samples.setdefault(exact_key, []).append(pair)
+                if key is not None:
+                    samples.setdefault(key, []).append(pair)
+                    if ":label:" in key:
+                        samples.setdefault(key.split(":label:", 1)[0] + ":label", []).append(pair)
     result: dict[str, tuple[int, int]] = {}
     for key, values in samples.items():
         counts = Counter(values)
+        if key.startswith("text:") and len(counts) != 1:
+            # Repeated identical wording with different formatting has no safe
+            # one-to-one match in another document; use the marker default.
+            continue
         result[key] = max(dict.fromkeys(values), key=lambda value: counts[value])
     return result
 
@@ -350,6 +385,9 @@ def reference_hanging_indent_pair(
     reference_pairs: dict[str, tuple[int, int]],
 ) -> tuple[int, int] | None:
     """기준 HWPX에서 추출한 동일 기호/라벨 문단의 대표 여백을 반환한다."""
+    exact_key = _reference_exact_key(text or "")
+    if exact_key is not None and exact_key in reference_pairs:
+        return reference_pairs[exact_key]
     key = _reference_marker_key(text or "")
     if key is None:
         return None
@@ -369,7 +407,7 @@ def restore_reference_indent_geometry(
     reference: str | Path,
     target: str | Path | None = None,
 ) -> dict[str, int]:
-    """Restore only marker paragraphs' left/intent geometry from the reference HWPX.
+    """Restore marker geometry and align trailing attachment numbers.
 
     This is intended as a final saved-artifact guard: later COM/page-fit operations may
     alter paragraph margins after the initial XML formatting pass. All text, runs,
@@ -394,7 +432,7 @@ def restore_reference_indent_geometry(
         for paragraph in root.iter():
             if tag(paragraph) != "p":
                 continue
-            text = plain_text(paragraph) or ""
+            text = _paragraph_visible_text(paragraph)
             pair = reference_hanging_indent_pair(text, reference_pairs)
             if pair is None:
                 continue
@@ -419,7 +457,60 @@ def restore_reference_indent_geometry(
                 repaired += 1
                 changed.add(name)
 
-    if checked == 0:
+    # COM measures each attachment paragraph independently. A saved HWPX can
+    # therefore retain slightly different number origins even though both
+    # paragraphs have a negative hanging indent. Normalize the *number* origin
+    # against the first item after all COM/page-fit edits have finished.
+    ordered = [
+        (name, paragraph)
+        for name, root in sections.items()
+        for paragraph in root.iter()
+        if tag(paragraph) == "p"
+    ]
+    texts = [_paragraph_visible_text(paragraph) for _, paragraph in ordered]
+    for start, end in find_trailing_numbered_blocks(texts):
+        _, first = ordered[start]
+        first_text = texts[start]
+        first_offset = numbered_item_offset(first_text)
+        if first_offset is None:
+            continue
+        first_style = pool.sources["paraProperties"].get(first.get("paraPrIDRef", ""))
+        if first_style is None:
+            continue
+        first_left, first_indent = _paragraph_left_intent(first_style)
+        if first_left is None or first_indent is None:
+            continue
+        anchor = first_left + first_indent + prefix_width_hwpunit(
+            first_text, first_offset, size_pt=_char_size_pt(header, first)
+        )
+        for index in range(start + 1, end + 1):
+            name, paragraph = ordered[index]
+            text = texts[index]
+            offset = numbered_item_offset(text)
+            if offset is None:
+                continue
+            base_id = paragraph.get("paraPrIDRef", "")
+            base = pool.sources["paraProperties"].get(base_id)
+            if base is None:
+                missing += 1
+                continue
+            left, indent = _paragraph_left_intent(base)
+            if left is None or indent is None:
+                missing += 1
+                continue
+            target_indent = anchor - left - prefix_width_hwpunit(
+                text, offset, size_pt=_char_size_pt(header, paragraph)
+            )
+            if target_indent != indent:
+                new_id = pool.para(base_id, ParagraphStyle(
+                    text=text, para_extra=(("left", left), ("intent", target_indent)),
+                ))
+                if new_id != base_id:
+                    paragraph.set("paraPrIDRef", new_id)
+                    changed.add(name)
+                    repaired += 1
+
+    if checked == 0 and not changed:
         return {"checked": 0, "repaired": 0, "missing": 0}
     if missing:
         raise ValueError(f"reference indent restoration lacks paragraph properties for {missing} paragraph(s)")
@@ -440,6 +531,18 @@ def restore_reference_indent_geometry(
         if os.path.exists(temporary):
             os.unlink(temporary)
     return {"checked": checked, "repaired": repaired, "missing": 0}
+
+
+def _paragraph_left_intent(para_pr) -> tuple[int | None, int | None]:
+    values = {}
+    for node in para_pr.iter():
+        kind = tag(node)
+        if kind in {"left", "intent"} and kind not in values:
+            try:
+                values[kind] = int(node.get("value", ""))
+            except ValueError:
+                return None, None
+    return values.get("left"), values.get("intent")
 
 
 def attachment_numbered_pair(

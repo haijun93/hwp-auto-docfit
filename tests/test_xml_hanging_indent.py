@@ -45,10 +45,100 @@ SAMPLE_LINES = [
 
 
 class XmlHangingIndentUnitTests(unittest.TestCase):
+    def test_final_guard_aligns_trailing_attachment_numbers(self):
+        from docfit_core.batch_format import ParagraphStyle, StylePool, _serialize
+        from docfit_core.fidelity.package import PackageSnapshot, build_package
+
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            source_text = folder / "attachments.txt"
+            source = folder / "source.hwpx"
+            damaged = folder / "damaged.hwpx"
+            restored = folder / "restored.hwpx"
+            source_text.write_text(
+                "붙임 : 1. 계획서 1부.\n   2. 일정표 1부. 끝.\n", encoding="utf-8")
+            build_hwpx_from_text_file(source_text, source)
+            apply_xml_hanging_indent(source, damaged)
+            snapshot = PackageSnapshot.load(damaged)
+            header = ET.fromstring(snapshot.read("Contents/header.xml"))
+            section = ET.fromstring(snapshot.read("Contents/section0.xml"))
+            pool = StylePool(header)
+            for item in section.iter():
+                if tag(item) == "p" and (plain_text(item) or "").lstrip().startswith("2."):
+                    item.set("paraPrIDRef", pool.para(item.get("paraPrIDRef"), ParagraphStyle(
+                        text=plain_text(item), para_extra=(("left", 7500), ("intent", -4300)))))
+            damaged.write_bytes(build_package(snapshot, {
+                "Contents/header.xml": _serialize(header, snapshot.read("Contents/header.xml")),
+                "Contents/section0.xml": _serialize(section, snapshot.read("Contents/section0.xml")),
+            }))
+            before = inspect_hanging_indent(damaged)
+            self.assertTrue(any("attachment numbers" in item["reason"] for item in before["findings"]))
+            from docfit_core.attachment_block import find_trailing_numbered_blocks
+            from docfit_core.xml_hanging_indent import _paragraph_visible_text
+            section = ET.fromstring(PackageSnapshot.load(damaged).read("Contents/section0.xml"))
+            texts = [_paragraph_visible_text(item) for item in section.iter() if tag(item) == "p"]
+            self.assertTrue(find_trailing_numbered_blocks(texts), texts)
+            result = restore_reference_indent_geometry(damaged, damaged, restored)
+            self.assertGreater(result["repaired"], 0)
+            after = inspect_hanging_indent(restored)
+            self.assertEqual(after["failed_count"], 0)
+
+    def test_reference_restore_keeps_explicit_exception_for_same_marker(self):
+        from docfit_core.batch_format import ParagraphStyle, StylePool, _serialize
+        from docfit_core.fidelity.package import PackageSnapshot, build_package
+
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            source_text = folder / "sample.txt"
+            reference = folder / "reference.hwpx"
+            damaged = folder / "damaged.hwpx"
+            restored = folder / "restored.hwpx"
+            source_text.write_text("ㅇ default\nㅇ another\nㅇ exceptional\n", encoding="utf-8")
+            build_hwpx_from_text_file(source_text, reference)
+            snapshot = PackageSnapshot.load(reference)
+            header = ET.fromstring(snapshot.read("Contents/header.xml"))
+            section = ET.fromstring(snapshot.read("Contents/section0.xml"))
+            pool = StylePool(header)
+            for item in section.iter():
+                if tag(item) != "p" or not (plain_text(item) or "").startswith("ㅇ"):
+                    continue
+                pair = (0, -3240) if plain_text(item) == "ㅇ exceptional" else (0, -2996)
+                item.set("paraPrIDRef", pool.para(item.get("paraPrIDRef"), ParagraphStyle(
+                    text=plain_text(item), para_extra=(("left", pair[0]), ("intent", pair[1])))))
+            replacements = {
+                "Contents/header.xml": _serialize(header, snapshot.read("Contents/header.xml")),
+                "Contents/section0.xml": _serialize(section, snapshot.read("Contents/section0.xml")),
+            }
+            reference.write_bytes(build_package(snapshot, replacements))
+            pairs = reference_marker_indent_pairs(reference)
+            self.assertEqual(reference_hanging_indent_pair("ㅇ exceptional", pairs), (0, -3240))
+            self.assertEqual(reference_hanging_indent_pair("ㅇ new text", pairs), (0, -2996))
+
+            # Simulate a later pass flattening the exceptional paragraph to the mode.
+            snapshot = PackageSnapshot.load(reference)
+            header = ET.fromstring(snapshot.read("Contents/header.xml"))
+            section = ET.fromstring(snapshot.read("Contents/section0.xml"))
+            pool = StylePool(header)
+            for item in section.iter():
+                if tag(item) == "p" and plain_text(item) == "ㅇ exceptional":
+                    item.set("paraPrIDRef", pool.para(item.get("paraPrIDRef"), ParagraphStyle(
+                        text=plain_text(item), para_extra=(("left", 0), ("intent", -2996)))))
+            damaged.write_bytes(build_package(snapshot, {
+                "Contents/header.xml": _serialize(header, snapshot.read("Contents/header.xml")),
+                "Contents/section0.xml": _serialize(section, snapshot.read("Contents/section0.xml")),
+            }))
+            result = restore_reference_indent_geometry(damaged, reference, restored)
+            self.assertGreaterEqual(result["repaired"], 1)
+            self.assertEqual(inspect_hanging_indent(restored, reference)["failed_count"], 0)
+
     def test_reference_document_pairs_are_preserved_per_marker_and_label(self):
         reference = Path(__file__).resolve().parents[1] / "resources" / "서식예시" / "기본 서식.hwpx"
         pairs = reference_marker_indent_pairs(reference)
         self.assertEqual(pairs["-"], (0, -2800))
+        self.assertEqual(pairs["□"], (0, -2548))
+        self.assertEqual(pairs["ㅇ"], (0, -2996))
+        self.assertEqual(reference_hanging_indent_pair("ㅁ heading", pairs), (0, -2548))
+        self.assertEqual(reference_hanging_indent_pair("○ heading", pairs), (0, -2996))
         self.assertEqual(pairs["*:label"], (0, -8336))
         self.assertEqual(pairs["**:label"], (0, -9092))
         self.assertEqual(reference_hanging_indent_pair("   * 항목: 본문", pairs), (0, -8336))
