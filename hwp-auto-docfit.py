@@ -1520,6 +1520,7 @@ _반각전각_폭배수 = _engine_resolve('docfit_engine.formatter', '_반각전
 문단_선행부_폭_HWPUNIT = _engine_resolve('docfit_engine.formatter', '문단_선행부_폭_HWPUNIT', globals())
 
 _내어쓰기_값_설정 = _engine_resolve('docfit_engine.formatter', '_내어쓰기_값_설정', globals())
+_내어쓰기_여백쌍_설정 = _engine_resolve('docfit_engine.formatter', '_내어쓰기_여백쌍_설정', globals())
 
 
 

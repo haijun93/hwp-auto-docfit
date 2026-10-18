@@ -16,10 +16,10 @@ class JustifiedIndentLayoutTest(unittest.TestCase):
         cls.ns = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'hwp-auto-docfit.py'))
 
     def _doc(self, calls):
-        state = {'pos': (0, 3, 0), 'indent': -5992}
+        state = {'pos': (0, 3, 0), 'indent': -5992, 'left': 0}
 
         class Doc:
-            ParaShape = type('P', (), {'Item': lambda self, key: state['indent']})()
+            ParaShape = type('P', (), {'Item': lambda self, key: state['left' if key == 'LeftMargin' else 'indent']})()
 
             def GetPos(self):
                 return state['pos']
@@ -42,7 +42,11 @@ class JustifiedIndentLayoutTest(unittest.TestCase):
         def set_indent(value):
             state['indent'] = value
 
-        return Doc(), run, set_indent
+        def set_pair(left, indent):
+            state['left'] = left
+            state['indent'] = indent
+
+        return Doc(), run, set_indent, set_pair
 
     def _assert_layout_refreshed(self, calls, target):
         line_end = calls.index('MoveLineEnd')
@@ -52,24 +56,50 @@ class JustifiedIndentLayoutTest(unittest.TestCase):
     def test_body_indent_refreshes_layout_before_caret_jump(self):
         fn = self.ns['문단_내어쓰기_적용']
         calls = []
-        doc, run, set_indent = self._doc(calls)
+        doc, run, set_indent, set_pair = self._doc(calls)
+        log = Mock()
         with patch.dict(fn.__globals__, {
-            'hwp': doc, 'hwp_run': run, '_내어쓰기_값_설정': set_indent, '현재_한칸표인가': lambda: False,
-            '내어쓰기_변경문단': set(), '로그': Mock(), '진단로그': Mock(),
+            'hwp': doc, 'hwp_run': run, '_내어쓰기_값_설정': set_indent,
+            '_내어쓰기_여백쌍_설정': set_pair,
+            '문단_내어쓰기_기준_오프셋': lambda text: 3,
+            '현재_한칸표인가': lambda: False,
+            '내어쓰기_변경문단': set(), '로그': log, '진단로그': Mock(),
         }):
-            self.assertTrue(fn((0, 3, 0), ' ㅇ 난세기 예보 시 전 주민을'))
+            self.assertTrue(fn((0, 3, 0), ' ㅇ 난세기 예보 시 전 주민을'), repr(log.call_args_list))
         self._assert_layout_refreshed(calls, (0, 3, 3))
 
     def test_width_probe_refreshes_layout_before_caret_jump(self):
         fn = self.ns['_캐럿위치_폭_실측']
         calls = []
-        doc, run, set_indent = self._doc(calls)
+        doc, run, set_indent, _ = self._doc(calls)
         with patch.dict(fn.__globals__, {
             'hwp': doc, 'hwp_run': run, '_내어쓰기_값_설정': set_indent,
             '현재문단_텍스트': lambda: ' ㅇ 난세기 예보 시 전 주민을', '진단로그': Mock(),
         }):
             self.assertEqual(fn((0, 3, 0), 3), 6480)
         self._assert_layout_refreshed(calls, (0, 3, 3))
+
+    def test_hanging_indent_sets_compensating_left_margin(self):
+        fn = self.ns['문단_내어쓰기_적용']
+        calls = []
+        doc, run, set_indent, set_pair = self._doc(calls)
+        log = Mock()
+        with patch.dict(fn.__globals__, {
+            'hwp': doc,
+            'hwp_run': run,
+            '_내어쓰기_값_설정': set_indent,
+            '_내어쓰기_여백쌍_설정': set_pair,
+            '문단_내어쓰기_기준_오프셋': lambda text: 3,
+            '_캐럿위치_폭_실측': lambda begin, count: 6480,
+            '현재_한칸표인가': lambda: False,
+            '로그': log,
+            '진단로그': Mock(),
+            '내어쓰기_변경문단': set(),
+        }):
+            self.assertTrue(fn((0, 3, 0), ' ㅇ 항목 내용'), repr(log.call_args_list))
+        self.assertEqual(doc.ParaShape.Item('LeftMargin'), 6480)
+        self.assertEqual(doc.ParaShape.Item('Indentation'), -6480)
+        self.assertGreaterEqual(doc.ParaShape.Item('LeftMargin') + doc.ParaShape.Item('Indentation'), 0)
 
 
 if __name__ == '__main__':

@@ -22,6 +22,7 @@ import difflib
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -219,6 +220,11 @@ EXCLUDED_PARA = ("ls",)
 EXCLUDED_CHAR = ("spacing",)
 # 문단 하나에만 준 손 간격: 원본에서 같은 계층(항목기호) 대표값과 다른 문단 위·아래 간격·내어쓰기·왼쪽 여백(사용자 결정 2026-10-17).
 HAND_KEYS = ("prev", "next", "intent", "left")
+_MARKER_PARAGRAPH = re.compile(r"^\s*(?:[□ㅁㅇ○●◦▪▫■◆◇※*-]+|\d+[.)])\s*\S")
+
+
+def _is_marker_paragraph(text):
+    return bool(_MARKER_PARAGRAPH.match(text or ""))
 
 
 def _group(text):
@@ -274,7 +280,8 @@ def _hand_keys(x, levels, context):
 def _normalized(x, line_count, hand=()):
     """비교용 문단: 제외 항목을 뺀 문단 모양과, 제외 항목을 뺀 뒤 모양이 같은 run을 합친 글자 구간."""
     para = tuple((k, v) for k, v in (x[2] or ()) if k not in EXCLUDED_PARA and k not in hand
-                 and not (k == "intent" and line_count is not None and line_count <= 1))
+                 and not (k == "intent" and line_count is not None and line_count <= 1
+                          and not _is_marker_paragraph(x[1])))
     runs = []
     for shape, text in x[3]:
         shape = tuple((k, v) for k, v in (shape or ()) if k not in EXCLUDED_CHAR)
@@ -293,7 +300,8 @@ def _excluded(x, y, hand=()):
         found.append("문단 하나에만 준 간격·여백")
     if px.get("ls") != py.get("ls"):
         found.append("줄 간격")
-    if px.get("intent") != py.get("intent") and x[4] is not None and x[4] <= 1:
+    if (px.get("intent") != py.get("intent") and x[4] is not None and x[4] <= 1
+            and not _is_marker_paragraph(x[1])):
         found.append("한 줄 문단 내어쓰기")
     sx = [dict(c or ()).get("spacing") for c, t in x[3] for _ in t]
     sy = [dict(c or ()).get("spacing") for c, t in y[3] for _ in t]
@@ -322,6 +330,10 @@ def compare(original, result):
             x, y = a[i], b[j]
             if x[0] == "P":
                 hand = _hand_keys(x, levels, contexts.get(i))
+                if _is_marker_paragraph(x[1]):
+                    # 항목기호/번호 문단의 들여쓰기는 수동 예외가 아니라 핵심 출력 규격이다.
+                    hand.discard("intent")
+                    hand.discard("left")
                 excluded.update(_excluded(x, y, hand))
                 x, y = _normalized(x, x[4], hand), _normalized(y, x[4], hand)
             if x == y:
