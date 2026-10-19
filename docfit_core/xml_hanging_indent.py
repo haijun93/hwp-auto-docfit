@@ -402,6 +402,34 @@ def reference_hanging_indent_pair(
     return reference_pairs.get(marker)
 
 
+def safe_reference_hanging_indent_pair(
+    text: str | None,
+    reference_pairs: dict[str, tuple[int, int]],
+    *,
+    wrapped: bool = True,
+) -> tuple[int, int] | None:
+    """Keep the reference indent while giving wrapped lines a real left margin.
+
+    Some sample HWPX paragraphs store ``left=0`` with a negative ``intent``.
+    Matching that pair verbatim leaves both rendered lines at the page margin.
+    Preserve the first-line origin (left + intent), but move the continuation
+    line inside by compensating for any negative origin.
+    """
+    pair = reference_hanging_indent_pair(text, reference_pairs)
+    if pair is None:
+        return None
+    left, intent = pair
+    if wrapped and intent < 0 and left + intent < 0:
+        return (left - (left + intent), intent)
+    return pair
+
+
+def paragraph_wraps(paragraph) -> bool:
+    """Use Hancom's saved line layout; absent layout is conservatively wrapped."""
+    line_array = next((child for child in paragraph if tag(child) == "linesegarray"), None)
+    return line_array is None or sum(tag(child) == "lineseg" for child in line_array) > 1
+
+
 def restore_reference_indent_geometry(
     source: str | Path,
     reference: str | Path,
@@ -433,7 +461,9 @@ def restore_reference_indent_geometry(
             if tag(paragraph) != "p":
                 continue
             text = _paragraph_visible_text(paragraph)
-            pair = reference_hanging_indent_pair(text, reference_pairs)
+            pair = safe_reference_hanging_indent_pair(
+                text, reference_pairs, wrapped=paragraph_wraps(paragraph)
+            )
             if pair is None:
                 continue
             checked += 1
@@ -454,6 +484,11 @@ def restore_reference_indent_geometry(
             new_id = pool.para(base_id, spec)
             if new_id != base_id:
                 paragraph.set("paraPrIDRef", new_id)
+                # Cached line positions were calculated with the old margins.
+                # Force Hancom to lay out every wrapped line using the new pair.
+                for child in list(paragraph):
+                    if tag(child) == "linesegarray":
+                        paragraph.remove(child)
                 repaired += 1
                 changed.add(name)
 
@@ -480,10 +515,12 @@ def restore_reference_indent_geometry(
         first_left, first_indent = _paragraph_left_intent(first_style)
         if first_left is None or first_indent is None:
             continue
-        anchor = first_left + first_indent + prefix_width_hwpunit(
+        # Attachment blocks are flush with the body margin. Do not inherit a
+        # positive first-line origin accidentally introduced by an earlier pass.
+        anchor = prefix_width_hwpunit(
             first_text, first_offset, size_pt=_char_size_pt(header, first)
         )
-        for index in range(start + 1, end + 1):
+        for index in range(start, end + 1):
             name, paragraph = ordered[index]
             text = texts[index]
             offset = numbered_item_offset(text)
@@ -498,15 +535,25 @@ def restore_reference_indent_geometry(
             if left is None or indent is None:
                 missing += 1
                 continue
-            target_indent = anchor - left - prefix_width_hwpunit(
-                text, offset, size_pt=_char_size_pt(header, paragraph)
-            )
-            if target_indent != indent:
+            size = _char_size_pt(header, paragraph)
+            prefix_width = prefix_width_hwpunit(text, offset, size_pt=size)
+            marker_end = text.find(".", offset) + 1
+            if marker_end <= offset:
+                continue
+            marker_width = prefix_width_hwpunit(text, marker_end, size_pt=size) - prefix_width
+            # The first origin is left+intent; the continuation origin is left.
+            # Keep each number at the common anchor and hang wrapped text after it.
+            target_left = anchor + marker_width
+            target_indent = -prefix_width - marker_width
+            if target_left != left or target_indent != indent:
                 new_id = pool.para(base_id, ParagraphStyle(
-                    text=text, para_extra=(("left", left), ("intent", target_indent)),
+                    text=text, para_extra=(("left", target_left), ("intent", target_indent)),
                 ))
                 if new_id != base_id:
                     paragraph.set("paraPrIDRef", new_id)
+                    for child in list(paragraph):
+                        if tag(child) == "linesegarray":
+                            paragraph.remove(child)
                     changed.add(name)
                     repaired += 1
 

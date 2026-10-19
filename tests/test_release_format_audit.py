@@ -51,7 +51,7 @@ class ReleaseFormatAuditTest(unittest.TestCase):
         self.assertEqual(result['status'], 'pass')
         self.assertEqual(result['marker_paragraph_count'], 1)
 
-    def test_top_level_heading_requires_zero_margins_and_zero_indent(self):
+    def test_top_level_heading_allows_zero_or_safe_hanging_margins(self):
         path = self._document(0, 0)
         with ZipFile(path, 'w') as archive:
             archive.writestr('Contents/header.xml', HEADER.format(left=0, indent=0))
@@ -65,8 +65,14 @@ class ReleaseFormatAuditTest(unittest.TestCase):
             archive.writestr('Contents/header.xml', HEADER.format(left=2400, indent=-2400))
             archive.writestr('Contents/section0.xml', SECTION.replace('ㅇ 추진 배경', 'ㅁ 추진 배경'))
         result = inspect_hanging_indent(path)
+        self.assertEqual(result['status'], 'pass')
+
+        path = self._document(0, 0)
+        with ZipFile(path, 'w') as archive:
+            archive.writestr('Contents/header.xml', HEADER.format(left=0, indent=-2400))
+            archive.writestr('Contents/section0.xml', SECTION.replace('ㅇ 추진 배경', 'ㅁ 추진 배경'))
+        result = inspect_hanging_indent(path)
         self.assertEqual(result['status'], 'fail')
-        self.assertIn('top-level', result['findings'][0]['reason'])
 
     def test_hanging_indent_is_applied_after_all_copy_style_operations(self):
         source = (Path(__file__).resolve().parents[1] / 'docfit_engine' / 'formatter.py').read_text(encoding='utf-8')

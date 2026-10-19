@@ -4107,6 +4107,10 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         continue
                     target = folder / filename
                     processor(source, target, selections)
+                    if name == '본문 서식 일괄 적용':
+                        from docfit_core.indent_stage_trace import capture_saved_stage, trace_enabled
+                        if trace_enabled():
+                            capture_saved_stage('XML 산출물·한글 재열기 전', target)
                     source = target
                     changed = True
                     로그(f'{name} 선행 서식 파일 생성 완료')
@@ -5970,10 +5974,10 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 문단추가 = dict(추가[1])
                 if (globals().get('표준서식_내어쓰기_사용', False)
                         and selected.get('indent', True)
-                        and not (사용자서식 and ('left' in 문단추가 or 'intent' in 문단추가))):
+                        and not (사용자서식 and 'intent' in 문단추가)):
                     from docfit_core.xml_hanging_indent import (
-                        hanging_indent_pair, reference_hanging_indent_pair,
-                        reference_marker_indent_pairs,
+                        hanging_indent_pair, paragraph_wraps,
+                        reference_marker_indent_pairs, safe_reference_hanging_indent_pair,
                     )
                     from pathlib import Path
                     if not _xml_내어쓰기_기준확인:
@@ -6015,7 +6019,10 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                             except Exception as error:
                                 로그(f'[알파 XML 내어쓰기] 기준 서식 분석 실패, 폭 계산 폴백: {error}')
                     내어쓰기쌍 = (
-                        reference_hanging_indent_pair(formatted, _xml_내어쓰기_기준쌍)
+                        safe_reference_hanging_indent_pair(
+                            formatted, _xml_내어쓰기_기준쌍,
+                            wrapped=paragraph_wraps(paragraph),
+                        )
                         if _xml_내어쓰기_기준쌍
                         else None
                     )

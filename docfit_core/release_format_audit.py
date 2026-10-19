@@ -116,8 +116,10 @@ def inspect_hanging_indent(path: str | Path, reference_path: str | Path | None =
                 if left is None or indent is None:
                     findings.append(ParagraphFinding(text, para_id, left, indent, "fail", "left/indent values unavailable"))
                 elif reference_pairs:
-                    from .xml_hanging_indent import reference_hanging_indent_pair
-                    expected = reference_hanging_indent_pair(text, reference_pairs)
+                    from .xml_hanging_indent import paragraph_wraps, safe_reference_hanging_indent_pair
+                    expected = safe_reference_hanging_indent_pair(
+                        text, reference_pairs, wrapped=paragraph_wraps(paragraph)
+                    )
                     if expected is not None and (left, indent) == expected:
                         findings.append(ParagraphFinding(text, para_id, left, indent, "pass", "matches reference HWPX"))
                     elif expected is not None:
@@ -125,7 +127,7 @@ def inspect_hanging_indent(path: str | Path, reference_path: str | Path | None =
                             text, para_id, left, indent, "fail",
                             f"reference mismatch: expected left={expected[0]}, intent={expected[1]}"))
                     elif TOP_LEVEL_MARKER.match(text):
-                        if left == 0 and indent == 0:
+                        if (left == 0 and indent == 0) or (left > 0 and indent < 0 and left + indent >= 0):
                             findings.append(ParagraphFinding(text, para_id, left, indent, "pass"))
                         else:
                             findings.append(ParagraphFinding(text, para_id, left, indent, "fail", "top-level ㅁ/□ heading must have no paragraph indent"))
@@ -134,7 +136,7 @@ def inspect_hanging_indent(path: str | Path, reference_path: str | Path | None =
                     else:
                         findings.append(ParagraphFinding(text, para_id, left, indent, "fail", "reference style unavailable and safe hanging geometry missing"))
                 elif TOP_LEVEL_MARKER.match(text):
-                    if left == 0 and indent == 0:
+                    if (left == 0 and indent == 0) or (left > 0 and indent < 0 and left + indent >= 0):
                         findings.append(ParagraphFinding(text, para_id, left, indent, "pass"))
                     else:
                         findings.append(ParagraphFinding(
@@ -148,6 +150,14 @@ def inspect_hanging_indent(path: str | Path, reference_path: str | Path | None =
         from .attachment_block import find_trailing_numbered_blocks, numbered_item_offset
         from .xml_hanging_indent import _char_size_pt, prefix_width_hwpunit
         for start, end in find_trailing_numbered_blocks([item[0] for item in all_paragraphs]):
+            first_text, _, first_id = all_paragraphs[start]
+            first_style = para_styles.get(first_id)
+            first_left, first_indent = _paragraph_margins(first_style) if first_style is not None else (None, None)
+            if (not first_text.startswith("붙임") or first_left is None or first_indent is None
+                    or first_left + first_indent != 0):
+                findings.append(ParagraphFinding(
+                    first_text, first_id, first_left, first_indent, "fail",
+                    "trailing attachment must start with 붙임 at the body margin"))
             origins: list[tuple[str, str, int]] = []
             for text, paragraph, para_id in all_paragraphs[start:end + 1]:
                 style = para_styles.get(para_id)

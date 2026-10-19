@@ -194,6 +194,11 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             # 서식을 바꾸지 않는다.
             문서_변경됨 = False
             globals()["_문서_제목표_있음"] = False
+            from docfit_core.indent_stage_trace import capture_stage, trace_enabled
+            def 내어쓰기_추적(이름):
+                if trace_enabled():
+                    capture_stage(이름, hwp, 순회_시작, 현재문단_텍스트, 범위_다음_문단으로_진행)
+            내어쓰기_추적('입력 문서')
             맨앞목록 = []
             if (작업_모드 in ('format', 'all') and 준말_등록표
                     and stage_enabled(선택_세부작업, 'abbreviation', 작업_모드)):
@@ -215,12 +220,14 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 if 제목붙임_선행적용(작업파일경로, 현재문서_기준=False, 처리목록=tuple(맨앞목록), 변경알림=알림) is False:
                     return False
                 문서_변경됨 = bool(알림.get('changed'))
+                내어쓰기_추적('XML 본문 서식 일괄 적용 직후')
 
             # ② 보고서 표준서식. 쪽 범위는 위에서 이미 문단 번호로 고정했다.
             결과 = 표준서식_선행_적용(파일명)
             if 결과 is False:
                 return False
             문서_변경됨 = 문서_변경됨 or bool(결과)
+            내어쓰기_추적('표준서식 선행 적용 직후')
 
             박스그림_실행 = False
             # 박스 그림 표(AI 채팅 답변을 붙여넣을 때 흔한 '┌─┬─┐ / │ … │ / └─┴─┘' 형태)는
@@ -345,6 +352,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     자간초기화_완료 = True
                 문서_변경됨 = 문서_변경됨 or bool(알림.get('changed'))
                 기본표서식_적용됨 = 기본표_포함
+                내어쓰기_추적('제목·개요·표 선행 서식 직후')
             if 표준서식_사용 and 작업_모드 in ('format', 'all'):
                 if 쪽범위_요청 is None and 활성_정밀표_프로필 and stage_enabled(선택_세부작업, 'precise_table'):
                     단계표시("표 정밀 서식")
@@ -423,6 +431,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             저장결과 = hwp.SaveAs(Path=저장파일, Format="HWPX", arg="")
             if 저장결과 is False:
                 raise RuntimeError(f"문서 저장에 실패했습니다: {저장파일}")
+            if trace_enabled():
+                from docfit_core.indent_stage_trace import capture_saved_stage
+                capture_saved_stage('COM 저장 직후·기준 복원 전', 저장파일)
             # XML 표준 일괄서식의 문단 여백은 이후 자간·쪽맞춤·COM 재확인에서
             # 다시 덮일 수 있다. 저장된 산출물에서 기준 HWPX의 left/intent를
             # 마지막으로 복원해 실제 결과 파일의 내어쓰기 값을 보증한다.
@@ -448,6 +459,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                             임시결과.unlink()
                         로그(f"[저장 결과 내어쓰기 기준 복원] 기준 문단 {복원결과['checked']}개 / "
                              f"실제 복원 {복원결과['repaired']}개")
+                        if trace_enabled():
+                            capture_saved_stage('최종 기준 내어쓰기 복원 후', 저장파일)
                 except Exception as error:
                     if 임시결과 is not None and 임시결과.exists():
                         임시결과.unlink()
@@ -945,6 +958,10 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     callbacks.on_stage_error(name, error)
                     raise
                 callbacks.on_stage_exit(name, result)
+                if result:
+                    from docfit_core.indent_stage_trace import capture_stage, trace_enabled
+                    if trace_enabled():
+                        capture_stage(name, hwp, 순회_시작, 현재문단_텍스트, 범위_다음_문단으로_진행)
                 return result
             def 최종_내어쓰기_확인():
                 # 양쪽 정렬 첫 줄은 기호 뒤 빈칸이 줄의 여유만큼 늘어난다. 내어쓰기를 잰 뒤 첫 줄 내용(다음 단어 당김·
