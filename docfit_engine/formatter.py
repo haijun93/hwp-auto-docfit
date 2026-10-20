@@ -547,6 +547,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 빈줄_줄간격 = Counter()   # 빈 줄의 줄 간격(%)은 본문과 따로 배운다
                 별표_정렬표 = Counter()   # '*' 다음 '**' 문장: 둘째 별표를 첫째 별표 아래에 맞췄는지(앞 빈칸 한 칸 적음)
                 앞_별표 = None
+                부연_부모 = None
+                부연_앞칸 = defaultdict(Counter)   # (위 문단 유형 또는 "", 부연설명 기호) → 앞 빈칸 수 빈도
                 개체 = {"tbl", "pic", "rect", "ellipse", "line", "container", "equation", "ole", "polygon", "curve",
                       "arc", "textart", "connectLine"}
                 sections = sorted((n for n in z.namelist() if re.fullmatch(r"Contents/section\d+\.xml", n)),
@@ -587,6 +589,14 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                             별표_정렬표[앞칸 + 1 == 앞_별표] += 1
                         앞_별표 = 앞칸 if text.startswith("*") and not text.startswith("**") else (
                             앞_별표 if text.startswith("**") else None)
+                        # 부연설명(*, **, ※) 앞 빈칸을 위 문단 유형별로 배운다(_부연설명_한문단과 같은 연결 규칙).
+                        유형 = _부모문단_유형(text)
+                        if 유형 is not None:
+                            부연_부모 = 유형
+                        elif _부연설명_문단인가(text):
+                            부연_앞칸[(부연_부모 or "", "**" if text.startswith("**") else text[0])][앞칸] += 1
+                        else:
+                            부연_부모 = None
                         count += 1
                         symbol = aliases.get(text[0], text[0])
                         # 가장 긴 텍스트 런을 사용해 짧은 라벨 강조가 본문 서식을 압도하지 않도록 한다.
@@ -677,6 +687,11 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 if spacing: fmt["기본_줄간격_퍼센트"] = spacing.most_common(1)[0][0]
                 if 빈줄_줄간격: fmt["빈줄_줄간격_퍼센트"] = 빈줄_줄간격.most_common(1)[0][0]
                 if 별표_정렬표: fmt["별표_정렬"] = 별표_정렬표.most_common(1)[0][0]
+                if 부연_앞칸:
+                    배운표 = {}
+                    for (부모, 기호), 빈도 in 부연_앞칸.items():
+                        배운표.setdefault(부모, {})[기호] = 빈도.most_common(1)[0][0]
+                    fmt["부연설명_앞빈칸"] = 배운표
                 if first_styles:
                     font, size, bold = first_styles[0]
                     fmt["제목_문단"] = {"font": font, "size_pt": size, "bold": bold}
@@ -4108,6 +4123,16 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     target = folder / filename
                     processor(source, target, selections)
                     if name == '본문 서식 일괄 적용':
+                        from docfit_core.marker_prefix import audit_hwpx_prefixes
+                        prefix_audit = audit_hwpx_prefixes(
+                            target, 표준서식_설정.get('기호_규칙', ()))
+                        mismatch_count = len(prefix_audit['mismatches'])
+                        로그(f'[항목기호 앞 공백 검수] 검사 {sum(prefix_audit["measured"].values())}문단 / '
+                             f'불일치 {mismatch_count}문단')
+                        for mismatch in prefix_audit['mismatches'][:20]:
+                            로그(f'[항목기호 공백 불일치] {mismatch["marker"]}: '
+                                 f'{mismatch["actual"]}칸 → {mismatch["expected"]}칸 / '
+                                 f'{mismatch["text"][:80]}')
                         from docfit_core.indent_stage_trace import capture_saved_stage, trace_enabled
                         if trace_enabled():
                             capture_saved_stage('XML 산출물·한글 재열기 전', target)
@@ -5393,7 +5418,16 @@ def _install(*, _docfit_namespace, _docfit_symbol):
         return bind_function(_캐럿위치_폭_실측, _docfit_namespace)
     if _docfit_symbol == '부연설명_앞빈칸_수':
         def 부연설명_앞빈칸_수(부모_유형, marker):
-            """위 문단 유형(제목/본문/내용/None)과 부연설명 기호로 앞 빈칸 수를 정한다. 규칙 밖이면 None."""
+            """위 문단 유형(제목/본문/내용/None)과 부연설명 기호로 앞 빈칸 수를 정한다. 규칙 밖이면 None.
+
+            서식 복사 프로필이 예시에서 배운 위 문단별 칸 수(fmt["부연설명_앞빈칸"], 위 문단 없음은 "")가 있으면
+            그 값을 먼저 쓰고, 예시에 없는 조합은 기본표(부연설명_앞빈칸)로 대신한다.
+            """
+            배운표 = 표준서식_설정.get("부연설명_앞빈칸")
+            if isinstance(배운표, dict):
+                값 = (배운표.get(부모_유형 or "") or {}).get(marker)
+                if 값 is not None:
+                    return int(값)
             return 부연설명_앞빈칸.get(부모_유형, {}).get(marker)
         return bind_function(부연설명_앞빈칸_수, _docfit_namespace)
     if _docfit_symbol == '_부연설명_앞빈칸_적용':
@@ -5478,7 +5512,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             왼쪽여백은 위 제목/본문/내용 문단과 같게 둔다. 부모대상((리스트, 문단) 집합)을 주면
             그 부모에 딸린 부연설명만 다시 맞춘다. 옮긴 부연설명은 내어쓰기_변경문단에 더한다.
             """
-            if not 부연설명_들여쓰기_사용:
+            if not (부연설명_들여쓰기_사용 or 표준서식_설정.get("부연설명_앞빈칸")):
                 return True
             if 중단_요청됨():
                 return False
@@ -5923,12 +5957,20 @@ def _install(*, _docfit_namespace, _docfit_symbol):
 
             _xml_내어쓰기_기준쌍 = None
             _xml_내어쓰기_기준확인 = False
+            _xml_부연_부모 = None      # 부연설명(*, **, ※)의 위 문단 유형(제목/본문/내용) — _부연설명_한문단과 같은 규칙
 
             def plan(text, paragraph):
-                nonlocal _xml_내어쓰기_기준쌍, _xml_내어쓰기_기준확인
+                nonlocal _xml_내어쓰기_기준쌍, _xml_내어쓰기_기준확인, _xml_부연_부모
                 # 컨트롤 문단도 위계 상태에는 포함한다. 그 문단의 실제 서식은 COM에 맡긴다.
                 readable = _문단_본문글(paragraph) if text is None else text
                 readable = normalize_leading_dot(readable)
+                부연_부모 = _xml_부연_부모
+                if readable.strip():
+                    유형 = _부모문단_유형(readable)
+                    if 유형 is not None:
+                        _xml_부연_부모 = 유형
+                    elif not _부연설명_문단인가(readable):
+                        _xml_부연_부모 = None   # 번호 항목 등 다른 문단이 끼면 연결이 끊긴다
                 prev = None
                 사용자서식 = _사용자서식인가()
                 if 표준서식_문단위간격_사용 and not 표준서식_설정.get("복제_들여쓰기_유지"):
@@ -5946,10 +5988,20 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         return None
                     return ParagraphStyle(text=readable, prev_pt=prev) if prev is not None else None
                 symbol, lead, font, size, paragraph_bold, marker_bold = rule
-                if readable.lstrip().startswith('**'):
-                    lead = max(0, lead - 1)
-                formatted = (readable if 표준서식_설정.get("복제_들여쓰기_유지")
-                             else ' ' * lead + readable.lstrip())
+                if readable.lstrip().startswith('**') and symbol != '**':
+                    lead = max(0, lead - 1)   # '*' 규칙을 빌려 쓸 때만 한 칸 적게('**' 규칙을 배운 프로필은 그 값 그대로)
+                # 부연설명(*, **, ※)은 위 문단 유형별 칸 수(예시에서 배운 값 → 부연설명_앞빈칸 기본표)를 쓴다.
+                # 예전에는 기호 규칙의 고정 칸 수(* 3, ** 2)만 넣고 뒤 단계(_부연설명_한문단)가 XML 처리 문단을
+                # 건너뛰어 '-' 아래 * 6·** 5가 3·2로 남았다(2026-10-20, 135f937 회귀).
+                if _부연설명_문단인가(readable) and (부연설명_들여쓰기_사용 or 표준서식_설정.get("부연설명_앞빈칸")):
+                    부연_본문 = readable.lstrip(' \t 　')
+                    칸 = 부연설명_앞빈칸_수(부연_부모, "**" if 부연_본문.startswith("**") else 부연_본문[0])
+                    if 칸 is not None:
+                        lead = 칸
+                # 문두 공백은 내어쓰기 left/intent 계산에 반영되어야 하므로 문단모양을 만들기 전에 정한다.
+                # 서식 복사(복제) 프로필도 예시에서 배운 칸 수로 맞춘다(v1.64 동작 복원, 2026-10-20). 예전에는
+                # 복제_들여쓰기_유지면 원문 앞 빈칸을 그대로 둬 txt 입력(앞 빈칸 0)의 ㅇ·-가 0칸이 됐다.
+                formatted = ' ' * lead + readable.lstrip(' \t 　')
                 추가 = ((), ())
                 if 사용자서식:
                     추가 = 사용자서식_XML추가값(leading_marker(readable)[0], symbol)
@@ -6196,11 +6248,12 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 not 기호_매칭 and 표준서식_일자담당자_사용 and 헤더_역할 == "dateinfo"
             )
 
-            # 자체 문장부호가 있는 경우에만 표준 선행공백으로 보정한다.
+            # v1.64 절차 복원: 자체 항목기호 문단은 복제 서식 프로필이어도
+            # 앞 공백류를 실측해 규칙값과 다르면 선행부만 교체한다.
             # **(주석2)는 둘째 별표가 *(주석1)의 별표와 같은 가로 위치에 오도록 선행 공백을 1칸 적게(공백수 - 1) 둔다.
-            if 자체_기호_매칭 and not 표준서식_설정.get("복제_들여쓰기_유지"):
+            if 자체_기호_매칭:
                 목표_공백수 = 자체_기호_매칭[1]
-                if text.lstrip().startswith("**"):
+                if text.lstrip().startswith("**") and 자체_기호_매칭[0] != "**":
                     목표_공백수 = max(0, 목표_공백수 - 1)
                 들여쓰기_공백_맞추기(목표_공백수)
 

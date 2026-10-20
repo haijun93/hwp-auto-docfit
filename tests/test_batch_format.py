@@ -241,6 +241,33 @@ def app_functions(*names):
 
 
 class BatchComSelectionTests(unittest.TestCase):
+    def test_legacy_prefix_repair_runs_for_copied_indent_profile(self):
+        ns = app_functions('표준서식_문단_처리')
+        spacing_fix = Mock()
+        ns.update(
+            hwp=Mock(), hwp_run=Mock(), 현재_한칸표인가=lambda: False,
+            현재문단_텍스트=lambda: '   ㅇ 항목',
+            normalize_leading_dot=normalize_leading_dot,
+            leading_marker=leading_marker,
+            표준서식_기호규칙_찾기=lambda _text: ('ㅇ', 1, '한컴돋움', 15, False, False),
+            표준서식_기호_사용=True, 표준서식_문단위간격_사용=False,
+            표준서식_설정={'복제_들여쓰기_유지': True, '스타일_속성선택': {},
+                          '복사_문단모양': {}, '계층_추가서식': {}, '복귀_간격': {},
+                          '기호_보통': ()},
+            _표준서식_XML텍스트=set(), _표준서식_XML간격={},
+            표준서식_제목_사용=False, 표준서식_일자담당자_사용=False,
+            표준서식_장평_사용=False, 표준서식_줄간격_사용=False,
+            표준서식_내어쓰기_사용=False, 최종_내어쓰기_예정=True,
+            표준서식_기호_굵게={'ㅇ': False},
+            들여쓰기_공백_맞추기=spacing_fix,
+            문자모양_적용_현재선택=Mock(),
+            문두_라벨_굵게_선반영=Mock(),
+            복사_문단모양_적용=Mock(), 계층_추가서식_적용=Mock(),
+            복사_간격_규칙_적용=Mock(), 진단로그=Mock(),
+        )
+        ns['표준서식_문단_처리'](1)
+        spacing_fix.assert_called_once_with(1)
+
     def test_body_passes_skip_measured_single_lines_and_process_every_multiline_boundary(self):
         class Cursor:
             def __init__(self):
@@ -294,10 +321,12 @@ class BatchComSelectionTests(unittest.TestCase):
     def test_app_processor_uses_actual_rules_and_preserves_heading_and_label_options(self):
         ns = app_functions('알파_일괄서식_가능', '_알파_라벨_굵게범위', '표준서식_hwpx_처리',
                            '표준서식_기호규칙_찾기', '문장부호_마커_끝위치',
-                           '문두_라벨_굵게_제외_문단인가', '괄호_문두_라벨인가', '_문단_본문글', '_알파_글꼴형식')
+                           '문두_라벨_굵게_제외_문단인가', '괄호_문두_라벨인가', '_문단_본문글', '_알파_글꼴형식',
+                           '_부모문단_유형', '_부연설명_문단인가', '부연설명_앞빈칸_수')
         ns['DOT_MARKERS'] = DOT_MARKERS
         tree = ast.parse((Path(__file__).resolve().parents[1] / 'hwp-auto-docfit.py').read_text(encoding='utf-8'))
-        wanted = {'표준서식_설정', '표준서식_기호_별칭', '문두라벨_기호설정', '표준서식_기호_굵게'}
+        wanted = {'표준서식_설정', '표준서식_기호_별칭', '문두라벨_기호설정', '표준서식_기호_굵게',
+                  '_제목_기호', '_본문_기호', '_내용_기호', '부연설명_앞빈칸', '부연설명_들여쓰기_사용'}
         for node in tree.body:
             if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id in wanted for t in node.targets):
                 exec(compile(ast.Module(body=[node], type_ignores=[]), '<app defaults>', 'exec'), ns)

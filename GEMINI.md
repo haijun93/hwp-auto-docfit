@@ -8,3 +8,4 @@
 - XML 파싱은 `defusedxml`만(GitLab 보안 검사). `hwp-auto-docfit.py`의 CRLF 줄바꿈 보존
 - 사용자 문서 원본은 수정하지 말고 사본으로 시험. 작업이 끝나면 요청이 없어도 자동으로 커밋하고 지정 브랜치에 푸시(사용자 지시, 2026-10-07)
 - 사용자와는 한국어로 소통
+- **진행 중 공동 작업(2026-10-20~)**: `docs/CODEX_CLAUDE_SPACING_COORDINATION.md`의 '★ Claude 작업 지시'를 먼저 읽고 자기 몫(Codex: W1~W3, Gemini: G1~G3)을 수행한 뒤 같은 문서의 결과 보고 칸에 적을 것. 한/글 COM 시험은 `C:\HWP_AUTODOCFIT\.com-test.lock` 잠금 필수

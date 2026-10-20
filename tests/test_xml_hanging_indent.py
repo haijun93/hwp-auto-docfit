@@ -319,10 +319,12 @@ class XmlHangingIndentUnitTests(unittest.TestCase):
             "알파_일괄서식_가능", "_알파_라벨_굵게범위", "표준서식_hwpx_처리",
             "표준서식_기호규칙_찾기", "문장부호_마커_끝위치",
             "문두_라벨_굵게_제외_문단인가", "괄호_문두_라벨인가", "_문단_본문글", "_알파_글꼴형식",
+            "_부모문단_유형", "_부연설명_문단인가", "부연설명_앞빈칸_수",
         )
         ns["DOT_MARKERS"] = DOT_MARKERS
         tree = ast.parse((Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py").read_text(encoding="utf-8"))
-        wanted = {"표준서식_설정", "표준서식_기호_별칭", "문두라벨_기호설정", "표준서식_기호_굵게"}
+        wanted = {"표준서식_설정", "표준서식_기호_별칭", "문두라벨_기호설정", "표준서식_기호_굵게",
+                  "_제목_기호", "_본문_기호", "_내용_기호", "부연설명_앞빈칸", "부연설명_들여쓰기_사용"}
         for node in tree.body:
             if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id in wanted for t in node.targets):
                 exec(compile(ast.Module(body=[node], type_ignores=[]), "<app defaults>", "exec"), ns)
@@ -339,7 +341,7 @@ class XmlHangingIndentUnitTests(unittest.TestCase):
             _문두_무시문자_정규식=re.compile(r"[\s\u200b\u2060\ufeff]+"),
             괄호_정규식=re.compile(r"\(([^()]+)\)|\[([^\[\]]+)\]"), 제목_xml이름=tag,
             _표준서식_문단위간격_표=lambda: dict(chapter=15, midtitle=15, box=15, circle=8, dash=4, note=0),
-            _GDI_글꼴인가=lambda name: True, 로그=Mock(),
+            _GDI_글꼴인가=lambda name: True, 로그=Mock(), shutil=__import__("shutil"),
         )
         reference = Path(__file__).resolve().parents[1] / "resources" / "서식예시"
         ns["서식예시_폴더"] = lambda: reference
@@ -355,6 +357,7 @@ class XmlHangingIndentUnitTests(unittest.TestCase):
             build_hwpx_from_text_file(txt_file, source)
             selections = ns["표준서식_hwpx_처리"](source)
             self.assertEqual(ns["표준서식_hwpx_처리"](source, target, selections), 3)
+            # ㅇ(본문) 아래 *는 위 문단별 규칙(부연설명_앞빈칸) 6칸이다. 예전에는 기호 규칙 고정값 3칸이 들어갔다.
             audit = inspect_hanging_indent(target, reference / "기본 서식.hwpx")
             self.assertEqual(audit["status"], "pass")
             findings = {item["text"]: item for item in audit["findings"]}
@@ -369,9 +372,9 @@ class XmlHangingIndentUnitTests(unittest.TestCase):
                 safe_reference_hanging_indent_pair(" ㅇ (삼체 행성 상황) 3개 항성의 불규칙 운동", expected_pairs),
             )
             self.assertEqual(
-                (findings["   * 항세기: 기후가 안정된 시기"]["left"],
-                 findings["   * 항세기: 기후가 안정된 시기"]["indent"]),
-                safe_reference_hanging_indent_pair("   * 항세기: 기후가 안정된 시기", expected_pairs),
+                (findings["      * 항세기: 기후가 안정된 시기"]["left"],
+                 findings["      * 항세기: 기후가 안정된 시기"]["indent"]),
+                safe_reference_hanging_indent_pair("      * 항세기: 기후가 안정된 시기", expected_pairs),
             )
 
 

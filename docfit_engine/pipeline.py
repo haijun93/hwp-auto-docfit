@@ -1082,7 +1082,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             # 한다. 자간·단어 분리 검사보다는 앞이어야 옮긴 부연설명의 줄바꿈도 검사된다.
             부연설명_단계_사용 = (작업_모드 in ('format', 'all') and 표준서식_사용
                               and stage_enabled(선택_세부작업, 'supplement_indent')
-                              and 부연설명_들여쓰기_사용)
+                              and (부연설명_들여쓰기_사용 or bool(표준서식_설정.get("부연설명_앞빈칸"))))
             if 부연설명_단계_사용 and not 세트모드:
                 if not stage('부연설명 들여쓰기', 부연설명_들여쓰기_전체_적용):
                     return False
