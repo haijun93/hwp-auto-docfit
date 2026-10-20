@@ -186,7 +186,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         if hwp.GetPos()[0] != area:
                             break
                         table_excluded = 표셀_자간_제외인가()
-                        one_cell_body = (area in one_cell_areas
+                        one_cell_body = (작업_모드 != 'spacing' and area in one_cell_areas
                                          and area not in (디자인표_보호영역 or set()))
                         if ((not 쪽범위_사용중() or area in 쪽범위_컨트롤영역)
                                 and (not table_excluded or one_cell_body) and not 숫자_표칸인가()):
@@ -243,6 +243,16 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                                                'word_start': info[2], 'word_end': info[3]})
                                 hwp.SetPos(*pos)
                                 검수_문제_기록(현재_처리파일, message)
+                            else:
+                                # 처리기가 묶어서 맞추는 괄호 안 공백도 최종 결과에서
+                                # 검사한다. 공백 없는 어절 검사만으로 통과시키지 않는다.
+                                hwp.SetPos(*pos)
+                                if 현재줄_끝_괄호내부_공백분리인가():
+                                    message = '[저장 결과 괄호 안 공백 분리] ' + 현재_화면줄_텍스트().strip()
+                                    issues.append({'text': message, 'page': page,
+                                                   'position': pos, 'area': area,
+                                                   'line_boundary': boundary})
+                                    검수_문제_기록(현재_처리파일, message)
                         hwp.SetPos(*boundary)
                         hwp_run('MoveNextChar')
                         if tuple(hwp.GetPos()) == boundary:

@@ -1112,8 +1112,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 # 검사하고, 선택적 '다음 단어 당김'은 하지 않는다.
                 내어쓰기_재적용 = 표준서식_내어쓰기_사용 and stage_enabled(선택_세부작업, 'hanging_indent')
                 global 재검사_대상문단, 다음단어_당김_사용
-                # 자간 정리만 할 때도 공문 띄어쓰기 규정('.  끝.', '붙임  …', 날짜)을 자간 조정 전에 맞춘다.
-                # 서식·한 번에 적용은 공백 정규화 단계에서 이미 했다.
+                # 기존 사용자 정책: 자간 정리도 끝 표시·붙임·날짜의 공식 띄어쓰기를
+                # 보정한다. 본문 단어 보존과 공백 보정 범위는 README에 구분해 안내한다.
                 if (작업_모드 == 'spacing' and 회차 == 1 and stage_enabled(선택_세부작업, 'body_spacing')
                         and not stage('공문 띄어쓰기 규정', 공문_띄어쓰기_전체_적용)):
                     return False

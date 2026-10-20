@@ -1139,6 +1139,10 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 finally:
                     if 바뀜 and not 성공:
                         단어모드_자간적용(runs, 0)
+            # 자간 정리는 글자/부호 수를 보존한다. 서식 적용의 연결선 정리만
+            # 기존 개수 조정을 허용하며, 자간 정리는 실패한 자간을 복원하고 끝낸다.
+            if 작업_모드 == 'spacing':
+                return "미해결"
             # ② 부호 개수를 끝에서부터 하나씩 줄인다(2개는 남김).
             지운 = []
             끝 = b
@@ -1169,19 +1173,35 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             # '단어모드_분리정보'는 경계에서 양옆으로 공백을 만나면 즉시 멈추므로
             # '계약방법(공개모집' | '원칙, 수의계약)이'처럼 괄호 안 공백에서 갈라진
             # 경우는 감지하지 못한다. 아래 루프에서 먼저 자간을 좁혀 처리한다.
-            for _ in range(max(1, 최대시도)):
-                if 중단_요청됨():
+            if 중단_요청됨():
+                return False
+            if 현재줄_끝_괄호내부_공백분리인가():
+                괄호시작, 괄호끝 = 단어모드_줄범위(hwp.GetPos())
+                괄호보관 = 단어모드_자간보관(괄호시작, 괄호끝)
+                괄호성공 = False
+                괄호변경 = False
+                try:
+                    if 괄호보관 is not None:
+                        # 실제 자간 하한 -50%까지 남은 여유만 탐색한다.
+                        # 예: 기존 -48%이면 추가 축소는 2단계만 허용한다.
+                        상한 = min(최대시도, 50 + min(
+                            (v for _, _, values in 괄호보관 for v in values), default=0))
+                        def 괄호확인(step):
+                            nonlocal 괄호변경
+                            괄호변경 = True
+                            단어모드_자간적용(괄호보관, -step)
+                            hwp.SetPos(*괄호시작)
+                            return not 현재줄_끝_괄호내부_공백분리인가()
+                        괄호성공 = 최소_성공단계_탐색(상한, 괄호확인) is not None
+                except _단계탐색_중단:
                     return False
-                if not 현재줄_끝_괄호내부_공백분리인가():
-                    break
-                hwp_run("MoveLineEnd")
-                hwp_run("MoveSelLineBegin")
-                hwp_run("CharShapeSpacingDecrease")
-                색상_적용_현재선택()
-                hwp_run("Cancel")
-            else:
-                문제줄 = 현재_화면줄_텍스트()
-                검수_문제_기록(현재_처리파일, f"[괄호 안 공백 분리] {문제줄.strip()}")
+                finally:
+                    if 괄호변경 and not 괄호성공:
+                        단어모드_자간적용(괄호보관, 0)
+                    hwp.SetPos(*괄호시작)
+                if not 괄호성공:
+                    문제줄 = 현재_화면줄_텍스트()
+                    검수_문제_기록(현재_처리파일, f"[괄호 안 공백 분리] {문제줄.strip()}")
 
             # 긴 단어 전체가 통째로 다음 줄로 밀려 양쪽정렬 간격이 벌어진 경우도
             # 같은 방식(자간 우선, 부족하면 장평 추가)으로 먼저 당겨 본다.
@@ -1928,7 +1948,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     continue
                 현재영역_한칸표 = area in 한칸표영역
                 if (표셀_자간_제외인가()
-                        and not (현재영역_한칸표 and area not in (디자인표_보호영역 or set()))):
+                        and not (작업_모드 != 'spacing' and 현재영역_한칸표
+                                 and area not in (디자인표_보호영역 or set()))):
                     진단로그(f"[표 안 문장 제외] 영역 {area}: 자간 조정 안 함")
                     continue
                 if 숫자_표칸인가():

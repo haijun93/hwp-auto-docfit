@@ -89,6 +89,20 @@ class ControlLineLoopTest(unittest.TestCase):
             }):
                 self.assertIs(fn(), expected)
 
+    def test_spacing_table_exclusion_also_excludes_single_cell_overview(self):
+        fn = self.ns['컨트롤_내부_자간조정']
+        doc = self._doc()
+        adjust = Mock()
+        with patch.dict(fn.__globals__, {
+            'hwp': doc, 'hwp_run': doc.run, '중단_요청됨': lambda: False,
+            '한칸표_영역_목록': lambda: {2}, '쪽범위_사용중': lambda: False,
+            '재검사_영역인가': lambda area: True, '표셀_자간_제외인가': lambda: True,
+            '디자인표_보호영역': set(), '작업_모드': 'spacing',
+            '자간자동조정': adjust, '진단로그': Mock(),
+        }):
+            self.assertTrue(fn())
+        adjust.assert_not_called()
+
     def test_punctuation_pass_processes_last_line_once(self):
         fn = self.ns['컨트롤_내부_문장부호_처리']
         doc = self._doc()
