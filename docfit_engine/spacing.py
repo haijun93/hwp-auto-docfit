@@ -740,9 +740,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
 
             # 글자마다 같은 COM 객체를 다시 얻지 않는다(늦은 바인딩 조회가 글자당 수십 번 생겨 줄 하나에 1초 넘게 걸렸다,
             # 2026-10-21 프로파일: 4회 호출 17초). 읽는 값과 순서는 예전과 같다.
-            pset = hwp.HParameterSet.HCharShape
-            hset = pset.HSet
-            action = hwp.HAction
+            pset = hset = action = None   # 첫 글자를 읽을 때 한 번만 얻는다
             while pos[2] < end[2]:
                 if 중단_요청됨():
                     return None
@@ -754,6 +752,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     진단로그(f"[서식 보관] 문자 위치 확인 실패로 이 구간 조정을 건너뜀: {start}~{end}")
                     return None
                 단어모드_범위선택(pos, nxt)
+                if pset is None:
+                    pset = hwp.HParameterSet.HCharShape
+                    hset, action = pset.HSet, hwp.HAction
                 action.GetDefault('CharShape', hset)
                 spacing = tuple(int(getattr(pset, key)) for key in _단어모드_자간필드)
                 if any(v < -50 or v > 50 for v in spacing):
