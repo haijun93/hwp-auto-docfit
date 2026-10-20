@@ -5957,6 +5957,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
 
             _xml_내어쓰기_기준쌍 = None
             _xml_내어쓰기_기준확인 = False
+            _xml_문장순번 = {}        # 같은 문장이 몇 번째로 나왔는지(예시에 같은 문장이 서식만 달리 반복될 때)
             _xml_부연_부모 = None      # 부연설명(*, **, ※)의 위 문단 유형(제목/본문/내용) — _부연설명_한문단과 같은 규칙
 
             def plan(text, paragraph):
@@ -6029,7 +6030,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         and not (사용자서식 and 'intent' in 문단추가)):
                     from docfit_core.xml_hanging_indent import (
                         hanging_indent_pair, paragraph_wraps,
-                        reference_marker_indent_pairs, safe_reference_hanging_indent_pair,
+                        next_occurrence, reference_marker_indent_pairs, safe_reference_hanging_indent_pair,
                     )
                     from pathlib import Path
                     if not _xml_내어쓰기_기준확인:
@@ -6081,6 +6082,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         safe_reference_hanging_indent_pair(
                             formatted, _xml_내어쓰기_기준쌍,
                             wrapped=paragraph_wraps(paragraph),
+                            occurrence=next_occurrence(_xml_문장순번, formatted),
                         )
                         if _xml_내어쓰기_기준쌍
                         else None

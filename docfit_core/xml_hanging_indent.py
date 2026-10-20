@@ -337,6 +337,7 @@ def reference_marker_indent_pairs(path: str | Path) -> dict[str, tuple[int, int]
         header = ET.fromstring(archive.read("Contents/header.xml"))
         styles = {node.get("id", ""): node for node in header.findall(".//hh:paraPr", namespaces)}
         samples: dict[str, list[tuple[int, int]]] = {}
+        occurrences: dict[str, int] = {}
         section_names = sorted(
             name for name in archive.namelist()
             if re.fullmatch(r"Contents/section\d+\.xml", name)
@@ -371,6 +372,9 @@ def reference_marker_indent_pairs(path: str | Path) -> dict[str, tuple[int, int]
                     continue
                 if exact_key is not None:
                     samples.setdefault(exact_key, []).append(pair)
+                    # 같은 문장이 여러 번 나오면 몇 번째인지(#1, #2 …)로도 보관한다(서식이 서로 다를 때 쓰임).
+                    occurrences[exact_key] = occurrences.get(exact_key, 0) + 1
+                    samples.setdefault(f"{exact_key}#{occurrences[exact_key]}", []).append(pair)
                 if key is not None:
                     samples.setdefault(key, []).append(pair)
                     if ":label:" in key:
@@ -389,9 +393,16 @@ def reference_marker_indent_pairs(path: str | Path) -> dict[str, tuple[int, int]
 def reference_hanging_indent_pair(
     text: str | None,
     reference_pairs: dict[str, tuple[int, int]],
+    occurrence: int | None = None,
 ) -> tuple[int, int] | None:
-    """기준 HWPX에서 추출한 동일 기호/라벨 문단의 대표 여백을 반환한다."""
+    """기준 HWPX에서 추출한 동일 기호/라벨 문단의 대표 여백을 반환한다.
+
+    occurrence: 이 문장이 문서에서 몇 번째로 나왔는지(1부터). 예시에 같은 문장이 여러 번 있고 서식이 다르면
+    같은 순번의 예시 값을 쓴다(next_occurrence로 센다).
+    """
     exact_key = _reference_exact_key(text or "")
+    if exact_key is not None and occurrence is not None and f"{exact_key}#{occurrence}" in reference_pairs             and exact_key not in reference_pairs:
+        return reference_pairs[f"{exact_key}#{occurrence}"]
     if exact_key is not None and exact_key in reference_pairs:
         return reference_pairs[exact_key]
     key = _reference_marker_key(text or "")
@@ -408,18 +419,28 @@ def reference_hanging_indent_pair(
     return reference_pairs.get(marker)
 
 
+def next_occurrence(counter: dict[str, int], text: str | None) -> int | None:
+    """문서 순서대로 같은 문장이 몇 번째인지 센다(reference_hanging_indent_pair의 occurrence용)."""
+    exact_key = _reference_exact_key(text or "")
+    if exact_key is None:
+        return None
+    counter[exact_key] = counter.get(exact_key, 0) + 1
+    return counter[exact_key]
+
+
 def safe_reference_hanging_indent_pair(
     text: str | None,
     reference_pairs: dict[str, tuple[int, int]],
     *,
     wrapped: bool = True,
+    occurrence: int | None = None,
 ) -> tuple[int, int] | None:
     """Return the reference (left, intent) verbatim (서식 복사는 예시 우선).
 
     ``left=0`` with a negative ``intent`` is a normal Hancom hanging indent, so the sample pair is reused as is.
     ``wrapped`` is kept only for call compatibility.
     """
-    pair = reference_hanging_indent_pair(text, reference_pairs)
+    pair = reference_hanging_indent_pair(text, reference_pairs, occurrence)
     if pair is None:
         return None
     # 예시 원본의 (left, intent)를 그대로 쓴다. 한/글에서 left=0·intent<0은 첫 줄은 여백, 다음 줄은 |intent|만큼
@@ -459,6 +480,7 @@ def restore_reference_indent_geometry(
     sections = {name: ET.fromstring(snapshot.read(name)) for name in metadata["section_names"]}
     changed: set[str] = set()
     checked = repaired = missing = 0
+    seen: dict[str, int] = {}
 
     for name, root in sections.items():
         for paragraph in root.iter():
@@ -466,7 +488,8 @@ def restore_reference_indent_geometry(
                 continue
             text = _paragraph_visible_text(paragraph)
             pair = safe_reference_hanging_indent_pair(
-                text, reference_pairs, wrapped=paragraph_wraps(paragraph)
+                text, reference_pairs, wrapped=paragraph_wraps(paragraph),
+                occurrence=next_occurrence(seen, text),
             )
             if pair is None:
                 continue

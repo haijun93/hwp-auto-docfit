@@ -82,6 +82,16 @@ class XmlHangingIndentUnitTests(unittest.TestCase):
         self.assertEqual(reference_hanging_indent_pair("ㅇ「특별 문장」", pairs), (10, -20))
         self.assertIsNone(reference_hanging_indent_pair("ㅇ이 아닌 글", {"ㅇ": (0, -3000)}))
 
+    def test_repeated_sentence_uses_same_occurrence_geometry(self):
+        # 예시에 같은 문장이 서식만 달리 두 번 나오면 n번째 문장은 예시의 n번째 값을 쓴다(2026-10-21 재연 불일치).
+        from docfit_core.xml_hanging_indent import next_occurrence
+        text = " ㅇ「법 시행령」개정"
+        pairs = {"ㅇ": (0, -2996), "text:ㅇ「법 시행령」개정#1": (0, -3000), "text:ㅇ「법 시행령」개정#2": (0, -2996)}
+        seen = {}
+        self.assertEqual(safe_reference_hanging_indent_pair(text, pairs, occurrence=next_occurrence(seen, text)), (0, -3000))
+        self.assertEqual(safe_reference_hanging_indent_pair(text, pairs, occurrence=next_occurrence(seen, text)), (0, -2996))
+        self.assertEqual(safe_reference_hanging_indent_pair(text, pairs), (0, -2996))   # 순번 모르면 기호 대표값
+
     def test_final_guard_aligns_trailing_attachment_numbers(self):
         from docfit_core.batch_format import ParagraphStyle, StylePool, _serialize
         from docfit_core.fidelity.package import PackageSnapshot, build_package

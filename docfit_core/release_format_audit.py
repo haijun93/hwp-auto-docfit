@@ -100,6 +100,7 @@ def inspect_hanging_indent(path: str | Path, reference_path: str | Path | None =
             raise ValueError("HWPX has no readable section or paragraph-style table")
         findings: list[ParagraphFinding] = []
         all_paragraphs: list[tuple[str, ET.Element, str]] = []
+        seen_texts: dict[str, int] = {}
         for section_name in section_names:
             section = ET.fromstring(archive.read(section_name))
             for paragraph in section.findall(".//hp:p", NS):
@@ -116,9 +117,10 @@ def inspect_hanging_indent(path: str | Path, reference_path: str | Path | None =
                 if left is None or indent is None:
                     findings.append(ParagraphFinding(text, para_id, left, indent, "fail", "left/indent values unavailable"))
                 elif reference_pairs:
-                    from .xml_hanging_indent import paragraph_wraps, safe_reference_hanging_indent_pair
+                    from .xml_hanging_indent import next_occurrence, paragraph_wraps, safe_reference_hanging_indent_pair
                     expected = safe_reference_hanging_indent_pair(
-                        text, reference_pairs, wrapped=paragraph_wraps(paragraph)
+                        text, reference_pairs, wrapped=paragraph_wraps(paragraph),
+                        occurrence=next_occurrence(seen_texts, text),
                     )
                     if expected is not None and (left, indent) == expected:
                         findings.append(ParagraphFinding(text, para_id, left, indent, "pass", "matches reference HWPX"))
