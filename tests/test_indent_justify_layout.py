@@ -79,7 +79,7 @@ class JustifiedIndentLayoutTest(unittest.TestCase):
             self.assertEqual(fn((0, 3, 0), 3), 6480)
         self._assert_layout_refreshed(calls, (0, 3, 3))
 
-    def test_hanging_indent_sets_compensating_left_margin(self):
+    def test_hanging_indent_preserves_first_line_left_margin(self):
         fn = self.ns['문단_내어쓰기_적용']
         calls = []
         doc, run, set_indent, set_pair = self._doc(calls)
@@ -97,9 +97,9 @@ class JustifiedIndentLayoutTest(unittest.TestCase):
             '내어쓰기_변경문단': set(),
         }):
             self.assertTrue(fn((0, 3, 0), ' ㅇ 항목 내용'), repr(log.call_args_list))
-        self.assertEqual(doc.ParaShape.Item('LeftMargin'), 6480)
+        # 첫 줄 = LeftMargin이므로 Shift+Tab 실측값(-6480)은 내어쓰기에만 반영한다.
+        self.assertEqual(doc.ParaShape.Item('LeftMargin'), 0)
         self.assertEqual(doc.ParaShape.Item('Indentation'), -6480)
-        self.assertGreaterEqual(doc.ParaShape.Item('LeftMargin') + doc.ParaShape.Item('Indentation'), 0)
 
 
 if __name__ == '__main__':

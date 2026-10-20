@@ -5016,10 +5016,10 @@ def _install(*, _docfit_namespace, _docfit_symbol):
         return bind_function(_내어쓰기_값_설정, _docfit_namespace)
     if _docfit_symbol == '_내어쓰기_여백쌍_설정':
         def _내어쓰기_여백쌍_설정(left, indentation):
-            """첫 줄 위치를 보존하면서 왼쪽 여백과 내어쓰기를 한 번에 설정한다.
+            """왼쪽 여백과 내어쓰기를 한 번에 설정한다.
 
-            한/글의 둘째 줄은 LeftMargin, 첫째 줄은 LeftMargin+Indentation 위치에 놓인다.
-            Indentation만 음수로 바꾸면 첫째 줄 전체가 왼쪽으로 밀린다(2026-10-18 실전 결과).
+            한/글 내어쓰기(Indentation<0)는 첫 줄을 LeftMargin에 두고 둘째 줄부터 |Indentation|만큼 더 민다
+            (기본 서식.hwpx·v1.78 결과로 확인, 2026-10-21). 예전 설명(첫 줄 = LeftMargin+Indentation)은 거꾸로였다.
             """
             action = hwp.CreateAction("ParagraphShape")
             params = action.CreateSet()
@@ -5083,8 +5083,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             정규키 = (text or '').lstrip(' \t\u00a0\u3000').rstrip('\r\n')
             if (_알파_일괄서식_문서 and any(
                     item.lstrip(' \t\u00a0\u3000').rstrip('\r\n') == 정규키
-                    for item in _표준서식_XML텍스트)):
-                return  # XML 기준 HWPX의 문단 여백을 COM 재계산으로 덮지 않는다.
+                    for item in globals().get('_표준서식_XML기준확정', ()))):
+                return  # 예시와 같은 문장만 예시의 문단 여백을 지킨다. 그 밖은 1.78처럼 Shift+Tab 실측(2026-10-21).
             현재키 = tuple(hwp.GetPos()[:2])
             if re.match(r'^\s*(?:ㅁ|□)\s+\S', text or ''):
                 # 최상위 항목 제목(ㅁ/□)은 하위 설명 문장처럼 매달지 않는다.
@@ -5217,14 +5217,11 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     raise RuntimeError("번호 마커 폭 실측 실패")
                 # 한/글 내어쓰기는 첫 줄을 왼쪽여백에 그대로 두고 둘째 줄부터 |값|만큼 더 민다.
                 # 첫 줄 번호가 기준 번호 위치에 오도록 왼쪽여백을 잡고, 꺾인 줄은 번호 뒤 내용에 맞춘다.
-                # 첫 줄 시작은 LeftMargin+Indentation, 번호 글자는 그 뒤 offset만큼
-                # 진행한 위치다. 따라서 LeftMargin은 기준 번호 위치 + 번호 폭에서
-                # 번호 앞 공백/라벨 폭을 빼야 한다. 기준 위치에서 prefix만 빼면
-                # `2.`처럼 prefix가 마커 폭과 같은 문단에서 왼쪽 여백이 음수로
-                # 뒤집히고, 저장된 HWPX의 left+intent가 음수가 된다.
-                target_left = 기준위치 + marker_width - prefix_width
+                # 첫 줄은 LeftMargin에서 시작하고 번호 글자는 그 뒤 prefix 폭만큼 진행한 위치다(v1.78 방식).
+                # 예전(a95fd54~)에는 번호 폭을 더해 붙임 묶음이 밀리고 둘째 번호가 첫 번호와 어긋났다(2026-10-21).
+                target_left = 기준위치 - prefix_width
                 target_indent = -marker_width
-                if target_left <= 0 or target_left + target_indent < 0:
+                if target_left < 0:
                     raise RuntimeError("붙임 번호 첫 줄 위치가 본문 왼쪽 경계를 벗어남")
                 action = hwp.CreateAction("ParagraphShape")
                 params = action.CreateSet()
@@ -5289,10 +5286,11 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 original_left = int(hwp.ParaShape.Item("LeftMargin"))
                 # 종전 결함 산출물은 LeftMargin=0, Indentation<0으로 저장됐다. 이를 다시
                 # 입력해도 음수 기준점을 물려받지 않도록 잘못된 쌍은 원점으로 복구한다.
-                baseline_left = original_left + int(original_indent)
-                if original_left == 0 and int(original_indent) < 0:
+                # 한/글은 첫 줄을 LeftMargin에 둔다. 왼쪽 여백은 그대로 두고 내어쓰기 값만 바꾼다(v1.78 방식).
+                # 다만 예전 결함(a95fd54~)이 남긴 (LeftMargin = -Indentation) 쌍은 첫 줄을 그만큼 밀었으므로 0으로 되돌린다.
+                baseline_left = max(0, original_left)
+                if int(original_indent) < 0 and original_left == -int(original_indent):
                     baseline_left = 0
-                baseline_left = max(0, baseline_left)
                 # 기존 내어쓰기를 지운 동일한 첫 줄 상태에서 매번 계산한다.
                 _내어쓰기_값_설정(0)
                 changed = True
@@ -5313,7 +5311,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 value = hwp.ParaShape.Item("Indentation")
                 if value >= 0:
                     raise RuntimeError("Shift+Tab 실행 후 내어쓰기 값이 설정되지 않았습니다")
-                target_left = baseline_left - int(value)
+                target_left = baseline_left
                 _내어쓰기_여백쌍_설정(target_left, int(value))
                 actual_left = int(hwp.ParaShape.Item("LeftMargin"))
                 actual_indent = int(hwp.ParaShape.Item("Indentation"))
@@ -5958,6 +5956,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             _xml_내어쓰기_기준쌍 = None
             _xml_내어쓰기_기준확인 = False
             _xml_문장순번 = {}        # 같은 문장이 몇 번째로 나왔는지(예시에 같은 문장이 서식만 달리 반복될 때)
+            _xml_기준확정 = set()     # 예시와 같은 문장이라 예시의 내어쓰기를 그대로 받은 문단 글
             _xml_부연_부모 = None      # 부연설명(*, **, ※)의 위 문단 유형(제목/본문/내용) — _부연설명_한문단과 같은 규칙
 
             def plan(text, paragraph):
@@ -6082,11 +6081,17 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         safe_reference_hanging_indent_pair(
                             formatted, _xml_내어쓰기_기준쌍,
                             wrapped=paragraph_wraps(paragraph),
-                            occurrence=next_occurrence(_xml_문장순번, formatted),
+                            occurrence=next_occurrence(_xml_문장순번, formatted), exact_only=True,
                         )
                         if _xml_내어쓰기_기준쌍
                         else None
                     )
+                    if 내어쓰기쌍 is not None:
+                        _xml_기준확정.add(formatted)   # 예시와 같은 문장: 예시 값 그대로(뒤 COM Shift+Tab이 덮지 않음)
+                    elif _xml_내어쓰기_기준쌍:
+                        # 예시에 같은 문장이 없으면 여백을 비워 두고 '최종 서식 기준 내어쓰기'(한/글 Shift+Tab 실측)에 맡긴다.
+                        # 추정 여백을 먼저 넣으면 그 위에서 실측이 겹쳐 문단 전체가 오른쪽으로 밀렸다(2026-10-21 화면 대조).
+                        내어쓰기쌍 = (0, 0)
                     if 내어쓰기쌍 is None:
                         내어쓰기쌍 = hanging_indent_pair(
                             formatted,
@@ -6125,6 +6130,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 return {'본문': list(range(result.applied))}
             _표준서식_XML텍스트 = set(result.formatted_texts)
             _표준서식_XML간격 = dict(result.paragraph_spacing)
+            globals()['_표준서식_XML기준확정'] = {t for t in _xml_기준확정 if t in result.formatted_texts}
             _알파_일괄서식_문서 = bool(result.applied)
             로그(f'[알파 일괄 서식] XML 적용 {result.applied}문단 / 기존 경로 {result.fallback}문단 / '
                  f'새 글자 모양 {result.char_styles}개·문단 모양 {result.paragraph_styles}개')

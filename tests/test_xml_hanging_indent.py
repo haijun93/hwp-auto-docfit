@@ -92,74 +92,17 @@ class XmlHangingIndentUnitTests(unittest.TestCase):
         self.assertEqual(safe_reference_hanging_indent_pair(text, pairs, occurrence=next_occurrence(seen, text)), (0, -2996))
         self.assertEqual(safe_reference_hanging_indent_pair(text, pairs), (0, -2996))   # 순번 모르면 기호 대표값
 
-    def test_final_guard_aligns_trailing_attachment_numbers(self):
-        from docfit_core.batch_format import ParagraphStyle, StylePool, _serialize
-        from docfit_core.fidelity.package import PackageSnapshot, build_package
-
+    def test_final_guard_keeps_measured_attachment_geometry(self):
+        # 붙임 번호 위치는 한/글 COM 붙임 목록 내어쓰기(실측)가 정한 값을 저장 뒤에도 그대로 둔다(2026-10-21).
+        # 예전에는 글자 폭 추정으로 다시 맞춰 붙임 묶음이 밀리고 둘째 번호가 첫 번호와 어긋났다.
         with tempfile.TemporaryDirectory() as folder:
             folder = Path(folder)
-            source_text = folder / "attachments.txt"
-            source = folder / "source.hwpx"
-            damaged = folder / "damaged.hwpx"
-            restored = folder / "restored.hwpx"
-            source_text.write_text(
-                "붙임 : 1. 계획서 1부.\n   2. 일정표 1부. 끝.\n", encoding="utf-8")
+            source_text, source, restored = folder / "attachments.txt", folder / "source.hwpx", folder / "restored.hwpx"
+            source_text.write_text("붙임 : 1. 계획서 1부.\n   2. 일정표 1부. 끝.\n", encoding="utf-8")
             build_hwpx_from_text_file(source_text, source)
-            apply_xml_hanging_indent(source, damaged)
-            snapshot = PackageSnapshot.load(damaged)
-            header = ET.fromstring(snapshot.read("Contents/header.xml"))
-            section = ET.fromstring(snapshot.read("Contents/section0.xml"))
-            pool = StylePool(header)
-            from docfit_core.xml_hanging_indent import _paragraph_visible_text
-            for item in section.iter():
-                if tag(item) == "p" and _paragraph_visible_text(item).startswith("붙임"):
-                    item.set("paraPrIDRef", pool.para(item.get("paraPrIDRef"), ParagraphStyle(
-                        text=_paragraph_visible_text(item), para_extra=(("left", 7500), ("intent", -4300)))))
-                if tag(item) == "p" and (plain_text(item) or "").lstrip().startswith("2."):
-                    item.set("paraPrIDRef", pool.para(item.get("paraPrIDRef"), ParagraphStyle(
-                        text=plain_text(item), para_extra=(("left", 7500), ("intent", -4300)))))
-            damaged.write_bytes(build_package(snapshot, {
-                "Contents/header.xml": _serialize(header, snapshot.read("Contents/header.xml")),
-                "Contents/section0.xml": _serialize(section, snapshot.read("Contents/section0.xml")),
-            }))
-            before = inspect_hanging_indent(damaged)
-            self.assertTrue(any("attachment numbers" in item["reason"] for item in before["findings"]))
-            self.assertTrue(any("must start with 붙임" in item["reason"] for item in before["findings"]), before["findings"])
-            from docfit_core.attachment_block import find_trailing_numbered_blocks
-            from docfit_core.xml_hanging_indent import _paragraph_visible_text
-            section = ET.fromstring(PackageSnapshot.load(damaged).read("Contents/section0.xml"))
-            texts = [_paragraph_visible_text(item) for item in section.iter() if tag(item) == "p"]
-            self.assertTrue(find_trailing_numbered_blocks(texts), texts)
-            result = restore_reference_indent_geometry(damaged, damaged, restored)
-            self.assertGreater(result["repaired"], 0)
-            after = inspect_hanging_indent(restored)
-            self.assertEqual(after["failed_count"], 0)
-            from docfit_core.xml_hanging_indent import _char_size_pt, _paragraph_left_intent
-            saved_header, saved_section = roots(restored)
-            saved_shapes = shapes(saved_header, "paraPr")
-            numbered = []
-            for para in saved_section.iter():
-                if tag(para) != "p":
-                    continue
-                value = _paragraph_visible_text(para)
-                if value.startswith("붙임") or value.lstrip().startswith("2."):
-                    left, indent = _paragraph_left_intent(saved_shapes[para.get("paraPrIDRef")])
-                    numbered.append({"text": value, "left": left, "indent": indent,
-                                     "size": _char_size_pt(saved_header, para)})
-            self.assertEqual(len(numbered), 2)
-            self.assertTrue(numbered[0]["text"].startswith("붙임"))
-            self.assertEqual(numbered[0]["left"] + numbered[0]["indent"], 0)
-            for item in numbered:
-                self.assertGreater(item["left"], 0)
-                self.assertLess(item["indent"], 0)
-                self.assertGreaterEqual(item["left"] + item["indent"], 0)
-            from docfit_core.attachment_block import numbered_item_offset
-            self.assertEqual(
-                numbered[0]["left"] + numbered[0]["indent"]
-                + prefix_width_hwpunit(numbered[0]["text"], numbered_item_offset(numbered[0]["text"]), size_pt=numbered[0]["size"]),
-                numbered[1]["left"] + numbered[1]["indent"]
-                + prefix_width_hwpunit(numbered[1]["text"], numbered_item_offset(numbered[1]["text"]), size_pt=numbered[1]["size"]),
-            )
+            result = restore_reference_indent_geometry(source, source, restored)
+            self.assertEqual(result["repaired"], 0)
+            self.assertFalse(restored.exists())
 
     def test_reference_restore_keeps_explicit_exception_for_same_marker(self):
         from docfit_core.batch_format import ParagraphStyle, StylePool, _serialize
@@ -222,43 +165,16 @@ class XmlHangingIndentUnitTests(unittest.TestCase):
         self.assertEqual(reference_hanging_indent_pair("   * 항목: 본문", pairs), (0, -8336))
         self.assertEqual(reference_hanging_indent_pair("   ** 주석: 본문", pairs), (0, -9092))
 
-    def test_saved_artifact_geometry_guard_restores_only_reference_pair(self):
+    def test_saved_artifact_geometry_guard_restores_only_exact_reference_sentences(self):
+        # 저장 후 복원은 예시와 같은 문장만 예시 값으로 되돌리고, 예시에 없는 문장은 한/글 실측(Shift+Tab) 값을 둔다.
         reference = Path(__file__).resolve().parents[1] / "resources" / "서식예시" / "기본 서식.hwpx"
         with tempfile.TemporaryDirectory() as folder:
             txt_path = Path(folder) / "sample.txt"
-            raw_hwpx = Path(folder) / "raw.hwpx"
-            formatted = Path(folder) / "formatted.hwpx"
-            restored = Path(folder) / "restored.hwpx"
-            txt_path.write_text("□ 추진 배경\nㅇ (현황) 내용", encoding="utf-8")
+            raw_hwpx, restored = Path(folder) / "raw.hwpx", Path(folder) / "restored.hwpx"
+            txt_path.write_text("□ 항성계 불안정에 따른 문명 존속 위기 심화\n□ 예시에 없는 제목\nㅇ (현황) 예시에 없는 내용", encoding="utf-8")
             build_hwpx_from_text_file(txt_path, raw_hwpx)
-            apply_xml_hanging_indent(raw_hwpx, formatted)
-
-            # Simulate a later COM/page-fit pass overwriting the chapter marker geometry.
-            from docfit_core.batch_format import ParagraphStyle, StylePool, _serialize
-            from docfit_core.fidelity.package import PackageSnapshot, build_package
-            from defusedxml import ElementTree as SafeET
-            snapshot = PackageSnapshot.load(formatted)
-            header = SafeET.fromstring(snapshot.read("Contents/header.xml"))
-            section_name = "Contents/section0.xml"
-            section = SafeET.fromstring(snapshot.read(section_name))
-            pool = StylePool(header)
-            for paragraph in section.iter():
-                if tag(paragraph) == "p" and plain_text(paragraph).lstrip().startswith("□"):
-                    para_id = pool.para(paragraph.get("paraPrIDRef"), ParagraphStyle(
-                        text=plain_text(paragraph), para_extra=(("left", 0), ("intent", 0))))
-                    paragraph.set("paraPrIDRef", para_id)
-            payload = build_package(snapshot, {
-                "Contents/header.xml": _serialize(header, snapshot.read("Contents/header.xml")),
-                section_name: _serialize(section, snapshot.read(section_name)),
-            })
-            formatted.write_bytes(payload)
-
-            result = restore_reference_indent_geometry(formatted, reference, restored)
-            self.assertEqual(result["checked"], 2)
-            self.assertEqual(result["repaired"], 2)
-            audit = inspect_hanging_indent(restored, reference)
-            self.assertEqual(audit["status"], "pass")
-            self.assertEqual(audit["failed_count"], 0)
+            result = restore_reference_indent_geometry(raw_hwpx, reference, restored)
+            self.assertEqual(result["checked"], 1)        # 예시와 같은 문장 1개만 대상
 
     def test_char_width_factor_and_prefix_width(self):
         self.assertEqual(char_width_factor("가"), 1.0)
@@ -290,7 +206,7 @@ class XmlHangingIndentUnitTests(unittest.TestCase):
         self.assertEqual(attachment_numbered_pair(first, anchor, size_pt=15.0), (7500, -7500))
         self.assertEqual(attachment_numbered_pair(second, anchor, size_pt=15.0), (7500, -4500))
 
-    def test_end_to_end_sample_text_passes_release_format_audit(self):
+    def test_sample_text_audit_rejects_legacy_estimated_attachment_geometry(self):
         with tempfile.TemporaryDirectory() as folder:
             txt_path = Path(folder) / "sample.txt"
             raw_hwpx = Path(folder) / "raw.hwpx"
@@ -302,9 +218,14 @@ class XmlHangingIndentUnitTests(unittest.TestCase):
             self.assertEqual(res.applied, 12)
 
             audit = inspect_hanging_indent(out_hwpx)
-            self.assertEqual(audit["status"], "pass")
-            self.assertEqual(audit["failed_count"], 0)
-            self.assertEqual(audit["checked_count"], 11)
+            # 첫 줄 = LeftMargin이므로 구 XML 추정값은 붙임 시작(7500)과 번호 원점(12750/9750)이 어긋난다.
+            self.assertEqual(audit["status"], "fail")
+            self.assertEqual(audit["failed_count"], 2)
+            self.assertEqual(audit["checked_count"], 13)
+            failures = [item for item in audit["findings"] if item["status"] == "fail"]
+            self.assertEqual((failures[0]["left"], failures[0]["indent"]), (7500, -7500))
+            self.assertIn("must start with 붙임 at the body margin", failures[0]["reason"])
+            self.assertIn("attachment numbers are not vertically aligned: 12750, 9750", failures[1]["reason"])
 
             header, section = roots(out_hwpx)
             para_map = shapes(header, "paraPr")
@@ -322,7 +243,7 @@ class XmlHangingIndentUnitTests(unittest.TestCase):
                 self.assertEqual(d_left, c_left * 2)
                 self.assertEqual(d_intent, c_intent * 2)
 
-    def test_formatter_hwpx_batch_integrates_xml_hanging_indent_when_enabled(self):
+    def test_formatter_hwpx_batch_defers_unmatched_geometry_to_measurement(self):
         from docfit_core.batch_format import BatchUnsupported, ParagraphStyle, apply_batch
         from docfit_core.document_rules import ParagraphSpacingTracker
         from docfit_core.fidelity.package import UnsupportedPackage
@@ -376,23 +297,20 @@ class XmlHangingIndentUnitTests(unittest.TestCase):
             self.assertEqual(ns["표준서식_hwpx_처리"](source, target, selections), 3)
             # ㅇ(본문) 아래 *는 위 문단별 규칙(부연설명_앞빈칸) 6칸이다. 예전에는 기호 규칙 고정값 3칸이 들어갔다.
             audit = inspect_hanging_indent(target, reference / "기본 서식.hwpx")
-            self.assertEqual(audit["status"], "pass")
-            findings = {item["text"]: item for item in audit["findings"]}
-            expected_pairs = reference_marker_indent_pairs(reference / "기본 서식.hwpx")
-            self.assertEqual(
-                (findings["ㅁ 추진 배경"]["left"], findings["ㅁ 추진 배경"]["indent"]),
-                safe_reference_hanging_indent_pair("ㅁ 추진 배경", expected_pairs),
-            )
-            self.assertEqual(
-                (findings[" ㅇ (삼체 행성 상황) 3개 항성의 불규칙 운동"]["left"],
-                 findings[" ㅇ (삼체 행성 상황) 3개 항성의 불규칙 운동"]["indent"]),
-                safe_reference_hanging_indent_pair(" ㅇ (삼체 행성 상황) 3개 항성의 불규칙 운동", expected_pairs),
-            )
-            self.assertEqual(
-                (findings["      * 항세기: 기후가 안정된 시기"]["left"],
-                 findings["      * 항세기: 기후가 안정된 시기"]["indent"]),
-                safe_reference_hanging_indent_pair("      * 항세기: 기후가 안정된 시기", expected_pairs),
-            )
+            self.assertEqual(audit["status"], "fail")
+            self.assertEqual(audit["failed_count"], 1)
+            self.assertEqual(audit["checked_count"], 3)
+            findings = {item["text"].strip(): item for item in audit["findings"]}
+            # 첫 줄 = LeftMargin: 예시와 같은 * 문장은 (0, -8336), 없는 ㅇ 문장은 (0, 0)으로 실측을 기다린다.
+            self.assertEqual((findings["ㅁ 추진 배경"]["left"], findings["ㅁ 추진 배경"]["indent"]), (0, 0))
+            self.assertEqual(findings["ㅁ 추진 배경"]["status"], "pass")
+            circle = findings["ㅇ (삼체 행성 상황) 3개 항성의 불규칙 운동"]
+            self.assertEqual((circle["left"], circle["indent"]), (0, 0))
+            self.assertEqual(circle["status"], "fail")
+            note = findings["* 항세기: 기후가 안정된 시기"]
+            self.assertEqual((note["left"], note["indent"]), (0, -8336))
+            self.assertEqual(note["status"], "pass")
+            self.assertEqual(note["text"], "      * 항세기: 기후가 안정된 시기")
 
 
 if __name__ == "__main__":

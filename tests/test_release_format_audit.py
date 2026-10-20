@@ -20,11 +20,13 @@ class ReleaseFormatAuditTest(unittest.TestCase):
             archive.writestr('Contents/section0.xml', SECTION)
         return path
 
-    def test_rejects_negative_indent_without_compensating_margin(self):
-        result = inspect_hanging_indent(self._document(0, -2400))
-        self.assertEqual(result['status'], 'fail')
-        self.assertEqual(result['failed_count'], 1)
-        self.assertIn('compensating left margin', result['findings'][0]['reason'])
+    def test_negative_indent_accepts_zero_left_margin_and_rejects_negative_left(self):
+        # 첫 줄 = LeftMargin이므로 left=0·indent<0은 정상이고 left<0만 왼쪽 경계를 벗어난다.
+        for left, status, failed_count in ((0, 'pass', 0), (-1, 'fail', 1)):
+            with self.subTest(left=left):
+                result = inspect_hanging_indent(self._document(left, -2400))
+                self.assertEqual(result['status'], status)
+                self.assertEqual(result['failed_count'], failed_count)
 
     def test_accepts_hanging_indent_pair_with_nonnegative_first_line(self):
         result = inspect_hanging_indent(self._document(2400, -2400))
@@ -52,27 +54,17 @@ class ReleaseFormatAuditTest(unittest.TestCase):
         self.assertEqual(result['marker_paragraph_count'], 1)
 
     def test_top_level_heading_allows_zero_or_safe_hanging_margins(self):
-        path = self._document(0, 0)
-        with ZipFile(path, 'w') as archive:
-            archive.writestr('Contents/header.xml', HEADER.format(left=0, indent=0))
-            archive.writestr('Contents/section0.xml', SECTION.replace('ㅇ 추진 배경', 'ㅁ 추진 배경'))
-        result = inspect_hanging_indent(path)
-        self.assertEqual(result['status'], 'pass')
-        self.assertEqual(result['findings'][0]['text'], 'ㅁ 추진 배경')
-
-        path = self._document(0, 0)
-        with ZipFile(path, 'w') as archive:
-            archive.writestr('Contents/header.xml', HEADER.format(left=2400, indent=-2400))
-            archive.writestr('Contents/section0.xml', SECTION.replace('ㅇ 추진 배경', 'ㅁ 추진 배경'))
-        result = inspect_hanging_indent(path)
-        self.assertEqual(result['status'], 'pass')
-
-        path = self._document(0, 0)
-        with ZipFile(path, 'w') as archive:
-            archive.writestr('Contents/header.xml', HEADER.format(left=0, indent=-2400))
-            archive.writestr('Contents/section0.xml', SECTION.replace('ㅇ 추진 배경', 'ㅁ 추진 배경'))
-        result = inspect_hanging_indent(path)
-        self.assertEqual(result['status'], 'fail')
+        # 첫 줄 = LeftMargin이므로 최상위 제목도 left=0·indent<0을 안전한 내어쓰기로 허용한다.
+        for left, indent, status in ((0, 0, 'pass'), (2400, -2400, 'pass'),
+                                     (0, -2400, 'pass'), (-1, -2400, 'fail')):
+            with self.subTest(left=left, indent=indent):
+                path = self._document(left, indent)
+                with ZipFile(path, 'w') as archive:
+                    archive.writestr('Contents/header.xml', HEADER.format(left=left, indent=indent))
+                    archive.writestr('Contents/section0.xml', SECTION.replace('ㅇ 추진 배경', 'ㅁ 추진 배경'))
+                result = inspect_hanging_indent(path)
+                self.assertEqual(result['status'], status)
+                self.assertEqual(result['findings'][0]['text'], 'ㅁ 추진 배경')
 
     def test_hanging_indent_is_applied_after_all_copy_style_operations(self):
         source = (Path(__file__).resolve().parents[1] / 'docfit_engine' / 'formatter.py').read_text(encoding='utf-8')

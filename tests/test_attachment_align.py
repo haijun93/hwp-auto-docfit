@@ -55,7 +55,7 @@ class AttachmentAlignTest(unittest.TestCase):
             self.assertTrue(fn())
         self.assertEqual(applied, [5000, 5000, 5000])
 
-    def test_numbered_attachment_uses_compensated_left_margin(self):
+    def test_numbered_attachment_aligns_number_from_first_line_left_margin(self):
         ns = runpy.run_path(str(Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"))
         fn = ns["_붙임목록_번호_내어쓰기_적용"]
         hwp = Mock()
@@ -85,9 +85,10 @@ class AttachmentAlignTest(unittest.TestCase):
         with patch.dict(fn.__globals__, patches):
             self.assertTrue(fn((0, 4, 0), "붙임: 1. 세부 시행계획 1부.", 5000))
         assigned = {call.args[0]: call.args[1] for call in params.SetItem.call_args_list}
-        self.assertEqual(assigned["LeftMargin"], 6500)
+        # 첫 줄 = LeftMargin이므로 번호 원점은 LeftMargin + 번호 앞 prefix 폭이다.
+        self.assertEqual(assigned["LeftMargin"], 2900)
         self.assertEqual(assigned["Indentation"], -3600)
-        self.assertGreaterEqual(assigned["LeftMargin"] + assigned["Indentation"], 0)
+        self.assertEqual(assigned["LeftMargin"] + 2100, 5000)
 
 
 if __name__ == "__main__":

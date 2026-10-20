@@ -120,7 +120,7 @@ def inspect_hanging_indent(path: str | Path, reference_path: str | Path | None =
                     from .xml_hanging_indent import next_occurrence, paragraph_wraps, safe_reference_hanging_indent_pair
                     expected = safe_reference_hanging_indent_pair(
                         text, reference_pairs, wrapped=paragraph_wraps(paragraph),
-                        occurrence=next_occurrence(seen_texts, text),
+                        occurrence=next_occurrence(seen_texts, text), exact_only=True,
                     )
                     if expected is not None and (left, indent) == expected:
                         findings.append(ParagraphFinding(text, para_id, left, indent, "pass", "matches reference HWPX"))
@@ -129,23 +129,23 @@ def inspect_hanging_indent(path: str | Path, reference_path: str | Path | None =
                             text, para_id, left, indent, "fail",
                             f"reference mismatch: expected left={expected[0]}, intent={expected[1]}"))
                     elif TOP_LEVEL_MARKER.match(text):
-                        if (left == 0 and indent == 0) or (left > 0 and indent < 0 and left + indent >= 0):
+                        if (left == 0 and indent == 0) or (left >= 0 and indent < 0):
                             findings.append(ParagraphFinding(text, para_id, left, indent, "pass"))
                         else:
                             findings.append(ParagraphFinding(text, para_id, left, indent, "fail", "top-level ㅁ/□ heading must have no paragraph indent"))
-                    elif indent < 0 and left > 0 and left + indent >= 0:
+                    elif indent < 0 and left >= 0:
                         findings.append(ParagraphFinding(text, para_id, left, indent, "pass"))
                     else:
                         findings.append(ParagraphFinding(text, para_id, left, indent, "fail", "reference style unavailable and safe hanging geometry missing"))
                 elif TOP_LEVEL_MARKER.match(text):
-                    if (left == 0 and indent == 0) or (left > 0 and indent < 0 and left + indent >= 0):
+                    if (left == 0 and indent == 0) or (left >= 0 and indent < 0):
                         findings.append(ParagraphFinding(text, para_id, left, indent, "pass"))
                     else:
                         findings.append(ParagraphFinding(
                             text, para_id, left, indent, "fail", "top-level ㅁ/□ heading must have no paragraph indent"))
                 elif indent >= 0:
                     findings.append(ParagraphFinding(text, para_id, left, indent, "fail", "required hanging indent is missing"))
-                elif left <= 0 or left + indent < 0:
+                elif left < 0:
                     findings.append(ParagraphFinding(text, para_id, left, indent, "fail", "negative indent has no compensating left margin"))
                 else:
                     findings.append(ParagraphFinding(text, para_id, left, indent, "pass"))
@@ -156,7 +156,7 @@ def inspect_hanging_indent(path: str | Path, reference_path: str | Path | None =
             first_style = para_styles.get(first_id)
             first_left, first_indent = _paragraph_margins(first_style) if first_style is not None else (None, None)
             if (not first_text.startswith("붙임") or first_left is None or first_indent is None
-                    or first_left + first_indent != 0):
+                    or first_left != 0):   # 한/글 첫 줄은 LeftMargin에서 시작한다(2026-10-21)
                 findings.append(ParagraphFinding(
                     first_text, first_id, first_left, first_indent, "fail",
                     "trailing attachment must start with 붙임 at the body margin"))
@@ -169,7 +169,7 @@ def inspect_hanging_indent(path: str | Path, reference_path: str | Path | None =
                 left, indent = _paragraph_margins(style)
                 if left is None or indent is None:
                     continue
-                origin = left + indent + prefix_width_hwpunit(
+                origin = left + prefix_width_hwpunit(   # 첫 줄 시작 = LeftMargin
                     text, offset, size_pt=_char_size_pt(header, paragraph)
                 )
                 origins.append((text, para_id, origin))

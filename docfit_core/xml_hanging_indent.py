@@ -394,6 +394,7 @@ def reference_hanging_indent_pair(
     text: str | None,
     reference_pairs: dict[str, tuple[int, int]],
     occurrence: int | None = None,
+    exact_only: bool = False,
 ) -> tuple[int, int] | None:
     """기준 HWPX에서 추출한 동일 기호/라벨 문단의 대표 여백을 반환한다.
 
@@ -405,6 +406,10 @@ def reference_hanging_indent_pair(
         return reference_pairs[f"{exact_key}#{occurrence}"]
     if exact_key is not None and exact_key in reference_pairs:
         return reference_pairs[exact_key]
+    if exact_only:
+        # 예시에 같은 문장이 없으면 기호 대표값을 강요하지 않는다. 글꼴·장평이 조금만 달라도 둘째 줄이 본문 첫 글자에서
+        # 어긋났다('- 항세기*와 …'의 둘째 줄이 '항'에 맞지 않음, 2026-10-21). 그런 문단은 한/글 Shift+Tab 실측에 맡긴다.
+        return None
     key = _reference_marker_key(text or "")
     if key is None:
         return None
@@ -434,13 +439,14 @@ def safe_reference_hanging_indent_pair(
     *,
     wrapped: bool = True,
     occurrence: int | None = None,
+    exact_only: bool = False,
 ) -> tuple[int, int] | None:
     """Return the reference (left, intent) verbatim (서식 복사는 예시 우선).
 
     ``left=0`` with a negative ``intent`` is a normal Hancom hanging indent, so the sample pair is reused as is.
     ``wrapped`` is kept only for call compatibility.
     """
-    pair = reference_hanging_indent_pair(text, reference_pairs, occurrence)
+    pair = reference_hanging_indent_pair(text, reference_pairs, occurrence, exact_only)
     if pair is None:
         return None
     # 예시 원본의 (left, intent)를 그대로 쓴다. 한/글에서 left=0·intent<0은 첫 줄은 여백, 다음 줄은 |intent|만큼
@@ -489,7 +495,7 @@ def restore_reference_indent_geometry(
             text = _paragraph_visible_text(paragraph)
             pair = safe_reference_hanging_indent_pair(
                 text, reference_pairs, wrapped=paragraph_wraps(paragraph),
-                occurrence=next_occurrence(seen, text),
+                occurrence=next_occurrence(seen, text), exact_only=True,
             )
             if pair is None:
                 continue
@@ -519,70 +525,9 @@ def restore_reference_indent_geometry(
                 repaired += 1
                 changed.add(name)
 
-    # COM measures each attachment paragraph independently. A saved HWPX can
-    # therefore retain slightly different number origins even though both
-    # paragraphs have a negative hanging indent. Normalize the *number* origin
-    # against the first item after all COM/page-fit edits have finished.
-    ordered = [
-        (name, paragraph)
-        for name, root in sections.items()
-        for paragraph in root.iter()
-        if tag(paragraph) == "p"
-    ]
-    texts = [_paragraph_visible_text(paragraph) for _, paragraph in ordered]
-    for start, end in find_trailing_numbered_blocks(texts):
-        _, first = ordered[start]
-        first_text = texts[start]
-        first_offset = numbered_item_offset(first_text)
-        if first_offset is None:
-            continue
-        first_style = pool.sources["paraProperties"].get(first.get("paraPrIDRef", ""))
-        if first_style is None:
-            continue
-        first_left, first_indent = _paragraph_left_intent(first_style)
-        if first_left is None or first_indent is None:
-            continue
-        # Attachment blocks are flush with the body margin. Do not inherit a
-        # positive first-line origin accidentally introduced by an earlier pass.
-        anchor = prefix_width_hwpunit(
-            first_text, first_offset, size_pt=_char_size_pt(header, first)
-        )
-        for index in range(start, end + 1):
-            name, paragraph = ordered[index]
-            text = texts[index]
-            offset = numbered_item_offset(text)
-            if offset is None:
-                continue
-            base_id = paragraph.get("paraPrIDRef", "")
-            base = pool.sources["paraProperties"].get(base_id)
-            if base is None:
-                missing += 1
-                continue
-            left, indent = _paragraph_left_intent(base)
-            if left is None or indent is None:
-                missing += 1
-                continue
-            size = _char_size_pt(header, paragraph)
-            prefix_width = prefix_width_hwpunit(text, offset, size_pt=size)
-            marker_end = text.find(".", offset) + 1
-            if marker_end <= offset:
-                continue
-            marker_width = prefix_width_hwpunit(text, marker_end, size_pt=size) - prefix_width
-            # The first origin is left+intent; the continuation origin is left.
-            # Keep each number at the common anchor and hang wrapped text after it.
-            target_left = anchor + marker_width
-            target_indent = -prefix_width - marker_width
-            if target_left != left or target_indent != indent:
-                new_id = pool.para(base_id, ParagraphStyle(
-                    text=text, para_extra=(("left", target_left), ("intent", target_indent)),
-                ))
-                if new_id != base_id:
-                    paragraph.set("paraPrIDRef", new_id)
-                    for child in list(paragraph):
-                        if tag(child) == "linesegarray":
-                            paragraph.remove(child)
-                    changed.add(name)
-                    repaired += 1
+    # 붙임 번호의 위치는 한/글 COM의 붙임 목록 내어쓰기(실측)가 정한 값을 그대로 둔다. 예전(21bbf8a~)에는 저장 뒤에
+    # 글자 폭 추정값으로 번호 시작점을 다시 맞춰, 붙임 묶음이 오른쪽으로 밀리고 둘째 번호가 첫 번호와 어긋났다
+    # (v1.79 후보 화면 대조, 2026-10-21). 1.78처럼 실측값을 유지한다.
 
     if checked == 0 and not changed:
         return {"checked": 0, "repaired": 0, "missing": 0}
