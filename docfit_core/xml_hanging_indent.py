@@ -251,6 +251,9 @@ def hanging_indent_pair(
     return (left, intent)
 
 
+_MARKER_ATTACHED_OPENERS = "「『"
+
+
 def _reference_marker_key(text: str) -> str | None:
     """기준 서식의 기호+라벨 유형 키를 만든다(기호별 서로 다른 원본값 보존)."""
     if not text:
@@ -262,9 +265,12 @@ def _reference_marker_key(text: str) -> str | None:
         marker = "**"
     elif stripped.startswith(("*", "＊")):
         marker = "*"
-    elif stripped.startswith(("ㅁ", "□")) and (len(stripped) == 1 or stripped[1].isspace()):
+    elif stripped.startswith(("ㅁ", "□")) and (len(stripped) == 1 or stripped[1].isspace()
+                                                or stripped[1] in _MARKER_ATTACHED_OPENERS):
         return "□"
-    elif stripped.startswith(("ㅇ", "○")) and (len(stripped) == 1 or stripped[1].isspace()):
+    elif stripped.startswith(("ㅇ", "○")) and (len(stripped) == 1 or stripped[1].isspace()
+                                                or stripped[1] in _MARKER_ATTACHED_OPENERS):
+        # 'ㅇ「법령」'처럼 기호 뒤에 낫표를 붙여 쓴 문단도 같은 ㅇ 기준값을 쓴다(불변 규칙: 항목기호 뒤 「는 붙임).
         marker = "ㅇ"
     elif stripped.startswith(("-", "–", "—")):
         marker = "-"
@@ -408,19 +414,17 @@ def safe_reference_hanging_indent_pair(
     *,
     wrapped: bool = True,
 ) -> tuple[int, int] | None:
-    """Keep the reference indent while giving wrapped lines a real left margin.
+    """Return the reference (left, intent) verbatim (서식 복사는 예시 우선).
 
-    Some sample HWPX paragraphs store ``left=0`` with a negative ``intent``.
-    Matching that pair verbatim leaves both rendered lines at the page margin.
-    Preserve the first-line origin (left + intent), but move the continuation
-    line inside by compensating for any negative origin.
+    ``left=0`` with a negative ``intent`` is a normal Hancom hanging indent, so the sample pair is reused as is.
+    ``wrapped`` is kept only for call compatibility.
     """
     pair = reference_hanging_indent_pair(text, reference_pairs)
     if pair is None:
         return None
-    left, intent = pair
-    if wrapped and intent < 0 and left + intent < 0:
-        return (left - (left + intent), intent)
+    # 예시 원본의 (left, intent)를 그대로 쓴다. 한/글에서 left=0·intent<0은 첫 줄은 여백, 다음 줄은 |intent|만큼
+    # 들어가는 정상 내어쓰기다. 예전(135f937~)에는 여러 줄 문단의 left를 -intent만큼 밀어 넣어 서식 복사 재연에서
+    # 'ㅇ' 문단이 left 0→3000으로 달라졌다(format_fidelity_pc 불일치, 2026-10-21). wrapped는 호출 호환용으로 남긴다.
     return pair
 
 

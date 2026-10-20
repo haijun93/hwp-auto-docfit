@@ -398,6 +398,7 @@ def run_one(example: Path, target: Path, out: Path, mode: str) -> dict:
     g["활성_서식표_프로필"] = copy.deepcopy(profile.get("form_tables")) or None
     g["활성_표서식_프로필"] = copy.deepcopy(profile.get("table_style")) or None
     g["활성_머리서식_프로필"] = copy.deepcopy(profile.get("report_header")) or None
+    g["활성_서식예시_파일"] = Path(example)
     g["괄호_축소_pt"] = float(profile["format"].get("괄호_축소_pt", 2) or 2)
     g["글꼴형식_등록"](profile["format"].get("글꼴형식"))
     # _프로파일_선택: 서식 옵션이 화면 값(설정)을 덮는다
@@ -461,6 +462,15 @@ def main():
         print(json.dumps(run_one(args.one[0], args.one[1], out, args.mode), ensure_ascii=False))
         return 0
     examples = args.examples or sorted(p for p in SAMPLE_FOLDER.iterdir() if p.suffix.lower() in (".hwpx", ".hwp"))
+    # 한/글 COM 잠금은 맨 바깥(이 프로세스)에서 한 번 잡고, 하위 --one 프로세스는 환경 변수로 물려받아 그대로 통과한다.
+    # 예전에는 하위의 regression_pc.처리가 바깥에서 잡힌 잠금을 다시 기다려 첫 예시에서 끝없이 멈췄다(2026-10-21).
+    sys.path.insert(0, str(ROOT))
+    from docfit_core.save_guard import com_test_lock
+    with com_test_lock("format_fidelity_pc", ",".join(p.name for p in examples)[:120]):
+        return _run_examples(examples, out, args.mode)
+
+
+def _run_examples(examples, out, mode):
     results = []
     for example in examples:
         copy_dir = Path(tempfile.mkdtemp(prefix="format_fidelity_src_"))
@@ -473,7 +483,7 @@ def main():
         strip_format(original, stripped)
         started = time.time()
         proc = subprocess.run([sys.executable, __file__, "--one", str(original), str(stripped), "--out", str(out),
-                               "--mode", args.mode], capture_output=True, text=True, encoding="utf-8", errors="replace")
+                               "--mode", mode], capture_output=True, text=True, encoding="utf-8", errors="replace")
         line = (proc.stdout.strip().splitlines() or [""])[-1]
         try:
             item = json.loads(line)

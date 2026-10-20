@@ -46,24 +46,24 @@ SAMPLE_LINES = [
 
 
 class XmlHangingIndentUnitTests(unittest.TestCase):
-    def test_wrapped_reference_markers_get_compensating_continuation_margin(self):
+    def test_wrapped_reference_markers_keep_reference_geometry_verbatim(self):
+        # 서식 복사는 예시 우선: 여러 줄 문단도 예시의 (left, intent)를 그대로 쓴다(2026-10-21).
+        # 예전 기대값(left를 -intent만큼 밀어 넣음)은 format_fidelity_pc 재연 불일치를 만들었다.
         reference = Path(__file__).resolve().parents[1] / "resources" / "서식예시" / "기본 서식.hwpx"
         pairs = reference_marker_indent_pairs(reference)
         cases = {
             "□ 총 소요: 미네랄 52만 단위, 베스핀 가스 18만 단위(’26~’30년)": None,
             " ㅇ 난세기 예보 시 전 주민을 탈수하여 건조 보관고에 보관하고, 항세기가 오면 일괄 침수 복원": None,
         }
-        cases = {
-            text: (-reference_hanging_indent_pair(text, pairs)[1], reference_hanging_indent_pair(text, pairs)[1])
-            for text in cases
-        }
+        cases = {text: reference_hanging_indent_pair(text, pairs) for text in cases}
         for text, expected in cases.items():
             self.assertEqual(safe_reference_hanging_indent_pair(text, pairs), expected)
 
         with tempfile.TemporaryDirectory() as folder:
             restored = Path(folder) / "restored.hwpx"
-            result = restore_reference_indent_geometry(reference, reference, restored)
-            self.assertGreater(result["repaired"], 0)
+            restore_reference_indent_geometry(reference, reference, restored)
+            if not restored.exists():   # 고칠 것이 없으면 결과 파일을 쓰지 않는다 = 예시 그대로
+                restored = reference
             audit = inspect_hanging_indent(restored, reference)
             findings = {item["text"]: item for item in audit["findings"]}
             header, section = roots(restored)
@@ -72,8 +72,15 @@ class XmlHangingIndentUnitTests(unittest.TestCase):
                 self.assertEqual((findings[text]["left"], findings[text]["indent"]), expected)
                 self.assertEqual(findings[text]["status"], "pass")
                 paragraph = next(p for p in section.iter() if tag(p) == "p" and plain_text(p) == text)
-                self.assertFalse(any(tag(child) == "linesegarray" for child in paragraph))
                 self.assertIn(paragraph.get("paraPrIDRef"), para_map)
+
+    def test_marker_with_attached_corner_bracket_uses_marker_reference(self):
+        # 'ㅇ「…'(기호 뒤 낫표 붙임)도 ㅇ 기준값을 쓴다. 정확히 같은 문장(exact 키)이 있으면 그것이 우선이다.
+        pairs = {"ㅇ": (0, -3000), "□": (0, -2548), "text:ㅇ「특별 문장」": (10, -20)}
+        self.assertEqual(reference_hanging_indent_pair(" ㅇ「난세기 대비 법 시행령」개정", pairs), (0, -3000))
+        self.assertEqual(reference_hanging_indent_pair("□「계획」 수립", pairs), (0, -2548))
+        self.assertEqual(reference_hanging_indent_pair("ㅇ「특별 문장」", pairs), (10, -20))
+        self.assertIsNone(reference_hanging_indent_pair("ㅇ이 아닌 글", {"ㅇ": (0, -3000)}))
 
     def test_final_guard_aligns_trailing_attachment_numbers(self):
         from docfit_core.batch_format import ParagraphStyle, StylePool, _serialize
