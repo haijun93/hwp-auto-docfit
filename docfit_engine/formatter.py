@@ -6035,33 +6035,40 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     if not _xml_내어쓰기_기준확인:
                         _xml_내어쓰기_기준확인 = True
                         candidates = []
-                        sample_folder = globals().get('서식예시_폴더')
-                        if callable(sample_folder):
+                        active_sample = globals().get('활성_서식예시_파일')
+                        if active_sample:
                             try:
-                                candidates.append(Path(sample_folder()) / '기본 서식.hwpx')
+                                candidates.append(Path(active_sample))
                             except Exception:
                                 pass
-                        app_home = globals().get('HWP_AUTOMATION_DIR')
-                        if app_home:
-                            candidates.append(Path(app_home) / '서식예시' / '기본 서식.hwpx')
-                        program_folder = globals().get('프로그램_폴더')
-                        if callable(program_folder):
+                        if not 사용자서식:
+                            sample_folder = globals().get('서식예시_폴더')
+                            if callable(sample_folder):
+                                try:
+                                    candidates.append(Path(sample_folder()) / '기본 서식.hwpx')
+                                except Exception:
+                                    pass
+                            app_home = globals().get('HWP_AUTOMATION_DIR')
+                            if app_home:
+                                candidates.append(Path(app_home) / '서식예시' / '기본 서식.hwpx')
+                            program_folder = globals().get('프로그램_폴더')
+                            if callable(program_folder):
+                                try:
+                                    candidates.append(Path(program_folder()) / 'resources' / '서식예시' / '기본 서식.hwpx')
+                                except Exception:
+                                    pass
+                            bundle_folder = globals().get('번들_리소스_폴더')
+                            if callable(bundle_folder):
+                                try:
+                                    bundle = bundle_folder()
+                                    if bundle:
+                                        candidates.append(Path(bundle) / 'resources' / '서식예시' / '기본 서식.hwpx')
+                                except Exception:
+                                    pass
                             try:
-                                candidates.append(Path(program_folder()) / 'resources' / '서식예시' / '기본 서식.hwpx')
+                                candidates.append(Path(__file__).resolve().parent / 'resources' / '서식예시' / '기본 서식.hwpx')
                             except Exception:
                                 pass
-                        bundle_folder = globals().get('번들_리소스_폴더')
-                        if callable(bundle_folder):
-                            try:
-                                bundle = bundle_folder()
-                                if bundle:
-                                    candidates.append(Path(bundle) / 'resources' / '서식예시' / '기본 서식.hwpx')
-                            except Exception:
-                                pass
-                        try:
-                            candidates.append(Path(__file__).resolve().parent / 'resources' / '서식예시' / '기본 서식.hwpx')
-                        except Exception:
-                            pass
                         reference = next((item for item in candidates if item.is_file()), None)
                         if reference is not None:
                             try:

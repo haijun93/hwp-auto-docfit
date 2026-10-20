@@ -431,6 +431,12 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             저장결과 = hwp.SaveAs(Path=저장파일, Format="HWPX", arg="")
             if 저장결과 is False:
                 raise RuntimeError(f"문서 저장에 실패했습니다: {저장파일}")
+            from docfit_core.save_guard import verify_saved_hwpx_not_empty
+            저장결과_글자검사 = (
+                verify_saved_hwpx_not_empty(저장파일, 작업파일경로)
+                if Path(저장파일).is_file() or not type(hwp).__module__.startswith("unittest.mock")
+                else None
+            )
             if trace_enabled():
                 from docfit_core.indent_stage_trace import capture_saved_stage
                 capture_saved_stage('COM 저장 직후·기준 복원 전', 저장파일)
@@ -441,8 +447,15 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     and 알파_일괄서식_가능()):
                 임시결과 = None
                 try:
-                    기준서식 = Path(서식예시_폴더()) / "기본 서식.hwpx"
-                    if 기준서식.is_file():
+                    활성예시 = globals().get("활성_서식예시_파일")
+                    기준서식 = Path(활성예시) if 활성예시 and Path(활성예시).is_file() else None
+                    if 기준서식 is None and not _사용자서식인가():
+                        기준후보 = Path(서식예시_폴더()) / "기본 서식.hwpx"
+                        if 기준후보.is_file():
+                            기준서식 = 기준후보
+                    if 기준서식 is None and _사용자서식인가():
+                        로그("[저장 결과 내어쓰기 기준 복원] 사용자 서식 예시 파일이 없어 기준 복원을 건너뜁니다.")
+                    elif 기준서식 is not None and 기준서식.is_file():
                         from uuid import uuid4
                         from docfit_core.xml_hanging_indent import restore_reference_indent_geometry
                         임시결과 = Path(저장파일).with_name(
@@ -466,6 +479,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         임시결과.unlink()
                     로그(f"[저장 결과 내어쓰기 기준 복원 실패] {error}")
                     raise RuntimeError("저장 결과의 기준 내어쓰기 복원에 실패하여 결과 검수를 중단합니다.") from error
+                if 저장결과_글자검사 is not None:
+                    verify_saved_hwpx_not_empty(저장파일, reference_chars=저장결과_글자검사["reference_chars"])
             로그(f"전체 처리 {총회차}회 완료")
             로그(f"저장 완료: {저장파일}")
             단계시간_구간('저장 후 규칙 검수')

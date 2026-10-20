@@ -30,6 +30,7 @@ sys.path.insert(0, str(ROOT))
 
 from docfit_core.stage_selection import default_choice, stages_for_mode, without_page_fit, without_tables
 from docfit_core.report_header import detect_header
+from docfit_core.save_guard import com_test_lock
 
 STD_KEYS = ["std_margin", "std_ratio", "std_linespacing", "std_title", "std_title_bold", "std_title_auto",
             "std_attachment_auto", "std_midtitle_auto", "std_midtitle_bold", "std_dateinfo", "std_dateinfo_bold",
@@ -156,12 +157,13 @@ def 처리(g, 원본, 작업폴더, 모드, 표제외_요청, 로그파일, 전�
     모드, 세부작업, 세부, 표제외 = 작업_설정(s, 모드, 표제외_요청, 전체서식_요청)
     간격 = {k: int(s[k]) for k in PARSPACE_KEYS}
     시작 = time.time()
-    g['작업_실행']([str(사본)], s["punctuation"], None, False, None, None, True, s["stdformat"], s["verify"],
-               int(s["punctuation_threshold"]), int(s.get("retry_body", 30)), int(s.get("retry_table", 5)),
-               s["paren_shrink"], 세부, 간격, s["paren_label_bold"], s["keep_punctuation_set_together"],
-               s["prevent_word_split"], 모드, s["label_symbols"], int(s["linespacing_min"]),
-               int(s["linespacing_max"]), bool(s.get("table_spacing", True)) and not 표제외, None, False, 세부작업,
-               2 if s.get("two_pass_processing") else 1, 1, None, False, False)
+    with com_test_lock("regression_pc", Path(원본).name):
+        g['작업_실행']([str(사본)], s["punctuation"], None, False, None, None, True, s["stdformat"], s["verify"],
+                   int(s["punctuation_threshold"]), int(s.get("retry_body", 30)), int(s.get("retry_table", 5)),
+                   s["paren_shrink"], 세부, 간격, s["paren_label_bold"], s["keep_punctuation_set_together"],
+                   s["prevent_word_split"], 모드, s["label_symbols"], int(s["linespacing_min"]),
+                   int(s["linespacing_max"]), bool(s.get("table_spacing", True)) and not 표제외, None, False, 세부작업,
+                   2 if s.get("two_pass_processing") else 1, 1, None, False, False)
     결과 = next(Path(작업폴더).glob('src(*).hwpx'), None)
     점수 = None
     if 점수줄:
@@ -253,62 +255,63 @@ def main():
             'flags_overridden': 바꾼_플래그, 'beta_mode': args.beta_mode}
     요구 = {'min_score': args.min_score, 'same_layout': args.require_same_layout}
     보고 = []
-    for 문서 in args.documents:
-        print(f"[START] {Path(문서).name}", flush=True)
-        with tempfile.TemporaryDirectory(prefix='docfit_regression_') as 폴더, \
-                open(Path(폴더) / 'log.txt', 'w', encoding='utf-8') as 로그파일:
-            live_log_path = None
-            if args.log_dir:
-                Path(args.log_dir).mkdir(parents=True, exist_ok=True)
-                live_log_path = Path(args.log_dir) / f"{Path(문서).stem}.log"
-                live_log_path.write_text('', encoding='utf-8')
-            사본, 결과, 초, 점수, 설정 = 처리(g, 문서, 폴더, args.mode, args.exclude_tables, 로그파일,
-                                        None if args.unify_full_format is None else args.unify_full_format == '1',
-                                        True if args.verify else None, live_log_path)
-            print(f"[PROCESS_DONE] {Path(문서).name} ({초}s; output={bool(결과)})", flush=True)
-            항목 = {'document': Path(문서).name,
-                  'document_sha256': hashlib.sha256(Path(문서).read_bytes()).hexdigest()[:16],
-                  **공통, 'settings': 설정, 'seconds': 초, 'score': 점수, 'output_created': bool(결과)}
-            원문제목 = 제목라벨_본문(문서)
-            if 원문제목:
-                항목.update({'title_check_required': True,
-                             'title_content_preserved': 제목_결과검사(원문제목, 결과) if 결과 else False})
-            # Keep the generated artifact as soon as processing completes. Later COM page-layout
-            # inspection may be slow or time out, but must not erase the only output evidence.
-            if args.keep_dir and 결과:
-                Path(args.keep_dir).mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(결과, Path(args.keep_dir) / f"{Path(문서).stem}.hwpx")
-            if 결과:
-                pythoncom.CoInitialize()
-                app = win32com.client.DispatchEx('HwpFrame.HwpObject')
-                try:
-                    app.RegisterModule(g['REGISTER_MODULE_NAME'], g['REGISTER_MODULE_VALUE'])
-                    g.update(로그=lambda *a: None, 진단로그=lambda *a: None)
-                    # TXT·MD 등은 원본에 쪽 구성이 없어 결과만 잰다(쪽 구성 비교 없음).
-                    if 사본.suffix in ('.hwp', '.hwpx'):
-                        print(f"[PAGE_AUDIT_START] original {Path(문서).name}", flush=True)
-                        원, 원쪽, 원나눔 = 쪽구성(g, app, 사본)
-                    else:
-                        원, 원쪽, 원나눔 = [], None, None
-                    print(f"[PAGE_AUDIT_START] result {Path(문서).name}", flush=True)
-                    결, 결쪽, 결나눔 = 쪽구성(g, app, 결과)
-                    print(f"[PAGE_AUDIT_DONE] {Path(문서).name}", flush=True)
-                finally:
-                    app.Quit()
-                    pythoncom.CoUninitialize()
-                다른 = [i + 1 for i in range(max(len(원), len(결)))
-                       if (원[i] if i < len(원) else None) != (결[i] if i < len(결) else None)]
-                항목.update({'pages': {'original': 원쪽, 'result': 결쪽},
-                           'reports': {'original': 원, 'result': 결, 'different': 다른},
-                           'page_breaks': {'original': 원나눔, 'result': 결나눔},
-                           'layout_same': None if 원쪽 is None else (not 다른 and 원쪽 == 결쪽)})
-            항목['checks'], 항목['passed'] = 판정(항목, 요구)
-            if args.log_dir:
-                로그파일.flush()
-                Path(args.log_dir).mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(Path(폴더) / 'log.txt', Path(args.log_dir) / f"{Path(문서).stem}.log")
-            보고.append(항목)
-            print(f"[DONE] {Path(문서).name}: {'PASS' if 항목['passed'] else 'FAIL'}", flush=True)
+    with com_test_lock("regression_pc", ",".join(Path(d).name for d in args.documents)):
+        for 문서 in args.documents:
+            print(f"[START] {Path(문서).name}", flush=True)
+            with tempfile.TemporaryDirectory(prefix='docfit_regression_') as 폴더, \
+                    open(Path(폴더) / 'log.txt', 'w', encoding='utf-8') as 로그파일:
+                live_log_path = None
+                if args.log_dir:
+                    Path(args.log_dir).mkdir(parents=True, exist_ok=True)
+                    live_log_path = Path(args.log_dir) / f"{Path(문서).stem}.log"
+                    live_log_path.write_text('', encoding='utf-8')
+                사본, 결과, 초, 점수, 설정 = 처리(g, 문서, 폴더, args.mode, args.exclude_tables, 로그파일,
+                                            None if args.unify_full_format is None else args.unify_full_format == '1',
+                                            True if args.verify else None, live_log_path)
+                print(f"[PROCESS_DONE] {Path(문서).name} ({초}s; output={bool(결과)})", flush=True)
+                항목 = {'document': Path(문서).name,
+                      'document_sha256': hashlib.sha256(Path(문서).read_bytes()).hexdigest()[:16],
+                      **공통, 'settings': 설정, 'seconds': 초, 'score': 점수, 'output_created': bool(결과)}
+                원문제목 = 제목라벨_본문(문서)
+                if 원문제목:
+                    항목.update({'title_check_required': True,
+                                 'title_content_preserved': 제목_결과검사(원문제목, 결과) if 결과 else False})
+                # Keep the generated artifact as soon as processing completes. Later COM page-layout
+                # inspection may be slow or time out, but must not erase the only output evidence.
+                if args.keep_dir and 결과:
+                    Path(args.keep_dir).mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(결과, Path(args.keep_dir) / f"{Path(문서).stem}.hwpx")
+                if 결과:
+                    pythoncom.CoInitialize()
+                    app = win32com.client.DispatchEx('HwpFrame.HwpObject')
+                    try:
+                        app.RegisterModule(g['REGISTER_MODULE_NAME'], g['REGISTER_MODULE_VALUE'])
+                        g.update(로그=lambda *a: None, 진단로그=lambda *a: None)
+                        # TXT·MD 등은 원본에 쪽 구성이 없어 결과만 잰다(쪽 구성 비교 없음).
+                        if 사본.suffix in ('.hwp', '.hwpx'):
+                            print(f"[PAGE_AUDIT_START] original {Path(문서).name}", flush=True)
+                            원, 원쪽, 원나눔 = 쪽구성(g, app, 사본)
+                        else:
+                            원, 원쪽, 원나눔 = [], None, None
+                        print(f"[PAGE_AUDIT_START] result {Path(문서).name}", flush=True)
+                        결, 결쪽, 결나눔 = 쪽구성(g, app, 결과)
+                        print(f"[PAGE_AUDIT_DONE] {Path(문서).name}", flush=True)
+                    finally:
+                        app.Quit()
+                        pythoncom.CoUninitialize()
+                    다른 = [i + 1 for i in range(max(len(원), len(결)))
+                           if (원[i] if i < len(원) else None) != (결[i] if i < len(결) else None)]
+                    항목.update({'pages': {'original': 원쪽, 'result': 결쪽},
+                               'reports': {'original': 원, 'result': 결, 'different': 다른},
+                               'page_breaks': {'original': 원나눔, 'result': 결나눔},
+                               'layout_same': None if 원쪽 is None else (not 다른 and 원쪽 == 결쪽)})
+                항목['checks'], 항목['passed'] = 판정(항목, 요구)
+                if args.log_dir:
+                    로그파일.flush()
+                    Path(args.log_dir).mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(Path(폴더) / 'log.txt', Path(args.log_dir) / f"{Path(문서).stem}.log")
+                보고.append(항목)
+                print(f"[DONE] {Path(문서).name}: {'PASS' if 항목['passed'] else 'FAIL'}", flush=True)
     text = json.dumps(보고, ensure_ascii=False, indent=2)
     if args.out:
         Path(args.out).write_text(text, encoding='utf-8')

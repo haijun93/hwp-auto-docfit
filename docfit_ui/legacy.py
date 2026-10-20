@@ -2150,6 +2150,15 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 활성_서식표_프로필 = copy.deepcopy(profile.get("form_tables")) or None
                 활성_표서식_프로필 = copy.deepcopy(profile.get("table_style")) or None
                 globals()["활성_머리서식_프로필"] = copy.deepcopy(profile.get("report_header")) or None
+                identifier = getattr(self, "_활성_서식_프로파일", "")
+                if not identifier and profile is not (getattr(self, "_프로파일들", None) or {}).get(""):
+                    identifier = next(
+                        (k for k, v in (getattr(self, "_프로파일들", None) or {}).items() if v is profile),
+                        "",
+                    )
+                globals()["활성_서식예시_파일"] = 서식예시_폴더() / 서식예시모듈.file_name_for(
+                    profile.get("name") or "", standard=not identifier
+                )
                 global 괄호_축소_pt
                 괄호_축소_pt = float(profile["format"].get("괄호_축소_pt", 2) or 2)
                 글꼴형식_등록(profile["format"].get("글꼴형식"))

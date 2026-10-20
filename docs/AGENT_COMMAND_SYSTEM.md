@@ -23,12 +23,25 @@
 5. **판정은 토큰 없이**: `lead_compare.py`·`split_check.py`·`regression_pc.py --verify`·`unittest` 종료 코드.
 6. 한도가 걸린 작업자의 카드는 대기열에 두고, 기다리는 동안 Claude나 다른 작업자가 처리할 수 있는 카드는 바로 넘긴다.
 
+## 2-1. 모델 선택 (2026-10-20 정정: Gemini 프로 요금제, ChatGPT/Codex 플러스 요금제)
+
+| 작업자 | 창 기본값 | Claude가 호출할 때 | 맡는 일 |
+|---|---|---|---|
+| **Gemini (주력)** | gemini-4-argon-high | 실측 시험 실행·정리는 gemini-4-argon-medium | 코드 수정·설계 구현·COM 실측·교차 검토 |
+| **Codex (보조, 한도 작음)** | gpt-6.1-sol · low · priority 등급 끔 권장 | low, 꼭 필요할 때만 medium | 위치가 확정된 S 카드, Gemini 수정의 교차 검토 |
+
+Codex 한도는 플러스라 작다. 조사·설계·큰 카드는 Gemini나 Claude가 맡는다. 한도가 걸리면 다른 작업자·Claude가 즉시 대신한다.
+서로 다른 모델 계열(Claude·GPT·Gemini)로 교차 검토하고, Antigravity의 Claude 모델은 쓰지 않는다.
+
+**Claude도 프로 요금제(주간 한도 있음)**: 주간 사용량이 높을 때(80% 이상) Claude는 조사·코드 읽기를 하지 않고
+카드 작성과 스크립트 판정(종료 코드·숫자)만 한다. 원인 조사도 Gemini에게 카드로 맡긴다.
+
 ## 3. 호출 방법 (사용자 붙여넣기 불필요)
 
 - Codex:
   `codex exec -C <저장소> -s workspace-write --add-dir C:\HWP_AUTODOCFIT -c model_reasoning_effort="low" -o <결과.md> - < <카드.md>`
 - Gemini:
-  `agy -p --effort low --mode accept-edits --add-dir C:\HWP_AUTODOCFIT --print-timeout 40m "<카드 내용>"`
+  `agy -p --model gemini-4-argon-high --mode accept-edits --add-dir C:\HWP_AUTODOCFIT --print-timeout 40m "<카드 내용>"`
 - 대화형 창(VS Code Codex, Antigravity 창)이 이미 같은 일을 하고 있으면 중복 호출하지 않는다. 그 창은 작업판을 읽고 보고 칸에 적는 방식으로 참여한다.
 
 ## 4. 작업 카드 형식

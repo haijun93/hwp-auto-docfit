@@ -61,52 +61,54 @@ def main():
     digest = hashlib.sha256(source.read_bytes()).hexdigest()
     import pythoncom
     import regression_pc as rp
-    pythoncom.CoInitialize()
-    try:
-        g = rp.앱_불러오기()
-        settings = copy.deepcopy(g['설정_불러오기']())
-        settings.update(verify=True, spacing_exclude_tables=False, table_spacing=True,
-                        two_pass_processing=False)
-        enabled = {'reset_spacing', 'body_spacing', 'short_line', 'control_spacing',
-                   'control_short_line', 'word_check', 'control_word_check'}
-        from docfit_core.stage_selection import stages_for_mode
-        settings.setdefault('stage_choices', {})['spacing'] = {
-            key: key in enabled for key, _ in stages_for_mode('spacing')}
-        g['설정_불러오기'] = lambda: copy.deepcopy(settings)
-        snapshot = out / 'input.hwpx'
-        if source.suffix.lower() == '.hwpx':
-            shutil.copyfile(source, snapshot)
-        else:
-            converter = g['외부문서_hwpx로_변환']
-            def capture(original, suffix, target):
-                result = converter(original, suffix, target)
-                shutil.copyfile(target, snapshot)
-                return result
-            g['외부문서_hwpx로_변환'] = capture
-        with (out / 'processing.log').open('w', encoding='utf-8') as log:
-            _, result, seconds, score, run_settings = rp.처리(
-                g, str(source), work, 'spacing', False, log, 검수_강제=True)
-        if result is None or not snapshot.is_file():
-            raise RuntimeError('변환 직후 원문 또는 결과 파일이 없습니다.')
-        kept = out / 'result.hwpx'
-        shutil.copyfile(result, kept)
-        checks = (g.get('최종검수_문서목록') or [{}])[-1].get('rule_checks', {})
-        required = ('word_check', 'control_word_check')
-        same = paragraph_texts(snapshot) == paragraph_texts(kept)
-        unchanged = hashlib.sha256(source.read_bytes()).hexdigest() == digest
-        passed = same and unchanged and all(checks.get(k, {}).get('status') == 'passed'
-                                            for k in required)
-        report = {'status': 'pass' if passed else 'fail', 'source': str(source),
-                  'source_sha256': digest, 'source_unchanged': unchanged,
-                  'visible_paragraph_texts_equal': same, 'seconds': seconds,
-                  'work_score': score, 'settings': run_settings, 'checks': checks,
-                  'scope': '자간 정리 전후 표시 텍스트 및 저장 후 본문·표/컨트롤 어절 분리',
-                  'unchecked': ['원본 대비 전체 시각적 동일성', '전체 서식 재연']}
-        (out / 'report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
-        print(json.dumps(report, ensure_ascii=False, indent=2))
-        return 0 if passed else 1
-    finally:
-        pythoncom.CoUninitialize()
+    from docfit_core.save_guard import com_test_lock
+    with com_test_lock("verify_spacing_contract_pc", source.name):
+        pythoncom.CoInitialize()
+        try:
+            g = rp.앱_불러오기()
+            settings = copy.deepcopy(g['설정_불러오기']())
+            settings.update(verify=True, spacing_exclude_tables=False, table_spacing=True,
+                            two_pass_processing=False)
+            enabled = {'reset_spacing', 'body_spacing', 'short_line', 'control_spacing',
+                       'control_short_line', 'word_check', 'control_word_check'}
+            from docfit_core.stage_selection import stages_for_mode
+            settings.setdefault('stage_choices', {})['spacing'] = {
+                key: key in enabled for key, _ in stages_for_mode('spacing')}
+            g['설정_불러오기'] = lambda: copy.deepcopy(settings)
+            snapshot = out / 'input.hwpx'
+            if source.suffix.lower() == '.hwpx':
+                shutil.copyfile(source, snapshot)
+            else:
+                converter = g['외부문서_hwpx로_변환']
+                def capture(original, suffix, target):
+                    result = converter(original, suffix, target)
+                    shutil.copyfile(target, snapshot)
+                    return result
+                g['외부문서_hwpx로_변환'] = capture
+            with (out / 'processing.log').open('w', encoding='utf-8') as log:
+                _, result, seconds, score, run_settings = rp.처리(
+                    g, str(source), work, 'spacing', False, log, 검수_강제=True)
+            if result is None or not snapshot.is_file():
+                raise RuntimeError('변환 직후 원문 또는 결과 파일이 없습니다.')
+            kept = out / 'result.hwpx'
+            shutil.copyfile(result, kept)
+            checks = (g.get('최종검수_문서목록') or [{}])[-1].get('rule_checks', {})
+            required = ('word_check', 'control_word_check')
+            same = paragraph_texts(snapshot) == paragraph_texts(kept)
+            unchanged = hashlib.sha256(source.read_bytes()).hexdigest() == digest
+            passed = same and unchanged and all(checks.get(k, {}).get('status') == 'passed'
+                                                for k in required)
+            report = {'status': 'pass' if passed else 'fail', 'source': str(source),
+                      'source_sha256': digest, 'source_unchanged': unchanged,
+                      'visible_paragraph_texts_equal': same, 'seconds': seconds,
+                      'work_score': score, 'settings': run_settings, 'checks': checks,
+                      'scope': '자간 정리 전후 표시 텍스트 및 저장 후 본문·표/컨트롤 어절 분리',
+                      'unchecked': ['원본 대비 전체 시각적 동일성', '전체 서식 재연']}
+            (out / 'report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+            return 0 if passed else 1
+        finally:
+            pythoncom.CoUninitialize()
 
 
 if __name__ == '__main__':

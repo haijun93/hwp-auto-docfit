@@ -231,15 +231,69 @@ Claude가 판정한 뒤 Codex에게 수정을 지시한다.
 
 | 카드 | 담당 | 상태 | 판정 근거 |
 |---|---|---|---|
-| W1 부연설명 위 문단별 앞 빈칸 | Claude(대행) | 구현·단위시험 통과, **COM 판정 대기**(T1) | lead_compare T1 |
-| W2 복제 프로필 앞 빈칸 | Claude(대행) | 구현·단위시험 통과, **COM 판정 대기**(T2) | lead_compare T2 |
-| W3 빈 문서 저장 차단·잠금 | Gemini | G1-T4·G2 뒤 착수 | unittest |
+| W1 부연설명 위 문단별 앞 빈칸 | Claude(대행) | **PASS·커밋 0c62433** | T1 lead_compare 10/0, 검수 100 |
+| W2 복제 프로필 앞 빈칸 | Claude(대행) | **PASS·커밋 0c62433** | T2 lead_compare 10/0 |
+| W3 빈 문서 저장 차단·잠금 | Gemini | **완료(판정 대기)** | unittest 1353건 실패 0 |
+| R1 서식별 활성_서식예시_파일 | Gemini | **완료(판정 대기)** | test_reference_sample 5/5, fidelity 19→4건 |
+| R2·R3 줄간격·문단위간격 설계안 | Gemini | **완료(판정 대기)** | 아래 보고 칸에 원인·수정안 작성 |
 | G1-T3 README 예시 자간 | Gemini | **PASS** | work_score 100, 갈라짐 0 |
-| G1-T4 간부회의 hwpx 자간 | Gemini | 진행 중 | split_check·글자 불변 |
-| G2 기본 서식 자기 재연 차이 목록 | Gemini | 진행 중 | lead_compare + 요소 목록 |
+| G1-T4 간부회의 hwpx 자간 | Gemini | **완료(판정 대기)** | work_score 100, 표 18칸 불변 |
+| G2 기본 서식 자기 재연 차이 목록 | Gemini | **PASS** | lead_compare 38/0 + 차이 4건 채택 |
 | C1 (예약) G2 차이 목록 중 코드 수정 1건 | Codex | **00:50 한도 재설정 뒤** | 카드로 지정 |
 
 Codex 한도 소진(00:50 재설정)으로 Codex 카드는 대기열에만 둔다. 보고는 10줄 이내, 로그는 파일 경로만.
+
+## ★★ v1.79 개발 계획 (2026-10-21, 사용자 지시: "현재의 오류와 비효율성을 개선하고 향상된 기능을 가진 1.79 개발 추진")
+
+**릴리스 합격 조건(docs/RELEASE_TEST_PROCEDURE.md)**: 서식 재연 불일치 0건 + 쪽별 화면 대조. 단위 시험·속도는 보조 확인일 뿐이다.
+기준선(format_fidelity_pc, 커밋 0c62433·v1.78 시점): 기본 서식 19 · 기본 서식2 19 · 내어쓰기 테스트(XML내어쓰기) 7 · (원본변환) 5 · 간부회의 0.
+
+| 단계 | 카드 | 담당 | 내용 | 합격 |
+|---|---|---|---|---|
+| A 오류 | A1 | Claude 판정 중 | R1(서식별 예시 기준)·W3(빈 저장 차단) 판정 | 단위 시험 실패 0, 기본 서식 불일치 감소 |
+| A 오류 | A2 | **Gemini** | 테스트예시 5종 전부를 `format_fidelity_pc.py`로 돌려 남은 불일치를 유형별로 묶고, 유형마다 원인(파일:행)·수정·시험을 한 묶음씩 처리. 붙임 둘째 항목, `ㅇ「`(예시 우선), 복귀 간격 등 | 5종 모두 불일치 0 |
+| B 효율 | B1 | **Gemini** | 자간 단계 속도: 짧은 문서인데 '본문 자간·단어 분리' 55~64초, '표/컨트롤 자간' 16~28초. 단계별 시간 로그로 원인(반복 측정·재시도 횟수 등)을 찾고, **결과가 같은** 범위에서 줄인다. 측정은 1회만, PC 정리 뒤 | 같은 입력에서 결과 HWPX의 글자·서식이 바뀌지 않음(fidelity 불일치 0 유지) |
+| B 효율 | B2 | Codex(00:50 이후, low) | Gemini B1 diff 교차 검토(S 카드) | 의견 10줄 |
+| C 기능 | C1 | 완료 | 부연설명 위 문단별 앞 빈칸 학습, 서식 복사 앞 빈칸 재연(0c62433), 자간 정리 원문 보존(a9b1a17), 빈 저장 차단(W3) | — |
+| D 릴리스 | D1 | **Claude** | APP_VERSION 1.79.0, README 갱신(버전 배지·다운로드 표·변경 사항·바뀐 점, 이전 버전 대비 비교표 없음), fidelity 5종 0건 기록, 태그 전 github/main fetch, alpha→main, github→origin | 절차 문서 기준 |
+
+순서: A1 판정 → **A2(최우선)** → B1 → D1. 새 기능 아이디어는 A·B가 끝난 뒤 사용자 확인을 받아 추가한다.
+Gemini는 A2를 유형 하나씩 끝낼 때마다 보고 칸에 `[A2-n] 유형 / 원인 파일:행 / 고친 내용 / 불일치 전→후` 1줄을 남겨라. 커밋은 Claude가 판정 뒤 한다.
+
+## ★ Claude 공지 (2026-10-21 00:00경) — 사용량에 따른 운영 변경
+- Gemini(프로·argon-high)가 **조사와 코드 수정의 주력**이다. Claude는 주간 사용량이 높아 지휘·판정만 한다.
+- Gemini 순서: **W3 마무리 → R1 → R2·R3 설계안**(보고서별 줄 간격·문단 위 간격, 원인 조사와 수정안까지 Gemini가 작성).
+- R1·W3를 끝내면 `python -m unittest discover -s tests` 결과와 아래 명령의 불일치 수를 보고하라(잠금 필수):
+  `scriptsormat_fidelity_pc.py "C:\HWP_AUTODOCFIT\테스트예시\기본 서식.hwpx" --out C:\HWP_AUTODOCFIT\테스트예시\지시시험_2026-10-20\geminiidelity_R1`
+  현재 기준선은 불일치 19건(커밋 0c62433). 목표는 0, R1로 약 17건 감소 예상.
+- 보고는 10줄 이내, 숫자 위주로 한다.
+
+## ★ 카드 R1 — Gemini (23:35 발행, W3와 같은 저장 블록이라 함께 처리) · 등급 M
+
+G2 보고 판정: **앞 빈칸 PASS(38/0) 확인, 차이 목록 4건 채택**. R1은 그중 1번이다. 수고했다.
+- **우선순위: R1을 W3보다 먼저.** 공식 재연 시험(format_fidelity_pc) 기본 서식 불일치 19건 중 약 17건이 R1에서 나온다
+  (`-` -3500→-2800 7건, `※` -3340→-4452 2건, `□ 총 소요` 1건, `ㅇ` -3000→-2996·`ㅇ「` -3000→-3748 등). 서식 복사는 예시 우선이므로
+  사용자 서식일 때 기준 예시 = 그 서식의 예시 파일이어야 한다.
+- 소유 파일: `docfit_engine/pipeline.py` 저장 블록(440~470행), `docfit_engine/formatter.py`의 **6030~6065행(XML 내어쓰기 기준 후보 목록)만**,
+  `docfit_ui/legacy.py`의 `_프로파일_전역반영`(2135행 근처)만, 새 시험 `tests/test_reference_sample.py`.
+  (formatter.py의 다른 부분은 Claude가 W1·W2로 고쳐 커밋 0c62433에 넣었다. 그 위에서 고쳐라.)
+- 원인: 엔진은 지금 쓰는 서식의 예시 파일 경로를 모른다. XML 내어쓰기 기준(formatter 6038~6062)과 저장 후 복원
+  (pipeline 444 `기준서식 = 서식예시_폴더()/"기본 서식.hwpx"`)이 모두 기본 서식으로 고정되어, 서식 복사 프로필의
+  `-`(-3500)·`※`(-3340)가 기본 서식 값(-2800·-4452)으로 덮인다.
+- 고칠 내용:
+  1. `_프로파일_전역반영`에서 전역 `활성_서식예시_파일`을 정한다:
+     `서식예시_폴더() / 서식예시모듈.file_name_for(profile["name"], standard=not identifier)`. 기본 서식이면 `기본 서식.hwpx`.
+     (identifier를 모르면 `profile is 기본` 판정 방식은 legacy.py 2335행 `file_name_for(..., standard=not identifier)`를 따른다.)
+     hwp-auto-docfit.py에 기본값 `활성_서식예시_파일 = None`을 둔다(CRLF 보존).
+  2. formatter 후보 목록과 pipeline 복원 기준: `활성_서식예시_파일`이 있고 파일이 존재하면 그것을 **첫 후보**로 쓴다.
+  3. 사용자 서식(`_사용자서식인가()`)인데 그 예시 파일이 없으면 저장 후 복원을 **건너뛴다**(기본 서식 값을 강요하지 않음), 로그 1줄.
+- 합격: 단위 시험(예시 파일 있음 → 그 파일 사용 / 사용자 서식·파일 없음 → 복원 생략 / 기본 서식 → 기존과 같음).
+  COM 판정은 Claude가 한다: `run_clone.py`로 `테스트예시\기본 서식.hwpx` 자기 재연 → 원본 대비 `-`·`※` 내어쓰기 일치.
+  (`run_clone.py`는 Claude가 `활성_서식예시_파일`을 복제 원본 경로로 설정하도록 고친다.)
+- 금지: 커밋·푸시. 보고는 'Gemini 결과 보고'에 10줄 이내.
+
+차이 목록 2·3번(보고서별 줄 간격·문단 위 간격)은 Claude가 설계한 뒤 카드로 낸다. 4번(`ㅇ「` 내어쓰기, 붙임 둘째 항목)은
+Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 
 ## ★ Claude 지시 변경 (2026-10-20 23:05) — Codex 사용량 한도(00:50까지)에 따른 역할 전환
 
@@ -294,7 +348,34 @@ Codex 한도 소진(00:50 재설정)으로 Codex 카드는 대기열에만 둔�
      - 문단 24·37(`ㅇ「난세기 대비...`, 기호 뒤 공백 없음): 원본 `(left=0, indent=-3000)` → 결과 `(left=3748, indent=-3748)` (`「` 뒤 글자 위치로 내어쓰기 측정).
      - 문단 48(`      2.「난세기 대비...`, 붙임 두 번째 항목): 원본 `(left=-232, indent=0)` → 결과 `(left=11392, indent=-5928)`.
 
-- **진행 중**: `C:\HWP_AUTODOCFIT\.com-test.lock` 대기 후 `G1-T4` 및 `G2-T5` 실행 예정.
+### G1-T4·G2-T5. `(서식)10월 확대간부회의_부서명 (2).hwpx` (`a9b1a17` vs `v1.78.0`, 표 포함·verify on)
+- 요약 JSON: `C:\HWP_AUTODOCFIT\테스트예시\지시시험_2026-10-20\gemini\g1t4_g2t5_summary.json` (산출물: `...\gemini\G1\T4_*`, `...\gemini\G2\T5_*`).
+| 시험 | 버전 | 점수 | 쪽수(원→결) | 글자(공백제외) | 표 칸 불변 | word/control_word_check | split_check / lead_compare |
+|---|---|---|---|---|---|---|---|
+| G1-T3 (README.txt, spacing) | v1.78.0 / a9b1a17 | 100 / 100 | 2 / 2 | 1371=1371 | 해당없음 | passed / passed | 본문 갈라짐 0, 거점(지구)·수립하여 한 줄 |
+| G1-T4 (간부회의.hwpx, spacing) | v1.78.0 / a9b1a17 | 100 / 100 | 1→1 / 1→1 | 446=446 | True(18칸) | passed(0) / passed(0) | 표 좁은 칸 `설치목적//기능` 1건(동일) |
+| G2-T5 (간부회의.hwpx, all) | v1.78.0 / a9b1a17 | 100 / 100 | 1→1 / 1→1 | 446=446 | True(18칸) | passed(0) / passed(0) | 갈라짐 0·짧은줄 0, `lead_compare` PASS(12/0, unknown 1) |
+
+### 카드 R1. 서식별 `활성_서식예시_파일` 연결 및 사용자 서식 복원 보호 (완료)
+- 수정 파일: `hwp-auto-docfit.py`(`활성_서식예시_파일 = None`), `docfit_ui/legacy.py`(`_프로파일_전역반영`), `docfit_engine/formatter.py`(6035~6065행 후보 1순위), `docfit_engine/pipeline.py`(저장 블록 복원 기준 및 사용자 서식 예시 없을 때 생략+로그 1줄).
+- 단위 시험: `tests/test_reference_sample.py` **5건 전부 PASS** (예시 파일 있음→그 파일 사용 / 사용자 서식·파일 없음→복원 생략 / 기본 서식→기존과 같음 / formatter 1순위 후보).
+
+### 카드 W3. 간헐적 빈 문서 저장 차단(fail-closed) 및 시험 스크립트 COM 잠금 (완료)
+- 수정 파일: `docfit_core/save_guard.py`, `tests/test_save_guard.py`, `docfit_engine/pipeline.py`(저장 블록만), `scripts/regression_pc.py`, `scripts/verify_spacing_contract_pc.py`.
+- 기준 글자 수 근거: COM 충돌 시 저장 직전 메모리 문서가 이미 비워질 수 있으므로, 처리 시작 때 확보된 디스크 `작업파일경로` HWPX의 공백 제외 글자 수(`defusedxml`)를 기준으로 대조(0자 또는 50% 미만 시 `RuntimeError`).
+- 단위 시험: `tests/test_save_guard.py` **4건 PASS**, `tests/test_pipeline_review.py` **23건 PASS** (전체 `unittest discover` 기존 1,344 + 신규 9 = 1,353건 실패 0).
+- `scripts/format_fidelity_pc.py` (`fidelity_R1`): `g["활성_서식예시_파일"] = Path(example)` 1줄 연동 후 실행 결과 **불일치 19건 → 4건 (15건 감소)** (`...\gemini\fidelity_R1\기본 서식.all.diff.txt`).
+
+### R2·R3 및 남은 불일치 4건 원인 조사·수정 설계안 (Gemini)
+1. **fidelity_R1 남은 불일치 4건(문단 21·53·88·90) 즉시 해결안 (`docfit_core/xml_hanging_indent.py`)**:
+   - **문단 53·90 (`ㅇ「난세기 대비...`, 2건)**: `xml_hanging_indent.py:267`이 `stripped[1].isspace()`만 허용해 공백 없는 `ㅇ「...`가 `_reference_marker_key`에서 `None` 반환 → `stripped[1] in ("「", "『", "(", "[")` 허용 시 기준값(`0, -3000`/`-2996`) 복원.
+   - **문단 21·88 (`ㅇ` 줄바꿈 문단 `left: 0 → 3000/3240`, 2건)**: 원본의 수동 예외(`left=0, intent=-3000/-3240`)를 `safe_reference_hanging_indent_pair`(`xml_hanging_indent.py:422`)가 `left=3000/3240`으로 보정함. 복제 서식(`_사용자서식인가()`)이거나 exact match일 때 원본 `pair` 그대로 유지하면 0건 달성 가능.
+2. **R2 (보고서별 줄 간격 설계안)**:
+   - **원인**: `formatter.py:647-650, 712`에서 기호별 문서 전체 단일 최빈 `LineSpacing`만 `복사_문단모양[symbol]`에 저장함(`기본 서식.hwpx`는 1·2·3보고서가 155%/180%/160%로 다름).
+   - **수정안**: `hwpx_서식_분석`에서 보고서 머리(제목 표) 경계별로 하위 보고서 순번(`report_idx`)을 구분해 기호 줄간격이 보고서마다 다르면 `복사_문단모양`에 보고서별 줄간격 표(`보고서별_줄간격[report_idx][symbol]`)를 저장하고 `표준서식_hwpx_처리`에서 보고서 경계마다 참조.
+3. **R3 (문단 위 간격·리턴간격 설계안)**:
+   - **원인**: `formatter.py:5975-5979`의 `ParagraphSpacingTracker`가 복제 서식에서도 고정 `표준서식_문단위간격_*_pt`와 일괄 리턴배율(150%)로 덮어써 문단 09(`**` 뒤 `ㅇ`, 원본 500→750)와 문단 44·45(3보고서 `*`/`**`, 원본 0→150) 차이를 만듦.
+   - **수정안**: `hwpx_서식_분석`에서 `(symbol, is_return)`별 `PrevSpacing` 빈도를 수집해 최빈값이 명확할 때만 `복사_문단위간격`으로 적용하고, 동률(예: `*`/`**`의 150 대 0)이거나 부연설명이 직전일 때의 비리턴 간격은 학습된 값을 우선 사용.
 
 ## Codex 결과 보고
 
