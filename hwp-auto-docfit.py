@@ -365,7 +365,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리"
-APP_VERSION = "1.80.0"
+APP_VERSION = "1.80.1"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 GITHUB_UPDATE_API_URL = "https://api.github.com/repos/haijun93/hwp-auto-docfit/releases/latest"
@@ -524,6 +524,7 @@ _표준서식_문단위간격_상태 = ParagraphSpacingTracker()
 # 먼저 쓴다(2026-10-04 결정 5).
 활성_표서식_프로필 = None
 활성_서식예시_파일 = None
+활성_항목기호_체계 = None
 
 표준서식_설정 = {
     "여백_mm": {
@@ -2458,6 +2459,8 @@ _묶음_쪽나눔_이동 = _engine_resolve('docfit_engine.page_fit', '_묶음_�
 _묶음_위간격_축소_당김 = _engine_resolve('docfit_engine.page_fit', '_묶음_위간격_축소_당김', globals())
 
 
+_묶음뒤_같은쪽_줄간격_맞춤 = _engine_resolve('docfit_engine.page_fit', '_묶음뒤_같은쪽_줄간격_맞춤', globals())
+쪽배치_축소쪽_줄간격_통일 = _engine_resolve('docfit_engine.page_fit', '쪽배치_축소쪽_줄간격_통일', globals())
 _묶음_같은쪽_이동 = _engine_resolve('docfit_engine.page_fit', '_묶음_같은쪽_이동', globals())
 
 

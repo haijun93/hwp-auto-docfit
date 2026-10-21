@@ -1867,6 +1867,15 @@ def _install(*, _docfit_namespace, _docfit_symbol):
         def 문장부호_마커_끝위치(text):
             if not text:
                 return None
+            scheme = globals().get('활성_항목기호_체계')
+            mapped = scheme.canonical(text) if scheme else None
+            if mapped:
+                return mapped[1]
+            # 번호·괄호·로마자 등 어떤 계열도 기호 중간에 빈칸을 넣지 않는다.
+            from docfit_core.marker_scheme import classify_marker
+            classified = classify_marker(text)
+            if classified:
+                return classified[1]
             벗긴텍스트 = text.lstrip()
             if not 벗긴텍스트:
                 return None

@@ -37,6 +37,7 @@ class PageGroupFallbackTest(unittest.TestCase):
             return False
 
         record = Mock()
+        self.tail_spacing = Mock()
         breaks = []
         self.breaks = breaks
         with patch.dict(fn.__globals__, {
@@ -47,6 +48,7 @@ class PageGroupFallbackTest(unittest.TestCase):
             '보고서_묶음_쪽별줄수': lambda paragraphs: dict(state['counts']),
             '보고서_줄간격_보관': lambda a, b: [((0, 3, 0), 0, 160), ((0, 5, 0), 0, 160)],
             '보고서_줄간격_적용': apply,
+            '_묶음뒤_같은쪽_줄간격_맞춤': self.tail_spacing,
             '세트문장_통계': stats, '검수_문제_기록': record,
             '로그': Mock(), '진단로그': Mock(), '현재_처리파일': 'x.hwpx',
             '쪽보다_긴_묶음인가': lambda paragraphs, counts: too_long,
@@ -60,11 +62,14 @@ class PageGroupFallbackTest(unittest.TestCase):
         self.assertEqual(applied, [('축소', 1), ('확대', 1)])
         self.assertEqual((stats['성공'], stats['실패']), (1, 0))
         record.assert_not_called()
+        self.tail_spacing.assert_not_called()
 
     def test_preferred_direction_still_wins_when_possible(self):
         stats, applied, _ = self._run(can_shrink=True, can_expand=True)
         self.assertEqual(applied, [('축소', 1)])
         self.assertEqual(stats['성공'], 1)
+        self.tail_spacing.assert_called_once_with(
+            [((0, 5, 0), (0, 5, 10), '소제목')], 3)
 
     def test_both_directions_blocked_is_recorded_once(self):
         stats, _, record = self._run(can_shrink=False, can_expand=False)

@@ -255,7 +255,9 @@ def paragraph_level(text):
     if _MIDTITLE_RE.match(stripped):
         return "midtitle"
     marker = stripped[0]
-    if marker == "□":
+    # 'ㅁ'(한글 자음)도 □로 쓴다. 문두 'ㅁ'→'□' 정리보다 먼저 간격을 정하는 경로에서 'ㅁ'를 놓쳐
+    # txt의 첫 소제목 위 간격이 0으로 남았다(2026-10-21, 변형 기호 체계 대조 시험에서 발견).
+    if marker == "□" or (marker == "ㅁ" and (len(stripped) == 1 or stripped[1].isspace())):
         return "box"
     if marker in ("ㅇ", "○", "☞"):
         return "circle"

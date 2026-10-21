@@ -549,7 +549,7 @@ def hanging_rule(text, values, marker, label, after):
     return "after_marker" if abs(guess - amount) <= max(300, 0.15 * amount) else "fixed"
 
 
-def paragraph_values(p, index, *, with_marker=True):
+def paragraph_values(p, index, *, with_marker=True, scheme=None):
     """문단 하나의 (그룹 기호, 역할, 글자, 요소 값). 글자가 없으면 None.
 
     글자 요소는 문단 글자 수로 가중한 최다값이다. 글자 크기는 문장 안 괄호 부연(본문보다 작게 쓰는
@@ -561,6 +561,15 @@ def paragraph_values(p, index, *, with_marker=True):
         return None
     values = dict(index.para(p.get("paraPrIDRef")) or {})
     group, role, raw = unify_marker(text) if with_marker else ("", "", "")
+    # 변형 항목기호 체계가 감지된 문서만 바꿔 읽는다(표준 □·ㅇ·- 문서의 붙임 번호 줄 등은 기존 판정 유지).
+    if with_marker and scheme:
+        mapped = scheme.canonical(text)
+        if scheme.is_excluded(text):
+            group, role, raw = "", "", ""
+        elif mapped:
+            group = mapped[0]
+            role = {"□": "소제목", "ㅇ": "본문", "-": "내용"}[group]
+            raw = text[len(text) - len(text.lstrip()):mapped[1]]
     lead = len(text) - len(text.lstrip(_SPACES))
     marker = (lead, lead + len(raw)) if raw else None
     label = _label_span(text, marker[1]) if marker else None
@@ -820,6 +829,9 @@ def analyze_format_elements(path, classify=None):
     with open_hwpx_safely(path) as archive:
         header = ET.fromstring(archive.read("Contents/header.xml"))
         roots = [ET.fromstring(archive.read(name)) for name in _sections(archive)]
+    from .marker_scheme import detect_scheme
+    scheme = detect_scheme("".join(t for _, t in _paragraph_runs(p))
+                           for root in roots for p in root if _tag(p) == "p")
     index = HeaderIndex(header)
     pages = []
     groups = OrderedDict()
@@ -853,7 +865,7 @@ def analyze_format_elements(path, classify=None):
             pages.append(page)
         # 본문 직속 문단만 계층 표본으로 본다(표 칸·글상자 문단은 섞지 않는다).
         for p in (x for x in root if _tag(x) == "p"):
-            found = paragraph_values(p, index)
+            found = paragraph_values(p, index, scheme=scheme)
             if found:
                 group, role, text, values = found
                 body_started = body_started or _starts_body(group, text, values)

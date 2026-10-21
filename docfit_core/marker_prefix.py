@@ -9,14 +9,17 @@ _PREFIX_CHARS = " \t\u00a0\u3000"
 _ALIASES = {"ㅁ": "□", "○": "ㅇ", "◦": "ㅇ", "☞": "ㅇ"}
 
 
-def expected_prefix(text, rules):
+def expected_prefix(text, rules, scheme=None):
     """(기호, 현재 공백수, 목표 공백수). 항목기호가 아니면 None."""
     if not text:
         return None
     stripped = text.lstrip(_PREFIX_CHARS)
     if stripped.startswith("붙임") and (len(stripped) == 2 or stripped[2] in " :：\t"):
         return "붙임", len(text) - len(stripped), 0
-    marker, role = leading_marker(stripped)
+    if scheme and scheme.is_excluded(text):
+        return None
+    mapped = scheme.canonical(text) if scheme else None
+    marker, role = (mapped[0], '항목') if mapped else leading_marker(stripped)
     if not role:
         return None
     key = _ALIASES.get(marker, marker)
@@ -29,23 +32,26 @@ def expected_prefix(text, rules):
     return marker, len(text) - len(stripped), target
 
 
-def normalize_prefix(text, rules):
-    info = expected_prefix(text, rules)
+def normalize_prefix(text, rules, scheme=None):
+    info = expected_prefix(text, rules, scheme)
     if info is None:
         return text
     stripped = text.lstrip(_PREFIX_CHARS)
     return " " * info[2] + stripped
 
 
-def audit_hwpx_prefixes(source, rules):
+def audit_hwpx_prefixes(source, rules, scheme=None):
     """저장된 HWPX 본문의 항목기호 공백 수를 읽기 전용으로 검사한다."""
+    if scheme is None:
+        from .marker_scheme import detect_hwpx_scheme
+        scheme = detect_hwpx_scheme(source)
     measured = Counter()
     mismatches = []
 
     def plan(text, _paragraph):
         if text is None:
             return None
-        info = expected_prefix(text, rules)
+        info = expected_prefix(text, rules, scheme)
         if info is None:
             return None
         measured[info[0]] += 1

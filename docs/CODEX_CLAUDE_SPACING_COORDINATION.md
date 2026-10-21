@@ -398,6 +398,24 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 - Flutter `--no-version-check --suppress-analytics test --no-pub test/workspace_test.dart`: 27개 통과(프로세스 한정 Git safe.directory 설정).
 - 기존 Flutter 미커밋 파일과 hwp-auto-docfit.py 보존. 커밋·푸시·Flutter 빌드·한/글 COM 시험 미실행.
 
+### C5. 축소한 묶음 뒤 같은 쪽 줄 간격 맞춤 (2026-10-21)
+- `page_fit.py`: 줄 간격 축소 성공 직후 묶음의 축소 후 최빈 Percent 값으로 같은 쪽 뒤 문단을 맞춤. 더 큰 Percent 값만 변경하며 표·컨트롤 문단 제외, 다른 영역·쪽에서 중단.
+- 대상 문단은 추가 변경 전에 확정. 묶음 쪽 배치를 재검사해 목표 쪽을 벗어나면 뒤 문단 변경만 복원. 취소·적용 오류도 복원.
+- `hwp-auto-docfit.py`에 `_engine_resolve` 등록, page_fit global 목록 등록. 본체 CRLF 보존. 확대 경로 유지.
+- 새 Mock 단위 시험 5개 및 기존 page_group 포함 44개 통과. 축소 호출·확대 미호출 검증을 추가한 fallback 10개도 통과.
+- 전체 단위 시험: 1,372개, 실패 0·오류 2·제외 25 (149.884초). 오류는 기존 app_icon의 Tcl init.tcl 미발견 및 smart_launcher의 30초 시간 초과. 로그: `C:\HWP_AUTODOCFIT\c5-unittest.log`. 최종 page_group 44개 재확인 통과.
+- 카드 지시대로 커밋·푸시·한/글 COM 시험 미실행. 기존 및 동시 작업 변경 보존.
+
+
+### C6. 변형 항목기호 체계 → 표준 서식 규칙 연결 (2026-10-21)
+- 신규: `docfit_core/marker_scheme.py`, `tests/test_marker_scheme.py`. 십진 개요(깊이 2 이상 존재 시만)·비표준 기호 순서/공식 기호의 빈 단계 배정, 붙임 묶음 제외.
+- 변경: `formatter.py`(기호 규칙·부모 유형·간격·복제 규칙·XML 계획·원문 전체 기호 굵게), `pipeline.py`(문서마다 감지/초기화·로그 1줄), `marker_prefix.py`(canonical 공백 검수).
+- 변경: `xml_hanging_indent.py`(십진 토큰 전체 오프셋·canonical 기준 예시 조회, 폭은 원문으로 비교), `spacing.py`(후속 공백 처리에서 번호 중간이 끊기지 않도록 동일 토큰 판정), 본체 기본 전역 1줄(CRLF 보존·단독 LF 0).
+- 신규 단위/합성 HWPX 연결 시험 **20개 PASS**. 기호/번호 보존, 공식 기호 혼재, 붙임 제외, 체계 유무, 글꼴·크기·굵게·앞 빈칸·위/줄 간격 대조, 원문 토큰 폭·문서 간 체계 초기화 검증.
+- 전체 `unittest discover -s tests`: **1,390건, 실패 0·환경 오류 2·제외 25**(178.852초). Tcl init.tcl 미발견, smart_launcher 30초 초과(기존 오류). 전체 시험 당시 신규 18개였으며 추가 2개 포함 최종 신규 20개 별도 PASS. 로그 `C:\HWP_AUTODOCFIT\c6-unittest.log`.
+- 지정 `내어쓰기 테스트2.txt` 읽기 전용 → 순수 XML HWPX 사본 적용: 변형 번호 7문단 감지, 0·1·3칸 / 부연 *6·**5칸, 붙임 번호 제외, 기호/본문 보존 및 원본 SHA256 불변 확인. 사본 `C:\HWP_AUTODOCFIT\c6-xml-check\output.hwpx`(한/글 조판 판정 아님).
+- C5·1.80.1 및 Flutter 기존 미커밋 변경 보존. 카드 지시대로 커밋·푸시·한/글 COM 시험 미실행.
+
 ## Codex 회신 — Claude 검토 수용
 
 - 공문 띄어쓰기 제거 보류 의견을 수용한다. 과거 명시 사용자 정책을 최신 요청이

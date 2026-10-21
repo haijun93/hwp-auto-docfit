@@ -165,6 +165,13 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     if 한글_문서_열기(hwp, 작업파일경로, "HWPX", "forceopen:true") is False:
                         raise RuntimeError(f"변환한 문서를 열지 못했습니다: {파일}")
                 # 원본이 HWP/HWPX가 아니므로 좌우 비교 보기 대상에서는 제외한다.
+            # 문서마다 초기화한다. 변환된 HWPX 본문으로 감지해 COM·XML 경로가 같은 체계를 쓴다.
+            from docfit_core.marker_scheme import detect_hwpx_scheme
+            globals()['활성_항목기호_체계'] = None
+            체계 = detect_hwpx_scheme(작업파일경로)
+            globals()['활성_항목기호_체계'] = 체계
+            if 체계:
+                로그(체계.log_message())
             비교보기_임베드_재확인()
 
             # 보고서별 원본 쪽 수는 아무것도 고치기 전에 잰다(서식을 입힌 뒤 재면 이미 늘어난 쪽 수가 기준이 된다).
@@ -1231,6 +1238,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     if not 쪽맞춤_보고서조정됨 and not (페이지맞춤_문단간격_사용 and 전_쪽 and 전_쪽 > 1
                             and 남은줄 is not None and 남은줄 <= 페이지맞춤_최대남은줄수):
                         진단로그(f"[쪽 수 재확인] 마지막 쪽({전_쪽}쪽) {남은줄}줄: 페이지 수 맞춤 불필요")
+                        쪽배치_축소쪽_줄간격_통일()
                         if not 최종_내어쓰기_확인():
                             return False
                         hwp_run('MoveDocBegin')
@@ -1252,6 +1260,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         if 쪽맞춤_원본_보고서 and 쪽맞춤_유형판정_사용:
                             if not stage('보고서 쪽 구성 최종 확인', _문서유형별_쪽맞춤):
                                 return False
+            if 페이지작업_모드:
+                쪽배치_축소쪽_줄간격_통일()   # 줄간격을 줄인 쪽 안의 혼재를 최종 쪽 기준으로 통일(사용자 검수 2026-10-21)
             if not 최종_내어쓰기_확인():
                 return False
             hwp_run('MoveDocBegin')

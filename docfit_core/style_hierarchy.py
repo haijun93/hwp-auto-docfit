@@ -28,7 +28,7 @@ def normalize_leading_dot(text):
 # 그 밖(보도자료·답변자료 등)은 기타 서식.
 MARKERS = (
     ("장", r"(?:제\s?\d{1,2}\s?[장편부]|\d{1,2}\s?장|[Cc]hapter\s?\d{1,2})(?=\s|$|[.．:：])"),
-    ("중제목", r"(?:[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+|[가-하])(?=\s|[.．])"),
+    ("중제목", r"(?:[Ⅰ-Ⅿ]+|[가-하])(?=\s|[.．])"),
     ("소제목", r"(?:[□ㅁ■]|\d{1,2}[.．]?)(?=\s|$)"),
     ("본문", r"(?:[ㅇ○◦☞]|[가-하]\))(?=\s|$)"),
     ("내용", r"(?:-|\d+\))(?=\s|$)"),
@@ -72,8 +72,18 @@ CIRCLED_MARKER = re.compile(r"[①-⑳㉠-㉻❶-❿➊-➓](?=\s|$)")
 CIRCLED_ROLES = ("본문", "내용", "부연설명")
 
 
-def leading_marker(text):
+def leading_marker(text, scheme=None):
+    if scheme:
+        if scheme.is_excluded(text):
+            return "", ""
+        mapped = scheme.canonical(text)
+        if mapped:
+            return mapped[0], {"□": "소제목", "ㅇ": "본문", "-": "내용"}[mapped[0]]
     stripped = (text or "").lstrip()
+    # ASCII 대문자 로마 번호도 공식 네모와 함께 쓰면 중제목이다.
+    roman = re.match(r"(?:[IVX]|[IVXLCDM]{2,})[.．](?=\s|$)", stripped)
+    if roman:
+        return roman.group(), "중제목"
     circled = CIRCLED_MARKER.match(stripped)
     if circled:
         # 역할은 기호만으로 정할 수 없으므로 문서 내 서식과 문맥으로 판정한다.
@@ -95,9 +105,13 @@ def analyze_hierarchy(paragraphs):
     Each input has text, left/indent in HWP units, font, size_pt and
     optional prev_spacing.  No pagination is inferred from XML alone.
     """
+    from .marker_scheme import detect_scheme
+
+    paragraphs = list(paragraphs)
+    scheme = detect_scheme(item.get("text", "") for item in paragraphs)
     records = []
     for idx, item in enumerate(paragraphs):
-        marker, marker_role = leading_marker(item.get("text", ""))
+        marker, marker_role = leading_marker(item.get("text", ""), scheme)
         indent = int(item.get("left", 0)) + int(item.get("indent", 0))
         records.append({**item, "index": idx, "marker": marker, "marker_role": marker_role,
                         "indent_hwpunit": indent})

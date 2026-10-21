@@ -9,21 +9,32 @@ from __future__ import annotations
 
 import re
 
+from .marker_scheme import classify_marker
 from .style_hierarchy import leading_marker
 
 # 별표 한 개 또는 두 개가 빈칸·별표가 아닌 글자 바로 뒤에 붙어 있고, 뒤에 별표나 영문·숫자가 이어지지 않을 때.
 _MARK = re.compile(r"(?<=[^\s*])(\*{1,2})(?![*A-Za-z0-9])")
 
 
+def _marker_end(text: str) -> int | None:
+    """문장 첫 항목기호의 끝 위치. 모든 번호·기호 계열의 토큰 전체를 읽는다."""
+    found = classify_marker(text)
+    if found:
+        return found[1]
+    marker, _ = leading_marker(text or "")
+    if marker:
+        return len(text) - len(text.lstrip()) + len(marker)
+    return None
+
+
 def applies_to(text: str) -> bool:
     """항목기호로 시작하는 문장인지(위첨자 규칙을 적용할 문장인지)."""
-    marker, _ = leading_marker(text or "")
-    return bool(marker)
+    return _marker_end(text) is not None
 
 
 def mark_spans(text: str) -> list[tuple[int, int]]:
     """문장에서 위첨자로 만들 별표의 (시작, 끝) 위치 목록. 항목기호 문장이 아니면 빈 목록."""
-    if not applies_to(text):
+    marker_end = _marker_end(text)
+    if marker_end is None:
         return []
-    marker_end = len(text) - len(text.lstrip()) + len(leading_marker(text)[0])
     return [match.span() for match in _MARK.finditer(text) if match.start() >= marker_end]

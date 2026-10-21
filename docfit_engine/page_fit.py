@@ -6,7 +6,7 @@ see docfit_engine.runtime. This module does not import the application bootstrap
 from docfit_engine.runtime import bind_function, bind_class
 
 def _install(*, _docfit_namespace, _docfit_symbol):
-    global 세트문장_선행들여쓰기_폭, 세트문장_후속문단인가, 세트문장_끝위치_찾기, 위치_페이지번호, 현재문단_줄간격_퍼센트, 항목기호_역할표, 보고서_문단역할, 보고서_본문묶음_수집, 보고서_단어분리_최종검사, 보고서_페이지배치_최종검사, 보고서_묶음_쪽별줄수, 쪽_본문줄수, 쪽첫줄_시작인가, 쪽보다_긴_묶음인가, 문서_쪽나누기_전체해제, 쪽나눔_설정, _묶음_쪽나눔_이동, 보고서_압축조건, 보고서_줄간격_보관, 보고서_줄간격_적용, 보고서_페이지보호_전체해제, 쪽맞춤_논리단위, 쪽맞춤_뒤로밀기인가, 보고서_소제목묶음_수집, 문단_첫줄_쪽, 소제목묶음_뒤_표인가, 소제목묶음_쪽맞춤_대상, _묶음_위간격_축소_당김, _묶음_같은쪽_이동, 소제목묶음_단위경계_앞쪽우선, 소제목묶음_같은쪽_시도, 본문_표_문단번호, 본문_쪽나눔_기억, 표_칸영역_범위, 표_쪽범위, 보고서_표묶음_수집, 표묶음_같은쪽_시도, 세트문장_같은쪽_시도, 로마자_중제목_표인가, 중제목_다음글문단, 쪽나눔_켜짐, 중제목_묶음_문단, 중제목_묶음_쪽, 중제목_외톨이_정리, 세트문장_같은쪽_전체_적용, 마지막쪽_화면줄수, 쪽맞춤_계측_시작, 쪽맞춤_계측_끝, 쪽맞춤_계측_더하기, 쪽맞춤_계측_복사, 쪽맞춤_계측_차이, 쪽맞춤_계측_단계문구, 쪽맞춤_계측_합계문구, 문단_위간격_pt_현재문단, 구조문단_간격_일괄조정, 구조문단_아래간격_일괄조정, 구조문단_간격_복원, 셀_세로여백_읽기, 셀_세로여백_현재선택, 표_셀_세로여백_일괄조정, _표_셀_대상_순회, 표_셀_세로여백_복원, 쪽맞춤_묶음분리_있음, 쪽맞춤_대상_조사, 쪽맞춤_레벨_적용, _보고서_페이지수_맞춤_고속, 보고서_페이지수_맞춤_시도, _보고서_페이지수_맞춤_시도_본체, _칸_문단글들, 제목표인가_현재, _한칸_제목표인가_현재, _기타_제목표인가_현재, _보고서_끝내용, 쪽맞춤_보고서_끝쪽, 쪽맞춤_보고서_목록, _쪽맞춤_줄간격_되돌리기, 보고서_1쪽_맞춤, 문단_화면줄수, 문단_자간_읽기, 문단_자간_적용, _문단_줄시작들, 문단_줄수_원본맞춤, 보고서_새쪽_시작인가, _대표_줄간격, 쪽맞춤_원본_보고서_기록, _보고서_내부_쪽나눔_해제, _문서유형별_쪽맞춤, _쪽맞춤_바꾼문단_단어분리_재검사, _문서유형별_쪽맞춤_본체, 보고서_페이지수_맞춤_전체_적용, 전체_찾아바꾸기, 괄호_안쪽_공백_정리_AllReplace, 괄호_안쪽_공백_정리_문단_처리, 쉼표_공백_보정_대상, 쉼표_공백_정리_문단_처리, _콜론_한글인가, 콜론_공백_보정_대상, 콜론_공백_정리_문단_처리, 쉼표_앞_공백_보정_대상, 쉼표_앞_공백_정리_문단_처리, _균등라벨_범위, 단어사이_연속공백_정리_대상, 단어사이_연속공백_정리_문단_처리, 문두_미음_기호_위치, 문두_미음_기호_정리, 항목기호_낫표_빈칸_구간, 항목기호_낫표_빈칸_정리_문단_처리, 연도_따옴표_정리_문단_처리, 곧은따옴표_통일_문단_처리, 작은따옴표_통일_문단_처리, 날짜_구분자_정리_문단_처리, 공문_띄어쓰기_정리_문단_처리, 공문_띄어쓰기_전체_적용, 문장내_공백_정규화_전체_적용, _문장내_공백_정규화_순회, 괄호_안쪽_공백_정리_전체_적용, 문장부호_뒤_공백_보정_문단_처리, 문장부호_뒤_공백_보정_전체_적용, 문단글_캐시_구간, _문단글_캐시_비우기, 현재문단_텍스트, _문단_위치표_계산, 문단_위치, _현재문단_텍스트_본체, _현재문단_텍스트_읽기, _현재문단_텍스트_읽기_상태, 실제_엔터_포함, 두_위치_사이_줄바꿈_문자인가, 문장부호_대상문장인가, 현재_화면줄_텍스트, 다음_줄_판정, 줄_목록_수집, 문장부호_줄병합_시도, _문장부호_줄병합_시도_본체, 본문_문장부호_처리, 현재_셀_주소_행번호, 현재_셀_행번호, 현재_한칸표인가, 현재_표_키, 표칸_묶음_수집, 표칸_묶음_키별, 한칸표_영역_목록, 디자인표_영역_목록, 디자인표_보호영역_갱신, _문서에_표_있음, _서식표_칸_확인, 표_헤더서식_현재셀_처리, 표_헤더서식_현재줄_처리, 표_헤더서식_표단위_처리, 서식표_영역_목록, 서식표_보호영역_조사, 표_헤더서식_전체_적용, 표_목록_수집, 셀_화면줄수, 셀_안쪽여백_읽기, 셀_안쪽여백_현재선택, 셀_안쪽여백_축소_시도
+    global 세트문장_선행들여쓰기_폭, 세트문장_후속문단인가, 세트문장_끝위치_찾기, 위치_페이지번호, 현재문단_줄간격_퍼센트, 항목기호_역할표, 보고서_문단역할, 보고서_본문묶음_수집, 보고서_단어분리_최종검사, 보고서_페이지배치_최종검사, 보고서_묶음_쪽별줄수, 쪽_본문줄수, 쪽첫줄_시작인가, 쪽보다_긴_묶음인가, 문서_쪽나누기_전체해제, 쪽나눔_설정, _묶음_쪽나눔_이동, 보고서_압축조건, 보고서_줄간격_보관, 보고서_줄간격_적용, 보고서_페이지보호_전체해제, 쪽맞춤_논리단위, 쪽맞춤_뒤로밀기인가, 보고서_소제목묶음_수집, 문단_첫줄_쪽, 소제목묶음_뒤_표인가, 소제목묶음_쪽맞춤_대상, _묶음_위간격_축소_당김, _묶음뒤_같은쪽_줄간격_맞춤, 쪽배치_축소쪽_줄간격_통일, _묶음_같은쪽_이동, 소제목묶음_단위경계_앞쪽우선, 소제목묶음_같은쪽_시도, 본문_표_문단번호, 본문_쪽나눔_기억, 표_칸영역_범위, 표_쪽범위, 보고서_표묶음_수집, 표묶음_같은쪽_시도, 세트문장_같은쪽_시도, 로마자_중제목_표인가, 중제목_다음글문단, 쪽나눔_켜짐, 중제목_묶음_문단, 중제목_묶음_쪽, 중제목_외톨이_정리, 세트문장_같은쪽_전체_적용, 마지막쪽_화면줄수, 쪽맞춤_계측_시작, 쪽맞춤_계측_끝, 쪽맞춤_계측_더하기, 쪽맞춤_계측_복사, 쪽맞춤_계측_차이, 쪽맞춤_계측_단계문구, 쪽맞춤_계측_합계문구, 문단_위간격_pt_현재문단, 구조문단_간격_일괄조정, 구조문단_아래간격_일괄조정, 구조문단_간격_복원, 셀_세로여백_읽기, 셀_세로여백_현재선택, 표_셀_세로여백_일괄조정, _표_셀_대상_순회, 표_셀_세로여백_복원, 쪽맞춤_묶음분리_있음, 쪽맞춤_대상_조사, 쪽맞춤_레벨_적용, _보고서_페이지수_맞춤_고속, 보고서_페이지수_맞춤_시도, _보고서_페이지수_맞춤_시도_본체, _칸_문단글들, 제목표인가_현재, _한칸_제목표인가_현재, _기타_제목표인가_현재, _보고서_끝내용, 쪽맞춤_보고서_끝쪽, 쪽맞춤_보고서_목록, _쪽맞춤_줄간격_되돌리기, 보고서_1쪽_맞춤, 문단_화면줄수, 문단_자간_읽기, 문단_자간_적용, _문단_줄시작들, 문단_줄수_원본맞춤, 보고서_새쪽_시작인가, _대표_줄간격, 쪽맞춤_원본_보고서_기록, _보고서_내부_쪽나눔_해제, _문서유형별_쪽맞춤, _쪽맞춤_바꾼문단_단어분리_재검사, _문서유형별_쪽맞춤_본체, 보고서_페이지수_맞춤_전체_적용, 전체_찾아바꾸기, 괄호_안쪽_공백_정리_AllReplace, 괄호_안쪽_공백_정리_문단_처리, 쉼표_공백_보정_대상, 쉼표_공백_정리_문단_처리, _콜론_한글인가, 콜론_공백_보정_대상, 콜론_공백_정리_문단_처리, 쉼표_앞_공백_보정_대상, 쉼표_앞_공백_정리_문단_처리, _균등라벨_범위, 단어사이_연속공백_정리_대상, 단어사이_연속공백_정리_문단_처리, 문두_미음_기호_위치, 문두_미음_기호_정리, 항목기호_낫표_빈칸_구간, 항목기호_낫표_빈칸_정리_문단_처리, 연도_따옴표_정리_문단_처리, 곧은따옴표_통일_문단_처리, 작은따옴표_통일_문단_처리, 날짜_구분자_정리_문단_처리, 공문_띄어쓰기_정리_문단_처리, 공문_띄어쓰기_전체_적용, 문장내_공백_정규화_전체_적용, _문장내_공백_정규화_순회, 괄호_안쪽_공백_정리_전체_적용, 문장부호_뒤_공백_보정_문단_처리, 문장부호_뒤_공백_보정_전체_적용, 문단글_캐시_구간, _문단글_캐시_비우기, 현재문단_텍스트, _문단_위치표_계산, 문단_위치, _현재문단_텍스트_본체, _현재문단_텍스트_읽기, _현재문단_텍스트_읽기_상태, 실제_엔터_포함, 두_위치_사이_줄바꿈_문자인가, 문장부호_대상문장인가, 현재_화면줄_텍스트, 다음_줄_판정, 줄_목록_수집, 문장부호_줄병합_시도, _문장부호_줄병합_시도_본체, 본문_문장부호_처리, 현재_셀_주소_행번호, 현재_셀_행번호, 현재_한칸표인가, 현재_표_키, 표칸_묶음_수집, 표칸_묶음_키별, 한칸표_영역_목록, 디자인표_영역_목록, 디자인표_보호영역_갱신, _문서에_표_있음, _서식표_칸_확인, 표_헤더서식_현재셀_처리, 표_헤더서식_현재줄_처리, 표_헤더서식_표단위_처리, 서식표_영역_목록, 서식표_보호영역_조사, 표_헤더서식_전체_적용, 표_목록_수집, 셀_화면줄수, 셀_안쪽여백_읽기, 셀_안쪽여백_현재선택, 셀_안쪽여백_축소_시도
     if _docfit_symbol == '세트문장_선행들여쓰기_폭':
         def 세트문장_선행들여쓰기_폭(text):
             """문단 앞 공백의 상대 폭을 계산한다. 탭은 공백 4칸으로 본다."""
@@ -121,6 +121,13 @@ def _install(*, _docfit_namespace, _docfit_symbol):
         return bind_function(항목기호_역할표, _docfit_namespace)
     if _docfit_symbol == '보고서_문단역할':
         def 보고서_문단역할(text):
+            scheme = globals().get('활성_항목기호_체계')
+            if scheme:
+                if scheme.is_excluded(text):
+                    return None
+                mapped = scheme.canonical(text)
+                if mapped:
+                    return {"□": "소제목", "ㅇ": "본문", "-": "내용"}[mapped[0]]
             marker, role = leading_marker(text)
             role = 항목기호_역할표().get(marker, role)
             return role or None
@@ -769,6 +776,148 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             진단로그(f'[문장 묶음] 문단 위 간격 {단계수 * 10}% 축소로도 당기지 못함 / {summary}')
             return False
         return bind_function(_묶음_위간격_축소_당김, _docfit_namespace)
+    if _docfit_symbol == '쪽배치_축소쪽_줄간격_통일':
+        def 쪽배치_축소쪽_줄간격_통일():
+            """쪽 배치가 모두 끝난 뒤, 줄간격을 줄인 묶음이 놓인 최종 쪽의 본문 문단을 그 묶음 값으로 맞춘다.
+
+            묶음을 줄인 순간에는 다음 쪽에 있던 문단(빈 줄·붙임)이 뒤 단계에서 같은 쪽으로 올라와 줄간격이 섞였다
+            (사용자 검수 2026-10-21: 한 쪽 안 140/160% → 사용자가 전체를 한 값으로 통일). 더 큰 Percent 값만 줄이므로
+            내용이 뒤쪽으로 밀리지 않는다. 표·그림 등 컨트롤 문단과 본문(리스트 0) 밖은 건드리지 않는다.
+            """
+            기록 = 세트문장_통계.get('축소묶음') or []
+            if not 기록:
+                return 0
+            original = hwp.GetPos()
+            percent = hwp.LineSpacingMethod('Percent')
+            바꾼 = 0
+            try:
+                controls = 본문_컨트롤_문단번호()
+                for 묶음 in 기록:
+                    값들 = {}
+                    for pos in 묶음:
+                        try:
+                            hwp.SetPos(*pos)
+                        except Exception:
+                            continue
+                        pset = hwp.HParameterSet.HParaShape
+                        hwp.HAction.GetDefault('ParagraphShape', pset.HSet)
+                        if int(pset.LineSpacingType) == percent:
+                            값들[int(pset.LineSpacing)] = 값들.get(int(pset.LineSpacing), 0) + 1
+                    if not 값들:
+                        continue
+                    target = max(값들, key=값들.get)
+                    쪽 = 문단_첫줄_쪽(묶음[0])
+                    hwp.SetPos(*묶음[0])
+                    hwp_run('MovePageBegin')
+                    hwp_run('MoveParaBegin')
+                    while True:
+                        if 중단_요청됨():
+                            return 바꾼
+                        pos = hwp.GetPos()
+                        if pos[0] != 0:
+                            break
+                        첫줄쪽 = 문단_첫줄_쪽(pos)
+                        if 첫줄쪽 > 쪽:
+                            break
+                        if 첫줄쪽 == 쪽 and pos[1] not in controls:
+                            hwp.SetPos(*pos)
+                            pset = hwp.HParameterSet.HParaShape
+                            hwp.HAction.GetDefault('ParagraphShape', pset.HSet)
+                            if int(pset.LineSpacingType) == percent and int(pset.LineSpacing) > target:
+                                act = hwp.CreateAction('ParagraphShape')
+                                p2 = act.CreateSet()
+                                p2.SetItem('LineSpacingType', percent)
+                                p2.SetItem('LineSpacing', target)
+                                if act.Execute(p2) is not False:
+                                    바꾼 += 1
+                        hwp.SetPos(*pos)
+                        hwp_run('MoveNextParaBegin')
+                        after = hwp.GetPos()
+                        if after[0] != 0 or after[1] <= pos[1]:
+                            break
+                    if 바꾼:
+                        로그(f'[쪽 배치 줄간격 통일] {쪽}쪽 문단 {바꾼}개 줄간격 {target}%로 맞춤')
+                return 바꾼
+            finally:
+                try:
+                    hwp.SetPos(*original)
+                except Exception:
+                    pass
+        return bind_function(쪽배치_축소쪽_줄간격_통일, _docfit_namespace)
+    if _docfit_symbol == '_묶음뒤_같은쪽_줄간격_맞춤':
+        def _묶음뒤_같은쪽_줄간격_맞춤(paragraphs, target_page):
+            """축소된 묶음 뒤의 같은 쪽 문단만 맞추고, 배치가 깨지면 추가 변경을 복원한다."""
+            if not paragraphs:
+                return 0
+            original = hwp.GetPos()
+            backup = []
+            committed = False
+
+            def 적용(pos, kind, value):
+                hwp.SetPos(*pos)
+                act = hwp.CreateAction('ParagraphShape')
+                pset = act.CreateSet()
+                pset.SetItem('LineSpacingType', kind)
+                pset.SetItem('LineSpacing', value)
+                if act.Execute(pset) is False:
+                    raise RuntimeError('묶음 뒤 문단 줄간격 적용 실패')
+
+            try:
+                percent = hwp.LineSpacingMethod('Percent')
+                frequencies = {}
+                for start, _, _ in paragraphs:
+                    hwp.SetPos(*start)
+                    pset = hwp.HParameterSet.HParaShape
+                    hwp.HAction.GetDefault('ParagraphShape', pset.HSet)
+                    if int(pset.LineSpacingType) == percent:
+                        value = int(pset.LineSpacing)
+                        frequencies[value] = frequencies.get(value, 0) + 1
+                if not frequencies:
+                    return 0
+                target = max(frequencies, key=frequencies.get)
+                controls = 본문_컨트롤_문단번호()
+                end = paragraphs[-1][1]
+                hwp.SetPos(*end)
+                # 변경 전에 대상 쪽을 확정해, 축소 후 다음 쪽에서 유입된 문단은 제외한다.
+                candidates = []
+                while True:
+                    if 중단_요청됨():
+                        return 0
+                    before = hwp.GetPos()
+                    hwp_run('MoveNextParaBegin')
+                    start = hwp.GetPos()
+                    if start[0] != end[0] or start[1] <= before[1]:
+                        break
+                    if 문단_첫줄_쪽(start) != target_page:
+                        break
+                    if start[0] != 0 or start[1] in controls:
+                        continue
+                    pset = hwp.HParameterSet.HParaShape
+                    hwp.HAction.GetDefault('ParagraphShape', pset.HSet)
+                    kind, value = int(pset.LineSpacingType), int(pset.LineSpacing)
+                    if kind == percent and value > target:
+                        candidates.append((start, kind, value))
+                for pos, kind, value in candidates:
+                    if 중단_요청됨():
+                        return 0
+                    backup.append((pos, kind, value))
+                    적용(pos, kind, target)
+                if not backup:
+                    return 0
+                counts = 보고서_묶음_쪽별줄수(paragraphs)
+                if not counts or set(counts) != {target_page}:
+                    return 0
+                committed = True
+                진단로그(f'[문장 묶음] 같은 쪽 묶음 뒤 {len(backup)}문단 줄간격 {target}%로 맞춤')
+                return len(backup)
+            finally:
+                try:
+                    if not committed:
+                        for pos, kind, value in backup:
+                            적용(pos, kind, value)
+                finally:
+                    hwp.SetPos(*original)
+        return bind_function(_묶음뒤_같은쪽_줄간격_맞춤, _docfit_namespace)
     if _docfit_symbol == '_묶음_같은쪽_이동':
         def _묶음_같은쪽_이동(시작위치, paragraphs, counts, 먼저_확대, summary, 표키=None, 한방향=False):
             """묶음 전체를 두 쪽 중 한 쪽으로 옮긴다.
@@ -821,6 +970,10 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         success = (set(new_counts) == {target_page}
                                    and (표키 is None or 표_쪽범위(표키) == (target_page, target_page)))
                         if success:
+                            if not expand:
+                                _묶음뒤_같은쪽_줄간격_맞춤(paragraphs, target_page)
+                                # 쪽 배치가 모두 끝난 뒤 최종 쪽 기준으로 한 번 더 통일하려고 축소한 묶음을 기록한다.
+                                세트문장_통계.setdefault('축소묶음', []).append([tuple(item[0]) for item in paragraphs])
                             로그(f'문장 묶음 {target_page}쪽 배치 완료: {summary} (줄간격 {step}단계 {direction})')
                             return True
                     if not expand:

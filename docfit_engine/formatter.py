@@ -55,8 +55,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             if 계층:
                 return _표준서식_문단위간격_상태.spacing_for_level(
                     계층, _표준서식_문단위간격_표(), 표준서식_문단위간격_복귀배율)
+            scheme = globals().get('활성_항목기호_체계')
             return _표준서식_문단위간격_상태.spacing_for(
-                text, _표준서식_문단위간격_표(), 표준서식_문단위간격_복귀배율)
+                scheme.style_text(text) if scheme else text, _표준서식_문단위간격_표(), 표준서식_문단위간격_복귀배율)
         return bind_function(표준서식_문단위간격_찾기, _docfit_namespace)
     if _docfit_symbol == '기호글꼴_적용':
         def 기호글꼴_적용(설정딕셔너리=None):
@@ -553,8 +554,15 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                       "arc", "textart", "connectLine"}
                 sections = sorted((n for n in z.namelist() if re.fullmatch(r"Contents/section\d+\.xml", n)),
                                   key=lambda n: int(re.search(r"section(\d+)", n).group(1)))
+                from docfit_core.marker_scheme import detect_scheme
+                # 정리할 문서의 전역 체계와 분리하여 예시 자체의 최상위 문단에서 배운다.
+                section_roots = {name: safe_xml_fromstring(z.read(name)) for name in sections}
+                reference_scheme = detect_scheme(
+                    "".join("".join(t.itertext()) for run in para if tag(run) == "run"
+                            for t in run if tag(t) == "t")
+                    for root in section_roots.values() for para in root if tag(para) == "p")
                 for name in sections:
-                    root = safe_xml_fromstring(z.read(name))
+                    root = section_roots[name]
                     if not margins:
                         page = child(root, "pagePr")
                         m = child(page, "margin") if page is not None else None
@@ -581,7 +589,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                             if 빈ls is not None and 빈ls.get("type") == "PERCENT":
                                 빈줄_줄간격[float(빈ls.get("value"))] += 1
                         else:
-                            빈줄_종류.append("marker" if 보고서_문단역할(text) else "other")
+                            빈줄_종류.append("marker" if leading_marker(text, reference_scheme)[1] else "other")
                         if not text: continue
                         원문 = "".join(t for _, t in runs)
                         앞칸 = len(원문) - len(원문.lstrip())
@@ -590,7 +598,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         앞_별표 = 앞칸 if text.startswith("*") and not text.startswith("**") else (
                             앞_별표 if text.startswith("**") else None)
                         # 부연설명(*, **, ※) 앞 빈칸을 위 문단 유형별로 배운다(_부연설명_한문단과 같은 연결 규칙).
-                        유형 = _부모문단_유형(text)
+                        예시_기호, 예시_역할 = leading_marker(원문, reference_scheme)
+                        유형 = {"소제목": "제목", "본문": "본문", "내용": "내용"}.get(예시_역할)
                         if 유형 is not None:
                             부연_부모 = 유형
                         elif _부연설명_문단인가(text):
@@ -598,7 +607,10 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         else:
                             부연_부모 = None
                         count += 1
-                        symbol = aliases.get(text[0], text[0])
+                        mapped = reference_scheme.canonical(원문)
+                        symbol = mapped[0] if mapped else aliases.get(text[0], text[0])
+                        if reference_scheme and reference_scheme.is_excluded(원문):
+                            symbol = ""
                         # 가장 긴 텍스트 런을 사용해 짧은 라벨 강조가 본문 서식을 압도하지 않도록 한다.
                         run, _ = max(runs, key=lambda item: len(item[1]))
                         char = chars.get(run.get("charPrIDRef"))
@@ -622,11 +634,11 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         def margin_value(key):
                             item = child(pm, key) if pm is not None else None
                             return int(item.get("value", "0")) if item is not None and item.get("unit", "HWPUNIT") == "HWPUNIT" else 0
-                        hierarchy_paragraphs.append({"text": text, "font": font,
+                        hierarchy_paragraphs.append({"text": 원문, "font": font,
                                                      "size_pt": height, "left": margin_value("left"),
                                                      "indent": margin_value("intent"),
                                                      "prev_spacing": margin_value("prev")})
-                        detected_marker, detected_role = leading_marker(text)
+                        detected_marker, detected_role = 예시_기호, 예시_역할
                         if detected_marker and font and height > 0:
                             marker_shapes[(detected_role, detected_marker)][(font, height, bold)] += 1
                         if font and height > 0:
@@ -1172,7 +1184,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             - 제목·개요 표 다음 첫 항목기호 문장: 예시에서 잰 표 아래~첫 문장 간격(빈 줄 없이 이 간격만큼 띄움)
             - 깊은 항목 다음 얕은 항목(계층 복귀): 예시에서 그 계층이 복귀할 때 쓴 문단 위 간격
             """
-            깊이 = 서식요소.ROLE_DEPTH.get(보고서_문단역할(text) or "")
+            scheme = globals().get('활성_항목기호_체계')
+            깊이 = 서식요소.ROLE_DEPTH.get(보고서_문단역할(scheme.style_text(text) if scheme else text) or "")
             직전 = _간격규칙_상태["직전깊이"]
             if 깊이 is not None:
                 _간격규칙_상태["직전깊이"] = 깊이
@@ -2799,12 +2812,17 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             sections = {n: safe_xml_fromstring(data) for n, data in contents.items() if re.fullmatch(r'Contents/section\d+\.xml', n)}
             if selections is None:
                 found = {n: 중제목_대상찾기(root) for n, root in sections.items()}
+                scheme = globals().get('활성_항목기호_체계')
                 for name, root in sections.items():
                     for index, p in enumerate(root):
                         if 제목_xml이름(p) != 'p':
                             continue
                         texts = _문단_일반글(p)
-                        heading = roman_heading_match(''.join(t.text or '' for t in texts)) if texts else None
+                        글 = ''.join(t.text or '' for t in texts) if texts else ''
+                        heading = roman_heading_match(글) if texts else None
+                        # 항목기호 체계가 Ⅰ.를 □ 단계로 정한 문서(공식 □ 없음)는 중제목 표로 바꾸지 않는다.
+                        if heading and scheme and scheme.canonical(글):
+                            continue
                         if heading:
                             found[name].append((index, ('text', *heading)))
                 return found
@@ -4801,7 +4819,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             rules = 표준서식_설정.get("내어쓰기_규칙") or {}
             if not rules:
                 return None
-            marker, _ = leading_marker(text)
+            scheme = globals().get('활성_항목기호_체계')
+            marker, _ = leading_marker(scheme.style_text(text) if scheme else text)
             rule = rules.get(marker) or rules.get(서식요소.unify_marker(text)[0])
             if rule is None and marker == "**":
                 # ** 전용 규칙이 없으면 대표 기호 *의 내어쓰기 규칙을 그대로 상속한다.
@@ -4849,9 +4868,12 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             if start >= len(text):
                 return None
             tail = text[start:]
-            if not (tail[0] in 공문서_기호 or tail[0] in "*＊☞ㅁ" or any(p.match(tail) for p in 항목_패턴)):
+            scheme = globals().get('활성_항목기호_체계')
+            mapped = scheme.canonical(text) if scheme else None
+            if not (mapped or tail[0] in 공문서_기호 or tail[0] in "*＊☞ㅁ" or any(p.match(tail) for p in 항목_패턴)):
                 return None
-            marker_end = 문장부호_마커_끝위치(text)
+            from docfit_core.xml_hanging_indent import marker_end_offset
+            marker_end = mapped[1] if mapped else marker_end_offset(text)
             if marker_end is None:
                 marker_end = start + 1
             idx = _문단_공백_건너뛰기(text, marker_end)
@@ -4878,7 +4900,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 return None
             tail = text[start:]
             # 일반 문장의 구두점은 대상으로 삼지 않는다.
-            구조마커 = (tail[0] in 공문서_기호 or tail[0] in "*＊☞ㅁ"
+            scheme = globals().get('활성_항목기호_체계')
+            구조마커 = ((scheme.canonical(text) if scheme else None) or tail[0] in 공문서_기호 or tail[0] in "*＊☞ㅁ"
                         or any(p.match(tail) for p in 항목_패턴))
             if not 구조마커:
                 # 기존 세트 후속 라벨: '(6~16번) : 본문'
@@ -5343,6 +5366,12 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             s = (text or "").lstrip()
             if not s:
                 return None
+            scheme = globals().get('활성_항목기호_체계')
+            if scheme and scheme.is_excluded(text):
+                return None
+            mapped = scheme.canonical(text) if scheme else None
+            if mapped:
+                return {'□': '제목', 'ㅇ': '본문', '-': '내용'}[mapped[0]]
             c = s[0]
             if c in _제목_기호:
                 return "제목"
@@ -5798,6 +5827,12 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             벗긴텍스트 = text.lstrip()
             if not 벗긴텍스트:
                 return None
+            scheme = globals().get('활성_항목기호_체계')
+            if scheme and scheme.is_excluded(text):
+                return None
+            mapped = scheme.canonical(text) if scheme else None
+            if mapped:
+                return next((rule for rule in 표준서식_설정['기호_규칙'] if rule[0] == mapped[0]), None)
             detected_marker, detected_role = leading_marker(벗긴텍스트)
             if detected_role == "장":
                 return ((표준서식_설정.get("논리역할_규칙") or {}).get("장")
@@ -5949,6 +5984,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             global _알파_일괄서식_문서, _표준서식_XML텍스트, _표준서식_XML간격
             if not 알파_일괄서식_가능():
                 return {} if target is None else 0
+            from docfit_core.marker_scheme import detect_hwpx_scheme
+            scheme = detect_hwpx_scheme(source)
+            globals()['활성_항목기호_체계'] = scheme
             tracker = ParagraphSpacingTracker()
             def _xml_문단_키(value):
                 return (value or '').lstrip(' \t\u00a0\u3000').rstrip('\r\n')
@@ -5963,7 +6001,12 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 nonlocal _xml_내어쓰기_기준쌍, _xml_내어쓰기_기준확인, _xml_부연_부모
                 # 컨트롤 문단도 위계 상태에는 포함한다. 그 문단의 실제 서식은 COM에 맡긴다.
                 readable = _문단_본문글(paragraph) if text is None else text
-                readable = normalize_leading_dot(readable)
+                if scheme and scheme.is_excluded(readable):
+                    _xml_부연_부모 = None
+                    return None
+                if not (scheme and scheme.canonical(readable)):
+                    readable = normalize_leading_dot(readable)
+                style_text = scheme.style_text(readable) if scheme else readable
                 부연_부모 = _xml_부연_부모
                 if readable.strip():
                     유형 = _부모문단_유형(readable)
@@ -5974,7 +6017,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 prev = None
                 사용자서식 = _사용자서식인가()
                 if 표준서식_문단위간격_사용 and not 표준서식_설정.get("복제_들여쓰기_유지"):
-                    prev = tracker.spacing_for(readable, _표준서식_문단위간격_표(), 표준서식_문단위간격_복귀배율)
+                    prev = tracker.spacing_for(style_text, _표준서식_문단위간격_표(), 표준서식_문단위간격_복귀배율)
                     if not readable.strip():
                         tables = [x for x in paragraph.iter() if 제목_xml이름(x) == 'tbl']
                         if any(중제목_유형판별(x) for x in tables):
@@ -6016,11 +6059,13 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 spans = list(_알파_라벨_굵게범위(formatted))
                 if marker_bold and enabled and not bold:
                     기호위치 = len(formatted) - len(formatted.lstrip())
-                    spans.append((기호위치, 기호위치 + 1))
+                    mapped = scheme.canonical(formatted) if scheme else None
+                    spans.append((기호위치, mapped[1] if mapped else 기호위치 + 1))
                 보통 = ()
                 if bold and symbol in (표준서식_설정.get("기호_보통") or ()):
                     기호위치 = len(formatted) - len(formatted.lstrip())
-                    끝 = 기호위치 + len(symbol)
+                    mapped = scheme.canonical(formatted) if scheme else None
+                    끝 = mapped[1] if mapped else 기호위치 + len(symbol)
                     끝 += len(formatted[끝:]) - len(formatted[끝:].lstrip(' \t'))   # 기호 뒤 빈칸도 보통('□ ')
                     보통 = ((기호위치, 끝),)
                 문단추가 = dict(추가[1])
@@ -6082,7 +6127,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         consistent_reference_pair(
                             formatted, _xml_내어쓰기_기준쌍,
                             size_pt=(size if selected.get('size', True) and size else 15.0),
-                            occurrence=next_occurrence(_xml_문장순번, formatted),
+                            occurrence=next_occurrence(_xml_문장순번, formatted), scheme=scheme,
                         )
                         if _xml_내어쓰기_기준쌍
                         else None
@@ -6187,7 +6232,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     hwp_run("Cancel")
                 return
 
-            통일텍스트 = normalize_leading_dot(text)
+            scheme = globals().get('활성_항목기호_체계')
+            통일텍스트 = text if scheme and scheme.canonical(text) else normalize_leading_dot(text)
             if 통일텍스트 != text:
                 시작 = hwp.GetPos()
                 hwp_run("MoveParaBegin")
@@ -6344,7 +6390,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 if 자체_기호_매칭 and 기호만굵게 and not 문단굵게:
                     hwp_run("MoveParaBegin")
                     문단_시작 = hwp.GetPos()
-                    문단_범위_선택(문단_시작, 공백수, 공백수 + 1)
+                    기호위치 = len(현재_text) - len(현재_text.lstrip())
+                    mapped = scheme.canonical(현재_text) if scheme else None
+                    문단_범위_선택(문단_시작, 기호위치, mapped[1] if mapped else 기호위치 + 1)
                     문자모양_적용_현재선택(굵게=True)
                     hwp_run("Cancel")
                 # 예시가 본문은 굵게·기호는 보통으로 썼으면 기호만 보통으로 되돌린다(2026-10-17, XML 경로와 같음).
@@ -6352,7 +6400,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     hwp_run("MoveParaBegin")
                     문단_시작 = hwp.GetPos()
                     기호위치 = len(현재_text) - len(현재_text.lstrip())
-                    끝 = 기호위치 + len(기호)
+                    mapped = scheme.canonical(현재_text) if scheme else None
+                    끝 = mapped[1] if mapped else 기호위치 + len(기호)
                     끝 += len(현재_text[끝:]) - len(현재_text[끝:].lstrip(' \t'))   # 기호 뒤 빈칸도 보통
                     문단_범위_선택(문단_시작, 기호위치, 끝)
                     문자모양_적용_현재선택(굵게=False)

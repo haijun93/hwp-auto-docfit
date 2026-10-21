@@ -32,6 +32,7 @@ from .batch_format import (
     tag,
 )
 from .document_rules import ParagraphSpacingTracker
+from .marker_scheme import classify_marker, detect_scheme
 from .fidelity.package import PackageSnapshot, build_package
 from .hwpx import validate_hwpx
 from .style_hierarchy import DOT_MARKERS, leading_marker, normalize_leading_dot
@@ -151,6 +152,9 @@ def marker_end_offset(text: str | None) -> int | None:
     """문단 선행 항목기호(별표·번호·공문서 기호)가 끝나는 문자 인덱스를 반환한다."""
     if not text:
         return None
+    classified = classify_marker(text)
+    if classified:
+        return classified[1]
     stripped = text.lstrip()
     if not stripped:
         return None
@@ -395,12 +399,16 @@ def reference_hanging_indent_pair(
     reference_pairs: dict[str, tuple[int, int]],
     occurrence: int | None = None,
     exact_only: bool = False,
+    *,
+    scheme=None,
 ) -> tuple[int, int] | None:
     """기준 HWPX에서 추출한 동일 기호/라벨 문단의 대표 여백을 반환한다.
 
     occurrence: 이 문장이 문서에서 몇 번째로 나왔는지(1부터). 예시에 같은 문장이 여러 번 있고 서식이 다르면
     같은 순번의 예시 값을 쓴다(next_occurrence로 센다).
     """
+    if scheme and scheme.is_excluded(text):
+        return None
     exact_key = _reference_exact_key(text or "")
     if exact_key is not None and occurrence is not None and f"{exact_key}#{occurrence}" in reference_pairs             and exact_key not in reference_pairs:
         return reference_pairs[f"{exact_key}#{occurrence}"]
@@ -410,7 +418,8 @@ def reference_hanging_indent_pair(
         # 예시에 같은 문장이 없으면 기호 대표값을 강요하지 않는다. 글꼴·장평이 조금만 달라도 둘째 줄이 본문 첫 글자에서
         # 어긋났다('- 항세기*와 …'의 둘째 줄이 '항'에 맞지 않음, 2026-10-21). 그런 문단은 한/글 Shift+Tab 실측에 맡긴다.
         return None
-    key = _reference_marker_key(text or "")
+    lookup_text = scheme.style_text(text) if scheme else text
+    key = _reference_marker_key(lookup_text or "")
     if key is None:
         return None
     if key in reference_pairs:
@@ -451,6 +460,7 @@ def consistent_reference_pair(
     *,
     size_pt: float,
     occurrence: int | None = None,
+    scheme=None,
 ) -> tuple[int, int] | None:
     """기본 서식(예시) 값과 같은 모양을 우선하되, 예시 값이 본문 첫 글자와 어긋나면 쓰지 않는다(2026-10-21 사용자 기준).
 
@@ -458,10 +468,10 @@ def consistent_reference_pair(
     REFERENCE_WIDTH_TOLERANCE 안에서 같을 때만 그 값. 3) 그 밖(예: 예시 '-' 2800 대 실제 3500)은 None →
     한/글 Shift+Tab 실측(본문 첫 글자 기준)에 맡긴다.
     """
-    exact = reference_hanging_indent_pair(text, reference_pairs, occurrence, exact_only=True)
+    exact = reference_hanging_indent_pair(text, reference_pairs, occurrence, exact_only=True, scheme=scheme)
     if exact is not None:
         return exact
-    pair = reference_hanging_indent_pair(text, reference_pairs, occurrence)
+    pair = reference_hanging_indent_pair(text, reference_pairs, occurrence, scheme=scheme)
     natural = natural_body_start_width(text, size_pt)
     if pair is None or natural is None:
         return None
@@ -531,6 +541,8 @@ def restore_reference_indent_geometry(
     changed: set[str] = set()
     checked = repaired = missing = 0
     seen: dict[str, int] = {}
+    scheme = detect_scheme([_paragraph_visible_text(p) for root in sections.values()
+                            for p in root if tag(p) == "p"])
 
     for name, root in sections.items():
         for paragraph in root.iter():
@@ -539,7 +551,7 @@ def restore_reference_indent_geometry(
             text = _paragraph_visible_text(paragraph)
             pair = consistent_reference_pair(
                 text, reference_pairs, size_pt=_char_size_pt(header, paragraph),
-                occurrence=next_occurrence(seen, text),
+                occurrence=next_occurrence(seen, text), scheme=scheme,
             )
             if pair is None:
                 continue
