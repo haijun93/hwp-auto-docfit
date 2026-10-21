@@ -1,7 +1,7 @@
 # 한글편집 후처리
 
-> **v1.79.0 공개 — 2026-10-21**
-> 서식 복사 예시 재연, 항목기호 앞 빈칸, 자간 정리 원문 보존을 바로잡고 빈 문서 저장을 막았습니다.
+> **v1.80.0 공개 — 2026-10-21**
+> 내어쓰기(Shift+Tab)·항목기호 앞 빈칸·붙임 번호를 기본 서식대로 바로잡고, 서식 복사 재연과 자간 정리 원문 보존을 보완했습니다.
 
 ### 보고서 마무리 30분, 버튼 한 번으로.
 
@@ -9,30 +9,30 @@
 **다 쓴 한글(HWP·HWPX) 보고서를 넣고 「정리 시작」만 누르세요.** 설치된 한/글을 자동으로 조작해 공문서 모양으로 다듬어 줍니다.
 
 <p>
-<img alt="현재 정식 버전 v1.79.0" src="https://img.shields.io/badge/%ED%98%84%EC%9E%AC%20%EA%B3%B5%EA%B0%9C%20%EC%A0%95%EC%8B%9D-v1.79.0-2563eb">
+<img alt="현재 정식 버전 v1.80.0" src="https://img.shields.io/badge/%ED%98%84%EC%9E%AC%20%EA%B3%B5%EA%B0%9C%20%EC%A0%95%EC%8B%9D-v1.80.0-2563eb">
 <img alt="무료" src="https://img.shields.io/badge/%EA%B0%80%EA%B2%A9-%EB%AC%B4%EB%A3%8C-16a34a">
 <img alt="Windows 10·11" src="https://img.shields.io/badge/Windows-10%C2%B711-0078d4">
 <img alt="한/글 2020" src="https://img.shields.io/badge/%ED%95%9C%2F%EA%B8%80-2020-0ea5e9">
 <img alt="문서 외부 전송 없음" src="https://img.shields.io/badge/%EB%AC%B8%EC%84%9C-%EC%99%B8%EB%B6%80%20%EC%A0%84%EC%86%A1%20%EC%97%86%EC%9D%8C-64748b">
 </p>
 
-## ⬇ 최신 정식 버전 다운로드 — v1.79.0
+## ⬇ 최신 정식 버전 다운로드 — v1.80.0
 
 **[최신 릴리즈와 전체 첨부 파일 보기](https://github.com/haijun93/hwp-auto-docfit/releases/latest)**
 
 | 파일 | 다운로드 및 용도 |
 |---|---|
 | 포터블용 (무설치) | **[HWP_AutoDocFit.exe 바로 받기](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/HWP_AutoDocFit.exe)** — 설치 마법사 없이 실행 파일을 직접 사용합니다. Windows 10·11 64비트, 한/글 2020 필요 |
-| 설치용 (Setup) | [HWP_AutoDocFit_v1.79.0_Setup.exe](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/HWP_AutoDocFit_v1.79.0_Setup.exe) — 현재 사용자 영역에 설치하고 시작 메뉴 바로가기를 만듭니다. 제거할 때는 Windows 앱 제거 기능을 사용합니다. |
-| GitLab 포터블용 미러 | [HWP_AutoDocFit.exe 내려받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/v1.79.0/downloads/HWP_AutoDocFit.exe) — GitLab 릴리즈 자산 |
-| 프로그램·예시 압축팩 | [HWP_AutoDocFit-v1.79.0.zip](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.79.0/HWP_AutoDocFit-v1.79.0.zip) — 압축을 풀어 실행 |
+| 설치용 (Setup) | [HWP_AutoDocFit_v1.80.0_Setup.exe](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/HWP_AutoDocFit_v1.80.0_Setup.exe) — 현재 사용자 영역에 설치하고 시작 메뉴 바로가기를 만듭니다. 제거할 때는 Windows 앱 제거 기능을 사용합니다. |
+| GitLab 포터블용 미러 | [HWP_AutoDocFit.exe 내려받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/v1.80.0/downloads/HWP_AutoDocFit.exe) — GitLab 릴리즈 자산 |
+| 프로그램·예시 압축팩 | [HWP_AutoDocFit-v1.80.0.zip](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.0/HWP_AutoDocFit-v1.80.0.zip) — 압축을 풀어 실행 |
 | 체크섬 | [SHA256SUMS](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/SHA256SUMS) — 배포 파일 SHA256 확인 |
 
 **변환 런타임은 EXE에 포함되어 있어 별도로 받을 필요가 없습니다.** 첫 실행 때 내장 ZIP과 변환 엔진을 `C:\HWP_AUTODOCFIT`에 저장합니다. 쓰기 권한이 없으면 `%LOCALAPPDATA%\HwpAutoDocFit`에 저장하며 온라인 다운로드는 하지 않습니다.
 
-**포터블용**은 설치 없이 실행 파일을 직접 쓰려는 경우, **설치용**은 시작 메뉴에서 실행하고 Windows 앱 제거로 정리하려는 경우에 선택하세요. 두 배포판은 릴리즈 첨부 파일과 체크섬에서 각각 구분합니다. · [v1.79.0 변경 사항](releases/v1.79.0.md) · [GitHub 저장소](https://github.com/haijun93/hwp-auto-docfit) · [GitLab 저장소](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
+**포터블용**은 설치 없이 실행 파일을 직접 쓰려는 경우, **설치용**은 시작 메뉴에서 실행하고 Windows 앱 제거로 정리하려는 경우에 선택하세요. 두 배포판은 릴리즈 첨부 파일과 체크섬에서 각각 구분합니다. · [v1.80.0 변경 사항](releases/v1.80.0.md) · [GitHub 저장소](https://github.com/haijun93/hwp-auto-docfit) · [GitLab 저장소](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
 
-**v1.79.0**은 예시 보고서를 복사한 서식이 예시와 똑같이 재연되도록(내어쓰기·왼쪽 여백·항목기호 앞 빈칸) 바로잡고, 자간 정리가 본문 글자를 바꾸지 않도록 보완했으며, 결과가 빈 문서로 저장되면 오류로 멈춥니다. 실행 파일은 포터블과 사용자 설치형으로 제공됩니다. 기본은 **폐쇄망 모드**라 앱이 스스로 외부 서버에 접속하지 않습니다. 자세한 내용은 [변경 사항](releases/v1.79.0.md)을 확인하세요.
+**v1.80.0**은 항목기호 문장의 내어쓰기가 본문 첫 글자에서 시작하도록(기본 서식 값 우선) 바로잡고, 예시 보고서를 복사한 서식이 예시와 똑같이 재연되도록(내어쓰기·왼쪽 여백·항목기호 앞 빈칸) 바로잡고, 자간 정리가 본문 글자를 바꾸지 않도록 보완했으며, 결과가 빈 문서로 저장되면 오류로 멈춥니다. 실행 파일은 포터블과 사용자 설치형으로 제공됩니다. 기본은 **폐쇄망 모드**라 앱이 스스로 외부 서버에 접속하지 않습니다. 자세한 내용은 [변경 사항](releases/v1.80.0.md)을 확인하세요.
 
 [![프로그램 사용 시연 영상 (약 5분). 클릭하면 고화질 영상이 열립니다.](docs/media/overview-demo.gif)](docs/media/overview-demo.mp4)
 
@@ -243,7 +243,7 @@ HWP·HWPX → PDF·그림도 **한/글 내장 저장 기능**을 씁니다. 한/
 
 # 자세한 사용 설명서
 
-이번 버전에서 바뀐 점: **v1.79.0**은 서식 복사 재연(복사한 서식의 내어쓰기·왼쪽 여백을 그 서식의 예시 파일에서 그대로, 기호 뒤 낫표·반복 문장 포함), 항목기호 앞 빈칸(부연설명은 위 문단에 맞는 칸 수, 복사 서식은 예시에서 배운 칸 수), 자간 정리 원문 보존(연결 부호를 지우지 않음, 실패한 자간은 되돌림, 표 제외 시 한 칸 표도 제외)을 바로잡고 빈 문서 저장을 막았습니다([변경 사항](releases/v1.79.0.md)). '서식 통일'은 v1.74부터 기본으로 글꼴·크기만 맞춥니다('전체 서식 맞추기' 옵션으로 전체 서식).
+이번 버전에서 바뀐 점: **v1.80.0**은 내어쓰기(둘째 줄이 항목기호 뒤 본문 첫 글자에서 시작, 기본 서식 값 우선)와 붙임 번호 정렬, 서식 복사 재연(복사한 서식의 내어쓰기·왼쪽 여백을 그 서식의 예시 파일에서 그대로, 기호 뒤 낫표·반복 문장 포함), 항목기호 앞 빈칸(부연설명은 위 문단에 맞는 칸 수, 복사 서식은 예시에서 배운 칸 수), 자간 정리 원문 보존(연결 부호를 지우지 않음, 실패한 자간은 되돌림, 표 제외 시 한 칸 표도 제외)을 바로잡고 빈 문서 저장을 막았습니다([변경 사항](releases/v1.80.0.md)). '서식 통일'은 v1.74부터 기본으로 글꼴·크기만 맞춥니다('전체 서식 맞추기' 옵션으로 전체 서식).
 
 <details>
 <summary><b>기능별 자세한 설명과 옵션 위치 펼치기</b></summary>
