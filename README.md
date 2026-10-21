@@ -22,11 +22,9 @@
 
 | 파일 | 다운로드 및 용도 |
 |---|---|
-| 포터블용 (무설치) | **[HWP_AutoDocFit.exe 바로 받기](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/HWP_AutoDocFit.exe)** — 설치 마법사 없이 실행 파일을 직접 사용합니다. Windows 10·11 64비트, 한/글 2020 필요 |
-| 설치용 (Setup) | [HWP_AutoDocFit_v1.80.0_Setup.exe](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/HWP_AutoDocFit_v1.80.0_Setup.exe) — 현재 사용자 영역에 설치하고 시작 메뉴 바로가기를 만듭니다. 제거할 때는 Windows 앱 제거 기능을 사용합니다. |
-| GitLab 포터블용 미러 | [HWP_AutoDocFit.exe 내려받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/releases/v1.80.0/downloads/HWP_AutoDocFit.exe) — GitLab 릴리즈 자산 |
-| 프로그램·예시 압축팩 | [HWP_AutoDocFit-v1.80.0.zip](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.0/HWP_AutoDocFit-v1.80.0.zip) — 압축을 풀어 실행 |
-| 체크섬 | [SHA256SUMS](https://github.com/haijun93/hwp-auto-docfit/releases/latest/download/SHA256SUMS) — 배포 파일 SHA256 확인 |
+| 포터블용 (무설치) | **[HWP_AutoDocFit_v1.80.0_Portable.exe 바로 받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.0/HWP_AutoDocFit_v1.80.0_Portable.exe)** — 설치 마법사 없이 실행 파일을 직접 사용합니다. Windows 10·11 64비트, 한/글 2020 필요 |
+| 설치용 (Setup) | [HWP_AutoDocFit_v1.80.0_Setup.exe](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.0/HWP_AutoDocFit_v1.80.0_Setup.exe) — 현재 사용자 영역에 설치하고 시작 메뉴 바로가기를 만듭니다. 제거할 때는 Windows 앱 제거 기능을 사용합니다. |
+| 체크섬 | [SHA256SUMS](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.0/SHA256SUMS) — 배포 파일 SHA256 확인 |
 
 **변환 런타임은 EXE에 포함되어 있어 별도로 받을 필요가 없습니다.** 첫 실행 때 내장 ZIP과 변환 엔진을 `C:\HWP_AUTODOCFIT`에 저장합니다. 쓰기 권한이 없으면 `%LOCALAPPDATA%\HwpAutoDocFit`에 저장하며 온라인 다운로드는 하지 않습니다.
 
