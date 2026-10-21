@@ -124,6 +124,8 @@ def 작업_설정(s, 모드, 표제외_요청, 전체서식_요청=None):
         if 전체서식_요청 is not None:
             세부작업['unify_full_format'] = 전체서식_요청
     세부 = {k: bool(s[k]) for k in STD_KEYS if k in s}
+    if 모드 in ('all', 'format') and not s.get('all_linespacing', True):
+        세부['std_linespacing'] = False
     세부['std_title_subtitle_pt'] = s.get('std_title_subtitle_pt')
     세부['table_fonts'] = s.get('table_fonts', {})
     세부['unify_exclude_spacing'] = 모드 == 'unify' and (bool(s.get('unify_exclude_spacing', False))

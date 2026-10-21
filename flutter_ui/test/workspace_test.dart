@@ -445,6 +445,13 @@ void main() {
     await tester.tap(find.byKey(const Key('allExcludePagefitSwitch')));
     await tester.pumpAndSettle();
     expect(calls.last, ['set_card_option', 'all_exclude_pagefit', true]);
+    final linespacingSwitch = find.byKey(const Key('allLinespacingSwitch'));
+    await tester.ensureVisible(linespacingSwitch);
+    expect(tester.widget<Switch>(linespacingSwitch).value, isTrue);
+    await tester.tap(linespacingSwitch);
+    await tester.pumpAndSettle();
+    expect(calls.last, ['set_card_option', 'all_linespacing', false]);
+    expect(tester.widget<Switch>(linespacingSwitch).value, isFalse);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });

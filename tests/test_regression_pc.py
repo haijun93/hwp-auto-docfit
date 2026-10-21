@@ -30,6 +30,19 @@ class RegressionToolTest(unittest.TestCase):
         self.assertTrue(세부작업['page_layout_keep'])
         self.assertTrue(세부['unify_exclude_spacing'])
 
+    def test_linespacing_card_overrides_format_option_only_for_all_and_format(self):
+        configure = self.ns['작업_설정']
+        for mode in ('all', 'format', 'spacing', 'unify'):
+            with self.subTest(mode=mode):
+                _, stages, detail, _ = configure({'all_linespacing': False, 'std_linespacing': True}, mode, False)
+                self.assertEqual(detail['std_linespacing'], mode not in ('all', 'format'))
+                _, baseline, _, _ = configure({}, mode, False)
+                self.assertEqual(stages, baseline)
+        for settings in ({}, {'all_linespacing': True}):
+            for enabled in (False, True):
+                _, _, detail, _ = configure({**settings, 'std_linespacing': enabled}, 'all', False)
+                self.assertEqual(detail['std_linespacing'], enabled)
+
     def test_required_check_not_run_fails(self):
         판정 = self.ns['판정']
         요구 = {'min_score': 100, 'same_layout': True}

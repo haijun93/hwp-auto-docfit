@@ -103,6 +103,7 @@ DEFAULTS = {
     "all_exclude_tables": False,
     # 한 번에 적용의 '페이지 맞춤 제외': 켜면 문단 아래 간격 페이지 맞춤·관련 문단 페이지 배치를 뺀다.
     "all_exclude_pagefit": False,
+    "all_linespacing": True,
     # 서식 통일 카드의 '표 제외'·'자간 정리 제외'·'페이지 맞춤 제외'. 세부 작업과 연동되며, 서식 통일의 쪽 맞춤은
     # 세부 작업 기본값이 꺼짐이라 '페이지 맞춤 제외'만 기본 켜짐이다.
     "unify_exclude_tables": False,
@@ -153,6 +154,7 @@ VARIABLE_BINDINGS = {'prevent_word_split': 'prevent_word_split_var',
  'all_exclude_tables': 'exclude_tables_var',
  'title_owner_text': 'title_owner_var',
  'all_exclude_pagefit': 'all_exclude_pagefit_var',
+ 'all_linespacing': 'all_linespacing_var',
  'unify_exclude_tables': 'unify_exclude_tables_var',
  'unify_exclude_spacing': 'unify_exclude_spacing_var',
  'unify_exclude_pagefit': 'unify_exclude_pagefit_var',

@@ -516,6 +516,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 # '한 번에 적용'의 '페이지 맞춤 제외'와 '서식 통일' 카드의 표 제외·자간 정리 제외·페이지 맞춤 제외. 세부 작업과
                 # 연동한다(_카드옵션_연동_시작).
                 self.all_exclude_pagefit_var = tk.BooleanVar(value=bool(저장된_설정.get("all_exclude_pagefit", False)))
+                self.all_linespacing_var = tk.BooleanVar(value=bool(저장된_설정.get("all_linespacing", True)))
                 self.unify_exclude_tables_var = tk.BooleanVar(value=bool(저장된_설정.get("unify_exclude_tables", False)))
                 self.unify_exclude_spacing_var = tk.BooleanVar(value=bool(저장된_설정.get("unify_exclude_spacing", False)))
                 self.unify_exclude_pagefit_var = tk.BooleanVar(value=bool(저장된_설정.get("unify_exclude_pagefit", True)))
@@ -532,7 +533,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         self.unify_quick_mode_var.set(target)
                 self.unify_quick_mode_var.trace_add("write", sync_full_format)
                 self.unify_full_format_var.trace_add("write", sync_quick_mode)
-                for 변수 in (self.exclude_tables_var, self.all_exclude_pagefit_var, self.unify_exclude_tables_var,
+                for 변수 in (self.exclude_tables_var, self.all_exclude_pagefit_var, self.all_linespacing_var, self.unify_exclude_tables_var,
                              self.unify_exclude_spacing_var, self.unify_exclude_pagefit_var, self.unify_keep_layout_var,
                              self.unify_full_format_var):
                     변수.trace_add("write", self._설정_변경됨)
@@ -637,6 +638,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         # 켜면 문단 아래 간격 페이지 맞춤·관련 문단 페이지 배치를 뺀다.
                         self.all_exclude_pagefit_check = 카드_체크(
                             "페이지 맞춤 제외", self.all_exclude_pagefit_var, self._표제외_변경)
+                        self.all_linespacing_check = 카드_체크(
+                            "줄 간격 적용", self.all_linespacing_var, self._표제외_변경)
                     self.mode_cards[mode] = (card, inner, description)
                     for surface in (card, inner, description):
                         surface.bind("<Button-1>", lambda e, m=mode: self._카드_클릭(m))
@@ -1567,6 +1570,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     summary += " · 표 제외"
                 if mode in ("all", "format") and hasattr(self, "all_exclude_pagefit_var") and self.all_exclude_pagefit_var.get():
                     summary += " · 페이지 맞춤 제외"
+                if mode in ("all", "format") and hasattr(self, "all_linespacing_var") and not self.all_linespacing_var.get():
+                    summary += " · 줄 간격 적용 끔"
                 choices = self.stage_choices[mode]
                 # 카드 옵션으로 끈 작업(자간 정리의 자간 초기화, 표 제외·페이지 맞춤 제외 등)은 위 문구로 이미 알린다.
                 카드로_끈작업 = 카드옵션_끈작업(self._카드옵션값_목록(), mode)
@@ -5278,6 +5283,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                                                    if hasattr(self, "include_spacing_var") else True)
                     설정값["all_exclude_tables"] = (bool(self.exclude_tables_var.get())
                                                   if hasattr(self, "exclude_tables_var") else False)
+                    설정값["all_linespacing"] = (bool(self.all_linespacing_var.get())
+                                                if hasattr(self, "all_linespacing_var") else True)
                     for 키, 이름 in (("all_exclude_pagefit", "all_exclude_pagefit_var"),
                                    ("unify_exclude_tables", "unify_exclude_tables_var"),
                                    ("unify_exclude_spacing", "unify_exclude_spacing_var"),
@@ -6218,6 +6225,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 if 자간제외:
                     self.로그표시("자간 정리 제외: 서식통일이 고친 문장의 자간 조정·외톨이 글자 당기기를 하지 않습니다.")
                 표준서식_세부_전달["unify_exclude_spacing"] = 자간제외
+                # 프로필 옵션을 반영한 화면 값보다 이번 작업의 카드 선택을 우선한다.
+                if mode in ("all", "format") and not self.all_linespacing_var.get():
+                    표준서식_세부_전달["std_linespacing"] = False
 
                 self._진행_세부작업 = dict(세부작업)   # 진행 화면이 끈 단계를 목록에서 뺄 때 쓴다
                 from docfit_engine.runtime import session_for

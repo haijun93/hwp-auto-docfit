@@ -1600,6 +1600,26 @@ class _WorkspaceState extends State<Workspace> {
             '표 관련 작업은 모두 빼고 정리해요. 제목·개요 서식 표는 정리해요.',
             style: TextStyle(fontSize: 12, color: _faint),
           ),
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                '줄 간격 적용',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            Switch(
+              key: const Key('allLinespacingSwitch'),
+              value:
+                  (state['card_options'] as Map? ??
+                      const {})['all_linespacing'] !=
+                  false,
+              onChanged: locked
+                  ? null
+                  : (on) => command('set_card_option', ['all_linespacing', on]),
+            ),
+          ],
+        ),
         // 켜면 문단 아래 간격 페이지 맞춤·관련 문단 페이지 배치를 뺀다.
         Row(
           children: [

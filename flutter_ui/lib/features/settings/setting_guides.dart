@@ -764,6 +764,11 @@ final Map<String, SettingGuide> settingGuides = {
     '한 번에 적용: 쪽 맞춤 빼기',
     '마지막 쪽을 채우려고 간격을 바꾸는 작업을 빼요.',
   ),
+  'all_linespacing': SettingGuide(
+    'cards',
+    '한 번에 적용: 줄 간격 적용',
+    '끄면 문서의 줄 간격을 유지해요. 페이지 맞춤의 줄 간격 조정은 페이지 맞춤 제외에서 정해요.',
+  ),
   'unify_exclude_tables': SettingGuide(
     'cards',
     '서식 통일: 표는 그대로',

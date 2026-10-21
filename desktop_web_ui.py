@@ -745,6 +745,7 @@ class DesktopWebBridge:
         "spacing_enabled": ("spacing_enabled_var", "spacing"),
         "spacing_page_fit": ("spacing_page_fit_var", "spacing"),
         "all_exclude_pagefit": ("all_exclude_pagefit_var", "all"),
+        "all_linespacing": ("all_linespacing_var", "all"),
         "unify_exclude_tables": ("unify_exclude_tables_var", "unify"),
         "unify_exclude_spacing": ("unify_exclude_spacing_var", "unify"),
         "unify_exclude_pagefit": ("unify_exclude_pagefit_var", "unify"),
@@ -756,7 +757,7 @@ class DesktopWebBridge:
         result = {}
         for key, (name, _) in self._CARD_OPTIONS.items():
             variable = getattr(self.gui, name, None)
-            result[key] = (key == "spacing_enabled") if variable is None else bool(variable.get())
+            result[key] = (key in ("spacing_enabled", "all_linespacing")) if variable is None else bool(variable.get())
         return result
 
     def set_card_option(self, key, on):

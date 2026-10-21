@@ -52,7 +52,8 @@ class WritingAidsGuiTest(unittest.TestCase):
                                      ["자간 정리", "자간 정리", "페이지 맞춤", "기존 자간 초기화", "표 제외",
                                       "서식 통일", "표 제외", "자간 정리 제외", "페이지 맞춤 제외", "원본 쪽 구성 유지",
                                       "퀵모드 (글꼴 종류·크기만)",
-                                      "한 번에 적용", "자간 조정 포함", "표 제외", "페이지 맞춤 제외"])
+                                      "한 번에 적용", "자간 조정 포함", "표 제외", "페이지 맞춤 제외", "줄 간격 적용"])
+                    self.assertTrue(app.all_linespacing_var.get())
                     for 이름 in ("all_exclude_pagefit_var", "unify_exclude_tables_var", "unify_exclude_spacing_var"):
                         self.assertFalse(getattr(app, 이름).get(), 이름)       # 기본 꺼짐
                     # 서식 통일의 쪽 맞춤은 세부 작업 기본값이 꺼짐이라 '페이지 맞춤 제외'가 켜져 보인다(세부 작업과 연동).
@@ -113,6 +114,9 @@ class WritingAidsGuiTest(unittest.TestCase):
                     app.exclude_tables_var.set(True)
                     app.exclude_tables_var.set(False)                    # 표 작업을 모두 다시 켠다
                     self.assertTrue(app.stage_choices["all"]["table_style"])
+                    app.all_linespacing_var.set(False)
+                    self.assertIn("줄 간격 적용 끔", app.options_summary.cget("text"))
+                    self.assertFalse(ns["설정_불러오기"]()["all_linespacing"])
                     # 한 번에 적용의 '페이지 맞춤 제외': 문단 아래 간격 페이지 맞춤·관련 문단 페이지 배치를 끈다.
                     app.all_exclude_pagefit_var.set(True)
                     app._표제외_변경()
@@ -127,9 +131,21 @@ class WritingAidsGuiTest(unittest.TestCase):
                     args = captured["args"]
                     self.assertEqual((args[25]["page_fit"], args[25]["page_group"]), (False, False))
                     self.assertTrue(args[22])                        # 표는 그대로
+                    self.assertFalse(args[13]["std_linespacing"])
                     app.running = False
                     app.all_exclude_pagefit_var.set(False)
+                    app.all_linespacing_var.set(True)
                     self.assertTrue(app.stage_choices["all"]["page_group"])
+                    # 프로필이 줄 간격을 켜도 카드 OFF가 우선하며 쪽 맞춤 단계는 유지한다.
+                    app.std_bool_vars["std_linespacing"].set(True)
+                    app.all_linespacing_var.set(False)
+                    for mode in ("all", "format"):
+                        with patch.object(threading, "Thread", _Thread):
+                            app.작업시작(mode)
+                        self.assertFalse(captured["args"][13]["std_linespacing"])
+                        self.assertTrue(captured["args"][25]["page_fit"])
+                        app.running = False
+                    app.all_linespacing_var.set(True)
                     self.assertTrue(ns["설정_불러오기"]()["unify_exclude_tables"] is False)
                     # 서식 통일 카드: 표 제외·자간 정리 제외·페이지 맞춤 제외
                     app.unify_exclude_tables_var.set(True)

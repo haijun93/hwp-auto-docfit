@@ -429,9 +429,12 @@ class BrowserApiTests(unittest.TestCase):
         bridge = _bridge(gui)
         self.assertEqual(bridge.get_state()["card_options"],
                          {"spacing_enabled": True, "spacing_page_fit": False,
-                          "all_exclude_pagefit": False, "unify_exclude_tables": False,
+                          "all_exclude_pagefit": False, "all_linespacing": True, "unify_exclude_tables": False,
                           "unify_exclude_spacing": False, "unify_exclude_pagefit": False,
                           "unify_keep_layout": False, "unify_quick_mode": True})
+        gui.all_linespacing_var = _Var(True)
+        state = bridge.set_card_option("all_linespacing", False)
+        self.assertEqual((state["mode"], state["card_options"]["all_linespacing"]), ("all", False))
         for name in ("all_exclude_pagefit_var", "unify_exclude_tables_var", "unify_exclude_spacing_var",
                      "unify_exclude_pagefit_var"):
             setattr(gui, name, _Var(False))

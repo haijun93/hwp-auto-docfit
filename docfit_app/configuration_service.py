@@ -35,6 +35,7 @@ LABELS = {
  'offline_mode':'폐쇄망 모드 (인터넷 연결 안 함)', 'table_spacing':'표 안 자간 정리', 'log_file':'작업 로그 파일 저장',
  'developer_mode':'문서 도구 표시', 'diagram_editor_enabled':'tldraw 도형 편집기 사용', 'all_include_spacing':'한 번에 적용: 자간 포함',
  'all_exclude_tables':'한 번에 적용: 표 제외', 'all_exclude_pagefit':'한 번에 적용: 페이지 맞춤 제외',
+ 'all_linespacing':'한 번에 적용: 줄 간격 적용',
  'unify_exclude_tables':'서식 통일: 표 제외', 'unify_exclude_spacing':'서식 통일: 자간 제외',
  'unify_exclude_pagefit':'서식 통일: 페이지 맞춤 제외', 'unify_keep_layout':'서식 통일: 원본 쪽 구성 유지',
  'unify_full_format':'서식 통일: 전체 서식 맞춤', 'unify_result_window':'서식 통일 결과 창 표시',

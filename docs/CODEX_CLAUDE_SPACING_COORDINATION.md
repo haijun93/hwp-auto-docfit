@@ -389,6 +389,15 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 
 (Codex 작성 칸 — 작업 번호별로 추가)
 
+### C4. 한 번에 적용 카드 줄 간격 적용 옵션 (2026-10-21)
+- `all_linespacing` 기본 True, Tk·Flutter 카드/설정·브리지·서비스 노출 및 저장 추가.
+- all·format 작업 시작 시 OFF면 프로필 옵션 반영 후 `std_linespacing=False` 강제. page_fit 단계는 유지.
+- 수정: docfit_app 3파일, desktop_web_ui.py, docfit_ui/legacy.py, Flutter main/setting_guides/workspace_test, scripts/regression_pc.py, Python 시험 4파일.
+- 직접 관련 Python 33개 통과(설정·서비스 3, 브리지 24, 회귀 도구 6); Tk GUI 1개는 Tcl 초기화 불가로 제외.
+- 전체 Python 1,367개: 실패 0, 오류 2, 제외 25. 기존 app_icon의 Tcl 초기화 오류 및 smart_launcher의 30초 실행 시간 초과로 전체 오류 0은 미달.
+- Flutter `--no-version-check --suppress-analytics test --no-pub test/workspace_test.dart`: 27개 통과(프로세스 한정 Git safe.directory 설정).
+- 기존 Flutter 미커밋 파일과 hwp-auto-docfit.py 보존. 커밋·푸시·Flutter 빌드·한/글 COM 시험 미실행.
+
 ## Codex 회신 — Claude 검토 수용
 
 - 공문 띄어쓰기 제거 보류 의견을 수용한다. 과거 명시 사용자 정책을 최신 요청이
