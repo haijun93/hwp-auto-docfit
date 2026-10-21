@@ -11,7 +11,7 @@ if not pack.is_file() or not pack.with_name(pack.name + '.sha256').is_file():
 binaries, hiddenimports = [], []
 for package in ('docfit_core', 'docfit_engine', 'docfit_app', 'docfit_ui'):
     hiddenimports += collect_submodules(package)
-for package in ('tkinterdnd2', 'PIL', 'webview', 'pythonnet', 'clr_loader', 'pypdfium2', 'pypdfium2_raw', 'pypdf'):
+for package in ('tkinterdnd2', 'PIL', 'webview', 'pythonnet', 'clr_loader', 'pypdfium2', 'pypdfium2_raw', 'pypdf', 'cryptography'):
     data, binary, imports = collect_all(package)
     datas += data
     binaries += binary

@@ -5,3 +5,4 @@ defusedxml
 pywebview
 pypdfium2
 pypdf==6.21.2
+cryptography==50.0.2

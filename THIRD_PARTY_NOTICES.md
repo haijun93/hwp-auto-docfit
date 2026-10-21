@@ -39,6 +39,7 @@ license and notice files remain available in the installed kordoc package.
 | Pillow | Images | MIT-CMU (HPND) |
 | defusedxml | Safe XML parsing | PSF |
 | pypdf 6.21.2 | PDF compression (file format: PDF 압축) | BSD-3-Clause |
+| cryptography 50.0.2 | AES encryption when re-securing compressed PDFs | Apache-2.0 OR BSD-3-Clause |
 | pywebview | Web UI window | BSD-3-Clause |
 | Flutter | flutter_ui | BSD-3-Clause |
 | rhwp (`@rhwp/core` 0.8.7, Edward Kim, https://github.com/edwardkim/rhwp) | Settings/format-element HWP typesetting preview (WASM, `flutter_ui/assets/hwp_preview`; bundled Rust crate notices in its `THIRD_PARTY_NOTICES.txt`) | MIT |
