@@ -424,6 +424,50 @@ def reference_hanging_indent_pair(
     return reference_pairs.get(marker)
 
 
+REFERENCE_WIDTH_TOLERANCE = 200   # HWPUNIT(약 0.7mm). 예시 값이 본문 첫 글자 폭과 이만큼 안에 있으면 예시 값을 쓴다.
+
+
+def natural_body_start_width(text: str | None, size_pt: float) -> int | None:
+    """빈칸·기호·띄어쓰기(·콜론 라벨)를 지난 본문 첫 글자까지의 이론 폭(양쪽 정렬로 늘어나기 전).
+
+    최상위 □/ㅁ도 비교용으로는 기호와 뒤 빈칸 다음 글자까지의 폭을 쓴다(예시는 □ 제목도 그 폭으로 내어 쓴다).
+    """
+    if not text:
+        return None
+    stripped = text.lstrip()
+    if stripped[:1] in ("ㅁ", "□"):
+        end = marker_end_offset(text)
+        offset = _skip_spaces(text, end) if end is not None else None
+    else:
+        offset = hanging_indent_offset(text)
+    if offset is None or offset <= 0:
+        return None
+    return prefix_width_hwpunit(text, offset, size_pt=size_pt)
+
+
+def consistent_reference_pair(
+    text: str | None,
+    reference_pairs: dict[str, tuple[int, int]],
+    *,
+    size_pt: float,
+    occurrence: int | None = None,
+) -> tuple[int, int] | None:
+    """기본 서식(예시) 값과 같은 모양을 우선하되, 예시 값이 본문 첫 글자와 어긋나면 쓰지 않는다(2026-10-21 사용자 기준).
+
+    1) 예시와 같은 문장이면 그 값. 2) 아니면 같은 기호·라벨의 예시 값이 본문 첫 글자 이론 폭과
+    REFERENCE_WIDTH_TOLERANCE 안에서 같을 때만 그 값. 3) 그 밖(예: 예시 '-' 2800 대 실제 3500)은 None →
+    한/글 Shift+Tab 실측(본문 첫 글자 기준)에 맡긴다.
+    """
+    exact = reference_hanging_indent_pair(text, reference_pairs, occurrence, exact_only=True)
+    if exact is not None:
+        return exact
+    pair = reference_hanging_indent_pair(text, reference_pairs, occurrence)
+    natural = natural_body_start_width(text, size_pt)
+    if pair is None or natural is None:
+        return None
+    return pair if abs(-pair[1] - natural) <= REFERENCE_WIDTH_TOLERANCE else None
+
+
 def next_occurrence(counter: dict[str, int], text: str | None) -> int | None:
     """문서 순서대로 같은 문장이 몇 번째인지 센다(reference_hanging_indent_pair의 occurrence용)."""
     exact_key = _reference_exact_key(text or "")
@@ -493,9 +537,9 @@ def restore_reference_indent_geometry(
             if tag(paragraph) != "p":
                 continue
             text = _paragraph_visible_text(paragraph)
-            pair = safe_reference_hanging_indent_pair(
-                text, reference_pairs, wrapped=paragraph_wraps(paragraph),
-                occurrence=next_occurrence(seen, text), exact_only=True,
+            pair = consistent_reference_pair(
+                text, reference_pairs, size_pt=_char_size_pt(header, paragraph),
+                occurrence=next_occurrence(seen, text),
             )
             if pair is None:
                 continue

@@ -13,6 +13,7 @@ from docfit_core.xml_hanging_indent import (
     attachment_numbered_pair,
     build_hwpx_from_text_file,
     char_width_factor,
+    consistent_reference_pair,
     hanging_indent_offset,
     hanging_indent_pair,
     prefix_width_hwpunit,
@@ -243,7 +244,22 @@ class XmlHangingIndentUnitTests(unittest.TestCase):
                 self.assertEqual(d_left, c_left * 2)
                 self.assertEqual(d_intent, c_intent * 2)
 
-    def test_formatter_hwpx_batch_defers_unmatched_geometry_to_measurement(self):
+    def test_consistent_reference_pair_checks_natural_body_start_width(self):
+        from unittest.mock import patch
+
+        pairs = {"-": (0, -2800), "ㅇ": (0, -2996)}
+        for text, width, expected in (
+            ("   - 새로운 본문", 3500, None),
+            (" ㅇ 새로운 본문", 3000, pairs["ㅇ"]),
+        ):
+            with self.subTest(text=text), patch(
+                "docfit_core.xml_hanging_indent.natural_body_start_width",
+                return_value=width,
+            ) as natural_width:
+                self.assertEqual(consistent_reference_pair(text, pairs, size_pt=15), expected)
+                natural_width.assert_called_once_with(text, 15)
+
+    def test_formatter_hwpx_batch_reuses_consistent_reference_geometry(self):
         from docfit_core.batch_format import BatchUnsupported, ParagraphStyle, apply_batch
         from docfit_core.document_rules import ParagraphSpacingTracker
         from docfit_core.fidelity.package import UnsupportedPackage
@@ -297,18 +313,28 @@ class XmlHangingIndentUnitTests(unittest.TestCase):
             self.assertEqual(ns["표준서식_hwpx_처리"](source, target, selections), 3)
             # ㅇ(본문) 아래 *는 위 문단별 규칙(부연설명_앞빈칸) 6칸이다. 예전에는 기호 규칙 고정값 3칸이 들어갔다.
             audit = inspect_hanging_indent(target, reference / "기본 서식.hwpx")
-            self.assertEqual(audit["status"], "fail")
-            self.assertEqual(audit["failed_count"], 1)
+            self.assertEqual(audit["status"], "pass")
+            self.assertEqual(audit["failed_count"], 0)
             self.assertEqual(audit["checked_count"], 3)
             findings = {item["text"].strip(): item for item in audit["findings"]}
-            # 첫 줄 = LeftMargin: 예시와 같은 * 문장은 (0, -8336), 없는 ㅇ 문장은 (0, 0)으로 실측을 기다린다.
-            self.assertEqual((findings["ㅁ 추진 배경"]["left"], findings["ㅁ 추진 배경"]["indent"]), (0, 0))
-            self.assertEqual(findings["ㅁ 추진 배경"]["status"], "pass")
-            circle = findings["ㅇ (삼체 행성 상황) 3개 항성의 불규칙 운동"]
-            self.assertEqual((circle["left"], circle["indent"]), (0, 0))
-            self.assertEqual(circle["status"], "fail")
+            pairs = reference_marker_indent_pairs(reference / "기본 서식.hwpx")
+            header, section = roots(target)
+            char_shapes = shapes(header, "charPr")
+            for node in section.iter():
+                if tag(node) != "p":
+                    continue
+                text = plain_text(node)
+                if text.strip() not in findings:
+                    continue
+                run = next(child for child in node.iter() if tag(child) == "run")
+                size_pt = int(char_shapes[run.get("charPrIDRef")].get("height")) / 100
+                expected = consistent_reference_pair(text, pairs, size_pt=size_pt)
+                with self.subTest(text=text):
+                    self.assertIsNotNone(expected)
+                    finding = findings[text.strip()]
+                    self.assertEqual((finding["left"], finding["indent"]), expected)
+                    self.assertEqual(finding["status"], "pass")
             note = findings["* 항세기: 기후가 안정된 시기"]
-            self.assertEqual((note["left"], note["indent"]), (0, -8336))
             self.assertEqual(note["status"], "pass")
             self.assertEqual(note["text"], "      * 항세기: 기후가 안정된 시기")
 

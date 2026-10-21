@@ -6029,7 +6029,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         and not (사용자서식 and 'intent' in 문단추가)):
                     from docfit_core.xml_hanging_indent import (
                         hanging_indent_pair, paragraph_wraps,
-                        next_occurrence, reference_marker_indent_pairs, safe_reference_hanging_indent_pair,
+                        consistent_reference_pair, next_occurrence, reference_marker_indent_pairs,
+                        safe_reference_hanging_indent_pair,
                     )
                     from pathlib import Path
                     if not _xml_내어쓰기_기준확인:
@@ -6078,10 +6079,10 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                             except Exception as error:
                                 로그(f'[알파 XML 내어쓰기] 기준 서식 분석 실패, 폭 계산 폴백: {error}')
                     내어쓰기쌍 = (
-                        safe_reference_hanging_indent_pair(
+                        consistent_reference_pair(
                             formatted, _xml_내어쓰기_기준쌍,
-                            wrapped=paragraph_wraps(paragraph),
-                            occurrence=next_occurrence(_xml_문장순번, formatted), exact_only=True,
+                            size_pt=(size if selected.get('size', True) and size else 15.0),
+                            occurrence=next_occurrence(_xml_문장순번, formatted),
                         )
                         if _xml_내어쓰기_기준쌍
                         else None
