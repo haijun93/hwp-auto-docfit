@@ -428,6 +428,12 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             단계표시("저장")
             상태(f"{파일명} : {총회차}회 처리 완료 / 최종 저장 중")
             처리쪽수 = 처리_쪽수_구하기()
+            try:   # 진단: 저장 직전 열린 문서 수(2개 이상이면 빈 문서가 활성일 위험, 2026-10-21)
+                문서수 = int(hwp.XHwpDocuments.Count)
+                if 문서수 != 1:
+                    로그(f"[저장 진단] 열린 문서 {문서수}개 — 활성 문서를 저장합니다")
+            except Exception:
+                pass
             저장결과 = hwp.SaveAs(Path=저장파일, Format="HWPX", arg="")
             if 저장결과 is False:
                 raise RuntimeError(f"문서 저장에 실패했습니다: {저장파일}")

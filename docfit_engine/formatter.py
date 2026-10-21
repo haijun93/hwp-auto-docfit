@@ -9785,9 +9785,23 @@ def _install(*, _docfit_namespace, _docfit_symbol):
         return bind_function(텍스트파일_읽기, _docfit_namespace)
     if _docfit_symbol == '텍스트_hwpx로_변환':
         def 텍스트_hwpx로_변환(텍스트, 대상경로):
-            """현재 hwp에 새 빈 문서를 만들어 텍스트를 문단 단위로 넣고 HWPX로 저장한다."""
+            """현재 hwp에 새 빈 문서를 만들어 텍스트를 문단 단위로 넣고 HWPX로 저장한다.
+
+            FileNew는 새 문서 창을 하나 더 연다. 한/글 시작 때의 빈 문서가 뒤에 남으면, 이후 문서를 닫고 다시 여는
+            단계에서 그 빈 문서가 활성 문서가 되어 최종 SaveAs가 빈 문서를 저장했다(txt 입력에서만 간헐 발생,
+            2026-10-21 재현). 새 문서를 만든 뒤 다른 문서 창은 저장하지 않고 닫아 창을 하나만 둔다.
+            """
             if hwp.Run("FileNew") is False:
                 raise RuntimeError("빈 문서를 만들지 못했습니다.")
+            try:
+                문서들 = hwp.XHwpDocuments
+                활성ID = 문서들.Active_XHwpDocument.DocumentID
+                for 번호 in reversed(range(int(문서들.Count))):
+                    문서 = 문서들.Item(번호)
+                    if 문서.DocumentID != 활성ID:
+                        문서.Close(False)
+            except Exception as error:   # 시험용 가짜 객체·구버전 한/글은 건너뛴다
+                진단로그(f"[빈 문서 정리] 다른 문서 창을 닫지 못함(무시): {error}")
             from docfit_core.labeled_text import mixes_report_lines
             # 제목:/개요: 라벨에 □ ㅇ - * 항목 줄이 섞인 TXT는 v1.73처럼 줄마다 넣고 준말 단계가 라벨을 서식 표로 바꾼다.
             # 라벨 해석기에 넘기면 항목이 한 문단으로 합쳐지고 '* 용어:' 주석이 'ㅇ (* 용어)'로 바뀌었다(v1.76 회귀).
