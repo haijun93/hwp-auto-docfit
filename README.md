@@ -8,8 +8,8 @@
 </p>
 
 <p align="center">
-<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.1/HWP_AutoDocFit_v1.80.1_Portable.exe"><img alt="무설치로 바로 받기" src="https://img.shields.io/badge/%E2%AC%87%20%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%94%EB%A1%9C%20%EB%B0%9B%EA%B8%B0-v1.80.1-2563eb?style=for-the-badge"></a>
-<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.1/HWP_AutoDocFit_v1.80.1_Setup.exe"><img alt="설치용 받기" src="https://img.shields.io/badge/%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0-Setup-0ea5e9?style=for-the-badge"></a>
+<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.2/HWP_AutoDocFit_v1.80.2_Portable.exe"><img alt="무설치로 바로 받기" src="https://img.shields.io/badge/%E2%AC%87%20%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%94%EB%A1%9C%20%EB%B0%9B%EA%B8%B0-v1.80.2-2563eb?style=for-the-badge"></a>
+<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.2/HWP_AutoDocFit_v1.80.2_Setup.exe"><img alt="설치용 받기" src="https://img.shields.io/badge/%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0-Setup-0ea5e9?style=for-the-badge"></a>
 </p>
 <p align="center">
 <img alt="무료" src="https://img.shields.io/badge/%EA%B0%80%EA%B2%A9-%EB%AC%B4%EB%A3%8C-16a34a">
@@ -25,8 +25,16 @@
 
 ---
 
-<h2 align="center">새로워진 v1.80.1</h2>
-<p align="center">기호가 무엇이든 위계대로. 둘째 줄까지 반듯하게. 그리고 더 안전하게.</p>
+<h2 align="center">새로워진 v1.80.2</h2>
+<p align="center">첨부 한도에 걸리던 PDF는 가볍게. 기호가 무엇이든 위계대로. 둘째 줄까지 반듯하게.</p>
+
+### 무거운 PDF, 가볍게. 보안 PDF도 보안 그대로.
+
+스캔본·사진이 많은 PDF를 넣고 파일포맷 변경에서 **「PDF 압축」**을 누르세요. 글자·쪽은 그대로 두고 그림만 다시 저장해 메일·전자결재 첨부 한도 안으로 줄입니다.
+인쇄·복사가 제한된 **보안 PDF도 같은 권한 그대로** 줄입니다. 보호가 풀린 사본은 만들지 않습니다.
+
+<p align="center"><img src="docs/media/v180/pdf-compress.png" alt="스캔 PDF 2.2MB가 PDF 압축 후 533KB로 줄어든 모습, 글자는 그대로" width="860"><br>
+<sub>스캔한 보고서 3쪽: 2.2MB → 533KB(76% 감소). 글자는 그대로 읽힙니다</sub></p>
 
 ### 어떤 항목기호를 써도, 같은 공문서 모양으로.
 
@@ -190,13 +198,13 @@
 
 | 파일 | 용도 |
 |---|---|
-| **[포터블 · HWP_AutoDocFit_v1.80.1_Portable.exe](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.1/HWP_AutoDocFit_v1.80.1_Portable.exe)** | 설치 없이 바로 실행 |
-| [설치용 · HWP_AutoDocFit_v1.80.1_Setup.exe](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.1/HWP_AutoDocFit_v1.80.1_Setup.exe) | 시작 메뉴 등록, Windows 앱 제거로 정리 |
-| [SHA256SUMS](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.1/SHA256SUMS) | 내려받은 파일 확인용 해시 |
+| **[포터블 · HWP_AutoDocFit_v1.80.2_Portable.exe](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.2/HWP_AutoDocFit_v1.80.2_Portable.exe)** | 설치 없이 바로 실행 |
+| [설치용 · HWP_AutoDocFit_v1.80.2_Setup.exe](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.2/HWP_AutoDocFit_v1.80.2_Setup.exe) | 시작 메뉴 등록, Windows 앱 제거로 정리 |
+| [SHA256SUMS](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.2/SHA256SUMS) | 내려받은 파일 확인용 해시 |
 
 - **필요한 것**: Windows 10·11(64비트), 문서를 편집할 수 있는 **한컴오피스 한/글**(2020에서 검증). Python 등 다른 설치는 필요 없습니다.
 - 변환 엔진은 실행 파일에 들어 있습니다. 첫 실행 때 `C:\HWP_AUTODOCFIT`(쓰기 권한이 없으면 `%LOCALAPPDATA%\HwpAutoDocFit`)에 풀며, 인터넷에서 받지 않습니다.
-- [전체 릴리스](https://github.com/haijun93/hwp-auto-docfit/releases/latest) · [v1.80.1 변경 사항](releases/v1.80.1.md) · [GitHub](https://github.com/haijun93/hwp-auto-docfit) · [GitLab](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
+- [전체 릴리스](https://github.com/haijun93/hwp-auto-docfit/releases/latest) · [v1.80.2 변경 사항](releases/v1.80.2.md) · [GitHub](https://github.com/haijun93/hwp-auto-docfit) · [GitLab](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
 
 ---
 
@@ -227,6 +235,12 @@
 괜찮습니다. 번호(`1.` `1.1.` `1-1` `가.` `1)` `(1)` `①`), 로마자·영문(`Ⅰ.` `A.` `a)`), 도형(`◆ ▶ ■ ● ✓ →` 등) 어떤 체계든 위계를 읽어 단계에 맞는 서식을 입힙니다. 기호 글자는 그대로 둡니다.
 </details>
 
+<details><summary><b>PDF가 첨부 한도를 넘어요. 보안 PDF도 줄일 수 있나요?</b></summary>
+
+파일포맷 변경에서 **PDF 압축**을 고르면 됩니다. 스캔본·사진 PDF에서 효과가 크고(시험 문서 66~78% 감소), 한/글로 만든 글자 위주 PDF는 이미 작아 "이미 충분히 작습니다"라고 알려 줍니다.
+인쇄·복사 제한이 걸린 보안 PDF는 **같은 권한 그대로** 줄입니다. 열기 암호가 걸린 PDF와 문서보안(DRM) 파일, 전자서명 PDF는 줄이지 않습니다.
+</details>
+
 <details><summary><b>줄 간격은 건드리지 않았으면 해요.</b></summary>
 
 한 번에 적용 카드의 **줄 간격 적용**을 끄면 문서의 줄 간격을 그대로 둡니다.
@@ -238,5 +252,5 @@
 
 <p align="center">
 <a href="docs/USER_GUIDE.md"><b>자세한 사용 설명서</b></a> — 기능별 사용법·옵션·결과 파일·문제 해결<br>
-<a href="releases/v1.80.1.md">v1.80.1 변경 사항</a> · <a href="HANDOVER.md">개발 인수인계 문서</a> · <a href="THIRD_PARTY_NOTICES.md">사용한 오픈소스</a> · <a href="LICENSE">라이선스</a>
+<a href="releases/v1.80.2.md">v1.80.2 변경 사항</a> · <a href="HANDOVER.md">개발 인수인계 문서</a> · <a href="THIRD_PARTY_NOTICES.md">사용한 오픈소스</a> · <a href="LICENSE">라이선스</a>
 </p>

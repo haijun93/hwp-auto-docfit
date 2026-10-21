@@ -537,6 +537,11 @@ class DesktopWebBridge:
             {"format": "hwpx", "label": "HWPX", "enabled": valid and hwpx_ready,
              "reason": hwpx_reason},
             {"format": "pdf", "label": "PDF", "enabled": valid and pdf_ready, "reason": pdf_reason},
+            # PDF 압축은 한/글·변환 엔진 없이 PDF 안의 그림·스트림만 다시 저장한다(보안 PDF는 같은 권한 유지).
+            {"format": "pdfz", "label": "PDF 압축", "enabled": valid and all(s == ".pdf" for s in suffixes),
+             "reason": (invalid_reason if not valid else
+                        "PDF 파일에만 쓸 수 있습니다" if any(s != ".pdf" for s in suffixes) else
+                        "글자·쪽은 그대로, 그림만 다시 저장 · 보안 PDF는 같은 권한 유지")},
             *({"format": kind, "label": kind.upper(), "enabled": valid and text_targets_ready,
                "reason": invalid_reason if not valid else engine_reason if not text_targets_ready and not kordoc_ready else "텍스트 추출 준비됨"} for kind in ("txt", "md")),
             *({"format": kind, "label": kind.upper(), "enabled": valid and pandoc_targets_ready,
@@ -654,7 +659,7 @@ class DesktopWebBridge:
     def set_conversion_target(self, target):
         target = str(target or "").lower()
         if target not in CONVERSION_OUTPUTS:
-            raise ValueError("결과 형식은 HWPX, PDF, DOCX, EPUB, HTML, JPG, PNG, TXT 또는 MD만 선택할 수 있습니다.")
+            raise ValueError("결과 형식은 HWPX, PDF, PDF 압축, DOCX, EPUB, HTML, JPG, PNG, TXT 또는 MD만 선택할 수 있습니다.")
         def update():
             if not self.gui.running:
                 self.conversion_target = target

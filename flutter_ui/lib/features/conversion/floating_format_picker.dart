@@ -34,6 +34,7 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
     'epub',
     'html',
     'pdf',
+    'pdfz',
     'jpg',
     'png',
     'txt',
@@ -53,6 +54,7 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
 
   IconData icon(String format) => switch (format) {
     'pdf' => Icons.picture_as_pdf_outlined,
+    'pdfz' => Icons.compress,
     'docx' => Icons.article_outlined,
     'epub' => Icons.menu_book_outlined,
     'jpg' || 'png' => Icons.image_outlined,

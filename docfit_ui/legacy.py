@@ -6023,6 +6023,10 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                                     convert_to_pandoc_format(source, target)
                                 elif target_format in IMAGE_FORMATS:
                                     target = convert_to_images(app, source, target)
+                                elif target_format == "pdfz":
+                                    from docfit_core.pdf_compress import compress_pdf
+                                    압축결과 = compress_pdf(source, target)
+                                    로그(f"PDF 압축: {source.name} {압축결과.summary()}")
                                 else:
                                     convert_to_pdf(app, source, target)
                                 successes += 1

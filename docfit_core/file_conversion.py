@@ -24,7 +24,7 @@ def output_path_for(source: str | Path, target_format: str) -> Path:
     source = Path(source)
     suffix = str(target_format or "").strip().lower().lstrip(".")
     if suffix not in CONVERSION_OUTPUTS:
-        raise ValueError("지원하는 결과 형식은 HWPX, PDF, DOCX, EPUB, HTML, JPG, PNG, TXT 또는 MD입니다.")
+        raise ValueError("지원하는 결과 형식은 HWPX, PDF, PDF 압축, DOCX, EPUB, HTML, JPG, PNG, TXT 또는 MD입니다.")
     if source.is_symlink() or not source.is_file():
         raise ValueError("원본이 일반 파일이 아니거나 심볼릭 링크입니다.")
     if source.suffix.lower() not in CONVERSION_INPUTS:
@@ -32,6 +32,11 @@ def output_path_for(source: str | Path, target_format: str) -> Path:
 
     stem = source.stem
     marker = f"({suffix.upper()}변경)"
+    if suffix == "pdfz":
+        # PDF 압축은 PDF만 받아 같은 PDF로 저장한다(재조판 없이 그림·스트림만 다시 저장).
+        if source.suffix.lower() != ".pdf":
+            raise ValueError("PDF 압축은 PDF 파일에만 쓸 수 있습니다.")
+        suffix, marker = "pdf", "(PDF압축)"
     candidate = source.with_name(f"{stem}{marker}.{suffix}")
     index = 2
     # 여러 쪽 그림은 확장자를 뺀 같은 이름의 폴더에 저장하므로 폴더 이름도 비어 있어야 한다.
@@ -283,7 +288,7 @@ def convert_hwp_to_hwpx(app, source: str | Path, target: str | Path) -> Path:
 TEXT_INPUTS = frozenset({".txt", ".md"})
 HTML_INPUTS = frozenset({".html", ".htm"})
 CONVERSION_INPUTS = SUPPORTED_INPUT_EXTENSIONS | TEXT_INPUTS | IMAGE_INPUT_EXTENSIONS | HTML_INPUTS
-CONVERSION_OUTPUTS = frozenset({"hwpx", "pdf", "docx", "epub", "html", "jpg", "png", "txt", "md"})
+CONVERSION_OUTPUTS = frozenset({"hwpx", "pdf", "pdfz", "docx", "epub", "html", "jpg", "png", "txt", "md"})
 
 
 def convert_input_to_hwpx(source: str | Path, target: str | Path) -> Path:

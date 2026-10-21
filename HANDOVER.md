@@ -7,6 +7,8 @@
 
 ## 1. 한눈에 보기
 
+2026-10-22 v1.80.2: 파일포맷 변경에 PDF 압축(`docfit_core/pdf_compress.py`, 대상 키 `pdfz`, pypdf 6.21.2). 재조판 없이 그림만 다시 저장하고 쪽·글자층을 대조한다. 보안 PDF는 같은 권한값(P)으로 다시 잠근다(소유자 암호는 새 무작위 값). 열기 암호·DRM·서명 PDF는 거부. 설계 `docs/PDF_COMPRESSION_DESIGN.md`.
+
 2026-10-21 v1.80.1: 항목기호 체계 일반화(어떤 기호 체계도 위계 분석 후 단계별 □·ㅇ·- 서식 적용, 원문 기호 유지).
 모듈 `docfit_core/marker_scheme.py`, 전역 `활성_항목기호_체계` 도입.
 연결 지점: `표준서식_기호규칙_찾기`·`_부모문단_유형`·`hanging/marker_end`·`보고서_문단역할`·`asterisk_superscript`·`analyze_hierarchy`.

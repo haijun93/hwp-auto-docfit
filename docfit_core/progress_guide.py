@@ -158,7 +158,7 @@ TIPS = {
 }
 TIPS["format"] = TIPS["all"]
 
-_TARGET_LABELS = {"hwpx": "HWPX", "pdf": "PDF", "docx": "DOCX", "epub": "EPUB", "png": "PNG", "jpg": "JPG",
+_TARGET_LABELS = {"hwpx": "HWPX", "pdf": "PDF", "pdfz": "PDF 압축", "docx": "DOCX", "epub": "EPUB", "png": "PNG", "jpg": "JPG",
                   "jpeg": "JPG"}
 
 

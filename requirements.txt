@@ -4,3 +4,4 @@ Pillow
 defusedxml
 pywebview
 pypdfium2
+pypdf==6.21.2
