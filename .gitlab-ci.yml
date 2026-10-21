@@ -49,7 +49,6 @@ release-windows:
       test -s "dist/$PORTABLE" && test -s "dist/$SETUP"
     # 한 번에 적용 시험용 보고서 예시(텍스트)도 함께 내려받게 한다(2026-10-04 사용자 요청).
     - cp "release-assets/보고서 예시 파일(한번에 적용).txt" "dist/보고서 예시 파일(한번에 적용).txt"
-    - sha256sum dist/HWP_AutoDocFit.exe
     # 압축팩(exe+예시)은 GitHub 릴리스에만 둔다. exe가 50MB를 넘으며 exe·압축팩을 함께 올리면 GitLab 첨부 한도(100MB)를
     # 넘어 작업이 실패했다(v1.73 첫 태그, 2026-10-11). GitLab에는 exe와 예시 텍스트만 올린다.
     - |
