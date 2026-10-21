@@ -1,12 +1,16 @@
 {
   "ok": true,
-  "version": "1.78.0",
+  "version": "1.80.0",
   "windows": [
     {
-      "title": "한글편집 후처리 · v1.78.0",
-      "pid": 8888
+      "title": "한글편집 후처리 · v1.80.0",
+      "pid": 3168,
+      "image": "D:\\a\\hwp-auto-docfit\\hwp-auto-docfit\\dist\\HWP_AutoDocFit\\HWP_AutoDocFit.exe"
     }
   ],
+  "window_ready_ms": 4449.42,
+  "smart_launcher": false,
+  "first_run_splash_ms": null,
   "offline_ocr": {
     "ok": true,
     "recognized": "공원 안내판 철거 계획",
