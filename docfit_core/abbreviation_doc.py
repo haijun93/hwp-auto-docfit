@@ -30,6 +30,7 @@ FORMAT_MARKERS: dict[str, str] = {
     "표": "table",
 }
 _MARKER_OF_KIND = {kind: marker for marker, kind in FORMAT_MARKERS.items()}
+ESCAPE = "\\"
 _KEY_LINE = re.compile(r"^\s*#(?!\+)\s*(.*?)\s*$")
 _FORMAT_LINE = re.compile(r"^\s*\[\s*서식\s*:\s*(.*?)\s*\]\s*$")
 
@@ -40,6 +41,7 @@ GUIDE_LINES = [
     "※ 문서에서 '준말: 내용' 줄은 본말로 바뀝니다. 본말이 여러 문단이면 빈칸 하나로 이어 한 줄이 됩니다.",
     "※ 서식 표로 바꾸려면 본말에 [서식:제목1] [서식:제목2] [서식:개요] [서식:중제목] [서식:붙임1] [서식:붙임2] [서식:표] 중 하나를 씁니다.",
     "※ 이 ※ 문단과 첫 # 앞의 문단은 설명이라 읽지 않습니다. 준말은 12자 이내, 같은 준말은 한 번만 씁니다.",
+    "※ 본말이 #·※·[서식:…]으로 시작하면 맨 앞에 역슬래시(\\)를 붙이세요. 역슬래시는 빼고 글자 그대로 씁니다.",
 ]
 
 
@@ -60,7 +62,7 @@ def _paragraphs(path: Path) -> list[str]:
     from defusedxml import ElementTree as ET
 
     from .hwpx import open_hwpx_safely
-    from .hwpx_idioms import _local_name, _paragraph_text
+    from .hwpx_idioms import _local_name
 
     with open_hwpx_safely(path) as archive:
         names = sorted(
@@ -70,27 +72,55 @@ def _paragraphs(path: Path) -> list[str]:
         paragraphs: list[str] = []
         for name in names:
             root = ET.fromstring(archive.read(name))
-            # 표 안 문단도 문서 순서대로 읽는다. 표 칸 안의 문단은 바깥 문단의 글에 섞이지 않게
-            # 가장 안쪽 문단 단위로 모은다.
+            # 표 안 문단도 문서 순서대로 읽는다. 표를 품은 바깥 문단은 표 칸 글을 빼고 자기 글만 읽고,
+            # 표 칸 문단은 따로 읽는다(글이 섞이거나 빠지지 않게).
             for node in root.iter():
-                if _local_name(node.tag) != "p":
-                    continue
-                if any(_local_name(child.tag) == "p" for child in node.iter() if child is not node):
-                    continue
-                paragraphs.append(_paragraph_text(node))
+                if _local_name(node.tag) == "p":
+                    paragraphs.append(_own_text(node, _local_name))
     return paragraphs
+
+
+def _own_text(paragraph, local_name) -> str:
+    """문단 글. 안에 든 다른 문단(표 칸 등)의 글은 넣지 않는다."""
+    parts: list[str] = []
+
+    def visit(node, top=False) -> None:
+        name = local_name(node.tag)
+        if name == "p" and not top:
+            return
+        if name == "t" and node.text:
+            parts.append(node.text)
+        elif name in {"lineBreak", "br"}:
+            parts.append("\n")
+        elif name == "tab":
+            parts.append("\t")
+        elif name in {"fwSpace", "nbSpace"}:
+            parts.append(" ")
+        for child in node:
+            visit(child)
+            if name == "t" and child.tail:
+                parts.append(child.tail)
+
+    visit(paragraph, top=True)
+    return "".join(parts)
 
 
 def parse_lines(lines: list[str]) -> tuple[dict[str, dict], list[str]]:
     """문단 글 목록을 등록표와 오류 목록으로 바꾼다. 잘못된 항목만 빼고 나머지는 쓴다."""
-    blocks: list[tuple[str, list[str]]] = []
+    blocks: list[tuple[str, list[tuple[str, bool]]]] = []
     for line in lines:
         text = line.replace("\n", " ").replace("\t", " ")
+        stripped = text.strip()
+        if stripped.startswith(ESCAPE):
+            # 역슬래시로 시작하는 줄은 글자 그대로의 본말이다(#·※·[서식:…]로 시작하는 본말을 쓸 때).
+            if blocks:
+                blocks[-1][1].append((stripped[1:], True))
+            continue
         marker = _KEY_LINE.fullmatch(text)
         if marker:
             blocks.append((marker.group(1), []))
-        elif blocks and not text.strip().startswith("※"):
-            blocks[-1][1].append(text)
+        elif blocks and not stripped.startswith("※"):
+            blocks[-1][1].append((text, False))
 
     entries: dict[str, dict] = {}
     errors: list[str] = []
@@ -111,11 +141,12 @@ def parse_lines(lines: list[str]) -> tuple[dict[str, dict], list[str]]:
             errors.append(f"'{key}': 같은 준말이 두 번 있습니다(뒤 항목은 쓰지 않음).")
             continue
         seen.add(key)
-        values = [item.strip() for item in body if item.strip()]
+        filled = [item for item in body if item[0].strip()]
+        values = [text.strip() for text, _ in filled]
         if not values:
             errors.append(f"'{key}': 본말이 비어 있습니다.")
             continue
-        format_marker = _FORMAT_LINE.fullmatch(values[0])
+        format_marker = None if filled[0][1] else _FORMAT_LINE.fullmatch(values[0])
         if format_marker:
             kind = FORMAT_MARKERS.get(format_marker.group(1).replace(" ", ""))
             if kind is None:
@@ -135,16 +166,23 @@ def parse_lines(lines: list[str]) -> tuple[dict[str, dict], list[str]]:
     return entries, errors
 
 
-def parse_document(path: str | Path) -> tuple[dict[str, dict], list[str]]:
-    """준말 문서를 읽어 (등록표, 오류 목록)을 돌려준다. 파일이 없거나 깨졌으면 빈 등록표와 오류 1건."""
+def read_document(path: str | Path) -> tuple[dict[str, dict], list[str], bool]:
+    """준말 문서를 읽어 (등록표, 오류 목록, 읽었는지)를 돌려준다. 파일이 없거나 깨졌으면 빈 등록표·오류 1건·False."""
     source = Path(path)
     if not source.is_file():
-        return {}, [f"준말 문서가 없습니다: {source}"]
+        return {}, [f"준말 문서가 없습니다: {source}"], False
     try:
         lines = _paragraphs(source)
     except Exception as exc:  # 손상·잠금·형식 오류는 작업을 막지 않고 알린다.
-        return {}, [f"준말 문서를 읽지 못했습니다({source.name}): {exc}"]
-    return parse_lines(lines)
+        return {}, [f"준말 문서를 읽지 못했습니다({source.name}): {exc}"], False
+    entries, errors = parse_lines(lines)
+    return entries, errors, True
+
+
+def parse_document(path: str | Path) -> tuple[dict[str, dict], list[str]]:
+    """준말 문서를 읽어 (등록표, 오류 목록)을 돌려준다. 파일이 없거나 깨졌으면 빈 등록표와 오류 1건."""
+    entries, errors, _ = read_document(path)
+    return entries, errors
 
 
 def document_lines(entries: dict) -> list[str]:
@@ -154,7 +192,9 @@ def document_lines(entries: dict) -> list[str]:
         if spec["type"] == "format":
             lines.append(f"[서식:{_MARKER_OF_KIND[spec['value']]}]")
         else:
-            lines.append(str(spec["value"]))
+            value = str(spec["value"])
+            risky = value.lstrip().startswith(("#", "※", ESCAPE)) or _FORMAT_LINE.fullmatch(value)
+            lines.append(ESCAPE + value if risky else value)
     return lines
 
 
@@ -164,15 +204,18 @@ def create_document(base_hwpx: str | Path, target: str | Path, entries: dict) ->
 
     def verify(temp: Path) -> None:
         parsed, errors = parse_document(temp)
-        if errors or set(parsed) != set(registry.normalize(entries)):
+        expected = {key: {"type": spec["type"], "value": spec["value"]}
+                    for key, spec in registry.normalize(entries).items()}
+        if errors or parsed != expected:
             raise ValueError("만든 준말 문서를 다시 읽은 결과가 다릅니다: " + "; ".join(errors))
 
     return write_paragraph_document(base_hwpx, target, document_lines(entries), verify)
 
 
 def initial_entries(settings: dict) -> dict[str, dict]:
-    """처음 만드는 문서에 넣을 항목: 기본 준말 + 설정에 저장된 사용자 준말(설정 값은 지우지 않음)."""
-    entries = registry.merge_with_defaults(settings.get("abbreviations"), True)
+    """처음 만드는 문서에 넣을 항목: 기본 준말(켜져 있을 때) + 설정에 저장된 사용자 준말(설정 값은 지우지 않음)."""
+    entries = registry.merge_with_defaults(settings.get("abbreviations"),
+                                           settings.get("abbreviation_defaults", True))
     return registry.normalize(entries)
 
 
@@ -208,9 +251,10 @@ def effective_registry(settings: dict, root: str | Path | None, base_hwpx: str |
     path = ensure_document(settings, root, base_hwpx)
     if path is None:
         return settings_registry, ["준말 문서를 만들 수 없어 앱 설정의 준말을 씁니다."], "settings"
-    entries, errors = parse_document(path)
-    if not entries and errors and not path.is_file():
-        return settings_registry, errors, "settings"
+    entries, errors, readable = read_document(path)
+    if not readable:
+        # 손상·잠금 등으로 문서를 못 읽으면 기본값만 쓰지 않고 앱 설정의 준말로 계속한다.
+        return settings_registry, errors + ["앱 설정의 준말을 대신 씁니다."], "settings"
     saved = registry.normalize(settings.get("abbreviations"))
     for key, spec in entries.items():
         # 문서로 표현할 수 없는 '배운 표 서식'은 설정에 저장된 같은 준말의 값을 이어 쓴다.

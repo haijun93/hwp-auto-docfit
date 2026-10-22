@@ -100,6 +100,37 @@ class AbbreviationDocumentTest(unittest.TestCase):
             {"abbreviation_source": "document", "abbreviation_defaults": False}, self.root, BASE)
         self.assertEqual(set(registry), {"표"})
 
+    def test_review_r1_unreadable_document_falls_back_to_settings(self):
+        self.path.parent.mkdir(parents=True)
+        self.path.write_bytes(b"locked or broken")
+        settings = {"abbreviation_source": "document", "abbreviation_defaults": False,
+                    "abbreviations": {"ㅁㅍ": {"type": "text", "value": "마포구청"}}}
+        registry, errors, source = doc.effective_registry(settings, self.root, BASE)
+        self.assertEqual(source, "settings")
+        self.assertEqual(registry, {"ㅁㅍ": {"type": "text", "value": "마포구청"}})
+        self.assertTrue(errors)
+        self.assertEqual(self.path.read_bytes(), b"locked or broken")   # 사용자 파일은 그대로
+
+    def test_review_r1_defaults_off_are_not_written(self):
+        settings = {"abbreviation_source": "document", "abbreviation_defaults": False,
+                    "abbreviations": {"요약": {"type": "text", "value": "x"}}}
+        doc.effective_registry(settings, self.root, BASE)
+        self.assertEqual(set(doc.parse_document(self.path)[0]), {"요약"})
+
+    def test_review_r1_risky_text_values_round_trip(self):
+        entries = {"태그": {"type": "text", "value": "#해시태그 문구"},
+                   "주석": {"type": "text", "value": "※ 참고 문구"},
+                   "가짜": {"type": "text", "value": "[서식:표]"},
+                   "빗금": {"type": "text", "value": "\\경로"}}
+        doc.create_document(BASE, self.path, entries)
+        self.assertEqual(doc.parse_document(self.path), (entries, []))
+
+    def test_review_r1_outer_paragraph_text_with_nested_table_is_kept(self):
+        from defusedxml.ElementTree import fromstring
+        from docfit_core.hwpx_idioms import _local_name
+        node = fromstring('<p><run><t>#표앞</t><tbl><tc><p><run><t>칸 글</t></run></p></tc></tbl></run></p>')
+        self.assertEqual(doc._own_text(node, _local_name), "#표앞")
+
     def test_service_document_commands(self):
         settings_path = self.root / "settings.json"
         settings_path.write_text(json.dumps({"abbreviations": {"ㅇ": {"type": "text", "value": "본말"}}}),

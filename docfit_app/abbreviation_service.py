@@ -57,9 +57,11 @@ class AbbreviationService:
         effective = registry.merge_with_defaults(user, use_defaults)
         if source == "document" and path.is_file():
             # 화면도 작업과 같이 매번 문서를 새로 읽는다(문서가 아직 없으면 첫 작업 때 설정 값으로 만들어진다).
-            user, document["errors"] = doc.parse_document(path)
-            effective = registry.normalize(registry.DEFAULT_ENTRIES) if use_defaults else {}
-            effective.update(user)
+            own, document["errors"], readable = doc.read_document(path)
+            if readable:
+                user = own
+                effective = registry.normalize(registry.DEFAULT_ENTRIES) if use_defaults else {}
+                effective.update(user)
         return {
             "use_defaults": use_defaults,
             "running": bool(running),

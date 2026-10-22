@@ -7,6 +7,8 @@
 
 ## 1. 한눈에 보기
 
+2026-10-22 v1.80.3: ① 파일포맷 변경 시작 시 `profile_combo` 오류 수정(`버튼_작업중/대기중`은 없는 위젯을 건너뜀) ② 작업 중단 10초·창 닫기 10/15초 상한 — `docfit_core/hwp_process.py`가 `한글_COM_인스턴스_생성(독립=True)`의 DispatchEx 전후 Hwp.exe PID 차집합만 기억하고 그 PID만 taskkill(사용자 한/글 보호) ③ 준말 관리 HWPX 문서 `C:\HWP_AUTODOCFIT\준말관리\준말관리.hwpx`(`docfit_core/abbreviation_doc.py`, 설정 `abbreviation_source`: 키가 없는 설정 묶음은 "settings", 앱 기본값은 "document") ④ rhwp 조판 미리보기 제거, 옵션 전·후 그림(`flutter_ui/assets/option_images`). 함정: 한글 경로에서 `flutter analyze`가 LSP JSON 오류로 죽으면 ASCII 경로 정션(`mklink /J`)에서 실행. Gemini(agy) 헤드리스는 명령 권한 허용 규칙이 없으면 첫 명령에서 멈춘다.
+
 2026-10-22 v1.80.2: 파일포맷 변경에 PDF 압축(`docfit_core/pdf_compress.py`, 대상 키 `pdfz`, pypdf 6.21.2). 재조판 없이 그림만 다시 저장하고 쪽·글자층을 대조한다. 보안 PDF는 같은 권한값(P)으로 다시 잠근다(소유자 암호는 새 무작위 값). 열기 암호·DRM·서명 PDF는 거부. 설계 `docs/PDF_COMPRESSION_DESIGN.md`.
 
 2026-10-21 v1.80.1: 항목기호 체계 일반화(어떤 기호 체계도 위계 분석 후 단계별 □·ㅇ·- 서식 적용, 원문 기호 유지).
