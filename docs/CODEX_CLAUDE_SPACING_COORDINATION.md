@@ -387,6 +387,11 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 
 ## Codex 결과 보고
 
+### C1. 표 정보단위 XML 엔진 (2026-10-22)
+- 변경: `docfit_core/table_units.py`, `tests/test_table_units.py`, `table_catalog.py`의 선택적 변환 연결점.
+- 지정 Python: 새 시험 12건·기존 카탈로그 14건 PASS; COM 미실행, 현재 브랜치·미커밋 유지.
+- 내장본 조절 대상 18종 계획 검증 통과. 엄격 자동판정의 행사시간표·일간표 경계 테두리 차이는 사용자 질의 및 상세 보고: `C:\HWP_AUTODOCFIT\v1803\reports\C1.md`.
+
 (Codex 작성 칸 — 작업 번호별로 추가)
 
 ### C4. 한 번에 적용 카드 줄 간격 적용 옵션 (2026-10-21)

@@ -52,7 +52,7 @@ class ApplicationService:
                   'clear_files':0,'set_mode':1,'inspect_document':1,'get_log':0,'clear_log':0,'shutdown':0}
         counts.update({'table_template':2,'document_tool':2,'get_pending_dialog':0,'stage_config':2,'set_stage':2,'set_stage_default':1})
         counts.update({'set_option':2,'set_include_spacing':1,'set_reset_spacing':1,'set_table_spacing':1,'set_exclude_tables':1,'set_range':3,'set_card_option':2})
-        counts.update({'flow_editor':2,'idioms':2,'hangul_fonts':2})
+        counts.update({'flow_editor':2,'idioms':2,'hangul_fonts':2,'table_units':2})
         counts.update({'diagram_list':0,'diagram_load':1,'diagram_save':3,'diagram_delete':1})
         if method not in counts:
             raise ServiceError('NOT_AVAILABLE','이 네이티브 시제품에서는 해당 기능을 아직 사용할 수 없습니다.')
@@ -162,6 +162,10 @@ class ApplicationService:
         if method=='delete_abbreviation': return response(lambda:self.abbreviations.delete(*args))
         if method=='set_abbreviation_defaults': return response(lambda:self.abbreviations.set_defaults(*args))
         if method=='abbreviation_document': return response(lambda:self.abbreviations.document_command(*args))
+        if method=='table_units':
+            from .table_units_service import TableUnitsService
+            # 네이티브 실행기에는 한/글 COM이 없어 목록·미리보기만 된다(복사·스냅샷은 데스크톱 앱).
+            return response(lambda:TableUnitsService().command(*args))
         if method=='add_paths':
             if len(args)!=1 or not isinstance(args[0],list) or len(args[0])>1000:
                 raise ServiceError('INVALID_INPUT','추가할 문서 목록을 확인해 주세요.')

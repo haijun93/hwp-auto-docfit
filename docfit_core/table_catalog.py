@@ -906,7 +906,8 @@ def export_template(template_id: str, output_path: str | Path,
                     catalog_path: str | Path | None = None, *,
                     cell_edits: dict | None = None,
                     structure_edits: list | None = None,
-                    style_edits: dict | None = None) -> Path:
+                    style_edits: dict | None = None,
+                    table_transform=None) -> Path:
     """원본 HWPX 표 구조·셀 서식·테두리·병합을 보존하고 요청한 칸 글·구조·서식을 반영해 저장한다."""
     if cell_edits is not None and (not isinstance(cell_edits, dict) or len(cell_edits) > 1000):
         raise ValueError("표 칸 수정 정보가 올바르지 않습니다.")
@@ -925,6 +926,8 @@ def export_template(template_id: str, output_path: str | Path,
         paragraphs = root.findall(_HP + "p")
         source_paragraph = paragraphs[record["paragraph_index"]]
         output_paragraph = _paragraph_with_table(source_paragraph, record["table_index"])
+        if table_transform is not None:
+            table_transform(_top_tables(output_paragraph)[0])
         if structure_edits:
             selected_tables = _top_tables(output_paragraph)
             if len(selected_tables) != 1:

@@ -24,6 +24,8 @@ from docfit_core.file_conversion import IMAGE_INPUT_EXTENSIONS
 from docfit_core.file_conversion import CONVERSION_INPUTS as SUPPORTED_INPUT_EXTENSIONS, CONVERSION_OUTPUTS
 from docfit_core.file_conversion import HANCOM_PDF_DIRECT, IMAGE_FORMATS, SAME_FORMAT_SUFFIXES
 
+_TABLE_UNITS_COM_LOCK = threading.Lock()
+
 # 화면에서 바로 켜고 끄는 공통 설정(이름 → 앱의 Tk 변수 속성). 값을 바꾸면 앱이 설정 파일에 저장한다.
 def _format_coverage(analysis):
     try:
@@ -1330,6 +1332,53 @@ class DesktopWebBridge:
             return result
         return self._tk(lambda: response(execute), front=action == "learn")
 
+    def _table_units_hwp(self):
+        """앱이 쓰는 방식 그대로 독립 한/글을 만들고 보안 모듈을 등록해 숨긴다."""
+        namespace = type(self.gui).파일포맷_변경_시작.__globals__
+        app = namespace["한글_COM_인스턴스_생성"](독립=True)
+        try:
+            registered = app.RegisterModule(namespace["REGISTER_MODULE_NAME"], namespace["REGISTER_MODULE_VALUE"])
+        except Exception:
+            registered = False
+        if registered is False:
+            try:
+                app.Quit()   # 등록에 실패해도 숨은 한/글이 남지 않게 닫는다
+            except Exception:
+                pass
+            raise RuntimeError("앱에 포함된 한/글 보안 모듈을 등록하지 못했습니다.")
+        try:
+            app.XHwpWindows.Item(0).Visible = False
+        except Exception:
+            pass
+        return app
+
+    def table_units(self, action, payload=None):
+        """표 템플릿: 스냅샷 목록·정보단위 미리보기·한/글 붙여넣기용 복사(2026-10-22).
+
+        한/글을 쓰는 스냅샷·복사는 시간이 걸리므로 Tk 화면 스레드가 아니라 호출 스레드에서 따로 COM을 연다.
+        """
+        from docfit_app.table_units_service import TableUnitsService
+        from docfit_app.api_contract import ServiceError
+
+        def execute():
+            if action in ("copy", "thumbnails") and self.gui.running:
+                raise ServiceError("JOB_RUNNING", "문서 작업이 끝난 뒤 다시 눌러 주세요.")
+            if action not in ("copy", "thumbnails"):
+                return TableUnitsService().command(action, payload)
+            # 스냅샷 생성 중에 복사가 겹치면 한/글·클립보드가 엉키므로 한 번에 하나만 한다.
+            if not _TABLE_UNITS_COM_LOCK.acquire(blocking=False):
+                raise ServiceError("BUSY", "표 템플릿 작업이 진행 중이에요. 끝난 뒤 다시 눌러 주세요.")
+            import pythoncom
+            try:
+                pythoncom.CoInitialize()
+                try:
+                    return TableUnitsService(self._table_units_hwp).command(action, payload)
+                finally:
+                    pythoncom.CoUninitialize()
+            finally:
+                _TABLE_UNITS_COM_LOCK.release()
+        return response(execute)
+
     def get_abbreviations(self):
         return self._tk(lambda: response(lambda: self.gui._준말_서비스().snapshot(running=self.gui.running)))
 
@@ -1687,7 +1736,7 @@ class _BrowserApi:
             "get_state", "add_files", "add_folder", "add_paths", "remove_file",
             "clear_files", "set_mode", "set_range", "start", "stop",
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
-            "get_pending_dialog", "resolve_dialog", "enable_close_guard", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document",
+            "get_pending_dialog", "resolve_dialog", "enable_close_guard", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units",
             "open_results", "next_job", "run_tool", "open_result",
             "show_result", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",

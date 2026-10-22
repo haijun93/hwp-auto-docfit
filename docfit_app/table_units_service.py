@@ -1,0 +1,214 @@
+"""표 템플릿: 스냅샷으로 고르고 정보단위 개수를 바꿔 한/글에 붙여넣을 수 있게 복사한다(2026-10-22).
+
+- 템플릿 원본은 사용자가 고칠 수 있는 `C:\\HWP_AUTODOCFIT\\표서식모음\\표 서식모음.hwpx`를 먼저 쓰고, 없으면 앱 내장본을 쓴다.
+- 정보단위 분석·조절은 docfit_core.table_units(한/글 없이 HWPX XML만 다룸).
+- 스냅샷 그림은 한/글로 PDF를 만든 뒤 표 부분만 잘라 PNG로 저장하고, 원본 파일 해시별로 캐시한다.
+- 복사는 조절한 HWPX를 숨긴 한/글로 열어 복사한다. 한/글을 닫아도 클립보드의 'Hwp Native' 형식이 남아
+  사용자가 한/글에서 Ctrl+V 하면 서식 그대로 붙는다(2026-10-22 실측).
+"""
+from __future__ import annotations
+
+import base64
+import hashlib
+import shutil
+import tempfile
+from pathlib import Path
+
+from docfit_core import table_units
+from docfit_core.table_catalog import default_catalog_path
+
+from .api_contract import ServiceError
+
+USER_CATALOG = Path(r"C:\HWP_AUTODOCFIT") / "표서식모음" / "표 서식모음.hwpx"
+SNAPSHOT_FOLDER = ".스냅샷"
+HWP_CLIPBOARD_FORMAT = "Hwp Native"
+
+
+def catalog_path(user_catalog: Path = USER_CATALOG) -> Path:
+    return user_catalog if user_catalog.is_file() else default_catalog_path()
+
+
+def _digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+
+
+def _safe_name(template_id: str) -> str:
+    return "".join(ch if ch.isalnum() else "_" for ch in str(template_id))
+
+
+def crop_to_content(image, margin: int = 6):
+    """흰 여백을 잘라 표 부분만 남긴다."""
+    from PIL import ImageChops, Image
+    rgb = image.convert("RGB")
+    background = Image.new("RGB", rgb.size, (255, 255, 255))
+    box = ImageChops.difference(rgb, background).getbbox()
+    if not box:
+        return rgb
+    left, top, right, bottom = box
+    return rgb.crop((max(0, left - margin), max(0, top - margin),
+                     min(rgb.width, right + margin), min(rgb.height, bottom + margin)))
+
+
+class TableUnitsService:
+    def __init__(self, hwp_factory=None, *, source: Path | None = None, snapshot_root: Path | None = None,
+                 clipboard_formats=None):
+        # hwp_factory: 독립 한/글 COM 객체를 만들어 돌려주는 함수(보안 모듈 등록·숨김 포함). 시험에서는 가짜.
+        self._hwp_factory = hwp_factory
+        self._source = source
+        self._snapshot_root = snapshot_root
+        self._clipboard_formats = clipboard_formats or _clipboard_formats
+
+    @property
+    def source(self) -> Path:
+        return Path(self._source) if self._source else catalog_path()
+
+    def _snapshot_dir(self) -> Path:
+        root = Path(self._snapshot_root) if self._snapshot_root else USER_CATALOG.parent / SNAPSHOT_FOLDER
+        return root / _digest(self.source)
+
+    def _snapshot_url(self, template_id: str) -> str | None:
+        path = self._snapshot_dir() / f"{_safe_name(template_id)}.png"
+        if not path.is_file():
+            return None
+        return "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode("ascii")
+
+    def _units(self):
+        try:
+            return table_units.describe_units(self.source)
+        except (OSError, ValueError) as exc:
+            raise ServiceError("CATALOG_UNAVAILABLE", f"표 서식 모음을 읽지 못했습니다: {exc}") from exc
+
+    def list(self) -> dict:
+        templates = []
+        for item in self._units():
+            templates.append({**item, "thumbnail": self._snapshot_url(item["id"])})
+        return {"source": str(self.source), "templates": templates,
+                "thumbnails_ready": bool(templates) and all(item["thumbnail"] for item in templates)}
+
+    def preview(self, template_id, row_count=None, col_count=None) -> dict:
+        try:
+            return table_units.preview(str(template_id), self.source, row_count=row_count, col_count=col_count)
+        except (KeyError, ValueError) as exc:
+            raise ServiceError("INVALID_INPUT", str(exc).strip("'\"")) from exc
+
+    def _export(self, folder: Path, template_id, row_count=None, col_count=None) -> Path:
+        target = folder / f"{_safe_name(template_id)}.hwpx"
+        try:
+            return table_units.export_resized(str(template_id), target, self.source,
+                                              row_count=row_count, col_count=col_count)
+        except (KeyError, ValueError) as exc:
+            raise ServiceError("INVALID_INPUT", str(exc).strip("'\"")) from exc
+
+    def _hwp(self):
+        if self._hwp_factory is None:
+            raise ServiceError("HWP_UNAVAILABLE", "한/글을 사용할 수 없어 이 작업을 할 수 없습니다.")
+        return self._hwp_factory()
+
+    @staticmethod
+    def _close(app) -> None:
+        for call in (lambda: app.Clear(1), app.Quit):
+            try:
+                call()
+            except Exception:
+                pass
+
+    def copy(self, template_id, row_count=None, col_count=None) -> dict:
+        folder = Path(tempfile.mkdtemp(prefix="docfit_table_copy_"))
+        try:
+            document = self._export(folder, template_id, row_count, col_count)
+            app = self._hwp()
+            try:
+                if app.Open(str(document), "HWPX", "forceopen:true") is False:
+                    raise ServiceError("HWP_FAILED", "한/글이 표 문서를 열지 못했습니다.")
+                app.Run("SelectAll")
+                app.Run("Copy")
+            finally:
+                self._close(app)
+            if HWP_CLIPBOARD_FORMAT not in self._clipboard_formats():
+                raise ServiceError("CLIPBOARD_FAILED", "클립보드에 한/글 표를 넣지 못했습니다. 다시 시도해 주세요.")
+            return {"copied": True, "message": "표를 복사했어요. 한/글 문서에서 붙여넣을 곳을 누르고 Ctrl+V 하세요."}
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
+
+    def thumbnails(self) -> dict:
+        """모든 템플릿의 실제 모양 그림을 한/글로 만든다(이미 있는 그림은 다시 만들지 않음)."""
+        import pypdfium2 as pdfium
+
+        from docfit_core.file_conversion import convert_hwpx_to_pdf
+
+        items = self._units()
+        target_dir = self._snapshot_dir()
+        missing = [item for item in items if not (target_dir / f"{_safe_name(item['id'])}.png").is_file()]
+        if missing:
+            target_dir.mkdir(parents=True, exist_ok=True)
+            folder = Path(tempfile.mkdtemp(prefix="docfit_table_snap_"))
+            app = None
+            try:
+                app = self._hwp()
+                for item in missing:
+                    document = self._export(folder, item["id"])
+                    pdf = folder / f"{_safe_name(item['id'])}.pdf"
+                    convert_hwpx_to_pdf(app, document, pdf)
+                    try:
+                        app.Clear(1)
+                    except Exception:
+                        pass
+                    rendered = pdfium.PdfDocument(str(pdf))
+                    try:
+                        image = rendered[0].render(scale=110 / 72).to_pil()
+                    finally:
+                        rendered.close()
+                    picture = crop_to_content(image)
+                    picture.thumbnail((640, 640))
+                    temporary = target_dir / f"{_safe_name(item['id'])}.png.tmp"
+                    picture.save(temporary, format="PNG", optimize=True)
+                    temporary.replace(target_dir / f"{_safe_name(item['id'])}.png")
+            finally:
+                if app is not None:
+                    self._close(app)
+                shutil.rmtree(folder, ignore_errors=True)
+            self._remove_old_snapshots(target_dir)
+        return self.list()
+
+    @staticmethod
+    def _remove_old_snapshots(current: Path) -> None:
+        """템플릿 파일이 바뀌어 새 해시 폴더를 만들었으면 예전 해시 폴더의 그림은 지운다."""
+        for folder in current.parent.iterdir():
+            if folder.is_dir() and folder != current and len(folder.name) == len(current.name):
+                shutil.rmtree(folder, ignore_errors=True)
+
+    def command(self, action, payload=None):
+        payload = payload if isinstance(payload, dict) else {}
+        counts = {key: payload.get(key) for key in ("row_count", "col_count")}
+        for key, value in counts.items():
+            if value is not None and (not isinstance(value, int) or isinstance(value, bool)):
+                raise ServiceError("INVALID_INPUT", "정보단위 개수를 확인해 주세요.")
+        if action == "list":
+            return self.list()
+        if action == "thumbnails":
+            return self.thumbnails()
+        if action in ("preview", "copy"):
+            template_id = payload.get("id")
+            if not isinstance(template_id, str) or not template_id:
+                raise ServiceError("INVALID_INPUT", "표 템플릿을 골라 주세요.")
+            method = self.preview if action == "preview" else self.copy
+            return method(template_id, **counts)
+        raise ServiceError("INVALID_INPUT", "표 템플릿 작업을 확인해 주세요.")
+
+
+def _clipboard_formats() -> list[str]:
+    import win32clipboard
+
+    win32clipboard.OpenClipboard()
+    try:
+        names, fmt = [], 0
+        while True:
+            fmt = win32clipboard.EnumClipboardFormats(fmt)
+            if not fmt:
+                return names
+            try:
+                names.append(win32clipboard.GetClipboardFormatName(fmt))
+            except Exception:
+                names.append(str(fmt))
+    finally:
+        win32clipboard.CloseClipboard()

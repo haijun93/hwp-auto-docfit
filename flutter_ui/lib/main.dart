@@ -22,6 +22,7 @@ import 'features/flows/flow_editor_screen.dart';
 import 'features/progress/live_progress.dart';
 import 'features/settings/settings_dialog.dart';
 import 'features/stages/stage_board.dart';
+import 'features/table_units/table_units_screen.dart';
 
 export 'core/api/abbreviation_api.dart' show ApiCall;
 
@@ -562,6 +563,14 @@ class _WorkspaceState extends State<Workspace> {
     );
   }
 
+  Future<void> openTableUnits() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => TableUnitsScreen(api: widget.api),
+      ),
+    );
+  }
+
   Future<void> openDiagramEditor() async {
     if (quickOptions['developer_mode'] != true ||
         quickOptions['diagram_editor_enabled'] != true) {
@@ -817,10 +826,30 @@ class _WorkspaceState extends State<Workspace> {
         onPressed: () => showLog(),
         icon: const Icon(Icons.receipt_long_outlined),
       ),
-      IconButton(
+      // 좁은 화면에서도 도구 줄이 넘치지 않게 표 관련 화면은 한 버튼의 메뉴로 연다.
+      PopupMenuButton<String>(
+        key: const Key('tableToolsMenu'),
         tooltip: '표/다이어그램',
-        onPressed: locked ? null : openFlowEditor,
+        enabled: !locked,
         icon: const Icon(Icons.table_chart_outlined),
+        onSelected: (value) =>
+            value == 'table_units' ? openTableUnits() : openFlowEditor(),
+        itemBuilder: (_) => const [
+          PopupMenuItem(
+            value: 'table_units',
+            child: ListTile(
+              leading: Icon(Icons.grid_on_outlined),
+              title: Text('표 템플릿 (골라서 한/글에 붙여넣기)'),
+            ),
+          ),
+          PopupMenuItem(
+            value: 'flow_editor',
+            child: ListTile(
+              leading: Icon(Icons.account_tree_outlined),
+              title: Text('표/다이어그램 편집기'),
+            ),
+          ),
+        ],
       ),
       // 문서 도구는 설정의 개발자 모드를 켜야 보인다.
       if (quickOptions['developer_mode'] == true)
