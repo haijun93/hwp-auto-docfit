@@ -57,6 +57,21 @@ class SmartLauncherBuildTest(unittest.TestCase):
         self.assertIn("CreateMutexW(None, True, mutex_name)", app_source)
         self.assertIn("scripts\\build_smart_launcher.py", build_source)
 
+    def test_splash_image_has_no_baked_status_text(self):
+        """그림 속 옛 버전·진행 막대·상태 문구가 런처 글과 겹치지 않게(1.80.3 사용자 보고)."""
+        from PIL import Image
+
+        image = Image.open(ROOT / "resources" / "splash.png").convert("RGB")
+        # 버전 줄은 왼쪽 고양이 그림(x<119)을 빼고, 진행 막대·상태 줄은 좌우 테두리만 빼고 비어 있어야 한다.
+        for left, top, bottom in ((119, 82, 99), (4, 166, 181), (4, 194, 215)):
+            for y in range(top, bottom + 1):
+                for x in range(left, image.width - 4):
+                    self.assertEqual(image.getpixel((x, y)), (255, 255, 255), (x, y))
+        source = (ROOT / "launcher" / "smart_launcher.cs").read_text(encoding="utf-8")
+        self.assertNotIn("Color.Transparent", source)
+        self.assertIn("Left = 119, Top = 82", source)
+        self.assertIn("Left = 34, Top = 194", source)
+
     def test_ci_enforces_warm_ui_startup_target(self):
         workflow = (ROOT / ".github" / "workflows" / "build-windows-exe.yml").read_text(encoding="utf-8")
         smoke = (ROOT / "scripts" / "smoke_smart_launcher.py").read_text(encoding="utf-8")

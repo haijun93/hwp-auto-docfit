@@ -20,7 +20,8 @@ class AbbreviationServiceTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name) / "settings.json"
         self.store = SettingsService(lambda: self.path)
-        self.service = AbbreviationService(self.store)
+        # 이 PC의 실제 준말 문서(C:\HWP_AUTODOCFIT\준말관리)를 읽지 않게 빈 임시 폴더를 문서 위치로 준다.
+        self.service = AbbreviationService(self.store, Path(self.temp.name))
 
     def write(self, settings):
         self.path.write_text(json.dumps(settings, ensure_ascii=False), encoding="utf-8")
@@ -78,7 +79,7 @@ class AbbreviationServiceTests(unittest.TestCase):
     def test_default_switch_and_user_entries_survive_reopening(self):
         self.service.save("요약", "text", "결과")
         self.service.set_defaults(False)
-        reopened = AbbreviationService(SettingsService(self.path))
+        reopened = AbbreviationService(SettingsService(self.path), Path(self.temp.name))
         self.assertFalse(reopened.defaults_enabled())
         self.assertEqual([row["key"] for row in reopened.snapshot()["entries"]], ["요약"])
 

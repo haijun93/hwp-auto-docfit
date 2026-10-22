@@ -448,6 +448,7 @@ Flutter UI 빌드는 `powershell -File build_flutter.ps1`로 수행하며 `build
    실제 한/글 문서의 붙여넣기·COM 조판은 별도 검증으로 구분한다.
 6. **태그**: `git tag -a vX.Y-beta.N -m "…"` → `git push github <태그>` → `git push origin <태그>`. GitLab CI(`release-windows`)가 메인 exe·시험용 텍스트를(통합 압축팩은 GitLab 첨부 한도 100MB 때문에 GitHub에만, 2026-10-11), GitHub 릴리스가 메인 exe·통합 압축팩을 자동 첨부합니다. 설정 초기화 exe는 배포하지 않습니다.
 7. 확인: `https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest`가 새 태그를 가리키는지, 내려받은 exe 해시가 노트와 같은지.
+8. **GitLab 내려받기(필수, 2026-10-22)**: 공공기관 PC는 GitHub가 막혀 있고 GitLab 릴리스 페이지는 로그인 없이 404다. GitHub 릴리스 게시 뒤 `.venv\Scripts\python.exe scripts\publish_gitlab_downloads.py X.Y.Z`로 GitLab `downloads` 브랜치(부모 없는 커밋 하나, 강제 갱신)에 exe·SHA256SUMS·예시 TXT를 올리고, README 다운로드 링크(`-/raw/downloads/<파일>?inline=false`)의 버전을 바꾼다. 큰 푸시는 502가 나면 다시 시도한다. GitLab main이 많이 뒤처졌으면 커밋을 몇 개씩 나눠 푸시한다.
 
 ---
 

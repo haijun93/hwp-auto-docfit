@@ -401,7 +401,7 @@ class PrecisionRegressionTest(unittest.TestCase):
                 archive.writestr("Contents/header.xml", ET.tostring(_header()))
                 archive.writestr("Contents/section0.xml", ET.tostring(_grid(3, 3)))
             original = source.read_bytes()
-            abbreviations = AbbreviationService(SettingsService(Path(folder) / "settings.json"))
+            abbreviations = AbbreviationService(SettingsService(Path(folder) / "settings.json"), Path(folder))
             service = TableTemplateService(abbreviations)
             service.command("learn", {"path": str(source)})
             self.assertEqual(table_style_of(abbreviations.user_entries())["rows"], 3)

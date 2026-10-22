@@ -18,6 +18,7 @@ on:
       - release/1.80.1
       - release/1.80.2
       - release/1.80.3
+      - release/1.80.4
       - claude/affectionate-goldberg-ggln7c
   workflow_dispatch: {}
 

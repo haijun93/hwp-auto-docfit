@@ -8,8 +8,8 @@
 </p>
 
 <p align="center">
-<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.3/HWP_AutoDocFit_v1.80.3_Portable.exe"><img alt="무설치로 바로 받기" src="https://img.shields.io/badge/%E2%AC%87%20%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%94%EB%A1%9C%20%EB%B0%9B%EA%B8%B0-v1.80.3-2563eb?style=for-the-badge"></a>
-<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.3/HWP_AutoDocFit_v1.80.3_Setup.exe"><img alt="설치용 받기" src="https://img.shields.io/badge/%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0-Setup-0ea5e9?style=for-the-badge"></a>
+<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.4_Portable.exe?inline=false"><img alt="무설치로 바로 받기" src="https://img.shields.io/badge/%E2%AC%87%20%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%94%EB%A1%9C%20%EB%B0%9B%EA%B8%B0-v1.80.4-2563eb?style=for-the-badge"></a>
+<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.4_Setup.exe?inline=false"><img alt="설치용 받기" src="https://img.shields.io/badge/%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0-Setup-0ea5e9?style=for-the-badge"></a>
 </p>
 <p align="center">
 <img alt="무료" src="https://img.shields.io/badge/%EA%B0%80%EA%B2%A9-%EB%AC%B4%EB%A3%8C-16a34a">
@@ -25,8 +25,13 @@
 
 ---
 
-<h2 align="center">새로워진 v1.80.3</h2>
-<p align="center">멈추면 바로 멈추고, 준말은 한/글 문서로. 옵션은 그림으로 한눈에.</p>
+<h2 align="center">새로워진 v1.80.4</h2>
+<p align="center">멈추면 바로 멈추고, 준말은 한/글 문서로. 옵션은 그림으로 한눈에. 이제 기관 PC에서도 GitLab에서 바로 받습니다.</p>
+
+### GitLab에서 바로 받기, 실행 준비 창은 또렷하게. (1.80.4)
+
+GitHub가 막힌 기관 PC에서도 위 「받기」 링크가 GitLab에서 바로 내려받습니다.
+처음 실행할 때 뜨는 「실행 준비」 창에서 옛 안내 문구와 새 문구가 겹쳐 보이던 문제를 고쳤습니다.
 
 ### 작업 중단·창 닫기, 이제 확실하게.
 
@@ -215,13 +220,15 @@
 
 | 파일 | 용도 |
 |---|---|
-| **[포터블 · HWP_AutoDocFit_v1.80.3_Portable.exe](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.3/HWP_AutoDocFit_v1.80.3_Portable.exe)** | 설치 없이 바로 실행 |
-| [설치용 · HWP_AutoDocFit_v1.80.3_Setup.exe](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.3/HWP_AutoDocFit_v1.80.3_Setup.exe) | 시작 메뉴 등록, Windows 앱 제거로 정리 |
-| [SHA256SUMS](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.3/SHA256SUMS) | 내려받은 파일 확인용 해시 |
+| **[포터블 · HWP_AutoDocFit_v1.80.4_Portable.exe](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.4_Portable.exe?inline=false)** | 설치 없이 바로 실행 |
+| [설치용 · HWP_AutoDocFit_v1.80.4_Setup.exe](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.4_Setup.exe?inline=false) | 시작 메뉴 등록, Windows 앱 제거로 정리 |
+| [보고서 예시 파일(한번에 적용).txt](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/%EB%B3%B4%EA%B3%A0%EC%84%9C%20%EC%98%88%EC%8B%9C%20%ED%8C%8C%EC%9D%BC%28%ED%95%9C%EB%B2%88%EC%97%90%20%EC%A0%81%EC%9A%A9%29.txt?inline=false) | 처음 체험용 예시 |
+| [SHA256SUMS](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/SHA256SUMS?inline=false) | 내려받은 파일 확인용 해시 |
 
 - **필요한 것**: Windows 10·11(64비트), 문서를 편집할 수 있는 **한컴오피스 한/글**(2020에서 검증). Python 등 다른 설치는 필요 없습니다.
 - 변환 엔진은 실행 파일에 들어 있습니다. 첫 실행 때 `C:\HWP_AUTODOCFIT`(쓰기 권한이 없으면 `%LOCALAPPDATA%\HwpAutoDocFit`)에 풀며, 인터넷에서 받지 않습니다.
-- [전체 릴리스](https://github.com/haijun93/hwp-auto-docfit/releases/latest) · [v1.80.3 변경 사항](releases/v1.80.3.md) · [GitHub](https://github.com/haijun93/hwp-auto-docfit) · [GitLab](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
+- 위 링크는 공공기관 PC에서도 열리는 **GitLab**(gitlab.aigov.go.kr)에서 받습니다. 기관망 밖에서는 [GitHub 릴리스](https://github.com/haijun93/hwp-auto-docfit/releases/latest)에서도 같은 파일(같은 SHA-256)을 받을 수 있습니다.
+- [v1.80.4 변경 사항](releases/v1.80.4.md) · [GitHub](https://github.com/haijun93/hwp-auto-docfit) · [GitLab](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
 
 ---
 
@@ -269,5 +276,5 @@
 
 <p align="center">
 <a href="docs/USER_GUIDE.md"><b>자세한 사용 설명서</b></a> — 기능별 사용법·옵션·결과 파일·문제 해결<br>
-<a href="releases/v1.80.3.md">v1.80.3 변경 사항</a> · <a href="HANDOVER.md">개발 인수인계 문서</a> · <a href="THIRD_PARTY_NOTICES.md">사용한 오픈소스</a> · <a href="LICENSE">라이선스</a>
+<a href="releases/v1.80.4.md">v1.80.4 변경 사항</a> · <a href="HANDOVER.md">개발 인수인계 문서</a> · <a href="THIRD_PARTY_NOTICES.md">사용한 오픈소스</a> · <a href="LICENSE">라이선스</a>
 </p>

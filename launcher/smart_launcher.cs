@@ -392,9 +392,11 @@ internal static class SmartLauncher
                     BackgroundImage = new System.Drawing.Bitmap(image);
             }
             BackgroundImageLayout = ImageLayout.Stretch;
+            // 배경 그림(resources/splash.png)에는 버전·진행 막대·상태 문구를 넣지 않는다.
+            // 바뀌는 글은 여기서만 그려야 그림 속 옛 문구와 겹치지 않는다(1.80.3 사용자 보고).
             versionLabel = new Label
             {
-                Left = 34, Top = 77, Width = 240, Height = 23,
+                Left = 119, Top = 82, Width = 340, Height = 18,
                 BackColor = System.Drawing.Color.White,
                 ForeColor = System.Drawing.Color.FromArgb(83, 104, 145),
                 Font = new System.Drawing.Font("Malgun Gothic", 8.5f),
@@ -402,8 +404,8 @@ internal static class SmartLauncher
             };
             label = new Label
             {
-                Left = 34, Top = 194, Width = 430, Height = 22,
-                BackColor = System.Drawing.Color.Transparent,
+                Left = 34, Top = 194, Width = 432, Height = 20,
+                BackColor = System.Drawing.Color.White,
                 ForeColor = System.Drawing.Color.FromArgb(83, 104, 145),
                 Font = new System.Drawing.Font("Malgun Gothic", 8.5f),
                 Text = "최초 실행 자료를 준비하고 있습니다."
