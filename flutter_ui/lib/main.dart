@@ -10,6 +10,7 @@ import 'bridge.dart' as bridge;
 import 'core/api/abbreviation_api.dart';
 import 'core/close_guards.dart';
 import 'core/drop_events.dart';
+import 'features/preview/option_images.dart';
 import 'features/abbreviations/abbreviation_manager.dart';
 import 'features/formats/table_template_panel.dart';
 import 'features/formats/profile_editor.dart';
@@ -1435,6 +1436,7 @@ class _WorkspaceState extends State<Workspace> {
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
+            const OptionImageButton('spacing_enabled'),
             Switch(
               key: const Key('spacingEnabledSwitch'),
               value: spacingEnabled,
@@ -1452,6 +1454,7 @@ class _WorkspaceState extends State<Workspace> {
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
+            const OptionImageButton('spacing_page_fit'),
             Switch(
               key: const Key('spacingPageFitSwitch'),
               value: spacingPageFit,
@@ -1538,6 +1541,7 @@ class _WorkspaceState extends State<Workspace> {
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
+              OptionImageButton(o.$1),
               Switch(
                 key: Key('${o.$1}Switch'),
                 value: cardOption(o.$1),
@@ -1562,6 +1566,7 @@ class _WorkspaceState extends State<Workspace> {
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
+            const OptionImageButton('all_include_spacing'),
             Switch(
               key: const Key('includeSpacingSwitch'),
               value: includeSpacing,

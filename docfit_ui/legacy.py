@@ -5816,80 +5816,108 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         pass
 
             def 버튼_작업중(self):
+                def _위젯_상태(이름, state):
+                    위젯 = getattr(self, 이름, None) if isinstance(이름, str) else 이름
+                    if 위젯 is not None:
+                        try:
+                            위젯.config(state=state)
+                        except tk.TclError:
+                            pass
+
                 self._작업방식_버튼상태("disabled")
-                self.profile_combo.config(state="disabled")
-                self.main_profile_combo.config(state="disabled")
-                self.copy_format_button.config(state="disabled")
+                for 이름 in getattr(self, "_프로파일_콤보_이름목록", ("profile_combo", "main_profile_combo")):
+                    _위젯_상태(이름, "disabled")
+                _위젯_상태("copy_format_button", "disabled")
                 self._설정탭_상태_갱신()   # 세부 설정 버튼은 켜 둔다(처리 기록 탭만 사용 가능)
-                self.keep_punctuation_set_check.config(state="disabled")
+                _위젯_상태("keep_punctuation_set_check", "disabled")
                 self._실행버튼_상태("disabled")
-                self.stop_button.config(state="normal")
-                self.clear_button.config(state="disabled")
-                self.document_review_button.config(state="disabled")
-                self.prevent_word_split_check.config(state="disabled")
-                self.punctuation_check.config(state="disabled")
-                self.punctuation_threshold_spin.config(state="disabled")
-                self.table_spacing_check.config(state="disabled")
-                self.log_file_check.config(state="disabled")
-                for 위젯 in (self.page_range_toggle, self.range_all_radio, self.range_pages_radio,
-                             self.range_start_spin, self.range_end_spin):
-                    위젯.config(state="disabled")
-                self.retry_body_spin.config(state="disabled")
-                self.retry_table_spin.config(state="disabled")
-                self.two_pass_check.config(state="disabled")
-                self.color_mark_check.config(state="disabled")
-                for 라디오 in self.color_radios:
-                    라디오.config(state="disabled")
-                for 체크 in self.std_detail_checks:
-                    체크.config(state="disabled")
-                for 스핀 in self.std_parspace_spins:
-                    스핀.config(state="disabled")
-                self.autoclose_check.config(state="disabled")
-                self.stdformat_check.config(state="disabled")
-                self.paren_shrink_check.config(state="disabled")
-                self.paren_label_bold_check.config(state="disabled")
-                for check in self.label_symbol_checks:
-                    check.config(state="disabled")
-                self.verify_check.config(state="disabled")
-                self.integrity_report_file_check.config(state="disabled")
-                self.final_review_file_check.config(state="disabled")
+                _위젯_상태("stop_button", "normal")
+                _위젯_상태("clear_button", "disabled")
+                _위젯_상태("document_review_button", "disabled")
+                _위젯_상태("prevent_word_split_check", "disabled")
+                _위젯_상태("punctuation_check", "disabled")
+                _위젯_상태("punctuation_threshold_spin", "disabled")
+                _위젯_상태("table_spacing_check", "disabled")
+                _위젯_상태("log_file_check", "disabled")
+                for 위젯 in ("page_range_toggle", "range_all_radio", "range_pages_radio",
+                             "range_start_spin", "range_end_spin"):
+                    _위젯_상태(위젯, "disabled")
+                _위젯_상태("retry_body_spin", "disabled")
+                _위젯_상태("retry_table_spin", "disabled")
+                _위젯_상태("two_pass_check", "disabled")
+                _위젯_상태("color_mark_check", "disabled")
+                for 라디오 in (getattr(self, "color_radios", None) or ()):
+                    _위젯_상태(라디오, "disabled")
+                for 체크 in (getattr(self, "std_detail_checks", None) or ()):
+                    _위젯_상태(체크, "disabled")
+                for 스핀 in (getattr(self, "std_parspace_spins", None) or ()):
+                    _위젯_상태(스핀, "disabled")
+                _위젯_상태("autoclose_check", "disabled")
+                _위젯_상태("stdformat_check", "disabled")
+                _위젯_상태("paren_shrink_check", "disabled")
+                _위젯_상태("paren_label_bold_check", "disabled")
+                for check in (getattr(self, "label_symbol_checks", None) or ()):
+                    _위젯_상태(check, "disabled")
+                _위젯_상태("verify_check", "disabled")
+                _위젯_상태("integrity_report_file_check", "disabled")
+                _위젯_상태("final_review_file_check", "disabled")
 
             def 버튼_대기중(self):
+                def _위젯_상태(이름, state):
+                    위젯 = getattr(self, 이름, None) if isinstance(이름, str) else 이름
+                    if 위젯 is not None:
+                        try:
+                            위젯.config(state=state)
+                        except tk.TclError:
+                            pass
+
                 self._작업방식_버튼상태("normal")
                 self._요약갱신()
-                self.profile_combo.config(state="readonly")
-                self.main_profile_combo.config(state="readonly")
-                self.copy_format_button.config(state="normal")
-                self.settings_button.config(state="normal")
+                for 이름 in getattr(self, "_프로파일_콤보_이름목록", ("profile_combo", "main_profile_combo")):
+                    _위젯_상태(이름, "readonly")
+                _위젯_상태("copy_format_button", "normal")
+                _위젯_상태("settings_button", "normal")
                 self._설정탭_상태_갱신()
-                self.keep_punctuation_set_check.config(state="normal")
+                _위젯_상태("keep_punctuation_set_check", "normal")
                 self._실행버튼_상태("normal" if self.files else "disabled")
-                self.stop_button.config(state="disabled")
-                self.clear_button.config(state="normal")
-                self.document_review_button.config(state="normal")
-                self.prevent_word_split_check.config(state="normal")
-                self.punctuation_check.config(state="normal")
-                self.punctuation_threshold_spin.config(state="normal")
-                self.table_spacing_check.config(state="normal")
-                self.log_file_check.config(state="normal")
-                self.page_range_toggle.config(state="normal")
-                self.range_all_radio.config(state="normal")
-                self.range_pages_radio.config(state="normal")
-                self._범위_상태_갱신()
-                self.retry_body_spin.config(state="normal")
-                self.retry_table_spin.config(state="normal")
-                self.two_pass_check.config(state="normal")
-                self.color_mark_check.config(state="normal")
+                _위젯_상태("stop_button", "disabled")
+                _위젯_상태("clear_button", "normal")
+                _위젯_상태("document_review_button", "normal")
+                _위젯_상태("prevent_word_split_check", "normal")
+                _위젯_상태("punctuation_check", "normal")
+                _위젯_상태("punctuation_threshold_spin", "normal")
+                _위젯_상태("table_spacing_check", "normal")
+                _위젯_상태("log_file_check", "normal")
+                _위젯_상태("page_range_toggle", "normal")
+                _위젯_상태("range_all_radio", "normal")
+                _위젯_상태("range_pages_radio", "normal")
+                if all(getattr(self, 이름, None) is not None for 이름 in ('range_mode_var', 'range_start_spin', 'range_end_spin')):
+                    try:
+                        self._범위_상태_갱신()
+                    except tk.TclError:
+                        pass
+                _위젯_상태("retry_body_spin", "normal")
+                _위젯_상태("retry_table_spin", "normal")
+                _위젯_상태("two_pass_check", "normal")
+                _위젯_상태("color_mark_check", "normal")
 
-                self.autoclose_check.config(state="normal")
-                self.stdformat_check.config(state="normal")
-                self.paren_shrink_check.config(state="normal")
-                self.paren_label_bold_check.config(state="normal")
-                self.verify_check.config(state="normal")
-                self.integrity_report_file_check.config(state="normal")
-                self.final_review_file_check.config(state="normal")
-                self._색상표시_상태_갱신()
-                self._표준서식_하위옵션_상태_갱신()
+                _위젯_상태("autoclose_check", "normal")
+                _위젯_상태("stdformat_check", "normal")
+                _위젯_상태("paren_shrink_check", "normal")
+                _위젯_상태("paren_label_bold_check", "normal")
+                _위젯_상태("verify_check", "normal")
+                _위젯_상태("integrity_report_file_check", "normal")
+                _위젯_상태("final_review_file_check", "normal")
+                if all(getattr(self, 이름, None) is not None for 이름 in ('color_mark_on_var',)):
+                    try:
+                        self._색상표시_상태_갱신()
+                    except tk.TclError:
+                        pass
+                if all(getattr(self, 이름, None) is not None for 이름 in ('stdformat_var', 'paren_label_bold_var')):
+                    try:
+                        self._표준서식_하위옵션_상태_갱신()
+                    except tk.TclError:
+                        pass
 
             def 비교창_준비(self):
                 if self.compare_toplevel is not None and self.compare_toplevel.winfo_exists():
@@ -5975,6 +6003,10 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 files = list(self.files)
                 if any(Path(path).suffix.lower() not in CONVERSION_INPUTS for path in files):
                     raise ValueError("지원하는 입력 형식만 변환할 수 있습니다.")
+
+                if self.settings_toplevel is None or not self.settings_toplevel.winfo_exists():
+                    self._설정창_생성()
+                    self.settings_toplevel.withdraw()
 
                 self.running = True
                 self.closing = False
@@ -6284,6 +6316,20 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 self.stop_button.config(state="disabled")
                 self.status_var.set("작업 중단 처리 중...")
                 self.로그표시("사용자가 작업 중단을 요청했습니다.")
+                self._중단_대상_worker = self.worker
+                previous = getattr(self, "_중단_예약", None)
+                if previous is not None:
+                    self.root.after_cancel(previous)
+                self._중단_예약 = self.root.after(10000, self._중단_유예_확인)
+
+            def _중단_유예_확인(self):
+                from docfit_core.hwp_process import kill_owned
+                worker = getattr(self, "_중단_대상_worker", None)
+                if worker is self.worker and worker is not None and worker.is_alive() and 중단_event.is_set():
+                    if kill_owned():
+                        message = "한/글이 응답하지 않아 앱이 띄운 한/글을 강제로 종료했어요."
+                        self.로그표시(message)
+                        self.status_var.set(message)
 
             def _서식통일_대표값_검토_요청(self, kind, payload):
                 from docfit_engine.context import current_context
@@ -6352,6 +6398,11 @@ def _install(*, _docfit_namespace, _docfit_symbol):
 
             def _알림(self, 함수, *args, **kwargs):
                 """웹 화면 모드에서도 메시지 창이 보이도록 임시 부모로 띄운다."""
+                labels = {}
+                for key in ("ok_label", "cancel_label"):
+                    value = kwargs.pop("flutter_" + key, None)
+                    if value is not None:
+                        labels[key] = value
                 if getattr(self.root, "_docfit_hidden_backend", False):
                     import uuid
                     done = tk.BooleanVar(master=self.root, value=False)
@@ -6361,6 +6412,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                                "choices": kwargs.pop("flutter_choices", []),
                                "fields": kwargs.pop("flutter_fields", []),
                                "done": done, "answer": False}
+                    pending.update(labels)
                     self._flutter_dialog = pending
                     try:
                         self.root.wait_variable(done)
@@ -7000,9 +7052,18 @@ def _install(*, _docfit_namespace, _docfit_symbol):
 
             def 종료(self):
                 if self.closing:
+                    if self._알림(messagebox.askyesno, APP_NAME,
+                                 "지금 강제로 종료할까요? 앱이 띄운 한/글도 함께 닫힙니다.",
+                                 flutter_ok_label="강제로 종료", flutter_cancel_label="계속 기다리기"):
+                        self._강제_종료()
                     return
                 if self.running:
-                    if not self._알림(messagebox.askyesno, APP_NAME, "현재 자간 조정 작업이 진행 중입니다.\n\n작업을 중단하고 종료하시겠습니까?"):
+                    names = {"file_format": "파일포맷 변경", "spacing": "자간 정리",
+                             "format": "서식 적용", "all": "한 번에 적용", "unify": "서식 통일"}
+                    name = names.get(self.selected_mode.get(), "작업")
+                    if not self._알림(messagebox.askyesno, APP_NAME,
+                                     f"현재 {name} 작업이 진행 중입니다.\n\n작업을 중단하고 종료할까요?",
+                                     flutter_ok_label="작업 중단하고 종료", flutter_cancel_label="계속 진행"):
                         return
                     self.closing = True
                     중단_event.set()
@@ -7018,11 +7079,38 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 작업창_분리()
 
             def worker_종료확인(self):
+                import time
+                from docfit_core.hwp_process import kill_owned
+                now = time.monotonic()
+                if getattr(self, "_종료_시작시각", None) is None:
+                    self._종료_시작시각 = now
                 if self.worker is not None and self.worker.is_alive():
+                    elapsed = now - self._종료_시작시각
+                    if elapsed >= 10 and not getattr(self, "_종료_한글정리됨", False):
+                        self._종료_한글정리됨 = True
+                        kill_owned(log=self.로그표시)
+                    if elapsed >= 15:
+                        self._강제_종료()
+                        return
                     self.root.after(200, self.worker_종료확인)
                     return
                 self._비교창_분리_후_보존()
                 self.root.destroy()
+            def _강제_종료(self):
+                import os
+                from docfit_core.hwp_process import kill_owned
+                try:
+                    kill_owned(log=self.로그표시)
+                except Exception:
+                    pass
+                try:
+                    self._비교창_분리_후_보존()
+                except Exception:
+                    pass
+                try:
+                    self.로그표시("작업이 응답하지 않아 프로그램을 강제로 종료합니다.")
+                finally:
+                    getattr(self, "_프로세스_종료", os._exit)(0)
         return bind_class(HwpAutoDocFitGUI, _docfit_namespace)
     if _docfit_symbol == '_새창_맨앞으로':
         def _새창_맨앞으로(event_or_window):

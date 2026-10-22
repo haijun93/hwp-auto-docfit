@@ -284,4 +284,46 @@ void main() {
         throwsA(isA<ServiceApiException>()
             .having((error) => error.code, 'code', 'API_VERSION')));
   });
+
+  testWidgets('document mode opens the HWPX and hides in-app editing',
+      (tester) async {
+    tester.view.physicalSize = const Size(420, 820);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final data = snapshot()
+      ..['source'] = 'document'
+      ..['document'] = {
+        'path': r'C:\HWP_AUTODOCFIT\준말관리\준말관리.hwpx',
+        'exists': true,
+        'errors': ["'가': 본말이 비어 있습니다."],
+      };
+    final calls = <List<Object?>>[];
+    Future<Object?> api(String name, List<Object?> args) async {
+      calls.add([name, ...args]);
+      if (name == 'abbreviation_document' && args[0] == 'use_settings') {
+        data['source'] = 'settings';
+      }
+      return envelope(data);
+    }
+
+    await tester.pumpWidget(
+        MaterialApp(home: Scaffold(body: AbbreviationManager(api: api))));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('abbreviationDocumentPanel')), findsOneWidget);
+    expect(find.byKey(const Key('addAbbreviationButton')), findsNothing);
+    expect(find.byKey(const Key('editAbbreviation-요약')), findsNothing);
+    expect(find.textContaining('본말이 비어'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('openAbbreviationDocument')));
+    await tester.pumpAndSettle();
+    expect(calls.last, ['abbreviation_document', 'open']);
+    await tester.tap(find.byKey(const Key('reloadAbbreviationDocument')));
+    await tester.pumpAndSettle();
+    expect(calls.last, ['abbreviation_document', 'reload']);
+    await tester.tap(find.text('앱 설정 사용'));
+    await tester.pumpAndSettle();
+    expect(calls.last, ['abbreviation_document', 'use_settings']);
+    expect(find.byKey(const Key('addAbbreviationButton')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

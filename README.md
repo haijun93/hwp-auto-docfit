@@ -8,8 +8,8 @@
 </p>
 
 <p align="center">
-<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.2/HWP_AutoDocFit_v1.80.2_Portable.exe"><img alt="무설치로 바로 받기" src="https://img.shields.io/badge/%E2%AC%87%20%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%94%EB%A1%9C%20%EB%B0%9B%EA%B8%B0-v1.80.2-2563eb?style=for-the-badge"></a>
-<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.2/HWP_AutoDocFit_v1.80.2_Setup.exe"><img alt="설치용 받기" src="https://img.shields.io/badge/%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0-Setup-0ea5e9?style=for-the-badge"></a>
+<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.3/HWP_AutoDocFit_v1.80.3_Portable.exe"><img alt="무설치로 바로 받기" src="https://img.shields.io/badge/%E2%AC%87%20%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%94%EB%A1%9C%20%EB%B0%9B%EA%B8%B0-v1.80.3-2563eb?style=for-the-badge"></a>
+<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.3/HWP_AutoDocFit_v1.80.3_Setup.exe"><img alt="설치용 받기" src="https://img.shields.io/badge/%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0-Setup-0ea5e9?style=for-the-badge"></a>
 </p>
 <p align="center">
 <img alt="무료" src="https://img.shields.io/badge/%EA%B0%80%EA%B2%A9-%EB%AC%B4%EB%A3%8C-16a34a">
@@ -25,8 +25,25 @@
 
 ---
 
-<h2 align="center">새로워진 v1.80.2</h2>
-<p align="center">첨부 한도에 걸리던 PDF는 가볍게. 기호가 무엇이든 위계대로. 둘째 줄까지 반듯하게.</p>
+<h2 align="center">새로워진 v1.80.3</h2>
+<p align="center">멈추면 바로 멈추고, 준말은 한/글 문서로. 옵션은 그림으로 한눈에.</p>
+
+### 작업 중단·창 닫기, 이제 확실하게.
+
+파일포맷 변경(HWPX→PDF)을 시작하면 바로 오류가 나던 문제를 고쳤습니다.
+한/글이 응답하지 않아도 **「작업 중단」 10초 뒤** 앱이 띄운 한/글을 정리해 작업을 끝냅니다. 창을 닫을 때는 15초 안에 반드시 닫히고, 한 번 더 닫으면 바로 강제 종료할 수 있습니다.
+사용자가 따로 연 한/글은 건드리지 않습니다. 종료 확인 문구도 지금 하는 작업 이름과 「작업 중단하고 종료 / 계속 진행」 버튼으로 바꿨습니다.
+
+### 준말은 한/글 문서에서 고칩니다.
+
+「준말 관리」에서 **한/글로 준말 문서를 열어** `#준말` 아래 문단에 본말을 쓰고 저장하면 끝입니다. 작업을 시작할 때마다 문서를 다시 읽어 항상 최신 값을 씁니다.
+제목·개요·중제목·붙임·표 서식 표는 본말에 `[서식:제목1]`처럼 적습니다. 지금까지 앱에 등록한 준말은 처음 문서를 만들 때 그대로 옮겨집니다.
+
+### 옵션 설명은 적용 전·후 그림으로.
+
+작업 방식 카드·세부 작업·설정 옆에 **실제 전·후 비교 그림**을 보여 줍니다. 그림을 누르면 크게 볼 수 있습니다. 조판 미리보기 엔진(자산 약 12MB)은 빼고 그림 1.4MB로 바꿨습니다.
+
+### 1.80.2 — 첨부 한도에 걸리던 PDF는 가볍게. 기호가 무엇이든 위계대로. 둘째 줄까지 반듯하게.
 
 ### 무거운 PDF, 가볍게. 보안 PDF도 보안 그대로.
 
@@ -198,13 +215,13 @@
 
 | 파일 | 용도 |
 |---|---|
-| **[포터블 · HWP_AutoDocFit_v1.80.2_Portable.exe](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.2/HWP_AutoDocFit_v1.80.2_Portable.exe)** | 설치 없이 바로 실행 |
-| [설치용 · HWP_AutoDocFit_v1.80.2_Setup.exe](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.2/HWP_AutoDocFit_v1.80.2_Setup.exe) | 시작 메뉴 등록, Windows 앱 제거로 정리 |
-| [SHA256SUMS](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.2/SHA256SUMS) | 내려받은 파일 확인용 해시 |
+| **[포터블 · HWP_AutoDocFit_v1.80.3_Portable.exe](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.3/HWP_AutoDocFit_v1.80.3_Portable.exe)** | 설치 없이 바로 실행 |
+| [설치용 · HWP_AutoDocFit_v1.80.3_Setup.exe](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.3/HWP_AutoDocFit_v1.80.3_Setup.exe) | 시작 메뉴 등록, Windows 앱 제거로 정리 |
+| [SHA256SUMS](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.3/SHA256SUMS) | 내려받은 파일 확인용 해시 |
 
 - **필요한 것**: Windows 10·11(64비트), 문서를 편집할 수 있는 **한컴오피스 한/글**(2020에서 검증). Python 등 다른 설치는 필요 없습니다.
 - 변환 엔진은 실행 파일에 들어 있습니다. 첫 실행 때 `C:\HWP_AUTODOCFIT`(쓰기 권한이 없으면 `%LOCALAPPDATA%\HwpAutoDocFit`)에 풀며, 인터넷에서 받지 않습니다.
-- [전체 릴리스](https://github.com/haijun93/hwp-auto-docfit/releases/latest) · [v1.80.2 변경 사항](releases/v1.80.2.md) · [GitHub](https://github.com/haijun93/hwp-auto-docfit) · [GitLab](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
+- [전체 릴리스](https://github.com/haijun93/hwp-auto-docfit/releases/latest) · [v1.80.3 변경 사항](releases/v1.80.3.md) · [GitHub](https://github.com/haijun93/hwp-auto-docfit) · [GitLab](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
 
 ---
 
@@ -252,5 +269,5 @@
 
 <p align="center">
 <a href="docs/USER_GUIDE.md"><b>자세한 사용 설명서</b></a> — 기능별 사용법·옵션·결과 파일·문제 해결<br>
-<a href="releases/v1.80.2.md">v1.80.2 변경 사항</a> · <a href="HANDOVER.md">개발 인수인계 문서</a> · <a href="THIRD_PARTY_NOTICES.md">사용한 오픈소스</a> · <a href="LICENSE">라이선스</a>
+<a href="releases/v1.80.3.md">v1.80.3 변경 사항</a> · <a href="HANDOVER.md">개발 인수인계 문서</a> · <a href="THIRD_PARTY_NOTICES.md">사용한 오픈소스</a> · <a href="LICENSE">라이선스</a>
 </p>

@@ -215,9 +215,22 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             prog_id = "HwpFrame.HwpObject"
             오류들 = []
             생성기들 = (win32.DispatchEx, win32.Dispatch) if 독립 else (win32.Dispatch,)
-            for 생성기 in 생성기들:
+            from docfit_core import hwp_process
+            for index, 생성기 in enumerate(생성기들):
+                before = None
+                if 독립 and index == 0:
+                    try:
+                        before = hwp_process.hwp_pids()
+                    except Exception:
+                        pass
                 try:
-                    return 생성기(prog_id)
+                    app = 생성기(prog_id)
+                    if before is not None:
+                        try:
+                            hwp_process.register_owned(hwp_process.hwp_pids() - before)
+                        except Exception:
+                            pass
+                    return app
                 except Exception as 오류:
                     오류들.append(f"{getattr(생성기, '__name__', 'COM 생성기')}: {오류}")
             설명 = " | ".join(오류들)

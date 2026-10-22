@@ -5,8 +5,6 @@ import 'package:flutter/material.dart';
 import '../../core/api/abbreviation_api.dart';
 import '../settings/kiosk_theme.dart';
 import 'element_preview.dart';
-import '../preview/hwp_typeset_preview.dart';
-import '../preview/typeset_spec.dart';
 
 /// 서식 세부 편집: 왼쪽에서 요소(문장 계층·서식 표·일반 표·쪽)를 고르고,
 /// 오른쪽에서 '문서에서 이렇게 보여요' 미리보기를 보며 값을 바꾼다.
@@ -282,21 +280,9 @@ class _ProfileEditorState extends State<ProfileEditor> {
     );
   }
 
-  /// 요소 미리보기: rhwp 조판 엔진으로 한/글처럼 그리고, 쓸 수 없으면 기존 미리보기를 보인다(쪽 여백은 기존 그림).
-  Widget _typeset(Map node, Map<String, String> values) {
-    final path = node['path'] as List;
-    final label = '${node['label']}';
-    final fallback = elementPreview(path, label, values);
-    final spec = elementSpec(path, label, values);
-    if (spec == null) return fallback;
-    return HwpTypesetPreview(
-      key: ValueKey('element-typeset-${path.join('/')}'),
-      spec: spec,
-      fallback: fallback,
-      minHeight: 120,
-      maxHeight: 420,
-    );
-  }
+  /// 요소 미리보기: 지금 값으로 그린 앱 내 미리보기(1.80.3부터 rhwp 조판 엔진은 쓰지 않음).
+  Widget _typeset(Map node, Map<String, String> values) =>
+      elementPreview(node['path'] as List, '${node['label']}', values);
 
   Widget _detail(Map node) {
     final fields = [for (final f in node['fields'] as List) f as Map];

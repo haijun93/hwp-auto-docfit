@@ -3680,8 +3680,17 @@ def _install(*, _docfit_namespace, _docfit_symbol):
         return bind_function(쪽번호_hwpx_처리, _docfit_namespace)
     if _docfit_symbol == '준말_사용표_만들기':
         def 준말_사용표_만들기(설정):
-            """설정의 준말 등록과 기본 준말(제목1·제목2·개요·붙임·로1~로10)을 합친 사용표. 사용자가 같은 준말을 등록하면 그 등록이 우선한다."""
-            return 준말_기본_병합(설정.get('abbreviations'), 설정.get('abbreviation_defaults', True))
+            """준말 사용표. 출처가 준말 관리 HWPX 문서이면 부를 때마다 문서를 다시 읽고(1.80.3),
+            앱 설정이면 설정의 준말 등록과 기본 준말(제목1·제목2·개요·붙임·로1~로10)을 합친다. 같은 준말은 사용자 등록이 우선한다."""
+            if 설정.get('abbreviation_source') != 'document':
+                return 준말_기본_병합(설정.get('abbreviations'), 설정.get('abbreviation_defaults', True))
+            from docfit_core.abbreviation_doc import effective_registry
+            사용표, 오류들, 출처 = effective_registry(설정, HWP_AUTOMATION_DIR)
+            for 오류 in 오류들[:20]:
+                로그(f"준말 문서: {오류}")
+            if 출처 == 'document':
+                로그(f"준말 문서에서 준말 {len(사용표)}개를 읽었습니다.")
+            return 사용표
         return bind_function(준말_사용표_만들기, _docfit_namespace)
     if _docfit_symbol == '준말_선행적용':
         def 준말_선행적용(원본문서경로, 현재문서_기준=True, 변경알림=None):

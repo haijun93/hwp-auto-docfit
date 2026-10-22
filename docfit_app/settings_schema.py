@@ -37,6 +37,8 @@ DEFAULTS = {
     "std_midtitle_bold": True,
     "abbreviations": {},
     "abbreviation_defaults": True,
+    # 준말 출처: "document"=준말 관리 HWPX 문서(C:\HWP_AUTODOCFIT\준말관리), "settings"=앱 설정(1.80.2까지)
+    "abbreviation_source": "document",
     "std_title_bold": True,
     "std_dateinfo": True,
     "std_dateinfo_bold": True,

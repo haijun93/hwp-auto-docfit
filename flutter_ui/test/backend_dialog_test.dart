@@ -1,10 +1,33 @@
 import 'dart:async';
+import 'package:docfit_ui/features/tools/backend_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:docfit_ui/main.dart';
 import 'workspace_test.dart' show initialState;
 
 void main() {
+  testWidgets('custom close confirmation labels', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BackendDialog(
+          api: (method, args) async => null,
+          data: const {
+            'id': 'close',
+            'title': '종료',
+            'message': '종료할까요?',
+            'confirm': true,
+            'ok_label': '작업 중단하고 종료',
+            'cancel_label': '계속 진행',
+          },
+        ),
+      ),
+    );
+    expect(find.text('작업 중단하고 종료'), findsOneWidget);
+    expect(find.text('계속 진행'), findsOneWidget);
+    expect(find.text('확인 후 진행'), findsNothing);
+    expect(find.text('취소'), findsNothing);
+  });
+
   testWidgets(
     'busy command keeps polling confirmation and applies explicit choices',
     (tester) async {

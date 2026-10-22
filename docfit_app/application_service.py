@@ -48,7 +48,7 @@ class ApplicationService:
     def dispatch(self, method, args):
         counts = {'handshake':0,'get_state':0,'get_settings':0,'save_settings':2,
                   'get_abbreviations':0,'save_abbreviation':4,'delete_abbreviation':1,
-                  'set_abbreviation_defaults':1,'add_paths':1,'remove_file':1,
+                  'set_abbreviation_defaults':1,'abbreviation_document':1,'add_paths':1,'remove_file':1,
                   'clear_files':0,'set_mode':1,'inspect_document':1,'get_log':0,'clear_log':0,'shutdown':0}
         counts.update({'table_template':2,'document_tool':2,'get_pending_dialog':0,'stage_config':2,'set_stage':2,'set_stage_default':1})
         counts.update({'set_option':2,'set_include_spacing':1,'set_reset_spacing':1,'set_table_spacing':1,'set_exclude_tables':1,'set_range':3,'set_card_option':2})
@@ -161,6 +161,7 @@ class ApplicationService:
         if method=='save_abbreviation': return response(lambda:self.abbreviations.save(*args))
         if method=='delete_abbreviation': return response(lambda:self.abbreviations.delete(*args))
         if method=='set_abbreviation_defaults': return response(lambda:self.abbreviations.set_defaults(*args))
+        if method=='abbreviation_document': return response(lambda:self.abbreviations.document_command(*args))
         if method=='add_paths':
             if len(args)!=1 or not isinstance(args[0],list) or len(args[0])>1000:
                 raise ServiceError('INVALID_INPUT','추가할 문서 목록을 확인해 주세요.')

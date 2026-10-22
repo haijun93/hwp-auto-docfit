@@ -898,7 +898,7 @@ class DesktopWebBridge:
         if not pending:
             with self._close_lock:
                 return dict(self._close_request) if self._close_request else None
-        return {key: pending[key] for key in ("id", "title", "message", "confirm", "choices", "fields")}
+        return {key: pending[key] for key in ("id", "title", "message", "confirm", "choices", "fields", "ok_label", "cancel_label") if key in pending}
 
     def get_pending_dialog(self):
         return self._tk(self._pending_dialog)
@@ -1317,6 +1317,11 @@ class DesktopWebBridge:
     def set_abbreviation_defaults(self, enabled):
         return self._tk(lambda: response(lambda: self.gui._준말_서비스().set_defaults(enabled, running=self.gui.running)))
 
+    def abbreviation_document(self, action):
+        """준말 관리 HWPX 문서 만들기·열기·다시 읽기·출처 전환(1.80.3)."""
+        return self._tk(lambda: response(lambda: self.gui._준말_서비스().document_command(
+            action, running=self.gui.running)))
+
     def open_results(self):
         self._tk(self.gui._결과파일_열기, timeout=None, front=True)
         return True
@@ -1656,7 +1661,7 @@ class _BrowserApi:
             "get_state", "add_files", "add_folder", "add_paths", "remove_file",
             "clear_files", "set_mode", "set_range", "start", "stop",
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
-            "get_pending_dialog", "resolve_dialog", "enable_close_guard", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults",
+            "get_pending_dialog", "resolve_dialog", "enable_close_guard", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document",
             "open_results", "next_job", "run_tool", "open_result",
             "show_result", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",

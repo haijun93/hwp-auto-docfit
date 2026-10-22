@@ -99,11 +99,19 @@ class _BackendDialogState extends State<BackendDialog> {
         if (widget.data['confirm'] == true)
           TextButton(
             onPressed: busy ? null : () => answer(false),
-            child: const Text('취소'),
+            child: Text(
+              widget.data['cancel_label'] is String
+                  ? widget.data['cancel_label'] as String
+                  : '취소',
+            ),
           ),
         FilledButton(
           onPressed: busy ? null : () => answer(true),
-          child: Text(widget.data['confirm'] == true ? '확인 후 진행' : '확인'),
+          child: Text(
+            widget.data['ok_label'] is String
+                ? widget.data['ok_label'] as String
+                : (widget.data['confirm'] == true ? '확인 후 진행' : '확인'),
+          ),
         ),
       ],
     ),

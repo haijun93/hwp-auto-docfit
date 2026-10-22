@@ -1,15 +1,25 @@
 """Shared abbreviation operations for Flutter and the fallback Tk dialog."""
 
+import os
 from copy import deepcopy
+from pathlib import Path
 
+from docfit_core import abbreviation_doc as doc
 from docfit_core import abbreviations as registry
 
 from .api_contract import ServiceError
 
 
 class AbbreviationService:
-    def __init__(self, settings):
+    def __init__(self, settings, document_root=None, base_hwpx=None, opener=None):
         self.settings = settings
+        # 준말 관리 HWPX 문서가 있는 앱 폴더(기본 C:\HWP_AUTODOCFIT). 시험에서는 임시 폴더를 넘긴다.
+        if document_root is None:
+            from docfit_core.format_samples import APP_HOME
+            document_root = APP_HOME
+        self.document_root = Path(document_root)
+        self.base_hwpx = base_hwpx
+        self._opener = opener
 
     @staticmethod
     def _editable(running):
@@ -40,15 +50,42 @@ class AbbreviationService:
         settings = self.settings.read()
         user = registry.normalize(self._entries(settings))
         use_defaults = bool(settings.get("abbreviation_defaults", True))
+        # 설정 파일에 키가 없으면 앱 기본값("document")을 따른다(엔진의 설정_불러오기와 같은 규칙).
+        source = doc.source_of({"abbreviation_source": "document", **settings})
+        path = doc.document_path(self.document_root)
+        document = {"path": str(path), "exists": path.is_file(), "errors": []}
         effective = registry.merge_with_defaults(user, use_defaults)
+        if source == "document" and path.is_file():
+            # 화면도 작업과 같이 매번 문서를 새로 읽는다(문서가 아직 없으면 첫 작업 때 설정 값으로 만들어진다).
+            user, document["errors"] = doc.parse_document(path)
+            effective = registry.normalize(registry.DEFAULT_ENTRIES) if use_defaults else {}
+            effective.update(user)
         return {
             "use_defaults": use_defaults,
             "running": bool(running),
+            "source": source,
+            "document": document,
             "entries": [{"key": key, **deepcopy(spec), "builtin": key not in user,
                          "label": self._label(spec)}
                         for key, spec in sorted(effective.items())],
             "format_kinds": dict(registry.FORMAT_KINDS),
         }
+
+    def document_command(self, action, *, running=False):
+        """준말 관리 HWPX 문서: create(없으면 만들기)·open(한/글에서 열기)·reload(다시 읽기)·use_document·use_settings."""
+        if action not in ("create", "open", "reload", "use_document", "use_settings"):
+            raise ServiceError("INVALID_INPUT", "준말 문서 작업을 확인해 주세요.")
+        if action in ("use_document", "use_settings"):
+            self._editable(running)
+            source = "document" if action == "use_document" else "settings"
+            self.settings.update(lambda settings: settings.update(abbreviation_source=source))
+        if action in ("create", "open", "use_document"):
+            path = doc.ensure_document(self.settings.read(), self.document_root, self.base_hwpx)
+            if path is None:
+                raise ServiceError("DOCUMENT_UNAVAILABLE", "준말 문서를 만들지 못했어요. 앱 폴더 권한을 확인해 주세요.")
+            if action == "open":
+                (self._opener or os.startfile)(str(path))
+        return self.snapshot(running=running)
 
     def save(self, key, kind, value, original_key="", *, running=False):
         self._editable(running)

@@ -149,6 +149,26 @@ def create_template(base_hwpx: str | Path, target: str | Path, entries: list[dic
             raise HwpxIdiomError("초기 상용구 항목의 준말 또는 본말이 올바르지 않습니다.")
         validated.append((key, value))
 
+    template_lines = [
+        "상용구 설정 문서 — 이 파일을 한/글에서 직접 수정하세요.",
+        "항목은 준말 표식 뒤에 준말을 적은 한 줄로 시작합니다.",
+        "그 바로 다음 줄부터 본말을 입력하고, 항목을 바꿀 때 새 표식을 씁니다.",
+        "예) +#+ㅁ 다음 줄에 □ 를 입력하면 ㅁ → □ 로 정의됩니다.",
+        "안내 문단은 설정에서 무시되며, +#+로 시작하는 문단만 항목입니다.",
+    ]
+    for key, value in validated:
+        template_lines.extend(["#+" + key, *value.split("\n")])
+    return write_paragraph_document(source, destination, template_lines, parse_hwpx)
+
+
+def write_paragraph_document(base_hwpx: str | Path, target: str | Path, lines: list[str], verify) -> Path:
+    """기본 HWPX의 구역·글자 서식을 재사용해 ``lines``를 한 줄씩 문단으로 쓴 문서를 만든다.
+
+    대상 파일이 이미 있으면 덮어쓰지 않는다. ``verify(임시경로)``가 예외 없이 끝나야 대상 파일로 옮긴다.
+    """
+    source, destination = Path(base_hwpx), Path(target)
+    if destination.exists():
+        return destination
     try:
         with open_hwpx_safely(source) as archive:
             names = archive.namelist()
@@ -194,16 +214,7 @@ def create_template(base_hwpx: str | Path, target: str | Path, entries: list[dic
                 if child is not text_node:
                     template_run.remove(child)
 
-            template_lines = [
-                "상용구 설정 문서 — 이 파일을 한/글에서 직접 수정하세요.",
-                "항목은 준말 표식 뒤에 준말을 적은 한 줄로 시작합니다.",
-                "그 바로 다음 줄부터 본말을 입력하고, 항목을 바꿀 때 새 표식을 씁니다.",
-                "예) +#+ㅁ 다음 줄에 □ 를 입력하면 ㅁ → □ 로 정의됩니다.",
-                "안내 문단은 설정에서 무시되며, +#+로 시작하는 문단만 항목입니다.",
-            ]
-            for key, value in validated:
-                template_lines.extend(["#+" + key, *value.split("\n")])
-            for line in template_lines:
+            for line in lines:
                     paragraph = copy.deepcopy(template_p)
                     run = next(child for child in paragraph if _local_name(child.tag) == "run")
                     node = next(child for child in run if _local_name(child.tag) == "t")
@@ -218,7 +229,7 @@ def create_template(base_hwpx: str | Path, target: str | Path, entries: list[dic
                     output.writestr(info, data, compress_type=ZIP_STORED if info.filename == "mimetype"
                                     else info.compress_type)
         # Output is validated and parsed before it becomes the active setting file.
-        parse_hwpx(temp)
+        verify(temp)
         temp.replace(destination)
         return destination
     except HwpxIdiomError:

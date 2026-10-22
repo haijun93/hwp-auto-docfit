@@ -43,7 +43,7 @@ LABELS = {
  'spacing_enabled':'자간 정리: 자간 기능 사용',
  'spacing_page_fit':'자간 정리: 페이지 맞춤',
 }
-EXCLUDED = {'abbreviations', 'active_format_profile', 'diagram_editor_enabled'} | {k for k in DEFAULTS if k.endswith('_rev')}
+EXCLUDED = {'abbreviations', 'abbreviation_source', 'active_format_profile', 'diagram_editor_enabled'} | {k for k in DEFAULTS if k.endswith('_rev')}
 
 
 def leaves(values, prefix=''):

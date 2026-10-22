@@ -485,7 +485,6 @@ const thirdPartyComponents = [
   ('ONNX Runtime 1.30.0', 'OCR 모델 실행', 'MIT'),
   ('sharp 0.35.5 · libvips', 'OCR 이미지 처리', 'Apache-2.0 · LGPL-3.0'),
   ('PDFium (@hyzyla/pdfium 2.1.13)', '스캔 PDF 쪽 그림 만들기', 'MIT · BSD-3-Clause'),
-  ('rhwp (@rhwp/core 0.8.7, Edward Kim)', '설정 화면 한/글 조판 미리보기', 'MIT'),
   ('React Flow (@xyflow/react 12.12.0) · React', '업무 흐름도·마인드맵 편집', 'MIT'),
   ('Flutter', '앱 화면', 'BSD-3-Clause'),
   ('Noto Sans KR', '앱 화면 글꼴', 'SIL OFL 1.1'),

@@ -4,9 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../core/api/abbreviation_api.dart';
-import '../preview/hwp_typeset_preview.dart';
-import '../preview/typeset_spec.dart';
-import 'doc_preview.dart';
+import '../preview/option_images.dart';
 import 'idiom_panel.dart';
 import 'kiosk_theme.dart';
 import 'setting_guides.dart';
@@ -715,48 +713,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
             'font',
           }.contains(category));
 
-  /// 옆 칸은 좁아 글자가 작으므로 넓은 창에 같은 조판을 크게 보인다.
-  Future<void> _zoomTypeset() => showDialog<void>(
-    context: context,
-    builder: (context) => Dialog(
-      backgroundColor: Kiosk.canvas,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      child: SizedBox(
-        width: math.min(980, MediaQuery.sizeOf(context).width - 48),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  const Expanded(
-                    child: Text('한/글 조판 미리보기', style: Kiosk.title),
-                  ),
-                  IconButton(
-                    tooltip: '닫기',
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close_rounded),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              HwpTypesetPreview(
-                key: const ValueKey('settings-typeset-zoom'),
-                spec: settingsSpec(_value, focusKey: lastKey),
-                fallback: const SizedBox.shrink(),
-                minHeight: 300,
-                maxHeight: 760,
-              ),
-            ],
-          ),
-        ),
-      ),
-    ),
-  );
-
-  /// 지금 값(저장 전 변경 포함)으로 보고서 한 토막을 rhwp 조판 엔진으로 그린다.
+  /// 방금 바꾼 설정에 맞는 적용 전·후 예시 그림(1.80.3, rhwp 조판 미리보기 대체).
   Widget _typesetPane() => ListView(
     padding: const EdgeInsets.only(bottom: 16),
     children: [
@@ -766,34 +723,19 @@ class _SettingsDialogState extends State<SettingsDialog> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                const Expanded(
-                  child: Text('한/글 조판 미리보기', style: Kiosk.cardTitle),
-                ),
-                TextButton.icon(
-                  onPressed: _zoomTypeset,
-                  icon: const Icon(Icons.zoom_in_rounded),
-                  label: const Text('크게 보기'),
-                ),
-              ],
-            ),
+            const Text('적용 전·후 예시', style: Kiosk.cardTitle),
             const SizedBox(height: 4),
             Text(
               lastKey == null
-                  ? '설정을 바꾸면 한/글에서 어떻게 보일지 바로 다시 그려요.'
-                  : '방금 바꾼 설정이 닿는 문단을 노랗게 표시했어요.',
+                  ? '설정이 문서에 어떻게 반영되는지 예시로 보여 드려요. 그림을 누르면 크게 볼 수 있어요.'
+                  : '방금 바꾼 설정과 관련된 예시예요. 그림을 누르면 크게 볼 수 있어요.',
               style: Kiosk.caption,
             ),
             const SizedBox(height: 12),
-            HwpTypesetPreview(
-              key: const ValueKey('settings-typeset'),
-              spec: settingsSpec(_value, focusKey: lastKey),
-              fallback: const DocPaper(
-                caption: '이 환경에서는 한/글 조판 미리보기를 쓸 수 없어요.',
-                children: [],
-              ),
-              minHeight: 140,
+            OptionImagePreview(
+              key: ValueKey('settings-option-image-${lastKey ?? ''}'),
+              lastKey,
+              fallback: optionImages['settings'],
             ),
           ],
         ),

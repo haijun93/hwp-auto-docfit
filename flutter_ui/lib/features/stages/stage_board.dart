@@ -1,9 +1,6 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
-import '../preview/hwp_typeset_preview.dart';
-import '../preview/typeset_spec.dart';
+import '../preview/option_images.dart';
 import '../settings/kiosk_theme.dart';
 
 /// 세부 작업 분류(설정 '전체 설정 열기'의 분류 목록과 같은 모양).
@@ -348,16 +345,6 @@ class _StageBoardState extends State<StageBoard> {
     );
   }
 
-  Widget _typeset(String key, bool applied, {double minHeight = 90}) {
-    final spec = stageSpec(key, applied: applied);
-    return HwpTypesetPreview(
-      key: ValueKey('stage-typeset-${applied ? 'after' : 'before'}'),
-      spec: spec ?? const {'paragraphs': []},
-      fallback: const SizedBox.shrink(),
-      minHeight: minHeight,
-    );
-  }
-
   Widget _labelled(String text, Widget child, {bool strong = false}) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
@@ -370,43 +357,29 @@ class _StageBoardState extends State<StageBoard> {
   Widget _previewPane() {
     final stage = _focused;
     final key = '${stage?['key'] ?? ''}';
-    final drawable = stage != null && stageSpec(key, applied: true) != null;
+    final image = stage == null ? null : optionImageFor(key);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: Kiosk.cardBox(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Text('한/글 조판 미리보기', style: Kiosk.cardTitle),
-              ),
-              if (drawable)
-                TextButton.icon(
-                  onPressed: () => _zoom(stage),
-                  icon: const Icon(Icons.zoom_in_rounded),
-                  label: const Text('크게 보기'),
-                ),
-            ],
-          ),
+          const Text('적용 전·후 예시', style: Kiosk.cardTitle),
           const SizedBox(height: 4),
           Text(
             stage == null
                 ? '단계를 고르면 문서가 어떻게 바뀌는지 보여 드려요.'
-                : '${stage['label']} — 단계 전과 뒤를 rhwp 조판 엔진으로 그렸어요. 카드를 가리키면 바로 바뀌어요.',
+                : '${stage['label']} — 왼쪽이 단계 전, 오른쪽이 단계 뒤예요. 그림을 누르면 크게 볼 수 있어요.',
             style: Kiosk.caption,
           ),
           const SizedBox(height: 12),
-          if (drawable) ...[
-            _labelled('단계 전', _typeset(key, false)),
-            const SizedBox(height: 12),
+          if (image != null)
             _labelled(
-              stage['on'] == true ? '단계 뒤 · 이번 실행에 적용' : '단계 뒤 · 지금은 건너뜀',
-              _typeset(key, true),
+              stage!['on'] == true ? '이번 실행에 적용' : '지금은 건너뜀',
+              OptionImagePreview(key),
               strong: stage['on'] == true,
-            ),
-          ] else if (stage != null)
+            )
+          else if (stage != null)
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
@@ -422,48 +395,4 @@ class _StageBoardState extends State<StageBoard> {
       ),
     );
   }
-
-  /// 옆 칸은 좁아 글자가 작으므로 넓은 창에 같은 조판을 크게 보인다.
-  Future<void> _zoom(Map stage) => showDialog<void>(
-    context: context,
-    builder: (context) => Dialog(
-      backgroundColor: Kiosk.canvas,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      child: SizedBox(
-        width: math.min(980, MediaQuery.sizeOf(context).width - 48),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text('${stage['label']}', style: Kiosk.title),
-                  ),
-                  IconButton(
-                    tooltip: '닫기',
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close_rounded),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              _labelled(
-                '단계 전',
-                _typeset('${stage['key']}', false, minHeight: 160),
-              ),
-              const SizedBox(height: 16),
-              _labelled(
-                '단계 뒤',
-                _typeset('${stage['key']}', true, minHeight: 160),
-                strong: true,
-              ),
-            ],
-          ),
-        ),
-      ),
-    ),
-  );
 }
