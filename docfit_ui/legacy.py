@@ -1444,7 +1444,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
 
             def _세부작업_열기(self, mode, save_default=None):
                 if mode not in self.stage_choices:
-                    return  # 파일포맷 변경 등 세부 작업이 없는 작업
+                    return  # 파일 변환 등 세부 작업이 없는 작업
                 titles = {"spacing": "자간 정리", "unify": "서식 통일", "format": "한 번에 적용(자간 조정 제외)",
                           "all": "한 번에 적용"}
                 dialog = tk.Toplevel(self.root)
@@ -1538,7 +1538,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     return
                 mode = self.selected_mode.get()
                 if mode not in self.stage_choices:
-                    # 파일포맷 변경은 세부 작업이 없는 변환 작업이다(세부 작업 표를 찾지 않는다).
+                    # 파일 변환은 세부 작업이 없는 변환 작업이다(세부 작업 표를 찾지 않는다).
                     self.options_summary.configure(
                         text="문서를 다른 파일 형식으로 바꿔 새 파일로 저장합니다. 원본은 바꾸지 않습니다.")
                     return
@@ -6017,11 +6017,11 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 self._안내키, self._안내지남 = None, set()
                 self._진행문서, self._실패목록, self._진행_세부작업 = None, {}, None
                 self._작업시작시각, self._작업종료시각 = time.monotonic(), None
-                self.status_var.set(f"파일포맷 변경 중 · {len(files)}개")
+                self.status_var.set(f"파일 변환 중 · {len(files)}개")
                 self._안내_설정(0)
                 self.버튼_작업중()
                 self.로그표시("")
-                self.로그표시(f"파일포맷 변경 시작 · {len(files)}개 · 결과 {target_format.upper()}")
+                self.로그표시(f"파일 변환 시작 · {len(files)}개 · 결과 {target_format.upper()}")
 
                 def worker():
                     successes, failures = 0, 0
@@ -6052,7 +6052,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                             if target_format != "pdfm" and is_same_format(source, target_format):
                                 # 이미 결과와 같은 형식이면 바꾸지 않는다(예: PDF→PDF, 2026-10-22 사용자 지시).
                                 gui_queue.put(("document_error", str(source), f"이미 {target_format.upper()} 파일이라 건너뛰었습니다."))
-                                로그(f"파일포맷 변경 건너뜀(같은 형식): {source.name}")
+                                로그(f"파일 변환 건너뜀(같은 형식): {source.name}")
                                 failures += 1   # 실패 목록·완료 문구의 수가 맞도록 건너뛴 파일도 '처리 못 함'으로 센다
                                 continue
                             if target_format == "pdfm":
@@ -6098,7 +6098,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                                     convert_to_pdf(app, source, target)
                                 successes += 1
                                 gui_queue.put(("saved", str(source), str(target), None))
-                                로그(f"파일포맷 변경 완료: {source.name} → {target.name}")
+                                로그(f"파일 변환 완료: {source.name} → {target.name}")
                             except Exception as exc:
                                 failures += 1
                                 if app is not None:
@@ -6107,7 +6107,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                                     except Exception:
                                         pass
                                 gui_queue.put(("document_error", str(source), str(exc)))
-                                로그(f"파일포맷 변경 실패: {source.name} — {exc}")
+                                로그(f"파일 변환 실패: {source.name} — {exc}")
                         if target_format == "pdfm" and not 중단_event.is_set():
                             from docfit_core.pdf_merge import merge_to_pdf, merged_output_path
                             첫_원본 = str(files[0])
@@ -7114,7 +7114,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         self._강제_종료()
                     return
                 if self.running:
-                    names = {"file_format": "파일포맷 변경", "spacing": "자간 정리",
+                    names = {"file_format": "파일 변환", "spacing": "자간 정리",
                              "format": "서식 적용", "all": "한 번에 적용", "unify": "서식 통일"}
                     name = names.get(self.selected_mode.get(), "작업")
                     if not self._알림(messagebox.askyesno, APP_NAME,

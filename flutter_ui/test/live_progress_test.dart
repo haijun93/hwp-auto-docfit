@@ -93,7 +93,7 @@ void main() {
   testWidgets('파일 변환은 파일 대기열과 실패 이유를 보여 준다', (tester) async {
     await _pump(tester, {
       'mode': 'file_format',
-      'name': '파일포맷 변경',
+      'name': '파일 변환',
       'icon': 'convert',
       'title': '파일 3개를 PDF로 바꾸고 있어요',
       'finished': false,

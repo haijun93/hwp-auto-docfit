@@ -125,7 +125,7 @@ MODE_META = {
                "finished": "문서 정리가 끝났어요"},
     "all": {"name": "한 번에 적용", "icon": "all", "running": "표준 서식으로 문서를 정리하고 있어요",
             "finished": "문서 정리가 끝났어요"},
-    "file_format": {"name": "파일포맷 변경", "icon": "convert", "running": "파일 {count}개를 {target}로 바꾸고 있어요",
+    "file_format": {"name": "파일 변환", "icon": "convert", "running": "파일 {count}개를 {target}로 바꾸고 있어요",
                     "finished": "파일 {count}개를 {target}로 바꿨어요"},
 }
 

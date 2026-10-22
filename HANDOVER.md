@@ -7,6 +7,8 @@
 
 ## 1. 한눈에 보기
 
+2026-10-22 v1.80.5: 표 템플릿 — `docfit_core/table_units.py`(정보단위 판정표 PLANS: 축별 start·core·sep·count, 고정 표는 None으로 명시해 자동 판정 차단; 늘리기는 마지막 단위 복제, 구역 전체를 덮는 병합 칸 span 조정, 열 축 표 폭 유지·중첩 표 폭 비례, 복제 개체 id·zOrder 재부여), `docfit_app/table_units_service.py`(스냅샷 = 한/글 PDF → 표 부분 잘라 PNG, 캐시 `C:\HWP_AUTODOCFIT\표서식모음\.스냅샷\<원본해시>`; 복사 = 숨긴 한/글 Open→SelectAll→Copy→Quit, 한/글을 닫아도 클립보드 'Hwp Native'가 남아 Ctrl+V 가능 — 실측), 브리지 `table_units`(COM은 호출 스레드에서, 동시 1개). 1.81부터 CI가 시작 속도 목표(스플래시 100ms·재실행 1.5초)를 강제하므로 기능 배포는 1.80.x로 했다. 또 v1.80.4 태그는 Semgrep(dynamic-urllib) 때문에 GitLab에 없다(5676041에서 수정).
+
 2026-10-22 v1.80.3: ① 파일포맷 변경 시작 시 `profile_combo` 오류 수정(`버튼_작업중/대기중`은 없는 위젯을 건너뜀) ② 작업 중단 10초·창 닫기 10/15초 상한 — `docfit_core/hwp_process.py`가 `한글_COM_인스턴스_생성(독립=True)`의 DispatchEx 전후 Hwp.exe PID 차집합만 기억하고 그 PID만 taskkill(사용자 한/글 보호) ③ 준말 관리 HWPX 문서 `C:\HWP_AUTODOCFIT\준말관리\준말관리.hwpx`(`docfit_core/abbreviation_doc.py`, 설정 `abbreviation_source`: 키가 없는 설정 묶음은 "settings", 앱 기본값은 "document") ④ rhwp 조판 미리보기 제거, 옵션 전·후 그림(`flutter_ui/assets/option_images`). 함정: 한글 경로에서 `flutter analyze`가 LSP JSON 오류로 죽으면 ASCII 경로 정션(`mklink /J`)에서 실행. Gemini(agy) 헤드리스는 명령 권한 허용 규칙이 없으면 첫 명령에서 멈춘다.
 
 2026-10-22 v1.80.2: 파일포맷 변경에 PDF 압축(`docfit_core/pdf_compress.py`, 대상 키 `pdfz`, pypdf 6.21.2). 재조판 없이 그림만 다시 저장하고 쪽·글자층을 대조한다. 보안 PDF는 같은 권한값(P)으로 다시 잠근다(소유자 암호는 새 무작위 값). 열기 암호·DRM·서명 PDF는 거부. 설계 `docs/PDF_COMPRESSION_DESIGN.md`.

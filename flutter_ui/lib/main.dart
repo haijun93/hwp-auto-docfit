@@ -184,7 +184,7 @@ class _WorkspaceState extends State<Workspace> {
     ),
     (
       'file_format',
-      '파일포맷 변경',
+      '파일 변환',
       'TXT·MD를 HWPX·PDF·그림으로, HWPX를 TXT·MD로도 바꿔요. 변환 도구는 앱에 포함되어 있어요.',
       Icons.swap_horiz_rounded,
       'HWPX변경',
@@ -229,7 +229,7 @@ class _WorkspaceState extends State<Workspace> {
       : mode == 'spacing' && !spacingEnabled && spacingPageFit
       ? '페이지 맞춤만'
       : mode == 'file_format'
-      ? '파일포맷 변경'
+      ? '파일 변환'
       : modes.firstWhere((m) => m.$1 == mode, orElse: () => modes.first).$2;
   int get stagesOn => stages.where((s) => s['on'] == true).length;
   bool get stagesChanged => stages.any((s) => s['on'] != s['default']);

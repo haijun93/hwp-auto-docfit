@@ -115,7 +115,7 @@ class LegacyTests(unittest.TestCase):
         app.root.destroy.assert_called_once()
 
     def test_modes_and_labels(self):
-        for mode, name in [('file_format', '파일포맷 변경'), ('spacing', '자간 정리'), ('format', '서식 적용'), ('all', '한 번에 적용'), ('unify', '서식 통일'), ('unknown', '작업')]:
+        for mode, name in [('file_format', '파일 변환'), ('spacing', '자간 정리'), ('format', '서식 적용'), ('all', '한 번에 적용'), ('unify', '서식 통일'), ('unknown', '작업')]:
             with self.subTest(mode=mode):
                 app = self.app()
                 app.selected_mode.get.return_value = mode

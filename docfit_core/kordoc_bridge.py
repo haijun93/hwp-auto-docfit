@@ -31,7 +31,7 @@ KORDOC_PACKAGE = f"kordoc@{KORDOC_VERSION}"
 NODE_MIN_MAJOR = 20
 
 # kordoc v4.21.30의 상세 사용법(지원 포맷 표)에 명시된 입력 형식.
-# 일반 정리 파이프라인의 지원_확장자와 분리해, kordoc 전용 파일포맷 변경에서만 사용한다.
+# 일반 정리 파이프라인의 지원_확장자와 분리해, kordoc 전용 파일 변환에서만 사용한다.
 SUPPORTED_INPUT_EXTENSIONS = frozenset({
     ".hwp", ".hwpx", ".hml", ".pdf", ".xls", ".xlsx", ".docx", ".pptx",
     ".png", ".jpg", ".jpeg", ".webp",

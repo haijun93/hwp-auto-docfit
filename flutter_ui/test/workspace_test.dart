@@ -880,8 +880,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('작업 방식 선택'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('파일포맷 변경'));
-    await tester.tap(find.text('파일포맷 변경').first);
+    await tester.ensureVisible(find.text('파일 변환'));
+    await tester.tap(find.text('파일 변환').first);
     await tester.pumpAndSettle();
     expect(find.text('변환할 포맷을 고르세요'), findsOneWidget);
     expect(find.text('DOCX'), findsOneWidget);
@@ -928,8 +928,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('작업 방식 선택'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('파일포맷 변경'));
-    await tester.tap(find.text('파일포맷 변경').first);
+    await tester.ensureVisible(find.text('파일 변환'));
+    await tester.tap(find.text('파일 변환').first);
     await tester.pumpAndSettle();
     expect(find.text('변환할 포맷을 고르세요'), findsOneWidget);
     expect(find.text('DOCX'), findsOneWidget);
@@ -976,8 +976,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('작업 방식 선택'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('파일포맷 변경'));
-    await tester.tap(find.text('파일포맷 변경').first);
+    await tester.ensureVisible(find.text('파일 변환'));
+    await tester.tap(find.text('파일 변환').first);
     await tester.pumpAndSettle();
     expect(find.text('변환할 포맷을 고르세요'), findsOneWidget);
     expect(find.text('DOCX'), findsOneWidget);
@@ -1042,8 +1042,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('작업 방식 선택'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('파일포맷 변경'));
-    await tester.tap(find.text('파일포맷 변경').first);
+    await tester.ensureVisible(find.text('파일 변환'));
+    await tester.tap(find.text('파일 변환').first);
     await tester.pumpAndSettle();
     expect(
       find.byKey(const Key('conversionPrerequisiteNotice')),
@@ -1089,8 +1089,8 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.text('작업 방식 선택'));
         await tester.pumpAndSettle();
-        await tester.ensureVisible(find.text('파일포맷 변경'));
-        await tester.tap(find.text('파일포맷 변경').first);
+        await tester.ensureVisible(find.text('파일 변환'));
+        await tester.tap(find.text('파일 변환').first);
         await tester.pumpAndSettle();
         expect(
           find.byKey(const Key('floatingConversionPicker')),

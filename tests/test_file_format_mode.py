@@ -1,4 +1,4 @@
-"""파일포맷 변경 모드: 세부 작업이 없는 모드에서 KeyError 없이 동작하고 준비 안 된 형식은 시작하지 않는다."""
+"""파일 변환 모드: 세부 작업이 없는 모드에서 KeyError 없이 동작하고 준비 안 된 형식은 시작하지 않는다."""
 import os
 from pathlib import Path
 import runpy

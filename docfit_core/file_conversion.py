@@ -1,4 +1,4 @@
-"""공용 파일포맷 변경 경로·형식 규칙."""
+"""공용 파일 변환 경로·형식 규칙."""
 
 from __future__ import annotations
 

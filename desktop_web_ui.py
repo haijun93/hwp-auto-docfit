@@ -1097,7 +1097,7 @@ class DesktopWebBridge:
                 return
             mode = self.gui.selected_mode.get()
             if mode not in self.gui.stage_choices:
-                return  # 파일포맷 변경에는 세부 작업이 없다
+                return  # 파일 변환에는 세부 작업이 없다
             choices = self.gui.stage_choices[mode]
             if action == "all":
                 if not isinstance(payload.get("enabled"), bool):
