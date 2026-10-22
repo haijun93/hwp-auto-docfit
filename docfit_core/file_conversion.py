@@ -15,6 +15,17 @@ IMAGE_INPUT_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".webp", ".bmp", ".
 # 그림 결과 형식(확장자 → Pillow 저장 형식). 한/글 PDF 저장본을 쪽마다 렌더링한다.
 IMAGE_FORMATS = {"jpg": "JPEG", "png": "PNG"}
 IMAGE_DPI = 150
+
+# 결과 형식과 같은 형식의 입력(예: PDF→PDF)은 변환하지 않는다. PDF 압축(pdfz)은 PDF→PDF가 목적이라 뺀다.
+SAME_FORMAT_SUFFIXES = {
+    "hwpx": frozenset({".hwpx"}), "pdf": frozenset({".pdf"}), "docx": frozenset({".docx"}),
+    "epub": frozenset({".epub"}), "html": frozenset({".html", ".htm"}), "jpg": frozenset({".jpg", ".jpeg"}),
+    "png": frozenset({".png"}), "txt": frozenset({".txt"}), "md": frozenset({".md"}),
+}
+
+
+def is_same_format(source: str | Path, target_format: str) -> bool:
+    return Path(source).suffix.lower() in SAME_FORMAT_SUFFIXES.get(str(target_format or "").lower(), ())
 MAX_IMAGE_PAGES = 500
 MAX_IMAGE_SIDE = 6000
 
@@ -204,7 +215,8 @@ def convert_to_images(app, source: str | Path, target: str | Path, *, dpi: int =
     created: list[Path] = []
     made_folder = False
     with tempfile.TemporaryDirectory(prefix="docfit_image_") as work:
-        pdf = convert_to_pdf(app, source, Path(work) / "render.pdf")
+        # PDF는 이미 쪽 배치가 있으므로 다시 조판하지 않고 그대로 쪽마다 그린다(한/글·변환 엔진 불필요).
+        pdf = source if source.suffix.lower() == ".pdf" else convert_to_pdf(app, source, Path(work) / "render.pdf")
         document = pdfium.PdfDocument(str(pdf))
         try:
             count = len(document)
@@ -288,7 +300,7 @@ def convert_hwp_to_hwpx(app, source: str | Path, target: str | Path) -> Path:
 TEXT_INPUTS = frozenset({".txt", ".md"})
 HTML_INPUTS = frozenset({".html", ".htm"})
 CONVERSION_INPUTS = SUPPORTED_INPUT_EXTENSIONS | TEXT_INPUTS | IMAGE_INPUT_EXTENSIONS | HTML_INPUTS
-CONVERSION_OUTPUTS = frozenset({"hwpx", "pdf", "pdfz", "docx", "epub", "html", "jpg", "png", "txt", "md"})
+CONVERSION_OUTPUTS = frozenset({"hwpx", "pdf", "pdfz", "pdfm", "docx", "epub", "html", "jpg", "png", "txt", "md"})
 
 
 def convert_input_to_hwpx(source: str | Path, target: str | Path) -> Path:

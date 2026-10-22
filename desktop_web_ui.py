@@ -22,7 +22,7 @@ from docfit_app.api_contract import response
 from docfit_app.app_state import STAGE_ORDER
 from docfit_core.file_conversion import IMAGE_INPUT_EXTENSIONS
 from docfit_core.file_conversion import CONVERSION_INPUTS as SUPPORTED_INPUT_EXTENSIONS, CONVERSION_OUTPUTS
-from docfit_core.file_conversion import HANCOM_PDF_DIRECT, IMAGE_FORMATS
+from docfit_core.file_conversion import HANCOM_PDF_DIRECT, IMAGE_FORMATS, SAME_FORMAT_SUFFIXES
 
 # 화면에서 바로 켜고 끄는 공통 설정(이름 → 앱의 Tk 변수 속성). 값을 바꾸면 앱이 설정 파일에 저장한다.
 def _format_coverage(analysis):
@@ -496,8 +496,19 @@ class DesktopWebBridge:
             return self._conversion_prerequisites_cache
 
     def _conversion_targets(self, files):
+        """결과 형식 목록. 넣은 파일이 모두 이미 그 형식이면(예: PDF→PDF) 그 형식은 고를 수 없게 한다(2026-10-22)."""
         suffixes = [Path(path).suffix.lower() for path in files]
-        valid = bool(suffixes) and all(suffix in SUPPORTED_INPUT_EXTENSIONS for suffix in suffixes)
+        targets = self._conversion_targets_raw(files, suffixes)
+        if suffixes:
+            for target in targets:
+                same = SAME_FORMAT_SUFFIXES.get(target["format"])
+                if same and all(suffix in same for suffix in suffixes):
+                    target["enabled"] = False
+                    target["reason"] = f"이미 {target['label']} 파일이라 같은 형식으로는 바꿀 수 없어요"
+        return targets
+
+    def _conversion_targets_raw(self, files, suffixes):
+        valid =bool(suffixes) and all(suffix in SUPPORTED_INPUT_EXTENSIONS for suffix in suffixes)
         prerequisites = self._conversion_prerequisites()
         kordoc = prerequisites["kordoc"]
         kordoc_ready = bool(kordoc.get("available"))
@@ -510,7 +521,8 @@ class DesktopWebBridge:
             kordoc_ready = False
             engine_reason = "그림 파일은 글자 인식(OCR)이 필요해 변환할 수 없습니다(폐쇄망 꾸러미에 OCR 미포함)"
         # HWP·HWPX는 한/글이 직접 PDF로 저장한다. 다른 입력만 kordoc 중간 변환이 필요하다.
-        pdf_needs_kordoc = any(suffix not in HANCOM_PDF_DIRECT for suffix in suffixes)
+        # 이미 PDF인 파일은 PDF 변환에서 건너뛰므로 변환 엔진이 필요 없다.
+        pdf_needs_kordoc = any(suffix not in HANCOM_PDF_DIRECT and suffix != ".pdf" for suffix in suffixes)
         pdf_ready = hwp_ready and (not pdf_needs_kordoc or kordoc_ready)
         invalid_reason = "변환할 수 없는 파일 형식이 있습니다"
         pdf_reason = (invalid_reason if not valid else
@@ -527,6 +539,11 @@ class DesktopWebBridge:
                        engine_reason if hwpx_needs_kordoc and not kordoc_ready else
                        "한/글 내장 HWP→HWPX 저장 · 원본 보존" if not hwpx_needs_kordoc else
                        "변환 준비됨")
+        pdf_only = all(suffix == ".pdf" for suffix in suffixes)
+        merge_direct = all(suffix == ".pdf" or suffix in IMAGE_INPUT_EXTENSIONS for suffix in suffixes)
+        # 합치기에서 PDF·그림은 그대로 쓰고, HWP·HWPX는 한/글, 그 밖의 형식만 변환 엔진이 더 필요하다.
+        merge_converted = [s for s in suffixes if s != ".pdf" and s not in IMAGE_INPUT_EXTENSIONS]
+        merge_ready = merge_direct or (hwp_ready and (kordoc_ready or all(s in HANCOM_PDF_DIRECT for s in merge_converted)))
         image_reason = (pdf_reason if not (valid and pdf_ready) else
                         "한/글 PDF 저장 후 쪽마다 그림 저장 · 여러 쪽은 폴더로 저장")
         pandoc_only = all(suffix in {".html", ".htm", ".md", ".txt"} for suffix in suffixes)
@@ -537,6 +554,13 @@ class DesktopWebBridge:
             {"format": "hwpx", "label": "HWPX", "enabled": valid and hwpx_ready,
              "reason": hwpx_reason},
             {"format": "pdf", "label": "PDF", "enabled": valid and pdf_ready, "reason": pdf_reason},
+            # PDF 하나로 합치기: 여러 파일(PDF·그림은 그대로, HWP·HWPX 등은 한/글 PDF 저장 뒤)을 순서대로 한 PDF로 묶는다.
+            {"format": "pdfm", "label": "PDF 하나로 합치기",
+             "enabled": valid and len(suffixes) >= 2 and merge_ready,
+             "reason": (invalid_reason if not valid else
+                        "파일을 2개 이상 넣으면 하나의 PDF로 합칠 수 있어요" if len(suffixes) < 2 else
+                        pdf_reason if not merge_ready else
+                        "넣은 순서대로 한 PDF로 합침 · 파일마다 책갈피 · 암호 PDF는 제외")},
             # PDF 압축은 한/글·변환 엔진 없이 PDF 안의 그림·스트림만 다시 저장한다(보안 PDF는 같은 권한 유지).
             {"format": "pdfz", "label": "PDF 압축", "enabled": valid and all(s == ".pdf" for s in suffixes),
              "reason": (invalid_reason if not valid else
@@ -547,7 +571,9 @@ class DesktopWebBridge:
             *({"format": kind, "label": kind.upper(), "enabled": valid and pandoc_targets_ready,
                "reason": invalid_reason if not valid else engine_reason if not kordoc_ready and not pandoc_only else
                         "내장 Pandoc을 사용할 수 없음" if not pandoc_ready else "내장 Pandoc 준비됨"} for kind in ("docx", "epub", "html")),
-            *({"format": kind, "label": kind.upper(), "enabled": valid and pdf_ready, "reason": image_reason}
+            # PDF만 넣으면 한/글·변환 엔진 없이 쪽마다 바로 그린다.
+            *({"format": kind, "label": kind.upper(), "enabled": valid and (pdf_only or pdf_ready),
+               "reason": "PDF 쪽마다 그림 저장 · 한/글 불필요" if valid and pdf_only else image_reason}
               for kind in IMAGE_FORMATS),
         ]
 

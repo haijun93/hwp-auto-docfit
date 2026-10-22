@@ -73,7 +73,14 @@ class ImageConversionTests(unittest.TestCase):
             for suffix in fc.IMAGE_INPUT_EXTENSIONS:
                 targets={v["format"]:v for v in bridge._conversion_targets(["scan"+suffix])}
                 self.assertEqual(targets["hwpx"]["enabled"],ready,suffix)
-                self.assertEqual(targets["png"]["enabled"],ready,suffix)
+                for output in ("png", "jpg"):
+                    with self.subTest(ready=ready, suffix=suffix, output=output):
+                        same_format = suffix in ((".jpg", ".jpeg") if output == "jpg" else (".png",))
+                        if same_format:
+                            self.assertFalse(targets[output]["enabled"])
+                            self.assertIn("같은 형식", targets[output]["reason"])
+                        else:
+                            self.assertEqual(targets[output]["enabled"],ready,suffix)
 
 
 class RuntimeUpgradeTests(unittest.TestCase):

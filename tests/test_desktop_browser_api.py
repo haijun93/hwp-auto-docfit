@@ -287,9 +287,13 @@ class BrowserApiTests(unittest.TestCase):
         }
         bridge.set_mode("file_format")
         targets = {item["format"]: item for item in bridge.get_state()["conversion_targets"]}
-        self.assertTrue(targets["html"]["enabled"])
+        self.assertFalse(targets["html"]["enabled"])
+        self.assertIn("같은 형식", targets["html"]["reason"])
         self.assertTrue(targets["docx"]["enabled"])
         self.assertTrue(targets["epub"]["enabled"])
+        gui.files.append(str(Path("report.md")))
+        targets = {item["format"]: item for item in bridge.get_state()["conversion_targets"]}
+        self.assertTrue(targets["html"]["enabled"])
         self.assertTrue(bridge.set_conversion_target("html")["can_start"])
 
     def test_file_format_rejects_unsupported_target_and_normal_mode_input(self):
