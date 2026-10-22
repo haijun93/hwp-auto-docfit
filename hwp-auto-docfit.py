@@ -3346,6 +3346,11 @@ def _단일_인스턴스_확인():
             kernel32.CloseHandle(handle)
             return False
         if handle and last_error == ERROR_ALREADY_EXISTS:
+            from docfit_app.instance_files import forward
+            try:
+                forward(sys.argv[1:])
+            except OSError:
+                pass
             _닫기_스플래시()
             # 이미 실행 중인 창을 찾아 앞으로 가져오기
             WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
@@ -3379,10 +3384,19 @@ def _단일_인스턴스_확인():
 
 
 def main():
+    from docfit_app.cli import COMMANDS, main as cli_main
+    if len(sys.argv) > 1 and sys.argv[1] in COMMANDS:
+        raise SystemExit(cli_main())
     import importlib.util
 
     if not _단일_인스턴스_확인():
         return
+
+    try:
+        from docfit_app.shell_menu import refresh_registered
+        refresh_registered()
+    except OSError:
+        pass
 
     if getattr(_selftest_sys, "frozen", False):
         def _배경_런타임_배포():
@@ -3403,7 +3417,9 @@ def main():
         _닫기_스플래시()
         root = TkinterDnD.Tk()
         _앱아이콘_적용(root)
-        HwpAutoDocFitGUI(root)
+        gui = HwpAutoDocFitGUI(root)
+        from docfit_app.instance_files import start
+        start(gui)
         _새창_맨앞으로(root)
         root.mainloop()
         return
@@ -3416,6 +3432,8 @@ def main():
             root = TkinterDnD.Tk()
             _앱아이콘_적용(root)
             gui = HwpAutoDocFitGUI(root)
+            from docfit_app.instance_files import start
+            start(gui)
             웹모드_기본창_숨김(root)
             보관.update(root=root, gui=gui)
             준비됨.set()

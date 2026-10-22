@@ -7,6 +7,13 @@ internal static class SmartLauncherTestChild
 {
     private static int Main(string[] args)
     {
+        if (args.Length == 2 && args[0] == "convert")
+        {
+            if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DOCFIT_LAUNCHER_PATH"))) return 12;
+            if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DOCFIT_LAUNCHER_HANDOFF_EVENT"))) return 13;
+            File.WriteAllText(args[1], Environment.GetEnvironmentVariable("DOCFIT_LAUNCHER_PATH"), new UTF8Encoding(false));
+            return 7;
+        }
         if (args.Length == 4 && args[0] == "--self-test" && args[1] == "--self-test-report" &&
             args[3] == "argument with spaces")
         {

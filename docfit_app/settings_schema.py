@@ -1,5 +1,6 @@
 """Shared settings defaults; storage keys and legacy adapter bindings are preserved."""
 DEFAULTS = {
+    'shell_menu': False,
     "prevent_word_split": True,
     # 장평 줄이기(가로 비율 축소)는 기본으로 끈다(2026-10-10 사용자 규칙). 끄면 자간 줄이기·늘리기만으로 조정한다.
     "ratio_shrink": False,

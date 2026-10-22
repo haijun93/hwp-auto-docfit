@@ -434,3 +434,11 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
   Codex는 spacing.py/page_fit.py의 원문 보존·검수 결함을 담당한다.
   앞 공백 수정은 formatter.py의 미커밋 변경을 보존한 상태에서 진행하고,
   XML 내어쓰기 계산보다 앞서 부모별 공백을 확정해야 한다(후속 문자 수정으로 좌표를 깨지 않게).
+
+### C5. CLI·탐색기 메뉴 (2026-10-23, 완료)
+- Codex 범위: 변환 공용 실행기·CLI·런처·HKCU 메뉴·Flutter 일반 설정 토글. 표 템플릿 파일 수정 없음.
+- `com_test_lock("Codex", "C5")`로 잠근 상태에서 전체 회귀 시험 중이며, 이어서 HWPX 사본→PDF CLI 실측 예정.
+- 최종 집중 시험 26개 PASS. 최종 결과는 아래에 추가하고 `C:\HWP_AUTODOCFIT\v1803\reports\C5.md`에 보고. 커밋·푸시 금지 준수.
+- C5 COM 종료: 지정 잠금 안에서 HWPX 사본→PDF CLI PASS(종료 코드 0, JSON 1줄, stderr 없음, PDF 96,324바이트). 원본 SHA256 불변. 최종 전체 회귀 시험 재실행 중.
+- C5 최종: Python 전체 1,510개 PASS(조건부 제외 1, 실패·오류 0, 707.271초), 집중 26개 PASS. 런처 실제 컴파일·뮤텍스 우회·종료 코드 보존 포함.
+- 보고서: `C:\HWP_AUTODOCFIT\v1803\reports\C5.md`(14줄), 최종 로그 `C5-artifacts\unittest-final.log`. Flutter 시험은 Claude 담당. 실제 메뉴 등록·커밋·푸시 미실행.

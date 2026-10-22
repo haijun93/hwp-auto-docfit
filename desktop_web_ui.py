@@ -875,14 +875,26 @@ class DesktopWebBridge:
         from docfit_app.configuration_service import ConfigurationService
         return ConfigurationService(self.gui._준말_서비스().settings)
 
+    def _settings_snapshot(self):
+        from docfit_app.shell_menu import status
+        snapshot = self._configuration().snapshot(running=self.gui.running)
+        snapshot['values']['shell_menu'] = status()['registered']
+        return snapshot
+
     def get_settings(self):
-        return self._tk(lambda: response(lambda: self._configuration().snapshot(running=self.gui.running)))
+        return self._tk(lambda: response(self._settings_snapshot))
 
     def save_settings(self, values, revision):
         def save():
             self._configuration().save(values, revision, running=self.gui.running)
+            if 'shell_menu' in values:
+                from docfit_app.shell_menu import register, unregister, launch_command
+                if values['shell_menu']:
+                    register(launch_command())
+                else:
+                    unregister()
             self.gui._Flutter설정_반영(values)
-            return self._configuration().snapshot(running=self.gui.running)
+            return self._settings_snapshot()
         return self._tk(lambda: response(save))
 
     def open_settings(self):
