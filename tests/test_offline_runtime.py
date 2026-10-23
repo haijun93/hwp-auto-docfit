@@ -148,6 +148,8 @@ class OfflineSettingsTests(unittest.TestCase):
         status = mock.Mock()
         fake = mock.Mock(settings_toplevel=None, status_var=status,
                          _알림=lambda *args, **kwargs: notices.append(args))
+        from docfit_app.update_service import UpdateService
+        fake._업데이트_서비스.return_value = UpdateService(ns["APP_VERSION"], offline=lambda: True)
         with mock.patch.dict(os.environ, {"DOCFIT_OFFLINE": "1"}), \
                 mock.patch.object(ns["threading"], "Thread", side_effect=AssertionError("network thread")):
             gui._자동업데이트_확인_시작(fake)

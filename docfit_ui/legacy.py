@@ -834,149 +834,81 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     업데이트_시작신호()
                     # 지난 업데이트가 남긴 구버전 백업과 내려받기 잔여물을 정리한다(교체가 끝난 다음 실행에서).
                     threading.Thread(target=업데이트_잔여정리, daemon=True, name="update-cleanup").start()
-                if getattr(sys, "frozen", False) and self.check_updates_on_start_var.get():
-                    root.after(1500, self._자동업데이트_확인_시작)
+                service = self._업데이트_서비스()
+                service.start_periodic_checks(
+                    root.after, lambda: self.check_updates_on_start_var.get(),
+                    self._서비스_업데이트_안내, alive=lambda: not self.closing)
+                root.after(2000, self._업데이트_버전알림)
 
-
-            def _자동업데이트_확인_시작(self, 수동=False):
-                from docfit_core.network_policy import offline_mode
-                if offline_mode():
-                    # 폐쇄망 모드: 외부 서버에 접속하지 않는다. 새 버전은 담당자가 전달한 실행 파일로 바꾼다.
-                    if 수동:
-                        self._알림(messagebox.showinfo, APP_NAME,
-                                   "폐쇄망 모드에서는 인터넷으로 업데이트를 확인하지 않습니다.\n\n"
-                                   "새 버전은 담당자가 전달한 실행 파일로 바꿔 주세요. 인터넷이 되는 PC라면 "
-                                   "설정에서 '폐쇄망 모드'를 끄면 업데이트를 확인할 수 있습니다.",
-                                   parent=self.settings_toplevel or self.root)
-                        self.status_var.set("폐쇄망 모드: 업데이트 확인을 하지 않았어요.")
-                    return
-                if 수동:
-                    버튼 = getattr(self, "update_button", None)
-                    if 버튼 is not None:
-                        버튼.config(state="disabled")
-                    self.status_var.set("새 업데이트가 있는지 확인하고 있어요…")
-
-                def 결과_표시(릴리스=None, 오류=None):
-                    버튼 = getattr(self, "update_button", None)
-                    if 버튼 is not None and not self.running:
-                        버튼.config(state="normal")
-                    if 오류 is not None:
-                        if 수동:
-                            self._알림(messagebox.showerror,
-                                APP_NAME,
-                                f"업데이트 정보를 확인하지 못했습니다.\n\n{오류}",
-                                parent=self.settings_toplevel or self.root,
-                            )
-                            self.status_var.set("업데이트 확인에 실패했어요.")
-                        return
-                    최신버전 = str((릴리스 or {}).get("tag_name") or (릴리스 or {}).get("name") or APP_VERSION)
-                    if not 릴리스 or _버전_튜플(최신버전) <= _버전_튜플(APP_VERSION):
-                        if 수동:
-                            self._알림(messagebox.showinfo,
-                                APP_NAME,
-                                "현재 최신버전입니다.",
-                                parent=self.settings_toplevel or self.root,
-                            )
-                            self.status_var.set("현재 최신버전입니다.")
-                        return
-                    self._자동업데이트_안내(릴리스)
-
-                def 확인():
-                    try:
-                        릴리스 = _최신_릴리스_통합_조회()
-                    except Exception as exc:
-                        # 네트워크가 없거나 GitLab이 응답하지 않아도 앱 사용은 막지 않는다.
-                        if 수동:
+            def _업데이트_서비스(self):
+                if not hasattr(self, "_update_service"):
+                    from docfit_app.update_service import UpdateService
+                    def ui_call(callback):
+                        from concurrent.futures import Future
+                        result = Future()
+                        def invoke():
                             try:
-                                self.root.after(0, lambda 오류=str(exc): 결과_표시(오류=오류))
-                            except Exception:
-                                pass
-                        return
-                    try:
-                        self.root.after(0, lambda: 결과_표시(릴리스=릴리스))
-                    except Exception:
-                        pass
+                                result.set_result(callback())
+                            except Exception as exc:
+                                result.set_exception(exc)
+                        self.root.after(0, invoke)
+                        return result.result(timeout=30)
+                    def portable(path, digest):
+                        return ui_call(lambda: self._자동업데이트_설치(path, digest))
+                    def exit_app():
+                        def close():
+                            self.closing = True
+                            self.root.destroy()
+                        return ui_call(close)
+                    self._update_service = UpdateService(
+                        APP_VERSION, folder=설정_폴더(),
+                        portable_install=portable, exit_app=exit_app,
+                        running=lambda: self.running)
+                return self._update_service
 
-                threading.Thread(target=확인, daemon=True, name="release-update-check").start()
+            def _업데이트_버전알림(self):
+                from docfit_app.settings_service import SettingsService
+                try:
+                    notice = self._업데이트_서비스().version_notice(
+                        SettingsService(설정_폴더() / "settings.json"))
+                    if notice:
+                        self._알림(messagebox.showinfo, APP_NAME, notice, parent=self.root)
+                except Exception as exc:
+                    self.로그표시(f"버전 알림 설정을 저장하지 못했습니다: {exc}")
 
-            def _자동업데이트_안내(self, 릴리스):
+            def _서비스_업데이트_안내(self, state):
                 if self.closing or self.running:
                     return
-                자산 = _업데이트_자산_선택(릴리스)
-                버전 = str(릴리스.get("tag_name") or 릴리스.get("name") or "새 버전")
-                if not 자산 or not 자산.get("browser_download_url"):
-                    self._알림(messagebox.showinfo,
-                        APP_NAME,
-                        f"{버전} 정식 버전이 출시되었지만 Windows EXE 파일이 없습니다.\n"
-                        f"Release에 {UPDATE_ASSET_NAME}를 첨부해 주세요.",
-                        parent=self.root,
-                    )
-                    return
-                if not self._알림(messagebox.askyesno,
-                    APP_NAME,
-                    f"새 정식 버전 {버전}이 출시되었습니다.\n\n"
-                    "지금 다운로드하고 앱을 자동으로 업데이트할까요?",
-                    parent=self.root,
-                ):
-                    return
-                self.status_var.set(f"{버전} 업데이트를 다운로드하고 있어요…")
-                threading.Thread(
-                    target=self._자동업데이트_다운로드,
-                    args=(릴리스, 자산),
-                    daemon=True,
-                    name="release-update-download",
-                ).start()
+                notes = "\n".join("• " + n for n in state["notes"])
+                if self._알림(messagebox.askyesno, APP_NAME,
+                             f"새 버전 v{state['latest']}이 나왔어요.\n\n{notes}\n\n업데이트할까요?",
+                             parent=self.root):
+                    threading.Thread(target=self._업데이트_서비스().start_update,
+                                     daemon=True, name="release-update-download").start()
 
-            def _자동업데이트_다운로드(self, 릴리스, 자산):
-                """'.part'로 받고 크기·EXE 머리·SHA-256(자산 digest 또는 릴리스 노트)을 확인한 뒤 확정한다."""
-                임시 = None
-                try:
-                    업데이트_폴더 = 설정_폴더() / "updates"
-                    업데이트_폴더.mkdir(parents=True, exist_ok=True)
-                    버전 = re.sub(r"[^0-9A-Za-z._-]+", "_", str(릴리스.get("tag_name", "latest")))
-                    다운로드_경로 = 업데이트_폴더 / f"HWP_AutoDocFit-{버전}.exe"
-                    임시 = 다운로드_경로.with_name(다운로드_경로.name + ".part")
-                    다운로드_URL = _업데이트_URL_검증(자산["browser_download_url"])
-                    예상해시 = 업데이트_예상해시(릴리스, 자산)
-                    해시 = hashlib.sha256()
-                    크기 = 0
-                    머리 = b""
-                    응답 = _업데이트_HTTP_GET(다운로드_URL,
-                                            {"User-Agent": f"HWP-AutoDocFit/{APP_VERSION}"}, 30)
-                    try:
-                        with open(임시, "wb") as 출력:
-                            while True:
-                                조각 = 응답.read(1024 * 1024)
-                                if not 조각:
-                                    break
-                                if len(머리) < 2:
-                                    머리 += 조각[:2]
-                                출력.write(조각)
-                                해시.update(조각)
-                                크기 += len(조각)
-                    finally:
-                        응답._docfit_connection.close()
-                    문제 = 업데이트_파일검증(크기, 머리, 해시.hexdigest(), int(자산.get("size") or 0) or None, 예상해시)
-                    if 문제:
-                        raise RuntimeError(문제)
-                    os.replace(임시, 다운로드_경로)
-                    임시 = None
-                    _업데이트_기록(f"내려받기 완료: {다운로드_경로.name} {크기:,}바이트, SHA-256 확인")
-                    self.root.after(0, lambda: self._자동업데이트_설치(다운로드_경로, 예상해시))
-                except Exception as exc:
-                    _업데이트_기록(f"내려받기 실패: {exc}")
-                    try:
-                        self.root.after(0, lambda 오류=str(exc): self._알림(messagebox.showerror,
-                            APP_NAME, f"자동 업데이트를 다운로드하지 못했습니다.\n\n{오류}", parent=self.root
-                        ))
-                    except Exception:
-                        pass
-                finally:
-                    if 임시 is not None:
-                        try:
-                            Path(임시).unlink()
-                        except OSError:
-                            pass
+            def _자동업데이트_확인_시작(self, 수동=False):
+                service = self._업데이트_서비스()
+                state = service.state()
+                if state["step"] == "offline":
+                    if 수동:
+                        self._알림(messagebox.showinfo, APP_NAME, state["message"], parent=self.root)
+                    return
+                def check():
+                    service.check()
+                    state = service.state()
+                    def show():
+                        if state["step"] == "available":
+                            self._서비스_업데이트_안내(state)
+                        elif 수동:
+                            self._알림(messagebox.showinfo, APP_NAME, state["message"], parent=self.root)
+                    self.root.after(0, show)
+                threading.Thread(target=check, daemon=True, name="release-update-check").start()
+
+            def _자동업데이트_안내(self, 릴리스):
+                self._서비스_업데이트_안내(self._업데이트_서비스().state())
+
+            def _자동업데이트_다운로드(self, 릴리스=None, 자산=None):
+                return self._업데이트_서비스().start_update()
 
             def _자동업데이트_설치(self, 다운로드_경로, 예상해시=None):
                 """구버전을 '.old'로 바꾸고 신버전을 원래 이름으로 넣는 교체 스크립트를 띄운 뒤 앱을 끝낸다.
@@ -984,7 +916,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 PyInstaller 단일 EXE는 부트로더(부모)와 Python(자식) 두 프로세스로 돈다. 예전에는 자식만 기다려 부모가 EXE를
                 잡고 있는 동안 복사가 실패했고, 그러면 내려받은 파일을 그 자리에서 실행해 구버전이 남았다(2026-10-09).
                 """
-                현재_실행파일 = Path(sys.executable).resolve()
+                from docfit_app.update_service import portable_target
+                현재_실행파일 = portable_target(sys.executable, os.environ)
                 폴더 = 현재_실행파일.parent
                 try:
                     시험 = 폴더 / f".docfit_update_test_{os.getpid()}"
@@ -1002,7 +935,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         os.startfile(str(다운로드_경로.parent))
                     except Exception:
                         pass
-                    return
+                    return False
                 스크립트 = 다운로드_경로.with_suffix(".ps1")
                 스크립트.write_text(업데이트_교체스크립트(), encoding="utf-8-sig")
                 기다릴 = [os.getpid()]

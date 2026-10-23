@@ -10,6 +10,7 @@ README의 다운로드 링크는 `-/raw/downloads/<파일>?inline=false` 형식�
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
 import subprocess
 import sys
@@ -38,14 +39,21 @@ def main(version: str) -> int:
             subprocess.run(["curl", "--fail", "--location", "--proto", "=https", "--silent", "--show-error",
                             "--max-time", "900", "--output", str(work / name),
                             GITHUB.format(version=version, name=name)], check=True)
-        expected = {}
-        for line in (work / "SHA256SUMS").read_text(encoding="utf-8").splitlines():
-            digest, _, path = line.partition(" ")
-            expected[Path(path.lstrip("*")).name] = digest.lower()
+        sys.path.insert(0, str(ROOT))
+        from docfit_app.update_service import extract_notes, parse_sha256sums
+        expected = parse_sha256sums((work / "SHA256SUMS").read_text(encoding="utf-8-sig"))
         for name in names[:2]:
             actual = hashlib.sha256((work / name).read_bytes()).hexdigest()
             if expected.get(name) != actual:
                 raise SystemExit(f"SHA-256 불일치: {name}")
+        # Pure helper is shared with the app so notes match the settings panel.
+        note_path = ROOT / "releases" / f"v{version}.md"
+        manifest = {"version": version, "files": {
+            kind: {"name": name, "size": (work / name).stat().st_size,
+                   "sha256": expected[name]}
+            for kind, name in zip(("portable", "setup"), names[:2])},
+            "notes": extract_notes(note_path.read_text(encoding="utf-8"))}
+        (work / "latest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
         shutil.copyfile(EXAMPLE, work / EXAMPLE.name)
         (work / "README.md").write_text(
             f"# 한글편집 후처리 v{version} 내려받기 (GitLab)\n\n"

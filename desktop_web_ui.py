@@ -360,6 +360,27 @@ class DesktopWebBridge:
             elapsed=elapsed,
         )
 
+    def check_update(self):
+        service = self._tk(lambda: self.gui._업데이트_서비스())
+        threading.Thread(target=service.check, daemon=True, name="manual-update-check").start()
+        return {"ok": True}
+
+    def start_update(self):
+        def begin():
+            from docfit_app.api_contract import ServiceError
+            if self.gui.running:
+                raise ServiceError("JOB_RUNNING", "문서 작업이 끝난 뒤 업데이트해 주세요.")
+            service = self.gui._업데이트_서비스()
+            if service.state()["step"] in ("checking", "downloading", "installing"):
+                raise ServiceError("BUSY", "업데이트 작업이 진행 중이에요.")
+            threading.Thread(target=service.start_update, daemon=True, name="manual-update-download").start()
+            return {"ok": True}
+        return self._tk(lambda: response(begin))
+
+    def open_update_page(self):
+        service = self._tk(lambda: self.gui._업데이트_서비스())
+        return {"ok": service.open_download_page()}
+
     def get_state(self):
         def snapshot():
             gui = self.gui
@@ -440,6 +461,7 @@ class DesktopWebBridge:
                 "conversion_targets": [],
                 "can_start": self._can_start(mode, gui.files, gui.running) if mode != "file_format" else False,
                 "version": APP_VERSION,
+                "update": gui._업데이트_서비스().state() if hasattr(gui, "_업데이트_서비스") else {},
             }
 
         state = self._tk(snapshot)
@@ -1780,7 +1802,7 @@ class _BrowserApi:
             "set_exclude_tables", "set_card_option",
             "set_drop_target", "add_format_file", "write_format_example", "rename_profile", "delete_profile",
             "edit_profile", "show_format_example", "open_format_samples", "format_gallery",
-            "set_conversion_target",
+            "set_conversion_target", "check_update", "start_update", "open_update_page",
         ):
             setattr(self, name, getattr(bridge, name))
 

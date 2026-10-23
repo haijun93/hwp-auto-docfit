@@ -14,12 +14,15 @@ class DistributionBuildTest(unittest.TestCase):
         self.assertNotIn("portable = EXE", spec)
         self.assertNotIn("Splash(", spec)
 
-    def test_installer_is_per_user_and_has_shortcuts_and_mutex(self):
+    def test_installer_is_per_user_and_closes_running_app_for_update(self):
         iss = (ROOT / "installer" / "setup.iss").read_text(encoding="utf-8")
         self.assertIn("PrivilegesRequired=lowest", iss)
         self.assertIn(r"{localappdata}\Programs\HWP_AutoDocFit", iss)
-        self.assertIn(r"Global\HWP_AutoDocFit_SingleInstance_Mutex", iss)
-        self.assertIn(r"Local\HWP_AutoDocFit_SingleInstance_Mutex", iss)
+        # AppMutex aborts before Restart Manager can close the running copy.
+        self.assertNotRegex(iss, r"(?m)^AppMutex=")
+        self.assertIn("CloseApplications=yes", iss)
+        self.assertIn("CloseApplicationsFilter=*.exe,*.dll,*.pyd", iss)
+        self.assertIn('Flags: nowait; Check: WizardSilent', iss)
         self.assertIn("{autoprograms}", iss)
         self.assertIn("{autodesktop}", iss)
         self.assertIn("[UninstallDelete]", iss)
