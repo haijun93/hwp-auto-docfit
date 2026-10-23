@@ -25,6 +25,7 @@ import 'features/settings/update_panel.dart';
 import 'features/stages/stage_board.dart';
 import 'features/table_units/table_units_screen.dart';
 import 'features/table_sketch/table_sketch_screen.dart';
+import 'features/public_language/public_language_screen.dart';
 
 export 'core/api/abbreviation_api.dart' show ApiCall;
 
@@ -1025,13 +1026,18 @@ class _WorkspaceState extends State<Workspace> {
                 onSelected: (v) {
                   if (v == 'diagram_editor') {
                     openDiagramEditor();
+                  } else if (v == 'proofread') {
+                    openPublicLanguage();
                   } else {
                     openTools(v);
                   }
                 },
                 itemBuilder: (_) => [
                   PopupMenuItem(value: 'review', child: Text('문서 검토')),
-                  PopupMenuItem(value: 'proofread', child: Text('공공언어 교정')),
+                  PopupMenuItem(
+                    value: 'proofread',
+                    child: Text('공공언어 바로쓰기 검토'),
+                  ),
                   PopupMenuItem(value: 'outline', child: Text('문서 구조 편집')),
                   PopupMenuItem(value: 'writing', child: Text('작성 도우미')),
                   PopupMenuItem(
@@ -2032,6 +2038,36 @@ class _WorkspaceState extends State<Workspace> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('종료를 취소했습니다. 저장 중이면 완료 후 다시 닫아 주세요.')),
       );
+    }
+  }
+
+  Future<void> openPublicLanguage() async {
+    if (!mounted) return;
+    bool fallback = false;
+    try {
+      final res = await widget.api('get_settings', []);
+      if (res is Map && res['data'] is Map) {
+        final values = (res['data'] as Map)['values'] as Map?;
+        fallback = values?['ui_tk_fallback'] == true;
+      }
+    } catch (_) {}
+    if (!mounted) return;
+    if (fallback) {
+      await command('run_tool', ['proofread']);
+    } else {
+      final initialSources = [
+        for (final file in files.whereType<Map>())
+          if (file['path'] is String) file['path'] as String,
+      ];
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => PublicLanguageScreen(
+            api: widget.api,
+            initialSources: initialSources.isNotEmpty ? initialSources : null,
+          ),
+        ),
+      );
+      await refresh();
     }
   }
 
