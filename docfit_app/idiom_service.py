@@ -33,7 +33,7 @@ class IdiomService:
         if not self._has_hwpx_configs():
             return None
         try:
-            text = hwpx_idioms.parse_hwpx(self.text_config) if self.text_config and self.text_config.is_file() else []
+            text = hwpx_idioms.parse_hwpx(self.text_config, allow_duplicate_keys=True) if self.text_config and self.text_config.is_file() else []
             body = hwpx_idioms.parse_hwpx(self.body_config) if self.body_config and self.body_config.is_file() else []
         except hwpx_idioms.HwpxIdiomError as exc:
             raise ServiceError("INVALID_IDIOM_FILE", str(exc)) from exc
@@ -42,7 +42,7 @@ class IdiomService:
             "folder": str(self.config_root),
             "source": "hwpx",
             "config_files": {"text": str(self.text_config), "body": str(self.body_config)},
-            "text": [{"key": item["key"], "value": item["value"], "attr": 0} for item in text],
+            "text": [{"key": item["key"], "value": item["value"], "attr": item.get("attr", 0)} for item in text],
             "body": [{"key": item["key"], "title": item["key"], "value": item["value"],
                       "attr": 1, "has_file": True} for item in body],
         }
@@ -138,7 +138,7 @@ class IdiomService:
         if not self._has_hwpx_configs():
             raise ServiceError("CONFIG_MISSING", "상용구 HWPX 설정 파일이 없습니다.")
         try:
-            text = hwpx_idioms.parse_hwpx(self.text_config) if self.text_config and self.text_config.is_file() else []
+            text = hwpx_idioms.parse_hwpx(self.text_config, allow_duplicate_keys=True) if self.text_config and self.text_config.is_file() else []
             body = hwpx_idioms.parse_hwpx(self.body_config) if self.body_config and self.body_config.is_file() else []
         except hwpx_idioms.HwpxIdiomError as exc:
             raise ServiceError("INVALID_IDIOM_FILE", str(exc)) from exc
@@ -160,7 +160,7 @@ class IdiomService:
 
             previous = store.load()
             data = IdiomFile(
-                text=[Idiom(item["key"], item["value"], 0) for item in text],
+                text=[Idiom(item["key"], item["value"], item.get("attr", 0)) for item in text],
                 body=[Idiom(item["key"], item["key"], 1) for item in body],
                 versions=previous.versions,
                 has_body_section=True,

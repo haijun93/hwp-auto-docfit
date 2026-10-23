@@ -812,7 +812,10 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 if self._활성_서식_프로파일 not in self._프로파일들:
                     self._활성_서식_프로파일 = ""
                 self._프로파일_전역반영(self._프로파일들[self._활성_서식_프로파일])
+                # 설정 창을 지연 생성(v1.80.0)한 뒤로 목록 갱신이 빠져 서식 순서·콤보가 비어 있었다 → 서식 바꾸기가 무시됨.
+                self._프로파일_목록갱신()
                 self._서식예시_폴더_준비()
+                root.after(4000, self._서식예시_자동감지)   # 사용자가 서식예시 폴더에 넣은 예시를 서식으로 등록
                 try:
                     상용구_폴더_준비()
                 except Exception as exc:
@@ -831,149 +834,81 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     업데이트_시작신호()
                     # 지난 업데이트가 남긴 구버전 백업과 내려받기 잔여물을 정리한다(교체가 끝난 다음 실행에서).
                     threading.Thread(target=업데이트_잔여정리, daemon=True, name="update-cleanup").start()
-                if getattr(sys, "frozen", False) and self.check_updates_on_start_var.get():
-                    root.after(1500, self._자동업데이트_확인_시작)
+                service = self._업데이트_서비스()
+                service.start_periodic_checks(
+                    root.after, lambda: self.check_updates_on_start_var.get(),
+                    self._서비스_업데이트_안내, alive=lambda: not self.closing)
+                root.after(2000, self._업데이트_버전알림)
 
-
-            def _자동업데이트_확인_시작(self, 수동=False):
-                from docfit_core.network_policy import offline_mode
-                if offline_mode():
-                    # 폐쇄망 모드: 외부 서버에 접속하지 않는다. 새 버전은 담당자가 전달한 실행 파일로 바꾼다.
-                    if 수동:
-                        self._알림(messagebox.showinfo, APP_NAME,
-                                   "폐쇄망 모드에서는 인터넷으로 업데이트를 확인하지 않습니다.\n\n"
-                                   "새 버전은 담당자가 전달한 실행 파일로 바꿔 주세요. 인터넷이 되는 PC라면 "
-                                   "설정에서 '폐쇄망 모드'를 끄면 업데이트를 확인할 수 있습니다.",
-                                   parent=self.settings_toplevel or self.root)
-                        self.status_var.set("폐쇄망 모드: 업데이트 확인을 하지 않았어요.")
-                    return
-                if 수동:
-                    버튼 = getattr(self, "update_button", None)
-                    if 버튼 is not None:
-                        버튼.config(state="disabled")
-                    self.status_var.set("새 업데이트가 있는지 확인하고 있어요…")
-
-                def 결과_표시(릴리스=None, 오류=None):
-                    버튼 = getattr(self, "update_button", None)
-                    if 버튼 is not None and not self.running:
-                        버튼.config(state="normal")
-                    if 오류 is not None:
-                        if 수동:
-                            self._알림(messagebox.showerror,
-                                APP_NAME,
-                                f"업데이트 정보를 확인하지 못했습니다.\n\n{오류}",
-                                parent=self.settings_toplevel or self.root,
-                            )
-                            self.status_var.set("업데이트 확인에 실패했어요.")
-                        return
-                    최신버전 = str((릴리스 or {}).get("tag_name") or (릴리스 or {}).get("name") or APP_VERSION)
-                    if not 릴리스 or _버전_튜플(최신버전) <= _버전_튜플(APP_VERSION):
-                        if 수동:
-                            self._알림(messagebox.showinfo,
-                                APP_NAME,
-                                "현재 최신버전입니다.",
-                                parent=self.settings_toplevel or self.root,
-                            )
-                            self.status_var.set("현재 최신버전입니다.")
-                        return
-                    self._자동업데이트_안내(릴리스)
-
-                def 확인():
-                    try:
-                        릴리스 = _최신_릴리스_통합_조회()
-                    except Exception as exc:
-                        # 네트워크가 없거나 GitLab이 응답하지 않아도 앱 사용은 막지 않는다.
-                        if 수동:
+            def _업데이트_서비스(self):
+                if not hasattr(self, "_update_service"):
+                    from docfit_app.update_service import UpdateService
+                    def ui_call(callback):
+                        from concurrent.futures import Future
+                        result = Future()
+                        def invoke():
                             try:
-                                self.root.after(0, lambda 오류=str(exc): 결과_표시(오류=오류))
-                            except Exception:
-                                pass
-                        return
-                    try:
-                        self.root.after(0, lambda: 결과_표시(릴리스=릴리스))
-                    except Exception:
-                        pass
+                                result.set_result(callback())
+                            except Exception as exc:
+                                result.set_exception(exc)
+                        self.root.after(0, invoke)
+                        return result.result(timeout=30)
+                    def portable(path, digest):
+                        return ui_call(lambda: self._자동업데이트_설치(path, digest))
+                    def exit_app():
+                        def close():
+                            self.closing = True
+                            self.root.destroy()
+                        return ui_call(close)
+                    self._update_service = UpdateService(
+                        APP_VERSION, folder=설정_폴더(),
+                        portable_install=portable, exit_app=exit_app,
+                        running=lambda: self.running)
+                return self._update_service
 
-                threading.Thread(target=확인, daemon=True, name="release-update-check").start()
+            def _업데이트_버전알림(self):
+                from docfit_app.settings_service import SettingsService
+                try:
+                    notice = self._업데이트_서비스().version_notice(
+                        SettingsService(설정_폴더() / "settings.json"))
+                    if notice:
+                        self._알림(messagebox.showinfo, APP_NAME, notice, parent=self.root)
+                except Exception as exc:
+                    self.로그표시(f"버전 알림 설정을 저장하지 못했습니다: {exc}")
 
-            def _자동업데이트_안내(self, 릴리스):
+            def _서비스_업데이트_안내(self, state):
                 if self.closing or self.running:
                     return
-                자산 = _업데이트_자산_선택(릴리스)
-                버전 = str(릴리스.get("tag_name") or 릴리스.get("name") or "새 버전")
-                if not 자산 or not 자산.get("browser_download_url"):
-                    self._알림(messagebox.showinfo,
-                        APP_NAME,
-                        f"{버전} 정식 버전이 출시되었지만 Windows EXE 파일이 없습니다.\n"
-                        f"Release에 {UPDATE_ASSET_NAME}를 첨부해 주세요.",
-                        parent=self.root,
-                    )
-                    return
-                if not self._알림(messagebox.askyesno,
-                    APP_NAME,
-                    f"새 정식 버전 {버전}이 출시되었습니다.\n\n"
-                    "지금 다운로드하고 앱을 자동으로 업데이트할까요?",
-                    parent=self.root,
-                ):
-                    return
-                self.status_var.set(f"{버전} 업데이트를 다운로드하고 있어요…")
-                threading.Thread(
-                    target=self._자동업데이트_다운로드,
-                    args=(릴리스, 자산),
-                    daemon=True,
-                    name="release-update-download",
-                ).start()
+                notes = "\n".join("• " + n for n in state["notes"])
+                if self._알림(messagebox.askyesno, APP_NAME,
+                             f"새 버전 v{state['latest']}이 나왔어요.\n\n{notes}\n\n업데이트할까요?",
+                             parent=self.root):
+                    threading.Thread(target=self._업데이트_서비스().start_update,
+                                     daemon=True, name="release-update-download").start()
 
-            def _자동업데이트_다운로드(self, 릴리스, 자산):
-                """'.part'로 받고 크기·EXE 머리·SHA-256(자산 digest 또는 릴리스 노트)을 확인한 뒤 확정한다."""
-                임시 = None
-                try:
-                    업데이트_폴더 = 설정_폴더() / "updates"
-                    업데이트_폴더.mkdir(parents=True, exist_ok=True)
-                    버전 = re.sub(r"[^0-9A-Za-z._-]+", "_", str(릴리스.get("tag_name", "latest")))
-                    다운로드_경로 = 업데이트_폴더 / f"HWP_AutoDocFit-{버전}.exe"
-                    임시 = 다운로드_경로.with_name(다운로드_경로.name + ".part")
-                    다운로드_URL = _업데이트_URL_검증(자산["browser_download_url"])
-                    예상해시 = 업데이트_예상해시(릴리스, 자산)
-                    해시 = hashlib.sha256()
-                    크기 = 0
-                    머리 = b""
-                    응답 = _업데이트_HTTP_GET(다운로드_URL,
-                                            {"User-Agent": f"HWP-AutoDocFit/{APP_VERSION}"}, 30)
-                    try:
-                        with open(임시, "wb") as 출력:
-                            while True:
-                                조각 = 응답.read(1024 * 1024)
-                                if not 조각:
-                                    break
-                                if len(머리) < 2:
-                                    머리 += 조각[:2]
-                                출력.write(조각)
-                                해시.update(조각)
-                                크기 += len(조각)
-                    finally:
-                        응답._docfit_connection.close()
-                    문제 = 업데이트_파일검증(크기, 머리, 해시.hexdigest(), int(자산.get("size") or 0) or None, 예상해시)
-                    if 문제:
-                        raise RuntimeError(문제)
-                    os.replace(임시, 다운로드_경로)
-                    임시 = None
-                    _업데이트_기록(f"내려받기 완료: {다운로드_경로.name} {크기:,}바이트, SHA-256 확인")
-                    self.root.after(0, lambda: self._자동업데이트_설치(다운로드_경로, 예상해시))
-                except Exception as exc:
-                    _업데이트_기록(f"내려받기 실패: {exc}")
-                    try:
-                        self.root.after(0, lambda 오류=str(exc): self._알림(messagebox.showerror,
-                            APP_NAME, f"자동 업데이트를 다운로드하지 못했습니다.\n\n{오류}", parent=self.root
-                        ))
-                    except Exception:
-                        pass
-                finally:
-                    if 임시 is not None:
-                        try:
-                            Path(임시).unlink()
-                        except OSError:
-                            pass
+            def _자동업데이트_확인_시작(self, 수동=False):
+                service = self._업데이트_서비스()
+                state = service.state()
+                if state["step"] == "offline":
+                    if 수동:
+                        self._알림(messagebox.showinfo, APP_NAME, state["message"], parent=self.root)
+                    return
+                def check():
+                    service.check()
+                    state = service.state()
+                    def show():
+                        if state["step"] == "available":
+                            self._서비스_업데이트_안내(state)
+                        elif 수동:
+                            self._알림(messagebox.showinfo, APP_NAME, state["message"], parent=self.root)
+                    self.root.after(0, show)
+                threading.Thread(target=check, daemon=True, name="release-update-check").start()
+
+            def _자동업데이트_안내(self, 릴리스):
+                self._서비스_업데이트_안내(self._업데이트_서비스().state())
+
+            def _자동업데이트_다운로드(self, 릴리스=None, 자산=None):
+                return self._업데이트_서비스().start_update()
 
             def _자동업데이트_설치(self, 다운로드_경로, 예상해시=None):
                 """구버전을 '.old'로 바꾸고 신버전을 원래 이름으로 넣는 교체 스크립트를 띄운 뒤 앱을 끝낸다.
@@ -981,7 +916,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 PyInstaller 단일 EXE는 부트로더(부모)와 Python(자식) 두 프로세스로 돈다. 예전에는 자식만 기다려 부모가 EXE를
                 잡고 있는 동안 복사가 실패했고, 그러면 내려받은 파일을 그 자리에서 실행해 구버전이 남았다(2026-10-09).
                 """
-                현재_실행파일 = Path(sys.executable).resolve()
+                from docfit_app.update_service import portable_target
+                현재_실행파일 = portable_target(sys.executable, os.environ)
                 폴더 = 현재_실행파일.parent
                 try:
                     시험 = 폴더 / f".docfit_update_test_{os.getpid()}"
@@ -999,7 +935,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         os.startfile(str(다운로드_경로.parent))
                     except Exception:
                         pass
-                    return
+                    return False
                 스크립트 = 다운로드_경로.with_suffix(".ps1")
                 스크립트.write_text(업데이트_교체스크립트(), encoding="utf-8-sig")
                 기다릴 = [os.getpid()]
@@ -2194,11 +2130,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 self._활성_서식_프로파일 = self._프로파일_ids[콤보.current()]
                 profile = self._프로파일들[self._활성_서식_프로파일]
                 self._프로파일_전역반영(profile)
-                # 설정창은 첫 화면을 빠르게 띄우기 위해 지연 생성한다. 메인 창의
-                # 서식 선택이나 설정창 없는 호출에서는 앱 전역 프로필만 반영한다.
-                if self.settings_toplevel is None or not self.settings_toplevel.winfo_exists():
-                    self._프로파일_목록갱신()
-                    return
+                # 서식의 옵션(내어쓰기·부연설명 들여쓰기·기호 굵게 등)은 설정 창이 없어도 반드시 작업 설정에 넣는다.
+                # v1.80.0에서 설정 창을 지연 생성하며 여기서 돌아가 버려, 앞 서식의 옵션(예: 내어쓰기 꺼짐)이 남아
+                # 다른 서식으로 바꿔도 내어쓰기·붙임 내어쓰기가 빠졌다(2026-10-23 사용자 실측). 변수는 시작 때 모두 만든다.
                 options = profile["options"]
                 for key, var in {**self.std_bool_vars, **self.std_parspace_vars}.items():
                     var.set(options.get(key, 기본_설정[key]))
@@ -2379,6 +2313,36 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         self._썸네일_만들기_시작([identifier])
                 except Exception as exc:
                     self.로그표시(f"서식예시 폴더에 예시 문서를 넣지 못했습니다(서식은 저장함): {exc}")
+
+            def _서식예시_자동감지(self):
+                """서식예시 폴더에 사용자가 직접 넣은 HWP/HWPX 가운데 아직 서식이 없는 파일을 하나씩 서식으로 등록한다.
+
+                (2026-10-23 사용자 요청) 파일은 그대로 두고 그 파일을 예시로 기록한다. 지금 고른 서식은 바꾸지 않는다.
+                하나가 끝나면(실패해도) 다음 파일로 넘어가고, 같은 실행 중 실패한 파일은 다시 시도하지 않는다."""
+                if not 알파_서식예시폴더_사용 or self.running or getattr(self, "_서식분석중", False):
+                    return
+                try:
+                    파일들 = sorted(p for p in 서식예시_폴더().iterdir()
+                                 if p.is_file() and p.suffix.lower() in (".hwp", ".hwpx") and not p.name.startswith(("~", ".")))
+                except OSError:
+                    return
+                등록됨 = set()
+                for 식별자 in list(self._프로파일들):
+                    try:
+                        등록됨.add(self._서식예시_경로(식별자)[0].stem.casefold())
+                    except Exception:
+                        pass
+                시도함 = getattr(self, "_서식예시_자동감지_시도", set())
+                대기 = [p for p in 파일들 if p.stem.casefold() not in 등록됨 and p.name.casefold() not in 시도함]
+                if not 대기:
+                    return
+                path = 대기[0]
+                self._서식예시_자동감지_시도 = 시도함 | {path.name.casefold()}
+                self._자동감지_예시 = path
+                self.로그표시(f"서식예시 폴더에서 새 예시를 찾아 서식으로 등록합니다: {path.name}")
+                self._서식_분석_시작(str(path), 이름묻기=False)
+                if not getattr(self, "_서식분석중", False):   # 분석을 시작하지 못했으면 표시를 지운다
+                    self._자동감지_예시 = None
 
             def _서식예시_폴더_준비(self):
                 """앱을 켤 때 서식예시 폴더를 만들고, 예전 설정 폴더의 예시를 옮기고, 기본 서식 예시가 없으면 넣는다.
@@ -4416,12 +4380,18 @@ def _install(*, _docfit_namespace, _docfit_symbol):
 
             def _서식_복사완료(self, profile=None, error=None):
                 표본 = profile.pop("_서식예시_원본", None) if isinstance(profile, dict) else None
+                자동 = getattr(self, "_자동감지_예시", None)
                 try:
                     self._서식_복사완료_처리(profile, error, 표본)
                 finally:
                     self._quick_registration = False
+                    self._자동감지_예시 = None
                     if 표본:
                         shutil.rmtree(Path(표본).parent, ignore_errors=True)
+                    if 자동 is not None:
+                        if error:
+                            self.로그표시(f"서식예시 폴더의 예시를 서식으로 만들지 못했습니다: {Path(자동).name} ({error})")
+                        self.root.after(500, self._서식예시_자동감지)
 
             def _서식_복사완료_처리(self, profile, error, 표본):
                 self._서식분석중 = False
@@ -4458,6 +4428,24 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     self._알림(messagebox.showerror, APP_NAME, f"서식 저장 실패\n{exc}", parent=parent)
                     return
                 self._프로파일들[identifier] = profile
+                자동 = getattr(self, "_자동감지_예시", None)
+                if 자동 is not None:
+                    예시경로, 정보경로 = self._서식예시_경로(identifier)
+                    예시 = Path(자동)
+                    try:
+                        if 예시.suffix.lower() != ".hwpx":   # HWP는 분석한 HWPX 사본을 같은 이름으로 곁에 둔다
+                            if 표본:
+                                self._서식예시_원본_보관(identifier, 표본)
+                        else:
+                            self._서식예시_기록(예시, 정보경로, {"kind": "source", "식별자": identifier})
+                            if 서식예시모듈.still_cut(예시, 40) is None:
+                                self._썸네일_만들기_시작([identifier])
+                    except Exception as exc:
+                        self.로그표시(f"예시 파일을 기록하지 못했습니다(서식은 저장함): {exc}")
+                    self._프로파일_목록갱신()
+                    self.status_var.set(f"서식예시 폴더의 예시를 서식으로 등록했습니다: {profile['name']}")
+                    self.로그표시(f"서식예시 폴더의 예시를 서식으로 등록했습니다: {profile['name']} ← {예시.name}")
+                    return
                 if 표본:
                     self._서식예시_원본_보관(identifier, 표본)
                 self._활성_서식_프로파일 = identifier
@@ -5990,11 +5978,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
 
             def 파일포맷_변경_시작(self, target_format='hwpx'):
                 """HWP·HWPX→PDF·그림은 한/글 내장 저장, 그 외 변환은 필요한 문서 엔진을 사용한다."""
-                from docfit_core.file_conversion import (
-                    IMAGE_FORMATS, CONVERSION_INPUTS, CONVERSION_OUTPUTS, convert_input_to_hwpx, convert_hwpx_to_text, convert_hwp_to_hwpx, convert_to_images, convert_to_pandoc_format, convert_to_pdf, output_path_for,
-                    is_same_format, IMAGE_INPUT_EXTENSIONS,
-                )
-                from docfit_core.kordoc_bridge import SUPPORTED_INPUT_EXTENSIONS, convert_to_hwpx
+                from docfit_core.file_conversion import CONVERSION_INPUTS, CONVERSION_OUTPUTS
 
                 if self.running or not self.files:
                     return
@@ -6024,126 +6008,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 self.로그표시(f"파일 변환 시작 · {len(files)}개 · 결과 {target_format.upper()}")
 
                 def worker():
-                    successes, failures = 0, 0
-                    app = None
-                    com_initialized = False
-                    # PDF 하나로 합치기(pdfm): PDF·그림은 그대로, 나머지는 한/글로 임시 PDF를 만든 뒤 순서대로 합친다.
-                    합칠_부분, 합치기_임시 = [], None
-                    합치기_한글필요 = target_format == "pdfm" and any(
-                        Path(f).suffix.lower() != ".pdf" and Path(f).suffix.lower() not in IMAGE_INPUT_EXTENSIONS for f in files)
-                    try:
-                        변환할_파일 = [f for f in files if not is_same_format(f, target_format)]
-                        그림_한글필요 = target_format in IMAGE_FORMATS and any(Path(f).suffix.lower() != ".pdf" for f in 변환할_파일)
-                        if (target_format == "pdf" and 변환할_파일) or 합치기_한글필요 or 그림_한글필요 or (target_format == "hwpx" and any(Path(f).suffix.lower() == ".hwp" for f in files)):
-                            pythoncom.CoInitialize()
-                            com_initialized = True
-                            app = 한글_COM_인스턴스_생성(독립=True)
-                            if app.RegisterModule(REGISTER_MODULE_NAME, REGISTER_MODULE_VALUE) is False:
-                                raise RuntimeError("앱에 포함된 한/글 보안 모듈을 등록하지 못했습니다.")
-                            try:
-                                app.Visible = False
-                            except Exception:
-                                pass
-                        for number, source_text in enumerate(files, 1):
-                            if 중단_event.is_set():
-                                break
-                            source = Path(source_text)
-                            gui_queue.put(("doc_begin", number, len(files), source.name))
-                            if target_format != "pdfm" and is_same_format(source, target_format):
-                                # 이미 결과와 같은 형식이면 바꾸지 않는다(예: PDF→PDF, 2026-10-22 사용자 지시).
-                                gui_queue.put(("document_error", str(source), f"이미 {target_format.upper()} 파일이라 건너뛰었습니다."))
-                                로그(f"파일 변환 건너뜀(같은 형식): {source.name}")
-                                failures += 1   # 실패 목록·완료 문구의 수가 맞도록 건너뛴 파일도 '처리 못 함'으로 센다
-                                continue
-                            if target_format == "pdfm":
-                                try:
-                                    if source.suffix.lower() == ".pdf" or source.suffix.lower() in IMAGE_INPUT_EXTENSIONS:
-                                        합칠_부분.append((source.name, source))
-                                    else:
-                                        if 합치기_임시 is None:
-                                            import tempfile as _tempfile
-                                            합치기_임시 = Path(_tempfile.mkdtemp(prefix="docfit_merge_parts_"))
-                                        임시_pdf = 합치기_임시 / f"{number:04d}.pdf"
-                                        convert_to_pdf(app, source, 임시_pdf)
-                                        합칠_부분.append((source.name, 임시_pdf))
-                                    successes += 1
-                                except Exception as exc:
-                                    failures += 1
-                                    if app is not None:
-                                        try:
-                                            app.Clear(1)
-                                        except Exception:
-                                            pass
-                                    gui_queue.put(("document_error", str(source), str(exc)))
-                                    로그(f"PDF 합치기 준비 실패: {source.name} — {exc}")
-                                continue
-                            try:
-                                target = output_path_for(source, target_format)
-                                if target_format == "hwpx":
-                                    if source.suffix.lower() == ".hwp":
-                                        convert_hwp_to_hwpx(app, source, target)
-                                    else:
-                                        convert_input_to_hwpx(source, target)
-                                elif target_format in {"txt", "md"} and source.suffix.lower() == ".hwpx":
-                                    convert_hwpx_to_text(source, target)
-                                elif target_format in {"txt", "md", "docx", "epub", "html"}:
-                                    convert_to_pandoc_format(source, target)
-                                elif target_format in IMAGE_FORMATS:
-                                    target = convert_to_images(app, source, target)
-                                elif target_format == "pdfz":
-                                    from docfit_core.pdf_compress import compress_pdf
-                                    압축결과 = compress_pdf(source, target)
-                                    로그(f"PDF 압축: {source.name} {압축결과.summary()}")
-                                else:
-                                    convert_to_pdf(app, source, target)
-                                successes += 1
-                                gui_queue.put(("saved", str(source), str(target), None))
-                                로그(f"파일 변환 완료: {source.name} → {target.name}")
-                            except Exception as exc:
-                                failures += 1
-                                if app is not None:
-                                    try:
-                                        app.Clear(1)
-                                    except Exception:
-                                        pass
-                                gui_queue.put(("document_error", str(source), str(exc)))
-                                로그(f"파일 변환 실패: {source.name} — {exc}")
-                        if target_format == "pdfm" and not 중단_event.is_set():
-                            from docfit_core.pdf_merge import merge_to_pdf, merged_output_path
-                            첫_원본 = str(files[0])
-                            if failures:
-                                # 일부가 빠진 합본은 만들지 않는다(쪽이 빠진 문서를 완성본으로 착각하지 않게).
-                                gui_queue.put(("document_error", 첫_원본, f"파일 {failures}개를 PDF로 바꾸지 못해 합치지 않았습니다."))
-                                successes = 0
-                            elif 합칠_부분:
-                                try:
-                                    합본 = merge_to_pdf(합칠_부분, merged_output_path([Path(f) for f in files]))
-                                    gui_queue.put(("saved", 첫_원본, str(합본.target), None))
-                                    로그(f"PDF 하나로 합치기 완료: {합본.target.name} ({합본.summary()})")
-                                    successes = 1
-                                except Exception as exc:
-                                    failures, successes = failures + 1, 0
-                                    gui_queue.put(("document_error", 첫_원본, str(exc)))
-                                    로그(f"PDF 하나로 합치기 실패: {exc}")
-                        if 중단_event.is_set():
-                            if target_format == "pdfm":
-                                successes = 0   # 중단하면 합본을 만들지 않으므로 성공으로 세지 않는다
-                            gui_queue.put(("file_conversion_stopped", successes, failures))
-                        else:
-                            gui_queue.put(("file_conversion_finished", successes, failures))
-                    except Exception as exc:
-                        gui_queue.put(("fatal_error", str(exc)))
-                    finally:
-                        if 합치기_임시 is not None:
-                            shutil.rmtree(합치기_임시, ignore_errors=True)
-                        if app is not None:
-                            try:
-                                app.Clear(1)
-                                app.Quit()
-                            except Exception:
-                                pass
-                        if com_initialized:
-                            pythoncom.CoUninitialize()
+                    from docfit_app.conversion_runner import run_conversion
+                    run_conversion(files, target_format, progress=gui_queue.put,
+                                   stop_event=중단_event, runtime_factory=lambda: globals(), log=로그)
 
                 self.worker = threading.Thread(target=worker, daemon=True, name="file-format-conversion")
                 self.worker.start()

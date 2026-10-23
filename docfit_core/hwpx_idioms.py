@@ -20,6 +20,8 @@ class HwpxIdiomError(ValueError):
 
 
 _MARKER = re.compile(r"^\s*#\+\s*(.*?)\s*$")
+# 한/글 HWP.IDO 항목의 속성(첫 16비트, 뜻은 비공개)을 보존하는 표기: '#+준말 [속성 1348]'(2026-10-23 사용자 요청: IDO의 모든 정보 반영).
+_ATTR = re.compile(r"^(.*?)\s+\[속성\s+([0-9A-Fa-f]{1,4})\]$")
 _MAX_ENTRIES = 2000
 _MAX_KEY = 20
 _MAX_VALUE = 100_000
@@ -51,8 +53,11 @@ def _paragraph_text(paragraph: ET.Element) -> str:
     return "".join(parts)
 
 
-def parse_hwpx(path: str | Path) -> list[dict[str, str]]:
-    """HWPX를 ``[{key, value}, ...]``로 읽는다.
+def parse_hwpx(path: str | Path, *, allow_duplicate_keys: bool = False) -> list[dict[str, str]]:
+    """HWPX를 ``[{key, value}, ...]``로 읽는다(준말 줄에 '[속성 xxxx]'가 있으면 ``attr`` 정수도 넣는다).
+
+    글자 상용구는 한/글처럼 같은 준말에 본말 여러 개를 둘 수 있다(allow_duplicate_keys). 본문 상용구는
+    준말로 문서 파일 이름을 지으므로 겹치면 안 된다.
 
     표 안의 문단도 문서 순서대로 읽으며, ``#+``가 아닌 일반 문단은 무시한다.
     이는 사용자가 제목·설명 문단을 넣어도 설정 항목에 섞이지 않게 하기 위함이다.
@@ -77,23 +82,30 @@ def parse_hwpx(path: str | Path) -> list[dict[str, str]]:
 
     entries: list[dict[str, str]] = []
     current_key: str | None = None
+    current_attr: int | None = None
     value_lines: list[str] = []
 
     def finish() -> None:
-        nonlocal current_key, value_lines
+        nonlocal current_key, current_attr, value_lines
         if current_key is None:
             return
         value = "\n".join(value_lines).strip("\n")
         if not value.strip():
             raise HwpxIdiomError(f"'{current_key}' 준말 아래에 본말이 없습니다.")
-        entries.append({"key": current_key, "value": value})
-        current_key, value_lines = None, []
+        entry = {"key": current_key, "value": value}
+        if current_attr is not None:
+            entry["attr"] = current_attr
+        entries.append(entry)
+        current_key, current_attr, value_lines = None, None, []
 
     for line in paragraphs:
         marker = _MARKER.fullmatch(line)
         if marker:
             finish()
-            current_key = marker.group(1).strip()
+            current_key, current_attr = marker.group(1).strip(), None
+            attr = _ATTR.fullmatch(current_key)
+            if attr:
+                current_key, current_attr = attr.group(1).strip(), int(attr.group(2), 16)
             if not current_key:
                 raise HwpxIdiomError("#+ 뒤에 준말을 입력해 주세요.")
             if len(current_key) > _MAX_KEY or any(ord(ch) < 32 for ch in current_key):
@@ -106,7 +118,7 @@ def parse_hwpx(path: str | Path) -> list[dict[str, str]]:
         raise HwpxIdiomError(f"상용구는 {_MAX_ENTRIES}개까지 사용할 수 있습니다.")
     seen: set[str] = set()
     for item in entries:
-        if item["key"] in seen:
+        if item["key"] in seen and not allow_duplicate_keys:
             raise HwpxIdiomError(f"준말이 중복되었습니다: {item['key']}")
         seen.add(item["key"])
         if len(item["value"]) > _MAX_VALUE:
@@ -120,12 +132,12 @@ def compile_native_idiom_file(text_path: str | Path, body_path: str | Path):
     """HWPX 설정 두 개를 한/글이 읽는 HWP.IDO 자료형으로 변환한다."""
     from .hwp_idioms import BODY_SECTION, Idiom, IdiomFile
 
-    text = parse_hwpx(text_path) if Path(text_path).is_file() else []
+    text = parse_hwpx(text_path, allow_duplicate_keys=True) if Path(text_path).is_file() else []
     body = parse_hwpx(body_path) if Path(body_path).is_file() else []
     if not text and not body:
         raise HwpxIdiomError("글자·본문 상용구 HWPX 설정 파일을 찾지 못했습니다.")
     return IdiomFile(
-        text=[Idiom(item["key"], item["value"], 0) for item in text],
+        text=[Idiom(item["key"], item["value"], item.get("attr", 0)) for item in text],
         body=[Idiom(item["key"], item["key"], 1) for item in body],
         has_body_section=bool(body) or bool(text),
     )

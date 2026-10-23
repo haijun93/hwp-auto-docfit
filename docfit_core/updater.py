@@ -58,6 +58,13 @@ def install_script():
     return r'''param([string]$WaitPidList, [string]$Downloaded, [string]$Target, [string]$Log, [string]$Sha256,
       [string]$StartedFlag, [string]$BusyFlag)
 $ErrorActionPreference = 'Stop'
+function Get-Sha256Hex([string]$Path) {
+    # Get-FileHash는 모듈 경로가 달라진 PowerShell에서 없을 수 있다(2026-10-23 CI 실측) — .NET으로 직접 계산한다.
+    $stream = [System.IO.File]::OpenRead($Path)
+    try { $sha = [System.Security.Cryptography.SHA256]::Create()
+          try { return (($sha.ComputeHash($stream) | ForEach-Object { $_.ToString('x2') }) -join '') } finally { $sha.Dispose() } }
+    finally { $stream.Dispose() }
+}
 function Write-Log([string]$m) { try { Add-Content -LiteralPath $Log -Value ("{0:yyyy-MM-dd HH:mm:ss} {1}" -f (Get-Date), $m) -Encoding UTF8 } catch {} }
 function Retry([scriptblock]$Action, [string]$What) {
     for ($i = 1; $i -le 60; $i++) {
@@ -85,7 +92,7 @@ try {
     $head = [byte[]](Get-Content -LiteralPath $Downloaded -Encoding Byte -TotalCount 2)
     if ($head.Count -lt 2 -or $head[0] -ne 0x4D -or $head[1] -ne 0x5A) { throw '내려받은 파일이 EXE가 아닙니다.' }
     # 앱이 검증한 뒤 교체하기 전에 파일이 바뀌지 않았는지 다시 확인한다(검증-사용 사이 바꿔치기 방지).
-    if (-not $Sha256 -or (Get-FileHash -LiteralPath $Downloaded -Algorithm SHA256).Hash -ne $Sha256.ToUpper()) { throw '내려받은 파일의 SHA-256이 검증 때와 다릅니다.' }
+    if (-not $Sha256 -or (Get-Sha256Hex $Downloaded) -ne $Sha256.ToLower()) { throw '내려받은 파일의 SHA-256이 검증 때와 다릅니다.' }
     if (Test-Path -LiteralPath $Old) { Retry { Remove-Item -LiteralPath $Old -Force } '이전 백업 삭제' }
     Retry { Move-Item -LiteralPath $Target -Destination $Old -Force } '구버전 이름 변경'
     $replaced = $true

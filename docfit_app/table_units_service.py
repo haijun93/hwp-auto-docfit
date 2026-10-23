@@ -21,6 +21,7 @@ from .api_contract import ServiceError
 
 USER_CATALOG = Path(r"C:\HWP_AUTODOCFIT") / "표서식모음" / "표 서식모음.hwpx"
 SNAPSHOT_FOLDER = ".스냅샷"
+SNAPSHOT_REVISION = b"C13-shapes-v1"
 HWP_CLIPBOARD_FORMAT = "Hwp Native"
 
 
@@ -29,7 +30,7 @@ def catalog_path(user_catalog: Path = USER_CATALOG) -> Path:
 
 
 def _digest(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+    return hashlib.sha256(SNAPSHOT_REVISION + path.read_bytes()).hexdigest()[:16]
 
 
 def _safe_name(template_id: str) -> str:

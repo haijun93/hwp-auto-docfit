@@ -12,7 +12,7 @@ import {FONTS,registerFonts,ARROWS,DOWN_ARROWS,FLOW_PRESETS,MAX_FLOW_STEPS,MAX_F
  CATALOG_SCOPES,buildCatalogGrid,applyCatalogStructure,setCatalogCellText,setCatalogStyle,setCatalogBorder,buildCatalogEdits,
  isTaskTable,isFixedCalloutCategory,resizeTaskGrid} from './table.js';
 
-const TITLE='표/다이어그램';
+const TITLE='다이어그램·마인드맵';
 function send(message){
  const host=window.chrome?.webview;
  if(window.parent!==window)window.parent.postMessage(message,window.location.origin);
@@ -212,7 +212,7 @@ function BarTableView({table,onChange}){
 }
 
 const TABLE_KINDS=['flow','grid'];
-const AVAILABLE_MODES=new Set(['diagram','mindmap','flow','grid']);
+const AVAILABLE_MODES=new Set(['diagram','mindmap']);
 const ROLE_SETS={flow:['step','date','arrow'],grid:['head','body']};
 const BORDER_PARTS={flow:['line','split'],grid:['outer','inner']};
 const newTables=()=>({flow:flowTable(5),grid:gridTable(4,4)});
@@ -257,7 +257,7 @@ function App(){
   next=layoutGraph(next);current.current=next;setGraph(next);setName(title);history.current=[];future.current=[];
   generation.current++;if(!dirty)savedGeneration.current=generation.current;
   send({type:'dirty',value:dirty,generation:generation.current});fit();
-  if(next.table&&TABLE_KINDS.includes(next.table.kind))setMode(next.table.kind);
+  if(next.table&&TABLE_KINDS.includes(next.table.kind)){setMode('diagram');setStatus('흐름표·기본 표는 더 이상 지원하지 않아요. 표 템플릿을 써 주세요.');}
   else if(next.table)setMode('diagram');
   else if(next.mindmap&&!next.nodes.length)setMode('mindmap');
  };
@@ -266,7 +266,7 @@ function App(){
  const changeTable=next=>{tables.current[next.kind]=next;commit({...current.current,table:next});};
  const mindmap=graph.mindmap??null;
  const changeMindmap=(next,select)=>{commit({...current.current,mindmap:next});if(select!==undefined)setMmSelected(select);};
- const switchMode=next=>{
+ const switchMode=next=>{if(next==='table_units'){send({type:'open_table_units'});return;}
   if(!AVAILABLE_MODES.has(next)){
    setStatus(next==='catalog'?'표 서식 모음은 현재 알파 버전에서 비활성화되어 있습니다.':'조직표와 장식표는 현재 알파 버전에서 사용할 수 없습니다.');
    return;
@@ -283,7 +283,7 @@ function App(){
  handle.current=async message=>{
   if(!message||typeof message!=='object')return;
   try{
-   switch(message.type){
+   switch(message.type){case 'set_mode':{if(message.mode==='diagram'||message.mode==='mindmap')switchMode(message.mode);break;}
     case 'new':tables.current=newTables();setMmSelected(null);replace({nodes:[],edges:[]},'새 '+TITLE,false);setMode('diagram');send({type:'document_new'});break;
     case 'mark_saved':
      if(Number.isInteger(message.generation))savedGeneration.current=Math.max(savedGeneration.current,message.generation);
@@ -476,7 +476,7 @@ function App(){
  const mmNode=mindmap&&mmSelected?findNode(mindmap,mmSelected)?.node:null;
  const shownNodes=mmGraph?mmGraph.nodes.map(n=>({...n,selected:n.id===mmSelected,draggable:true,connectable:true})):graph.nodes;
  const shownEdges=mmGraph?mmGraph.edges:graph.edges;
- const tabs=[['diagram','다이어그램'],['mindmap','마인드맵'],['flow','흐름표'],['grid','기본 표']];
+ const tabs=[['diagram','다이어그램'],['mindmap','마인드맵'],['table_units','표 템플릿']];
  const canvas=mode==='diagram'||mode==='mindmap';
  const scopeLabel=CATALOG_SCOPES.find(([k])=>k===catalogScope)?.[1]??'선택 칸';
  return <HistoryContext.Provider value={checkpoint}><div className="editor-shell">
@@ -490,7 +490,7 @@ function App(){
     <button disabled={busy} onClick={()=>handle.current({type:'copy_png'})}>그림 복사 (한/글 붙여넣기)</button>
     <button disabled={busy} onClick={()=>send({type:'request_png'})}>{busy?'PNG 변환 중…':'PNG 내보내기'}</button>
     {mode==='diagram'&&<select aria-label="예시 서식" value="" onChange={e=>send({type:'request_template',template:e.target.value})}><option value="">예시 서식</option>{Object.entries(templates).map(([key,t])=><option key={key} value={key}>{t.name}</option>)}</select>}
-   </>:<><button onClick={()=>send({type:'copy_result',kind:'table',spec:table})}>표 복사 (한/글 붙여넣기)</button><button className="primary" onClick={exportHwpx}>한/글 문서로 저장</button></>}
+   </>:null}
   </nav></header>
   <div className="workspace">
    {mode==='diagram'&&<aside>

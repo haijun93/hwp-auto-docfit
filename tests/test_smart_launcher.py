@@ -8,6 +8,7 @@ import time
 import uuid
 import unittest
 import zipfile
+from unittest.mock import patch
 
 from scripts.build_smart_launcher import build, find_csc, make_payload
 
@@ -57,6 +58,15 @@ class SmartLauncherBuildTest(unittest.TestCase):
         self.assertIn("CreateMutexW(None, True, mutex_name)", app_source)
         self.assertIn("scripts\\build_smart_launcher.py", build_source)
 
+    def test_cli_routing_and_relative_gui_arguments(self):
+        source = (ROOT / 'launcher' / 'smart_launcher.cs').read_text(encoding='utf-8')
+        self.assertIn('bool cliCommand = IsCliCommand(args);', source)
+        self.assertIn('!File.Exists(args[0]) && !Directory.Exists(args[0])', source)
+        for alias in ('--help', '-h', '/?', '--version'):
+            self.assertIn('"' + alias + '"', source)
+        self.assertIn('File.Exists(a) || Directory.Exists(a) ? Path.GetFullPath(a) : a', source)
+        self.assertIn('WorkingDirectory = IsCliCommand(args) ? Environment.CurrentDirectory : cachePath', source)
+
     def test_splash_image_has_no_baked_status_text(self):
         """그림 속 옛 버전·진행 막대·상태 문구가 런처 글과 겹치지 않게(1.80.3 사용자 보고)."""
         from PIL import Image
@@ -95,7 +105,18 @@ class SmartLauncherBuildTest(unittest.TestCase):
             child = bundle / "HWP_AutoDocFit.exe"
             subprocess.run([str(csc), "/nologo", "/target:exe", f"/out:{child}", str(fixture)], check=True)
             launcher = root / "HWP_AutoDocFit.exe"
-            payload_hash, _ = build(bundle, launcher, version)
+            # 사용 중인 앱과 충돌하지 않도록 시험용 런처 소스의 뮤텍스 이름만 격리한다.
+            test_mutex = 'HWP_AutoDocFit_Test_' + uuid.uuid4().hex
+            isolated = root / 'compiler-root'
+            (isolated / 'launcher').mkdir(parents=True)
+            (isolated / 'resources').mkdir()
+            launcher_source = (ROOT / 'launcher' / 'smart_launcher.cs').read_text(encoding='utf-8')
+            (isolated / 'launcher' / 'smart_launcher.cs').write_text(
+                launcher_source.replace('HWP_AutoDocFit_SingleInstance_Mutex', test_mutex), encoding='utf-8')
+            for name in ('app_icon.ico', 'splash.png'):
+                shutil.copy2(ROOT / 'resources' / name, isolated / 'resources' / name)
+            with patch('scripts.build_smart_launcher.ROOT', isolated):
+                payload_hash, _ = build(bundle, launcher, version)
             cache_name = "app_v" + version.replace(" ", "_") + "_" + payload_hash[:12]
             cache_path = Path(os.environ["LOCALAPPDATA"]) / "HWP_AutoDocFit" / cache_name
             test_cache = cache_path
@@ -105,9 +126,10 @@ class SmartLauncherBuildTest(unittest.TestCase):
             # First non-self-test launch exercises the embedded native splash
             # resource and cold extraction, then transfers the mutex to the child.
             handoff_report = root / "mutex handoff.json"
-            subprocess.run([str(launcher), "--handoff-report", str(handoff_report)], check=True, timeout=30)
+            handoff_report.write_text('', encoding='utf-8')
+            subprocess.run([str(launcher), "--handoff-report", handoff_report.name], cwd=root, check=True, timeout=30)
             deadline = time.monotonic() + 5
-            while not handoff_report.exists() and time.monotonic() < deadline:
+            while handoff_report.read_text(encoding="utf-8") != '{"handoff":true}' and time.monotonic() < deadline:
                 time.sleep(0.05)
             self.assertEqual(handoff_report.read_text(encoding="utf-8"), '{"handoff":true}')
             self.assertTrue((cache_path / ".docfit-complete").is_file())
@@ -127,6 +149,24 @@ class SmartLauncherBuildTest(unittest.TestCase):
             cached_ms = (time.perf_counter() - warm_start) * 1000
             self.assertEqual((cache_path / ".docfit-complete").stat().st_mtime_ns, marker_time)
 
+            # CLI는 앱 뮤텍스가 잡힌 상태에서도 실행되고 자식 종료 코드·런처 경로를 보존한다.
+            import ctypes
+            from ctypes import wintypes
+            kernel = ctypes.windll.kernel32
+            kernel.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
+            kernel.CreateMutexW.restype = wintypes.HANDLE
+            kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+            kernel.ReleaseMutex.argtypes = [wintypes.HANDLE]
+            handle = kernel.CreateMutexW(None, True, 'Global\\' + test_mutex)
+            self.assertTrue(handle)
+            try:
+                cli_report = root / 'CLI 경로 report.txt'
+                completed = subprocess.run([str(launcher), 'convert', cli_report.name], cwd=root, timeout=30)
+                self.assertEqual(completed.returncode, 7)
+                self.assertEqual(cli_report.read_text(encoding='utf-8'), str(launcher))
+            finally:
+                kernel.ReleaseMutex(handle)
+                kernel.CloseHandle(handle)
             self.assertGreater(cached_ms, 0)
             time.sleep(1.1)  # let the fixture release its mutex and executable image handle
 

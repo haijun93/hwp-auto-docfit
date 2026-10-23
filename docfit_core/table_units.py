@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import re
 from pathlib import Path
 
@@ -25,36 +26,90 @@ def _axis(start, core, count, sep=0, *, axis="row"):
                 max=8 if axis == "col" else 40 // core)
 
 
+# 내장 표 서식 항목별 모양 서명 상수 (표 서식모음.hwpx 기준)
+# 현재 None으로 두고 Claude가 시험 실행 시 채운다.
+# 내장 표 서식 모음에서 계산한 모양 서명(compute_catalog_signatures). 이름이 바뀌어도 모양으로 판정표를 찾는다.
+SHAPE_SIGNATURES: dict[str, str | None] = {
+    '라벨 서식 · 모양 1': '4afc81c3945f5542',
+    '라벨 서식 · 모양 2': '4afc81c3945f5542',
+    '라벨 서식 · 모양 3': 'ba28e3852a1ed1bc',
+    '라벨 서식 · 모양 4': '4afc81c3945f5542',
+    '라벨 서식 · 모양 5': 'fb7620756fb25509',
+    '라벨 서식 · 모양 6': '7a641a7402375f53',
+    '부연설명 · 모양 1': 'e71baf079ebf674f',
+    '부연설명 · 모양 2': '68fc9894b22bd0a2',
+    '부연설명 · 모양 3': 'e71baf079ebf674f',
+    '부연설명 · 모양 4': 'ba28e3852a1ed1bc',
+    '부연설명 · 모양 5': '4afc81c3945f5542',
+    '부연설명 · 모양 6': '6abcd3b1acdbe172',
+    '분야별과제표 · 모양 1': '408beef24fa87dd6',
+    '신구대조표 · 모양 1': '78ffecfa68b7b6ab',
+    '신구대조표 · 사용자형': '920eb8de103721f0',
+    '추진절차(가로세로) · 사용자형': '1660c86716c32a08',
+    '신구대조표 · 모양 2': 'dcc581be5e609dcd',
+    '신구대조표 · 모양 3': '22556c475d775a45',
+    '일정표(연간) · 모양 1': '84a71465228518f1',
+    '일정표(월별) · 모양 1': '2398484fbb0fdf6d',
+    '일정표(일간) · 모양 1': '67ead53e71fb418b',
+    '일정표(주간) · 모양 1': '5bee044c21f08c86',
+    '조직도 · 모양 1': 'f97c6d9d4a4f2dc6',
+    '추진절차(가로) · 모양 1': '3d47a1f8cc513c8b',
+    '추진절차(가로) · 모양 2': '47e5c804bb9f56cd',
+    '추진절차(가로) · 모양 3': 'fb587afb20a87119',
+    '추진절차(가로) · 모양 4': 'fb587afb20a87119',
+    '추진절차(가로) · 모양 5': '153a12978b7c3ab3',
+    '추진절차(가로세로) · 모양 1': 'de7a0cc46096a07b',
+    '추진절차(세로) · 모양 1': '77d7182dd4a2859a',
+    '표(가로) · 모양 1': 'eb8966dfb9811ca3',
+    '표(가로) · 모양 2': 'dc2b6b8dcf7f4325',
+    '표(가로) · 모양 3': 'bdefa9af7bf4d5ba',
+    '행사시간표 · 모양 1': '93fdef0a5e0e82aa',
+    '행사표(1일) · 모양 1': '4cfe028a946afd99',
+    '현황표(가로) · 모양 1': '96d1f6dc43f69192',
+}
+
+
 def _plans():
     result = {}
 
-    def add(name, row=None, col=None):
+    def add(name, row=None, col=None, signature=None):
         result[name] = {"row": _axis(*row) if row else None,
-                        "col": _axis(*col, axis="col") if col else None}
+                        "col": _axis(*col, axis="col") if col else None,
+                        "signature": signature if signature is not None else SHAPE_SIGNATURES.get(name)}
 
     add("분야별과제표 · 모양 1", col=(0, 3, 3, 1))
     add("분야별과제표 · 모양 2", col=(0, 3, 2, 1))
     add("표(가로) · 모양 1", (1, 1, 5), (0, 1, 5))
     add("표(가로) · 모양 2", (0, 1, 1), (0, 1, 4))
     add("표(가로) · 모양 3", col=(2, 2, 1))
-    add("현황표(가로) · 모양 1", col=(0, 2, 2))
-    add("행사시간표 · 모양 1", (1, 1, 6))
+    add("현황표(가로) · 모양 1", (3, 1, 2), (0, 2, 2))
+    # 사진첨부용: 사진 행 + 설명 행 두 행이 한 묶음 — 행 단위 +1이면 지금 모양(두 행)을 아래로 하나 더 붙인다(2026-10-23 사용자 요청).
+    for number in (1, 2):
+        add(f"사진첨부용 · 모양 {number}", (0, 2, 1), (0, 1, 4))
+    add("행사시간표 · 모양 1", (1, 1, 6), (2, 1, 2))
     for number, count in enumerate((5, 5, 4, 4, 6), 1):
-        add(f"추진절차(가로) · 모양 {number}", col=(0, 1, count, 1))
-    add("추진절차(가로세로) · 모양 1", col=(0, 1, 4, 1))
-    add("추진절차(세로) · 모양 1", (1, 1, 12))
+        add(f"추진절차(가로) · 모양 {number}",
+            (0, 1, 1) if number == 1 else (1, 1, 1 if number == 5 else 2),
+            (0, 1, count, 1))
+    add("추진절차(가로세로) · 모양 1", (12, 1, 1), (0, 1, 4, 1))
+    add("추진절차(가로세로) · 사용자형", (2, 1, 5, 1), (0, 1, 2, 1), signature="1660c86716c32a08")
+    add("추진절차(세로) · 모양 1", (2, 1, 6, 1))
+    add("신구대조표 · 모양 1", (1, 8, 1))
+    add("신구대조표 · 사용자형", (1, 1, 4), signature="920eb8de103721f0")
     add("신구대조표 · 모양 2", (2, 1, 3))
-    add("신구대조표 · 모양 3", (1, 1, 6))
+    add("신구대조표 · 모양 3", (1, 2, 3))
     add("일정표(연간) · 모양 1", (2, 1, 5), (1, 4, 5))
     add("일정표(월별) · 모양 1", (1, 4, 6), (2, 1, 6))
     add("일정표(주간) · 모양 1", (2, 1, 9), (1, 1, 6))
-    add("일정표(일간) · 모양 1", (1, 2, 9))
-    add("행사표(1일) · 모양 1", (1, 8, 2))
+    add("일정표(일간) · 모양 1", (1, 2, 9), (1, 1, 4))
+    add("행사표(1일) · 모양 1", (1, 8, 2), (3, 1, 2))
     for category, count in (("부연설명", 7), ("라벨 서식", 6), ("표(가로)", 3),
                             ("현황표(가로)", 1), ("신구대조표", 1), ("조직도", 1)):
         for number in range(1, count + 1):
-            result.setdefault(f"{category} · 모양 {number}", {"row": None, "col": None})
-    org_chart_plan = {"row": None, "col": {"count": 5, "min": 2, "max": 10, "core": 2, "sep": 1, "kind": "org_chart"}}
+            name = f"{category} · 모양 {number}"
+            result.setdefault(name, {"row": None, "col": None, "signature": SHAPE_SIGNATURES.get(name)})
+    org_chart_plan = {"row": None, "col": {"count": 5, "min": 2, "max": 10, "core": 2, "sep": 1, "kind": "org_chart"},
+                      "signature": SHAPE_SIGNATURES.get("조직도 · 모양 2")}
     result["조직도"] = org_chart_plan
     result["조직도 · 모양 2"] = org_chart_plan
     return result
@@ -65,6 +120,28 @@ PLANS = _plans()
 
 def _flat(meta):
     return [c for row in meta for c in (row if isinstance(row, list) else [row])]
+
+
+def shape_signature(cell_meta, rows, cols) -> str:
+    """행 수·열 수·칸 병합 배치(rowSpan, colSpan, 상대 위치)·채움색 유무 패턴의 해시 문자열."""
+    cells = _flat(cell_meta)
+    parts = [f"{rows}x{cols}"]
+    for c in sorted(cells, key=lambda x: (int(x.get("row", 0)), int(x.get("col", 0)))):
+        r = int(c.get("row", 0))
+        col = int(c.get("col", 0))
+        rs = int(c.get("rowSpan", 1))
+        cs = int(c.get("colSpan", 1))
+        style = c.get("style")
+        has_fill = 1 if (isinstance(style, dict) and bool(style.get("fill"))) else 0
+        parts.append(f"{r},{col},{rs},{cs},{has_fill}")
+    raw = ";".join(parts)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def compute_catalog_signatures(catalog_path=None) -> dict[str, str]:
+    """내장 표 서식 파일에서 각 템플릿의 shape_signature를 계산한다."""
+    records = catalog._scan(catalog_path or catalog.default_catalog_path())
+    return {r["name"]: shape_signature(r["cell_meta"], r["rows"], r["cols"]) for r in records}
 
 
 def _end(p):
@@ -157,13 +234,41 @@ def detect_plan(cell_meta, rows, cols) -> dict:
 
 
 def plan_for(template) -> dict:
-    name = template.get("name")
-    if name in PLANS:
-        plan = copy.deepcopy(PLANS[name])
-    elif template.get("category") == "조직도" and template.get("cols") == 14:
-        plan = {"row": None, "col": {"count": 5, "min": 2, "max": 10, "core": 2, "sep": 1, "kind": "org_chart"}}
+    matched_plan = None
+
+    # ① 모양 서명이 같은 PLANS
+    cell_meta = template.get("cell_meta")
+    rows = template.get("rows")
+    cols = template.get("cols")
+    if cell_meta is not None and rows is not None and cols is not None:
+        try:
+            sig = shape_signature(cell_meta, rows, cols)
+            # 이름이 정확히 같은 판정표가 있고 서명이 없거나 같으면 그것이 우선이다. 평범한 격자 표는 서명이 다른 표와
+            # 겹칠 수 있다(2026-10-23: 사진첨부용 모양 1이 다른 2×4 표의 규칙을 받아 두 행 묶음이 아닌 한 행만 늘었다).
+            named = PLANS.get(template.get("name"))
+            if named is not None and named.get("signature") in (None, sig):
+                matched_plan = named
+            for p in ([] if matched_plan is not None else PLANS.values()):
+                if p.get("signature") and p["signature"] == sig:
+                    matched_plan = p
+                    break
+        except Exception:
+            pass
+
+    # ② 이름이 같은 PLANS
+    if matched_plan is None:
+        name = template.get("name")
+        if name in PLANS:
+            matched_plan = PLANS[name]
+        elif template.get("category") == "조직도" and template.get("cols") == 14:
+            matched_plan = {"row": None, "col": {"count": 5, "min": 2, "max": 10, "core": 2, "sep": 1, "kind": "org_chart"}}
+
+    # ③ 자동 판정
+    if matched_plan is not None:
+        plan = copy.deepcopy(matched_plan)
     else:
         plan = detect_plan(template["cell_meta"], template["rows"], template["cols"])
+
 
     for axis, length in (("row", template["rows"]), ("col", template["cols"])):
         if plan[axis] is not None:
@@ -173,7 +278,7 @@ def plan_for(template) -> dict:
                 _validate(_flat(template["cell_meta"]), length, axis, plan[axis])
             except ValueError:
                 plan[axis] = None
-    return plan
+    return {"row": plan.get("row"), "col": plan.get("col"), "signature": plan.get("signature")}
 
 
 def _cells(table):
@@ -230,7 +335,7 @@ class _ObjectIds:
         self.z_order = -1
         for root in roots:
             for node in root.iter():
-                for attr in ("id", "instId"):
+                for attr in ("id", "instId", "instid"):
                     value = _integer(node.get(attr))
                     if value is not None:
                         self.used.add(value)
@@ -243,7 +348,7 @@ class _ObjectIds:
             # Paragraph/list IDs are HWPX sentinels, not drawing object IDs.
             if not node.tag.startswith(HP) or node.tag in (HP + "p", HP + "subList"):
                 continue
-            for attr in ("id", "instId"):
+            for attr in ("id", "instId", "instid"):
                 if _integer(node.get(attr)) is not None:
                     while self.next_id in self.used:
                         self.next_id += 1
@@ -676,6 +781,14 @@ def generate_org_chart(template_table_element, team_count, *, fill="increment", 
         t_R = t_mid + 1
     box_start = team_cols[t_L][1]
     box_end = team_cols[t_R][0]
+
+    top_box_sz = top_box_tc.find(HP + "cellSz") if top_box_tc is not None else None
+    ref_box_width = int(top_box_sz.get("width")) if (top_box_sz is not None and top_box_sz.get("width")) else 21045
+    while get_w(box_start, box_end - box_start + 1) < ref_box_width * 0.95 and t_L > 0 and t_R < team_count - 1:
+        t_L -= 1
+        t_R += 1
+        box_start = team_cols[t_L][1]
+        box_end = team_cols[t_R][0]
     box_span = box_end - box_start + 1
 
     def make_cell(proto_tc, row_addr, col_addr, row_span, col_span, width, height, text=None):
@@ -907,7 +1020,10 @@ def _load(template_id, catalog_path):
         root = ET.fromstring(archive.read(record["section"]))
         table = catalog._top_tables(root.findall(HP + "p")[record["paragraph_index"]])[record["table_index"]]
         header = ET.fromstring(archive.read("Contents/header.xml")) if "Contents/header.xml" in archive.namelist() else None
-    return record, table, catalog._header_lookup(header)
+        images = catalog._image_lookup(archive)
+    info = catalog._header_lookup(header)
+    info["images"] = images
+    return record, table, info
 
 
 def export_resized(template_id, output_path, catalog_path=None, row_count=None, col_count=None, *, fill="increment", cell_texts=None) -> Path:
@@ -990,7 +1106,7 @@ def describe_units(catalog_path=None) -> list[dict]:
         if record.get("category") == "조직도" and (chosen_org is not None and record["id"] == chosen_org["id"]):
             item["name"] = "조직도"
         item["units"] = {axis: {k: p[k] for k in ("count", "min", "max", "core", "sep", "kind") if k in p} if p else None
-                         for axis, p in plan_for(record).items()}
+                         for axis, p in plan_for(record).items() if axis in ("row", "col")}
         result.append(item)
 
 

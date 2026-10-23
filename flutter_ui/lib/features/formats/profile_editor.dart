@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../core/api/abbreviation_api.dart';
 import '../settings/kiosk_theme.dart';
 import 'element_preview.dart';
+import 'page_margin_layout.dart';
 
 /// 서식 세부 편집: 왼쪽에서 요소(문장 계층·서식 표·일반 표·쪽)를 고르고,
 /// 오른쪽에서 '문서에서 이렇게 보여요' 미리보기를 보며 값을 바꾼다.
@@ -302,6 +303,8 @@ class _ProfileEditorState extends State<ProfileEditor> {
         if (!placed.contains('${f['key']}')) f,
     ];
     if (others.isNotEmpty) grouped.add(('기타', others));
+    final path = node['path'] as List? ?? const [];
+    final isPage = path.length == 1 && path.first == 'page';
     return ListView(
       padding: const EdgeInsets.only(bottom: 16),
       children: [
@@ -319,7 +322,19 @@ class _ProfileEditorState extends State<ProfileEditor> {
             ],
           ),
         ),
-        for (final (title, items) in grouped)
+        if (isPage)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: PageMarginLayout(
+              node: node,
+              edits: edits,
+              generation: generation,
+              busy: busy,
+              onEdit: (p, f, val) => edit(p, f, val),
+            ),
+          )
+        else
+          for (final (title, items) in grouped)
           Container(
             margin: const EdgeInsets.only(top: 12),
             padding: const EdgeInsets.all(18),

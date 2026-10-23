@@ -434,3 +434,27 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
   Codex는 spacing.py/page_fit.py의 원문 보존·검수 결함을 담당한다.
   앞 공백 수정은 formatter.py의 미커밋 변경을 보존한 상태에서 진행하고,
   XML 내어쓰기 계산보다 앞서 부모별 공백을 확정해야 한다(후속 문자 수정으로 좌표를 깨지 않게).
+
+### C5. CLI·탐색기 메뉴 (2026-10-23, 완료)
+- Codex 범위: 변환 공용 실행기·CLI·런처·HKCU 메뉴·Flutter 일반 설정 토글. 표 템플릿 파일 수정 없음.
+- `com_test_lock("Codex", "C5")`로 잠근 상태에서 전체 회귀 시험 중이며, 이어서 HWPX 사본→PDF CLI 실측 예정.
+- 최종 집중 시험 26개 PASS. 최종 결과는 아래에 추가하고 `C:\HWP_AUTODOCFIT\v1803\reports\C5.md`에 보고. 커밋·푸시 금지 준수.
+- C5 COM 종료: 지정 잠금 안에서 HWPX 사본→PDF CLI PASS(종료 코드 0, JSON 1줄, stderr 없음, PDF 96,324바이트). 원본 SHA256 불변. 최종 전체 회귀 시험 재실행 중.
+- C5 최종: Python 전체 1,510개 PASS(조건부 제외 1, 실패·오류 0, 707.271초), 집중 26개 PASS. 런처 실제 컴파일·뮤텍스 우회·종료 코드 보존 포함.
+- 보고서: `C:\HWP_AUTODOCFIT\v1803\reports\C5.md`(14줄), 최종 로그 `C5-artifacts\unittest-final.log`. Flutter 시험은 Claude 담당. 실제 메뉴 등록·커밋·푸시 미실행.
+
+### C11. 앱 업데이트 서비스 (2026-10-23, 완료)
+- 서비스·Tk/Flutter 브리지·Setup·GitLab 매니페스트 구현. Flutter 소스 수정·커밋·푸시 없음.
+- 지정 Python 전체 1579건 실패·오류 0(제외 1), 신규 30건 포함 집중 73건 PASS. CRLF 유지.
+- 보고: C:\HWP_AUTODOCFIT\v1803\reports\C11.md. 실제 Setup 설치·공개 네트워크 시험 미실행.
+
+### C13. 표 정보단위·도형 미리보기 (2026-10-23, Codex 진행)
+- 범위: table_units.py·table_catalog.py·table_units_service.py 및 Python 시험. Flutter·커밋·푸시 금지 준수. COM 잠금 Codex/C13 사용 중.
+- 공유 계약: cell_meta.shapes 기본 [] 및 요청 필드 제공. pic(그림·칸 배경 imgBrush)은 원본 이미지 data URI인 선택 필드 `src`도 제공하므로 Gemini 렌더러는 Image.memory 등으로 표시 가능.
+- 가로세로 polygon 화살표, 세로 JPG, 신구대조표 배경 PNG 확인. 원본 alpha=0은 한/글에서 정상 불투명이며 변경하면 그림이 사라져 그대로 보존. 새 PDF 스냅샷에서 화살표 표시 확인.
+
+### C12. 표그림판 Python (2026-10-23, 완료)
+- 변경: docfit_core/table_sketch.py, docfit_app/table_sketch_service.py, desktop_web_ui.py, docfit_app/application_service.py, tests/test_table_sketch.py, scripts/verify_table_sketch_pc.py.
+- 지정 Python 전체 1,594개 실행: 실패·오류 0, 조건부 제외 1 (566.758초). 최종 신규 20개 포함 관련 52개 PASS.
+- com_test_lock("Codex", "C12") 조직도 복사·붙여넣기·저장 PASS: preview와 4행·8열·28칸·병합 4칸 일치. 판정 JSON: C:\HWP_AUTODOCFIT\v1803\reports\C12-artifacts\com-result.json.
+- 보고: C:\HWP_AUTODOCFIT\v1803\reports\C12.md. Branch: feature/table-sketch; no commit/push/Flutter edits; Python CRLF preserved.

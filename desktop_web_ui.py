@@ -48,6 +48,19 @@ QUICK_OPTIONS = {
 }
 
 
+def _profile_trace(message):
+    """서식 선택 작동 기록: DOCFIT_PROFILE_TRACE에 파일 경로가 있을 때만 남긴다(사용자 시험용)."""
+    target = os.environ.get("DOCFIT_PROFILE_TRACE")
+    if not target:
+        return
+    try:
+        from datetime import datetime
+        with open(target, "a", encoding="utf-8") as handle:
+            handle.write(f"{datetime.now():%H:%M:%S} {message}\n")
+    except OSError:
+        pass
+
+
 class DesktopWebBridge:
     """WebView에서 호출하는 API. 모든 Tk 접근은 Tk 이벤트 루프에 위임한다."""
 
@@ -347,6 +360,27 @@ class DesktopWebBridge:
             elapsed=elapsed,
         )
 
+    def check_update(self):
+        service = self._tk(lambda: self.gui._업데이트_서비스())
+        threading.Thread(target=service.check, daemon=True, name="manual-update-check").start()
+        return {"ok": True}
+
+    def start_update(self):
+        def begin():
+            from docfit_app.api_contract import ServiceError
+            if self.gui.running:
+                raise ServiceError("JOB_RUNNING", "문서 작업이 끝난 뒤 업데이트해 주세요.")
+            service = self.gui._업데이트_서비스()
+            if service.state()["step"] in ("checking", "downloading", "installing"):
+                raise ServiceError("BUSY", "업데이트 작업이 진행 중이에요.")
+            threading.Thread(target=service.start_update, daemon=True, name="manual-update-download").start()
+            return {"ok": True}
+        return self._tk(lambda: response(begin))
+
+    def open_update_page(self):
+        service = self._tk(lambda: self.gui._업데이트_서비스())
+        return {"ok": service.open_download_page()}
+
     def get_state(self):
         def snapshot():
             gui = self.gui
@@ -427,6 +461,7 @@ class DesktopWebBridge:
                 "conversion_targets": [],
                 "can_start": self._can_start(mode, gui.files, gui.running) if mode != "file_format" else False,
                 "version": APP_VERSION,
+                "update": gui._업데이트_서비스().state() if hasattr(gui, "_업데이트_서비스") else {},
             }
 
         state = self._tk(snapshot)
@@ -875,14 +910,26 @@ class DesktopWebBridge:
         from docfit_app.configuration_service import ConfigurationService
         return ConfigurationService(self.gui._준말_서비스().settings)
 
+    def _settings_snapshot(self):
+        from docfit_app.shell_menu import status
+        snapshot = self._configuration().snapshot(running=self.gui.running)
+        snapshot['values']['shell_menu'] = status()['registered']
+        return snapshot
+
     def get_settings(self):
-        return self._tk(lambda: response(lambda: self._configuration().snapshot(running=self.gui.running)))
+        return self._tk(lambda: response(self._settings_snapshot))
 
     def save_settings(self, values, revision):
         def save():
             self._configuration().save(values, revision, running=self.gui.running)
+            if 'shell_menu' in values:
+                from docfit_app.shell_menu import register, unregister, launch_command
+                if values['shell_menu']:
+                    register(launch_command())
+                else:
+                    unregister()
             self.gui._Flutter설정_반영(values)
-            return self._configuration().snapshot(running=self.gui.running)
+            return self._settings_snapshot()
         return self._tk(lambda: response(save))
 
     def open_settings(self):
@@ -1352,6 +1399,24 @@ class DesktopWebBridge:
             pass
         return app
 
+    def table_sketch(self, action, payload=None):
+        """Table sketch conversion, storage and clipboard API."""
+        from docfit_app.table_sketch_service import TableSketchService
+        try:
+            if action == "copy" and self.gui.running:
+                return {"ok": False, "message": "문서 작업이 끝난 뒤 다시 눌러 주세요."}
+            folder = self._tk(lambda: getattr(self.gui, "_준말_서비스")().settings._path.parent)
+            if action != "copy":
+                return TableSketchService(folder).command(action, payload)
+            if not _TABLE_UNITS_COM_LOCK.acquire(blocking=False):
+                return {"ok": False, "message": "표 작업이 진행 중입니다. 잠시 후 다시 눌러 주세요."}
+            try:
+                return TableSketchService(folder, self._table_units_hwp).command(action, payload)
+            finally:
+                _TABLE_UNITS_COM_LOCK.release()
+        except Exception as exc:
+            return {"ok": False, "message": str(exc)}
+
     def table_units(self, action, payload=None):
         """표 템플릿: 스냅샷 목록·정보단위 미리보기·한/글 붙여넣기용 복사(2026-10-22).
 
@@ -1489,11 +1554,17 @@ class DesktopWebBridge:
         def select():
             gui = self.gui
             ids = list(self._profile_state().profile_ids or [])
+            if not ids and hasattr(gui, "_프로파일_목록갱신"):
+                gui._프로파일_목록갱신()   # 서식 순서가 아직 없으면 먼저 채운다(없으면 모든 선택이 무시됨)
+                ids = list(self._profile_state().profile_ids or [])
             combo = getattr(gui, "main_profile_combo", None)
+            before = self._profile_state().active_profile_id
             if gui.running or identifier not in ids or combo is None:
+                _profile_trace(f"무시 요청={identifier!r} 작업중={gui.running} 목록={ids} 콤보={combo is not None}")
                 return
             combo.current(ids.index(identifier))
             gui._프로파일_선택(SimpleNamespace(widget=combo))
+            _profile_trace(f"선택 요청={identifier!r} 이전={before!r} 이후={self._profile_state().active_profile_id!r}")
 
         self._tk(select)
         return self.get_state()
@@ -1504,6 +1575,10 @@ class DesktopWebBridge:
         if target not in ("documents", "manual_documents", "format", "quick_format"):
             raise ValueError("지원하지 않는 놓기 대상입니다.")
         self.drop_target = target
+        if target == "format":   # 서식 관리 창을 열 때 서식예시 폴더에 새로 넣은 예시를 찾아 등록한다
+            detect = getattr(self.gui, "_서식예시_자동감지", None)
+            if detect is not None:
+                self._tk(detect)
         window = self.window
         if window is not None and hasattr(window, "run_js"):
             text = ("여기에 놓으면 이 보고서의 서식을 복제합니다" if target == "format"
@@ -1738,14 +1813,14 @@ class _BrowserApi:
             "get_state", "add_files", "add_folder", "add_paths", "remove_file",
             "clear_files", "set_mode", "set_range", "start", "stop",
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
-            "get_pending_dialog", "resolve_dialog", "enable_close_guard", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units",
+            "get_pending_dialog", "resolve_dialog", "enable_close_guard", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch",
             "open_results", "next_job", "run_tool", "open_result",
             "show_result", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",
             "set_exclude_tables", "set_card_option",
             "set_drop_target", "add_format_file", "write_format_example", "rename_profile", "delete_profile",
             "edit_profile", "show_format_example", "open_format_samples", "format_gallery",
-            "set_conversion_target",
+            "set_conversion_target", "check_update", "start_update", "open_update_page",
         ):
             setattr(self, name, getattr(bridge, name))
 

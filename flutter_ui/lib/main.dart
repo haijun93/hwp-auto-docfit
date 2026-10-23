@@ -21,8 +21,10 @@ import 'features/diagrams/diagram_editor_screen.dart';
 import 'features/flows/flow_editor_screen.dart';
 import 'features/progress/live_progress.dart';
 import 'features/settings/settings_dialog.dart';
+import 'features/settings/update_panel.dart';
 import 'features/stages/stage_board.dart';
 import 'features/table_units/table_units_screen.dart';
+import 'features/table_sketch/table_sketch_screen.dart';
 
 export 'core/api/abbreviation_api.dart' show ApiCall;
 
@@ -426,8 +428,8 @@ class _WorkspaceState extends State<Workspace> {
         pageBuilder: (dialogContext, animation, secondaryAnimation) =>
             LayoutBuilder(
               builder: (context, constraints) {
-                final width = math.min(360.0, constraints.maxWidth - 24);
-                final height = math.min(470.0, constraints.maxHeight - 24);
+                final width = math.min(540.0, constraints.maxWidth - 24);
+                final height = math.min(640.0, constraints.maxHeight - 24);
                 final anchor =
                     _conversionAnchor ??
                     Offset(constraints.maxWidth / 2, constraints.maxHeight / 2);
@@ -555,10 +557,10 @@ class _WorkspaceState extends State<Workspace> {
     );
   }
 
-  Future<void> openFlowEditor() async {
+  Future<void> openFlowEditor({String mode = 'diagram'}) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => FlowEditorScreen(api: widget.api),
+        builder: (_) => FlowEditorScreen(api: widget.api, initialMode: mode),
       ),
     );
   }
@@ -567,6 +569,14 @@ class _WorkspaceState extends State<Workspace> {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => TableUnitsScreen(api: widget.api),
+      ),
+    );
+  }
+
+  Future<void> openTableSketch() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => TableSketchScreen(api: widget.api),
       ),
     );
   }
@@ -765,123 +775,289 @@ class _WorkspaceState extends State<Workspace> {
     child: AbsorbPointer(absorbing: appClosing, child: child),
   );
 
-  PreferredSizeWidget appBar() => AppBar(
-    backgroundColor: Colors.white,
-    surfaceTintColor: Colors.transparent,
-    toolbarHeight: 72,
-    automaticallyImplyLeading: false,
-    title: Row(
-      children: [
-        Container(
-          width: 38,
-          height: 38,
-          decoration: BoxDecoration(
-            color: _ink,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: const Icon(
-            Icons.description_rounded,
-            color: Colors.white,
-            size: 23,
-          ),
-        ),
-        const SizedBox(width: 12),
-        const Flexible(
-          child: Text(
-            '한글편집 후처리',
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -.8,
+  PreferredSizeWidget appBar() => PreferredSize(
+    preferredSize: const Size.fromHeight(72),
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        // 네 메뉴 버튼(서식 관리·다이어그램·마인드맵·표 템플릿)을 글과 함께 놓으려면 약 880이 필요하다(폭 800에서 79 넘침).
+        final isNarrow = width < 900;
+        final showProfileBadge = width >= 1000;
+        final currentProfileName =
+            '${profiles.whereType<Map>().where((p) => p['id'] == state['profile']).firstOrNull?['name'] ?? '기본 보고서 서식'}';
+
+        Widget topBtn({
+          required Key key,
+          required String label,
+          required IconData icon,
+          required VoidCallback? onPressed,
+          String? tooltip,
+        }) {
+          final btn = TextButton.icon(
+            key: key,
+            onPressed: locked ? null : onPressed,
+            icon: Icon(icon, size: 18),
+            label: isNarrow ? const SizedBox.shrink() : Text(label),
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.symmetric(horizontal: isNarrow ? 4 : 8),
+              minimumSize: isNarrow ? const Size(36, 36) : null,
+            ),
+          );
+          return Tooltip(message: tooltip ?? label, child: btn);
+        }
+
+        final formatButton = Tooltip(
+          message: isNarrow
+              ? '서식 관리 (현재: $currentProfileName)\nHWP/HWPX 예시를 놓으면 새 서식으로 등록해요.'
+              : 'HWP/HWPX 예시를 여기에 놓으면 새 서식으로 등록·선택해요.',
+          // 서식 관리를 누르면 하위 메뉴: 썸네일로 선택 · 서식예시 확인 · 서식예시 폴더 · 서식관리(2026-10-23 사용자 요청).
+          child: PopupMenuButton<String>(
+            key: const Key('topMenu_format'),
+            enabled: !locked,
+            tooltip: '',
+            position: PopupMenuPosition.under,
+            onSelected: (v) {
+              switch (v) {
+                case 'kiosk':
+                  openKiosk();
+                case 'example':
+                  command('show_format_example');
+                case 'samples':
+                  command('open_format_samples');
+                case 'manage':
+                  openFormats();
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                key: Key('formatMenu_kiosk'),
+                value: 'kiosk',
+                child: ListTile(
+                  leading: Icon(Icons.photo_library_outlined),
+                  title: Text('썸네일로 선택'),
+                ),
+              ),
+              PopupMenuItem(
+                key: Key('formatMenu_example'),
+                value: 'example',
+                child: ListTile(
+                  leading: Icon(Icons.preview_outlined),
+                  title: Text('서식예시 확인'),
+                ),
+              ),
+              PopupMenuItem(
+                key: Key('formatMenu_samples'),
+                value: 'samples',
+                child: ListTile(
+                  leading: Icon(Icons.folder_open_outlined),
+                  title: Text('서식예시 폴더'),
+                ),
+              ),
+              PopupMenuItem(
+                key: Key('formatMenu_manage'),
+                value: 'manage',
+                child: ListTile(
+                  leading: Icon(Icons.tune_outlined),
+                  title: Text('서식관리'),
+                ),
+              ),
+            ],
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: isNarrow ? 6 : 8,
+                vertical: 8,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.style_outlined,
+                    size: 18,
+                    color: locked ? Colors.grey : _blue,
+                  ),
+                  if (!isNarrow) ...[
+                    const SizedBox(width: 6),
+                    Text(
+                      '서식 관리',
+                      style: TextStyle(
+                        color: locked ? Colors.grey : _blue,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Icon(
+                      Icons.arrow_drop_down,
+                      size: 18,
+                      color: locked ? Colors.grey : _blue,
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
-        ),
-      ],
-    ),
-    actions: [
-      Tooltip(
-        message: 'HWP/HWPX 예시를 여기에 놓으면 새 서식으로 등록·선택해요.',
-        child: SizedBox(
-          key: profileDropKey,
-          width: 132,
-          child: ActionChip(
-            key: const Key('quickProfileDropBadge'),
-            avatar: const Icon(Icons.style_outlined, size: 18),
-            label: Text(
-              '${profiles.whereType<Map>().where((p) => p['id'] == state['profile']).firstOrNull?['name'] ?? '기본 보고서 서식'}',
-              overflow: TextOverflow.ellipsis,
-            ),
-            onPressed: locked ? null : openFormats,
+        );
+
+        return AppBar(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          toolbarHeight: 72,
+          automaticallyImplyLeading: false,
+          titleSpacing: isNarrow ? 8 : 16,
+          title: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: _ink,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.description_rounded,
+                  color: Colors.white,
+                  size: 23,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  '한글편집 후처리',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: isNarrow ? 17 : 20,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -.8,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (!showProfileBadge)
+                KeyedSubtree(key: profileDropKey, child: formatButton)
+              else
+                formatButton,
+              if (showProfileBadge) ...[
+                const SizedBox(width: 4),
+                Tooltip(
+                  message: 'HWP/HWPX 예시를 여기에 놓으면 새 서식으로 등록·선택해요.',
+                  child: ConstrainedBox(
+                    key: profileDropKey,
+                    constraints: const BoxConstraints(maxWidth: 130),
+                    child: ActionChip(
+                      key: const Key('quickProfileDropBadge'),
+                      avatar: const Icon(Icons.check, size: 14),
+                      label: Text(
+                        currentProfileName,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      onPressed: locked ? null : openFormats,
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(width: 4),
+              // 메뉴 버튼이 늘어도 넘치지 않게, 공간이 모자라면 옆으로 밀어 볼 수 있게 한다.
+              Flexible(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      topBtn(
+                        key: const Key('topMenu_diagram'),
+                        label: '다이어그램',
+                        icon: Icons.account_tree_outlined,
+                        onPressed: () => openFlowEditor(mode: 'diagram'),
+                      ),
+                      const SizedBox(width: 4),
+                      topBtn(
+                        key: const Key('topMenu_mindmap'),
+                        label: '마인드맵',
+                        icon: Icons.hub_outlined,
+                        onPressed: () => openFlowEditor(mode: 'mindmap'),
+                      ),
+                      const SizedBox(width: 4),
+                      topBtn(
+                        key: const Key('topMenu_tableUnits'),
+                        label: '표 템플릿',
+                        icon: Icons.grid_on_outlined,
+                        onPressed: openTableUnits,
+                      ),
+                      const SizedBox(width: 4),
+                      topBtn(
+                        key: const Key('topMenu_tableSketch'),
+                        label: '표그림판',
+                        icon: Icons.border_all_outlined,
+                        onPressed: openTableSketch,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
-        ),
-      ),
-      IconButton(
-        tooltip: '사용 방법 (F1)',
-        onPressed: showHelp,
-        icon: const Icon(Icons.help_outline_rounded),
-      ),
-      IconButton(
-        tooltip: '작업 로그',
-        onPressed: () => showLog(),
-        icon: const Icon(Icons.receipt_long_outlined),
-      ),
-      // 좁은 화면에서도 도구 줄이 넘치지 않게 표 관련 화면은 한 버튼의 메뉴로 연다.
-      PopupMenuButton<String>(
-        key: const Key('tableToolsMenu'),
-        tooltip: '표/다이어그램',
-        enabled: !locked,
-        icon: const Icon(Icons.table_chart_outlined),
-        onSelected: (value) =>
-            value == 'table_units' ? openTableUnits() : openFlowEditor(),
-        itemBuilder: (_) => const [
-          PopupMenuItem(
-            value: 'table_units',
-            child: ListTile(
-              leading: Icon(Icons.grid_on_outlined),
-              title: Text('표 템플릿 (골라서 한/글에 붙여넣기)'),
+          actions: [
+            IconButton(
+              tooltip: '사용 방법 (F1)',
+              visualDensity: isNarrow ? VisualDensity.compact : null,
+              padding: isNarrow ? EdgeInsets.zero : null,
+              constraints: isNarrow
+                  ? const BoxConstraints(minWidth: 32, minHeight: 32)
+                  : null,
+              onPressed: showHelp,
+              icon: const Icon(Icons.help_outline_rounded),
             ),
-          ),
-          PopupMenuItem(
-            value: 'flow_editor',
-            child: ListTile(
-              leading: Icon(Icons.account_tree_outlined),
-              title: Text('표/다이어그램 편집기'),
+            IconButton(
+              tooltip: '작업 로그',
+              visualDensity: isNarrow ? VisualDensity.compact : null,
+              padding: isNarrow ? EdgeInsets.zero : null,
+              constraints: isNarrow
+                  ? const BoxConstraints(minWidth: 32, minHeight: 32)
+                  : null,
+              onPressed: () => showLog(),
+              icon: const Icon(Icons.receipt_long_outlined),
             ),
-          ),
-        ],
-      ),
-      // 문서 도구는 설정의 개발자 모드를 켜야 보인다.
-      if (quickOptions['developer_mode'] == true)
-        PopupMenuButton<String>(
-          tooltip: '문서 도구',
-          enabled: !locked,
-          icon: const Icon(Icons.handyman_outlined),
-          onSelected: (v) {
-            if (v == 'diagram_editor') {
-              openDiagramEditor();
-            } else {
-              openTools(v);
-            }
-          },
-          itemBuilder: (_) => [
-            PopupMenuItem(value: 'review', child: Text('문서 검토')),
-            PopupMenuItem(value: 'proofread', child: Text('공공언어 교정')),
-            PopupMenuItem(value: 'outline', child: Text('문서 구조 편집')),
-            PopupMenuItem(value: 'writing', child: Text('작성 도우미')),
-            PopupMenuItem(value: 'markdown', child: Text('Markdown 내보내기')),
-            PopupMenuItem(value: 'advanced', child: Text('고급 문서 도구')),
+            if (quickOptions['developer_mode'] == true)
+              PopupMenuButton<String>(
+                tooltip: '문서 도구',
+                enabled: !locked,
+                icon: const Icon(Icons.handyman_outlined),
+                onSelected: (v) {
+                  if (v == 'diagram_editor') {
+                    openDiagramEditor();
+                  } else {
+                    openTools(v);
+                  }
+                },
+                itemBuilder: (_) => [
+                  PopupMenuItem(value: 'review', child: Text('문서 검토')),
+                  PopupMenuItem(value: 'proofread', child: Text('공공언어 교정')),
+                  PopupMenuItem(value: 'outline', child: Text('문서 구조 편집')),
+                  PopupMenuItem(value: 'writing', child: Text('작성 도우미')),
+                  PopupMenuItem(
+                    value: 'markdown',
+                    child: Text('Markdown 내보내기'),
+                  ),
+                  PopupMenuItem(value: 'advanced', child: Text('고급 문서 도구')),
+                ],
+              ),
+            IconButton(
+              tooltip: '설정',
+              visualDensity: isNarrow ? VisualDensity.compact : null,
+              padding: isNarrow ? EdgeInsets.zero : null,
+              constraints: isNarrow
+                  ? const BoxConstraints(minWidth: 32, minHeight: 32)
+                  : null,
+              onPressed: () async {
+                if (mounted) scaffoldKey.currentState?.openEndDrawer();
+              },
+              icon: const Icon(Icons.settings_outlined),
+            ),
+            SizedBox(width: isNarrow ? 6 : 12),
           ],
-        ),
-      IconButton(
-        tooltip: '설정',
-        onPressed: () async {
-          if (mounted) scaffoldKey.currentState?.openEndDrawer();
-        },
-        icon: const Icon(Icons.settings_outlined),
-      ),
-      const SizedBox(width: 12),
-    ],
+        );
+      },
+    ),
   );
 
   /// 단계 메뉴에 붙이는 한 줄 요약. 어느 화면에서든 지금 상태를 알 수 있게 한다.
@@ -1406,7 +1582,7 @@ class _WorkspaceState extends State<Workspace> {
               children: [
                 Row(
                   children: [
-                    Icon(m.$4, color: colors.accent),
+                    Icon(m.$4, size: 36, color: colors.accent),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
@@ -1421,6 +1597,7 @@ class _WorkspaceState extends State<Workspace> {
                       selected
                           ? Icons.check_circle
                           : Icons.radio_button_unchecked,
+                      size: 36,
                       color: selected ? colors.accent : const Color(0xffcbd5e1),
                     ),
                   ],
@@ -3123,7 +3300,12 @@ class _WorkspaceState extends State<Workspace> {
             '끄더라도 결과는 작업 기록과 최종 검수에 남아요.',
           ),
           settingsLabel('프로그램'),
-          optionSwitch('check_updates', '시작할 때 새 버전 확인', '새 버전이 있으면 알려 드려요.'),
+          optionSwitch(
+            'check_updates',
+            '시작할 때 새 버전 확인',
+            '시작할 때와 몇 시간마다 새 버전을 확인해요.',
+          ),
+          UpdatePanel(state: state, command: command),
           optionSwitch(
             'always_on_top',
             '앱 창을 항상 위에 표시',

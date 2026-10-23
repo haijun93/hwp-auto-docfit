@@ -200,6 +200,10 @@ def _install(*, _docfit_namespace, _docfit_symbol):
     if _docfit_symbol == '_업데이트_자산_선택':
         def _업데이트_자산_선택(릴리스):
             자산들 = [item for item in 릴리스.get("assets", []) if str(item.get("name", "")).lower().endswith(".exe")]
+            종류 = "setup" if (Path(sys.executable).parent / "unins000.exe").is_file() else "portable"
+            for 자산 in 자산들:
+                if re.fullmatch(r"HWP_AutoDocFit_v[0-9.]+_" + 종류 + r"\.exe", str(자산.get("name", "")), re.I):
+                    return 자산
             for 자산 in 자산들:
                 if str(자산.get("name", "")).lower() == UPDATE_ASSET_NAME.lower():
                     return 자산

@@ -8,13 +8,16 @@
 </p>
 
 <p align="center">
-<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.5_Portable.exe?inline=false"><img alt="무설치로 바로 받기" src="https://img.shields.io/badge/%E2%AC%87%20%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%94%EB%A1%9C%20%EB%B0%9B%EA%B8%B0-v1.80.5-2563eb?style=for-the-badge"></a>
-<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.5_Setup.exe?inline=false"><img alt="설치용 받기" src="https://img.shields.io/badge/%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0-Setup-0ea5e9?style=for-the-badge"></a>
+<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.7/HWP_AutoDocFit_v1.80.7_Portable.exe"><img alt="GitHub에서 무설치로 받기" src="https://img.shields.io/badge/GitHub-%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v1.80.7-2563eb?style=for-the-badge&logo=github"></a>
+<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.7/HWP_AutoDocFit_v1.80.7_Setup.exe"><img alt="GitHub에서 설치용 받기" src="https://img.shields.io/badge/GitHub-%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0-0ea5e9?style=for-the-badge&logo=github"></a>
+<br>
+<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.7_Portable.exe?inline=false"><img alt="공공기관 PC: GitLab에서 무설치로 받기" src="https://img.shields.io/badge/%EA%B3%B5%EA%B3%B5%EA%B8%B0%EA%B4%80%20PC%20GitLab-%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0-15803d?style=for-the-badge&logo=gitlab"></a>
+<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.7_Setup.exe?inline=false"><img alt="공공기관 PC: GitLab에서 설치용 받기" src="https://img.shields.io/badge/%EA%B3%B5%EA%B3%B5%EA%B8%B0%EA%B4%80%20PC%20GitLab-%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0-16a34a?style=for-the-badge&logo=gitlab"></a>
 </p>
 <p align="center">
 <img alt="무료" src="https://img.shields.io/badge/%EA%B0%80%EA%B2%A9-%EB%AC%B4%EB%A3%8C-16a34a">
 <img alt="Windows 10·11" src="https://img.shields.io/badge/Windows-10%C2%B711-0078d4">
-<img alt="한/글 2020" src="https://img.shields.io/badge/%ED%95%9C%2F%EA%B8%80-2020-0ea5e9">
+<img alt="한/글 모든 버전" src="https://img.shields.io/badge/%ED%95%9C%2F%EA%B8%80-%EB%AA%A8%EB%93%A0%20%EB%B2%84%EC%A0%84-0ea5e9">
 <img alt="문서 외부 전송 없음" src="https://img.shields.io/badge/%EB%AC%B8%EC%84%9C-%EC%99%B8%EB%B6%80%20%EC%A0%84%EC%86%A1%20%EC%97%86%EC%9D%8C-64748b">
 </p>
 
@@ -25,15 +28,44 @@
 
 ---
 
-<h2 align="center">새로워진 v1.80.5</h2>
-<p align="center">자주 쓰는 표는 모양을 보고 고르고, 칸 묶음 수만 정해 한/글에 바로 붙여넣으세요.</p>
+<h2 align="center">새로워진 v1.80.7</h2>
+<p align="center">바둑판에 선을 그려 표를 만들고, 자주 쓰는 표는 칸 수를 늘려 한/글에 바로 붙여넣으세요.</p>
 
-### 표 템플릿: 고르고, 늘리고, 붙여넣기. (1.80.5)
+### 선을 그으면 표가 됩니다. 표그림판. (1.80.7)
 
-상단 표 버튼 → **「표 템플릿」**에서 표 서식 모음 36종을 실제 한/글 모양 그림으로 보고 고릅니다.
-분야별 과제표의 과제 묶음, 행사 시간표의 시간 줄, 일정표의 연도·월·주처럼 **여러 칸으로 된 정보단위**를 [−][+]로 줄이거나 늘린 뒤
-「한/글에 붙여넣기용 복사」를 누르고 한/글에서 **Ctrl+V** 하면 테두리·색·글꼴이 그대로 붙습니다.
-표 서식 모음 파일(`C:\HWP_AUTODOCFIT\표서식모음\표 서식모음.hwpx`)을 고치면 새 모양으로 다시 그립니다.
+상단 메뉴의 **「표그림판」**에서 점선 바둑판 용지에 가로·세로·대각선 직선을 그리면 한/글에 바로 붙여 넣는 표가 만들어집니다.
+선으로 둘러싼 자리는 칸 하나로 합쳐지고 그리지 않은 경계는 보이지 않는 테두리가 되어 조직도처럼 상자와 선으로 된 서식도 자유롭게 그릴 수 있습니다.
+도구(사각형·지우개·글·선택)와 선 굵기·종류 선택, 화면 이동·확대, 실행 취소를 지원하며 **「한/글에 붙여넣기용 복사」**로 표를 한/글에 바로 붙여넣습니다.
+
+### 표 템플릿, 더 많이 늘리고 한눈에 고르기. (1.80.7)
+
+화면을 T자형으로 넓혀 위쪽에 모든 표 이름 버튼을 나열하고 왼쪽 분류 목록도 잘림 없이 한눈에 보고 고를 수 있도록 개선했습니다.
+현황표·추진절차·신구대조표의 행 조절, 일정표·행사시간표의 열 조절, 사진과 설명 묶음을 아래로 더하는 사진첨부표까지 [−][+]로 조절하는 정보단위 표를 대폭 늘렸습니다.
+추진절차나 신구대조표처럼 화살표 그림이 들어간 표도 미리보기에서 화살표 모양을 그대로 확인하며 작업할 수 있습니다.
+
+### 고른 서식 그대로, 내어쓰기까지. 쪽 맞춤은 여백부터. (1.80.6)
+
+서식 관리에서 「적용할 서식」을 바꿔도 처음 서식에 고정되던 문제를 고치고, 서식 변경 시 항목기호별 내어쓰기와 부연설명 들여쓰기 옵션이 빠짐없이 함께 적용되도록 바로잡았습니다.
+서식예시 폴더(`C:\HWP_AUTODOCFIT\서식예시`)에 HWP·HWPX 문서를 넣어 두면 앱을 켤 때나 서식 관리 창을 열 때 자동으로 감지하여 새 서식으로 등록합니다(원본 파일 및 현재 선택 서식 유지).
+쪽 맞춤 시 줄간격(권장 160%)을 좁히기 전에 위·아래 여백을 최소 5mm까지 먼저 줄여 본문 가독성을 지킵니다(한 번에 적용의 기본 여백 단일 보고서 대상).
+
+### 업데이트는 설정에서 바로. 기관 PC에서도. (1.80.6)
+
+설정 → 프로그램의 **「지금 확인」**으로 새 버전을 확인하고, 진행률을 보며 내려받아 바꿉니다. GitHub가 막힌 기관 PC에서도 GitLab에서 받습니다.
+설치본은 설치 파일로 조용히 설치한 뒤 다시 켜지고, 포터블은 실행 파일을 바꿔 끼웁니다. 폐쇄망 모드에서는 인터넷에 접속하지 않고 수동으로 바꾸는 방법을 안내합니다.
+
+### 표 템플릿: 고르고, 늘리고, 붙여넣기. (1.80.6)
+
+상단 표 메뉴(다이어그램·마인드맵·표 템플릿)에서 **「표 템플릿」**을 고르면 서식 모음을 실제 한/글 모양으로 보고 검색·즐겨찾기로 빠르게 찾습니다.
+과제 묶음·시간 줄·일정표처럼 반복되는 정보단위를 [−][+]로 조절하면 연도나 번호가 자동으로 이어지고(+1), 미리보기 칸을 눌러 글을 바로 수정할 수 있습니다.
+2~10개 팀 수를 정해 상자가 나란히 늘어나는 **조직도**도 지원하며, 칸 안의 글상자 표도 알맞게 비율을 맞춰 줍니다.
+「한/글에 붙여넣기용 복사」를 누르면 빈 문단 없이 표만 깔끔하게 복사되어 한/글 창이 앞으로 뜨고, **Ctrl+V**로 서식 그대로 붙습니다.
+
+### 탐색기에서 바로 변환. 명령줄도. (1.80.6)
+
+윈도우 탐색기에서 파일을 우클릭해 **「한글편집 후처리」** 메뉴에서 HWPX·PDF 변환, PDF 하나로 합치기, PDF 압축을 바로 실행할 수 있습니다(설정에서 켜기·끄기 가능, 관리자 권한 불필요).
+여러 파일을 한꺼번에 골라도 프로그램이 한 번에 모아서 차례대로 변환하고, 작업이 끝나면 알림 창으로 처리 결과를 알려 줍니다(D: 드라이브·업무 폴더의 파일도 됩니다).
+업무 자동화를 위해 명령줄 도구도 지원하여 `HWP_AutoDocFit.exe convert` 명령으로 일괄 변환하고 형식 지정 및 작업 결과 코드를 확인할 수 있습니다.
 
 <h2 align="center">v1.80.4</h2>
 <p align="center">멈추면 바로 멈추고, 준말은 한/글 문서로. 옵션은 그림으로 한눈에. 이제 기관 PC에서도 GitLab에서 바로 받습니다.</p>
@@ -233,17 +265,17 @@ GitHub가 막힌 기관 PC에서도 위 「받기」 링크가 GitLab에서 바�
 
 <h2 align="center">받기</h2>
 
-| 파일 | 용도 |
-|---|---|
-| **[포터블 · HWP_AutoDocFit_v1.80.5_Portable.exe](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.5_Portable.exe?inline=false)** | 설치 없이 바로 실행 |
-| [설치용 · HWP_AutoDocFit_v1.80.5_Setup.exe](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.5_Setup.exe?inline=false) | 시작 메뉴 등록, Windows 앱 제거로 정리 |
-| [보고서 예시 파일(한번에 적용).txt](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/%EB%B3%B4%EA%B3%A0%EC%84%9C%20%EC%98%88%EC%8B%9C%20%ED%8C%8C%EC%9D%BC%28%ED%95%9C%EB%B2%88%EC%97%90%20%EC%A0%81%EC%9A%A9%29.txt?inline=false) | 처음 체험용 예시 |
-| [SHA256SUMS](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/SHA256SUMS?inline=false) | 내려받은 파일 확인용 해시 |
+| 파일 | GitHub에서 받기 | 공공기관 PC(GitHub 차단) — GitLab에서 받기 | 용도 |
+|---|---|---|---|
+| **포터블 · HWP_AutoDocFit_v1.80.7_Portable.exe** | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.7/HWP_AutoDocFit_v1.80.7_Portable.exe) | [받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.7_Portable.exe?inline=false) | 설치 없이 바로 실행 |
+| 설치용 · HWP_AutoDocFit_v1.80.7_Setup.exe | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.7/HWP_AutoDocFit_v1.80.7_Setup.exe) | [받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.7_Setup.exe?inline=false) | 시작 메뉴 등록, Windows 앱 제거로 정리 |
+| 보고서 예시 파일(한번에 적용).txt | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/latest) | [받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/%EB%B3%B4%EA%B3%A0%EC%84%9C%20%EC%98%88%EC%8B%9C%20%ED%8C%8C%EC%9D%BC%28%ED%95%9C%EB%B2%88%EC%97%90%20%EC%A0%81%EC%9A%A9%29.txt?inline=false) | 처음 체험용 예시 |
+| SHA256SUMS | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.7/SHA256SUMS) | [받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/SHA256SUMS?inline=false) | 내려받은 파일 확인용 해시 |
 
-- **필요한 것**: Windows 10·11(64비트), 문서를 편집할 수 있는 **한컴오피스 한/글**(2020에서 검증). Python 등 다른 설치는 필요 없습니다.
+- **필요한 것**: Windows 10·11(64비트), 문서를 편집할 수 있는 **한컴오피스 한/글**(버전에 관계없이 사용 — NEO·2018·2020·2022·2024 등). Python 등 다른 설치는 필요 없습니다.
 - 변환 엔진은 실행 파일에 들어 있습니다. 첫 실행 때 `C:\HWP_AUTODOCFIT`(쓰기 권한이 없으면 `%LOCALAPPDATA%\HwpAutoDocFit`)에 풀며, 인터넷에서 받지 않습니다.
-- 위 링크는 공공기관 PC에서도 열리는 **GitLab**(gitlab.aigov.go.kr)에서 받습니다. 기관망 밖에서는 [GitHub 릴리스](https://github.com/haijun93/hwp-auto-docfit/releases/latest)에서도 같은 파일(같은 SHA-256)을 받을 수 있습니다.
-- [v1.80.5 변경 사항](releases/v1.80.5.md) · [GitHub](https://github.com/haijun93/hwp-auto-docfit) · [GitLab](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
+- 두 곳의 파일은 같습니다(같은 SHA-256). 공공기관 PC처럼 GitHub가 막힌 곳에서는 **GitLab**(gitlab.aigov.go.kr) 링크로 받으세요. 모든 릴리스는 [GitHub 릴리스](https://github.com/haijun93/hwp-auto-docfit/releases/latest)에 있습니다.
+- [v1.80.7 변경 사항](releases/v1.80.7.md) · [GitHub](https://github.com/haijun93/hwp-auto-docfit) · [GitLab](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
 
 ---
 
@@ -291,5 +323,5 @@ GitHub가 막힌 기관 PC에서도 위 「받기」 링크가 GitLab에서 바�
 
 <p align="center">
 <a href="docs/USER_GUIDE.md"><b>자세한 사용 설명서</b></a> — 기능별 사용법·옵션·결과 파일·문제 해결<br>
-<a href="releases/v1.80.5.md">v1.80.5 변경 사항</a> · <a href="HANDOVER.md">개발 인수인계 문서</a> · <a href="THIRD_PARTY_NOTICES.md">사용한 오픈소스</a> · <a href="LICENSE">라이선스</a>
+<a href="releases/v1.80.7.md">v1.80.7 변경 사항</a> · <a href="HANDOVER.md">개발 인수인계 문서</a> · <a href="THIRD_PARTY_NOTICES.md">사용한 오픈소스</a> · <a href="LICENSE">라이선스</a>
 </p>

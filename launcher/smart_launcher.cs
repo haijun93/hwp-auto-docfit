@@ -21,9 +21,21 @@ internal static class SmartLauncher
     private const int SwRestore = 9;
     private static SplashForm splash;
 
+    private static bool IsCliCommand(string[] args)
+    {
+        return args.Length > 0 &&
+            new[] { "convert", "help", "version", "formats", "--help", "-h", "/?", "--version" }.Contains(args[0]) &&
+            !File.Exists(args[0]) && !Directory.Exists(args[0]);
+    }
+
     [STAThread]
     private static int Main(string[] args)
     {
+        bool cliCommand = IsCliCommand(args);
+        // GUI 파일 인자는 호출 폴더 기준이다. 리소스용 cachePath 작업 폴더는 유지한다.
+        if (!cliCommand)
+            args = args.Select(a => File.Exists(a) || Directory.Exists(a) ? Path.GetFullPath(a) : a).ToArray();
+        if (cliCommand) AttachConsole(unchecked((uint)-1));
         bool selfTest = args.Any(a => string.Equals(a, "--self-test", StringComparison.OrdinalIgnoreCase));
         string mutexName = null;
         Mutex mutex = null;
@@ -39,7 +51,7 @@ internal static class SmartLauncher
             Directory.CreateDirectory(cacheRoot);
             cachePath = Path.Combine(cacheRoot, "app_v" + SafeVersion(manifest.Version) + "_" + manifest.PayloadHash.Substring(0, 12));
 
-            if (!selfTest)
+            if (!selfTest && !cliCommand)
             {
                 mutexName = "Global\\" + MutexSuffix;
                 try
@@ -55,32 +67,39 @@ internal static class SmartLauncher
                 {
                     mutex.Dispose();
                     ActivateExistingWindow();
+                    if (args.Length > 0)
+                    {
+                        if (!CacheIsValid(cachePath, manifest)) ExtractPayload(cachePath, manifest, true);
+                        bool ignored = false;
+                        return StartApplication(Path.Combine(cachePath, "app_main.exe"), cachePath,
+                            args, true, null, null, ref ignored);
+                    }
                     return 0;
                 }
             }
 
             if (!CacheIsValid(cachePath, manifest))
             {
-                if (!selfTest)
+                if (!selfTest && !cliCommand)
                 {
                     Application.EnableVisualStyles();
                     splash = new SplashForm(manifest.Version);
                     splash.Show();
                     Application.DoEvents();
                 }
-                ExtractPayload(cachePath, manifest, selfTest);
+                ExtractPayload(cachePath, manifest, selfTest || cliCommand);
             }
 
             string appPath = Path.Combine(cachePath, "app_main.exe");
-            int exitCode = StartApplication(appPath, cachePath, args, selfTest, mutex, mutexName, ref ownsMutex);
+            int exitCode = StartApplication(appPath, cachePath, args, selfTest || cliCommand, mutex, mutexName, ref ownsMutex);
             mutex = null;
-            if (!selfTest) CleanupOldCaches(cacheRoot, Path.GetFileName(cachePath));
+            if (!selfTest && !cliCommand) CleanupOldCaches(cacheRoot, Path.GetFileName(cachePath));
             return exitCode;
         }
         catch (Exception ex)
         {
             CloseSplash();
-            if (!args.Any(a => string.Equals(a, "--self-test", StringComparison.OrdinalIgnoreCase)))
+            if (!cliCommand && !args.Any(a => string.Equals(a, "--self-test", StringComparison.OrdinalIgnoreCase)))
             {
                 MessageBox.Show("앱 실행 준비 중 오류가 발생했습니다.\r\n\r\n" + ex.Message, AppTitle,
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -109,10 +128,16 @@ internal static class SmartLauncher
             var start = new ProcessStartInfo
             {
                 FileName = appPath,
-                WorkingDirectory = cachePath,
+                WorkingDirectory = IsCliCommand(args) ? Environment.CurrentDirectory : cachePath,
                 UseShellExecute = false,
                 Arguments = string.Join(" ", args.Select(QuoteArgument).ToArray())
             };
+            start.EnvironmentVariables["DOCFIT_LAUNCHER_PATH"] = Assembly.GetExecutingAssembly().Location;
+            if (selfTest)
+            {
+                start.EnvironmentVariables.Remove("DOCFIT_LAUNCHER_HANDOFF_EVENT");
+                start.EnvironmentVariables.Remove("DOCFIT_LAUNCHER_MUTEX_NAME");
+            }
             if (!selfTest)
             {
                 eventName = "Local\\HWP_AutoDocFit_Handoff_" + Guid.NewGuid().ToString("N");
@@ -324,6 +349,7 @@ internal static class SmartLauncher
         splash = null;
     }
 
+    [DllImport("kernel32.dll")] private static extern bool AttachConsole(uint processId);
     [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hwnd);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr hwnd, StringBuilder text, int maxCount);

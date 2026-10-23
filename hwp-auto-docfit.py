@@ -365,7 +365,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리"
-APP_VERSION = "1.80.5"
+APP_VERSION = "1.80.7"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 GITHUB_UPDATE_API_URL = "https://api.github.com/repos/haijun93/hwp-auto-docfit/releases/latest"
@@ -475,6 +475,8 @@ _콘솔_출력_가능 = (sys.stdout is not None)
 쪽범위_컨트롤영역 = set()
 
 표준서식_여백_사용 = True
+# 쪽 맞춤: 서식의 위·아래 쪽 여백이 기본값 그대로(따로 정하지 않음)이면 이 값(mm)까지 줄여 목표 쪽에 담아 본다(2026-10-23 사용자 요청).
+쪽맞춤_위아래여백_최소_mm = 5.0
 표준서식_장평_사용 = True
 표준서식_줄간격_사용 = True
 표준서식_제목_사용 = True
@@ -3346,6 +3348,11 @@ def _단일_인스턴스_확인():
             kernel32.CloseHandle(handle)
             return False
         if handle and last_error == ERROR_ALREADY_EXISTS:
+            from docfit_app.instance_files import forward
+            try:
+                forward(sys.argv[1:])
+            except OSError:
+                pass
             _닫기_스플래시()
             # 이미 실행 중인 창을 찾아 앞으로 가져오기
             WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
@@ -3379,10 +3386,19 @@ def _단일_인스턴스_확인():
 
 
 def main():
+    from docfit_app.cli import is_cli_command, main as cli_main
+    if is_cli_command(sys.argv[1:]):
+        raise SystemExit(cli_main())
     import importlib.util
 
     if not _단일_인스턴스_확인():
         return
+
+    try:
+        from docfit_app.shell_menu import refresh_registered
+        refresh_registered()
+    except OSError:
+        pass
 
     if getattr(_selftest_sys, "frozen", False):
         def _배경_런타임_배포():
@@ -3403,7 +3419,9 @@ def main():
         _닫기_스플래시()
         root = TkinterDnD.Tk()
         _앱아이콘_적용(root)
-        HwpAutoDocFitGUI(root)
+        gui = HwpAutoDocFitGUI(root)
+        from docfit_app.instance_files import start
+        start(gui)
         _새창_맨앞으로(root)
         root.mainloop()
         return
@@ -3416,6 +3434,8 @@ def main():
             root = TkinterDnD.Tk()
             _앱아이콘_적용(root)
             gui = HwpAutoDocFitGUI(root)
+            from docfit_app.instance_files import start
+            start(gui)
             웹모드_기본창_숨김(root)
             보관.update(root=root, gui=gui)
             준비됨.set()

@@ -2596,7 +2596,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 act.Execute(pset)
         return bind_function(_쪽맞춤_줄간격_되돌리기, _docfit_namespace)
     if _docfit_symbol == '보고서_1쪽_맞춤':
-        def 보고서_1쪽_맞춤(보고서, 번호=1, 목표쪽수=1, 원본줄간격=None, 원본줄자간=None):
+        def 보고서_1쪽_맞춤(보고서, 번호=1, 목표쪽수=1, 원본줄간격=None, 원본줄자간=None, 여백조정=False):
             """보고서를 첫 쪽부터 목표쪽수 쪽 안에 담는다. 성공하면 True, 못 하면 바꾼 값을 모두 되돌리고 False.
 
             1) 문단 아래·위 간격과 표 셀 여백을 레벨 이분 탐색으로 줄인다(보고서 쪽 범위 안 묶음이 쪽 경계에 걸리지 않는
@@ -2628,8 +2628,37 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 쪽맞춤_레벨_적용(조사, 레벨)
                 return 쪽맞춤_묶음분리_있음(최소쪽=보고서['start'], 최대쪽=목표쪽)
 
+            def 위아래여백_축소_가능():
+                # '한 번에 적용'의 보고서 하나짜리 문서에서만(여백조정: 취합보고서는 여백을 바꾸면 모든 보고서의 쪽 맞춤이
+                # 무너진다, 2026-10-23 사용자 결정), 서식(표준서식 여백)이 위·아래 여백을 기본값 그대로 두었을 때만.
+                if (not 여백조정 or 작업_모드 != 'all' or not 표준서식_사용 or not 표준서식_여백_사용
+                        or 쪽범위_사용중() or not 쪽맞춤_위아래여백_최소_mm):
+                    return False
+                기본 = (_표준서식_설정_기본값 or {}).get('여백_mm') or {}
+                지금 = (표준서식_설정 or {}).get('여백_mm') or {}
+                try:
+                    return all(abs(float(지금.get(k, 기본.get(k))) - float(기본[k])) < 0.05 for k in ('top', 'bottom'))
+                except (KeyError, TypeError, ValueError):
+                    return False
+
+            def 위아래여백(값=None):
+                """보고서 첫 문단이 있는 구역의 (위, 아래) 쪽 여백(HWPUNIT). 값을 주면 그 값으로 바꾼다."""
+                try:
+                    hwp.SetPos(0, 범위.start, 0)
+                    pset = hwp.HParameterSet.HSecDef
+                    hwp.HAction.GetDefault("PageSetup", pset.HSet)
+                    if 값 is None:
+                        return int(pset.PageDef.TopMargin), int(pset.PageDef.BottomMargin)
+                    pset.PageDef.TopMargin, pset.PageDef.BottomMargin = int(값[0]), int(값[1])
+                    hwp.HAction.Execute("PageSetup", pset.HSet)
+                    return 값
+                except Exception as error:
+                    로그(f"[쪽 수 맞춤] 위·아래 여백을 {'바꾸지' if 값 else '읽지'} 못했습니다(무시): {error}")
+                    return None
+
             줄간격보관 = []
             자간보관 = []
+            여백보관 = None
             완료 = False
             try:
                 if 조사['문단'] or 조사['셀']:
@@ -2644,6 +2673,37 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                             return True
                 if 중단_요청됨():
                     return False
+                # 서식이 위·아래 여백을 따로 정하지 않았으면 1mm씩 최소 5mm까지 줄여 본다(사용자 요청, 2026-10-23).
+                # 줄간격을 권장 160%보다 낮추면 가독성이 크게 떨어지므로(허용 하한 140%) 여백 조정을 최우선으로 한다:
+                # 문단 위 간격 0·줄간격 축소(마지막 수단)보다 먼저 쓰고, 담기는 여백에서
+                # 간격 축소 레벨을 다시 골라 필요한 만큼만 줄인다. 끝내 못 담으면 마지막 수단은 줄인 여백 위에서 이어 간다.
+                if 위아래여백_축소_가능():
+                    여백보관 = 위아래여백()
+                if 여백보관:
+                    최소 = _mm_hwpunit(쪽맞춤_위아래여백_최소_mm)
+                    위, 아래 = 여백보관
+                    while (위 > 최소 or 아래 > 최소) and not 중단_요청됨():
+                        위, 아래 = max(최소, 위 - _mm_hwpunit(1)), max(최소, 아래 - _mm_hwpunit(1))
+                        if 위아래여백((위, 아래)) is None:
+                            break
+                        if (측정(최대레벨) or 목표쪽 + 1) > 목표쪽:
+                            continue
+                        레벨 = 최대레벨
+                        if 조사['문단'] or 조사['셀']:
+                            결과 = 쪽맞춤_레벨_탐색(측정, 목표쪽, 최대레벨, bundle_split=묶음걸림,
+                                              extra_levels=페이지맞춤_묶음확인_추가단계)
+                            if 결과['status'] in ('ok', 'bundle_moved'):
+                                레벨 = 결과['level']
+                        쪽맞춤_레벨_적용(조사, 레벨)
+                        if (끝쪽()[0] or 목표쪽 + 1) <= 목표쪽:
+                            완료 = True
+                            로그(f"보고서 {번호} {목표쪽수}쪽 맞춤 완료: 위·아래 쪽 여백 "
+                                 f"{HwpUnit_mm(여백보관[0]):.1f}·{HwpUnit_mm(여백보관[1]):.1f}mm → "
+                                 f"{HwpUnit_mm(위):.1f}·{HwpUnit_mm(아래):.1f}mm + 레벨 {레벨} 축소")
+                            return True
+                    if 중단_요청됨():
+                        return False
+                    로그(f"[쪽 수 맞춤] 보고서 {번호}: 위·아래 여백을 {쪽맞춤_위아래여백_최소_mm:g}mm까지 줄여도 넘쳐 마지막 수단을 이어 씀")
                 # 마지막 수단: 위 간격 0pt, 표 셀 여백 최소(최대 레벨의 아래 간격 축소는 그대로).
                 쪽맞춤_레벨_적용(조사, 최대레벨, 위간격_0=True)
                 쪽, 줄수 = 끝쪽()
@@ -2736,6 +2796,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 return False
             finally:
                 if not 완료:
+                    if 여백보관:
+                        위아래여백(여백보관)
                     if 줄간격보관:
                         _쪽맞춤_줄간격_되돌리기(줄간격보관)
                     for 문단번호, 이전자간 in reversed(자간보관):
@@ -3047,7 +3109,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         로그(f"보고서 {번호 + 1}: 보고서 안 쪽 나눔을 풀어 {목표[번호]}쪽 안에 들어감")
                         continue
                 if 보고서_1쪽_맞춤(항목, 번호 + 1, 목표[번호], 원본[번호][2] if 원본 is not None else None,
-                               원본[번호][3] if 원본 is not None else None):
+                               원본[번호][3] if 원본 is not None else None,
+                               여백조정=len(보고서) == 1 and 유형 != '취합보고서'):
                     쪽맞춤_보고서조정됨 = True
                 else:
                     hwp.SetPos(*위치)

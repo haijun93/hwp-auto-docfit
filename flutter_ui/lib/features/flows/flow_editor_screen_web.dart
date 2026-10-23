@@ -8,10 +8,12 @@ import 'dart:ui_web' as ui_web;
 import 'package:flutter/material.dart';
 import 'package:web/web.dart' as web;
 import '../../core/api/abbreviation_api.dart';
+import '../table_units/table_units_screen.dart';
 
 class FlowEditorScreen extends StatefulWidget {
-  const FlowEditorScreen({super.key, required this.api});
+  const FlowEditorScreen({super.key, required this.api, this.initialMode = 'diagram'});
   final ApiCall api;
+  final String initialMode;
   @override
   State<FlowEditorScreen> createState() => _FlowEditorScreenState();
 }
@@ -20,7 +22,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
   late final String viewType;
   late final web.HTMLIFrameElement frame;
   late final JSFunction listener;
-  String name = '새 표/다이어그램';
+  String name = '새 다이어그램·마인드맵';
   String? identity, revision;
   final saveState = EditSaveState();
   bool dirty = false, ready = false, busy = false;
@@ -41,7 +43,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
       ..src = Uri.base
           .resolve('assets/assets/flow_editor/index.html')
           .toString()
-      ..title = '표/다이어그램 편집기'
+      ..title = '다이어그램·마인드맵'
       ..setAttribute('sandbox', 'allow-scripts allow-same-origin')
       ..style.border = '0'
       ..style.width = '100%'
@@ -105,6 +107,17 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
     final type = message['type'];
     if (type == 'ready') {
       if (mounted) setState(() => ready = true);
+      post({'type': 'set_mode', 'mode': widget.initialMode});
+      return;
+    }
+    if (type == 'open_table_units') {
+      if (mounted) {
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => TableUnitsScreen(api: widget.api),
+          ),
+        );
+      }
       return;
     }
     if (type == 'dirty') {
@@ -142,7 +155,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
           if (await confirmDiscard()) {
             identity = null;
             revision = null;
-            name = '새 표/다이어그램';
+            name = '새 다이어그램·마인드맵';
             dirty = false;
             post({'type': 'new'});
           }

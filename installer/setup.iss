@@ -18,7 +18,7 @@ ArchitecturesInstallIn64BitMode=x64
 ArchitecturesAllowed=x64
 CloseApplications=yes
 RestartApplications=no
-AppMutex=Global\HWP_AutoDocFit_SingleInstance_Mutex,Local\HWP_AutoDocFit_SingleInstance_Mutex
+CloseApplicationsFilter=*.exe,*.dll,*.pyd
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -41,5 +41,15 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "한글편집 후처리 실행"; Flags: nowait postinstall skipifsilent
 
+Filename: "{app}\{#AppExe}"; Flags: nowait; Check: WizardSilent
+
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
+
+[Registry]
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.hwp\shell\HwpAutoDocFit"; Flags: dontcreatekey uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.hwpx\shell\HwpAutoDocFit"; Flags: dontcreatekey uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\HwpAutoDocFit"; Flags: dontcreatekey uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.png\shell\HwpAutoDocFit"; Flags: dontcreatekey uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.jpg\shell\HwpAutoDocFit"; Flags: dontcreatekey uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.jpeg\shell\HwpAutoDocFit"; Flags: dontcreatekey uninsdeletekey

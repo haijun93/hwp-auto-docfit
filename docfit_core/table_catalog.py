@@ -206,8 +206,119 @@ def _header_lookup(header_root) -> dict:
             elif grad_colors:
                 fill = grad_colors[-1]
         borders[bid] = {"fill": fill, "borders": sides}
+        image = next((n for n in bf.iter() if _tag(n) == "img"), None)
+        if image is not None:
+            borders[bid]["image"] = image.get("binaryItemIDRef")
 
     return {"fonts": fonts, "chars": chars, "paras": paras, "borders": borders}
+
+
+def _image_lookup(archive):
+    """그림 참조를 미리보기에 전달한다. XML과 동일한 원본 이미지 바이트를 쓴다."""
+    import base64
+    import mimetypes
+    result = {}
+    for name in archive.namelist():
+        if name.startswith("BinData/"):
+            mime = mimetypes.guess_type(name)[0] or "application/octet-stream"
+            if mime.startswith("image/"):
+                result[Path(name).stem] = "data:" + mime + ";base64," + base64.b64encode(archive.read(name)).decode("ascii")
+    return result
+
+
+_DRAWINGS = {"pic", "rect", "polygon", "line", "ellipse", "container", "arc", "curve", "connectLine", "ole", "textart"}
+
+
+def _drawing_roots(node):
+    for child in node:
+        tag = _tag(child)
+        if tag == "tbl":
+            continue
+        if tag in _DRAWINGS:
+            yield child
+        else:
+            yield from _drawing_roots(child)
+
+
+def _shape_direction(shape):
+    comment = " ".join(n.text or "" for n in shape.iter() if _tag(n) == "shapeComment")
+    direction = next((d for word, d in (("오른쪽", "right"), ("왼쪽", "left"), ("아래", "down"), ("위쪽", "up")) if word in comment), "none")
+    points = [(float(n.get("x", 0)), float(n.get("y", 0))) for n in shape if _tag(n) in ("pt", "pt0", "pt1", "pt2", "pt3")]
+    points = list(dict.fromkeys(points))
+    if direction == "none" and points and _tag(shape) == "polygon":
+        # A triangle/arrow tip is the sparse extreme opposite a flat base.
+        candidates = []
+        for axis, low, high in ((0, "left", "right"), (1, "up", "down")):
+            values = [p[axis] for p in points]
+            a, b = values.count(min(values)), values.count(max(values))
+            candidates.append((abs(a - b), high if a > b else low))
+        score, d = max(candidates)
+        if score:
+            direction = d
+    line = shape.find(_HP + "lineShape")
+    if _tag(shape) == "line" and line is not None:
+        head, tail = line.get("headStyle", "NORMAL"), line.get("tailStyle", "NORMAL")
+        if head != "NORMAL" or tail != "NORMAL":
+            direction = "right" if tail != "NORMAL" else "left"
+    if direction != "none":
+        order = ["right", "down", "left", "up"]
+        rotation = shape.find(_HP + "rotationInfo")
+        angle = float(rotation.get("angle", 0)) if rotation is not None else 0
+        direction = order[(order.index(direction) + round(angle / 90)) % 4]
+        flip = shape.find(_HP + "flip")
+        if flip is not None:
+            if flip.get("horizontal") == "1":
+                direction = {"right": "left", "left": "right"}.get(direction, direction)
+            if flip.get("vertical") == "1":
+                direction = {"up": "down", "down": "up"}.get(direction, direction)
+    return direction
+
+
+def _cell_shapes(cell, width, height, header_info, align):
+    images = (header_info or {}).get("images", {})
+    shapes = []
+    def color(value):
+        return value.lower() if re.fullmatch(r"#[0-9a-fA-F]{6}", value or "") else None
+    for drawing in _drawing_roots(cell):
+        tag = _tag(drawing)
+        size = drawing.find(_HP + "sz")
+        if size is None:
+            size = drawing.find(_HP + "curSz")
+        w = float(size.get("width", width)) if size is not None else width
+        h = float(size.get("height", height)) if size is not None else height
+        pos = drawing.find(_HP + "pos")
+        inline = pos is None or pos.get("treatAsChar") == "1"
+        x = (width - w) / 2 if align == "CENTER" else (width - w if align == "RIGHT" else 0)
+        y = (height - h) / 2
+        if not inline:
+            x = float(pos.get("horzOffset", 0))
+            y = float(pos.get("vertOffset", 0))
+        direction = _shape_direction(drawing)
+        point_count = len({(n.get("x"), n.get("y")) for n in drawing if _tag(n) == "pt"})
+        kind = tag if tag in ("pic", "line", "rect", "ellipse") else "other"
+        if tag == "polygon":
+            kind = "triangle" if point_count == 3 else ("arrow" if direction != "none" else "other")
+        if tag == "line" and direction != "none":
+            kind = "arrow"
+        brush = next((n for n in drawing.iter() if _tag(n) == "winBrush"), None)
+        line = drawing.find(_HP + "lineShape")
+        item = {"kind": kind, "x": x / width, "y": y / height, "w": w / width, "h": h / height,
+                "direction": direction, "fill": color(brush.get("faceColor")) if brush is not None else None,
+                "line": color(line.get("color")) if line is not None and line.get("style") != "NONE" and float(line.get("width", 1)) > 0 else None,
+                "text": " ".join(n.text or "" for n in drawing.iter(_HP + "t"))}
+        img = next((n for n in drawing.iter() if _tag(n) == "img"), None)
+        if img is not None and img.get("binaryItemIDRef") in images:
+            item["src"] = images[img.get("binaryItemIDRef")]
+        shapes.append(item)
+    # Background images (e.g. 신구대조표's arrow) are not hp:pic objects.
+    background = (header_info or {}).get("borders", {}).get(cell.get("borderFillIDRef"), {}).get("image")
+    if background:
+        item = {"kind": "pic", "x": 0., "y": 0., "w": 1., "h": 1., "direction": "none",
+                "fill": None, "line": None, "text": ""}
+        if background in images:
+            item["src"] = images[background]
+        shapes.insert(0, item)
+    return shapes
 
 
 def _cell_meta(cell, fallback_row: int, fallback_col: int, text: str, header_info: dict | None) -> dict:
@@ -244,6 +355,7 @@ def _cell_meta(cell, fallback_row: int, fallback_col: int, text: str, header_inf
     size = char_info.get("size", 11.0)
     display_size = size if size >= 6.0 else 10.0
     return {
+        "shapes": _cell_shapes(cell, width, height, header_info, align),
         "row": row_addr,
         "col": col_addr,
         "rowSpan": row_span,
@@ -302,6 +414,7 @@ def _scan(path: str | Path) -> list[dict]:
             else None
         )
         header_info = _header_lookup(header_root)
+        header_info["images"] = _image_lookup(archive)
         for section_name in sections:
             root = ET.fromstring(archive.read(section_name))
             for paragraph_index, paragraph in enumerate(root.findall(_HP + "p")):
