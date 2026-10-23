@@ -442,3 +442,8 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 - C5 COM 종료: 지정 잠금 안에서 HWPX 사본→PDF CLI PASS(종료 코드 0, JSON 1줄, stderr 없음, PDF 96,324바이트). 원본 SHA256 불변. 최종 전체 회귀 시험 재실행 중.
 - C5 최종: Python 전체 1,510개 PASS(조건부 제외 1, 실패·오류 0, 707.271초), 집중 26개 PASS. 런처 실제 컴파일·뮤텍스 우회·종료 코드 보존 포함.
 - 보고서: `C:\HWP_AUTODOCFIT\v1803\reports\C5.md`(14줄), 최종 로그 `C5-artifacts\unittest-final.log`. Flutter 시험은 Claude 담당. 실제 메뉴 등록·커밋·푸시 미실행.
+
+### C11. 앱 업데이트 서비스 (2026-10-23, 완료)
+- 서비스·Tk/Flutter 브리지·Setup·GitLab 매니페스트 구현. Flutter 소스 수정·커밋·푸시 없음.
+- 지정 Python 전체 1579건 실패·오류 0(제외 1), 신규 30건 포함 집중 73건 PASS. CRLF 유지.
+- 보고: C:\HWP_AUTODOCFIT\v1803\reports\C11.md. 실제 Setup 설치·공개 네트워크 시험 미실행.
