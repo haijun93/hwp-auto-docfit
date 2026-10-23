@@ -21,6 +21,7 @@ import 'features/diagrams/diagram_editor_screen.dart';
 import 'features/flows/flow_editor_screen.dart';
 import 'features/progress/live_progress.dart';
 import 'features/settings/settings_dialog.dart';
+import 'features/settings/update_panel.dart';
 import 'features/stages/stage_board.dart';
 import 'features/table_units/table_units_screen.dart';
 
@@ -3137,7 +3138,12 @@ class _WorkspaceState extends State<Workspace> {
             '끄더라도 결과는 작업 기록과 최종 검수에 남아요.',
           ),
           settingsLabel('프로그램'),
-          optionSwitch('check_updates', '시작할 때 새 버전 확인', '새 버전이 있으면 알려 드려요.'),
+          optionSwitch(
+            'check_updates',
+            '시작할 때 새 버전 확인',
+            '시작할 때와 몇 시간마다 새 버전을 확인해요.',
+          ),
+          UpdatePanel(state: state, command: command),
           optionSwitch(
             'always_on_top',
             '앱 창을 항상 위에 표시',
