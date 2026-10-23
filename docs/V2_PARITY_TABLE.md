@@ -47,9 +47,9 @@
 | **T17** | 원본-결과 HWP 좌우 비교 창 | L5917 `비교창_준비` | 작업 완료 후 결과 목록 "좌우 비교 보기" 클릭 시 | - 입: 동기 스크롤 토글, 닫기<br>- 출: 좌측(원본) - 우측(결과) HWP COM 뷰어 | 없음 | **없음** | `launch_external_hwp_diff` (신규 독립 프로세스 브리지) | **상** | Windows OLE COM 뷰어 특성상 Flutter 직접 임베딩 불가. 독립 C#/Win32 뷰어 프로세스 분리 연동 필요. |
 | **T18** | 대화상자 부모 헬퍼 | L6274 `_대화상자_부모` | Tk 모달 대화상자 중앙 정렬 시 내부 호출 | - 입/출: 1x1 투명 오버레이 윈도우 | 없음 (불필요) | **완료 (Tk 전용)** | N/A | 하 | Tk GUI 전용 내부 유틸리티. Flutter의 BuildContext 기반 모달 체계로 자동 소멸. |
 | **T19** | 절약 완료 안내 창 | L6291 `_절약_완료창` | 전체 문서 맞춤/변환 배치 완료 시 | - 입: 확인, 결과 폴더 열기<br>- 출: 검은 고양이 그림, "OO분 시간 절약!" | `features/execution/execution_result_dialog.dart`<br>& `main.dart` (`outcome`) | **일부** | `get_state` | 중 | Flutter 4단계 결과 화면(`outcome`)에 완료 안내 표시 중. 캐릭터 및 시간 절약 연출 이관 가능. |
-| **T20** | 서식통일 2단계: 대표 서식 검토 창 | L6415 `_서식통일_대표서식_검토창` | 다중 문서 서식 통일 마법사 2단계 도달 시 | - 입: 추출된 서식 후보 중 대표 기준 서식 선택<br>- 출: 선택된 기준 프로필 ID 확정 | 없음 | **없음** | `get_pending_dialog`, `resolve_dialog` 또는 `flow_wizard` | **상** | 서식 통일 마법사의 핵심 승인 단계. Flutter 마법사 Step 2 위젯 신설 필수. |
-| **T21** | 서식통일 3단계: 적용 영역 검토 창 | L6564 `_서식통일_적용영역_검토창` | 서식 통일 마법사 3단계 도달 시 | - 입: 문서별 적용 섹션/본문/표/머리말 체크박스<br>- 출: 적용 영역 매핑 구조체 | 없음 | **없음** | `get_pending_dialog`, `resolve_dialog` | **상** | 문서별/영역별 세부 적용 범위 체크 리스트 Flutter 컴포넌트 신설 필수. |
-| **T22** | 서식통일 5단계: 결과 확인 창 | L6672 `_서식통일_결과_확인창` | 서식 통일 마법사 완료 시 | - 입: 완료 확인, 결과 폴더 열기<br>- 출: 변경 문서 목록 및 적용 스타일 요약 | 없음 | **없음** | `get_pending_dialog`, `resolve_dialog` | **상** | Flutter 4단계 결과 탭에 마법사 완료 요약 카드 통합 필요. |
+| **T20** | 서식통일 2단계: 대표 서식 검토 창 | L6415 `_서식통일_대표서식_검토창` | 다중 문서 서식 통일 마법사 2단계 도달 시 | - 입: 추출된 서식 후보 중 대표 기준 서식 선택<br>- 출: 선택된 기준 프로필 ID 확정 | `features/style_unify/unify_pick_style_dialog.dart`<br>(`UnifyPickStyleDialog`) | **완료** | `get_pending_dialog`, `resolve_dialog` | **상** | G29: 브리지 모달 및 Flutter 화면 이관 완료. `ui_tk_fallback=true` 시 기존 Tk 창 유지. [API](V2_STYLE_UNIFY_DIALOGS_API.md). |
+| **T21** | 서식통일 3단계: 적용 영역 검토 창 | L6564 `_서식통일_적용영역_검토창` | 서식 통일 마법사 3단계 도달 시 | - 입: 문서별 적용 섹션/본문/표/머리말 체크박스<br>- 출: 적용 영역 매핑 구조체 | `features/style_unify/unify_area_dialog.dart`<br>(`UnifyAreaDialog`) | **완료** | `get_pending_dialog`, `resolve_dialog` | **상** | G29: 불일치 문장 선별 체크박스 이관 완료. `ui_tk_fallback=true` 시 기존 Tk 창 유지. [API](V2_STYLE_UNIFY_DIALOGS_API.md). |
+| **T22** | 서식통일 5단계: 결과 확인 창 | L6672 `_서식통일_결과_확인창` | 서식 통일 마법사 완료 시 | - 입: 완료 확인, 결과 폴더 열기<br>- 출: 변경 문서 목록 및 적용 스타일 요약 | `features/style_unify/unify_result_dialog.dart`<br>(`UnifyResultDialog`) | **완료** | `get_pending_dialog`, `resolve_dialog` | **상** | G29: 검수 통계 및 결과 폴더 열기 이관 완료. `ui_tk_fallback=true` 시 기존 Tk 창 유지. [API](V2_STYLE_UNIFY_DIALOGS_API.md). |
 | **S01** | 서식 이름 바꾸기 | L2168 `simpledialog.askstring` | 서식 프로필 복제/이름바꾸기 버튼 클릭 시 | - 입: 새 서식 이름 텍스트 | `main.dart`<br>(`RenameFormatDialog`) | **완료** | `rename_profile` | 상 | `main.dart` L3427 `RenameFormatDialog`에서 자체 처리 및 브리지 `rename_profile` 호출. |
 | **S02** | 서식 기관명 바꾸기 | L2178 `simpledialog.askstring` | 서식 복사/이름바꾸기 시 기관명 입력 | - 입: 대상 기관명 텍스트 | `main.dart`<br>(`RenameFormatDialog`) | **완료** | `rename_profile` | 상 | `RenameFormatDialog`에서 이름과 기관명을 한 폼에서 입력받아 자체 완결. |
 | **S03** | 서식 신규 생성 이름 입력 | L4320 `simpledialog.askstring` | 새 서식 만들기 클릭 시 | - 입: 새 서식 이름 텍스트 | `features/formats/profile_editor.dart`<br>(`ProfileEditor`) | **완료** | `format_profile` | 상 | Flutter 프로필 생성/저장 폼에서 자체 처리. |
@@ -149,13 +149,13 @@
 
 | 분류 | 전체 개수 | 완료 (Flutter 완비) | 완료 (브리지 대화상자) | 일부 (Workspace 흡수 등) | 없음 (미구현/외부) |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Toplevel 화면** | 22 | 6 | 0 | 9 | 7 (T18 헬퍼 포함) |
+| **Toplevel 화면** | 22 | 9 | 0 | 9 | 4 (T18 헬퍼 포함) |
 | **simpledialog** | 6 | 4 | 0 | 2 | 0 |
 | **메시지/알림 대화상자** | 48 | 0 | 41 | 0 | 7 (messagebox 직호출) |
 | **filedialog (파일/폴더)** | 15 | 0 | 0 | 0 | 15 (`file_picker` 대상) |
-| **총합** | **91** | **10** | **41** | **11** | **29** |
+| **총합** | **91** | **13** | **41** | **11** | **26** |
 
-- **실제 동등성 달성률**: 완전 전환(10) + 브리지 연동(41) = **56.0% (51/91)** 달성.
+- **실제 동등성 달성률**: 완전 전환(13) + 브리지 연동(41) = **59.3% (54/91)** 달성.
 - **핵심 사실 정정**:
   - `T03` 서식 키오스크는 초안과 달리 `main.dart`의 `openKiosk()`와 `kioskCard`로 이미 완료됨.
   - `T02` 세부작업, `T13/T14` 서식수정, `T15` 환경설정은 Flutter 위젯이 이미 존재함에도 `desktop_web_ui.py`에 Tk 창 호출 경로(B03, B05, B13)가 잔존하여 이중 유지 중임.

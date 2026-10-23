@@ -1080,7 +1080,10 @@ class DesktopWebBridge:
         if not pending:
             with self._close_lock:
                 return dict(self._close_request) if self._close_request else None
-        return {key: pending[key] for key in ("id", "title", "message", "confirm", "choices", "fields", "ok_label", "cancel_label") if key in pending}
+        return {key: pending[key] for key in (
+            "id", "kind", "type", "title", "message", "confirm", "choices", "fields",
+            "ok_label", "cancel_label", "styles", "areas", "result"
+        ) if key in pending}
 
     def get_pending_dialog(self):
         return self._tk(self._pending_dialog)
@@ -1119,10 +1122,10 @@ class DesktopWebBridge:
         def resolve():
             pending = getattr(self.gui, "_flutter_dialog", None)
             if pending and pending["id"] == identifier and isinstance(accepted, bool):
-                allowed = {item["id"] for item in pending["choices"]}
+                allowed = {item["id"] for item in pending.get("choices", [])}
                 if selection is not None and (not isinstance(selection, list) or any(item not in allowed for item in selection)):
                     raise ValueError("검토 항목을 다시 선택해 주세요.")
-                allowed_fields = {item["id"] for item in pending["fields"]}
+                allowed_fields = {item["id"] for item in pending.get("fields", [])}
                 if fields is not None and (not isinstance(fields, dict) or any(key not in allowed_fields or not isinstance(value, str) for key, value in fields.items())):
                     raise ValueError("검토 값을 확인해 주세요.")
                 pending["selection"] = selection if selection is not None else list(allowed)
