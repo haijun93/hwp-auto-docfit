@@ -8,8 +8,8 @@
 </p>
 
 <p align="center">
-<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.6_Portable.exe?inline=false"><img alt="무설치로 바로 받기" src="https://img.shields.io/badge/%E2%AC%87%20%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%94%EB%A1%9C%20%EB%B0%9B%EA%B8%B0-v1.80.6-2563eb?style=for-the-badge"></a>
-<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.6_Setup.exe?inline=false"><img alt="설치용 받기" src="https://img.shields.io/badge/%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0-Setup-0ea5e9?style=for-the-badge"></a>
+<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.7_Portable.exe?inline=false"><img alt="무설치로 바로 받기" src="https://img.shields.io/badge/%E2%AC%87%20%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%94%EB%A1%9C%20%EB%B0%9B%EA%B8%B0-v1.80.7-2563eb?style=for-the-badge"></a>
+<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.7_Setup.exe?inline=false"><img alt="설치용 받기" src="https://img.shields.io/badge/%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0-Setup-0ea5e9?style=for-the-badge"></a>
 </p>
 <p align="center">
 <img alt="무료" src="https://img.shields.io/badge/%EA%B0%80%EA%B2%A9-%EB%AC%B4%EB%A3%8C-16a34a">
@@ -25,8 +25,20 @@
 
 ---
 
-<h2 align="center">새로워진 v1.80.6</h2>
-<p align="center">자주 쓰는 표는 모양을 보고 고르고, 칸 묶음 수만 정해 한/글에 바로 붙여넣으세요.</p>
+<h2 align="center">새로워진 v1.80.7</h2>
+<p align="center">바둑판에 선을 그려 표를 만들고, 자주 쓰는 표는 칸 수를 늘려 한/글에 바로 붙여넣으세요.</p>
+
+### 선을 그으면 표가 됩니다. 표그림판. (1.80.7)
+
+상단 메뉴의 **「표그림판」**에서 점선 바둑판 용지에 가로·세로·대각선 직선을 그리면 한/글에 바로 붙여 넣는 표가 만들어집니다.
+선으로 둘러싼 자리는 칸 하나로 합쳐지고 그리지 않은 경계는 보이지 않는 테두리가 되어 조직도처럼 상자와 선으로 된 서식도 자유롭게 그릴 수 있습니다.
+도구(사각형·지우개·글·선택)와 선 굵기·종류 선택, 화면 이동·확대, 실행 취소를 지원하며 **「한/글에 붙여넣기용 복사」**로 표를 한/글에 바로 붙여넣습니다.
+
+### 표 템플릿, 더 많이 늘리고 한눈에 고르기. (1.80.7)
+
+화면을 T자형으로 넓혀 위쪽에 모든 표 이름 버튼을 나열하고 왼쪽 분류 목록도 잘림 없이 한눈에 보고 고를 수 있도록 개선했습니다.
+현황표·추진절차·신구대조표의 행 조절, 일정표·행사시간표의 열 조절, 사진과 설명 묶음을 아래로 더하는 사진첨부표까지 [−][+]로 조절하는 정보단위 표를 대폭 늘렸습니다.
+추진절차나 신구대조표처럼 화살표 그림이 들어간 표도 미리보기에서 화살표 모양을 그대로 확인하며 작업할 수 있습니다.
 
 ### 고른 서식 그대로, 내어쓰기까지. 쪽 맞춤은 여백부터. (1.80.6)
 
@@ -252,15 +264,15 @@ GitHub가 막힌 기관 PC에서도 위 「받기」 링크가 GitLab에서 바�
 
 | 파일 | 용도 |
 |---|---|
-| **[포터블 · HWP_AutoDocFit_v1.80.6_Portable.exe](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.6_Portable.exe?inline=false)** | 설치 없이 바로 실행 |
-| [설치용 · HWP_AutoDocFit_v1.80.6_Setup.exe](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.6_Setup.exe?inline=false) | 시작 메뉴 등록, Windows 앱 제거로 정리 |
+| **[포터블 · HWP_AutoDocFit_v1.80.7_Portable.exe](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.7_Portable.exe?inline=false)** | 설치 없이 바로 실행 |
+| [설치용 · HWP_AutoDocFit_v1.80.7_Setup.exe](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.7_Setup.exe?inline=false) | 시작 메뉴 등록, Windows 앱 제거로 정리 |
 | [보고서 예시 파일(한번에 적용).txt](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/%EB%B3%B4%EA%B3%A0%EC%84%9C%20%EC%98%88%EC%8B%9C%20%ED%8C%8C%EC%9D%BC%28%ED%95%9C%EB%B2%88%EC%97%90%20%EC%A0%81%EC%9A%A9%29.txt?inline=false) | 처음 체험용 예시 |
 | [SHA256SUMS](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/SHA256SUMS?inline=false) | 내려받은 파일 확인용 해시 |
 
 - **필요한 것**: Windows 10·11(64비트), 문서를 편집할 수 있는 **한컴오피스 한/글**(2020에서 검증). Python 등 다른 설치는 필요 없습니다.
 - 변환 엔진은 실행 파일에 들어 있습니다. 첫 실행 때 `C:\HWP_AUTODOCFIT`(쓰기 권한이 없으면 `%LOCALAPPDATA%\HwpAutoDocFit`)에 풀며, 인터넷에서 받지 않습니다.
 - 위 링크는 공공기관 PC에서도 열리는 **GitLab**(gitlab.aigov.go.kr)에서 받습니다. 기관망 밖에서는 [GitHub 릴리스](https://github.com/haijun93/hwp-auto-docfit/releases/latest)에서도 같은 파일(같은 SHA-256)을 받을 수 있습니다.
-- [v1.80.6 변경 사항](releases/v1.80.6.md) · [GitHub](https://github.com/haijun93/hwp-auto-docfit) · [GitLab](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
+- [v1.80.7 변경 사항](releases/v1.80.7.md) · [GitHub](https://github.com/haijun93/hwp-auto-docfit) · [GitLab](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
 
 ---
 
@@ -308,5 +320,5 @@ GitHub가 막힌 기관 PC에서도 위 「받기」 링크가 GitLab에서 바�
 
 <p align="center">
 <a href="docs/USER_GUIDE.md"><b>자세한 사용 설명서</b></a> — 기능별 사용법·옵션·결과 파일·문제 해결<br>
-<a href="releases/v1.80.6.md">v1.80.6 변경 사항</a> · <a href="HANDOVER.md">개발 인수인계 문서</a> · <a href="THIRD_PARTY_NOTICES.md">사용한 오픈소스</a> · <a href="LICENSE">라이선스</a>
+<a href="releases/v1.80.7.md">v1.80.7 변경 사항</a> · <a href="HANDOVER.md">개발 인수인계 문서</a> · <a href="THIRD_PARTY_NOTICES.md">사용한 오픈소스</a> · <a href="LICENSE">라이선스</a>
 </p>
