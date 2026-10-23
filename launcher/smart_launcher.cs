@@ -204,7 +204,6 @@ internal static class SmartLauncher
     {
         string parent = Path.GetDirectoryName(finalPath);
         string staging = Path.Combine(parent, ".staging-" + Guid.NewGuid().ToString("N"));
-        if (Directory.Exists(finalPath)) Directory.Delete(finalPath, true);
         Directory.CreateDirectory(staging);
         try
         {
@@ -257,12 +256,45 @@ internal static class SmartLauncher
             }
             if (written.Count != manifest.Items.Count) throw new InvalidDataException("압축 파일 일부 항목이 누락되었습니다.");
             File.WriteAllText(Path.Combine(staging, ".docfit-complete"), manifest.PayloadHash, new UTF8Encoding(false));
-            Directory.Move(staging, finalPath);
+            ReplaceCache(staging, finalPath);
         }
         catch
         {
             try { if (Directory.Exists(staging)) Directory.Delete(staging, true); } catch { }
             throw;
+        }
+    }
+
+    private static void ReplaceCache(string staging, string finalPath)
+    {
+        // 손상된 캐시는 바로 지우지 않는다: 잠깐 잡고 있는 프로세스(방금 끝난 자식·백신 검사)가 있으면
+        // 삭제가 실패해 런처가 멈췄다(CI 실측). 옆으로 옮긴 뒤 새 폴더를 놓고, 옛 폴더는 나중에 지운다.
+        string trash = null;
+        for (int attempt = 0; ; attempt++)
+        {
+            try
+            {
+                if (Directory.Exists(finalPath))
+                {
+                    trash = Path.Combine(Path.GetDirectoryName(finalPath), ".trash-" + Guid.NewGuid().ToString("N"));
+                    Directory.Move(finalPath, trash);
+                }
+                Directory.Move(staging, finalPath);
+                break;
+            }
+            catch (IOException)
+            {
+                if (attempt >= 25) throw;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                if (attempt >= 25) throw;
+            }
+            Thread.Sleep(200);
+        }
+        if (trash != null)
+        {
+            try { Directory.Delete(trash, true); } catch { }
         }
     }
 
@@ -280,6 +312,11 @@ internal static class SmartLauncher
             string trash = Path.Combine(cacheRoot, ".trash-" + Guid.NewGuid().ToString("N"));
             try { Directory.Move(path, trash); }
             catch { continue; }
+            try { Directory.Delete(trash, true); } catch { }
+        }
+        // 지우지 못하고 남은 옛 캐시(.trash-*)는 다음 실행 때 다시 지운다.
+        foreach (string trash in Directory.GetDirectories(cacheRoot, ".trash-*"))
+        {
             try { Directory.Delete(trash, true); } catch { }
         }
         // Another launcher may still be extracting into .staging-*; it owns that cleanup.

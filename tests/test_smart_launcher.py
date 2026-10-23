@@ -255,16 +255,25 @@ internal static class CleanupProbe {
 
             # A completion marker alone must not accept a partially deleted cache.
             asset = cache_path / 'asset.txt'
-            for damage in ('missing', 'truncated'):
+            # 'held': 손상된 캐시의 파일을 다른 프로세스가 잠깐 잡고 있어도(CI 실측) 런처가 기다렸다 교체한다.
+            import threading
+            for damage in ('missing', 'truncated', 'held'):
                 with self.subTest(cache_damage=damage):
+                    holder = None
                     if damage == 'missing':
                         asset.unlink()
                     else:
                         asset.write_bytes(b'x')
+                    if damage == 'held':
+                        handle = open(asset, 'rb')
+                        holder = threading.Timer(1.0, handle.close)
+                        holder.start()
                     subprocess.run(
                         [str(launcher), '--self-test', '--self-test-report', str(report), 'argument with spaces'],
                         check=True, timeout=30,
                     )
+                    if holder is not None:
+                        holder.join()
                     self.assertEqual(asset.read_bytes(), b'complete asset')
 
             # CLI는 앱 뮤텍스가 잡힌 상태에서도 실행되고 자식 종료 코드·런처 경로를 보존한다.
