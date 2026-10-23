@@ -9,10 +9,7 @@ Widget _wrap(
   return MaterialApp(
     home: Scaffold(
       body: SingleChildScrollView(
-        child: UpdatePanel(
-          state: state,
-          command: command,
-        ),
+        child: UpdatePanel(state: state, command: command),
       ),
     ),
   );
@@ -22,7 +19,10 @@ void main() {
   group('UpdatePanel 위젯', () {
     testWidgets('state["update"]가 없으면 현재 버전과 지금 확인 버튼만 표시', (tester) async {
       final calls = <String>[];
-      Future<void> command(String method, [List<Object?> args = const []]) async {
+      Future<void> command(
+        String method, [
+        List<Object?> args = const [],
+      ]) async {
         calls.add(method);
       }
 
@@ -50,21 +50,23 @@ void main() {
 
     testWidgets('step: idle 일 때 상태 줄 및 추가 버튼 숨김', (tester) async {
       final calls = <String>[];
-      Future<void> command(String method, [List<Object?> args = const []]) async {
+      Future<void> command(
+        String method, [
+        List<Object?> args = const [],
+      ]) async {
         calls.add(method);
       }
 
       final state = {
-        'update': {
-          'step': 'idle',
-          'current': '1.80.6',
-        },
+        'update': {'step': 'idle', 'current': '1.80.6'},
       };
 
       await tester.pumpWidget(_wrap(state, command));
 
       expect(find.text('현재 버전 v1.80.6'), findsOneWidget);
-      final checkBtn = tester.widget<OutlinedButton>(find.byKey(const Key('checkUpdateButton')));
+      final checkBtn = tester.widget<OutlinedButton>(
+        find.byKey(const Key('checkUpdateButton')),
+      );
       expect(checkBtn.onPressed, isNotNull);
 
       expect(find.byKey(const Key('updateStatusText')), findsNothing);
@@ -79,18 +81,21 @@ void main() {
 
     testWidgets('step: checking 일 때 지금 확인 비활성 및 안내 문구', (tester) async {
       final state = {
-        'update': {
-          'step': 'checking',
-          'current': '1.80.6',
-        },
+        'update': {'step': 'checking', 'current': '1.80.6'},
       };
 
-      await tester.pumpWidget(_wrap(state, (method, [args = const []]) async {}));
+      await tester.pumpWidget(
+        _wrap(state, (method, [args = const []]) async {}),
+      );
 
-      final checkBtn = tester.widget<OutlinedButton>(find.byKey(const Key('checkUpdateButton')));
+      final checkBtn = tester.widget<OutlinedButton>(
+        find.byKey(const Key('checkUpdateButton')),
+      );
       expect(checkBtn.onPressed, isNull);
 
-      final status = tester.widget<Text>(find.byKey(const Key('updateStatusText')));
+      final status = tester.widget<Text>(
+        find.byKey(const Key('updateStatusText')),
+      );
       expect(status.data, '새 버전을 확인하고 있어요…');
       expect(find.byKey(const Key('updateProgress')), findsNothing);
       expect(find.byKey(const Key('startUpdateButton')), findsNothing);
@@ -99,27 +104,35 @@ void main() {
 
     testWidgets('step: latest 일 때 최신 버전 문구 표시', (tester) async {
       final state = {
-        'update': {
-          'step': 'latest',
-          'current': '1.80.6',
-        },
+        'update': {'step': 'latest', 'current': '1.80.6'},
       };
 
-      await tester.pumpWidget(_wrap(state, (method, [args = const []]) async {}));
+      await tester.pumpWidget(
+        _wrap(state, (method, [args = const []]) async {}),
+      );
 
-      final checkBtn = tester.widget<OutlinedButton>(find.byKey(const Key('checkUpdateButton')));
+      final checkBtn = tester.widget<OutlinedButton>(
+        find.byKey(const Key('checkUpdateButton')),
+      );
       expect(checkBtn.onPressed, isNotNull);
 
-      final status = tester.widget<Text>(find.byKey(const Key('updateStatusText')));
+      final status = tester.widget<Text>(
+        find.byKey(const Key('updateStatusText')),
+      );
       expect(status.data, '최신 버전이에요.');
       expect(find.byKey(const Key('updateProgress')), findsNothing);
       expect(find.byKey(const Key('startUpdateButton')), findsNothing);
       expect(find.byKey(const Key('openUpdatePageButton')), findsNothing);
     });
 
-    testWidgets('step: available (설치본) 일 때 notes 목록과 업데이트 버튼 동작', (tester) async {
+    testWidgets('step: available (설치본) 일 때 notes 목록과 업데이트 버튼 동작', (
+      tester,
+    ) async {
       final calls = <String>[];
-      Future<void> command(String method, [List<Object?> args = const []]) async {
+      Future<void> command(
+        String method, [
+        List<Object?> args = const [],
+      ]) async {
         calls.add(method);
       }
 
@@ -129,26 +142,26 @@ void main() {
           'current': '1.80.6',
           'latest': '1.80.7',
           'installed': true,
-          'notes': [
-            '자간 조정 알고리즘 최적화',
-            '서식 통일 결과 창 오류 수정',
-          ],
+          'notes': ['자간 조정 알고리즘 최적화', '서식 통일 결과 창 오류 수정'],
         },
       };
 
       await tester.pumpWidget(_wrap(state, command));
 
-      final checkBtn = tester.widget<OutlinedButton>(find.byKey(const Key('checkUpdateButton')));
+      final checkBtn = tester.widget<OutlinedButton>(
+        find.byKey(const Key('checkUpdateButton')),
+      );
       expect(checkBtn.onPressed, isNotNull);
 
-      final status = tester.widget<Text>(find.byKey(const Key('updateStatusText')));
+      final status = tester.widget<Text>(
+        find.byKey(const Key('updateStatusText')),
+      );
       expect(status.data, '새 버전 v1.80.7이 나왔어요.');
 
-      final notesWidget = tester.widget<Text>(find.byKey(const Key('updateNotes')));
-      expect(
-        notesWidget.data,
-        '• 자간 조정 알고리즘 최적화\n• 서식 통일 결과 창 오류 수정',
+      final notesWidget = tester.widget<Text>(
+        find.byKey(const Key('updateNotes')),
       );
+      expect(notesWidget.data, '• 자간 조정 알고리즘 최적화\n• 서식 통일 결과 창 오류 수정');
 
       final updateBtnFinder = find.byKey(const Key('startUpdateButton'));
       expect(updateBtnFinder, findsOneWidget);
@@ -160,7 +173,9 @@ void main() {
       expect(find.byKey(const Key('openUpdatePageButton')), findsNothing);
     });
 
-    testWidgets('step: available (포터블 installed=false) 일 때 버튼 문구 변경', (tester) async {
+    testWidgets('step: available (포터블 installed=false) 일 때 버튼 문구 변경', (
+      tester,
+    ) async {
       final calls = <String>[];
       final state = {
         'update': {
@@ -171,9 +186,11 @@ void main() {
         },
       };
 
-      await tester.pumpWidget(_wrap(state, (method, [args = const []]) async {
-        calls.add(method);
-      }));
+      await tester.pumpWidget(
+        _wrap(state, (method, [args = const []]) async {
+          calls.add(method);
+        }),
+      );
 
       final updateBtnFinder = find.byKey(const Key('startUpdateButton'));
       expect(updateBtnFinder, findsOneWidget);
@@ -202,9 +219,13 @@ void main() {
         },
       };
 
-      await tester.pumpWidget(_wrap(state, (method, [args = const []]) async {}));
+      await tester.pumpWidget(
+        _wrap(state, (method, [args = const []]) async {}),
+      );
 
-      final notesWidget = tester.widget<Text>(find.byKey(const Key('updateNotes')));
+      final notesWidget = tester.widget<Text>(
+        find.byKey(const Key('updateNotes')),
+      );
       expect(
         notesWidget.data,
         '• 첫 번째 변경\n'
@@ -218,19 +239,21 @@ void main() {
 
     testWidgets('step: downloading 일 때 진행률(percent/100)과 비활성', (tester) async {
       final state = {
-        'update': {
-          'step': 'downloading',
-          'current': '1.80.6',
-          'percent': 42,
-        },
+        'update': {'step': 'downloading', 'current': '1.80.6', 'percent': 42},
       };
 
-      await tester.pumpWidget(_wrap(state, (method, [args = const []]) async {}));
+      await tester.pumpWidget(
+        _wrap(state, (method, [args = const []]) async {}),
+      );
 
-      final checkBtn = tester.widget<OutlinedButton>(find.byKey(const Key('checkUpdateButton')));
+      final checkBtn = tester.widget<OutlinedButton>(
+        find.byKey(const Key('checkUpdateButton')),
+      );
       expect(checkBtn.onPressed, isNull);
 
-      final status = tester.widget<Text>(find.byKey(const Key('updateStatusText')));
+      final status = tester.widget<Text>(
+        find.byKey(const Key('updateStatusText')),
+      );
       expect(status.data, '내려받는 중… 42%');
 
       final progressFinder = find.byKey(const Key('updateProgress'));
@@ -244,18 +267,21 @@ void main() {
 
     testWidgets('step: installing 일 때 안내 문구와 비활성', (tester) async {
       final state = {
-        'update': {
-          'step': 'installing',
-          'current': '1.80.6',
-        },
+        'update': {'step': 'installing', 'current': '1.80.6'},
       };
 
-      await tester.pumpWidget(_wrap(state, (method, [args = const []]) async {}));
+      await tester.pumpWidget(
+        _wrap(state, (method, [args = const []]) async {}),
+      );
 
-      final checkBtn = tester.widget<OutlinedButton>(find.byKey(const Key('checkUpdateButton')));
+      final checkBtn = tester.widget<OutlinedButton>(
+        find.byKey(const Key('checkUpdateButton')),
+      );
       expect(checkBtn.onPressed, isNull);
 
-      final status = tester.widget<Text>(find.byKey(const Key('updateStatusText')));
+      final status = tester.widget<Text>(
+        find.byKey(const Key('updateStatusText')),
+      );
       expect(status.data, '설치를 시작했어요. 잠시 뒤 앱이 다시 열려요.');
       expect(find.byKey(const Key('updateProgress')), findsNothing);
       expect(find.byKey(const Key('startUpdateButton')), findsNothing);
@@ -264,23 +290,27 @@ void main() {
 
     testWidgets('step: failed 일 때 다운로드 페이지 열기 버튼과 명령 호출', (tester) async {
       final calls = <String>[];
-      Future<void> command(String method, [List<Object?> args = const []]) async {
+      Future<void> command(
+        String method, [
+        List<Object?> args = const [],
+      ]) async {
         calls.add(method);
       }
 
       final state = {
-        'update': {
-          'step': 'failed',
-          'current': '1.80.6',
-        },
+        'update': {'step': 'failed', 'current': '1.80.6'},
       };
 
       await tester.pumpWidget(_wrap(state, command));
 
-      final checkBtn = tester.widget<OutlinedButton>(find.byKey(const Key('checkUpdateButton')));
+      final checkBtn = tester.widget<OutlinedButton>(
+        find.byKey(const Key('checkUpdateButton')),
+      );
       expect(checkBtn.onPressed, isNotNull);
 
-      final status = tester.widget<Text>(find.byKey(const Key('updateStatusText')));
+      final status = tester.widget<Text>(
+        find.byKey(const Key('updateStatusText')),
+      );
       expect(status.data, '업데이트하지 못했어요.');
 
       final openPageBtnFinder = find.byKey(const Key('openUpdatePageButton'));
@@ -296,7 +326,9 @@ void main() {
       final stateCancelled = {
         'update': {'step': 'cancelled', 'current': '1.80.6'},
       };
-      await tester.pumpWidget(_wrap(stateCancelled, (method, [args = const []]) async {}));
+      await tester.pumpWidget(
+        _wrap(stateCancelled, (method, [args = const []]) async {}),
+      );
       expect(
         tester.widget<Text>(find.byKey(const Key('updateStatusText'))).data,
         '업데이트를 취소했어요.',
@@ -305,7 +337,9 @@ void main() {
       final stateOffline = {
         'update': {'step': 'offline', 'current': '1.80.6'},
       };
-      await tester.pumpWidget(_wrap(stateOffline, (method, [args = const []]) async {}));
+      await tester.pumpWidget(
+        _wrap(stateOffline, (method, [args = const []]) async {}),
+      );
       expect(
         tester.widget<Text>(find.byKey(const Key('updateStatusText'))).data,
         '폐쇄망 모드에서는 인터넷으로 확인하지 않아요.',
@@ -321,7 +355,9 @@ void main() {
         },
       };
 
-      await tester.pumpWidget(_wrap(state, (method, [args = const []]) async {}));
+      await tester.pumpWidget(
+        _wrap(state, (method, [args = const []]) async {}),
+      );
       expect(
         tester.widget<Text>(find.byKey(const Key('updateStatusText'))).data,
         '서버 점검 중입니다. 잠시 후 시도하세요.',

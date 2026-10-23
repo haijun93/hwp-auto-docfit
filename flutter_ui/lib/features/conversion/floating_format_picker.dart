@@ -63,6 +63,25 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
     _ => Icons.description_outlined,
   };
 
+  /// 칸 이름이 길면 낱말 경계에서 두 줄로 나눈다('PDF 하나로 합치기' → 'PDF 하나로' / '합치기').
+  static String _sliceLabel(String label) {
+    if (label.length <= 6 || label.contains('\n')) return label;
+    final words = label.split(' ');
+    if (words.length < 2) return label;
+    var best = 1;
+    var bestDiff = 1 << 30;
+    for (var i = 1; i < words.length; i++) {
+      final left = words.sublist(0, i).join(' ').length;
+      final right = words.sublist(i).join(' ').length;
+      final diff = (left - right).abs();
+      if (diff <= bestDiff) {
+        best = i;
+        bestDiff = diff;
+      }
+    }
+    return '${words.sublist(0, best).join(' ')}\n${words.sublist(best).join(' ')}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final active = hovered ?? widget.selected;
@@ -139,9 +158,13 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
                                       onFocusChange: (on) => setState(
                                         () => hovered = on ? format : null,
                                       ),
+                                      // 고를 수 없는 칸도 누르면 아래쪽에 그 칸의 이유를 보여 준다(누르기 전 선택 형식의 이유가
+                                      // 남아 'PDF 압축'에 'HWPX 같은 형식' 안내가 보이던 문제, 2026-10-23 사용자 실측).
                                       onTap: enabled
                                           ? () => widget.onSelected(format)
-                                          : null,
+                                          : () => setState(
+                                              () => hovered = format,
+                                            ),
                                       child: Stack(
                                         children: [
                                           Positioned(
@@ -159,11 +182,19 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
                                                   size: 37.5,
                                                 ),
                                                 const SizedBox(height: 5),
+                                                // 긴 이름(예: 'PDF 하나로 합치기')은 낱말 단위로 두 줄, 가운데 정렬 —
+                                                // 칸이 좁아 'PDF 하나로 합치' / '기'로 끊기던 문제(2026-10-23 사용자 실측).
                                                 Text(
-                                                  '${target['label']}',
+                                                  _sliceLabel(
+                                                    '${target['label']}',
+                                                  ),
+                                                  textAlign: TextAlign.center,
+                                                  maxLines: 2,
+                                                  softWrap: true,
                                                   style: TextStyle(
                                                     color: foreground,
                                                     fontSize: 15,
+                                                    height: 1.15,
                                                     fontWeight: FontWeight.w700,
                                                   ),
                                                 ),
@@ -238,7 +269,9 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
           ),
           const SizedBox(height: 12),
           Text(
-            '변환 결과: ${activeInfo['label']}',
+            activeInfo['enabled'] == true
+                ? '변환 결과: ${activeInfo['label']}'
+                : '고를 수 없음: ${activeInfo['label']}',
             key: const Key('conversionSelectedOutput'),
             style: const TextStyle(fontWeight: FontWeight.w700),
           ),
