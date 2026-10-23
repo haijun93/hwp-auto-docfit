@@ -48,6 +48,19 @@ QUICK_OPTIONS = {
 }
 
 
+def _profile_trace(message):
+    """서식 선택 작동 기록: DOCFIT_PROFILE_TRACE에 파일 경로가 있을 때만 남긴다(사용자 시험용)."""
+    target = os.environ.get("DOCFIT_PROFILE_TRACE")
+    if not target:
+        return
+    try:
+        from datetime import datetime
+        with open(target, "a", encoding="utf-8") as handle:
+            handle.write(f"{datetime.now():%H:%M:%S} {message}\n")
+    except OSError:
+        pass
+
+
 class DesktopWebBridge:
     """WebView에서 호출하는 API. 모든 Tk 접근은 Tk 이벤트 루프에 위임한다."""
 
@@ -1501,11 +1514,17 @@ class DesktopWebBridge:
         def select():
             gui = self.gui
             ids = list(self._profile_state().profile_ids or [])
+            if not ids and hasattr(gui, "_프로파일_목록갱신"):
+                gui._프로파일_목록갱신()   # 서식 순서가 아직 없으면 먼저 채운다(없으면 모든 선택이 무시됨)
+                ids = list(self._profile_state().profile_ids or [])
             combo = getattr(gui, "main_profile_combo", None)
+            before = self._profile_state().active_profile_id
             if gui.running or identifier not in ids or combo is None:
+                _profile_trace(f"무시 요청={identifier!r} 작업중={gui.running} 목록={ids} 콤보={combo is not None}")
                 return
             combo.current(ids.index(identifier))
             gui._프로파일_선택(SimpleNamespace(widget=combo))
+            _profile_trace(f"선택 요청={identifier!r} 이전={before!r} 이후={self._profile_state().active_profile_id!r}")
 
         self._tk(select)
         return self.get_state()
@@ -1516,6 +1535,10 @@ class DesktopWebBridge:
         if target not in ("documents", "manual_documents", "format", "quick_format"):
             raise ValueError("지원하지 않는 놓기 대상입니다.")
         self.drop_target = target
+        if target == "format":   # 서식 관리 창을 열 때 서식예시 폴더에 새로 넣은 예시를 찾아 등록한다
+            detect = getattr(self.gui, "_서식예시_자동감지", None)
+            if detect is not None:
+                self._tk(detect)
         window = self.window
         if window is not None and hasattr(window, "run_js"):
             text = ("여기에 놓으면 이 보고서의 서식을 복제합니다" if target == "format"

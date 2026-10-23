@@ -812,7 +812,10 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 if self._활성_서식_프로파일 not in self._프로파일들:
                     self._활성_서식_프로파일 = ""
                 self._프로파일_전역반영(self._프로파일들[self._활성_서식_프로파일])
+                # 설정 창을 지연 생성(v1.80.0)한 뒤로 목록 갱신이 빠져 서식 순서·콤보가 비어 있었다 → 서식 바꾸기가 무시됨.
+                self._프로파일_목록갱신()
                 self._서식예시_폴더_준비()
+                root.after(4000, self._서식예시_자동감지)   # 사용자가 서식예시 폴더에 넣은 예시를 서식으로 등록
                 try:
                     상용구_폴더_준비()
                 except Exception as exc:
@@ -2194,11 +2197,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 self._활성_서식_프로파일 = self._프로파일_ids[콤보.current()]
                 profile = self._프로파일들[self._활성_서식_프로파일]
                 self._프로파일_전역반영(profile)
-                # 설정창은 첫 화면을 빠르게 띄우기 위해 지연 생성한다. 메인 창의
-                # 서식 선택이나 설정창 없는 호출에서는 앱 전역 프로필만 반영한다.
-                if self.settings_toplevel is None or not self.settings_toplevel.winfo_exists():
-                    self._프로파일_목록갱신()
-                    return
+                # 서식의 옵션(내어쓰기·부연설명 들여쓰기·기호 굵게 등)은 설정 창이 없어도 반드시 작업 설정에 넣는다.
+                # v1.80.0에서 설정 창을 지연 생성하며 여기서 돌아가 버려, 앞 서식의 옵션(예: 내어쓰기 꺼짐)이 남아
+                # 다른 서식으로 바꿔도 내어쓰기·붙임 내어쓰기가 빠졌다(2026-10-23 사용자 실측). 변수는 시작 때 모두 만든다.
                 options = profile["options"]
                 for key, var in {**self.std_bool_vars, **self.std_parspace_vars}.items():
                     var.set(options.get(key, 기본_설정[key]))
@@ -2379,6 +2380,36 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         self._썸네일_만들기_시작([identifier])
                 except Exception as exc:
                     self.로그표시(f"서식예시 폴더에 예시 문서를 넣지 못했습니다(서식은 저장함): {exc}")
+
+            def _서식예시_자동감지(self):
+                """서식예시 폴더에 사용자가 직접 넣은 HWP/HWPX 가운데 아직 서식이 없는 파일을 하나씩 서식으로 등록한다.
+
+                (2026-10-23 사용자 요청) 파일은 그대로 두고 그 파일을 예시로 기록한다. 지금 고른 서식은 바꾸지 않는다.
+                하나가 끝나면(실패해도) 다음 파일로 넘어가고, 같은 실행 중 실패한 파일은 다시 시도하지 않는다."""
+                if not 알파_서식예시폴더_사용 or self.running or getattr(self, "_서식분석중", False):
+                    return
+                try:
+                    파일들 = sorted(p for p in 서식예시_폴더().iterdir()
+                                 if p.is_file() and p.suffix.lower() in (".hwp", ".hwpx") and not p.name.startswith(("~", ".")))
+                except OSError:
+                    return
+                등록됨 = set()
+                for 식별자 in list(self._프로파일들):
+                    try:
+                        등록됨.add(self._서식예시_경로(식별자)[0].stem.casefold())
+                    except Exception:
+                        pass
+                시도함 = getattr(self, "_서식예시_자동감지_시도", set())
+                대기 = [p for p in 파일들 if p.stem.casefold() not in 등록됨 and p.name.casefold() not in 시도함]
+                if not 대기:
+                    return
+                path = 대기[0]
+                self._서식예시_자동감지_시도 = 시도함 | {path.name.casefold()}
+                self._자동감지_예시 = path
+                self.로그표시(f"서식예시 폴더에서 새 예시를 찾아 서식으로 등록합니다: {path.name}")
+                self._서식_분석_시작(str(path), 이름묻기=False)
+                if not getattr(self, "_서식분석중", False):   # 분석을 시작하지 못했으면 표시를 지운다
+                    self._자동감지_예시 = None
 
             def _서식예시_폴더_준비(self):
                 """앱을 켤 때 서식예시 폴더를 만들고, 예전 설정 폴더의 예시를 옮기고, 기본 서식 예시가 없으면 넣는다.
@@ -4416,12 +4447,18 @@ def _install(*, _docfit_namespace, _docfit_symbol):
 
             def _서식_복사완료(self, profile=None, error=None):
                 표본 = profile.pop("_서식예시_원본", None) if isinstance(profile, dict) else None
+                자동 = getattr(self, "_자동감지_예시", None)
                 try:
                     self._서식_복사완료_처리(profile, error, 표본)
                 finally:
                     self._quick_registration = False
+                    self._자동감지_예시 = None
                     if 표본:
                         shutil.rmtree(Path(표본).parent, ignore_errors=True)
+                    if 자동 is not None:
+                        if error:
+                            self.로그표시(f"서식예시 폴더의 예시를 서식으로 만들지 못했습니다: {Path(자동).name} ({error})")
+                        self.root.after(500, self._서식예시_자동감지)
 
             def _서식_복사완료_처리(self, profile, error, 표본):
                 self._서식분석중 = False
@@ -4458,6 +4495,24 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     self._알림(messagebox.showerror, APP_NAME, f"서식 저장 실패\n{exc}", parent=parent)
                     return
                 self._프로파일들[identifier] = profile
+                자동 = getattr(self, "_자동감지_예시", None)
+                if 자동 is not None:
+                    예시경로, 정보경로 = self._서식예시_경로(identifier)
+                    예시 = Path(자동)
+                    try:
+                        if 예시.suffix.lower() != ".hwpx":   # HWP는 분석한 HWPX 사본을 같은 이름으로 곁에 둔다
+                            if 표본:
+                                self._서식예시_원본_보관(identifier, 표본)
+                        else:
+                            self._서식예시_기록(예시, 정보경로, {"kind": "source", "식별자": identifier})
+                            if 서식예시모듈.still_cut(예시, 40) is None:
+                                self._썸네일_만들기_시작([identifier])
+                    except Exception as exc:
+                        self.로그표시(f"예시 파일을 기록하지 못했습니다(서식은 저장함): {exc}")
+                    self._프로파일_목록갱신()
+                    self.status_var.set(f"서식예시 폴더의 예시를 서식으로 등록했습니다: {profile['name']}")
+                    self.로그표시(f"서식예시 폴더의 예시를 서식으로 등록했습니다: {profile['name']} ← {예시.name}")
+                    return
                 if 표본:
                     self._서식예시_원본_보관(identifier, 표본)
                 self._활성_서식_프로파일 = identifier
