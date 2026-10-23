@@ -68,6 +68,7 @@ def parser():
     convert.add_argument('--quiet', action='store_true')
     convert.add_argument('--notify', action='store_true')
     convert.add_argument('--timeout', type=float, default=180, help='파일당 제한 시간(초, 기본 180)')
+    convert.add_argument('--collect', help='여러 프로세스 요청을 모음 폴더에 모아 대표 1개가 일괄 처리')
     for name in ('help', 'version', 'formats'):
         commands.add_parser(name)
     return p
@@ -174,10 +175,24 @@ def main(argv=None, *, stdout=None, stderr=None, runner=None, console=None):
         if not math.isfinite(args.timeout) or args.timeout <= 0:
             raise ArgumentError('--timeout은 0보다 큰 유한한 초 값이어야 합니다.')
         files = expand_inputs(args.inputs)
-        if args.to == 'pdfm' and len(files) < 2:
+        if not getattr(args, 'collect', None) and args.to == 'pdfm' and len(files) < 2:
             raise ArgumentError('PDF 합치기는 파일이 2개 이상 필요합니다.')
         if args.output_dir and Path(args.output_dir).exists() and not Path(args.output_dir).is_dir():
             raise ArgumentError('결과를 저장할 폴더 경로를 지정해 주세요.')
+        if getattr(args, 'collect', None):
+            from docfit_app.shell_batch import handle_collect
+            return handle_collect(
+                args.collect,
+                files,
+                args.to,
+                output_dir=args.output_dir,
+                timeout=args.timeout,
+                runner=runner,
+                argv=argv,
+                console=console,
+                stdout=stdout,
+                stderr=stderr,
+            )
         if runner is None:
             from docfit_app.conversion_runner import run_conversion
             runner = run_conversion

@@ -52,12 +52,33 @@ class ShellMenuTests(unittest.TestCase):
         self.assertEqual(sum('DocFitCommand' in values for values in self.reg.data.values()), 6)
         base = menu.ROOT + r'\.hwp\shell\HwpAutoDocFit'
         self.assertEqual(self.reg.data[base]['MUIVerb'], '한글편집 후처리')
+        self.assertEqual(self.reg.data[base]['MultiSelectModel'], 'Player')
+
         commands = [v[''] for p, v in self.reg.data.items() if p.endswith('\\command')]
-        self.assertEqual(len(commands), 12)
+        self.assertEqual(len(commands), 18)
+
+        # 새 동사 및 일괄 변환(--collect) 명령 확인
+        self.assertIn(f'"{self.exe}" convert "%1" --to pdfm --collect pdfm --notify', commands)
+        self.assertEqual(sum('--to pdfm --collect pdfm --notify' in c for c in commands), 6)
+        self.assertIn(f'"{self.exe}" convert "%1" --to pdf --collect pdf --notify', commands)
+        self.assertIn(f'"{self.exe}" convert "%1" --to hwpx --collect hwpx --notify', commands)
         self.assertIn(f'"{self.exe}" convert "%1" --to pdf --notify', commands)
         self.assertIn(f'"{self.exe}" "%1"', commands)
         self.assertEqual(sum('--to hwpx ' in c for c in commands), 1)
         self.assertEqual(sum('--to pdfz ' in c for c in commands), 1)
+
+        # MultiSelectModel 값 검증
+        for ext in menu.EXTENSIONS:
+            ext_base = menu.ROOT + '\\' + ext + '\\shell\\' + menu.MENU
+            self.assertEqual(self.reg.data[ext_base].get('MultiSelectModel'), 'Player')
+            subkeys = [p for p in self.reg.data if p.startswith(ext_base + '\\shell\\') and not p.endswith('\\command')]
+            for subkey in subkeys:
+                self.assertEqual(self.reg.data[subkey].get('MultiSelectModel'), 'Player')
+
+        # 레이블 확인
+        self.assertEqual(self.reg.data[base + r'\shell\00_pdf']['MUIVerb'], 'PDF로 변환(여러 개)')
+        self.assertEqual(self.reg.data[base + r'\shell\01_hwpx']['MUIVerb'], 'HWPX로 변환(여러 개)')
+        self.assertEqual(self.reg.data[base + r'\shell\02_pdfm']['MUIVerb'], 'PDF 하나로 합치기')
 
     def test_unregister_preserves_other_apps_and_is_idempotent(self):
         menu.register(self.exe, registry=self.reg)

@@ -277,3 +277,28 @@ class CliTests(unittest.TestCase):
                                 capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('pdfm', result.stdout)
+
+    def test_collect_argument_parsing(self):
+        p = cli.parser()
+        args = p.parse_args(['convert', 'file.hwpx', '--to', 'pdf', '--collect', 'pdf'])
+        self.assertEqual(args.collect, 'pdf')
+
+    def test_collect_leader_and_follower_exit_codes(self):
+        source = self.file('single.hwpx')
+        with patch('docfit_app.shell_batch.handle_collect', return_value=0) as mock_handle:
+            code, _, _ = self.invoke('convert', str(source), '--to', 'pdf', '--collect', 'pdf')
+            self.assertEqual(code, 0)
+            mock_handle.assert_called_once()
+            self.assertEqual(mock_handle.call_args.args[0], 'pdf')
+
+        with patch('docfit_app.shell_batch.handle_collect', return_value=1) as mock_handle:
+            code, _, _ = self.invoke('convert', str(source), '--to', 'pdf', '--collect', 'pdf')
+            self.assertEqual(code, 1)
+
+    def test_collect_allows_single_file_for_pdfm(self):
+        source = self.file('one.pdf')
+        with patch('docfit_app.shell_batch.handle_collect', return_value=0) as mock_handle:
+            code, _, _ = self.invoke('convert', str(source), '--to', 'pdfm', '--collect', 'pdfm')
+            self.assertEqual(code, 0)
+            mock_handle.assert_called_once()
+

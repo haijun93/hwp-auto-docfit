@@ -37,20 +37,47 @@ def menu_entries(exe_path):
     result = {}
     for ext in EXTENSIONS:
         base = ROOT + '\\' + ext + '\\shell\\' + MENU
-        result[base] = {'MUIVerb': '한글편집 후처리', 'SubCommands': '', 'DocFitCommand': command}
-        actions = [('pdf', 'PDF로 변환'), ('png', '그림(PNG)으로 변환')]
-        if ext in ('.hwp', '.hwpx'):
-            if ext == '.hwp':
-                actions.insert(1, ('hwpx', 'HWPX로 변환'))
-            actions.append(('open', '한글편집 후처리로 열기'))
+        result[base] = {
+            'MUIVerb': '한글편집 후처리',
+            'SubCommands': '',
+            'DocFitCommand': command,
+            'MultiSelectModel': 'Player',
+        }
+        if ext == '.hwp':
+            actions = [
+                ('pdf', 'PDF로 변환(여러 개)', 'pdf'),
+                ('hwpx', 'HWPX로 변환(여러 개)', 'hwpx'),
+                ('pdfm', 'PDF 하나로 합치기', 'pdfm'),
+                ('png', '그림(PNG)으로 변환', None),
+                ('open', '한글편집 후처리로 열기', None),
+            ]
+        elif ext == '.hwpx':
+            actions = [
+                ('pdf', 'PDF로 변환', 'pdf'),
+                ('pdfm', 'PDF 하나로 합치기', 'pdfm'),
+                ('png', '그림(PNG)으로 변환', None),
+                ('open', '한글편집 후처리로 열기', None),
+            ]
         elif ext == '.pdf':
-            actions = [('pdfz', 'PDF 압축'), ('png', '그림(PNG)으로 변환')]
+            actions = [
+                ('pdfm', 'PDF 하나로 합치기', 'pdfm'),
+                ('pdfz', 'PDF 압축', None),
+                ('png', '그림(PNG)으로 변환', None),
+            ]
         else:
-            actions = [('pdf', 'PDF로 변환')]
-        for index, (target, label) in enumerate(actions):
+            actions = [
+                ('pdf', 'PDF로 변환', None),
+                ('pdfm', 'PDF 하나로 합치기', 'pdfm'),
+            ]
+        for index, (target, label, collect) in enumerate(actions):
             key = base + f'\\shell\\{index:02d}_{target}'
-            result[key] = {'MUIVerb': label}
-            value = f'{command} "%1"' if target == 'open' else f'{command} convert "%1" --to {target} --notify'
+            result[key] = {'MUIVerb': label, 'MultiSelectModel': 'Player'}
+            if target == 'open':
+                value = f'{command} "%1"'
+            elif collect:
+                value = f'{command} convert "%1" --to {target} --collect {collect} --notify'
+            else:
+                value = f'{command} convert "%1" --to {target} --notify'
             result[key + r'\command'] = {'': value}
     return result
 
