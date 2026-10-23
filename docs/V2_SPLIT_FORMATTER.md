@@ -25,6 +25,7 @@ raw 함수를 재바인딩한 뒤 재수출한다. `patch('docfit_engine.formatt
 | `formatter_utils.py` | 60 | 863 | 글꼴 탐색·설정·진행·범위 공통 포트 |
 | `formatter_analysis.py` | 15 | 683 | 서식 프로필·예시 분석과 내보내기 |
 | `formatter_titles.py` | 74 | 1850 | 제목·개요·중제목·붙임의 공통 구조 및 적용 |
+| `formatter_tables.py` | 31 | 865 | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
 
 | 함수 | 새 모듈 | 이유 |
 |---|---|---|
@@ -41,6 +42,9 @@ raw 함수를 재바인딩한 뒤 재수출한다. `patch('docfit_engine.formatt
 | `기본_서식프로파일` | `formatter_analysis` | 서식 프로필·예시 분석과 내보내기 |
 | `서식프로파일_목록` | `formatter_analysis` | 서식 프로필·예시 분석과 내보내기 |
 | `_제목뒤간격_다시재기` | `formatter_analysis` | 서식 프로필·예시 분석과 내보내기 |
+| `_표_텍스트` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
+| `_표_서명` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
+| `_정밀표_프로필_추출` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
 | `hwpx_서식_분석` | `formatter_analysis` | 서식 프로필·예시 분석과 내보내기 |
 | `보고서머리_프로필_반영` | `formatter_analysis` | 서식 프로필·예시 분석과 내보내기 |
 | `보고서머리_hwpx_처리` | `formatter_analysis` | 서식 프로필·예시 분석과 내보내기 |
@@ -90,8 +94,18 @@ raw 함수를 재바인딩한 뒤 재수출한다. `patch('docfit_engine.formatt
 | `제목_원본자료` | `formatter_titles` | 제목·개요·중제목·붙임의 공통 구조 및 적용 |
 | `제목_참조병합` | `formatter_titles` | 제목·개요·중제목·붙임의 공통 구조 및 적용 |
 | `날짜칸인가` | `formatter_titles` | 제목·개요·중제목·붙임의 공통 구조 및 적용 |
+| `표_날짜칸_한줄` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
+| `표날짜칸_hwpx_처리` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
+| `두글자칸_hwpx_처리` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
 | `제목_날짜칸_한줄` | `formatter_titles` | 제목·개요·중제목·붙임의 공통 구조 및 적용 |
 | `제목_표서식_복사` | `formatter_titles` | 제목·개요·중제목·붙임의 공통 구조 및 적용 |
+| `_정밀표_매칭점수` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
+| `_정밀표_셀서식_복사` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
+| `_표_글_그대로` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
+| `_정밀표_글자위치_복사` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
+| `_정밀표_같은표만` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
+| `_정밀표_글같음` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
+| `정밀표_서식_적용` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
 | `제목_문단_가운데정렬` | `formatter_titles` | 제목·개요·중제목·붙임의 공통 구조 및 적용 |
 | `제목_괄호부연_축소` | `formatter_titles` | 제목·개요·중제목·붙임의 공통 구조 및 적용 |
 | `제목_hwpx_처리` | `formatter_titles` | 제목·개요·중제목·붙임의 공통 구조 및 적용 |
@@ -124,6 +138,11 @@ raw 함수를 재바인딩한 뒤 재수출한다. `patch('docfit_engine.formatt
 | `제목개요폭_hwpx_처리` | `formatter_titles` | 제목·개요·중제목·붙임의 공통 구조 및 적용 |
 | `상자서식_hwpx_처리` | `formatter_titles` | 제목·개요·중제목·붙임의 공통 구조 및 적용 |
 | `쪽번호_hwpx_처리` | `formatter_titles` | 제목·개요·중제목·붙임의 공통 구조 및 적용 |
+| `기본표서식` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
+| `_기본표서식_대상인가` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
+| `기본표서식_hwpx_처리` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
+| `표너비_hwpx_처리` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
+| `기본표서식_선행적용` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
 | `붙임2종_현재문서_조사` | `formatter_titles` | 제목·개요·중제목·붙임의 공통 구조 및 적용 |
 | `제목붙임_선행적용` | `formatter_titles` | 제목·개요·중제목·붙임의 공통 구조 및 적용 |
 | `정밀표_선행적용` | `formatter_titles` | 제목·개요·중제목·붙임의 공통 구조 및 적용 |
@@ -158,6 +177,19 @@ raw 함수를 재바인딩한 뒤 재수출한다. `patch('docfit_engine.formatt
 | `상용구_폴더_준비` | `formatter_utils` | 글꼴 탐색·설정·진행·범위 공통 포트 |
 | `상용구_전용폴더_찾기` | `formatter_utils` | 글꼴 탐색·설정·진행·범위 공통 포트 |
 | `텍스트_삽입` | `formatter_utils` | 글꼴 탐색·설정·진행·범위 공통 포트 |
+| `_셀_안쪽여백_단계축소` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
+| `표_셀_안쪽여백_전체_적용` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
+| `본문_가용너비_mm` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
+| `표_전체너비_mm` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
+| `현재셀_너비_mm` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
+| `표_열너비_순서대로_설정` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
+| `표_열너비_본문맞춤_시도` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
+| `표_열너비_본문맞춤_전체_적용` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
+| `표_셀_테두리_적용` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
+| `표_테두리_삼선표_적용` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
+| `표_테두리_전체_적용` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
+| `넓은_표칸_줄인가` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
+| `컨트롤_내부_문장부호_처리` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
 | `끝위치추출` | `formatter_utils` | 글꼴 탐색·설정·진행·범위 공통 포트 |
 | `다음_문단으로_진행` | `formatter_utils` | 글꼴 탐색·설정·진행·범위 공통 포트 |
 | `쪽표시` | `formatter_utils` | 글꼴 탐색·설정·진행·범위 공통 포트 |

@@ -48,9 +48,11 @@ def verify():
         import re
         formatter.hashlib = hashlib
         formatter.re = re
+        from defusedxml.ElementTree import fromstring
+        table = fromstring("<tbl/>")
         with patch("docfit_engine.formatter.제목_셀들", return_value=[]) as dependency:
-            formatter._표_서명([])
-            dependency.assert_called_once_with([])
+            formatter._표_서명(table)
+            dependency.assert_called_once_with(table)
         patch_calls += 1
 
     isolated = 0
