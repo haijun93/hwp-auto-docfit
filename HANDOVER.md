@@ -7,6 +7,8 @@
 
 ## 1. 한눈에 보기
 
+2026-10-23 v1.80.9 통합 검증(C15): 런처 사용 중 캐시 삭제로 생긴 표그림판 HWPX 없음·다이어그램/마인드맵 404 수정, 표 반복 단위 최대 50(축별 실측 상한), 연간·주간 일정표 날짜 자동 계산, 사진첨부용 모양 1·2 아래로 추가, 표 이름 자판형 배치, 내장 미리보기 69장 동봉. 배포 검증·SHA-256은 `releases/v1.80.9.md`, 작업 보고는 `C:\HWP_AUTODOCFIT\v1803\reports\C15.md`에 기록한다.
+
 2026-10-23 v1.80.7(1.80.6은 미게시): 표그림판 `docfit_core/table_sketch.py`(선→격자 압축·직사각형 병합·보이지 않는 테두리·대각선→HWPX)·`docfit_app/table_sketch_service.py`(숨긴 한/글로 표만 복사)·화면 `flutter_ui/lib/features/table_sketch/`(끌기=그리기, 포인터 신호로 끝점), 표 템플릿 PLANS 확대·이름 우선 판정·shapes(그림 화살표 src)·T자형, 상단 메뉴 나열(서식 관리 하위 메뉴), 원형 형식 메뉴 1.5배, 글자 상용구 HWPX의 같은 준말·[속성 xxxx] 보존. Gemini 헤드리스 권한은 ~/.gemini/config/config.json 폴더 규칙으로 해결.
 2026-10-23 v1.80.6: 서식 선택 고정·옵션 미반영 수정(v1.80.0 설정 창 지연 생성의 부작용 — `_프로파일_목록갱신`을 시작 때 호출, `_프로파일_선택`은 설정 창 없이도 옵션 변수 반영), 서식예시 폴더 자동 감지(`_서식예시_자동감지`, 폴더 파일 그대로 예시로 기록), 쪽 맞춤 위·아래 여백 5mm 우선(`보고서_1쪽_맞춤` 여백조정 — 한 번에 적용·보고서 1개·기본 여백일 때만), 업데이트 서비스 `docfit_app/update_service.py`(GitLab downloads/latest.json → GitHub, 설치본 Setup /SILENT, 포터블 교체, 폐쇄망 접속 0회). 배포 때 `scripts/publish_gitlab_downloads.py`가 latest.json도 올린다.
 2026-10-22 v1.80.5: 표 템플릿 — `docfit_core/table_units.py`(정보단위 판정표 PLANS: 축별 start·core·sep·count, 고정 표는 None으로 명시해 자동 판정 차단; 늘리기는 마지막 단위 복제, 구역 전체를 덮는 병합 칸 span 조정, 열 축 표 폭 유지·중첩 표 폭 비례, 복제 개체 id·zOrder 재부여), `docfit_app/table_units_service.py`(스냅샷 = 한/글 PDF → 표 부분 잘라 PNG, 캐시 `C:\HWP_AUTODOCFIT\표서식모음\.스냅샷\<원본해시>`; 복사 = 숨긴 한/글 Open→SelectAll→Copy→Quit, 한/글을 닫아도 클립보드 'Hwp Native'가 남아 Ctrl+V 가능 — 실측), 브리지 `table_units`(COM은 호출 스레드에서, 동시 1개). 1.81부터 CI가 시작 속도 목표(스플래시 100ms·재실행 1.5초)를 강제하므로 기능 배포는 1.80.x로 했다. 또 v1.80.4 태그는 Semgrep(dynamic-urllib) 때문에 GitLab에 없다(5676041에서 수정).
@@ -440,6 +442,7 @@ Flutter UI 빌드는 `powershell -File build_flutter.ps1`로 수행하며 `build
 2. 버전 올리기: `hwp-auto-docfit.py`의 `APP_VERSION`, `README.md` 5행, `website/index.html`(5곳), 새 릴리스 노트 `releases/vX.Y-beta.N.md`(SHA-256 자리는 `SHA256_PLACEHOLDER`).
    - 자동 업데이트는 버전 문자열의 숫자 3개로 비교합니다(`_버전_튜플`: "1.68 Beta 2" → (1, 68, 2)).
    - 그래서 1.69 다음 정식판은 '1.7'이 아니라 **'1.70'**입니다('1.7' → (1, 7, 0)은 1.69보다 낮아 기존 앱이 업데이트를 알리지 않음).
+   - README 두 개(GitHub용 `.github/README.md`, GitLab용 `README.md`)를 함께 갱신한다. 본문은 같게 유지하고 각 호스트의 다운로드 링크와 상대 경로를 확인한다.
 2-1. **개선 효과 표는 넣지 않는다(2026-10-17 사용자 지시)**. 대신 서식 복사 100% 재연 시험(scripts/format_fidelity_pc.py)을 반드시 돌려 결과를 배포 검증에 적고, README.md를 함께 갱신한다.
 3. 전체 테스트 통과 확인 → 커밋 → `git push github main` → `git push origin main`.
 4. **exe 빌드**: CI는 alpha·release/1.76.4 및 기존 빌드 브랜치를 지원한다.
