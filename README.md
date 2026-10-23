@@ -8,13 +8,16 @@
 </p>
 
 <p align="center">
-<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.7_Portable.exe?inline=false"><img alt="무설치로 바로 받기" src="https://img.shields.io/badge/%E2%AC%87%20%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%94%EB%A1%9C%20%EB%B0%9B%EA%B8%B0-v1.80.7-2563eb?style=for-the-badge"></a>
-<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.7_Setup.exe?inline=false"><img alt="설치용 받기" src="https://img.shields.io/badge/%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0-Setup-0ea5e9?style=for-the-badge"></a>
+<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.7/HWP_AutoDocFit_v1.80.7_Portable.exe"><img alt="GitHub에서 무설치로 받기" src="https://img.shields.io/badge/GitHub-%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v1.80.7-2563eb?style=for-the-badge&logo=github"></a>
+<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.7/HWP_AutoDocFit_v1.80.7_Setup.exe"><img alt="GitHub에서 설치용 받기" src="https://img.shields.io/badge/GitHub-%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0-0ea5e9?style=for-the-badge&logo=github"></a>
+<br>
+<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.7_Portable.exe?inline=false"><img alt="공공기관 PC: GitLab에서 무설치로 받기" src="https://img.shields.io/badge/%EA%B3%B5%EA%B3%B5%EA%B8%B0%EA%B4%80%20PC%20GitLab-%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0-15803d?style=for-the-badge&logo=gitlab"></a>
+<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.7_Setup.exe?inline=false"><img alt="공공기관 PC: GitLab에서 설치용 받기" src="https://img.shields.io/badge/%EA%B3%B5%EA%B3%B5%EA%B8%B0%EA%B4%80%20PC%20GitLab-%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0-16a34a?style=for-the-badge&logo=gitlab"></a>
 </p>
 <p align="center">
 <img alt="무료" src="https://img.shields.io/badge/%EA%B0%80%EA%B2%A9-%EB%AC%B4%EB%A3%8C-16a34a">
 <img alt="Windows 10·11" src="https://img.shields.io/badge/Windows-10%C2%B711-0078d4">
-<img alt="한/글 2020" src="https://img.shields.io/badge/%ED%95%9C%2F%EA%B8%80-2020-0ea5e9">
+<img alt="한/글 모든 버전" src="https://img.shields.io/badge/%ED%95%9C%2F%EA%B8%80-%EB%AA%A8%EB%93%A0%20%EB%B2%84%EC%A0%84-0ea5e9">
 <img alt="문서 외부 전송 없음" src="https://img.shields.io/badge/%EB%AC%B8%EC%84%9C-%EC%99%B8%EB%B6%80%20%EC%A0%84%EC%86%A1%20%EC%97%86%EC%9D%8C-64748b">
 </p>
 
@@ -262,16 +265,16 @@ GitHub가 막힌 기관 PC에서도 위 「받기」 링크가 GitLab에서 바�
 
 <h2 align="center">받기</h2>
 
-| 파일 | 용도 |
-|---|---|
-| **[포터블 · HWP_AutoDocFit_v1.80.7_Portable.exe](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.7_Portable.exe?inline=false)** | 설치 없이 바로 실행 |
-| [설치용 · HWP_AutoDocFit_v1.80.7_Setup.exe](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.7_Setup.exe?inline=false) | 시작 메뉴 등록, Windows 앱 제거로 정리 |
-| [보고서 예시 파일(한번에 적용).txt](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/%EB%B3%B4%EA%B3%A0%EC%84%9C%20%EC%98%88%EC%8B%9C%20%ED%8C%8C%EC%9D%BC%28%ED%95%9C%EB%B2%88%EC%97%90%20%EC%A0%81%EC%9A%A9%29.txt?inline=false) | 처음 체험용 예시 |
-| [SHA256SUMS](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/SHA256SUMS?inline=false) | 내려받은 파일 확인용 해시 |
+| 파일 | GitHub에서 받기 | 공공기관 PC(GitHub 차단) — GitLab에서 받기 | 용도 |
+|---|---|---|---|
+| **포터블 · HWP_AutoDocFit_v1.80.7_Portable.exe** | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.7/HWP_AutoDocFit_v1.80.7_Portable.exe) | [받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.7_Portable.exe?inline=false) | 설치 없이 바로 실행 |
+| 설치용 · HWP_AutoDocFit_v1.80.7_Setup.exe | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.7/HWP_AutoDocFit_v1.80.7_Setup.exe) | [받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.7_Setup.exe?inline=false) | 시작 메뉴 등록, Windows 앱 제거로 정리 |
+| 보고서 예시 파일(한번에 적용).txt | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/latest) | [받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/%EB%B3%B4%EA%B3%A0%EC%84%9C%20%EC%98%88%EC%8B%9C%20%ED%8C%8C%EC%9D%BC%28%ED%95%9C%EB%B2%88%EC%97%90%20%EC%A0%81%EC%9A%A9%29.txt?inline=false) | 처음 체험용 예시 |
+| SHA256SUMS | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.7/SHA256SUMS) | [받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/SHA256SUMS?inline=false) | 내려받은 파일 확인용 해시 |
 
-- **필요한 것**: Windows 10·11(64비트), 문서를 편집할 수 있는 **한컴오피스 한/글**(2020에서 검증). Python 등 다른 설치는 필요 없습니다.
+- **필요한 것**: Windows 10·11(64비트), 문서를 편집할 수 있는 **한컴오피스 한/글**(버전에 관계없이 사용 — NEO·2018·2020·2022·2024 등). Python 등 다른 설치는 필요 없습니다.
 - 변환 엔진은 실행 파일에 들어 있습니다. 첫 실행 때 `C:\HWP_AUTODOCFIT`(쓰기 권한이 없으면 `%LOCALAPPDATA%\HwpAutoDocFit`)에 풀며, 인터넷에서 받지 않습니다.
-- 위 링크는 공공기관 PC에서도 열리는 **GitLab**(gitlab.aigov.go.kr)에서 받습니다. 기관망 밖에서는 [GitHub 릴리스](https://github.com/haijun93/hwp-auto-docfit/releases/latest)에서도 같은 파일(같은 SHA-256)을 받을 수 있습니다.
+- 두 곳의 파일은 같습니다(같은 SHA-256). 공공기관 PC처럼 GitHub가 막힌 곳에서는 **GitLab**(gitlab.aigov.go.kr) 링크로 받으세요. 모든 릴리스는 [GitHub 릴리스](https://github.com/haijun93/hwp-auto-docfit/releases/latest)에 있습니다.
 - [v1.80.7 변경 사항](releases/v1.80.7.md) · [GitHub](https://github.com/haijun93/hwp-auto-docfit) · [GitLab](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
 
 ---
