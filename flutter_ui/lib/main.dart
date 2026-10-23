@@ -967,30 +967,6 @@ class _WorkspaceState extends State<Workspace> {
               onPressed: () => showLog(),
               icon: const Icon(Icons.receipt_long_outlined),
             ),
-            if (quickOptions['developer_mode'] == true)
-              PopupMenuButton<String>(
-                tooltip: '문서 도구',
-                enabled: !locked,
-                icon: const Icon(Icons.handyman_outlined),
-                onSelected: (v) {
-                  if (v == 'diagram_editor') {
-                    openDiagramEditor();
-                  } else {
-                    openTools(v);
-                  }
-                },
-                itemBuilder: (_) => [
-                  PopupMenuItem(value: 'review', child: Text('문서 검토')),
-                  PopupMenuItem(value: 'proofread', child: Text('공공언어 교정')),
-                  PopupMenuItem(value: 'outline', child: Text('문서 구조 편집')),
-                  PopupMenuItem(value: 'writing', child: Text('작성 도우미')),
-                  PopupMenuItem(
-                    value: 'markdown',
-                    child: Text('Markdown 내보내기'),
-                  ),
-                  PopupMenuItem(value: 'advanced', child: Text('고급 문서 도구')),
-                ],
-              ),
             IconButton(
               tooltip: '설정',
               visualDensity: isNarrow ? VisualDensity.compact : null,
@@ -2042,19 +2018,9 @@ class _WorkspaceState extends State<Workspace> {
     if (!mounted) return;
     if (state['doc_hints'] is Map) await setDropTarget('manual_documents');
     if (!mounted) return;
-    final mapped =
-        {'polish': 'clean', 'paste': 'convert', 'writing': 'amount'}[name] ??
-        name;
-    final path = files.isNotEmpty
-        ? '${(files.first as Map)['path'] ?? ''}'
-        : '';
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => DocumentToolsWorkspace(
-          api: widget.api,
-          initial: mapped,
-          initialPath: path,
-        ),
+        builder: (_) => DocumentToolsWorkspace(api: widget.api, initial: name),
       ),
     );
     if (state['doc_hints'] is Map) await setDropTarget('documents');
@@ -3317,7 +3283,7 @@ class _WorkspaceState extends State<Workspace> {
           optionSwitch(
             'developer_mode',
             '개발자 모드',
-            '켜면 문서 검토·공공언어 교정·작성 도우미 등 문서 도구 메뉴가 나타나요.',
+            '도형 편집기의 개발자 기능을 사용할 수 있어요.',
           ),
           settingsLabel('더 보기'),
           ListTile(

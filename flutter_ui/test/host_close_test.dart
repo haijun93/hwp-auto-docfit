@@ -4,7 +4,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:docfit_ui/core/close_guards.dart';
 import 'package:docfit_ui/main.dart';
 import 'package:docfit_ui/features/settings/settings_dialog.dart';
-import 'package:docfit_ui/features/tools/document_tools_workspace.dart';
 import 'workspace_test.dart' show initialState;
 import 'settings_dialog_test.dart' show data;
 
@@ -86,34 +85,6 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('pending outliner RPC vetoes host close', (tester) async {
-    final pending = Completer<Object?>();
-    final nav = GlobalKey<NavigatorState>();
-    await tester.pumpWidget(
-      MaterialApp(navigatorKey: nav, home: const SizedBox()),
-    );
-    unawaited(
-      nav.currentState!.push(
-        MaterialPageRoute<void>(
-          builder: (_) => DocumentToolsWorkspace(api: (_, _) => pending.future),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(await CloseGuards.prepareAll(), false);
-    expect(find.byType(DocumentToolsWorkspace), findsOneWidget);
-    pending.complete({
-      'ok': true,
-      'data': {'text': '', 'revision': 'r'},
-    });
-    await tester.pumpAndSettle();
-    final closing = CloseGuards.prepareAll();
-    await tester.pumpAndSettle();
-    expect(await closing, true);
-    expect(find.byType(DocumentToolsWorkspace), findsNothing);
-    await tester.pumpWidget(const SizedBox());
-  });
-
   testWidgets('unregistered modal prevents host exit', (tester) async {
     final state = initialState();
     Map? pending;
@@ -144,47 +115,6 @@ void main() {
     await tester.pumpAndSettle();
     expect(approved, false);
     expect(find.text('작성 중'), findsOneWidget);
-    await tester.pumpWidget(const SizedBox());
-  });
-
-  testWidgets('failed outliner save keeps the route and input on host close', (
-    tester,
-  ) async {
-    final nav = GlobalKey<NavigatorState>();
-    Future<Object?> api(String method, List<Object?> args) async =>
-        args[0] == 'outline.load'
-        ? {
-            'ok': true,
-            'data': {'text': '', 'revision': 'r'},
-          }
-        : {
-            'ok': false,
-            'error': {'message': '저장 실패'},
-          };
-    await tester.pumpWidget(
-      MaterialApp(navigatorKey: nav, home: const SizedBox()),
-    );
-    unawaited(
-      nav.currentState!.push(
-        MaterialPageRoute<void>(
-          builder: (_) => DocumentToolsWorkspace(api: api),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    final field = find.byWidgetPredicate(
-      (w) => w is TextField && w.decoration?.labelText == '입력 / 초안',
-    );
-    await tester.enterText(field, '# 저장에 실패해도 남아야 하는 문장');
-    final close = CloseGuards.prepareAll();
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 4));
-    expect(await close, false);
-    expect(find.byType(DocumentToolsWorkspace), findsOneWidget);
-    expect(
-      tester.widget<TextField>(field).controller!.text,
-      '# 저장에 실패해도 남아야 하는 문장',
-    );
     await tester.pumpWidget(const SizedBox());
   });
 

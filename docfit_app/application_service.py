@@ -137,8 +137,9 @@ class ApplicationService:
         if method=='document_tool':
             from docfit_app.document_tools_service import DocumentToolsService
             def execute():
-                result=DocumentToolsService(self.store._path.parent).command(*args)
-                if args[0]=='add_text':
+                name, payload = args
+                result=DocumentToolsService(self.store._path.parent).command(name, payload)
+                if name=='add_text':
                     self.data.files.append(result['path'])
                 return result
             return response(execute)

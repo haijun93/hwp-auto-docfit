@@ -1734,22 +1734,10 @@ class DesktopWebBridge:
         return self.get_state()
 
     def run_tool(self, name):
-        commands = {
-            "review": self.gui._문서검토_열기,
-            "proofread": self.gui._공공언어_검토,
-            "paste": self.gui._텍스트로_문서추가_열기,
-            "polish": self.gui._붙여넣기_정리_열기,
-            "outline": self.gui._아웃라이너_열기,
-            "writing": self.gui._작성도우미_열기,
-            "markdown": self.gui.Markdown_내보내기,
-            "advanced": self.gui.고급문서도구_열기,
-        }
+        commands = {"paste": self.gui._텍스트로_문서추가_열기}
         command = commands.get(name)
         if command is None:
             raise ValueError("지원하지 않는 도구입니다.")
-        developer = getattr(self.gui, "developer_mode_var", None)
-        if developer is not None and not developer.get():
-            raise ValueError("문서 도구는 설정에서 개발자 모드를 켜야 사용할 수 있습니다.")
         self._tk(command, timeout=None, front=True)
         return True
 

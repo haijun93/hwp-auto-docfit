@@ -14,7 +14,7 @@ Map<String, Object?> data() => {
     },
     {
       'key': 'developer_mode',
-      'label': '문서 도구 표시',
+      'label': '개발자 모드',
       'type': 'boolean',
       'default': false,
     },

@@ -120,11 +120,8 @@ class _MergeOrderDialogState extends State<MergeOrderDialog> {
                     shrinkWrap: true,
                     buildDefaultDragHandles: false,
                     itemCount: _items.length,
-                    onReorder: (oldIndex, newIndex) {
+                    onReorderItem: (oldIndex, newIndex) {
                       setState(() {
-                        if (oldIndex < newIndex) {
-                          newIndex -= 1;
-                        }
                         final item = _items.removeAt(oldIndex);
                         _items.insert(newIndex, item);
                       });

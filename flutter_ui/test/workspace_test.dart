@@ -224,7 +224,7 @@ void main() {
     },
   );
 
-  testWidgets('general editor is visible and excluded tldraw has no menu', (
+  testWidgets('developer mode preserves diagram menu without document tools', (
     tester,
   ) async {
     final state = initialState();
@@ -238,9 +238,8 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('topMenu_tableUnits')), findsOneWidget);
-    expect(find.byTooltip('문서 도구'), findsOneWidget);
-    await tester.tap(find.byTooltip('문서 도구'));
-    await tester.pumpAndSettle();
+    expect(find.byTooltip('문서 도구'), findsNothing);
+    expect(find.byKey(const Key('topMenu_diagram')), findsOneWidget);
     expect(find.text('tldraw 편집기 (개발자 전용)'), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });

@@ -12,7 +12,6 @@ const CARD_OPTION_INPUTS = [
 const MODE_LABELS = {spacing:"자간 정리",unify:"서식 통일",format:"한 번에 적용 · 자간 조정 제외",all:"한 번에 적용"};
 const $ = (id) => document.getElementById(id);
 let currentStep = 1;
-let returnStep = 1;
 let currentMode = "spacing";
 let lastState = null;
 let hasRun = false;
@@ -32,40 +31,22 @@ function navigate(step) {
     page.hidden = !active;
     page.classList.toggle("active", active);
   });
-  $("toolsPage").hidden = true;
   updateFooter();
   window.scrollTo({top:0,behavior:"smooth"});
 }
 
-function openTools() {
-  returnStep = currentStep;
-  $("toolsPage").hidden = false;
-  document.querySelectorAll(".page[data-page]").forEach((page) => { page.hidden = true; });
-  $("backButton").hidden = false;
-  $("nextButton").hidden = true;
-  $("startButton").hidden = true;
-  $("nextJobButton").hidden = true;
-  $("stopButton").hidden = !(lastState?.running);
-  $("toolsButton").hidden = true;
-  $("footerHint").textContent = "도구를 선택하면 별도 창에서 열립니다.";
-  window.scrollTo({top:0,behavior:"smooth"});
-}
-
 function updateFooter() {
-  const toolsOpen = !$("toolsPage").hidden;
-  const nextReady = !toolsOpen && currentStep === 1 && Boolean(lastState?.count > 0) && !busy;
-  const startVisible = !toolsOpen && ((currentStep === 2) || (currentStep === 3 && !hasRun));
+  const nextReady = currentStep === 1 && Boolean(lastState?.count > 0) && !busy;
+  const startVisible = ((currentStep === 2) || (currentStep === 3 && !hasRun));
   const startReady = startVisible && Boolean(lastState?.can_start) && !busy;
-  const nextJobReady = !toolsOpen && currentStep === 4 && hasRun && Boolean(lastState) && !lastState.running;
-  $("backButton").hidden = !toolsOpen;
-  $("toolsButton").hidden = toolsOpen || currentStep === 3 && Boolean(lastState?.running);
-  $("nextButton").hidden = toolsOpen || currentStep !== 1;
+  const nextJobReady = currentStep === 4 && hasRun && Boolean(lastState) && !lastState.running;
+  $("nextButton").hidden = currentStep !== 1;
   $("nextButton").disabled = !nextReady;
   $("nextButton").classList.toggle("is-next-action", nextReady);
   $("startButton").hidden = !startVisible;
   $("startButton").disabled = !startReady;
   $("startButton").classList.toggle("is-next-action", startReady);
-  $("nextJobButton").hidden = toolsOpen || currentStep !== 4;
+  $("nextJobButton").hidden = currentStep !== 4;
   $("nextJobButton").disabled = !nextJobReady;
   $("nextJobButton").classList.toggle("is-next-action", nextJobReady);
   $("stopButton").hidden = !lastState?.running;
@@ -75,7 +56,7 @@ function updateFooter() {
     3: hasRun ? (lastState?.running ? "문서 처리 중입니다." : "진행 상태와 결과를 확인하세요.") : "작업 방식을 정했다면 여기서도 시작할 수 있어요.",
     4: "결과를 확인한 뒤 다음 작업을 시작하세요."
   };
-  if (!toolsOpen) $("footerHint").textContent = hints[currentStep];
+  $("footerHint").textContent = hints[currentStep];
 }
 
 function renderFiles(state) {
@@ -287,8 +268,6 @@ $("stopButton").addEventListener("click",()=>callApi("stop"));
 $("nextButton").addEventListener("click",()=>navigate(2));
 $("startButton").addEventListener("click",startJob);
 $("nextJobButton").addEventListener("click",nextJob);
-$("toolsButton").addEventListener("click",openTools);
-$("backButton").addEventListener("click",()=>navigate(returnStep));
 document.querySelectorAll(".mode-card").forEach((card)=>card.addEventListener("click",async()=>{
   currentMode = card.dataset.mode;
   render({...lastState,mode:currentMode});
@@ -308,10 +287,6 @@ $("rangeBox").addEventListener("toggle",()=>{
 for (const id of ["rangeStart","rangeEnd"]) $(id).addEventListener("change",()=>{
   if ($("rangeBox").open) callApi("set_range",true,$("rangeStart").value,$("rangeEnd").value);
 });
-document.querySelectorAll("[data-tool]").forEach((button)=>button.addEventListener("click",async()=>{
-  await callApi("run_tool",button.dataset.tool);
-}));
-
 const dropArea = $("dropArea");
 for (const eventName of ["dragenter","dragover"]) dropArea.addEventListener(eventName,(event)=>{
   event.preventDefault();

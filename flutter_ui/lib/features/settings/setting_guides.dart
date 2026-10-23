@@ -32,7 +32,7 @@ const guideCategories = [
   GuideCategory('result', '결과·기록', '저장·검수·보고서', Icons.fact_check_outlined),
   GuideCategory('general', '일반', '탐색기 메뉴', Icons.folder_outlined),
   GuideCategory('program', '프로그램·네트워크', '창·폐쇄망·업데이트', Icons.settings_outlined),
-  GuideCategory('dev', '개발자 도구', '문서 도구·도형 편집기', Icons.build_outlined),
+  GuideCategory('dev', '개발자 도구', '도형 편집기', Icons.build_outlined),
 ];
 
 typedef PreviewBuilder = Widget Function(Object? value);
@@ -827,16 +827,6 @@ final Map<String, SettingGuide> settingGuides = {
     '서식 통일 결과 창 보기',
     '문서 하나를 서식 통일하면 결과 확인 창을 띄워요.',
   ),
-  'review_document_kind': SettingGuide(
-    'result',
-    '검토할 문서 종류',
-    '문서 구조 검토의 기준 문서 종류예요.',
-  ),
-  'review_reading_purpose': SettingGuide(
-    'result',
-    '검토 목적',
-    '문서 구조 검토의 읽는 목적이에요.',
-  ),
   'paste_add_folder': SettingGuide(
     'result',
     '붙여넣은 글 저장 폴더',
@@ -869,8 +859,8 @@ final Map<String, SettingGuide> settingGuides = {
   // ---------------- 개발자 도구 ----------------
   'developer_mode': SettingGuide(
     'dev',
-    '문서 도구 보이기',
-    '문서 구조 검토·맞춤법·작성 도우미 같은 도구 메뉴를 보여요.',
+    '개발자 모드',
+    '도형 편집기의 개발자 기능을 사용할 수 있어요.',
   ),
   'diagram_editor_enabled': SettingGuide(
     'dev',
