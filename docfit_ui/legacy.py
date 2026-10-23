@@ -5993,6 +5993,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     self._설정창_생성()
                     self.settings_toplevel.withdraw()
 
+                from docfit_app.jobs import manager_for, prepare_legacy
+                self._job_id = prepare_legacy(self).begin('file_format', {'target':target_format}, stop_event=중단_event)
+                manager_for(self).report(self._job_id, 'started', {})
                 self.running = True
                 self.closing = False
                 중단_event.clear()
@@ -6007,13 +6010,12 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 self.로그표시("")
                 self.로그표시(f"파일 변환 시작 · {len(files)}개 · 결과 {target_format.upper()}")
 
-                def worker():
-                    from docfit_app.conversion_runner import run_conversion
-                    run_conversion(files, target_format, progress=gui_queue.put,
-                                   stop_event=중단_event, runtime_factory=lambda: globals(), log=로그)
-
-                self.worker = threading.Thread(target=worker, daemon=True, name="file-format-conversion")
-                self.worker.start()
+                from docfit_app.conversion_runner import start_conversion_job
+                self._job_managed_conversion = self._job_id
+                start_conversion_job(manager_for(self), files, target_format, job_id=self._job_id,
+                                     progress=gui_queue.put, stop_event=중단_event,
+                                     runtime_factory=lambda: globals(), log=로그)
+                self.worker = manager_for(self).thread(self._job_id)
 
             def 작업시작(self, mode='all'):
                 if mode == "spacing" and not self.spacing_enabled_var.get() and not self.spacing_page_fit_var.get():
@@ -6059,6 +6061,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 시작_인덱스 = self._재개_시작_인덱스 if 이어서_진행 else 1
                 self._재개_대기중 = False
 
+                from docfit_app.jobs import manager_for, prepare_legacy
+                self._job_id = prepare_legacy(self).begin(mode, {}, stop_event=중단_event)
+                manager_for(self).report(self._job_id, 'started', {})
                 self.running = True
 
                 if self.settings_toplevel is not None and self.settings_toplevel.winfo_exists():
@@ -6230,11 +6235,15 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     kwargs={"context": self._run_context, "callbacks": self._run_context.callbacks},
                     daemon=True
                 )
+                manager_for(self).attach(self._job_id, self.worker)
                 self.worker.start()
 
             def 작업중단(self):
                 if not self.running:
                     return
+                from docfit_app.jobs import manager_for
+                if getattr(self, '_job_id', None):
+                    manager_for(self).cancel(self._job_id)
                 중단_event.set()
                 self.stop_button.config(state="disabled")
                 self.status_var.set("작업 중단 처리 중...")
@@ -6724,6 +6733,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                             break
                         item = gui_queue.get_nowait()
                         event = item[0]
+                        from docfit_app.jobs import manager_for, legacy_event
+                        if getattr(self, '_job_managed_conversion', None) != getattr(self, '_job_id', None):
+                            legacy_event(manager_for(self), getattr(self, '_job_id', None), item)
                         if event in ("style_unify_profile_review", "style_unify_regions_review",
                                      "style_unify_result_review"):
                             try:
