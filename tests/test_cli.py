@@ -18,7 +18,7 @@ class CliTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.folder = Path(self.temp.name)
+        self.folder = Path(self.temp.name).resolve()  # CI 임시 폴더는 짧은 이름(RUNNER~1)이라 코드가 펼친 경로와 맞춘다
 
     def file(self, name='문서.hwpx'):
         path = self.folder / name
