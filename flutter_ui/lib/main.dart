@@ -427,8 +427,8 @@ class _WorkspaceState extends State<Workspace> {
         pageBuilder: (dialogContext, animation, secondaryAnimation) =>
             LayoutBuilder(
               builder: (context, constraints) {
-                final width = math.min(360.0, constraints.maxWidth - 24);
-                final height = math.min(470.0, constraints.maxHeight - 24);
+                final width = math.min(540.0, constraints.maxWidth - 24);
+                final height = math.min(640.0, constraints.maxHeight - 24);
                 final anchor =
                     _conversionAnchor ??
                     Offset(constraints.maxWidth / 2, constraints.maxHeight / 2);
@@ -1033,141 +1033,6 @@ class _WorkspaceState extends State<Workspace> {
     ),
   );
 
-  /*
-  PreferredSizeWidget _oldAppBar() => AppBar(
-    backgroundColor: Colors.white,
-    surfaceTintColor: Colors.transparent,
-    toolbarHeight: 72,
-    automaticallyImplyLeading: false,
-    title: Row(
-      children: [
-        Container(
-          width: 38,
-          height: 38,
-          decoration: BoxDecoration(
-            color: _ink,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: const Icon(
-            Icons.description_rounded,
-            color: Colors.white,
-            size: 23,
-          ),
-        ),
-        const SizedBox(width: 12),
-        const Flexible(
-          child: Text(
-            '한글편집 후처리',
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -.8,
-            ),
-          ),
-        ),
-      ],
-    ),
-    actions: [
-      Tooltip(
-        message: 'HWP/HWPX 예시를 여기에 놓으면 새 서식으로 등록·선택해요.',
-        child: SizedBox(
-          key: profileDropKey,
-          width: 132,
-          child: ActionChip(
-            key: const Key('quickProfileDropBadge'),
-            avatar: const Icon(Icons.style_outlined, size: 18),
-            label: Text(
-              '${profiles.whereType<Map>().where((p) => p['id'] == state['profile']).firstOrNull?['name'] ?? '기본 보고서 서식'}',
-              overflow: TextOverflow.ellipsis,
-            ),
-            onPressed: locked ? null : openFormats,
-          ),
-        ),
-      ),
-      IconButton(
-        tooltip: '사용 방법 (F1)',
-        onPressed: showHelp,
-        icon: const Icon(Icons.help_outline_rounded),
-      ),
-      IconButton(
-        tooltip: '작업 로그',
-        onPressed: () => showLog(),
-        icon: const Icon(Icons.receipt_long_outlined),
-      ),
-      // 좁은 화면에서도 도구 줄이 넘치지 않게 표 관련 화면은 한 버튼의 메뉴로 연다.
-      PopupMenuButton<String>(
-        key: const Key('tableToolsMenu'),
-        tooltip: '표/다이어그램',
-        enabled: !locked,
-        icon: const Icon(Icons.table_chart_outlined),
-        onSelected: (value) {
-          if (value == 'table_units') {
-            openTableUnits();
-          } else if (value == 'mindmap') {
-            openFlowEditor(mode: 'mindmap');
-          } else {
-            openFlowEditor(mode: 'diagram');
-          }
-        },
-        itemBuilder: (_) => const [
-          PopupMenuItem(
-            value: 'diagram', /*
-            child: ListTile(
-              leading: Icon(Icons.hub_outlined),
-*/ child: ListTile(leading: Icon(Icons.account_tree_outlined), title: Text('다이어그램'),
-            ),
-          ),
-          PopupMenuItem(
-            value: 'mindmap',
-            child: ListTile(
-              leading: Icon(Icons.hub_outlined),
-              title: Text('마인드맵'),
-            ),
-          ),
-          PopupMenuItem(
-            value: 'table_units',
-            child: ListTile(
-              leading: Icon(Icons.grid_on_outlined),
-              title: Text('표 템플릿'),
-            ),
-          ),
-        ],
-      ),
-      // 문서 도구는 설정의 개발자 모드를 켜야 보인다.
-      if (quickOptions['developer_mode'] == true)
-        PopupMenuButton<String>(
-          tooltip: '문서 도구',
-          enabled: !locked,
-          icon: const Icon(Icons.handyman_outlined),
-          onSelected: (v) {
-            if (v == 'diagram_editor') {
-              openDiagramEditor();
-            } else {
-              openTools(v);
-            }
-          },
-          itemBuilder: (_) => [
-            PopupMenuItem(value: 'review', child: Text('문서 검토')),
-            PopupMenuItem(value: 'proofread', child: Text('공공언어 교정')),
-            PopupMenuItem(value: 'outline', child: Text('문서 구조 편집')),
-            PopupMenuItem(value: 'writing', child: Text('작성 도우미')),
-            PopupMenuItem(value: 'markdown', child: Text('Markdown 내보내기')),
-            PopupMenuItem(value: 'advanced', child: Text('고급 문서 도구')),
-          ],
-        ),
-      IconButton(
-        tooltip: '설정',
-        onPressed: () async {
-          if (mounted) scaffoldKey.currentState?.openEndDrawer();
-        },
-        icon: const Icon(Icons.settings_outlined),
-      ),
-      const SizedBox(width: 12),
-    ],
-  );
-
-  */
   /// 단계 메뉴에 붙이는 한 줄 요약. 어느 화면에서든 지금 상태를 알 수 있게 한다.
   String tabHint(int i) => switch (i) {
     0 => files.isEmpty ? '문서를 추가하세요' : '${files.length}개 문서',

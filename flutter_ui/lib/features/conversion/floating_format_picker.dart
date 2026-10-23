@@ -79,7 +79,8 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
           const SizedBox(height: 12),
           LayoutBuilder(
             builder: (context, constraints) {
-              final side = math.min(340.0, constraints.maxWidth);
+              // 원형 메뉴는 1.5배(2026-10-23 사용자 요청: 340 → 510).
+              final side = math.min(510.0, constraints.maxWidth);
               final center = Offset(side / 2, side / 2);
               final labelRadius = side * .345;
               return SizedBox(
@@ -144,10 +145,10 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
                                       child: Stack(
                                         children: [
                                           Positioned(
-                                            left: label.dx - 40,
-                                            top: label.dy - 37,
-                                            width: 80,
-                                            height: 74,
+                                            left: label.dx - 60,
+                                            top: label.dy - 55.5,
+                                            width: 120,
+                                            height: 111,
                                             child: Column(
                                               mainAxisAlignment:
                                                   MainAxisAlignment.center,
