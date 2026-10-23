@@ -876,6 +876,13 @@ class DesktopWebBridge:
         if params is not None and not isinstance(params, dict):
             raise ServiceError('INVALID_INPUT', '작업 입력을 확인해 주세요.')
         params = params or {}
+        if kind == 'public_language':
+            sources = params.get('sources')
+            if sources is None:
+                sources = self._tk(lambda: list(self.gui.files))
+            return self._public_language_service().start(sources)
+        if kind == 'public_language_apply':
+            return self._public_language_service().apply(params.get('review_id'), params.get('ids'))
         if kind == 'table_copy':
             return self._jobs().start(kind, params, lambda report, cancelled:
                 self._table_copy_job(params, report, cancelled))
@@ -1219,6 +1226,32 @@ class DesktopWebBridge:
         if action == "delete":
             return service.delete(payload.get("id"))
         raise ServiceError("INVALID_ACTION", "흐름도 작업을 확인해 주세요.")
+
+    def _public_language_service(self):
+        from docfit_app.public_language_service import PublicLanguageService
+        def obtain():
+            service = getattr(self.gui, '_public_language_backend', None)
+            if service is None:
+                namespace = self.gui._공공언어_검토.__globals__
+                service = PublicLanguageService(namespace['설정_폴더'](), self._jobs(),
+                                               namespace['교정용_hwpx_준비'])
+                self.gui._public_language_backend = service
+            return service
+        return self._tk(obtain)
+
+    def public_language(self, action, payload=None):
+        from docfit_app.api_contract import ServiceError
+        def execute():
+            if payload is not None and not isinstance(payload, dict):
+                raise ServiceError('INVALID_INPUT', '검토 입력과 명령을 확인해 주세요.')
+            if action not in {'start', 'apply'}:
+                raise ServiceError('INVALID_INPUT', '검토 입력과 명령을 확인해 주세요.')
+            kind = 'public_language' if action == 'start' else 'public_language_apply'
+            return {'job_id': self.start_job(kind, payload)}
+        return response(execute)
+
+    def proofreading_exclusions(self, action='list', payload=None):
+        return response(lambda: self._public_language_service().exclusions(action, payload))
 
     def document_tool(self, name, payload):
         from docfit_app.document_tools_service import DocumentToolsService
@@ -1835,6 +1868,8 @@ class DesktopWebBridge:
         return self.get_state()
 
     def run_tool(self, name):
+        if name == "proofread" and not self._tk(self._tk_fallback_enabled):
+            return self.public_language('start')
         commands = {
             "review": self.gui._문서검토_열기,
             "proofread": self.gui._공공언어_검토,
@@ -1935,7 +1970,7 @@ class _BrowserApi:
             "get_state", "add_files", "add_folder", "add_paths", "remove_file",
             "clear_files", "set_mode", "set_range", "start", "stop", "start_job", "cancel_job", "get_events",
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
-            "get_pending_dialog", "resolve_dialog", "enable_close_guard", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch",
+            "get_pending_dialog", "resolve_dialog", "enable_close_guard", "format_profile", "flow_editor", "document_tool", "public_language", "proofreading_exclusions", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch",
             "open_results", "next_job", "run_tool", "open_result",
             "show_result", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",

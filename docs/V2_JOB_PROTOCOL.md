@@ -7,6 +7,8 @@ Python 구현: `docfit_app/jobs.py`. Flutter 수신 구현은 다음 카드에�
 
 `start_job(kind, params={}) → job_id`는 UUID 문자열을 반환한다. 종류는
 `format`, `spacing`, `unify`, `all`, `file_format`, `table_copy`이다.
+C16은 데스크톱 WebView에 `public_language`, `public_language_apply`를 추가한다.
+입출력과 표현 묶음별 적용 단위는 [V2_PUBLIC_LANGUAGE_API.md](V2_PUBLIC_LANGUAGE_API.md)를 따른다.
 `file_format`의 params는 `target`(기본 hwpx), 네이티브에서는 `files`, `output_dir`도 받는다.
 데스크톱의 입력 파일은 기존 화면 목록을 쓴다. 문서 작업의 params는
 `range_enabled`, `start`, `end`, 표 복사는 기존 `table_units.copy` payload를 그대로 쓴다.
