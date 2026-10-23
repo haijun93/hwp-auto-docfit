@@ -125,6 +125,14 @@ Future<void> pumpScreen(
   await tester.pumpAndSettle();
 }
 
+/// 고른 이름 버튼은 진한 바탕에 흰 글자(촘촘한 자판형 이름 줄).
+bool isHighlighted(WidgetTester tester, Finder button) {
+  final text = tester.widget<Text>(
+    find.descendant(of: button, matching: find.byType(Text)),
+  );
+  return text.style?.color == Colors.white;
+}
+
 void main() {
   testWidgets('목록 로드, 첫 번째 템플릿 자동 선택 및 preview 호출', (tester) async {
     final calls = <List<Object?>>[];
@@ -291,6 +299,8 @@ void main() {
     expect((firstPreview[2] as Map)['fill'], 'increment');
 
     // '비우기' 선택
+    await tester.ensureVisible(find.byKey(const Key('fillOption_blank')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('fillOption_blank')));
     await tester.pumpAndSettle();
 
@@ -300,6 +310,8 @@ void main() {
     expect((blankPreview[2] as Map)['fill'], 'blank');
 
     // '그대로' 선택
+    await tester.ensureVisible(find.byKey(const Key('fillOption_copy')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('fillOption_copy')));
     await tester.pumpAndSettle();
 
@@ -579,24 +591,24 @@ void main() {
       expect(btn3, findsOneWidget);
 
       // 3. 첫 번째(0:1) 자동 선택 상태에서 0:1은 FilledButton(강조), 나머지는 OutlinedButton
-      expect(tester.widget(btn1), isA<FilledButton>());
-      expect(tester.widget(btn2), isA<OutlinedButton>());
-      expect(tester.widget(btn3), isA<OutlinedButton>());
+      expect(isHighlighted(tester, btn1), isTrue);
+      expect(isHighlighted(tester, btn2), isFalse);
+      expect(isHighlighted(tester, btn3), isFalse);
 
       // 4. 0:2 ('서약서 고정 표') 버튼 탭 -> 템플릿 선택 및 강조 변경
       await tester.tap(btn2);
       await tester.pumpAndSettle();
 
-      expect(tester.widget(btn2), isA<FilledButton>());
-      expect(tester.widget(btn1), isA<OutlinedButton>());
+      expect(isHighlighted(tester, btn2), isTrue);
+      expect(isHighlighted(tester, btn1), isFalse);
       expect(find.byKey(const Key('fixedTableNotice')), findsOneWidget);
 
       // 5. 0:3 ('월간 일정표') 버튼 탭 -> 선택 변경
       await tester.tap(btn3);
       await tester.pumpAndSettle();
 
-      expect(tester.widget(btn3), isA<FilledButton>());
-      expect(tester.widget(btn2), isA<OutlinedButton>());
+      expect(isHighlighted(tester, btn3), isTrue);
+      expect(isHighlighted(tester, btn2), isFalse);
     },
   );
 

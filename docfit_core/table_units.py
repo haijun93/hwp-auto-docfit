@@ -21,9 +21,43 @@ def _sub(parent, tag, attrib=None):
     return child
 
 
+# 정보단위 −/+ 최대값: 행·열 모두 50개(2026-10-23 사용자 지시, 예전 행 40÷단위 칸 수·열 8·조직도 10).
+UNIT_MAX = 50
+# 50개로 늘리면 표가 깨지는 축(칸 폭이 원래 가장 좁은 칸의 60%·2.5mm 아래로 줄거나 배치 불가)은 30 -> 15 -> 그 아래
+# 순서로 실측해 정한 값(2026-10-23, 내장·사용자 표 서식모음 모두 측정, 사용자 지시).
+AXIS_CAPS = {
+    ("기본형(가로) · 모양 1", "col"): 15,
+    ("분야별과제표 · 모양 1", "col"): 15,
+    ("일정표(연간) · 모양 1", "col"): 13,
+    ("일정표(일간) · 모양 1", "col"): 15,
+    ("조직도", "col"): 9,
+    ("추진절차(가로) · 모양 1", "col"): 15,
+    ("추진절차(가로) · 모양 2", "col"): 15,
+    ("추진절차(가로) · 모양 3", "col"): 15,
+    ("추진절차(가로) · 모양 4", "col"): 15,
+    ("추진절차(가로) · 모양 5", "col"): 15,
+    ("추진절차(가로세로) · 모양 1", "col"): 8,
+    ("표(가로) · 모양 3", "col"): 8,
+    ("행사시간표 · 모양 1", "col"): 30,
+    ("행사표(1일) · 모양 1", "col"): 30,
+    ("현황표(가로) · 모양 1", "col"): 15,
+}
+
+
+def _capped(name, axis, plan):
+    """판정표 축에 실측 상한(AXIS_CAPS, 없으면 UNIT_MAX)을 적용한 사본. 지금 개수보다 작아지지는 않는다."""
+    if plan is None:
+        return None
+    result = dict(plan)
+    cap = AXIS_CAPS.get((name, axis))
+    if cap is None and result.get("kind") == "org_chart":
+        cap = AXIS_CAPS.get(("조직도", axis))
+    result["max"] = max(result["count"], min(result.get("max", UNIT_MAX), cap or UNIT_MAX))
+    return result
+
+
 def _axis(start, core, count, sep=0, *, axis="row"):
-    return dict(start=start, core=core, sep=sep, count=count, min=1,
-                max=8 if axis == "col" else 40 // core)
+    return dict(start=start, core=core, sep=sep, count=count, min=1, max=UNIT_MAX)
 
 
 # 내장 표 서식 항목별 모양 서명 상수 (표 서식모음.hwpx 기준)
@@ -100,7 +134,9 @@ def _plans():
     add("신구대조표 · 모양 3", (1, 2, 3))
     add("일정표(연간) · 모양 1", (2, 1, 5), (1, 4, 5))
     add("일정표(월별) · 모양 1", (1, 4, 6), (2, 1, 6))
-    add("일정표(주간) · 모양 1", (2, 1, 9), (1, 1, 6))
+    # 주간표의 열 단위는 1주~5주. 맨 끝 「당일」 열은 단위가 아니라 늘어난 주 뒤에 그대로 둔다(2026-10-23 사용자 실측).
+    add("일정표(주간) · 모양 1", (2, 1, 9), (1, 1, 5))
+    result["일정표(주간) · 모양 1"]["col"]["kind"] = "weekly"   # 1행 n주, 2행 첫 날짜 기준 주 단위 기간 자동 기재
     add("일정표(일간) · 모양 1", (1, 2, 9), (1, 1, 4))
     add("행사표(1일) · 모양 1", (1, 8, 2), (3, 1, 2))
     for category, count in (("부연설명", 7), ("라벨 서식", 6), ("표(가로)", 3),
@@ -108,7 +144,7 @@ def _plans():
         for number in range(1, count + 1):
             name = f"{category} · 모양 {number}"
             result.setdefault(name, {"row": None, "col": None, "signature": SHAPE_SIGNATURES.get(name)})
-    org_chart_plan = {"row": None, "col": {"count": 5, "min": 2, "max": 10, "core": 2, "sep": 1, "kind": "org_chart"},
+    org_chart_plan = {"row": None, "col": {"count": 5, "min": 2, "max": UNIT_MAX, "core": 2, "sep": 1, "kind": "org_chart"},
                       "signature": SHAPE_SIGNATURES.get("조직도 · 모양 2")}
     result["조직도"] = org_chart_plan
     result["조직도 · 모양 2"] = org_chart_plan
@@ -261,7 +297,7 @@ def plan_for(template) -> dict:
         if name in PLANS:
             matched_plan = PLANS[name]
         elif template.get("category") == "조직도" and template.get("cols") == 14:
-            matched_plan = {"row": None, "col": {"count": 5, "min": 2, "max": 10, "core": 2, "sep": 1, "kind": "org_chart"}}
+            matched_plan = {"row": None, "col": {"count": 5, "min": 2, "max": UNIT_MAX, "core": 2, "sep": 1, "kind": "org_chart"}}
 
     # ③ 자동 판정
     if matched_plan is not None:
@@ -278,6 +314,8 @@ def plan_for(template) -> dict:
                 _validate(_flat(template["cell_meta"]), length, axis, plan[axis])
             except ValueError:
                 plan[axis] = None
+    for axis in ("row", "col"):
+        plan[axis] = _capped(template.get("name"), axis, plan.get(axis))
     return {"row": plan.get("row"), "col": plan.get("col"), "signature": plan.get("signature")}
 
 
@@ -404,8 +442,56 @@ def _token_value(token):
     return int(token)
 
 
+_DATE = re.compile(r"(?<![0-9.])(?:([0-9]{4})\.)?([0-9]{1,2})\.([0-9]{1,2})\.(?:\(([월화수목금토일])\))?")
+_WEEKDAYS = "월화수목금토일"
+
+
+def _increment_dates(text, previous, steps):
+    """날짜('월.일.', '연.월.일.', 요일 포함)는 실제 달력으로 늘린다. 날짜 칸이 아니면 None.
+
+    숫자를 따로 늘리면 5.32.처럼 없는 날이나 틀린 요일이 생겼다(2026-10-23 일정표(주간·일간) 실측).
+    기간('5.23.~5.25.')은 시작일을 앞 단위와의 간격만큼 옮기고 길이는 앞 단위 기간과 같게 한다
+    (마지막 주가 짧아도 다음 주는 온전한 한 주).
+    """
+    import datetime as _dt
+    current, before = list(_DATE.finditer(text)), list(_DATE.finditer(previous or ""))
+    if not current or _TOKENS.search(_DATE.sub("", text)):
+        return None
+    single = not before   # 앞 단위가 없으면 하루 뒤(기간은 같은 길이로)
+    if not single and len(current) != len(before):
+        return None
+
+    def day(match):
+        return _dt.date(int(match.group(1) or _dt.date.today().year), int(match.group(2)), int(match.group(3)))
+
+    def show(match, value):
+        piece = (f"{value.year}." if match.group(1) else "") + f"{value.month}.{value.day}."
+        return piece + (f"({_WEEKDAYS[value.weekday()]})" if match.group(4) else "")
+
+    try:
+        now = [day(m) for m in current]
+        prior = list(now) if single else [day(m) for m in before]
+    except ValueError:
+        return None
+    shift = 1 if single else (now[0] - prior[0]).days
+    if shift <= 0:
+        return None
+    start = now[0] + _dt.timedelta(days=shift * steps)
+    values = [start]
+    for index in range(1, len(now)):   # 기간 끝 등: 앞 단위에서의 시작일과의 거리를 유지
+        values.append(start + (prior[index] - prior[0]))
+    out, last = [], 0
+    for match, value in zip(current, values):
+        out.append(text[last:match.start()] + show(match, value))
+        last = match.end()
+    return "".join(out) + text[last:]
+
+
 def _increment_text(text, previous=None, steps=1):
     """같은 위치의 토큰 간격을 외삽한다. 시각은 자정 이후에도 24+시를 유지한다."""
+    dated = _increment_dates(text, previous, steps)
+    if dated is not None:
+        return dated
     matches = list(_TOKENS.finditer(text))
     before = list(_TOKENS.finditer(previous or ""))
     def replace(index, match):
@@ -415,9 +501,11 @@ def _increment_text(text, previous=None, steps=1):
         if len(before) == len(matches):
             old = before[index].group()
             if (":" in old) == (":" in token):
-                delta = value - _token_value(old) or 1
+                # 앞 단위와 같은 값이면 반복하는 번호다(예: 일정표(연간)의 분기 1·2·3·4는 해마다 같다) — 그대로 둔다.
+                # 예전에는 간격 0을 1로 바꿔 늘릴 때마다 2·3·4·5, 3·4·5·6으로 밀렸다(2026-10-23 사용자 실측).
+                delta = value - _token_value(old)
         month = text[match.end():].startswith("월")
-        if month:
+        if month and delta:
             delta = delta % 12 or 1
         value += delta * steps
         if ":" in token:
@@ -967,6 +1055,51 @@ def generate_org_chart(template_table_element, team_count, *, fill="increment", 
     return new_table
 
 
+WEEKLY_DEFAULT_FIRST = (4, 26)
+
+
+def _set_cell_text(cell, value):
+    nodes = list(cell.iter(HP + "t"))
+    if not nodes:
+        return
+    nodes[0].text = value
+    for node in nodes[1:]:
+        node.text = ""
+
+
+def _fill_weekly(table, plan):
+    """일정표(주간): 1행은 1주·2주·…, 2행은 사용자가 1주 칸에 적은 첫 날짜(없으면 4.26.)부터 주 단위 기간.
+
+    1주는 첫 날짜부터 그 주 금요일까지, 2주부터는 토요일~금요일 7일(예: 4.26.~5.1., 5.2.~5.8.) —
+    2026-10-23 사용자 지시 예시와 원래 표의 3주·4주 기간이 모두 이 규칙이다.
+    """
+    import datetime as _dt
+    cells = {}
+    for tr in table.findall(HP + "tr"):
+        for tc in tr.findall(HP + "tc"):
+            meta = catalog._cell_meta(tc, 0, 0, "", None)
+            cells[(meta["row"], meta["col"])] = tc
+    start, count = plan["start"], plan["count"]
+    first_cell = cells.get((1, start))
+    month, day = WEEKLY_DEFAULT_FIRST
+    if first_cell is not None:
+        match = _DATE.search("".join(n.text or "" for n in first_cell.iter(HP + "t")))
+        if match:
+            month, day = int(match.group(2)), int(match.group(3))
+    try:
+        begin = _dt.date(_dt.date.today().year, month, day)
+    except ValueError:
+        begin = _dt.date(_dt.date.today().year, *WEEKLY_DEFAULT_FIRST)
+    for k in range(count):
+        end = begin + _dt.timedelta(days=(4 - begin.weekday()) % 7)   # 그 주 금요일(금요일이면 당일)
+        label, dates = cells.get((0, start + k)), cells.get((1, start + k))
+        if label is not None:
+            _set_cell_text(label, f"{k + 1}주")
+        if dates is not None:
+            _set_cell_text(dates, f"{begin.month}.{begin.day}.~{end.month}.{end.day}.")
+        begin = end + _dt.timedelta(days=1)
+
+
 def resize_table(tbl_element, plan, row_count=None, col_count=None, *, id_roots=(), fill="increment", cell_texts=None):
     """제자리 변경. plan의 count와 내부 복제 원본도 갱신하여 연속 조절을 지원한다.
 
@@ -1006,6 +1139,9 @@ def resize_table(tbl_element, plan, row_count=None, col_count=None, *, id_roots=
         else:
             _validate(_meta(working), int(working.get(axis + "Cnt")), axis, p)
     _apply_texts(working, cell_texts)
+    col_plan = updated.get("col")
+    if col_plan and col_plan.get("kind") == "weekly" and fill == "increment":
+        _fill_weekly(working, col_plan)
     tbl_element.attrib.clear()
     tbl_element.attrib.update(working.attrib)
     tbl_element[:] = list(working)

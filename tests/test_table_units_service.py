@@ -57,6 +57,10 @@ class TableUnitsServiceTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
+        # 이 시험들은 내장 그림이 없는 상태(한/글로 그림 만들기)를 본다 — 앱에 넣은 그림 폴더를 빈 곳으로 바꾼다.
+        bundled = patch("docfit_app.table_units_service.BUNDLED_SNAPSHOTS", Path(self.temp.name) / "no-bundled")
+        bundled.start()
+        self.addCleanup(bundled.stop)
         self.log = []
         self.formats = ["Hwp Native", "HTML Format"]
         self.service = TableUnitsService(lambda: FakeHwp(self.log), source=default_catalog_path(),
@@ -174,3 +178,16 @@ class TableUnitsServiceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BundledSnapshotTests(unittest.TestCase):
+    def test_builtin_templates_show_bundled_pictures_without_hangul(self):
+        """앱에 넣어 둔 내장 표 그림은 한/글 없이 바로 보인다(처음 쓰는 사용자, 2026-10-23 사용자 요청)."""
+        def no_hwp():
+            raise AssertionError("내장 그림이 있으면 한/글을 띄우지 않는다")
+        with tempfile.TemporaryDirectory() as folder:
+            service = TableUnitsService(no_hwp, source=default_catalog_path(), snapshot_root=Path(folder))
+            data = service.list()
+            self.assertTrue(data["thumbnails_ready"])
+            self.assertTrue(all(t["thumbnail"].startswith("data:image/png;base64,") for t in data["templates"]))
+            self.assertTrue(service.command("thumbnails", {})["thumbnails_ready"])

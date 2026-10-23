@@ -268,15 +268,68 @@ internal static class SmartLauncher
 
     private static void CleanupOldCaches(string cacheRoot, string keepName)
     {
+        Version currentVersion = CacheVersion(keepName);
+        if (currentVersion == null) return;
         foreach (string path in Directory.GetDirectories(cacheRoot, "app_v*"))
         {
             if (string.Equals(Path.GetFileName(path), keepName, StringComparison.OrdinalIgnoreCase)) continue;
-            try { Directory.Delete(path, true); } catch { }
+            Version candidateVersion = CacheVersion(Path.GetFileName(path));
+            if (candidateVersion == null || candidateVersion > currentVersion) continue;
+            if (CacheIsInUse(path)) continue;
+            // Never recursively delete the published cache path: a failed move must leave it intact.
+            string trash = Path.Combine(cacheRoot, ".trash-" + Guid.NewGuid().ToString("N"));
+            try { Directory.Move(path, trash); }
+            catch { continue; }
+            try { Directory.Delete(trash, true); } catch { }
         }
-        foreach (string path in Directory.GetDirectories(cacheRoot, ".staging-*"))
+        // Another launcher may still be extracting into .staging-*; it owns that cleanup.
+    }
+
+    private static Version CacheVersion(string name)
+    {
+        if (!name.StartsWith("app_v", StringComparison.OrdinalIgnoreCase)) return null;
+        int separator = name.LastIndexOf('_');
+        if (separator <= 5) return null;
+        string value = name.Substring(5, separator - 5);
+        string numeric = new string(value.TakeWhile(c => char.IsDigit(c) || c == '.').ToArray());
+        string[] parts = numeric.Split('.');
+        if (parts.Length > 4) return null;
+        Version version;
+        return Version.TryParse(string.Join(".", parts.Concat(Enumerable.Repeat("0", 4 - parts.Length))),
+            out version) ? version : null;
+    }
+
+    private static bool CacheIsInUse(string cachePath)
+    {
+        // The launcher exits after mutex handoff, so it cannot own an app-lifetime lock.
+        try
         {
-            try { Directory.Delete(path, true); } catch { }
+            string appPath = Path.GetFullPath(Path.Combine(cachePath, "app_main.exe"));
+            bool inUse = false;
+            foreach (Process process in Process.GetProcessesByName("app_main"))
+            {
+                using (process)
+                {
+                    try
+                    {
+                        if (string.Equals(Path.GetFullPath(process.MainModule.FileName), appPath,
+                            StringComparison.OrdinalIgnoreCase)) inUse = true;
+                    }
+                    catch { inUse = true; } // Inaccessible processes are conservatively protected.
+                }
+            }
+            if (inUse) return true;
+
+            string pythonDll = Path.Combine(cachePath, "_internal", "python312.dll");
+            IEnumerable<string> probes = Directory.GetFiles(cachePath, "*.pyd", SearchOption.AllDirectories);
+            if (File.Exists(pythonDll)) probes = probes.Concat(new[] { pythonDll });
+            foreach (string probe in probes)
+            {
+                using (var stream = new FileStream(probe, FileMode.Open, FileAccess.Write, FileShare.None)) { }
+            }
+            return false;
         }
+        catch { return true; }
     }
 
     private static string SafeCombine(string root, string relative)

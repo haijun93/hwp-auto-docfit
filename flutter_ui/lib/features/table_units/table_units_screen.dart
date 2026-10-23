@@ -572,57 +572,42 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
         color: Colors.white,
         border: Border(bottom: BorderSide(color: Color(0xffe2e8f0), width: 1)),
       ),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 120),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.vertical,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: templates.map((t) {
-              final isSelected = _selectedTemplate?.id == t.id;
-              final tone = _categoryTone(t.category);
-              if (isSelected) {
-                return FilledButton(
-                  key: Key('templateName_${t.id}'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: tone.strong,
-                    foregroundColor: Colors.white,
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    textStyle: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
+      // 키보드 자판처럼 촘촘하게(높이 28·간격 4) — 높이 제한·스크롤 없이 모든 템플릿 이름이 보이게(2026-10-23 사용자 요청).
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+      child: Wrap(
+        spacing: 4,
+        runSpacing: 4,
+        children: templates.map((t) {
+          final isSelected = _selectedTemplate?.id == t.id;
+          final tone = _categoryTone(t.category);
+          return Material(
+            key: Key('templateName_${t.id}'),
+            color: isSelected ? tone.strong : tone.soft,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(6),
+              side: BorderSide(color: isSelected ? tone.strong : tone.border),
+            ),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(6),
+              onTap: () => _selectTemplate(t),
+              child: Container(
+                height: 28,
+                padding: const EdgeInsets.symmetric(horizontal: 9),
+                alignment: Alignment.center,
+                child: Text(
+                  t.name,
+                  maxLines: 1,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    height: 1.0,
+                    color: isSelected ? Colors.white : tone.ink,
+                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
                   ),
-                  onPressed: () => _selectTemplate(t),
-                  child: Text(t.name),
-                );
-              } else {
-                return OutlinedButton(
-                  key: Key('templateName_${t.id}'),
-                  style: OutlinedButton.styleFrom(
-                    backgroundColor: tone.soft,
-                    foregroundColor: tone.ink,
-                    side: BorderSide(color: tone.border),
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    textStyle: const TextStyle(fontSize: 12),
-                  ),
-                  onPressed: () => _selectTemplate(t),
-                  child: Text(t.name),
-                );
-              }
-            }).toList(),
-          ),
-        ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
       ),
     );
   }

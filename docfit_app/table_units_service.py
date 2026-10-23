@@ -21,6 +21,8 @@ from .api_contract import ServiceError
 
 USER_CATALOG = Path(r"C:\HWP_AUTODOCFIT") / "표서식모음" / "표 서식모음.hwpx"
 SNAPSHOT_FOLDER = ".스냅샷"
+# 앱에 미리 넣어 둔 내장 표 템플릿 그림(표 내용 지문 이름). 처음 쓰는 사용자도 한/글로 만들 필요 없이 바로 보인다(2026-10-23 사용자 요청).
+BUNDLED_SNAPSHOTS = default_catalog_path().parents[1] / "table_snapshots" / "tables"
 SNAPSHOT_REVISION = b"C13-shapes-v1"
 HWP_CLIPBOARD_FORMAT = "Hwp Native"
 
@@ -126,8 +128,15 @@ class TableUnitsService:
             return root / "tables" / f"{key}.png"
         return self._snapshot_dir() / f"{_safe_name(template_id)}.png"
 
+    def _bundled_snapshot(self, template_id: str) -> Path | None:
+        key = self._content_keys().get(str(template_id))
+        path = BUNDLED_SNAPSHOTS / f"{key}.png" if key else None
+        return path if path is not None and path.is_file() else None
+
     def _snapshot_url(self, template_id: str) -> str | None:
         path = self._snapshot_path(template_id)
+        if not path.is_file():
+            path = self._bundled_snapshot(template_id) or path
         if not path.is_file():
             legacy = self._snapshot_dir() / f"{_safe_name(template_id)}.png"
             if not legacy.is_file():
@@ -222,7 +231,8 @@ class TableUnitsService:
         from docfit_core.file_conversion import convert_hwpx_to_pdf
 
         items = self._units()
-        missing = [item for item in items if not self._snapshot_path(item["id"]).is_file()]
+        missing = [item for item in items
+                   if not self._snapshot_path(item["id"]).is_file() and self._bundled_snapshot(item["id"]) is None]
         if missing:
             folder = Path(tempfile.mkdtemp(prefix="docfit_table_snap_"))
             app = None
