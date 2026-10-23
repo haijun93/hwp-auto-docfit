@@ -14,7 +14,6 @@ from unittest.mock import Mock, patch
 
 from desktop_web_ui import DesktopWebBridge
 from docfit_app.api_contract import ServiceError
-from docfit_app.diagram_service import DiagramService
 from docfit_app.flow_service import FlowService
 from docfit_app.settings_service import SettingsService
 from docfit_core.fidelity.package import PackageSnapshot, copy_exact, write_package
@@ -159,7 +158,7 @@ print(json.dumps(result))
                         child.communicate()
 
     def test_two_editors_cannot_claim_each_others_revision(self):
-        for service_type in (FlowService, DiagramService):
+        for service_type in (FlowService,):
             with self.subTest(service=service_type), tempfile.TemporaryDirectory() as folder:
                 store = SettingsService(Path(folder)/'settings.json')
                 store.update(lambda s: s.update(developer_mode=True, diagram_editor_enabled=True))

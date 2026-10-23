@@ -10,17 +10,6 @@ if (Test-Path $Bundle) { throw "Prototype output already exists. Choose a new -O
 Push-Location $Root
 try {
     & (Join-Path $Root 'scripts\build_flow_editor.ps1') -Npm $Npm
-    $NodeVersion = (& node --version).TrimStart('v')
-    if ([version]$NodeVersion -lt [version]'22.12.0') {
-        throw "The tldraw editor build requires Node.js 22.12.0 or newer. Found $NodeVersion."
-    }
-    Push-Location (Join-Path $Root "tldraw_editor")
-    try {
-        & $Npm ci --no-audit --no-fund
-        if ($LASTEXITCODE -ne 0) { throw "tldraw editor dependency installation failed" }
-        & $Npm run build
-        if ($LASTEXITCODE -ne 0) { throw "tldraw editor bundle build failed" }
-    } finally { Pop-Location }
     & $Python -m pip check
     if ($LASTEXITCODE -ne 0) { throw "Python dependency check failed" }
     Push-Location (Join-Path $Root "flutter_ui")

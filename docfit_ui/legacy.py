@@ -3632,7 +3632,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 developer_box.pack(fill="x", pady=(0, 12))
                 ttk.Checkbutton(developer_box, text="개발자 모드 켜기",
                                 variable=self.developer_mode_var).pack(anchor="w")
-                ttk.Label(developer_box, text="기본값은 꺼짐입니다. Flutter 도형 편집기의 개발자 기능을 사용할 수 있습니다.",
+                ttk.Label(developer_box, text="기본값은 꺼짐입니다. 자세한 문서 처리 완료 안내를 표시합니다.",
                           style="Hint.TLabel", wraplength=650).pack(anchor="w", padx=(22, 0), pady=(2, 0))
                 ttk.Label(
                     update_box,

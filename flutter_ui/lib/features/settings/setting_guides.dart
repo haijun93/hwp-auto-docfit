@@ -860,12 +860,7 @@ final Map<String, SettingGuide> settingGuides = {
   'developer_mode': SettingGuide(
     'dev',
     '개발자 모드',
-    '도형 편집기의 개발자 기능을 사용할 수 있어요.',
-  ),
-  'diagram_editor_enabled': SettingGuide(
-    'dev',
-    'tldraw 도형 편집기',
-    '개발자용 자유 도형 편집기를 켜요.',
+    '자세한 문서 처리 완료 안내를 표시해요.',
   ),
 };
 

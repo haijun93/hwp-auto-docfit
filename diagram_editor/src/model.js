@@ -109,45 +109,8 @@ export function nodeFont(data={}){
  return {px,lineHeight:Math.round(px*1.5),weight:data.bold?700:400,family:'"'+(data.font??'맑은 고딕')+'", "Malgun Gothic", "Noto Sans KR", sans-serif',color:data.textColor??'#172b4d',
   css:(data.bold?'700 ':'')+px+'px "'+(data.font??'맑은 고딕')+'", "Malgun Gothic", "Noto Sans KR", sans-serif'};
 }
-function rich(value) {
- if(typeof value?.text==='string')return value.text;
- return (value?.content??[]).map(rich).join(value?.type==='doc'?'\n':'');
-}
 export function decode(snapshot) {
- if(snapshot?.format===FORMAT)return {...validate(snapshot),converted:false};
- const store=snapshot?.document?.store;
- if(!store||typeof store!=='object')throw new Error('지원하지 않는 문서입니다.');
- const values=Object.values(store),pages=values.filter(v=>v.typeName==='page');
- if(pages.length>1)throw new Error('여러 페이지의 tldraw 문서는 자동 변환하지 않습니다. 원본을 보존했습니다.');
- const shapes=values.filter(v=>v.typeName==='shape');
- if(shapes.some(v=>!['geo','text','arrow'].includes(v.type)||v.rotation))throw new Error('자유선·회전 등 자동 변환할 수 없는 도형이 있습니다. 원본을 보존했습니다.');
- const nodes=shapes.filter(v=>v.type!=='arrow').map(v=>{
-  if(v.parentId&&!v.parentId.startsWith('page:'))throw new Error('그룹 도형은 자동 변환하지 않습니다.');
-  const p=v.props??{},shape=v.type==='text'?'text':({'rectangle':'rectangle','diamond':'diamond','ellipse':'ellipse'}[p.geo]);
-  if(!shape)throw new Error('자동 변환할 수 없는 도형 종류입니다.');
-  if(v.type==='text'&&!text(p.text??rich(p.richText)))throw new Error('문자 도형을 확인해 주세요.');
-  return {...node(p.text??rich(p.richText),v.x,v.y,shape,Object.hasOwn(COLORS,p.color)?p.color:'blue',v.id),width:p.w??220,height:p.h??90};
- });
- const nodeMap=new Map(nodes.map(n=>[n.id,n]));
- const bindings=values.filter(v=>v.typeName==='binding'&&v.type==='arrow');
- const edges=shapes.filter(v=>v.type==='arrow').map(v=>{
-  const p=v.props??{},start=bindings.find(b=>b.fromId===v.id&&b.props?.terminal==='start'),end=bindings.find(b=>b.fromId===v.id&&b.props?.terminal==='end');
-  const find=(point)=>{
-   if(!point||!finite(point.x)||!finite(point.y))return null;
-   const x=v.x+point.x,y=v.y+point.y;
-   const distances=nodes.flatMap(n=>['top','bottom','left','right'].map(side=>{
-    const [px,py]=anchor(n,side);return {id:n.id,side,d:Math.hypot(px-x,py-y)};
-   })).sort((a,b)=>a.d-b.d);
-   const near=distances[0];
-   if(!near||near.d>40||distances[1]&&distances[1].id!==near.id&&Math.abs(distances[1].d-near.d)<1)return null;
-   return near;
-  };
-  const a=start&&nodeMap.has(start.toId)?{id:start.toId,side:'bottom'}:find(p.start);
-  const b=end&&nodeMap.has(end.toId)?{id:end.toId,side:'top'}:find(p.end);
-  if(!a||!b||p.bend)throw new Error('연결 위치가 모호하거나 곡선인 화살표는 자동 변환하지 않습니다.');
-  return edge(a.id,b.id,p.text??rich(p.richText),v.id,a.side,b.side);
- });
- return {...validate({format:FORMAT,version:1,nodes,edges}),converted:true};
+ return {...validate(snapshot),converted:false};
 }
 export function anchor(n,side) {
  const {x,y}=n.position,w=n.width??220,h=n.height??90;

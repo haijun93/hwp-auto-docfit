@@ -18,7 +18,6 @@ import 'features/tools/document_tools_workspace.dart';
 import 'features/tools/backend_dialog.dart';
 import 'features/conversion/floating_format_picker.dart';
 import 'features/conversion/merge_order_dialog.dart';
-import 'features/diagrams/diagram_editor_screen.dart';
 import 'features/flows/flow_editor_screen.dart';
 import 'features/progress/live_progress.dart';
 import 'features/settings/settings_dialog.dart';
@@ -597,29 +596,6 @@ class _WorkspaceState extends State<Workspace> {
         builder: (_) => TableSketchScreen(api: widget.api),
       ),
     );
-  }
-
-  Future<void> openDiagramEditor() async {
-    if (quickOptions['developer_mode'] != true ||
-        quickOptions['diagram_editor_enabled'] != true) {
-      return;
-    }
-    try {
-      await widget.api('diagram_list', const []); // Python 서비스에서 기능 플래그를 재검사한다.
-      if (!mounted) return;
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => DiagramEditorScreen(api: widget.api),
-        ),
-      );
-      await refresh();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('도형 편집기를 열지 못했어요: $e')));
-      }
-    }
   }
 
   /// Ctrl+Enter: 문서 선택 화면에서는 다음 단계로, 작업 방식 화면에서는 바로 시작한다.
@@ -3283,7 +3259,7 @@ class _WorkspaceState extends State<Workspace> {
           optionSwitch(
             'developer_mode',
             '개발자 모드',
-            '도형 편집기의 개발자 기능을 사용할 수 있어요.',
+            '자세한 문서 처리 완료 안내를 표시해요.',
           ),
           settingsLabel('더 보기'),
           ListTile(
