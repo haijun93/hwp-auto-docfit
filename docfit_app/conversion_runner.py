@@ -44,10 +44,12 @@ def run_conversion(files, target, output_dir=None, progress=None, stop_event=Non
             elif event[0] == 'document_error':
                 results.append(dict(source=event[1], output=None,
                                     status='skipped' if is_same_format(event[1], target_format) else 'failed', error=event[2]))
-            elif event[0] == 'fatal_error':
+            elif event[0] in {'fatal_error', 'conversion_error'}:
                 results.append(dict(source=None, output=None, status='failed', error=event[1]))
+            elif event[0] == 'file_conversion_stopped':
+                results.append(dict(source=None, output=None, status='cancelled', error='중단됨'))
             if progress:
-                progress(event)
+                progress(('log', event[1]) if event[0] == 'conversion_error' else event)
     gui_queue = Events()
 
     def relocate(path):
@@ -155,7 +157,7 @@ def run_conversion(files, target, output_dir=None, progress=None, stop_event=Non
             첫_원본 = str(files[0])
             if failures:
                 # 일부가 빠진 합본은 만들지 않는다(쪽이 빠진 문서를 완성본으로 착각하지 않게).
-                gui_queue.put(("document_error", 첫_원본, f"파일 {failures}개를 PDF로 바꾸지 못해 합치지 않았습니다."))
+                gui_queue.put(("conversion_error", f"파일 {failures}개를 PDF로 바꾸지 못해 합치지 않았습니다."))
                 successes = 0
             elif 합칠_부분:
                 try:
@@ -165,7 +167,7 @@ def run_conversion(files, target, output_dir=None, progress=None, stop_event=Non
                     successes = 1
                 except Exception as exc:
                     failures, successes = failures + 1, 0
-                    gui_queue.put(("document_error", 첫_원본, str(exc)))
+                    gui_queue.put(("conversion_error", str(exc)))
                     로그(f"PDF 하나로 합치기 실패: {exc}")
         if 중단_event.is_set():
             if target_format == "pdfm":

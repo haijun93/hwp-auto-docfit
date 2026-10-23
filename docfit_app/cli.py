@@ -4,11 +4,22 @@ import contextlib
 import glob
 import io
 import json
+import math
+import queue
 import re
+import threading
+import time
 import sys
 from pathlib import Path
 
 COMMANDS = {'convert', 'help', 'version', 'formats'}
+ALIASES = {'--help': 'help', '-h': 'help', '/?': 'help', '--version': 'version'}
+
+
+def is_cli_command(argv):
+    return bool(argv and argv[0] in COMMANDS | ALIASES.keys() and not Path(argv[0]).exists())
+
+
 FORMAT_ORDER = ('hwpx', 'pdf', 'pdfz', 'pdfm', 'docx', 'epub', 'html', 'jpg', 'png', 'txt', 'md')
 
 
@@ -56,6 +67,7 @@ def parser():
     convert.add_argument('--json', action='store_true')
     convert.add_argument('--quiet', action='store_true')
     convert.add_argument('--notify', action='store_true')
+    convert.add_argument('--timeout', type=float, default=180, help='파일당 제한 시간(초, 기본 180)')
     for name in ('help', 'version', 'formats'):
         commands.add_parser(name)
     return p
@@ -86,8 +98,58 @@ def expand_inputs(inputs):
     return files
 
 
+def _run_with_timeout(runner, files, target, output_dir, timeout):
+    """COM 생성부터 Quit까지 감시한다. 멈춘 COM 스레드는 기다리지 않는다."""
+    from docfit_core.hwp_process import kill_owned
+    messages = queue.Queue()
+    stop = threading.Event()
+
+    def work():
+        try:
+            result = runner(files, target, output_dir=output_dir,
+                            progress=lambda event: messages.put(('event', event)), stop_event=stop)
+            messages.put(('done', result))
+        except BaseException as exc:
+            messages.put(('error', exc))
+
+    threading.Thread(target=work, daemon=True, name='docfit-cli-conversion').start()
+    deadline, current, completed = time.monotonic() + timeout, files[0], []
+    try:
+        while True:
+            try:
+                kind, value = messages.get(timeout=max(0, deadline - time.monotonic()))
+            except queue.Empty:
+                stop.set()
+                kill_owned()
+                completed.append(dict(source=current, output=None, status='failed',
+                                      error=f'시간 제한 {timeout:g}초 초과: 변환을 중단했습니다.'))
+                return completed
+            if kind == 'done':
+                return value
+            if kind == 'error':
+                raise value
+            if value[0] == 'doc_begin':
+                current = files[value[1] - 1]
+                deadline = time.monotonic() + timeout
+            elif value[0] == 'saved':
+                completed.append(dict(source=value[1], output=value[2], status='success', error=None))
+            elif value[0] == 'document_error':
+                from docfit_core.file_conversion import is_same_format
+                completed.append(dict(source=value[1], output=None,
+                                      status='skipped' if is_same_format(value[1], target) else 'failed', error=value[2]))
+            elif value[0] == 'fatal_error':
+                completed.append(dict(source=None, output=None, status='failed', error=value[1]))
+            elif value[0] in {'file_conversion_finished', 'file_conversion_stopped'}:
+                current = None
+                deadline = time.monotonic() + timeout
+
+    finally:
+        stop.set()
+
 def main(argv=None, *, stdout=None, stderr=None, runner=None, console=None):
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] in ALIASES:
+        argv[0] = ALIASES[argv[0]]
     console = attach_console() if console is None else console
     stdout, stderr = stdout or sys.stdout or io.StringIO(), stderr or sys.stderr or io.StringIO()
     results, error, code = [], None, 0
@@ -109,6 +171,8 @@ def main(argv=None, *, stdout=None, stderr=None, runner=None, console=None):
             from docfit_core.file_conversion import CONVERSION_OUTPUTS
             print(' '.join(f for f in FORMAT_ORDER if f in CONVERSION_OUTPUTS), file=stdout)
             return 0
+        if not math.isfinite(args.timeout) or args.timeout <= 0:
+            raise ArgumentError('--timeout은 0보다 큰 유한한 초 값이어야 합니다.')
         files = expand_inputs(args.inputs)
         if args.to == 'pdfm' and len(files) < 2:
             raise ArgumentError('PDF 합치기는 파일이 2개 이상 필요합니다.')
@@ -119,20 +183,27 @@ def main(argv=None, *, stdout=None, stderr=None, runner=None, console=None):
             runner = run_conversion
         # 엔진의 진단 출력도 JSON 한 줄 규약을 깨지 않게 모은다.
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            results = runner(files, args.to, output_dir=args.output_dir)
+            results = _run_with_timeout(runner, files, args.to, args.output_dir, args.timeout)
         statuses = {r['status'] for r in results}
-        if 'failed' in statuses:
+        if 'cancelled' in statuses:
+            code, error = 130, '중단됨'
+        elif 'failed' in statuses:
             code = 1
         elif 'success' not in statuses:
             code = 3
         elif 'skipped' in statuses:
             code = 1
+    except KeyboardInterrupt:
+        code, error = 130, '중단됨'
     except SystemExit as exc:
         return int(exc.code or 0)
     except (ArgumentError, ValueError) as exc:
         code, error = 2, str(exc)
     except Exception as exc:
         code, error = 1, str(exc)
+    finally:
+        from docfit_core.hwp_process import kill_owned
+        kill_owned()
     if '--json' in argv:
         print(json.dumps(dict(exit_code=code, results=results, error=error), ensure_ascii=False), file=stdout)
     elif '--quiet' not in argv:

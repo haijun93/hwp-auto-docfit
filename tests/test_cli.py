@@ -1,4 +1,6 @@
 import io
+import contextlib
+import time
 import json
 from pathlib import Path
 import subprocess
@@ -33,6 +35,127 @@ class CliTests(unittest.TestCase):
             code, out, _ = self.invoke(command)
             self.assertEqual(code, 0)
             self.assertIn(token, out)
+
+    def test_cli_aliases_and_existing_command_files(self):
+        for alias in cli.ALIASES:
+            self.assertTrue(cli.is_cli_command([alias]))
+            self.assertEqual(self.invoke(alias)[0], 0)
+        with contextlib.chdir(self.folder):
+            for command in cli.COMMANDS | cli.ALIASES.keys():
+                # /?는 Windows 파일명으로 만들 수 없으므로 판정 함수의 exists를 대체한다.
+                with patch('docfit_app.cli.Path.exists', return_value=True):
+                    self.assertFalse(cli.is_cli_command([command]))
+            self.file('convert')
+            self.assertFalse(cli.is_cli_command(['convert']))
+            (self.folder / 'help').mkdir()
+            self.assertFalse(cli.is_cli_command(['help']))
+            self.assertTrue(cli.is_cli_command(['formats']))
+        self.assertFalse(cli.is_cli_command([]))
+
+    def test_timeout_validation_and_default(self):
+        self.assertEqual(cli.parser().parse_args(['convert', 'a', '--to', 'pdf']).timeout, 180)
+        for value in ('0', '-1', 'nan', 'inf', 'bad'):
+            self.assertEqual(self.invoke('convert', str(self.file()), '--to', 'pdf', '--timeout', value)[0], 2)
+
+    def test_timeout_preserves_finished_file_and_cleans_only_owned(self):
+        first, second = self.file(), self.file('second.hwpx')
+        release, entered, finished = threading.Event(), threading.Event(), threading.Event()
+        def hung(files, target, **kwargs):
+            try:
+                kwargs['progress'](('doc_begin', 1, 2, first.name))
+                kwargs['progress'](('saved', str(first), 'first.pdf', None))
+                kwargs['progress'](('doc_begin', 2, 2, second.name))
+                entered.set()
+                release.wait(5)
+                self.assertTrue(kwargs['stop_event'].is_set())
+                return []
+            finally:
+                finished.set()
+        try:
+            with patch('docfit_core.hwp_process.kill_owned') as kill:
+                started = time.monotonic()
+                code, out, err = self.invoke('convert', str(first), str(second), '--to', 'pdf',
+                                            '--timeout', '0.05', '--json', runner=hung)
+                self.assertLess(time.monotonic() - started, 2)
+                self.assertTrue(entered.is_set())
+                self.assertEqual(code, 1)
+                results = json.loads(out)['results']
+                self.assertEqual([r['status'] for r in results], ['success', 'failed'])
+                self.assertEqual(results[1]['source'], str(second))
+                self.assertIn('시간 제한', results[1]['error'])
+                self.assertGreaterEqual(kill.call_count, 2)
+                self.assertEqual(err, '')
+        finally:
+            release.set()
+            self.assertTrue(finished.wait(2))
+
+    def test_timeout_is_per_file_and_includes_startup_and_cleanup(self):
+        first, second = str(self.file()), str(self.file('second.hwpx'))
+        def sequential(files, target, **kwargs):
+            for number, source in enumerate(files, 1):
+                kwargs['progress'](('doc_begin', number, len(files), source))
+                time.sleep(0.06)
+            return [dict(source=f, output='ok', status='success', error=None) for f in files]
+        with patch('docfit_core.hwp_process.kill_owned'):
+            result = cli._run_with_timeout(sequential, [first, second], 'pdf', None, 0.1)
+            self.assertEqual([r['status'] for r in result], ['success', 'success'])
+            for phase in ('startup', 'cleanup'):
+                release, finished = threading.Event(), threading.Event()
+                def hung(files, target, **kwargs):
+                    try:
+                        if phase == 'cleanup':
+                            kwargs['progress'](('saved', first, 'ok.pdf', None))
+                            kwargs['progress'](('file_conversion_finished', 1, 0))
+                        release.wait(5)
+                        return []
+                    finally:
+                        finished.set()
+                try:
+                    result = cli._run_with_timeout(hung, [first], 'pdf', None, 0.03)
+                    self.assertEqual(result[-1]['status'], 'failed')
+                    self.assertEqual(result[-1]['source'], None if phase == 'cleanup' else first)
+                finally:
+                    release.set()
+                    self.assertTrue(finished.wait(2))
+
+    def test_cleanup_on_success_failure_and_interrupt(self):
+        for effect, expected in [(None, 0), (RuntimeError('failure'), 1), (KeyboardInterrupt(), 130)]:
+            def runner(*args, **kwargs):
+                if effect is not None:
+                    raise effect
+                return [dict(source='a', output='b', status='success', error=None)]
+            with patch('docfit_core.hwp_process.kill_owned') as kill:
+                code, out, _ = self.invoke('convert', str(self.file()), '--to', 'pdf', '--json', runner=runner)
+                self.assertEqual(code, expected)
+                kill.assert_called_once_with()
+                if expected == 130:
+                    self.assertEqual(json.loads(out)['error'], '중단됨')
+
+    def test_merge_stop_has_explicit_exit_code(self):
+        stop = threading.Event()
+        stop.set()
+        def runner(files, target, **kwargs):
+            kwargs['stop_event'] = stop
+            return run_conversion(files, target, **kwargs)
+        code, out, _ = self.invoke('convert', str(self.file('a.pdf')), str(self.file('b.pdf')),
+                                    '--to', 'pdfm', '--json', runner=runner)
+        self.assertEqual(code, 130)
+        self.assertEqual(json.loads(out)['error'], '중단됨')
+
+    def test_merge_preparation_errors_are_not_replaced_by_summary(self):
+        app, com = Mock(), Mock()
+        runtime = dict(pythoncom=com, 한글_COM_인스턴스_생성=lambda **k: app,
+                       REGISTER_MODULE_NAME='name', REGISTER_MODULE_VALUE='value')
+        first, second = self.file(), self.file('second.hwpx')
+        events = []
+        with patch('docfit_core.file_conversion.convert_to_pdf', side_effect=[RuntimeError('first cause'), RuntimeError('second cause')]):
+            result = run_conversion([first, second], 'pdfm', runtime_factory=lambda: runtime, progress=events.append)
+        self.assertEqual([(r['source'], r['error']) for r in result[:2]],
+                         [(str(first), 'first cause'), (str(second), 'second cause')])
+        self.assertIsNone(result[2]['source'])
+        self.assertIn('2개', result[2]['error'])
+        self.assertEqual(len([e for e in events if e[0] == 'document_error']), 2)
+        self.assertEqual(events[-2][0], 'log')
 
     def test_argument_errors(self):
         for args in [(), ('convert',), ('convert', 'absent.hwpx', '--to', 'pdf'),
@@ -138,7 +261,9 @@ class CliTests(unittest.TestCase):
     def test_stop_prevents_outputs(self):
         stop = threading.Event()
         stop.set()
-        self.assertEqual(run_conversion([self.file('x.txt')], 'md', stop_event=stop), [])
+        result = run_conversion([self.file('x.txt')], 'md', stop_event=stop)
+        self.assertEqual(result[0]['status'], 'cancelled')
+        self.assertEqual(result[0]['error'], '중단됨')
 
     def test_notification_even_on_argument_error(self):
         with patch.object(cli, 'notify') as notify:

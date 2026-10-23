@@ -3384,8 +3384,8 @@ def _단일_인스턴스_확인():
 
 
 def main():
-    from docfit_app.cli import COMMANDS, main as cli_main
-    if len(sys.argv) > 1 and sys.argv[1] in COMMANDS:
+    from docfit_app.cli import is_cli_command, main as cli_main
+    if is_cli_command(sys.argv[1:]):
         raise SystemExit(cli_main())
     import importlib.util
 

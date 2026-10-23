@@ -21,10 +21,20 @@ internal static class SmartLauncher
     private const int SwRestore = 9;
     private static SplashForm splash;
 
+    private static bool IsCliCommand(string[] args)
+    {
+        return args.Length > 0 &&
+            new[] { "convert", "help", "version", "formats", "--help", "-h", "/?", "--version" }.Contains(args[0]) &&
+            !File.Exists(args[0]) && !Directory.Exists(args[0]);
+    }
+
     [STAThread]
     private static int Main(string[] args)
     {
-        bool cliCommand = args.Length > 0 && new[] { "convert", "help", "version", "formats" }.Contains(args[0]);
+        bool cliCommand = IsCliCommand(args);
+        // GUI 파일 인자는 호출 폴더 기준이다. 리소스용 cachePath 작업 폴더는 유지한다.
+        if (!cliCommand)
+            args = args.Select(a => File.Exists(a) || Directory.Exists(a) ? Path.GetFullPath(a) : a).ToArray();
         if (cliCommand) AttachConsole(unchecked((uint)-1));
         bool selfTest = args.Any(a => string.Equals(a, "--self-test", StringComparison.OrdinalIgnoreCase));
         string mutexName = null;
@@ -118,8 +128,7 @@ internal static class SmartLauncher
             var start = new ProcessStartInfo
             {
                 FileName = appPath,
-                WorkingDirectory = args.Length > 0 && new[] { "convert", "help", "version", "formats" }.Contains(args[0])
-                    ? Environment.CurrentDirectory : cachePath,
+                WorkingDirectory = IsCliCommand(args) ? Environment.CurrentDirectory : cachePath,
                 UseShellExecute = false,
                 Arguments = string.Join(" ", args.Select(QuoteArgument).ToArray())
             };

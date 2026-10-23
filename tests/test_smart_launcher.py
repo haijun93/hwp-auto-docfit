@@ -58,6 +58,15 @@ class SmartLauncherBuildTest(unittest.TestCase):
         self.assertIn("CreateMutexW(None, True, mutex_name)", app_source)
         self.assertIn("scripts\\build_smart_launcher.py", build_source)
 
+    def test_cli_routing_and_relative_gui_arguments(self):
+        source = (ROOT / 'launcher' / 'smart_launcher.cs').read_text(encoding='utf-8')
+        self.assertIn('bool cliCommand = IsCliCommand(args);', source)
+        self.assertIn('!File.Exists(args[0]) && !Directory.Exists(args[0])', source)
+        for alias in ('--help', '-h', '/?', '--version'):
+            self.assertIn('"' + alias + '"', source)
+        self.assertIn('File.Exists(a) || Directory.Exists(a) ? Path.GetFullPath(a) : a', source)
+        self.assertIn('WorkingDirectory = IsCliCommand(args) ? Environment.CurrentDirectory : cachePath', source)
+
     def test_splash_image_has_no_baked_status_text(self):
         """그림 속 옛 버전·진행 막대·상태 문구가 런처 글과 겹치지 않게(1.80.3 사용자 보고)."""
         from PIL import Image
@@ -117,9 +126,10 @@ class SmartLauncherBuildTest(unittest.TestCase):
             # First non-self-test launch exercises the embedded native splash
             # resource and cold extraction, then transfers the mutex to the child.
             handoff_report = root / "mutex handoff.json"
-            subprocess.run([str(launcher), "--handoff-report", str(handoff_report)], check=True, timeout=30)
+            handoff_report.write_text('', encoding='utf-8')
+            subprocess.run([str(launcher), "--handoff-report", handoff_report.name], cwd=root, check=True, timeout=30)
             deadline = time.monotonic() + 5
-            while not handoff_report.exists() and time.monotonic() < deadline:
+            while handoff_report.read_text(encoding="utf-8") != '{"handoff":true}' and time.monotonic() < deadline:
                 time.sleep(0.05)
             self.assertEqual(handoff_report.read_text(encoding="utf-8"), '{"handoff":true}')
             self.assertTrue((cache_path / ".docfit-complete").is_file())

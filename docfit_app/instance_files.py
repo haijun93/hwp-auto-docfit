@@ -37,7 +37,13 @@ def start(gui):
                             if isinstance(value, str):
                                 gui.파일추가(value)
                     path.unlink()
-                except (OSError, ValueError):
+                except (ValueError, UnicodeError):
+                    # 깨진 요청을 격리하고 다음 정상 요청을 계속 처리한다.
+                    try:
+                        path.replace(path.with_suffix('.bad'))
+                    except OSError:
+                        pass
+                except OSError:
                     pass
         gui.root.after(500, poll)
     gui.root.after(500, poll)

@@ -28,6 +28,24 @@ class InstanceFileTests(unittest.TestCase):
             self.assertEqual(list(instance_files._folder().glob('*.json')), [])
             gui.작업시작.assert_not_called()
 
+    def test_bad_requests_are_quarantined_and_valid_requests_continue(self):
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {'LOCALAPPDATA': folder}):
+            requests = instance_files._folder()
+            requests.mkdir(parents=True)
+            for name, data in [('a', b''), ('b', b'{broken'), ('c', b'\xff')]:
+                (requests / (name + '.json')).write_bytes(data)
+            (requests / 'z.json').write_text(json.dumps(['valid.hwpx']), encoding='utf-8')
+            gui = Mock(running=False)
+            with patch.object(sys, 'argv', ['app']):
+                instance_files.start(gui)
+            poll = gui.root.after.call_args.args[1]
+            poll()
+            poll()
+            gui.파일추가.assert_called_once_with('valid.hwpx')
+            self.assertEqual(list(requests.glob('*.json')), [])
+            self.assertEqual(len(list(requests.glob('*.bad'))), 3)
+            self.assertEqual(gui.root.after.call_count, 3)
+
     def test_busy_app_keeps_request_until_idle(self):
         with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {'LOCALAPPDATA': folder}):
             document = Path(folder) / '문서.hwpx'
