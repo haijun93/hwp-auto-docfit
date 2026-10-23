@@ -23,6 +23,7 @@ raw 함수를 재바인딩한 뒤 재수출한다. `patch('docfit_engine.formatt
 | 새 모듈 | 함수 수 | 줄 수 | 분할 이유 |
 |---|---:|---:|---|
 | `formatter_utils.py` | 60 | 863 | 글꼴 탐색·설정·진행·범위 공통 포트 |
+| `formatter_analysis.py` | 15 | 683 | 서식 프로필·예시 분석과 내보내기 |
 
 | 함수 | 새 모듈 | 이유 |
 |---|---|---|
@@ -36,6 +37,21 @@ raw 함수를 재바인딩한 뒤 재수출한다. `patch('docfit_engine.formatt
 | `서식_기본값_전역_복원` | `formatter_utils` | 글꼴 탐색·설정·진행·범위 공통 포트 |
 | `프로그램_폴더` | `formatter_utils` | 글꼴 탐색·설정·진행·범위 공통 포트 |
 | `번들_리소스_폴더` | `formatter_utils` | 글꼴 탐색·설정·진행·범위 공통 포트 |
+| `기본_서식프로파일` | `formatter_analysis` | 서식 프로필·예시 분석과 내보내기 |
+| `서식프로파일_목록` | `formatter_analysis` | 서식 프로필·예시 분석과 내보내기 |
+| `_제목뒤간격_다시재기` | `formatter_analysis` | 서식 프로필·예시 분석과 내보내기 |
+| `hwpx_서식_분석` | `formatter_analysis` | 서식 프로필·예시 분석과 내보내기 |
+| `보고서머리_프로필_반영` | `formatter_analysis` | 서식 프로필·예시 분석과 내보내기 |
+| `보고서머리_hwpx_처리` | `formatter_analysis` | 서식 프로필·예시 분석과 내보내기 |
+| `예시문서_기본이름` | `formatter_analysis` | 서식 프로필·예시 분석과 내보내기 |
+| `_분석본_보관` | `formatter_analysis` | 서식 프로필·예시 분석과 내보내기 |
+| `한글파일_서식_분석` | `formatter_analysis` | 서식 프로필·예시 분석과 내보내기 |
+| `교정용_hwpx_준비` | `formatter_analysis` | 서식 프로필·예시 분석과 내보내기 |
+| `분석용_hwpx_준비` | `formatter_analysis` | 서식 프로필·예시 분석과 내보내기 |
+| `스타일분석_파일생성` | `formatter_analysis` | 서식 프로필·예시 분석과 내보내기 |
+| `스타일분석_요약` | `formatter_analysis` | 서식 프로필·예시 분석과 내보내기 |
+| `서식프로파일_표시이름` | `formatter_analysis` | 서식 프로필·예시 분석과 내보내기 |
+| `문서_markdown_내보내기` | `formatter_analysis` | 서식 프로필·예시 분석과 내보내기 |
 | `_hwpx_안전_저장` | `formatter_utils` | 글꼴 탐색·설정·진행·범위 공통 포트 |
 | `설정_폴더` | `formatter_utils` | 글꼴 탐색·설정·진행·범위 공통 포트 |
 | `서식프로파일_폴더` | `formatter_utils` | 글꼴 탐색·설정·진행·범위 공통 포트 |
