@@ -26,9 +26,15 @@ raw 함수를 재바인딩한 뒤 재수출한다. `patch('docfit_engine.formatt
 | `formatter_analysis.py` | 15 | 683 | 서식 프로필·예시 분석과 내보내기 |
 | `formatter_titles.py` | 74 | 1850 | 제목·개요·중제목·붙임의 공통 구조 및 적용 |
 | `formatter_tables.py` | 31 | 865 | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
+| `formatter_apply.py` | 64 | 2125 | 표준서식·문자/문단 적용 및 XML 선행 처리 |
 
 | 함수 | 새 모듈 | 이유 |
 |---|---|---|
+| `_표준서식_문단위간격_표` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `기본_계층_스타일` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `표준서식_문단위간격_찾기` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `기호글꼴_적용` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `표글꼴_적용` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
 | `_hwp_설치폴더_후보_레지스트리` | `formatter_utils` | 글꼴 탐색·설정·진행·범위 공통 포트 |
 | `_hwp_설치폴더_후보_공통경로` | `formatter_utils` | 글꼴 탐색·설정·진행·범위 공통 포트 |
 | `한글_폰트_폴더_자동감지` | `formatter_utils` | 글꼴 탐색·설정·진행·범위 공통 포트 |
@@ -57,6 +63,10 @@ raw 함수를 재바인딩한 뒤 재수출한다. `patch('docfit_engine.formatt
 | `스타일분석_요약` | `formatter_analysis` | 서식 프로필·예시 분석과 내보내기 |
 | `서식프로파일_표시이름` | `formatter_analysis` | 서식 프로필·예시 분석과 내보내기 |
 | `문서_markdown_내보내기` | `formatter_analysis` | 서식 프로필·예시 분석과 내보내기 |
+| `복사_문단모양_적용` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `계층_추가서식_값` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `복사_간격_규칙_적용` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `계층_추가서식_적용` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
 | `개요붙임_원본자료` | `formatter_titles` | 제목·개요·중제목·붙임의 공통 구조 및 적용 |
 | `붙임_유형판별` | `formatter_titles` | 제목·개요·중제목·붙임의 공통 구조 및 적용 |
 | `붙임_대상찾기` | `formatter_titles` | 제목·개요·중제목·붙임의 공통 구조 및 적용 |
@@ -97,6 +107,9 @@ raw 함수를 재바인딩한 뒤 재수출한다. `patch('docfit_engine.formatt
 | `표_날짜칸_한줄` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
 | `표날짜칸_hwpx_처리` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
 | `두글자칸_hwpx_처리` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
+| `빈줄서식_hwpx_처리` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `개요첫칸_hwpx_처리` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `강조낱말_hwpx_처리` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
 | `제목_날짜칸_한줄` | `formatter_titles` | 제목·개요·중제목·붙임의 공통 구조 및 적용 |
 | `제목_표서식_복사` | `formatter_titles` | 제목·개요·중제목·붙임의 공통 구조 및 적용 |
 | `_정밀표_매칭점수` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
@@ -135,14 +148,33 @@ raw 함수를 재바인딩한 뒤 재수출한다. `patch('docfit_engine.formatt
 | `_문서_표번호` | `formatter_titles` | 제목·개요·중제목·붙임의 공통 구조 및 적용 |
 | `_서식표_번호_부여` | `formatter_titles` | 제목·개요·중제목·붙임의 공통 구조 및 적용 |
 | `_hwpx_안전_저장` | `formatter_utils` | 글꼴 탐색·설정·진행·범위 공통 포트 |
+| `_문단_일반글` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `_문단_준말_판별` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `_문단_준말_제외사유` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `_문단_글_바꾸기` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `준말_hwpx_처리` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
 | `제목개요폭_hwpx_처리` | `formatter_titles` | 제목·개요·중제목·붙임의 공통 구조 및 적용 |
+| `연결부호탭_hwpx_처리` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `콜론라벨_hwpx_처리` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
 | `상자서식_hwpx_처리` | `formatter_titles` | 제목·개요·중제목·붙임의 공통 구조 및 적용 |
 | `쪽번호_hwpx_처리` | `formatter_titles` | 제목·개요·중제목·붙임의 공통 구조 및 적용 |
+| `준말_사용표_만들기` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `준말_선행적용` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
 | `기본표서식` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
 | `_기본표서식_대상인가` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
 | `기본표서식_hwpx_처리` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
 | `표너비_hwpx_처리` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
 | `기본표서식_선행적용` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
+| `_위첨자_글자모양` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `_문단_별표_대상` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `별표위첨자_hwpx_처리` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `별표위첨자_선행적용` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `_한글_글꼴표` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `_글꼴_확보` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `_글자모양_글꼴크기` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `_본문기호_글꼴` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `붙임글꼴_hwpx_처리` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `글자서식_선행적용` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
 | `붙임2종_현재문서_조사` | `formatter_titles` | 제목·개요·중제목·붙임의 공통 구조 및 적용 |
 | `제목붙임_선행적용` | `formatter_titles` | 제목·개요·중제목·붙임의 공통 구조 및 적용 |
 | `정밀표_선행적용` | `formatter_titles` | 제목·개요·중제목·붙임의 공통 구조 및 적용 |
@@ -177,6 +209,38 @@ raw 함수를 재바인딩한 뒤 재수출한다. `patch('docfit_engine.formatt
 | `상용구_폴더_준비` | `formatter_utils` | 글꼴 탐색·설정·진행·범위 공통 포트 |
 | `상용구_전용폴더_찾기` | `formatter_utils` | 글꼴 탐색·설정·진행·범위 공통 포트 |
 | `텍스트_삽입` | `formatter_utils` | 글꼴 탐색·설정·진행·범위 공통 포트 |
+| `문자모양_적용_현재선택` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `_다른_글꼴형식으로_재실행` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `문단_줄간격_적용_현재선택` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `HwpUnit_pt` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `HwpUnit_mm` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `문단_위간격_적용_현재선택` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `문단_아래간격_pt_현재문단` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `문단_아래간격_적용_현재선택` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `_mm_hwpunit` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `_현재_쪽여백` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `_표준_또는_원본여백` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `페이지_여백_설정` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `용지_다르면_알림` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `들여쓰기_공백_맞추기` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `표준서식_기호규칙_찾기` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `본문형_일반문장인가` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `_사용자서식인가` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `알파_일괄서식_가능` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `사용자서식_XML추가값` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `_GDI_글꼴인가` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `_알파_글꼴형식` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `_알파_라벨_굵게범위` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `표준서식_hwpx_처리` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `_알파_한줄문단인가` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `표준서식_문단_처리` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `빈문단_분류` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `항목기호문장_사이_빈문단_찾기` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `본문_컨트롤_문단번호` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `항목기호문장_사이_빈줄_삭제` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `글꼴형식_모으기` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `글꼴형식_등록` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
+| `표준서식_전체_적용` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
 | `_셀_안쪽여백_단계축소` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
 | `표_셀_안쪽여백_전체_적용` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
 | `본문_가용너비_mm` | `formatter_tables` | 표 서명·정밀 복제·일반 표 서식·너비·테두리 |
@@ -207,6 +271,7 @@ raw 함수를 재바인딩한 뒤 재수출한다. `patch('docfit_engine.formatt
 | `현재_표셀인가` | `formatter_utils` | 글꼴 탐색·설정·진행·범위 공통 포트 |
 | `숫자_표칸인가` | `formatter_utils` | 글꼴 탐색·설정·진행·범위 공통 포트 |
 | `저장파일명` | `formatter_utils` | 글꼴 탐색·설정·진행·범위 공통 포트 |
+| `표준서식_선행_적용` | `formatter_apply` | 표준서식·문자/문단 적용 및 XML 선행 처리 |
 | `바이너리_HWP_파일인가` | `formatter_utils` | 글꼴 탐색·설정·진행·범위 공통 포트 |
 | `텍스트파일_읽기` | `formatter_utils` | 글꼴 탐색·설정·진행·범위 공통 포트 |
 
