@@ -4,7 +4,6 @@ import unittest
 from types import SimpleNamespace
 from docfit_app.application_service import ApplicationService
 from docfit_app.api_contract import ServiceError
-from docfit_app.diagram_service import DiagramService
 from docfit_app.flow_service import FlowService
 from docfit_app.settings_service import SettingsService
 from desktop_web_ui import DesktopWebBridge
@@ -24,8 +23,6 @@ class FlowServiceTests(unittest.TestCase):
         service.save(self.identity, "일반 흐름도", self.snapshot)
         self.assertEqual(service.load(self.identity)["snapshot"], self.snapshot)
         self.assertEqual(service.list()[0]["name"], "일반 흐름도")
-        with self.assertRaises(ServiceError):
-            DiagramService(self.folder, self.store).list()
         self.assertFalse((self.folder / "diagrams").exists())
         service.delete(self.identity)
         self.assertEqual(service.list(), [])
@@ -88,3 +85,17 @@ class FlowServiceTests(unittest.TestCase):
         first = service.export_png(encoded)["path"]
         second = service.export_png(encoded)["path"]
         self.assertNotEqual(first, second)
+
+    def test_removed_sdk_commands_rejected_and_old_setting_ignored(self):
+        self.store.update(lambda s: s.update(developer_mode=True, diagram_editor_enabled=True))
+        app = ApplicationService(self.folder / "settings.json")
+        for method, args in (("diagram_list", []), ("diagram_load", [self.identity]),
+                             ("diagram_save", [self.identity, "old", {}]), ("diagram_delete", [self.identity])):
+            with self.subTest(method=method), self.assertRaisesRegex(ServiceError, "지원하지 않는"):
+                app.dispatch(method, args)
+        settings = app.configuration.snapshot()
+        self.assertNotIn("diagram_editor_enabled", settings["values"])
+        self.assertNotIn("diagram_editor_enabled", app.state()["options"])
+        self.assertNotIn("diagram_editor_enabled", {f["key"] for f in settings["fields"]})
+        self.assertIn("flows", app.state()["capabilities"])
+        self.assertNotIn("diagrams", app.state()["capabilities"])

@@ -42,7 +42,7 @@ class ButtonStateGuardTest(unittest.TestCase):
 
     def test_all_widgets_and_popup(self):
         app = self.app()
-        names = "profile_combo copy_format_button settings_button keep_punctuation_set_check clear_button document_review_button prevent_word_split_check punctuation_check punctuation_threshold_spin table_spacing_check log_file_check page_range_toggle range_all_radio range_pages_radio range_start_spin range_end_spin retry_body_spin retry_table_spin two_pass_check color_mark_check autoclose_check stdformat_check paren_shrink_check paren_label_bold_check verify_check integrity_report_file_check final_review_file_check _팝업_profile_combo".split()
+        names = "profile_combo copy_format_button settings_button keep_punctuation_set_check clear_button prevent_word_split_check punctuation_check punctuation_threshold_spin table_spacing_check log_file_check page_range_toggle range_all_radio range_pages_radio range_start_spin range_end_spin retry_body_spin retry_table_spin two_pass_check color_mark_check autoclose_check stdformat_check paren_shrink_check paren_label_bold_check verify_check integrity_report_file_check final_review_file_check _팝업_profile_combo".split()
         for name in names:
             setattr(app, name, Widget())
         for name in ("color_radios", "std_detail_checks", "std_parspace_spins", "label_symbol_checks"):

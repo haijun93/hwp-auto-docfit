@@ -68,10 +68,7 @@ void main() {
     expect(find.text('1분 16초 경과'), findsOneWidget);
     expect(find.text('단계 1/3'), findsOneWidget);
     expect(find.text('50%'), findsOneWidget);
-    expect(
-      find.text('줄 끝에서 단어가 갈라지지 않도록 글자 간격을 조정하고 있어요.'),
-      findsOneWidget,
-    );
+    expect(find.text('줄 끝에서 단어가 갈라지지 않도록 글자 간격을 조정하고 있어요.'), findsOneWidget);
     expect(find.text('첫 안내'), findsOneWidget);
   });
 

@@ -76,6 +76,40 @@ class _TableMenuTestNavigatorObserver extends NavigatorObserver {
 }
 
 void main() {
+  // 창을 줄여도 상단 메뉴가 잘려 보이지 않는다(2026-10-23 사용자 실측: 폭 1140·1280에서 '표 템…'으로 잘림).
+  for (final width in [420.0, 900.0, 1140.0, 1280.0, 1440.0]) {
+    testWidgets('top menu buttons stay fully visible at width $width', (
+      tester,
+    ) async {
+      tester.view.physicalSize = Size(width, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final state = initialState();
+      Future<Object?> api(String name, List<Object?> args) async => state;
+      await tester.pumpWidget(MaterialApp(home: Workspace(api: api)));
+      await tester.pumpAndSettle();
+      // 버튼 묶음이 오른쪽 아이콘(도움말) 뒤로 잘려 들어가지 않아야 한다.
+      final limit = tester.getRect(find.byTooltip('사용 방법 (F1)')).left;
+      for (final key in [
+        'topMenu_format',
+        'topMenu_diagram',
+        'topMenu_mindmap',
+        'topMenu_tableUnits',
+        'topMenu_tableSketch',
+      ]) {
+        final rect = tester.getRect(find.byKey(Key(key)));
+        expect(
+          rect.left >= 0 && rect.right <= limit + 0.5,
+          isTrue,
+          reason: '$key at $width: $rect (limit $limit)',
+        );
+      }
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
+
   testWidgets(
     'top menu contains four buttons and opens corresponding screens',
     (tester) async {
@@ -84,6 +118,7 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       final state = initialState();
+      final commands = <String>[];
       Future<Object?> api(String name, List<Object?> args) async {
         if (name == 'table_units') {
           return {
@@ -93,6 +128,12 @@ void main() {
             'error': null,
           };
         }
+        if (name == 'format_gallery') {
+          return [
+            {'id': '', 'name': '기본 보고서 서식', 'active': true, 'image': null},
+          ];
+        }
+        commands.add(name);
         return state;
       }
 
@@ -110,18 +151,19 @@ void main() {
       expect(find.byKey(const Key('topMenu_mindmap')), findsOneWidget);
       expect(find.byKey(const Key('topMenu_tableUnits')), findsOneWidget);
 
-      // 서식 관리 → 하위 메뉴 4개(썸네일로 선택·서식예시 확인·서식예시 폴더·서식관리), 서식관리를 고르면 서식 관리 창
+      // 서식 관리 → 바로 썸네일 '서식 고르기'. 카드 아래 첫 줄 서식예시 확인, 둘째 줄 서식예시 폴더·서식관리
       await tester.tap(find.byKey(const Key('topMenu_format')));
       await tester.pumpAndSettle();
-      for (final key in [
-        'formatMenu_kiosk',
-        'formatMenu_example',
-        'formatMenu_samples',
-        'formatMenu_manage',
-      ]) {
+      expect(find.byKey(const Key('formatKioskDialog')), findsOneWidget);
+      for (final key in ['kioskExample-', 'kioskSamples-', 'kioskManage-']) {
         expect(find.byKey(Key(key)), findsOneWidget);
       }
-      await tester.tap(find.byKey(const Key('formatMenu_manage')));
+      await tester.tap(find.byKey(const Key('kioskExample-')));
+      await tester.pumpAndSettle();
+      expect(commands, contains('show_format_example'));
+      await tester.tap(find.byKey(const Key('topMenu_format')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('kioskManage-')));
       await tester.pumpAndSettle();
       expect(find.text('서식 관리'), findsWidgets);
       await tester.tap(find.byTooltip('닫기').last);
@@ -183,7 +225,7 @@ void main() {
     },
   );
 
-  testWidgets('general editor is visible and excluded tldraw has no menu', (
+  testWidgets('developer mode preserves diagram menu without document tools', (
     tester,
   ) async {
     final state = initialState();
@@ -197,9 +239,8 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('topMenu_tableUnits')), findsOneWidget);
-    expect(find.byTooltip('문서 도구'), findsOneWidget);
-    await tester.tap(find.byTooltip('문서 도구'));
-    await tester.pumpAndSettle();
+    expect(find.byTooltip('문서 도구'), findsNothing);
+    expect(find.byKey(const Key('topMenu_diagram')), findsOneWidget);
     expect(find.text('tldraw 편집기 (개발자 전용)'), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });

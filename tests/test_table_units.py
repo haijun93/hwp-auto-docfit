@@ -63,7 +63,7 @@ class TableUnitsTests(unittest.TestCase):
             with self.subTest(name=item["name"]):
                 expected = units.PLANS[item["name"]]
                 for axis in ("row", "col"):
-                    p = expected[axis]
+                    p = units._capped(item["name"], axis, expected[axis])
                     self.assertEqual(item["units"][axis],
                         {k: p[k] for k in ("count", "min", "max", "core", "sep", "kind") if k in p} if p else None)
 
@@ -84,7 +84,8 @@ class TableUnitsTests(unittest.TestCase):
                 ("② Ⅱ", "① Ⅰ", "③ Ⅲ"), ("⑳ Ⅻ", "⑲ Ⅺ", "① Ⅰ"),
                 ("14:20~14:25", "14:15~14:20", "14:25~14:30"),
                 ("23:55", "23:45", "24:05"), ("안내문", None, "안내문"),
-                ("2030", "2030", "2031"), ("제9회", None, "제10회")):
+                # 앞 단위와 같은 값은 반복 번호다(2026-10-23 사용자 지시: 분기 1·2·3·4 반복)
+                ("2030", "2030", "2030"), ("제9회", None, "제10회")):
             with self.subTest(text=text):
                 self.assertEqual(units._increment_text(text, previous), expected)
 
@@ -272,12 +273,12 @@ class TableUnitsTests(unittest.TestCase):
     def test_invalid_requests_are_atomic(self):
         table, plan = self.load("행사시간표 · 모양 1")
         original = ET.tostring(table)
-        for value in (0, 41, 1.5, True):
+        for value in (0, 51, 1.5, True):
             with self.assertRaises(ValueError):
                 units.resize_table(table, plan, row_count=value)
             self.assertEqual(ET.tostring(table), original)
         with self.assertRaises(ValueError):
-            units.resize_table(table, plan, row_count=3, col_count=9)
+            units.resize_table(table, plan, row_count=3, col_count=31)
         self.assertEqual(ET.tostring(table), original)
         table, plan = self.load("조직도 · 모양 1")
         with self.assertRaises(ValueError):
@@ -362,7 +363,10 @@ class TableUnitsTests(unittest.TestCase):
         with patch.object(units, "detect_plan", side_effect=AssertionError("fixed template detection forbidden")):
             for name in ("일정표(일간) · 모양 1", "신구대조표 · 모양 3"):
                 with self.subTest(name=name):
-                    self.assertEqual(units.plan_for(self.records[name]), units.PLANS[name])
+                    expected = dict(units.PLANS[name])
+                    for axis in ("row", "col"):
+                        expected[axis] = units._capped(name, axis, expected[axis])
+                    self.assertEqual(units.plan_for(self.records[name]), expected)
 
     def test_detect_fixed_templates(self):
         fixed = [f"{category} · 모양 {number}"
@@ -387,7 +391,8 @@ class TableUnitsTests(unittest.TestCase):
             if name in self.records:
                 actual = {k: v for k, v in units.plan_for(self.records[name]).items() if k in ("row", "col")}
                 self.assertEqual(actual,
-                                 {"row": units.PLANS[name]["row"], "col": units.PLANS[name]["col"]})
+                                 {"row": units._capped(name, "row", units.PLANS[name]["row"]),
+                                  "col": units._capped(name, "col", units.PLANS[name]["col"])})
 
     def test_plan_for_matches_by_shape_signature_when_name_changed(self):
         # 이름이 바뀌었지만 모양 서명이 같은 경우 PLANS를 정상적으로 찾는지 시험
@@ -403,8 +408,8 @@ class TableUnitsTests(unittest.TestCase):
             units.PLANS["표(가로) · 모양 1"]["signature"] = sig
             with patch.object(units, "detect_plan", side_effect=AssertionError("detect_plan should not be called")):
                 plan = units.plan_for(fake_rec)
-                self.assertEqual(plan["row"], units.PLANS["표(가로) · 모양 1"]["row"])
-                self.assertEqual(plan["col"], units.PLANS["표(가로) · 모양 1"]["col"])
+                self.assertEqual(plan["row"], units._capped(fake_rec["name"], "row", units.PLANS["표(가로) · 모양 1"]["row"]))
+                self.assertEqual(plan["col"], units._capped(fake_rec["name"], "col", units.PLANS["표(가로) · 모양 1"]["col"]))
         finally:
             units.PLANS["표(가로) · 모양 1"]["signature"] = orig_sig
 
@@ -641,7 +646,8 @@ class C13TableUnitsTests(unittest.TestCase):
                     p = units.plan_for(rec)[axis]
                     self.assertIsNotNone(p)
                     self.assertEqual(p["min"], 1)
-                    self.assertEqual(p["max"], 8 if axis == "col" else 40 // p["core"])
+                    # 최대값: 50, 깨지는 축은 실측값(AXIS_CAPS) — 2026-10-23 사용자 지시
+                    self.assertEqual(p["max"], max(p["count"], units.AXIS_CAPS.get((name, axis), units.UNIT_MAX)))
                     for target in (p["min"], p["count"] + 1, p["max"]):
                         _, table, _ = units._load(rec["id"], source)
                         plan = units.plan_for(rec)
@@ -796,3 +802,40 @@ class C13TableUnitsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class IncrementAndScheduleTests(unittest.TestCase):
+    """2026-10-23 사용자 실측: 반복 번호는 반복, 날짜는 달력대로, 주간표는 첫 날짜 기준 주 단위, 최대값 50·실측 상한."""
+
+    def test_equal_tokens_repeat_and_dates_follow_calendar(self):
+        self.assertEqual(units._increment_text("1", "1"), "1")            # 분기 1·2·3·4 반복
+        self.assertEqual(units._increment_text("2027", "2026"), "2028")
+        self.assertEqual(units._increment_text("2026.10.28.(수)", "2026.10.27.(화)"), "2026.10.29.(목)")
+        self.assertEqual(units._increment_text("12.31.(목)", "12.30.(수)"), "1.1.(금)")
+        self.assertEqual(units._increment_text("5.23.~5.25.", "5.16.~5.22."), "5.30.~6.5.")
+        self.assertEqual(units._increment_text("2026.10.28.(수)"), "2026.10.29.(목)")
+
+    def test_annual_quarters_repeat_when_years_grow(self):
+        rid = next(r["id"] for r in units.describe_units(SOURCE) if r["name"] == "일정표(연간) · 모양 1")
+        view = units.preview(rid, SOURCE, col_count=7)
+        quarters = view["cells"][1]
+        self.assertEqual(quarters, ["1", "2", "3", "4"] * (len(quarters) // 4))
+
+    def test_weekly_first_date_drives_week_ranges(self):
+        rid = next(r["id"] for r in units.describe_units(SOURCE) if r["name"] == "일정표(주간) · 모양 1")
+        view = units.preview(rid, SOURCE, col_count=7)
+        self.assertEqual(view["cells"][0][1:8], [f"{k}주" for k in range(1, 8)])
+        self.assertEqual(view["cells"][1][:3], ["4.26.~5.1.", "5.2.~5.8.", "5.9.~5.15."])
+        self.assertEqual(view["cells"][0][-1], "당일")                      # 끝 열은 단위가 아니다
+        view = units.preview(rid, SOURCE, col_count=5, cell_texts={"1,1": "6.1."})
+        self.assertEqual(view["cells"][1][:2], ["6.1.~6.5.", "6.6.~6.12."])
+
+    def test_unit_maximum_is_fifty_unless_measured_cap(self):
+        for item in units.describe_units(SOURCE):
+            for axis, p in (item["units"] or {}).items():
+                if p:
+                    with self.subTest(name=item["name"], axis=axis):
+                        cap = units.AXIS_CAPS.get((item["name"], axis), units.UNIT_MAX)
+                        if p.get("kind") == "org_chart":
+                            cap = units.AXIS_CAPS[("조직도", "col")]
+                        self.assertEqual(p["max"], max(p["count"], cap))

@@ -26,7 +26,7 @@ jobs:
           test -s release-assets/build-source.txt
           SOURCE=$(cat release-assets/build-source.txt)
           git merge-base --is-ancestor "$SOURCE" HEAD
-          git diff --exit-code "$SOURCE" HEAD -- . ':(exclude)release-assets' ':(exclude)releases' ':(exclude)HANDOVER.md' ':(exclude)README.md' ':(exclude)website'
+          git diff --exit-code "$SOURCE" HEAD -- . ':(exclude)release-assets' ':(exclude)releases' ':(exclude)HANDOVER.md' ':(exclude)README.md' ':(exclude).github/README.md' ':(exclude)website'
           if test -f release-assets/build-delivery.json; then
             test "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = true
             test "$(gh release view "$TAG" --json targetCommitish --jq .targetCommitish)" = "$SOURCE"

@@ -876,13 +876,6 @@ class DesktopWebBridge:
         if params is not None and not isinstance(params, dict):
             raise ServiceError('INVALID_INPUT', '작업 입력을 확인해 주세요.')
         params = params or {}
-        if kind == 'public_language':
-            sources = params.get('sources')
-            if sources is None:
-                sources = self._tk(lambda: list(self.gui.files))
-            return self._public_language_service().start(sources)
-        if kind == 'public_language_apply':
-            return self._public_language_service().apply(params.get('review_id'), params.get('ids'))
         if kind == 'table_copy':
             return self._jobs().start(kind, params, lambda report, cancelled:
                 self._table_copy_job(params, report, cancelled))
@@ -891,7 +884,8 @@ class DesktopWebBridge:
         if kind == 'file_format' and 'target' in params:
             self.set_conversion_target(params['target'])
         return self._start_legacy(kind, params.get('range_enabled', False),
-                                  params.get('start', '1'), params.get('end', '1'), _strict=True)
+                                  params.get('start', '1'), params.get('end', '1'),
+                                  file_order=params.get('file_order'), _strict=True)
 
     def _table_copy_job(self, params, report, cancelled):
         if cancelled():
@@ -913,23 +907,26 @@ class DesktopWebBridge:
     def get_events(self, after_seq=0, max=200):
         return self._jobs().events(after_seq, max)
 
-    def start(self, mode, range_enabled=False, start="1", end="1"):
+    def start(self, mode, range_enabled=False, start="1", end="1", file_order=None):
         from docfit_app.api_contract import ServiceError
         try:
-            self.start_job(mode, dict(range_enabled=range_enabled, start=start, end=end))
+            self.start_job(mode, dict(range_enabled=range_enabled, start=start, end=end, file_order=file_order))
         except ServiceError as exc:
             # 기존 start는 파일 없음·이미 실행 중 등 GUI가 시작하지 않은 경우에도 상태를 돌려준다.
             if exc.code not in {'JOB_NOT_STARTED', 'JOB_RUNNING'}:
                 raise
         return self.get_state()
 
-    def _start_legacy(self, mode, range_enabled=False, start="1", end="1", *, _strict=False):
+    def _start_legacy(self, mode, range_enabled=False, start="1", end="1", *, file_order=None, _strict=False):
         from docfit_app.api_contract import ServiceError
         def started(previous):
             identifier = getattr(self.gui, '_job_id', None)
             if _strict and (not identifier or identifier == previous):
                 raise ServiceError('JOB_NOT_STARTED', '입력 문서와 작업 설정을 확인해 주세요.')
             return identifier
+        if file_order is not None and (mode != "file_format" or self.conversion_target != "pdfm"):
+            raise ValueError("파일 순서는 PDF 하나로 합치기에서만 지정할 수 있습니다.")
+
         if mode not in {"spacing", "unify", "format", "all", "file_format"}:
             raise ValueError("지원하지 않는 작업 방식입니다.")
 
@@ -941,13 +938,31 @@ class DesktopWebBridge:
             if files and (chosen is None or not chosen.get("enabled")):
                 reason = (chosen or {}).get("reason") or "지원하지 않는 결과 형식입니다"
                 raise ValueError(f"{self.conversion_target.upper()} 변환을 시작할 수 없습니다: {reason}")
+            if file_order is not None:
+                if not isinstance(file_order, (list, tuple)):
+                    raise ValueError("파일 순서 목록이 올바르지 않습니다.")
+                def _norm(p):
+                    try:
+                        return os.path.normcase(os.path.normpath(str(p)))
+                    except Exception:
+                        return str(p)
+                if len(file_order) != len(files) or set(map(_norm, file_order)) != set(map(_norm, files)):
+                    raise ValueError("지정한 파일 순서 목록이 현재 문서 목록과 일치하지 않습니다.")
             def begin_conversion():
                 if self.gui.running:
                     raise ServiceError('JOB_RUNNING', '문서 작업이 진행 중입니다.')
                 previous = getattr(self.gui, '_job_id', None)
                 self.gui._flutter_completion = {}
                 self.gui._flutter_format_review = {}
-                self.gui.파일포맷_변경_시작(self.conversion_target)
+                if self.conversion_target == "pdfm" and file_order:
+                    original_files = list(self.gui.files)
+                    try:
+                        self.gui.files = list(file_order)
+                        self.gui.파일포맷_변경_시작(self.conversion_target)
+                    finally:
+                        self.gui.files = original_files
+                else:
+                    self.gui.파일포맷_변경_시작(self.conversion_target)
                 return started(previous)
             identifier = self._tk(begin_conversion)
             return identifier if _strict else self.get_state()
@@ -1229,32 +1244,6 @@ class DesktopWebBridge:
         if action == "delete":
             return service.delete(payload.get("id"))
         raise ServiceError("INVALID_ACTION", "흐름도 작업을 확인해 주세요.")
-
-    def _public_language_service(self):
-        from docfit_app.public_language_service import PublicLanguageService
-        def obtain():
-            service = getattr(self.gui, '_public_language_backend', None)
-            if service is None:
-                namespace = self.gui._공공언어_검토.__globals__
-                service = PublicLanguageService(namespace['설정_폴더'](), self._jobs(),
-                                               namespace['교정용_hwpx_준비'])
-                self.gui._public_language_backend = service
-            return service
-        return self._tk(obtain)
-
-    def public_language(self, action, payload=None):
-        from docfit_app.api_contract import ServiceError
-        def execute():
-            if payload is not None and not isinstance(payload, dict):
-                raise ServiceError('INVALID_INPUT', '검토 입력과 명령을 확인해 주세요.')
-            if action not in {'start', 'apply'}:
-                raise ServiceError('INVALID_INPUT', '검토 입력과 명령을 확인해 주세요.')
-            kind = 'public_language' if action == 'start' else 'public_language_apply'
-            return {'job_id': self.start_job(kind, payload)}
-        return response(execute)
-
-    def proofreading_exclusions(self, action='list', payload=None):
-        return response(lambda: self._public_language_service().exclusions(action, payload))
 
     def document_tool(self, name, payload):
         from docfit_app.document_tools_service import DocumentToolsService
@@ -1871,24 +1860,10 @@ class DesktopWebBridge:
         return self.get_state()
 
     def run_tool(self, name):
-        if name == "proofread" and not self._tk(self._tk_fallback_enabled):
-            return self.public_language('start')
-        commands = {
-            "review": self.gui._문서검토_열기,
-            "proofread": self.gui._공공언어_검토,
-            "paste": self.gui._텍스트로_문서추가_열기,
-            "polish": self.gui._붙여넣기_정리_열기,
-            "outline": self.gui._아웃라이너_열기,
-            "writing": self.gui._작성도우미_열기,
-            "markdown": self.gui.Markdown_내보내기,
-            "advanced": self.gui.고급문서도구_열기,
-        }
+        commands = {"paste": self.gui._텍스트로_문서추가_열기}
         command = commands.get(name)
         if command is None:
             raise ValueError("지원하지 않는 도구입니다.")
-        developer = getattr(self.gui, "developer_mode_var", None)
-        if developer is not None and not developer.get():
-            raise ValueError("문서 도구는 설정에서 개발자 모드를 켜야 사용할 수 있습니다.")
         self._tk(command, timeout=None, front=True)
         return True
 
@@ -1973,7 +1948,7 @@ class _BrowserApi:
             "get_state", "add_files", "add_folder", "add_paths", "remove_file",
             "clear_files", "set_mode", "set_range", "start", "stop", "start_job", "cancel_job", "get_events",
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
-            "get_pending_dialog", "resolve_dialog", "enable_close_guard", "format_profile", "flow_editor", "document_tool", "public_language", "proofreading_exclusions", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch",
+            "get_pending_dialog", "resolve_dialog", "enable_close_guard", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch",
             "open_results", "next_job", "run_tool", "open_result",
             "show_result", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",

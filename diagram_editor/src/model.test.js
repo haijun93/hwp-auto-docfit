@@ -31,18 +31,12 @@ test('SVG escapes untrusted text and caps raster size',()=>{
  assert.match(output.source,/&lt;script&gt;/);assert.doesNotMatch(output.source,/<script/i);
  assert.throws(()=>svg(document({nodes:[a,node('far',50000,0)],edges:[]})));
 });
-test('supported legacy templates convert without editing the source snapshot',()=>{
- const snapshot={document:{store:{
-  page:{typeName:'page'},
-  a:{typeName:'shape',id:'shape:a',type:'geo',x:100,y:60,props:{geo:'rectangle',w:220,h:90,text:'접수',color:'blue'}},
-  b:{typeName:'shape',id:'shape:b',type:'geo',x:100,y:220,props:{geo:'rectangle',w:220,h:90,text:'검토',color:'blue'}},
-  arrow:{typeName:'shape',id:'shape:arrow',type:'arrow',x:0,y:0,props:{start:{x:210,y:150},end:{x:210,y:220}}},
- }}};
- const before=JSON.stringify(snapshot),converted=decode(snapshot);
- assert.equal(converted.converted,true);assert.equal(converted.edges.length,1);
- assert.equal(JSON.stringify(snapshot),before);
- snapshot.document.store.a.type='draw';assert.throws(()=>decode(snapshot));
+test('flow documents round-trip and removed snapshot format is rejected',()=>{
+ const graph=document(template('horizontal'));
+ assert.deepEqual(decode(graph),{...validate(graph),converted:false});
+ assert.throws(()=>decode({document:{store:{}}}));
 });
+
 test('arbitrary HTML fields are discarded and text remains data',()=>{
  const graph=document(template('horizontal'));graph.nodes[0].dangerouslySetInnerHTML={__html:'<script/>'};
  assert.equal(validate(graph).nodes[0].dangerouslySetInnerHTML,undefined);

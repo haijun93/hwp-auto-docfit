@@ -17,7 +17,7 @@ import 'features/formats/profile_editor.dart';
 import 'features/tools/document_tools_workspace.dart';
 import 'features/tools/backend_dialog.dart';
 import 'features/conversion/floating_format_picker.dart';
-import 'features/diagrams/diagram_editor_screen.dart';
+import 'features/conversion/merge_order_dialog.dart';
 import 'features/flows/flow_editor_screen.dart';
 import 'features/progress/live_progress.dart';
 import 'features/settings/settings_dialog.dart';
@@ -25,7 +25,6 @@ import 'features/settings/update_panel.dart';
 import 'features/stages/stage_board.dart';
 import 'features/table_units/table_units_screen.dart';
 import 'features/table_sketch/table_sketch_screen.dart';
-import 'features/public_language/public_language_screen.dart';
 
 export 'core/api/abbreviation_api.dart' show ApiCall;
 
@@ -404,14 +403,18 @@ class _WorkspaceState extends State<Workspace> {
     }
   }
 
-  Future<void> startJob() async {
+  Future<void> startJob({List<String>? fileOrder}) async {
     if (!canStart) return;
-    await command('start', [
+    final args = (<Object?>[
       mode,
       rangeOn,
       rangeStart.text.trim(),
       rangeEnd.text.trim(),
     ]);
+    if (fileOrder != null) {
+      args.add(fileOrder);
+    }
+    await command('start', args);
     if (mounted && running) setState(() => tab = 2);
   }
 
@@ -513,9 +516,22 @@ class _WorkspaceState extends State<Workspace> {
     )) {
       return;
     }
+    List<String>? mergeOrder;
+    if (picked == 'pdfm' && files.length >= 2) {
+      final docFiles = files.whereType<Map>().toList();
+      final order = await showDialog<List<String>>(
+        context: context,
+        barrierDismissible: true,
+        builder: (dialogContext) => MergeOrderDialog(files: docFiles),
+      );
+      if (!mounted || order == null) return;
+      mergeOrder = order;
+    }
     await command('set_conversion_target', [picked]);
     // 결과 형식을 고르면 '변환 시작'을 기다리지 않고 바로 변환한다(사용자 지시, 2026-10-15).
-    if (mounted && mode == 'file_format' && canStart) await startJob();
+    if (mounted && mode == 'file_format' && canStart) {
+      await startJob(fileOrder: mergeOrder);
+    }
   }
 
   Widget conversionPanel() {
@@ -580,29 +596,6 @@ class _WorkspaceState extends State<Workspace> {
         builder: (_) => TableSketchScreen(api: widget.api),
       ),
     );
-  }
-
-  Future<void> openDiagramEditor() async {
-    if (quickOptions['developer_mode'] != true ||
-        quickOptions['diagram_editor_enabled'] != true) {
-      return;
-    }
-    try {
-      await widget.api('diagram_list', const []); // Python 서비스에서 기능 플래그를 재검사한다.
-      if (!mounted) return;
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => DiagramEditorScreen(api: widget.api),
-        ),
-      );
-      await refresh();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('도형 편집기를 열지 못했어요: $e')));
-      }
-    }
   }
 
   /// Ctrl+Enter: 문서 선택 화면에서는 다음 단계로, 작업 방식 화면에서는 바로 시작한다.
@@ -782,8 +775,9 @@ class _WorkspaceState extends State<Workspace> {
       builder: (context, constraints) {
         final width = constraints.maxWidth;
         // 네 메뉴 버튼(서식 관리·다이어그램·마인드맵·표 템플릿)을 글과 함께 놓으려면 약 880이 필요하다(폭 800에서 79 넘침).
-        final isNarrow = width < 900;
-        final showProfileBadge = width >= 1000;
+        // 다섯 메뉴 버튼을 글과 함께 놓으려면 약 1180이 필요하다. 모자라면 아이콘만(이름은 툴팁) — 잘려 보이지 않게(2026-10-23 사용자 실측).
+        final isNarrow = width < 1180;
+        final showProfileBadge = width >= 1360;
         final currentProfileName =
             '${profiles.whereType<Map>().where((p) => p['id'] == state['profile']).firstOrNull?['name'] ?? '기본 보고서 서식'}';
 
@@ -813,87 +807,16 @@ class _WorkspaceState extends State<Workspace> {
               ? '서식 관리 (현재: $currentProfileName)\nHWP/HWPX 예시를 놓으면 새 서식으로 등록해요.'
               : 'HWP/HWPX 예시를 여기에 놓으면 새 서식으로 등록·선택해요.',
           // 서식 관리를 누르면 하위 메뉴: 썸네일로 선택 · 서식예시 확인 · 서식예시 폴더 · 서식관리(2026-10-23 사용자 요청).
-          child: PopupMenuButton<String>(
+          // 서식 관리를 누르면 바로 '서식 고르기'(썸네일) — 카드마다 서식예시 확인·서식예시 폴더·서식관리(2026-10-23 사용자 요청).
+          child: TextButton.icon(
             key: const Key('topMenu_format'),
-            enabled: !locked,
-            tooltip: '',
-            position: PopupMenuPosition.under,
-            onSelected: (v) {
-              switch (v) {
-                case 'kiosk':
-                  openKiosk();
-                case 'example':
-                  command('show_format_example');
-                case 'samples':
-                  command('open_format_samples');
-                case 'manage':
-                  openFormats();
-              }
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(
-                key: Key('formatMenu_kiosk'),
-                value: 'kiosk',
-                child: ListTile(
-                  leading: Icon(Icons.photo_library_outlined),
-                  title: Text('썸네일로 선택'),
-                ),
-              ),
-              PopupMenuItem(
-                key: Key('formatMenu_example'),
-                value: 'example',
-                child: ListTile(
-                  leading: Icon(Icons.preview_outlined),
-                  title: Text('서식예시 확인'),
-                ),
-              ),
-              PopupMenuItem(
-                key: Key('formatMenu_samples'),
-                value: 'samples',
-                child: ListTile(
-                  leading: Icon(Icons.folder_open_outlined),
-                  title: Text('서식예시 폴더'),
-                ),
-              ),
-              PopupMenuItem(
-                key: Key('formatMenu_manage'),
-                value: 'manage',
-                child: ListTile(
-                  leading: Icon(Icons.tune_outlined),
-                  title: Text('서식관리'),
-                ),
-              ),
-            ],
-            child: Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: isNarrow ? 6 : 8,
-                vertical: 8,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.style_outlined,
-                    size: 18,
-                    color: locked ? Colors.grey : _blue,
-                  ),
-                  if (!isNarrow) ...[
-                    const SizedBox(width: 6),
-                    Text(
-                      '서식 관리',
-                      style: TextStyle(
-                        color: locked ? Colors.grey : _blue,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    Icon(
-                      Icons.arrow_drop_down,
-                      size: 18,
-                      color: locked ? Colors.grey : _blue,
-                    ),
-                  ],
-                ],
-              ),
+            onPressed: locked ? null : openKiosk,
+            icon: const Icon(Icons.style_outlined, size: 18),
+            label: isNarrow ? const SizedBox.shrink() : const Text('서식 관리'),
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.symmetric(horizontal: isNarrow ? 4 : 8),
+              minimumSize: isNarrow ? const Size(36, 36) : null,
             ),
           ),
         );
@@ -919,18 +842,20 @@ class _WorkspaceState extends State<Workspace> {
                   size: 23,
                 ),
               ),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Text(
-                  '한글편집 후처리',
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: isNarrow ? 17 : 20,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -.8,
+              // 아주 좁은 창(700 미만)에서는 앱 이름 글을 숨겨 메뉴 아이콘 자리를 확보한다(이름은 창 제목줄에 있다).
+              if (width >= 700) const SizedBox(width: 8),
+              if (width >= 700)
+                Flexible(
+                  child: Text(
+                    '한글편집 후처리',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: isNarrow ? 17 : 20,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -.8,
+                    ),
                   ),
                 ),
-              ),
               const SizedBox(width: 8),
               if (!showProfileBadge)
                 KeyedSubtree(key: profileDropKey, child: formatButton)
@@ -1018,35 +943,6 @@ class _WorkspaceState extends State<Workspace> {
               onPressed: () => showLog(),
               icon: const Icon(Icons.receipt_long_outlined),
             ),
-            if (quickOptions['developer_mode'] == true)
-              PopupMenuButton<String>(
-                tooltip: '문서 도구',
-                enabled: !locked,
-                icon: const Icon(Icons.handyman_outlined),
-                onSelected: (v) {
-                  if (v == 'diagram_editor') {
-                    openDiagramEditor();
-                  } else if (v == 'proofread') {
-                    openPublicLanguage();
-                  } else {
-                    openTools(v);
-                  }
-                },
-                itemBuilder: (_) => [
-                  PopupMenuItem(value: 'review', child: Text('문서 검토')),
-                  PopupMenuItem(
-                    value: 'proofread',
-                    child: Text('공공언어 바로쓰기 검토'),
-                  ),
-                  PopupMenuItem(value: 'outline', child: Text('문서 구조 편집')),
-                  PopupMenuItem(value: 'writing', child: Text('작성 도우미')),
-                  PopupMenuItem(
-                    value: 'markdown',
-                    child: Text('Markdown 내보내기'),
-                  ),
-                  PopupMenuItem(value: 'advanced', child: Text('고급 문서 도구')),
-                ],
-              ),
             IconButton(
               tooltip: '설정',
               visualDensity: isNarrow ? VisualDensity.compact : null,
@@ -1913,7 +1809,7 @@ class _WorkspaceState extends State<Workspace> {
                 Expanded(
                   child: GridView.extent(
                     maxCrossAxisExtent: 240,
-                    childAspectRatio: 0.62,
+                    childAspectRatio: 0.5,
                     mainAxisSpacing: 12,
                     crossAxisSpacing: 12,
                     children: [for (final p in items) kioskCard(ctx, p)],
@@ -1932,8 +1828,21 @@ class _WorkspaceState extends State<Workspace> {
         ),
       ),
     );
-    if (picked != null && picked != '${state['profile'] ?? ''}') {
-      await command('set_profile', [picked]);
+    if (picked == null) return;
+    // 카드 아래 버튼은 'example:<id>'·'samples:<id>'·'manage:<id>', 카드 자체를 누르면 '<id>'.
+    final cut = picked.indexOf(':');
+    final action = cut < 0 ? 'select' : picked.substring(0, cut);
+    final id = cut < 0 ? picked : picked.substring(cut + 1);
+    if (action != 'samples' && id != '${state['profile'] ?? ''}') {
+      await command('set_profile', [id]);
+    }
+    switch (action) {
+      case 'example':
+        await command('show_format_example');
+      case 'samples':
+        await command('open_format_samples');
+      case 'manage':
+        openFormats();
     }
   }
 
@@ -1985,6 +1894,46 @@ class _WorkspaceState extends State<Workspace> {
                 maxLines: 3,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+            // 첫째 줄: 이 서식의 예시 확인 / 둘째 줄: 서식예시 폴더 · 서식관리 (2026-10-23 사용자 요청)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: OutlinedButton.icon(
+                key: Key('kioskExample-${p['id']}'),
+                onPressed: () => Navigator.pop(ctx, 'example:${p['id']}'),
+                icon: const Icon(Icons.preview_outlined, size: 16),
+                label: const Text('서식예시 확인'),
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      key: Key('kioskSamples-${p['id']}'),
+                      onPressed: () => Navigator.pop(ctx, 'samples:${p['id']}'),
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      child: const FittedBox(child: Text('서식예시 폴더')),
+                    ),
+                  ),
+                  Expanded(
+                    child: TextButton(
+                      key: Key('kioskManage-${p['id']}'),
+                      onPressed: () => Navigator.pop(ctx, 'manage:${p['id']}'),
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      child: const FittedBox(child: Text('서식관리')),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -2041,53 +1990,14 @@ class _WorkspaceState extends State<Workspace> {
     }
   }
 
-  Future<void> openPublicLanguage() async {
-    if (!mounted) return;
-    bool fallback = false;
-    try {
-      final res = await widget.api('get_settings', []);
-      if (res is Map && res['data'] is Map) {
-        final values = (res['data'] as Map)['values'] as Map?;
-        fallback = values?['ui_tk_fallback'] == true;
-      }
-    } catch (_) {}
-    if (!mounted) return;
-    if (fallback) {
-      await command('run_tool', ['proofread']);
-    } else {
-      final initialSources = [
-        for (final file in files.whereType<Map>())
-          if (file['path'] is String) file['path'] as String,
-      ];
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => PublicLanguageScreen(
-            api: widget.api,
-            initialSources: initialSources.isNotEmpty ? initialSources : null,
-          ),
-        ),
-      );
-      await refresh();
-    }
-  }
 
   Future<void> openTools(String name) async {
     if (!mounted) return;
     if (state['doc_hints'] is Map) await setDropTarget('manual_documents');
     if (!mounted) return;
-    final mapped =
-        {'polish': 'clean', 'paste': 'convert', 'writing': 'amount'}[name] ??
-        name;
-    final path = files.isNotEmpty
-        ? '${(files.first as Map)['path'] ?? ''}'
-        : '';
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => DocumentToolsWorkspace(
-          api: widget.api,
-          initial: mapped,
-          initialPath: path,
-        ),
+        builder: (_) => DocumentToolsWorkspace(api: widget.api, initial: name),
       ),
     );
     if (state['doc_hints'] is Map) await setDropTarget('documents');
@@ -3350,7 +3260,7 @@ class _WorkspaceState extends State<Workspace> {
           optionSwitch(
             'developer_mode',
             '개발자 모드',
-            '켜면 문서 검토·공공언어 교정·작성 도우미 등 문서 도구 메뉴가 나타나요.',
+            '자세한 문서 처리 완료 안내를 표시해요.',
           ),
           settingsLabel('더 보기'),
           ListTile(

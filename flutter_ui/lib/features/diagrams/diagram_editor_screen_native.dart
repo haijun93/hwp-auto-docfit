@@ -16,10 +16,8 @@ class DiagramEditorScreen extends StatefulWidget {
   const DiagramEditorScreen({
     super.key,
     required this.api,
-    this.useTldraw = true,
   });
   final ApiCall api;
-  final bool useTldraw;
 
   @override
   State<DiagramEditorScreen> createState() => _DiagramEditorScreenState();
@@ -55,17 +53,9 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
 
   Future<void> initialize() async {
     try {
-      // API를 다시 검사해 Flutter 메뉴 우회로의 비활성 기능 접근을 막는다.
-      final state = await widget.api('get_state', const []);
-      final options = state is Map ? state['options'] as Map? : null;
-      if (widget.useTldraw &&
-          (options?['developer_mode'] != true ||
-              options?['diagram_editor_enabled'] != true)) {
-        throw Exception('개발자 모드와 tldraw 도형 편집기 사용을 모두 켜 주세요.');
-      }
       await storage('list');
       final manifest = await rootBundle.loadString(
-        'assets/${widget.useTldraw ? 'diagram_editor' : 'flow_editor'}/asset-manifest.json',
+        'assets/flow_editor/asset-manifest.json',
       );
       final decoded = jsonDecode(manifest) as Map;
       assets = {'index.html'};
@@ -125,7 +115,7 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
     }
     try {
       final data = await rootBundle.load(
-        'assets/${widget.useTldraw ? 'diagram_editor' : 'flow_editor'}/$raw',
+        'assets/flow_editor/$raw',
       );
       final ext = raw.split('.').last.toLowerCase();
       request.response.headers
@@ -158,17 +148,7 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
     String action, [
     Map<String, Object?> payload = const {},
   ]) {
-    if (!widget.useTldraw) return widget.api('flow_editor', [action, payload]);
-    return widget.api('diagram_$action', switch (action) {
-      'list' => const [],
-      'load' || 'delete' => [payload['id']],
-      _ => [
-        payload['id'],
-        payload['name'],
-        payload['snapshot'],
-        payload['revision'],
-      ],
-    });
+    return widget.api('flow_editor', [action, payload]);
   }
 
   void post(Map<String, Object?> message) {

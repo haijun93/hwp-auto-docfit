@@ -346,7 +346,9 @@ void main() {
       // 증감 버튼을 누르면: page_top Up -> 15.1mm, page_bottom Down -> 14.9mm
       await tester.tap(find.byKey(const Key('pageMarginUp_page_top')));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.byKey(const Key('pageMarginDown_page_bottom')));
+      await tester.ensureVisible(
+        find.byKey(const Key('pageMarginDown_page_bottom')),
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('pageMarginDown_page_bottom')));
       await tester.pumpAndSettle();
@@ -368,9 +370,7 @@ void main() {
       final saved = calls.last;
       expect(saved.first, 'save');
       final edits = (saved[1] as Map)['edits'] as List;
-      final editsMap = {
-        for (final e in edits) (e as Map)['key']: e['value'],
-      };
+      final editsMap = {for (final e in edits) (e as Map)['key']: e['value']};
       expect(editsMap['page_top'], '15.1mm');
       expect(editsMap['page_bottom'], '14.9mm');
       expect(editsMap['page_left'], '25.0mm');

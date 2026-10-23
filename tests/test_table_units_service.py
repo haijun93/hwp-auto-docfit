@@ -57,6 +57,10 @@ class TableUnitsServiceTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
+        # 이 시험들은 내장 그림이 없는 상태(한/글로 그림 만들기)를 본다 — 앱에 넣은 그림 폴더를 빈 곳으로 바꾼다.
+        bundled = patch("docfit_app.table_units_service.BUNDLED_SNAPSHOTS", Path(self.temp.name) / "no-bundled")
+        bundled.start()
+        self.addCleanup(bundled.stop)
         self.log = []
         self.formats = ["Hwp Native", "HTML Format"]
         self.service = TableUnitsService(lambda: FakeHwp(self.log), source=default_catalog_path(),
@@ -174,3 +178,26 @@ class TableUnitsServiceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BundledSnapshotTests(unittest.TestCase):
+    def test_builtin_templates_show_bundled_pictures_without_hangul(self):
+        """앱에 넣어 둔 내장 표 그림은 한/글 없이 바로 보인다(처음 쓰는 사용자, 2026-10-23 사용자 요청)."""
+        def no_hwp():
+            raise AssertionError("내장 그림이 있으면 한/글을 띄우지 않는다")
+        with tempfile.TemporaryDirectory() as folder:
+            service = TableUnitsService(no_hwp, source=default_catalog_path(), snapshot_root=Path(folder))
+            data = service.list()
+            missing = [t["name"] for t in data["templates"] if not t["thumbnail"]]
+            self.assertTrue(data["thumbnails_ready"], f"그림 없는 템플릿: {missing[:5]} / {len(missing)}개, 출처 {service.source}")
+            self.assertTrue(all(t["thumbnail"].startswith("data:image/png;base64,") for t in data["templates"]))
+            self.assertTrue(service.command("thumbnails", {})["thumbnails_ready"])
+
+    def test_bundled_pictures_do_not_depend_on_registered_xml_prefixes(self):
+        """다른 기능이 이름공간 접두어를 등록해도 같은 표는 같은 그림을 찾는다(전체 시험 순서 실패 재현)."""
+        import xml.etree.ElementTree as StdET
+        from docfit_core import table_units
+        with patch.dict(StdET._namespace_map), tempfile.TemporaryDirectory() as folder:
+            StdET.register_namespace("zz", table_units.HP[1:-1])
+            service = TableUnitsService(lambda: None, source=default_catalog_path(), snapshot_root=Path(folder))
+            self.assertTrue(service.list()["thumbnails_ready"])

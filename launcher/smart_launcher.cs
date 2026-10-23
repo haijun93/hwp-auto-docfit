@@ -204,7 +204,6 @@ internal static class SmartLauncher
     {
         string parent = Path.GetDirectoryName(finalPath);
         string staging = Path.Combine(parent, ".staging-" + Guid.NewGuid().ToString("N"));
-        if (Directory.Exists(finalPath)) Directory.Delete(finalPath, true);
         Directory.CreateDirectory(staging);
         try
         {
@@ -257,7 +256,7 @@ internal static class SmartLauncher
             }
             if (written.Count != manifest.Items.Count) throw new InvalidDataException("압축 파일 일부 항목이 누락되었습니다.");
             File.WriteAllText(Path.Combine(staging, ".docfit-complete"), manifest.PayloadHash, new UTF8Encoding(false));
-            Directory.Move(staging, finalPath);
+            ReplaceCache(staging, finalPath);
         }
         catch
         {
@@ -266,17 +265,108 @@ internal static class SmartLauncher
         }
     }
 
+    private static void ReplaceCache(string staging, string finalPath)
+    {
+        // 손상된 캐시는 바로 지우지 않는다: 잠깐 잡고 있는 프로세스(방금 끝난 자식·백신 검사)가 있으면
+        // 삭제가 실패해 런처가 멈췄다(CI 실측). 옆으로 옮긴 뒤 새 폴더를 놓고, 옛 폴더는 나중에 지운다.
+        string trash = null;
+        for (int attempt = 0; ; attempt++)
+        {
+            try
+            {
+                if (Directory.Exists(finalPath))
+                {
+                    trash = Path.Combine(Path.GetDirectoryName(finalPath), ".trash-" + Guid.NewGuid().ToString("N"));
+                    Directory.Move(finalPath, trash);
+                }
+                Directory.Move(staging, finalPath);
+                break;
+            }
+            catch (IOException)
+            {
+                if (attempt >= 25) throw;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                if (attempt >= 25) throw;
+            }
+            Thread.Sleep(200);
+        }
+        if (trash != null)
+        {
+            try { Directory.Delete(trash, true); } catch { }
+        }
+    }
+
     private static void CleanupOldCaches(string cacheRoot, string keepName)
     {
+        Version currentVersion = CacheVersion(keepName);
+        if (currentVersion == null) return;
         foreach (string path in Directory.GetDirectories(cacheRoot, "app_v*"))
         {
             if (string.Equals(Path.GetFileName(path), keepName, StringComparison.OrdinalIgnoreCase)) continue;
-            try { Directory.Delete(path, true); } catch { }
+            Version candidateVersion = CacheVersion(Path.GetFileName(path));
+            if (candidateVersion == null || candidateVersion > currentVersion) continue;
+            if (CacheIsInUse(path)) continue;
+            // Never recursively delete the published cache path: a failed move must leave it intact.
+            string trash = Path.Combine(cacheRoot, ".trash-" + Guid.NewGuid().ToString("N"));
+            try { Directory.Move(path, trash); }
+            catch { continue; }
+            try { Directory.Delete(trash, true); } catch { }
         }
-        foreach (string path in Directory.GetDirectories(cacheRoot, ".staging-*"))
+        // 지우지 못하고 남은 옛 캐시(.trash-*)는 다음 실행 때 다시 지운다.
+        foreach (string trash in Directory.GetDirectories(cacheRoot, ".trash-*"))
         {
-            try { Directory.Delete(path, true); } catch { }
+            try { Directory.Delete(trash, true); } catch { }
         }
+        // Another launcher may still be extracting into .staging-*; it owns that cleanup.
+    }
+
+    private static Version CacheVersion(string name)
+    {
+        if (!name.StartsWith("app_v", StringComparison.OrdinalIgnoreCase)) return null;
+        int separator = name.LastIndexOf('_');
+        if (separator <= 5) return null;
+        string value = name.Substring(5, separator - 5);
+        string numeric = new string(value.TakeWhile(c => char.IsDigit(c) || c == '.').ToArray());
+        string[] parts = numeric.Split('.');
+        if (parts.Length > 4) return null;
+        Version version;
+        return Version.TryParse(string.Join(".", parts.Concat(Enumerable.Repeat("0", 4 - parts.Length))),
+            out version) ? version : null;
+    }
+
+    private static bool CacheIsInUse(string cachePath)
+    {
+        // The launcher exits after mutex handoff, so it cannot own an app-lifetime lock.
+        try
+        {
+            string appPath = Path.GetFullPath(Path.Combine(cachePath, "app_main.exe"));
+            bool inUse = false;
+            foreach (Process process in Process.GetProcessesByName("app_main"))
+            {
+                using (process)
+                {
+                    try
+                    {
+                        if (string.Equals(Path.GetFullPath(process.MainModule.FileName), appPath,
+                            StringComparison.OrdinalIgnoreCase)) inUse = true;
+                    }
+                    catch { inUse = true; } // Inaccessible processes are conservatively protected.
+                }
+            }
+            if (inUse) return true;
+
+            string pythonDll = Path.Combine(cachePath, "_internal", "python312.dll");
+            IEnumerable<string> probes = Directory.GetFiles(cachePath, "*.pyd", SearchOption.AllDirectories);
+            if (File.Exists(pythonDll)) probes = probes.Concat(new[] { pythonDll });
+            foreach (string probe in probes)
+            {
+                using (var stream = new FileStream(probe, FileMode.Open, FileAccess.Write, FileShare.None)) { }
+            }
+            return false;
+        }
+        catch { return true; }
     }
 
     private static string SafeCombine(string root, string relative)

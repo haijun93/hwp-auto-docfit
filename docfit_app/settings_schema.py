@@ -71,8 +71,6 @@ DEFAULTS = {
     "title_owner_text": "",
     "std_table_header": True,
     "active_format_profile": "",
-    "review_document_kind": "보고서",
-    "review_reading_purpose": "상세 설명용",
     "symbol_fonts": {
         "□": {"font": "HY견고딕", "size": "17"},
         "ㅇ": {"font": "한컴돋움", "size": "15"},
@@ -96,10 +94,8 @@ DEFAULTS = {
     "offline_mode": True,
     "table_spacing": True,
     "log_file": False,
-    # 개발자 모드: 켜야 문서 도구(문서 구조 검토·맞춤법·작성 도우미·Markdown·고급 문서 도구 등) 메뉴가 보인다.
+    # 개발자 모드: 도형 편집기의 개발자 기능을 허용한다.
     "developer_mode": False,
-    # tldraw 기능은 개발자 모드와 함께 사용자가 별도 활성화해야 한다.
-    "diagram_editor_enabled": False,
     # '한 번에 적용' 카드의 '자간 조정 포함'. 끄면 기존 자간을 두고 서식만 입히는 서식 적용(format)으로 실행한다.
     "all_include_spacing": True,
     # 한 번에 적용의 '표 제외': 켜면 표 관련 세부 작업을 모두 빼고 표 칸 안 문장도 자간 작업에서 뺀다.

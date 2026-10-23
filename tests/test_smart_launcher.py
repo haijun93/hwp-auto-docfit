@@ -67,6 +67,108 @@ class SmartLauncherBuildTest(unittest.TestCase):
         self.assertIn('File.Exists(a) || Directory.Exists(a) ? Path.GetFullPath(a) : a', source)
         self.assertIn('WorkingDirectory = IsCliCommand(args) ? Environment.CurrentDirectory : cachePath', source)
 
+    def test_cleanup_protects_running_newer_and_unmovable_caches(self):
+        source = (ROOT / 'launcher' / 'smart_launcher.cs').read_text(encoding='utf-8')
+        cleanup = source.split('private static void CleanupOldCaches(', 1)[1].split(
+            'private static Version CacheVersion(', 1)[0]
+        self.assertIn('candidateVersion == null || candidateVersion > currentVersion', cleanup)
+        self.assertIn('if (CacheIsInUse(path)) continue;', cleanup)
+        self.assertIn('try { Directory.Move(path, trash); }\n            catch { continue; }', cleanup)
+        self.assertLess(cleanup.index('Directory.Move(path, trash)'), cleanup.index('Directory.Delete(trash, true)'))
+        self.assertNotIn('Directory.Delete(path, true)', cleanup)
+        self.assertIn('Process.GetProcessesByName("app_main")', source)
+        self.assertIn('process.MainModule.FileName', source)
+        self.assertIn('catch { inUse = true; }', source)
+        self.assertIn('FileMode.Open, FileAccess.Write, FileShare.None', source)
+        self.assertIn('"python312.dll"', source)
+        self.assertIn('"*.pyd", SearchOption.AllDirectories', source)
+        validity = source.split('private static bool CacheIsValid(', 1)[1].split(
+            'private static void ExtractPayload(', 1)[0]
+        self.assertIn('foreach (ManifestItem item in manifest.Items)', validity)
+        self.assertIn('!info.Exists || info.Length != item.Length', validity)
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows cache cleanup integration test')
+    def test_compiled_cleanup_preserves_locked_running_and_newer_caches(self):
+        # Compile the real launcher with a test-only entry point; never use the user's cache.
+        with tempfile.TemporaryDirectory(prefix='docfit-cache-cleanup-') as temporary:
+            root = Path(temporary)
+            harness = root / 'CleanupProbe.cs'
+            harness.write_text('''
+using System;
+using System.Reflection;
+using System.Threading;
+internal static class CleanupProbe {
+    public static void Main(string[] args) {
+        if (args[0] == "hold") {
+            Console.WriteLine("ready");
+            Thread.Sleep(60000);
+            return;
+        }
+        typeof(SmartLauncher).GetMethod("CleanupOldCaches",
+            BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, new object[] { args[0], args[1] });
+    }
+}
+''', encoding='utf-8')
+            probe = root / 'probe.exe'
+            subprocess.run([
+                str(find_csc()), '/nologo', '/codepage:65001', '/target:exe', '/main:CleanupProbe',
+                f'/out:{probe}', '/reference:System.Windows.Forms.dll',
+                '/reference:System.IO.Compression.dll', '/reference:System.Core.dll',
+                str(ROOT / 'launcher' / 'smart_launcher.cs'), str(harness),
+            ], check=True, timeout=30)
+            cache = root / 'cache'
+            cache.mkdir()
+            keep = 'app_v1.80.9_current'
+
+            def make_cache(name):
+                path = cache / name
+                (path / '_internal').mkdir(parents=True)
+                (path / 'asset.txt').write_bytes(b'keep all assets')
+                return path
+
+            def snapshot(path):
+                return {str(p.relative_to(path)): p.read_bytes() for p in path.rglob('*') if p.is_file()}
+
+            def cleanup():
+                subprocess.run([str(probe), str(cache), keep], check=True, timeout=30)
+
+            current = make_cache(keep)
+            newer = make_cache('app_v1.80.10_newer')
+            unknown = make_cache('app_vunknown_hash')
+            staging = make_cache('.staging-active')
+            protected = [current, newer, unknown, staging]
+            for filename in ('_internal/python312.dll', '_internal/extension.pyd', 'asset.txt'):
+                with self.subTest(locked_file=filename):
+                    locked = make_cache('app_v1.80.8_locked')
+                    free = make_cache('app_v1.79.0_unused')
+                    target = locked / filename
+                    target.write_bytes(b'locked payload')
+                    before = snapshot(locked)
+                    # Windows open() denies delete sharing. asset.txt reaches the failed Move branch.
+                    with target.open('rb'):
+                        cleanup()
+                        self.assertEqual(snapshot(locked), before)
+                        self.assertFalse(free.exists())
+                        self.assertTrue(all(p.exists() for p in protected))
+                        self.assertFalse(list(cache.glob('.trash-*')))
+                    cleanup()
+                    self.assertFalse(locked.exists())
+
+            running = make_cache('app_v1.80.8_running')
+            shutil.copy2(probe, running / 'app_main.exe')
+            before = snapshot(running)
+            child = subprocess.Popen([str(running / 'app_main.exe'), 'hold'], stdout=subprocess.PIPE, text=True)
+            try:
+                self.assertEqual(child.stdout.readline().strip(), 'ready')
+                cleanup()
+                self.assertEqual(snapshot(running), before)
+            finally:
+                child.terminate()
+                child.wait(timeout=10)
+                child.stdout.close()
+            cleanup()
+            self.assertFalse(running.exists())
+
     def test_splash_image_has_no_baked_status_text(self):
         """그림 속 옛 버전·진행 막대·상태 문구가 런처 글과 겹치지 않게(1.80.3 사용자 보고)."""
         from PIL import Image
@@ -103,6 +205,7 @@ class SmartLauncherBuildTest(unittest.TestCase):
             bundle = root / "bundle"
             bundle.mkdir()
             child = bundle / "HWP_AutoDocFit.exe"
+            (bundle / 'asset.txt').write_bytes(b'complete asset')
             subprocess.run([str(csc), "/nologo", "/target:exe", f"/out:{child}", str(fixture)], check=True)
             launcher = root / "HWP_AutoDocFit.exe"
             # 사용 중인 앱과 충돌하지 않도록 시험용 런처 소스의 뮤텍스 이름만 격리한다.
@@ -111,17 +214,18 @@ class SmartLauncherBuildTest(unittest.TestCase):
             (isolated / 'launcher').mkdir(parents=True)
             (isolated / 'resources').mkdir()
             launcher_source = (ROOT / 'launcher' / 'smart_launcher.cs').read_text(encoding='utf-8')
-            (isolated / 'launcher' / 'smart_launcher.cs').write_text(
-                launcher_source.replace('HWP_AutoDocFit_SingleInstance_Mutex', test_mutex), encoding='utf-8')
+            cache_parent = root / 'test-cache'
+            launcher_source = launcher_source.replace('HWP_AutoDocFit_SingleInstance_Mutex', test_mutex)
+            launcher_source = launcher_source.replace(
+                'Path.Combine(localAppData, "HWP_AutoDocFit")',
+                '@"' + str(cache_parent).replace('"', '""') + '"')
+            (isolated / 'launcher' / 'smart_launcher.cs').write_text(launcher_source, encoding='utf-8')
             for name in ('app_icon.ico', 'splash.png'):
                 shutil.copy2(ROOT / 'resources' / name, isolated / 'resources' / name)
             with patch('scripts.build_smart_launcher.ROOT', isolated):
                 payload_hash, _ = build(bundle, launcher, version)
             cache_name = "app_v" + version.replace(" ", "_") + "_" + payload_hash[:12]
-            cache_path = Path(os.environ["LOCALAPPDATA"]) / "HWP_AutoDocFit" / cache_name
-            test_cache = cache_path
-            cache_parent = Path(os.environ["LOCALAPPDATA"]) / "HWP_AutoDocFit"
-            self.addCleanup(lambda: shutil.rmtree(test_cache) if test_cache.exists() and test_cache.parent == cache_parent else None)
+            cache_path = cache_parent / cache_name
 
             # First non-self-test launch exercises the embedded native splash
             # resource and cold extraction, then transfers the mutex to the child.
@@ -148,6 +252,29 @@ class SmartLauncherBuildTest(unittest.TestCase):
             )
             cached_ms = (time.perf_counter() - warm_start) * 1000
             self.assertEqual((cache_path / ".docfit-complete").stat().st_mtime_ns, marker_time)
+
+            # A completion marker alone must not accept a partially deleted cache.
+            asset = cache_path / 'asset.txt'
+            # 'held': 손상된 캐시의 파일을 다른 프로세스가 잠깐 잡고 있어도(CI 실측) 런처가 기다렸다 교체한다.
+            import threading
+            for damage in ('missing', 'truncated', 'held'):
+                with self.subTest(cache_damage=damage):
+                    holder = None
+                    if damage == 'missing':
+                        asset.unlink()
+                    else:
+                        asset.write_bytes(b'x')
+                    if damage == 'held':
+                        handle = open(asset, 'rb')
+                        holder = threading.Timer(1.0, handle.close)
+                        holder.start()
+                    subprocess.run(
+                        [str(launcher), '--self-test', '--self-test-report', str(report), 'argument with spaces'],
+                        check=True, timeout=30,
+                    )
+                    if holder is not None:
+                        holder.join()
+                    self.assertEqual(asset.read_bytes(), b'complete asset')
 
             # CLI는 앱 뮤텍스가 잡힌 상태에서도 실행되고 자식 종료 코드·런처 경로를 보존한다.
             import ctypes

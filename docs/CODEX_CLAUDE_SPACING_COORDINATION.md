@@ -458,3 +458,17 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 - 지정 Python 전체 1,594개 실행: 실패·오류 0, 조건부 제외 1 (566.758초). 최종 신규 20개 포함 관련 52개 PASS.
 - com_test_lock("Codex", "C12") 조직도 복사·붙여넣기·저장 PASS: preview와 4행·8열·28칸·병합 4칸 일치. 판정 JSON: C:\HWP_AUTODOCFIT\v1803\reports\C12-artifacts\com-result.json.
 - 보고: C:\HWP_AUTODOCFIT\v1803\reports\C12.md. Branch: feature/table-sketch; no commit/push/Flutter edits; Python CRLF preserved.
+
+
+## Codex 결과 보고 — C17 (2026-10-24, 완료)
+- release/1.80.9: Flutter·Tk·구형 웹 문서 도구 메뉴, 전용 창/상태/설정/이벤트/명령과 전용 시험 삭제. 일반 텍스트 입력·개조식 변환 및 도형 편집기 개발자 설정 유지.
+- 공용 코어(korean_proofread, document_review, outline_ops, ai_prompts, number_check, kordoc_bridge 등)는 기존 기능·시험 호환용으로 보존. 개조식 변환 명령은 convert로 분리.
+- Python 전체 1,620개(조건부 제외 1) 및 최종 집중 58개 PASS. Flutter 전체 132개 PASS(조건부 제외 1), analyze 지적 0개. JS 문법·CRLF·diff 검사 PASS.
+- COM 잠금 Codex/C17 사용 후 해제. C15 소유 변경 보존, 현재 release 브랜치에 C17만 커밋하며 푸시는 C15 담당. 보고: C:\HWP_AUTODOCFIT\v1803\reports\C17.md.
+
+
+## Codex 결과 보고 — C19 (2026-10-24, 완료)
+- G29 합격 및 커밋 470165a. 무인 시험의 profile 키·브리지 호출을 복구하고 Toplevel/messagebox를 차단. Tk 검토창 3개 본문·문구는 a737632와 동일(판정 JSON: C:\HWP_AUTODOCFIT\v1803\reports\C19-static-final.json).
+- github/main 78f5482(v1.80.9) 병합. 삭제된 문서 도구·tldraw와 2.0.0 전용 T11/T12 서비스·API·화면·시험을 제거. jobs.py와 PDF 합치기 순서 지정 유지.
+- Python 전체 1640개 PASS(제외 0, 427.816초), Flutter 전체 142개 PASS(제외 1), analyze 지적 0. 병합 집중 80개 및 호환성 집중 38개 PASS.
+- 남은 이관은 V2_PARITY_TABLE.md 끝에 정리. COM 잠금 Codex/C19 사용 후 해제. 보고: C:\HWP_AUTODOCFIT\v1803\reports\C19.md. GitHub dev/2.0.0만 푸시(배포 없음).

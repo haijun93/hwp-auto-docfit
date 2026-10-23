@@ -22,6 +22,7 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
 
   bool _loadingList = false;
   bool _loadingThumbnails = false;
+  bool _autoThumbnailsTried = false;
   bool _loadingPreview = false;
   bool _copying = false;
 
@@ -66,6 +67,15 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
     try {
       final data = await _api.list();
       if (!mounted) return;
+      // 그림이 없으면(서식모음이 바뀌었거나 처음) 화면을 열 때 한 번 자동으로 만든다 — 버튼을 몰라도 그림이 보이게(2026-10-23 사용자 실측).
+      if (!data.thumbnailsReady &&
+          !_autoThumbnailsTried &&
+          data.templates.isNotEmpty) {
+        _autoThumbnailsTried = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _generateThumbnails();
+        });
+      }
       setState(() {
         _listData = data;
         _loadingList = false;
@@ -240,7 +250,10 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
                 final r = (cellItem['row'] as num?)?.toInt();
                 final c = (cellItem['col'] as num?)?.toInt();
                 final rawShapes = cellItem['shapes'];
-                if (r != null && c != null && rawShapes is List && rawShapes.isNotEmpty) {
+                if (r != null &&
+                    c != null &&
+                    rawShapes is List &&
+                    rawShapes.isNotEmpty) {
                   final list = <CellShape>[];
                   for (final s in rawShapes) {
                     if (s is Map) {
@@ -557,57 +570,133 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
       key: const Key('templateNameBar'),
       decoration: const BoxDecoration(
         color: Colors.white,
-        border: Border(
-          bottom: BorderSide(color: Color(0xffe2e8f0), width: 1),
-        ),
+        border: Border(bottom: BorderSide(color: Color(0xffe2e8f0), width: 1)),
       ),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 120),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.vertical,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: templates.map((t) {
-              final isSelected = _selectedTemplate?.id == t.id;
-              if (isSelected) {
-                return FilledButton(
-                  key: Key('templateName_${t.id}'),
-                  style: FilledButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    textStyle: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
+      // 키보드 자판처럼 촘촘하게(높이 28·간격 4) — 높이 제한·스크롤 없이 모든 템플릿 이름이 보이게(2026-10-23 사용자 요청).
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+      child: Wrap(
+        spacing: 4,
+        runSpacing: 4,
+        children: templates.map((t) {
+          final isSelected = _selectedTemplate?.id == t.id;
+          final tone = _categoryTone(t.category);
+          return Material(
+            key: Key('templateName_${t.id}'),
+            color: isSelected ? tone.strong : tone.soft,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(6),
+              side: BorderSide(color: isSelected ? tone.strong : tone.border),
+            ),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(6),
+              onTap: () => _selectTemplate(t),
+              child: Container(
+                height: 28,
+                padding: const EdgeInsets.symmetric(horizontal: 9),
+                alignment: Alignment.center,
+                child: Text(
+                  t.name,
+                  maxLines: 1,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    height: 1.0,
+                    color: isSelected ? Colors.white : tone.ink,
+                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
                   ),
-                  onPressed: () => _selectTemplate(t),
-                  child: Text(t.name),
-                );
-              } else {
-                return OutlinedButton(
-                  key: Key('templateName_${t.id}'),
-                  style: OutlinedButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    textStyle: const TextStyle(fontSize: 12),
-                  ),
-                  onPressed: () => _selectTemplate(t),
-                  child: Text(t.name),
-                );
-              }
-            }).toList(),
-          ),
-        ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
       ),
     );
+  }
+
+  /// 분류마다 고유한 바탕색(같은 분류의 모양 1~N은 같은 색). 앱의 파란 계열과 어울리는 연한 색 조합(2026-10-23 사용자 요청).
+  static const _tones = <({Color soft, Color border, Color ink, Color strong})>[
+    (
+      soft: Color(0xffeff6ff),
+      border: Color(0xffbfdbfe),
+      ink: Color(0xff1e40af),
+      strong: Color(0xff2563eb),
+    ),
+    (
+      soft: Color(0xffecfdf5),
+      border: Color(0xffa7f3d0),
+      ink: Color(0xff065f46),
+      strong: Color(0xff059669),
+    ),
+    (
+      soft: Color(0xfffff7ed),
+      border: Color(0xfffed7aa),
+      ink: Color(0xff9a3412),
+      strong: Color(0xffea580c),
+    ),
+    (
+      soft: Color(0xfff5f3ff),
+      border: Color(0xffddd6fe),
+      ink: Color(0xff5b21b6),
+      strong: Color(0xff7c3aed),
+    ),
+    (
+      soft: Color(0xfffdf2f8),
+      border: Color(0xfffbcfe8),
+      ink: Color(0xff9d174d),
+      strong: Color(0xffdb2777),
+    ),
+    (
+      soft: Color(0xfff0fdfa),
+      border: Color(0xff99f6e4),
+      ink: Color(0xff115e59),
+      strong: Color(0xff0d9488),
+    ),
+    (
+      soft: Color(0xfffefce8),
+      border: Color(0xfffde68a),
+      ink: Color(0xff854d0e),
+      strong: Color(0xffca8a04),
+    ),
+    (
+      soft: Color(0xffeef2ff),
+      border: Color(0xffc7d2fe),
+      ink: Color(0xff3730a3),
+      strong: Color(0xff4f46e5),
+    ),
+    (
+      soft: Color(0xfff0f9ff),
+      border: Color(0xffbae6fd),
+      ink: Color(0xff075985),
+      strong: Color(0xff0284c7),
+    ),
+    (
+      soft: Color(0xfff7fee7),
+      border: Color(0xffd9f99d),
+      ink: Color(0xff3f6212),
+      strong: Color(0xff65a30d),
+    ),
+    (
+      soft: Color(0xfffef2f2),
+      border: Color(0xfffecaca),
+      ink: Color(0xff991b1b),
+      strong: Color(0xffdc2626),
+    ),
+    (
+      soft: Color(0xfff8fafc),
+      border: Color(0xffcbd5e1),
+      ink: Color(0xff334155),
+      strong: Color(0xff475569),
+    ),
+  ];
+
+  ({Color soft, Color border, Color ink, Color strong}) _categoryTone(
+    String category,
+  ) {
+    final order = <String>[];
+    for (final t in _listData?.templates ?? const []) {
+      if (!order.contains(t.category)) order.add(t.category);
+    }
+    final index = order.indexOf(category);
+    return _tones[(index < 0 ? 0 : index) % _tones.length];
   }
 
   Widget _buildGallery({bool shrinkWrap = false}) {
@@ -797,14 +886,20 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: const Color(0xfffef3c7)),
               ),
-              child: const Row(
+              child: Row(
                 children: [
-                  Icon(Icons.info_outline, size: 16, color: Color(0xffd97706)),
+                  const Icon(
+                    Icons.info_outline,
+                    size: 16,
+                    color: Color(0xffd97706),
+                  ),
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      '한/글로 실제 모양 그림을 만들 수 있어요',
-                      style: TextStyle(
+                      _loadingThumbnails
+                          ? '한/글로 실제 모양 그림을 만들고 있어요… 바뀐 표만 만들며, 처음에는 1분쯤 걸려요'
+                          : '한/글로 실제 모양 그림을 만들 수 있어요 — 오른쪽 위 「스냅샷 새로 만들기」',
+                      style: const TextStyle(
                         fontSize: 12,
                         color: Color(0xff92400e),
                         fontWeight: FontWeight.w500,

@@ -180,23 +180,43 @@ class BrowserApiTests(unittest.TestCase):
         self.assertFalse(gui.verify_var.get())
         self.assertEqual(gui.selected_profiles, [])
 
-    def test_document_tools_need_developer_mode(self):
+    def test_removed_tools_rejected_even_in_developer_mode(self):
+        gui = _FakeGui()
+        gui._텍스트로_문서추가_열기 = lambda: None
+        gui.developer_mode_var = _Var(True)
+        bridge = _bridge(gui)
+        for name in ("review", "proofread", "outline", "writing", "markdown", "advanced", "polish"):
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, "지원하지 않는"):
+                bridge.run_tool(name)
+
+    def test_text_input_remains_available_without_developer_mode(self):
         gui = _FakeGui()
         called = []
-        for name in ("_문서검토_열기", "_공공언어_검토", "_텍스트로_문서추가_열기", "_붙여넣기_정리_열기",
-                     "_아웃라이너_열기", "_작성도우미_열기", "고급문서도구_열기"):
-            setattr(gui, name, lambda: None)
-        gui.Markdown_내보내기 = lambda: called.append(True)
+        gui._텍스트로_문서추가_열기 = lambda: called.append(True)
         gui.developer_mode_var = _Var(False)
-        bridge = _bridge(gui)
-        self.assertFalse(bridge.get_state()["options"]["developer_mode"])
-        with self.assertRaises(ValueError):
-            bridge.run_tool("markdown")
-        self.assertEqual(called, [])
-        bridge.set_option("developer_mode", True)
-        self.assertTrue(bridge.get_state()["options"]["developer_mode"])
-        bridge.run_tool("markdown")
+        self.assertTrue(_bridge(gui).run_tool("paste"))
         self.assertEqual(called, [True])
+
+    def test_document_tool_bridge_rejects_deleted_commands_and_keeps_conversion(self):
+        from types import SimpleNamespace
+        from docfit_app.settings_service import SettingsService
+        with tempfile.TemporaryDirectory() as folder:
+            gui = _FakeGui()
+            gui._준말_서비스 = lambda: SimpleNamespace(settings=SettingsService(Path(folder)/"settings.json"))
+            bridge = _bridge(gui)
+            for name in ("review", "proofread", "proofread_apply", "numbers", "markdown", "prompt", "prompts",
+                         "outline", "outline.load", "outline.save", "outline.export", "outline.filter",
+                         "outline.move", "outline.toggle", "outline.note", "outline.indent", "outline.outdent",
+                         "advanced", "advanced.start", "advanced.poll", "writing"):
+                with self.subTest(name=name):
+                    result = bridge.document_tool(name, {})
+                    self.assertFalse(result["ok"])
+                    self.assertEqual(result["error"]["code"], "INVALID_TOOL")
+                    self.assertIn("지원하지 않는", result["error"]["message"])
+            result = bridge.document_tool("convert", {"text": "# 제목\n- 항목"})
+            self.assertTrue(result["ok"])
+            self.assertIn("제목", result["data"]["text"])
+            self.assertNotIn("#", result["data"]["text"])
 
     def test_profile_and_quick_option(self):
         gui = _FakeGui()

@@ -30,7 +30,7 @@ class UnitAxis {
   factory UnitAxis.fromJson(Map<dynamic, dynamic> json) => UnitAxis(
     count: (json['count'] as num?)?.toInt() ?? 1,
     min: (json['min'] as num?)?.toInt() ?? 1,
-    max: (json['max'] as num?)?.toInt() ?? 40,
+    max: (json['max'] as num?)?.toInt() ?? 50,
     core: (json['core'] as num?)?.toInt() ?? 1,
     sep: (json['sep'] as num?)?.toInt() ?? 0,
   );

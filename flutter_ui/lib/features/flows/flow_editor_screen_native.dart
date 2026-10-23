@@ -8,5 +8,5 @@ class FlowEditorScreen extends StatelessWidget {
   final String initialMode;
   @override
   Widget build(BuildContext context) =>
-      DiagramEditorScreen(api: api, useTldraw: false);
+      DiagramEditorScreen(api: api);
 }

@@ -21,6 +21,8 @@ from .api_contract import ServiceError
 
 USER_CATALOG = Path(r"C:\HWP_AUTODOCFIT") / "표서식모음" / "표 서식모음.hwpx"
 SNAPSHOT_FOLDER = ".스냅샷"
+# 앱에 미리 넣어 둔 내장 표 템플릿 그림(표 내용 지문 이름). 처음 쓰는 사용자도 한/글로 만들 필요 없이 바로 보인다(2026-10-23 사용자 요청).
+BUNDLED_SNAPSHOTS = default_catalog_path().parents[1] / "table_snapshots" / "tables"
 SNAPSHOT_REVISION = b"C13-shapes-v1"
 HWP_CLIPBOARD_FORMAT = "Hwp Native"
 
@@ -50,6 +52,16 @@ def crop_to_content(image, margin: int = 6):
                      min(rgb.width, right + margin), min(rgb.height, bottom + margin)))
 
 
+def _table_fingerprint(table) -> str:
+    """표 XML 내용 지문. ET.tostring은 앞서 등록된 이름공간 접두어(hp/ns0 등)에 따라 글자가 달라져
+    같은 표도 지문이 바뀌었다(전체 시험 순서에 따라 내장 그림을 못 찾음, 2026-10-23) — 접두어와 무관하게 계산한다."""
+    digest = hashlib.sha256(SNAPSHOT_REVISION)
+    for element in table.iter():
+        digest.update(repr((element.tag, sorted(element.attrib.items()), element.text or "",
+                            element.tail or "" if element is not table else "")).encode("utf-8"))
+    return digest.hexdigest()[:20]
+
+
 class TableUnitsService:
     def __init__(self, hwp_factory=None, *, source: Path | None = None, snapshot_root: Path | None = None,
                  clipboard_formats=None, settings=None, activator=None):
@@ -57,6 +69,7 @@ class TableUnitsService:
         self._hwp_factory = hwp_factory
         self._source = source
         self._snapshot_root = snapshot_root
+        self._content_cache: dict[str, dict[str, str]] = {}
         self._clipboard_formats = clipboard_formats or _clipboard_formats
         self._settings = settings
         self._memory = {}
@@ -90,10 +103,55 @@ class TableUnitsService:
         root = Path(self._snapshot_root) if self._snapshot_root else USER_CATALOG.parent / SNAPSHOT_FOLDER
         return root / _digest(self.source)
 
+    def _content_keys(self) -> dict[str, str]:
+        """템플릿마다 표 XML 내용 지문(그림 판 표식 포함). 서식모음 파일을 한 번만 열어 모두 계산하고 파일 지문별로 기억한다.
+
+        그림을 파일 전체 지문 폴더에 두면 서식모음에 표 하나만 더해도 모든 그림이 사라졌다(2026-10-23 사용자 실측) —
+        표 내용 지문으로 두면 바뀌지 않은 표의 그림은 그대로 쓴다."""
+        from defusedxml import ElementTree as ET
+        from docfit_core import table_catalog as catalog
+        digest = _digest(self.source)
+        cached = self._content_cache.get(digest)
+        if cached is not None:
+            return cached
+        keys: dict[str, str] = {}
+        try:
+            records = catalog._scan(self.source)
+            sections = {}
+            with catalog._safe_archive(self.source) as archive:
+                for record in records:
+                    name = record["section"]
+                    if name not in sections:
+                        sections[name] = ET.fromstring(archive.read(name))
+                    paragraph = sections[name].findall(table_units.HP + "p")[record["paragraph_index"]]
+                    table = catalog._top_tables(paragraph)[record["table_index"]]
+                    keys[str(record["id"])] = _table_fingerprint(table)
+        except Exception:
+            keys = {}
+        self._content_cache = {digest: keys}
+        return keys
+
+    def _snapshot_path(self, template_id: str) -> Path:
+        key = self._content_keys().get(str(template_id))
+        if key:
+            root = Path(self._snapshot_root) if self._snapshot_root else USER_CATALOG.parent / SNAPSHOT_FOLDER
+            return root / "tables" / f"{key}.png"
+        return self._snapshot_dir() / f"{_safe_name(template_id)}.png"
+
+    def _bundled_snapshot(self, template_id: str) -> Path | None:
+        key = self._content_keys().get(str(template_id))
+        path = BUNDLED_SNAPSHOTS / f"{key}.png" if key else None
+        return path if path is not None and path.is_file() else None
+
     def _snapshot_url(self, template_id: str) -> str | None:
-        path = self._snapshot_dir() / f"{_safe_name(template_id)}.png"
+        path = self._snapshot_path(template_id)
         if not path.is_file():
-            return None
+            path = self._bundled_snapshot(template_id) or path
+        if not path.is_file():
+            legacy = self._snapshot_dir() / f"{_safe_name(template_id)}.png"
+            if not legacy.is_file():
+                return None
+            path = legacy
         return "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode("ascii")
 
     def _units(self):
@@ -197,10 +255,9 @@ class TableUnitsService:
         from docfit_core.file_conversion import convert_hwpx_to_pdf
 
         items = self._units()
-        target_dir = self._snapshot_dir()
-        missing = [item for item in items if not (target_dir / f"{_safe_name(item['id'])}.png").is_file()]
+        missing = [item for item in items
+                   if not self._snapshot_path(item["id"]).is_file() and self._bundled_snapshot(item["id"]) is None]
         if missing:
-            target_dir.mkdir(parents=True, exist_ok=True)
             folder = Path(tempfile.mkdtemp(prefix="docfit_table_snap_"))
             app = None
             try:
@@ -220,14 +277,17 @@ class TableUnitsService:
                         rendered.close()
                     picture = crop_to_content(image)
                     picture.thumbnail((640, 640))
-                    temporary = target_dir / f"{_safe_name(item['id'])}.png.tmp"
+                    target = self._snapshot_path(item["id"])
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    temporary = target.with_name(target.name + ".tmp")
                     picture.save(temporary, format="PNG", optimize=True)
-                    temporary.replace(target_dir / f"{_safe_name(item['id'])}.png")
+                    temporary.replace(target)
             finally:
                 if app is not None:
                     self._close(app)
                 shutil.rmtree(folder, ignore_errors=True)
-            self._remove_old_snapshots(target_dir)
+            # 예전 파일 지문 폴더(표 내용 지문 저장 전 방식)는 지운다.
+            self._remove_old_snapshots(self._snapshot_dir())
         return self.list()
 
     @staticmethod

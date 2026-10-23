@@ -9,6 +9,7 @@ from copy import deepcopy
 
 def migrate_settings(settings, defaults):
     result=deepcopy(settings)
+    result.pop("diagram_editor_enabled", None)
     def old(key):
         try:return int(result.get(key,1) or 1)<2
         except (TypeError,ValueError):return True

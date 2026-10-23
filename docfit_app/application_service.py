@@ -8,7 +8,6 @@ from docfit_app.api_contract import ServiceError, response
 from docfit_app.configuration_service import ConfigurationService
 from docfit_app.settings_service import SettingsService
 from docfit_app.settings_schema import DEFAULTS
-from docfit_app.diagram_service import DiagramService
 from docfit_app.flow_service import FlowService
 from docfit_app.settings_migrations import migrate
 from docfit_core.hwpx import validate_and_inspect_hwpx
@@ -21,7 +20,6 @@ class ApplicationService:
         self.store = SettingsService(settings_path)
         self.configuration = ConfigurationService(self.store)
         self.abbreviations = AbbreviationService(self.store)
-        self.diagrams = DiagramService(Path(settings_path).parent, self.store)
         self.flows = FlowService(Path(settings_path).parent, self.store)
         self.data = AppState()
         self.lock = threading.RLock()
@@ -81,8 +79,7 @@ class ApplicationService:
                 'progress':{'steps':list(STAGE_ORDER),'active':None,'visited':[],'outcome':None,'detail':''},
                 'stages':[{'key':k,'label':label,'enabled':self.data.stages.get((self.data.mode,k),selected.get(k,default_choice(k,self.data.mode))),
                            'default':default_choice(k,self.data.mode)} for k,label in stages_for_mode(self.data.mode)],
-                'can_start':False,'capabilities':['documents.inspect','settings','abbreviations','flows'] +
-                (['diagrams'] if self.diagrams.enabled() else [])}
+                'can_start':False,'capabilities':['documents.inspect','settings','abbreviations','flows']}
 
     def dispatch(self, method, args):
         counts = {'handshake':0,'get_state':0,'get_settings':0,'save_settings':2,
@@ -93,10 +90,9 @@ class ApplicationService:
         counts.update({'table_template':2,'document_tool':2,'get_pending_dialog':0,'stage_config':2,'set_stage':2,'set_stage_default':1})
         counts.update({'set_option':2,'set_include_spacing':1,'set_reset_spacing':1,'set_table_spacing':1,'set_exclude_tables':1,'set_range':3,'set_card_option':2})
         counts.update({'flow_editor':2,'idioms':2,'hangul_fonts':2,'table_units':2,'table_sketch':2})
-        counts.update({'diagram_list':0,'diagram_load':1,'diagram_save':3,'diagram_delete':1})
         if method not in counts:
-            raise ServiceError('NOT_AVAILABLE','이 네이티브 시제품에서는 해당 기능을 아직 사용할 수 없습니다.')
-        if not ((method == 'diagram_save' and len(args) in (3, 4)) or (method == 'table_sketch' and len(args) in (1, 2))) and len(args)!=counts[method]:
+            raise ServiceError('NOT_AVAILABLE','지원하지 않는 명령입니다.')
+        if not (method == 'table_sketch' and len(args) in (1, 2)) and len(args)!=counts[method]:
             raise ServiceError('INVALID_INPUT','입력 항목 수를 확인해 주세요.')
         if self.data.closing and method != 'shutdown':
             raise ServiceError('BACKEND_CLOSING','백엔드가 종료 중입니다.')
@@ -105,8 +101,7 @@ class ApplicationService:
         if method == 'get_events': return self.get_events(*args)
         if method=='handshake':
             return {'protocol_version':1,'backend_version':'1.74 Native Prototype 1',
-                    'capabilities':['documents.inspect','settings','abbreviations','flows'] +
-                    (['diagrams'] if self.diagrams.enabled() else []),'engine_ready':False}
+                    'capabilities':['documents.inspect','settings','abbreviations','flows'],'engine_ready':False}
         if method=='set_card_option':
             name,value=args
             allowed={'spacing_enabled','spacing_page_fit','spacing_reset_existing','spacing_exclude_tables','unify_exclude_tables','unify_exclude_spacing','unify_exclude_pagefit',
@@ -180,8 +175,9 @@ class ApplicationService:
         if method=='document_tool':
             from docfit_app.document_tools_service import DocumentToolsService
             def execute():
-                result=DocumentToolsService(self.store._path.parent).command(*args)
-                if args[0]=='add_text':
+                name, payload = args
+                result=DocumentToolsService(self.store._path.parent).command(name, payload)
+                if name=='add_text':
                     self.data.files.append(result['path'])
                 return result
             return response(execute)
@@ -270,13 +266,9 @@ class ApplicationService:
             if action=='save':return self.flows.save(payload.get('id'),payload.get('name'),payload.get('snapshot'),payload.get('revision'))
             if action=='delete':return self.flows.delete(payload.get('id'))
             raise ServiceError('INVALID_ACTION','흐름도 작업을 확인해 주세요.')
-        if method=='diagram_list': return self.diagrams.list()
-        if method=='diagram_load': return self.diagrams.load(*args)
-        if method=='diagram_save': return self.diagrams.save(*args)
-        if method=='diagram_delete': return self.diagrams.delete(*args)
         if method=='shutdown':
             self.data.closing=True
             self.jobs.shutdown()
             return {'closed':True}
-        raise ServiceError('NOT_AVAILABLE','이 네이티브 시제품에서는 해당 기능을 아직 사용할 수 없습니다.')
+        raise ServiceError('NOT_AVAILABLE','지원하지 않는 명령입니다.')
 
