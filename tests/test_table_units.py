@@ -261,7 +261,7 @@ class TableUnitsTests(unittest.TestCase):
     def test_all_adjustable_templates_min_max_and_grid(self):
         for name, record in self.records.items():
             for axis, p in units.plan_for(record).items():
-                if p is None:
+                if axis not in ("row", "col") or p is None:   # signature 같은 부가 정보는 축이 아니다
                     continue
                 for target in (1, p["count"] + 1, p["max"]):
                     with self.subTest(name=name, axis=axis, target=target):
@@ -368,15 +368,45 @@ class TableUnitsTests(unittest.TestCase):
         fixed = [f"{category} · 모양 {number}"
                  for category, numbers in (("부연설명", range(1, 8)),
                                            ("라벨 서식", range(1, 7)),
-                                           ("표(가로)", (3,)), ("현황표(가로)", (1,)),
+
                                            ("신구대조표", (1,)), ("조직도", (1,)))
                  for number in numbers]
         with patch.object(units, "detect_plan", side_effect=AssertionError("fixed template detection forbidden")):
             for name in fixed:
                 with self.subTest(name=name):
-                    self.assertEqual(units.PLANS[name], {"row": None, "col": None})
+                    self.assertEqual(units.PLANS[name]["row"], None)
+                    self.assertEqual(units.PLANS[name]["col"], None)
                     record = self.records.get(name, {"name": name, "rows": 1, "cols": 1})
-                    self.assertEqual(units.plan_for(record), {"row": None, "col": None})
+                    self.assertEqual(units.plan_for(record)["row"], None)
+                    self.assertEqual(units.plan_for(record)["col"], None)
+
+        # 열 단위가 보완된 템플릿의 단위 값 검증
+        self.assertEqual(units.PLANS["표(가로) · 모양 3"]["col"], units._axis(2, 2, 1, axis="col"))
+        self.assertEqual(units.PLANS["현황표(가로) · 모양 1"]["col"], units._axis(0, 2, 2, axis="col"))
+        for name in ("표(가로) · 모양 3", "현황표(가로) · 모양 1"):
+            if name in self.records:
+                actual = {k: v for k, v in units.plan_for(self.records[name]).items() if k in ("row", "col")}
+                self.assertEqual(actual,
+                                 {"row": units.PLANS[name]["row"], "col": units.PLANS[name]["col"]})
+
+    def test_plan_for_matches_by_shape_signature_when_name_changed(self):
+        # 이름이 바뀌었지만 모양 서명이 같은 경우 PLANS를 정상적으로 찾는지 시험
+        rec = copy.deepcopy(self.records["표(가로) · 모양 1"])
+        sig = units.shape_signature(rec["cell_meta"], rec["rows"], rec["cols"])
+
+        fake_rec = copy.deepcopy(rec)
+        fake_rec["name"] = "기본형(가로) · 모양 1"
+        fake_rec["category"] = "기본형(가로)"
+
+        orig_sig = units.PLANS["표(가로) · 모양 1"].get("signature")
+        try:
+            units.PLANS["표(가로) · 모양 1"]["signature"] = sig
+            with patch.object(units, "detect_plan", side_effect=AssertionError("detect_plan should not be called")):
+                plan = units.plan_for(fake_rec)
+                self.assertEqual(plan["row"], units.PLANS["표(가로) · 모양 1"]["row"])
+                self.assertEqual(plan["col"], units.PLANS["표(가로) · 모양 1"]["col"])
+        finally:
+            units.PLANS["표(가로) · 모양 1"]["signature"] = orig_sig
 
     def test_signature_preserves_internal_and_lateral_edges(self):
         for axis in ("row", "col"):
@@ -554,6 +584,41 @@ class TableUnitsTests(unittest.TestCase):
         self.assertEqual(len(org_items), 1, "목록에서 조직도는 1개만 노출되어야 함")
         self.assertEqual(org_items[0]["name"], "조직도")
         self.assertEqual(org_items[0]["units"]["col"]["kind"], "org_chart")
+
+    def test_org_chart_top_box_width_and_centering(self):
+        user_catalog = Path(r"C:\HWP_AUTODOCFIT\표서식모음\표 서식모음.hwpx")
+        catalog_path = user_catalog if user_catalog.is_file() else SOURCE
+        records_map = {r["name"]: r for r in catalog._scan(catalog_path)}
+        if "조직도 · 모양 2" not in records_map:
+            self.skipTest("조직도 · 모양 2가 없어 시험을 건너뜁니다.")
+
+        rec_m2 = records_map["조직도 · 모양 2"]
+        _, template_table, _ = units._load(rec_m2["id"], catalog_path)
+        ref_top_box = next(c for c in template_table.findall(HP + "tr")[1].findall(HP + "tc")
+                           if int(c.find(HP + "cellSpan").get("colSpan")) > 1)
+        ref_width = int(ref_top_box.find(HP + "cellSz").get("width"))
+
+        for N in range(2, 11):
+            with self.subTest(team_count=N):
+                table = units.generate_org_chart(template_table, N)
+
+                # 1. 그리드 무결성
+                self.grid(table, width=True)
+
+                # 2. 가운데 정렬
+                total_cols = int(table.get("colCnt"))
+                r1_cells = table.findall(HP + "tr")[1].findall(HP + "tc")
+                top_box = next(c for c in r1_cells if int(c.find(HP + "cellSpan").get("colSpan")) > 1)
+                box_col = int(top_box.find(HP + "cellAddr").get("colAddr"))
+                box_span = int(top_box.find(HP + "cellSpan").get("colSpan"))
+                left_cols = box_col
+                right_cols = total_cols - (box_col + box_span)
+                self.assertEqual(left_cols, right_cols, f"N={N} 위 상자 가운데 정렬 불일치 ({left_cols} != {right_cols})")
+
+                # 3. 위 상자 폭 >= 기준 폭 * 0.95
+                box_width = int(top_box.find(HP + "cellSz").get("width"))
+                self.assertGreaterEqual(box_width, ref_width * 0.95,
+                                        f"N={N} 위 상자 폭 부족: {box_width} < {ref_width * 0.95}")
 
 
 if __name__ == "__main__":

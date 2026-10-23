@@ -555,10 +555,10 @@ class _WorkspaceState extends State<Workspace> {
     );
   }
 
-  Future<void> openFlowEditor() async {
+  Future<void> openFlowEditor({String mode = 'diagram'}) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => FlowEditorScreen(api: widget.api),
+        builder: (_) => FlowEditorScreen(api: widget.api, initialMode: mode),
       ),
     );
   }
@@ -832,21 +832,35 @@ class _WorkspaceState extends State<Workspace> {
         tooltip: '표/다이어그램',
         enabled: !locked,
         icon: const Icon(Icons.table_chart_outlined),
-        onSelected: (value) =>
-            value == 'table_units' ? openTableUnits() : openFlowEditor(),
+        onSelected: (value) {
+          if (value == 'table_units') {
+            openTableUnits();
+          } else if (value == 'mindmap') {
+            openFlowEditor(mode: 'mindmap');
+          } else {
+            openFlowEditor(mode: 'diagram');
+          }
+        },
         itemBuilder: (_) => const [
+          PopupMenuItem(
+            value: 'diagram', /*
+            child: ListTile(
+              leading: Icon(Icons.hub_outlined),
+*/ child: ListTile(leading: Icon(Icons.account_tree_outlined), title: Text('다이어그램'),
+            ),
+          ),
+          PopupMenuItem(
+            value: 'mindmap',
+            child: ListTile(
+              leading: Icon(Icons.hub_outlined),
+              title: Text('마인드맵'),
+            ),
+          ),
           PopupMenuItem(
             value: 'table_units',
             child: ListTile(
               leading: Icon(Icons.grid_on_outlined),
-              title: Text('표 템플릿 (골라서 한/글에 붙여넣기)'),
-            ),
-          ),
-          PopupMenuItem(
-            value: 'flow_editor',
-            child: ListTile(
-              leading: Icon(Icons.account_tree_outlined),
-              title: Text('표/다이어그램 편집기'),
+              title: Text('표 템플릿'),
             ),
           ),
         ],

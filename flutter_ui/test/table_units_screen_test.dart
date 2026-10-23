@@ -178,6 +178,7 @@ void main() {
     expect(find.byKey(const Key('templateCard_0:3')), findsNothing);
 
     // 3. 분류 칩 '서약서' 선택 후 검색창에 '과제' -> 불일치로 결과 없음
+    await tester.ensureVisible(find.byKey(const Key('categoryChip_서약서')));
     await tester.tap(find.byKey(const Key('categoryChip_서약서')));
     await tester.pumpAndSettle();
 
@@ -319,8 +320,11 @@ void main() {
     // 미리보기 위젯의 좌측 상단(0행 0열)을 탭하여 다이얼로그 열기
     final previewWidget = find.byType(TableGridPreview);
     expect(previewWidget, findsOneWidget);
-    final topLeft = tester.getTopLeft(previewWidget);
-    await tester.tapAt(topLeft + const Offset(20, 20));
+    final contentFinder = find.byKey(const Key('tableGridContent'));
+    final target = contentFinder.evaluate().isNotEmpty
+        ? tester.getTopLeft(contentFinder)
+        : tester.getTopLeft(previewWidget);
+    await tester.tapAt(target + const Offset(20, 20));
     await tester.pumpAndSettle();
 
     // 글 입력 창이 나타났는지 확인
@@ -369,6 +373,7 @@ void main() {
     }
 
     await pumpScreen(tester, api: apiActivatedTrue);
+    await tester.ensureVisible(find.byKey(const Key('btnCopyTable')));
     await tester.tap(find.byKey(const Key('btnCopyTable')));
     await tester.pump();
     await tester.pumpAndSettle();
@@ -396,6 +401,7 @@ void main() {
     }
 
     await pumpScreen(tester, api: apiActivatedFalse);
+    await tester.ensureVisible(find.byKey(const Key('btnCopyTable')));
     await tester.tap(find.byKey(const Key('btnCopyTable')));
     await tester.pump();
     await tester.pumpAndSettle();
@@ -507,6 +513,7 @@ void main() {
 
     await tester.pumpWidget(const SizedBox());
     await pumpScreen(tester, api: copyFailApi);
+    await tester.ensureVisible(find.byKey(const Key('btnCopyTable')));
     await tester.tap(find.byKey(const Key('btnCopyTable')));
     await tester.pumpAndSettle();
 

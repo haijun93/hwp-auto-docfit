@@ -170,8 +170,7 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
             templates: rolledBack,
           );
           if (_selectedTemplate?.id == template.id) {
-            _selectedTemplate =
-                _selectedTemplate!.copyWith(favorite: !newFav);
+            _selectedTemplate = _selectedTemplate!.copyWith(favorite: !newFav);
           }
         });
       }
@@ -277,10 +276,7 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
           ? '한/글 창을 앞으로 가져왔어요. Ctrl+V로 붙여넣으세요.'
           : '한/글 문서에서 붙여넣을 곳을 누르고 Ctrl+V 하세요.';
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(notice),
-          behavior: SnackBarBehavior.floating,
-        ),
+        SnackBar(content: Text(notice), behavior: SnackBarBehavior.floating),
       );
     } catch (e) {
       if (!mounted) return;
@@ -297,39 +293,12 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
   Future<void> _editCellText(int row, int col) async {
     final key = '$row,$col';
     final existingText = _cellTexts[key] ?? '';
-    final controller = TextEditingController(text: existingText);
-
+    // 입력 창이 닫히는 애니메이션 동안에도 입력 상자가 그려지므로, 컨트롤러는 창 위젯이 스스로 만들고 폐기한다.
     final newText = await showDialog<String>(
       context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: Text('칸 글 입력 ($row행 $col열)'),
-          content: TextField(
-            key: const Key('cellTextInputField'),
-            controller: controller,
-            maxLines: 4,
-            autofocus: true,
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              hintText: '이 칸에 들어갈 글을 적어주세요.',
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(null),
-              child: const Text('취소'),
-            ),
-            FilledButton(
-              key: const Key('btnSaveCellText'),
-              onPressed: () => Navigator.of(ctx).pop(controller.text),
-              child: const Text('확인'),
-            ),
-          ],
-        );
-      },
+      builder: (ctx) =>
+          _CellTextDialog(row: row, col: col, initial: existingText),
     );
-
-    controller.dispose();
 
     if (newText != null) {
       final trimmed = newText.trim();
@@ -653,8 +622,15 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
               decoration: InputDecoration(
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12),
                 hintText: '이름 또는 분류 검색',
-                hintStyle: const TextStyle(fontSize: 13, color: Color(0xff94a3b8)),
-                prefixIcon: const Icon(Icons.search, size: 18, color: Color(0xff64748b)),
+                hintStyle: const TextStyle(
+                  fontSize: 13,
+                  color: Color(0xff94a3b8),
+                ),
+                prefixIcon: const Icon(
+                  Icons.search,
+                  size: 18,
+                  color: Color(0xff64748b),
+                ),
                 suffixIcon: _searchQuery.isNotEmpty
                     ? IconButton(
                         icon: const Icon(Icons.clear, size: 16),
@@ -836,7 +812,10 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
                 style: OutlinedButton.styleFrom(
                   foregroundColor: const Color(0xffef4444),
                   side: const BorderSide(color: Color(0xfffecaca)),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
                   visualDensity: VisualDensity.compact,
                 ),
                 onPressed: () {
@@ -1127,4 +1106,54 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
       ),
     );
   }
+}
+
+class _CellTextDialog extends StatefulWidget {
+  const _CellTextDialog({
+    required this.row,
+    required this.col,
+    required this.initial,
+  });
+  final int row, col;
+  final String initial;
+  @override
+  State<_CellTextDialog> createState() => _CellTextDialogState();
+}
+
+class _CellTextDialogState extends State<_CellTextDialog> {
+  late final TextEditingController controller = TextEditingController(
+    text: widget.initial,
+  );
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text('칸 글 입력 (${widget.row}행 ${widget.col}열)'),
+    content: TextField(
+      key: const Key('cellTextInputField'),
+      controller: controller,
+      maxLines: 4,
+      autofocus: true,
+      decoration: const InputDecoration(
+        border: OutlineInputBorder(),
+        hintText: '이 칸에 들어갈 글을 적어주세요.',
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(null),
+        child: const Text('취소'),
+      ),
+      FilledButton(
+        key: const Key('btnSaveCellText'),
+        onPressed: () => Navigator.of(context).pop(controller.text),
+        child: const Text('확인'),
+      ),
+    ],
+  );
 }

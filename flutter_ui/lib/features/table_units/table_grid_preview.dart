@@ -128,6 +128,7 @@ class TableGridPreview extends StatelessWidget {
         rowStarts[rows] = renderHeight;
 
         Widget content = Container(
+          key: const Key('tableGridContent'),
           width: renderWidth,
           height: renderHeight,
           decoration: BoxDecoration(

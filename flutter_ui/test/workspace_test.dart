@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:docfit_ui/main.dart';
+import 'package:docfit_ui/features/flows/flow_editor_screen.dart';
+import 'package:docfit_ui/features/table_units/table_units_screen.dart';
 
 Map<String, dynamic> initialState() => <String, dynamic>{
   'files': <Map<String, String>>[],
@@ -61,7 +63,103 @@ Map<String, dynamic> initialState() => <String, dynamic>{
   'version': 'test',
 };
 
+class _TableMenuTestNavigatorObserver extends NavigatorObserver {
+  final pushedRoutes = <Route<dynamic>>[];
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didPush(route, previousRoute);
+    pushedRoutes.add(route);
+  }
+}
+
 void main() {
+  testWidgets(
+    'table tools menu contains three items and opens corresponding screens',
+    (tester) async {
+      tester.view.physicalSize = const Size(1024, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final state = initialState();
+      Future<Object?> api(String name, List<Object?> args) async {
+        if (name == 'table_units') {
+          return {
+            'api_version': 1,
+            'ok': true,
+            'data': {
+              'categories': <Map<String, Object?>>[],
+              'count': 0,
+            },
+            'error': null,
+          };
+        }
+        return state;
+      }
+
+      final observer = _TableMenuTestNavigatorObserver();
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorObservers: [observer],
+          home: Workspace(api: api),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('tableToolsMenu')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('tableToolsMenu')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('다이어그램'), findsOneWidget);
+      expect(find.text('마인드맵'), findsOneWidget);
+      expect(find.text('표 템플릿'), findsOneWidget);
+
+      await tester.tap(find.text('다이어그램'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final diagramFinder = find.byType(FlowEditorScreen);
+      expect(diagramFinder, findsOneWidget);
+      final diagramScreen = tester.widget<FlowEditorScreen>(diagramFinder);
+      expect(diagramScreen.initialMode, 'diagram');
+      expect(observer.pushedRoutes.isNotEmpty, isTrue);
+
+      Navigator.of(tester.element(diagramFinder)).pop();
+      await tester.pumpAndSettle(); // 화면이 닫히는 애니메이션이 끝난 뒤 메뉴를 연다
+
+      await tester.tap(find.byKey(const Key('tableToolsMenu')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('마인드맵'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final mindmapFinder = find.byType(FlowEditorScreen);
+      expect(mindmapFinder, findsOneWidget);
+      final mindmapScreen = tester.widget<FlowEditorScreen>(mindmapFinder);
+      expect(mindmapScreen.initialMode, 'mindmap');
+
+      Navigator.of(tester.element(mindmapFinder)).pop();
+      await tester.pumpAndSettle(); // 화면이 닫히는 애니메이션이 끝난 뒤 메뉴를 연다
+
+      await tester.tap(find.byKey(const Key('tableToolsMenu')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('표 템플릿'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final tableUnitsFinder = find.byType(TableUnitsScreen);
+      expect(tableUnitsFinder, findsOneWidget);
+
+      Navigator.of(tester.element(tableUnitsFinder)).pop();
+      await tester.pumpAndSettle(); // 화면이 닫히는 애니메이션이 끝난 뒤 메뉴를 연다
+
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
   testWidgets('general editor is visible and excluded tldraw has no menu', (
     tester,
   ) async {
