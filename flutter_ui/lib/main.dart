@@ -24,6 +24,7 @@ import 'features/settings/settings_dialog.dart';
 import 'features/settings/update_panel.dart';
 import 'features/stages/stage_board.dart';
 import 'features/table_units/table_units_screen.dart';
+import 'features/table_sketch/table_sketch_screen.dart';
 
 export 'core/api/abbreviation_api.dart' show ApiCall;
 
@@ -572,6 +573,14 @@ class _WorkspaceState extends State<Workspace> {
     );
   }
 
+  Future<void> openTableSketch() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => TableSketchScreen(api: widget.api),
+      ),
+    );
+  }
+
   Future<void> openDiagramEditor() async {
     if (quickOptions['developer_mode'] != true ||
         quickOptions['diagram_editor_enabled'] != true) {
@@ -834,7 +843,9 @@ class _WorkspaceState extends State<Workspace> {
         enabled: !locked,
         icon: const Icon(Icons.table_chart_outlined),
         onSelected: (value) {
-          if (value == 'table_units') {
+          if (value == 'table_sketch') {
+            openTableSketch();
+          } else if (value == 'table_units') {
             openTableUnits();
           } else if (value == 'mindmap') {
             openFlowEditor(mode: 'mindmap');
@@ -862,6 +873,13 @@ class _WorkspaceState extends State<Workspace> {
             child: ListTile(
               leading: Icon(Icons.grid_on_outlined),
               title: Text('표 템플릿'),
+            ),
+          ),
+          PopupMenuItem(
+            value: 'table_sketch',
+            child: ListTile(
+              leading: Icon(Icons.border_all_outlined),
+              title: Text('표그림판'),
             ),
           ),
         ],

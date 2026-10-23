@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:docfit_ui/main.dart';
 import 'package:docfit_ui/features/flows/flow_editor_screen.dart';
 import 'package:docfit_ui/features/table_units/table_units_screen.dart';
+import 'package:docfit_ui/features/table_sketch/table_sketch_screen.dart';
 
 Map<String, dynamic> initialState() => <String, dynamic>{
   'files': <Map<String, String>>[],
@@ -75,7 +76,7 @@ class _TableMenuTestNavigatorObserver extends NavigatorObserver {
 
 void main() {
   testWidgets(
-    'table tools menu contains three items and opens corresponding screens',
+    'table tools menu contains four items and opens corresponding screens',
     (tester) async {
       tester.view.physicalSize = const Size(1024, 900);
       tester.view.devicePixelRatio = 1;
@@ -113,6 +114,7 @@ void main() {
       expect(find.text('다이어그램'), findsOneWidget);
       expect(find.text('마인드맵'), findsOneWidget);
       expect(find.text('표 템플릿'), findsOneWidget);
+      expect(find.text('표그림판'), findsOneWidget);
 
       await tester.tap(find.text('다이어그램'));
       await tester.pump();
@@ -154,6 +156,19 @@ void main() {
 
       Navigator.of(tester.element(tableUnitsFinder)).pop();
       await tester.pumpAndSettle(); // 화면이 닫히는 애니메이션이 끝난 뒤 메뉴를 연다
+
+      await tester.tap(find.byKey(const Key('tableToolsMenu')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('표그림판'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final tableSketchFinder = find.byType(TableSketchScreen);
+      expect(tableSketchFinder, findsOneWidget);
+
+      Navigator.of(tester.element(tableSketchFinder)).pop();
+      await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
