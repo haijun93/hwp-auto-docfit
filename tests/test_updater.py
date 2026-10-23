@@ -42,7 +42,7 @@ class InstallScriptTest(unittest.TestCase):
     def test_script_renames_old_retries_and_restores(self):
         s = install_script()
         self.assertLess(s.index("내려받은 신버전 파일이 없습니다"), s.index("Move-Item -LiteralPath $Target -Destination $Old"))
-        self.assertLess(s.index("Get-FileHash"), s.index("Move-Item -LiteralPath $Target -Destination $Old"))
+        self.assertLess(s.index("(Get-Sha256Hex $Downloaded)"), s.index("Move-Item -LiteralPath $Target -Destination $Old"))
         for 필수 in ("WaitPidList", "$Target.old", "StartedFlag", "신버전 시작 확인 실패", "Move-Item -LiteralPath $Target -Destination $Old",
                     "Retry", "구버전 복구", "Start-Process -FilePath $Target", "Remove-Item -LiteralPath $Old"):
             self.assertIn(필수, s)

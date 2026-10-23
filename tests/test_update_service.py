@@ -127,7 +127,8 @@ class UpdateServiceTest(unittest.TestCase):
         script = setup_script()
         self.assertLess(script.index('Wait-Process'), script.index('Start-Process'))
         self.assertIn('/SILENT /NORESTART /SUPPRESSMSGBOXES /SP-', script)
-        self.assertIn('Get-FileHash -LiteralPath', script)
+        self.assertIn('(Get-Sha256Hex $Installer)', script)   # Get-FileHash 없는 PowerShell에서도 검증(2026-10-23 CI)
+        self.assertNotIn('Get-FileHash -LiteralPath', script)
 
     def test_corrupt_hash_size_mz_rejected_and_invalid_cache_redownloaded(self):
         for data in (b'MZ' + b'y' * 140000, b'ZZ' + EXE[2:], EXE[:-1], EXE + b'x'):

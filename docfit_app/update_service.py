@@ -112,6 +112,13 @@ def setup_script():
     return '''param([string]$Installer, [string]$Sha256, [string]$WaitPidList,
                    [int]$AppPid, [string]$AppExecutable)
 $ErrorActionPreference = 'Stop'
+function Get-Sha256Hex([string]$Path) {
+    # Get-FileHash는 모듈 경로가 달라진 PowerShell에서 없을 수 있다(2026-10-23 CI 실측) — .NET으로 직접 계산한다.
+    $stream = [System.IO.File]::OpenRead($Path)
+    try { $sha = [System.Security.Cryptography.SHA256]::Create()
+          try { return (($sha.ComputeHash($stream) | ForEach-Object { $_.ToString('x2') }) -join '') } finally { $sha.Dispose() } }
+    finally { $stream.Dispose() }
+}
 foreach ($processId in ($WaitPidList -split ' ')) {
     if ($processId) {
         $appProcess = Get-Process -Id ([int]$processId) -ErrorAction SilentlyContinue
@@ -122,7 +129,7 @@ foreach ($processId in ($WaitPidList -split ' ')) {
         }
     }
 }
-if ((Get-FileHash -LiteralPath $Installer -Algorithm SHA256).Hash -ne $Sha256) { throw 'SHA-256 불일치' }
+if ((Get-Sha256Hex $Installer) -ne $Sha256.ToLower()) { throw 'SHA-256 불일치' }
 Start-Process -FilePath $Installer -ArgumentList '/SILENT /NORESTART /SUPPRESSMSGBOXES /SP-' -Wait
 '''
 
