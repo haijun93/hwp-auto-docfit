@@ -56,6 +56,34 @@ def write_request(folder: Path, file_path: str | Path, *, time_func: Callable[[]
     return req_path
 
 
+def _pid_alive(pid: int) -> bool:
+    """프로세스가 살아 있는지 확인한다(판단할 수 없으면 살아 있다고 본다)."""
+    if pid <= 0:
+        return False
+    if os.name != "nt":
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except OSError:
+            return True
+        return True
+    import ctypes
+    from ctypes import wintypes
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+    if not handle:
+        return ctypes.get_last_error() == 5  # 접근 거부면 살아 있는 남의 프로세스
+    try:
+        code = wintypes.DWORD()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+            return True
+        return code.value == 259  # STILL_ACTIVE
+    finally:
+        kernel32.CloseHandle(handle)
+
+
 class BatchLock:
     """O_CREAT | O_EXCL 기반 파일 잠금. 첫 프로세스가 대표(Leader)가 된다."""
 
@@ -65,6 +93,30 @@ class BatchLock:
         self.acquired: bool = False
 
     def acquire(self) -> bool:
+        if self._try_acquire():
+            return True
+        # 대표가 강제 종료되어 남은 잠금이면 치우고 한 번 더 시도한다(남겨 두면 이후 우클릭 요청이 영영 처리되지 않음).
+        if self._is_stale():
+            try:
+                self.lock_file.unlink(missing_ok=True)
+            except OSError:
+                return False
+            return self._try_acquire()
+        return False
+
+    def _is_stale(self, max_age_seconds: float = 900.0) -> bool:
+        try:
+            text = self.lock_file.read_text(encoding="utf-8")
+            age = time.time() - self.lock_file.stat().st_mtime
+        except OSError:
+            return False
+        try:
+            pid = int(text.split()[0])
+        except (IndexError, ValueError):
+            return age > 10.0  # 쓰는 중일 수 있으니 잠깐은 기다린다
+        return age > max_age_seconds or not _pid_alive(pid)
+
+    def _try_acquire(self) -> bool:
         try:
             self.fd = os.open(str(self.lock_file), os.O_CREAT | os.O_EXCL | os.O_RDWR)
             try:
@@ -128,12 +180,16 @@ def validate_request_file(
             pass
         return None
 
-    # 사용자 프로필 경로 확인 (대소문자 무시 비교)
-    profile = (user_profile or Path(os.environ.get("USERPROFILE") or Path.home())).resolve()
+    # 허용 폴더 확인 (대소문자 무시 비교). 기본은 제한 없음 — 요청 폴더가 사용자 LOCALAPPDATA라 본인만 쓸 수 있고,
+    # 실제 문서는 D: 드라이브·공유 폴더·C:\ 아래 업무 폴더에도 있으므로 사용자 폴더로 묶으면 정상 요청이 버려진다.
     resolved_target = target_path.resolve()
-    profile_str = str(profile).casefold()
-    target_str = str(resolved_target).casefold()
-    if not (target_str == profile_str or target_str.startswith(profile_str + os.sep) or target_str.startswith(profile_str + "/")):
+    if user_profile is not None:
+        profile_str = str(Path(user_profile).resolve()).casefold()
+        target_str = str(resolved_target).casefold()
+        allowed = target_str == profile_str or target_str.startswith(profile_str + os.sep) or target_str.startswith(profile_str + "/")
+    else:
+        allowed = resolved_target.is_absolute()
+    if not allowed:
         bad_path = req_file.with_suffix(".bad")
         try:
             req_file.replace(bad_path)

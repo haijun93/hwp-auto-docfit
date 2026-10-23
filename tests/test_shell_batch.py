@@ -219,6 +219,33 @@ class ShellBatchTests(unittest.TestCase):
         self.assertFalse(req.exists())
         self.assertTrue(req.with_suffix(".bad").exists())
 
+    def test_files_outside_user_folder_allowed_by_default(self):
+        """기본(허용 폴더 미지정)에서는 사용자 폴더 밖(D: 드라이브·업무 폴더) 파일도 받아들인다."""
+        outside = self.root / "outside"
+        outside.mkdir()
+        target = outside / "보고서.hwpx"
+        target.write_bytes(b"data")
+        req = shell_batch.write_request(self.batch_dir, target)
+        with patch.dict(os.environ, {"USERPROFILE": str(self.root / "user_home")}):
+            self.assertEqual(shell_batch.validate_request_file(req), target.resolve())
+
+    def test_stale_lock_from_dead_leader_is_reclaimed(self):
+        """대표가 강제 종료되어 남은 잠금(죽은 PID)은 치우고 새 대표가 된다."""
+        lock_file = self.batch_dir / ".lock"
+        lock_file.write_text("999999999\n0", encoding="utf-8")
+        lock = shell_batch.BatchLock(lock_file)
+        with patch.object(shell_batch, "_pid_alive", return_value=False):
+            self.assertTrue(lock.acquire())
+        lock.release()
+
+    def test_live_leader_lock_is_respected(self):
+        """살아 있는 대표의 잠금은 건드리지 않는다."""
+        lock_file = self.batch_dir / ".lock"
+        lock_file.write_text(f"{os.getpid()}\n0", encoding="utf-8")
+        self.assertTrue(shell_batch._pid_alive(os.getpid()))
+        self.assertFalse(shell_batch.BatchLock(lock_file).acquire())
+        self.assertTrue(lock_file.exists())
+
     def test_max_files_cap_200(self):
         """200개 상한에 도달하면 즉시 수집을 끊고 묶음 처리하는지 검증."""
         files = [self.make_file(f"doc_{i:03d}.hwpx") for i in range(250)]

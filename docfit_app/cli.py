@@ -44,7 +44,7 @@ def attach_console():
 def notify(message):
     if sys.platform == 'win32':
         import ctypes
-        ctypes.windll.user32.MessageBoxW(None, message, '한글편집 후처리', 0x40)
+        ctypes.windll.user32.MessageBoxW(None, message, '한글편집 후처리', 0x40 | 0x10000 | 0x40000)  # 정보 아이콘·앞으로·맨 위(탐색기 뒤에 숨지 않게)
 
 
 class ArgumentError(ValueError):
