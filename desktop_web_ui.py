@@ -1399,6 +1399,24 @@ class DesktopWebBridge:
             pass
         return app
 
+    def table_sketch(self, action, payload=None):
+        """Table sketch conversion, storage and clipboard API."""
+        from docfit_app.table_sketch_service import TableSketchService
+        try:
+            if action == "copy" and self.gui.running:
+                return {"ok": False, "message": "문서 작업이 끝난 뒤 다시 눌러 주세요."}
+            folder = self._tk(lambda: getattr(self.gui, "_준말_서비스")().settings._path.parent)
+            if action != "copy":
+                return TableSketchService(folder).command(action, payload)
+            if not _TABLE_UNITS_COM_LOCK.acquire(blocking=False):
+                return {"ok": False, "message": "표 작업이 진행 중입니다. 잠시 후 다시 눌러 주세요."}
+            try:
+                return TableSketchService(folder, self._table_units_hwp).command(action, payload)
+            finally:
+                _TABLE_UNITS_COM_LOCK.release()
+        except Exception as exc:
+            return {"ok": False, "message": str(exc)}
+
     def table_units(self, action, payload=None):
         """표 템플릿: 스냅샷 목록·정보단위 미리보기·한/글 붙여넣기용 복사(2026-10-22).
 
@@ -1795,7 +1813,7 @@ class _BrowserApi:
             "get_state", "add_files", "add_folder", "add_paths", "remove_file",
             "clear_files", "set_mode", "set_range", "start", "stop",
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
-            "get_pending_dialog", "resolve_dialog", "enable_close_guard", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units",
+            "get_pending_dialog", "resolve_dialog", "enable_close_guard", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch",
             "open_results", "next_job", "run_tool", "open_result",
             "show_result", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",

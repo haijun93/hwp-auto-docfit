@@ -452,3 +452,9 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 - 범위: table_units.py·table_catalog.py·table_units_service.py 및 Python 시험. Flutter·커밋·푸시 금지 준수. COM 잠금 Codex/C13 사용 중.
 - 공유 계약: cell_meta.shapes 기본 [] 및 요청 필드 제공. pic(그림·칸 배경 imgBrush)은 원본 이미지 data URI인 선택 필드 `src`도 제공하므로 Gemini 렌더러는 Image.memory 등으로 표시 가능.
 - 가로세로 polygon 화살표, 세로 JPG, 신구대조표 배경 PNG 확인. 원본 alpha=0은 한/글에서 정상 불투명이며 변경하면 그림이 사라져 그대로 보존. 새 PDF 스냅샷에서 화살표 표시 확인.
+
+### C12. 표그림판 Python (2026-10-23, 완료)
+- 변경: docfit_core/table_sketch.py, docfit_app/table_sketch_service.py, desktop_web_ui.py, docfit_app/application_service.py, tests/test_table_sketch.py, scripts/verify_table_sketch_pc.py.
+- 지정 Python 전체 1,594개 실행: 실패·오류 0, 조건부 제외 1 (566.758초). 최종 신규 20개 포함 관련 52개 PASS.
+- com_test_lock("Codex", "C12") 조직도 복사·붙여넣기·저장 PASS: preview와 4행·8열·28칸·병합 4칸 일치. 판정 JSON: C:\HWP_AUTODOCFIT\v1803\reports\C12-artifacts\com-result.json.
+- 보고: C:\HWP_AUTODOCFIT\v1803\reports\C12.md. Branch: feature/table-sketch; no commit/push/Flutter edits; Python CRLF preserved.

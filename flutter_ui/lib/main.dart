@@ -24,6 +24,7 @@ import 'features/settings/settings_dialog.dart';
 import 'features/settings/update_panel.dart';
 import 'features/stages/stage_board.dart';
 import 'features/table_units/table_units_screen.dart';
+import 'features/table_sketch/table_sketch_screen.dart';
 
 export 'core/api/abbreviation_api.dart' show ApiCall;
 
@@ -572,6 +573,14 @@ class _WorkspaceState extends State<Workspace> {
     );
   }
 
+  Future<void> openTableSketch() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => TableSketchScreen(api: widget.api),
+      ),
+    );
+  }
+
   Future<void> openDiagramEditor() async {
     if (quickOptions['developer_mode'] != true ||
         quickOptions['diagram_editor_enabled'] != true) {
@@ -947,25 +956,43 @@ class _WorkspaceState extends State<Workspace> {
                 ),
               ],
               const SizedBox(width: 4),
-              topBtn(
-                key: const Key('topMenu_diagram'),
-                label: '다이어그램',
-                icon: Icons.account_tree_outlined,
-                onPressed: () => openFlowEditor(mode: 'diagram'),
-              ),
-              const SizedBox(width: 4),
-              topBtn(
-                key: const Key('topMenu_mindmap'),
-                label: '마인드맵',
-                icon: Icons.hub_outlined,
-                onPressed: () => openFlowEditor(mode: 'mindmap'),
-              ),
-              const SizedBox(width: 4),
-              topBtn(
-                key: const Key('topMenu_tableUnits'),
-                label: '표 템플릿',
-                icon: Icons.grid_on_outlined,
-                onPressed: openTableUnits,
+              // 메뉴 버튼이 늘어도 넘치지 않게, 공간이 모자라면 옆으로 밀어 볼 수 있게 한다.
+              Flexible(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      topBtn(
+                        key: const Key('topMenu_diagram'),
+                        label: '다이어그램',
+                        icon: Icons.account_tree_outlined,
+                        onPressed: () => openFlowEditor(mode: 'diagram'),
+                      ),
+                      const SizedBox(width: 4),
+                      topBtn(
+                        key: const Key('topMenu_mindmap'),
+                        label: '마인드맵',
+                        icon: Icons.hub_outlined,
+                        onPressed: () => openFlowEditor(mode: 'mindmap'),
+                      ),
+                      const SizedBox(width: 4),
+                      topBtn(
+                        key: const Key('topMenu_tableUnits'),
+                        label: '표 템플릿',
+                        icon: Icons.grid_on_outlined,
+                        onPressed: openTableUnits,
+                      ),
+                      const SizedBox(width: 4),
+                      topBtn(
+                        key: const Key('topMenu_tableSketch'),
+                        label: '표그림판',
+                        icon: Icons.border_all_outlined,
+                        onPressed: openTableSketch,
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ],
           ),
