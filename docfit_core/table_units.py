@@ -44,6 +44,8 @@ SHAPE_SIGNATURES: dict[str, str | None] = {
     '부연설명 · 모양 6': '6abcd3b1acdbe172',
     '분야별과제표 · 모양 1': '408beef24fa87dd6',
     '신구대조표 · 모양 1': '78ffecfa68b7b6ab',
+    '신구대조표 · 사용자형': '920eb8de103721f0',
+    '추진절차(가로세로) · 사용자형': '1660c86716c32a08',
     '신구대조표 · 모양 2': 'dcc581be5e609dcd',
     '신구대조표 · 모양 3': '22556c475d775a45',
     '일정표(연간) · 모양 1': '84a71465228518f1',
@@ -80,19 +82,27 @@ def _plans():
     add("표(가로) · 모양 1", (1, 1, 5), (0, 1, 5))
     add("표(가로) · 모양 2", (0, 1, 1), (0, 1, 4))
     add("표(가로) · 모양 3", col=(2, 2, 1))
-    add("현황표(가로) · 모양 1", col=(0, 2, 2))
-    add("행사시간표 · 모양 1", (1, 1, 6))
+    add("현황표(가로) · 모양 1", (3, 1, 2), (0, 2, 2))
+    # 사진첨부용: 사진 행 + 설명 행 두 행이 한 묶음 — 행 단위 +1이면 지금 모양(두 행)을 아래로 하나 더 붙인다(2026-10-23 사용자 요청).
+    for number in (1, 2):
+        add(f"사진첨부용 · 모양 {number}", (0, 2, 1), (0, 1, 4))
+    add("행사시간표 · 모양 1", (1, 1, 6), (2, 1, 2))
     for number, count in enumerate((5, 5, 4, 4, 6), 1):
-        add(f"추진절차(가로) · 모양 {number}", col=(0, 1, count, 1))
-    add("추진절차(가로세로) · 모양 1", col=(0, 1, 4, 1))
-    add("추진절차(세로) · 모양 1", (1, 1, 12))
+        add(f"추진절차(가로) · 모양 {number}",
+            (0, 1, 1) if number == 1 else (1, 1, 1 if number == 5 else 2),
+            (0, 1, count, 1))
+    add("추진절차(가로세로) · 모양 1", (12, 1, 1), (0, 1, 4, 1))
+    add("추진절차(가로세로) · 사용자형", (2, 1, 5, 1), (0, 1, 2, 1), signature="1660c86716c32a08")
+    add("추진절차(세로) · 모양 1", (2, 1, 6, 1))
+    add("신구대조표 · 모양 1", (1, 8, 1))
+    add("신구대조표 · 사용자형", (1, 1, 4), signature="920eb8de103721f0")
     add("신구대조표 · 모양 2", (2, 1, 3))
-    add("신구대조표 · 모양 3", (1, 1, 6))
+    add("신구대조표 · 모양 3", (1, 2, 3))
     add("일정표(연간) · 모양 1", (2, 1, 5), (1, 4, 5))
     add("일정표(월별) · 모양 1", (1, 4, 6), (2, 1, 6))
     add("일정표(주간) · 모양 1", (2, 1, 9), (1, 1, 6))
-    add("일정표(일간) · 모양 1", (1, 2, 9))
-    add("행사표(1일) · 모양 1", (1, 8, 2))
+    add("일정표(일간) · 모양 1", (1, 2, 9), (1, 1, 4))
+    add("행사표(1일) · 모양 1", (1, 8, 2), (3, 1, 2))
     for category, count in (("부연설명", 7), ("라벨 서식", 6), ("표(가로)", 3),
                             ("현황표(가로)", 1), ("신구대조표", 1), ("조직도", 1)):
         for number in range(1, count + 1):
@@ -233,7 +243,12 @@ def plan_for(template) -> dict:
     if cell_meta is not None and rows is not None and cols is not None:
         try:
             sig = shape_signature(cell_meta, rows, cols)
-            for p in PLANS.values():
+            # 이름이 정확히 같은 판정표가 있고 서명이 없거나 같으면 그것이 우선이다. 평범한 격자 표는 서명이 다른 표와
+            # 겹칠 수 있다(2026-10-23: 사진첨부용 모양 1이 다른 2×4 표의 규칙을 받아 두 행 묶음이 아닌 한 행만 늘었다).
+            named = PLANS.get(template.get("name"))
+            if named is not None and named.get("signature") in (None, sig):
+                matched_plan = named
+            for p in ([] if matched_plan is not None else PLANS.values()):
                 if p.get("signature") and p["signature"] == sig:
                     matched_plan = p
                     break
@@ -320,7 +335,7 @@ class _ObjectIds:
         self.z_order = -1
         for root in roots:
             for node in root.iter():
-                for attr in ("id", "instId"):
+                for attr in ("id", "instId", "instid"):
                     value = _integer(node.get(attr))
                     if value is not None:
                         self.used.add(value)
@@ -333,7 +348,7 @@ class _ObjectIds:
             # Paragraph/list IDs are HWPX sentinels, not drawing object IDs.
             if not node.tag.startswith(HP) or node.tag in (HP + "p", HP + "subList"):
                 continue
-            for attr in ("id", "instId"):
+            for attr in ("id", "instId", "instid"):
                 if _integer(node.get(attr)) is not None:
                     while self.next_id in self.used:
                         self.next_id += 1
@@ -1005,7 +1020,10 @@ def _load(template_id, catalog_path):
         root = ET.fromstring(archive.read(record["section"]))
         table = catalog._top_tables(root.findall(HP + "p")[record["paragraph_index"]])[record["table_index"]]
         header = ET.fromstring(archive.read("Contents/header.xml")) if "Contents/header.xml" in archive.namelist() else None
-    return record, table, catalog._header_lookup(header)
+        images = catalog._image_lookup(archive)
+    info = catalog._header_lookup(header)
+    info["images"] = images
+    return record, table, info
 
 
 def export_resized(template_id, output_path, catalog_path=None, row_count=None, col_count=None, *, fill="increment", cell_texts=None) -> Path:

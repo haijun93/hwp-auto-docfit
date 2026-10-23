@@ -42,6 +42,7 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
   Map<String, String> _cellTexts = {};
 
   TablePreview? _previewData;
+  Map<String, List<CellShape>> _previewShapes = {};
   int _previewSeq = 0;
 
   @override
@@ -73,6 +74,7 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
         } else {
           _selectedTemplate = null;
           _previewData = null;
+          _previewShapes = {};
         }
       });
     } catch (e) {
@@ -190,6 +192,7 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
       _currentColCount = template.units.col?.count;
       _selectedFill = 'increment';
       _cellTexts = {};
+      _previewShapes = {};
       _copyErrorMessage = null;
     });
     _requestPreview();
@@ -203,14 +206,56 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
       _previewError = null;
     });
     try {
-      final preview = await _api.preview(
-        _selectedTemplate!.id,
-        rowCount: _currentRowCount,
-        colCount: _currentColCount,
-        fill: _selectedFill,
-        cellTexts: _cellTexts.isNotEmpty ? Map.from(_cellTexts) : null,
-      );
+      final payload = <String, Object?>{
+        'id': _selectedTemplate!.id,
+        'row_count': _currentRowCount,
+        'col_count': _currentColCount,
+        'fill': _selectedFill,
+        'cell_texts': _cellTexts.isNotEmpty ? Map.from(_cellTexts) : const {},
+      };
+
+      final res = await widget.api('table_units', ['preview', payload]);
       if (!mounted || seq != _previewSeq) return;
+
+      if (res is! Map || res['ok'] != true) {
+        final err = res is Map ? res['error'] as Map? : null;
+        throw ServiceApiException(
+          '${err?['code'] ?? 'UNKNOWN'}',
+          '${err?['message'] ?? '미리보기를 불러오지 못했습니다.'}',
+          true,
+        );
+      }
+
+      final data = res['data'] as Map? ?? const {};
+      final preview = TablePreview.fromJson(data);
+
+      // shapes 추출
+      final extractedShapes = <String, List<CellShape>>{};
+      final rawMeta = data['cell_meta'];
+      if (rawMeta is List) {
+        for (final rowItem in rawMeta) {
+          if (rowItem is List) {
+            for (final cellItem in rowItem) {
+              if (cellItem is Map) {
+                final r = (cellItem['row'] as num?)?.toInt();
+                final c = (cellItem['col'] as num?)?.toInt();
+                final rawShapes = cellItem['shapes'];
+                if (r != null && c != null && rawShapes is List && rawShapes.isNotEmpty) {
+                  final list = <CellShape>[];
+                  for (final s in rawShapes) {
+                    if (s is Map) {
+                      list.add(CellShape.fromJson(s));
+                    }
+                  }
+                  if (list.isNotEmpty) {
+                    extractedShapes['$r,$c'] = list;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
 
       // 범위 벗어난 입력 버리기 검사
       int prunedCount = 0;
@@ -236,6 +281,7 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
 
       setState(() {
         _previewData = preview;
+        _previewShapes = extractedShapes;
         _loadingPreview = false;
       });
 
@@ -252,6 +298,7 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
       if (!mounted || seq != _previewSeq) return;
       setState(() {
         _previewError = '$e';
+        _previewShapes = {};
         _loadingPreview = false;
       });
     }
@@ -439,23 +486,33 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isWide = constraints.maxWidth >= 760;
+        final templateNameBar = _buildTemplateNameBar();
+
         if (isWide) {
-          return Row(
+          return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              SizedBox(
-                width: math.min(460, constraints.maxWidth * 0.42),
-                child: _buildGallery(),
-              ),
-              const VerticalDivider(
-                width: 1,
-                thickness: 1,
-                color: Color(0xffe2e8f0),
-              ),
+              templateNameBar,
               Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(24),
-                  child: _buildDetail(),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(
+                      width: math.min(460, constraints.maxWidth * 0.42),
+                      child: _buildGallery(),
+                    ),
+                    const VerticalDivider(
+                      width: 1,
+                      thickness: 1,
+                      color: Color(0xffe2e8f0),
+                    ),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.all(24),
+                        child: _buildDetail(),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -464,18 +521,92 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              SizedBox(height: 320, child: _buildGallery()),
-              const Divider(height: 1, thickness: 1, color: Color(0xffe2e8f0)),
+              templateNameBar,
               Expanded(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: _buildDetail(),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _buildGallery(shrinkWrap: true),
+                      const Divider(
+                        height: 1,
+                        thickness: 1,
+                        color: Color(0xffe2e8f0),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: _buildDetail(),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
           );
         }
       },
+    );
+  }
+
+  /// 상단 템플릿 이름 나열 바: 가로로 줄바꿈되어 전부 보이고, 누르면 선택 및 강조.
+  Widget _buildTemplateNameBar() {
+    final templates = _listData?.templates ?? const <TableTemplateInfo>[];
+    if (templates.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      key: const Key('templateNameBar'),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          bottom: BorderSide(color: Color(0xffe2e8f0), width: 1),
+        ),
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 120),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.vertical,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: templates.map((t) {
+              final isSelected = _selectedTemplate?.id == t.id;
+              if (isSelected) {
+                return FilledButton(
+                  key: Key('templateName_${t.id}'),
+                  style: FilledButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  onPressed: () => _selectTemplate(t),
+                  child: Text(t.name),
+                );
+              } else {
+                return OutlinedButton(
+                  key: Key('templateName_${t.id}'),
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    textStyle: const TextStyle(fontSize: 12),
+                  ),
+                  onPressed: () => _selectTemplate(t),
+                  child: Text(t.name),
+                );
+              }
+            }).toList(),
+          ),
+        ),
+      ),
     );
   }
 
@@ -684,25 +815,23 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
               ),
             ),
 
-          // 2. 분류 칩
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
+          // 2. 분류 칩 (Wrap으로 줄바꿈하여 잘림 없이 모두 표시)
+          Padding(
             padding: const EdgeInsets.only(bottom: 10),
-            child: Row(
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
               children: categories.map((cat) {
                 final selected = _selectedCategory == cat;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 6),
-                  child: ChoiceChip(
-                    key: Key('categoryChip_$cat'),
-                    label: Text(cat),
-                    selected: selected,
-                    onSelected: (val) {
-                      if (val) {
-                        setState(() => _selectedCategory = cat);
-                      }
-                    },
-                  ),
+                return ChoiceChip(
+                  key: Key('categoryChip_$cat'),
+                  label: Text(cat),
+                  selected: selected,
+                  onSelected: (val) {
+                    if (val) {
+                      setState(() => _selectedCategory = cat);
+                    }
+                  },
                 );
               }).toList(),
             ),
@@ -857,6 +986,7 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
                       rows: _previewData!.rows,
                       cols: _previewData!.cols,
                       cellMeta: _previewData!.cellMeta,
+                      shapes: _previewShapes,
                       maxHeight: 340,
                       onCellTap: (r, c) => _editCellText(r, c),
                       editedCellKeys: _cellTexts.keys.toSet(),

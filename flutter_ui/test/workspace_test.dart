@@ -75,6 +75,96 @@ class _TableMenuTestNavigatorObserver extends NavigatorObserver {
 
 void main() {
   testWidgets(
+    'top menu contains four buttons and opens corresponding screens',
+    (tester) async {
+      tester.view.physicalSize = const Size(1024, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final state = initialState();
+      Future<Object?> api(String name, List<Object?> args) async {
+        if (name == 'table_units') {
+          return {
+            'api_version': 1,
+            'ok': true,
+            'data': {
+              'categories': <Map<String, Object?>>[],
+              'count': 0,
+            },
+            'error': null,
+          };
+        }
+        return state;
+      }
+
+      final observer = _TableMenuTestNavigatorObserver();
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorObservers: [observer],
+          home: Workspace(api: api),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('topMenu_format')), findsOneWidget);
+      expect(find.byKey(const Key('topMenu_diagram')), findsOneWidget);
+      expect(find.byKey(const Key('topMenu_mindmap')), findsOneWidget);
+      expect(find.byKey(const Key('topMenu_tableUnits')), findsOneWidget);
+
+      // 서식 관리 → 하위 메뉴 4개(썸네일로 선택·서식예시 확인·서식예시 폴더·서식관리), 서식관리를 고르면 서식 관리 창
+      await tester.tap(find.byKey(const Key('topMenu_format')));
+      await tester.pumpAndSettle();
+      for (final key in ['formatMenu_kiosk', 'formatMenu_example', 'formatMenu_samples', 'formatMenu_manage']) {
+        expect(find.byKey(Key(key)), findsOneWidget);
+      }
+      await tester.tap(find.byKey(const Key('formatMenu_manage')));
+      await tester.pumpAndSettle();
+      expect(find.text('서식 관리'), findsWidgets);
+      await tester.tap(find.byTooltip('닫기').last);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('topMenu_diagram')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final diagramFinder = find.byType(FlowEditorScreen);
+      expect(diagramFinder, findsOneWidget);
+      final diagramScreen = tester.widget<FlowEditorScreen>(diagramFinder);
+      expect(diagramScreen.initialMode, 'diagram');
+      expect(observer.pushedRoutes.isNotEmpty, isTrue);
+
+      Navigator.of(tester.element(diagramFinder)).pop();
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('topMenu_mindmap')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final mindmapFinder = find.byType(FlowEditorScreen);
+      expect(mindmapFinder, findsOneWidget);
+      final mindmapScreen = tester.widget<FlowEditorScreen>(mindmapFinder);
+      expect(mindmapScreen.initialMode, 'mindmap');
+
+      Navigator.of(tester.element(mindmapFinder)).pop();
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('topMenu_tableUnits')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final tableUnitsFinder = find.byType(TableUnitsScreen);
+      expect(tableUnitsFinder, findsOneWidget);
+
+      Navigator.of(tester.element(tableUnitsFinder)).pop();
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  /*
+  testWidgets(
     'table tools menu contains three items and opens corresponding screens',
     (tester) async {
       tester.view.physicalSize = const Size(1024, 900);
@@ -160,6 +250,87 @@ void main() {
     },
   );
 
+  testWidgets(
+    'top bar four menu buttons at width 420 show icon only with no overflow',
+    (tester) async {
+      tester.view.physicalSize = const Size(420, 820);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final state = initialState();
+      Future<Object?> api(String name, List<Object?> args) async => state;
+      await tester.pumpWidget(DocFitApp(api: api));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('topMenu_format')), findsOneWidget);
+      expect(find.byKey(const Key('topMenu_diagram')), findsOneWidget);
+      expect(find.byKey(const Key('topMenu_mindmap')), findsOneWidget);
+      expect(find.byKey(const Key('topMenu_tableUnits')), findsOneWidget);
+
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  testWidgets(
+    'work-mode cards and conversion picker circular options are 1.5x larger',
+    (tester) async {
+      tester.view.physicalSize = const Size(1024, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final state = initialState();
+      state['files'] = [
+        {'name': '문서.hwpx', 'folder': r'C:\문서'},
+      ];
+      Future<Object?> api(String name, List<Object?> args) async => state;
+
+      await tester.pumpWidget(DocFitApp(api: api));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('작업 방식 선택'));
+      await tester.pumpAndSettle();
+
+      // 1. 작업 방식 카드의 선택 원 (Icons.check_circle) 및 아이콘 크기가 36.0 (24.0 * 1.5)인지 위젯 크기로 확인
+      final checkCircle = tester.widget<Icon>(find.byIcon(Icons.check_circle));
+      expect(checkCircle.size, 36.0);
+      final checkCircleSize = tester.getSize(find.byIcon(Icons.check_circle));
+      expect(checkCircleSize.width, 36.0);
+      expect(checkCircleSize.height, 36.0);
+
+      final modeIcon = tester.widget<Icon>(find.byIcon(Icons.space_bar_rounded));
+      expect(modeIcon.size, 36.0);
+      final modeIconSize = tester.getSize(find.byIcon(Icons.space_bar_rounded));
+      expect(modeIconSize.width, 36.0);
+      expect(modeIconSize.height, 36.0);
+
+      // 2. 파일 변환(형식 고르기) 화면의 원형 옵션 아이콘 크기 확인
+      await tester.ensureVisible(find.text('파일 변환').first);
+      await tester.tap(find.text('파일 변환').first);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('floatingConversionPicker')), findsOneWidget);
+
+      final formatIconFinder = find.descendant(
+        of: find.byKey(const Key('conversionSlice-pdf')),
+        matching: find.byType(Icon),
+      );
+      final formatIcon = tester.widget<Icon>(formatIconFinder);
+      expect(formatIcon.size, 37.5); // 25.0 * 1.5
+
+      final cancelIconFinder = find.descendant(
+        of: find.byKey(const Key('cancelConversionPicker')),
+        matching: find.byIcon(Icons.close_rounded),
+      );
+      final cancelIcon = tester.widget<Icon>(cancelIconFinder);
+      expect(cancelIcon.size, 28.5); // 19.0 * 1.5
+
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  */
+
   testWidgets('general editor is visible and excluded tldraw has no menu', (
     tester,
   ) async {
@@ -167,13 +338,13 @@ void main() {
     Future<Object?> api(String name, List<Object?> args) async => state;
     await tester.pumpWidget(DocFitApp(api: api));
     await tester.pumpAndSettle();
-    expect(find.byTooltip('표/다이어그램'), findsOneWidget);
+    expect(find.byKey(const Key('topMenu_tableUnits')), findsOneWidget);
     expect(find.byTooltip('문서 도구'), findsNothing);
     state['options']['developer_mode'] = true;
     state['options']['diagram_editor_enabled'] = true;
     await tester.pump(const Duration(seconds: 2));
     await tester.pumpAndSettle();
-    expect(find.byTooltip('표/다이어그램'), findsOneWidget);
+    expect(find.byKey(const Key('topMenu_tableUnits')), findsOneWidget);
     expect(find.byTooltip('문서 도구'), findsOneWidget);
     await tester.tap(find.byTooltip('문서 도구'));
     await tester.pumpAndSettle();

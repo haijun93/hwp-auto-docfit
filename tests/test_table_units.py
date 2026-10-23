@@ -277,7 +277,7 @@ class TableUnitsTests(unittest.TestCase):
                 units.resize_table(table, plan, row_count=value)
             self.assertEqual(ET.tostring(table), original)
         with self.assertRaises(ValueError):
-            units.resize_table(table, plan, row_count=3, col_count=3)
+            units.resize_table(table, plan, row_count=3, col_count=9)
         self.assertEqual(ET.tostring(table), original)
         table, plan = self.load("조직도 · 모양 1")
         with self.assertRaises(ValueError):
@@ -369,7 +369,7 @@ class TableUnitsTests(unittest.TestCase):
                  for category, numbers in (("부연설명", range(1, 8)),
                                            ("라벨 서식", range(1, 7)),
 
-                                           ("신구대조표", (1,)), ("조직도", (1,)))
+                                           ("조직도", (1,)))
                  for number in numbers]
         with patch.object(units, "detect_plan", side_effect=AssertionError("fixed template detection forbidden")):
             for name in fixed:
@@ -619,6 +619,179 @@ class TableUnitsTests(unittest.TestCase):
                 box_width = int(top_box.find(HP + "cellSz").get("width"))
                 self.assertGreaterEqual(box_width, ref_width * 0.95,
                                         f"N={N} 위 상자 폭 부족: {box_width} < {ref_width * 0.95}")
+
+
+
+class C13TableUnitsTests(unittest.TestCase):
+    grid = TableUnitsTests.grid
+
+    @classmethod
+    def setUpClass(cls):
+        cls.sources = [SOURCE]
+        user = Path(r"C:\HWP_AUTODOCFIT\표서식모음\표 서식모음.hwpx")
+        if user.is_file():
+            cls.sources.append(user)
+        cls.records = {path: {r["name"]: r for r in catalog._scan(path)} for path in cls.sources}
+
+    def check_axes(self, name, axes):
+        for source in self.sources:
+            rec = self.records[source][name]
+            for axis in axes:
+                with self.subTest(source=str(source), name=name, axis=axis):
+                    p = units.plan_for(rec)[axis]
+                    self.assertIsNotNone(p)
+                    self.assertEqual(p["min"], 1)
+                    self.assertEqual(p["max"], 8 if axis == "col" else 40 // p["core"])
+                    for target in (p["min"], p["count"] + 1, p["max"]):
+                        _, table, _ = units._load(rec["id"], source)
+                        plan = units.plan_for(rec)
+                        units.resize_table(table, plan, **{axis + "_count": target})
+                        self.grid(table, width=axis == "col")
+                        self.assertEqual(int(table.get(axis + "Cnt")),
+                                         rec["rows" if axis == "row" else "cols"] +
+                                         (target - p["count"]) * (p["core"] + p["sep"]))
+                    _, table, _ = units._load(rec["id"], source)
+                    before = ET.tostring(table)
+                    plan = units.plan_for(rec)
+                    for target in (0, p["max"] + 1):
+                        with self.assertRaises(ValueError):
+                            units.resize_table(table, plan, **{axis + "_count": target})
+                        self.assertEqual(ET.tostring(table), before)
+
+    def test_c13_01_status_rows(self):
+        self.check_axes("현황표(가로) · 모양 1", ("row", "col"))
+
+    def test_c13_02_horizontal_rows_keep_columns(self):
+        for number in range(1, 6):
+            self.check_axes(f"추진절차(가로) · 모양 {number}", ("row", "col"))
+
+    def test_c13_03_both_process_axes(self):
+        self.check_axes("추진절차(가로세로) · 모양 1", ("row", "col"))
+        for source in self.sources:
+            rec = self.records[source]["추진절차(가로세로) · 모양 1"]
+            _, table, _ = units._load(rec["id"], source)
+            plan = units.plan_for(rec)
+            units.resize_table(table, plan, row_count=plan["row"]["count"] + 1,
+                               col_count=plan["col"]["count"] + 1)
+            self.grid(table, width=True)
+
+    def test_c13_04_comparison_rows_and_merged_arrow(self):
+        self.check_axes("신구대조표 · 모양 1", ("row",))
+        for source in self.sources:
+            rec = self.records[source]["신구대조표 · 모양 1"]
+            target = units.plan_for(rec)["row"]["count"] + 1
+            view = units.preview(rec["id"], source, row_count=target)
+            center = next(c for row in view["cell_meta"] for c in row if c["col"] == 1)
+            self.assertEqual(center["rowSpan"], view["rows"])
+
+    def test_c13_05_blank_information_pair(self):
+        self.check_axes("신구대조표 · 모양 3", ("row",))
+        for source in self.sources:
+            rec = self.records[source]["신구대조표 · 모양 3"]
+            p = units.plan_for(rec)["row"]
+            self.assertEqual((p["start"], p["core"], p["count"]), (1, 2, 3))
+            view = units.preview(rec["id"], source, row_count=4)
+            self.assertEqual(view["rows"], 9)
+            # 늘린 한 쌍 = 빈 칸 행(낮은 행) + 정보 행(높은 행). 원본 정보 행도 비어 있어 글이 아니라 행 높이로 쌍을 확인한다.
+            heights = [row[0]["height"] for row in view["cell_meta"]]
+            self.assertTrue(all(not c["text"] for c in view["cell_meta"][7]))
+            self.assertEqual(heights[7], heights[5])
+            self.assertEqual(heights[8], heights[6])
+            self.assertLess(heights[7], heights[8])
+            self.assertEqual(units.preview(rec["id"], source, row_count=2)["rows"], 5)
+
+    def test_photo_attachment_stacks_two_row_block_by_exact_name(self):
+        """사진첨부용: 이름이 같은 판정표가 모양 서명이 겹치는 다른 표보다 우선하고, 행 단위는 사진+설명 두 행 묶음이다."""
+        meta = [[{"row": r, "col": c, "rowSpan": 1, "colSpan": 1, "text": "", "fill": None} for c in range(4)] for r in range(2)]
+        for number in (1, 2):
+            plan = units.plan_for({"name": f"사진첨부용 · 모양 {number}", "rows": 2, "cols": 4, "cell_meta": meta})
+            self.assertEqual((plan["row"]["start"], plan["row"]["core"], plan["row"]["count"]), (0, 2, 1))
+            self.assertEqual((plan["col"]["core"], plan["col"]["count"]), (1, 4))
+
+    def test_c13_06_daily_columns(self):
+        self.check_axes("일정표(일간) · 모양 1", ("row", "col"))
+
+    def test_c13_07_timetable_columns(self):
+        self.check_axes("행사시간표 · 모양 1", ("row", "col"))
+
+    def test_c13_08_event_columns(self):
+        self.check_axes("행사표(1일) · 모양 1", ("row", "col"))
+
+    def shape_views(self, name):
+        for source in self.sources:
+            rec = self.records[source][name]
+            view = units.preview(rec["id"], source)
+            for row in view["cell_meta"]:
+                for cell in row:
+                    self.assertIn("shapes", cell)
+                    for shape in cell["shapes"]:
+                        self.assertTrue({"kind", "x", "y", "w", "h", "direction", "fill", "line", "text"} <= shape.keys())
+                        self.assertIn(shape["kind"], ("arrow", "triangle", "line", "rect", "ellipse", "pic", "other"))
+                        self.assertGreater(shape["w"], 0)
+                        self.assertGreater(shape["h"], 0)
+            yield source, rec, view
+
+    def test_c13_09_process_polygon_and_clone(self):
+        for source, rec, view in self.shape_views("추진절차(가로세로) · 모양 1"):
+            if rec["cols"] != 3:
+                continue
+            shapes = [s for row in view["cell_meta"] for c in row for s in c["shapes"]]
+            self.assertEqual([(s["kind"], s["direction"]) for s in shapes], [("arrow", "right")])
+            grown = units.preview(rec["id"], source, col_count=3, row_count=6)
+            self.assertEqual(sum(len(c["shapes"]) for row in grown["cell_meta"] for c in row), 2)
+            self.assertEqual(sum(c["text"] == "↓" for row in grown["cell_meta"] for c in row), 15)
+
+    def test_c13_10_vertical_pictures_and_clone_ids(self):
+        for source, rec, view in self.shape_views("추진절차(세로) · 모양 1"):
+            shapes = [s for row in view["cell_meta"] for c in row for s in c["shapes"]]
+            self.assertEqual(len(shapes), 5)
+            self.assertTrue(all(s["kind"] == "pic" and s["src"].startswith("data:image/") for s in shapes))
+            _, table, _ = units._load(rec["id"], source)
+            plan = units.plan_for(rec)
+            for target in (7, 1, 8):
+                units.resize_table(table, plan, row_count=target)
+                self.grid(table)
+                pics = list(table.iter(HP + "pic"))
+                self.assertEqual(len(pics), target - 1)
+                for attr in ("id", "instid", "zOrder"):
+                    values = [p.get(attr) for p in pics]
+                    self.assertEqual(len(values), len(set(values)))
+            # 이 표의 단계 표시는 칸 글이 아니라 그림 안에 있다(칸 글 없음) — 그림 수·번호 중복 없음으로 확인한다.
+
+    def test_c13_11_comparison_background_picture(self):
+        for source, rec, view in self.shape_views("신구대조표 · 모양 1"):
+            if rec["cell_meta"][0][1]["rowSpan"] != 5:
+                continue
+            shape = view["cell_meta"][0][1]["shapes"][0]
+            self.assertEqual(shape["kind"], "pic")
+            self.assertTrue(shape["src"].startswith("data:image/png;base64,"))
+            grown = units.preview(rec["id"], source, row_count=5)
+            self.assertEqual(grown["cell_meta"][0][1]["shapes"], [shape])
+
+    def test_snapshot_revision_and_outside_drawing_crop(self):
+        from docfit_app.table_units_service import crop_to_content, _digest, SNAPSHOT_REVISION
+        from PIL import Image, ImageDraw
+        import hashlib
+        self.assertNotEqual(_digest(SOURCE), hashlib.sha256(SOURCE.read_bytes()).hexdigest()[:16])
+        self.assertTrue(SNAPSHOT_REVISION)
+        image = Image.new("RGB", (200, 100), "white")
+        draw = ImageDraw.Draw(image)
+        draw.rectangle((50, 20, 130, 70), outline="black")
+        draw.polygon(((140, 40), (180, 50), (140, 60)), fill="gray")
+        cropped = crop_to_content(image, margin=0)
+        self.assertEqual(cropped.size, (131, 51))
+        self.assertEqual(cropped.getpixel((130, 30)), (128, 128, 128))
+
+    def test_drawing_geometry_and_text_symbols(self):
+        cell = ET.fromstring(f'<hp:tc xmlns:hp="{HP[1:-1]}"><hp:subList><hp:p><hp:run><hp:t>→</hp:t>'
+            '<hp:polygon><hp:curSz width="20" height="30"/><hp:rotationInfo angle="90"/>'
+            '<hp:sz width="20" height="30"/><hp:pos treatAsChar="0" horzOffset="120" vertOffset="-10"/>'
+            '<hp:shapeComment>오른쪽 화살표</hp:shapeComment></hp:polygon></hp:run></hp:p></hp:subList>'
+            '<hp:cellSz width="100" height="50"/></hp:tc>')
+        shapes = catalog._cell_meta(cell, 0, 0, "→", None)["shapes"]
+        self.assertEqual(len(shapes), 1)
+        self.assertEqual((shapes[0]["x"], shapes[0]["y"], shapes[0]["w"], shapes[0]["h"]), (1.2, -.2, .2, .6))
+        self.assertEqual(shapes[0]["direction"], "down")
 
 
 if __name__ == "__main__":

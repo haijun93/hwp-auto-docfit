@@ -145,9 +145,9 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
                                         children: [
                                           Positioned(
                                             left: label.dx - 40,
-                                            top: label.dy - 33,
+                                            top: label.dy - 37,
                                             width: 80,
-                                            height: 66,
+                                            height: 74,
                                             child: Column(
                                               mainAxisAlignment:
                                                   MainAxisAlignment.center,
@@ -155,7 +155,7 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
                                                 Icon(
                                                   icon(format),
                                                   color: foreground,
-                                                  size: 25,
+                                                  size: 37.5,
                                                 ),
                                                 const SizedBox(height: 5),
                                                 Text(
@@ -211,10 +211,10 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
                                       ? '원본 파일'
                                       : widget.fileNames.first,
                                 ),
-                                const SizedBox(height: 8),
+                                const SizedBox(height: 4),
                                 const Icon(
                                   Icons.close_rounded,
-                                  size: 19,
+                                  size: 28.5,
                                   color: Color(0xff64748b),
                                 ),
                                 const Text(

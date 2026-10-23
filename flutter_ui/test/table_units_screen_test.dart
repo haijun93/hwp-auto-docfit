@@ -1,4 +1,4 @@
-import 'package:docfit_ui/core/api/abbreviation_api.dart';
+import 'package:docfit_ui/core/api/table_units_api.dart';
 import 'package:docfit_ui/features/table_units/table_grid_preview.dart';
 import 'package:docfit_ui/features/table_units/table_units_screen.dart';
 import 'package:flutter/material.dart';
@@ -24,6 +24,7 @@ Map<String, Object?> samplePreview({
   int rows = 3,
   int cols = 2,
   List<Map<String, Object?>>? nestedInFirstCell,
+  Map<String, List<Map<String, Object?>>>? shapesByCell,
 }) => {
   'rows': rows,
   'cols': cols,
@@ -55,6 +56,8 @@ Map<String, Object?> samplePreview({
             },
             if (r == 0 && c == 0 && nestedInFirstCell != null)
               'nested': nestedInFirstCell,
+            if (shapesByCell != null && shapesByCell['$r,$c'] != null)
+              'shapes': shapesByCell['$r,$c'],
           },
       ],
   ],
@@ -562,6 +565,193 @@ void main() {
       calls.any((c) => c[0] == 'table_units' && c[1] == 'thumbnails'),
       isTrue,
     );
+  });
+
+  // --- 신규 기능 시험 (G19): 상단 이름 바, Wrap 분류 칩, 도형(화살표) 그리기, 폭 420 반응형 ---
+
+  testWidgets('상단 이름 버튼이 전부 나열되고 누르면 해당 템플릿 선택 및 강조 (Key templateNameBar, templateName_<id>)', (tester) async {
+    Future<Object?> api(String name, List<Object?> args) async {
+      final action = args[0] as String;
+      if (action == 'list') return envelope(sampleListData());
+      if (action == 'preview') return envelope(samplePreview());
+      return envelope({});
+    }
+
+    await pumpScreen(tester, api: api);
+
+    // 1. 상단 바 컨테이너 존재 확인
+    expect(find.byKey(const Key('templateNameBar')), findsOneWidget);
+
+    // 2. 모든 템플릿(0:1, 0:2, 0:3)의 이름 버튼 존재 확인
+    final btn1 = find.byKey(const Key('templateName_0:1'));
+    final btn2 = find.byKey(const Key('templateName_0:2'));
+    final btn3 = find.byKey(const Key('templateName_0:3'));
+    expect(btn1, findsOneWidget);
+    expect(btn2, findsOneWidget);
+    expect(btn3, findsOneWidget);
+
+    // 3. 첫 번째(0:1) 자동 선택 상태에서 0:1은 FilledButton(강조), 나머지는 OutlinedButton
+    expect(tester.widget(btn1), isA<FilledButton>());
+    expect(tester.widget(btn2), isA<OutlinedButton>());
+    expect(tester.widget(btn3), isA<OutlinedButton>());
+
+    // 4. 0:2 ('서약서 고정 표') 버튼 탭 -> 템플릿 선택 및 강조 변경
+    await tester.tap(btn2);
+    await tester.pumpAndSettle();
+
+    expect(tester.widget(btn2), isA<FilledButton>());
+    expect(tester.widget(btn1), isA<OutlinedButton>());
+    expect(find.byKey(const Key('fixedTableNotice')), findsOneWidget);
+
+    // 5. 0:3 ('월간 일정표') 버튼 탭 -> 선택 변경
+    await tester.tap(btn3);
+    await tester.pumpAndSettle();
+
+    expect(tester.widget(btn3), isA<FilledButton>());
+    expect(tester.widget(btn2), isA<OutlinedButton>());
+  });
+
+  testWidgets('모든 분류 칩이 Wrap으로 배치되어 잘림 없이 화면 안에 모두 표시', (tester) async {
+    final listWithManyCats = sampleListData();
+    final templates = (listWithManyCats['templates'] as List).cast<Map<String, Object?>>();
+    templates.add({
+      'id': '0:4',
+      'category': '사진첨부용',
+      'name': '사진 첨부 표',
+      'rows': 2,
+      'cols': 2,
+      'thumbnail': null,
+      'favorite': false,
+      'units': {'row': null, 'col': null},
+    });
+
+    Future<Object?> api(String name, List<Object?> args) async {
+      final action = args[0] as String;
+      if (action == 'list') return envelope(listWithManyCats);
+      if (action == 'preview') return envelope(samplePreview());
+      return envelope({});
+    }
+
+    // 폭 420의 좁은 화면에서도 가로 스크롤로 잘리지 않고 Wrap으로 모두 표시
+    await pumpScreen(tester, api: api, width: 420.0, height: 800.0);
+
+    final expectedCats = ['즐겨찾기', '최근 사용', '전체', '과제표', '서약서', '일정표', '사진첨부용'];
+    for (final cat in expectedCats) {
+      final chipFinder = find.byKey(Key('categoryChip_$cat'));
+      expect(chipFinder, findsOneWidget);
+
+      final rect = tester.getRect(chipFinder);
+      expect(rect.left, greaterThanOrEqualTo(0.0));
+      expect(rect.right, lessThanOrEqualTo(420.0));
+    }
+  });
+
+  testWidgets('shapes(arrow right/down)가 있는 미리보기에서 화살표 그리기 레이어 및 TableShapesPainter 호출', (tester) async {
+    final shapesData = <String, List<Map<String, Object?>>>{
+      '0,0': [
+        {
+          'kind': 'arrow',
+          'x': 0.1,
+          'y': 0.2,
+          'w': 0.8,
+          'h': 0.6,
+          'direction': 'right',
+          'fill': '#2563EB',
+          'line': '#1D4ED8',
+          'text': '진행',
+        },
+      ],
+      '1,0': [
+        {
+          'kind': 'arrow',
+          'x': 0.2,
+          'y': 0.1,
+          'w': 0.6,
+          'h': 0.8,
+          'direction': 'down',
+          'fill': null,
+          'line': null,
+          'text': '',
+        },
+      ],
+    };
+
+    Future<Object?> api(String name, List<Object?> args) async {
+      final action = args[0] as String;
+      if (action == 'list') return envelope(sampleListData());
+      if (action == 'preview') {
+        return envelope(samplePreview(rows: 2, cols: 2, shapesByCell: shapesData));
+      }
+      return envelope({});
+    }
+
+    await pumpScreen(tester, api: api);
+
+    // tableShapesLayer 레이어 및 TableShapesPainter 호출 검증
+    final shapesLayerFinder = find.byKey(const Key('tableShapesLayer'));
+    expect(shapesLayerFinder, findsOneWidget);
+
+    final customPaint = tester.widget<CustomPaint>(shapesLayerFinder);
+    expect(customPaint.painter, isA<TableShapesPainter>());
+
+    // shapes가 없는 경우 tableShapesLayer가 그려지지 않음 (기존과 동일)
+    await tester.pumpWidget(const SizedBox());
+    Future<Object?> apiNoShapes(String name, List<Object?> args) async {
+      final action = args[0] as String;
+      if (action == 'list') return envelope(sampleListData());
+      if (action == 'preview') return envelope(samplePreview());
+      return envelope({});
+    }
+    await pumpScreen(tester, api: apiNoShapes);
+    expect(find.byKey(const Key('tableShapesLayer')), findsNothing);
+  });
+
+  testWidgets('TableGridPreview에서 다양한 도형(화살표 4방향, 삼각형, 선, 사각형, 타원, 그림, 칸 밖 도형) 예외 없이 렌더링', (tester) async {
+    final previewData = TablePreview.fromJson(samplePreview(rows: 2, cols: 2));
+    final shapes = {
+      '0,0': [
+        const CellShape(kind: 'arrow', direction: 'right', fill: '#FF0000', text: '오른쪽'),
+        const CellShape(kind: 'arrow', direction: 'left', fill: '#00FF00'),
+        const CellShape(kind: 'arrow', direction: 'up', fill: '#0000FF'),
+        const CellShape(kind: 'arrow', direction: 'down', fill: null),
+      ],
+      '0,1': [
+        const CellShape(kind: 'triangle', direction: 'right', fill: '#FF00FF'),
+        const CellShape(kind: 'triangle', direction: 'left'),
+        const CellShape(kind: 'triangle', direction: 'up'),
+        const CellShape(kind: 'triangle', direction: 'down'),
+      ],
+      '1,0': [
+        const CellShape(kind: 'line', direction: 'right', line: '#000000'),
+        const CellShape(kind: 'line', direction: 'down', line: '#333333'),
+        const CellShape(kind: 'rect', fill: '#E0E0E0', line: '#999999', text: '상자'),
+        const CellShape(kind: 'ellipse', fill: null, line: '#FF0000'),
+      ],
+      '1,1': [
+        const CellShape(kind: 'pic', text: '사진'),
+        const CellShape(kind: 'other'),
+        // 칸 밖으로 나가는 도형 (x: -0.2, w: 1.5)
+        const CellShape(kind: 'arrow', x: -0.2, y: -0.1, w: 1.5, h: 1.2, direction: 'right'),
+      ],
+    };
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TableGridPreview(
+            rows: 2,
+            cols: 2,
+            cellMeta: previewData.cellMeta,
+            shapes: shapes,
+            maxHeight: 400,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const Key('tableShapesLayer')), findsOneWidget);
   });
 
   for (final width in [420.0, 1200.0]) {
