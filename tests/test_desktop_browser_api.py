@@ -508,5 +508,53 @@ class BrowserApiTests(unittest.TestCase):
         self.assertEqual(popen.call_args.args[0][:2], ["explorer", "/select,"])
 
 
+    def test_open_settings_stages_log_return_flutter_only_by_default(self):
+        gui = _FakeGui()
+        gui.설정창_열기 = mock.Mock()
+        gui._세부작업_열기 = mock.Mock()
+        gui.log_window = mock.Mock()
+        gui.log_window.deiconify = mock.Mock()
+        gui.log_window.lift = mock.Mock()
+
+        bridge = _bridge(gui)
+
+        res_settings = bridge.open_settings()
+        self.assertEqual(res_settings, {"ok": False, "error": "FLUTTER_ONLY"})
+        gui.설정창_열기.assert_not_called()
+
+        res_stages = bridge.open_stages()
+        self.assertEqual(res_stages, {"ok": False, "error": "FLUTTER_ONLY"})
+        gui._세부작업_열기.assert_not_called()
+
+        res_log = bridge.open_log()
+        self.assertEqual(res_log, {"ok": False, "error": "FLUTTER_ONLY"})
+        gui.log_window.deiconify.assert_not_called()
+        gui.log_window.lift.assert_not_called()
+
+    def test_open_settings_stages_log_with_ui_tk_fallback_enabled(self):
+        gui = _FakeGui()
+        gui.설정창_열기 = mock.Mock()
+        gui._세부작업_열기 = mock.Mock()
+        gui.log_window = mock.Mock()
+        gui.log_window.deiconify = mock.Mock()
+        gui.log_window.lift = mock.Mock()
+        gui.ui_tk_fallback_var = _Var(True)
+
+        bridge = _bridge(gui)
+
+        res_settings = bridge.open_settings()
+        self.assertTrue(res_settings)
+        gui.설정창_열기.assert_called_once()
+
+        res_stages = bridge.open_stages()
+        self.assertTrue(res_stages)
+        gui._세부작업_열기.assert_called_once()
+
+        res_log = bridge.open_log()
+        self.assertTrue(res_log)
+        gui.log_window.deiconify.assert_called_once()
+        gui.log_window.lift.assert_called_once()
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -122,6 +122,8 @@ DEFAULTS = {
     "spacing_reset_existing": None,
     "spacing_enabled": True,
     "spacing_page_fit": False,
+    # 2.0.0 단계별 Tk 창 제거 대비 비상 되돌리기용 플래그 (기본 False = Tk 창 대신 Flutter 화면 사용)
+    "ui_tk_fallback": False,
 }
 
 VARIABLE_BINDINGS = {'prevent_word_split': 'prevent_word_split_var',
@@ -162,4 +164,5 @@ VARIABLE_BINDINGS = {'prevent_word_split': 'prevent_word_split_var',
  'unify_exclude_spacing': 'unify_exclude_spacing_var',
  'unify_exclude_pagefit': 'unify_exclude_pagefit_var',
  'unify_keep_layout': 'unify_keep_layout_var',
- 'unify_full_format': 'unify_full_format_var'}
+ 'unify_full_format': 'unify_full_format_var',
+ 'ui_tk_fallback': 'ui_tk_fallback_var'}

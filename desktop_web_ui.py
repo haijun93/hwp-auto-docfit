@@ -932,7 +932,33 @@ class DesktopWebBridge:
             return self._settings_snapshot()
         return self._tk(lambda: response(save))
 
+    def _tk_fallback_enabled(self):
+        var = getattr(self.gui, "ui_tk_fallback_var", None)
+        if var is not None and hasattr(var, "get"):
+            return bool(var.get())
+        fallback = getattr(self.gui, "ui_tk_fallback", None)
+        if fallback is not None:
+            return bool(fallback)
+        try:
+            service = getattr(self.gui, "_준말_서비스", None)
+            if callable(service):
+                settings = service().settings.read()
+                if isinstance(settings, dict) and "ui_tk_fallback" in settings:
+                    return bool(settings["ui_tk_fallback"])
+        except Exception:
+            pass
+        try:
+            settings = getattr(self.gui, "settings", None)
+            if isinstance(settings, dict) and "ui_tk_fallback" in settings:
+                return bool(settings["ui_tk_fallback"])
+        except Exception:
+            pass
+        from docfit_app.settings_schema import DEFAULTS
+        return bool(DEFAULTS.get("ui_tk_fallback", False))
+
     def open_settings(self):
+        if not self._tk_fallback_enabled():
+            return {"ok": False, "error": "FLUTTER_ONLY"}
         self._tk(self.gui.설정창_열기, timeout=None, front=True)
         return True
 
@@ -941,12 +967,16 @@ class DesktopWebBridge:
         return self.get_state()
 
     def open_stages(self):
+        if not self._tk_fallback_enabled():
+            return {"ok": False, "error": "FLUTTER_ONLY"}
         self._tk(lambda: self.gui._세부작업_열기(
             self.gui.selected_mode.get(), self.gui._세부작업_기본저장.get(self.gui.selected_mode.get(), True)
         ), timeout=None, front=True)
         return True
 
     def open_log(self):
+        if not self._tk_fallback_enabled():
+            return {"ok": False, "error": "FLUTTER_ONLY"}
         self._tk(lambda: (self.gui.log_window.deiconify(), self.gui.log_window.lift()), front=True)
         return True
 
