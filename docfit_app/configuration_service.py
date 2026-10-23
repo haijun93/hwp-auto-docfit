@@ -9,6 +9,7 @@ from .settings_schema import DEFAULTS
 from .settings_migrations import migrate
 
 LABELS = {
+ 'shell_menu':'탐색기 우클릭 메뉴',
  'prevent_word_split':'어절 줄 나눔 방지', 'ratio_shrink':'장평 줄이기', 'punctuation':'문장부호 위치 정리',
  'punctuation_threshold':'문장부호 이동 한도', 'keep_punctuation_set_together':'문장부호 묶음 유지',
  'color_mark_on':'조정한 글자 색 표시', 'color':'표시 색', 'autoclose':'처리 후 한글 창 닫기',

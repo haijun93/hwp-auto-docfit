@@ -30,6 +30,7 @@ const guideCategories = [
     Icons.dashboard_customize_outlined,
   ),
   GuideCategory('result', '결과·기록', '저장·검수·보고서', Icons.fact_check_outlined),
+  GuideCategory('general', '일반', '탐색기 메뉴', Icons.folder_outlined),
   GuideCategory('program', '프로그램·네트워크', '창·폐쇄망·업데이트', Icons.settings_outlined),
   GuideCategory('dev', '개발자 도구', '문서 도구·도형 편집기', Icons.build_outlined),
 ];
@@ -852,6 +853,11 @@ final Map<String, SettingGuide> settingGuides = {
     'program',
     '시작할 때 업데이트 확인',
     '앱을 켤 때 새 버전이 있는지 확인해요. 폐쇄망 모드에서는 확인하지 않아요.',
+  ),
+  'shell_menu': SettingGuide(
+    'general',
+    '탐색기 우클릭 메뉴',
+    '현재 사용자에게만 등록해요. Windows 11에서는 파일 우클릭 → 더 많은 옵션 표시 → 한글편집 후처리에서 변환할 수 있어요.',
   ),
   'always_on_top': SettingGuide('program', '항상 위에 표시', '앱 창을 다른 창보다 위에 둬요.'),
   'hwp_font_folder': SettingGuide(
