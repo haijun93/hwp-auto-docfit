@@ -65,7 +65,7 @@ class TableUnitsTests(unittest.TestCase):
                 for axis in ("row", "col"):
                     p = expected[axis]
                     self.assertEqual(item["units"][axis],
-                        {k: p[k] for k in ("count", "min", "max", "core", "sep")} if p else None)
+                        {k: p[k] for k in ("count", "min", "max", "core", "sep", "kind") if k in p} if p else None)
 
     def test_task_columns_sequential(self):
         table, plan = self.load("분야별과제표 · 모양 1")
@@ -75,6 +75,68 @@ class TableUnitsTests(unittest.TestCase):
             self.assertEqual(int(table.get("colCnt")), count * 4)
             self.assertEqual(table.find(HP + "sz").get("width"), total)
             self.grid(table, width=True)
+
+    def test_increment_tokens(self):
+        for text, previous, expected in (
+                ("2030년", "2029년", "2031년"), ("12월", "11월", "1월"),
+                ("1월", "12월", "2월"), ("2주", "1주", "3주"),
+                ("2일차 제2회 2)", "1일차 제1회 1)", "3일차 제3회 3)"),
+                ("② Ⅱ", "① Ⅰ", "③ Ⅲ"), ("⑳ Ⅻ", "⑲ Ⅺ", "① Ⅰ"),
+                ("14:20~14:25", "14:15~14:20", "14:25~14:30"),
+                ("23:55", "23:45", "24:05"), ("안내문", None, "안내문"),
+                ("2030", "2030", "2031"), ("제9회", None, "제10회")):
+            with self.subTest(text=text):
+                self.assertEqual(units._increment_text(text, previous), expected)
+
+    def test_fill_modes_and_edit_coordinates(self):
+        for fill, expected in (("increment", "2032"), ("blank", ""), ("copy", "2030")):
+            table, plan = self.load("일정표(연간) · 모양 1")
+            units.resize_table(table, plan, col_count=7, fill=fill)
+            self.assertEqual(catalog._text(table.findall(HP + "tr")[0].findall(HP + "tc")[-1]), expected)
+        table, plan = self.load("분야별과제표 · 모양 1")
+        units.resize_table(table, plan, col_count=4, fill="blank", cell_texts={"0,13": "새 제목\n둘째 줄"})
+        cell = next(c for _, c in units._cells(table) if c.find(HP + "cellAddr").get("colAddr") == "13")
+        self.assertEqual([catalog._text(p) for p in catalog._cell_paragraphs(cell)][:2], ["새 제목", "둘째 줄"])
+        self.grid(table, width=True)
+
+    def test_fill_preserves_split_run_format_and_blank_clears_nested(self):
+        cell = ET.fromstring(f'<hp:tc xmlns:hp="{HP[1:-1]}"><hp:subList><hp:p><hp:run charPrIDRef="1"><hp:t>20</hp:t></hp:run>'
+            '<hp:run charPrIDRef="2"><hp:t>30년</hp:t></hp:run></hp:p></hp:subList></hp:tc>')
+        previous = copy.deepcopy(cell)
+        list(previous.iter(HP + "t"))[1].text = "29년"
+        units._fill_clone(cell, previous, "increment", 1)
+        self.assertEqual(catalog._text(cell), "2031년")
+        self.assertEqual([n.get("charPrIDRef") for n in cell.iter(HP + "run")], ["1", "2"])
+        units._fill_clone(cell, previous, "blank", 1)
+        self.assertEqual(catalog._text(cell), "")
+
+    def test_nested_preview_and_new_plans_export_grid(self):
+        view = units.preview(self.records["분야별과제표 · 모양 1"]["id"], SOURCE, col_count=4)
+        nested = view["cell_meta"][0][1]["nested"][0]
+        self.assertIn("cell_meta", nested)
+        self.assertGreater(nested["rows"], 0)
+        for name, axis in (("표(가로) · 모양 2", "row"), ("표(가로) · 모양 3", "col"),
+                           ("현황표(가로) · 모양 1", "col")):
+            record = self.records[name]
+            plan = units.plan_for(record)[axis]
+            self.assertIsNotNone(plan)
+            for target in (1, plan["count"] + 1):
+                with self.subTest(name=name, target=target), tempfile.TemporaryDirectory() as folder:
+                    out = Path(folder) / "export.hwpx"
+                    units.export_resized(record["id"], out, SOURCE, **{axis + "_count": target})
+                    with zipfile.ZipFile(out) as archive:
+                        tables = [t for n in catalog._section_names(archive)
+                                  for p in ET.fromstring(archive.read(n)).findall(HP + "p") for t in catalog._top_tables(p)]
+                    self.assertEqual(len(tables), 1)
+                    self.grid(tables[0], width=axis == "col")
+
+    def test_cell_text_validation_atomic(self):
+        table, plan = self.load("일정표(연간) · 모양 1")
+        before = ET.tostring(table)
+        for texts in ({"0,2": "covered"}, {"0,99": "missing"}, {"0,1": "x" * 1001}, {"0,1": "\x00"}):
+            with self.assertRaises(ValueError):
+                units.resize_table(table, plan, col_count=6, cell_texts=texts)
+            self.assertEqual(ET.tostring(table), before)
 
     def test_event_timetable_height_and_header(self):
         table, plan = self.load("행사시간표 · 모양 1")
@@ -179,7 +241,7 @@ class TableUnitsTests(unittest.TestCase):
         self.assertEqual(int(table.get("rowCnt")), 25)
         days = [c for c in units._meta(table) if c["col"] == 0 and c["row"] > 0]
         self.assertEqual([(c["row"], c["rowSpan"]) for c in days], [(1, 8), (9, 8), (17, 8)])
-        self.assertIn("2일차", catalog._text(table.findall(HP + "tr")[17]))
+        self.assertIn("3일차", catalog._text(table.findall(HP + "tr")[17]))
         self.grid(table)
 
     def test_merged_headers_arrows_and_plain_comparison(self):
@@ -269,7 +331,9 @@ class TableUnitsTests(unittest.TestCase):
                         " ".join("".join(n.text or "" for n in catalog._cell_text_nodes(cell)).split())[:80], header)
                         for j, cell in enumerate(row.findall(HP + "tc"))]
                         for i, row in enumerate(tables[0].findall(HP + "tr"))]
-                    self.assertEqual(view["cell_meta"], expected)
+                    actual = [[{k: v for k, v in cell.items() if k != "nested"} for cell in row]
+                              for row in view["cell_meta"]]
+                    self.assertEqual(actual, expected)
         self.assertEqual(SOURCE.read_bytes(), self.original)
         with self.assertRaises(ValueError):
             units.export_resized(self.records["행사시간표 · 모양 1"]["id"], SOURCE, SOURCE, row_count=3)
@@ -350,6 +414,146 @@ class TableUnitsTests(unittest.TestCase):
             cells = table.findall(HP + "tr")[1].findall(HP + "tc")
             self.assertEqual(cells[0].find(HP + "cellSz").get("width"), "10")
             self.assertEqual(cells[-1].find(HP + "cellSz").get("width"), "10")
+
+    def test_org_chart_generation(self):
+        user_catalog = Path(r"C:\HWP_AUTODOCFIT\표서식모음\표 서식모음.hwpx")
+        catalog_path = user_catalog if user_catalog.is_file() else SOURCE
+        records_map = {r["name"]: r for r in catalog._scan(catalog_path)}
+
+        if "조직도 · 모양 2" not in records_map:
+            self.skipTest("조직도 기준 파일에 '조직도 · 모양 2'가 없어 시험을 건너뜁니다.")
+
+        rec_m2 = records_map["조직도 · 모양 2"]
+        _, template_table, _ = units._load(rec_m2["id"], catalog_path)
+        orig_width = int(template_table.find(HP + "sz").get("width"))
+        # 칸 테두리를 실제 문서 정의(header.xml)로 풀어 읽는다(없으면 기본값 SOLID로 잘못 읽힘).
+        import zipfile
+        from defusedxml import ElementTree as DET
+        with zipfile.ZipFile(catalog_path) as archive:
+            header_info = catalog._header_lookup(DET.fromstring(archive.read("Contents/header.xml")))
+
+        # N=3, 4, 5, 6, 8 시험
+        for N in (3, 4, 5, 6, 8):
+            with self.subTest(team_count=N):
+                table = units.generate_org_chart(template_table, N)
+
+                # 1. 그리드 무결성 및 표 폭 유지
+                self.grid(table, width=True)
+                self.assertEqual(int(table.find(HP + "sz").get("width")), orig_width)
+
+                # 2. 열 수 (3N-1, N이 짝수면 +1)
+                expected_cols = 3 * N if N % 2 == 0 else 3 * N - 1
+                self.assertEqual(int(table.get("rowCnt")), 6)
+                self.assertEqual(int(table.get("colCnt")), expected_cols)
+
+                rows = table.findall(HP + "tr")
+                self.assertEqual(len(rows), 6)
+
+                # 3. 위 상자가 가운데
+                r1_cells = rows[1].findall(HP + "tc")
+                top_box = next(c for c in r1_cells if int(c.find(HP + "cellSpan").get("colSpan")) > 1)
+                box_col = int(top_box.find(HP + "cellAddr").get("colAddr"))
+                box_span = int(top_box.find(HP + "cellSpan").get("colSpan"))
+                left_cols = box_col
+                right_cols = expected_cols - (box_col + box_span)
+                self.assertEqual(left_cols, right_cols, f"위 상자가 가운데에 있지 않음 ({left_cols} != {right_cols})")
+
+                # 4. 가로 연결선이 첫 팀 가운데~마지막 팀 가운데
+                r2_meta = [catalog._cell_meta(tc, 2, 0, "", header_info) for tc in rows[2].findall(HP + "tc")]
+                bottom_borders = {}
+                for c in r2_meta:
+                    for col in range(c["col"], c["col"] + c["colSpan"]):
+                        bottom_borders[col] = c["borders"]["bottom"]["type"]
+
+                self.assertEqual(bottom_borders[0], "NONE", "col 0은 가로선이 없어야 함")
+                for col in range(1, expected_cols - 1):
+                    self.assertEqual(bottom_borders[col], "SOLID", f"col {col} 가로 연결선 누락")
+                self.assertEqual(bottom_borders[expected_cols - 1], "NONE", "마지막 열은 가로선이 없어야 함")
+
+                # 5. 팀마다 세로선 (가운데 경계 테두리)
+                r3_meta = [catalog._cell_meta(tc, 3, 0, "", header_info) for tc in rows[3].findall(HP + "tc")]
+                is_even = (N % 2 == 0)
+                t_cols = {}
+                cur_c = 0
+                for t in range(N):
+                    t_cols[t] = (cur_c, cur_c + 1)
+                    cur_c += 2
+                    if t < N - 1:
+                        cur_c += 2 if (is_even and t == (N // 2) - 1) else 1
+
+                for t in range(N):
+                    cL, cR = t_cols[t]
+                    cL_cell = next(c for c in r3_meta if c["col"] <= cL < c["col"] + c["colSpan"])
+                    cR_cell = next(c for c in r3_meta if c["col"] <= cR < c["col"] + c["colSpan"])
+                    has_v = (cL_cell["borders"]["right"]["type"] == "SOLID" or
+                             cR_cell["borders"]["left"]["type"] == "SOLID")
+                    self.assertTrue(has_v, f"팀 {t} 세로선 누락 (cL={cL}, cR={cR})")
+
+                # 6. 팀 상자 N개, 인원 칸 N개
+                # 짝수 팀이면 가운데 간격 칸도 2칸 병합이다(예시 모양 1과 같음) — 위·아래 테두리가 있는 칸만 팀 상자로 센다.
+                def boxed(tc, row):
+                    meta = catalog._cell_meta(tc, row, 0, "", header_info)
+                    return meta["borders"]["top"]["type"] != "NONE" and meta["borders"]["bottom"]["type"] != "NONE"
+                r4_teams = [c for c in rows[4].findall(HP + "tc") if boxed(c, 4)]
+                self.assertEqual(len(r4_teams), N, f"팀 상자 개수 불일치: {len(r4_teams)} != {N}")
+                r5_counts = [c for c in rows[5].findall(HP + "tc")
+                             if int(c.find(HP + "cellSpan").get("colSpan")) == 2 and "".join(c.itertext()).strip()]
+                self.assertEqual(len(r5_counts), N, f"인원 칸 개수 불일치: {len(r5_counts)} != {N}")
+
+        # N=5는 기준 모양 2와 칸 구조·테두리 역할이 같아야 함
+        t5 = units.generate_org_chart(template_table, 5)
+        t5_rows = t5.findall(HP + "tr")
+        ref_rows = template_table.findall(HP + "tr")
+        for r_idx in range(6):
+            new_tcs = t5_rows[r_idx].findall(HP + "tc")
+            ref_tcs = ref_rows[r_idx].findall(HP + "tc")
+            self.assertEqual(len(new_tcs), len(ref_tcs), f"행 {r_idx} 칸 개수 불일치")
+            for c_idx in range(len(new_tcs)):
+                m_new = catalog._cell_meta(new_tcs[c_idx], r_idx, 0, "", header_info)
+                m_ref = catalog._cell_meta(ref_tcs[c_idx], r_idx, 0, "", header_info)
+                self.assertEqual(m_new["col"], m_ref["col"])
+                self.assertEqual(m_new["colSpan"], m_ref["colSpan"])
+                self.assertEqual(m_new["rowSpan"], m_ref["rowSpan"])
+                for side in ("top", "bottom", "left", "right"):
+                    self.assertEqual(m_new["borders"][side]["type"], m_ref["borders"][side]["type"],
+                                     f"행 {r_idx} 칸 {c_idx} {side} 테두리 불일치")
+
+        # N=4는 모양 1과 열 수(12열) 및 테두리 역할(가로선 범위·세로선 위치)이 같아야 함
+        if "조직도 · 모양 1" in records_map:
+            rec_m1 = records_map["조직도 · 모양 1"]
+            _, table_m1, _ = units._load(rec_m1["id"], catalog_path)
+            t4 = units.generate_org_chart(template_table, 4)
+            self.assertEqual(int(t4.get("colCnt")), int(table_m1.get("colCnt")))
+            r2_t4 = [catalog._cell_meta(tc, 2, 0, "", header_info) for tc in t4.findall(HP + "tr")[2].findall(HP + "tc")]
+            r2_m1 = [catalog._cell_meta(tc, 2, 0, "", header_info) for tc in table_m1.findall(HP + "tr")[2].findall(HP + "tc")]
+            b_t4 = {col: c["borders"]["bottom"]["type"] for c in r2_t4 for col in range(c["col"], c["col"] + c["colSpan"])}
+            b_m1 = {col: c["borders"]["bottom"]["type"] for c in r2_m1 for col in range(c["col"], c["col"] + c["colSpan"])}
+            self.assertEqual(b_t4, b_m1, "N=4 가로선 범위가 모양 1과 일치해야 함")
+
+        # N=6은 모양 3과 열 수(18열)가 같아야 함
+        if "조직도 · 모양 3" in records_map:
+            rec_m3 = records_map["조직도 · 모양 3"]
+            _, table_m3, _ = units._load(rec_m3["id"], catalog_path)
+            t6 = units.generate_org_chart(template_table, 6)
+            self.assertEqual(int(t6.get("colCnt")), int(table_m3.get("colCnt")))
+
+        # 기존 정보단위 체계 연결(resize_table, describe_units) 시험
+        plan = units.plan_for(rec_m2)
+        self.assertIsNotNone(plan["col"])
+        self.assertEqual(plan["col"]["kind"], "org_chart")
+        self.assertEqual(plan["col"]["count"], 5)
+
+        working = copy.deepcopy(template_table)
+        units.resize_table(working, plan, col_count=3)
+        self.assertEqual(plan["col"]["count"], 3)
+        self.assertEqual(int(working.get("colCnt")), 8)
+        self.grid(working, width=True)
+
+        descriptions = units.describe_units(catalog_path)
+        org_items = [d for d in descriptions if d.get("category") == "조직도"]
+        self.assertEqual(len(org_items), 1, "목록에서 조직도는 1개만 노출되어야 함")
+        self.assertEqual(org_items[0]["name"], "조직도")
+        self.assertEqual(org_items[0]["units"]["col"]["kind"], "org_chart")
 
 
 if __name__ == "__main__":

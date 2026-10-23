@@ -1,4 +1,5 @@
 import 'package:docfit_ui/core/api/abbreviation_api.dart';
+import 'package:docfit_ui/features/table_units/table_grid_preview.dart';
 import 'package:docfit_ui/features/table_units/table_units_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -19,7 +20,11 @@ Map<String, Object?> errorEnvelope(String code, String message) => {
   'error': {'code': code, 'message': message, 'recoverable': true},
 };
 
-Map<String, Object?> samplePreview({int rows = 3, int cols = 2}) => {
+Map<String, Object?> samplePreview({
+  int rows = 3,
+  int cols = 2,
+  List<Map<String, Object?>>? nestedInFirstCell,
+}) => {
   'rows': rows,
   'cols': cols,
   'cell_meta': [
@@ -48,14 +53,20 @@ Map<String, Object?> samplePreview({int rows = 3, int cols = 2}) => {
               'left': {'type': 'SOLID', 'width': 0.12, 'color': '#000000'},
               'right': {'type': 'SOLID', 'width': 0.12, 'color': '#000000'},
             },
+            if (r == 0 && c == 0 && nestedInFirstCell != null)
+              'nested': nestedInFirstCell,
           },
       ],
   ],
 };
 
-Map<String, Object?> sampleListData({bool thumbnailsReady = true}) => {
+Map<String, Object?> sampleListData({
+  bool thumbnailsReady = true,
+  List<String>? recent,
+}) => {
   'source': 'C:/HWP_AUTODOCFIT/templates.hwpx',
   'thumbnails_ready': thumbnailsReady,
+  'recent': recent ?? ['0:3', '0:1'],
   'templates': [
     {
       'id': '0:1',
@@ -64,6 +75,7 @@ Map<String, Object?> sampleListData({bool thumbnailsReady = true}) => {
       'rows': 3,
       'cols': 4,
       'thumbnail': samplePngBase64,
+      'favorite': false,
       'units': {
         'row': {'count': 3, 'min': 1, 'max': 5, 'core': 1, 'sep': 0},
         'col': null,
@@ -76,6 +88,7 @@ Map<String, Object?> sampleListData({bool thumbnailsReady = true}) => {
       'rows': 2,
       'cols': 2,
       'thumbnail': null,
+      'favorite': true,
       'units': {'row': null, 'col': null},
     },
     {
@@ -85,6 +98,7 @@ Map<String, Object?> sampleListData({bool thumbnailsReady = true}) => {
       'rows': 4,
       'cols': 6,
       'thumbnail': null,
+      'favorite': false,
       'units': {
         'row': null,
         'col': {'count': 2, 'min': 1, 'max': 4, 'core': 1, 'sep': 0},
@@ -129,7 +143,6 @@ void main() {
     expect(find.text('분야별 과제표'), findsWidgets);
     expect(find.byKey(const Key('tableGridPreview')), findsOneWidget);
 
-    // list와 preview가 순차적으로 호출되었는지 확인
     expect(calls.any((c) => c[0] == 'table_units' && c[1] == 'list'), isTrue);
     expect(
       calls.any((c) => c[0] == 'table_units' && c[1] == 'preview'),
@@ -137,21 +150,270 @@ void main() {
     );
   });
 
-  testWidgets('분류 칩 거르기 및 다른 카드 선택 시 preview 호출', (tester) async {
+  testWidgets('검색창 검색어 필터링 (이름·분류 부분 일치) 및 분류 칩과 연동', (tester) async {
+    Future<Object?> api(String name, List<Object?> args) async {
+      final action = args[0] as String;
+      if (action == 'list') return envelope(sampleListData());
+      if (action == 'preview') return envelope(samplePreview());
+      return envelope({});
+    }
+
+    await pumpScreen(tester, api: api);
+
+    // 1. 이름 검색: '월간' 입력
+    final searchField = find.byKey(const Key('searchTextField'));
+    expect(searchField, findsOneWidget);
+    await tester.enterText(searchField, '월간');
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('templateCard_0:3')), findsOneWidget);
+    expect(find.byKey(const Key('templateCard_0:1')), findsNothing);
+    expect(find.byKey(const Key('templateCard_0:2')), findsNothing);
+
+    // 2. 분류 검색: '과제' 입력
+    await tester.enterText(searchField, '과제');
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('templateCard_0:1')), findsOneWidget);
+    expect(find.byKey(const Key('templateCard_0:3')), findsNothing);
+
+    // 3. 분류 칩 '서약서' 선택 후 검색창에 '과제' -> 불일치로 결과 없음
+    await tester.tap(find.byKey(const Key('categoryChip_서약서')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('표 템플릿이 없습니다.'), findsOneWidget);
+
+    // 검색어를 비우면 '서약서' 칩에 맞는 카드 표시
+    await tester.enterText(searchField, '');
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('templateCard_0:2')), findsOneWidget);
+  });
+
+  testWidgets('즐겨찾기 토글 호출 및 즐겨찾기 칩 거르기', (tester) async {
     final calls = <List<Object?>>[];
     Future<Object?> api(String name, List<Object?> args) async {
       calls.add([name, ...args]);
       final action = args[0] as String;
-      if (action == 'list') {
-        return envelope(sampleListData());
-      }
-      if (action == 'preview') {
+      if (action == 'list') return envelope(sampleListData());
+      if (action == 'preview') return envelope(samplePreview());
+      if (action == 'favorite') {
         final payload = args[1] as Map;
+        final list = sampleListData();
+        final templates = (list['templates'] as List).cast<Map<String, Object?>>();
+        for (final t in templates) {
+          if (t['id'] == payload['id']) {
+            t['favorite'] = payload['on'];
+          }
+        }
+        return envelope(list);
+      }
+      return envelope({});
+    }
+
+    await pumpScreen(tester, api: api);
+
+    // 0:1 템플릿의 별 버튼 클릭
+    final favBtn = find.byKey(const Key('btnFavorite_0:1'));
+    expect(favBtn, findsOneWidget);
+    await tester.tap(favBtn);
+    await tester.pumpAndSettle();
+
+    // favorite API 호출 검증
+    final favCalls = calls.where(
+      (c) =>
+          c[0] == 'table_units' &&
+          c[1] == 'favorite' &&
+          (c[2] as Map)['id'] == '0:1' &&
+          (c[2] as Map)['on'] == true,
+    );
+    expect(favCalls, isNotEmpty);
+
+    // '즐겨찾기' 칩 클릭
+    await tester.tap(find.byKey(const Key('categoryChip_즐겨찾기')));
+    await tester.pumpAndSettle();
+
+    // 0:1(방금 켬)과 0:2(초기 즐겨찾기) 모두 보여야 함
+    expect(find.byKey(const Key('templateCard_0:1')), findsOneWidget);
+    expect(find.byKey(const Key('templateCard_0:2')), findsOneWidget);
+    expect(find.byKey(const Key('templateCard_0:3')), findsNothing);
+  });
+
+  testWidgets('최근 사용 칩 클릭 시 recent 순서대로 정렬 표시', (tester) async {
+    Future<Object?> api(String name, List<Object?> args) async {
+      final action = args[0] as String;
+      if (action == 'list') {
+        return envelope(sampleListData(recent: ['0:3', '0:1']));
+      }
+      if (action == 'preview') return envelope(samplePreview());
+      return envelope({});
+    }
+
+    await pumpScreen(tester, api: api);
+
+    // '최근 사용' 칩 클릭
+    await tester.tap(find.byKey(const Key('categoryChip_최근 사용')));
+    await tester.pumpAndSettle();
+
+    // recent에 없는 0:2는 보이지 않아야 함
+    expect(find.byKey(const Key('templateCard_0:2')), findsNothing);
+    expect(find.byKey(const Key('templateCard_0:3')), findsOneWidget);
+    expect(find.byKey(const Key('templateCard_0:1')), findsOneWidget);
+
+    // 순서: 0:3이 0:1보다 먼저 위치해야 함 (x 또는 y 좌표 비교)
+    final pos3 = tester.getTopLeft(find.byKey(const Key('templateCard_0:3')));
+    final pos1 = tester.getTopLeft(find.byKey(const Key('templateCard_0:1')));
+    // GridView에서 첫 번째 항목(0:3)의 x좌표가 두 번째 항목(0:1)보다 작음
+    expect(pos3.dx, lessThan(pos1.dx));
+  });
+
+  testWidgets('글 처리 방식(fill) 선택 시 preview 인자 전달 및 다시 호출', (tester) async {
+    final calls = <List<Object?>>[];
+    Future<Object?> api(String name, List<Object?> args) async {
+      calls.add([name, ...args]);
+      final action = args[0] as String;
+      if (action == 'list') return envelope(sampleListData());
+      if (action == 'preview') return envelope(samplePreview());
+      return envelope({});
+    }
+
+    await pumpScreen(tester, api: api);
+
+    // 첫 로드 시 preview 인자에 fill: 'increment' 확인
+    final firstPreview = calls.lastWhere(
+      (c) => c[0] == 'table_units' && c[1] == 'preview',
+    );
+    expect((firstPreview[2] as Map)['fill'], 'increment');
+
+    // '비우기' 선택
+    await tester.tap(find.byKey(const Key('fillOption_blank')));
+    await tester.pumpAndSettle();
+
+    final blankPreview = calls.lastWhere(
+      (c) => c[0] == 'table_units' && c[1] == 'preview',
+    );
+    expect((blankPreview[2] as Map)['fill'], 'blank');
+
+    // '그대로' 선택
+    await tester.tap(find.byKey(const Key('fillOption_copy')));
+    await tester.pumpAndSettle();
+
+    final copyPreview = calls.lastWhere(
+      (c) => c[0] == 'table_units' && c[1] == 'preview',
+    );
+    expect((copyPreview[2] as Map)['fill'], 'copy');
+  });
+
+  testWidgets('칸 눌러 글 입력 -> cell_texts 인자 전달 및 모두 지우기', (tester) async {
+    final calls = <List<Object?>>[];
+    Future<Object?> api(String name, List<Object?> args) async {
+      calls.add([name, ...args]);
+      final action = args[0] as String;
+      if (action == 'list') return envelope(sampleListData());
+      if (action == 'preview') return envelope(samplePreview());
+      return envelope({});
+    }
+
+    await pumpScreen(tester, api: api);
+
+    // 미리보기 위젯의 좌측 상단(0행 0열)을 탭하여 다이얼로그 열기
+    final previewWidget = find.byType(TableGridPreview);
+    expect(previewWidget, findsOneWidget);
+    final topLeft = tester.getTopLeft(previewWidget);
+    await tester.tapAt(topLeft + const Offset(20, 20));
+    await tester.pumpAndSettle();
+
+    // 글 입력 창이 나타났는지 확인
+    final cellInput = find.byKey(const Key('cellTextInputField'));
+    expect(cellInput, findsOneWidget);
+
+    await tester.enterText(cellInput, '새로운 과제명');
+    await tester.tap(find.byKey(const Key('btnSaveCellText')));
+    await tester.pumpAndSettle();
+
+    // preview 호출에 cell_texts 반영 확인
+    final lastPreview = calls.lastWhere(
+      (c) => c[0] == 'table_units' && c[1] == 'preview',
+    );
+    final texts = (lastPreview[2] as Map)['cell_texts'] as Map?;
+    expect(texts, isNotNull);
+    expect(texts!['0,0'], '새로운 과제명');
+
+    // '입력한 글 모두 지우기' 버튼 확인 및 클릭
+    final clearBtn = find.byKey(const Key('btnClearCellTexts'));
+    expect(clearBtn, findsOneWidget);
+    await tester.tap(clearBtn);
+    await tester.pumpAndSettle();
+
+    final clearedPreview = calls.lastWhere(
+      (c) => c[0] == 'table_units' && c[1] == 'preview',
+    );
+    final clearedTexts = (clearedPreview[2] as Map)['cell_texts'] as Map?;
+    expect(clearedTexts == null || clearedTexts.isEmpty, isTrue);
+  });
+
+  testWidgets('복사 시 activated 응답에 따른 안내 문구 2가지 (true vs false)', (tester) async {
+    // 1. activated == true 케이스
+    Future<Object?> apiActivatedTrue(String name, List<Object?> args) async {
+      final action = args[0] as String;
+      if (action == 'list') return envelope(sampleListData());
+      if (action == 'preview') return envelope(samplePreview());
+      if (action == 'copy') {
+        return envelope({
+          'copied': true,
+          'message': 'OK',
+          'activated': true,
+        });
+      }
+      return envelope({});
+    }
+
+    await pumpScreen(tester, api: apiActivatedTrue);
+    await tester.tap(find.byKey(const Key('btnCopyTable')));
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('한/글 창을 앞으로 가져왔어요. Ctrl+V로 붙여넣으세요.'),
+      findsOneWidget,
+    );
+
+    // 2. activated == false 케이스 (재사용 전 위젯 트리 비우기)
+    await tester.pumpWidget(const SizedBox());
+
+    Future<Object?> apiActivatedFalse(String name, List<Object?> args) async {
+      final action = args[0] as String;
+      if (action == 'list') return envelope(sampleListData());
+      if (action == 'preview') return envelope(samplePreview());
+      if (action == 'copy') {
+        return envelope({
+          'copied': true,
+          'message': 'OK',
+          'activated': false,
+        });
+      }
+      return envelope({});
+    }
+
+    await pumpScreen(tester, api: apiActivatedFalse);
+    await tester.tap(find.byKey(const Key('btnCopyTable')));
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('한/글 문서에서 붙여넣을 곳을 누르고 Ctrl+V 하세요.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('nested 표가 포함된 preview 렌더링 시 예외 없음', (tester) async {
+    final nestedData = [samplePreview(rows: 2, cols: 2)];
+    Future<Object?> api(String name, List<Object?> args) async {
+      final action = args[0] as String;
+      if (action == 'list') return envelope(sampleListData());
+      if (action == 'preview') {
         return envelope(
-          samplePreview(
-            rows: payload['id'] == '0:2' ? 2 : 3,
-            cols: payload['id'] == '0:2' ? 2 : 4,
-          ),
+          samplePreview(rows: 3, cols: 3, nestedInFirstCell: nestedData),
         );
       }
       return envelope({});
@@ -159,27 +421,8 @@ void main() {
 
     await pumpScreen(tester, api: api);
 
-    // 서약서 칩 클릭
-    final chipFinder = find.byKey(const Key('categoryChip_서약서'));
-    expect(chipFinder, findsOneWidget);
-    await tester.tap(chipFinder);
-    await tester.pumpAndSettle();
-
-    // '분야별 과제표' 카드는 사라지고 '서약서 고정 표'만 보여야 함
-    expect(find.byKey(const Key('templateCard_0:1')), findsNothing);
-    expect(find.byKey(const Key('templateCard_0:2')), findsOneWidget);
-
-    // 카드 선택
-    await tester.tap(find.byKey(const Key('templateCard_0:2')));
-    await tester.pumpAndSettle();
-
-    final previewCalls = calls.where(
-      (c) =>
-          c[0] == 'table_units' &&
-          c[1] == 'preview' &&
-          (c[2] as Map)['id'] == '0:2',
-    );
-    expect(previewCalls, isNotEmpty);
+    expect(tester.takeException(), isNull);
+    expect(find.byType(TableGridPreview), findsOneWidget);
   });
 
   testWidgets('스테퍼 [+]/[-] 동작, max 제한에서 [+] 꺼짐, preview 인자 반영', (tester) async {
@@ -187,9 +430,7 @@ void main() {
     Future<Object?> api(String name, List<Object?> args) async {
       calls.add([name, ...args]);
       final action = args[0] as String;
-      if (action == 'list') {
-        return envelope(sampleListData());
-      }
+      if (action == 'list') return envelope(sampleListData());
       if (action == 'preview') {
         final payload = args[1] as Map;
         final rows = (payload['row_count'] as num?)?.toInt() ?? 3;
@@ -205,26 +446,21 @@ void main() {
     final plusBtn = find.byKey(const Key('btnRowPlus'));
     final minusBtn = find.byKey(const Key('btnRowMinus'));
 
-    // [+] 클릭 -> 4개
     await tester.tap(plusBtn);
     await tester.pumpAndSettle();
     expect(find.text('행 단위 4개'), findsOneWidget);
 
-    // [+] 클릭 -> 5개 (max=5 도달)
     await tester.tap(plusBtn);
     await tester.pumpAndSettle();
     expect(find.text('행 단위 5개'), findsOneWidget);
 
-    // max(5)에 도달했으므로 [+] 버튼이 비활성화(onPressed == null)되어야 함
     final plusWidget = tester.widget<IconButton>(plusBtn);
     expect(plusWidget.onPressed, isNull);
 
-    // [-] 클릭 -> 4개로 감소
     await tester.tap(minusBtn);
     await tester.pumpAndSettle();
     expect(find.text('행 단위 4개'), findsOneWidget);
 
-    // preview 호출 인자에 row_count가 정확히 전달되었는지 확인
     final lastPreview = calls.lastWhere(
       (c) => c[0] == 'table_units' && c[1] == 'preview',
     );
@@ -234,18 +470,13 @@ void main() {
   testWidgets('고정 표는 안내 문구 표시 및 스테퍼 없음', (tester) async {
     Future<Object?> api(String name, List<Object?> args) async {
       final action = args[0] as String;
-      if (action == 'list') {
-        return envelope(sampleListData());
-      }
-      if (action == 'preview') {
-        return envelope(samplePreview(rows: 2, cols: 2));
-      }
+      if (action == 'list') return envelope(sampleListData());
+      if (action == 'preview') return envelope(samplePreview(rows: 2, cols: 2));
       return envelope({});
     }
 
     await pumpScreen(tester, api: api);
 
-    // 템플릿 2 (고정 표) 선택
     await tester.tap(find.byKey(const Key('templateCard_0:2')));
     await tester.pumpAndSettle();
 
@@ -255,40 +486,7 @@ void main() {
     expect(find.byKey(const Key('btnRowPlus')), findsNothing);
   });
 
-  testWidgets('복사 버튼 클릭 시 copy API 호출 및 SnackBar 표시', (tester) async {
-    final calls = <List<Object?>>[];
-    Future<Object?> api(String name, List<Object?> args) async {
-      calls.add([name, ...args]);
-      final action = args[0] as String;
-      if (action == 'list') {
-        return envelope(sampleListData());
-      }
-      if (action == 'preview') {
-        return envelope(samplePreview());
-      }
-      if (action == 'copy') {
-        return envelope({
-          'copied': true,
-          'message': '클립보드에 복사했어요. 한/글에서 Ctrl+V로 붙여넣으세요.',
-        });
-      }
-      return envelope({});
-    }
-
-    await pumpScreen(tester, api: api);
-
-    final copyBtn = find.byKey(const Key('btnCopyTable'));
-    expect(copyBtn, findsOneWidget);
-    await tester.tap(copyBtn);
-    await tester.pump(); // SnackBar 시작
-    await tester.pumpAndSettle();
-
-    expect(calls.any((c) => c[0] == 'table_units' && c[1] == 'copy'), isTrue);
-    expect(find.text('클립보드에 복사했어요. 한/글에서 Ctrl+V로 붙여넣으세요.'), findsOneWidget);
-  });
-
   testWidgets('API 오류 발생 시 화면 및 복사 오류 메시지 표시', (tester) async {
-    // 1. 초기 로드 실패 시
     Future<Object?> failApi(String name, List<Object?> args) async {
       return errorEnvelope('LOAD_FAILED', '목록을 불러올 수 없습니다.');
     }
@@ -297,7 +495,6 @@ void main() {
     expect(find.byKey(const Key('errorMessage')), findsOneWidget);
     expect(find.text('목록을 불러올 수 없습니다.'), findsOneWidget);
 
-    // 2. 복사 실패 시 빨간 글 표시
     Future<Object?> copyFailApi(String name, List<Object?> args) async {
       final action = args[0] as String;
       if (action == 'list') return envelope(sampleListData());
@@ -308,7 +505,6 @@ void main() {
       return envelope({});
     }
 
-    // 앞 화면의 상태(목록 오류)를 재사용하지 않도록 위젯 트리를 비운 뒤 새로 띄운다.
     await tester.pumpWidget(const SizedBox());
     await pumpScreen(tester, api: copyFailApi);
     await tester.tap(find.byKey(const Key('btnCopyTable')));
@@ -327,8 +523,6 @@ void main() {
     }
 
     await pumpScreen(tester, api: api);
-
-    // 템플릿 1에는 base64 썸네일이 있음
     expect(find.byType(Image), findsWidgets);
   });
 

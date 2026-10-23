@@ -1364,7 +1364,8 @@ class DesktopWebBridge:
             if action in ("copy", "thumbnails") and self.gui.running:
                 raise ServiceError("JOB_RUNNING", "문서 작업이 끝난 뒤 다시 눌러 주세요.")
             if action not in ("copy", "thumbnails"):
-                return TableUnitsService().command(action, payload)
+                settings = self._tk(lambda: self.gui._준말_서비스().settings)
+                return TableUnitsService(settings=settings).command(action, payload)
             # 스냅샷 생성 중에 복사가 겹치면 한/글·클립보드가 엉키므로 한 번에 하나만 한다.
             if not _TABLE_UNITS_COM_LOCK.acquire(blocking=False):
                 raise ServiceError("BUSY", "표 템플릿 작업이 진행 중이에요. 끝난 뒤 다시 눌러 주세요.")
@@ -1372,7 +1373,8 @@ class DesktopWebBridge:
             try:
                 pythoncom.CoInitialize()
                 try:
-                    return TableUnitsService(self._table_units_hwp).command(action, payload)
+                    settings = self._tk(lambda: self.gui._준말_서비스().settings)
+                    return TableUnitsService(self._table_units_hwp, settings=settings).command(action, payload)
                 finally:
                     pythoncom.CoUninitialize()
             finally:

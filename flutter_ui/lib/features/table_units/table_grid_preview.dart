@@ -21,7 +21,7 @@ Color? parseHexColor(String? hex) {
   return null;
 }
 
-/// 병합(rowSpan/colSpan)과 서식을 반영해 한/글 표 구조를 그리는 미리보기 위젯.
+/// 병합(rowSpan/colSpan), 서식, 글상자 안 nested 표를 반영해 한/글 표 구조를 그리는 미리보기 위젯.
 class TableGridPreview extends StatelessWidget {
   const TableGridPreview({
     super.key,
@@ -30,6 +30,8 @@ class TableGridPreview extends StatelessWidget {
     required this.cellMeta,
     this.maxHeight,
     this.maxWidth,
+    this.onCellTap,
+    this.editedCellKeys = const {},
   });
 
   final int rows;
@@ -37,6 +39,8 @@ class TableGridPreview extends StatelessWidget {
   final List<List<CellMeta>> cellMeta;
   final double? maxHeight;
   final double? maxWidth;
+  final void Function(int row, int col)? onCellTap;
+  final Set<String> editedCellKeys;
 
   @override
   Widget build(BuildContext context) {
@@ -106,38 +110,88 @@ class TableGridPreview extends StatelessWidget {
           renderWidth = renderHeight * ratio;
         }
 
-        return Center(
-          child: Container(
-            width: renderWidth,
-            height: renderHeight,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(4),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0x0d000000),
-                  blurRadius: 4,
-                  offset: const Offset(0, 1),
-                ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: CustomPaint(
-                size: Size(renderWidth, renderHeight),
-                painter: _TableGridPainter(
-                  rows: rows,
-                  cols: cols,
-                  cells: cells,
-                  colWidths: colWidths,
-                  rowHeights: rowHeights,
-                  totalWidth: totalWidth,
-                  totalHeight: totalHeight,
-                ),
+        // 터치 좌표 계산용 시작 위치 목록 미리 계산
+        final colStarts = List<double>.filled(cols + 1, 0.0);
+        double curX = 0.0;
+        for (int i = 0; i < cols; i++) {
+          colStarts[i] = curX;
+          curX += (colWidths[i] / totalWidth) * renderWidth;
+        }
+        colStarts[cols] = renderWidth;
+
+        final rowStarts = List<double>.filled(rows + 1, 0.0);
+        double curY = 0.0;
+        for (int i = 0; i < rows; i++) {
+          rowStarts[i] = curY;
+          curY += (rowHeights[i] / totalHeight) * renderHeight;
+        }
+        rowStarts[rows] = renderHeight;
+
+        Widget content = Container(
+          width: renderWidth,
+          height: renderHeight,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(4),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x0d000000),
+                blurRadius: 4,
+                offset: Offset(0, 1),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: CustomPaint(
+              size: Size(renderWidth, renderHeight),
+              painter: _TableGridPainter(
+                rows: rows,
+                cols: cols,
+                cells: cells,
+                colWidths: colWidths,
+                rowHeights: rowHeights,
+                totalWidth: totalWidth,
+                totalHeight: totalHeight,
+                editedCellKeys: editedCellKeys,
               ),
             ),
           ),
         );
+
+        if (onCellTap != null) {
+          content = GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapUp: (details) {
+              final pos = details.localPosition;
+              for (final cell in cells) {
+                final r0 = cell.row.clamp(0, rows);
+                final r1 = (cell.row + cell.rowSpan).clamp(0, rows);
+                final c0 = cell.col.clamp(0, cols);
+                final c1 = (cell.col + cell.colSpan).clamp(0, cols);
+
+                final left = colStarts[c0];
+                final right = colStarts[c1];
+                final top = rowStarts[r0];
+                final bottom = rowStarts[r1];
+
+                if (pos.dx >= left &&
+                    pos.dx <= right &&
+                    pos.dy >= top &&
+                    pos.dy <= bottom) {
+                  onCellTap!(cell.row, cell.col);
+                  break;
+                }
+              }
+            },
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: content,
+            ),
+          );
+        }
+
+        return Center(child: content);
       },
     );
   }
@@ -152,6 +206,7 @@ class _TableGridPainter extends CustomPainter {
     required this.rowHeights,
     required this.totalWidth,
     required this.totalHeight,
+    required this.editedCellKeys,
   });
 
   final int rows;
@@ -161,30 +216,61 @@ class _TableGridPainter extends CustomPainter {
   final List<double> rowHeights;
   final double totalWidth;
   final double totalHeight;
+  final Set<String> editedCellKeys;
 
   @override
   void paint(Canvas canvas, Size size) {
     if (totalWidth <= 0 || totalHeight <= 0) return;
 
-    // 열 시작 위치 x 좌표 계산
+    _renderTable(
+      canvas: canvas,
+      rect: Rect.fromLTWH(0, 0, size.width, size.height),
+      rows: rows,
+      cols: cols,
+      cells: cells,
+      colWidths: colWidths,
+      rowHeights: rowHeights,
+      totalWidth: totalWidth,
+      totalHeight: totalHeight,
+      editedKeys: editedCellKeys,
+      depth: 0,
+    );
+  }
+
+  void _renderTable({
+    required Canvas canvas,
+    required Rect rect,
+    required int rows,
+    required int cols,
+    required List<CellMeta> cells,
+    required List<double> colWidths,
+    required List<double> rowHeights,
+    required double totalWidth,
+    required double totalHeight,
+    Set<String> editedKeys = const {},
+    int depth = 0,
+  }) {
+    if (rect.width <= 0 || rect.height <= 0 || totalWidth <= 0 || totalHeight <= 0) {
+      return;
+    }
+
     final colStarts = List<double>.filled(cols + 1, 0.0);
-    double curX = 0.0;
+    double curX = rect.left;
     for (int i = 0; i < cols; i++) {
       colStarts[i] = curX;
-      curX += (colWidths[i] / totalWidth) * size.width;
+      curX += (colWidths[i] / totalWidth) * rect.width;
     }
-    colStarts[cols] = size.width;
+    colStarts[cols] = rect.right;
 
-    // 행 시작 위치 y 좌표 계산
     final rowStarts = List<double>.filled(rows + 1, 0.0);
-    double curY = 0.0;
+    double curY = rect.top;
     for (int i = 0; i < rows; i++) {
       rowStarts[i] = curY;
-      curY += (rowHeights[i] / totalHeight) * size.height;
+      curY += (rowHeights[i] / totalHeight) * rect.height;
     }
-    rowStarts[rows] = size.height;
+    rowStarts[rows] = rect.bottom;
 
-    // 1단계: 셀 배경색 채우기
+    // 1단계: 셀 배경색 채우기 및 편집된 칸 강조
     for (final cell in cells) {
       final r0 = cell.row.clamp(0, rows);
       final r1 = (cell.row + cell.rowSpan).clamp(0, rows);
@@ -196,19 +282,70 @@ class _TableGridPainter extends CustomPainter {
       final top = rowStarts[r0];
       final bottom = rowStarts[r1];
 
-      final rect = Rect.fromLTRB(left, top, right, bottom);
+      final cellRect = Rect.fromLTRB(left, top, right, bottom);
 
       final fillColor = parseHexColor(cell.style.fill);
       if (fillColor != null && fillColor.a > 0) {
         final fillPaint = Paint()
           ..color = fillColor
           ..style = PaintingStyle.fill;
-        canvas.drawRect(rect, fillPaint);
+        canvas.drawRect(cellRect, fillPaint);
+      }
+
+      // 사용자가 직접 입력한 칸 강조
+      final cellKey = '${cell.row},${cell.col}';
+      if (editedKeys.contains(cellKey)) {
+        final editHighlightPaint = Paint()
+          ..color = const Color(0x332563eb)
+          ..style = PaintingStyle.fill;
+        canvas.drawRect(cellRect, editHighlightPaint);
       }
     }
 
-    // 2단계: 셀 텍스트 그리기
+    // 2단계: nested 표 그리기 (글상자 안 축소 표)
     for (final cell in cells) {
+      final nestedList = cell.nested;
+      if (nestedList != null && nestedList.isNotEmpty && depth < 2) {
+        final r0 = cell.row.clamp(0, rows);
+        final r1 = (cell.row + cell.rowSpan).clamp(0, rows);
+        final c0 = cell.col.clamp(0, cols);
+        final c1 = (cell.col + cell.colSpan).clamp(0, cols);
+
+        final cellRect = Rect.fromLTRB(
+          colStarts[c0],
+          rowStarts[r0],
+          colStarts[c1],
+          rowStarts[r1],
+        );
+
+        final innerRect = cellRect.deflate(2.0);
+        if (innerRect.width > 12 && innerRect.height > 10) {
+          final count = nestedList.length;
+          final subHeight = innerRect.height / count;
+
+          for (int ni = 0; ni < count; ni++) {
+            final nestedTable = nestedList[ni];
+            final subRect = Rect.fromLTWH(
+              innerRect.left,
+              innerRect.top + ni * subHeight,
+              innerRect.width,
+              subHeight,
+            );
+
+            _drawSingleNestedTable(
+              canvas: canvas,
+              rect: subRect,
+              table: nestedTable,
+              depth: depth + 1,
+            );
+          }
+        }
+      }
+    }
+
+    // 3단계: 셀 텍스트 그리기
+    for (final cell in cells) {
+      // nested가 이미 채워져 있는 셀에서 텍스트가 비어있지 않더라도 크기가 작으면 nested 우선
       final text = cell.text.trim();
       if (text.isEmpty) continue;
 
@@ -225,12 +362,11 @@ class _TableGridPainter extends CustomPainter {
       final rectWidth = right - left;
       final rectHeight = bottom - top;
 
-      // 너무 작은 셀은 텍스트 생략
-      if (rectWidth < 14 || rectHeight < 10) continue;
+      if (rectWidth < 12 || rectHeight < 8) continue;
 
       final textColor =
           parseHexColor(cell.style.color) ?? const Color(0xff1e293b);
-      final fontSize = (rectHeight * 0.42).clamp(8.0, 13.0);
+      final fontSize = (rectHeight * 0.42).clamp(depth > 0 ? 6.0 : 8.0, 13.0);
 
       TextAlign align = TextAlign.left;
       if (cell.align.toLowerCase() == 'center') {
@@ -271,7 +407,7 @@ class _TableGridPainter extends CustomPainter {
       textPainter.paint(canvas, Offset(textX, textY));
     }
 
-    // 3단계: 테두리 그리기
+    // 4단계: 셀 테두리 그리기
     for (final cell in cells) {
       final r0 = cell.row.clamp(0, rows);
       final r1 = (cell.row + cell.rowSpan).clamp(0, rows);
@@ -310,14 +446,77 @@ class _TableGridPainter extends CustomPainter {
         Offset(right, top),
         Offset(right, bottom),
       );
+
+      // 사용자가 직접 입력한 칸 테두리 강조 표시 (depth == 0인 경우)
+      if (depth == 0 && editedKeys.contains('${cell.row},${cell.col}')) {
+        final highlightBorderPaint = Paint()
+          ..color = const Color(0xff2563eb)
+          ..strokeWidth = 1.5
+          ..style = PaintingStyle.stroke;
+        canvas.drawRect(Rect.fromLTRB(left, top, right, bottom), highlightBorderPaint);
+      }
     }
 
-    // 외곽 기본 테두리
+    // 5단계: 외곽 기본 테두리
     final outerPaint = Paint()
-      ..color = const Color(0xff64748b)
-      ..strokeWidth = 1.0
+      ..color = depth == 0 ? const Color(0xff64748b) : const Color(0xff94a3b8)
+      ..strokeWidth = depth == 0 ? 1.0 : 0.7
       ..style = PaintingStyle.stroke;
-    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), outerPaint);
+    canvas.drawRect(rect, outerPaint);
+  }
+
+  void _drawSingleNestedTable({
+    required Canvas canvas,
+    required Rect rect,
+    required TablePreview table,
+    required int depth,
+  }) {
+    if (table.rows <= 0 || table.cols <= 0 || table.cellMeta.isEmpty) return;
+
+    final nCells = <CellMeta>[];
+    for (final rowList in table.cellMeta) {
+      nCells.addAll(rowList);
+    }
+
+    final nColWidths = List<double>.filled(table.cols, 1.0);
+    final nColHasExact = List<bool>.filled(table.cols, false);
+    for (final c in nCells) {
+      if (c.colSpan == 1 && c.col >= 0 && c.col < table.cols) {
+        if (!nColHasExact[c.col] || c.width > nColWidths[c.col]) {
+          nColWidths[c.col] = c.width > 0 ? c.width : 1.0;
+          nColHasExact[c.col] = true;
+        }
+      }
+    }
+    final nTotalW = nColWidths.fold<double>(0.0, (a, b) => a + b);
+
+    final nRowHeights = List<double>.filled(table.rows, 1.0);
+    final nRowHasExact = List<bool>.filled(table.rows, false);
+    for (final c in nCells) {
+      if (c.rowSpan == 1 && c.row >= 0 && c.row < table.rows) {
+        if (!nRowHasExact[c.row] || c.height > nRowHeights[c.row]) {
+          nRowHeights[c.row] = c.height > 0 ? c.height : 1.0;
+          nRowHasExact[c.row] = true;
+        }
+      }
+    }
+    final nTotalH = nRowHeights.fold<double>(0.0, (a, b) => a + b);
+
+    canvas.save();
+    canvas.clipRect(rect);
+    _renderTable(
+      canvas: canvas,
+      rect: rect,
+      rows: table.rows,
+      cols: table.cols,
+      cells: nCells,
+      colWidths: nColWidths,
+      rowHeights: nRowHeights,
+      totalWidth: nTotalW,
+      totalHeight: nTotalH,
+      depth: depth,
+    );
+    canvas.restore();
   }
 
   @override
@@ -326,6 +525,7 @@ class _TableGridPainter extends CustomPainter {
         oldDelegate.cols != cols ||
         oldDelegate.cells != cells ||
         oldDelegate.totalWidth != totalWidth ||
-        oldDelegate.totalHeight != totalHeight;
+        oldDelegate.totalHeight != totalHeight ||
+        oldDelegate.editedCellKeys != editedCellKeys;
   }
 }

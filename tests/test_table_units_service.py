@@ -2,15 +2,32 @@
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from docfit_app.api_contract import ServiceError
 from docfit_app.table_units_service import TableUnitsService, crop_to_content
 from docfit_core.table_catalog import default_catalog_path
+from docfit_app.settings_service import SettingsService
 
 
 class FakeHwp:
     def __init__(self, log):
         self.log = log
+        table = SimpleNamespace(CtrlID="tbl", Next=None, GetAnchorPos=lambda n: self.anchor(n))
+        self.HeadCtrl = SimpleNamespace(CtrlID="secd", Next=table)
+
+    def anchor(self, index):
+        self.log.append(("GetAnchorPos", index))
+        return "anchor"
+
+    def SetPosBySet(self, pos):
+        self.log.append(("SetPosBySet", pos))
+        return True
+
+    def FindCtrl(self):
+        self.log.append(("FindCtrl",))
+        return True
 
     def Open(self, path, kind, option):
         self.log.append(("Open", Path(path).suffix, kind))
@@ -43,7 +60,8 @@ class TableUnitsServiceTests(unittest.TestCase):
         self.log = []
         self.formats = ["Hwp Native", "HTML Format"]
         self.service = TableUnitsService(lambda: FakeHwp(self.log), source=default_catalog_path(),
-                                         snapshot_root=Path(self.temp.name), clipboard_formats=lambda: self.formats)
+                                         snapshot_root=Path(self.temp.name), clipboard_formats=lambda: self.formats,
+                                         settings=SettingsService(Path(self.temp.name) / "settings.json"), activator=lambda: False)
 
     def test_list_reports_units_and_missing_snapshots(self):
         data = self.service.command("list", {})
@@ -83,6 +101,9 @@ class TableUnitsServiceTests(unittest.TestCase):
         self.assertTrue(result["copied"])
         self.assertIn(("Run", "Copy"), self.log)
         self.assertEqual(self.log[-1], ("Quit",))
+        self.assertEqual(self.log[1:5], [("GetAnchorPos", 0), ("SetPosBySet", "anchor"), ("FindCtrl",), ("Run", "Copy")])
+        self.assertNotIn(("Run", "SelectAll"), self.log)
+        self.assertFalse(result["activated"])
         self.formats = ["HTML Format"]
         with self.assertRaises(ServiceError):
             self.service.command("copy", {"id": template["id"]})
@@ -98,6 +119,50 @@ class TableUnitsServiceTests(unittest.TestCase):
                                 ("preview", {"id": "0:1", "col_count": True}), ("delete", {})):
             with self.assertRaises(ServiceError):
                 self.service.command(action, payload)
+
+    def test_preferences_persist_recent_deduplicates_and_caps_at_eight(self):
+        templates = self.service.list()["templates"][:9]
+        first = templates[0]["id"]
+        result = self.service.command("favorite", {"id": first, "on": True})
+        self.assertTrue(result["templates"][0]["favorite"])
+        fresh = TableUnitsService(source=default_catalog_path(), snapshot_root=Path(self.temp.name),
+                                  settings=self.service._settings)
+        self.assertTrue(fresh.list()["templates"][0]["favorite"])
+        for item in templates:
+            self.service.copy(item["id"])
+        self.service.copy(templates[-2]["id"])
+        recent = fresh.list()["recent"]
+        self.assertEqual(len(recent), 8)
+        self.assertEqual(recent[:2], [templates[-2]["id"], templates[-1]["id"]])
+        self.assertFalse(self.service.favorite(first, False)["templates"][0]["favorite"])
+        with self.assertRaises(ServiceError):
+            self.service.command("favorite", {"id": first, "on": 1})
+        with self.assertRaises(ServiceError):
+            self.service.favorite("missing", True)
+
+    def test_payload_validation_and_post_fill_text(self):
+        item = next(t for t in self.service.list()["templates"] if "연간" in t["name"])
+        result = self.service.command("preview", {"id": item["id"], "col_count": 6,
+            "fill": "blank", "cell_texts": {"0,21": "입력 제목"}})
+        self.assertEqual(result["cell_meta"][0][-1]["text"], "입력 제목")
+        invalid = [{"fill": []}, {"fill": "unknown"}, {"cell_texts": []},
+                   {"cell_texts": {"0:1": "x"}}, {"cell_texts": {"0,1": 1}},
+                   {"cell_texts": {"0,1": "x" * 1001}}, {"cell_texts": {"0,2": "covered"}},
+                   {"cell_texts": {f"{i},0": "x" for i in range(201)}}]
+        for extra in invalid:
+            for action in ("preview", "copy"):
+                with self.subTest(extra=extra, action=action), self.assertRaises(ServiceError):
+                    self.service.command(action, {"id": item["id"], **extra})
+
+    def test_activation_failure_still_copies_and_failed_copy_does_not_update_recent(self):
+        item = self.service.list()["templates"][0]
+        self.service._activator = lambda: (_ for _ in ()).throw(OSError("focus"))
+        self.assertTrue(self.service.copy(item["id"])["copied"])
+        self.assertEqual(self.service.list()["recent"], [item["id"]])
+        self.service._hwp_factory = lambda: SimpleNamespace(Open=lambda *a: True, HeadCtrl=None, Clear=lambda *a: None, Quit=lambda: None)
+        with self.assertRaises(ServiceError):
+            self.service.copy(self.service.list()["templates"][1]["id"])
+        self.assertEqual(self.service.list()["recent"], [item["id"]])
 
     def test_crop_removes_white_margin(self):
         from PIL import Image, ImageDraw

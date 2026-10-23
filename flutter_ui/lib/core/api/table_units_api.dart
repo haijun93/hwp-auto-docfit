@@ -71,6 +71,7 @@ class TableTemplateInfo {
     required this.rows,
     required this.cols,
     this.thumbnail,
+    this.favorite = false,
     required this.units,
   });
 
@@ -80,7 +81,28 @@ class TableTemplateInfo {
   final int rows;
   final int cols;
   final String? thumbnail;
+  final bool favorite;
   final TableUnits units;
+
+  TableTemplateInfo copyWith({
+    String? id,
+    String? category,
+    String? name,
+    int? rows,
+    int? cols,
+    String? thumbnail,
+    bool? favorite,
+    TableUnits? units,
+  }) => TableTemplateInfo(
+    id: id ?? this.id,
+    category: category ?? this.category,
+    name: name ?? this.name,
+    rows: rows ?? this.rows,
+    cols: cols ?? this.cols,
+    thumbnail: thumbnail ?? this.thumbnail,
+    favorite: favorite ?? this.favorite,
+    units: units ?? this.units,
+  );
 
   factory TableTemplateInfo.fromJson(Map<dynamic, dynamic> json) =>
       TableTemplateInfo(
@@ -90,6 +112,7 @@ class TableTemplateInfo {
         rows: (json['rows'] as num?)?.toInt() ?? 0,
         cols: (json['cols'] as num?)?.toInt() ?? 0,
         thumbnail: json['thumbnail'] as String?,
+        favorite: json['favorite'] == true,
         units: TableUnits.fromJson(json['units'] as Map?),
       );
 }
@@ -99,17 +122,22 @@ class TableUnitsListData {
   const TableUnitsListData({
     this.source,
     required this.thumbnailsReady,
+    this.recent = const [],
     required this.templates,
   });
 
   final String? source;
   final bool thumbnailsReady;
+  final List<String> recent;
   final List<TableTemplateInfo> templates;
 
   factory TableUnitsListData.fromJson(Map<dynamic, dynamic> json) =>
       TableUnitsListData(
         source: json['source'] as String?,
         thumbnailsReady: json['thumbnails_ready'] == true,
+        recent: (json['recent'] as List? ?? const [])
+            .map((e) => '$e')
+            .toList(),
         templates: (json['templates'] as List? ?? const [])
             .whereType<Map>()
             .map(TableTemplateInfo.fromJson)
@@ -202,7 +230,7 @@ class CellStyle {
   }
 }
 
-/// 셀 메타데이터 (병합, 크기, 내용, 서식).
+/// 셀 메타데이터 (병합, 크기, 내용, 서식, 글상자 안 nested 표).
 class CellMeta {
   const CellMeta({
     required this.row,
@@ -215,6 +243,7 @@ class CellMeta {
     this.align = 'left',
     this.style = const CellStyle(),
     this.borders = const CellBorders(),
+    this.nested,
   });
 
   final int row;
@@ -227,19 +256,31 @@ class CellMeta {
   final String align;
   final CellStyle style;
   final CellBorders borders;
+  final List<TablePreview>? nested;
 
-  factory CellMeta.fromJson(Map<dynamic, dynamic> json) => CellMeta(
-    row: (json['row'] as num?)?.toInt() ?? 0,
-    col: (json['col'] as num?)?.toInt() ?? 0,
-    rowSpan: (json['rowSpan'] as num?)?.toInt() ?? 1,
-    colSpan: (json['colSpan'] as num?)?.toInt() ?? 1,
-    width: (json['width'] as num?)?.toDouble() ?? 1.0,
-    height: (json['height'] as num?)?.toDouble() ?? 1.0,
-    text: '${json['text'] ?? ''}',
-    align: '${json['align'] ?? 'left'}',
-    style: CellStyle.fromJson(json['style'] as Map?),
-    borders: CellBorders.fromJson(json['borders'] as Map?),
-  );
+  factory CellMeta.fromJson(Map<dynamic, dynamic> json) {
+    final rawNested = json['nested'];
+    List<TablePreview>? nested;
+    if (rawNested is List) {
+      nested = rawNested
+          .whereType<Map>()
+          .map(TablePreview.fromJson)
+          .toList();
+    }
+    return CellMeta(
+      row: (json['row'] as num?)?.toInt() ?? 0,
+      col: (json['col'] as num?)?.toInt() ?? 0,
+      rowSpan: (json['rowSpan'] as num?)?.toInt() ?? 1,
+      colSpan: (json['colSpan'] as num?)?.toInt() ?? 1,
+      width: (json['width'] as num?)?.toDouble() ?? 1.0,
+      height: (json['height'] as num?)?.toDouble() ?? 1.0,
+      text: '${json['text'] ?? ''}',
+      align: '${json['align'] ?? 'left'}',
+      style: CellStyle.fromJson(json['style'] as Map?),
+      borders: CellBorders.fromJson(json['borders'] as Map?),
+      nested: nested,
+    );
+  }
 }
 
 /// 표 미리보기 응답 데이터.
@@ -276,15 +317,21 @@ class TablePreview {
 
 /// 표 클립보드 복사 응답 데이터.
 class TableCopyResult {
-  const TableCopyResult({required this.copied, required this.message});
+  const TableCopyResult({
+    required this.copied,
+    required this.message,
+    this.activated = false,
+  });
 
   final bool copied;
   final String message;
+  final bool activated;
 
   factory TableCopyResult.fromJson(Map<dynamic, dynamic> json) =>
       TableCopyResult(
         copied: json['copied'] == true,
         message: '${json['message'] ?? ''}',
+        activated: json['activated'] == true,
       );
 }
 
@@ -332,16 +379,30 @@ class TableUnitsApi {
     return TableUnitsListData.fromJson(data);
   }
 
+  /// 즐겨찾기 토글.
+  Future<TableUnitsListData> favorite(String id, bool on) async {
+    final payload = <String, Object?>{
+      'id': id,
+      'on': on,
+    };
+    final data = await _request('favorite', payload);
+    return TableUnitsListData.fromJson(data);
+  }
+
   /// 정보단위가 조절된 표 구조 미리보기 조회.
   Future<TablePreview> preview(
     String id, {
     int? rowCount,
     int? colCount,
+    String fill = 'increment',
+    Map<String, String>? cellTexts,
   }) async {
     final payload = <String, Object?>{
       'id': id,
       'row_count': rowCount,
       'col_count': colCount,
+      'fill': fill,
+      'cell_texts': cellTexts ?? const {},
     };
     final data = await _request('preview', payload);
     return TablePreview.fromJson(data);
@@ -352,11 +413,15 @@ class TableUnitsApi {
     String id, {
     int? rowCount,
     int? colCount,
+    String fill = 'increment',
+    Map<String, String>? cellTexts,
   }) async {
     final payload = <String, Object?>{
       'id': id,
       'row_count': rowCount,
       'col_count': colCount,
+      'fill': fill,
+      'cell_texts': cellTexts ?? const {},
     };
     final data = await _request('copy', payload);
     return TableCopyResult.fromJson(data);

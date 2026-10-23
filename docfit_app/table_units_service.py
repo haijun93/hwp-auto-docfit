@@ -51,12 +51,35 @@ def crop_to_content(image, margin: int = 6):
 
 class TableUnitsService:
     def __init__(self, hwp_factory=None, *, source: Path | None = None, snapshot_root: Path | None = None,
-                 clipboard_formats=None):
+                 clipboard_formats=None, settings=None, activator=None):
         # hwp_factory: 독립 한/글 COM 객체를 만들어 돌려주는 함수(보안 모듈 등록·숨김 포함). 시험에서는 가짜.
         self._hwp_factory = hwp_factory
         self._source = source
         self._snapshot_root = snapshot_root
         self._clipboard_formats = clipboard_formats or _clipboard_formats
+        self._settings = settings
+        self._memory = {}
+        self._activator = activator or _activate_visible_hwp
+
+    def _preferences(self):
+        return self._settings.read() if self._settings else self._memory
+
+    def _update_preferences(self, change):
+        if self._settings:
+            self._settings.update(change)
+        else:
+            change(self._memory)
+
+    def favorite(self, template_id, on):
+        if not isinstance(template_id, str) or type(on) is not bool or template_id not in {t["id"] for t in self._units()}:
+            raise ServiceError("INVALID_INPUT", "즐겨찾기 표와 선택 값을 확인해 주세요.")
+        def update(data):
+            favorites = _id_list(data.get("table_template_favorites"))
+            data["table_template_favorites"] = [v for v in favorites if v != template_id]
+            if on:
+                data["table_template_favorites"].append(template_id)
+        self._update_preferences(update)
+        return self.list()
 
     @property
     def source(self) -> Path:
@@ -79,23 +102,29 @@ class TableUnitsService:
             raise ServiceError("CATALOG_UNAVAILABLE", f"표 서식 모음을 읽지 못했습니다: {exc}") from exc
 
     def list(self) -> dict:
+        preferences = self._preferences()
+        favorites = _id_list(preferences.get("table_template_favorites"))
         templates = []
         for item in self._units():
-            templates.append({**item, "thumbnail": self._snapshot_url(item["id"])})
+            templates.append({**item, "thumbnail": self._snapshot_url(item["id"]),
+                              "favorite": item["id"] in favorites})
+        ids = {t["id"] for t in templates}
         return {"source": str(self.source), "templates": templates,
+                "recent": [v for v in _id_list(preferences.get("table_template_recent")) if v in ids][:8],
                 "thumbnails_ready": bool(templates) and all(item["thumbnail"] for item in templates)}
 
-    def preview(self, template_id, row_count=None, col_count=None) -> dict:
+    def preview(self, template_id, row_count=None, col_count=None, *, fill="increment", cell_texts=None) -> dict:
         try:
-            return table_units.preview(str(template_id), self.source, row_count=row_count, col_count=col_count)
+            return table_units.preview(str(template_id), self.source, row_count=row_count, col_count=col_count,
+                                       fill=fill, cell_texts=cell_texts)
         except (KeyError, ValueError) as exc:
             raise ServiceError("INVALID_INPUT", str(exc).strip("'\"")) from exc
 
-    def _export(self, folder: Path, template_id, row_count=None, col_count=None) -> Path:
+    def _export(self, folder: Path, template_id, row_count=None, col_count=None, *, fill="increment", cell_texts=None) -> Path:
         target = folder / f"{_safe_name(template_id)}.hwpx"
         try:
             return table_units.export_resized(str(template_id), target, self.source,
-                                              row_count=row_count, col_count=col_count)
+                                              row_count=row_count, col_count=col_count, fill=fill, cell_texts=cell_texts)
         except (KeyError, ValueError) as exc:
             raise ServiceError("INVALID_INPUT", str(exc).strip("'\"")) from exc
 
@@ -112,21 +141,37 @@ class TableUnitsService:
             except Exception:
                 pass
 
-    def copy(self, template_id, row_count=None, col_count=None) -> dict:
+    def copy(self, template_id, row_count=None, col_count=None, *, fill="increment", cell_texts=None) -> dict:
         folder = Path(tempfile.mkdtemp(prefix="docfit_table_copy_"))
         try:
-            document = self._export(folder, template_id, row_count, col_count)
+            document = self._export(folder, template_id, row_count, col_count, fill=fill, cell_texts=cell_texts)
             app = self._hwp()
             try:
                 if app.Open(str(document), "HWPX", "forceopen:true") is False:
                     raise ServiceError("HWP_FAILED", "한/글이 표 문서를 열지 못했습니다.")
-                app.Run("SelectAll")
-                app.Run("Copy")
+                control = app.HeadCtrl
+                while control is not None and control.CtrlID != "tbl":
+                    control = control.Next
+                if control is None:
+                    raise ServiceError("HWP_FAILED", "복사할 표를 찾지 못했습니다.")
+                if app.SetPosBySet(control.GetAnchorPos(0)) is False or app.FindCtrl() is False:
+                    raise ServiceError("HWP_FAILED", "복사할 표를 선택하지 못했습니다.")
+                if app.Run("Copy") is False:
+                    raise ServiceError("CLIPBOARD_FAILED", "표를 복사하지 못했습니다.")
             finally:
                 self._close(app)
             if HWP_CLIPBOARD_FORMAT not in self._clipboard_formats():
                 raise ServiceError("CLIPBOARD_FAILED", "클립보드에 한/글 표를 넣지 못했습니다. 다시 시도해 주세요.")
-            return {"copied": True, "message": "표를 복사했어요. 한/글 문서에서 붙여넣을 곳을 누르고 Ctrl+V 하세요."}
+            def update(data):
+                recent = _id_list(data.get("table_template_recent"))
+                data["table_template_recent"] = [str(template_id)] + [v for v in recent if v != str(template_id)][:7]
+            self._update_preferences(update)
+            try:
+                activated = bool(self._activator())
+            except Exception:
+                activated = False
+            return {"copied": True, "activated": activated,
+                    "message": "표를 복사했어요. 한/글 문서에서 붙여넣을 곳을 누르고 Ctrl+V 하세요."}
         finally:
             shutil.rmtree(folder, ignore_errors=True)
 
@@ -178,7 +223,9 @@ class TableUnitsService:
                 shutil.rmtree(folder, ignore_errors=True)
 
     def command(self, action, payload=None):
-        payload = payload if isinstance(payload, dict) else {}
+        if payload is not None and not isinstance(payload, dict):
+            raise ServiceError("INVALID_INPUT", "표 템플릿 입력 형식을 확인해 주세요.")
+        payload = payload or {}
         counts = {key: payload.get(key) for key in ("row_count", "col_count")}
         for key, value in counts.items():
             if value is not None and (not isinstance(value, int) or isinstance(value, bool)):
@@ -187,13 +234,46 @@ class TableUnitsService:
             return self.list()
         if action == "thumbnails":
             return self.thumbnails()
+        if action == "favorite":
+            return self.favorite(payload.get("id"), payload.get("on"))
         if action in ("preview", "copy"):
             template_id = payload.get("id")
             if not isinstance(template_id, str) or not template_id:
                 raise ServiceError("INVALID_INPUT", "표 템플릿을 골라 주세요.")
             method = self.preview if action == "preview" else self.copy
-            return method(template_id, **counts)
+            try:
+                table_units.validate_input(payload.get("fill", "increment"), payload.get("cell_texts"))
+            except ValueError as exc:
+                raise ServiceError("INVALID_INPUT", str(exc)) from exc
+            return method(template_id, **counts, fill=payload.get("fill", "increment"), cell_texts=payload.get("cell_texts"))
         raise ServiceError("INVALID_INPUT", "표 템플릿 작업을 확인해 주세요.")
+
+
+def _id_list(value):
+    return list(dict.fromkeys(v for v in value if isinstance(v, str))) if isinstance(value, list) else []
+
+
+def _activate_visible_hwp():
+    import win32gui
+    import win32con
+
+    windows = []
+    def collect(hwnd, _):
+        if not win32gui.IsWindowVisible(hwnd):
+            return
+        cls, title = win32gui.GetClassName(hwnd), win32gui.GetWindowText(hwnd)
+        if cls.startswith("HwndWrapper[Hwp") or cls.startswith("Hwp") or (cls == "HNC_FRAME" and ("한글" in title or "한/글" in title)):
+            windows.append(hwnd)
+    win32gui.EnumWindows(collect, None)
+    for hwnd in windows:
+        try:
+            if win32gui.IsIconic(hwnd):
+                win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+            win32gui.SetForegroundWindow(hwnd)
+            return win32gui.GetForegroundWindow() == hwnd
+        except Exception:
+            continue
+    return False
 
 
 def _clipboard_formats() -> list[str]:
