@@ -142,6 +142,20 @@ class TableUnitsService:
             except Exception:
                 pass
 
+    def start_copy_job(self, manager, payload):
+        def runner(report, cancelled):
+            if cancelled():
+                return None
+            import pythoncom
+            pythoncom.CoInitialize()
+            try:
+                result = self.command('copy', payload)
+                report('item_done', result)
+                return result
+            finally:
+                pythoncom.CoUninitialize()
+        return manager.start('table_copy', payload, runner)
+
     def copy(self, template_id, row_count=None, col_count=None, *, fill="increment", cell_texts=None) -> dict:
         folder = Path(tempfile.mkdtemp(prefix="docfit_table_copy_"))
         try:

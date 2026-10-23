@@ -89,6 +89,9 @@ class DesktopWebBridge:
 
     def _shutdown(self):
         """Tk 종료 시 대기·실행 중 요청의 호출자를 종료 오류로 해제한다."""
+        manager = getattr(self.gui, '_job_manager', None)
+        if manager is not None:
+            threading.Thread(target=manager.shutdown, daemon=True).start()
         self._cancel_pending_drop()
         with self._request_lock:
             self._closed = True
@@ -393,6 +396,7 @@ class DesktopWebBridge:
                     else "서식을 등록하지 못했어요. 처리 상태를 확인해 주세요.")}
                 self._quick_watch = None
             return {
+                "job": self._jobs().latest(),
                 "_open_completed_result": False,
                 "files": [
                     {"name": Path(path).name, "path": path, "folder": str(Path(path).parent)}
@@ -863,7 +867,62 @@ class DesktopWebBridge:
         self._tk(update)
         return self.get_state()
 
+    def _jobs(self):
+        from docfit_app.jobs import manager_for
+        return manager_for(self.gui)
+
+    def start_job(self, kind, params=None):
+        from docfit_app.api_contract import ServiceError
+        if params is not None and not isinstance(params, dict):
+            raise ServiceError('INVALID_INPUT', '작업 입력을 확인해 주세요.')
+        params = params or {}
+        if kind == 'table_copy':
+            return self._jobs().start(kind, params, lambda report, cancelled:
+                self._table_copy_job(params, report, cancelled))
+        if kind not in {'format', 'spacing', 'unify', 'all', 'file_format'}:
+            raise ServiceError('INVALID_INPUT', '지원하지 않는 작업 종류입니다.')
+        if kind == 'file_format' and 'target' in params:
+            self.set_conversion_target(params['target'])
+        return self._start_legacy(kind, params.get('range_enabled', False),
+                                  params.get('start', '1'), params.get('end', '1'), _strict=True)
+
+    def _table_copy_job(self, params, report, cancelled):
+        if cancelled():
+            return None
+        result = self._table_units_command('copy', params)
+        if not result.get('ok'):
+            error = result.get('error') or {}
+            from docfit_app.api_contract import ServiceError
+            raise ServiceError(error.get('code', 'JOB_FAILED'), error.get('message', '표 복사 실패'))
+        report('item_done', result.get('data') or {})
+        return result.get('data')
+
+    def cancel_job(self, job_id):
+        state = self._jobs().cancel(job_id)
+        if self._tk(lambda: getattr(self.gui, '_job_id', None)) == job_id:
+            self._tk(self.gui.작업중단)
+        return state
+
+    def get_events(self, after_seq=0, max=200):
+        return self._jobs().events(after_seq, max)
+
     def start(self, mode, range_enabled=False, start="1", end="1"):
+        from docfit_app.api_contract import ServiceError
+        try:
+            self.start_job(mode, dict(range_enabled=range_enabled, start=start, end=end))
+        except ServiceError as exc:
+            # 기존 start는 파일 없음·이미 실행 중 등 GUI가 시작하지 않은 경우에도 상태를 돌려준다.
+            if exc.code not in {'JOB_NOT_STARTED', 'JOB_RUNNING'}:
+                raise
+        return self.get_state()
+
+    def _start_legacy(self, mode, range_enabled=False, start="1", end="1", *, _strict=False):
+        from docfit_app.api_contract import ServiceError
+        def started(previous):
+            identifier = getattr(self.gui, '_job_id', None)
+            if _strict and (not identifier or identifier == previous):
+                raise ServiceError('JOB_NOT_STARTED', '입력 문서와 작업 설정을 확인해 주세요.')
+            return identifier
         if mode not in {"spacing", "unify", "format", "all", "file_format"}:
             raise ValueError("지원하지 않는 작업 방식입니다.")
 
@@ -876,15 +935,20 @@ class DesktopWebBridge:
                 reason = (chosen or {}).get("reason") or "지원하지 않는 결과 형식입니다"
                 raise ValueError(f"{self.conversion_target.upper()} 변환을 시작할 수 없습니다: {reason}")
             def begin_conversion():
+                if self.gui.running:
+                    raise ServiceError('JOB_RUNNING', '문서 작업이 진행 중입니다.')
+                previous = getattr(self.gui, '_job_id', None)
                 self.gui._flutter_completion = {}
                 self.gui._flutter_format_review = {}
                 self.gui.파일포맷_변경_시작(self.conversion_target)
-            self._tk(begin_conversion)
-            return self.get_state()
+                return started(previous)
+            identifier = self._tk(begin_conversion)
+            return identifier if _strict else self.get_state()
 
         def begin():
             if self.gui.running:
-                return
+                raise ServiceError('JOB_RUNNING', '문서 작업이 진행 중입니다.')
+            previous = getattr(self.gui, '_job_id', None)
             options = self._card_options()
             if mode == "spacing" and not options["spacing_enabled"] and not options["spacing_page_fit"]:
                 raise ValueError("자간 정리 또는 페이지 맞춤을 하나 이상 켜 주세요.")
@@ -898,12 +962,18 @@ class DesktopWebBridge:
             self.gui._flutter_completion = {}
             self.gui._flutter_format_review = {}
             self.gui.작업시작(mode)
+            return started(previous)
 
-        self._tk(begin)
-        return self.get_state()
+        identifier = self._tk(begin)
+        return identifier if _strict else self.get_state()
 
     def stop(self):
-        self._tk(self.gui.작업중단)
+        job = self._jobs().latest()
+        identifier = job['id'] if job and job['state'] not in {'done', 'failed', 'cancelled'} else None
+        if identifier:
+            self.cancel_job(identifier)
+        else:
+            self._tk(self.gui.작업중단)
         return self.get_state()
 
     def _configuration(self):
@@ -1448,6 +1518,28 @@ class DesktopWebBridge:
             return {"ok": False, "message": str(exc)}
 
     def table_units(self, action, payload=None):
+        if action != 'copy':
+            return self._table_units_command(action, payload)
+        def execute():
+            manager = self._jobs()
+            identifier = manager.begin('table_copy', payload)
+            manager.report(identifier, 'started', {})
+            try:
+                result = self._table_units_command(action, payload)
+                if result.get('ok'):
+                    manager.report(identifier, 'item_done', result.get('data') or {})
+                    manager.report(identifier, 'done', result.get('data') or {})
+                else:
+                    manager.report(identifier, 'failed', result.get('error') or {})
+                return result
+            except Exception as exc:
+                manager.report(identifier, 'failed', {'code':'JOB_FAILED', 'message':str(exc)})
+                raise
+        # 기존 응답 봉투를 그대로 유지한다.
+        result = response(execute)
+        return result['data'] if result['ok'] else result
+
+    def _table_units_command(self, action, payload=None):
         """표 템플릿: 스냅샷 목록·정보단위 미리보기·한/글 붙여넣기용 복사(2026-10-22).
 
         한/글을 쓰는 스냅샷·복사는 시간이 걸리므로 Tk 화면 스레드가 아니라 호출 스레드에서 따로 COM을 연다.
@@ -1841,7 +1933,7 @@ class _BrowserApi:
         for name in (
             "cancel_zero_click", "start_zero_click", "quick_register_and_activate_profile", "drop_format_file", "set_profile_drop_bounds",
             "get_state", "add_files", "add_folder", "add_paths", "remove_file",
-            "clear_files", "set_mode", "set_range", "start", "stop",
+            "clear_files", "set_mode", "set_range", "start", "stop", "start_job", "cancel_job", "get_events",
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
             "get_pending_dialog", "resolve_dialog", "enable_close_guard", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch",
             "open_results", "next_job", "run_tool", "open_result",
