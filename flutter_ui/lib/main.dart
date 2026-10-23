@@ -781,8 +781,9 @@ class _WorkspaceState extends State<Workspace> {
       builder: (context, constraints) {
         final width = constraints.maxWidth;
         // 네 메뉴 버튼(서식 관리·다이어그램·마인드맵·표 템플릿)을 글과 함께 놓으려면 약 880이 필요하다(폭 800에서 79 넘침).
-        final isNarrow = width < 900;
-        final showProfileBadge = width >= 1000;
+        // 다섯 메뉴 버튼을 글과 함께 놓으려면 약 1180이 필요하다. 모자라면 아이콘만(이름은 툴팁) — 잘려 보이지 않게(2026-10-23 사용자 실측).
+        final isNarrow = width < 1180;
+        final showProfileBadge = width >= 1360;
         final currentProfileName =
             '${profiles.whereType<Map>().where((p) => p['id'] == state['profile']).firstOrNull?['name'] ?? '기본 보고서 서식'}';
 
@@ -812,87 +813,16 @@ class _WorkspaceState extends State<Workspace> {
               ? '서식 관리 (현재: $currentProfileName)\nHWP/HWPX 예시를 놓으면 새 서식으로 등록해요.'
               : 'HWP/HWPX 예시를 여기에 놓으면 새 서식으로 등록·선택해요.',
           // 서식 관리를 누르면 하위 메뉴: 썸네일로 선택 · 서식예시 확인 · 서식예시 폴더 · 서식관리(2026-10-23 사용자 요청).
-          child: PopupMenuButton<String>(
+          // 서식 관리를 누르면 바로 '서식 고르기'(썸네일) — 카드마다 서식예시 확인·서식예시 폴더·서식관리(2026-10-23 사용자 요청).
+          child: TextButton.icon(
             key: const Key('topMenu_format'),
-            enabled: !locked,
-            tooltip: '',
-            position: PopupMenuPosition.under,
-            onSelected: (v) {
-              switch (v) {
-                case 'kiosk':
-                  openKiosk();
-                case 'example':
-                  command('show_format_example');
-                case 'samples':
-                  command('open_format_samples');
-                case 'manage':
-                  openFormats();
-              }
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(
-                key: Key('formatMenu_kiosk'),
-                value: 'kiosk',
-                child: ListTile(
-                  leading: Icon(Icons.photo_library_outlined),
-                  title: Text('썸네일로 선택'),
-                ),
-              ),
-              PopupMenuItem(
-                key: Key('formatMenu_example'),
-                value: 'example',
-                child: ListTile(
-                  leading: Icon(Icons.preview_outlined),
-                  title: Text('서식예시 확인'),
-                ),
-              ),
-              PopupMenuItem(
-                key: Key('formatMenu_samples'),
-                value: 'samples',
-                child: ListTile(
-                  leading: Icon(Icons.folder_open_outlined),
-                  title: Text('서식예시 폴더'),
-                ),
-              ),
-              PopupMenuItem(
-                key: Key('formatMenu_manage'),
-                value: 'manage',
-                child: ListTile(
-                  leading: Icon(Icons.tune_outlined),
-                  title: Text('서식관리'),
-                ),
-              ),
-            ],
-            child: Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: isNarrow ? 6 : 8,
-                vertical: 8,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.style_outlined,
-                    size: 18,
-                    color: locked ? Colors.grey : _blue,
-                  ),
-                  if (!isNarrow) ...[
-                    const SizedBox(width: 6),
-                    Text(
-                      '서식 관리',
-                      style: TextStyle(
-                        color: locked ? Colors.grey : _blue,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    Icon(
-                      Icons.arrow_drop_down,
-                      size: 18,
-                      color: locked ? Colors.grey : _blue,
-                    ),
-                  ],
-                ],
-              ),
+            onPressed: locked ? null : openKiosk,
+            icon: const Icon(Icons.style_outlined, size: 18),
+            label: isNarrow ? const SizedBox.shrink() : const Text('서식 관리'),
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.symmetric(horizontal: isNarrow ? 4 : 8),
+              minimumSize: isNarrow ? const Size(36, 36) : null,
             ),
           ),
         );
@@ -918,18 +848,20 @@ class _WorkspaceState extends State<Workspace> {
                   size: 23,
                 ),
               ),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Text(
-                  '한글편집 후처리',
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: isNarrow ? 17 : 20,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -.8,
+              // 아주 좁은 창(700 미만)에서는 앱 이름 글을 숨겨 메뉴 아이콘 자리를 확보한다(이름은 창 제목줄에 있다).
+              if (width >= 700) const SizedBox(width: 8),
+              if (width >= 700)
+                Flexible(
+                  child: Text(
+                    '한글편집 후처리',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: isNarrow ? 17 : 20,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -.8,
+                    ),
                   ),
                 ),
-              ),
               const SizedBox(width: 8),
               if (!showProfileBadge)
                 KeyedSubtree(key: profileDropKey, child: formatButton)
@@ -1907,7 +1839,7 @@ class _WorkspaceState extends State<Workspace> {
                 Expanded(
                   child: GridView.extent(
                     maxCrossAxisExtent: 240,
-                    childAspectRatio: 0.62,
+                    childAspectRatio: 0.5,
                     mainAxisSpacing: 12,
                     crossAxisSpacing: 12,
                     children: [for (final p in items) kioskCard(ctx, p)],
@@ -1926,8 +1858,21 @@ class _WorkspaceState extends State<Workspace> {
         ),
       ),
     );
-    if (picked != null && picked != '${state['profile'] ?? ''}') {
-      await command('set_profile', [picked]);
+    if (picked == null) return;
+    // 카드 아래 버튼은 'example:<id>'·'samples:<id>'·'manage:<id>', 카드 자체를 누르면 '<id>'.
+    final cut = picked.indexOf(':');
+    final action = cut < 0 ? 'select' : picked.substring(0, cut);
+    final id = cut < 0 ? picked : picked.substring(cut + 1);
+    if (action != 'samples' && id != '${state['profile'] ?? ''}') {
+      await command('set_profile', [id]);
+    }
+    switch (action) {
+      case 'example':
+        await command('show_format_example');
+      case 'samples':
+        await command('open_format_samples');
+      case 'manage':
+        openFormats();
     }
   }
 
@@ -1979,6 +1924,46 @@ class _WorkspaceState extends State<Workspace> {
                 maxLines: 3,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+            // 첫째 줄: 이 서식의 예시 확인 / 둘째 줄: 서식예시 폴더 · 서식관리 (2026-10-23 사용자 요청)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: OutlinedButton.icon(
+                key: Key('kioskExample-${p['id']}'),
+                onPressed: () => Navigator.pop(ctx, 'example:${p['id']}'),
+                icon: const Icon(Icons.preview_outlined, size: 16),
+                label: const Text('서식예시 확인'),
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      key: Key('kioskSamples-${p['id']}'),
+                      onPressed: () => Navigator.pop(ctx, 'samples:${p['id']}'),
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      child: const FittedBox(child: Text('서식예시 폴더')),
+                    ),
+                  ),
+                  Expanded(
+                    child: TextButton(
+                      key: Key('kioskManage-${p['id']}'),
+                      onPressed: () => Navigator.pop(ctx, 'manage:${p['id']}'),
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      child: const FittedBox(child: Text('서식관리')),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
