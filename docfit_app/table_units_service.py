@@ -52,6 +52,16 @@ def crop_to_content(image, margin: int = 6):
                      min(rgb.width, right + margin), min(rgb.height, bottom + margin)))
 
 
+def _table_fingerprint(table) -> str:
+    """표 XML 내용 지문. ET.tostring은 앞서 등록된 이름공간 접두어(hp/ns0 등)에 따라 글자가 달라져
+    같은 표도 지문이 바뀌었다(전체 시험 순서에 따라 내장 그림을 못 찾음, 2026-10-23) — 접두어와 무관하게 계산한다."""
+    digest = hashlib.sha256(SNAPSHOT_REVISION)
+    for element in table.iter():
+        digest.update(repr((element.tag, sorted(element.attrib.items()), element.text or "",
+                            element.tail or "" if element is not table else "")).encode("utf-8"))
+    return digest.hexdigest()[:20]
+
+
 class TableUnitsService:
     def __init__(self, hwp_factory=None, *, source: Path | None = None, snapshot_root: Path | None = None,
                  clipboard_formats=None, settings=None, activator=None):
@@ -115,7 +125,7 @@ class TableUnitsService:
                         sections[name] = ET.fromstring(archive.read(name))
                     paragraph = sections[name].findall(table_units.HP + "p")[record["paragraph_index"]]
                     table = catalog._top_tables(paragraph)[record["table_index"]]
-                    keys[str(record["id"])] = hashlib.sha256(SNAPSHOT_REVISION + ET.tostring(table)).hexdigest()[:20]
+                    keys[str(record["id"])] = _table_fingerprint(table)
         except Exception:
             keys = {}
         self._content_cache = {digest: keys}

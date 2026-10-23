@@ -863,7 +863,10 @@ class DesktopWebBridge:
         self._tk(update)
         return self.get_state()
 
-    def start(self, mode, range_enabled=False, start="1", end="1"):
+    def start(self, mode, range_enabled=False, start="1", end="1", file_order=None):
+        if file_order is not None and (mode != "file_format" or self.conversion_target != "pdfm"):
+            raise ValueError("파일 순서는 PDF 하나로 합치기에서만 지정할 수 있습니다.")
+
         if mode not in {"spacing", "unify", "format", "all", "file_format"}:
             raise ValueError("지원하지 않는 작업 방식입니다.")
 
@@ -875,10 +878,28 @@ class DesktopWebBridge:
             if files and (chosen is None or not chosen.get("enabled")):
                 reason = (chosen or {}).get("reason") or "지원하지 않는 결과 형식입니다"
                 raise ValueError(f"{self.conversion_target.upper()} 변환을 시작할 수 없습니다: {reason}")
+            if file_order is not None:
+                if not isinstance(file_order, (list, tuple)):
+                    raise ValueError("파일 순서 목록이 올바르지 않습니다.")
+                def _norm(p):
+                    try:
+                        return os.path.normcase(os.path.normpath(str(p)))
+                    except Exception:
+                        return str(p)
+                if len(file_order) != len(files) or set(map(_norm, file_order)) != set(map(_norm, files)):
+                    raise ValueError("지정한 파일 순서 목록이 현재 문서 목록과 일치하지 않습니다.")
             def begin_conversion():
                 self.gui._flutter_completion = {}
                 self.gui._flutter_format_review = {}
-                self.gui.파일포맷_변경_시작(self.conversion_target)
+                if self.conversion_target == "pdfm" and file_order:
+                    original_files = list(self.gui.files)
+                    try:
+                        self.gui.files = list(file_order)
+                        self.gui.파일포맷_변경_시작(self.conversion_target)
+                    finally:
+                        self.gui.files = original_files
+                else:
+                    self.gui.파일포맷_변경_시작(self.conversion_target)
             self._tk(begin_conversion)
             return self.get_state()
 

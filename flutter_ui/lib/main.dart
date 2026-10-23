@@ -17,6 +17,7 @@ import 'features/formats/profile_editor.dart';
 import 'features/tools/document_tools_workspace.dart';
 import 'features/tools/backend_dialog.dart';
 import 'features/conversion/floating_format_picker.dart';
+import 'features/conversion/merge_order_dialog.dart';
 import 'features/diagrams/diagram_editor_screen.dart';
 import 'features/flows/flow_editor_screen.dart';
 import 'features/progress/live_progress.dart';
@@ -403,14 +404,18 @@ class _WorkspaceState extends State<Workspace> {
     }
   }
 
-  Future<void> startJob() async {
+  Future<void> startJob({List<String>? fileOrder}) async {
     if (!canStart) return;
-    await command('start', [
+    final args = (<Object?>[
       mode,
       rangeOn,
       rangeStart.text.trim(),
       rangeEnd.text.trim(),
     ]);
+    if (fileOrder != null) {
+      args.add(fileOrder);
+    }
+    await command('start', args);
     if (mounted && running) setState(() => tab = 2);
   }
 
@@ -512,9 +517,22 @@ class _WorkspaceState extends State<Workspace> {
     )) {
       return;
     }
+    List<String>? mergeOrder;
+    if (picked == 'pdfm' && files.length >= 2) {
+      final docFiles = files.whereType<Map>().toList();
+      final order = await showDialog<List<String>>(
+        context: context,
+        barrierDismissible: true,
+        builder: (dialogContext) => MergeOrderDialog(files: docFiles),
+      );
+      if (!mounted || order == null) return;
+      mergeOrder = order;
+    }
     await command('set_conversion_target', [picked]);
     // 결과 형식을 고르면 '변환 시작'을 기다리지 않고 바로 변환한다(사용자 지시, 2026-10-15).
-    if (mounted && mode == 'file_format' && canStart) await startJob();
+    if (mounted && mode == 'file_format' && canStart) {
+      await startJob(fileOrder: mergeOrder);
+    }
   }
 
   Widget conversionPanel() {

@@ -157,5 +157,49 @@ class FileFormatModeTests(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in folder.iterdir() if p.name.startswith('메모')), ['메모.txt'])
 
 
+    def test_merge_order_passed_to_conversion_runner(self):
+        folder = Path(self.temp.name)
+        docs = []
+        for name in ('1.pdf', '2.pdf', '3.pdf'):
+            p = folder / name
+            p.write_bytes(b'%PDF-1.4 dummy')
+            docs.append(str(p))
+        self.app.files = list(docs)
+        self.bridge.set_mode('file_format')
+        self.bridge.set_conversion_target('pdfm')
+        custom_order = [docs[1], docs[2], docs[0]]
+        with patch('docfit_app.conversion_runner.run_conversion') as mock_run:
+            self.bridge.start('file_format', file_order=custom_order)
+        mock_run.assert_called_once()
+        called_files = mock_run.call_args[0][0]
+        self.assertEqual(called_files, custom_order)
+        # 문서 목록 자체 순서는 바뀌지 않아야 한다
+        self.assertEqual(self.app.files, docs)
+
+    def test_merge_order_mismatched_set_raises_error(self):
+        folder = Path(self.temp.name)
+        docs = []
+        for name in ('1.pdf', '2.pdf', '3.pdf'):
+            p = folder / name
+            p.write_bytes(b'%PDF-1.4 dummy')
+            docs.append(str(p))
+        self.app.files = list(docs)
+        self.bridge.set_mode('file_format')
+        self.bridge.set_conversion_target('pdfm')
+        # 개수 부족
+        with self.assertRaises(ValueError):
+            self.bridge.start('file_format', file_order=[docs[0], docs[1]])
+        # 다른 파일 포함
+        with self.assertRaises(ValueError):
+            self.bridge.start('file_format', file_order=[docs[0], docs[1], str(folder / 'other.pdf')])
+        # 중복 포함
+        with self.assertRaises(ValueError):
+            self.bridge.start('file_format', file_order=[docs[0], docs[1], docs[1]])
+        # pdfm이 아닐 때 순서 인자 전달 시 거부
+        self.bridge.set_conversion_target('png')
+        with self.assertRaises(ValueError):
+            self.bridge.start('file_format', file_order=docs)
+
+
 if __name__ == '__main__':
     unittest.main()

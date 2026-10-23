@@ -188,6 +188,16 @@ class BundledSnapshotTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             service = TableUnitsService(no_hwp, source=default_catalog_path(), snapshot_root=Path(folder))
             data = service.list()
-            self.assertTrue(data["thumbnails_ready"])
+            missing = [t["name"] for t in data["templates"] if not t["thumbnail"]]
+            self.assertTrue(data["thumbnails_ready"], f"그림 없는 템플릿: {missing[:5]} / {len(missing)}개, 출처 {service.source}")
             self.assertTrue(all(t["thumbnail"].startswith("data:image/png;base64,") for t in data["templates"]))
             self.assertTrue(service.command("thumbnails", {})["thumbnails_ready"])
+
+    def test_bundled_pictures_do_not_depend_on_registered_xml_prefixes(self):
+        """다른 기능이 이름공간 접두어를 등록해도 같은 표는 같은 그림을 찾는다(전체 시험 순서 실패 재현)."""
+        import xml.etree.ElementTree as StdET
+        from docfit_core import table_units
+        with patch.dict(StdET._namespace_map), tempfile.TemporaryDirectory() as folder:
+            StdET.register_namespace("zz", table_units.HP[1:-1])
+            service = TableUnitsService(lambda: None, source=default_catalog_path(), snapshot_root=Path(folder))
+            self.assertTrue(service.list()["thumbnails_ready"])
