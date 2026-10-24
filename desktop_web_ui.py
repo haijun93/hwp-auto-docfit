@@ -1649,6 +1649,23 @@ class DesktopWebBridge:
         self._tk(reveal, timeout=None, front=True)
         return self.get_state()
 
+    def open_diff(self, index=0):
+        """T17 진입점. 독립 비교 백엔드 연결 전에는 Tk 빈 창을 열지 않는다."""
+        if not self._tk_fallback_enabled():
+            return {
+                "ok": False,
+                "code": "DIFF_BACKEND_NOT_READY",
+                "error": "원본·결과 비교는 준비 중입니다. 독립 한/글 비교 뷰어가 아직 연결되지 않았습니다.",
+            }
+        self._tk(self.gui.비교창_준비, timeout=None, front=True)
+        return {**self.get_state(), "ok": True, "tk_fallback": True}
+
+    def compare_result(self, index=0):
+        return self.open_diff(index)
+
+    def launch_external_hwp_diff(self, index=0):
+        return self.open_diff(index)
+
     def _stages_changed(self, mode):
         """세부 작업을 바꾼 뒤 그 카드 옵션(표 제외·페이지 맞춤 제외 등)을 세부 작업에 맞춘다."""
         if hasattr(self.gui, "_세부작업_옵션_맞춤"):
@@ -1954,7 +1971,7 @@ class _BrowserApi:
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
             "get_pending_dialog", "resolve_dialog", "enable_close_guard", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch",
             "open_results", "next_job", "run_tool", "open_result",
-            "show_result", "set_stage", "reset_stages", "set_stage_default",
+            "show_result", "open_diff", "compare_result", "launch_external_hwp_diff", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",
             "set_exclude_tables", "set_card_option",
             "set_drop_target", "add_format_file", "write_format_example", "rename_profile", "delete_profile",

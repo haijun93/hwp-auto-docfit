@@ -44,7 +44,7 @@
 | **T14** | 서식 계층 구조 확인 창 | L4674 `_서식_구조_확인` | 서식 프로필 상세 "계층 구조(스타일) 보기" 클릭 시 | - 입: 항목기호별 글꼴/크기/들여쓰기 규칙<br>- 출: 계층 스타일 맵 저장 | `features/formats/profile_editor.dart`<br>(`ProfileEditor`) | **완료** | `format_profile` | **상** | `ProfileEditor` 내부 계층 스타일 탭에 완전 통합됨. |
 | **T15** | 전체 환경설정 창 | L4832 `_설정창_생성` | 상단 메뉴 "설정" -> "환경설정" 클릭 시 | - 입: 폰트 매핑, COM 타임아웃, 백업 등 6개 탭<br>- 출: settings.json 저장 | `features/settings/settings_dialog.dart`<br>(`SettingsDialog`) | **완료** | `get_settings`, `save_settings`, `open_settings` | **상** | Flutter `SettingsDialog`가 구현 완료됨. 브리지 `open_settings`가 레거시 Tk 창(`설정창_열기`)을 띄우는 경로 제거 대상. |
 | **T16** | kordoc 고급 문서 도구 창 | L5663 `고급문서도구_열기` | 1.80.9에서 진입점 삭제 | - 입: 문서 덤프, 바이너리 검사, 필드 추출, 패치<br>- 출: 진단 결과 리포트 및 패치 파일 | 없음 | **삭제됨(1.80.9)** | 없음 | — | C19: main의 삭제 결정 반영. 이관 대상에서 제외. |
-| **T17** | 원본-결과 HWP 좌우 비교 창 | L5917 `비교창_준비` | 작업 완료 후 결과 목록 "좌우 비교 보기" 클릭 시 | - 입: 동기 스크롤 토글, 닫기<br>- 출: 좌측(원본) - 우측(결과) HWP COM 뷰어 | 없음 | **없음** | `launch_external_hwp_diff` (신규 독립 프로세스 브리지) | **상** | Windows OLE COM 뷰어 특성상 Flutter 직접 임베딩 불가. 독립 C#/Win32 뷰어 프로세스 분리 연동 필요. |
+| **T17** | 원본-결과 HWP 좌우 비교 창 | L5917 `비교창_준비` | Flutter 결과별 비교 버튼 | - 입: 선택 결과 인덱스<br>- 출: 미구현 오류 안내 | `main.dart` 결과 화면 | **일부(진입점만)** | `open_diff` / `launch_external_hwp_diff` | **상** | C26: 기본 경로는 DIFF_BACKEND_NOT_READY, Tk 창 0. 독립 OLE 프로세스·원본/결과 연결 미구현. 명시적 Tk 폴백만 기존 호출 유지. |
 | **T18** | 대화상자 부모 헬퍼 | L6274 `_대화상자_부모` | Tk 모달 대화상자 중앙 정렬 시 내부 호출 | - 입/출: 1x1 투명 오버레이 윈도우 | 없음 (불필요) | **완료 (Tk 전용)** | N/A | 하 | Tk GUI 전용 내부 유틸리티. Flutter의 BuildContext 기반 모달 체계로 자동 소멸. |
 | **T19** | 절약 완료 안내 창 | L6291 `_절약_완료창` | 전체 문서 맞춤/변환 배치 완료 시 | - 입: 확인, 결과 폴더 열기<br>- 출: 검은 고양이 그림, "OO분 시간 절약!" | `main.dart`<br>(`outcome`, `_savingsCard`) | **완료** | `get_state` | 중 | G31: Flutter 4단계 결과 화면(`outcome`)에 절약 시간·문구·고양이 캐릭터 그림 연출 이관 완료. `ui_tk_fallback=true` 시 기존 Tk 창 유지. |
 | **T20** | 서식통일 2단계: 대표 서식 검토 창 | L6415 `_서식통일_대표서식_검토창` | 다중 문서 서식 통일 마법사 2단계 도달 시 | - 입: 추출된 서식 후보 중 대표 기준 서식 선택<br>- 출: 선택된 기준 프로필 ID 확정 | `features/style_unify/unify_pick_style_dialog.dart`<br>(`UnifyPickStyleDialog`) | **완료** | `get_pending_dialog`, `resolve_dialog` | **상** | G29: 브리지 모달 및 Flutter 화면 이관 완료. `ui_tk_fallback=true` 시 기존 Tk 창 유지. [API](V2_STYLE_UNIFY_DIALOGS_API.md). |
@@ -172,3 +172,13 @@ T20~T22는 G29로 이관 완료이며 후속 Windows 실기기 회귀 검증에 
 - 전용 시험: T07 Python 3개·Flutter 1개, T04/T19 Python 9개·Flutter 5개. 실제 Tk 창·messagebox·한/글 COM 생성은 시험 대역으로 차단하며 완료 이벤트의 실제 절약 시간 전달도 검증한다.
 - 현재 Toplevel 22행: 삭제 8, 완료 13(T18 Tk 헬퍼 포함), 없음 1(T17). 7장 잔여 목록이 후속 작업 기준이다.
 - 최종 검증: Python 전체 1,651개 PASS + 최종 전용 9개 PASS(전체 실행 후 추가한 재안내 1개 포함), Flutter 전체 148개 PASS(제외 1), analyze 지적 0. CRLF 및 diff 검사 PASS. A에서는 엔진을 변경하지 않아 COM 재연을 별도로 실행하지 않았다.
+
+
+## 9. C26 판정 (2026-10-25)
+
+- G33는 수정 후 진입점만 채택했다. Flutter 결과별 비교 버튼과 오류 안내, open_diff 브리지 노출은 존재한다.
+- **T17은 미완료**: 독립 프로세스 시작, 한/글 OLE 호스트 생성, 선택한 원본·결과 문서 연결 및 종료 정리는 구현되지 않았다. G33 보고의 「별도 프로세스 분리: 백엔드 필요」는 구현 완료 근거가 아니다.
+- 기본 Flutter 경로는 DIFF_BACKEND_NOT_READY 오류를 반환하며 Tk 창을 만들지 않는다. ui_tk_fallback=true는 기존 비교창_준비 호출과 상태를 유지하고 ok/tk_fallback 응답으로 명시적 폴백 수락을 알린다. 레거시 Tk 창 본문·문구는 변경하지 않았다.
+- 후속 범위: 독립 OLE 비교 프로세스와 선택 결과 경로 연결, 사본·읽기 전용 문서 보호, 프로세스 종료·오류 처리 및 Windows 실기기 검증. 7장의 T17 잔여 범위는 계속 유효하다.
+- Flutter 시험은 420px에서 스크롤 후 실제 버튼 호출을 검증한다. 기본 브리지의 미완료 오류·별칭 우회 차단 및 명시적 Tk 폴백을 Python 시험으로 검증한다.
+- C26 최종 검증: Python 전체 1,656개 실패·오류 0(선택 MCP SDK 미설치로 기존 조건부 제외 1), 집중 4개 PASS; Flutter 151개 PASS(기존 제외 1), analyze 0. formatter 병합 기본 3종 COM 재연 불일치 0/0/0.

@@ -472,3 +472,19 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 - github/main 78f5482(v1.80.9) 병합. 삭제된 문서 도구·tldraw와 2.0.0 전용 T11/T12 서비스·API·화면·시험을 제거. jobs.py와 PDF 합치기 순서 지정 유지.
 - Python 전체 1640개 PASS(제외 0, 427.816초), Flutter 전체 142개 PASS(제외 1), analyze 지적 0. 병합 집중 80개 및 호환성 집중 38개 PASS.
 - 남은 이관은 V2_PARITY_TABLE.md 끝에 정리. COM 잠금 Codex/C19 사용 후 해제. 보고: C:\HWP_AUTODOCFIT\v1803\reports\C19.md. GitHub dev/2.0.0만 푸시(배포 없음).
+
+- C22 2026-10-24T17:43:48 COM 재연 시험 시작(잠금 획득, 기본 3종, 임시 사본만 처리).
+
+- C22 2026-10-24T17:52:16 COM 재연 시험 종료(잠금 반환).
+
+### C10. 2.0 ?? ID?????? ?? (2026-10-23, Codex)
+- ??: jobs.py???/? ???legacy ? ????WebView/???? API??? ???Python ??. Flutter ???????? ??.
+- ?? ?? ?? 17? ?? ?? 75? PASS. ?? ?? ?? ?? ??? ?? ??? `C:\HWP_AUTODOCFIT\v1803\reports\C10.md`? ????.
+- ?? 10? ? ? ?? ?/?? ???? worker ?? ? ??? ??. COM ?? ??(?? COM????? ?? ??).
+
+
+## Codex 결과 보고 — C26 (2026-10-25)
+- G33 수정 후 진입점 채택: 기본 Flutter 경로 Tk 창 0, 독립 OLE 비교 백엔드 미구현은 오류 응답과 V2_PARITY_TABLE에 명시. 기존 Tk 본문·문구 보존.
+- dev/2.0.0-split(ab3e0fe)을 dev/2.0.0에 병합. 8개 모듈·358함수 AST 불일치 0, 유효 patch 3회 및 컨텍스트 2개 분리 PASS.
+- 전체 Python·Flutter·analyze 및 COM 잠금 기본 3종 사본 재연 결과는 C26.md에 최종 기록한다. C10 메모와 C22 잠금 기록 모두 보존.
+- C26 최종: Python 전체 1,656개 실패·오류 0(선택 MCP SDK 부재 1개 제외), T17 집중 4개 PASS. Flutter 151개 PASS(기존 제외 1), analyze 0. 기본 3종 재연 불일치 0/0/0, 원본 7개 SHA-256 동일·COM 잠금 해제. 보고: C:\HWP_AUTODOCFIT\v1803\reports\C26.md.
