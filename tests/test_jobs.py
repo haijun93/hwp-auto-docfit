@@ -235,5 +235,277 @@ class JobsTests(unittest.TestCase):
         manager.report(identifier, 'done', {})
 
 
+class JobsProtocolBoundaryTests(unittest.TestCase):
+    def _manager(self, **kwargs):
+        if 'cleanup' not in kwargs:
+            kwargs['cleanup'] = Mock(return_value=[])
+        manager = JobManager(**kwargs)
+        self.addCleanup(manager.shutdown, timeout=0)
+        return manager
+
+    def test_cancel_after_terminal_is_idempotent(self):
+        """취소 요청이 완료 뒤에 들어온 경우: done, failed, cancelled 상태에서 cancel은 무해하고 상태를 변경하지 않는다."""
+        for terminal in ('done', 'failed', 'cancelled'):
+            with self.subTest(terminal=terminal):
+                cleanup = Mock(return_value=[])
+                manager = self._manager(cleanup=cleanup)
+                identifier = manager.begin('format', {})
+                manager.report(identifier, 'started', {})
+                manager.report(identifier, terminal, {'marker': terminal})
+                before_state = manager.status(identifier)
+                before_events = manager.events()
+                self.assertEqual(before_state['state'], terminal)
+                self.assertFalse(before_state['cancel_requested'])
+
+                with patch('docfit_app.jobs.threading.Timer') as mock_timer:
+                    ret1 = manager.cancel(identifier)
+                    ret2 = manager.cancel(identifier)
+
+                self.assertEqual(ret1, before_state)
+                self.assertEqual(ret2, before_state)
+                self.assertEqual(manager.status(identifier), before_state)
+                self.assertFalse(manager.cancelled(identifier))
+                self.assertEqual(manager.events(), before_events)
+                mock_timer.assert_not_called()
+                cleanup.assert_not_called()
+
+    def test_duplicate_start_same_job_id_is_rejected(self):
+        """같은 job_id 중복 시작: 이미 시작된 예약 job_id로 재차 start를 호출하면 거부되어야 한다 (P4-BUG-01)."""
+        manager = self._manager()
+        runner = Mock(return_value={'count': 1})
+        identifier = manager.begin('format', {})
+        thread_stub = Mock()
+        thread_stub.is_alive.return_value = True
+
+        with patch('docfit_app.jobs.threading.Thread', return_value=thread_stub) as mock_thread_cls:
+            res_id = manager.start('format', {}, runner, job_id=identifier)
+            self.assertEqual(res_id, identifier)
+            manager.report(identifier, 'started', {})
+            self.assertEqual(manager.thread(identifier), thread_stub)
+            self.assertEqual(mock_thread_cls.call_count, 1)
+            self.assertEqual(thread_stub.start.call_count, 1)
+            before_state = manager.status(identifier)
+            before_events = manager.events()
+
+            try:
+                with self.assertRaises(ServiceError) as ctx:
+                    manager.start('format', {}, runner, job_id=identifier)
+                self.assertEqual(ctx.exception.code, 'JOB_RUNNING')
+                self.assertEqual(mock_thread_cls.call_count, 1)
+                self.assertEqual(thread_stub.start.call_count, 1)
+                self.assertEqual(manager.status(identifier), before_state)
+                self.assertEqual(manager.events(), before_events)
+                runner.assert_not_called()
+            finally:
+                thread_stub.is_alive.return_value = False
+                manager.report(identifier, 'failed', {'code': 'TEST_CLEANUP'})
+
+    def test_seq_monotonic_across_jobs_and_truncated_pages(self):
+        """사건 순번(seq) 단조 증가: 복수 작업에 걸쳐 seq가 1씩 증가하며, 버퍼 절단 후에도 페이지네이션 순서가 유지된다."""
+        manager = self._manager(capacity=5)
+        heavy = manager.begin('format', {})
+        light = manager.begin('preview', {})
+
+        manager.report(heavy, 'started', {})
+        manager.report(light, 'started', {})
+        manager.report(heavy, 'progress', {'percent': 10})
+        manager.report(light, 'log', {'message': 'preview'})
+        manager.report(light, 'done', {'result': {'ok': True}})
+        manager.report(heavy, 'item_done', {'source': 'a', 'output': 'b'})
+        manager.report(heavy, 'done', {'result': {'count': 1}})
+
+        # 종료된 작업에 추가 report 시도 시 seq가 증가하지 않아야 함
+        manager.report(heavy, 'progress', {'percent': 50})
+        self.assertEqual(manager.events()['latest_seq'], 7)
+
+        # capacity=5이므로 버퍼에는 seq [3, 4, 5, 6, 7]만 남음
+        p1 = manager.events(0, max=2)
+        self.assertEqual([e['seq'] for e in p1['events']], [3, 4])
+        self.assertEqual(p1['oldest_seq'], 3)
+        self.assertEqual(p1['latest_seq'], 7)
+        self.assertEqual(p1['next_seq'], 4)
+        self.assertTrue(p1['gap'])
+
+        p2 = manager.events(4, max=2)
+        self.assertEqual([e['seq'] for e in p2['events']], [5, 6])
+        self.assertEqual(p2['next_seq'], 6)
+        self.assertFalse(p2['gap'])
+
+        p3 = manager.events(6, max=2)
+        self.assertEqual([e['seq'] for e in p3['events']], [7])
+        self.assertEqual(p3['next_seq'], 7)
+        self.assertFalse(p3['gap'])
+
+        p4 = manager.events(7, max=2)
+        self.assertEqual(p4['events'], [])
+        self.assertEqual(p4['next_seq'], 7)
+        self.assertEqual(p4['latest_seq'], 7)
+        self.assertFalse(p4['gap'])
+
+        seen = [e['seq'] for p in (p1, p2, p3) for e in p['events']]
+        self.assertEqual(seen, [3, 4, 5, 6, 7])
+        self.assertTrue(all(seen[i] == seen[i-1] + 1 for i in range(1, len(seen))))
+
+        all_events = p1['events'] + p2['events'] + p3['events']
+        self.assertEqual([(e['job_id'], e['type']) for e in all_events], [
+            (heavy, 'progress'),
+            (light, 'log'),
+            (light, 'done'),
+            (heavy, 'item_done'),
+            (heavy, 'done'),
+        ])
+
+        p_edge = manager.events(99, max=1)
+        self.assertEqual(p_edge['events'], [])
+        self.assertEqual(p_edge['next_seq'], 99)
+        self.assertEqual(p_edge['latest_seq'], 7)
+
+        self.assertEqual(manager.get_events(7, max=2), p4)
+
+    def test_restart_recovers_multiple_orphans_only_once(self):
+        """재시작 시 남은 작업 정리: 복수 작업의 ORPHANED_JOB 일괄 회수 및 활성 저널 정리, 반복 재시작 시 중복 발행 없음."""
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'jobs.json'
+            records = [
+                {'id': '00000000-0000-4000-8000-000000000001', 'kind': 'format'},
+                {'id': '00000000-0000-4000-8000-000000000002', 'kind': 'preview'},
+                {'id': '00000000-0000-4000-8000-000000000003', 'kind': 'catalog'},
+            ]
+            path.write_text(json.dumps(records), encoding='utf-8')
+            cleanup = Mock(return_value=[])
+
+            with patch('docfit_app.jobs.threading.Thread') as mock_t, \
+                 patch('docfit_app.jobs.threading.Timer') as mock_timer, \
+                 patch('docfit_core.hwp_process.kill_owned') as mock_kill:
+                recovered = self._manager(state_path=path, cleanup=cleanup)
+
+                for r in records:
+                    st = recovered.status(r['id'])
+                    self.assertEqual(st['state'], 'failed')
+                    self.assertEqual(st['kind'], r['kind'])
+                    self.assertFalse(st['cancel_requested'])
+                    self.assertIsNone(recovered.thread(r['id']))
+
+                events = recovered.events()['events']
+                self.assertEqual(len(events), 3)
+                self.assertEqual([e['seq'] for e in events], [1, 2, 3])
+                self.assertEqual([e['job_id'] for e in events], [r['id'] for r in records])
+                self.assertEqual([e['type'] for e in events], ['failed', 'failed', 'failed'])
+                for e in events:
+                    self.assertEqual(e['data']['code'], 'ORPHANED_JOB')
+                    self.assertTrue(bool(e['data'].get('message')))
+
+                self.assertEqual(json.loads(path.read_text(encoding='utf-8')), [])
+                mock_t.assert_not_called()
+                mock_timer.assert_not_called()
+                cleanup.assert_not_called()
+                mock_kill.assert_not_called()
+
+                recovered.shutdown(timeout=0)
+
+            fresh = self._manager(state_path=path, cleanup=cleanup)
+            self.assertIsNone(fresh.latest())
+            self.assertEqual(fresh.events()['events'], [])
+            self.assertEqual(fresh.events()['latest_seq'], 0)
+            self.assertEqual(json.loads(path.read_text(encoding='utf-8')), [])
+
+            new_id = fresh.begin('format', {})
+            fresh.report(new_id, 'started', {})
+            fresh.report(new_id, 'done', {})
+            self.assertEqual([e['seq'] for e in fresh.events()['events']], [1, 2])
+            fresh.shutdown(timeout=0)
+
+    def test_begin_rejects_invalid_kind_and_params_without_side_effects(self):
+        """잘못된 입력 거부 (begin): 무효한 kind 및 params 거부 및 side-effect free 검증."""
+        manager = self._manager()
+        invalid_kinds = [('', {}), (None, {}), (True, {}), (7, {}), ([], {}), ({}, {})]
+        invalid_params = [('format', []), ('format', 'bad'), ('format', 0), ('format', False)]
+
+        for kind, params in invalid_kinds + invalid_params:
+            with self.subTest(kind=kind, params=params):
+                before_events = manager.events()
+                with self.assertRaises(ServiceError) as ctx:
+                    manager.begin(kind, params)
+                self.assertEqual(ctx.exception.code, 'INVALID_INPUT')
+                self.assertEqual(manager.events(), before_events)
+                self.assertIsNone(manager.latest())
+
+        valid_id = manager.begin('format', None)
+        self.assertEqual(manager.status(valid_id)['state'], 'queued')
+        self.assertEqual(manager.events()['events'], [])
+        manager.report(valid_id, 'done', {})
+
+    def test_events_rejects_invalid_cursor_and_limit_types(self):
+        """잘못된 입력 거부 (events): after_seq 및 max에 대한 무효 타입(bool 구별 등) 거부 검증."""
+        manager = self._manager()
+        identifier = manager.begin('format', {})
+        manager.report(identifier, 'started', {})
+        manager.report(identifier, 'done', {})
+        before_events = manager.events()
+
+        invalid_cursors = [(False, 1), (True, 1), (0.0, 1), ('0', 1), (None, 1), (-1, 1)]
+        invalid_limits = [(0, False), (0, True), (0, 1.0), (0, '1'), (0, None), (0, -1), (0, 0), (0, 201)]
+
+        for after_seq, max_count in invalid_cursors + invalid_limits:
+            with self.subTest(after_seq=after_seq, max=max_count):
+                with self.assertRaises(ServiceError) as ctx:
+                    manager.events(after_seq, max_count)
+                self.assertEqual(ctx.exception.code, 'INVALID_INPUT')
+                self.assertEqual(manager.events(), before_events)
+
+        self.assertEqual(len(manager.events(0, max=1)['events']), 1)
+        self.assertEqual(len(manager.events(0, max=200)['events']), 2)
+        p_empty = manager.events(2, max=1)
+        self.assertEqual(p_empty['events'], [])
+        self.assertEqual(p_empty['next_seq'], 2)
+
+    def test_report_rejects_invalid_event_shape_without_side_effects(self):
+        """잘못된 입력 거부 (report): 알 수 없는 type 또는 dict가 아닌 data 거부 및 상태 불변 검증."""
+        manager = self._manager()
+        identifier = manager.begin('format', {})
+        manager.report(identifier, 'started', {})
+        before_state = manager.status(identifier)
+        before_events = manager.events()
+
+        invalid_cases = [('unknown', {}), ('', {}), (None, {}), ('progress', None), ('log', []), ('done', 'bad')]
+
+        try:
+            for ev_type, ev_data in invalid_cases:
+                with self.subTest(type=ev_type, data=ev_data):
+                    with self.assertRaises(ServiceError) as ctx:
+                        manager.report(identifier, ev_type, ev_data)
+                    self.assertEqual(ctx.exception.code, 'INVALID_INPUT')
+                    self.assertEqual(manager.status(identifier), before_state)
+                    self.assertEqual(manager.events(), before_events)
+        finally:
+            manager.report(identifier, 'done', {})
+            self.assertEqual(manager.status(identifier)['state'], 'done')
+
+    def test_unknown_job_ids_use_job_not_found(self):
+        """잘못된 입력 거부 (ID): 존재하지 않거나 잘못된 ID에 대한 일관된 JOB_NOT_FOUND 반환 검증."""
+        manager = self._manager()
+        invalid_ids = ['missing', '', None, False, 7, []]
+
+        for identifier in invalid_ids:
+            with self.subTest(identifier=identifier):
+                methods = [
+                    ('status', lambda: manager.status(identifier)),
+                    ('cancel', lambda: manager.cancel(identifier)),
+                    ('thread', lambda: manager.thread(identifier)),
+                    ('cancelled', lambda: manager.cancelled(identifier)),
+                    ('report', lambda: manager.report(identifier, 'log', {})),
+                ]
+                with patch('docfit_app.jobs.threading.Timer') as mock_timer:
+                    for name, call in methods:
+                        with self.subTest(method=name):
+                            with self.assertRaises(ServiceError) as ctx:
+                                call()
+                            self.assertEqual(ctx.exception.code, 'JOB_NOT_FOUND')
+                    mock_timer.assert_not_called()
+
+        self.assertIsNone(manager.latest())
+        self.assertEqual(manager.events()['events'], [])
+
+
 if __name__ == '__main__':
     unittest.main()
