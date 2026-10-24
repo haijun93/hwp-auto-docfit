@@ -472,3 +472,14 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 - github/main 78f5482(v1.80.9) 병합. 삭제된 문서 도구·tldraw와 2.0.0 전용 T11/T12 서비스·API·화면·시험을 제거. jobs.py와 PDF 합치기 순서 지정 유지.
 - Python 전체 1640개 PASS(제외 0, 427.816초), Flutter 전체 142개 PASS(제외 1), analyze 지적 0. 병합 집중 80개 및 호환성 집중 38개 PASS.
 - 남은 이관은 V2_PARITY_TABLE.md 끝에 정리. COM 잠금 Codex/C19 사용 후 해제. 보고: C:\HWP_AUTODOCFIT\v1803\reports\C19.md. GitHub dev/2.0.0만 푸시(배포 없음).
+
+### Codex 결과 보고 — P1 검토 (2026-10-25)
+- 이번 사용자 지정 범위는 시작 속도 P1 검토. 기존 W1~W3 자간 작업은 변경하지 않음.
+- hwp-auto-docfit.py 들여쓰기 오류 수정, CRLF 보존. 지정 시험 3개 PASS.
+- P1 최종 FAIL: 상세 coverage 계산 누락, 초기화 중 폰트 캐시 접근, legacy.py 혼합 줄바꿈.
+- 보고서: C:\HWP_AUTODOCFIT\v1803\reports\P1-review-codex.md. COM 시험 없음. PASS 조건 미충족으로 커밋/푸시 없음.
+
+### Codex 결과 보고 — P1 재검토 (2026-10-25)
+- 기존 차단 3건 해소: 상세 coverage 계산 복원, 두 글꼴 콤보 postcommand 지연, legacy CRLF 5805/단독 LF 0.
+- 지정 가상환경 시험 3개 PASS. 별도 Mock coverage 재계산·두 콜백 실행 PASS. COM·전체 회귀·성능 smoke 미실행.
+- VERDICT: PASS (재검토 범위). 보고: C:\HWP_AUTODOCFIT\v1803\reports\P1-review-codex-2.md. 사용자 지시에 따라 P1 커밋·github 지정 브랜치 푸시.

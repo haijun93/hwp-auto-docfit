@@ -258,6 +258,23 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             def _결과목록(self, value):
                 self.state.results = value
 
+            @property
+            def _한글_폰트_목록_캐시(self):
+                if getattr(self, "_한글_폰트_목록_캐시_저장", None) is None:
+                    folder = self.font_folder_var.get() if hasattr(self, "font_folder_var") else ""
+                    self._한글_폰트_목록_캐시_저장 = 한글_폰트_목록_전체(folder)
+                return self._한글_폰트_목록_캐시_저장
+
+            @_한글_폰트_목록_캐시.setter
+            def _한글_폰트_목록_캐시(self, value):
+                self._한글_폰트_목록_캐시_저장 = value
+
+            def _폰트_목록_가져오기(self):
+                if not getattr(self, "_gui_initialized", False):
+                    return None
+                folder = self.font_folder_var.get() if hasattr(self, "font_folder_var") else ""
+                return 한글_폰트_목록_전체(folder)
+
             FOOTER_NOTE_DEFAULT = "정리된 HWPX는 원본 폴더에 저장되며, 같은 이름의 기존 결과를 바꿉니다."
 
             def __init__(self, root):
@@ -444,7 +461,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     }
                 if not self.font_folder_var.get():
                     self.font_folder_var.set(한글_폰트_폴더_자동감지())
-                self._한글_폰트_목록_캐시 = 한글_폰트_목록_전체(self.font_folder_var.get())
+                self._한글_폰트_목록_캐시_저장 = None
                 기호글꼴_적용(저장된_설정)
                 self.paren_shrink_var = tk.BooleanVar(value=bool(저장된_설정["paren_shrink"]))
                 self.paren_label_bold_var = tk.BooleanVar(value=bool(저장된_설정["paren_label_bold"]))
@@ -818,6 +835,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     root.after, lambda: self.check_updates_on_start_var.get(),
                     self._서비스_업데이트_안내, alive=lambda: not self.closing)
                 root.after(2000, self._업데이트_버전알림)
+                self._gui_initialized = True
 
             def _업데이트_서비스(self):
                 if not hasattr(self, "_update_service"):
@@ -1247,8 +1265,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         ttk.Label(행, text=기호, width=3).pack(side="left")
                         콤보 = ttk.Combobox(
                             행, textvariable=self.symbol_font_vars[기호]["font"],
-                            values=self._한글_폰트_목록_캐시, width=22
+                            values=(), width=22
                         )
+                        콤보.configure(postcommand=lambda c=콤보: c.configure(values=self._한글_폰트_목록_캐시))
                         콤보.pack(side="left", padx=(4, 8))
                         self._휠_콤보박스_바인딩(콤보)
                         글꼴_콤보들[기호] = 콤보
@@ -1275,8 +1294,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         ttk.Label(행, text=이름, width=6).pack(side="left")
                         콤보 = ttk.Combobox(
                             행, textvariable=self.table_font_vars[part]["font"],
-                            values=self._한글_폰트_목록_캐시, width=22
+                            values=(), width=22
                         )
+                        콤보.configure(postcommand=lambda c=콤보: c.configure(values=self._한글_폰트_목록_캐시))
                         콤보.pack(side="left", padx=(4, 8))
                         self._휠_콤보박스_바인딩(콤보)
                         # 글꼴 목록 새로고침이 문장기호 글꼴 상자와 함께 갱신하도록 같이 보관한다.
@@ -4095,7 +4115,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 콤보.bind("<Button-5>", lambda e: (_이동(1), "break"))
 
             def _폰트목록_새로고침(self):
-                self._한글_폰트_목록_캐시 = 한글_폰트_목록_전체(self.font_folder_var.get())
+                self._한글_폰트_목록_캐시_저장 = None
                 for 콤보 in getattr(self, "symbol_font_combos", {}).values():
                     콤보["values"] = self._한글_폰트_목록_캐시
                 if not self._한글_폰트_목록_캐시:
@@ -4219,7 +4239,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 self.linespacing_min_var.set(기본_설정["linespacing_min"])
                 self.linespacing_max_var.set(기본_설정["linespacing_max"])
                 self.font_folder_var.set(기본_설정.get("hwp_font_folder", "") or 한글_폰트_폴더_자동감지())
-                self._한글_폰트_목록_캐시 = 한글_폰트_목록_전체(self.font_folder_var.get())
+                self._한글_폰트_목록_캐시_저장 = None
                 self.paste_add_folder_var.set(기본_설정.get("paste_add_folder", ""))
                 for 기호, v in self.symbol_font_vars.items():
                     기본항목 = 기본_설정.get("symbol_fonts", {}).get(기호, {})

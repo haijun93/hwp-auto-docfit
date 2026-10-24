@@ -218,6 +218,30 @@ if __name__ == "__main__" and "--self-test" in _selftest_sys.argv:
 from docfit_engine.runtime import resolve as _engine_resolve
 from docfit_engine.pipeline import PipelineCallbacks
 
+class _LazyEngineSymbol:
+    """엔진 모듈 심볼을 첫 호출 또는 속성 접근 시점에 지연 로드하는 프록시."""
+    __slots__ = ("_module", "_name", "_namespace", "_resolved")
+
+    def __init__(self, module, name, namespace):
+        self._module = module
+        self._name = name
+        self._namespace = namespace
+        self._resolved = None
+
+    def _get_target(self):
+        if self._resolved is None:
+            self._resolved = _engine_resolve(self._module, self._name, self._namespace)
+        return self._resolved
+
+    def __call__(self, *args, **kwargs):
+        return self._get_target()(*args, **kwargs)
+
+    def __getattr__(self, item):
+        return getattr(self._get_target(), item)
+
+    def __repr__(self):
+        return f"<LazyEngineSymbol {self._module}.{self._name}>"
+
 import os
 import sys
 import shutil
@@ -321,13 +345,13 @@ from docfit_core import writing_aids, ai_prompts
 from docfit_core.writing_aids import refresh_dates as 날짜_현행화
 
 
-XML_네임스페이스_등록 = _engine_resolve('docfit_engine.com_driver', 'XML_네임스페이스_등록', globals())
+XML_네임스페이스_등록 = _LazyEngineSymbol('docfit_engine.com_driver', 'XML_네임스페이스_등록', globals())
 
 
-XML_요소_생성 = _engine_resolve('docfit_engine.com_driver', 'XML_요소_생성', globals())
+XML_요소_생성 = _LazyEngineSymbol('docfit_engine.com_driver', 'XML_요소_생성', globals())
 
 
-XML_자식_추가 = _engine_resolve('docfit_engine.com_driver', 'XML_자식_추가', globals())
+XML_자식_추가 = _LazyEngineSymbol('docfit_engine.com_driver', 'XML_자식_추가', globals())
 from docfit_core.style_inventory import analyze_style_inventory, build_style_sample, inventory_markdown
 from docfit_core import report_header as 보고서머리
 from docfit_core import connector_tabs as 연결부호탭
@@ -376,35 +400,35 @@ _업데이트_허용_호스트들 = (_업데이트_허용_호스트, "api.github
 _업데이트_허용_호스트_접미사 = (".githubusercontent.com",)
 
 
-_업데이트_URL_검증 = _engine_resolve('docfit_engine.com_driver', '_업데이트_URL_검증', globals())
+_업데이트_URL_검증 = _LazyEngineSymbol('docfit_engine.com_driver', '_업데이트_URL_검증', globals())
 
 
-_업데이트_HTTP_GET = _engine_resolve('docfit_engine.com_driver', '_업데이트_HTTP_GET', globals())
+_업데이트_HTTP_GET = _LazyEngineSymbol('docfit_engine.com_driver', '_업데이트_HTTP_GET', globals())
 
 
-_업데이트_기록 = _engine_resolve('docfit_engine.com_driver', '_업데이트_기록', globals())
+_업데이트_기록 = _LazyEngineSymbol('docfit_engine.com_driver', '_업데이트_기록', globals())
 
 
 UPDATE_STARTED_FLAG = "app_started.flag"   # 새 버전이 켜졌다는 신호(교체 스크립트가 확인 뒤 백업을 지운다)
 UPDATE_BUSY_FLAG = "update_busy.flag"      # 교체 스크립트가 도는 중(이때는 시작 정리가 백업을 지우지 않는다)
 
 
-업데이트_시작신호 = _engine_resolve('docfit_engine.com_driver', '업데이트_시작신호', globals())
+업데이트_시작신호 = _LazyEngineSymbol('docfit_engine.com_driver', '업데이트_시작신호', globals())
 
 
-업데이트_잔여정리 = _engine_resolve('docfit_engine.com_driver', '업데이트_잔여정리', globals())
+업데이트_잔여정리 = _LazyEngineSymbol('docfit_engine.com_driver', '업데이트_잔여정리', globals())
 
 
-_버전_튜플 = _engine_resolve('docfit_engine.com_driver', '_버전_튜플', globals())
+_버전_튜플 = _LazyEngineSymbol('docfit_engine.com_driver', '_버전_튜플', globals())
 
 
-_최신_릴리스_조회 = _engine_resolve('docfit_engine.com_driver', '_최신_릴리스_조회', globals())
+_최신_릴리스_조회 = _LazyEngineSymbol('docfit_engine.com_driver', '_최신_릴리스_조회', globals())
 
 
-_최신_릴리스_통합_조회 = _engine_resolve('docfit_engine.com_driver', '_최신_릴리스_통합_조회', globals())
+_최신_릴리스_통합_조회 = _LazyEngineSymbol('docfit_engine.com_driver', '_최신_릴리스_통합_조회', globals())
 
 
-_업데이트_자산_선택 = _engine_resolve('docfit_engine.com_driver', '_업데이트_자산_선택', globals())
+_업데이트_자산_선택 = _LazyEngineSymbol('docfit_engine.com_driver', '_업데이트_자산_선택', globals())
 
 # ============================================================
 # AutomationModule
@@ -429,10 +453,10 @@ REGISTER_MODULE_NAME = "FilePathCheckDLL"
 REGISTER_MODULE_VALUE = REGISTRY_VALUE_NAME
 
 
-한글_COM_인스턴스_생성 = _engine_resolve('docfit_engine.com_driver', '한글_COM_인스턴스_생성', globals())
+한글_COM_인스턴스_생성 = _LazyEngineSymbol('docfit_engine.com_driver', '한글_COM_인스턴스_생성', globals())
 
 
-한글_문서_열기 = _engine_resolve('docfit_engine.com_driver', '한글_문서_열기', globals())
+한글_문서_열기 = _LazyEngineSymbol('docfit_engine.com_driver', '한글_문서_열기', globals())
 
 # ============================================================
 # 전역 상태
@@ -3184,13 +3208,13 @@ _텍스트_인코딩_후보 = ("utf-8-sig", "utf-8", "cp949")
 알파_AI답변변환_사용 = True
 
 
-AI답변_개조식_변환 = _engine_resolve('docfit_engine.formatter', 'AI답변_개조식_변환', globals())
+AI답변_개조식_변환 = _LazyEngineSymbol('docfit_engine.formatter', 'AI답변_개조식_변환', globals())
 
 
-텍스트_hwpx_단독변환 = _engine_resolve('docfit_engine.formatter', '텍스트_hwpx_단독변환', globals())
+텍스트_hwpx_단독변환 = _LazyEngineSymbol('docfit_engine.formatter', '텍스트_hwpx_단독변환', globals())
 
 
-외부문서_hwpx로_변환 = _engine_resolve('docfit_engine.formatter', '외부문서_hwpx로_변환', globals())
+외부문서_hwpx로_변환 = _LazyEngineSymbol('docfit_engine.formatter', '외부문서_hwpx로_변환', globals())
 
 
 # 알파(2026-10-10): kordoc은 PDF를 마크다운으로 바꿔 프리셋 서식으로 HWPX를 만들어 원본 서식이 사라진다.
@@ -3199,44 +3223,44 @@ AI답변_개조식_변환 = _engine_resolve('docfit_engine.formatter', 'AI답변
 알파_PDF서식이식_사용 = True
 
 
-PDF_서식_이식 = _engine_resolve('docfit_engine.formatter', 'PDF_서식_이식', globals())
+PDF_서식_이식 = _LazyEngineSymbol('docfit_engine.formatter', 'PDF_서식_이식', globals())
 
 
-_박스그림표_한글표_삽입 = _engine_resolve('docfit_engine.formatter', '_박스그림표_한글표_삽입', globals())
+_박스그림표_한글표_삽입 = _LazyEngineSymbol('docfit_engine.formatter', '_박스그림표_한글표_삽입', globals())
 
 
 # 선 문자 표의 줄은 테두리·칸 구분 문자로 시작한다. 정상 글을 지우지 않도록 '선 문자로 시작하는 줄'만 잔여물로 본다.
 _박스그림_줄시작 = re.compile(r'^\s*[┌├└│┃┏┣┗]')
 
 
-_박스그림_줄인가 = _engine_resolve('docfit_engine.formatter', '_박스그림_줄인가', globals())
+_박스그림_줄인가 = _LazyEngineSymbol('docfit_engine.formatter', '_박스그림_줄인가', globals())
 
 
-_박스그림_남은_문단 = _engine_resolve('docfit_engine.formatter', '_박스그림_남은_문단', globals())
+_박스그림_남은_문단 = _LazyEngineSymbol('docfit_engine.formatter', '_박스그림_남은_문단', globals())
 
 
-_박스그림표_교체 = _engine_resolve('docfit_engine.formatter', '_박스그림표_교체', globals())
+_박스그림표_교체 = _LazyEngineSymbol('docfit_engine.formatter', '_박스그림표_교체', globals())
 
 
-박스그림_전체_적용 = _engine_resolve('docfit_engine.formatter', '박스그림_전체_적용', globals())
+박스그림_전체_적용 = _LazyEngineSymbol('docfit_engine.formatter', '박스그림_전체_적용', globals())
 
 
-저장결과_규칙검수 = _engine_resolve('docfit_engine.formatter', '저장결과_규칙검수', globals())
+저장결과_규칙검수 = _LazyEngineSymbol('docfit_engine.formatter', '저장결과_규칙검수', globals())
 
 
-문서_처리 = _engine_resolve('docfit_engine.pipeline', '문서_처리', globals())
+문서_처리 = _LazyEngineSymbol('docfit_engine.pipeline', '문서_처리', globals())
 
 
-_문서_처리_본체 = _engine_resolve('docfit_engine.pipeline', '_문서_처리_본체', globals())
+_문서_처리_본체 = _LazyEngineSymbol('docfit_engine.pipeline', '_문서_처리_본체', globals())
 
 # ============================================================
 # 백그라운드 작업 실행 스레드
 # ============================================================
 
-절전_방지 = _engine_resolve('docfit_engine.pipeline', '절전_방지', globals())
+절전_방지 = _LazyEngineSymbol('docfit_engine.pipeline', '절전_방지', globals())
 
 
-작업_실행 = _engine_resolve('docfit_engine.pipeline', '작업_실행', globals())
+작업_실행 = _LazyEngineSymbol('docfit_engine.pipeline', '작업_실행', globals())
 
 # Tk fallback palette. Keep the keys aligned with the WebView2 UI's neutral
 # surfaces and single blue primary action so startup also works without WebView2.
@@ -3286,6 +3310,7 @@ def _닫기_스플래시():
             pyi_splash.close()
     except Exception:
         pass
+
 
 
 def _단일_인스턴스_확인():
@@ -3353,6 +3378,7 @@ def _단일_인스턴스_확인():
                 forward(sys.argv[1:])
             except OSError:
                 pass
+        
             _닫기_스플래시()
             # 이미 실행 중인 창을 찾아 앞으로 가져오기
             WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
@@ -3374,6 +3400,7 @@ def _단일_인스턴스_확인():
                 user32.EnumWindows(WNDENUMPROC(enum_cb), 0)
             except Exception:
                 pass
+        
             if handle:
                 kernel32.CloseHandle(handle)
             return False
@@ -3381,6 +3408,7 @@ def _단일_인스턴스_확인():
         _APP_MUTEX_HANDLE = handle
         return True
     except Exception:
+        pass
         _닫기_스플래시()
         return True
 
@@ -3395,10 +3423,20 @@ def main():
         return
 
     try:
-        from docfit_app.shell_menu import refresh_registered
-        refresh_registered()
+
+
+        def _배경_탐색기메뉴_갱신():
+            try:
+    
+                from docfit_app.shell_menu import refresh_registered
+                refresh_registered()
+            except OSError:
+                pass
+
+        threading.Thread(target=_배경_탐색기메뉴_갱신, name="shell-menu-refresh", daemon=True).start()
     except OSError:
         pass
+
 
     if getattr(_selftest_sys, "frozen", False):
         def _배경_런타임_배포():
@@ -3408,6 +3446,7 @@ def main():
                 deploy_embedded_runtime(KORDOC_VERSION)
             except Exception:
                 pass
+        
 
         threading.Thread(target=_배경_런타임_배포, name="kordoc-deploy", daemon=True).start()
 

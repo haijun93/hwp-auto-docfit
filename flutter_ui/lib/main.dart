@@ -688,9 +688,10 @@ class _WorkspaceState extends State<Workspace> {
           autofocus: true,
           child: Scaffold(
             key: scaffoldKey,
-            endDrawer: settingsDrawer(),
+            endDrawer: settingsVisible ? settingsDrawer() : const SizedBox.shrink(),
             onEndDrawerChanged: (open) {
               settingsVisible = open;
+              if (open) setState(() {});
               if (state['doc_hints'] is Map) {
                 unawaited(setDropTarget('documents'));
               }

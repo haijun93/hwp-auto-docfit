@@ -333,7 +333,8 @@ class DesktopWebBridge:
                 "source": str(source.get("filename") or "") if isinstance(source, dict) else "",
                 "active": identifier == active,
                 # 예시 보고서에서 분석한 서식 요소 가운데 정리에 쓰는 수(서식 관리 창의 복제 범위 요약)
-                "coverage": self._cached_coverage(identifier, analysis),
+                # 첫 화면 로딩 시 불필요한 format_elements 모듈 로딩 및 연산을 방지:
+                "coverage": self._coverage_cache.get(identifier, (None, None))[1],
             })
         return items
 
@@ -1361,8 +1362,9 @@ class DesktopWebBridge:
                         "choices": elements.element_choices(key)})
                 if fields:
                     nodes.append({"path": list(path), "label": label, "fields": fields})
+            coverage = self._cached_coverage(identifier, analysis)
             return {"id": identifier, "name": profile.get("name"), "revision": revision,
-                    "coverage": self._cached_coverage(identifier, analysis), "nodes": nodes}
+                    "coverage": coverage, "nodes": nodes}
         return self._tk(lambda: response(execute))
 
     def hangul_fonts(self, action, payload=None):

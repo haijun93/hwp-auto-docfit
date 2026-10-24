@@ -45,8 +45,10 @@ internal static class SmartLauncher
         try
         {
             string manifestText = ReadResourceText(ManifestResource);
-            PayloadManifest manifest = PayloadManifest.Parse(manifestText);
-            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            PayloadManifest manifest = PayloadManifest.ParseHeader(manifestText);
+            string localAppData = Environment.GetEnvironmentVariable("LOCALAPPDATA");
+            if (string.IsNullOrEmpty(localAppData))
+                localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
             string cacheRoot = Path.Combine(localAppData, "HWP_AutoDocFit");
             Directory.CreateDirectory(cacheRoot);
             cachePath = Path.Combine(cacheRoot, "app_v" + SafeVersion(manifest.Version) + "_" + manifest.PayloadHash.Substring(0, 12));
@@ -69,7 +71,11 @@ internal static class SmartLauncher
                     ActivateExistingWindow();
                     if (args.Length > 0)
                     {
-                        if (!CacheIsValid(cachePath, manifest)) ExtractPayload(cachePath, manifest, true);
+                        if (!CacheIsValidFast(cachePath, manifest))
+                        {
+                            manifest.ParseAllItems(manifestText);
+                            ExtractPayload(cachePath, manifest, true);
+                        }
                         bool ignored = false;
                         return StartApplication(Path.Combine(cachePath, "app_main.exe"), cachePath,
                             args, true, null, null, ref ignored);
@@ -78,7 +84,7 @@ internal static class SmartLauncher
                 }
             }
 
-            if (!CacheIsValid(cachePath, manifest))
+            if (!CacheIsValidFast(cachePath, manifest))
             {
                 if (!selfTest && !cliCommand)
                 {
@@ -87,6 +93,7 @@ internal static class SmartLauncher
                     splash.Show();
                     Application.DoEvents();
                 }
+                manifest.ParseAllItems(manifestText);
                 ExtractPayload(cachePath, manifest, selfTest || cliCommand);
             }
 
@@ -180,6 +187,20 @@ internal static class SmartLauncher
         }
     }
 
+    private static bool CacheIsValidFast(string cachePath, PayloadManifest manifest)
+    {
+        string marker = Path.Combine(cachePath, ".docfit-complete");
+        string appPath = Path.Combine(cachePath, "app_main.exe");
+        try
+        {
+            if (!File.Exists(marker) || !File.Exists(appPath)) return false;
+            string recordedHash = File.ReadAllText(marker, Encoding.UTF8).Trim();
+            if (!string.Equals(recordedHash, manifest.PayloadHash, StringComparison.OrdinalIgnoreCase)) return false;
+            return true;
+        }
+        catch { return false; }
+    }
+
     private static bool CacheIsValid(string cachePath, PayloadManifest manifest)
     {
         string marker = Path.Combine(cachePath, ".docfit-complete");
@@ -187,15 +208,15 @@ internal static class SmartLauncher
         try
         {
             if (!File.Exists(marker) || !File.Exists(appPath)) return false;
-            if (!string.Equals(File.ReadAllText(marker, Encoding.UTF8).Trim(), manifest.PayloadHash,
-                StringComparison.OrdinalIgnoreCase)) return false;
+            string recordedHash = File.ReadAllText(marker, Encoding.UTF8).Trim();
+            if (!string.Equals(recordedHash, manifest.PayloadHash, StringComparison.OrdinalIgnoreCase)) return false;
+
             foreach (ManifestItem item in manifest.Items)
             {
-                string path = SafeCombine(cachePath, item.Path);
-                var info = new FileInfo(path);
+                var info = new FileInfo(SafeCombine(cachePath, item.Path));
                 if (!info.Exists || info.Length != item.Length) return false;
             }
-            return manifest.Items.Any(i => string.Equals(i.Path, "app_main.exe", StringComparison.OrdinalIgnoreCase));
+            return true;
         }
         catch { return false; }
     }
@@ -454,27 +475,50 @@ internal static class SmartLauncher
         public string PayloadHash;
         public List<ManifestItem> Items = new List<ManifestItem>();
 
-        public static PayloadManifest Parse(string text)
+        public static PayloadManifest ParseHeader(string text)
         {
             var result = new PayloadManifest();
+            using (var reader = new StringReader(text))
+            {
+                string line;
+                while ((line = reader.ReadLine()) != null)
+                {
+                    if (line.StartsWith("V\t", StringComparison.Ordinal))
+                        result.Version = line.Substring(2).Trim();
+                    else if (line.StartsWith("P\t", StringComparison.Ordinal))
+                        result.PayloadHash = line.Substring(2).Trim();
+                    if (!string.IsNullOrEmpty(result.Version) && !string.IsNullOrEmpty(result.PayloadHash))
+                        break;
+                }
+            }
+            if (string.IsNullOrWhiteSpace(result.Version) || result.PayloadHash == null || result.PayloadHash.Length != 64)
+                throw new InvalidDataException("포터블 매니페스트 헤더가 올바르지 않습니다.");
+            return result;
+        }
+
+        public void ParseAllItems(string text)
+        {
+            if (Items.Count > 0) return;
             foreach (string line in text.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries))
             {
                 string[] fields = line.Split(new[] { '\t' }, 4);
-                if (fields[0] == "V" && fields.Length >= 2) result.Version = fields[1];
-                else if (fields[0] == "P" && fields.Length >= 2) result.PayloadHash = fields[1];
-                else if (fields[0] == "F" && fields.Length == 4)
+                if (fields[0] == "F" && fields.Length == 4)
                 {
                     long size;
                     if (!long.TryParse(fields[2], NumberStyles.None, CultureInfo.InvariantCulture, out size) || size < 0)
                         throw new InvalidDataException("잘못된 파일 크기 매니페스트입니다.");
-                    result.Items.Add(new ManifestItem { Sha256 = fields[1], Length = size, Path = fields[3] });
+                    Items.Add(new ManifestItem { Sha256 = fields[1], Length = size, Path = fields[3] });
                 }
             }
-            if (string.IsNullOrWhiteSpace(result.Version) || result.PayloadHash == null || result.PayloadHash.Length != 64 || result.Items.Count == 0)
-                throw new InvalidDataException("포터블 매니페스트가 올바르지 않습니다.");
-            if (result.Items.Any(i => string.IsNullOrWhiteSpace(i.Path) || i.Path.Contains("\t") || i.Path.Contains("\n") || i.Path.Contains("\\")))
-                throw new InvalidDataException("매니페스트에 허용되지 않는 경로가 포함되어 있습니다.");
-            return result;
+            if (Items.Count == 0 || Items.Any(i => string.IsNullOrWhiteSpace(i.Path) || i.Path.Contains("\t") || i.Path.Contains("\n") || i.Path.Contains("\\")))
+                throw new InvalidDataException("매니페스트에 허용되지 않는 항목이 포함되어 있습니다.");
+        }
+
+        public static PayloadManifest Parse(string text)
+        {
+            var manifest = ParseHeader(text);
+            manifest.ParseAllItems(text);
+            return manifest;
         }
     }
 
