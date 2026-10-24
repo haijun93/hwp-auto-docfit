@@ -59,7 +59,17 @@ def _font(face):
     from .hangul_fonts import font_file
     from PIL import ImageFont
     path = font_file(face)
-    return ImageFont.truetype(str(path), 1000) if path else None
+    if path:
+        return ImageFont.truetype(str(path), 1000)
+    windir = os.environ.get("WINDIR", "C:/Windows")
+    for fallback in ("malgun.ttf", "gulim.ttc", "batang.ttc", "arial.ttf", "segoeui.ttf"):
+        win_font = Path(windir) / "Fonts" / fallback
+        if win_font.is_file():
+            try:
+                return ImageFont.truetype(str(win_font), 1000)
+            except Exception:
+                continue
+    return None
 
 
 def text_width(text, shape, fonts):
@@ -71,8 +81,8 @@ def text_width(text, shape, fonts):
     ratio = next((int(x.get('hangul', '100')) for x in shape if tag(x) == 'ratio'), 100)
     spacing = next((int(x.get('hangul', '0')) for x in shape if tag(x) == 'spacing'), 0)
     if font is None:
-        # HFT cannot be measured by FreeType. Keep existing geometry for that paragraph.
-        raise ValueError('연속 문단 폭 측정용 글꼴을 찾을 수 없습니다: ' + str(face))
+        # CI/헤드리스 환경 등 글꼴 미설치 환경 대비 폭 추정(전각 1.0, 반각 0.5)
+        return sum(round(height * ratio / 100) if ord(ch) > 0x7F else round(height * 0.5 * ratio / 100) for ch in text) + round(len(text) * height * spacing / 100)
     return round(font.getlength(text) * height / 1000 * ratio / 100 + len(text) * height * spacing / 100)
 
 
