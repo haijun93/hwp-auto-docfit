@@ -18,7 +18,7 @@ void main() {
       ];
       state['card_options'] = {
         'spacing_enabled': true,
-        'spacing_page_fit': false,
+        'spacing_exclude_pagefit': true,
       };
       final calls = <List<Object?>>[];
       Future<Object?> api(String name, List<Object?> args) async {
@@ -33,9 +33,9 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('작업 방식 선택'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('spacingPageFitSwitch')));
+      await tester.tap(find.byKey(const Key('spacingExcludePagefitSwitch')));
       await tester.pumpAndSettle();
-      expect(calls.last, ['set_card_option', 'spacing_page_fit', true]);
+      expect(calls.last, ['set_card_option', 'spacing_exclude_pagefit', false]);
       expect(
         tester
             .widget<Switch>(find.byKey(const Key('spacingEnabledSwitch')))
@@ -47,13 +47,13 @@ void main() {
       expect(calls.last, ['set_card_option', 'spacing_enabled', false]);
       expect(
         tester
-            .widget<Switch>(find.byKey(const Key('spacingPageFitSwitch')))
+            .widget<Switch>(find.byKey(const Key('spacingExcludePagefitSwitch')))
             .value,
-        isTrue,
+        isFalse,
       );
       expect(
         tester
-            .widget<Switch>(find.byKey(const Key('resetSpacingSwitch')))
+            .widget<Switch>(find.byKey(const Key('spacingExcludeResetSwitch')))
             .onChanged,
         isNull,
       );
@@ -69,7 +69,7 @@ void main() {
         matching: find.byType(FilledButton),
       );
       expect(tester.widget<FilledButton>(startButton).onPressed, isNotNull);
-      await tester.tap(find.byKey(const Key('spacingPageFitSwitch')));
+      await tester.tap(find.byKey(const Key('spacingExcludePagefitSwitch')));
       await tester.pumpAndSettle();
       expect(find.text('자간 정리 또는 페이지 맞춤을 하나 이상 켜 주세요.'), findsOneWidget);
       expect(tester.widget<FilledButton>(startButton).onPressed, isNull);

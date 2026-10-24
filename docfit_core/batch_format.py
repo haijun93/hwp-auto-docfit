@@ -366,6 +366,8 @@ def _rewrite_runs(paragraph, spec, pool):
             clone[0].text = text[a:b]
             force = any(lo <= global_start + a and global_start + b <= hi for lo, hi in spec.bold_spans)
             piece_spec = run_spec(run, global_start + a)
+            if force and spec.size_pt is not None:
+                piece_spec = replace(piece_spec, size_pt=spec.size_pt)
             if any(lo <= global_start + a and global_start + b <= hi for lo, hi in spec.plain_spans):
                 piece_spec, force = replace(piece_spec, bold=False), False
             clone.set("charPrIDRef", pool.char(run.get("charPrIDRef"), piece_spec, force))

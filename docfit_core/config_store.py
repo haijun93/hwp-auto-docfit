@@ -7,14 +7,16 @@ writers and avoid a second implementation of atomic replacement.
 from copy import deepcopy
 
 
-def migrate_settings(settings, defaults):
+def migrate_settings(settings, defaults=None):
+    if defaults is None:
+        defaults = {}
     result=deepcopy(settings)
     result.pop("diagram_editor_enabled", None)
     def old(key):
         try:return int(result.get(key,1) or 1)<2
         except (TypeError,ValueError):return True
     if old('label_symbols_rev'):
-        symbols=result.get('label_symbols',defaults['label_symbols'])
+        symbols=result.get('label_symbols',defaults.get('label_symbols'))
         if isinstance(symbols,dict):result['label_symbols']={**symbols,'*':False,'**':False}
     if old('report_files_rev'):
         for key in ('log_file','integrity_report_file','final_review_file'):result[key]=False
@@ -22,13 +24,31 @@ def migrate_settings(settings, defaults):
         prior={'std_parspace_chapter':'20','std_parspace_midtitle':'15','std_parspace_box':'15',
                'std_parspace_circle':'10','std_parspace_note':'3'}
         if all(str(result.get(k,v)).strip()==v for k,v in prior.items()):
-            for key in (*prior,'std_parspace_dash'):result[key]=defaults[key]
+            for key in (*prior,'std_parspace_dash'):
+                if key in defaults:
+                    result[key]=defaults[key]
     if old('std_supplement_rev'):result['std_supplement_indent']=True
     # 줄 간격 최솟값 기본 160% -> 140%(사용자 지시, 2026-10-15). 예전 기본값 그대로인 설정만 옮긴다.
     if old('linespacing_min_rev') and str(result.get('linespacing_min','160')).strip()=='160':
-        result['linespacing_min']=defaults['linespacing_min']
+        if 'linespacing_min' in defaults:
+            result['linespacing_min']=defaults['linespacing_min']
+    # 카드 옵션 3개 제외 방식으로 이전(2026-10-24 사용자 지시)
+    if "all_linespacing" in result:
+        val = result.pop("all_linespacing")
+        if "all_exclude_linespacing" not in result:
+            result["all_exclude_linespacing"] = not val
+    if "spacing_page_fit" in result:
+        val = result.pop("spacing_page_fit")
+        if "spacing_exclude_pagefit" not in result:
+            result["spacing_exclude_pagefit"] = not val
+    if "spacing_reset_existing" in result:
+        val = result.pop("spacing_reset_existing")
+        if "spacing_exclude_reset" not in result:
+            result["spacing_exclude_reset"] = (not val) if val is not None else defaults.get("spacing_exclude_reset", True)
+    if old('card_options_rev'):
+        result['card_options_rev'] = 2
     for key in ('label_symbols_rev','report_files_rev','std_parspace_rev','std_supplement_rev',
-                'linespacing_min_rev'):result[key]=2
+                'linespacing_min_rev','card_options_rev'):result[key]=2
     fonts=result.get('symbol_fonts',{})
     if isinstance(fonts,dict):
         for spec in fonts.values():

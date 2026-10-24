@@ -108,7 +108,7 @@ def _para(pool, base, spec):
     return result
 
 
-def _split_soft_continuations(root):
+def _split_soft_continuations(root, rules):
     """A numbered manual break becomes a paragraph so it can carry its own geometry."""
     for p in list(root):
         if tag(p) != 'p' or not any(tag(x) == 'lineBreak' for x in p.iter()):
@@ -127,6 +127,9 @@ def _split_soft_continuations(root):
                     if br.tail:
                         fragments[-1].append((run, br.tail))
         texts = [''.join(text for _, text in parts) for parts in fragments]
+        outer = classify_marker(texts[0]) if texts else None
+        if outer and rules.get(outer[0]) in ('none', 'fixed', 'after_marker'):
+            continue
         inline = inline_item(texts[0]) if texts else None
         if not inline or not all(classify_marker(t) and classify_marker(t)[0] == inline[0] for t in texts[1:]):
             continue
@@ -181,8 +184,8 @@ def align_sections(header, sections, *, source_sections=None, rules=None, measur
     for name, root in sections.items():
         original_root = (source_sections or sections)[name]
         if original_root is not root:
-            _split_soft_continuations(original_root)
-        _split_soft_continuations(root)
+            _split_soft_continuations(original_root, rules)
+        _split_soft_continuations(root, rules)
         paragraphs = [p for p in root if tag(p) == 'p']
         originals = [p for p in original_root if tag(p) == 'p']
         state = None
@@ -224,7 +227,8 @@ def align_sections(header, sections, *, source_sections=None, rules=None, measur
                         p.remove(cache)
                 changed.add(text)
                 continue
-            is_plain = (include_plain and state and state[0] is None and
+            is_plain = (include_plain and marker is None and not is_supplement(text)
+                        and state and state[0] is None and
                         is_continuation(state[6], original))
             if state and ((family is not None and family == state[0]) or is_plain):
                 _, anchor, end, parent, body_id, paren_id, _ = state

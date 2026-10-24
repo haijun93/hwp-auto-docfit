@@ -17,6 +17,38 @@ def copy_result(payload):
         html, text = table_html(spec)
         formats = [(clipboard.RegisterClipboardFormat("HTML Format"), cf_html(html)), (13, text)]
         result = "table"
+    elif payload.get("kind") in ("diagram", "shapes"):
+        import tempfile
+        from pathlib import Path
+        from docfit_core.diagram_shapes import diagram_to_hwpx
+        from docfit_app.native_table_clipboard import copy_hwpx_document
+        snapshot = payload.get("snapshot") or payload.get("spec")
+        temp_hwpx = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".hwpx", delete=False) as tf:
+                temp_hwpx = Path(tf.name)
+            diagram_to_hwpx(snapshot, temp_hwpx)
+            copy_hwpx_document(temp_hwpx)
+            return {"copied": True, "format": "shapes", "native": True}
+        except Exception:
+            if payload.get("base64"):
+                from PIL import Image
+                from docfit_app.flow_service import FlowService
+                data = FlowService.png_bytes(payload.get("base64"))
+                with Image.open(io.BytesIO(data)) as source:
+                    source.load()
+                    image = Image.new("RGB", source.size, "white")
+                    rgba = source.convert("RGBA")
+                    image.paste(rgba, mask=rgba.getchannel("A"))
+                    stream = io.BytesIO()
+                    image.save(stream, format="BMP")
+                formats = [(8, stream.getvalue()[14:]), (clipboard.RegisterClipboardFormat("PNG"), data)]
+                result = "image"
+            else:
+                raise
+        finally:
+            if temp_hwpx is not None:
+                temp_hwpx.unlink(missing_ok=True)
     elif payload.get("kind") == "png":
         from PIL import Image
         from docfit_app.flow_service import FlowService

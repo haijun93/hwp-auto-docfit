@@ -98,7 +98,8 @@ class GeometryTests(unittest.TestCase):
 
     def test_overlapping_and_joining(self):
         clean,warnings=ts.normalize(drawing([line(5,0,2,0),line(0,0,3,0),line(5,0,7,0)]))
-        self.assertEqual(clean['lines'],[line(0,0,7,0,width='thin',style='solid')])
+        self.assertEqual(clean['lines'],[line(0,0,7,0,width='thin',style='solid',
+                                            width_mm=0.12,color='#000000',group_id=None)])
         self.assertFalse(warnings)
         result=ts.preview(drawing(box(0,0,4,4)+[line(0,0,4,4,width='double'),line(0,0,4,4,width='thin')]))
         self.assertEqual(result['cells'][0]['diagonal_styles']['backslash'],('double','solid'))

@@ -7,7 +7,7 @@ import tempfile
 import threading
 from pathlib import Path
 
-from docfit_core import table_sketch
+from docfit_core import table_sketch, table_import
 from .table_units_service import TableUnitsService, HWP_CLIPBOARD_FORMAT
 
 COM_LOCK = threading.Lock()
@@ -99,6 +99,19 @@ class TableSketchService:
         finally:
             COM_LOCK.release()
 
+    def import_table(self, source_type, data, table_index=0):
+        if source_type == "html":
+            res = table_import.import_table_from_html(data)
+        elif source_type in ("hwpx", "file"):
+            res = table_import.import_table_from_hwpx(data, table_index=table_index)
+        elif source_type == "xml":
+            res = table_import.import_table_from_xml(data)
+        else:
+            raise ValueError(f"지원하지 않는 가져오기 형식입니다: {source_type}")
+        if not res.get('lines'):
+            raise ValueError('가져올 표를 찾지 못했습니다. HWPX 파일이나 표를 확인해 주세요.')
+        return dict(ok=True, **res)
+
     def command(self, action, payload=None):
         try:
             if action == "preview": return table_sketch.preview(payload)
@@ -108,6 +121,15 @@ class TableSketchService:
                 return self.save(payload.get("name"), payload.get("sketch"))
             if action == "load": return self.load(payload)
             if action == "delete": return self.delete(payload)
+            if action in ("import", "import_table"):
+                src = payload.get("source_type", "html") if isinstance(payload, dict) else "html"
+                d = payload.get("data", payload) if isinstance(payload, dict) else payload
+                idx = payload.get("table_index", 0) if isinstance(payload, dict) else 0
+                return self.import_table(src, d, table_index=idx)
+            if action == "import_hwpx":
+                p = payload.get("path", payload) if isinstance(payload, dict) else payload
+                idx = payload.get("table_index", 0) if isinstance(payload, dict) else 0
+                return self.import_table("hwpx", p, table_index=idx)
             raise ValueError("표그림판 작업을 확인해 주세요.")
         except (OSError, ValueError, TypeError) as exc:
             return dict(ok=False, message=str(exc))

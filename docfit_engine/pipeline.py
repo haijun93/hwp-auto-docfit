@@ -165,6 +165,19 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     if 한글_문서_열기(hwp, 작업파일경로, "HWPX", "forceopen:true") is False:
                         raise RuntimeError(f"변환한 문서를 열지 못했습니다: {파일}")
                 # 원본이 HWP/HWPX가 아니므로 좌우 비교 보기 대상에서는 제외한다.
+            if (작업_모드 in ('spacing', 'all', 'format') and
+                    stage_enabled(선택_세부작업, 'cell_image_to_bg', 작업_모드)):
+                from docfit_core.cell_image_bg import convert_cell_images_to_bg_hwpx
+                if 작업_임시폴더 is None:
+                    작업_임시폴더 = tempfile.TemporaryDirectory(prefix='docfit_cell_bg_')
+                배경사본 = Path(작업_임시폴더.name) / 'cell-background.hwpx'
+                변환수 = convert_cell_images_to_bg_hwpx(작업파일경로, 배경사본)
+                if 변환수:
+                    hwp_run('FileClose')
+                    if 한글_문서_열기(hwp, 배경사본, 'HWPX', 'forceopen:true') is False:
+                        raise RuntimeError('셀 배경 변환 사본을 열지 못했습니다.')
+                    작업파일경로 = 배경사본
+                로그(f'표 셀 이미지 배경 변환: {변환수}칸')
             # 문서마다 초기화한다. 변환된 HWPX 본문으로 감지해 COM·XML 경로가 같은 체계를 쓴다.
             from docfit_core.marker_scheme import detect_hwpx_scheme
             globals()['활성_항목기호_체계'] = None

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import math
+import re
 import zipfile
 from pathlib import Path
 
@@ -34,6 +35,28 @@ def normalize(sketch):
         try:
             x1, y1, x2, y2 = (line[k] for k in ("x1", "y1", "x2", "y2"))
             width, style = line.get("width", "thin"), line.get("style", "solid")
+            color = line.get("color", "#000000")
+            group_id = line.get("group_id") or line.get("groupId")
+            width_mm = line.get("width_mm")
+            if isinstance(width, (int, float)) or (isinstance(width, str) and re.match(r"^[0-9.]+(mm)?$", width.strip())):
+                try:
+                    w_num = float(str(width).replace("mm", "").strip())
+                    if 0.1 <= w_num <= 5.0:
+                        width_mm = w_num
+                        width = "double" if (style == "double" or width == "double") else ("thick" if w_num >= 0.4 else "thin")
+                except ValueError:
+                    pass
+            if width_mm is None:
+                width_mm = 0.5 if width == "double" else (0.4 if width == "thick" else 0.12)
+            if (isinstance(width_mm, bool) or not isinstance(width_mm, (int, float))
+                    or not math.isfinite(width_mm) or not 0.1 <= width_mm <= 5):
+                raise ValueError
+            if group_id is not None and not isinstance(group_id, str):
+                raise ValueError
+            if not (isinstance(color, str) and re.fullmatch(r"#[0-9A-Fa-f]{6}", color.strip())):
+                color = "#000000"
+            else:
+                color = color.strip().upper()
             if (any(type(v) is not int for v in (x1, y1, x2, y2)) or
                     not (0 <= x1 <= cols and 0 <= x2 <= cols and 0 <= y1 <= rows and 0 <= y2 <= rows) or
                     (x1, y1) == (x2, y2) or
@@ -45,11 +68,11 @@ def normalize(sketch):
             kind = "v" if x1 == x2 else "h" if y1 == y2 else "b" if y2 > y1 else "s"
             intercept = x1 if kind == "v" else y1 if kind == "h" else y1-x1 if kind == "b" else y1+x1
             start, end = (y1, y2) if kind == "v" else (x1, x2)
-            groups.setdefault((kind, intercept, width, style), []).append((start, end))
+            groups.setdefault((kind, intercept, width, style, width_mm, color, group_id), []).append((start, end))
         except (TypeError, KeyError, ValueError):
             warnings.append(f"선 {i+1}: 격자 밖·0길이·잘못된 좌표/기울기/서식을 제외했습니다.")
     lines = []
-    for (kind, intercept, width, style), intervals in sorted(groups.items()):
+    for (kind, intercept, width, style, width_mm, color, group_id), intervals in sorted(groups.items(), key=lambda x: (x[0][0], str(x[0][1]), str(x[0][2]), str(x[0][3]), float(x[0][4] or 0), str(x[0][5]))):
         merged = []
         for start, end in sorted(intervals):
             if merged and start <= merged[-1][1]:
@@ -60,7 +83,7 @@ def normalize(sketch):
             point = lambda t: (intercept, t) if kind == "v" else (t, intercept if kind == "h" else t+intercept if kind == "b" else intercept-t)
             x1, y1 = point(start)
             x2, y2 = point(end)
-            lines.append(dict(x1=x1, y1=y1, x2=x2, y2=y2, width=width, style=style))
+            lines.append(dict(x1=x1, y1=y1, x2=x2, y2=y2, width=width, style=style, width_mm=width_mm, color=color, group_id=group_id))
     clean_texts = []
     for i, item in enumerate(texts):
         if (not isinstance(item, dict) or type(item.get("x")) is not int or type(item.get("y")) is not int or
@@ -71,7 +94,17 @@ def normalize(sketch):
             warnings.append(f"글 {i+1}: 위치나 서식이 잘못되어 제외했습니다.")
         else:
             clean_texts.append({**item, "bold": item.get("bold", False), "align": item.get("align", "center")})
-    return dict(grid=dict(cols=cols, rows=rows, cell_mm=float(mm)), lines=lines, texts=clean_texts), warnings
+    clean_colors = []
+    for c_item in (sketch.get("cell_colors") or sketch.get("cellColors") or []):
+        if not isinstance(c_item, dict):
+            continue
+        cx = c_item.get("x", c_item.get("col", c_item.get("c")))
+        cy = c_item.get("y", c_item.get("row", c_item.get("r")))
+        color_val = c_item.get("color", "")
+        if (type(cx) is int and type(cy) is int and 0 <= cx < cols and 0 <= cy < rows and
+                isinstance(color_val, str) and re.fullmatch(r"#[0-9A-Fa-f]{6}", color_val.strip())):
+            clean_colors.append(dict(x=cx, y=cy, color=color_val.strip().upper()))
+    return dict(grid=dict(cols=cols, rows=rows, cell_mm=float(mm)), lines=lines, texts=clean_texts, cell_colors=clean_colors), warnings
 
 
 def _layout(sketch, _split_lines=()):
@@ -96,6 +129,12 @@ def _layout(sketch, _split_lines=()):
                       (l["x1"] if kind == "h" else l["y1"]) <= start and
                       (l["x2"] if kind == "h" else l["y2"]) >= end]
         return max(candidates, key=rank, default=NONE)
+    def edge_detail(kind, fixed, start, end):
+        candidates = [l for l in (horizontal if kind == 'h' else vertical)
+                      if (l['y1'] if kind == 'h' else l['x1']) == fixed
+                      and (l['x1'] if kind == 'h' else l['y1']) <= start
+                      and (l['x2'] if kind == 'h' else l['y2']) >= end]
+        return max(candidates, key=lambda l: (rank((l['width'], l['style'])), l['width_mm']), default={})
     def bounds(region):
         rr, cc = zip(*region)
         return min(rr), min(cc), max(rr)+1, max(cc)+1
@@ -177,9 +216,20 @@ def _layout(sketch, _split_lines=()):
         cell = dict(row=r, col=c, rowspan=re-r, colspan=ce-c,
                     borders={k:v[0] for k,v in border.items()}, border_styles={k:v[1] for k,v in border.items()},
                     diagonal="cross" if len(ds)==2 else next(iter(ds), "none"), text="", texts=[], diagonal_styles=ds)
+        cell['border_details'] = dict(
+            top=edge_detail('h', ys[r], xs[c], xs[ce]),
+            bottom=edge_detail('h', ys[re], xs[c], xs[ce]),
+            left=edge_detail('v', xs[c], ys[r], ys[re]),
+            right=edge_detail('v', xs[ce], ys[r], ys[re]))
         for t in drawing["texts"]:
             if xs[c] <= t["x"] < xs[ce] and ys[r] <= t["y"] < ys[re]:
                 cell["texts"].append(t)
+        cell_fill = ""
+        for cc in drawing.get("cell_colors", []):
+            if xs[c] <= cc["x"] < xs[ce] and ys[r] <= cc["y"] < ys[re]:
+                cell_fill = cc["color"]
+                break
+        cell["fill"] = cell_fill
         cell["text"] = "\n".join(t["text"] for t in cell["texts"])
         cells.append(cell)
     for t in drawing["texts"]:
@@ -188,6 +238,7 @@ def _layout(sketch, _split_lines=()):
     mm = drawing["grid"]["cell_mm"]
     return dict(ok=True, rows=len(ys)-1, cols=len(xs)-1, cells=sorted(cells,key=lambda c:(c["row"],c["col"])),
                 width_mm=(xs[-1]-xs[0])*mm, height_mm=(ys[-1]-ys[0])*mm,
+                cell_colors=drawing.get("cell_colors", []),
                 warnings=warnings, x_coords=xs, y_coords=ys)
 
 
@@ -243,19 +294,33 @@ def to_hwpx(sketch, path):
             paras[align] = definition("paraProperties", "paraPr", node)
         border_cache = {}
         def border_id(cell):
-            key = repr((cell["borders"], cell.get("border_styles"), cell["diagonal"],cell.get("diagonal_styles")))
+            key = repr((cell["borders"], cell.get("border_styles"), cell["diagonal"], cell.get("diagonal_styles"), cell.get("fill"), cell.get('border_details')))
             if key in border_cache: return border_cache[key]
             parent = refs.find(HH+"borderFills")
             node = parent.makeelement(HH+"borderFill", dict(threeD="0",shadow="0",centerLine="NONE",breakCellSeparateLine="0"))
             for name, value in (("slash","slash"),("backSlash","backslash")):
                 _add(node, HH+name, type="CENTER" if cell["diagonal"] in (value,"cross") else "NONE", Crooked="0", isCounter="0")
             def line_attrs(width, style):
-                return dict(type="NONE" if width=="none" else "DOUBLE_SLIM" if width=="double" else {"solid":"SOLID","dash":"DASH","dot":"DOT"}[style],
-                            width={"none":"0.12 mm","thin":"0.12 mm","thick":"0.4 mm","double":"0.5 mm"}[width],color="#000000")
+                t_str = "NONE" if width=="none" else "DOUBLE_SLIM" if width=="double" else {"solid":"SOLID","dash":"DASH","dot":"DOT"}.get(style, "SOLID")
+                w_str = "0.12 mm"
+                if width in ("none", "thin", "thick", "double"):
+                    w_str = {"none":"0.12 mm","thin":"0.12 mm","thick":"0.4 mm","double":"0.5 mm"}[width]
+                elif isinstance(width, (int, float)):
+                    w_str = f"{width} mm"
+                elif isinstance(width, str) and "mm" in width:
+                    w_str = width
+                return dict(type=t_str, width=w_str, color="#000000")
             for side in ("left","right","top","bottom"):
-                _add(node, HH+side+"Border", **line_attrs(cell["borders"][side],cell.get("border_styles",{}).get(side,"solid")))
+                attrs = line_attrs(cell["borders"][side],cell.get("border_styles",{}).get(side,"solid"))
+                detail = cell.get('border_details', {}).get(side, {})
+                if detail:
+                    attrs.update(width=f"{detail['width_mm']:g} mm", color=detail['color'])
+                _add(node, HH+side+"Border", **attrs)
             diag = max(cell.get("diagonal_styles",{}).values(), key=lambda v:("thin","thick","double").index(v[0]), default=("thin","solid"))
             _add(node, HH+"diagonal", **line_attrs(*diag))
+            if cell.get("fill"):
+                fill_brush = _add(node, catalog._HC + "fillBrush")
+                _add(fill_brush, catalog._HC + "winBrush", faceColor=cell["fill"])
             border_cache[key] = definition("borderFills", "borderFill", node)
             return border_cache[key]
         invisible = border_id(dict(borders={s:"none" for s in ("top","bottom","left","right")}, diagonal="none"))

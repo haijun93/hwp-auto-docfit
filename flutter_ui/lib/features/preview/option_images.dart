@@ -68,6 +68,7 @@ const Map<String, OptionImage> optionImages = {
   // 작업 방식 카드 옵션(stage_selection.CARD_OPTION_STAGES)
   'spacing_enabled': _spacing,
   'spacing_page_fit': _pageFit,
+  'spacing_exclude_pagefit': _pageFit,
   'spacing_reset_existing': OptionImage(
     'reset-spacing.png',
     '기존 자간을 0%로 되돌린 뒤 다시 정리하기 전·후',
@@ -76,6 +77,11 @@ const Map<String, OptionImage> optionImages = {
   'unify_exclude_pagefit': _pageFit,
   'unify_keep_layout': _layout,
   'all_include_spacing': _allInOne,
+  'all_exclude_linespacing': _allInOne,
+  'spacing_exclude_reset': OptionImage(
+    'reset-spacing.png',
+    '기존 자간을 0%로 되돌린 뒤 다시 정리하기 전·후',
+  ),
   // 설정 화면(키 접두어는 optionImageFor에서 처리)
   'label_symbols': OptionImage('labels.png', '문두 라벨 굵게 전·후'),
   'std_hanging_indent': OptionImage(

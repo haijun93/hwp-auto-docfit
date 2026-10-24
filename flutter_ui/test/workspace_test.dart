@@ -479,8 +479,8 @@ void main() {
     state['reset_spacing'] = true;
     Future<Object?> api(String name, List<Object?> args) async {
       if (name != 'get_state') calls.add([name, ...args]);
-      if (name == 'set_reset_spacing') {
-        state['reset_spacing'] = args.first;
+      if (name == 'set_card_option') {
+        state['card_options'] = {'spacing_exclude_reset': args[1]};
         state['mode'] = 'spacing';
       }
       return Map<String, dynamic>.from(state);
@@ -490,10 +490,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('작업 방식 선택'));
     await tester.pumpAndSettle();
-    expect(find.text('기존 자간 초기화'), findsOneWidget);
-    await tester.tap(find.byKey(const Key('resetSpacingSwitch')));
+    expect(find.text('기존 자간 초기화 제외'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('spacingExcludeResetSwitch')));
     await tester.pumpAndSettle();
-    expect(calls.last, ['set_reset_spacing', false]);
+    expect(calls.last, ['set_card_option', 'spacing_exclude_reset', true]);
     expect(find.text('문서에 있던 자간은 그대로 두고 그 위에서 정리해요.'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
@@ -606,13 +606,13 @@ void main() {
     await tester.tap(find.byKey(const Key('allExcludePagefitSwitch')));
     await tester.pumpAndSettle();
     expect(calls.last, ['set_card_option', 'all_exclude_pagefit', true]);
-    final linespacingSwitch = find.byKey(const Key('allLinespacingSwitch'));
+    final linespacingSwitch = find.byKey(const Key('allExcludeLinespacingSwitch'));
     await tester.ensureVisible(linespacingSwitch);
-    expect(tester.widget<Switch>(linespacingSwitch).value, isTrue);
+    expect(tester.widget<Switch>(linespacingSwitch).value, isFalse);
     await tester.tap(linespacingSwitch);
     await tester.pumpAndSettle();
-    expect(calls.last, ['set_card_option', 'all_linespacing', false]);
-    expect(tester.widget<Switch>(linespacingSwitch).value, isFalse);
+    expect(calls.last, ['set_card_option', 'all_exclude_linespacing', true]);
+    expect(tester.widget<Switch>(linespacingSwitch).value, isTrue);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });

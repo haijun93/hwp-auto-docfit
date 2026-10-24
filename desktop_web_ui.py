@@ -484,7 +484,8 @@ class DesktopWebBridge:
             return False
         if mode == "spacing":
             options = self._card_options()
-            if not options["spacing_enabled"] and not options["spacing_page_fit"]:
+            page_fit_off = options.get("spacing_exclude_pagefit", not options.get("spacing_page_fit", True))
+            if not options.get("spacing_enabled", True) and page_fit_off:
                 return False
         suffixes = [Path(path).suffix.lower() for path in files]
         if mode == "file_format":
@@ -811,9 +812,12 @@ class DesktopWebBridge:
     # 같이 켜고 끈다(서식 통일의 쪽 맞춤은 세부 작업 기본값이 꺼짐이라 '페이지 맞춤 제외'가 기본 켜짐).
     _CARD_OPTIONS = {
         "spacing_enabled": ("spacing_enabled_var", "spacing"),
+        "spacing_exclude_pagefit": ("spacing_exclude_pagefit_var", "spacing"),
+        "spacing_exclude_reset": ("spacing_exclude_reset_var", "spacing"),
         "spacing_page_fit": ("spacing_page_fit_var", "spacing"),
         "all_exclude_pagefit": ("all_exclude_pagefit_var", "all"),
         "all_linespacing": ("all_linespacing_var", "all"),
+        "all_exclude_linespacing": ("all_exclude_linespacing_var", "all"),
         "unify_exclude_tables": ("unify_exclude_tables_var", "unify"),
         "unify_exclude_spacing": ("unify_exclude_spacing_var", "unify"),
         "unify_exclude_pagefit": ("unify_exclude_pagefit_var", "unify"),
@@ -825,7 +829,12 @@ class DesktopWebBridge:
         result = {}
         for key, (name, _) in self._CARD_OPTIONS.items():
             variable = getattr(self.gui, name, None)
-            result[key] = (key in ("spacing_enabled", "all_linespacing")) if variable is None else bool(variable.get())
+            if variable is not None:
+                result[key] = bool(variable.get())
+            elif key == "spacing_exclude_pagefit" and getattr(self.gui, "spacing_page_fit_var", None) is not None:
+                result[key] = not bool(self.gui.spacing_page_fit_var.get())
+            else:
+                result[key] = key in ("spacing_enabled", "spacing_exclude_reset", "spacing_page_fit", "all_linespacing")
         return result
 
     def set_card_option(self, key, on):
@@ -907,7 +916,8 @@ class DesktopWebBridge:
             if self.gui.running:
                 return
             options = self._card_options()
-            if mode == "spacing" and not options["spacing_enabled"] and not options["spacing_page_fit"]:
+            page_fit_off = options.get("spacing_exclude_pagefit", not options.get("spacing_page_fit", True))
+            if mode == "spacing" and not options.get("spacing_enabled", True) and page_fit_off:
                 raise ValueError("자간 정리 또는 페이지 맞춤을 하나 이상 켜 주세요.")
             self.gui.selected_mode.set(mode)
             self.gui.range_mode_var.set("pages" if range_enabled else "all")

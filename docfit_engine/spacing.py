@@ -883,6 +883,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             다시 확인한다 — '자간 -4%, 장평 93%' 조합처럼, 자간을 극한까지
             밀어붙이는 대신 장평과 나눠 분담한다.
             """
+            from docfit_core.table_limits import spacing_floor
             if not 장평_줄이기_사용:
                 return False            # 장평 줄이기 끔(기본): 자간만으로 조정한다
             # 보관: 호출자가 같은 구간을 이미 읽고 원래 값으로 되돌려 둔 (자간, 장평)
@@ -946,6 +947,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             다음단어_당김_자간_최대_퍼센트(기본 10%p)까지만 쓰고, 그래도 안 되면
             장평도 추가로 줄인다(단어_장평_추가축소_시도, 기본 90%까지).
             """
+            from docfit_core.table_limits import spacing_floor
             start, boundary = 단어모드_줄범위(anchor)
             다음글자 = 단어모드_한글자(boundary)
             if not 다음글자 or not 다음글자[2] or 다음글자[2].isspace():
@@ -1110,6 +1112,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
     if _docfit_symbol == '_연결단위_맞춤':
         def _연결단위_맞춤(문단시작, 단위):
             """한 연결 단위를 맞춘다. '자간'·'개수'·'미해결'(걸쳤던 단위), ''(걸치지 않음·대상 아님), None(중단)."""
+            from docfit_core.table_limits import spacing_floor
             단위시작, 부호시작, 부호끝, 단위끝 = 단위
             try:
                 위치 = [문단_위치(문단시작, 단위시작), 문단_위치(문단시작, 부호시작),
@@ -1180,6 +1183,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
     if _docfit_symbol == '단어중간_줄바꿈방지':
         def 단어중간_줄바꿈방지(최대시도):
             """현재 화면줄을 처리하고 다음 경계는 호출자의 줄 순회에서 처리한다."""
+            from docfit_core.table_limits import spacing_floor
             # '단어모드_분리정보'는 경계에서 양옆으로 공백을 만나면 즉시 멈추므로
             # '계약방법(공개모집' | '원칙, 수의계약)이'처럼 괄호 안 공백에서 갈라진
             # 경우는 감지하지 못한다. 아래 루프에서 먼저 자간을 좁혀 처리한다.
@@ -1386,8 +1390,14 @@ def _install(*, _docfit_namespace, _docfit_symbol):
         return bind_function(자간자동조정, _docfit_namespace)
     if _docfit_symbol == '_자간자동조정_본체':
         def _자간자동조정_본체(최대시도=None):
+            from docfit_core.table_limits import spacing_floor
             if 최대시도 is None:
                 최대시도 = 자간_최대시도_본문
+            floor = spacing_floor(globals())
+            if floor > -50:
+                # 기존 양수 자간(+50 포함)에서도 절대 하한까지 탐색할 예산을 확보한다.
+                # 실제 적용 범위는 혼합 run의 현재 최솟값과 floor 사이로 다시 제한된다.
+                최대시도 = max(최대시도, 50 - floor)
             # 세부 작업에서 '단어 분리 최종 검사'를 선택했다면 일반 자간 옵션과
             # 무관하게 실제 화면줄의 공백 없는 어절 분리를 검사해야 한다.
             if (spacing_floor(globals()) > -50 or 단어중간_줄바꿈방지_사용

@@ -577,6 +577,11 @@ final Map<String, SettingGuide> settingGuides = {
       ],
     ),
   ),
+  'spacing_exclude_reset': SettingGuide(
+    'sentence',
+    '기존 자간 초기화 제외',
+    '켜면 문서에 걸린 기존 자간을 0%로 되돌리지 않고 그 위에서 정리해요. 끄면 0%로 초기화한 뒤 정리해요.',
+  ),
   'spacing_reset_existing': SettingGuide(
     'sentence',
     '기존 자간 초기화',
@@ -768,6 +773,31 @@ final Map<String, SettingGuide> settingGuides = {
     'cards',
     '한 번에 적용: 쪽 맞춤 빼기',
     '마지막 쪽을 채우려고 간격을 바꾸는 작업을 빼요.',
+  ),
+  'all_exclude_linespacing': SettingGuide(
+    'cards',
+    '한 번에 적용: 줄 간격 적용 제외',
+    '켜면 문서의 줄 간격을 표준값으로 바꾸지 않고 그대로 둬요.',
+  ),
+  'all_cell_image_to_bg': SettingGuide(
+    'cards',
+    '한 번에 적용: 표 셀 이미지를 배경으로 변경',
+    '표 셀 안에 들어있는 단독 이미지를 셀 배경 이미지(크기에 맞추어)로 변경해요.',
+  ),
+  'spacing_cell_image_to_bg': SettingGuide(
+    'cards',
+    '자간 정리: 표 셀 이미지를 배경으로 변경',
+    '표 셀 안에 들어있는 단독 이미지를 셀 배경 이미지(크기에 맞추어)로 변경해요.',
+  ),
+  'spacing_exclude_pagefit': SettingGuide(
+    'cards',
+    '자간 정리: 페이지 맞춤 제외',
+    '켜면 문단 아래 간격 페이지 맞춤을 빼요. 끄면 페이지 맞춤을 함께 실행해요.',
+  ),
+  'spacing_page_fit': SettingGuide(
+    'cards',
+    '자간 정리: 페이지 맞춤',
+    '문단 아래 간격과 줄 간격을 미세하게 조정해 쪽 수를 맞춰요.',
   ),
   'all_linespacing': SettingGuide(
     'cards',

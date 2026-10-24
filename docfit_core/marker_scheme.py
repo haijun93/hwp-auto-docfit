@@ -51,6 +51,8 @@ def classify_marker(text) -> tuple[str, int] | None:
                 family = re.sub(r"[0-9]+|[가나다라마바사아자차카타파하]|[A-Za-z]", representative, token)
             return family, lead + match.end()
     first = stripped[0]
+    if first in "❶❷❸❹❺❻❼❽❾❿" and (len(stripped) == 1 or stripped[1].isspace()):
+        return "-", lead + 1
     if first in "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳㉠㉡㉢㉣㉤㉥㉦㉧㉨㉩㉪㉫㉬㉭㉮㉯㉰㉱㉲㉳㉴㉵㉶㉷㉸㉹㉺㉻":
         if len(stripped) == 1 or stripped[1].isspace():
             family = "①" if "①" <= first <= "⑳" else "㉠" if "㉠" <= first <= "㉭" else "㉮"

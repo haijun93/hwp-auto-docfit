@@ -215,11 +215,45 @@ class _WorkspaceState extends State<Workspace> {
   String get cardMode => mode == 'format' ? 'all' : mode;
   bool get includeSpacing => state['include_spacing'] != false;
   // '자간 정리' 카드의 '기존 자간 초기화'(세부 작업 01과 같은 값).
-  bool get resetSpacing => state['reset_spacing'] != false;
+  bool get spacingExcludeReset {
+    final opts = state['card_options'] as Map? ?? const {};
+    if (opts.containsKey('spacing_exclude_reset')) {
+      return opts['spacing_exclude_reset'] == true;
+    }
+    if (opts.containsKey('spacing_reset_existing')) {
+      return opts['spacing_reset_existing'] == false;
+    }
+    if (state.containsKey('reset_spacing')) {
+      return state['reset_spacing'] == false;
+    }
+    return true;
+  }
+  bool get resetSpacing => !spacingExcludeReset;
   bool get tableSpacing => state['table_spacing'] != false;
   bool get spacingEnabled =>
       (state['card_options'] as Map? ?? const {})['spacing_enabled'] != false;
-  bool get spacingPageFit => cardOption('spacing_page_fit');
+  bool get spacingExcludePagefit {
+    final opts = state['card_options'] as Map? ?? const {};
+    if (opts.containsKey('spacing_exclude_pagefit')) {
+      return opts['spacing_exclude_pagefit'] == true;
+    }
+    if (opts.containsKey('spacing_page_fit')) {
+      return opts['spacing_page_fit'] == false;
+    }
+    return false;
+  }
+  bool get spacingPageFit => !spacingExcludePagefit;
+  bool get allExcludeLinespacing {
+    final opts = state['card_options'] as Map? ?? const {};
+    if (opts.containsKey('all_exclude_linespacing')) {
+      return opts['all_exclude_linespacing'] == true;
+    }
+    if (opts.containsKey('all_linespacing')) {
+      return opts['all_linespacing'] == false;
+    }
+    return false;
+  }
+  bool get allLinespacing => !allExcludeLinespacing;
   // '한 번에 적용'의 '표 제외'(설정 all_exclude_tables, 기본 꺼짐).
   bool get excludeTables => state['exclude_tables'] == true;
   // 카드 옵션(한 번에 적용 '페이지 맞춤 제외', 서식 통일 '표 제외'·'자간 정리 제외'·'페이지 맞춤 제외').
@@ -1558,24 +1592,24 @@ class _WorkspaceState extends State<Workspace> {
           children: [
             const Expanded(
               child: Text(
-                '페이지 맞춤',
+                '페이지 맞춤 제외',
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
-            const OptionImageButton('spacing_page_fit'),
+            const OptionImageButton('spacing_exclude_pagefit'),
             Switch(
-              key: const Key('spacingPageFitSwitch'),
-              value: spacingPageFit,
+              key: const Key('spacingExcludePagefitSwitch'),
+              value: spacingExcludePagefit,
               onChanged: locked
                   ? null
                   : (on) =>
-                        command('set_card_option', ['spacing_page_fit', on]),
+                        command('set_card_option', ['spacing_exclude_pagefit', on]),
             ),
           ],
         ),
         if (!spacingEnabled)
           Text(
-            spacingPageFit
+            !spacingExcludePagefit
                 ? '자간·장평·줄 병합은 그대로 두고 문단·표의 세로 간격과 페이지 배치만 조정해요.'
                 : '자간 정리 또는 페이지 맞춤을 하나 이상 켜 주세요.',
             style: const TextStyle(fontSize: 12, color: _faint),
@@ -1585,20 +1619,20 @@ class _WorkspaceState extends State<Workspace> {
           children: [
             const Expanded(
               child: Text(
-                '기존 자간 초기화',
+                '기존 자간 초기화 제외',
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
             Switch(
-              key: const Key('resetSpacingSwitch'),
-              value: resetSpacing,
+              key: const Key('spacingExcludeResetSwitch'),
+              value: spacingExcludeReset,
               onChanged: locked || !spacingEnabled
                   ? null
-                  : (on) => command('set_reset_spacing', [on]),
+                  : (on) => command('set_card_option', ['spacing_exclude_reset', on]),
             ),
           ],
         ),
-        if (spacingEnabled && !resetSpacing)
+        if (spacingEnabled && spacingExcludeReset)
           const Text(
             '문서에 있던 자간은 그대로 두고 그 위에서 정리해요.',
             style: TextStyle(fontSize: 12, color: _faint),
@@ -1619,6 +1653,24 @@ class _WorkspaceState extends State<Workspace> {
                 onChanged: locked || !spacingEnabled
                     ? null
                     : (on) => command('set_table_spacing', [!on]),
+              ),
+            ],
+          ),
+        if (showTableOptions)
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  '표 셀 이미지를 배경으로 변경',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+              Switch(
+                key: const Key('spacingCellImageToBgSwitch'),
+                value: cardOption('spacing_cell_image_to_bg'),
+                onChanged: locked || !spacingEnabled
+                    ? null
+                    : (on) => command('set_card_option', ['spacing_cell_image_to_bg', on]),
               ),
             ],
           ),
@@ -1708,6 +1760,24 @@ class _WorkspaceState extends State<Workspace> {
               ),
             ],
           ),
+        if (showTableOptions)
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  '표 셀 이미지를 배경으로 변경',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+              Switch(
+                key: const Key('allCellImageToBgSwitch'),
+                value: cardOption('all_cell_image_to_bg'),
+                onChanged: locked || excludeTables
+                    ? null
+                    : (on) => command('set_card_option', ['all_cell_image_to_bg', on]),
+              ),
+            ],
+          ),
         if (excludeTables)
           const Text(
             '표 관련 작업은 모두 빼고 정리해요. 제목·개요 서식 표는 정리해요.',
@@ -1717,22 +1787,27 @@ class _WorkspaceState extends State<Workspace> {
           children: [
             const Expanded(
               child: Text(
-                '줄 간격 적용',
+                '줄 간격 적용 제외',
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
             Switch(
-              key: const Key('allLinespacingSwitch'),
-              value:
-                  (state['card_options'] as Map? ??
-                      const {})['all_linespacing'] !=
-                  false,
+              key: const Key('allExcludeLinespacingSwitch'),
+              value: allExcludeLinespacing,
+
+
+
               onChanged: locked
                   ? null
-                  : (on) => command('set_card_option', ['all_linespacing', on]),
+                  : (on) => command('set_card_option', ['all_exclude_linespacing', on]),
             ),
           ],
         ),
+        if (allExcludeLinespacing)
+          const Text(
+            '본문·표 줄 간격을 표준값으로 바꾸지 않고 그대로 둬요.',
+            style: TextStyle(fontSize: 12, color: _faint),
+          ),
         // 켜면 문단 아래 간격 페이지 맞춤·관련 문단 페이지 배치를 뺀다.
         Row(
           children: [

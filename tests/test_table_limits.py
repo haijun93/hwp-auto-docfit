@@ -28,7 +28,7 @@ class TableLimitsTest(unittest.TestCase):
                 TableLimits.from_settings(settings)
 
     def test_absolute_budget_includes_mixed_negative_spacing(self):
-        for original, budget in (([0, 0], 25), ([-24, -10], 1), ([-25], 0), ([-30], 0)):
+        for original, budget in (([0, 0], 25), ([-24, -10], 1), ([-25], 0), ([-30], 0), ([50], 75)):
             self.assertEqual(TableLimits().shrink_budget(original), budget)
 
     def test_body_and_single_cell_exception(self):

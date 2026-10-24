@@ -199,6 +199,20 @@ class FlowService:
         """Publish a selected template through Hancom's native clipboard format."""
         raise ServiceError("FEATURE_DISABLED", "표 서식 모음은 현재 알파 버전에서 비활성화되어 있습니다.")
 
+    def export_shapes_hwpx(self, snapshot):
+        """다이어그램 스냅샷을 한/글 도형 HWPX 문서로 생성해 내보낸다."""
+        import uuid
+        from docfit_core.diagram_shapes import diagram_to_hwpx
+        folder = self.root / "exports"
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / (uuid.uuid4().hex + ".hwpx")
+        try:
+            diagram_to_hwpx(snapshot, path)
+        except Exception as exc:
+            path.unlink(missing_ok=True)
+            raise ServiceError("INVALID_DIAGRAM_SHAPES", str(exc)) from exc
+        return {"path": str(path)}
+
     def export_png(self, encoded):
         import uuid
         data = self.png_bytes(encoded)

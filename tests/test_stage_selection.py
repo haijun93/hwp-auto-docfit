@@ -114,6 +114,44 @@ class StageSelectionTest(unittest.TestCase):
         self.assertEqual(card_option_off_keys({"unify_exclude_pagefit": True, "unify_exclude_tables": False}, "unify"),
                          {"page_fit"})
         self.assertEqual(card_option_off_keys({"spacing_reset_existing": False}, "spacing"), {"reset_spacing"})
+        self.assertEqual(card_option_off_keys({"spacing_exclude_reset": True}, "spacing"), {"reset_spacing"})
+        self.assertEqual(card_option_off_keys({"spacing_exclude_pagefit": True}, "spacing"), {"page_fit", "page_group"})
+
+    def test_card_option_exclusion_modes(self):
+        self.assertEqual(card_option_keys("spacing_exclude_pagefit", "spacing"), ("page_fit", "page_group"))
+        self.assertEqual(card_option_keys("spacing_exclude_reset", "spacing"), ("reset_spacing",))
+
+        self.assertEqual(card_option_stage_values("spacing_exclude_pagefit", True, {}, "spacing"),
+                         {"page_fit": False, "page_group": False})
+        self.assertEqual(card_option_stage_values("spacing_exclude_pagefit", False, {}, "spacing"),
+                         {"page_fit": True, "page_group": True})
+        self.assertEqual(card_option_stage_values("spacing_exclude_reset", True, {}, "spacing"),
+                         {"reset_spacing": False})
+        self.assertEqual(card_option_stage_values("spacing_exclude_reset", False, {}, "spacing"),
+                         {"reset_spacing": True})
+
+        self.assertTrue(default_choice("reset_spacing", "spacing"))
+        self.assertFalse(default_choice("page_fit", "spacing"))
+        self.assertFalse(default_choice("page_group", "spacing"))
+
+    def test_settings_migration_idempotent(self):
+        from docfit_core.config_store import migrate_settings
+        old = {
+            "all_linespacing": True,
+            "spacing_page_fit": False,
+            "spacing_reset_existing": True,
+        }
+        migrated = migrate_settings(old)
+        self.assertEqual(migrated["all_exclude_linespacing"], False)
+        self.assertEqual(migrated["spacing_exclude_pagefit"], True)
+        self.assertEqual(migrated["spacing_exclude_reset"], False)
+        self.assertEqual(migrated["card_options_rev"], 2)
+        self.assertNotIn("all_linespacing", migrated)
+        self.assertNotIn("spacing_page_fit", migrated)
+        self.assertNotIn("spacing_reset_existing", migrated)
+
+        remigrated = migrate_settings(migrated)
+        self.assertEqual(migrated, remigrated)
 
 
 if __name__ == "__main__":

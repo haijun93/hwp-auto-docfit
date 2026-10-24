@@ -1654,6 +1654,7 @@ _표준_또는_원본여백 = _engine_resolve('docfit_engine.formatter', '_표�
 들여쓰기_공백_맞추기 = _engine_resolve('docfit_engine.formatter', '들여쓰기_공백_맞추기', globals())
 
 표준서식_기호_별칭 = {
+    **{marker: "-" for marker in "❶❷❸❹❺❻❼❽❾❿"},
     # ☞로 시작하는 문장은 ㅇ와 동일한 폰트·크기·굵기·문단위간격 규칙을 적용한다.
     "☞": "ㅇ",
     # 공식 규정상 'ㅇ'은 한글 자소 '이응'(U+3147)을 써야 하지만, 문자표에서

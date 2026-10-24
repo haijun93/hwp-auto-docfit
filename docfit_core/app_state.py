@@ -8,7 +8,7 @@ from .stage_selection import SPACING_STAGE_KEYS, default_choice, stages_for_mode
 class RunOptions:
     mode: Literal["spacing", "unify", "format", "all"] = "all"
     include_spacing: bool = True
-    reset_spacing: bool = True
+    reset_spacing: bool = False
     table_spacing: bool = True
     exclude_tables: bool = False
     verify_result: bool = True
@@ -17,6 +17,11 @@ class RunOptions:
     page_range: str = ""
     spacing_enabled: bool = True
     spacing_page_fit: bool = False
+    spacing_exclude_pagefit: bool | None = None
+    spacing_exclude_reset: bool | None = None
+    all_exclude_linespacing: bool | None = None
+    spacing_cell_image_to_bg: bool = False
+    all_cell_image_to_bg: bool = False
 
     def __post_init__(self):
         if self.mode not in ("spacing", "unify", "format", "all"):
@@ -35,15 +40,19 @@ class RunOptions:
         selected = stage_choices.get(mode, {})
         result = {key: bool(selected.get(key, default_choice(key, mode)))
                   for key, _ in stages_for_mode(mode)}
-        if "reset_spacing" in result:
-            result["reset_spacing"] = self.reset_spacing
+        if 'cell_image_to_bg' in result:
+            result['cell_image_to_bg'] = bool(selected.get('cell_image_to_bg',
+                self.spacing_cell_image_to_bg if mode == 'spacing' else self.all_cell_image_to_bg))
+        if "reset_spacing" in result and self.spacing_exclude_reset is not None:
+            result["reset_spacing"] = not self.spacing_exclude_reset
         if mode == "spacing":
             # 자간 기능을 끄면 초기화·줄 병합·표/컨트롤·대표 서식 보정까지 실행하지 않는다.
             if not self.spacing_enabled:
                 for key in (*SPACING_STAGE_KEYS, "style_unify"):
                     result[key] = False
             for key in ("page_fit", "page_group"):
-                result[key] = self.spacing_page_fit and bool(selected.get(key, True))
+                page_fit_on = not self.spacing_exclude_pagefit if self.spacing_exclude_pagefit is not None else self.spacing_page_fit
+                result[key] = page_fit_on and bool(selected.get(key, True))
         if self.exclude_tables:
             result = without_tables(result)
         if not self.effective_table_spacing:

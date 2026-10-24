@@ -37,12 +37,17 @@ LABELS = {
  'developer_mode':'개발자 모드', 'all_include_spacing':'한 번에 적용: 자간 포함',
  'all_exclude_tables':'한 번에 적용: 표 제외', 'all_exclude_pagefit':'한 번에 적용: 페이지 맞춤 제외',
  'all_linespacing':'한 번에 적용: 줄 간격 적용',
+ 'all_exclude_linespacing':'한 번에 적용: 줄 간격 적용 제외',
+ 'all_cell_image_to_bg':'한 번에 적용: 표 셀 내 이미지를 배경 이미지로 변경',
  'unify_exclude_tables':'서식 통일: 표 제외', 'unify_exclude_spacing':'서식 통일: 자간 제외',
  'unify_exclude_pagefit':'서식 통일: 페이지 맞춤 제외', 'unify_keep_layout':'서식 통일: 원본 쪽 구성 유지',
  'unify_full_format':'서식 통일: 전체 서식 맞춤', 'unify_result_window':'서식 통일 결과 창 표시',
  'spacing_reset_existing':'기존 자간 초기화',
+ 'spacing_exclude_reset':'자간 정리: 기존 자간 초기화 제외',
  'spacing_enabled':'자간 정리: 자간 기능 사용',
  'spacing_page_fit':'자간 정리: 페이지 맞춤',
+ 'spacing_exclude_pagefit':'자간 정리: 페이지 맞춤 제외',
+ 'spacing_cell_image_to_bg':'자간 정리: 표 셀 내 이미지를 배경 이미지로 변경',
 }
 EXCLUDED = {'abbreviations', 'abbreviation_source', 'active_format_profile'} | {k for k in DEFAULTS if k.endswith('_rev')}
 
@@ -130,15 +135,15 @@ class ConfigurationService:
                 except (InvalidOperation,ValueError):
                     raise ServiceError('INVALID_INPUT',field['label']+'에 유효한 숫자를 입력해 주세요.')
                 value = value.strip()
-            clean[key] = value
-        def update(settings):
-            if revision(settings)!=expected_revision:
             if key in {'table_linespacing_min', 'table_spacing_min'}:
                 from docfit_core.table_limits import TableLimits
                 try:
                     TableLimits.from_settings({key: value})
                 except ValueError as exc:
                     raise ServiceError('INVALID_INPUT', str(exc))
+            clean[key] = value
+        def update(settings):
+            if revision(settings)!=expected_revision:
                 raise ServiceError('SETTINGS_CHANGED','다른 화면에서 설정이 바뀌었습니다. 다시 불러온 뒤 적용해 주세요.')
             settings.update(migrate(settings))
             for key,value in clean.items():

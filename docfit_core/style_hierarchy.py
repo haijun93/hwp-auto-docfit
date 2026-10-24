@@ -84,6 +84,8 @@ def leading_marker(text, scheme=None):
     roman = re.match(r"(?:[IVX]|[IVXLCDM]{2,})[.．](?=\s|$)", stripped)
     if roman:
         return roman.group(), "중제목"
+    if stripped[:1] in "❶❷❸❹❺❻❼❽❾❿" and len(stripped) > 1 and stripped[1].isspace():
+        return stripped[0], "내용"
     circled = CIRCLED_MARKER.match(stripped)
     if circled:
         # 역할은 기호만으로 정할 수 없으므로 문서 내 서식과 문맥으로 판정한다.
@@ -130,7 +132,7 @@ def analyze_hierarchy(paragraphs):
     styles = defaultdict(list)
     for index, record in enumerate(records):
         role = record["marker_role"]
-        if CIRCLED_MARKER.fullmatch(record["marker"]):
+        if CIRCLED_MARKER.fullmatch(record["marker"]) and not record["marker_role"]:
             candidates = []
             for name in CIRCLED_ROLES:
                 value = role_indent[name]

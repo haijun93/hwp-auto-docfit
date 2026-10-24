@@ -2,15 +2,18 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'table_sketch_models.dart';
 
-/// 점 p에서 선분 a-b 사이의 최단거리 계산.
-double distanceToSegment(Offset p, Offset a, Offset b) {
-  final ab = b - a;
-  final ap = p - a;
-  final len2 = ab.dx * ab.dx + ab.dy * ab.dy;
-  if (len2 == 0) return (p - a).distance;
-  final t = ((ap.dx * ab.dx + ap.dy * ab.dy) / len2).clamp(0.0, 1.0);
-  final proj = Offset(a.dx + t * ab.dx, a.dy + t * ab.dy);
-  return (p - proj).distance;
+/// 16진수 색상 문자열 파싱 (#RRGGBB 또는 #AARRGGBB).
+Color? parseHexColor(String? hex) {
+  if (hex == null || hex.isEmpty) return null;
+  String clean = hex.replaceAll('#', '').trim();
+  if (clean.startsWith('0x') || clean.startsWith('0X')) {
+    clean = clean.substring(2);
+  }
+  if (clean.length == 6) {
+    clean = 'FF$clean';
+  }
+  final val = int.tryParse(clean, radix: 16);
+  return val != null ? Color(val) : null;
 }
 
 /// 시작점과 끝점을 바탕으로 가장 가까운 격자점 및 가로/세로/45° 대각선으로 스냅된 끝 격자점을 계산.
@@ -95,15 +98,28 @@ class TableSketchPainter extends CustomPainter {
     required this.doc,
     required this.cellSize,
     this.selectedLineIndex,
+    Set<int>? selectedLineIndices,
     this.previewLine,
     this.previewRect,
-  });
+    this.hoveredSegmentLine,
+    this.marqueeRect,
+    this.verticalGuides,
+    this.horizontalGuides,
+  }) : selectedLineIndices = {
+         if (selectedLineIndices != null) ...selectedLineIndices,
+         if (selectedLineIndex != null) selectedLineIndex,
+       };
 
   final TableSketchDoc doc;
   final double cellSize;
   final int? selectedLineIndex;
+  final Set<int> selectedLineIndices;
   final SketchLine? previewLine;
   final Rect? previewRect;
+  final SketchLine? hoveredSegmentLine;
+  final Rect? marqueeRect;
+  final List<double>? verticalGuides;
+  final List<double>? horizontalGuides;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -111,17 +127,29 @@ class TableSketchPainter extends CustomPainter {
     final bgPaint = Paint()..color = Colors.white;
     canvas.drawRect(Offset.zero & size, bgPaint);
 
-    // 2. 바둑판 점선 격자 (연회색 점선)
+    // 2. 셀 배경색 채우기
+    _drawCellColors(canvas);
+
+    // 3. 바둑판 점선 격자 (연회색 점선)
     _drawGrid(canvas, size);
 
-    // 3. 기존에 그려진 선들
+    // 4. 스마트 가이드 (빨간 점선)
+    _drawSmartGuides(canvas, size);
+
+    // 5. 기존에 그려진 선들
     for (int i = 0; i < doc.lines.length; i++) {
       final line = doc.lines[i];
-      final isSelected = (i == selectedLineIndex);
-      _drawSketchLine(canvas, line, isSelected: isSelected);
+      final isSelected = selectedLineIndices.contains(i);
+      final showHandles = isSelected && selectedLineIndices.length == 1;
+      _drawSketchLine(
+        canvas,
+        line,
+        isSelected: isSelected,
+        showHandles: showHandles,
+      );
     }
 
-    // 4. 드래그 중인 미리보기 선 / 사각형
+    // 6. 드래그 중인 미리보기 선 / 사각형
     if (previewLine != null) {
       _drawSketchLine(canvas, previewLine!, isPreview: true);
     }
@@ -129,12 +157,22 @@ class TableSketchPainter extends CustomPainter {
       _drawPreviewRect(canvas, previewRect!);
     }
 
-    // 5. 텍스트 렌더링
+    // 7. 정밀 지우개 호버 세그먼트 강조 (연한 빨간색 두껍게)
+    if (hoveredSegmentLine != null) {
+      _drawHoveredSegment(canvas, hoveredSegmentLine!);
+    }
+
+    // 8. 올가미(마퀴) 선택 사각형
+    if (marqueeRect != null) {
+      _drawMarquee(canvas, marqueeRect!);
+    }
+
+    // 9. 텍스트 렌더링
     for (final textItem in doc.texts) {
       _drawSketchText(canvas, textItem);
     }
 
-    // 6. 종이 테두리 (가장자리 회색 선)
+    // 10. 종이 테두리 (가장자리 회색 선)
     final borderPaint = Paint()
       ..color = const Color(0xFFCBD5E1)
       ..style = PaintingStyle.stroke
@@ -142,18 +180,31 @@ class TableSketchPainter extends CustomPainter {
     canvas.drawRect(Offset.zero & size, borderPaint);
   }
 
+  void _drawCellColors(Canvas canvas) {
+    for (final cc in doc.cellColors) {
+      final color = parseHexColor(cc.color);
+      if (color != null) {
+        final r = Rect.fromLTWH(
+          cc.x * cellSize,
+          cc.y * cellSize,
+          cellSize,
+          cellSize,
+        );
+        canvas.drawRect(r, Paint()..color = color);
+      }
+    }
+  }
+
   void _drawGrid(Canvas canvas, Size size) {
     final cols = doc.grid.cols;
     final rows = doc.grid.rows;
 
     final gridPath = Path();
-    // 세로선들
     for (int c = 0; c <= cols; c++) {
       final x = c * cellSize;
       gridPath.moveTo(x, 0);
       gridPath.lineTo(x, rows * cellSize);
     }
-    // 가로선들
     for (int r = 0; r <= rows; r++) {
       final y = r * cellSize;
       gridPath.moveTo(0, y);
@@ -168,24 +219,98 @@ class TableSketchPainter extends CustomPainter {
     canvas.drawPath(dashedGrid, gridPaint);
   }
 
+  void _drawSmartGuides(Canvas canvas, Size size) {
+    final guidePaint = Paint()
+      ..color = const Color(0xFFEF4444)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2;
+
+    if (verticalGuides != null) {
+      for (final x in verticalGuides!) {
+        final path = Path()
+          ..moveTo(x, 0)
+          ..lineTo(x, size.height);
+        final dashed = createDashedPath(path, 4.0, 4.0);
+        canvas.drawPath(dashed, guidePaint);
+      }
+    }
+    if (horizontalGuides != null) {
+      for (final y in horizontalGuides!) {
+        final path = Path()
+          ..moveTo(0, y)
+          ..lineTo(size.width, y);
+        final dashed = createDashedPath(path, 4.0, 4.0);
+        canvas.drawPath(dashed, guidePaint);
+      }
+    }
+  }
+
+  void _drawHoveredSegment(Canvas canvas, SketchLine seg) {
+    final p1 = Offset(seg.x1 * cellSize, seg.y1 * cellSize);
+    final p2 = Offset(seg.x2 * cellSize, seg.y2 * cellSize);
+
+    final glow = Paint()
+      ..color = const Color(0x66EF4444)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 10.0
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(p1, p2, glow);
+
+    final linePaint = Paint()
+      ..color = const Color(0xFFDC2626)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.0
+      ..strokeCap = StrokeCap.square;
+    canvas.drawLine(p1, p2, linePaint);
+  }
+
+  void _drawMarquee(Canvas canvas, Rect rect) {
+    final fillPaint = Paint()
+      ..color = const Color(0x1F2563EB)
+      ..style = PaintingStyle.fill;
+    canvas.drawRect(rect, fillPaint);
+
+    final borderPaint = Paint()
+      ..color = const Color(0xFF2563EB)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2;
+    final path = Path()..addRect(rect);
+    final dashed = createDashedPath(path, 4.0, 4.0);
+    canvas.drawPath(dashed, borderPaint);
+  }
+
   void _drawSketchLine(
     Canvas canvas,
     SketchLine line, {
     bool isSelected = false,
     bool isPreview = false,
+    bool showHandles = false,
   }) {
     final p1 = Offset(line.x1 * cellSize, line.y1 * cellSize);
     final p2 = Offset(line.x2 * cellSize, line.y2 * cellSize);
 
-    final baseStrokeWidth = switch (line.width) {
+    double baseStrokeWidth = switch (line.width) {
       'thick' => 3.0,
       'double' => 1.0,
       _ => 1.4,
     };
+    if (line.widthMm != null && line.widthMm! > 0) {
+      baseStrokeWidth = math.max(
+        0.8,
+        line.widthMm! * (cellSize / doc.grid.cellMm),
+      );
+    }
 
-    final color = isPreview
-        ? const Color(0xFF2563EB).withValues(alpha: 0.8)
-        : (isSelected ? const Color(0xFF1D4ED8) : const Color(0xFF0F172A));
+    Color color;
+    if (isPreview) {
+      color = const Color(0xFF2563EB).withValues(alpha: 0.8);
+    } else if (isSelected) {
+      color = const Color(0xFF1D4ED8);
+    } else if (line.color != null && line.color!.isNotEmpty) {
+      color = parseHexColor(line.color) ?? const Color(0xFF0F172A);
+    } else {
+      color = const Color(0xFF0F172A);
+    }
 
     // 선택된 선 하이라이트 (바깥쪽 푸른 글로우)
     if (isSelected) {
@@ -196,10 +321,19 @@ class TableSketchPainter extends CustomPainter {
         ..strokeCap = StrokeCap.round;
       canvas.drawLine(p1, p2, glowPaint);
 
-      // 끝점 핸들
-      final handlePaint = Paint()..color = const Color(0xFF2563EB);
-      canvas.drawCircle(p1, 4.0, handlePaint);
-      canvas.drawCircle(p2, 4.0, handlePaint);
+      if (showHandles) {
+        // 끝점 핸들 (원형 핸들: 흰 바탕에 파란 테두리)
+        final handleFill = Paint()..color = Colors.white;
+        final handleBorder = Paint()
+          ..color = const Color(0xFF2563EB)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.0;
+
+        canvas.drawCircle(p1, 5.0, handleFill);
+        canvas.drawCircle(p1, 5.0, handleBorder);
+        canvas.drawCircle(p2, 5.0, handleFill);
+        canvas.drawCircle(p2, 5.0, handleBorder);
+      }
     }
 
     final paint = Paint()
@@ -244,8 +378,7 @@ class TableSketchPainter extends CustomPainter {
   }
 
   void _drawPreviewRect(Canvas canvas, Rect rect) {
-    final path = Path()
-      ..addRect(rect);
+    final path = Path()..addRect(rect);
     final dashed = createDashedPath(path, 6.0, 4.0);
     final paint = Paint()
       ..color = const Color(0xFF2563EB).withValues(alpha: 0.8)
@@ -262,16 +395,14 @@ class TableSketchPainter extends CustomPainter {
       cellSize,
     );
 
-    // 텍스트 페인터 설정
     final textStyle = TextStyle(
       color: const Color(0xFF0F172A),
       fontSize: math.max(10.0, cellSize * 0.7),
       fontWeight: textItem.bold ? FontWeight.bold : FontWeight.normal,
     );
 
-    final textSpan = TextSpan(text: textItem.text, style: textStyle);
     final textPainter = TextPainter(
-      text: textSpan,
+      text: TextSpan(text: textItem.text, style: textStyle),
       textAlign: switch (textItem.align) {
         'left' => TextAlign.left,
         'right' => TextAlign.right,
@@ -281,7 +412,6 @@ class TableSketchPainter extends CustomPainter {
     );
     textPainter.layout();
 
-    // 칸 기준 정렬 위치 계산
     double dx = cellRect.left;
     if (textItem.align == 'center') {
       dx = cellRect.center.dx - (textPainter.width / 2.0);
@@ -292,7 +422,6 @@ class TableSketchPainter extends CustomPainter {
     }
     final dy = cellRect.center.dy - (textPainter.height / 2.0);
 
-    // 글자 배경에 약간의 반투명 흰색 패딩을 그려 격자선과 겹쳐도 잘 보이도록 처리
     final bgRect = Rect.fromLTWH(
       dx - 2.0,
       dy - 1.0,

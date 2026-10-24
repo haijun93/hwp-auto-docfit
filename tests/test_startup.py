@@ -114,8 +114,9 @@ class StartupTest(unittest.TestCase):
         roles = ['소제목', '본문', '내용', '내용', '내용', '부연설명', '본문', '내용']
         with patch.dict(collect.__globals__, {
             'hwp': doc, 'hwp_run': doc.run,
-            '현재문단_텍스트': lambda: roles[doc.pos[1]],
-            '보고서_문단역할': lambda text: text,
+            '현재문단_텍스트': lambda: {'소제목': '□ 제목', '본문': ' ㅇ 본문',
+                                        '내용': '   - 내용', '부연설명': '     ※ 설명'}.get(roles[doc.pos[1]], ''),
+            '보고서_문단역할': lambda text: roles[doc.pos[1]],
             '중단_요청됨': lambda: False,
         }):
             self.assertEqual([p[0][1] for p in collect((0, 1, 0))], [1, 2, 3, 4, 5])

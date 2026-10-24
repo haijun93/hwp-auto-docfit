@@ -3148,6 +3148,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         if 종류 in ('title1', 'title2', 'title3', 'overview'))
             if 뒤빈줄:
                 로그(f"제목·개요 표와 첫 항목기호 문장 사이 빈 줄 {뒤빈줄}개 삭제")
+            from docfit_core.report_corrections import join_title_overview
+            지운수 += join_title_overview(root, 변환목록)
             return 지운수 + 뒤빈줄
         return bind_function(_제목개요_빈줄_정리, _docfit_namespace)
     if _docfit_symbol == '_서식표_글':
@@ -5388,7 +5390,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 return "제목"
             if c in _본문_기호:
                 return "본문"
-            if c in _내용_기호:
+            if c in _내용_기호 or c in "❶❷❸❹❺❻❼❽❾❿":
                 return "내용"
             return None
         return bind_function(_부모문단_유형, _docfit_namespace)
@@ -6148,7 +6150,14 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     elif _xml_내어쓰기_기준쌍:
                         # 예시에 같은 문장이 없으면 여백을 비워 두고 '최종 서식 기준 내어쓰기'(한/글 Shift+Tab 실측)에 맡긴다.
                         # 추정 여백을 먼저 넣으면 그 위에서 실측이 겹쳐 문단 전체가 오른쪽으로 밀렸다(2026-10-21 화면 대조).
-                        내어쓰기쌍 = (0, 0)
+                        from docfit_core.xml_hanging_indent import marker_end_offset
+                        marker_end = marker_end_offset(formatted)
+                        paren_label = marker_end is not None and formatted[marker_end:].lstrip().startswith("(")
+                        내어쓰기쌍 = (hanging_indent_pair(formatted, size_pt=size or 15.0,
+                                          ratio=표준서식_설정["기본_장평"] if 표준서식_장평_사용 else 100)
+                                    if paren_label else (0, 0))
+                        if paren_label and 내어쓰기쌍 is not None:
+                            _xml_기준확정.add(formatted)
                     if 내어쓰기쌍 is None:
                         내어쓰기쌍 = hanging_indent_pair(
                             formatted,
@@ -6163,10 +6172,12 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     text=formatted, font=font if selected.get('font', True) else None,
                     font_type=글꼴형식,
                     size_pt=size if selected.get('size', True) else None,
-                    bold=bold if '복사_문단모양' in 표준서식_설정 else (True if bold else None),
+                    bold=(bool(paragraph_bold and enabled) if readable.lstrip()[:1] in '❶❷❸❹❺❻❼❽❾❿'
+                          else bold if '복사_문단모양' in 표준서식_설정 else (True if bold else None)),
                     ratio=표준서식_설정['기본_장평'] if 표준서식_장평_사용 else None,
                     line_percent=표준서식_설정['기본_줄간격_퍼센트'] if 표준서식_줄간격_사용 else None,
-                    prev_pt=prev, bold_spans=tuple(spans), char_extra=추가[0],
+                    prev_pt=(0 if prev is not None and readable.lstrip()[:1] in "❶❷❸❹❺❻❼❽❾❿" else prev),
+                    bold_spans=tuple(spans), char_extra=추가[0],
                     para_extra=tuple(sorted(문단추가.items())))
 
             try:
@@ -6178,7 +6189,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     continuation_target = Path(target).with_name(f".continuation-{uuid4().hex}.hwpx")
                     try:
                         aligned = align_hwpx(target, continuation_target, original=source,
-                                             rules=표준서식_설정.get("내어쓰기_규칙", {}))
+                                             rules=표준서식_설정.get("내어쓰기_규칙", {}),
+                                             include_plain=True)
                         if aligned:
                             continuation_target.replace(target)
                             result.formatted_texts.update(aligned)

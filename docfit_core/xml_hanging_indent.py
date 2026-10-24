@@ -76,6 +76,7 @@ DEFAULT_SYMBOL_RULES: tuple[tuple[str, int, str, float, bool, bool], ...] = (
 )
 
 DEFAULT_SYMBOL_ALIASES: dict[str, str] = {
+    **{marker: "-" for marker in "❶❷❸❹❺❻❼❽❾❿"},
     "☞": "ㅇ",
     "○": "ㅇ",
     "ㅁ": "□",
@@ -889,6 +890,8 @@ def apply_xml_hanging_indent(
 
             readable = normalize_leading_dot(original_text)
             prev_pt = tracker.spacing_for(readable, spacing_table, 150) if format_markers else None
+            if prev_pt is not None and readable.lstrip()[:1] in "❶❷❸❹❺❻❼❽❾❿":
+                prev_pt = 0
             rule = find_symbol_rule(readable) if format_markers else None
 
             formatted = readable

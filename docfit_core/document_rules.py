@@ -261,7 +261,7 @@ def paragraph_level(text):
         return "box"
     if marker in ("ㅇ", "○", "☞"):
         return "circle"
-    if marker == "-":
+    if marker in "-❶❷❸❹❺❻❼❽❾❿":
         return "dash"
     if marker in ("*", "※", "→", "•", "·", "‧", "∙", "⋅", "ㆍ", "●"):
         return "note"

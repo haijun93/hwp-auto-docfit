@@ -10,7 +10,7 @@ import 'table_sketch_api.dart';
 import 'table_sketch_models.dart';
 import 'table_sketch_painter.dart';
 
-enum SketchToolMode { line, rect, eraser, text, select }
+enum SketchToolMode { line, rect, eraser, preciseEraser, text, select, cellColor }
 
 /// 표그림판 화면: 점선 격자 용지에 직선을 그려 한/글 표로 변환 및 복사.
 class TableSketchScreen extends StatefulWidget {
@@ -29,6 +29,8 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
   SketchToolMode _tool = SketchToolMode.line;
   String _lineWidth = 'thin'; // thin, thick, double
   String _lineStyle = 'solid'; // solid, dash, dot
+  double? _selectedLineWidthMm;
+  String _activeColor = '#DBEAFE';
 
   // 문서 데이터
   late TableSketchDoc _doc;
@@ -36,7 +38,19 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
   final List<TableSketchDoc> _redoStack = [];
 
   // 선택 및 드래그 제스처 상태
-  int? _selectedLineIndex;
+  Set<int> _selectedLineIndices = {};
+  int? get _selectedLineIndex =>
+      _selectedLineIndices.isEmpty ? null : _selectedLineIndices.first;
+  SketchLine? _hoverSegment;
+  bool _panDidErase = false;
+  Rect? _marqueeRect;
+  List<SketchLine> _clipboardLines = [];
+  List<double>? _verticalGuides;
+  List<double>? _horizontalGuides;
+  int? _activeHandle; // 1 or 2
+  bool _isMovingSelection = false;
+  bool _isMarqueeSelecting = false;
+
   Offset? _dragStart;
   Offset? _dragCurrent;
   SketchLine? _previewLine;
@@ -66,7 +80,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
     _requestPreview();
   }
 
-  // 끌기는 언제나 그리기에 쓰고(스크롤 상자가 끌기를 가져가면 선이 그려지지 않았다), 화면 이동은 휠·스크롤 막대로 한다.
+  // 끌기는 언제나 그리기에 쓰고, 화면 이동은 휠·스크롤 막대로 한다.
   final ScrollController _vScroll = ScrollController();
   final ScrollController _hScroll = ScrollController();
 
@@ -103,7 +117,9 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
     setState(() {
       _redoStack.add(_doc.clone());
       _doc = _undoStack.removeLast();
-      _selectedLineIndex = null;
+      _selectedLineIndices.clear();
+      _hoverSegment = null;
+      _marqueeRect = null;
       _previewLine = null;
       _previewRect = null;
     });
@@ -115,7 +131,9 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
     setState(() {
       _undoStack.add(_doc.clone());
       _doc = _redoStack.removeLast();
-      _selectedLineIndex = null;
+      _selectedLineIndices.clear();
+      _hoverSegment = null;
+      _marqueeRect = null;
       _previewLine = null;
       _previewRect = null;
     });
@@ -144,7 +162,9 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
         _saveSnapshot();
         setState(() {
           _doc = TableSketchDoc(grid: _doc.grid);
-          _selectedLineIndex = null;
+          _selectedLineIndices.clear();
+          _hoverSegment = null;
+          _marqueeRect = null;
           _previewLine = null;
           _previewRect = null;
         });
@@ -286,7 +306,9 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
       );
 
       _doc = newDoc;
-      _selectedLineIndex = null;
+      _selectedLineIndices.clear();
+      _hoverSegment = null;
+      _marqueeRect = null;
       _previewLine = null;
       _previewRect = null;
     });
@@ -298,61 +320,73 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
   Future<void> _saveSketch() async {
     final name = _saveNameController.text.trim();
     if (name.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('저장할 이름을 입력하세요.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('서식 이름을 입력해 주세요.')),
+      );
       return;
     }
-    final res = await _sketchApi.save(name, _doc.toJson());
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            res['ok'] == true ? '저장되었습니다.' : '저장 실패: ${res['message']}',
+    try {
+      final res = await _sketchApi.save(name, _doc.toJson());
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res['message']?.toString() ?? '서식이 저장되었습니다.'),
           ),
-        ),
-      );
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('저장 실패: $e')),
+        );
+      }
     }
   }
 
   Future<void> _openListDialog() async {
-    final list = await _sketchApi.list();
+    List<String> items = [];
+    try {
+      items = await _sketchApi.list();
+    } catch (_) {}
+
     if (!mounted) return;
-    if (list.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('저장된 서식이 없습니다.')));
-      return;
-    }
-    showDialog<void>(
+
+    showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('저장된 표 서식 목록'),
+        title: const Text('보관된 표 서식 목록'),
         content: SizedBox(
           width: 320,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: list.length,
-            itemBuilder: (ctx, idx) {
-              final item = list[idx];
+          height: 300,
+          child: items.isEmpty
+              ? const Center(child: Text('저장된 서식이 없습니다.'))
+              : ListView.builder(
+            itemCount: items.length,
+            itemBuilder: (context, idx) {
+              final item = items[idx];
               return ListTile(
                 title: Text(item),
                 trailing: IconButton(
                   icon: const Icon(Icons.delete_outline, size: 20),
                   onPressed: () async {
-                    await _sketchApi.delete(item);
-                    if (ctx.mounted) Navigator.of(ctx).pop();
-                    _openListDialog();
+                    try {
+                      await _sketchApi.delete(item);
+                      if (ctx.mounted) Navigator.of(ctx).pop();
+                      _openListDialog();
+                    } catch (_) {}
                   },
                 ),
                 onTap: () async {
-                  final loaded = await _sketchApi.load(item);
+                  TableSketchDoc? loaded;
+                  try {
+                    loaded = await _sketchApi.load(item);
+                  } catch (_) {}
                   if (loaded != null && mounted) {
                     _saveSnapshot();
                     setState(() {
-                      _doc = loaded;
+                      _doc = loaded!;
                       _saveNameController.text = item;
-                      _selectedLineIndex = null;
+                      _selectedLineIndices.clear();
                     });
                     _triggerPreviewDebounced();
                   }
@@ -374,17 +408,103 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
 
   // --- 캔버스 제스처 처리 ---
 
+  void _handleHover(PointerHoverEvent e) {
+    if (_tool == SketchToolMode.preciseEraser) {
+      final pos = e.localPosition;
+      final threshold = math.max(16.0, _cellSize * 0.8);
+      SketchLine? bestSeg;
+      double bestDist = double.infinity;
+      for (final line in _doc.lines) {
+        final p1 = Offset(line.x1 * _cellSize, line.y1 * _cellSize);
+        final p2 = Offset(line.x2 * _cellSize, line.y2 * _cellSize);
+        final dist = distanceToSegment(pos, p1, p2);
+        if (dist < threshold && dist < bestDist) {
+          final segIdx = findLineSegmentIndex(line, pos, _cellSize, maxDistance: threshold);
+          if (segIdx != null) {
+            bestDist = dist;
+            bestSeg = getLineSegment(line, segIdx);
+          }
+        }
+      }
+      if (bestSeg != _hoverSegment) {
+        setState(() => _hoverSegment = bestSeg);
+      }
+    } else {
+      if (_hoverSegment != null) {
+        setState(() => _hoverSegment = null);
+      }
+    }
+  }
+
   void _handlePanStart(DragStartDetails details) {
     final pos = details.localPosition;
     setState(() {
       _dragStart = pos;
       _dragCurrent = pos;
+      _panDidErase = false;
+      _isMovingSelection = false;
+      _isMarqueeSelecting = false;
+      _activeHandle = null;
+      _verticalGuides = null;
+      _horizontalGuides = null;
     });
 
     if (_tool == SketchToolMode.eraser) {
       _eraseLineAt(pos);
+    } else if (_tool == SketchToolMode.preciseEraser) {
+      _eraseSegmentAt(pos, isPanStart: true);
     } else if (_tool == SketchToolMode.select) {
-      _selectLineAt(pos);
+      // 1개 선이 선택된 경우 끝점 핸들 클릭 확인
+      if (_selectedLineIndices.length == 1) {
+        final line = _doc.lines[_selectedLineIndices.first];
+        final p1 = Offset(line.x1 * _cellSize, line.y1 * _cellSize);
+        final p2 = Offset(line.x2 * _cellSize, line.y2 * _cellSize);
+        if ((pos - p1).distance <= 12.0) {
+          _activeHandle = 1;
+          _saveSnapshot();
+          return;
+        }
+        if ((pos - p2).distance <= 12.0) {
+          _activeHandle = 2;
+          _saveSnapshot();
+          return;
+        }
+      }
+
+      // 이미 선택된 선을 클릭하여 이동 시작하는지 확인
+      bool clickedOnSelected = false;
+      for (final idx in _selectedLineIndices) {
+        final line = _doc.lines[idx];
+        final p1 = Offset(line.x1 * _cellSize, line.y1 * _cellSize);
+        final p2 = Offset(line.x2 * _cellSize, line.y2 * _cellSize);
+        if (distanceToSegment(pos, p1, p2) <= math.max(16.0, _cellSize * 0.8)) {
+          clickedOnSelected = true;
+          break;
+        }
+      }
+
+      if (clickedOnSelected) {
+        _isMovingSelection = true;
+        _saveSnapshot();
+      } else {
+        final found = _findLineAt(pos);
+        if (found != null) {
+          _selectLineAt(
+            pos,
+            toggle: HardwareKeyboard.instance.isShiftPressed ||
+                HardwareKeyboard.instance.isControlPressed,
+          );
+          _isMovingSelection = true;
+          _saveSnapshot();
+        } else {
+          // 빈 영역 클릭 시 마퀴 선택 시작
+          if (!HardwareKeyboard.instance.isShiftPressed &&
+              !HardwareKeyboard.instance.isControlPressed) {
+            _selectedLineIndices.clear();
+          }
+          _isMarqueeSelecting = true;
+        }
+      }
     }
   }
 
@@ -398,6 +518,16 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
       _updateRectPreview(_dragStart!, pos);
     } else if (_tool == SketchToolMode.eraser) {
       _eraseLineAt(pos);
+    } else if (_tool == SketchToolMode.preciseEraser) {
+      _eraseSegmentAt(pos, isPanStart: false);
+    } else if (_tool == SketchToolMode.select) {
+      if (_activeHandle != null && _selectedLineIndices.length == 1) {
+        _updateActiveHandle(pos);
+      } else if (_isMovingSelection && _dragStart != null) {
+        _updateMovingSelection(pos);
+      } else if (_isMarqueeSelecting && _dragStart != null) {
+        _updateMarqueeSelection(_dragStart!, pos);
+      }
     }
   }
 
@@ -410,6 +540,12 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
         _dragStart != null &&
         _dragCurrent != null) {
       _commitRect(_dragStart!, _dragCurrent!);
+    } else if (_tool == SketchToolMode.preciseEraser && _panDidErase) {
+      _triggerPreviewDebounced();
+    } else if (_tool == SketchToolMode.select) {
+      if (_isMovingSelection || _activeHandle != null) {
+        _triggerPreviewDebounced();
+      }
     }
 
     setState(() {
@@ -417,6 +553,12 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
       _dragCurrent = null;
       _previewLine = null;
       _previewRect = null;
+      _marqueeRect = null;
+      _activeHandle = null;
+      _isMovingSelection = false;
+      _isMarqueeSelecting = false;
+      _verticalGuides = null;
+      _horizontalGuides = null;
     });
   }
 
@@ -425,9 +567,17 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
     if (_tool == SketchToolMode.text) {
       _openTextDialogAt(pos);
     } else if (_tool == SketchToolMode.select) {
-      _selectLineAt(pos);
+      _selectLineAt(
+        pos,
+        toggle: HardwareKeyboard.instance.isShiftPressed ||
+            HardwareKeyboard.instance.isControlPressed,
+      );
     } else if (_tool == SketchToolMode.eraser) {
       _eraseLineAt(pos);
+    } else if (_tool == SketchToolMode.preciseEraser) {
+      _eraseSegmentAt(pos, isPanStart: true);
+    } else if (_tool == SketchToolMode.cellColor) {
+      _applyCellColorAt(pos);
     }
   }
 
@@ -456,6 +606,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
           y2: snapped.y,
           width: _lineWidth,
           style: _lineStyle,
+          widthMm: _selectedLineWidthMm,
         );
       });
     } else {
@@ -486,6 +637,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
         y2: snapped.y,
         width: _lineWidth,
         style: _lineStyle,
+        widthMm: _selectedLineWidthMm,
       );
       setState(() {
         _doc.addLine(newLine);
@@ -533,7 +685,6 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
     if (minX < maxX && minY < maxY) {
       _saveSnapshot();
       setState(() {
-        // 상단 가로선
         _doc.addLine(
           SketchLine(
             x1: minX,
@@ -542,9 +693,9 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
             y2: minY,
             width: _lineWidth,
             style: _lineStyle,
+            widthMm: _selectedLineWidthMm,
           ),
         );
-        // 하단 가로선
         _doc.addLine(
           SketchLine(
             x1: minX,
@@ -553,9 +704,9 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
             y2: maxY,
             width: _lineWidth,
             style: _lineStyle,
+            widthMm: _selectedLineWidthMm,
           ),
         );
-        // 좌측 세로선
         _doc.addLine(
           SketchLine(
             x1: minX,
@@ -564,9 +715,9 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
             y2: maxY,
             width: _lineWidth,
             style: _lineStyle,
+            widthMm: _selectedLineWidthMm,
           ),
         );
-        // 우측 세로선
         _doc.addLine(
           SketchLine(
             x1: maxX,
@@ -575,6 +726,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
             y2: maxY,
             width: _lineWidth,
             style: _lineStyle,
+            widthMm: _selectedLineWidthMm,
           ),
         );
       });
@@ -582,7 +734,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
     }
   }
 
-  // --- 지우개 & 선택 로직 ---
+  // --- 지우개 & 정밀 지우개 & 선택 로직 ---
 
   void _eraseLineAt(Offset pos) {
     final threshold = math.max(16.0, _cellSize * 0.8);
@@ -604,22 +756,54 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
       _saveSnapshot();
       setState(() {
         _doc.lines.removeAt(bestIdx!);
-        if (_selectedLineIndex == bestIdx) {
-          _selectedLineIndex = null;
-        } else if (_selectedLineIndex != null &&
-            _selectedLineIndex! > bestIdx) {
-          _selectedLineIndex = _selectedLineIndex! - 1;
-        }
+        _selectedLineIndices.clear();
       });
       _triggerPreviewDebounced();
     }
   }
 
-  void _selectLineAt(Offset pos) {
+  void _eraseSegmentAt(Offset pos, {bool isPanStart = false}) {
+    final threshold = math.max(16.0, _cellSize * 0.8);
+    int? bestLineIdx;
+    int? bestSegIdx;
+    double bestDist = double.infinity;
+
+    for (int i = 0; i < _doc.lines.length; i++) {
+      final line = _doc.lines[i];
+      final p1 = Offset(line.x1 * _cellSize, line.y1 * _cellSize);
+      final p2 = Offset(line.x2 * _cellSize, line.y2 * _cellSize);
+      final dist = distanceToSegment(pos, p1, p2);
+      if (dist < threshold && dist < bestDist) {
+        final seg = findLineSegmentIndex(line, pos, _cellSize, maxDistance: threshold);
+        if (seg != null) {
+          bestDist = dist;
+          bestLineIdx = i;
+          bestSegIdx = seg;
+        }
+      }
+    }
+
+    if (bestLineIdx != null && bestSegIdx != null) {
+      if (isPanStart || !_panDidErase) {
+        _saveSnapshot();
+        _panDidErase = true;
+      }
+      setState(() {
+        final line = _doc.lines[bestLineIdx!];
+        final remaining = splitLineAt(line, bestSegIdx!);
+        _doc.lines.removeAt(bestLineIdx);
+        _doc.lines.insertAll(bestLineIdx, remaining);
+        _selectedLineIndices.clear();
+        _hoverSegment = null;
+      });
+      _triggerPreviewDebounced();
+    }
+  }
+
+  int? _findLineAt(Offset pos) {
     final threshold = math.max(16.0, _cellSize * 0.8);
     int? bestIdx;
     double bestDist = double.infinity;
-
     for (int i = 0; i < _doc.lines.length; i++) {
       final line = _doc.lines[i];
       final p1 = Offset(line.x1 * _cellSize, line.y1 * _cellSize);
@@ -630,44 +814,297 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
         bestIdx = i;
       }
     }
+    return bestIdx;
+  }
+
+  void _selectLineAt(Offset pos, {bool toggle = false}) {
+    final bestIdx = _findLineAt(pos);
 
     setState(() {
-      _selectedLineIndex = bestIdx;
-      if (bestIdx != null) {
-        final line = _doc.lines[bestIdx];
-        _lineWidth = line.width;
-        _lineStyle = line.style;
+      if (bestIdx == null) {
+        if (!toggle) {
+          _selectedLineIndices.clear();
+        }
+      } else {
+        final clicked = _doc.lines[bestIdx];
+        final targetIndices = <int>{bestIdx};
+        if (clicked.groupId != null && clicked.groupId!.isNotEmpty) {
+          for (int i = 0; i < _doc.lines.length; i++) {
+            if (_doc.lines[i].groupId == clicked.groupId) {
+              targetIndices.add(i);
+            }
+          }
+        }
+
+        if (toggle) {
+          if (_selectedLineIndices.contains(bestIdx)) {
+            _selectedLineIndices.removeAll(targetIndices);
+          } else {
+            _selectedLineIndices.addAll(targetIndices);
+          }
+        } else {
+          _selectedLineIndices = targetIndices;
+        }
+
+        if (_selectedLineIndices.isNotEmpty) {
+          final first = _doc.lines[_selectedLineIndices.first];
+          _lineWidth = first.width;
+          _lineStyle = first.style;
+          _selectedLineWidthMm = first.widthMm;
+        }
       }
     });
   }
 
-  void _deleteSelectedLine() {
-    if (_selectedLineIndex != null &&
-        _selectedLineIndex! >= 0 &&
-        _selectedLineIndex! < _doc.lines.length) {
-      _saveSnapshot();
-      setState(() {
-        _doc.lines.removeAt(_selectedLineIndex!);
-        _selectedLineIndex = null;
-      });
-      _triggerPreviewDebounced();
+  void _deleteSelectedLines() {
+    if (_selectedLineIndices.isEmpty) return;
+    _saveSnapshot();
+    setState(() {
+      final toRemove = _selectedLineIndices.toList()
+        ..sort((a, b) => b.compareTo(a));
+      for (final idx in toRemove) {
+        if (idx >= 0 && idx < _doc.lines.length) {
+          _doc.lines.removeAt(idx);
+        }
+      }
+      _selectedLineIndices.clear();
+    });
+    _triggerPreviewDebounced();
+  }
+
+  void _groupSelected() {
+    if (_selectedLineIndices.length < 2) return;
+    _saveSnapshot();
+    final gid = 'g_${DateTime.now().millisecondsSinceEpoch}';
+    setState(() {
+      for (final idx in _selectedLineIndices) {
+        _doc.lines[idx] = _doc.lines[idx].copyWith(groupId: gid);
+      }
+    });
+  }
+
+  void _ungroupSelected() {
+    if (_selectedLineIndices.isEmpty) return;
+    _saveSnapshot();
+    setState(() {
+      for (final idx in _selectedLineIndices) {
+        _doc.lines[idx] = _doc.lines[idx].copyWith(groupId: '');
+      }
+    });
+  }
+
+  bool get _hasGroupSelected =>
+      _selectedLineIndices.any((idx) => _doc.lines[idx].groupId?.isNotEmpty == true);
+
+  void _selectAll() {
+    setState(() {
+      _selectedLineIndices = {for (int i = 0; i < _doc.lines.length; i++) i};
+    });
+  }
+
+  void _copySelected() {
+    if (_selectedLineIndices.isEmpty) return;
+    _clipboardLines = _selectedLineIndices.map((i) => _doc.lines[i].copyWith()).toList();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${_clipboardLines.length}개 선 복사됨')),
+    );
+  }
+
+  void _paste() {
+    if (_clipboardLines.isEmpty) return;
+    _saveSnapshot();
+    setState(() {
+      final newIndices = <int>{};
+      for (final l in _clipboardLines) {
+        final pasted = l.copyWith(
+          x1: (l.x1 + 1).clamp(0, _doc.grid.cols),
+          y1: (l.y1 + 1).clamp(0, _doc.grid.rows),
+          x2: (l.x2 + 1).clamp(0, _doc.grid.cols),
+          y2: (l.y2 + 1).clamp(0, _doc.grid.rows),
+        );
+        newIndices.add(_doc.lines.length);
+        _doc.addLine(pasted);
+      }
+      _selectedLineIndices = newIndices;
+    });
+    _triggerPreviewDebounced();
+  }
+
+  void _moveSelected(int dx, int dy) {
+    if (_selectedLineIndices.isEmpty) return;
+    _saveSnapshot();
+    setState(() {
+      for (final idx in _selectedLineIndices) {
+        final l = _doc.lines[idx];
+        _doc.lines[idx] = l.copyWith(
+          x1: (l.x1 + dx).clamp(0, _doc.grid.cols),
+          y1: (l.y1 + dy).clamp(0, _doc.grid.rows),
+          x2: (l.x2 + dx).clamp(0, _doc.grid.cols),
+          y2: (l.y2 + dy).clamp(0, _doc.grid.rows),
+        );
+      }
+    });
+    _triggerPreviewDebounced();
+  }
+
+  void _updateActiveHandle(Offset pos) {
+    final idx = _selectedLineIndices.first;
+    final line = _doc.lines[idx];
+    final rawGx = (pos.dx / _cellSize).round().clamp(0, _doc.grid.cols);
+    final rawGy = (pos.dy / _cellSize).round().clamp(0, _doc.grid.rows);
+
+    final vGuides = <double>[];
+    final hGuides = <double>[];
+
+    for (int i = 0; i < _doc.lines.length; i++) {
+      if (i == idx) continue;
+      final ol = _doc.lines[i];
+      if (ol.x1 == rawGx || ol.x2 == rawGx) vGuides.add(rawGx * _cellSize);
+      if (ol.y1 == rawGy || ol.y2 == rawGy) hGuides.add(rawGy * _cellSize);
     }
+
+    SketchLine updated;
+    if (_activeHandle == 1) {
+      final snapped = snapLineCoords(
+        line.x2,
+        line.y2,
+        rawGx,
+        rawGy,
+        _doc.grid.cols,
+        _doc.grid.rows,
+      );
+      updated = snapped != null ? line.copyWith(x1: snapped.x, y1: snapped.y) : line;
+    } else {
+      final snapped = snapLineCoords(
+        line.x1,
+        line.y1,
+        rawGx,
+        rawGy,
+        _doc.grid.cols,
+        _doc.grid.rows,
+      );
+      updated = snapped != null ? line.copyWith(x2: snapped.x, y2: snapped.y) : line;
+    }
+
+    setState(() {
+      _doc.lines[idx] = updated;
+      _verticalGuides = vGuides.isEmpty ? null : vGuides.toSet().toList();
+      _horizontalGuides = hGuides.isEmpty ? null : hGuides.toSet().toList();
+    });
+  }
+
+  void _updateMovingSelection(Offset current) {
+    final deltaGx = ((current.dx - _dragStart!.dx) / _cellSize).round();
+    final deltaGy = ((current.dy - _dragStart!.dy) / _cellSize).round();
+    if (deltaGx == 0 && deltaGy == 0) return;
+
+    for (final idx in _selectedLineIndices) {
+      final l = _doc.lines[idx];
+      if (l.x1 + deltaGx < 0 ||
+          l.x1 + deltaGx > _doc.grid.cols ||
+          l.x2 + deltaGx < 0 ||
+          l.x2 + deltaGx > _doc.grid.cols ||
+          l.y1 + deltaGy < 0 ||
+          l.y1 + deltaGy > _doc.grid.rows ||
+          l.y2 + deltaGy < 0 ||
+          l.y2 + deltaGy > _doc.grid.rows) {
+        return;
+      }
+    }
+
+    _dragStart = Offset(
+      _dragStart!.dx + deltaGx * _cellSize,
+      _dragStart!.dy + deltaGy * _cellSize,
+    );
+
+    final vGuides = <double>[];
+    final hGuides = <double>[];
+
+    setState(() {
+      for (final idx in _selectedLineIndices) {
+        final l = _doc.lines[idx];
+        _doc.lines[idx] = l.copyWith(
+          x1: l.x1 + deltaGx,
+          y1: l.y1 + deltaGy,
+          x2: l.x2 + deltaGx,
+          y2: l.y2 + deltaGy,
+        );
+      }
+
+      for (final idx in _selectedLineIndices) {
+        final l = _doc.lines[idx];
+        for (int i = 0; i < _doc.lines.length; i++) {
+          if (_selectedLineIndices.contains(i)) continue;
+          final ol = _doc.lines[i];
+          if (l.x1 == ol.x1 || l.x1 == ol.x2) vGuides.add(l.x1 * _cellSize);
+          if (l.x2 == ol.x1 || l.x2 == ol.x2) vGuides.add(l.x2 * _cellSize);
+          if (l.y1 == ol.y1 || l.y1 == ol.y2) hGuides.add(l.y1 * _cellSize);
+          if (l.y2 == ol.y1 || l.y2 == ol.y2) hGuides.add(l.y2 * _cellSize);
+        }
+      }
+      _verticalGuides = vGuides.isEmpty ? null : vGuides.toSet().toList();
+      _horizontalGuides = hGuides.isEmpty ? null : hGuides.toSet().toList();
+    });
+  }
+
+  void _updateMarqueeSelection(Offset start, Offset current) {
+    final rect = Rect.fromPoints(start, current);
+    final matched = <int>{};
+
+    for (int i = 0; i < _doc.lines.length; i++) {
+      final line = _doc.lines[i];
+      final minX = math.min(line.x1, line.x2) * _cellSize;
+      final maxX = math.max(line.x1, line.x2) * _cellSize;
+      final minY = math.min(line.y1, line.y2) * _cellSize;
+      final maxY = math.max(line.y1, line.y2) * _cellSize;
+      final lineBox = Rect.fromLTRB(minX, minY, maxX, maxY);
+      if (rect.overlaps(lineBox) ||
+          rect.contains(Offset(minX, minY)) ||
+          rect.contains(Offset(maxX, maxY))) {
+        matched.add(i);
+      }
+    }
+
+    setState(() {
+      _marqueeRect = rect;
+      _selectedLineIndices = matched;
+    });
+  }
+
+  void _applyCellColorAt(Offset pos) {
+    final cx = (pos.dx / _cellSize).floor().clamp(0, _doc.grid.cols - 1);
+    final cy = (pos.dy / _cellSize).floor().clamp(0, _doc.grid.rows - 1);
+    _saveSnapshot();
+    setState(() {
+      _doc.setCellColor(cx, cy, _activeColor);
+    });
+    _triggerPreviewDebounced();
   }
 
   void _updateSelectedLineStyle({String? width, String? style}) {
-    if (_selectedLineIndex != null &&
-        _selectedLineIndex! >= 0 &&
-        _selectedLineIndex! < _doc.lines.length) {
-      _saveSnapshot();
-      setState(() {
-        final old = _doc.lines[_selectedLineIndex!];
-        _doc.lines[_selectedLineIndex!] = old.copyWith(
+    if (_selectedLineIndices.isEmpty) return;
+    _saveSnapshot();
+    setState(() {
+      for (final idx in _selectedLineIndices) {
+        final old = _doc.lines[idx];
+        _doc.lines[idx] = old.copyWith(
           width: width ?? old.width,
           style: style ?? old.style,
         );
-      });
-      _triggerPreviewDebounced();
-    }
+      }
+    });
+    _triggerPreviewDebounced();
+  }
+
+  void _updateSelectedLineWidthMm(double? widthMm) {
+    if (_selectedLineIndices.isEmpty) return;
+    _saveSnapshot();
+    setState(() {
+      for (final idx in _selectedLineIndices) {
+        _doc.lines[idx] = _doc.lines[idx].copyWith(widthMm: widthMm);
+      }
+    });
+    _triggerPreviewDebounced();
   }
 
   // --- 글 입력 대화상자 ---
@@ -719,7 +1156,6 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
 
   void _handlePointerSignal(PointerSignalEvent event) {
     if (event is PointerScrollEvent) {
-      // Ctrl + 마우스 휠
       if (HardwareKeyboard.instance.isControlPressed) {
         if (event.scrollDelta.dy < 0) {
           _zoomIn();
@@ -741,10 +1177,10 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
   Widget build(BuildContext context) {
     return CallbackShortcuts(
       bindings: {
-        const SingleActivator(LogicalKeyboardKey.delete): _deleteSelectedLine,
+        const SingleActivator(LogicalKeyboardKey.delete): _deleteSelectedLines,
         const SingleActivator(LogicalKeyboardKey.escape): () {
           setState(() {
-            _selectedLineIndex = null;
+            _selectedLineIndices.clear();
             _tool = SketchToolMode.select;
           });
         },
@@ -755,6 +1191,22 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
           control: true,
           shift: true,
         ): _redo,
+        const SingleActivator(LogicalKeyboardKey.keyC, control: true): _copySelected,
+        const SingleActivator(LogicalKeyboardKey.keyV, control: true): _paste,
+        const SingleActivator(LogicalKeyboardKey.keyA, control: true): _selectAll,
+        const SingleActivator(LogicalKeyboardKey.keyG, control: true): _groupSelected,
+        const SingleActivator(
+          LogicalKeyboardKey.keyG,
+          control: true,
+          shift: true,
+        ): _ungroupSelected,
+        const SingleActivator(LogicalKeyboardKey.arrowUp): () => _moveSelected(0, -1),
+        const SingleActivator(LogicalKeyboardKey.arrowDown): () => _moveSelected(0, 1),
+        const SingleActivator(LogicalKeyboardKey.arrowLeft): () => _moveSelected(-1, 0),
+        const SingleActivator(LogicalKeyboardKey.arrowRight): () => _moveSelected(1, 0),
+        const SingleActivator(LogicalKeyboardKey.keyE, shift: true): () {
+          setState(() => _tool = SketchToolMode.preciseEraser);
+        },
       },
       child: Focus(
         autofocus: true,
@@ -778,7 +1230,6 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
               ],
             ),
             actions: [
-              // 좁은 창(폭 600 미만)에서는 글 없는 아이콘 버튼으로 도구 줄이 넘치지 않게 한다.
               if (MediaQuery.sizeOf(context).width < 600)
                 IconButton(
                   key: const Key('sketchOrgExample'),
@@ -819,7 +1270,6 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
             builder: (context, constraints) {
               final isNarrow = constraints.maxWidth < 750;
               if (isNarrow) {
-                // 좁은 화면 (폭 420 등) 세로 레이아웃
                 return Column(
                   children: [
                     _buildTopToolbar(isNarrow: true),
@@ -828,7 +1278,6 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
                   ],
                 );
               } else {
-                // 넓은 화면 가로 레이아웃
                 return Row(
                   children: [
                     Expanded(
@@ -891,6 +1340,12 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
               tooltip: '지우개',
             ),
             _toolButton(
+              key: const Key('toolPreciseEraser'),
+              mode: SketchToolMode.preciseEraser,
+              icon: Icons.cleaning_services_outlined,
+              tooltip: '정밀 지우개 (셀 한 칸 단위)',
+            ),
+            _toolButton(
               key: const Key('toolText'),
               mode: SketchToolMode.text,
               icon: Icons.title_rounded,
@@ -902,14 +1357,72 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
               icon: Icons.near_me_rounded,
               tooltip: '선택 및 속성 변경',
             ),
+            _toolButton(
+              key: const Key('toolCellColor'),
+              mode: SketchToolMode.cellColor,
+              icon: Icons.format_color_fill_rounded,
+              tooltip: '셀 배경색 채우기',
+            ),
             const SizedBox(width: 8),
             Container(width: 1, height: 24, color: const Color(0xFFCBD5E1)),
             const SizedBox(width: 8),
 
-            // 선 굵기
+            // 묶음(그룹) 도구
+            IconButton(
+              key: const Key('btnGroupLines'),
+              tooltip: '묶음 지정 (Ctrl+G)',
+              icon: const Icon(Icons.group_work_outlined, size: 20),
+              onPressed: _selectedLineIndices.length >= 2 ? _groupSelected : null,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            ),
+            IconButton(
+              key: const Key('btnUngroupLines'),
+              tooltip: '묶음 해제 (Ctrl+Shift+G)',
+              icon: const Icon(Icons.workspaces_outlined, size: 20),
+              onPressed: _hasGroupSelected ? _ungroupSelected : null,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            ),
+
+            const SizedBox(width: 8),
+            Container(width: 1, height: 24, color: const Color(0xFFCBD5E1)),
+            const SizedBox(width: 8),
+
+            // 선 굵기 mm 드롭다운
             const Text(
               '굵기:',
               style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+            ),
+            const SizedBox(width: 4),
+            DropdownButton<double?>(
+              key: const Key('lineWidthMmDropdown'),
+              value: _selectedLineWidthMm,
+              hint: const Text('기본', style: TextStyle(fontSize: 12)),
+              isDense: true,
+              items: const [
+                DropdownMenuItem(value: null, child: Text('기본', style: TextStyle(fontSize: 12))),
+                DropdownMenuItem(value: 0.1, child: Text('0.1mm', style: TextStyle(fontSize: 12))),
+                DropdownMenuItem(value: 0.12, child: Text('0.12mm', style: TextStyle(fontSize: 12))),
+                DropdownMenuItem(value: 0.15, child: Text('0.15mm', style: TextStyle(fontSize: 12))),
+                DropdownMenuItem(value: 0.2, child: Text('0.2mm', style: TextStyle(fontSize: 12))),
+                DropdownMenuItem(value: 0.25, child: Text('0.25mm', style: TextStyle(fontSize: 12))),
+                DropdownMenuItem(value: 0.3, child: Text('0.3mm', style: TextStyle(fontSize: 12))),
+                DropdownMenuItem(value: 0.4, child: Text('0.4mm', style: TextStyle(fontSize: 12))),
+                DropdownMenuItem(value: 0.5, child: Text('0.5mm', style: TextStyle(fontSize: 12))),
+                DropdownMenuItem(value: 0.6, child: Text('0.6mm', style: TextStyle(fontSize: 12))),
+                DropdownMenuItem(value: 0.7, child: Text('0.7mm', style: TextStyle(fontSize: 12))),
+                DropdownMenuItem(value: 1.0, child: Text('1.0mm', style: TextStyle(fontSize: 12))),
+                DropdownMenuItem(value: 1.5, child: Text('1.5mm', style: TextStyle(fontSize: 12))),
+                DropdownMenuItem(value: 2.0, child: Text('2.0mm', style: TextStyle(fontSize: 12))),
+                DropdownMenuItem(value: 3.0, child: Text('3.0mm', style: TextStyle(fontSize: 12))),
+                DropdownMenuItem(value: 4.0, child: Text('4.0mm', style: TextStyle(fontSize: 12))),
+                DropdownMenuItem(value: 5.0, child: Text('5.0mm', style: TextStyle(fontSize: 12))),
+              ],
+              onChanged: (val) {
+                setState(() => _selectedLineWidthMm = val);
+                _updateSelectedLineWidthMm(val);
+              },
             ),
             const SizedBox(width: 4),
             _widthChip('thin', '얇게', const Key('lineWidthThin')),
@@ -929,6 +1442,26 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
             _styleChip('solid', '실선', const Key('lineStyleSolid')),
             _styleChip('dash', '파선', const Key('lineStyleDash')),
             _styleChip('dot', '점선', const Key('lineStyleDot')),
+
+            const SizedBox(width: 8),
+            Container(width: 1, height: 24, color: const Color(0xFFCBD5E1)),
+            const SizedBox(width: 8),
+
+            // 셀 배경색 팔레트
+            const Text(
+              '배경색:',
+              style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+            ),
+            const SizedBox(width: 4),
+            for (final (colorHex, colorName) in const [
+              ('#FFFFFF', '흰색'),
+              ('#F1F5F9', '연회색'),
+              ('#DBEAFE', '연파랑'),
+              ('#FEF08A', '연노랑'),
+              ('#DCFCE7', '연초록'),
+              ('#FFEDD5', '연주황'),
+            ])
+              _colorChip(colorHex, colorName),
 
             const SizedBox(width: 8),
             Container(width: 1, height: 24, color: const Color(0xFFCBD5E1)),
@@ -983,7 +1516,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
             setState(() {
               _tool = mode;
               if (mode != SketchToolMode.select) {
-                _selectedLineIndex = null;
+                _selectedLineIndices.clear();
               }
             });
           },
@@ -1052,6 +1585,39 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
     );
   }
 
+  Widget _colorChip(String hex, String label) {
+    final isSelected = _activeColor == hex && _tool == SketchToolMode.cellColor;
+    final color = parseHexColor(hex) ?? Colors.white;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: Tooltip(
+        message: label,
+        child: InkWell(
+          key: Key('colorChip_$hex'),
+          onTap: () {
+            setState(() {
+              _activeColor = hex;
+              _tool = SketchToolMode.cellColor;
+            });
+          },
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            width: 22,
+            height: 22,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: isSelected ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1),
+                width: isSelected ? 2.5 : 1.0,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   /// 캔버스 작업 영역 (스크롤뷰 + 커스텀페인트)
   Widget _buildCanvasArea() {
     final canvasWidth = _doc.grid.cols * _cellSize;
@@ -1093,42 +1659,49 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
                         ],
                         borderRadius: BorderRadius.circular(4),
                       ),
-                      child: Listener(
-                        // 누름·이동·뗌을 직접 받아 뗀 위치를 끝점으로 쓴다(한 번에 멀리 옮겨도 선이 그려지게).
-                        behavior: HitTestBehavior.opaque,
-                        onPointerDown: (e) => _handlePanStart(
-                          DragStartDetails(
-                            globalPosition: e.position,
-                            localPosition: e.localPosition,
+                      child: MouseRegion(
+                        onHover: _handleHover,
+                        child: Listener(
+                          behavior: HitTestBehavior.opaque,
+                          onPointerDown: (e) => _handlePanStart(
+                            DragStartDetails(
+                              globalPosition: e.position,
+                              localPosition: e.localPosition,
+                            ),
                           ),
-                        ),
-                        onPointerMove: (e) => _handlePanUpdate(
-                          DragUpdateDetails(
-                            globalPosition: e.position,
-                            localPosition: e.localPosition,
-                          ),
-                        ),
-                        onPointerUp: (e) {
-                          _handlePanUpdate(
+                          onPointerMove: (e) => _handlePanUpdate(
                             DragUpdateDetails(
                               globalPosition: e.position,
                               localPosition: e.localPosition,
                             ),
-                          );
-                          _handlePanEnd(DragEndDetails());
-                        },
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTapUp: _handleTapUp,
-                          child: CustomPaint(
-                            key: const Key('sketchCanvas'),
-                            size: Size(canvasWidth, canvasHeight),
-                            painter: TableSketchPainter(
-                              doc: _doc,
-                              cellSize: _cellSize,
-                              selectedLineIndex: _selectedLineIndex,
-                              previewLine: _previewLine,
-                              previewRect: _previewRect,
+                          ),
+                          onPointerUp: (e) {
+                            _handlePanUpdate(
+                              DragUpdateDetails(
+                                globalPosition: e.position,
+                                localPosition: e.localPosition,
+                              ),
+                            );
+                            _handlePanEnd(DragEndDetails());
+                          },
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTapUp: _handleTapUp,
+                            child: CustomPaint(
+                              key: const Key('sketchCanvas'),
+                              size: Size(canvasWidth, canvasHeight),
+                              painter: TableSketchPainter(
+                                doc: _doc,
+                                cellSize: _cellSize,
+                                selectedLineIndex: _selectedLineIndex,
+                                selectedLineIndices: _selectedLineIndices,
+                                previewLine: _previewLine,
+                                previewRect: _previewRect,
+                                hoveredSegmentLine: _hoverSegment,
+                                marqueeRect: _marqueeRect,
+                                verticalGuides: _verticalGuides,
+                                horizontalGuides: _horizontalGuides,
+                              ),
                             ),
                           ),
                         ),
@@ -1186,48 +1759,35 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
                   const SizedBox(height: 8),
                   if (_previewResult != null && _previewResult!.ok) ...[
                     Text(
-                      '크기: ${_previewResult!.rows}행 × ${_previewResult!.cols}열 (${_previewResult!.cells.length}칸)',
+                      '크기: ${_previewResult!.rows}행 ${_previewResult!.cols}열 '
+                      '(${_previewResult!.widthMm.toStringAsFixed(1)} × ${_previewResult!.heightMm.toStringAsFixed(1)} mm)',
                       style: const TextStyle(
-                        fontSize: 13,
-                        color: Color(0xFF334155),
+                        fontSize: 12,
+                        color: Color(0xFF475569),
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '용지 차지: ${_previewResult!.widthMm.toStringAsFixed(1)}mm × ${_previewResult!.heightMm.toStringAsFixed(1)}mm',
+                      '셀 개수: ${_previewResult!.cells.length}개',
                       style: const TextStyle(
                         fontSize: 12,
-                        color: Color(0xFF64748B),
+                        color: Color(0xFF475569),
                       ),
                     ),
                     if (_previewResult!.warnings.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFEF3C7),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: _previewResult!.warnings
-                              .map(
-                                (w) => Text(
-                                  '• $w',
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: Color(0xFF92400E),
-                                  ),
-                                ),
-                              )
-                              .toList(),
+                      const SizedBox(height: 6),
+                      Text(
+                        '주의: ${_previewResult!.warnings.join(", ")}',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFFD97706),
                         ),
                       ),
                     ],
                   ] else ...[
                     const Text(
-                      '선을 그리면 한/글 표 형태가 자동으로 계산됩니다.',
-                      style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                      '그려진 표 선이 없습니다. 상단 도구로 사각형이나 선을 그리면 미리보기가 갱신됩니다.',
+                      style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
                     ),
                   ],
                 ],
@@ -1235,7 +1795,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
             ),
             const SizedBox(height: 12),
 
-            // 복사 버튼
+            // 한/글 복사 버튼
             FilledButton.icon(
               key: const Key('sketchCopyButton'),
               onPressed: _copying ? null : _copyToClipboard,
@@ -1249,24 +1809,23 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
                       ),
                     )
                   : const Icon(Icons.copy_rounded, size: 18),
-              label: const Text('한/글에 붙여넣기용 복사'),
+              label: Text(_copying ? '복사 중...' : '한/글로 복사 (클립보드)'),
               style: FilledButton.styleFrom(
                 backgroundColor: const Color(0xFF2563EB),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+                padding: const EdgeInsets.symmetric(vertical: 12),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
+            const Divider(color: Color(0xFFE2E8F0)),
+            const SizedBox(height: 8),
 
-            // 저장 및 불러오기
+            // 서식 저장 영역
             const Text(
-              '표 서식 보관',
+              '서식 보관함',
               style: TextStyle(
-                fontSize: 13,
+                fontSize: 14,
                 fontWeight: FontWeight.bold,
-                color: Color(0xFF475569),
+                color: Color(0xFF1E293B),
               ),
             ),
             const SizedBox(height: 8),
@@ -1274,29 +1833,22 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
               children: [
                 Expanded(
                   child: TextField(
-                    key: const Key('sketchNameField'),
+                    key: const Key('sketchSaveNameInput'),
                     controller: _saveNameController,
                     decoration: const InputDecoration(
-                      hintText: '서식 이름',
+                      labelText: '서식 이름',
                       isDense: true,
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 10,
-                      ),
                       border: OutlineInputBorder(),
                     ),
-                    style: const TextStyle(fontSize: 13),
                   ),
                 ),
                 const SizedBox(width: 8),
-                FilledButton.tonal(
+                FilledButton(
                   key: const Key('sketchSaveButton'),
                   onPressed: _saveSketch,
                   style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 12,
-                    ),
+                    backgroundColor: const Color(0xFF475569),
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
                   ),
                   child: const Text('저장'),
                 ),

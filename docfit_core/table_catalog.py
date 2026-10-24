@@ -233,6 +233,12 @@ def _drawing_roots(node):
     for child in node:
         tag = _tag(child)
         if tag == "tbl":
+            yield from _drawing_roots(child)
+            continue
+        if tag == "container":
+            yield child
+            yield from _drawing_roots(child)
+            continue
             continue
         if tag in _DRAWINGS:
             yield child
@@ -351,6 +357,13 @@ def _cell_meta(cell, fallback_row: int, fallback_col: int, text: str, header_inf
 
     bf_id = target_cell.get("borderFillIDRef", "1")
     bf_info = borders_map.get(bf_id, {"fill": "", "borders": _DEFAULT_BORDERS})
+    if target_cell is not cell:
+        outer_bf_id = cell.get("borderFillIDRef", "1")
+        outer_bf_info = borders_map.get(outer_bf_id, {})
+        if not bf_info.get("fill") and outer_bf_info.get("fill"):
+            bf_info = {**bf_info, "fill": outer_bf_info.get("fill")}
+        if outer_bf_info.get("borders") and (not bf_info.get("borders") or bf_info.get("borders") == _DEFAULT_BORDERS):
+            bf_info = {**bf_info, "borders": copy.deepcopy(outer_bf_info.get("borders"))}
 
     size = char_info.get("size", 11.0)
     display_size = size if size >= 6.0 else 10.0
