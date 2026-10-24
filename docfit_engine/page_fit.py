@@ -24,33 +24,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
         return bind_function(세트문장_선행들여쓰기_폭, _docfit_namespace)
     if _docfit_symbol == '세트문장_후속문단인가':
         def 세트문장_후속문단인가(상위_들여쓰기, text):
-            """상위 문장부호 문단에 종속된 연속 설명 문단인지 판정한다.
-
-            예) '     ※ ...' 다음의 '         (6~16번) ...'은 포함하지만,
-                ' ㅇ ...', '   - ...', '□ ...'처럼 독립 구조 항목은 새 세트로 본다.
-            """
-            if not text or not text.strip():
-                return False
-
-            현재_들여쓰기 = 세트문장_선행들여쓰기_폭(text)
-            if 현재_들여쓰기 <= 상위_들여쓰기:
-                return False
-
-            벗긴텍스트 = text.lstrip(" \t")
-            if not 벗긴텍스트:
-                return False
-
-            # 공문서 구조 기호(□/ㅇ/-/※ 등)는 들여쓰기가 더 깊어도 별도 항목이다.
-            if 벗긴텍스트[0] in 공문서_기호:
-                return False
-
-            # '1.', '(1)', '가.' 등 명시적 항목 번호 역시 별도 항목으로 본다.
-            # '(6~16번)'처럼 범위 설명 라벨은 항목_패턴과 일치하지 않으므로 후속문단으로 유지된다.
-            for pattern in 항목_패턴:
-                if pattern.match(벗긴텍스트):
-                    return False
-
-            return True
+            """같은 영역에서 더 깊은 ※·*·** 및 번호 없는 설명을 부모에 묶는다."""
+            from docfit_core.continuation import is_continuation
+            return is_continuation(상위_들여쓰기, text)
         return bind_function(세트문장_후속문단인가, _docfit_namespace)
     if _docfit_symbol == '세트문장_끝위치_찾기':
         def 세트문장_끝위치_찾기(시작위치, 시작텍스트):
@@ -145,7 +121,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 hwp.SetPos(*시작위치)
                 hwp_run('MoveParaBegin')
                 start = hwp.GetPos()
-                role = 보고서_문단역할(현재문단_텍스트())
+                start_text = 현재문단_텍스트()
+                parent_indent = 세트문장_선행들여쓰기_폭(start_text)
+                role = 보고서_문단역할(start_text)
                 if role not in ('소제목', '본문', '내용', '부연설명'):
                     return []
                 hwp_run('MoveParaEnd')
@@ -158,13 +136,15 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     next_start = hwp.GetPos()
                     if next_start[0] != start[0] or next_start[1] <= result[-1][0][1]:
                         break
-                    next_role = 보고서_문단역할(현재문단_텍스트())
+                    next_text = 현재문단_텍스트()
+                    next_role = 보고서_문단역할(next_text)
                     if role == '소제목' and not body_attached and next_role == '본문':
                         body_attached = True
-                    elif next_role == '부연설명':
-                        pass
+                        parent_indent = 세트문장_선행들여쓰기_폭(next_text)
                     elif body_attached and next_role == '내용':
-                        pass
+                        parent_indent = 세트문장_선행들여쓰기_폭(next_text)
+                    elif 세트문장_후속문단인가(parent_indent, next_text):
+                        next_role = next_role or '부연설명'
                     else:
                         break
                     hwp_run('MoveParaEnd')
