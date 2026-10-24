@@ -46,8 +46,8 @@ class RunOptions:
         if "reset_spacing" in result:
             if self.spacing_exclude_reset is not None:
                 result["reset_spacing"] = not self.spacing_exclude_reset
-            elif not self.reset_spacing:
-                result["reset_spacing"] = False
+            elif "reset_spacing" not in selected:
+                result["reset_spacing"] = self.reset_spacing
         if mode == "spacing":
             # 자간 기능을 끄면 초기화·줄 병합·표/컨트롤·대표 서식 보정까지 실행하지 않는다.
             if not self.spacing_enabled:
