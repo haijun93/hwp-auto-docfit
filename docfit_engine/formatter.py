@@ -4851,7 +4851,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 # 콜론 라벨은 예시 규칙과 관계없이 콜론 뒤 본문 첫 글자 기준(불변 규칙, 2026-10-17). 콜론이 없으면
                 # 기본 판정도 기호 뒤(괄호 라벨은 '(')라 예전 결과와 같다.
                 return _여는낫표_건너뛰기(text, _문단_본문시작_오프셋(text))
-            return _여는낫표_건너뛰기(text, _문단_본문시작_오프셋(text))
+            from docfit_core.continuation import inline_item
+            inline = inline_item(text)
+            return inline[2] if inline else _여는낫표_건너뛰기(text, _문단_본문시작_오프셋(text))
         return bind_function(문단_내어쓰기_기준_오프셋, _docfit_namespace)
     if _docfit_symbol == '_여는낫표_건너뛰기':
         def _여는낫표_건너뛰기(text, offset):
@@ -6169,6 +6171,21 @@ def _install(*, _docfit_namespace, _docfit_symbol):
 
             try:
                 result = apply_batch(source, target, plan)
+                if target is not None and globals().get("표준서식_내어쓰기_사용", False):
+                    from docfit_core.continuation import align_hwpx
+                    from pathlib import Path
+                    from uuid import uuid4
+                    continuation_target = Path(target).with_name(f".continuation-{uuid4().hex}.hwpx")
+                    try:
+                        aligned = align_hwpx(target, continuation_target, original=source,
+                                             rules=표준서식_설정.get("내어쓰기_규칙", {}))
+                        if aligned:
+                            continuation_target.replace(target)
+                            result.formatted_texts.update(aligned)
+                            _xml_기준확정.update(aligned)
+                    finally:
+                        if continuation_target.exists():
+                            continuation_target.unlink()
             except Exception as error:
                 # 미지원 구조(BatchUnsupported·UnsupportedPackage)뿐 아니라 예상 밖 오류(_rewrite_runs의 글자 보존 검사 등)도
                 # 기존 COM 경로로 돌린다. 알파 새 기능의 오류로 베타에서 되던 문서 처리가 실패하면 안 된다(2026-10-09 검토).

@@ -216,6 +216,10 @@ def hanging_indent_offset(text: str | None, *, rule: str = "body_start") -> int 
         return None
     if rule == "after_marker":
         return _skip_corner_quote(text, idx)
+    from .continuation import inline_item
+    inline = inline_item(text)
+    if inline:
+        return inline[2]
     colon_match = _COLON_LABEL_RE.match(text[idx:])
     if colon_match:
         label_chars = re.sub(r"\s+", "", colon_match.group(1))
