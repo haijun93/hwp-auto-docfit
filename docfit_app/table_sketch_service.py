@@ -100,7 +100,15 @@ class TableSketchService:
             COM_LOCK.release()
 
     def import_table(self, source_type, data, table_index=0):
-        if source_type == "html":
+        if source_type == 'clipboard':
+            if not COM_LOCK.acquire(blocking=False):
+                raise ValueError('다른 한/글 표 작업이 끝난 뒤 다시 붙여넣어 주세요.')
+            try:
+                from .native_table_clipboard import read_clipboard_table
+                res = read_clipboard_table()
+            finally:
+                COM_LOCK.release()
+        elif source_type == "html":
             res = table_import.import_table_from_html(data)
         elif source_type in ("hwpx", "file"):
             res = table_import.import_table_from_hwpx(data, table_index=table_index)

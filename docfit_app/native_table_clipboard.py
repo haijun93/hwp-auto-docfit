@@ -12,6 +12,50 @@ import time
 from .api_contract import ServiceError
 
 
+def read_clipboard_table():
+    """사용자 문서와 분리된 세션에서 복사된 표를 HWPX 사본으로 읽는다."""
+    import tempfile
+    import pythoncom
+    import win32com.client
+    import win32clipboard
+    from docfit_core import table_import
+    native = win32clipboard.RegisterClipboardFormat('Hwp Native')
+    if not win32clipboard.IsClipboardFormatAvailable(native):
+        html_format = win32clipboard.RegisterClipboardFormat('HTML Format')
+        win32clipboard.OpenClipboard()
+        try:
+            if not win32clipboard.IsClipboardFormatAvailable(html_format):
+                raise ValueError('한/글에서 표를 먼저 복사해 주세요.')
+            data = win32clipboard.GetClipboardData(html_format)
+        finally:
+            win32clipboard.CloseClipboard()
+        return table_import.import_table_from_html(data.decode('utf8') if isinstance(data, bytes) else data)
+    app = None
+    pythoncom.CoInitialize()
+    try:
+        app = win32com.client.DispatchEx('HwpFrame.HwpObject')
+        app.XHwpWindows.Item(0).Visible = False
+        from docfit_core.format_samples import APP_HOME, REGISTRY_VALUE, LEGACY_REGISTRY_VALUE
+        module = REGISTRY_VALUE if (APP_HOME / 'dll' / 'HwpAutoDocFitSecurity.dll').is_file() else LEGACY_REGISTRY_VALUE
+        if not app.RegisterModule('FilePathCheckDLL', module):
+            raise ValueError('한/글 보안 모듈을 등록하지 못했습니다.')
+        with tempfile.TemporaryDirectory(prefix='docfit_paste_') as folder:
+            path = Path(folder) / 'clipboard.hwpx'
+            if app.HAction.Run('Paste') is False or app.SaveAs(str(path), 'HWPX', '') is False:
+                raise ValueError('복사된 표를 읽지 못했습니다.')
+            result = table_import.import_table_from_hwpx(path)
+            app.Clear(1)
+            return result
+    finally:
+        if app is not None:
+            try:
+                app.Clear(1)
+                app.Quit()
+            except Exception:
+                pass
+        pythoncom.CoUninitialize()
+
+
 def copy_hwpx_document(path: str | Path) -> dict:
     source = Path(path)
     if sys.platform != "win32":

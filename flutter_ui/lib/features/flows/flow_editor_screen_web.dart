@@ -210,6 +210,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
           final copied = await storage('copy_result', {
             'kind': message['kind'],
             if (message['spec'] != null) 'spec': message['spec'],
+            if (message['snapshot'] != null) 'snapshot': message['snapshot'],
             if (message['base64'] != null) 'base64': message['base64'],
           });
           if (copied is Map && copied['copied'] == true) {

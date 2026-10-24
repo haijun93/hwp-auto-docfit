@@ -26,6 +26,10 @@ class ApplicationService:
 
     def state(self):
         settings = {**DEFAULTS, **migrate(self.store.read())}
+        for old, new in (('all_linespacing','all_exclude_linespacing'),
+                         ('spacing_page_fit','spacing_exclude_pagefit'),
+                         ('spacing_reset_existing','spacing_exclude_reset')):
+            settings[old] = not settings[new]
         saved_stages=settings.get('stage_choices',{})
         if not isinstance(saved_stages,dict):saved_stages={}
         selected=saved_stages.get(self.data.mode,{})
@@ -35,7 +39,7 @@ class ApplicationService:
                 'status':'문서 분석·설정 시제품', 'version':'1.74 Native Prototype 1',
                 'include_spacing':settings['all_include_spacing'], 'reset_spacing':self.data.stages.get(('spacing','reset_spacing'),settings.get('spacing_reset_existing') if settings.get('spacing_reset_existing') is not None else True),
                 'table_spacing':settings['table_spacing'], 'exclude_tables':settings['all_exclude_tables'],
-                'card_options':{**{key:bool(settings.get(key)) for key in ('spacing_enabled','spacing_page_fit','unify_exclude_tables','unify_exclude_spacing','unify_exclude_pagefit','unify_keep_layout','unify_full_format','all_include_spacing','all_exclude_tables','all_exclude_pagefit','all_linespacing')},'spacing_exclude_tables':not settings['table_spacing'],'spacing_reset_existing':bool(settings['spacing_reset_existing']) if settings.get('spacing_reset_existing') is not None else True},'range':self.data.range,'results':[], 'options':settings,
+                'card_options':{**{key:bool(settings.get(key)) for key in ('spacing_enabled','spacing_page_fit','spacing_exclude_pagefit','spacing_exclude_reset','all_exclude_linespacing','spacing_cell_image_to_bg','all_cell_image_to_bg','unify_exclude_tables','unify_exclude_spacing','unify_exclude_pagefit','unify_keep_layout','unify_full_format','all_include_spacing','all_exclude_tables','all_exclude_pagefit','all_linespacing')},'spacing_exclude_tables':not settings['table_spacing'],'spacing_reset_existing':bool(settings['spacing_reset_existing']) if settings.get('spacing_reset_existing') is not None else True},'range':self.data.range,'results':[], 'options':settings,
                 'profiles':[], 'profile':'','default_saved':self.data.mode in saved_stages,'format_task':None,
                 'progress':{'steps':list(STAGE_ORDER),'active':None,'visited':[],'outcome':None,'detail':''},
                 'stages':[{'key':k,'label':label,'enabled':self.data.stages.get((self.data.mode,k),selected.get(k,default_choice(k,self.data.mode))),
@@ -61,11 +65,14 @@ class ApplicationService:
                     'capabilities':['documents.inspect','settings','abbreviations','flows'],'engine_ready':False}
         if method=='set_card_option':
             name,value=args
-            allowed={'spacing_enabled','spacing_page_fit','spacing_reset_existing','spacing_exclude_tables','unify_exclude_tables','unify_exclude_spacing','unify_exclude_pagefit',
+            allowed={'spacing_enabled','spacing_exclude_pagefit','spacing_exclude_reset','all_exclude_linespacing','spacing_cell_image_to_bg','all_cell_image_to_bg','spacing_page_fit','spacing_reset_existing','spacing_exclude_tables','unify_exclude_tables','unify_exclude_spacing','unify_exclude_pagefit',
                      'unify_keep_layout','unify_full_format','all_include_spacing','all_exclude_tables','all_exclude_pagefit','all_linespacing'}
             if name not in allowed or not isinstance(value,bool):raise ServiceError('INVALID_OPTION','카드 옵션을 확인해 주세요.')
             if name=='spacing_exclude_tables':key,value='table_spacing',not value
             else:key=name
+            aliases={'all_linespacing':'all_exclude_linespacing','spacing_page_fit':'spacing_exclude_pagefit','spacing_reset_existing':'spacing_exclude_reset'}
+            if key in aliases:
+                key,value=aliases[key],not value
             self.store.update(lambda current:current.update({key:value}))
             if name=='spacing_reset_existing':self.data.stages[('spacing','reset_spacing')]=value
             if name=='all_include_spacing' and self.data.mode in ('all','format'):

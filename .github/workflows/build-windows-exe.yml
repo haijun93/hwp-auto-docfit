@@ -24,6 +24,7 @@ on:
       - release/1.80.7
       - release/1.80.8
       - release/1.80.9
+      - release/1.80.10
       - claude/affectionate-goldberg-ggln7c
     paths-ignore:
       - 'README.md'
@@ -179,7 +180,8 @@ jobs:
           if-no-files-found: error
 
       - name: Stage binary in draft release (Git objects have a 100MiB limit)
-        if: startsWith(github.ref, 'refs/heads/release/')
+        # C25는 사용자 확인 전 빌드만 검증한다. 초안·태그·게시를 생성하지 않는다.
+        if: startsWith(github.ref, 'refs/heads/release/') && github.ref != 'refs/heads/release/1.80.10'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -199,7 +201,7 @@ jobs:
           gh release upload "$TAG" "$PORTABLE" "$SETUP" --clobber
 
       - name: Commit build provenance and verification records
-        if: github.ref != 'refs/heads/alpha'
+        if: github.ref != 'refs/heads/alpha' && github.ref != 'refs/heads/release/1.80.10'
         shell: bash
         run: |
           mkdir -p release-assets

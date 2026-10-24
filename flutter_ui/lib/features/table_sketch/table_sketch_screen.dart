@@ -910,8 +910,49 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
     );
   }
 
+  Future<void> _importTable({bool fromFile = false}) async {
+    String? path;
+    if (fromFile) {
+      final input = TextEditingController();
+      path = await showDialog<String>(context: context, builder: (context) => AlertDialog(
+        title: const Text('HWPX에서 표 가져오기'),
+        content: TextField(controller: input, decoration: const InputDecoration(labelText: 'HWPX 파일 경로')),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
+          FilledButton(onPressed: () => Navigator.pop(context, input.text.trim()), child: const Text('가져오기'))],
+      ));
+      if (path == null || path.isEmpty) return;
+    }
+    if (!mounted) return;
+    if (_doc.lines.isNotEmpty || _doc.texts.isNotEmpty) {
+      final replace = await showDialog<bool>(context: context, builder: (context) => AlertDialog(
+        title: const Text('새 그림으로 열기'), content: const Text('현재 그림을 가져온 표로 바꿀까요? 실행 취소로 복구할 수 있어요.'),
+        actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('새 그림으로 열기'))],
+      ));
+      if (replace != true) return;
+    }
+    try {
+      final result = await widget.api('table_sketch', ['import', {
+        'source_type': fromFile ? 'hwpx' : 'clipboard', 'data': path,
+      }]);
+      if (!mounted) return;
+      if (result is! Map || result['ok'] != true) {
+        throw Exception(result is Map ? result['message'] : '표를 읽지 못했습니다.');
+      }
+      _saveSnapshot();
+      setState(() { _doc = TableSketchDoc.fromJson(result); _selectedLineIndices.clear(); });
+      _triggerPreviewDebounced();
+      final warnings = result['warnings'];
+      if (warnings is List && warnings.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(warnings.join('\n'))));
+      }
+    } catch (error) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('표 가져오기 실패: $error')));
+    }
+  }
+
   void _paste() {
-    if (_clipboardLines.isEmpty) return;
+    if (_clipboardLines.isEmpty) { _importTable(); return; }
     _saveSnapshot();
     setState(() {
       final newIndices = <int>{};
@@ -1245,6 +1286,10 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
                   onPressed: _loadOrgExample,
                 ),
               const SizedBox(width: 8),
+              IconButton(key: const Key('pasteTableButton'), tooltip: '한/글 표 붙여넣기 (Ctrl+V)',
+                icon: const Icon(Icons.content_paste), onPressed: () => _importTable()),
+              IconButton(key: const Key('importHwpxButton'), tooltip: 'HWPX에서 표 가져오기',
+                icon: const Icon(Icons.file_open_outlined), onPressed: () => _importTable(fromFile: true)),
               IconButton(
                 key: const Key('undoButton'),
                 tooltip: '실행 취소 (Ctrl+Z)',

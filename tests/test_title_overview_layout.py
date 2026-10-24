@@ -122,7 +122,7 @@ class TitleOverviewLayoutTest(unittest.TestCase):
             self.assertEqual(fn(source, target, found), 2)
         section = self._read(target)
         paragraphs = [p for p in section if self.name(p) == 'p']
-        self.assertEqual(len(paragraphs), 4)   # 구역 설정, 제목 표, 개요 표, 개요 뒤 빈 줄
+        self.assertEqual(len(paragraphs), 3)   # 1.80.10: 구역 설정, 제목 표, 개요 표, 개요 뒤 빈 줄
         tables = [t for t in section.iter() if self.name(t) == 'tbl']
         for table in tables:
             out = self.ns['제목_자식'](table, 'outMargin')
@@ -164,7 +164,7 @@ class TitleOverviewLayoutTest(unittest.TestCase):
         with patch.dict(fn.__globals__, {'준말_등록표': merge_with_defaults({})}):
             target = source.with_name('abbr-marker.hwpx')
             self.assertEqual(fn(source, target, fn(source)), 2)
-        self.assertEqual(self._kinds(target), ['secPr', 'tbl', 'tbl', '□ 활용대상 : 전기버스 4대'])
+        self.assertEqual(self._kinds(target), ['secPr', 'tbl', '□ 활용대상 : 전기버스 4대'])
 
     def test_title_without_overview_and_plain_text_after(self):
         from docfit_core.abbreviations import merge_with_defaults

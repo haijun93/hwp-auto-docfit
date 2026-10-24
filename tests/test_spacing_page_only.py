@@ -113,7 +113,7 @@ class SpacingPageBridgeTests(unittest.TestCase):
                     bridge._tk = lambda callback, **kwargs: callback()
                     if not reopen:
                         self.assertTrue(app.spacing_enabled_var.get())
-                        self.assertFalse(app.spacing_page_fit_var.get())
+                        self.assertTrue(app.spacing_page_fit_var.get())
                         bridge.set_card_option("spacing_page_fit", True)
                         bridge.set_card_option("spacing_enabled", False)
                     self.assertFalse(app.spacing_enabled_var.get())

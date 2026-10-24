@@ -106,8 +106,8 @@ class TableSketchPainter extends CustomPainter {
     this.verticalGuides,
     this.horizontalGuides,
   }) : selectedLineIndices = {
-         if (selectedLineIndices != null) ...selectedLineIndices,
-         if (selectedLineIndex != null) selectedLineIndex,
+         ...?selectedLineIndices,
+         ?selectedLineIndex,
        };
 
   final TableSketchDoc doc;

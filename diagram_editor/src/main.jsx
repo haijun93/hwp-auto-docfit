@@ -311,6 +311,11 @@ function App(){
     case 'export_png':{
      setBusy(true);
      const doc=snapshot();
+     if(message.type==='copy_png'){
+      const graph=layoutGraph(mode==='mindmap'&&doc.mindmap?{...doc,...mindmapGraph(doc.mindmap)}:doc);
+      send({type:'copy_result',kind:'diagram',snapshot:graph,name:nameRef.current});
+      setBusy(false);break;
+     }
      const image=svg(mode==='mindmap'&&doc.mindmap?{...doc,nodes:[],edges:[]}:doc),url=URL.createObjectURL(new Blob([image.source],{type:'image/svg+xml'}));
      try{
       const bitmap=new Image();await new Promise((resolve,reject)=>{bitmap.onload=resolve;bitmap.onerror=()=>reject(new Error('이미지 변환에 실패했습니다.'));bitmap.src=url;});

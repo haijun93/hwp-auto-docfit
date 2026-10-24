@@ -43,8 +43,11 @@ class RunOptions:
         if 'cell_image_to_bg' in result:
             result['cell_image_to_bg'] = bool(selected.get('cell_image_to_bg',
                 self.spacing_cell_image_to_bg if mode == 'spacing' else self.all_cell_image_to_bg))
-        if "reset_spacing" in result and self.spacing_exclude_reset is not None:
-            result["reset_spacing"] = not self.spacing_exclude_reset
+        if "reset_spacing" in result:
+            if self.spacing_exclude_reset is not None:
+                result["reset_spacing"] = not self.spacing_exclude_reset
+            elif not self.reset_spacing:
+                result["reset_spacing"] = False
         if mode == "spacing":
             # 자간 기능을 끄면 초기화·줄 병합·표/컨트롤·대표 서식 보정까지 실행하지 않는다.
             if not self.spacing_enabled:

@@ -513,7 +513,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 # '한 번에 적용'의 '페이지 맞춤 제외'와 '서식 통일' 카드의 표 제외·자간 정리 제외·페이지 맞춤 제외. 세부 작업과
                 # 연동한다(_카드옵션_연동_시작).
                 self.all_exclude_pagefit_var = tk.BooleanVar(value=bool(저장된_설정.get("all_exclude_pagefit", False)))
-                self.all_linespacing_var = tk.BooleanVar(value=bool(저장된_설정.get("all_linespacing", True)))
+                self.all_linespacing_var = tk.BooleanVar(value=not bool(저장된_설정["all_exclude_linespacing"]) if "all_exclude_linespacing" in 저장된_설정 else bool(저장된_설정.get("all_linespacing", True)))
                 self.all_exclude_linespacing_var = tk.BooleanVar(value=bool(저장된_설정.get("all_exclude_linespacing", not self.all_linespacing_var.get())))
                 def sync_linespacing_ex(*_):
                     target = not self.all_exclude_linespacing_var.get()

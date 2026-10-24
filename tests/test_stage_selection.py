@@ -66,12 +66,12 @@ class StageSelectionTest(unittest.TestCase):
         for option, (modes, _, _) in CARD_OPTION_STAGES.items():
             self.assertTrue(card_option_keys(option, modes[0]), option)
         self.assertEqual(card_option_keys("spacing_exclude_tables", "spacing"),
-                         ("control_spacing", "control_short_line", "control_word_check"))
+                         ("control_spacing", "control_short_line", "control_word_check", "cell_image_to_bg"))
         self.assertEqual(card_option_keys("unify_exclude_tables", "unify"), ("table_style", "table_unify"))
         self.assertEqual(card_option_keys("unify_exclude_spacing", "unify"), ("unify_spacing",))
         self.assertEqual(card_option_keys("unify_exclude_pagefit", "unify"), ("page_fit",))
         self.assertEqual(card_option_keys("all_exclude_tables", "format"),
-                         ("text_table_convert", "table_style", "table_width", "precise_table", "table_format"))
+                         ("text_table_convert", "table_style", "table_width", "precise_table", "cell_image_to_bg", "table_format"))
         self.assertEqual(len(card_option_keys("all_include_spacing", "all")), 7)
         self.assertEqual(card_option_keys("all_include_spacing", "format"), ())   # 자간 조정 제외 구성에는 자간 작업이 없다
         self.assertEqual(card_option_keys("unify_exclude_tables", "all"), ())     # 다른 카드의 작업은 건드리지 않는다
