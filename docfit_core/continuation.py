@@ -1,6 +1,7 @@
 """Shared recognition and geometry for paragraphs continuing a labelled item."""
 from functools import lru_cache
 import copy
+import os
 import re
 from pathlib import Path
 
