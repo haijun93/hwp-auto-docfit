@@ -619,6 +619,10 @@ final Map<String, SettingGuide> settingGuides = {
       ],
     ),
   ),
+  'table_linespacing_min': SettingGuide('sentence', '표 칸 최소 줄 간격',
+    '쪽 맞춤에 필요할 때만 이 하한까지 줄여요. 본문 줄 간격과 별도예요.', unit: '%'),
+  'table_spacing_min': SettingGuide('sentence', '표 칸 자간 하한',
+    '칸 너비에 관계없이 같은 하한을 사용해요. 한 칸 상자는 기존 본문 기준을 유지해요.', unit: '%'),
   'linespacing_min': SettingGuide(
     'sentence',
     '줄 간격 최솟값',

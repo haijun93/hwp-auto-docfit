@@ -579,9 +579,11 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         continue
                     target = min(세트문장_최대줄간격_퍼센트, value + 10 * 단계)
                 else:
-                    if value <= 세트문장_최소줄간격_퍼센트:
+                    floor = (globals().get("표칸_줄간격_하한", 100) if pos[0] > 0
+                             else 세트문장_최소줄간격_퍼센트)
+                    if value <= floor:
                         continue
-                    target = max(세트문장_최소줄간격_퍼센트, value - 10 * 단계)
+                    target = max(floor, value - 10 * 단계)
                 hwp.SetPos(*pos)
                 act = hwp.CreateAction('ParagraphShape')
                 pset = act.CreateSet()
@@ -2108,6 +2110,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 except Exception:
                     pass
             셀 = {}
+            셀줄간격 = []
             if 페이지맞춤_표셀세로여백_사용 and hasattr(hwp, 'HParameterSet'):
                 for area in _표_셀_대상_순회(최소쪽, 문단범위):
                     시작 = time.perf_counter()
@@ -2115,7 +2118,16 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     쪽맞춤_계측_더하기('표셀읽기', time.perf_counter() - 시작, 1)
                     if 값 is not None:
                         셀.setdefault(area, 값)
-            return {'문단': 문단, '셀': 셀, '문단현재': {k: list(v) for k, v in 문단.items()}, '셀현재': dict(셀)}
+                        hwp.SetPos(area, 0, 0)
+                        begin = hwp.GetPos()
+                        hwp_run("MoveListEnd")
+                        end = hwp.GetPos()
+                        if end[0] == area:
+                            saved = 보고서_줄간격_보관(begin, end)
+                            if saved is None:
+                                raise RuntimeError("표 칸 줄 간격 조사 중단")
+                            셀줄간격.extend(saved)
+            return {'문단': 문단, '셀': 셀, '셀줄간격': 셀줄간격, '문단현재': {k: list(v) for k, v in 문단.items()}, '셀현재': dict(셀)}
         return bind_function(쪽맞춤_대상_조사, _docfit_namespace)
     if _docfit_symbol == '쪽맞춤_레벨_적용':
         def 쪽맞춤_레벨_적용(조사, 레벨, 위간격_0=False):
@@ -2165,6 +2177,19 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         조사['셀현재'][area] = 목표
                         바꾼셀 += 1
                 쪽맞춤_계측_더하기('표셀쓰기', time.perf_counter() - 셀시작, 바꾼셀)
+                # 쪽 수 탐색 중에만 축소하고, 레벨 0/실패 복원은 비율 이외 형식까지 원래 값 그대로 복원한다.
+                saved_lines = 조사.get('셀줄간격', ())
+                if 레벨 > 0:
+                    보고서_줄간격_적용(saved_lines, 레벨)
+                else:
+                    for pos, kind, value in saved_lines:
+                        hwp.SetPos(*pos)
+                        action = hwp.CreateAction('ParagraphShape')
+                        params = action.CreateSet()
+                        params.SetItem('LineSpacingType', kind)
+                        params.SetItem('LineSpacing', value)
+                        if action.Execute(params) is False:
+                            raise RuntimeError('표 칸 줄 간격 복원 실패')
             finally:
                 try:
                     hwp.SetPos(*원위치)
@@ -4207,6 +4232,14 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 압축대상_시작, _ = 줄목록[-2]
                 조정횟수 = 0
                 최대조정 = 40
+                from docfit_core.table_limits import spacing_floor
+                floor = spacing_floor(globals())
+                if floor > -50:
+                    start, end = 단어모드_줄범위(압축대상_시작)
+                    runs = 단어모드_자간보관(start, end)
+                    if runs is None:
+                        raise RuntimeError("표 칸 자간 확인 실패")
+                    최대조정 = max(0, min(v for _, _, values in runs for v in values) - floor)
                 해결됨 = False
                 새_줄목록 = 줄목록
 

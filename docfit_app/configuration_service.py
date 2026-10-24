@@ -15,6 +15,7 @@ LABELS = {
  'color_mark_on':'조정한 글자 색 표시', 'color':'표시 색', 'autoclose':'처리 후 한글 창 닫기',
  'stdformat':'보고서 표준서식 적용', 'verify':'상세 진단', 'integrity_report_file':'무결성 보고서 저장',
  'final_review_file':'최종검수 보고서 저장', 'two_pass_processing':'두 번 처리', 'retry_body':'본문 재시도 횟수',
+ 'table_linespacing_min':'표 칸 최소 줄 간격 (%)', 'table_spacing_min':'표 칸 자간 하한 (%)',
  'retry_table':'표 재시도 횟수', 'linespacing_min':'최소 줄 간격 (%)', 'linespacing_max':'최대 줄 간격 (%)',
  'label_symbols':'문두 라벨 굵게', 'paren_shrink':'괄호 자간 정리', 'paren_label_bold':'괄호 라벨 굵게',
  'std_margin':'편집 여백', 'std_ratio':'기본 장평', 'std_linespacing':'기본 줄 간격', 'std_title':'제목 서식',
@@ -67,7 +68,7 @@ def fields():
         for part in parts:
             label += ' · ' + {'header':'머리글', 'body':'본문', 'font':'글꼴', 'size':'크기 (pt)'}.get(part, part)
         numeric = (root.startswith('std_parspace_') or root in {'punctuation_threshold','retry_body','retry_table',
-                   'linespacing_min','linespacing_max','std_title_subtitle_pt'} or key.endswith('.size'))
+                   'table_linespacing_min','table_spacing_min','linespacing_min','linespacing_max','std_title_subtitle_pt'} or key.endswith('.size'))
         result.append({'key':key, 'label':label, 'type':'boolean' if isinstance(default,bool) or default is None
                        else 'number' if numeric else 'text', 'default':True if default is None else default,
                        'group':'글꼴' if root in {'symbol_fonts','table_fonts'} else
@@ -120,11 +121,11 @@ class ConfigurationService:
             elif field['type']=='number':
                 try:
                     number = Decimal(value)
-                    if not number.is_finite() or number<0 or number>1000:
+                    if not number.is_finite() or number<(-25 if key=='table_spacing_min' else 0) or number>1000:
                         raise ValueError()
                     if (key.endswith('.size') or key=='std_title_subtitle_pt') and number<=0:
                         raise ValueError()
-                    if key in {'retry_body','retry_table','punctuation_threshold','linespacing_min','linespacing_max'} and number!=number.to_integral_value():
+                    if key in {'table_linespacing_min','table_spacing_min','retry_body','retry_table','punctuation_threshold','linespacing_min','linespacing_max'} and number!=number.to_integral_value():
                         raise ValueError()
                 except (InvalidOperation,ValueError):
                     raise ServiceError('INVALID_INPUT',field['label']+'에 유효한 숫자를 입력해 주세요.')
@@ -132,6 +133,12 @@ class ConfigurationService:
             clean[key] = value
         def update(settings):
             if revision(settings)!=expected_revision:
+            if key in {'table_linespacing_min', 'table_spacing_min'}:
+                from docfit_core.table_limits import TableLimits
+                try:
+                    TableLimits.from_settings({key: value})
+                except ValueError as exc:
+                    raise ServiceError('INVALID_INPUT', str(exc))
                 raise ServiceError('SETTINGS_CHANGED','다른 화면에서 설정이 바뀌었습니다. 다시 불러온 뒤 적용해 주세요.')
             settings.update(migrate(settings))
             for key,value in clean.items():

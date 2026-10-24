@@ -422,6 +422,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 self._범위_끝직접설정 = False      # 사용자가 종료쪽을 직접 바꿨는지
                 self.retry_body_var = tk.StringVar(value=str(저장된_설정["retry_body"]))
                 self.retry_table_var = tk.StringVar(value=str(저장된_설정["retry_table"]))
+                self.table_linespacing_min_var = tk.StringVar(value=str(저장된_설정["table_linespacing_min"]))
+                self.table_spacing_min_var = tk.StringVar(value=str(저장된_설정["table_spacing_min"]))
                 self.linespacing_min_var = tk.StringVar(value=str(저장된_설정["linespacing_min"]))
                 self.linespacing_max_var = tk.StringVar(value=str(저장된_설정["linespacing_max"]))
                 self.font_folder_var = tk.StringVar(value=str(저장된_설정.get("hwp_font_folder", "")))
@@ -3751,6 +3753,13 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 self.retry_table_spin.pack(side="left", padx=(4, 0))
 
                 # 그룹 2: 보고서 서식
+                for label, var, low, high in (("표 칸 최소 줄 간격 (%)", self.table_linespacing_min_var, 100, 500),
+                                               ("표 칸 자간 하한 (%)", self.table_spacing_min_var, -25, 0)):
+                    row = ttk.Frame(tabs["layout"])
+                    row.pack(anchor="w", padx=18)
+                    ttk.Label(row, text=label).pack(side="left")
+                    ttk.Spinbox(row, from_=low, to=high, textvariable=var, width=5).pack(side="left")
+
                 # 실행창 '서식 정리 · 세부 작업'과 같은 10단계(내어쓰기는 별도 탭)를
                 # 번호 순서로 나열하고, 각 단계에 딸린 상세 설정을 그 아래 중첩한다.
                 # 자간 정리 탭과 마찬가지로 self.stage_choices["format"]을 그대로
@@ -4007,6 +4016,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     기존_세부작업 = 기존_설정.get("stage_choices", {})
                     if isinstance(기존_세부작업, dict) and 기존_세부작업:
                         설정값["stage_choices"] = 기존_세부작업
+                        "table_linespacing_min": str(self.table_linespacing_min_var.get()),
+                        "table_spacing_min": str(self.table_spacing_min_var.get()),
                     설정값["abbreviations"] = 기존_설정.get("abbreviations", {})
                     설정값["abbreviation_defaults"] = 기존_설정.get("abbreviation_defaults", True)
                     설정값["label_symbols_rev"] = 2
@@ -4207,6 +4218,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             def 로그_여러줄_표시(self, 줄들):
                 if not 줄들:
                     return
+                self.table_linespacing_min_var.set(기본_설정["table_linespacing_min"])
+                self.table_spacing_min_var.set(기본_설정["table_spacing_min"])
                 try:
                     self.log_text.insert(tk.END, "\n".join(줄들) + "\n")
                     총줄수 = int(self.log_text.index("end-1c").split(".")[0])
@@ -4749,6 +4762,10 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 # 프로필 옵션을 반영한 화면 값보다 이번 작업의 카드 선택을 우선한다.
                 if mode in ("all", "format") and not self.all_linespacing_var.get():
                     표준서식_세부_전달["std_linespacing"] = False
+                from docfit_core.table_limits import TableLimits
+                표한도 = TableLimits.from_settings({"table_linespacing_min": self.table_linespacing_min_var.get(),
+                                                     "table_spacing_min": self.table_spacing_min_var.get()})
+                표준서식_세부_전달.update(table_linespacing_min=표한도.line_min, table_spacing_min=표한도.spacing_min)
 
                 self._진행_세부작업 = dict(세부작업)   # 진행 화면이 끈 단계를 목록에서 뺄 때 쓴다
                 from docfit_engine.runtime import session_for

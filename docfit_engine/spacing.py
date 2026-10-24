@@ -4,6 +4,7 @@ Original algorithms and comments are preserved. Runtime bindings are session-loc
 see docfit_engine.runtime. This module does not import the application bootstrap.
 """
 from docfit_engine.runtime import bind_function, bind_class
+from docfit_core.table_limits import spacing_floor
 
 def _install(*, _docfit_namespace, _docfit_symbol):
     global 문단_자간보호_선행부_오프셋, 컨트롤_내부_자간조정, 한칸표_자간조정, 표셀_자간_제외인가, 컨트롤_줄병합_대상인가, 문서_전체_자간_초기화, 자간초기화_hwpx_처리, 현재_페이지번호, 처리중_기록_대체, 검수_문제_기록, 줄경계_어절연속_문자쌍인가, 현재줄_끝_어절분리인가, 현재줄_끝_붙임괄호_분리인가, 현재줄_끝_괄호내부_공백분리인가, 단어문자인가, 단어모드_범위선택, 단어모드_한글자, 단어모드_줄범위, 의미단위_범위, 일반_의미단위_범위, 등_어절인가, 숫자쉼표_어절인가, 숫자끝_어절인가, _숫자쉼표_앞단어인가, 어절_의미단위_범위, 앞어절_묶음_후속인가, _왼쪽_어절_추가, _단어모드_공백전까지, _띄운날짜_어절_확장, _직함이름_어절_확장, 단어모드_분리정보, 칸폭보다_긴_단어인가, 붙임의미단위_줄분리인가, 자간보호_글자수, 자간조정_본문범위, 자간조정_현재줄_본문선택, _단어모드_다음위치, 단어모드_서식보관, 단어모드_자간보관, 단어모드_자간적용, 단어모드_장평보관, 단어모드_장평적용, 최소_성공단계_탐색, 단어_장평_추가축소_시도, 다음단어_당김_시도, 어절분리_앞줄당김인가, 단어모드_마지막줄_짧은잔여인가, 연결부호_구간, 연결부호_단위들, 연결부호_전체_맞춤, _연결단위_맞춤, 단어중간_줄바꿈방지, 자간자동조정, _자간자동조정_본체, 본문_기존자간조정, 문단세트_가능, 문단세트1_글서식_적용, _문단세트_줄순회, 문단세트2_배치_적용, _괄호따옴표_시작문자인가, 문장부호_시작인가, 문장부호_마커_끝위치, 세트문장_시작인가
@@ -774,6 +775,10 @@ def _install(*, _docfit_namespace, _docfit_symbol):
         return bind_function(단어모드_자간보관, _docfit_namespace)
     if _docfit_symbol == '단어모드_자간적용':
         def 단어모드_자간적용(runs, delta):
+            from docfit_core.table_limits import spacing_floor
+            floor = spacing_floor(globals())
+            if delta < 0 and any(v + delta < floor for _, _, values in runs for v in values):
+                raise 문두보호_조정불가("표 칸 자간 하한 도달")
             for start, end, values in runs:
                 단어모드_범위선택(start, end)
                 act = hwp.CreateAction('CharShape')
@@ -895,7 +900,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             현재_최소자간 = min((v for _, _, vs in spacing_runs for v in vs), default=0)
             자간_한도 = min(4, max(1, 최대시도))
             자간값 = -max(0, 자간_한도 + 현재_최소자간)
-            if 자간값 and any(not -50 <= v + 자간값 <= 50 for _, _, vs in spacing_runs for v in vs):
+            if 자간값 and any(not spacing_floor(globals()) <= v + 자간값 <= 50 for _, _, vs in spacing_runs for v in vs):
                 자간값 = 0
             자간적용됨 = False
             성공 = False
@@ -979,7 +984,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             현재_최소자간 = min((v for _, _, vs in runs for v in vs), default=0)
             자간_상한 = max(0, min(최대시도, 다음단어_당김_자간_최대_퍼센트 + 현재_최소자간))
             # 자간은 -50%보다 작게 할 수 없다.
-            탐색_상한 = min(자간_상한, 50 + 현재_최소자간)
+            탐색_상한 = min(자간_상한, -spacing_floor(globals()) + 현재_최소자간)
 
             def 당김_확인(step):
                 nonlocal changed
@@ -1124,7 +1129,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             # ① 부호 글자만 자간을 한도 넘어 줄인다.
             runs = 단어모드_자간보관(cs, ce)
             if runs is not None:
-                상한 = 50 + min((v for _, _, vs in runs for v in vs), default=0)
+                상한 = -spacing_floor(globals()) + min((v for _, _, vs in runs for v in vs), default=0)
                 바뀜 = 성공 = False
 
                 def 확인(step):
@@ -1189,7 +1194,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     if 괄호보관 is not None:
                         # 실제 자간 하한 -50%까지 남은 여유만 탐색한다.
                         # 예: 기존 -48%이면 추가 축소는 2단계만 허용한다.
-                        상한 = min(최대시도, 50 + min(
+                        상한 = min(최대시도, -spacing_floor(globals()) + min(
                             (v for _, _, values in 괄호보관 for v in values), default=0))
                         def 괄호확인(step):
                             nonlocal 괄호변경
@@ -1277,7 +1282,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         success = False
                         changed = False
                         # 자간은 -50%보다 작게 할 수 없다.
-                        상한 = min(최대시도, 50 + min((v for _, _, vs in runs for v in vs), default=0))
+                        상한 = min(최대시도, -spacing_floor(globals()) + min((v for _, _, vs in runs for v in vs), default=0))
 
                         def 당김_확인(step):
                             nonlocal changed
@@ -1385,7 +1390,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 최대시도 = 자간_최대시도_본문
             # 세부 작업에서 '단어 분리 최종 검사'를 선택했다면 일반 자간 옵션과
             # 무관하게 실제 화면줄의 공백 없는 어절 분리를 검사해야 한다.
-            if (단어중간_줄바꿈방지_사용
+            if (spacing_floor(globals()) > -50 or 단어중간_줄바꿈방지_사용
                     or stage_enabled(선택_세부작업, 'word_check')):
                 return 단어중간_줄바꿈방지(최대시도)
 
@@ -1979,8 +1984,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         괄호_안쪽_공백_정리_문단_처리()
                         쉼표_공백_정리_문단_처리()
                         콜론_공백_정리_문단_처리()
-                    최대시도 = (자간_최대시도_본문 if 현재영역_한칸표 or 넓은_표칸_줄인가()
-                            else 자간_최대시도_표)
+                    최대시도 = (자간_최대시도_본문 if 현재영역_한칸표
+                            else max(자간_최대시도_표, -globals().get("표칸_자간_하한", -25)))
                     result = 자간자동조정(최대시도=최대시도)
                     if result is False:
                         return False

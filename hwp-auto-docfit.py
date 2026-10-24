@@ -635,7 +635,10 @@ _ttf_패밀리이름 = _engine_resolve('docfit_engine.formatter', '_ttf_패밀�
 단어중간_줄바꿈방지_사용 = False
 문장부호_2줄_기준글자수 = 5
 자간_최대시도_본문 = 30
-자간_최대시도_표 = 5
+자간_최대시도_표 = 25
+표칸_줄간격_하한 = 100
+표칸_자간_하한 = -25
+from docfit_core.table_limits import spacing_floor
 
 # '다음 단어 당김'(통째로 밀린 단어를 앞줄로 끌어올리는 기능) 전용 상한.
 # 이 기능은 문서의 거의 모든 줄(양쪽정렬에서 단어 경계로 깔끔하게 끝나는
@@ -2997,10 +3000,8 @@ _셀_안쪽여백_단계축소 = _engine_resolve('docfit_engine.formatter', '_�
 
 # 한 줄이 이 글자 수 이상인 표 칸은 본문과 같은 자간 한도를 쓴다(사용자 결정
 # 2026-09-25). 좁은 칸은 자간을 많이 바꾸면 글자가 뭉개져 표 한도로 묶어 둔다.
-넓은_표칸_기준글자수 = 20
 
 
-넓은_표칸_줄인가 = _engine_resolve('docfit_engine.formatter', '넓은_표칸_줄인가', globals())
 
 
 컨트롤_내부_자간조정 = _engine_resolve('docfit_engine.spacing', '컨트롤_내부_자간조정', globals())

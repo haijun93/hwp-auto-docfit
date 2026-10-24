@@ -42,7 +42,7 @@ class ControlLineLoopTest(unittest.TestCase):
             self.assertTrue(fn())
         self.assertEqual(calls, [(2, 0, 0)])
 
-    def test_wide_cell_lines_use_body_budget(self):
+    def test_all_cell_widths_use_table_budget(self):
         fn = self.ns['컨트롤_내부_자간조정']
         budgets = []
         for wide in (True, False):
@@ -57,7 +57,7 @@ class ControlLineLoopTest(unittest.TestCase):
                 '자간_최대시도_본문': 30, '자간_최대시도_표': 5,
             }):
                 fn()
-        self.assertEqual(budgets, [30, 5])
+        self.assertEqual(budgets, [25, 25])
 
     def test_single_cell_body_is_processed_even_when_multi_cell_spacing_is_off(self):
         fn = self.ns['컨트롤_내부_자간조정']
@@ -75,19 +75,6 @@ class ControlLineLoopTest(unittest.TestCase):
         }):
             self.assertTrue(fn())
         self.assertEqual(calls, [((2, 0, 0), 30)])
-
-    def test_wide_cell_detection(self):
-        fn = self.ns['넓은_표칸_줄인가']
-        for length, expected in ((33, True), (20, True), (6, False)):
-            class Doc:
-                def GetPos(self):
-                    return (2, 0, 0)
-                def SetPos(self, *pos):
-                    pass
-            with patch.dict(fn.__globals__, {
-                'hwp': Doc(), '단어모드_줄범위': lambda p, n=length: ((2, 0, 0), (2, 0, n)),
-            }):
-                self.assertIs(fn(), expected)
 
     def test_spacing_table_exclusion_also_excludes_single_cell_overview(self):
         fn = self.ns['컨트롤_내부_자간조정']
