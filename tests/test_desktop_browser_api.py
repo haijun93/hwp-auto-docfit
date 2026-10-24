@@ -189,11 +189,12 @@ class BrowserApiTests(unittest.TestCase):
             with self.subTest(name=name), self.assertRaisesRegex(ValueError, "지원하지 않는"):
                 bridge.run_tool(name)
 
-    def test_text_input_remains_available_without_developer_mode(self):
+    def test_text_input_fallback_remains_available_without_developer_mode(self):
         gui = _FakeGui()
         called = []
         gui._텍스트로_문서추가_열기 = lambda: called.append(True)
         gui.developer_mode_var = _Var(False)
+        gui.ui_tk_fallback_var = _Var(True)
         self.assertTrue(_bridge(gui).run_tool("paste"))
         self.assertEqual(called, [True])
 

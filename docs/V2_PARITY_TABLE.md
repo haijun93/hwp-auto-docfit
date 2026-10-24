@@ -31,10 +31,10 @@
 | **T01** | 처리 기록 창 | L760 `__init__`<br>(L2062 `_기록토글`, L2071 `_기록닫기`) | 상단 메뉴 "로그 보기" 또는 진행 표시줄 클릭 시 | - 입: 로그 지우기/닫기<br>- 출: 실시간 ScrolledText 로그 스트림 | `features/progress/live_progress.dart`<br>(`LiveProgress`), `main.dart` (`showLog`) | **완료** | `get_state`, `get_log` | 중 | Flutter 하단 진행 카드 및 `showLog` 다이얼로그에 임베디드 완료됨. 단, 브리지 `open_log` 호출 시 `log_window.deiconify()` 잔존. |
 | **T02** | 세부 작업 항목 설정 창 | L1386 `_세부작업_열기` | 2단계 세부작업 "단계별 수치 조정" 클릭 시 | - 입: 9대 작업 그룹 On/Off 체크박스, 세부 목표치 Spinbox<br>- 출: 설정 저장/적용 | `features/stages/stage_board.dart`<br>(`StageBoard`), `main.dart` (`showStages`) | **완료** | `set_stage`, `stage_config`, `set_stage_default`, `reset_stages` | **상** | 메인 화면의 `StageBoard` 및 `showStages` 모달 시트로 완전 구현됨. 브리지 `open_stages` API 호출 시 Tk 창(`_세부작업_열기`)을 띄우는 경로 제거 대상. |
 | **T03** | 서식 키오스크 (스틸컷 선택) | L2489 `_서식_키오스크_열기` | 서식 선택 영역 "썸네일로 선택" 클릭 시 | - 입: 썸네일 카드 클릭 선택<br>- 출: 서식 카드 그리드, 미리보기 이미지, 프로필 ID | `main.dart`<br>(`openKiosk`, `kioskCard`) | **완료** | `format_gallery`, `set_profile` | 하 | `main.dart`의 `openKiosk()`와 `kioskCard` 그리드 다이얼로그로 이미 완전 구현되어 정상 작동 중 (초안의 '없음' 오류 수정). |
-| **T04** | 서식 예시 문서 편집 창 | L2761 `_서식_예시편집_시작` | 서식 관리자에서 "예시 문서 열어 편집/분석" 클릭 시 | - 입: HWP 외부 실행, 저장 후 분석 요청<br>- 출: 분석 안내문, 완료 여부 | 없음 | **없음** | `write_format_example`, `analyze_hwp_format` | 하 | 브리지 `write_format_example` 호출 시 Tk 창 뜸. 외부 HWP 실행 안내 및 백그라운드 분석 Flutter 전용 모달로 이관 대상. |
+| **T04** | 서식 예시 문서 편집 창 | L2761 `_서식_예시편집_시작` | 서식 관리자에서 "예시 문서 열어 편집/분석" 클릭 시 | - 입: HWP 외부 실행, 저장 후 분석 요청<br>- 출: 분석 안내문, 완료 여부 | `features/formats/format_example_edit_dialog.dart`<br>(`FormatExampleEditDialog`) | **완료** | `write_format_example`, `get_pending_dialog`, `resolve_dialog` | 하 | G31: Flutter 전용 가이드 모달(`FormatExampleEditDialog`) 및 브리지 연동 완료. `ui_tk_fallback=true` 시 기존 Tk 창 유지. |
 | **T05** | 문서 검토 (가독성/구조) 창 | L2879 `_문서검토_열기` | 1.80.9에서 진입점 삭제 | - 입: 검토 대상 파일 선택, JSON 내보내기<br>- 출: 장/절/문단 구조 트리, 가독성 지수 통계 | 없음 | **삭제됨(1.80.9)** | 없음 | — | C19: main의 삭제 결정 반영. 이관 대상에서 제외. |
 | **T06** | 아웃라이너 창 | L3031 `_아웃라이너_열기` | 1.80.9에서 진입점 삭제 | - 입: 계층 노드 추가/수정/삭제, 들여쓰기<br>- 출: HWP/MD/TXT 내보내기 | 없음 | **삭제됨(1.80.9)** | 없음 | — | C19: main의 삭제 결정 반영. 이관 대상에서 제외. |
-| **T07** | 텍스트로 문서 추가 창 | L3494 `_텍스트로_문서추가_열기` | "텍스트 직접 입력/붙여넣기로 문서 추가" 클릭 시 | - 입: 텍스트 본문, 제목, AI변환 체크<br>- 출: TXT/HWP 임시 파일 생성 및 큐 등록 | `features/tools/document_tools_workspace.dart`<br>(`DocumentToolsWorkspace`) | **일부** | `document_tool`, `text_input` | 중 | C19: 개발자 도구 전용이 아니므로 유지. 메인 문서 추가의 `openTools('convert')`와 `DocumentToolsWorkspace`가 동작하며 `text_input`/`run_tool('paste')` Tk 경로는 남음. |
+| **T07** | 텍스트로 문서 추가 창 | L3494 `_텍스트로_문서추가_열기` | "텍스트 직접 입력/붙여넣기로 문서 추가" 클릭 시 | - 입: 텍스트 본문, 제목, AI변환 체크<br>- 출: TXT/HWP 임시 파일 생성 및 큐 등록 | `features/tools/document_tools_workspace.dart`<br>(`DocumentToolsWorkspace`) | **완료** | `document_tool`, `text_input` | 중 | C20: 「텍스트 입력」→`openTools('convert')`→`DocumentToolsWorkspace` 유지. `text_input`/`run_tool('paste')`는 기본 FLUTTER_ONLY, ui_tk_fallback=true에서 기존 Tk 호출. Python·Flutter 경로 시험 추가. |
 | **T08** | 붙여넣기 정리 창 | L3675 `_붙여넣기_정리_열기` | 1.80.9에서 진입점 삭제 | - 입: 마크다운 기호 제거, 개조식 변환 옵션<br>- 출: 정리된 텍스트 프리뷰, 클립보드 복사 | 없음 | **삭제됨(1.80.9)** | 없음 | — | C19: main의 삭제 결정 반영. 이관 대상에서 제외. 텍스트 추가 화면의 clean 변환은 별도 유지. |
 | **T09** | AI 프롬프트 생성기 창 | L3794 `_AI_프롬프트_열기` | 1.80.9에서 진입점 삭제 | - 입: 프롬프트 유형(교정/요약/초안), 본문 발췌<br>- 출: 조립된 공문서 시스템 프롬프트 복사 | 없음 | **삭제됨(1.80.9)** | 없음 | — | C19: main의 삭제 결정 반영. 이관 대상에서 제외. |
 | **T10** | 공문서 작성 도우미 창 | L3870 `_작성도우미_열기` | 1.80.9에서 진입점 삭제 | - 입: 7대 도우미(금액, 날짜, 표 계산, 나이 등)<br>- 출: 변환된 공문서 문구 복사 | 없음 | **삭제됨(1.80.9)** | 없음 | — | C19: main의 삭제 결정 반영. 이관 대상에서 제외. |
@@ -46,7 +46,7 @@
 | **T16** | kordoc 고급 문서 도구 창 | L5663 `고급문서도구_열기` | 1.80.9에서 진입점 삭제 | - 입: 문서 덤프, 바이너리 검사, 필드 추출, 패치<br>- 출: 진단 결과 리포트 및 패치 파일 | 없음 | **삭제됨(1.80.9)** | 없음 | — | C19: main의 삭제 결정 반영. 이관 대상에서 제외. |
 | **T17** | 원본-결과 HWP 좌우 비교 창 | L5917 `비교창_준비` | 작업 완료 후 결과 목록 "좌우 비교 보기" 클릭 시 | - 입: 동기 스크롤 토글, 닫기<br>- 출: 좌측(원본) - 우측(결과) HWP COM 뷰어 | 없음 | **없음** | `launch_external_hwp_diff` (신규 독립 프로세스 브리지) | **상** | Windows OLE COM 뷰어 특성상 Flutter 직접 임베딩 불가. 독립 C#/Win32 뷰어 프로세스 분리 연동 필요. |
 | **T18** | 대화상자 부모 헬퍼 | L6274 `_대화상자_부모` | Tk 모달 대화상자 중앙 정렬 시 내부 호출 | - 입/출: 1x1 투명 오버레이 윈도우 | 없음 (불필요) | **완료 (Tk 전용)** | N/A | 하 | Tk GUI 전용 내부 유틸리티. Flutter의 BuildContext 기반 모달 체계로 자동 소멸. |
-| **T19** | 절약 완료 안내 창 | L6291 `_절약_완료창` | 전체 문서 맞춤/변환 배치 완료 시 | - 입: 확인, 결과 폴더 열기<br>- 출: 검은 고양이 그림, "OO분 시간 절약!" | `features/execution/execution_result_dialog.dart`<br>& `main.dart` (`outcome`) | **일부** | `get_state` | 중 | Flutter 4단계 결과 화면(`outcome`)에 완료 안내 표시 중. 캐릭터 및 시간 절약 연출 이관 가능. |
+| **T19** | 절약 완료 안내 창 | L6291 `_절약_완료창` | 전체 문서 맞춤/변환 배치 완료 시 | - 입: 확인, 결과 폴더 열기<br>- 출: 검은 고양이 그림, "OO분 시간 절약!" | `main.dart`<br>(`outcome`, `_savingsCard`) | **완료** | `get_state` | 중 | G31: Flutter 4단계 결과 화면(`outcome`)에 절약 시간·문구·고양이 캐릭터 그림 연출 이관 완료. `ui_tk_fallback=true` 시 기존 Tk 창 유지. |
 | **T20** | 서식통일 2단계: 대표 서식 검토 창 | L6415 `_서식통일_대표서식_검토창` | 다중 문서 서식 통일 마법사 2단계 도달 시 | - 입: 추출된 서식 후보 중 대표 기준 서식 선택<br>- 출: 선택된 기준 프로필 ID 확정 | `features/style_unify/unify_pick_style_dialog.dart`<br>(`UnifyPickStyleDialog`) | **완료** | `get_pending_dialog`, `resolve_dialog` | **상** | G29: 브리지 모달 및 Flutter 화면 이관 완료. `ui_tk_fallback=true` 시 기존 Tk 창 유지. [API](V2_STYLE_UNIFY_DIALOGS_API.md). |
 | **T21** | 서식통일 3단계: 적용 영역 검토 창 | L6564 `_서식통일_적용영역_검토창` | 서식 통일 마법사 3단계 도달 시 | - 입: 문서별 적용 섹션/본문/표/머리말 체크박스<br>- 출: 적용 영역 매핑 구조체 | `features/style_unify/unify_area_dialog.dart`<br>(`UnifyAreaDialog`) | **완료** | `get_pending_dialog`, `resolve_dialog` | **상** | G29: 불일치 문장 선별 체크박스 이관 완료. `ui_tk_fallback=true` 시 기존 Tk 창 유지. [API](V2_STYLE_UNIFY_DIALOGS_API.md). |
 | **T22** | 서식통일 5단계: 결과 확인 창 | L6672 `_서식통일_결과_확인창` | 서식 통일 마법사 완료 시 | - 입: 완료 확인, 결과 폴더 열기<br>- 출: 변경 문서 목록 및 적용 스타일 요약 | `features/style_unify/unify_result_dialog.dart`<br>(`UnifyResultDialog`) | **완료** | `get_pending_dialog`, `resolve_dialog` | **상** | G29: 불일치·판정 보류·미확정·오류 내역 전체 표시 완료. 폴더 열기는 완료 결과 화면에서 제공. `ui_tk_fallback=true` 시 기존 Tk 창 유지. [API](V2_STYLE_UNIFY_DIALOGS_API.md). |
@@ -129,7 +129,7 @@
 | **B01** | `add_files` (L618) | `self.gui.파일선택` (F13) | 1단계 "문서 추가" 버튼 또는 Ctrl+O | `self._tk(..., front=True)`로 Win32 파일 선택창 호출 | Flutter `file_picker`로 파일 선택 후 경로만 백엔드 전송 |
 | **B02** | `add_folder` (L623) | `self.gui._폴더선택` (F01) | 1단계 "폴더 추가" 버튼 클릭 시 | `self._tk(..., front=True)`로 Win32 폴더 선택창 호출 | Flutter `file_picker` `getDirectoryPath()`로 대체 |
 | **B03** | `open_settings` (L935) | `self.gui.설정창_열기` (T15) | 설정 드로어 "전체 설정 열기" 클릭 시 | `self._tk(..., front=True)`로 레거시 Tk 환경설정 창 띄움 | Flutter `SettingsDialog`가 이미 존재하므로 브리지의 Tk 호출 제거 |
-| **B04** | `text_input` (L939) | `self.gui._텍스트로_문서추가_열기` (T07) | 1단계 "텍스트 붙여넣기" 클릭 시 | `self._tk(..., front=True)`로 Tk 텍스트 입력 창 띄움 | Flutter `DocumentToolsWorkspace(initial: 'convert')` 모달로 대체 |
+| **B04** | `text_input` (L939) | `self.gui._텍스트로_문서추가_열기` (T07) | 1단계 "텍스트 붙여넣기" 클릭 시 | C20: ui_tk_fallback=true일 때만 기존 Tk 창 | Flutter `DocumentToolsWorkspace(initial: 'convert')` 유지, 기본 FLUTTER_ONLY |
 | **B05** | `open_stages` (L943) | `self.gui._세부작업_열기` (T02) | 2단계 세부작업 상세 조정 클릭 시 | `self._tk(..., front=True)`로 Tk 세부작업 팝업 띄움 | Flutter `showStages()` AlertDialog로 완전 일원화 |
 | **B06** | `open_log` (L949) | `self.gui.log_window` (T01) | 로그 메뉴 또는 상태바 클릭 시 | `log_window.deiconify()`, `lift()`로 숨은 Tk 창 표시 | Flutter `LiveProgress` / `showLog()` 다이얼로그로 완전 대체 |
 | **B07** | `flow_editor` (L1045) | `filedialog.asksaveasfilename` | 표 편집기 PNG 내보내기 시 | `self._tk(..., front=True)`로 Tk 파일 저장창 호출 | Flutter `file_picker` `getSavePath()`로 대체 |
@@ -139,7 +139,7 @@
 | **B11** | `add_format_file` (L1628) | `self.gui._서식_파일에서_추가` (F02) | 서식 관리 "예시 파일에서 복제" 클릭 시 | `self._tk(..., front=True)`로 Tk 파일 열기창 호출 | Flutter `file_picker`로 대체 |
 | **B12** | `write_format_example` (L1633) | `self.gui._서식_예시편집_시작` (T04) | 서식 관리 "예시 작성하여 복제" 클릭 시 | `self._tk(..., front=True)`로 Tk 예시편집 창 띄움 | Flutter 가이드 다이얼로그로 전환 |
 | **B13** | `edit_profile` (L1652) | `self.gui._서식_수정하기` (T13/T14) | 서식 관리 "세부 수정" 버튼 클릭 시 | `self._tk(..., front=True)`로 Tk 서식세부창 띄움 | Flutter `ProfileEditor`가 이미 완비되어 있으므로 Tk 호출 분기 제거 |
-| **B14** | `run_tool(name)` | T07 텍스트 문서 추가만 유지 | 문서 목록의 텍스트 추가 | `paste`만 허용; 나머지 문서 도구는 삭제됨(1.80.9) | T07 잔존 Tk 호출 정리 |
+| **B14** | `run_tool(name)` | T07 텍스트 문서 추가만 유지 | 문서 목록의 텍스트 추가 | `paste`만 허용; 나머지 문서 도구는 삭제됨(1.80.9) | C20 완료: 기본 FLUTTER_ONLY, ui_tk_fallback=true만 기존 Tk 호출 |
 
 ---
 
@@ -156,12 +156,19 @@
 
 | 대상 | 남은 범위 |
 |---|---|
-| T04 서식 예시 편집 안내 | 외부 한/글 예시 작성·저장 후 분석 안내를 Flutter로 이관 |
-| T07 텍스트 문서 추가 | 기존 Flutter 변환 화면을 유지하고 `text_input`/`run_tool('paste')`의 Tk 창 호출 정리 |
 | T17 원본·결과 비교 | 한/글 OLE 비교 뷰어를 독립 프로세스로 분리하고 Flutter 진입점 연결 |
-| T19 절약 완료 안내 | 기존 결과 화면에 캐릭터·절약 시간 연출 이관 |
 | T01·T02·T13·T14·T15 | Flutter 화면은 완료; `ui_tk_fallback`의 Tk 경로 최종 폐기 및 호출 동등성 확인 |
 | S01~S04·M 계열 | 이미 이관된 입력·확인 응답 검증 및 잔존 messagebox 직호출 재조사/전환 |
 | F01·F02·F08·F09·F11·F12·F13, B01·B02·B07~B11 | 파일·폴더 열기/저장 선택을 OS 네이티브 선택과 경로 API로 정리(흐름도 저장 B07/B08 유지) |
 
 T20~T22는 G29로 이관 완료이며 후속 Windows 실기기 회귀 검증에 포함한다. 삭제 기능은 재이관하지 않는다.
+
+## 8. C20·C22 판정 (2026-10-24)
+
+- C22에서 실제 G31 변경과 `reports/G31.md`를 확인해 수정 후 채택했다. 앞 C20의 도구 오류에 따른 「미구현」 판정은 이 판정으로 대체한다. T04 안내·분석/취소 회신, T19 절약 문구·시간·고양이를 Flutter로 이관했다.
+- T19는 완료 이벤트에서 초기화 전 절약 초를 전달하도록 수정했다. T04 저장 실패·항목기호 없음은 오류를 전달하고 다시 편집/취소할 수 있다. 이관 완료 판정을 위한 시험 생략·검사 완화는 없다.
+- Tk 동일성: T04·T19의 기존 Tk 창 본문·문구, T07 메서드 및 다른 Tk 메서드와 본체는 3aaa6c3 대비 AST/내용 동일. Flutter 분기·응답 payload 및 명시적 폴백 분리만 추가했다(`reports/C22-static.json`).
+- T07 완료: Flutter 「텍스트 입력」 화면·문서 추가 유지. 두 잔존 API는 기본 경로에서 FLUTTER_ONLY, ui_tk_fallback=true에서는 기존 Tk 창 호출·반환값 유지. 삭제 도구 거부 유지.
+- 전용 시험: T07 Python 3개·Flutter 1개, T04/T19 Python 9개·Flutter 5개. 실제 Tk 창·messagebox·한/글 COM 생성은 시험 대역으로 차단하며 완료 이벤트의 실제 절약 시간 전달도 검증한다.
+- 현재 Toplevel 22행: 삭제 8, 완료 13(T18 Tk 헬퍼 포함), 없음 1(T17). 7장 잔여 목록이 후속 작업 기준이다.
+- 최종 검증: Python 전체 1,651개 PASS + 최종 전용 9개 PASS(전체 실행 후 추가한 재안내 1개 포함), Flutter 전체 148개 PASS(제외 1), analyze 지적 0. CRLF 및 diff 검사 PASS. A에서는 엔진을 변경하지 않아 COM 재연을 별도로 실행하지 않았다.

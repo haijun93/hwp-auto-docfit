@@ -1055,6 +1055,8 @@ class DesktopWebBridge:
         return True
 
     def text_input(self):
+        if not self._tk_fallback_enabled():
+            return {"ok": False, "error": "FLUTTER_ONLY"}
         self._tk(self.gui._텍스트로_문서추가_열기, timeout=None, front=True)
         return self.get_state()
 
@@ -1097,7 +1099,7 @@ class DesktopWebBridge:
                 return dict(self._close_request) if self._close_request else None
         return {key: pending[key] for key in (
             "id", "kind", "type", "title", "message", "confirm", "choices", "fields",
-            "ok_label", "cancel_label", "styles", "areas", "result"
+            "ok_label", "cancel_label", "styles", "areas", "result", "error"
         ) if key in pending}
 
     def get_pending_dialog(self):
@@ -1864,6 +1866,8 @@ class DesktopWebBridge:
         command = commands.get(name)
         if command is None:
             raise ValueError("지원하지 않는 도구입니다.")
+        if not self._tk_fallback_enabled():
+            return {"ok": False, "error": "FLUTTER_ONLY"}
         self._tk(command, timeout=None, front=True)
         return True
 

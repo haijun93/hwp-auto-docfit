@@ -2799,10 +2799,60 @@ class _WorkspaceState extends State<Workspace> {
 
   // ---- 4. 결과 확인 -------------------------------------------------
 
+  Widget _buildCatImage(String catImage) {
+    try {
+      final commaIndex = catImage.indexOf(',');
+      final base64Str =
+          commaIndex >= 0 ? catImage.substring(commaIndex + 1) : catImage;
+      final bytes = base64Decode(base64Str);
+      return Image.memory(
+        bytes,
+        key: const Key('savingsCatImage'),
+        height: 80,
+        fit: BoxFit.contain,
+      );
+    } catch (_) {
+      return const SizedBox.shrink();
+    }
+  }
+
+  Widget _savingsCard() {
+    final msg = completion['savings_message']?.toString() ?? '';
+    if (msg.isEmpty) return const SizedBox.shrink();
+    final catImage = completion['cat_image']?.toString() ?? '';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: panel(
+        Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (catImage.isNotEmpty) _buildCatImage(catImage),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  msg,
+                  key: const Key('savingsMessageText'),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xff111827),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget outcome() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       heading('작업 결과를 확인하세요', '${state['status'] ?? '작업이 끝나면 저장된 문서가 표시됩니다.'}'),
+      _savingsCard(),
       if (completion.isNotEmpty ||
           formatReview.isNotEmpty ||
           failures.isNotEmpty)

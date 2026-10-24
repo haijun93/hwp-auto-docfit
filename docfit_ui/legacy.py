@@ -2734,6 +2734,57 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     self._알림(messagebox.showerror, APP_NAME, f"한글을 열지 못했습니다.\n{exc}", parent=parent)
                     return
                 self._예시편집_hwp = app
+
+                def _한글닫기():
+                    한글 = getattr(self, "_예시편집_hwp", None)
+                    self._예시편집_hwp = None
+                    if 한글 is not None:
+                        try:
+                            한글.Clear(1)
+                            한글.Quit()
+                        except Exception:
+                            pass
+
+                if getattr(self.root, "_docfit_hidden_backend", False) and not getattr(self, "_is_tk_fallback", lambda: False)():
+                    기본안내 = ("열린 한/글 창에서 예시 문서를 작성하세요.\n\n"
+                                "□·ㅇ·-·※ 같은 항목기호를 섞어 원하는 계층 구조로 쓰면, 기호별로 가장 많이 쓴 "
+                                "글꼴·크기·들여쓰기가 그 기호의 서식이 됩니다. 다 쓰면 '분석 시작'을 누르세요.\n"
+                                "서식 이름은 첫 문장의 앞 8글자로 정하며 나중에 '이름 바꾸기…'로 고칠 수 있습니다.")
+                    안내문 = 기본안내
+                    오류문구 = ""
+                    while True:
+                        답 = self._알림(
+                            messagebox.askokcancel,
+                            "서식 예시 문서 편집",
+                            안내문,
+                            kind="format_example_edit",
+                            flutter_error=오류문구,
+                            flutter_ok_label="분석 시작",
+                            flutter_cancel_label="취소",
+                        )
+                        if not 답:
+                            _한글닫기()
+                            return
+                        한글 = getattr(self, "_예시편집_hwp", None)
+                        if 한글 is None:
+                            return
+                        임시 = Path(tempfile.mkdtemp(prefix="docfit_example_")) / "예시.hwpx"
+                        try:
+                            if 한글.SaveAs(str(임시), "HWPX", "") is False:
+                                raise RuntimeError("예시 문서를 임시 파일로 저장하지 못했습니다.")
+                            문단들 = [b.text for b in inspect_hwpx(임시).blocks if b.type == "paragraph"]
+                        except Exception as exc:
+                            오류문구 = f"예시 문서를 읽지 못했습니다: {exc}"
+                            안내문 = f"{기본안내}\n\n[오류] {오류문구}"
+                            continue
+                        if not any(leading_marker(t)[0] for t in 문단들):
+                            오류문구 = "항목기호(□·ㅇ·-·※ 등)로 시작하는 문단이 없습니다. 기호를 붙인 문단을 한두 개 이상 써 주세요."
+                            안내문 = f"{기본안내}\n\n[오류] {오류문구}"
+                            continue
+                        이름 = 예시문서_기본이름(문단들)
+                        _한글닫기()
+                        self._서식_분석_시작(str(임시), 이름묻기=False, 기본이름=이름)
+                        return
                 창 = tk.Toplevel(parent)
                 self._예시편집_창 = 창
                 창.title("서식 예시 문서 편집")
@@ -4853,8 +4904,31 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 임시.focus_force()
                 return 임시, 임시
 
-            def _절약_완료창(self, 성공, 실패):
-                if getattr(self.root, "_docfit_hidden_backend", False):
+            def _절약_완료창(self, 성공, 실패, *, savings_seconds=None):
+                if getattr(self.root, "_docfit_hidden_backend", False) and not getattr(self, "_is_tk_fallback", lambda: False)():
+                    절약초 = (self._절약초 or 0) if savings_seconds is None else savings_seconds
+                    if 실패 == 0:
+                        문구 = f"당신의 소중한 시간 {절약시간_분초_표시(절약초)}가 절약되었습니다!"
+                    else:
+                        문구 = f"문서 {실패}개를 처리하지 못했습니다. 처리 기록을 확인해 주세요. (성공 {성공}개)"
+                    그림경로 = 번들_고양이_그림_찾기()
+                    cat_image = None
+                    if 그림경로 is not None and Path(그림경로).is_file():
+                        try:
+                            import base64
+                            with open(그림경로, "rb") as f:
+                                cat_image = "data:image/png;base64," + base64.b64encode(f.read()).decode("ascii")
+                        except Exception:
+                            cat_image = None
+                    completion = getattr(self, "_flutter_completion", None)
+                    if not isinstance(completion, dict):
+                        completion = {}
+                        self._flutter_completion = completion
+                    completion["savings_message"] = 문구
+                    completion["savings_seconds"] = 절약초
+                    completion["savings_time"] = 절약시간_분초_표시(절약초) if 실패 == 0 else ""
+                    if cat_image is not None:
+                        completion["cat_image"] = cat_image
                     return
                 """작업 완료창(개발자 모드 끔): 검은 고양이 그림과 '당신의 소중한 시간 00분 00초가 절약되었습니다!'만 보인다.
 
@@ -4913,6 +4987,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 styles = kwargs.pop("flutter_styles", None)
                 areas = kwargs.pop("flutter_areas", None)
                 result_payload = kwargs.pop("flutter_result", None)
+                error_payload = kwargs.pop("flutter_error", None)
                 for key in ("ok_label", "cancel_label"):
                     value = kwargs.pop("flutter_" + key, None)
                     if value is not None:
@@ -4932,6 +5007,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         pending["styles"] = styles
                     if areas is not None:
                         pending["areas"] = areas
+                    if error_payload is not None:
+                        pending["error"] = error_payload
                     if result_payload is not None:
                         pending["result"] = result_payload
                     pending.update(labels)
@@ -5514,6 +5591,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                             if self._안내키:
                                 self._안내지남.add(self._안내키)
                             self._안내키 = "done" if item[2] == 0 else self._안내키
+                            절약한_초 = self._절약초 or 0
                             절약한_시간 = 절약시간_분초_표시(self._절약초 or 0)
                             self._절약초 = None
                             self._작업결과_표시(item[2] == 0)
@@ -5544,7 +5622,10 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                             if not self.closing and not self.developer_mode_var.get():
                                 # 개발자 모드가 꺼져 있으면 절약한 시간만 귀여운 검은 고양이와 함께 보여 준다(2026-10-11 사용자 요청).
                                 # 자세한 완료 안내(성공·실패 건수·세부 작업·최종 검수)는 개발자 모드에서만 보인다.
-                                self._절약_완료창(item[1], item[2])
+                                if getattr(self.root, "_docfit_hidden_backend", False) and not self._is_tk_fallback():
+                                    self._절약_완료창(item[1], item[2], savings_seconds=절약한_초)
+                                else:
+                                    self._절약_완료창(item[1], item[2])
                             elif not self.closing and not getattr(self.root, "_docfit_hidden_backend", False):
                                 안내문 = f"문서 처리가 완료되었습니다.\n\n성공: {item[1]}개\n실패: {item[2]}개"
                                 if len(item) >= 6:

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/api/abbreviation_api.dart';
+import '../formats/format_example_edit_dialog.dart';
 import '../style_unify/unify_area_dialog.dart';
 import '../style_unify/unify_pick_style_dialog.dart';
 import '../style_unify/unify_result_dialog.dart';
@@ -54,6 +55,9 @@ class _BackendDialogState extends State<BackendDialog> {
     }
     if (kind == 'style_unify_result') {
       return UnifyResultDialog(api: widget.api, data: widget.data);
+    }
+    if (kind == 'format_example_edit') {
+      return FormatExampleEditDialog(api: widget.api, data: widget.data);
     }
     return PopScope(
       canPop: false,
