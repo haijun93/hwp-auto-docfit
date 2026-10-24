@@ -74,6 +74,23 @@
 - [ ] **시험**: 쪽 끝에서 `ㅇ`+`※`가 갈라지는 합성 문서 → 결과에서 같은 쪽, `※` 두 줄, `*`·`**`·`※` 혼합, 앞 줄이 `-`·`•`일 때도(※가 `-` 줄의 부연일 때), `※` 뒤에 다음 `ㅇ`이 오면 거기서 묶음 끝, 쪽 수 맞춤과 함께 실행, 묶음이 한 쪽보다 길 때(나뉠 수 있음 — 기록), 이미 같은 쪽이면 변화 없음(멱등).
 - [ ] **PC 확인**: 한/글에서 실제 쪽 경계 사례로 ※ 줄이 앞 줄과 같은 쪽에 놓이는지, 쪽 수가 늘지 않는지(혹은 늘면 사용자에게 알림) 확인. 정식 배포 영향 여부(1.80.9 이전에도 있었는지)와 핫픽스 후보 여부 판단.
 
+## [미착수] 작업 방식 카드 옵션 3개를 "…제외" 방식으로 바꾸기 (사용자 요청, 2026-10-24)
+카드 옵션을 모두 **"제외"(빼기) 방식**으로 통일한다(이미 `표 제외`·`페이지 맞춤 제외`·`자간 정리 제외` 등이 같은 방식). 바꿀 것은 세 가지:
+
+| # | 카드 | 지금 | 바꿀 이름 | 새 기본값 | 의미 |
+|---|---|---|---|---|---|
+| 1 | 한 번에 적용 | **줄 간격 적용** (설정 키 `all_linespacing`, 기본 **켬**) | **줄 간격 적용 제외** | **끔(off)** | 켜면 줄 간격 적용 단계를 뺀다 |
+| 2 | 자간 정리 | **페이지 맞춤** (`spacing_page_fit`, 기본 **끔**) | **페이지 맞춤 제외** | **끔(off)** | 켜면 페이지 맞춤을 뺀다(끄면 페이지 맞춤 실행) |
+| 3 | 자간 정리 | **기존 자간 초기화** (`spacing_reset_existing`, 세부 작업 `reset_spacing`과 같은 값) | **기존 자간 초기화 제외** | **켬(on)** | 켜면 기존 자간 초기화를 뺀다 |
+
+관련 코드(읽기 결과): Flutter 카드 `flutter_ui/lib/main.dart`(한 번에 적용 '줄 간격 적용' 스위치 `allLinespacingSwitch` ~1720행, 자간 정리 '페이지 맞춤' `spacingPageFitSwitch` ~1561행, '기존 자간 초기화' `resetSpacingSwitch` ~1588행, 값 읽기 `state['card_options']`), 옵션 이미지 `OptionImageButton('spacing_page_fit')`(옵션 키로 연결), 안내 글 `flutter_ui/lib/features/settings/setting_guides.dart`(`'한 번에 적용: 줄 간격 적용'`·`'기존 자간 초기화'` 등 이름 문자열), 설정 키·기본값 `docfit_app/settings_schema.py`(`all_linespacing: True`, `spacing_page_fit: False`, `spacing_reset_existing: None`, 변수 이름 매핑 `*_var`), 옵션 이름 사전 `docfit_app/configuration_service.py`(`'all_linespacing':'한 번에 적용: 줄 간격 적용'`, `'spacing_reset_existing'`, `'spacing_page_fit':'자간 정리: 페이지 맞춤'`), 세부 작업과 연동 `docfit_core/stage_selection.py`의 `CARD_OPTION_STAGES`(`spacing_page_fit`·`spacing_reset_existing`은 "켜면 단계를 켬"(마지막 값 False), 제외 방식은 True), Tk 카드 `docfit_ui/legacy.py`(~536~600행), WebView `desktop_web_ui.py`·`desktop_web/`.
+
+- [ ] **이름·의미 변경(제외 방식)**: 새 옵션 키를 `all_exclude_linespacing`·`spacing_exclude_pagefit`·`spacing_exclude_reset`처럼 짓고(기존 `all_exclude_pagefit`·`unify_exclude_*`와 같은 규칙), `CARD_OPTION_STAGES`에서 "켜면 해당 세부 작업을 끈다"(마지막 값 True)로 등록. 줄 간격 단계의 세부 작업 키 확인(`all_linespacing`은 `CARD_OPTION_STAGES`에 없고 별도 처리 — 어느 단계가 줄 간격 적용인지 `stage_selection.py`·`docfit_engine/pipeline.py`에서 찾아 연동). 화면(Flutter·Tk·WebView) 스위치 이름, 설명 글, 옵션 이미지 키, README·`setting_guides.dart`·`configuration_service.py` 이름 갱신.
+- [ ] **기존 설정 이전(마이그레이션, 필수)**: 사용자 PC에 이미 저장된 설정이 있으므로 `docfit_app/settings_migrations.py`로 옛 키를 새 키로 **의미를 뒤집어** 옮긴다 — `all_exclude_linespacing = not all_linespacing`, `spacing_exclude_pagefit = not spacing_page_fit`, `spacing_exclude_reset = not spacing_reset_existing`(None이면 새 기본값 적용). 이전 뒤 옛 키는 제거하고 설정 버전을 올리며, 이전을 두 번 해도 같은 결과(멱등)인지 시험. 이전 때 **사용자가 바꿔 둔 값은 동작이 그대로 유지**되게 한다(예: 옛 `spacing_page_fit=True`(페이지 맞춤 켬) → `spacing_exclude_pagefit=False`).
+- [ ] **⚠ 새 기본값이 현재 기본 동작을 바꾸는 항목 — 사용자 확인 필요**: ① **#1 줄 간격 적용 제외 기본 off** = 줄 간격을 **적용**한다 → 지금(적용 켬)과 **같음(동작 변화 없음)**. ② **#2 자간 정리의 페이지 맞춤 제외 기본 off** = 페이지 맞춤을 **실행**한다 → 지금 기본(페이지 맞춤 꺼짐)과 **반대(동작 변화 있음)** — 자간 정리가 기본으로 쪽 수 맞춤까지 하게 되어 처리 시간·결과(문단 간격 조정)가 달라진다. ③ **#3 기존 자간 초기화 제외 기본 on** = 초기화를 **하지 않는다** → 지금 기본(초기화 켬, README 예제도 "기존 자간 초기화: 켬")과 **반대(동작 변화 있음)** — 이전 편집에서 남은 자간이 0%로 되돌려지지 않고 그 위에서 정리된다. 사용자 요청대로 기본값을 적용하되, 릴리스 노트의 "바뀐 점"에 ②③을 분명히 적고 신규 설치 기본값과 **기존 사용자 설정(마이그레이션이 유지)**을 구분한다. 의도와 다르면(예: ②③은 현재 동작을 유지) 기본값을 알려 달라.
+- [ ] **연동 규칙 점검**: 자간 정리 카드는 "자간 정리"(`spacing_enabled`)와 "페이지 맞춤" 중 **하나 이상 켜져 있어야** 실행한다(현재 안내 문구 "자간 정리 또는 페이지 맞춤을 하나 이상 켜 주세요", `작업시작`의 검사). "페이지 맞춤 제외"로 바뀌면 이 검사를 **"자간 정리를 끄고 페이지 맞춤도 제외하면 할 일이 없음"**으로 다시 정의하고(`spacing_enabled=off` ∧ `spacing_exclude_pagefit=on`이면 실행 불가 안내), `기존 자간 초기화 제외`는 자간 정리가 꺼져 있으면 의미가 없으므로 비활성(현재처럼 `!spacingEnabled`일 때 스위치 잠금) 유지. 한 번에 적용의 "자간 조정 포함"·"표 제외"·"페이지 맞춤 제외"와 이름·배치 일관성(제외 옵션끼리 모아 표시) 확인.
+- [ ] **시험**: `tests/`의 카드 옵션 시험(`test_pipeline_review`·`stage_selection`·브라우저 API·`settings_schema`)을 새 키·새 기본값으로 갱신 + 신규 — ① 새 옵션이 세부 작업을 끄는 방향(켜면 해당 단계 제외)인지 ② 마이그레이션(옛 설정 6가지 조합 → 새 설정, 멱등) ③ 신규 설치 기본값(#1 off·#2 off·#3 on)과 그에 따른 단계 구성 ④ 자간 정리에서 할 일이 없을 때 안내 ⑤ Flutter 위젯 시험(스위치 이름·기본값·잠금·`OptionImageButton` 키) ⑥ README 옵션 설명·이미지 키 갱신. Windows·한/글 실제 실행 결과(쪽 수·처리 시간 변화)는 PC에서 확인.
+
 ## [미착수] 표그림판 — 셀 단위 "정밀 지우개" 추가 (사용자 요청, 2026-10-24)
 요구: 현재 지우개는 사용자가 그린 **여러 셀에 걸친 선(과 사각형)을 통째로** 지운다. 새 **정밀 지우개**는 같은 선이라도 **셀 1개 단위로** 지운다. 예: **3개 셀에 걸친 선**이면 기본 지우개는 3칸을 한 번에 모두 지우고, 정밀 지우개는 **그중 1칸 구간만** 지워 나머지 2칸은 남긴다.
 
