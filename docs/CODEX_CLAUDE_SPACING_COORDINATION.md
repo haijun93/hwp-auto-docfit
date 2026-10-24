@@ -472,3 +472,7 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 - github/main 78f5482(v1.80.9) 병합. 삭제된 문서 도구·tldraw와 2.0.0 전용 T11/T12 서비스·API·화면·시험을 제거. jobs.py와 PDF 합치기 순서 지정 유지.
 - Python 전체 1640개 PASS(제외 0, 427.816초), Flutter 전체 142개 PASS(제외 1), analyze 지적 0. 병합 집중 80개 및 호환성 집중 38개 PASS.
 - 남은 이관은 V2_PARITY_TABLE.md 끝에 정리. COM 잠금 Codex/C19 사용 후 해제. 보고: C:\HWP_AUTODOCFIT\v1803\reports\C19.md. GitHub dev/2.0.0만 푸시(배포 없음).
+
+- C22 2026-10-24T17:43:48 COM 재연 시험 시작(잠금 획득, 기본 3종, 임시 사본만 처리).
+
+- C22 2026-10-24T17:52:16 COM 재연 시험 종료(잠금 반환).

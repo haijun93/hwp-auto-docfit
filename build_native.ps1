@@ -35,7 +35,7 @@ try {
     } finally { Pop-Location }
     & $Python -m PyInstaller --noconfirm --clean --onedir --console `
         --paths $Root --name HWP_AutoDocFit_Backend `
-        --collect-submodules docfit_app --collect-submodules docfit_core `
+        --collect-submodules docfit_app --collect-submodules docfit_core --collect-submodules docfit_engine `
         --distpath (Join-Path $OutputPath "backend-build") `
         --workpath (Join-Path $OutputPath "work") `
         --specpath (Join-Path $OutputPath "spec") `

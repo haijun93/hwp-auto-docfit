@@ -29,6 +29,7 @@ def verify():
         namespace[name] = resolve("docfit_engine.formatter", name, namespace)
         raw = getattr(formatter, name)
         assert raw.__globals__ is vars(formatter), name
+        assert raw.__closure__ is None, name
         assert raw.__module__ == "docfit_engine.formatter", name
         assert raw.__qualname__ == name, name
         template, facade = session_for(namespace).templates[name]

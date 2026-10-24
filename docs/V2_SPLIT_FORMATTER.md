@@ -398,7 +398,16 @@ raw 함수를 재바인딩한 뒤 재수출한다. `patch('docfit_engine.formatt
   이동/잔류 함수 전체 AST(중첩 함수·문자열 포함)를 비교하며 누락·중복·추가도 실패한다.
 - `scripts/verify_formatter_bindings.py`: 직접 import, formatter patch의 실제 호출, 모든 함수 전역,
   runtime resolve 및 컨텍스트별 상태 분리를 검증한다. 전체 unittest 개수는 기존과 동일하게 유지한다.
-- 전체 시험·COM 결과 및 빌드 수집 확인은 검증 완료 후 아래에 기록한다.
+- C22 최종 검증(2026-10-24): Python 전체 1,640개 PASS(714.503초, 제외 0). 내어쓰기 적용 순서
+  시험은 이동된 `formatter_apply.py`를 읽도록 대상 파일만 바꿨으며 순서 검사 2개는 그대로 유지했다.
+- AST 358개 불일치 0(`V2_SPLIT_FORMATTER_IDENTITY.json`). 바인딩 검증은 raw 전역·closure·직접 import,
+  유효 patch 호출 3개, 실행 컨텍스트 분리 2개 모두 PASS.
+- COM 기본 3종 재연 불일치 0/0/0. 원본 SHA-256 전후 동일, C22 잠금 획득/반환 완료.
+  결과: `C:\HWP_AUTODOCFIT\v1803\reports\C22-fidelity\summary.json` 및 `originals.json`.
+- PyInstaller `collect_submodules('docfit_engine')`가 8개 분할 모듈 모두를 실제로 수집한다.
+  본체 spec 및 build.bat/build_dist.bat 경로 확인, build_native.ps1에도 engine 수집 추가.
+  전체 EXE 빌드는 이번 검증 범위에 포함하지 않았다. 수집 근거: `reports/C22-packaging.json`(작업 폴더 상위).
+- `dev/2.0.0-split`에만 푸시하며 `dev/2.0.0` 병합은 Claude 판정 뒤 별도로 진행한다.
 
 ## 남은 계획
 
