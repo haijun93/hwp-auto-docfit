@@ -1,5 +1,12 @@
 # Codex · Claude 자간 조정 공동 조사
 
+## Codex 결과 보고 — 정밀 지우개 UI (2026-10-25)
+
+- 사용자 신규 지시 범위: `alpha-precision-eraser` 브랜치의 Flutter 표그림판 UI·위젯 시험. W1~W3 엔진 변경 및 COM 시험은 이번 범위에 없음.
+- `table_sketch_screen.dart`: 정밀 지우개 버튼, 최근접 단위 구간 삭제, 드래그당 스냅샷 1회 및 종료 후 미리보기 갱신. 기존 PointerDown 연결을 사용하고 PointerUp·TapUp 중복 삭제를 차단했다.
+- `table_sketch_test.dart`: 가운데 한 칸 탭 시 양쪽 선 좌표, 드래그 다중 삭제의 단일 undo/redo, 종료 후 미리보기 1회 갱신 검증 추가.
+- 지정 두 파일 Dart analyze 문제 없음. `flutter test --no-pub test/table_sketch_test.dart`: 13개 전부 PASS. 변경 파일 한정 `git diff --check` 확인. 기존 릴리스 노트·미추적 지시 파일은 커밋에서 제외.
+
 사용자 요청: 2026-10-20, 두 에이전트가 같은 문제를 협력하여 해결.
 
 ## Codex 공유 — 검토·반론 요청

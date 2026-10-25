@@ -10,7 +10,7 @@ import 'table_sketch_api.dart';
 import 'table_sketch_models.dart';
 import 'table_sketch_painter.dart';
 
-enum SketchToolMode { line, rect, eraser, text, select }
+enum SketchToolMode { line, rect, eraser, preciseEraser, text, select }
 
 /// 표그림판 화면: 점선 격자 용지에 직선을 그려 한/글 표로 변환 및 복사.
 class TableSketchScreen extends StatefulWidget {
@@ -41,6 +41,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
   Offset? _dragCurrent;
   SketchLine? _previewLine;
   Rect? _previewRect;
+  bool _dragChangedLines = false;
 
   // 뷰포트 확대/축소 및 기본 크기
   double _zoom = 1.0;
@@ -376,12 +377,15 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
 
   void _handlePanStart(DragStartDetails details) {
     final pos = details.localPosition;
+    _dragChangedLines = false;
     setState(() {
       _dragStart = pos;
       _dragCurrent = pos;
     });
 
-    if (_tool == SketchToolMode.eraser) {
+    if (_tool == SketchToolMode.preciseEraser) {
+      _erasePrecisionAt(pos, inDrag: true);
+    } else if (_tool == SketchToolMode.eraser) {
       _eraseLineAt(pos);
     } else if (_tool == SketchToolMode.select) {
       _selectLineAt(pos);
@@ -390,6 +394,8 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
 
   void _handlePanUpdate(DragUpdateDetails details) {
     final pos = details.localPosition;
+    // PointerUp에서도 호출되므로 같은 위치를 다시 지우지 않는다.
+    if (_tool == SketchToolMode.preciseEraser && pos == _dragCurrent) return;
     setState(() => _dragCurrent = pos);
 
     if (_tool == SketchToolMode.line && _dragStart != null) {
@@ -398,10 +404,16 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
       _updateRectPreview(_dragStart!, pos);
     } else if (_tool == SketchToolMode.eraser) {
       _eraseLineAt(pos);
+    } else if (_tool == SketchToolMode.preciseEraser) {
+      _erasePrecisionAt(pos, inDrag: true);
     }
   }
 
   void _handlePanEnd(DragEndDetails details) {
+    if (_dragChangedLines) {
+      _dragChangedLines = false;
+      _triggerPreviewDebounced();
+    }
     if (_tool == SketchToolMode.line &&
         _dragStart != null &&
         _dragCurrent != null) {
@@ -428,6 +440,8 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
       _selectLineAt(pos);
     } else if (_tool == SketchToolMode.eraser) {
       _eraseLineAt(pos);
+    } else if (_tool == SketchToolMode.preciseEraser) {
+      _erasePrecisionAt(pos);
     }
   }
 
@@ -583,6 +597,45 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
   }
 
   // --- 지우개 & 선택 로직 ---
+
+  void _erasePrecisionAt(Offset pos, {bool inDrag = false}) {
+    final threshold = math.max(16.0, _cellSize * 0.8);
+    var bestDist = double.infinity;
+    int? bestAx, bestAy, bestBx, bestBy;
+    for (final line in _doc.lines) {
+      if (!line.isValid) continue;
+      final dx = (line.x2 - line.x1).sign;
+      final dy = (line.y2 - line.y1).sign;
+      for (var k = 0; k < line.lengthInUnits; k++) {
+        final ax = line.x1 + dx * k;
+        final ay = line.y1 + dy * k;
+        final bx = ax + dx;
+        final by = ay + dy;
+        final dist = distanceToSegment(
+          pos,
+          Offset(ax * _cellSize, ay * _cellSize),
+          Offset(bx * _cellSize, by * _cellSize),
+        );
+        if (dist < threshold && dist < bestDist) {
+          bestDist = dist;
+          bestAx = ax;
+          bestAy = ay;
+          bestBx = bx;
+          bestBy = by;
+        }
+      }
+    }
+    if (bestAx == null) return;
+    if (!inDrag || !_dragChangedLines) _saveSnapshot();
+    final changed = _doc.eraseUnitSegment(bestAx, bestAy!, bestBx!, bestBy!);
+    if (changed) {
+      setState(() {
+        _dragChangedLines = inDrag;
+        _selectedLineIndex = null;
+      });
+      if (!inDrag) _triggerPreviewDebounced();
+    }
+  }
 
   void _eraseLineAt(Offset pos) {
     final threshold = math.max(16.0, _cellSize * 0.8);
@@ -891,6 +944,12 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
               tooltip: '지우개',
             ),
             _toolButton(
+              key: const Key('toolPreciseEraser'),
+              mode: SketchToolMode.preciseEraser,
+              icon: Icons.content_cut_rounded,
+              tooltip: '정밀 지우개 (셀 한 칸 단위)',
+            ),
+            _toolButton(
               key: const Key('toolText'),
               mode: SketchToolMode.text,
               icon: Icons.title_rounded,
@@ -1119,7 +1178,10 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
                         },
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
-                          onTapUp: _handleTapUp,
+                          // 정밀 지우개 탭은 Listener의 Down/Up에서 이미 처리한다.
+                          onTapUp: _tool == SketchToolMode.preciseEraser
+                              ? null
+                              : _handleTapUp,
                           child: CustomPaint(
                             key: const Key('sketchCanvas'),
                             size: Size(canvasWidth, canvasHeight),

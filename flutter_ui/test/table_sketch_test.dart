@@ -86,6 +86,81 @@ void main() {
   });
 
   group('TableSketchScreen Widget Tests', () {
+    for (final drag in [false, true]) {
+      testWidgets(
+        drag
+            ? 'Precise eraser drag groups changes into one undo step'
+            : 'Precise eraser tool splits line into unit segments on tap',
+        (tester) async {
+          tester.view.physicalSize = const Size(1024, 900);
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+          final previews = <Map>[];
+          Future<Object?> api(String name, List<Object?> args) async {
+            if (name == 'table_sketch' && args[0] == 'preview') {
+              previews.add(args[1] as Map);
+            }
+            return {'ok': true};
+          }
+
+          await tester.pumpWidget(
+            MaterialApp(home: TableSketchScreen(api: api)),
+          );
+          await tester.pumpAndSettle();
+          final topLeft = tester.getTopLeft(
+            find.byKey(const Key('sketchCanvas')),
+          );
+          const cellSize = 16.0;
+          Offset at(double x, double y) =>
+              topLeft + Offset(x * cellSize, y * cellSize);
+          final draw = await tester.startGesture(at(2, 5));
+          await draw.moveTo(at(drag ? 8 : 5, 5));
+          await draw.up();
+          await tester.pump(const Duration(milliseconds: 600));
+          await tester.pumpAndSettle();
+
+          await tester.tap(find.byKey(const Key('toolPreciseEraser')));
+          await tester.pumpAndSettle();
+          final before = previews.length;
+          if (drag) {
+            final erase = await tester.startGesture(at(3.5, 5));
+            await erase.moveTo(at(4.5, 5));
+            await erase.moveTo(at(5.5, 5));
+            await tester.pump(const Duration(milliseconds: 600));
+            expect(previews.length, before);
+            await erase.up();
+          } else {
+            await tester.tapAt(at(3.5, 5));
+          }
+          await tester.pump(const Duration(milliseconds: 600));
+          await tester.pumpAndSettle();
+          expect(previews.length, before + 1);
+          List<List<Object?>> coords() => (previews.last['lines'] as List)
+              .cast<Map>()
+              .map((l) => [l['x1'], l['y1'], l['x2'], l['y2']])
+              .toList();
+          final remaining = [
+            [2, 5, 3, 5],
+            [drag ? 6 : 4, 5, drag ? 8 : 5, 5],
+          ];
+          expect(coords(), remaining);
+
+          await tester.tap(find.byKey(const Key('undoButton')));
+          await tester.pump(const Duration(milliseconds: 600));
+          await tester.pumpAndSettle();
+          expect(coords(), [
+            [2, 5, drag ? 8 : 5, 5],
+          ]);
+          await tester.tap(find.byKey(const Key('redoButton')));
+          await tester.pump(const Duration(milliseconds: 600));
+          await tester.pumpAndSettle();
+          expect(coords(), remaining);
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+
     testWidgets(
       'Line tool creates horizontal, vertical and 45° lines on canvas drag',
       (tester) async {
