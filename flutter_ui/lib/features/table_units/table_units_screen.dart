@@ -46,6 +46,11 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
   Map<String, List<CellShape>> _previewShapes = {};
   int _previewSeq = 0;
 
+  double? _leftPaneWidth;
+  final ScrollController _galleryScrollController = ScrollController();
+  final ScrollController _detailScrollController = ScrollController();
+  final ScrollController _ribbonScrollController = ScrollController();
+
   @override
   void initState() {
     super.initState();
@@ -56,6 +61,9 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _galleryScrollController.dispose();
+    _detailScrollController.dispose();
+    _ribbonScrollController.dispose();
     super.dispose();
   }
 
@@ -502,6 +510,10 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
         final templateNameBar = _buildTemplateNameBar();
 
         if (isWide) {
+          final maxLeft = (constraints.maxWidth - 280.0).clamp(220.0, constraints.maxWidth);
+          final defaultLeft = math.min(460.0, constraints.maxWidth * 0.42).clamp(240.0, maxLeft);
+          final leftWidth = (_leftPaneWidth ?? defaultLeft).clamp(220.0, maxLeft);
+
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -511,18 +523,55 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     SizedBox(
-                      width: math.min(460, constraints.maxWidth * 0.42),
+                      width: leftWidth,
                       child: _buildGallery(),
                     ),
-                    const VerticalDivider(
-                      width: 1,
-                      thickness: 1,
-                      color: Color(0xffe2e8f0),
+                    MouseRegion(
+                      cursor: SystemMouseCursors.resizeColumn,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onHorizontalDragUpdate: (details) {
+                          setState(() {
+                            _leftPaneWidth = (leftWidth + details.delta.dx).clamp(220.0, maxLeft);
+                          });
+                        },
+                        onDoubleTap: () {
+                          setState(() {
+                            _leftPaneWidth = defaultLeft;
+                          });
+                        },
+                        child: Container(
+                          width: 10,
+                          color: const Color(0xfff8fafc),
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              Container(
+                                width: 1,
+                                color: const Color(0xffcbd5e1),
+                              ),
+                              Container(
+                                width: 4,
+                                height: 36,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xff94a3b8),
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
                     Expanded(
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.all(24),
-                        child: _buildDetail(),
+                      child: Scrollbar(
+                        controller: _detailScrollController,
+                        thumbVisibility: true,
+                        child: SingleChildScrollView(
+                          controller: _detailScrollController,
+                          padding: const EdgeInsets.all(24),
+                          child: _buildDetail(),
+                        ),
                       ),
                     ),
                   ],
@@ -536,21 +585,23 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
             children: [
               templateNameBar,
               Expanded(
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _buildGallery(shrinkWrap: true),
-                      const Divider(
-                        height: 1,
-                        thickness: 1,
-                        color: Color(0xffe2e8f0),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: _buildDetail(),
-                      ),
-                    ],
+                child: Scrollbar(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildGallery(shrinkWrap: true),
+                        const Divider(
+                          height: 1,
+                          thickness: 1,
+                          color: Color(0xffe2e8f0),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: _buildDetail(),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -561,7 +612,7 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
     );
   }
 
-  /// 상단 템플릿 이름 나열 바: 가로로 줄바꿈되어 전부 보이고, 누르면 선택 및 강조.
+  /// 상단 템플릿 이름 나열 바 (PPT 표 스타일 갤러리 리본): 가로 1줄로 단정하게 스크롤 및 탐색.
   Widget _buildTemplateNameBar() {
     final templates = _listData?.templates ?? const <TableTemplateInfo>[];
     if (templates.isEmpty) return const SizedBox.shrink();
@@ -572,48 +623,134 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
         color: Colors.white,
         border: Border(bottom: BorderSide(color: Color(0xffe2e8f0), width: 1)),
       ),
-      // 키보드 자판처럼 촘촘하게(높이 28·간격 4) — 높이 제한·스크롤 없이 모든 템플릿 이름이 보이게(2026-10-23 사용자 요청).
-      padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
-      child: Wrap(
-        spacing: 4,
-        runSpacing: 4,
-        children: templates.map((t) {
-          final isSelected = _selectedTemplate?.id == t.id;
-          final tone = _categoryTone(t.category);
-          return Material(
-            key: Key('templateName_${t.id}'),
-            color: isSelected ? tone.strong : tone.soft,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(6),
-              side: BorderSide(color: isSelected ? tone.strong : tone.border),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Row(
+        children: [
+          // PPT 표 스타일 아이콘 및 라벨
+          Container(
+            padding: const EdgeInsets.only(left: 4, right: 8),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.palette_outlined,
+                  size: 16,
+                  color: Color(0xff2563eb),
+                ),
+                SizedBox(width: 4),
+                Text(
+                  '표 스타일',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xff334155),
+                  ),
+                ),
+              ],
             ),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(6),
-              onTap: () => _selectTemplate(t),
-              child: Container(
-                height: 28,
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Text(
-                      t.name,
-                      maxLines: 1,
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        height: 1.0,
-                        color: isSelected ? Colors.white : tone.ink,
-                        fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+          ),
+          const SizedBox(
+            height: 18,
+            child: VerticalDivider(
+              width: 12,
+              thickness: 1,
+              color: Color(0xffe2e8f0),
+            ),
+          ),
+          // 좌측 스크롤 버튼
+          SizedBox(
+            width: 24,
+            height: 28,
+            child: IconButton(
+              icon: const Icon(Icons.chevron_left, size: 18),
+              padding: EdgeInsets.zero,
+              tooltip: '이전 표 스타일',
+              onPressed: () {
+                if (_ribbonScrollController.hasClients) {
+                  _ribbonScrollController.animateTo(
+                    math.max(0.0, _ribbonScrollController.offset - 200),
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOut,
+                  );
+                }
+              },
+            ),
+          ),
+          // 가로 1줄 스크롤 리본 (PPT 표 스타일 갤러리)
+          Expanded(
+            child: SingleChildScrollView(
+              controller: _ribbonScrollController,
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: templates.map((t) {
+                  final isSelected = _selectedTemplate?.id == t.id;
+                  final tone = _categoryTone(t.category);
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: Material(
+                      key: Key('templateName_${t.id}'),
+                      color: isSelected ? tone.strong : tone.soft,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(6),
+                        side: BorderSide(
+                          color: isSelected ? tone.strong : tone.border,
+                        ),
+                      ),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(6),
+                        onTap: () => _selectTemplate(t),
+                        child: Container(
+                          height: 28,
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Text(
+                                t.name,
+                                maxLines: 1,
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  height: 1.0,
+                                  color: isSelected ? Colors.white : tone.ink,
+                                  fontWeight: isSelected
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
-                  ],
-                ),
+                  );
+                }).toList(),
               ),
             ),
-          );
-        }).toList(),
+          ),
+          // 우측 스크롤 버튼
+          SizedBox(
+            width: 24,
+            height: 28,
+            child: IconButton(
+              icon: const Icon(Icons.chevron_right, size: 18),
+              padding: EdgeInsets.zero,
+              tooltip: '다음 표 스타일',
+              onPressed: () {
+                if (_ribbonScrollController.hasClients) {
+                  _ribbonScrollController.animateTo(
+                    _ribbonScrollController.offset + 200,
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOut,
+                  );
+                }
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -709,237 +846,383 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
     final categories = _getCategories();
     final templates = _getFilteredTemplates();
 
-    final Widget grid;
+    final headerSliver = SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // 1. PPT 스타일 검색 & 분류 드롭다운 메뉴 바
+            Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 34,
+                    child: TextField(
+                      key: const Key('searchTextField'),
+                      controller: _searchController,
+                      decoration: InputDecoration(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 10),
+                        hintText: '이름 또는 분류 검색',
+                        hintStyle: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xff94a3b8),
+                        ),
+                        prefixIcon: const Icon(
+                          Icons.search,
+                          size: 16,
+                          color: Color(0xff64748b),
+                        ),
+                        suffixIcon: _searchQuery.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear, size: 14),
+                                padding: EdgeInsets.zero,
+                                onPressed: () {
+                                  _searchController.clear();
+                                  setState(() => _searchQuery = '');
+                                },
+                              )
+                            : null,
+                        filled: true,
+                        fillColor: const Color(0xfff1f5f9),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(6),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                      style: const TextStyle(fontSize: 12.5),
+                      onChanged: (val) {
+                        setState(() => _searchQuery = val);
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // PPT 드롭다운 메뉴 (분류 즉시 이동)
+                Container(
+                  height: 34,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xfff8fafc),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xffcbd5e1)),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: categories.contains(_selectedCategory)
+                          ? _selectedCategory
+                          : '전체',
+                      isDense: true,
+                      icon: const Icon(
+                        Icons.keyboard_arrow_down,
+                        size: 18,
+                        color: Color(0xff64748b),
+                      ),
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xff1e293b),
+                      ),
+                      onChanged: (cat) {
+                        if (cat != null) {
+                          setState(() => _selectedCategory = cat);
+                        }
+                      },
+                      items: categories.map((cat) {
+                        return DropdownMenuItem<String>(
+                          value: cat,
+                          child: Text(cat),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+
+            // 스냅샷 생성 안내
+            if (_listData != null && !_listData!.thumbnailsReady)
+              Container(
+                key: const Key('thumbnailsNotice'),
+                margin: const EdgeInsets.only(bottom: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xfffffbeb),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0xfffef3c7)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.info_outline,
+                      size: 15,
+                      color: Color(0xffd97706),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        _loadingThumbnails
+                            ? '한/글로 실제 모양 그림을 만들고 있어요…'
+                            : '한/글로 실제 모양 그림을 만들 수 있어요 — 오른쪽 위 「스냅샷 새로 만들기」',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Color(0xff92400e),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            // 2. PPT 스타일 분류 팔레트 (정리된 칩 컨테이너)
+            Container(
+              padding: const EdgeInsets.all(5),
+              decoration: BoxDecoration(
+                color: const Color(0xfff8fafc),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xffe2e8f0)),
+              ),
+              child: Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                children: categories.map((cat) {
+                  final isSelected = _selectedCategory == cat;
+                  return Material(
+                    key: Key('categoryChip_$cat'),
+                    color: isSelected
+                        ? const Color(0xff2563eb)
+                        : Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(6),
+                      side: BorderSide(
+                        color: isSelected
+                            ? const Color(0xff2563eb)
+                            : const Color(0xffcbd5e1),
+                      ),
+                    ),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(6),
+                      onTap: () {
+                        setState(() => _selectedCategory = cat);
+                      },
+                      child: Container(
+                        height: 28,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            if (isSelected) ...[
+                              const Icon(
+                                Icons.check,
+                                size: 12,
+                                color: Colors.white,
+                              ),
+                              const SizedBox(width: 3),
+                            ],
+                            Text(
+                              cat,
+                              maxLines: 1,
+                              style: TextStyle(
+                                fontSize: 11,
+                                height: 1.0,
+                                color: isSelected
+                                    ? Colors.white
+                                    : const Color(0xff334155),
+                                fontWeight: isSelected
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+            const SizedBox(height: 6),
+            // 서식 개수 및 현재 분류 상태 표시줄
+            Row(
+              children: [
+                Text(
+                  '$_selectedCategory 서식',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xff475569),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: const Color(0xffe2e8f0),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '${templates.length}개',
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xff334155),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final Widget bodySliver;
     if (templates.isEmpty) {
-      grid = const Center(
-        child: Padding(
-          padding: EdgeInsets.symmetric(vertical: 40),
-          child: Text(
-            '표 템플릿이 없습니다.',
-            style: TextStyle(color: Color(0xff8b95a1)),
+      bodySliver = const SliverToBoxAdapter(
+        child: Center(
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: 40),
+            child: Text(
+              '표 템플릿이 없습니다.',
+              style: TextStyle(color: Color(0xff8b95a1)),
+            ),
           ),
         ),
       );
     } else {
-      grid = GridView.builder(
-        shrinkWrap: shrinkWrap,
-        physics: shrinkWrap
-            ? const NeverScrollableScrollPhysics()
-            : const AlwaysScrollableScrollPhysics(),
-        itemCount: templates.length,
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          crossAxisSpacing: 10,
-          mainAxisSpacing: 10,
-          childAspectRatio: 0.82,
-        ),
-        itemBuilder: (context, index) {
-          final template = templates[index];
-          final isSelected = _selectedTemplate?.id == template.id;
-          final imageBytes = _decodeBase64(template.thumbnail);
+      bodySliver = SliverPadding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+        sliver: SliverGrid(
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
+            childAspectRatio: 0.82,
+          ),
+          delegate: SliverChildBuilderDelegate(
+            (context, index) {
+              final template = templates[index];
+              final isSelected = _selectedTemplate?.id == template.id;
+              final imageBytes = _decodeBase64(template.thumbnail);
 
-          return GestureDetector(
-            key: Key('templateCard_${template.id}'),
-            onTap: () => _selectTemplate(template),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 150),
-              decoration: BoxDecoration(
-                color: isSelected ? const Color(0xffedf3ff) : Colors.white,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: isSelected
-                      ? const Color(0xff2563eb)
-                      : const Color(0xffe2e8f0),
-                  width: isSelected ? 2 : 1,
-                ),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x0a000000),
-                    blurRadius: 4,
-                    offset: Offset(0, 2),
+              return GestureDetector(
+                key: Key('templateCard_${template.id}'),
+                onTap: () => _selectTemplate(template),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  decoration: BoxDecoration(
+                    color: isSelected ? const Color(0xffedf3ff) : Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: isSelected
+                          ? const Color(0xff2563eb)
+                          : const Color(0xffe2e8f0),
+                      width: isSelected ? 2 : 1,
+                    ),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x0a000000),
+                        blurRadius: 4,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              child: Stack(
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                  child: Stack(
                     children: [
-                      Expanded(
-                        child: Container(
-                          decoration: const BoxDecoration(
-                            color: Color(0xfff8fafc),
-                            borderRadius: BorderRadius.vertical(
-                              top: Radius.circular(8),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(
+                            child: Container(
+                              decoration: const BoxDecoration(
+                                color: Color(0xfff8fafc),
+                                borderRadius: BorderRadius.vertical(
+                                  top: Radius.circular(8),
+                                ),
+                              ),
+                              alignment: Alignment.center,
+                              child: imageBytes != null
+                                  ? Image.memory(imageBytes, fit: BoxFit.contain)
+                                  : const Icon(
+                                      Icons.table_chart_outlined,
+                                      size: 36,
+                                      color: Color(0xff94a3b8),
+                                    ),
                             ),
                           ),
-                          alignment: Alignment.center,
-                          child: imageBytes != null
-                              ? Image.memory(imageBytes, fit: BoxFit.contain)
-                              : const Icon(
-                                  Icons.table_chart_outlined,
-                                  size: 36,
-                                  color: Color(0xff94a3b8),
+                          Padding(
+                            padding: const EdgeInsets.all(8),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  template.name,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xff1e293b),
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              template.name,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xff1e293b),
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                                const SizedBox(height: 4),
+                                _buildUnitBadge(template),
+                              ],
                             ),
-                            const SizedBox(height: 4),
-                            _buildUnitBadge(template),
-                          ],
+                          ),
+                        ],
+                      ),
+                      Positioned(
+                        top: 2,
+                        right: 2,
+                        child: IconButton(
+                          key: Key('btnFavorite_${template.id}'),
+                          icon: Icon(
+                            template.favorite ? Icons.star : Icons.star_border,
+                            color: template.favorite
+                                ? const Color(0xfff59e0b)
+                                : const Color(0xff94a3b8),
+                            size: 20,
+                          ),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 32,
+                            minHeight: 32,
+                          ),
+                          onPressed: () => _toggleFavorite(template),
+                          tooltip: template.favorite ? '즐겨찾기 해제' : '즐겨찾기 추가',
                         ),
                       ),
                     ],
                   ),
-                  Positioned(
-                    top: 2,
-                    right: 2,
-                    child: IconButton(
-                      key: Key('btnFavorite_${template.id}'),
-                      icon: Icon(
-                        template.favorite ? Icons.star : Icons.star_border,
-                        color: template.favorite
-                            ? const Color(0xfff59e0b)
-                            : const Color(0xff94a3b8),
-                        size: 20,
-                      ),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 32,
-                        minHeight: 32,
-                      ),
-                      onPressed: () => _toggleFavorite(template),
-                      tooltip: template.favorite ? '즐겨찾기 해제' : '즐겨찾기 추가',
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
+                ),
+              );
+            },
+            childCount: templates.length,
+          ),
+        ),
       );
     }
 
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // 1. 검색창
-          SizedBox(
-            height: 40,
-            child: TextField(
-              key: const Key('searchTextField'),
-              controller: _searchController,
-              decoration: InputDecoration(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                hintText: '이름 또는 분류 검색',
-                hintStyle: const TextStyle(
-                  fontSize: 13,
-                  color: Color(0xff94a3b8),
-                ),
-                prefixIcon: const Icon(
-                  Icons.search,
-                  size: 18,
-                  color: Color(0xff64748b),
-                ),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear, size: 16),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() => _searchQuery = '');
-                        },
-                      )
-                    : null,
-                filled: true,
-                fillColor: const Color(0xfff1f5f9),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-              style: const TextStyle(fontSize: 13),
-              onChanged: (val) {
-                setState(() => _searchQuery = val);
-              },
-            ),
-          ),
-          const SizedBox(height: 10),
+    if (shrinkWrap) {
+      return CustomScrollView(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        slivers: [headerSliver, bodySliver],
+      );
+    }
 
-          // 스냅샷 생성 안내
-          if (_listData != null && !_listData!.thumbnailsReady)
-            Container(
-              key: const Key('thumbnailsNotice'),
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xfffffbeb),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xfffef3c7)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.info_outline,
-                    size: 16,
-                    color: Color(0xffd97706),
-                  ),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      _loadingThumbnails
-                          ? '한/글로 실제 모양 그림을 만들고 있어요… 바뀐 표만 만들며, 처음에는 1분쯤 걸려요'
-                          : '한/글로 실제 모양 그림을 만들 수 있어요 — 오른쪽 위 「스냅샷 새로 만들기」',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xff92400e),
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-          // 2. 분류 칩 (Wrap으로 줄바꿈하여 잘림 없이 모두 표시)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: categories.map((cat) {
-                final selected = _selectedCategory == cat;
-                return ChoiceChip(
-                  key: Key('categoryChip_$cat'),
-                  label: Text(cat),
-                  selected: selected,
-                  onSelected: (val) {
-                    if (val) {
-                      setState(() => _selectedCategory = cat);
-                    }
-                  },
-                );
-              }).toList(),
-            ),
-          ),
-
-          if (shrinkWrap) grid else Expanded(child: grid),
-        ],
+    return Scrollbar(
+      controller: _galleryScrollController,
+      thumbVisibility: true,
+      child: CustomScrollView(
+        controller: _galleryScrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [headerSliver, bodySliver],
       ),
     );
   }

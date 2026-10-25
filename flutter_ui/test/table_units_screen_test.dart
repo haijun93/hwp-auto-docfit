@@ -833,4 +833,27 @@ void main() {
       expect(pos2.dx, greaterThanOrEqualTo(pos1.dx + size1.width));
     },
   );
+
+  testWidgets(
+    '좌측 분류 칩 버튼이 상단 메뉴와 동일하게 높이 28px의 컴팩트한 사이즈로 배치되고 전체 스크롤이 작동한다',
+    (tester) async {
+      Future<Object?> api(String name, List<Object?> args) async {
+        final action = args[0] as String;
+        if (action == 'list') return envelope(sampleListData());
+        if (action == 'preview') return envelope(samplePreview());
+        return envelope({});
+      }
+
+      await pumpScreen(tester, api: api, width: 1000.0, height: 800.0);
+
+      // 분류 칩 높이 검증 (상단 메뉴와 동일하게 28px)
+      final chipAll = find.byKey(const Key('categoryChip_전체'));
+      expect(chipAll, findsOneWidget);
+      expect(tester.getSize(chipAll).height, equals(28.0));
+
+      // 갤러리 영역 전체가 CustomScrollView 및 Scrollbar로 위아래 스크롤 가능
+      expect(find.byType(CustomScrollView), findsOneWidget);
+      expect(find.byType(Scrollbar), findsWidgets);
+    },
+  );
 }
