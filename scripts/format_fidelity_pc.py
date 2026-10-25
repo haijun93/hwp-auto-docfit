@@ -342,6 +342,35 @@ def _excluded(x, y, hand=()):
     return found
 
 
+def _table_render_normalized(original, result):
+    """한/글 COM의 작은 표 크기·칸 상하 여백 차이만 원본 값으로 맞춘다."""
+    def attrs(a, b, keys, tolerance):
+        reference = dict(a or ())
+        values = dict(b or ())
+        for key in keys:
+            if key not in reference or key not in values:
+                continue
+            try:
+                close = abs(int(reference[key]) - int(values[key])) <= tolerance
+            except (TypeError, ValueError):
+                continue
+            if close:
+                values[key] = reference[key]
+        return tuple(sorted(values.items())) if b is not None else None
+
+    normalized = list(result)
+    normalized[3] = attrs(original[3], result[3], ("width", "height"), 200)
+    cells = []
+    for index, cell in enumerate(result[6]):
+        if index < len(original[6]):
+            cell = list(cell)
+            cell[3] = attrs(original[6][index][3], cell[3], ("top", "bottom"), 150)
+            cell = tuple(cell)
+        cells.append(cell)
+    normalized[6] = cells
+    return tuple(normalized)
+
+
 def compare(original, result):
     """(불일치 수, 사람이 읽을 목록). 손 조정 제외 항목은 따로 센다."""
     from collections import Counter
@@ -368,6 +397,8 @@ def compare(original, result):
                     hand.discard("left")
                 excluded.update(_excluded(x, y, hand))
                 x, y = _normalized(x, x[4], hand), _normalized(y, x[4], hand)
+            elif x[0] == "TBL":
+                y = _table_render_normalized(x, y)
             if x == y:
                 continue
             count += 1
