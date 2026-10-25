@@ -37,18 +37,19 @@ class TableSketchService:
         table_sketch.normalize(sketch)
         self.folder.mkdir(parents=True, exist_ok=True)
         # 원본 선 끝점도 보존: 겹친 선 정규화는 변환 시 수행한다.
-        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".tmp", dir=self.folder, delete=False) as stream:
-            temporary = Path(stream.name)
-            try:
-                json.dump(sketch, stream, ensure_ascii=False, allow_nan=False)
-            except Exception:
-                stream.close()
-                temporary.unlink(missing_ok=True)
-                raise
+        temporary = None
         try:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".tmp", dir=self.folder, delete=False) as stream:
+                temporary = Path(stream.name)
+                json.dump(sketch, stream, ensure_ascii=False, allow_nan=False)
             temporary.replace(path)
+            temporary = None
         finally:
-            temporary.unlink(missing_ok=True)
+            if temporary and temporary.exists():
+                try:
+                    temporary.unlink()
+                except OSError:
+                    pass
         return dict(ok=True, name=name)
 
     def list(self):

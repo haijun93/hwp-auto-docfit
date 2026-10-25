@@ -1,8 +1,8 @@
-pywin32
-tkinterdnd2
-Pillow
-defusedxml
-pywebview
-pypdfium2
+pywin32==308
+tkinterdnd2==0.4.2
+Pillow==11.1.0
+defusedxml==0.7.1
+pywebview==5.4
+pypdfium2==4.30.1
 pypdf==6.21.2
 cryptography==50.0.2

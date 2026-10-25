@@ -465,3 +465,10 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 - 공용 코어(korean_proofread, document_review, outline_ops, ai_prompts, number_check, kordoc_bridge 등)는 기존 기능·시험 호환용으로 보존. 개조식 변환 명령은 convert로 분리.
 - Python 전체 1,620개(조건부 제외 1) 및 최종 집중 58개 PASS. Flutter 전체 132개 PASS(조건부 제외 1), analyze 지적 0개. JS 문법·CRLF·diff 검사 PASS.
 - COM 잠금 Codex/C17 사용 후 해제. C15 소유 변경 보존, 현재 release 브랜치에 C17만 커밋하며 푸시는 C15 담당. 보고: C:\HWP_AUTODOCFIT\v1803\reports\C17.md.
+
+### P2 보안 검토 (Codex, 2026-10-25)
+- 재검토 VERDICT: PASS. 지정 시험 44개 및 추가 회귀 40개 통과.
+- S1 양 공급처 서명 검증·정책·변조 우회 차단·서명 URL 연결, S4 설치형/포터블 인메모리 명령 및 최종 길이 제한 보완.
+- S2 정규화 전 '..' 거부 복구. 설치형·포터블 호출 회귀 및 공백 검사 통과. 사용자 문서·한/글 COM 시험 없음.
+- 기존 W1~W3 조사와 별개인 P2 보안 범위. 기본 공개키/서명 강제 정책은 설계의 이행 상태 유지. 전체 시험·커밋·푸시 결과는 아래 보고서 참조.
+- 보고서: C:\HWP_AUTODOCFIT\v1803\reports\P2-review-codex.md

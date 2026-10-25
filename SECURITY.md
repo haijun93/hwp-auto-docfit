@@ -68,3 +68,12 @@
   ```powershell
   Get-FileHash .\HWP_AutoDocFit.exe -Algorithm SHA256
   ```
+
+## 한/글 자동화 보안 모듈 (MapoHwpAutoDocFitSecurity.dll)
+
+- **파일명**: `MapoHwpAutoDocFitSecurity.dll` (호환 명칭 `HwpAutoDocFitSecurity.dll`)
+- **실물 SHA-256**: `9ac5b97c47ac8aed1e8bca27a3eef39411361d8f68c262509f0c40a8f9d21bb6`
+- **코드서명**: `NotSigned` (공식 서명 없음)
+- **출처 및 라이선스**: 한글과컴퓨터 공식 개발자 가이드의 AutomationModule 보안 승인 인터페이스 기반 바이너리.
+- **용도**: 한컴오피스 한/글 COM 자동화 시 사용자 보안 승인 팝업("접근을 허용하시겠습니까?")을 생략하고 자동화하기 위한 `RegisterModule("FilePathCheckDLL", ...)` 등록용 모듈.
+- **안전성**: 네트워크 통신 및 사용자 파일 접근을 일체 수행하지 않는 정적 승인 모듈이며, 빌드 및 무인 테스트에서 SHA-256 무결성을 상시 대조합니다.

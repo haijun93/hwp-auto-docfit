@@ -8,6 +8,7 @@
 3. 다음 실행 때 남은 '.old'와 내려받기 잔여물을 지운다.
 """
 import re
+import subprocess
 
 SHA256_PATTERN = re.compile(r"SHA-?256[^0-9A-Fa-f]{0,20}([0-9A-Fa-f]{64})")
 
@@ -53,13 +54,37 @@ def launch_environment(environ):
     return env
 
 
+def powershell_encoded_command(script: str, parameters: dict[str, str]) -> list[str]:
+    """PowerShell 스크립트와 파라미터를 메모리 내 -EncodedCommand로 패키징한다 (S4 TOCTOU 방지)."""
+    import base64
+    import re
+    table_items = []
+    for k, v in parameters.items():
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9]*", k):
+            raise ValueError(f"올바르지 않은 PowerShell 매개변수 이름입니다: {k}")
+        val_str = str(v)
+        if "\x00" in val_str:
+            raise ValueError("매개변수 값에 NUL 문자를 포함할 수 없습니다.")
+        escaped_val = val_str.replace("'", "''")
+        table_items.append(f"'{k}' = '{escaped_val}'")
+
+    hashtable_code = f"$docfitParams = @{{ {'; '.join(table_items)} }}"
+    full_script = f"{hashtable_code}; & {{ {script} }} @docfitParams"
+
+    encoded = base64.b64encode(full_script.encode("utf-16le")).decode("ascii")
+    cmd = ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded]
+    total_len = len(subprocess.list2cmdline(cmd).encode("utf-16le")) // 2 + 1
+    if total_len > 32000:
+        raise ValueError("PowerShell 명령 문자열 길이가 한도(32,000자)를 초과합니다.")
+    return cmd
+
+
 def install_script():
     """구버전을 신버전으로 교체하는 PowerShell 스크립트 본문(매개변수로 경로·PID를 받는다)."""
     return r'''param([string]$WaitPidList, [string]$Downloaded, [string]$Target, [string]$Log, [string]$Sha256,
       [string]$StartedFlag, [string]$BusyFlag)
 $ErrorActionPreference = 'Stop'
 function Get-Sha256Hex([string]$Path) {
-    # Get-FileHash는 모듈 경로가 달라진 PowerShell에서 없을 수 있다(2026-10-23 CI 실측) — .NET으로 직접 계산한다.
     $stream = [System.IO.File]::OpenRead($Path)
     try { $sha = [System.Security.Cryptography.SHA256]::Create()
           try { return (($sha.ComputeHash($stream) | ForEach-Object { $_.ToString('x2') }) -join '') } finally { $sha.Dispose() } }
@@ -72,13 +97,10 @@ function Retry([scriptblock]$Action, [string]$What) {
     }
 }
 $Old = "$Target.old"
-# PyInstaller 단일 실행 파일의 내부 변수를 지운다. 남아 있으면 새로 실행한 exe가 이미 지워진 구버전 임시 폴더에서
-# python312.dll을 찾다가 'Failed to load Python DLL'로 멈춘다(2026-10-10 업데이트 오류).
 Get-ChildItem Env: | Where-Object { $_.Name -like '_PYI_*' -or $_.Name -eq '_MEIPASS2' } | ForEach-Object { Remove-Item -LiteralPath ("Env:" + $_.Name) -ErrorAction SilentlyContinue }
 $env:PYINSTALLER_RESET_ENVIRONMENT = '1'
 Write-Log "업데이트 시작: $Downloaded -> $Target"
 if ($BusyFlag) { try { Set-Content -LiteralPath $BusyFlag -Value $PID -Encoding UTF8 } catch {} }
-# PID 목록은 글자 하나로 받아 직접 나눈다(-File로 넘긴 '1,2'는 [int[]]가 아니라 숫자 12로 묶였다. Beta 12 리뷰 R1).
 $WaitPids = @()
 foreach ($t in ($WaitPidList -split '[^0-9]+')) { if ($t) { $WaitPids += [int]$t } }
 Write-Log ("대기 PID: " + ($WaitPids -join ', '))
@@ -87,11 +109,9 @@ $stillRunning = @($WaitPids | Where-Object { $_ -gt 0 -and (Get-Process -Id $_ -
 $replaced = $false
 try {
     if ($stillRunning.Count -gt 0) { throw ("앱이 아직 실행 중입니다(PID " + ($stillRunning -join ', ') + "). 교체하지 않습니다.") }
-    # 신버전 파일이 없거나 EXE가 아니면 구버전을 건드리지 않는다(교체 전에 확인).
     if (-not (Test-Path -LiteralPath $Downloaded)) { throw '내려받은 신버전 파일이 없습니다.' }
     $head = [byte[]](Get-Content -LiteralPath $Downloaded -Encoding Byte -TotalCount 2)
     if ($head.Count -lt 2 -or $head[0] -ne 0x4D -or $head[1] -ne 0x5A) { throw '내려받은 파일이 EXE가 아닙니다.' }
-    # 앱이 검증한 뒤 교체하기 전에 파일이 바뀌지 않았는지 다시 확인한다(검증-사용 사이 바꿔치기 방지).
     if (-not $Sha256 -or (Get-Sha256Hex $Downloaded) -ne $Sha256.ToLower()) { throw '내려받은 파일의 SHA-256이 검증 때와 다릅니다.' }
     if (Test-Path -LiteralPath $Old) { Retry { Remove-Item -LiteralPath $Old -Force } '이전 백업 삭제' }
     Retry { Move-Item -LiteralPath $Target -Destination $Old -Force } '구버전 이름 변경'
@@ -101,7 +121,6 @@ try {
     Write-Log '교체 완료, 신버전 실행'
     if ($StartedFlag -and (Test-Path -LiteralPath $StartedFlag)) { Remove-Item -LiteralPath $StartedFlag -Force -ErrorAction SilentlyContinue }
     $newProc = Start-Process -FilePath $Target -PassThru
-    # 새 버전이 실제로 켜졌는지(시작 확인 파일) 확인한 뒤에만 구버전 백업을 지운다(Beta 12 리뷰 R5).
     if ($StartedFlag) {
         $ok = $false
         for ($i = 0; $i -lt 120; $i++) { if (Test-Path -LiteralPath $StartedFlag) { $ok = $true; break }; Start-Sleep -Milliseconds 500 }
@@ -124,11 +143,9 @@ try {
             Write-Log '구버전 복구, 구버전 실행'
         } catch { Write-Log "구버전 복구 실패: $($_.Exception.Message)" }
     }
-    # 검증에 실패했을 수 있는 내려받은 파일은 실행하지 않는다. 구버전만 다시 실행한다(앱이 아직 돌고 있으면 하지 않음).
     if ($stillRunning.Count -eq 0 -and (Test-Path -LiteralPath $Target)) { Start-Process -FilePath $Target }
 } finally {
     if ($BusyFlag) { Remove-Item -LiteralPath $BusyFlag -Force -ErrorAction SilentlyContinue }
-    Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
 }
 '''
 

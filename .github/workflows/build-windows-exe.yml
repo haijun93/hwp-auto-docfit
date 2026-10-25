@@ -33,30 +33,32 @@ on:
   workflow_dispatch: {}
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
     runs-on: windows-latest
+    permissions:
+      contents: write
     env:
       PYTHONIOENCODING: utf-8
       DOCFIT_TEST_PYTHON: ${{ github.workspace }}/.venv/Scripts/python.exe
       DOCFIT_TEST_REPO: ${{ github.workspace }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11  # v4.1.1
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@0a5c61591373683505ea898e09a6ea1c78b9644e  # v5.0.0
         with:
           python-version: "3.12"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@60edb5dd545a775178f5252478337951c3261f44  # v4.0.2
         with:
           node-version: '22'
 
       - name: Install build dependencies
         run: |
           python -m venv .venv
-          & ".\.venv\Scripts\python.exe" -m pip install --disable-pip-version-check -r "requirements.txt" pyinstaller
+          & ".\.venv\Scripts\python.exe" -m pip install --disable-pip-version-check -r "requirements.txt" pyinstaller==6.12.0
 
       - name: Check Pillow image support
         run: |
@@ -92,7 +94,7 @@ jobs:
         shell: pwsh
         run: ./scripts/build_kordoc_runtime.ps1 -Output resources/HWP_AutoDocFit_kordoc_runtime.zip
 
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@2783a3f08e1baf891508463f8c6653c217c46fb8  # v2.18.0
         with:
           channel: stable
           flutter-version: '3.47.5'
@@ -166,7 +168,7 @@ jobs:
         run: Copy-Item "resources/HWP_AutoDocFit_kordoc_runtime.zip*" -Destination "dist"
 
       - name: Upload exe artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3  # v4.3.1
         with:
           name: ${{ github.ref_name == 'alpha' && 'HWP_AutoDocFit-alpha' || 'HWP_AutoDocFit-binaries' }}
           path: |

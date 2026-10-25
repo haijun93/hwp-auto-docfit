@@ -138,13 +138,15 @@ class UpdateService:
     def __init__(self, current, *, http_get=http_get, clock=time.monotonic,
                  launch=subprocess.Popen, offline=offline_mode, folder=None,
                  executable=None, frozen=None, portable_install=None, exit_app=None,
-                 open_page=webbrowser.open, running=lambda: False):
+                 open_page=webbrowser.open, running=lambda: False, trust_policy=None):
         self.http_get, self.clock, self.launch, self.offline = http_get, clock, launch, offline
         self.folder = Path(folder) if folder else settings_folder()
         self.executable = Path(executable or sys.executable)
         self.frozen = bool(getattr(sys, "frozen", False)) if frozen is None else frozen
         self.portable_install, self.exit_app = portable_install, exit_app
         self.open_page, self.running = open_page, running
+        from docfit_core.update_trust import default_update_trust_policy
+        self.trust_policy = trust_policy or default_update_trust_policy()
         self._lock, self._operation = threading.RLock(), threading.Lock()
         self._release, self._announced = None, set()
         self._periodic_started = False
@@ -221,6 +223,26 @@ class UpdateService:
         return dict(name=name, size=size, sha256=digest, url=validate_url(item.get("url") or RAW + quote(name) + "?inline=false"))
 
     def _gitlab(self):
+        from docfit_core.update_trust import verify_signed_manifest
+        signed_raw = None
+        if self.trust_policy.require_signed or self.trust_policy.public_keys:
+            try:
+                signed_raw = self._read(RAW + "latest.signed.json?inline=false")
+            except Exception:
+                if self.trust_policy.require_signed:
+                    raise
+        if signed_raw is not None:
+            verified = verify_signed_manifest(signed_raw.encode("utf-8"), policy=self.trust_policy)
+            version = str(verified["version"]).removeprefix("v")
+            version_key(version)
+            files = {kind: self._file(version, kind, {**verified["files"][kind], "url": verified["files"][kind]["urls"]["gitlab"]}) for kind in ("portable", "setup")}
+            notes = verified.get("notes", [])
+            return dict(version=version, files=files, notes=[str(n).replace("**", "").strip().splitlines()[0] for n in notes[:6] if str(n).strip()], source="GitLab (Signed)")
+
+        if self.trust_policy.require_signed:
+            from docfit_core.update_trust import UpdateTrustError
+            raise UpdateTrustError("서명된 메타데이터가 필요합니다.")
+
         data = json.loads(self._read(RAW + "latest.json?inline=false"))
         version = str(data["version"]).removeprefix("v")
         version_key(version)
@@ -231,10 +253,24 @@ class UpdateService:
         return dict(version=version, files=files, notes=[str(n).replace("**", "").strip().splitlines()[0] for n in notes[:6] if str(n).strip()], source="GitLab")
 
     def _github(self):
+        from docfit_core.update_trust import verify_signed_manifest
         data = json.loads(self._read(GITHUB_API))
+        assets = {a["name"]: a for a in data.get("assets", [])}
+        if "latest.signed.json" in assets and (self.trust_policy.require_signed or self.trust_policy.public_keys):
+            signed_raw = self._read(assets["latest.signed.json"]["browser_download_url"])
+            verified = verify_signed_manifest(signed_raw.encode("utf-8"), policy=self.trust_policy)
+            version = str(verified["version"]).removeprefix("v")
+            version_key(version)
+            files = {kind: self._file(version, kind, {**verified["files"][kind], "url": verified["files"][kind]["urls"]["github"]}) for kind in ("portable", "setup")}
+            notes = verified.get("notes", [])
+            return dict(version=version, files=files, notes=[str(n).replace("**", "").strip().splitlines()[0] for n in notes[:6] if str(n).strip()], source="GitHub (Signed)")
+
+        if self.trust_policy.require_signed:
+            from docfit_core.update_trust import UpdateTrustError
+            raise UpdateTrustError("서명된 메타데이터가 필요합니다.")
+
         version = str(data["tag_name"]).removeprefix("v")
         version_key(version)
-        assets = {a["name"]: a for a in data["assets"]}
         sums = parse_sha256sums(self._read(assets["SHA256SUMS"]["browser_download_url"]))
         files = {}
         for kind, suffix in (("portable", "Portable"), ("setup", "Setup")):
@@ -248,11 +284,14 @@ class UpdateService:
         if self._offline():
             return False
         self._set(step="checking", percent=0, message="새 버전을 확인하고 있어요…")
+        from docfit_core.update_trust import UpdateTrustError
         results = []
         for read in (self._gitlab, self._github):
             try:
                 self._metadata_deadline = self.clock() + 8
                 results.append(read())
+            except UpdateTrustError:
+                raise
             except Exception:
                 pass
         if self._offline():
@@ -353,13 +392,18 @@ class UpdateService:
                 return False
             self._set(step="installing", message="설치를 시작했어요. 잠시 뒤 앱이 다시 열려요.")
             if kind == "setup":
-                script = path.with_suffix(".ps1")
-                script.write_text(setup_script(), encoding="utf-8-sig")
-                from docfit_core.updater import launch_environment
-                self.launch(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script),
-                             "-Installer", str(path), "-Sha256", item["sha256"], "-WaitPidList", f"{os.getpid()} {os.getppid()}",
-                             "-AppPid", str(os.getpid()), "-AppExecutable", str(self.executable)],
-                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), env=launch_environment(os.environ))
+                from docfit_core.updater import launch_environment, powershell_encoded_command
+                params = {
+                    "Installer": str(path),
+                    "Sha256": item["sha256"],
+                    "WaitPidList": f"{os.getpid()} {os.getppid()}",
+                    "AppPid": str(os.getpid()),
+                    "AppExecutable": str(self.executable),
+                }
+                cmd = powershell_encoded_command(setup_script(), params)
+                self.launch(cmd,
+                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                            env=launch_environment(os.environ))
                 if self.exit_app:
                     self.exit_app()
             elif self.portable_install:

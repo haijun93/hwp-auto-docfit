@@ -3,7 +3,7 @@
 from pathlib import Path
 
 REQUIRED_FILES = (
-    "index.html", "flutter_bootstrap.js", "main.dart.js", "FONT-LICENSE.txt",
+    "index.html", "docfit_bridge.js", "flutter_bootstrap.js", "main.dart.js", "FONT-LICENSE.txt",
     "assets/assets/NotoSansKR.ttf", "canvaskit/canvaskit.js", "canvaskit/canvaskit.wasm",
 )
 

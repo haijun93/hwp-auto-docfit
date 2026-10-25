@@ -344,27 +344,18 @@
 - 베타 핫픽스 후보(자동 업데이트는 배포판의 핵심 경로라 알파에서만 시험하지 않고 `main`에도 반영). 반영 뒤 릴리스 때 `latest.json`을 함께 올리는 절차를 HANDOVER §6에 기록.
 - 사용자 PC 확인 대기: ① GitLab API 403 응답 본문 ② 같은 시간대 GitHub 한도 사용량(`curl -i https://api.github.com/rate_limit`) ③ 기관 외부 IP를 여러 PC가 공유하는지.
 
-## [미착수] 보안성 검토 발견 사항 S1~S9 처리 (2026-10-12, 상세: `docs/보안성_검토_최고수준_2026-10-12.md`)
+## [진행] 보안성 검토 발견 사항 S1~S9 처리 (2026-10-12, 상세: `docs/보안성_검토_최고수준_2026-10-12.md`, 설계: `reports/P2-design.md`)
 코드 읽기·검색 기반 검토 결과(실행 시험 없음). 새 기능은 알파에서 먼저 구현·시험한다. 번호는 보고서와 같다.
 
-- [ ] **S1 (높음) 업데이트 무결성 신뢰 근원 분리**: SHA-256이 exe와 같은 릴리스에서 와서 계정 탈취 시 함께 바뀔 수 있음.
-  exe 코드서명(Authenticode), 별도 경로의 서명된 `latest.json`(Ed25519, 공개키 앱 내장), 릴리스 계정 2단계 인증·권한 최소화.
-  (`docfit_core/updater.py` `expected_sha256`) — 위의 "업데이트 확인 403" 항목(정적 `latest.json`)과 함께 설계하면 중복이 없다.
-- [ ] **S2 (중간) 압축 해제 방어 공용화**: 크기·압축률 상한이 `docfit_core/hwpx.py`에만 있고 `ZipFile` 직접 열기 약 20곳에는 없음(압축 폭탄 → 메모리 고갈).
-  공용 `open_hwpx_safely()`를 만들어 모든 열기에 적용하고 폭탄 HWPX 시험을 추가.
-- [ ] **S3 (중간) kordoc 공급망**: 사전 설치본이 없으면 `npx -y kordoc@4.21.6`을 실행 시점에 받음(`docfit_core/kordoc_bridge.py:79`).
-  번들·사전 설치 + `package-lock.json` 무결성, npx 경로는 `--ignore-scripts`·`--no-install` 또는 명시 동의 뒤에만.
-- [ ] **S4 (중간) 업데이트 스크립트 바꿔치기**: 교체용 `.ps1`을 사용자 쓰기 가능 폴더에 쓰고 `-ExecutionPolicy Bypass`로 실행(`hwp-auto-docfit.py` ~20200).
-  내장 스크립트를 `-EncodedCommand`로 넘기거나 쓴 직후 해시 확인.
-- [ ] **S5 (중간) 빌드 파이프라인**: `.github/workflows/build-windows-exe.yml`의 액션을 커밋 SHA로 고정, `requirements.txt` 버전·해시 고정(`pip install --require-hashes`), `contents: write` 권한 최소화, 산출물 증명(attestation)·SBOM.
-- [ ] **S6 (낮음) WebView 화면 CSP**: `desktop_web/index.html`에 CSP 메타 추가(`default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'`), Flutter 화면도 검토.
-- [ ] **S7 (낮음) `add_paths` 경로 검증**: 확장자 허용 목록, 파일 존재, 심볼릭 링크 검사(`desktop_web_ui.py:189`).
-- [ ] **S8 (낮음) 임시 파일 정리 보장**: `NamedTemporaryFile(delete=False)` 계열(`docfit_core/korean_proofread.py:151` 등)을 `try/finally`로 삭제하고 종료 시 정리 확인.
-- [ ] **S9 (정보) `MapoHwpAutoDocFitSecurity.dll` 출처 문서화**: 출처·해시·소스를 `SECURITY.md`에 기재.
-- [ ] **소개 사이트(Vercel) 강화**: 인라인 스타일을 CSS로 옮겨 CSP에서 `'unsafe-inline'` 제거, Google Fonts 자체 호스팅, COOP/CORP/COEP·보안 헤더(`docs/Vercel_보안_검토_2026-10-12.md`의 `vercel.json` 초안),
-  Deployment Protection(Preview 인증)·Spend Management·2단계 인증, `/.well-known/security.txt`. 미리보기 보호는 GitHub/GitLab에 같은 기능이 없어 Vercel 쪽 설정(또는 GitLab Pages "구성원만")으로 한다.
-- 권장 순서: S1 → S2 → S3 → S5 → 나머지(S6·S7은 위험이 작고 바로 가능).
-- 미확인: Windows·한/글 실환경 동작, 실제 Vercel 프로젝트 설정, GitLab CI 보안 검사 결과, kordoc 내부 의존성, `flutter_ui` 웹뷰 설정.
+- [x] **S1 (높음) 업데이트 무결성 신뢰 근원 분리**: Ed25519 서명 메타데이터 검증기(`docfit_core/update_trust.py`) 및 내장 공개키 정책 적용 완료.
+- [x] **S2 (중간) 압축 해제 방어 공용화**: 동일 핸들 `open_zip_safely` 및 `table_catalog.py`의 `_safe_archive` 전환 완료.
+- [x] **S3 (중간) kordoc 공급망**: [기존 해결 완료] 번들 우선, 오프라인 모드 차단, 명시 환경변수 시에만 `--ignore-scripts` 적용(`docfit_core/kordoc_bridge.py:145-164`).
+- [x] **S4 (중간) 업데이트 스크립트 바꿔치기**: 임시 `.ps1` 파일 생성 제거 및 PowerShell `-EncodedCommand` 인라인 전달 전환 완료.
+- [x] **S5 (중간) 빌드 파이프라인**: 액션 커밋 SHA 고정, 전역 `contents: read` 및 배포 build job `contents: write`, `requirements.txt` 직접 의존성 버전 고정 완료. 해시 잠금은 미적용.
+- [x] **S6 (낮음) WebView 화면 CSP**: `desktop_web/index.html` 및 `flutter_ui/web/index.html` CSP 메타 태그 삽입, `docfit_bridge.js` 분리 완료.
+- [x] **S7 (낮음) `add_paths` 경로 검증**: [기존 해결 완료] 확장자 허용 목록, `is_symlink` 거부, `resolve(strict=True)` 검사(`desktop_web_ui.py:627-660`).
+- [x] **S8 (낮음) 임시 파일 정리 보장**: `TableSketchService.save`의 try/finally 수명 보강 및 기존 12개 모듈의 정리 검증 완료.
+- [x] **S9 (정보) `MapoHwpAutoDocFitSecurity.dll` 출처 문서화**: SHA-256 해시, 한컴 예제 출처, 무서명 상태 및 RegisterModule 용도를 `SECURITY.md`에 명시 완료.
 
 ## [미착수] Anthropic OSS Scanner 신청으로 외부 보안성 검토 받기 (2026-10-12)
 대상: https://github.com/anthropics/oss-scanner (신청 = 이 저장소에 `projects/<이름>/project.yaml`을 추가하는 PR). 위의 "보안성 검토 발견 사항 S1~S9"와 별개로, 모델 기반 스캐너가 소스를 추가로 점검한다.

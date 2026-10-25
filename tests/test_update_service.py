@@ -55,6 +55,53 @@ class Network:
 
 
 class UpdateServiceTest(unittest.TestCase):
+    def test_signed_sources_and_no_unsigned_downgrade(self):
+        from datetime import datetime, timezone, timedelta
+        from tests.test_update_trust import _generate_key_pair, _make_signed_envelope
+        from docfit_core.update_trust import UpdateTrustPolicy
+        private, public = _generate_key_pair()
+        payload = manifest()
+        now = datetime.now(timezone.utc)
+        payload.update(product='HWP_AutoDocFit', issued_at=(now - timedelta(minutes=1)).isoformat(),
+                       expires_at=(now + timedelta(days=1)).isoformat())
+        for kind, item in payload['files'].items():
+            item['urls'] = {'gitlab': RAW + 'signed-' + kind,
+                            'github': 'https://github.com/a/signed-' + kind}
+        envelope = _make_signed_envelope(private, payload)
+        for required in (True, False):
+            for source in ('gitlab', 'github'):
+                for mode in ('valid', 'tampered', 'missing'):
+                    with self.subTest(required=required, source=source, mode=mode):
+                        calls = []
+                        def network(url, headers, timeout):
+                            calls.append(url)
+                            if url == GITHUB_API:
+                                return io.BytesIO(json.dumps({'assets': [] if mode == 'missing' else [
+                                    {'name': 'latest.signed.json', 'browser_download_url':
+                                     'https://github.com/a/latest.signed.json'}]}).encode())
+                            if 'latest.signed.json' in url:
+                                if mode == 'missing':
+                                    raise OSError('404')
+                                body = json.loads(envelope)
+                                if mode == 'tampered':
+                                    body['signature'] = 'A' * 88
+                                return io.BytesIO(json.dumps(body).encode())
+                            if source == 'github':
+                                raise OSError('GitLab unavailable')
+                            return Network()(url, headers, timeout)
+                        service = self.service(network, trust_policy=UpdateTrustPolicy(
+                            require_signed=required, public_keys={'docfit-test-key': public}))
+                        if source == 'github':
+                            service._gitlab = Mock(side_effect=OSError('unavailable'))
+                        success = service.check()
+                        expected = mode == 'valid' or (mode == 'missing' and not required and source == 'gitlab')
+                        self.assertEqual(success, expected)
+                        if mode == 'valid':
+                            self.assertEqual(service._release['files']['portable']['url'],
+                                             payload['files']['portable']['urls'][source])
+                        if mode == 'tampered' or required:
+                            self.assertFalse(any('latest.json?' in url or 'SHA256SUMS' in url for url in calls))
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -121,8 +168,17 @@ class UpdateServiceTest(unittest.TestCase):
         service = self.service(installed=True, launch=launch, exit_app=exit_app)
         self.assertTrue(service.start_update())
         args = launch.call_args.args[0]
-        self.assertTrue(args[args.index('-Installer') + 1].endswith('_Setup.exe'))
-        self.assertIn('-WaitPidList', args)
+        self.assertIn("-EncodedCommand", args)
+        self.assertNotIn("-File", args)
+        if "-EncodedCommand" in args:
+            import base64
+            encoded = args[args.index("-EncodedCommand") + 1]
+            decoded = base64.b64decode(encoded).decode("utf-16le")
+            self.assertIn("_Setup.exe", decoded)
+            self.assertIn(f"'WaitPidList' = '{os.getpid()} {os.getppid()}'", decoded)
+            self.assertIn(f"'Sha256' = '{HASH}'", decoded)
+            self.assertIn("Installer", decoded)
+            self.assertFalse(list(self.folder.rglob('*.ps1')))
         exit_app.assert_called_once()
         script = setup_script()
         self.assertLess(script.index('Wait-Process'), script.index('Start-Process'))

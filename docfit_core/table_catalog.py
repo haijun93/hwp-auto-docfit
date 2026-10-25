@@ -11,6 +11,7 @@ from pathlib import Path
 from defusedxml import ElementTree as ET
 
 from .batch_format import _serialize
+from .hwpx import open_hwpx_safely, HwpxLimits
 from .table_builder import BORDER_TYPES, BORDER_WIDTHS, FONTS, _Header, _installed_fonts
 
 _HP = "{http://www.hancom.co.kr/hwpml/2011/paragraph}"
@@ -40,15 +41,13 @@ def default_catalog_path() -> Path:
 
 
 def _safe_archive(path: Path) -> zipfile.ZipFile:
-    archive = zipfile.ZipFile(path)
-    infos = archive.infolist()
-    if len(infos) > _MAX_ENTRIES or sum(item.file_size for item in infos) > _MAX_ARCHIVE_BYTES:
-        archive.close()
-        raise ValueError("표 서식 파일 크기 또는 항목 수가 허용 범위를 넘습니다.")
-    if any(item.file_size > _MAX_ARCHIVE_BYTES for item in infos):
-        archive.close()
-        raise ValueError("표 서식 파일 안의 개별 항목이 너무 큽니다.")
-    return archive
+    limits = HwpxLimits(
+        max_entries=_MAX_ENTRIES,
+        max_total_size=_MAX_ARCHIVE_BYTES,
+        max_file_size=_MAX_ARCHIVE_BYTES,
+        max_compression_ratio=1000,
+    )
+    return open_hwpx_safely(path, limits=limits)
 
 
 def _section_names(archive: zipfile.ZipFile) -> list[str]:
