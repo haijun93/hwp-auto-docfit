@@ -58,7 +58,7 @@ class PipelineReviewTest(unittest.TestCase):
             '최종검수_문서목록': [], '검수_문제목록': [], 'gui_queue': Mock(),
         }
         settings.update(extra or {})
-        with patch.dict(fn.__globals__, settings):
+        with patch.dict(fn.__globals__, settings), patch("docfit_core.marker_spacing.normalize_hwpx", return_value=0):
             result = fn(source, 1, 1)
         return result, calls, doc
 
@@ -151,7 +151,7 @@ class PipelineReviewTest(unittest.TestCase):
             '_서식통일_최종결과_사용자확인': Mock(),
         }
         settings.update(overrides)
-        with patch.dict(fn.__globals__, settings):
+        with patch.dict(fn.__globals__, settings), patch("docfit_core.marker_spacing.normalize_hwpx", return_value=0):
             result = fn('source.hwpx', 'result.hwpx', 결과창=결과창)
         return result, open_document, style, table, word, record
 
@@ -395,7 +395,7 @@ class PipelineReviewTest(unittest.TestCase):
             '로그': Mock(), '진단로그': Mock(), '단계표시': Mock(),
         }
         settings.update(extra)
-        with patch.dict(fn.__globals__, settings):
+        with patch.dict(fn.__globals__, settings), patch("docfit_core.marker_spacing.normalize_hwpx", return_value=0):
             result = fn(검증만=검증만)
         return result, applied
 

@@ -215,6 +215,12 @@ if __name__ == "__main__" and "--self-test" in _selftest_sys.argv:
     if not _packaging_result["ok"]:
         raise SystemExit(_packaging_finish(_packaging_result))
 
+# Read-only CLI commands do not need Windows COM or GUI imports.
+if __name__ == "__main__" and len(_selftest_sys.argv) > 1:
+    from docfit_app.cli import is_cli_command as _early_cli, main as _early_cli_main
+    if _selftest_sys.argv[1] in {"formats", "help", "--help", "-h", "/?"} and _early_cli(_selftest_sys.argv[1:]):
+        raise SystemExit(_early_cli_main())
+
 from docfit_engine.runtime import resolve as _engine_resolve
 from docfit_engine.pipeline import PipelineCallbacks
 
@@ -365,7 +371,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리"
-APP_VERSION = "1.80.9"
+APP_VERSION = "1.80.10"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 GITHUB_UPDATE_API_URL = "https://api.github.com/repos/haijun93/hwp-auto-docfit/releases/latest"

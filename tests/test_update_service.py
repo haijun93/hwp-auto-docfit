@@ -301,6 +301,7 @@ class UpdateServiceTest(unittest.TestCase):
         state['notes'].clear()
         self.assertEqual(['바뀐 점'], service.state()['notes'])
 
+    @unittest.skipUnless(os.name == "nt", "Windows PowerShell integration; verified on Windows CI")
     def test_setup_script_skips_unrelated_parent_without_executing_installer(self):
         installer = self.folder / 'Setup.exe'
         installer.write_bytes(EXE)

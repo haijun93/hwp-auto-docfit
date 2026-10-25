@@ -5824,6 +5824,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
         return bind_function(들여쓰기_공백_맞추기, _docfit_namespace)
     if _docfit_symbol == '표준서식_기호규칙_찾기':
         def 표준서식_기호규칙_찾기(text):
+            from docfit_core.marker_spacing import invariant_rule
             if not text:
                 return None
             # v1.11 버그수정: 기존에는 lstrip(" ")로 '일반 공백'만 제거했다.
@@ -5841,7 +5842,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 return None
             mapped = scheme.canonical(text) if scheme else None
             if mapped:
-                return next((rule for rule in 표준서식_설정['기호_규칙'] if rule[0] == mapped[0]), None)
+                return invariant_rule(next((rule for rule in 표준서식_설정['기호_규칙'] if rule[0] == mapped[0]), None))
             detected_marker, detected_role = leading_marker(벗긴텍스트)
             if detected_role == "장":
                 return ((표준서식_설정.get("논리역할_규칙") or {}).get("장")
@@ -5849,19 +5850,19 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             if 표준서식_설정.get("논리역할_규칙"):
                 for 규칙 in 표준서식_설정["기호_규칙"]:
                     if 규칙[0] == detected_marker:
-                        return 규칙
+                        return invariant_rule(규칙)
                 if detected_role in 표준서식_설정["논리역할_규칙"]:
-                    return 표준서식_설정["논리역할_규칙"][detected_role]
+                    return invariant_rule(표준서식_설정["논리역할_규칙"][detected_role])
             if 벗긴텍스트[0] in DOT_MARKERS:
                 return next((규칙 for 규칙 in 표준서식_설정["기호_규칙"] if 규칙[0] == "•"), None)
             for 규칙 in 표준서식_설정["기호_규칙"]:
                 if 벗긴텍스트.startswith(규칙[0]):
-                    return 규칙
+                    return invariant_rule(규칙)
             for 별칭_기호, 원본_기호 in 표준서식_기호_별칭.items():
                 if 벗긴텍스트.startswith(별칭_기호):
                     for 규칙 in 표준서식_설정["기호_규칙"]:
                         if 규칙[0] == 원본_기호:
-                            return 규칙
+                            return invariant_rule(규칙)
             return None
         return bind_function(표준서식_기호규칙_찾기, _docfit_namespace)
     if _docfit_symbol == '본문형_일반문장인가':

@@ -465,3 +465,7 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 - 공용 코어(korean_proofread, document_review, outline_ops, ai_prompts, number_check, kordoc_bridge 등)는 기존 기능·시험 호환용으로 보존. 개조식 변환 명령은 convert로 분리.
 - Python 전체 1,620개(조건부 제외 1) 및 최종 집중 58개 PASS. Flutter 전체 132개 PASS(조건부 제외 1), analyze 지적 0개. JS 문법·CRLF·diff 검사 PASS.
 - COM 잠금 Codex/C17 사용 후 해제. C15 소유 변경 보존, 현재 release 브랜치에 C17만 커밋하며 푸시는 C15 담당. 보고: C:\HWP_AUTODOCFIT\v1803\reports\C17.md.
+
+## Codex 후속 결과 보고 (2026-10-25, 1.80.10 항목기호 탭)
+
+사용자 첨부 원본의 탭 항목 33개를 작업용 사본에서 정리했다. 본문 직속만 변경하고 Run/표/필드는 보존한다. 관련 113시험(Windows 전용 제외 1)과 별도 확장/파이프라인 시험 통과. 결과 근거: docs/V1_80_10_MARKER_TAB_2026-10-25.md, 실행 환경의 /tmp/v18010-sample-report.json. 실제 한/글 COM 및 C 드라이브 PC 자료는 이 환경에 없어 실행하지 않았으며 100% 재연 합격으로 보고하지 않는다.

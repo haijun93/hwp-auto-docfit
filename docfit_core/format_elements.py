@@ -1474,7 +1474,8 @@ def apply_to_profile(profile):
             size = _value(elements, "size")
             bold = bool(_value(elements, "bold", rule[4]))
             marker_bold = _value(elements, "marker_bold")
-            rules[index] = (rule[0], _value(elements, "lead_spaces", rule[1]), font,
+            from .marker_spacing import LEADING_SPACES
+            rules[index] = (rule[0], LEADING_SPACES.get(marker, _value(elements, "lead_spaces", rule[1])), font,
                             size / 100 if size else rule[3], bold,
                             bool(marker_bold) and not bold if marker_bold is not None else rule[5])
             if bold and marker_bold is False:

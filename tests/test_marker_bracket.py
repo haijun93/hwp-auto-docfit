@@ -1,4 +1,4 @@
-"""항목기호 뒤 여는 낫표 규칙(사용자 규칙, 2026-10-17): 빈칸 없이 붙이고, 내어쓰기는 '「' 바로 뒤 첫 글자 기준."""
+"""항목기호 뒤 빈칸 1개(2026-10-25), 내어쓰기는 '「' 바로 뒤 첫 글자 기준."""
 from pathlib import Path
 import runpy
 import unittest
@@ -9,13 +9,13 @@ class MarkerBracketTest(unittest.TestCase):
     def setUpClass(cls):
         cls.ns = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'hwp-auto-docfit.py'))
 
-    def test_space_between_marker_and_bracket_is_removed(self):
+    def test_space_before_bracket_is_preserved_by_latest_invariant(self):
         span = self.ns['항목기호_낫표_빈칸_구간']
         convert = self.ns['공백규칙_글변환']
-        self.assertEqual(span(' ㅇ 「난세기 대비 탈수준비절차에 관한 법령」 개정'), (2, 3))
-        self.assertEqual(convert(' ㅇ 「난세기 대비 탈수준비절차에 관한 법령」 개정'),
-                         ' ㅇ「난세기 대비 탈수준비절차에 관한 법령」 개정')
-        self.assertEqual(convert('   - 　「규칙」 준수'), '   -「규칙」 준수')
+        self.assertIsNone(span(' ㅇ 「법령」 개정'))
+        self.assertEqual(convert(' ㅇ 「법령」 개정'), ' ㅇ 「법령」 개정')
+        punct = self.ns['문장부호뒤공백_글변환']
+        self.assertEqual(punct(' ㅇ「법령」 개정'), ' ㅇ 「법령」 개정')
 
     def test_other_text_is_unchanged(self):
         span = self.ns['항목기호_낫표_빈칸_구간']
