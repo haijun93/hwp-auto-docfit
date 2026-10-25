@@ -117,7 +117,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         f"해제 예상 {검사정보['total_uncompressed_size']:,}바이트"
                     )
 
-                if 확장자 == ".hwpx" and 작업_모드 in ("format", "all", "unify"):
+                if 확장자 == ".hwpx" and 작업_모드 in ("format", "all", "unify") and not 쪽범위_요청:
                     from docfit_core.marker_spacing import normalize_hwpx
                     작업_임시폴더 = tempfile.TemporaryDirectory(prefix="docfit_marker_spaces_")
                     정리사본 = Path(작업_임시폴더.name) / "marker_spaces.hwpx"
@@ -153,7 +153,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         f"HWP → HWPX 변환 완료: {작업파일경로.name} / "
                         f"압축 항목 {검사정보['entry_count']}개"
                     )
-                    if 작업_모드 in ("format", "all", "unify"):
+                    if 작업_모드 in ("format", "all", "unify") and not 쪽범위_요청:
                         from docfit_core.marker_spacing import normalize_hwpx
                         정리사본 = Path(작업_임시폴더.name) / "marker_spaces.hwpx"
                         정리수 = normalize_hwpx(작업파일경로, 정리사본)

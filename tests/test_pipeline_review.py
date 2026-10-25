@@ -58,9 +58,19 @@ class PipelineReviewTest(unittest.TestCase):
             '최종검수_문서목록': [], '검수_문제목록': [], 'gui_queue': Mock(),
         }
         settings.update(extra or {})
-        with patch.dict(fn.__globals__, settings), patch("docfit_core.marker_spacing.normalize_hwpx", return_value=0):
+        with patch.dict(fn.__globals__, settings), patch("docfit_core.marker_spacing.normalize_hwpx", return_value=0) as normalize:
             result = fn(source, 1, 1)
+            self.normalization_calls = normalize.call_count
         return result, calls, doc
+
+    def test_page_range_never_triggers_whole_document_marker_normalization(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / 'source.hwpx'
+            source.touch()
+            self._process_document(source, {'쪽범위_요청': (2, 2), '쪽범위_계산': lambda *a: None})
+            self.assertEqual(self.normalization_calls, 0)
+            self._process_document(source, {'쪽범위_요청': None, '문서_처리_1회': lambda *a: False})
+            self.assertEqual(self.normalization_calls, 1)
 
     def test_range_is_fixed_before_any_format_or_protection_changes(self):
         with tempfile.TemporaryDirectory() as folder:
