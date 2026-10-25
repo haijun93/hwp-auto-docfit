@@ -5,7 +5,7 @@
 - [x] **카탈로그 파서 중첩 표 복원**: `docfit_core/table_catalog.py`의 `_cell_meta()`에서 outer cell 고유 테두리/채우기(`borderFillIDRef`)가 inner cell 속성으로 덮어써지던 결함 수정.
 - [x] **중첩 표 재귀 프리뷰 추출**: `_table_preview()`에서 셀 내부 중첩 표(`<hp:tbl>`)를 재귀 추출하여 `nested` 계층 구조로 전달, Flutter UI(`table_grid_preview.dart`)에서 T형 날개 서식 및 안쪽 표 완전 렌더링.
 - [x] **단위 및 회귀 시험 전수 PASS**: `tests/test_table_catalog.py` 14종 단위 시험 전수 통과 (중첩 표 추출 및 무결성 확인).
-- [x] **v1.80.11 포터블 단일 실행파일 빌드**: PyInstaller + Smart Launcher 파이프라인 가동, `HWP_AutoDocFit_v1.80.11_Portable.exe` (218,618,880 bytes, SHA-256: `85e703751b844bb0f490902829197f1490fe32ba02e360dd9d25c2b7210d05cb`) 생성 완료.
+- [x] **v1.80.11 포터블 단일 실행파일 빌드**: PyInstaller + Smart Launcher 파이프라인 가동, `HWP_AutoDocFit_v1.80.11_Portable.exe` (218,618,880 bytes, SHA-256: `648705b8f8dea0a8e3d3eba8ceb8bde00324fe9c900c9c550e1dde156787cb61`) 생성 완료.
 - [x] **바탕화면 배포 및 바로가기 생성**: 사용자 바탕화면 복사 및 바로가기(`.lnk`, `.bat`) 생성 완료.
 - [x] **릴리즈 노트 작성**: `releases/v1.80.11.md` 작성 완료.
 

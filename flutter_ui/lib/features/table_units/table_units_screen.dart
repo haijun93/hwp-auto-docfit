@@ -592,17 +592,23 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
               onTap: () => _selectTemplate(t),
               child: Container(
                 height: 28,
-                padding: const EdgeInsets.symmetric(horizontal: 9),
-                alignment: Alignment.center,
-                child: Text(
-                  t.name,
-                  maxLines: 1,
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    height: 1.0,
-                    color: isSelected ? Colors.white : tone.ink,
-                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                  ),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text(
+                      t.name,
+                      maxLines: 1,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        height: 1.0,
+                        color: isSelected ? Colors.white : tone.ink,
+                        fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),

@@ -801,4 +801,36 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets(
+    '상단 템플릿 이름 버튼들은 가로 전체를 차지하지 않고 텍스트 길이에 비례하는 컴팩트한 너비로 한 줄에 여러 개 배치된다',
+    (tester) async {
+      Future<Object?> api(String name, List<Object?> args) async {
+        final action = args[0] as String;
+        if (action == 'list') return envelope(sampleListData());
+        if (action == 'preview') return envelope(samplePreview());
+        return envelope({});
+      }
+
+      await pumpScreen(tester, api: api, width: 1000.0, height: 800.0);
+
+      final btn1 = find.byKey(const Key('templateName_0:1'));
+      final btn2 = find.byKey(const Key('templateName_0:2'));
+      expect(btn1, findsOneWidget);
+      expect(btn2, findsOneWidget);
+
+      final size1 = tester.getSize(btn1);
+      final size2 = tester.getSize(btn2);
+
+      // 전체 가로폭(976px)을 차지하지 않고 텍스트 길이에 비례하는 너비 (250px 미만)
+      expect(size1.width, lessThan(250.0));
+      expect(size2.width, lessThan(250.0));
+
+      // 두 버튼이 한 줄을 각각 차지하지 않고 나란히 배치됨 (같은 y 좌표)
+      final pos1 = tester.getTopLeft(btn1);
+      final pos2 = tester.getTopLeft(btn2);
+      expect(pos1.dy, equals(pos2.dy));
+      expect(pos2.dx, greaterThanOrEqualTo(pos1.dx + size1.width));
+    },
+  );
 }
