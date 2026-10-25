@@ -619,11 +619,15 @@ class DesktopWebBridge:
         ]
 
     def add_files(self):
+        if not self._tk_fallback_enabled():
+            return {"ok": False, "error": "FLUTTER_ONLY"}
         self._tk(self.gui.파일선택, timeout=None, front=True)
         self._tk(self._update_document_hints)
         return self.get_state()
 
     def add_folder(self):
+        if not self._tk_fallback_enabled():
+            return {"ok": False, "error": "FLUTTER_ONLY"}
         self._tk(self.gui._폴더선택, timeout=None, front=True)
         self._tk(self._update_document_hints)
         return self.get_state()
@@ -1444,6 +1448,8 @@ class DesktopWebBridge:
                 return snapshot
             if action == "add_body" and isinstance(data, dict):
                 if not data.get("path"):
+                    if not self._tk_fallback_enabled():
+                        raise ServiceError("PATH_REQUIRED", "본문 상용구로 쓸 문서 경로를 지정해 주세요.")
                     from tkinter import filedialog
                     picked = self._tk(lambda: filedialog.askopenfilename(
                         parent=self.gui.root, title="본문 상용구로 쓸 문서",
@@ -1489,12 +1495,15 @@ class DesktopWebBridge:
             pythoncom.CoUninitialize()
 
     def table_template(self, action, payload):
+        from docfit_app.api_contract import ServiceError
         from docfit_app.table_template_service import TableTemplateService
         def execute():
             if action != "get":
                 self.gui._준말_서비스()._editable(self.gui.running)
             data = dict(payload) if isinstance(payload, dict) else payload
             if action == "learn" and isinstance(data, dict) and not data.get("path"):
+                if not self._tk_fallback_enabled():
+                    raise ServiceError("PATH_REQUIRED", "기본 데이터 표 서식 학습할 HWPX 문서 경로를 지정해 주세요.")
                 from tkinter import filedialog
                 path = filedialog.askopenfilename(parent=self.gui.root,
                     title="기본 데이터 표 서식 학습", filetypes=[("HWPX 문서", "*.hwpx")])
@@ -1775,6 +1784,8 @@ class DesktopWebBridge:
 
     def add_format_file(self):
         """예시 보고서 파일을 골라 서식을 복제한다."""
+        if not self._tk_fallback_enabled():
+            return {"ok": False, "error": "FLUTTER_ONLY"}
         self._tk(self.gui._서식_파일에서_추가, timeout=None, front=True)
         return self.get_state()
 

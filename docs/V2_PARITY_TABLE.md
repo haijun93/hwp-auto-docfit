@@ -97,19 +97,19 @@
 
 | 번호 | 호출 함수 및 위치 | 대화상자 종류 | 선택 대상 및 용도 | 현재 상태 | Flutter 전환 시 권장 정책 |
 | :--- | :--- | :--- | :--- | :---: | :--- |
-| **F01** | L2044 `_폴더선택` | `askdirectory` | 변환 대상 문서들이 포함된 폴더 선택 | 없음 | **Windows 네이티브 대화상자 유지** (`file_picker`) |
-| **F02** | L2735 `_서식_파일에서_추가` | `askopenfilename` | 서식 복제용 예시 HWP/HWPX 파일 선택 | 없음 | **Windows 네이티브 대화상자 유지** (`file_picker`) |
+| **F01** | L2044 `_폴더선택` | `askdirectory` | 변환 대상 문서들이 포함된 폴더 선택 | **완료** | Flutter getDirectoryPath() 및 add_paths 경로 API 연동 완료 (ui_tk_fallback=true 시 Tk 유지) |
+| **F02** | L2735 `_서식_파일에서_추가` | `askopenfilename` | 서식 복제용 예시 HWP/HWPX 파일 선택 | **완료** | Flutter openFile() 및 add_format_paths 경로 API 연동 완료 (ui_tk_fallback=true 시 Tk 유지) |
 | **F03** | L2907 `_문서검토_열기` (`export_result`) | `asksaveasfilename` | 문서 구조/가독성 분석 결과 JSON 저장 경로 | **삭제됨(1.80.9)** | 상위 문서 도구 삭제에 따라 이관 제외 |
 | **F04** | L3350 `_아웃라이너_열기` (`개조식으로추가`) | `asksaveasfilename` | 아웃라이너 작성 결과 .txt 파일 저장 | **삭제됨(1.80.9)** | 상위 문서 도구 삭제에 따라 이관 제외 |
 | **F05** | L3374 `_아웃라이너_열기` (`마크다운으로추가`) | `asksaveasfilename` | 아웃라이너 작성 결과 .md 파일 저장 | **삭제됨(1.80.9)** | 상위 문서 도구 삭제에 따라 이관 제외 |
 | **F06** | L3395 `_아웃라이너_열기` (`저장`) | `asksaveasfilename` | 아웃라이너 전용 구조 데이터 저장 | **삭제됨(1.80.9)** | 상위 문서 도구 삭제에 따라 이관 제외 |
 | **F07** | L3410 `_아웃라이너_열기` (`열기`) | `askopenfilename` | 기존 아웃라이너 데이터 파일 열기 | **삭제됨(1.80.9)** | 상위 문서 도구 삭제에 따라 이관 제외 |
-| **F08** | L3530 `_텍스트로_문서추가_열기` (`폴더_찾아보기`) | `askdirectory` | 텍스트 변환 HWP 자동 저장 대상 폴더 | 없음 | **Windows 네이티브 대화상자 유지** (`file_picker`) |
-| **F09** | L3624 `_텍스트로_문서추가_열기` (`문서로추가`) | `asksaveasfilename` | 변환 텍스트 수동 .txt 파일 저장 위치 | 없음 | **Windows 네이티브 대화상자 유지** (`file_picker`) |
+| **F08** | L3530 `_텍스트로_문서추가_열기` (`폴더_찾아보기`) | `askdirectory` | 텍스트 변환 HWP 자동 저장 대상 폴더 | **완료 (Flutter 화면)** | DocumentToolsWorkspace 자체 완결 (ui_tk_fallback=true 시 기존 Tk 폴더선택 유지) |
+| **F09** | L3624 `_텍스트로_문서추가_열기` (`문서로추가`) | `asksaveasfilename` | 변환 텍스트 수동 .txt 파일 저장 위치 | **완료 (Flutter 화면)** | DocumentToolsWorkspace 자체 완결 (ui_tk_fallback=true 시 기존 Tk 저장창 유지) |
 | **F10** | L4079 `_작성도우미_열기` (`문서고르기`) | `askopenfilename` | 공문서 도우미 기관 서식 템플릿 HWP 열기 | **삭제됨(1.80.9)** | 상위 문서 도구 삭제에 따라 이관 제외 |
-| **F11** | L4309 `_서식_복사하기` | `askopenfilename` | 서식 프로필 복제 원본 파일 선택 | 없음 | **Windows 네이티브 대화상자 유지** (`file_picker`) |
-| **F12** | L5343 `_폰트폴더_찾아보기` | `askdirectory` | 설정창 사용자 폰트 검색 폴더 선택 | 없음 | **Windows 네이티브 대화상자 유지** (`file_picker`) |
-| **F13** | L5582 `파일선택` | `askopenfilenames` | 메인 화면 변환 대상 다중 HWP/오피스 파일 선택 | 없음 | **Windows 네이티브 대화상자 유지** (`file_picker`) |
+| **F11** | L4309 `_서식_복사하기` | `askopenfilename` | 서식 프로필 복제 원본 파일 선택 | **완료** | 서식 관리 openFile() 및 add_format_paths 연동 (ui_tk_fallback=true 시 Tk 유지) |
+| **F12** | L5343 `_폰트폴더_찾아보기` | `askdirectory` | 설정창 사용자 폰트 검색 폴더 선택 | **완료 (자동 열거)** | Flutter hangul_fonts 자동 감지 체계 대체 (ui_tk_fallback=true 시 Tk 유지) |
+| **F13** | L5582 `파일선택` | `askopenfilenames` | 메인 화면 변환 대상 다중 HWP/오피스 파일 선택 | **완료** | Flutter openFiles() 및 add_paths 경로 API 연동 완료 (ui_tk_fallback=true 시 Tk 유지) |
 | **F14** | L5696 `고급문서도구_열기` (`compare_tool`) | `askopenfilename` | 고급 문서 도구 비교 대상 HWP 파일 선택 | **삭제됨(1.80.9)** | 상위 문서 도구 삭제에 따라 이관 제외 |
 | **F15** | L5702, L5732 `고급문서도구_열기` (`patch_tool` 등) | `askopenfilename` | kordoc 패치 및 Markdown 생성 대상 파일 선택 | **삭제됨(1.80.9)** | 상위 문서 도구 삭제에 따라 이관 제외 |
 
@@ -126,17 +126,17 @@
 
 | 번호 | 공개 API 메서드명 (행 번호) | 호출 대상 (legacy.py 함수 / Toplevel 번호) | Flutter 트리거 동작 (언제 뜨나) | 현재 동작 및 문제점 | 2.0.0 전환 방안 |
 | :---: | :--- | :--- | :--- | :--- | :--- |
-| **B01** | `add_files` (L618) | `self.gui.파일선택` (F13) | 1단계 "문서 추가" 버튼 또는 Ctrl+O | `self._tk(..., front=True)`로 Win32 파일 선택창 호출 | Flutter `file_picker`로 파일 선택 후 경로만 백엔드 전송 |
-| **B02** | `add_folder` (L623) | `self.gui._폴더선택` (F01) | 1단계 "폴더 추가" 버튼 클릭 시 | `self._tk(..., front=True)`로 Win32 폴더 선택창 호출 | Flutter `file_picker` `getDirectoryPath()`로 대체 |
+| **B01** | `add_files` (L618) | `self.gui.파일선택` (F13) | 1단계 "문서 추가" 버튼 또는 Ctrl+O | `self._tk(..., front=True)`로 Win32 파일 선택창 호출 | Flutter openFiles() -> add_paths 경로 API 통일. ui_tk_fallback=false 시 FLUTTER_ONLY 차단, true 시 기존 Tk 호출 유지 |
+| **B02** | `add_folder` (L623) | `self.gui._폴더선택` (F01) | 1단계 "폴더 추가" 버튼 클릭 시 | `self._tk(..., front=True)`로 Win32 폴더 선택창 호출 | Flutter getDirectoryPath() -> add_paths 경로 API 통일. ui_tk_fallback=false 시 FLUTTER_ONLY 차단, true 시 기존 Tk 호출 유지 |
 | **B03** | `open_settings` (L935) | `self.gui.설정창_열기` (T15) | 설정 드로어 "전체 설정 열기" 클릭 시 | `self._tk(..., front=True)`로 레거시 Tk 환경설정 창 띄움 | Flutter `SettingsDialog`가 이미 존재하므로 브리지의 Tk 호출 제거 |
 | **B04** | `text_input` (L939) | `self.gui._텍스트로_문서추가_열기` (T07) | 1단계 "텍스트 붙여넣기" 클릭 시 | C20: ui_tk_fallback=true일 때만 기존 Tk 창 | Flutter `DocumentToolsWorkspace(initial: 'convert')` 유지, 기본 FLUTTER_ONLY |
 | **B05** | `open_stages` (L943) | `self.gui._세부작업_열기` (T02) | 2단계 세부작업 상세 조정 클릭 시 | `self._tk(..., front=True)`로 Tk 세부작업 팝업 띄움 | Flutter `showStages()` AlertDialog로 완전 일원화 |
 | **B06** | `open_log` (L949) | `self.gui.log_window` (T01) | 로그 메뉴 또는 상태바 클릭 시 | `log_window.deiconify()`, `lift()`로 숨은 Tk 창 표시 | Flutter `LiveProgress` / `showLog()` 다이얼로그로 완전 대체 |
-| **B07** | `flow_editor` (L1045) | `filedialog.asksaveasfilename` | 표 편집기 PNG 내보내기 시 | `self._tk(..., front=True)`로 Tk 파일 저장창 호출 | Flutter `file_picker` `getSavePath()`로 대체 |
-| **B08** | `flow_editor` (L1083) | `filedialog.asksaveasfilename` | 표 편집기 HWPX 내보내기 시 | `self._tk(..., front=True)`로 Tk 파일 저장창 호출 | Flutter `file_picker` `getSavePath()`로 대체 |
-| **B09** | `idioms` (L1321) | `filedialog.askopenfilename` | 본문 상용구 파일 등록 시 | `self._tk(..., front=True)`로 Tk 파일 열기창 호출 | Flutter `file_picker`로 대체 |
-| **B10** | `table_template` (L1372) | `filedialog.askopenfilename` | 기본 표 서식 학습 파일 선택 시 | `self._tk(..., front=True)`로 Tk 파일 열기창 호출 | Flutter `file_picker`로 대체 |
-| **B11** | `add_format_file` (L1628) | `self.gui._서식_파일에서_추가` (F02) | 서식 관리 "예시 파일에서 복제" 클릭 시 | `self._tk(..., front=True)`로 Tk 파일 열기창 호출 | Flutter `file_picker`로 대체 |
+| **B07** | `flow_editor` (L1045) | `filedialog.asksaveasfilename` | 표 편집기 PNG 내보내기 시 | `self._tk(..., front=True)`로 Tk 파일 저장창 호출 | 유지: 표/다이어그램 편집기 PNG 저장용 Tk filedialog 유지 (사용자 지시) |
+| **B08** | `flow_editor` (L1083) | `filedialog.asksaveasfilename` | 표 편집기 HWPX 내보내기 시 | `self._tk(..., front=True)`로 Tk 파일 저장창 호출 | 유지: 표 HWPX 저장용 Tk filedialog 유지 (사용자 지시) |
+| **B09** | `idioms` (L1321) | `filedialog.askopenfilename` | 본문 상용구 파일 등록 시 | `self._tk(..., front=True)`로 Tk 파일 열기창 호출 | Flutter openFile() -> payload['path'] 경로 API 전달. path 미제공 시 PATH_REQUIRED 에러, ui_tk_fallback=true 시 Tk 호출 |
+| **B10** | `table_template` (L1372) | `filedialog.askopenfilename` | 기본 표 서식 학습 파일 선택 시 | `self._tk(..., front=True)`로 Tk 파일 열기창 호출 | Flutter openFile() -> payload['path'] 경로 API 전달. path 미제공 시 PATH_REQUIRED 에러, ui_tk_fallback=true 시 Tk 호출 |
+| **B11** | `add_format_file` (L1628) | `self.gui._서식_파일에서_추가` (F02) | 서식 관리 "예시 파일에서 복제" 클릭 시 | `self._tk(..., front=True)`로 Tk 파일 열기창 호출 | Flutter openFile() -> add_format_paths 경로 API 전달. ui_tk_fallback=false 시 FLUTTER_ONLY 차단, true 시 기존 Tk 호출 |
 | **B12** | `write_format_example` (L1633) | `self.gui._서식_예시편집_시작` (T04) | 서식 관리 "예시 작성하여 복제" 클릭 시 | `self._tk(..., front=True)`로 Tk 예시편집 창 띄움 | Flutter 가이드 다이얼로그로 전환 |
 | **B13** | `edit_profile` (L1652) | `self.gui._서식_수정하기` (T13/T14) | 서식 관리 "세부 수정" 버튼 클릭 시 | `self._tk(..., front=True)`로 Tk 서식세부창 띄움 | Flutter `ProfileEditor`가 이미 완비되어 있으므로 Tk 호출 분기 제거 |
 | **B14** | `run_tool(name)` | T07 텍스트 문서 추가만 유지 | 문서 목록의 텍스트 추가 | `paste`만 허용; 나머지 문서 도구는 삭제됨(1.80.9) | C20 완료: 기본 FLUTTER_ONLY, ui_tk_fallback=true만 기존 Tk 호출 |
@@ -159,7 +159,6 @@
 | T17 원본·결과 비교 | 한/글 OLE 비교 뷰어를 독립 프로세스로 분리하고 Flutter 진입점 연결 |
 | T01·T02·T13·T14·T15 | Flutter 화면은 완료; `ui_tk_fallback`의 Tk 경로 최종 폐기 및 호출 동등성 확인 |
 | S01~S04·M 계열 | 이미 이관된 입력·확인 응답 검증 및 잔존 messagebox 직호출 재조사/전환 |
-| F01·F02·F08·F09·F11·F12·F13, B01·B02·B07~B11 | 파일·폴더 열기/저장 선택을 OS 네이티브 선택과 경로 API로 정리(흐름도 저장 B07/B08 유지) |
 
 T20~T22는 G29로 이관 완료이며 후속 Windows 실기기 회귀 검증에 포함한다. 삭제 기능은 재이관하지 않는다.
 
@@ -172,3 +171,10 @@ T20~T22는 G29로 이관 완료이며 후속 Windows 실기기 회귀 검증에 
 - 전용 시험: T07 Python 3개·Flutter 1개, T04/T19 Python 9개·Flutter 5개. 실제 Tk 창·messagebox·한/글 COM 생성은 시험 대역으로 차단하며 완료 이벤트의 실제 절약 시간 전달도 검증한다.
 - 현재 Toplevel 22행: 삭제 8, 완료 13(T18 Tk 헬퍼 포함), 없음 1(T17). 7장 잔여 목록이 후속 작업 기준이다.
 - 최종 검증: Python 전체 1,651개 PASS + 최종 전용 9개 PASS(전체 실행 후 추가한 재안내 1개 포함), Flutter 전체 148개 PASS(제외 1), analyze 지적 0. CRLF 및 diff 검사 PASS. A에서는 엔진을 변경하지 않아 COM 재연을 별도로 실행하지 않았다.
+
+## 9. P3 판정 (2026-10-24)
+
+- 파일·폴더 선택 전 항목(F01·F02·F08·F09·F11·F12·F13, B01·B02·B07~B11)의 OS 네이티브 선택 및 경로 API 통일 완료.
+- B07/B08 흐름도 저장 유지 및 `ui_tk_fallback=true` 레거시 동등성 100% 보존 확인.
+- Flutter `bridge_native.dart` 가로채기(21종 확장자 지원, `openFiles`, `getDirectoryPath`, `openFile`, `add_paths`, `add_format_paths`) 및 백엔드 `desktop_web_ui.py`의 `ui_tk_fallback` 가드 적용.
+- 무인 단위 시험 Python 16개, Flutter 6개 전수 통과 확인.
