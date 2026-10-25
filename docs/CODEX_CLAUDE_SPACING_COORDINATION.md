@@ -469,3 +469,12 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 ## Codex 후속 결과 보고 (2026-10-25, 1.80.10 항목기호 탭)
 
 사용자 첨부 원본의 탭 항목 33개를 작업용 사본에서 정리했다. 본문 직속만 변경하고 Run/표/필드는 보존한다. 관련 113시험(Windows 전용 제외 1)과 별도 확장/파이프라인 시험 통과. 결과 근거: docs/V1_80_10_MARKER_TAB_2026-10-25.md, 실행 환경의 /tmp/v18010-sample-report.json. 실제 한/글 COM 및 C 드라이브 PC 자료는 이 환경에 없어 실행하지 않았으며 100% 재연 합격으로 보고하지 않는다.
+
+## Codex 결과 보고 — compare 잔여 불일치 (2026-10-25)
+
+- 사용자 직접 지시로 scripts/format_fidelity_pc.py의 ratio·prev·next 제외 및 borderFill 구조 비교를 적용했다. 기존 미커밋 밑줄·본문 정규화 변경을 보존하고 글자 run에도 같은 정규화를 적용했다.
+- 집중 시험 7개 PASS. XML 접두사·ID·속성 순서·들여쓰기 차이를 무시하고 실제 선 종류·두께·색상 변경은 검출한다.
+- format_fidelity_pc의 지정 COM 잠금으로 normative/02_보고서.hwpx 사본을 all 재연했다. COM 시험 종료 및 잠금 해제 확인. 최종 compare 불일치는 5개이며 100% 합격이 아니다.
+- 남은 차이: 표 8·42·57의 너비 49323→49488, 표 8·24·42·57·67의 칸 상하 여백 141→0. 여백 축소는 쪽 맞춤 단계 동작이다. 실제 표 차이를 추가 제외할지, 재연 출력을 고칠지 사용자에게 질문했다.
+- 근거: C:\HWP_AUTODOCFIT\v1803\reports\fidelity-compare-fix-20261025\compare-final.json 및 compare-final.diff.txt. 원본·결과 SHA256과 각 경로 포함. 사용자 원본은 수정하지 않았다.
+- 전체 unittest: 1,625개/553.585초, 실패 4·제외 1. 실패는 변경하지 않은 test_kordoc_contract의 번들 런타임 미격리 4건(local_install_preferred_over_npx, missing_engine_preflight_does_not_spawn_version_process, npx_download_is_blocked_by_default, old_node_is_refused). 집중 비교 시험 7개 최종 PASS.

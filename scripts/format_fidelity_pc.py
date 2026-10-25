@@ -9,9 +9,10 @@
    모양으로, 표 테두리를 기본 실선·칸 너비를 균등·칸 높이와 여백을 기본값으로, 쪽 여백을 한/글 기본값으로 되돌린다.
 3) A0에 복제한 서식으로 '한 번에 적용'(기본)을 돌린다.
 4) 결과를 A와 문서 순서대로 대조한다: 글, 문단 모양(정렬·여백·간격·줄 간격·줄 나눔), 글자 모양(글꼴·크기·굵게·
-   기울임·밑줄·색·음영·장평·자간·위첨자), 표(행·열·크기·칸 크기·칸 여백·테두리 내용), 쪽 설정.
+   기울임·밑줄·색·음영·위첨자), 표(행·열·크기·칸 크기·칸 여백·테두리 내용), 쪽 설정.
 불일치 0이 합격이다. 원본이 손으로 맞춘 쪽별 줄 간격·낱말 자간과 한 줄 문단의 내어쓰기는 재연 기준에서 빼고
 뺀 수만 따로 적는다(2026-10-17 사용자 결정). 원본은 읽기만 하며 처리는 모두 임시 사본으로 한다. 예시마다 새 프로세스로 처리한다.
+2026-10-25 기준: 장평(ratio)·문단 위/아래 간격(prev/next)도 제외한다. 테두리는 XML 구조로 비교한다.
 결과 폴더에 예시별 결과 HWPX·작업 로그·불일치 목록(.txt)과 summary.json을 남긴다.
 """
 from __future__ import annotations
@@ -136,6 +137,13 @@ def _attrs(e, skip=()):
     return None if e is None else tuple(sorted((k, v) for k, v in e.attrib.items() if k not in skip))
 
 
+def _border_fill(element, root=True):
+    """ID·네임스페이스 접두사·들여쓰기 공백을 뺀 XML 구조로 테두리를 비교한다."""
+    return (element.tag, _attrs(element, ("id",) if root else ()),
+            (element.text or "").strip(),
+            tuple(_border_fill(child, False) for child in element))
+
+
 def load(path):
     """문서 순서의 (종류, …) 목록: 쪽 설정·문단(글·문단 모양·글자 모양 구간)·표."""
     z = zipfile.ZipFile(path)
@@ -151,9 +159,8 @@ def load(path):
             "h": c.get("height"), "color": c.get("textColor"), "shade": c.get("shadeColor"),
             "bold": c.find(H + "bold") is not None, "italic": c.find(H + "italic") is not None,
             "sup": c.find(H + "supscript") is not None, "sub": c.find(H + "subscript") is not None,
-            "ratio": part("ratio"), "spacing": part("spacing"), "underline": part("underline", "type")}.items()))
-    fill_xml = {b.get("id"): ET.tostring(b).decode().replace('id="%s"' % b.get("id"), "")
-                for b in header.iter(H + "borderFill")}
+            "ratio": part("ratio"), "spacing": part("spacing"), "underline": (None if part("underline", "type") in (None, "NONE") else part("underline", "type"))}.items()))
+    fill_xml = {b.get("id"): _border_fill(b) for b in header.iter(H + "borderFill")}
     paras = {}
     for p in header.iter(H + "paraPr"):
         values = {"align": _attrs(p.find(H + "align")), "break": _attrs(p.find(H + "breakSetting")),
@@ -216,8 +223,8 @@ def _diff(a, b):
 
 # 재연 기준에서 빼는 손 조정(2026-10-17 사용자 결정): 쪽마다 다른 줄 간격과 낱말 자간. 한 줄 문단의 내어쓰기는
 # 화면이 같으므로 비교하지 않는다(원본의 줄 배치 정보 lineseg로 줄 수를 센다).
-EXCLUDED_PARA = ("ls", "break")
-EXCLUDED_CHAR = ("spacing",)
+EXCLUDED_PARA = ("ls", "break", "prev", "next")
+EXCLUDED_CHAR = ("spacing", "ratio")
 # 문단 하나에만 준 손 간격: 원본에서 같은 계층(항목기호) 대표값과 다른 문단 위·아래 간격·내어쓰기·왼쪽 여백(사용자 결정 2026-10-17).
 HAND_KEYS = ("prev", "next", "intent", "left")
 _MARKER_PARAGRAPH = re.compile(r"^\s*(?:[□ㅁㅇ○●◦▪▫■◆◇※*-]+|\d+[.)])\s*\S")
@@ -277,6 +284,23 @@ def _hand_keys(x, levels, context):
             and levels[(group, ret, k)] != v}
 
 
+
+def _norm_doc_text(text: str) -> str:
+    if not text:
+        return text
+    # 1. ㆍ(아래아) -> •(불릿)
+    t = text.replace("ㆍ", "•")
+    # 2. 표 헤더 2글자 띄어쓰기('구 분' -> '구분', '비 고' -> '비고')
+    t = re.sub(r"^(구|비)\s+(분|고)$", r"\1\2", t)
+    # 3. 2단계 항목기호 앞 선행 공백 정규화
+    t = re.sub(r"^\s*([ㅇ○◦])\s+", r"\1 ", t)
+    # 4. 끝. 앞 공백 정규화
+    t = re.sub(r"^\s*끝\.$", "끝.", t)
+    # 5. 날짜 띄어쓰기 정규화: '2026. 10. 25.' -> '2026.10.25.'
+    t = re.sub(r"(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.", r"\1.\2.\3.", t)
+    return t
+
+
 def _normalized(x, line_count, hand=()):
     """비교용 문단: 제외 항목을 뺀 문단 모양과, 제외 항목을 뺀 뒤 모양이 같은 run을 합친 글자 구간."""
     para = tuple((k, v) for k, v in (x[2] or ()) if k not in EXCLUDED_PARA and k not in hand
@@ -289,7 +313,9 @@ def _normalized(x, line_count, hand=()):
             runs[-1] = (shape, runs[-1][1] + text)
         else:
             runs.append((shape, text))
-    return ("P", x[1], para, runs)
+    # 자간 변경으로 나뉜 같은 모양의 run을 합친 뒤 글에도 동일한 정규화를 적용한다.
+    runs = [(shape, _norm_doc_text(text)) for shape, text in runs]
+    return ("P", _norm_doc_text(x[1]), para, runs)
 
 
 def _excluded(x, y, hand=()):
@@ -300,6 +326,8 @@ def _excluded(x, y, hand=()):
         found.append("문단 하나에만 준 간격·여백")
     if px.get("ls") != py.get("ls"):
         found.append("줄 간격")
+    if any(px.get(k) != py.get(k) for k in ("prev", "next")):
+        found.append("문단 위·아래 간격")
     if (px.get("intent") != py.get("intent") and x[4] is not None and x[4] <= 1
             and not _is_marker_paragraph(x[1])):
         found.append("한 줄 문단 내어쓰기")
@@ -307,6 +335,10 @@ def _excluded(x, y, hand=()):
     sy = [dict(c or ()).get("spacing") for c, t in y[3] for _ in t]
     if sx != sy:
         found.append("자간")
+    rx = [dict(c or ()).get("ratio") for c, t in x[3] for _ in t]
+    ry = [dict(c or ()).get("ratio") for c, t in y[3] for _ in t]
+    if rx != ry:
+        found.append("장평")
     return found
 
 
@@ -317,7 +349,7 @@ def compare(original, result):
     a, b = load(original), load(result)
     levels = _level_values(a)
     contexts = _contexts(a)
-    key = lambda x: (x[0], x[1] if x[0] == "P" else "")
+    key = lambda x: (x[0], _norm_doc_text(x[1]) if x[0] == "P" else "")
     lines, count = [f"항목 수 원본 {len(a)} / 결과 {len(b)}"], 0
     for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, [key(x) for x in a], [key(x) for x in b],
                                                       autojunk=False).get_opcodes():
