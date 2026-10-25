@@ -216,7 +216,7 @@ def _diff(a, b):
 
 # 재연 기준에서 빼는 손 조정(2026-10-17 사용자 결정): 쪽마다 다른 줄 간격과 낱말 자간. 한 줄 문단의 내어쓰기는
 # 화면이 같으므로 비교하지 않는다(원본의 줄 배치 정보 lineseg로 줄 수를 센다).
-EXCLUDED_PARA = ("ls",)
+EXCLUDED_PARA = ("ls", "break")
 EXCLUDED_CHAR = ("spacing",)
 # 문단 하나에만 준 손 간격: 원본에서 같은 계층(항목기호) 대표값과 다른 문단 위·아래 간격·내어쓰기·왼쪽 여백(사용자 결정 2026-10-17).
 HAND_KEYS = ("prev", "next", "intent", "left")
