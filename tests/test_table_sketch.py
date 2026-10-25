@@ -1,5 +1,8 @@
 """표그림판: 기하 구조·HWPX·저장·브리지 계약 회귀 시험."""
 import copy
+import json
+import shutil
+import subprocess
 import tempfile
 import unittest
 import zipfile
@@ -121,6 +124,66 @@ class GeometryTests(unittest.TestCase):
         for mm in (0,float('inf'),True):
             value=drawing(); value['grid']['cell_mm']=mm
             with self.assertRaises(ValueError): ts.preview(value)
+
+
+class TestPrecisionEraserTableLayout(unittest.TestCase):
+    """실제 Dart 모델의 삭제 결과를 Python 레이아웃에 연결한다."""
+
+    @classmethod
+    def setUpClass(cls):
+        dart = shutil.which('dart')
+        if not dart:
+            raise unittest.SkipTest('정밀 지우개 모델 시험에는 Dart SDK가 필요합니다.')
+        # Flutter의 dart.bat 대신 SDK 실행 파일을 직접 호출한다.
+        sdk = Path(dart).parent / 'cache/dart-sdk/bin/dart.exe'
+        cls.dart = str(sdk) if sdk.exists() else dart
+
+    def erase(self, lines, segment):
+        model = (Path(__file__).resolve().parents[1] /
+                 'flutter_ui/lib/features/table_sketch/table_sketch_models.dart')
+        source = f"""import 'dart:convert';
+import '{model.as_uri()}';
+void main(List<String> args) {{
+  final doc = TableSketchDoc.fromJson(jsonDecode(args[0]));
+  final s = (jsonDecode(args[1]) as List).cast<int>();
+  final changed = doc.eraseUnitSegment(s[0], s[1], s[2], s[3]);
+  print(jsonEncode({{'changed': changed, 'doc': doc.toJson()}}));
+}}
+"""
+        with tempfile.TemporaryDirectory() as folder:
+            script = Path(folder) / 'erase.dart'
+            script.write_text(source, encoding='utf-8')
+            result = subprocess.run(
+                [self.dart, str(script), json.dumps(drawing(lines)), json.dumps(segment)],
+                capture_output=True, text=True, encoding='utf-8', timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        erased = json.loads(result.stdout)
+        self.assertTrue(erased['changed'])
+        return erased['doc']
+
+    def test_split_middle_segment_creates_two_lines(self):
+        result = self.erase([line(0,0,3,0,width='thick',style='dash')], [1,0,2,0])
+        self.assertEqual(result['lines'], [
+            line(0,0,1,0,width='thick',style='dash'),
+            line(2,0,3,0,width='thick',style='dash')])
+
+    def test_erase_inner_h_segment_merges_cells(self):
+        result = ts._layout(self.erase(
+            box(0,0,2,2)+[line(0,1,2,1),line(1,0,1,2)], [0,1,1,1]))
+        cells = {(c['row'],c['col']):(c['rowspan'],c['colspan']) for c in result['cells']}
+        self.assertEqual(cells, {(0,0):(2,1), (0,1):(1,1), (1,1):(1,1)})
+
+    def test_erase_inner_v_segment_merges_cells(self):
+        result = ts._layout(self.erase(
+            box(0,0,2,2)+[line(0,1,2,1),line(1,0,1,2)], [1,0,1,1]))
+        cells = {(c['row'],c['col']):(c['rowspan'],c['colspan']) for c in result['cells']}
+        self.assertEqual(cells, {(0,0):(1,2), (1,0):(1,1), (1,1):(1,1)})
+
+    def test_erase_diagonal_segment(self):
+        result = self.erase([line(0,0,3,3)], [1,1,2,2])
+        self.assertEqual(result['lines'], [
+            line(0,0,1,1,width='thin',style='solid'),
+            line(2,2,3,3,width='thin',style='solid')])
 
 
 class ExportTests(unittest.TestCase):

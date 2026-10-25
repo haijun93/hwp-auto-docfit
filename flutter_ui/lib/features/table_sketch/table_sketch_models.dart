@@ -1,4 +1,6 @@
 
+import 'dart:math' as math;
+
 /// 격자 설정 (cols, rows, cell_mm).
 class GridConfig {
   const GridConfig({
@@ -50,6 +52,39 @@ class SketchLine {
   final int y2;
   final String width; // "thin" | "thick" | "double"
   final String style; // "solid" | "dash" | "dot"
+
+  int get lengthInUnits => math.max((x2 - x1).abs(), (y2 - y1).abs());
+
+  /// 지정한 한 격자 구간을 지우고 남은 선을 원래 방향으로 반환한다.
+  List<SketchLine> splitAtUnitIndex(int index) {
+    if (!isValid || index < 0 || index >= lengthInUnits) return [this];
+    final dx = (x2 - x1).sign;
+    final dy = (y2 - y1).sign;
+    return [
+      if (index > 0)
+        copyWith(x2: x1 + dx * index, y2: y1 + dy * index),
+      if (index < lengthInUnits - 1)
+        copyWith(x1: x1 + dx * (index + 1), y1: y1 + dy * (index + 1)),
+    ];
+  }
+
+  /// 방향과 무관하게 일치하는 한 격자 구간만 지운다.
+  List<SketchLine> splitByUnitSegment(int sx1, int sy1, int sx2, int sy2) {
+    if (!isValid) return [this];
+    final dx = (x2 - x1).sign;
+    final dy = (y2 - y1).sign;
+    for (var k = 0; k < lengthInUnits; k++) {
+      final ax = x1 + dx * k;
+      final ay = y1 + dy * k;
+      final bx = ax + dx;
+      final by = ay + dy;
+      if ((sx1 == ax && sy1 == ay && sx2 == bx && sy2 == by) ||
+          (sx2 == ax && sy2 == ay && sx1 == bx && sy1 == by)) {
+        return splitAtUnitIndex(k);
+      }
+    }
+    return [this];
+  }
 
   /// 가로선(y1==y2), 세로선(x1==x2), 대각선(|x2-x1|==|y2-y1|, 45°) 검증.
   bool get isValid {
@@ -160,6 +195,19 @@ class TableSketchDoc {
   GridConfig grid;
   List<SketchLine> lines;
   List<SketchText> texts;
+
+  /// 겹친 선을 포함하여 해당 한 격자 구간을 모두 지운다.
+  bool eraseUnitSegment(int sx1, int sy1, int sx2, int sy2) {
+    var changed = false;
+    final remaining = <SketchLine>[];
+    for (final line in lines) {
+      final parts = line.splitByUnitSegment(sx1, sy1, sx2, sy2);
+      if (parts.length != 1 || !identical(parts.first, line)) changed = true;
+      remaining.addAll(parts);
+    }
+    if (changed) lines = remaining;
+    return changed;
+  }
 
   TableSketchDoc clone() => TableSketchDoc(
     grid: grid,

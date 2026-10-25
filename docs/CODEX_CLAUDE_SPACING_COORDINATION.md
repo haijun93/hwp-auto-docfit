@@ -387,6 +387,12 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 
 ## Codex 결과 보고
 
+### Precision Eraser 모델·레이아웃 회귀 시험 (2026-10-25)
+- 사용자 직접 요청 범위: `SketchLine.lengthInUnits`, `splitAtUnitIndex`, `splitByUnitSegment`, `TableSketchDoc.eraseUnitSegment` 구현. 가로·세로·45도 대각선의 한 격자 구간 삭제, 서식·방향 보존, 겹친 모든 선 처리.
+- `tests/test_table_sketch.py`에 실제 Dart 모델 삭제 결과를 `_layout()`에 전달하는 회귀 시험 4개 추가. 지정 Python 가상환경은 현재 worktree에 없어 `C:\HWP_AUTODOCFIT\v1803\v2\.venv\Scripts\python.exe` 사용: 기존 20개 포함 24개 PASS(제외 0).
+- Flutter 경계 시험 3개 추가: 8방향·끝/가운데·길이 1·범위 밖·역방향 구간·중복 선·변경 여부. 기존 표그림판 시험 포함 14개 PASS. Dart analyze 지적 0, git diff --check PASS.
+- COM 시험 및 사용자 문서 조작 없음. 기존 미추적 `codex_task.txt` 보존. `alpha`는 다른 worktree 사용 중이므로 현재 기준 별도 `alpha-precision-eraser` 브랜치에 커밋·github → origin 순서 푸시.
+
 ### C1. 표 정보단위 XML 엔진 (2026-10-22)
 - 변경: `docfit_core/table_units.py`, `tests/test_table_units.py`, `table_catalog.py`의 선택적 변환 연결점.
 - 지정 Python: 새 시험 12건·기존 카탈로그 14건 PASS; COM 미실행, 현재 브랜치·미커밋 유지.
