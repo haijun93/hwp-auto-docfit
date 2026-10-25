@@ -49,10 +49,24 @@ class MarkerSpacingTests(unittest.TestCase):
             ('<t>①<tab/>본문</t>','① 본문'),
             ('<t>Ⅰ.<tab/>장 제목</t>','Ⅰ. 장 제목'),
             ('<t>1.<tab/>절 제목</t>','1. 절 제목'),
-            ('<t>ㅇ「법령」 적용</t>','ㅇ 「법령」 적용')]:
+            ('<t>ㅇ「법령」 적용</t>','ㅇ 「법령」 적용'),
+            ('<t>-내용</t>','- 내용'),
+            ('<t>-「지방계약법」 적용</t>','- 「지방계약법」 적용'),
+            ('<t>•내용</t>','• 내용'),
+            ('<t>①내용</t>','① 내용'),
+            ('<t>1.내용</t>','1. 내용'),
+            ('<t>가.내용</t>','가. 내용'),
+            ('<t>Ⅰ.내용</t>','Ⅰ. 내용')]:
             p=paragraph('<run>'+inner+'</run>')
             self.assertTrue(normalize_paragraph(p))
             self.assertEqual(xml_text(p),expected)
+
+    def test_negative_numbers_and_dates_are_preserved(self):
+        for inner in ['<t>-12% 감소</t>', '<t>-500원 차감</t>', '<t>2026.10.25. 안내문</t>']:
+            p=paragraph('<run>'+inner+'</run>')
+            before=ET.tostring(p)
+            self.assertFalse(normalize_paragraph(p))
+            self.assertEqual(ET.tostring(p),before)
 
     def test_table_and_field_objects_are_not_flattened(self):
         for inner in ['<run><t>□<tab/>본문</t><tbl/></run>','<run><fieldBegin/><t>ㅇ<tab/>본문</t></run>']:

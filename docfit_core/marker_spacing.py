@@ -44,7 +44,12 @@ def normalize_paragraph(p):
     value = xml_text(p)
     classified = classify_marker(value)
     if classified is None:
-        tight = re.match(r"^\s*([□ㅁㅇ○※])(?=\S)", value)
+        if re.match(r"^\s*[0-9]{4}[.．][0-9]{1,2}[.．][0-9]{1,2}", value):
+            return False
+        tight = re.match(
+            r"^\s*([□ㅁㅇ○※•]|-(?!\d)|[①-⑳]|[0-9]{1,2}[.．]|[가나다라마바사아자차카타파하][.．]|[Ⅰ-Ⅿ]+[.．])(?=\S)",
+            value,
+        )
         if tight is None:
             return False
         marker_end = tight.end()
@@ -121,5 +126,5 @@ def normalize_hwpx(source, target):
             for info, payload in rewritten:
                 archive.writestr(info, payload)
         validate_hwpx(staged)
-        os.link(staged, target)
+        os.replace(staged, target)
     return changes
