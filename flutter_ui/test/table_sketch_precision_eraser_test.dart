@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import '../lib/features/table_sketch/table_sketch_models.dart';
+import 'package:docfit_ui/features/table_sketch/table_sketch_models.dart';
 
 void main() {
   test('각 방향의 끝과 가운데 구간을 지우고 서식을 보존한다', () {
