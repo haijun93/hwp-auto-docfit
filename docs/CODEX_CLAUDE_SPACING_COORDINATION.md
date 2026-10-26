@@ -488,3 +488,8 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 - dev/2.0.0-split(ab3e0fe)을 dev/2.0.0에 병합. 8개 모듈·358함수 AST 불일치 0, 유효 patch 3회 및 컨텍스트 2개 분리 PASS.
 - 전체 Python·Flutter·analyze 및 COM 잠금 기본 3종 사본 재연 결과는 C26.md에 최종 기록한다. C10 메모와 C22 잠금 기록 모두 보존.
 - C26 최종: Python 전체 1,656개 실패·오류 0(선택 MCP SDK 부재 1개 제외), T17 집중 4개 PASS. Flutter 151개 PASS(기존 제외 1), analyze 0. 기본 3종 재연 불일치 0/0/0, 원본 7개 SHA-256 동일·COM 잠금 해제. 보고: C:\HWP_AUTODOCFIT\v1803\reports\C26.md.
+
+### V2 Core Contracts (2026-10-26, Codex 수석 개발자)
+- 산출물: docfit_core/session 3개 모듈, Flutter 6탭 내비게이션 셸 및 6개 어댑터, docs/V2_CORE_CONTRACTS.md, docs/TEAM_ORGANIZATION_AND_WORKFLOW.md.
+- 검증 결과: Python 세션 계약 19개 단위 시험 PASS, Flutter 6캔버스 왕복 상태 보존 시험 및 어댑터 마운트 시험 전수 PASS, flutter analyze 0 issues.
+- 제미나이 1-코덱스 협업: 제미나이 1의 판단·실행은 반드시 코덱스의 검수를 거치며, Windows 한/글 COM 실전 테스트 결과를 수석 개발자 코덱스가 분석하여 제미나이 2, 3에게 개선 지시함.
