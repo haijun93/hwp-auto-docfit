@@ -568,7 +568,7 @@ void main() {
   // --- 신규 기능 시험 (G19): 상단 이름 바, Wrap 분류 칩, 도형(화살표) 그리기, 폭 420 반응형 ---
 
   testWidgets(
-    '상단 이름 버튼이 전부 나열되고 누르면 해당 템플릿 선택 및 강조 (Key templateNameBar, templateName_<id>)',
+    '중복 상단 메뉴(templateNameBar)가 삭제되고 좌측 갤러리 카드에서 직접 선택 및 미리보기가 작동한다',
     (tester) async {
       Future<Object?> api(String name, List<Object?> args) async {
         final action = args[0] as String;
@@ -579,40 +579,30 @@ void main() {
 
       await pumpScreen(tester, api: api);
 
-      // 1. 상단 바 컨테이너 존재 확인
-      expect(find.byKey(const Key('templateNameBar')), findsOneWidget);
+      // 1. 중복 상단 바 삭제 확인 (화면 세로 캔버스 확보)
+      expect(find.byKey(const Key('templateNameBar')), findsNothing);
 
-      // 2. 모든 템플릿(0:1, 0:2, 0:3)의 이름 버튼 존재 확인
-      final btn1 = find.byKey(const Key('templateName_0:1'));
-      final btn2 = find.byKey(const Key('templateName_0:2'));
-      final btn3 = find.byKey(const Key('templateName_0:3'));
-      expect(btn1, findsOneWidget);
-      expect(btn2, findsOneWidget);
-      expect(btn3, findsOneWidget);
+      // 2. 좌측 갤러리 템플릿 카드 존재 확인
+      final card1 = find.byKey(const Key('templateCard_0:1'));
+      final card2 = find.byKey(const Key('templateCard_0:2'));
+      final card3 = find.byKey(const Key('templateCard_0:3'));
+      expect(card1, findsOneWidget);
+      expect(card2, findsOneWidget);
+      expect(card3, findsOneWidget);
 
-      // 3. 첫 번째(0:1) 자동 선택 상태에서 0:1은 FilledButton(강조), 나머지는 OutlinedButton
-      expect(isHighlighted(tester, btn1), isTrue);
-      expect(isHighlighted(tester, btn2), isFalse);
-      expect(isHighlighted(tester, btn3), isFalse);
-
-      // 4. 0:2 ('서약서 고정 표') 버튼 탭 -> 템플릿 선택 및 강조 변경
-      await tester.tap(btn2);
+      // 3. 0:2 ('서약서 고정 표') 카드 탭 -> 템플릿 선택 및 미리보기 갱신
+      await tester.tap(card2);
       await tester.pumpAndSettle();
-
-      expect(isHighlighted(tester, btn2), isTrue);
-      expect(isHighlighted(tester, btn1), isFalse);
       expect(find.byKey(const Key('fixedTableNotice')), findsOneWidget);
 
-      // 5. 0:3 ('월간 일정표') 버튼 탭 -> 선택 변경
-      await tester.tap(btn3);
+      // 4. 0:3 ('월간 일정표') 카드 탭 -> 선택 변경
+      await tester.tap(card3);
       await tester.pumpAndSettle();
-
-      expect(isHighlighted(tester, btn3), isTrue);
-      expect(isHighlighted(tester, btn2), isFalse);
+      expect(find.text('월간 일정표'), findsWidgets);
     },
   );
 
-  testWidgets('모든 분류 칩이 Wrap으로 배치되어 잘림 없이 화면 안에 모두 표시', (tester) async {
+  testWidgets('모든 분류 칩이 PPT 스타일 가로 1줄 리본으로 단정하게 배치되어 스크롤 가능', (tester) async {
     final listWithManyCats = sampleListData();
     final templates = (listWithManyCats['templates'] as List)
         .cast<Map<String, Object?>>();
@@ -634,18 +624,27 @@ void main() {
       return envelope({});
     }
 
-    // 폭 420의 좁은 화면에서도 가로 스크롤로 잘리지 않고 Wrap으로 모두 표시
+    // PPT 스타일 가로 1줄 리본 배치 검증
     await pumpScreen(tester, api: api, width: 420.0, height: 800.0);
 
     final expectedCats = ['즐겨찾기', '최근 사용', '전체', '과제표', '서약서', '일정표', '사진첨부용'];
     for (final cat in expectedCats) {
       final chipFinder = find.byKey(Key('categoryChip_$cat'));
       expect(chipFinder, findsOneWidget);
-
-      final rect = tester.getRect(chipFinder);
-      expect(rect.left, greaterThanOrEqualTo(0.0));
-      expect(rect.right, lessThanOrEqualTo(420.0));
     }
+
+    // 가로 1줄 리본으로 동일 Y좌표에 정렬됨 (불필요한 세로 줄바꿈 방지)
+    final chip1 = find.byKey(const Key('categoryChip_즐겨찾기'));
+    final chip2 = find.byKey(const Key('categoryChip_최근 사용'));
+    final chip3 = find.byKey(const Key('categoryChip_전체'));
+    expect(tester.getTopLeft(chip1).dy, equals(tester.getTopLeft(chip2).dy));
+    expect(tester.getTopLeft(chip2).dy, equals(tester.getTopLeft(chip3).dy));
+
+    // 좌/우 스크롤 내비게이션 버튼 존재 및 탭 동작
+    expect(find.byKey(const Key('btnCategoryRibbonLeft')), findsOneWidget);
+    expect(find.byKey(const Key('btnCategoryRibbonRight')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('btnCategoryRibbonRight')));
+    await tester.pumpAndSettle();
   });
 
   testWidgets(
@@ -801,4 +800,56 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets(
+    '상단 메뉴 삭제 후 넓은 세로 캔버스가 확보되고 상단 즉시 복사 버튼(btnTopCopyTable)이 제공된다',
+    (tester) async {
+      final copyCalls = <Map<String, Object?>>[];
+      Future<Object?> api(String name, List<Object?> args) async {
+        final action = args[0] as String;
+        if (action == 'list') return envelope(sampleListData());
+        if (action == 'preview') return envelope(samplePreview());
+        if (action == 'copy') {
+          copyCalls.add({'action': action, 'args': args});
+          return envelope({'ok': true, 'activated': true});
+        }
+        return envelope({});
+      }
+
+      await pumpScreen(tester, api: api, width: 1000.0, height: 800.0);
+
+      // 상단 중복 메뉴가 없고, 상세창 상단 즉시 복사 버튼과 하단 복사 버튼이 모두 존재
+      expect(find.byKey(const Key('templateNameBar')), findsNothing);
+      expect(find.byKey(const Key('btnTopCopyTable')), findsOneWidget);
+      expect(find.byKey(const Key('btnCopyTable')), findsOneWidget);
+
+      // 상단 즉시 복사 버튼 클릭 시 복사 호출
+      await tester.tap(find.byKey(const Key('btnTopCopyTable')));
+      await tester.pumpAndSettle();
+      expect(copyCalls, isNotEmpty);
+    },
+  );
+
+  testWidgets(
+    '좌측 분류 칩 버튼이 상단 메뉴와 동일하게 높이 28px의 컴팩트한 사이즈로 배치되고 전체 스크롤이 작동한다',
+    (tester) async {
+      Future<Object?> api(String name, List<Object?> args) async {
+        final action = args[0] as String;
+        if (action == 'list') return envelope(sampleListData());
+        if (action == 'preview') return envelope(samplePreview());
+        return envelope({});
+      }
+
+      await pumpScreen(tester, api: api, width: 1000.0, height: 800.0);
+
+      // 분류 칩 높이 검증 (상단 메뉴와 동일하게 28px)
+      final chipAll = find.byKey(const Key('categoryChip_전체'));
+      expect(chipAll, findsOneWidget);
+      expect(tester.getSize(chipAll).height, equals(28.0));
+
+      // 갤러리 영역 전체가 CustomScrollView 및 Scrollbar로 위아래 스크롤 가능
+      expect(find.byType(CustomScrollView), findsOneWidget);
+      expect(find.byType(Scrollbar), findsWidgets);
+    },
+  );
 }

@@ -8,8 +8,8 @@
 </p>
 
 <p align="center">
-<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.9/HWP_AutoDocFit_v1.80.9_Portable.exe"><img alt="GitHub에서 무설치로 받기" src="https://img.shields.io/badge/GitHub-%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v1.80.9-2563eb?style=for-the-badge&logo=github"></a>
-<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.9/HWP_AutoDocFit_v1.80.9_Setup.exe"><img alt="GitHub에서 설치용 받기" src="https://img.shields.io/badge/GitHub-%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0-0ea5e9?style=for-the-badge&logo=github"></a>
+<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.15/HWP_AutoDocFit_v1.80.15_Portable.exe"><img alt="GitHub에서 무설치로 받기" src="https://img.shields.io/badge/GitHub-%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v1.80.15-2563eb?style=for-the-badge&logo=github"></a>
+<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.15/HWP_AutoDocFit_v1.80.15_Setup.exe"><img alt="GitHub에서 설치용 받기" src="https://img.shields.io/badge/GitHub-%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0-0ea5e9?style=for-the-badge&logo=github"></a>
 <br>
 </p>
 <p align="center">
@@ -26,8 +26,20 @@
 
 ---
 
-<h2 align="center">새로워진 v1.80.9</h2>
-<p align="center">바둑판에 선을 그려 표를 만들고, 자주 쓰는 표는 칸 수를 늘려 한/글에 바로 붙여넣으세요.</p>
+<h2 align="center">새로워진 v1.80.15</h2>
+<p align="center">표 템플릿 UI 중복 상단 메뉴 전면 삭제, PPT 스타일 가로 1줄 컴팩트 리본 및 한/글 즉시 복사 버튼 탑재</p>
+
+### 표 템플릿 화면 수직 공간 극대화 및 중복 메뉴 삭제 (1.80.14)
+
+좌측 갤러리의 템플릿 목록과 완전히 중복되던 최상단 가로 템플릿 이름 바를 전면 삭제하여 표 미리보기 및 편집 작업 공간을 대폭 넓혔습니다. 검색창은 36px 전폭 규격으로 확대하고 원클릭 내용 지우기 버튼을 탑재했습니다.
+
+### PPT 스타일 가로 1줄 분류 리본 (Single-Row Ribbon) (1.80.14)
+
+최대 6줄을 차지하던 20개 분류 버튼 칩을 가로 1줄 단정형 리본(좌우 `<` `>` 내비게이션 화살표, 28px 통일 규격, 시각적 아이콘 및 분류별 서식 개수 뱃지)으로 전면 교체하여 한눈에 쾌적하게 탐색할 수 있습니다.
+
+### 우측 상세창 상단 즉시 복사 버튼 (1.80.14)
+
+템플릿 선택 즉시 1클릭으로 한/글에 붙여넣을 수 있도록 상세창 상단 타이틀 옆에 `[ 📋 한/글로 복사 (Ctrl+V) ]` 주 액션 버튼을 전면 배치했습니다.
 
 ### 표그림판·다이어그램·마인드맵이 다시 열립니다. (1.80.9)
 
@@ -287,15 +299,15 @@ GitHub가 막힌 기관 PC에서도 위 「받기」 링크가 GitLab에서 바�
 
 | 파일 | 받기 | 용도 |
 |---|---|---|
-| **포터블 · HWP_AutoDocFit_v1.80.9_Portable.exe** | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.9/HWP_AutoDocFit_v1.80.9_Portable.exe) | 설치 없이 바로 실행 |
-| 설치용 · HWP_AutoDocFit_v1.80.9_Setup.exe | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.9/HWP_AutoDocFit_v1.80.9_Setup.exe) | 시작 메뉴 등록, Windows 앱 제거로 정리 |
+| **포터블 · HWP_AutoDocFit_v1.80.15_Portable.exe** | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.15/HWP_AutoDocFit_v1.80.15_Portable.exe) | 설치 없이 바로 실행 |
+| 설치용 · HWP_AutoDocFit_v1.80.15_Setup.exe | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.15/HWP_AutoDocFit_v1.80.15_Setup.exe) | 시작 메뉴 등록, Windows 앱 제거로 정리 |
 | 보고서 예시 파일(한번에 적용).txt | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/latest) | 처음 체험용 예시 |
-| SHA256SUMS | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.9/SHA256SUMS) | 내려받은 파일 확인용 해시 |
+| SHA256SUMS | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.15/SHA256SUMS) | 내려받은 파일 확인용 해시 |
 
 - **필요한 것**: Windows 10·11(64비트), 문서를 편집할 수 있는 **한컴오피스 한/글**(모든 버전 사용 — NEO·2018·2020·2022·2024 등). Python 등 다른 설치는 필요 없습니다.
 - 변환 엔진은 실행 파일에 들어 있습니다. 첫 실행 때 `C:\HWP_AUTODOCFIT`(쓰기 권한이 없으면 `%LOCALAPPDATA%\HwpAutoDocFit`)에 풀며, 인터넷에서 받지 않습니다.
 - 모든 릴리스는 [GitHub 릴리스](https://github.com/haijun93/hwp-auto-docfit/releases/latest)에 있습니다.
-- [v1.80.9 변경 사항](../releases/v1.80.9.md) · [GitHub](https://github.com/haijun93/hwp-auto-docfit)
+- [v1.80.15 변경 사항](../releases/v1.80.15.md) · [GitHub](https://github.com/haijun93/hwp-auto-docfit)
 
 ---
 
@@ -343,5 +355,5 @@ GitHub가 막힌 기관 PC에서도 위 「받기」 링크가 GitLab에서 바�
 
 <p align="center">
 <a href="../docs/USER_GUIDE.md"><b>자세한 사용 설명서</b></a> — 기능별 사용법·옵션·결과 파일·문제 해결<br>
-<a href="../releases/v1.80.9.md">v1.80.9 변경 사항</a> · <a href="../HANDOVER.md">개발 인수인계 문서</a> · <a href="../THIRD_PARTY_NOTICES.md">사용한 오픈소스</a> · <a href="../LICENSE">라이선스</a>
+<a href="../releases/v1.80.15.md">v1.80.15 변경 사항</a> · <a href="../HANDOVER.md">개발 인수인계 문서</a> · <a href="../THIRD_PARTY_NOTICES.md">사용한 오픈소스</a> · <a href="../LICENSE">라이선스</a>
 </p>

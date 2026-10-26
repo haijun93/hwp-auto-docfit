@@ -91,7 +91,7 @@ class ReferenceSampleTests(unittest.TestCase):
                 "gui_queue": Mock(),
             }
             with patch("docfit_core.xml_hanging_indent.restore_reference_indent_geometry", side_effect=fake_restore):
-                with patch.dict(fn.__globals__, settings):
+                with patch.dict(fn.__globals__, settings), patch("docfit_core.marker_spacing.normalize_hwpx", return_value=0):
                     self.assertTrue(fn(source, 1, 1))
 
         self.assertEqual(restored_calls, [custom_sample])
@@ -152,7 +152,7 @@ class ReferenceSampleTests(unittest.TestCase):
                 "gui_queue": Mock(),
             }
             with patch("docfit_core.xml_hanging_indent.restore_reference_indent_geometry", side_effect=fake_restore):
-                with patch.dict(fn.__globals__, settings):
+                with patch.dict(fn.__globals__, settings), patch("docfit_core.marker_spacing.normalize_hwpx", return_value=0):
                     self.assertTrue(fn(source, 1, 1))
 
         self.assertEqual(restored_calls, [])
@@ -212,7 +212,7 @@ class ReferenceSampleTests(unittest.TestCase):
                 "gui_queue": Mock(),
             }
             with patch("docfit_core.xml_hanging_indent.restore_reference_indent_geometry", side_effect=fake_restore):
-                with patch.dict(fn.__globals__, settings):
+                with patch.dict(fn.__globals__, settings), patch("docfit_core.marker_spacing.normalize_hwpx", return_value=0):
                     self.assertTrue(fn(source, 1, 1))
 
         self.assertEqual(restored_calls, [default_sample])

@@ -117,12 +117,24 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         f"해제 예상 {검사정보['total_uncompressed_size']:,}바이트"
                     )
 
+                if 확장자 == ".hwpx" and 작업_모드 in ("format", "all", "unify") and not 쪽범위_요청:
+                    from docfit_core.marker_spacing import normalize_hwpx
+                    작업_임시폴더 = tempfile.TemporaryDirectory(prefix="docfit_marker_spaces_")
+                    정리사본 = Path(작업_임시폴더.name) / "marker_spaces.hwpx"
+                    정리수 = normalize_hwpx(파일경로, 정리사본)
+                    if 정리수:
+                        작업파일경로 = 정리사본
+                        로그(f"항목기호 뒤 탭·공백을 일반 빈칸 1개로 정리: {정리수}문단")
+                    else:
+                        작업_임시폴더.cleanup()
+                        작업_임시폴더 = None
+
                 로그(f"문서 열기: {파일}")
                 단계초기화()
                 단계표시("열기")
                 # HWP NEO에서 최신 HWPX의 호환성 경고가 뜨는 경우에도 자동화가
                 # 중단되지 않도록 강제 열기 옵션을 사용한다.
-                열린결과 = 한글_문서_열기(hwp, 파일경로, 원본_확장자명.upper(), "forceopen:true")
+                열린결과 = 한글_문서_열기(hwp, 작업파일경로, 원본_확장자명.upper(), "forceopen:true")
                 if 열린결과 is False:
                     raise RuntimeError(f"한글에서 문서를 열지 못했습니다: {파일}")
 
@@ -141,6 +153,13 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         f"HWP → HWPX 변환 완료: {작업파일경로.name} / "
                         f"압축 항목 {검사정보['entry_count']}개"
                     )
+                    if 작업_모드 in ("format", "all", "unify") and not 쪽범위_요청:
+                        from docfit_core.marker_spacing import normalize_hwpx
+                        정리사본 = Path(작업_임시폴더.name) / "marker_spaces.hwpx"
+                        정리수 = normalize_hwpx(작업파일경로, 정리사본)
+                        if 정리수:
+                            작업파일경로 = 정리사본
+                            로그(f"항목기호 뒤 탭·공백을 일반 빈칸 1개로 정리: {정리수}문단")
                     if 한글_문서_열기(hwp, 작업파일경로, "HWPX", "forceopen:true") is False:
                         raise RuntimeError("변환한 작업용 HWPX 문서를 다시 열지 못했습니다.")
 
@@ -1097,7 +1116,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     return False
                 if not stage('표 테두리 선 굵기 통일', 표_테두리_전체_적용):
                     return False
-            if 작업_모드 == 'format' and 표준서식_사용 and stage_enabled(선택_세부작업, 'single_cell_spacing'):
+            if 작업_모드 in ('format', 'all') and 표준서식_사용 and stage_enabled(선택_세부작업, 'single_cell_spacing', 작업_모드):
                 if not stage('개요·한 칸 표 자간 조정', 한칸표_자간조정):
                     return False
             # 내어쓰기는 화면줄의 가로 폭과 줄바꿈을 바꿀 수 있으므로 자간·단어

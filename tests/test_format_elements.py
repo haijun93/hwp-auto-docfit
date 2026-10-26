@@ -285,7 +285,7 @@ class FormatElementsTest(unittest.TestCase):
         fe.set_value(analysis, ("form", "title1", "para", "A1", 0), "size", 2500)
         fe.apply_to_profile(profile)
         rule = profile["format"]["기호_규칙"][0]
-        self.assertEqual(rule[:5], ("ㅇ", 0, "돋움", 15, False))
+        self.assertEqual(rule[:5], ("ㅇ", 1, "돋움", 15, False))  # 2026-10-25: 앞 빈칸 1개는 복제 원본보다 우선
         self.assertTrue(rule[5])   # 기호만 굵게
         self.assertEqual(profile["options"]["symbol_fonts"]["ㅇ"], {"font": "돋움", "size": "15"})
         self.assertEqual(profile["format"]["복사_문단모양"]["ㅇ"]["LeftMargin"], 1500)

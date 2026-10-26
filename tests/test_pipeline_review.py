@@ -58,9 +58,19 @@ class PipelineReviewTest(unittest.TestCase):
             '최종검수_문서목록': [], '검수_문제목록': [], 'gui_queue': Mock(),
         }
         settings.update(extra or {})
-        with patch.dict(fn.__globals__, settings):
+        with patch.dict(fn.__globals__, settings), patch("docfit_core.marker_spacing.normalize_hwpx", return_value=0) as normalize:
             result = fn(source, 1, 1)
+            self.normalization_calls = normalize.call_count
         return result, calls, doc
+
+    def test_page_range_never_triggers_whole_document_marker_normalization(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / 'source.hwpx'
+            source.touch()
+            self._process_document(source, {'쪽범위_요청': (2, 2), '쪽범위_계산': lambda *a: None})
+            self.assertEqual(self.normalization_calls, 0)
+            self._process_document(source, {'쪽범위_요청': None, '문서_처리_1회': lambda *a: False})
+            self.assertEqual(self.normalization_calls, 1)
 
     def test_range_is_fixed_before_any_format_or_protection_changes(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -96,7 +106,7 @@ class PipelineReviewTest(unittest.TestCase):
                 })
             mutate.assert_not_called()
 
-    def _pass_calls(self, mode, standard):
+    def _pass_calls(self, mode, standard, single_cell=False):
         fn = self.ns['_문서_처리_1회']
         calls = []
         def unify(**kwargs):
@@ -106,7 +116,9 @@ class PipelineReviewTest(unittest.TestCase):
         with patch.dict(fn.__globals__, {
             '작업_모드': mode, '표준서식_사용': standard,
             '세트문장_같은쪽_사용': True, '세트문장_통계': {},
-            'stage_enabled': lambda _, key, *a: key in ('style_unify', 'page_fit', 'page_group'),
+            'stage_enabled': lambda _, key, *a: key in ('style_unify', 'page_fit', 'page_group')
+                or (single_cell and key == 'single_cell_spacing'),
+            '한칸표_자간조정': lambda: calls.append('single_cell') or True,
             '중단_요청됨': lambda: False, '단계표시': Mock(), '상태': Mock(), '로그': Mock(),
             'hwp_run': Mock(), '순회_시작': Mock(), '서식통일_전체_적용': unify,
             '표_셀_안쪽여백_전체_적용': lambda: True,
@@ -118,6 +130,15 @@ class PipelineReviewTest(unittest.TestCase):
         }):
             self.assertTrue(fn('source.hwpx'))
         return calls
+
+    def test_single_cell_spacing_runs_in_all_and_format_when_selected(self):
+        for mode in ('all', 'format', 'spacing'):
+            for standard in (False, True):
+                for selected in (False, True):
+                    with self.subTest(mode=mode, standard=standard, selected=selected):
+                        calls = self._pass_calls(mode, standard, single_cell=selected)
+                        expected = mode in ('all', 'format') and standard and selected
+                        self.assertEqual(calls.count('single_cell'), int(expected))
 
     def test_standard_format_stages_are_not_reverted_by_unify_profile(self):
         # 표준서식이 기준이면 괄호·내어쓰기 단계가 서식통일 뒤에 설정값을 입힌다. 서식통일 직후
@@ -151,7 +172,7 @@ class PipelineReviewTest(unittest.TestCase):
             '_서식통일_최종결과_사용자확인': Mock(),
         }
         settings.update(overrides)
-        with patch.dict(fn.__globals__, settings):
+        with patch.dict(fn.__globals__, settings), patch("docfit_core.marker_spacing.normalize_hwpx", return_value=0):
             result = fn('source.hwpx', 'result.hwpx', 결과창=결과창)
         return result, open_document, style, table, word, record
 
@@ -395,7 +416,7 @@ class PipelineReviewTest(unittest.TestCase):
             '로그': Mock(), '진단로그': Mock(), '단계표시': Mock(),
         }
         settings.update(extra)
-        with patch.dict(fn.__globals__, settings):
+        with patch.dict(fn.__globals__, settings), patch("docfit_core.marker_spacing.normalize_hwpx", return_value=0):
             result = fn(검증만=검증만)
         return result, applied
 

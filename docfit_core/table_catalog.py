@@ -338,7 +338,7 @@ def _cell_meta(cell, fallback_row: int, fallback_col: int, text: str, header_inf
 
     target_cell = cell
     sub_tc = cell.find(".//" + _HP + "tbl//" + _HP + "tc")
-    if sub_tc is not None:
+    if sub_tc is not None and not _cell_runs(cell):
         target_cell = sub_tc
 
     runs = _cell_runs(target_cell)
@@ -349,7 +349,7 @@ def _cell_meta(cell, fallback_row: int, fallback_col: int, text: str, header_inf
     para_id = cell_paras[0].get("paraPrIDRef", "0") if cell_paras else "0"
     align = paras.get(para_id, "CENTER")
 
-    bf_id = target_cell.get("borderFillIDRef", "1")
+    bf_id = cell.get("borderFillIDRef", "1")
     bf_info = borders_map.get(bf_id, {"fill": "", "borders": _DEFAULT_BORDERS})
 
     size = char_info.get("size", 11.0)
@@ -386,7 +386,16 @@ def _table_preview(table, header_info: dict | None = None) -> dict:
             parts = [node.text or "" for node in _cell_text_nodes(cell)]
             text = " ".join("".join(parts).split())[:80]
             cells.append(text)
-            meta_cells.append(_cell_meta(cell, r_idx, c_idx, text, header_info))
+            c_meta = _cell_meta(cell, r_idx, c_idx, text, header_info)
+            nested_tables = []
+            for sub_tbl in cell.findall(".//" + _HP + "tbl"):
+                try:
+                    nested_tables.append(_table_preview(sub_tbl, header_info))
+                except Exception:
+                    pass
+            if nested_tables:
+                c_meta["nested"] = nested_tables
+            meta_cells.append(c_meta)
         rows.append(cells)
         meta_rows.append(meta_cells)
     return {
