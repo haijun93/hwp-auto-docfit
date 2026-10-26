@@ -9,8 +9,8 @@
 
 <p align="center">
 <br>
-<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.14_Portable.exe?inline=false"><img alt="공공기관 PC: GitLab에서 무설치로 받기" src="https://img.shields.io/badge/%EA%B3%B5%EA%B3%B5%EA%B8%B0%EA%B4%80%20PC%20GitLab-%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v1.80.14-15803d?style=for-the-badge&logo=gitlab"></a>
-<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.14_Setup.exe?inline=false"><img alt="공공기관 PC: GitLab에서 설치용 받기" src="https://img.shields.io/badge/%EA%B3%B5%EA%B3%B5%EA%B8%B0%EA%B4%80%20PC%20GitLab-%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0-16a34a?style=for-the-badge&logo=gitlab"></a>
+<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.15_Portable.exe?inline=false"><img alt="공공기관 PC: GitLab에서 무설치로 받기" src="https://img.shields.io/badge/%EA%B3%B5%EA%B3%B5%EA%B8%B0%EA%B4%80%20PC%20GitLab-%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v1.80.15-15803d?style=for-the-badge&logo=gitlab"></a>
+<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.15_Setup.exe?inline=false"><img alt="공공기관 PC: GitLab에서 설치용 받기" src="https://img.shields.io/badge/%EA%B3%B5%EA%B3%B5%EA%B8%B0%EA%B4%80%20PC%20GitLab-%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0-16a34a?style=for-the-badge&logo=gitlab"></a>
 </p>
 <p align="center">
 <img alt="무료" src="https://img.shields.io/badge/%EA%B0%80%EA%B2%A9-%EB%AC%B4%EB%A3%8C-16a34a">
@@ -26,7 +26,7 @@
 
 ---
 
-<h2 align="center">새로워진 v1.80.14</h2>
+<h2 align="center">새로워진 v1.80.15</h2>
 <p align="center">표 템플릿 UI 중복 상단 메뉴 전면 삭제, PPT 스타일 가로 1줄 컴팩트 리본 및 한/글 즉시 복사 버튼 탑재</p>
 
 ### 표 템플릿 화면 수직 공간 극대화 및 중복 메뉴 삭제 (1.80.14)
@@ -299,15 +299,15 @@ GitHub가 막힌 기관 PC에서도 위 「받기」 링크가 GitLab에서 바�
 
 | 파일 | 받기 | 용도 |
 |---|---|---|
-| **포터블 · HWP_AutoDocFit_v1.80.14_Portable.exe** | [받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.14_Portable.exe?inline=false) | 설치 없이 바로 실행 |
-| 설치용 · HWP_AutoDocFit_v1.80.14_Setup.exe | [받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.14_Setup.exe?inline=false) | 시작 메뉴 등록, Windows 앱 제거로 정리 |
+| **포터블 · HWP_AutoDocFit_v1.80.15_Portable.exe** | [받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.15_Portable.exe?inline=false) | 설치 없이 바로 실행 |
+| 설치용 · HWP_AutoDocFit_v1.80.15_Setup.exe | [받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v1.80.15_Setup.exe?inline=false) | 시작 메뉴 등록, Windows 앱 제거로 정리 |
 | 보고서 예시 파일(한번에 적용).txt | [받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/%EB%B3%B4%EA%B3%A0%EC%84%9C%20%EC%98%88%EC%8B%9C%20%ED%8C%8C%EC%9D%BC%28%ED%95%9C%EB%B2%88%EC%97%90%20%EC%A0%81%EC%9A%A9%29.txt?inline=false) | 처음 체험용 예시 |
 | SHA256SUMS | [받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/SHA256SUMS?inline=false) | 내려받은 파일 확인용 해시 |
 
 - **필요한 것**: Windows 10·11(64비트), 문서를 편집할 수 있는 **한컴오피스 한/글**(모든 버전 사용 — NEO·2018·2020·2022·2024 등). Python 등 다른 설치는 필요 없습니다.
 - 변환 엔진은 실행 파일에 들어 있습니다. 첫 실행 때 `C:\HWP_AUTODOCFIT`(쓰기 권한이 없으면 `%LOCALAPPDATA%\HwpAutoDocFit`)에 풀며, 인터넷에서 받지 않습니다.
 - 배포 파일은 GitLab의 downloads 브랜치에서 로그인 없이 받을 수 있습니다.
-- [v1.80.14 변경 사항](releases/v1.80.14.md) · [GitLab](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
+- [v1.80.15 변경 사항](releases/v1.80.15.md) · [GitLab](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
 
 ---
 
@@ -355,5 +355,5 @@ GitHub가 막힌 기관 PC에서도 위 「받기」 링크가 GitLab에서 바�
 
 <p align="center">
 <a href="docs/USER_GUIDE.md"><b>자세한 사용 설명서</b></a> — 기능별 사용법·옵션·결과 파일·문제 해결<br>
-<a href="releases/v1.80.14.md">v1.80.14 변경 사항</a> · <a href="HANDOVER.md">개발 인수인계 문서</a> · <a href="THIRD_PARTY_NOTICES.md">사용한 오픈소스</a> · <a href="LICENSE">라이선스</a>
+<a href="releases/v1.80.15.md">v1.80.15 변경 사항</a> · <a href="HANDOVER.md">개발 인수인계 문서</a> · <a href="THIRD_PARTY_NOTICES.md">사용한 오픈소스</a> · <a href="LICENSE">라이선스</a>
 </p>
