@@ -1,5 +1,11 @@
 # 2.0.0 세션 계약과 6탭 통합 경계
 
+2026-10-27 확정 보충: [잔여 상세 설계](V2_REMAINING_DESIGN_SPEC.md)에 T17 독립 OLE
+호스트·IPC·수명 주기, 세 캔버스 Command v1, B01~B14 대체 계약을 정의한다.
+아래의 “운영 경로 교체는 하지 않는다”는 최초 계약 작성 당시 범위다. 현재
+main.dart에 IntegratedWorkspace가 연결되어 있으며 잔여 구현 완료 여부는 보충 문서의
+릴리즈 게이트로 판정한다.
+
 ## 공통 모델 계약
 
 `docfit_core.session`은 COM·Tk·Flutter에 의존하지 않는다. 문서마다 하나의
