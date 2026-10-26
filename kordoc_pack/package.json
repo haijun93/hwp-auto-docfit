@@ -1,1 +1,1 @@
-{"name":"docfit-kordoc-runtime","private":true,"dependencies":{"kordoc":"4.21.30","pdfjs-dist":"4.10.38"}}
+{"name":"docfit-kordoc-runtime","private":true,"dependencies":{"kordoc":"^4.24.9","pdfjs-dist":"4.10.38"}}
