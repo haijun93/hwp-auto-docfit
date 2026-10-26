@@ -25,6 +25,8 @@ import 'features/settings/update_panel.dart';
 import 'features/stages/stage_board.dart';
 import 'features/table_units/table_units_screen.dart';
 import 'features/table_sketch/table_sketch_screen.dart';
+import 'features/workspace/workspace_adapters.dart';
+
 
 export 'core/api/abbreviation_api.dart' show ApiCall;
 
@@ -67,8 +69,13 @@ const _mintSoft = Color(0xfff3f8f7);
 };
 
 class DocFitApp extends StatelessWidget {
-  const DocFitApp({super.key, this.api = bridge.callApi});
+  const DocFitApp({
+    super.key,
+    this.api = bridge.callApi,
+    this.useIntegratedShell = true,
+  });
   final ApiCall api;
+  final bool useIntegratedShell;
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: '한글편집 후처리',
@@ -98,7 +105,16 @@ class DocFitApp extends StatelessWidget {
         border: OutlineInputBorder(),
       ),
     ),
-    home: Workspace(api: api),
+    home: useIntegratedShell
+        ? IntegratedWorkspace(
+            api: api,
+            documentEditorWidget: Workspace(api: api),
+            fileConversionWidget: DocumentToolsWorkspace(
+              api: api,
+              initial: 'convert',
+            ),
+          )
+        : Workspace(api: api),
   );
 }
 
