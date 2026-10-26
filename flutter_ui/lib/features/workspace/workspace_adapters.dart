@@ -134,3 +134,4 @@ class IntegratedWorkspace extends StatelessWidget {
     );
   }
 }
+
