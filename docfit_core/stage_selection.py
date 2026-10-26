@@ -119,11 +119,11 @@ _MODE_STAGES = {
     # 서식통일은 예외 문단별 서식→자간→내어쓰기 처리이며 전체 자간 단계는 돌리지 않는다.
     "spacing": ("reset_spacing", "style_unify", "body_spacing", "short_line", "control_spacing",
                 "control_short_line", "word_check", "control_word_check", "page_fit", "page_group"),
-    # 개요·한 칸 표 자간 조정(single_cell_spacing)은 서식 전용이다.
+    # 개요·한 칸 표 자간 조정(single_cell_spacing)은 서식 및 일괄 적용(all)에 포함한다.
     "all": _FIRST_STAGES + (
         "text_table_convert", "reset_spacing", "asterisk_superscript", "attachment_font", "pre_format",
         "table_style", "table_width", "precise_table", "normalize_space", "punctuation_space", "style_unify",
-        "parenthesis", "table_format", "hanging_indent", "supplement_indent", "star_align", "body_spacing", "short_line", "control_spacing",
+        "parenthesis", "table_format", "single_cell_spacing", "hanging_indent", "supplement_indent", "star_align", "body_spacing", "short_line", "control_spacing",
         "control_short_line", "word_check", "control_word_check", "page_fit", "page_group"),
 }
 
