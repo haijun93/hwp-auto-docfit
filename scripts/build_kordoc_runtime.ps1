@@ -9,7 +9,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $NodeVersion = '22.23.3'
 $NodeSha256 = '2b0ff57b049cda1bbcea2240eec20467018713c1efe1f7360c2681859b90ed71'
-$KordocVersion = '4.21.30'
+$KordocVersion = '4.24.9'
 $PandocVersion = '3.12.1'
 $PandocSha256 = '6ef431cb20b2c24a0371fc19200dc49d452be54b1b5c9239f3462841ef53e587'
 
