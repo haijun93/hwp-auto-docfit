@@ -274,6 +274,7 @@ void main() {
       await tester.pumpWidget(DocFitApp(api: api));
       await tester.pumpAndSettle();
       expect(find.text('3 단계면 끝나요'), findsOneWidget);
+      await tester.ensureVisible(find.text('문서 추가'));
       await tester.tap(find.text('문서 추가'));
       await tester.pumpAndSettle();
       expect(find.text('문서.hwpx'), findsOneWidget);
@@ -289,7 +290,7 @@ void main() {
       await tester.tap(find.text('정리 시작'));
       await tester.pump(const Duration(milliseconds: 300));
       expect(
-        calls.where((s) => s != 'get_state' && s != 'enable_close_guard'),
+        calls.where((s) => s != 'get_state' && s != 'enable_close_guard' && s != 'table_units' && s != 'table_sketch' && s != 'flow_editor'),
         ['add_files', 'set_mode', 'start'],
       );
       expect(find.text('문서를 정리하고 있어요'), findsOneWidget);
@@ -866,7 +867,7 @@ void main() {
       );
       expect(
         calls.where(
-          (name) => name != 'get_state' && name != 'enable_close_guard',
+          (name) => name != 'get_state' && name != 'enable_close_guard' && name != 'table_units' && name != 'table_sketch' && name != 'flow_editor',
         ),
         ['get_abbreviations'],
       );

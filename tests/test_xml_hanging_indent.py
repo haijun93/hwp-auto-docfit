@@ -47,6 +47,25 @@ SAMPLE_LINES = [
 
 
 class XmlHangingIndentUnitTests(unittest.TestCase):
+    def test_todo_96_colon_label_hanging_indent(self):
+        """TODO 96: 원문자 및 항목 기호 뒤 콜론(:) 위치에 맞춘 들여쓰기 오프셋 검증."""
+        cases = [
+            ("① 사업목적: 인공지능 기반 공공문서 자동화", "인"),
+            ("② 추진방향: 3단계 점진적 적용", "3"),
+            ("1. 대상기관: 서울특별시 마포구청", "서"),
+            ("가. 추진일정: 2026년 10월부터 12월까지", "2"),
+            ("1) 소요예산: 총 5억원 내외", "총"),
+            ("①사업목적:인공지능", "인"),
+            ("①: 인공지능 기반", "인"),
+            ("① 사업목적 : 인공지능", "인"),
+            ("① 사업목적： 인공지능", "인"),
+            ("① (추진배경): 인공지능 기반", "인"),
+        ]
+        for text, expected_first_char in cases:
+            off = hanging_indent_offset(text)
+            self.assertIsNotNone(off, f"Offset should not be None for {text}")
+            self.assertEqual(text[off], expected_first_char, f"Mismatched char at {off} for {text}")
+
     def test_wrapped_reference_markers_keep_reference_geometry_verbatim(self):
         # 서식 복사는 예시 우선: 여러 줄 문단도 예시의 (left, intent)를 그대로 쓴다(2026-10-21).
         # 예전 기대값(left를 -intent만큼 밀어 넣음)은 format_fidelity_pc 재연 불일치를 만들었다.

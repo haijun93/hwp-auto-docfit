@@ -16,8 +16,10 @@ class DiagramEditorScreen extends StatefulWidget {
   const DiagramEditorScreen({
     super.key,
     required this.api,
+    this.isModal = true,
   });
   final ApiCall api;
+  final bool isModal;
 
   @override
   State<DiagramEditorScreen> createState() => _DiagramEditorScreenState();
@@ -36,7 +38,7 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
   String name = '새 업무 흐름도';
   String? failure;
 
-  late final CloseLease _closeLease;
+  CloseLease? _closeLease;
   Future<bool> _prepareHostClose() async {
     if (saveState.saving || busy || !canCloseEditor(context)) return false;
     if (!await confirmDiscard() || !mounted) return false;
@@ -47,7 +49,9 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
   @override
   void initState() {
     super.initState();
-    _closeLease = CloseGuards.register(_prepareHostClose);
+    if (widget.isModal) {
+      _closeLease = CloseGuards.register(_prepareHostClose);
+    }
     initialize();
   }
 
@@ -526,7 +530,7 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
 
   @override
   void dispose() {
-    _closeLease.release();
+    _closeLease?.release();
     for (final subscription in subscriptions) {
       unawaited(subscription.cancel());
     }

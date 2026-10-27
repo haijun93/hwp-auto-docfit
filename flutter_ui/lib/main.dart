@@ -112,6 +112,7 @@ class DocFitApp extends StatelessWidget {
             fileConversionWidget: DocumentToolsWorkspace(
               api: api,
               initial: 'convert',
+              isModal: false,
             ),
           )
         : Workspace(api: api),
@@ -1988,8 +1989,10 @@ class _WorkspaceState extends State<Workspace> {
     try {
       accepted = !busy && await CloseGuards.prepareAll();
       // An unregistered dialog may hold edits or a pending RPC: fail closed.
+      if (!mounted) return;
+      final route = ModalRoute.of(context);
       accepted =
-          accepted && mounted && ModalRoute.of(context)?.isCurrent == true;
+          accepted && (route == null || route.isCurrent == true);
       final result = await widget.api('resolve_dialog', [
         request['id'],
         accepted,

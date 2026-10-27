@@ -11,6 +11,12 @@ from docfit_core import kordoc_bridge as kb
 class KordocContractTest(unittest.TestCase):
     """kordoc 실행 계약: 정확한 버전, Node 20 이상, 셸 없는 Windows 실행, 부분 적용 표시."""
 
+    def setUp(self):
+        super().setUp()
+        self._runtime_patch = patch.object(kb, "_bundled_runtime", return_value=None)
+        self._runtime_patch.start()
+        self.addCleanup(self._runtime_patch.stop)
+
     def test_exact_version_pinned(self):
         self.assertEqual(kb.KORDOC_PACKAGE, "kordoc@4.21.30")
 

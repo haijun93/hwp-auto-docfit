@@ -67,7 +67,7 @@ class DiagramAdapter extends StatelessWidget {
   @override
   Widget build(BuildContext context) => KeyedSubtree(
         key: const ValueKey('tab-diagram-adapter'),
-        child: DiagramEditorScreen(api: api),
+        child: DiagramEditorScreen(api: api, isModal: false),
       );
 }
 
@@ -83,7 +83,7 @@ class MindMapAdapter extends StatelessWidget {
   @override
   Widget build(BuildContext context) => KeyedSubtree(
         key: const ValueKey('tab-mindmap-adapter'),
-        child: FlowEditorScreen(api: api, initialMode: 'flow'),
+        child: FlowEditorScreen(api: api, initialMode: 'flow', isModal: false),
       );
 }
 

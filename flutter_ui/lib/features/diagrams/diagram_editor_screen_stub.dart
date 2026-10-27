@@ -3,8 +3,9 @@ import 'package:flutter/material.dart';
 import '../../core/api/abbreviation_api.dart';
 
 class DiagramEditorScreen extends StatelessWidget {
-  const DiagramEditorScreen({super.key, required this.api});
+  const DiagramEditorScreen({super.key, required this.api, this.isModal = true});
   final ApiCall api;
+  final bool isModal;
 
   @override
   Widget build(BuildContext context) => const Scaffold(

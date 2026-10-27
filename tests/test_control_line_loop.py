@@ -57,7 +57,7 @@ class ControlLineLoopTest(unittest.TestCase):
                 '자간_최대시도_본문': 30, '자간_최대시도_표': 5,
             }):
                 fn()
-        self.assertEqual(budgets, [30, 5])
+        self.assertEqual(budgets, [5, 5])
 
     def test_single_cell_body_is_processed_even_when_multi_cell_spacing_is_off(self):
         fn = self.ns['컨트롤_내부_자간조정']

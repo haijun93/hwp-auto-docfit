@@ -8,9 +8,11 @@ class DocumentToolsWorkspace extends StatefulWidget {
     super.key,
     required this.api,
     this.initial = 'convert',
+    this.isModal = true,
   });
   final ApiCall api;
   final String initial;
+  final bool isModal;
   @override
   State<DocumentToolsWorkspace> createState() => _ToolsState();
 }
@@ -20,7 +22,7 @@ class _ToolsState extends State<DocumentToolsWorkspace> {
   late String mode;
   String status = '', calculation = 'col_sum';
   bool busy = false, closing = false;
-  late final CloseLease _closeLease;
+  CloseLease? _closeLease;
   static const modes = {
     'clean': 'AI 답변 기호 정리',
     'convert': '개조식 변환',
@@ -38,16 +40,18 @@ class _ToolsState extends State<DocumentToolsWorkspace> {
   void initState() {
     super.initState();
     mode = modes.containsKey(widget.initial) ? widget.initial : 'convert';
-    _closeLease = CloseGuards.register(() async {
-      if (busy || !canCloseEditor(context)) return false;
-      leave();
-      return true;
-    });
+    if (widget.isModal) {
+      _closeLease = CloseGuards.register(() async {
+        if (busy || !canCloseEditor(context)) return false;
+        leave();
+        return true;
+      });
+    }
   }
 
   @override
   void dispose() {
-    _closeLease.release();
+    _closeLease?.release();
     input.dispose();
     output.dispose();
     super.dispose();
