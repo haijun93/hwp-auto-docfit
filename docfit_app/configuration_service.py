@@ -15,7 +15,7 @@ LABELS = {
  'color_mark_on':'조정한 글자 색 표시', 'color':'표시 색', 'autoclose':'처리 후 한글 창 닫기',
  'stdformat':'보고서 표준서식 적용', 'verify':'상세 진단', 'integrity_report_file':'무결성 보고서 저장',
  'final_review_file':'최종검수 보고서 저장', 'two_pass_processing':'두 번 처리', 'retry_body':'본문 재시도 횟수',
- 'retry_table':'표 재시도 횟수', 'linespacing_min':'최소 줄 간격 (%)', 'linespacing_max':'최대 줄 간격 (%)',
+ 'retry_table':'표 재시도 횟수', 'linespacing_min':'최소 줄 간격 (%)', 'linespacing_max':'최대 줄 간격 (%)','table_linespacing_min':'표 칸 최소 줄 간격 (%)', 'table_spacing_min':'표 칸 최소 자간 (%)',
  'label_symbols':'문두 라벨 굵게', 'paren_shrink':'괄호 자간 정리', 'paren_label_bold':'괄호 라벨 굵게',
  'std_margin':'편집 여백', 'std_ratio':'기본 장평', 'std_linespacing':'기본 줄 간격', 'std_title':'제목 서식',
  'std_title_auto':'제목 자동 판별', 'std_attachment_auto':'붙임 자동 판별', 'std_midtitle_auto':'중제목 자동 판별',

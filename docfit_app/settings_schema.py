@@ -22,6 +22,8 @@ DEFAULTS = {
     "retry_table": "5",
     "linespacing_min": "140",
     "linespacing_max": "200",
+    "table_linespacing_min": "100",
+    "table_spacing_min": "-25",
     # 문두 라벨 굵게에서 뺄 기호(False). 별표(*, **)는 2026-10-03부터 기본으로 뺀다.
     "label_symbols": {"□": False, "※": False, "*": False, "**": False},
     # 설정 파일 판: 2 = 별표(*, **) 라벨 굵게 기본값 끔을 반영한 설정(예전 파일은 불러올 때 한 번 끈다)
@@ -146,6 +148,8 @@ VARIABLE_BINDINGS = {'prevent_word_split': 'prevent_word_split_var',
  'retry_table': 'retry_table_var',
  'linespacing_min': 'linespacing_min_var',
  'linespacing_max': 'linespacing_max_var',
+    'table_linespacing_min': 'table_linespacing_min_var',
+    'table_spacing_min': 'table_spacing_min_var',
  'hwp_font_folder': 'font_folder_var',
  'paste_add_folder': 'paste_add_folder_var',
  'paren_shrink': 'paren_shrink_var',
