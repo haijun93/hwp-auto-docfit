@@ -11,6 +11,13 @@ import json
 import os
 import sys
 
+# Windows cp949 console encoding fix for Korean & special symbols (e.g. ①-⑳)
+if sys.stdout.encoding.lower() != "utf-8":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 AIR_HOST = "192.168.0.3"
 AIR_PORT = 11434
 GENERATE_PATH = "/api/generate"
@@ -33,24 +40,50 @@ def call_deepseek_air(prompt, task_name="TODO_96", output_path=None):
     payload = json.dumps({
         "model": "deepseek-r1:7b",
         "prompt": prompt,
-        "stream": False,
+        "stream": True,
         "keep_alive": "60m"
     }).encode("utf-8")
     
-    conn = http.client.HTTPConnection(AIR_HOST, AIR_PORT, timeout=300)
+    conn = http.client.HTTPConnection(AIR_HOST, AIR_PORT, timeout=600)
     conn.request("POST", GENERATE_PATH, body=payload, headers={"Content-Type": "application/json"})
     resp = conn.getresponse()
     if resp.status != 200:
         raise RuntimeError(f"HTTP {resp.status}: {resp.reason}")
-    data = json.loads(resp.read().decode("utf-8"))
-    conn.close()
+
+    chunks = []
+    print(f"[*] Streaming tokens from DeepSeek-Air...", flush=True)
+    out_file = open(output_path, "w", encoding="utf-8") if output_path else None
+    try:
+        while True:
+            line = resp.readline()
+            if not line:
+                break
+            try:
+                data = json.loads(line.decode("utf-8"))
+            except Exception:
+                continue
+            token = data.get("response", "")
+            thinking = data.get("thinking", "")
+            text_to_write = token or thinking
+            if text_to_write:
+                chunks.append(text_to_write)
+                if out_file:
+                    out_file.write(text_to_write)
+                    out_file.flush()
+                try:
+                    print(text_to_write, end="", flush=True)
+                except Exception:
+                    pass
+            if data.get("done", False):
+                break
+    finally:
+        if out_file:
+            out_file.close()
+        conn.close()
     
-    response_text = data.get("response", "")
-    print(f"[+] Response received from DeepSeek-Air: {len(response_text)} characters")
-    
+    response_text = "".join(chunks)
+    print(f"\n[+] Completed! Total characters: {len(response_text)}")
     if output_path:
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(response_text)
         print(f"[+] Saved output to {output_path}")
     return response_text
 
