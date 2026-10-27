@@ -43,3 +43,4 @@
 1. **버전 명기**: `hwp-auto-docfit.py`의 `APP_VERSION`을 `2.0.0`으로 승격할 것.
 2. **배포 패키징**: `build_dist.bat`를 가동하여 `HWP_AutoDocFit_v2.0.0_Portable.exe` 및 `Setup.exe` 바이너리를 생성할 것.
 3. **원격 배포**: Git 태그 `v2.0.0` 생성 후 GitLab 및 GitHub에 동시 푸시하여 릴리즈를 정식 공표할 것.
+
