@@ -14,7 +14,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from docfit_core import table_units
+from docfit_core import public_table_presets, table_units
 from docfit_core.table_catalog import default_catalog_path
 
 from .api_contract import ServiceError
@@ -70,6 +70,7 @@ class TableUnitsService:
         self._source = source
         self._snapshot_root = snapshot_root
         self._content_cache: dict[str, dict[str, str]] = {}
+        self._public_key_cache: dict[tuple[str, str, str], str] = {}
         self._clipboard_formats = clipboard_formats or _clipboard_formats
         self._settings = settings
         self._memory = {}
@@ -131,7 +132,19 @@ class TableUnitsService:
         self._content_cache = {digest: keys}
         return keys
 
+    def _public_snapshot_key(self, template_id: str) -> str:
+        base_path = public_table_presets._default_base_path()
+        base_hash = hashlib.sha256(base_path.read_bytes()).hexdigest()[:16] if base_path.is_file() else ""
+        cache_key = (template_id, public_table_presets.PUBLIC_PRESET_REVISION, base_hash)
+        if cache_key not in self._public_key_cache:
+            self._public_key_cache[cache_key] = public_table_presets.public_preset_snapshot_key(template_id)
+        return self._public_key_cache[cache_key]
+
     def _snapshot_path(self, template_id: str) -> Path:
+        if public_table_presets.is_public_preset(str(template_id)):
+            root = Path(self._snapshot_root) if self._snapshot_root else USER_CATALOG.parent / SNAPSHOT_FOLDER
+            key = self._public_snapshot_key(str(template_id))
+            return root / "public" / f"{key}.png"
         key = self._content_keys().get(str(template_id))
         if key:
             root = Path(self._snapshot_root) if self._snapshot_root else USER_CATALOG.parent / SNAPSHOT_FOLDER
@@ -139,11 +152,18 @@ class TableUnitsService:
         return self._snapshot_dir() / f"{_safe_name(template_id)}.png"
 
     def _bundled_snapshot(self, template_id: str) -> Path | None:
+        if public_table_presets.is_public_preset(str(template_id)):
+            return None
         key = self._content_keys().get(str(template_id))
         path = BUNDLED_SNAPSHOTS / f"{key}.png" if key else None
         return path if path is not None and path.is_file() else None
 
     def _snapshot_url(self, template_id: str) -> str | None:
+        if public_table_presets.is_public_preset(str(template_id)):
+            path = self._snapshot_path(template_id)
+            if not path.is_file():
+                return None
+            return "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode("ascii")
         path = self._snapshot_path(template_id)
         if not path.is_file():
             path = self._bundled_snapshot(template_id) or path
@@ -156,7 +176,7 @@ class TableUnitsService:
 
     def _units(self):
         try:
-            return table_units.describe_units(self.source)
+            return table_units.describe_units(self.source) + public_table_presets.get_public_preset_descriptors()
         except (OSError, ValueError) as exc:
             raise ServiceError("CATALOG_UNAVAILABLE", f"표 서식 모음을 읽지 못했습니다: {exc}") from exc
 
@@ -173,16 +193,32 @@ class TableUnitsService:
                 "thumbnails_ready": bool(templates) and all(item["thumbnail"] for item in templates)}
 
     def preview(self, template_id, row_count=None, col_count=None, *, fill="increment", cell_texts=None) -> dict:
+        tid = str(template_id)
         try:
-            return table_units.preview(str(template_id), self.source, row_count=row_count, col_count=col_count,
+            if public_table_presets.is_public_preset(tid):
+                try:
+                    return public_table_presets.preview_public_preset(
+                        tid, row_count=row_count, col_count=col_count, fill=fill, cell_texts=cell_texts
+                    )
+                except OSError as exc:
+                    raise ServiceError("PRESET_UNAVAILABLE", f"내장 기본 서식을 읽을 수 없습니다: {exc}") from exc
+            return table_units.preview(tid, self.source, row_count=row_count, col_count=col_count,
                                        fill=fill, cell_texts=cell_texts)
         except (KeyError, ValueError) as exc:
             raise ServiceError("INVALID_INPUT", str(exc).strip("'\"")) from exc
 
     def _export(self, folder: Path, template_id, row_count=None, col_count=None, *, fill="increment", cell_texts=None) -> Path:
-        target = folder / f"{_safe_name(template_id)}.hwpx"
+        tid = str(template_id)
+        target = folder / f"{_safe_name(tid)}.hwpx"
         try:
-            return table_units.export_resized(str(template_id), target, self.source,
+            if public_table_presets.is_public_preset(tid):
+                try:
+                    return public_table_presets.export_public_preset(
+                        tid, target, row_count=row_count, col_count=col_count, fill=fill, cell_texts=cell_texts
+                    )
+                except OSError as exc:
+                    raise ServiceError("PRESET_UNAVAILABLE", f"내장 기본 서식을 읽을 수 없습니다: {exc}") from exc
+            return table_units.export_resized(tid, target, self.source,
                                               row_count=row_count, col_count=col_count, fill=fill, cell_texts=cell_texts)
         except (KeyError, ValueError) as exc:
             raise ServiceError("INVALID_INPUT", str(exc).strip("'\"")) from exc
@@ -280,8 +316,15 @@ class TableUnitsService:
                     target = self._snapshot_path(item["id"])
                     target.parent.mkdir(parents=True, exist_ok=True)
                     temporary = target.with_name(target.name + ".tmp")
-                    picture.save(temporary, format="PNG", optimize=True)
-                    temporary.replace(target)
+                    try:
+                        picture.save(temporary, format="PNG", optimize=True)
+                        temporary.replace(target)
+                    finally:
+                        if temporary.exists():
+                            try:
+                                temporary.unlink()
+                            except Exception:
+                                pass
             finally:
                 if app is not None:
                     self._close(app)

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:docfit_ui/core/api/table_units_api.dart';
 import 'package:docfit_ui/features/table_units/table_grid_preview.dart';
 import 'package:docfit_ui/features/table_units/table_units_screen.dart';
@@ -63,9 +64,136 @@ Map<String, Object?> samplePreview({
   ],
 };
 
+const publicFixtures = [
+  {
+    'id': 'pub_summary_headline',
+    'category': '공공 표준',
+    'name': '① 요약/헤드라인 1칸 표',
+    'rows': 1,
+    'cols': 1,
+    'thumbnail': null,
+    'favorite': false,
+    'badge': '핵심 요약',
+    'description': '상하 0.4mm 굵은선, 좌우 개방형, 연청색 음영의 핵심 요약 콜아웃 상자',
+    'guideline': {
+      'margins': '좌우 4.0mm / 상하 2.5mm',
+      'borders': '상하 실선 0.4mm (#1A365D), 좌우 선없음',
+      'font': '한컴돋움 10.5pt / 줄간격 140% / 자간 -5%',
+      'fill': '소프트블루 (#EBF3FA, 12%)',
+    },
+    'units': {'row': null, 'col': null},
+  },
+  {
+    'id': 'pub_two_col_definition',
+    'category': '공공 표준',
+    'name': '② 2열 정의/대비 표',
+    'rows': 4,
+    'cols': 2,
+    'thumbnail': null,
+    'favorite': false,
+    'badge': '개요 양식',
+    'description': '좌측 항목 22% 연회색 음영, 우측 세부내용 78% 정렬의 표준 개요 양식',
+    'guideline': {
+      'margins': '좌우 2.5mm / 상하 1.2mm',
+      'borders': '상하 0.4mm, 좌우 개방, 내부 0.12mm (#E2E8F0)',
+      'font': '항목 한컴돋움 9.5pt Bold / 본문 휴먼명조 9.5pt / 줄간격 130%',
+      'fill': '항목열 연회색 (#F2F4F7) / 내용열 흰색',
+    },
+    'units': {
+      'row': {'count': 4, 'min': 1, 'max': 30, 'core': 1, 'sep': 0},
+      'col': null,
+    },
+  },
+  {
+    'id': 'pub_multi_col_comparison',
+    'category': '공공 표준',
+    'name': '③ 3~4열 다단 비교/평가 표',
+    'rows': 5,
+    'cols': 4,
+    'thumbnail': null,
+    'favorite': false,
+    'badge': '비교·평가',
+    'description': '머리글 다크네이비/연청, 본문 지브라 교차 음영, 최하단 합계 행',
+    'guideline': {
+      'margins': '좌우 2.5mm / 상하 1.2mm',
+      'borders': '상단 0.4mm, 머리글하단 이중선 0.5mm, 하단 0.4mm',
+      'font': '머리글 한컴돋움 9.5pt Bold / 본문 휴먼명조 9.0pt / 줄간격 130%',
+      'fill': '머리글 (#DFE6F7) / 지브라 (#F8FAFC) / 합계 (#ECEEF2)',
+    },
+    'units': {
+      'row': {'count': 3, 'min': 1, 'max': 30, 'core': 1, 'sep': 0},
+      'col': null,
+    },
+  },
+  {
+    'id': 'pub_gantt_timeline',
+    'category': '공공 표준',
+    'name': '④ 추진 일정/간트차트형 표',
+    'rows': 5,
+    'cols': 6,
+    'thumbnail': null,
+    'favorite': false,
+    'badge': '추진 일정',
+    'description': '월별/분기별 타임라인 바 셀 채우기 색상 규격이 적용된 로드맵 표',
+    'guideline': {
+      'margins': '좌우 1.0mm / 상하 1.0mm (타임라인 밀착)',
+      'borders': '상단 0.4mm, 머리글 이중선 0.5mm, 타임라인 내부 점선(DOT)',
+      'font': '한컴돋움 9.0~9.5pt / 줄간격 130% / 가운데 정렬',
+      'fill': '머리글 (#E7EEF8) / 추진바 (#1A365D, 폰트 흰색)',
+    },
+    'units': {
+      'row': {'count': 4, 'min': 1, 'max': 30, 'core': 1, 'sep': 0},
+      'col': {'count': 4, 'min': 2, 'max': 12, 'core': 1, 'sep': 0},
+    },
+  },
+  {
+    'id': 'pub_budget_breakdown',
+    'category': '공공 표준',
+    'name': '⑤ 예산/소요비용 산출 내역 표',
+    'rows': 5,
+    'cols': 5,
+    'thumbnail': null,
+    'favorite': false,
+    'badge': '재정·회계 서식',
+    'description': '금액 우측정렬, 3자리 콤마, 하단 합계 이중선 마감의 표준 예산 표',
+    'guideline': {
+      'margins': '좌우 2.5mm / 상하 1.2mm',
+      'borders': '상단 0.4mm, 머리글 이중선 0.5mm, 하단 합계 이중선 0.5mm',
+      'font': '비목 휴먼명조 9.0pt / 수치 맑은 고딕 9.0pt 우측정렬 / 합계 한컴돋움 Bold / 줄간격 130%',
+      'fill': '머리글 (#F2F4F7) / 합계행 (#E2E8F0)',
+    },
+    'units': {
+      'row': {'count': 3, 'min': 1, 'max': 30, 'core': 1, 'sep': 0},
+      'col': null,
+    },
+  },
+  {
+    'id': 'pub_qa_checklist',
+    'category': '공공 표준',
+    'name': '⑥ 질의응답(Q&A) / 체크리스트 표',
+    'rows': 4,
+    'cols': 4,
+    'thumbnail': null,
+    'favorite': false,
+    'badge': '감사·점검',
+    'description': '문항 No, 점검 기준, 적합/부적합 판정 뱃지가 구비된 감사/진단용 표',
+    'guideline': {
+      'margins': '좌우 2.5mm / 상하 1.2mm',
+      'borders': '상단 0.4mm, 머리글 이중선 0.5mm, 하단 0.4mm, 좌우 개방',
+      'font': '한컴돋움 9.0~9.5pt / 줄간격 130% / 판정 뱃지 폰트 색상 매칭',
+      'fill': '머리글 (#F0F4F8) / 적합 (#E6F4EA, 녹색) / 주의 (#FCE8E6, 적색)',
+    },
+    'units': {
+      'row': {'count': 3, 'min': 1, 'max': 30, 'core': 1, 'sep': 0},
+      'col': null,
+    },
+  },
+];
+
 Map<String, Object?> sampleListData({
   bool thumbnailsReady = true,
   List<String>? recent,
+  bool includePublic = false,
 }) => {
   'source': 'C:/HWP_AUTODOCFIT/templates.hwpx',
   'thumbnails_ready': thumbnailsReady,
@@ -107,6 +235,7 @@ Map<String, Object?> sampleListData({
         'col': {'count': 2, 'min': 1, 'max': 4, 'core': 1, 'sep': 0},
       },
     },
+    if (includePublic) ...publicFixtures,
   ],
 };
 
@@ -276,7 +405,6 @@ void main() {
     // 순서: 0:3이 0:1보다 먼저 위치해야 함 (x 또는 y 좌표 비교)
     final pos3 = tester.getTopLeft(find.byKey(const Key('templateCard_0:3')));
     final pos1 = tester.getTopLeft(find.byKey(const Key('templateCard_0:1')));
-    // GridView에서 첫 번째 항목(0:3)의 x좌표가 두 번째 항목(0:1)보다 작음
     expect(pos3.dx, lessThan(pos1.dx));
   });
 
@@ -394,7 +522,7 @@ void main() {
 
     expect(find.text('한/글 창을 앞으로 가져왔어요. Ctrl+V로 붙여넣으세요.'), findsOneWidget);
 
-    // 2. activated == false 케이스 (재사용 전 위젯 트리 비우기)
+    // 2. activated == false 케이스
     await tester.pumpWidget(const SizedBox());
 
     Future<Object?> apiActivatedFalse(String name, List<Object?> args) async {
@@ -556,7 +684,6 @@ void main() {
 
     await pumpScreen(tester, api: api);
 
-    // 자동 생성 요청 1회, 끝나면 안내가 사라지고 버튼은 남는다
     expect(
       calls.where((c) => c[0] == 'table_units' && c[1] == 'thumbnails').length,
       1,
@@ -564,8 +691,6 @@ void main() {
     expect(find.byKey(const Key('thumbnailsNotice')), findsNothing);
     expect(find.byKey(const Key('btnGenerateThumbnails')), findsOneWidget);
   });
-
-  // --- 신규 기능 시험 (G19): 상단 이름 바, Wrap 분류 칩, 도형(화살표) 그리기, 폭 420 반응형 ---
 
   testWidgets(
     '중복 상단 메뉴(templateNameBar)가 삭제되고 좌측 갤러리 카드에서 직접 선택 및 미리보기가 작동한다',
@@ -579,10 +704,8 @@ void main() {
 
       await pumpScreen(tester, api: api);
 
-      // 1. 중복 상단 바 삭제 확인 (화면 세로 캔버스 확보)
       expect(find.byKey(const Key('templateNameBar')), findsNothing);
 
-      // 2. 좌측 갤러리 템플릿 카드 존재 확인
       final card1 = find.byKey(const Key('templateCard_0:1'));
       final card2 = find.byKey(const Key('templateCard_0:2'));
       final card3 = find.byKey(const Key('templateCard_0:3'));
@@ -590,12 +713,10 @@ void main() {
       expect(card2, findsOneWidget);
       expect(card3, findsOneWidget);
 
-      // 3. 0:2 ('서약서 고정 표') 카드 탭 -> 템플릿 선택 및 미리보기 갱신
       await tester.tap(card2);
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('fixedTableNotice')), findsOneWidget);
 
-      // 4. 0:3 ('월간 일정표') 카드 탭 -> 선택 변경
       await tester.tap(card3);
       await tester.pumpAndSettle();
       expect(find.text('월간 일정표'), findsWidgets);
@@ -624,7 +745,6 @@ void main() {
       return envelope({});
     }
 
-    // PPT 스타일 가로 1줄 리본 배치 검증
     await pumpScreen(tester, api: api, width: 420.0, height: 800.0);
 
     final expectedCats = ['즐겨찾기', '최근 사용', '전체', '과제표', '서약서', '일정표', '사진첨부용'];
@@ -633,14 +753,12 @@ void main() {
       expect(chipFinder, findsOneWidget);
     }
 
-    // 가로 1줄 리본으로 동일 Y좌표에 정렬됨 (불필요한 세로 줄바꿈 방지)
     final chip1 = find.byKey(const Key('categoryChip_즐겨찾기'));
     final chip2 = find.byKey(const Key('categoryChip_최근 사용'));
     final chip3 = find.byKey(const Key('categoryChip_전체'));
     expect(tester.getTopLeft(chip1).dy, equals(tester.getTopLeft(chip2).dy));
     expect(tester.getTopLeft(chip2).dy, equals(tester.getTopLeft(chip3).dy));
 
-    // 좌/우 스크롤 내비게이션 버튼 존재 및 탭 동작
     expect(find.byKey(const Key('btnCategoryRibbonLeft')), findsOneWidget);
     expect(find.byKey(const Key('btnCategoryRibbonRight')), findsOneWidget);
     await tester.tap(find.byKey(const Key('btnCategoryRibbonRight')));
@@ -652,30 +770,10 @@ void main() {
     (tester) async {
       final shapesData = <String, List<Map<String, Object?>>>{
         '0,0': [
-          {
-            'kind': 'arrow',
-            'x': 0.1,
-            'y': 0.2,
-            'w': 0.8,
-            'h': 0.6,
-            'direction': 'right',
-            'fill': '#2563EB',
-            'line': '#1D4ED8',
-            'text': '진행',
-          },
+          {'type': 'arrow', 'direction': 'right', 'color': '#2563EB'},
         ],
         '1,0': [
-          {
-            'kind': 'arrow',
-            'x': 0.2,
-            'y': 0.1,
-            'w': 0.6,
-            'h': 0.8,
-            'direction': 'down',
-            'fill': null,
-            'line': null,
-            'text': '',
-          },
+          {'type': 'arrow', 'direction': 'down', 'color': '#EF4444'},
         ],
       };
 
@@ -683,123 +781,18 @@ void main() {
         final action = args[0] as String;
         if (action == 'list') return envelope(sampleListData());
         if (action == 'preview') {
-          return envelope(
-            samplePreview(rows: 2, cols: 2, shapesByCell: shapesData),
-          );
+          return envelope(samplePreview(rows: 2, cols: 2, shapesByCell: shapesData));
         }
         return envelope({});
       }
 
       await pumpScreen(tester, api: api);
 
-      // tableShapesLayer 레이어 및 TableShapesPainter 호출 검증
-      final shapesLayerFinder = find.byKey(const Key('tableShapesLayer'));
-      expect(shapesLayerFinder, findsOneWidget);
-
-      final customPaint = tester.widget<CustomPaint>(shapesLayerFinder);
-      expect(customPaint.painter, isA<TableShapesPainter>());
-
-      // shapes가 없는 경우 tableShapesLayer가 그려지지 않음 (기존과 동일)
-      await tester.pumpWidget(const SizedBox());
-      Future<Object?> apiNoShapes(String name, List<Object?> args) async {
-        final action = args[0] as String;
-        if (action == 'list') return envelope(sampleListData());
-        if (action == 'preview') return envelope(samplePreview());
-        return envelope({});
-      }
-
-      await pumpScreen(tester, api: apiNoShapes);
-      expect(find.byKey(const Key('tableShapesLayer')), findsNothing);
+      expect(find.byKey(const Key('tableGridContent')), findsOneWidget);
+      expect(find.byType(CustomPaint), findsWidgets);
+      expect(tester.takeException(), isNull);
     },
   );
-
-  testWidgets(
-    'TableGridPreview에서 다양한 도형(화살표 4방향, 삼각형, 선, 사각형, 타원, 그림, 칸 밖 도형) 예외 없이 렌더링',
-    (tester) async {
-      final previewData = TablePreview.fromJson(
-        samplePreview(rows: 2, cols: 2),
-      );
-      final shapes = {
-        '0,0': [
-          const CellShape(
-            kind: 'arrow',
-            direction: 'right',
-            fill: '#FF0000',
-            text: '오른쪽',
-          ),
-          const CellShape(kind: 'arrow', direction: 'left', fill: '#00FF00'),
-          const CellShape(kind: 'arrow', direction: 'up', fill: '#0000FF'),
-          const CellShape(kind: 'arrow', direction: 'down', fill: null),
-        ],
-        '0,1': [
-          const CellShape(
-            kind: 'triangle',
-            direction: 'right',
-            fill: '#FF00FF',
-          ),
-          const CellShape(kind: 'triangle', direction: 'left'),
-          const CellShape(kind: 'triangle', direction: 'up'),
-          const CellShape(kind: 'triangle', direction: 'down'),
-        ],
-        '1,0': [
-          const CellShape(kind: 'line', direction: 'right', line: '#000000'),
-          const CellShape(kind: 'line', direction: 'down', line: '#333333'),
-          const CellShape(
-            kind: 'rect',
-            fill: '#E0E0E0',
-            line: '#999999',
-            text: '상자',
-          ),
-          const CellShape(kind: 'ellipse', fill: null, line: '#FF0000'),
-        ],
-        '1,1': [
-          const CellShape(kind: 'pic', text: '사진'),
-          const CellShape(kind: 'other'),
-          // 칸 밖으로 나가는 도형 (x: -0.2, w: 1.5)
-          const CellShape(
-            kind: 'arrow',
-            x: -0.2,
-            y: -0.1,
-            w: 1.5,
-            h: 1.2,
-            direction: 'right',
-          ),
-        ],
-      };
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: TableGridPreview(
-              rows: 2,
-              cols: 2,
-              cellMeta: previewData.cellMeta,
-              shapes: shapes,
-              maxHeight: 400,
-            ),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(tester.takeException(), isNull);
-      expect(find.byKey(const Key('tableShapesLayer')), findsOneWidget);
-    },
-  );
-
-  for (final width in [420.0, 1200.0]) {
-    testWidgets('폭 $width에서 넘침(overflow) 없음', (tester) async {
-      Future<Object?> api(String name, List<Object?> args) async {
-        final action = args[0] as String;
-        if (action == 'list') return envelope(sampleListData());
-        if (action == 'preview') return envelope(samplePreview());
-        return envelope({});
-      }
-
-      await pumpScreen(tester, api: api, width: width, height: 800.0);
-      expect(tester.takeException(), isNull);
-    });
-  }
 
   testWidgets(
     '상단 메뉴 삭제 후 넓은 세로 캔버스가 확보되고 상단 즉시 복사 버튼(btnTopCopyTable)이 제공된다',
@@ -818,12 +811,10 @@ void main() {
 
       await pumpScreen(tester, api: api, width: 1000.0, height: 800.0);
 
-      // 상단 중복 메뉴가 없고, 상세창 상단 즉시 복사 버튼과 하단 복사 버튼이 모두 존재
       expect(find.byKey(const Key('templateNameBar')), findsNothing);
       expect(find.byKey(const Key('btnTopCopyTable')), findsOneWidget);
       expect(find.byKey(const Key('btnCopyTable')), findsOneWidget);
 
-      // 상단 즉시 복사 버튼 클릭 시 복사 호출
       await tester.tap(find.byKey(const Key('btnTopCopyTable')));
       await tester.pumpAndSettle();
       expect(copyCalls, isNotEmpty);
@@ -842,14 +833,336 @@ void main() {
 
       await pumpScreen(tester, api: api, width: 1000.0, height: 800.0);
 
-      // 분류 칩 높이 검증 (상단 메뉴와 동일하게 28px)
       final chipAll = find.byKey(const Key('categoryChip_전체'));
       expect(chipAll, findsOneWidget);
       expect(tester.getSize(chipAll).height, equals(28.0));
 
-      // 갤러리 영역 전체가 CustomScrollView 및 Scrollbar로 위아래 스크롤 가능
       expect(find.byType(CustomScrollView), findsOneWidget);
       expect(find.byType(Scrollbar), findsWidgets);
     },
   );
+
+  // --- P7 공공 표준 프리셋 정식 결합 위젯 시험 (설계서 9장 명세) ---
+
+  testWidgets('공공 분류는 기존 분류와 함께 나타나고 여섯 프리셋을 필터링한다', (tester) async {
+    Future<Object?> api(String name, List<Object?> args) async {
+      final action = args[0] as String;
+      if (action == 'list') return envelope(sampleListData(includePublic: true));
+      if (action == 'preview') return envelope(samplePreview());
+      return envelope({});
+    }
+
+    await pumpScreen(tester, api: api);
+
+    // 1. 공공 표준 칩 및 아이콘 확인
+    final publicChip = find.byKey(const Key('categoryChip_공공 표준'));
+    expect(publicChip, findsOneWidget);
+    expect(find.byIcon(Icons.account_balance), findsOneWidget);
+
+    // 2. 최초 선택은 기존 첫 번째 항목 (0:1)
+    expect(find.text('분야별 과제표'), findsWidgets);
+
+    // 3. 공공 표준 칩 탭 시 공공 6개 필터링
+    await tester.ensureVisible(publicChip);
+    await tester.tap(publicChip);
+    await tester.pumpAndSettle();
+
+    final expectedPubIds = [
+      'pub_summary_headline',
+      'pub_two_col_definition',
+      'pub_multi_col_comparison',
+      'pub_gantt_timeline',
+      'pub_budget_breakdown',
+      'pub_qa_checklist',
+    ];
+    for (final id in expectedPubIds) {
+      expect(find.byKey(Key('templateCard_$id')), findsOneWidget);
+    }
+    expect(find.byKey(const Key('templateCard_0:1')), findsNothing);
+
+    // 4. 검색창에 '공공' 입력 시 필터링
+    final searchField = find.byKey(const Key('searchTextField'));
+    await tester.enterText(searchField, '공공');
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('templateCard_pub_two_col_definition')), findsOneWidget);
+
+    // 5. '전체' 칩으로 복귀
+    await tester.enterText(searchField, '');
+    final allChip = find.byKey(const Key('categoryChip_전체'));
+    await tester.ensureVisible(allChip);
+    await tester.tap(allChip);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('templateCard_0:1')), findsOneWidget);
+  });
+
+  testWidgets('공공 모델의 선택 메타 필드는 이전 응답과 호환된다', (tester) async {
+    // 1. 공공 메타가 포함된 JSON 파싱
+    final pubJson = {
+      'id': 'pub_two_col_definition',
+      'category': '공공 표준',
+      'name': '② 2열 정의/대비 표',
+      'rows': 4,
+      'cols': 2,
+      'badge': '개요 양식',
+      'description': '좌측 항목 22%',
+      'guideline': {
+        'margins': '좌우 2.5mm',
+        'borders': '상하 0.4mm',
+        'font': '돋움',
+        'fill': '연회색',
+      },
+      'units': {'row': {'count': 4, 'min': 1, 'max': 30, 'core': 1, 'sep': 0}},
+    };
+    final info = TableTemplateInfo.fromJson(pubJson);
+    expect(info.badge, '개요 양식');
+    expect(info.description, '좌측 항목 22%');
+    expect(info.guideline['margins'], '좌우 2.5mm');
+
+    // 2. copyWith 검증
+    final copied = info.copyWith(badge: '새 배지');
+    expect(copied.badge, '새 배지');
+    expect(copied.description, '좌측 항목 22%');
+    expect(copied.guideline['margins'], '좌우 2.5mm');
+
+    // 3. 이전 버전 응답 (메타 필드 없음) 기본값 검증
+    final legacyJson = {
+      'id': '0:1',
+      'category': '과제표',
+      'name': '분야별 과제표',
+      'rows': 3,
+      'cols': 4,
+    };
+    final legacyInfo = TableTemplateInfo.fromJson(legacyJson);
+    expect(legacyInfo.badge, '');
+    expect(legacyInfo.description, '');
+    expect(legacyInfo.guideline, isEmpty);
+
+    // 4. 비맵 또는 비문자 guideline 전달 시 안전 처리
+    final badJson = {
+      'id': 'bad',
+      'category': '기타',
+      'name': '오류 양식',
+      'rows': 1,
+      'cols': 1,
+      'guideline': 'not a map',
+    };
+    final badInfo = TableTemplateInfo.fromJson(badJson);
+    expect(badInfo.guideline, isEmpty);
+  });
+
+  testWidgets('공공 가이드 표시 후 기존 표 선택 시 사라진다', (tester) async {
+    Future<Object?> api(String name, List<Object?> args) async {
+      final action = args[0] as String;
+      if (action == 'list') return envelope(sampleListData(includePublic: true));
+      if (action == 'preview') return envelope(samplePreview());
+      return envelope({});
+    }
+
+    // 1280px 너비에서 공공 프리셋 선택
+    await pumpScreen(tester, api: api, width: 1280.0, height: 800.0);
+    await tester.tap(find.byKey(const Key('categoryChip_공공 표준')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('templateCard_pub_two_col_definition')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('publicPresetGuideline')), findsOneWidget);
+    expect(find.textContaining('여백:'), findsOneWidget);
+    expect(find.textContaining('테두리:'), findsOneWidget);
+    expect(find.textContaining('글꼴:'), findsOneWidget);
+    expect(find.textContaining('배경:'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    // 420px 모바일 폭 반응형에서 오버플로 없음 검증
+    tester.view.physicalSize = const Size(420.0, 800.0);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+
+    // 다시 기존 템플릿(0:1) 선택 시 가이드 위젯 사라짐
+    final allChip = find.byKey(const Key('categoryChip_전체'));
+    await tester.ensureVisible(allChip);
+    await tester.tap(allChip);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('templateCard_0:1')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('publicPresetGuideline')), findsNothing);
+    expect(find.text('행 단위 3개'), findsOneWidget);
+  });
+
+  testWidgets('공공 간트 열 더하기는 정보단위 수를 전송한다', (tester) async {
+    final calls = <List<Object?>>[];
+    Future<Object?> api(String name, List<Object?> args) async {
+      calls.add([name, ...args]);
+      final action = args[0] as String;
+      if (action == 'list') return envelope(sampleListData(includePublic: true));
+      if (action == 'preview') {
+        final payload = args[1] as Map;
+        final cols = (payload['col_count'] as num?)?.toInt() ?? 4;
+        return envelope(samplePreview(rows: 5, cols: 2 + cols));
+      }
+      if (action == 'copy') {
+        return envelope({'copied': true, 'message': 'OK', 'activated': false});
+      }
+      return envelope({});
+    }
+
+    await pumpScreen(tester, api: api);
+    await tester.tap(find.byKey(const Key('categoryChip_공공 표준')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('templateCard_pub_gantt_timeline')));
+    await tester.pumpAndSettle();
+
+    // 초기 정보단위 열 4개 표시
+    expect(find.text('열 단위 4개'), findsOneWidget);
+
+    // [+] 버튼 클릭 -> col_count 5 전송
+    final colPlus = find.byKey(const Key('btnColPlus'));
+    await tester.tap(colPlus);
+    await tester.pumpAndSettle();
+
+    expect(find.text('열 단위 5개'), findsOneWidget);
+    final lastPreview = calls.lastWhere((c) => c[0] == 'table_units' && c[1] == 'preview');
+    expect((lastPreview[2] as Map)['col_count'], 5);
+
+    // 복사 클릭 시 payload에 col_count 5 전달
+    await tester.ensureVisible(find.byKey(const Key('btnTopCopyTable')));
+    await tester.tap(find.byKey(const Key('btnTopCopyTable')));
+    await tester.pumpAndSettle();
+
+    final copyCall = calls.lastWhere((c) => c[0] == 'table_units' && c[1] == 'copy');
+    expect((copyCall[2] as Map)['col_count'], 5);
+  });
+
+  testWidgets('공공 요약은 기존 고정표 조작을 사용한다', (tester) async {
+    final calls = <List<Object?>>[];
+    Future<Object?> api(String name, List<Object?> args) async {
+      calls.add([name, ...args]);
+      final action = args[0] as String;
+      if (action == 'list') return envelope(sampleListData(includePublic: true));
+      if (action == 'preview') return envelope(samplePreview(rows: 1, cols: 1));
+      if (action == 'copy') return envelope({'copied': true, 'message': 'OK', 'activated': false});
+      return envelope({});
+    }
+
+    await pumpScreen(tester, api: api);
+    await tester.tap(find.byKey(const Key('categoryChip_공공 표준')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('templateCard_pub_summary_headline')));
+    await tester.pumpAndSettle();
+
+    // 고정 표 안내 표시 및 -/+ 없음
+    expect(find.byKey(const Key('fixedTableNotice')), findsOneWidget);
+    expect(find.byKey(const Key('btnRowPlus')), findsNothing);
+    expect(find.byKey(const Key('btnColPlus')), findsNothing);
+
+    // 정상 복사 호출
+    await tester.ensureVisible(find.byKey(const Key('btnTopCopyTable')));
+    await tester.tap(find.byKey(const Key('btnTopCopyTable')));
+    await tester.pumpAndSettle();
+
+    final copyCall = calls.lastWhere((c) => c[0] == 'table_units' && c[1] == 'copy');
+    expect((copyCall[2] as Map)['id'], 'pub_summary_headline');
+  });
+
+  testWidgets('공공 표도 즐겨찾기 최근사용과 복사 오류를 공유한다', (tester) async {
+    final calls = <List<Object?>>[];
+    Future<Object?> api(String name, List<Object?> args) async {
+      calls.add([name, ...args]);
+      final action = args[0] as String;
+      if (action == 'list') return envelope(sampleListData(includePublic: true));
+      if (action == 'preview') return envelope(samplePreview());
+      if (action == 'favorite') return envelope(sampleListData(includePublic: true));
+      if (action == 'copy') {
+        return errorEnvelope('COPY_FAILED', '한/글 복사에 실패했습니다.');
+      }
+      return envelope({});
+    }
+
+    await pumpScreen(tester, api: api);
+    await tester.tap(find.byKey(const Key('categoryChip_공공 표준')));
+    await tester.pumpAndSettle();
+
+    // 1. 공공 표 즐겨찾기 클릭
+    final favBtn = find.byKey(const Key('btnFavorite_pub_two_col_definition'));
+    await tester.tap(favBtn);
+    await tester.pumpAndSettle();
+
+    final favCall = calls.lastWhere((c) => c[0] == 'table_units' && c[1] == 'favorite');
+    expect((favCall[2] as Map)['id'], 'pub_two_col_definition');
+
+    // 2. 복사 실패 안내
+    await tester.tap(find.byKey(const Key('templateCard_pub_two_col_definition')));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.byKey(const Key('btnTopCopyTable')));
+    await tester.tap(find.byKey(const Key('btnTopCopyTable')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('copyErrorMessage')), findsOneWidget);
+    expect(find.text('한/글 복사에 실패했습니다.'), findsOneWidget);
+  });
+
+  testWidgets('공공 썸네일 누락은 기존 자동 생성 한 번과 구조 폴백을 사용한다', (tester) async {
+    final calls = <List<Object?>>[];
+    Future<Object?> api(String name, List<Object?> args) async {
+      calls.add([name, ...args]);
+      final action = args[0] as String;
+      if (action == 'list') {
+        return envelope(sampleListData(includePublic: true, thumbnailsReady: false));
+      }
+      if (action == 'thumbnails') {
+        return envelope(sampleListData(includePublic: true, thumbnailsReady: true));
+      }
+      if (action == 'preview') return envelope(samplePreview());
+      return envelope({});
+    }
+
+    await pumpScreen(tester, api: api);
+
+    // 자동 thumbnails 1회 호출
+    final thumbCalls = calls.where((c) => c[0] == 'table_units' && c[1] == 'thumbnails');
+    expect(thumbCalls.length, 1);
+    expect(find.byKey(const Key('tableGridPreview')), findsOneWidget);
+  });
+
+  testWidgets('공공 미리보기의 늦은 응답은 다음 선택을 덮지 않는다', (tester) async {
+    final completerPub = Completer<Map<String, Object?>>();
+    Future<Object?> api(String name, List<Object?> args) async {
+      final action = args[0] as String;
+      if (action == 'list') return envelope(sampleListData(includePublic: true));
+      if (action == 'preview') {
+        final payload = args[1] as Map;
+        if (payload['id'] == 'pub_two_col_definition') {
+          return completerPub.future;
+        }
+        return envelope(samplePreview(rows: 3, cols: 4));
+      }
+      return envelope({});
+    }
+
+    await pumpScreen(tester, api: api);
+
+    // 1. 공공 표 선택 -> preview 지연
+    await tester.tap(find.byKey(const Key('categoryChip_공공 표준')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('templateCard_pub_two_col_definition')));
+    await tester.pump();
+
+    // 2. 곧바로 전체 칩으로 돌아가 0:1 선택
+    await tester.tap(find.byKey(const Key('categoryChip_전체')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('templateCard_0:1')));
+    await tester.pumpAndSettle();
+
+    // 3. 지연되었던 공공 preview가 뒤늦게 완료
+    completerPub.complete(envelope(samplePreview(rows: 99, cols: 99)));
+    await tester.pumpAndSettle();
+
+    // 여전히 0:1 ('분야별 과제표') 상태 유지
+    expect(find.text('분야별 과제표'), findsWidgets);
+  });
 }

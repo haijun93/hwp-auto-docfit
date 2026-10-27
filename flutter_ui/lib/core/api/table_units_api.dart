@@ -73,6 +73,9 @@ class TableTemplateInfo {
     this.thumbnail,
     this.favorite = false,
     required this.units,
+    this.badge = '',
+    this.description = '',
+    this.guideline = const <String, String>{},
   });
 
   final String id;
@@ -83,6 +86,9 @@ class TableTemplateInfo {
   final String? thumbnail;
   final bool favorite;
   final TableUnits units;
+  final String badge;
+  final String description;
+  final Map<String, String> guideline;
 
   TableTemplateInfo copyWith({
     String? id,
@@ -93,6 +99,9 @@ class TableTemplateInfo {
     String? thumbnail,
     bool? favorite,
     TableUnits? units,
+    String? badge,
+    String? description,
+    Map<String, String>? guideline,
   }) => TableTemplateInfo(
     id: id ?? this.id,
     category: category ?? this.category,
@@ -102,19 +111,35 @@ class TableTemplateInfo {
     thumbnail: thumbnail ?? this.thumbnail,
     favorite: favorite ?? this.favorite,
     units: units ?? this.units,
+    badge: badge ?? this.badge,
+    description: description ?? this.description,
+    guideline: guideline ?? this.guideline,
   );
 
-  factory TableTemplateInfo.fromJson(Map<dynamic, dynamic> json) =>
-      TableTemplateInfo(
-        id: '${json['id'] ?? ''}',
-        category: '${json['category'] ?? '기타'}',
-        name: '${json['name'] ?? ''}',
-        rows: (json['rows'] as num?)?.toInt() ?? 0,
-        cols: (json['cols'] as num?)?.toInt() ?? 0,
-        thumbnail: json['thumbnail'] as String?,
-        favorite: json['favorite'] == true,
-        units: TableUnits.fromJson(json['units'] as Map?),
-      );
+  factory TableTemplateInfo.fromJson(Map<dynamic, dynamic> json) {
+    final rawGuideline = json['guideline'];
+    final guideline = <String, String>{};
+    if (rawGuideline is Map) {
+      for (final entry in rawGuideline.entries) {
+        if (entry.key is String && entry.value is String) {
+          guideline[entry.key as String] = entry.value as String;
+        }
+      }
+    }
+    return TableTemplateInfo(
+      id: '${json['id'] ?? ''}',
+      category: '${json['category'] ?? '기타'}',
+      name: '${json['name'] ?? ''}',
+      rows: (json['rows'] as num?)?.toInt() ?? 0,
+      cols: (json['cols'] as num?)?.toInt() ?? 0,
+      thumbnail: json['thumbnail'] as String?,
+      favorite: json['favorite'] == true,
+      units: TableUnits.fromJson(json['units'] as Map?),
+      badge: '${json['badge'] ?? ''}',
+      description: '${json['description'] ?? ''}',
+      guideline: guideline,
+    );
+  }
 }
 
 /// 표 템플릿 목록 응답 데이터.

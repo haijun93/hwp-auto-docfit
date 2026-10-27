@@ -994,7 +994,9 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
 
               ),
 
-              const SizedBox(height: 16),
+
+
+        const SizedBox(height: 16),
 
               FilledButton(onPressed: _loadList, child: const Text('다시 시도')),
 
@@ -1442,7 +1444,16 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
 
                                     children: [
 
-                                      if (isSelected) ...[
+                                      if (cat == '공공 표준') ...[
+                                        Icon(
+                                          Icons.account_balance,
+                                          size: 16,
+                                          color: isSelected
+                                              ? Colors.white
+                                              : const Color(0xff2563eb),
+                                        ),
+                                        const SizedBox(width: 4),
+                                      ] else if (isSelected) ...[
 
                                         const Icon(
 
@@ -2046,6 +2057,111 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
 
 
 
+  Widget _buildPresetGuideline(TableTemplateInfo template) {
+    final hasBadge = template.badge.isNotEmpty;
+    final hasDescription = template.description.isNotEmpty;
+    final hasGuideline = template.guideline.isNotEmpty;
+
+    if (!hasBadge && !hasDescription && !hasGuideline) {
+      return const SizedBox.shrink();
+    }
+
+    final children = <Widget>[];
+
+    if (hasBadge || hasDescription) {
+      children.add(
+        Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 6,
+          runSpacing: 4,
+          children: [
+            if (hasBadge)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xffeff6ff),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: const Color(0xffbfdbfe)),
+                ),
+                child: Text(
+                  template.badge,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xff1d4ed8),
+                  ),
+                ),
+              ),
+            if (hasDescription)
+              Text(
+                template.description,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Color(0xff475569),
+                ),
+              ),
+          ],
+        ),
+      );
+    }
+
+    if (hasGuideline) {
+      final guideLabels = {
+        'margins': '여백',
+        'borders': '테두리',
+        'font': '글꼴',
+        'fill': '배경',
+      };
+
+      final guideWidgets = <Widget>[];
+      for (final key in ['margins', 'borders', 'font', 'fill']) {
+        final val = template.guideline[key];
+        if (val != null && val.isNotEmpty) {
+          final label = guideLabels[key] ?? key;
+          guideWidgets.add(
+            Text(
+              '$label: $val',
+              style: const TextStyle(
+                fontSize: 11.5,
+                color: Color(0xff334155),
+                height: 1.3,
+              ),
+            ),
+          );
+        }
+      }
+
+      if (guideWidgets.isNotEmpty) {
+        if (children.isNotEmpty) {
+          children.add(const SizedBox(height: 6));
+        }
+        children.add(
+          Wrap(
+            spacing: 12,
+            runSpacing: 4,
+            children: guideWidgets,
+          ),
+        );
+      }
+    }
+
+    return Container(
+      key: const Key('publicPresetGuideline'),
+      margin: const EdgeInsets.only(top: 8, bottom: 4),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xfff1f5f9),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xffe2e8f0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: children,
+      ),
+    );
+  }
+
   Widget _buildDetail() {
 
     final template = _selectedTemplate;
@@ -2214,6 +2330,8 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
 
         ),
 
+        _buildPresetGuideline(template),
+
         const SizedBox(height: 16),
 
         Container(
