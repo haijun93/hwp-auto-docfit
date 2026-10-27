@@ -85,3 +85,62 @@ class FileDropTests(TestCase):
         bridge.add_paths([r'C:\문서.hwpx'])
         gui.파일추가.assert_not_called()
         gui.폴더추가.assert_not_called()
+
+    def test_conversion_drop_precedes_profile_badge(self):
+        bridge = DesktopWebBridge(Mock())
+        bridge.add_paths = Mock(return_value={})
+        bridge.quick_register_and_activate_profile = Mock()
+        bridge.add_format_paths = Mock()
+        bridge.set_drop_target('file_conversion')
+        bridge.set_profile_drop_bounds([10, 10, 100, 100])
+        paths = [r'C:\보고서.pptx']
+        bridge.receive_drop(paths, client_x=50, client_y=50)
+        bridge.add_paths.assert_called_once_with(paths, from_drop=True, file_conversion=True)
+        bridge.quick_register_and_activate_profile.assert_not_called()
+        bridge.add_format_paths.assert_not_called()
+
+    def test_existing_drop_targets_keep_routing(self):
+        bridge = DesktopWebBridge(Mock())
+        bridge.add_paths = Mock(return_value={})
+        bridge.add_format_paths = Mock(return_value={})
+        bridge.quick_register_and_activate_profile = Mock(return_value={})
+
+        paths = [r'C:\문서.hwpx']
+        bridge.set_drop_target('documents')
+        bridge.receive_drop(paths)
+        bridge.add_paths.assert_called_with(paths, from_drop=True)
+
+        bridge.set_drop_target('manual_documents')
+        bridge.receive_drop(paths)
+        bridge.add_paths.assert_called_with(paths, from_drop=False)
+
+        bridge.set_drop_target('format')
+        bridge.receive_drop(paths)
+        bridge.add_format_paths.assert_called_with(paths)
+
+        bridge.set_drop_target('quick_format')
+        bridge.receive_drop(paths)
+        bridge.quick_register_and_activate_profile.assert_called_with(paths[0])
+
+    def test_conversion_drop_rejects_folders_and_missing_native_paths(self):
+        with tempfile.TemporaryDirectory() as folder:
+            subfolder = Path(folder) / 'sub'
+            subfolder.mkdir()
+            gui = Mock(running=False, files=[])
+            gui.status_var = Mock()
+            gui.파일추가 = Mock(return_value=False)
+            gui.폴더추가 = Mock(return_value=0)
+            bridge = DesktopWebBridge(gui)
+            bridge._tk = lambda callback: callback()
+            bridge.get_file_conversion_state = Mock(return_value={})
+            bridge.set_drop_target('file_conversion')
+
+            bridge.receive_drop([str(subfolder)])
+            gui.status_var.set.assert_called_with('파일을 끌어 놓아 주세요')
+            gui.파일추가.assert_not_called()
+            gui.폴더추가.assert_not_called()
+
+            handler, mock_bridge = self.bind()
+            with self.assertLogs('desktop_web_ui', level='WARNING'):
+                handler.callback({'dataTransfer': {'files': [{'name': 'unknown.pptx'}]}})
+            mock_bridge.receive_drop.assert_not_called()

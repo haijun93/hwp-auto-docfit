@@ -105,4 +105,70 @@ class FileDialogTests(unittest.TestCase):
         self.assertFalse(result['cancelled'])
         self.assertNotIn(str(self.root), str(result))
 
+    def test_conversion_selection_accepts_supported_formats(self):
+        from docfit_core.file_conversion import CONVERSION_INPUTS
+        files = []
+        for ext in sorted(CONVERSION_INPUTS):
+            sample = self.root / f"sample{ext}"
+            sample.write_bytes(b"data")
+            files.append(sample)
+        paths = [str(f) for f in files]
+        res = self.service.register_selection('add_conversion_files', paths)
+        self.assertTrue(res['ok'])
+        token = res['selection_id']
+        resolved = self.service.resolve_selection(token, 'add_conversion_files')
+        self.assertEqual(len(resolved), len(files))
+        for sample in files:
+            with self.subTest(ext=sample.suffix.lower()):
+                self.assertIn(str(sample.resolve()), resolved)
+
+    def test_conversion_purpose_does_not_expand_document_policy(self):
+        pptx = self.root / "test.pptx"
+        pptx.write_bytes(b"pptx_data")
+        res = self.service.register_selection('add_conversion_files', [str(pptx)])
+        self.assertTrue(res['ok'])
+        resolved = self.service.resolve_selection(res['selection_id'], 'add_conversion_files')
+        self.assertEqual(resolved, [str(pptx.resolve())])
+        with self.assertRaises(ServiceError) as ctx:
+            self.service.register_selection('add_files', [str(pptx)])
+        self.assertEqual(ctx.exception.code, 'UNSUPPORTED_FORMAT')
+
+    def test_conversion_token_is_bound_single_use_and_expires(self):
+        pptx = self.root / "bound.pptx"
+        pptx.write_bytes(b"bound")
+        res = self.service.register_selection('add_conversion_files', [str(pptx)])
+        token = res['selection_id']
+        for f in res['files']:
+            self.assertIn('name', f)
+            self.assertNotIn('path', f)
+            self.assertNotIn(str(self.root), str(f))
+        with self.assertRaises(ServiceError) as ctx:
+            self.service.resolve_selection(token, 'add_files')
+        self.assertEqual(ctx.exception.code, 'INVALID_PURPOSE')
+        resolved = self.service.resolve_selection(token, 'add_conversion_files')
+        self.assertEqual(resolved, [str(pptx.resolve())])
+        with self.assertRaises(ServiceError) as ctx:
+            self.service.resolve_selection(token, 'add_conversion_files')
+        self.assertEqual(ctx.exception.code, 'SELECTION_EXPIRED')
+        res2 = self.service.register_selection('add_conversion_files', [str(pptx)])
+        token2 = res2['selection_id']
+        self.now = 300
+        with self.assertRaises(ServiceError) as ctx:
+            self.service.resolve_selection(token2, 'add_conversion_files')
+        self.assertEqual(ctx.exception.code, 'SELECTION_EXPIRED')
+
+    def test_conversion_selection_cancel_and_request_dedup(self):
+        self.service._dialog = lambda *args: []
+        cancel_res = self.service.select_files('conv_cancel', 'add_conversion_files')
+        self.assertEqual(cancel_res, {'ok': True, 'cancelled': True})
+        calls = [0]
+        def counting_dialog(*args):
+            calls[0] += 1
+            return [str(self.file)]
+        self.service._dialog = counting_dialog
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            results = list(ex.map(lambda _: self.service.select_files('conv_dedup', 'add_conversion_files'), range(8)))
+        self.assertEqual(calls[0], 1)
+        self.assertTrue(all(r == results[0] for r in results))
+
 if __name__ == '__main__': unittest.main()

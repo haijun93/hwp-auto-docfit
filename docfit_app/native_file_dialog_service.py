@@ -11,12 +11,14 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 from .api_contract import ServiceError
+from docfit_core.file_conversion import CONVERSION_INPUTS
 
 DOCUMENTS = frozenset({'.hwp', '.hwpx', '.pdf', '.doc', '.docx', '.txt', '.md'})
 PURPOSES = {
     'add_files': ('open', DOCUMENTS),
     'add_folder': ('directory', DOCUMENTS),
     'add_format_file': ('open', frozenset({'.hwp', '.hwpx'})),
+    'add_conversion_files': ('open', CONVERSION_INPUTS),
     'idioms': ('open', frozenset({'.hwp', '.hwpx', '.ido'})),
     'table_template': ('open', frozenset({'.hwpx'})),
     'flow_png': ('save', frozenset({'.png'})),
@@ -72,7 +74,7 @@ class NativeFileDialogService:
             fail('INVALID_PURPOSE')
         expected, extensions = PURPOSES[purpose]
         if mode is not None and (mode != expected or type(multiple) is not bool or
-                                 (multiple and (mode != 'open' or purpose != 'add_files'))):
+                                 (multiple and (mode != 'open' or purpose not in {'add_files', 'add_conversion_files'}))):
             fail('INVALID_INPUT')
         return expected, extensions
 
@@ -120,7 +122,7 @@ class NativeFileDialogService:
         mode, extensions = self._policy(purpose)
         if not isinstance(paths, (list, tuple)) or not 1 <= len(paths) <= self.MAX_FILES:
             fail('INVALID_PATH')
-        if purpose not in {'add_files', 'add_format_file'} and len(paths) != 1:
+        if purpose not in {'add_files', 'add_format_file', 'add_conversion_files'} and len(paths) != 1:
             fail('INVALID_PATH')
         canonical = list(dict.fromkeys(self._path(p, mode, extensions) for p in paths))
         identities = [self._identity(p) for p in canonical]

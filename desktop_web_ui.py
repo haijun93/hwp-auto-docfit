@@ -486,6 +486,18 @@ class DesktopWebBridge:
             state["can_start"] = self._can_start(state["mode"], files, state["running"], targets)
         return state
 
+    def get_file_conversion_state(self):
+        state = dict(self.get_state())
+        files = [item["path"] for item in state.get("files", [])]
+        if state.get("mode") == "file_format" and state.get("conversion_targets"):
+            targets = state["conversion_targets"]
+        else:
+            targets = self._conversion_targets(files)
+        state["conversion_targets"] = targets
+        state["conversion_target"] = self.conversion_target
+        state["can_start"] = self._can_start("file_format", files, state.get("running", False), targets)
+        return state
+
     def _can_start(self, mode, files, running, conversion_targets=None):
         if not files or running:
             return False
@@ -643,6 +655,13 @@ class DesktopWebBridge:
             return {'ok': False, 'error': 'FILE_SELECTION_REQUIRED'}
         return self.add_paths(self._file_dialogs.resolve_selection(selection_id, 'add_files'))
 
+    def add_conversion_files(self, selection_id=None):
+        if not selection_id:
+            return {'ok': False, 'error': 'FILE_SELECTION_REQUIRED'}
+        paths = self._file_dialogs.resolve_selection(selection_id, 'add_conversion_files')
+        self.add_paths(paths, file_conversion=True)
+        return self.get_file_conversion_state()
+
     def add_folder(self):
         return {'ok': False, 'error': 'FILE_SELECTION_REQUIRED'}
 
@@ -650,25 +669,32 @@ class DesktopWebBridge:
         paths = self._file_dialogs.resolve_selection(selection_id, 'add_folder')
         return self.add_paths(self._file_dialogs.directory_files(paths, recursive))
 
-    def add_paths(self, paths, *, from_drop=False):
+    def add_paths(self, paths, *, from_drop=False, file_conversion=False):
         if not isinstance(paths, (list, tuple)):
-            return self.get_state()
+            return self.get_file_conversion_state() if file_conversion else self.get_state()
         if len(paths) > 1000:
-            return self.get_state()
+            return self.get_file_conversion_state() if file_conversion else self.get_state()
 
         if paths:
             from docfit_app.api_contract import ServiceError
+            purpose = 'add_conversion_files' if file_conversion else 'add_files'
             try:
-                selection = self._file_dialogs.register_selection('add_files', paths)
-                paths = self._file_dialogs.resolve_selection(selection['selection_id'], 'add_files')
+                selection = self._file_dialogs.register_selection(purpose, paths)
+                paths = self._file_dialogs.resolve_selection(selection['selection_id'], purpose)
             except ServiceError:
-                return self.get_state()
+                return self.get_file_conversion_state() if file_conversion else self.get_state()
 
         def add():
             if self.gui.running:
                 return
             self._cancel_pending_drop()
             added = 0
+            if file_conversion:
+                from docfit_core.file_conversion import CONVERSION_INPUTS
+                allowed_extensions = CONVERSION_INPUTS
+            else:
+                allowed_extensions = set(SUPPORTED_INPUT_EXTENSIONS) | {".txt", ".md", ".doc"}
+
             for value in paths:
                 path = str(value or "").strip()
                 if len(path) > 32767:
@@ -681,14 +707,21 @@ class DesktopWebBridge:
                         continue
                     candidate = candidate.resolve(strict=True)
                     path = str(candidate)
-                    if candidate.is_file() and candidate.suffix.lower() not in (
-                        set(SUPPORTED_INPUT_EXTENSIONS) | {".txt", ".md", ".doc"}
-                    ):
-                        continue
-                    if Path(path).is_dir():
-                        added += self.gui.폴더추가(path)
-                    elif self.gui.파일추가(path):
-                        added += 1
+                    if file_conversion:
+                        if candidate.is_dir():
+                            self.gui.status_var.set("파일을 끌어 놓아 주세요")
+                            continue
+                        if candidate.is_file() and candidate.suffix.lower() not in allowed_extensions:
+                            continue
+                        if self.gui.파일추가(path, file_conversion=True):
+                            added += 1
+                    else:
+                        if candidate.is_file() and candidate.suffix.lower() not in allowed_extensions:
+                            continue
+                        if Path(path).is_dir():
+                            added += self.gui.폴더추가(path)
+                        elif self.gui.파일추가(path):
+                            added += 1
                 except (OSError, ValueError):
                     continue
             if added:
@@ -700,7 +733,7 @@ class DesktopWebBridge:
                 self._cancel_pending_drop()
 
         self._tk(add)
-        return self.get_state()
+        return self.get_file_conversion_state() if file_conversion else self.get_state()
 
     def remove_file(self, index):
         def remove():
@@ -1752,7 +1785,7 @@ class DesktopWebBridge:
     # ---- 서식 관리(예시 보고서로 서식 복제·이름 바꾸기·세부 수정·삭제) ----
     def set_drop_target(self, target):
         """끌어 놓은 파일을 넣을 곳을 바꾼다: documents(문서 목록) 또는 format(예시 서식 복제)."""
-        if target not in ("documents", "manual_documents", "format", "quick_format"):
+        if target not in ("documents", "manual_documents", "format", "quick_format", "file_conversion"):
             raise ValueError("지원하지 않는 놓기 대상입니다.")
         self.drop_target = target
         if target == "format":   # 서식 관리 창을 열 때 서식예시 폴더에 새로 넣은 예시를 찾아 등록한다
@@ -1797,6 +1830,8 @@ class DesktopWebBridge:
 
     def receive_drop(self, paths, client_x=None, client_y=None):
         """창에 끌어 놓은 파일: '서식 관리' 창이 열려 있으면 예시 서식 복제, 아니면 문서 목록에 추가."""
+        if self.drop_target == "file_conversion":
+            return self.add_paths(paths, from_drop=True, file_conversion=True)
         if self.drop_target == "format":
             return self.add_format_paths(paths)
         bounds = getattr(self, "_profile_drop_bounds", None)
@@ -1986,7 +2021,7 @@ class _BrowserApi:
     def __init__(self, bridge):
         for name in (
             "cancel_zero_click", "start_zero_click", "quick_register_and_activate_profile", "drop_format_file", "set_profile_drop_bounds",
-            "get_state", "add_files", "add_folder", "add_paths", "remove_file",
+            "get_state", "get_file_conversion_state", "select_files", "selection_status", "add_files", "add_conversion_files", "add_folder", "add_paths", "remove_file",
             "clear_files", "set_mode", "set_range", "start", "stop", "start_job", "cancel_job", "get_events",
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
             "get_pending_dialog", "resolve_dialog", "enable_close_guard", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch",

@@ -4282,7 +4282,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 except Exception as e:
                     self._알림(messagebox.showerror, APP_NAME, f"로그 복사 중 오류가 발생했습니다.\n\n{e}", parent=self.root)
 
-            def 파일추가(self, file_path):
+            def 파일추가(self, file_path, *, file_conversion=False):
                 try:
                     file_path = str(Path(file_path).resolve())
                 except Exception:
@@ -4290,7 +4290,12 @@ def _install(*, _docfit_namespace, _docfit_symbol):
 
                 if not os.path.isfile(file_path):
                     return False
-                if Path(file_path).suffix.lower() not in 지원_확장자:
+                if file_conversion:
+                    from docfit_core.file_conversion import CONVERSION_INPUTS
+                    allowed_exts = CONVERSION_INPUTS
+                else:
+                    allowed_exts = 지원_확장자
+                if Path(file_path).suffix.lower() not in allowed_exts:
                     return False
                 if file_path in self.files:
                     return False

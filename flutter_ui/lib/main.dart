@@ -18,6 +18,7 @@ import 'features/tools/document_tools_workspace.dart';
 import 'features/tools/backend_dialog.dart';
 import 'features/conversion/floating_format_picker.dart';
 import 'features/conversion/merge_order_dialog.dart';
+import 'features/conversion/file_conversion_workspace.dart';
 import 'features/flows/flow_editor_screen.dart';
 import 'features/progress/live_progress.dart';
 import 'features/settings/settings_dialog.dart';
@@ -106,22 +107,67 @@ class DocFitApp extends StatelessWidget {
       ),
     ),
     home: useIntegratedShell
-        ? IntegratedWorkspace(
-            api: api,
-            documentEditorWidget: Workspace(api: api),
-            fileConversionWidget: DocumentToolsWorkspace(
-              api: api,
-              initial: 'convert',
-              isModal: false,
-            ),
-          )
+        ? _IntegratedAppWorkspace(api: api)
         : Workspace(api: api),
   );
 }
 
-class Workspace extends StatefulWidget {
-  const Workspace({super.key, required this.api});
+class _IntegratedAppWorkspace extends StatefulWidget {
+  const _IntegratedAppWorkspace({required this.api});
   final ApiCall api;
+
+  @override
+  State<_IntegratedAppWorkspace> createState() => _IntegratedAppWorkspaceState();
+}
+
+class _IntegratedAppWorkspaceState extends State<_IntegratedAppWorkspace> {
+  int selectedIndex = 0;
+  int _dropTargetGeneration = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _routeDropTarget(0);
+  }
+
+  Future<void> _routeDropTarget(int index) async {
+    final gen = ++_dropTargetGeneration;
+    final target = index == 5 ? 'file_conversion' : 'documents';
+    try {
+      await widget.api('set_drop_target', [target]);
+    } catch (_) {}
+    if (!mounted || gen != _dropTargetGeneration) return;
+  }
+
+  void _onTabChanged(int index) {
+    if (selectedIndex == index) return;
+    setState(() {
+      selectedIndex = index;
+    });
+    _routeDropTarget(index);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IntegratedWorkspace(
+      api: widget.api,
+      documentEditorWidget: Workspace(
+        api: widget.api,
+        isActive: selectedIndex == 0,
+      ),
+      fileConversionWidget: FileConversionWorkspace(
+        api: widget.api,
+        isActive: selectedIndex == 5,
+      ),
+      onTabChanged: _onTabChanged,
+    );
+  }
+}
+
+class Workspace extends StatefulWidget {
+  const Workspace({super.key, required this.api, this.isActive = true});
+  final ApiCall api;
+  final bool isActive;
   @override
   State<Workspace> createState() => _WorkspaceState();
 }
@@ -141,7 +187,7 @@ class _WorkspaceState extends State<Workspace> {
   String? lastQuickNotice;
 
   void reportProfileBounds() {
-    if (!kIsWeb || !mounted) return;
+    if (!widget.isActive || !kIsWeb || !mounted) return;
     final box = profileDropKey.currentContext?.findRenderObject();
     if (box is! RenderBox || !box.hasSize) return;
     final point = box.localToGlobal(Offset.zero);
@@ -159,6 +205,28 @@ class _WorkspaceState extends State<Workspace> {
           .then((_) {})
           .catchError((_) {}),
     );
+  }
+
+  @override
+  void didUpdateWidget(Workspace oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isActive && !widget.isActive) {
+      lastProfileBounds = null;
+      unawaited(
+        widget
+            .api('set_profile_drop_bounds', [
+              [0.0, 0.0, 0.0, 0.0],
+            ])
+            .then((_) {})
+            .catchError((_) {}),
+      );
+    } else if (!oldWidget.isActive && widget.isActive) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && widget.isActive) {
+          reportProfileBounds();
+        }
+      });
+    }
   }
 
   bool _conversionPickerOpen = false;
@@ -336,19 +404,21 @@ class _WorkspaceState extends State<Workspace> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       stateVersion.value++;
-      reportProfileBounds();
-      final quickNotice = state['quick_notice'] as Map? ?? const {};
-      if (quickNotice['id'] is String && quickNotice['id'] != lastQuickNotice) {
-        lastQuickNotice = quickNotice['id'] as String;
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('${quickNotice['message']}')));
-      }
-      if (files.isNotEmpty &&
-          !locked &&
-          (documentDropped || (documentsChanged && mode == 'file_format'))) {
-        setState(() => tab = 1);
-        if (mode == 'file_format') openConversionPicker();
+      if (widget.isActive) {
+        reportProfileBounds();
+        final quickNotice = state['quick_notice'] as Map? ?? const {};
+        if (quickNotice['id'] is String && quickNotice['id'] != lastQuickNotice) {
+          lastQuickNotice = quickNotice['id'] as String;
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('${quickNotice['message']}')));
+        }
+        if (files.isNotEmpty &&
+            !locked &&
+            (documentDropped || (documentsChanged && mode == 'file_format'))) {
+          setState(() => tab = 1);
+          if (mode == 'file_format') openConversionPicker();
+        }
       }
     });
     checkBackendDialog();
@@ -436,7 +506,7 @@ class _WorkspaceState extends State<Workspace> {
   }
 
   Future<void> openConversionPicker() async {
-    if (!mounted || locked || _conversionPickerOpen) return;
+    if (!widget.isActive || !mounted || locked || _conversionPickerOpen) return;
     _conversionPickerOpen = true;
     String? picked;
     try {
@@ -1782,6 +1852,7 @@ class _WorkspaceState extends State<Workspace> {
   Map get formatTask => state['format_task'] as Map? ?? const {};
 
   Future<void> setDropTarget(String target) async {
+    if (!widget.isActive) return;
     try {
       await widget.api('set_drop_target', [
         target == 'documents' && settingsVisible ? 'manual_documents' : target,
