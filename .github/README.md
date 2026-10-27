@@ -8,8 +8,8 @@
 </p>
 
 <p align="center">
-<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.15/HWP_AutoDocFit_v1.80.15_Portable.exe"><img alt="GitHub에서 무설치로 받기" src="https://img.shields.io/badge/GitHub-%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v1.80.15-2563eb?style=for-the-badge&logo=github"></a>
-<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.15/HWP_AutoDocFit_v1.80.15_Setup.exe"><img alt="GitHub에서 설치용 받기" src="https://img.shields.io/badge/GitHub-%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0-0ea5e9?style=for-the-badge&logo=github"></a>
+<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.0.0/HWP_AutoDocFit_v2.0.0_Portable.exe"><img alt="GitHub에서 무설치로 받기" src="https://img.shields.io/badge/GitHub-%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v2.0.0-2563eb?style=for-the-badge&logo=github"></a>
+<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.0.0/HWP_AutoDocFit_v2.0.0_Setup.exe"><img alt="GitHub에서 설치용 받기" src="https://img.shields.io/badge/GitHub-%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0-0ea5e9?style=for-the-badge&logo=github"></a>
 <br>
 </p>
 <p align="center">
@@ -26,7 +26,32 @@
 
 ---
 
-<h2 align="center">새로워진 v1.80.15</h2>
+<h2 align="center">새로워진 v2.0.0 메이저 릴리즈</h2>
+<p align="center">차세대 통합 단일 셸(Flutter 6-Tab) 안착, 한글 타이포그래피 정밀 조판(표 줄간격 100%·자간 -25%, 원문자 콜론 정렬), 공공 표준 표 6대 템플릿 탑재</p>
+
+### 차세대 통합 단일 셸 워크스페이스 (Flutter 6-Tab) (2.0.0)
+
+6개 핵심 작업 도구(자간/행간 맞춤, 표 단위 서식, 표그림판, 다이어그램, 마인드맵, 공공도구함)가 하나의 단일 창 안에서 탭 전환으로 매끄럽게 연결됩니다. 탭 전환 시 창 닫기 보호 장치(CloseGuards)를 분리하여 백그라운드 작업 손실 없이 신속하게 화면을 넘나들 수 있습니다.
+
+### 표 셀 줄간격 최소 100% 및 자간 -25% 보장 (TODO 76~82) (2.0.0)
+
+표 안의 글자가 위아래로 답답하게 겹치지 않도록 줄간격을 최소 100%로 보장하고, 자간을 최소 -25%까지 조절하여 가독성을 극대화했습니다. 구형 20자 분기 휴리스틱을 전면 폐기하여 모든 표 칸에서 균일하고 단정한 조판 품질을 제공합니다.
+
+### 원문자·항목기호 콜론 후속 자동 들여쓰기 정렬 (TODO 96) (2.0.0)
+
+원문자(`①~⑳`), 번호(`1.`), 한글 기호 뒤에 콜론(`:`, `：`)이 오는 문단(`①사업목적:인공지능`)에서 둘째 줄 이상의 후속 문장이 콜론 뒤 본문 첫 글자에 수직으로 칼같이 일치하도록 자동 들여쓰기(Hanging Indent) 메트릭스를 적용했습니다.
+
+### 플로우차트 네이티브 한글 도형 클립보드 복사 (TODO 164~168) (2.0.0)
+
+다이어그램 및 흐름도 편집기에서 작성한 사각형, 타원, 화살표 연결선을 비트맵 이미지가 아닌 실제 한/글 고유의 네이티브 벡터 도형(`hp:rect`, `hp:ellipse`, `hp:connectLine`)으로 한/글에 즉시 붙여넣을 수 있습니다.
+
+### 공공기관 행정 보고서 표준 표 6대 템플릿 탑재 (2.0.0)
+
+행정안전부 및 기획재정부 보고서 지침을 준수한 6대 표준 표(요약 1칸 표, 2열 정의 표, 3~4열 비교 표, 간트차트 일정표, 예산 산출 표, Q&A 체크리스트 표) 정밀 메트릭스 및 프리셋이 탑재되었습니다.
+
+---
+
+<h2 align="center">이전 릴리즈 (v1.80.15)</h2>
 <p align="center">표 템플릿 UI 중복 상단 메뉴 전면 삭제, PPT 스타일 가로 1줄 컴팩트 리본 및 한/글 즉시 복사 버튼 탑재</p>
 
 ### 표 템플릿 화면 수직 공간 극대화 및 중복 메뉴 삭제 (1.80.14)
@@ -299,15 +324,15 @@ GitHub가 막힌 기관 PC에서도 위 「받기」 링크가 GitLab에서 바�
 
 | 파일 | 받기 | 용도 |
 |---|---|---|
-| **포터블 · HWP_AutoDocFit_v1.80.15_Portable.exe** | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.15/HWP_AutoDocFit_v1.80.15_Portable.exe) | 설치 없이 바로 실행 |
-| 설치용 · HWP_AutoDocFit_v1.80.15_Setup.exe | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.15/HWP_AutoDocFit_v1.80.15_Setup.exe) | 시작 메뉴 등록, Windows 앱 제거로 정리 |
+| **포터블 · HWP_AutoDocFit_v2.0.0_Portable.exe** | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.0.0/HWP_AutoDocFit_v2.0.0_Portable.exe) | 설치 없이 바로 실행 |
+| 설치용 · HWP_AutoDocFit_v2.0.0_Setup.exe | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.0.0/HWP_AutoDocFit_v2.0.0_Setup.exe) | 시작 메뉴 등록, Windows 앱 제거로 정리 |
 | 보고서 예시 파일(한번에 적용).txt | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/latest) | 처음 체험용 예시 |
-| SHA256SUMS | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v1.80.15/SHA256SUMS) | 내려받은 파일 확인용 해시 |
+| SHA256SUMS | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.0.0/SHA256SUMS) | 내려받은 파일 확인용 해시 |
 
 - **필요한 것**: Windows 10·11(64비트), 문서를 편집할 수 있는 **한컴오피스 한/글**(모든 버전 사용 — NEO·2018·2020·2022·2024 등). Python 등 다른 설치는 필요 없습니다.
 - 변환 엔진은 실행 파일에 들어 있습니다. 첫 실행 때 `C:\HWP_AUTODOCFIT`(쓰기 권한이 없으면 `%LOCALAPPDATA%\HwpAutoDocFit`)에 풀며, 인터넷에서 받지 않습니다.
 - 모든 릴리스는 [GitHub 릴리스](https://github.com/haijun93/hwp-auto-docfit/releases/latest)에 있습니다.
-- [v1.80.15 변경 사항](../releases/v1.80.15.md) · [GitHub](https://github.com/haijun93/hwp-auto-docfit)
+- [v2.0.0 변경 사항](../releases/v2.0.0.md) · [GitHub](https://github.com/haijun93/hwp-auto-docfit)
 
 ---
 
@@ -355,5 +380,5 @@ GitHub가 막힌 기관 PC에서도 위 「받기」 링크가 GitLab에서 바�
 
 <p align="center">
 <a href="../docs/USER_GUIDE.md"><b>자세한 사용 설명서</b></a> — 기능별 사용법·옵션·결과 파일·문제 해결<br>
-<a href="../releases/v1.80.15.md">v1.80.15 변경 사항</a> · <a href="../HANDOVER.md">개발 인수인계 문서</a> · <a href="../THIRD_PARTY_NOTICES.md">사용한 오픈소스</a> · <a href="../LICENSE">라이선스</a>
+<a href="../releases/v2.0.0.md">v2.0.0 변경 사항</a> · <a href="../HANDOVER.md">개발 인수인계 문서</a> · <a href="../THIRD_PARTY_NOTICES.md">사용한 오픈소스</a> · <a href="../LICENSE">라이선스</a>
 </p>
