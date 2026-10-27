@@ -474,9 +474,19 @@ class BrowserApiTests(unittest.TestCase):
         gui.running = True
         self.assertTrue(bridge.set_card_option("all_exclude_pagefit", False)["card_options"]["all_exclude_pagefit"])
 
-    @mock.patch("desktop_web_ui.Path.resolve", return_value=Path(r"C:\a\report.hwpx"))
-    def test_format_manager_profiles_drop_routing_and_edits(self, _resolve):
+    def test_format_manager_profiles_drop_routing_and_edits(self):
         # 서식 목록은 이름·기관·기본 서식 여부·예시 파일·사용 중 여부를 함께 준다.
+        import tempfile
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        sample_0 = str(Path(temporary.name) / "sample_0.txt")
+        Path(sample_0).write_bytes(b"sample")
+        sample_1 = str(Path(temporary.name) / "sample_1.hwpx")
+        Path(sample_1).write_bytes(b"sample")
+        sample_2 = str(Path(temporary.name) / "sample_2.hwp")
+        Path(sample_2).write_bytes(b"sample")
+        sample_3 = str(Path(temporary.name) / "sample_3.hwpx")
+        Path(sample_3).write_bytes(b"sample")
         gui = _FakeGui()
         gui._프로파일들["abc"]["source"] = {"filename": "예시.hwpx"}
         bridge = _bridge(gui)
@@ -494,14 +504,14 @@ class BrowserApiTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             bridge.set_drop_target("somewhere")
         self.assertEqual(bridge.set_drop_target("format")["drop_target"], "format")
-        bridge.receive_drop([r"C:\a\메모.txt", r"C:\a\예시.hwpx", r"C:\a\둘째.hwp"])
-        self.assertEqual(started, [(r"C:\a\예시.hwpx", False)])
+        bridge.receive_drop([sample_0, sample_1, sample_2])
+        self.assertEqual(started, [(sample_1, False)])
         self.assertEqual(added, [])
-        bridge.receive_drop([r"C:\a\메모.txt"])
+        bridge.receive_drop([sample_0])
         self.assertIn("HWP 또는 HWPX", gui.status_var.get())
         bridge.set_drop_target("documents")
-        bridge.receive_drop([r"C:\a\보고서.hwpx"])
-        self.assertEqual(added, [r"C:\a\report.hwpx"])
+        bridge.receive_drop([sample_3])
+        self.assertEqual(added, [sample_3])
         self.assertEqual(len(started), 1)
         # 이름 바꾸기·삭제가 안 되면 notice에 이유를 담는다.
         gui._서식_이름_저장 = lambda identifier, name, organization: "이미 사용 중인 서식 이름입니다." if name == "중복" else None

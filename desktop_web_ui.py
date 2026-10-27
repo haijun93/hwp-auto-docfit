@@ -66,6 +66,8 @@ class DesktopWebBridge:
 
     def __init__(self, gui):
         self.gui = gui
+        from docfit_app.native_file_dialog_service import NativeFileDialogService
+        self._file_dialogs = NativeFileDialogService()
         self.window = None
         self.tk_stopped = None
         # 사용자가 웹 창을 닫아 종료하는 중인지. 이때는 창이 스스로 닫히므로
@@ -92,6 +94,7 @@ class DesktopWebBridge:
         manager = getattr(self.gui, '_job_manager', None)
         if manager is not None:
             threading.Thread(target=manager.shutdown, daemon=True).start()
+        self._file_dialogs.close()
         self._cancel_pending_drop()
         with self._request_lock:
             self._closed = True
@@ -618,21 +621,48 @@ class DesktopWebBridge:
               for kind in IMAGE_FORMATS),
         ]
 
-    def add_files(self):
-        self._tk(self.gui.파일선택, timeout=None, front=True)
-        self._tk(self._update_document_hints)
-        return self.get_state()
+    def select_files(self, payload):
+        self._file_dialogs.submit_selection(**payload)
+        return self._file_dialogs.selection_status(payload['request_id'])
+
+    def selection_status(self, request_id):
+        return self._file_dialogs.selection_status(request_id)
+
+    def register_selection(self, payload):
+        return self._file_dialogs.register_selection(**payload)
+
+    def _selection_path(self, payload, purpose, key='input_selection_id'):
+        from docfit_app.api_contract import ServiceError
+        token = payload.get(key)
+        if not token:
+            raise ServiceError('FILE_SELECTION_REQUIRED', 'Select a file first.')
+        return self._file_dialogs.resolve_selection(token, purpose)[0]
+
+    def add_files(self, selection_id=None):
+        if not selection_id:
+            return {'ok': False, 'error': 'FILE_SELECTION_REQUIRED'}
+        return self.add_paths(self._file_dialogs.resolve_selection(selection_id, 'add_files'))
 
     def add_folder(self):
-        self._tk(self.gui._폴더선택, timeout=None, front=True)
-        self._tk(self._update_document_hints)
-        return self.get_state()
+        return {'ok': False, 'error': 'FILE_SELECTION_REQUIRED'}
+
+    def add_directory(self, selection_id, recursive=False):
+        paths = self._file_dialogs.resolve_selection(selection_id, 'add_folder')
+        return self.add_paths(self._file_dialogs.directory_files(paths, recursive))
 
     def add_paths(self, paths, *, from_drop=False):
         if not isinstance(paths, (list, tuple)):
             return self.get_state()
-        if len(paths) > 100:
+        if len(paths) > 1000:
             return self.get_state()
+
+        if paths:
+            from docfit_app.api_contract import ServiceError
+            try:
+                selection = self._file_dialogs.register_selection('add_files', paths)
+                paths = self._file_dialogs.resolve_selection(selection['selection_id'], 'add_files')
+            except ServiceError:
+                return self.get_state()
 
         def add():
             if self.gui.running:
@@ -1152,6 +1182,12 @@ class DesktopWebBridge:
         self._tk(resolve)
         return {"ok": True}
 
+    def flow_export(self, payload):
+        from docfit_app.api_contract import ServiceError
+        if not isinstance(payload, dict) or payload.get('format') not in {'png', 'hwpx'}:
+            raise ServiceError('INVALID_INPUT', 'Choose PNG or HWPX.')
+        return self.flow_editor('export_' + payload['format'], payload)
+
     def flow_editor(self, action, payload):
         from docfit_app.flow_service import FlowService
         from docfit_app.api_contract import ServiceError
@@ -1165,16 +1201,10 @@ class DesktopWebBridge:
         if action == "export_png":
             import os
             import tempfile
-            from tkinter import filedialog
             data = service.png_bytes(payload.get("base64"))
             raw_name = payload.get("name", "표/다이어그램")
             name = "".join(c for c in str(raw_name)[:120] if c.isalnum() or c in " _-") or "표 다이어그램"
-            selected = self._tk(lambda: filedialog.asksaveasfilename(
-                parent=self.gui.root, title="표/다이어그램 PNG 저장", initialfile=name + ".png",
-                defaultextension=".png", filetypes=[("PNG 이미지", "*.png")],
-            ), front=True)
-            if not selected:
-                return {"cancelled": True}
+            selected = self._selection_path(payload, 'flow_png', 'output_selection_id')
             target = Path(selected)
             if target.suffix.lower() != ".png":
                 raise ServiceError("INVALID_PATH", "PNG 파일로 저장해 주세요.")
@@ -1195,7 +1225,6 @@ class DesktopWebBridge:
             import os
             import sys
             import tempfile
-            from tkinter import filedialog
             from docfit_core.table_builder import TableSpecError, build_table_hwpx, normalize
             from docfit_app.table_template_service import TableTemplateService
             spec = payload.get("spec")
@@ -1207,12 +1236,7 @@ class DesktopWebBridge:
                 raise ServiceError("INVALID_TABLE", str(exc)) from exc
             raw_name = payload.get("name", "표")
             name = "".join(c for c in str(raw_name)[:120] if c.isalnum() or c in " _-") or "표"
-            selected = self._tk(lambda: filedialog.asksaveasfilename(
-                parent=self.gui.root, title="표 HWPX 저장", initialfile=name + ".hwpx",
-                defaultextension=".hwpx", filetypes=[("한/글 문서", "*.hwpx")],
-            ), front=True)
-            if not selected:
-                return {"cancelled": True}
+            selected = self._selection_path(payload, 'flow_hwpx', 'output_selection_id')
             target = Path(selected)
             if target.suffix.lower() != ".hwpx":
                 raise ServiceError("INVALID_PATH", "HWPX 파일로 저장해 주세요.")
@@ -1443,14 +1467,8 @@ class DesktopWebBridge:
                 os.startfile(str(path))   # 한/글에서 열어 내용을 고친다
                 return snapshot
             if action == "add_body" and isinstance(data, dict):
-                if not data.get("path"):
-                    from tkinter import filedialog
-                    picked = self._tk(lambda: filedialog.askopenfilename(
-                        parent=self.gui.root, title="본문 상용구로 쓸 문서",
-                        filetypes=[("한/글 문서", "*.hwp *.hwpx")]), front=True)
-                    if not picked:
-                        return service.snapshot()
-                    data["path"] = picked
+                if data.get('input_selection_id') or not data.get('path'):
+                    data['path'] = self._selection_path(data, 'idioms')
                 source = Path(str(data["path"]))
                 if source.suffix.lower() == ".hwpx" and source.is_file():
                     # 한/글 본문 상용구는 HWP 문서라 한/글로 바꿔 넣는다.
@@ -1494,17 +1512,13 @@ class DesktopWebBridge:
             if action != "get":
                 self.gui._준말_서비스()._editable(self.gui.running)
             data = dict(payload) if isinstance(payload, dict) else payload
-            if action == "learn" and isinstance(data, dict) and not data.get("path"):
-                from tkinter import filedialog
-                path = filedialog.askopenfilename(parent=self.gui.root,
-                    title="기본 데이터 표 서식 학습", filetypes=[("HWPX 문서", "*.hwpx")])
-                if not path:
-                    return TableTemplateService(self.gui._준말_서비스()).snapshot()
-                data["path"] = path
+            if action == 'learn' and isinstance(data, dict):
+                if data.get('input_selection_id') or not data.get('path'):
+                    data['path'] = self._selection_path(data, 'table_template')
             result = TableTemplateService(self.gui._준말_서비스()).command(
                 action, data, running=self.gui.running)
             return result
-        return self._tk(lambda: response(execute), front=action == "learn")
+        return self._tk(lambda: response(execute))
 
     def _table_units_hwp(self):
         """앱이 쓰는 방식 그대로 독립 한/글을 만들고 보안 모듈을 등록해 숨긴다."""
@@ -1757,8 +1771,14 @@ class DesktopWebBridge:
 
     def add_format_paths(self, paths):
         """끌어 놓은 예시 보고서(HWP/HWPX) 중 첫 파일의 서식을 분석해 새 서식으로 복제한다."""
-        candidates = [str(value or "").strip() for value in (paths or [])]
-        candidates = [path for path in candidates if Path(path).suffix.lower() in (".hwp", ".hwpx")]
+        from docfit_app.api_contract import ServiceError
+        candidates = [str(p) for p in (paths or []) if Path(str(p)).suffix.lower() in {'.hwp', '.hwpx'}]
+        if candidates:
+            try:
+                selection = self._file_dialogs.register_selection('add_format_file', candidates)
+                candidates = self._file_dialogs.resolve_selection(selection['selection_id'], 'add_format_file')
+            except ServiceError:
+                return self.get_state()
 
         def start():
             gui = self.gui
@@ -1790,10 +1810,10 @@ class DesktopWebBridge:
             return self.add_paths(paths, from_drop=False)
         return self.add_paths(paths, from_drop=True)
 
-    def add_format_file(self):
-        """예시 보고서 파일을 골라 서식을 복제한다."""
-        self._tk(self.gui._서식_파일에서_추가, timeout=None, front=True)
-        return self.get_state()
+    def add_format_file(self, selection_id=None):
+        if not selection_id:
+            return {'ok': False, 'error': 'FILE_SELECTION_REQUIRED'}
+        return self.add_format_paths(self._file_dialogs.resolve_selection(selection_id, 'add_format_file'))
 
     def write_format_example(self):
         """빈 한/글 문서에 예시를 직접 써서 서식을 만든다."""

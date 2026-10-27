@@ -568,3 +568,12 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 - Global section ID allocation, borderFill/character/paragraph style mapping and itemCnt updates; cloned document formatting; ZIP limits/path/duplicate/CRC checks; defusedxml DTD rejection and style reference validation.
 - Validation: requested pytest files (adapter/session/diff_host/canvas_hwpx): 62 passed, 106 subtests passed. Adapter unittest: 8 passed. CRLF and git diff --check passed.
 - No COM or user document changes. Official XSD and Hancom reopen/render validation remain separate gates. Existing unrelated task instruction file preserved.
+
+## Codex 결과 보고 — V2 파일 선택 서비스 (2026-10-27)
+
+- 사용자 지정 dev/2.0.0에서 NativeFileDialogService 및 DesktopWebBridge 파일/폴더 추가·PNG/HWPX 저장·상용구 문서·표 서식 학습 경로를 구현했다. 기존 무관한 작업 지시 파일은 보존했다.
+- 선택창은 전용 STA에서 Win32 공용 파일창/Shell 폴더창으로 실행한다(설치된 pywin32에 IFileDialog 래퍼 없음). Tk 파일창 호출 제거. select_files는 request_id와 pending 상태를 즉시 반환하며 selection_status로 완료 토큰을 조회한다.
+- 목적 허용목록, 5분 만료, 단일 사용, 요청 중복 제거, 실제 경로/확장자/파일 ID 재검증, ADS·네트워크·부모 reparse 거부, 폴더 비재귀 기본·1000개 상한·파일 ID 중복 제거를 적용했다.
+- 선택 완료 응답에는 이름/크기만 포함한다. 파일 추가는 add_paths, 폴더는 add_directory, 저장/가져오기는 output_selection_id/input_selection_id를 사용한다. 선택 없이 호출하면 FILE_SELECTION_REQUIRED. 일반 상태 조회용 _tk RPC는 유지한다.
+- 지정 5개 pytest와 관련 브리지/드롭/흐름도/수명 주기 시험 합계 128개 및 142 subtests PASS. 추가 reparse·브리지 연결 시험 포함 신규 서비스 최종 12개 및 4 subtests PASS.
+- CRLF 및 diff 검사 수행. 사용자 원본 수정·한/글 COM 시험 없음. 실제 Windows 대화상자 조작/Flutter 통합 UI 검증은 미실행이며, 전체 저장소 unittest 실행 결과로 보고하지 않는다.
