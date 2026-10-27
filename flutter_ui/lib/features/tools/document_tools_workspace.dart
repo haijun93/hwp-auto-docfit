@@ -101,6 +101,7 @@ class _ToolsState extends State<DocumentToolsWorkspace> {
 
   void leave() {
     if (busy || closing) return;
+    if (!Navigator.of(context).canPop()) return; // 탭 안에서는 닫을 화면이 없다(앱 멈춤 방지)
     setState(() => closing = true);
     Navigator.pop(context);
   }
@@ -125,10 +126,14 @@ class _ToolsState extends State<DocumentToolsWorkspace> {
     },
     child: Scaffold(
       appBar: AppBar(
-        leading: IconButton(
-          onPressed: busy ? null : leave,
-          icon: const Icon(Icons.arrow_back),
-        ),
+        // 탭 안에서는 ← 버튼을 보이지 않는다. 새 화면으로 열었을 때만 표시.
+        automaticallyImplyLeading: false,
+        leading: !Navigator.of(context).canPop()
+            ? null
+            : IconButton(
+                onPressed: busy ? null : leave,
+                icon: const Icon(Icons.arrow_back),
+              ),
         title: const Text('텍스트 입력'),
       ),
       body: Padding(

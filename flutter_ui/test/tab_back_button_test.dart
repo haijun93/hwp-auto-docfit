@@ -1,3 +1,4 @@
+import 'package:docfit_ui/features/tools/document_tools_workspace.dart';
 import 'package:docfit_ui/features/workspace/tab_navigation_shell.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -84,4 +85,22 @@ void main() {
     expect(find.byType(NavigationBar), findsOneWidget);
     expect(tester.state<NavigatorState>(find.byType(Navigator)).canPop(), isFalse);
   });
+
+  testWidgets('탭 안 텍스트 입력 화면에는 ← 버튼이 보이지 않는다', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: TabNavigationShell(
+        documentEditor: _page('문서'),
+        tableTemplates: _page('표템플릿 화면'),
+        tableSketch: _page('표그림판 화면'),
+        diagram: _page('다이어그램 화면'),
+        mindMap: _page('마인드맵 화면'),
+        fileConversion: DocumentToolsWorkspace(api: (_, _) async => <String, Object?>{}, initial: 'convert', isModal: false),
+        initialIndex: 5,
+      ),
+    ));
+    await tester.pump();
+    expect(find.byIcon(Icons.arrow_back), findsNothing);
+    expect(find.byType(BackButton), findsNothing);
+  });
 }
+

@@ -412,7 +412,11 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
                 : null,
           ),
         ],
-        leading: IconButton(
+        // 탭 안(돌아갈 화면 없음)에서는 ← 버튼을 보이지 않는다. 새 화면으로 열었을 때만 표시.
+        automaticallyImplyLeading: false,
+        leading: !Navigator.of(context).canPop()
+            ? null
+            : IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () async {
             if (!saveState.saving &&
