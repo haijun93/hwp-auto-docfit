@@ -577,3 +577,10 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 - 선택 완료 응답에는 이름/크기만 포함한다. 파일 추가는 add_paths, 폴더는 add_directory, 저장/가져오기는 output_selection_id/input_selection_id를 사용한다. 선택 없이 호출하면 FILE_SELECTION_REQUIRED. 일반 상태 조회용 _tk RPC는 유지한다.
 - 지정 5개 pytest와 관련 브리지/드롭/흐름도/수명 주기 시험 합계 128개 및 142 subtests PASS. 추가 reparse·브리지 연결 시험 포함 신규 서비스 최종 12개 및 4 subtests PASS.
 - CRLF 및 diff 검사 수행. 사용자 원본 수정·한/글 COM 시험 없음. 실제 Windows 대화상자 조작/Flutter 통합 UI 검증은 미실행이며, 전체 저장소 unittest 실행 결과로 보고하지 않는다.
+
+## Codex 결과 보고 — P6 반응형 편집기 설계 (2026-10-28)
+
+- 사용자 지정 feature/2.0.1-responsive, HEAD ea84ccf에서 설계만 작성. W1~W3 기존 완료/판정 기록 보존, 엔진·Flutter·JS·시험 코드 변경 없음.
+- 정본: C:\HWP_AUTODOCFIT\v1803\reports\P6-design.md. 저장소 보관: docs/P6-design.md. 수정 TARGET·시그니처·자료 구조·구현 순서·보존 계약·위젯/브라우저 시험·완료 기준 명시.
+- 내장 웹 도구의 실제 소스(diagram_editor/src)를 확인하여 Flutter host 위젯 시험과 내부 DOM 검증을 구분. 420/700/1024/1440 및 1.0/1.5 행렬, 700 포함 경계, 리사이즈 상태 보존 시험 설계.
+- TARGET 경로/행 범위 및 문서 CRLF 검사 완료. 제품 구현·앱 시험·빌드·COM 시험 미실행. 설계 문서만 사용자 AGENTS.md 자동 커밋·github→origin 순서 푸시 지시에 따라 현재 지정 브랜치에 반영.
