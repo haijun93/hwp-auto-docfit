@@ -577,3 +577,11 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 - 선택 완료 응답에는 이름/크기만 포함한다. 파일 추가는 add_paths, 폴더는 add_directory, 저장/가져오기는 output_selection_id/input_selection_id를 사용한다. 선택 없이 호출하면 FILE_SELECTION_REQUIRED. 일반 상태 조회용 _tk RPC는 유지한다.
 - 지정 5개 pytest와 관련 브리지/드롭/흐름도/수명 주기 시험 합계 128개 및 142 subtests PASS. 추가 reparse·브리지 연결 시험 포함 신규 서비스 최종 12개 및 4 subtests PASS.
 - CRLF 및 diff 검사 수행. 사용자 원본 수정·한/글 COM 시험 없음. 실제 Windows 대화상자 조작/Flutter 통합 UI 검증은 미실행이며, 전체 저장소 unittest 실행 결과로 보고하지 않는다.
+
+## Codex 결과 보고 — P5 파일변환 화면 설계 (2026-10-28)
+
+- 최신 사용자 직접 지시에 따라 feature/2.0.1-file-conversion에서 설계만 작성. W1~W3 엔진 작업은 재개하지 않음.
+- 산출물: C:\HWP_AUTODOCFIT\v1803\reports\P5-design.md, 저장소 보관본 docs/P5-design.md. TARGET 위치·시그니처·등록 정책·jobs·회귀 시험·완료 기준 명시.
+- 소스 조사로 잘못된 탭 주입, PPTX 선택 정책 누락, 선택 API 공개 누락, 숨은 Workspace 팝업 경합 확인. 결과 폴더는 기존 show_result 재사용으로 설계.
+- 소스 코드 수정·사용자 원본 변경·COM·앱 실행·자동 시험 없음. 보고서 사본 일치와 문서 차이/CRLF를 검사. 구현 합격은 후속 검수 대상.
+- AGENTS.md에 따라 설계 문서만 현재 지정 브랜치에 커밋하고 github → origin 순으로 푸시.
