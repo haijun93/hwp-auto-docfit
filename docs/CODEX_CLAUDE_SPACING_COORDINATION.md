@@ -577,3 +577,11 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 - 선택 완료 응답에는 이름/크기만 포함한다. 파일 추가는 add_paths, 폴더는 add_directory, 저장/가져오기는 output_selection_id/input_selection_id를 사용한다. 선택 없이 호출하면 FILE_SELECTION_REQUIRED. 일반 상태 조회용 _tk RPC는 유지한다.
 - 지정 5개 pytest와 관련 브리지/드롭/흐름도/수명 주기 시험 합계 128개 및 142 subtests PASS. 추가 reparse·브리지 연결 시험 포함 신규 서비스 최종 12개 및 4 subtests PASS.
 - CRLF 및 diff 검사 수행. 사용자 원본 수정·한/글 COM 시험 없음. 실제 Windows 대화상자 조작/Flutter 통합 UI 검증은 미실행이며, 전체 저장소 unittest 실행 결과로 보고하지 않는다.
+
+
+## Codex 결과 보고 — P7 공공 표 프리셋 결합 설계 (2026-10-28)
+
+- 사용자 지정 feature/2.0.1-public-presets의 b756ee8 초안을 검토하고 설계서만 작성했다. 앱 코드·사용자 원본·COM은 수정하거나 실행하지 않았다.
+- 산출물: C:\HWP_AUTODOCFIT\v1803\reports\P7-design.md, 저장소 보관본 docs/P7-design.md. 정확한 TARGET 범위·새 함수/자료구조·구현 순서·기존 동작 보존·자동시험·완료 기준을 명시했다.
+- 발견: HWPX 생성/서비스 연결 누락, 실제 행열과 반복단위 혼용, header_split 기본값 오류, 반환 사전 공유, fill/검증/캐시/Flutter 통합 시험 공백. 공공 ID에 한정해 공통 생성·복사·스냅샷 경로를 재사용하도록 설계했다.
+- 초안 단위 시험 test_public_table_presets.py 6건 PASS(0.003초). 전체/Flutter/실제 COM 검증은 미실행이며 구현 합격 판정이 아니다. W1~W3의 기존 결과는 변경하지 않았다.
