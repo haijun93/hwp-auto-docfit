@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:webview_flutter_windows/webview_flutter_windows.dart';
 
 import '../../core/api/abbreviation_api.dart';
+import '../workspace/tab_navigation_shell.dart';
 
 class DiagramEditorScreen extends StatefulWidget {
   const DiagramEditorScreen({
@@ -42,7 +43,7 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
   Future<bool> _prepareHostClose() async {
     if (saveState.saving || busy || !canCloseEditor(context)) return false;
     if (!await confirmDiscard() || !mounted) return false;
-    Navigator.of(context).pop();
+    closeWorkspaceScreen(context);
     return true;
   }
 
@@ -486,7 +487,7 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
           !saveState.saving &&
           await confirmDiscard() &&
           context.mounted) {
-        Navigator.pop(context);
+        closeWorkspaceScreen(context);
       }
     },
     child: Scaffold(
@@ -507,7 +508,7 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
             if (!saveState.saving &&
                 await confirmDiscard() &&
                 context.mounted) {
-              Navigator.pop(context);
+              closeWorkspaceScreen(context);
             }
           },
         ),

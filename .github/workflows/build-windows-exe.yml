@@ -24,6 +24,7 @@ on:
       - release/1.80.7
       - release/1.80.8
       - release/1.80.9
+      - release/2.0.1
       - claude/affectionate-goldberg-ggln7c
     paths-ignore:
       - 'README.md'
@@ -56,7 +57,7 @@ jobs:
       - name: Install build dependencies
         run: |
           python -m venv .venv
-          & ".\.venv\Scripts\python.exe" -m pip install --disable-pip-version-check -r "requirements.txt" pyinstaller
+          & ".\.venv\Scripts\python.exe" -m pip install --disable-pip-version-check -r "requirements.txt" pyinstaller playwright psutil
 
       - name: Check Pillow image support
         run: |
@@ -144,6 +145,13 @@ jobs:
           }
           exit $smokeExit
 
+      - name: Verify Flutter content and native close on frozen EXE
+        run: |
+          & ".\.venv\Scripts\python.exe" scripts\smoke_webview_content.py --exe dist/HWP_AutoDocFit/HWP_AutoDocFit.exe --report dist/webview-content-smoke.json
+          if ($LASTEXITCODE -ne 0) { throw 'Flutter content/native close smoke failed.' }
+          & ".\.venv\Scripts\python.exe" scripts\smoke_webview_content.py --exe dist/HWP_AutoDocFit/HWP_AutoDocFit.exe --report dist/webview-unresponsive-smoke.json --unresponsive
+          if ($LASTEXITCODE -ne 0) { throw 'Unresponsive frontend close smoke failed.' }
+
       - name: Build smart-caching single-file portable launcher
         shell: pwsh
         run: |
@@ -173,6 +181,8 @@ jobs:
             dist/HWP_AutoDocFit_v*_Portable.exe
             dist/HWP_AutoDocFit_v*_Setup.exe
             dist/windows-ui-smoke.json
+            dist/webview-*-smoke.json
+            dist/webview-*-smoke.png
             dist/smart-launcher-startup.json
             dist/HWP_AutoDocFit_kordoc_runtime.zip
             dist/HWP_AutoDocFit_kordoc_runtime.zip.sha256

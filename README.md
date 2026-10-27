@@ -9,8 +9,8 @@
 
 <p align="center">
 <br>
-<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.0.0_Portable.exe?inline=false"><img alt="공공기관 PC: GitLab에서 무설치로 받기" src="https://img.shields.io/badge/%EA%B3%B5%EA%B3%B5%EA%B8%B0%EA%B4%80%20PC%20GitLab-%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v2.0.0-15803d?style=for-the-badge&logo=gitlab"></a>
-<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.0.0_Setup.exe?inline=false"><img alt="공공기관 PC: GitLab에서 설치용 받기" src="https://img.shields.io/badge/%EA%B3%B5%EA%B3%B5%EA%B8%B0%EA%B4%80%20PC%20GitLab-%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0-16a34a?style=for-the-badge&logo=gitlab"></a>
+<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.0.1_Portable.exe?inline=false"><img alt="공공기관 PC: GitLab에서 무설치로 받기" src="https://img.shields.io/badge/%EA%B3%B5%EA%B3%B5%EA%B8%B0%EA%B4%80%20PC%20GitLab-%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v2.0.1-15803d?style=for-the-badge&logo=gitlab"></a>
+<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.0.1_Setup.exe?inline=false"><img alt="공공기관 PC: GitLab에서 설치용 받기" src="https://img.shields.io/badge/%EA%B3%B5%EA%B3%B5%EA%B8%B0%EA%B4%80%20PC%20GitLab-%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0-16a34a?style=for-the-badge&logo=gitlab"></a>
 </p>
 <p align="center">
 <img alt="무료" src="https://img.shields.io/badge/%EA%B0%80%EA%B2%A9-%EB%AC%B4%EB%A3%8C-16a34a">
@@ -23,6 +23,19 @@
 <a href="docs/media/overview-demo.mp4"><img src="docs/media/overview-demo.gif" alt="한글편집 후처리 5분 시연 — 누르면 고화질 영상" width="860"></a><br>
 <sub>▶ 누르면 5분 시연 영상(고화질)이 열립니다</sub>
 </p>
+
+---
+
+<h2 align="center">v2.0.1 긴급 핫픽스 릴리즈</h2>
+<p align="center">초기 실행 흰 화면(WebView 자산 로딩 지연) 완화 및 창 닫기(X) 안전 탈출구 보장</p>
+
+### 창 닫기 안전 탈출구 보장 (Close Watchdog) (2.0.1)
+
+프론트엔드 로딩 실패나 무응답 상태에서도 앱이 종료되지 않고 백그라운드에 남는 문제를 해결했습니다. 창 닫기(X) 요청 시 프론트엔드가 5초 이내에 응답하지 않거나, 닫기 대기 중 X 버튼을 다시 누르면 백엔드 프로세스와 소유 한/글 프로세스를 안전하게 강제 정리하고 종료합니다. 정상 실행 중일 때는 기존 저장/폐기 확인 창이 그대로 유지됩니다.
+
+### 초기 구동 렌더링 및 스모크 게이트 강화 (2.0.1)
+
+WebView2 로컬 서버의 대용량 폰트 및 엔진 자산 로딩 대기 시의 상태 안정성을 강화하고, CI 빌드 파이프라인에서 실제 화면 렌더링(다크 픽셀 잉크 검사) 및 비응답 닫기 스모크 테스트(`smoke_webview_content.py`)를 필수로 통과하도록 게이트를 확장했습니다.
 
 ---
 

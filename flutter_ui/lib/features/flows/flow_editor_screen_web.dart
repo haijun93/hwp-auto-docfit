@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:web/web.dart' as web;
 import '../../core/api/abbreviation_api.dart';
 import '../table_units/table_units_screen.dart';
+import '../workspace/tab_navigation_shell.dart';
 
 class FlowEditorScreen extends StatefulWidget {
   const FlowEditorScreen({super.key, required this.api, this.initialMode = 'diagram', this.isModal = true});
@@ -31,7 +32,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
   Future<bool> _prepareHostClose() async {
     if (saveState.saving || busy || !canCloseEditor(context)) return false;
     if (!await confirmDiscard() || !mounted) return false;
-    Navigator.of(context).pop();
+    closeWorkspaceScreen(context);
     return true;
   }
 
@@ -396,7 +397,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
           !saveState.saving &&
           await confirmDiscard() &&
           context.mounted) {
-        Navigator.pop(context);
+        closeWorkspaceScreen(context);
       }
     },
     child: Scaffold(
@@ -417,7 +418,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
             if (!saveState.saving &&
                 await confirmDiscard() &&
                 context.mounted) {
-              Navigator.pop(context);
+              closeWorkspaceScreen(context);
             }
           },
         ),
