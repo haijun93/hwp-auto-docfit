@@ -560,3 +560,11 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
   1) T17 비교 뷰어 한/글 OLE 호스트 프로세스 분리 및 IPC 수명 주기 규격 완성
   2) 캔버스(표그림판·다이어그램·마인드맵) 전용 구체 Command 클래스 및 스키마 설계 (`canvas_commands.py`)
   3) Win32 파일 다이얼로그(B01~B14) 완전 대체 규격 확정
+
+## Codex result report - V2 Canvas Package Adapter (2026-10-27)
+
+- User-assigned branch: dev/2.0.0. Added docfit_core/hwpx/canvas_package_adapter.py and tests/test_v2_canvas_package_adapter.py.
+- Merges kind/source blocks after a section0 paragraph anchor (after_id/anchor_id), or appends. Returns ZIP bytes; output_path uses validated temporary output and atomic replacement. Original path/hardlink overwrites are rejected.
+- Global section ID allocation, borderFill/character/paragraph style mapping and itemCnt updates; cloned document formatting; ZIP limits/path/duplicate/CRC checks; defusedxml DTD rejection and style reference validation.
+- Validation: requested pytest files (adapter/session/diff_host/canvas_hwpx): 62 passed, 106 subtests passed. Adapter unittest: 8 passed. CRLF and git diff --check passed.
+- No COM or user document changes. Official XSD and Hancom reopen/render validation remain separate gates. Existing unrelated task instruction file preserved.
