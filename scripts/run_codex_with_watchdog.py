@@ -66,7 +66,7 @@ def run_codex(prompt: str, workdir: str | Path | None = None) -> dict:
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=300,
+            timeout=600,
         )
         stdout = proc.stdout or ""
         stderr = proc.stderr or ""
