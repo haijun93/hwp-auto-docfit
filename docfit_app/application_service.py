@@ -23,6 +23,45 @@ class ApplicationService:
         self.flows = FlowService(Path(settings_path).parent, self.store)
         self.data = AppState()
         self.lock = threading.RLock()
+        from .jobs import JobManager
+        self.jobs = JobManager(state_path=Path(settings_path).parent / 'native-jobs.json')
+
+    def start_job(self, kind, params=None):
+        if params is not None and not isinstance(params, dict):
+            raise ServiceError('INVALID_INPUT', '작업 입력을 확인해 주세요.')
+        params = params or {}
+        if kind == 'file_format':
+            from .conversion_runner import start_conversion_job
+            return start_conversion_job(self.jobs, params.get('files', list(self.data.files)),
+                                        params.get('target', 'hwpx'), params.get('output_dir'))
+        if kind == 'table_copy':
+            from .table_units_service import TableUnitsService
+            return TableUnitsService(self._table_hwp, settings=self.store).start_copy_job(self.jobs, params)
+        raise ServiceError('NOT_AVAILABLE', '이 실행기에서는 해당 문서 엔진을 아직 사용할 수 없습니다.')
+
+    @staticmethod
+    def _table_hwp():
+        from .conversion_runner import _runtime
+        runtime = _runtime()
+        app = runtime['한글_COM_인스턴스_생성'](독립=True)
+        try:
+            if app.RegisterModule(runtime['REGISTER_MODULE_NAME'], runtime['REGISTER_MODULE_VALUE']) is False:
+                raise ServiceError('HWP_FAILED', '한/글 보안 모듈을 등록하지 못했습니다.')
+            app.XHwpWindows.Item(0).Visible = False
+            return app
+        except Exception:
+            try:
+                app.Clear(1)
+                app.Quit()
+            except Exception:
+                pass
+            raise
+
+    def cancel_job(self, job_id):
+        return self.jobs.cancel(job_id)
+
+    def get_events(self, after_seq=0, max=200):
+        return self.jobs.events(after_seq, max)
 
     def state(self):
         settings = {**DEFAULTS, **migrate(self.store.read())}
@@ -30,8 +69,8 @@ class ApplicationService:
         if not isinstance(saved_stages,dict):saved_stages={}
         selected=saved_stages.get(self.data.mode,{})
         if not isinstance(selected,dict):selected={}
-        return {'files':[{'path':p,'name':Path(p).name,'folder':str(Path(p).parent)} for p in self.data.files],
-                'count':len(self.data.files),'native_backend':True,'mode':self.data.mode,'running':False,'engine_ready':False,
+        return {'job':self.jobs.latest(), 'files':[{'path':p,'name':Path(p).name,'folder':str(Path(p).parent)} for p in self.data.files],
+                'count':len(self.data.files),'native_backend':True,'mode':self.data.mode,'running':bool(self.jobs.latest() and self.jobs.latest()['state'] in {'queued','running'}),'engine_ready':False,
                 'status':'문서 분석·설정 시제품', 'version':'1.74 Native Prototype 1',
                 'include_spacing':settings['all_include_spacing'], 'reset_spacing':self.data.stages.get(('spacing','reset_spacing'),settings.get('spacing_reset_existing') if settings.get('spacing_reset_existing') is not None else True),
                 'table_spacing':settings['table_spacing'], 'exclude_tables':settings['all_exclude_tables'],
@@ -47,6 +86,7 @@ class ApplicationService:
                   'get_abbreviations':0,'save_abbreviation':4,'delete_abbreviation':1,
                   'set_abbreviation_defaults':1,'abbreviation_document':1,'add_paths':1,'remove_file':1,
                   'clear_files':0,'set_mode':1,'inspect_document':1,'get_log':0,'clear_log':0,'shutdown':0}
+        counts.update({'start_job':2, 'cancel_job':1, 'get_events':1})
         counts.update({'table_template':2,'document_tool':2,'get_pending_dialog':0,'stage_config':2,'set_stage':2,'set_stage_default':1})
         counts.update({'set_option':2,'set_include_spacing':1,'set_reset_spacing':1,'set_table_spacing':1,'set_exclude_tables':1,'set_range':3,'set_card_option':2})
         counts.update({'flow_editor':2,'idioms':2,'hangul_fonts':2,'table_units':2,'table_sketch':2})
@@ -56,6 +96,9 @@ class ApplicationService:
             raise ServiceError('INVALID_INPUT','입력 항목 수를 확인해 주세요.')
         if self.data.closing and method != 'shutdown':
             raise ServiceError('BACKEND_CLOSING','백엔드가 종료 중입니다.')
+        if method == 'start_job': return self.start_job(*args)
+        if method == 'cancel_job': return self.cancel_job(*args)
+        if method == 'get_events': return self.get_events(*args)
         if method=='handshake':
             return {'protocol_version':1,'backend_version':'1.74 Native Prototype 1',
                     'capabilities':['documents.inspect','settings','abbreviations','flows'],'engine_ready':False}
@@ -165,7 +208,9 @@ class ApplicationService:
             return TableSketchService(self.store._path.parent).command(*args)
         if method=='table_units':
             from .table_units_service import TableUnitsService
-            # 네이티브 실행기에는 한/글 COM이 없어 목록·미리보기만 된다(복사·스냅샷은 데스크톱 앱).
+            if args[0] == 'copy':
+                return response(lambda:self.jobs.run_inline('table_copy', args[1],
+                    lambda report, cancelled:TableUnitsService(settings=self.store).command(*args)))
             return response(lambda:TableUnitsService().command(*args))
         if method=='add_paths':
             if len(args)!=1 or not isinstance(args[0],list) or len(args[0])>1000:
@@ -221,6 +266,9 @@ class ApplicationService:
             if action=='save':return self.flows.save(payload.get('id'),payload.get('name'),payload.get('snapshot'),payload.get('revision'))
             if action=='delete':return self.flows.delete(payload.get('id'))
             raise ServiceError('INVALID_ACTION','흐름도 작업을 확인해 주세요.')
-        if method=='shutdown': self.data.closing=True;return {'closed':True}
+        if method=='shutdown':
+            self.data.closing=True
+            self.jobs.shutdown()
+            return {'closed':True}
         raise ServiceError('NOT_AVAILABLE','지원하지 않는 명령입니다.')
 

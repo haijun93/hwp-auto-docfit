@@ -35,7 +35,7 @@ class StageSelectionTest(unittest.TestCase):
             self.assertLess(keys.index("table_format"), keys.index("hanging_indent"))
             self.assertLess(keys.index("hanging_indent"), keys.index("supplement_indent"))
         self.assertLess(all_keys.index("supplement_indent"), all_keys.index("body_spacing"))
-        self.assertNotIn("single_cell_spacing", all_keys)
+        self.assertIn("single_cell_spacing", all_keys)
 
     def test_omitted_selection_keeps_previous_behavior(self):
         self.assertTrue(enabled(None, "body_spacing"))

@@ -1,5 +1,13 @@
 # Codex · Claude 자간 조정 공동 조사
 
+## Codex 결과 보고 — v1.80.15 단계 누락 수정 검수 (2026-10-26)
+
+- 최신 사용자 직접 지시 범위: all의 single_cell_spacing 누락 수정 검수 및 패키징 승인 문서 작성. 기존 W1~W3 판정 기록은 유지한다.
+- stage_selection.py·pipeline.py·test_stage_selection.py 제출 변경 확인. test_pipeline_review.py에 모드·표준서식·선택 12조합 실제 파이프라인 Mock 호출 회귀 시험 추가.
+- 지정 가상환경 요청 4모듈 최초 52개 PASS, 추가 시험 포함 최종 53개 PASS(실패·오류 0). COM 및 사용자 원본 조작 없음.
+- 판정: 해당 수정과 v1.80.15 패키징 진행 승인. 실제 3줄 조판·전체 회귀·공개 배포는 이번 검증 범위 밖. 상세: docs/CODEX_REVIEW_18015_FIX.md.
+- 최신 AGENTS.md 자동 커밋·푸시 지시에 따라 검수 대상 변경과 보고서만 현재 main에 커밋하고 github → origin 순서로 푸시한다. 기존 미추적 분석 스크립트는 제외한다.
+
 ## Codex 사용 한도 및 스케줄 (2026-10-25 사용자 지침)
 
 - 직전 리셋: 2026-10-25 20:43 (현재 가용 상태, 정밀 지우개 모델 및 UI 완수)
@@ -485,6 +493,33 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 - Python 전체 1,620개(조건부 제외 1) 및 최종 집중 58개 PASS. Flutter 전체 132개 PASS(조건부 제외 1), analyze 지적 0개. JS 문법·CRLF·diff 검사 PASS.
 - COM 잠금 Codex/C17 사용 후 해제. C15 소유 변경 보존, 현재 release 브랜치에 C17만 커밋하며 푸시는 C15 담당. 보고: C:\HWP_AUTODOCFIT\v1803\reports\C17.md.
 
+## Codex 결과 보고 — C19 (2026-10-24, 완료)
+- G29 합격 및 커밋 470165a. 무인 시험의 profile 키·브리지 호출을 복구하고 Toplevel/messagebox를 차단. Tk 검토창 3개 본문·문구는 a737632와 동일(판정 JSON: C:\HWP_AUTODOCFIT\v1803\reports\C19-static-final.json).
+- github/main 78f5482(v1.80.9) 병합. 삭제된 문서 도구·tldraw와 2.0.0 전용 T11/T12 서비스·API·화면·시험을 제거. jobs.py와 PDF 합치기 순서 지정 유지.
+- Python 전체 1640개 PASS(제외 0, 427.816초), Flutter 전체 142개 PASS(제외 1), analyze 지적 0. 병합 집중 80개 및 호환성 집중 38개 PASS.
+- 남은 이관은 V2_PARITY_TABLE.md 끝에 정리. COM 잠금 Codex/C19 사용 후 해제. 보고: C:\HWP_AUTODOCFIT\v1803\reports\C19.md. GitHub dev/2.0.0만 푸시(배포 없음).
+
+- C22 2026-10-24T17:43:48 COM 재연 시험 시작(잠금 획득, 기본 3종, 임시 사본만 처리).
+
+- C22 2026-10-24T17:52:16 COM 재연 시험 종료(잠금 반환).
+
+### C10. 2.0 ?? ID?????? ?? (2026-10-23, Codex)
+- ??: jobs.py???/? ???legacy ? ????WebView/???? API??? ???Python ??. Flutter ???????? ??.
+- ?? ?? ?? 17? ?? ?? 75? PASS. ?? ?? ?? ?? ??? ?? ??? `C:\HWP_AUTODOCFIT\v1803\reports\C10.md`? ????.
+- ?? 10? ? ? ?? ?/?? ???? worker ?? ? ??? ??. COM ?? ??(?? COM????? ?? ??).
+
+
+## Codex 결과 보고 — C26 (2026-10-25)
+- G33 수정 후 진입점 채택: 기본 Flutter 경로 Tk 창 0, 독립 OLE 비교 백엔드 미구현은 오류 응답과 V2_PARITY_TABLE에 명시. 기존 Tk 본문·문구 보존.
+- dev/2.0.0-split(ab3e0fe)을 dev/2.0.0에 병합. 8개 모듈·358함수 AST 불일치 0, 유효 patch 3회 및 컨텍스트 2개 분리 PASS.
+- 전체 Python·Flutter·analyze 및 COM 잠금 기본 3종 사본 재연 결과는 C26.md에 최종 기록한다. C10 메모와 C22 잠금 기록 모두 보존.
+- C26 최종: Python 전체 1,656개 실패·오류 0(선택 MCP SDK 부재 1개 제외), T17 집중 4개 PASS. Flutter 151개 PASS(기존 제외 1), analyze 0. 기본 3종 재연 불일치 0/0/0, 원본 7개 SHA-256 동일·COM 잠금 해제. 보고: C:\HWP_AUTODOCFIT\v1803\reports\C26.md.
+
+### V2 Core Contracts (2026-10-26, Codex 수석 개발자)
+- 산출물: docfit_core/session 3개 모듈, Flutter 6탭 내비게이션 셸 및 6개 어댑터, docs/V2_CORE_CONTRACTS.md, docs/TEAM_ORGANIZATION_AND_WORKFLOW.md.
+- 검증 결과: Python 세션 계약 19개 단위 시험 PASS, Flutter 6캔버스 왕복 상태 보존 시험 및 어댑터 마운트 시험 전수 PASS, flutter analyze 0 issues.
+- 제미나이 1-코덱스 협업: 제미나이 1의 판단·실행은 반드시 코덱스의 검수를 거치며, Windows 한/글 COM 실전 테스트 결과를 수석 개발자 코덱스가 분석하여 제미나이 2, 3에게 개선 지시함.
+
 ## Codex 후속 결과 보고 (2026-10-25, 1.80.10 항목기호 탭)
 
 사용자 첨부 원본의 탭 항목 33개를 작업용 사본에서 정리했다. 본문 직속만 변경하고 Run/표/필드는 보존한다. 관련 113시험(Windows 전용 제외 1)과 별도 확장/파이프라인 시험 통과. 결과 근거: docs/V1_80_10_MARKER_TAB_2026-10-25.md, 실행 환경의 /tmp/v18010-sample-report.json. 실제 한/글 COM 및 C 드라이브 PC 자료는 이 환경에 없어 실행하지 않았으며 100% 재연 합격으로 보고하지 않는다.
@@ -513,3 +548,32 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 - W1~W3는 현황판의 기존 완료/판정 기록을 보존했다. 앱 코드·사용자 원본·COM 변경 및 실행 없음.
 - 문서 diff·참조 경로를 검사했다. 문서 전용 변경으로 앱 전체 회귀/서식 재연/Flutter 시험은 실행하지 않았다.
 - 사용자 AGENTS.md의 자동 커밋·github→origin 푸시 지시에 따라 이번 문서만 커밋하고 alpha 원격에 순차 반영한다.
+
+
+
+---
+
+## [지시 하달, 2026-10-27 06:55 KST] 코덱스 수석 개발자 잔여 설계 완성 지시
+- 발신: 총괄 매니저 제미나이 1
+- 근거: 사용자 직접 지시 ("코덱스 현재 유휴상태야. 지금 즉시 설계를 완성하라고 지시해")
+- 과제: `docs/CODEX_TASK_REMAINING_DESIGN.md` 참조
+  1) T17 비교 뷰어 한/글 OLE 호스트 프로세스 분리 및 IPC 수명 주기 규격 완성
+  2) 캔버스(표그림판·다이어그램·마인드맵) 전용 구체 Command 클래스 및 스키마 설계 (`canvas_commands.py`)
+  3) Win32 파일 다이얼로그(B01~B14) 완전 대체 규격 확정
+
+## Codex result report - V2 Canvas Package Adapter (2026-10-27)
+
+- User-assigned branch: dev/2.0.0. Added docfit_core/hwpx/canvas_package_adapter.py and tests/test_v2_canvas_package_adapter.py.
+- Merges kind/source blocks after a section0 paragraph anchor (after_id/anchor_id), or appends. Returns ZIP bytes; output_path uses validated temporary output and atomic replacement. Original path/hardlink overwrites are rejected.
+- Global section ID allocation, borderFill/character/paragraph style mapping and itemCnt updates; cloned document formatting; ZIP limits/path/duplicate/CRC checks; defusedxml DTD rejection and style reference validation.
+- Validation: requested pytest files (adapter/session/diff_host/canvas_hwpx): 62 passed, 106 subtests passed. Adapter unittest: 8 passed. CRLF and git diff --check passed.
+- No COM or user document changes. Official XSD and Hancom reopen/render validation remain separate gates. Existing unrelated task instruction file preserved.
+
+## Codex 결과 보고 — V2 파일 선택 서비스 (2026-10-27)
+
+- 사용자 지정 dev/2.0.0에서 NativeFileDialogService 및 DesktopWebBridge 파일/폴더 추가·PNG/HWPX 저장·상용구 문서·표 서식 학습 경로를 구현했다. 기존 무관한 작업 지시 파일은 보존했다.
+- 선택창은 전용 STA에서 Win32 공용 파일창/Shell 폴더창으로 실행한다(설치된 pywin32에 IFileDialog 래퍼 없음). Tk 파일창 호출 제거. select_files는 request_id와 pending 상태를 즉시 반환하며 selection_status로 완료 토큰을 조회한다.
+- 목적 허용목록, 5분 만료, 단일 사용, 요청 중복 제거, 실제 경로/확장자/파일 ID 재검증, ADS·네트워크·부모 reparse 거부, 폴더 비재귀 기본·1000개 상한·파일 ID 중복 제거를 적용했다.
+- 선택 완료 응답에는 이름/크기만 포함한다. 파일 추가는 add_paths, 폴더는 add_directory, 저장/가져오기는 output_selection_id/input_selection_id를 사용한다. 선택 없이 호출하면 FILE_SELECTION_REQUIRED. 일반 상태 조회용 _tk RPC는 유지한다.
+- 지정 5개 pytest와 관련 브리지/드롭/흐름도/수명 주기 시험 합계 128개 및 142 subtests PASS. 추가 reparse·브리지 연결 시험 포함 신규 서비스 최종 12개 및 4 subtests PASS.
+- CRLF 및 diff 검사 수행. 사용자 원본 수정·한/글 COM 시험 없음. 실제 Windows 대화상자 조작/Flutter 통합 UI 검증은 미실행이며, 전체 저장소 unittest 실행 결과로 보고하지 않는다.

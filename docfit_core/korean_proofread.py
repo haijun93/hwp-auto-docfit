@@ -60,16 +60,18 @@ def _local(tag):
     return tag.rsplit("}", 1)[-1]
 
 
-def _paragraph_nodes(root):
+def _paragraph_nodes(root, *, with_index=False):
+    paragraph_index = 0
     for paragraph in root.iter():
         if _local(paragraph.tag) != "p":
             continue
+        paragraph_index += 1
         # Nested table-cell paragraphs must not be counted through their
         # enclosing table run and then counted again as their own paragraph.
         nodes = [node for run in paragraph if _local(run.tag) == "run"
                  for node in run if _local(node.tag) == "t"]
         if nodes:
-            yield nodes
+            yield (paragraph_index, nodes) if with_index else nodes
 
 
 def _matches(text, excluded, allowed=None):
@@ -90,14 +92,18 @@ def _matches(text, excluded, allowed=None):
     return result
 
 
-def scan_hwpx(path, excluded=()):
+def scan_hwpx(path, excluded=(), *, locations=False, cancelled=lambda: False):
     """Return grouped candidates with counts and a short in-document context."""
     validation = validate_hwpx(path)
     found = {}
     with open_hwpx_safely(path) as archive:
         for section in validation["section_names"]:
+            if cancelled():
+                return []
             root = ET.fromstring(archive.read(section))
-            for nodes in _paragraph_nodes(root):
+            for paragraph, nodes in _paragraph_nodes(root, with_index=True):
+                if cancelled():
+                    return []
                 text = "".join(node.text or "" for node in nodes)
                 for start, end, rule in _matches(text, set(excluded)):
                     item = found.setdefault(rule.id, {"rule_id": rule.id,
@@ -106,6 +112,8 @@ def scan_hwpx(path, excluded=()):
                                                        "suggestion": rule.suggestion,
                                                        "reason": rule.reason,
                                                        "count": 0, "examples": []})
+                    if locations:
+                        item.setdefault("locations", []).append({"section": section, "paragraph": paragraph, "page": None})
                     item["count"] += 1
                     if len(item["examples"]) < 3:
                         item["examples"].append(text[max(0, start - 24):min(len(text), end + 24)].strip())
@@ -135,7 +143,7 @@ def _replace_span(nodes, start, end, replacement):
         last_node.text = suffix
 
 
-def apply_approved_hwpx(source, destination, approved_rule_ids, excluded=()):
+def apply_approved_hwpx(source, destination, approved_rule_ids, excluded=(), *, cancelled=lambda: False):
     """Write a new HWPX; never modify the source or an existing destination."""
     source, destination = Path(source), Path(destination)
     if source.resolve() == destination.resolve() or destination.exists():
@@ -154,11 +162,15 @@ def apply_approved_hwpx(source, destination, approved_rule_ids, excluded=()):
         with open_hwpx_safely(source) as original, ZipFile(temporary, "w") as output:
             sections = set(validation["section_names"])
             for info in original.infolist():
+                if cancelled():
+                    raise InterruptedError("교정을 취소했습니다.")
                 data = original.read(info.filename)
                 if info.filename in sections:
                     root = ET.fromstring(data)
                     section_changed = False
                     for nodes in _paragraph_nodes(root):
+                        if cancelled():
+                            raise InterruptedError("교정을 취소했습니다.")
                         text = "".join(node.text or "" for node in nodes)
                         matches = _matches(text, set(excluded), allowed)
                         for start, end, rule in reversed(matches):
@@ -170,6 +182,8 @@ def apply_approved_hwpx(source, destination, approved_rule_ids, excluded=()):
                 output.writestr(info, data)
         validate_hwpx(temporary)
         # os.link prevents a race from silently overwriting another result.
+        if cancelled():
+            raise InterruptedError("저장 전에 교정을 취소했습니다.")
         os.link(temporary, destination)
         return changes
     finally:

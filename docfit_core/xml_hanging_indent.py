@@ -60,7 +60,7 @@ ITEM_PATTERNS: tuple[re.Pattern[str], ...] = (
 )
 
 _OPENING_BRACKET_QUOTE = frozenset("([{\"'“‘「『《〈（〔【")
-_COLON_LABEL_RE = re.compile(r"([^\n\r:：]{1,30}?)[ \t]*[:：][ \t]+(?=\S)")
+_COLON_LABEL_RE = re.compile(r"([^\n\r:：]{1,30}?)[ \t]*[:：][ \t]*(?=\S)")
 _BOLD_COLON_LABEL_RE = re.compile(r"^([^\n\r:：]{1,25}?)[ \t]*([:：])[ \t]+(\S.*)$")
 _PAREN_LABEL_RE = re.compile(r"\(([^()]+)\)|\[([^\[\]]+)\]")
 
@@ -216,13 +216,18 @@ def hanging_indent_offset(text: str | None, *, rule: str = "body_start") -> int 
         return None
     if rule == "after_marker":
         return _skip_corner_quote(text, idx)
-    colon_match = _COLON_LABEL_RE.match(text[idx:])
-    if colon_match:
-        label_chars = re.sub(r"\s+", "", colon_match.group(1))
-        if 1 <= len(label_chars) <= 12:
-            after_colon = idx + colon_match.end()
-            if after_colon < len(text):
-                idx = after_colon
+    if idx < len(text) and text[idx] in (":", "："):
+        after_colon = _skip_spaces(text, idx + 1)
+        if after_colon < len(text):
+            idx = after_colon
+    else:
+        colon_match = _COLON_LABEL_RE.match(text[idx:])
+        if colon_match:
+            label_chars = re.sub(r"\s+", "", colon_match.group(1))
+            if 1 <= len(label_chars) <= 12:
+                after_colon = idx + colon_match.end()
+                if after_colon < len(text):
+                    idx = after_colon
     return _skip_corner_quote(text, idx)
 
 

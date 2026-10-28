@@ -4,6 +4,41 @@ import shutil
 import threading
 
 
+def start_conversion_job(manager, files, target, output_dir=None, *, job_id=None,
+                         progress=None, stop_event=None, **kwargs):
+    """변환 정리까지 끝난 뒤 종료 사건을 내는 비동기 진입점."""
+    from .jobs import legacy_event
+    # runner가 시작되기 전에 ID를 캡처할 필요 없이 report 콜백으로 튜플을 변환한다.
+    def runner(report, cancelled):
+        class Stop:
+            def is_set(self):
+                return cancelled() or (stop_event is not None and stop_event.is_set())
+        class Adapter:
+            def __init__(self):
+                self.progress = {'file':0, 'total':0, 'percent':0, 'stage':''}
+                self.terminal = None
+            def status(self, _):
+                return {'progress':self.progress}
+            def report(self, _, type, data):
+                if type in ('done', 'failed', 'cancelled'):
+                    self.terminal = (type, data)
+                else:
+                    if type == 'progress':
+                        self.progress.update(data)
+                    report(type, data)
+        adapter = Adapter()
+        def emit(item):
+            legacy_event(adapter, 'conversion', item)
+            if progress:
+                progress(item)
+        results = run_conversion(files, target, output_dir,
+            progress=emit, stop_event=Stop(), **kwargs)
+        if adapter.terminal:
+            report(*adapter.terminal)
+        return results
+    return manager.start('file_format', {'target':target}, runner, job_id=job_id)
+
+
 def _runtime():
     # UI 부트스트랩 없이 기존 엔진의 독립 COM 생성 함수를 바인딩한다.
     import pythoncom

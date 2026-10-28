@@ -25,6 +25,8 @@ import 'features/settings/update_panel.dart';
 import 'features/stages/stage_board.dart';
 import 'features/table_units/table_units_screen.dart';
 import 'features/table_sketch/table_sketch_screen.dart';
+import 'features/workspace/workspace_adapters.dart';
+
 
 export 'core/api/abbreviation_api.dart' show ApiCall;
 
@@ -67,8 +69,13 @@ const _mintSoft = Color(0xfff3f8f7);
 };
 
 class DocFitApp extends StatelessWidget {
-  const DocFitApp({super.key, this.api = bridge.callApi});
+  const DocFitApp({
+    super.key,
+    this.api = bridge.callApi,
+    this.useIntegratedShell = true,
+  });
   final ApiCall api;
+  final bool useIntegratedShell;
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: '한글편집 후처리',
@@ -98,7 +105,17 @@ class DocFitApp extends StatelessWidget {
         border: OutlineInputBorder(),
       ),
     ),
-    home: Workspace(api: api),
+    home: useIntegratedShell
+        ? IntegratedWorkspace(
+            api: api,
+            documentEditorWidget: Workspace(api: api),
+            fileConversionWidget: DocumentToolsWorkspace(
+              api: api,
+              initial: 'convert',
+              isModal: false,
+            ),
+          )
+        : Workspace(api: api),
   );
 }
 
@@ -1972,8 +1989,10 @@ class _WorkspaceState extends State<Workspace> {
     try {
       accepted = !busy && await CloseGuards.prepareAll();
       // An unregistered dialog may hold edits or a pending RPC: fail closed.
+      if (!mounted) return;
+      final route = ModalRoute.of(context);
       accepted =
-          accepted && mounted && ModalRoute.of(context)?.isCurrent == true;
+          accepted && (route == null || route.isCurrent == true);
       final result = await widget.api('resolve_dialog', [
         request['id'],
         accepted,
@@ -1989,6 +2008,7 @@ class _WorkspaceState extends State<Workspace> {
       );
     }
   }
+
 
   Future<void> openTools(String name) async {
     if (!mounted) return;
@@ -2798,10 +2818,60 @@ class _WorkspaceState extends State<Workspace> {
 
   // ---- 4. 결과 확인 -------------------------------------------------
 
+  Widget _buildCatImage(String catImage) {
+    try {
+      final commaIndex = catImage.indexOf(',');
+      final base64Str =
+          commaIndex >= 0 ? catImage.substring(commaIndex + 1) : catImage;
+      final bytes = base64Decode(base64Str);
+      return Image.memory(
+        bytes,
+        key: const Key('savingsCatImage'),
+        height: 80,
+        fit: BoxFit.contain,
+      );
+    } catch (_) {
+      return const SizedBox.shrink();
+    }
+  }
+
+  Widget _savingsCard() {
+    final msg = completion['savings_message']?.toString() ?? '';
+    if (msg.isEmpty) return const SizedBox.shrink();
+    final catImage = completion['cat_image']?.toString() ?? '';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: panel(
+        Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (catImage.isNotEmpty) _buildCatImage(catImage),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  msg,
+                  key: const Key('savingsMessageText'),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xff111827),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget outcome() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       heading('작업 결과를 확인하세요', '${state['status'] ?? '작업이 끝나면 저장된 문서가 표시됩니다.'}'),
+      _savingsCard(),
       if (completion.isNotEmpty ||
           formatReview.isNotEmpty ||
           failures.isNotEmpty)
@@ -2946,6 +3016,14 @@ class _WorkspaceState extends State<Workspace> {
                           : () => command('show_result', [i]),
                       icon: const Icon(Icons.folder_open_outlined),
                     ),
+                    IconButton(
+                      key: Key('compareItem-$i'),
+                      tooltip: '원본·결과 비교',
+                      onPressed: busy
+                          ? null
+                          : () => openDiff(i),
+                      icon: const Icon(Icons.compare_arrows_rounded),
+                    ),
                   ],
                 ),
               ),
@@ -2957,11 +3035,79 @@ class _WorkspaceState extends State<Workspace> {
               icon: const Icon(Icons.open_in_new),
               label: Text(results.length > 1 ? '결과 모두 열기' : '결과 파일 열기'),
             ),
+            const SizedBox(height: 8),
+            if (compareError != null) ...[
+              Container(
+                key: const Key('compareErrorMessage'),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xfffee2e2),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.error_outline, size: 18, color: Color(0xffdc2626)),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        compareError!,
+                        style: const TextStyle(fontSize: 13, color: Color(0xffdc2626)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+            OutlinedButton.icon(
+              key: const Key('compareResultButton'),
+              onPressed: results.isEmpty || busy
+                  ? null
+                  : () => openDiff(0),
+              icon: const Icon(Icons.compare_arrows_rounded),
+              label: const Text('원본·결과 비교'),
+            ),
           ],
         ),
       ),
     ],
   );
+
+  String? compareError;
+
+  Future<void> openDiff([int index = 0]) async {
+    setState(() => compareError = null);
+    try {
+      final res = await widget.api('open_diff', [index]);
+      if (!mounted) return;
+      if (res is! Map || res['ok'] != true) {
+        final message = res is Map ? res['error'] : null;
+        final err = '${message ?? '비교 창을 열지 못했습니다.'}';
+        setState(() => compareError = err);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(err),
+              backgroundColor: const Color(0xffdc2626),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (!mounted) return;
+      final err = '비교 창을 여는 중 오류가 발생했습니다: $e';
+      setState(() => compareError = err);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(err),
+            backgroundColor: const Color(0xffdc2626),
+          ),
+        );
+      }
+    }
+  }
 
   Map get completion => state['completion'] as Map? ?? const {};
   Map get formatReview => state['format_review'] as Map? ?? const {};
@@ -3037,7 +3183,7 @@ class _WorkspaceState extends State<Workspace> {
                     ? null
                     : () async {
                         await command('next_job');
-                        if (mounted) setState(() => tab = 0);
+                        if (mounted) setState(() { compareError = null; tab = 0; });
                       },
                 child: const Text('새 작업 시작'),
               ),

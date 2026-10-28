@@ -11,9 +11,10 @@ import '../../core/api/abbreviation_api.dart';
 import '../table_units/table_units_screen.dart';
 
 class FlowEditorScreen extends StatefulWidget {
-  const FlowEditorScreen({super.key, required this.api, this.initialMode = 'diagram'});
+  const FlowEditorScreen({super.key, required this.api, this.initialMode = 'diagram', this.isModal = true});
   final ApiCall api;
   final String initialMode;
+  final bool isModal;
   @override
   State<FlowEditorScreen> createState() => _FlowEditorScreenState();
 }
@@ -26,7 +27,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
   String? identity, revision;
   final saveState = EditSaveState();
   bool dirty = false, ready = false, busy = false;
-  late final CloseLease _closeLease;
+  CloseLease? _closeLease;
   Future<bool> _prepareHostClose() async {
     if (saveState.saving || busy || !canCloseEditor(context)) return false;
     if (!await confirmDiscard() || !mounted) return false;
@@ -37,7 +38,9 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
   @override
   void initState() {
     super.initState();
-    _closeLease = CloseGuards.register(_prepareHostClose);
+    if (widget.isModal) {
+      _closeLease = CloseGuards.register(_prepareHostClose);
+    }
     viewType = 'docfit-flow-${DateTime.now().microsecondsSinceEpoch}';
     frame = web.HTMLIFrameElement()
       ..src = Uri.base
@@ -429,7 +432,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
   );
   @override
   void dispose() {
-    _closeLease.release();
+    _closeLease?.release();
     web.window.removeEventListener('message', listener);
     super.dispose();
   }

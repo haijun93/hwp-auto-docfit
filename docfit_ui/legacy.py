@@ -2734,6 +2734,57 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     self._알림(messagebox.showerror, APP_NAME, f"한글을 열지 못했습니다.\n{exc}", parent=parent)
                     return
                 self._예시편집_hwp = app
+
+                def _한글닫기():
+                    한글 = getattr(self, "_예시편집_hwp", None)
+                    self._예시편집_hwp = None
+                    if 한글 is not None:
+                        try:
+                            한글.Clear(1)
+                            한글.Quit()
+                        except Exception:
+                            pass
+
+                if getattr(self.root, "_docfit_hidden_backend", False) and not getattr(self, "_is_tk_fallback", lambda: False)():
+                    기본안내 = ("열린 한/글 창에서 예시 문서를 작성하세요.\n\n"
+                                "□·ㅇ·-·※ 같은 항목기호를 섞어 원하는 계층 구조로 쓰면, 기호별로 가장 많이 쓴 "
+                                "글꼴·크기·들여쓰기가 그 기호의 서식이 됩니다. 다 쓰면 '분석 시작'을 누르세요.\n"
+                                "서식 이름은 첫 문장의 앞 8글자로 정하며 나중에 '이름 바꾸기…'로 고칠 수 있습니다.")
+                    안내문 = 기본안내
+                    오류문구 = ""
+                    while True:
+                        답 = self._알림(
+                            messagebox.askokcancel,
+                            "서식 예시 문서 편집",
+                            안내문,
+                            kind="format_example_edit",
+                            flutter_error=오류문구,
+                            flutter_ok_label="분석 시작",
+                            flutter_cancel_label="취소",
+                        )
+                        if not 답:
+                            _한글닫기()
+                            return
+                        한글 = getattr(self, "_예시편집_hwp", None)
+                        if 한글 is None:
+                            return
+                        임시 = Path(tempfile.mkdtemp(prefix="docfit_example_")) / "예시.hwpx"
+                        try:
+                            if 한글.SaveAs(str(임시), "HWPX", "") is False:
+                                raise RuntimeError("예시 문서를 임시 파일로 저장하지 못했습니다.")
+                            문단들 = [b.text for b in inspect_hwpx(임시).blocks if b.type == "paragraph"]
+                        except Exception as exc:
+                            오류문구 = f"예시 문서를 읽지 못했습니다: {exc}"
+                            안내문 = f"{기본안내}\n\n[오류] {오류문구}"
+                            continue
+                        if not any(leading_marker(t)[0] for t in 문단들):
+                            오류문구 = "항목기호(□·ㅇ·-·※ 등)로 시작하는 문단이 없습니다. 기호를 붙인 문단을 한두 개 이상 써 주세요."
+                            안내문 = f"{기본안내}\n\n[오류] {오류문구}"
+                            continue
+                        이름 = 예시문서_기본이름(문단들)
+                        _한글닫기()
+                        self._서식_분석_시작(str(임시), 이름묻기=False, 기본이름=이름)
+                        return
                 창 = tk.Toplevel(parent)
                 self._예시편집_창 = 창
                 창.title("서식 예시 문서 편집")
@@ -4558,6 +4609,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     self._설정창_생성()
                     self.settings_toplevel.withdraw()
 
+                from docfit_app.jobs import manager_for, prepare_legacy
+                self._job_id = prepare_legacy(self).begin('file_format', {'target':target_format}, stop_event=중단_event)
+                manager_for(self).report(self._job_id, 'started', {})
                 self.running = True
                 self.closing = False
                 중단_event.clear()
@@ -4572,13 +4626,12 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 self.로그표시("")
                 self.로그표시(f"파일 변환 시작 · {len(files)}개 · 결과 {target_format.upper()}")
 
-                def worker():
-                    from docfit_app.conversion_runner import run_conversion
-                    run_conversion(files, target_format, progress=gui_queue.put,
-                                   stop_event=중단_event, runtime_factory=lambda: globals(), log=로그)
-
-                self.worker = threading.Thread(target=worker, daemon=True, name="file-format-conversion")
-                self.worker.start()
+                from docfit_app.conversion_runner import start_conversion_job
+                self._job_managed_conversion = self._job_id
+                start_conversion_job(manager_for(self), files, target_format, job_id=self._job_id,
+                                     progress=gui_queue.put, stop_event=중단_event,
+                                     runtime_factory=lambda: globals(), log=로그)
+                self.worker = manager_for(self).thread(self._job_id)
 
             def 작업시작(self, mode='all'):
                 if mode == "spacing" and not self.spacing_enabled_var.get() and not self.spacing_page_fit_var.get():
@@ -4621,6 +4674,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 시작_인덱스 = self._재개_시작_인덱스 if 이어서_진행 else 1
                 self._재개_대기중 = False
 
+                from docfit_app.jobs import manager_for, prepare_legacy
+                self._job_id = prepare_legacy(self).begin(mode, {}, stop_event=중단_event)
+                manager_for(self).report(self._job_id, 'started', {})
                 self.running = True
 
                 if self.settings_toplevel is not None and self.settings_toplevel.winfo_exists():
@@ -4792,11 +4848,15 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     kwargs={"context": self._run_context, "callbacks": self._run_context.callbacks},
                     daemon=True
                 )
+                manager_for(self).attach(self._job_id, self.worker)
                 self.worker.start()
 
             def 작업중단(self):
                 if not self.running:
                     return
+                from docfit_app.jobs import manager_for
+                if getattr(self, '_job_id', None):
+                    manager_for(self).cancel(self._job_id)
                 중단_event.set()
                 self.stop_button.config(state="disabled")
                 self.status_var.set("작업 중단 처리 중...")
@@ -4844,8 +4904,31 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 임시.focus_force()
                 return 임시, 임시
 
-            def _절약_완료창(self, 성공, 실패):
-                if getattr(self.root, "_docfit_hidden_backend", False):
+            def _절약_완료창(self, 성공, 실패, *, savings_seconds=None):
+                if getattr(self.root, "_docfit_hidden_backend", False) and not getattr(self, "_is_tk_fallback", lambda: False)():
+                    절약초 = (self._절약초 or 0) if savings_seconds is None else savings_seconds
+                    if 실패 == 0:
+                        문구 = f"당신의 소중한 시간 {절약시간_분초_표시(절약초)}가 절약되었습니다!"
+                    else:
+                        문구 = f"문서 {실패}개를 처리하지 못했습니다. 처리 기록을 확인해 주세요. (성공 {성공}개)"
+                    그림경로 = 번들_고양이_그림_찾기()
+                    cat_image = None
+                    if 그림경로 is not None and Path(그림경로).is_file():
+                        try:
+                            import base64
+                            with open(그림경로, "rb") as f:
+                                cat_image = "data:image/png;base64," + base64.b64encode(f.read()).decode("ascii")
+                        except Exception:
+                            cat_image = None
+                    completion = getattr(self, "_flutter_completion", None)
+                    if not isinstance(completion, dict):
+                        completion = {}
+                        self._flutter_completion = completion
+                    completion["savings_message"] = 문구
+                    completion["savings_seconds"] = 절약초
+                    completion["savings_time"] = 절약시간_분초_표시(절약초) if 실패 == 0 else ""
+                    if cat_image is not None:
+                        completion["cat_image"] = cat_image
                     return
                 """작업 완료창(개발자 모드 끔): 검은 고양이 그림과 '당신의 소중한 시간 00분 00초가 절약되었습니다!'만 보인다.
 
@@ -4881,14 +4964,35 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 확인.focus_set()
                 return 창
 
+            def _is_tk_fallback(self):
+                var = getattr(self, "ui_tk_fallback_var", None)
+                if var is not None and hasattr(var, "get"):
+                    return bool(var.get())
+                if hasattr(self, "ui_tk_fallback"):
+                    return bool(self.ui_tk_fallback)
+                try:
+                    service = getattr(self, "_준말_서비스", None)
+                    if callable(service):
+                        settings = service().settings.read()
+                        if isinstance(settings, dict) and "ui_tk_fallback" in settings:
+                            return bool(settings["ui_tk_fallback"])
+                except Exception:
+                    return False
+                return False
+
             def _알림(self, 함수, *args, **kwargs):
                 """웹 화면 모드에서도 메시지 창이 보이도록 임시 부모로 띄운다."""
                 labels = {}
+                kind = kwargs.pop("kind", None)
+                styles = kwargs.pop("flutter_styles", None)
+                areas = kwargs.pop("flutter_areas", None)
+                result_payload = kwargs.pop("flutter_result", None)
+                error_payload = kwargs.pop("flutter_error", None)
                 for key in ("ok_label", "cancel_label"):
                     value = kwargs.pop("flutter_" + key, None)
                     if value is not None:
                         labels[key] = value
-                if getattr(self.root, "_docfit_hidden_backend", False):
+                if getattr(self.root, "_docfit_hidden_backend", False) and not getattr(self, "_is_tk_fallback", lambda: False)():
                     import uuid
                     done = tk.BooleanVar(master=self.root, value=False)
                     pending = {"id": uuid.uuid4().hex, "title": str(args[0]) if args else APP_NAME,
@@ -4897,6 +5001,16 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                                "choices": kwargs.pop("flutter_choices", []),
                                "fields": kwargs.pop("flutter_fields", []),
                                "done": done, "answer": False}
+                    if kind is not None:
+                        pending["kind"] = kind
+                    if styles is not None:
+                        pending["styles"] = styles
+                    if areas is not None:
+                        pending["areas"] = areas
+                    if error_payload is not None:
+                        pending["error"] = error_payload
+                    if result_payload is not None:
+                        pending["result"] = result_payload
                     pending.update(labels)
                     self._flutter_dialog = pending
                     try:
@@ -4929,22 +5043,45 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 대표프로필 = 요청.get("profile")
                 if 대표프로필 is None:
                     대표프로필 = _서식통일_문서대표프로필
-                if getattr(self.root, "_docfit_hidden_backend", False):
+                if getattr(self.root, "_docfit_hidden_backend", False) and not getattr(self, "_is_tk_fallback", lambda: False)():
                     fields, mapping = [], {}
+                    그룹별_표본 = 요청.get("payload") or {}
+                    styles = []
                     for index, (key, values) in enumerate(대표프로필.items()):
+                        marker, role, level = key if isinstance(key, tuple) and len(key) >= 3 else (str(key), "본문", 1)
+                        samples = 그룹별_표본.get(key, []) if isinstance(그룹별_표본, dict) else []
+                        font_val = values.get("font", (None, 0))[0]
+                        size_raw = values.get("size", (None, 0))[0]
+                        size_val = (size_raw / 100) if size_raw is not None else None
+                        marker_bold_val = values.get("marker_bold", (None, 0))[0]
+                        label_bold_val = values.get("label_bold", (None, 0))[0]
+                        hanging_val = values.get("hanging_indent", (None, 0))[0]
+                        styles.append({
+                            "index": index,
+                            "marker": str(marker),
+                            "role": str(role),
+                            "level": level,
+                            "samples_count": len(samples),
+                            "font": font_val,
+                            "size": size_val,
+                            "marker_bold": marker_bold_val,
+                            "label_bold": label_bold_val,
+                            "hanging_indent": hanging_val,
+                        })
                         for field, pair in values.items():
-                            if field not in ("font", "size", "marker_bold", "label_bold", "italic", "underline"):
+                            if field not in ("font", "size", "marker_bold", "label_bold", "hanging_indent", "italic", "underline"):
                                 continue
                             value = pair[0]
                             identity = f"{index}:{field}"
                             shown = "" if value is None else str(value / 100 if field == "size" else value if field == "font" else bool(value))
-                            labels = {"font": "글꼴", "size": "크기", "marker_bold": "기호 굵게", "label_bold": "라벨 굵게", "italic": "기울임", "underline": "밑줄"}
+                            labels = {"font": "글꼴", "size": "크기", "marker_bold": "기호 굵게", "label_bold": "라벨 굵게", "hanging_indent": "내어쓰기", "italic": "기울임", "underline": "밑줄"}
                             fields.append({"id": identity, "label": f"{key[0]} {labels[field]}" + (" (pt)" if field == "size" else ""),
                                            "type": "text" if field in ("font", "size") else "bool", "value": shown})
                             mapping[identity] = (key, field)
+                    choices = [{"id": s["index"], "label": f"{s['marker']} · {s['role']}"} for s in styles]
                     from math import isfinite
                     while True:
-                        approved = self._알림(messagebox.askyesno, "대표 서식 검토", "빈 값은 판정을 보류합니다. 대표값을 확인한 뒤 진행하세요.", flutter_fields=fields)
+                        approved = self._알림(messagebox.askyesno, "서식통일 2/5 · 대표 서식 확인", "빈 값은 판정을 보류합니다. 대표값을 확인한 뒤 진행하세요.", flutter_fields=fields, flutter_choices=choices, flutter_styles=styles, kind="style_unify_profile", flutter_ok_label="확인한 대표값으로 진행", flutter_cancel_label="취소")
                         if not approved:
                             break
                         try:
@@ -5114,10 +5251,46 @@ def _install(*, _docfit_namespace, _docfit_symbol):
 
             def _서식통일_적용영역_검토창(self, 요청):
                 계획 = 요청["payload"]
-                if getattr(self.root, "_docfit_hidden_backend", False):
-                    choices = [{"id": index, "label": str(item.get("text", item.get("reason", item)))[:300]}
-                               for index, item in enumerate(계획) if item.get("mismatch")]
-                    approved = self._알림(messagebox.askyesno, "서식 적용 영역 검토", "선택한 불일치 영역만 적용합니다.", flutter_choices=choices)
+                def changed_fields(item):
+                    fields = []
+                    if item.get("font_runs"):
+                        fields.append(f"글꼴 {len(item['font_runs'])}영역 → {item.get('font') or '판정 보류'}")
+                    if item.get("size_runs"):
+                        fields.append(f"크기 {len(item['size_runs'])}영역 → {item.get('size') / 100:g}pt")
+                    if item.get("aside_runs"):
+                        fields.append(f"괄호 {len(item['aside_runs'])}영역 → {item.get('aside_size') / 100:g}pt")
+                    if item.get("marker_bold_runs"):
+                        fields.append(f"문두 굵기 {len(item['marker_bold_runs'])}영역 → {'굵게' if item.get('marker_bold') else '보통'}")
+                    if item.get("label_bold_runs"):
+                        fields.append(f"라벨 굵기 {len(item['label_bold_runs'])}영역 → {'굵게' if item.get('label_bold') else '보통'}")
+                    if item.get("hanging_mismatch"):
+                        fields.append(f"내어쓰기 → {'적용' if item.get('expected_hanging') else '미적용'}")
+                    return fields
+                if getattr(self.root, "_docfit_hidden_backend", False) and not getattr(self, "_is_tk_fallback", lambda: False)():
+                    후보_목록 = [(index, item) for index, item in enumerate(계획) if item.get("mismatch")]
+                    areas = []
+                    choices = []
+                    for index, item in 후보_목록:
+                        doc = str(item.get("doc") or item.get("file") or item.get("doc_index") or "doc0")
+                        area = str(item.get("area") or index)
+                        marker = str(item.get("marker", ""))
+                        role = str(item.get("role", ""))
+                        text = str(item.get("text", "")).strip()
+                        changes = ", ".join(changed_fields(item))
+                        areas.append({
+                            "id": index,
+                            "doc": doc,
+                            "area": area,
+                            "marker": marker,
+                            "role": role,
+                            "level": item.get("level", 1),
+                            "text": text,
+                            "changes": changes,
+                            "checked": True,
+                        })
+                        choices.append({"id": index, "label": f"{marker} / {role} — {text[:200]}"})
+
+                    approved = self._알림(messagebox.askyesno, "서식통일 3/5 · 편집 영역 확인", "선택한 불일치 영역만 적용합니다.", flutter_choices=choices, flutter_areas=areas, kind="style_unify_regions", flutter_ok_label="선택 영역만 적용", flutter_cancel_label="취소")
                     요청["approved"] = approved
                     요청["selected"] = self._flutter_selection if approved else []
                     요청["done"].set()
@@ -5226,8 +5399,20 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 window.focus_set()
 
             def _서식통일_결과_확인창(self, 요청):
-                if getattr(self.root, "_docfit_hidden_backend", False):
-                    self._알림(messagebox.showinfo, "서식통일 결과", str(요청["payload"]))
+                if getattr(self.root, "_docfit_hidden_backend", False) and not getattr(self, "_is_tk_fallback", lambda: False)():
+                    result = 요청.get("payload") or {}
+                    self._flutter_format_review = dict(result)
+                    status = result.get("status", "error")
+                    status_text = {"passed": "검수 통과", "failed": "불일치 남음",
+                                   "incomplete": "일부 판정 보류", "error": "검수 오류",
+                                   "not_applicable": "검사할 문장 없음"}.get(status, status)
+                    res_data = dict(result)
+                    res_data["status_text"] = status_text
+                    self._알림(messagebox.showinfo, "서식통일 5/5 · 작업 결과 확인",
+                              f"저장 결과 확인 · {status_text}",
+                              flutter_result=res_data, kind="style_unify_result",
+                              flutter_ok_label="결과 확인", flutter_cancel_label="닫기")
+                    요청["approved"] = True
                     요청["done"].set()
                     return
                 result = 요청["payload"] or {}
@@ -5286,6 +5471,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                             break
                         item = gui_queue.get_nowait()
                         event = item[0]
+                        from docfit_app.jobs import manager_for, legacy_event
+                        if getattr(self, '_job_managed_conversion', None) != getattr(self, '_job_id', None):
+                            legacy_event(manager_for(self), getattr(self, '_job_id', None), item)
                         if event in ("style_unify_profile_review", "style_unify_regions_review",
                                      "style_unify_result_review"):
                             try:
@@ -5293,12 +5481,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                                     self._서식통일_대표서식_검토창(item[1])
                                 elif event == "style_unify_regions_review":
                                     self._서식통일_적용영역_검토창(item[1])
-                                elif getattr(self.root, "_docfit_hidden_backend", False):
-                                    # Flutter에서는 별도 검수창 대신 4단계 결과 패널에 표시한다.
-                                    self._flutter_format_review = dict(item[1].get("payload") or {})
-                                    item[1]["approved"] = True
-                                    item[1]["done"].set()
-                                else:
+                                elif event == "style_unify_result_review":
                                     self._서식통일_결과_확인창(item[1])
                             except Exception as exc:
                                 로그(f"[서식통일] 사용자 확인창 오류: {exc}")
@@ -5408,6 +5591,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                             if self._안내키:
                                 self._안내지남.add(self._안내키)
                             self._안내키 = "done" if item[2] == 0 else self._안내키
+                            절약한_초 = self._절약초 or 0
                             절약한_시간 = 절약시간_분초_표시(self._절약초 or 0)
                             self._절약초 = None
                             self._작업결과_표시(item[2] == 0)
@@ -5438,7 +5622,10 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                             if not self.closing and not self.developer_mode_var.get():
                                 # 개발자 모드가 꺼져 있으면 절약한 시간만 귀여운 검은 고양이와 함께 보여 준다(2026-10-11 사용자 요청).
                                 # 자세한 완료 안내(성공·실패 건수·세부 작업·최종 검수)는 개발자 모드에서만 보인다.
-                                self._절약_완료창(item[1], item[2])
+                                if getattr(self.root, "_docfit_hidden_backend", False) and not self._is_tk_fallback():
+                                    self._절약_완료창(item[1], item[2], savings_seconds=절약한_초)
+                                else:
+                                    self._절약_완료창(item[1], item[2])
                             elif not self.closing and not getattr(self.root, "_docfit_hidden_backend", False):
                                 안내문 = f"문서 처리가 완료되었습니다.\n\n성공: {item[1]}개\n실패: {item[2]}개"
                                 if len(item) >= 6:

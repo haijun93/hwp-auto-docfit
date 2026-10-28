@@ -35,6 +35,7 @@ def main():
                     except OSError:
                         pass
                     app.data.closing=True
+                    app.jobs.shutdown()
                     server.shutdown()
                 threading.Thread(target=parent_closed,daemon=True).start()
                 server.serve_forever(poll_interval=0.1)

@@ -67,6 +67,9 @@ class FlowServiceTests(unittest.TestCase):
         bridge = DesktopWebBridge.__new__(DesktopWebBridge)
         bridge.gui = SimpleNamespace(root=object(), _준말_서비스=lambda: SimpleNamespace(settings=self.store))
         bridge._tk = lambda fn, **kwargs: fn()
+        from docfit_app.native_file_dialog_service import NativeFileDialogService
+        bridge._file_dialogs = NativeFileDialogService()
+        self.addCleanup(bridge._file_dialogs.close)
         original = self.folder / "original.hwpx"
         original.write_bytes(b"original document")
         with patch("tkinter.filedialog.asksaveasfilename", return_value=str(original)):
@@ -74,8 +77,10 @@ class FlowServiceTests(unittest.TestCase):
                 bridge.flow_editor("export_png", {"name": "흐름도", "base64": encoded})
         self.assertEqual(original.read_bytes(), b"original document")
         target = self.folder / "result.png"
-        with patch("tkinter.filedialog.asksaveasfilename", return_value=str(target)):
-            self.assertEqual(bridge.flow_editor("export_png", {"base64": encoded})["path"], str(target))
+        token = bridge._file_dialogs.register_selection('flow_png', [str(target)])['selection_id']
+        with patch("tkinter.filedialog.asksaveasfilename") as dialog:
+            self.assertEqual(bridge.flow_editor("export_png", {"base64": encoded, 'output_selection_id': token})["path"], str(target))
+            dialog.assert_not_called()
         self.assertEqual(target.read_bytes(), base64.b64decode(encoded))
         with patch("tkinter.filedialog.asksaveasfilename") as dialog:
             with self.assertRaises(ServiceError):

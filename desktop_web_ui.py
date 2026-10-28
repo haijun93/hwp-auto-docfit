@@ -66,6 +66,8 @@ class DesktopWebBridge:
 
     def __init__(self, gui):
         self.gui = gui
+        from docfit_app.native_file_dialog_service import NativeFileDialogService
+        self._file_dialogs = NativeFileDialogService()
         self.window = None
         self.tk_stopped = None
         # 사용자가 웹 창을 닫아 종료하는 중인지. 이때는 창이 스스로 닫히므로
@@ -89,6 +91,10 @@ class DesktopWebBridge:
 
     def _shutdown(self):
         """Tk 종료 시 대기·실행 중 요청의 호출자를 종료 오류로 해제한다."""
+        manager = getattr(self.gui, '_job_manager', None)
+        if manager is not None:
+            threading.Thread(target=manager.shutdown, daemon=True).start()
+        self._file_dialogs.close()
         self._cancel_pending_drop()
         with self._request_lock:
             self._closed = True
@@ -393,6 +399,7 @@ class DesktopWebBridge:
                     else "서식을 등록하지 못했어요. 처리 상태를 확인해 주세요.")}
                 self._quick_watch = None
             return {
+                "job": self._jobs().latest(),
                 "_open_completed_result": False,
                 "files": [
                     {"name": Path(path).name, "path": path, "folder": str(Path(path).parent)}
@@ -614,21 +621,48 @@ class DesktopWebBridge:
               for kind in IMAGE_FORMATS),
         ]
 
-    def add_files(self):
-        self._tk(self.gui.파일선택, timeout=None, front=True)
-        self._tk(self._update_document_hints)
-        return self.get_state()
+    def select_files(self, payload):
+        self._file_dialogs.submit_selection(**payload)
+        return self._file_dialogs.selection_status(payload['request_id'])
+
+    def selection_status(self, request_id):
+        return self._file_dialogs.selection_status(request_id)
+
+    def register_selection(self, payload):
+        return self._file_dialogs.register_selection(**payload)
+
+    def _selection_path(self, payload, purpose, key='input_selection_id'):
+        from docfit_app.api_contract import ServiceError
+        token = payload.get(key)
+        if not token:
+            raise ServiceError('FILE_SELECTION_REQUIRED', 'Select a file first.')
+        return self._file_dialogs.resolve_selection(token, purpose)[0]
+
+    def add_files(self, selection_id=None):
+        if not selection_id:
+            return {'ok': False, 'error': 'FILE_SELECTION_REQUIRED'}
+        return self.add_paths(self._file_dialogs.resolve_selection(selection_id, 'add_files'))
 
     def add_folder(self):
-        self._tk(self.gui._폴더선택, timeout=None, front=True)
-        self._tk(self._update_document_hints)
-        return self.get_state()
+        return {'ok': False, 'error': 'FILE_SELECTION_REQUIRED'}
+
+    def add_directory(self, selection_id, recursive=False):
+        paths = self._file_dialogs.resolve_selection(selection_id, 'add_folder')
+        return self.add_paths(self._file_dialogs.directory_files(paths, recursive))
 
     def add_paths(self, paths, *, from_drop=False):
         if not isinstance(paths, (list, tuple)):
             return self.get_state()
-        if len(paths) > 100:
+        if len(paths) > 1000:
             return self.get_state()
+
+        if paths:
+            from docfit_app.api_contract import ServiceError
+            try:
+                selection = self._file_dialogs.register_selection('add_files', paths)
+                paths = self._file_dialogs.resolve_selection(selection['selection_id'], 'add_files')
+            except ServiceError:
+                return self.get_state()
 
         def add():
             if self.gui.running:
@@ -863,7 +897,63 @@ class DesktopWebBridge:
         self._tk(update)
         return self.get_state()
 
+    def _jobs(self):
+        from docfit_app.jobs import manager_for
+        return manager_for(self.gui)
+
+    def start_job(self, kind, params=None):
+        from docfit_app.api_contract import ServiceError
+        if params is not None and not isinstance(params, dict):
+            raise ServiceError('INVALID_INPUT', '작업 입력을 확인해 주세요.')
+        params = params or {}
+        if kind == 'table_copy':
+            return self._jobs().start(kind, params, lambda report, cancelled:
+                self._table_copy_job(params, report, cancelled))
+        if kind not in {'format', 'spacing', 'unify', 'all', 'file_format'}:
+            raise ServiceError('INVALID_INPUT', '지원하지 않는 작업 종류입니다.')
+        if kind == 'file_format' and 'target' in params:
+            self.set_conversion_target(params['target'])
+        return self._start_legacy(kind, params.get('range_enabled', False),
+                                  params.get('start', '1'), params.get('end', '1'),
+                                  file_order=params.get('file_order'), _strict=True)
+
+    def _table_copy_job(self, params, report, cancelled):
+        if cancelled():
+            return None
+        result = self._table_units_command('copy', params)
+        if not result.get('ok'):
+            error = result.get('error') or {}
+            from docfit_app.api_contract import ServiceError
+            raise ServiceError(error.get('code', 'JOB_FAILED'), error.get('message', '표 복사 실패'))
+        report('item_done', result.get('data') or {})
+        return result.get('data')
+
+    def cancel_job(self, job_id):
+        state = self._jobs().cancel(job_id)
+        if self._tk(lambda: getattr(self.gui, '_job_id', None)) == job_id:
+            self._tk(self.gui.작업중단)
+        return state
+
+    def get_events(self, after_seq=0, max=200):
+        return self._jobs().events(after_seq, max)
+
     def start(self, mode, range_enabled=False, start="1", end="1", file_order=None):
+        from docfit_app.api_contract import ServiceError
+        try:
+            self.start_job(mode, dict(range_enabled=range_enabled, start=start, end=end, file_order=file_order))
+        except ServiceError as exc:
+            # 기존 start는 파일 없음·이미 실행 중 등 GUI가 시작하지 않은 경우에도 상태를 돌려준다.
+            if exc.code not in {'JOB_NOT_STARTED', 'JOB_RUNNING'}:
+                raise
+        return self.get_state()
+
+    def _start_legacy(self, mode, range_enabled=False, start="1", end="1", *, file_order=None, _strict=False):
+        from docfit_app.api_contract import ServiceError
+        def started(previous):
+            identifier = getattr(self.gui, '_job_id', None)
+            if _strict and (not identifier or identifier == previous):
+                raise ServiceError('JOB_NOT_STARTED', '입력 문서와 작업 설정을 확인해 주세요.')
+            return identifier
         if file_order is not None and (mode != "file_format" or self.conversion_target != "pdfm"):
             raise ValueError("파일 순서는 PDF 하나로 합치기에서만 지정할 수 있습니다.")
 
@@ -889,6 +979,9 @@ class DesktopWebBridge:
                 if len(file_order) != len(files) or set(map(_norm, file_order)) != set(map(_norm, files)):
                     raise ValueError("지정한 파일 순서 목록이 현재 문서 목록과 일치하지 않습니다.")
             def begin_conversion():
+                if self.gui.running:
+                    raise ServiceError('JOB_RUNNING', '문서 작업이 진행 중입니다.')
+                previous = getattr(self.gui, '_job_id', None)
                 self.gui._flutter_completion = {}
                 self.gui._flutter_format_review = {}
                 if self.conversion_target == "pdfm" and file_order:
@@ -900,12 +993,14 @@ class DesktopWebBridge:
                         self.gui.files = original_files
                 else:
                     self.gui.파일포맷_변경_시작(self.conversion_target)
-            self._tk(begin_conversion)
-            return self.get_state()
+                return started(previous)
+            identifier = self._tk(begin_conversion)
+            return identifier if _strict else self.get_state()
 
         def begin():
             if self.gui.running:
-                return
+                raise ServiceError('JOB_RUNNING', '문서 작업이 진행 중입니다.')
+            previous = getattr(self.gui, '_job_id', None)
             options = self._card_options()
             if mode == "spacing" and not options["spacing_enabled"] and not options["spacing_page_fit"]:
                 raise ValueError("자간 정리 또는 페이지 맞춤을 하나 이상 켜 주세요.")
@@ -919,12 +1014,18 @@ class DesktopWebBridge:
             self.gui._flutter_completion = {}
             self.gui._flutter_format_review = {}
             self.gui.작업시작(mode)
+            return started(previous)
 
-        self._tk(begin)
-        return self.get_state()
+        identifier = self._tk(begin)
+        return identifier if _strict else self.get_state()
 
     def stop(self):
-        self._tk(self.gui.작업중단)
+        job = self._jobs().latest()
+        identifier = job['id'] if job and job['state'] not in {'done', 'failed', 'cancelled'} else None
+        if identifier:
+            self.cancel_job(identifier)
+        else:
+            self._tk(self.gui.작업중단)
         return self.get_state()
 
     def _configuration(self):
@@ -953,21 +1054,53 @@ class DesktopWebBridge:
             return self._settings_snapshot()
         return self._tk(lambda: response(save))
 
+    def _tk_fallback_enabled(self):
+        var = getattr(self.gui, "ui_tk_fallback_var", None)
+        if var is not None and hasattr(var, "get"):
+            return bool(var.get())
+        fallback = getattr(self.gui, "ui_tk_fallback", None)
+        if fallback is not None:
+            return bool(fallback)
+        try:
+            service = getattr(self.gui, "_준말_서비스", None)
+            if callable(service):
+                settings = service().settings.read()
+                if isinstance(settings, dict) and "ui_tk_fallback" in settings:
+                    return bool(settings["ui_tk_fallback"])
+        except Exception:
+            pass
+        try:
+            settings = getattr(self.gui, "settings", None)
+            if isinstance(settings, dict) and "ui_tk_fallback" in settings:
+                return bool(settings["ui_tk_fallback"])
+        except Exception:
+            pass
+        from docfit_app.settings_schema import DEFAULTS
+        return bool(DEFAULTS.get("ui_tk_fallback", False))
+
     def open_settings(self):
+        if not self._tk_fallback_enabled():
+            return {"ok": False, "error": "FLUTTER_ONLY"}
         self._tk(self.gui.설정창_열기, timeout=None, front=True)
         return True
 
     def text_input(self):
+        if not self._tk_fallback_enabled():
+            return {"ok": False, "error": "FLUTTER_ONLY"}
         self._tk(self.gui._텍스트로_문서추가_열기, timeout=None, front=True)
         return self.get_state()
 
     def open_stages(self):
+        if not self._tk_fallback_enabled():
+            return {"ok": False, "error": "FLUTTER_ONLY"}
         self._tk(lambda: self.gui._세부작업_열기(
             self.gui.selected_mode.get(), self.gui._세부작업_기본저장.get(self.gui.selected_mode.get(), True)
         ), timeout=None, front=True)
         return True
 
     def open_log(self):
+        if not self._tk_fallback_enabled():
+            return {"ok": False, "error": "FLUTTER_ONLY"}
         self._tk(lambda: (self.gui.log_window.deiconify(), self.gui.log_window.lift()), front=True)
         return True
 
@@ -994,7 +1127,10 @@ class DesktopWebBridge:
         if not pending:
             with self._close_lock:
                 return dict(self._close_request) if self._close_request else None
-        return {key: pending[key] for key in ("id", "title", "message", "confirm", "choices", "fields", "ok_label", "cancel_label") if key in pending}
+        return {key: pending[key] for key in (
+            "id", "kind", "type", "title", "message", "confirm", "choices", "fields",
+            "ok_label", "cancel_label", "styles", "areas", "result", "error"
+        ) if key in pending}
 
     def get_pending_dialog(self):
         return self._tk(self._pending_dialog)
@@ -1033,10 +1169,10 @@ class DesktopWebBridge:
         def resolve():
             pending = getattr(self.gui, "_flutter_dialog", None)
             if pending and pending["id"] == identifier and isinstance(accepted, bool):
-                allowed = {item["id"] for item in pending["choices"]}
+                allowed = {item["id"] for item in pending.get("choices", [])}
                 if selection is not None and (not isinstance(selection, list) or any(item not in allowed for item in selection)):
                     raise ValueError("검토 항목을 다시 선택해 주세요.")
-                allowed_fields = {item["id"] for item in pending["fields"]}
+                allowed_fields = {item["id"] for item in pending.get("fields", [])}
                 if fields is not None and (not isinstance(fields, dict) or any(key not in allowed_fields or not isinstance(value, str) for key, value in fields.items())):
                     raise ValueError("검토 값을 확인해 주세요.")
                 pending["selection"] = selection if selection is not None else list(allowed)
@@ -1045,6 +1181,12 @@ class DesktopWebBridge:
                 pending["done"].set(True)
         self._tk(resolve)
         return {"ok": True}
+
+    def flow_export(self, payload):
+        from docfit_app.api_contract import ServiceError
+        if not isinstance(payload, dict) or payload.get('format') not in {'png', 'hwpx'}:
+            raise ServiceError('INVALID_INPUT', 'Choose PNG or HWPX.')
+        return self.flow_editor('export_' + payload['format'], payload)
 
     def flow_editor(self, action, payload):
         from docfit_app.flow_service import FlowService
@@ -1059,16 +1201,10 @@ class DesktopWebBridge:
         if action == "export_png":
             import os
             import tempfile
-            from tkinter import filedialog
             data = service.png_bytes(payload.get("base64"))
             raw_name = payload.get("name", "표/다이어그램")
             name = "".join(c for c in str(raw_name)[:120] if c.isalnum() or c in " _-") or "표 다이어그램"
-            selected = self._tk(lambda: filedialog.asksaveasfilename(
-                parent=self.gui.root, title="표/다이어그램 PNG 저장", initialfile=name + ".png",
-                defaultextension=".png", filetypes=[("PNG 이미지", "*.png")],
-            ), front=True)
-            if not selected:
-                return {"cancelled": True}
+            selected = self._selection_path(payload, 'flow_png', 'output_selection_id')
             target = Path(selected)
             if target.suffix.lower() != ".png":
                 raise ServiceError("INVALID_PATH", "PNG 파일로 저장해 주세요.")
@@ -1089,7 +1225,6 @@ class DesktopWebBridge:
             import os
             import sys
             import tempfile
-            from tkinter import filedialog
             from docfit_core.table_builder import TableSpecError, build_table_hwpx, normalize
             from docfit_app.table_template_service import TableTemplateService
             spec = payload.get("spec")
@@ -1101,12 +1236,7 @@ class DesktopWebBridge:
                 raise ServiceError("INVALID_TABLE", str(exc)) from exc
             raw_name = payload.get("name", "표")
             name = "".join(c for c in str(raw_name)[:120] if c.isalnum() or c in " _-") or "표"
-            selected = self._tk(lambda: filedialog.asksaveasfilename(
-                parent=self.gui.root, title="표 HWPX 저장", initialfile=name + ".hwpx",
-                defaultextension=".hwpx", filetypes=[("한/글 문서", "*.hwpx")],
-            ), front=True)
-            if not selected:
-                return {"cancelled": True}
+            selected = self._selection_path(payload, 'flow_hwpx', 'output_selection_id')
             target = Path(selected)
             if target.suffix.lower() != ".hwpx":
                 raise ServiceError("INVALID_PATH", "HWPX 파일로 저장해 주세요.")
@@ -1337,14 +1467,8 @@ class DesktopWebBridge:
                 os.startfile(str(path))   # 한/글에서 열어 내용을 고친다
                 return snapshot
             if action == "add_body" and isinstance(data, dict):
-                if not data.get("path"):
-                    from tkinter import filedialog
-                    picked = self._tk(lambda: filedialog.askopenfilename(
-                        parent=self.gui.root, title="본문 상용구로 쓸 문서",
-                        filetypes=[("한/글 문서", "*.hwp *.hwpx")]), front=True)
-                    if not picked:
-                        return service.snapshot()
-                    data["path"] = picked
+                if data.get('input_selection_id') or not data.get('path'):
+                    data['path'] = self._selection_path(data, 'idioms')
                 source = Path(str(data["path"]))
                 if source.suffix.lower() == ".hwpx" and source.is_file():
                     # 한/글 본문 상용구는 HWP 문서라 한/글로 바꿔 넣는다.
@@ -1388,17 +1512,13 @@ class DesktopWebBridge:
             if action != "get":
                 self.gui._준말_서비스()._editable(self.gui.running)
             data = dict(payload) if isinstance(payload, dict) else payload
-            if action == "learn" and isinstance(data, dict) and not data.get("path"):
-                from tkinter import filedialog
-                path = filedialog.askopenfilename(parent=self.gui.root,
-                    title="기본 데이터 표 서식 학습", filetypes=[("HWPX 문서", "*.hwpx")])
-                if not path:
-                    return TableTemplateService(self.gui._준말_서비스()).snapshot()
-                data["path"] = path
+            if action == 'learn' and isinstance(data, dict):
+                if data.get('input_selection_id') or not data.get('path'):
+                    data['path'] = self._selection_path(data, 'table_template')
             result = TableTemplateService(self.gui._준말_서비스()).command(
                 action, data, running=self.gui.running)
             return result
-        return self._tk(lambda: response(execute), front=action == "learn")
+        return self._tk(lambda: response(execute))
 
     def _table_units_hwp(self):
         """앱이 쓰는 방식 그대로 독립 한/글을 만들고 보안 모듈을 등록해 숨긴다."""
@@ -1439,6 +1559,28 @@ class DesktopWebBridge:
             return {"ok": False, "message": str(exc)}
 
     def table_units(self, action, payload=None):
+        if action != 'copy':
+            return self._table_units_command(action, payload)
+        def execute():
+            manager = self._jobs()
+            identifier = manager.begin('table_copy', payload)
+            manager.report(identifier, 'started', {})
+            try:
+                result = self._table_units_command(action, payload)
+                if result.get('ok'):
+                    manager.report(identifier, 'item_done', result.get('data') or {})
+                    manager.report(identifier, 'done', result.get('data') or {})
+                else:
+                    manager.report(identifier, 'failed', result.get('error') or {})
+                return result
+            except Exception as exc:
+                manager.report(identifier, 'failed', {'code':'JOB_FAILED', 'message':str(exc)})
+                raise
+        # 기존 응답 봉투를 그대로 유지한다.
+        result = response(execute)
+        return result['data'] if result['ok'] else result
+
+    def _table_units_command(self, action, payload=None):
         """표 템플릿: 스냅샷 목록·정보단위 미리보기·한/글 붙여넣기용 복사(2026-10-22).
 
         한/글을 쓰는 스냅샷·복사는 시간이 걸리므로 Tk 화면 스레드가 아니라 호출 스레드에서 따로 COM을 연다.
@@ -1520,6 +1662,23 @@ class DesktopWebBridge:
 
         self._tk(reveal, timeout=None, front=True)
         return self.get_state()
+
+    def open_diff(self, index=0):
+        """T17 진입점. 독립 비교 백엔드 연결 전에는 Tk 빈 창을 열지 않는다."""
+        if not self._tk_fallback_enabled():
+            return {
+                "ok": False,
+                "code": "DIFF_BACKEND_NOT_READY",
+                "error": "원본·결과 비교는 준비 중입니다. 독립 한/글 비교 뷰어가 아직 연결되지 않았습니다.",
+            }
+        self._tk(self.gui.비교창_준비, timeout=None, front=True)
+        return {**self.get_state(), "ok": True, "tk_fallback": True}
+
+    def compare_result(self, index=0):
+        return self.open_diff(index)
+
+    def launch_external_hwp_diff(self, index=0):
+        return self.open_diff(index)
 
     def _stages_changed(self, mode):
         """세부 작업을 바꾼 뒤 그 카드 옵션(표 제외·페이지 맞춤 제외 등)을 세부 작업에 맞춘다."""
@@ -1612,8 +1771,14 @@ class DesktopWebBridge:
 
     def add_format_paths(self, paths):
         """끌어 놓은 예시 보고서(HWP/HWPX) 중 첫 파일의 서식을 분석해 새 서식으로 복제한다."""
-        candidates = [str(value or "").strip() for value in (paths or [])]
-        candidates = [path for path in candidates if Path(path).suffix.lower() in (".hwp", ".hwpx")]
+        from docfit_app.api_contract import ServiceError
+        candidates = [str(p) for p in (paths or []) if Path(str(p)).suffix.lower() in {'.hwp', '.hwpx'}]
+        if candidates:
+            try:
+                selection = self._file_dialogs.register_selection('add_format_file', candidates)
+                candidates = self._file_dialogs.resolve_selection(selection['selection_id'], 'add_format_file')
+            except ServiceError:
+                return self.get_state()
 
         def start():
             gui = self.gui
@@ -1645,10 +1810,10 @@ class DesktopWebBridge:
             return self.add_paths(paths, from_drop=False)
         return self.add_paths(paths, from_drop=True)
 
-    def add_format_file(self):
-        """예시 보고서 파일을 골라 서식을 복제한다."""
-        self._tk(self.gui._서식_파일에서_추가, timeout=None, front=True)
-        return self.get_state()
+    def add_format_file(self, selection_id=None):
+        if not selection_id:
+            return {'ok': False, 'error': 'FILE_SELECTION_REQUIRED'}
+        return self.add_format_paths(self._file_dialogs.resolve_selection(selection_id, 'add_format_file'))
 
     def write_format_example(self):
         """빈 한/글 문서에 예시를 직접 써서 서식을 만든다."""
@@ -1738,6 +1903,8 @@ class DesktopWebBridge:
         command = commands.get(name)
         if command is None:
             raise ValueError("지원하지 않는 도구입니다.")
+        if not self._tk_fallback_enabled():
+            return {"ok": False, "error": "FLUTTER_ONLY"}
         self._tk(command, timeout=None, front=True)
         return True
 
@@ -1820,11 +1987,11 @@ class _BrowserApi:
         for name in (
             "cancel_zero_click", "start_zero_click", "quick_register_and_activate_profile", "drop_format_file", "set_profile_drop_bounds",
             "get_state", "add_files", "add_folder", "add_paths", "remove_file",
-            "clear_files", "set_mode", "set_range", "start", "stop",
+            "clear_files", "set_mode", "set_range", "start", "stop", "start_job", "cancel_job", "get_events",
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
             "get_pending_dialog", "resolve_dialog", "enable_close_guard", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch",
             "open_results", "next_job", "run_tool", "open_result",
-            "show_result", "set_stage", "reset_stages", "set_stage_default",
+            "show_result", "open_diff", "compare_result", "launch_external_hwp_diff", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",
             "set_exclude_tables", "set_card_option",
             "set_drop_target", "add_format_file", "write_format_example", "rename_profile", "delete_profile",

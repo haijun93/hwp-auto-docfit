@@ -67,7 +67,7 @@ class ReleaseFormatAuditTest(unittest.TestCase):
                 self.assertEqual(result['findings'][0]['text'], 'ㅁ 추진 배경')
 
     def test_hanging_indent_is_applied_after_all_copy_style_operations(self):
-        source = (Path(__file__).resolve().parents[1] / 'docfit_engine' / 'formatter.py').read_text(encoding='utf-8')
+        source = (Path(__file__).resolve().parents[1] / 'docfit_engine' / 'formatter_apply.py').read_text(encoding='utf-8')
         start = source.index("if _docfit_symbol == '표준서식_문단_처리':")
         end = source.index('return bind_function(표준서식_문단_처리', start)
         body = source[start:end]

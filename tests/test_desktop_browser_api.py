@@ -189,11 +189,12 @@ class BrowserApiTests(unittest.TestCase):
             with self.subTest(name=name), self.assertRaisesRegex(ValueError, "지원하지 않는"):
                 bridge.run_tool(name)
 
-    def test_text_input_remains_available_without_developer_mode(self):
+    def test_text_input_fallback_remains_available_without_developer_mode(self):
         gui = _FakeGui()
         called = []
         gui._텍스트로_문서추가_열기 = lambda: called.append(True)
         gui.developer_mode_var = _Var(False)
+        gui.ui_tk_fallback_var = _Var(True)
         self.assertTrue(_bridge(gui).run_tool("paste"))
         self.assertEqual(called, [True])
 
@@ -473,9 +474,19 @@ class BrowserApiTests(unittest.TestCase):
         gui.running = True
         self.assertTrue(bridge.set_card_option("all_exclude_pagefit", False)["card_options"]["all_exclude_pagefit"])
 
-    @mock.patch("desktop_web_ui.Path.resolve", return_value=Path(r"C:\a\report.hwpx"))
-    def test_format_manager_profiles_drop_routing_and_edits(self, _resolve):
+    def test_format_manager_profiles_drop_routing_and_edits(self):
         # 서식 목록은 이름·기관·기본 서식 여부·예시 파일·사용 중 여부를 함께 준다.
+        import tempfile
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        sample_0 = str(Path(temporary.name) / "sample_0.txt")
+        Path(sample_0).write_bytes(b"sample")
+        sample_1 = str(Path(temporary.name) / "sample_1.hwpx")
+        Path(sample_1).write_bytes(b"sample")
+        sample_2 = str(Path(temporary.name) / "sample_2.hwp")
+        Path(sample_2).write_bytes(b"sample")
+        sample_3 = str(Path(temporary.name) / "sample_3.hwpx")
+        Path(sample_3).write_bytes(b"sample")
         gui = _FakeGui()
         gui._프로파일들["abc"]["source"] = {"filename": "예시.hwpx"}
         bridge = _bridge(gui)
@@ -493,14 +504,14 @@ class BrowserApiTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             bridge.set_drop_target("somewhere")
         self.assertEqual(bridge.set_drop_target("format")["drop_target"], "format")
-        bridge.receive_drop([r"C:\a\메모.txt", r"C:\a\예시.hwpx", r"C:\a\둘째.hwp"])
-        self.assertEqual(started, [(r"C:\a\예시.hwpx", False)])
+        bridge.receive_drop([sample_0, sample_1, sample_2])
+        self.assertEqual(started, [(sample_1, False)])
         self.assertEqual(added, [])
-        bridge.receive_drop([r"C:\a\메모.txt"])
+        bridge.receive_drop([sample_0])
         self.assertIn("HWP 또는 HWPX", gui.status_var.get())
         bridge.set_drop_target("documents")
-        bridge.receive_drop([r"C:\a\보고서.hwpx"])
-        self.assertEqual(added, [r"C:\a\report.hwpx"])
+        bridge.receive_drop([sample_3])
+        self.assertEqual(added, [sample_3])
         self.assertEqual(len(started), 1)
         # 이름 바꾸기·삭제가 안 되면 notice에 이유를 담는다.
         gui._서식_이름_저장 = lambda identifier, name, organization: "이미 사용 중인 서식 이름입니다." if name == "중복" else None
@@ -526,6 +537,54 @@ class BrowserApiTests(unittest.TestCase):
                 mock.patch("desktop_web_ui.subprocess.Popen") as popen:
             bridge.show_result(0)
         self.assertEqual(popen.call_args.args[0][:2], ["explorer", "/select,"])
+
+
+    def test_open_settings_stages_log_return_flutter_only_by_default(self):
+        gui = _FakeGui()
+        gui.설정창_열기 = mock.Mock()
+        gui._세부작업_열기 = mock.Mock()
+        gui.log_window = mock.Mock()
+        gui.log_window.deiconify = mock.Mock()
+        gui.log_window.lift = mock.Mock()
+
+        bridge = _bridge(gui)
+
+        res_settings = bridge.open_settings()
+        self.assertEqual(res_settings, {"ok": False, "error": "FLUTTER_ONLY"})
+        gui.설정창_열기.assert_not_called()
+
+        res_stages = bridge.open_stages()
+        self.assertEqual(res_stages, {"ok": False, "error": "FLUTTER_ONLY"})
+        gui._세부작업_열기.assert_not_called()
+
+        res_log = bridge.open_log()
+        self.assertEqual(res_log, {"ok": False, "error": "FLUTTER_ONLY"})
+        gui.log_window.deiconify.assert_not_called()
+        gui.log_window.lift.assert_not_called()
+
+    def test_open_settings_stages_log_with_ui_tk_fallback_enabled(self):
+        gui = _FakeGui()
+        gui.설정창_열기 = mock.Mock()
+        gui._세부작업_열기 = mock.Mock()
+        gui.log_window = mock.Mock()
+        gui.log_window.deiconify = mock.Mock()
+        gui.log_window.lift = mock.Mock()
+        gui.ui_tk_fallback_var = _Var(True)
+
+        bridge = _bridge(gui)
+
+        res_settings = bridge.open_settings()
+        self.assertTrue(res_settings)
+        gui.설정창_열기.assert_called_once()
+
+        res_stages = bridge.open_stages()
+        self.assertTrue(res_stages)
+        gui._세부작업_열기.assert_called_once()
+
+        res_log = bridge.open_log()
+        self.assertTrue(res_log)
+        gui.log_window.deiconify.assert_called_once()
+        gui.log_window.lift.assert_called_once()
 
 
 if __name__ == '__main__':

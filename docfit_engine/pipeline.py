@@ -1116,7 +1116,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     return False
                 if not stage('표 테두리 선 굵기 통일', 표_테두리_전체_적용):
                     return False
-            if 작업_모드 == 'format' and 표준서식_사용 and stage_enabled(선택_세부작업, 'single_cell_spacing'):
+            if 작업_모드 in ('format', 'all') and 표준서식_사용 and stage_enabled(선택_세부작업, 'single_cell_spacing', 작업_모드):
                 if not stage('개요·한 칸 표 자간 조정', 한칸표_자간조정):
                     return False
             # 내어쓰기는 화면줄의 가로 폭과 줄바꿈을 바꿀 수 있으므로 자간·단어

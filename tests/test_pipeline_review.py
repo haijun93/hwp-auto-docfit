@@ -106,7 +106,7 @@ class PipelineReviewTest(unittest.TestCase):
                 })
             mutate.assert_not_called()
 
-    def _pass_calls(self, mode, standard):
+    def _pass_calls(self, mode, standard, single_cell=False):
         fn = self.ns['_문서_처리_1회']
         calls = []
         def unify(**kwargs):
@@ -116,7 +116,9 @@ class PipelineReviewTest(unittest.TestCase):
         with patch.dict(fn.__globals__, {
             '작업_모드': mode, '표준서식_사용': standard,
             '세트문장_같은쪽_사용': True, '세트문장_통계': {},
-            'stage_enabled': lambda _, key, *a: key in ('style_unify', 'page_fit', 'page_group'),
+            'stage_enabled': lambda _, key, *a: key in ('style_unify', 'page_fit', 'page_group')
+                or (single_cell and key == 'single_cell_spacing'),
+            '한칸표_자간조정': lambda: calls.append('single_cell') or True,
             '중단_요청됨': lambda: False, '단계표시': Mock(), '상태': Mock(), '로그': Mock(),
             'hwp_run': Mock(), '순회_시작': Mock(), '서식통일_전체_적용': unify,
             '표_셀_안쪽여백_전체_적용': lambda: True,
@@ -128,6 +130,15 @@ class PipelineReviewTest(unittest.TestCase):
         }):
             self.assertTrue(fn('source.hwpx'))
         return calls
+
+    def test_single_cell_spacing_runs_in_all_and_format_when_selected(self):
+        for mode in ('all', 'format', 'spacing'):
+            for standard in (False, True):
+                for selected in (False, True):
+                    with self.subTest(mode=mode, standard=standard, selected=selected):
+                        calls = self._pass_calls(mode, standard, single_cell=selected)
+                        expected = mode in ('all', 'format') and standard and selected
+                        self.assertEqual(calls.count('single_cell'), int(expected))
 
     def test_standard_format_stages_are_not_reverted_by_unify_profile(self):
         # 표준서식이 기준이면 괄호·내어쓰기 단계가 서식통일 뒤에 설정값을 입힌다. 서식통일 직후

@@ -1,0 +1,18 @@
+{
+  "base": "3aaa6c3da23c0dfa6b0f27f46e51526f9de527b6",
+  "functions": 358,
+  "moved": 358,
+  "unchanged": 0,
+  "ast_mismatches": 0,
+  "modules": {
+    "docfit_engine/formatter.py": 0,
+    "docfit_engine/formatter_utils.py": 60,
+    "docfit_engine/formatter_analysis.py": 15,
+    "docfit_engine/formatter_titles.py": 74,
+    "docfit_engine/formatter_tables.py": 31,
+    "docfit_engine/formatter_apply.py": 64,
+    "docfit_engine/formatter_indent.py": 33,
+    "docfit_engine/formatter_unify.py": 46,
+    "docfit_engine/formatter_text.py": 35
+  }
+}
