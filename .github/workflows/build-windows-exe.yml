@@ -180,8 +180,9 @@ jobs:
         shell: pwsh
         run: |
           $targetGate = @()
+          # 2.0.1 긴급 수정도 기록만(2026-10-29 사용자 승인: 목표 미달이어도 오류 수정이면 배포, 2.0.2부터 다시 차단).
           # v1.80.x는 시작 속도 목표를 기록으로 두고 배포(사용자 결정 2026-10-21, 측정 스플래시 114ms·재실행 1.72초). 1.81부터 다시 차단.
-          if ($env:GITHUB_REF -like 'refs/heads/release/*' -and $env:GITHUB_REF -notlike 'refs/heads/release/1.80.*') { $targetGate = @('--require-target') }
+          if ($env:GITHUB_REF -like 'refs/heads/release/*' -and $env:GITHUB_REF -notlike 'refs/heads/release/1.80.*' -and $env:GITHUB_REF -ne 'refs/heads/release/2.0.1') { $targetGate = @('--require-target') }
           & ".\.venv\Scripts\python.exe" scripts\smoke_smart_launcher.py --report "dist/smart-launcher-startup.json" --target-cache-ms 1500 --target-splash-ms 100 @targetGate
           if ($LASTEXITCODE -ne 0) { throw "Smart launcher cold/warm smoke test failed with exit code $LASTEXITCODE." }
 
