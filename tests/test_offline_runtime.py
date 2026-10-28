@@ -20,7 +20,7 @@ def make_pack(path, version=VERSION, extra=(), node=True):
         archive.writestr("runtime.json", json.dumps({"kordoc": version, "node": "22.23.3"}))
         if node:
             archive.writestr("node/node.exe", b"MZ fake node")
-        archive.writestr("app/node_modules/kordoc/dist/cli.js", "console.log('4.21.30')")
+        archive.writestr("app/node_modules/kordoc/dist/cli.js", "console.log('4.24.9')")
         for name, data in extra:
             archive.writestr(name, data)
     return path
@@ -77,7 +77,7 @@ class OfflineRuntimeTests(unittest.TestCase):
                 "pandoc": "3.12.1",
             }))
             archive.writestr("node/node.exe", b"MZ fake node")
-            archive.writestr("app/node_modules/kordoc/dist/cli.js", "console.log('4.21.30')")
+            archive.writestr("app/node_modules/kordoc/dist/cli.js", "console.log('4.24.9')")
             archive.writestr("pandoc/pandoc.exe", b"MZ fake pandoc")
         self.assertTrue(kr.pandoc_available())
         executable = kr.ensure_pandoc()
@@ -117,7 +117,7 @@ class OfflineRuntimeTests(unittest.TestCase):
             self.assertFalse(kb.engine_status()["available"])
 
     def test_kordoc_runs_with_offline_environment_and_local_model_cache(self):
-        completed = mock.Mock(returncode=0, stdout="4.21.30", stderr="")
+        completed = mock.Mock(returncode=0, stdout="4.24.9", stderr="")
         with mock.patch.object(kb, "_kordoc_command", return_value=["node", "cli.js"]), \
                 mock.patch.object(kb.subprocess, "run", return_value=completed) as run:
             kb.run_kordoc(["--version"])

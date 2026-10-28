@@ -1174,25 +1174,25 @@ void main() {
         'format': 'hwpx',
         'label': 'HWPX',
         'enabled': false,
-        'reason': 'kordoc 4.21.30 설치 필요 (Node.js 20+)',
+        'reason': 'kordoc 4.24.9 설치 필요 (Node.js 20+)',
       },
       {
         'format': 'pdf',
         'label': 'PDF',
         'enabled': false,
-        'reason': 'kordoc 4.21.30 설치 필요 (Node.js 20+)',
+        'reason': 'kordoc 4.24.9 설치 필요 (Node.js 20+)',
       },
       {
         'format': 'docx',
         'label': 'DOCX',
         'enabled': false,
-        'reason': 'kordoc 4.21.30 설치 필요 (Node.js 20+)',
+        'reason': 'kordoc 4.24.9 설치 필요 (Node.js 20+)',
       },
       {
         'format': 'epub',
         'label': 'EPUB',
         'enabled': false,
-        'reason': 'kordoc 4.21.30 설치 필요 (Node.js 20+)',
+        'reason': 'kordoc 4.24.9 설치 필요 (Node.js 20+)',
       },
     ];
     state['can_start'] = false;
@@ -1216,7 +1216,7 @@ void main() {
       tester
           .widget<Text>(find.byKey(const Key('conversionPrerequisiteNotice')))
           .data,
-      contains('kordoc 4.21.30 설치 필요'),
+      contains('kordoc 4.24.9 설치 필요'),
     );
     final button = tester.widget<FilledButton>(
       find.widgetWithText(FilledButton, '변환 시작'),

@@ -4,7 +4,7 @@
 Node.js와 kordoc을 한 꾸러미로 만들어 실행 파일과 함께 전달한다.
 
 꾸러미 구조(폴더 또는 같은 구조의 ZIP):
-    runtime.json                         {"kordoc": "4.21.30", "node": "22.23.3", ...}
+    runtime.json                         {"kordoc": "4.24.9", "node": "22.23.3", ...}
     node/node.exe                        공식 Node.js 실행 파일
     app/node_modules/kordoc/dist/cli.js  kordoc 진입점
 
@@ -28,7 +28,7 @@ from pathlib import Path, PurePosixPath
 RUNTIME_FOLDER_NAME = "kordoc-runtime"
 RUNTIME_PACK_NAME = "HWP_AutoDocFit_kordoc_runtime.zip"
 MANIFEST_NAME = "runtime.json"
-KORDOC_RUNTIME_VERSION = "4.21.30"
+KORDOC_RUNTIME_VERSION = "4.24.9"
 MAX_PACK_FILES = 20_000
 MAX_PACK_BYTES = 700 * 1024 * 1024
 
@@ -55,8 +55,8 @@ def installed_root() -> Path:
 
 def model_cache_dir() -> Path:
     """kordoc OCR·수식 모델 위치(폐쇄망에서는 'kordoc models --import'로 미리 넣는다)."""
-    for root in (app_directory() / RUNTIME_FOLDER_NAME, installed_root() / "4.21.30",
-                 user_installed_root() / "4.21.30"):
+    for root in (app_directory() / RUNTIME_FOLDER_NAME, installed_root() / "4.24.9",
+                 user_installed_root() / "4.24.9"):
         if all((root / "models" / "ppocr" / name).is_file() for name in ("det.onnx", "rec_korean.onnx", "rec_korean.yml")):
             return root / "models"
     base = os.environ.get("APPDATA") or os.environ.get("LOCALAPPDATA")

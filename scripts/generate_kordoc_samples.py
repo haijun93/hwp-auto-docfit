@@ -1,4 +1,4 @@
-"""kordoc 4.21.30 기반 기관별·프리셋별 예시 전종 HWPX 생성 및 규범 기준본 구축 스크립트.
+"""kordoc 4.24.9 기반 기관별·프리셋별 예시 전종 HWPX 생성 및 규범 기준본 구축 스크립트.
 불변 규칙: 항목기호와 본문 사이 일반 스페이스 1개, 탭 금지.
 """
 from __future__ import annotations
@@ -23,8 +23,8 @@ sys.path.insert(0, str(ROOT))
 
 from docfit_core.marker_spacing import normalize_hwpx
 
-NODE_EXE = r"C:\Users\haiju\AppData\Local\HwpAutoDocFit\kordoc-runtime\4.21.30\node\node.exe"
-CLI_JS = r"C:\Users\haiju\AppData\Local\HwpAutoDocFit\kordoc-runtime\4.21.30\app\node_modules\kordoc\dist\cli.js"
+NODE_EXE = r"C:\Users\haiju\AppData\Local\HwpAutoDocFit\kordoc-runtime\4.24.9\node\node.exe"
+CLI_JS = r"C:\Users\haiju\AppData\Local\HwpAutoDocFit\kordoc-runtime\4.24.9\app\node_modules\kordoc\dist\cli.js"
 
 BASE_DIR = Path(r"C:\HWP_AUTODOCFIT\테스트예시\kordoc_generated_20261025")
 RAW_DIR = BASE_DIR / "raw"
@@ -68,9 +68,9 @@ def main() -> int:
         print(f"오류: 입력 마크다운 파일이 없습니다: {INPUT_MD}")
         return 1
 
-    print("=== kordoc 전종 생성 시작 (kordoc 4.21.30) ===")
+    print("=== kordoc 전종 생성 시작 (kordoc 4.24.9) ===")
     raw_manifest = {
-        "kordoc_version": "4.21.30",
+        "kordoc_version": "4.24.9",
         "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "source_markdown": str(INPUT_MD),
         "source_sha256": sha256_file(INPUT_MD),
@@ -78,7 +78,7 @@ def main() -> int:
     }
 
     norm_manifest = {
-        "kordoc_version": "4.21.30",
+        "kordoc_version": "4.24.9",
         "normalized_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "rule": "항목기호 뒤 일반 빈칸 1개, 탭 금지, 앞 빈칸 규범화",
         "files": [],
