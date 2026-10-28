@@ -1,0 +1,250 @@
+{
+  "started": "2026-10-29T01:19:19",
+  "pid": 11272,
+  "preexisting_pids": [],
+  "source_sha256": "49a6b7f6601e0aa63ddd157d6f1dfb0ec852abc45eccae28e7a135533824e899",
+  "source_unchanged": true,
+  "probes": [
+    {
+      "name": "version",
+      "calls": "Version",
+      "status": "PASS",
+      "value": "9, 6, 1, 10778",
+      "seconds": 0.0006
+    },
+    {
+      "name": "security",
+      "calls": "RegisterModule",
+      "status": "PASS",
+      "value": true,
+      "seconds": 0.0094
+    },
+    {
+      "name": "attach_rot",
+      "calls": "ROT.EnumRunning/GetObject (PID whitelist)",
+      "status": "PASS",
+      "value": [
+        {
+          "moniker": "!HwpObject.96.1",
+          "pid": 11272,
+          "copy_path_verified": true,
+          "RegisterModule": false
+        }
+      ],
+      "seconds": 0.0548
+    },
+    {
+      "name": "attach_moniker",
+      "calls": "GetObject(display name)/BindToMoniker",
+      "status": "FAIL",
+      "error": "com_error(-2147221020, '잘못된 구문입니다.', None, None)",
+      "seconds": 0.0252
+    },
+    {
+      "name": "attach_active",
+      "calls": "GetActiveObject (only owned HWP exists)",
+      "status": "FAIL",
+      "error": "com_error(-2147221021, '작업을 사용할 수 없습니다.', None, None)",
+      "seconds": 0.0235
+    },
+    {
+      "name": "cursor",
+      "calls": "GetPos/GetSelectedPosBySet",
+      "status": "PASS",
+      "value": {
+        "pos": [
+          0,
+          1,
+          8
+        ],
+        "selection": [
+          [
+            0,
+            1,
+            8
+          ],
+          [
+            0,
+            1,
+            8
+          ]
+        ]
+      },
+      "seconds": 0.0139
+    },
+    {
+      "name": "paragraph",
+      "calls": "MoveParaBegin/MoveSelParaEnd/GetTextFile",
+      "status": "PASS",
+      "value": {
+        "selection": [
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            1,
+            8
+          ]
+        ],
+        "text_length": 96
+      },
+      "seconds": 0.1566
+    },
+    {
+      "name": "page",
+      "calls": "KeyIndicator/MovePageBegin/MovePageEnd",
+      "status": "PASS",
+      "value": {
+        "indicator": [
+          true,
+          1,
+          1,
+          1,
+          1,
+          2,
+          97,
+          0,
+          "문단 나눔"
+        ],
+        "begin": [
+          0,
+          0,
+          16
+        ],
+        "end": [
+          0,
+          17,
+          30
+        ]
+      },
+      "seconds": 0.0167
+    },
+    {
+      "name": "table_context",
+      "calls": "HeadCtrl/GetAnchorPos/ParentCtrl/GetPos",
+      "status": "PASS",
+      "value": {
+        "anchor": [
+          0,
+          0,
+          16
+        ],
+        "inside_pos": [
+          2,
+          0,
+          0
+        ],
+        "parent": "tbl"
+      },
+      "seconds": 0.0811
+    },
+    {
+      "name": "undo_group",
+      "calls": "BeginTransaction/EndTransaction/HAction.Undo",
+      "status": "FAIL",
+      "error": "AttributeError: BeginTransaction is not exposed by installed IHwpObject",
+      "seconds": 0.0293
+    },
+    {
+      "name": "undo_plain",
+      "calls": "InsertText/Bold/InsertText/Undo",
+      "status": "PASS",
+      "value": {
+        "one_undo_restored_text": false,
+        "first_remaining": true,
+        "second_remaining": false
+      },
+      "seconds": 0.3983
+    },
+    {
+      "name": "insert_template",
+      "calls": "FindCtrl/GetTextFile(HWPML2X)/SetTextFile(insertfile)",
+      "status": "PASS",
+      "value": {
+        "tables_before": 8,
+        "tables_after": 9,
+        "clipboard": false,
+        "one_undo_table_count_restored": true,
+        "one_undo_hml_identical": true
+      },
+      "seconds": 1.9749
+    },
+    {
+      "name": "replace_table",
+      "calls": "table_units.export_resized/auxiliary HML/DeleteCtrl/SetTextFile",
+      "status": "PASS",
+      "value": {
+        "template": "표(가로) · 모양 1",
+        "anchor": [
+          0,
+          49,
+          0
+        ],
+        "rows_before": 6,
+        "rows_after_increase": 7,
+        "rows_after_decrease": 5,
+        "table_count": 9,
+        "clipboard": false,
+        "target_doc_id_unchanged": true,
+        "limitation": "임의 기존 표의 의미단위 역판정/내용 이관은 별도 구현 필요"
+      },
+      "seconds": 9.2617
+    },
+    {
+      "name": "selection_spacing",
+      "calls": "existing 단어모드_자간적용/SelectText/CharShape",
+      "status": "PASS",
+      "value": {
+        "before": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "after": [
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1
+        ],
+        "outside_unchanged": true,
+        "limitation": "기존 엔진 저수준 적용만 검증; 전체 탐색 결과 동일성 미검증"
+      },
+      "seconds": 1.7525
+    },
+    {
+      "name": "dialog",
+      "calls": "HAction.Run(CharShape) + marshaled GetPos + PID dialog close",
+      "status": "PASS",
+      "value": {
+        "dialog_visible_at_call": true,
+        "getpos": [
+          0,
+          52,
+          6
+        ],
+        "call_seconds": 0.0037,
+        "edit_return": true,
+        "edit_seconds": 0.0056,
+        "dialog_seen": true
+      },
+      "seconds": 4.0719
+    }
+  ],
+  "supervisor": {
+    "worker_exit": 0,
+    "preexisting_pids": [],
+    "remaining_hwp_pids": []
+  },
+  "measurement_folder": "C:\\HWP_AUTODOCFIT\\v1803\\reports\\C28-final2",
+  "scope": "NEO 9.6.1.10778 only; not Hangul 2020 validation"
+}

@@ -577,3 +577,11 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 - 선택 완료 응답에는 이름/크기만 포함한다. 파일 추가는 add_paths, 폴더는 add_directory, 저장/가져오기는 output_selection_id/input_selection_id를 사용한다. 선택 없이 호출하면 FILE_SELECTION_REQUIRED. 일반 상태 조회용 _tk RPC는 유지한다.
 - 지정 5개 pytest와 관련 브리지/드롭/흐름도/수명 주기 시험 합계 128개 및 142 subtests PASS. 추가 reparse·브리지 연결 시험 포함 신규 서비스 최종 12개 및 4 subtests PASS.
 - CRLF 및 diff 검사 수행. 사용자 원본 수정·한/글 COM 시험 없음. 실제 Windows 대화상자 조작/Flutter 통합 UI 검증은 미실행이며, 전체 저장소 unittest 실행 결과로 보고하지 않는다.
+
+## Codex 결과 보고 — C28 LiveLink 0단계 (2026-10-29)
+
+- 사용자 신규 카드에 따라 feature/livelink에서 PoC 스크립트·안전 시험·설계 문서를 작성했다. 기존 W1~W3 엔진 코드는 수정하지 않았다.
+- COM 시험은 01:08경 시작, 최종 C28-final2 종료 완료. .com-test.lock으로 직렬화하고 직접 생성한 PID와 scratch 사본만 사용했다. 남은 한/글 PID 0개, 잠금 해제, 원본 SHA256 불변.
+- 실제 설치는 NEO 9.6.1.10778이다. ROT 재연결·문맥·HML 표 삽입·정보단위 교체(6→7→5행)·저수준 선택 자간·모달 응답 확인. 한/글 2020 검증으로 해석하지 않는다.
+- 단일 표 삽입은 Undo 1회로 HML까지 원복. 복수 동작 Undo 그룹은 미지원 API·실제 반례로 요구 미충족. 임의 사용자 표 내용 이관·범위 탐색 동일성·실제 내부 도킹은 미검증이다.
+- 증거: docs/LIVELINK_POC.md, docs/LIVELINK_POC_RESULTS.json 및 C:\HWP_AUTODOCFIT\v1803\reports\C28-final2. 보호·감시 경계 시험 5개 PASS. 전체 unittest 결과는 LiveLink 문서 최종 검증 기록에 적는다.
