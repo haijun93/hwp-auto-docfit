@@ -26,6 +26,7 @@ import 'features/stages/stage_board.dart';
 import 'features/table_units/table_units_screen.dart';
 import 'features/table_sketch/table_sketch_screen.dart';
 import 'features/workspace/workspace_adapters.dart';
+import 'features/workspace/tab_navigation_shell.dart';
 
 
 export 'core/api/abbreviation_api.dart' show ApiCall;
@@ -591,7 +592,16 @@ class _WorkspaceState extends State<Workspace> {
     );
   }
 
+  /// 6탭 화면 안이면 새 화면을 덮어 열지 않고 해당 탭으로 옮긴다(하단 탭 메뉴가 사라지던 문제).
+  bool _switchWorkspaceTab(int index) {
+    final scope = WorkspaceTabScope.maybeOf(context);
+    if (scope == null) return false;
+    scope.selectTab(index);
+    return true;
+  }
+
   Future<void> openFlowEditor({String mode = 'diagram'}) async {
+    if (_switchWorkspaceTab(mode == 'mindmap' ? 4 : 3)) return;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => FlowEditorScreen(api: widget.api, initialMode: mode),
@@ -600,6 +610,7 @@ class _WorkspaceState extends State<Workspace> {
   }
 
   Future<void> openTableUnits() async {
+    if (_switchWorkspaceTab(1)) return;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => TableUnitsScreen(api: widget.api),
@@ -608,6 +619,7 @@ class _WorkspaceState extends State<Workspace> {
   }
 
   Future<void> openTableSketch() async {
+    if (_switchWorkspaceTab(2)) return;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => TableSketchScreen(api: widget.api),
@@ -1987,6 +1999,7 @@ class _WorkspaceState extends State<Workspace> {
     setState(() => appClosing = true);
     var accepted = false;
     try {
+      await widget.api('acknowledge_close', [request['id']]);
       accepted = !busy && await CloseGuards.prepareAll();
       // An unregistered dialog may hold edits or a pending RPC: fail closed.
       if (!mounted) return;

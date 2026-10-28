@@ -278,7 +278,7 @@ class BrowserApiTests(unittest.TestCase):
         gui = _FakeGui()
         bridge = _bridge(gui)
         bridge._conversion_prerequisites = lambda: {
-            "kordoc": {"available": True, "reason": "kordoc 4.21.30 설치 확인"},
+            "kordoc": {"available": True, "reason": "kordoc 4.24.9 설치 확인"},
             "pandoc": True,
             "hwp_com": True,
         }
@@ -321,7 +321,7 @@ class BrowserApiTests(unittest.TestCase):
         gui = _FakeGui()
         bridge = _bridge(gui)
         bridge._conversion_prerequisites = lambda: {
-            "kordoc": {"available": True, "reason": "kordoc 4.21.30 설치 확인"},
+            "kordoc": {"available": True, "reason": "kordoc 4.24.9 설치 확인"},
             "pandoc": False,
             "hwp_com": True,
         }
@@ -338,7 +338,7 @@ class BrowserApiTests(unittest.TestCase):
         gui.files = [str(Path("report.xlsx"))]
         bridge = _bridge(gui)
         bridge._conversion_prerequisites = lambda: {
-            "kordoc": {"available": False, "reason": "kordoc 4.21.30 설치 필요 (Node.js 20+)"},
+            "kordoc": {"available": False, "reason": "kordoc 4.24.9 설치 필요 (Node.js 20+)"},
             "pandoc": False,
             "hwp_com": True,
         }
@@ -346,9 +346,9 @@ class BrowserApiTests(unittest.TestCase):
         self.assertFalse(state["can_start"])
         targets = {target["format"]: target for target in state["conversion_targets"]}
         self.assertFalse(targets["hwpx"]["enabled"])
-        self.assertIn("kordoc 4.21.30 설치 필요", targets["hwpx"]["reason"])
+        self.assertIn("kordoc 4.24.9 설치 필요", targets["hwpx"]["reason"])
         self.assertFalse(targets["pdf"]["enabled"])
-        self.assertIn("kordoc 4.21.30 설치 필요", targets["pdf"]["reason"])
+        self.assertIn("kordoc 4.24.9 설치 필요", targets["pdf"]["reason"])
         self.assertFalse(targets["docx"]["enabled"])
 
     def test_hwpx_pdf_needs_no_kordoc_node_or_pandoc(self):

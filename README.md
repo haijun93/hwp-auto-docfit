@@ -9,8 +9,8 @@
 
 <p align="center">
 <br>
-<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.0.0_Portable.exe?inline=false"><img alt="공공기관 PC: GitLab에서 무설치로 받기" src="https://img.shields.io/badge/%EA%B3%B5%EA%B3%B5%EA%B8%B0%EA%B4%80%20PC%20GitLab-%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v2.0.0-15803d?style=for-the-badge&logo=gitlab"></a>
-<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.0.0_Setup.exe?inline=false"><img alt="공공기관 PC: GitLab에서 설치용 받기" src="https://img.shields.io/badge/%EA%B3%B5%EA%B3%B5%EA%B8%B0%EA%B4%80%20PC%20GitLab-%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0-16a34a?style=for-the-badge&logo=gitlab"></a>
+<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.0.1_Portable.exe?inline=false"><img alt="공공기관 PC: GitLab에서 무설치로 받기" src="https://img.shields.io/badge/%EA%B3%B5%EA%B3%B5%EA%B8%B0%EA%B4%80%20PC%20GitLab-%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v2.0.1-15803d?style=for-the-badge&logo=gitlab"></a>
+<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.0.1_Setup.exe?inline=false"><img alt="공공기관 PC: GitLab에서 설치용 받기" src="https://img.shields.io/badge/%EA%B3%B5%EA%B3%B5%EA%B8%B0%EA%B4%80%20PC%20GitLab-%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0-16a34a?style=for-the-badge&logo=gitlab"></a>
 </p>
 <p align="center">
 <img alt="무료" src="https://img.shields.io/badge/%EA%B0%80%EA%B2%A9-%EB%AC%B4%EB%A3%8C-16a34a">
@@ -23,6 +23,30 @@
 <a href="docs/media/overview-demo.mp4"><img src="docs/media/overview-demo.gif" alt="한글편집 후처리 5분 시연 — 누르면 고화질 영상" width="860"></a><br>
 <sub>▶ 누르면 5분 시연 영상(고화질)이 열립니다</sub>
 </p>
+
+---
+
+<h2 align="center">v2.0.1 긴급 수정 릴리즈</h2>
+<p align="center">2.0.0의 흰 화면·창 닫기 불가·탭 멈춤과 새 PC에서 변환 기능이 안 되던 문제를 고쳤습니다</p>
+
+### 창 닫기(X)가 항상 동작 (2.0.1)
+
+화면이 응답하지 않을 때 X를 눌러도 창이 닫히지 않고 프로그램이 뒤에 남던 문제를 고쳤습니다. 화면이 5초 안에 답하지 않거나 X를 한 번 더 누르면, 앱이 만든 한/글 프로세스까지 정리하고 바로 닫습니다. 정상일 때는 지금처럼 저장 확인 창이 먼저 나옵니다.
+
+### 탭 ← 버튼 멈춤·하단 탭 사라짐 수정 (2.0.1)
+
+탭 안에서 ← 버튼을 누르면 앱이 멈추던 문제를 고쳤습니다. 탭 안의 ← 버튼은 숨기고, 상단 메뉴는 해당 탭으로 이동하며, 하단 탭은 항상 보입니다.
+
+### 새 PC에서 변환 기능이 안 되던 문제 수정 (2.0.1)
+
+2.0.0은 함께 넣은 변환 엔진(kordoc 4.24.9)과 앱이 찾는 버전(4.21.30)이 달라, 이전 엔진이 없는 PC에서는 변환 기능이 동작하지 않았습니다. 버전을 4.24.9로 맞추고 고정했습니다.
+
+### 실제 실행 파일로 화면·종료 확인 (2.0.1)
+
+배포 전 자동 검사에서 실제 exe를 띄워 첫 화면에 내용이 그려지는지(측정 4.6초), X로 닫히는지(0.6초), 화면이 멈춘 상태에서도 X로 닫히는지를 확인합니다.
+
+> 파일변환 탭은 새 변환 화면으로 교체하는 동안 잠시 비활성(누르면 "준비 중")입니다. 새 화면은 다음 버전에 넣습니다.
+> 시작 속도(기록): 첫 실행 스플래시 166.9ms(목표 100ms 미달), 재실행 1.37~1.47초. 시작 속도 개선은 다음 버전 과제입니다.
 
 ---
 

@@ -88,9 +88,12 @@ class DesktopWebBridge:
         self._close_lock = threading.Lock()
         self._close_protocol = False
         self._close_request = None
+        self._close_timer = None
 
     def _shutdown(self):
         """Tk 종료 시 대기·실행 중 요청의 호출자를 종료 오류로 해제한다."""
+        with self._close_lock:
+            self._cancel_close_timer()
         manager = getattr(self.gui, '_job_manager', None)
         if manager is not None:
             threading.Thread(target=manager.shutdown, daemon=True).start()
@@ -1140,6 +1143,49 @@ class DesktopWebBridge:
             self._close_protocol = True
         return {"ok": True}
 
+    def _cancel_close_timer(self):
+        if self._close_timer is not None:
+            self._close_timer.cancel()
+            self._close_timer = None
+
+    def acknowledge_close(self, identifier):
+        # Explicitly acknowledge before opening save/discard dialogs. Polling
+        # state alone does not prove Flutter can handle the close request.
+        with self._close_lock:
+            if self._close_request is None or self._close_request["id"] != identifier:
+                return {"ok": False}
+            self._cancel_close_timer()
+        return {"ok": True}
+
+    def _close_unanswered(self, identifier):
+        with self._close_lock:
+            if self._close_request is None or self._close_request["id"] != identifier:
+                return
+            # Delivery and the timeout race under the same lock.
+            if self._close_timer is None:
+                return
+            self._close_request = None
+            self._cancel_close_timer()
+        self._force_close(native_event=False)
+
+    def _force_close(self, *, native_event):
+        """Release callers and stop owned work without waiting on JavaScript/Tk."""
+        self.user_closing = native_event
+        self._shutdown()
+
+        def cleanup():
+            from docfit_core.hwp_process import kill_owned
+            try:
+                kill_owned()
+            finally:
+                try:
+                    self.gui.root.after(0, self.gui.root.destroy)
+                except Exception:
+                    logging.getLogger(__name__).exception("Could not stop the Tk message pump")
+
+        threading.Thread(target=cleanup, name="webview-close-cleanup", daemon=True).start()
+        return True
+
     def resolve_dialog(self, identifier, accepted, selection=None, fields=None):
         with self._close_lock:
             host_close = self._close_request is not None and self._close_request["id"] == identifier
@@ -1147,6 +1193,7 @@ class DesktopWebBridge:
                 if not isinstance(accepted, bool):
                     raise ValueError("종료 응답을 확인해 주세요.")
                 self._close_request = None
+                self._cancel_close_timer()
         if host_close:
             if not accepted:
                 return {"accepted": False}
@@ -1912,12 +1959,22 @@ class DesktopWebBridge:
         """OS 창 닫기 전에 기존 앱의 종료 확인·작업 중단 절차를 수행한다."""
         if self.tk_stopped is not None and self.tk_stopped.is_set():
             return True
+        force = False
         with self._close_lock:
             if self._close_protocol:
-                if self._close_request is None:
-                    import uuid
+                if self._close_request is not None:
+                    self._close_request = None
+                    self._cancel_close_timer()
+                    force = True
+                else:
                     self._close_request = {"id": uuid.uuid4().hex, "kind": "app_close"}
-                return False  # Never block the native closing event for JS.
+                    self._close_timer = threading.Timer(
+                        5.0, self._close_unanswered, args=(self._close_request["id"],))
+                    self._close_timer.daemon = True
+                    self._close_timer.start()
+                    return False  # Never block the native closing event for JS.
+        if force:
+            return self._force_close(native_event=True)
         def defer_confirmation():
             if not (getattr(self.gui.root, "_docfit_hidden_backend", False) and self.gui.running):
                 return False
@@ -1980,6 +2037,18 @@ for _edit_name in (
     setattr(DesktopWebBridge, _edit_name, _cancel_before_edit(getattr(DesktopWebBridge, _edit_name)))
 
 
+def smoke_cdp_port(environ=None):
+    """Return the loopback CDP port requested by the frozen-EXE smoke test, if any.
+
+    pywebview's own AdditionalBrowserArguments replaces WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
+    on some WebView2 runtimes, so the smoke test asks the app for the port explicitly.
+    """
+    value = (os.environ if environ is None else environ).get("DOCFIT_SMOKE_CDP_PORT", "")
+    if value.isdigit() and 1024 <= int(value) <= 65535:
+        return int(value)
+    return None
+
+
 class _BrowserApi:
     """Expose commands only: pywebview recursively inspects public attributes."""
 
@@ -1989,7 +2058,7 @@ class _BrowserApi:
             "get_state", "add_files", "add_folder", "add_paths", "remove_file",
             "clear_files", "set_mode", "set_range", "start", "stop", "start_job", "cancel_job", "get_events",
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
-            "get_pending_dialog", "resolve_dialog", "enable_close_guard", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch",
+            "get_pending_dialog", "resolve_dialog", "enable_close_guard", "acknowledge_close", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch",
             "open_results", "next_job", "run_tool", "open_result",
             "show_result", "open_diff", "compare_result", "launch_external_hwp_diff", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",
@@ -2169,6 +2238,9 @@ def run_webview(gui):
 
     # 창 아이콘: 지정하지 않으면 실행 파일(python.exe 또는 exe)의 아이콘을 쓴다.
     아이콘 = {"icon": APP_ICON} if APP_ICON and Path(APP_ICON).is_file() else {}
+    smoke_port = smoke_cdp_port()
+    if smoke_port is not None:
+        webview.settings["REMOTE_DEBUGGING_PORT"] = smoke_port
     webview.start(initialize_webview, args=[window], gui="edgechromium", http_server=True, **아이콘)
     return True
 

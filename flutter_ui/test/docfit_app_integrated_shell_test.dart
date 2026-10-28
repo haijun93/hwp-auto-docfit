@@ -60,10 +60,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.byType(MindMapAdapter), findsOneWidget);
 
-    // Tap on Tab 6: 파일변환
+    // Tab 6 파일변환은 2.0.1에서 비활성 — 눌러도 마인드맵에 머문다
     await tester.tap(find.text('파일변환'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
-    expect(find.byType(FileConversionAdapter), findsOneWidget);
+    expect(find.byType(MindMapAdapter), findsOneWidget);
   });
 }

@@ -478,7 +478,7 @@ class _IdiomPanelState extends State<IdiomPanel> {
 
 /// 함께 쓰는 프로그램·코드(이름, 쓰는 곳, 라이선스). 자세한 고지는 THIRD_PARTY_NOTICES.md(2026-10-17 사용자 요청).
 const thirdPartyComponents = [
-  ('kordoc 4.21.30 (chrisryugj)', '문서 변환 엔진(PDF·DOCX·이미지 → HWPX 등)', 'MIT'),
+  ('kordoc 4.24.9 (chrisryugj)', '문서 변환 엔진(PDF·DOCX·이미지 → HWPX 등)', 'MIT'),
   ('Node.js 22.23.3', 'kordoc 실행 런타임(EXE 내장)', 'MIT'),
   ('pdf.js (pdfjs-dist 4.10.38)', 'PDF 글자 읽기', 'Apache-2.0'),
   ('PP-OCRv5 한국어 모델 (PaddlePaddle)', '이미지·스캔 PDF 한국어 글자 인식', 'Apache-2.0'),

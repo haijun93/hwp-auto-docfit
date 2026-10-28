@@ -18,7 +18,7 @@ class KordocContractTest(unittest.TestCase):
         self.addCleanup(self._runtime_patch.stop)
 
     def test_exact_version_pinned(self):
-        self.assertEqual(kb.KORDOC_PACKAGE, "kordoc@4.21.30")
+        self.assertEqual(kb.KORDOC_PACKAGE, "kordoc@4.24.9")
 
     def test_old_node_is_refused(self):
         with patch.object(kb, "_node_major", return_value=18):

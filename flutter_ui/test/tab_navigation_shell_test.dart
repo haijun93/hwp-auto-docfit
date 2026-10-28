@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('all six canvases retain state across tab switches', (
+  testWidgets('enabled canvases retain state across tab switches', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -18,7 +18,8 @@ void main() {
         ),
       ),
     );
-    const labels = ['문서편집', '표템플릿', '표그림판', '다이어그램', '마인드맵', '파일변환'];
+    // 파일변환(5)은 2.0.1에서 비활성이라 제외
+    const labels = ['문서편집', '표템플릿', '표그림판', '다이어그램', '마인드맵'];
     for (final label in labels) {
       await tester.tap(find.text(label));
       await tester.pumpAndSettle();

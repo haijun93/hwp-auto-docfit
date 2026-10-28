@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:web/web.dart' as web;
 import '../../core/api/abbreviation_api.dart';
 import '../table_units/table_units_screen.dart';
+import '../workspace/tab_navigation_shell.dart';
 
 class FlowEditorScreen extends StatefulWidget {
   const FlowEditorScreen({super.key, required this.api, this.initialMode = 'diagram', this.isModal = true});
@@ -31,7 +32,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
   Future<bool> _prepareHostClose() async {
     if (saveState.saving || busy || !canCloseEditor(context)) return false;
     if (!await confirmDiscard() || !mounted) return false;
-    Navigator.of(context).pop();
+    closeWorkspaceScreen(context);
     return true;
   }
 
@@ -396,7 +397,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
           !saveState.saving &&
           await confirmDiscard() &&
           context.mounted) {
-        Navigator.pop(context);
+        closeWorkspaceScreen(context);
       }
     },
     child: Scaffold(
@@ -411,13 +412,17 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
                 : null,
           ),
         ],
-        leading: IconButton(
+        // 탭 안(돌아갈 화면 없음)에서는 ← 버튼을 보이지 않는다. 새 화면으로 열었을 때만 표시.
+        automaticallyImplyLeading: false,
+        leading: !Navigator.of(context).canPop()
+            ? null
+            : IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () async {
             if (!saveState.saving &&
                 await confirmDiscard() &&
                 context.mounted) {
-              Navigator.pop(context);
+              closeWorkspaceScreen(context);
             }
           },
         ),

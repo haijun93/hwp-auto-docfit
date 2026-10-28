@@ -1,5 +1,33 @@
 import 'package:flutter/material.dart';
 
+/// 탭 안 화면이 '닫기·뒤로'를 요청할 때 쓰는 통로.
+/// 탭 화면은 앱의 첫 경로 위에 바로 있어 Navigator.pop을 하면 첫 화면이 빠져 앱이 멈춘다(2.0.0 사용자 보고).
+class WorkspaceTabScope extends InheritedWidget {
+  const WorkspaceTabScope({super.key, required this.goHome, required this.selectTab, required super.child});
+
+  final VoidCallback goHome;
+
+  /// 탭 번호(0 문서편집·1 표템플릿·2 표그림판·3 다이어그램·4 마인드맵·5 파일변환)로 이동한다.
+  final ValueChanged<int> selectTab;
+
+  static WorkspaceTabScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<WorkspaceTabScope>();
+
+  @override
+  bool updateShouldNotify(WorkspaceTabScope oldWidget) =>
+      goHome != oldWidget.goHome || selectTab != oldWidget.selectTab;
+}
+
+/// 편집기 화면을 닫는다: 새 경로로 열렸으면 이전 화면으로, 탭 안이면 첫 탭(문서편집)으로.
+void closeWorkspaceScreen(BuildContext context) {
+  final navigator = Navigator.of(context);
+  if (navigator.canPop()) {
+    navigator.pop();
+    return;
+  }
+  WorkspaceTabScope.maybeOf(context)?.goHome();
+}
+
 /// Root workspace contract. Owners inject the six adapters in this fixed order.
 /// Keep the shell mounted (and keys stable) for the lifetime of the workspace.
 class TabNavigationShell extends StatefulWidget {
@@ -29,7 +57,10 @@ class TabNavigationShell extends StatefulWidget {
 }
 
 class _TabNavigationShellState extends State<TabNavigationShell> {
-  late int _index = widget.initialIndex;
+  late int _index = disabledTabs.contains(widget.initialIndex) ? 0 : widget.initialIndex;
+
+  /// 아직 열 수 없는 탭(5: 파일변환 — 교체 작업 중).
+  static const disabledTabs = {5};
 
   static const _labels = ['문서편집', '표템플릿', '표그림판', '다이어그램', '마인드맵', '파일변환'];
   static const _icons = [
@@ -40,6 +71,14 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
     Icons.hub_outlined,
     Icons.transform,
   ];
+
+  void _select(int index) {
+    if (index == _index || disabledTabs.contains(index)) return;
+    setState(() => _index = index);
+    widget.onTabChanged?.call(index);
+  }
+
+  void _goHome() => _select(0);
 
   @override
   Widget build(BuildContext context) {
@@ -52,28 +91,34 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
       widget.fileConversion,
     ];
     return Scaffold(
-      body: IndexedStack(
-        index: _index,
-        children: [
-          for (var i = 0; i < pages.length; i++)
-            TickerMode(
-              key: ValueKey('workspace-tab-$i'),
-              enabled: i == _index,
-              child: pages[i],
-            ),
-        ],
+      body: WorkspaceTabScope(
+        goHome: _goHome,
+        selectTab: _select,
+        child: IndexedStack(
+          index: _index,
+          children: [
+            for (var i = 0; i < pages.length; i++)
+              TickerMode(
+                key: ValueKey('workspace-tab-$i'),
+                enabled: i == _index,
+                child: pages[i],
+              ),
+          ],
+        ),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-        onDestinationSelected: (index) {
-          if (index == _index) return;
-          setState(() => _index = index);
-          widget.onTabChanged?.call(index);
-        },
+        onDestinationSelected: _select,
         destinations: [
           for (var i = 0; i < _labels.length; i++)
-            NavigationDestination(icon: Icon(_icons[i]), label: _labels[i]),
+            NavigationDestination(
+              icon: Icon(_icons[i]),
+              label: _labels[i],
+              // 파일변환 탭은 kordoc 변환 화면으로 교체될 때까지 비활성(2.0.1, 사용자 지시)
+              enabled: !disabledTabs.contains(i),
+              tooltip: disabledTabs.contains(i) ? '준비 중' : null,
+            ),
         ],
       ),
     );
