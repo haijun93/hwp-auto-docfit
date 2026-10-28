@@ -156,6 +156,16 @@ jobs:
           & ".\.venv\Scripts\python.exe" scripts\smoke_webview_content.py --exe dist/HWP_AutoDocFit/HWP_AutoDocFit.exe --report dist/webview-unresponsive-smoke.json --unresponsive
           if ($LASTEXITCODE -ne 0) { throw 'Unresponsive frontend close smoke failed.' }
 
+      - name: Upload WebView smoke diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: webview-smoke-diagnostics
+          path: |
+            dist/webview-*-smoke.json
+            dist/webview-*-smoke.png
+          if-no-files-found: ignore
+
       - name: Build smart-caching single-file portable launcher
         shell: pwsh
         run: |

@@ -16,6 +16,28 @@ import time
 import uuid
 
 
+def _cdp_diagnostics(process, port):
+    """Record why CDP is unreachable: app alive?, WebView2 browser args, listening ports."""
+    info = {'app_exit_code': process.poll(), 'port': port, 'browsers': [], 'listening': []}
+    try:
+        import psutil
+        tree = [psutil.Process(process.pid)]
+        tree += tree[0].children(recursive=True)
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+            if (proc.info['name'] or '').lower().startswith('msedgewebview2'):
+                line = ' '.join(proc.info['cmdline'] or [])
+                if '--type=' not in line:
+                    info['browsers'].append(line[:600])
+        pids = {p.pid for p in tree}
+        info['tree'] = sorted({p.name() for p in tree})
+        for conn in psutil.net_connections('tcp'):
+            if conn.status == 'LISTEN' and conn.laddr and conn.laddr.ip in ('127.0.0.1', '::1', '0.0.0.0'):
+                info['listening'].append([conn.pid, conn.laddr.port, conn.pid in pids])
+    except Exception as error:
+        info['diagnostic_error'] = repr(error)
+    return info
+
+
 def main():
     from PIL import Image
     from playwright.sync_api import sync_playwright
@@ -53,6 +75,7 @@ def main():
                     break
                 except Exception:
                     if time.monotonic() >= deadline:
+                        result['cdp_diagnostics'] = _cdp_diagnostics(process, port)
                         raise RuntimeError('WebView2 CDP did not start')
                     time.sleep(.2)
             page = browser.contexts[0].pages[0]
