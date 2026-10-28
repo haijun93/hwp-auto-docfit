@@ -53,7 +53,7 @@ TARGET: tests/test_desktop_file_drop.py:89-146
 - 결과 snapshot 항목은 {name,path,source,pages,...}, 성공 사건은 {source,output}, 실패 사건은 {source,message}. 서로 키가 다르므로 명시적으로 변환한다.
 
 새 Dart 내부 자료 구조(같은 화면 파일에 두고 외부 API를 바꾸지 않음):
-- enum _ConversionOperation { idle, selectingFiles, choosingFormat, orderingMerge, starting }.
+- enum _ConversionOperation { idle, selectingFiles, changingFiles, choosingFormat, orderingMerge, starting }.
 - class _ConversionResultRow { const _ConversionResultRow({required String source, String? output, String? message, required String state}); final String source; final String? output; final String? message; final String state; }. state는 done/failed, 화면에서 resultIndex를 캐시하지 않는다.
 - int revision: 목록/시작 등 변경 시 증가; int jobGeneration: 추적 ID 변경 시 증가; int nextSeq: 전역 사건 커서; Set<int> seenEventSeqs: 현재 추적 작업 중복 사건 방지; bool eventPolling: 사건 조회 단일 실행; _ConversionOperation operation; bool cancelPending.
 - Map<String,dynamic>? trackedJob; List<_ConversionResultRow> jobItems; String? terminalMessage. snapshot/job 데이터는 기존 Map 계약을 유지하고 불필요한 모델 계층을 만들지 않는다.
@@ -82,7 +82,7 @@ Workspace.reportProfileBounds/didUpdateWidget의 활성 검사와 비활성 시 
 
 파일 추가는 operation=selectingFiles를 setState로 먼저 반영하고 revision을 증가시킨다. native 선택창 pending은 기존 200ms 조회·120초 제한을 사용한다. 시작 당시 isActive일 때만 선택을 열되, 한번 열린 선택은 탭 전환 뒤 완료되어도 동일 requestId를 추적하고 selection_id를 한번만 소비하여 공유 목록에 등록한다. 숨겨진 탭에서 새 모달이나 변환은 열지 않는다. dispose 뒤 새 API·setState 금지. 오류/취소/타임아웃 모두 finally에서 idle 복원하고 활성 상태 또는 추적 job이 있으면 재조회한다. error 응답을 성공 토큰처럼 다루지 않는다.
 
-removeFile/clearFiles는 canMutate 검사 → operation 잠금에 준하는 busy 잠금 및 revision 증가 → 기존 API await → 오류 검사 → 변환 전용 refresh 순서다. 일반 snapshot 응답을 변환 snapshot 전체로 덮어쓰지 않는다. 오래된 refresh는 expectedRevision 불일치로 버린다. refresh가 이미 진행 중이면 후속 refresh 요청을 pending으로 남겨 변경 이후 반드시 한번 수행한다. operation/busy 중 주기 조회는 덮어쓰기를 미룬다.
+removeFile/clearFiles는 canMutate 검사 → operation=changingFiles 잠금 및 revision 증가 → 기존 API await → 오류 검사 → 변환 전용 refresh 순서다. 일반 snapshot 응답을 변환 snapshot 전체로 덮어쓰지 않는다. 오래된 refresh는 expectedRevision 불일치로 버린다. refresh가 이미 진행 중이면 후속 refresh 요청을 pending으로 남겨 변경 이후 반드시 한번 수행한다. operation/busy 중 주기 조회는 덮어쓰기를 미룬다.
 
 desktop_web_ui.py:672-736의 add_paths에서 file_conversion=True이며 선택 검증이 ServiceError로 거부될 때만 디렉터리 여부를 확인하여 Tk를 통해 '파일을 끌어 놓아 주세요'를 알린다. 디렉터리를 목록에 넣거나 검증을 우회하지 않는다. 혼합 드롭(파일+폴더)은 현재 전체 검증 거부 정책을 유지한다. 링크·junction·UNC·ADS·상대 경로/TTL·purpose·일회 소비·1000개 제한은 그대로다. 문서편집의 file_conversion=False 분기와 기본 DOCUMENTS 허용 목록도 변경하지 않는다. add_conversion_files는 add_paths가 반환한 변환 snapshot을 그대로 돌려 불필요한 중복 준비 상태 조회를 줄인다.
 
@@ -141,7 +141,7 @@ gap이면 최신 get_file_conversion_state를 다시 요청하여 progress/termi
 - 기존 'text input keeps original entrypoint': if(find...isNotEmpty) 제거. 버튼 존재를 먼저 expect, ensureVisible 후 tap, DocumentToolsWorkspace와 convert 초기 모드 확인, pageBack 후 원 화면 복귀 검증. 실패를 조건문으로 숨기지 않는다.
 - 'drop target requests are serialized': 첫 set_drop_target Future를 지연한 상태에서 5→0→5 연속 전환, 서버 적용 순서와 최종 file_conversion 확인. 세대 비교만으로 통과할 수 없는 대역 작성.
 - 기존 'hidden editor cannot open picker on conversion update' 유지 및 mode=file_format에서 탭 복귀·드롭 revision 갱신 검증. 단독 Workspace 기존 동작 시험도 유지.
-- 'conversion drop refresh never auto starts': Flutter web 시험에서 브라우저 docfit-documents-dropped 사건을 실제 dispatch하고 get_file_conversion_state 재조회/표시만 확인. dart:js_interop/package:web 의존 코드는 별도 web 전용 시험 파일이 필요하면 이 파일을 web 실행 대상으로 제한하는 대신 기존 VM 회귀를 없애지 말고 조건부 import helper를 추가할 것. 새 파일이 필요해지는 경우 먼저 해당 파일의 TARGET와 범위를 설계서에 추가한다. VM 기본 시험에서는 api snapshot의 document_drop_revision 변화와 주기 refresh를 검증하며 실제 DOM 드롭 검증과 구분해 보고한다.
+- 'conversion drop refresh never auto starts': VM 위젯 시험에서 api snapshot의 document_drop_revision 및 files를 갱신하고 주기 refresh 뒤 파일 표시와 start_job/모달 0회를 검증한다. native drop 전달 자체는 Python test_native_paths_delivered_including_korean_spaces_and_multiple_files와 test_conversion_drop_precedes_profile_badge로 검사한다. 이 두 계층 시험을 실제 DOM 드롭 종단 시험으로 표현하지 않는다. 이번 편집 범위에는 web 전용 helper를 추가하지 않는다.
 
 ### tests/test_p5_file_conversion_bridge.py
 
@@ -165,7 +165,7 @@ _make_bridge에 gui._job_id=None, 실제 list/dict 상태, 동기 _tk 대역을 
 
 1. Python 지정 묶음: .venv\Scripts\python.exe -m unittest tests.test_p5_file_conversion_bridge tests.test_p5_legacy_file_registration tests.test_v2_file_dialog_service tests.test_desktop_file_drop
 2. 전체 Python: .venv\Scripts\python.exe -m unittest discover -s tests. 실제 모달·한/글 실행 경로가 남아 있으면 먼저 patch하고 무인 종료시킨다.
-3. flutter_ui에서 flutter analyze, flutter test test/file_conversion_workspace_test.dart test/file_conversion_integration_test.dart, 이어 기존 conversion_source_name_test/merge_order_dialog_test/document_tools_workspace_test/workspace_test/workspace_adapters_test 및 전체 flutter test. web 전용 실제 DOM 시험을 작성했다면 flutter test --platform chrome 대상으로 따로 실행하고 VM 시험과 결과를 나눠 기록한다.
+3. flutter_ui에서 flutter analyze, flutter test test/file_conversion_workspace_test.dart test/file_conversion_integration_test.dart, 이어 기존 conversion_source_name_test/merge_order_dialog_test/document_tools_workspace_test/workspace_test/workspace_adapters_test 및 전체 flutter test.
 4. build_flutter.ps1의 기존 빌드/자산 검사 통과. 생성 desktop_web/flutter 자산은 손으로 수정하거나 Git에 추가하지 않는다. 설계/소스 시험만으로 EXE 검증 완료라고 하지 않는다.
 5. 변경 파일 git diff --check, CRLF/단독 LF 확인. hwp-auto-docfit.py 및 변환 엔진 파일은 변경 없어야 한다.
 6. 선택적인 Windows+한/글 실기기 검증은 사용자 원본 사본만 사용하며 시작 전에 C:\HWP_AUTODOCFIT\.com-test.lock를 원자적으로 획득하고 소유자/시간/목적을 기록, 종료 후 자기 잠금만 해제한다. 자동 단위 시험은 COM을 patch하므로 잠금 없이 실제 COM을 실행하지 않는다.
