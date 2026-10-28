@@ -1,231 +1,173 @@
 # P5 설계서 — 2.0.1 파일변환 전용 화면
 
-작성: 2026-10-28 / 설계만 작성, 소스 변경·엔진 실행 없음.
-저장소: C:\HWP_AUTODOCFIT\v1803\fconv
-기준: feature/2.0.1-file-conversion, HEAD ea84ccfebbe35ead55b24b844cb737e6654a7b22 (사용자가 지정한 main=v2.0.0 기준 작업선).
-산출물: C:\HWP_AUTODOCFIT\v1803\reports\P5-design.md. 같은 내용의 저장소 보관본은 docs/P5-design.md.
-아래 행 번호는 위 HEAD의 1-based 번호이다. 새 파일은 1행부터 작성한다. 코더는 명령을 실행하지 않고 파일만 편집한다. 검증 명령은 별도 실행 담당자가 수행한다.
+작성일: 2026-10-28. 설계 담당: Codex. 이 문서는 구현 지시이며 소스 변경 또는 구현 검수 완료 보고가 아니다.
+산출물: C:\HWP_AUTODOCFIT\v1803\reports\P5-design.md
+저장소 보관본: C:\HWP_AUTODOCFIT\v1803\fconv\docs\P5-design.md
+저장소: C:\HWP_AUTODOCFIT\v1803\fconv, 지정 브랜치 feature/2.0.1-file-conversion.
+행 번호 기준: HEAD a04137f(WIP), 1-based, 끝행 포함. main 기준 ea84ccf(v2.0.0). 큰 파일은 아래 TARGET 범위만 충분히 읽고 함수 앵커를 찾아 부분 편집한다.
 
-## 1. 조사 결론과 범위
+## 1. 현재 상태와 구현 범위
 
-1. main.dart:108-118에서 IntegratedWorkspace.fileConversionWidget에 DocumentToolsWorkspace(initial:'convert', isModal:false)를 넣는다. 이것이 현상의 직접 원인이다. workspace_adapters.dart:100-137와 tab_navigation_shell.dart:1-87은 주입된 자식을 그대로 보존하며 6개 탭을 IndexedStack에 올린다.
-2. 텍스트 도구의 정상 진입점은 main.dart:1239-1261 부근 addButtons의 ‘텍스트 입력’ → openTools('convert'), main.dart:2013-2024 → DocumentToolsWorkspace이다. 이 경로와 document_tools_workspace.dart의 document_tool 호출은 보존한다.
-3. 기존 변환 실행 사슬은 DesktopWebBridge.start_job('file_format', params) → _start_legacy → gui.파일포맷_변경_시작 → conversion_runner.start_conversion_job → run_conversion이다. 새 변환기, CLI, subprocess, COM worker를 만들지 않는다.
-4. 화면만 교체하면 PPTX 추가가 실패한다. native_file_dialog_service.py:16-24의 DOCUMENTS/add_files 정책이 PPTX·XLSX·이미지 등을 거부하며 DesktopWebBridge.add_paths도 같은 purpose로 재검증한다. 기존 문서편집 정책을 넓히지 않고 변환 전용 purpose를 추가한다.
-5. get_state:480-487은 선택 모드가 file_format일 때만 conversion_targets를 채운다. 탭을 여는 것만으로 문서편집 모드를 변경하지 않도록 변환 전용 읽기 API를 추가한다.
-6. 숨긴 Workspace도 Timer와 드롭 감시가 살아 있고 apply:347-352가 포맷 선택창을 연다. IndexedStack의 TickerMode는 Timer를 멈추지 않는다. 활성 탭 정보를 주어 숨은 화면의 자동 팝업·배지 영역 보고를 차단한다.
-7. 현재 번들 계약은 kordoc_bridge.py:29-38의 kordoc 4.21.30이다. 이번 작업에서 버전·다운로드·엔진 선택 순서를 변경하지 않는다.
+현재 HEAD에는 이전 설계(0377ab0)에 따른 P5 구현이 WIP로 들어 있다. 따라서 새 화면을 중복 생성하지 말고 기존 FileConversionWorkspace를 완성한다. P5-impl.md의 '구현 완료'는 시험 통과의 근거가 아니다. 루트 P5-design.md의 ea84ccf 기준 행 번호 대신 이 문서의 a04137f 기준 위치를 따른다. O5.md는 지정 경로에 존재하지 않아 검토하지 못했다.
 
-형식 계약: 입력 HWP/HWPX/HML/PDF/XLS/XLSX/DOCX/PPTX/PNG/JPG/JPEG/WebP 및 file_conversion.CONVERSION_INPUTS의 TXT/MD/HTML/HTM·기타 그림. 출력은 현재 CONVERSION_OUTPUTS의 hwpx/pdf/pdfz/pdfm/docx/epub/html/jpg/png/txt/md이다. **HWP·PPTX는 입력 형식이며 현재 출력 형식이 아니다.** ‘상호 변환’이라는 문구로 모든 조합/HWP·PPTX 출력을 약속하지 않는다. 출력 선택은 _conversion_targets의 enabled/reason을 그대로 따른다. 엔진 기능 확장은 P5에 포함하지 않는다. DOC는 기존 문서편집 입력만 유지하며 변환 전용 정책에서는 CONVERSION_INPUTS를 따른다.
+확인한 실행 사슬은 start_job('file_format', params) → DesktopWebBridge._start_legacy → gui.파일포맷_변경_시작(target_format) → conversion_runner.start_conversion_job → run_conversion이다. 새 엔진·CLI·COM worker·변환 subprocess를 만들지 않는다. 현재 번들 kordoc 4.21.30, Pandoc 및 한/글 직접 변환의 기존 경로와 준비 상태 판단을 그대로 사용한다.
 
-## 2. 편집 대상과 정확한 위치
+화면은 여섯 번째 탭에 FileConversionWorkspace, 텍스트 입력은 문서편집의 '텍스트 입력' → openTools('convert') → DocumentToolsWorkspace로 유지한다. 통합 탭은 이미 연결되어 있다(main.dart:115-163). 재구현하지 않는다.
 
-각 TARGET는 코더가 읽고 고칠 범위다. 큰 파일은 해당 범위를 충분히 읽고 앵커를 찾아 부분 편집한다. 구간 밖 전체 재작성 금지. 모든 기존 대상은 현재 CRLF, 단독 LF=0이다.
+지원 계약: 입력은 file_conversion.CONVERSION_INPUTS, 출력은 CONVERSION_OUTPUTS(hwpx/pdf/pdfz/pdfm/docx/epub/html/jpg/png/txt/md)다. HWP와 PPTX는 현재 입력이며 출력이 아니다. '상호 변환'을 모든 형식의 전 조합 지원으로 해석하지 않는다. UI 선택지는 _conversion_targets의 enabled/reason을 따른다. HWP/PPTX 출력 추가·번들 교체는 범위 밖이다.
 
-TARGET: flutter_ui/lib/main.dart:1-35,71-162,278-355,438-551,2013-2024
-- 새 화면 import와 통합 호스트 추가, Workspace 활성 여부 입력, 숨은 화면 부작용 제한. 438-551 기존 선택 플로우는 그대로 두고 진입 가드만 보강한다. 2013-2024는 보존 확인 범위.
-TARGET: flutter_ui/lib/features/conversion/file_conversion_workspace.dart:1-1 (신규 전체)
-- FileConversionWorkspace와 상태·파일 선택·폴링·형식 대화상자·jobs 표시 구현.
-TARGET: desktop_web_ui.py:140-155,390-507,624-723,1753-1811,1982-2001
-- 변환 전용 snapshot·파일 등록 API, add_paths의 선택적 변환 정책, 드롭 대상 추가, BrowserApi 공개 목록 추가. 기존 작업 실행 900-1029 및 폴더 표시 show_result 1652-1664는 재사용하며 고치지 않는다.
-TARGET: docfit_app/native_file_dialog_service.py:14-25,70-77,119-134
-- CONVERSION_INPUTS import, add_conversion_files purpose, 복수 선택·등록 허용 목록에 그 purpose만 추가.
-TARGET: docfit_ui/legacy.py:4285-4308
-- 파일추가에 명시적인 변환 입력 옵션을 추가해 HTML/HTM 등 기존 변환 입력도 실제 등록되게 한다. 기본 지원_확장자는 그대로 둔다.
-TARGET: flutter_ui/test/file_conversion_workspace_test.dart:1-1 (신규 전체)
-- 새 화면 단독 위젯 시험과 API 대역.
-TARGET: flutter_ui/test/file_conversion_integration_test.dart:1-1 (신규 전체)
-- 실제 DocFitApp 통합 탭·숨은 화면·텍스트 입력 회귀 시험.
-TARGET: tests/test_p5_file_conversion_bridge.py:1-1 (신규 전체)
-- snapshot·새 purpose 등록·드롭·기존 실행 위임·원본 보존의 무인 시험.
-TARGET: tests/test_v2_file_dialog_service.py:1-109
-- FileDialogTests에 변환 purpose 및 기존 정책 불변 시험 추가.
-TARGET: tests/test_desktop_file_drop.py:1-88
-- FileDropTests에 file_conversion 드롭의 배지 우선순위·기존 분기 보존 시험 추가.
-TARGET: tests/test_p5_legacy_file_registration.py:1-1 (신규 전체)
-- 실제 파일추가 메서드의 기본/변환 정책과 목록·UI 갱신 시험.
+## 2. 편집 TARGET — 파일마다 한 줄
 
-재사용 전용(수정하지 않음): floating_format_picker.dart:1-409, merge_order_dialog.dart:1-276, workspace_adapters.dart:100-137, tab_navigation_shell.dart:1-87, document_tools_workspace.dart:1-253, conversion_runner.py:1-214, jobs.py:1-280, file_conversion.py:1-350, hwp-auto-docfit.py:3103-3104. 기존 workspace_test.dart와 workspace_adapters_test.dart는 수정하지 않고 회귀 실행한다.
+아래는 실제 수정 대상이다. 범위 밖 전체 재작성 금지. 기존 파일은 UTF-8과 CRLF를 유지한다. 특히 24,000자 초과 파일(main.dart, file_conversion_workspace.dart, desktop_web_ui.py)은 지정된 구간과 앵커를 사용한다.
 
-## 3. 백엔드의 추가 계약 — 기존 변환 실행 로직은 그대로
+TARGET: flutter_ui/lib/main.dart:115-165,185-230,1850-1875
+TARGET: flutter_ui/lib/features/conversion/file_conversion_workspace.dart:1-340,341-600,601-880
+TARGET: desktop_web_ui.py:489-499,658-736
+TARGET: flutter_ui/test/file_conversion_workspace_test.dart:1-505
+TARGET: flutter_ui/test/file_conversion_integration_test.dart:1-197
+TARGET: tests/test_p5_file_conversion_bridge.py:1-177
+TARGET: tests/test_desktop_file_drop.py:89-146
 
-### 3.1 파일 선택 서비스
+재사용·보존 확인 위치(수정 대상 아님): main.dart:19-21,71-113,400-424,508-623,1310-1335,2084-2095; workspace_adapters.dart의 FileConversionAdapter/IntegratedWorkspace; tab_navigation_shell.dart:1-87; floating_format_picker.dart:1-409; merge_order_dialog.dart:1-276; document_tools_workspace.dart:1-253; desktop_web_ui.py:501-634,636-656,738-756,937-1031,1685-1697,1786-1848,2018-2036; native_file_dialog_service.py:14-25,72-112,121-151; legacy.py:4285-4315,4600 이후 파일포맷_변경_시작; jobs.py:1-280; conversion_runner.py:1-214; file_conversion.py:295-305; kordoc_bridge.py:29-38. 이미 있는 변환 purpose·파일 등록 옵션·공개 API는 유지하며 새로 또 추가하지 않는다.
 
-PURPOSES['add_conversion_files'] = ('open', CONVERSION_INPUTS). CONVERSION_INPUTS는 docfit_core.file_conversion에서 가져온 기존 불변 집합을 재사용한다. DOCUMENTS는 수정하지 않는다.
-_policy의 multiple 허용 조건은 mode=='open' AND purpose in {'add_files','add_conversion_files'}로 한다. register_selection의 다중 경로 허용 집합 {'add_files','add_format_file'}에 add_conversion_files를 추가한다. 목적 바인딩, 300초 TTL, 단일 소비, 재검증, 경로/파일 ID·ADS·UNC·reparse 거부, 1000개 상한은 전혀 바꾸지 않는다.
+## 3. 조사에서 확인한 보완점
 
-### 3.2 DesktopWebBridge 새 공개 메서드
+1. main.dart:133-140은 API 호출 후 세대 번호를 비교한다. 이미 서버에서 적용된 이전 set_drop_target의 부작용을 되돌리지는 못한다. P5-impl.md에 적힌 '직렬 큐'는 실제 코드에 없다.
+2. file_conversion_workspace.dart:117-152에서 raw 오류를 표시해도 호출자가 drainEvents를 계속하며, applySnapshot의 expectedRevision 인자를 내부에서 검사하지 않는다. startConversion의 최신 조회 오류가 이전 snapshot으로 실행을 이어갈 수 있다. remove_file/clear_files/show_result 응답은 get_state여서 mode!=file_format이면 conversion_targets가 빈 배열이다.
+3. addFiles:240-294는 탭 비활성화 시 선택 응답을 버린다. 시작/선택/병합 대화상자 전체를 포괄하는 작업 잠금도 없다. pickerOpen은 형식창 종료 직후 풀려 병합창이 열린 동안 재진입할 수 있다.
+4. cancelConversion:493-509는 실패 응답을 해석하지 않고 cancelPending을 유지한다. 취소 성공과 실제 worker 종료를 구분해야 한다.
+5. build:803-808은 failed 상태도 '변환 완료'로 표시한다. :862는 jobItems 인덱스를 results 인덱스로 간주하여 중간 실패가 있으면 다른 파일 폴더를 열 수 있다.
+6. applySnapshot은 jobId가 한번 정해지면 외부에서 새로 시작한 변환 작업을 채택하지 않는다. terminal 상태도 뒤늦은 started 사건으로 running으로 돌아갈 수 있다. gap 복구 시 결과 상세는 snapshot에서 다시 구성하지 않는다.
+7. desktop_web_ui.py:678-685의 토큰 등록이 디렉터리를 먼저 거부하므로 :711-713의 '파일을 끌어 놓아 주세요' 안내는 그 경로에 도달하지 않는다.
+8. Python P5 시험의 start 위임은 실제와 다른 target/file_order 키워드·반환값을 가정한다. 취소 시험의 manager 대역도 실제 dict 계약과 다르다. show_result 시험은 Windows explorer Popen을 막지 않는다. Flutter stale refresh 시험은 최초 목록 응답도 오기 전에 삭제 버튼을 찾고, 텍스트 입력 시험은 버튼이 없으면 통째로 생략한다. timer만 돌린 시험은 실제 드롭 검증이 아니다.
 
-- def get_file_conversion_state(self): -> dict
-  state=self.get_state()를 읽고, state['files']의 path를 _conversion_targets(files)에 전달한다. 반환 사본에 conversion_targets와 conversion_target, can_start=self._can_start('file_format',files,state['running'],targets)를 채운다. 기존 mode는 그대로 남긴다. gui.selected_mode.set/set_mode 호출, 파일/설정 변경 금지. 외부 엔진 준비 상태 조회는 기존 get_state처럼 Tk snapshot 밖에서 실행한다. mode가 이미 file_format이면 get_state가 만든 targets를 재사용해 중복 조회하지 않는다.
-- def add_conversion_files(self, selection_id): -> dict
-  resolve_selection(selection_id,'add_conversion_files')로 일회용 선택을 해석하고 add_paths(paths, file_conversion=True)로 전달한 뒤 get_file_conversion_state()를 반환한다. 파일 선택 취소에는 이 메서드를 호출하지 않는다.
-- def add_paths(self, paths, *, from_drop=False, file_conversion=False): -> dict (기존 시그니처 확장)
-  file_conversion=False일 때 기존 코드·반환 get_state·기존 gui.파일추가(path) 호출 형태를 유지한다. True일 때만 register/resolve purpose='add_conversion_files', 허용 확장자=CONVERSION_INPUTS, gui.파일추가(path, file_conversion=True)를 사용한다. 기존 from_drop revision, 중복 제거, status/log, hints, 실행 중 등록 금지 유지. 변환 전용 드롭은 파일만 허용하며 폴더는 목록에 넣지 않고 상태 문구로 ‘파일을 끌어 놓아 주세요’를 알린다. 폴더 재귀 추가 기능은 만들지 않는다.
-- set_drop_target의 기존 허용 값에 'file_conversion' 추가.
-- receive_drop의 첫 분기에 drop_target=='file_conversion'이면 add_paths(paths,from_drop=True,file_conversion=True)로 연결한다. 이 분기는 format/quick_format 및 _profile_drop_bounds 판정보다 앞에 둔다. 기존 네 분기는 그대로 유지한다. _FILE_DROP_SCRIPT 및 _bind_file_drop의 경로 전달·보안 검증은 재사용한다.
-- _BrowserApi 공개 목록에 get_file_conversion_state/add_conversion_files 두 이름과 기존 서비스 메서드 select_files/selection_status를 공개 목록에 추가한다. 두 선택 메서드는 브리지에 구현되어 있지만 현재 _BrowserApi에는 빠져 있다. register_selection은 raw 경로를 받으므로 새로 공개하지 않는다.
+## 4. 유지할 API와 자료 구조
 
-### 3.3 레거시 파일 등록의 최소 확장
+기존 공개 계약(이름·인자 변경 금지):
+- FileConversionWorkspace({Key? key, required ApiCall api, bool isActive = true}).
+- get_file_conversion_state() -> dict: files, mode, running, conversion_target, conversion_targets, can_start, job, results, failures. mode를 변경하지 않는다. snapshot의 파일은 문서편집과 공유한다.
+- select_files({'request_id': String, 'purpose':'add_conversion_files', 'mode':'open', 'multiple':true}) -> {pending, cancelled, selection_id, ...}; selection_status(requestId)로 완료 확인; add_conversion_files(selectionId)로만 등록한다.
+- remove_file(index), clear_files(), show_result(index)의 응답은 일반 snapshot이다. 이후 get_file_conversion_state로 재조회하여 변환 상태를 확정한다.
+- start_job('file_format', {'target':String, 'file_order':List<String> 선택}) -> String jobId. file_order는 pdfm만 전달한다. 값 검증은 서버에도 이미 있다.
+- cancel_job(jobId) -> job dict; 취소 요청을 수락해도 running일 수 있다. get_events(after_seq,200) -> {events,next_seq,latest_seq,oldest_seq,gap}; 사건은 {seq,job_id,type,data}. seq는 작업별이 아닌 전역 증가 값이다.
+- 결과 snapshot 항목은 {name,path,source,pages,...}, 성공 사건은 {source,output}, 실패 사건은 {source,message}. 서로 키가 다르므로 명시적으로 변환한다.
 
-def 파일추가(self, file_path, *, file_conversion=False):
-- 기본 False: 기존 지원_확장자 검사 및 모든 부수 동작 보존.
-- True: 함수 내부에서 CONVERSION_INPUTS를 import해 그 집합으로만 확장자 검사. 이것은 사용자가 요구한 변환 화면의 명시적 경로 구분이며 전역 기능 플래그/설정 키를 만들지 않는다.
-- resolve, isfile, 중복 거부, self.files.append, file_count/file_list, 원본폴더 버튼, 범위·결과 초기화 등 4295-4308의 나머지 동작은 공통으로 그대로 수행한다. 별도 append 우회 경로를 만들지 않는다.
-- 폴더추가/파일_드롭/지원_확장자 전역은 변경하지 않는다.
+새 Dart 내부 자료 구조(같은 화면 파일에 두고 외부 API를 바꾸지 않음):
+- enum _ConversionOperation { idle, selectingFiles, choosingFormat, orderingMerge, starting }.
+- class _ConversionResultRow { const _ConversionResultRow({required String source, String? output, String? message, required String state}); final String source; final String? output; final String? message; final String state; }. state는 done/failed, 화면에서 resultIndex를 캐시하지 않는다.
+- int revision: 목록/시작 등 변경 시 증가; int jobGeneration: 추적 ID 변경 시 증가; int nextSeq: 전역 사건 커서; Set<int> seenEventSeqs: 현재 추적 작업 중복 사건 방지; bool eventPolling: 사건 조회 단일 실행; _ConversionOperation operation; bool cancelPending.
+- Map<String,dynamic>? trackedJob; List<_ConversionResultRow> jobItems; String? terminalMessage. snapshot/job 데이터는 기존 Map 계약을 유지하고 불필요한 모델 계층을 만들지 않는다.
+- 파일 목록 비교는 순서 포함 path List로 한다. 결과 경로 비교는 Windows 구분자 정규화와 대소문자 무시를 적용하되 브라우저에 임의 파일 열기 API를 추가하지 않는다.
 
-## 4. Flutter 자료 구조와 함수 계약
+새/보완할 내부 함수 시그니처:
+- bool applySnapshot(Map raw, int expectedRevision): mounted·revision·응답 오류를 모두 검사하고 유효할 때만 적용. 성공 여부 반환.
+- bool get isJobRunning: queued/running을 진행 중으로 처리하고 terminal이면 false. snapshot.running은 다른 작업의 전역 잠금으로 별도 사용.
+- bool get canMutate: isActive && operation==idle && !running && !isJobRunning && !cancelPending.
+- void adoptJob(Map<String,dynamic> job): 새 ID 채택·jobGeneration 증가·상세/중복 집합 초기화. 전역 nextSeq를 0으로 되돌리지 않는다.
+- Future<void> refresh(); Future<void> drainEvents(); Future<void> addFiles(); Future<void> removeFile(int index); Future<void> clearFiles(); Future<void> chooseFormat(); Future<void> startConversion(String target,{List<String>? fileOrder}); Future<void> cancelConversion(); Future<void> openResultFolder([String? outputPath]).
+- int? resultIndexForOutput(String outputPath): 최신 snapshot.results에서 path가 일치하는 실제 인덱스만 반환.
+- void rebuildResultRowsFromSnapshot(): 해당 변환 작업의 성공 results와 실패 failures에서 행 복구. events와 snapshot이 같은 항목을 중복 표시하지 않게 (source,output,state) 기준으로 합친다. source만으로 합치면 여러 출력 구분이 사라지므로 금지.
+- main.dart의 Future<void> _routeDropTarget(int index) 유지, Future<void> _dropTargetQueue=Future<void>.value() 추가. API는 큐의 앞 요청이 끝난 뒤 실행한다.
+- Python def add_paths(self, paths, *, from_drop=False, file_conversion=False)와 def add_conversion_files(self, selection_id=None) 유지. 신규 공개 Python API는 필요 없다.
 
-### 4.1 통합 호스트와 활성 상태
+## 5. 단계별 구현 순서
 
-main.dart에서 기존 Stateless DocFitApp의 theme 및 useIntegratedShell=False 경로는 유지한다. home의 integrated 분기만 private StatefulWidget인 _IntegratedAppWorkspace(api:api)로 교체한다.
+### 단계 1 — 탭·드롭 상태 소유권
 
-_IntegratedAppWorkspace({required ApiCall api}); State의 int selectedIndex=0.
-그 build는 기존 IntegratedWorkspace를 사용하며 documentEditorWidget=Workspace(api:api,isActive:selectedIndex==0), fileConversionWidget=FileConversionWorkspace(api:api,isActive:selectedIndex==5), onTabChanged는 selectedIndex를 setState로 갱신한다. 기존 adapter/shell/key/탭 순서는 바꾸지 않는다.
+main.dart:115-165에서 기존 selectedIndex와 주입 구조를 유지한다. _routeDropTarget은 호출 시 최신 세대를 증가시키고 큐에 작업을 연결한다. 큐 작업이 실제 실행되기 직전 mounted와 세대를 검사하고, 유효할 때 set_drop_target을 await한다. 진행 중인 요청이 끝나면 가장 최신 요청이 반드시 뒤에서 적용되어야 한다. 실패는 큐를 끊지 않도록 처리하되 현재 요청 실패를 무조건 성공으로 보이지 않게 후속 전환/재활성화에서 재시도할 수 있게 한다. 큐에 숨은 Workspace의 set_drop_target이 끼어들지 않도록 기존 isActive 가드를 유지한다.
 
-Workspace({super.key,required this.api,this.isActive=true}); final bool isActive.
-- 별도 화면으로 쓰는 기존 호출은 기본 true라 동작 불변.
-- reportProfileBounds: 비활성이면 보고하지 않는다.
-- apply의 post-frame 자동 quick_notice/문서 변경에 따른 탭 전환·포맷 창 호출은 widget.isActive인 경우만 수행한다. 상태 적용·진행/완료 기록·기존 pending backend dialog 처리는 유지한다. 숨겨진 탭은 앱 전역 종료/대화상자 처리를 계속 담당할 수 있으므로 polling 전체를 중단하지 않는다.
-- openConversionPicker 첫 가드에 !widget.isActive 추가.
-- didUpdateWidget에서 true→false일 때 lastProfileBounds=null로 지우고 기존 set_profile_drop_bounds([0,0,0,0]) 호출을 직렬화한다. false→true일 때 다음 프레임 reportProfileBounds로 재보고한다. 타이밍상 비활성화 뒤 도착한 좌표 보고가 남아도 file_conversion 드롭 분기가 좌표보다 우선하므로 잘못된 서식 등록을 막는다.
-- 활성화 복귀 시 drop_target을 기존 documents로 돌린다. FileConversionWorkspace 활성화는 file_conversion으로 지정한다. 양쪽 전환 호출은 호스트의 한 async 직렬 큐에서 처리한다: Future<void> _routeDropTarget(int index). 탭 변경마다 세대 번호를 증가시키며 최신 index를 순차 처리한다. index==5→file_conversion, 나머지→documents. 초기 호스트에서 한 번 적용한다. Workspace의 설정/텍스트/서식 모달 내부 drop_target 동작은 그대로 유지한다. 비활성화된 Workspace의 모달 복귀 코드가 드롭 대상을 덮지 않도록 setDropTarget에 !isActive 가드를 추가하되 단독 Workspace 기본 true는 유지한다.
+Workspace.reportProfileBounds/didUpdateWidget의 활성 검사와 비활성 시 좌표 무효화 유지. apply의 숨은 탭 팝업 차단 유지. 문서편집 폴링 전체를 중단하지 않는다(전역 종료/백엔드 대화상자 처리 소유권 유지). 탭 순서·IndexedStack key·useIntegratedShell=false의 기본 true 동작은 그대로다.
 
-### 4.2 새 화면
+### 단계 2 — 파일 목록·선택 생명주기
 
-class FileConversionWorkspace extends StatefulWidget {
-  const FileConversionWorkspace({super.key, required this.api, this.isActive=true});
-  final ApiCall api;
-  final bool isActive;
-}
+파일 추가는 operation=selectingFiles를 setState로 먼저 반영하고 revision을 증가시킨다. native 선택창 pending은 기존 200ms 조회·120초 제한을 사용한다. 시작 당시 isActive일 때만 선택을 열되, 한번 열린 선택은 탭 전환 뒤 완료되어도 동일 requestId를 추적하고 selection_id를 한번만 소비하여 공유 목록에 등록한다. 숨겨진 탭에서 새 모달이나 변환은 열지 않는다. dispose 뒤 새 API·setState 금지. 오류/취소/타임아웃 모두 finally에서 idle 복원하고 활성 상태 또는 추적 job이 있으면 재조회한다. error 응답을 성공 토큰처럼 다루지 않는다.
 
-새 파일은 main.dart를 import하지 않는다. ApiCall, FloatingFormatPicker, MergeOrderDialog, watchDocumentDrops, Material/services/dart:async만 필요한 만큼 import한다. 외부 패키지 추가 없음.
+removeFile/clearFiles는 canMutate 검사 → operation 잠금에 준하는 busy 잠금 및 revision 증가 → 기존 API await → 오류 검사 → 변환 전용 refresh 순서다. 일반 snapshot 응답을 변환 snapshot 전체로 덮어쓰지 않는다. 오래된 refresh는 expectedRevision 불일치로 버린다. refresh가 이미 진행 중이면 후속 refresh 요청을 pending으로 남겨 변경 이후 반드시 한번 수행한다. operation/busy 중 주기 조회는 덮어쓰기를 미룬다.
 
-상태 자료:
-- Map<String,dynamic> snapshot = {}; 서버 snapshot의 files/results/failures/completion/conversion_targets/job를 읽는다. 변환 목록은 기존 gui.files를 공유하며 탭 전환 시 복사/지우지 않는다. 화면에 ‘문서편집과 파일 목록을 함께 사용합니다’를 짧게 표시한다.
-- bool busy=false, polling=false, pickerOpen=false, cancelPending=false; String? error, jobId; int revision=0, nextSeq=0; Timer? pollTimer; void Function()? stopWatchingDrops.
-- List<Map<String,dynamic>> jobItems=[]; 각 항목 {source:String, output:String?, message:String?, state:'done'|'failed'}; 이벤트에서 만든 현재 job 결과 캐시. 다른 작업의 결과를 섞지 않는다.
-- Map<String,dynamic>? trackedJob; id/kind/state/progress/cancel_requested만 신뢰한다. 서버 progress는 {file:num,total:num,stage:String,percent:num}; percent를 0..100으로 제한해 LinearProgressIndicator에는 /100.
-- 선택 요청 식별자는 int 카운터+현재 microseconds를 결합한 화면 인스턴스 고유 문자열. 선택 요청 중 busy=true이고, 재클릭을 막는다.
+desktop_web_ui.py:672-736의 add_paths에서 file_conversion=True이며 선택 검증이 ServiceError로 거부될 때만 디렉터리 여부를 확인하여 Tk를 통해 '파일을 끌어 놓아 주세요'를 알린다. 디렉터리를 목록에 넣거나 검증을 우회하지 않는다. 혼합 드롭(파일+폴더)은 현재 전체 검증 거부 정책을 유지한다. 링크·junction·UNC·ADS·상대 경로/TTL·purpose·일회 소비·1000개 제한은 그대로다. 문서편집의 file_conversion=False 분기와 기본 DOCUMENTS 허용 목록도 변경하지 않는다. add_conversion_files는 add_paths가 반환한 변환 snapshot을 그대로 돌려 불필요한 중복 준비 상태 조회를 줄인다.
 
-함수 시그니처:
-Future<void> refresh();
-Future<void> addFiles();
-Future<void> removeFile(int index);
-Future<void> clearFiles();
-Future<void> chooseFormat();
-Future<void> startConversion(String target, {List<String>? fileOrder});
-Future<void> cancelConversion();
-Future<void> openResultFolder();
-Future<void> drainEvents();
-void applySnapshot(Map raw, int expectedRevision);
+### 단계 3 — 형식 선택·병합·시작
 
-API 호출은 기존 비정형 응답을 존중한다. get_file_conversion_state/remove_file/clear_files는 bare snapshot, select_files/selection_status는 {ok,pending,cancelled,selection_id,error}, start_job은 문자열 job ID, cancel_job은 bare job status, get_events는 bare batch, show_result는 bare snapshot이다. 모든 응답을 {ok,data}로 가정하지 않는다. ok:false 또는 error가 있는 응답·예외는 error에 표시하며 snapshot으로 덮어쓰지 않는다.
+chooseFormat 전체를 하나의 operation으로 잠근다. 형식창을 여는 시점에 파일 경로 순서와 revision을 캡처한다. FloatingFormatPicker와 기존 Esc/취소/바깥 클릭 동작을 그대로 사용한다. 선택하지 않고 닫으면 target/files/job 모두 변경하지 않는다.
 
-## 5. 화면과 동작의 구현 순서
+pdfm이면 2개 이상에서 기존 MergeOrderDialog를 열고 operation=orderingMerge를 유지한다. 정렬 결과가 취소되면 시작하지 않는다. 확인 뒤 최신 변환 snapshot을 받아 캡처 목록과 순서까지 비교한다. 파일 수만 비교하지 않는다. 형식창·병합창이 열린 동안 목록이 바뀌면 '파일 목록이 바뀌었습니다. 다시 선택해 주세요.' 표시 후 종료한다.
 
-1. 3장의 Python 경계부터 구현한다. 순수 읽기 API와 변환 전용 등록 경로만 추가하며 _start_legacy/conversion_runner/jobs는 수정하지 않는다.
-2. 새 화면 build: 상단 ‘파일변환’, 파일 추가/전체 비우기, 스크롤 파일 목록(이름·확장자·전체 경로 툴팁·행 삭제), 선택 결과 형식/선택 버튼, enabled/reason 안내, 진행 막대/처리 파일 수/취소 버튼, 완료·실패/취소 요약, 결과 폴더 열기. 좁은 폭 420에서도 Wrap/Expanded/스크롤로 넘침을 막는다. 뒤로가기 화살표/텍스트 입력 필드/작성 도구 드롭다운은 넣지 않는다.
-3. initState: 드롭 감시 등록, 최초 refresh와 1초 주기 폴링. 비활성·자기 변환 job 없음이면 새 화면 폴링을 쉬고, 활성 또는 자기 job 진행 중일 때만 실행한다. didUpdateWidget 활성화 시 refresh한다. 드롭 이벤트는 활성인 경우 refresh만 예약한다. dispose는 Timer/리스너를 해제하고 revision을 증가시킨다.
-4. refresh: 중첩 호출을 막고 revision을 캡처, get_file_conversion_state를 await한 뒤 mounted·revision 일치 때만 반영. 명령은 시작 시 revision을 증가시켜 명령 전 조회가 뒤늦게 파일 목록을 되돌리지 못하게 한다. busy 중 조회는 보류하고 finally에 1회 재조회한다. 실패하면 연결 오류와 재시도 버튼, 다음 폴링으로 회복. 오류를 빈 성공 화면으로 처리하지 않는다.
-5. addFiles: select_files([{request_id,purpose:'add_conversion_files',mode:'open',multiple:true}]) → pending이면 selection_status([request_id])를 150~250ms 간격으로 확인(동시에 1회) → cancelled이면 등록 호출 없이 종료 → selection_id 확인 → add_conversion_files([selection_id]) → refresh. 상태 확인은 유한 수명(예: 120초)을 두고 기한 후 화면 오류로 종료하며 선택 토큰을 추측하거나 파일 이름으로 경로를 만들지 않는다. 선택 완료가 dispose 뒤면 추가 호출을 하지 않는다. 탭 이탈 뒤 완료는 토큰을 소비하지 않고 등록 취소로 처리한다.
-6. 등록·드롭은 파일 목록만 갱신한다. 자동 변환/결과 자동 열기/형식창 자동 표시 없음. canMutate는 !busy && !snapshot.running이며 job cancel 요청 중에도 비활성. start 조건은 여기에 snapshot.can_start와 선택 target.enabled를 함께 적용한다. engine_ready 같은 네이티브 시제품 전용 필드는 새로 요구하지 않는다.
-7. chooseFormat: 기존 FloatingFormatPicker를 showGeneralDialog 안에서 그대로 사용한다. 기존 main.dart:443-525의 크기 제한·Esc·중앙/바깥 취소 패턴을 따른다. targets는 서버 목록이며 busy/running이면 모두 비활성. 원본 파일 이름과 개수는 snapshot.files에서 공급한다. 기존 컴포넌트의 ‘포맷을 누르면 바로 변환’ 의미를 유지한다. 사용자가 명시적으로 포맷을 선택하면 startConversion으로 바로 진행한다. Esc/중앙/바깥 취소면 target·작업·목록 불변.
-8. pdfm 선택은 snapshot.files 사본을 MergeOrderDialog에 넘긴다. null은 아무 작업도 하지 않는다. 확인 결과는 경로 순서를 그대로 file_order에 전달한다. 다이얼로그를 기다리는 동안 파일 목록/작업 상태가 변했으면 재조회 후 비교하여 ‘파일 목록이 바뀌었습니다. 다시 선택해 주세요’ 표시, 시작하지 않는다. 서버 _start_legacy의 최종 순서 재검증도 유지한다. 원래 gui.files 정렬을 변경하지 않는다.
-9. startConversion: 시작 직전에 최신 snapshot을 받아 target.enabled, running, 파일 목록 동일성을 재검사. start_job(['file_format', {'target':target, 필요 시 'file_order':order}])를 단 한 번 호출한다. 범위·stage·문서편집 모드/set_mode는 보내지 않는다. 반환 nonempty 문자열 ID를 jobId로 저장하고 jobItems/nextSeq를 초기화한다. set_conversion_target 별도 호출은 불필요(start_job이 이미 수행). ID 수신 전후 중복 클릭은 busy로 막는다. 기존 Workspace.start/startJob는 변경하지 않는다.
-10. jobs: get_events([nextSeq,200])를 순차 소비하고 next_seq를 저장한다. 모든 이벤트의 seq는 전진시키되 job_id==jobId만 표시한다. started/progress/item_done/item_failed/done/failed/cancelled를 반영한다. 200개가 차면 다음 배치를 이어 읽되 UI에 제어를 돌려준다. gap이면 get_file_conversion_state.job로 상태를 재동기화하고 results/failures로 표시를 보완한다. snapshot.job.kind=='file_format'이면 화면 재진입 시 기존 job에 다시 연결할 수 있다. 다른 kind는 ‘다른 문서 작업이 진행 중입니다’로 표시하며 그 job 취소 버튼은 제공하지 않는다.
-11. 취소는 cancel_job([jobId]) 1회만 호출한다. 즉시 ‘취소 요청 중’으로 바꾸되 terminal로 꾸미지 않는다. terminal 사건 또는 같은 ID의 terminal snapshot을 받을 때까지 잠근다. 백엔드의 10초 정리·worker 종료·소유 HWP PID 보호를 그대로 사용한다. 실패/부분 성공 수치는 done과 별개로 표시한다(done이라도 item_failed/failures가 있으면 실패 수를 숨기지 않는다). 작업 도중 탭을 옮겨도 jobId/진행 상태는 유지한다.
-12. 결과 폴더는 기존 show_result([index])를 사용해 탐색기에서 결과 파일이 든 폴더를 연다. open_results는 실제로 결과 문서를 열고 여러 파일이면 확인 모달도 띄우므로 사용하지 않는다. snapshot/results 또는 현재 jobItems에 성공 결과가 있고 running=false인 경우만 제공한다. 다른 job의 과거 결과를 현재 변환 결과로 보이지 않게 한다. 성공 결과 각 행에 해당 snapshot.results 인덱스의 폴더 열기 버튼을 둔다. 대표 버튼은 첫 성공 결과 인덱스를 사용한다. 경로로 results에서 정확한 인덱스를 매핑하고 결과가 바뀌어 인덱스를 찾을 수 없으면 다시 조회해 안내한다. 여러 폴더/다중 쪽 그림도 기존 show_result의 동작을 따른다. 앱 밖 경로를 Flutter에서 직접 열지 않는다. 클릭에 의해서만 실행한다. show_result의 반환 snapshot은 다시 get_file_conversion_state로 보완한다.
-13. 4.1의 호스트 연결 및 숨은 Workspace 가드를 적용한다. 초기 탭 0 유지, 5를 선택했을 때만 새 화면 활성화. 통합 전용 신규 동작은 useIntegratedShell=True 안에 제한한다. ‘텍스트 입력’의 기존 라우트·모달 닫기 가드·입력 보존은 그대로다.
+시작 직전에도 유효한 최신 조회, 활성 탭, running=false, 대상 enabled=true, 파일 존재를 확인한다. 조회 실패이면 이전 snapshot으로 시작하지 않는다. 형식 선택 연속 클릭·병합창 연속 클릭은 start_job을 중복 호출하지 않게 operation을 starting으로 원자적으로 전이한다. start_job에는 기존 두 인자만 사용하고 반환 String ID를 채택한다. 별도로 set_mode('file_format')를 호출하거나 별도 변환 실행기를 만들지 않는다. 파일 등록/드롭/단순 refresh로 자동 시작하지 않는다. 버튼에는 '형식 선택 후 변환'처럼 선택이 실행으로 이어짐을 알리는 문구를 사용한다.
 
-주요 위젯 Key: fileConversionWorkspace, conversionAddFiles, conversionClearFiles, conversionFileList, conversionRemove_<index>, conversionChooseFormat, conversionProgress, conversionCancelJob, conversionOpenResults, conversionError. 기존 picker/merge Key는 원래 것을 사용한다.
+### 단계 4 — jobs·지연 응답·취소
 
-## 6. 기존 동작과 금지 사항
+drainEvents 진입 시 eventPolling을 설정하고 작업 ID·jobGeneration·revision을 캡처한다. 각 await 뒤 dispose/추적 세대 변경을 검사한다. 목록 revision만 바뀌어도 오래된 사건의 화면 적용을 막고 재조회를 예약한다. nextSeq는 모든 작업의 사건에서 서버 next_seq로 전진하되 현재 ID 사건만 화면에 적용한다. 중복 seq는 무시하고 terminal 뒤의 started/progress로 상태를 되돌리지 않는다. 서버 snapshot에서 이미 terminal이면 과거 시작 사건을 재생하지 않는다.
 
-- 6개 탭의 이름·순서·stable Key·IndexedStack 수명 보존. 기존 문서편집 단계/옵션/프로필/범위·결과 화면 보존.
-- 원본·기존 결과 덮어쓰기 금지, 파일 추가가 자동 실행을 의미하지 않음. 기존 명시적 포맷 선택 즉시 실행 의미는 보존.
-- HWP/HWPX→PDF 한/글 내장 경로, PDF→이미지 직접 경로, PDF 합치기/압축, TXT/MD 처리, 같은 형식 입력 제외, 준비 상태 사유 및 엔진 캐시 모두 재사용.
-- return/pass/상수 조건/주석 처리로 기존 검증·시험을 회피하지 않는다. 추가 가드는 실제 활성 상태/경합/지원 정책을 검사한다. 전역 DOCUMENTS 확장으로 해결하지 않는다.
-- 수정 파일의 UTF-8·CRLF 유지. hwp-auto-docfit.py는 수정하지 않는다. XML 처리를 추가할 필요 없으며 필요해지더라도 defusedxml만 허용.
-- 원본 사용 문서는 시험에 쓰지 않는다. TemporaryDirectory의 합성 파일·사본만 사용한다. 자동 시험은 네이티브 선택창·messagebox·한/글·탐색기를 실제 실행하지 않는다.
-- 별도 네이티브 Flutter 시제품의 IPC/브리지 기능 확대는 이번 범위 밖이다. 현재 운영 Flutter Web+WebView2+DesktopWebBridge가 수용 대상이며 useIntegratedShell=False도 회귀로 지킨다.
+snapshot.job이 file_format이고 추적 ID가 없거나 기존 추적이 terminal이면 새 ID를 채택한다. 다른 종류 job은 trackedJob으로 채택하지 않고 전역 running 잠금/안내만 반영한다. 현재 추적이 running인데 최신 job이 다른 ID라는 이유만으로 취소 대상을 갈아끼우지 않는다. 현재 ID의 terminal 사건을 먼저 처리한 다음 최신 snapshot을 적용한다.
 
-## 7. 작성할 시험 — 파일·시험명·검사 내용
+gap이면 최신 get_file_conversion_state를 다시 요청하여 progress/terminal/results/failures를 복구한다. cursor는 응답 latest_seq가 유효한 정수일 때 그 위치로 이동하고 snapshot과 겹친 후속 사건은 중복 방지한다. 복구 조회 실패 시 cursor를 앞당겨 사건을 잃지 말고 오류를 표시한다. 재진입·dispose·다른 작업 사건에도 안전해야 한다.
 
-### flutter_ui/test/file_conversion_workspace_test.dart (신규)
+취소는 진행 중인 현재 ID만 한번 요청한다. 응답 job의 cancel_requested/state를 반영하되 수락을 terminal로 가정하지 않는다. 성공 후에는 해당 ID terminal 또는 snapshot 종료 확인까지 cancelPending과 폴링을 유지한다. 예외·{ok:false}/{error:...} 실패이면 오류를 표시하고 cancelPending=false로 돌려 재시도 가능하게 한다. terminal 수신 시 해제한다. 탭 전환해도 추적 중인 작업은 폴링하며 재실행하지 않는다.
 
-공통: ApiCall 대역이 호출 method/args를 기록하고 bare snapshot·문자열 job ID·event batch를 실제 계약대로 반환. pending 요청에는 Completer 사용. Timer 시험은 pump(Duration)로 전진시키며 마지막에 pumpWidget(SizedBox())로 해제. 진행 막대·주기 Timer가 있으므로 무제한 pumpAndSettle 금지.
+### 단계 5 — 결과·반응형 표시
 
-- file conversion shows files without text tools: 파일명·개수·형식·비활성 reason, 텍스트 입력/개조식 컨트롤 없음.
-- adds selected pptx through scoped selection token: pending→완료→add_conversion_files 정확한 ID, start_job 0회.
-- cancelled selection leaves file list unchanged: add_conversion_files/start_job 0회.
-- file addition and drop refresh never start conversion: 활성 드롭 통지/목록 변경 뒤 picker와 시작 모두 없음.
-- format choice starts existing file_format job once: 유효 picker 선택 → start_job kind/target 정확, 더블 클릭에도 1회.
-- unavailable target cannot start: enabled=false와 reason 확인, 호출 없음.
-- picker cancellation preserves target and files: Esc/중앙/바깥 각각 검사.
-- merge confirmation preserves chosen order: 두 파일 순서 변경 뒤 file_order 정확, 서버 목록 원본 순서는 그대로.
-- merge cancellation and changed files do not start: 취소 및 pending 중 목록 변경 각각 0회 시작.
-- progress and cancellation follow tracked job: 자기 job percent 표시, 다른 ID 이벤트 무시, 취소 1회, terminal 전 재실행 불가.
-- event gap restores snapshot and partial failures: gap 재조회, done+실패 1건/성공 1건 동시 표시.
-- stale refresh cannot restore removed files: 조회 Completer를 삭제 응답 후 완료해도 파일 재등장 없음.
-- opens result folder only on explicit click: 성공 완료만으로 show_result 0회, 클릭 후 올바른 인덱스로 1회, open_results/open_result 0회.
-- inactive widget and disposal stop side effects: 비활성의 드롭 반응 없음, dispose 뒤 late 응답·Timer 오류·추가 API 호출 없음.
-- layout supports narrow and wide windows: 420x800/1280x900에서 tester.takeException()==null, 파일/결과 스크롤 접근 가능.
+상태 제목 우선순위: failed='변환 실패', cancelled='변환 취소됨', done+실패항목='변환 완료 (일부 실패 포함)', done+실패없음='변환 완료'. 실패 사건 data.message를 보존한다. 서버가 done으로 끝내면서 개별 실패를 보고하는 기존 계약은 바꾸지 않는다. 같은 형식 건너뜀 메시지도 지우지 않는다.
 
-### flutter_ui/test/file_conversion_integration_test.dart (신규)
+결과 폴더 버튼은 성공 output 경로를 받아 최신 results.path에서 실제 인덱스를 찾은 경우만 show_result(index)를 호출한다. snapshot이 아직 결과를 모르면 refresh 후 한번 다시 찾고, 없으면 안내한다. 0으로 임의 fallback 금지. 상단 버튼은 최신 성공 결과의 경로를 사용한다. 자동 폴더 열기·open_result/open_results 호출 금지. 이전 문서편집 결과를 변환 완료로 표시하지 않도록 trackedJob.kind와 현재 작업의 결과만 사용한다. 전역 snapshot이 다른 작업으로 바뀌면 보관된 변환 결과는 표시할 수 있으나 현재 results에 없는 항목의 버튼은 비활성화한다.
 
-- sixth tab mounts FileConversionWorkspace: DocFitApp 실제 integrated 경로에서 6번째 탭 선택, 새 위젯 표시/DocumentToolsWorkspace 미표시, 탭 이름 순서 고정.
-- hidden editor cannot open picker on conversion update: 변환 탭에서 공유 snapshot의 mode=file_format/files/revision 변경을 흘려도 기존 Workspace의 floating picker가 열리지 않음.
-- switching tabs preserves conversion job and routes drops: 0→5→0→5, 같은 jobId/취소 상태 보존, drop_target의 최종값 정확, 폴링 응답 순서 역전에도 최신 탭을 따른다.
-- text input keeps original entrypoint: 문서편집의 ‘텍스트 입력’으로 DocumentToolsWorkspace 라우트 진입, document_tool('convert'/'add_text') 계약과 뒤로가기 유지.
-- standalone Workspace retains existing behavior: useIntegratedShell=False에서 기존 문서편집/포맷 선택 동작 유지.
+420px/1280px, 긴 한글 이름·경로·진행 제목·형식 label에서 overflow가 없게 :709-725,753-779,800-818의 Row를 Wrap 또는 Expanded+적절한 줄바꿈으로 바꾼다. 파일명과 경로는 ellipsis/Tooltip, 전체 내용은 스크롤로 접근 가능하게 한다. 기존 위젯 key 유지; 행 열기 key는 렌더링 순서여도 실제 API 인덱스는 path로 찾는다.
 
-### tests/test_v2_file_dialog_service.py (기존 FileDialogTests 확장)
+## 6. 작성·수정할 무인 시험
 
-- test_conversion_selection_accepts_supported_formats: CONVERSION_INPUTS 각 확장자 합성 파일을 subTest로 생성, 복수 선택 token resolve 성공(PPTX 포함).
-- test_conversion_purpose_does_not_expand_document_policy: PPTX가 add_conversion_files에서 성공하고 기존 add_files에서 UNSUPPORTED_FORMAT ServiceError로 거부됨.
-- test_conversion_token_is_bound_single_use_and_expires: 다른 purpose 오용·만료·재사용 거부, files 메타데이터에 경로 없음.
-- test_conversion_selection_cancel_and_request_dedup: 주입 dialog 대역만 실행, 취소와 동일 request 1회 실행 유지.
+시험은 코더가 파일로 작성하고 별도 실행 담당자가 실행한다. 모든 대화상자 입력은 Flutter tester 또는 native dialog 대역으로 완료한다. 실제 한/글·사용자 문서·explorer를 띄우지 않는다. 조건부로 핵심 assertion을 건너뛰거나 구현 함수 전체를 통과 반환으로 바꾸지 않는다.
 
-### tests/test_p5_file_conversion_bridge.py (신규, unittest.TestCase)
+### flutter_ui/test/file_conversion_workspace_test.dart
 
-- test_conversion_snapshot_keeps_editor_mode_and_uses_targets: _tk 동기 대역, get_state/_conversion_targets/_can_start 대역으로 mode 불변·대상/실행 가능 값 검증. 추가 시험에서는 기존 test_desktop_browser_api의 Fake GUI 패턴으로 실제 get_state 경유도 확인한다.
-- test_conversion_snapshot_does_not_duplicate_ready_probe: mode=file_format 상태에서 _conversion_targets 중복 조회 없음.
-- test_selected_pptx_uses_conversion_policy: 실제 선택 서비스+임시 PPTX → 등록 token 소비 → gui.파일추가(path,file_conversion=True) 및 1회 등록.
-- test_running_job_rejects_conversion_list_mutation: 등록·삭제·비우기 중 running 보호 검증. 기존 clear_files가 GUI에 위임하므로 GUI 대역도 실제 실행 중 목록 변경 금지 계약을 구현한다.
-- test_file_format_start_delegates_existing_worker: start_job/_start_legacy 실제 경유, 가짜 gui.파일포맷_변경_시작이 job ID를 생성, target·file_order 전달/원래 files 복원 및 JOB_RUNNING/지원 불가 거부 확인. subprocess·COM 생성은 호출되면 시험 실패로 patch.
-- test_job_cancellation_uses_exact_id: cancel_job이 manager.cancel과 matching gui 작업중단만 호출, 다른 job 취소 오염 없음.
-- test_show_result_reveals_folder_without_opening_document: show_result 실제 호출에서 explorer /select 경로 또는 _경로_열기(부모 폴더)를 확인, subprocess.Popen/os.name을 patch하고 문서 열기·모달 호출은 0회.
-- test_browser_api_exposes_only_required_conversion_methods: 신규 두 메서드+select_files/selection_status 노출, register_selection·gui/COM 객체 직접 노출 없음.
-- test_registration_preserves_source_bytes: 임시 PPTX/MD의 등록 전후 SHA-256 일치(변환 정확도를 뜻하지 않음).
+기존 FakeApi의 기본 get_events는 빈 사건, 정수 커서다. events 대역에는 seq를 넣는다. 반복 반환하는 이벤트가 있을 때 중복 처리를 확인한다. 각 시험은 pumpWidget(SizedBox)로 dispose, 필요시 bounded pump로 Future 완료를 제어한다.
+- 기존 'stale refresh cannot restore removed files': 첫 snapshot을 먼저 완료해 삭제 버튼을 표시한다. 두 번째 refresh만 Completer로 지연 → 삭제 → 옛 응답 완료. 삭제 파일 미복원 및 후속 조회 확인.
+- 기존 'file addition and drop refresh never start conversion': timer만 돌리는 방식 교체. 선택 토큰 등록 후 파일 표시, 통합 시험의 실제 드롭 사건 경로와 함께 시작/모달 0회 확인.
+- 'selection completes after tab switch': pending 선택 중 isActive=false 전환 후 완료; token 1회 소비, 파일 등록, 모달/시작 0회.
+- 'invalid refresh blocks start': 최신 조회 {ok:false,error:...} 또는 throw; 이전 파일 snapshot이 있어도 start_job 0회.
+- 'merge flow blocks duplicate start': 병합창 중 추가·비우기·형식 재진입 금지, 확인 1회만 실행, 순서 반전 후 정확한 file_order 확인.
+- 'changed files block regular conversion': 일반 형식 선택 중 서버 목록 바뀜; 시작 0회. 기존 merge changed 시험과 별개.
+- 'cancel request failure can retry': cancel_job 오류 뒤 버튼 재활성, 같은 ID 재시도, cancel_requested=true 응답만으로 완료되지 않음, terminal 뒤 잠금 해제.
+- 'terminal state cannot regress': snapshot done 뒤 늦은 started/progress가 와도 완료 유지. 다른 ID 사건은 진행률·결과·취소에 영향 없음.
+- 'adopts next conversion after terminal': 완료 job A 뒤 snapshot job B를 채택하고 B만 취소. 탭 전환/복귀 후 ID 보존.
+- 기존 'event gap restores snapshot and partial failures': 여러 페이지 사건 유실(gap=true,latest_seq) 뒤 snapshot만으로 성공/실패 상세·진행률 복구, 중복 없음.
+- 'mixed failure reveals matching result': item_failed(A), item_done(B), item_done(C); results=[B,C]. C 버튼은 show_result(1), 존재하지 않는 경로는 호출 0회.
+- 'failed job displays failure': failed+message, 결과 0건에서 변환 실패 표시; 변환 완료 없음. done+일부실패/전체건너뜀도 각각 검사.
+- 'editor result is not conversion completion': snapshot.job.kind=spacing와 기존 results가 있어도 변환 완료/결과 버튼 없음.
+- 기존 취소·비활성·dispose 시험 확대: in-flight refresh/events 후 dispose해도 setState 오류·후속 API 없음.
+- 기존 narrow/wide 시험에 긴 label/긴 경로/실패 메시지/결과/진행중을 각각 넣고 tester.takeException()==null 확인.
 
-### tests/test_desktop_file_drop.py (기존 FileDropTests 확장)
+### flutter_ui/test/file_conversion_integration_test.dart
 
-- test_conversion_drop_precedes_profile_badge: file_conversion+배지 안 좌표에서도 add_paths(...,from_drop=True,file_conversion=True)만 호출, 서식 복제 0회.
-- test_existing_drop_targets_keep_routing: documents/manual_documents/format/quick_format 기존 분기·revision 계약 그대로.
-- test_conversion_drop_rejects_folders_and_missing_native_paths: 폴더·이름만 있는 drop 거부, 파일 경로 추정 없음.
+- 기존 'sixth tab mounts FileConversionWorkspace': NavigationDestination으로 탭을 찾는다. '파일변환' 문자열은 화면 제목과 탐색 탭에 중복될 수 있으므로 findsOneWidget 가정 제거.
+- 기존 'text input keeps original entrypoint': if(find...isNotEmpty) 제거. 버튼 존재를 먼저 expect, ensureVisible 후 tap, DocumentToolsWorkspace와 convert 초기 모드 확인, pageBack 후 원 화면 복귀 검증. 실패를 조건문으로 숨기지 않는다.
+- 'drop target requests are serialized': 첫 set_drop_target Future를 지연한 상태에서 5→0→5 연속 전환, 서버 적용 순서와 최종 file_conversion 확인. 세대 비교만으로 통과할 수 없는 대역 작성.
+- 기존 'hidden editor cannot open picker on conversion update' 유지 및 mode=file_format에서 탭 복귀·드롭 revision 갱신 검증. 단독 Workspace 기존 동작 시험도 유지.
+- 'conversion drop refresh never auto starts': Flutter web 시험에서 브라우저 docfit-documents-dropped 사건을 실제 dispatch하고 get_file_conversion_state 재조회/표시만 확인. dart:js_interop/package:web 의존 코드는 별도 web 전용 시험 파일이 필요하면 이 파일을 web 실행 대상으로 제한하는 대신 기존 VM 회귀를 없애지 말고 조건부 import helper를 추가할 것. 새 파일이 필요해지는 경우 먼저 해당 파일의 TARGET와 범위를 설계서에 추가한다. VM 기본 시험에서는 api snapshot의 document_drop_revision 변화와 주기 refresh를 검증하며 실제 DOM 드롭 검증과 구분해 보고한다.
 
-### tests/test_p5_legacy_file_registration.py (신규)
+### tests/test_p5_file_conversion_bridge.py
 
-- test_default_file_registration_keeps_extensions: 기본 등록은 기존 지원_확장자만 허용, HTML은 기존대로 거부.
-- test_conversion_file_registration_accepts_html_and_pptx: explicit 옵션에서 두 형식 등록·카운터·리스트·범위/결과 초기화 갱신.
-- test_conversion_file_registration_rejects_invalid_and_duplicate: exe/없는 파일/중복 거부, 목록/카운터 불변.
+_make_bridge에 gui._job_id=None, 실제 list/dict 상태, 동기 _tk 대역을 사용한다. Mock을 job 객체 대신 내보내며 truthiness에 의존하지 않는다.
+- test_file_format_start_delegates_existing_worker: worker side_effect가 gui._job_id='job-1234'를 설정. target=pdf에는 file_order를 전달하지 않고 worker가 positional 'pdf'로 1회 호출됨을 검사한다. start_job은 worker 반환값이 아닌 _job_id를 반환한다. 별도 pdfm 시험에서는 실파일 경로의 역순을 params에 넣고 worker 호출 순간 gui.files가 그 순서이며 호출 뒤 원래 순서 복원됨을 검사. 잘못된 file_order는 worker 0회. 실제 COM/Popen 금지 대역 사용.
+- test_job_cancellation_uses_exact_id: gui._job_id='job-target'; manager.cancel 반환 dict를 사용하고 올바른 ID에서만 gui.작업중단 호출. 다른 ID는 중단 호출 0회. 존재하지 않는 ID의 ServiceError는 그대로 전파됨을 확인.
+- test_show_result_reveals_folder_without_opening_document: Windows에서는 desktop_web_ui.subprocess.Popen을 patch하여 ['explorer','/select,',정규화경로]를 검사; Windows 외에서는 _경로_열기 호출 검사. os.startfile/open_result/open_results/알림 호출 0회. 실제 프로세스 실행 금지.
+- test_conversion_snapshot_keeps_editor_mode_and_uses_targets 확대: selected_mode.set 미호출, 반환 state can_start도 확인. test_conversion_snapshot_does_not_duplicate_ready_probe 유지.
+- test_add_conversion_files_reuses_returned_snapshot: 유효 토큰·add_paths 대역으로 반환 snapshot 동일성 및 변환 조회 중복 0회 확인.
+- 기존 registration_preserves_source_bytes 유지: TemporaryDirectory 합성 파일만 사용, 등록 전후 hash 동일.
 
-기존 시험 파일의 if __name__ == '__main__' 블록 앞에 메서드를 추가한다.
+### tests/test_desktop_file_drop.py
 
-실제 legacy 파일추가 메서드를 시험한다. 거대한 GUI를 띄우지 않도록 기존 legacy 시험의 클래스 추출/바인딩 패턴을 사용하고, 필요한 경우 def 파일추가 노드만 ast로 추출·compile하여 Path/os/지원_확장자/tk.END를 주입한다. Fake self의 file_count/file_list/원본폴더·범위·결과 함수는 Mock. 원본 함수를 모사한 복제 테스트는 금지한다.
+기존 test_conversion_drop_precedes_profile_badge, test_existing_drop_targets_keep_routing 유지. test_conversion_drop_rejects_folders_and_missing_native_paths는 get_state/get_file_conversion_state를 모두 dict 대역으로 두어 무관한 GUI snapshot 때문에 실패하지 않게 한다. 폴더·혼합 목록은 등록 0회·안내 문구 확인, 경로 없는 native drop은 이름으로 경로를 추정하지 않음 확인. 모든 native 파일 선택/윈도우는 대역.
 
-## 8. 실행 담당자 검증과 완료 기준
+기존 tests/test_v2_file_dialog_service.py:108-173과 tests/test_p5_legacy_file_registration.py:1-114는 재작성하지 않고 회귀 실행한다. purpose 단일 소비·TTL·문서편집 입력 불변·변환 HTML/PPTX 등록·목록 UI 갱신이 통과해야 한다.
 
-코더는 위 파일을 편집하고 편집 목록만 제출한다. 아래는 실행 권한이 있는 검수 담당자의 절차이며 코더가 실행해야 완료되는 요구가 아니다.
+## 7. 실행 담당자의 검증 및 완료 기준
 
-1. 지정 가상환경을 먼저 확인한다. 이 worktree에는 .venv가 없을 수 있으므로 시스템 Python으로 대체해 통과라고 쓰지 않는다. 저장소 환경 연결 후 루트에서 .\.venv\Scripts\python.exe -m unittest discover -s tests. 집중 시험은 tests/test_p5_file_conversion_bridge.py, test_p5_legacy_file_registration.py, test_v2_file_dialog_service.py, test_desktop_file_drop.py 및 기존 test_desktop_browser_api/test_jobs/test_file_conversion/test_text_conversion_embedded_runtime이다.
-2. flutter_ui에서 flutter analyze, flutter test(새 시험+기존 전체). SDK 위치는 flutter_ui/README.md를 따른다. 정적 검사/전체 시험 성공 뒤 운영 Web 자산을 build_flutter.ps1의 기존 절차로 재생성·검증한다. 생성 desktop_web/flutter는 커밋하지 않는다. 이번 설계 작성 시에는 이 검증을 실행하지 않았다.
-3. 자동 시험의 네이티브 파일 선택은 NativeFileDialogService에 dialog 대역을 주입한다. 한/글 실행/COM·messagebox·os.startfile/subprocess/탐색기 경로는 patch로 차단한다. 시험은 사람이 누를 창 없이 유한 시간 안에 종료한다.
-4. 실제 앱 검수는 합성 MD 및 문서 사본만 사용한다. 파일 추가/PPTX 드롭→목록 유지→형식 선택→진행→취소 또는 완료→결과 폴더 클릭, PDF 2개 합치기 순서, 비활성 사유, 탭 왕복·텍스트 입력을 확인한다. 실제 한/글 COM 변환을 수행할 때만 C:\HWP_AUTODOCFIT\.com-test.lock을 소유자/시각/P5로 원자적 취득하고 finally에서 해제한다. 다른 소유자의 잠금은 지우지 않는다.
-5. 완료 판정: 6번째 탭이 FileConversionWorkspace, 정상 텍스트 입력 경로 그대로, PPTX/HWP/HWPX/PDF/DOCX/TXT/MD 추가 가능, 출력은 기존 enabled 목록만, 새 엔진 없음, 원본 불변, jobs 취소의 실제 terminal 대기, 결과 폴더 명시적 열기, 숨은 팝업 없음, 신규·기존 회귀 통과 및 CRLF/차이 검사 완료. 시험 불가 항목은 미검증으로 남기며 합격으로 치환하지 않는다.
-6. 배포·버전 변경·main 병합은 이번 요청 범위 밖. 구현 후 허가된 작업 브랜치 feature/2.0.1-file-conversion에 해당 작업만 커밋하고 github→origin 순으로 푸시한다. 설계 산출물도 같은 브랜치의 문서로 보관한다. 다른 작업의 변경은 포함하지 않는다.
+코더는 명령 실행·빌드·시험·푸시 없이 위 파일 편집과 변경 요약만 남긴다. 실행 담당자는 저장소 규칙에 따라 검증/커밋/푸시한다. 이 설계 작성에서는 소스 시험과 COM 시험을 실행하지 않았다.
 
-## 9. 설계 단계 결과 보고
+1. Python 지정 묶음: .venv\Scripts\python.exe -m unittest tests.test_p5_file_conversion_bridge tests.test_p5_legacy_file_registration tests.test_v2_file_dialog_service tests.test_desktop_file_drop
+2. 전체 Python: .venv\Scripts\python.exe -m unittest discover -s tests. 실제 모달·한/글 실행 경로가 남아 있으면 먼저 patch하고 무인 종료시킨다.
+3. flutter_ui에서 flutter analyze, flutter test test/file_conversion_workspace_test.dart test/file_conversion_integration_test.dart, 이어 기존 conversion_source_name_test/merge_order_dialog_test/document_tools_workspace_test/workspace_test/workspace_adapters_test 및 전체 flutter test. web 전용 실제 DOM 시험을 작성했다면 flutter test --platform chrome 대상으로 따로 실행하고 VM 시험과 결과를 나눠 기록한다.
+4. build_flutter.ps1의 기존 빌드/자산 검사 통과. 생성 desktop_web/flutter 자산은 손으로 수정하거나 Git에 추가하지 않는다. 설계/소스 시험만으로 EXE 검증 완료라고 하지 않는다.
+5. 변경 파일 git diff --check, CRLF/단독 LF 확인. hwp-auto-docfit.py 및 변환 엔진 파일은 변경 없어야 한다.
+6. 선택적인 Windows+한/글 실기기 검증은 사용자 원본 사본만 사용하며 시작 전에 C:\HWP_AUTODOCFIT\.com-test.lock를 원자적으로 획득하고 소유자/시간/목적을 기록, 종료 후 자기 잠금만 해제한다. 자동 단위 시험은 COM을 patch하므로 잠금 없이 실제 COM을 실행하지 않는다.
 
-HANDOVER.md와 공동 조사 문서의 ★ Claude 작업 지시를 확인했다. 이번 최신 직접 지시는 P5 설계 전용이므로 과거 W1~W3 엔진 수정을 재개하지 않았다. 소스·사용자 원본·COM·빌드·시험을 변경/실행하지 않았다. 변경할 지점과 API 계약, 입력 정책 누락, 숨은 탭 경합을 소스 조사로 확인했으며 실제 구현/실행 합격은 후속 검수에 남긴다.
+완료 기준: 여섯 번째 탭은 파일 목록·형식 선택·진행/취소·실패/성공 상세·명시적 결과 폴더 열기를 제공한다. 텍스트 입력 원래 진입점과 다른 다섯 탭/단독 화면의 동작이 유지된다. PPTX/HTML 등 변환 입력은 전용 purpose로만 확장된다. 추가/드롭은 자동 실행하지 않는다. 탭 전환·선택/병합 취소·취소 요청 실패·늦은 응답·사건 유실·일부 실패·다른 작업 진행에서 잘못된 실행/취소/폴더 열기가 없다. 위 무인 시험과 빌드 검증이 모두 통과하고 실제 실행 여부를 구분해 보고한다. 편법 return/pass/상수 조건/주석 처리로 기존 처리나 시험을 무력화하지 않는다. XML 변경이 필요해져도 파서는 defusedxml만 사용한다. 버전/릴리스 태그/배포는 이 과제에 포함하지 않는다.
