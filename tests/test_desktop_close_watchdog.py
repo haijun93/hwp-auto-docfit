@@ -84,5 +84,16 @@ class CloseWatchdogTests(unittest.TestCase):
         self.gui.종료.assert_called_once_with()
 
 
+
+
+class SmokeCdpPortTests(unittest.TestCase):
+    def test_port_only_from_valid_smoke_variable(self):
+        from desktop_web_ui import smoke_cdp_port
+        self.assertIsNone(smoke_cdp_port({}))
+        self.assertEqual(smoke_cdp_port({"DOCFIT_SMOKE_CDP_PORT": "57179"}), 57179)
+        for bad in ("", "80", "70000", "9222; x", "-1"):
+            self.assertIsNone(smoke_cdp_port({"DOCFIT_SMOKE_CDP_PORT": bad}))
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -2037,6 +2037,18 @@ for _edit_name in (
     setattr(DesktopWebBridge, _edit_name, _cancel_before_edit(getattr(DesktopWebBridge, _edit_name)))
 
 
+def smoke_cdp_port(environ=None):
+    """Return the loopback CDP port requested by the frozen-EXE smoke test, if any.
+
+    pywebview's own AdditionalBrowserArguments replaces WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
+    on some WebView2 runtimes, so the smoke test asks the app for the port explicitly.
+    """
+    value = (os.environ if environ is None else environ).get("DOCFIT_SMOKE_CDP_PORT", "")
+    if value.isdigit() and 1024 <= int(value) <= 65535:
+        return int(value)
+    return None
+
+
 class _BrowserApi:
     """Expose commands only: pywebview recursively inspects public attributes."""
 
@@ -2226,6 +2238,9 @@ def run_webview(gui):
 
     # 창 아이콘: 지정하지 않으면 실행 파일(python.exe 또는 exe)의 아이콘을 쓴다.
     아이콘 = {"icon": APP_ICON} if APP_ICON and Path(APP_ICON).is_file() else {}
+    smoke_port = smoke_cdp_port()
+    if smoke_port is not None:
+        webview.settings["REMOTE_DEBUGGING_PORT"] = smoke_port
     webview.start(initialize_webview, args=[window], gui="edgechromium", http_server=True, **아이콘)
     return True
 
