@@ -577,3 +577,11 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 - 선택 완료 응답에는 이름/크기만 포함한다. 파일 추가는 add_paths, 폴더는 add_directory, 저장/가져오기는 output_selection_id/input_selection_id를 사용한다. 선택 없이 호출하면 FILE_SELECTION_REQUIRED. 일반 상태 조회용 _tk RPC는 유지한다.
 - 지정 5개 pytest와 관련 브리지/드롭/흐름도/수명 주기 시험 합계 128개 및 142 subtests PASS. 추가 reparse·브리지 연결 시험 포함 신규 서비스 최종 12개 및 4 subtests PASS.
 - CRLF 및 diff 검사 수행. 사용자 원본 수정·한/글 COM 시험 없음. 실제 Windows 대화상자 조작/Flutter 통합 UI 검증은 미실행이며, 전체 저장소 unittest 실행 결과로 보고하지 않는다.
+
+
+## Codex 결과 보고 — TT1 설계 전용 (2026-10-28)
+
+- 사용자 최신 지시: feature/alpha-tt1에서 표 템플릿 TODO 1·3번의 설계서만 작성. W1~W3 및 제품·시험 코드는 변경하지 않음.
+- 설계: C:\HWP_AUTODOCFIT\v1803\reports\TT1-design.md (동일 Git 사본 docs/TT1-design.md). 파일·함수·TARGET 범위·자료 구조·구현 순서·시험·완료 기준 포함.
+- 조사: v1.80.9 table_units.py는 현재와 동일. 내장 조직도 모양1은 5×18/N6, 사용자 모양1은 6×12/N4로 서로 다름. 즐겨찾기 순서 전달 보완 및 원본 snapshot 왕복 복원을 설계함.
+- 검증: 문서 사본 일치·TARGET 위치·개행·diff 검사만 수행. 전체 unittest/Flutter 및 COM 시험 미수행, 사용자 원본 불변. TODO는 구현 미완료 상태로 유지.
