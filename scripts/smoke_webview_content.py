@@ -36,6 +36,10 @@ def main():
     env['DOCFIT_OFFLINE'] = '1'
     env['DOCFIT_LAUNCHER_MUTEX_NAME'] = 'Local\\DocFitSmoke_' + uuid.uuid4().hex
     env['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'] = f'--remote-debugging-port={port}'
+    # A WebView2 browser already running on the same user data folder (e.g. the
+    # previous smoke step's app) would adopt this window and ignore the CDP port.
+    import tempfile
+    env['WEBVIEW2_USER_DATA_FOLDER'] = tempfile.mkdtemp(prefix='docfit-smoke-webview-')
     process = subprocess.Popen([str(args.exe.resolve())], env=env)
     result = {'ok': False, 'exe': str(args.exe.resolve()), 'pid': process.pid, 'console': [], 'errors': [], 'failed_requests': []}
     app_pid = process.pid
