@@ -64,6 +64,10 @@ jobs:
           & ".\.venv\Scripts\python.exe" -c "from PIL import Image, ImageTk, ImageOps; print('Pillow', Image.__version__)"
 
       - name: Validate source and regression tests
+        # RUNNER~1 8.3 short TEMP paths break path-equality tests; use the long runner temp.
+        env:
+          TEMP: ${{ runner.temp }}
+          TMP: ${{ runner.temp }}
         run: |
           & ".\.venv\Scripts\python.exe" -m py_compile "hwp-auto-docfit.py" "docfit_core/batch_format.py"
           & ".\.venv\Scripts\python.exe" -m unittest discover -s "tests" *> "windows-tests.log"

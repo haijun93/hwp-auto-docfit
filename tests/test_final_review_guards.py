@@ -198,13 +198,13 @@ class HostCloseTests(unittest.TestCase):
         bridge.enable_close_guard()
         return bridge, gui
 
-    def test_os_close_is_vetoed_and_repeated_events_share_request(self):
+    def test_os_close_is_vetoed_and_rejected_close_keeps_app(self):
         bridge, gui = self.make_bridge()
         self.assertFalse(bridge.request_close())
         pending = bridge.get_pending_dialog()
         self.assertEqual(pending['kind'], 'app_close')
-        self.assertFalse(bridge.request_close())
-        self.assertEqual(bridge.get_pending_dialog(), pending)
+        # A second native close while the request is pending force-closes (2.0.1);
+        # that path is covered by test_desktop_close_watchdog.
         gui.종료.assert_not_called()
         self.assertFalse(bridge.resolve_dialog(pending['id'], False)['accepted'])
         self.assertIsNone(bridge.get_pending_dialog())

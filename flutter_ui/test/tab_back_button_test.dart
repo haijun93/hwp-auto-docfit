@@ -89,18 +89,33 @@ void main() {
   testWidgets('탭 안 텍스트 입력 화면에는 ← 버튼이 보이지 않는다', (tester) async {
     await tester.pumpWidget(MaterialApp(
       home: TabNavigationShell(
-        documentEditor: _page('문서'),
+        documentEditor: DocumentToolsWorkspace(api: (_, _) async => <String, Object?>{}, initial: 'convert', isModal: false),
         tableTemplates: _page('표템플릿 화면'),
         tableSketch: _page('표그림판 화면'),
         diagram: _page('다이어그램 화면'),
         mindMap: _page('마인드맵 화면'),
-        fileConversion: DocumentToolsWorkspace(api: (_, _) async => <String, Object?>{}, initial: 'convert', isModal: false),
-        initialIndex: 5,
+        fileConversion: _page('파일변환 화면'),
       ),
     ));
     await tester.pump();
     expect(find.byIcon(Icons.arrow_back), findsNothing);
     expect(find.byType(BackButton), findsNothing);
   });
-}
 
+  testWidgets('파일변환 탭은 비활성이라 눌러도 이동하지 않는다', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: TabNavigationShell(
+        documentEditor: _page('문서'),
+        tableTemplates: _page('표템플릿 화면'),
+        tableSketch: _page('표그림판 화면'),
+        diagram: _page('다이어그램 화면'),
+        mindMap: _page('마인드맵 화면'),
+        fileConversion: _page('파일변환 화면'),
+      ),
+    ));
+    await tester.tap(find.text('파일변환'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 0);
+    expect(find.text('파일변환 화면'), findsNothing);
+  });
+}
