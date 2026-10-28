@@ -1,14 +1,14 @@
 {
   "ok": true,
-  "version": "1.80.9",
+  "version": "2.0.1",
   "windows": [
     {
-      "title": "한글편집 후처리 · v1.80.9",
-      "pid": 1980,
+      "title": "한글편집 후처리 · v2.0.1",
+      "pid": 8244,
       "image": "D:\\a\\hwp-auto-docfit\\hwp-auto-docfit\\dist\\HWP_AutoDocFit\\HWP_AutoDocFit.exe"
     }
   ],
-  "window_ready_ms": 4446.27,
+  "window_ready_ms": 3390.7,
   "smart_launcher": false,
   "first_run_splash_ms": null,
   "offline_ocr": {
@@ -19,8 +19,8 @@
   },
   "embedded_runtime": {
     "ok": true,
-    "path": "C:\\HWP_AUTODOCFIT\\kordoc-runtime\\4.21.30",
-    "version": "4.21.30",
+    "path": "C:\\HWP_AUTODOCFIT\\kordoc-runtime\\4.24.9",
+    "version": "4.24.9",
     "sidecar_required": false
   }
 }
