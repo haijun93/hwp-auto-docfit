@@ -134,7 +134,7 @@ class TableUnitsService:
 
     def _public_snapshot_key(self, template_id: str) -> str:
         base_path = public_table_presets._default_base_path()
-        base_hash = hashlib.sha256(base_path.read_bytes()).hexdigest()[:16] if base_path.is_file() else ""
+        base_hash = hashlib.sha256(base_path.read_bytes()).hexdigest() if base_path.is_file() else ""
         cache_key = (template_id, public_table_presets.PUBLIC_PRESET_REVISION, base_hash)
         if cache_key not in self._public_key_cache:
             self._public_key_cache[cache_key] = public_table_presets.public_preset_snapshot_key(template_id)
@@ -160,7 +160,10 @@ class TableUnitsService:
 
     def _snapshot_url(self, template_id: str) -> str | None:
         if public_table_presets.is_public_preset(str(template_id)):
-            path = self._snapshot_path(template_id)
+            try:
+                path = self._snapshot_path(template_id)
+            except (OSError, ValueError):
+                return None
             if not path.is_file():
                 return None
             return "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode("ascii")
@@ -320,11 +323,7 @@ class TableUnitsService:
                         picture.save(temporary, format="PNG", optimize=True)
                         temporary.replace(target)
                     finally:
-                        if temporary.exists():
-                            try:
-                                temporary.unlink()
-                            except Exception:
-                                pass
+                        temporary.unlink(missing_ok=True)
             finally:
                 if app is not None:
                     self._close(app)

@@ -250,7 +250,7 @@ Future<void> pumpScreen(
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
 
-  await tester.pumpWidget(MaterialApp(home: TableUnitsScreen(api: api)));
+  await tester.pumpWidget(MaterialApp(home: TableUnitsScreen(key: ValueKey(api), api: api)));
   await tester.pumpAndSettle();
 }
 
@@ -960,10 +960,14 @@ void main() {
 
     // 1280px 너비에서 공공 프리셋 선택
     await pumpScreen(tester, api: api, width: 1280.0, height: 800.0);
-    await tester.tap(find.byKey(const Key('categoryChip_공공 표준')));
+    final pubChip = find.byKey(const Key('categoryChip_공공 표준'));
+    await tester.ensureVisible(pubChip);
+    await tester.tap(pubChip);
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('templateCard_pub_two_col_definition')));
+    final pubCard = find.byKey(const Key('templateCard_pub_two_col_definition'));
+    await tester.ensureVisible(pubCard);
+    await tester.tap(pubCard);
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('publicPresetGuideline')), findsOneWidget);
@@ -984,7 +988,9 @@ void main() {
     await tester.tap(allChip);
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('templateCard_0:1')));
+    final legacyCard = find.byKey(const Key('templateCard_0:1'));
+    await tester.ensureVisible(legacyCard);
+    await tester.tap(legacyCard);
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('publicPresetGuideline')), findsNothing);
@@ -1009,10 +1015,14 @@ void main() {
     }
 
     await pumpScreen(tester, api: api);
-    await tester.tap(find.byKey(const Key('categoryChip_공공 표준')));
+    final pubChip = find.byKey(const Key('categoryChip_공공 표준'));
+    await tester.ensureVisible(pubChip);
+    await tester.tap(pubChip);
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('templateCard_pub_gantt_timeline')));
+    final ganttCard = find.byKey(const Key('templateCard_pub_gantt_timeline'));
+    await tester.ensureVisible(ganttCard);
+    await tester.tap(ganttCard);
     await tester.pumpAndSettle();
 
     // 초기 정보단위 열 4개 표시
@@ -1026,6 +1036,31 @@ void main() {
     expect(find.text('열 단위 5개'), findsOneWidget);
     final lastPreview = calls.lastWhere((c) => c[0] == 'table_units' && c[1] == 'preview');
     expect((lastPreview[2] as Map)['col_count'], 5);
+
+    // [-] 버튼 클릭으로 최소값(2개) 도달 시 추가 감소 차단 검증
+    final colMinus = find.byKey(const Key('btnColMinus'));
+    // 현재 5개 -> 2개로 감소 (3회 탭)
+    await tester.tap(colMinus);
+    await tester.pumpAndSettle();
+    await tester.tap(colMinus);
+    await tester.pumpAndSettle();
+    await tester.tap(colMinus);
+    await tester.pumpAndSettle();
+    expect(find.text('열 단위 2개'), findsOneWidget);
+
+    // 최소 2개 상태에서 추가 탭 시 2개 유지 (차단)
+    await tester.tap(colMinus);
+    await tester.pumpAndSettle();
+    expect(find.text('열 단위 2개'), findsOneWidget);
+
+    // 다시 [+] 버튼 3번 눌러 5개로 복원 후 복사
+    await tester.tap(colPlus);
+    await tester.pumpAndSettle();
+    await tester.tap(colPlus);
+    await tester.pumpAndSettle();
+    await tester.tap(colPlus);
+    await tester.pumpAndSettle();
+    expect(find.text('열 단위 5개'), findsOneWidget);
 
     // 복사 클릭 시 payload에 col_count 5 전달
     await tester.ensureVisible(find.byKey(const Key('btnTopCopyTable')));
@@ -1048,10 +1083,14 @@ void main() {
     }
 
     await pumpScreen(tester, api: api);
-    await tester.tap(find.byKey(const Key('categoryChip_공공 표준')));
+    final pubChip = find.byKey(const Key('categoryChip_공공 표준'));
+    await tester.ensureVisible(pubChip);
+    await tester.tap(pubChip);
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('templateCard_pub_summary_headline')));
+    final sumCard = find.byKey(const Key('templateCard_pub_summary_headline'));
+    await tester.ensureVisible(sumCard);
+    await tester.tap(sumCard);
     await tester.pumpAndSettle();
 
     // 고정 표 안내 표시 및 -/+ 없음
@@ -1083,11 +1122,14 @@ void main() {
     }
 
     await pumpScreen(tester, api: api);
-    await tester.tap(find.byKey(const Key('categoryChip_공공 표준')));
+    final pubChip = find.byKey(const Key('categoryChip_공공 표준'));
+    await tester.ensureVisible(pubChip);
+    await tester.tap(pubChip);
     await tester.pumpAndSettle();
 
     // 1. 공공 표 즐겨찾기 클릭
     final favBtn = find.byKey(const Key('btnFavorite_pub_two_col_definition'));
+    await tester.ensureVisible(favBtn);
     await tester.tap(favBtn);
     await tester.pumpAndSettle();
 
@@ -1095,7 +1137,9 @@ void main() {
     expect((favCall[2] as Map)['id'], 'pub_two_col_definition');
 
     // 2. 복사 실패 안내
-    await tester.tap(find.byKey(const Key('templateCard_pub_two_col_definition')));
+    final twoColCard = find.byKey(const Key('templateCard_pub_two_col_definition'));
+    await tester.ensureVisible(twoColCard);
+    await tester.tap(twoColCard);
     await tester.pumpAndSettle();
 
     await tester.ensureVisible(find.byKey(const Key('btnTopCopyTable')));
@@ -1127,6 +1171,27 @@ void main() {
     final thumbCalls = calls.where((c) => c[0] == 'table_units' && c[1] == 'thumbnails');
     expect(thumbCalls.length, 1);
     expect(find.byKey(const Key('tableGridPreview')), findsOneWidget);
+
+    // 실패 서브케이스: thumbnails 호출이 실패하더라도 spinner 종료, 구조 표 유지, 무한 재요청 없음
+    final failCalls = <List<Object?>>[];
+    Future<Object?> failApi(String name, List<Object?> args) async {
+      failCalls.add([name, ...args]);
+      final action = args[0] as String;
+      if (action == 'list') {
+        return envelope(sampleListData(includePublic: true, thumbnailsReady: false));
+      }
+      if (action == 'thumbnails') {
+        return errorEnvelope('THUMBNAIL_FAILED', '썸네일 생성 실패');
+      }
+      if (action == 'preview') return envelope(samplePreview());
+      return envelope({});
+    }
+
+    await pumpScreen(tester, api: failApi);
+    final failThumbCalls = failCalls.where((c) => c[0] == 'table_units' && c[1] == 'thumbnails');
+    expect(failThumbCalls.length, 1);
+    expect(find.byKey(const Key('tableGridPreview')), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
   });
 
   testWidgets('공공 미리보기의 늦은 응답은 다음 선택을 덮지 않는다', (tester) async {
@@ -1146,17 +1211,30 @@ void main() {
 
     await pumpScreen(tester, api: api);
 
-    // 1. 공공 표 선택 -> preview 지연
-    await tester.tap(find.byKey(const Key('categoryChip_공공 표준')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('templateCard_pub_two_col_definition')));
+    // 1. 공공 표 선택 -> preview 지연 (미완료 Future 동안 스피너가 돌 수 있으므로 pumpAndSettle 대신 pump 사용)
+    final pubChip = find.byKey(const Key('categoryChip_공공 표준'));
+    await tester.ensureVisible(pubChip);
+    await tester.tap(pubChip);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    final pubCard = find.byKey(const Key('templateCard_pub_two_col_definition'));
+    await tester.ensureVisible(pubCard);
+    await tester.tap(pubCard);
     await tester.pump();
 
     // 2. 곧바로 전체 칩으로 돌아가 0:1 선택
-    await tester.tap(find.byKey(const Key('categoryChip_전체')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('templateCard_0:1')));
-    await tester.pumpAndSettle();
+    final allChip = find.byKey(const Key('categoryChip_전체'));
+    await tester.ensureVisible(allChip);
+    await tester.tap(allChip);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    final legacyCard = find.byKey(const Key('templateCard_0:1'));
+    await tester.ensureVisible(legacyCard);
+    await tester.tap(legacyCard);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
 
     // 3. 지연되었던 공공 preview가 뒤늦게 완료
     completerPub.complete(envelope(samplePreview(rows: 99, cols: 99)));

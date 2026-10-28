@@ -91,6 +91,8 @@
 
 ### `docfit_core/public_table_presets.py`
 순수 파이썬/XML 기반 자립 프리셋 조판 엔진:
+- 안전 ZIP helper: `from docfit_core.hwpx import open_hwpx_safely` 사용 (`archive_safety.py` 의존 없음)
+- 리비전: `PUBLIC_PRESET_REVISION = "p7-v2"` (결정론적 스냅샷 키 및 캐시 무효화 기준)
 
 ```python
 # 프리셋 정보 조회
@@ -140,10 +142,15 @@ def build_public_preset_preview(
    - 기존 서식 손상 시 `CATALOG_UNAVAILABLE` 오류를 정상 반환합니다.
 2. **독립 스냅샷 캐시 (`_snapshot_path`, `_snapshot_url`)**:
    - 공공 프리셋 스냅샷은 `<snapshot_root>/public/<key>.png` 경로에 분리 저장합니다.
-   - 스냅샷 키는 `PUBLIC_PRESET_REVISION = 'p7-v1'`, 프리셋 ID, 바탕 양식 해시, 최종 표/헤더/페이지 XML 튜플 해시(SHA256 20자리)로 계산되어 결정론적으로 유지됩니다.
+   - 스냅샷 키는 `PUBLIC_PRESET_REVISION = 'p7-v2'`, 프리셋 ID, 바탕 양식 해시, 최종 표/헤더/pagePr(여백 margin 포함) XML 전체 요소 해시(SHA256 20자리)로 계산되어 결정론적으로 유지됩니다.
    - 16자리 레거시 해시 폴더 청소 로직에 6자리 'public' 폴더가 영향을 받지 않습니다.
+   - 바탕 파일 누락/손상 시 `_snapshot_url` 내부에서만 `None`으로 처리하여 기존 서식 목록 및 내장 사진 표시에 영향을 주지 않습니다.
 3. **루팅 분기 (`preview`, `_export`)**:
    - `is_public_preset(id)` 판정으로 공공 프리셋만 전용 엔진으로 라우팅하며, 미등록 ID는 기존 `INVALID_INPUT` 예외로 처리됩니다.
+4. **한/글 COM 연동 의존성 분리**:
+   - 표 HWPX 생성 및 XML 구조 미리보기(`preview_public_preset`)는 COM 없이 순수 파이썬 환경에서 자립 수행됩니다.
+   - 한/글 클립보드 복사(`copy`, Hwp Native 포맷) 및 실측 PNG 썸네일 생성(`thumbnails`, PDF 변환/래스터화)만 한/글 COM 인스턴스를 사용합니다.
+   - 실제 한/글 COM 검증은 단위 시험과 분리되며, `C:\HWP_AUTODOCFIT\.com-test.lock` 배타 잠금 환경에서 실측됩니다.
 
 ---
 
@@ -158,3 +165,16 @@ def build_public_preset_preview(
 3. **표준 조판 가이드라인 카드 (`_buildPresetGuideline`)**:
    - 우측 상세 화면 상단에 용도 배지, 설명 및 4대 가이드라인(여백, 테두리, 글꼴, 배경) 카드 표시 (`Key('publicPresetGuideline')`).
    - 비공공 템플릿 선택 시 자동으로 사라지며, 420px 모바일 폭 반응형에서도 오버플로 없이 줄바꿈 배치.
+
+---
+
+## 7. 구현 및 검증 현황
+
+- **구현 완료**:
+  - `docfit_core/public_table_presets.py`: 6대 공공 표준 프리셋 정의, open_hwpx_safely 연동, _remove_public_preview_image, _validate_public_contents(스타일/폰트/단일섹션 무결성 검증), p7-v2 스냅샷 키(여백 포함).
+  - `docfit_app/table_units_service.py`: 공공 프리셋 분기, 바탕 누락 격리, 독립 public 캐시(전체 SHA256 키).
+  - `flutter_ui`: 모델 확장, 공공 칩/아이콘, 표준 조판 가이드라인 카드.
+  - 단위/서비스/위젯 자동 시험 코드 작성 완료 (사람 입력 없이 무인 실행 가능).
+- **실측 검증(실행 담당자 예정)**:
+  - Python / Flutter 자동 단위 시험 일괄 실행 및 판정.
+  - 한/글 COM 인스턴스 배타 잠금(`C:\HWP_AUTODOCFIT\.com-test.lock`) 환경에서 실제 붙여넣기 및 PDF 변환 실측.

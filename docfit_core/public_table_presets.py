@@ -1,5 +1,5 @@
 """공공기관·비즈니스 6대 표준 표 템플릿 프리셋 엔진 (2.0.1).
-행정업무운영편람 및 기획재정부 보고서 표준 지침에 맞춘 조판 메트릭스, 셀 메타, HWPX 생성 자립 모듈.
+행정업무운영편람 및 기획재정부 보고서 표준 지침을 참고한 공공 업무 예시 프리셋 조판 메트릭스, 셀 메타, HWPX 생성 자립 모듈.
 """
 
 from __future__ import annotations
@@ -19,10 +19,10 @@ from defusedxml import ElementTree as ET
 from docfit_core import table_builder
 from docfit_core import table_catalog as catalog
 from docfit_core import table_units
-from docfit_core.archive_safety import open_hwpx_safely
+from docfit_core.hwpx import open_hwpx_safely
 
 CATEGORY_NAME = "공공 표준"
-PUBLIC_PRESET_REVISION = "p7-v1"
+PUBLIC_PRESET_REVISION = "p7-v2"
 
 # 6대 공공 표준 프리셋 정의 (공공 업무 예시 프리셋)
 PUBLIC_TABLE_PRESETS: dict[str, dict[str, Any]] = {
@@ -309,7 +309,8 @@ def get_public_preset_descriptors() -> list[dict[str, Any]]:
     descriptors = []
     for pid, p in PUBLIC_TABLE_PRESETS.items():
         units_desc = {}
-        for axis, u in p["units"].items():
+        for axis in ("row", "col"):
+            u = p["_plan"].get(axis)
             if u:
                 units_desc[axis] = {
                     k: u[k]
@@ -340,7 +341,22 @@ def is_public_preset(template_id: str) -> bool:
 def get_public_preset(template_id: str) -> dict[str, Any] | None:
     """공공 프리셋 원본 사본을 반환한다."""
     preset = PUBLIC_TABLE_PRESETS.get(template_id)
-    return copy.deepcopy(preset) if preset is not None else None
+    if preset is None:
+        return None
+    res = copy.deepcopy(preset)
+    units_desc = {}
+    for axis in ("row", "col"):
+        u = res["_plan"].get(axis)
+        if u:
+            units_desc[axis] = {
+                k: u[k]
+                for k in ("count", "min", "max", "core", "sep")
+                if k in u
+            }
+        else:
+            units_desc[axis] = None
+    res["units"] = units_desc
+    return res
 
 
 def public_preset_plan(preset_id: str) -> dict[str, Any]:
@@ -378,11 +394,23 @@ def _public_para(pool: table_builder._Header, align: str, line_spacing: int, cac
     source = next(x for x in pool.groups["paraProperties"] if x.get("id") == "0")
     clone = copy.deepcopy(source)
     align_el = table_builder._child(clone, "align")
-    if align_el is not None:
-        align_el.set("horizontal", align)
-    for line in (x for x in clone.iter() if table_builder._tag(x) == "lineSpacing"):
-        if line.get("type") == "PERCENT":
+    if align_el is None:
+        align_el = table_builder._element(clone, "align")
+    align_el.set("horizontal", align)
+
+    found_line_spacing = False
+    for line in clone.iter():
+        if table_builder._tag(line) == "lineSpacing":
+            line.set("type", "PERCENT")
             line.set("value", str(line_spacing))
+            line.attrib.pop("unit", None)
+            found_line_spacing = True
+
+    if not found_line_spacing:
+        line_el = table_builder._element(clone, "lineSpacing")
+        line_el.set("type", "PERCENT")
+        line_el.set("value", str(line_spacing))
+
     pid = pool._append("paraProperties", clone)
     cache[key] = pid
     return pid
@@ -751,6 +779,165 @@ def _apply_public_style(table: ET.Element, header: ET.Element, preset: dict[str,
                     p.remove(cache)
 
 
+def _remove_public_preview_image(contents: dict[str, bytes]) -> None:
+    """Preview/PrvImage.png 파일을 제거하고 content.hpf manifest 및 spine 참조를 정리한다."""
+    contents.pop("Preview/PrvImage.png", None)
+    if "Contents/content.hpf" in contents:
+        raw_bytes = contents["Contents/content.hpf"]
+        root = ET.fromstring(raw_bytes)
+        removed_ids = set()
+        for elem in root.iter():
+            if table_builder._tag(elem) == "manifest":
+                to_remove = []
+                for item in list(elem):
+                    if table_builder._tag(item) == "item":
+                        href = item.get("href", "")
+                        if href == "Preview/PrvImage.png" or href.endswith("/PrvImage.png"):
+                            item_id = item.get("id")
+                            if item_id:
+                                removed_ids.add(item_id)
+                            to_remove.append(item)
+                for it in to_remove:
+                    elem.remove(it)
+
+        if removed_ids:
+            for elem in root.iter():
+                if table_builder._tag(elem) == "spine":
+                    to_remove = []
+                    for itemref in list(elem):
+                        if table_builder._tag(itemref) == "itemref":
+                            if itemref.get("idref") in removed_ids:
+                                to_remove.append(itemref)
+                    for rf in to_remove:
+                        elem.remove(rf)
+
+        contents["Contents/content.hpf"] = table_builder._serialize(root, raw_bytes)
+
+
+def _validate_public_contents(contents: dict[str, bytes]) -> tuple[ET.Element, ET.Element, ET.Element]:
+    """공공 패키지 내용의 필수 파일, 단일 섹션, 최상위 표, 스타일/폰트 참조 무결성을 검증한다.
+
+    반환: (section0 Element, table Element, header Element)
+    """
+    if "mimetype" not in contents:
+        raise ValueError("패키지에 mimetype 파일이 누락되었습니다.")
+    if "Contents/header.xml" not in contents:
+        raise ValueError("패키지에 Contents/header.xml이 누락되었습니다.")
+
+    sections = sorted(n for n in contents if re.fullmatch(r"Contents/section\d+\.xml", n))
+    if len(sections) != 1 or sections[0] != "Contents/section0.xml":
+        raise ValueError(f"단일 section0 구조가 아닙니다 (검출된 섹션: {sections}).")
+
+    header = ET.fromstring(contents["Contents/header.xml"])
+    section0 = ET.fromstring(contents["Contents/section0.xml"])
+
+    # 최상위 표 검출: p 직접 하위 top_tables
+    top_tables = []
+    for p in section0.findall(table_units.HP + "p"):
+        top_tables.extend(catalog._top_tables(p))
+    if len(top_tables) != 1:
+        raise ValueError(f"최상위 표 개수가 1개가 아닙니다: {len(top_tables)}")
+    all_tbls = section0.findall(f".//{table_units.HP}tbl")
+    if len(all_tbls) != 1:
+        raise ValueError(f"중첩 표가 검출되었거나 표 개수가 1개가 아닙니다: {len(all_tbls)}")
+    table = top_tables[0]
+
+    # 행열 개수, 폭 및 좌표 검증
+    row_cnt = int(table.get("rowCnt", 0))
+    col_cnt = int(table.get("colCnt", 0))
+    if row_cnt <= 0 or col_cnt <= 0:
+        raise ValueError(f"유효하지 않은 rowCnt({row_cnt}) 또는 colCnt({col_cnt})")
+    tbl_sz = table.find(table_units.HP + "sz")
+    if tbl_sz is None or int(tbl_sz.get("width", 0)) <= 0:
+        raise ValueError("표 폭(sz.width)이 없거나 양수가 아닙니다.")
+    total_tbl_width = int(tbl_sz.get("width"))
+
+    trs = table.findall(table_units.HP + "tr")
+    if len(trs) != row_cnt:
+        raise ValueError(f"실제 행 수({len(trs)})가 rowCnt({row_cnt})와 불일치합니다.")
+    for r_idx, tr in enumerate(trs):
+        tcs = tr.findall(table_units.HP + "tc")
+        row_width_sum = 0
+        for tc in tcs:
+            cell_sz = tc.find(table_units.HP + "cellSz")
+            if cell_sz is None or int(cell_sz.get("width", 0)) <= 0:
+                raise ValueError(f"셀 ({r_idx})의 폭이 없거나 양수가 아닙니다.")
+            row_width_sum += int(cell_sz.get("width"))
+            addr = tc.find(table_units.HP + "cellAddr")
+            if addr is not None:
+                if int(addr.get("rowAddr", -1)) < 0 or int(addr.get("colAddr", -1)) < 0:
+                    raise ValueError(f"셀 좌표가 음수입니다: rowAddr={addr.get('rowAddr')}, colAddr={addr.get('colAddr')}")
+        if row_width_sum != total_tbl_width:
+            raise ValueError(f"행 {r_idx}의 셀 폭 합({row_width_sum})이 표 전체 폭({total_tbl_width})과 불일치합니다.")
+
+    # header 그룹별 itemCnt 및 ID 중복 검사
+    for group_name in ("borderFills", "charProperties", "paraProperties", "styles"):
+        group_elem = next((x for x in header.iter() if table_builder._tag(x) == group_name), None)
+        if group_elem is not None:
+            item_cnt_str = group_elem.get("itemCnt")
+            children = list(group_elem)
+            if item_cnt_str is not None:
+                if int(item_cnt_str) != len(children):
+                    raise ValueError(f"{group_name}의 itemCnt({item_cnt_str})와 실제 자식 수({len(children)})가 불일치합니다.")
+            child_ids = [c.get("id") for c in children if c.get("id") is not None]
+            if len(child_ids) != len(set(child_ids)):
+                raise ValueError(f"{group_name} 내 중복된 id가 존재합니다.")
+
+    # 사용 중 참조 ID 존재 검사
+    bf_ids = {x.get("id") for x in header.iter() if table_builder._tag(x) == "borderFill" and x.get("id") is not None}
+    char_ids = {x.get("id") for x in header.iter() if table_builder._tag(x) == "charPr" and x.get("id") is not None}
+    para_ids = {x.get("id") for x in header.iter() if table_builder._tag(x) == "paraPr" and x.get("id") is not None}
+    style_ids = {x.get("id") for x in header.iter() if table_builder._tag(x) == "style" and x.get("id") is not None}
+    font_ids = {x.get("id") for x in header.iter() if table_builder._tag(x) == "font" and x.get("id") is not None}
+
+    for tc in table.findall(f".//{table_units.HP}tc"):
+        bf_ref = tc.get("borderFillIDRef")
+        if bf_ref is not None and bf_ref not in bf_ids:
+            raise ValueError(f"유효하지 않은 borderFillIDRef 참조: {bf_ref}")
+
+    for p in table.findall(f".//{table_units.HP}p"):
+        para_ref = p.get("paraPrIDRef")
+        if para_ref is not None and para_ref not in para_ids:
+            raise ValueError(f"유효하지 않은 paraPrIDRef 참조: {para_ref}")
+        style_ref = p.get("styleIDRef")
+        if style_ref is not None and style_ref not in style_ids:
+            raise ValueError(f"유효하지 않은 styleIDRef 참조: {style_ref}")
+        for run in p.findall(f".//{table_units.HP}run"):
+            char_ref = run.get("charPrIDRef")
+            if char_ref is not None and char_ref not in char_ids:
+                raise ValueError(f"유효하지 않은 charPrIDRef 참조: {char_ref}")
+
+    for char_pr in header.iter():
+        if table_builder._tag(char_pr) == "charPr":
+            for font_ref in char_pr.iter():
+                if table_builder._tag(font_ref) == "fontRef":
+                    for lang_attr in ("hangul", "latin", "hanja", "japanese", "other", "symbol", "user"):
+                        f_id = font_ref.get(lang_attr)
+                        if f_id is not None and f_id not in font_ids:
+                            raise ValueError(f"유효하지 않은 fontRef {lang_attr} ID 참조: {f_id}")
+
+    # 필수 manifest의 로컬 href 존재 검사
+    if "Contents/content.hpf" in contents:
+        hpf = ET.fromstring(contents["Contents/content.hpf"])
+        for item in hpf.iter():
+            if table_builder._tag(item) == "item":
+                href = item.get("href")
+                if href and not href.startswith(("http://", "https://")):
+                    possible = [href, f"Contents/{href}", href.lstrip("/")]
+                    if not any(p in contents for p in possible):
+                        raise ValueError(f"manifest 참조 파일이 패키지에 존재하지 않습니다: {href}")
+
+    return section0, table, header
+
+
+def _hash_public_tree(digest: Any, root: Any) -> None:
+    """순회하는 각 요소의 expanded tag, sorted attributes, text, tail을 결정론적으로 해시한다."""
+    for elem in root.iter():
+        attr_items = sorted(elem.attrib.items())
+        token = repr((elem.tag, attr_items, elem.text or "", elem.tail or ""))
+        digest.update(token.encode("utf-8"))
+
+
 def _build_public_document(
     preset_id: str,
     row_count: int | None,
@@ -773,6 +960,13 @@ def _build_public_document(
     base_path = _default_base_path()
     if not base_path.is_file():
         raise OSError(f"내장 기본 서식 파일을 찾을 수 없습니다: {base_path}")
+
+    # builder 호출 전 원본 바탕의 단일 section 및 header.xml 검사
+    with open_hwpx_safely(base_path) as bz:
+        b_names = bz.namelist()
+        b_secs = sorted(n for n in b_names if re.fullmatch(r"Contents/section\d+\.xml", n))
+        if len(b_secs) != 1 or "Contents/header.xml" not in b_names:
+            raise ValueError(f"내장 바탕 문서의 섹션 구조가 단일 section이 아닙니다 (sections: {len(b_secs)}).")
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_hwpx = Path(temp_dir) / "base_grid.hwpx"
@@ -798,10 +992,15 @@ def _build_public_document(
     header = ET.fromstring(header_bytes)
     section0 = ET.fromstring(section_bytes)
 
-    tables = section0.findall(f".//{table_units.HP}tbl")
-    if not tables:
-        raise ValueError("표 요소를 찾을 수 없습니다.")
-    table = tables[0]
+    top_tables = []
+    for p in section0.findall(table_units.HP + "p"):
+        top_tables.extend(catalog._top_tables(p))
+    if len(top_tables) != 1:
+        raise ValueError(f"최상위 표 개수가 1개가 아닙니다: {len(top_tables)}")
+    all_tbls = section0.findall(f".//{table_units.HP}tbl")
+    if len(all_tbls) != 1:
+        raise ValueError(f"중첩 표가 존재하거나 최상위 표가 1개가 아닙니다: {len(all_tbls)}")
+    table = top_tables[0]
 
     plan = public_preset_plan(preset_id)
     table_units.resize_table(
@@ -817,12 +1016,13 @@ def _build_public_document(
     page_pr = next(x for x in section0.iter() if table_builder._tag(x) == "pagePr")
     margin_el = table_builder._child(page_pr, "margin")
     body_width = int(page_pr.get("width")) - int(margin_el.get("left")) - int(margin_el.get("right"))
+    if body_width <= 0:
+        raise ValueError(f"본문 폭이 양수가 아닙니다: {body_width}")
 
     _apply_public_style(table, header, preset, body_width)
 
-    # PrvImage 제거 (기존 문서 썸네일 방지)
-    if "Preview/PrvImage.png" in contents:
-        contents.pop("Preview/PrvImage.png")
+    # PrvImage 및 content.hpf manifest/itemref 정리
+    _remove_public_preview_image(contents)
 
     # PrvText 재생성
     all_texts = []
@@ -841,16 +1041,23 @@ def _build_public_document(
 def _write_public_package(contents: dict[str, bytes], target: Path) -> Path:
     target = Path(target)
     base_path = _default_base_path()
-    try:
-        if target.resolve() == base_path.resolve() or (target.exists() and os.path.samefile(target, base_path)):
-            raise ValueError("내장 바탕 원본 문서를 출력 대상으로 덮어쓸 수 없습니다.")
-    except (FileNotFoundError, OSError):
-        pass
+    if target.resolve() == base_path.resolve():
+        raise ValueError("내장 바탕 원본 문서를 출력 대상으로 덮어쓸 수 없습니다.")
+    if target.exists() and os.path.samefile(target, base_path):
+        raise ValueError("내장 바탕 원본 문서를 출력 대상으로 덮어쓸 수 없습니다.")
 
     target.parent.mkdir(parents=True, exist_ok=True)
-    temp_file = target.with_name(target.name + f".tmp_{os.getpid()}")
+    temp_path: Path | None = None
 
     try:
+        with tempfile.NamedTemporaryFile(
+            delete=False,
+            prefix=target.name + ".tmp_",
+            suffix=".hwpx",
+            dir=target.parent
+        ) as ntf:
+            temp_path = Path(ntf.name)
+
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as out:
             if "mimetype" in contents:
@@ -858,32 +1065,18 @@ def _write_public_package(contents: dict[str, bytes], target: Path) -> Path:
             for name, data in contents.items():
                 if name != "mimetype":
                     out.writestr(name, data)
-        temp_file.write_bytes(buffer.getvalue())
+        temp_path.write_bytes(buffer.getvalue())
 
-        # 임시 파일 무결성 및 구조 재검증
-        with open_hwpx_safely(temp_file) as check_z:
-            c_sec = check_z.read("Contents/section0.xml")
-            c_hdr = check_z.read("Contents/header.xml")
-            s_elem = ET.fromstring(c_sec)
-            h_elem = ET.fromstring(c_hdr)
-            tb_list = s_elem.findall(f".//{table_units.HP}tbl")
-            if len(tb_list) != 1:
-                raise ValueError("최상위 표가 정확히 1개가 아닙니다.")
-            # 스타일 참조 유효성 검사
-            bf_ids = {x.get("id") for x in h_elem.iter() if table_builder._tag(x) == "borderFill"}
-            for tc in tb_list[0].findall(f".//{table_units.HP}tc"):
-                bf_ref = tc.get("borderFillIDRef")
-                if bf_ref is not None and bf_ref not in bf_ids:
-                    raise ValueError(f"유효하지 않은 borderFillIDRef 참조: {bf_ref}")
+        # 임시 파일 무결성 및 전체 구조 재검증
+        with open_hwpx_safely(temp_path) as check_z:
+            check_contents = {info.filename: check_z.read(info.filename) for info in check_z.infolist()}
+        _validate_public_contents(check_contents)
 
-        temp_file.replace(target)
+        temp_path.replace(target)
         return target
     finally:
-        if temp_file.exists():
-            try:
-                temp_file.unlink()
-            except Exception:
-                pass
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
 
 
 def preview_public_preset(
@@ -971,22 +1164,21 @@ def public_preset_snapshot_key(preset_id: str) -> str:
         cell_texts=None
     )
 
-    section0 = ET.fromstring(contents[sorted(n for n in contents if re.fullmatch(r"Contents/section\d+\.xml", n))[0]])
+    section0_name = sorted(n for n in contents if re.fullmatch(r"Contents/section\d+\.xml", n))[0]
+    section0 = ET.fromstring(contents[section0_name])
     page_pr = next(x for x in section0.iter() if table_builder._tag(x) == "pagePr")
 
     digest = hashlib.sha256(PUBLIC_PRESET_REVISION.encode("utf-8"))
     digest.update(preset_id.encode("utf-8"))
 
-    # pagePr 반영
-    digest.update(repr((page_pr.tag, sorted(page_pr.attrib.items()))).encode("utf-8"))
+    # pagePr 및 하위 요소 전체 (margin 포함) 해시
+    _hash_public_tree(digest, page_pr)
 
-    # header 요소 순회
-    for elem in header.iter():
-        digest.update(repr((elem.tag, sorted(elem.attrib.items()), elem.text or "", elem.tail or "")).encode("utf-8"))
+    # header 요소 순회 해시
+    _hash_public_tree(digest, header)
 
-    # table 요소 순회
-    for elem in table.iter():
-        digest.update(repr((elem.tag, sorted(elem.attrib.items()), elem.text or "", elem.tail or "")).encode("utf-8"))
+    # table 요소 순회 해시
+    _hash_public_tree(digest, table)
 
     return digest.hexdigest()[:20]
 

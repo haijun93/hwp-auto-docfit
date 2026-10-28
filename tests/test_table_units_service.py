@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from docfit_app.api_contract import ServiceError
 from docfit_app.settings_service import SettingsService
@@ -319,6 +319,7 @@ class TableUnitsServiceTests(unittest.TestCase):
         self.assertEqual(k1, k2)
 
     def test_public_thumbnails_generate_once_and_preserve_bundled_legacy(self):
+        real_bundled = default_catalog_path().parents[1] / "table_snapshots" / "tables"
         fake_pdf = Path(self.temp.name) / "fake.pdf"
         from pypdf import PdfWriter
         w = PdfWriter()
@@ -329,37 +330,106 @@ class TableUnitsServiceTests(unittest.TestCase):
         def fake_convert(app, doc, pdf):
             pdf.write_bytes(fake_pdf.read_bytes())
 
-        # pypdfium2 및 PIL을 가짜 렌더링으로 patch
         from PIL import Image
         fake_img = Image.new("RGB", (100, 50), "white")
 
-        with patch("docfit_core.file_conversion.convert_hwpx_to_pdf", side_effect=fake_convert), \
-             patch("pypdfium2.PdfDocument") as mock_pdf:
-            mock_doc = mock_pdf.return_value
-            mock_doc.__getitem__.return_value.render.return_value.to_pil.return_value = fake_img
+        with patch("docfit_app.table_units_service.BUNDLED_SNAPSHOTS", real_bundled):
+            # 기본 내장사진 bytes 기록
+            legacy_bytes_map = {}
+            if real_bundled.is_dir():
+                for f in real_bundled.glob("*.png"):
+                    legacy_bytes_map[f.name] = f.read_bytes()
 
-            data = self.service.command("thumbnails", {})
-            self.assertTrue(data["thumbnails_ready"])
-            # 공공 스냅샷이 생성되었는지 확인
-            pub_thumb = next(t["thumbnail"] for t in data["templates"] if t["id"] == "pub_summary_headline")
-            self.assertIsNotNone(pub_thumb)
+            mock_convert = MagicMock(side_effect=fake_convert)
+            with patch("docfit_core.file_conversion.convert_hwpx_to_pdf", mock_convert), \
+                 patch("pypdfium2.PdfDocument") as mock_pdf:
+                mock_doc = mock_pdf.return_value
+                mock_doc.__getitem__.return_value.render.return_value.to_pil.return_value = fake_img
 
-            # 2회차 호출 시 추가 SaveAs 없음
-            self.log.clear()
-            self.service.command("thumbnails", {})
-            saves = sum(1 for item in self.log if item[0] == "SaveAs")
-            self.assertEqual(saves, 0)
+                # 1회차 호출: legacy는 bundled로 충족되고 public 6개만 convert
+                data = self.service.command("thumbnails", {})
+                self.assertTrue(data["thumbnails_ready"])
+                self.assertEqual(mock_convert.call_count, 6)
+
+                # public PNG 6개 생성 확인
+                for pid in public_table_presets.PUBLIC_TABLE_PRESETS:
+                    path = self.service._snapshot_path(pid)
+                    self.assertTrue(path.is_file(), f"{pid} public thumbnail file exists")
+
+                # 2회차 호출 시 추가 convert 호출 0회
+                self.service.command("thumbnails", {})
+                self.assertEqual(mock_convert.call_count, 6)
+
+            # legacy bundled bytes 불변 확인
+            for fname, expected_bytes in legacy_bytes_map.items():
+                self.assertEqual((real_bundled / fname).read_bytes(), expected_bytes)
 
     def test_failed_public_thumbnail_does_not_leave_png_or_lose_legacy_cache(self):
-        target = self.service._snapshot_path("pub_summary_headline")
-        tmp_target = target.with_name(target.name + ".tmp")
+        real_bundled = default_catalog_path().parents[1] / "table_snapshots" / "tables"
+        with patch("docfit_app.table_units_service.BUNDLED_SNAPSHOTS", real_bundled):
+            # public 6개 중 5개는 미리 더미 png 생성, pub_summary_headline 단 1개만 missing 상태로 만듦
+            pub_ids = list(public_table_presets.PUBLIC_TABLE_PRESETS.keys())
+            for pid in pub_ids[1:]:
+                p = self.service._snapshot_path(pid)
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_bytes(b"dummy_png")
 
-        with patch("PIL.Image.Image.save", side_effect=IOError("save error")):
-            with self.assertRaises(IOError):
-                self.service.command("thumbnails", {})
+            target = self.service._snapshot_path("pub_summary_headline")
+            tmp_target = target.with_name(target.name + ".tmp")
 
-        self.assertFalse(target.exists())
-        self.assertFalse(tmp_target.exists())
+            def save_with_partial_write_and_fail(img, fp, *args, **kwargs):
+                Path(fp).write_bytes(b"partial_tmp_data")
+                raise IOError("save error during thumbnail generation")
+
+            fake_pdf = Path(self.temp.name) / "fake.pdf"
+            fake_pdf.write_bytes(b"%PDF-1.4 fake")
+
+            def fake_convert(app, doc, pdf):
+                pdf.write_bytes(fake_pdf.read_bytes())
+
+            from PIL import Image
+            fake_img = Image.new("RGB", (100, 50), "white")
+
+            with patch("docfit_core.file_conversion.convert_hwpx_to_pdf", side_effect=fake_convert), \
+                 patch("pypdfium2.PdfDocument") as mock_pdf, \
+                 patch("PIL.Image.Image.save", side_effect=save_with_partial_write_and_fail):
+                mock_doc = mock_pdf.return_value
+                mock_doc.__getitem__.return_value.render.return_value.to_pil.return_value = fake_img
+
+                with self.assertRaises(IOError):
+                    self.service.command("thumbnails", {})
+
+            # png 및 tmp 파일 없음, COM 종료 확인
+            self.assertFalse(target.exists())
+            self.assertFalse(tmp_target.exists())
+            self.assertIn(("Quit",), self.log)
+
+    def test_missing_public_base_keeps_legacy_list_and_pictures(self):
+        """public base 누락 시 list 성공·legacy사진그대로·public thumbnail=None·ready=False, 직접 public 요청은 오류. 사용자 원본 접근0."""
+        real_bundled = default_catalog_path().parents[1] / "table_snapshots" / "tables"
+        with patch("docfit_app.table_units_service.BUNDLED_SNAPSHOTS", real_bundled), \
+             patch("docfit_core.public_table_presets._default_base_path", return_value=Path(self.temp.name) / "missing_base.hwpx"):
+            # list 호출 성공
+            data = self.service.command("list", {})
+            self.assertFalse(data["thumbnails_ready"])
+            templates = data["templates"]
+            legacy_templates = [t for t in templates if not public_table_presets.is_public_preset(t["id"])]
+            public_templates = [t for t in templates if public_table_presets.is_public_preset(t["id"])]
+
+            # legacy는 bundled 사진 그대로 존재
+            self.assertTrue(all(t["thumbnail"] is not None for t in legacy_templates))
+            # public은 thumbnail=None
+            self.assertTrue(all(t["thumbnail"] is None for t in public_templates))
+
+            # 직접 public 미리보기 요청 시 PRESET_UNAVAILABLE
+            with self.assertRaises(ServiceError) as ctx:
+                self.service.command("preview", {"id": "pub_summary_headline"})
+            self.assertEqual(ctx.exception.code, "PRESET_UNAVAILABLE")
+
+            # 직접 public 복사 요청 시 PRESET_UNAVAILABLE
+            with self.assertRaises(ServiceError) as ctx:
+                self.service.command("copy", {"id": "pub_summary_headline"})
+            self.assertEqual(ctx.exception.code, "PRESET_UNAVAILABLE")
 
     def test_public_errors_are_api_errors_before_hwp_launch(self):
         invalids = [

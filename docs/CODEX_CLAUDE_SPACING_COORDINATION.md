@@ -585,3 +585,9 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 - 산출물: C:\HWP_AUTODOCFIT\v1803\reports\P7-design.md, 저장소 보관본 docs/P7-design.md. 정확한 TARGET 범위·새 함수/자료구조·구현 순서·기존 동작 보존·자동시험·완료 기준을 명시했다.
 - 발견: HWPX 생성/서비스 연결 누락, 실제 행열과 반복단위 혼용, header_split 기본값 오류, 반환 사전 공유, fill/검증/캐시/Flutter 통합 시험 공백. 공공 ID에 한정해 공통 생성·복사·스냅샷 경로를 재사용하도록 설계했다.
 - 초안 단위 시험 test_public_table_presets.py 6건 PASS(0.003초). 전체/Flutter/실제 COM 검증은 미실행이며 구현 합격 판정이 아니다. W1~W3의 기존 결과는 변경하지 않았다.
+
+## Codex 결과 보고 — P7 설계 재검토 (2026-10-28, HEAD b8b28aa)
+- 산출물: C:\HWP_AUTODOCFIT\v1803\reports\P7-design.md 및 동일 Git 보관본 docs/P7-design.md. 최초 b756ee8 초안 문제와 현재 WIP 잔여 보완을 구분하고 TARGET/시그니처/구현 순서/시험/완료 기준을 갱신했다.
+- 차단 오류: 존재하지 않는 docfit_core.archive_safety import. 실제 helper는 docfit_core.hwpx.open_hwpx_safely. 순수 코어 unittest는 loader error 1로 중단했고 개별 시험 합격으로 기록하지 않았다.
+- 추가 설계: pagePr 하위 여백 해시, 원래 base의 section 검사, manifest 정리, 스타일 참조 검증, 고유 임시 저장, legacy 목록 보호 및 시험 단언 보강. O5.md는 지정 경로에 없음.
+- 앱 코드·사용자 원본 변경 및 실제 한/글 COM 실행 없음. Flutter/서비스/전체 시험 미실행. W1~W3 기존 판정 보존. 문서만 지정 feature/2.0.1-public-presets에 커밋하고 github→origin 순서로 푸시한다.

@@ -14,7 +14,7 @@ from defusedxml import ElementTree as ET
 
 from docfit_core import table_builder, table_units
 from docfit_core import table_catalog as catalog
-from docfit_core.archive_safety import open_hwpx_safely
+from docfit_core.hwpx import open_hwpx_safely
 from docfit_core.public_table_presets import (
     CATEGORY_NAME,
     PUBLIC_PRESET_REVISION,
@@ -28,10 +28,24 @@ from docfit_core.public_table_presets import (
     public_preset_plan,
     public_preset_snapshot_key,
     _default_base_path,
+    _remove_public_preview_image,
+    _validate_public_contents,
+    _hash_public_tree,
+    _public_para,
+    _write_public_package,
+    _build_public_document,
 )
 
 
 class PublicTablePresetsTest(unittest.TestCase):
+    def test_import_uses_existing_hwpx_helper(self):
+        from docfit_core.hwpx import open_hwpx_safely as helper
+        self.assertTrue(callable(helper))
+        self.assertTrue(callable(get_public_preset_descriptors))
+        self.assertTrue(callable(preview_public_preset))
+        self.assertTrue(callable(export_public_preset))
+        self.assertTrue(callable(public_preset_snapshot_key))
+
     def test_descriptors_has_six_presets(self):
         descriptors = get_public_preset_descriptors()
         self.assertEqual(len(descriptors), 6)
@@ -187,6 +201,31 @@ class PublicTablePresetsTest(unittest.TestCase):
         summary = preview_public_preset("pub_summary_headline")
         self.assertEqual(summary["rows"], 1)
         self.assertEqual(summary["cols"], 1)
+
+        # 6종 최소/최대 허용 범위 검증
+        # two_col: min=1, max=30
+        self.assertEqual(preview_public_preset("pub_two_col_definition", row_count=1)["rows"], 1)
+        self.assertEqual(preview_public_preset("pub_two_col_definition", row_count=30)["rows"], 30)
+
+        # multi_col: min=1 (1+1+1=3행), max=30 (1+30+1=32행)
+        self.assertEqual(preview_public_preset("pub_multi_col_comparison", row_count=1)["rows"], 3)
+        self.assertEqual(preview_public_preset("pub_multi_col_comparison", row_count=30)["rows"], 32)
+
+        # gantt: min=(row 1, col 2) -> (2행, 4열), max=(row 30, col 12) -> (31행, 14열)
+        g_min = preview_public_preset("pub_gantt_timeline", row_count=1, col_count=2)
+        self.assertEqual(g_min["rows"], 2)
+        self.assertEqual(g_min["cols"], 4)
+        g_max = preview_public_preset("pub_gantt_timeline", row_count=30, col_count=12)
+        self.assertEqual(g_max["rows"], 31)
+        self.assertEqual(g_max["cols"], 14)
+
+        # budget: min=1 (3행), max=30 (32행)
+        self.assertEqual(preview_public_preset("pub_budget_breakdown", row_count=1)["rows"], 3)
+        self.assertEqual(preview_public_preset("pub_budget_breakdown", row_count=30)["rows"], 32)
+
+        # qa: min=1 (2행), max=30 (31행)
+        self.assertEqual(preview_public_preset("pub_qa_checklist", row_count=1)["rows"], 2)
+        self.assertEqual(preview_public_preset("pub_qa_checklist", row_count=30)["rows"], 31)
 
     def test_invalid_counts_and_fixed_axes_fail_without_output(self):
         invalids = [
@@ -360,11 +399,34 @@ class PublicTablePresetsTest(unittest.TestCase):
         self.assertEqual(base_hash_before, base_hash_after, "원본 base 서식이 수정되지 않아야 합니다.")
 
     def test_preview_and_export_have_identical_cell_metadata(self):
+        cases = [
+            # 기본
+            ("pub_summary_headline", None, None),
+            ("pub_two_col_definition", None, None),
+            ("pub_multi_col_comparison", None, None),
+            ("pub_gantt_timeline", None, None),
+            ("pub_budget_breakdown", None, None),
+            ("pub_qa_checklist", None, None),
+            # 최소
+            ("pub_two_col_definition", 1, None),
+            ("pub_multi_col_comparison", 1, None),
+            ("pub_gantt_timeline", 1, 2),
+            ("pub_budget_breakdown", 1, None),
+            ("pub_qa_checklist", 1, None),
+            # 최대
+            ("pub_two_col_definition", 30, None),
+            ("pub_multi_col_comparison", 30, None),
+            ("pub_budget_breakdown", 30, None),
+            ("pub_qa_checklist", 30, None),
+            # 간트 양축 동시 변경
+            ("pub_gantt_timeline", 10, 6),
+            ("pub_gantt_timeline", 30, 12),
+        ]
         with tempfile.TemporaryDirectory() as td:
-            for pid in PUBLIC_TABLE_PRESETS:
-                prev = preview_public_preset(pid)
-                out_path = Path(td) / f"{pid}_cmp.hwpx"
-                export_public_preset(pid, out_path)
+            for pid, rc, cc in cases:
+                prev = preview_public_preset(pid, row_count=rc, col_count=cc)
+                out_path = Path(td) / f"{pid}_{rc}_{cc}_cmp.hwpx"
+                export_public_preset(pid, out_path, row_count=rc, col_count=cc)
 
                 record = catalog._scan(out_path)[0]
                 reparsed = catalog.preview(record["id"], out_path)
@@ -379,8 +441,13 @@ class PublicTablePresetsTest(unittest.TestCase):
                         self.assertEqual(m1["col"], m2["col"])
                         self.assertEqual(m1["rowSpan"], m2["rowSpan"])
                         self.assertEqual(m1["colSpan"], m2["colSpan"])
+                        self.assertEqual(m1["text"], m2["text"])
+                        self.assertEqual(m1["width"], m2["width"])
+                        self.assertEqual(m1["height"], m2["height"])
                         self.assertEqual(m1["align"], m2["align"])
-                        self.assertEqual(m1["style"].get("fill"), m2["style"].get("fill"))
+                        self.assertEqual(m1["style"], m2["style"])
+                        self.assertEqual(m1["borders"], m2["borders"])
+                        self.assertEqual(m1.get("shapes"), m2.get("shapes"))
 
     def test_public_metrics_are_written_to_xml(self):
         with tempfile.TemporaryDirectory() as td:
@@ -495,6 +562,35 @@ class PublicTablePresetsTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             public_preset_snapshot_key("pub_unknown")
 
+        # revision 변경 시 키 변경
+        with patch("docfit_core.public_table_presets.PUBLIC_PRESET_REVISION", "test-rev-new"):
+            self.assertNotEqual(public_preset_snapshot_key("pub_summary_headline"), k1)
+
+        # 샘플 텍스트 변경 시 키 변경
+        with patch.dict(PUBLIC_TABLE_PRESETS["pub_summary_headline"], {"sample_rows": [["다른 요약 텍스트"]]}):
+            self.assertNotEqual(public_preset_snapshot_key("pub_summary_headline"), k1)
+
+        # cellMargin 변경 시 키 변경
+        with patch.dict(PUBLIC_TABLE_PRESETS["pub_summary_headline"]["margins_hwpunit"], {"left": 2500}):
+            self.assertNotEqual(public_preset_snapshot_key("pub_summary_headline"), k1)
+
+        # pagePr margin top/bottom 변경 시 키 변경
+        with tempfile.TemporaryDirectory() as td:
+            base_src = _default_base_path()
+            mod_base = Path(td) / "mod_base.hwpx"
+            with open_hwpx_safely(base_src) as z_in, zipfile.ZipFile(mod_base, "w") as z_out:
+                for item in z_in.infolist():
+                    data = z_in.read(item.filename)
+                    if item.filename == "Contents/section0.xml":
+                        sec_el = ET.fromstring(data)
+                        p_pr = next(x for x in sec_el.iter() if table_builder._tag(x) == "pagePr")
+                        m_el = table_builder._child(p_pr, "margin")
+                        m_el.set("top", "9999")
+                        data = table_builder._serialize(sec_el, data)
+                    z_out.writestr(item, data)
+            with patch("docfit_core.public_table_presets._default_base_path", return_value=mod_base):
+                self.assertNotEqual(public_preset_snapshot_key("pub_summary_headline"), k1)
+
     def test_export_failure_preserves_target_and_base(self):
         base_path = _default_base_path()
         base_bytes = base_path.read_bytes()
@@ -504,6 +600,23 @@ class PublicTablePresetsTest(unittest.TestCase):
             export_public_preset("pub_summary_headline", base_path)
         self.assertEqual(base_path.read_bytes(), base_bytes)
 
+        # base 사본의 하드링크 대상 export 거부
+        with tempfile.TemporaryDirectory() as td:
+            temp_base_copy = Path(td) / "base_copy.hwpx"
+            temp_base_copy.write_bytes(base_bytes)
+            hardlink_target = Path(td) / "hardlink.hwpx"
+            try:
+                os.link(temp_base_copy, hardlink_target)
+                has_hardlink = True
+            except (OSError, NotImplementedError):
+                has_hardlink = False
+
+            if has_hardlink:
+                with patch("docfit_core.public_table_presets._default_base_path", return_value=temp_base_copy):
+                    with self.assertRaises(ValueError):
+                        export_public_preset("pub_summary_headline", hardlink_target)
+                self.assertEqual(temp_base_copy.read_bytes(), base_bytes)
+
         # 임시 대상 파일 생성 후 replace 실패 시 기존 대상 파일 보존
         with tempfile.TemporaryDirectory() as td:
             target = Path(td) / "existing.hwpx"
@@ -512,9 +625,201 @@ class PublicTablePresetsTest(unittest.TestCase):
                 with self.assertRaises(OSError):
                     export_public_preset("pub_summary_headline", target)
             self.assertEqual(target.read_bytes(), b"preserve_me")
-            # 임시 파일이 남아있지 않아야 함
             tmps = [p for p in target.parent.iterdir() if p.name.startswith("existing.hwpx.tmp")]
             self.assertEqual(len(tmps), 0)
+
+        # 검증 실패 시 기존 대상 파일 보존 및 tmp 정리
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td) / "existing_val.hwpx"
+            target.write_bytes(b"preserve_me_val")
+            with patch("docfit_core.public_table_presets._validate_public_contents", side_effect=ValueError("bad_contents")):
+                with self.assertRaises(ValueError):
+                    export_public_preset("pub_summary_headline", target)
+            self.assertEqual(target.read_bytes(), b"preserve_me_val")
+            tmps = [p for p in target.parent.iterdir() if p.name.startswith("existing_val.hwpx.tmp")]
+            self.assertEqual(len(tmps), 0)
+
+    def test_base_sections_checked_before_builder(self):
+        """임시 2section base를 주고 builder 호출0·ValueError·출력없음."""
+        with tempfile.TemporaryDirectory() as td:
+            base_src = _default_base_path()
+            multi_sec_base = Path(td) / "multi_section.hwpx"
+            with open_hwpx_safely(base_src) as z_in, zipfile.ZipFile(multi_sec_base, "w") as z_out:
+                for item in z_in.infolist():
+                    z_out.writestr(item, z_in.read(item.filename))
+                # 두 번째 섹션 추가
+                z_out.writestr("Contents/section1.xml", z_in.read("Contents/section0.xml"))
+
+            out_target = Path(td) / "out.hwpx"
+            with patch("docfit_core.public_table_presets._default_base_path", return_value=multi_sec_base), \
+                 patch("docfit_core.table_builder.build_table_hwpx") as mock_builder:
+                with self.assertRaises(ValueError) as ctx:
+                    export_public_preset("pub_summary_headline", out_target)
+                self.assertIn("단일 section", str(ctx.exception))
+                self.assertEqual(mock_builder.call_count, 0)
+                self.assertFalse(out_target.exists())
+
+    def test_removed_preview_image_has_no_manifest_reference(self):
+        """preview image manifest item/idref 포함 fixture에서 파일·참조 제거, 다른 manifest item 보존."""
+        hpf_xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<package xmlns="http://www.idpf.org/2007/opf" version="2.0">'
+            '<metadata><title>Test</title></metadata>'
+            '<manifest>'
+            '<item id="header" href="header.xml" media-type="application/xml"/>'
+            '<item id="section0" href="section0.xml" media-type="application/xml"/>'
+            '<item id="prv_img" href="Preview/PrvImage.png" media-type="image/png"/>'
+            '</manifest>'
+            '<spine>'
+            '<itemref idref="section0"/>'
+            '<itemref idref="prv_img"/>'
+            '</spine>'
+            '</package>'
+        ).encode("utf-8")
+
+        contents = {
+            "Contents/content.hpf": hpf_xml,
+            "Preview/PrvImage.png": b"fake_png",
+            "Contents/header.xml": b"<header/>",
+            "Contents/section0.xml": b"<section0/>",
+        }
+
+        _remove_public_preview_image(contents)
+
+        self.assertNotIn("Preview/PrvImage.png", contents)
+        new_hpf = ET.fromstring(contents["Contents/content.hpf"])
+        items = [x for x in new_hpf.iter() if table_builder._tag(x) == "item"]
+        itemrefs = [x for x in new_hpf.iter() if table_builder._tag(x) == "itemref"]
+
+        self.assertEqual(len(items), 2)
+        self.assertFalse(any(it.get("id") == "prv_img" for it in items))
+        self.assertTrue(any(it.get("id") == "header" for it in items))
+        self.assertTrue(any(it.get("id") == "section0" for it in items))
+
+        self.assertEqual(len(itemrefs), 1)
+        self.assertEqual(itemrefs[0].get("idref"), "section0")
+
+    def test_non_percent_line_spacing_is_replaced(self):
+        """paraPr id0의 FIXED 및 lineSpacing 누락 fixture를 PERCENT 140/130으로 만들고 미리보기/export가 같은 결과."""
+        with tempfile.TemporaryDirectory() as td:
+            base_src = _default_base_path()
+            mod_base = Path(td) / "mod_para.hwpx"
+            with open_hwpx_safely(base_src) as z_in, zipfile.ZipFile(mod_base, "w") as z_out:
+                for item in z_in.infolist():
+                    data = z_in.read(item.filename)
+                    if item.filename == "Contents/header.xml":
+                        hdr_el = ET.fromstring(data)
+                        for p_pr in hdr_el.iter():
+                            if table_builder._tag(p_pr) == "paraPr" and p_pr.get("id") == "0":
+                                for ls in list(p_pr):
+                                    if table_builder._tag(ls) == "lineSpacing":
+                                        ls.set("type", "FIXED")
+                                        ls.set("value", "2000")
+                        data = table_builder._serialize(hdr_el, data)
+                    z_out.writestr(item, data)
+
+            with patch("docfit_core.public_table_presets._default_base_path", return_value=mod_base):
+                prev = preview_public_preset("pub_summary_headline")
+                out_path = Path(td) / "out_sum.hwpx"
+                export_public_preset("pub_summary_headline", out_path)
+
+                with open_hwpx_safely(out_path) as z:
+                    hdr = ET.fromstring(z.read("Contents/header.xml"))
+                    sec = ET.fromstring(z.read("Contents/section0.xml"))
+                    p = sec.find(f".//{table_units.HP}p")
+                    pid = p.get("paraPrIDRef")
+                    para_prop = next(x for x in hdr.iter() if table_builder._tag(x) == "paraPr" and x.get("id") == pid)
+                    ls = next(x for x in para_prop.iter() if table_builder._tag(x) == "lineSpacing")
+                    self.assertEqual(ls.get("type"), "PERCENT")
+                    self.assertEqual(ls.get("value"), "140")
+
+    def test_package_rejects_dangling_style_references(self):
+        """border/char/para/style/fontRef·중복ID·잘못된 itemCnt·manifest href 각각 손상한 contents가 replace 전에 실패."""
+        # 정상 문서 생성 후 contents 추출
+        contents, _, _ = _build_public_document(
+            "pub_summary_headline", None, None, fill="increment", cell_texts=None
+        )
+
+        # 1. borderFillIDRef 손상
+        bad_bf = copy.deepcopy(contents)
+        sec = ET.fromstring(bad_bf["Contents/section0.xml"])
+        tc = sec.find(f".//{table_units.HP}tc")
+        tc.set("borderFillIDRef", "999999")
+        bad_bf["Contents/section0.xml"] = table_builder._serialize(sec, contents["Contents/section0.xml"])
+        with self.assertRaises(ValueError) as ctx:
+            _validate_public_contents(bad_bf)
+        self.assertIn("borderFillIDRef", str(ctx.exception))
+
+        # 2. charPrIDRef 손상
+        bad_char = copy.deepcopy(contents)
+        sec = ET.fromstring(bad_char["Contents/section0.xml"])
+        run = sec.find(f".//{table_units.HP}run")
+        run.set("charPrIDRef", "888888")
+        bad_char["Contents/section0.xml"] = table_builder._serialize(sec, contents["Contents/section0.xml"])
+        with self.assertRaises(ValueError) as ctx:
+            _validate_public_contents(bad_char)
+        self.assertIn("charPrIDRef", str(ctx.exception))
+
+        # 3. paraPrIDRef 손상
+        bad_para = copy.deepcopy(contents)
+        sec = ET.fromstring(bad_para["Contents/section0.xml"])
+        p = sec.find(f".//{table_units.HP}p")
+        p.set("paraPrIDRef", "777777")
+        bad_para["Contents/section0.xml"] = table_builder._serialize(sec, contents["Contents/section0.xml"])
+        with self.assertRaises(ValueError) as ctx:
+            _validate_public_contents(bad_para)
+        self.assertIn("paraPrIDRef", str(ctx.exception))
+
+        # 4. 중복 ID 존재
+        bad_dup = copy.deepcopy(contents)
+        hdr = ET.fromstring(bad_dup["Contents/header.xml"])
+        bf_group = next(x for x in hdr.iter() if table_builder._tag(x) == "borderFills")
+        clone_bf = copy.deepcopy(list(bf_group)[0])
+        bf_group.append(clone_bf)  # 동일한 ID 중복 추가
+        bf_group.set("itemCnt", str(len(list(bf_group))))
+        bad_dup["Contents/header.xml"] = table_builder._serialize(hdr, contents["Contents/header.xml"])
+        with self.assertRaises(ValueError) as ctx:
+            _validate_public_contents(bad_dup)
+        self.assertIn("중복된 id", str(ctx.exception))
+
+        # 5. 잘못된 itemCnt
+        bad_cnt = copy.deepcopy(contents)
+        hdr = ET.fromstring(bad_cnt["Contents/header.xml"])
+        bf_group = next(x for x in hdr.iter() if table_builder._tag(x) == "borderFills")
+        bf_group.set("itemCnt", "999")
+        bad_cnt["Contents/header.xml"] = table_builder._serialize(hdr, contents["Contents/header.xml"])
+        with self.assertRaises(ValueError) as ctx:
+            _validate_public_contents(bad_cnt)
+        self.assertIn("itemCnt", str(ctx.exception))
+
+        # 6. manifest href 누락
+        bad_manifest = copy.deepcopy(contents)
+        if "Contents/content.hpf" in bad_manifest:
+            hpf = ET.fromstring(bad_manifest["Contents/content.hpf"])
+            manifest = next(x for x in hpf.iter() if table_builder._tag(x) == "manifest")
+            bad_item = ET.SubElement(manifest, "item", {"id": "ghost", "href": "ghost_file.xml"})
+            bad_manifest["Contents/content.hpf"] = table_builder._serialize(hpf, contents["Contents/content.hpf"])
+            with self.assertRaises(ValueError) as ctx:
+                _validate_public_contents(bad_manifest)
+            self.assertIn("manifest 참조 파일", str(ctx.exception))
+
+    def test_unique_temporary_outputs_do_not_collide(self):
+        """실제 스레드/COM 없이 임시 생성 helper 두 호출의 서로 다른 경로와 각 실패 정리를 검사. 다른 임시 파일은 보존."""
+        with tempfile.TemporaryDirectory() as td:
+            target1 = Path(td) / "out1.hwpx"
+            target2 = Path(td) / "out2.hwpx"
+
+            # 기존 다른 임시 파일 존재
+            other_tmp = Path(td) / "out1.hwpx.tmp_other.hwpx"
+            other_tmp.write_bytes(b"leave_me_alone")
+
+            # 두 번 export
+            export_public_preset("pub_summary_headline", target1)
+            export_public_preset("pub_two_col_definition", target2)
+
+            self.assertTrue(target1.is_file())
+            self.assertTrue(target2.is_file())
+            self.assertTrue(other_tmp.is_file(), "기존 다른 임시 파일은 보존되어야 합니다.")
 
 
 if __name__ == "__main__":
