@@ -23,13 +23,14 @@
 
 중요: Flutter 위젯 시험은 iframe/WebView 내부 CSS overflow를 볼 수 없다. 따라서 Flutter 실제 화면 위젯 시험과 내장 웹 편집기 브라우저 시험을 모두 완료 기준으로 둔다. Webview를 빈 박스로 대체한 위젯 시험만으로 전체 합격이라고 보고해서는 안 된다.
 
+검수 참고 확인: 2026-10-28 재확인 시 `C:\HWP_AUTODOCFIT\v1803\reports\O5.md`는 존재하지 않았다. 따라서 DeepSeek 지적을 읽거나 수용했다고 간주하지 않는다. 추후 파일이 제공되면 구현 담당자는 지적별 코드 근거·수용/보류 이유를 추가하되 P6 범위를 넘는 기능 변경은 분리한다. 기존 설계 커밋 `56baa77` 이후 대상 제품 소스 변경이 없음을 확인했으므로 위 기준 HEAD의 행 번호를 유지한다.
 ## 2. 변경 파일 TARGET 목록
 
 24,000자가 넘는 기존 파일은 수정에 필요한 넓은 범위를 명시했다. 한 파일당 TARGET 한 줄이며 여러 구간은 세미콜론으로 구분한다. 새 파일의 1-1은 현재 파일이 없다는 뜻으로, 지정 내용 전체를 새로 작성한다.
 
 TARGET:C:\HWP_AUTODOCFIT\v1803\resp\flutter_ui\lib\core\widgets\editor_responsive.dart:1-1 (신규 전체)
 TARGET:C:\HWP_AUTODOCFIT\v1803\resp\flutter_ui\lib\features\table_sketch\table_sketch_screen.dart:1-90;794-1112;1210-1381
-TARGET:C:\HWP_AUTODOCFIT\v1803\resp\flutter_ui\lib\features\table_units\table_units_screen.dart:1-240;1793-2381;2389-3320;3330-3425;4097-4433;4961-5109;5373-5553
+TARGET:C:\HWP_AUTODOCFIT\v1803\resp\flutter_ui\lib\features\table_units\table_units_screen.dart:1-240;1793-2381;2389-3320;3330-3908;4097-4433;4961-5109;5373-5553
 TARGET:C:\HWP_AUTODOCFIT\v1803\resp\flutter_ui\lib\features\diagrams\diagram_editor_screen_native.dart:1-24;482-529
 TARGET:C:\HWP_AUTODOCFIT\v1803\resp\flutter_ui\lib\features\flows\flow_editor_screen_web.dart:1-25;392-432
 TARGET:C:\HWP_AUTODOCFIT\v1803\resp\diagram_editor\src\main.jsx:1-23;235-246;479-535;583-656
@@ -118,6 +119,32 @@ EditorAction은 compact일 때 Tooltip과 IconButton, 보통일 때 TextButton.i
 8. bottom `btnCopyTable` 높이 48은 minHeight:48로 바꾸고 동일 compact 표시를 적용한다. `_buildStepper()`는 label Expanded와 +/- 영역이 겹치면 Wrap/Column으로 분기한다. 이름·count는 보이고 plus/minus min/max/loading 조건을 유지한다. `_buildFillSelector()`의 Wrap과 입력 양식 라벨은 유지한다. detail 수직 Scrollbar와 controller를 한 곳에만 attach한다.
 9. 검색·분류·즐겨찾기·최근 사용·선택·편집한 칸 글·행열 count·fill·preview/cache·copy error는 기존 State 소유다. resize/toggle로 `_loadList`/`_selectTemplate`를 재실행하지 않는다. gallery/detail scroll 위치는 PageStorageKey를 각각 부여해 보존한다. Drawer 밖에서 다시 생성할 때 SearchController를 새로 만들지 않는다.
 
+### 5.1 코더의 함수 변경 범위와 키 대조표
+
+신규 표시 헬퍼가 필요한 경우 아래 시그니처로 고정한다. `compact`는 최상위 유한 폭에서 계산한 값이고, 상세 패널 자체의 좁은 폭을 화면 compact로 오인하지 않는다.
+
+```dart
+// table_sketch_screen.dart, State에 추가. 기존 데이터 메서드는 그대로 사용.
+Widget _buildPanelDrawer({required double availableWidth});
+// table_units_screen.dart, 기존 인자 없는 두 함수를 아래로 변경하고 호출부 전체 갱신.
+Widget _buildBody({required bool compact});
+Widget _buildDetail({required bool compact});
+Widget _buildGalleryDrawer({required double availableWidth});
+Widget _buildGallery({bool shrinkWrap = false, VoidCallback? onTemplateSelected});
+```
+
+Drawer 열기 콜백은 Scaffold 아래 Builder의 context를 받는다. 갤러리 카드의 기존 `_selectTemplate(template)` 다음에 `if (compact && Scaffold.of(context).isDrawerOpen) Scaffold.of(context).closeDrawer()`를 실행할 때, 이 compact는 최상위 화면 판정값을 사용한다. State의 읽기 전용 getter로 숨겨 계산하지 말고 build에서 결정한 값을 갤러리 카드 콜백까지 전달하는 지역 함수/클로저로 연결한다. 선택 로직 자체인 821행 `_selectTemplate`는 변경하지 않는다. `_buildGallery`에서 이 값이 직접 필요하면 선택 후 닫기를 담당하는 콜백을 optional named 인자로 추가하고, 모든 호출부에서 동일 콜백을 전달한다: `Widget _buildGallery({bool shrinkWrap = false, VoidCallback? onTemplateSelected})`. 카드 탭에서 기존 선택 처리를 마친 직후에만 `onTemplateSelected?.call()`을 호출한다. wide에서는 null을 전달한다. 신규 `_buildGalleryDrawer`의 내용에서 닫기 콜백을 제공한다.
+
+| 실제 위치 | 보존할 Key / 점검 |
+|---|---|
+| 표그림판 815~866 | `tableSketchScreen`, `sketchOrgExample`, `undoButton`, `redoButton`, `clearAllButton` |
+| 표그림판 929~990 | `toolLine`, `toolRect`, `toolEraser`, `toolPreciseEraser`, `toolText`, `toolSelect`, `lineWidthThin`, `lineWidthThick`, `lineWidthDouble`, `lineStyleSolid`, `lineStyleDash`, `lineStyleDot` |
+| 표그림판 1186, 1302~1369 | `sketchCanvas`, `sketchCopyButton`, `sketchNameField`, `sketchSaveButton`, `sketchListButton` |
+| 표 템플릿 1865, 2445~3085 | `btnGenerateThumbnails`, `searchTextField`, `btnCategoryRibbonLeft`, `categoryChip_$cat`, `btnCategoryRibbonRight` |
+| 표 템플릿 3441~3881 | `templateCard_${template.id}`, `btnFavorite_${template.id}`; 카드 이름 Tooltip/탭 후 Drawer 닫기 및 갤러리 scroll 연결을 포함하는 수정 범위 |
+| 표 템플릿 4277~5305 | `btnTopCopyTable`, `btnClearCellTexts`, `tableGridPreview`, `fixedTableNotice`, `btnRowMinus`, `btnRowPlus`, `btnColMinus`, `btnColPlus`, `colWidthNotice`, `btnCopyTable`, `copyErrorMessage`, `fillOption_increment`, `fillOption_blank`, `fillOption_copy` |
+
+표그림판 `_saveNameController`(58행), `_vScroll`/`_hScroll`(71~72행), 표 템플릿 `_searchController`(141행), gallery/detail/category 컨트롤러(197~205행)는 기존 State에서 계속 소유·dispose한다. 도킹/Drawer 전환 중 동일 ScrollController가 두 활성 ScrollPosition에 동시에 붙지 않게 한 곳만 구성한다. 일반 PageStorageKey는 서로 다른 subtree 간 이동을 자동으로 해결하지 않으므로 gallery/detail 각각 동일한 PageStorageBucket을 State에 `final PageStorageBucket _galleryBucket = PageStorageBucket();` 및 `final PageStorageBucket _detailBucket = PageStorageBucket();`로 보관하여 dock/Drawer 어느 위치에서도 같은 bucket+key를 사용하거나 기존 컨트롤러 offset을 유한 범위로 복원한다. 새 GlobalKey로 본문 전체를 갈아 끼워 문제를 숨기지 않는다.
 ## 6. 웹 편집기와 Dart 호스트 구현 지시
 
 ### 6.1 main.jsx

@@ -584,3 +584,7 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 - 정본: C:\HWP_AUTODOCFIT\v1803\reports\P6-design.md. 저장소 보관: docs/P6-design.md. 수정 TARGET·시그니처·자료 구조·구현 순서·보존 계약·위젯/브라우저 시험·완료 기준 명시.
 - 내장 웹 도구의 실제 소스(diagram_editor/src)를 확인하여 Flutter host 위젯 시험과 내부 DOM 검증을 구분. 420/700/1024/1440 및 1.0/1.5 행렬, 700 포함 경계, 리사이즈 상태 보존 시험 설계.
 - TARGET 경로/행 범위 및 문서 CRLF 검사 완료. 제품 구현·앱 시험·빌드·COM 시험 미실행. 설계 문서만 사용자 AGENTS.md 자동 커밋·github→origin 순서 푸시 지시에 따라 현재 지정 브랜치에 반영.
+
+### P6 설계 정본 재확인 (2026-10-28, Codex)
+- 기존 설계 보관본을 실제 소스와 대조하고 누락된 reports/P6-design.md 정본을 생성했다. O5.md 부재 명시, 카드 수정 TARGET 확대, 표시 헬퍼 시그니처·기존 Key·스크롤 상태 보존 지시를 보완했다.
+- 제품/시험 코드 변경 및 앱·COM 실행 없음. TARGET 경로/행 범위, 정본과 보관본 동일성, CRLF 및 diff 검사만 수행. 과거 W1~W3 판정은 보존한다.
