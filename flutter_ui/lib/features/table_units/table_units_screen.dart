@@ -272,7 +272,16 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
 
   Future<void> _toggleFavorite(TableTemplateInfo template) async {
 
-    final newFav = !template.favorite;
+    final originalFavorites = _listData?.favorites ?? const <String>[];
+    final newFav = !template.favorite;
+    final updatedFavorites = List<String>.from(originalFavorites);
+    if (newFav) {
+      if (!updatedFavorites.contains(template.id)) {
+        updatedFavorites.add(template.id);
+      }
+    } else {
+      updatedFavorites.remove(template.id);
+    }
 
 
 
@@ -300,8 +309,10 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
 
           thumbnailsReady: _listData!.thumbnailsReady,
 
-          recent: _listData!.recent,
+          recent: _listData!.recent,
 
+
+          favorites: updatedFavorites,
           templates: updatedTemplates,
 
         );
@@ -374,9 +385,10 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
 
             thumbnailsReady: _listData!.thumbnailsReady,
 
-            recent: _listData!.recent,
+            recent: _listData!.recent,
 
-            templates: rolledBack,
+
+            favorites: originalFavorites, templates: rolledBack,
 
           );
 
@@ -834,7 +846,14 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
 
     if (_selectedCategory == '즐겨찾기') {
 
-      list = _listData!.templates.where((t) => t.favorite).toList();
+      final map = {for (final t in _listData!.templates) t.id: t};
+      list = [];
+      for (final id in _listData!.favorites) {
+        final t = map[id];
+        if (t != null && t.favorite) {
+          list.add(t);
+        }
+      }
 
     } else if (_selectedCategory == '최근 사용') {
 

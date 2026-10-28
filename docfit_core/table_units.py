@@ -21,6 +21,190 @@ def _sub(parent, tag, attrib=None):
     return child
 
 
+ORG_CHART_PROFILES: dict[str, dict] = {
+    "six_even_4": {
+        "rows": 6,
+        "cols": 12,
+        "count": 4,
+        "signature": "824aaef78af34c47",
+        "top_row": 1,
+        "connector_row": 2,
+        "stem_row": 3,
+        "team_row": 4,
+        "count_row": 5,
+        "cap_row": 0,
+        "team_starts": (0, 3, 7, 10),
+        "role_sources": {
+            "cap_blank": (0, 0),
+            "cap_left": (0, 4),
+            "cap_mid": (0, 5),
+            "cap_right": (0, 7),
+            "top_blank": (0, 0),
+            "top_edge_left": (1, 3),
+            "top_box": (1, 4),
+            "top_edge_right": (1, 8),
+            "conn_edge_left": (2, 0),
+            "conn_normal": (2, 1),
+            "conn_box_left": (2, 4),
+            "conn_mid_left": (2, 5),
+            "conn_mid_right": (2, 6),
+            "conn_box_right": (2, 7),
+            "conn_edge_right": (2, 11),
+            "stem_first_left": (3, 0),
+            "stem_first_right": (3, 1),
+            "stem_inner_left": (3, 3),
+            "stem_inner_right": (3, 4),
+            "stem_last_left": (3, 10),
+            "stem_last_right": (3, 11),
+            "stem_gap": (3, 2),
+            "team": (4, 0),
+            "team_gap": (4, 2),
+            "count": (5, 0),
+            "count_gap": (5, 2),
+        },
+    },
+    "six_odd_5": {
+        "rows": 6,
+        "cols": 14,
+        "count": 5,
+        "signature": "b9b82a52e1e1e44e",
+        "top_row": 1,
+        "connector_row": 2,
+        "stem_row": 3,
+        "team_row": 4,
+        "count_row": 5,
+        "cap_row": 0,
+        "team_starts": (0, 3, 6, 9, 12),
+        "role_sources": {
+            "cap_blank": (0, 0),
+            "cap_left": (0, 4),
+            "cap_mid": (0, 5),
+            "cap_right": (0, 9),
+            "top_blank": (1, 0),
+            "top_edge_left": (1, 3),
+            "top_box": (1, 4),
+            "top_edge_right": (1, 10),
+            "conn_edge_left": (2, 0),
+            "conn_normal": (2, 1),
+            "conn_box_left": (2, 4),
+            "conn_mid_left": (2, 5),
+            "conn_mid_right": (2, 7),
+            "conn_box_right": (2, 9),
+            "conn_edge_right": (2, 13),
+            "stem_first_left": (3, 0),
+            "stem_first_right": (3, 1),
+            "stem_inner_left": (3, 3),
+            "stem_inner_right": (3, 4),
+            "stem_mid_left": (3, 5),
+            "stem_mid_right": (3, 7),
+            "stem_last_left": (3, 12),
+            "stem_last_right": (3, 13),
+            "stem_gap": (3, 2),
+            "team": (4, 0),
+            "team_gap": (4, 2),
+            "count": (5, 0),
+            "count_gap": (5, 2),
+        },
+    },
+    "five_even_6": {
+        "rows": 5,
+        "cols": 18,
+        "count": 6,
+        "signature": "f97c6d9d4a4f2dc6",
+        "top_row": 0,
+        "connector_row": 1,
+        "stem_row": 2,
+        "team_row": 3,
+        "count_row": 4,
+        "cap_row": None,
+        "team_starts": (0, 3, 6, 10, 13, 16),
+        "role_sources": {
+            "cap_blank": None,
+            "top_blank": (0, 0),
+            "top_edge_left": (0, 5),
+            "top_box": (0, 6),
+            "top_edge_right": (0, 12),
+            "conn_edge_left": (1, 0),
+            "conn_normal": (1, 2),
+            "conn_box_left": (1, 6),
+            "conn_mid_left": (1, 6),
+            "conn_mid_right": (1, 9),
+            "conn_box_right": (1, 9),
+            "conn_edge_right": (1, 17),
+            "stem_first_left": (2, 0),
+            "stem_first_right": (2, 1),
+            "stem_inner_left": (2, 3),
+            "stem_inner_right": (2, 4),
+            "stem_last_left": (2, 16),
+            "stem_last_right": (2, 17),
+            "stem_gap": (2, 2),
+            "team": (3, 0),
+            "team_gap": (3, 2),
+            "count": (4, 0),
+            "count_gap": (4, 2),
+        },
+    },
+    "six_irregular_3": {
+        "rows": 6,
+        "cols": 13,
+        "count": 3,
+        "signature": "e8d5cc6f44a0fbb5",
+        "top_row": 1,
+        "connector_row": 2,
+        "stem_row": 3,
+        "team_row": 4,
+        "count_row": 5,
+        "cap_row": 0,
+        "team_starts": (0, 5, 11),
+        "role_sources": {
+            "cap_blank": (0, 0),
+            "cap_left": (0, 4),
+            "cap_mid": (0, 6),
+            "cap_right": (0, 8),
+            "top_blank": (0, 0),
+            "top_edge_left": (1, 3),
+            "top_box": (1, 4),
+            "top_edge_right": (1, 9),
+            "conn_edge_left": (2, 0),
+            "conn_normal": (2, 1),
+            "conn_box_left": (2, 4),
+            "conn_mid_left": (2, 6),
+            "conn_mid_right": (2, 7),
+            "conn_box_right": (2, 8),
+            "conn_edge_right": (2, 12),
+            "stem_first_left": (3, 0),
+            "stem_first_right": (3, 1),
+            "stem_inner_left": (3, 6),
+            "stem_inner_right": (3, 7),
+            "stem_last_left": (3, 11),
+            "stem_last_right": (3, 12),
+            "stem_gap": (3, 3),
+            "team": (4, 0),
+            "team_gap": (4, 3),
+            "count": (5, 0),
+            "count_gap": (5, 3),
+        },
+    },
+}
+
+
+def _org_chart_plan(profile: dict) -> dict:
+    prof_key = next((k for k, v in ORG_CHART_PROFILES.items() if v is profile), None)
+    return {
+        "row": None,
+        "col": {
+            "kind": "org_chart",
+            "count": profile["count"],
+            "min": 2,
+            "max": UNIT_MAX,
+            "core": 2,
+            "sep": 1,
+            "profile": prof_key or profile.get("signature", "custom"),
+        },
+        "signature": profile.get("signature"),
+    }
+
+
 # 정보단위 −/+ 최대값: 행·열 모두 50개(2026-10-23 사용자 지시, 예전 행 40÷단위 칸 수·열 8·조직도 10).
 UNIT_MAX = 50
 # 50개로 늘리면 표가 깨지는 축(칸 폭이 원래 가장 좁은 칸의 60%·2.5mm 아래로 줄거나 배치 불가)은 30 -> 15 -> 그 아래
@@ -87,6 +271,9 @@ SHAPE_SIGNATURES: dict[str, str | None] = {
     '일정표(일간) · 모양 1': '67ead53e71fb418b',
     '일정표(주간) · 모양 1': '5bee044c21f08c86',
     '조직도 · 모양 1': 'f97c6d9d4a4f2dc6',
+    '조직도 · 모양 2': 'b9b82a52e1e1e44e',
+    '조직도 · 모양 3': 'f97c6d9d4a4f2dc6',
+    '조직도 · 모양 4': 'e8d5cc6f44a0fbb5',
     '추진절차(가로) · 모양 1': '3d47a1f8cc513c8b',
     '추진절차(가로) · 모양 2': '47e5c804bb9f56cd',
     '추진절차(가로) · 모양 3': 'fb587afb20a87119',
@@ -140,14 +327,16 @@ def _plans():
     add("일정표(일간) · 모양 1", (1, 2, 9), (1, 1, 4))
     add("행사표(1일) · 모양 1", (1, 8, 2), (3, 1, 2))
     for category, count in (("부연설명", 7), ("라벨 서식", 6), ("표(가로)", 3),
-                            ("현황표(가로)", 1), ("신구대조표", 1), ("조직도", 1)):
+                            ("현황표(가로)", 1), ("신구대조표", 1)):
         for number in range(1, count + 1):
             name = f"{category} · 모양 {number}"
             result.setdefault(name, {"row": None, "col": None, "signature": SHAPE_SIGNATURES.get(name)})
-    org_chart_plan = {"row": None, "col": {"count": 5, "min": 2, "max": UNIT_MAX, "core": 2, "sep": 1, "kind": "org_chart"},
-                      "signature": SHAPE_SIGNATURES.get("조직도 · 모양 2")}
-    result["조직도"] = org_chart_plan
-    result["조직도 · 모양 2"] = org_chart_plan
+    result["조직도 · 모양 1"] = copy.deepcopy(_org_chart_plan(ORG_CHART_PROFILES["five_even_6"]))
+    result["조직도 · 모양 2"] = copy.deepcopy(_org_chart_plan(ORG_CHART_PROFILES["six_odd_5"]))
+    result["조직도 · 모양 3"] = copy.deepcopy(_org_chart_plan(ORG_CHART_PROFILES["five_even_6"]))
+    result["조직도 · 모양 4"] = copy.deepcopy(_org_chart_plan(ORG_CHART_PROFILES["six_irregular_3"]))
+    result["조직도"] = copy.deepcopy(result["조직도 · 모양 2"])
+
     return result
 
 
@@ -269,14 +458,58 @@ def detect_plan(cell_meta, rows, cols) -> dict:
     return result
 
 
+def _org_chart_profile(template: dict) -> dict | None:
+    rows = template.get("rows")
+    cols = template.get("cols")
+    name = str(template.get("name", ""))
+    category = str(template.get("category", ""))
+    cell_meta = template.get("cell_meta")
+
+    sig = None
+    if cell_meta is not None and rows is not None and cols is not None:
+        try:
+            sig = shape_signature(cell_meta, rows, cols)
+        except Exception:
+            sig = None
+
+    is_org = category == "조직도" or "조직도" in name
+
+    # 1. 서명 일치 확인
+    if sig is not None:
+        for key, prof in ORG_CHART_PROFILES.items():
+            if prof["signature"] == sig and rows == prof["rows"] and cols == prof["cols"]:
+                return prof
+
+    # 2. 조직도 계열인 경우 구조(행, 열, 팀행 배치) 검사
+    if is_org:
+        for key, prof in ORG_CHART_PROFILES.items():
+            if rows != prof["rows"] or cols != prof["cols"]:
+                continue
+            if cell_meta is not None:
+                flat_cells = _flat(cell_meta)
+                team_cells = [c for c in flat_cells if c.get("row") == prof["team_row"]]
+                starts = tuple(c.get("col") for c in team_cells if c.get("col") in prof["team_starts"])
+                if starts == prof["team_starts"]:
+                    return prof
+            else:
+                return prof
+
+    return None
+
+
 def plan_for(template) -> dict:
     matched_plan = None
+
+    # 0. 조직도 구조 판정
+    org_prof = _org_chart_profile(template)
+    if org_prof is not None:
+        matched_plan = copy.deepcopy(_org_chart_plan(org_prof))
 
     # ① 모양 서명이 같은 PLANS
     cell_meta = template.get("cell_meta")
     rows = template.get("rows")
     cols = template.get("cols")
-    if cell_meta is not None and rows is not None and cols is not None:
+    if matched_plan is None and cell_meta is not None and rows is not None and cols is not None:
         try:
             sig = shape_signature(cell_meta, rows, cols)
             # 이름이 정확히 같은 판정표가 있고 서명이 없거나 같으면 그것이 우선이다. 평범한 격자 표는 서명이 다른 표와
@@ -295,16 +528,16 @@ def plan_for(template) -> dict:
     if matched_plan is None:
         name = template.get("name")
         if name in PLANS:
-            matched_plan = PLANS[name]
-        elif template.get("category") == "조직도" and template.get("cols") == 14:
-            matched_plan = {"row": None, "col": {"count": 5, "min": 2, "max": UNIT_MAX, "core": 2, "sep": 1, "kind": "org_chart"}}
+            if "조직도" in str(name):
+                pass
+            else:
+                matched_plan = PLANS[name]
 
     # ③ 자동 판정
     if matched_plan is not None:
         plan = copy.deepcopy(matched_plan)
     else:
         plan = detect_plan(template["cell_meta"], template["rows"], template["cols"])
-
 
     for axis, length in (("row", template["rows"]), ("col", template["cols"])):
         if plan[axis] is not None:
@@ -753,56 +986,114 @@ def _resize_axis(table, axis, p, target, object_ids, fill):
         cell_sz.set(dim, str(new_size))
 
 
-def generate_org_chart(template_table_element, team_count, *, fill="increment", cell_texts=None, id_roots=()):
-    """기준 표(모양 2)의 XML에서 역할별 칸 서식을 뽑아 N팀(2~10)짜리 조직도 표를 새로 조립한다."""
+def _org_chart_source(table, profile: dict) -> dict:
+    tbl = table
+    rows = tbl.findall(HP + "tr")
+    if len(rows) != profile["rows"]:
+        raise ValueError(f"표의 행 수({len(rows)})가 조직도 프로필 행 수({profile['rows']})와 다릅니다.")
+
+    sz = tbl.find(HP + "sz")
+    total_width = int(sz.get("width")) if sz is not None else 50333
+
+    row_heights = []
+    source_cells = {}
+    for r_idx, r in enumerate(rows):
+        tc_first = r.find(HP + "tc")
+        csz = tc_first.find(HP + "cellSz") if tc_first is not None else None
+        h = int(csz.get("height")) if csz is not None else 282
+        row_heights.append(h)
+        for tc in r.findall(HP + "tc"):
+            addr = tc.find(HP + "cellAddr")
+            if addr is not None:
+                r_addr = int(addr.get("rowAddr"))
+                c_addr = int(addr.get("colAddr"))
+                source_cells[(r_addr, c_addr)] = tc
+
+    for role_name, coord in profile["role_sources"].items():
+        if coord is not None and coord not in source_cells:
+            raise ValueError(f"조직도 필수 역할 셀 {role_name} {coord}를 표에서 찾을 수 없습니다.")
+
+    top_box_tc = source_cells[profile["role_sources"]["top_box"]]
+
+    team_cells = []
+    for c_start in profile["team_starts"]:
+        tc = source_cells.get((profile["team_row"], c_start))
+        if tc is None:
+            raise ValueError(f"팀 행({profile['team_row']}) 열({c_start})의 셀을 찾을 수 없습니다.")
+        team_cells.append(tc)
+
+    count_cells = []
+    count_row_cells = [tc for (r, c), tc in source_cells.items() if r == profile["count_row"]]
+    for c_start in profile["team_starts"]:
+        matched_tc = None
+        for tc in count_row_cells:
+            addr = tc.find(HP + "cellAddr")
+            span = tc.find(HP + "cellSpan")
+            c_addr = int(addr.get("colAddr")) if addr is not None else 0
+            c_span = int(span.get("colSpan")) if span is not None else 1
+            if c_addr <= c_start < c_addr + c_span:
+                matched_tc = tc
+                break
+        if matched_tc is None:
+            matched_tc = source_cells.get((profile["count_row"], c_start))
+        if matched_tc is None:
+            raise ValueError(f"팀 열({c_start})에 대응하는 인원 셀을 찾을 수 없습니다.")
+        count_cells.append(matched_tc)
+
+    role_cells = {role: source_cells[coord] for role, coord in profile["role_sources"].items() if coord is not None}
+
+    return {
+        "table_snapshot": copy.deepcopy(table),
+        "profile": profile,
+        "base_count": profile["count"],
+        "total_width": total_width,
+        "row_heights": row_heights,
+        "top_box_cell": top_box_tc,
+        "team_cells": team_cells,
+        "count_cells": count_cells,
+        "role_cells": role_cells,
+        "source_cells": source_cells,
+    }
+
+
+def _generate_org_chart_from_source(source: dict, team_count: int, *, fill="increment", cell_texts=None, id_roots=()):
     validate_input(fill, cell_texts)
     if type(team_count) is not int or not 2 <= team_count <= 10:
         raise ValueError("조직도 팀 수는 2~10 사이 정수로 지정해 주세요.")
 
-    tbl = template_table_element
-    sz = tbl.find(HP + "sz")
-    total_width = int(sz.get("width")) if sz is not None else 50333
+    if team_count == source["base_count"]:
+        new_table = copy.deepcopy(source["table_snapshot"])
+        if cell_texts:
+            _apply_texts(new_table, cell_texts)
+        object_ids = _ObjectIds((*id_roots, new_table))
+        object_ids.renew(new_table)
+        return new_table
 
-    rows = tbl.findall(HP + "tr")
-    if len(rows) < 6:
-        raise ValueError("기준 조직도 표 구조(6행)를 찾을 수 없습니다.")
+    profile = source["profile"]
+    total_width = source["total_width"]
+    row_heights = source["row_heights"]
+    role_cells = source["role_cells"]
 
-    row_heights = []
-    for r in rows:
-        tc = r.find(HP + "tc")
-        csz = tc.find(HP + "cellSz") if tc is not None else None
-        h = int(csz.get("height")) if csz is not None else 282
-        row_heights.append(h)
+    def role_proto(role_name, fallback_role=None):
+        if role_name in role_cells:
+            return role_cells[role_name]
+        if fallback_role and fallback_role in role_cells:
+            return role_cells[fallback_role]
+        return list(role_cells.values())[0]
 
-    source_cells = {}
-    for r_idx, r in enumerate(rows):
-        for tc in r.findall(HP + "tc"):
-            addr = tc.find(HP + "cellAddr")
-            if addr is not None:
-                source_cells[(int(addr.get("rowAddr")), int(addr.get("colAddr")))] = tc
-
-    def proto(r, c):
-        if (r, c) in source_cells:
-            return source_cells[(r, c)]
-        row_tcs = [tc for (row_idx, col_idx), tc in source_cells.items() if row_idx == r]
-        return row_tcs[0] if row_tcs else list(source_cells.values())[0]
-
-    top_box_tc = proto(1, 4)
+    top_box_tc = source["top_box_cell"]
     top_box_parts = [n.text or "" for n in catalog._cell_text_nodes(top_box_tc)]
     top_box_text = " ".join("".join(top_box_parts).split()) or "지역경제과"
 
-    orig_cols = [0, 3, 6, 9, 12]
     orig_team_names = []
+    for tc in source["team_cells"]:
+        parts = [n.text or "" for n in catalog._cell_text_nodes(tc)]
+        orig_team_names.append(" ".join("".join(parts).split()))
+
     orig_team_counts = []
-    for c in orig_cols:
-        if (4, c) in source_cells:
-            t_str = " ".join("".join(n.text or "" for n in catalog._cell_text_nodes(source_cells[(4, c)])).split())
-            if t_str:
-                orig_team_names.append(t_str)
-        if (5, c) in source_cells:
-            cnt_str = " ".join("".join(n.text or "" for n in catalog._cell_text_nodes(source_cells[(5, c)])).split())
-            if cnt_str:
-                orig_team_counts.append(cnt_str)
+    for tc in source["count_cells"]:
+        parts = [n.text or "" for n in catalog._cell_text_nodes(tc)]
+        orig_team_counts.append(" ".join("".join(parts).split()))
 
     if not orig_team_names:
         orig_team_names = ["경제총괄팀", "시장경영팀", "시장시설팀", "동물보호팀", "생활경제팀"]
@@ -811,12 +1102,13 @@ def generate_org_chart(template_table_element, team_count, *, fill="increment", 
 
     team_names = []
     team_counts = []
+    base_n = len(orig_team_names)
     for i in range(team_count):
-        if i < len(orig_team_names):
+        if i < base_n:
             t_name = orig_team_names[i]
             t_count = orig_team_counts[min(i, len(orig_team_counts) - 1)]
         else:
-            steps = i - len(orig_team_names) + 1
+            steps = i - base_n + 1
             if fill == "blank":
                 t_name, t_count = "", ""
             elif fill == "copy":
@@ -920,61 +1212,77 @@ def generate_org_chart(template_table_element, team_count, *, fill="increment", 
                 t_el.text = text
         return new_tc
 
-    # Row 0
-    r0_cells = []
-    for col in range(box_start):
-        r0_cells.append(make_cell(proto(0, 0), 0, col, 1, 1, get_w(col, 1), row_heights[0]))
-    r0_cells.append(make_cell(proto(0, 4), 0, box_start, 1, 1, get_w(box_start, 1), row_heights[0]))
-    if box_span > 2:
-        r0_cells.append(make_cell(proto(0, 5), 0, box_start + 1, 1, box_span - 2, get_w(box_start + 1, box_span - 2), row_heights[0]))
-    r0_cells.append(make_cell(proto(0, 9), 0, box_end, 1, 1, get_w(box_end, 1), row_heights[0]))
-    for col in range(box_end + 1, total_cols):
-        r0_cells.append(make_cell(proto(0, 0), 0, col, 1, 1, get_w(col, 1), row_heights[0]))
+    has_cap = profile["cap_row"] is not None
+    cap_r = profile["cap_row"] if has_cap else -1
+    top_r = profile["top_row"]
+    conn_r = profile["connector_row"]
+    stem_r = profile["stem_row"]
+    team_r = profile["team_row"]
+    count_r = profile["count_row"]
 
-    # Row 1
+    all_rows = []
+
+    # Cap row
+    if has_cap:
+        r0_cells = []
+        for col in range(box_start):
+            r0_cells.append(make_cell(role_proto("cap_blank"), cap_r, col, 1, 1, get_w(col, 1), row_heights[cap_r]))
+        r0_cells.append(make_cell(role_proto("cap_left"), cap_r, box_start, 1, 1, get_w(box_start, 1), row_heights[cap_r]))
+        if box_span > 2:
+            r0_cells.append(make_cell(role_proto("cap_mid"), cap_r, box_start + 1, 1, box_span - 2, get_w(box_start + 1, box_span - 2), row_heights[cap_r]))
+        r0_cells.append(make_cell(role_proto("cap_right"), cap_r, box_end, 1, 1, get_w(box_end, 1), row_heights[cap_r]))
+        for col in range(box_end + 1, total_cols):
+            r0_cells.append(make_cell(role_proto("cap_blank"), cap_r, col, 1, 1, get_w(col, 1), row_heights[cap_r]))
+        all_rows.append((cap_r, r0_cells))
+
+    # Top row
     r1_cells = []
     for col in range(box_start - 1):
-        r1_cells.append(make_cell(proto(1, 0), 1, col, 1, 1, get_w(col, 1), row_heights[1]))
-    r1_cells.append(make_cell(proto(1, 3), 1, box_start - 1, 1, 1, get_w(box_start - 1, 1), row_heights[1]))
-    r1_cells.append(make_cell(proto(1, 4), 1, box_start, 1, box_span, get_w(box_start, box_span), row_heights[1], text=top_box_text))
-    r1_cells.append(make_cell(proto(1, 10), 1, box_end + 1, 1, 1, get_w(box_end + 1, 1), row_heights[1]))
+        r1_cells.append(make_cell(role_proto("top_blank"), top_r, col, 1, 1, get_w(col, 1), row_heights[top_r]))
+    if box_start > 0:
+        r1_cells.append(make_cell(role_proto("top_edge_left"), top_r, box_start - 1, 1, 1, get_w(box_start - 1, 1), row_heights[top_r]))
+    r1_cells.append(make_cell(role_proto("top_box"), top_r, box_start, 1, box_span, get_w(box_start, box_span), row_heights[top_r], text=top_box_text))
+    if box_end + 1 < total_cols:
+        r1_cells.append(make_cell(role_proto("top_edge_right"), top_r, box_end + 1, 1, 1, get_w(box_end + 1, 1), row_heights[top_r]))
     for col in range(box_end + 2, total_cols):
-        r1_cells.append(make_cell(proto(1, 0), 1, col, 1, 1, get_w(col, 1), row_heights[1]))
+        r1_cells.append(make_cell(role_proto("top_blank"), top_r, col, 1, 1, get_w(col, 1), row_heights[top_r]))
+    all_rows.append((top_r, r1_cells))
 
-    # Row 2
+    # Connector row
     r2_cells = []
     first_mid = team_cols[0][1]
     last_mid = team_cols[team_count - 1][0]
     for col in range(first_mid):
-        r2_cells.append(make_cell(proto(2, 0), 2, col, 1, 1, get_w(col, 1), row_heights[2]))
+        r2_cells.append(make_cell(role_proto("conn_edge_left"), conn_r, col, 1, 1, get_w(col, 1), row_heights[conn_r]))
     if not is_even:
         t_mid = team_count // 2
         cL, cR = team_cols[t_mid]
         gap_L = gap_cols[t_mid - 1][0]
         gap_R = gap_cols[t_mid][0]
         for col in range(first_mid, gap_L):
-            p = proto(2, 4) if (box_start <= col <= box_end) else proto(2, 1)
-            r2_cells.append(make_cell(p, 2, col, 1, 1, get_w(col, 1), row_heights[2]))
-        r2_cells.append(make_cell(proto(2, 5), 2, gap_L, 1, 2, get_w(gap_L, 2), row_heights[2]))
-        r2_cells.append(make_cell(proto(2, 7), 2, cR, 1, 2, get_w(cR, 2), row_heights[2]))
+            p = role_proto("conn_box_left") if (box_start <= col <= box_end) else role_proto("conn_normal")
+            r2_cells.append(make_cell(p, conn_r, col, 1, 1, get_w(col, 1), row_heights[conn_r]))
+        r2_cells.append(make_cell(role_proto("conn_mid_left"), conn_r, gap_L, 1, 2, get_w(gap_L, 2), row_heights[conn_r]))
+        r2_cells.append(make_cell(role_proto("conn_mid_right"), conn_r, cR, 1, 2, get_w(cR, 2), row_heights[conn_r]))
         for col in range(gap_R + 1, last_mid + 1):
-            p = proto(2, 9) if (box_start <= col <= box_end) else proto(2, 10)
-            r2_cells.append(make_cell(p, 2, col, 1, 1, get_w(col, 1), row_heights[2]))
+            p = role_proto("conn_box_right") if (box_start <= col <= box_end) else role_proto("conn_normal")
+            r2_cells.append(make_cell(p, conn_r, col, 1, 1, get_w(col, 1), row_heights[conn_r]))
     else:
         g_mid = (team_count // 2) - 1
         mid_L, mid_R = gap_cols[g_mid]
         for col in range(first_mid, mid_L):
-            p = proto(2, 4) if (box_start <= col <= box_end) else proto(2, 1)
-            r2_cells.append(make_cell(p, 2, col, 1, 1, get_w(col, 1), row_heights[2]))
-        r2_cells.append(make_cell(proto(2, 5), 2, mid_L, 1, 1, get_w(mid_L, 1), row_heights[2]))
-        r2_cells.append(make_cell(proto(2, 7), 2, mid_R, 1, 1, get_w(mid_R, 1), row_heights[2]))
+            p = role_proto("conn_box_left") if (box_start <= col <= box_end) else role_proto("conn_normal")
+            r2_cells.append(make_cell(p, conn_r, col, 1, 1, get_w(col, 1), row_heights[conn_r]))
+        r2_cells.append(make_cell(role_proto("conn_mid_left"), conn_r, mid_L, 1, 1, get_w(mid_L, 1), row_heights[conn_r]))
+        r2_cells.append(make_cell(role_proto("conn_mid_right"), conn_r, mid_R, 1, 1, get_w(mid_R, 1), row_heights[conn_r]))
         for col in range(mid_R + 1, last_mid + 1):
-            p = proto(2, 9) if (box_start <= col <= box_end) else proto(2, 10)
-            r2_cells.append(make_cell(p, 2, col, 1, 1, get_w(col, 1), row_heights[2]))
+            p = role_proto("conn_box_right") if (box_start <= col <= box_end) else role_proto("conn_normal")
+            r2_cells.append(make_cell(p, conn_r, col, 1, 1, get_w(col, 1), row_heights[conn_r]))
     for col in range(last_mid + 1, total_cols):
-        r2_cells.append(make_cell(proto(2, 13), 2, col, 1, 1, get_w(col, 1), row_heights[2]))
+        r2_cells.append(make_cell(role_proto("conn_edge_right"), conn_r, col, 1, 1, get_w(col, 1), row_heights[conn_r]))
+    all_rows.append((conn_r, r2_cells))
 
-    # Row 3
+    # Stem row
     r3_cells = []
     t_mid = (team_count // 2) if not is_even else -1
     for t in range(team_count):
@@ -982,57 +1290,62 @@ def generate_org_chart(template_table_element, team_count, *, fill="increment", 
         if not is_even and t == t_mid:
             gap_L = gap_cols[t - 1][0]
             gap_R = gap_cols[t][0]
-            r3_cells.append(make_cell(proto(3, 5), 3, gap_L, 1, 2, get_w(gap_L, 2), row_heights[3]))
-            r3_cells.append(make_cell(proto(3, 7), 3, cR, 1, 2, get_w(cR, 2), row_heights[3]))
+            r3_cells.append(make_cell(role_proto("stem_mid_left", "stem_inner_left"), stem_r, gap_L, 1, 2, get_w(gap_L, 2), row_heights[stem_r]))
+            r3_cells.append(make_cell(role_proto("stem_mid_right", "stem_inner_right"), stem_r, cR, 1, 2, get_w(cR, 2), row_heights[stem_r]))
         else:
             if t == 0:
-                pL, pR = proto(3, 0), proto(3, 1)
+                pL, pR = role_proto("stem_first_left"), role_proto("stem_first_right")
             elif t == team_count - 1:
-                pL, pR = proto(3, 12), proto(3, 13)
+                pL, pR = role_proto("stem_last_left"), role_proto("stem_last_right")
             else:
-                pL, pR = proto(3, 3), proto(3, 4)
-            r3_cells.append(make_cell(pL, 3, cL, 1, 1, get_w(cL, 1), row_heights[3]))
-            r3_cells.append(make_cell(pR, 3, cR, 1, 1, get_w(cR, 1), row_heights[3]))
+                pL, pR = role_proto("stem_inner_left"), role_proto("stem_inner_right")
+            r3_cells.append(make_cell(pL, stem_r, cL, 1, 1, get_w(cL, 1), row_heights[stem_r]))
+            r3_cells.append(make_cell(pR, stem_r, cR, 1, 1, get_w(cR, 1), row_heights[stem_r]))
         if t < team_count - 1:
             if not is_even and (t == t_mid - 1 or t == t_mid):
                 pass
             elif is_even and t == (team_count // 2) - 1:
                 g_col = gap_cols[t][0]
-                r3_cells.append(make_cell(proto(3, 2), 3, g_col, 1, 2, get_w(g_col, 2), row_heights[3]))
+                r3_cells.append(make_cell(role_proto("stem_gap"), stem_r, g_col, 1, 2, get_w(g_col, 2), row_heights[stem_r]))
             else:
                 g_col = gap_cols[t][0]
-                r3_cells.append(make_cell(proto(3, 2), 3, g_col, 1, 1, get_w(g_col, 1), row_heights[3]))
+                r3_cells.append(make_cell(role_proto("stem_gap"), stem_r, g_col, 1, 1, get_w(g_col, 1), row_heights[stem_r]))
+    all_rows.append((stem_r, r3_cells))
 
-    # Row 4
+    # Team row
     r4_cells = []
     for t in range(team_count):
         cL, cR = team_cols[t]
-        proto_t = proto(4, min(t * 3, 12))
-        r4_cells.append(make_cell(proto_t, 4, cL, 1, 2, get_w(cL, 2), row_heights[4], text=team_names[t]))
+        proto_t = source["team_cells"][t] if t < len(source["team_cells"]) else source["team_cells"][-1]
+        r4_cells.append(make_cell(proto_t, team_r, cL, 1, 2, get_w(cL, 2), row_heights[team_r], text=team_names[t]))
         if t < team_count - 1:
             if is_even and t == (team_count // 2) - 1:
                 g_col = gap_cols[t][0]
-                r4_cells.append(make_cell(proto(4, 2), 4, g_col, 1, 2, get_w(g_col, 2), row_heights[4], text=""))
+                r4_cells.append(make_cell(role_proto("team_gap"), team_r, g_col, 1, 2, get_w(g_col, 2), row_heights[team_r], text=""))
             else:
                 g_col = gap_cols[t][0]
-                r4_cells.append(make_cell(proto(4, 2), 4, g_col, 1, 1, get_w(g_col, 1), row_heights[4], text=""))
+                r4_cells.append(make_cell(role_proto("team_gap"), team_r, g_col, 1, 1, get_w(g_col, 1), row_heights[team_r], text=""))
+    all_rows.append((team_r, r4_cells))
 
-    # Row 5
+    # Count row
     r5_cells = []
     for t in range(team_count):
         cL, cR = team_cols[t]
-        proto_c = proto(5, min(t * 3, 12))
-        r5_cells.append(make_cell(proto_c, 5, cL, 1, 2, get_w(cL, 2), row_heights[5], text=team_counts[t]))
+        proto_c = source["count_cells"][t] if t < len(source["count_cells"]) else source["count_cells"][-1]
+        r5_cells.append(make_cell(proto_c, count_r, cL, 1, 2, get_w(cL, 2), row_heights[count_r], text=team_counts[t]))
         if t < team_count - 1:
             if is_even and t == (team_count // 2) - 1:
                 g_col = gap_cols[t][0]
-                r5_cells.append(make_cell(proto(5, 2), 5, g_col, 1, 2, get_w(g_col, 2), row_heights[5], text=""))
+                r5_cells.append(make_cell(role_proto("count_gap"), count_r, g_col, 1, 2, get_w(g_col, 2), row_heights[count_r], text=""))
             else:
                 g_col = gap_cols[t][0]
-                r5_cells.append(make_cell(proto(5, 2), 5, g_col, 1, 1, get_w(g_col, 1), row_heights[5], text=""))
+                r5_cells.append(make_cell(role_proto("count_gap"), count_r, g_col, 1, 1, get_w(g_col, 1), row_heights[count_r], text=""))
+    all_rows.append((count_r, r5_cells))
 
-    new_table = copy.deepcopy(template_table_element)
-    new_table.set("rowCnt", "6")
+    all_rows.sort(key=lambda x: x[0])
+
+    new_table = copy.deepcopy(source["table_snapshot"])
+    new_table.set("rowCnt", str(len(all_rows)))
     new_table.set("colCnt", str(total_cols))
     sz_el = new_table.find(HP + "sz")
     if sz_el is not None:
@@ -1040,12 +1353,13 @@ def generate_org_chart(template_table_element, team_count, *, fill="increment", 
         sz_el.set("height", str(sum(row_heights)))
 
     table_rows = new_table.findall(HP + "tr")
-    all_rows = [r0_cells, r1_cells, r2_cells, r3_cells, r4_cells, r5_cells]
-    for r_idx, r_elem in enumerate(table_rows[:6]):
-        for old_tc in list(r_elem.findall(HP + "tc")):
-            r_elem.remove(old_tc)
-        for new_tc in all_rows[r_idx]:
-            r_elem.append(new_tc)
+    for r_idx, (_, row_cells) in enumerate(all_rows):
+        if r_idx < len(table_rows):
+            r_elem = table_rows[r_idx]
+            for old_tc in list(r_elem.findall(HP + "tc")):
+                r_elem.remove(old_tc)
+            for new_tc in row_cells:
+                r_elem.append(new_tc)
 
     if cell_texts:
         _apply_texts(new_table, cell_texts)
@@ -1053,6 +1367,20 @@ def generate_org_chart(template_table_element, team_count, *, fill="increment", 
     object_ids = _ObjectIds((*id_roots, new_table))
     object_ids.renew(new_table)
     return new_table
+
+
+def generate_org_chart(template_table_element, team_count, *, fill="increment", cell_texts=None, id_roots=()):
+    """기준 조직도 표의 XML에서 역할별 칸 서식을 뽑아 N팀(2~10)짜리 조직도 표를 새로 조립한다."""
+    validate_input(fill, cell_texts)
+    if type(team_count) is not int or not 2 <= team_count <= 10:
+        raise ValueError("조직도 팀 수는 2~10 사이 정수로 지정해 주세요.")
+    rows = int(template_table_element.get("rowCnt", 0))
+    cols = int(template_table_element.get("colCnt", 0))
+    prof = _org_chart_profile({"rows": rows, "cols": cols, "category": "조직도"})
+    if prof is None:
+        prof = ORG_CHART_PROFILES["six_odd_5"]
+    source = _org_chart_source(template_table_element, prof)
+    return _generate_org_chart_from_source(source, team_count, fill=fill, cell_texts=cell_texts, id_roots=id_roots)
 
 
 WEEKLY_DEFAULT_FIRST = (4, 26)
@@ -1118,7 +1446,20 @@ def resize_table(tbl_element, plan, row_count=None, col_count=None, *, id_roots=
             target_count = col_count
         else:
             target_count = col_plan["count"]
-        working = generate_org_chart(working, target_count, fill=fill, cell_texts=cell_texts, id_roots=id_roots)
+        source = col_plan.get("_source")
+        if source is None:
+            prof_key = col_plan.get("profile")
+            prof = ORG_CHART_PROFILES.get(prof_key) if prof_key else None
+            if prof is None:
+                prof = _org_chart_profile({"rows": int(working.get("rowCnt", 0)),
+                                           "cols": int(working.get("colCnt", 0)),
+                                           "name": updated.get("name", ""),
+                                           "category": "조직도"})
+            if prof is None:
+                prof = ORG_CHART_PROFILES["six_odd_5"]
+            source = _org_chart_source(working, prof)
+            col_plan["_source"] = source
+        working = _generate_org_chart_from_source(source, target_count, fill=fill, cell_texts=cell_texts, id_roots=id_roots)
         col_plan["count"] = target_count
         tbl_element.attrib.clear()
         tbl_element.attrib.update(working.attrib)
@@ -1211,9 +1552,14 @@ def _select_org_chart_record(org_records):
         return None
     for r in org_records:
         if r.get("name") == "조직도 · 모양 2":
-            return r
+            p = plan_for(r)
+            if p.get("col") is not None:
+                return r
     candidates = []
     for r in org_records:
+        p = plan_for(r)
+        if p.get("col") is None:
+            continue
         cols = r.get("cols", 0)
         if (cols + 1) % 3 == 0:
             n = (cols + 1) // 3
@@ -1222,6 +1568,9 @@ def _select_org_chart_record(org_records):
     if candidates:
         candidates.sort(key=lambda x: x[0], reverse=True)
         return candidates[0][1]
+    for r in org_records:
+        if plan_for(r).get("col") is not None:
+            return r
     return org_records[0]
 
 
@@ -1244,7 +1593,5 @@ def describe_units(catalog_path=None) -> list[dict]:
         item["units"] = {axis: {k: p[k] for k in ("count", "min", "max", "core", "sep", "kind") if k in p} if p else None
                          for axis, p in plan_for(record).items() if axis in ("row", "col")}
         result.append(item)
-
-
 
     return result

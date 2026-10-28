@@ -175,6 +175,116 @@ class TableUnitsServiceTests(unittest.TestCase):
         cropped = crop_to_content(image, margin=2)
         self.assertEqual(cropped.size, (35, 25))
 
+    def test_list_moves_label_category_last_stably(self):
+        sample = [
+            {"id": "A1", "category": "일반 A", "name": "A1"},
+            {"id": "L1", "category": "라벨 서식", "name": "L1"},
+            {"id": "B1", "category": "일반 B", "name": "B1"},
+            {"id": "L2", "category": "라벨 서식", "name": "L2"},
+            {"id": "A2", "category": "일반 A", "name": "A2"},
+        ]
+        with patch.object(self.service, "_units", return_value=sample), \
+             patch.object(self.service, "_snapshot_url", return_value="data:image/png;base64,mock"):
+            data = self.service.list()
+            ids = [t["id"] for t in data["templates"]]
+            self.assertEqual(ids, ["A1", "B1", "A2", "L1", "L2"])
+            self.assertEqual([t["id"] for t in sample], ["A1", "L1", "B1", "L2", "A2"])
+
+    def test_list_normalizes_category_whitespace(self):
+        sample = [
+            {"id": "A", "category": "일반", "name": "A"},
+            {"id": "L1", "category": "라벨서식", "name": "L1"},
+            {"id": "B", "category": "일반 B", "name": "B"},
+            {"id": "L2", "category": "라벨 서식", "name": "L2"},
+            {"id": "L3", "category": "라벨\t서식", "name": "L3"},
+            {"id": "L4", "category": " 라벨   서식 ", "name": "L4"},
+        ]
+        with patch.object(self.service, "_units", return_value=sample), \
+             patch.object(self.service, "_snapshot_url", return_value="data:image/png;base64,mock"):
+            data = self.service.list()
+            ids = [t["id"] for t in data["templates"]]
+            self.assertEqual(ids, ["A", "B", "L1", "L2", "L3", "L4"])
+            res_cats = {t["id"]: t["category"] for t in data["templates"]}
+            self.assertEqual(res_cats["L1"], "라벨서식")
+            self.assertEqual(res_cats["L2"], "라벨 서식")
+            self.assertEqual(res_cats["L3"], "라벨\t서식")
+            self.assertEqual(res_cats["L4"], " 라벨   서식 ")
+
+    def test_list_preserves_label_shape_order(self):
+        sample = [
+            {"id": "L1", "category": "라벨 서식", "name": "모양 1"},
+            {"id": "X1", "category": "분류 X", "name": "X1"},
+            {"id": "L2", "category": "라벨 서식", "name": "모양 2"},
+            {"id": "L3", "category": "라벨 서식", "name": "모양 3"},
+            {"id": "Y1", "category": "분류 Y", "name": "Y1"},
+            {"id": "L4", "category": "라벨 서식", "name": "모양 4"},
+            {"id": "L5", "category": "라벨 서식", "name": "모양 5"},
+            {"id": "L6", "category": "라벨 서식", "name": "모양 6"},
+        ]
+        with patch.object(self.service, "_units", return_value=sample), \
+             patch.object(self.service, "_snapshot_url", return_value="data:image/png;base64,mock"):
+            data = self.service.list()
+            ids = [t["id"] for t in data["templates"]]
+            self.assertEqual(ids, ["X1", "Y1", "L1", "L2", "L3", "L4", "L5", "L6"])
+
+    def test_list_without_or_only_label_categories(self):
+        with patch.object(self.service, "_units", return_value=[]):
+            data = self.service.list()
+            self.assertEqual(data["templates"], [])
+            self.assertFalse(data["thumbnails_ready"])
+
+        no_label = [
+            {"id": "A", "category": "일반 A", "name": "A"},
+            {"id": "B", "category": "일반 B", "name": "B"},
+        ]
+        with patch.object(self.service, "_units", return_value=no_label), \
+             patch.object(self.service, "_snapshot_url", return_value="data:image/png;base64,mock"):
+            data = self.service.list()
+            self.assertEqual([t["id"] for t in data["templates"]], ["A", "B"])
+            self.assertTrue(data["thumbnails_ready"])
+
+        only_label = [
+            {"id": "L1", "category": "라벨 서식", "name": "L1"},
+            {"id": "L2", "category": "라벨서식", "name": "L2"},
+        ]
+        with patch.object(self.service, "_units", return_value=only_label), \
+             patch.object(self.service, "_snapshot_url", return_value=None):
+            data = self.service.list()
+            self.assertEqual([t["id"] for t in data["templates"]], ["L1", "L2"])
+            self.assertFalse(data["thumbnails_ready"])
+
+    def test_list_preserves_favorites_and_recent_order(self):
+        self.service._settings.set("table_template_favorites", ["L2", "A1", "L1", "missing_id"])
+        self.service._settings.set("table_template_recent", ["L1", "B1", "L2", "missing_id"])
+        sample = [
+            {"id": "A1", "category": "일반 A", "name": "A1"},
+            {"id": "L1", "category": "라벨 서식", "name": "L1"},
+            {"id": "B1", "category": "일반 B", "name": "B1"},
+            {"id": "L2", "category": "라벨 서식", "name": "L2"},
+        ]
+        with patch.object(self.service, "_units", return_value=sample), \
+             patch.object(self.service, "_snapshot_url", return_value="data:image/png;base64,mock"):
+            data = self.service.list()
+            self.assertEqual(data["favorites"], ["L2", "A1", "L1"])
+            self.assertEqual(data["recent"], ["L1", "B1", "L2"])
+            self.assertEqual([t["id"] for t in data["templates"]], ["A1", "B1", "L1", "L2"])
+
+    def test_list_orders_custom_catalog_without_mutation(self):
+        import shutil
+        custom_file = Path(self.temp.name) / "custom_catalog.hwpx"
+        shutil.copy2(default_catalog_path(), custom_file)
+        orig_sha = hashlib.sha256(custom_file.read_bytes()).hexdigest()
+        svc = TableUnitsService(lambda: FakeHwp([]), source=custom_file,
+                                snapshot_root=Path(self.temp.name) / "snap_custom",
+                                settings=SettingsService(Path(self.temp.name) / "settings_custom.json"))
+        data = svc.list()
+        self.assertEqual(hashlib.sha256(custom_file.read_bytes()).hexdigest(), orig_sha)
+        categories = [t["category"] for t in data["templates"]]
+        label_indices = [i for i, c in enumerate(categories) if "".join(c.split()) == "라벨서식"]
+        non_label_indices = [i for i, c in enumerate(categories) if "".join(c.split()) != "라벨서식"]
+        if label_indices and non_label_indices:
+            self.assertGreater(min(label_indices), max(non_label_indices))
+
 
 if __name__ == "__main__":
     unittest.main()

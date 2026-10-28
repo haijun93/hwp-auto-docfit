@@ -65,10 +65,12 @@ Map<String, Object?> samplePreview({
 
 Map<String, Object?> sampleListData({
   bool thumbnailsReady = true,
+  List<String>? favorites,
   List<String>? recent,
 }) => {
   'source': 'C:/HWP_AUTODOCFIT/templates.hwpx',
   'thumbnails_ready': thumbnailsReady,
+  if (favorites != null) 'favorites': favorites,
   'recent': recent ?? ['0:3', '0:1'],
   'templates': [
     {
@@ -850,6 +852,297 @@ void main() {
       // 갤러리 영역 전체가 CustomScrollView 및 Scrollbar로 위아래 스크롤 가능
       expect(find.byType(CustomScrollView), findsOneWidget);
       expect(find.byType(Scrollbar), findsWidgets);
+    },
+  );
+
+  Map<String, Object?> sortedFixtureData() => {
+    'source': 'C:/HWP_AUTODOCFIT/templates.hwpx',
+    'thumbnails_ready': true,
+    'favorites': ['label2', 'A1'],
+    'recent': ['label1', 'B1'],
+    'templates': [
+      {
+        'id': 'A1',
+        'category': '분류 A',
+        'name': 'A1 서식',
+        'rows': 2,
+        'cols': 2,
+        'thumbnail': samplePngBase64,
+        'favorite': true,
+        'units': {'row': null, 'col': null},
+      },
+      {
+        'id': 'B1',
+        'category': '분류 B',
+        'name': 'B1 서식',
+        'rows': 2,
+        'cols': 2,
+        'thumbnail': samplePngBase64,
+        'favorite': false,
+        'units': {'row': null, 'col': null},
+      },
+      {
+        'id': 'label1',
+        'category': '라벨 서식',
+        'name': '라벨 1 서식',
+        'rows': 2,
+        'cols': 2,
+        'thumbnail': samplePngBase64,
+        'favorite': false,
+        'units': {'row': null, 'col': null},
+      },
+      {
+        'id': 'label2',
+        'category': '라벨 서식',
+        'name': '라벨 2 서식',
+        'rows': 2,
+        'cols': 2,
+        'thumbnail': samplePngBase64,
+        'favorite': true,
+        'units': {'row': null, 'col': null},
+      },
+    ],
+  };
+
+  testWidgets('분류 칩은 백엔드 순서이며 라벨 서식이 마지막', (tester) async {
+    Future<Object?> api(String name, List<Object?> args) async {
+      final action = args[0] as String;
+      if (action == 'list') return envelope(sortedFixtureData());
+      if (action == 'preview') return envelope(samplePreview());
+      return envelope({});
+    }
+
+    await pumpScreen(tester, api: api, width: 1200.0, height: 800.0);
+
+    final expectedOrder = ['즐겨찾기', '최근 사용', '전체', '분류 A', '분류 B', '라벨 서식'];
+    final chips = <Finder>[];
+    for (final cat in expectedOrder) {
+      final finder = find.byKey(Key('categoryChip_$cat'));
+      await tester.ensureVisible(finder);
+      expect(finder, findsOneWidget);
+      chips.add(finder);
+    }
+    for (int i = 0; i < chips.length - 1; i++) {
+      expect(
+        tester.getTopLeft(chips[i]).dx,
+        lessThan(tester.getTopLeft(chips[i + 1]).dx),
+      );
+    }
+  });
+
+  testWidgets('전체 목록과 검색은 라벨 서식이 마지막', (tester) async {
+    Future<Object?> api(String name, List<Object?> args) async {
+      final action = args[0] as String;
+      if (action == 'list') return envelope(sortedFixtureData());
+      if (action == 'preview') return envelope(samplePreview());
+      return envelope({});
+    }
+
+    await pumpScreen(tester, api: api, width: 1200.0, height: 800.0);
+
+    await tester.tap(find.byKey(const Key('categoryChip_전체')));
+    await tester.pumpAndSettle();
+
+    final cardA1 = find.byKey(const Key('templateCard_A1'));
+    final cardB1 = find.byKey(const Key('templateCard_B1'));
+    final cardL1 = find.byKey(const Key('templateCard_label1'));
+    final cardL2 = find.byKey(const Key('templateCard_label2'));
+
+    expect(cardA1, findsOneWidget);
+    expect(cardB1, findsOneWidget);
+    expect(cardL1, findsOneWidget);
+    expect(cardL2, findsOneWidget);
+
+    final searchInput = find.byKey(const Key('inputSearch'));
+    if (searchInput.evaluate().isNotEmpty) {
+      await tester.enterText(searchInput, '서식');
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('templateCard_label1')), findsOneWidget);
+      expect(find.byKey(const Key('templateCard_label2')), findsOneWidget);
+    }
+  });
+
+  testWidgets('즐겨찾기와 최근 사용은 ID 배열 순서 유지', (tester) async {
+    Future<Object?> api(String name, List<Object?> args) async {
+      final action = args[0] as String;
+      if (action == 'list') return envelope(sortedFixtureData());
+      if (action == 'preview') return envelope(samplePreview());
+      return envelope({});
+    }
+
+    await pumpScreen(tester, api: api, width: 1200.0, height: 800.0);
+
+    await tester.tap(find.byKey(const Key('categoryChip_즐겨찾기')));
+    await tester.pumpAndSettle();
+
+    final cardL2 = find.byKey(const Key('templateCard_label2'));
+    final cardA1 = find.byKey(const Key('templateCard_A1'));
+    expect(cardL2, findsOneWidget);
+    expect(cardA1, findsOneWidget);
+    expect(tester.getTopLeft(cardL2).dx, lessThan(tester.getTopLeft(cardA1).dx));
+
+    await tester.tap(find.byKey(const Key('categoryChip_최근 사용')));
+    await tester.pumpAndSettle();
+
+    final cardL1 = find.byKey(const Key('templateCard_label1'));
+    final cardB1 = find.byKey(const Key('templateCard_B1'));
+    expect(cardL1, findsOneWidget);
+    expect(cardB1, findsOneWidget);
+    expect(tester.getTopLeft(cardL1).dx, lessThan(tester.getTopLeft(cardB1).dx));
+  });
+
+  testWidgets('즐겨찾기 토글 성공과 실패는 사용자 순서를 보존', (tester) async {
+    bool failApi = false;
+    final data = sortedFixtureData();
+
+    Future<Object?> api(String name, List<Object?> args) async {
+      final action = args[0] as String;
+      if (action == 'list') return envelope(data);
+      if (action == 'preview') return envelope(samplePreview());
+      if (action == 'favorite') {
+        if (failApi) throw Exception('API Failure');
+        final payload = args[1] as Map;
+        final tList = (data['templates'] as List).cast<Map<String, Object?>>();
+        for (final t in tList) {
+          if (t['id'] == payload['id']) {
+            t['favorite'] = payload['on'];
+          }
+        }
+        final favs = List<String>.from((data['favorites'] as List).cast<String>());
+        if (payload['on'] == true) {
+          favs.add(payload['id'] as String);
+        } else {
+          favs.remove(payload['id']);
+        }
+        data['favorites'] = favs;
+        return envelope(data);
+      }
+      return envelope({});
+    }
+
+    await pumpScreen(tester, api: api, width: 1200.0, height: 800.0);
+
+    final favBtnB1 = find.byKey(const Key('btnFavorite_B1'));
+    expect(favBtnB1, findsOneWidget);
+    await tester.tap(favBtnB1);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('categoryChip_즐겨찾기')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('templateCard_label2')), findsOneWidget);
+    expect(find.byKey(const Key('templateCard_A1')), findsOneWidget);
+    expect(find.byKey(const Key('templateCard_B1')), findsOneWidget);
+
+    failApi = true;
+    final favBtnA1 = find.byKey(const Key('btnFavorite_A1'));
+    expect(favBtnA1, findsOneWidget);
+    await tester.tap(favBtnA1);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('templateCard_A1')), findsOneWidget);
+  });
+
+  testWidgets('이전 목록 응답은 favorites 없이 기존 순서로 표시', (tester) async {
+    final legacyData = {
+      'source': 'C:/HWP_AUTODOCFIT/templates.hwpx',
+      'thumbnails_ready': true,
+      'recent': ['A1'],
+      'templates': [
+        {
+          'id': 'A1',
+          'category': '일반',
+          'name': 'A1 서식',
+          'rows': 2,
+          'cols': 2,
+          'thumbnail': samplePngBase64,
+          'favorite': true,
+          'units': {'row': null, 'col': null},
+        },
+        {
+          'id': 'B1',
+          'category': '일반',
+          'name': 'B1 서식',
+          'rows': 2,
+          'cols': 2,
+          'thumbnail': samplePngBase64,
+          'favorite': true,
+          'units': {'row': null, 'col': null},
+        },
+      ],
+    };
+
+    Future<Object?> api(String name, List<Object?> args) async {
+      final action = args[0] as String;
+      if (action == 'list') return envelope(legacyData);
+      if (action == 'preview') return envelope(samplePreview());
+      return envelope({});
+    }
+
+    await pumpScreen(tester, api: api, width: 1200.0, height: 800.0);
+
+    await tester.tap(find.byKey(const Key('categoryChip_즐겨찾기')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('templateCard_A1')), findsOneWidget);
+    expect(find.byKey(const Key('templateCard_B1')), findsOneWidget);
+  });
+
+  testWidgets('조직도 모양 1은 팀 수 조절을 표시하고 preview에 전달', (tester) async {
+    final calls = <List<Object?>>[];
+    final orgData = {
+      'source': 'C:/HWP_AUTODOCFIT/templates.hwpx',
+      'thumbnails_ready': true,
+      'favorites': <String>[],
+      'recent': <String>[],
+      'templates': [
+        {
+          'id': 'org:1',
+          'category': '조직도',
+          'name': '조직도 · 모양 1',
+          'rows': 6,
+          'cols': 12,
+          'thumbnail': samplePngBase64,
+          'favorite': false,
+          'units': {
+            'row': null,
+            'col': {
+              'count': 4,
+              'min': 2,
+              'max': 9,
+              'core': 2,
+              'sep': 1,
+              'kind': 'org_chart',
+            },
+          },
+        },
+      ],
+    };
+
+    Future<Object?> api(String name, List<Object?> args) async {
+      calls.add([name, ...args]);
+      final action = args[0] as String;
+      if (action == 'list') return envelope(orgData);
+      if (action == 'preview') return envelope(samplePreview(rows: 6, cols: 15));
+      return envelope({});
+    }
+
+    await pumpScreen(tester, api: api, width: 1200.0, height: 800.0);
+
+    expect(find.text('이 표는 정보단위 조절 없이 그대로 복사해요'), findsNothing);
+    expect(find.byKey(const Key('btnColPlus')), findsOneWidget);
+    expect(find.byKey(const Key('btnColMinus')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('btnColPlus')));
+    await tester.pumpAndSettle();
+
+    final previewCalls = calls.where(
+      (c) =>
+          c[0] == 'table_units' &&
+          c[1] == 'preview' &&
+          (c[2] as Map)['id'] == 'org:1' &&
+          (c[2] as Map)['col_count'] == 5,
+    );
+    expect(previewCalls, isNotEmpty);
+  });
     },
   );
 }

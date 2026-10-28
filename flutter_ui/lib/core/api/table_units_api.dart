@@ -122,27 +122,42 @@ class TableUnitsListData {
   const TableUnitsListData({
     this.source,
     required this.thumbnailsReady,
+    this.favorites = const [],
     this.recent = const [],
     required this.templates,
   });
 
   final String? source;
   final bool thumbnailsReady;
+  final List<String> favorites;
   final List<String> recent;
   final List<TableTemplateInfo> templates;
 
-  factory TableUnitsListData.fromJson(Map<dynamic, dynamic> json) =>
-      TableUnitsListData(
-        source: json['source'] as String?,
-        thumbnailsReady: json['thumbnails_ready'] == true,
-        recent: (json['recent'] as List? ?? const [])
-            .map((e) => '$e')
-            .toList(),
-        templates: (json['templates'] as List? ?? const [])
-            .whereType<Map>()
-            .map(TableTemplateInfo.fromJson)
-            .toList(),
-      );
+  factory TableUnitsListData.fromJson(Map<dynamic, dynamic> json) {
+    final templates = (json['templates'] as List? ?? const [])
+        .whereType<Map>()
+        .map(TableTemplateInfo.fromJson)
+        .toList();
+    final rawFavorites = json['favorites'];
+    final List<String> favorites;
+    if (rawFavorites is List) {
+      favorites = rawFavorites.map((e) => '$e').toList();
+    } else {
+      favorites = templates
+          .where((t) => t.favorite)
+          .map((t) => t.id)
+          .toList();
+    }
+    return TableUnitsListData(
+      source: json['source'] as String?,
+      thumbnailsReady: json['thumbnails_ready'] == true,
+      favorites: favorites,
+      recent: (json['recent'] as List? ?? const [])
+          .map((e) => '$e')
+          .toList(),
+      templates: templates,
+    );
+  }
 }
 
 /// 셀 한 변의 테두리 설정.

@@ -19,6 +19,13 @@ from docfit_core.table_catalog import default_catalog_path
 
 from .api_contract import ServiceError
 
+TEMPLATE_LAST_CATEGORIES: tuple[str, ...] = ("라벨 서식",)
+_LAST_CAT_KEYS = {"".join(c.split()) for c in TEMPLATE_LAST_CATEGORIES}
+
+
+def _template_is_last(item: dict) -> bool:
+    return "".join(str(item.get("category", "")).split()) in _LAST_CAT_KEYS
+
 USER_CATALOG = Path(r"C:\HWP_AUTODOCFIT") / "표서식모음" / "표 서식모음.hwpx"
 SNAPSHOT_FOLDER = ".스냅샷"
 # 앱에 미리 넣어 둔 내장 표 템플릿 그림(표 내용 지문 이름). 처음 쓰는 사용자도 한/글로 만들 필요 없이 바로 보인다(2026-10-23 사용자 요청).
@@ -167,8 +174,10 @@ class TableUnitsService:
         for item in self._units():
             templates.append({**item, "thumbnail": self._snapshot_url(item["id"]),
                               "favorite": item["id"] in favorites})
+        templates = sorted(templates, key=_template_is_last)
         ids = {t["id"] for t in templates}
         return {"source": str(self.source), "templates": templates,
+                "favorites": [v for v in favorites if v in ids],
                 "recent": [v for v in _id_list(preferences.get("table_template_recent")) if v in ids][:8],
                 "thumbnails_ready": bool(templates) and all(item["thumbnail"] for item in templates)}
 
