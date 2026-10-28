@@ -150,6 +150,7 @@ jobs:
           exit $smokeExit
 
       - name: Verify Flutter content and native close on frozen EXE
+        timeout-minutes: 12
         run: |
           & ".\.venv\Scripts\python.exe" scripts\smoke_webview_content.py --exe dist/HWP_AutoDocFit/HWP_AutoDocFit.exe --report dist/webview-content-smoke.json
           if ($LASTEXITCODE -ne 0) { throw 'Flutter content/native close smoke failed.' }
