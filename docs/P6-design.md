@@ -2,7 +2,7 @@
 
 작성: Codex, 2026-10-28. 설계 전용이며 이 문서 작성 과정에서는 제품 코드·시험 코드를 변경하지 않았다.
 
-작업 루트: `C:\HWP_AUTODOCFIT\v1803\resp`, 브랜치 `feature/2.0.1-responsive`, 조사 HEAD `ea84ccfebbe35ead55b24b844cb737e6654a7b22`(v2.0.0 main 기준). 아래 행 번호는 이 HEAD의 실제 파일 기준이다. 앞선 수정으로 행이 이동하면 함께 적은 함수명·코드 앵커로 찾는다. 출력 정본은 `C:\HWP_AUTODOCFIT\v1803\reports\P6-design.md`, 저장소 보관본은 `docs/P6-design.md`다. 사용자 메시지에서 제어문자로 깨진 경로 및 빈 `-design.md`는 명확하게 제시된 P6 경로로 해석한다.
+작업 루트: `C:\HWP_AUTODOCFIT\v1803\resp`, 브랜치 `feature/2.0.1-responsive`, 코드 조사 기준 `ea84ccfebbe35ead55b24b844cb737e6654a7b22`, 설계 재검토 HEAD `56baa77e683c0199b14590d5e4825e46bb390b87`(v2.0.0 main 기준). 아래 행 번호는 이 HEAD의 실제 파일 기준이다. 앞선 수정으로 행이 이동하면 함께 적은 함수명·코드 앵커로 찾는다. 출력 정본은 `C:\HWP_AUTODOCFIT\v1803\reports\P6-design.md`, 저장소 보관본은 `docs/P6-design.md`다. 사용자 메시지에서 제어문자로 깨진 경로 및 빈 `-design.md`는 명확하게 제시된 P6 경로로 해석한다.
 
 ## 1. 구현 범위와 조사 결과
 
@@ -100,7 +100,7 @@ EditorAction은 compact일 때 Tooltip과 IconButton, 보통일 때 TextButton.i
 
 1. import와 State 위쪽에 공통 위젯 import와 `_dockPanelVisible`을 추가한다. 기존 `tableSketchScreen` Key는 Scaffold에서 유지한다. Scaffold 아래 Builder의 Scaffold.of(context)로 endDrawer를 여는 방식으로 구현하고 Scaffold key는 교체하지 않는다.
 2. build 794~913의 CallbackShortcuts/Focus는 그대로 두고 그 안에 LayoutBuilder를 넣어 Scaffold/AppBar/body에 같은 compact를 전달한다. `_buildTopToolbar({required bool isNarrow})`의 이름·인자는 유지하여 호출부 변경을 줄인다. isNarrow에 <=700 결과를 전달한다. 600/750 별도 분기 제거.
-3. AppBar 제목은 현재 Flexible+ellipsis를 유지한다. actions는 고정 전체 Row 대신 폭 상한 `constraints.maxWidth * 0.62`를 가진 EditorToolbar 하나에 기존 조직도·undo·redo·clearAll과 패널 토글을 넣는다. actions의 전체 폭이 제목·leading을 잠식하지 않게 titleSpacing을 조정하며 버튼은 축소하지 않는다. `sketchOrgExample`은 <=700에서 아이콘만, 넓으면 기존 OutlinedButton.icon 유지. undo/redo/clear 활성 조건·tooltip·키 그대로.
+3. AppBar 제목은 현재 Flexible+ellipsis를 유지한다. actions는 총 폭 상한 `constraints.maxWidth * 0.62`의 유한 Row로 바꾼다. 패널 토글은 Row 끝의 고정 48폭 슬롯에 두고, 나머지 폭의 Expanded 안 EditorToolbar에 기존 조직도·undo·redo·clearAll을 넣는다. 패널 토글은 가로 스크롤 밖에서 항상 보인다. actions의 전체 폭이 제목·leading을 잠식하지 않게 titleSpacing을 조정하며 버튼은 축소하지 않는다. `sketchOrgExample`은 <=700에서 아이콘만, 넓으면 기존 OutlinedButton.icon 유지. undo/redo/clear 활성 조건·tooltip·키 그대로.
 4. 새 토글 Key `sketchPanelToggle`, tooltip `미리보기·저장 패널`. compact에서는 Scaffold endDrawer 열기, wide에서는 `_dockPanelVisible` 토글이다. endDrawer는 SafeArea+닫기 버튼(Key `sketchPanelClose`)+Expanded(panel)로 구성한 Drawer이며 폭은 min(360, maxWidth-24), 높이는 Scaffold가 제한한다. modal barrier/Escape/닫기를 통해 닫을 수 있어야 한다.
 5. 본문은 항상 Row → Expanded → Column(toolbar, Expanded(canvas)) 경로를 유지하고, 우측 320 패널만 `!compact && _dockPanelVisible`일 때 붙인다. 기존 compact 하단 패널은 없애고 Drawer로 접근한다. 캔버스의 타입·Key·부모 경로를 폭에 따라 교체하지 않아 pointer/scroll 상태가 보존되게 한다. 패널은 한 시점에 dock 또는 drawer 한 곳에서만 만든다. 넓은 화면에는 endDrawer 콘텐츠를 중복 생성하지 않는다.
 6. toolbar 916~1026의 기존 가로 스크롤을 EditorToolbar로 교체한다. 여섯 도구 키와 동작은 그대로다. 굵기/종류 제목은 compact에서 숨기고, `_widthChip(String width, String label, Key key, {bool compact = false})`, `_styleChip(String style, String label, Key key, {bool compact = false})`로 확장한다. 기존 ChoiceChip.selected/onSelected를 유지하면서 compact의 label만 선 굵기/실선·파선·점선 CustomPaint 또는 구별 가능한 Icon으로 바꾸고 Tooltip(label)을 추가한다. 굵기 키 thin/thick/double 및 종류 solid/dash/dot는 문자열까지 유지한다. 확대율 수치는 상태값으로 계속 표시한다. zoom 동작 범위·식은 변경하지 않는다.
@@ -243,7 +243,7 @@ API fake는 실제 앱이 쓰는 ApiCall 형식을 따른다. table_units는 기
 
 무인 WebView mock 지침(조사한 설치 패키지 webview_flutter_windows 1.2.0 기준):
 
-- TestDefaultBinaryMessengerBinding에서 MethodChannel `io.jns.webview.win`의 initialize에 `{'textureId':1}` 응답. per-instance `io.jns.webview.win/1`의 setPopupWindowPolicy/setBackgroundColor/loadUrl/postWebMessage/setSize 등 void 메서드는 null 응답하고 호출을 기록한다. dispose도 기록한다.
+- TestDefaultBinaryMessengerBinding에서 MethodChannel `io.jns.webview.win`의 initialize에 `{'textureId':1}` 응답. per-instance `io.jns.webview.win/1`의 setPopupWindowPolicy/setBackgroundColor/loadUrl/postWebMessage/setSize 등 void 메서드는 null 응답하고 호출을 기록한다. dispose는 전역 채널 `io.jns.webview.win`에서 인자 1로 호출되므로 그곳에서 기록한다. per-instance 채널의 dispose로 잘못 가정하지 않는다.
 - EventChannel `io.jns.webview.win/1/events`의 listen/cancel에 성공 응답을 제공하고 구독 종료를 검사한다. 이벤트를 보낼 때 StandardMethodCodec의 성공 envelope를 사용한다. rootBundle asset-manifest는 저장소의 실제 fixture를 사용한다. 로컬 HttpServer.bind/close는 tester.runAsync 구간에서 완료를 기다리며 네이티브 WebView2 프로세스는 실행하지 않는다. 로컬 서버를 외부 네트워크로 접속하지 않는다.
 - 모든 채널 handler는 teardown에서 해제한다. MissingPluginException을 잡아 성공 처리하지 않는다. setUp/tearDown의 실제 오류는 실패다.
 
@@ -325,3 +325,41 @@ SDK는 HANDOVER의 `%LOCALAPPDATA%\DocFitTools\flutter`/FLUTTER_SDK를 사용한
 ## 10. 설계 작성 결과
 
 HANDOVER.md 및 공동작업 지시를 읽고 과거 W1~W3 완료/판정 기록은 유지했다. 현 P6 요청은 설계 전용이므로 엔진·Flutter·JS·시험·생성 자산·사용자 문서를 수정하거나 실행하지 않았다. 저장소 조사와 문서 경로/행 번호 검사를 수행했다. 이 설계의 제품 구현·위젯 시험·브라우저 시험·COM 시험은 미실행이다.
+
+## 11. 재검토 보완 — 파일만 수정하는 코더용 확정 사항 (2026-10-28)
+
+이 절은 앞 절의 모호한 부분을 확정한다. 코드/시험 구현은 여전히 수행하지 않았다. `C:\HWP_AUTODOCFIT\v1803\reports\O5.md`는 이번 조사 시점에 존재하지 않아 DeepSeek 지적을 확인했다고 보고하지 않는다. 추후 전달되면 실제 코드와 대조하고 P6 범위의 타당한 지적만 반영한다. 기존 코드 행 번호는 재검토 HEAD에서도 동일함을 확인했다.
+
+### 11.1 변경 위치와 함수 연결 확정
+
+- 표그림판 State 선언 28행 부근에 `_dockPanelVisible` 추가, build 794~913 교체, `_buildTopToolbar` 916~1026, `_widthChip` 1074~1092, `_styleChip` 1094~1112, `_buildBottomOrRightPanel` 1210~1381 수정. `_toolButton` 1029~1072의 도구 선택·preview 호출은 유지한다. 패널을 만드는 새 메서드는 `Widget _buildPanelDrawer({required double width})`, `void _togglePanel(BuildContext scaffoldContext, {required bool compact})`로 한다. drawer 본문은 기존 `_buildBottomOrRightPanel(isNarrow: true)` 재사용이다. Scaffold 뒤 Builder가 받은 context만 openEndDrawer에 전달한다.
+- 표 템플릿 `_buildBody` 1921~2381, `_buildGallery` 2389~4095, `_buildDetail` 4097~5113, `_buildFillSelector` 5117~5371, `_buildStepper` 5373~5553을 앵커로 삼는다. 갤러리 카드 생성은 3425행 이후에도 이어지므로 TARGET의 확대된 2389~4095 범위를 함께 읽는다. State 상단 90~240 안에 표시 상태 추가. 새 메서드는 `bool _canDockGallery(double width, TextScaler scaler)`, `Widget _buildGalleryDrawer({required double width})`, `void _toggleGallery(BuildContext scaffoldContext, {required bool canDock})`. `_canDockGallery`는 `width > 700 && width >= 220 + 10 + max(280, 280 * scaler.scale(14) / 14)`다. 본문·Drawer 생성 여부·토글 동작 모두 같은 canDock을 사용한다. compact는 끝까지 `width <= 700`으로 별도 계산하여 아이콘 여부에만 사용한다. 기존 `_buildBody()`·`_buildGallery({bool shrinkWrap = false})`·`_buildDetail()` 시그니처는 유지하고, 필요 표시값은 메서드 안 LayoutBuilder/MediaQuery에서 구한다.
+- `_buildFillSelector`는 폼 label과 기존 Wrap을 유지한다. `ChoiceChip`의 글자 정책·선택값을 바꾸지 않고 1.5배 최소높이/줄바꿈만 검사한다. 새 UI 모델/API DTO/저장 설정을 추가하지 않는다. 새 상태는 bool 및 기존 State 소유 controller뿐이다.
+- Dart native/web 호스트의 기존 save/initialize/storage/handle/조건부 export는 수정하지 않는다. 변경 범위는 지정한 build의 제목 ellipsis와 필요할 때 오류 표시의 스크롤뿐이다. 다이어그램 web stub은 의도된 별도 경로이므로 시험을 만들기 위해 활성 화면으로 바꾸지 않는다.
+
+### 11.2 패널 전환과 포커스 수명
+
+1. Drawer와 dock를 같은 프레임에 중복 구성하지 않는다. wide에서는 Scaffold.drawer/endDrawer를 null로, compact(갤러리는 !canDock)에서만 구성한다. Flutter 자체가 Drawer를 숨길 때 element를 제거할 수 있으므로 입력 controller·필터·선택·API 결과를 Drawer 안 State로 옮기지 않는다.
+2. 열린 Drawer에서 wide로 resize해도 route의 modal barrier, local history, 포커스가 남아 있지 않아야 한다. `Scaffold.onDrawerChanged`/`onEndDrawerChanged`로 실제 열림을 기록하는 `_drawerOpen: bool = false`를 추가한다. 마지막 canDock/compact는 `bool? _lastCanDock` 또는 `bool? _lastCompact`에 기록한다. 전환 감지 후 `WidgetsBinding.instance.addPostFrameCallback`에서 mounted를 검사하고, 이전 Drawer가 열렸을 때만 ScaffoldState.closeDrawer/closeEndDrawer를 호출한다. build 중 setState/Navigator.pop 금지. ScaffoldState는 build에서 읽은 값을 넘기거나 State의 context 아래 Builder로 얻으며 기존 Scaffold Key를 교체하지 않는다. post-frame 예약 중복은 전환값을 즉시 기록하여 막는다. 닫기 과정에서 문서 단축키 Escape가 그림 선택/도구를 바꾸지 않도록 Drawer 포커스와 닫기 처리가 우선하도록 한다.
+3. 각 화면 시험에 `open_drawer_resize_to_wide_leaves_no_modal_barrier` 추가: 420에서 패널 열기→입력→1024 전환→Drawer barrier 없음→캔버스/상세 hitTestable→420 복귀 시 기본 닫힘→입력값 보존. drawer가 닫힌 상태의 resize와 모두 검사한다. drawer 열기/닫기로 API 요청 수가 증가하지 않는다.
+4. EditorToolbar는 각 child를 `Focus(onFocusChange: ...)`로 감싸되 child의 onPressed/Key/자체 focus를 교체하지 않는다. focus 진입 시 그 wrapper의 BuildContext에 `Scrollable.ensureVisible`을 호출한다. 내부 Scrollbar 두께 공간을 padding에 확보한다. AppBar 안에서는 기본 toolbarHeight가 유한하므로 48px 아이콘과 스크롤바가 함께 들어가도록 vertical padding을 줄인다. intrinsic height를 강제로 AppBar 바깥까지 키우지 않는다.
+5. 표 템플릿 AppBar도 `템플릿 목록` 토글 48폭을 고정하고, 나머지 actions만 유한 폭 EditorToolbar에 둔다. snapshot 버튼과 제목이 경합해도 토글은 보인다. 본문 Row의 Expanded는 유한 폭 부모 아래에만 둔다.
+
+### 11.3 웹 패널·아이콘 범위와 검증 구체화
+
+- 새 ToolbarAction은 header뿐 아니라 diagram/mindmap aside의 tool-row 액션(undo/redo/복제/정렬/zOrder/하위·형제/순서·삭제) 및 독립 undo/부모선 토글에도 적용한다. 기존 접근성 이름이 없는 버튼은 기존 보이는 문구를 aria-label로 추가한다. 기존 aria-label/title이 있으면 그대로 유지한다. compact에서 액션 문구만 숨기고 form label·legend·summary·입력 내용·글꼴/크기 값은 유지한다. ShapeIcon 도형 버튼은 이미 아이콘이므로 콜백/label을 바꾸지 않는다. 같은 ToolbarAction에 className을 전달하여 기존 선택/비활성 스타일을 유지한다.
+- 실제 `.tool-label` 숨김은 `display:none`이어도 버튼에 aria-label이 남으면 된다. 기존 label을 바꾸어 브라우저 시험을 맞추지 않는다. 표기 기호는 그대로 남기고 text span만 숨기는 경우에도 각 icon을 구별할 수 있어야 한다.
+- wrapper는 초기 렌더부터 항상 같은 위치에 있고 main에는 안정된 `key="editor-main"`을 준다. 패널 자식의 조건부 배열 변화로 ReactFlow가 재생성되지 않게 한다. CSS에 `#editor-tools-panel[hidden]{display:none}`을 명시하여 flex 규칙이 hidden을 덮지 못하게 한다. 펼친 wide wrapper 자체에도 overflow-y:auto/min-height:0를 주어 aside의 세로 내용이 캔버스를 밀지 않게 한다.
+- footer의 ellipsis에는 실제 status 전체를 title로 전달한다(655행 부근 footer). 문서명은 title에 전체 name을 유지한다. 창 확대 시험 중 그래프 영역의 문서 좌표계/폰트는 바꾸지 않는다.
+- 브라우저 행렬은 각 조합을 새 page로 시작하여 기본 접힘을 검사하고, 별도 resize 시험만 같은 page를 쓴다. 모든 액션의 기존 role/name을 목록으로 정해 순회한다. header 목록은 `새 문서`, `열기·삭제`, `저장`, `그림 복사 (한/글 붙여넣기)`, `PNG 내보내기`, diagram일 때 `예시 서식`, 세 mode 탭이다. side 목록은 위 액션들과 실제 선택 상태별 controls다. 도구 클릭 뒤 request_*를 기록만 하는 경우도 다음 단계에서 host harness가 기존 프로토콜 응답을 보내 완료한다. `표 템플릿` 탭은 `open_table_units` 요청을 확인하고 편집기 모드 전환으로 오인하지 않는다.
+- 문자 배율 적용은 각 요소의 최초 computed font-size를 WeakMap에 저장한 뒤 `base * scale`로 설정한다. 반복 resize 때 1.5를 누적 곱하지 않는다. 새로 나타난 조건부 controls에도 같은 처리를 한다. 글꼴을 바꾼 뒤 document.fonts.ready와 requestAnimationFrame 두 번을 기다린다. zoom에 따른 CSS viewport 조합과 문자 확대 조합은 결과 JSON의 kind 필드로 구분한다.
+
+### 11.4 무인 시험 fixture와 결과 형식
+
+- native list fake는 `api('flow_editor', ['list', {}])`의 실제 storage 호출명(파일의 storage 구현 확인)에 빈 List를 반환한다. list envelope를 표 템플릿처럼 감싸지 않는다. 알 수 없는 API 호출은 TestFailure. Windows 패키지 이벤트 포맷은 설치본 `lib/src/webview.dart`의 `_handleEvent`에 맞춘다. EventChannel에 보내는 값은 `StandardMethodCodec().encodeSuccessEnvelope({"type":"webMessageReceived","value":jsonEncode(message)})`로 감싸며 save 명령 자체 검사는 per-instance `postWebMessage` 인자의 JSON을 decode하여 type/id/name을 검사한다. 사본 저장 완료 API를 시험할 경우에는 실제 `save_document` 수신 이벤트를 보내고 그 후 API 호출까지 따로 확인한다. 명령 전송만 확인한 시험을 저장 완료 시험이라고 부르지 않는다.
+- web host 시험은 실제 iframe postMessage에 저장 명령이 도착하는 것을 same-origin contentWindow의 message listener로 기록한다. 가짜 ready는 native 이벤트와 섞지 않는다. iframe이 실제 로드된 후 수신기를 설치하여 postMessage 누락을 막고, 시험 중 자동 ready와 수동 ready가 경합하지 않게 초기 로드/ready 상태를 명시적으로 구분한다. origin/source 거부 검사는 신규 mount에서 유효 ready 전에 실시한다. 실제 자산이 자동 ready를 보내면 해당 보안 사례는 시험 harness가 iframe message 전송을 통제하는 별도 fixture에서 수행한다. 제품의 URL/origin 검사를 느슨하게 만들지 않는다. 구체적으로 pump 전 window에 capture 단계 시험 listener를 등록하고 실제 ready만 stopImmediatePropagation하여 자동 ready를 통제한다. foreign origin/source 사건을 먼저 보내 ready=false를 확인한 다음, 유효 ready 1회를 허용한다. teardown에서 capture listener를 반드시 해제한다.
+- 표그림판 fake의 list는 `['P6_저장표']`, load는 `{'sketch': 저장했던 sketch}`, save는 `{'ok': true}`, copy는 모델이 요구하는 ok/message 필드를 제공한다. list/load/delete는 preview와 payload 형태가 다르다. 삭제 액션도 `sketch_panel_copy_save_load_accessible`에서 목록의 삭제 버튼을 tester로 눌러 `['delete', 'P6_저장표']`와 목록 갱신을 검사한다.
+- JSON 자료 구조는 `{'source_head': str, 'cases': [{'screen': str, 'kind': 'text'|'display', 'width': number, 'scale': number, 'actions_checked': [str], 'passed': bool, 'errors': [str]}], 'passed': bool}`로 고정한다. 예외가 생긴 조합도 실패 항목을 기록한 후 최종 nonzero로 끝낸다. 기록 후 예외를 삼켜 전체 PASS를 출력하지 않는다.
+- 새 각 시험에는 10초 준비 상한, PNG만 30초 상한을 둔다. tester.runAsync는 native loopback bind/close 같은 실제 비동기에만 쓰고 위젯 pump를 안에서 호출하지 않는다. 모든 mount는 먼저 빈 위젯으로 unmount하고 채널 해제·서버 종료·pending timer 없음까지 확인한다.
+
+재검토 산출물은 정본과 저장소 보관본을 같은 UTF-8/CRLF 내용으로 유지한다. 커밋·푸시에는 설계 보관본과 공동작업 결과 기록만 포함하며 제품/시험 코드를 포함하지 않는다. 문서 작성 검수는 TARGET 경로·행 범위 존재, 신규 경로 미존재, 한 파일 한 TARGET, 양쪽 문서 동일성, diff/CRLF 검사다. 제품 시험은 실행 담당자 검증 대기로 남긴다.
