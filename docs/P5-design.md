@@ -28,7 +28,7 @@ TARGET: flutter_ui/test/file_conversion_integration_test.dart:1-197
 TARGET: tests/test_p5_file_conversion_bridge.py:1-177
 TARGET: tests/test_desktop_file_drop.py:89-146
 
-재사용·보존 확인 위치(수정 대상 아님): main.dart:19-21,71-113,400-424,508-623,1310-1335,2084-2095; workspace_adapters.dart의 FileConversionAdapter/IntegratedWorkspace; tab_navigation_shell.dart:1-87; floating_format_picker.dart:1-409; merge_order_dialog.dart:1-276; document_tools_workspace.dart:1-253; desktop_web_ui.py:501-634,636-656,738-756,937-1031,1685-1697,1786-1848,2018-2036; native_file_dialog_service.py:14-25,72-112,121-151; legacy.py:4285-4315,4600 이후 파일포맷_변경_시작; jobs.py:1-280; conversion_runner.py:1-214; file_conversion.py:295-305; kordoc_bridge.py:29-38. 이미 있는 변환 purpose·파일 등록 옵션·공개 API는 유지하며 새로 또 추가하지 않는다.
+재사용·보존 확인 위치(수정 대상 아님): main.dart:19-21,71-113,400-424,508-623,1310-1335,2084-2095; workspace_adapters.dart의 FileConversionAdapter/IntegratedWorkspace; tab_navigation_shell.dart:1-87; floating_format_picker.dart:1-409; merge_order_dialog.dart:1-276; document_tools_workspace.dart:1-253; desktop_web_ui.py:501-634,636-656,738-756,937-1031,1685-1697,1786-1848,2018-2036; native_file_dialog_service.py:14-25,72-112,121-151; legacy.py:4285-4315,4600 이후 파일포맷_변경_시작; jobs.py:1-280; conversion_runner.py:1-227; file_conversion.py:295-305; kordoc_bridge.py:29-38. 이미 있는 변환 purpose·파일 등록 옵션·공개 API는 유지하며 새로 또 추가하지 않는다.
 
 ## 3. 조사에서 확인한 보완점
 
@@ -100,7 +100,9 @@ drainEvents 진입 시 eventPolling을 설정하고 작업 ID·jobGeneration·re
 
 snapshot.job이 file_format이고 추적 ID가 없거나 기존 추적이 terminal이면 새 ID를 채택한다. 다른 종류 job은 trackedJob으로 채택하지 않고 전역 running 잠금/안내만 반영한다. 현재 추적이 running인데 최신 job이 다른 ID라는 이유만으로 취소 대상을 갈아끼우지 않는다. 현재 ID의 terminal 사건을 먼저 처리한 다음 최신 snapshot을 적용한다.
 
-gap이면 최신 get_file_conversion_state를 다시 요청하여 progress/terminal/results/failures를 복구한다. cursor는 응답 latest_seq가 유효한 정수일 때 그 위치로 이동하고 snapshot과 겹친 후속 사건은 중복 방지한다. 복구 조회 실패 시 cursor를 앞당겨 사건을 잃지 말고 오류를 표시한다. 재진입·dispose·다른 작업 사건에도 안전해야 한다.
+progress 사건은 부분 갱신이다. jobs.py:255-268은 stage만 또는 percent만 보낸다. 기존 progress에 실제 수신 필드만 병합하며 생략된 file/total/percent를 0으로 초기화하지 않는다. percent는 표시 시 0..100으로 제한한다.
+
+gap이면 반환 배치의 자기 job 사건도 빠짐없이 적용한 뒤 최신 get_file_conversion_state로 progress/terminal/results/failures를 복구한다. cursor는 처리한 batch의 next_seq까지만 이동하고, latest_seq로 바로 건너뛰어 200개 이후의 미처리 사건을 버리지 않는다. 같은 작업 ID snapshot만 결과 복원에 사용한다. 최신 snapshot이 다른 job이면 기존 행을 보존하고 이력 일부 미확인 안내를 표시한다. 복구 조회 실패 시 cursor를 앞당겨 사건을 잃지 말고 오류를 표시한다. 재진입·dispose·다른 작업 사건에도 안전해야 한다.
 
 취소는 진행 중인 현재 ID만 한번 요청한다. 응답 job의 cancel_requested/state를 반영하되 수락을 terminal로 가정하지 않는다. 성공 후에는 해당 ID terminal 또는 snapshot 종료 확인까지 cancelPending과 폴링을 유지한다. 예외·{ok:false}/{error:...} 실패이면 오류를 표시하고 cancelPending=false로 돌려 재시도 가능하게 한다. terminal 수신 시 해제한다. 탭 전환해도 추적 중인 작업은 폴링하며 재실행하지 않는다.
 
@@ -126,6 +128,8 @@ gap이면 최신 get_file_conversion_state를 다시 요청하여 progress/termi
 - 'merge flow blocks duplicate start': 병합창 중 추가·비우기·형식 재진입 금지, 확인 1회만 실행, 순서 반전 후 정확한 file_order 확인.
 - 'changed files block regular conversion': 일반 형식 선택 중 서버 목록 바뀜; 시작 0회. 기존 merge changed 시험과 별개.
 - 'cancel request failure can retry': cancel_job 오류 뒤 버튼 재활성, 같은 ID 재시도, cancel_requested=true 응답만으로 완료되지 않음, terminal 뒤 잠금 해제.
+- 'partial progress preserves file total and percent': file=2,total=4,percent=25 뒤 stage-only/percent-only 사건을 적용해 file/total과 생략된 필드 보존 검증.
+- 'gap retains subsequent event pages': gap 배치가 200개이고 latest_seq가 더 큰 경우 다음 배치도 소비, 타 작업 snapshot 결과는 미혼합 검증.
 - 'terminal state cannot regress': snapshot done 뒤 늦은 started/progress가 와도 완료 유지. 다른 ID 사건은 진행률·결과·취소에 영향 없음.
 - 'adopts next conversion after terminal': 완료 job A 뒤 snapshot job B를 채택하고 B만 취소. 탭 전환/복귀 후 ID 보존.
 - 기존 'event gap restores snapshot and partial failures': 여러 페이지 사건 유실(gap=true,latest_seq) 뒤 snapshot만으로 성공/실패 상세·진행률 복구, 중복 없음.
