@@ -121,7 +121,12 @@ def main():
             if ink < .005 or result['errors']:
                 raise RuntimeError('Flutter did not paint usable content without runtime errors')
             if args.unresponsive:
-                page.evaluate('window.pywebview.api.get_state = () => new Promise(() => {})')
+                # Freeze the page's JavaScript like a hung frontend. Replacing API
+                # functions via evaluate() hung on CI; a debugger pause cannot answer.
+                result['stage'] = 'make_unresponsive'
+                cdp = page.context.new_cdp_session(page)
+                cdp.send('Debugger.enable')
+                cdp.send('Debugger.pause')
             result['stage'] = 'find_window'
             candidates = []
             def inspect(hwnd, _):
