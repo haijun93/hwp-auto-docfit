@@ -49,15 +49,18 @@ def version_key(value):
 
 
 def extract_notes(body):
-    lines, active = [], False
+    # 2.0.x 릴리스 노트는 '## 바뀐 점' 아래 '### 1. 제목' 소제목을 쓴다(예전은 '## 새로 된 점' 아래 '- ' 목록).
+    lines, titles, active = [], [], False
     for line in str(body).splitlines():
-        if line.strip() == "## 새로 된 점":
+        if line.strip() in ("## 새로 된 점", "## 바뀐 점"):
             active = True
         elif active and line.startswith("## "):
             break
+        elif active and line.startswith("### "):
+            titles.append(re.sub(r"^\d+\.\s*", "", line[4:]).replace("**", "").strip())
         elif active and line.startswith("- "):
             lines.append(line[2:].replace("**", "").strip())
-    return lines[:6]
+    return (titles or lines)[:6]
 
 
 def parse_sha256sums(body):

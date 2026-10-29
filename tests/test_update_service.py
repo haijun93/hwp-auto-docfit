@@ -379,6 +379,10 @@ class ParsingTest(unittest.TestCase):
         body = '# 발행\n- 제외\n## 새로 된 점\n' + '\n'.join(f'- **항목{i}**\n  - 하위' for i in range(8)) + '\n## 기타\n- 제외'
         self.assertEqual([f'항목{i}' for i in range(6)], extract_notes(body))
 
+    def test_notes_from_changed_section_titles(self):
+        body = '# v2.0.3\n## 바뀐 점\n### 1. **그림판** 탭\n- 설명\n### 2. 자석 연결\n## 알려진 점\n### 3. 제외'
+        self.assertEqual(['그림판 탭', '자석 연결'], extract_notes(body))
+
     def test_sums(self):
         self.assertEqual({'a.exe': HASH, 'b.exe': HASH}, parse_sha256sums(f'{HASH.upper()}  a.exe\n{HASH} *b.exe\n잘못된 줄'))
         # 실제 릴리스의 SHA256SUMS는 빌드 폴더 경로가 붙어 있다(2026-10-23 실측: 경로 때문에 GitHub 조회가 실패).

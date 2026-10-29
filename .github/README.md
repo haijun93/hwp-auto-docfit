@@ -8,8 +8,8 @@
 </p>
 
 <p align="center">
-<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.0.2/HWP_AutoDocFit_v2.0.2_Portable.exe"><img alt="GitHub에서 무설치로 받기" src="https://img.shields.io/badge/GitHub-%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v2.0.2-2563eb?style=for-the-badge&logo=github"></a>
-<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.0.2/HWP_AutoDocFit_v2.0.2_Setup.exe"><img alt="GitHub에서 설치용 받기" src="https://img.shields.io/badge/GitHub-%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0-0ea5e9?style=for-the-badge&logo=github"></a>
+<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.0.3/HWP_AutoDocFit_v2.0.3_Portable.exe"><img alt="GitHub에서 무설치로 받기" src="https://img.shields.io/badge/GitHub-%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v2.0.3-2563eb?style=for-the-badge&logo=github"></a>
+<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.0.3/HWP_AutoDocFit_v2.0.3_Setup.exe"><img alt="GitHub에서 설치용 받기" src="https://img.shields.io/badge/GitHub-%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0-0ea5e9?style=for-the-badge&logo=github"></a>
 <br>
 </p>
 <p align="center">
@@ -23,6 +23,25 @@
 <a href="../docs/media/overview-demo.mp4"><img src="../docs/media/overview-demo.gif" alt="한글편집 후처리 5분 시연 — 누르면 고화질 영상" width="860"></a><br>
 <sub>▶ 누르면 5분 시연 영상(고화질)이 열립니다</sub>
 </p>
+
+---
+
+<h2 align="center">v2.0.3 릴리즈</h2>
+<p align="center">그림판 탭을 새로 넣고, 표그림판·마인드맵·다이어그램 편집 기능을 크게 늘렸습니다</p>
+
+### 그림판 탭 (2.0.3)
+
+사진을 끌어 놓거나 붙여 넣어 배경으로 깔고, 그 위에 펜·도형·선·글상자를 올립니다. 올린 것은 모두 따로 옮기고 고칠 수 있으며, PNG로 저장하거나 한/글에 그림으로 붙여 넣습니다.
+
+### 표그림판 올가미·여러 개체 선택·칸 배경 그림 (2.0.3)
+
+올가미로 둘러 고른 선과 글을 함께 옮기고, 복사·복제·삭제합니다. 지우개는 지나간 칸만 지웁니다. 사진을 칸에 끌어 놓으면 칸 배경 그림이 되고, 한/글에 붙여 넣을 때 그림 채우기로 함께 들어갑니다.
+
+### 마인드맵 지도 테마·다이어그램 자석 (2.0.3)
+
+마인드맵 가지 모양 10가지와 지도 테마(모양 5 × 색 8 × 바탕 3)를 고릅니다. 다이어그램은 선이 도형 가까이 가면 붙고, 도형을 옮기면 마주 보는 면으로 따라가며, 정렬 맞춤 점선이 나타납니다.
+
+> 시작 속도 개선은 다음 버전에서 이어 갑니다.
 
 ---
 
