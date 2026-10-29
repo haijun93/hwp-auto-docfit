@@ -1,14 +1,14 @@
 {
   "ok": true,
-  "version": "2.0.1",
+  "version": "2.0.2",
   "windows": [
     {
-      "title": "한글편집 후처리 · v2.0.1",
-      "pid": 8244,
+      "title": "한글편집 후처리 · v2.0.2",
+      "pid": 1736,
       "image": "D:\\a\\hwp-auto-docfit\\hwp-auto-docfit\\dist\\HWP_AutoDocFit\\HWP_AutoDocFit.exe"
     }
   ],
-  "window_ready_ms": 3390.7,
+  "window_ready_ms": 3685.39,
   "smart_launcher": false,
   "first_run_splash_ms": null,
   "offline_ocr": {
