@@ -1,6 +1,8 @@
 """격자 선 그림을 병합 표와 HWPX로 변환한다. COM을 사용하지 않는다."""
 from __future__ import annotations
 
+import base64
+import binascii
 import copy
 import math
 import zipfile
@@ -12,6 +14,44 @@ from . import table_catalog as catalog
 
 HP = catalog._HP
 HH = catalog._HH
+HC = catalog._HC
+# 칸 배경 그림(2026-10-30 사용자 요청): 그림 하나 8MB, 그림 수 100개까지.
+MAX_IMAGE_BYTES = 8 * 1024 * 1024
+MAX_IMAGES = 100
+
+
+def _image_kind(data):
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "png"
+    if data[:3] == b"\xff\xd8\xff":
+        return "jpg"
+    return None
+
+
+def _clean_images(images, cols, rows, warnings):
+    if images is None:
+        return []
+    if not isinstance(images, list) or len(images) > MAX_IMAGES:
+        raise ValueError(f"칸 그림은 {MAX_IMAGES}개까지 넣을 수 있습니다.")
+    clean, seen = [], set()
+    for i, item in enumerate(images):
+        try:
+            x, y, encoded = item["x"], item["y"], item["data"]
+            if type(x) is not int or type(y) is not int or not (0 <= x < cols and 0 <= y < rows) or not isinstance(encoded, str):
+                raise ValueError
+            if encoded.startswith("data:"):
+                encoded = encoded.split(",", 1)[1]
+            if len(encoded) > MAX_IMAGE_BYTES * 4 // 3 + 8:
+                raise ValueError
+            data = base64.b64decode(encoded, validate=True)
+            kind = _image_kind(data)
+            if kind is None or len(data) > MAX_IMAGE_BYTES or (x, y) in seen:
+                raise ValueError
+            seen.add((x, y))
+            clean.append(dict(x=x, y=y, data=encoded, kind=kind))
+        except (TypeError, KeyError, ValueError, binascii.Error):
+            warnings.append(f"칸 그림 {i+1}: PNG·JPG가 아니거나 위치·크기가 잘못되어 제외했습니다.")
+    return clean
 UNIT_MM = 283.465
 NONE = ("none", "solid")
 
@@ -71,7 +111,8 @@ def normalize(sketch):
             warnings.append(f"글 {i+1}: 위치나 서식이 잘못되어 제외했습니다.")
         else:
             clean_texts.append({**item, "bold": item.get("bold", False), "align": item.get("align", "center")})
-    return dict(grid=dict(cols=cols, rows=rows, cell_mm=float(mm)), lines=lines, texts=clean_texts), warnings
+    images = _clean_images(sketch.get("images"), cols, rows, warnings)
+    return dict(grid=dict(cols=cols, rows=rows, cell_mm=float(mm)), lines=lines, texts=clean_texts, images=images), warnings
 
 
 def _layout(sketch, _split_lines=()):
@@ -181,10 +222,18 @@ def _layout(sketch, _split_lines=()):
             if xs[c] <= t["x"] < xs[ce] and ys[r] <= t["y"] < ys[re]:
                 cell["texts"].append(t)
         cell["text"] = "\n".join(t["text"] for t in cell["texts"])
+        # 칸 배경 그림: 칸 안에 놓인 첫 그림(번호만 싣고 그림 자료는 drawing["images"]에 둔다).
+        for k, image in enumerate(drawing["images"]):
+            if xs[c] <= image["x"] < xs[ce] and ys[r] <= image["y"] < ys[re]:
+                cell["image"] = k
+                break
         cells.append(cell)
     for t in drawing["texts"]:
         if not xs[0] <= t["x"] < xs[-1] or not ys[0] <= t["y"] < ys[-1]:
             warnings.append("표 범위 밖의 글을 제외했습니다.")
+    for image in drawing["images"]:
+        if not xs[0] <= image["x"] < xs[-1] or not ys[0] <= image["y"] < ys[-1]:
+            warnings.append("표 범위 밖의 칸 그림을 제외했습니다.")
     mm = drawing["grid"]["cell_mm"]
     return dict(ok=True, rows=len(ys)-1, cols=len(xs)-1, cells=sorted(cells,key=lambda c:(c["row"],c["col"])),
                 width_mm=(xs[-1]-xs[0])*mm, height_mm=(ys[-1]-ys[0])*mm,
@@ -203,6 +252,7 @@ def _add(parent, tag, **attrs):
 
 def to_hwpx(sketch, path):
     result = _layout(sketch)
+    images = normalize(sketch)[0]["images"]
     if not result["cells"]:
         raise ValueError("표로 만들 가로·세로 범위가 필요합니다.")
     target = Path(path)
@@ -242,8 +292,15 @@ def to_hwpx(sketch, path):
                     n.set("value", "0")
             paras[align] = definition("paraProperties", "paraPr", node)
         border_cache = {}
+        bin_items = {}  # 그림 번호 → (manifest id, 파일 이름, 자료)
+        def bin_item(index):
+            if index not in bin_items:
+                image = images[index]
+                ident = f"sketchimg{len(bin_items)+1}"
+                bin_items[index] = (ident, f"BinData/{ident}.{image['kind']}", base64.b64decode(image["data"]), image["kind"])
+            return bin_items[index][0]
         def border_id(cell):
-            key = repr((cell["borders"], cell.get("border_styles"), cell["diagonal"],cell.get("diagonal_styles")))
+            key = repr((cell["borders"], cell.get("border_styles"), cell["diagonal"],cell.get("diagonal_styles"), cell.get("image")))
             if key in border_cache: return border_cache[key]
             parent = refs.find(HH+"borderFills")
             node = parent.makeelement(HH+"borderFill", dict(threeD="0",shadow="0",centerLine="NONE",breakCellSeparateLine="0"))
@@ -256,6 +313,10 @@ def to_hwpx(sketch, path):
                 _add(node, HH+side+"Border", **line_attrs(cell["borders"][side],cell.get("border_styles",{}).get(side,"solid")))
             diag = max(cell.get("diagonal_styles",{}).values(), key=lambda v:("thin","thick","double").index(v[0]), default=("thin","solid"))
             _add(node, HH+"diagonal", **line_attrs(*diag))
+            if cell.get("image") is not None:
+                # 칸 배경 그림: 크기에 맞추어(TOTAL) 채운다 — 한/글 '셀 테두리/배경 > 그림'과 같다.
+                brush = _add(_add(node, HC+"fillBrush"), HC+"imgBrush", mode="TOTAL")
+                _add(brush, HC+"img", binaryItemIDRef=bin_item(cell["image"]), bright="0", contrast="0", effect="REAL_PIC", alpha="0")
             border_cache[key] = definition("borderFills", "borderFill", node)
             return border_cache[key]
         invisible = border_id(dict(borders={s:"none" for s in ("top","bottom","left","right")}, diagonal="none"))
@@ -297,6 +358,14 @@ def to_hwpx(sketch, path):
                     data = ET.tostring(section,encoding="utf-8",xml_declaration=True)
                 elif info.filename == "Contents/header.xml":
                     data = ET.tostring(header,encoding="utf-8",xml_declaration=True)
+                elif info.filename == "Contents/content.hpf" and bin_items:
+                    manifest = archive.read(info.filename).decode("utf-8")
+                    entries = "".join(
+                        f'<opf:item id="{ident}" href="{name}" media-type="image/{"png" if kind == "png" else "jpg"}" isEmbeded="1"/>'
+                        for ident, name, _data, kind in bin_items.values())
+                    if "</opf:manifest>" not in manifest:
+                        raise ValueError("문서 목록(content.hpf)을 찾지 못했습니다.")
+                    data = manifest.replace("</opf:manifest>", entries + "</opf:manifest>", 1).encode("utf-8")
                 elif info.filename in catalog._section_names(archive):
                     other = ET.fromstring(archive.read(info.filename))
                     prop = catalog._section_properties_paragraph(other)
@@ -304,4 +373,6 @@ def to_hwpx(sketch, path):
                     data = ET.tostring(other,encoding="utf-8",xml_declaration=True)
                 else: data = archive.read(info.filename)
                 output.writestr(info,data)
+            for _ident, name, data, _kind in bin_items.values():
+                output.writestr(name, data)
     return target

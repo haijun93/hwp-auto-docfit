@@ -337,3 +337,79 @@ double _distanceToSegment(Offset p, Offset a, Offset b) {
   final t = ((ap.dx * ab.dx + ap.dy * ab.dy) / len2).clamp(0.0, 1.0);
   return (p - Offset(a.dx + t * ab.dx, a.dy + t * ab.dy)).distance;
 }
+
+/// 격자 칸 (x, y)가 든 표 칸(선으로 둘러싸인 영역)의 사각형(격자 단위).
+/// 선이 끊겨 종이 끝까지 열려 있으면 표 칸이 아니므로 null.
+Rect? cellRegion(TableSketchDoc doc, int x, int y) {
+  final cols = doc.grid.cols, rows = doc.grid.rows;
+  if (x < 0 || y < 0 || x >= cols || y >= rows) return null;
+  final horizontal = <(int, int)>{}; // (x, y): (x,y)-(x+1,y) 가로 칸 경계
+  final vertical = <(int, int)>{}; // (x, y): (x,y)-(x,y+1) 세로 칸 경계
+  for (final line in doc.lines) {
+    if (!line.isValid) continue;
+    if (line.y1 == line.y2) {
+      for (
+        var k = math.min(line.x1, line.x2);
+        k < math.max(line.x1, line.x2);
+        k++
+      ) {
+        horizontal.add((k, line.y1));
+      }
+    } else if (line.x1 == line.x2) {
+      for (
+        var k = math.min(line.y1, line.y2);
+        k < math.max(line.y1, line.y2);
+        k++
+      ) {
+        vertical.add((line.x1, k));
+      }
+    }
+  }
+  final seen = <(int, int)>{(x, y)};
+  final queue = <(int, int)>[(x, y)];
+  var minX = x, maxX = x, minY = y, maxY = y;
+  while (queue.isNotEmpty) {
+    final (cx, cy) = queue.removeLast();
+    minX = math.min(minX, cx);
+    maxX = math.max(maxX, cx);
+    minY = math.min(minY, cy);
+    maxY = math.max(maxY, cy);
+    for (final (nx, ny, blocked) in [
+      (cx - 1, cy, vertical.contains((cx, cy))),
+      (cx + 1, cy, vertical.contains((cx + 1, cy))),
+      (cx, cy - 1, horizontal.contains((cx, cy))),
+      (cx, cy + 1, horizontal.contains((cx, cy + 1))),
+    ]) {
+      if (blocked) continue;
+      if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) return null; // 열린 영역
+      if (seen.add((nx, ny))) queue.add((nx, ny));
+    }
+  }
+  return Rect.fromLTRB(
+    minX.toDouble(),
+    minY.toDouble(),
+    maxX + 1.0,
+    maxY + 1.0,
+  );
+}
+
+/// 칸 배경 그림을 넣는다: 같은 칸에 있던 그림은 바꾼다. 표 칸이 아니면 false.
+bool setCellImage(TableSketchDoc doc, int x, int y, String data) {
+  final region = cellRegion(doc, x, y);
+  if (region == null) return false;
+  removeCellImage(doc, x, y);
+  doc.images.add(SketchImage(x: x, y: y, data: data));
+  return true;
+}
+
+/// (x, y)가 든 칸의 배경 그림을 지운다. 지운 것이 있으면 true.
+bool removeCellImage(TableSketchDoc doc, int x, int y) {
+  final region = cellRegion(doc, x, y);
+  final before = doc.images.length;
+  doc.images.removeWhere(
+    (image) => region == null
+        ? image.x == x && image.y == y
+        : region.contains(Offset(image.x + .5, image.y + .5)),
+  );
+  return doc.images.length != before;
+}

@@ -124,6 +124,17 @@ class _IntegratedHome extends StatefulWidget {
 
 class _IntegratedHomeState extends State<_IntegratedHome> {
   final workspace = GlobalKey<_WorkspaceState>();
+  int lastTab = 0;
+
+  /// 표그림판 탭에서는 끌어 놓은 사진을 칸 배경 그림으로 받고, 나가면 문서 목록으로 되돌린다.
+  void routeDrops(int index) {
+    if (index == 2) {
+      unawaited(widget.api('set_drop_target', ['sketch_image']).catchError((_) => null));
+    } else if (lastTab == 2 && index != 5) {
+      unawaited(widget.api('set_drop_target', ['documents']).catchError((_) => null));
+    }
+    lastTab = index;
+  }
 
   @override
   Widget build(BuildContext context) => IntegratedWorkspace(
@@ -133,6 +144,7 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
       onPickFiles: () => workspace.currentState?.addConversionFiles(),
     ),
     onTabChanged: (index) {
+      routeDrops(index);
       if (index == 5) workspace.currentState?.enterConversionMode();
     },
   );

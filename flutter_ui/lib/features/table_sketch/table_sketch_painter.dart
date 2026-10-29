@@ -1,4 +1,6 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'table_sketch_models.dart';
 
@@ -98,6 +100,8 @@ class TableSketchPainter extends CustomPainter {
     this.selectedTexts = const {},
     this.lassoPath,
     this.marquee = false,
+    this.cellImages = const [],
+    this.imageTarget,
     this.previewLine,
     this.previewRect,
   });
@@ -110,6 +114,12 @@ class TableSketchPainter extends CustomPainter {
   /// 올가미(자유 곡선) 또는 선택 상자([시작, 현재]) 경로, 화면 좌표.
   final List<Offset>? lassoPath;
   final bool marquee;
+
+  /// 칸 배경 그림: (칸 사각형(격자 단위), 그림). 칸 크기에 맞춰 늘려 채운다.
+  final List<(Rect, ui.Image)> cellImages;
+
+  /// '칸 그림' 도구로 고른 칸(격자 단위).
+  final Rect? imageTarget;
   final SketchLine? previewLine;
   final Rect? previewRect;
 
@@ -121,6 +131,39 @@ class TableSketchPainter extends CustomPainter {
 
     // 2. 바둑판 점선 격자 (연회색 점선)
     _drawGrid(canvas, size);
+
+    // 2-1. 칸 배경 그림(선 아래)
+    for (final (region, image) in cellImages) {
+      final dst = Rect.fromLTRB(
+        region.left * cellSize,
+        region.top * cellSize,
+        region.right * cellSize,
+        region.bottom * cellSize,
+      );
+      canvas.drawImageRect(
+        image,
+        Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
+        dst,
+        Paint()..filterQuality = FilterQuality.medium,
+      );
+    }
+    final target = imageTarget;
+    if (target != null) {
+      final r = Rect.fromLTRB(
+        target.left * cellSize,
+        target.top * cellSize,
+        target.right * cellSize,
+        target.bottom * cellSize,
+      );
+      canvas.drawRect(r, Paint()..color = const Color(0x2216A34A));
+      canvas.drawRect(
+        r.deflate(1),
+        Paint()
+          ..color = const Color(0xFF16A34A)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2,
+      );
+    }
 
     // 3. 기존에 그려진 선들
     for (int i = 0; i < doc.lines.length; i++) {

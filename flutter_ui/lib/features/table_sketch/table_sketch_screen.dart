@@ -8,10 +8,23 @@ import 'package:flutter/services.dart';
 import '../../core/api/abbreviation_api.dart' show ApiCall;
 import 'table_sketch_api.dart';
 import 'table_sketch_models.dart';
+import 'dart:convert';
+import 'dart:ui' as ui;
+
+import '../../core/drop_events.dart';
 import 'table_sketch_painter.dart';
 import 'table_sketch_selection.dart';
 
-enum SketchToolMode { line, rect, eraser, preciseEraser, text, select, lasso }
+enum SketchToolMode {
+  line,
+  rect,
+  eraser,
+  preciseEraser,
+  text,
+  select,
+  lasso,
+  cellImage,
+}
 
 /// 표그림판 화면: 점선 격자 용지에 직선을 그려 한/글 표로 변환 및 복사.
 class TableSketchScreen extends StatefulWidget {
@@ -50,6 +63,13 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
   // 6탭 화면에서는 다른 탭이 먼저 자동 초점을 가져가 단축키(Ctrl+Z·Delete·Ctrl+C/V/D·방향키)가
   // 먹지 않았다 — 캔버스를 누르면 이 화면이 초점을 가져온다(2026-10-30 실제 앱 시험).
   final FocusNode _keyboardFocus = FocusNode(debugLabel: 'tableSketch');
+
+  // 칸 배경 그림: '칸 그림' 도구로 고른 칸, 풀어 둔 그림, 끌어 놓기 알림 해제 함수.
+  (int, int)? _imageTarget;
+  final Map<String, ui.Image> _decoded = {};
+  final Set<String> _decoding = {};
+  void Function()? _stopImageDrops;
+  final GlobalKey _canvasKey = GlobalKey(debugLabel: 'sketchCanvasArea');
   Offset? _dragStart;
   Offset? _dragCurrent;
   SketchLine? _previewLine;
@@ -77,6 +97,10 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
     super.initState();
     _sketchApi = TableSketchApi(widget.api);
     _doc = TableSketchDoc();
+    _stopImageDrops = watchWindowEvent(
+      'docfit-sketch-image-dropped',
+      () => unawaited(takeDroppedImage()),
+    );
     _requestPreview();
   }
 
@@ -88,6 +112,10 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
   void dispose() {
     _previewDebounceTimer?.cancel();
     _keyboardFocus.dispose();
+    _stopImageDrops?.call();
+    for (final image in _decoded.values) {
+      image.dispose();
+    }
     _saveNameController.dispose();
     _vScroll.dispose();
     _hScroll.dispose();
@@ -474,6 +502,8 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
       _eraseLineAt(pos);
     } else if (_tool == SketchToolMode.preciseEraser) {
       _erasePrecisionAt(pos);
+    } else if (_tool == SketchToolMode.cellImage) {
+      _pickImageCell(pos);
     }
   }
 
@@ -969,9 +999,8 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
   Widget build(BuildContext context) {
     return CallbackShortcuts(
       bindings: {
-        const SingleActivator(LogicalKeyboardKey.delete): _deleteSelectedLine,
-        const SingleActivator(LogicalKeyboardKey.backspace):
-            _deleteSelectedLine,
+        const SingleActivator(LogicalKeyboardKey.delete): _deleteKey,
+        const SingleActivator(LogicalKeyboardKey.backspace): _deleteKey,
         const SingleActivator(LogicalKeyboardKey.keyA, control: true):
             _selectAll,
         const SingleActivator(LogicalKeyboardKey.keyC, control: true):
@@ -979,7 +1008,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
         const SingleActivator(LogicalKeyboardKey.keyX, control: true):
             _cutSelection,
         const SingleActivator(LogicalKeyboardKey.keyV, control: true):
-            _pasteClipboard,
+            _pasteKey,
         const SingleActivator(LogicalKeyboardKey.keyD, control: true):
             _duplicateSelection,
         const SingleActivator(LogicalKeyboardKey.arrowLeft): () =>
@@ -1172,6 +1201,13 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
               label: '올가미',
               tooltip: '올가미 선택 (자유롭게 둘러 고르기, Shift로 더하기)',
             ),
+            _toolButton(
+              key: const Key('toolCellImage'),
+              mode: SketchToolMode.cellImage,
+              icon: Icons.image_outlined,
+              label: '칸 그림',
+              tooltip: '칸 배경 그림 (칸을 누르고 Ctrl+V, 또는 사진을 칸에 끌어 놓기)',
+            ),
             const SizedBox(width: 8),
             Container(width: 1, height: 24, color: const Color(0xFFCBD5E1)),
             const SizedBox(width: 8),
@@ -1236,6 +1272,185 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
     );
   }
 
+  // --- 칸 배경 그림 ---
+
+  String _imageKey(String data) => '${data.length}:${data.hashCode}';
+
+  List<(Rect, ui.Image)> _cellImagesToPaint() {
+    final out = <(Rect, ui.Image)>[];
+    for (final image in _doc.images) {
+      final region = cellRegion(_doc, image.x, image.y);
+      if (region == null) continue;
+      final key = _imageKey(image.data);
+      final decoded = _decoded[key];
+      if (decoded != null) {
+        out.add((region, decoded));
+      } else if (_decoding.add(key)) {
+        unawaited(_decode(key, image.data));
+      }
+    }
+    return out;
+  }
+
+  Future<void> _decode(String key, String data) async {
+    try {
+      final raw = data.startsWith('data:') ? data.split(',').last : data;
+      final codec = await ui.instantiateImageCodec(base64Decode(raw));
+      final frame = await codec.getNextFrame();
+      if (!mounted) {
+        frame.image.dispose();
+        return;
+      }
+      setState(() => _decoded[key] = frame.image);
+    } catch (_) {
+      // 풀 수 없는 그림은 칸에 그리지 않는다(표 변환 쪽에서 제외 안내).
+    }
+  }
+
+  Rect? _imageTargetRegion() {
+    final target = _imageTarget;
+    return target == null ? null : cellRegion(_doc, target.$1, target.$2);
+  }
+
+  void _notice(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _pickImageCell(Offset pos) {
+    final x = (pos.dx / _cellSize).floor(), y = (pos.dy / _cellSize).floor();
+    if (cellRegion(_doc, x, y) == null) {
+      setState(() => _imageTarget = null);
+      _notice('선으로 둘러싸인 표 칸을 눌러 주세요.');
+      return;
+    }
+    setState(() => _imageTarget = (x, y));
+  }
+
+  /// 그림을 칸에 넣는다(되돌리기 가능). 표 칸이 아니면 안내.
+  bool _applyCellImage(int x, int y, String data) {
+    if (cellRegion(_doc, x, y) == null) {
+      _notice('사진은 선으로 둘러싸인 표 칸 안에 놓아 주세요.');
+      return false;
+    }
+    _saveSnapshot();
+    setState(() {
+      setCellImage(_doc, x, y, data);
+      _imageTarget = (x, y);
+    });
+    _triggerPreviewDebounced();
+    return true;
+  }
+
+  /// 창에 끌어 놓은 사진을 가져와 놓은 자리의 칸에 넣는다.
+  Future<void> takeDroppedImage() async {
+    final result = await widget.api('table_sketch', ['take_drop']);
+    if (!mounted || result is! Map || result['data'] is! String) return;
+    final box = _canvasKey.currentContext?.findRenderObject() as RenderBox?;
+    final cx = result['client_x'], cy = result['client_y'];
+    if (box == null || cx is! num || cy is! num) {
+      final target = _imageTarget;
+      if (target != null) {
+        _applyCellImage(target.$1, target.$2, result['data'] as String);
+      } else {
+        _notice('사진을 표 칸 위에 놓아 주세요.');
+      }
+      return;
+    }
+    final local = box.globalToLocal(Offset(cx.toDouble(), cy.toDouble()));
+    applyDroppedImageAt(local, result['data'] as String);
+  }
+
+  /// 캔버스 좌표에 놓인 사진을 그 칸에 넣는다(시험에서도 쓴다).
+  bool applyDroppedImageAt(Offset local, String data) {
+    final x = (local.dx / _cellSize).floor(),
+        y = (local.dy / _cellSize).floor();
+    if (_tool != SketchToolMode.cellImage) {
+      setState(() => _tool = SketchToolMode.cellImage);
+    }
+    return _applyCellImage(x, y, data);
+  }
+
+  Future<void> _pasteClipboardImage() async {
+    final target = _imageTarget;
+    if (target == null) {
+      _notice('그림을 넣을 표 칸을 먼저 눌러 주세요.');
+      return;
+    }
+    final result = await widget.api('table_sketch', ['clipboard_image']);
+    if (!mounted) return;
+    if (result is Map && result['data'] is String) {
+      _applyCellImage(target.$1, target.$2, result['data'] as String);
+    } else {
+      _notice(
+        result is Map && result['message'] is String
+            ? result['message'] as String
+            : '클립보드 사진을 읽지 못했습니다.',
+      );
+    }
+  }
+
+  void _removeTargetImage() {
+    final target = _imageTarget;
+    if (target == null) return;
+    final trial = _doc.clone();
+    if (!removeCellImage(trial, target.$1, target.$2)) {
+      _notice('이 칸에는 배경 그림이 없습니다.');
+      return;
+    }
+    _saveSnapshot();
+    setState(() => removeCellImage(_doc, target.$1, target.$2));
+    _triggerPreviewDebounced();
+  }
+
+  void _deleteKey() {
+    if (_tool == SketchToolMode.cellImage) {
+      _removeTargetImage();
+    } else {
+      _deleteSelectedLine();
+    }
+  }
+
+  void _pasteKey() {
+    if (_tool == SketchToolMode.cellImage) {
+      unawaited(_pasteClipboardImage());
+    } else {
+      _pasteClipboard();
+    }
+  }
+
+  Widget _cellImageBar() => Row(
+    children: [
+      Text(
+        _imageTarget == null ? '칸을 고르세요' : '고른 칸',
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF15803D),
+        ),
+      ),
+      _selectionAction(
+        Icons.content_paste_go_rounded,
+        '클립보드 사진 넣기 (Ctrl+V)',
+        () => unawaited(_pasteClipboardImage()),
+        const Key('sketchPasteImage'),
+      ),
+      _selectionAction(
+        Icons.hide_image_outlined,
+        '칸 그림 지우기 (Delete)',
+        _removeTargetImage,
+        const Key('sketchRemoveImage'),
+      ),
+      const SizedBox(width: 12),
+      const Text(
+        '사진을 표 칸 위에 끌어 놓으면 바로 그 칸 배경으로 들어가요(칸 크기에 맞춤).',
+        style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+      ),
+    ],
+  );
+
   /// 고른 개체가 있거나 복사해 둔 것이 있을 때만 나타나는 줄(도구 모음이 길어 오른쪽 끝이 가려지지 않게).
   Widget _buildSelectionBar() {
     return Container(
@@ -1249,55 +1464,60 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
       ),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            if (_sel.isNotEmpty) ...[
-              Text(
-                '${_sel.count}개 선택',
-                key: const Key('sketchSelectionCount'),
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF1D4ED8),
-                ),
+        child: _tool == SketchToolMode.cellImage
+            ? _cellImageBar()
+            : Row(
+                children: [
+                  if (_sel.isNotEmpty) ...[
+                    Text(
+                      '${_sel.count}개 선택',
+                      key: const Key('sketchSelectionCount'),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF1D4ED8),
+                      ),
+                    ),
+                    _selectionAction(
+                      Icons.copy_rounded,
+                      '복사 (Ctrl+C)',
+                      _copySelection,
+                      const Key('sketchCopy'),
+                    ),
+                    _selectionAction(
+                      Icons.control_point_duplicate_rounded,
+                      '복제 (Ctrl+D)',
+                      _duplicateSelection,
+                      const Key('sketchDuplicate'),
+                    ),
+                    _selectionAction(
+                      Icons.delete_outline_rounded,
+                      '삭제 (Delete)',
+                      _deleteSelectedLine,
+                      const Key('sketchDeleteSelection'),
+                    ),
+                  ],
+                  if (_clipboard != null)
+                    _selectionAction(
+                      Icons.content_paste_rounded,
+                      '붙여넣기 (Ctrl+V)',
+                      _pasteClipboard,
+                      const Key('sketchPaste'),
+                    ),
+                  const SizedBox(width: 12),
+                  Text(
+                    _sel.isEmpty
+                        ? (_clipboard == null
+                              ? '선택·올가미로 여러 개를 고르면 함께 옮기기·복사·삭제할 수 있어요'
+                              : 'Ctrl+V로 붙여넣기')
+                        : '끌어서 옮기기 · 방향키로 한 칸 · Shift로 더 고르기',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF64748B),
+                    ),
+                  ),
+                ],
               ),
-              _selectionAction(
-                Icons.copy_rounded,
-                '복사 (Ctrl+C)',
-                _copySelection,
-                const Key('sketchCopy'),
-              ),
-              _selectionAction(
-                Icons.control_point_duplicate_rounded,
-                '복제 (Ctrl+D)',
-                _duplicateSelection,
-                const Key('sketchDuplicate'),
-              ),
-              _selectionAction(
-                Icons.delete_outline_rounded,
-                '삭제 (Delete)',
-                _deleteSelectedLine,
-                const Key('sketchDeleteSelection'),
-              ),
-            ],
-            if (_clipboard != null)
-              _selectionAction(
-                Icons.content_paste_rounded,
-                '붙여넣기 (Ctrl+V)',
-                _pasteClipboard,
-                const Key('sketchPaste'),
-              ),
-            const SizedBox(width: 12),
-            Text(
-              _sel.isEmpty
-                  ? (_clipboard == null
-                        ? '선택·올가미로 여러 개를 고르면 함께 옮기기·복사·삭제할 수 있어요'
-                        : 'Ctrl+V로 붙여넣기')
-                  : '끌어서 옮기기 · 방향키로 한 칸 · Shift로 더 고르기',
-              style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -1463,6 +1683,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Listener(
+                        key: _canvasKey,
                         // 누름·이동·뗌을 직접 받아 뗀 위치를 끝점으로 쓴다(한 번에 멀리 옮겨도 선이 그려지게).
                         behavior: HitTestBehavior.opaque,
                         onPointerDown: (e) {
@@ -1505,6 +1726,10 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
                               selectedTexts: _sel.texts,
                               lassoPath: _lassoPath,
                               marquee: _tool == SketchToolMode.select,
+                              cellImages: _cellImagesToPaint(),
+                              imageTarget: _tool == SketchToolMode.cellImage
+                                  ? _imageTargetRegion()
+                                  : null,
                               previewLine: _previewLine,
                               previewRect: _previewRect,
                             ),

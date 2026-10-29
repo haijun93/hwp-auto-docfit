@@ -177,18 +177,42 @@ class SketchText {
   );
 }
 
+/// 표 칸 배경 그림: (x, y)는 그림이 든 칸 안의 한 격자 칸, data는 PNG/JPG base64.
+/// 그림은 그 칸(선으로 둘러싸인 영역) 크기에 맞춰 늘려 채운다(한/글 '크기에 맞추어').
+class SketchImage {
+  const SketchImage({required this.x, required this.y, required this.data});
+
+  final int x;
+  final int y;
+  final String data;
+
+  factory SketchImage.fromJson(Map<dynamic, dynamic> json) => SketchImage(
+    x: (json['x'] as num?)?.toInt() ?? 0,
+    y: (json['y'] as num?)?.toInt() ?? 0,
+    data: '${json['data'] ?? ''}',
+  );
+
+  Map<String, dynamic> toJson() => {'x': x, 'y': y, 'data': data};
+
+  SketchImage copyWith({int? x, int? y}) =>
+      SketchImage(x: x ?? this.x, y: y ?? this.y, data: data);
+}
+
 /// 표그림판 문서 전체 데이터.
 class TableSketchDoc {
   TableSketchDoc({
     this.grid = const GridConfig(),
     List<SketchLine>? lines,
     List<SketchText>? texts,
+    List<SketchImage>? images,
   }) : lines = lines ?? <SketchLine>[],
-       texts = texts ?? <SketchText>[];
+       texts = texts ?? <SketchText>[],
+       images = images ?? <SketchImage>[];
 
   GridConfig grid;
   List<SketchLine> lines;
   List<SketchText> texts;
+  List<SketchImage> images;
 
   /// 겹친 선을 포함하여 해당 한 격자 구간을 모두 지운다.
   bool eraseUnitSegment(int sx1, int sy1, int sx2, int sy2) {
@@ -207,6 +231,7 @@ class TableSketchDoc {
     grid: grid,
     lines: lines.map((l) => l.copyWith()).toList(),
     texts: texts.map((t) => t.copyWith()).toList(),
+    images: List.of(images),
   );
 
   factory TableSketchDoc.fromJson(Map<dynamic, dynamic> json) {
@@ -224,10 +249,18 @@ class TableSketchDoc {
         if (item is Map) texts.add(SketchText.fromJson(item));
       }
     }
+    final rawImages = json['images'];
+    final images = <SketchImage>[];
+    if (rawImages is List) {
+      for (final item in rawImages) {
+        if (item is Map) images.add(SketchImage.fromJson(item));
+      }
+    }
     return TableSketchDoc(
       grid: GridConfig.fromJson(json['grid'] as Map?),
       lines: lines,
       texts: texts,
+      images: images,
     );
   }
 
@@ -235,6 +268,7 @@ class TableSketchDoc {
     'grid': grid.toJson(),
     'lines': lines.map((l) => l.toJson()).toList(),
     'texts': texts.map((t) => t.toJson()).toList(),
+    if (images.isNotEmpty) 'images': images.map((i) => i.toJson()).toList(),
   };
 
   /// 선 추가 (동일 좌표 선이 있으면 교체).
