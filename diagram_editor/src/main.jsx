@@ -351,7 +351,7 @@ function App(){
   const made=edge(source.id,target.id,'',id(),s,t,{...EDGE_DEFAULT,autoSide:true});
   return {...made,...extra};
  };
- const restyle=patch=>changeMindmap(restyleNodes(mindmap,mmSelected,mmScope,patch));
+ const restyle=patch=>changeMindmap(restyleNodes(current.current.mindmap??mindmap,mmSelected,mmScope,patch));
  const switchMode=next=>{
   if(!AVAILABLE_MODES.has(next)){
    setStatus(next==='catalog'?'표 서식 모음은 현재 알파 버전에서 비활성화되어 있습니다.':'조직표와 장식표는 현재 알파 버전에서 사용할 수 없습니다.');
@@ -622,7 +622,7 @@ function App(){
    </aside>}
    {mode==='mindmap'&&mindmap&&<aside><h2>마인드맵</h2>
     <Select label="배치" value={mindmap.layout} options={[['both','가운데에서 좌우로'],['right','오른쪽으로'],['down','위에서 아래로(조직도형)']]} onChange={layout=>{changeMindmap(autoLayoutMindmap(mindmap,layout));fit();}}/>
-    {(()=>{const th=themeOf(mindmap),setTheme=patch=>changeMindmap({...mindmap,theme:{...th,...patch}});return <fieldset className="text-style mm-theme" aria-label="지도 테마"><legend>지도 테마</legend>
+    {(()=>{const th=themeOf(mindmap),setTheme=patch=>{const m=current.current.mindmap??mindmap;changeMindmap({...m,theme:{...themeOf(m),...patch}});};return <fieldset className="text-style mm-theme" aria-label="지도 테마"><legend>지도 테마</legend>
      <small>지도 전체에 한 번에 적용해요(가지마다 따로 고친 서식은 그대로).</small>
      <div className="mm-theme-row" role="radiogroup" aria-label="테마 모양">{MINDMAP_THEME_SHAPES.map(([key,label])=>
       <button key={key} role="radio" aria-checked={th.shape===key} className={th.shape===key?'active':''} onClick={()=>setTheme({shape:key})}>
