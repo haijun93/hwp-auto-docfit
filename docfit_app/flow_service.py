@@ -12,7 +12,8 @@ from docfit_app.api_contract import ServiceError
 
 
 _ID = re.compile(r"^[a-f0-9]{32}$")
-_MAX_SNAPSHOT_BYTES = 700 * 1024
+# 그림판은 배경 사진(긴 변 2000px)을 문서에 담으므로 넉넉하게(2026-10-30).
+_MAX_SNAPSHOT_BYTES = 24 * 1024 * 1024
 
 
 class FlowService:

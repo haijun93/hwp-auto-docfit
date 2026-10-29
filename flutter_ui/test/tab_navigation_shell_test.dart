@@ -15,10 +15,11 @@ void main() {
           diagram: const _Canvas(),
           mindMap: const _Canvas(),
           fileConversion: const _Canvas(),
+          paint: const _Canvas(),
         ),
       ),
     );
-    const labels = ['문서편집', '표템플릿', '표그림판', '다이어그램', '마인드맵', '파일변환'];
+    const labels = ['문서편집', '표템플릿', '표그림판', '다이어그램', '마인드맵', '파일변환', '그림판'];
     for (final label in labels) {
       await tester.tap(find.text(label));
       await tester.pumpAndSettle();

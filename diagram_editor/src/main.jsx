@@ -2,6 +2,7 @@ import React,{useRef,useState,useEffect,createContext,useContext} from 'react';
 import {createRoot} from 'react-dom/client';
 import {ReactFlow,ReactFlowProvider,Background,Controls,MiniMap,Handle,Position,ConnectionMode,applyNodeChanges,applyEdgeChanges,NodeResizer,BaseEdge,useReactFlow,ViewportPortal,reconnectEdge} from '@xyflow/react';
 import {autoRoute,nodeAt,facingSides,smartGuides} from './magnet.js';
+import {freehandNode,freehandPath,withBackground,withoutBackground,fitSize,paintStyle,BACKGROUND_ID} from './paint.js';
 import '@xyflow/react/dist/style.css';
 import './style.css';
 import {FORMAT,PALETTE,templates,template,node,edge,id,decode,validate,svg,layoutGraph,computeNodeAutoFitBox,edgeLabelBox,LINE_HEIGHT,nodeFont,nodePaint,edgePath,EDGE_DEFAULT} from './model.js';
@@ -14,7 +15,7 @@ import {FONTS,registerFonts,ARROWS,DOWN_ARROWS,FLOW_PRESETS,MAX_FLOW_STEPS,MAX_F
  isTaskTable,isFixedCalloutCategory,resizeTaskGrid} from './table.js';
 
 const TITLE='다이어그램·마인드맵';
-const newName=mode=>'새 '+(mode==='mindmap'?'마인드맵':'다이어그램');
+const newName=mode=>'새 '+(mode==='mindmap'?'마인드맵':mode==='paint'?'그림':'다이어그램');
 function send(message){
  const host=window.chrome?.webview;
  if(window.parent!==window)window.parent.postMessage(message,window.location.origin);
@@ -42,6 +43,11 @@ function FlowNode({id:nodeId,data,selected,width,height}){
  const resizeStart=useContext(HistoryContext);
  const w=width??220,h=height??90,inset=Math.max(1,p.width/2+1),line=LINE_SHAPES.has(data.shape);
  const key='n'+safeId(nodeId);
+ if(data.shape==='image')return <>{!data.background&&<NodeResizer onResizeStart={resizeStart} isVisible={selected} minWidth={20} minHeight={20} keepAspectRatio/>}
+  <div className="node-body shape-image" style={{width:w,height:h}}><img src={data.src} alt="" draggable={false} style={{width:'100%',height:'100%',display:'block',pointerEvents:'none'}}/></div></>;
+ if(data.shape==='freehand')return <><NodeResizer onResizeStart={resizeStart} isVisible={selected} minWidth={8} minHeight={8}/>
+  <div className="node-body shape-freehand" style={{width:w,height:h}}><svg className="shape-svg" width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden="true">
+   <path d={freehandPath(data.points,0,0,w,h)} fill="none" stroke={p.stroke==='none'?'#111827':p.stroke} strokeWidth={p.width} strokeDasharray={p.dash||undefined} strokeLinecap="round" strokeLinejoin="round"/></svg></div></>;
  const start=data.lineStart??p.startDefault,end=p.end;
  return <><NodeResizer onResizeStart={resizeStart} isVisible={selected} minWidth={line?20:40} minHeight={line?10:30}/>
   {Object.entries(Position).map(([k,value])=><Handle key={k} id={value} type="source" position={value}/>)}
@@ -232,7 +238,7 @@ function BarTableView({table,onChange}){
 }
 
 const TABLE_KINDS=['flow','grid'];
-const AVAILABLE_MODES=new Set(['diagram','mindmap']);
+const AVAILABLE_MODES=new Set(['diagram','mindmap','paint']);
 const ROLE_SETS={flow:['step','date','arrow'],grid:['head','body']};
 const BORDER_PARTS={flow:['line','split'],grid:['outer','inner']};
 const newTables=()=>({flow:flowTable(5),grid:gridTable(4,4)});
@@ -287,6 +293,51 @@ function App(){
  const mindmap=graph.mindmap??null;
  const changeMindmap=(next,select)=>{commit({...current.current,mindmap:next});if(select!==undefined)setMmSelected(select);};
  const [mmScope,setMmScope]=useState('one');
+ // 그림판: 도구(선택·펜), 펜·도형 색과 굵기, 그리는 중인 펜 선(화면 좌표)
+ const drawable=mode==='diagram'||mode==='paint';
+ const [paintTool,setPaintTool]=useState('select'),[penColor,setPenColor]=useState('#DC2626'),[penWidth,setPenWidth]=useState(3);
+ const [penLive,setPenLive]=useState(null);const penPoints=useRef([]);
+ const setBackgroundFromFile=file=>{
+  if(!file||!/^image\//.test(file.type)){setStatus('그림 파일(PNG·JPG 등)을 놓아 주세요.');return;}
+  if(file.size>40*1024*1024){setStatus('40MB보다 큰 그림은 넣을 수 없습니다.');return;}
+  const reader=new FileReader();
+  reader.onload=()=>{const image=new Image();image.onload=()=>{
+   const {width,height}=fitSize(image.naturalWidth,image.naturalHeight,2000);
+   const c=document.createElement('canvas');c.width=width;c.height=height;c.getContext('2d').drawImage(image,0,0,width,height);
+   const src=file.type==='image/png'?c.toDataURL('image/png'):c.toDataURL('image/jpeg',.9);
+   commit({...current.current,nodes:withBackground(current.current.nodes,src,width,height)});
+   setStatus('배경 사진을 넣었어요. 펜·도형·글상자를 올려 보세요.');setTimeout(()=>flow.current?.fitView({padding:.05}),50);
+  };image.onerror=()=>setStatus('그림을 읽지 못했습니다.');image.src=reader.result;};
+  reader.readAsDataURL(file);
+ };
+ useEffect(()=>{
+  if(mode!=='paint')return;
+  // 사진을 창에 끌어 놓거나 Ctrl+V로 붙여 넣으면 배경으로(그림판 탭에서만).
+  const over=e=>{if([...(e.dataTransfer?.types??[])].includes('Files')){e.preventDefault();e.dataTransfer.dropEffect='copy';}};
+  const drop=e=>{const file=e.dataTransfer?.files?.[0];if(file){e.preventDefault();setBackgroundFromFile(file);}};
+  const paste=e=>{const item=[...(e.clipboardData?.items??[])].find(i=>i.type.startsWith('image/'));if(item){e.preventDefault();setBackgroundFromFile(item.getAsFile());}};
+  window.addEventListener('dragover',over);window.addEventListener('drop',drop);window.addEventListener('paste',paste);
+  return()=>{window.removeEventListener('dragover',over);window.removeEventListener('drop',drop);window.removeEventListener('paste',paste);};
+ });
+ const addPaint=shape=>{
+  const center=flow.current?.screenToFlowPosition({x:window.innerWidth/2,y:window.innerHeight/2})??{x:100,y:100};
+  let position={...center},tries=0;
+  // 이미 놓인 개체와 겹치지 않게 오른쪽 아래로 비켜 놓는다.
+  while(tries<30&&graph.nodes.some(n=>!n.data?.background&&position.x<n.position.x+n.width&&n.position.x<position.x+60&&position.y<n.position.y+n.height&&n.position.y<position.y+40)){position={x:position.x+50,y:position.y+60};tries++;}
+  const made=node(shape==='text'?'글 입력':'',position.x,position.y,shape,'blue',id(),paintStyle(shape,penColor,penWidth));
+  if(LINE_SHAPES.has(shape))Object.assign(made,shape==='vline'?{width:40,height:160}:shape==='diagonal'?{width:160,height:120}:{width:200,height:40});
+  if(shape==='text')Object.assign(made,{width:160,height:50});
+  commit({...graph,nodes:[...graph.nodes.map(n=>({...n,selected:false})),{...made,selected:true}]});
+  setPaintTool('select');
+ };
+ const penEvent=e=>{const r=e.currentTarget.getBoundingClientRect();return {screen:[e.clientX-r.left,e.clientY-r.top],flow:flow.current?.screenToFlowPosition({x:e.clientX,y:e.clientY})};};
+ const penDown=e=>{e.preventDefault();e.currentTarget.setPointerCapture?.(e.pointerId);const p=penEvent(e);penPoints.current=[p.flow];setPenLive([p.screen]);};
+ const penMove=e=>{if(!penLive)return;const p=penEvent(e);penPoints.current.push(p.flow);setPenLive(v=>[...(v??[]),p.screen]);};
+ const penUp=()=>{
+  const made=penPoints.current.length>1?freehandNode(penPoints.current,{stroke:penColor,strokeWidth:penWidth}):null;
+  penPoints.current=[];setPenLive(null);
+  if(made)commit({...current.current,nodes:[...current.current.nodes.map(n=>({...n,selected:false})),made]});
+ };
  const [guides,setGuides]=useState([]);
  // 자석: 놓은 곳 아래 도형(선 도형 제외)을 찾는다.
  const dropTarget=(event,skip)=>{
@@ -318,7 +369,7 @@ function App(){
  handle.current=async message=>{
   if(!message||typeof message!=='object')return;
   try{
-   switch(message.type){case 'set_mode':{if(message.mode==='diagram'||message.mode==='mindmap'){switchMode(message.mode);if(nameRef.current==='새 '+TITLE)setName(newName(message.mode));}break;}
+   switch(message.type){case 'set_mode':{if(message.mode==='diagram'||message.mode==='mindmap'||message.mode==='paint'){switchMode(message.mode);if(nameRef.current==='새 '+TITLE)setName(newName(message.mode));}break;}
     case 'new':tables.current=newTables();setMmSelected(null);replace({nodes:[],edges:[]},newName(mode),false);send({type:'document_new'});break;
     case 'mark_saved':
      if(Number.isInteger(message.generation))savedGeneration.current=Math.max(savedGeneration.current,message.generation);
@@ -417,9 +468,9 @@ function App(){
    if(ctrl&&k==='s'){e.preventDefault();send({type:'request_save'});}
    if(ctrl&&k==='z'){e.preventDefault();mode==='catalog'?undoCatalog(e.shiftKey):undo(e.shiftKey);}
    if(ctrl&&k==='y'){e.preventDefault();mode==='catalog'?undoCatalog(true):undo(true);}
-   if(mode==='diagram'&&ctrl&&k==='d'){e.preventDefault();duplicate();}
-   if(mode==='diagram'&&ctrl&&k==='c'){clipboard.current=structuredClone(current.current.nodes.filter(n=>n.selected));}
-   if(mode==='diagram'&&ctrl&&k==='v'&&clipboard.current?.length){e.preventDefault();
+   if(drawable&&ctrl&&k==='d'){e.preventDefault();duplicate();}
+   if(drawable&&ctrl&&k==='c'){clipboard.current=structuredClone(current.current.nodes.filter(n=>n.selected&&!n.data?.background));}
+   if(drawable&&ctrl&&k==='v'&&clipboard.current?.length){e.preventDefault();
     const copies=clipboard.current.map(n=>({...n,id:id(),position:{x:n.position.x+40,y:n.position.y+40},selected:true}));
     commit({...current.current,nodes:[...current.current.nodes.map(n=>({...n,selected:false})),...copies]});}
    if(mode==='mindmap'&&mindmap&&mmSelected){
@@ -511,7 +562,8 @@ function App(){
  const mmNode=mindmap&&mmSelected?findNode(mindmap,mmSelected)?.node:null;
  const shownNodes=mmGraph?mmGraph.nodes.map(n=>({...n,selected:n.id===mmSelected,draggable:true,connectable:true})):graph.nodes;
  const shownEdges=mmGraph?mmGraph.edges:graph.edges;
- const canvas=mode==='diagram'||mode==='mindmap';
+ const canvas=mode==='diagram'||mode==='mindmap'||mode==='paint';
+ const hasBackground=graph.nodes.some(n=>n.id===BACKGROUND_ID);
  const scopeLabel=CATALOG_SCOPES.find(([k])=>k===catalogScope)?.[1]??'선택 칸';
  return <HistoryContext.Provider value={checkpoint}><div className="editor-shell">
   <header>
@@ -545,6 +597,28 @@ function App(){
       const data={...(selectedEdge.data??EDGE_DEFAULT),autoSide:e.target.checked};let next={...graph,edges:graph.edges.map(v=>v.id===selectedEdge.id?{...v,data}:v)};
       next={...next,edges:autoRoute(next.nodes,next.edges)};commit(next);}}/> 자석 연결(도형을 옮기면 마주 보는 면으로 붙음)</label></>}
     <p>연결점을 끌어 도형 연결<br/>Shift+선택: 여러 도형<br/>Ctrl+C/V 복사·붙여넣기, Ctrl+D 복제<br/>Delete: 선택 삭제 · Ctrl+휠: 확대·축소</p>
+   </aside>}
+   {mode==='paint'&&<aside className="paint-aside">
+    <h2>그림판</h2>
+    <div className="tool-row" role="radiogroup" aria-label="그림판 도구">
+     <button role="radio" aria-checked={paintTool==='select'} className={paintTool==='select'?'active':''} onClick={()=>setPaintTool('select')}>↖ 선택·이동</button>
+     <button role="radio" aria-checked={paintTool==='pen'} className={paintTool==='pen'?'active':''} onClick={()=>setPaintTool('pen')}>✎ 펜</button></div>
+    <ColorRow label="펜·도형 색" value={penColor} onChange={c=>setPenColor(c==='none'?'#111827':c)}/>
+    <Select label="굵기" value={String(penWidth)} options={[['2','가늘게'],['3','보통'],['5','굵게'],['8','아주 굵게']]} onChange={v=>setPenWidth(Number(v))}/>
+    <h2>배경 사진</h2>
+    <label className="file-button">배경 사진 열기<input type="file" accept="image/*" aria-label="배경 사진 열기" onChange={e=>{setBackgroundFromFile(e.target.files?.[0]);e.target.value='';}}/></label>
+    <button disabled={!hasBackground} onClick={()=>commit({...current.current,nodes:withoutBackground(current.current.nodes)})}>배경 지우기</button>
+    <p>사진을 이 창에 끌어 놓거나 Ctrl+V로 붙여 넣어도 배경이 돼요. 배경은 맨 뒤에 고정돼요.</p>
+    <h2>넣기</h2>
+    <div className="shape-grid">{[['text','글상자'],['rectangle','사각형'],['roundRect','둥근 사각형'],['ellipse','타원'],['circle','원'],['arrowLine','화살표'],['line','직선'],['arrowRight','블록 화살표'],['star5','별'],['calloutRound','말풍선'],['triangle','삼각형'],['heart','하트']].map(([shape,label])=>
+     <button key={shape} title={label} aria-label={label+' 넣기'} onClick={()=>addPaint(shape)}><ShapeIcon shape={shape}/></button>)}</div>
+    <div className="tool-row"><button onClick={()=>undo()} title="실행 취소 (Ctrl+Z)">↶ 취소</button><button onClick={()=>undo(true)} title="다시 실행 (Ctrl+Y)">↷ 다시</button><button onClick={duplicate} title="복제 (Ctrl+D)">⧉ 복제</button></div>
+    {selected&&<><h2>선택 개체</h2>
+     {selected.data.shape!=='freehand'&&<label>글<textarea aria-label="개체 글" maxLength={2000} value={selected.data.label} onChange={e=>edit({label:e.target.value})}/></label>}
+     <div className="tool-row"><button onClick={()=>order(true)}>맨 앞으로</button><button onClick={()=>order(false)}>맨 뒤로</button></div>
+     <ShapeStyleControls data={selected.data} onChange={edit}/>
+     {selected.data.shape!=='freehand'&&<TextStyleControls label="글자" value={{font:selected.data.font,size:selected.data.size,bold:selected.data.bold,textColor:selected.data.textColor}} onChange={edit}/>}</>}
+    <p>모든 펜 선·도형·글상자는 따로 옮기고 크기·색을 바꿀 수 있어요.<br/>Delete: 지우기 · Ctrl+C/V 복사 · Ctrl+D 복제</p>
    </aside>}
    {mode==='mindmap'&&mindmap&&<aside><h2>마인드맵</h2>
     <Select label="배치" value={mindmap.layout} options={[['both','가운데에서 좌우로'],['right','오른쪽으로'],['down','위에서 아래로(조직도형)']]} onChange={layout=>{changeMindmap(autoLayoutMindmap(mindmap,layout));fit();}}/>
@@ -649,7 +723,7 @@ function App(){
        const next={...current.current,mindmap:map};current.current=next;setGraph(next);mark();
       }return;
      }
-     if(mode!=='diagram')return;
+     if(!drawable)return;
      // 스마트 가이드: 도형 하나를 끌 때 다른 도형의 가장자리·가운데에 맞춰 붙이고 빨간 점선을 보인다(PPT처럼).
      const moves=changes.filter(c=>c.type==='position'&&c.position);
      if(moves.length===1&&(moves[0].dragging||guides.length)){
@@ -668,8 +742,8 @@ function App(){
      const routed=autoRoute(next.nodes,next.edges);if(routed!==next.edges)next={...next,edges:routed};
      current.current=next;setGraph(next);if(edits.length)mark();
     }}
-    onEdgesChange={changes=>{if(mode!=='diagram')return;const next={...current.current,edges:applyEdgeChanges(changes,current.current.edges)};current.current=next;setGraph(next);if(changes.some(c=>c.type!=='select'))mark();}}
-    onNodeDragStart={()=>checkpoint()} onBeforeDelete={async()=>{if(mode!=='diagram')return false;checkpoint();return true;}}
+    onEdgesChange={changes=>{if(!drawable)return;const next={...current.current,edges:applyEdgeChanges(changes,current.current.edges)};current.current=next;setGraph(next);if(changes.some(c=>c.type!=='select'))mark();}}
+    onNodeDragStart={()=>checkpoint()} onBeforeDelete={async({nodes,edges})=>{if(!drawable)return false;checkpoint();return {nodes:nodes.filter(n=>!n.data?.background),edges};}}
     onConnect={connection=>{
      if(mode==='mindmap'){try{changeMindmap(reparentNode(positionMindmap(current.current.mindmap,{}),connection.target,connection.source,{sourceHandle:connection.sourceHandle,targetHandle:connection.targetHandle}));}catch(error){setStatus(error.message);}return;}
      // 새 연결선은 자석 연결: 두 도형이 마주 보는 면에 붙고, 도형을 옮기면 따라간다(연결선 설정에서 끌 수 있음).
@@ -680,18 +754,18 @@ function App(){
     connectionRadius={40}
     onConnectEnd={(event,state)=>{
      // 연결점이 아니라 도형 몸체에 놓아도 붙인다(draw.io처럼). 이후 도형을 옮기면 마주 보는 면으로 따라간다.
-     if(mode!=='diagram'||state?.isValid||!state?.fromNode)return;
+     if(!drawable||state?.isValid||!state?.fromNode)return;
      const target=dropTarget(event,[state.fromNode.id]);
      const source=current.current.nodes.find(n=>n.id===state.fromNode.id);
      if(!target||!source)return;
      commit({...current.current,edges:[...current.current.edges,magnetEdge(source,target)]});
     }}
-    edgesReconnectable={mode==='diagram'}
-    onReconnect={(old,connection)=>{if(mode!=='diagram')return;
+    edgesReconnectable={drawable}
+    onReconnect={(old,connection)=>{if(!drawable)return;
      const edges=reconnectEdge(old,connection,current.current.edges,{shouldReplaceId:false}).map(e=>e.id===old.id?{...e,data:{...(e.data??EDGE_DEFAULT),autoSide:false}}:e);
      commit({...current.current,edges});}}
     onReconnectEnd={(event,old,handleType,state)=>{
-     if(mode!=='diagram'||state?.isValid)return;
+     if(!drawable||state?.isValid)return;
      const fixed=handleType==='source'?old.target:old.source;
      const target=dropTarget(event,[fixed]);if(!target)return;
      const other=current.current.nodes.find(n=>n.id===fixed);if(!other)return;
@@ -701,9 +775,11 @@ function App(){
     }}
     onNodeDragStop={()=>setGuides([])}
     onSelectionDragStart={()=>checkpoint()} onNodeDoubleClick={()=>{setStatus('왼쪽 내용 입력에서 수정하세요.');}}
-    fitView deleteKeyCode={mode==='diagram'?['Backspace','Delete']:null}><Background gap={20}/><Controls/><MiniMap/>
+    fitView deleteKeyCode={drawable?['Backspace','Delete']:null}><Background gap={20}/><Controls/><MiniMap/>
     {guides.length>0&&<ViewportPortal><svg className="smart-guides" style={{position:'absolute',left:0,top:0,overflow:'visible',pointerEvents:'none'}}>
-     {guides.map((l,i)=><line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke="#EF4444" strokeWidth="1" strokeDasharray="4 3"/>)}</svg></ViewportPortal>}</ReactFlow></div>
+     {guides.map((l,i)=><line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke="#EF4444" strokeWidth="1" strokeDasharray="4 3"/>)}</svg></ViewportPortal>}</ReactFlow>
+    {mode==='paint'&&paintTool==='pen'&&<div className="pen-layer" aria-label="펜으로 그리기" onPointerDown={penDown} onPointerMove={penMove} onPointerUp={penUp} onPointerCancel={penUp}>
+     {penLive&&<svg width="100%" height="100%"><polyline points={penLive.map(p=>p.join(',')).join(' ')} fill="none" stroke={penColor} strokeWidth={penWidth*(flow.current?.getZoom?.()??1)} strokeLinecap="round" strokeLinejoin="round"/></svg>}</div>}</div>
     {mode==='catalog'&&<div className="catalog-preview"><div className="catalog-preview-card">
      <h2>{selectedCatalogTemplate?.name??'표 서식을 선택하세요'}</h2>
      {selectedCatalogTemplate?<><p>{catalogGrid.length}행 × {catalogColCount}열 · {isStepTemplate?'단계별 정보단위+연결단위 연동 편집':isFixedCategory?'고정 서식 요소 편집 및 복사':'기본 표 자유 편집 (행·열 끼우기, 글자·바탕·테두리 서식, 병합 미리보기)'}</p>

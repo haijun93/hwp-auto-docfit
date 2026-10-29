@@ -3,6 +3,9 @@
 // 연결선은 꺾은선·직선·곡선, 색·굵기·선 모양, 양 끝 화살표 모양을 고른다. 예전 문서(도형 4종·색 이름)도 그대로 연다.
 import {FONTS,isFontName,validateTable} from './table.js';
 import {SHAPES,LINE_SHAPES,shapePath,textFactor,DASHES,MARKERS,dashArray,markerSvg} from './shapes.js';
+import {isImageSrc,validPoints,freehandPath,BACKGROUND_ID} from './paint.js';
+/** 그림판 전용 개체(도형 목록에는 없음): 펜 선·그림. */
+const PAINT_SHAPES=new Set(['freehand','image']);
 import {validateMindmap,mindmapGraph} from './mindmap.js';
 export const FORMAT = 'docfit-flow';
 export const COLORS = {blue:'#dbeafe',green:'#dcfce7',orange:'#ffedd5',yellow:'#fef9c3',white:'#ffffff'};
@@ -47,13 +50,23 @@ export function validate(snapshot) {
  if(snapshot.nodes.length>1000||snapshot.edges.length>2000)throw new Error('도형 또는 연결선 수가 제한을 넘습니다.');
  const ids=new Set();
  const nodes=snapshot.nodes.map(n=>{
-  if(!text(n.id,100)||!n.id||ids.has(n.id)||!finite(n.position?.x)||!finite(n.position?.y)||!text(n.data?.label)||!SHAPES.has(n.data.shape)||!Object.hasOwn(COLORS,n.data.color))throw new Error('도형 데이터가 올바르지 않습니다.');
+  if(!text(n.id,100)||!n.id||ids.has(n.id)||!finite(n.position?.x)||!finite(n.position?.y)||!text(n.data?.label)||!(SHAPES.has(n.data?.shape)||PAINT_SHAPES.has(n.data?.shape))||!Object.hasOwn(COLORS,n.data.color))throw new Error('도형 데이터가 올바르지 않습니다.');
   ids.add(n.id);
   const style={...nodeTextStyle(n.data),...nodeShapeStyle(n.data)};
   const w=n.width??220,h=n.height??90;
   if(!finite(w)||!finite(h)||w<20||h<10||w>100000||h>100000)throw new Error('도형 크기가 올바르지 않습니다.');
   const made=node(n.data.label,n.position.x,n.position.y,n.data.shape,n.data.color,n.id);
-  return {...made,data:{...made.data,...style},width:w,height:h};
+  const extra={};
+  if(n.data.shape==='freehand'){if(!validPoints(n.data.points))throw new Error('펜 선 데이터가 올바르지 않습니다.');extra.points=n.data.points.map(p=>[p[0],p[1]]);}
+  if(n.data.shape==='image'){
+   if(!isImageSrc(n.data.src))throw new Error('그림 데이터가 올바르지 않습니다.');extra.src=n.data.src;
+   if(n.data.background===true){
+    // 배경 사진: 맨 뒤에 잠근다.
+    if(n.id!==BACKGROUND_ID)throw new Error('배경 그림 데이터가 올바르지 않습니다.');
+    return {...made,data:{...made.data,...style,...extra,background:true},width:w,height:h,zIndex:-1,draggable:false,selectable:false,deletable:false};
+   }
+  }
+  return {...made,data:{...made.data,...style,...extra},width:w,height:h};
  });
  const nodeIds=new Set(ids);
  const edges=snapshot.edges.map(e=>{
@@ -162,6 +175,10 @@ export function wrapKoreanAwareText(value,maxWidth,font=FONT,px=FONT_SIZE) {
 const measure=(value,font,px)=>textWidth(value,font,px);
 export function computeNodeAutoFitBox(n) {
  const f=nodeFont(n.data);
+ if(PAINT_SHAPES.has(n.data.shape)){
+  // 펜 선·그림은 사용자가 정한 크기 그대로(글 상자로 늘리지 않는다).
+  return {width:n.width??220,height:n.height??90,lines:n.data.label?[n.data.label]:[],lineHeight:f.lineHeight,factor:1,textWidth:0,textHeight:0,font:f};
+ }
  if(LINE_SHAPES.has(n.data.shape)){
   // 선 도형은 글이 있으면 선 위에 한 줄로 쓰고, 상자 크기는 사용자가 끈 그대로 둔다.
   const lines=n.data.label?wrapKoreanAwareText(n.data.label,Math.max(32,(n.width??220)-8),f.css,f.px):[];
@@ -212,6 +229,11 @@ function svgLines(lines,x,y,f=nodeFont()) {
 }
 /** 도형 한 개의 SVG(화면 노드와 PNG가 같은 모양을 쓴다). 화살표 머리는 defs로 따로 모은다. */
 export function nodeSvg(n,x,y,w,h,defs){
+ if(n.data.shape==='image')return '<image href="'+esc(n.data.src)+'" x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" preserveAspectRatio="none"/>';
+ if(n.data.shape==='freehand'){
+  const p=nodePaint(n.data);
+  return '<path d="'+freehandPath(n.data.points,x,y,w,h)+'" fill="none" stroke="'+(p.stroke==='none'?'none':p.stroke)+'" stroke-width="'+p.width+'"'+(p.dash?' stroke-dasharray="'+p.dash+'"':'')+' stroke-linecap="round" stroke-linejoin="round"/>';
+ }
  const p=nodePaint(n.data),d=shapePath(n.data.shape,x,y,w,h);
  let markers='';
  if(LINE_SHAPES.has(n.data.shape)){

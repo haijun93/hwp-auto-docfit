@@ -98,5 +98,27 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
     expect(calls, contains('add_files:null'));
+
+    // Tab 7 그림판: 같은 편집기를 그림판 모드로 연다
+    expect(find.text('그림판'), findsOneWidget);
+    await tester.tap(find.text('그림판'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byType(PaintAdapter), findsOneWidget);
+    expect(
+      tester
+          .widget<FlowEditorScreen>(
+            find.descendant(
+              of: find.byType(PaintAdapter),
+              matching: find.byType(FlowEditorScreen),
+            ),
+          )
+          .initialMode,
+      'paint',
+    );
+    // 표그림판 탭에서는 사진 끌어 놓기를 칸 그림으로 받고, 떠나면 문서 목록으로 되돌린다
+    final sketchAt = calls.indexOf('set_drop_target:sketch_image');
+    expect(sketchAt, greaterThanOrEqualTo(0));
+    expect(calls.lastIndexOf('set_drop_target:documents'), greaterThan(sketchAt));
   });
 }

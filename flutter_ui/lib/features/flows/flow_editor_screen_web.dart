@@ -12,7 +12,12 @@ import '../table_units/table_units_screen.dart';
 import '../workspace/tab_navigation_shell.dart';
 
 class FlowEditorScreen extends StatefulWidget {
-  const FlowEditorScreen({super.key, required this.api, this.initialMode = 'diagram', this.isModal = true});
+  const FlowEditorScreen({
+    super.key,
+    required this.api,
+    this.initialMode = 'diagram',
+    this.isModal = true,
+  });
   final ApiCall api;
   final String initialMode;
   final bool isModal;
@@ -27,8 +32,11 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
   late String name = newName;
 
   /// 새 문서 기본 이름은 모드별로('새 다이어그램' / '새 마인드맵').
-  String get newName =>
-      widget.initialMode == 'mindmap' ? '새 마인드맵' : '새 다이어그램';
+  String get newName => switch (widget.initialMode) {
+    'mindmap' => '새 마인드맵',
+    'paint' => '새 그림',
+    _ => '새 다이어그램',
+  };
   String? identity, revision;
   final saveState = EditSaveState();
   bool dirty = false, ready = false, busy = false;
@@ -51,7 +59,11 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
       ..src = Uri.base
           .resolve('assets/assets/flow_editor/index.html')
           .toString()
-      ..title = widget.initialMode == 'mindmap' ? '마인드맵' : '다이어그램'
+      ..title = switch (widget.initialMode) {
+        'mindmap' => '마인드맵',
+        'paint' => '그림판',
+        _ => '다이어그램',
+      }
       ..setAttribute('sandbox', 'allow-scripts allow-same-origin')
       ..style.border = '0'
       ..style.width = '100%'
@@ -409,32 +421,34 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
     },
     child: Scaffold(
       // 탭 안에서는 제목 줄 없이 편집기 도구 줄이 맨 위(사본 저장은 편집기 도구 줄에 있음, 2026-10-29 사용자 요청).
-      appBar: !widget.isModal ? null : AppBar(
-        title: Text(name),
-        actions: [
-          IconButton(
-            tooltip: '사본으로 저장',
-            icon: const Icon(Icons.copy),
-            onPressed: ready && !busy && !saveState.saving
-                ? () => save(asCopy: true)
-                : null,
-          ),
-        ],
-        // 탭 안(돌아갈 화면 없음)에서는 ← 버튼을 보이지 않는다. 새 화면으로 열었을 때만 표시.
-        automaticallyImplyLeading: false,
-        leading: !Navigator.of(context).canPop()
-            ? null
-            : IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () async {
-            if (!saveState.saving &&
-                await confirmDiscard() &&
-                context.mounted) {
-              closeWorkspaceScreen(context);
-            }
-          },
-        ),
-      ),
+      appBar: !widget.isModal
+          ? null
+          : AppBar(
+              title: Text(name),
+              actions: [
+                IconButton(
+                  tooltip: '사본으로 저장',
+                  icon: const Icon(Icons.copy),
+                  onPressed: ready && !busy && !saveState.saving
+                      ? () => save(asCopy: true)
+                      : null,
+                ),
+              ],
+              // 탭 안(돌아갈 화면 없음)에서는 ← 버튼을 보이지 않는다. 새 화면으로 열었을 때만 표시.
+              automaticallyImplyLeading: false,
+              leading: !Navigator.of(context).canPop()
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.arrow_back),
+                      onPressed: () async {
+                        if (!saveState.saving &&
+                            await confirmDiscard() &&
+                            context.mounted) {
+                          closeWorkspaceScreen(context);
+                        }
+                      },
+                    ),
+            ),
       body: Stack(
         children: [
           HtmlElementView(viewType: viewType),

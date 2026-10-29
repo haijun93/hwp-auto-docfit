@@ -3,7 +3,12 @@ import 'package:flutter/material.dart';
 /// 탭 안 화면이 '닫기·뒤로'를 요청할 때 쓰는 통로.
 /// 탭 화면은 앱의 첫 경로 위에 바로 있어 Navigator.pop을 하면 첫 화면이 빠져 앱이 멈춘다(2.0.0 사용자 보고).
 class WorkspaceTabScope extends InheritedWidget {
-  const WorkspaceTabScope({super.key, required this.goHome, required this.selectTab, required super.child});
+  const WorkspaceTabScope({
+    super.key,
+    required this.goHome,
+    required this.selectTab,
+    required super.child,
+  });
 
   final VoidCallback goHome;
 
@@ -39,9 +44,10 @@ class TabNavigationShell extends StatefulWidget {
     required this.diagram,
     required this.mindMap,
     required this.fileConversion,
+    required this.paint,
     this.initialIndex = 0,
     this.onTabChanged,
-  }) : assert(initialIndex >= 0 && initialIndex < 6);
+  }) : assert(initialIndex >= 0 && initialIndex < 7);
 
   final Widget documentEditor;
   final Widget tableTemplates;
@@ -49,6 +55,9 @@ class TabNavigationShell extends StatefulWidget {
   final Widget diagram;
   final Widget mindMap;
   final Widget fileConversion;
+
+  /// 탭 6: 그림판(사진 배경 위에 펜·도형·글상자를 독립 개체로).
+  final Widget paint;
   final int initialIndex;
   final ValueChanged<int>? onTabChanged;
 
@@ -59,7 +68,15 @@ class TabNavigationShell extends StatefulWidget {
 class _TabNavigationShellState extends State<TabNavigationShell> {
   late int _index = widget.initialIndex;
 
-  static const _labels = ['문서편집', '표템플릿', '표그림판', '다이어그램', '마인드맵', '파일변환'];
+  static const _labels = [
+    '문서편집',
+    '표템플릿',
+    '표그림판',
+    '다이어그램',
+    '마인드맵',
+    '파일변환',
+    '그림판',
+  ];
   static const _icons = [
     Icons.description_outlined,
     Icons.table_chart_outlined,
@@ -67,6 +84,7 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
     Icons.account_tree_outlined,
     Icons.hub_outlined,
     Icons.transform,
+    Icons.brush_outlined,
   ];
 
   void _select(int index) {
@@ -86,6 +104,7 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
       widget.diagram,
       widget.mindMap,
       widget.fileConversion,
+      widget.paint,
     ];
     return Scaffold(
       body: WorkspaceTabScope(
@@ -109,10 +128,7 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
         onDestinationSelected: _select,
         destinations: [
           for (var i = 0; i < _labels.length; i++)
-            NavigationDestination(
-              icon: Icon(_icons[i]),
-              label: _labels[i],
-            ),
+            NavigationDestination(icon: Icon(_icons[i]), label: _labels[i]),
         ],
       ),
     );
