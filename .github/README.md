@@ -8,8 +8,8 @@
 </p>
 
 <p align="center">
-<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.0.1/HWP_AutoDocFit_v2.0.1_Portable.exe"><img alt="GitHub에서 무설치로 받기" src="https://img.shields.io/badge/GitHub-%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v2.0.1-2563eb?style=for-the-badge&logo=github"></a>
-<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.0.1/HWP_AutoDocFit_v2.0.1_Setup.exe"><img alt="GitHub에서 설치용 받기" src="https://img.shields.io/badge/GitHub-%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0-0ea5e9?style=for-the-badge&logo=github"></a>
+<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.0.2/HWP_AutoDocFit_v2.0.2_Portable.exe"><img alt="GitHub에서 무설치로 받기" src="https://img.shields.io/badge/GitHub-%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v2.0.2-2563eb?style=for-the-badge&logo=github"></a>
+<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.0.2/HWP_AutoDocFit_v2.0.2_Setup.exe"><img alt="GitHub에서 설치용 받기" src="https://img.shields.io/badge/GitHub-%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0-0ea5e9?style=for-the-badge&logo=github"></a>
 <br>
 </p>
 <p align="center">
@@ -23,6 +23,25 @@
 <a href="../docs/media/overview-demo.mp4"><img src="../docs/media/overview-demo.gif" alt="한글편집 후처리 5분 시연 — 누르면 고화질 영상" width="860"></a><br>
 <sub>▶ 누르면 5분 시연 영상(고화질)이 열립니다</sub>
 </p>
+
+---
+
+<h2 align="center">v2.0.2 릴리즈</h2>
+<p align="center">파일변환 탭을 열고, 다이어그램·마인드맵 탭이 바로 작동하며, 변환 포맷을 숫자 키패드로 고릅니다</p>
+
+### 파일변환 탭 사용 가능 (2.0.2)
+
+파일변환 탭의 "여기에 파일을 놓으세요" 영역에 파일을 끌어 놓거나 「파일 선택」을 누르면 바로 변환할 포맷을 고르는 창이 뜹니다. 변환이 끝나면 앱의 「4. 결과 확인」 화면에서 결과 파일을 열거나 폴더를 볼 수 있습니다.
+
+### 변환 포맷을 숫자 키패드 모양으로 (2.0.2)
+
+원형 메뉴를 키보드 숫자패드와 같은 3×4 배열(7 HWPX·8 DOCX·9 EPUB / 4 HTML·5 취소·6 MD / 1 PDF·2 PDF 압축·3 PDF 합치기 / 0 JPG·. PNG·+ TXT)로 바꿨습니다. 숫자 키를 누르면 바로 그 포맷으로 변환하고, 5번이나 Esc는 취소입니다.
+
+### 다이어그램·마인드맵 탭 바로 작동 (2.0.2)
+
+다이어그램 탭에서 "Flutter Windows 앱에서만 사용할 수 있어요" 안내만 나오던 문제를 고쳐, 탭에서 바로 다이어그램을 그립니다. 마인드맵 탭은 마인드맵 모드로 열립니다. 편집기 위쪽의 제목·모드 전환 줄을 없애 편집 도구 줄이 맨 위에 옵니다.
+
+> 시작 속도(기록): 첫 실행 스플래시 114.2ms(목표 100ms 미달), 재실행 화면 1.93·1.83초(목표 1.5초 미달), 캐시 실행 0.76초. 시작 속도 개선은 2.0.3 과제이며 2.0.3부터 배포 조건으로 다시 적용합니다.
 
 ---
 
