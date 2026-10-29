@@ -1,3 +1,31 @@
+## [미착수·핫픽스 2.0.1] 탭 메뉴 3건 수정 요청 — 다이어그램 탭 작동·마인드맵 상단 메뉴 삭제·파일변환 탭 (사용자 요청, 2026-10-29)
+대상: **v2.0.1 핫픽스**(`release/2.0.1`, 지금 `main`과 같은 커밋). 아래 코드 위치는 `main`(2.0.x) 기준으로 읽은 결과이며 재현은 하지 못했다. 이 TODO는 `alpha` 브랜치의 TODO.md에 적었으므로 **`main`/`release/2.0.1`의 TODO.md에도 옮겨 적어야 핫픽스 작업자가 볼 수 있다.**
+
+**(1) 탭 "다이어그램"이 "도형 편집기는 Flutter Windows 앱에서만 사용할 수 있어요."로 작동하지 않음**
+- 증상: 탭 메뉴 `다이어그램`을 누르면 위 메시지만 나온다. 같은 앱에서 탭 `마인드맵`으로 들어가 **그 화면의 상단 메뉴 "다이어그램"**을 누르면 정상 작동한다. 요구: **탭 `다이어그램`에서 바로 다이어그램 기능을 쓸 수 있게** 한다.
+- 원인(코드 읽기): `flutter_ui/lib/features/workspace/workspace_adapters.dart`의 `DiagramAdapter`(탭 3)가 `DiagramEditorScreen`을 띄우는데, 이 화면은 조건부 내보내기(`diagram_editor_screen.dart`: `if (dart.library.io) …_native.dart`, 기본은 `…_stub.dart`)라 **WebView2(웹 빌드)에서는 stub이 선택돼 그 메시지(`'도형 편집기는 Flutter Windows 앱에서만 …'`)만 보여 준다.** 반면 정상 작동하는 길은 `FlowEditorScreen`(`flow_editor_screen_web.dart`)이 `assets/flow_editor/index.html`(소스 `diagram_editor/src/main.jsx`, 모드 `diagram`/`mindmap`)을 iframe으로 띄우는 것이다.
+- [ ] **수정**: `DiagramAdapter`가 `DiagramEditorScreen` 대신 **`FlowEditorScreen(api: api, initialMode: 'diagram', isModal: false)`**를 쓰게 한다(웹/WebView2 경로). `DiagramEditorScreen`(tldraw 기반 네이티브 도형 편집기, 개발자 모드 도구)은 개발자 모드에서만 남기고 일반 탭에서는 쓰지 않는다(`개발자 모드` 설정과 충돌 없는지 확인).
+- [ ] **함께 발견한 연쇄 오류**: `MindMapAdapter`(탭 4)는 `FlowEditorScreen(initialMode: 'flow')`를 넘기는데 편집기는 `set_mode`로 **`'diagram'` 또는 `'mindmap'`만 받는다**(`diagram_editor/src/main.jsx` 286행 `if(message.mode==='diagram'||message.mode==='mindmap')`). `'flow'`는 무시되어 **마인드맵 탭이 마인드맵 모드가 아니라 기본 `diagram` 모드로 열릴 수 있다**(사용자 보고도 "마인드맵 탭에서 들어가 상단의 다이어그램 메뉴로 정상 작동"과 맞음). → `MindMapAdapter`를 `initialMode: 'mindmap'`으로 고치고 두 탭이 각각 다른 모드로 열리는지 시험.
+- [ ] **시험**: Flutter 위젯 시험 — 탭 3 선택 시 stub 메시지(`Flutter Windows 앱에서만`)가 나오지 않고 `FlowEditorScreen`이 `initialMode: 'diagram'`으로 만들어짐, 탭 4는 `'mindmap'`; 탭 이동 뒤 편집 중인 내용 보존(저장 전 경고 `confirmDiscard`와 충돌 없는지 — 탭 전환 시 iframe이 파괴/재생성되는지, `KeyedSubtree` 유지). 실제 화면 동작은 Windows PC(WebView2)에서 확인.
+
+**(2) 마인드맵(편집기) UI 상단의 "다이어그램·마인드맵 / 새 다이어그램·마인드맵 / 다이어그램 / 마인드맵 / 표 템플릿" 삭제**
+- 요구: 이 상단 영역은 필요 없다고 판단 → **삭제**. 내용: 문서 제목 표시줄(`다이어그램·마인드맵` — 저장 이름 기본값 `새 다이어그램·마인드맵`)과 모드 전환 버튼 3개(`다이어그램`·`마인드맵`·`표 템플릿`).
+- 위치: `diagram_editor/src/main.jsx` — `TITLE='다이어그램·마인드맵'`(15행), 모드 탭 `const tabs=[['diagram','다이어그램'],['mindmap','마인드맵'],['table_units','표 템플릿']]`(479행 근처), 새 문서 이름 `'새 '+TITLE`(287행), Flutter 쪽 `flow_editor_screen_web.dart`의 `name = '새 다이어그램·마인드맵'`·iframe `title = '다이어그램·마인드맵'`(24·50행), 빌드 산출물 `flutter_ui/assets/flow_editor/assets/index-*.js`(Vite로 다시 빌드해 갱신).
+- [ ] **수정**: 상단 모드 전환 줄(위 3개 버튼)과 제목 영역을 삭제하고 편집 도구 줄이 맨 위로 오게 한다. **탭이 모드를 정하므로**((1)에서 `다이어그램` 탭 = `diagram`, `마인드맵` 탭 = `mindmap`) 편집기 안에서 모드를 바꾸는 버튼은 필요 없다 — 모드는 `set_mode` 메시지로만 받는다. `표 템플릿` 버튼은 이미 최상위 탭(`표템플릿`, 탭 1)이 있으므로 삭제하고, `table_units` 모드로 가던 코드 경로(`main.jsx`의 `switchMode('table_units')` 등)가 남아 죽은 코드가 되지 않게 정리.
+- [ ] **확인**: 문서 이름(저장 이름 기본값)은 제목 영역을 없애도 저장·열기 목록에서 필요하므로 **이름 입력/표시를 다른 위치(저장 대화상자나 상태줄)로 옮길지** 정한다(현재 제목 영역이 이름 편집을 겸하는지 확인). `name` 기본값 문구도 모드별로(`새 다이어그램` / `새 마인드맵`) 바꾸는 것을 제안.
+- [ ] **시험**: 새 다이어그램·마인드맵 동작(저장·불러오기·실행 취소)이 그대로이고 상단 줄이 사라졌는지(JS 시험 `diagram_editor`의 모델 시험 20개 유지 + Flutter 위젯/스모크 시험), 모드가 탭에 따라 정해지는지, 좁은 창에서 도구 줄이 넘치지 않는지(앞의 반응형 설계 P6과 함께 검토).
+
+**(3) 탭 "파일변환"을 이렇게 동작시킨다**
+- 현재: `tab_navigation_shell.dart`에서 탭 5 `파일변환`은 **"준비 중"으로 비활성**(`static const disabledTabs = {5}`, 툴팁 "준비 중", 주석 "kordoc 변환 화면으로 교체될 때까지 비활성(2.0.1, 사용자 지시)"). 파일 변환 기능 자체는 `main.dart`의 문서 편집 흐름 안에서 이미 동작한다(모드 `file_format`, 파일을 끌어놓으면 `openConversionPicker()`로 **원형 변환 메뉴(`FloatingFormatPicker`)가 바로 팝업**, 형식을 고르면 곧바로 변환 시작(`startJob`), 진행·`4. 결과 확인` 화면). 설계 문서는 `feature/2.0.1-file-conversion` 브랜치의 `docs/P5-design.md`(검수 전 초안).
+- 요구 3가지:
+  1. **"여기에 파일을 놓으세요"** — 탭 화면에 **드래그 앤 드롭으로 파일을 추가하는 영역**을 둔다(영역 문구 "여기에 파일을 놓으세요", 파일 선택 버튼도 함께).
+  2. **파일을 추가하면 바로 파일변환 원형 메뉴가 팝업**된다(기존 `FloatingFormatPicker`/`openConversionPicker` 그대로; 여러 파일이면 합치기 순서 대화상자(`merge_order_dialog.dart`) 등 기존 규칙 유지).
+  3. **작업 완료 화면은 별도 UI를 만들지 않고 앱의 "4. 결과 확인" UI를 그대로 사용**해 결과를 보여 준다(`main.dart`의 단계 4 결과 영역, `결과 파일 열기·폴더 보기` 동작 포함).
+- [ ] **수정 방향**: 탭 5를 활성화하고(`disabledTabs`에서 제거, 툴팁 "준비 중" 삭제) `FileConversionAdapter`의 `child`로 **문서 편집 화면의 "파일 변환" 모드를 그대로 재사용**하되 ① 시작 화면을 드롭 영역으로 단순화(문서 선택·작업 방식 카드 단계 생략) ② 파일이 들어오면 `set_mode('file_format')` → `openConversionPicker()` ③ 변환이 끝나면 `main.dart`의 **4단계(결과 확인) 화면으로 이동**(같은 위젯·같은 상태를 써서 중복 UI를 만들지 않음). 두 곳(문서 편집의 파일 변환 모드와 이 탭)이 **같은 백엔드 상태(`state['files']`·`mode`·결과 목록)**를 공유하므로 탭을 오갈 때 파일 목록·진행 중 작업이 꼬이지 않게 정의(변환 중 다른 탭으로 이동하면 진행을 유지하고 돌아오면 같은 화면, 탭 5에서 시작한 작업이 문서 편집 탭의 일괄 적용 목록과 섞이지 않게 `selected_mode`로 분리).
+- [ ] **끌어놓기 구현**: WebView2 파일 끌어놓기는 `desktop_web_ui.py`의 `_FILE_DROP_SCRIPT`/`set_drop_target('documents'|'format'…)`을 쓴다 — **탭 5 전용 대상(예: `conversion`)**을 추가해 이 탭에서 놓은 파일만 변환 목록으로 가게 하고(다른 탭에서는 기존 대상 유지), 놓은 파일의 형식 검사(`CONVERSION_INPUTS`)·지원하지 않는 형식 안내를 기존 규칙과 같게.
+- [ ] **시험**: Flutter 위젯 시험(탭 5 활성·드롭 영역 문구·파일 추가 시 원형 메뉴 호출·완료 시 결과 확인 화면 표시), 백엔드 `set_drop_target` 대상 추가 시험, 탭 이동 중 작업 유지. 실제 끌어놓기와 변환(HWPX→PDF 등)은 Windows·한/글 PC에서 확인(앞서 기록한 `profile_combo` 오류·작업 중단 문제는 1.80.3에서 수정됐으나 이 경로에서 재발하지 않는지 함께 확인).
+- 우선순위: (1)·(2)는 작은 수정(어댑터 한 줄 + JS/빌드)이라 먼저, (3)은 화면 재구성이 커서 별도 커밋/시험. 모두 2.0.1 CI의 Flutter·JS 시험과 스모크(`smoke_webview_content.py`)를 통과해야 한다.
+
 ## [미착수] 표 템플릿 목록에서 "라벨 서식"을 가장 뒤쪽 순서로 (사용자 요청, 2026-10-26, 1.80.15)
 요구: 표 템플릿을 나열할 때 **"라벨 서식" 분류(와 그 템플릿들)를 맨 뒤**에 둔다.
 
