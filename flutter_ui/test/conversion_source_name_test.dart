@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:docfit_ui/features/conversion/floating_format_picker.dart';
 
@@ -190,6 +191,66 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets('keypad lays formats out like a numpad and number keys pick them', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    String? selected;
+    var cancelled = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 510,
+            child: FloatingFormatPicker(
+              fileNames: const ['보고서.hwp'],
+              fileCount: 1,
+              selected: 'hwpx',
+              targets: const [
+                {'format': 'hwpx', 'label': 'HWPX', 'enabled': true},
+                {'format': 'pdf', 'label': 'PDF', 'enabled': true},
+                {'format': 'txt', 'label': 'TXT', 'enabled': true},
+              ],
+              onSelected: (format) => selected = format,
+              onCancel: () => cancelled = true,
+            ),
+          ),
+        ),
+      ),
+    );
+    Offset at(String key) => tester.getCenter(find.byKey(Key(key)));
+    // 7 8 9 / 4 5 6 / 1 2 3 / 0 . + : HWPX 왼쪽 위, 취소 가운데, PDF 왼쪽 셋째 줄, TXT 오른쪽 아래.
+    final hwpx = at('conversionSlice-hwpx');
+    final cancel = at('cancelConversionPicker');
+    final pdf = at('conversionSlice-pdf');
+    final txt = at('conversionSlice-txt');
+    expect(hwpx.dx, lessThan(cancel.dx));
+    expect(hwpx.dy, lessThan(cancel.dy));
+    expect(pdf.dx, closeTo(hwpx.dx, 1));
+    expect(pdf.dy, greaterThan(cancel.dy));
+    expect(txt.dx, greaterThan(cancel.dx));
+    expect(txt.dy, greaterThan(pdf.dy));
+    expect(find.text('7'), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.numpad1);
+    expect(selected, 'pdf');
+    await tester.sendKeyEvent(LogicalKeyboardKey.numpadAdd);
+    expect(selected, 'txt');
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit7);
+    expect(selected, 'hwpx');
+    // 고를 수 없는 칸(2=PDF 압축)은 선택하지 않고 이유만 보인다.
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit2);
+    await tester.pump();
+    expect(selected, 'hwpx');
+    expect(find.text('고를 수 없음: PDFZ'), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.numpad5);
+    expect(cancelled, isTrue);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'multiple sources show first basename with count and keep cancel',
