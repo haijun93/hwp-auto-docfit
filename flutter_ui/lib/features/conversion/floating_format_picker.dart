@@ -1,9 +1,10 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
-/// Filee의 플로팅 도넛 선택 방식을 Flutter로 구현한다.
-/// 각 조각의 실제 경로로 클릭 영역을 제한해 인접 포맷이 잘못 선택되지 않는다.
+/// 변환 포맷을 키보드 숫자패드 모양의 사각 키패드로 고른다.
+/// 칸 위치가 숫자 키와 같아 마우스·숫자 키 어느 쪽으로도 고를 수 있다.
 class FloatingFormatPicker extends StatefulWidget {
   const FloatingFormatPicker({
     super.key,
@@ -28,20 +29,102 @@ class FloatingFormatPicker extends StatefulWidget {
 
 class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
   String? hovered;
-  static const formats = [
-    'hwpx',
-    'docx',
-    'epub',
-    'html',
-    'pdf',
-    'pdfz',
-    'pdfm',
-    'jpg',
-    'png',
-    'txt',
-    'md',
+
+  /// 키보드 숫자패드 배열(2026-10-29 사용자 요청: 원형 → 번호 키패드형 사각 배열).
+  /// 가운데 5번 자리는 원본 파일·취소 칸이다. 줄마다 문서 / 웹·텍스트 / PDF / 그림·텍스트.
+  static const keypad = <(String, String?)>[
+    ('7', 'hwpx'),
+    ('8', 'docx'),
+    ('9', 'epub'),
+    ('4', 'html'),
+    ('5', null),
+    ('6', 'md'),
+    ('1', 'pdf'),
+    ('2', 'pdfz'),
+    ('3', 'pdfm'),
+    ('0', 'jpg'),
+    ('.', 'png'),
+    ('+', 'txt'),
   ];
   static const accent = Color(0xff7664ec);
+  static const _digits = [
+    LogicalKeyboardKey.digit0,
+    LogicalKeyboardKey.digit1,
+    LogicalKeyboardKey.digit2,
+    LogicalKeyboardKey.digit3,
+    LogicalKeyboardKey.digit4,
+    LogicalKeyboardKey.digit5,
+    LogicalKeyboardKey.digit6,
+    LogicalKeyboardKey.digit7,
+    LogicalKeyboardKey.digit8,
+    LogicalKeyboardKey.digit9,
+  ];
+  static const _numpad = [
+    LogicalKeyboardKey.numpad0,
+    LogicalKeyboardKey.numpad1,
+    LogicalKeyboardKey.numpad2,
+    LogicalKeyboardKey.numpad3,
+    LogicalKeyboardKey.numpad4,
+    LogicalKeyboardKey.numpad5,
+    LogicalKeyboardKey.numpad6,
+    LogicalKeyboardKey.numpad7,
+    LogicalKeyboardKey.numpad8,
+    LogicalKeyboardKey.numpad9,
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    HardwareKeyboard.instance.addHandler(_onKey);
+  }
+
+  @override
+  void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onKey);
+    super.dispose();
+  }
+
+  /// 숫자 키(윗줄·숫자패드 모두)로 칸을 고른다. 5는 취소.
+  bool _onKey(KeyEvent event) {
+    if (event is! KeyDownEvent) return false;
+    final key = _keyLabel(event.logicalKey);
+    if (key == null) return false;
+    final format = keypad.firstWhere((cell) => cell.$1 == key).$2;
+    if (format == null) {
+      widget.onCancel();
+    } else {
+      _press(format);
+    }
+    return true;
+  }
+
+  static String? _keyLabel(LogicalKeyboardKey logical) {
+    final shift = HardwareKeyboard.instance.isShiftPressed;
+    if (logical == LogicalKeyboardKey.numpadDecimal ||
+        logical == LogicalKeyboardKey.period) {
+      return '.';
+    }
+    if (logical == LogicalKeyboardKey.numpadAdd ||
+        logical == LogicalKeyboardKey.add ||
+        (shift && logical == LogicalKeyboardKey.equal)) {
+      return '+';
+    }
+    final numpad = _numpad.indexOf(logical);
+    if (numpad >= 0) return '$numpad';
+    if (shift) return null;
+    final digit = _digits.indexOf(logical);
+    return digit >= 0 ? '$digit' : null;
+  }
+
+  void _press(String format) {
+    if (info(format)['enabled'] == true) {
+      widget.onSelected(format);
+    } else {
+      // 고를 수 없는 칸도 누르면 아래쪽에 그 칸의 이유를 보여 준다(누르기 전 선택 형식의 이유가
+      // 남아 'PDF 압축'에 'HWPX 같은 형식' 안내가 보이던 문제, 2026-10-23 사용자 실측).
+      setState(() => hovered = format);
+    }
+  }
 
   Map info(String format) => widget.targets.firstWhere(
     (item) => item['format'] == format,
@@ -82,6 +165,152 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
     return '${words.sublist(0, best).join(' ')}\n${words.sublist(best).join(' ')}';
   }
 
+  /// 키 윗면 왼쪽 위의 숫자 각인.
+  Widget _keyLegend(String key, Color color) => Positioned(
+    left: 9,
+    top: 5,
+    child: ExcludeSemantics(
+      child: Text(
+        key,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w800,
+          color: color.withValues(alpha: .65),
+        ),
+      ),
+    ),
+  );
+
+  Widget _formatKey(String key, String format, double height) {
+    final target = info(format);
+    final enabled = target['enabled'] == true;
+    final hot = hovered == format;
+    final selected = widget.selected == format;
+    final foreground = hot && enabled
+        ? Colors.white
+        : enabled
+        ? const Color(0xff25324a)
+        : const Color(0xff8a94a6);
+    return Material(
+      color: hot && enabled
+          ? accent
+          : selected && enabled
+          ? const Color(0xffe9e5ff)
+          : enabled
+          ? Colors.white
+          : const Color(0xffedf0f5),
+      elevation: hot && enabled ? 5 : 2,
+      shadowColor: const Color(0x500f172a),
+      borderRadius: BorderRadius.circular(14),
+      clipBehavior: Clip.antiAlias,
+      child: Tooltip(
+        message: enabled ? '${target['label']} 선택' : '${target['reason']}',
+        child: Semantics(
+          selected: selected,
+          enabled: enabled,
+          button: true,
+          label: '${target['label']} 변환',
+          child: InkWell(
+            key: Key('conversionSlice-$format'),
+            onHover: (on) => setState(() => hovered = on ? format : null),
+            onFocusChange: (on) =>
+                setState(() => hovered = on ? format : null),
+            onTap: () => _press(format),
+            child: SizedBox(
+              height: height,
+              child: Stack(
+                children: [
+                  _keyLegend(key, foreground),
+                  Positioned.fill(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(6, 16, 6, 6),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(icon(format), color: foreground, size: 34),
+                            const SizedBox(height: 5),
+                            // 긴 이름(예: 'PDF 하나로 합치기')은 낱말 단위로 두 줄, 가운데 정렬 —
+                            // 칸이 좁아 'PDF 하나로 합치' / '기'로 끊기던 문제(2026-10-23 사용자 실측).
+                            Text(
+                              _sliceLabel('${target['label']}'),
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              softWrap: true,
+                              style: TextStyle(
+                                color: foreground,
+                                fontSize: 15,
+                                height: 1.15,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _cancelKey(String key, double height) {
+    const muted = Color(0xff64748b);
+    return Material(
+      color: const Color(0xfff1f5f9),
+      elevation: 2,
+      shadowColor: const Color(0x500f172a),
+      borderRadius: BorderRadius.circular(14),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        key: const Key('cancelConversionPicker'),
+        onTap: widget.onCancel,
+        child: SizedBox(
+          height: height,
+          child: Stack(
+            children: [
+              _keyLegend(key, muted),
+              Positioned.fill(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 6, 4, 4),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        widget.fileCount > 1
+                            ? '첫 파일 · ${widget.fileCount}개'
+                            : '${widget.fileCount}개 파일',
+                        maxLines: 1,
+                        style: const TextStyle(fontSize: 11, color: muted),
+                      ),
+                      const SizedBox(height: 2),
+                      _SourceFileName(
+                        name: widget.fileNames.isEmpty
+                            ? '원본 파일'
+                            : widget.fileNames.first,
+                      ),
+                      const SizedBox(height: 2),
+                      const Icon(Icons.close_rounded, size: 22, color: muted),
+                      const Text(
+                        '취소',
+                        style: TextStyle(fontSize: 11, color: muted),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final active = hovered ?? widget.selected;
@@ -98,170 +327,36 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
           const SizedBox(height: 12),
           LayoutBuilder(
             builder: (context, constraints) {
-              // 원형 메뉴는 1.5배(2026-10-23 사용자 요청: 340 → 510).
+              // 키패드 폭은 예전 원형 메뉴와 같은 510까지(2026-10-23 사용자 요청 크기 유지).
               final side = math.min(510.0, constraints.maxWidth);
-              final center = Offset(side / 2, side / 2);
-              final labelRadius = side * .345;
+              const gap = 8.0;
+              final cellHeight = math.max(88.0, (side - gap * 2) / 3 * .72);
               return SizedBox(
+                key: const Key('conversionKeypad'),
                 width: side,
-                height: side,
-                child: Stack(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Positioned.fill(child: CustomPaint(painter: _RingShadow())),
-                    for (var i = 0; i < formats.length; i++)
-                      Positioned.fill(
-                        child: Builder(
-                          builder: (context) {
-                            final format = formats[i];
-                            final target = info(format);
-                            final enabled = target['enabled'] == true;
-                            final hot = hovered == format;
-                            final selected = widget.selected == format;
-                            final angle =
-                                -math.pi / 2 + i * 2 * math.pi / formats.length;
-                            final label =
-                                center +
-                                Offset(math.cos(angle), math.sin(angle)) *
-                                    labelRadius;
-                            final foreground = hot && enabled
-                                ? Colors.white
-                                : enabled
-                                ? const Color(0xff25324a)
-                                : const Color(0xff8a94a6);
-                            return ClipPath(
-                              clipper: _SliceClipper(
-                                index: i,
-                                count: formats.length,
-                              ),
-                              child: Material(
-                                color: hot && enabled
-                                    ? accent
-                                    : selected && enabled
-                                    ? const Color(0xffe9e5ff)
-                                    : enabled
-                                    ? Colors.white
-                                    : const Color(0xffedf0f5),
-                                child: Tooltip(
-                                  message: enabled
-                                      ? '${target['label']} 선택'
-                                      : '${target['reason']}',
-                                  child: Semantics(
-                                    selected: selected,
-                                    enabled: enabled,
-                                    button: true,
-                                    label: '${target['label']} 변환',
-                                    child: InkWell(
-                                      key: Key('conversionSlice-$format'),
-                                      onHover: (on) => setState(
-                                        () => hovered = on ? format : null,
-                                      ),
-                                      onFocusChange: (on) => setState(
-                                        () => hovered = on ? format : null,
-                                      ),
-                                      // 고를 수 없는 칸도 누르면 아래쪽에 그 칸의 이유를 보여 준다(누르기 전 선택 형식의 이유가
-                                      // 남아 'PDF 압축'에 'HWPX 같은 형식' 안내가 보이던 문제, 2026-10-23 사용자 실측).
-                                      onTap: enabled
-                                          ? () => widget.onSelected(format)
-                                          : () => setState(
-                                              () => hovered = format,
-                                            ),
-                                      child: Stack(
-                                        children: [
-                                          Positioned(
-                                            left: label.dx - 60,
-                                            top: label.dy - 55.5,
-                                            width: 120,
-                                            height: 111,
-                                            child: Column(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment.center,
-                                              children: [
-                                                Icon(
-                                                  icon(format),
-                                                  color: foreground,
-                                                  size: 37.5,
-                                                ),
-                                                const SizedBox(height: 5),
-                                                // 긴 이름(예: 'PDF 하나로 합치기')은 낱말 단위로 두 줄, 가운데 정렬 —
-                                                // 칸이 좁아 'PDF 하나로 합치' / '기'로 끊기던 문제(2026-10-23 사용자 실측).
-                                                Text(
-                                                  _sliceLabel(
-                                                    '${target['label']}',
-                                                  ),
-                                                  textAlign: TextAlign.center,
-                                                  maxLines: 2,
-                                                  softWrap: true,
-                                                  style: TextStyle(
-                                                    color: foreground,
-                                                    fontSize: 15,
-                                                    height: 1.15,
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
+                    for (var row = 0; row < 4; row++) ...[
+                      if (row > 0) const SizedBox(height: gap),
+                      Row(
+                        children: [
+                          for (var col = 0; col < 3; col++) ...[
+                            if (col > 0) const SizedBox(width: gap),
+                            Expanded(
+                              child: switch (keypad[row * 3 + col]) {
+                                (final key, final String format) => _formatKey(
+                                  key,
+                                  format,
+                                  cellHeight,
                                 ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    Positioned(
-                      left: side * .295,
-                      top: side * .295,
-                      width: side * .41,
-                      height: side * .41,
-                      child: Material(
-                        color: Colors.white,
-                        shape: const CircleBorder(),
-                        clipBehavior: Clip.antiAlias,
-                        child: InkWell(
-                          key: const Key('cancelConversionPicker'),
-                          onTap: widget.onCancel,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  widget.fileCount > 1
-                                      ? '첫 파일 · ${widget.fileCount}개'
-                                      : '${widget.fileCount}개 파일',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Color(0xff64748b),
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                _SourceFileName(
-                                  name: widget.fileNames.isEmpty
-                                      ? '원본 파일'
-                                      : widget.fileNames.first,
-                                ),
-                                const SizedBox(height: 4),
-                                const Icon(
-                                  Icons.close_rounded,
-                                  size: 28.5,
-                                  color: Color(0xff64748b),
-                                ),
-                                const Text(
-                                  '취소',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: Color(0xff64748b),
-                                  ),
-                                ),
-                              ],
+                                (final key, _) => _cancelKey(key, cellHeight),
+                              },
                             ),
-                          ),
-                        ),
+                          ],
+                        ],
                       ),
-                    ),
+                    ],
                   ],
                 ),
               );
@@ -290,7 +385,7 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
           ),
           const SizedBox(height: 8),
           const Text(
-            '포맷을 누르면 바로 변환을 시작해요 · 가운데 또는 Esc로 취소',
+            '포맷을 누르거나 숫자 키로 바로 변환해요 · 5번 또는 Esc로 취소',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 11, color: Color(0xff64748b)),
           ),
@@ -298,50 +393,6 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
       ),
     );
   }
-}
-
-class _SliceClipper extends CustomClipper<Path> {
-  const _SliceClipper({required this.index, required this.count});
-  final int index, count;
-
-  @override
-  Path getClip(Size size) {
-    final center = size.center(Offset.zero);
-    final outer = math.min(size.width, size.height) / 2 - 8;
-    final inner = outer * .43;
-    const gap = .025;
-    // 조각 수에 맞춰 같은 각도로 나눈다. 각 조각은 라벨 각도를 가운데에 둔다.
-    final step = 2 * math.pi / count;
-    final start = -math.pi / 2 - step / 2 + index * step + gap;
-    final sweep = step - gap * 2;
-    final end = start + sweep;
-    return Path()
-      ..moveTo(
-        center.dx + outer * math.cos(start),
-        center.dy + outer * math.sin(start),
-      )
-      ..arcTo(
-        Rect.fromCircle(center: center, radius: outer),
-        start,
-        sweep,
-        false,
-      )
-      ..lineTo(
-        center.dx + inner * math.cos(end),
-        center.dy + inner * math.sin(end),
-      )
-      ..arcTo(
-        Rect.fromCircle(center: center, radius: inner),
-        end,
-        -sweep,
-        false,
-      )
-      ..close();
-  }
-
-  @override
-  bool shouldReclip(_SliceClipper oldClipper) =>
-      oldClipper.index != index || oldClipper.count != count;
 }
 
 /// Keep the source extension visible while ellipsizing only the file stem.
@@ -364,7 +415,7 @@ class _SourceFileName extends StatelessWidget {
         child: ExcludeSemantics(
           child: DefaultTextStyle(
             style: const TextStyle(
-              fontSize: 14,
+              fontSize: 13,
               fontWeight: FontWeight.w800,
               color: Color(0xff25324a),
             ),
@@ -389,21 +440,4 @@ class _SourceFileName extends StatelessWidget {
       ),
     );
   }
-}
-
-class _RingShadow extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final path = Path()
-      ..addOval(
-        Rect.fromCircle(
-          center: size.center(Offset.zero),
-          radius: math.min(size.width, size.height) / 2 - 8,
-        ),
-      );
-    canvas.drawShadow(path, const Color(0x500f172a), 12, false);
-  }
-
-  @override
-  bool shouldRepaint(_RingShadow oldDelegate) => false;
 }
