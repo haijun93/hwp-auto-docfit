@@ -59,17 +59,19 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
     LogicalKeyboardKey.digit8,
     LogicalKeyboardKey.digit9,
   ];
+  /// 숫자패드는 물리 키 위치로 본다 — NumLock이 꺼져 있으면 숫자패드 1이 End로 들어와
+  /// 고를 수 없던 문제(2026-10-29 실제 앱 시험).
   static const _numpad = [
-    LogicalKeyboardKey.numpad0,
-    LogicalKeyboardKey.numpad1,
-    LogicalKeyboardKey.numpad2,
-    LogicalKeyboardKey.numpad3,
-    LogicalKeyboardKey.numpad4,
-    LogicalKeyboardKey.numpad5,
-    LogicalKeyboardKey.numpad6,
-    LogicalKeyboardKey.numpad7,
-    LogicalKeyboardKey.numpad8,
-    LogicalKeyboardKey.numpad9,
+    PhysicalKeyboardKey.numpad0,
+    PhysicalKeyboardKey.numpad1,
+    PhysicalKeyboardKey.numpad2,
+    PhysicalKeyboardKey.numpad3,
+    PhysicalKeyboardKey.numpad4,
+    PhysicalKeyboardKey.numpad5,
+    PhysicalKeyboardKey.numpad6,
+    PhysicalKeyboardKey.numpad7,
+    PhysicalKeyboardKey.numpad8,
+    PhysicalKeyboardKey.numpad9,
   ];
 
   @override
@@ -87,7 +89,7 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
   /// 숫자 키(윗줄·숫자패드 모두)로 칸을 고른다. 5는 취소.
   bool _onKey(KeyEvent event) {
     if (event is! KeyDownEvent) return false;
-    final key = _keyLabel(event.logicalKey);
+    final key = _keyLabel(event.physicalKey, event.logicalKey);
     if (key == null) return false;
     final format = keypad.firstWhere((cell) => cell.$1 == key).$2;
     if (format == null) {
@@ -98,19 +100,24 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
     return true;
   }
 
-  static String? _keyLabel(LogicalKeyboardKey logical) {
+  static String? _keyLabel(
+    PhysicalKeyboardKey physical,
+    LogicalKeyboardKey logical,
+  ) {
     final shift = HardwareKeyboard.instance.isShiftPressed;
-    if (logical == LogicalKeyboardKey.numpadDecimal ||
+    final numpad = _numpad.indexOf(physical);
+    if (numpad >= 0) return '$numpad';
+    if (physical == PhysicalKeyboardKey.numpadDecimal ||
+        logical == LogicalKeyboardKey.numpadDecimal ||
         logical == LogicalKeyboardKey.period) {
       return '.';
     }
-    if (logical == LogicalKeyboardKey.numpadAdd ||
+    if (physical == PhysicalKeyboardKey.numpadAdd ||
+        logical == LogicalKeyboardKey.numpadAdd ||
         logical == LogicalKeyboardKey.add ||
         (shift && logical == LogicalKeyboardKey.equal)) {
       return '+';
     }
-    final numpad = _numpad.indexOf(logical);
-    if (numpad >= 0) return '$numpad';
     if (shift) return null;
     final digit = _digits.indexOf(logical);
     return digit >= 0 ? '$digit' : null;
@@ -167,13 +174,13 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
 
   /// 키 윗면 왼쪽 위의 숫자 각인.
   Widget _keyLegend(String key, Color color) => Positioned(
-    left: 9,
-    top: 5,
+    left: 7,
+    top: 4,
     child: ExcludeSemantics(
       child: Text(
         key,
         style: TextStyle(
-          fontSize: 13,
+          fontSize: 10,
           fontWeight: FontWeight.w800,
           color: color.withValues(alpha: .65),
         ),
@@ -201,7 +208,7 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
           : const Color(0xffedf0f5),
       elevation: hot && enabled ? 5 : 2,
       shadowColor: const Color(0x500f172a),
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(10),
       clipBehavior: Clip.antiAlias,
       child: Tooltip(
         message: enabled ? '${target['label']} 선택' : '${target['reason']}',
@@ -223,14 +230,14 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
                   _keyLegend(key, foreground),
                   Positioned.fill(
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(6, 16, 6, 6),
+                      padding: const EdgeInsets.fromLTRB(4, 12, 4, 4),
                       child: FittedBox(
                         fit: BoxFit.scaleDown,
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(icon(format), color: foreground, size: 34),
-                            const SizedBox(height: 5),
+                            Icon(icon(format), color: foreground, size: 24),
+                            const SizedBox(height: 3),
                             // 긴 이름(예: 'PDF 하나로 합치기')은 낱말 단위로 두 줄, 가운데 정렬 —
                             // 칸이 좁아 'PDF 하나로 합치' / '기'로 끊기던 문제(2026-10-23 사용자 실측).
                             Text(
@@ -240,7 +247,7 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
                               softWrap: true,
                               style: TextStyle(
                                 color: foreground,
-                                fontSize: 15,
+                                fontSize: 11,
                                 height: 1.15,
                                 fontWeight: FontWeight.w700,
                               ),
@@ -265,7 +272,7 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
       color: const Color(0xfff1f5f9),
       elevation: 2,
       shadowColor: const Color(0x500f172a),
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(10),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         key: const Key('cancelConversionPicker'),
@@ -277,7 +284,7 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
               _keyLegend(key, muted),
               Positioned.fill(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 6, 4, 4),
+                  padding: const EdgeInsets.fromLTRB(4, 4, 4, 3),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -286,19 +293,19 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
                             ? '첫 파일 · ${widget.fileCount}개'
                             : '${widget.fileCount}개 파일',
                         maxLines: 1,
-                        style: const TextStyle(fontSize: 11, color: muted),
+                        style: const TextStyle(fontSize: 9, color: muted),
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 1),
                       _SourceFileName(
                         name: widget.fileNames.isEmpty
                             ? '원본 파일'
                             : widget.fileNames.first,
                       ),
-                      const SizedBox(height: 2),
-                      const Icon(Icons.close_rounded, size: 22, color: muted),
+                      const SizedBox(height: 1),
+                      const Icon(Icons.close_rounded, size: 16, color: muted),
                       const Text(
                         '취소',
-                        style: TextStyle(fontSize: 11, color: muted),
+                        style: TextStyle(fontSize: 9, color: muted),
                       ),
                     ],
                   ),
@@ -322,15 +329,15 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
         children: [
           const Text(
             '변환할 포맷을 고르세요',
-            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           LayoutBuilder(
             builder: (context, constraints) {
-              // 키패드 폭은 예전 원형 메뉴와 같은 510까지(2026-10-23 사용자 요청 크기 유지).
-              final side = math.min(510.0, constraints.maxWidth);
-              const gap = 8.0;
-              final cellHeight = math.max(88.0, (side - gap * 2) / 3 * .72);
+              // 키패드 폭은 357까지(2026-10-29 사용자 요청: 510에서 30% 축소).
+              final side = math.min(357.0, constraints.maxWidth);
+              const gap = 6.0;
+              final cellHeight = math.max(66.0, (side - gap * 2) / 3 * .66);
               return SizedBox(
                 key: const Key('conversionKeypad'),
                 width: side,
@@ -362,13 +369,13 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
               );
             },
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           Text(
             activeInfo['enabled'] == true
                 ? '변환 결과: ${activeInfo['label']}'
                 : '고를 수 없음: ${activeInfo['label']}',
             key: const Key('conversionSelectedOutput'),
-            style: const TextStyle(fontWeight: FontWeight.w700),
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 4),
           Text(
@@ -376,18 +383,18 @@ class _FloatingFormatPickerState extends State<FloatingFormatPicker> {
             key: const Key('conversionPrerequisiteNotice'),
             textAlign: TextAlign.center,
             style: TextStyle(
-              fontSize: 12,
-              height: 1.5,
+              fontSize: 11,
+              height: 1.4,
               color: activeInfo['enabled'] == true
                   ? const Color(0xff64748b)
                   : const Color(0xff9a3412),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           const Text(
             '포맷을 누르거나 숫자 키로 바로 변환해요 · 5번 또는 Esc로 취소',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 11, color: Color(0xff64748b)),
+            style: TextStyle(fontSize: 10, color: Color(0xff64748b)),
           ),
         ],
       ),
@@ -415,7 +422,7 @@ class _SourceFileName extends StatelessWidget {
         child: ExcludeSemantics(
           child: DefaultTextStyle(
             style: const TextStyle(
-              fontSize: 13,
+              fontSize: 12,
               fontWeight: FontWeight.w800,
               color: Color(0xff25324a),
             ),

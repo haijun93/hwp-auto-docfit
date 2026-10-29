@@ -485,8 +485,9 @@ class _WorkspaceState extends State<Workspace> {
         pageBuilder: (dialogContext, animation, secondaryAnimation) =>
             LayoutBuilder(
               builder: (context, constraints) {
-                final width = math.min(540.0, constraints.maxWidth - 24);
-                final height = math.min(640.0, constraints.maxHeight - 24);
+                // 키패드 포맷 선택 창(2026-10-29 사용자 요청: 30% 축소, 540×640 → 380×440).
+                final width = math.min(380.0, constraints.maxWidth - 24);
+                final height = math.min(440.0, constraints.maxHeight - 24);
                 final anchor =
                     _conversionAnchor ??
                     Offset(constraints.maxWidth / 2, constraints.maxHeight / 2);

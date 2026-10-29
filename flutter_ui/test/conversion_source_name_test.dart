@@ -242,6 +242,14 @@ void main() {
     expect(selected, 'txt');
     await tester.sendKeyEvent(LogicalKeyboardKey.digit7);
     expect(selected, 'hwpx');
+    // NumLock이 꺼져 숫자패드 1이 End로 들어와도 물리 위치로 PDF를 고른다.
+    await tester.sendKeyEvent(
+      LogicalKeyboardKey.end,
+      physicalKey: PhysicalKeyboardKey.numpad1,
+    );
+    expect(selected, 'pdf');
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit7);
+    expect(selected, 'hwpx');
     // 고를 수 없는 칸(2=PDF 압축)은 선택하지 않고 이유만 보인다.
     await tester.sendKeyEvent(LogicalKeyboardKey.digit2);
     await tester.pump();
