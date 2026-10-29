@@ -25,10 +25,7 @@ class TableSketchApi {
     if (response is Map) {
       return TableSketchCopyResult.fromJson(response);
     }
-    return const TableSketchCopyResult(
-      ok: false,
-      message: '복사 요청 처리에 실패했습니다.',
-    );
+    return const TableSketchCopyResult(ok: false, message: '복사 요청 처리에 실패했습니다.');
   }
 
   /// command('table_sketch', ['save', {"name": 이름, "sketch": 그림}])

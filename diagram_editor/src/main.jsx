@@ -1,11 +1,12 @@
 import React,{useRef,useState,useEffect,createContext,useContext} from 'react';
 import {createRoot} from 'react-dom/client';
-import {ReactFlow,ReactFlowProvider,Background,Controls,MiniMap,Handle,Position,ConnectionMode,applyNodeChanges,applyEdgeChanges,NodeResizer,BaseEdge,useReactFlow} from '@xyflow/react';
+import {ReactFlow,ReactFlowProvider,Background,Controls,MiniMap,Handle,Position,ConnectionMode,applyNodeChanges,applyEdgeChanges,NodeResizer,BaseEdge,useReactFlow,ViewportPortal,reconnectEdge} from '@xyflow/react';
+import {autoRoute,nodeAt,facingSides,smartGuides} from './magnet.js';
 import '@xyflow/react/dist/style.css';
 import './style.css';
 import {FORMAT,PALETTE,templates,template,node,edge,id,decode,validate,svg,layoutGraph,computeNodeAutoFitBox,edgeLabelBox,LINE_HEIGHT,nodeFont,nodePaint,edgePath,EDGE_DEFAULT} from './model.js';
 import {SHAPE_GROUPS,SHAPES,LINE_SHAPES,shapePath,DASHES,MARKERS,dashArray} from './shapes.js';
-import {sampleMindmap,mindmapGraph,addChild,addSibling,removeNode,updateNode,moveNode,findNode,positionMindmap,reparentNode,autoLayoutMindmap} from './mindmap.js';
+import {sampleMindmap,mindmapGraph,addChild,addSibling,removeNode,updateNode,moveNode,findNode,positionMindmap,reparentNode,autoLayoutMindmap,restyleNodes,MINDMAP_SHAPES,MINDMAP_SCOPES,MINDMAP_THEME_SHAPES,MINDMAP_PALETTES,MINDMAP_GROUNDS,themeOf,clearBranchStyles} from './mindmap.js';
 import {FONTS,registerFonts,ARROWS,DOWN_ARROWS,FLOW_PRESETS,MAX_FLOW_STEPS,MAX_FLOW_ROWS,MAX_ROWS,MAX_COLS,MAX_ORG,ROLE_NAMES,BORDER_TYPES,BORDER_WIDTHS,BORDER_NAMES,
  flowTable,gridTable,orgTable,barTable,flowDetails,resizeFlow,resizeFlowRows,insertStep,removeStep,resizeGrid,insertRow,removeRow,insertCol,removeCol,resizeOrg,
  setStyle,setBorder,exportSpec,cssOf,cssBorder,
@@ -73,6 +74,24 @@ function FlowEdge(props){
 const edgeTypes={smoothstep:FlowEdge};
 const nodeTypes={flow:FlowNode};
 
+/** 지도 테마 모양 단추의 작은 그림(가운데 주제 + 큰 가지 + 작은 가지). */
+function ThemeShapeIcon({kind}){
+ const c='#2563eb',soft='#dbeafe';
+ const main=kind==='pill'?<rect x="22" y="4" width="20" height="8" rx="4" fill={soft}/>
+  :kind==='capsule'?<rect x="22" y="4" width="20" height="8" rx="4" fill="white" stroke={c}/>
+  :kind==='line'?<path d="M22 12 H42" stroke={c} strokeWidth="1.6"/>
+  :kind==='block'?<rect x="22" y="4" width="20" height="8" rx="2" fill={c}/>
+  :<rect x="22" y="4" width="20" height="8" rx="2" fill={c}/>;
+ const sub=kind==='block'?<rect x="22" y="15" width="16" height="6" rx="1.5" fill={soft}/>
+  :kind==='line'?<path d="M22 21 H38" stroke={c} strokeWidth="1"/>
+  :kind==='classic'?<rect x="22" y="15" width="16" height="6" rx="1.5" fill="white" stroke={c}/>
+  :<path d="M23 18 H36" stroke="#334155" strokeWidth="1.4"/>;
+ return <svg width="44" height="24" viewBox="0 0 44 24" aria-hidden="true">
+  {kind==='classic'?<ellipse cx="9" cy="12" rx="8" ry="6" fill="#1d4ed8"/>:kind==='line'?<rect x="1" y="6" width="16" height="12" rx="2" fill="white" stroke="#1d4ed8"/>
+   :<rect x="1" y="6" width="16" height="12" rx={kind==='block'?2:6} fill="#1d4ed8"/>}
+  <path d={kind==='block'?'M17 12 H20 V8 H22 M20 12 V18 H22':'M17 12 C20 12 19 8 22 8 M17 12 C20 12 19 18 22 18'} fill="none" stroke={c} strokeWidth="1"/>
+  {main}{sub}</svg>;
+}
 /** 도형 갤러리 단추의 작은 그림. */
 function ShapeIcon({shape}){
  const line=LINE_SHAPES.has(shape),key='i'+shape;
@@ -267,6 +286,21 @@ function App(){
  const changeTable=next=>{tables.current[next.kind]=next;commit({...current.current,table:next});};
  const mindmap=graph.mindmap??null;
  const changeMindmap=(next,select)=>{commit({...current.current,mindmap:next});if(select!==undefined)setMmSelected(select);};
+ const [mmScope,setMmScope]=useState('one');
+ const [guides,setGuides]=useState([]);
+ // 자석: 놓은 곳 아래 도형(선 도형 제외)을 찾는다.
+ const dropTarget=(event,skip)=>{
+  const p=event.changedTouches?.[0]??event;
+  if(!flow.current||p?.clientX==null)return null;
+  const point=flow.current.screenToFlowPosition({x:p.clientX,y:p.clientY});
+  return nodeAt(current.current.nodes,point,new Set(skip),n=>LINE_SHAPES.has(n.data?.shape));
+ };
+ const magnetEdge=(source,target,extra={})=>{
+  const [s,t]=facingSides(source,target);
+  const made=edge(source.id,target.id,'',id(),s,t,{...EDGE_DEFAULT,autoSide:true});
+  return {...made,...extra};
+ };
+ const restyle=patch=>changeMindmap(restyleNodes(mindmap,mmSelected,mmScope,patch));
  const switchMode=next=>{
   if(!AVAILABLE_MODES.has(next)){
    setStatus(next==='catalog'?'표 서식 모음은 현재 알파 버전에서 비활성화되어 있습니다.':'조직표와 장식표는 현재 알파 버전에서 사용할 수 없습니다.');
@@ -506,11 +540,26 @@ function App(){
      <ShapeStyleControls data={selected.data} onChange={edit}/>
      <TextStyleControls label="도형 글자" value={{font:selected.data.font,size:selected.data.size,bold:selected.data.bold,textColor:selected.data.textColor}} onChange={edit}/></>}
     {selectedEdge&&!selected&&<><h2>선택 연결선</h2><label>연결선 설명<input aria-label="연결선 설명" maxLength={300} value={selectedEdge.label??''} onChange={e=>commit({...graph,edges:graph.edges.map(v=>v.id===selectedEdge.id?{...v,label:e.target.value}:v)})}/></label>
-     <EdgeStyleControls value={selectedEdge.data} onChange={editEdge}/></>}
+     <EdgeStyleControls value={selectedEdge.data} onChange={editEdge}/>
+     <label className="check"><input type="checkbox" checked={!!selectedEdge.data?.autoSide} onChange={e=>{
+      const data={...(selectedEdge.data??EDGE_DEFAULT),autoSide:e.target.checked};let next={...graph,edges:graph.edges.map(v=>v.id===selectedEdge.id?{...v,data}:v)};
+      next={...next,edges:autoRoute(next.nodes,next.edges)};commit(next);}}/> 자석 연결(도형을 옮기면 마주 보는 면으로 붙음)</label></>}
     <p>연결점을 끌어 도형 연결<br/>Shift+선택: 여러 도형<br/>Ctrl+C/V 복사·붙여넣기, Ctrl+D 복제<br/>Delete: 선택 삭제 · Ctrl+휠: 확대·축소</p>
    </aside>}
    {mode==='mindmap'&&mindmap&&<aside><h2>마인드맵</h2>
     <Select label="배치" value={mindmap.layout} options={[['both','가운데에서 좌우로'],['right','오른쪽으로'],['down','위에서 아래로(조직도형)']]} onChange={layout=>{changeMindmap(autoLayoutMindmap(mindmap,layout));fit();}}/>
+    {(()=>{const th=themeOf(mindmap),setTheme=patch=>changeMindmap({...mindmap,theme:{...th,...patch}});return <fieldset className="text-style mm-theme" aria-label="지도 테마"><legend>지도 테마</legend>
+     <small>지도 전체에 한 번에 적용해요(가지마다 따로 고친 서식은 그대로).</small>
+     <div className="mm-theme-row" role="radiogroup" aria-label="테마 모양">{MINDMAP_THEME_SHAPES.map(([key,label])=>
+      <button key={key} role="radio" aria-checked={th.shape===key} className={th.shape===key?'active':''} onClick={()=>setTheme({shape:key})}>
+       <ThemeShapeIcon kind={key}/><small>{label}</small></button>)}</div>
+     <div className="mm-theme-row" role="radiogroup" aria-label="테마 색">{MINDMAP_PALETTES.map(([key,label,colors])=>
+      <button key={key} role="radio" aria-checked={th.palette===key} className={th.palette===key?'active':''} title={label} onClick={()=>setTheme({palette:key})}>
+       <span className="mm-swatch">{colors.slice(0,5).map(c=><i key={c} style={{background:c}}/>)}</span><small>{label}</small></button>)}</div>
+     <div className="mm-theme-row" role="radiogroup" aria-label="테마 바탕">{MINDMAP_GROUNDS.map(([key,label])=>
+      <button key={key} role="radio" aria-checked={th.ground===key} className={th.ground===key?'active':''} onClick={()=>setTheme({ground:key})}>{label}</button>)}</div>
+     <button onClick={()=>changeMindmap(clearBranchStyles(mindmap))}>가지별 서식 지우기 (테마로 통일)</button>
+    </fieldset>;})()}
     <button onClick={()=>{changeMindmap(autoLayoutMindmap(mindmap));fit();}}>자동 정렬 (수동 위치 초기화)</button>
     <p>도형을 끌어 이동 · 연결점을 끌어 부모 변경<br/>하위 가지는 단계 제한 없이 추가 (문서당 300개)</p>
     {mmNode?<><h2>선택 가지</h2>
@@ -524,11 +573,16 @@ function App(){
      {mmSelected!==mindmap.root.id&&<EdgeStyleControls value={mmNode.edge?.style??mmGraph.edges.find(e=>e.target===mmSelected)?.data??EDGE_DEFAULT} onChange={style=>changeMindmap(updateNode(mindmap,mmSelected,{edge:{style}}))}/>}
      {(()=>{const shown=mmGraph?.nodes.find(n=>n.id===mmSelected)?.data??{};return <>
       <fieldset className="text-style"><legend>가지 모양</legend>
-       <Select label="도형" value={shown.shape??'roundRect'} options={[...SHAPES.entries()].filter(([k])=>!LINE_SHAPES.has(k))} onChange={shape=>changeMindmap(updateNode(mindmap,mmSelected,{style:{shape}}))}/>
-       <ColorRow label="바탕색" value={shown.fill} onChange={fill=>changeMindmap(updateNode(mindmap,mmSelected,{style:{fill}}))}/>
-       <ColorRow label="테두리색" value={shown.stroke} onChange={stroke=>changeMindmap(updateNode(mindmap,mmSelected,{style:{stroke}}))}/>
+       <Select label="적용 범위" value={mmScope} options={MINDMAP_SCOPES} onChange={setMmScope}/>
+       <div className="mm-shape-grid" role="radiogroup" aria-label="가지 모양">{MINDMAP_SHAPES.map(([key,label])=>
+        <button key={key} role="radio" aria-checked={(shown.shape??'roundRect')===key} className={(shown.shape??'roundRect')===key?'active':''} title={label} onClick={()=>restyle({shape:key})}>
+         <ShapeIcon shape={key==='text'?'rectangle':key}/><small>{label}</small></button>)}</div>
+       <details className="shape-group"><summary>다른 도형</summary>
+        <Select label="도형" value={shown.shape??'roundRect'} options={[...SHAPES.entries()].filter(([k])=>!LINE_SHAPES.has(k))} onChange={shape=>restyle({shape})}/></details>
+       <ColorRow label="바탕색" value={shown.fill} onChange={fill=>restyle({fill})}/>
+       <ColorRow label="테두리색" value={shown.stroke} onChange={stroke=>restyle({stroke})}/>
       </fieldset>
-      <TextStyleControls label="가지 글자" value={{font:shown.font,size:shown.size,bold:shown.bold,textColor:shown.textColor}} onChange={patch=>changeMindmap(updateNode(mindmap,mmSelected,{style:patch}))}/></>;})()}
+      <TextStyleControls label="가지 글자" value={{font:shown.font,size:shown.size,bold:shown.bold,textColor:shown.textColor}} onChange={patch=>restyle(patch)}/></>;})()}
     </>:<p>가지를 눌러 고르세요.</p>}
     <button onClick={()=>undo()}>실행 취소 (Ctrl+Z)</button>
    </aside>}
@@ -580,7 +634,7 @@ function App(){
     {(mode!=='grid'||table.custom_border)&&<BorderControls table={table} parts={BORDER_PARTS[mode]} onChange={changeTable}/>}
     <button onClick={()=>undo()}>실행 취소 (Ctrl+Z)</button>
    </aside>}
-   <main><div className="flow-layer" style={{display:canvas?'block':'none'}}><ReactFlow nodes={shownNodes} edges={shownEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} connectionMode={ConnectionMode.Loose} snapToGrid snapGrid={[10,10]}
+   <main><div className="flow-layer" style={{display:canvas?'block':'none'}}><ReactFlow style={mmGraph?.background?{background:mmGraph.background}:undefined} nodes={shownNodes} edges={shownEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} connectionMode={ConnectionMode.Loose} snapToGrid snapGrid={[10,10]}
     nodesDraggable={canvas} nodesConnectable={canvas} elementsSelectable
     onInit={instance=>{flow.current=instance;send({type:'ready',protocol_version:1,editor:FORMAT});}}
     onNodeClick={(_,n)=>{if(mode==='mindmap')setMmSelected(n.id);}}
@@ -596,19 +650,60 @@ function App(){
       }return;
      }
      if(mode!=='diagram')return;
+     // 스마트 가이드: 도형 하나를 끌 때 다른 도형의 가장자리·가운데에 맞춰 붙이고 빨간 점선을 보인다(PPT처럼).
+     const moves=changes.filter(c=>c.type==='position'&&c.position);
+     if(moves.length===1&&(moves[0].dragging||guides.length)){
+      const moving=current.current.nodes.find(n=>n.id===moves[0].id);
+      if(moving){
+       const others=current.current.nodes.filter(n=>!n.selected&&n.id!==moving.id);
+       const g=smartGuides({...moving,position:moves[0].position},others,8/(flow.current?.getZoom?.()||1)); // 화면 기준 8px
+       changes=changes.map(c=>c===moves[0]?{...c,position:{x:g.x,y:g.y}}:c);
+       setGuides(moves[0].dragging?g.lines:[]);
+      }
+     }else if(moves.some(c=>!c.dragging)||!moves.length&&guides.length)setGuides([]);
      const edits=changes.filter(c=>c.type!=='select'&&!(c.type==='dimensions'&&!c.resizing));
      let next={...current.current,nodes:applyNodeChanges(changes,current.current.nodes)};
      if(changes.some(c=>c.type==='dimensions'&&(c.resizing!==undefined||c.setAttributes)))next=layoutGraph(next);
+     // 자석 연결선: 도형을 옮기면 마주 보는 면으로 다시 붙는다.
+     const routed=autoRoute(next.nodes,next.edges);if(routed!==next.edges)next={...next,edges:routed};
      current.current=next;setGraph(next);if(edits.length)mark();
     }}
     onEdgesChange={changes=>{if(mode!=='diagram')return;const next={...current.current,edges:applyEdgeChanges(changes,current.current.edges)};current.current=next;setGraph(next);if(changes.some(c=>c.type!=='select'))mark();}}
     onNodeDragStart={()=>checkpoint()} onBeforeDelete={async()=>{if(mode!=='diagram')return false;checkpoint();return true;}}
     onConnect={connection=>{
      if(mode==='mindmap'){try{changeMindmap(reparentNode(positionMindmap(current.current.mindmap,{}),connection.target,connection.source,{sourceHandle:connection.sourceHandle,targetHandle:connection.targetHandle}));}catch(error){setStatus(error.message);}return;}
+     // 새 연결선은 자석 연결: 두 도형이 마주 보는 면에 붙고, 도형을 옮기면 따라간다(연결선 설정에서 끌 수 있음).
+     const a=current.current.nodes.find(n=>n.id===connection.source),b=current.current.nodes.find(n=>n.id===connection.target);
+     if(a&&b&&a.id!==b.id&&!LINE_SHAPES.has(a.data?.shape)&&!LINE_SHAPES.has(b.data?.shape)){commit({...current.current,edges:[...current.current.edges,magnetEdge(a,b)]});return;}
      commit({...current.current,edges:[...current.current.edges,edge(connection.source,connection.target,'',id(),connection.sourceHandle,connection.targetHandle,{...EDGE_DEFAULT})]});
     }}
+    connectionRadius={40}
+    onConnectEnd={(event,state)=>{
+     // 연결점이 아니라 도형 몸체에 놓아도 붙인다(draw.io처럼). 이후 도형을 옮기면 마주 보는 면으로 따라간다.
+     if(mode!=='diagram'||state?.isValid||!state?.fromNode)return;
+     const target=dropTarget(event,[state.fromNode.id]);
+     const source=current.current.nodes.find(n=>n.id===state.fromNode.id);
+     if(!target||!source)return;
+     commit({...current.current,edges:[...current.current.edges,magnetEdge(source,target)]});
+    }}
+    edgesReconnectable={mode==='diagram'}
+    onReconnect={(old,connection)=>{if(mode!=='diagram')return;
+     const edges=reconnectEdge(old,connection,current.current.edges,{shouldReplaceId:false}).map(e=>e.id===old.id?{...e,data:{...(e.data??EDGE_DEFAULT),autoSide:false}}:e);
+     commit({...current.current,edges});}}
+    onReconnectEnd={(event,old,handleType,state)=>{
+     if(mode!=='diagram'||state?.isValid)return;
+     const fixed=handleType==='source'?old.target:old.source;
+     const target=dropTarget(event,[fixed]);if(!target)return;
+     const other=current.current.nodes.find(n=>n.id===fixed);if(!other)return;
+     const [a,b]=handleType==='source'?[target,other]:[other,target];
+     const [s,t]=facingSides(a,b);
+     commit({...current.current,edges:current.current.edges.map(e=>e.id===old.id?{...e,source:a.id,target:b.id,sourceHandle:s,targetHandle:t,data:{...(e.data??EDGE_DEFAULT),autoSide:true}}:e)});
+    }}
+    onNodeDragStop={()=>setGuides([])}
     onSelectionDragStart={()=>checkpoint()} onNodeDoubleClick={()=>{setStatus('왼쪽 내용 입력에서 수정하세요.');}}
-    fitView deleteKeyCode={mode==='diagram'?['Backspace','Delete']:null}><Background gap={20}/><Controls/><MiniMap/></ReactFlow></div>
+    fitView deleteKeyCode={mode==='diagram'?['Backspace','Delete']:null}><Background gap={20}/><Controls/><MiniMap/>
+    {guides.length>0&&<ViewportPortal><svg className="smart-guides" style={{position:'absolute',left:0,top:0,overflow:'visible',pointerEvents:'none'}}>
+     {guides.map((l,i)=><line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke="#EF4444" strokeWidth="1" strokeDasharray="4 3"/>)}</svg></ViewportPortal>}</ReactFlow></div>
     {mode==='catalog'&&<div className="catalog-preview"><div className="catalog-preview-card">
      <h2>{selectedCatalogTemplate?.name??'표 서식을 선택하세요'}</h2>
      {selectedCatalogTemplate?<><p>{catalogGrid.length}행 × {catalogColCount}열 · {isStepTemplate?'단계별 정보단위+연결단위 연동 편집':isFixedCategory?'고정 서식 요소 편집 및 복사':'기본 표 자유 편집 (행·열 끼우기, 글자·바탕·테두리 서식, 병합 미리보기)'}</p>

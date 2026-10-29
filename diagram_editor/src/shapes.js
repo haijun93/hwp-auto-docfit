@@ -3,7 +3,7 @@
 
 export const SHAPE_GROUPS=[
  ['사각형',[['rectangle','사각형'],['roundRect','둥근 사각형'],['snipRect','모서리 잘린 사각형'],['frame','액자']]],
- ['기본 도형',[['ellipse','타원'],['triangle','삼각형'],['rightTriangle','직각 삼각형'],['parallelogram','평행 사변형'],['trapezoid','사다리꼴'],
+ ['기본 도형',[['ellipse','타원'],['circle','원'],['triangle','삼각형'],['rightTriangle','직각 삼각형'],['parallelogram','평행 사변형'],['trapezoid','사다리꼴'],
   ['diamond','마름모'],['pentagon','오각형'],['hexagon','육각형'],['octagon','팔각형'],['plus','십자형'],['cylinder','원통'],['cloud','구름'],['heart','하트']]],
  ['블록 화살표',[['arrowRight','오른쪽 화살표'],['arrowLeft','왼쪽 화살표'],['arrowUp','위쪽 화살표'],['arrowDown','아래쪽 화살표'],
   ['arrowLeftRight','좌우 화살표'],['chevron','갈매기형'],['homePlate','오각형 화살표']]],
@@ -12,7 +12,7 @@ export const SHAPE_GROUPS=[
  ['별·현수막',[['star5','별 5'],['star8','별 8'],['banner','현수막']]],
  ['설명선',[['calloutRect','사각 설명선'],['calloutRound','둥근 설명선']]],
  ['선',[['line','직선'],['arrowLine','화살표 선'],['doubleArrowLine','양쪽 화살표 선'],['vline','세로선'],['diagonal','대각선']]],
- ['글',[['text','텍스트 상자']]],
+ ['글',[['text','텍스트 상자'],['underline','밑줄']]],
 ];
 export const SHAPES=new Map(SHAPE_GROUPS.flatMap(([,items])=>items));
 export const LINE_SHAPES=new Set(['line','arrowLine','doubleArrowLine','vline','diagonal']);
@@ -33,6 +33,8 @@ export function shapePath(shape,x,y,w,h){
   case 'roundRect':case 'terminator':{const k=shape==='terminator'?h/2:m*0.18;return `M ${x+k} ${y} H ${r-k} A ${k} ${k} 0 0 1 ${r} ${y+k} V ${b-k} A ${k} ${k} 0 0 1 ${r-k} ${b} H ${x+k} A ${k} ${k} 0 0 1 ${x} ${b-k} V ${y+k} A ${k} ${k} 0 0 1 ${x+k} ${y} Z`;}
   case 'snipRect':{const k=m*0.2;return poly([[x,y],[r-k,y],[r,y+k],[r,b],[x,b]]);}
   case 'frame':{const k=m*0.12;return poly([[x,y],[r,y],[r,b],[x,b]])+' '+poly([[x+k,y+k],[x+k,b-k],[r-k,b-k],[r-k,y+k]]);}
+  case 'circle':{const d=m/2;return `M ${cx-d} ${cy} A ${d} ${d} 0 1 0 ${cx+d} ${cy} A ${d} ${d} 0 1 0 ${cx-d} ${cy} Z`;}
+  case 'underline':return `M ${x} ${b} L ${r} ${b}`;
   case 'ellipse':return `M ${x} ${cy} A ${w/2} ${h/2} 0 1 0 ${r} ${cy} A ${w/2} ${h/2} 0 1 0 ${x} ${cy} Z`;
   case 'triangle':return poly([[cx,y],[r,b],[x,b]]);
   case 'rightTriangle':return poly([[x,y],[r,b],[x,b]]);
@@ -72,7 +74,7 @@ export function shapePath(shape,x,y,w,h){
 /** 도형 안에서 글이 들어갈 가로 비율(마름모·타원처럼 안쪽이 좁은 도형은 줄여 넣는다). */
 export function textFactor(shape){
  if(['diamond','decision','star5','star8'].includes(shape))return .5;
- if(['ellipse','triangle','heart','cloud','hexagon','octagon','pentagon','calloutRound'].includes(shape))return .7;
+ if(['ellipse','circle','triangle','heart','cloud','hexagon','octagon','pentagon','calloutRound'].includes(shape))return .7;
  if(['arrowRight','arrowLeft','arrowLeftRight','chevron','homePlate','parallelogram','data','trapezoid'].includes(shape))return .75;
  return 1;
 }

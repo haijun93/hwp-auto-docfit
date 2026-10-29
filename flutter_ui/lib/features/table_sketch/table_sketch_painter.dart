@@ -94,14 +94,22 @@ class TableSketchPainter extends CustomPainter {
   TableSketchPainter({
     required this.doc,
     required this.cellSize,
-    this.selectedLineIndex,
+    this.selectedLines = const {},
+    this.selectedTexts = const {},
+    this.lassoPath,
+    this.marquee = false,
     this.previewLine,
     this.previewRect,
   });
 
   final TableSketchDoc doc;
   final double cellSize;
-  final int? selectedLineIndex;
+  final Set<int> selectedLines;
+  final Set<int> selectedTexts;
+
+  /// 올가미(자유 곡선) 또는 선택 상자([시작, 현재]) 경로, 화면 좌표.
+  final List<Offset>? lassoPath;
+  final bool marquee;
   final SketchLine? previewLine;
   final Rect? previewRect;
 
@@ -117,8 +125,12 @@ class TableSketchPainter extends CustomPainter {
     // 3. 기존에 그려진 선들
     for (int i = 0; i < doc.lines.length; i++) {
       final line = doc.lines[i];
-      final isSelected = (i == selectedLineIndex);
-      _drawSketchLine(canvas, line, isSelected: isSelected);
+      _drawSketchLine(
+        canvas,
+        line,
+        isSelected: selectedLines.contains(i),
+        showHandles: selectedLines.length == 1,
+      );
     }
 
     // 4. 드래그 중인 미리보기 선 / 사각형
@@ -129,9 +141,53 @@ class TableSketchPainter extends CustomPainter {
       _drawPreviewRect(canvas, previewRect!);
     }
 
-    // 5. 텍스트 렌더링
-    for (final textItem in doc.texts) {
-      _drawSketchText(canvas, textItem);
+    // 5. 텍스트 렌더링(고른 칸은 파란 바탕)
+    for (var i = 0; i < doc.texts.length; i++) {
+      if (selectedTexts.contains(i)) {
+        final t = doc.texts[i];
+        canvas.drawRect(
+          Rect.fromLTWH(t.x * cellSize, t.y * cellSize, cellSize, cellSize),
+          Paint()..color = const Color(0x553B82F6),
+        );
+      }
+      _drawSketchText(canvas, doc.texts[i]);
+    }
+
+    // 6. 여러 개를 고르면 감싸는 점선 상자
+    if (selectedLines.length + selectedTexts.length > 1) {
+      final bounds = _selectionRect();
+      if (bounds != null) {
+        canvas.drawPath(
+          createDashedPath(Path()..addRect(bounds.inflate(4)), 5.0, 3.0),
+          Paint()
+            ..color = const Color(0xFF2563EB)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.2,
+        );
+      }
+    }
+
+    // 7. 올가미·선택 상자(끌고 있는 동안)
+    final path = lassoPath;
+    if (path != null && path.length >= 2) {
+      final outline = Path();
+      if (marquee) {
+        outline.addRect(Rect.fromPoints(path.first, path.last));
+      } else {
+        outline.moveTo(path.first.dx, path.first.dy);
+        for (final p in path.skip(1)) {
+          outline.lineTo(p.dx, p.dy);
+        }
+        outline.close();
+      }
+      canvas.drawPath(outline, Paint()..color = const Color(0x1A2563EB));
+      canvas.drawPath(
+        createDashedPath(outline, 5.0, 3.0),
+        Paint()
+          ..color = const Color(0xFF2563EB)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.2,
+      );
     }
 
     // 6. 종이 테두리 (가장자리 회색 선)
@@ -173,6 +229,7 @@ class TableSketchPainter extends CustomPainter {
     SketchLine line, {
     bool isSelected = false,
     bool isPreview = false,
+    bool showHandles = true,
   }) {
     final p1 = Offset(line.x1 * cellSize, line.y1 * cellSize);
     final p2 = Offset(line.x2 * cellSize, line.y2 * cellSize);
@@ -196,10 +253,12 @@ class TableSketchPainter extends CustomPainter {
         ..strokeCap = StrokeCap.round;
       canvas.drawLine(p1, p2, glowPaint);
 
-      // 끝점 핸들
-      final handlePaint = Paint()..color = const Color(0xFF2563EB);
-      canvas.drawCircle(p1, 4.0, handlePaint);
-      canvas.drawCircle(p2, 4.0, handlePaint);
+      // 끝점 핸들(하나만 골랐을 때)
+      if (showHandles) {
+        final handlePaint = Paint()..color = const Color(0xFF2563EB);
+        canvas.drawCircle(p1, 4.0, handlePaint);
+        canvas.drawCircle(p2, 4.0, handlePaint);
+      }
     }
 
     final paint = Paint()
@@ -214,8 +273,22 @@ class TableSketchPainter extends CustomPainter {
       final len = delta.distance;
       if (len > 0) {
         final normal = Offset(-delta.dy / len, delta.dx / len) * 1.5;
-        _drawSingleStroke(canvas, p1 + normal, p2 + normal, line.style, paint, isPreview);
-        _drawSingleStroke(canvas, p1 - normal, p2 - normal, line.style, paint, isPreview);
+        _drawSingleStroke(
+          canvas,
+          p1 + normal,
+          p2 + normal,
+          line.style,
+          paint,
+          isPreview,
+        );
+        _drawSingleStroke(
+          canvas,
+          p1 - normal,
+          p2 - normal,
+          line.style,
+          paint,
+          isPreview,
+        );
       }
     } else {
       _drawSingleStroke(canvas, p1, p2, line.style, paint, isPreview);
@@ -231,11 +304,15 @@ class TableSketchPainter extends CustomPainter {
     bool isPreview,
   ) {
     if (style == 'dash' || isPreview) {
-      final path = Path()..moveTo(p1.dx, p1.dy)..lineTo(p2.dx, p2.dy);
+      final path = Path()
+        ..moveTo(p1.dx, p1.dy)
+        ..lineTo(p2.dx, p2.dy);
       final dashed = createDashedPath(path, 6.0, 4.0);
       canvas.drawPath(dashed, paint);
     } else if (style == 'dot') {
-      final path = Path()..moveTo(p1.dx, p1.dy)..lineTo(p2.dx, p2.dy);
+      final path = Path()
+        ..moveTo(p1.dx, p1.dy)
+        ..lineTo(p2.dx, p2.dy);
       final dotted = createDashedPath(path, 2.0, 3.0);
       canvas.drawPath(dotted, paint);
     } else {
@@ -244,8 +321,7 @@ class TableSketchPainter extends CustomPainter {
   }
 
   void _drawPreviewRect(Canvas canvas, Rect rect) {
-    final path = Path()
-      ..addRect(rect);
+    final path = Path()..addRect(rect);
     final dashed = createDashedPath(path, 6.0, 4.0);
     final paint = Paint()
       ..color = const Color(0xFF2563EB).withValues(alpha: 0.8)
@@ -306,6 +382,27 @@ class TableSketchPainter extends CustomPainter {
     );
 
     textPainter.paint(canvas, Offset(dx, dy));
+  }
+
+  Rect? _selectionRect() {
+    Rect? box;
+    void add(Rect r) => box = box == null ? r : box!.expandToInclude(r);
+    for (final i in selectedLines) {
+      if (i < 0 || i >= doc.lines.length) continue;
+      final l = doc.lines[i];
+      add(
+        Rect.fromPoints(
+          Offset(l.x1 * cellSize, l.y1 * cellSize),
+          Offset(l.x2 * cellSize, l.y2 * cellSize),
+        ),
+      );
+    }
+    for (final i in selectedTexts) {
+      if (i < 0 || i >= doc.texts.length) continue;
+      final t = doc.texts[i];
+      add(Rect.fromLTWH(t.x * cellSize, t.y * cellSize, cellSize, cellSize));
+    }
+    return box;
   }
 
   @override

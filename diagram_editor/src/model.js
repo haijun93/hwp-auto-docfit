@@ -72,7 +72,8 @@ export function edgeStyle(data){
  const s={...EDGE_DEFAULT,...data};
  if(!['step','straight','curve'].includes(s.line)||!hex(s.color)||typeof s.width!=='number'||!(s.width>=0.5&&s.width<=10)||!DASH_KEYS.has(s.dash)||!MARKER_KEYS.has(s.start)||!MARKER_KEYS.has(s.end))
   throw new Error('연결선 모양을 확인해 주세요.');
- return {line:s.line,color:s.color,width:s.width,dash:s.dash,start:s.start,end:s.end};
+ // autoSide: 도형을 옮기면 마주 보는 면으로 다시 붙는 연결선(자석).
+ return {line:s.line,color:s.color,width:s.width,dash:s.dash,start:s.start,end:s.end,...(s.autoSide===true?{autoSide:true}:{})};
 }
 /** 도형 글자 서식(선택): font(글꼴), size(pt), bold, textColor. 값이 없으면 예전 기본(맑은 고딕 12pt). */
 export const TEXT_FONTS=FONTS;
@@ -167,6 +168,18 @@ export function computeNodeAutoFitBox(n) {
   return {width:n.width??220,height:n.height??40,lines,lineHeight:f.lineHeight,factor:1,textWidth:0,textHeight:lines.length*f.lineHeight,font:f};
  }
  const factor=textFactor(n.data.shape);
+ if(n.data.shape==='circle'){
+  // 원형은 정사각형을 유지하고 글을 원 안에서 줄바꿈한다. 넘치면 지름을 키운다(최대 360).
+  const padX=6,padY=4;let d=Math.max(40,n.width??84,n.height??84),lines=[];
+  for(;;){
+   lines=wrapKoreanAwareText(n.data.label,Math.max(24,Math.floor(d*factor-2*padX)),f.css,f.px);
+   const widest=Math.max(0,...lines.map(line=>textWidth(line,f.css,f.px)));
+   if((lines.length*f.lineHeight+2*padY<=d*factor&&widest+2*padX<=d*factor+1)||d>=360)break;
+   d+=8;
+  }
+  const longest=Math.max(0,...lines.map(line=>textWidth(line,f.css,f.px)));
+  return {width:d,height:d,lines,lineHeight:f.lineHeight,factor,textWidth:longest,textHeight:lines.length*f.lineHeight,font:f};
+ }
  const minWidth=Math.max(60,n.width??220),maxWidth=Math.max(360,minWidth);
  const lines=wrapKoreanAwareText(n.data.label,Math.max(32,Math.floor(maxWidth*factor-2*PADDING_X)),f.css,f.px);
  const longest=Math.max(0,...lines.map(line=>textWidth(line,f.css,f.px)));
@@ -227,5 +240,5 @@ export function svg(snapshot) {
   const ty=LINE_SHAPES.has(n.data.shape)?y+h/2-box.lineHeight*0.7:y+h/2;
   return nodeSvg(n,x,y,w,h,defs)+svgLines(box.lines,x+w/2,ty,nodeFont(n.data));
  }).join('');
- return {width:bounds.width,height:bounds.height,source:'<svg xmlns="http://www.w3.org/2000/svg" width="'+bounds.width+'" height="'+bounds.height+'" viewBox="'+bounds.x+' '+bounds.y+' '+bounds.width+' '+bounds.height+'"><defs>'+defs.join('')+'</defs><rect x="'+bounds.x+'" y="'+bounds.y+'" width="'+bounds.width+'" height="'+bounds.height+'" fill="white"/>'+drawnEdges+drawnNodes+'</svg>'};
+ return {width:bounds.width,height:bounds.height,source:'<svg xmlns="http://www.w3.org/2000/svg" width="'+bounds.width+'" height="'+bounds.height+'" viewBox="'+bounds.x+' '+bounds.y+' '+bounds.width+' '+bounds.height+'"><defs>'+defs.join('')+'</defs><rect x="'+bounds.x+'" y="'+bounds.y+'" width="'+bounds.width+'" height="'+bounds.height+'" fill="'+(graph.background??'white')+'"/>'+drawnEdges+drawnNodes+'</svg>'};
 }

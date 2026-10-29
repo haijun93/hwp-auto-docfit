@@ -1,13 +1,8 @@
-
 import 'dart:math' as math;
 
 /// 격자 설정 (cols, rows, cell_mm).
 class GridConfig {
-  const GridConfig({
-    this.cols = 36,
-    this.rows = 50,
-    this.cellMm = 5.0,
-  });
+  const GridConfig({this.cols = 36, this.rows = 50, this.cellMm = 5.0});
 
   final int cols;
   final int rows;
@@ -61,8 +56,7 @@ class SketchLine {
     final dx = (x2 - x1).sign;
     final dy = (y2 - y1).sign;
     return [
-      if (index > 0)
-        copyWith(x2: x1 + dx * index, y2: y1 + dy * index),
+      if (index > 0) copyWith(x2: x1 + dx * index, y2: y1 + dy * index),
       if (index < lengthInUnits - 1)
         copyWith(x1: x1 + dx * (index + 1), y1: y1 + dy * (index + 1)),
     ];
@@ -189,8 +183,8 @@ class TableSketchDoc {
     this.grid = const GridConfig(),
     List<SketchLine>? lines,
     List<SketchText>? texts,
-  })  : lines = lines ?? <SketchLine>[],
-        texts = texts ?? <SketchText>[];
+  }) : lines = lines ?? <SketchLine>[],
+       texts = texts ?? <SketchText>[];
 
   GridConfig grid;
   List<SketchLine> lines;
@@ -328,10 +322,7 @@ class TableSketchPreviewResult {
 
 /// 표그림판 복사 응답 데이터.
 class TableSketchCopyResult {
-  const TableSketchCopyResult({
-    required this.ok,
-    required this.message,
-  });
+  const TableSketchCopyResult({required this.ok, required this.message});
 
   final bool ok;
   final String message;

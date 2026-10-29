@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {FORMAT,templates,template,validate,decode,node,edge,svg,id} from './model.js';
+import {FORMAT,templates,template,validate,decode,node,edge,svg,id,computeNodeAutoFitBox} from './model.js';
 const document = graph=>({format:FORMAT,version:1,nodes:graph.nodes,edges:graph.edges});
 test('two templates (horizontal·vertical) round-trip with branches and varied shapes',()=>{
  assert.deepEqual(Object.keys(templates),['horizontal','vertical']);
@@ -110,4 +110,12 @@ test('mind map: add child/sibling, restyle, auto layout both sides and export',a
  const out=svg({format:FORMAT,version:1,nodes:[],edges:[],mindmap:checked}).source;
  assert.match(out,/2026 업무 계획/);
  assert.throws(()=>mm.validateMindmap({root:{id:'a',text:'x',children:[],style:{shape:'blob'}}}));
+});
+
+test('circle nodes stay square and wrap text inside, growing only when needed',()=>{
+ const small=computeNodeAutoFitBox({data:{label:'축제',shape:'circle'},width:84,height:84});
+ assert.equal(small.width,small.height);assert.equal(small.width,84);
+ const long=computeNodeAutoFitBox({data:{label:'소상공인 컨설팅 지원 사업 확대',shape:'circle'},width:84,height:84});
+ assert.equal(long.width,long.height);
+ assert.ok(long.width>84);assert.ok(long.lines.length>=2);
 });
