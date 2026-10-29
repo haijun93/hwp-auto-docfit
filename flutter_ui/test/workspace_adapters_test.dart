@@ -32,10 +32,10 @@ void main() {
     expect(find.text('마인드맵'), findsOneWidget);
     expect(find.text('파일변환'), findsOneWidget);
 
-    // 파일변환 탭은 2.0.1에서 비활성(교체 작업 중) — 눌러도 이동하지 않는다
     await tester.tap(find.text('파일변환'));
     await tester.pumpAndSettle();
-    expect(currentTab, isNot(5));
+    expect(currentTab, 5);
+    expect(find.text('FileConversionContent'), findsOneWidget);
 
     // Switch back to Tab 0 (문서편집)
     await tester.tap(find.text('문서편집'));

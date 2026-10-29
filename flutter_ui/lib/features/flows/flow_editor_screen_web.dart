@@ -24,7 +24,11 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
   late final String viewType;
   late final web.HTMLIFrameElement frame;
   late final JSFunction listener;
-  String name = '새 다이어그램·마인드맵';
+  late String name = newName;
+
+  /// 새 문서 기본 이름은 모드별로('새 다이어그램' / '새 마인드맵').
+  String get newName =>
+      widget.initialMode == 'mindmap' ? '새 마인드맵' : '새 다이어그램';
   String? identity, revision;
   final saveState = EditSaveState();
   bool dirty = false, ready = false, busy = false;
@@ -47,7 +51,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
       ..src = Uri.base
           .resolve('assets/assets/flow_editor/index.html')
           .toString()
-      ..title = '다이어그램·마인드맵'
+      ..title = widget.initialMode == 'mindmap' ? '마인드맵' : '다이어그램'
       ..setAttribute('sandbox', 'allow-scripts allow-same-origin')
       ..style.border = '0'
       ..style.width = '100%'
@@ -159,7 +163,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
           if (await confirmDiscard()) {
             identity = null;
             revision = null;
-            name = '새 다이어그램·마인드맵';
+            name = newName;
             dirty = false;
             post({'type': 'new'});
           }
@@ -174,6 +178,9 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
           break;
         case 'request_save':
           await save();
+          break;
+        case 'request_save_copy':
+          await save(asCopy: true);
           break;
         case 'save_document':
           final selectedId =
@@ -401,7 +408,8 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
       }
     },
     child: Scaffold(
-      appBar: AppBar(
+      // 탭 안에서는 제목 줄 없이 편집기 도구 줄이 맨 위(사본 저장은 편집기 도구 줄에 있음, 2026-10-29 사용자 요청).
+      appBar: !widget.isModal ? null : AppBar(
         title: Text(name),
         actions: [
           IconButton(

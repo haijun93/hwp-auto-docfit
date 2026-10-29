@@ -57,10 +57,7 @@ class TabNavigationShell extends StatefulWidget {
 }
 
 class _TabNavigationShellState extends State<TabNavigationShell> {
-  late int _index = disabledTabs.contains(widget.initialIndex) ? 0 : widget.initialIndex;
-
-  /// 아직 열 수 없는 탭(5: 파일변환 — 교체 작업 중).
-  static const disabledTabs = {5};
+  late int _index = widget.initialIndex;
 
   static const _labels = ['문서편집', '표템플릿', '표그림판', '다이어그램', '마인드맵', '파일변환'];
   static const _icons = [
@@ -73,7 +70,7 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
   ];
 
   void _select(int index) {
-    if (index == _index || disabledTabs.contains(index)) return;
+    if (index == _index) return;
     setState(() => _index = index);
     widget.onTabChanged?.call(index);
   }
@@ -115,9 +112,6 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
             NavigationDestination(
               icon: Icon(_icons[i]),
               label: _labels[i],
-              // 파일변환 탭은 kordoc 변환 화면으로 교체될 때까지 비활성(2.0.1, 사용자 지시)
-              enabled: !disabledTabs.contains(i),
-              tooltip: disabledTabs.contains(i) ? '준비 중' : null,
             ),
         ],
       ),

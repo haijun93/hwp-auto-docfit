@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../core/api/abbreviation_api.dart' show ApiCall;
-import '../diagrams/diagram_editor_screen.dart';
 import '../flows/flow_editor_screen.dart';
 import '../table_sketch/table_sketch_screen.dart';
 import '../table_units/table_units_screen.dart';
@@ -67,7 +66,9 @@ class DiagramAdapter extends StatelessWidget {
   @override
   Widget build(BuildContext context) => KeyedSubtree(
         key: const ValueKey('tab-diagram-adapter'),
-        child: DiagramEditorScreen(api: api, isModal: false),
+        // 탭에서도 상단 메뉴와 같은 편집기(다이어그램 모드)를 연다 — 예전 도형 편집기는 웹 화면에서
+        // "Flutter Windows 앱에서만" 안내만 보였다(2026-10-29 사용자 보고).
+        child: FlowEditorScreen(api: api, initialMode: 'diagram', isModal: false),
       );
 }
 
@@ -83,7 +84,7 @@ class MindMapAdapter extends StatelessWidget {
   @override
   Widget build(BuildContext context) => KeyedSubtree(
         key: const ValueKey('tab-mindmap-adapter'),
-        child: FlowEditorScreen(api: api, initialMode: 'flow', isModal: false),
+        child: FlowEditorScreen(api: api, initialMode: 'mindmap', isModal: false),
       );
 }
 

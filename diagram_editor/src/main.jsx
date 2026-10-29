@@ -13,6 +13,7 @@ import {FONTS,registerFonts,ARROWS,DOWN_ARROWS,FLOW_PRESETS,MAX_FLOW_STEPS,MAX_F
  isTaskTable,isFixedCalloutCategory,resizeTaskGrid} from './table.js';
 
 const TITLE='다이어그램·마인드맵';
+const newName=mode=>'새 '+(mode==='mindmap'?'마인드맵':'다이어그램');
 function send(message){
  const host=window.chrome?.webview;
  if(window.parent!==window)window.parent.postMessage(message,window.location.origin);
@@ -266,7 +267,7 @@ function App(){
  const changeTable=next=>{tables.current[next.kind]=next;commit({...current.current,table:next});};
  const mindmap=graph.mindmap??null;
  const changeMindmap=(next,select)=>{commit({...current.current,mindmap:next});if(select!==undefined)setMmSelected(select);};
- const switchMode=next=>{if(next==='table_units'){send({type:'open_table_units'});return;}
+ const switchMode=next=>{
   if(!AVAILABLE_MODES.has(next)){
    setStatus(next==='catalog'?'표 서식 모음은 현재 알파 버전에서 비활성화되어 있습니다.':'조직표와 장식표는 현재 알파 버전에서 사용할 수 없습니다.');
    return;
@@ -283,8 +284,8 @@ function App(){
  handle.current=async message=>{
   if(!message||typeof message!=='object')return;
   try{
-   switch(message.type){case 'set_mode':{if(message.mode==='diagram'||message.mode==='mindmap')switchMode(message.mode);break;}
-    case 'new':tables.current=newTables();setMmSelected(null);replace({nodes:[],edges:[]},'새 '+TITLE,false);setMode('diagram');send({type:'document_new'});break;
+   switch(message.type){case 'set_mode':{if(message.mode==='diagram'||message.mode==='mindmap'){switchMode(message.mode);if(nameRef.current==='새 '+TITLE)setName(newName(message.mode));}break;}
+    case 'new':tables.current=newTables();setMmSelected(null);replace({nodes:[],edges:[]},newName(mode),false);send({type:'document_new'});break;
     case 'mark_saved':
      if(Number.isInteger(message.generation))savedGeneration.current=Math.max(savedGeneration.current,message.generation);
      send({type:'dirty',value:generation.current>savedGeneration.current,generation:generation.current});
@@ -476,16 +477,15 @@ function App(){
  const mmNode=mindmap&&mmSelected?findNode(mindmap,mmSelected)?.node:null;
  const shownNodes=mmGraph?mmGraph.nodes.map(n=>({...n,selected:n.id===mmSelected,draggable:true,connectable:true})):graph.nodes;
  const shownEdges=mmGraph?mmGraph.edges:graph.edges;
- const tabs=[['diagram','다이어그램'],['mindmap','마인드맵'],['table_units','표 템플릿']];
  const canvas=mode==='diagram'||mode==='mindmap';
  const scopeLabel=CATALOG_SCOPES.find(([k])=>k===catalogScope)?.[1]??'선택 칸';
  return <HistoryContext.Provider value={checkpoint}><div className="editor-shell">
-  <header><strong>{TITLE}</strong><span className="document-name">{name}</span>
-   <div className="mode-tabs" role="tablist" aria-label="만들 것">{tabs.map(([key,label])=><button key={key} role="tab" aria-selected={mode===key} className={mode===key?'active':''} onClick={()=>switchMode(key)}>{label}</button>)}</div>
+  <header>
    <nav>
    <button onClick={()=>send({type:'request_new'})}>새 문서</button>
    <button onClick={()=>send({type:'request_list'})}>열기·삭제</button>
    <button onClick={()=>send({type:'request_save'})}>저장</button>
+   <button onClick={()=>send({type:'request_save_copy'})}>사본 저장</button>
    {mode==='catalog'?<><button onClick={()=>send({type:'request_catalog'})}>목록 새로고침</button><button className="primary" disabled={!selectedCatalogTemplate||busy} onClick={copyCatalog}>선택한 표 한/글에 복사</button><button disabled={!selectedCatalogTemplate||busy} onClick={exportCatalog}>수정 표 HWPX 저장</button></>:canvas?<>
     <button disabled={busy} onClick={()=>handle.current({type:'copy_png'})}>그림 복사 (한/글 붙여넣기)</button>
     <button disabled={busy} onClick={()=>send({type:'request_png'})}>{busy?'PNG 변환 중…':'PNG 내보내기'}</button>

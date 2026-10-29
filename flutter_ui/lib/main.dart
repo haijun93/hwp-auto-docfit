@@ -16,6 +16,7 @@ import 'features/formats/table_template_panel.dart';
 import 'features/formats/profile_editor.dart';
 import 'features/tools/document_tools_workspace.dart';
 import 'features/tools/backend_dialog.dart';
+import 'features/conversion/conversion_drop_pane.dart';
 import 'features/conversion/floating_format_picker.dart';
 import 'features/conversion/merge_order_dialog.dart';
 import 'features/flows/flow_editor_screen.dart';
@@ -107,16 +108,33 @@ class DocFitApp extends StatelessWidget {
       ),
     ),
     home: useIntegratedShell
-        ? IntegratedWorkspace(
-            api: api,
-            documentEditorWidget: Workspace(api: api),
-            fileConversionWidget: DocumentToolsWorkspace(
-              api: api,
-              initial: 'convert',
-              isModal: false,
-            ),
-          )
+        ? _IntegratedHome(api: api)
         : Workspace(api: api),
+  );
+}
+
+/// 6탭 작업 공간. 파일변환 탭은 문서편집 화면의 '파일 변환' 흐름(키패드 포맷 선택 → 진행 → 4. 결과 확인)을
+/// 그대로 쓰고, 탭에는 파일을 놓는 영역만 둔다(2026-10-29 사용자 요청, 2.0.2).
+class _IntegratedHome extends StatefulWidget {
+  const _IntegratedHome({required this.api});
+  final ApiCall api;
+  @override
+  State<_IntegratedHome> createState() => _IntegratedHomeState();
+}
+
+class _IntegratedHomeState extends State<_IntegratedHome> {
+  final workspace = GlobalKey<_WorkspaceState>();
+
+  @override
+  Widget build(BuildContext context) => IntegratedWorkspace(
+    api: widget.api,
+    documentEditorWidget: Workspace(key: workspace, api: widget.api),
+    fileConversionWidget: ConversionDropPane(
+      onPickFiles: () => workspace.currentState?.addConversionFiles(),
+    ),
+    onTabChanged: (index) {
+      if (index == 5) workspace.currentState?.enterConversionMode();
+    },
   );
 }
 
@@ -349,7 +367,11 @@ class _WorkspaceState extends State<Workspace> {
           !locked &&
           (documentDropped || (documentsChanged && mode == 'file_format'))) {
         setState(() => tab = 1);
-        if (mode == 'file_format') openConversionPicker();
+        if (mode == 'file_format') {
+          // 파일변환 탭에서 넣은 파일도 문서편집 화면의 변환 흐름(진행·4. 결과 확인)으로 이어 간다.
+          WorkspaceTabScope.maybeOf(context)?.selectTab(0);
+          openConversionPicker();
+        }
       }
     });
     checkBackendDialog();
@@ -434,6 +456,19 @@ class _WorkspaceState extends State<Workspace> {
     }
     await command('start', args);
     if (mounted && running) setState(() => tab = 2);
+  }
+
+  /// 파일변환 탭을 열면 작업 방식을 '파일 변환'으로 바꾸고 끌어 놓은 파일을 문서 목록으로 받는다.
+  Future<void> enterConversionMode() async {
+    if (locked) return;
+    if (mode != 'file_format') await command('set_mode', ['file_format']);
+    await setDropTarget('documents');
+  }
+
+  /// 파일변환 탭의 '파일 선택'.
+  Future<void> addConversionFiles() async {
+    await enterConversionMode();
+    if (!locked) await command('add_files');
   }
 
   Future<void> openConversionPicker() async {

@@ -102,7 +102,7 @@ void main() {
     expect(find.byType(BackButton), findsNothing);
   });
 
-  testWidgets('파일변환 탭은 비활성이라 눌러도 이동하지 않는다', (tester) async {
+  testWidgets('파일변환 탭을 누르면 파일변환 화면으로 이동한다(2.0.2)', (tester) async {
     await tester.pumpWidget(MaterialApp(
       home: TabNavigationShell(
         documentEditor: _page('문서'),
@@ -115,7 +115,7 @@ void main() {
     ));
     await tester.tap(find.text('파일변환'));
     await tester.pumpAndSettle();
-    expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 0);
-    expect(find.text('파일변환 화면'), findsNothing);
+    expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 5);
+    expect(find.text('파일변환 화면'), findsOneWidget);
   });
 }
