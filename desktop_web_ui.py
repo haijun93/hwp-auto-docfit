@@ -61,6 +61,35 @@ def _profile_trace(message):
         pass
 
 
+class PendingGui:
+    """Tk 화면을 만드는 동안 먼저 웹 창을 띄우기 위한 대리 객체(2.0.5 시작 속도).
+
+    숨긴 Tk 화면(HwpAutoDocFitGUI)을 만드는 데 1~2초가 걸려 웹 창이 그만큼 늦게 떴다. 웹 창은 바로 만들고,
+    화면 요청(브리지 호출)은 Tk 준비가 끝날 때까지 기다렸다가 실제 화면으로 넘긴다."""
+
+    def __init__(self, ready: threading.Event, holder: dict, timeout: float = 30.0):
+        object.__setattr__(self, "_ready", ready)
+        object.__setattr__(self, "_holder", holder)
+        object.__setattr__(self, "_timeout", timeout)
+
+    def resolve(self):
+        if not self._ready.wait(self._timeout):
+            raise RuntimeError("앱 인터페이스를 시작하지 못했습니다.")
+        if "오류" in self._holder:
+            raise RuntimeError("앱 인터페이스를 시작하지 못했습니다.") from self._holder["오류"]
+        return self._holder["gui"]
+
+    def __getattr__(self, name):
+        return getattr(self.resolve(), name)
+
+    def __setattr__(self, name, value):
+        setattr(self.resolve(), name, value)
+
+
+def _real_gui(gui):
+    return gui.resolve() if isinstance(gui, PendingGui) else gui
+
+
 class DesktopWebBridge:
     """WebView에서 호출하는 API. 모든 Tk 접근은 Tk 이벤트 루프에 위임한다."""
 
@@ -2225,9 +2254,19 @@ def run_webview(gui):
     if not page.is_file():
         raise FileNotFoundError(f"웹 UI 파일을 찾을 수 없습니다: {page}")
 
-    screen_width, screen_height = bridge._tk(
-        lambda: (gui.root.winfo_screenwidth(), gui.root.winfo_screenheight())
-    )
+    if isinstance(gui, PendingGui):
+        # Tk를 기다리지 않고 창 크기를 정한다(pywebview 화면 정보는 Tk와 같은 논리 픽셀).
+        try:
+            screen = webview.screens[0]
+            screen_width, screen_height = int(screen.width), int(screen.height)
+        except Exception:
+            screen_width, screen_height = bridge._tk(
+                lambda: (gui.root.winfo_screenwidth(), gui.root.winfo_screenheight())
+            )
+    else:
+        screen_width, screen_height = bridge._tk(
+            lambda: (gui.root.winfo_screenwidth(), gui.root.winfo_screenheight())
+        )
     width = min(1040, max(420, screen_width - 40))
     # Reserve space for the title bar and taskbar; center the window so it
     # remains fully reachable even when Tk reports a logical (DPI-scaled) size.
@@ -2252,13 +2291,26 @@ def run_webview(gui):
     tk_stopped = threading.Event()
     bridge.tk_stopped = tk_stopped
     window.events.closing += bridge.request_close
-    original_destroy = gui.root.destroy
 
-    def tracked_destroy():
-        bridge._shutdown()
-        original_destroy()
+    def track_tk_destroy():
+        try:
+            root = _real_gui(gui).root
+        except Exception:
+            # Tk 화면을 만들지 못했다: 웹 창을 닫고 시작 오류는 호출한 쪽이 알린다.
+            tk_stopped.set()
+            return
+        original_destroy = root.destroy
 
-    gui.root.destroy = tracked_destroy
+        def tracked_destroy():
+            bridge._shutdown()
+            original_destroy()
+
+        root.destroy = tracked_destroy
+
+    if isinstance(gui, PendingGui):
+        threading.Thread(target=track_tk_destroy, name="tk-ready-watch", daemon=True).start()
+    else:
+        track_tk_destroy()
 
     def bind_file_drop(web_window):
         try:

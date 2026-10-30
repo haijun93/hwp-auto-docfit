@@ -3452,12 +3452,15 @@ def main():
 
     tk_thread = threading.Thread(target=tk_실행, name="hwp-tk-event-loop", daemon=True)
     tk_thread.start()
-    if not 준비됨.wait(30):
-        _닫기_스플래시()
-        raise RuntimeError("앱 인터페이스를 시작하지 못했습니다.")
-    if "오류" in 보관:
-        _닫기_스플래시()
-        raise RuntimeError("앱 인터페이스를 시작하지 못했습니다.") from 보관["오류"]
+
+    def tk_준비_확인():
+        # 웹 창은 Tk 화면을 만드는 동안 먼저 뜬다(2.0.5). Tk가 실패하면 예전처럼 시작 오류로 끝낸다.
+        if not 준비됨.wait(30):
+            _닫기_스플래시()
+            raise RuntimeError("앱 인터페이스를 시작하지 못했습니다.")
+        if "오류" in 보관:
+            _닫기_스플래시()
+            raise RuntimeError("앱 인터페이스를 시작하지 못했습니다.") from 보관["오류"]
 
     try:
         import desktop_web_ui
@@ -3466,11 +3469,15 @@ def main():
         desktop_web_ui.APP_VERSION = APP_VERSION
         desktop_web_ui.STAGE_ORDER = 진행단계_순서
         desktop_web_ui.APP_ICON = str(번들_앱아이콘_찾기() or "")
-        if not desktop_web_ui.run_webview(보관["gui"]):
+        화면 = desktop_web_ui.PendingGui(준비됨, 보관)
+        if not desktop_web_ui.run_webview(화면):
+            tk_준비_확인()
             _닫기_스플래시()
             보관["root"].after(0, lambda: 웹모드_기본창_복원(보관["root"]))
             tk_thread.join()
+        tk_준비_확인()
     except Exception as 오류:
+        tk_준비_확인()
         _닫기_스플래시()
         def 기존화면_안내(시작오류):
             messagebox.showwarning(
