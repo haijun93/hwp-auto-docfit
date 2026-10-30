@@ -4,9 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:docfit_ui/main.dart';
-import 'package:docfit_ui/features/flows/flow_editor_screen.dart';
-import 'package:docfit_ui/features/table_units/table_units_screen.dart';
-import 'package:docfit_ui/features/table_sketch/table_sketch_screen.dart';
 
 
 Map<String, dynamic> initialState() => <String, dynamic>{
@@ -93,10 +90,6 @@ void main() {
       final limit = tester.getRect(find.byTooltip('사용 방법 (F1)')).left;
       for (final key in [
         'topMenu_format',
-        'topMenu_diagram',
-        'topMenu_mindmap',
-        'topMenu_tableUnits',
-        'topMenu_tableSketch',
       ]) {
         final rect = tester.getRect(find.byKey(Key(key)));
         expect(
@@ -147,9 +140,15 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('topMenu_format')), findsOneWidget);
-      expect(find.byKey(const Key('topMenu_diagram')), findsOneWidget);
-      expect(find.byKey(const Key('topMenu_mindmap')), findsOneWidget);
-      expect(find.byKey(const Key('topMenu_tableUnits')), findsOneWidget);
+      // 다이어그램·마인드맵·표 템플릿·표그림판은 하단 탭으로만 연다(상단 아이콘 삭제, 2026-10-30 사용자 지시).
+      for (final key in [
+        'topMenu_diagram',
+        'topMenu_mindmap',
+        'topMenu_tableUnits',
+        'topMenu_tableSketch',
+      ]) {
+        expect(find.byKey(Key(key)), findsNothing, reason: key);
+      }
 
       // 서식 관리 → 바로 썸네일 '서식 고르기'. 카드 아래 첫 줄 서식예시 확인, 둘째 줄 서식예시 폴더·서식관리
       await tester.tap(find.byKey(const Key('topMenu_format')));
@@ -169,57 +168,6 @@ void main() {
       await tester.tap(find.byTooltip('닫기').last);
       await tester.pumpAndSettle();
 
-      await tester.ensureVisible(find.byKey(const Key('topMenu_diagram')));
-
-      await tester.tap(find.byKey(const Key('topMenu_diagram')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
-
-      final diagramFinder = find.byType(FlowEditorScreen);
-      expect(diagramFinder, findsOneWidget);
-      final diagramScreen = tester.widget<FlowEditorScreen>(diagramFinder);
-      expect(diagramScreen.initialMode, 'diagram');
-      expect(observer.pushedRoutes.isNotEmpty, isTrue);
-
-      Navigator.of(tester.element(diagramFinder)).pop();
-      await tester.pumpAndSettle();
-
-      await tester.ensureVisible(find.byKey(const Key('topMenu_mindmap')));
-
-      await tester.tap(find.byKey(const Key('topMenu_mindmap')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
-
-      final mindmapFinder = find.byType(FlowEditorScreen);
-      expect(mindmapFinder, findsOneWidget);
-      final mindmapScreen = tester.widget<FlowEditorScreen>(mindmapFinder);
-      expect(mindmapScreen.initialMode, 'mindmap');
-
-      Navigator.of(tester.element(mindmapFinder)).pop();
-      await tester.pumpAndSettle();
-
-      await tester.ensureVisible(find.byKey(const Key('topMenu_tableUnits')));
-
-      await tester.tap(find.byKey(const Key('topMenu_tableUnits')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
-
-      final tableUnitsFinder = find.byType(TableUnitsScreen);
-      expect(tableUnitsFinder, findsOneWidget);
-
-      Navigator.of(tester.element(tableUnitsFinder)).pop();
-      await tester.pumpAndSettle();
-
-      // 표그림판도 상단 메뉴에 나열되고 누르면 표그림판 화면이 열린다.
-      await tester.ensureVisible(find.byKey(const Key('topMenu_tableSketch')));
-      await tester.tap(find.byKey(const Key('topMenu_tableSketch')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
-      final sketchFinder = find.byType(TableSketchScreen);
-      expect(sketchFinder, findsOneWidget);
-      Navigator.of(tester.element(sketchFinder)).pop();
-      await tester.pumpAndSettle();
-
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
     },
@@ -232,15 +180,12 @@ void main() {
     Future<Object?> api(String name, List<Object?> args) async => state;
     await tester.pumpWidget(DocFitApp(api: api));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('topMenu_tableUnits')), findsOneWidget);
     expect(find.byTooltip('문서 도구'), findsNothing);
     state['options']['developer_mode'] = true;
     state['options']['diagram_editor_enabled'] = true;
     await tester.pump(const Duration(seconds: 2));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('topMenu_tableUnits')), findsOneWidget);
     expect(find.byTooltip('문서 도구'), findsNothing);
-    expect(find.byKey(const Key('topMenu_diagram')), findsOneWidget);
     expect(find.text('tldraw 편집기 (개발자 전용)'), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });

@@ -123,14 +123,32 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
           ],
         ),
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-        onDestinationSelected: _select,
-        destinations: [
-          for (var i = 0; i < _labels.length; i++)
-            NavigationDestination(icon: Icon(_icons[i]), label: _labels[i]),
-        ],
+      // 하단 탭은 앱의 다른 부분과 어울리게 낮고 작게(기본 80 → 52, 2026-10-30 사용자 지시).
+      bottomNavigationBar: NavigationBarTheme(
+        data: NavigationBarThemeData(
+          height: 52,
+          indicatorShape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          labelTextStyle: WidgetStateProperty.resolveWith(
+            (states) => TextStyle(
+              fontSize: 11,
+              fontWeight: states.contains(WidgetState.selected)
+                  ? FontWeight.w700
+                  : FontWeight.w500,
+            ),
+          ),
+          iconTheme: const WidgetStatePropertyAll(IconThemeData(size: 19)),
+        ),
+        child: NavigationBar(
+          selectedIndex: _index,
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+          onDestinationSelected: _select,
+          destinations: [
+            for (var i = 0; i < _labels.length; i++)
+              NavigationDestination(icon: Icon(_icons[i]), label: _labels[i]),
+          ],
+        ),
       ),
     );
   }

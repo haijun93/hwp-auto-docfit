@@ -99,6 +99,9 @@ void main() {
       300,
       scrollable: find.byType(Scrollable).last,
     );
+    // 목록 맨 아래 단추가 하단 탭에 걸치지 않게 위쪽으로 맞춘다.
+    await tester.ensureVisible(find.text('전체 설정 열기'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('전체 설정 열기'));
     await tester.pumpAndSettle();
 

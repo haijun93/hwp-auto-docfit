@@ -19,13 +19,10 @@ import 'features/tools/backend_dialog.dart';
 import 'features/conversion/conversion_drop_pane.dart';
 import 'features/conversion/floating_format_picker.dart';
 import 'features/conversion/merge_order_dialog.dart';
-import 'features/flows/flow_editor_screen.dart';
 import 'features/progress/live_progress.dart';
 import 'features/settings/settings_dialog.dart';
 import 'features/settings/update_panel.dart';
 import 'features/stages/stage_board.dart';
-import 'features/table_units/table_units_screen.dart';
-import 'features/table_sketch/table_sketch_screen.dart';
 import 'features/workspace/workspace_adapters.dart';
 import 'features/workspace/tab_navigation_shell.dart';
 
@@ -643,41 +640,6 @@ class _WorkspaceState extends State<Workspace> {
     );
   }
 
-  /// 6탭 화면 안이면 새 화면을 덮어 열지 않고 해당 탭으로 옮긴다(하단 탭 메뉴가 사라지던 문제).
-  bool _switchWorkspaceTab(int index) {
-    final scope = WorkspaceTabScope.maybeOf(context);
-    if (scope == null) return false;
-    scope.selectTab(index);
-    return true;
-  }
-
-  Future<void> openFlowEditor({String mode = 'diagram'}) async {
-    if (_switchWorkspaceTab(mode == 'mindmap' ? 4 : 3)) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => FlowEditorScreen(api: widget.api, initialMode: mode),
-      ),
-    );
-  }
-
-  Future<void> openTableUnits() async {
-    if (_switchWorkspaceTab(1)) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => TableUnitsScreen(api: widget.api),
-      ),
-    );
-  }
-
-  Future<void> openTableSketch() async {
-    if (_switchWorkspaceTab(2)) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => TableSketchScreen(api: widget.api),
-      ),
-    );
-  }
-
   /// Ctrl+Enter: 문서 선택 화면에서는 다음 단계로, 작업 방식 화면에서는 바로 시작한다.
   void primaryShortcut() {
     if (tab == 0 && !locked && files.isNotEmpty) {
@@ -855,32 +817,11 @@ class _WorkspaceState extends State<Workspace> {
       builder: (context, constraints) {
         final width = constraints.maxWidth;
         // 네 메뉴 버튼(서식 관리·다이어그램·마인드맵·표 템플릿)을 글과 함께 놓으려면 약 880이 필요하다(폭 800에서 79 넘침).
-        // 다섯 메뉴 버튼을 글과 함께 놓으려면 약 1180이 필요하다. 모자라면 아이콘만(이름은 툴팁) — 잘려 보이지 않게(2026-10-23 사용자 실측).
-        final isNarrow = width < 1180;
+        // 상단 메뉴는 '서식 관리' 하나(다른 화면은 하단 탭, 2026-10-30). 좁으면 아이콘만(이름은 툴팁).
+        final isNarrow = width < 760;
         final showProfileBadge = width >= 1360;
         final currentProfileName =
             '${profiles.whereType<Map>().where((p) => p['id'] == state['profile']).firstOrNull?['name'] ?? '기본 보고서 서식'}';
-
-        Widget topBtn({
-          required Key key,
-          required String label,
-          required IconData icon,
-          required VoidCallback? onPressed,
-          String? tooltip,
-        }) {
-          final btn = TextButton.icon(
-            key: key,
-            onPressed: locked ? null : onPressed,
-            icon: Icon(icon, size: 18),
-            label: isNarrow ? const SizedBox.shrink() : Text(label),
-            style: TextButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.symmetric(horizontal: isNarrow ? 4 : 8),
-              minimumSize: isNarrow ? const Size(36, 36) : null,
-            ),
-          );
-          return Tooltip(message: tooltip ?? label, child: btn);
-        }
 
         final formatButton = Tooltip(
           message: isNarrow
@@ -962,44 +903,6 @@ class _WorkspaceState extends State<Workspace> {
                 ),
               ],
               const SizedBox(width: 4),
-              // 메뉴 버튼이 늘어도 넘치지 않게, 공간이 모자라면 옆으로 밀어 볼 수 있게 한다.
-              Flexible(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      topBtn(
-                        key: const Key('topMenu_diagram'),
-                        label: '다이어그램',
-                        icon: Icons.account_tree_outlined,
-                        onPressed: () => openFlowEditor(mode: 'diagram'),
-                      ),
-                      const SizedBox(width: 4),
-                      topBtn(
-                        key: const Key('topMenu_mindmap'),
-                        label: '마인드맵',
-                        icon: Icons.hub_outlined,
-                        onPressed: () => openFlowEditor(mode: 'mindmap'),
-                      ),
-                      const SizedBox(width: 4),
-                      topBtn(
-                        key: const Key('topMenu_tableUnits'),
-                        label: '표 템플릿',
-                        icon: Icons.grid_on_outlined,
-                        onPressed: openTableUnits,
-                      ),
-                      const SizedBox(width: 4),
-                      topBtn(
-                        key: const Key('topMenu_tableSketch'),
-                        label: '표그림판',
-                        icon: Icons.border_all_outlined,
-                        onPressed: openTableSketch,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
             ],
           ),
           actions: [
