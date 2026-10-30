@@ -10,6 +10,7 @@ import subprocess
 import shutil
 import threading
 import time
+import tempfile
 import uuid
 import re
 from concurrent.futures import Future, TimeoutError
@@ -1775,15 +1776,29 @@ class DesktopWebBridge:
         return self.get_state()
 
     def open_diff(self, index=0):
-        """T17 진입점. 독립 비교 백엔드 연결 전에는 Tk 빈 창을 열지 않는다."""
-        if not self._tk_fallback_enabled():
-            return {
-                "ok": False,
-                "code": "DIFF_BACKEND_NOT_READY",
-                "error": "원본·결과 비교는 준비 중입니다. 독립 한/글 비교 뷰어가 아직 연결되지 않았습니다.",
-            }
-        self._tk(self.gui.비교창_준비, timeout=None, front=True)
-        return {**self.get_state(), "ok": True, "tk_fallback": True}
+        """원본·결과의 글을 나란히 비교한 HTML을 만들어 기본 브라우저로 연다(2.0.6).
+
+        예전에는 독립 한/글 비교 뷰어가 붙을 때까지 '준비 중' 오류만 보였다(사용자 보고)."""
+        if self._tk_fallback_enabled():
+            self._tk(self.gui.비교창_준비, timeout=None, front=True)
+            return {**self.get_state(), "ok": True, "tk_fallback": True}
+        from docfit_app.result_compare import build_report
+        try:
+            item = getattr(self.gui, "_결과목록", [])[int(index)]
+            original, result = item.get("원본", ""), item.get("결과", "")
+        except (IndexError, TypeError, ValueError, AttributeError):
+            original = result = ""
+        if not (original and os.path.isfile(original) and result and os.path.isfile(result)):
+            return {"ok": False, "code": "DIFF_FILE_MISSING",
+                    "error": "원본이나 결과 파일을 찾을 수 없어 비교하지 못했어요. 옮기거나 지우지 않았는지 확인해 주세요."}
+        try:
+            folder = Path(tempfile.gettempdir()) / "HWP_AutoDocFit_compare"
+            report = build_report(original, result, folder / f"비교_{Path(result).stem[:60]}.html")
+        except Exception as exc:
+            return {"ok": False, "code": "DIFF_UNSUPPORTED", "error": str(exc) or "비교하지 못했어요."}
+        if os.name == "nt":
+            os.startfile(str(report))   # noqa: S606 — 앱이 만든 HTML을 기본 브라우저로 연다
+        return {**self.get_state(), "ok": True, "report": str(report)}
 
     def compare_result(self, index=0):
         return self.open_diff(index)
