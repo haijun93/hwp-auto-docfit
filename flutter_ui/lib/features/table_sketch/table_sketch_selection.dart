@@ -198,6 +198,10 @@ bool translateSelection(
     if (x < 0 || y < 0 || x >= cols || y >= rows) return false;
     if (occupied.contains((x, y))) return false;
   }
+  final before = sel.lines.isEmpty ? null : selectionBounds(doc, sel);
+  if (before != null) {
+    moveFill(doc, before, before.shift(Offset(dx.toDouble(), dy.toDouble())));
+  }
   for (final i in sel.lines) {
     final s = doc.lines[i];
     doc.lines[i] = s.copyWith(
@@ -546,16 +550,47 @@ List<SketchLine> rectangleLines(
   Rect r, {
   String width = 'thin',
   String style = 'solid',
+  String color = sketchBlack,
 }) {
   final l = r.left.round(),
       t = r.top.round(),
       ri = r.right.round(),
       b = r.bottom.round();
+  SketchLine line(int x1, int y1, int x2, int y2) => SketchLine(
+    x1: x1,
+    y1: y1,
+    x2: x2,
+    y2: y2,
+    width: width,
+    style: style,
+    color: color,
+  );
   return [
-    SketchLine(x1: l, y1: t, x2: ri, y2: t, width: width, style: style),
-    SketchLine(x1: l, y1: b, x2: ri, y2: b, width: width, style: style),
-    SketchLine(x1: l, y1: t, x2: l, y2: b, width: width, style: style),
-    SketchLine(x1: ri, y1: t, x2: ri, y2: b, width: width, style: style),
+    line(l, t, ri, t),
+    line(l, b, ri, b),
+    line(l, t, l, b),
+    line(ri, t, ri, b),
+  ];
+}
+
+/// 범위가 [from]과 같은 배경색을 [to]로 옮긴다(사각형을 옮기거나 크기를 바꿀 때 배경도 따라간다).
+void moveFill(TableSketchDoc doc, Rect? from, Rect to) {
+  if (from == null) return;
+  doc.fills = [
+    for (final f in doc.fills)
+      if (f.x1 == from.left.round() &&
+          f.y1 == from.top.round() &&
+          f.x2 == from.right.round() &&
+          f.y2 == from.bottom.round())
+        SketchFill(
+          x1: to.left.round(),
+          y1: to.top.round(),
+          x2: to.right.round(),
+          y2: to.bottom.round(),
+          color: f.color,
+        )
+      else
+        f,
   ];
 }
 
@@ -566,12 +601,18 @@ SketchSelection resizeRectangle(
   Rect bounds,
 ) {
   final sample = doc.lines[sel.lines.first];
+  moveFill(doc, selectionBounds(doc, sel), bounds);
   for (final i in sel.lines.toList()..sort((a, b) => b.compareTo(a))) {
     doc.lines.removeAt(i);
   }
   final start = doc.lines.length;
   doc.lines.addAll(
-    rectangleLines(bounds, width: sample.width, style: sample.style),
+    rectangleLines(
+      bounds,
+      width: sample.width,
+      style: sample.style,
+      color: sample.color,
+    ),
   );
   return SketchSelection(
     lines: {for (var i = start; i < doc.lines.length; i++) i},

@@ -4,6 +4,10 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'table_sketch_models.dart';
 
+/// '#RRGGBB' → 화면 색.
+Color sketchColorValue(String hex) =>
+    Color(0xFF000000 | int.parse(hex.substring(1), radix: 16));
+
 /// 점 p에서 선분 a-b 사이의 최단거리 계산.
 double distanceToSegment(Offset p, Offset a, Offset b) {
   final ab = b - a;
@@ -153,6 +157,19 @@ class TableSketchPainter extends CustomPainter {
 
     // 2. 바둑판 점선 격자 (연회색 점선)
     _drawGrid(canvas, size);
+
+    // 2-0. 사각형 배경색(그림·선 아래)
+    for (final fill in doc.fills) {
+      canvas.drawRect(
+        Rect.fromLTRB(
+          fill.x1 * cellSize,
+          fill.y1 * cellSize,
+          fill.x2 * cellSize,
+          fill.y2 * cellSize,
+        ),
+        Paint()..color = sketchColorValue(fill.color),
+      );
+    }
 
     // 2-1. 칸 배경 그림(선 아래)
     for (final (region, image) in cellImages) {
@@ -346,7 +363,11 @@ class TableSketchPainter extends CustomPainter {
 
     final color = isPreview
         ? const Color(0xFF2563EB).withValues(alpha: 0.8)
-        : (isSelected ? const Color(0xFF1D4ED8) : const Color(0xFF0F172A));
+        : (isSelected
+              ? const Color(0xFF1D4ED8)
+              : (line.color == sketchBlack
+                    ? const Color(0xFF0F172A)
+                    : sketchColorValue(line.color)));
 
     // 선택된 선 하이라이트 (바깥쪽 푸른 글로우)
     if (isSelected) {

@@ -5,6 +5,7 @@ import base64
 import binascii
 import copy
 import math
+import re
 import zipfile
 from pathlib import Path
 
@@ -53,7 +54,18 @@ def _clean_images(images, cols, rows, warnings):
             warnings.append(f"칸 그림 {i+1}: PNG·JPG가 아니거나 위치·크기가 잘못되어 제외했습니다.")
     return clean
 UNIT_MM = 283.465
-NONE = ("none", "solid")
+NONE = ("none", "solid", "#000000")
+_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
+MAX_FILLS = 2000
+
+
+def _color(value, default="#000000"):
+    """선·칸 색(#RRGGBB). 없으면 기본값, 잘못되면 ValueError(2.0.7 표그림판 색)."""
+    if value in (None, ""):
+        return default
+    if not isinstance(value, str) or not _COLOR.match(value):
+        raise ValueError
+    return value.upper()
 
 
 def normalize(sketch):
@@ -74,6 +86,7 @@ def normalize(sketch):
         try:
             x1, y1, x2, y2 = (line[k] for k in ("x1", "y1", "x2", "y2"))
             width, style = line.get("width", "thin"), line.get("style", "solid")
+            color = _color(line.get("color"))
             if (any(type(v) is not int for v in (x1, y1, x2, y2)) or
                     not (0 <= x1 <= cols and 0 <= x2 <= cols and 0 <= y1 <= rows and 0 <= y2 <= rows) or
                     (x1, y1) == (x2, y2) or
@@ -85,11 +98,11 @@ def normalize(sketch):
             kind = "v" if x1 == x2 else "h" if y1 == y2 else "b" if y2 > y1 else "s"
             intercept = x1 if kind == "v" else y1 if kind == "h" else y1-x1 if kind == "b" else y1+x1
             start, end = (y1, y2) if kind == "v" else (x1, x2)
-            groups.setdefault((kind, intercept, width, style), []).append((start, end))
+            groups.setdefault((kind, intercept, width, style, color), []).append((start, end))
         except (TypeError, KeyError, ValueError):
             warnings.append(f"선 {i+1}: 격자 밖·0길이·잘못된 좌표/기울기/서식을 제외했습니다.")
     lines = []
-    for (kind, intercept, width, style), intervals in sorted(groups.items()):
+    for (kind, intercept, width, style, color), intervals in sorted(groups.items()):
         merged = []
         for start, end in sorted(intervals):
             if merged and start <= merged[-1][1]:
@@ -100,7 +113,8 @@ def normalize(sketch):
             point = lambda t: (intercept, t) if kind == "v" else (t, intercept if kind == "h" else t+intercept if kind == "b" else intercept-t)
             x1, y1 = point(start)
             x2, y2 = point(end)
-            lines.append(dict(x1=x1, y1=y1, x2=x2, y2=y2, width=width, style=style))
+            lines.append(dict(x1=x1, y1=y1, x2=x2, y2=y2, width=width, style=style,
+                              **({} if color == "#000000" else {"color": color})))
     clean_texts = []
     for i, item in enumerate(texts):
         if (not isinstance(item, dict) or type(item.get("x")) is not int or type(item.get("y")) is not int or
@@ -112,7 +126,20 @@ def normalize(sketch):
         else:
             clean_texts.append({**item, "bold": item.get("bold", False), "align": item.get("align", "center")})
     images = _clean_images(sketch.get("images"), cols, rows, warnings)
-    return dict(grid=dict(cols=cols, rows=rows, cell_mm=float(mm)), lines=lines, texts=clean_texts, images=images), warnings
+    fills = []
+    raw_fills = sketch.get("fills", [])
+    if not isinstance(raw_fills, list) or len(raw_fills) > MAX_FILLS:
+        raise ValueError(f"칸 배경색은 {MAX_FILLS}개까지 넣을 수 있습니다.")
+    for i, item in enumerate(raw_fills):
+        try:
+            x1, y1, x2, y2 = (item[k] for k in ("x1", "y1", "x2", "y2"))
+            if (any(type(v) is not int for v in (x1, y1, x2, y2)) or not (0 <= x1 < x2 <= cols and 0 <= y1 < y2 <= rows)):
+                raise ValueError
+            fills.append(dict(x1=x1, y1=y1, x2=x2, y2=y2, color=_color(item.get("color"))))
+        except (TypeError, KeyError, ValueError):
+            warnings.append(f"칸 배경색 {i+1}: 범위·색이 잘못되어 제외했습니다.")
+    return dict(grid=dict(cols=cols, rows=rows, cell_mm=float(mm)), lines=lines, texts=clean_texts, images=images,
+                fills=fills), warnings
 
 
 def _layout(sketch, _split_lines=()):
@@ -132,7 +159,7 @@ def _layout(sketch, _split_lines=()):
     # 겹친 다른 서식은 굵은 선 우선, 같은 굵기는 solid > dash > dot.
     rank = lambda s: (("none", "thin", "thick", "double").index(s[0]), ("dot", "dash", "solid").index(s[1]))
     def edge(kind, fixed, start, end):
-        candidates = [(l["width"], l["style"]) for l in (horizontal if kind == "h" else vertical)
+        candidates = [(l["width"], l["style"], l.get("color", "#000000")) for l in (horizontal if kind == "h" else vertical)
                       if (l["y1"] if kind == "h" else l["x1"]) == fixed and
                       (l["x1"] if kind == "h" else l["y1"]) <= start and
                       (l["x2"] if kind == "h" else l["y2"]) >= end]
@@ -214,14 +241,19 @@ def _layout(sketch, _split_lines=()):
         for l in diagonals:
             if corner(l, (r,c,re,ce)) or (l in split and diag_in(l,(r,c,re,ce))):
                 direction = "backslash" if l["y2"] > l["y1"] else "slash"
-                ds[direction] = max(ds.get(direction, NONE), (l["width"],l["style"]), key=rank)
+                ds[direction] = max(ds.get(direction, NONE[:2]), (l["width"],l["style"]), key=rank)
         cell = dict(row=r, col=c, rowspan=re-r, colspan=ce-c,
                     borders={k:v[0] for k,v in border.items()}, border_styles={k:v[1] for k,v in border.items()},
+                    border_colors={k:v[2] for k,v in border.items()},
                     diagonal="cross" if len(ds)==2 else next(iter(ds), "none"), text="", texts=[], diagonal_styles=ds)
         for t in drawing["texts"]:
             if xs[c] <= t["x"] < xs[ce] and ys[r] <= t["y"] < ys[re]:
                 cell["texts"].append(t)
         cell["text"] = "\n".join(t["text"] for t in cell["texts"])
+        # 칸 배경색(2.0.7): 칸 왼쪽 위 격자점이 든 마지막 채우기 사각형의 색.
+        for fill in drawing.get("fills", []):
+            if fill["x1"] <= xs[c] < fill["x2"] and fill["y1"] <= ys[r] < fill["y2"]:
+                cell["fill"] = fill["color"]
         # 칸 배경 그림: 칸 안에 놓인 첫 그림(번호만 싣고 그림 자료는 drawing["images"]에 둔다).
         for k, image in enumerate(drawing["images"]):
             if xs[c] <= image["x"] < xs[ce] and ys[r] <= image["y"] < ys[re]:
@@ -300,19 +332,24 @@ def to_hwpx(sketch, path):
                 bin_items[index] = (ident, f"BinData/{ident}.{image['kind']}", base64.b64decode(image["data"]), image["kind"])
             return bin_items[index][0]
         def border_id(cell):
-            key = repr((cell["borders"], cell.get("border_styles"), cell["diagonal"],cell.get("diagonal_styles"), cell.get("image")))
+            key = repr((cell["borders"], cell.get("border_styles"), cell.get("border_colors"), cell["diagonal"],
+                        cell.get("diagonal_styles"), cell.get("image"), cell.get("fill")))
             if key in border_cache: return border_cache[key]
             parent = refs.find(HH+"borderFills")
             node = parent.makeelement(HH+"borderFill", dict(threeD="0",shadow="0",centerLine="NONE",breakCellSeparateLine="0"))
             for name, value in (("slash","slash"),("backSlash","backslash")):
                 _add(node, HH+name, type="CENTER" if cell["diagonal"] in (value,"cross") else "NONE", Crooked="0", isCounter="0")
-            def line_attrs(width, style):
+            def line_attrs(width, style, color="#000000"):
                 return dict(type="NONE" if width=="none" else "DOUBLE_SLIM" if width=="double" else {"solid":"SOLID","dash":"DASH","dot":"DOT"}[style],
-                            width={"none":"0.12 mm","thin":"0.12 mm","thick":"0.4 mm","double":"0.5 mm"}[width],color="#000000")
+                            width={"none":"0.12 mm","thin":"0.12 mm","thick":"0.4 mm","double":"0.5 mm"}[width],color=color)
             for side in ("left","right","top","bottom"):
-                _add(node, HH+side+"Border", **line_attrs(cell["borders"][side],cell.get("border_styles",{}).get(side,"solid")))
+                _add(node, HH+side+"Border", **line_attrs(cell["borders"][side],cell.get("border_styles",{}).get(side,"solid"),
+                                                          cell.get("border_colors",{}).get(side,"#000000")))
             diag = max(cell.get("diagonal_styles",{}).values(), key=lambda v:("thin","thick","double").index(v[0]), default=("thin","solid"))
             _add(node, HH+"diagonal", **line_attrs(*diag))
+            if cell.get("fill") and cell.get("image") is None:
+                # 칸 배경색(2.0.7): 한/글 '셀 테두리/배경 > 배경 > 면 색'.
+                _add(_add(node, HC+"fillBrush"), HC+"winBrush", faceColor=cell["fill"], hatchColor="#000000", alpha="0")
             if cell.get("image") is not None:
                 # 칸 배경 그림: 크기에 맞추어(TOTAL) 채운다 — 한/글 '셀 테두리/배경 > 그림'과 같다.
                 brush = _add(_add(node, HC+"fillBrush"), HC+"imgBrush", mode="TOTAL")

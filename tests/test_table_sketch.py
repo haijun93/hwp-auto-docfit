@@ -290,3 +290,37 @@ class ServiceTests(unittest.TestCase):
 
 
 if __name__=='__main__': unittest.main()
+
+
+class SketchColorTests(unittest.TestCase):
+    """2.0.7: 선 색·사각형 배경색이 한/글 표 테두리 색·칸 배경색으로."""
+
+    def test_line_color_and_fill_reach_hwpx(self):
+        import tempfile, zipfile
+        from pathlib import Path
+        from docfit_core import table_sketch
+        sketch = {"grid": {"cols": 20, "rows": 20, "cell_mm": 5.0}, "lines": [
+            {"x1": 1, "y1": 1, "x2": 9, "y2": 1, "color": "#dc2626"}, {"x1": 1, "y1": 4, "x2": 9, "y2": 4},
+            {"x1": 1, "y1": 1, "x2": 1, "y2": 4}, {"x1": 9, "y1": 1, "x2": 9, "y2": 4}],
+            "texts": [], "fills": [{"x1": 1, "y1": 1, "x2": 9, "y2": 4, "color": "#DBEAFE"}]}
+        view = table_sketch.preview(sketch)
+        cell = view["cells"][0]
+        self.assertEqual(cell["border_colors"]["top"], "#DC2626")
+        self.assertEqual(cell["border_colors"]["bottom"], "#000000")
+        self.assertEqual(cell["fill"], "#DBEAFE")
+        with tempfile.TemporaryDirectory() as folder:
+            out = Path(folder) / "t.hwpx"
+            table_sketch.to_hwpx(sketch, out)
+            with zipfile.ZipFile(out) as archive:
+                header = archive.read("Contents/header.xml").decode("utf-8")
+        self.assertIn('color="#DC2626"', header)
+        self.assertIn('faceColor="#DBEAFE"', header)
+
+    def test_bad_colors_are_rejected_or_dropped(self):
+        from docfit_core import table_sketch
+        clean, warnings = table_sketch.normalize({"grid": {"cols": 5, "rows": 5}, "lines": [
+            {"x1": 0, "y1": 0, "x2": 3, "y2": 0, "color": "red"}], "texts": [],
+            "fills": [{"x1": 0, "y1": 0, "x2": 9, "y2": 1, "color": "#FFFFFF"}]})
+        self.assertEqual(clean["lines"], [])
+        self.assertEqual(clean["fills"], [])
+        self.assertEqual(len(warnings), 2)
