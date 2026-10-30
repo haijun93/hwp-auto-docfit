@@ -7,11 +7,22 @@
 설치된 한/글을 직접 다뤄 공문서 모양으로 다듬어 드립니다. 원본은 그대로 둡니다.
 </p>
 
-<p align="center">
-<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.0.3/HWP_AutoDocFit_v2.0.3_Portable.exe"><img alt="GitHub에서 무설치로 받기" src="https://img.shields.io/badge/GitHub-%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v2.0.3-2563eb?style=for-the-badge&logo=github"></a>
-<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.0.3/HWP_AutoDocFit_v2.0.3_Setup.exe"><img alt="GitHub에서 설치용 받기" src="https://img.shields.io/badge/GitHub-%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0-0ea5e9?style=for-the-badge&logo=github"></a>
-<br>
-</p>
+<h2 align="center">⬇️ 지금 내려받기 · 최신 v2.0.3</h2>
+
+<table align="center">
+<tr>
+<td align="center" width="50%">
+<b>무설치(포터블)</b><br><sub>받아서 더블클릭하면 바로 실행 · 추천</sub><br><br>
+<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.0.3/HWP_AutoDocFit_v2.0.3_Portable.exe"><img height="56" alt="GitHub에서 무설치로 받기 v2.0.3" src="https://img.shields.io/badge/%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v2.0.3-2563eb?style=for-the-badge&logo=github"></a>
+</td>
+<td align="center" width="50%">
+<b>설치용</b><br><sub>시작 메뉴·제어판에 등록</sub><br><br>
+<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.0.3/HWP_AutoDocFit_v2.0.3_Setup.exe"><img height="56" alt="GitHub에서 설치용 받기 v2.0.3" src="https://img.shields.io/badge/%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0%20v2.0.3-2563eb?style=for-the-badge&logo=github"></a>
+</td>
+</tr>
+</table>
+
+<p align="center"><sub>Windows 10·11 · 무료 · 한/글 설치 필요 · <b>GitHub가 막힌 공공기관 PC</b>는 <a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.0.3_Portable.exe?inline=false">GitLab에서 받기</a></sub></p>
 <p align="center">
 <img alt="무료" src="https://img.shields.io/badge/%EA%B0%80%EA%B2%A9-%EB%AC%B4%EB%A3%8C-16a34a">
 <img alt="Windows 10·11" src="https://img.shields.io/badge/Windows-10%C2%B711-0078d4">
