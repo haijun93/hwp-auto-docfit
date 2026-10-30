@@ -498,6 +498,12 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
     } else if (_tool == SketchToolMode.select ||
         _tool == SketchToolMode.lasso) {
       _selectLineAt(pos);
+    } else if (_tool == SketchToolMode.line || _tool == SketchToolMode.rect) {
+      // 그리기 도구로 이미 있는 사각형·직선을 한 번 누르면 그 모형을 골라 바로 옮길 수 있게 한다.
+      if (shapeSelect(_doc, pos / _cellSize, _hitTolerance).lines.isNotEmpty) {
+        setState(() => _tool = SketchToolMode.select);
+        _selectLineAt(pos);
+      }
     } else if (_tool == SketchToolMode.eraser) {
       _eraseLineAt(pos);
     } else if (_tool == SketchToolMode.preciseEraser) {
@@ -709,12 +715,17 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
 
   double get _hitTolerance => math.max(16.0, _cellSize * 0.8) / _cellSize;
 
-  /// 눌러 고르기. Shift를 누르고 있으면 더하거나 뺀다.
+  /// 눌러 고르기: 사각형은 네 변을, 직선은 한 줄 전체를 한 모형으로 고른다.
+  /// Shift를 누르고 있으면 더하고, 이미 고른 모형이면 뺀다.
   void _selectLineAt(Offset pos) {
-    final hit = hitSelect(_doc, pos / _cellSize, _hitTolerance);
+    final hit = shapeSelect(_doc, pos / _cellSize, _hitTolerance);
     final shift = HardwareKeyboard.instance.isShiftPressed;
+    final already =
+        hit.isNotEmpty &&
+        hit.lines.every(_sel.lines.contains) &&
+        hit.texts.every(_sel.texts.contains);
     setState(() {
-      _sel = shift ? _sel.toggled(hit) : hit;
+      _sel = !shift ? hit : (already ? _sel.toggled(hit) : _sel.union(hit));
       _syncStyleFromSelection();
     });
   }
@@ -746,8 +757,8 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
         onSelection = bounds != null && bounds.inflate(.3).contains(grid);
       }
       if (!onSelection && _tool == SketchToolMode.select) {
-        // 고르지 않은 개체를 바로 끌면 그것을 골라 옮긴다(파워포인트처럼).
-        final hit = hitSelect(_doc, grid, _hitTolerance);
+        // 고르지 않은 개체를 바로 끌면 그 모형(사각형·직선)을 골라 옮긴다(파워포인트처럼).
+        final hit = shapeSelect(_doc, grid, _hitTolerance);
         if (hit.isNotEmpty) {
           setState(() => _sel = hit);
           onSelection = true;

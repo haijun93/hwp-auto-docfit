@@ -413,3 +413,111 @@ bool removeCellImage(TableSketchDoc doc, int x, int y) {
   );
   return doc.images.length != before;
 }
+
+/// 한 번 눌러 '모형' 고르기: 누른 선이 따로 그린 사각형의 한 변이면 네 변을 함께,
+/// 아니면 이어진 한 직선(쪼개진 조각 포함)을 통째로 고른다. 글 칸은 hitSelect와 같다.
+SketchSelection shapeSelect(TableSketchDoc doc, Offset grid, double tolerance) {
+  final hit = hitSelect(doc, grid, tolerance);
+  if (hit.lines.length != 1) return hit;
+  final index = hit.lines.single;
+  final seg = _AxisSeg.of(doc.lines[index], index);
+  if (seg == null) return hit; // 대각선은 그 선만
+  final segs = [
+    for (var i = 0; i < doc.lines.length; i++) ?_AxisSeg.of(doc.lines[i], i),
+  ];
+  return SketchSelection(
+    lines: _rectangleThrough(segs, seg) ?? _chain(segs, seg).indices,
+  );
+}
+
+class _AxisSeg {
+  const _AxisSeg(this.horizontal, this.at, this.lo, this.hi, this.index);
+  final bool horizontal;
+  final int at, lo, hi, index;
+
+  static _AxisSeg? of(SketchLine l, int index) {
+    if (l.y1 == l.y2 && l.x1 != l.x2) {
+      return _AxisSeg(
+        true,
+        l.y1,
+        math.min(l.x1, l.x2),
+        math.max(l.x1, l.x2),
+        index,
+      );
+    }
+    if (l.x1 == l.x2 && l.y1 != l.y2) {
+      return _AxisSeg(
+        false,
+        l.x1,
+        math.min(l.y1, l.y2),
+        math.max(l.y1, l.y2),
+        index,
+      );
+    }
+    return null;
+  }
+}
+
+typedef _Chain = ({Set<int> indices, int lo, int hi});
+
+/// 같은 줄 위에서 맞닿거나 겹치는 조각을 모두 이은 직선.
+_Chain _chain(List<_AxisSeg> segs, _AxisSeg start) {
+  final indices = {start.index};
+  var lo = start.lo, hi = start.hi;
+  var grown = true;
+  while (grown) {
+    grown = false;
+    for (final s in segs) {
+      if (s.horizontal != start.horizontal || s.at != start.at) continue;
+      if (indices.contains(s.index) || s.hi < lo || s.lo > hi) continue;
+      indices.add(s.index);
+      lo = math.min(lo, s.lo);
+      hi = math.max(hi, s.hi);
+      grown = true;
+    }
+  }
+  return (indices: indices, lo: lo, hi: hi);
+}
+
+/// at 줄 위에서 [from, to] 한 칸을 덮는 조각에서 시작한 직선.
+_Chain? _chainCovering(
+  List<_AxisSeg> segs,
+  bool horizontal,
+  int at,
+  int from,
+  int to,
+) {
+  final a = math.min(from, to), b = math.max(from, to);
+  for (final s in segs) {
+    if (s.horizontal == horizontal && s.at == at && s.lo <= a && s.hi >= b) {
+      return _chain(segs, s);
+    }
+  }
+  return null;
+}
+
+/// 누른 선이 네 변이 꼭 맞물린(바깥으로 삐져나간 선이 없는) 사각형의 변이면 그 네 변.
+Set<int>? _rectangleThrough(List<_AxisSeg> segs, _AxisSeg seg) {
+  final side = _chain(segs, seg);
+  final a = side.lo, b = side.hi, at = seg.at;
+  for (final d in const [1, -1]) {
+    final left = _chainCovering(segs, !seg.horizontal, a, at, at + d);
+    final right = _chainCovering(segs, !seg.horizontal, b, at, at + d);
+    if (left == null || right == null) continue;
+    // 모서리에서 끝나야 한다(표처럼 이어진 선이면 사각형 모형이 아니다).
+    final leftEnd = d > 0 ? left.hi : left.lo;
+    final rightEnd = d > 0 ? right.hi : right.lo;
+    final leftStart = d > 0 ? left.lo : left.hi;
+    final rightStart = d > 0 ? right.lo : right.hi;
+    if (leftStart != at || rightStart != at || leftEnd != rightEnd) continue;
+    final opposite = _chainCovering(segs, seg.horizontal, leftEnd, a, a + 1);
+    if (opposite == null || opposite.lo != a || opposite.hi != b) continue;
+    return {
+      ...side.indices,
+      ...left.indices,
+      ...right.indices,
+      ...opposite.indices,
+    };
+  }
+  return null;
+}
