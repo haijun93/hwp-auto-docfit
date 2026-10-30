@@ -105,3 +105,13 @@ label.check{display:flex!important;align-items:center;gap:6px}label.check input{
 .paint-drop-zone{border:2px dashed #2563eb;border-radius:10px;background:#eff6ff;padding:14px 10px;text-align:center;margin-bottom:8px;display:flex;flex-direction:column;gap:6px}.paint-drop-zone b{font-size:15px;color:#1d4ed8}.paint-drop-zone span{font-size:12px;color:#475569}.paint-drop-zone .file-link{font-size:12px;color:#2563eb;text-decoration:underline;cursor:pointer}.paint-drop-zone .file-link input{display:none}.paint-empty{position:absolute;inset:24px;z-index:4;pointer-events:none;border:3px dashed #93c5fd;border-radius:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:#1d4ed8;background:rgba(239,246,255,.55)}.paint-empty b{font-size:22px}.paint-empty span{font-size:14px;color:#475569}
 .rotate-handle{position:absolute;left:50%;top:-30px;width:14px;height:14px;margin-left:-7px;border-radius:50%;background:#fff;border:2px solid #2563eb;cursor:grab;z-index:7;touch-action:none}.rotate-handle:active{cursor:grabbing}.rotate-handle::after{content:'';position:absolute;left:5px;top:12px;width:1.5px;height:16px;background:#2563eb}.rotate-row{display:flex;align-items:center;gap:6px;font-size:13px;margin:6px 0}.rotate-row input[type=range]{flex:1;min-width:60px}.rotate-row input[type=number]{width:52px}
 .node-rot{position:relative;transform-origin:50% 50%}
+.layer-panel{margin-top:10px;border-top:1px solid #e2e8f0;padding-top:6px}
+.layer-list{list-style:none;margin:4px 0;padding:0;border:1px solid #e2e8f0;border-radius:6px;max-height:220px;overflow:auto}
+.layer-list li{display:flex;align-items:center;gap:4px;padding:3px 6px;border-bottom:1px solid #f1f5f9;cursor:pointer;font-size:13px}
+.layer-list li:last-child{border-bottom:0}
+.layer-list li.active{background:#dbeafe}
+.layer-list li button{display:inline-block;width:auto;flex:none;margin:0;padding:0 2px;min-width:22px;border:0;background:transparent;font-size:13px}
+.layer-list li .layer-name{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.layer-list li input{flex:1;min-width:0;font-size:13px}
+.layer-list li small{color:#64748b}
+.layer-assign{width:100%;margin-top:4px}

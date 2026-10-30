@@ -8,7 +8,7 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "test": "node --test src/model.test.js src/table.test.js src/mindmap.test.js src/magnet.test.js src/paint.test.js"
+    "test": "node --test src/model.test.js src/table.test.js src/mindmap.test.js src/magnet.test.js src/paint.test.js src/layers.test.js"
   },
   "dependencies": {
     "@xyflow/react": "12.12.0",

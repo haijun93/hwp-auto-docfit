@@ -7,6 +7,7 @@ import {isImageSrc,validPoints,freehandPath,BACKGROUND_ID} from './paint.js';
 /** 그림판 전용 개체(도형 목록에는 없음): 펜 선·그림. */
 const PAINT_SHAPES=new Set(['freehand','image']);
 import {validateMindmap,mindmapGraph} from './mindmap.js';
+import {validateLayers,visibleGraph} from './layers.js';
 export const FORMAT = 'docfit-flow';
 export const COLORS = {blue:'#dbeafe',green:'#dcfce7',orange:'#ffedd5',yellow:'#fef9c3',white:'#ffffff'};
 // 색 고르기 판(PPT 테마 색처럼 자주 쓰는 색).
@@ -57,12 +58,15 @@ export function validate(snapshot) {
   if(!finite(w)||!finite(h)||w<20||h<10||w>100000||h>100000)throw new Error('도형 크기가 올바르지 않습니다.');
   const made=node(n.data.label,n.position.x,n.position.y,n.data.shape,n.data.color,n.id);
   const extra={};
+  // 레이어(layers.js): 개체가 속한 레이어 id. 없거나 잘못되면 맨 아래 레이어로 본다.
+  if(typeof n.data.layer==='string'&&/^[A-Za-z0-9_-]{1,64}$/.test(n.data.layer))extra.layer=n.data.layer;
   if(n.data.shape==='freehand'){if(!validPoints(n.data.points))throw new Error('펜 선 데이터가 올바르지 않습니다.');extra.points=n.data.points.map(p=>[p[0],p[1]]);}
   if(n.data.shape==='image'){
    if(!isImageSrc(n.data.src))throw new Error('그림 데이터가 올바르지 않습니다.');extra.src=n.data.src;
    if(n.data.background===true){
     // 배경 사진: 맨 뒤에 잠근다.
     if(n.id!==BACKGROUND_ID)throw new Error('배경 그림 데이터가 올바르지 않습니다.');
+    delete extra.layer;
     return {...made,data:{...made.data,...style,...extra,background:true},width:w,height:h,zIndex:-1,draggable:false,selectable:false,deletable:false};
    }
   }
@@ -78,7 +82,8 @@ export function validate(snapshot) {
  });
  const table=snapshot.table==null?undefined:validateTable(snapshot.table);
  const mindmap=snapshot.mindmap==null?undefined:validateMindmap(snapshot.mindmap);
- return {format:FORMAT,version:1,nodes,edges,...(table?{table}:{}),...(mindmap?{mindmap}:{})};
+ const layers=snapshot.layers==null?undefined:validateLayers(snapshot.layers);
+ return {format:FORMAT,version:1,nodes,edges,...(table?{table}:{}),...(mindmap?{mindmap}:{}),...(layers?{layers}:{})};
 }
 /** 연결선 모양: line(step 꺾은선·straight 직선·curve 곡선), color, width(0.5~10), dash, start·end(화살표 머리). */
 export function edgeStyle(data){
@@ -253,7 +258,8 @@ export function nodeSvg(n,x,y,w,h,defs){
 }
 export function svg(snapshot) {
  const checked=validate(snapshot);
- const graph=layoutGraph(checked.mindmap&&!checked.nodes.length?mindmapGraph(checked.mindmap):checked),{nodes,edges}=graph,bounds=getDiagramBounds(graph);
+ // 숨긴 레이어는 그림에 넣지 않고, 레이어 순서(아래→위)대로 겹쳐 그린다.
+ const graph=layoutGraph(checked.mindmap&&!checked.nodes.length?mindmapGraph(checked.mindmap):visibleGraph(checked)),{nodes,edges}=graph,bounds=getDiagramBounds(graph);
  const defs=[];
  const drawnEdges=edges.map(e=>{
   const s=e.data??EDGE_DEFAULT,key='e'+String(e.id).replace(/[^A-Za-z0-9_-]/g,'');

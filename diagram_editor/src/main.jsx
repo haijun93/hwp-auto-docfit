@@ -3,6 +3,7 @@ import {createRoot} from 'react-dom/client';
 import {ReactFlow,ReactFlowProvider,Background,Controls,MiniMap,Handle,Position,ConnectionMode,applyNodeChanges,applyEdgeChanges,NodeResizer,BaseEdge,useReactFlow,ViewportPortal,reconnectEdge} from '@xyflow/react';
 import {autoRoute,nodeAt,facingSides,smartGuides} from './magnet.js';
 import {freehandNode,freehandPath,withBackground,withoutBackground,fitSize,paintStyle,BACKGROUND_ID,isImageSrc} from './paint.js';
+import {defaultLayers,addLayer,updateLayer,moveLayer,removeLayer,assignLayer,layeredNodes,layeredEdges,layerOf} from './layers.js';
 import '@xyflow/react/dist/style.css';
 import './style.css';
 import {FORMAT,PALETTE,templates,template,node,edge,id,decode,validate,svg,layoutGraph,computeNodeAutoFitBox,edgeLabelBox,LINE_HEIGHT,nodeFont,nodePaint,edgePath,EDGE_DEFAULT,rotationFromPointer,normalizeRotation} from './model.js';
@@ -261,6 +262,28 @@ function BarTableView({table,onChange}){
  </div><p className="hint">보고서 소제목 옆 실적 기준일 표시처럼 쓰는 장식 막대예요(학습: 장식표.hwpx).</p></div>;
 }
 
+function LayerPanel({layers,active,counts,selectedCount,onActive,onChange,onAdd,onRemove,onMove,onAssign}){
+ const [renaming,setRenaming]=useState(null);
+ return <section className="layer-panel" aria-label="레이어">
+  <h2>레이어</h2>
+  <ul className="layer-list">{[...layers].reverse().map((l,i)=><li key={l.id} className={l.id===active?'active':''} onClick={()=>onActive(l.id)}>
+   <button className="layer-eye" aria-label={(l.visible?'숨기기: ':'보이기: ')+l.name} aria-pressed={!l.visible} title={l.visible?'숨기기':'보이기'} onClick={e=>{e.stopPropagation();onChange(l.id,{visible:!l.visible});}}>{l.visible?'👁':'◌'}</button>
+   <button className="layer-lock" aria-label={(l.locked?'잠금 풀기: ':'잠그기: ')+l.name} aria-pressed={l.locked} title={l.locked?'잠금 풀기':'잠그기'} onClick={e=>{e.stopPropagation();onChange(l.id,{locked:!l.locked});}}>{l.locked?'🔒':'🔓'}</button>
+   {renaming===l.id?<input autoFocus aria-label="레이어 이름" maxLength={60} defaultValue={l.name} onClick={e=>e.stopPropagation()}
+     onBlur={e=>{onChange(l.id,{name:e.target.value.trim()||l.name});setRenaming(null);}} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();if(e.key==='Escape')setRenaming(null);}}/>
+    :<span className="layer-name" title="두 번 눌러 이름 바꾸기" onDoubleClick={()=>setRenaming(l.id)}>{l.name}</span>}
+   <small>{counts[l.id]??0}</small>
+  </li>)}</ul>
+  <div className="tool-row">
+   <button onClick={onAdd} title="새 레이어(맨 위)">＋ 새 레이어</button>
+   <button onClick={()=>onMove(1)} title="한 칸 위로" aria-label="레이어 위로">▲</button>
+   <button onClick={()=>onMove(-1)} title="한 칸 아래로" aria-label="레이어 아래로">▼</button>
+   <button disabled={layers.length<=1} onClick={onRemove} title="레이어와 안의 개체 지우기" aria-label="레이어 지우기">🗑</button>
+  </div>
+  {selectedCount>0&&<button className="layer-assign" onClick={onAssign}>고른 개체 {selectedCount}개를 이 레이어로</button>}
+ </section>;
+}
+
 const TABLE_KINDS=['flow','grid'];
 const AVAILABLE_MODES=new Set(['diagram','mindmap','paint']);
 const ROLE_SETS={flow:['step','date','arrow'],grid:['head','body']};
@@ -289,6 +312,7 @@ function App(){
  const [catalog,setCatalog]=useState(null),[catalogCategory,setCatalogCategory]=useState(''),[catalogTemplate,setCatalogTemplate]=useState(''),[catalogStates,setCatalogStates]=useState({});
  const [catalogCellSel,setCatalogCellSel]=useState({r:0,c:0}),[catalogScope,setCatalogScope]=useState('cell'),[catalogCustomBorder,setCatalogCustomBorder]=useState(false);
  const [mmSelected,setMmSelected]=useState(null);
+ const [activeLayer,setActiveLayer]=useState(null);
  // 도형 묶음 펼침 상태(도형을 넣어도 펼친 묶음이 접히지 않게 기억한다).
  const [openGroups,setOpenGroups]=useState(()=>new Set(['사각형','기본 도형','선']));
  const flow=useRef(null),current=useRef(graph),history=useRef([]),future=useRef([]),nameRef=useRef(name),clipboard=useRef(null);
@@ -296,7 +320,17 @@ function App(){
  const generation=useRef(0),savedGeneration=useRef(0);
  const mark=()=>{generation.current++;send({type:'dirty',value:true,generation:generation.current});};
  const checkpoint=()=>{history.current.push(structuredClone(current.current));if(history.current.length>80)history.current.shift();future.current=[];};
- const commit=(next,record=true)=>{if(record)checkpoint();next=layoutGraph(next);current.current=next;setGraph(next);mark();};
+ const commit=(next,record=true)=>{
+  if(record)checkpoint();
+  const before=new Set(current.current.nodes.map(n=>n.id)),fresh=next.nodes.filter(n=>!before.has(n.id)&&!n.data?.background&&!n.data?.layer);
+  if(fresh.length&&next.nodes!==current.current.nodes){
+   const layers=next.layers??defaultLayers(),target=layers.some(l=>l.id===activeLayer)?activeLayer:layers[layers.length-1].id;
+   const layer=layers.find(l=>l.id===target);
+   next={...next,nodes:assignLayer(next.nodes,fresh.map(n=>n.id),target)};
+   if(next.layers&&(!layer.visible||layer.locked)){next={...next,layers:updateLayer(next.layers,target,{visible:true,locked:false})};setStatus('‘'+layer.name+'’ 레이어에 넣으려고 보이기·잠금 풀기를 했어요.');}
+  }
+  next=layoutGraph(next);current.current=next;setGraph(next);mark();
+ };
  const undo=(redo=false)=>{
   const stack=redo?future:history,other=redo?history:future;if(!stack.current.length)return;
   other.current.push(structuredClone(current.current));const next=stack.current.pop();current.current=next;setGraph(next);mark();
@@ -408,7 +442,7 @@ function App(){
     case 'load':{
      const loaded=decode(message.snapshot);
      if(loaded.table)tables.current[loaded.table.kind]=loaded.table;
-     replace({nodes:loaded.nodes,edges:loaded.edges,...(loaded.table?{table:loaded.table}:{}),...(loaded.mindmap?{mindmap:loaded.mindmap}:{})},message.name,loaded.converted);
+     setActiveLayer(null);replace({nodes:loaded.nodes,edges:loaded.edges,...(loaded.table?{table:loaded.table}:{}),...(loaded.mindmap?{mindmap:loaded.mindmap}:{}),...(loaded.layers?{layers:loaded.layers}:{})},message.name,loaded.converted);
      send({type:'document_loaded',converted:loaded.converted});break;
     }
     case 'apply_template':{
@@ -451,6 +485,18 @@ function App(){
   return ()=>host.removeEventListener('message',receive);
  },[]);
  const selectedNodes=graph.nodes.filter(n=>n.selected),selected=selectedNodes[0],selectedEdge=graph.edges.find(e=>e.selected);
+ const layers=graph.layers??defaultLayers();
+ const currentLayer=layers.some(l=>l.id===activeLayer)?activeLayer:layers[layers.length-1].id;
+ const layerCounts={};for(const n of graph.nodes)if(!n.data?.background){const k=layerOf(n,layers);layerCounts[k]=(layerCounts[k]??0)+1;}
+ const changeLayers=next=>commit({...current.current,layers:next,nodes:current.current.nodes.map(n=>({...n,selected:false}))});
+ const layerPanel=<LayerPanel layers={layers} active={currentLayer} counts={layerCounts} selectedCount={selectedNodes.filter(n=>!n.data?.background).length}
+  onActive={setActiveLayer}
+  onChange={(layerId,patch)=>changeLayers(updateLayer(layers,layerId,patch))}
+  onAdd={()=>{try{const next=addLayer(layers);changeLayers(next);setActiveLayer(next[next.length-1].id);}catch(error){setStatus(error.message);}}}
+  onMove={step=>changeLayers(moveLayer(layers,currentLayer,step))}
+  onRemove={()=>{const count=layerCounts[currentLayer]??0;if(count&&!window.confirm('이 레이어와 안의 개체 '+count+'개를 지울까요? (Ctrl+Z로 되돌릴 수 있어요)'))return;
+   commit(removeLayer({...current.current,layers},currentLayer));setActiveLayer(null);}}
+  onAssign={()=>commit({...current.current,layers,nodes:assignLayer(current.current.nodes,selectedNodes.map(n=>n.id),currentLayer)})}/>;
  const duplicate=()=>{
   const items=current.current.nodes.filter(n=>n.selected);if(!items.length)return;
   const copies=items.map(n=>({...structuredClone(n),id:id(),position:{x:n.position.x+30,y:n.position.y+30},selected:true}));
@@ -590,8 +636,8 @@ function App(){
  // 마인드맵: 수동 위치와 계층 연결을 화면·내보내기에 함께 반영한다.
  const mmGraph=mode==='mindmap'&&mindmap?layoutGraph(mindmapGraph(mindmap)):null;
  const mmNode=mindmap&&mmSelected?findNode(mindmap,mmSelected)?.node:null;
- const shownNodes=mmGraph?mmGraph.nodes.map(n=>({...n,selected:n.id===mmSelected,draggable:true,connectable:true})):graph.nodes;
- const shownEdges=mmGraph?mmGraph.edges:graph.edges;
+ const shownNodes=mmGraph?mmGraph.nodes.map(n=>({...n,selected:n.id===mmSelected,draggable:true,connectable:true})):layeredNodes(graph.nodes,graph.layers);
+ const shownEdges=mmGraph?mmGraph.edges:layeredEdges(graph.edges,graph.nodes,graph.layers);
  const canvas=mode==='diagram'||mode==='mindmap'||mode==='paint';
  const hasBackground=graph.nodes.some(n=>n.id===BACKGROUND_ID);
  const scopeLabel=CATALOG_SCOPES.find(([k])=>k===catalogScope)?.[1]??'선택 칸';
@@ -626,6 +672,7 @@ function App(){
      <label className="check"><input type="checkbox" checked={!!selectedEdge.data?.autoSide} onChange={e=>{
       const data={...(selectedEdge.data??EDGE_DEFAULT),autoSide:e.target.checked};let next={...graph,edges:graph.edges.map(v=>v.id===selectedEdge.id?{...v,data}:v)};
       next={...next,edges:autoRoute(next.nodes,next.edges)};commit(next);}}/> 자석 연결(도형을 옮기면 마주 보는 면으로 붙음)</label></>}
+    {layerPanel}
     <p>연결점을 끌어 도형 연결<br/>Shift+선택: 여러 도형<br/>Ctrl+C/V 복사·붙여넣기, Ctrl+D 복제<br/>Delete: 선택 삭제 · Ctrl+휠: 확대·축소</p>
    </aside>}
    {mode==='paint'&&<aside className="paint-aside">
@@ -649,6 +696,7 @@ function App(){
      <div className="tool-row"><button onClick={()=>order(true)}>맨 앞으로</button><button onClick={()=>order(false)}>맨 뒤로</button></div>
      <ShapeStyleControls data={selected.data} onChange={edit}/>
      {selected.data.shape!=='freehand'&&<TextStyleControls label="글자" value={{font:selected.data.font,size:selected.data.size,bold:selected.data.bold,textColor:selected.data.textColor}} onChange={edit}/>}</>}
+    {layerPanel}
     <p>모든 펜 선·도형·글상자는 따로 옮기고 크기·색을 바꿀 수 있어요.<br/>Delete: 지우기 · Ctrl+C/V 복사 · Ctrl+D 복제</p>
    </aside>}
    {mode==='mindmap'&&mindmap&&<aside><h2>마인드맵</h2>
