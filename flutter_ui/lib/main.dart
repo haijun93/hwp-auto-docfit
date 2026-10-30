@@ -316,6 +316,15 @@ class _WorkspaceState extends State<Workspace> implements ConversionHost {
   List get files => state['files'] as List? ?? [];
   @override
   List get results => state['results'] as List? ?? [];
+  @override
+  Map? get hwpBulk => state['hwp_bulk'] as Map?;
+  @override
+  Future<Object?> apiCall(String method, List<Object?> args) async {
+    final value = await widget.api(method, args);
+    if (mounted) unawaited(refresh());
+    return value;
+  }
+
   List get stages => state['stages'] as List? ?? [];
   List get profiles => state['profiles'] as List? ?? [];
   Map get quickOptions => state['options'] as Map? ?? {};

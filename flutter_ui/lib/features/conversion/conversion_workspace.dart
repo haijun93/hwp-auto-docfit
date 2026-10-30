@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'hwp_bulk_panel.dart';
+
 /// 파일변환 탭이 문서편집 상태에서 읽고 부르는 것(2.0.7: 파일변환 탭 한 화면에서 넣기 → 고르기 → 결과까지).
 abstract class ConversionHost {
   ValueNotifier<int> get stateVersion;
@@ -15,6 +17,12 @@ abstract class ConversionHost {
   Future<void> command(String method, [List<Object?> args]);
   Future<void> convertTo(String format);
   Future<void> addConversionFiles();
+
+  /// HWP → HWPX 일괄 변환 상태(get_state의 hwp_bulk, 없으면 null).
+  Map? get hwpBulk;
+
+  /// 상태를 바꾸지 않는 백엔드 호출(일괄 변환 창이 결과를 직접 읽는다).
+  Future<Object?> apiCall(String method, List<Object?> args);
 }
 
 /// 파일변환 탭 화면(참고 디자인 3단): 올린 파일 · 변환할 포맷 · 변환 결과.
@@ -293,6 +301,18 @@ class ConversionWorkspace extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: 6),
+          Tooltip(
+            message: '파일 하나·폴더·드라이브 전체의 HWP를 찾아 원본 옆에 HWPX로 저장 (암호 문서 포함)',
+            child: TextButton.icon(
+              key: const Key('conversionFindHwp'),
+              onPressed: host.locked
+                  ? null
+                  : () => showHwpBulkDialog(context, host.apiCall),
+              icon: const Icon(Icons.manage_search_rounded),
+              label: const Text('HWP 찾아 HWPX로 바꾸기'),
+            ),
+          ),
         ],
       ),
     );
@@ -406,6 +426,9 @@ class ConversionWorkspace extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _title('변환 결과'),
+        if (host.hwpBulk case final Map bulk
+            when '${bulk['phase'] ?? 'idle'}' != 'idle')
+          HwpBulkCard(bulk: bulk, call: host.apiCall),
         if (host.running) ...[
           LinearProgressIndicator(value: host.progressValue, color: accent),
           const SizedBox(height: 6),
