@@ -74,13 +74,20 @@ class TableSketchApi {
   }
 
   /// command('table_sketch', ['paste_hwp', {cell_mm}]): 한/글에서 복사한 표를 그림으로.
-  Future<Map<String, dynamic>> pasteHwp(double cellMm) async {
+  /// [afterSeq]: 그림판 안에서 복사할 때의 클립보드 번호. 그 뒤로 클립보드가 그대로면 code UNCHANGED.
+  Future<Map<String, dynamic>> pasteHwp(double cellMm, {int? afterSeq}) async {
     final response = await call('table_sketch', [
       'paste_hwp',
-      {'cell_mm': cellMm},
+      {'cell_mm': cellMm, 'after_seq': ?afterSeq},
     ]);
     if (response is Map) return Map<String, dynamic>.from(response);
     return {'ok': false, 'message': '한/글 표를 가져오지 못했습니다.'};
+  }
+
+  /// Windows 클립보드 바뀜 번호(그림판 안 복사 때 기억해 Ctrl+V가 무엇을 붙일지 정한다).
+  Future<int?> clipboardSeq() async {
+    final response = await call('table_sketch', ['clipboard_seq']);
+    return response is Map && response['seq'] is num ? (response['seq'] as num).toInt() : null;
   }
 
   /// command('table_sketch', ['delete', 이름])

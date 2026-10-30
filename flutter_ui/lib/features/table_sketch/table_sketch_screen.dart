@@ -61,6 +61,8 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
   int? _resizeHandle;
   Rect? _resizeStart; // 격자 단위
   SketchClip? _clipboard;
+  // 그림판 안에서 복사할 때의 Windows 클립보드 번호(그 뒤 한/글에서 새로 복사했는지 가린다).
+  int? _clipboardSeq;
   int _pasteShift = 0;
   Offset? _lastErasePos;
   // 6탭 화면에서는 다른 탭이 먼저 자동 초점을 가져가 단축키(Ctrl+Z·Delete·Ctrl+C/V/D·방향키)가
@@ -568,10 +570,22 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
   // --- 한/글 표 붙여넣기 ---
 
   /// 한/글에서 복사(Ctrl+C)한 표를 선·글로 바꿔 그림판에 놓는다. 지금 그림은 실행 취소로 되돌릴 수 있다.
-  Future<void> _pasteHwpTable() async {
-    final res = await _sketchApi.pasteHwp(_doc.grid.cellMm);
+  /// 단추는 늘 한/글 표를 가져온다. Ctrl+V([fromKey])는 한/글 표가 없거나 그림판 안 복사 뒤 클립보드가 그대로면
+  /// 그림판 안 붙여넣기를 한다(2.0.6: Ctrl+V로도 한/글 표가 붙게).
+  Future<void> _pasteHwpTable({bool fromKey = false}) async {
+    final res = await _sketchApi.pasteHwp(
+      _doc.grid.cellMm,
+      afterSeq: fromKey && _clipboard != null ? _clipboardSeq : null,
+    );
     if (!mounted) return;
     final sketch = res['sketch'];
+    if (fromKey && !(res['ok'] == true && sketch is Map)) {
+      if (_clipboard != null && !_clipboard!.isEmpty) {
+        _pasteClipboard();
+        return;
+      }
+      if (res['code'] == 'UNCHANGED') return;
+    }
     if (res['ok'] == true && sketch is Map) {
       _saveSnapshot();
       setState(() {
@@ -1219,6 +1233,9 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
       _clipboard = copySelection(_doc, sel);
       _pasteShift = 0;
     });
+    unawaited(
+      _sketchApi.clipboardSeq().then((seq) => _clipboardSeq = seq).catchError((_) => null),
+    );
   }
 
   void _cutSelection() {
@@ -1770,7 +1787,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
     if (_tool == SketchToolMode.cellImage) {
       unawaited(_pasteClipboardImage());
     } else {
-      _pasteClipboard();
+      unawaited(_pasteHwpTable(fromKey: true));
     }
   }
 

@@ -23,9 +23,11 @@ def validate_name(name):
 
 
 class TableSketchService:
-    def __init__(self, settings_root, hwp_factory=None, *, clipboard_formats=None, activator=None, clipboard_html=None):
+    def __init__(self, settings_root, hwp_factory=None, *, clipboard_formats=None, activator=None, clipboard_html=None,
+                 clipboard_seq=None):
         self.folder = Path(settings_root) / "table_sketches"
         self._clipboard_html = clipboard_html or _clipboard_html
+        self._clipboard_seq = clipboard_seq or _clipboard_seq
         self.hwp = TableUnitsService(hwp_factory, clipboard_formats=clipboard_formats, activator=activator)
 
     def _path(self, name):
@@ -103,7 +105,13 @@ class TableSketchService:
 
     def paste_hwp(self, payload=None):
         """한/글에서 복사한 표(클립보드 HTML)를 표그림판 그림으로. 칸 간격은 지금 그림판 값을 따른다."""
-        cell_mm = payload.get("cell_mm", 5.0) if isinstance(payload, dict) else 5.0
+        payload = payload if isinstance(payload, dict) else {}
+        # Ctrl+V(2.0.6): 표그림판 안에서 복사한 뒤 클립보드가 그대로면 한/글 표가 아니라 그림판 안 붙여넣기를 한다.
+        seq = self._clipboard_seq()
+        after = payload.get("after_seq")
+        if type(after) is int and seq is not None and seq == after:
+            return dict(ok=False, code="UNCHANGED", seq=seq, message="")
+        cell_mm = payload.get("cell_mm", 5.0)
         if isinstance(cell_mm, bool) or not isinstance(cell_mm, (int, float)) or not 0.5 <= cell_mm <= 50:
             cell_mm = 5.0
         html = self._clipboard_html()
@@ -111,7 +119,7 @@ class TableSketchService:
             raise ValueError("클립보드에 한/글 표가 없습니다. 한/글에서 표를 선택해 복사(Ctrl+C)한 뒤 다시 눌러 주세요.")
         sketch = sketch_from_html(html, float(cell_mm))
         source = sketch.pop("source")
-        return dict(ok=True, sketch=sketch, rows=source["rows"], cols=source["cols"],
+        return dict(ok=True, sketch=sketch, rows=source["rows"], cols=source["cols"], seq=seq,
                     message=f"한/글 표({source['rows']}행 × {source['cols']}열)를 가져왔어요. 선·글을 고친 뒤 다시 복사할 수 있어요.")
 
     def command(self, action, payload=None):
@@ -124,6 +132,7 @@ class TableSketchService:
             if action == "load": return self.load(payload)
             if action == "delete": return self.delete(payload)
             if action == "paste_hwp": return self.paste_hwp(payload)
+            if action == "clipboard_seq": return dict(ok=True, seq=self._clipboard_seq())
             raise ValueError("표그림판 작업을 확인해 주세요.")
         except (OSError, ValueError, TypeError) as exc:
             return dict(ok=False, message=str(exc))
@@ -152,3 +161,12 @@ def _clipboard_html():
         return data if isinstance(data, (bytes, str)) else None
     finally:
         win32clipboard.CloseClipboard()
+
+
+def _clipboard_seq():
+    """Windows 클립보드 바뀜 번호(복사할 때마다 늘어난다). 알 수 없으면 None."""
+    try:
+        import win32clipboard
+        return int(win32clipboard.GetClipboardSequenceNumber())
+    except Exception:
+        return None

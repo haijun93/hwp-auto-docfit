@@ -62,5 +62,17 @@ class HwpTableImportTest(unittest.TestCase):
             self.assertIn("복사", empty["message"])
 
 
+    def test_ctrl_v_keeps_inside_copy_when_clipboard_unchanged(self):
+        with tempfile.TemporaryDirectory() as folder:
+            service = TableSketchService(folder, clipboard_html=lambda: HTML, clipboard_seq=lambda: 7)
+            same = service.command("paste_hwp", {"after_seq": 7})
+            self.assertFalse(same["ok"])
+            self.assertEqual(same["code"], "UNCHANGED")
+            newer = service.command("paste_hwp", {"after_seq": 6})
+            self.assertTrue(newer["ok"])
+            self.assertEqual(newer["seq"], 7)
+            self.assertEqual(service.command("clipboard_seq"), {"ok": True, "seq": 7})
+
+
 if __name__ == "__main__":
     unittest.main()
