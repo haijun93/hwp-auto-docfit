@@ -194,6 +194,9 @@ class KioskTest(unittest.TestCase):
             with zipfile.ZipFile(path, 'w') as z:
                 z.writestr('mimetype', 'application/hwp+zip')
                 z.writestr('Preview/PrvImage.png', png.getvalue())
+                # 서식 예시는 실제 HWPX다: 압축 폭탄 방어 열기(open_hwpx_safely)가 머리글·본문을 확인한다.
+                z.writestr('Contents/header.xml', '<head/>')
+                z.writestr('Contents/section0.xml', '<sec/>')
             cut = fs.still_cut(path, 300)
             self.assertEqual(Image.open(io.BytesIO(cut)).size, (300, 424))
             self.assertIsNone(fs.still_cut(Path(tmp) / 'none.hwpx'))

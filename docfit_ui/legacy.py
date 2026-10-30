@@ -915,8 +915,6 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     except Exception:
                         pass
                     return False
-                스크립트 = 다운로드_경로.with_suffix(".ps1")
-                스크립트.write_text(업데이트_교체스크립트(), encoding="utf-8-sig")
                 기다릴 = [os.getpid()]
                 try:
                     부모 = os.getppid()
@@ -925,23 +923,17 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 except Exception:
                     pass
                 try:
+                    from docfit_core.updater import powershell_command
                     subprocess.Popen(
-                        [
-                            "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
-                            "-File", str(스크립트), "-WaitPidList", " ".join(str(x) for x in 기다릴),
-                            "-Downloaded", str(다운로드_경로), "-Target", str(현재_실행파일),
-                            "-Log", str(다운로드_경로.parent / "update.log"), "-Sha256", str(예상해시 or ""),
-                            "-StartedFlag", str(다운로드_경로.parent / UPDATE_STARTED_FLAG),
-                            "-BusyFlag", str(다운로드_경로.parent / UPDATE_BUSY_FLAG),
-                        ],
+                        powershell_command(
+                            업데이트_교체스크립트(), WaitPidList=" ".join(str(x) for x in 기다릴),
+                            Downloaded=다운로드_경로, Target=현재_실행파일, Log=다운로드_경로.parent / "update.log",
+                            Sha256=예상해시 or "", StartedFlag=다운로드_경로.parent / UPDATE_STARTED_FLAG,
+                            BusyFlag=다운로드_경로.parent / UPDATE_BUSY_FLAG),
                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                         env=업데이트_실행환경(os.environ),
                     )
                 except Exception:
-                    try:
-                        스크립트.unlink()
-                    except OSError:
-                        pass
                     raise
                 _업데이트_기록(f"교체 스크립트 시작: {현재_실행파일.name} ← {다운로드_경로.name}")
                 self.closing = True

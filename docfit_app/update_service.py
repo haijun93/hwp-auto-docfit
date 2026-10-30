@@ -338,12 +338,10 @@ class UpdateService:
                 return False
             self._set(step="installing", message="설치를 시작했어요. 잠시 뒤 앱이 다시 열려요.")
             if kind == "setup":
-                script = path.with_suffix(".ps1")
-                script.write_text(setup_script(), encoding="utf-8-sig")
-                from docfit_core.updater import launch_environment
-                self.launch(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script),
-                             "-Installer", str(path), "-Sha256", item["sha256"], "-WaitPidList", f"{os.getpid()} {os.getppid()}",
-                             "-AppPid", str(os.getpid()), "-AppExecutable", str(self.executable)],
+                from docfit_core.updater import launch_environment, powershell_command
+                self.launch(powershell_command(setup_script(), Installer=path, Sha256=item["sha256"],
+                                               WaitPidList=f"{os.getpid()} {os.getppid()}", AppPid=os.getpid(),
+                                               AppExecutable=self.executable),
                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), env=launch_environment(os.environ))
                 if self.exit_app:
                     self.exit_app()

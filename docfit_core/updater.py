@@ -7,6 +7,7 @@
    어느 단계든 실패하면 '.old'를 되살려 구버전을 다시 실행한다. 각 단계는 잠금(백신 검사 등)에 대비해 재시도한다.
 3. 다음 실행 때 남은 '.old'와 내려받기 잔여물을 지운다.
 """
+import base64
 import re
 
 SHA256_PATTERN = re.compile(r"SHA-?256[^0-9A-Fa-f]{0,20}([0-9A-Fa-f]{64})")
@@ -51,6 +52,19 @@ def launch_environment(environ):
            if not k.upper().startswith("_PYI_") and k.upper() != "_MEIPASS2"}
     env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
     return env
+
+
+def powershell_command(script, **params):
+    """스크립트를 파일로 쓰지 않고 -EncodedCommand로 실행하는 명령줄(보안 검토 S4).
+
+    예전에는 사용자 쓰기 폴더에 .ps1을 쓴 뒤 실행해, 쓰고 실행하는 사이에 다른 프로그램이 파일을 바꿔치기할 수 있었다.
+    매개변수는 PowerShell 작은따옴표 문자열로 넘긴다(작은따옴표는 두 번 써서 이스케이프)."""
+    quote = lambda value: "'" + str(value).replace("'", "''") + "'"
+    call = "& {\n" + script + "\n} " + " ".join(f"-{name} {quote(value)}" for name, value in params.items())
+    encoded = base64.b64encode(call.encode("utf-16-le")).decode("ascii")
+    if len(encoded) > 30000:
+        raise ValueError("업데이트 스크립트가 너무 깁니다.")
+    return ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded]
 
 
 def install_script():
@@ -128,7 +142,7 @@ try {
     if ($stillRunning.Count -eq 0 -and (Test-Path -LiteralPath $Target)) { Start-Process -FilePath $Target }
 } finally {
     if ($BusyFlag) { Remove-Item -LiteralPath $BusyFlag -Force -ErrorAction SilentlyContinue }
-    Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
+    if ($MyInvocation.MyCommand.Path) { Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue }
 }
 '''
 

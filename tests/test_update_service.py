@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import io
 import json
@@ -122,8 +123,14 @@ class UpdateServiceTest(unittest.TestCase):
         service = self.service(installed=True, launch=launch, exit_app=exit_app)
         self.assertTrue(service.start_update())
         args = launch.call_args.args[0]
-        self.assertTrue(args[args.index('-Installer') + 1].endswith('_Setup.exe'))
-        self.assertIn('-WaitPidList', args)
+        # 스크립트 파일을 쓰지 않고 -EncodedCommand로 넘긴다(보안 S4: 실행 전 바꿔치기 방지).
+        self.assertEqual(args[-2], '-EncodedCommand')
+        self.assertNotIn('-File', args)
+        command = base64.b64decode(args[-1]).decode('utf-16-le')
+        self.assertIn(setup_script(), command)
+        self.assertRegex(command, r"-Installer '[^']*_Setup\.exe'")
+        self.assertIn('-WaitPidList', command)
+        self.assertFalse(list(self.folder.rglob('*.ps1')))
         exit_app.assert_called_once()
         script = setup_script()
         self.assertLess(script.index('Wait-Process'), script.index('Start-Process'))

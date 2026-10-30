@@ -85,3 +85,20 @@ class LeftoverTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PowerShellCommandTest(unittest.TestCase):
+    def test_encoded_command_runs_script_with_quoted_parameters(self):
+        import base64, shutil, subprocess, tempfile
+        from pathlib import Path
+        from docfit_core.updater import powershell_command
+        script = "param([string]$Name, [int]$Count)\nSet-Content -LiteralPath $Name -Value ($Count * 2) -Encoding ascii"
+        with tempfile.TemporaryDirectory(prefix="ps 'q' 한글") as folder:
+            target = Path(folder) / "out.txt"
+            args = powershell_command(script, Name=target, Count=21)
+            self.assertNotIn("-File", args)
+            self.assertIn(f"-Name '{str(target).replace(chr(39), chr(39) * 2)}'",
+                          base64.b64decode(args[-1]).decode("utf-16-le"))
+            if shutil.which("powershell.exe"):
+                subprocess.run(args, check=True, timeout=60)
+                self.assertEqual(target.read_text().strip(), "42")

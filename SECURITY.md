@@ -68,3 +68,11 @@
   ```powershell
   Get-FileHash .\HWP_AutoDocFit.exe -Algorithm SHA256
   ```
+
+## 한/글 자동화 보안 모듈(`MapoHwpAutoDocFitSecurity.dll`)
+
+- **역할**: 한/글 자동화(COM)가 파일을 열고 저장할 때 보안 승인 창이 뜨지 않게 하는 한/글 보안 승인 모듈입니다. 앱은 `RegisterModule("FilePathCheckDLL", …)`로 등록합니다.
+- **설치 위치**: 처음 실행할 때 `C:\HWP_AUTODOCFIT\dll\HwpAutoDocFitSecurity.dll`로 복사하고, 현재 사용자 레지스트리(`HKCU`)에 값 `HwpAutoDocFitSecurity`로 등록합니다. 관리자 권한은 쓰지 않습니다.
+- **배포 파일 해시(SHA-256)**: `9AC5B97C47AC8AED1E8BCA27A3EEF39411361D8F68C262509F0C40A8F9D21BB6`(217,229바이트).
+  - 시험(`tests/test_security_module.py`)이 이 값을 확인합니다. DLL을 바꾸면 시험이 실패하므로 이 문서와 함께 검토해야 합니다.
+- **출처**: 원본 출처와 소스는 저장소에 기록이 없어 **확인이 필요**합니다(보안 검토 S9). 확인하면 이 칸에 배포처와 확인 방법을 적습니다.

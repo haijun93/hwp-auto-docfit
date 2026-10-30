@@ -70,7 +70,9 @@ def _inspect(path, deadline):
     directory_bytes = struct.unpack_from('<I', tail, eocd + 12)[0]
     if entries > MAX_ENTRIES or directory_bytes > 1024 * 1024:
         return _unknown()
-    with zipfile.ZipFile(path) as archive:
+    # 압축 폭탄 방어(보안 검토 S2): 항목 크기·압축률 상한을 검사하는 공용 열기를 쓴다.
+    from docfit_core.hwpx import open_hwpx_safely
+    with open_hwpx_safely(path) as archive:
         infos = archive.infolist()
         if len(infos) > MAX_ENTRIES or len({x.filename for x in infos}) != len(infos):
             return _unknown()

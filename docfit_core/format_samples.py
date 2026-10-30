@@ -135,7 +135,8 @@ def still_cut(path, width: int = 300, fmt: str = "PNG") -> bytes | None:
     import zipfile
     try:
         from PIL import Image
-        with zipfile.ZipFile(path) as z:
+        from docfit_core.hwpx import open_hwpx_safely
+        with open_hwpx_safely(path) as z:   # 압축 폭탄 방어(보안 검토 S2)
             data = z.read(PREVIEW_ENTRY)
         image = Image.open(io.BytesIO(data)).convert("RGB")
         if image.width > width:
