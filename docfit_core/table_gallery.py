@@ -119,14 +119,37 @@ def gallery_templates():
     return result
 
 
+_TRAILING = {"비고", "계", "합계"}
+MIN_UNIT_MM = 15   # 열을 늘려도 단위 열 하나가 이 폭(본문 170mm 기준)보다 좁아지지 않게 상한을 정한다
+
+
+def column_unit(columns, col_unit=None):
+    """열 정보단위 (시작 열, 개수). 정한 것이 없으면 첫 열(구분·번호)과 끝의 비고·계 열을 뺀 가운데 열 모두."""
+    if col_unit:
+        return col_unit
+    end = len(columns) - 1 if len(columns) > 2 and columns[-1][0].replace(" ", "") in _TRAILING else len(columns)
+    return (1, max(1, end - 1))
+
+
 def gallery_plans():
-    """이름별 정보단위 판정표 재료: {이름: (행 단위(start, core, count), 열 단위(start, core, count) 또는 None)}."""
+    """이름별 정보단위 판정표 재료: {이름: (행 단위(start, core, count), 열 단위(start, core, count))}.
+
+    2.0.6부터 모든 추가 서식이 열 단위도 늘리고 줄인다(사용자 요청)."""
     plans = {}
     for category, number, (columns, body, tail, col_unit), _ in gallery_templates():
-        rows = (1, 1, len(body))
-        cols = (col_unit[0], 1, col_unit[1]) if col_unit else None
-        plans[f"{category} · 모양 {number}"] = (rows, cols)
+        start, count = column_unit(columns, col_unit)
+        plans[f"{category} · 모양 {number}"] = ((1, 1, len(body)), (start, 1, count))
     return plans
+
+
+def gallery_col_caps():
+    """열 단위 상한: 단위 열 폭 합(본문 170mm 비율)을 MIN_UNIT_MM로 나눈 값(지금 개수보다 작지 않게, 최대 15)."""
+    caps = {}
+    for category, number, (columns, body, tail, col_unit), _ in gallery_templates():
+        start, count = column_unit(columns, col_unit)
+        share = sum(c[1] for c in columns[start:start + count]) / sum(c[1] for c in columns)
+        caps[(f"{category} · 모양 {number}", "col")] = max(count, min(15, int(170 * share // MIN_UNIT_MM)))
+    return caps
 
 
 def _para(pool, horizontal):

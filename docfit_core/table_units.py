@@ -41,11 +41,14 @@ AXIS_CAPS = {
     ("행사시간표 · 모양 1", "col"): 30,
     ("행사표(1일) · 모양 1", "col"): 30,
     ("현황표(가로) · 모양 1", "col"): 15,
-    # 추가 서식: 칸 폭이 너무 좁아지지 않는 개수까지(본문 폭 기준).
-    **{(f"월별 실적표 · 모양 {n}", "col"): 12 for n in (1, 2)},
-    **{(f"연도별 추진계획표 · 모양 {n}", "col"): 8 for n in (1, 2, 3)},
-    **{(f"대안비교표 · 모양 {n}", "col"): 6 for n in (1, 2, 3)},
 }
+# 추가 서식(table_gallery): 단위 열이 12mm보다 좁아지지 않는 개수까지(본문 폭 기준, 2.0.6 모든 추가 서식 열 단위).
+from .table_gallery import gallery_col_caps as _gallery_col_caps  # noqa: E402
+AXIS_CAPS.update(_gallery_col_caps())
+# 성격상 개수가 정해진 열: 월은 12개월까지, 연도·대안은 예전에 정한 값.
+AXIS_CAPS.update({**{(f"월별 실적표 · 모양 {n}", "col"): 12 for n in (1, 2)},
+                  **{(f"연도별 추진계획표 · 모양 {n}", "col"): 8 for n in (1, 2, 3)},
+                  **{(f"대안비교표 · 모양 {n}", "col"): 6 for n in (1, 2, 3)}})
 
 
 def _capped(name, axis, plan):
@@ -504,11 +507,43 @@ def _increment_dates(text, previous, steps):
     return "".join(out) + text[last:]
 
 
+_YEAR_MONTH = re.compile(r"(?<![0-9.])([0-9]{4})\.(\s*)([0-9]{1,2})\.(?!\s*[0-9])")
+
+
+def _increment_year_months(text, previous, steps):
+    """'2026. 1.'처럼 연·월만 있는 날짜는 달력 달로 늘린다(2.0.6). 아니면 None.
+
+    숫자를 따로 늘리면 '2026. 1. ~ 2026. 12.'가 '2027. 2. ~ 2027. 13.'처럼 없는 달이 됐다. 기간은 기간 길이만큼,
+    한 달짜리는 한 달씩 옮기고, 앞 단위가 있으면 앞 단위와의 간격을 따른다."""
+    current, before = list(_YEAR_MONTH.finditer(text)), list(_YEAR_MONTH.finditer(previous or ""))
+    if not current or _TOKENS.search(_YEAR_MONTH.sub("", text)):
+        return None
+    index = lambda m: int(m.group(1)) * 12 + int(m.group(3)) - 1
+    now = [index(m) for m in current]
+    if any(not 1 <= int(m.group(3)) <= 12 for m in current):
+        return None
+    if before and len(before) == len(current):
+        shift = now[0] - index(before[0])
+    else:
+        shift = now[-1] - now[0] + 1 if len(now) > 1 else 1
+    if shift <= 0:
+        return None
+    out, last = [], 0
+    for match, value in zip(current, now):
+        value += shift * steps
+        out.append(text[last:match.start()] + f"{value // 12}.{match.group(2)}{value % 12 + 1}.")
+        last = match.end()
+    return "".join(out) + text[last:]
+
+
 def _increment_text(text, previous=None, steps=1):
     """같은 위치의 토큰 간격을 외삽한다. 시각은 자정 이후에도 24+시를 유지한다."""
     dated = _increment_dates(text, previous, steps)
     if dated is not None:
         return dated
+    months = _increment_year_months(text, previous, steps)
+    if months is not None:
+        return months
     matches = list(_TOKENS.finditer(text))
     before = list(_TOKENS.finditer(previous or ""))
     def replace(index, match):
