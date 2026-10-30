@@ -99,12 +99,18 @@ def compile_launcher(
     source = ROOT / "launcher" / "smart_launcher.cs"
     if not splash.is_file():
         raise FileNotFoundError(f"native launcher splash image not found: {splash}")
+    # 런처는 WinForms·System.Drawing 없이 Win32로 스플래시를 그리므로 PNG를 24비트 BMP로 바꿔 넣는다.
+    from PIL import Image
+
+    splash_bmp = work / "splash.bmp"
+    with Image.open(splash) as image:
+        image.convert("RGB").save(splash_bmp, format="BMP")
     command = [
         str(csc), "/nologo", "/codepage:65001", "/target:winexe", "/optimize+", "/platform:anycpu",
         f"/out:{output_exe}", f"/win32icon:{icon}",
         f"/resource:{payload_zip},DocFitPayload", f"/resource:{manifest},DocFitManifest",
-        f"/resource:{splash},DocFitSplash",
-        "/reference:System.Windows.Forms.dll", "/reference:System.IO.Compression.dll",
+        f"/resource:{splash_bmp},DocFitSplash",
+        "/reference:System.IO.Compression.dll",
         "/reference:System.Core.dll", str(source),
     ]
     # csc accepts Assembly* attributes from a generated source file; keep them versioned per build.

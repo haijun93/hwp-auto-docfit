@@ -50,9 +50,15 @@ class SmartLauncherBuildTest(unittest.TestCase):
             "CacheIsValid", "ExtractPayload", "SafeCombine", "SHA256.Create()",
             "Directory.Move(staging, finalPath)", "CleanupOldCaches", "ProcessStartInfo",
             "SetForegroundWindow", r'mutexName = "Global\\" + MutexSuffix',
-            'GetManifestResourceStream("DocFitSplash")', "new SplashForm(manifest.Version)",
+            'GetManifestResourceStream("DocFitSplash")', "new NativeSplash(version)",
         ):
             self.assertIn(token, source)
+        # 첫 실행 스플래시는 WinForms 없이 Win32로 그리고, 전체 매니페스트를 읽기 전에 띄운다(2.0.5 시작 속도).
+        self.assertNotIn("System.Windows.Forms", source)
+        self.assertNotIn("System.Windows.Forms", (ROOT / "scripts" / "build_smart_launcher.py").read_text(encoding="utf-8"))
+        main = source.split("private static int Main(", 1)[1].split("private static int StartApplication(", 1)[0]
+        self.assertLess(main.index("ShowSplash(version)"), main.rindex("manifest = LoadManifest(version, payloadHash)"))
+        self.assertIn("ImmDisableIME(0)", source)
         self.assertIn("DOCFIT_LAUNCHER_HANDOFF_EVENT", app_source)
         self.assertIn("WaitForSingleObject(handle, 45000)", app_source)
         self.assertIn("CreateMutexW(None, True, mutex_name)", app_source)
@@ -64,7 +70,7 @@ class SmartLauncherBuildTest(unittest.TestCase):
         self.assertIn('!File.Exists(args[0]) && !Directory.Exists(args[0])', source)
         for alias in ('--help', '-h', '/?', '--version'):
             self.assertIn('"' + alias + '"', source)
-        self.assertIn('File.Exists(a) || Directory.Exists(a) ? Path.GetFullPath(a) : a', source)
+        self.assertIn('(File.Exists(args[i]) || Directory.Exists(args[i]))) args[i] = Path.GetFullPath(args[i]);', source)
         self.assertIn('WorkingDirectory = IsCliCommand(args) ? Environment.CurrentDirectory : cachePath', source)
 
     def test_cleanup_protects_running_newer_and_unmovable_caches(self):
@@ -181,8 +187,8 @@ internal static class CleanupProbe {
                     self.assertEqual(image.getpixel((x, y)), (255, 255, 255), (x, y))
         source = (ROOT / "launcher" / "smart_launcher.cs").read_text(encoding="utf-8")
         self.assertNotIn("Color.Transparent", source)
-        self.assertIn("Left = 119, Top = 82", source)
-        self.assertIn("Left = 34, Top = 194", source)
+        self.assertIn("DrawLabel(dc, versionText, 119, 82,", source)
+        self.assertIn("DrawLabel(dc, status, 34, 194,", source)
 
     def test_ci_enforces_warm_ui_startup_target(self):
         workflow = (ROOT / ".github" / "workflows" / "build-windows-exe.yml").read_text(encoding="utf-8")
