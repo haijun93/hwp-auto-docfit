@@ -153,3 +153,22 @@ class SketchImageInputTests(unittest.TestCase):
             bridge._tk = lambda callback: callback()
             bridge.receive_drop([str(Path(folder) / "memo.txt")])
             self.assertIsNone(getattr(bridge, "_sketch_drop", None))
+
+    def test_drop_on_paint_tab_becomes_the_paint_background(self):
+        from unittest.mock import Mock
+        from desktop_web_ui import DesktopWebBridge
+        with tempfile.TemporaryDirectory() as folder:
+            pic = Path(folder) / "배경.jpg"
+            Image.new("RGB", (40, 30), (9, 8, 7)).save(pic)
+            gui = Mock(running=False, files=[])
+            bridge = DesktopWebBridge(gui)
+            bridge._tk = lambda callback: callback()
+            bridge.get_state = Mock(return_value={})
+            bridge.window = Mock()
+            bridge.set_drop_target("paint_image")
+            bridge.receive_drop([str(pic)])
+            gui.파일추가.assert_not_called()  # 문서 목록에 들어가지 않는다
+            bridge.window.run_js.assert_any_call("window.dispatchEvent(new Event('docfit-paint-image-dropped'));")
+            bridge._tk = lambda callback: Path(folder)
+            taken = bridge.table_sketch("take_drop")
+            self.assertEqual((taken["kind"], taken["width"], taken["height"]), ("jpg", 40, 30))

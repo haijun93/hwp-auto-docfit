@@ -126,11 +126,14 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
   final workspace = GlobalKey<_WorkspaceState>();
   int lastTab = 0;
 
-  /// 표그림판 탭에서는 끌어 놓은 사진을 칸 배경 그림으로 받고, 나가면 문서 목록으로 되돌린다.
+  /// 표그림판 탭에서는 끌어 놓은 사진을 칸 배경 그림으로, 그림판 탭에서는 배경 사진으로 받고,
+  /// 나가면 문서 목록으로 되돌린다.
   void routeDrops(int index) {
     if (index == 2) {
       unawaited(widget.api('set_drop_target', ['sketch_image']).catchError((_) => null));
-    } else if (lastTab == 2 && index != 5) {
+    } else if (index == 5) {
+      unawaited(widget.api('set_drop_target', ['paint_image']).catchError((_) => null));
+    } else if (lastTab == 2 || lastTab == 5) {
       unawaited(widget.api('set_drop_target', ['documents']).catchError((_) => null));
     }
     lastTab = index;

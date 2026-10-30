@@ -1,4 +1,5 @@
 import '../../core/close_guards.dart';
+import '../../core/drop_events.dart';
 import 'edit_save_state.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -29,6 +30,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
   late final String viewType;
   late final web.HTMLIFrameElement frame;
   late final JSFunction listener;
+  void Function()? _stopPaintDrops;
   late String name = newName;
 
   /// 새 문서 기본 이름은 모드별로('새 다이어그램' / '새 마인드맵').
@@ -53,6 +55,13 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
     super.initState();
     if (widget.isModal) {
       _closeLease = CloseGuards.register(_prepareHostClose);
+    }
+    if (widget.initialMode == 'paint') {
+      // 그림판 탭에 끌어 놓은 사진은 앱이 받아(창 위 놓기 층) 배경으로 넘긴다.
+      _stopPaintDrops = watchWindowEvent(
+        'docfit-paint-image-dropped',
+        () => unawaited(_takePaintDrop()),
+      );
     }
     viewType = 'docfit-flow-${DateTime.now().microsecondsSinceEpoch}';
     frame = web.HTMLIFrameElement()
@@ -457,8 +466,21 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
       ),
     ),
   );
+  Future<void> _takePaintDrop() async {
+    final result = await widget.api('table_sketch', ['take_drop']);
+    if (result is! Map || result['ok'] != true) return;
+    final kind = result['kind'] == 'png' ? 'png' : 'jpeg';
+    post({
+      'type': 'set_background',
+      'src': 'data:image/$kind;base64,${result['data']}',
+      'width': result['width'],
+      'height': result['height'],
+    });
+  }
+
   @override
   void dispose() {
+    _stopPaintDrops?.call();
     _closeLease?.release();
     web.window.removeEventListener('message', listener);
     super.dispose();

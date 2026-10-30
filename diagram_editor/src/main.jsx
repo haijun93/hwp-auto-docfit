@@ -2,7 +2,7 @@ import React,{useRef,useState,useEffect,createContext,useContext} from 'react';
 import {createRoot} from 'react-dom/client';
 import {ReactFlow,ReactFlowProvider,Background,Controls,MiniMap,Handle,Position,ConnectionMode,applyNodeChanges,applyEdgeChanges,NodeResizer,BaseEdge,useReactFlow,ViewportPortal,reconnectEdge} from '@xyflow/react';
 import {autoRoute,nodeAt,facingSides,smartGuides} from './magnet.js';
-import {freehandNode,freehandPath,withBackground,withoutBackground,fitSize,paintStyle,BACKGROUND_ID} from './paint.js';
+import {freehandNode,freehandPath,withBackground,withoutBackground,fitSize,paintStyle,BACKGROUND_ID,isImageSrc} from './paint.js';
 import '@xyflow/react/dist/style.css';
 import './style.css';
 import {FORMAT,PALETTE,templates,template,node,edge,id,decode,validate,svg,layoutGraph,computeNodeAutoFitBox,edgeLabelBox,LINE_HEIGHT,nodeFont,nodePaint,edgePath,EDGE_DEFAULT} from './model.js';
@@ -371,6 +371,12 @@ function App(){
   try{
    switch(message.type){case 'set_mode':{if(message.mode==='diagram'||message.mode==='mindmap'||message.mode==='paint'){switchMode(message.mode);if(nameRef.current==='새 '+TITLE)setName(newName(message.mode));}break;}
     case 'new':tables.current=newTables();setMmSelected(null);replace({nodes:[],edges:[]},newName(mode),false);send({type:'document_new'});break;
+    case 'set_background':{
+     // 앱 창에 끌어 놓은 사진(앱이 받아 알맞은 크기로 바꿔 넘김)을 그림판 배경으로.
+     if(mode!=='paint'||!isImageSrc(message.src))break;
+     const size=fitSize(Number(message.width)||1,Number(message.height)||1,2000);
+     commit({...current.current,nodes:withBackground(current.current.nodes,message.src,size.width,size.height)});
+     setStatus('배경 사진을 넣었어요. 펜·도형·글상자를 올려 보세요.');setTimeout(()=>flow.current?.fitView({padding:.05}),50);break;}
     case 'mark_saved':
      if(Number.isInteger(message.generation))savedGeneration.current=Math.max(savedGeneration.current,message.generation);
      send({type:'dirty',value:generation.current>savedGeneration.current,generation:generation.current});
@@ -606,9 +612,10 @@ function App(){
     <ColorRow label="펜·도형 색" value={penColor} onChange={c=>setPenColor(c==='none'?'#111827':c)}/>
     <Select label="굵기" value={String(penWidth)} options={[['2','가늘게'],['3','보통'],['5','굵게'],['8','아주 굵게']]} onChange={v=>setPenWidth(Number(v))}/>
     <h2>배경 사진</h2>
-    <label className="file-button">배경 사진 열기<input type="file" accept="image/*" aria-label="배경 사진 열기" onChange={e=>{setBackgroundFromFile(e.target.files?.[0]);e.target.value='';}}/></label>
+    <div className="paint-drop-zone" aria-label="배경 사진 놓는 곳"><b>📷 사진을 끌어 놓으세요</b><span>그림판 아무 곳에 놓아도 배경이 돼요. Ctrl+V로 붙여 넣어도 돼요.</span>
+     <label className="file-link">파일에서 고르기<input type="file" accept="image/*" aria-label="배경 사진 열기" onChange={e=>{setBackgroundFromFile(e.target.files?.[0]);e.target.value='';}}/></label></div>
     <button disabled={!hasBackground} onClick={()=>commit({...current.current,nodes:withoutBackground(current.current.nodes)})}>배경 지우기</button>
-    <p>사진을 이 창에 끌어 놓거나 Ctrl+V로 붙여 넣어도 배경이 돼요. 배경은 맨 뒤에 고정돼요.</p>
+    <p>배경은 맨 뒤에 고정돼요.</p>
     <h2>넣기</h2>
     <div className="shape-grid">{[['text','글상자'],['rectangle','사각형'],['roundRect','둥근 사각형'],['ellipse','타원'],['circle','원'],['arrowLine','화살표'],['line','직선'],['arrowRight','블록 화살표'],['star5','별'],['calloutRound','말풍선'],['triangle','삼각형'],['heart','하트']].map(([shape,label])=>
      <button key={shape} title={label} aria-label={label+' 넣기'} onClick={()=>addPaint(shape)}><ShapeIcon shape={shape}/></button>)}</div>
@@ -708,7 +715,7 @@ function App(){
     {(mode!=='grid'||table.custom_border)&&<BorderControls table={table} parts={BORDER_PARTS[mode]} onChange={changeTable}/>}
     <button onClick={()=>undo()}>실행 취소 (Ctrl+Z)</button>
    </aside>}
-   <main><div className="flow-layer" style={{display:canvas?'block':'none'}}><ReactFlow style={mmGraph?.background?{background:mmGraph.background}:undefined} nodes={shownNodes} edges={shownEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} connectionMode={ConnectionMode.Loose} snapToGrid snapGrid={[10,10]}
+   <main><div className="flow-layer" style={{display:canvas?'block':'none'}}>{mode==='paint'&&!hasBackground&&<div className="paint-empty" aria-hidden="true"><b>📷 배경 사진을 여기에 끌어 놓으세요</b><span>탐색기에서 사진을 끌어 오면 바로 배경이 돼요(Ctrl+V도 돼요)</span></div>}<ReactFlow style={mmGraph?.background?{background:mmGraph.background}:undefined} nodes={shownNodes} edges={shownEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} connectionMode={ConnectionMode.Loose} snapToGrid snapGrid={[10,10]}
     nodesDraggable={canvas} nodesConnectable={canvas} elementsSelectable
     onInit={instance=>{flow.current=instance;send({type:'ready',protocol_version:1,editor:FORMAT});}}
     onNodeClick={(_,n)=>{if(mode==='mindmap')setMmSelected(n.id);}}

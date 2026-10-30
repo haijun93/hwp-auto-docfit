@@ -33,8 +33,9 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     final previews = <Map>[];
     Future<Object?> api(String name, List<Object?> args) async {
-      if (name == 'table_sketch' && args[0] == 'preview')
+      if (name == 'table_sketch' && args[0] == 'preview') {
         previews.add(args[1] as Map);
+      }
       return {
         'ok': true,
         'rows': 1,

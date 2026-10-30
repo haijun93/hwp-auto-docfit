@@ -1808,7 +1808,7 @@ class DesktopWebBridge:
     # ---- 서식 관리(예시 보고서로 서식 복제·이름 바꾸기·세부 수정·삭제) ----
     def set_drop_target(self, target):
         """끌어 놓은 파일을 넣을 곳을 바꾼다: documents(문서 목록) 또는 format(예시 서식 복제)."""
-        if target not in ("documents", "manual_documents", "format", "quick_format", "sketch_image"):
+        if target not in ("documents", "manual_documents", "format", "quick_format", "sketch_image", "paint_image"):
             raise ValueError("지원하지 않는 놓기 대상입니다.")
         self.drop_target = target
         if target == "format":   # 서식 관리 창을 열 때 서식예시 폴더에 새로 넣은 예시를 찾아 등록한다
@@ -1819,6 +1819,7 @@ class DesktopWebBridge:
         if window is not None and hasattr(window, "run_js"):
             text = ("여기에 놓으면 이 보고서의 서식을 복제합니다" if target == "format"
                     else "표 칸 위에 놓으면 칸 배경 그림으로 넣습니다" if target == "sketch_image"
+                    else "여기에 놓으면 그림판 배경 사진으로 넣습니다" if target == "paint_image"
                     else "여기에 놓으면 문서 목록에 추가됩니다")
             try:
                 window.run_js(f"window.docfitDropText = {text!r};")
@@ -1858,6 +1859,8 @@ class DesktopWebBridge:
             return self.add_format_paths(paths)
         if self.drop_target == "sketch_image":
             return self._receive_sketch_image(paths, client_x, client_y)
+        if self.drop_target == "paint_image":
+            return self._receive_sketch_image(paths, client_x, client_y, event="docfit-paint-image-dropped")
         bounds = getattr(self, "_profile_drop_bounds", None)
         on_badge = (bounds is not None and isinstance(client_x, (int, float)) and isinstance(client_y, (int, float)))
         if on_badge:
@@ -1869,8 +1872,8 @@ class DesktopWebBridge:
             return self.add_paths(paths, from_drop=False)
         return self.add_paths(paths, from_drop=True)
 
-    def _receive_sketch_image(self, paths, client_x, client_y):
-        """표그림판에 끌어 놓은 사진: 알맞은 크기로 바꿔 두고 화면에 알린다(화면이 take_drop으로 가져간다)."""
+    def _receive_sketch_image(self, paths, client_x, client_y, event="docfit-sketch-image-dropped"):
+        """표그림판·그림판에 끌어 놓은 사진: 알맞은 크기로 바꿔 두고 화면에 알린다(화면이 take_drop으로 가져간다)."""
         from docfit_app import sketch_image_input
         try:
             image = sketch_image_input.from_path(paths[0]) if paths else None
@@ -1883,7 +1886,7 @@ class DesktopWebBridge:
         window = self.window
         if window is not None and hasattr(window, "run_js"):
             try:
-                window.run_js("window.dispatchEvent(new Event('docfit-sketch-image-dropped'));")
+                window.run_js(f"window.dispatchEvent(new Event({event!r}));")
             except Exception:
                 logging.getLogger(__name__).debug("sketch drop notify failed", exc_info=True)
         return self.get_state()
