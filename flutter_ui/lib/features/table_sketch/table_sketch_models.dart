@@ -39,8 +39,11 @@ class SketchLine {
     required this.y2,
     this.width = 'thin',
     this.style = 'solid',
+    this.layer,
   });
 
+  /// 속한 레이어 id. null이면 아직 정하지 않은 새 선(다음 정리 때 지금 레이어로 들어간다).
+  final String? layer;
   final int x1;
   final int y1;
   final int x2;
@@ -102,6 +105,7 @@ class SketchLine {
     y2: (json['y2'] as num?)?.toInt() ?? 0,
     width: '${json['width'] ?? 'thin'}',
     style: '${json['style'] ?? 'solid'}',
+    layer: json['layer'] is String ? json['layer'] as String : null,
   );
 
   Map<String, dynamic> toJson() => {
@@ -111,6 +115,7 @@ class SketchLine {
     'y2': y2,
     'width': width,
     'style': style,
+    if (layer != null) 'layer': layer,
   };
 
   SketchLine copyWith({
@@ -120,6 +125,7 @@ class SketchLine {
     int? y2,
     String? width,
     String? style,
+    String? layer,
   }) => SketchLine(
     x1: x1 ?? this.x1,
     y1: y1 ?? this.y1,
@@ -127,6 +133,7 @@ class SketchLine {
     y2: y2 ?? this.y2,
     width: width ?? this.width,
     style: style ?? this.style,
+    layer: layer ?? this.layer,
   );
 }
 
@@ -138,8 +145,10 @@ class SketchText {
     required this.text,
     this.bold = false,
     this.align = 'center',
+    this.layer,
   });
 
+  final String? layer;
   final int x;
   final int y;
   final String text;
@@ -152,6 +161,7 @@ class SketchText {
     text: '${json['text'] ?? ''}',
     bold: json['bold'] == true,
     align: '${json['align'] ?? 'center'}',
+    layer: json['layer'] is String ? json['layer'] as String : null,
   );
 
   Map<String, dynamic> toJson() => {
@@ -160,6 +170,7 @@ class SketchText {
     'text': text,
     'bold': bold,
     'align': align,
+    if (layer != null) 'layer': layer,
   };
 
   SketchText copyWith({
@@ -168,20 +179,28 @@ class SketchText {
     String? text,
     bool? bold,
     String? align,
+    String? layer,
   }) => SketchText(
     x: x ?? this.x,
     y: y ?? this.y,
     text: text ?? this.text,
     bold: bold ?? this.bold,
     align: align ?? this.align,
+    layer: layer ?? this.layer,
   );
 }
 
 /// 표 칸 배경 그림: (x, y)는 그림이 든 칸 안의 한 격자 칸, data는 PNG/JPG base64.
 /// 그림은 그 칸(선으로 둘러싸인 영역) 크기에 맞춰 늘려 채운다(한/글 '크기에 맞추어').
 class SketchImage {
-  const SketchImage({required this.x, required this.y, required this.data});
+  const SketchImage({
+    required this.x,
+    required this.y,
+    required this.data,
+    this.layer,
+  });
 
+  final String? layer;
   final int x;
   final int y;
   final String data;
@@ -190,29 +209,187 @@ class SketchImage {
     x: (json['x'] as num?)?.toInt() ?? 0,
     y: (json['y'] as num?)?.toInt() ?? 0,
     data: '${json['data'] ?? ''}',
+    layer: json['layer'] is String ? json['layer'] as String : null,
   );
 
-  Map<String, dynamic> toJson() => {'x': x, 'y': y, 'data': data};
+  Map<String, dynamic> toJson() => {
+    'x': x,
+    'y': y,
+    'data': data,
+    if (layer != null) 'layer': layer,
+  };
 
-  SketchImage copyWith({int? x, int? y}) =>
-      SketchImage(x: x ?? this.x, y: y ?? this.y, data: data);
+  SketchImage copyWith({int? x, int? y, String? layer}) => SketchImage(
+    x: x ?? this.x,
+    y: y ?? this.y,
+    data: data,
+    layer: layer ?? this.layer,
+  );
 }
 
+/// 표그림판 레이어(포토샵처럼): 보이기·잠금·이름. 목록은 아래→위 순서다.
+class SketchLayer {
+  const SketchLayer({
+    required this.id,
+    required this.name,
+    this.visible = true,
+    this.locked = false,
+  });
+
+  final String id;
+  final String name;
+  final bool visible;
+  final bool locked;
+
+  /// 숨기거나 잠근 레이어의 개체는 고치는 도구(선택·지우개·이동)에서 빠진다.
+  bool get editable => visible && !locked;
+
+  factory SketchLayer.fromJson(Map<dynamic, dynamic> json) => SketchLayer(
+    id: '${json['id'] ?? defaultSketchLayerId}',
+    name: '${json['name'] ?? '레이어'}',
+    visible: json['visible'] != false,
+    locked: json['locked'] == true,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'visible': visible,
+    'locked': locked,
+  };
+
+  SketchLayer copyWith({String? name, bool? visible, bool? locked}) =>
+      SketchLayer(
+        id: id,
+        name: name ?? this.name,
+        visible: visible ?? this.visible,
+        locked: locked ?? this.locked,
+      );
+}
+
+const defaultSketchLayerId = 'layer-1';
+
 /// 표그림판 문서 전체 데이터.
+///
+/// lines·texts·images는 고칠 수 있는(보이고 잠그지 않은) 레이어의 개체만 담는다. 숨기거나 잠근 레이어의
+/// 개체는 [parked]에 따로 두어 선택·지우개·이동이 닿지 않게 하고, 그리기·저장·복사 때 다시 합친다.
 class TableSketchDoc {
   TableSketchDoc({
     this.grid = const GridConfig(),
     List<SketchLine>? lines,
     List<SketchText>? texts,
     List<SketchImage>? images,
+    List<SketchLayer>? layers,
+    String? activeLayer,
+    TableSketchDoc? parked,
   }) : lines = lines ?? <SketchLine>[],
        texts = texts ?? <SketchText>[],
-       images = images ?? <SketchImage>[];
+       images = images ?? <SketchImage>[],
+       layers =
+           layers ??
+           [const SketchLayer(id: defaultSketchLayerId, name: '레이어 1')],
+       activeLayer = activeLayer ?? defaultSketchLayerId,
+       _parkedLines = parked?.lines ?? <SketchLine>[],
+       _parkedTexts = parked?.texts ?? <SketchText>[],
+       _parkedImages = parked?.images ?? <SketchImage>[];
 
   GridConfig grid;
   List<SketchLine> lines;
   List<SketchText> texts;
   List<SketchImage> images;
+  List<SketchLayer> layers;
+  String activeLayer;
+  List<SketchLine> _parkedLines;
+  List<SketchText> _parkedTexts;
+  List<SketchImage> _parkedImages;
+
+  SketchLayer layerOf(String? id) => layers.firstWhere(
+    (l) => l.id == id,
+    orElse: () => layers.firstWhere(
+      (l) => l.id == activeLayer,
+      orElse: () => layers.first,
+    ),
+  );
+
+  /// 레이어를 정하지 않은 새 개체를 지금 레이어에 넣는다(레이어를 바꾸기 전·저장 전에 부른다).
+  void claimUnassigned() {
+    final target = layerOf(activeLayer).id;
+    lines = [
+      for (final l in lines) l.layer == null ? l.copyWith(layer: target) : l,
+    ];
+    texts = [
+      for (final t in texts) t.layer == null ? t.copyWith(layer: target) : t,
+    ];
+    images = [
+      for (final i in images) i.layer == null ? i.copyWith(layer: target) : i,
+    ];
+  }
+
+  /// 레이어 상태에 맞게 개체를 고칠 수 있는 목록과 [parked]로 나눈다.
+  void repark() {
+    claimUnassigned();
+    final allLines = [...lines, ..._parkedLines];
+    final allTexts = [...texts, ..._parkedTexts];
+    final allImages = [...images, ..._parkedImages];
+    bool editable(String? id) => layerOf(id).editable;
+    lines = allLines.where((l) => editable(l.layer)).toList();
+    texts = allTexts.where((t) => editable(t.layer)).toList();
+    images = allImages.where((i) => editable(i.layer)).toList();
+    _parkedLines = allLines.where((l) => !editable(l.layer)).toList();
+    _parkedTexts = allTexts.where((t) => !editable(t.layer)).toList();
+    _parkedImages = allImages.where((i) => !editable(i.layer)).toList();
+  }
+
+  /// 화면에 그릴 잠근(보이는) 레이어 개체.
+  List<SketchLine> get lockedLines =>
+      _parkedLines.where((l) => layerOf(l.layer).visible).toList();
+  List<SketchText> get lockedTexts =>
+      _parkedTexts.where((t) => layerOf(t.layer).visible).toList();
+
+  int countIn(String layerId) =>
+      [
+        ...lines,
+        ..._parkedLines,
+      ].where((l) => (l.layer ?? activeLayer) == layerId).length +
+      [
+        ...texts,
+        ..._parkedTexts,
+      ].where((t) => (t.layer ?? activeLayer) == layerId).length +
+      [
+        ...images,
+        ..._parkedImages,
+      ].where((i) => (i.layer ?? activeLayer) == layerId).length;
+
+  /// 고른 선·글을 다른 레이어로 옮긴다.
+  void moveToLayer(
+    Set<SketchLine> chosenLines,
+    Set<SketchText> chosenTexts,
+    String layerId,
+  ) {
+    lines = [
+      for (final l in lines)
+        chosenLines.contains(l) ? l.copyWith(layer: layerId) : l,
+    ];
+    texts = [
+      for (final t in texts)
+        chosenTexts.contains(t) ? t.copyWith(layer: layerId) : t,
+    ];
+    repark();
+  }
+
+  /// 레이어와 그 안의 개체를 지운다(마지막 레이어는 남긴다).
+  void removeLayer(String layerId) {
+    if (layers.length <= 1) return;
+    claimUnassigned();
+    lines.removeWhere((l) => l.layer == layerId);
+    texts.removeWhere((t) => t.layer == layerId);
+    images.removeWhere((i) => i.layer == layerId);
+    _parkedLines.removeWhere((l) => l.layer == layerId);
+    _parkedTexts.removeWhere((t) => t.layer == layerId);
+    _parkedImages.removeWhere((i) => i.layer == layerId);
+    layers = layers.where((l) => l.id != layerId).toList();
+    if (activeLayer == layerId) activeLayer = layers.last.id;
+  }
 
   /// 겹친 선을 포함하여 해당 한 격자 구간을 모두 지운다.
   bool eraseUnitSegment(int sx1, int sy1, int sx2, int sy2) {
@@ -232,6 +409,13 @@ class TableSketchDoc {
     lines: lines.map((l) => l.copyWith()).toList(),
     texts: texts.map((t) => t.copyWith()).toList(),
     images: List.of(images),
+    layers: List.of(layers),
+    activeLayer: activeLayer,
+    parked: TableSketchDoc(
+      lines: List.of(_parkedLines),
+      texts: List.of(_parkedTexts),
+      images: List.of(_parkedImages),
+    ),
   );
 
   factory TableSketchDoc.fromJson(Map<dynamic, dynamic> json) {
@@ -256,20 +440,47 @@ class TableSketchDoc {
         if (item is Map) images.add(SketchImage.fromJson(item));
       }
     }
-    return TableSketchDoc(
+    final rawLayers = json['layers'];
+    final layers = <SketchLayer>[];
+    if (rawLayers is List) {
+      for (final item in rawLayers) {
+        if (item is Map) layers.add(SketchLayer.fromJson(item));
+      }
+    }
+    final doc = TableSketchDoc(
       grid: GridConfig.fromJson(json['grid'] as Map?),
       lines: lines,
       texts: texts,
       images: images,
+      layers: layers.isEmpty ? null : layers,
+      activeLayer: json['active_layer'] is String
+          ? json['active_layer'] as String
+          : null,
     );
+    if (!doc.layers.any((l) => l.id == doc.activeLayer)) {
+      doc.activeLayer = doc.layers.last.id;
+    }
+    doc.repark();
+    return doc;
   }
 
-  Map<String, dynamic> toJson() => {
-    'grid': grid.toJson(),
-    'lines': lines.map((l) => l.toJson()).toList(),
-    'texts': texts.map((t) => t.toJson()).toList(),
-    if (images.isNotEmpty) 'images': images.map((i) => i.toJson()).toList(),
-  };
+  /// 저장용: 모든 레이어의 개체와 레이어 목록. [forTable]이면 한/글 표로 바꿀 것만(숨긴 레이어 제외).
+  Map<String, dynamic> toJson({bool forTable = false}) {
+    claimUnassigned();
+    bool keep(String? id) => !forTable || layerOf(id).visible;
+    final allLines = [...lines, ..._parkedLines].where((l) => keep(l.layer));
+    final allTexts = [...texts, ..._parkedTexts].where((t) => keep(t.layer));
+    final allImages = [...images, ..._parkedImages].where((i) => keep(i.layer));
+    return {
+      'grid': grid.toJson(),
+      'lines': allLines.map((l) => l.toJson()).toList(),
+      'texts': allTexts.map((t) => t.toJson()).toList(),
+      if (allImages.isNotEmpty)
+        'images': allImages.map((i) => i.toJson()).toList(),
+      if (!forTable) 'layers': layers.map((l) => l.toJson()).toList(),
+      if (!forTable) 'active_layer': activeLayer,
+    };
+  }
 
   /// 선 추가 (동일 좌표 선이 있으면 교체).
   void addLine(SketchLine line) {

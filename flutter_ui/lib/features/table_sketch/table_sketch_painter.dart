@@ -187,7 +187,13 @@ class TableSketchPainter extends CustomPainter {
       );
     }
 
-    // 3. 기존에 그려진 선들
+    // 3. 잠근 레이어의 선·글(고를 수 없지만 보인다)과 기존에 그려진 선들
+    for (final line in doc.lockedLines) {
+      _drawSketchLine(canvas, line);
+    }
+    for (final text in doc.lockedTexts) {
+      _drawSketchText(canvas, text);
+    }
     for (int i = 0; i < doc.lines.length; i++) {
       final line = doc.lines[i];
       _drawSketchLine(

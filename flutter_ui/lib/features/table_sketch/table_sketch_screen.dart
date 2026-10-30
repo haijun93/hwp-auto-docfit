@@ -213,7 +213,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
     if (!mounted) return;
     setState(() => _previewLoading = true);
     try {
-      final res = await _sketchApi.preview(_doc.toJson());
+      final res = await _sketchApi.preview(_doc.toJson(forTable: true));
       if (mounted) {
         setState(() {
           _previewResult = res;
@@ -231,7 +231,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
     if (_copying) return;
     setState(() => _copying = true);
     try {
-      final res = await _sketchApi.copy(_doc.toJson());
+      final res = await _sketchApi.copy(_doc.toJson(forTable: true));
       if (mounted) {
         setState(() => _copying = false);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -337,6 +337,232 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
       _previewRect = null;
     });
     _triggerPreviewDebounced();
+  }
+
+  // --- 레이어 ---
+
+  /// 레이어 목록을 바꾼다(실행 취소 가능). 고른 개체는 풀고 개체를 레이어 상태에 맞게 다시 나눈다.
+  void _changeLayers(void Function(TableSketchDoc doc) change) {
+    _saveSnapshot();
+    setState(() {
+      _doc.claimUnassigned();
+      change(_doc);
+      _doc.repark();
+      _sel = SketchSelection();
+    });
+    _triggerPreviewDebounced();
+  }
+
+  void _addLayer() {
+    final names = _doc.layers.map((l) => l.name).toSet();
+    var n = _doc.layers.length + 1;
+    while (names.contains('레이어 $n')) {
+      n++;
+    }
+    final id = 'layer-${DateTime.now().microsecondsSinceEpoch}';
+    _changeLayers((doc) {
+      doc.layers = [...doc.layers, SketchLayer(id: id, name: '레이어 $n')];
+      doc.activeLayer = id;
+    });
+  }
+
+  void _moveActiveLayer(int step) {
+    final i = _doc.layers.indexWhere((l) => l.id == _doc.activeLayer);
+    final j = i + step;
+    if (i < 0 || j < 0 || j >= _doc.layers.length) return;
+    _changeLayers((doc) {
+      final next = List.of(doc.layers);
+      final item = next.removeAt(i);
+      next.insert(j, item);
+      doc.layers = next;
+    });
+  }
+
+  Future<void> _renameLayer(SketchLayer layer) async {
+    final controller = TextEditingController(text: layer.name);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('레이어 이름'),
+        content: TextField(
+          key: const Key('sketchLayerNameField'),
+          controller: controller,
+          autofocus: true,
+          maxLength: 60,
+          onSubmitted: (v) => Navigator.pop(context, v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('바꾸기'),
+          ),
+        ],
+      ),
+    );
+    if (name == null || name.trim().isEmpty) return;
+    _changeLayers((doc) {
+      doc.layers = [
+        for (final l in doc.layers)
+          l.id == layer.id ? l.copyWith(name: name.trim()) : l,
+      ];
+    });
+  }
+
+  Widget _buildLayerPanel() {
+    final layers = _doc.layers.reversed.toList(); // 위 레이어가 위에 보인다
+    final selected = _sel.lines.length + _sel.texts.length;
+    return Container(
+      key: const Key('sketchLayerPanel'),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            '레이어',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 6),
+          for (final layer in layers)
+            Material(
+              color: layer.id == _doc.activeLayer
+                  ? const Color(0xFFDBEAFE)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(6),
+              child: InkWell(
+                key: Key('sketchLayer-${layer.id}'),
+                borderRadius: BorderRadius.circular(6),
+                onTap: () => _changeLayers((doc) => doc.activeLayer = layer.id),
+                onDoubleTap: () => _renameLayer(layer),
+                child: Row(
+                  children: [
+                    IconButton(
+                      key: Key('sketchLayerEye-${layer.id}'),
+                      visualDensity: VisualDensity.compact,
+                      tooltip: layer.visible ? '숨기기' : '보이기',
+                      icon: Icon(
+                        layer.visible
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
+                        size: 18,
+                      ),
+                      onPressed: () => _changeLayers((doc) {
+                        doc.layers = [
+                          for (final l in doc.layers)
+                            l.id == layer.id
+                                ? l.copyWith(visible: !l.visible)
+                                : l,
+                        ];
+                      }),
+                    ),
+                    IconButton(
+                      key: Key('sketchLayerLock-${layer.id}'),
+                      visualDensity: VisualDensity.compact,
+                      tooltip: layer.locked ? '잠금 풀기' : '잠그기',
+                      icon: Icon(
+                        layer.locked
+                            ? Icons.lock_outline
+                            : Icons.lock_open_outlined,
+                        size: 18,
+                      ),
+                      onPressed: () => _changeLayers((doc) {
+                        doc.layers = [
+                          for (final l in doc.layers)
+                            l.id == layer.id
+                                ? l.copyWith(locked: !l.locked)
+                                : l,
+                        ];
+                      }),
+                    ),
+                    Expanded(
+                      child: Tooltip(
+                        message: '두 번 눌러 이름 바꾸기',
+                        child: Text(
+                          layer.name,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '${_doc.countIn(layer.id)}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                ),
+              ),
+            ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 4,
+            runSpacing: 4,
+            children: [
+              OutlinedButton.icon(
+                key: const Key('sketchLayerAdd'),
+                onPressed: _addLayer,
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('새 레이어'),
+              ),
+              IconButton(
+                key: const Key('sketchLayerUp'),
+                tooltip: '레이어 위로',
+                onPressed: () => _moveActiveLayer(1),
+                icon: const Icon(Icons.arrow_upward, size: 18),
+              ),
+              IconButton(
+                key: const Key('sketchLayerDown'),
+                tooltip: '레이어 아래로',
+                onPressed: () => _moveActiveLayer(-1),
+                icon: const Icon(Icons.arrow_downward, size: 18),
+              ),
+              IconButton(
+                key: const Key('sketchLayerDelete'),
+                tooltip: '레이어와 안의 선·글 지우기',
+                onPressed: _doc.layers.length <= 1
+                    ? null
+                    : () => _changeLayers(
+                        (doc) => doc.removeLayer(doc.activeLayer),
+                      ),
+                icon: const Icon(Icons.delete_outline, size: 18),
+              ),
+            ],
+          ),
+          if (selected > 0)
+            TextButton(
+              key: const Key('sketchLayerAssign'),
+              onPressed: () {
+                final lines = {
+                  for (final i in _sel.lines)
+                    if (i < _doc.lines.length) _doc.lines[i],
+                };
+                final texts = {
+                  for (final i in _sel.texts)
+                    if (i < _doc.texts.length) _doc.texts[i],
+                };
+                _changeLayers(
+                  (doc) => doc.moveToLayer(lines, texts, doc.activeLayer),
+                );
+              },
+              child: Text('고른 선·글 $selected개를 이 레이어로'),
+            ),
+          const Text(
+            '숨긴 레이어는 한/글 표에 넣지 않아요. 잠근 레이어는 보이지만 고칠 수 없어요.',
+            style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+          ),
+        ],
+      ),
+    );
   }
 
   // --- 한/글 표 붙여넣기 ---
@@ -1896,6 +2122,8 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            _buildLayerPanel(),
+            const SizedBox(height: 12),
             // 표 미리보기 요약 정보
             Container(
               padding: const EdgeInsets.all(12),
