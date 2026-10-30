@@ -16,6 +16,7 @@ from pathlib import Path
 
 from docfit_core import table_units
 from docfit_core.table_catalog import default_catalog_path
+from docfit_core.table_gallery import GALLERY_NAME, GALLERY_PREFIX
 
 from .api_contract import ServiceError
 
@@ -25,6 +26,8 @@ SNAPSHOT_FOLDER = ".스냅샷"
 BUNDLED_SNAPSHOTS = default_catalog_path().parents[1] / "table_snapshots" / "tables"
 SNAPSHOT_REVISION = b"C13-shapes-v1"
 HWP_CLIPBOARD_FORMAT = "Hwp Native"
+# 2.0.5 추가 서식(공공기관 표 16종 × 디자인 유형): 사용자 서식모음과 따로 늘 함께 보인다. id는 'g' + 원래 id.
+GALLERY_PATH = default_catalog_path().parent / GALLERY_NAME
 
 
 def catalog_path(user_catalog: Path = USER_CATALOG) -> Path:
@@ -64,7 +67,7 @@ def _table_fingerprint(table) -> str:
 
 class TableUnitsService:
     def __init__(self, hwp_factory=None, *, source: Path | None = None, snapshot_root: Path | None = None,
-                 clipboard_formats=None, settings=None, activator=None):
+                 clipboard_formats=None, settings=None, activator=None, gallery: Path | None = GALLERY_PATH):
         # hwp_factory: 독립 한/글 COM 객체를 만들어 돌려주는 함수(보안 모듈 등록·숨김 포함). 시험에서는 가짜.
         self._hwp_factory = hwp_factory
         self._source = source
@@ -74,6 +77,14 @@ class TableUnitsService:
         self._settings = settings
         self._memory = {}
         self._activator = activator or _activate_visible_hwp
+        self._gallery = Path(gallery) if gallery else None
+
+    def _resolve(self, template_id) -> tuple[Path, str]:
+        """템플릿 id를 (서식 파일, 그 파일 안의 id)로. 'g'로 시작하면 추가 서식 파일이다."""
+        value = str(template_id)
+        if self._gallery is not None and value.startswith(GALLERY_PREFIX):
+            return self._gallery, value[len(GALLERY_PREFIX):]
+        return self.source, value
 
     def _preferences(self):
         return self._settings.read() if self._settings else self._memory
@@ -110,26 +121,31 @@ class TableUnitsService:
         표 내용 지문으로 두면 바뀌지 않은 표의 그림은 그대로 쓴다."""
         from defusedxml import ElementTree as ET
         from docfit_core import table_catalog as catalog
-        digest = _digest(self.source)
+        sources = [("", self.source)] + ([(GALLERY_PREFIX, self._gallery)] if self._gallery_ready() else [])
+        digest = "|".join(_digest(path) for _, path in sources)
         cached = self._content_cache.get(digest)
         if cached is not None:
             return cached
         keys: dict[str, str] = {}
-        try:
-            records = catalog._scan(self.source)
-            sections = {}
-            with catalog._safe_archive(self.source) as archive:
-                for record in records:
-                    name = record["section"]
-                    if name not in sections:
-                        sections[name] = ET.fromstring(archive.read(name))
-                    paragraph = sections[name].findall(table_units.HP + "p")[record["paragraph_index"]]
-                    table = catalog._top_tables(paragraph)[record["table_index"]]
-                    keys[str(record["id"])] = _table_fingerprint(table)
-        except Exception:
-            keys = {}
+        for prefix, path in sources:
+            try:
+                records = catalog._scan(path)
+                sections = {}
+                with catalog._safe_archive(path) as archive:
+                    for record in records:
+                        name = record["section"]
+                        if name not in sections:
+                            sections[name] = ET.fromstring(archive.read(name))
+                        paragraph = sections[name].findall(table_units.HP + "p")[record["paragraph_index"]]
+                        table = catalog._top_tables(paragraph)[record["table_index"]]
+                        keys[prefix + str(record["id"])] = _table_fingerprint(table)
+            except Exception:
+                continue
         self._content_cache = {digest: keys}
         return keys
+
+    def _gallery_ready(self) -> bool:
+        return self._gallery is not None and self._gallery.is_file()
 
     def _snapshot_path(self, template_id: str) -> Path:
         key = self._content_keys().get(str(template_id))
@@ -156,9 +172,16 @@ class TableUnitsService:
 
     def _units(self):
         try:
-            return table_units.describe_units(self.source)
+            items = table_units.describe_units(self.source)
         except (OSError, ValueError) as exc:
             raise ServiceError("CATALOG_UNAVAILABLE", f"표 서식 모음을 읽지 못했습니다: {exc}") from exc
+        if self._gallery_ready():
+            try:
+                extra = table_units.describe_units(self._gallery)
+            except (OSError, ValueError):
+                extra = []
+            items += [{**item, "id": GALLERY_PREFIX + str(item["id"]), "gallery": True} for item in extra]
+        return items
 
     def list(self) -> dict:
         preferences = self._preferences()
@@ -174,15 +197,18 @@ class TableUnitsService:
 
     def preview(self, template_id, row_count=None, col_count=None, *, fill="increment", cell_texts=None) -> dict:
         try:
-            return table_units.preview(str(template_id), self.source, row_count=row_count, col_count=col_count,
-                                       fill=fill, cell_texts=cell_texts)
+            path, raw_id = self._resolve(template_id)
+            result = table_units.preview(raw_id, path, row_count=row_count, col_count=col_count,
+                                         fill=fill, cell_texts=cell_texts)
+            return {**result, "id": str(template_id)}
         except (KeyError, ValueError) as exc:
             raise ServiceError("INVALID_INPUT", str(exc).strip("'\"")) from exc
 
     def _export(self, folder: Path, template_id, row_count=None, col_count=None, *, fill="increment", cell_texts=None) -> Path:
         target = folder / f"{_safe_name(template_id)}.hwpx"
         try:
-            return table_units.export_resized(str(template_id), target, self.source,
+            path, raw_id = self._resolve(template_id)
+            return table_units.export_resized(raw_id, target, path,
                                               row_count=row_count, col_count=col_count, fill=fill, cell_texts=cell_texts)
         except (KeyError, ValueError) as exc:
             raise ServiceError("INVALID_INPUT", str(exc).strip("'\"")) from exc

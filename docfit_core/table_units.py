@@ -41,6 +41,10 @@ AXIS_CAPS = {
     ("행사시간표 · 모양 1", "col"): 30,
     ("행사표(1일) · 모양 1", "col"): 30,
     ("현황표(가로) · 모양 1", "col"): 15,
+    # 추가 서식: 칸 폭이 너무 좁아지지 않는 개수까지(본문 폭 기준).
+    **{(f"월별 실적표 · 모양 {n}", "col"): 12 for n in (1, 2)},
+    **{(f"연도별 추진계획표 · 모양 {n}", "col"): 8 for n in (1, 2, 3)},
+    **{(f"대안비교표 · 모양 {n}", "col"): 6 for n in (1, 2, 3)},
 }
 
 
@@ -144,6 +148,10 @@ def _plans():
         for number in range(1, count + 1):
             name = f"{category} · 모양 {number}"
             result.setdefault(name, {"row": None, "col": None, "signature": SHAPE_SIGNATURES.get(name)})
+    # 2.0.5 추가 서식(table_gallery): 본문 행이 행 단위, 연도·월·대안 열이 열 단위. 합계 행·열은 단위 밖이다.
+    from .table_gallery import gallery_plans
+    for name, (row, col) in gallery_plans().items():
+        add(name, row, col)
     org_chart_plan = {"row": None, "col": {"count": 5, "min": 2, "max": UNIT_MAX, "core": 2, "sep": 1, "kind": "org_chart"},
                       "signature": SHAPE_SIGNATURES.get("조직도 · 모양 2")}
     result["조직도"] = org_chart_plan
