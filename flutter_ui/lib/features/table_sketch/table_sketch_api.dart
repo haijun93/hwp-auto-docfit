@@ -73,6 +73,16 @@ class TableSketchApi {
     return null;
   }
 
+  /// command('table_sketch', ['paste_hwp', {cell_mm}]): 한/글에서 복사한 표를 그림으로.
+  Future<Map<String, dynamic>> pasteHwp(double cellMm) async {
+    final response = await call('table_sketch', [
+      'paste_hwp',
+      {'cell_mm': cellMm},
+    ]);
+    if (response is Map) return Map<String, dynamic>.from(response);
+    return {'ok': false, 'message': '한/글 표를 가져오지 못했습니다.'};
+  }
+
   /// command('table_sketch', ['delete', 이름])
   Future<bool> delete(String name) async {
     final response = await call('table_sketch', ['delete', name]);

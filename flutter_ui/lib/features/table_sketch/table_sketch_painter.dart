@@ -437,7 +437,10 @@ class TableSketchPainter extends CustomPainter {
     );
 
     // 텍스트 페인터 설정
+    // 그림판 캔버스는 앱 테마 글꼴을 물려받지 않는다. 내장 한글 글꼴을 직접 지정해야 오프라인에서도
+    // 모든 한글·○ 같은 기호가 보인다(지정하지 않으면 일부 글자가 □로 보였음, 2.0.5).
     final textStyle = TextStyle(
+      fontFamily: 'NotoSansKR',
       color: const Color(0xFF0F172A),
       fontSize: math.max(10.0, cellSize * 0.7),
       fontWeight: textItem.bold ? FontWeight.bold : FontWeight.normal,

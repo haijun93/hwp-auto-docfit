@@ -8,6 +8,7 @@ import threading
 from pathlib import Path
 
 from docfit_core import table_sketch
+from docfit_core.hwp_table_import import sketch_from_html
 from .table_units_service import TableUnitsService, HWP_CLIPBOARD_FORMAT
 
 COM_LOCK = threading.Lock()
@@ -22,8 +23,9 @@ def validate_name(name):
 
 
 class TableSketchService:
-    def __init__(self, settings_root, hwp_factory=None, *, clipboard_formats=None, activator=None):
+    def __init__(self, settings_root, hwp_factory=None, *, clipboard_formats=None, activator=None, clipboard_html=None):
         self.folder = Path(settings_root) / "table_sketches"
+        self._clipboard_html = clipboard_html or _clipboard_html
         self.hwp = TableUnitsService(hwp_factory, clipboard_formats=clipboard_formats, activator=activator)
 
     def _path(self, name):
@@ -99,6 +101,19 @@ class TableSketchService:
         finally:
             COM_LOCK.release()
 
+    def paste_hwp(self, payload=None):
+        """한/글에서 복사한 표(클립보드 HTML)를 표그림판 그림으로. 칸 간격은 지금 그림판 값을 따른다."""
+        cell_mm = payload.get("cell_mm", 5.0) if isinstance(payload, dict) else 5.0
+        if isinstance(cell_mm, bool) or not isinstance(cell_mm, (int, float)) or not 0.5 <= cell_mm <= 50:
+            cell_mm = 5.0
+        html = self._clipboard_html()
+        if not html:
+            raise ValueError("클립보드에 한/글 표가 없습니다. 한/글에서 표를 선택해 복사(Ctrl+C)한 뒤 다시 눌러 주세요.")
+        sketch = sketch_from_html(html, float(cell_mm))
+        source = sketch.pop("source")
+        return dict(ok=True, sketch=sketch, rows=source["rows"], cols=source["cols"],
+                    message=f"한/글 표({source['rows']}행 × {source['cols']}열)를 가져왔어요. 선·글을 고친 뒤 다시 복사할 수 있어요.")
+
     def command(self, action, payload=None):
         try:
             if action == "preview": return table_sketch.preview(payload)
@@ -108,6 +123,32 @@ class TableSketchService:
                 return self.save(payload.get("name"), payload.get("sketch"))
             if action == "load": return self.load(payload)
             if action == "delete": return self.delete(payload)
+            if action == "paste_hwp": return self.paste_hwp(payload)
             raise ValueError("표그림판 작업을 확인해 주세요.")
         except (OSError, ValueError, TypeError) as exc:
             return dict(ok=False, message=str(exc))
+
+
+def _clipboard_html():
+    """Windows 클립보드의 'HTML Format'(한/글이 표를 복사할 때 함께 넣음). 없으면 None."""
+    try:
+        import win32clipboard
+    except ImportError:
+        return None
+    fmt = win32clipboard.RegisterClipboardFormat("HTML Format")
+    for _ in range(5):
+        try:
+            win32clipboard.OpenClipboard()
+            break
+        except Exception:
+            import time
+            time.sleep(0.05)
+    else:
+        return None
+    try:
+        if not win32clipboard.IsClipboardFormatAvailable(fmt):
+            return None
+        data = win32clipboard.GetClipboardData(fmt)
+        return data if isinstance(data, (bytes, str)) else None
+    finally:
+        win32clipboard.CloseClipboard()

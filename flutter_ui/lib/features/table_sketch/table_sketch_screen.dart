@@ -339,6 +339,28 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
     _triggerPreviewDebounced();
   }
 
+  // --- 한/글 표 붙여넣기 ---
+
+  /// 한/글에서 복사(Ctrl+C)한 표를 선·글로 바꿔 그림판에 놓는다. 지금 그림은 실행 취소로 되돌릴 수 있다.
+  Future<void> _pasteHwpTable() async {
+    final res = await _sketchApi.pasteHwp(_doc.grid.cellMm);
+    if (!mounted) return;
+    final sketch = res['sketch'];
+    if (res['ok'] == true && sketch is Map) {
+      _saveSnapshot();
+      setState(() {
+        _doc = TableSketchDoc.fromJson(sketch);
+        _sel = SketchSelection();
+        _previewLine = null;
+        _previewRect = null;
+      });
+      _triggerPreviewDebounced();
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${res['message'] ?? '한/글 표를 가져오지 못했습니다.'}')),
+    );
+  }
+
   // --- 저장 / 불러오기 / 삭제 ---
 
   Future<void> _saveSketch() async {
@@ -1157,6 +1179,21 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
                   icon: const Icon(Icons.account_tree_outlined, size: 18),
                   label: const Text('조직도 예시'),
                   onPressed: _loadOrgExample,
+                ),
+              const SizedBox(width: 8),
+              if (MediaQuery.sizeOf(context).width < 600)
+                IconButton(
+                  key: const Key('sketchPasteHwp'),
+                  tooltip: '한/글 표 붙여넣기',
+                  icon: const Icon(Icons.content_paste_go_rounded),
+                  onPressed: _pasteHwpTable,
+                )
+              else
+                OutlinedButton.icon(
+                  key: const Key('sketchPasteHwp'),
+                  icon: const Icon(Icons.content_paste_go_rounded, size: 18),
+                  label: const Text('한/글 표 붙여넣기'),
+                  onPressed: _pasteHwpTable,
                 ),
               const SizedBox(width: 8),
               IconButton(
