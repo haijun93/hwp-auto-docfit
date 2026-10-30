@@ -59,6 +59,14 @@ class LiveLinkTest(unittest.TestCase):
         with self.assertRaises(LiveLinkError):
             choose([])
 
+    def test_unsaved_new_document_is_chosen_only_when_single(self):
+        saved = Session("m1", FakeApp(r"C:\가.hwpx"), r"C:\가.hwpx", "가.hwpx")
+        blank = Session("m2", FakeApp(""), "", "")
+        self.assertIs(choose([saved, blank], window_title="빈 문서 1 - 한글"), blank)
+        self.assertIs(choose([saved, blank], window_title="가.hwpx [C:\a\] - 한글"), saved)
+        with self.assertRaises(LiveLinkError):
+            choose([saved, blank, Session("m3", FakeApp(""), "", "")], window_title="빈 문서 2 - 한글")
+
     def test_context_and_single_paste(self):
         app = FakeApp(r"C:\a\가.hwpx", in_table=True)
         ctx = context(app)

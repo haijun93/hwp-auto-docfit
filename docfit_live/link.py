@@ -87,6 +87,11 @@ def choose(sessions: list[Session], *, prefer_path: str = "", window_title: str 
         named = [s for s in sessions if s.title and s.title in window_title]
         if len(named) == 1:
             return named[0]
+        if not named and "[" not in window_title:
+            # 저장 안 한 새 문서('빈 문서 1 - 한글')는 문서 이름이 비어 있다(10-31 실측). 그런 문서가 하나뿐일 때만 고른다.
+            blank = [s for s in sessions if not s.path]
+            if len(blank) == 1:
+                return blank[0]
     if len(sessions) == 1:
         return sessions[0]
     raise LiveLinkError("AMBIGUOUS", "한/글 창이 여러 개 있어요. 넣을 문서 창을 한 번 누른 뒤 다시 시도해 주세요.")
