@@ -1906,8 +1906,9 @@ class DesktopWebBridge:
             report = build_report(original, result, folder / f"비교_{Path(result).stem[:60]}.html")
         except Exception as exc:
             return {"ok": False, "code": "DIFF_UNSUPPORTED", "error": str(exc) or "비교하지 못했어요."}
-        if os.name == "nt":
-            os.startfile(str(report))   # noqa: S606 — 앱이 만든 HTML을 기본 브라우저로 연다
+        opener = getattr(os, "startfile", None)
+        if opener:
+            opener(str(report))   # noqa: S606 — 앱이 만든 HTML을 기본 브라우저로 연다
         return {**self.get_state(), "ok": True, "report": str(report)}
 
     def compare_result(self, index=0):

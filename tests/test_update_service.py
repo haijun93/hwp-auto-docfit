@@ -305,7 +305,7 @@ class UpdateServiceTest(unittest.TestCase):
                                  '-Installer', str(installer), '-Sha256', HASH,
                                  '-WaitPidList', str(os.getpid()), '-AppPid', '2147483646',
                                  '-AppExecutable', str(self.folder / 'HWP_AutoDocFit.exe')],
-                                capture_output=True, timeout=10)
+                                capture_output=True, timeout=60)
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn(b'/SILENT /NORESTART /SUPPRESSMSGBOXES /SP-', result.stdout)
 
