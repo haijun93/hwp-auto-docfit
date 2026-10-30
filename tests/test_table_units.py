@@ -264,7 +264,7 @@ class TableUnitsTests(unittest.TestCase):
             for axis, p in units.plan_for(record).items():
                 if axis not in ("row", "col") or p is None:   # signature 같은 부가 정보는 축이 아니다
                     continue
-                for target in (1, p["count"] + 1, p["max"]):
+                for target in (p.get("min", 1), p["count"] + 1, p["max"]):
                     with self.subTest(name=name, axis=axis, target=target):
                         table, plan = self.load(name)
                         units.resize_table(table, plan, **{axis + "_count": target})
@@ -280,9 +280,12 @@ class TableUnitsTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             units.resize_table(table, plan, row_count=3, col_count=31)
         self.assertEqual(ET.tostring(table), original)
+        # 조직도 모양 1은 2.0.6부터 2~9팀으로 조절한다(1.80.15에서 꺼졌던 조절 복구). 범위 밖은 표를 바꾸지 않는다.
         table, plan = self.load("조직도 · 모양 1")
+        original = ET.tostring(table)
         with self.assertRaises(ValueError):
-            units.resize_table(table, plan, col_count=2)
+            units.resize_table(table, plan, col_count=1)
+        self.assertEqual(ET.tostring(table), original)
 
     def test_plan_validation_rejects_cross_unit_merge(self):
         record = copy.deepcopy(self.records["행사시간표 · 모양 1"])
@@ -371,9 +374,7 @@ class TableUnitsTests(unittest.TestCase):
     def test_detect_fixed_templates(self):
         fixed = [f"{category} · 모양 {number}"
                  for category, numbers in (("부연설명", range(1, 8)),
-                                           ("라벨 서식", range(1, 7)),
-
-                                           ("조직도", (1,)))
+                                           ("라벨 서식", range(1, 7)))
                  for number in numbers]
         with patch.object(units, "detect_plan", side_effect=AssertionError("fixed template detection forbidden")):
             for name in fixed:
@@ -836,6 +837,6 @@ class IncrementAndScheduleTests(unittest.TestCase):
                 if p:
                     with self.subTest(name=item["name"], axis=axis):
                         cap = units.AXIS_CAPS.get((item["name"], axis), units.UNIT_MAX)
-                        if p.get("kind") == "org_chart":
+                        if p.get("kind") in ("org_chart", "org_chart_wide"):
                             cap = units.AXIS_CAPS[("조직도", "col")]
                         self.assertEqual(p["max"], max(p["count"], cap))

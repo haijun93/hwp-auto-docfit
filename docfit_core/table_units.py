@@ -54,7 +54,7 @@ def _capped(name, axis, plan):
         return None
     result = dict(plan)
     cap = AXIS_CAPS.get((name, axis))
-    if cap is None and result.get("kind") == "org_chart":
+    if cap is None and result.get("kind") in ("org_chart", "org_chart_wide"):
         cap = AXIS_CAPS.get(("조직도", axis))
     result["max"] = max(result["count"], min(result.get("max", UNIT_MAX), cap or UNIT_MAX))
     return result
@@ -156,6 +156,11 @@ def _plans():
                       "signature": SHAPE_SIGNATURES.get("조직도 · 모양 2")}
     result["조직도"] = org_chart_plan
     result["조직도 · 모양 2"] = org_chart_plan
+    # 5행 조직도(내장 서식모음 모양 1, 사용자 서식모음 모양 3): 팀 6개를 2~10팀으로 다시 짠다(2.0.6, 1.80.15에서 꺼졌던 조절 복구).
+    wide_plan = {"row": None, "col": {"count": 6, "min": 2, "max": 10, "core": 2, "sep": 1, "kind": "org_chart_wide"},
+                 "signature": SHAPE_SIGNATURES.get("조직도 · 모양 1")}
+    result["조직도 · 모양 1"] = wide_plan
+    result["조직도 · 모양 3"] = wide_plan
     return result
 
 
@@ -314,9 +319,13 @@ def plan_for(template) -> dict:
         plan = detect_plan(template["cell_meta"], template["rows"], template["cols"])
 
 
+    # 조직도 생성기는 정해진 행 구조만 다룬다(모양 2 계열 6행, 모양 1 계열 5행). 이름만 같은 다른 모양에는 쓰지 않는다.
+    org_rows = {"org_chart": 6, "org_chart_wide": 5}
+    if plan.get("col") and plan["col"].get("kind") in org_rows and template.get("rows") != org_rows[plan["col"]["kind"]]:
+        plan["col"] = None
     for axis, length in (("row", template["rows"]), ("col", template["cols"])):
         if plan[axis] is not None:
-            if plan[axis].get("kind") == "org_chart":
+            if plan[axis].get("kind") in ("org_chart", "org_chart_wide"):
                 continue
             try:
                 _validate(_flat(template["cell_meta"]), length, axis, plan[axis])
@@ -1063,6 +1072,168 @@ def generate_org_chart(template_table_element, team_count, *, fill="increment", 
     return new_table
 
 
+def generate_org_chart_wide(template_table_element, team_count, *, fill="increment", cell_texts=None, id_roots=()):
+    """5행 조직도(내장 표 서식모음 '조직도 · 모양 1': 위 상자·연결선·가로 버스·팀 상자·팀 설명)를 N팀(2~10)으로 다시 짠다.
+
+    줄은 모두 칸 테두리로 그린다. 새 표에 필요한 테두리 모양(t·b·l·r 조합)은 원본 표의 칸에 이미 있으므로
+    머리글(header.xml)을 고치지 않고 그 테두리 ID를 그대로 쓴다. 글 서식은 같은 역할의 원본 칸을 복제한다."""
+    validate_input(fill, cell_texts)
+    if type(team_count) is not int or not 2 <= team_count <= 10:
+        raise ValueError("조직도 팀 수는 2~10 사이 정수로 지정해 주세요.")
+    tbl = template_table_element
+    rows = tbl.findall(HP + "tr")
+    if len(rows) != 5:
+        raise ValueError("기준 조직도 표 구조(5행)를 찾을 수 없습니다.")
+    cells = {}
+    for row in rows:
+        for tc in row.findall(HP + "tc"):
+            addr = tc.find(HP + "cellAddr")
+            cells[(int(addr.get("rowAddr")), int(addr.get("colAddr")))] = tc
+    heights = [int(row.find(HP + "tc").find(HP + "cellSz").get("height")) for row in rows]
+    total_width = int(tbl.find(HP + "sz").get("width"))
+
+    def text_of(tc):
+        return " ".join("".join(n.text or "" for n in catalog._cell_text_nodes(tc)).split())
+
+    # 원본의 역할별 칸: 위 상자(0행 가장 넓은 칸), 팀 상자(3행 글 있는 칸), 팀 설명(4행 글 있는 칸).
+    root_tc = max((tc for (r, _), tc in cells.items() if r == 0),
+                  key=lambda tc: int(tc.find(HP + "cellSpan").get("colSpan", "1")))
+    team_tcs = [tc for (r, c), tc in sorted(cells.items()) if r == 3 and text_of(tc)]
+    detail_tcs = [tc for (r, c), tc in sorted(cells.items()) if r == 4 and text_of(tc)]
+    if not team_tcs or not detail_tcs:
+        raise ValueError("기준 조직도 표의 팀 칸을 찾을 수 없습니다.")
+    # 선 모양별 원본 칸(내장 '조직도 · 모양 1'의 칸 위치, 모양 서명으로 같은 구조임을 확인한 표만 온다).
+    border_cells = {"": (0, 0), "r": (0, 5), "l": (0, 12), "b": (1, 2), "tbr": (1, 6), "tbl": (1, 9),
+                    "br": (2, 0), "bl": (2, 17), "t": (2, 2), "lr": (3, 2)}
+    if any(position not in cells for position in border_cells.values()):
+        raise ValueError("기준 조직도 표 구조를 찾을 수 없습니다.")
+    blank_tcs = {sides: cells[position] for sides, position in border_cells.items()}
+    border_ids = {sides: tc.get("borderFillIDRef") for sides, tc in blank_tcs.items()}
+    widths_by_role = {}
+    for (r, c), tc in cells.items():
+        span = int(tc.find(HP + "cellSpan").get("colSpan", "1"))
+        width = int(tc.find(HP + "cellSz").get("width"))
+        if r == 3:
+            role = "box" if text_of(tc) else ("gap" if span == 1 else "center")
+            widths_by_role.setdefault(role, width / (2 if role == "box" else 1))
+    box_w, gap_w = widths_by_role.get("box", 6000), widths_by_role.get("gap", 3000)
+    center_w = widths_by_role.get("center", gap_w)
+
+    # 팀 이름·설명: 원본 순서대로 쓰고, 모자라면 마지막 값을 채우기 방식대로 늘린다.
+    names, details = [text_of(tc) for tc in team_tcs], [text_of(tc) for tc in detail_tcs]
+
+    def nth(values, i):
+        if i < len(values):
+            return values[i]
+        if fill == "blank":
+            return ""
+        if fill == "copy":
+            return values[-1]
+        return _increment_text(values[-1], steps=i - len(values) + 1)
+
+    # 열 배치: 팀 상자 2열, 팀 사이 1열. 팀 수가 짝수면 가운데 틈을 2열로 넓혀 가운데 세로선이 칸 경계에 오게 한다.
+    even = team_count % 2 == 0
+    team_cols, gaps, weights, col = [], [], [], 0
+    for t in range(team_count):
+        team_cols.append(col)
+        weights += [box_w, box_w]
+        col += 2
+        if t < team_count - 1:
+            wide = even and t == team_count // 2 - 1
+            gaps.append((col, 2 if wide else 1))
+            weights += [center_w / 2, center_w / 2] if wide else [gap_w]
+            col += 2 if wide else 1
+    total_cols = col
+    widths, acc, prev = [], 0, 0
+    for w in weights:
+        acc += w
+        value = round(acc * total_width / sum(weights))
+        widths.append(value - prev)
+        prev = value
+    center = (gaps[team_count // 2 - 1][0] + 1) if even else team_cols[team_count // 2] + 1
+    first_drop, last_drop = team_cols[0] + 1, team_cols[-1] + 1
+    root_start = max(center - 3, first_drop)
+    root_end = min(center + 2, last_drop - 1)
+
+    def make(proto, r, c, span, text=None, sides=None):
+        tc = copy.deepcopy(proto)
+        tc.find(HP + "cellAddr").attrib.update(rowAddr=str(r), colAddr=str(c))
+        tc.find(HP + "cellSpan").attrib.update(rowSpan="1", colSpan=str(span))
+        tc.find(HP + "cellSz").attrib.update(width=str(sum(widths[c:c + span])), height=str(heights[r]))
+        if sides is not None:
+            if sides not in border_ids:
+                raise ValueError("기준 조직도 표에 필요한 테두리 모양이 없습니다: " + sides)
+            tc.set("borderFillIDRef", border_ids[sides])
+        for p in tc.iter(HP + "p"):
+            for cache in p.findall(HP + "linesegarray"):
+                p.remove(cache)
+        nodes = list(tc.iter(HP + "t"))
+        if text is not None and nodes:
+            nodes[0].text = text
+            for node in nodes[1:]:
+                node.text = ""
+        elif text is None:
+            for node in nodes:
+                node.text = ""
+        return tc
+
+    def blank(r, c, span, sides):
+        return make(blank_tcs[sides], r, c, span, sides=sides)
+
+    in_bus = lambda c: first_drop <= c < last_drop
+    out = [[] for _ in range(5)]
+    # 0행: 위 상자(양옆 칸은 상자 변을 함께 그린다)
+    for c in range(total_cols):
+        if c == root_start:
+            out[0].append(make(root_tc, 0, c, root_end - root_start + 1, text=text_of(root_tc)))
+        elif root_start < c <= root_end:
+            continue
+        else:
+            out[0].append(blank(0, c, 1, "r" if c == root_start - 1 else "l" if c == root_end + 1 else ""))
+    # 1행: 위 상자에서 내려오는 가운데 세로선과 가로 버스(아래 변)
+    for c in range(total_cols):
+        if c == root_start:
+            out[1].append(blank(1, c, center - root_start, "tbr"))
+        elif c == center:
+            out[1].append(blank(1, c, root_end - center + 1, "tbl"))
+        elif root_start < c <= root_end:
+            continue
+        else:
+            out[1].append(blank(1, c, 1, "b" if in_bus(c) else ""))
+    # 2행: 팀마다 내려가는 세로선, 위 변은 버스
+    gap_at = dict(gaps)
+    c = 0
+    while c < total_cols:
+        if c in team_cols:
+            out[2].append(blank(2, c, 1, ("t" if in_bus(c) else "") + "br"))
+            out[2].append(blank(2, c + 1, 1, ("t" if in_bus(c + 1) else "") + "bl"))
+            c += 2
+        else:
+            out[2].append(blank(2, c, gap_at[c], "t"))
+            c += gap_at[c]
+    # 3행: 팀 상자, 4행: 팀 설명
+    for t, start in enumerate(team_cols):
+        out[3].append(make(team_tcs[min(t, len(team_tcs) - 1)], 3, start, 2, text=nth(names, t)))
+        out[4].append(make(detail_tcs[min(t, len(detail_tcs) - 1)], 4, start, 2, text=nth(details, t)))
+        if t < team_count - 1:
+            g, span = gaps[t]
+            out[3].append(blank(3, g, span, "lr"))
+            out[4].append(blank(4, g, span, ""))
+
+    new_table = copy.deepcopy(tbl)
+    new_table.set("colCnt", str(total_cols))
+    new_table.find(HP + "sz").set("width", str(total_width))
+    for r, row in enumerate(new_table.findall(HP + "tr")):
+        for old in list(row.findall(HP + "tc")):
+            row.remove(old)
+        for tc in out[r]:
+            row.append(tc)
+    if cell_texts:
+        _apply_texts(new_table, cell_texts)
+    _ObjectIds((*id_roots, new_table)).renew(new_table)
+    return new_table
+
+
 WEEKLY_DEFAULT_FIRST = (4, 26)
 
 
@@ -1117,7 +1288,7 @@ def resize_table(tbl_element, plan, row_count=None, col_count=None, *, id_roots=
     working, updated = copy.deepcopy(tbl_element), copy.deepcopy(plan)
     object_ids = _ObjectIds((*id_roots, working))
     col_plan = updated.get("col")
-    if col_plan and col_plan.get("kind") == "org_chart":
+    if col_plan and col_plan.get("kind") in ("org_chart", "org_chart_wide"):
         if row_count is not None:
             raise ValueError("이 표에는 조절할 행 정보단위가 없습니다.")
         if col_count is not None:
@@ -1126,7 +1297,11 @@ def resize_table(tbl_element, plan, row_count=None, col_count=None, *, id_roots=
             target_count = col_count
         else:
             target_count = col_plan["count"]
-        working = generate_org_chart(working, target_count, fill=fill, cell_texts=cell_texts, id_roots=id_roots)
+        if col_plan["kind"] == "org_chart":
+            working = generate_org_chart(working, target_count, fill=fill, cell_texts=cell_texts, id_roots=id_roots)
+        elif target_count != col_plan["count"] or cell_texts:
+            # 팀 수가 그대로면 원본 표를 그대로 둔다(되돌리면 원본과 같다).
+            working = generate_org_chart_wide(working, target_count, fill=fill, cell_texts=cell_texts, id_roots=id_roots)
         col_plan["count"] = target_count
         tbl_element.attrib.clear()
         tbl_element.attrib.update(working.attrib)

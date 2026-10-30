@@ -28,6 +28,13 @@ SNAPSHOT_REVISION = b"C13-shapes-v1"
 HWP_CLIPBOARD_FORMAT = "Hwp Native"
 # 2.0.5 추가 서식(공공기관 표 16종 × 디자인 유형): 사용자 서식모음과 따로 늘 함께 보인다. id는 'g' + 원래 id.
 GALLERY_PATH = default_catalog_path().parent / GALLERY_NAME
+# 목록 맨 뒤에 둘 분류(사용자 요청 2026-10-26). 띄어쓰기 변형(라벨서식)도 같은 분류로 본다.
+TEMPLATE_LAST_CATEGORIES = ("라벨 서식",)
+
+
+def _is_last_category(category) -> bool:
+    name = "".join(str(category or "").split())
+    return any(name == "".join(last.split()) for last in TEMPLATE_LAST_CATEGORIES)
 
 
 def catalog_path(user_catalog: Path = USER_CATALOG) -> Path:
@@ -190,6 +197,8 @@ class TableUnitsService:
         for item in self._units():
             templates.append({**item, "thumbnail": self._snapshot_url(item["id"]),
                               "favorite": item["id"] in favorites})
+        # 라벨 서식은 분류 띠·전체 목록 모두 맨 뒤(안정 정렬이라 나머지 순서는 그대로).
+        templates.sort(key=lambda t: _is_last_category(t.get("category")))
         ids = {t["id"] for t in templates}
         return {"source": str(self.source), "templates": templates,
                 "recent": [v for v in _id_list(preferences.get("table_template_recent")) if v in ids][:8],
