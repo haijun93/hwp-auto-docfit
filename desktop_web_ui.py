@@ -1713,6 +1713,43 @@ class DesktopWebBridge:
         threading.Thread(target=work, name="hwp-bulk", daemon=True).start()
         return status()
 
+    def live_link(self, action, payload=None):
+        """3.0 LiveLink: 실행 중인 한/글 문서의 커서 위치에 바로 넣기(저장하지 않음, Ctrl+Z 한 번으로 되돌림)."""
+        from docfit_live import link, service as live
+        payload = payload if isinstance(payload, dict) else {}
+        if getattr(self, "_live", None) is None:
+            self._live = live.LiveLinkService()
+        try:
+            if action == "status":
+                return {"ok": True, **self._live.status(str(payload.get("path") or ""))}
+            if action != "insert":
+                return {"ok": False, "message": "알 수 없는 명령입니다."}
+            source, data = payload.get("source"), payload.get("data")
+            producers = {"table_units": lambda: self.table_units("copy", data),
+                         "table_sketch": lambda: self.table_sketch("copy", data),
+                         "image": lambda: self.flow_editor("copy_result", data)}
+            if source not in producers or not isinstance(data, dict):
+                return {"ok": False, "message": "넣을 내용을 확인해 주세요."}
+            if self.gui.running:
+                return {"ok": False, "message": "문서 작업이 끝난 뒤 다시 눌러 주세요."}
+            before = self._live.status(str(payload.get("path") or ""))
+            if not before.get("connected"):
+                return {"ok": False, **before}
+            saved = live.save_clipboard()
+            try:
+                made = producers[source]()
+                if isinstance(made, dict) and made.get("ok") is False:
+                    return {**made, "ok": False}
+                result = self._live.paste(expected=before["context"])
+            finally:
+                restored = live.restore_clipboard(saved) if saved else True
+            return {"ok": True, "title": before["title"], **result, "clipboard_restored": restored}
+        except link.LiveLinkError as exc:
+            return {"ok": False, "code": exc.code, "message": str(exc)}
+        except Exception as exc:
+            logging.getLogger(__name__).warning("LiveLink 실패", exc_info=True)
+            return {"ok": False, "message": str(exc) or "한/글에 넣지 못했어요."}
+
     def table_sketch(self, action, payload=None):
         """Table sketch conversion, storage and clipboard API."""
         from docfit_app.table_sketch_service import TableSketchService
@@ -2282,7 +2319,7 @@ class _BrowserApi:
             "clear_files", "set_mode", "set_range", "start", "stop", "start_job", "cancel_job", "get_events",
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
             "get_pending_dialog", "resolve_dialog", "enable_close_guard", "acknowledge_close", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch",
-            "hwp_bulk", "open_results", "next_job", "run_tool", "open_result",
+            "hwp_bulk", "live_link", "open_results", "next_job", "run_tool", "open_result",
             "show_result", "open_source_file", "show_source_file", "open_result_source", "open_diff", "compare_result", "launch_external_hwp_diff", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",
             "set_exclude_tables", "set_card_option",
