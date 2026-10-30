@@ -12,7 +12,7 @@ class WorkspaceTabScope extends InheritedWidget {
 
   final VoidCallback goHome;
 
-  /// 탭 번호(0 문서편집·1 표템플릿·2 표그림판·3 다이어그램·4 마인드맵·5 파일변환)로 이동한다.
+  /// 탭 번호(0 문서편집·1 표템플릿·2 표그림판·3 다이어그램·4 마인드맵·5 그림판·6 파일변환)로 이동한다.
   final ValueChanged<int> selectTab;
 
   static WorkspaceTabScope? maybeOf(BuildContext context) =>
@@ -56,7 +56,7 @@ class TabNavigationShell extends StatefulWidget {
   final Widget mindMap;
   final Widget fileConversion;
 
-  /// 탭 6: 그림판(사진 배경 위에 펜·도형·글상자를 독립 개체로).
+  /// 탭 5: 그림판(사진 배경 위에 펜·도형·글상자를 독립 개체로).
   final Widget paint;
   final int initialIndex;
   final ValueChanged<int>? onTabChanged;
@@ -74,8 +74,9 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
     '표그림판',
     '다이어그램',
     '마인드맵',
-    '파일변환',
     '그림판',
+    // 파일변환은 항상 맨 끝(2026-10-30 사용자 지시).
+    '파일변환',
   ];
   static const _icons = [
     Icons.description_outlined,
@@ -83,8 +84,8 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
     Icons.draw_outlined,
     Icons.account_tree_outlined,
     Icons.hub_outlined,
-    Icons.transform,
     Icons.brush_outlined,
+    Icons.transform,
   ];
 
   void _select(int index) {
@@ -103,8 +104,8 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
       widget.tableSketch,
       widget.diagram,
       widget.mindMap,
-      widget.fileConversion,
       widget.paint,
+      widget.fileConversion,
     ];
     return Scaffold(
       body: WorkspaceTabScope(

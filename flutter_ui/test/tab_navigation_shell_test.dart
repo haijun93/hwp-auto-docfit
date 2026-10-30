@@ -19,7 +19,12 @@ void main() {
         ),
       ),
     );
-    const labels = ['문서편집', '표템플릿', '표그림판', '다이어그램', '마인드맵', '파일변환', '그림판'];
+    const labels = ['문서편집', '표템플릿', '표그림판', '다이어그램', '마인드맵', '그림판', '파일변환'];
+    // 하단 탭은 이 순서로 놓이고 파일변환이 항상 맨 끝이다(2026-10-30 사용자 지시).
+    final xs = [for (final l in labels) tester.getCenter(find.text(l)).dx];
+    for (var i = 1; i < xs.length; i++) {
+      expect(xs[i], greaterThan(xs[i - 1]), reason: labels[i]);
+    }
     for (final label in labels) {
       await tester.tap(find.text(label));
       await tester.pumpAndSettle();

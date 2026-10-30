@@ -145,7 +145,7 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
     ),
     onTabChanged: (index) {
       routeDrops(index);
-      if (index == 5) workspace.currentState?.enterConversionMode();
+      if (index == 6) workspace.currentState?.enterConversionMode();
     },
   );
 }

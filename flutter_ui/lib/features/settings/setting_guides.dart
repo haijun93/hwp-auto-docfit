@@ -837,12 +837,12 @@ final Map<String, SettingGuide> settingGuides = {
   'offline_mode': SettingGuide(
     'program',
     '폐쇄망 모드 (인터넷 연결 안 함)',
-    '인터넷이 안 되는 PC용이에요. 켜면 앱이 업데이트 확인·모델 내려받기 같은 외부 접속을 하지 않아요.',
+    '인터넷이 안 되는 PC용이에요. 켜면 모델 내려받기 같은 외부 접속을 하지 않고, 업데이트는 공공기관망의 내부 GitLab에서만 받아요.',
   ),
   'check_updates_on_start': SettingGuide(
     'program',
     '시작할 때 업데이트 확인',
-    '앱을 켤 때 새 버전이 있는지 확인해요. 폐쇄망 모드에서는 확인하지 않아요.',
+    '앱을 켤 때 새 버전이 있는지 확인해요. 폐쇄망 모드에서도 내부 GitLab으로 확인해요.',
   ),
   'shell_menu': SettingGuide(
     'general',

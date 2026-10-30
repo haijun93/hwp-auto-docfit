@@ -8,6 +8,7 @@ import tempfile
 import threading
 import unittest
 from unittest.mock import Mock, patch
+from urllib.parse import urlparse
 
 from docfit_app.settings_service import SettingsService
 from docfit_app.update_service import (
@@ -190,34 +191,16 @@ class UpdateServiceTest(unittest.TestCase):
         self.assertTrue(service.start_update())
         self.assertGreater(now[0], 30)
 
-    def test_offline_zero_calls_all_entries_and_order(self):
-        for installed in (False, True):
-            network, page = Network(), Mock()
-            service = self.service(network, installed=installed, open_page=page)
-            service.offline = lambda: True
-            self.assertFalse(service.check())
-            self.assertFalse(service.start_update())
-            self.assertFalse(service.open_download_page())
-            self.assertEqual([], network.calls)
-            page.assert_not_called()
-            state = service.state()
-            self.assertEqual('offline', state['step'])
-            self.assertIn('Setup.exe', state['message'])
-            self.assertIn('포터블', state['message'])
-            self.assertEqual(installed, state['message'].index('Setup.exe') < state['message'].index('포터블'))
-
-    def test_switch_offline_during_download_cleans_part(self):
-        network = Network()
-        service = self.service(network, portable_install=Mock())
-        class Switch(io.BytesIO):
-            def read(self, n=-1):
-                service.offline = lambda: True
-                return super().read(n)
-            read1 = read
-        network.on_download = lambda: Switch(EXE)
-        self.assertFalse(service.start_update())
-        self.assertEqual('offline', service.state()['step'])
-        self.assertFalse(list((self.folder / 'updates').glob('*.part')))
+    def test_offline_mode_updates_from_internal_gitlab_only(self):
+        network, install = Network(), Mock()
+        service = self.service(network, portable_install=install)
+        service.offline = lambda: True
+        self.assertTrue(service.check())
+        self.assertEqual('GitLab', service.state()['source'])
+        self.assertTrue(service.start_update())
+        install.assert_called_once()
+        self.assertTrue(network.calls)
+        self.assertTrue(all(urlparse(url).hostname == 'gitlab.aigov.go.kr' for url, _ in network.calls), network.calls)
 
     def test_version_notice_once_and_settings_kept(self):
         store = SettingsService(self.folder / 'settings.json')
@@ -341,12 +324,11 @@ class UpdateServiceTest(unittest.TestCase):
         self.assertFalse(service.start_update())
         self.assertEqual('failed', service.state()['step'])
 
-    def test_periodic_offline_and_disabled_schedule_without_http(self):
+    def test_periodic_disabled_schedule_without_http(self):
         network, calls = Network(), []
         service = self.service(network)
-        service.offline = lambda: True
         schedule = lambda delay, callback: calls.append((delay, callback))
-        service.start_periodic_checks(schedule, lambda: True, Mock())
+        service.start_periodic_checks(schedule, lambda: False, Mock())
         self.assertEqual(20000, calls[0][0])
         calls[0][1]()
         self.assertEqual(21600000, calls[-1][0])

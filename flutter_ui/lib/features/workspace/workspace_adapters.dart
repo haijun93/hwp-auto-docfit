@@ -73,7 +73,7 @@ class MindMapAdapter extends StatelessWidget {
   );
 }
 
-/// Workspace adapter for Tab 7: 그림판 (photo background + pen, shapes, text boxes)
+/// Workspace adapter for Tab 6: 그림판 (photo background + pen, shapes, text boxes)
 class PaintAdapter extends StatelessWidget {
   const PaintAdapter({super.key, required this.api});
 
@@ -86,7 +86,7 @@ class PaintAdapter extends StatelessWidget {
   );
 }
 
-/// Workspace adapter for Tab 6: File Format Conversion & Merge
+/// Workspace adapter for Tab 7 (always last): File Format Conversion & Merge
 class FileConversionAdapter extends StatelessWidget {
   const FileConversionAdapter({super.key, required this.child});
 

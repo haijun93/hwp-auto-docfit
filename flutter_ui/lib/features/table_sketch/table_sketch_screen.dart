@@ -1147,72 +1147,72 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
         color: Colors.white,
         border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
       ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            // 도구 선택기
-            _toolButton(
-              key: const Key('toolLine'),
-              mode: SketchToolMode.line,
-              icon: Icons.horizontal_rule_rounded,
-              label: '직선',
-              tooltip: '직선 그리기',
-            ),
-            _toolButton(
-              key: const Key('toolRect'),
-              mode: SketchToolMode.rect,
-              icon: Icons.crop_square_rounded,
-              label: '사각형',
-              tooltip: '사각형 그리기 (4변 선)',
-            ),
-            _toolButton(
-              key: const Key('toolEraser'),
-              mode: SketchToolMode.eraser,
-              icon: Icons.auto_fix_normal_outlined,
-              label: '지우개',
-              tooltip: '지우개',
-            ),
-            _toolButton(
-              key: const Key('toolPreciseEraser'),
-              mode: SketchToolMode.preciseEraser,
-              icon: Icons.content_cut_rounded,
-              label: '정밀 지우개',
-              tooltip: '정밀 지우개 (셀 한 칸 단위)',
-            ),
-            _toolButton(
-              key: const Key('toolText'),
-              mode: SketchToolMode.text,
-              icon: Icons.title_rounded,
-              label: '글',
-              tooltip: '칸 글 입력',
-            ),
-            _toolButton(
-              key: const Key('toolSelect'),
-              mode: SketchToolMode.select,
-              icon: Icons.near_me_rounded,
-              label: '선택',
-              tooltip: '선택 (Shift+클릭·끌어 상자로 여러 개, 끌어 옮기기)',
-            ),
-            _toolButton(
-              key: const Key('toolLasso'),
-              mode: SketchToolMode.lasso,
-              icon: Icons.gesture_rounded,
-              label: '올가미',
-              tooltip: '올가미 선택 (자유롭게 둘러 고르기, Shift로 더하기)',
-            ),
-            _toolButton(
-              key: const Key('toolCellImage'),
-              mode: SketchToolMode.cellImage,
-              icon: Icons.image_outlined,
-              label: '칸 그림',
-              tooltip: '칸 배경 그림 (칸을 누르고 Ctrl+V, 또는 사진을 칸에 끌어 놓기)',
-            ),
-            const SizedBox(width: 8),
-            Container(width: 1, height: 24, color: const Color(0xFFCBD5E1)),
-            const SizedBox(width: 8),
-
-            // 선 굵기
+      // 창이 좁으면 가로 스크롤 대신 다음 줄로 내려 모든 도구가 보이게 한다(2026-10-30 사용자 보고).
+      child: Wrap(
+        key: const Key('sketchToolbarWrap'),
+        spacing: 4,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          // 도구 선택기
+          _toolButton(
+            key: const Key('toolLine'),
+            mode: SketchToolMode.line,
+            icon: Icons.horizontal_rule_rounded,
+            label: '직선',
+            tooltip: '직선 그리기',
+          ),
+          _toolButton(
+            key: const Key('toolRect'),
+            mode: SketchToolMode.rect,
+            icon: Icons.crop_square_rounded,
+            label: '사각형',
+            tooltip: '사각형 그리기 (4변 선)',
+          ),
+          _toolButton(
+            key: const Key('toolEraser'),
+            mode: SketchToolMode.eraser,
+            icon: Icons.auto_fix_normal_outlined,
+            label: '지우개',
+            tooltip: '지우개',
+          ),
+          _toolButton(
+            key: const Key('toolPreciseEraser'),
+            mode: SketchToolMode.preciseEraser,
+            icon: Icons.content_cut_rounded,
+            label: '정밀 지우개',
+            tooltip: '정밀 지우개 (셀 한 칸 단위)',
+          ),
+          _toolButton(
+            key: const Key('toolText'),
+            mode: SketchToolMode.text,
+            icon: Icons.title_rounded,
+            label: '글',
+            tooltip: '칸 글 입력',
+          ),
+          _toolButton(
+            key: const Key('toolSelect'),
+            mode: SketchToolMode.select,
+            icon: Icons.near_me_rounded,
+            label: '선택',
+            tooltip: '선택 (Shift+클릭·끌어 상자로 여러 개, 끌어 옮기기)',
+          ),
+          _toolButton(
+            key: const Key('toolLasso'),
+            mode: SketchToolMode.lasso,
+            icon: Icons.gesture_rounded,
+            label: '올가미',
+            tooltip: '올가미 선택 (자유롭게 둘러 고르기, Shift로 더하기)',
+          ),
+          _toolButton(
+            key: const Key('toolCellImage'),
+            mode: SketchToolMode.cellImage,
+            icon: Icons.image_outlined,
+            label: '칸 그림',
+            tooltip: '칸 배경 그림 (칸을 누르고 Ctrl+V, 또는 사진을 칸에 끌어 놓기)',
+          ),
+          // 묶음(굵기·종류·확대)은 한 덩어리로 줄을 바꾼다.
+          _toolGroup([
             const Text(
               '굵기:',
               style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
@@ -1221,12 +1221,8 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
             _widthChip('thin', '얇게', const Key('lineWidthThin')),
             _widthChip('thick', '굵게', const Key('lineWidthThick')),
             _widthChip('double', '이중', const Key('lineWidthDouble')),
-
-            const SizedBox(width: 8),
-            Container(width: 1, height: 24, color: const Color(0xFFCBD5E1)),
-            const SizedBox(width: 8),
-
-            // 선 종류
+          ]),
+          _toolGroup([
             const Text(
               '종류:',
               style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
@@ -1235,12 +1231,8 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
             _styleChip('solid', '실선', const Key('lineStyleSolid')),
             _styleChip('dash', '파선', const Key('lineStyleDash')),
             _styleChip('dot', '점선', const Key('lineStyleDot')),
-
-            const SizedBox(width: 8),
-            Container(width: 1, height: 24, color: const Color(0xFFCBD5E1)),
-            const SizedBox(width: 8),
-
-            // 확대/축소 버튼
+          ]),
+          _toolGroup([
             IconButton(
               tooltip: '축소',
               icon: const Icon(Icons.remove, size: 18),
@@ -1266,11 +1258,22 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
             ),
-          ],
-        ),
+          ]),
+        ],
       ),
     );
   }
+
+  /// 도구 줄의 한 묶음: 왼쪽 구분선과 함께 한 줄로 붙어 다닌다.
+  Widget _toolGroup(List<Widget> children) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      const SizedBox(width: 4),
+      Container(width: 1, height: 24, color: const Color(0xFFCBD5E1)),
+      const SizedBox(width: 8),
+      ...children,
+    ],
+  );
 
   // --- 칸 배경 그림 ---
 
@@ -1444,11 +1447,21 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
         const Key('sketchRemoveImage'),
       ),
       const SizedBox(width: 12),
-      const Text(
-        '사진을 표 칸 위에 끌어 놓으면 바로 그 칸 배경으로 들어가요(칸 크기에 맞춤).',
-        style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-      ),
+      _barHint('사진을 표 칸 위에 끌어 놓으면 바로 그 칸 배경으로 들어가요(칸 크기에 맞춤).'),
     ],
+  );
+
+  /// 선택 줄 안내 글: 창이 좁으면 버튼을 가리지 않고 글 끝을 줄인다(전체 글은 툴팁).
+  Widget _barHint(String text) => Expanded(
+    child: Tooltip(
+      message: text,
+      child: Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+      ),
+    ),
   );
 
   /// 고른 개체가 있거나 복사해 둔 것이 있을 때만 나타나는 줄(도구 모음이 길어 오른쪽 끝이 가려지지 않게).
@@ -1456,69 +1469,63 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
     return Container(
       key: const Key('sketchSelectionBar'),
       // 선택 여부와 관계없이 같은 높이로 두어 캔버스가 밀리지 않게 한다.
+      // 버튼은 왼쪽에 고정하고, 창이 좁으면 안내 글만 줄여 버튼이 가려지지 않게 한다.
       height: 38,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: const BoxDecoration(
         color: Color(0xFFEFF6FF),
         border: Border(bottom: BorderSide(color: Color(0xFFBFDBFE))),
       ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: _tool == SketchToolMode.cellImage
-            ? _cellImageBar()
-            : Row(
-                children: [
-                  if (_sel.isNotEmpty) ...[
-                    Text(
-                      '${_sel.count}개 선택',
-                      key: const Key('sketchSelectionCount'),
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF1D4ED8),
-                      ),
-                    ),
-                    _selectionAction(
-                      Icons.copy_rounded,
-                      '복사 (Ctrl+C)',
-                      _copySelection,
-                      const Key('sketchCopy'),
-                    ),
-                    _selectionAction(
-                      Icons.control_point_duplicate_rounded,
-                      '복제 (Ctrl+D)',
-                      _duplicateSelection,
-                      const Key('sketchDuplicate'),
-                    ),
-                    _selectionAction(
-                      Icons.delete_outline_rounded,
-                      '삭제 (Delete)',
-                      _deleteSelectedLine,
-                      const Key('sketchDeleteSelection'),
-                    ),
-                  ],
-                  if (_clipboard != null)
-                    _selectionAction(
-                      Icons.content_paste_rounded,
-                      '붙여넣기 (Ctrl+V)',
-                      _pasteClipboard,
-                      const Key('sketchPaste'),
-                    ),
-                  const SizedBox(width: 12),
+      child: _tool == SketchToolMode.cellImage
+          ? _cellImageBar()
+          : Row(
+              children: [
+                if (_sel.isNotEmpty) ...[
                   Text(
-                    _sel.isEmpty
-                        ? (_clipboard == null
-                              ? '선택·올가미로 여러 개를 고르면 함께 옮기기·복사·삭제할 수 있어요'
-                              : 'Ctrl+V로 붙여넣기')
-                        : '끌어서 옮기기 · 방향키로 한 칸 · Shift로 더 고르기',
+                    '${_sel.count}개 선택',
+                    key: const Key('sketchSelectionCount'),
                     style: const TextStyle(
-                      fontSize: 11,
-                      color: Color(0xFF64748B),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1D4ED8),
                     ),
                   ),
+                  _selectionAction(
+                    Icons.copy_rounded,
+                    '복사 (Ctrl+C)',
+                    _copySelection,
+                    const Key('sketchCopy'),
+                  ),
+                  _selectionAction(
+                    Icons.control_point_duplicate_rounded,
+                    '복제 (Ctrl+D)',
+                    _duplicateSelection,
+                    const Key('sketchDuplicate'),
+                  ),
+                  _selectionAction(
+                    Icons.delete_outline_rounded,
+                    '삭제 (Delete)',
+                    _deleteSelectedLine,
+                    const Key('sketchDeleteSelection'),
+                  ),
                 ],
-              ),
-      ),
+                if (_clipboard != null)
+                  _selectionAction(
+                    Icons.content_paste_rounded,
+                    '붙여넣기 (Ctrl+V)',
+                    _pasteClipboard,
+                    const Key('sketchPaste'),
+                  ),
+                const SizedBox(width: 12),
+                _barHint(
+                  _sel.isEmpty
+                      ? (_clipboard == null
+                            ? '선택·올가미로 여러 개를 고르면 함께 옮기기·복사·삭제할 수 있어요'
+                            : 'Ctrl+V로 붙여넣기')
+                      : '끌어서 옮기기 · 방향키로 한 칸 · Shift로 더 고르기',
+                ),
+              ],
+            ),
     );
   }
 

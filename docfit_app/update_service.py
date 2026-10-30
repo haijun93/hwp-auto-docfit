@@ -21,6 +21,7 @@ from docfit_core.network_policy import offline_mode, settings_folder
 from docfit_core.updater import verify_download
 
 RAW = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/"
+INTERNAL_HOST = "gitlab.aigov.go.kr"
 DOWNLOAD_PAGE = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/tree/downloads"
 GITHUB_API = "https://api.github.com/repos/haijun93/hwp-auto-docfit/releases/latest"
 BUSY = {"checking", "downloading", "installing"}
@@ -159,27 +160,18 @@ class UpdateService:
         with self._lock:
             self._state.update(changes)
 
-    def _offline(self):
-        if not self.offline():
-            return False
-        setup = "담당자가 전달한 새 설치 파일(Setup.exe)을 실행하거나"
-        portable = "앱을 끈 뒤 새 포터블 파일을 지금 파일 위에 복사해 바꾸세요."
-        if self._state["installed"]:
-            message = f"폐쇄망 모드: {setup}, {portable}"
-        else:
-            message = "폐쇄망 모드: 앱을 끈 뒤 새 포터블 파일을 지금 파일 위에 복사해 바꾸거나, 담당자가 전달한 새 설치 파일(Setup.exe)을 실행하세요."
-        self._set(step="offline", message=message)
-        return True
+    def _internal_only(self):
+        # 폐쇄망 모드여도 업데이트는 끄지 않는다(2.0.4, 사용자 지시). 공공기관망에서 열리는 내부 GitLab에서만 받고 GitHub에는 접속하지 않는다.
+        return bool(self.offline())
 
     def state(self):
-        self._offline()
         with self._lock:
             return deepcopy(self._state)
 
     @contextmanager
     def _response(self, url, timeout):
-        if self._offline():
-            raise RuntimeError("폐쇄망 모드에서는 인터넷에 접속하지 않습니다.")
+        if self._internal_only() and urlparse(url).hostname != INTERNAL_HOST:
+            raise RuntimeError("폐쇄망 모드에서는 내부 GitLab에서만 업데이트를 받습니다.")
         response = self.http_get(validate_url(url), {"User-Agent": f"HWP-AutoDocFit/{self._state['current']}"}, timeout)
         try:
             yield response
@@ -248,18 +240,14 @@ class UpdateService:
         return dict(version=version, files=files, notes=extract_notes(data.get("body", "")), source="GitHub")
 
     def _refresh(self):
-        if self._offline():
-            return False
         self._set(step="checking", percent=0, message="새 버전을 확인하고 있어요…")
         results = []
-        for read in (self._gitlab, self._github):
+        for read in (self._gitlab,) if self._internal_only() else (self._gitlab, self._github):
             try:
                 self._metadata_deadline = self.clock() + 8
                 results.append(read())
             except Exception:
                 pass
-        if self._offline():
-            return False
         if not results:
             self._set(step="failed", message="업데이트 정보를 확인하지 못했어요. 잠시 뒤 다시 눌러 주세요.")
             return False
@@ -315,8 +303,6 @@ class UpdateService:
                 # read1 returns after receiving bytes, rather than waiting to fill a whole block.
                 reader = getattr(response, "read1", response.read)
                 while True:
-                    if self._offline():
-                        raise RuntimeError("폐쇄망 모드로 바뀌어 다운로드를 중단했습니다.")
                     before = self.clock()
                     chunk = reader(64 * 1024)
                     if self.clock() - before >= 30:
@@ -339,8 +325,6 @@ class UpdateService:
         if self.running() or not self._begin():
             return False
         try:
-            if self._offline():
-                return False
             if not self.frozen:
                 return self.open_download_page()
             if not self._refresh() or self._state["step"] != "available":
@@ -349,8 +333,6 @@ class UpdateService:
             item = self._release["files"][kind]
             self._set(step="downloading", percent=0, message="업데이트 파일을 내려받고 있어요…")
             path = self._download(item)
-            if self._offline():
-                return False
             if self.running():
                 self._set(step="available", message="문서 작업이 끝난 뒤 업데이트해 주세요.")
                 return False
@@ -372,16 +354,13 @@ class UpdateService:
                 raise RuntimeError("포터블 업데이트 설치 연결이 없습니다.")
             return True
         except Exception as exc:
-            if not self._offline():
-                cancelled = getattr(exc, "winerror", None) == 1223
-                self._set(step="cancelled" if cancelled else "failed", message="업데이트를 취소했어요." if cancelled else f"업데이트 실패: {_error_line(exc)}")
+            cancelled = getattr(exc, "winerror", None) == 1223
+            self._set(step="cancelled" if cancelled else "failed", message="업데이트를 취소했어요." if cancelled else f"업데이트 실패: {_error_line(exc)}")
             return False
         finally:
             self._operation.release()
 
     def open_download_page(self):
-        if self._offline():
-            return False
         self.open_page(DOWNLOAD_PAGE)
         return True
 
@@ -403,7 +382,7 @@ class UpdateService:
         def tick():
             if not alive():
                 return
-            if enabled() and not self._offline():
+            if enabled():
                 def work():
                     if self.check():
                         state = self.state()

@@ -34,7 +34,7 @@ void main() {
 
     await tester.tap(find.text('파일변환'));
     await tester.pumpAndSettle();
-    expect(currentTab, 5);
+    expect(currentTab, 6);
     expect(find.text('FileConversionContent'), findsOneWidget);
 
     // Switch back to Tab 0 (문서편집)
