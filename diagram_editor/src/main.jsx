@@ -5,7 +5,7 @@ import {autoRoute,nodeAt,facingSides,smartGuides} from './magnet.js';
 import {freehandNode,freehandPath,withBackground,withoutBackground,fitSize,paintStyle,BACKGROUND_ID,isImageSrc} from './paint.js';
 import '@xyflow/react/dist/style.css';
 import './style.css';
-import {FORMAT,PALETTE,templates,template,node,edge,id,decode,validate,svg,layoutGraph,computeNodeAutoFitBox,edgeLabelBox,LINE_HEIGHT,nodeFont,nodePaint,edgePath,EDGE_DEFAULT} from './model.js';
+import {FORMAT,PALETTE,templates,template,node,edge,id,decode,validate,svg,layoutGraph,computeNodeAutoFitBox,edgeLabelBox,LINE_HEIGHT,nodeFont,nodePaint,edgePath,EDGE_DEFAULT,rotationFromPointer,normalizeRotation} from './model.js';
 import {SHAPE_GROUPS,SHAPES,LINE_SHAPES,shapePath,DASHES,MARKERS,dashArray} from './shapes.js';
 import {sampleMindmap,mindmapGraph,addChild,addSibling,removeNode,updateNode,moveNode,findNode,positionMindmap,reparentNode,autoLayoutMindmap,restyleNodes,MINDMAP_SHAPES,MINDMAP_SCOPES,MINDMAP_THEME_SHAPES,MINDMAP_PALETTES,MINDMAP_GROUNDS,themeOf,clearBranchStyles} from './mindmap.js';
 import {FONTS,registerFonts,ARROWS,DOWN_ARROWS,FLOW_PRESETS,MAX_FLOW_STEPS,MAX_FLOW_ROWS,MAX_ROWS,MAX_COLS,MAX_ORG,ROLE_NAMES,BORDER_TYPES,BORDER_WIDTHS,BORDER_NAMES,
@@ -37,6 +37,22 @@ function Marker({id:markerId,kind,color}){
  </marker>;
 }
 
+/** 회전 손잡이(PPT처럼 도형 위의 동그라미): 끌면 0~359° 돌리고, Shift를 누르면 15°씩. */
+function RotateHandle({nodeId,rotation}){
+ const {updateNodeData}=useReactFlow();const checkpoint=useContext(HistoryContext);
+ const down=e=>{
+  e.stopPropagation();e.preventDefault();
+  const box=e.currentTarget.closest('.react-flow__node')?.getBoundingClientRect();if(!box)return;
+  const cx=box.left+box.width/2,cy=box.top+box.height/2;checkpoint();
+  const move=ev=>updateNodeData(nodeId,{rotation:rotationFromPointer(cx,cy,ev.clientX,ev.clientY,ev.shiftKey)});
+  const up=()=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',up);};
+  window.addEventListener('pointermove',move);window.addEventListener('pointerup',up);
+ };
+ return <div className="rotate-handle nodrag" title={`회전 ${rotation??0}° (끌기, Shift: 15°씩)`} aria-label="도형 회전" onPointerDown={down}/>;
+}
+/** 회전 틀: 도형·연결점·회전 손잡이를 함께 가운데 중심으로 돌린다(연결점 위치도 돈 자리로 잡힌다). */
+const Rotated=({data,w,h,children})=><div className="node-rot" style={{width:w,height:h,transform:data.rotation?`rotate(${data.rotation}deg)`:undefined}}>{children}</div>;
+
 /** 도형 노드: PPT 도형 경로를 SVG로 그리고 글을 가운데에 얹는다. 선 도형은 화살표 머리를 붙인다. */
 function FlowNode({id:nodeId,data,selected,width,height}){
  const box=computeNodeAutoFitBox({data,width,height}),f=nodeFont(data),p=nodePaint(data);
@@ -44,13 +60,17 @@ function FlowNode({id:nodeId,data,selected,width,height}){
  const w=width??220,h=height??90,inset=Math.max(1,p.width/2+1),line=LINE_SHAPES.has(data.shape);
  const key='n'+safeId(nodeId);
  if(data.shape==='image')return <>{!data.background&&<NodeResizer onResizeStart={resizeStart} isVisible={selected} minWidth={20} minHeight={20} keepAspectRatio/>}
-  <div className="node-body shape-image" style={{width:w,height:h}}><img src={data.src} alt="" draggable={false} style={{width:'100%',height:'100%',display:'block',pointerEvents:'none'}}/></div></>;
+  <Rotated data={data} w={w} h={h}>{selected&&!data.background&&<RotateHandle nodeId={nodeId} rotation={data.rotation}/>}
+  <div className="node-body shape-image" style={{width:w,height:h}}><img src={data.src} alt="" draggable={false} style={{width:'100%',height:'100%',display:'block',pointerEvents:'none'}}/></div></Rotated></>;
  if(data.shape==='freehand')return <><NodeResizer onResizeStart={resizeStart} isVisible={selected} minWidth={8} minHeight={8}/>
+  <Rotated data={data} w={w} h={h}>{selected&&<RotateHandle nodeId={nodeId} rotation={data.rotation}/>}
   <div className="node-body shape-freehand" style={{width:w,height:h}}><svg className="shape-svg" width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden="true">
-   <path d={freehandPath(data.points,0,0,w,h)} fill="none" stroke={p.stroke==='none'?'#111827':p.stroke} strokeWidth={p.width} strokeDasharray={p.dash||undefined} strokeLinecap="round" strokeLinejoin="round"/></svg></div></>;
+   <path d={freehandPath(data.points,0,0,w,h)} fill="none" stroke={p.stroke==='none'?'#111827':p.stroke} strokeWidth={p.width} strokeDasharray={p.dash||undefined} strokeLinecap="round" strokeLinejoin="round"/></svg></div></Rotated></>;
  const start=data.lineStart??p.startDefault,end=p.end;
  return <><NodeResizer onResizeStart={resizeStart} isVisible={selected} minWidth={line?20:40} minHeight={line?10:30}/>
+  <Rotated data={data} w={w} h={h}>
   {Object.entries(Position).map(([k,value])=><Handle key={k} id={value} type="source" position={value}/>)}
+  {selected&&<RotateHandle nodeId={nodeId} rotation={data.rotation}/>}
   <div className={'node-body shape-'+data.shape} style={{width:w,height:h}}>
    <svg className="shape-svg" width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden="true">
     {line&&<defs><Marker id={key+'s'} kind={start} color={p.stroke}/><Marker id={key+'e'} kind={end} color={p.stroke}/></defs>}
@@ -61,7 +81,7 @@ function FlowNode({id:nodeId,data,selected,width,height}){
    <span className="node-lines" style={{fontFamily:f.family,fontSize:f.px,lineHeight:f.lineHeight+'px',fontWeight:f.weight,color:f.color,marginTop:line?-f.lineHeight*1.4:0}}>
     {box.lines.map((l,i)=><span key={i} style={{display:'block',height:f.lineHeight}}>{l||' '}</span>)}
    </span>
-  </div></>;
+  </div></Rotated></>;
 }
 /** 연결선: 꺾은선·직선·곡선, 색·굵기·선 모양, 양 끝 화살표 머리. */
 function FlowEdge(props){
@@ -146,6 +166,10 @@ function ShapeStyleControls({data,onChange}){
   <ColorRow label={line?'선 색':'테두리색'} value={p.stroke} onChange={stroke=>onChange({stroke})}/>
   <Stepper label={line?'선 굵기':'테두리 굵기'} value={p.width} min={0} max={10} step={0.5} onChange={strokeWidth=>onChange({strokeWidth})}/>
   <Select label="선 모양" value={data.dash??'solid'} options={DASHES.map(([k,n])=>[k,n])} onChange={dash=>onChange({dash})}/>
+  <div className="rotate-row"><span>회전</span><input type="range" min="0" max="359" step="1" aria-label="회전 각도" value={data.rotation??0} onChange={e=>onChange({rotation:normalizeRotation(e.target.value)})}/>
+   <input type="number" min="0" max="359" aria-label="회전 각도(도)" value={data.rotation??0} onChange={e=>{const v=Number(e.target.value);if(v>=0&&v<=360)onChange({rotation:normalizeRotation(v)});}}/>°
+   <button className="mini" title="왼쪽으로 90°" onClick={()=>onChange({rotation:normalizeRotation((data.rotation??0)-90)})}>⟲</button>
+   <button className="mini" title="오른쪽으로 90°" onClick={()=>onChange({rotation:normalizeRotation((data.rotation??0)+90)})}>⟳</button></div>
   {line&&<><Select label="시작 화살표" value={data.lineStart??p.startDefault} options={MARKERS} onChange={lineStart=>onChange({lineStart})}/>
    <Select label="끝 화살표" value={p.end} options={MARKERS} onChange={lineEnd=>onChange({lineEnd})}/></>}
  </fieldset>;

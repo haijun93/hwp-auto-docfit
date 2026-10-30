@@ -119,3 +119,17 @@ test('circle nodes stay square and wrap text inside, growing only when needed',(
  assert.equal(long.width,long.height);
  assert.ok(long.width>84);assert.ok(long.lines.length>=2);
 });
+
+test('rotation is validated, normalized and drawn around the shape center', async () => {
+ const {validate, svg, rotationFromPointer, normalizeRotation} = await import('./model.js');
+ const n = {id: 'a', type: 'flow', position: {x: 0, y: 0}, width: 100, height: 50, data: {label: '가', shape: 'rectangle', color: 'blue', rotation: 45}};
+ const checked = validate({format: 'docfit-flow', version: 1, nodes: [n], edges: []});
+ assert.equal(checked.nodes[0].data.rotation, 45);
+ assert.match(svg({format: 'docfit-flow', version: 1, nodes: [n], edges: []}).source, /rotate\(45 50 25\)/);
+ assert.throws(() => validate({format: 'docfit-flow', version: 1, nodes: [{...n, data: {...n.data, rotation: 400}}], edges: []}));
+ assert.equal(normalizeRotation(-90), 270);
+ assert.equal(normalizeRotation(360), 0);
+ assert.equal(rotationFromPointer(0, 0, 0, -10), 0); // 위
+ assert.equal(rotationFromPointer(0, 0, 10, 0), 90); // 오른쪽
+ assert.equal(rotationFromPointer(0, 0, 10, 9, true), 135); // Shift: 15°씩
+});

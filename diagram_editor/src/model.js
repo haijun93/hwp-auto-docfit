@@ -90,6 +90,13 @@ export function edgeStyle(data){
 }
 /** 도형 글자 서식(선택): font(글꼴), size(pt), bold, textColor. 값이 없으면 예전 기본(맑은 고딕 12pt). */
 export const TEXT_FONTS=FONTS;
+/** 회전 각도(도)를 0 이상 360 미만 정수로. */
+export const normalizeRotation=deg=>((Math.round(Number(deg)||0)%360)+360)%360;
+/** 도형 가운데를 중심으로 끈 점까지의 방향(위=0°, 시계 방향). snap이면 15°씩. */
+export function rotationFromPointer(cx,cy,x,y,snap=false){
+ const deg=Math.atan2(y-cy,x-cx)*180/Math.PI+90;
+ return normalizeRotation(snap?Math.round(deg/15)*15:deg);
+}
 export function nodeTextStyle(data){
  const style={};
  if(data.font!==undefined){if(!isFontName(data.font))throw new Error('도형 글꼴을 확인해 주세요.');style.font=data.font;}
@@ -107,6 +114,7 @@ export function nodeShapeStyle(data){
  if(data.strokeWidth!==undefined){if(typeof data.strokeWidth!=='number'||!(data.strokeWidth>=0&&data.strokeWidth<=10))throw new Error('도형 테두리 굵기를 확인해 주세요.');style.strokeWidth=data.strokeWidth;}
  if(data.dash!==undefined){if(!DASH_KEYS.has(data.dash))throw new Error('도형 테두리 모양을 확인해 주세요.');style.dash=data.dash;}
  for(const key of ['lineStart','lineEnd'])if(data[key]!==undefined){if(!MARKER_KEYS.has(data[key]))throw new Error('선 화살표 모양을 확인해 주세요.');style[key]=data[key];}
+ if(data.rotation!==undefined){if(typeof data.rotation!=='number'||!Number.isFinite(data.rotation)||data.rotation<0||data.rotation>360)throw new Error('도형 회전 각도를 확인해 주세요.');style.rotation=normalizeRotation(data.rotation);}
  return style;
 }
 /** 도형을 그릴 실제 값(예전 문서의 색 이름 color도 바탕색으로 쓴다). */
@@ -260,7 +268,9 @@ export function svg(snapshot) {
  const drawnNodes=nodes.map(n=>{
   const {x,y}=n.position,w=n.width,h=n.height,box=computeNodeAutoFitBox(n);
   const ty=LINE_SHAPES.has(n.data.shape)?y+h/2-box.lineHeight*0.7:y+h/2;
-  return nodeSvg(n,x,y,w,h,defs)+svgLines(box.lines,x+w/2,ty,nodeFont(n.data));
+  const drawn=nodeSvg(n,x,y,w,h,defs)+svgLines(box.lines,x+w/2,ty,nodeFont(n.data));
+  // 회전한 도형은 가운데를 중심으로 돌려 그린다(글도 함께, PPT처럼).
+  return n.data.rotation?'<g transform="rotate('+n.data.rotation+' '+(x+w/2)+' '+(y+h/2)+')">'+drawn+'</g>':drawn;
  }).join('');
  return {width:bounds.width,height:bounds.height,source:'<svg xmlns="http://www.w3.org/2000/svg" width="'+bounds.width+'" height="'+bounds.height+'" viewBox="'+bounds.x+' '+bounds.y+' '+bounds.width+' '+bounds.height+'"><defs>'+defs.join('')+'</defs><rect x="'+bounds.x+'" y="'+bounds.y+'" width="'+bounds.width+'" height="'+bounds.height+'" fill="'+(graph.background??'white')+'"/>'+drawnEdges+drawnNodes+'</svg>'};
 }
