@@ -145,10 +145,17 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
     documentEditorWidget: Workspace(key: workspace, api: widget.api),
     fileConversionWidget: ConversionDropPane(
       onPickFiles: () => workspace.currentState?.addConversionFiles(),
+      onConvertListed: () => workspace.currentState?.convertListedFiles(),
     ),
     onTabChanged: (index) {
+      final from = lastTab;
       routeDrops(index);
-      if (index == 6) workspace.currentState?.enterConversionMode();
+      if (index == 6) {
+        workspace.currentState?.enterConversionMode();
+      } else if (from == 6) {
+        // 파일변환 탭을 그냥 떠나면 작업 방식을 원래 카드로 되돌린다(넣은 파일을 변환하러 가는 때는 제외).
+        workspace.currentState?.leaveConversionMode();
+      }
     },
     // 앱 메뉴(사용 방법·작업 로그·설정)는 상단 탭 줄 오른쪽 끝에 둔다.
     trailing: Builder(
@@ -417,7 +424,9 @@ class _WorkspaceState extends State<Workspace> {
         setState(() => tab = 1);
         if (mode == 'file_format') {
           // 파일변환 탭에서 넣은 파일도 문서편집 화면의 변환 흐름(진행·4. 결과 확인)으로 이어 간다.
+          _conversionHandoff = true;
           WorkspaceTabScope.maybeOf(context)?.selectTab(0);
+          _conversionHandoff = false;
           openConversionPicker();
         }
       }
@@ -507,10 +516,37 @@ class _WorkspaceState extends State<Workspace> {
   }
 
   /// 파일변환 탭을 열면 작업 방식을 '파일 변환'으로 바꾸고 끌어 놓은 파일을 문서 목록으로 받는다.
+  String _modeBeforeConversion = 'spacing';
+  bool _conversionHandoff = false;
+
   Future<void> enterConversionMode() async {
     if (locked) return;
-    if (mode != 'file_format') await command('set_mode', ['file_format']);
+    if (mode != 'file_format') {
+      _modeBeforeConversion = mode == 'format' ? 'all' : mode;
+      await command('set_mode', ['file_format']);
+    }
     await setDropTarget('documents');
+  }
+
+  /// 파일변환 탭의 '문서편집 목록의 문서 변환하기': 목록이 비었으면 파일 고르기, 아니면 포맷 고르기로.
+  Future<void> convertListedFiles() async {
+    if (files.isEmpty) return addConversionFiles();
+    await enterConversionMode();
+    if (!mounted || locked) return;
+    _conversionHandoff = true;
+    WorkspaceTabScope.maybeOf(context)?.selectTab(0);
+    _conversionHandoff = false;
+    setState(() => tab = 1);
+    await openConversionPicker();
+  }
+
+  Future<void> leaveConversionMode() async {
+    if (_conversionHandoff) {
+      _conversionHandoff = false;
+      return;
+    }
+    if (locked || mode != 'file_format') return;
+    await command('set_mode', [_modeBeforeConversion]);
   }
 
   /// 파일변환 탭의 '파일 선택'.

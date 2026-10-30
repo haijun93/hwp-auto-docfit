@@ -32,7 +32,7 @@ LABELS = {
  'std_table_header':'표 머리글 서식', 'symbol_fonts':'항목기호 글꼴', 'table_fonts':'표 글꼴',
  'hwp_font_folder':'한글 글꼴 폴더', 'paste_add_folder':'붙여넣기 문서 저장 폴더', 'always_on_top':'항상 위에 표시',
  'check_updates_on_start':'시작할 때 업데이트 확인',
- 'offline_mode':'폐쇄망 모드 (인터넷 연결 안 함)', 'table_spacing':'표 안 자간 정리', 'log_file':'작업 로그 파일 저장',
+ 'table_spacing':'표 안 자간 정리', 'log_file':'작업 로그 파일 저장',
  'developer_mode':'개발자 모드', 'all_include_spacing':'한 번에 적용: 자간 포함',
  'all_exclude_tables':'한 번에 적용: 표 제외', 'all_exclude_pagefit':'한 번에 적용: 페이지 맞춤 제외',
  'all_linespacing':'한 번에 적용: 줄 간격 적용',
@@ -72,7 +72,7 @@ def fields():
                        else 'number' if numeric else 'text', 'default':True if default is None else default,
                        'group':'글꼴' if root in {'symbol_fonts','table_fonts'} else
                        '개발자 도구' if root in {'developer_mode'} else
-                       '네트워크' if root in {'offline_mode','check_updates_on_start'} else
+                       '네트워크' if root in {'check_updates_on_start'} else
                        '표준서식' if root.startswith('std_') or root in {'label_symbols','title_owner_text'} else '작업·프로그램'})
     return result
 

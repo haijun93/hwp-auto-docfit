@@ -1,20 +1,14 @@
-"""폐쇄망(인터넷이 안 되는 PC) 운영 정책.
+"""외부 접속 정책.
 
-기본값은 폐쇄망 모드다. 이 모드에서는 앱이 스스로 외부에 접속하지 않는다.
-- 업데이트는 끄지 않고 공공기관망의 내부 GitLab에서만 확인·내려받는다(GitHub 접속 안 함, 2.0.4).
-- kordoc은 KORDOC_OFFLINE=1로 실행해 AI 모델 내려받기를 막고, npx 내려받기를 쓰지 않는다.
-
-설정 파일의 offline_mode(기본 True)를 따르며, 시험·관리용으로 환경 변수
-DOCFIT_OFFLINE=1/0이 설정값보다 우선한다.
+폐쇄망 모드 설정은 2.0.4에서 없앴다(사용자 지시). 앱은 업데이트 확인만 외부에 접속하고,
+변환 엔진(kordoc)은 언제나 모델 내려받기·npm 접속 없이 앱에 포함된 것만 쓴다(kordoc_bridge).
+시험·관리용 환경 변수 DOCFIT_OFFLINE=1이면 업데이트도 내부 GitLab에만 접속한다.
 """
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 
-SETTING_KEY = "offline_mode"
-DEFAULT_OFFLINE = True
 
 
 def settings_folder() -> Path:
@@ -23,15 +17,8 @@ def settings_folder() -> Path:
 
 
 def offline_mode() -> bool:
-    override = os.environ.get("DOCFIT_OFFLINE", "").strip()
-    if override in ("0", "1"):
-        return override == "1"
-    try:
-        with (settings_folder() / "settings.json").open("r", encoding="utf-8") as stream:
-            value = json.load(stream).get(SETTING_KEY, DEFAULT_OFFLINE)
-    except (OSError, ValueError, AttributeError):
-        return DEFAULT_OFFLINE
-    return value if isinstance(value, bool) else DEFAULT_OFFLINE
+    """시험·관리용 DOCFIT_OFFLINE=1일 때만 참(설정 파일의 옛 offline_mode 값은 쓰지 않는다)."""
+    return os.environ.get("DOCFIT_OFFLINE", "").strip() == "1"
 
 
 def offline_environment(base: dict[str, str] | None = None) -> dict[str, str]:

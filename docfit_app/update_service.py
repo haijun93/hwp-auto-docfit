@@ -161,7 +161,7 @@ class UpdateService:
             self._state.update(changes)
 
     def _internal_only(self):
-        # 폐쇄망 모드여도 업데이트는 끄지 않는다(2.0.4, 사용자 지시). 공공기관망에서 열리는 내부 GitLab에서만 받고 GitHub에는 접속하지 않는다.
+        # 시험·관리용 DOCFIT_OFFLINE=1이면 공공기관망의 내부 GitLab에서만 받고 GitHub에는 접속하지 않는다.
         return bool(self.offline())
 
     def state(self):
@@ -171,7 +171,7 @@ class UpdateService:
     @contextmanager
     def _response(self, url, timeout):
         if self._internal_only() and urlparse(url).hostname != INTERNAL_HOST:
-            raise RuntimeError("폐쇄망 모드에서는 내부 GitLab에서만 업데이트를 받습니다.")
+            raise RuntimeError("내부 GitLab에서만 업데이트를 받도록 설정되어 있습니다.")
         response = self.http_get(validate_url(url), {"User-Agent": f"HWP-AutoDocFit/{self._state['current']}"}, timeout)
         try:
             yield response

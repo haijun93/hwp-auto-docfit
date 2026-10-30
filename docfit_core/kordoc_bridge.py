@@ -182,7 +182,7 @@ def ocr_available() -> bool:
             return False
     if runtime:
         return False
-    return not offline_mode() or kordoc_runtime.ocr_models_present()
+    return kordoc_runtime.ocr_models_present()
 
 
 def engine_status() -> dict[str, str | bool]:
@@ -240,8 +240,8 @@ def _startupinfo():
 def run_kordoc(arguments: list[str], timeout: int = 600,
                 acceptable_codes: tuple[int, ...] = (0, 2)) -> subprocess.CompletedProcess[str]:
     command = [*_kordoc_command(), *map(str, arguments)]
-    # 폐쇄망 모드에서는 kordoc의 모델 내려받기·npm 접속·onnxruntime 원격 전송을 막는다.
-    env = offline_environment() if offline_mode() else dict(os.environ)
+    # kordoc은 언제나 모델 내려받기·npm 접속·onnxruntime 원격 전송 없이 실행한다(앱에 포함된 것만).
+    env = offline_environment()
     env.setdefault("ORT_DISABLE_TELEMETRY", "1")
     env["KORDOC_MODEL_CACHE"] = str(kordoc_runtime.model_cache_dir())
     completed = subprocess.run(

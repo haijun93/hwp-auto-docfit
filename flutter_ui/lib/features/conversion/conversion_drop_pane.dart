@@ -3,9 +3,16 @@ import 'package:flutter/material.dart';
 /// 파일변환 탭 첫 화면: 파일을 끌어 놓거나 고르면 문서편집 화면의 변환 흐름이 이어진다
 /// (키패드 포맷 선택 → 진행 → 4. 결과 확인).
 class ConversionDropPane extends StatelessWidget {
-  const ConversionDropPane({super.key, required this.onPickFiles});
+  const ConversionDropPane({
+    super.key,
+    required this.onPickFiles,
+    this.onConvertListed,
+  });
 
   final VoidCallback onPickFiles;
+
+  /// 문서편집 목록에 이미 넣어 둔 문서를 바로 변환(포맷 고르기)한다.
+  final VoidCallback? onConvertListed;
 
   static const accent = Color(0xff7656a8);
 
@@ -58,6 +65,15 @@ class ConversionDropPane extends StatelessWidget {
                     icon: const Icon(Icons.folder_open_outlined),
                     label: const Text('파일 선택'),
                   ),
+                  if (onConvertListed != null) ...[
+                    const SizedBox(height: 10),
+                    TextButton.icon(
+                      key: const Key('conversionConvertListed'),
+                      onPressed: onConvertListed,
+                      icon: const Icon(Icons.playlist_play_rounded),
+                      label: const Text('문서편집 목록의 문서 변환하기'),
+                    ),
+                  ],
                 ],
               ),
             ),

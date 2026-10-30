@@ -1000,10 +1000,7 @@ void main() {
     // 파일 변환은 '파일변환' 탭에서 고른다(작업 방식 카드에서 뺐다, 2026-10-30).
     await tester.tap(find.byKey(const Key('workspaceTab-6')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('workspaceTab-0')));
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byKey(const Key('openConversionPicker')));
-    await tester.tap(find.byKey(const Key('openConversionPicker')));
+    await tester.tap(find.byKey(const Key('conversionConvertListed')));
     await tester.pumpAndSettle();
     expect(find.text('변환할 포맷을 고르세요'), findsOneWidget);
     expect(find.text('DOCX'), findsOneWidget);
@@ -1053,10 +1050,7 @@ void main() {
     // 파일 변환은 '파일변환' 탭에서 고른다(작업 방식 카드에서 뺐다, 2026-10-30).
     await tester.tap(find.byKey(const Key('workspaceTab-6')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('workspaceTab-0')));
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byKey(const Key('openConversionPicker')));
-    await tester.tap(find.byKey(const Key('openConversionPicker')));
+    await tester.tap(find.byKey(const Key('conversionConvertListed')));
     await tester.pumpAndSettle();
     expect(find.text('변환할 포맷을 고르세요'), findsOneWidget);
     expect(find.text('DOCX'), findsOneWidget);
@@ -1106,10 +1100,7 @@ void main() {
     // 파일 변환은 '파일변환' 탭에서 고른다(작업 방식 카드에서 뺐다, 2026-10-30).
     await tester.tap(find.byKey(const Key('workspaceTab-6')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('workspaceTab-0')));
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byKey(const Key('openConversionPicker')));
-    await tester.tap(find.byKey(const Key('openConversionPicker')));
+    await tester.tap(find.byKey(const Key('conversionConvertListed')));
     await tester.pumpAndSettle();
     expect(find.text('변환할 포맷을 고르세요'), findsOneWidget);
     expect(find.text('DOCX'), findsOneWidget);
@@ -1177,10 +1168,7 @@ void main() {
     // 파일 변환은 '파일변환' 탭에서 고른다(작업 방식 카드에서 뺐다, 2026-10-30).
     await tester.tap(find.byKey(const Key('workspaceTab-6')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('workspaceTab-0')));
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byKey(const Key('openConversionPicker')));
-    await tester.tap(find.byKey(const Key('openConversionPicker')));
+    await tester.tap(find.byKey(const Key('conversionConvertListed')));
     await tester.pumpAndSettle();
     expect(
       find.byKey(const Key('conversionPrerequisiteNotice')),
@@ -1229,12 +1217,7 @@ void main() {
         // 파일 변환은 '파일변환' 탭에서 고른다(작업 방식 카드에서 뺐다, 2026-10-30).
         await tester.tap(find.byKey(const Key('workspaceTab-6')));
         await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('workspaceTab-0')));
-        await tester.pumpAndSettle();
-        await tester.ensureVisible(
-          find.byKey(const Key('openConversionPicker')),
-        );
-        await tester.tap(find.byKey(const Key('openConversionPicker')));
+        await tester.tap(find.byKey(const Key('conversionConvertListed')));
         await tester.pumpAndSettle();
         expect(
           find.byKey(const Key('floatingConversionPicker')),

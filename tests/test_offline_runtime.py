@@ -43,16 +43,15 @@ class OfflineRuntimeTests(unittest.TestCase):
         app_patch.start()
         self.addCleanup(app_patch.stop)
 
-    def test_offline_mode_is_default_and_follows_settings_and_override(self):
-        self.assertTrue(np_.offline_mode())
+    def test_offline_mode_setting_is_gone_and_only_the_test_override_remains(self):
+        # 2.0.4: 폐쇄망 모드 설정 삭제(사용자 지시). 옛 설정 파일의 값은 무시한다.
         settings = np_.settings_folder() / "settings.json"
         settings.parent.mkdir(parents=True)
-        settings.write_text(json.dumps({"offline_mode": False}), encoding="utf-8")
-        self.assertFalse(np_.offline_mode())
+        settings.write_text(json.dumps({"offline_mode": True}), encoding="utf-8")
+        with mock.patch.dict(os.environ, {"DOCFIT_OFFLINE": ""}):
+            self.assertFalse(np_.offline_mode())
         with mock.patch.dict(os.environ, {"DOCFIT_OFFLINE": "1"}):
             self.assertTrue(np_.offline_mode())
-        settings.write_text("{broken", encoding="utf-8")
-        self.assertTrue(np_.offline_mode())
 
     def test_pack_next_to_app_installs_once_and_is_found(self):
         make_pack(self.app / kr.RUNTIME_PACK_NAME)
@@ -107,8 +106,8 @@ class OfflineRuntimeTests(unittest.TestCase):
         self.assertFalse((self.root / "install" / VERSION).exists())
         self.assertEqual([p.name for p in (self.root / "install").iterdir() if p.suffix != ".lock"], [])  # 반쯤 푼 폴더도 남기지 않는다
 
-    def test_offline_mode_never_downloads_with_npx(self):
-        with mock.patch.dict(os.environ, {"DOCFIT_ALLOW_NPX_DOWNLOAD": "1"}), \
+    def test_test_override_never_downloads_with_npx(self):
+        with mock.patch.dict(os.environ, {"DOCFIT_ALLOW_NPX_DOWNLOAD": "1", "DOCFIT_OFFLINE": "1"}), \
                 mock.patch.object(kb, "_node_major", return_value=22), \
                 mock.patch.object(kb, "_local_kordoc", return_value=None), \
                 mock.patch.object(kb, "_npx_command", side_effect=AssertionError("npx used")):
@@ -136,27 +135,34 @@ class OfflineRuntimeTests(unittest.TestCase):
 
 
 class OfflineSettingsTests(unittest.TestCase):
-    def test_offline_setting_is_listed_and_defaults_on(self):
+    def test_offline_setting_is_no_longer_listed(self):
         from docfit_app.configuration_service import fields
-        field = next(item for item in fields() if item["key"] == "offline_mode")
-        self.assertEqual((field["type"], field["default"], field["group"]), ("boolean", True, "네트워크"))
+        self.assertFalse([item for item in fields() if item["key"] == "offline_mode"])
 
-    def test_update_check_does_not_touch_network_in_offline_mode(self):
+    def test_update_check_runs_in_offline_mode_against_internal_gitlab(self):
+        # 2.0.4부터 폐쇄망 모드에서도 업데이트는 확인한다(내부 GitLab만, GitHub 접속 안 함 — 사용자 지시).
         ns = runpy.run_path(str(Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"), run_name="offline_update")
         gui = ns["HwpAutoDocFitGUI"]
-        notices = []
         status = mock.Mock()
-        fake = mock.Mock(settings_toplevel=None, status_var=status,
-                         _알림=lambda *args, **kwargs: notices.append(args))
+        fake = mock.Mock(settings_toplevel=None, status_var=status, _알림=lambda *args, **kwargs: None)
         from docfit_app.update_service import UpdateService
-        fake._업데이트_서비스.return_value = UpdateService(ns["APP_VERSION"], offline=lambda: True)
-        with mock.patch.dict(os.environ, {"DOCFIT_OFFLINE": "1"}), \
-                mock.patch.object(ns["threading"], "Thread", side_effect=AssertionError("network thread")):
+        calls = []
+        def http_get(url, headers, timeout):
+            calls.append(url)
+            raise OSError("no network in test")
+        fake._업데이트_서비스.return_value = UpdateService(ns["APP_VERSION"], offline=lambda: True, http_get=http_get)
+        started = []
+        class Thread:
+            def __init__(self, target=None, **kwargs):
+                self.target = target
+            def start(self):
+                started.append(self.target)
+                self.target()
+        with mock.patch.dict(os.environ, {"DOCFIT_OFFLINE": "1"}),                 mock.patch.object(ns["threading"], "Thread", Thread):
             gui._자동업데이트_확인_시작(fake)
-            self.assertEqual(notices, [])
-            gui._자동업데이트_확인_시작(fake, 수동=True)
-        self.assertIn("폐쇄망", notices[0][2])
-
+        self.assertEqual(len(started), 1)
+        self.assertTrue(calls)
+        self.assertTrue(all("gitlab.aigov.go.kr" in url for url in calls), calls)
 
 if __name__ == "__main__":
     unittest.main()

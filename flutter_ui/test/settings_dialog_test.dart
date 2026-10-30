@@ -104,8 +104,8 @@ Map<String, Object?> guided() => {
       'group': '표준서식',
     },
     {
-      'key': 'offline_mode',
-      'label': '폐쇄망 모드',
+      'key': 'check_updates_on_start',
+      'label': '시작할 때 업데이트 확인',
       'type': 'boolean',
       'default': true,
       'group': '네트워크',
@@ -114,7 +114,7 @@ Map<String, Object?> guided() => {
   'values': {
     'std_hanging_indent': true,
     'std_parspace_circle': '8',
-    'offline_mode': true,
+    'check_updates_on_start': true,
   },
 };
 
@@ -151,9 +151,9 @@ void mainGuided() {
     expect(find.text('위 간격 9pt'), findsOneWidget); // 예시가 값에 따라 바로 바뀐다
     expect(find.text('바꾼 설정 1개'), findsOneWidget);
     // 검색은 분류와 관계없이 찾는다.
-    await tester.enterText(find.byType(TextField).first, '폐쇄망');
+    await tester.enterText(find.byType(TextField).first, '업데이트');
     await tester.pumpAndSettle();
-    expect(find.text('폐쇄망 모드 (인터넷 연결 안 함)'), findsOneWidget);
+    expect(find.text('시작할 때 업데이트 확인'), findsWidgets);
     await tester.tap(find.text('변경사항 적용'));
     await tester.pumpAndSettle();
     expect(saved, [

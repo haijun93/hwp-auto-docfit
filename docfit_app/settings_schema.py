@@ -92,8 +92,6 @@ DEFAULTS = {
     "paste_add_folder": "",
     "always_on_top": True,
     "check_updates_on_start": True,
-    # 폐쇄망(인터넷이 안 되는 PC) 모드. 켜면 kordoc 모델 내려받기 등 외부 접속을 하지 않고, 업데이트는 내부 GitLab에서만 받는다.
-    "offline_mode": True,
     "table_spacing": True,
     "log_file": False,
     # 개발자 모드: 도형 편집기의 개발자 기능을 허용한다.
