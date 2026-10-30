@@ -7,17 +7,17 @@
 설치된 한/글을 직접 다뤄 공문서 모양으로 다듬어 드립니다. 원본은 그대로 둡니다.
 </p>
 
-<h2 align="center">⬇️ 지금 내려받기 · 최신 v2.0.3</h2>
+<h2 align="center">⬇️ 지금 내려받기 · 최신 v2.0.4</h2>
 
 <table align="center">
 <tr>
 <td align="center" width="50%">
 <b>무설치(포터블)</b><br><sub>받아서 더블클릭하면 바로 실행 · 추천</sub><br><br>
-<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.0.3_Portable.exe?inline=false"><img height="56" alt="GitLab에서 무설치로 받기 v2.0.3" src="https://img.shields.io/badge/%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v2.0.3-15803d?style=for-the-badge&logo=gitlab"></a>
+<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.0.4_Portable.exe?inline=false"><img height="56" alt="GitLab에서 무설치로 받기 v2.0.4" src="https://img.shields.io/badge/%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v2.0.4-15803d?style=for-the-badge&logo=gitlab"></a>
 </td>
 <td align="center" width="50%">
 <b>설치용</b><br><sub>시작 메뉴·제어판에 등록</sub><br><br>
-<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.0.3_Setup.exe?inline=false"><img height="56" alt="GitLab에서 설치용 받기 v2.0.3" src="https://img.shields.io/badge/%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0%20v2.0.3-15803d?style=for-the-badge&logo=gitlab"></a>
+<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.0.4_Setup.exe?inline=false"><img height="56" alt="GitLab에서 설치용 받기 v2.0.4" src="https://img.shields.io/badge/%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0%20v2.0.4-15803d?style=for-the-badge&logo=gitlab"></a>
 </td>
 </tr>
 </table>
@@ -34,6 +34,25 @@
 <a href="docs/media/overview-demo.mp4"><img src="docs/media/overview-demo.gif" alt="한글편집 후처리 5분 시연 — 누르면 고화질 영상" width="860"></a><br>
 <sub>▶ 누르면 5분 시연 영상(고화질)이 열립니다</sub>
 </p>
+
+---
+
+<h2 align="center">v2.0.4 릴리즈</h2>
+<p align="center">탭과 앱 메뉴를 상단 한 줄로 합치고, 페이지 맞춤 작업과 자동 업데이트를 더했습니다</p>
+
+### 상단 통합 탭 줄 (2.0.4)
+
+탭 메뉴와 사용 방법·작업 로그·설정 단추를 상단 한 줄로 합쳤습니다. 파일변환 탭은 항상 맨 끝에 있습니다.
+
+### 페이지 맞춤 · 자동 업데이트 (2.0.4)
+
+작업 방식에 '페이지 맞춤'을 새로 넣어 내용은 그대로 두고 쪽 수만 맞춥니다. 폐쇄망 모드를 없애 자동 업데이트가 다시 작동합니다.
+
+### 표그림판 사각형 손잡이·다이어그램 회전 (2.0.4)
+
+표그림판 사각형을 다이어그램처럼 놓고 손잡이로 크기를 바꾸며, 빨간 맞춤 안내선이 나타납니다. 다이어그램 도형은 0~359° 돌릴 수 있습니다. 그림판 배경 사진은 끌어 놓으면 바로 들어갑니다.
+
+> 시작 속도 개선은 다음 버전에서 이어 갑니다.
 
 ---
 
@@ -182,7 +201,7 @@ PDF 하나로 합치기에서 파일을 끌거나 **↑/↓**로 순서를 정�
 ### 업데이트는 설정에서 바로. 기관 PC에서도. (1.80.6)
 
 설정 → 프로그램의 **「지금 확인」**으로 새 버전을 확인하고, 진행률을 보며 내려받아 바꿉니다. GitHub가 막힌 기관 PC에서도 GitLab에서 받습니다.
-설치본은 설치 파일로 조용히 설치한 뒤 다시 켜지고, 포터블은 실행 파일을 바꿔 끼웁니다. 폐쇄망 모드에서는 인터넷에 접속하지 않고 수동으로 바꾸는 방법을 안내합니다.
+설치본은 설치 파일로 조용히 설치한 뒤 다시 켜지고, 포터블은 실행 파일을 바꿔 끼웁니다.
 
 ### 표 템플릿: 고르고, 늘리고, 붙여넣기. (1.80.6)
 
@@ -371,7 +390,7 @@ GitHub가 막힌 기관 PC에서도 위 「받기」 링크가 GitLab에서 바�
 <table>
 <tr>
 <td width="25%" align="center"><h3>🗂</h3><b>원본은 그대로</b><br><sub>언제나 사본으로 작업하고<br>결과는 새 파일로 저장</sub></td>
-<td width="25%" align="center"><h3>🔒</h3><b>내 PC 안에서만</b><br><sub>문서를 외부로 보내지 않습니다<br>기본은 폐쇄망 모드</sub></td>
+<td width="25%" align="center"><h3>🔒</h3><b>내 PC 안에서만</b><br><sub>문서를 외부로 보내지 않습니다<br>외부 접속은 업데이트 확인뿐</sub></td>
 <td width="25%" align="center"><h3>✅</h3><b>스스로 검사</b><br><sub>저장한 결과를 다시 열어<br>본문·표·그림 보존을 확인</sub></td>
 <td width="25%" align="center"><h3>🛡</h3><b>꾸민 표는 손대지 않음</b><br><sub>장식 표·조직도·흐름표는<br>서식 작업에서 제외</sub></td>
 </tr>
@@ -418,7 +437,7 @@ GitHub가 막힌 기관 PC에서도 위 「받기」 링크가 GitLab에서 바�
 
 <details><summary><b>문서가 밖으로 나가지 않나요?</b></summary>
 
-나가지 않습니다. 내 PC에 설치된 한/글을 직접 다뤄 처리합니다. 기본은 폐쇄망 모드라 앱이 스스로 외부에 접속하지 않습니다.
+나가지 않습니다. 내 PC에 설치된 한/글을 직접 다뤄 처리합니다. 앱이 외부에 접속하는 것은 새 버전 확인뿐이며, 문서 내용은 보내지 않습니다.
 </details>
 
 <details><summary><b>원본이 망가지면 어떡하죠?</b></summary>
