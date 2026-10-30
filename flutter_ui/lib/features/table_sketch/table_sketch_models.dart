@@ -471,12 +471,15 @@ class TableSketchDoc {
     final allLines = [...lines, ..._parkedLines].where((l) => keep(l.layer));
     final allTexts = [...texts, ..._parkedTexts].where((t) => keep(t.layer));
     final allImages = [...images, ..._parkedImages].where((i) => keep(i.layer));
+    // 한/글 표로 바꿀 때는 레이어 표시가 필요 없다(표 변환은 레이어를 모른다).
+    Map<String, dynamic> item(Map<String, dynamic> json) =>
+        forTable ? (json..remove('layer')) : json;
     return {
       'grid': grid.toJson(),
-      'lines': allLines.map((l) => l.toJson()).toList(),
-      'texts': allTexts.map((t) => t.toJson()).toList(),
+      'lines': allLines.map((l) => item(l.toJson())).toList(),
+      'texts': allTexts.map((t) => item(t.toJson())).toList(),
       if (allImages.isNotEmpty)
-        'images': allImages.map((i) => i.toJson()).toList(),
+        'images': allImages.map((i) => item(i.toJson())).toList(),
       if (!forTable) 'layers': layers.map((l) => l.toJson()).toList(),
       if (!forTable) 'active_layer': activeLayer,
     };

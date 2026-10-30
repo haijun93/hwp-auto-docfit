@@ -147,7 +147,7 @@ void main(List<String> args) {{
   final doc = TableSketchDoc.fromJson(jsonDecode(args[0]));
   final s = (jsonDecode(args[1]) as List).cast<int>();
   final changed = doc.eraseUnitSegment(s[0], s[1], s[2], s[3]);
-  print(jsonEncode({{'changed': changed, 'doc': doc.toJson()}}));
+  print(jsonEncode({{'changed': changed, 'doc': doc.toJson(forTable: true)}}));
 }}
 """
         with tempfile.TemporaryDirectory() as folder:

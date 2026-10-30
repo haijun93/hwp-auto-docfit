@@ -77,7 +77,8 @@ def main():
             if args.require_launcher_splash:win32gui.EnumWindows(inspect_splash,None)
             win32gui.EnumWindows(inspect,None)
             if process.poll() is not None and not found and not args.smart_launcher:break
-            time.sleep(.05)
+            # 스플래시를 재는 동안은 5ms 간격으로 본다(50ms 간격이면 측정값이 최대 50ms 늦게 잡혔다, 2.0.5).
+            time.sleep(.005 if args.require_launcher_splash and splash_state["ready_ms"] is None else .05)
         result={"ok":bool(found),"version":version,"windows":found,
                 "window_ready_ms":round((time.perf_counter()-process_started)*1000,2) if found else None,
                 "smart_launcher":bool(args.smart_launcher),

@@ -7,22 +7,22 @@
 설치된 한/글을 직접 다뤄 공문서 모양으로 다듬어 드립니다. 원본은 그대로 둡니다.
 </p>
 
-<h2 align="center">⬇️ 지금 내려받기 · 최신 v2.0.4</h2>
+<h2 align="center">⬇️ 지금 내려받기 · 최신 v2.0.5</h2>
 
 <table align="center">
 <tr>
 <td align="center" width="50%">
 <b>무설치(포터블)</b><br><sub>받아서 더블클릭하면 바로 실행 · 추천</sub><br><br>
-<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.0.4/HWP_AutoDocFit_v2.0.4_Portable.exe"><img height="56" alt="GitHub에서 무설치로 받기 v2.0.4" src="https://img.shields.io/badge/%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v2.0.4-2563eb?style=for-the-badge&logo=github"></a>
+<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.0.5/HWP_AutoDocFit_v2.0.5_Portable.exe"><img height="56" alt="GitHub에서 무설치로 받기 v2.0.5" src="https://img.shields.io/badge/%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v2.0.5-2563eb?style=for-the-badge&logo=github"></a>
 </td>
 <td align="center" width="50%">
 <b>설치용</b><br><sub>시작 메뉴·제어판에 등록</sub><br><br>
-<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.0.4/HWP_AutoDocFit_v2.0.4_Setup.exe"><img height="56" alt="GitHub에서 설치용 받기 v2.0.4" src="https://img.shields.io/badge/%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0%20v2.0.4-2563eb?style=for-the-badge&logo=github"></a>
+<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.0.5/HWP_AutoDocFit_v2.0.5_Setup.exe"><img height="56" alt="GitHub에서 설치용 받기 v2.0.5" src="https://img.shields.io/badge/%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0%20v2.0.5-2563eb?style=for-the-badge&logo=github"></a>
 </td>
 </tr>
 </table>
 
-<p align="center"><sub>Windows 10·11 · 무료 · 한/글 설치 필요 · <b>GitHub가 막힌 공공기관 PC</b>는 <a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.0.4_Portable.exe?inline=false">GitLab에서 받기</a></sub></p>
+<p align="center"><sub>Windows 10·11 · 무료 · 한/글 설치 필요 · <b>GitHub가 막힌 공공기관 PC</b>는 <a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.0.5_Portable.exe?inline=false">GitLab에서 받기</a></sub></p>
 <p align="center">
 <img alt="무료" src="https://img.shields.io/badge/%EA%B0%80%EA%B2%A9-%EB%AC%B4%EB%A3%8C-16a34a">
 <img alt="Windows 10·11" src="https://img.shields.io/badge/Windows-10%C2%B711-0078d4">
@@ -34,6 +34,23 @@
 <a href="../docs/media/overview-demo.mp4"><img src="../docs/media/overview-demo.gif" alt="한글편집 후처리 5분 시연 — 누르면 고화질 영상" width="860"></a><br>
 <sub>▶ 누르면 5분 시연 영상(고화질)이 열립니다</sub>
 </p>
+
+---
+
+<h2 align="center">v2.0.5 릴리즈</h2>
+<p align="center">공공기관 표 템플릿 45개, 한/글 표 붙여넣기, 레이어를 더했습니다</p>
+
+### 표 템플릿 45개 추가 (2.0.5)
+
+사업개요표·추진실적표·예산집행표·대안비교표 등 공공기관 보고서에 자주 쓰는 표 18종을 디자인 5유형(청색 머리글·선 강조·줄무늬·첫 열 강조·합계 강조)으로 더했습니다. 행·열을 정보 단위로 늘리고 줄입니다.
+
+### 한/글 표 붙여넣기 · 레이어 (2.0.5)
+
+한/글에서 복사한 표를 표그림판에 붙여 넣어 고친 뒤 다시 한/글에 넣습니다. 표그림판·다이어그램·그림판에 포토샵처럼 보이기·잠금·순서를 정하는 레이어가 생겼습니다.
+
+### 첫 실행 시작 화면 더 빨리 (2.0.5)
+
+첫 실행 시작 화면이 보이기까지 걸리는 시간을 절반으로 줄였습니다.
 
 ---
 
