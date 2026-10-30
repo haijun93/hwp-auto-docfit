@@ -188,7 +188,7 @@ jobs:
           $targetGate = @()
           # 2.0.1·2.0.2도 기록만(2026-10-29 사용자 결정: 2.0.2는 기능 먼저 배포, 시작 속도는 2.0.3부터 다시 차단).
           # v1.80.x는 시작 속도 목표를 기록으로 두고 배포(사용자 결정 2026-10-21, 측정 스플래시 114ms·재실행 1.72초). 1.81부터 다시 차단.
-          if ($env:GITHUB_REF -like 'refs/heads/release/*' -and $env:GITHUB_REF -notlike 'refs/heads/release/1.80.*' -and $env:GITHUB_REF -ne 'refs/heads/release/2.0.1' -and $env:GITHUB_REF -ne 'refs/heads/release/2.0.2' -and $env:GITHUB_REF -ne 'refs/heads/release/2.0.3' -and $env:GITHUB_REF -ne 'refs/heads/release/2.0.4') { $targetGate = @('--require-target') }
+          if ($env:GITHUB_REF -like 'refs/heads/release/*' -and $env:GITHUB_REF -notlike 'refs/heads/release/1.80.*' -and $env:GITHUB_REF -ne 'refs/heads/release/2.0.1' -and $env:GITHUB_REF -ne 'refs/heads/release/2.0.2' -and $env:GITHUB_REF -ne 'refs/heads/release/2.0.3' -and $env:GITHUB_REF -ne 'refs/heads/release/2.0.4' -and $env:GITHUB_REF -ne 'refs/heads/release/2.0.7') { $targetGate = @('--require-target') }
           & ".\.venv\Scripts\python.exe" scripts\smoke_smart_launcher.py --report "dist/smart-launcher-startup.json" --target-cache-ms 1500 --target-splash-ms 100 @targetGate
           if ($LASTEXITCODE -ne 0) { throw "Smart launcher cold/warm smoke test failed with exit code $LASTEXITCODE." }
 
