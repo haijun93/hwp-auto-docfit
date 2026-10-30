@@ -209,9 +209,77 @@ class TableUnitsService:
             path, raw_id = self._resolve(template_id)
             result = table_units.preview(raw_id, path, row_count=row_count, col_count=col_count,
                                          fill=fill, cell_texts=cell_texts)
+            self._attach_drawing_pictures(template_id, raw_id, path, result)
             return {**result, "id": str(template_id)}
         except (KeyError, ValueError) as exc:
             raise ServiceError("INVALID_INPUT", str(exc).strip("'\"")) from exc
+
+    @staticmethod
+    def _shape_key(shape):
+        return (shape.get("kind"), round(float(shape.get("w", 0)), 3), round(float(shape.get("h", 0)), 3),
+                shape.get("fill"), shape.get("direction"))
+
+    def _attach_drawing_pictures(self, template_id, raw_id, path, result):
+        """묶음 도형(여러 도형을 모아 만든 화살표 등)은 미리보기가 모양을 그릴 수 없다(2.0.6 사용자 보고:
+        추진절차(가로) 모양 3의 화살표가 빈 그림 상자로 보임). 한/글로 그린 템플릿 그림에서 그 도형 자리를 잘라
+        그림으로 붙인다. 정보단위를 늘려 복제된 같은 도형에도 같은 그림을 쓴다."""
+        cells = [cell for row in result.get("cell_meta", []) for cell in row]
+        wanted = [shape for cell in cells for shape in cell.get("shapes") or []
+                  if shape.get("kind") == "other" and not shape.get("src")]
+        if not wanted:
+            return
+        pictures = self._drawing_pictures(template_id, raw_id, path)
+        for shape in wanted:
+            src = pictures.get(self._shape_key(shape))
+            if src:
+                shape["src"] = src
+
+    def _drawing_pictures(self, template_id, raw_id, path) -> dict:
+        cache = self.__dict__.setdefault("_drawing_cache", {})
+        key = (str(template_id), _digest(path))
+        if key in cache:
+            return cache[key]
+        pictures = {}
+        try:
+            snapshot = self._snapshot_path(template_id)
+            if not snapshot.is_file():
+                snapshot = self._bundled_snapshot(template_id) or snapshot
+            if snapshot.is_file():
+                from PIL import Image
+                import io
+                base = table_units.preview(raw_id, path)
+                cells = [cell for row in base["cell_meta"] for cell in row]
+                cols, rows = base["cols"], base["rows"]
+                widths, heights = [0.0] * cols, [0.0] * rows
+                for cell in cells:
+                    if cell["colSpan"] == 1:
+                        widths[cell["col"]] = max(widths[cell["col"]], float(cell["width"]))
+                    if cell["rowSpan"] == 1:
+                        heights[cell["row"]] = max(heights[cell["row"]], float(cell["height"]))
+                if all(widths) and all(heights):
+                    with Image.open(snapshot) as opened:
+                        image = opened.convert("RGB")
+                    margin = 6   # crop_to_content가 남긴 여백
+                    sx = (image.width - 2 * margin) / sum(widths)
+                    sy = (image.height - 2 * margin) / sum(heights)
+                    for cell in cells:
+                        for shape in cell.get("shapes") or []:
+                            if shape.get("kind") != "other" or self._shape_key(shape) in pictures:
+                                continue
+                            left = margin + (sum(widths[:cell["col"]]) + float(shape["x"]) * cell["width"]) * sx
+                            top = margin + (sum(heights[:cell["row"]]) + float(shape["y"]) * cell["height"]) * sy
+                            box = (int(left), int(top), int(left + float(shape["w"]) * cell["width"] * sx + 1),
+                                   int(top + float(shape["h"]) * cell["height"] * sy + 1))
+                            if box[2] - box[0] < 2 or box[3] - box[1] < 2:
+                                continue
+                            out = io.BytesIO()
+                            image.crop(box).save(out, format="PNG")
+                            pictures[self._shape_key(shape)] = ("data:image/png;base64," +
+                                                                base64.b64encode(out.getvalue()).decode("ascii"))
+        except Exception:
+            pictures = {}
+        cache[key] = pictures
+        return pictures
 
     def _export(self, folder: Path, template_id, row_count=None, col_count=None, *, fill="increment", cell_texts=None) -> Path:
         target = folder / f"{_safe_name(template_id)}.hwpx"

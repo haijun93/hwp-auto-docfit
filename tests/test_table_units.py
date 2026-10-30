@@ -331,8 +331,7 @@ class TableUnitsTests(unittest.TestCase):
                     self.assertEqual(view["cols"], int(tables[0].get("colCnt")))
                     self.assertEqual(len(view["cell_meta"]), view["rows"])
                     header = units._load(template_id, SOURCE)[2]
-                    expected = [[catalog._cell_meta(cell, i, j,
-                        " ".join("".join(n.text or "" for n in catalog._cell_text_nodes(cell)).split())[:80], header)
+                    expected = [[catalog._cell_meta(cell, i, j, units._preview_text(cell), header)
                         for j, cell in enumerate(row.findall(HP + "tc"))]
                         for i, row in enumerate(tables[0].findall(HP + "tr"))]
                     actual = [[{k: v for k, v in cell.items() if k != "nested"} for cell in row]

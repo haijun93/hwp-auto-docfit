@@ -1404,7 +1404,7 @@ def preview(template_id, catalog_path=None, row_count=None, col_count=None, *, f
     for i, row in enumerate(table.findall(HP + "tr")):
         texts, meta = [], []
         for j, cell in enumerate(row.findall(HP + "tc")):
-            text = " ".join("".join(n.text or "" for n in catalog._cell_text_nodes(cell)).split())[:80]
+            text = _preview_text(cell)
             texts.append(text)
             item = catalog._cell_meta(cell, i, j, text, header)
             nested = catalog._top_tables(cell)
@@ -1414,6 +1414,35 @@ def preview(template_id, catalog_path=None, row_count=None, col_count=None, *, f
         result["cells"].append(texts)
         result["cell_meta"].append(meta)
     return result
+
+
+def _preview_text(cell, limit=400):
+    """칸 글을 문단마다 한 줄로(문단 사이 줄바꿈 유지). 예전에는 모든 문단을 한 줄로 붙여 부연설명의 글머리 세 줄이
+    미리보기에서 한 줄로 보였다(2.0.6 사용자 보고). 칸 안 표의 글은 넣지 않는다."""
+    if catalog._top_tables(cell):
+        # 칸 안에 표가 든 칸(T형 등)은 예전처럼 칸 안 표의 글까지 한 줄로 보여 준다.
+        return " ".join("".join(n.text or "" for n in catalog._cell_text_nodes(cell)).split())[:80]
+    lines = []
+
+    def walk(node):
+        for child in node:
+            if child.tag == HP + "tbl":
+                continue
+            if child.tag == HP + "p":
+                parts = []
+                for item in child.iter():
+                    if item.tag == HP + "tbl":
+                        break
+                    if item.tag == HP + "t" and item.text:
+                        parts.append(item.text)
+                line = " ".join("".join(parts).split())
+                if line:
+                    lines.append(line)
+            else:
+                walk(child)
+
+    walk(cell)
+    return "\n".join(lines)[:limit]
 
 
 def _nested_preview(table, header):

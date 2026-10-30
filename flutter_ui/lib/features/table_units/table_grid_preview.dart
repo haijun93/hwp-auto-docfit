@@ -165,7 +165,8 @@ class TableGridPreview extends StatelessWidget {
     final totalHeight = rowHeights.fold<double>(0.0, (a, b) => a + b);
 
     final ratio = (totalWidth > 0 && totalHeight > 0)
-        ? (totalWidth / totalHeight).clamp(0.2, 5.0)
+        // 실제 표 비율 그대로(라벨 서식처럼 가로로 긴 표가 세로로 늘어나 보이던 문제, 2.0.6).
+        ? (totalWidth / totalHeight).clamp(0.05, 60.0)
         : 1.5;
 
     // 셀별 shapes 취합
@@ -592,14 +593,40 @@ class _TableGridPainter extends CustomPainter {
       final bottom = rowStarts[r1];
 
       void drawBorderLine(CellBorderSide side, Offset p1, Offset p2) {
-        if (side.type.toUpperCase() == 'NONE') return;
-        final strokeW = (side.width * 1.5).clamp(0.5, 3.0);
+        final type = side.type.toUpperCase();
+        if (type == 'NONE') return;
         final color = parseHexColor(side.color) ?? const Color(0xff94a3b8);
+        // 한/글 선 종류를 비슷하게: 이중선 계열은 두 줄, 파선·점선은 끊어 그린다(2.0.6).
+        final doubled = type.contains('DOUBLE') || type.contains('SLIM') || type.contains('THICK');
+        final strokeW = doubled ? 0.8 : (side.width * 1.5).clamp(0.5, 3.0).toDouble();
         final paint = Paint()
           ..color = color
           ..strokeWidth = strokeW
           ..style = PaintingStyle.stroke;
-        canvas.drawLine(p1, p2, paint);
+        void segment(Offset a, Offset b) {
+          final dashed = type.contains('DASH');
+          final dotted = !dashed && (type.contains('DOT') || type == 'CIRCLE');
+          if (!dashed && !dotted) {
+            canvas.drawLine(a, b, paint);
+            return;
+          }
+          final on = dashed ? 5.0 : 1.5, off = dashed ? 3.0 : 2.5;
+          final length = (b - a).distance;
+          if (length <= 0) return;
+          final dir = (b - a) / length;
+          for (var t = 0.0; t < length; t += on + off) {
+            canvas.drawLine(a + dir * t, a + dir * math.min(t + on, length), paint);
+          }
+        }
+
+        if (doubled) {
+          final vertical = (p1.dx - p2.dx).abs() < 0.01;
+          final gap = vertical ? const Offset(1.2, 0) : const Offset(0, 1.2);
+          segment(p1 - gap, p2 - gap);
+          segment(p1 + gap, p2 + gap);
+        } else {
+          segment(p1, p2);
+        }
       }
 
       drawBorderLine(cell.borders.top, Offset(left, top), Offset(right, top));
@@ -632,12 +659,8 @@ class _TableGridPainter extends CustomPainter {
       }
     }
 
-    // 5단계: 외곽 기본 테두리
-    final outerPaint = Paint()
-      ..color = depth == 0 ? const Color(0xff64748b) : const Color(0xff94a3b8)
-      ..strokeWidth = depth == 0 ? 1.0 : 0.7
-      ..style = PaintingStyle.stroke;
-    canvas.drawRect(rect, outerPaint);
+    // 바깥 테두리는 따로 그리지 않는다: 칸마다 실제 선(없으면 없음)만 그려야 왼쪽 실제 모양과 같다
+    // (예전엔 표 둘레에 검은 선을 늘 그려, 선이 없는 표도 네 면이 막힌 것처럼 보였다, 2.0.6 사용자 보고).
   }
 
   void _drawSingleNestedTable({
