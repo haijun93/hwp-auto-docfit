@@ -30,6 +30,7 @@ on:
       - release/2.0.4
       - release/2.0.5
       - release/2.0.6
+      - release/2.0.7
       - claude/affectionate-goldberg-ggln7c
     paths-ignore:
       - 'README.md'
