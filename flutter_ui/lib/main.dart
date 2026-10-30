@@ -16,7 +16,7 @@ import 'features/formats/table_template_panel.dart';
 import 'features/formats/profile_editor.dart';
 import 'features/tools/document_tools_workspace.dart';
 import 'features/tools/backend_dialog.dart';
-import 'features/conversion/conversion_drop_pane.dart';
+import 'features/conversion/conversion_workspace.dart';
 import 'features/conversion/floating_format_picker.dart';
 import 'features/conversion/merge_order_dialog.dart';
 import 'features/progress/live_progress.dart';
@@ -109,6 +109,31 @@ class DocFitApp extends StatelessWidget {
 
 /// 6탭 작업 공간. 파일변환 탭은 문서편집 화면의 '파일 변환' 흐름(키패드 포맷 선택 → 진행 → 4. 결과 확인)을
 /// 그대로 쓰고, 탭에는 파일을 놓는 영역만 둔다(2026-10-29 사용자 요청, 2.0.2).
+/// 파일변환 탭: 문서편집 상태(_WorkspaceState)를 읽어 3단 화면을 그린다. 처음에는 상태가 만들어지길 기다린다.
+class _ConversionTab extends StatefulWidget {
+  const _ConversionTab({required this.workspace});
+  final GlobalKey<_WorkspaceState> workspace;
+  @override
+  State<_ConversionTab> createState() => _ConversionTabState();
+}
+
+class _ConversionTabState extends State<_ConversionTab> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final host = widget.workspace.currentState;
+    if (host == null) return const Center(child: CircularProgressIndicator());
+    return ConversionWorkspace(host: host);
+  }
+}
+
 class _IntegratedHome extends StatefulWidget {
   const _IntegratedHome({required this.api});
   final ApiCall api;
@@ -143,10 +168,7 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
   Widget build(BuildContext context) => IntegratedWorkspace(
     api: widget.api,
     documentEditorWidget: Workspace(key: workspace, api: widget.api),
-    fileConversionWidget: ConversionDropPane(
-      onPickFiles: () => workspace.currentState?.addConversionFiles(),
-      onConvertListed: () => workspace.currentState?.convertListedFiles(),
-    ),
+    fileConversionWidget: _ConversionTab(workspace: workspace),
     onTabChanged: (index) {
       final from = lastTab;
       routeDrops(index);
@@ -199,7 +221,7 @@ class Workspace extends StatefulWidget {
   State<Workspace> createState() => _WorkspaceState();
 }
 
-class _WorkspaceState extends State<Workspace> {
+class _WorkspaceState extends State<Workspace> implements ConversionHost {
   Map<String, dynamic> state = {};
   int tab = 0;
   bool busy = false, polling = false, wasRunning = false;
@@ -242,6 +264,7 @@ class _WorkspaceState extends State<Workspace> {
   final rangeEnd = TextEditingController(text: '1');
   bool rangeOn = false, rangeLoaded = false;
   // '서식 관리' 창은 별도 대화상자라 상태가 바뀔 때마다 다시 그리도록 알린다.
+  @override
   final stateVersion = ValueNotifier<int>(0);
   // 서식 관리에서 안 된 이유(이름 중복 등)를 창 안에 보여 준다.
   String? formatNotice;
@@ -284,10 +307,14 @@ class _WorkspaceState extends State<Workspace> {
     ),
   ];
 
+  @override
   bool get running => state['running'] == true;
+  @override
   bool get locked =>
       appClosing || busy || running || state.isEmpty || error != null;
+  @override
   List get files => state['files'] as List? ?? [];
+  @override
   List get results => state['results'] as List? ?? [];
   List get stages => state['stages'] as List? ?? [];
   List get profiles => state['profiles'] as List? ?? [];
@@ -295,6 +322,7 @@ class _WorkspaceState extends State<Workspace> {
   String get mode => state['mode'] as String? ?? 'spacing';
   String get conversionTarget =>
       state['conversion_target'] as String? ?? 'hwpx';
+  @override
   List get conversionTargets =>
       state['conversion_targets'] as List? ?? const [];
   bool get conversionTargetEnabled => conversionTargets.any(
@@ -422,11 +450,8 @@ class _WorkspaceState extends State<Workspace> {
           !locked &&
           (documentDropped || (documentsChanged && mode == 'file_format'))) {
         setState(() => tab = 1);
-        if (mode == 'file_format') {
-          // 파일변환 탭에서 넣은 파일도 문서편집 화면의 변환 흐름(진행·4. 결과 확인)으로 이어 간다.
-          _conversionHandoff = true;
-          WorkspaceTabScope.maybeOf(context)?.selectTab(0);
-          _conversionHandoff = false;
+        if (mode == 'file_format' && !conversionTabActive) {
+          // 문서편집 화면에서 파일 변환을 하던 옛 흐름(파일변환 탭 밖)만 키패드 팝업을 연다.
           openConversionPicker();
         }
       }
@@ -466,6 +491,7 @@ class _WorkspaceState extends State<Workspace> {
     }
   }
 
+  @override
   Future<void> command(String method, [List<Object?> args = const []]) async {
     if (!mounted || busy) return;
     // 명령 전 시작된 조회는 명령 결과보다 오래된 상태일 수 있다.
@@ -519,7 +545,43 @@ class _WorkspaceState extends State<Workspace> {
   String _modeBeforeConversion = 'spacing';
   bool _conversionHandoff = false;
 
+  /// 파일변환 탭이 열려 있는지(2.0.7: 그 탭 한 화면에서 넣기 → 고르기 → 결과까지).
+  bool conversionTabActive = false;
+
+  @override
+  String get statusText => '${state['status'] ?? ''}';
+  @override
+  double? get progressValue => null;
+
+  /// 포맷 칸을 누르면 바로 변환한다(PDF 합치기는 순서를 먼저 정한다).
+  @override
+  Future<void> convertTo(String format) async {
+    if (locked) return;
+    if (!conversionTargets.any(
+      (item) =>
+          item is Map && item['format'] == format && item['enabled'] == true,
+    )) {
+      return;
+    }
+    List<String>? mergeOrder;
+    if (format == 'pdfm' && files.length >= 2) {
+      final order = await showDialog<List<String>>(
+        context: context,
+        barrierDismissible: true,
+        builder: (dialogContext) =>
+            MergeOrderDialog(files: files.whereType<Map>().toList()),
+      );
+      if (!mounted || order == null) return;
+      mergeOrder = order;
+    }
+    await command('set_conversion_target', [format]);
+    if (mounted && mode == 'file_format' && canStart) {
+      await startJob(fileOrder: mergeOrder);
+    }
+  }
+
   Future<void> enterConversionMode() async {
+    conversionTabActive = true;
     if (locked) return;
     if (mode != 'file_format') {
       _modeBeforeConversion = mode == 'format' ? 'all' : mode;
@@ -541,6 +603,7 @@ class _WorkspaceState extends State<Workspace> {
   }
 
   Future<void> leaveConversionMode() async {
+    conversionTabActive = false;
     if (_conversionHandoff) {
       _conversionHandoff = false;
       return;
@@ -550,6 +613,7 @@ class _WorkspaceState extends State<Workspace> {
   }
 
   /// 파일변환 탭의 '파일 선택'.
+  @override
   Future<void> addConversionFiles() async {
     await enterConversionMode();
     if (!locked) await command('add_files');
@@ -3160,6 +3224,7 @@ class _WorkspaceState extends State<Workspace> {
 
   Map get completion => state['completion'] as Map? ?? const {};
   Map get formatReview => state['format_review'] as Map? ?? const {};
+  @override
   Map get failures => state['failures'] as Map? ?? const {};
 
   String _formatReviewStatus(Object? status) => switch (status) {

@@ -438,7 +438,8 @@ class DesktopWebBridge:
                 "job": self._jobs().latest(),
                 "_open_completed_result": False,
                 "files": [
-                    {"name": Path(path).name, "path": path, "folder": str(Path(path).parent)}
+                    {"name": Path(path).name, "path": path, "folder": str(Path(path).parent),
+                     "size": _file_size(path)}
                     for path in gui.files
                 ],
                 "count": len(gui.files),
@@ -1761,6 +1762,46 @@ class DesktopWebBridge:
         self._tk(open_one, timeout=None, front=True)
         return self.get_state()
 
+    def _reveal(self, path, missing):
+        if path and os.path.isfile(path) and os.name == "nt":
+            subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
+        elif path and os.path.isdir(os.path.dirname(path)):
+            self.gui._경로_열기(os.path.dirname(path))
+        else:
+            self.gui.status_var.set(missing)
+
+    def _open_path(self, path, missing):
+        if path and os.path.isfile(path):
+            self.gui._경로_열기(path)
+        else:
+            self.gui.status_var.set(missing)
+
+    def _source_path(self, index):
+        try:
+            return str(list(self.gui.files)[int(index)])
+        except (IndexError, TypeError, ValueError):
+            return ""
+
+    def open_source_file(self, index):
+        """파일변환 화면 오른쪽 버튼 메뉴: 올린 파일을 연결된 프로그램으로 연다(2.0.7)."""
+        self._tk(lambda: self._open_path(self._source_path(index), "파일을 찾을 수 없습니다."), timeout=None, front=True)
+        return self.get_state()
+
+    def show_source_file(self, index):
+        """올린 파일을 탐색기에서 골라 보인다(2.0.7)."""
+        self._tk(lambda: self._reveal(self._source_path(index), "파일 폴더를 찾을 수 없습니다."), timeout=None, front=True)
+        return self.get_state()
+
+    def open_result_source(self, index):
+        """결과의 원본 파일을 연다(2.0.7)."""
+        def source():
+            try:
+                return getattr(self.gui, "_결과목록", [])[int(index)].get("원본", "")
+            except (IndexError, TypeError, ValueError, AttributeError):
+                return ""
+        self._tk(lambda: self._open_path(source(), "원본 파일을 찾을 수 없습니다."), timeout=None, front=True)
+        return self.get_state()
+
     def show_result(self, index):
         """탐색기에서 결과 파일이 있는 폴더를 열고 그 파일을 선택해 둔다."""
         def reveal():
@@ -2154,6 +2195,13 @@ def smoke_cdp_port(environ=None):
     return None
 
 
+def _file_size(path):
+    try:
+        return os.path.getsize(path)
+    except OSError:
+        return None
+
+
 class _BrowserApi:
     """Expose commands only: pywebview recursively inspects public attributes."""
 
@@ -2165,7 +2213,7 @@ class _BrowserApi:
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
             "get_pending_dialog", "resolve_dialog", "enable_close_guard", "acknowledge_close", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch",
             "open_results", "next_job", "run_tool", "open_result",
-            "show_result", "open_diff", "compare_result", "launch_external_hwp_diff", "set_stage", "reset_stages", "set_stage_default",
+            "show_result", "open_source_file", "show_source_file", "open_result_source", "open_diff", "compare_result", "launch_external_hwp_diff", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",
             "set_exclude_tables", "set_card_option",
             "set_drop_target", "add_format_file", "write_format_example", "rename_profile", "delete_profile",
