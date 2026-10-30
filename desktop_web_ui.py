@@ -1623,7 +1623,8 @@ class DesktopWebBridge:
 
     def _table_units_hwp(self):
         """앱이 쓰는 방식 그대로 독립 한/글을 만들고 보안 모듈을 등록해 숨긴다."""
-        namespace = type(self.gui).파일포맷_변경_시작.__globals__
+        # 2.0.5 오류: 시작을 빠르게 하려고 둔 대리 객체(PendingGui)의 type을 읽어 한/글 복사가 모두 실패했다.
+        namespace = type(_real_gui(self.gui)).파일포맷_변경_시작.__globals__
         app = namespace["한글_COM_인스턴스_생성"](독립=True)
         try:
             registered = app.RegisterModule(namespace["REGISTER_MODULE_NAME"], namespace["REGISTER_MODULE_VALUE"])
@@ -2294,7 +2295,10 @@ def run_webview(gui):
 
     def track_tk_destroy():
         try:
-            root = _real_gui(gui).root
+            real = _real_gui(gui)
+            # Tk 준비가 끝나면 브리지는 대리 객체 대신 실제 화면을 쓴다(type·isinstance 검사도 실제 화면 기준).
+            bridge.gui = real
+            root = real.root
         except Exception:
             # Tk 화면을 만들지 못했다: 웹 창을 닫고 시작 오류는 호출한 쪽이 알린다.
             tk_stopped.set()
