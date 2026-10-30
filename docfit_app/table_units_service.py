@@ -204,11 +204,11 @@ class TableUnitsService:
                 "recent": [v for v in _id_list(preferences.get("table_template_recent")) if v in ids][:8],
                 "thumbnails_ready": bool(templates) and all(item["thumbnail"] for item in templates)}
 
-    def preview(self, template_id, row_count=None, col_count=None, *, fill="increment", cell_texts=None) -> dict:
+    def preview(self, template_id, row_count=None, col_count=None, *, fill="increment", cell_texts=None, arrow=None) -> dict:
         try:
             path, raw_id = self._resolve(template_id)
             result = table_units.preview(raw_id, path, row_count=row_count, col_count=col_count,
-                                         fill=fill, cell_texts=cell_texts)
+                                         fill=fill, cell_texts=cell_texts, arrow=arrow)
             self._attach_drawing_pictures(template_id, raw_id, path, result)
             return {**result, "id": str(template_id)}
         except (KeyError, ValueError) as exc:
@@ -281,12 +281,14 @@ class TableUnitsService:
         cache[key] = pictures
         return pictures
 
-    def _export(self, folder: Path, template_id, row_count=None, col_count=None, *, fill="increment", cell_texts=None) -> Path:
+    def _export(self, folder: Path, template_id, row_count=None, col_count=None, *, fill="increment", cell_texts=None,
+                arrow=None) -> Path:
         target = folder / f"{_safe_name(template_id)}.hwpx"
         try:
             path, raw_id = self._resolve(template_id)
             return table_units.export_resized(raw_id, target, path,
-                                              row_count=row_count, col_count=col_count, fill=fill, cell_texts=cell_texts)
+                                              row_count=row_count, col_count=col_count, fill=fill, cell_texts=cell_texts,
+                                              arrow=arrow)
         except (KeyError, ValueError) as exc:
             raise ServiceError("INVALID_INPUT", str(exc).strip("'\"")) from exc
 
@@ -317,10 +319,11 @@ class TableUnitsService:
                 pythoncom.CoUninitialize()
         return manager.start('table_copy', payload, runner)
 
-    def copy(self, template_id, row_count=None, col_count=None, *, fill="increment", cell_texts=None) -> dict:
+    def copy(self, template_id, row_count=None, col_count=None, *, fill="increment", cell_texts=None, arrow=None) -> dict:
         folder = Path(tempfile.mkdtemp(prefix="docfit_table_copy_"))
         try:
-            document = self._export(folder, template_id, row_count, col_count, fill=fill, cell_texts=cell_texts)
+            document = self._export(folder, template_id, row_count, col_count, fill=fill, cell_texts=cell_texts,
+                                    arrow=arrow)
             app = self._hwp()
             try:
                 if app.Open(str(document), "HWPX", "forceopen:true") is False:
@@ -410,6 +413,9 @@ class TableUnitsService:
                 raise ServiceError("INVALID_INPUT", "정보단위 개수를 확인해 주세요.")
         if action == "list":
             return self.list()
+        if action == "arrows":
+            from docfit_core.table_arrows import catalog as arrow_catalog
+            return arrow_catalog()
         if action == "thumbnails":
             return self.thumbnails()
         if action == "favorite":
@@ -421,9 +427,12 @@ class TableUnitsService:
             method = self.preview if action == "preview" else self.copy
             try:
                 table_units.validate_input(payload.get("fill", "increment"), payload.get("cell_texts"))
+                from docfit_core.table_arrows import validate as validate_arrow
+                arrow = validate_arrow(payload.get("arrow"))
             except ValueError as exc:
                 raise ServiceError("INVALID_INPUT", str(exc)) from exc
-            return method(template_id, **counts, fill=payload.get("fill", "increment"), cell_texts=payload.get("cell_texts"))
+            return method(template_id, **counts, fill=payload.get("fill", "increment"), cell_texts=payload.get("cell_texts"),
+                          arrow=arrow)
         raise ServiceError("INVALID_INPUT", "표 템플릿 작업을 확인해 주세요.")
 
 

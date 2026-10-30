@@ -1029,7 +1029,7 @@ def export_template(template_id: str, output_path: str | Path,
                     cell_edits: dict | None = None,
                     structure_edits: list | None = None,
                     style_edits: dict | None = None,
-                    table_transform=None) -> Path:
+                    table_transform=None, arrow=None, arrow_cells=None) -> Path:
     """원본 HWPX 표 구조·셀 서식·테두리·병합을 보존하고 요청한 칸 글·구조·서식을 반영해 저장한다."""
     if cell_edits is not None and (not isinstance(cell_edits, dict) or len(cell_edits) > 1000):
         raise ValueError("표 칸 수정 정보가 올바르지 않습니다.")
@@ -1048,6 +1048,16 @@ def export_template(template_id: str, output_path: str | Path,
         paragraphs = root.findall(_HP + "p")
         source_paragraph = paragraphs[record["paragraph_index"]]
         output_paragraph = _paragraph_with_table(source_paragraph, record["table_index"])
+        header_data = None
+        extra_files = {}
+        if arrow and arrow_cells:
+            # 화살표 바꾸기(2.0.6): 정보단위를 늘리기 전에 원본 표에 넣어 늘어난 칸도 같은 화살표가 되게 한다.
+            from . import table_arrows
+            header_bytes = archive.read("Contents/header.xml") if "Contents/header.xml" in archive.namelist() else None
+            arrow_header = ET.fromstring(header_bytes) if header_bytes is not None else None
+            extra_files = table_arrows.apply(_top_tables(output_paragraph)[0], arrow_cells, arrow, arrow_header)
+            if header_bytes is not None:
+                header_data = _serialize(arrow_header, header_bytes)
         if table_transform is not None:
             table_transform(_top_tables(output_paragraph)[0])
         if structure_edits:
@@ -1061,12 +1071,13 @@ def export_template(template_id: str, output_path: str | Path,
                 raise ValueError("선택한 표를 편집할 수 없습니다.")
             _apply_cell_edits(selected_tables[0], cell_edits)
 
-        header_data = None
         if style_edits:
             selected_tables = _top_tables(output_paragraph)
             if len(selected_tables) != 1:
                 raise ValueError("선택한 표를 편집할 수 없습니다.")
             header_bytes = archive.read("Contents/header.xml") if "Contents/header.xml" in archive.namelist() else None
+            if header_data is not None:
+                header_bytes = header_data
             header_root = ET.fromstring(header_bytes) if header_bytes is not None else None
             if _apply_style_edits(selected_tables[0], header_root, style_edits) and header_bytes is not None:
                 header_data = _serialize(header_root, header_bytes)
@@ -1100,7 +1111,12 @@ def export_template(template_id: str, output_path: str | Path,
                     data = chosen_data
                 elif info.filename == "Contents/header.xml" and header_data is not None:
                     data = header_data
+                elif info.filename == "Contents/content.hpf" and extra_files:
+                    from .table_arrows import add_to_manifest
+                    data = add_to_manifest(archive.read(info.filename), extra_files)
                 else:
                     data = archive.read(info.filename)
                 output.writestr(info, data)
+            for name, data in extra_files.items():
+                output.writestr(name, data)
     return target

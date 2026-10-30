@@ -74,6 +74,10 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
 
   TableTemplateInfo? _selectedTemplate;
 
+  /// 고른 화살표(null이면 표에 있던 화살표 그대로). {kind: symbol|image, value, direction, size}
+  Map<String, Object?>? _arrow;
+  Map<String, Object?>? _arrowCatalog;
+
 
 
   int? _currentRowCount;
@@ -420,6 +424,8 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
 
       _selectedFill = 'increment';
 
+      _arrow = null;
+
       _cellTexts = {};
 
       _previewShapes = {};
@@ -459,6 +465,8 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
         'col_count': _currentColCount,
 
         'fill': _selectedFill,
+
+        if (_arrow != null) 'arrow': _arrow,
 
         'cell_texts': _cellTexts.isNotEmpty ? Map.from(_cellTexts) : const {},
 
@@ -675,6 +683,8 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
         colCount: _currentColCount,
 
         fill: _selectedFill,
+
+        arrow: _arrow,
 
         cellTexts: _cellTexts.isNotEmpty ? Map.from(_cellTexts) : null,
 
@@ -2478,6 +2488,11 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
 
         ],
 
+        if ((_selectedTemplate?.arrows ?? 0) > 0) ...[
+          const SizedBox(height: 14),
+          _buildArrowSelector(),
+        ],
+
         const SizedBox(height: 24),
 
         SizedBox(
@@ -2555,6 +2570,177 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
   }
 
 
+
+  Future<void> _loadArrowCatalog() async {
+    if (_arrowCatalog != null) return;
+    try {
+      final data = await _api.arrows();
+      if (mounted) setState(() => _arrowCatalog = data);
+    } catch (_) {}
+  }
+
+  void _chooseArrow(Map<String, Object?>? arrow) {
+    setState(() => _arrow = arrow);
+    _requestPreview();
+  }
+
+  /// 칸 사이 화살표 종류 고르기(2.0.6): 기호 화살표·공문서용 그림 화살표, 그림은 방향·크기도 고른다.
+  Widget _buildArrowSelector() {
+    _loadArrowCatalog();
+    final catalog = _arrowCatalog;
+    final symbols = (catalog?['symbols'] as List?)?.cast<Object?>() ?? const [];
+    final images = (catalog?['images'] as List?)?.cast<Object?>() ?? const [];
+    final kind = _arrow?['kind'];
+    final value = _arrow?['value'];
+    Widget box({required Key key, required bool selected, required VoidCallback onTap, required Widget child,
+        double width = 40, double height = 40, String? tooltip}) {
+      final tile = InkWell(
+        key: key,
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          width: width,
+          height: height,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xffdbeafe) : Colors.white,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: selected ? const Color(0xff2563eb) : const Color(0xffcbd5e1),
+              width: selected ? 2 : 1,
+            ),
+          ),
+          child: child,
+        ),
+      );
+      return tooltip == null ? tile : Tooltip(message: tooltip, child: tile);
+    }
+
+    Map<String, Object?> imageArrow(String style) => {
+      'kind': 'image',
+      'value': style,
+      'direction': _arrow?['direction'] ?? 'auto',
+      'size': _arrow?['size'] ?? 'medium',
+    };
+    return Container(
+      key: const Key('arrowSelector'),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xffe2e8f0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  '화살표 모양',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xff334155)),
+                ),
+              ),
+              TextButton(
+                key: const Key('arrowReset'),
+                onPressed: _arrow == null ? null : () => _chooseArrow(null),
+                child: const Text('원래 화살표'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text('기호 화살표', style: TextStyle(fontSize: 12, color: Color(0xff64748b))),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final symbol in symbols)
+                box(
+                  key: Key('arrowSymbol_$symbol'),
+                  selected: kind == 'symbol' && value == symbol,
+                  onTap: () => _chooseArrow({'kind': 'symbol', 'value': '$symbol'}),
+                  child: Text('$symbol', style: const TextStyle(fontSize: 20, color: Color(0xff0f172a))),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Text('공문서용 그림 화살표', style: TextStyle(fontSize: 12, color: Color(0xff64748b))),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final item in images.whereType<Map>())
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    box(
+                      key: Key('arrowImage_${item['value']}'),
+                      width: 64,
+                      height: 52,
+                      tooltip: '${item['label']}',
+                      selected: kind == 'image' && value == item['value'],
+                      onTap: () => _chooseArrow(imageArrow('${item['value']}')),
+                      child: Padding(
+                        padding: const EdgeInsets.all(6),
+                        child: Image.memory(
+                          UriData.parse('${item['src']}').contentAsBytes(),
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text('${item['label']}', style: const TextStyle(fontSize: 11, color: Color(0xff475569))),
+                  ],
+                ),
+            ],
+          ),
+          if (kind == 'image') ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 16,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('방향  ', style: TextStyle(fontSize: 13)),
+                    DropdownButton<String>(
+                      key: const Key('arrowDirection'),
+                      value: '${_arrow?['direction'] ?? 'auto'}',
+                      items: [
+                        for (final pair in ((catalog?['directions'] as List?) ?? const []).whereType<List>())
+                          DropdownMenuItem(value: '${pair[0]}', child: Text('${pair[1]}')),
+                      ],
+                      onChanged: (v) => _chooseArrow({..._arrow!, 'direction': v}),
+                    ),
+                  ],
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('크기  ', style: TextStyle(fontSize: 13)),
+                    for (final pair in ((catalog?['sizes'] as List?) ?? const []).whereType<List>())
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: ChoiceChip(
+                          key: Key('arrowSize_${pair[0]}'),
+                          label: Text('${pair[1]}'),
+                          selected: (_arrow?['size'] ?? 'medium') == pair[0],
+                          onSelected: (_) => _chooseArrow({..._arrow!, 'size': '${pair[0]}'}),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 
   Widget _buildFillSelector() {
 

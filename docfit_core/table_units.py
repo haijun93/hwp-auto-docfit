@@ -1380,8 +1380,11 @@ def _load(template_id, catalog_path):
     return record, table, info
 
 
-def export_resized(template_id, output_path, catalog_path=None, row_count=None, col_count=None, *, fill="increment", cell_texts=None) -> Path:
+def export_resized(template_id, output_path, catalog_path=None, row_count=None, col_count=None, *, fill="increment", cell_texts=None,
+                   arrow=None) -> Path:
     validate_input(fill, cell_texts)
+    from . import table_arrows
+    arrow = table_arrows.validate(arrow)
     record, _, _ = _load(template_id, catalog_path)
     plan = plan_for(record)
     # Other sections and header definitions may survive the catalog export.
@@ -1391,12 +1394,28 @@ def export_resized(template_id, output_path, catalog_path=None, row_count=None, 
                  if name.lower().endswith(".xml")]
     return catalog.export_template(template_id, output_path, catalog_path,
         table_transform=lambda table: resize_table(table, plan, row_count, col_count, id_roots=roots,
-                                                   fill=fill, cell_texts=cell_texts))
+                                                   fill=fill, cell_texts=cell_texts),
+        arrow=arrow, arrow_cells=table_arrows.detect(record) if arrow else None)
 
 
-def preview(template_id, catalog_path=None, row_count=None, col_count=None, *, fill="increment", cell_texts=None) -> dict:
+def preview(template_id, catalog_path=None, row_count=None, col_count=None, *, fill="increment", cell_texts=None,
+            arrow=None) -> dict:
     validate_input(fill, cell_texts)
+    from . import table_arrows
+    arrow = table_arrows.validate(arrow)
     record, table, header = _load(template_id, catalog_path)
+    if arrow:
+        # 고른 화살표를 원본 표에 넣은 뒤 미리보기를 만든다(내보내기와 같은 순서).
+        source = Path(catalog_path or catalog.default_catalog_path())
+        with catalog._safe_archive(source) as archive:
+            header_root = ET.fromstring(archive.read("Contents/header.xml"))
+        table_arrows.apply(table, table_arrows.detect(record), arrow, header_root)
+        images = header.get("images", {})
+        header = catalog._header_lookup(header_root)
+        header["images"] = dict(images)
+        if arrow["kind"] == "image":
+            for direction in table_arrows.DIRECTIONS:
+                header["images"][table_arrows.bin_id(direction)] = table_arrows.image_data_url(arrow["value"], direction)
     resize_table(table, plan_for(record), row_count, col_count, fill=fill, cell_texts=cell_texts)
     result = {k: record[k] for k in ("id", "name")}
     # Unlike the catalog's compact preview, return every resized cell.
@@ -1486,6 +1505,9 @@ def describe_units(catalog_path=None) -> list[dict]:
             elif len(org_records) > 1 and record.get("name") not in ("조직도 · 모양 2", "조직도"):
                 continue
         item = {k: record[k] for k in ("id", "category", "name", "rows", "cols")}
+        # 화살표 칸 수(2.0.6): 1개 이상이면 화면에 화살표 고르기를 보인다.
+        from .table_arrows import detect as detect_arrows
+        item["arrows"] = len(detect_arrows(record))
         if record.get("category") == "조직도" and (chosen_org is not None and record["id"] == chosen_org["id"]):
             item["name"] = "조직도"
         item["units"] = {axis: {k: p[k] for k in ("count", "min", "max", "core", "sep", "kind") if k in p} if p else None

@@ -73,8 +73,11 @@ class TableTemplateInfo {
     this.thumbnail,
     this.favorite = false,
     required this.units,
+    this.arrows = 0,
   });
 
+  /// 칸 사이 화살표 칸 수(1개 이상이면 화살표 고르기를 보인다, 2.0.6).
+  final int arrows;
   final String id;
   final String category;
   final String name;
@@ -93,6 +96,7 @@ class TableTemplateInfo {
     String? thumbnail,
     bool? favorite,
     TableUnits? units,
+    int? arrows,
   }) => TableTemplateInfo(
     id: id ?? this.id,
     category: category ?? this.category,
@@ -102,6 +106,7 @@ class TableTemplateInfo {
     thumbnail: thumbnail ?? this.thumbnail,
     favorite: favorite ?? this.favorite,
     units: units ?? this.units,
+    arrows: arrows ?? this.arrows,
   );
 
   factory TableTemplateInfo.fromJson(Map<dynamic, dynamic> json) =>
@@ -114,6 +119,7 @@ class TableTemplateInfo {
         thumbnail: json['thumbnail'] as String?,
         favorite: json['favorite'] == true,
         units: TableUnits.fromJson(json['units'] as Map?),
+        arrows: (json['arrows'] as num?)?.toInt() ?? 0,
       );
 }
 
@@ -408,6 +414,9 @@ class TableUnitsApi {
     return TablePreview.fromJson(data);
   }
 
+  /// 화살표 선택지(기호·공문서용 그림 화살표·방향·크기).
+  Future<Map<String, Object?>> arrows() => _request('arrows', const {});
+
   /// 한/글 붙여넣기용 클립보드 복사.
   Future<TableCopyResult> copy(
     String id, {
@@ -415,6 +424,7 @@ class TableUnitsApi {
     int? colCount,
     String fill = 'increment',
     Map<String, String>? cellTexts,
+    Map<String, Object?>? arrow,
   }) async {
     final payload = <String, Object?>{
       'id': id,
@@ -422,6 +432,7 @@ class TableUnitsApi {
       'col_count': colCount,
       'fill': fill,
       'cell_texts': cellTexts ?? const {},
+      'arrow': ?arrow,
     };
     final data = await _request('copy', payload);
     return TableCopyResult.fromJson(data);
