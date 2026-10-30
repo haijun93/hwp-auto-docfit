@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:docfit_ui/main.dart';
 
-
 Map<String, dynamic> initialState() => <String, dynamic>{
   'files': <Map<String, String>>[],
   'mode': 'spacing',
@@ -88,9 +87,7 @@ void main() {
       await tester.pumpAndSettle();
       // 버튼 묶음이 오른쪽 아이콘(도움말) 뒤로 잘려 들어가지 않아야 한다.
       final limit = tester.getRect(find.byTooltip('사용 방법 (F1)')).left;
-      for (final key in [
-        'topMenu_format',
-      ]) {
+      for (final key in ['topMenu_format']) {
         final rect = tester.getRect(find.byKey(Key(key)));
         expect(
           rect.left >= 0 && rect.right <= limit + 0.5,
@@ -235,7 +232,14 @@ void main() {
       await tester.tap(find.text('정리 시작'));
       await tester.pump(const Duration(milliseconds: 300));
       expect(
-        calls.where((s) => s != 'get_state' && s != 'enable_close_guard' && s != 'table_units' && s != 'table_sketch' && s != 'flow_editor'),
+        calls.where(
+          (s) =>
+              s != 'get_state' &&
+              s != 'enable_close_guard' &&
+              s != 'table_units' &&
+              s != 'table_sketch' &&
+              s != 'flow_editor',
+        ),
         ['add_files', 'set_mode', 'start'],
       );
       expect(find.text('문서를 정리하고 있어요'), findsOneWidget);
@@ -269,7 +273,7 @@ void main() {
       'spacing': const Color(0xffe3edff),
       'unify': const Color(0xffeff8f5),
       'all': const Color(0xfffff7eb),
-      'file_format': const Color(0xfff4f1ff),
+      'pagefit': const Color(0xfff4f1ff),
     };
     final actual = <Color>{};
     for (final entry in expected.entries) {
@@ -812,7 +816,12 @@ void main() {
       );
       expect(
         calls.where(
-          (name) => name != 'get_state' && name != 'enable_close_guard' && name != 'table_units' && name != 'table_sketch' && name != 'flow_editor',
+          (name) =>
+              name != 'get_state' &&
+              name != 'enable_close_guard' &&
+              name != 'table_units' &&
+              name != 'table_sketch' &&
+              name != 'flow_editor',
         ),
         ['get_abbreviations'],
       );
@@ -988,8 +997,13 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('작업 방식 선택'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('파일 변환'));
-    await tester.tap(find.text('파일 변환').first);
+    // 파일 변환은 '파일변환' 탭에서 고른다(작업 방식 카드에서 뺐다, 2026-10-30).
+    await tester.tap(find.byKey(const Key('workspaceTab-6')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('workspaceTab-0')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('openConversionPicker')));
+    await tester.tap(find.byKey(const Key('openConversionPicker')));
     await tester.pumpAndSettle();
     expect(find.text('변환할 포맷을 고르세요'), findsOneWidget);
     expect(find.text('DOCX'), findsOneWidget);
@@ -1036,8 +1050,13 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('작업 방식 선택'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('파일 변환'));
-    await tester.tap(find.text('파일 변환').first);
+    // 파일 변환은 '파일변환' 탭에서 고른다(작업 방식 카드에서 뺐다, 2026-10-30).
+    await tester.tap(find.byKey(const Key('workspaceTab-6')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('workspaceTab-0')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('openConversionPicker')));
+    await tester.tap(find.byKey(const Key('openConversionPicker')));
     await tester.pumpAndSettle();
     expect(find.text('변환할 포맷을 고르세요'), findsOneWidget);
     expect(find.text('DOCX'), findsOneWidget);
@@ -1084,8 +1103,13 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('작업 방식 선택'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('파일 변환'));
-    await tester.tap(find.text('파일 변환').first);
+    // 파일 변환은 '파일변환' 탭에서 고른다(작업 방식 카드에서 뺐다, 2026-10-30).
+    await tester.tap(find.byKey(const Key('workspaceTab-6')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('workspaceTab-0')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('openConversionPicker')));
+    await tester.tap(find.byKey(const Key('openConversionPicker')));
     await tester.pumpAndSettle();
     expect(find.text('변환할 포맷을 고르세요'), findsOneWidget);
     expect(find.text('DOCX'), findsOneWidget);
@@ -1150,8 +1174,13 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('작업 방식 선택'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('파일 변환'));
-    await tester.tap(find.text('파일 변환').first);
+    // 파일 변환은 '파일변환' 탭에서 고른다(작업 방식 카드에서 뺐다, 2026-10-30).
+    await tester.tap(find.byKey(const Key('workspaceTab-6')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('workspaceTab-0')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('openConversionPicker')));
+    await tester.tap(find.byKey(const Key('openConversionPicker')));
     await tester.pumpAndSettle();
     expect(
       find.byKey(const Key('conversionPrerequisiteNotice')),
@@ -1197,8 +1226,15 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.text('작업 방식 선택'));
         await tester.pumpAndSettle();
-        await tester.ensureVisible(find.text('파일 변환'));
-        await tester.tap(find.text('파일 변환').first);
+        // 파일 변환은 '파일변환' 탭에서 고른다(작업 방식 카드에서 뺐다, 2026-10-30).
+        await tester.tap(find.byKey(const Key('workspaceTab-6')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('workspaceTab-0')));
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(
+          find.byKey(const Key('openConversionPicker')),
+        );
+        await tester.tap(find.byKey(const Key('openConversionPicker')));
         await tester.pumpAndSettle();
         expect(
           find.byKey(const Key('floatingConversionPicker')),

@@ -44,7 +44,7 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.byType(TabNavigationShell), findsOneWidget);
-    final bar = tester.widget<NavigationBar>(find.byType(NavigationBar));
+    final bar = tester.widget<WorkspaceTabBar>(find.byType(WorkspaceTabBar));
     expect(bar.selectedIndex, 0);
   });
 
@@ -96,10 +96,12 @@ void main() {
     await tester.tap(find.byKey(const Key('jump-표그림판으로')));
     await tester.pumpAndSettle();
     expect(
-      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+      tester
+          .widget<WorkspaceTabBar>(find.byType(WorkspaceTabBar))
+          .selectedIndex,
       2,
     );
-    expect(find.byType(NavigationBar), findsOneWidget);
+    expect(find.byType(WorkspaceTabBar), findsOneWidget);
     expect(
       tester.state<NavigatorState>(find.byType(Navigator)).canPop(),
       isFalse,
@@ -146,7 +148,9 @@ void main() {
     await tester.tap(find.text('파일변환'));
     await tester.pumpAndSettle();
     expect(
-      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+      tester
+          .widget<WorkspaceTabBar>(find.byType(WorkspaceTabBar))
+          .selectedIndex,
       6, // 파일변환은 항상 맨 끝
     );
     expect(find.text('파일변환 화면'), findsOneWidget);

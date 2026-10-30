@@ -129,6 +129,7 @@ class DesktopWebBridge:
             ux.user_overrode_mode = False
         elif not ux.user_overrode_mode and not self.gui.running:
             mode = ux.doc_hints["recommended_mode"]
+            self._page_fit_card = False  # 다른 카드를 고르면 페이지 맞춤 카드 해제
             self.gui.selected_mode.set("format" if mode == "all" and not self._include_spacing() else mode)
             self._mode_selected()
             self.gui.status_var.set(ux.doc_hints["reason"])
@@ -394,6 +395,8 @@ class DesktopWebBridge:
         def snapshot():
             gui = self.gui
             mode = gui.selected_mode.get()
+            if mode == "spacing" and getattr(self, "_page_fit_card", False):
+                mode = "pagefit"  # '페이지 맞춤' 카드: 내부는 자간 정리 흐름의 쪽 맞춤만
             watched = getattr(self, "_quick_watch", None)
             if watched and not self._profile_state().analyzing_format:
                 active = self._profile_state().active_profile_id
@@ -736,7 +739,7 @@ class DesktopWebBridge:
     def set_mode(self, mode):
         """작업 카드를 고른다. 카드는 세 장이며 '한 번에 적용'(all)은 '자간 조정 포함'을 끄면
         서식 적용(format)으로 실행한다. 예전 화면이 보내는 format은 자간 조정을 끈 한 번에 적용이다."""
-        if mode not in {"spacing", "unify", "format", "all", "file_format"}:
+        if mode not in {"spacing", "unify", "format", "all", "file_format", "pagefit"}:
             raise ValueError("지원하지 않는 작업 방식입니다.")
 
         def select():
@@ -744,7 +747,9 @@ class DesktopWebBridge:
                 return
             self._ux().user_overrode_mode = True
             self._cancel_pending_drop()
-            internal = mode
+            # '페이지 맞춤' 카드(2026-10-30): 쪽 맞춤만 하는 작업. 내부는 자간 정리 흐름에서 자간을 끄고 쪽 맞춤만 켠다.
+            self._page_fit_card = mode == "pagefit"
+            internal = "spacing" if mode == "pagefit" else mode
             if mode in ("all", "format"):
                 variable = getattr(self.gui, "include_spacing_var", None)
                 if mode == "format" and variable is not None:
@@ -774,6 +779,7 @@ class DesktopWebBridge:
             if gui.running or variable is None:
                 return
             variable.set(bool(on))
+            self._page_fit_card = False  # 다른 카드를 고르면 페이지 맞춤 카드 해제
             gui.selected_mode.set("all" if on else "format")
             self._mode_selected()
 
@@ -794,6 +800,7 @@ class DesktopWebBridge:
                 variable.set(bool(on))   # 변경 감시가 세부 작업 값과 설정 파일을 함께 바꾼다
             else:
                 gui.stage_choices["spacing"]["reset_spacing"] = bool(on)
+            self._page_fit_card = False  # 다른 카드를 고르면 페이지 맞춤 카드 해제
             gui.selected_mode.set("spacing")
             self._mode_selected()
 
@@ -816,6 +823,7 @@ class DesktopWebBridge:
             if gui.running or variable is None:
                 return
             variable.set(bool(on))
+            self._page_fit_card = False  # 다른 카드를 고르면 페이지 맞춤 카드 해제
             gui.selected_mode.set("spacing")
             self._mode_selected()
 
@@ -837,6 +845,7 @@ class DesktopWebBridge:
             if gui.running or variable is None:
                 return
             variable.set(bool(on))
+            self._page_fit_card = False  # 다른 카드를 고르면 페이지 맞춤 카드 해제
             gui.selected_mode.set("all" if self._include_spacing() else "format")
             self._mode_selected()
 
@@ -878,8 +887,10 @@ class DesktopWebBridge:
                 return
             variable.set(bool(on))
             if card == "all":
+                self._page_fit_card = False  # 다른 카드를 고르면 페이지 맞춤 카드 해제
                 gui.selected_mode.set("all" if self._include_spacing() else "format")
             else:
+                self._page_fit_card = False  # 다른 카드를 고르면 페이지 맞춤 카드 해제
                 gui.selected_mode.set(card)
             self._mode_selected()
 
@@ -912,7 +923,7 @@ class DesktopWebBridge:
         if kind == 'table_copy':
             return self._jobs().start(kind, params, lambda report, cancelled:
                 self._table_copy_job(params, report, cancelled))
-        if kind not in {'format', 'spacing', 'unify', 'all', 'file_format'}:
+        if kind not in {'format', 'spacing', 'unify', 'all', 'file_format', 'pagefit'}:
             raise ServiceError('INVALID_INPUT', '지원하지 않는 작업 종류입니다.')
         if kind == 'file_format' and 'target' in params:
             self.set_conversion_target(params['target'])
@@ -960,7 +971,7 @@ class DesktopWebBridge:
         if file_order is not None and (mode != "file_format" or self.conversion_target != "pdfm"):
             raise ValueError("파일 순서는 PDF 하나로 합치기에서만 지정할 수 있습니다.")
 
-        if mode not in {"spacing", "unify", "format", "all", "file_format"}:
+        if mode not in {"spacing", "unify", "format", "all", "file_format", "pagefit"}:
             raise ValueError("지원하지 않는 작업 방식입니다.")
 
         if mode == "file_format":
@@ -1007,7 +1018,9 @@ class DesktopWebBridge:
             options = self._card_options()
             if mode == "spacing" and not options["spacing_enabled"] and not options["spacing_page_fit"]:
                 raise ValueError("자간 정리 또는 페이지 맞춤을 하나 이상 켜 주세요.")
-            self.gui.selected_mode.set(mode)
+            page_fit_only = mode == "pagefit"
+            run_mode = "spacing" if page_fit_only else mode
+            self.gui.selected_mode.set(run_mode)
             self.gui.range_mode_var.set("pages" if range_enabled else "all")
             self.gui.page_range_var.set(bool(range_enabled))
             self.gui.range_start_var.set(str(start or "1"))
@@ -1016,7 +1029,19 @@ class DesktopWebBridge:
             self.gui._범위_상태_갱신()
             self.gui._flutter_completion = {}
             self.gui._flutter_format_review = {}
-            self.gui.작업시작(mode)
+            if not page_fit_only:
+                self.gui.작업시작(mode)
+                return started(previous)
+            # 작업시작이 옵션을 그 자리에서 읽어 두므로, 잠깐 '자간 끔·쪽 맞춤 켬'으로 바꿨다가 자간 정리 카드 설정을 되돌린다.
+            gui = self.gui
+            saved = (gui.spacing_enabled_var.get(), gui.spacing_page_fit_var.get())
+            try:
+                gui.spacing_enabled_var.set(False)
+                gui.spacing_page_fit_var.set(True)
+                gui.작업시작("spacing")
+            finally:
+                gui.spacing_enabled_var.set(saved[0])
+                gui.spacing_page_fit_var.set(saved[1])
             return started(previous)
 
         identifier = self._tk(begin)
@@ -1973,6 +1998,7 @@ class DesktopWebBridge:
             self.gui._결과_초기화()
             self.gui._안내키, self.gui._안내지남 = None, set()
             self.gui.status_var.set("새 문서를 선택하세요.")
+            self._page_fit_card = False  # 다른 카드를 고르면 페이지 맞춤 카드 해제
             self.gui.selected_mode.set("spacing")
             self.gui._모드_선택됨()
 

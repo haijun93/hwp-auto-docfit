@@ -256,6 +256,25 @@ class BrowserApiTests(unittest.TestCase):
         bridge.set_option("log_file", False)
         self.assertTrue(gui.log_file_var.get())
 
+    def test_page_fit_card_runs_page_fit_only_and_keeps_spacing_card_options(self):
+        gui = _FakeGui()
+        gui.spacing_enabled_var, gui.spacing_page_fit_var = _Var(True), _Var(False)
+        gui.page_range_var = _Var(False)
+        gui._범위_상태_갱신 = lambda: None
+        seen = []
+        gui.작업시작 = lambda mode: seen.append((mode, gui.spacing_enabled_var.get(), gui.spacing_page_fit_var.get()))
+        bridge = _bridge(gui)
+        bridge.get_state = lambda: {'mode': 'pagefit' if bridge._page_fit_card and gui.selected_mode.get() == 'spacing' else gui.selected_mode.get()}
+        self.assertEqual(bridge.set_mode('pagefit')['mode'], 'pagefit')
+        self.assertEqual(gui.selected_mode.get(), 'spacing')
+        bridge._start_legacy('pagefit')
+        # 실행할 때만 '자간 끔·쪽 맞춤 켬'이고, 자간 정리 카드 설정은 그대로 돌아온다.
+        self.assertEqual(seen, [('spacing', False, True)])
+        self.assertEqual((gui.spacing_enabled_var.get(), gui.spacing_page_fit_var.get()), (True, False))
+        self.assertEqual(bridge.set_mode('spacing')['mode'], 'spacing')
+        with self.assertRaises(ValueError):
+            bridge.set_mode('page_fit')
+
     def test_all_card_runs_format_when_spacing_is_excluded(self):
         gui = _FakeGui()
         bridge = _bridge(gui)

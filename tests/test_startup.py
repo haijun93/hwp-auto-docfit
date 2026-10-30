@@ -171,6 +171,9 @@ class StartupTest(unittest.TestCase):
 
         self.assertEqual(Path(output_filename("보고서.hwp")).name, "보고서(자간조정).hwpx")
         self.assertEqual(Path(output_filename("보고서.hwpx")).name, "보고서(자간조정).hwpx")
+        # '페이지 맞춤' 카드(쪽 맞춤만)는 결과 이름이 (페이지맞춤)이다.
+        output_filename.__globals__["쪽맞춤만"] = True
+        self.assertEqual(Path(output_filename("보고서.hwp")).name, "보고서(페이지맞춤).hwpx")
 
     def test_release_version_and_exe_asset_selection(self):
         source = Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"

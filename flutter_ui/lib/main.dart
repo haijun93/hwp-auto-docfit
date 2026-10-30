@@ -26,7 +26,6 @@ import 'features/stages/stage_board.dart';
 import 'features/workspace/workspace_adapters.dart';
 import 'features/workspace/tab_navigation_shell.dart';
 
-
 export 'core/api/abbreviation_api.dart' show ApiCall;
 
 void main() => runApp(const DocFitApp());
@@ -59,7 +58,7 @@ const _mintSoft = Color(0xfff3f8f7);
     selectedSurface: const Color(0xffffedcf),
     accent: const Color(0xffa86a1f),
   ),
-  'file_format' => (
+  'file_format' || 'pagefit' => (
     surface: const Color(0xfff4f1ff),
     selectedSurface: const Color(0xffeae4ff),
     accent: const Color(0xff7656a8),
@@ -104,9 +103,7 @@ class DocFitApp extends StatelessWidget {
         border: OutlineInputBorder(),
       ),
     ),
-    home: useIntegratedShell
-        ? _IntegratedHome(api: api)
-        : Workspace(api: api),
+    home: useIntegratedShell ? _IntegratedHome(api: api) : Workspace(api: api),
   );
 }
 
@@ -127,11 +124,17 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
   /// 나가면 문서 목록으로 되돌린다.
   void routeDrops(int index) {
     if (index == 2) {
-      unawaited(widget.api('set_drop_target', ['sketch_image']).catchError((_) => null));
+      unawaited(
+        widget.api('set_drop_target', ['sketch_image']).catchError((_) => null),
+      );
     } else if (index == 5) {
-      unawaited(widget.api('set_drop_target', ['paint_image']).catchError((_) => null));
+      unawaited(
+        widget.api('set_drop_target', ['paint_image']).catchError((_) => null),
+      );
     } else if (lastTab == 2 || lastTab == 5) {
-      unawaited(widget.api('set_drop_target', ['documents']).catchError((_) => null));
+      unawaited(
+        widget.api('set_drop_target', ['documents']).catchError((_) => null),
+      );
     }
     lastTab = index;
   }
@@ -147,6 +150,38 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
       routeDrops(index);
       if (index == 6) workspace.currentState?.enterConversionMode();
     },
+    // 앱 메뉴(사용 방법·작업 로그·설정)는 상단 탭 줄 오른쪽 끝에 둔다.
+    trailing: Builder(
+      builder: (context) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            tooltip: '사용 방법 (F1)',
+            visualDensity: VisualDensity.compact,
+            onPressed: () => workspace.currentState?.showHelp(),
+            icon: const Icon(Icons.help_outline_rounded, size: 20),
+          ),
+          IconButton(
+            tooltip: '작업 로그',
+            visualDensity: VisualDensity.compact,
+            onPressed: () => workspace.currentState?.showLog(),
+            icon: const Icon(Icons.receipt_long_outlined, size: 20),
+          ),
+          IconButton(
+            tooltip: '설정',
+            visualDensity: VisualDensity.compact,
+            onPressed: () {
+              // 설정 서랍은 문서편집 화면에 붙어 있어 그 탭으로 옮긴 뒤 연다.
+              WorkspaceTabScope.maybeOf(context)?.selectTab(0);
+              WidgetsBinding.instance.addPostFrameCallback(
+                (_) => workspace.currentState?.openSettings(),
+              );
+            },
+            icon: const Icon(Icons.settings_outlined, size: 20),
+          ),
+        ],
+      ),
+    ),
   );
 }
 
@@ -232,12 +267,13 @@ class _WorkspaceState extends State<Workspace> {
       Icons.auto_awesome_rounded,
       '일괄적용',
     ),
+    // 파일 변환은 '파일변환' 탭으로 옮겼다. 페이지 맞춤은 쪽 맞춤만 하는 작업(2026-10-30 사용자 지시).
     (
-      'file_format',
-      '파일 변환',
-      'TXT·MD를 HWPX·PDF·그림으로, HWPX를 TXT·MD로도 바꿔요. 변환 도구는 앱에 포함되어 있어요.',
-      Icons.swap_horiz_rounded,
-      'HWPX변경',
+      'pagefit',
+      '페이지 맞춤',
+      '내용은 그대로 두고 여백·문단 간격·줄 간격만 다듬어 쪽 수를 맞춰요. 마지막 쪽에 조금 남은 내용을 앞쪽으로 당겨요.',
+      Icons.fit_screen_rounded,
+      '페이지맞춤',
     ),
   ];
 
@@ -819,6 +855,8 @@ class _WorkspaceState extends State<Workspace> {
         // 네 메뉴 버튼(서식 관리·다이어그램·마인드맵·표 템플릿)을 글과 함께 놓으려면 약 880이 필요하다(폭 800에서 79 넘침).
         // 상단 메뉴는 '서식 관리' 하나(다른 화면은 하단 탭, 2026-10-30). 좁으면 아이콘만(이름은 툴팁).
         final isNarrow = width < 760;
+        // 탭 화면 안에서는 앱 이름·사용 방법·작업 로그·설정이 상단 탭 줄에 있으므로 여기서는 뺀다.
+        final integrated = WorkspaceTabScope.maybeOf(context) != null;
         final showProfileBadge = width >= 1360;
         final currentProfileName =
             '${profiles.whereType<Map>().where((p) => p['id'] == state['profile']).firstOrNull?['name'] ?? '기본 보고서 서식'}';
@@ -845,27 +883,28 @@ class _WorkspaceState extends State<Workspace> {
         return AppBar(
           backgroundColor: Colors.white,
           surfaceTintColor: Colors.transparent,
-          toolbarHeight: 72,
+          toolbarHeight: integrated ? 46 : 72,
           automaticallyImplyLeading: false,
           titleSpacing: isNarrow ? 8 : 16,
           title: Row(
             children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: _ink,
-                  borderRadius: BorderRadius.circular(12),
+              if (!integrated)
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: _ink,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.description_rounded,
+                    color: Colors.white,
+                    size: 23,
+                  ),
                 ),
-                child: const Icon(
-                  Icons.description_rounded,
-                  color: Colors.white,
-                  size: 23,
-                ),
-              ),
               // 아주 좁은 창(700 미만)에서는 앱 이름 글을 숨겨 메뉴 아이콘 자리를 확보한다(이름은 창 제목줄에 있다).
-              if (width >= 700) const SizedBox(width: 8),
-              if (width >= 700)
+              if (!integrated && width >= 700) const SizedBox(width: 8),
+              if (!integrated && width >= 700)
                 Flexible(
                   child: Text(
                     '한글편집 후처리',
@@ -905,41 +944,43 @@ class _WorkspaceState extends State<Workspace> {
               const SizedBox(width: 4),
             ],
           ),
-          actions: [
-            IconButton(
-              tooltip: '사용 방법 (F1)',
-              visualDensity: isNarrow ? VisualDensity.compact : null,
-              padding: isNarrow ? EdgeInsets.zero : null,
-              constraints: isNarrow
-                  ? const BoxConstraints(minWidth: 32, minHeight: 32)
-                  : null,
-              onPressed: showHelp,
-              icon: const Icon(Icons.help_outline_rounded),
-            ),
-            IconButton(
-              tooltip: '작업 로그',
-              visualDensity: isNarrow ? VisualDensity.compact : null,
-              padding: isNarrow ? EdgeInsets.zero : null,
-              constraints: isNarrow
-                  ? const BoxConstraints(minWidth: 32, minHeight: 32)
-                  : null,
-              onPressed: () => showLog(),
-              icon: const Icon(Icons.receipt_long_outlined),
-            ),
-            IconButton(
-              tooltip: '설정',
-              visualDensity: isNarrow ? VisualDensity.compact : null,
-              padding: isNarrow ? EdgeInsets.zero : null,
-              constraints: isNarrow
-                  ? const BoxConstraints(minWidth: 32, minHeight: 32)
-                  : null,
-              onPressed: () async {
-                if (mounted) scaffoldKey.currentState?.openEndDrawer();
-              },
-              icon: const Icon(Icons.settings_outlined),
-            ),
-            SizedBox(width: isNarrow ? 6 : 12),
-          ],
+          actions: integrated
+              ? const [SizedBox.shrink()] // 빈 목록이면 설정 서랍 단추(≡)가 저절로 생긴다
+              : [
+                  IconButton(
+                    tooltip: '사용 방법 (F1)',
+                    visualDensity: isNarrow ? VisualDensity.compact : null,
+                    padding: isNarrow ? EdgeInsets.zero : null,
+                    constraints: isNarrow
+                        ? const BoxConstraints(minWidth: 32, minHeight: 32)
+                        : null,
+                    onPressed: showHelp,
+                    icon: const Icon(Icons.help_outline_rounded),
+                  ),
+                  IconButton(
+                    tooltip: '작업 로그',
+                    visualDensity: isNarrow ? VisualDensity.compact : null,
+                    padding: isNarrow ? EdgeInsets.zero : null,
+                    constraints: isNarrow
+                        ? const BoxConstraints(minWidth: 32, minHeight: 32)
+                        : null,
+                    onPressed: () => showLog(),
+                    icon: const Icon(Icons.receipt_long_outlined),
+                  ),
+                  IconButton(
+                    tooltip: '설정',
+                    visualDensity: isNarrow ? VisualDensity.compact : null,
+                    padding: isNarrow ? EdgeInsets.zero : null,
+                    constraints: isNarrow
+                        ? const BoxConstraints(minWidth: 32, minHeight: 32)
+                        : null,
+                    onPressed: () async {
+                      if (mounted) scaffoldKey.currentState?.openEndDrawer();
+                    },
+                    icon: const Icon(Icons.settings_outlined),
+                  ),
+                  SizedBox(width: isNarrow ? 6 : 12),
+                ],
         );
       },
     ),
@@ -1958,8 +1999,7 @@ class _WorkspaceState extends State<Workspace> {
       // An unregistered dialog may hold edits or a pending RPC: fail closed.
       if (!mounted) return;
       final route = ModalRoute.of(context);
-      accepted =
-          accepted && (route == null || route.isCurrent == true);
+      accepted = accepted && (route == null || route.isCurrent == true);
       final result = await widget.api('resolve_dialog', [
         request['id'],
         accepted,
@@ -1975,7 +2015,6 @@ class _WorkspaceState extends State<Workspace> {
       );
     }
   }
-
 
   Future<void> openTools(String name) async {
     if (!mounted) return;
@@ -2788,8 +2827,9 @@ class _WorkspaceState extends State<Workspace> {
   Widget _buildCatImage(String catImage) {
     try {
       final commaIndex = catImage.indexOf(',');
-      final base64Str =
-          commaIndex >= 0 ? catImage.substring(commaIndex + 1) : catImage;
+      final base64Str = commaIndex >= 0
+          ? catImage.substring(commaIndex + 1)
+          : catImage;
       final bytes = base64Decode(base64Str);
       return Image.memory(
         bytes,
@@ -2986,9 +3026,7 @@ class _WorkspaceState extends State<Workspace> {
                     IconButton(
                       key: Key('compareItem-$i'),
                       tooltip: '원본·결과 비교',
-                      onPressed: busy
-                          ? null
-                          : () => openDiff(i),
+                      onPressed: busy ? null : () => openDiff(i),
                       icon: const Icon(Icons.compare_arrows_rounded),
                     ),
                   ],
@@ -3006,7 +3044,10 @@ class _WorkspaceState extends State<Workspace> {
             if (compareError != null) ...[
               Container(
                 key: const Key('compareErrorMessage'),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xfffee2e2),
                   borderRadius: BorderRadius.circular(8),
@@ -3014,12 +3055,19 @@ class _WorkspaceState extends State<Workspace> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.error_outline, size: 18, color: Color(0xffdc2626)),
+                    const Icon(
+                      Icons.error_outline,
+                      size: 18,
+                      color: Color(0xffdc2626),
+                    ),
                     const SizedBox(width: 8),
                     Flexible(
                       child: Text(
                         compareError!,
-                        style: const TextStyle(fontSize: 13, color: Color(0xffdc2626)),
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Color(0xffdc2626),
+                        ),
                       ),
                     ),
                   ],
@@ -3029,9 +3077,7 @@ class _WorkspaceState extends State<Workspace> {
             ],
             OutlinedButton.icon(
               key: const Key('compareResultButton'),
-              onPressed: results.isEmpty || busy
-                  ? null
-                  : () => openDiff(0),
+              onPressed: results.isEmpty || busy ? null : () => openDiff(0),
               icon: const Icon(Icons.compare_arrows_rounded),
               label: const Text('원본·결과 비교'),
             ),
@@ -3150,7 +3196,12 @@ class _WorkspaceState extends State<Workspace> {
                     ? null
                     : () async {
                         await command('next_job');
-                        if (mounted) setState(() { compareError = null; tab = 0; });
+                        if (mounted) {
+                          setState(() {
+                            compareError = null;
+                            tab = 0;
+                          });
+                        }
                       },
                 child: const Text('새 작업 시작'),
               ),
@@ -3169,6 +3220,8 @@ class _WorkspaceState extends State<Workspace> {
   );
 
   // ---- 설정 서랍 ----------------------------------------------------
+
+  void openSettings() => scaffoldKey.currentState?.openEndDrawer();
 
   Future<void> showLog() async {
     String logText;
@@ -3369,11 +3422,7 @@ class _WorkspaceState extends State<Workspace> {
             '앱 창을 항상 위에 표시',
             '다른 창을 사용해도 앱을 앞에 유지해요.',
           ),
-          optionSwitch(
-            'developer_mode',
-            '개발자 모드',
-            '자세한 문서 처리 완료 안내를 표시해요.',
-          ),
+          optionSwitch('developer_mode', '개발자 모드', '자세한 문서 처리 완료 안내를 표시해요.'),
           settingsLabel('더 보기'),
           ListTile(
             contentPadding: EdgeInsets.zero,

@@ -836,6 +836,11 @@ def _install(*, _docfit_namespace, _docfit_symbol, bind_function):
         def 저장파일명(파일):
             path = Path(파일)
             suffix = {"spacing": "(자간조정)", "unify": "(서식통일)", "format": "(서식적용)", "all": "(일괄적용)"}[작업_모드]
+            try:
+                if 작업_모드 == "spacing" and 쪽맞춤만:
+                    suffix = "(페이지맞춤)"
+            except NameError:
+                pass
             if 쪽범위_실제 is not None:
                 # 일부 쪽만 처리한 결과가 전체 처리 결과를 덮어쓰지 않도록 범위를 이름에 남긴다.
                 suffix += f"({쪽범위_실제[0]}-{쪽범위_실제[1]}쪽)"

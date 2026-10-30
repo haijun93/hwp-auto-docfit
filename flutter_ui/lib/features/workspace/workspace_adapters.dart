@@ -108,8 +108,10 @@ class IntegratedWorkspace extends StatelessWidget {
     required this.fileConversionWidget,
     this.initialIndex = 0,
     this.onTabChanged,
+    this.trailing,
   });
 
+  final Widget? trailing;
   final ApiCall api;
   final Widget documentEditorWidget;
   final Widget fileConversionWidget;
@@ -121,6 +123,7 @@ class IntegratedWorkspace extends StatelessWidget {
     return TabNavigationShell(
       initialIndex: initialIndex,
       onTabChanged: onTabChanged,
+      trailing: trailing,
       documentEditor: DocumentEditorAdapter(child: documentEditorWidget),
       tableTemplates: TableTemplatesAdapter(api: api),
       tableSketch: TableSketchAdapter(api: api),
