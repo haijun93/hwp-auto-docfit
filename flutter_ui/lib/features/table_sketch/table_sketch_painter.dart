@@ -104,6 +104,9 @@ class TableSketchPainter extends CustomPainter {
     this.imageTarget,
     this.previewLine,
     this.previewRect,
+    this.resizeBox,
+    this.guideXs = const {},
+    this.guideYs = const {},
   });
 
   final TableSketchDoc doc;
@@ -122,6 +125,25 @@ class TableSketchPainter extends CustomPainter {
   final Rect? imageTarget;
   final SketchLine? previewLine;
   final Rect? previewRect;
+
+  /// 고른 사각형 모형(격자 단위): 크기 조절 손잡이 8개를 그린다.
+  final Rect? resizeBox;
+
+  /// 옮기거나 크기를 바꾸는 동안의 맞춤 안내선(격자 단위, 빨간 점선).
+  final Set<double> guideXs;
+  final Set<double> guideYs;
+
+  /// 손잡이 순서: 왼위·위·오위·오른·오아래·아래·왼아래·왼(격자 단위 좌표).
+  static List<Offset> handlePoints(Rect r) => [
+    r.topLeft,
+    r.topCenter,
+    r.topRight,
+    r.centerRight,
+    r.bottomRight,
+    r.bottomCenter,
+    r.bottomLeft,
+    r.centerLeft,
+  ];
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -207,6 +229,39 @@ class TableSketchPainter extends CustomPainter {
             ..style = PaintingStyle.stroke
             ..strokeWidth = 1.2,
         );
+      }
+    }
+
+    // 6-1. 맞춤 안내선(다이어그램처럼 빨간 점선)
+    final guide = Paint()
+      ..color = const Color(0xFFDC2626)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+    for (final x in guideXs) {
+      final path = Path()
+        ..moveTo(x * cellSize, 0)
+        ..lineTo(x * cellSize, size.height);
+      canvas.drawPath(createDashedPath(path, 6.0, 4.0), guide);
+    }
+    for (final y in guideYs) {
+      final path = Path()
+        ..moveTo(0, y * cellSize)
+        ..lineTo(size.width, y * cellSize);
+      canvas.drawPath(createDashedPath(path, 6.0, 4.0), guide);
+    }
+
+    // 6-2. 사각형 크기 조절 손잡이
+    final box = resizeBox;
+    if (box != null) {
+      final fill = Paint()..color = Colors.white;
+      final edge = Paint()
+        ..color = const Color(0xFF2563EB)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5;
+      for (final p in handlePoints(box)) {
+        final r = Rect.fromCenter(center: p * cellSize, width: 9, height: 9);
+        canvas.drawRect(r, fill);
+        canvas.drawRect(r, edge);
       }
     }
 

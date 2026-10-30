@@ -57,6 +57,9 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
   Offset? _moveOrigin; // 격자 단위
   int _movedDx = 0, _movedDy = 0;
   bool _moveSnapshotTaken = false;
+  // 고른 사각형의 크기 조절 손잡이(0~7, TableSketchPainter.handlePoints 순서)
+  int? _resizeHandle;
+  Rect? _resizeStart; // 격자 단위
   SketchClip? _clipboard;
   int _pasteShift = 0;
   Offset? _lastErasePos;
@@ -480,7 +483,11 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
     } else if (_tool == SketchToolMode.rect &&
         _dragStart != null &&
         _dragCurrent != null) {
-      _commitRect(_dragStart!, _dragCurrent!);
+      if ((_dragCurrent! - _dragStart!).distance < _cellSize / 2) {
+        _placeRect(_dragStart!);
+      } else {
+        _commitRect(_dragStart!, _dragCurrent!);
+      }
     }
 
     setState(() {
@@ -601,6 +608,19 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
     }
   }
 
+  /// 사각형 도구로 한 번 누르면 기본 크기(8×4칸) 사각형을 놓는다. 이미 있는 모형을 누르면 고르기로 넘긴다.
+  void _placeRect(Offset at) {
+    if (shapeSelect(_doc, at / _cellSize, _hitTolerance).isNotEmpty) return;
+    final cols = _doc.grid.cols, rows = _doc.grid.rows;
+    final w = math.min(8, cols), h = math.min(4, rows);
+    final x = (at.dx / _cellSize).round().clamp(0, cols - w);
+    final y = (at.dy / _cellSize).round().clamp(0, rows - h);
+    _commitRect(
+      Offset(x * _cellSize, y * _cellSize),
+      Offset((x + w) * _cellSize, (y + h) * _cellSize),
+    );
+  }
+
   void _commitRect(Offset start, Offset current) {
     final gx1 = (start.dx / _cellSize).round().clamp(0, _doc.grid.cols);
     final gy1 = (start.dy / _cellSize).round().clamp(0, _doc.grid.rows);
@@ -659,6 +679,13 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
             style: _lineStyle,
           ),
         );
+        // 그린 사각형을 바로 골라 손잡이로 크기를 고치고 끌어 옮길 수 있게 한다(다이어그램처럼).
+        _sel = shapeSelect(
+          _doc,
+          Offset((minX + maxX) / 2, minY.toDouble()),
+          .3,
+        );
+        _tool = SketchToolMode.select;
       });
       _triggerPreviewDebounced();
     }
@@ -749,6 +776,21 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
     final shift = HardwareKeyboard.instance.isShiftPressed;
     _movingSelection = false;
     _lassoPath = null;
+    _resizeHandle = null;
+    final box = _tool == SketchToolMode.select
+        ? selectedRectangle(_doc, _sel)
+        : null;
+    if (box != null) {
+      final handles = TableSketchPainter.handlePoints(box);
+      for (var i = 0; i < handles.length; i++) {
+        if ((handles[i] * _cellSize - pos).distance <= 10) {
+          _resizeHandle = i;
+          _resizeStart = box;
+          _moveSnapshotTaken = false;
+          return;
+        }
+      }
+    }
     if (!shift) {
       var onSelection = _sel.isNotEmpty && _hitsSelection(grid);
       if (!onSelection && _tool == SketchToolMode.lasso && _sel.isNotEmpty) {
@@ -777,6 +819,30 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
   }
 
   void _updateSelectionDrag(Offset pos) {
+    final handle = _resizeHandle, start = _resizeStart;
+    if (handle != null && start != null) {
+      final gx = (pos.dx / _cellSize)
+          .round()
+          .clamp(0, _doc.grid.cols)
+          .toDouble();
+      final gy = (pos.dy / _cellSize)
+          .round()
+          .clamp(0, _doc.grid.rows)
+          .toDouble();
+      var l = start.left, t = start.top, r = start.right, b = start.bottom;
+      if (const {0, 6, 7}.contains(handle)) l = math.min(gx, r - 1);
+      if (const {2, 3, 4}.contains(handle)) r = math.max(gx, l + 1);
+      if (const {0, 1, 2}.contains(handle)) t = math.min(gy, b - 1);
+      if (const {4, 5, 6}.contains(handle)) b = math.max(gy, t + 1);
+      final next = Rect.fromLTRB(l, t, r, b);
+      if (next == selectionBounds(_doc, _sel)) return;
+      if (!_moveSnapshotTaken) {
+        _saveSnapshot();
+        _moveSnapshotTaken = true;
+      }
+      setState(() => _sel = resizeRectangle(_doc, _sel, next));
+      return;
+    }
     if (_movingSelection && _moveOrigin != null) {
       final grid = pos / _cellSize;
       final totalDx = (grid.dx - _moveOrigin!.dx).round();
@@ -812,9 +878,19 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
   }
 
   void _endSelectionDrag() {
+    if (_resizeHandle != null) {
+      setState(() {
+        _resizeHandle = null;
+        _resizeStart = null;
+      });
+      if (_moveSnapshotTaken) _triggerPreviewDebounced();
+      return;
+    }
     if (_movingSelection) {
-      _movingSelection = false;
-      _moveOrigin = null;
+      setState(() {
+        _movingSelection = false;
+        _moveOrigin = null;
+      });
       if (_movedDx != 0 || _movedDy != 0) _triggerPreviewDebounced();
       return;
     }
@@ -1663,6 +1739,10 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
   Widget _buildCanvasArea() {
     final canvasWidth = _doc.grid.cols * _cellSize;
     final canvasHeight = _doc.grid.rows * _cellSize;
+    // 옮기거나 크기를 바꾸는 동안 다른 개체와 맞는 곳에 빨간 안내선(다이어그램처럼).
+    final guides = _movingSelection || _resizeHandle != null
+        ? alignmentGuides(_doc, _sel)
+        : (xs: <double>{}, ys: <double>{});
 
     return Listener(
       onPointerSignal: _handlePointerSignal,
@@ -1750,6 +1830,11 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
                                   : null,
                               previewLine: _previewLine,
                               previewRect: _previewRect,
+                              resizeBox: _tool == SketchToolMode.select
+                                  ? selectedRectangle(_doc, _sel)
+                                  : null,
+                              guideXs: guides.xs,
+                              guideYs: guides.ys,
                             ),
                           ),
                         ),

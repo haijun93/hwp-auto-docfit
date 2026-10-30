@@ -521,3 +521,82 @@ Set<int>? _rectangleThrough(List<_AxisSeg> segs, _AxisSeg seg) {
   }
   return null;
 }
+
+/// 고른 것이 따로 선 사각형 하나이면 그 테두리(격자 단위), 아니면 null.
+Rect? selectedRectangle(TableSketchDoc doc, SketchSelection sel) {
+  if (sel.texts.isNotEmpty || sel.lines.length < 4) return null;
+  final segs = [
+    for (var i = 0; i < doc.lines.length; i++) ?_AxisSeg.of(doc.lines[i], i),
+  ];
+  final first = sel.lines.first;
+  if (first < 0 || first >= doc.lines.length) return null;
+  final seg = _AxisSeg.of(doc.lines[first], first);
+  if (seg == null) return null;
+  final rect = _rectangleThrough(segs, seg);
+  if (rect == null ||
+      rect.length != sel.lines.length ||
+      !rect.containsAll(sel.lines)) {
+    return null;
+  }
+  return selectionBounds(doc, sel);
+}
+
+/// 사각형 네 변(테두리 굵기·종류는 그대로).
+List<SketchLine> rectangleLines(
+  Rect r, {
+  String width = 'thin',
+  String style = 'solid',
+}) {
+  final l = r.left.round(),
+      t = r.top.round(),
+      ri = r.right.round(),
+      b = r.bottom.round();
+  return [
+    SketchLine(x1: l, y1: t, x2: ri, y2: t, width: width, style: style),
+    SketchLine(x1: l, y1: b, x2: ri, y2: b, width: width, style: style),
+    SketchLine(x1: l, y1: t, x2: l, y2: b, width: width, style: style),
+    SketchLine(x1: ri, y1: t, x2: ri, y2: b, width: width, style: style),
+  ];
+}
+
+/// 고른 사각형을 새 테두리로 바꾸고, 새 네 변을 고른 상태로 돌려준다.
+SketchSelection resizeRectangle(
+  TableSketchDoc doc,
+  SketchSelection sel,
+  Rect bounds,
+) {
+  final sample = doc.lines[sel.lines.first];
+  for (final i in sel.lines.toList()..sort((a, b) => b.compareTo(a))) {
+    doc.lines.removeAt(i);
+  }
+  final start = doc.lines.length;
+  doc.lines.addAll(
+    rectangleLines(bounds, width: sample.width, style: sample.style),
+  );
+  return SketchSelection(
+    lines: {for (var i = start; i < doc.lines.length; i++) i},
+  );
+}
+
+/// 옮기거나 크기를 바꾸는 동안 다른 개체와 가장자리·가운데가 맞는 세로(x)·가로(y) 위치(격자 단위).
+({Set<double> xs, Set<double> ys}) alignmentGuides(
+  TableSketchDoc doc,
+  SketchSelection sel,
+) {
+  final bounds = selectionBounds(doc, sel);
+  if (bounds == null) return (xs: <double>{}, ys: <double>{});
+  final otherXs = <double>{}, otherYs = <double>{};
+  for (var i = 0; i < doc.lines.length; i++) {
+    if (sel.lines.contains(i)) continue;
+    final l = doc.lines[i];
+    otherXs.addAll([l.x1.toDouble(), l.x2.toDouble()]);
+    otherYs.addAll([l.y1.toDouble(), l.y2.toDouble()]);
+    // 다른 선의 가운데도 맞춤 기준이 된다.
+    otherXs.add((l.x1 + l.x2) / 2);
+    otherYs.add((l.y1 + l.y2) / 2);
+  }
+  return (
+    xs: {bounds.left, bounds.center.dx, bounds.right}.intersection(otherXs),
+    ys: {bounds.top, bounds.center.dy, bounds.bottom}.intersection(otherYs),
+  );
+}
