@@ -1000,11 +1000,10 @@ void main() {
     // 파일 변환은 '파일변환' 탭에서 고른다(작업 방식 카드에서 뺐다, 2026-10-30).
     await tester.tap(find.byKey(const Key('workspaceTab-6')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('conversionConvertListed')));
-    await tester.pumpAndSettle();
-    expect(find.text('변환할 포맷을 고르세요'), findsOneWidget);
+    // 2.0.7: 파일변환 탭 한 화면에서 포맷 칸을 바로 누른다(팝업 없음).
+    expect(find.byKey(const Key('conversionWorkspace')), findsOneWidget);
     expect(find.text('DOCX'), findsOneWidget);
-    await tester.tap(find.text('PDF').last);
+    await tester.tap(find.byKey(const Key('conversionFormat-pdf')));
     await tester.pumpAndSettle();
     // 형식을 고르면 '변환 시작'을 누르지 않아도 바로 변환을 시작한다(사용자 지시, 2026-10-15).
     final picked = calls.indexWhere(
@@ -1050,11 +1049,10 @@ void main() {
     // 파일 변환은 '파일변환' 탭에서 고른다(작업 방식 카드에서 뺐다, 2026-10-30).
     await tester.tap(find.byKey(const Key('workspaceTab-6')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('conversionConvertListed')));
-    await tester.pumpAndSettle();
-    expect(find.text('변환할 포맷을 고르세요'), findsOneWidget);
+    // 2.0.7: 파일변환 탭 한 화면에서 포맷 칸을 바로 누른다(팝업 없음).
+    expect(find.byKey(const Key('conversionWorkspace')), findsOneWidget);
     expect(find.text('DOCX'), findsOneWidget);
-    await tester.tap(find.text('TXT').last);
+    await tester.tap(find.byKey(const Key('conversionFormat-txt')));
     await tester.pumpAndSettle();
     // 형식을 고르면 '변환 시작'을 누르지 않아도 바로 변환을 시작한다(사용자 지시, 2026-10-15).
     final picked = calls.indexWhere(
@@ -1100,11 +1098,10 @@ void main() {
     // 파일 변환은 '파일변환' 탭에서 고른다(작업 방식 카드에서 뺐다, 2026-10-30).
     await tester.tap(find.byKey(const Key('workspaceTab-6')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('conversionConvertListed')));
-    await tester.pumpAndSettle();
-    expect(find.text('변환할 포맷을 고르세요'), findsOneWidget);
+    // 2.0.7: 파일변환 탭 한 화면에서 포맷 칸을 바로 누른다(팝업 없음).
+    expect(find.byKey(const Key('conversionWorkspace')), findsOneWidget);
     expect(find.text('DOCX'), findsOneWidget);
-    await tester.tap(find.text('MD').last);
+    await tester.tap(find.byKey(const Key('conversionFormat-md')));
     await tester.pumpAndSettle();
     // 형식을 고르면 '변환 시작'을 누르지 않아도 바로 변환을 시작한다(사용자 지시, 2026-10-15).
     final picked = calls.indexWhere(
@@ -1168,29 +1165,19 @@ void main() {
     // 파일 변환은 '파일변환' 탭에서 고른다(작업 방식 카드에서 뺐다, 2026-10-30).
     await tester.tap(find.byKey(const Key('workspaceTab-6')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('conversionConvertListed')));
-    await tester.pumpAndSettle();
-    expect(
-      find.byKey(const Key('conversionPrerequisiteNotice')),
-      findsOneWidget,
+    // 2.0.7: 쓸 수 없는 포맷 칸은 눌러지지 않고, 말풍선으로 이유(설치 필요)를 보인다.
+    expect(find.byTooltip('kordoc 4.24.9 설치 필요 (Node.js 20+)'), findsWidgets);
+    final cell = tester.widget<InkWell>(
+      find.byKey(const Key('conversionFormat-hwpx')),
     );
-    expect(
-      tester
-          .widget<Text>(find.byKey(const Key('conversionPrerequisiteNotice')))
-          .data,
-      contains('kordoc 4.24.9 설치 필요'),
-    );
-    final button = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, '변환 시작'),
-    );
-    expect(button.onPressed, isNull);
+    expect(cell.onTap, isNull);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
 
   for (final width in [420.0, 1024.0]) {
     testWidgets(
-      'floating format picker cancels and commits only a chosen format at $width',
+      'conversion tab ignores number keys and converts only a tapped format at $width',
       (tester) async {
         tester.view.physicalSize = Size(width, 700);
         tester.view.devicePixelRatio = 1;
@@ -1199,7 +1186,7 @@ void main() {
         final state = initialState();
         final choices = <Object?>[];
         state['files'] = [
-          {'name': 'report.hwpx', 'folder': r'C:\Docs'},
+          {'name': 'report.hwpx', 'folder': r'C:\Docs', 'size': 2048},
         ];
         Future<Object?> api(String method, List<Object?> args) async {
           if (method == 'set_mode') state['mode'] = args.first;
@@ -1212,41 +1199,22 @@ void main() {
 
         await tester.pumpWidget(DocFitApp(api: api));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('작업 방식 선택'));
-        await tester.pumpAndSettle();
-        // 파일 변환은 '파일변환' 탭에서 고른다(작업 방식 카드에서 뺐다, 2026-10-30).
         await tester.tap(find.byKey(const Key('workspaceTab-6')));
         await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('conversionConvertListed')));
-        await tester.pumpAndSettle();
-        expect(
-          find.byKey(const Key('floatingConversionPicker')),
-          findsOneWidget,
-        );
-        await tester.tap(find.byKey(const Key('cancelConversionPicker')));
-        await tester.pumpAndSettle();
-        expect(choices, isEmpty);
+        expect(find.byKey(const Key('conversionWorkspace')), findsOneWidget);
         expect(find.byKey(const Key('floatingConversionPicker')), findsNothing);
-        await tester.ensureVisible(
-          find.byKey(const Key('openConversionPicker')),
-        );
-        await tester.tap(find.byKey(const Key('openConversionPicker')));
-        await tester.pumpAndSettle();
-        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        expect(find.text('2 KB'), findsOneWidget);
+        // 숫자 키 선택은 없앴다(사용자 지시, 2.0.7).
+        await tester.sendKeyEvent(LogicalKeyboardKey.digit1);
+        await tester.sendKeyEvent(LogicalKeyboardKey.numpad1);
         await tester.pumpAndSettle();
         expect(choices, isEmpty);
-        await tester.tap(find.byKey(const Key('openConversionPicker')));
-        await tester.pumpAndSettle();
-        await tester.tap(
-          find.descendant(
-            of: find.byKey(const Key('conversionSlice-pdf')),
-            matching: find.text('PDF'),
-          ),
-        );
+        final pdf = find.byKey(const Key('conversionFormat-pdf'));
+        await tester.ensureVisible(pdf);
+        await tester.tap(pdf);
         await tester.pumpAndSettle();
         expect(choices, ['pdf']);
         expect(find.byKey(const Key('floatingConversionPicker')), findsNothing);
-        expect(find.text('선택한 결과 형식: PDF'), findsOneWidget);
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox());
       },

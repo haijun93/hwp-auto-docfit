@@ -148,8 +148,9 @@ def convert_hwpx_to_pdf(app, source: str | Path, target: str | Path) -> Path:
     temporary.unlink()
     opened = False
     try:
-        if app.Open(str(source), open_format, "") is False:
-            raise RuntimeError(f"한/글이 {open_format} 문서를 열지 못했습니다.")
+        # 암호 문서는 숨은 암호 창에서 멈추지 않고 바로 실패한다(2.0.7).
+        if app.Open(str(source), open_format, "suspendpassword:true") is False:
+            raise RuntimeError(f"한/글이 {open_format} 문서를 열지 못했습니다(암호 문서이면 암호를 풀고 다시 시도하세요).")
         opened = True
         if app.SaveAs(str(temporary), "PDF", "") is False:
             raise RuntimeError("한/글이 PDF로 저장하지 못했습니다.")
@@ -281,8 +282,8 @@ def convert_hwp_to_hwpx(app, source: str | Path, target: str | Path) -> Path:
     opened = False
     try:
         opened = True  # Failed Open may still leave a partial COM document.
-        if app.Open(str(source), "HWP", "forceopen:true") is False:
-            raise RuntimeError("한/글에서 HWP 원본을 열지 못했습니다.")
+        if app.Open(str(source), "HWP", "forceopen:true;suspendpassword:true") is False:
+            raise RuntimeError("한/글에서 HWP 원본을 열지 못했습니다. 암호 문서는 'HWP 찾아 HWPX로'에서 암호를 넣어 변환하세요.")
         if app.SaveAs(str(temporary), "HWPX", "") is False:
             raise RuntimeError("한/글에서 HWPX 저장을 완료하지 못했습니다.")
         validate_hwpx(temporary)

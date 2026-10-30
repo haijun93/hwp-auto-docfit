@@ -40,6 +40,10 @@ Future<Object?> callApi(String method, List<Object?> args) async {
     }
     return _client.call('get_state', []);
   }
+  if (method == 'hwp_bulk' && args.isNotEmpty && args[0] == 'pick_folder') {
+    // HWP 일괄 변환: 찾을 폴더 고르기(창은 앱에서 띄운다).
+    return {'ok': true, 'folder': await getDirectoryPath()};
+  }
   if (method == 'add_folder') {
     final folder = await getDirectoryPath();
     if (folder != null) {

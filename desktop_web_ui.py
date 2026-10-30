@@ -438,7 +438,8 @@ class DesktopWebBridge:
                 "job": self._jobs().latest(),
                 "_open_completed_result": False,
                 "files": [
-                    {"name": Path(path).name, "path": path, "folder": str(Path(path).parent)}
+                    {"name": Path(path).name, "path": path, "folder": str(Path(path).parent),
+                     "size": _file_size(path)}
                     for path in gui.files
                 ],
                 "count": len(gui.files),
@@ -520,6 +521,8 @@ class DesktopWebBridge:
             targets = self._conversion_targets(files)
             state["conversion_targets"] = targets
             state["can_start"] = self._can_start(state["mode"], files, state["running"], targets)
+        bulk_state = getattr(self, "_bulk_state", None)
+        state["hwp_bulk"] = bulk_state.as_dict() if bulk_state else None
         return state
 
     def _can_start(self, mode, files, running, conversion_targets=None):
@@ -1643,6 +1646,73 @@ class DesktopWebBridge:
             pass
         return app
 
+    def hwp_bulk(self, action, payload=None):
+        """HWP → HWPX 일괄 변환(2.0.7): drives · start · stop · status · open_report · show_report."""
+        from docfit_core import hwp_bulk as bulk
+        payload = payload if isinstance(payload, dict) else {}
+        state = getattr(self, "_bulk_state", None)
+        running = bool(state and state.phase in {"scan", "convert"})
+
+        def status(ok=True, message=""):
+            return {"ok": ok, "message": message, "bulk": state.as_dict() if state else None}
+        if action == "drives":
+            return {"ok": True, "drives": bulk.local_drives()}
+        if action == "status":
+            return status()
+        if action == "stop":
+            stop = getattr(self, "_bulk_stop", None)
+            if stop is not None:
+                stop.set()
+            return status()
+        if action in {"open_report", "show_report"}:
+            path = state.report if state else ""
+            opener = self._open_path if action == "open_report" else self._reveal
+            self._tk(lambda: opener(path, "변환 결과표가 아직 없습니다."))
+            return status()
+        if action != "start":
+            return status(False, "지원하지 않는 명령입니다.")
+        if running:
+            return status(False, "HWPX 일괄 변환이 이미 진행 중입니다.")
+        if self._tk(lambda: self.gui.running):
+            return status(False, "다른 문서 작업이 끝난 뒤 시작해 주세요.")
+        roots, passwords = payload.get("roots"), payload.get("passwords") or []
+        if (not isinstance(roots, list) or not 1 <= len(roots) <= 20 or not isinstance(passwords, list)
+                or len(passwords) > 20 or not all(isinstance(x, str) and 0 < len(x) <= 128 for x in passwords)):
+            return status(False, "찾을 위치와 암호 목록을 확인해 주세요.")
+        clean = []
+        for value in roots:
+            path = Path(str(value or ""))
+            if not path.is_absolute() or path.is_symlink() or not (
+                    path.is_dir() or (path.is_file() and path.suffix.lower() == ".hwp")):
+                return status(False, f"찾을 위치를 열 수 없습니다: {value}")
+            clean.append(path.resolve())
+        documents = Path(os.path.expanduser("~")) / "Documents"
+        report_dir = (documents if documents.is_dir() else Path(tempfile.gettempdir())) / "HWP_AutoDocFit" / "HWPX변환_결과표"
+        state = self._bulk_state = bulk.BulkState(phase="scan")
+        stop = self._bulk_stop = threading.Event()
+
+        def factory():
+            import pythoncom
+            pythoncom.CoInitialize()
+            return self._table_units_hwp()
+
+        def work():
+            try:
+                bulk.run_bulk(clean, app_factory=factory, state=state, stop=stop, passwords=list(passwords),
+                              report_dir=report_dir, recursive=payload.get("recursive", True) is not False)
+            except Exception as exc:  # 한/글 없음 등: 화면에 이유를 보인다.
+                logging.getLogger(__name__).warning("HWPX 일괄 변환 실패", exc_info=True)
+                state.error, state.phase = str(exc), "error"
+            finally:
+                passwords.clear()  # 암호는 작업이 끝나면 버린다(저장·기록하지 않음).
+                try:
+                    import pythoncom
+                    pythoncom.CoUninitialize()
+                except Exception:
+                    pass
+        threading.Thread(target=work, name="hwp-bulk", daemon=True).start()
+        return status()
+
     def table_sketch(self, action, payload=None):
         """Table sketch conversion, storage and clipboard API."""
         from docfit_app.table_sketch_service import TableSketchService
@@ -1761,6 +1831,46 @@ class DesktopWebBridge:
         self._tk(open_one, timeout=None, front=True)
         return self.get_state()
 
+    def _reveal(self, path, missing):
+        if path and os.path.isfile(path) and os.name == "nt":
+            subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
+        elif path and os.path.isdir(os.path.dirname(path)):
+            self.gui._경로_열기(os.path.dirname(path))
+        else:
+            self.gui.status_var.set(missing)
+
+    def _open_path(self, path, missing):
+        if path and os.path.isfile(path):
+            self.gui._경로_열기(path)
+        else:
+            self.gui.status_var.set(missing)
+
+    def _source_path(self, index):
+        try:
+            return str(list(self.gui.files)[int(index)])
+        except (IndexError, TypeError, ValueError):
+            return ""
+
+    def open_source_file(self, index):
+        """파일변환 화면 오른쪽 버튼 메뉴: 올린 파일을 연결된 프로그램으로 연다(2.0.7)."""
+        self._tk(lambda: self._open_path(self._source_path(index), "파일을 찾을 수 없습니다."), timeout=None, front=True)
+        return self.get_state()
+
+    def show_source_file(self, index):
+        """올린 파일을 탐색기에서 골라 보인다(2.0.7)."""
+        self._tk(lambda: self._reveal(self._source_path(index), "파일 폴더를 찾을 수 없습니다."), timeout=None, front=True)
+        return self.get_state()
+
+    def open_result_source(self, index):
+        """결과의 원본 파일을 연다(2.0.7)."""
+        def source():
+            try:
+                return getattr(self.gui, "_결과목록", [])[int(index)].get("원본", "")
+            except (IndexError, TypeError, ValueError, AttributeError):
+                return ""
+        self._tk(lambda: self._open_path(source(), "원본 파일을 찾을 수 없습니다."), timeout=None, front=True)
+        return self.get_state()
+
     def show_result(self, index):
         """탐색기에서 결과 파일이 있는 폴더를 열고 그 파일을 선택해 둔다."""
         def reveal():
@@ -1796,8 +1906,9 @@ class DesktopWebBridge:
             report = build_report(original, result, folder / f"비교_{Path(result).stem[:60]}.html")
         except Exception as exc:
             return {"ok": False, "code": "DIFF_UNSUPPORTED", "error": str(exc) or "비교하지 못했어요."}
-        if os.name == "nt":
-            os.startfile(str(report))   # noqa: S606 — 앱이 만든 HTML을 기본 브라우저로 연다
+        opener = getattr(os, "startfile", None)
+        if opener:
+            opener(str(report))   # noqa: S606 — 앱이 만든 HTML을 기본 브라우저로 연다
         return {**self.get_state(), "ok": True, "report": str(report)}
 
     def compare_result(self, index=0):
@@ -2154,6 +2265,13 @@ def smoke_cdp_port(environ=None):
     return None
 
 
+def _file_size(path):
+    try:
+        return os.path.getsize(path)
+    except OSError:
+        return None
+
+
 class _BrowserApi:
     """Expose commands only: pywebview recursively inspects public attributes."""
 
@@ -2164,8 +2282,8 @@ class _BrowserApi:
             "clear_files", "set_mode", "set_range", "start", "stop", "start_job", "cancel_job", "get_events",
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
             "get_pending_dialog", "resolve_dialog", "enable_close_guard", "acknowledge_close", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch",
-            "open_results", "next_job", "run_tool", "open_result",
-            "show_result", "open_diff", "compare_result", "launch_external_hwp_diff", "set_stage", "reset_stages", "set_stage_default",
+            "hwp_bulk", "open_results", "next_job", "run_tool", "open_result",
+            "show_result", "open_source_file", "show_source_file", "open_result_source", "open_diff", "compare_result", "launch_external_hwp_diff", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",
             "set_exclude_tables", "set_card_option",
             "set_drop_target", "add_format_file", "write_format_example", "rename_profile", "delete_profile",

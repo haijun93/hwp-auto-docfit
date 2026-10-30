@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:docfit_ui/main.dart';
-import 'package:docfit_ui/features/conversion/conversion_drop_pane.dart';
+import 'package:docfit_ui/features/conversion/conversion_workspace.dart';
 import 'package:docfit_ui/features/flows/flow_editor_screen.dart';
 import 'package:docfit_ui/features/workspace/workspace_adapters.dart';
 import 'package:docfit_ui/features/workspace/tab_navigation_shell.dart';
@@ -90,8 +90,9 @@ void main() {
     await tester.tap(find.text('파일변환'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
-    expect(find.byType(ConversionDropPane), findsOneWidget);
-    expect(find.text('여기에 파일을 놓으세요'), findsOneWidget);
+    // 2.0.7: 파일변환 탭 한 화면(올린 파일 · 변환할 포맷 · 변환 결과).
+    expect(find.byType(ConversionWorkspace), findsOneWidget);
+    expect(find.byKey(const Key('conversionDropZone')), findsOneWidget);
     expect(calls, contains('set_mode:file_format'));
     expect(calls, contains('set_drop_target:documents'));
     await tester.tap(find.byKey(const Key('conversionPickFiles')));

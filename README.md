@@ -7,17 +7,17 @@
 설치된 한/글을 직접 다뤄 공문서 모양으로 다듬어 드립니다. 원본은 그대로 둡니다.
 </p>
 
-<h2 align="center">⬇️ 지금 내려받기 · 최신 v2.0.5</h2>
+<h2 align="center">⬇️ 지금 내려받기 · 최신 v2.0.7</h2>
 
 <table align="center">
 <tr>
 <td align="center" width="50%">
 <b>무설치(포터블)</b><br><sub>받아서 더블클릭하면 바로 실행 · 추천</sub><br><br>
-<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.0.5_Portable.exe?inline=false"><img height="56" alt="GitLab에서 무설치로 받기 v2.0.5" src="https://img.shields.io/badge/%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v2.0.5-15803d?style=for-the-badge&logo=gitlab"></a>
+<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.0.7_Portable.exe?inline=false"><img height="56" alt="GitLab에서 무설치로 받기 v2.0.7" src="https://img.shields.io/badge/%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v2.0.7-15803d?style=for-the-badge&logo=gitlab"></a>
 </td>
 <td align="center" width="50%">
 <b>설치용</b><br><sub>시작 메뉴·제어판에 등록</sub><br><br>
-<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.0.5_Setup.exe?inline=false"><img height="56" alt="GitLab에서 설치용 받기 v2.0.5" src="https://img.shields.io/badge/%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0%20v2.0.5-15803d?style=for-the-badge&logo=gitlab"></a>
+<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.0.7_Setup.exe?inline=false"><img height="56" alt="GitLab에서 설치용 받기 v2.0.7" src="https://img.shields.io/badge/%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0%20v2.0.7-15803d?style=for-the-badge&logo=gitlab"></a>
 </td>
 </tr>
 </table>
@@ -34,6 +34,60 @@
 <a href="docs/media/overview-demo.mp4"><img src="docs/media/overview-demo.gif" alt="한글편집 후처리 5분 시연 — 누르면 고화질 영상" width="860"></a><br>
 <sub>▶ 누르면 5분 시연 영상(고화질)이 열립니다</sub>
 </p>
+
+---
+
+<h2 align="center">주요 기능 한눈에</h2>
+<p align="center">위 탭에서 기능을 고릅니다. 모든 작업은 이 PC 안에서만 하고 문서를 밖으로 보내지 않습니다.</p>
+
+<table>
+<tr>
+<td width="50%" valign="top"><a href="docs/media/app/edit.png"><img src="docs/media/app/edit.png" alt="문서편집 화면: 문서 선택, 작업 방식, 진행 과정, 결과 확인 4단계"></a><br><b>문서편집</b><br><sub>한/글 문서를 넣고 자간 정리·서식 통일·쪽 맞춤을 고르면 결과가 새 파일로 저장됩니다. 원본은 그대로 둡니다.</sub></td>
+<td width="50%" valign="top"><a href="docs/media/app/table-template.png"><img src="docs/media/app/table-template.png" alt="표 템플릿 화면: 추진절차(가로) 모양 1을 고르고 행·열 단위를 조절"></a><br><b>표 템플릿</b><br><sub>공공기관 보고서에 자주 쓰는 표 80종. 행·열을 정보 단위로 늘리고 줄인 뒤 한/글에 바로 붙여 넣습니다(Ctrl+V).</sub></td>
+</tr>
+<tr>
+<td width="50%" valign="top"><a href="docs/media/app/table-sketch.png"><img src="docs/media/app/table-sketch.png" alt="표그림판 화면: 조직도 예시를 선으로 그린 모습과 표 미리보기"></a><br><b>표그림판</b><br><sub>모눈 위에 선을 긋듯 표를 그리면 한/글 표로 바뀝니다. 선 색·배경색, 레이어, 한/글 표 붙여넣기(Ctrl+V)를 지원합니다.</sub></td>
+<td width="50%" valign="top"><a href="docs/media/app/file-convert.png"><img src="docs/media/app/file-convert.png" alt="파일변환 화면: 올린 파일, 변환할 포맷, 변환 결과 세 칸과 HWPX 일괄 변환 결과"></a><br><b>파일변환</b><br><sub>HWP·HWPX·PDF·DOCX·그림을 한 화면에서 바꿉니다. 폴더·드라이브 전체의 HWP를 찾아 HWPX로 한 번에 바꾸고, 암호 문서도 처리합니다.</sub></td>
+</tr>
+<tr>
+<td width="50%" valign="top"><a href="docs/media/app/diagram.png"><img src="docs/media/app/diagram.png" alt="다이어그램 화면: 신청 접수부터 결과 통보까지 업무 흐름도"></a><br><b>다이어그램</b><br><sub>업무 흐름도·순서도를 도형을 끌어 만들고 그림으로 복사해 한/글에 붙여 넣습니다.</sub></td>
+<td width="50%" valign="top"><a href="docs/media/app/mindmap.png"><img src="docs/media/app/mindmap.png" alt="마인드맵 화면: 2026 업무 계획을 가지로 펼친 지도"></a><br><b>마인드맵</b><br><sub>Tab·Enter로 가지를 늘려 생각을 정리합니다. 테마를 고르고 그림으로 한/글에 붙여 넣습니다.</sub></td>
+</tr>
+</table>
+
+---
+
+<h2 align="center">v2.0.7 릴리즈</h2>
+<p align="center">파일변환 화면을 새로 만들고, HWP 일괄 HWPX 변환(암호 문서 포함)과 표그림판 색을 더했습니다</p>
+
+### 파일변환 화면 새 디자인 (2.0.7)
+
+올린 파일 · 변환할 포맷 · 변환 결과를 한 화면에 두었습니다. 포맷 칸을 누르면 바로 바꾸고, 결과는 열기·폴더에서 보기와 마우스 오른쪽 메뉴로 다룹니다.
+
+### HWP 찾아 HWPX로 바꾸기 (2.0.7)
+
+폴더나 드라이브 전체의 HWP를 찾아 원본 옆에 HWPX로 저장합니다. 암호 문서는 넣은 암호로 열어 같은 암호의 HWPX로 바꾸고, 배포용·기관 보안(DRM) 문서는 열 수 있으면 바꾸고 아니면 결과표에 이유를 남깁니다.
+
+### 표그림판 선 색 · 배경색 (2.0.7)
+
+선 색과 사각형 배경색을 그림판과 같은 26색에서 고릅니다. 한/글 표로 바꿀 때와 한/글 표를 붙여 넣을 때 색이 그대로 옮겨집니다.
+
+---
+
+<h2 align="center">v2.0.6 릴리즈</h2>
+<p align="center">한/글 복사 오류를 고치고, 표 템플릿 화살표 고르기와 실제 모양 미리보기를 더했습니다</p>
+
+### 한/글 복사 오류 수정 (2.0.6)
+
+2.0.5에서 표 템플릿·표그림판의 '한/글에 붙여넣기용 복사'가 실패하던 오류를 고쳤습니다.
+
+### 표 템플릿 화살표 고르기 (2.0.6)
+
+추진절차·신구대조표의 칸 사이 화살표를 기호 12종이나 공문서용 그림 화살표 5종으로 바꿉니다. 그림 화살표는 방향과 크기도 고릅니다.
+
+### 실제 모양 미리보기 · 열 단위 · 원본 비교 (2.0.6)
+
+표 템플릿 미리보기가 실제 표와 같아졌고, 추가 서식 45개 모두 열 단위로 늘리고 줄입니다. 원본·결과 비교는 글 비교 화면으로 열립니다.
 
 ---
 

@@ -93,8 +93,22 @@ def _pt(style, name):
     return float(match.group(1)) if match else None
 
 
+def _hex(value):
+    match = re.search(r"#([0-9a-fA-F]{6})\b", value or "")
+    return ("#" + match.group(1)).upper() if match else "#000000"
+
+
+def _background(style):
+    """칸 바탕색(2.0.7): 'background:#fce4d6' 또는 background-color. 흰색·없음은 None."""
+    match = re.search(r"background(?:-color)?\s*:\s*([^;]+)", style, re.I)
+    if not match or "#" not in match.group(1):
+        return None
+    color = _hex(match.group(1))
+    return None if color == "#FFFFFF" else color
+
+
 def _border(style, side):
-    """'border-top:solid #000000 1.70pt' → (굵기, 종류) 또는 None(선 없음)."""
+    """'border-top:solid #000000 1.70pt' → (굵기, 종류, 색) 또는 None(선 없음)."""
     match = re.search(r"border-" + side + r"\s*:\s*([^;]+)", style, re.I)
     if not match:
         match = re.search(r"border\s*:\s*([^;]+)", style, re.I)
@@ -106,10 +120,11 @@ def _border(style, side):
     size = re.search(r"([\d.]+)\s*pt", value)
     points = float(size.group(1)) if size else 0.5
     kind = "dash" if "dash" in value else "dot" if "dot" in value else "solid"
+    color = _hex(value)
     if "double" in value:
-        return ("double", "solid")
+        return ("double", "solid", color)
     # 한/글 0.12mm≈0.34pt(가는 선), 0.4mm≈1.13pt 이상은 굵은 선.
-    return ("thick" if points >= 0.9 else "thin", kind)
+    return ("thick" if points >= 0.9 else "thin", kind, color)
 
 
 def _place(rows):
@@ -188,9 +203,12 @@ def sketch_from_html(html, cell_mm=5.0):
         if old is None or rank[line[0]] > rank[old[0]]:
             segments[key] = line
 
-    texts = []
+    texts, fills = [], []
     for r, c, rs, cs, cell in cells:
         x0, x1, y0, y1 = xs[c], xs[c + cs], ys[r], ys[r + rs]
+        background = _background(cell["style"])
+        if background:
+            fills.append({"x1": x0, "y1": y0, "x2": x1, "y2": y1, "color": background})
         for x in range(x0, x1):
             mark(("h", y0, x), _border(cell["style"], "top"))
             mark(("h", y1, x), _border(cell["style"], "bottom"))
@@ -202,20 +220,22 @@ def sketch_from_html(html, cell_mm=5.0):
             align = {"justify": "left"}.get(cell["align"], cell["align"]) or "center"
             texts.append({"x": x0, "y": y0, "text": text[:10000], "bold": cell["bold"], "align": align})
     lines = []
-    for (kind, at, start), (width, style) in sorted(segments.items()):
+    for (kind, at, start), (width, style, color) in sorted(segments.items()):
         last = lines[-1] if lines else None
         if (last and last["_kind"] == kind and last["_at"] == at and last["width"] == width and last["style"] == style
-                and last["_end"] == start):
+                and last["color"] == color and last["_end"] == start):
             last["_end"] = start + 1
         else:
-            lines.append({"_kind": kind, "_at": at, "_end": start + 1, "_start": start, "width": width, "style": style})
+            lines.append({"_kind": kind, "_at": at, "_end": start + 1, "_start": start, "width": width, "style": style,
+                          "color": color})
     result_lines = []
     for line in lines:
         if line["_kind"] == "h":
             coords = dict(x1=line["_start"], y1=line["_at"], x2=line["_end"], y2=line["_at"])
         else:
             coords = dict(x1=line["_at"], y1=line["_start"], x2=line["_at"], y2=line["_end"])
-        result_lines.append({**coords, "width": line["width"], "style": line["style"]})
+        result_lines.append({**coords, "width": line["width"], "style": line["style"],
+                             **({} if line["color"] == "#000000" else {"color": line["color"]})})
     grid = {"cols": max(36, xs[-1] + _MARGIN), "rows": max(50, ys[-1] + _MARGIN), "cell_mm": float(cell_mm)}
-    return {"grid": grid, "lines": result_lines, "texts": texts, "images": [],
+    return {"grid": grid, "lines": result_lines, "texts": texts, "images": [], "fills": fills,
             "source": {"rows": n_rows, "cols": n_cols}}

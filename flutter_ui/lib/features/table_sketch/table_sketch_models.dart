@@ -39,6 +39,7 @@ class SketchLine {
     required this.y2,
     this.width = 'thin',
     this.style = 'solid',
+    this.color = sketchBlack,
     this.layer,
   });
 
@@ -50,6 +51,7 @@ class SketchLine {
   final int y2;
   final String width; // "thin" | "thick" | "double"
   final String style; // "solid" | "dash" | "dot"
+  final String color; // "#RRGGBB" (2.0.7 선 색, 기본 검정)
 
   int get lengthInUnits => math.max((x2 - x1).abs(), (y2 - y1).abs());
 
@@ -105,6 +107,7 @@ class SketchLine {
     y2: (json['y2'] as num?)?.toInt() ?? 0,
     width: '${json['width'] ?? 'thin'}',
     style: '${json['style'] ?? 'solid'}',
+    color: normalizeSketchColor(json['color']) ?? sketchBlack,
     layer: json['layer'] is String ? json['layer'] as String : null,
   );
 
@@ -115,6 +118,7 @@ class SketchLine {
     'y2': y2,
     'width': width,
     'style': style,
+    if (color != sketchBlack) 'color': color,
     if (layer != null) 'layer': layer,
   };
 
@@ -125,6 +129,7 @@ class SketchLine {
     int? y2,
     String? width,
     String? style,
+    String? color,
     String? layer,
   }) => SketchLine(
     x1: x1 ?? this.x1,
@@ -133,8 +138,70 @@ class SketchLine {
     y2: y2 ?? this.y2,
     width: width ?? this.width,
     style: style ?? this.style,
+    color: color ?? this.color,
     layer: layer ?? this.layer,
   );
+}
+
+const sketchBlack = '#000000';
+
+/// 선 색·배경색 고르기 색 범위(그림판·도형 편집기와 같은 26색).
+const sketchPalette = [
+  '#FFFFFF', '#F2F2F2', '#D9D9D9', '#7F7F7F', '#262626', //
+  '#DBEAFE', '#BFDBFE', '#3B82F6', '#1D4ED8', //
+  '#DCFCE7', '#86EFAC', '#16A34A', //
+  '#FEF9C3', '#FDE047', '#CA8A04', //
+  '#FFEDD5', '#FDBA74', '#EA580C', //
+  '#FEE2E2', '#FCA5A5', '#DC2626', //
+  '#EDE9FE', '#C4B5FD', '#7C3AED', //
+  '#DFE6F7', '#4C4C4C', '#000000',
+];
+
+/// '#rrggbb' → '#RRGGBB', 잘못된 값은 null.
+String? normalizeSketchColor(Object? value) {
+  if (value is! String || !RegExp(r'^#[0-9A-Fa-f]{6}$').hasMatch(value)) {
+    return null;
+  }
+  return value.toUpperCase();
+}
+
+/// 사각형 배경색(격자 단위, x2·y2는 끝 격자점). 2.0.7.
+class SketchFill {
+  const SketchFill({
+    required this.x1,
+    required this.y1,
+    required this.x2,
+    required this.y2,
+    required this.color,
+  });
+
+  final int x1;
+  final int y1;
+  final int x2;
+  final int y2;
+  final String color;
+
+  static SketchFill? fromJson(Map<dynamic, dynamic> json) {
+    final color = normalizeSketchColor(json['color']);
+    final v = [
+      for (final k in ['x1', 'y1', 'x2', 'y2']) json[k],
+    ];
+    if (color == null || v.any((e) => e is! num)) return null;
+    final n = [for (final e in v) (e as num).toInt()];
+    if (n[0] >= n[2] || n[1] >= n[3]) return null;
+    return SketchFill(x1: n[0], y1: n[1], x2: n[2], y2: n[3], color: color);
+  }
+
+  Map<String, dynamic> toJson() => {
+    'x1': x1,
+    'y1': y1,
+    'x2': x2,
+    'y2': y2,
+    'color': color,
+  };
+
+  bool sameArea(SketchFill o) =>
+      o.x1 == x1 && o.y1 == y1 && o.x2 == x2 && o.y2 == y2;
 }
 
 /// 표그림판 칸 글자 (x, y는 칸 번호, 왼쪽 위 격자점).
@@ -279,10 +346,12 @@ class TableSketchDoc {
     List<SketchLine>? lines,
     List<SketchText>? texts,
     List<SketchImage>? images,
+    List<SketchFill>? fills,
     List<SketchLayer>? layers,
     String? activeLayer,
     TableSketchDoc? parked,
   }) : lines = lines ?? <SketchLine>[],
+       fills = fills ?? <SketchFill>[],
        texts = texts ?? <SketchText>[],
        images = images ?? <SketchImage>[],
        layers =
@@ -297,6 +366,9 @@ class TableSketchDoc {
   List<SketchLine> lines;
   List<SketchText> texts;
   List<SketchImage> images;
+
+  /// 사각형 배경색(레이어와 무관, 그린 순서대로 겹친다).
+  List<SketchFill> fills;
   List<SketchLayer> layers;
   String activeLayer;
   List<SketchLine> _parkedLines;
@@ -409,6 +481,7 @@ class TableSketchDoc {
     lines: lines.map((l) => l.copyWith()).toList(),
     texts: texts.map((t) => t.copyWith()).toList(),
     images: List.of(images),
+    fills: List.of(fills),
     layers: List.of(layers),
     activeLayer: activeLayer,
     parked: TableSketchDoc(
@@ -440,6 +513,12 @@ class TableSketchDoc {
         if (item is Map) images.add(SketchImage.fromJson(item));
       }
     }
+    final rawFills = json['fills'];
+    final fills = <SketchFill>[
+      if (rawFills is List)
+        for (final item in rawFills)
+          if (item is Map) ?SketchFill.fromJson(item),
+    ];
     final rawLayers = json['layers'];
     final layers = <SketchLayer>[];
     if (rawLayers is List) {
@@ -452,6 +531,7 @@ class TableSketchDoc {
       lines: lines,
       texts: texts,
       images: images,
+      fills: fills,
       layers: layers.isEmpty ? null : layers,
       activeLayer: json['active_layer'] is String
           ? json['active_layer'] as String
@@ -480,9 +560,21 @@ class TableSketchDoc {
       'texts': allTexts.map((t) => item(t.toJson())).toList(),
       if (allImages.isNotEmpty)
         'images': allImages.map((i) => item(i.toJson())).toList(),
+      if (fills.isNotEmpty) 'fills': fills.map((f) => f.toJson()).toList(),
       if (!forTable) 'layers': layers.map((l) => l.toJson()).toList(),
       if (!forTable) 'active_layer': activeLayer,
     };
+  }
+
+  /// 사각형 배경색을 칠한다(같은 범위는 바꾸고, color가 null이면 지운다).
+  void setFill(int x1, int y1, int x2, int y2, String? color) {
+    final area = SketchFill(x1: x1, y1: y1, x2: x2, y2: y2, color: sketchBlack);
+    fills = [
+      for (final f in fills)
+        if (!f.sameArea(area)) f,
+      if (color != null)
+        SketchFill(x1: x1, y1: y1, x2: x2, y2: y2, color: color),
+    ];
   }
 
   /// 선 추가 (동일 좌표 선이 있으면 교체).

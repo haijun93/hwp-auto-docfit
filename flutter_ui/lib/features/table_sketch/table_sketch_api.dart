@@ -87,7 +87,9 @@ class TableSketchApi {
   /// Windows 클립보드 바뀜 번호(그림판 안 복사 때 기억해 Ctrl+V가 무엇을 붙일지 정한다).
   Future<int?> clipboardSeq() async {
     final response = await call('table_sketch', ['clipboard_seq']);
-    return response is Map && response['seq'] is num ? (response['seq'] as num).toInt() : null;
+    return response is Map && response['seq'] is num
+        ? (response['seq'] as num).toInt()
+        : null;
   }
 
   /// command('table_sketch', ['delete', 이름])

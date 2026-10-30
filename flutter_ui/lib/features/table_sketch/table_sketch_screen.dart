@@ -43,6 +43,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
   SketchToolMode _tool = SketchToolMode.line;
   String _lineWidth = 'thin'; // thin, thick, double
   String _lineStyle = 'solid'; // solid, dash, dot
+  String _lineColor = sketchBlack; // 새 선 색(2.0.7)
 
   // 문서 데이터
   late TableSketchDoc _doc;
@@ -807,6 +808,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
           y2: snapped.y,
           width: _lineWidth,
           style: _lineStyle,
+          color: _lineColor,
         );
       });
     } else {
@@ -837,6 +839,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
         y2: snapped.y,
         width: _lineWidth,
         style: _lineStyle,
+        color: _lineColor,
       );
       setState(() {
         _doc.addLine(newLine);
@@ -906,6 +909,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
             y2: minY,
             width: _lineWidth,
             style: _lineStyle,
+            color: _lineColor,
           ),
         );
         // 하단 가로선
@@ -917,6 +921,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
             y2: maxY,
             width: _lineWidth,
             style: _lineStyle,
+            color: _lineColor,
           ),
         );
         // 좌측 세로선
@@ -928,6 +933,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
             y2: maxY,
             width: _lineWidth,
             style: _lineStyle,
+            color: _lineColor,
           ),
         );
         // 우측 세로선
@@ -939,6 +945,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
             y2: maxY,
             width: _lineWidth,
             style: _lineStyle,
+            color: _lineColor,
           ),
         );
         // 그린 사각형을 바로 골라 손잡이로 크기를 고치고 끌어 옮길 수 있게 한다(다이어그램처럼).
@@ -1024,6 +1031,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
       final line = _doc.lines[_sel.lines.first];
       _lineWidth = line.width;
       _lineStyle = line.style;
+      _lineColor = line.color;
     }
   }
 
@@ -1198,7 +1206,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
     _triggerPreviewDebounced();
   }
 
-  void _updateSelectedLineStyle({String? width, String? style}) {
+  void _updateSelectedLineStyle({String? width, String? style, String? color}) {
     final targets = _sel.validFor(_doc).lines;
     if (targets.isEmpty) return;
     _saveSnapshot();
@@ -1208,10 +1216,191 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
         _doc.lines[i] = old.copyWith(
           width: width ?? old.width,
           style: style ?? old.style,
+          color: color ?? old.color,
         );
       }
     });
     _triggerPreviewDebounced();
+  }
+
+  /// 고른 사각형(또는 고른 선들이 두른 범위)의 배경색을 칠한다. color가 null이면 지운다.
+  void _applyFill(String? color) {
+    final sel = _sel.validFor(_doc);
+    final box =
+        selectedRectangle(_doc, sel) ??
+        (sel.lines.isNotEmpty ? selectionBounds(_doc, sel) : null);
+    if (box == null || box.width < 1 || box.height < 1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('배경색을 칠할 사각형(또는 칸 테두리 선)을 먼저 고르세요.')),
+      );
+      return;
+    }
+    _saveSnapshot();
+    setState(
+      () => _doc.setFill(
+        box.left.round(),
+        box.top.round(),
+        box.right.round(),
+        box.bottom.round(),
+        color,
+      ),
+    );
+    _triggerPreviewDebounced();
+  }
+
+  /// 색 고르기 단추: 26색 + (배경은 '없음') + 직접 입력.
+  Widget _colorButton({
+    required Key key,
+    required String label,
+    required String tooltip,
+    required String? current,
+    required bool allowNone,
+    required void Function(String? color) onPick,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: Tooltip(
+        message: tooltip,
+        child: OutlinedButton(
+          key: key,
+          style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            minimumSize: const Size(0, 30),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          onPressed: () async {
+            final picked = await _pickColor(
+              key: key,
+              allowNone: allowNone,
+              current: current,
+            );
+            if (picked == null) return;
+            onPick(picked.isEmpty ? null : picked);
+          },
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 14,
+                height: 14,
+                decoration: BoxDecoration(
+                  color: current == null
+                      ? Colors.white
+                      : sketchColorValue(current),
+                  border: Border.all(color: const Color(0xFF94A3B8)),
+                ),
+                child: current == null
+                    ? const Icon(
+                        Icons.block,
+                        size: 12,
+                        color: Color(0xFFDC2626),
+                      )
+                    : null,
+              ),
+              const SizedBox(width: 4),
+              Text(label, style: const TextStyle(fontSize: 12)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 고른 색('#RRGGBB'), '없음'이면 '', 닫으면 null.
+  Future<String?> _pickColor({
+    required Key key,
+    required bool allowNone,
+    required String? current,
+  }) {
+    final prefix = (key as ValueKey<String>).value;
+    return showDialog<String>(
+      context: context,
+      builder: (context) {
+        final controller = TextEditingController(text: current ?? '');
+        Widget swatch(String hex) => InkWell(
+          key: Key('$prefix-$hex'),
+          onTap: () => Navigator.pop(context, hex),
+          child: Container(
+            width: 26,
+            height: 26,
+            decoration: BoxDecoration(
+              color: sketchColorValue(hex),
+              border: Border.all(
+                color: hex == current
+                    ? const Color(0xFF2563EB)
+                    : const Color(0xFFCBD5E1),
+                width: hex == current ? 2.5 : 1,
+              ),
+            ),
+          ),
+        );
+        return AlertDialog(
+          title: const Text('색 고르기', style: TextStyle(fontSize: 15)),
+          content: SizedBox(
+            width: 300,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [for (final hex in sketchPalette) swatch(hex)],
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  key: Key('$prefix-hex'),
+                  controller: controller,
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    labelText: '직접 입력 (#RRGGBB)',
+                  ),
+                  onSubmitted: (v) {
+                    final hex = normalizeSketchColor(v.trim());
+                    if (hex != null) Navigator.pop(context, hex);
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            if (allowNone)
+              TextButton(
+                key: Key('$prefix-none'),
+                onPressed: () => Navigator.pop(context, ''),
+                child: const Text('없음'),
+              ),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('닫기'),
+            ),
+            FilledButton(
+              key: Key('$prefix-apply'),
+              onPressed: () {
+                final hex = normalizeSketchColor(controller.text.trim());
+                if (hex != null) Navigator.pop(context, hex);
+              },
+              child: const Text('적용'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  String? get _selectedFillColor {
+    final sel = _sel.validFor(_doc);
+    final box = sel.lines.isEmpty ? null : selectionBounds(_doc, sel);
+    if (box == null) return null;
+    for (final f in _doc.fills.reversed) {
+      if (f.x1 == box.left.round() &&
+          f.y1 == box.top.round() &&
+          f.x2 == box.right.round() &&
+          f.y2 == box.bottom.round()) {
+        return f.color;
+      }
+    }
+    return null;
   }
 
   void _selectAll() {
@@ -1234,7 +1423,10 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
       _pasteShift = 0;
     });
     unawaited(
-      _sketchApi.clipboardSeq().then((seq) => _clipboardSeq = seq).catchError((_) => null),
+      _sketchApi
+          .clipboardSeq()
+          .then((seq) => _clipboardSeq = seq)
+          .catchError((_) => null),
     );
   }
 
@@ -1598,6 +1790,28 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
             _styleChip('solid', '실선', const Key('lineStyleSolid')),
             _styleChip('dash', '파선', const Key('lineStyleDash')),
             _styleChip('dot', '점선', const Key('lineStyleDot')),
+          ]),
+          _toolGroup([
+            _colorButton(
+              key: const Key('lineColorButton'),
+              label: '선 색',
+              tooltip: '새로 그을 선과 고른 선(사각형 테두리)의 색',
+              current: _lineColor,
+              allowNone: false,
+              onPick: (color) {
+                if (color == null) return;
+                setState(() => _lineColor = color);
+                _updateSelectedLineStyle(color: color);
+              },
+            ),
+            _colorButton(
+              key: const Key('fillColorButton'),
+              label: '배경',
+              tooltip: '고른 사각형의 배경색',
+              current: _selectedFillColor,
+              allowNone: true,
+              onPick: _applyFill,
+            ),
           ]),
           _toolGroup([
             IconButton(
