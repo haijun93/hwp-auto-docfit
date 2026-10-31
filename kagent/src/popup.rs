@@ -1,5 +1,6 @@
 //! 빠른 붙여넣기 팝업: 단축키를 누르면 마우스 옆에 최근 항목을 바로 그린다(메모리 목록, DB 읽기 없음).
 //! 숫자 1~9·↑↓·Enter로 고르면 원래 창으로 돌아가 붙여넣는다. Esc·바깥 클릭은 닫기.
+//! 글자를 치면 바로 찾는다(한글 입력 중인 글자도 반영). 찾는 중에는 숫자도 찾을 글자로 쓴다.
 
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicIsize, Ordering};
@@ -7,10 +8,11 @@ use std::sync::atomic::{AtomicIsize, Ordering};
 use windows_sys::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::*;
 use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
+use windows_sys::Win32::UI::Input::Ime::{GCS_COMPSTR, ImmGetCompositionStringW, ImmGetContext, ImmReleaseContext};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, SetFocus, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, SendInput, VIRTUAL_KEY, VK_CONTROL,
     VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_HOME, VK_LMENU, VK_LWIN, VK_MENU, VK_NEXT, VK_PRIOR, VK_RETURN,
-    VK_RMENU, VK_RWIN, VK_SHIFT, VK_UP,
+    VK_BACK, VK_RMENU, VK_RWIN, VK_SHIFT, VK_UP,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
@@ -30,9 +32,37 @@ struct State {
     top: usize,
     target: isize,
     hover: Option<usize>,
+    /// 확정된 찾기 글자와 한글 입력 중인 글자.
+    query: String,
+    comp: String,
 }
 
-static STATE: Mutex<State> = Mutex::new(State { items: Vec::new(), sel: 0, top: 0, target: 0, hover: None });
+static STATE: Mutex<State> = Mutex::new(State {
+    items: Vec::new(), sel: 0, top: 0, target: 0, hover: None, query: String::new(), comp: String::new(),
+});
+
+impl State {
+    fn needle(&self) -> String {
+        format!("{}{}", self.query, self.comp)
+    }
+}
+
+/// 찾기 글자로 목록을 다시 만든다. 빈 찾기는 메모리 목록, 찾기는 저장소(복호화 결과 캐시)에서.
+fn refilter() {
+    let needle = STATE.lock().unwrap().needle();
+    let items = if needle.trim().is_empty() {
+        app().recent.lock().unwrap().clone()
+    } else {
+        app().store.lock().unwrap().recent(50, Some(needle.trim())).unwrap_or_default()
+    };
+    let mut st = STATE.lock().unwrap();
+    st.items = items;
+    st.sel = 0;
+    st.top = 0;
+    st.hover = None;
+    drop(st);
+    unsafe { InvalidateRect(popup_hwnd(), std::ptr::null(), 0) };
+}
 static HWND_POPUP: AtomicIsize = AtomicIsize::new(0);
 
 fn popup_hwnd() -> HWND {
@@ -85,7 +115,10 @@ pub fn show() {
         st.sel = 0;
         st.top = 0;
         st.hover = None;
-        let rows = st.items.len().clamp(1, VISIBLE) as i32;
+        st.query.clear();
+        st.comp.clear();
+        // 찾기 결과가 늘 수 있으므로 항목이 적어도 창은 몇 줄 여유를 둔다.
+        let rows = st.items.len().clamp(5, VISIBLE) as i32;
         drop(st);
         let mut pt = POINT { x: 0, y: 0 };
         GetCursorPos(&mut pt);
@@ -110,6 +143,11 @@ pub fn show() {
 pub fn refresh() {
     let hwnd = popup_hwnd();
     if hwnd.is_null() || unsafe { IsWindowVisible(hwnd) } == 0 {
+        return;
+    }
+    let searching = !STATE.lock().unwrap().needle().is_empty();
+    if searching {
+        refilter();
         return;
     }
     let mut st = STATE.lock().unwrap();
@@ -212,15 +250,21 @@ unsafe fn paint(hwnd: HWND) {
         SelectObject(mem, small);
         SetTextColor(mem, 0x00555555);
         let mut hr = RECT { left: scale(hwnd, 10), top: 0, right: w - scale(hwnd, 10), bottom: head };
-        let title = wide("K클립보드 · 1~9 또는 ↑↓ Enter · Del 지우기 · Esc 닫기");
-        DrawTextW(mem, title.as_ptr(), -1, &mut hr, DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
-
         let st = STATE.lock().unwrap();
+        let title = if st.needle().is_empty() {
+            "K클립보드 · 1~9 또는 ↑↓ Enter · 글자를 치면 찾기 · Esc 닫기".to_string()
+        } else {
+            SetTextColor(mem, 0x00222222);
+            format!("찾기: {}{}▏ · {}개 · Esc 지우기", st.query, st.comp, st.items.len())
+        };
+        DrawTextW(mem, wide(&title).as_ptr(), -1, &mut hr, DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
+
         let row = scale(hwnd, ROW_H);
         if st.items.is_empty() {
             SelectObject(mem, font);
             let mut r = RECT { left: scale(hwnd, 12), top: head, right: w, bottom: head + row };
-            let t = wide("아직 기록된 항목이 없습니다. 무엇이든 복사해 보세요.");
+            let t = wide(if st.needle().is_empty() { "아직 기록된 항목이 없습니다. 무엇이든 복사해 보세요." }
+                         else { "찾는 글자가 들어 있는 항목이 없습니다." });
             DrawTextW(mem, t.as_ptr(), -1, &mut r, DT_SINGLELINE | DT_VCENTER);
         }
         for (i, item) in st.items.iter().enumerate().skip(st.top).take(VISIBLE) {
@@ -233,7 +277,7 @@ unsafe fn paint(hwnd: HWND) {
             }
             SelectObject(mem, small);
             SetTextColor(mem, 0x00EB6325);
-            let shortcut = if i - st.top < 9 { format!("{}", i - st.top + 1) } else { String::new() };
+            let shortcut = if i - st.top < 9 && st.needle().is_empty() { format!("{}", i - st.top + 1) } else { String::new() };
             let mut nr = RECT { left: scale(hwnd, 8), top: y, right: scale(hwnd, 24), bottom: y + row };
             DrawTextW(mem, wide(&shortcut).as_ptr(), -1, &mut nr, DT_SINGLELINE | DT_VCENTER | DT_CENTER);
             SetTextColor(mem, 0x00888888);
@@ -284,7 +328,24 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             WM_KEYDOWN => {
                 let vk = wp as u16;
                 match vk {
-                    VK_ESCAPE => hide(),
+                    VK_ESCAPE => {
+                        let searching = !STATE.lock().unwrap().needle().is_empty();
+                        if searching {
+                            let mut st = STATE.lock().unwrap();
+                            st.query.clear();
+                            st.comp.clear();
+                            drop(st);
+                            refilter();
+                        } else {
+                            hide();
+                        }
+                    }
+                    VK_BACK => {
+                        let changed = STATE.lock().unwrap().query.pop().is_some();
+                        if changed {
+                            refilter();
+                        }
+                    }
                     VK_RETURN => {
                         let sel = STATE.lock().unwrap().sel;
                         choose(sel);
@@ -306,7 +367,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                             refresh();
                         }
                     }
-                    0x31..=0x39 | 0x61..=0x69 => {
+                    0x31..=0x39 | 0x61..=0x69 if STATE.lock().unwrap().needle().is_empty() => {
                         let n = if vk >= 0x61 { vk - 0x61 } else { vk - 0x31 } as usize;
                         let top = STATE.lock().unwrap().top;
                         choose(top + n);
@@ -316,6 +377,41 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                 }
                 InvalidateRect(hwnd, std::ptr::null(), 0);
                 0
+            }
+            WM_CHAR => {
+                let ch = char::from_u32(wp as u32).unwrap_or('\0');
+                let mut st = STATE.lock().unwrap();
+                // 찾기 전의 숫자는 고르기(WM_KEYDOWN)에 썼다. 제어 문자는 무시.
+                if IsWindowVisible(hwnd) == 0 || ch < ' ' || ch == '\u{7f}'
+                    || (st.needle().is_empty() && ch.is_ascii_digit() && ch != '0')
+                    || st.query.chars().count() >= 40
+                {
+                    return 0;
+                }
+                st.query.push(ch);
+                st.comp.clear();
+                drop(st);
+                refilter();
+                0
+            }
+            WM_IME_COMPOSITION => {
+                if lp as u32 & GCS_COMPSTR != 0 {
+                    let imc = ImmGetContext(hwnd);
+                    let bytes = ImmGetCompositionStringW(imc, GCS_COMPSTR, std::ptr::null_mut(), 0);
+                    let mut buf = vec![0u16; (bytes.max(0) as usize) / 2];
+                    if !buf.is_empty() {
+                        ImmGetCompositionStringW(imc, GCS_COMPSTR, buf.as_mut_ptr() as _, bytes as u32);
+                    }
+                    ImmReleaseContext(hwnd, imc);
+                    STATE.lock().unwrap().comp = String::from_utf16_lossy(&buf);
+                    refilter();
+                }
+                // 확정 글자는 기본 처리가 WM_CHAR로 보낸다.
+                DefWindowProcW(hwnd, msg, wp, lp)
+            }
+            WM_IME_ENDCOMPOSITION => {
+                STATE.lock().unwrap().comp.clear();
+                DefWindowProcW(hwnd, msg, wp, lp)
             }
             WM_MOUSEMOVE => {
                 let i = row_at(hwnd, lp);

@@ -19,13 +19,18 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindow
 use crate::util::wide;
 
 pub enum Capture {
-    Text(String),
+    /// 글과 같은 내용의 서식 형식 묶음(HTML·RTF, pack_formats).
+    Text(String, Vec<u8>),
     Files(Vec<String>),
     Png(Vec<u8>),
     Dib(Vec<u8>),
 }
 
+/// 글과 함께 보관해 되돌릴 서식 형식(이름으로 등록되는 형식).
+const RICH_FORMATS: [&str; 2] = ["HTML Format", "Rich Text Format"];
+
 struct Formats {
+    rich: [u32; 2],
     png: u32,
     exclude: u32,
     history: u32,
@@ -35,6 +40,7 @@ fn formats() -> &'static Formats {
     static F: OnceLock<Formats> = OnceLock::new();
     F.get_or_init(|| unsafe {
         Formats {
+            rich: RICH_FORMATS.map(|name| RegisterClipboardFormatW(wide(name).as_ptr())),
             png: RegisterClipboardFormatW(wide("PNG").as_ptr()),
             exclude: RegisterClipboardFormatW(wide("ExcludeClipboardContentFromMonitorProcessing").as_ptr()),
             history: RegisterClipboardFormatW(wide("CanIncludeInClipboardHistory").as_ptr()),
@@ -147,7 +153,15 @@ pub fn read(hwnd: HWND, max_bytes: usize) -> Option<Capture> {
                 let end = units.iter().position(|&u| u == 0).unwrap_or(units.len());
                 let text = String::from_utf16_lossy(&units[..end]);
                 if !text.trim().is_empty() {
-                    return Some(Capture::Text(text));
+                    let mut rich = Vec::new();
+                    for (name, fmt) in RICH_FORMATS.iter().zip(f.rich) {
+                        if fmt != 0 && IsClipboardFormatAvailable(fmt) != 0 {
+                            if let Some(bytes) = global_bytes(GetClipboardData(fmt), max_bytes) {
+                                rich.push((name.to_string(), bytes));
+                            }
+                        }
+                    }
+                    return Some(Capture::Text(text, pack_formats(&rich)));
                 }
             }
         }
@@ -189,8 +203,41 @@ unsafe fn put(format: u32, data: &[u8]) -> bool {
     }
 }
 
-/// 저장한 항목을 원래 형식으로 클립보드에 올린다.
-pub fn write(hwnd: HWND, kind: &str, payload: &[u8]) -> bool {
+/// [개수][이름 길이·이름·자료 길이·자료]… (작은 끝 u32). 비어 있으면 빈 바이트.
+pub fn pack_formats(formats: &[(String, Vec<u8>)]) -> Vec<u8> {
+    if formats.is_empty() {
+        return Vec::new();
+    }
+    let mut out = (formats.len() as u32).to_le_bytes().to_vec();
+    for (name, data) in formats {
+        out.extend_from_slice(&(name.len() as u32).to_le_bytes());
+        out.extend_from_slice(name.as_bytes());
+        out.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        out.extend_from_slice(data);
+    }
+    out
+}
+
+pub fn unpack_formats(mut data: &[u8]) -> Vec<(String, Vec<u8>)> {
+    let mut take = |n: usize| -> Option<&[u8]> {
+        let (head, rest) = (data.get(..n)?, data.get(n..)?);
+        data = rest;
+        Some(head)
+    };
+    let mut out = Vec::new();
+    let Some(count) = take(4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]])) else { return out };
+    for _ in 0..count.min(16) {
+        let Some(len) = take(4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize) else { break };
+        let Some(name) = take(len).map(|b| String::from_utf8_lossy(b).into_owned()) else { break };
+        let Some(len) = take(4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize) else { break };
+        let Some(bytes) = take(len) else { break };
+        out.push((name, bytes.to_vec()));
+    }
+    out
+}
+
+/// 저장한 항목을 원래 형식으로 클립보드에 올린다(글은 함께 보관한 HTML·RTF도).
+pub fn write(hwnd: HWND, kind: &str, payload: &[u8], extra: &[u8]) -> bool {
     let Some(_open) = Open::new(hwnd) else { return false };
     unsafe {
         if EmptyClipboard() == 0 {
@@ -201,7 +248,13 @@ pub fn write(hwnd: HWND, kind: &str, payload: &[u8]) -> bool {
                 let mut units: Vec<u16> = String::from_utf8_lossy(payload).encode_utf16().collect();
                 units.push(0);
                 let bytes: Vec<u8> = units.iter().flat_map(|u| u.to_le_bytes()).collect();
-                put(CF_UNICODETEXT as u32, &bytes)
+                let ok = put(CF_UNICODETEXT as u32, &bytes);
+                for (name, data) in unpack_formats(extra) {
+                    if let Some(i) = RICH_FORMATS.iter().position(|n| *n == name) {
+                        put(formats().rich[i], &data);
+                    }
+                }
+                ok
             }
             "files" => {
                 let text = String::from_utf8_lossy(payload);
@@ -371,6 +424,17 @@ mod tests {
         assert!(dib_to_png(&[0u8; 10]).is_none());
         let top_down = dib_to_png(&dib(1, -1, 32, &[1, 2, 3, 0])).unwrap();
         assert_eq!(png_size(&top_down), Some((1, 1)));
+    }
+
+    #[test]
+    fn formats_pack() {
+        let packed = pack_formats(&[("HTML Format".into(), b"<b>x</b>".to_vec()), ("Rich Text Format".into(), vec![])]);
+        let back = unpack_formats(&packed);
+        assert_eq!(back.len(), 2);
+        assert_eq!(back[0], ("HTML Format".to_string(), b"<b>x</b>".to_vec()));
+        assert!(unpack_formats(&[]).is_empty());
+        assert!(unpack_formats(&packed[..7]).is_empty());
+        assert!(pack_formats(&[]).is_empty());
     }
 
     #[test]

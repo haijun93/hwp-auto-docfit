@@ -181,12 +181,13 @@ pub fn handle(v: &Value) -> Value {
         "get" => {
             let Some(id) = id_of(v) else { return error("항목을 확인해 주세요.") };
             match a.store.lock().unwrap().payload(id) {
-                Ok(Some((kind, data))) => {
+                Ok(Some((kind, data, extra))) => {
                     let body: Value = match kind.as_str() {
                         "image" => base64(&data).into(),
                         _ => String::from_utf8_lossy(&data).into_owned().into(),
                     };
-                    ok(vec![("id", id.into()), ("kind", kind.into()), ("data", body)])
+                    let formats = crate::clip::unpack_formats(&extra).into_iter().map(|(n, _)| Value::Str(n)).collect();
+                    ok(vec![("id", id.into()), ("kind", kind.into()), ("data", body), ("formats", Value::Arr(formats))])
                 }
                 Ok(None) => error("항목이 없습니다."),
                 Err(e) => error(&e),

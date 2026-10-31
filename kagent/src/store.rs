@@ -9,8 +9,7 @@ use crate::json::{self, Value};
 use crate::sqlite::{Arg, Connection};
 
 /// 스키마 버전(PRAGMA user_version). 앱(kagent_client.py)이 같은 값을 확인한다.
-#[allow(dead_code)]
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 2;
 
 #[derive(Clone, Debug)]
 pub struct Settings {
@@ -22,6 +21,11 @@ pub struct Settings {
     pub paused: bool,
     pub hotkey: String,
     pub excluded_apps: Vec<String>,
+    /// 스크린샷 폴더(Win+PrtScn·캡처 도구 자동 저장)에 새로 생긴 PNG도 기록.
+    pub watch_screenshots: bool,
+    /// 타임머신 조사 폴더(앱이 정해 준다, 비어 있으면 감시 안 함).
+    pub timeline_roots: Vec<String>,
+    pub timeline_mtime_only: bool,
 }
 
 impl Default for Settings {
@@ -39,8 +43,21 @@ impl Default for Settings {
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
+            watch_screenshots: true,
+            timeline_roots: Vec::new(),
+            timeline_mtime_only: false,
         }
     }
+}
+
+fn string_list(v: &Value, key: &str, lower: bool, max_len: usize) -> Option<Vec<String>> {
+    let Some(Value::Arr(items)) = v.get(key) else { return None };
+    Some(items
+        .iter()
+        .filter_map(|i| if let Value::Str(s) = i { Some(if lower { s.to_lowercase() } else { s.clone() }) } else { None })
+        .filter(|s| !s.is_empty() && s.len() <= max_len)
+        .take(100)
+        .collect())
 }
 
 impl Settings {
@@ -54,6 +71,9 @@ impl Settings {
             ("paused", self.paused.into()),
             ("hotkey", self.hotkey.as_str().into()),
             ("excluded_apps", Value::Arr(self.excluded_apps.iter().map(|s| s.as_str().into()).collect())),
+            ("watch_screenshots", self.watch_screenshots.into()),
+            ("timeline_roots", Value::Arr(self.timeline_roots.iter().map(|s| s.as_str().into()).collect())),
+            ("timeline_mtime_only", self.timeline_mtime_only.into()),
         ])
     }
 
@@ -80,13 +100,22 @@ impl Settings {
         if let Some(s) = v.str("hotkey").filter(|s| s.len() <= 40) {
             self.hotkey = s.to_string();
         }
-        if let Some(Value::Arr(items)) = v.get("excluded_apps") {
-            self.excluded_apps = items
-                .iter()
-                .filter_map(|i| if let Value::Str(s) = i { Some(s.to_lowercase()) } else { None })
-                .filter(|s| !s.is_empty() && s.len() <= 100)
-                .take(100)
+        if let Some(list) = string_list(v, "excluded_apps", true, 100) {
+            self.excluded_apps = list;
+        }
+        if let Some(b) = v.bool("watch_screenshots") {
+            self.watch_screenshots = b;
+        }
+        // 조사 폴더: 절대 경로(드라이브 문자)만, 최대 20개.
+        if let Some(list) = string_list(v, "timeline_roots", false, 1000) {
+            self.timeline_roots = list
+                .into_iter()
+                .filter(|p| p.len() > 3 && p.as_bytes()[1] == b':' && !p.contains("..") && !p.starts_with("\\\\"))
+                .take(20)
                 .collect();
+        }
+        if let Some(b) = v.bool("timeline_mtime_only") {
+            self.timeline_mtime_only = b;
         }
     }
 
@@ -152,28 +181,44 @@ impl Store {
              CREATE TABLE IF NOT EXISTS items(
                 id INTEGER PRIMARY KEY, created REAL NOT NULL, used REAL NOT NULL, kind TEXT NOT NULL,
                 hash TEXT NOT NULL UNIQUE, size INTEGER NOT NULL, pinned INTEGER NOT NULL DEFAULT 0,
-                source TEXT NOT NULL DEFAULT '', preview BLOB NOT NULL, payload BLOB NOT NULL);
-             CREATE INDEX IF NOT EXISTS items_used ON items(used);
-             PRAGMA user_version=1;",
+                source TEXT NOT NULL DEFAULT '', preview BLOB NOT NULL, payload BLOB NOT NULL,
+                extra BLOB NOT NULL DEFAULT x'');
+             CREATE INDEX IF NOT EXISTS items_used ON items(used);",
         )?;
+        // v1 → v2: 서식(HTML·RTF) 보관 칸 추가.
+        let mut version = 0;
+        conn.query("PRAGMA user_version", &[], |r| version = r.int(0))?;
+        if version < 2 {
+            let _ = conn.exec("ALTER TABLE items ADD COLUMN extra BLOB NOT NULL DEFAULT x''");
+            conn.exec(&format!("PRAGMA user_version={SCHEMA_VERSION}"))?;
+        }
         Ok(Store { conn, previews: std::collections::HashMap::new() })
     }
 
-    /// 새 항목이면 (id, true), 이미 있던 내용이면 (id, false)(순서만 앞으로).
-    pub fn insert(&self, kind: &str, data: &[u8], preview: &str, source: &str, now: f64) -> Result<(i64, bool), String> {
+    /// 새 항목이면 (id, true), 이미 있던 내용이면 (id, false)(순서만 앞으로, 서식은 새것으로).
+    /// extra: 같은 내용의 다른 형식(HTML·RTF) 묶음 — 중복 판단에는 쓰지 않는다.
+    pub fn insert(&self, kind: &str, data: &[u8], extra: &[u8], preview: &str, source: &str, now: f64)
+                  -> Result<(i64, bool), String> {
         let hash = content_hash(kind, data);
         let mut existing = None;
         self.conn.query("SELECT id FROM items WHERE hash = ?", &[Arg::Text(&hash)], |r| existing = Some(r.int(0)))?;
+        let sealed_extra = if extra.is_empty() { Vec::new() } else { crypt::protect(extra).ok_or("암호화 실패")? };
         if let Some(id) = existing {
-            self.conn.run("UPDATE items SET used = ? WHERE id = ?", &[Arg::Real(now), Arg::Int(id)])?;
+            if extra.is_empty() {
+                self.conn.run("UPDATE items SET used = ? WHERE id = ?", &[Arg::Real(now), Arg::Int(id)])?;
+            } else {
+                self.conn.run("UPDATE items SET used = ?, extra = ? WHERE id = ?",
+                              &[Arg::Real(now), Arg::Blob(&sealed_extra), Arg::Int(id)])?;
+            }
             return Ok((id, false));
         }
         let sealed = crypt::protect(data).ok_or("암호화 실패")?;
         let sealed_preview = crypt::protect(preview.as_bytes()).ok_or("암호화 실패")?;
         self.conn.run(
-            "INSERT INTO items(created, used, kind, hash, size, source, preview, payload) VALUES(?,?,?,?,?,?,?,?)",
-            &[Arg::Real(now), Arg::Real(now), Arg::Text(kind), Arg::Text(&hash), Arg::Int(data.len() as i64),
-              Arg::Text(source), Arg::Blob(&sealed_preview), Arg::Blob(&sealed)],
+            "INSERT INTO items(created, used, kind, hash, size, source, preview, payload, extra)              VALUES(?,?,?,?,?,?,?,?,?)",
+            &[Arg::Real(now), Arg::Real(now), Arg::Text(kind), Arg::Text(&hash),
+              Arg::Int((data.len() + extra.len()) as i64), Arg::Text(source), Arg::Blob(&sealed_preview),
+              Arg::Blob(&sealed), Arg::Blob(&sealed_extra)],
         )?;
         Ok((self.conn.last_id(), true))
     }
@@ -242,13 +287,17 @@ impl Store {
         Ok(out)
     }
 
-    pub fn payload(&self, id: i64) -> Result<Option<(String, Vec<u8>)>, String> {
+    /// (종류, 내용, 서식 묶음).
+    pub fn payload(&self, id: i64) -> Result<Option<(String, Vec<u8>, Vec<u8>)>, String> {
         let mut found = None;
-        self.conn.query("SELECT kind, payload FROM items WHERE id = ?", &[Arg::Int(id)], |r| {
-            found = Some((r.text(0), r.blob(1)))
+        self.conn.query("SELECT kind, payload, extra FROM items WHERE id = ?", &[Arg::Int(id)], |r| {
+            found = Some((r.text(0), r.blob(1), r.blob(2)))
         })?;
         Ok(match found {
-            Some((kind, sealed)) => Some((kind, crypt::unprotect(&sealed).ok_or("복호화 실패")?)),
+            Some((kind, sealed, sealed_extra)) => {
+                let extra = if sealed_extra.is_empty() { Vec::new() } else { crypt::unprotect(&sealed_extra).unwrap_or_default() };
+                Some((kind, crypt::unprotect(&sealed).ok_or("복호화 실패")?, extra))
+            }
             None => None,
         })
     }
@@ -285,18 +334,49 @@ mod tests {
         Store::open(":memory:").unwrap()
     }
 
+    impl Store {
+        fn insert_plain(&self, kind: &str, data: &[u8], preview: &str, source: &str, now: f64)
+                        -> Result<(i64, bool), String> {
+            self.insert(kind, data, &[], preview, source, now)
+        }
+    }
+
+    #[test]
+    fn extra_formats_and_migration() {
+        let s = store();
+        let (id, _) = s.insert("text", b"hello", b"html-bytes", "hello", "", 1.0).unwrap();
+        assert_eq!(s.payload(id).unwrap().unwrap().2, b"html-bytes".to_vec());
+        let (again, new) = s.insert("text", b"hello", b"newer", "hello", "", 2.0).unwrap();
+        assert!(!new && again == id);
+        assert_eq!(s.payload(id).unwrap().unwrap().2, b"newer".to_vec());
+        // v1 DB를 열면 extra 칸이 생긴다.
+        let dir = std::env::temp_dir().join(format!("kagent-mig-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("v1.db");
+        let _ = std::fs::remove_file(&path);
+        {
+            let c = Connection::open(path.to_str().unwrap()).unwrap();
+            c.exec("CREATE TABLE items(id INTEGER PRIMARY KEY, created REAL NOT NULL, used REAL NOT NULL,                     kind TEXT NOT NULL, hash TEXT NOT NULL UNIQUE, size INTEGER NOT NULL, pinned INTEGER NOT NULL                     DEFAULT 0, source TEXT NOT NULL DEFAULT '', preview BLOB NOT NULL, payload BLOB NOT NULL);                     PRAGMA user_version=1;").unwrap();
+        }
+        let migrated = Store::open(path.to_str().unwrap()).unwrap();
+        let (mid, _) = migrated.insert("text", b"x", b"y", "x", "", 1.0).unwrap();
+        assert_eq!(migrated.payload(mid).unwrap().unwrap().2, b"y".to_vec());
+        drop(migrated);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn insert_dedupe_and_order() {
         let mut s = store();
-        let (a, new_a) = s.insert("text", "첫째".as_bytes(), "첫째", "notepad.exe", 1.0).unwrap();
-        let (b, _) = s.insert("text", "둘째".as_bytes(), "둘째", "", 2.0).unwrap();
-        let (a2, new_a2) = s.insert("text", "첫째".as_bytes(), "첫째", "", 3.0).unwrap();
+        let (a, new_a) = s.insert_plain("text", "첫째".as_bytes(), "첫째", "notepad.exe", 1.0).unwrap();
+        let (b, _) = s.insert_plain("text", "둘째".as_bytes(), "둘째", "", 2.0).unwrap();
+        let (a2, new_a2) = s.insert_plain("text", "첫째".as_bytes(), "첫째", "", 3.0).unwrap();
         assert!(new_a && !new_a2);
         assert_eq!(a, a2);
         let ids: Vec<i64> = s.recent(10, None).unwrap().iter().map(|x| x.id).collect();
         assert_eq!(ids, vec![a, b]);
         assert_eq!(s.count().unwrap(), 2);
-        assert_eq!(s.payload(a).unwrap().unwrap(), ("text".into(), "첫째".as_bytes().to_vec()));
+        assert_eq!(s.payload(a).unwrap().unwrap(), ("text".into(), "첫째".as_bytes().to_vec(), Vec::new()));
         assert_eq!(s.recent(10, Some("둘")).unwrap()[0].id, b);
     }
 
@@ -305,10 +385,10 @@ mod tests {
         let mut s = store();
         let mut settings = Settings::default();
         settings.max_items = 3;
-        let pinned = s.insert("text", b"pinned", "p", "", 0.5).unwrap().0;
+        let pinned = s.insert_plain("text", b"pinned", "p", "", 0.5).unwrap().0;
         s.pin(pinned, true).unwrap();
         for i in 0..6 {
-            s.insert("text", format!("t{i}").as_bytes(), "x", "", 10.0 + i as f64).unwrap();
+            s.insert_plain("text", format!("t{i}").as_bytes(), "x", "", 10.0 + i as f64).unwrap();
         }
         assert_eq!(s.enforce(&settings, 20.0).unwrap(), 3);
         assert_eq!(s.count().unwrap(), 4); // 고정 1 + 최근 3
@@ -316,7 +396,7 @@ mod tests {
         assert_eq!(s.enforce(&settings, 10.0 + 86400.0 * 2.0).unwrap(), 3);
         assert_eq!(s.recent(10, None).unwrap()[0].id, pinned);
         settings.max_total_bytes = 0;
-        s.insert("text", &[1u8; 100], "big", "", 1e9).unwrap();
+        s.insert_plain("text", &[1u8; 100], "big", "", 1e9).unwrap();
         s.enforce(&settings, 1e9).unwrap();
         assert_eq!(s.count().unwrap(), 1); // 고정만 남음
         assert_eq!(s.clear(true).unwrap(), 0);

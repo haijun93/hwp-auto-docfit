@@ -14,9 +14,11 @@ mod pipe;
 mod popup;
 mod sqlite;
 mod store;
+mod timeline;
 mod util;
+mod watch;
 
-use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{Sender, channel};
 use std::sync::{Mutex, OnceLock};
 
@@ -62,6 +64,146 @@ pub struct App {
     pub hwnd: AtomicIsize,
     pub hotkey_ok: AtomicBool,
     pub listening: AtomicBool,
+    /// 마지막으로 클립보드에서 그림을 기록한 때(ms) — 같은 캡처가 스크린샷 폴더로도 오면 한 번만.
+    pub last_clip_image: AtomicU64,
+    pub timeline: Mutex<Option<timeline::Timeline>>,
+    pub screenshots: Mutex<String>,
+}
+
+fn now_ms() -> u64 {
+    (now() * 1000.0) as u64
+}
+
+/// 스크린샷 폴더(알려진 폴더 FOLDERID_Screenshots, 없으면 사진\Screenshots).
+fn screenshots_folder() -> Option<String> {
+    use windows_sys::Win32::System::Com::CoTaskMemFree;
+    use windows_sys::Win32::UI::Shell::{FOLDERID_Screenshots, SHGetKnownFolderPath};
+    if let Ok(dir) = std::env::var("KAGENT_SCREENSHOTS") {
+        return std::path::Path::new(&dir).is_dir().then_some(dir); // 시험용
+    }
+    unsafe {
+        let mut p: windows_sys::core::PWSTR = std::ptr::null_mut();
+        if SHGetKnownFolderPath(&FOLDERID_Screenshots, 0, std::ptr::null_mut(), &mut p) == 0 && !p.is_null() {
+            let mut n = 0;
+            while *p.add(n) != 0 {
+                n += 1;
+            }
+            let path = String::from_utf16_lossy(std::slice::from_raw_parts(p, n));
+            CoTaskMemFree(p as _);
+            if std::path::Path::new(&path).is_dir() {
+                return Some(path);
+            }
+        } else if !p.is_null() {
+            CoTaskMemFree(p as _);
+        }
+    }
+    let fallback = format!("{}\\Pictures\\Screenshots", std::env::var("USERPROFILE").ok()?);
+    std::path::Path::new(&fallback).is_dir().then_some(fallback)
+}
+
+/// 스크린샷 폴더에 새로 생긴 PNG 한 장을 그림 항목으로 기록한다.
+fn record_screenshot(path: &str) {
+    if !path.to_lowercase().ends_with(".png") {
+        return;
+    }
+    if now_ms().saturating_sub(app().last_clip_image.load(Ordering::Relaxed)) < 3000 {
+        return; // 같은 캡처가 클립보드로 이미 기록됨
+    }
+    let max = app().settings.lock().unwrap().max_item_bytes as u64;
+    // 캡처 도구가 아직 쓰는 중일 수 있어 몇 번 다시 시도한다.
+    let mut data = None;
+    for _ in 0..5 {
+        match std::fs::metadata(path) {
+            Ok(m) if m.len() > max => return,
+            Ok(_) => {
+                if let Ok(bytes) = std::fs::read(path) {
+                    if bytes.starts_with(b"\x89PNG") && bytes.ends_with(b"IEND\xAE\x42\x60\x82") {
+                        data = Some(bytes);
+                        break;
+                    }
+                }
+            }
+            Err(_) => return,
+        }
+        std::thread::sleep(std::time::Duration::from_millis(150));
+    }
+    let Some(data) = data else { return };
+    let preview = format!("캡처 · {}", clip::preview("image", &data));
+    let settings = app().settings.lock().unwrap().clone();
+    {
+        let store = app().store.lock().unwrap();
+        let t = now();
+        if store.insert("image", &data, &[], &preview, "screenshot", t).is_err() {
+            return;
+        }
+        let _ = store.enforce(&settings, t);
+    }
+    refresh_recent();
+}
+
+/// 설정에 맞춰 폴더 감시(스크린샷·타임머신)를 다시 시작한다. 타임머신 폴더는 먼저 한 번 증분으로 훑는다.
+pub fn restart_watchers() {
+    let settings = app().settings.lock().unwrap().clone();
+    let mut roots: Vec<(String, u32, bool)> = Vec::new();
+    let shots = if settings.watch_screenshots && !settings.paused { screenshots_folder() } else { None };
+    *app().screenshots.lock().unwrap() = shots.clone().unwrap_or_default();
+    if let Some(dir) = shots {
+        roots.push((dir, 0, false));
+    }
+    let timeline_roots: Vec<String> =
+        settings.timeline_roots.iter().filter(|r| std::path::Path::new(r).is_dir()).cloned().collect();
+    {
+        let mut tl = app().timeline.lock().unwrap();
+        if timeline_roots.is_empty() {
+            *tl = None;
+        } else if tl.is_none() {
+            *tl = timeline::Timeline::open(&format!("{}\\timeline.db", app().dir)).ok();
+        }
+        if let Some(t) = tl.as_mut() {
+            t.mtime_only = settings.timeline_mtime_only;
+            let _ = t.drop_other_roots(&timeline_roots);
+        }
+    }
+    for (i, root) in timeline_roots.iter().enumerate() {
+        roots.push((root.clone(), i as u32 + 1, true));
+    }
+    let names = timeline_roots.clone();
+    watch::restart(roots, move |batch| {
+        for (tag, change) in batch {
+            if tag == 0 {
+                if let watch::Change::Added(rel) | watch::Change::Modified(rel) = change {
+                    let dir = app().screenshots.lock().unwrap().clone();
+                    record_screenshot(&format!("{dir}\\{rel}"));
+                }
+                continue;
+            }
+            let Some(root) = names.get(tag as usize - 1) else { continue };
+            let tl = app().timeline.lock().unwrap();
+            let Some(t) = tl.as_ref() else { continue };
+            let _ = match change {
+                watch::Change::Overflow => t.scan_root(root).map(|_| ()),
+                watch::Change::Added(rel) | watch::Change::Removed(rel) | watch::Change::Modified(rel) => t.apply(root, &rel),
+            };
+        }
+        write_status();
+    });
+    if !timeline_roots.is_empty() {
+        // 첫 색인·증분 갱신은 낮은 우선순위로(감시를 먼저 켜 두어 그 사이 변경도 놓치지 않는다).
+        std::thread::Builder::new().name("kagent-scan".into()).stack_size(512 * 1024).spawn(move || {
+            unsafe {
+                use windows_sys::Win32::System::Threading::{GetCurrentThread, SetThreadPriority,
+                                                            THREAD_MODE_BACKGROUND_BEGIN};
+                SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN);
+            }
+            for root in &timeline_roots {
+                let tl = app().timeline.lock().unwrap();
+                if let Some(t) = tl.as_ref() {
+                    let _ = t.scan_root(root);
+                }
+            }
+            write_status();
+        }).ok();
+    }
 }
 
 static APP: OnceLock<App> = OnceLock::new();
@@ -103,6 +245,9 @@ pub fn write_status() {
         ("total_bytes", total.into()),
         ("hotkey", settings.hotkey.as_str().into()),
         ("hotkey_ok", a.hotkey_ok.load(Ordering::Relaxed).into()),
+        ("screenshots", a.screenshots.lock().unwrap().as_str().into()),
+        ("timeline_roots", (settings.timeline_roots.len() as i64).into()),
+        ("timeline_files", a.timeline.lock().map(|t| t.as_ref().map(|t| t.count()).unwrap_or(0)).unwrap_or(0).into()),
         ("updated", now().into()),
     ]);
     let path = format!("{}\\status.json", a.dir);
@@ -124,24 +269,27 @@ fn worker(rx: std::sync::mpsc::Receiver<(Capture, String)>) {
         SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
     }
     for (capture, source) in rx {
-        let (kind, data) = match capture {
-            Capture::Text(s) => ("text", s.into_bytes()),
-            Capture::Files(files) => ("files", files.join("\n").into_bytes()),
-            Capture::Png(b) => ("image", b),
-            Capture::Dib(d) => match clip::dib_to_png(&d) {
-                Some(p) => ("image", p),
+        let (kind, data, extra) = match capture {
+            Capture::Text(s, extra) => ("text", s.into_bytes(), extra),
+            Capture::Files(files) => ("files", files.join("\n").into_bytes(), Vec::new()),
+            Capture::Png(b) => {
+                app().last_clip_image.store(now_ms(), Ordering::Relaxed);
+                ("image", b, Vec::new())
+            }
+            Capture::Dib(d) => match { app().last_clip_image.store(now_ms(), Ordering::Relaxed); clip::dib_to_png(&d) } {
+                Some(p) => ("image", p, Vec::new()),
                 None => continue,
             },
         };
         let settings = app().settings.lock().unwrap().clone();
-        if data.len() as i64 > settings.max_item_bytes {
+        if (data.len() + extra.len()) as i64 > settings.max_item_bytes {
             continue;
         }
         let preview = clip::preview(kind, &data);
         let t = now();
         {
             let store = app().store.lock().unwrap();
-            if store.insert(kind, &data, &preview, &source, t).is_err() {
+            if store.insert(kind, &data, &extra, &preview, &source, t).is_err() {
                 continue;
             }
             let _ = store.enforce(&settings, t);
@@ -294,15 +442,16 @@ pub fn set_paused(hwnd: HWND, paused: bool) {
     save_settings();
     set_listening(hwnd, !paused);
     tray(hwnd, NIM_MODIFY);
+    restart_watchers();
     write_status();
 }
 
 /// 항목을 클립보드에 올리고(자기 쓰기는 다시 기록하지 않음), 원하면 target 창에 Ctrl+V.
 pub fn restore(id: i64, paste: bool, target: HWND) -> bool {
     let payload = app().store.lock().unwrap().payload(id).ok().flatten();
-    let Some((kind, data)) = payload else { return false };
+    let Some((kind, data, extra)) = payload else { return false };
     let hwnd = main_hwnd();
-    if !clip::write(hwnd, &kind, &data) {
+    if !clip::write(hwnd, &kind, &data, &extra) {
         return false;
     }
     app().self_seq.store(unsafe { GetClipboardSequenceNumber() }, Ordering::Relaxed);
@@ -377,11 +526,13 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                 let paused = app().settings.lock().unwrap().paused;
                 set_listening(hwnd, !paused);
                 tray(hwnd, NIM_MODIFY);
+                restart_watchers();
                 write_status();
                 0
             }
             WM_DESTROY => {
                 set_listening(hwnd, false);
+                watch::stop();
                 UnregisterHotKey(hwnd, HOTKEY_ID);
                 tray(hwnd, NIM_DELETE);
                 let _ = std::fs::remove_file(format!("{}\\status.json", app().dir));
@@ -440,6 +591,9 @@ fn main() {
         hwnd: AtomicIsize::new(0),
         hotkey_ok: AtomicBool::new(false),
         listening: AtomicBool::new(false),
+        last_clip_image: AtomicU64::new(0),
+        timeline: Mutex::new(None),
+        screenshots: Mutex::new(String::new()),
     });
     *app().recent.lock().unwrap() = app().store.lock().unwrap().recent(RECENT, None).unwrap_or_default();
     std::thread::Builder::new().name("kagent-worker".into()).stack_size(256 * 1024).spawn(move || worker(rx)).ok();
@@ -474,6 +628,7 @@ fn main() {
         let paused = app().settings.lock().unwrap().paused;
         set_listening(hwnd, !paused);
         tray(hwnd, NIM_ADD);
+        restart_watchers();
         write_status();
         pipe::start();
 

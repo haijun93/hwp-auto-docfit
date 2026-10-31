@@ -36,7 +36,8 @@
 | 일시정지 | 기록 안 함(리스너 해제) | — |
 
 구현 위치: `kagent/`(Rust: `clip`·`store`·`sqlite`·`crypt`·`pipe`·`popup`·`json`), 앱 `docfit_app/kagent_client.py`·`kclip_service.py`, 화면 `flutter_ui/lib/features/kclip/`, CI `build-windows-exe.yml`의 "Build K agent" 단계(→ `resources/kagent.exe` + SHA-256).
-남은 것: 스크린샷 폴더·타임머신 폴더 감시(`ReadDirectoryChangesW`), HTML·RTF 서식 보존, 팝업 한글 검색(IME), 코드 서명, 24시간 누수 측정.
+**2차(같은 날)**: 서식 보존(글과 함께 HTML·RTF 보관·복원, 스키마 v2 자동 이전), 팝업 찾기(글자를 치면 바로 찾기, 한글 조합 중 글자 반영, Esc로 지우기), 폴더 감시(`watch.rs`: ReadDirectoryChangesW + 완료 포트 한 개, 400ms 묶기, 넘침이면 그 폴더만 다시 훑기) — 스크린샷 폴더의 새 PNG를 '캡처' 항목으로(같은 캡처가 클립보드로 3초 안에 왔으면 한 번만), 타임머신 조사 폴더를 앱과 같은 `timeline.db` 스키마로 실시간 갱신(`timeline.rs`, 설정 `timeline_roots`). 실측(`scripts/kagent_watch_check_pc.py`): 새 파일 반영 0.43초, 지운 폴더 반영, 임시 파일 무시, 앱 `Store`로 읽기 호환, 감시 켠 상태 유휴 CPU 0.0%·개인 메모리 1.95MB, exe 0.72MB.
+남은 것: 코드 서명(인증서 필요), 24시간 누수 측정(K1 과제로 스트레스 측정 스크립트), 타임머신 화면(TM2 과제).
 
 ## 1. 왜 독립 exe인가 (같은 exe 모드와 비교)
 
