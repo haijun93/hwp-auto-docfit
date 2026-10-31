@@ -89,10 +89,10 @@ class ApplicationService:
         counts.update({'start_job':2, 'cancel_job':1, 'get_events':1})
         counts.update({'table_template':2,'document_tool':2,'get_pending_dialog':0,'stage_config':2,'set_stage':2,'set_stage_default':1})
         counts.update({'set_option':2,'set_include_spacing':1,'set_reset_spacing':1,'set_table_spacing':1,'set_exclude_tables':1,'set_range':3,'set_card_option':2})
-        counts.update({'flow_editor':2,'idioms':2,'hangul_fonts':2,'table_units':2,'table_sketch':2,'file_rename':2})
+        counts.update({'flow_editor':2,'idioms':2,'hangul_fonts':2,'table_units':2,'table_sketch':2,'file_rename':2,'kclip':2})
         if method not in counts:
             raise ServiceError('NOT_AVAILABLE','지원하지 않는 명령입니다.')
-        if not (method in ('table_sketch', 'file_rename') and len(args) in (1, 2)) and len(args)!=counts[method]:
+        if not (method in ('table_sketch', 'file_rename', 'kclip') and len(args) in (1, 2)) and len(args)!=counts[method]:
             raise ServiceError('INVALID_INPUT','입력 항목 수를 확인해 주세요.')
         if self.data.closing and method != 'shutdown':
             raise ServiceError('BACKEND_CLOSING','백엔드가 종료 중입니다.')
@@ -206,6 +206,11 @@ class ApplicationService:
             if args[0] == 'copy' and getattr(self.data, 'running', False):
                 return {'ok':False,'message':'문서 작업이 끝난 뒤 다시 눌러 주세요.'}
             return TableSketchService(self.store._path.parent).command(*args)
+        if method=='kclip':
+            from .kclip_service import KClipService
+            if getattr(self, '_kclip_service', None) is None:
+                self._kclip_service = KClipService()
+            return self._kclip_service.command(*args)
         if method=='file_rename':
             if getattr(self, '_rename_service', None) is None:
                 from .file_rename_service import FileRenameService

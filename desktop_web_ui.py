@@ -1721,6 +1721,18 @@ class DesktopWebBridge:
             service = self._rename_service = FileRenameService(folder, dialogs=self._file_dialogs)
         return service
 
+    def kclip(self, action, payload=None):
+        """K클립보드: 상주 프로그램(kagent.exe) 켜기·끄기와 목록·설정(파이프 명령)."""
+        try:
+            from docfit_app.kclip_service import KClipService
+            service = getattr(self, "_kclip_service", None)
+            if service is None:
+                service = self._kclip_service = KClipService()
+            return service.command(action, payload)
+        except Exception as exc:
+            logging.getLogger(__name__).warning("K클립보드 처리 실패", exc_info=True)
+            return {"ok": False, "message": str(exc) or "K클립보드를 처리하지 못했습니다."}
+
     def file_rename(self, action, payload=None):
         """파일이름 탭: 목록·미리보기·적용·되돌리기(경로는 호스트에만 둔다)."""
         try:
@@ -2319,7 +2331,7 @@ class _BrowserApi:
             "clear_files", "set_mode", "set_range", "start", "stop", "start_job", "cancel_job", "get_events",
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
             "get_pending_dialog", "resolve_dialog", "enable_close_guard", "acknowledge_close", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch",
-            "file_rename", "hwp_bulk", "open_results", "next_job", "run_tool", "open_result",
+            "file_rename", "kclip", "hwp_bulk", "open_results", "next_job", "run_tool", "open_result",
             "show_result", "open_source_file", "show_source_file", "open_result_source", "open_diff", "compare_result", "launch_external_hwp_diff", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",
             "set_exclude_tables", "set_card_option",

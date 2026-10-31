@@ -25,6 +25,7 @@ import 'features/settings/update_panel.dart';
 import 'features/stages/stage_board.dart';
 import 'features/workspace/workspace_adapters.dart';
 import 'features/workspace/tab_navigation_shell.dart';
+import 'features/kclip/kclip_dialog.dart';
 
 export 'core/api/abbreviation_api.dart' show ApiCall;
 
@@ -188,6 +189,13 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
       builder: (context) => Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          IconButton(
+            key: const ValueKey('kclip-open'),
+            tooltip: 'K클립보드 (복사 기록 · Ctrl+Shift+V)',
+            visualDensity: VisualDensity.compact,
+            onPressed: () => showKClipDialog(context, widget.api),
+            icon: const Icon(Icons.content_paste_search, size: 20),
+          ),
           IconButton(
             tooltip: '사용 방법 (F1)',
             visualDensity: VisualDensity.compact,

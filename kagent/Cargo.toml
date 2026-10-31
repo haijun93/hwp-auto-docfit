@@ -1,0 +1,38 @@
+[package]
+name = "kagent"
+version = "0.1.0"
+edition = "2024"
+description = "K에이전트: K클립보드 기록·빠른 붙여넣기 상주 프로그램(초경량, 네트워크 코드 없음)"
+license = "MIT"
+publish = false
+
+[dependencies]
+# Win32 바인딩(순수 Rust, 빌드 스크립트·C 컴파일러 없음).
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Security_Cryptography",
+    "Win32_Storage_FileSystem",
+    "Win32_System_DataExchange",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
+    "Win32_System_Pipes",
+    "Win32_System_Threading",
+    "Win32_System_IO",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+# 클립보드 비트맵(DIB) ↔ PNG. 순수 Rust.
+png = "0.17"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

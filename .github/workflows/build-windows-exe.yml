@@ -113,6 +113,14 @@ jobs:
         shell: pwsh
         run: ./build_flutter.ps1
 
+      - name: Build K agent (kagent.exe, Rust)
+        shell: pwsh
+        run: |
+          cargo test --release --locked --manifest-path kagent/Cargo.toml
+          cargo build --release --locked --manifest-path kagent/Cargo.toml
+          Copy-Item kagent/target/release/kagent.exe resources/kagent.exe -Force
+          (Get-FileHash resources/kagent.exe -Algorithm SHA256).Hash | Out-File -Encoding ascii resources/kagent.exe.sha256
+
       - name: Build EXE using shared packaging specification
         run: |
           & ".\.venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean "HWP_AutoDocFit.spec"
