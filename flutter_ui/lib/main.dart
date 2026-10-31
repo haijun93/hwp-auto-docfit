@@ -143,6 +143,7 @@ class _IntegratedHome extends StatefulWidget {
 }
 
 class _IntegratedHomeState extends State<_IntegratedHome> {
+  final savedSidebarExpanded = ValueNotifier<bool?>(null);
   final workspace = GlobalKey<_WorkspaceState>();
   int lastTab = 0;
 
@@ -172,7 +173,12 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
   @override
   Widget build(BuildContext context) => IntegratedWorkspace(
     api: widget.api,
-    documentEditorWidget: Workspace(key: workspace, api: widget.api),
+    documentEditorWidget: Workspace(
+      key: workspace,
+      api: widget.api,
+      onSidebarCollapsed: (collapsed) =>
+          savedSidebarExpanded.value = collapsed == null ? null : !collapsed,
+    ),
     fileConversionWidget: _ConversionTab(workspace: workspace),
     onTabChanged: (index) {
       final from = lastTab;
@@ -184,9 +190,18 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
         workspace.currentState?.leaveConversionMode();
       }
     },
-    // 앱 메뉴(사용 방법·작업 로그·설정)는 상단 탭 줄 오른쪽 끝에 둔다.
+    savedSidebarExpanded: savedSidebarExpanded,
+    // 시작 때 호출을 늘리지 않으려 ☰을 누를 때만 저장한다.
+    onSidebarExpandedChanged: (expanded) {
+      unawaited(
+        widget
+            .api('set_sidebar_collapsed', [!expanded])
+            .then<void>((_) {}, onError: (_) {}),
+      );
+    },
+    // 앱 메뉴(사용 방법·작업 로그·설정)는 왼쪽 메뉴 아래쪽에 둔다.
     trailing: Builder(
-      builder: (context) => Row(
+      builder: (context) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
@@ -227,8 +242,11 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
 }
 
 class Workspace extends StatefulWidget {
-  const Workspace({super.key, required this.api});
+  const Workspace({super.key, required this.api, this.onSidebarCollapsed});
   final ApiCall api;
+
+  /// 상태 응답에 실려 온 왼쪽 메뉴 접힘 저장값.
+  final ValueChanged<bool?>? onSidebarCollapsed;
   @override
   State<Workspace> createState() => _WorkspaceState();
 }
@@ -446,6 +464,8 @@ class _WorkspaceState extends State<Workspace> implements ConversionHost {
     final documentsChanged =
         jsonEncode(state['files'] ?? []) != jsonEncode(next['files'] ?? []);
     state = Map<String, dynamic>.from(next);
+    final collapsed = next['sidebar_collapsed'];
+    widget.onSidebarCollapsed?.call(collapsed is bool ? collapsed : null);
     // 입력 중인 값은 유지하되, 문서 변경·새 작업·백엔드 범위 변경은 반영한다.
     if (range.isNotEmpty &&
         (!rangeLoaded || syncRange || rangeChanged || documentsChanged)) {

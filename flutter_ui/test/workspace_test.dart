@@ -244,7 +244,7 @@ void main() {
         ['add_files', 'set_mode', 'start'],
       );
       expect(find.text('문서를 정리하고 있어요'), findsOneWidget);
-      await tester.tap(find.text(width >= 1000 ? '문서 선택' : '1. 문서 선택').first);
+      await tester.tap(find.textContaining('문서 선택').first);
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('문서.hwpx'), findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -867,7 +867,7 @@ void main() {
       await tester.pumpWidget(DocFitApp(api: api));
       await tester.pumpAndSettle();
       if (resetMethod == 'next_job') {
-        await tester.tap(find.text('결과 확인').first);
+        await tester.tap(find.textContaining('결과 확인').first);
         await tester.pumpAndSettle();
         await tester.tap(find.text('새 작업 시작'));
         await tester.pumpAndSettle();

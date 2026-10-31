@@ -488,6 +488,7 @@ class DesktopWebBridge:
                 "format_task": self._format_task(),
                 "pending_dialog": self._pending_dialog(),
                 "drop_target": self.drop_target,
+                "sidebar_collapsed": self._sidebar_collapsed_value(),
                 "document_drop_revision": self._document_drop_revision,
                 "options": {
                     name: bool(getattr(gui, attribute).get())
@@ -2166,6 +2167,22 @@ class DesktopWebBridge:
         return self.get_state()
 
     # ---- 서식 관리(예시 보고서로 서식 복제·이름 바꾸기·세부 수정·삭제) ----
+    def _sidebar_collapsed_value(self):
+        """왼쪽 메뉴 접힘 저장값(없으면 None). 상태 조회가 잦아 한 번만 읽는다."""
+        if not hasattr(self, "_sidebar_collapsed"):
+            try:
+                self._sidebar_collapsed = self.gui._준말_서비스().settings.read().get("sidebar_collapsed")
+            except Exception:
+                self._sidebar_collapsed = None
+        return self._sidebar_collapsed
+
+    def set_sidebar_collapsed(self, collapsed):
+        """☰을 눌렀을 때만 왼쪽 메뉴 접힘 상태를 설정 파일에 저장한다."""
+        value = bool(collapsed)
+        self._sidebar_collapsed = value
+        self.gui._준말_서비스().settings.update(lambda current: current.update({"sidebar_collapsed": value}))
+        return value
+
     def set_drop_target(self, target):
         """끌어 놓은 파일을 넣을 곳을 바꾼다: documents(문서 목록) 또는 format(예시 서식 복제)."""
         if target not in ("documents", "manual_documents", "format", "quick_format", "sketch_image", "paint_image",
@@ -2486,7 +2503,7 @@ class _BrowserApi:
             "show_result", "open_source_file", "show_source_file", "open_result_source", "open_diff", "compare_result", "launch_external_hwp_diff", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",
             "set_exclude_tables", "set_card_option",
-            "set_drop_target", "add_format_file", "write_format_example", "rename_profile", "delete_profile",
+            "set_sidebar_collapsed", "set_drop_target", "add_format_file", "write_format_example", "rename_profile", "delete_profile",
             "edit_profile", "show_format_example", "open_format_samples", "format_gallery",
             "set_conversion_target", "start_single_file_conversion", "check_update", "start_update", "open_update_page",
         ):

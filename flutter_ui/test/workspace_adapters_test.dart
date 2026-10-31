@@ -6,6 +6,9 @@ import 'package:docfit_ui/features/workspace/workspace_adapters.dart';
 
 void main() {
   testWidgets('IntegratedWorkspace mounts TabNavigationShell with 9 tabs', (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     int currentTab = 0;
     Future<Object?> mockApi(String endpoint, List<Object?> params) async {
       return {'ok': true};
