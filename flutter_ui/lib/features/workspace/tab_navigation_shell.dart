@@ -6,6 +6,11 @@ const kTabTimemachine = 7;
 const kTabFileConversion = 8;
 const kTabCount = 9;
 
+/// 파일명 일괄변경은 기능이 완벽해질 때까지 메뉴에 보이지 않는다(2026-11-01 사용자 지시).
+/// 완성되면 true로 바꾼다. 탭 번호는 그대로 둔다.
+const kFileRenameMenuEnabled = false;
+const kDefaultHiddenTabs = kFileRenameMenuEnabled ? <int>{} : <int>{kTabFileRename};
+
 /// 탭 안 화면이 '닫기·뒤로'를 요청할 때 쓰는 통로.
 /// 탭 화면은 앱의 첫 경로 위에 바로 있어 Navigator.pop을 하면 첫 화면이 빠져 앱이 멈춘다(2.0.0 사용자 보고).
 class WorkspaceTabScope extends InheritedWidget {
@@ -56,6 +61,7 @@ class TabNavigationShell extends StatefulWidget {
     this.initialIndex = 0,
     this.onTabChanged,
     this.trailing,
+    this.hiddenTabs = kDefaultHiddenTabs,
   }) : assert(initialIndex >= 0 && initialIndex < kTabCount);
 
   final Widget documentEditor;
@@ -72,6 +78,9 @@ class TabNavigationShell extends StatefulWidget {
   final Widget fileRename;
   final Widget timemachine;
   final int initialIndex;
+
+  /// 메뉴에 보이지 않고 화면도 만들지 않는 탭.
+  final Set<int> hiddenTabs;
   final ValueChanged<int>? onTabChanged;
 
   /// 상단 탭 줄 오른쪽 끝의 앱 전체 메뉴(사용 방법·작업 로그·설정 등).
@@ -82,7 +91,7 @@ class TabNavigationShell extends StatefulWidget {
 }
 
 class _TabNavigationShellState extends State<TabNavigationShell> {
-  late int _index = widget.initialIndex;
+  late int _index = widget.hiddenTabs.contains(widget.initialIndex) ? 0 : widget.initialIndex;
   final ScrollController _tabScrollController = ScrollController();
 
   @override
@@ -116,6 +125,7 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
   ];
 
   void _select(int index) {
+    if (widget.hiddenTabs.contains(index)) return;
     if (index == _index) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -161,6 +171,7 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
               icons: _icons,
               selectedIndex: _index,
               onSelected: _select,
+              hiddenTabs: widget.hiddenTabs,
               scrollController: _tabScrollController,
               trailing: widget.trailing,
             ),
@@ -172,7 +183,7 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
                     TickerMode(
                       key: ValueKey('workspace-tab-$i'),
                       enabled: i == _index,
-                      child: pages[i],
+                      child: widget.hiddenTabs.contains(i) ? const SizedBox.shrink() : pages[i],
                     ),
                 ],
               ),
@@ -188,6 +199,7 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
 /// Filee 목록 메뉴·이음오피스 탭 크기를 참고했다. 창이 좁으면 탭 부분을 가로로 밀어 본다.
 class WorkspaceTabBar extends StatelessWidget {
   const WorkspaceTabBar({
+    this.hiddenTabs = const {},
     super.key,
     required this.labels,
     required this.icons,
@@ -197,6 +209,7 @@ class WorkspaceTabBar extends StatelessWidget {
     this.trailing,
   });
 
+  final Set<int> hiddenTabs;
   final List<String> labels;
   final List<IconData> icons;
   final int selectedIndex;
@@ -262,7 +275,7 @@ class WorkspaceTabBar extends StatelessWidget {
               // 자리가 모자라면 탭을 촘촘하게, 더 모자라면 아이콘만(이름은 툴팁) — 끝 탭이 가려지지 않게.
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final per = constraints.maxWidth / labels.length;
+                  final per = constraints.maxWidth / (labels.length - hiddenTabs.length);
                   final density = per >= 104
                       ? _PillDensity.normal
                       : per >= 82
@@ -274,6 +287,7 @@ class WorkspaceTabBar extends StatelessWidget {
                     child: Row(
                       children: [
                         for (var i = 0; i < labels.length; i++)
+                          if (!hiddenTabs.contains(i))
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 1),
                             child: _TabPill(
