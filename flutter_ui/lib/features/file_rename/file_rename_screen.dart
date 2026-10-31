@@ -37,6 +37,7 @@ class FileRenameScreen extends StatefulWidget {
 }
 
 class FileRenameScreenState extends State<FileRenameScreen> {
+  bool _mruLoaded = false;
   late final FileRenameApi _api = FileRenameApi(widget.api);
   List<RenameEntry> _entries = const [];
   final List<Map<String, Object?>> _rules = [];
@@ -62,7 +63,16 @@ class FileRenameScreenState extends State<FileRenameScreen> {
   void initState() {
     super.initState();
     _stopDrops = watchWindowEvent('docfit-rename-files-dropped', () => unawaited(_refreshList()));
-    unawaited(_loadReplaceMru());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 시작 때 호출을 늘리지 않으려 탭이 처음 보일 때 불러온다.
+    if (!_mruLoaded && TickerMode.of(context)) {
+      _mruLoaded = true;
+      unawaited(_loadReplaceMru());
+    }
   }
 
   Future<void> _loadReplaceMru() async {

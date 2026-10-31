@@ -42,8 +42,7 @@ def _deliver(gui, paths, rename=False):
             gui._rename_startup_paths = list(paths)
     else:
         for value in paths:
-            if Path(value).is_file():
-                gui.파일추가(value)
+            gui.파일추가(value)
 
 
 def start(gui):
