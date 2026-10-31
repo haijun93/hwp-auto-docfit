@@ -1,4 +1,5 @@
 """타임머신 서비스 계약 시험. 모든 파일은 임시 폴더 안에서만 다룬다."""
+import base64
 import json
 import os
 import tempfile
@@ -9,6 +10,7 @@ from unittest.mock import patch
 from pathlib import Path
 
 from docfit_app.timemachine_service import TimemachineService
+from docfit_core.timemachine import thumbs
 from docfit_core.timemachine.rules import Rules
 from docfit_core.timemachine.store import Store
 
@@ -16,10 +18,26 @@ from docfit_core.timemachine.store import Store
 class FakeAgent:
     def __init__(self, running=False, fail=False):
         self.is_running, self.fail, self.calls = running, fail, []
+        self.settings = {"timeline_roots": [], "timeline_mtime_only": False}
+        self.reject_roots = False
     def running(self): return self.is_running
+    def status_file(self):
+        return {"pid": 1, "timeline_roots": len(self.settings["timeline_roots"])} if self.is_running else None
     def request(self, command, **payload):
         self.calls.append((command, payload))
         if self.fail: raise OSError("IPC 실패")
+        if command == "settings_set":
+            self.settings = dict(payload["settings"], timeline_roots=[] if self.reject_roots else payload["settings"]["timeline_roots"])
+        return {"ok": True, "settings": dict(self.settings)}
+
+
+class StubResult:
+    seen = written = removed = 0
+    errors = []
+
+
+def stub_scanner(store, roots, rules, progress=None):
+    return StubResult()
 
 
 class TimemachineServiceTests(unittest.TestCase):
@@ -33,7 +51,8 @@ class TimemachineServiceTests(unittest.TestCase):
         self.agent = FakeAgent()
         self.opened, self.revealed = [], []
         self.service = TimemachineService(self.settings, db_path=Path(self.temp.name) / "timeline.db",
-            agent=self.agent, opener=self.opened.append, revealer=self.revealed.append)
+            agent=self.agent, opener=self.opened.append, revealer=self.revealed.append,
+            scanner=stub_scanner, thumb_dir=Path(self.temp.name) / "thumbs")
 
     def tearDown(self):
         self.service.store.close()
@@ -181,6 +200,165 @@ class TimemachineServiceTests(unittest.TestCase):
         self.assertTrue(self.service.command("open",{"id":row["id"]})["ok"])
         self.assertTrue(self.service.command("reveal",{"id":row["id"]})["ok"])
         self.assertEqual(self.opened,[str(file)]); self.assertEqual(self.revealed,[str(file)])
+
+    # ── 켤 때 K에이전트 연동 ──
+    def wait_scan_idle(self):
+        deadline = time.time() + 5
+        while self.service.command("status")["scan"]["running"] and time.time() < deadline:
+            time.sleep(0.01)
+
+    def test_enable_with_agent_sends_roots_and_skips_app_scan(self):
+        called = []
+        self.service.scanner = lambda *a, **k: called.append(1) or StubResult()
+        self.agent.is_running = True
+        self.assertTrue(self.enable()["ok"])
+        self.assertEqual(self.agent.calls[-1], ("settings_set", {"settings": {"timeline_roots": [str(self.root)], "timeline_mtime_only": False}}))
+        self.wait_scan_idle()
+        self.assertEqual(called, [])
+        self.assertEqual(self.service.command("status")["watch"], "agent")
+
+    def test_enable_without_agent_starts_app_scan_and_reports_app_watch(self):
+        called = threading.Event()
+        self.service.scanner = lambda *a, **k: called.set() or StubResult()
+        self.enable()
+        self.assertTrue(called.wait(2))
+        self.wait_scan_idle()
+        self.assertEqual(self.agent.calls, [])
+        self.assertEqual(self.service.command("status")["watch"], "app")
+
+    def test_disable_stops_agent_watch(self):
+        self.agent.is_running = True
+        self.enable()
+        self.service.command("settings_set", {"roots": [str(self.root)], "time_mode": "max", "enabled": False})
+        self.assertEqual(self.agent.settings["timeline_roots"], [])
+
+    def test_agent_started_later_receives_roots_on_scan(self):
+        self.enable(); self.wait_scan_idle()
+        self.agent.is_running = True
+        self.assertEqual(self.service.command("status")["watch"], "app")
+        self.assertEqual(self.service.command("scan"), {"ok": True, "by": "agent"})
+        self.assertEqual(self.agent.settings["timeline_roots"], [str(self.root)])
+        self.assertEqual(self.service.command("status")["watch"], "agent")
+        sets = len([c for c in self.agent.calls if c[0] == "settings_set"])
+        self.service.command("scan")  # 이미 같으면 다시 보내지 않는다(에이전트의 전체 재훑기 방지)
+        self.assertEqual(len([c for c in self.agent.calls if c[0] == "settings_set"]), sets)
+
+    def test_agent_failure_or_rejected_roots_fall_back_to_app_scan(self):
+        for setup in ("fail", "reject_roots"):
+            called = threading.Event()
+            self.service.scanner = lambda *a, **k: called.set() or StubResult()
+            self.agent.is_running = True
+            setattr(self.agent, setup, True)
+            self.service._settings = dict(self.service._settings, enabled=False)
+            self.enable()
+            self.assertTrue(called.wait(2), setup)
+            self.wait_scan_idle()
+            setattr(self.agent, setup, False)
+
+    def test_root_change_during_scan_scans_again(self):
+        second = Path(self.temp.name) / "추가"; second.mkdir()
+        entered, release, seen = threading.Event(), threading.Event(), []
+        def scanner(store, roots, rules, progress=None):
+            seen.append(list(roots)); entered.set(); release.wait(2)
+            return StubResult()
+        self.service.scanner = scanner
+        self.enable()
+        self.assertTrue(entered.wait(2))
+        self.enable([second])
+        release.set()
+        deadline = time.time() + 5
+        while len(seen) < 2 and time.time() < deadline:
+            time.sleep(0.01)
+        self.wait_scan_idle()
+        self.assertEqual(seen[-1], [str(second)])
+
+    # ── 썸네일 권한 ──
+    def add_file(self, file, *, kind="image", cloud=False):
+        now = time.time()
+        self.service.store.upsert_many([{"path":str(file),"root":str(self.root),"name":file.name,"kind":kind,"size":1,"mtime":now,"ctime":now,"work_time":now,"flags":[],"cloud":cloud}])
+        return self.service.store.range(now - 1, now + 1, limit=1)[0]["id"]
+
+    def png(self, name="그림.png"):
+        from PIL import Image
+        file = self.root / name
+        Image.new("RGB", (400, 200), "red").save(file)
+        return file
+
+    def test_thumbnail_returns_base64_jpeg_and_uses_cache(self):
+        self.enable()
+        file_id = self.add_file(self.png())
+        with patch("docfit_core.timemachine.thumbs.render", wraps=thumbs.render) as render:
+            first = self.service.command("thumbnail", {"id": file_id})
+            second = self.service.command("thumbnail", {"id": file_id})
+        self.assertTrue(first["ok"])
+        self.assertTrue(base64.b64decode(first["data"]).startswith(b"\xff\xd8\xff"))
+        self.assertEqual(first["data"], second["data"])
+        self.assertEqual(render.call_count, 1)
+
+    def test_thumbnail_permission_checks(self):
+        self.assertEqual(self.service.command("thumbnail", {"id": True})["code"], "INVALID_INPUT")
+        self.assertEqual(self.service.command("thumbnail", {"id": 1})["code"], "TM_DISABLED")
+        self.enable()
+        self.assertEqual(self.service.command("thumbnail", {"id": 999})["code"], "TM_NOT_FOUND")
+        outside = self.add_file(self.plain_file, kind="pdf")
+        result = self.service.command("thumbnail", {"id": outside})
+        self.assertEqual((result["code"], result.get("data")), ("TM_NOT_AVAILABLE", None))
+        hidden = self.add_file(self.png("숨김.png"))
+        self.service.store.hide(hidden)
+        self.assertEqual(self.service.command("thumbnail", {"id": hidden})["code"], "TM_NOT_AVAILABLE")
+
+    def test_thumbnail_cloud_flag_never_reads_file(self):
+        self.enable()
+        file_id = self.add_file(self.png(), cloud=True)
+        with patch("docfit_core.timemachine.thumbs.render") as render:
+            self.assertEqual(self.service.command("thumbnail", {"id": file_id}), {"ok": True, "data": None})
+        render.assert_not_called()
+
+    def test_thumbnail_missing_file_is_null_and_keeps_index(self):
+        self.enable()
+        file_id = self.add_file(self.root / "없음.png")
+        self.assertEqual(self.service.command("thumbnail", {"id": file_id}), {"ok": True, "data": None})
+        self.assertIsNotNone(self.service.store.get(file_id))
+        self.assertFalse(self.service.store.get(file_id)["hidden"])
+
+    def test_thumbnail_limits_concurrency_to_two(self):
+        self.enable()
+        ids = [self.add_file(self.png(f"그림{i}.png")) for i in range(5)]
+        lock, active, peak, results = threading.Lock(), [0], [0], []
+        def slow(path):
+            with lock:
+                active[0] += 1; peak[0] = max(peak[0], active[0])
+            time.sleep(0.05)
+            with lock:
+                active[0] -= 1
+            return b"\xff\xd8\xff"
+        with patch("docfit_core.timemachine.thumbs.render", slow):
+            threads = [threading.Thread(target=lambda i=i: results.append(self.service.command("thumbnail", {"id": i}))) for i in ids]
+            for t in threads: t.start()
+            for t in threads: t.join()
+        self.assertEqual(peak[0], 2)
+        self.assertTrue(all(item["ok"] and item["data"] for item in results))
+
+    def test_thumbnail_time_limit_returns_null_and_slot_stays_held(self):
+        self.enable()
+        file_id = self.add_file(self.png())
+        release = threading.Event()
+        with patch("docfit_core.timemachine.thumbs.render", lambda path: release.wait(5) and None), \
+                patch("docfit_app.timemachine_service.THUMBNAIL_TIME_LIMIT", 0.05):
+            self.assertEqual(self.service.command("thumbnail", {"id": file_id}), {"ok": True, "data": None})
+            self.assertFalse(self.service._thumbnail_slots._value == 2)
+            release.set()
+            deadline = time.time() + 2
+            while self.service._thumbnail_slots._value != 2 and time.time() < deadline:
+                time.sleep(0.01)
+        self.assertEqual(self.service._thumbnail_slots._value, 2)
+
+    def test_thumbnail_busy_pdfium_asks_retry_without_caching(self):
+        self.enable()
+        file_id = self.add_file(self.png())
+        def busy(path): raise thumbs.ThumbnailBusy()
+        with patch("docfit_core.timemachine.thumbs.render", busy):
+            self.assertEqual(self.service.command("thumbnail", {"id": file_id}), {"ok": True, "data": None, "retry": True})
 
 
 if __name__ == "__main__": unittest.main()

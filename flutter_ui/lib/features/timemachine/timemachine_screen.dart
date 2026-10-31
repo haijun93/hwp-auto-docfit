@@ -1,6 +1,7 @@
 ﻿import 'dart:async';
 import 'package:flutter/material.dart';
 import 'timemachine_api.dart';
+import 'timemachine_thumbnails.dart';
 import '../../core/api/abbreviation_api.dart' show ApiCall;
 
 class TimemachineScreen extends StatefulWidget {
@@ -13,6 +14,9 @@ class TimemachineScreen extends StatefulWidget {
 class _TimemachineScreenState extends State<TimemachineScreen> {
   static const _kinds = {'한/글':'hwp', '문서':'doc', '표':'sheet', '발표':'slide', 'PDF':'pdf', '이미지':'image'};
   late final TimemachineApi _api = TimemachineApi(widget.api);
+  late final TimemachineThumbnailLoader _thumbnails = TimemachineThumbnailLoader(_api);
+  bool _watchByAgent = false;
+  Timer? _scanPoll;
   Map<String, Object?>? _settings;
   Map<String, int> _days = {};
   final List<TimemachineItem> _items = [];
@@ -31,11 +35,11 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
   Timer? _debounce;
 
   @override
-  void initState() { super.initState(); _load(); _scroll.addListener(_onScroll); }
+  void initState() { super.initState(); _load(firstOpen: true); _scroll.addListener(_onScroll); }
   @override
-  void dispose() { _debounce?.cancel(); _scroll.dispose(); _search.dispose(); super.dispose(); }
+  void dispose() { _debounce?.cancel(); _scanPoll?.cancel(); _thumbnails.dispose(); _scroll.dispose(); _search.dispose(); super.dispose(); }
 
-  Future<void> _load() async {
+  Future<void> _load({bool firstOpen = false}) async {
     Map<String, Object?> status;
     Map<String, Object?> settings;
     try {
@@ -52,9 +56,11 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
     }
     final raw = settings['settings'];
     final loaded = raw is Map ? Map<String, Object?>.from(raw) : {'roots': [], 'time_mode':'max', 'enabled':false};
-    setState(() { _settings = loaded;
+    setState(() { _settings = loaded; _watchByAgent = status['watch'] == 'agent';
       if (status['ok'] != true) _error = '${status['message'] ?? '상태를 불러오지 못했습니다.'}'; });
     if (loaded['enabled'] == true) {
+      // 에이전트가 없으면 앱을 열 때 증분 색인한다(사용자 결정 6). 에이전트가 있으면 폴더 설정만 맞춘다.
+      if (firstOpen) { try { await _requestScan(); } catch (_) {} if (!mounted) return; }
       await _refreshDays();
       if (_start == null || _end == null) {
         _resetRange();
@@ -67,6 +73,25 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
   Future<void> _retryConnection() async {
     setState(() { _settings = null; _error = null; });
     await _load();
+  }
+
+  Future<Map<String, Object?>> _requestScan() async {
+    final response = await _api.command('scan');
+    if (!mounted) return response;
+    if (response['by'] != null) setState(() => _watchByAgent = response['by'] == 'agent');
+    if (response['running'] == true) _waitForScan();
+    return response;
+  }
+  void _waitForScan() {
+    _scanPoll?.cancel();
+    _scanPoll = Timer(const Duration(seconds: 1), () async {
+      Map<String, Object?> status;
+      try { status = await _api.command('status'); } catch (_) { return; }
+      if (!mounted) return;
+      final scan = status['scan'];
+      if (scan is Map && scan['running'] == true) { _waitForScan(); return; }
+      await _filtersChanged();
+    });
   }
 
   Map<String, Object?> get _filters => {'roots': _settings?['roots'] ?? [],
@@ -141,7 +166,7 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
     try { saved = await _api.command('settings_set', next); }
     catch (_) { if (mounted) setState(() => _error = '설정을 저장하지 못했습니다. 앱 연결을 확인해 주세요.'); return; }
     if (saved['ok'] != true) { if (mounted) setState(() => _error = '${saved['message'] ?? '설정을 저장하지 못했습니다.'}'); return; }
-    try { await _api.command('scan'); }
+    try { await _requestScan(); }
     catch (_) { if (mounted) setState(() => _error = '색인 요청을 보내지 못했습니다. 앱 연결을 확인해 주세요.'); }
     await _load();
   }
@@ -180,7 +205,7 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
   }
   Future<void> _scan() async {
     try {
-      final response = await _api.command('scan');
+      final response = await _requestScan();
       if (response['ok'] != true && mounted) setState(() => _error = '${response['message'] ?? '다시 훑지 못했습니다.'}');
       await _load();
     } catch (_) {
@@ -240,6 +265,7 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
     for(final entry in _kinds.entries) FilterChip(label:Text(entry.key),selected:_selectedKinds.contains(entry.value),onSelected:(value){setState(()=>value?_selectedKinds.add(entry.value):_selectedKinds.remove(entry.value));_filtersChanged();}),
     SizedBox(width:220,child:TextField(controller:_search,decoration:const InputDecoration(prefixIcon:Icon(Icons.search),hintText:'이름 찾기',isDense:true),onChanged:(value){_debounce?.cancel();_debounce=Timer(const Duration(milliseconds:300),(){_query=value.trim();_filtersChanged();});})),
     OutlinedButton.icon(onPressed:_scan,icon:const Icon(Icons.refresh),label:const Text('다시 훑기')),
+    Text(_watchByAgent ? '실시간 감시: K에이전트' : '실시간 감시: 앱을 열 때만',key:const ValueKey('tm-watch-status'),style:Theme.of(context).textTheme.bodySmall),
   ]));
   Widget _calendar() {
     final first = DateTime(_month.year,_month.month,1); final offset = first.weekday-1; final cells = ((offset+DateTime(_month.year,_month.month+1,0).day+6)~/7)*7;
@@ -277,7 +303,7 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
   }
   Widget _itemCard(TimemachineItem item,DateTime date) => Padding(padding:const EdgeInsets.fromLTRB(18,2,12,8),child:Row(crossAxisAlignment:CrossAxisAlignment.center,children:[
     SizedBox(width:24,child:Column(mainAxisSize:MainAxisSize.min,children:[Container(width:2,height:8,color:Colors.blue),Container(width:2,height:32,color:Colors.blue.withValues(alpha:.35)),Container(width:9,height:9,decoration:const BoxDecoration(color:Colors.blue,shape:BoxShape.circle))])),
-    Expanded(child:Card(child:InkWell(onTap:()=>_openItem(item),child:Padding(padding:const EdgeInsets.all(12),child:Row(children:[Icon(_kindIcon(item.kind)),const SizedBox(width:10),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(item.name,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontWeight:FontWeight.w600)),Text('${date.hour.toString().padLeft(2,'0')}:${date.minute.toString().padLeft(2,'0')}  ·  ${item.folder}',maxLines:1,overflow:TextOverflow.ellipsis,style:Theme.of(context).textTheme.bodySmall),Wrap(spacing:4,children:[if(item.flags.contains('copied'))const _Badge('복사됨'),if(item.flags.contains('new'))const _Badge('새 문서')])])),TextButton(onPressed:()=>_revealItem(item),child:const Text('폴더 열기'))]))))),
+    Expanded(child:Card(child:InkWell(onTap:()=>_openItem(item),child:Padding(padding:const EdgeInsets.all(12),child:Row(children:[TimemachineThumbnail(item:item,icon:_kindIcon(item.kind),loader:_thumbnails),const SizedBox(width:10),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(item.name,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontWeight:FontWeight.w600)),Text('${date.hour.toString().padLeft(2,'0')}:${date.minute.toString().padLeft(2,'0')}  ·  ${item.folder}',maxLines:1,overflow:TextOverflow.ellipsis,style:Theme.of(context).textTheme.bodySmall),Wrap(spacing:4,children:[if(item.flags.contains('copied'))const _Badge('복사됨'),if(item.flags.contains('new'))const _Badge('새 문서')])])),TextButton(onPressed:()=>_revealItem(item),child:const Text('폴더 열기'))]))))),
   ]));
 }
 

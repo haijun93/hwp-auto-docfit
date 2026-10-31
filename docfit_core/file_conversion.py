@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from docfit_core import pdfium_guard
 from docfit_core.kordoc_bridge import SUPPORTED_INPUT_EXTENSIONS
 
 IMAGE_INPUT_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", ".gif"})
@@ -198,6 +199,7 @@ def convert_to_pdf(app, source: str | Path, target: str | Path) -> Path:
         return convert_hwpx_to_pdf(app, intermediate, target)
 
 
+@pdfium_guard.exclusive()
 def convert_to_images(app, source: str | Path, target: str | Path, *, dpi: int = IMAGE_DPI) -> Path:
     """한/글로 PDF를 만든 뒤 쪽마다 JPG·PNG 그림으로 저장한다.
 

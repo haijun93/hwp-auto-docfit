@@ -14,6 +14,8 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import pdfium_guard
+
 # 강도: (목표 dpi, JPEG 품질). 기본은 '보통'.
 LEVELS = {"lossless": None, "normal": (150, 75), "strong": (100, 60)}
 DEFAULT_LEVEL = "normal"
@@ -66,6 +68,7 @@ def _page_signature(reader):
             for p in reader.pages]
 
 
+@pdfium_guard.exclusive()
 def _page_texts(path: Path) -> list[str]:
     import pypdfium2 as pdfium
 

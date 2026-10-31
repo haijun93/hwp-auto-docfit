@@ -14,7 +14,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from docfit_core import table_units
+from docfit_core import pdfium_guard, table_units
 from docfit_core.table_catalog import default_catalog_path
 from docfit_core.table_gallery import GALLERY_NAME, GALLERY_PREFIX
 
@@ -376,11 +376,12 @@ class TableUnitsService:
                         app.Clear(1)
                     except Exception:
                         pass
-                    rendered = pdfium.PdfDocument(str(pdf))
-                    try:
-                        image = rendered[0].render(scale=110 / 72).to_pil()
-                    finally:
-                        rendered.close()
+                    with pdfium_guard.exclusive():
+                        rendered = pdfium.PdfDocument(str(pdf))
+                        try:
+                            image = rendered[0].render(scale=110 / 72).to_pil()
+                        finally:
+                            rendered.close()
                     picture = crop_to_content(image)
                     picture.thumbnail((640, 640))
                     target = self._snapshot_path(item["id"])
