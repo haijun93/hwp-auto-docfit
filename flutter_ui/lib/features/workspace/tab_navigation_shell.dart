@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
+import '../../core/api/abbreviation_api.dart' show ApiCall;
+import '../../core/api/live_link_api.dart';
 
 /// 탭 안 화면이 '닫기·뒤로'를 요청할 때 쓰는 통로.
 /// 탭 화면은 앱의 첫 경로 위에 바로 있어 Navigator.pop을 하면 첫 화면이 빠져 앱이 멈춘다(2.0.0 사용자 보고).
@@ -48,6 +51,7 @@ class TabNavigationShell extends StatefulWidget {
     this.initialIndex = 0,
     this.onTabChanged,
     this.trailing,
+    this.api,
   }) : assert(initialIndex >= 0 && initialIndex < 7);
 
   final Widget documentEditor;
@@ -64,13 +68,53 @@ class TabNavigationShell extends StatefulWidget {
 
   /// 상단 탭 줄 오른쪽 끝의 앱 전체 메뉴(사용 방법·작업 로그·설정 등).
   final Widget? trailing;
+  final ApiCall? api;
 
   @override
   State<TabNavigationShell> createState() => _TabNavigationShellState();
 }
 
-class _TabNavigationShellState extends State<TabNavigationShell> {
+class _TabNavigationShellState extends State<TabNavigationShell> with WidgetsBindingObserver {
   late int _index = widget.initialIndex;
+  Timer? _statusTimer;
+  bool _statusLoading = false;
+  String _statusLabel = '한/글 없음';
+  LiveLinkApi? _liveLink;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _liveLink = widget.api == null ? null : LiveLinkApi(widget.api!);
+    if (_liveLink == null) return;
+    _refreshStatus();
+    _statusTimer = Timer.periodic(const Duration(seconds: 5), (_) => _refreshStatus());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshStatus();
+  }
+
+  Future<void> _refreshStatus() async {
+    if (_statusLoading || _liveLink == null) return;
+    _statusLoading = true;
+    try {
+      final status = await _liveLink!.status();
+      if (mounted) setState(() => _statusLabel = status.label);
+    } catch (_) {
+      if (mounted) setState(() => _statusLabel = '한/글 없음');
+    } finally {
+      _statusLoading = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _statusTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
 
   static const _labels = [
     '문서편집',
@@ -123,7 +167,22 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
               icons: _icons,
               selectedIndex: _index,
               onSelected: _select,
-              trailing: widget.trailing,
+              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                if (_liveLink != null && MediaQuery.sizeOf(context).width >= 600)
+                  Tooltip(
+                    message: '$_statusLabel — 눌러서 다시 확인',
+                    child: InkWell(
+                      key: const Key('liveLinkStatus'),
+                      onTap: _refreshStatus,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        child: Icon(Icons.link_rounded, size: 18, key: const Key('liveLinkStatusIcon'),
+                            color: _statusLabel == '한/글 없음' ? const Color(0xFFB0B4C0) : const Color(0xFF7664EC)),
+                      ),
+                    ),
+                  ),
+                if (widget.trailing != null) widget.trailing!,
+              ]),
             ),
             Expanded(
               child: IndexedStack(
