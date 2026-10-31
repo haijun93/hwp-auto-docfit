@@ -136,7 +136,7 @@ class IntegratedWorkspace extends StatelessWidget {
     required this.documentEditorWidget,
     required this.fileConversionWidget,
     this.initialIndex = 0,
-    this.renameStartup = false,
+    this.tabRequest,
     this.onTabChanged,
     this.trailing,
     this.savedSidebarExpanded,
@@ -150,13 +150,14 @@ class IntegratedWorkspace extends StatelessWidget {
   final Widget documentEditorWidget;
   final Widget fileConversionWidget;
   final int initialIndex;
-  final bool renameStartup;
+  final ValueListenable<int?>? tabRequest;
   final ValueChanged<int>? onTabChanged;
 
   @override
   Widget build(BuildContext context) {
     return TabNavigationShell(
-      initialIndex: renameStartup ? kTabFileRename : initialIndex,
+      initialIndex: initialIndex,
+      tabRequest: tabRequest,
       onTabChanged: onTabChanged,
       trailing: trailing,
       savedSidebarExpanded: savedSidebarExpanded,

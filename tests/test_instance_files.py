@@ -70,7 +70,6 @@ class InstanceFileTests(unittest.TestCase):
             first.write_text('a')
             second.write_text('b')
             gui = Mock(running=False)
-            gui._file_rename_argument_paths = Mock()
             with patch.object(sys, 'argv', ['app', '--rename', str(first), str(missing)]):
                 instance_files.start(gui)
             self.assertEqual(gui._rename_startup_paths, [str(first), str(missing)])

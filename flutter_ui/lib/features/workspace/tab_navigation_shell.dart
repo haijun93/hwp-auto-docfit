@@ -68,6 +68,7 @@ class TabNavigationShell extends StatefulWidget {
     this.trailing,
     this.onSidebarExpandedChanged,
     this.savedSidebarExpanded,
+    this.tabRequest,
     this.hiddenTabs = kDefaultHiddenTabs,
   }) : assert(initialIndex >= 0 && initialIndex < kTabCount);
 
@@ -97,6 +98,9 @@ class TabNavigationShell extends StatefulWidget {
   /// 저장된 펼침 상태. null이면 창 폭으로 정한다.
   final ValueListenable<bool?>? savedSidebarExpanded;
 
+  /// 바깥에서 특정 탭을 열어 달라는 요청(탐색기 보내기 등).
+  final ValueListenable<int?>? tabRequest;
+
   @override
   State<TabNavigationShell> createState() => _TabNavigationShellState();
 }
@@ -111,6 +115,7 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
   @override
   void dispose() {
     widget.savedSidebarExpanded?.removeListener(_applySaved);
+    widget.tabRequest?.removeListener(_applyTabRequest);
     _tabScrollController.dispose();
     super.dispose();
   }
@@ -152,6 +157,7 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
     super.initState();
     _applySaved();
     widget.savedSidebarExpanded?.addListener(_applySaved);
+    widget.tabRequest?.addListener(_applyTabRequest);
   }
 
   /// 저장값은 첫 상태 응답 때 늦게 온다. 사용자가 이미 눌렀으면 덮지 않는다.
@@ -164,6 +170,11 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
     } else {
       _expanded = saved;
     }
+  }
+
+  void _applyTabRequest() {
+    final index = widget.tabRequest?.value;
+    if (index != null && mounted) _select(index);
   }
 
   void _toggleSidebar() {

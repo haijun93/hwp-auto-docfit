@@ -136,6 +136,32 @@ void main2() {
     });
   }
 
+  testWidgets('바깥 요청으로 파일명 일괄변경 탭이 열린다', (tester) async {
+    await _size(tester, 1400);
+    final request = ValueNotifier<int?>(null);
+    final selected = <int>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TabNavigationShell(
+          documentEditor: const SizedBox(),
+          tableTemplates: const SizedBox(),
+          tableSketch: const SizedBox(),
+          diagram: const SizedBox(),
+          mindMap: const SizedBox(),
+          fileConversion: const SizedBox(),
+          paint: const SizedBox(),
+          fileRename: const SizedBox(),
+          timemachine: const SizedBox(),
+          onTabChanged: selected.add,
+          tabRequest: request,
+        ),
+      ),
+    );
+    request.value = kTabFileRename;
+    await tester.pump();
+    expect(selected, const [kTabFileRename]);
+  });
+
   testWidgets('왼쪽 메뉴: 낮은 창에서도 넘치지 않는다', (tester) async {
     await _size(tester, 800, 200);
     await tester.pumpWidget(_shell());
@@ -182,6 +208,7 @@ void main2() {
           fileRename: const SizedBox(),
           timemachine: const SizedBox(),
           onTabChanged: selected.add,
+          hiddenTabs: const {kTabFileRename},
         ),
       ),
     );

@@ -34,10 +34,12 @@ def split_rename_arguments(arguments):
 
 def _deliver(gui, paths, rename=False):
     if rename:
-        if hasattr(gui, '_file_rename_argument_paths'):
-            gui._file_rename_argument_paths(paths)
+        # 화면 쪽 다음 상태 조회가 가져간다(desktop_web_ui._drain_rename_paths).
+        queue = getattr(gui, '_rename_startup_paths', None)
+        if isinstance(queue, list):
+            queue.extend(paths)
         else:
-            gui._rename_startup_paths = list(getattr(gui, '_rename_startup_paths', [])) + list(paths)
+            gui._rename_startup_paths = list(paths)
     else:
         for value in paths:
             if Path(value).is_file():

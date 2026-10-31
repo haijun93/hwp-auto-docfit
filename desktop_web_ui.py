@@ -96,7 +96,6 @@ class DesktopWebBridge:
 
     def __init__(self, gui):
         self.gui = gui
-        self._rename_startup_paths = list(getattr(gui, '_rename_startup_paths', []))
         from docfit_app.native_file_dialog_service import NativeFileDialogService
         self._file_dialogs = NativeFileDialogService()
         self.window = None
@@ -489,6 +488,7 @@ class DesktopWebBridge:
                 "format_task": self._format_task(),
                 "pending_dialog": self._pending_dialog(),
                 "drop_target": self.drop_target,
+                "rename_open": self._drain_rename_paths(),
                 "sidebar_collapsed": self._sidebar_collapsed_value(),
                 "document_drop_revision": self._document_drop_revision,
                 "options": {
@@ -1894,16 +1894,26 @@ class DesktopWebBridge:
             logging.getLogger(__name__).warning("파일이름 처리 실패", exc_info=True)
             return {"ok": False, "message": str(exc) or "이름 바꾸기를 처리하지 못했습니다."}
 
-    def take_rename_startup_paths(self):
-        paths, self._rename_startup_paths = self._rename_startup_paths, []
-        return {"ok": True, "paths": paths}
-
-    def _file_rename_argument_paths(self, paths):
-        """Queue startup/forwarded --rename paths for the rename tab."""
-        valid = [path for path in paths if isinstance(path, str) and Path(path).is_file()]
-        if not valid:
-            return
-        self._rename_startup_paths.extend(valid)
+    def _drain_rename_paths(self):
+        """탐색기 보내기(--rename)로 받은 경로를 목록에 넣고, 화면이 탭을 열도록 True를 돌려준다.
+        시작 때 호출을 늘리지 않으려 이미 오가는 상태 조회에 얹는다."""
+        queue = getattr(self.gui, "_rename_startup_paths", None)
+        if not isinstance(queue, list) or not queue:
+            return False
+        paths, queue[:] = list(queue), []
+        try:
+            self._file_rename_service().add_paths(paths[:10000])
+        except Exception:
+            logging.getLogger(__name__).exception("rename startup paths failed")
+        window = self.window
+        if window is not None and hasattr(window, "run_js"):
+            # 상태 조회는 Tk 스레드에서 돌아 화면 호출을 기다리면 서로 막힌다.
+            threading.Thread(
+                target=window.run_js,
+                args=("window.dispatchEvent(new Event('docfit-rename-files-dropped'));",),
+                daemon=True,
+            ).start()
+        return True
 
     def table_sketch(self, action, payload=None):
         """Table sketch conversion, storage and clipboard API."""
@@ -2511,7 +2521,7 @@ class _BrowserApi:
             "clear_files", "set_mode", "set_range", "start", "stop", "start_job", "cancel_job", "get_events",
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
             "get_pending_dialog", "resolve_dialog", "enable_close_guard", "acknowledge_close", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch", "timemachine",
-            "file_rename", "take_rename_startup_paths", "kclip", "hwp_bulk", "open_results", "next_job", "run_tool", "open_result",
+            "file_rename", "kclip", "hwp_bulk", "open_results", "next_job", "run_tool", "open_result",
             "show_result", "open_source_file", "show_source_file", "open_result_source", "open_diff", "compare_result", "launch_external_hwp_diff", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",
             "set_exclude_tables", "set_card_option",
