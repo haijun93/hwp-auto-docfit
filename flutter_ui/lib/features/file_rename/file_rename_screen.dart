@@ -69,7 +69,7 @@ class FileRenameScreenState extends State<FileRenameScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     // 시작 때 호출을 늘리지 않으려 탭이 처음 보일 때 불러온다.
-    if (!_mruLoaded && TickerMode.of(context)) {
+    if (!_mruLoaded && TickerMode.valuesOf(context).enabled) {
       _mruLoaded = true;
       unawaited(_loadReplaceMru());
     }

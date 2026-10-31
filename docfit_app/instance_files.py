@@ -42,12 +42,13 @@ def _deliver(gui, paths, rename=False):
             gui._rename_startup_paths = list(paths)
     else:
         for value in paths:
-            gui.파일추가(value)
+            if isinstance(value, str):
+                gui.파일추가(value)
 
 
 def start(gui):
     rename, paths = split_rename_arguments(sys.argv[1:])
-    _deliver(gui, paths, rename)
+    _deliver(gui, paths if rename else [value for value in paths if Path(value).is_file()], rename)
 
     def poll():
         folder = _folder()
