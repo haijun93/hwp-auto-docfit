@@ -27,6 +27,7 @@ pub enum Change {
 const BUF_BYTES: usize = 64 * 1024;
 const QUIET_MS: u32 = 400;
 const MAX_WAIT_MS: u128 = 2000;
+const MAX_PENDING_CHANGES: usize = 1000;
 const STOP_KEY: usize = usize::MAX;
 
 struct Dir {
@@ -35,6 +36,15 @@ struct Dir {
     buf: Vec<u64>,
     tag: u32,
     subtree: bool,
+}
+
+impl Drop for Dir {
+    fn drop(&mut self) {
+        if !self.handle.is_null() && self.handle != INVALID_HANDLE_VALUE {
+            unsafe { CloseHandle(self.handle) };
+            self.handle = INVALID_HANDLE_VALUE;
+        }
+    }
 }
 
 // 감시 스레드 하나만 이 핸들·버퍼를 쓴다.
@@ -104,11 +114,15 @@ pub fn restart(roots: Vec<(String, u32, bool)>, on_batch: impl Fn(Vec<(u32, Chan
         if handle == INVALID_HANDLE_VALUE {
             continue;
         }
+        let key = dirs.len();
+        if unsafe { CreateIoCompletionPort(handle, port, key, 0) }.is_null() {
+            unsafe { CloseHandle(handle) };
+            continue;
+        }
         let mut dir = Box::new(Dir { overlapped: unsafe { std::mem::zeroed() }, handle, buf: vec![0u64; BUF_BYTES / 8],
                                      tag, subtree });
-        let key = dirs.len();
-        if unsafe { CreateIoCompletionPort(handle, port, key, 0) }.is_null() || !arm(&mut dir) {
-            unsafe { CloseHandle(handle) };
+        if !arm(&mut dir) {
+            // arm 실패 시 dir이 스코프를 벗어나며 Dir::drop에서 handle이 자동 해제됨
             continue;
         }
         dirs.push(dir);
@@ -143,7 +157,11 @@ pub fn restart(roots: Vec<(String, u32, bool)>, on_batch: impl Fn(Vec<(u32, Chan
                 continue; // 폴더가 사라짐 등: 이 폴더 감시는 끝난다.
             }
             if bytes == 0 {
-                overflow.push(dir.tag);
+                if !overflow.contains(&dir.tag) {
+                    overflow.push(dir.tag);
+                    // 전체 스캔으로 대체되므로 해당 폴더의 세부 변경을 압축 제거하여 메모리 점유 방지
+                    pending.retain(|&(tag, _), _| tag != dir.tag);
+                }
             } else {
                 for change in parse(&dir.buf, bytes as usize) {
                     let path = match &change {
@@ -159,17 +177,24 @@ pub fn restart(roots: Vec<(String, u32, bool)>, on_batch: impl Fn(Vec<(u32, Chan
             }
             arm(dir);
             let started = *first_pending.get_or_insert_with(std::time::Instant::now);
-            if started.elapsed().as_millis() > MAX_WAIT_MS {
+            if started.elapsed().as_millis() > MAX_WAIT_MS || pending.len() >= MAX_PENDING_CHANGES {
                 flush(&mut pending, &mut overflow, &on_batch);
                 first_pending = None;
             }
         }
-        for dir in &dirs {
-            unsafe { CloseHandle(dir.handle) };
-        }
+        // dirs는 스코프 종료 시 Dir::drop으로 각 dir.handle이 자동 해제됨
         unsafe { CloseHandle(port) };
     });
-    *CURRENT.lock().unwrap() = Some(Watcher { port, thread: thread.ok() });
+    match thread {
+        Ok(t) => {
+            *CURRENT.lock().unwrap() = Some(Watcher { port, thread: Some(t) });
+        }
+        Err(_) => {
+            // thread 생성 실패 시 dirs는 클로저와 함께 drop되어 Dir::drop으로 핸들이 자동 해제됨
+            unsafe { CloseHandle(port) };
+            *CURRENT.lock().unwrap() = None;
+        }
+    }
 }
 
 fn flush(pending: &mut HashMap<(u32, String), Change>, overflow: &mut Vec<u32>,
@@ -229,5 +254,13 @@ mod tests {
         stop();
         assert!(batch.iter().any(|(tag, c)| *tag == 7 && *c == Change::Added("sub\\보고서.hwpx".into())), "{batch:?}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn restart_empty_roots_cleans_up() {
+        restart(vec![], |_| {});
+        assert!(CURRENT.lock().unwrap().is_none());
+        stop();
+        assert!(CURRENT.lock().unwrap().is_none());
     }
 }

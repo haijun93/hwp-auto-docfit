@@ -35,10 +35,11 @@ struct State {
     /// 확정된 찾기 글자와 한글 입력 중인 글자.
     query: String,
     comp: String,
+    seq: u64,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
-    items: Vec::new(), sel: 0, top: 0, target: 0, hover: None, query: String::new(), comp: String::new(),
+    items: Vec::new(), sel: 0, top: 0, target: 0, hover: None, query: String::new(), comp: String::new(), seq: 0,
 });
 
 impl State {
@@ -48,14 +49,23 @@ impl State {
 }
 
 /// 찾기 글자로 목록을 다시 만든다. 빈 찾기는 메모리 목록, 찾기는 저장소(복호화 결과 캐시)에서.
+/// 단계별로 잠금을 해제하여 STATE와 DB/recent 동시 잠금이 없도록 하고,
+/// sequence 번호 검증을 통해 이전 검색 결과가 새 입력을 덮어쓰지 않도록 보장한다.
 fn refilter() {
-    let needle = STATE.lock().unwrap().needle();
+    let (needle, cur_seq) = {
+        let mut st = STATE.lock().unwrap();
+        st.seq += 1;
+        (st.needle(), st.seq)
+    };
     let items = if needle.trim().is_empty() {
         app().recent.lock().unwrap().clone()
     } else {
         app().store.lock().unwrap().recent(50, Some(needle.trim())).unwrap_or_default()
     };
     let mut st = STATE.lock().unwrap();
+    if st.seq != cur_seq || st.needle() != needle {
+        return;
+    }
     st.items = items;
     st.sel = 0;
     st.top = 0;
@@ -105,13 +115,15 @@ pub fn show() {
     if hwnd.is_null() {
         return;
     }
+    let recent_items = app().recent.lock().unwrap().clone();
     unsafe {
         let fg = GetForegroundWindow();
         let mut st = STATE.lock().unwrap();
+        st.seq += 1;
         if fg != hwnd && fg != main_hwnd() {
             st.target = fg as isize;
         }
-        st.items = app().recent.lock().unwrap().clone();
+        st.items = recent_items;
         st.sel = 0;
         st.top = 0;
         st.hover = None;
@@ -145,13 +157,20 @@ pub fn refresh() {
     if hwnd.is_null() || unsafe { IsWindowVisible(hwnd) } == 0 {
         return;
     }
-    let searching = !STATE.lock().unwrap().needle().is_empty();
+    let (searching, cur_seq) = {
+        let st = STATE.lock().unwrap();
+        (!st.needle().is_empty(), st.seq)
+    };
     if searching {
         refilter();
         return;
     }
+    let recent_items = app().recent.lock().unwrap().clone();
     let mut st = STATE.lock().unwrap();
-    st.items = app().recent.lock().unwrap().clone();
+    if st.seq != cur_seq || !st.needle().is_empty() {
+        return;
+    }
+    st.items = recent_items;
     st.sel = st.sel.min(st.items.len().saturating_sub(1));
     drop(st);
     unsafe { InvalidateRect(hwnd, std::ptr::null(), 0) };
@@ -224,25 +243,99 @@ fn kind_tag(kind: &str) -> &'static str {
     }
 }
 
+struct PaintGuard {
+    hwnd: HWND,
+    ps: PAINTSTRUCT,
+    hdc: HDC,
+    mem: HDC,
+    bmp: HBITMAP,
+    old_bmp: HGDIOBJ,
+    font: HFONT,
+    small: HFONT,
+    old_font: HGDIOBJ,
+}
+
+impl Drop for PaintGuard {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.mem.is_null() {
+                if !self.old_font.is_null() {
+                    SelectObject(self.mem, self.old_font);
+                }
+                if !self.old_bmp.is_null() {
+                    SelectObject(self.mem, self.old_bmp);
+                }
+                DeleteDC(self.mem);
+            }
+            if !self.font.is_null() {
+                DeleteObject(self.font);
+            }
+            if !self.small.is_null() {
+                DeleteObject(self.small);
+            }
+            if !self.bmp.is_null() {
+                DeleteObject(self.bmp);
+            }
+            if !self.hdc.is_null() {
+                EndPaint(self.hwnd, &self.ps);
+            }
+        }
+    }
+}
+
 unsafe fn paint(hwnd: HWND) {
     unsafe {
         let mut ps: PAINTSTRUCT = std::mem::zeroed();
         let hdc = BeginPaint(hwnd, &mut ps);
+        if hdc.is_null() {
+            return;
+        }
+        let mut guard = PaintGuard {
+            hwnd,
+            ps,
+            hdc,
+            mem: std::ptr::null_mut(),
+            bmp: std::ptr::null_mut(),
+            old_bmp: std::ptr::null_mut(),
+            font: std::ptr::null_mut(),
+            small: std::ptr::null_mut(),
+            old_font: std::ptr::null_mut(),
+        };
+
         let mut rc: RECT = std::mem::zeroed();
         GetClientRect(hwnd, &mut rc);
         let (w, h) = (rc.right, rc.bottom);
         let mem = CreateCompatibleDC(hdc);
+        if mem.is_null() {
+            return;
+        }
+        guard.mem = mem;
+
         let bmp = CreateCompatibleBitmap(hdc, w, h);
-        let old_bmp = SelectObject(mem, bmp);
+        if bmp.is_null() {
+            return;
+        }
+        guard.bmp = bmp;
+        guard.old_bmp = SelectObject(mem, bmp);
+
         let font = CreateFontW(-scale(hwnd, 15), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 5, 0, wide("맑은 고딕").as_ptr());
         let small = CreateFontW(-scale(hwnd, 12), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 5, 0, wide("맑은 고딕").as_ptr());
-        let old_font = SelectObject(mem, font);
+        if font.is_null() || small.is_null() {
+            guard.font = font;
+            guard.small = small;
+            return;
+        }
+        guard.font = font;
+        guard.small = small;
+        guard.old_font = SelectObject(mem, font);
         SetBkMode(mem, TRANSPARENT as i32);
 
         let fill = |r: RECT, color: u32| {
             let brush = CreateSolidBrush(color);
-            FillRect(mem, &r, brush);
-            DeleteObject(brush);
+            if !brush.is_null() {
+                FillRect(mem, &r, brush);
+                DeleteObject(brush);
+            }
         };
         fill(rc, 0x00FFFFFF);
         let head = scale(hwnd, HEAD_H);
@@ -292,13 +385,6 @@ unsafe fn paint(hwnd: HWND) {
         }
         drop(st);
         BitBlt(hdc, 0, 0, w, h, mem, 0, 0, SRCCOPY);
-        SelectObject(mem, old_font);
-        SelectObject(mem, old_bmp);
-        DeleteObject(font);
-        DeleteObject(small);
-        DeleteObject(bmp);
-        DeleteDC(mem);
-        EndPaint(hwnd, &ps);
     }
 }
 

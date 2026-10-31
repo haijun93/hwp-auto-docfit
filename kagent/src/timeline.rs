@@ -220,9 +220,9 @@ impl Timeline {
 
     /// 감시 알림 한 건: 지금 실제 상태를 보고 반영한다(폴더면 그 아래를 훑는다).
     pub fn apply(&self, root: &str, relative: &str) -> Result<(), String> {
+        let parts = safe_relative_path(relative).ok_or_else(|| "잘못된 상대 경로".to_string())?;
         let path = format!("{}\\{}", root.trim_end_matches('\\'), relative);
         // 경로 중간에 제외 폴더가 있으면 무시.
-        let parts: Vec<&str> = relative.split('\\').collect();
         if parts[..parts.len().saturating_sub(1)].iter().any(|p| skip_dir(p, 0)) {
             return Ok(());
         }
@@ -316,6 +316,58 @@ fn walk_dir(folder: &str, mut f: impl FnMut(&str, u32, i64, f64, f64)) {
     unsafe { FindClose(h) };
 }
 
+pub fn safe_relative_path(relative: &str) -> Option<Vec<&str>> {
+    if relative.is_empty() {
+        return None;
+    }
+    // Unix 스타일 슬래시나 혼용 거부
+    if relative.contains('/') {
+        return None;
+    }
+    // 드라이브 문자(예: C:) 및 ADS(stream) 콜론 전체 거부
+    if relative.contains(':') {
+        return None;
+    }
+    // 물음표(와일드카드 및 \\?\ 장치 경로 접두어) 거부
+    if relative.contains('?') {
+        return None;
+    }
+    // UNC 또는 선행/후행 백슬래시 거부
+    if relative.starts_with('\\') || relative.ends_with('\\') {
+        return None;
+    }
+    let parts: Vec<&str> = relative.split('\\').collect();
+    if parts.is_empty() {
+        return None;
+    }
+    for &p in &parts {
+        if p.is_empty() || p == "." || p == ".." {
+            return None;
+        }
+        // Win32 경로 정규화 취약점 방지: 끝 공백이나 마침표 거부
+        if p.ends_with(' ') || p.ends_with('.') {
+            return None;
+        }
+        // 선행 공백이나 공백만 있는 세그먼트 거부
+        if p.starts_with(' ') || p.trim().is_empty() {
+            return None;
+        }
+        // DOS 예약 장치명 거부 (확장자 유무 불문)
+        let stem = p.split('.').next().unwrap_or(p);
+        let upper = stem.to_ascii_uppercase();
+        let is_device = matches!(
+            upper.as_str(),
+            "CON" | "PRN" | "AUX" | "NUL"
+                | "COM1" | "COM2" | "COM3" | "COM4" | "COM5" | "COM6" | "COM7" | "COM8" | "COM9"
+                | "LPT1" | "LPT2" | "LPT3" | "LPT4" | "LPT5" | "LPT6" | "LPT7" | "LPT8" | "LPT9"
+        );
+        if is_device {
+            return None;
+        }
+    }
+    Some(parts)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -365,5 +417,58 @@ mod tests {
         assert_eq!(tl.count(), 3);
         assert_eq!(tl.drop_other_roots(&[]).unwrap(), 3);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn apply_rejects_absolute_and_traversal_paths() {
+        let base = std::env::temp_dir().join(format!("kagent-tl-traversal-{}", std::process::id()));
+        let root = base.join("root");
+        let outside = base.join("outside.pdf");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(&outside, b"sentinel").unwrap();
+        std::fs::write(root.join("valid.pdf"), b"valid").unwrap();
+
+        let r = root.to_string_lossy().into_owned();
+        let tl = Timeline::open(":memory:").unwrap();
+        tl.scan_root(&r).unwrap();
+        assert_eq!(tl.count(), 1);
+
+        // 잘못된 경로 거부 검증
+        assert!(tl.apply(&r, "..\\outside.pdf").is_err());
+        assert!(tl.apply(&r, "C:\\outside.pdf").is_err());
+        assert!(tl.apply(&r, "\\\\server\\share\\x.pdf").is_err());
+        assert!(tl.apply(&r, "/absolute/x.pdf").is_err());
+        assert!(tl.apply(&r, "\\leading\\x.pdf").is_err());
+        assert!(tl.apply(&r, "trailing\\").is_err());
+        assert!(tl.apply(&r, "sub\\\\empty_segment.pdf").is_err());
+        assert!(tl.apply(&r, ".").is_err());
+        assert!(tl.apply(&r, "..").is_err());
+        assert!(tl.apply(&r, "").is_err());
+
+        // Win32 정규화 alias, 장치명, ADS, 와일드카드 거부 검증
+        assert!(tl.apply(&r, "sub\\file.txt.").is_err());
+        assert!(tl.apply(&r, "sub\\file.txt ").is_err());
+        assert!(tl.apply(&r, "sub\\ CON").is_err());
+        assert!(tl.apply(&r, "sub\\CON").is_err());
+        assert!(tl.apply(&r, "sub\\con.txt").is_err());
+        assert!(tl.apply(&r, "sub\\NUL").is_err());
+        assert!(tl.apply(&r, "sub\\prn.pdf").is_err());
+        assert!(tl.apply(&r, "sub\\COM1").is_err());
+        assert!(tl.apply(&r, "file.pdf:stream").is_err());
+        assert!(tl.apply(&r, "\\\\?\\C:\\outside.pdf").is_err());
+        assert!(tl.apply(&r, "sub\\?file.txt").is_err());
+
+        // sentinel 파일 및 DB count 불변 확인
+        assert_eq!(tl.count(), 1);
+        assert_eq!(std::fs::read(&outside).unwrap(), b"sentinel");
+
+        // 정상 하위 경로는 적용
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        std::fs::write(root.join("sub").join("nested.pdf"), b"nested").unwrap();
+        assert!(tl.apply(&r, "sub\\nested.pdf").is_ok());
+        assert_eq!(tl.count(), 2);
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

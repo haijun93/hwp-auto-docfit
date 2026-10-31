@@ -133,7 +133,11 @@ pub fn read(hwnd: HWND, max_bytes: usize) -> Option<Capture> {
         if IsClipboardFormatAvailable(CF_HDROP as u32) != 0 {
             let h = GetClipboardData(CF_HDROP as u32) as HDROP;
             if !h.is_null() {
-                let count = DragQueryFileW(h, u32::MAX, std::ptr::null_mut(), 0).min(10000);
+                let total_count = DragQueryFileW(h, u32::MAX, std::ptr::null_mut(), 0);
+                if total_count == 0 || total_count > MAX_HDROP_FILES {
+                    return None;
+                }
+                let count = total_count;
                 let mut files = Vec::with_capacity(count as usize);
                 let mut buf = vec![0u16; 32768];
                 for i in 0..count {
@@ -218,20 +222,70 @@ pub fn pack_formats(formats: &[(String, Vec<u8>)]) -> Vec<u8> {
     out
 }
 
-pub fn unpack_formats(mut data: &[u8]) -> Vec<(String, Vec<u8>)> {
-    let mut take = |n: usize| -> Option<&[u8]> {
-        let (head, rest) = (data.get(..n)?, data.get(n..)?);
-        data = rest;
-        Some(head)
+pub fn unpack_formats(data: &[u8]) -> Vec<(String, Vec<u8>)> {
+    if data.is_empty() {
+        return Vec::new();
+    }
+    let mut cursor: usize = 0;
+    let count_end = match cursor.checked_add(4) {
+        Some(e) => e,
+        None => return Vec::new(),
     };
-    let mut out = Vec::new();
-    let Some(count) = take(4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]])) else { return out };
-    for _ in 0..count.min(16) {
-        let Some(len) = take(4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize) else { break };
-        let Some(name) = take(len).map(|b| String::from_utf8_lossy(b).into_owned()) else { break };
-        let Some(len) = take(4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize) else { break };
-        let Some(bytes) = take(len) else { break };
-        out.push((name, bytes.to_vec()));
+    let count_bytes = match data.get(cursor..count_end) {
+        Some(b) => b,
+        None => return Vec::new(),
+    };
+    cursor = count_end;
+    let count = u32::from_le_bytes([count_bytes[0], count_bytes[1], count_bytes[2], count_bytes[3]]) as usize;
+    if count == 0 || count > 16 {
+        return Vec::new();
+    }
+    let mut out = Vec::with_capacity(count);
+    for _ in 0..count {
+        let name_len_end = match cursor.checked_add(4) {
+            Some(e) => e,
+            None => return Vec::new(),
+        };
+        let name_len_bytes = match data.get(cursor..name_len_end) {
+            Some(b) => b,
+            None => return Vec::new(),
+        };
+        cursor = name_len_end;
+        let name_len = u32::from_le_bytes([name_len_bytes[0], name_len_bytes[1], name_len_bytes[2], name_len_bytes[3]]) as usize;
+        let name_end = match cursor.checked_add(name_len) {
+            Some(e) => e,
+            None => return Vec::new(),
+        };
+        let name_bytes = match data.get(cursor..name_end) {
+            Some(b) => b,
+            None => return Vec::new(),
+        };
+        cursor = name_end;
+        let name = String::from_utf8_lossy(name_bytes).into_owned();
+
+        let data_len_end = match cursor.checked_add(4) {
+            Some(e) => e,
+            None => return Vec::new(),
+        };
+        let data_len_bytes = match data.get(cursor..data_len_end) {
+            Some(b) => b,
+            None => return Vec::new(),
+        };
+        cursor = data_len_end;
+        let data_len = u32::from_le_bytes([data_len_bytes[0], data_len_bytes[1], data_len_bytes[2], data_len_bytes[3]]) as usize;
+        let data_end = match cursor.checked_add(data_len) {
+            Some(e) => e,
+            None => return Vec::new(),
+        };
+        let item_data = match data.get(cursor..data_end) {
+            Some(b) => b,
+            None => return Vec::new(),
+        };
+        cursor = data_end;
+        out.push((name, item_data.to_vec()));
+    }
+    if cursor != data.len() {
+        return Vec::new();
     }
     out
 }
@@ -285,6 +339,76 @@ pub fn write(hwnd: HWND, kind: &str, payload: &[u8], extra: &[u8]) -> bool {
     }
 }
 
+pub const MAX_HDROP_FILES: u32 = 10_000;
+pub const MAX_DIB_DIMENSION: u32 = 20_000;
+pub const MAX_DIB_PIXELS: usize = 4096 * 4096; // 16M 픽셀 한도 (메모리 예산 및 DoS 방어)
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct DibLayout {
+    pub width: usize,
+    pub height: usize,
+    pub stride: usize,
+    pub pixel_offset: usize,
+    pub pixel_bytes: usize,
+    pub bytes_per_pixel: usize,
+}
+
+pub fn checked_dib_layout(
+    width: i32,
+    height: i32,
+    bits: u16,
+    compression: u32,
+    header: usize,
+    input_len: usize,
+) -> Option<DibLayout> {
+    if header < 40 {
+        return None;
+    }
+    if width <= 0 || (width as u32) > MAX_DIB_DIMENSION {
+        return None;
+    }
+    if height == 0 || height == i32::MIN || height.unsigned_abs() > MAX_DIB_DIMENSION {
+        return None;
+    }
+    if bits != 24 && bits != 32 {
+        return None;
+    }
+    if compression != 0 && compression != 3 {
+        return None;
+    }
+    let mask_extra = if compression == 3 && header == 40 { 12usize } else { 0usize };
+    let pixel_offset = header.checked_add(mask_extra)?;
+
+    let w = width as usize;
+    let h = height.unsigned_abs() as usize;
+    let bpp = (bits / 8) as usize;
+
+    let total_pixels = w.checked_mul(h)?;
+    if total_pixels > MAX_DIB_PIXELS {
+        return None;
+    }
+
+    let total_bits = w.checked_mul(bits as usize)?;
+    let rounded_bits = total_bits.checked_add(31)?;
+    let dwords = rounded_bits / 32;
+    let stride = dwords.checked_mul(4)?;
+
+    let pixel_bytes = stride.checked_mul(h)?;
+    let total_required = pixel_offset.checked_add(pixel_bytes)?;
+    if total_required > input_len {
+        return None;
+    }
+
+    Some(DibLayout {
+        width: w,
+        height: h,
+        stride,
+        pixel_offset,
+        pixel_bytes,
+        bytes_per_pixel: bpp,
+    })
+}
+
 /// CF_DIB(24·32비트, BI_RGB·BI_BITFIELDS) → PNG. 다른 형식은 None(기록하지 않음).
 pub fn dib_to_png(dib: &[u8]) -> Option<Vec<u8>> {
     let u32_at = |o: usize| dib.get(o..o + 4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]));
@@ -293,24 +417,41 @@ pub fn dib_to_png(dib: &[u8]) -> Option<Vec<u8>> {
     let height = u32_at(8)? as i32;
     let bits = u16::from_le_bytes([*dib.get(14)?, *dib.get(15)?]);
     let compression = u32_at(16)?;
-    if header < 40 || width <= 0 || height == 0 || width > 20000 || height.abs() > 20000 || !(bits == 24 || bits == 32)
-        || !(compression == 0 || compression == 3)
-    {
-        return None;
-    }
-    let offset = header + if compression == 3 && header == 40 { 12 } else { 0 };
-    let (w, h) = (width as usize, height.unsigned_abs() as usize);
-    let stride = (w * bits as usize).div_ceil(32) * 4;
-    let pixels = dib.get(offset..offset + stride * h)?;
-    let bpp = bits as usize / 8;
-    let any_alpha = bits == 32 && (0..h).any(|y| (0..w).any(|x| pixels[y * stride + x * 4 + 3] != 0));
-    let mut rgba = Vec::with_capacity(w * h * 4);
+
+    let layout = checked_dib_layout(width, height, bits, compression, header, dib.len())?;
+    let pixels = dib.get(layout.pixel_offset..layout.pixel_offset.checked_add(layout.pixel_bytes)?)?;
+    let (w, h) = (layout.width, layout.height);
+    let stride = layout.stride;
+    let bpp = layout.bytes_per_pixel;
+
+    let rgba_cap = w.checked_mul(h)?.checked_mul(4)?;
+    let mut rgba = Vec::with_capacity(rgba_cap);
+    let mut any_alpha = false;
+
+    // 픽셀 메모리 1회 선형 순회 (알파 검사 및 변환을 동시 수행)
     for row in 0..h {
         let y = if height > 0 { h - 1 - row } else { row };
-        let line = &pixels[y * stride..y * stride + w * bpp];
+        let line_start = y.checked_mul(stride)?;
+        let line_len = w.checked_mul(bpp)?;
+        let line = pixels.get(line_start..line_start.checked_add(line_len)?)?;
         for px in line.chunks_exact(bpp) {
-            let a = if any_alpha { px[3] } else { 255 };
+            let a = if bits == 32 {
+                let alpha = px[3];
+                if alpha != 0 {
+                    any_alpha = true;
+                }
+                alpha
+            } else {
+                255
+            };
             rgba.extend_from_slice(&[px[2], px[1], px[0], a]);
+        }
+    }
+
+    // 32비트 DIB이면서 알파 채널이 전부 0인 경우에만 255(불투명)로 일괄 수정
+    if bits == 32 && !any_alpha {
+        for px in rgba.chunks_exact_mut(4) {
+            px[3] = 255;
         }
     }
     let mut out = Vec::new();
@@ -332,9 +473,29 @@ pub fn png_to_dib(data: &[u8]) -> Option<Vec<u8>> {
     let mut reader = decoder.read_info().ok()?;
     let mut buf = vec![0; reader.output_buffer_size()];
     let info = reader.next_frame(&mut buf).ok()?;
+    if info.width == 0 || info.width > MAX_DIB_DIMENSION || info.height == 0 || info.height > MAX_DIB_DIMENSION {
+        return None;
+    }
     let (w, h) = (info.width as usize, info.height as usize);
+    match w.checked_mul(h) {
+        Some(p) if p <= MAX_DIB_PIXELS => (),
+        _ => return None,
+    }
     let channels = info.color_type.samples();
-    let mut out = Vec::with_capacity(40 + w * h * 4);
+    if channels == 0 || channels > 4 {
+        return None;
+    }
+    let line_len = w.checked_mul(channels)?;
+    if line_len > info.line_size {
+        return None;
+    }
+    let expected_buf_len = info.line_size.checked_mul(h)?;
+    if buf.len() < expected_buf_len {
+        return None;
+    }
+    let pixel_bytes = w.checked_mul(h)?.checked_mul(4)?;
+    let total_dib_len = 40usize.checked_add(pixel_bytes)?;
+    let mut out = Vec::with_capacity(total_dib_len);
     for v in [40u32, w as u32, h as u32] {
         out.extend_from_slice(&v.to_le_bytes());
     }
@@ -342,7 +503,8 @@ pub fn png_to_dib(data: &[u8]) -> Option<Vec<u8>> {
     out.extend_from_slice(&32u16.to_le_bytes());
     out.extend_from_slice(&[0u8; 24]); // BI_RGB, 크기, 해상도, 색 수
     for y in (0..h).rev() {
-        let line = &buf[y * info.line_size..y * info.line_size + w * channels];
+        let line_start = y * info.line_size;
+        let line = &buf[line_start..line_start + line_len];
         for px in line.chunks_exact(channels) {
             let (r, g, b, a) = match channels {
                 1 => (px[0], px[0], px[0], 255),
@@ -424,6 +586,11 @@ mod tests {
         assert!(dib_to_png(&[0u8; 10]).is_none());
         let top_down = dib_to_png(&dib(1, -1, 32, &[1, 2, 3, 0])).unwrap();
         assert_eq!(png_size(&top_down), Some((1, 1)));
+
+        // 32비트 알파 유지 검증
+        let alpha_png = dib_to_png(&dib(1, 1, 32, &[10, 20, 30, 128])).unwrap();
+        let back_alpha = png_to_dib(&alpha_png).unwrap();
+        assert_eq!(&back_alpha[40..44], &[10, 20, 30, 128]);
     }
 
     #[test]
@@ -435,6 +602,82 @@ mod tests {
         assert!(unpack_formats(&[]).is_empty());
         assert!(unpack_formats(&packed[..7]).is_empty());
         assert!(pack_formats(&[]).is_empty());
+    }
+
+    #[test]
+    fn unpack_formats_rejects_truncated_and_trailing_data() {
+        let valid = pack_formats(&[
+            ("HTML Format".into(), b"<b>x</b>".to_vec()),
+            ("Rich Text Format".into(), b"{\\rtf1}".to_vec()),
+        ]);
+        let ok = unpack_formats(&valid);
+        assert_eq!(ok.len(), 2);
+        assert_eq!(ok[0], ("HTML Format".into(), b"<b>x</b>".to_vec()));
+        assert_eq!(ok[1], ("Rich Text Format".into(), b"{\\rtf1}".to_vec()));
+
+        // 각 필드에서 잘린 데이터는 전체 빈 결과
+        for len in 0..valid.len() {
+            assert!(unpack_formats(&valid[..len]).is_empty());
+        }
+
+        // 후행 바이트가 있는 경우 거부
+        let mut with_trailing = valid.clone();
+        with_trailing.push(0);
+        assert!(unpack_formats(&with_trailing).is_empty());
+
+        // 과다 count (> 16) 거부
+        let mut bad_count = (17u32).to_le_bytes().to_vec();
+        bad_count.extend_from_slice(&valid[4..]);
+        assert!(unpack_formats(&bad_count).is_empty());
+    }
+
+    #[test]
+    fn dib_layout_rejects_overflow_and_bad_dimensions() {
+        // i32::MIN, 0, 음수 폭, 20,001 치수 거부
+        assert!(checked_dib_layout(10, i32::MIN, 24, 0, 40, 1000).is_none());
+        assert!(checked_dib_layout(0, 10, 24, 0, 40, 1000).is_none());
+        assert!(checked_dib_layout(-5, 10, 24, 0, 40, 1000).is_none());
+        assert!(checked_dib_layout(10, 0, 24, 0, 40, 1000).is_none());
+        assert!(checked_dib_layout(20001, 10, 24, 0, 40, 10_000_000).is_none());
+        assert!(checked_dib_layout(10, 20001, 24, 0, 40, 10_000_000).is_none());
+        assert!(checked_dib_layout(10, -20001, 24, 0, 40, 10_000_000).is_none());
+
+        // MAX_DIB_PIXELS (16M) 초과 거부 (예: 5000 x 5000 = 25M)
+        assert!(checked_dib_layout(5000, 5000, 24, 0, 40, 100_000_000).is_none());
+
+        // 지원하지 않는 bpp 및 압축 거부
+        assert!(checked_dib_layout(10, 10, 16, 0, 40, 1000).is_none());
+        assert!(checked_dib_layout(10, 10, 24, 1, 40, 1000).is_none());
+
+        // header < 40 거부
+        assert!(checked_dib_layout(10, 10, 24, 0, 39, 1000).is_none());
+
+        // 입력 바이트 부족 (잘린 header/mask/pixels)
+        let layout = checked_dib_layout(3, 2, 24, 0, 40, 1000).unwrap();
+        assert_eq!(layout.stride, 12); // 3 * 3 = 9 bytes -> 12 bytes (div_ceil(32)*4)
+        assert_eq!(layout.pixel_bytes, 24);
+        assert_eq!(layout.pixel_offset, 40);
+        assert!(checked_dib_layout(3, 2, 24, 0, 40, 63).is_none()); // 40 + 24 = 64 bytes 필요
+        assert!(checked_dib_layout(3, 2, 24, 0, 40, 64).is_some());
+
+        // top-down (음수 높이) 및 32-bit 변환 지원
+        let top_down = checked_dib_layout(4, -5, 32, 0, 40, 200).unwrap();
+        assert_eq!(top_down.height, 5);
+        assert_eq!(top_down.stride, 16);
+    }
+
+    #[test]
+    fn png_to_dib_checked_size() {
+        let valid_png = dib_to_png(&dib(2, 2, 24, &[10, 20, 30])).unwrap();
+        let dib_bytes = png_to_dib(&valid_png).unwrap();
+        assert_eq!(dib_bytes.len(), 40 + 2 * 2 * 4);
+        let header = u32::from_le_bytes([dib_bytes[0], dib_bytes[1], dib_bytes[2], dib_bytes[3]]);
+        assert_eq!(header, 40);
+
+        // 손상된 입력
+        assert!(png_to_dib(&[]).is_none());
+        assert!(png_to_dib(b"not a png").is_none());
+        assert!(png_to_dib(&valid_png[..valid_png.len() - 5]).is_none());
     }
 
     #[test]

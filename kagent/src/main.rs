@@ -18,11 +18,12 @@ mod timeline;
 mod util;
 mod watch;
 
-use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, AtomicU64, Ordering};
+use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, AtomicU64, AtomicI64, Ordering};
 use std::sync::mpsc::{Sender, channel};
 use std::sync::{Mutex, OnceLock};
 
-use windows_sys::Win32::Foundation::{ERROR_ALREADY_EXISTS, GetLastError, HWND, LPARAM, LRESULT, POINT, WPARAM};
+use windows_sys::Win32::Foundation::{CloseHandle, ERROR_ALREADY_EXISTS, GetLastError, HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{CreateBitmap, CreateDIBSection, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS};
 use windows_sys::Win32::System::DataExchange::{AddClipboardFormatListener, GetClipboardSequenceNumber,
                                                RemoveClipboardFormatListener};
@@ -54,6 +55,23 @@ const READ_DELAY_MS: u32 = 60; // 연달아 오는 변경 알림을 한 번으�
 const RECENT: usize = 50;
 const MAIN_CLASS: &str = "HwpAutoDocFit.KAgentMain";
 
+pub enum TimelineMsg {
+    Reconfigure {
+        generation: u64,
+        roots: Vec<String>,
+        mtime_only: bool,
+    },
+    ScanRoot {
+        generation: u64,
+        root: String,
+    },
+    Apply {
+        generation: u64,
+        root: String,
+        relative: String,
+    },
+}
+
 pub struct App {
     pub dir: String,
     pub store: Mutex<Store>,
@@ -68,6 +86,10 @@ pub struct App {
     pub last_clip_image: AtomicU64,
     pub timeline: Mutex<Option<timeline::Timeline>>,
     pub screenshots: Mutex<String>,
+    pub scan_pending: Mutex<HashSet<String>>,
+    pub timeline_generation: AtomicU64,
+    pub timeline_files: AtomicI64,
+    pub timeline_tx: Mutex<Option<Sender<TimelineMsg>>>,
 }
 
 fn now_ms() -> u64 {
@@ -141,6 +163,105 @@ fn record_screenshot(path: &str) {
     refresh_recent();
 }
 
+fn mark_scan_pending(pending: &mut HashSet<String>, root: &str) -> bool {
+    pending.insert(root.to_string())
+}
+
+fn unmark_scan_pending(pending: &mut HashSet<String>, root: &str) -> bool {
+    pending.remove(root)
+}
+
+fn timeline_worker(rx: std::sync::mpsc::Receiver<TimelineMsg>) {
+    unsafe {
+        use windows_sys::Win32::System::Threading::{GetCurrentThread, SetThreadPriority,
+                                                    THREAD_MODE_BACKGROUND_BEGIN};
+        SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN);
+    }
+    let mut current_gen: u64 = 0;
+    let mut active_roots: Vec<String> = Vec::new();
+    let mut tl: Option<timeline::Timeline> = None;
+
+    for msg in rx {
+        match msg {
+            TimelineMsg::Reconfigure { generation, roots, mtime_only } => {
+                if generation < app().timeline_generation.load(Ordering::Relaxed) {
+                    continue;
+                }
+                current_gen = generation;
+                active_roots = roots.clone();
+                if active_roots.is_empty() {
+                    tl = None;
+                    *app().timeline.lock().unwrap() = None;
+                    app().timeline_files.store(0, Ordering::Relaxed);
+                } else {
+                    if tl.is_none() {
+                        tl = timeline::Timeline::open(&format!("{}\\timeline.db", app().dir)).ok();
+                    }
+                    if let Some(t) = tl.as_mut() {
+                        t.mtime_only = mtime_only;
+                        let _ = t.drop_other_roots(&active_roots);
+                        let count = t.count();
+                        app().timeline_files.store(count, Ordering::Relaxed);
+                    }
+                }
+                write_status();
+            }
+            TimelineMsg::ScanRoot { generation, root } => {
+                let latest_gen = app().timeline_generation.load(Ordering::Relaxed);
+                if generation < latest_gen || current_gen < latest_gen || !active_roots.contains(&root) {
+                    let mut pending = app().scan_pending.lock().unwrap();
+                    unmark_scan_pending(&mut pending, &root);
+                    continue;
+                }
+                if let Some(t) = tl.as_ref() {
+                    let _ = t.scan_root(&root);
+                    let count = t.count();
+                    app().timeline_files.store(count, Ordering::Relaxed);
+                }
+                {
+                    let mut pending = app().scan_pending.lock().unwrap();
+                    unmark_scan_pending(&mut pending, &root);
+                }
+                write_status();
+            }
+            TimelineMsg::Apply { generation, root, relative } => {
+                let latest_gen = app().timeline_generation.load(Ordering::Relaxed);
+                if generation < latest_gen || current_gen < latest_gen || !active_roots.contains(&root) {
+                    continue;
+                }
+                if let Some(t) = tl.as_ref() {
+                    let _ = t.apply(&root, &relative);
+                    let count = t.count();
+                    app().timeline_files.store(count, Ordering::Relaxed);
+                    write_status();
+                }
+            }
+        }
+    }
+}
+
+pub fn schedule_timeline_scan(root: String) {
+    {
+        let mut pending = app().scan_pending.lock().unwrap();
+        if !mark_scan_pending(&mut pending, &root) {
+            return;
+        }
+    }
+    let generation = app().timeline_generation.load(Ordering::Relaxed);
+    let sent = {
+        let guard = app().timeline_tx.lock().unwrap();
+        guard.as_ref().map(|tx| tx.send(TimelineMsg::ScanRoot { generation, root: root.clone() }).is_ok()).unwrap_or(false)
+    };
+    if !sent {
+        let mut pending = app().scan_pending.lock().unwrap();
+        unmark_scan_pending(&mut pending, &root);
+    }
+}
+
+pub fn scan_timeline_root(root: &str) {
+    schedule_timeline_scan(root.to_string());
+}
+
 /// 설정에 맞춰 폴더 감시(스크린샷·타임머신)를 다시 시작한다. 타임머신 폴더는 먼저 한 번 증분으로 훑는다.
 pub fn restart_watchers() {
     let settings = app().settings.lock().unwrap().clone();
@@ -152,18 +273,19 @@ pub fn restart_watchers() {
     }
     let timeline_roots: Vec<String> =
         settings.timeline_roots.iter().filter(|r| std::path::Path::new(r).is_dir()).cloned().collect();
-    {
-        let mut tl = app().timeline.lock().unwrap();
-        if timeline_roots.is_empty() {
-            *tl = None;
-        } else if tl.is_none() {
-            *tl = timeline::Timeline::open(&format!("{}\\timeline.db", app().dir)).ok();
-        }
-        if let Some(t) = tl.as_mut() {
-            t.mtime_only = settings.timeline_mtime_only;
-            let _ = t.drop_other_roots(&timeline_roots);
-        }
+
+    // 새 세대 번호 발급 (이전 세대의 진행 중 스캔 및 알림은 stale 처리됨)
+    let generation = app().timeline_generation.fetch_add(1, Ordering::SeqCst) + 1;
+
+    // 타임라인 전용 워커에 설정 변경 전달 (DB I/O를 창/메시지 스레드에서 수행하지 않음)
+    if let Some(tx) = app().timeline_tx.lock().unwrap().as_ref() {
+        let _ = tx.send(TimelineMsg::Reconfigure {
+            generation,
+            roots: timeline_roots.clone(),
+            mtime_only: settings.timeline_mtime_only,
+        });
     }
+
     for (i, root) in timeline_roots.iter().enumerate() {
         roots.push((root.clone(), i as u32 + 1, true));
     }
@@ -178,31 +300,22 @@ pub fn restart_watchers() {
                 continue;
             }
             let Some(root) = names.get(tag as usize - 1) else { continue };
-            let tl = app().timeline.lock().unwrap();
-            let Some(t) = tl.as_ref() else { continue };
-            let _ = match change {
-                watch::Change::Overflow => t.scan_root(root).map(|_| ()),
-                watch::Change::Added(rel) | watch::Change::Removed(rel) | watch::Change::Modified(rel) => t.apply(root, &rel),
-            };
-        }
-        write_status();
-    });
-    if !timeline_roots.is_empty() {
-        // 첫 색인·증분 갱신은 낮은 우선순위로(감시를 먼저 켜 두어 그 사이 변경도 놓치지 않는다).
-        std::thread::Builder::new().name("kagent-scan".into()).stack_size(512 * 1024).spawn(move || {
-            unsafe {
-                use windows_sys::Win32::System::Threading::{GetCurrentThread, SetThreadPriority,
-                                                            THREAD_MODE_BACKGROUND_BEGIN};
-                SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN);
-            }
-            for root in &timeline_roots {
-                let tl = app().timeline.lock().unwrap();
-                if let Some(t) = tl.as_ref() {
-                    let _ = t.scan_root(root);
+            match change {
+                watch::Change::Overflow => schedule_timeline_scan(root.clone()),
+                watch::Change::Added(rel) | watch::Change::Removed(rel) | watch::Change::Modified(rel) => {
+                    if let Some(tx) = app().timeline_tx.lock().unwrap().as_ref() {
+                        let _ = tx.send(TimelineMsg::Apply {
+                            generation,
+                            root: root.clone(),
+                            relative: rel,
+                        });
+                    }
                 }
             }
-            write_status();
-        }).ok();
+        }
+    });
+    for root in timeline_roots {
+        schedule_timeline_scan(root);
     }
 }
 
@@ -236,6 +349,8 @@ pub fn write_status() {
         (s.count().unwrap_or(0), s.total_bytes().unwrap_or(0))
     };
     let settings = a.settings.lock().unwrap().clone();
+    let screenshots = a.screenshots.lock().unwrap().clone();
+    let timeline_files = a.timeline_files.load(Ordering::Relaxed);
     let v = json::Value::obj(vec![
         ("version", VERSION.into()),
         ("pid", (std::process::id() as i64).into()),
@@ -245,9 +360,9 @@ pub fn write_status() {
         ("total_bytes", total.into()),
         ("hotkey", settings.hotkey.as_str().into()),
         ("hotkey_ok", a.hotkey_ok.load(Ordering::Relaxed).into()),
-        ("screenshots", a.screenshots.lock().unwrap().as_str().into()),
+        ("screenshots", screenshots.as_str().into()),
         ("timeline_roots", (settings.timeline_roots.len() as i64).into()),
-        ("timeline_files", a.timeline.lock().map(|t| t.as_ref().map(|t| t.count()).unwrap_or(0)).unwrap_or(0).into()),
+        ("timeline_files", timeline_files.into()),
         ("updated", now().into()),
     ]);
     let path = format!("{}\\status.json", a.dir);
@@ -547,10 +662,16 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let has = |flag: &str| args.iter().any(|a| a == flag);
-    unsafe {
+    let instance_mutex = unsafe {
         // 하나만 실행: 이미 있으면 그쪽에 요청만 보내고 끝낸다.
-        CreateMutexW(std::ptr::null(), 0, wide("Local\\HwpAutoDocFit.kagent").as_ptr());
+        CreateMutexW(std::ptr::null(), 0, wide("Local\\HwpAutoDocFit.kagent").as_ptr())
+    };
+    if instance_mutex.is_null() {
+        std::process::exit(1);
+    }
+    unsafe {
         if GetLastError() == ERROR_ALREADY_EXISTS {
+            CloseHandle(instance_mutex);
             let other = FindWindowW(wide(MAIN_CLASS).as_ptr(), std::ptr::null());
             if !other.is_null() {
                 if has("--quit") {
@@ -562,6 +683,7 @@ fn main() {
             return;
         }
         if has("--quit") {
+            CloseHandle(instance_mutex);
             return;
         }
         SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
@@ -581,6 +703,7 @@ fn main() {
     };
     let settings = Settings::load(&format!("{dir}\\settings.json"));
     let (tx, rx) = channel();
+    let (tl_tx, tl_rx) = channel();
     let _ = APP.set(App {
         dir,
         store: Mutex::new(store),
@@ -594,9 +717,14 @@ fn main() {
         last_clip_image: AtomicU64::new(0),
         timeline: Mutex::new(None),
         screenshots: Mutex::new(String::new()),
+        scan_pending: Mutex::new(HashSet::new()),
+        timeline_generation: AtomicU64::new(0),
+        timeline_files: AtomicI64::new(0),
+        timeline_tx: Mutex::new(Some(tl_tx)),
     });
     *app().recent.lock().unwrap() = app().store.lock().unwrap().recent(RECENT, None).unwrap_or_default();
     std::thread::Builder::new().name("kagent-worker".into()).stack_size(256 * 1024).spawn(move || worker(rx)).ok();
+    std::thread::Builder::new().name("kagent-timeline".into()).stack_size(512 * 1024).spawn(move || timeline_worker(tl_rx)).ok();
 
     unsafe {
         let instance = GetModuleHandleW(std::ptr::null());
@@ -637,17 +765,39 @@ fn main() {
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
+        CloseHandle(instance_mutex);
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn hotkeys() {
-        use super::*;
         assert_eq!(parse_hotkey("Ctrl+Shift+V"), Some((MOD_NOREPEAT | MOD_CONTROL | MOD_SHIFT, 'V' as u32)));
         assert_eq!(parse_hotkey("Alt+F2"), Some((MOD_NOREPEAT | MOD_ALT, 0x71)));
         assert_eq!(parse_hotkey("V"), None);
         assert_eq!(parse_hotkey("Ctrl+Space"), None);
+    }
+
+    #[test]
+    fn timeline_scan_pending_deduplicates_root() {
+        let mut pending = HashSet::new();
+        assert!(mark_scan_pending(&mut pending, "C:\\test"));
+        assert!(!mark_scan_pending(&mut pending, "C:\\test"));
+        assert!(mark_scan_pending(&mut pending, "C:\\other"));
+        assert!(unmark_scan_pending(&mut pending, "C:\\test"));
+        assert!(!unmark_scan_pending(&mut pending, "C:\\test"));
+        assert!(mark_scan_pending(&mut pending, "C:\\test"));
+    }
+
+    #[test]
+    fn timeline_generation_stale_detection() {
+        let current_gen = 2u64;
+        let old_msg_gen = 1u64;
+        let new_msg_gen = 2u64;
+        assert!(old_msg_gen < current_gen);
+        assert!(!(new_msg_gen < current_gen));
     }
 }
