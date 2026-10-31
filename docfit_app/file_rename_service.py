@@ -220,7 +220,8 @@ class FileRenameService:
         with self._lock:
             entries = [self._entries[i] for i in self._order]
             try:
-                plan = build_plan(entries, rules, overrides=overrides, excluded=excluded)
+                on_conflict = "number" if payload.get("on_conflict") == "number" else "block"
+                plan = build_plan(entries, rules, overrides=overrides, excluded=excluded, on_conflict=on_conflict)
             except RuleError as error:
                 raise RenameServiceError("RENAME_INVALID_RULE", str(error)) from None
             self._plan = plan

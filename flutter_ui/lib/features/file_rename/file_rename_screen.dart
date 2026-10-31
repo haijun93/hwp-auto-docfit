@@ -47,6 +47,10 @@ class FileRenameScreenState extends State<FileRenameScreen> {
   String _message = '';
   bool _busy = false;
   bool _recursive = false;
+  /// 바뀌는 항목만 보이기(PowerRename '바뀐 항목만 표시').
+  bool _onlyChanged = false;
+  /// 이름이 겹칠 때: block(적용 막기) · number(' (2)'를 붙여 피하기).
+  String _onConflict = 'block';
   String? _lastRun;
   Timer? _debounce;
   void Function()? _stopDrops;
@@ -121,6 +125,7 @@ class FileRenameScreenState extends State<FileRenameScreen> {
       'rules': _rules,
       'overrides': _overrides,
       'excluded': _excluded.toList(),
+      'on_conflict': _onConflict,
     });
     if (!mounted) return;
     setState(() {
@@ -492,6 +497,8 @@ class FileRenameScreenState extends State<FileRenameScreen> {
       ?item?.reason,
       if (warn.contains('executable')) '실행 파일입니다.',
       if (warn.contains('ext_changed')) '확장자가 바뀌어도 파일 형식은 바뀌지 않습니다.',
+      if (warn.contains('names_short')) '목록에 이 순서의 새 이름이 없어 그대로 둡니다.',
+      if (warn.contains('auto_numbered')) '이름이 겹쳐 번호를 붙였습니다.',
       if (warn.contains('exif_missing')) '촬영일이 없어 수정한 날을 썼습니다.',
       if (warn.contains('long_path')) '경로가 260자를 넘습니다.',
     ].join('\n');
@@ -506,6 +513,49 @@ class FileRenameScreenState extends State<FileRenameScreen> {
           if (warn.isNotEmpty) Icon(Icons.warning_amber, size: 14, color: scheme.tertiary),
         ],
       ),
+    );
+  }
+
+  /// 원래·새 이름 목록을 탭으로 나눠 클립보드에(엑셀에 붙여 넣어 고친 뒤 '이름 목록 붙여넣기'로 되돌릴 수 있다).
+  Future<void> _copyNameList() async {
+    final lines = [
+      '원래 이름\t새 이름',
+      for (final e in _entries) '${e.name}\t${_preview[e.id]?.newName ?? e.name}',
+    ];
+    await Clipboard.setData(ClipboardData(text: lines.join('\n')));
+    if (mounted) setState(() => _message = '${_entries.length}개 이름 목록을 복사했습니다');
+  }
+
+  /// 새 이름에서 원래 이름과 달라진 가운데 부분만 색으로 강조한다.
+  Widget _highlighted(String before, String after, {required bool changed, required bool italic}) {
+    final style = TextStyle(fontWeight: changed ? FontWeight.w600 : null, fontStyle: italic ? FontStyle.italic : null);
+    if (!changed || after.isEmpty) {
+      return Text(after, overflow: TextOverflow.ellipsis, style: style);
+    }
+    var start = 0;
+    while (start < before.length && start < after.length && before[start] == after[start]) {
+      start++;
+    }
+    var end = 0;
+    while (end < before.length - start && end < after.length - start &&
+        before[before.length - 1 - end] == after[after.length - 1 - end]) {
+      end++;
+    }
+    final scheme = Theme.of(context).colorScheme;
+    return Text.rich(
+      TextSpan(
+        style: style,
+        children: [
+          TextSpan(text: after.substring(0, start)),
+          TextSpan(
+            text: after.substring(start, after.length - end),
+            style: TextStyle(backgroundColor: scheme.primaryContainer, color: scheme.onPrimaryContainer),
+          ),
+          TextSpan(text: after.substring(after.length - end)),
+        ],
+      ),
+      key: ValueKey('rename-new-${after.hashCode}'),
+      overflow: TextOverflow.ellipsis,
     );
   }
 
@@ -529,26 +579,65 @@ class FileRenameScreenState extends State<FileRenameScreen> {
       );
     }
     final header = Theme.of(context).textTheme.labelMedium;
+    final visible = _onlyChanged
+        ? [for (final e in _entries) if (_preview[e.id] != null && _preview[e.id]!.status != 'unchanged') e]
+        : _entries;
     return Column(
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
-          child: Row(
+          child: Column(
             children: [
-              const SizedBox(width: 40),
-              Expanded(child: Text('원래 이름', style: header)),
-              Expanded(child: Text('새 이름 (두 번 눌러 직접 고치기)', style: header)),
-              SizedBox(width: 80, child: Text('상태', style: header)),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  FilterChip(
+                    key: const ValueKey('rename-only-changed'),
+                    label: const Text('바뀌는 것만 보기'),
+                    selected: _onlyChanged,
+                    onSelected: (v) => setState(() => _onlyChanged = v),
+                  ),
+                  DropdownButton<String>(
+                    key: const ValueKey('rename-on-conflict'),
+                    value: _onConflict,
+                    items: const [
+                      DropdownMenuItem(value: 'block', child: Text('이름이 겹치면 적용 막기')),
+                      DropdownMenuItem(value: 'number', child: Text('이름이 겹치면 (2)·(3) 붙이기')),
+                    ],
+                    onChanged: (v) {
+                      setState(() => _onConflict = v ?? 'block');
+                      _schedulePreview();
+                    },
+                  ),
+                  TextButton.icon(
+                    key: const ValueKey('rename-copy-list'),
+                    onPressed: _copyNameList,
+                    icon: const Icon(Icons.copy_all, size: 18),
+                    label: const Text('이름 목록 복사'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  const SizedBox(width: 40),
+                  Expanded(child: Text('원래 이름', style: header)),
+                  Expanded(child: Text('새 이름 (바뀐 부분 강조 · 두 번 눌러 직접 고치기)', style: header)),
+                  SizedBox(width: 80, child: Text('상태', style: header)),
+                ],
+              ),
             ],
           ),
         ),
         const Divider(height: 1),
         Expanded(
           child: ListView.builder(
-            itemCount: _entries.length,
+            itemCount: visible.length,
             itemExtent: 36,
             itemBuilder: (context, index) {
-              final entry = _entries[index];
+              final entry = visible[index];
               final item = _preview[entry.id];
               final selected = entry.id == _selected;
               final changed = item?.status == 'ok';
@@ -579,13 +668,11 @@ class FileRenameScreenState extends State<FileRenameScreen> {
                           ),
                         ),
                         Expanded(
-                          child: Text(
+                          child: _highlighted(
+                            entry.name,
                             item?.newName ?? '',
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontWeight: changed ? FontWeight.w600 : null,
-                              fontStyle: item?.overridden == true ? FontStyle.italic : null,
-                            ),
+                            changed: changed,
+                            italic: item?.overridden == true,
                           ),
                         ),
                         SizedBox(width: 80, child: _status(item)),

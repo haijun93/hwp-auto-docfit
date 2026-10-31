@@ -38,7 +38,7 @@ void main() {
     expect(find.text('표그림판'), findsOneWidget);
     expect(find.text('다이어그램'), findsOneWidget);
     expect(find.text('마인드맵'), findsOneWidget);
-    expect(find.text('파일이름'), findsOneWidget);
+    expect(find.text('파일명 일괄변경'), findsOneWidget);
     expect(find.text('파일변환'), findsOneWidget);
 
     // Initial tab (index 0) has DocumentEditorAdapter

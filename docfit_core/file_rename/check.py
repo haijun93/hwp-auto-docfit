@@ -36,7 +36,8 @@ def _key(path):
     return os.path.normcase(os.path.normpath(path)).casefold()
 
 
-def build_plan(entries, rules, *, overrides=None, excluded=(), exists=os.path.lexists, today=None, exif_reader=None):
+def build_plan(entries, rules, *, overrides=None, excluded=(), exists=os.path.lexists, today=None, exif_reader=None,
+               on_conflict="block"):
     """미리보기 계획. 항목 상태: ok·unchanged·conflict·invalid·skipped.
 
     overrides: {entry_id: 새 이름} — 사용자가 직접 고친 이름(규칙 결과를 덮어씀).
@@ -74,11 +75,37 @@ def build_plan(entries, rules, *, overrides=None, excluded=(), exists=os.path.le
                         item["warnings"].append("executable")
         items.append(item)
     _mark_conflicts(items, exists)
+    if on_conflict == "number":
+        _number_conflicts(items, exists)
+        _mark_conflicts(items, exists)
     summary = {status: 0 for status in ("ok", "unchanged", "conflict", "invalid", "skipped")}
     for item in items:
         summary[item["status"]] += 1
     summary["executables"] = sum("executable" in item["warnings"] for item in items if item["status"] == "ok")
     return dict(plan_id=_plan_id(items), items=items, summary=summary)
+
+
+def _number_conflicts(items, exists):
+    """충돌 항목에 ' (2)', ' (3)' …을 붙여 겹치지 않게 한다(목록 순서대로, 앞 항목은 원래 새 이름을 먼저 가진다)."""
+    moving = {_key(i["old_path"]) for i in items if i["status"] in ("ok", "conflict")}
+    taken = {_key(i["new_path"]) for i in items if i["status"] == "ok" and i["new_path"]}
+    taken |= {_key(i["old_path"]) for i in items if i["status"] not in ("ok", "conflict")}
+    for item in items:
+        if item["status"] != "conflict" or not item["new_path"]:
+            continue
+        folder = os.path.dirname(item["new_path"])
+        stem, ext = (item["new_name"], "") if item.get("is_folder") else os.path.splitext(item["new_name"])
+        for k in range(1, 1000):
+            name = item["new_name"] if k == 1 else f"{stem} ({k}){ext}"
+            path = os.path.join(folder, name)
+            key = _key(path)
+            if key in taken or (key not in moving and exists(path)) or invalid_name_reason(name):
+                continue
+            item.update(new_name=name, new_path=path, status="ok", reason=None)
+            if k > 1:
+                item["warnings"] = sorted(set(item["warnings"]) | {"auto_numbered"})
+            taken.add(key)
+            break
 
 
 def _mark_conflicts(items, exists):
