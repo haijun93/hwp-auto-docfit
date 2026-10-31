@@ -509,10 +509,11 @@ class _SettingsDialogState extends State<SettingsDialog> {
     final visible =
         [
           for (final field in _fields)
-            if (field['key'] == 'file_rename_sendto') ...[] // 위쪽 전용 스위치로 켜고 끈다(바로가기까지 만들어야 해서).
-            else if (query.isEmpty
-                ? _categoryOf(field) == category
-                : _matches(field, query))
+            // 보내기는 위쪽 전용 스위치로 켜고 끈다(바로가기까지 만들어야 해서).
+            if (field['key'] != 'file_rename_sendto' &&
+                (query.isEmpty
+                    ? _categoryOf(field) == category
+                    : _matches(field, query)))
               field,
         ]..sort(
           (a, b) => (guideOrder['${a['key']}'] ?? 9999).compareTo(
