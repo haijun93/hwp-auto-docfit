@@ -77,7 +77,7 @@ class RunContext:
             self.state["표_자간조정_사용"] = options.effective_table_spacing
             # '페이지 맞춤' 카드(자간 끔·쪽 맞춤만): 결과 이름을 (페이지맞춤)으로.
             self.state["쪽맞춤만"] = (options.effective_mode == "spacing" and not options.spacing_enabled
-                                  and options.spacing_page_fit)
+                                  and not options.spacing_exclude_pagefit)
             value = options.page_range
             if value:
                 parts = str(value).split("-", 1)

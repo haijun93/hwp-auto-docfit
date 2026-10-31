@@ -18,7 +18,7 @@ class SpacingPageOptionsTests(unittest.TestCase):
             for page in (False, True):
                 with self.subTest(spacing=spacing, page=page):
                     selected = RunOptions(mode="spacing", spacing_enabled=spacing,
-                                          spacing_page_fit=page).resolve_stages(choices)
+                                          spacing_exclude_pagefit=not page).resolve_stages(choices)
                     self.assertEqual([selected[k] for k in SPACING_STAGE_KEYS], [spacing] * 7)
                     self.assertEqual(selected["style_unify"], spacing)
                     self.assertEqual((selected["page_fit"], selected["page_group"]), (page, page))
@@ -35,7 +35,7 @@ class SpacingPageOptionsTests(unittest.TestCase):
         self.assertTrue(selected["page_fit"])
 
     def test_table_exclusion_and_advanced_page_selection_are_respected(self):
-        selected = RunOptions(mode="spacing", spacing_page_fit=True, table_spacing=False).resolve_stages(
+        selected = RunOptions(mode="spacing", spacing_exclude_pagefit=False, table_spacing=False).resolve_stages(
             {"spacing": {"page_fit": True, "page_group": False}})
         self.assertFalse(selected["control_spacing"])
         self.assertTrue(selected["page_fit"])
@@ -58,7 +58,8 @@ class SpacingPagePipelineTests(unittest.TestCase):
         for standard in (False, True):
             calls.clear()
             selection = RunOptions(mode="spacing", spacing_enabled=False,
-                                   spacing_page_fit=True).resolve_stages({})
+                                   spacing_exclude_pagefit=False).resolve_stages(
+                                       {"spacing": {"page_fit": True, "page_group": True}})
             with patch.dict(fn.__globals__, {
                 **{name: forbidden for name in names},
                 "작업_모드": "spacing", "표준서식_사용": standard, "선택_세부작업": selection,
@@ -98,6 +99,23 @@ class SpacingPagePipelineTests(unittest.TestCase):
 
 
 class SpacingPageBridgeTests(unittest.TestCase):
+    def test_start_guard_uses_exclusion_semantics(self):
+        from desktop_web_ui import DesktopWebBridge
+        enabled, excluded = Mock(), Mock()
+        enabled.get.return_value = False
+        excluded.get.return_value = True
+        bridge = DesktopWebBridge.__new__(DesktopWebBridge)
+        bridge.gui = SimpleNamespace(running=False, spacing_enabled_var=enabled,
+                                     spacing_exclude_pagefit_var=excluded, selected_mode=Mock())
+        bridge._tk = lambda callback: callback()
+        bridge.get_state = lambda: {}
+        bridge._mode_selected = Mock()
+        self.assertFalse(bridge._can_start("spacing", ["원본.hwp"], False))
+        with self.assertRaisesRegex(ValueError, "할 일이 없습니다"):
+            bridge.start("spacing")
+        excluded.get.return_value = False
+        self.assertTrue(bridge._can_start("spacing", ["원본.hwp"], False))
+
     def test_real_gui_persists_page_only_and_links_advanced_stages(self):
         from desktop_web_ui import DesktopWebBridge
         from tests.gui_support import gui_root
@@ -113,42 +131,42 @@ class SpacingPageBridgeTests(unittest.TestCase):
                     bridge._tk = lambda callback, **kwargs: callback()
                     if not reopen:
                         self.assertTrue(app.spacing_enabled_var.get())
-                        self.assertFalse(app.spacing_page_fit_var.get())
-                        bridge.set_card_option("spacing_page_fit", True)
+                        self.assertTrue(app.spacing_exclude_pagefit_var.get())
+                        bridge.set_card_option("spacing_exclude_pagefit", False)
                         bridge.set_card_option("spacing_enabled", False)
                     self.assertFalse(app.spacing_enabled_var.get())
-                    self.assertTrue(app.spacing_page_fit_var.get())
-                    self.assertFalse(any(app.stage_choices["spacing"][key] for key in SPACING_STAGE_KEYS))
+                    self.assertFalse(app.spacing_exclude_pagefit_var.get())
+                    self.assertTrue(any(app.stage_choices["spacing"][key] for key in SPACING_STAGE_KEYS))
                     self.assertTrue(app.stage_choices["spacing"]["page_fit"])
                     saved = ns["설정_불러오기"]()
                     self.assertFalse(saved["spacing_enabled"])
-                    self.assertTrue(saved["spacing_page_fit"])
+                    self.assertFalse(saved["spacing_exclude_pagefit"])
                     # 세부 작업에서 자간 단계를 다시 고르면 마스터도 켜진다.
                     if reopen:
                         bridge.set_stage("body_spacing", True)
                         self.assertTrue(app.spacing_enabled_var.get())
-                        self.assertTrue(app.spacing_page_fit_var.get())
+                        self.assertFalse(app.spacing_exclude_pagefit_var.get())
                 finally:
                     root.destroy()
 
-    def test_switches_select_spacing_and_both_off_block_start(self):
+    def test_switches_select_spacing_and_excluded_page_fit_blocks_start(self):
         from desktop_web_ui import DesktopWebBridge
-        enabled, page = Mock(), Mock()
+        enabled, page_exclude = Mock(), Mock()
         enabled.get.return_value = False
-        page.get.return_value = False
+        page_exclude.get.return_value = True
         bridge = DesktopWebBridge.__new__(DesktopWebBridge)
         bridge.gui = SimpleNamespace(running=False, spacing_enabled_var=enabled,
-                                     spacing_page_fit_var=page, selected_mode=Mock())
+                                     spacing_exclude_pagefit_var=page_exclude, selected_mode=Mock())
         bridge._tk = lambda callback: callback()
         bridge.get_state = lambda: {}
         bridge._mode_selected = Mock()
         self.assertFalse(bridge._can_start("spacing", ["원본.hwp"], False))
-        with self.assertRaisesRegex(ValueError, "하나 이상"):
+        with self.assertRaisesRegex(ValueError, "할 일이 없습니다"):
             bridge.start("spacing")
-        page.get.return_value = True
+        page_exclude.get.return_value = False
         self.assertTrue(bridge._can_start("spacing", ["원본.hwp"], False))
-        bridge.set_card_option("spacing_page_fit", True)
-        page.set.assert_called_once_with(True)
+        bridge.set_card_option("spacing_exclude_pagefit", False)
+        page_exclude.set.assert_called_once_with(False)
         bridge.gui.selected_mode.set.assert_called_once_with("spacing")
         bridge.gui.running = True
         bridge.set_card_option("spacing_enabled", True)

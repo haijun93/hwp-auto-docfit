@@ -72,9 +72,9 @@ class ApplicationService:
         return {'job':self.jobs.latest(), 'files':[{'path':p,'name':Path(p).name,'folder':str(Path(p).parent)} for p in self.data.files],
                 'count':len(self.data.files),'native_backend':True,'mode':self.data.mode,'running':bool(self.jobs.latest() and self.jobs.latest()['state'] in {'queued','running'}),'engine_ready':False,
                 'status':'문서 분석·설정 시제품', 'version':'1.74 Native Prototype 1',
-                'include_spacing':settings['all_include_spacing'], 'reset_spacing':self.data.stages.get(('spacing','reset_spacing'),settings.get('spacing_reset_existing') if settings.get('spacing_reset_existing') is not None else True),
+                'include_spacing':settings['all_include_spacing'], 'reset_spacing':self.data.stages.get(('spacing','reset_spacing'),not settings['spacing_exclude_reset']),
                 'table_spacing':settings['table_spacing'], 'exclude_tables':settings['all_exclude_tables'],
-                'card_options':{**{key:bool(settings.get(key)) for key in ('spacing_enabled','spacing_page_fit','unify_exclude_tables','unify_exclude_spacing','unify_exclude_pagefit','unify_keep_layout','unify_full_format','all_include_spacing','all_exclude_tables','all_exclude_pagefit','all_linespacing')},'spacing_exclude_tables':not settings['table_spacing'],'spacing_reset_existing':bool(settings['spacing_reset_existing']) if settings.get('spacing_reset_existing') is not None else True},'range':self.data.range,'results':[], 'options':settings,
+                'card_options':{**{key:bool(settings.get(key)) for key in ('spacing_enabled','spacing_exclude_pagefit','spacing_exclude_reset','unify_exclude_tables','unify_exclude_spacing','unify_exclude_pagefit','unify_keep_layout','unify_full_format','all_include_spacing','all_exclude_tables','all_exclude_pagefit','all_exclude_linespacing')},'spacing_exclude_tables':not settings['table_spacing']},'range':self.data.range,'results':[], 'options':settings,
                 'profiles':[], 'profile':'','default_saved':self.data.mode in saved_stages,'format_task':None,
                 'progress':{'steps':list(STAGE_ORDER),'active':None,'visited':[],'outcome':None,'detail':''},
                 'stages':[{'key':k,'label':label,'enabled':self.data.stages.get((self.data.mode,k),selected.get(k,default_choice(k,self.data.mode))),
@@ -104,13 +104,14 @@ class ApplicationService:
                     'capabilities':['documents.inspect','settings','abbreviations','flows'],'engine_ready':False}
         if method=='set_card_option':
             name,value=args
-            allowed={'spacing_enabled','spacing_page_fit','spacing_reset_existing','spacing_exclude_tables','unify_exclude_tables','unify_exclude_spacing','unify_exclude_pagefit',
-                     'unify_keep_layout','unify_full_format','all_include_spacing','all_exclude_tables','all_exclude_pagefit','all_linespacing'}
+            allowed={'spacing_enabled','spacing_exclude_pagefit','spacing_exclude_reset','spacing_exclude_tables','unify_exclude_tables','unify_exclude_spacing','unify_exclude_pagefit',
+                     'unify_keep_layout','unify_full_format','all_include_spacing','all_exclude_tables','all_exclude_pagefit','all_exclude_linespacing'}
             if name not in allowed or not isinstance(value,bool):raise ServiceError('INVALID_OPTION','카드 옵션을 확인해 주세요.')
             if name=='spacing_exclude_tables':key,value='table_spacing',not value
             else:key=name
             self.store.update(lambda current:current.update({key:value}))
-            if name=='spacing_reset_existing':self.data.stages[('spacing','reset_spacing')]=value
+            if name=='spacing_exclude_reset':
+                self.data.stages[('spacing','reset_spacing')]=not value
             if name=='all_include_spacing' and self.data.mode in ('all','format'):
                 self.data.mode='all' if value else 'format'
             return self.state()
@@ -123,7 +124,7 @@ class ApplicationService:
             self.data.range={'enabled':enabled,'start':start,'end':end}
             return self.state()
         if method in ('set_option','set_include_spacing','set_reset_spacing','set_table_spacing','set_exclude_tables'):
-            mapping={'set_include_spacing':'all_include_spacing','set_reset_spacing':'spacing_reset_existing',
+            mapping={'set_include_spacing':'all_include_spacing','set_reset_spacing':'spacing_exclude_reset',
                      'set_table_spacing':'table_spacing','set_exclude_tables':'all_exclude_tables'}
             if method=='set_option':
                 key,value=args
@@ -132,8 +133,10 @@ class ApplicationService:
                     raise ServiceError('INVALID_OPTION','설정 항목을 확인해 주세요.')
             else:key,value=mapping[method],args[0]
             if not isinstance(value,bool):raise ServiceError('INVALID_OPTION','설정 값을 확인해 주세요.')
-            self.store.update(lambda current:current.update({key:value}))
-            if method=='set_reset_spacing':self.data.stages[('spacing','reset_spacing')]=value
+            stored_value = not value if method == 'set_reset_spacing' else value
+            self.store.update(lambda current:current.update({key:stored_value}))
+            if method=='set_reset_spacing':
+                self.data.stages[('spacing','reset_spacing')]=value
             if method=='set_include_spacing' and self.data.mode in ('all','format'):
                 self.data.mode='all' if value else 'format'
             return self.state()

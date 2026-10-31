@@ -35,13 +35,13 @@ LABELS = {
  'table_spacing':'표 안 자간 정리', 'log_file':'작업 로그 파일 저장',
  'developer_mode':'개발자 모드', 'all_include_spacing':'한 번에 적용: 자간 포함',
  'all_exclude_tables':'한 번에 적용: 표 제외', 'all_exclude_pagefit':'한 번에 적용: 페이지 맞춤 제외',
- 'all_linespacing':'한 번에 적용: 줄 간격 적용',
+ 'all_exclude_linespacing':'한 번에 적용: 줄 간격 적용 제외',
  'unify_exclude_tables':'서식 통일: 표 제외', 'unify_exclude_spacing':'서식 통일: 자간 제외',
  'unify_exclude_pagefit':'서식 통일: 페이지 맞춤 제외', 'unify_keep_layout':'서식 통일: 원본 쪽 구성 유지',
  'unify_full_format':'서식 통일: 전체 서식 맞춤', 'unify_result_window':'서식 통일 결과 창 표시',
- 'spacing_reset_existing':'기존 자간 초기화',
+ 'spacing_exclude_reset':'기존 자간 초기화 제외',
  'spacing_enabled':'자간 정리: 자간 기능 사용',
- 'spacing_page_fit':'자간 정리: 페이지 맞춤',
+ 'spacing_exclude_pagefit':'자간 정리: 페이지 맞춤 제외',
 }
 EXCLUDED = {'ui_tk_fallback', 'abbreviations', 'abbreviation_source', 'active_format_profile'} | {k for k in DEFAULTS if k.endswith('_rev')}
 
@@ -93,10 +93,6 @@ class ConfigurationService:
                         merged[key][part] = spec
             else:
                 merged[key] = value
-        if merged.get('spacing_reset_existing') is None:
-            stages = saved.get('stage_choices',{})
-            spacing = stages.get('spacing',{}) if isinstance(stages,dict) else {}
-            merged['spacing_reset_existing'] = bool(spacing.get('reset_spacing',True)) if isinstance(spacing,dict) else True
         known = {f['key'] for f in fields()}
         return {'fields':fields(), 'values':{k:v for k,v in leaves(merged) if k in known},
                 'revision':revision(saved), 'running':bool(running)}

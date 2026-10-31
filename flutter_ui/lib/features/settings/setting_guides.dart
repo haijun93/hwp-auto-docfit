@@ -577,10 +577,10 @@ final Map<String, SettingGuide> settingGuides = {
       ],
     ),
   ),
-  'spacing_reset_existing': SettingGuide(
+  'spacing_exclude_reset': SettingGuide(
     'sentence',
-    '기존 자간 초기화',
-    '자간 정리 전에 문서에 이미 걸린 자간을 0%로 되돌려요. 끄면 기존 자간 위에서 정리해요.',
+    '기존 자간 초기화 제외',
+    '켜면 문서에 이미 걸린 자간을 0%로 되돌리는 단계를 건너뛰어요.',
     preview: (v) => _beforeAfter(
       v,
       [
@@ -598,8 +598,8 @@ final Map<String, SettingGuide> settingGuides = {
           spans: [DocSpan('좁게 눌린 자간이 그대로 남아 있음', mark: _hl)],
         ),
       ],
-      offLabel: '끄면 (기존 자간 유지)',
-      onLabel: '켜면 (0%로 되돌림)',
+      offLabel: '끄면 (기존 자간 초기화)',
+      onLabel: '켜면 (기존 자간 유지)',
     ),
   ),
   'table_spacing': SettingGuide(
@@ -765,10 +765,15 @@ final Map<String, SettingGuide> settingGuides = {
     '한 번에 적용: 쪽 맞춤 빼기',
     '마지막 쪽을 채우려고 간격을 바꾸는 작업을 빼요.',
   ),
-  'all_linespacing': SettingGuide(
+  'all_exclude_linespacing': SettingGuide(
     'cards',
-    '한 번에 적용: 줄 간격 적용',
-    '끄면 문서의 줄 간격을 유지해요. 페이지 맞춤의 줄 간격 조정은 페이지 맞춤 제외에서 정해요.',
+    '한 번에 적용: 줄 간격 적용 제외',
+    '켜면 줄 간격 적용 단계를 건너뛰어요.',
+  ),
+  'spacing_exclude_pagefit': SettingGuide(
+    'cards',
+    '자간 정리: 페이지 맞춤 제외',
+    '켜면 문단 아래 간격 페이지 맞춤과 관련 문단 페이지 배치를 건너뛰어요.',
   ),
   'unify_exclude_tables': SettingGuide(
     'cards',

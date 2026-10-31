@@ -10,6 +10,22 @@ from copy import deepcopy
 def migrate_settings(settings, defaults):
     result=deepcopy(settings)
     result.pop("diagram_editor_enabled", None)
+    # 작업 카드 옵션은 포함에서 제외 방식으로 이름·의미가 바뀌었다. 저장된 값이 있는
+    # 사용자 설정만 반전 이전하고, 새 설치에는 DEFAULTS가 그대로 적용되게 한다.
+    renamed = (
+        ("all_linespacing", "all_exclude_linespacing"),
+        ("spacing_page_fit", "spacing_exclude_pagefit"),
+        ("spacing_reset_existing", "spacing_exclude_reset"),
+    )
+    for old_key, new_key in renamed:
+        if new_key not in result and old_key in result and isinstance(result[old_key], bool):
+            result[new_key] = not result[old_key]
+        result.pop(old_key, None)
+    if "spacing_exclude_reset" not in result and isinstance(result.get("stage_choices"), dict):
+        spacing = result["stage_choices"].get("spacing", {})
+        if isinstance(spacing, dict) and isinstance(spacing.get("reset_spacing"), bool):
+            result["spacing_exclude_reset"] = not spacing["reset_spacing"]
+    result["card_options_rev"] = 2
     def old(key):
         try:return int(result.get(key,1) or 1)<2
         except (TypeError,ValueError):return True

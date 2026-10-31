@@ -354,12 +354,14 @@ class _WorkspaceState extends State<Workspace> implements ConversionHost {
   );
   String get cardMode => mode == 'format' ? 'all' : mode;
   bool get includeSpacing => state['include_spacing'] != false;
-  // '자간 정리' 카드의 '기존 자간 초기화'(세부 작업 01과 같은 값).
-  bool get resetSpacing => state['reset_spacing'] != false;
+  // '자간 정리' 카드 제외 옵션은 세부 작업 상태와 반대 의미다.
+  bool get excludeResetSpacing => cardOption('spacing_exclude_reset');
+  bool get resetSpacing => !excludeResetSpacing;
   bool get tableSpacing => state['table_spacing'] != false;
   bool get spacingEnabled =>
       (state['card_options'] as Map? ?? const {})['spacing_enabled'] != false;
-  bool get spacingPageFit => cardOption('spacing_page_fit');
+  bool get excludePageFit => cardOption('spacing_exclude_pagefit');
+  bool get spacingPageFit => !excludePageFit;
   // '한 번에 적용'의 '표 제외'(설정 all_exclude_tables, 기본 꺼짐).
   bool get excludeTables => state['exclude_tables'] == true;
   // 카드 옵션(한 번에 적용 '페이지 맞춤 제외', 서식 통일 '표 제외'·'자간 정리 제외'·'페이지 맞춤 제외').
@@ -1703,18 +1705,18 @@ class _WorkspaceState extends State<Workspace> implements ConversionHost {
           children: [
             const Expanded(
               child: Text(
-                '페이지 맞춤',
+                '페이지 맞춤 제외',
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
-            const OptionImageButton('spacing_page_fit'),
+            const OptionImageButton('spacing_exclude_pagefit'),
             Switch(
-              key: const Key('spacingPageFitSwitch'),
-              value: spacingPageFit,
+              key: const Key('spacingExcludePagefitSwitch'),
+              value: excludePageFit,
               onChanged: locked
                   ? null
                   : (on) =>
-                        command('set_card_option', ['spacing_page_fit', on]),
+                        command('set_card_option', ['spacing_exclude_pagefit', on]),
             ),
           ],
         ),
@@ -1722,28 +1724,28 @@ class _WorkspaceState extends State<Workspace> implements ConversionHost {
           Text(
             spacingPageFit
                 ? '자간·장평·줄 병합은 그대로 두고 문단·표의 세로 간격과 페이지 배치만 조정해요.'
-                : '자간 정리 또는 페이지 맞춤을 하나 이상 켜 주세요.',
+                : '자간 정리를 끄고 페이지 맞춤도 제외하면 할 일이 없습니다.',
             style: const TextStyle(fontSize: 12, color: _faint),
           ),
-        // 끄면 문서에 이미 있는 자간을 0%로 되돌리지 않고 그 위에서 정리한다.
+  // 켜면 문서에 이미 있는 자간을 0%로 되돌리는 단계를 건너뛴다.
         Row(
           children: [
             const Expanded(
               child: Text(
-                '기존 자간 초기화',
+                '기존 자간 초기화 제외',
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
             Switch(
               key: const Key('resetSpacingSwitch'),
-              value: resetSpacing,
+              value: excludeResetSpacing,
               onChanged: locked || !spacingEnabled
                   ? null
-                  : (on) => command('set_reset_spacing', [on]),
+                  : (on) => command('set_card_option', ['spacing_exclude_reset', on]),
             ),
           ],
         ),
-        if (spacingEnabled && !resetSpacing)
+        if (spacingEnabled && excludeResetSpacing)
           const Text(
             '문서에 있던 자간은 그대로 두고 그 위에서 정리해요.',
             style: TextStyle(fontSize: 12, color: _faint),
@@ -1862,19 +1864,16 @@ class _WorkspaceState extends State<Workspace> implements ConversionHost {
           children: [
             const Expanded(
               child: Text(
-                '줄 간격 적용',
+                '줄 간격 적용 제외',
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
             Switch(
               key: const Key('allLinespacingSwitch'),
-              value:
-                  (state['card_options'] as Map? ??
-                      const {})['all_linespacing'] !=
-                  false,
+              value: cardOption('all_exclude_linespacing'),
               onChanged: locked
                   ? null
-                  : (on) => command('set_card_option', ['all_linespacing', on]),
+                  : (on) => command('set_card_option', ['all_exclude_linespacing', on]),
             ),
           ],
         ),

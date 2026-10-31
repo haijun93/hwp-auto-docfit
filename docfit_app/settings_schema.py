@@ -102,7 +102,7 @@ DEFAULTS = {
     "all_exclude_tables": False,
     # 한 번에 적용의 '페이지 맞춤 제외': 켜면 문단 아래 간격 페이지 맞춤·관련 문단 페이지 배치를 뺀다.
     "all_exclude_pagefit": False,
-    "all_linespacing": True,
+    "all_exclude_linespacing": False,
     # 서식 통일 카드의 '표 제외'·'자간 정리 제외'·'페이지 맞춤 제외'. 세부 작업과 연동되며, 서식 통일의 쪽 맞춤은
     # 세부 작업 기본값이 꺼짐이라 '페이지 맞춤 제외'만 기본 켜짐이다.
     "unify_exclude_tables": False,
@@ -114,17 +114,17 @@ DEFAULTS = {
     "unify_full_format": False,
     # 서식통일 뒤 '작업 결과 확인' 창(서식통일 5/5)을 띄울지. 기본 꺼짐(2026-10-04 사용자 요청).
     "unify_result_window": False,
-    # '자간 정리' 카드의 '기존 자간 초기화'(세부 작업 01과 같은 값). None이면 저장된 세부 작업 구성을 따른다.
-    "spacing_reset_existing": None,
+    # '자간 정리' 카드 제외 옵션. 기본 동작은 기존 설정과 같이 페이지 맞춤·자간 초기화를 실행한다.
+    "spacing_exclude_reset": False,
     "spacing_enabled": True,
-    "spacing_page_fit": False,
+    "spacing_exclude_pagefit": True,
     # 2.0.0 단계별 Tk 창 제거 대비 비상 되돌리기용 플래그 (기본 False = Tk 창 대신 Flutter 화면 사용)
     "ui_tk_fallback": False,
 }
 
 VARIABLE_BINDINGS = {'prevent_word_split': 'prevent_word_split_var',
  'spacing_enabled': 'spacing_enabled_var',
- 'spacing_page_fit': 'spacing_page_fit_var',
+ 'spacing_exclude_pagefit': 'spacing_exclude_pagefit_var',
  'ratio_shrink': 'ratio_shrink_var',
  'punctuation': 'punctuation_var',
  'punctuation_threshold': 'punctuation_threshold_var',
@@ -157,7 +157,8 @@ VARIABLE_BINDINGS = {'prevent_word_split': 'prevent_word_split_var',
  'all_exclude_tables': 'exclude_tables_var',
  'title_owner_text': 'title_owner_var',
  'all_exclude_pagefit': 'all_exclude_pagefit_var',
- 'all_linespacing': 'all_linespacing_var',
+ 'all_exclude_linespacing': 'all_exclude_linespacing_var',
+ 'spacing_exclude_reset': 'spacing_exclude_reset_var',
  'unify_exclude_tables': 'unify_exclude_tables_var',
  'unify_exclude_spacing': 'unify_exclude_spacing_var',
  'unify_exclude_pagefit': 'unify_exclude_pagefit_var',
