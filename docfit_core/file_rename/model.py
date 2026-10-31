@@ -24,6 +24,7 @@ class Entry:
     size: int = 0
     mtime: float = 0.0
     ctime: float = 0.0
+    is_folder: bool = False
 
     @property
     def folder(self):
@@ -47,7 +48,7 @@ class Entry:
         st = os.stat(path)
         # Windows의 st_ctime은 생성 시각이다. 다른 OS는 st_birthtime이 있으면 그것을 쓴다.
         ctime = getattr(st, "st_birthtime", None) or st.st_ctime
-        return cls(entry_id or path, path, st.st_size, st.st_mtime, ctime)
+        return cls(entry_id or path, path, st.st_size, st.st_mtime, ctime, os.path.isdir(path))
 
     def fingerprint(self):
         return (self.size, int(self.mtime * 1000))

@@ -141,6 +141,16 @@ void main() {
     expect(find.textContaining('2자리'), findsOneWidget);
   });
 
+  testWidgets('새 문서 이름 규칙 메뉴와 폴더 자체 이름 바꾸기 버튼 표시', (tester) async {
+    final backend = _FakeBackend();
+    await _pump(tester, backend);
+    expect(find.byKey(const ValueKey('rename-folder-self')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('rename-add-rule')));
+    await tester.pumpAndSettle();
+    expect(find.text('문서 제목으로'), findsOneWidget);
+    expect(find.text('공문서 이름 틀'), findsOneWidget);
+  });
+
   test('규칙 요약 문구', () {
     expect(ruleSummary({'kind': 'replace', 'find': 'IMG_', 'to': ''}), "'IMG_' → ''");
     expect(ruleSummary({'kind': 'number_shift', 'delta': -1, 'which': 'first'}), '첫 번호 -1');
