@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/api/abbreviation_api.dart' show ApiCall;
+import '../file_rename/file_rename_screen.dart';
 import '../flows/flow_editor_screen.dart';
 import '../table_sketch/table_sketch_screen.dart';
 import '../table_units/table_units_screen.dart';
@@ -86,7 +87,20 @@ class PaintAdapter extends StatelessWidget {
   );
 }
 
-/// Workspace adapter for Tab 7 (always last): File Format Conversion & Merge
+/// Workspace adapter for Tab 7: 파일이름 (bulk rename with rules, preview, undo)
+class FileRenameAdapter extends StatelessWidget {
+  const FileRenameAdapter({super.key, required this.api});
+
+  final ApiCall api;
+
+  @override
+  Widget build(BuildContext context) => KeyedSubtree(
+    key: const ValueKey('tab-file-rename-adapter'),
+    child: FileRenameScreen(api: api),
+  );
+}
+
+/// Workspace adapter for Tab 8 (always last): File Format Conversion & Merge
 class FileConversionAdapter extends StatelessWidget {
   const FileConversionAdapter({super.key, required this.child});
 
@@ -131,6 +145,7 @@ class IntegratedWorkspace extends StatelessWidget {
       mindMap: MindMapAdapter(api: api),
       fileConversion: FileConversionAdapter(child: fileConversionWidget),
       paint: PaintAdapter(api: api),
+      fileRename: FileRenameAdapter(api: api),
     );
   }
 }

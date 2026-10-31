@@ -156,7 +156,11 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
       unawaited(
         widget.api('set_drop_target', ['paint_image']).catchError((_) => null),
       );
-    } else if (lastTab == 2 || lastTab == 5) {
+    } else if (index == kTabFileRename) {
+      unawaited(
+        widget.api('set_drop_target', ['rename_files']).catchError((_) => null),
+      );
+    } else if (lastTab == 2 || lastTab == 5 || lastTab == kTabFileRename) {
       unawaited(
         widget.api('set_drop_target', ['documents']).catchError((_) => null),
       );
@@ -172,9 +176,9 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
     onTabChanged: (index) {
       final from = lastTab;
       routeDrops(index);
-      if (index == 6) {
+      if (index == kTabFileConversion) {
         workspace.currentState?.enterConversionMode();
-      } else if (from == 6) {
+      } else if (from == kTabFileConversion) {
         // 파일변환 탭을 그냥 떠나면 작업 방식을 원래 카드로 되돌린다(넣은 파일을 변환하러 가는 때는 제외).
         workspace.currentState?.leaveConversionMode();
       }

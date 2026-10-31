@@ -1713,6 +1713,22 @@ class DesktopWebBridge:
         threading.Thread(target=work, name="hwp-bulk", daemon=True).start()
         return status()
 
+    def _file_rename_service(self):
+        service = getattr(self, "_rename_service", None)
+        if service is None:
+            from docfit_app.file_rename_service import FileRenameService
+            folder = self._tk(lambda: getattr(self.gui, "_준말_서비스")().settings._path.parent)
+            service = self._rename_service = FileRenameService(folder, dialogs=self._file_dialogs)
+        return service
+
+    def file_rename(self, action, payload=None):
+        """파일이름 탭: 목록·미리보기·적용·되돌리기(경로는 호스트에만 둔다)."""
+        try:
+            return self._file_rename_service().command(action, payload)
+        except Exception as exc:
+            logging.getLogger(__name__).warning("파일이름 처리 실패", exc_info=True)
+            return {"ok": False, "message": str(exc) or "이름 바꾸기를 처리하지 못했습니다."}
+
     def table_sketch(self, action, payload=None):
         """Table sketch conversion, storage and clipboard API."""
         from docfit_app.table_sketch_service import TableSketchService
@@ -1989,7 +2005,8 @@ class DesktopWebBridge:
     # ---- 서식 관리(예시 보고서로 서식 복제·이름 바꾸기·세부 수정·삭제) ----
     def set_drop_target(self, target):
         """끌어 놓은 파일을 넣을 곳을 바꾼다: documents(문서 목록) 또는 format(예시 서식 복제)."""
-        if target not in ("documents", "manual_documents", "format", "quick_format", "sketch_image", "paint_image"):
+        if target not in ("documents", "manual_documents", "format", "quick_format", "sketch_image", "paint_image",
+                          "rename_files"):
             raise ValueError("지원하지 않는 놓기 대상입니다.")
         self.drop_target = target
         if target == "format":   # 서식 관리 창을 열 때 서식예시 폴더에 새로 넣은 예시를 찾아 등록한다
@@ -2001,6 +2018,7 @@ class DesktopWebBridge:
             text = ("여기에 놓으면 이 보고서의 서식을 복제합니다" if target == "format"
                     else "표 칸 위에 놓으면 칸 배경 그림으로 넣습니다" if target == "sketch_image"
                     else "여기에 놓으면 그림판 배경 사진으로 넣습니다" if target == "paint_image"
+                    else "여기에 파일을 놓으면 이름 목록에 추가됩니다" if target == "rename_files"
                     else "여기에 놓으면 문서 목록에 추가됩니다")
             try:
                 window.run_js(f"window.docfitDropText = {text!r};")
@@ -2042,6 +2060,8 @@ class DesktopWebBridge:
             return self._receive_sketch_image(paths, client_x, client_y)
         if self.drop_target == "paint_image":
             return self._receive_sketch_image(paths, client_x, client_y, event="docfit-paint-image-dropped")
+        if self.drop_target == "rename_files":
+            return self._receive_rename_paths(paths)
         bounds = getattr(self, "_profile_drop_bounds", None)
         on_badge = (bounds is not None and isinstance(client_x, (int, float)) and isinstance(client_y, (int, float)))
         if on_badge:
@@ -2052,6 +2072,23 @@ class DesktopWebBridge:
         if self.drop_target == "manual_documents":
             return self.add_paths(paths, from_drop=False)
         return self.add_paths(paths, from_drop=True)
+
+    def _receive_rename_paths(self, paths):
+        """파일이름 탭에 끌어 놓은 파일·폴더(폴더는 바로 아래 파일만): 목록에 더하고 화면에 알린다."""
+        try:
+            result = self._file_rename_service().add_paths(list(paths or [])[:10000])
+        except Exception as exc:
+            return self._with_notice(str(exc) or "파일을 추가하지 못했습니다.")
+        window = self.window
+        if window is not None and hasattr(window, "run_js"):
+            try:
+                window.run_js("window.dispatchEvent(new Event('docfit-rename-files-dropped'));")
+            except Exception:
+                logging.getLogger(__name__).debug("rename drop event failed", exc_info=True)
+        if result.get("skipped_count"):
+            return self._with_notice(f"{result['skipped_count']}개 파일은 목록에 넣지 않았습니다: "
+                                     f"{result['skipped'][0]['reason']}")
+        return self.get_state()
 
     def _receive_sketch_image(self, paths, client_x, client_y, event="docfit-sketch-image-dropped"):
         """표그림판·그림판에 끌어 놓은 사진: 알맞은 크기로 바꿔 두고 화면에 알린다(화면이 take_drop으로 가져간다)."""
@@ -2282,7 +2319,7 @@ class _BrowserApi:
             "clear_files", "set_mode", "set_range", "start", "stop", "start_job", "cancel_job", "get_events",
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
             "get_pending_dialog", "resolve_dialog", "enable_close_guard", "acknowledge_close", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch",
-            "hwp_bulk", "open_results", "next_job", "run_tool", "open_result",
+            "file_rename", "hwp_bulk", "open_results", "next_job", "run_tool", "open_result",
             "show_result", "open_source_file", "show_source_file", "open_result_source", "open_diff", "compare_result", "launch_external_hwp_diff", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",
             "set_exclude_tables", "set_card_option",

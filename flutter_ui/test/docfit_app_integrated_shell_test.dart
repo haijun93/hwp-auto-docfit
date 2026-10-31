@@ -9,6 +9,10 @@ import 'package:docfit_ui/features/workspace/tab_navigation_shell.dart';
 void main() {
   testWidgets('DocFitApp mounts IntegratedWorkspace with 6 tabs by default',
       (tester) async {
+    // 탭이 8개라 좁은 창에서는 아이콘만 보인다 — 이름까지 보이는 넓이로 시험한다.
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     final calls = <String>[];
     Future<Object?> mockApi(String endpoint, List<Object?> params) async {
       calls.add('$endpoint:${params.firstOrNull}');
@@ -34,6 +38,7 @@ void main() {
     expect(find.text('표그림판'), findsOneWidget);
     expect(find.text('다이어그램'), findsOneWidget);
     expect(find.text('마인드맵'), findsOneWidget);
+    expect(find.text('파일이름'), findsOneWidget);
     expect(find.text('파일변환'), findsOneWidget);
 
     // Initial tab (index 0) has DocumentEditorAdapter

@@ -30,11 +30,12 @@ void main() {
     expect(find.text('표그림판'), findsOneWidget);
     expect(find.text('다이어그램'), findsOneWidget);
     expect(find.text('마인드맵'), findsOneWidget);
+    expect(find.text('파일이름'), findsOneWidget);
     expect(find.text('파일변환'), findsOneWidget);
 
     await tester.tap(find.text('파일변환'));
     await tester.pumpAndSettle();
-    expect(currentTab, 6);
+    expect(currentTab, 7);
     expect(find.text('FileConversionContent'), findsOneWidget);
 
     // Switch back to Tab 0 (문서편집)

@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
 
+/// 탭 번호. 파일변환은 항상 맨 끝(2026-10-30 사용자 지시), 파일이름은 그 바로 앞(2026-10-31).
+const kTabFileRename = 6;
+const kTabFileConversion = 7;
+const kTabCount = 8;
+
 /// 탭 안 화면이 '닫기·뒤로'를 요청할 때 쓰는 통로.
 /// 탭 화면은 앱의 첫 경로 위에 바로 있어 Navigator.pop을 하면 첫 화면이 빠져 앱이 멈춘다(2.0.0 사용자 보고).
 class WorkspaceTabScope extends InheritedWidget {
@@ -12,7 +17,7 @@ class WorkspaceTabScope extends InheritedWidget {
 
   final VoidCallback goHome;
 
-  /// 탭 번호(0 문서편집·1 표템플릿·2 표그림판·3 다이어그램·4 마인드맵·5 그림판·6 파일변환)로 이동한다.
+  /// 탭 번호(0 문서편집·1 표템플릿·2 표그림판·3 다이어그램·4 마인드맵·5 그림판·6 파일이름·7 파일변환)로 이동한다.
   final ValueChanged<int> selectTab;
 
   static WorkspaceTabScope? maybeOf(BuildContext context) =>
@@ -45,10 +50,11 @@ class TabNavigationShell extends StatefulWidget {
     required this.mindMap,
     required this.fileConversion,
     required this.paint,
+    required this.fileRename,
     this.initialIndex = 0,
     this.onTabChanged,
     this.trailing,
-  }) : assert(initialIndex >= 0 && initialIndex < 7);
+  }) : assert(initialIndex >= 0 && initialIndex < kTabCount);
 
   final Widget documentEditor;
   final Widget tableTemplates;
@@ -59,6 +65,9 @@ class TabNavigationShell extends StatefulWidget {
 
   /// 탭 5: 그림판(사진 배경 위에 펜·도형·글상자를 독립 개체로).
   final Widget paint;
+
+  /// 탭 6: 파일이름(여러 파일 이름을 규칙으로 한꺼번에 바꾸기).
+  final Widget fileRename;
   final int initialIndex;
   final ValueChanged<int>? onTabChanged;
 
@@ -79,6 +88,7 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
     '다이어그램',
     '마인드맵',
     '그림판',
+    '파일이름',
     // 파일변환은 항상 맨 끝(2026-10-30 사용자 지시).
     '파일변환',
   ];
@@ -89,6 +99,7 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
     Icons.account_tree_outlined,
     Icons.hub_outlined,
     Icons.brush_outlined,
+    Icons.drive_file_rename_outline,
     Icons.transform,
   ];
 
@@ -109,6 +120,7 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
       widget.diagram,
       widget.mindMap,
       widget.paint,
+      widget.fileRename,
       widget.fileConversion,
     ];
     // 탭 메뉴와 앱 메뉴(설정 등)를 상단 한 줄로 합쳤다(2026-10-30 사용자 지시).

@@ -32,6 +32,7 @@ void main() {
           mindMap: _page('마인드맵 화면'),
           fileConversion: _page('파일변환 화면'),
           paint: _page('그림판 화면'),
+          fileRename: _page('파일이름 화면'),
           initialIndex: 3,
         ),
       ),
@@ -90,6 +91,7 @@ void main() {
           mindMap: _page('마인드맵 화면'),
           fileConversion: _page('파일변환 화면'),
           paint: _page('그림판 화면'),
+          fileRename: _page('파일이름 화면'),
         ),
       ),
     );
@@ -123,6 +125,7 @@ void main() {
           mindMap: _page('마인드맵 화면'),
           fileConversion: _page('파일변환 화면'),
           paint: _page('그림판 화면'),
+          fileRename: _page('파일이름 화면'),
         ),
       ),
     );
@@ -142,6 +145,7 @@ void main() {
           mindMap: _page('마인드맵 화면'),
           fileConversion: _page('파일변환 화면'),
           paint: _page('그림판 화면'),
+          fileRename: _page('파일이름 화면'),
         ),
       ),
     );
@@ -151,7 +155,7 @@ void main() {
       tester
           .widget<WorkspaceTabBar>(find.byType(WorkspaceTabBar))
           .selectedIndex,
-      6, // 파일변환은 항상 맨 끝
+      7, // 파일변환은 항상 맨 끝
     );
     expect(find.text('파일변환 화면'), findsOneWidget);
   });

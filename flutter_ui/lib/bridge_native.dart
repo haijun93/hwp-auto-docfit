@@ -40,6 +40,24 @@ Future<Object?> callApi(String method, List<Object?> args) async {
     }
     return _client.call('get_state', []);
   }
+  if (method == 'file_rename' && args.isNotEmpty && args[0] == 'pick_files') {
+    // 파일이름 탭: 모든 확장자. 경로는 호스트가 검증·보관하고 화면에는 이름만 돌아온다.
+    final picked = await openFiles();
+    if (picked.isEmpty) return _client.call('file_rename', ['list', <String, Object?>{}]);
+    return _client.call('file_rename', [
+      'add_paths',
+      {'paths': picked.map((file) => file.path).toList()},
+    ]);
+  }
+  if (method == 'file_rename' && args.isNotEmpty && args[0] == 'pick_folder') {
+    final folder = await getDirectoryPath();
+    if (folder == null) return _client.call('file_rename', ['list', <String, Object?>{}]);
+    final payload = args.length > 1 && args[1] is Map ? args[1] as Map : const {};
+    return _client.call('file_rename', [
+      'add_paths',
+      {'paths': [folder], 'recursive': payload['recursive'] == true},
+    ]);
+  }
   if (method == 'hwp_bulk' && args.isNotEmpty && args[0] == 'pick_folder') {
     // HWP 일괄 변환: 찾을 폴더 고르기(창은 앱에서 띄운다).
     return {'ok': true, 'folder': await getDirectoryPath()};

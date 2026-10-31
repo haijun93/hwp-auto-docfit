@@ -21,7 +21,11 @@ PURPOSES = {
     'table_template': ('open', frozenset({'.hwpx'})),
     'flow_png': ('save', frozenset({'.png'})),
     'flow_hwpx': ('save', frozenset({'.hwpx'})),
+    # 파일이름 탭: 모든 확장자(None = 확장자 제한 없음).
+    'rename_files': ('open', None),
+    'rename_folder': ('directory', None),
 }
+MULTIPLE = frozenset({'add_files', 'add_format_file', 'rename_files'})
 
 
 def fail(code):
@@ -43,13 +47,13 @@ def native_dialog(purpose, mode, multiple):
             return []
         path = shell.SHGetPathFromIDList(result[0])
         return [os.fsdecode(path)]
-    extensions = sorted(PURPOSES[purpose][1])
+    extensions = sorted(PURPOSES[purpose][1] or ())
     flags = win32con.OFN_EXPLORER | win32con.OFN_NOCHANGEDIR | win32con.OFN_PATHMUSTEXIST
     flags |= win32con.OFN_FILEMUSTEXIST if mode == 'open' else win32con.OFN_OVERWRITEPROMPT
     if multiple:
         flags |= win32con.OFN_ALLOWMULTISELECT
-    dialog = win32ui.CreateFileDialog(mode == 'open', extensions[0][1:], None, flags,
-        'Supported files|' + ';'.join('*' + ext for ext in extensions) + '||')
+    pattern = 'Supported files|' + ';'.join('*' + ext for ext in extensions) + '||' if extensions else 'All files|*.*||'
+    dialog = win32ui.CreateFileDialog(mode == 'open', extensions[0][1:] if extensions else None, None, flags, pattern)
     if dialog.DoModal() != win32con.IDOK:
         return []
     return list(dialog.GetPathNames())
@@ -72,7 +76,7 @@ class NativeFileDialogService:
             fail('INVALID_PURPOSE')
         expected, extensions = PURPOSES[purpose]
         if mode is not None and (mode != expected or type(multiple) is not bool or
-                                 (multiple and (mode != 'open' or purpose != 'add_files'))):
+                                 (multiple and (mode != 'open' or purpose not in ('add_files', 'rename_files')))):
             fail('INVALID_INPUT')
         return expected, extensions
 
@@ -97,7 +101,7 @@ class NativeFileDialogService:
                 if not path.is_dir():
                     fail('INVALID_PATH')
             else:
-                if path.suffix.lower() not in extensions:
+                if extensions is not None and path.suffix.lower() not in extensions:
                     fail('UNSUPPORTED_FORMAT')
                 if mode == 'open' and not path.is_file():
                     fail('INVALID_PATH')
@@ -120,7 +124,7 @@ class NativeFileDialogService:
         mode, extensions = self._policy(purpose)
         if not isinstance(paths, (list, tuple)) or not 1 <= len(paths) <= self.MAX_FILES:
             fail('INVALID_PATH')
-        if purpose not in {'add_files', 'add_format_file'} and len(paths) != 1:
+        if purpose not in MULTIPLE and len(paths) != 1:
             fail('INVALID_PATH')
         canonical = list(dict.fromkeys(self._path(p, mode, extensions) for p in paths))
         identities = [self._identity(p) for p in canonical]
