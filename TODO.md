@@ -1,3 +1,30 @@
+## [미착수·신규 기능] HEIC 사진 지원 — 파일변환·그림판·표그림판 등에서 사용 (사용자 요청, 2026-10-31)
+요구: 아이폰 등에서 찍은 **HEIC(HEIF) 사진 파일**을 앱의 이미지 입력이 받는 모든 곳에서 쓸 수 있게 한다 — **파일변환**(HEIC → JPG·PNG·PDF·HWPX 등), **그림판**(사진 배경), **표그림판**(칸 배경 그림 끌어놓기), 그리고 같은 입력 경로를 쓰는 곳 전부(파일이름 탭의 EXIF 날짜, 표 칸 그림 배경 변환 등).
+
+**현재(코드 읽기, `main` 32c9904)**: HEIC는 어디서도 받지 않는다. 이미지 확장자 목록이 곳곳에 따로 하드코딩돼 있고 **HEIC가 빠져 있다.**
+- `docfit_app/sketch_image_input.py`: `IMAGE_SUFFIXES = {.png .jpg .jpeg .gif .bmp .webp .tif .tiff}`, 안내 문구 "그림 파일(PNG·JPG·GIF·BMP·WEBP·TIFF)을 놓아 주세요", `from_path`가 `PIL.Image.open` → 긴 변 1600px로 줄여 PNG/JPG(base64). **그림판 배경과 표그림판 칸 배경이 이 함수를 같이 쓴다**(`desktop_web_ui.py`의 `_receive_sketch_image`, 끌어놓기 대상 `sketch_image`·`paint_image`).
+- `docfit_core/file_conversion.py:13` `IMAGE_INPUT_EXTENSIONS = {.png .jpg .jpeg .webp .bmp .tif .tiff .gif}`, `docfit_core/kordoc_bridge.py:37·42`(OCR 입력 `.png .jpg .jpeg .webp`) — 파일변환·이미지 OCR → HWPX.
+- 설치 의존성(`requirements.txt`)의 Pillow는 **HEIC를 읽지 못한다**(플러그인 필요).
+
+**구현 방식 후보와 결정 사항 (먼저 정해야 함 — 라이선스가 걸림)**
+| 방식 | 장점 | 문제 |
+|---|---|---|
+| ① **`pillow-heif`**(Pillow에 HEIF 열기 등록, `register_heif_opener()`) | 기존 `Image.open` 경로가 그대로 HEIC를 읽음, EXIF·회전·여러 프레임 지원, 오프라인 | **윈도우용 바이너리 wheel이 GPLv2**(번들 `x265` GPL-2.0, `libheif`·`libde265` LGPL-3.0; 이번 확인: `pillow_heif 1.8.1` 메타데이터 "License for pillow-heif binary wheels: GPLv2, due to base library licenses"). 이 앱은 MIT이고 exe로 배포(PyInstaller)하므로 **GPL 라이브러리를 exe에 번들하면 배포 라이선스·소스 제공 의무가 생긴다.** 공공기관 배포물에서 문제 소지 → **법무/보안 검토 필요** |
+| ② pillow-heif를 **x265(인코더) 없이 직접 빌드**(디코드만: libheif + libde265, LGPL-3.0, 동적 링크) | GPL 회피 가능(LGPL은 동적 링크·대체 가능 고지로 허용) | CI에서 libheif·libde265를 직접 빌드해야 함(Windows vcpkg/conda 필요), 유지보수 부담. HEVC 특허 이슈(디코더 소프트웨어 배포의 특허 문제는 지역·사용처에 따라 법무 확인) |
+| ③ **Windows 이미징 구성요소(WIC)**로 읽기(`pywin32`/`ctypes`로 `IWICImagingFactory`) | 앱에 코덱을 넣지 않음, 이미 쓰는 pywin32 | 사용자 PC에 **Microsoft "HEIF 이미지 확장"(Store, 무료) + HEVC 코덱**이 있어야 함(HEVC 확장은 환경에 따라 유료/OEM). **폐쇄망·기관 PC에서는 설치 못 할 수 있음.** 코덱이 없으면 읽기 실패 안내 필요 |
+| ④ 별도 **선택 설치 플러그인**(앱과 분리 배포, 사용자가 설치) | 본체 라이선스 영향 없음, 필요한 사용자만 | 설치 경험이 번거롭고 폐쇄망 반입 필요 |
+- **제안**: 1차는 ③(WIC, 코덱이 있으면 읽고 없으면 친절한 안내) + ①을 **선택 설치(④)**로 두는 하이브리드를 검토하고, 라이선스·특허는 **담당 부서 검토 결과를 받은 뒤** 번들 여부를 결정. 어느 쪽이든 아래 입력 계층은 공용 함수 하나(`open_image_any(path)`)로 만들어 방식 교체가 쉽게 한다.
+
+**구현 계획**
+- [ ] **공용 이미지 읽기 계층**: `docfit_core/image_input.py`(순수 파이썬, 가능하면 리눅스 시험 가능한 부분 분리) — `open_image_any(path) -> PIL.Image`(RGB/RGBA), 확장자 목록 상수 **한 곳**(`IMAGE_EXTENSIONS`, `HEIC_EXTENSIONS = {.heic .heif .heics .heifs .hif}`)을 `sketch_image_input.py`·`file_conversion.py`·`kordoc_bridge.py`·파일 선택 목적(`native_file_dialog_service.PURPOSES`)·Flutter/JS 끌어놓기 필터가 모두 가져다 쓰게 정리(지금은 4곳이 따로 정의). HEIC는 `exif_transpose`로 **회전 방향 보정**, ICC 색 프로필 sRGB 변환, **여러 이미지가 든 HEIC(라이브 포토·버스트)는 첫 이미지만**(안내), 알파·16비트·HDR(10bit)은 8bit sRGB로 안전 변환.
+- [ ] **그림판·표그림판**: `sketch_image_input.from_path`의 허용 목록과 안내 문구에 HEIC 추가 + 읽기 계층 사용. 끌어놓기가 안 되는 형식은 거부 이유를 사용자에게 보여 준다(조용히 무시 금지). 클립보드(`from_clipboard`) 경로는 영향 없음. 결과는 지금처럼 긴 변 1600px 줄여 JPG/PNG — **HEIC 원본은 수정하지 않는다.**
+- [ ] **파일변환**: 입력 확장자에 HEIC 추가(`CONVERSION_INPUTS`), 출력 **JPG/PNG/PDF**(이미지→PDF는 기존 `convert_to_images`·PDF 경로 재사용 여부 확인), **이미지 OCR → HWPX**의 입력으로도 허용(`kordoc_bridge` OCR은 JPG로 먼저 변환해 넘김). 여러 HEIC를 한 PDF로 합치기(기존 "합치기 순서" 대화상자 재사용). 원본 보존·결과는 새 파일.
+- [ ] **파일이름 탭 연동**: EXIF 촬영일 읽기(`datetime_rules`)가 HEIC의 EXIF도 읽게(같은 읽기 계층의 메타 함수 `read_exif(path)` 공용). HEIC는 확장자만 `.jpg`로 바꿔도 JPG가 되지 않는다는 경고(확장자 변경 규칙의 안내 — 앞 설계서 §5의 6번)와 연동.
+- [ ] **보안**: 이미지 디코더는 **신뢰할 수 없는 입력의 공격면**이다(libheif·libde265 취약점 이력). 크기·픽셀 수 상한(`Image.MAX_IMAGE_PIXELS` 기존 80,000,000과 일치), 파일 크기 상한(지금 40MB), **디코딩을 별도 프로세스·시간 제한으로 실행**(앞서 TODO의 보안 검토 S2 "안전 열기 공용화"와 같은 계층), 깨진 파일은 예외 대신 안내. OSS 스캐너·OSV 검사 대상에 새 의존성 추가.
+- [ ] **라이선스·배포**: 선택한 방식에 따라 `THIRD_PARTY_NOTICES.md`(libheif LGPL-3.0·libde265 LGPL-3.0·x265 GPL-2.0 사용 여부), PyInstaller spec(`HWP_AutoDocFit.spec`)의 숨은 import·동적 라이브러리 포함, 설치형·포터블 크기 변화 확인, README 지원 형식 목록 갱신.
+- [ ] **시험**: HEIC 샘플(작은 합성 HEIC — 자체 생성 또는 라이선스 문제 없는 공개 샘플. 회전 EXIF 있는 것·알파 없는 것·여러 이미지 든 것·깨진 파일) → 읽기·크기·방향·색, 확장자 목록 공용화 시험(모든 입력 경로가 같은 목록 사용), 그림판·표그림판 끌어놓기 거부/수락 메시지, 파일변환 HEIC → JPG/PNG/PDF, 코덱이 없을 때의 안내(WIC 방식), 거대·깨진 파일 안전 거부. 샘플이 없으면 CI에서 `pillow-heif`로 합성하되 시험 전용 의존성으로만. 실제 아이폰 사진(회전·HDR·라이브 포토)은 사용자 PC·실제 사진으로 확인(**클라우드에는 HEIC 샘플이 없고 Windows 코덱 확인 불가**).
+- 사용자에게 필요한 것: ① 실제 HEIC 샘플 1~2장(개인정보 없는 사진, 아이폰 기본 설정으로 촬영) ② **기관 PC에 HEIF 이미지 확장·HEVC 코덱이 설치돼 있는지** ③ GPL 라이브러리 번들이 가능한지(기관 정책) — 없으면 WIC 중심으로.
+
 ## [미착수·신규 기능] 파일 이름 일괄 변경 기능 — DarkNamer 벤치마킹 (사용자 요청, 2026-10-31)
 
 > **설계 확정(2026-10-31)**: 사용자 결정 **"탭을 새로 추가하는 방식"** — 새 탭 `파일이름`을 그림판(5) 다음 6번에 넣고 파일변환은 7번(맨 끝 규칙 유지). 설계서 `docs/FILE_RENAME_DESIGN.md`(탭 셸 변경·`main.dart` 파일변환 탭 번호 6→7·Core/서비스/화면 구조·규칙 모델·안전 검사·IPC·시험·구현 순서·열린 질문 5개). 아래 "확인 필요 ①"은 해소됨. 사용자 첨부 예: UUID 이름 JPG 사진 7장(`6C1D56A5-….JPG`) → 날짜+번호로 정리.
