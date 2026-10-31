@@ -16,6 +16,7 @@ abstract class ConversionHost {
   double? get progressValue;
   Future<void> command(String method, [List<Object?> args]);
   Future<void> convertTo(String format);
+  Future<void> convertSingleFile(int index, String format);
   Future<void> addConversionFiles();
 
   /// HWP → HWPX 일괄 변환 상태(get_state의 hwp_bulk, 없으면 null).
@@ -123,7 +124,7 @@ class ConversionWorkspace extends StatelessWidget {
     ),
   );
 
-  Future<void> _menu(
+  Future<int?> _menu(
     BuildContext context,
     Offset at,
     List<(String, IconData, VoidCallback)> items,
@@ -151,6 +152,51 @@ class ConversionWorkspace extends StatelessWidget {
       ],
     );
     if (picked != null) items[picked].$3();
+    return picked;
+  }
+
+  Future<void> _singleFileMenu(BuildContext context, Offset at, int index) async {
+    final targets = {
+      for (final item in host.conversionTargets.whereType<Map>())
+        '${item['format']}': item,
+    };
+    final formats = layout.whereType<String>().toList();
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final picked = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(
+        at & const Size(1, 1),
+        Offset.zero & overlay.size,
+      ),
+      items: [
+        for (final format in formats)
+          PopupMenuItem<String>(
+            key: Key('conversionSingleFormat-$format'),
+            value: format,
+            enabled: targets[format]?['enabled'] == true && !host.locked,
+            child: Tooltip(
+              message: targets[format]?['enabled'] == true
+                  ? '${targets[format]?['label'] ?? format.toUpperCase()}로 변환'
+                  : '${targets[format]?['reason'] ?? '변환할 문서를 추가하세요.'}',
+              child: Opacity(
+                opacity: targets[format]?['enabled'] == true && !host.locked
+                    ? 1
+                    : 0.42,
+                child: Row(
+                  children: [
+                    Icon(icon(format), size: 18, color: faint),
+                    const SizedBox(width: 10),
+                    Text('${targets[format]?['label'] ?? format.toUpperCase()}'),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+    if (picked != null && !host.locked) {
+      await host.convertSingleFile(index, picked);
+    }
   }
 
   void _blankMenu(BuildContext context, Offset at) => _menu(context, at, [
@@ -210,6 +256,11 @@ class ConversionWorkspace extends StatelessWidget {
                                   '폴더에서 보기',
                                   Icons.folder_open_outlined,
                                   () => host.command('show_source_file', [i]),
+                                ),
+                                (
+                                  '이 파일만 다른 포맷으로',
+                                  Icons.swap_horiz,
+                                  () => _singleFileMenu(context, d.globalPosition, i),
                                 ),
                                 (
                                   '목록에서 빼기',

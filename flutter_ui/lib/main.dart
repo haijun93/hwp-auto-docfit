@@ -601,6 +601,17 @@ class _WorkspaceState extends State<Workspace> implements ConversionHost {
     }
   }
 
+  /// 파일 메뉴에서 호출하는 단일 변환. 공통 포맷 선택값과 파일 목록을 건드리지 않는다.
+  @override
+  Future<void> convertSingleFile(int index, String format) async {
+    if (locked || index < 0 || index >= files.length) return;
+    final target = conversionTargets.whereType<Map>().where(
+      (item) => item['format'] == format,
+    ).firstOrNull;
+    if (target == null || target['enabled'] != true) return;
+    await command('start_single_file_conversion', [index, format]);
+  }
+
   Future<void> enterConversionMode() async {
     conversionTabActive = true;
     if (locked) return;

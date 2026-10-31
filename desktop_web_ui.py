@@ -804,6 +804,80 @@ class DesktopWebBridge:
         self._tk(update)
         return self.get_state()
 
+    def start_single_file_conversion(self, file_index, target):
+        """현재 공통 변환 가능성 판단을 적용해 선택한 입력 하나를 고정하여 변환한다."""
+        from docfit_app.api_contract import ServiceError
+        target = str(target or "").lower()
+        if target not in CONVERSION_OUTPUTS:
+            raise ValueError("지원하지 않는 결과 형식입니다.")
+
+        def begin():
+            gui = self.gui
+            if gui.running:
+                raise ServiceError('JOB_RUNNING', '문서 작업이 진행 중입니다.')
+            try:
+                index = int(file_index)
+            except (TypeError, ValueError):
+                raise ValueError("파일 선택이 올바르지 않습니다.")
+            current_files = list(gui.files)
+            if not 0 <= index < len(current_files):
+                raise ValueError("파일을 찾을 수 없습니다.")
+            source_snapshot = str(current_files[index])
+            targets = {item["format"]: item for item in self._conversion_targets([source_snapshot])}
+            chosen = targets.get(target)
+            if chosen is None or not chosen.get("enabled"):
+                reason = (chosen or {}).get("reason") or "지원하지 않는 결과 형식입니다"
+                raise ValueError(f"{target.upper()} 변환을 시작할 수 없습니다: {reason}")
+
+            return self._start_single_conversion_snapshot(source_snapshot, target)
+
+        return self._tk(begin)
+
+    def _start_single_conversion_snapshot(self, source_snapshot, target):
+        """목록/현재 타깃 UI 상태를 쓰지 않고 단일 경로 snapshot으로 runner를 시작한다."""
+        from docfit_app.api_contract import ServiceError
+        from docfit_app.jobs import manager_for, prepare_legacy
+        from docfit_app.conversion_runner import start_conversion_job
+        gui = self.gui
+        if gui.running:
+            raise ServiceError('JOB_RUNNING', '문서 작업이 진행 중입니다.')
+        runtime = getattr(gui, '_docfit_runtime_namespace', None)
+        if runtime is None:
+            runtime = getattr(gui, '파일포맷_변경_시작').__globals__
+        stop_event = runtime.get('중단_event')
+        gui_queue = runtime.get('gui_queue')
+        if stop_event is None or gui_queue is None:
+            raise ServiceError('JOB_NOT_STARTED', '변환 작업 실행 환경을 준비하지 못했습니다.')
+        identifier = prepare_legacy(gui).begin(
+            'file_format', {'target': target, 'files': [source_snapshot]}, stop_event=stop_event,
+        )
+        gui._job_id = identifier
+        manager = manager_for(gui)
+        manager.report(identifier, 'started', {})
+        gui._flutter_completion = {}
+        gui._flutter_format_review = {}
+        gui.running = True
+        gui.closing = False
+        stop_event.clear()
+        gui.selected_mode.set('file_format')
+        gui._결과_초기화(결과목록도_지우기=True)
+        gui._안내키, gui._안내지남 = None, set()
+        gui._진행문서, gui._실패목록, gui._진행_세부작업 = None, {}, None
+        gui._작업시작시각, gui._작업종료시각 = time.monotonic(), None
+        gui.status_var.set('파일 변환 중 · 1개')
+        gui._안내_설정(0)
+        gui.버튼_작업중()
+        gui.로그표시("")
+        gui.로그표시(f"파일 변환 시작 · 1개 · 결과 {target.upper()}")
+        gui._job_managed_conversion = identifier
+        start_conversion_job(
+            manager, [source_snapshot], target, job_id=identifier,
+            progress=gui_queue.put, stop_event=stop_event,
+            runtime_factory=lambda: runtime, log=gui.로그표시,
+        )
+        gui.worker = manager.thread(identifier)
+        return identifier
+
     def set_include_spacing(self, on):
         """'한 번에 적용'의 '자간 조정 포함'을 바꾸고 그 카드를 고른다(설정 파일에 저장된다)."""
         def update():
@@ -958,11 +1032,18 @@ class DesktopWebBridge:
                 self._table_copy_job(params, report, cancelled))
         if kind not in {'format', 'spacing', 'unify', 'all', 'file_format', 'pagefit'}:
             raise ServiceError('INVALID_INPUT', '지원하지 않는 작업 종류입니다.')
-        if kind == 'file_format' and 'target' in params:
+        if kind == 'file_format' and 'target' in params and not params.get('single_file'):
             self.set_conversion_target(params['target'])
-        return self._start_legacy(kind, params.get('range_enabled', False),
+        if kind == 'file_format' and params.get('single_file'):
+            self._single_conversion_target = str(params['target']).lower()
+        try:
+            return self._start_legacy(kind, params.get('range_enabled', False),
                                   params.get('start', '1'), params.get('end', '1'),
-                                  file_order=params.get('file_order'), _strict=True)
+                                  file_order=params.get('file_order'), _strict=True,
+                                  single_file=bool(params.get('single_file')))
+        finally:
+            if kind == 'file_format' and params.get('single_file'):
+                self._single_conversion_target = None
 
     def _table_copy_job(self, params, report, cancelled):
         if cancelled():
@@ -994,14 +1075,16 @@ class DesktopWebBridge:
                 raise
         return self.get_state()
 
-    def _start_legacy(self, mode, range_enabled=False, start="1", end="1", *, file_order=None, _strict=False):
+    def _start_legacy(self, mode, range_enabled=False, start="1", end="1", *, file_order=None,
+                      _strict=False, single_file=False):
         from docfit_app.api_contract import ServiceError
         def started(previous):
             identifier = getattr(self.gui, '_job_id', None)
             if _strict and (not identifier or identifier == previous):
                 raise ServiceError('JOB_NOT_STARTED', '입력 문서와 작업 설정을 확인해 주세요.')
             return identifier
-        if file_order is not None and (mode != "file_format" or self.conversion_target != "pdfm"):
+        if file_order is not None and (mode != "file_format" or
+                                       (self.conversion_target != "pdfm" and not single_file)):
             raise ValueError("파일 순서는 PDF 하나로 합치기에서만 지정할 수 있습니다.")
 
         if mode not in {"spacing", "unify", "format", "all", "file_format", "pagefit"}:
@@ -1010,11 +1093,12 @@ class DesktopWebBridge:
         if mode == "file_format":
             # 화면은 준비되지 않은 형식의 시작 버튼을 끄지만, 늦게 온 요청도 여기서 막는다.
             files = self._tk(lambda: list(self.gui.files))
+            target = getattr(self, '_single_conversion_target', self.conversion_target) if single_file else self.conversion_target
             targets = {item["format"]: item for item in self._conversion_targets(files)}
-            chosen = targets.get(self.conversion_target)
+            chosen = targets.get(target)
             if files and (chosen is None or not chosen.get("enabled")):
                 reason = (chosen or {}).get("reason") or "지원하지 않는 결과 형식입니다"
-                raise ValueError(f"{self.conversion_target.upper()} 변환을 시작할 수 없습니다: {reason}")
+                raise ValueError(f"{target.upper()} 변환을 시작할 수 없습니다: {reason}")
             if file_order is not None:
                 if not isinstance(file_order, (list, tuple)):
                     raise ValueError("파일 순서 목록이 올바르지 않습니다.")
@@ -1023,7 +1107,9 @@ class DesktopWebBridge:
                         return os.path.normcase(os.path.normpath(str(p)))
                     except Exception:
                         return str(p)
-                if len(file_order) != len(files) or set(map(_norm, file_order)) != set(map(_norm, files)):
+                if (single_file and (len(file_order) != 1 or file_order[0] not in files) or
+                        not single_file and (len(file_order) != len(files) or
+                                             set(map(_norm, file_order)) != set(map(_norm, files)))):
                     raise ValueError("지정한 파일 순서 목록이 현재 문서 목록과 일치하지 않습니다.")
             def begin_conversion():
                 if self.gui.running:
@@ -1031,11 +1117,55 @@ class DesktopWebBridge:
                 previous = getattr(self.gui, '_job_id', None)
                 self.gui._flutter_completion = {}
                 self.gui._flutter_format_review = {}
-                if self.conversion_target == "pdfm" and file_order:
+                if single_file:
+                    gui = self.gui
+                    target_files = list(file_order or [])
+                    if gui.running or not target_files:
+                        raise ServiceError('JOB_RUNNING' if gui.running else 'JOB_NOT_STARTED',
+                                           '입력 문서와 작업 설정을 확인해 주세요.')
+                    from docfit_app.jobs import manager_for, prepare_legacy
+                    from docfit_app.conversion_runner import start_conversion_job
+                    gui._flutter_completion = {}
+                    gui._flutter_format_review = {}
+                    runtime = getattr(gui, '_docfit_runtime_namespace', None)
+                    if runtime is None:
+                        runtime = getattr(gui.파일포맷_변경_시작, '__globals__', {})
+                    중단_event = runtime.get('중단_event')
+                    gui_queue = runtime.get('gui_queue')
+                    if 중단_event is None or gui_queue is None:
+                        raise ServiceError('JOB_NOT_STARTED', '변환 작업 실행 환경을 준비하지 못했습니다.')
+                    gui._job_id = prepare_legacy(gui).begin(
+                        'file_format', {'target': target}, stop_event=중단_event,
+                    )
+                    identifier = gui._job_id
+                    manager = manager_for(gui)
+                    manager.report(identifier, 'started', {})
+                    gui.running = True
+                    gui.closing = False
+                    중단_event.clear()
+                    gui.selected_mode.set('file_format')
+                    gui._결과_초기화(결과목록도_지우기=True)
+                    gui._안내키, gui._안내지남 = None, set()
+                    gui._진행문서, gui._실패목록, gui._진행_세부작업 = None, {}, None
+                    gui._작업시작시각, gui._작업종료시각 = time.monotonic(), None
+                    gui.status_var.set(f"파일 변환 중 · 1개")
+                    gui._안내_설정(0)
+                    gui.버튼_작업중()
+                    gui.로그표시("")
+                    gui.로그표시(f"파일 변환 시작 · 1개 · 결과 {target.upper()}")
+                    gui._job_managed_conversion = identifier
+                    start_conversion_job(
+                        manager, list(target_files), target, job_id=identifier,
+                        progress=gui_queue.put, stop_event=중단_event,
+                        runtime_factory=lambda: runtime,
+                        log=gui.로그표시,
+                    )
+                    gui.worker = manager.thread(identifier)
+                elif file_order:
                     original_files = list(self.gui.files)
                     try:
                         self.gui.files = list(file_order)
-                        self.gui.파일포맷_변경_시작(self.conversion_target)
+                        self.gui.파일포맷_변경_시작(target)
                     finally:
                         self.gui.files = original_files
                 else:
@@ -2353,7 +2483,7 @@ class _BrowserApi:
             "set_exclude_tables", "set_card_option",
             "set_drop_target", "add_format_file", "write_format_example", "rename_profile", "delete_profile",
             "edit_profile", "show_format_example", "open_format_samples", "format_gallery",
-            "set_conversion_target", "check_update", "start_update", "open_update_page",
+            "set_conversion_target", "start_single_file_conversion", "check_update", "start_update", "open_update_page",
         ):
             setattr(self, name, getattr(bridge, name))
 
