@@ -119,11 +119,20 @@ class DesktopWebBridge:
         self._close_protocol = False
         self._close_request = None
         self._close_timer = None
+        self._hotkeys = None
+        self._hotkey_lock = threading.RLock()
+        self._hotkey_state_lock = threading.Lock()
+        self._last_hotkey = None
+        self._last_hotkey_at = None
 
     def _shutdown(self):
         """Tk 종료 시 대기·실행 중 요청의 호출자를 종료 오류로 해제한다."""
         with self._close_lock:
             self._cancel_close_timer()
+        with self._hotkey_lock:
+            hotkeys, self._hotkeys = self._hotkeys, None
+        if hotkeys is not None:
+            hotkeys.stop()
         manager = getattr(self.gui, '_job_manager', None)
         if manager is not None:
             threading.Thread(target=manager.shutdown, daemon=True).start()
@@ -436,6 +445,8 @@ class DesktopWebBridge:
                 self._quick_watch = None
             return {
                 "job": self._jobs().latest(),
+                "last_hotkey": self._last_hotkey,
+                "last_hotkey_at": self._last_hotkey_at,
                 "_open_completed_result": False,
                 "files": [
                     {"name": Path(path).name, "path": path, "folder": str(Path(path).parent),
@@ -1713,6 +1724,85 @@ class DesktopWebBridge:
         threading.Thread(target=work, name="hwp-bulk", daemon=True).start()
         return status()
 
+    def _hotkey_callback(self, name):
+        from datetime import datetime, timezone
+        with self._hotkey_state_lock:
+            self._last_hotkey = name
+            self._last_hotkey_at = datetime.now(timezone.utc).isoformat()
+
+    def _hotkey_bindings(self):
+        from docfit_live.hotkeys import DEFAULT_HOTKEYS
+        saved = self._configuration().store.read().get("hotkeys", {})
+        saved = saved if isinstance(saved, dict) else {}
+        return {name: saved.get(name, default) for name, default in DEFAULT_HOTKEYS.items()}
+
+    def _ensure_hotkeys(self):
+        from docfit_live.hotkeys import HotkeyService
+        with self._hotkey_lock:
+            if self._hotkeys is None:
+                service = HotkeyService(self._hotkey_bindings(), self._hotkey_callback)
+                service.start()
+                self._hotkeys = service
+            return self._hotkeys
+
+    def live_hotkeys(self, action, payload=None) -> dict:
+        from docfit_live.hotkeys import DEFAULT_HOTKEYS, HotkeyService, parse_hotkey
+        payload = payload if isinstance(payload, dict) else {}
+        try:
+            if action == "get":
+                service = self._ensure_hotkeys()
+                return {"ok": True, **service.snapshot()}
+            if action != "set":
+                return {"ok": False, "message": "알 수 없는 단축키 명령입니다."}
+            proposed = payload.get("bindings")
+            if not isinstance(proposed, dict):
+                return {"ok": False, "message": "단축키 설정을 확인해 주세요."}
+            unknown = set(proposed) - set(DEFAULT_HOTKEYS)
+            if unknown:
+                return {"ok": False, "message": "지원하지 않는 단축키 이름입니다."}
+            normalized = {name: proposed.get(name, default) for name, default in DEFAULT_HOTKEYS.items()}
+            combinations = set()
+            for value in normalized.values():
+                if not isinstance(value, str):
+                    raise ValueError("단축키 값은 문자열이어야 합니다.")
+                combination = parse_hotkey(value)
+                if combination in combinations:
+                    raise ValueError("같은 단축키 조합을 여러 이름에 지정할 수 없습니다.")
+                combinations.add(combination)
+
+            with self._hotkey_lock:
+                previous_service = self._hotkeys
+                previous_bindings = previous_service.bindings if previous_service is not None else self._hotkey_bindings()
+                if previous_service is not None:
+                    try:
+                        previous_service.stop()
+                    except Exception:
+                        self._hotkeys = previous_service
+                        raise
+                    self._hotkeys = None
+                try:
+                    def change(settings):
+                        settings["hotkeys"] = dict(normalized)
+                    self._configuration().store.update(change)
+                    replacement = HotkeyService(normalized, self._hotkey_callback)
+                    replacement.start()
+                    self._hotkeys = replacement
+                except Exception:
+                    if previous_service is not None:
+                        try:
+                            restored = HotkeyService(previous_bindings, self._hotkey_callback)
+                            restored.start()
+                            self._hotkeys = restored
+                        except Exception:
+                            logging.getLogger(__name__).exception("이전 단축키 서비스를 복구하지 못했습니다.")
+                    raise
+                return {"ok": True, **self._hotkeys.snapshot()}
+        except ValueError as exc:
+            return {"ok": False, "message": str(exc)}
+        except Exception as exc:
+            logging.getLogger(__name__).warning("단축키 명령 처리에 실패했습니다.", exc_info=True)
+            return {"ok": False, "message": str(exc) or "단축키 설정을 처리하지 못했습니다."}
+
     def live_link(self, action, payload=None):
         """3.0 LiveLink: 실행 중인 한/글 문서의 커서 위치에 바로 넣기(저장하지 않음, Ctrl+Z 한 번으로 되돌림)."""
         from docfit_live import link, service as live
@@ -2319,7 +2409,7 @@ class _BrowserApi:
             "clear_files", "set_mode", "set_range", "start", "stop", "start_job", "cancel_job", "get_events",
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
             "get_pending_dialog", "resolve_dialog", "enable_close_guard", "acknowledge_close", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch",
-            "hwp_bulk", "live_link", "open_results", "next_job", "run_tool", "open_result",
+            "hwp_bulk", "live_link", "live_hotkeys", "open_results", "next_job", "run_tool", "open_result",
             "show_result", "open_source_file", "show_source_file", "open_result_source", "open_diff", "compare_result", "launch_external_hwp_diff", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",
             "set_exclude_tables", "set_card_option",
