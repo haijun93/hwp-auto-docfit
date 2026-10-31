@@ -42,6 +42,9 @@ class FakeHost implements ConversionHost {
   @override
   Future<void> convertTo(String format) async => converted.add(format);
   @override
+  Future<void> convertSingleFile(int index, String format) async =>
+      calls.add(['start_single_file_conversion', index, format]);
+  @override
   Future<void> addConversionFiles() async => calls.add(['add_files']);
   @override
   Map? hwpBulk;
@@ -116,6 +119,18 @@ void main() {
     await tester.tap(find.byKey(const Key('conversionMenu-폴더에서 보기')));
     await tester.pumpAndSettle();
     expect(host.calls.last, ['show_source_file', 0]);
+    await _rightClick(tester, find.byKey(const Key('conversionFile-0')));
+    await tester.tap(find.byKey(const Key('conversionMenu-이 파일만 다른 포맷으로')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('conversionSingleFormat-pdf')), findsOneWidget);
+    final unavailable = tester.widget<PopupMenuItem<String>>(
+      find.byKey(const Key('conversionSingleFormat-hwpx')),
+    );
+    expect(unavailable.enabled, isFalse);
+    expect(find.byTooltip('한/글이 필요해요'), findsNWidgets(2));
+    await tester.tap(find.byKey(const Key('conversionSingleFormat-pdf')));
+    await tester.pumpAndSettle();
+    expect(host.calls.last, ['start_single_file_conversion', 0, 'pdf']);
     await _rightClick(tester, find.byKey(const Key('conversionResult-0')));
     await tester.tap(find.byKey(const Key('conversionMenu-원본 열기')));
     await tester.pumpAndSettle();

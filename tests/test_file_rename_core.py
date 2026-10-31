@@ -47,7 +47,9 @@ class RuleTests(unittest.TestCase):
             self.assertIn("title_unsupported", results[4][2])
             template = apply_rules([table, pdf], [{"kind": "template", "dept": "기획", "digits": 2}],
                                    today=datetime(2026, 10, 31))
-            self.assertEqual(template[0][0], "20261031_기획_보고서_ 계획_안.hwpx")
+            # {date}는 파일 수정일(방금 만든 파일)이라 실행한 날짜에 따라 달라진다.
+            stamp = datetime.fromtimestamp(table.mtime).strftime("%Y%m%d")
+            self.assertEqual(template[0][0], f"{stamp}_기획_보고서_ 계획_안.hwpx")
             self.assertTrue(template[1][0].endswith("_기획_file.pdf"))
             with self.assertRaises(RuleError):
                 validate_rules([{"kind": "template", "template": "{wat}"}])
