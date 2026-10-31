@@ -7,17 +7,17 @@
 설치된 한/글을 직접 다뤄 공문서 모양으로 다듬어 드립니다. 원본은 그대로 둡니다.
 </p>
 
-<h2 align="center">⬇️ 지금 내려받기 · 최신 v2.0.7</h2>
+<h2 align="center">⬇️ 지금 내려받기 · 최신 v2.0.8</h2>
 
 <table align="center">
 <tr>
 <td align="center" width="50%">
 <b>무설치(포터블)</b><br><sub>받아서 더블클릭하면 바로 실행 · 추천</sub><br><br>
-<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.0.7_Portable.exe?inline=false"><img height="56" alt="GitLab에서 무설치로 받기 v2.0.7" src="https://img.shields.io/badge/%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v2.0.7-15803d?style=for-the-badge&logo=gitlab"></a>
+<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.0.8_Portable.exe?inline=false"><img height="56" alt="GitLab에서 무설치로 받기 v2.0.8" src="https://img.shields.io/badge/%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v2.0.8-15803d?style=for-the-badge&logo=gitlab"></a>
 </td>
 <td align="center" width="50%">
 <b>설치용</b><br><sub>시작 메뉴·제어판에 등록</sub><br><br>
-<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.0.7_Setup.exe?inline=false"><img height="56" alt="GitLab에서 설치용 받기 v2.0.7" src="https://img.shields.io/badge/%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0%20v2.0.7-15803d?style=for-the-badge&logo=gitlab"></a>
+<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.0.8_Setup.exe?inline=false"><img height="56" alt="GitLab에서 설치용 받기 v2.0.8" src="https://img.shields.io/badge/%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0%20v2.0.8-15803d?style=for-the-badge&logo=gitlab"></a>
 </td>
 </tr>
 </table>
@@ -54,6 +54,19 @@
 <td width="50%" valign="top"><a href="docs/media/app/mindmap.png"><img src="docs/media/app/mindmap.png" alt="마인드맵 화면: 2026 업무 계획을 가지로 펼친 지도"></a><br><b>마인드맵</b><br><sub>Tab·Enter로 가지를 늘려 생각을 정리합니다. 테마를 고르고 그림으로 한/글에 붙여 넣습니다.</sub></td>
 </tr>
 </table>
+
+---
+
+<h2 align="center">v2.0.8 릴리즈</h2>
+<p align="center">파일 이름을 규칙으로 한꺼번에 바꾸는 '파일이름' 탭과, 복사한 것을 모아 두는 K클립보드를 더했습니다</p>
+
+### 파일이름 탭 (2.0.8)
+
+여러 파일의 이름을 규칙으로 한꺼번에 바꿉니다. 문자열 바꾸기·앞뒤 추가·번호 붙이기(폴더별)·날짜(사진 촬영일 포함)·괄호 지우기·결과 접미사 정리 등 18가지 규칙을 쌓으면 바뀔 이름을 먼저 보여 주고, [변경 적용]을 눌러야 바뀝니다. 같은 이름 충돌은 막고, 되돌리기는 앱을 다시 켜도 됩니다.
+
+### K클립보드 (2.0.8, 기본 꺼짐)
+
+복사(Ctrl+C)한 글·그림·파일 경로와 화면 캡처를 이 PC에 암호화해 모아 두고, 아무 창에서나 Ctrl+Shift+V로 골라 바로 붙여 넣습니다. 앱과 따로 도는 아주 작은 프로그램(약 0.7MB, 쉴 때 CPU 0%)이 맡으며, 상단 오른쪽 단추에서 동의한 뒤 켤 때만 동작합니다.
 
 ---
 
