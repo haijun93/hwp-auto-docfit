@@ -238,7 +238,8 @@ void main() {
               s != 'enable_close_guard' &&
               s != 'table_units' &&
               s != 'table_sketch' &&
-              s != 'flow_editor',
+              s != 'flow_editor' &&
+              s != 'timemachine',
         ),
         ['add_files', 'set_mode', 'start'],
       );
@@ -821,7 +822,8 @@ void main() {
               name != 'enable_close_guard' &&
               name != 'table_units' &&
               name != 'table_sketch' &&
-              name != 'flow_editor',
+              name != 'flow_editor' &&
+              name != 'timemachine',
         ),
         ['get_abbreviations'],
       );
@@ -999,8 +1001,8 @@ void main() {
     await tester.pumpAndSettle();
     // 파일 변환은 '파일변환' 탭에서 고른다(작업 방식 카드에서 뺐다, 2026-10-30).
     // 탭 8개: 좁은 창에서는 탭 줄을 밀어야 보인다.
-    await tester.ensureVisible(find.byKey(const Key('workspaceTab-7')));
-    await tester.tap(find.byKey(const Key('workspaceTab-7')));
+    await tester.ensureVisible(find.byKey(const Key('workspaceTab-8')));
+    await tester.tap(find.byKey(const Key('workspaceTab-8')));
     await tester.pumpAndSettle();
     // 2.0.7: 파일변환 탭 한 화면에서 포맷 칸을 바로 누른다(팝업 없음).
     expect(find.byKey(const Key('conversionWorkspace')), findsOneWidget);
@@ -1050,8 +1052,8 @@ void main() {
     await tester.pumpAndSettle();
     // 파일 변환은 '파일변환' 탭에서 고른다(작업 방식 카드에서 뺐다, 2026-10-30).
     // 탭 8개: 좁은 창에서는 탭 줄을 밀어야 보인다.
-    await tester.ensureVisible(find.byKey(const Key('workspaceTab-7')));
-    await tester.tap(find.byKey(const Key('workspaceTab-7')));
+    await tester.ensureVisible(find.byKey(const Key('workspaceTab-8')));
+    await tester.tap(find.byKey(const Key('workspaceTab-8')));
     await tester.pumpAndSettle();
     // 2.0.7: 파일변환 탭 한 화면에서 포맷 칸을 바로 누른다(팝업 없음).
     expect(find.byKey(const Key('conversionWorkspace')), findsOneWidget);
@@ -1101,8 +1103,8 @@ void main() {
     await tester.pumpAndSettle();
     // 파일 변환은 '파일변환' 탭에서 고른다(작업 방식 카드에서 뺐다, 2026-10-30).
     // 탭 8개: 좁은 창에서는 탭 줄을 밀어야 보인다.
-    await tester.ensureVisible(find.byKey(const Key('workspaceTab-7')));
-    await tester.tap(find.byKey(const Key('workspaceTab-7')));
+    await tester.ensureVisible(find.byKey(const Key('workspaceTab-8')));
+    await tester.tap(find.byKey(const Key('workspaceTab-8')));
     await tester.pumpAndSettle();
     // 2.0.7: 파일변환 탭 한 화면에서 포맷 칸을 바로 누른다(팝업 없음).
     expect(find.byKey(const Key('conversionWorkspace')), findsOneWidget);
@@ -1170,8 +1172,8 @@ void main() {
     await tester.pumpAndSettle();
     // 파일 변환은 '파일변환' 탭에서 고른다(작업 방식 카드에서 뺐다, 2026-10-30).
     // 탭 8개: 좁은 창에서는 탭 줄을 밀어야 보인다.
-    await tester.ensureVisible(find.byKey(const Key('workspaceTab-7')));
-    await tester.tap(find.byKey(const Key('workspaceTab-7')));
+    await tester.ensureVisible(find.byKey(const Key('workspaceTab-8')));
+    await tester.tap(find.byKey(const Key('workspaceTab-8')));
     await tester.pumpAndSettle();
     // 2.0.7: 쓸 수 없는 포맷 칸은 눌러지지 않고, 말풍선으로 이유(설치 필요)를 보인다.
     expect(find.byTooltip('kordoc 4.24.9 설치 필요 (Node.js 20+)'), findsWidgets);
@@ -1208,8 +1210,8 @@ void main() {
         await tester.pumpWidget(DocFitApp(api: api));
         await tester.pumpAndSettle();
         // 탭 8개: 좁은 창에서는 탭 줄을 밀어야 보인다.
-        await tester.ensureVisible(find.byKey(const Key('workspaceTab-7')));
-        await tester.tap(find.byKey(const Key('workspaceTab-7')));
+        await tester.ensureVisible(find.byKey(const Key('workspaceTab-8')));
+        await tester.tap(find.byKey(const Key('workspaceTab-8')));
         await tester.pumpAndSettle();
         expect(find.byKey(const Key('conversionWorkspace')), findsOneWidget);
         expect(find.byKey(const Key('floatingConversionPicker')), findsNothing);

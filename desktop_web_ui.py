@@ -1721,6 +1721,22 @@ class DesktopWebBridge:
             service = self._rename_service = FileRenameService(folder, dialogs=self._file_dialogs)
         return service
 
+    def _timemachine_service(self):
+        service = getattr(self, "_timemachine_service_instance", None)
+        if service is None:
+            from docfit_app.timemachine_service import TimemachineService
+            folder = self._tk(lambda: getattr(self.gui, "_준말_서비스")().settings._path.parent)
+            service = self._timemachine_service_instance = TimemachineService(folder)
+        return service
+
+    def timemachine(self, action, payload=None):
+        """타임머신 화면 명령을 처리한다."""
+        try:
+            return self._timemachine_service().command(action, payload)
+        except Exception:
+            logging.getLogger(__name__).exception("타임머신 처리 실패")
+            return {"ok": False, "code": "TM_FAILED", "message": "타임머신 작업을 완료하지 못했습니다."}
+
     def kclip(self, action, payload=None):
         """K클립보드: 상주 프로그램(kagent.exe) 켜기·끄기와 목록·설정(파이프 명령)."""
         try:
@@ -2330,7 +2346,7 @@ class _BrowserApi:
             "get_state", "add_files", "add_folder", "add_paths", "remove_file",
             "clear_files", "set_mode", "set_range", "start", "stop", "start_job", "cancel_job", "get_events",
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
-            "get_pending_dialog", "resolve_dialog", "enable_close_guard", "acknowledge_close", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch",
+            "get_pending_dialog", "resolve_dialog", "enable_close_guard", "acknowledge_close", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch", "timemachine",
             "file_rename", "kclip", "hwp_bulk", "open_results", "next_job", "run_tool", "open_result",
             "show_result", "open_source_file", "show_source_file", "open_result_source", "open_diff", "compare_result", "launch_external_hwp_diff", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",

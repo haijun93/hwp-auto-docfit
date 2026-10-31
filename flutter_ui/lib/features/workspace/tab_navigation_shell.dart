@@ -1,9 +1,10 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
-/// 탭 번호. 파일변환은 항상 맨 끝(2026-10-30 사용자 지시), 파일이름은 그 바로 앞(2026-10-31).
+/// 탭 번호. 파일이름 뒤에 타임머신을 두고 파일변환을 맨 끝에 둔다.
 const kTabFileRename = 6;
-const kTabFileConversion = 7;
-const kTabCount = 8;
+const kTabTimemachine = 7;
+const kTabFileConversion = 8;
+const kTabCount = 9;
 
 /// 탭 안 화면이 '닫기·뒤로'를 요청할 때 쓰는 통로.
 /// 탭 화면은 앱의 첫 경로 위에 바로 있어 Navigator.pop을 하면 첫 화면이 빠져 앱이 멈춘다(2.0.0 사용자 보고).
@@ -17,7 +18,7 @@ class WorkspaceTabScope extends InheritedWidget {
 
   final VoidCallback goHome;
 
-  /// 탭 번호(0 문서편집·1 표템플릿·2 표그림판·3 다이어그램·4 마인드맵·5 그림판·6 파일이름·7 파일변환)로 이동한다.
+  /// 탭 번호(0 문서편집·1 표템플릿·2 표그림판·3 다이어그램·4 마인드맵·5 그림판·6 파일이름·7 타임머신·8 파일변환)로 이동한다.
   final ValueChanged<int> selectTab;
 
   static WorkspaceTabScope? maybeOf(BuildContext context) =>
@@ -38,7 +39,7 @@ void closeWorkspaceScreen(BuildContext context) {
   WorkspaceTabScope.maybeOf(context)?.goHome();
 }
 
-/// Root workspace contract. Owners inject the six adapters in this fixed order.
+/// Root workspace contract. Owners inject adapters in this fixed order.
 /// Keep the shell mounted (and keys stable) for the lifetime of the workspace.
 class TabNavigationShell extends StatefulWidget {
   const TabNavigationShell({
@@ -51,6 +52,7 @@ class TabNavigationShell extends StatefulWidget {
     required this.fileConversion,
     required this.paint,
     required this.fileRename,
+    required this.timemachine,
     this.initialIndex = 0,
     this.onTabChanged,
     this.trailing,
@@ -68,6 +70,7 @@ class TabNavigationShell extends StatefulWidget {
 
   /// 탭 6: 파일이름(여러 파일 이름을 규칙으로 한꺼번에 바꾸기).
   final Widget fileRename;
+  final Widget timemachine;
   final int initialIndex;
   final ValueChanged<int>? onTabChanged;
 
@@ -80,6 +83,13 @@ class TabNavigationShell extends StatefulWidget {
 
 class _TabNavigationShellState extends State<TabNavigationShell> {
   late int _index = widget.initialIndex;
+  final ScrollController _tabScrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _tabScrollController.dispose();
+    super.dispose();
+  }
 
   static const _labels = [
     '문서편집',
@@ -89,6 +99,7 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
     '마인드맵',
     '그림판',
     '파일이름',
+    '타임머신',
     // 파일변환은 항상 맨 끝(2026-10-30 사용자 지시).
     '파일변환',
   ];
@@ -100,13 +111,27 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
     Icons.hub_outlined,
     Icons.brush_outlined,
     Icons.drive_file_rename_outline,
+    Icons.history_toggle_off,
     Icons.transform,
   ];
 
   void _select(int index) {
-    if (index == _index) return;
+    if (index == _index) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final context = _tabContexts[index];
+        if (context != null && context.mounted) Scrollable.ensureVisible(context, alignment: 0.5, duration: const Duration(milliseconds: 180), curve: Curves.easeOut);
+      });
+      return;
+    }
     setState(() => _index = index);
     widget.onTabChanged?.call(index);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final context = _tabContexts[index];
+      if (context == null || !context.mounted) return;
+      Scrollable.ensureVisible(context, alignment: 0.5, duration: const Duration(milliseconds: 180), curve: Curves.easeOut);
+    });
   }
 
   void _goHome() => _select(0);
@@ -121,6 +146,7 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
       widget.mindMap,
       widget.paint,
       widget.fileRename,
+      widget.timemachine,
       widget.fileConversion,
     ];
     // 탭 메뉴와 앱 메뉴(설정 등)를 상단 한 줄로 합쳤다(2026-10-30 사용자 지시).
@@ -135,6 +161,7 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
               icons: _icons,
               selectedIndex: _index,
               onSelected: _select,
+              scrollController: _tabScrollController,
               trailing: widget.trailing,
             ),
             Expanded(
@@ -166,6 +193,7 @@ class WorkspaceTabBar extends StatelessWidget {
     required this.icons,
     required this.selectedIndex,
     required this.onSelected,
+    required this.scrollController,
     this.trailing,
   });
 
@@ -173,7 +201,23 @@ class WorkspaceTabBar extends StatelessWidget {
   final List<IconData> icons;
   final int selectedIndex;
   final ValueChanged<int> onSelected;
+  final ScrollController scrollController;
   final Widget? trailing;
+
+  void _ensureSelectedTabVisible(int index) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!scrollController.hasClients) return;
+      final tabContext = _tabContexts[index];
+      if (tabContext == null || !tabContext.mounted) return;
+      Scrollable.ensureVisible(
+        tabContext,
+        alignment: 0.5,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+      );
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -226,6 +270,7 @@ class WorkspaceTabBar extends StatelessWidget {
                       : _PillDensity.iconOnly;
                   return SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
+                    controller: scrollController,
                     child: Row(
                       children: [
                         for (var i = 0; i < labels.length; i++)
@@ -238,7 +283,11 @@ class WorkspaceTabBar extends StatelessWidget {
                               selected: i == selectedIndex,
                               color: scheme.primary,
                               density: density,
-                              onTap: () => onSelected(i),
+                              index: i,
+                              onTap: () {
+                                onSelected(i);
+                                _ensureSelectedTabVisible(i);
+                              },
                             ),
                           ),
                       ],
@@ -257,6 +306,8 @@ class WorkspaceTabBar extends StatelessWidget {
 
 enum _PillDensity { normal, compact, iconOnly }
 
+final Map<int, BuildContext> _tabContexts = {};
+
 class _TabPill extends StatelessWidget {
   const _TabPill({
     super.key,
@@ -266,6 +317,7 @@ class _TabPill extends StatelessWidget {
     required this.color,
     required this.onTap,
     this.density = _PillDensity.normal,
+    required this.index,
   });
 
   final _PillDensity density;
@@ -275,6 +327,7 @@ class _TabPill extends StatelessWidget {
   final bool selected;
   final Color color;
   final VoidCallback onTap;
+  final int index;
 
   @override
   Widget build(BuildContext context) {
@@ -315,8 +368,11 @@ class _TabPill extends StatelessWidget {
         ),
       ),
     );
-    return density == _PillDensity.iconOnly
-        ? Tooltip(message: label, child: pill)
-        : pill;
+    return Builder(builder: (context) {
+      _tabContexts[index] = context;
+      return density == _PillDensity.iconOnly
+          ? Tooltip(message: label, child: pill)
+          : pill;
+    });
   }
 }
