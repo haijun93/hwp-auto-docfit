@@ -2,6 +2,7 @@ import '../../core/close_guards.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import '../workspace/tab_navigation_shell.dart' show kFileRenameMenuEnabled;
 
 import '../../core/api/abbreviation_api.dart';
 import '../preview/option_images.dart';
@@ -745,6 +746,26 @@ class _SettingsDialogState extends State<SettingsDialog> {
 
   /// 오른쪽 내용: 설정 값 목록, 또는 상용구·앱 정보 관리 화면(검색 중이면 설정 값 목록).
   Widget _body(List<Map> visible, bool locked, String query) {
+    if (query.isEmpty && category == 'general') {
+      final current = snapshot?['values'] as Map?;
+      return ListView(
+        children: [
+          if (kFileRenameMenuEnabled)
+            SwitchListTile(
+              title: const Text('탐색기 보내기 메뉴에 추가'),
+              subtitle: const Text('선택한 파일에서 파일명 일괄변경을 엽니다.'),
+              value: current?['file_rename_sendto'] == true,
+              onChanged: locked ? null : (enabled) async {
+                try {
+                  await request('file_rename', ['sendto_set', {'enabled': enabled}]);
+                  if (mounted) await load();
+                } catch (e) { if (mounted) setState(() => error = '$e'); }
+              },
+            ),
+          ...[for (final field in visible) _card(field, locked)],
+        ],
+      );
+    }
     if (query.isEmpty && category == 'idiom_text') {
       return IdiomPanel(
         key: const ValueKey('idiom-text'),

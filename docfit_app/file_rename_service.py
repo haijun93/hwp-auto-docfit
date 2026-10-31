@@ -61,6 +61,7 @@ class FileRenameService:
         self._order = []
         self._plan = None
         self._last_run = None
+        self._mru_path = self.folder / "replace_mru.json"
 
     # ── 경로 ──────────────────────────────────────────────────────────────
     @staticmethod
@@ -127,6 +128,10 @@ class FileRenameService:
                 added.append(entry.id)
             self._plan = None
         return dict(self.listing(), added=len(added), skipped=skipped[:50], skipped_count=len(skipped))
+
+    def add_argument_paths(self, paths):
+        """--rename 인자의 경로도 일반 추가와 동일한 경로 검증을 거친다."""
+        return self.add_paths(paths)
 
     def _walk(self, root, recursive, include_hidden, skipped):
         found = []
@@ -316,6 +321,96 @@ class FileRenameService:
             if os.path.exists(temp):
                 os.unlink(temp)
 
+    def _rules_payload(self, rules):
+        try:
+            validate_rules(rules)
+        except RuleError as error:
+            raise RenameServiceError("RENAME_INVALID_RULE", str(error)) from None
+        return rules
+
+    def ruleset_export(self, payload):
+        name = payload.get("name")
+        data = self._load_rulesets()
+        rules = data.get(name) if isinstance(name, str) else None
+        if rules is None:
+            raise RenameServiceError("INVALID_INPUT", "내보낼 규칙 세트를 찾지 못했습니다.")
+        self._rules_payload(rules)
+        return dict(ok=True, name=name, rules=rules, json=json.dumps(
+            {"version": 1, "name": name, "rules": rules}, ensure_ascii=False, indent=2))
+
+    def ruleset_import(self, payload):
+        raw = payload.get("json")
+        if not isinstance(raw, str) or len(raw) > 1_000_000:
+            raise RenameServiceError("INVALID_INPUT", "규칙 JSON 파일을 확인해 주세요.")
+        try:
+            imported = json.loads(raw)
+        except (ValueError, TypeError):
+            raise RenameServiceError("INVALID_INPUT", "규칙 JSON 파일을 읽지 못했습니다.") from None
+        if not isinstance(imported, dict) or imported.get("version") != 1:
+            raise RenameServiceError("INVALID_INPUT", "지원하지 않는 규칙 JSON 형식입니다.")
+        name = imported.get("name")
+        if not isinstance(name, str) or not RULESET_NAME.fullmatch(name) or name != name.strip():
+            raise RenameServiceError("INVALID_INPUT", "규칙 세트 이름은 40자 이내로 입력해 주세요.")
+        rules = self._rules_payload(imported.get("rules"))
+        data = self._load_rulesets()
+        if name not in data and len(data) >= 100:
+            raise RenameServiceError("INVALID_INPUT", "규칙 세트는 100개까지 저장할 수 있습니다.")
+        data[name] = rules
+        self._save_rulesets(data)
+        return dict(ok=True, rulesets=[dict(name=k, rules=v) for k, v in data.items()])
+
+    def replace_mru(self, action, payload):
+        try:
+            values = json.loads(self._mru_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            values = []
+        if not isinstance(values, list):
+            values = []
+        values = [v for v in values if isinstance(v, dict) and isinstance(v.get("find"), str)
+                  and isinstance(v.get("to"), str)][:10]
+        if action == "replace_mru_list":
+            return dict(ok=True, values=values)
+        find, to = payload.get("find"), payload.get("to")
+        if not isinstance(find, str) or not isinstance(to, str) or len(find) > 255 or len(to) > 255:
+            raise RenameServiceError("INVALID_INPUT", "최근 바꾸기 내용을 확인해 주세요.")
+        pair = {"find": find, "to": to}
+        values = [v for v in values if v != pair]
+        values.insert(0, pair)
+        values = values[:10]
+        self.folder.mkdir(parents=True, exist_ok=True)
+        self._mru_path.write_text(json.dumps(values, ensure_ascii=False, indent=1), encoding="utf-8")
+        return dict(ok=True, values=values)
+
+    @staticmethod
+    def set_sendto(enabled, *, sendto_dir=None, executable=None, shortcut_factory=None):
+        """SendTo 바로가기를 만들거나 지운다. 레지스트리는 사용하지 않는다."""
+        folder = Path(sendto_dir) if sendto_dir is not None else Path(os.environ.get("APPDATA", "")) / "Microsoft" / "Windows" / "SendTo"
+        shortcut = folder / "파일명 일괄변경.lnk"
+        if not enabled:
+            try:
+                shortcut.unlink()
+            except FileNotFoundError:
+                pass
+            return dict(ok=True, enabled=False)
+        if not executable:
+            raise RenameServiceError("INVALID_INPUT", "앱 실행 파일 경로가 없습니다.")
+        folder.mkdir(parents=True, exist_ok=True)
+        try:
+            if shortcut_factory is None:
+                import win32com.client
+                shell = win32com.client.Dispatch("WScript.Shell")
+                link = shell.CreateShortCut(str(shortcut))
+            else:
+                link = shortcut_factory(str(shortcut))
+            link.TargetPath = str(Path(executable).resolve())
+            link.Arguments = '"--rename"'
+            link.WorkingDirectory = str(Path(executable).resolve().parent)
+            link.Description = "파일명 일괄변경에서 선택한 파일을 엽니다."
+            link.Save()
+        except Exception as error:
+            raise RenameServiceError("SENDTO_FAILED", f"보내기 바로가기를 만들지 못했습니다: {error}") from None
+        return dict(ok=True, enabled=True, path=str(shortcut))
+
     def rulesets(self, action, payload):
         data = self._load_rulesets()
         if action == "ruleset_list":
@@ -324,10 +419,7 @@ class FileRenameService:
         if not isinstance(name, str) or not RULESET_NAME.match(name) or name != name.strip():
             raise RenameServiceError("INVALID_INPUT", "규칙 세트 이름은 40자 이내로 입력해 주세요.")
         if action == "ruleset_save":
-            try:
-                validate_rules(payload.get("rules"))
-            except RuleError as error:
-                raise RenameServiceError("RENAME_INVALID_RULE", str(error)) from None
+            self._rules_payload(payload.get("rules"))
             if name not in data and len(data) >= 100:
                 raise RenameServiceError("INVALID_INPUT", "규칙 세트는 100개까지 저장할 수 있습니다.")
             data[name] = payload["rules"]
@@ -345,6 +437,11 @@ class FileRenameService:
             if action == "pick_files":
                 paths = self._pick("rename_files", "open", True)
                 return self.listing() if paths is None else self.add_paths(paths)
+            if action == "add_argument_paths":
+                paths = payload.get("paths")
+                if not isinstance(paths, list) or len(paths) > MAX_ENTRIES:
+                    raise RenameServiceError("INVALID_INPUT", "추가할 파일 목록을 확인해 주세요.")
+                return self.add_argument_paths(paths)
             if action == "pick_folder":
                 paths = self._pick("rename_folder", "directory", False)
                 return self.listing() if paths is None else self.add_paths(
@@ -369,6 +466,12 @@ class FileRenameService:
                 return self.history_list(payload)
             if action in ("ruleset_list", "ruleset_save", "ruleset_delete"):
                 return self.rulesets(action, payload)
+            if action == "ruleset_export":
+                return self.ruleset_export(payload)
+            if action == "ruleset_import":
+                return self.ruleset_import(payload)
+            if action in ("replace_mru_list", "replace_mru_add"):
+                return self.replace_mru(action, payload)
             raise RenameServiceError("NOT_AVAILABLE", "지원하지 않는 명령입니다.")
         except RenameServiceError as error:
             return dict(ok=False, code=error.code, message=str(error))

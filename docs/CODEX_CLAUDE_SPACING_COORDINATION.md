@@ -584,3 +584,11 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 - 선택 완료 응답에는 이름/크기만 포함한다. 파일 추가는 add_paths, 폴더는 add_directory, 저장/가져오기는 output_selection_id/input_selection_id를 사용한다. 선택 없이 호출하면 FILE_SELECTION_REQUIRED. 일반 상태 조회용 _tk RPC는 유지한다.
 - 지정 5개 pytest와 관련 브리지/드롭/흐름도/수명 주기 시험 합계 128개 및 142 subtests PASS. 추가 reparse·브리지 연결 시험 포함 신규 서비스 최종 12개 및 4 subtests PASS.
 - CRLF 및 diff 검사 수행. 사용자 원본 수정·한/글 COM 시험 없음. 실제 Windows 대화상자 조작/Flutter 통합 UI 검증은 미실행이며, 전체 저장소 unittest 실행 결과로 보고하지 않는다.
+
+## Codex 결과 보고 — FR6 파일명 일괄변경 확장 (2026-11-01)
+
+- 브랜치 `feature/rename-sendto`에서 FR6 서비스·Flutter 화면을 보완했다. 파일명 메뉴 플래그 `kFileRenameMenuEnabled=false`는 유지했고 설정의 SendTo 스위치는 이 플래그가 켜질 때만 보이게 했다. 기본 설정은 false.
+- 서비스: `%APPDATA%\\Microsoft\\Windows\\SendTo\\파일명 일괄변경.lnk` 생성/삭제(레지스트리 사용 없음), JSON 규칙 세트 내보내기 자료 생성 및 버전·이름·규칙 검증 후 저장, 찾기/바꾸기 MRU 10개(동일 쌍은 맨 앞으로 이동), `add_argument_paths`에서 기존 추가 경로 검증 재사용.
+- Flutter: JSON 파일 열기/저장 대화상자, 규칙 편집 대화상자의 최근 찾기/바꾸기 메뉴를 연결했다. 메뉴가 숨겨진 상태의 UI 노출이나 인자 실행은 활성화하지 않았다.
+- 시험: 지정 Python 가상환경에서 파일명 변경 관련 55개 PASS(오류 0). SendTo 임시 폴더 생성·삭제, 잘못된/상대/없는 인자 경로, 잘못된 규칙 JSON 무저장, MRU 중복·순서·10개 상한을 포함한다. `flutter test --no-pub --timeout 120s`: 228개 PASS, 기존 제외 1개. `git diff --check` PASS.
+- 한/글 COM 시험 없음. 커밋/푸시는 이 결과 기록 완료 후 수행.

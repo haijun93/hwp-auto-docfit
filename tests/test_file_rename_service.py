@@ -37,6 +37,50 @@ class FileRenameServiceTests(unittest.TestCase):
     def names(self, result):
         return [e["name"] for e in result["entries"]]
 
+    def test_rename_argument_paths_reuse_validation(self):
+        result = self.service.command("add_argument_paths", {"paths": [
+            str(self.root / "6C1D56A5.JPG"), str(self.root / "missing.txt"), "relative.txt"]})
+        self.assertEqual(result["added"], 1)
+        self.assertEqual(result["skipped_count"], 2)
+        self.assertEqual(self.names(result), ["6C1D56A5.JPG"])
+
+    def test_ruleset_json_import_rejects_invalid_rules_without_saving(self):
+        import json
+        bad = json.dumps({"version": 1, "name": "bad", "rules": [{"kind": "no_such_rule"}]})
+        result = self.service.command("ruleset_import", {"json": bad})
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["code"], "RENAME_INVALID_RULE")
+        self.assertFalse((self.settings / "file_rename" / "rulesets.json").exists())
+
+    def test_replace_mru_moves_duplicates_to_front_and_caps_ten(self):
+        for i in range(10):
+            self.service.command("replace_mru_add", {"find": f"f{i}", "to": f"t{i}"})
+        self.service.command("replace_mru_add", {"find": "f5", "to": "t5"})
+        self.service.command("replace_mru_add", {"find": "new", "to": "value"})
+        values = self.service.command("replace_mru_list")["values"]
+        self.assertEqual(len(values), 10)
+        self.assertEqual(values[0], {"find": "new", "to": "value"})
+        self.assertEqual(values[1], {"find": "f5", "to": "t5"})
+        self.assertEqual(len({(v['find'], v['to']) for v in values}), 10)
+
+    def test_sendto_shortcut_create_delete_with_injected_folder(self):
+        class Link:
+            def Save(self):
+                Path(self.path).write_text(self.TargetPath + "\n" + self.Arguments + "\n" + self.WorkingDirectory)
+        folder = Path(self.tmp.name) / "SendTo"
+        def factory(path):
+            link = Link()
+            link.path = path
+            return link
+        made = FileRenameService.set_sendto(True, sendto_dir=folder, executable="C:/DocFit/app.exe", shortcut_factory=factory)
+        target = folder / "파일명 일괄변경.lnk"
+        self.assertTrue(made["ok"])
+        self.assertTrue(target.is_file())
+        self.assertIn('"--rename"', target.read_text())
+        removed = FileRenameService.set_sendto(False, sendto_dir=folder)
+        self.assertFalse(removed["enabled"])
+        self.assertFalse(target.exists())
+
     def test_pick_folder_recursive_preview_apply_undo(self):
         listed = self.service.command("pick_folder", {"recursive": True})
         self.assertTrue(listed["ok"], listed)
