@@ -30,7 +30,7 @@ void main() {
         case 'list':
           return {
             'ok': true,
-            'items': [
+          'items': [
               {'id': 1, 'kind': 'text', 'preview': '업무보고(안)', 'pinned': false},
               {'id': 2, 'kind': 'image', 'preview': '그림 640×480', 'pinned': true},
             ],
@@ -40,6 +40,8 @@ void main() {
             'ok': true,
             'settings': {'max_items': 50, 'max_total_mb': 200, 'max_age_days': 30, 'auto_paste': true},
           };
+        case 'get':
+          return {'ok': true, 'id': 2, 'kind': 'image', 'data': 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/pV8AAAAASUVORK5CYII='};
       }
       return {'ok': true};
     }
@@ -56,7 +58,20 @@ void main() {
     expect(calls, contains('enable'));
     expect(find.text('업무보고(안)'), findsOneWidget);
     expect(find.textContaining('기록 중 · 2개'), findsOneWidget);
+    final itemTiles = tester.widgetList<ListTile>(find.byType(ListTile)).toList();
+    expect((itemTiles.first.title as Text).data, '그림 640×480');
+    expect((itemTiles.first.leading as Tooltip).message, '그림');
+    await tester.tap(find.byKey(const ValueKey('kclip-item-2')));
+    await tester.pumpAndSettle();
+    expect(calls, contains('get'));
+    expect(find.byType(Image), findsNWidgets(2));
+    await tester.tap(find.text('닫기'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('업무보고(안)'));
+    await tester.pumpAndSettle();
+    expect(find.text('업무보고(안)'), findsWidgets);
+    expect(calls, isNot(contains('restore')));
+    await tester.tap(find.text('다시 복사'));
     await tester.pumpAndSettle();
     expect(calls, contains('restore'));
     await tester.tap(find.byTooltip('고정(지워지지 않음)'));

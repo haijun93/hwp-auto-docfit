@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:collection';
+import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
@@ -37,6 +40,8 @@ class _KClipPanelState extends State<KClipPanel> {
   String message = '';
   String query = '';
   Timer? _debounce;
+  final LinkedHashMap<int, Uint8List?> _images = LinkedHashMap();
+  final Set<int> _loadingImages = {};
 
   bool get running => status['running'] == true;
   Map get agent => (status['status'] as Map?) ?? const {};
@@ -70,9 +75,57 @@ class _KClipPanelState extends State<KClipPanel> {
       if (!mounted) return;
       setState(() {
         items = [for (final i in (list['items'] as List? ?? const [])) i as Map];
+        items.sort((a, b) => (b['pinned'] == true ? 1 : 0).compareTo(a['pinned'] == true ? 1 : 0));
         settings = (conf['settings'] as Map?) ?? const {};
       });
     }
+  }
+
+  Future<Uint8List?> _imageFor(int id) async {
+    if (_images.containsKey(id)) return _images[id];
+    if (!_loadingImages.add(id)) return null;
+    final result = await _call('get', {'id': id});
+    Uint8List? bytes;
+    try {
+      if (result['kind'] == 'image' && result['data'] is String) {
+        bytes = base64Decode(result['data'] as String);
+      }
+    } catch (_) {}
+    _loadingImages.remove(id);
+    if (!mounted) return bytes;
+    setState(() {
+      _images[id] = bytes;
+      while (_images.length > 24) {
+        _images.remove(_images.keys.first);
+      }
+    });
+    return bytes;
+  }
+
+  void _preview(Map item) {
+    showDialog<void>(context: context, builder: (context) => AlertDialog(
+      title: Text(_kind(item['kind'])),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('닫기')),
+        FilledButton(
+          onPressed: () {
+            Navigator.of(context).pop();
+            _act('restore', {'id': item['id']}, '클립보드에 올렸습니다. Ctrl+V로 붙여넣으세요.');
+          },
+          child: const Text('다시 복사'),
+        ),
+      ],
+      content: FutureBuilder<Uint8List?>(
+        future: item['kind'] == 'image' ? _imageFor((item['id'] as num).toInt()) : Future.value(null),
+        builder: (context, snapshot) {
+          if (item['kind'] == 'image') {
+            if (snapshot.connectionState != ConnectionState.done) return const SizedBox(height: 160, child: Center(child: CircularProgressIndicator()));
+            return snapshot.data == null ? const Text('그림을 불러오지 못했습니다.') : Image.memory(snapshot.data!, fit: BoxFit.contain);
+          }
+          return SingleChildScrollView(child: SelectableText('${item['preview'] ?? ''}'));
+        },
+      ),
+    ));
   }
 
   Future<void> _act(String action, [Map<String, Object?>? payload, String? done]) async {
@@ -198,6 +251,12 @@ class _KClipPanelState extends State<KClipPanel> {
               onPressed: busy ? null : () => _act(paused ? 'resume' : 'pause'),
               child: Text(paused ? '다시 기록' : '일시정지'),
             ),
+            PopupMenuButton<int>(
+              tooltip: '일시정지 시간',
+              onSelected: (minutes) => _act('pause', {'minutes': minutes}),
+              itemBuilder: (_) => const [PopupMenuItem(value: 30, child: Text('30분')), PopupMenuItem(value: 60, child: Text('1시간'))],
+              child: const Padding(padding: EdgeInsets.all(8), child: Text('일시정지 시간')),
+            ),
             OutlinedButton(
               onPressed: busy ? null : () => _act('clear', {'keep_pinned': true}, '고정하지 않은 항목을 지웠습니다.'),
               child: const Text('모두 지우기(고정 제외)'),
@@ -228,12 +287,17 @@ class _KClipPanelState extends State<KClipPanel> {
                   itemBuilder: (context, index) {
                     final item = items[index];
                     final pinned = item['pinned'] == true;
+                    final id = (item['id'] as num).toInt();
+                    final thumb = item['kind'] == 'image' ? _images[id] : null;
+                    if (item['kind'] == 'image' && !_images.containsKey(id) && !_loadingImages.contains(id)) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) unawaited(_imageFor(id)); });
+                    }
                     return ListTile(
                       key: ValueKey('kclip-item-${item['id']}'),
                       dense: true,
-                      leading: Tooltip(message: _kind(item['kind']), child: Icon(_kindIcon(item['kind']))),
+                      leading: Tooltip(message: _kind(item['kind']), child: thumb == null ? Icon(_kindIcon(item['kind'])) : Image.memory(thumb, width: 48, height: 48, fit: BoxFit.cover)),
                       title: Text('${item['preview'] ?? ''}', maxLines: 2, overflow: TextOverflow.ellipsis),
-                      onTap: () => _act('restore', {'id': item['id']}, '클립보드에 올렸습니다. Ctrl+V로 붙여넣으세요.'),
+                      onTap: () => _preview(item),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
