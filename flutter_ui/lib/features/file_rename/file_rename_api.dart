@@ -103,6 +103,8 @@ const ruleKinds = <RuleKind>[
   RuleKind('digits_delete', '숫자 지우기', {}),
   RuleKind('clear', '이름 지우기(확장자만 남김)', {}),
   RuleKind('strip_result_suffix', '결과 접미사 지우기', {'to': ''}),
+  RuleKind('doc_title', '문서 제목으로', {'position': 'replace', 'sep': '_', 'max_length': 60}),
+  RuleKind('template', '공문서 이름 틀', {'template': '{date}_{dept}_{title}', 'dept': '', 'digits': 1, 'max_length': 60}),
   RuleKind('cleanup', '공백·밑줄 정리', {'nfc': true, 'collapse_spaces': true, 'underscore': 'keep', 'strip': true}),
   RuleKind('case', '대/소문자', {'mode': 'lower'}),
   RuleKind('ext_case', '확장자 대/소문자', {'mode': 'lower'}),

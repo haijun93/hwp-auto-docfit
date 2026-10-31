@@ -98,10 +98,32 @@ def execute_plan(plan, history, *, stop_on_error=True, stat=os.stat, rename=_ren
         if [st.st_size, int(st.st_mtime * 1000)] != list(item["fingerprint"]):
             raise PlanStaleError(f"미리보기 뒤 파일이 바뀌었습니다: {item['old_name']}")
     run_id = history.new_run("apply", plan_id=plan["plan_id"], count=len(items))
-    done, failed, skipped = _run_moves([(i["id"], i["old_path"], i["new_path"]) for i in items], history, run_id,
-                                       stop_on_error=stop_on_error, rename=rename)
+    # 폴더와 그 안 항목을 함께 바꿀 때: 깊은 경로부터(안쪽 이름을 먼저, 폴더는 나중) 바꿔 경로가 꼬이지 않게 한다.
+    # 새 이름은 모두 '옛 폴더 안' 기준으로 계산돼 있으므로 이 순서면 그대로 맞다.
+    done, failed, skipped = [], [], []
+    for group in _depth_groups(items, deepest_first=True):
+        if failed and stop_on_error:
+            skipped.extend(i["id"] for i in group)
+            continue
+        d, f, s = _run_moves([(i["id"], i["old_path"], i["new_path"]) for i in group], history, run_id,
+                             stop_on_error=stop_on_error, rename=rename)
+        done += d
+        failed += f
+        skipped += s
     history.write(dict(op="end", run=run_id))
     return dict(run_id=run_id, done=done, failed=failed, skipped=skipped)
+
+
+def _depth(path):
+    return os.path.normpath(path).count(os.sep)
+
+
+def _depth_groups(items, *, deepest_first, key=lambda i: i["old_path"]):
+    """경로 깊이가 같은 항목끼리 묶는다(같은 깊이 안의 순환·연쇄는 _run_moves가 처리)."""
+    groups = {}
+    for item in items:
+        groups.setdefault(_depth(key(item)), []).append(item)
+    return [groups[d] for d in sorted(groups, reverse=deepest_first)]
 
 
 def undo(history, run_id, *, rename=_rename_no_overwrite):
@@ -109,9 +131,24 @@ def undo(history, run_id, *, rename=_rename_no_overwrite):
     run = history.get(run_id)
     if run is None:
         raise KeyError(run_id)
+    undo_id = history.new_run("undo", undo_of=run_id, count=len(run["items"]))
+    done, failed, skipped = [], [], []
+    # 되돌리기는 얕은 경로부터: 바깥 폴더 이름을 먼저 되돌려야 안쪽 항목의 기록된 경로가 다시 맞는다.
+    entries = [dict(item, id=item_id) for item_id, item in run["items"].items()]
+    for group in _depth_groups(entries, deepest_first=False, key=lambda i: i["original"]):
+        d, f, s = _undo_group(group, history, undo_id, rename)
+        done += d
+        failed += f
+        skipped += s
+    history.write(dict(op="end", run=undo_id))
+    return dict(run_id=undo_id, done=done, failed=failed, skipped=skipped)
+
+
+def _undo_group(group, history, undo_id, rename):
     moves = []
     blocked = []
-    for item_id, item in run["items"].items():
+    for item in group:
+        item_id = item["id"]
         current = item["current"]
         if item["pending"]:  # 중단된 rename: 실제로 어디 있는지 디스크로 확인한다.
             src, dst = item["pending"]
@@ -129,7 +166,5 @@ def undo(history, run_id, *, rename=_rename_no_overwrite):
             blocked.append(dict(id=move[0], reason="원래 이름 자리에 다른 파일이 있습니다."))
         else:
             ready.append(move)
-    undo_id = history.new_run("undo", undo_of=run_id, count=len(ready))
     done, failed, skipped = _run_moves(ready, history, undo_id, stop_on_error=False, rename=rename)
-    history.write(dict(op="end", run=undo_id))
-    return dict(run_id=undo_id, done=done, failed=failed + blocked, skipped=skipped)
+    return done, failed + blocked, skipped

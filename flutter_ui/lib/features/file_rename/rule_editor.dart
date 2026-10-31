@@ -31,6 +31,9 @@ const _keyLabels = {
   'strip': '앞뒤 공백·밑줄 지우기',
   'mode': '방식',
   'ext': '확장자',
+  'template': '이름 틀 ({date} 수정일 · {title} 제목 · {orig} 원래 이름 · {n} 번호 · {dept} 부서)',
+  'dept': '부서 이름',
+  'max_length': '제목 최대 길이',
 };
 
 Map<String, String> _choices(String kind, String key) {

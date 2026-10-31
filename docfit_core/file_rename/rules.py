@@ -11,6 +11,7 @@ import re
 import unicodedata
 
 from .datetime_rules import entry_datetime, format_datetime, read_exif_datetime
+from .doc_title import read_document_title, sanitize_title
 from .model import RuleError, split_name
 from .numbering import number_sequence
 
@@ -317,6 +318,69 @@ def _a_strip_suffix(state, opt, ctx):
     return stem.strip(), state[1]
 
 
+def _v_doc_title(spec):
+    return dict(position=_choice(spec, "position", "replace", ("prefix", "suffix", "replace")),
+                sep=_str(spec, "sep", "_", max_len=8), max_length=_int(spec, "max_length", 60, minimum=1, maximum=255))
+
+
+def _a_doc_title(state, opt, ctx):
+    entry = ctx["entry"]
+    if entry.ext.casefold() != ".hwpx":
+        ctx["warnings"].add("title_unsupported")
+        return state
+    if entry.id in ctx["title_errors"]:
+        raise RuleError("문서 제목을 읽지 못했습니다.")
+    if entry.id not in ctx["title_cache"]:
+        try:
+            ctx["title_cache"][entry.id] = sanitize_title(read_document_title(entry.path), 255)
+        except Exception:
+            ctx["title_errors"].add(entry.id)
+            raise RuleError("문서 제목을 읽지 못했습니다.") from None
+    elif entry.id in ctx["title_errors"]:
+        raise RuleError("문서 제목을 읽지 못했습니다.")
+    title = ctx["title_cache"][entry.id][:opt["max_length"]].rstrip(". ")
+    if not title:
+        raise RuleError("문서 제목이 비어 있습니다.")
+    return _place(state[0], title, opt["position"], opt["sep"]), state[1]
+
+
+_TEMPLATE_VARS = {"date", "title", "orig", "n", "dept"}
+
+
+def _v_template(spec):
+    template = _str(spec, "template", "{date}_{dept}_{title}", allow_empty=False, max_len=500)
+    unknown = sorted(set(re.findall(r"\{([^{}]+)\}", template)) - _TEMPLATE_VARS)
+    if unknown:
+        raise RuleError("알 수 없는 템플릿 변수: " + ", ".join(unknown))
+    if "{" in re.sub(r"\{[^{}]+\}", "", template) or "}" in re.sub(r"\{[^{}]+\}", "", template):
+        raise RuleError("템플릿 변수의 중괄호를 확인해 주세요.")
+    return dict(template=template, dept=_str(spec, "dept", "", max_len=100),
+                digits=_int(spec, "digits", 1, minimum=1, maximum=12),
+                max_length=_int(spec, "max_length", 60, minimum=1, maximum=255))
+
+
+def _a_template(state, opt, ctx):
+    entry = ctx["entry"]
+    if entry.id not in ctx["title_cache"]:
+        if entry.ext.casefold() == ".hwpx":
+            try:
+                ctx["title_cache"][entry.id] = sanitize_title(read_document_title(entry.path), 255)
+            except Exception:
+                ctx["title_errors"].add(entry.id)
+                raise RuleError("문서 제목을 읽지 못했습니다.") from None
+        elif any(token in opt["template"] for token in ("{title}",)):
+            ctx["warnings"].add("title_unsupported")
+            ctx["title_cache"][entry.id] = ""
+        else:
+            ctx["title_cache"][entry.id] = ""
+    title = (ctx["title_cache"][entry.id][:opt["max_length"]].rstrip(". ") or entry.stem)
+    moment, _ = entry_datetime(entry, "mtime", today=ctx.get("today"))
+    values = dict(date=format_datetime(moment, "YYYYMMDD"), title=title, orig=entry.stem,
+                  n=str(ctx.get("number", 1)).zfill(opt["digits"]), dept=opt["dept"])
+    name = re.sub(r"\{([^{}]+)\}", lambda match: values[match.group(1)], opt["template"])
+    return name, state[1]
+
+
 RULE_KINDS = {
     "replace": (_v_replace, _a_replace),
     "add": (_v_add, _a_add),
@@ -336,6 +400,8 @@ RULE_KINDS = {
     "cleanup": (_v_cleanup, _a_cleanup),
     "case": (_v_case, _a_case),
     "strip_result_suffix": (_v_strip_suffix, _a_strip_suffix),
+    "doc_title": (_v_doc_title, _a_doc_title),
+    "template": (_v_template, _a_template),
 }
 MAX_RULES = 50
 
@@ -366,14 +432,22 @@ def apply_rules(entries, rules, *, today=None, exif_reader=None):
     rules = validate_rules(rules)
     numbers = {i: number_sequence(entries, start=r["start"], step=r["step"], per_folder=r["per_folder"])
                for i, r in enumerate(rules) if r["kind"] == "number"}
+    template_numbers = {i: number_sequence(entries, start=1, step=1, per_folder=False)
+                        for i, r in enumerate(rules) if r["kind"] == "template"}
     results = []
+    title_cache, title_errors = {}, set()
     for position, entry in enumerate(entries):
         state = (entry.stem, entry.ext)
-        ctx = dict(entry=entry, today=today, exif_reader=exif_reader, warnings=set())
+        ctx = dict(entry=entry, today=today, exif_reader=exif_reader, warnings=set(), number=position + 1,
+                   title_cache=title_cache, title_errors=title_errors)
         try:
             for index, rule in enumerate(rules):
+                if entry.is_folder:
+                    continue
                 if index in numbers:
                     ctx["number"] = numbers[index][position]
+                elif index in template_numbers:
+                    ctx["number"] = template_numbers[index][position]
                 state = RULE_KINDS[rule["kind"]][1](state, rule, ctx)
         except RuleError as error:
             results.append((None, str(error), ctx["warnings"]))

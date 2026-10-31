@@ -115,6 +115,12 @@ class FileRenameServiceTests(unittest.TestCase):
         reloaded = FileRenameService(self.settings).command("ruleset_list")
         self.assertNotIn("내 규칙", [r["name"] for r in reloaded["rulesets"]])
 
+    def test_add_folder_as_item(self):
+        result = self.service.add_paths([str(self.root)], as_folder=True)
+        self.assertEqual(result["added"], 1)
+        self.assertEqual(result["entries"][0]["name"], "work")
+        self.assertTrue(result["entries"][0]["is_folder"])
+
 
 if __name__ == "__main__":
     unittest.main()

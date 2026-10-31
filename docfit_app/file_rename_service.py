@@ -26,8 +26,7 @@ DEFAULT_RULESETS = {
     "사진 촬영일+번호": [{"kind": "date", "source": "exif", "format": "YYYYMMDD", "position": "replace"},
                     {"kind": "number", "digits": 3, "sep": "_"}, {"kind": "ext_case", "mode": "lower"}],
     "결과 접미사 정리": [{"kind": "strip_result_suffix"}, {"kind": "cleanup"}],
-    "공문 파일명(날짜_이름)": [{"kind": "date", "source": "mtime", "format": "YYYYMMDD", "position": "prefix",
-                         "sep": "_"}, {"kind": "cleanup"}],
+    "공문서 파일명(날짜_부서_제목)": [{"kind": "template", "template": "{date}_{dept}_{title}", "dept": ""}],
 }
 
 
@@ -84,7 +83,7 @@ class FileRenameService:
             raise RenameServiceError("RENAME_PATH_REJECTED", "파일을 찾을 수 없습니다.")
         return str(candidate.resolve())
 
-    def add_paths(self, paths, *, recursive=False, include_hidden=False):
+    def add_paths(self, paths, *, recursive=False, include_hidden=False, as_folder=False):
         """파일과 폴더 경로를 목록에 더한다(폴더는 펼침). 이미 있는 파일은 건너뛴다."""
         if not isinstance(paths, (list, tuple)):
             raise RenameServiceError("INVALID_INPUT", "추가할 파일 목록을 확인해 주세요.")
@@ -96,7 +95,9 @@ class FileRenameService:
             except RenameServiceError as error:
                 skipped.append(dict(path=str(raw)[:260], reason=str(error)))
                 continue
-            if is_dir:
+            if is_dir and as_folder:
+                files.append(path)
+            elif is_dir:
                 files.extend(self._walk(path, recursive, include_hidden, skipped))
             else:
                 files.append(path)
@@ -155,7 +156,7 @@ class FileRenameService:
     # ── 목록 ──────────────────────────────────────────────────────────────
     def _view(self, entry):
         return dict(id=entry.id, name=entry.name, folder=entry.folder, size=entry.size, mtime=entry.mtime,
-                    ctime=entry.ctime)
+                    ctime=entry.ctime, is_folder=entry.is_folder)
 
     def listing(self):
         with self._lock:
@@ -347,7 +348,8 @@ class FileRenameService:
                 paths = self._pick("rename_folder", "directory", False)
                 return self.listing() if paths is None else self.add_paths(
                     paths, recursive=payload.get("recursive") is True,
-                    include_hidden=payload.get("include_hidden") is True)
+                    include_hidden=payload.get("include_hidden") is True,
+                    as_folder=payload.get("as_folder") is True)
             if action == "remove":
                 return self.remove(payload)
             if action == "clear":

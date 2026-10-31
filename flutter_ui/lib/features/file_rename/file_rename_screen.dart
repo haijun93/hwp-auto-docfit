@@ -409,6 +409,12 @@ class FileRenameScreenState extends State<FileRenameScreen> {
             onChanged: (v) => setState(() => _recursive = v == true),
           ),
           const Text('하위 폴더 포함'),
+          OutlinedButton.icon(
+            key: const ValueKey('rename-folder-self'),
+            onPressed: _busy ? null : () => _run('pick_folder', {'as_folder': true}),
+            icon: const Icon(Icons.drive_file_rename_outline),
+            label: const Text('폴더 자체 이름 바꾸기'),
+          ),
           const SizedBox(width: 8),
           OutlinedButton.icon(
             onPressed: _busy || _entries.isEmpty ? null : () => _run('clear', null, '목록을 비웠습니다'),

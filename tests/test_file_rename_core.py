@@ -2,8 +2,11 @@ import hashlib
 import os
 import tempfile
 import unittest
+import zipfile
 from datetime import datetime
 from pathlib import Path
+from defusedxml import ElementTree as ET
+from docfit_core.file_rename.doc_title import read_document_title, sanitize_title
 
 from docfit_core.file_rename import (Entry, History, PlanStaleError, RuleError, apply_rules, build_plan,
                                      execute_plan, invalid_name_reason, natural_key, split_name, undo,
@@ -19,6 +22,36 @@ def fake(path, mtime=0.0):
 
 
 class RuleTests(unittest.TestCase):
+    def test_doc_title_and_template(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            def hwpx(name, body):
+                path = root / name
+                with zipfile.ZipFile(path, "w") as archive:
+                    archive.writestr("Contents/section0.xml", body)
+                return Entry.from_path(path)
+            table = hwpx("table.hwpx", '<hp:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p><hp:run><hp:tbl><hp:tr><hp:tc><hp:p><hp:run><hp:t>보고서: 계획/안</hp:t></hp:run></hp:p></hp:tc></hp:tr></hp:tbl></hp:run></hp:p></hp:sec>')
+            ordinary = hwpx("plain.hwpx", '<hp:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p><hp:run><hp:t>첫 제목</hp:t></hp:run></hp:p></hp:sec>')
+            empty = hwpx("empty.hwpx", '<hp:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p/></hp:sec>')
+            broken_path = root / "broken.hwpx"
+            broken_path.write_bytes(b"not a zip")
+            broken = Entry.from_path(broken_path)
+            pdf = Entry("pdf", str(root / "file.pdf"), 1, 0, 0)
+            rules = [{"kind": "doc_title", "max_length": 60}]
+            results = apply_rules([table, ordinary, empty, broken, pdf], rules)
+            self.assertEqual(results[0][0], "보고서_ 계획_안.hwpx")
+            self.assertEqual(results[1][0], "첫 제목.hwpx")
+            self.assertIsNotNone(results[2][1])
+            self.assertIsNotNone(results[3][1])
+            self.assertEqual(results[4][0], "file.pdf")
+            self.assertIn("title_unsupported", results[4][2])
+            template = apply_rules([table, pdf], [{"kind": "template", "dept": "기획", "digits": 2}],
+                                   today=datetime(2026, 10, 31))
+            self.assertEqual(template[0][0], "20261031_기획_보고서_ 계획_안.hwpx")
+            self.assertTrue(template[1][0].endswith("_기획_file.pdf"))
+            with self.assertRaises(RuleError):
+                validate_rules([{"kind": "template", "template": "{wat}"}])
+
     def test_split_name(self):
         self.assertEqual(split_name("a.b.hwpx"), ("a.b", ".hwpx"))
         self.assertEqual(split_name(".bashrc"), (".bashrc", ""))
@@ -188,6 +221,27 @@ class ExecutorTests(unittest.TestCase):
         self.assertEqual(len(back["done"]), 2)
         self.assertEqual(self.listing(), ["6C1D56A5.JPG", "8AA3A713.JPG"])
         self.assertTrue(self.history.get(result["run_id"])["undone"])
+
+    def test_folder_and_child_file_apply_undo_preserve_hash(self):
+        folder = self.root / "기존 폴더"
+        folder.mkdir()
+        child = folder / "a.txt"
+        child.write_text("원본 내용", encoding="utf-8")
+        before = hashlib.sha256(child.read_bytes()).hexdigest()
+        entries = [Entry.from_path(folder), Entry.from_path(child)]
+        # 폴더와 안쪽 파일 이름을 함께 바꾼다(안쪽 새 이름은 옛 폴더 기준으로 계산됨).
+        plan = build_plan(entries, [], overrides={entries[0].id: "새 폴더", entries[1].id: "b.txt"})
+        self.assertEqual([item["status"] for item in plan["items"]], ["ok", "ok"])
+        result = execute_plan(plan, self.history)
+        self.assertEqual(result["failed"], [])
+        self.assertTrue((self.root / "새 폴더" / "b.txt").is_file())
+        self.assertFalse(folder.exists())
+        self.assertEqual(hashlib.sha256((self.root / "새 폴더" / "b.txt").read_bytes()).hexdigest(), before)
+        back = undo(self.history, result["run_id"])
+        self.assertEqual(len(back["done"]), 2)
+        self.assertEqual(back["failed"], [])
+        self.assertTrue(child.is_file())
+        self.assertEqual(hashlib.sha256(child.read_bytes()).hexdigest(), before)
 
     def test_swap_chain_and_case_only(self):
         e = self.make("a.txt", "b.txt", "c.txt")

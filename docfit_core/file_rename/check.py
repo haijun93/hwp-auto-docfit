@@ -48,7 +48,7 @@ def build_plan(entries, rules, *, overrides=None, excluded=(), exists=os.path.le
     for entry, (new_name, error, warnings) in zip(entries, results):
         item = dict(id=entry.id, old_path=entry.path, old_name=entry.name, new_name=new_name, new_path=None,
                     status="ok", reason=None, warnings=sorted(warnings), overridden=entry.id in overrides,
-                    fingerprint=list(entry.fingerprint()))
+                    fingerprint=list(entry.fingerprint()), is_folder=entry.is_folder)
         if entry.id in overrides:
             item["new_name"] = new_name = overrides[entry.id]
         if entry.id in excluded:
@@ -66,11 +66,12 @@ def build_plan(entries, rules, *, overrides=None, excluded=(), exists=os.path.le
             else:
                 if len(item["new_path"]) >= LONG_PATH_WARN:
                     item["warnings"].append("long_path")
-                old_ext, new_ext = entry.ext.lower(), os.path.splitext(new_name)[1].lower()
-                if old_ext != new_ext:
-                    item["warnings"].append("ext_changed")
-                if old_ext in EXECUTABLE_EXTS or new_ext in EXECUTABLE_EXTS:
-                    item["warnings"].append("executable")
+                if not entry.is_folder:  # 폴더는 확장자 개념이 없다
+                    old_ext, new_ext = entry.ext.lower(), os.path.splitext(new_name)[1].lower()
+                    if old_ext != new_ext:
+                        item["warnings"].append("ext_changed")
+                    if old_ext in EXECUTABLE_EXTS or new_ext in EXECUTABLE_EXTS:
+                        item["warnings"].append("executable")
         items.append(item)
     _mark_conflicts(items, exists)
     summary = {status: 0 for status in ("ok", "unchanged", "conflict", "invalid", "skipped")}
