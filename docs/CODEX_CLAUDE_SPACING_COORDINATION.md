@@ -543,6 +543,13 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 
 ## Codex 결과 보고 — OpenOffice 벤치마킹 (2026-10-26)
 
+## Codex 결과 보고 — OPT2 카드 제외 옵션 (2026-10-31)
+
+- 담당 범위는 OPT2 작업 방식 카드 3개 옵션 키·의미 변경이다. W1~W3 및 Gemini G1~G3 결과에는 손대지 않았다.
+- 새 키는 settings schema, stage selection, Python/Tk/Web 브리지와 Flutter 카드에 연결했다. 옛 키 반전 마이그레이션은 `docfit_core.config_store`에 두고 `card_options_rev=2`를 기록한다.
+- 기본값은 현재 동작을 보존한다: 줄 간격 제외 off, 자간 카드 페이지 맞춤 제외 on, 자간 초기화 제외 off.
+- Python·Flutter 전체 검사 및 사용자 지정 github push 결과는 작업 종료 후 이어 기록한다.
+
 - 사용자 신규 지시로 docs/OPENOFFICE_BENCHMARK_REPORT.md 작성. 이음오피스와 Apache OpenOffice를 구분하고 6탭 공통 스타일·이력·필터 설계 및 단계별 검증 게이트를 제안했다.
 - 외부 고정 SHA 소스·공식 UNO 문서와 현재 HEAD 2c164c8 구현을 대조. 1초대 실행은 실측 달성이 아닌 목표로 정정했다.
 - W1~W3는 현황판의 기존 완료/판정 기록을 보존했다. 앱 코드·사용자 원본·COM 변경 및 실행 없음.

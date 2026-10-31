@@ -258,19 +258,20 @@ class BrowserApiTests(unittest.TestCase):
 
     def test_page_fit_card_runs_page_fit_only_and_keeps_spacing_card_options(self):
         gui = _FakeGui()
-        gui.spacing_enabled_var, gui.spacing_page_fit_var = _Var(True), _Var(False)
+        gui.spacing_enabled_var, gui.spacing_exclude_pagefit_var = _Var(True), _Var(True)
         gui.page_range_var = _Var(False)
         gui._범위_상태_갱신 = lambda: None
         seen = []
-        gui.작업시작 = lambda mode: seen.append((mode, gui.spacing_enabled_var.get(), gui.spacing_page_fit_var.get()))
+        gui.spacing_exclude_reset_var = _Var(False)
+        gui.작업시작 = lambda mode: seen.append((mode, gui.spacing_enabled_var.get(), gui.spacing_exclude_pagefit_var.get()))
         bridge = _bridge(gui)
         bridge.get_state = lambda: {'mode': 'pagefit' if bridge._page_fit_card and gui.selected_mode.get() == 'spacing' else gui.selected_mode.get()}
         self.assertEqual(bridge.set_mode('pagefit')['mode'], 'pagefit')
         self.assertEqual(gui.selected_mode.get(), 'spacing')
         bridge._start_legacy('pagefit')
         # 실행할 때만 '자간 끔·쪽 맞춤 켬'이고, 자간 정리 카드 설정은 그대로 돌아온다.
-        self.assertEqual(seen, [('spacing', False, True)])
-        self.assertEqual((gui.spacing_enabled_var.get(), gui.spacing_page_fit_var.get()), (True, False))
+        self.assertEqual(seen, [('spacing', False, False)])
+        self.assertEqual((gui.spacing_enabled_var.get(), gui.spacing_exclude_pagefit_var.get()), (True, True))
         self.assertEqual(bridge.set_mode('spacing')['mode'], 'spacing')
         with self.assertRaises(ValueError):
             bridge.set_mode('page_fit')
@@ -430,12 +431,12 @@ class BrowserApiTests(unittest.TestCase):
         # 세부 작업에서 켜도 카드 값이 같이 바뀐다.
         self.assertTrue(bridge.set_stage("reset_spacing", True)["reset_spacing"])
         # 변경 감시 변수가 있으면 그 변수로 바꾼다(앱이 세부 작업 값과 설정 파일을 함께 바꿈).
-        gui.reset_spacing_var = _Var(True)
+        gui.spacing_exclude_reset_var = _Var(False)
         bridge.set_reset_spacing(False)
-        self.assertFalse(gui.reset_spacing_var.get())
+        self.assertTrue(gui.spacing_exclude_reset_var.get())
         gui.running = True
         bridge.set_reset_spacing(True)
-        self.assertFalse(gui.reset_spacing_var.get())
+        self.assertTrue(gui.spacing_exclude_reset_var.get())
 
     def test_spacing_card_toggles_table_spacing(self):
         # '자간 정리' 카드의 '표 내 자간 정리'는 설정 table_spacing(표 안 문장 자간조정)과 같은 값이다.
@@ -472,13 +473,13 @@ class BrowserApiTests(unittest.TestCase):
         gui.unify_quick_mode_var = _Var(True)
         bridge = _bridge(gui)
         self.assertEqual(bridge.get_state()["card_options"],
-                         {"spacing_enabled": True, "spacing_page_fit": False,
-                          "all_exclude_pagefit": False, "all_linespacing": True, "unify_exclude_tables": False,
+                         {"spacing_enabled": True, "spacing_exclude_pagefit": True, "spacing_exclude_reset": False,
+                          "all_exclude_pagefit": False, "all_exclude_linespacing": False, "unify_exclude_tables": False,
                           "unify_exclude_spacing": False, "unify_exclude_pagefit": False,
                           "unify_keep_layout": False, "unify_quick_mode": True})
-        gui.all_linespacing_var = _Var(True)
-        state = bridge.set_card_option("all_linespacing", False)
-        self.assertEqual((state["mode"], state["card_options"]["all_linespacing"]), ("all", False))
+        gui.all_exclude_linespacing_var = _Var(False)
+        state = bridge.set_card_option("all_exclude_linespacing", True)
+        self.assertEqual((state["mode"], state["card_options"]["all_exclude_linespacing"]), ("all", True))
         for name in ("all_exclude_pagefit_var", "unify_exclude_tables_var", "unify_exclude_spacing_var",
                      "unify_exclude_pagefit_var"):
             setattr(gui, name, _Var(False))
