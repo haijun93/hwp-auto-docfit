@@ -4,11 +4,14 @@ import 'file_rename_api.dart';
 
 const _keyLabels = {
   'find': '찾을 글자',
-  'to': '바꿀 글자',
+  'to': r'바꿀 글자 (${start=1,increment=1,padding=3} 번호 · $YYYY$MM$DD 날짜 · ${rstringalnum=8} 무작위 · 정규식 $1)',
   'regex': '정규식',
   'case': '대소문자 구분',
   'count': '바꿀 횟수',
-  'text': '넣을 글자 ({orig} 원래 이름 · {folder} 폴더 · {date} 수정일)',
+  'text': r'넣을 글자 ({orig} 원래 이름 · {folder} 폴더 · {date} 수정일 · ${start=1,padding=3} 번호 · $YYYY$MM$DD)',
+  'names': '새 이름(한 줄에 하나, 목록 순서대로)',
+  'keep_ext': '확장자는 그대로 두기',
+  'width': '전각·반각',
   'position': '위치',
   'sep': '구분 문자',
   'source': '날짜 기준',
@@ -57,7 +60,15 @@ Map<String, String> _choices(String kind, String key) {
     case 'underscore':
       return {'keep': '그대로', 'to_space': '밑줄 → 공백', 'from_space': '공백 → 밑줄'};
     case 'mode':
-      return {'lower': '소문자', 'upper': '대문자', if (kind == 'case') 'title': '첫 글자 대문자'};
+      return {
+        'lower': '소문자',
+        'upper': '대문자',
+        if (kind == 'case') 'title': '낱말마다 첫 글자 대문자',
+        if (kind == 'case') 'capitalize': '맨 앞 글자만 대문자',
+        if (kind == 'case') 'sentence': '문장형(맨 앞만 대문자)',
+      };
+    case 'width':
+      return {'keep': '그대로', 'half': '전각 → 반각(Ａ１ → A1)', 'full': '반각 → 전각'};
   }
   return const {};
 }
@@ -127,8 +138,14 @@ class _RuleEditorDialogState extends State<_RuleEditorDialog> {
     return TextField(
       key: ValueKey('rule-field-$key'),
       controller: _controller(key),
-      decoration: InputDecoration(labelText: label),
-      keyboardType: defaultValue is int ? TextInputType.number : TextInputType.text,
+      decoration: InputDecoration(labelText: label, alignLabelWithHint: key == 'names'),
+      keyboardType: defaultValue is int
+          ? TextInputType.number
+          : key == 'names'
+              ? TextInputType.multiline
+              : TextInputType.text,
+      minLines: key == 'names' ? 6 : 1,
+      maxLines: key == 'names' ? 14 : 1,
     );
   }
 

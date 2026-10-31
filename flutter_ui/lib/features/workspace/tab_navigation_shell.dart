@@ -98,7 +98,7 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
     '다이어그램',
     '마인드맵',
     '그림판',
-    '파일이름',
+    '파일명 일괄변경',
     '타임머신',
     // 파일변환은 항상 맨 끝(2026-10-30 사용자 지시).
     '파일변환',

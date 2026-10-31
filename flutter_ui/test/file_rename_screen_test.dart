@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:docfit_ui/features/file_rename/file_rename_api.dart';
@@ -151,8 +152,56 @@ void main() {
     expect(find.text('공문서 이름 틀'), findsOneWidget);
   });
 
+  testWidgets('충돌 처리 선택이 미리보기에 실리고, 바뀌는 것만 보기·이름 목록 복사', (tester) async {
+    final backend = _FakeBackend();
+    final copied = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') copied.add('${(call.arguments as Map)['text']}');
+      return null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+    await _pump(tester, backend);
+    await tester.tap(find.byKey(const ValueKey('rename-add-files')));
+    await tester.pumpAndSettle(const Duration(milliseconds: 300));
+    expect(backend.lastPreview?['on_conflict'] ?? 'block', 'block');
+    await tester.tap(find.byKey(const ValueKey('rename-on-conflict')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('이름이 겹치면 (2)·(3) 붙이기').last);
+    await tester.pumpAndSettle(const Duration(milliseconds: 300));
+    expect(backend.lastPreview!['on_conflict'], 'number');
+    // 규칙이 없으면 모두 '그대로' → 바뀌는 것만 보기에서 목록이 빈다.
+    expect(find.byKey(const ValueKey('rename-row-a')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('rename-only-changed')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('rename-row-a')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('rename-copy-list')));
+    await tester.pumpAndSettle();
+    expect(copied.single, startsWith('원래 이름\t새 이름\n6C1D56A5.JPG\t6C1D56A5.JPG'));
+  });
+
+  testWidgets('이름 목록 붙여넣기 규칙: 여러 줄 입력이 그대로 실린다', (tester) async {
+    final backend = _FakeBackend();
+    await _pump(tester, backend);
+    await tester.tap(find.byKey(const ValueKey('rename-add-files')));
+    await tester.pumpAndSettle(const Duration(milliseconds: 300));
+    await tester.tap(find.byKey(const ValueKey('rename-add-rule')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('이름 목록 붙여넣기(엑셀·메모장 줄)').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('rule-field-names')), '보고서\n붙임1');
+    await tester.tap(find.text('확인'));
+    await tester.pumpAndSettle(const Duration(milliseconds: 300));
+    final rule = (backend.lastPreview!['rules'] as List).single as Map;
+    expect(rule['kind'], 'names_list');
+    expect(rule['names'], '보고서\n붙임1');
+    expect(find.textContaining('2줄'), findsOneWidget);
+  });
+
   test('규칙 요약 문구', () {
     expect(ruleSummary({'kind': 'replace', 'find': 'IMG_', 'to': ''}), "'IMG_' → ''");
     expect(ruleSummary({'kind': 'number_shift', 'delta': -1, 'which': 'first'}), '첫 번호 -1');
+    expect(ruleSummary({'kind': 'case', 'mode': 'capitalize'}), '맨 앞 글자만 대문자');
+    expect(ruleSummary({'kind': 'case', 'mode': 'sentence'}), '문장형(맨 앞만 대문자)');
+    expect(ruleSummary({'kind': 'ext_case', 'mode': 'lower'}), '소문자');
   });
 }

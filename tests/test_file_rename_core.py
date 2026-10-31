@@ -47,7 +47,7 @@ class RuleTests(unittest.TestCase):
             self.assertIn("title_unsupported", results[4][2])
             template = apply_rules([table, pdf], [{"kind": "template", "dept": "기획", "digits": 2}],
                                    today=datetime(2026, 10, 31))
-            self.assertEqual(template[0][0], "20261031_기획_보고서_ 계획_안.hwpx")
+            self.assertEqual(template[0][0], datetime.fromtimestamp(table.mtime).strftime("%Y%m%d") + "_기획_보고서_ 계획_안.hwpx")
             self.assertTrue(template[1][0].endswith("_기획_file.pdf"))
             with self.assertRaises(RuleError):
                 validate_rules([{"kind": "template", "template": "{wat}"}])

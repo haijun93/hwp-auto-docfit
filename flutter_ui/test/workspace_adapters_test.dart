@@ -30,7 +30,7 @@ void main() {
     expect(find.text('표그림판'), findsOneWidget);
     expect(find.text('다이어그램'), findsOneWidget);
     expect(find.text('마인드맵'), findsOneWidget);
-    expect(find.text('파일이름'), findsOneWidget);
+    expect(find.text('파일명 일괄변경'), findsOneWidget);
     expect(find.text('타임머신'), findsOneWidget);
     expect(find.text('파일변환'), findsOneWidget);
 
@@ -40,7 +40,8 @@ void main() {
     expect(currentTab, 8);
     expect(find.text('FileConversionContent'), findsOneWidget);
 
-    // Switch back to Tab 0 (문서편집)
+    // Switch back to Tab 0 (문서편집) — 탭 이름이 길어져 좁은 창에서는 탭 줄을 다시 밀어야 보인다.
+    await tester.ensureVisible(find.text('문서편집'));
     await tester.tap(find.text('문서편집'));
     await tester.pumpAndSettle();
     expect(currentTab, 0);

@@ -105,8 +105,9 @@ const ruleKinds = <RuleKind>[
   RuleKind('strip_result_suffix', '결과 접미사 지우기', {'to': ''}),
   RuleKind('doc_title', '문서 제목으로', {'position': 'replace', 'sep': '_', 'max_length': 60}),
   RuleKind('template', '공문서 이름 틀', {'template': '{date}_{dept}_{title}', 'dept': '', 'digits': 1, 'max_length': 60}),
-  RuleKind('cleanup', '공백·밑줄 정리', {'nfc': true, 'collapse_spaces': true, 'underscore': 'keep', 'strip': true}),
+  RuleKind('cleanup', '공백·밑줄·전각 정리', {'nfc': true, 'collapse_spaces': true, 'underscore': 'keep', 'strip': true, 'width': 'keep'}),
   RuleKind('case', '대/소문자', {'mode': 'lower'}),
+  RuleKind('names_list', '이름 목록 붙여넣기(엑셀·메모장 줄)', {'names': '', 'keep_ext': true}),
   RuleKind('ext_case', '확장자 대/소문자', {'mode': 'lower'}),
   RuleKind('ext_replace', '확장자 바꾸기', {'ext': 'txt'}),
   RuleKind('ext_add', '확장자 덧붙이기', {'ext': 'bak'}),
@@ -141,9 +142,18 @@ String ruleSummary(Map<String, Object?> rule) {
     case 'ext_replace':
     case 'ext_add':
       return '.${'${rule['ext']}'.replaceFirst('.', '')}';
+    case 'names_list':
+      final lines = '${rule['names']}'.split('\n').where((l) => l.trim().isNotEmpty).length;
+      return '$lines줄 · ${rule['keep_ext'] == false ? '확장자까지' : '확장자 유지'}';
     case 'case':
     case 'ext_case':
-      return rule['mode'] == 'upper' ? '대문자' : rule['mode'] == 'title' ? '첫 글자 대문자' : '소문자';
+      return const {
+            'upper': '대문자',
+            'title': '낱말마다 첫 글자 대문자',
+            'capitalize': '맨 앞 글자만 대문자',
+            'sentence': '문장형(맨 앞만 대문자)',
+          }[rule['mode']] ??
+          '소문자';
     default:
       return '';
   }

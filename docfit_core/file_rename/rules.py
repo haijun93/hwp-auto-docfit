@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import os
 import re
+import secrets
+import string
+import uuid
 import unicodedata
 
 from .datetime_rules import entry_datetime, format_datetime, read_exif_datetime
@@ -78,16 +81,72 @@ def _scoped(state, scope, func):
 
 # ── 규칙 정의: (검증 함수, 적용 함수). 검증은 정규화한 옵션 dict를 돌려준다. ─────────────
 
+# ── 공통 변수(PowerRename 문법 + 앱 변수) ─────────────────────────────────
+# ${start=1,increment=1,padding=3}  번호(목록 순서), ${rstringalnum=8}·${rstringalpha=8}·${rstringdigit=8}·${ruuidv4}
+# $YYYY $YY $MM $DD $hh $mm $ss $fff  수정 시각, $$ = $ 글자, {orig}·{folder}·{date} 앱 변수
+_COUNTER = re.compile(r"\$\{((?:start|increment|padding)=-?\d{1,9}(?:,(?:start|increment|padding)=-?\d{1,9})*)?\}")
+_RANDOM = re.compile(r"\$\{(rstringalnum|rstringalpha|rstringdigit)=(\d{1,3})\}|\$\{ruuidv4\}")
+_DATE_TOKEN = re.compile(r"\$(YYYY|YY|MM|DD|hh|mm|ss|fff)")
+_ALPHABETS = {"rstringalnum": string.ascii_letters + string.digits, "rstringalpha": string.ascii_letters,
+              "rstringdigit": string.digits}
+
+
+def _regex_groups(text):
+    r"""PowerRename처럼 $1·$2 …를 정규식 묶음으로 받는다(\1·\g<이름>도 그대로, $$1은 글자 $1)."""
+    return re.sub(r"\$\$|\$(\d{1,2})", lambda m: m.group(0) if m.group(1) is None else f"\\g<{m.group(1)}>", text)
+
+
+def expand_vars(text, ctx):
+    entry = ctx["entry"]
+    position = ctx.get("position", 0)
+
+    def counter(match):
+        opts = dict(start=0, increment=1, padding=0)
+        for part in filter(None, (match.group(1) or "").split(",")):
+            key, value = part.split("=")
+            opts[key] = int(value)
+        value = opts["start"] + position * opts["increment"]
+        return (("-" if value < 0 else "") + str(abs(value)).zfill(max(0, min(opts["padding"], 12))))
+
+    def random_text(match):
+        if match.group(0) == "${ruuidv4}":
+            return str(uuid.uuid4())
+        n = min(int(match.group(2)), 64)
+        return "".join(secrets.choice(_ALPHABETS[match.group(1)]) for _ in range(n))
+
+    moment = None
+
+    def date_token(match):
+        nonlocal moment
+        if moment is None:
+            moment = entry_datetime(entry, "mtime", today=ctx.get("today"))[0]
+        token = match.group(1)
+        if token == "fff":
+            return f"{moment.microsecond // 1000:03d}"
+        return format_datetime(moment, token)
+
+    text = text.replace("$$", "\x00")
+    text = _COUNTER.sub(counter, text)
+    text = _RANDOM.sub(random_text, text)
+    text = _DATE_TOKEN.sub(date_token, text)
+    if "{" in text:
+        text = (text.replace("{orig}", entry.stem).replace("{folder}", os.path.basename(entry.folder))
+                .replace("{date}", format_datetime(entry_datetime(entry, "mtime", today=ctx.get("today"))[0],
+                                                   "YYYYMMDD")))
+    return text.replace("\x00", "$")
+
+
 def _v_replace(spec):
     find = _str(spec, "find", allow_empty=False)
     regex = _bool(spec, "regex", False)
     case = _bool(spec, "case", True)
+    to = _str(spec, "to")
     if regex:
         try:
-            re.compile(find)
+            re.compile(find).sub(_regex_groups(to), "")  # 없는 묶음($3)·잘못된 역슬래시도 여기서 거른다
         except re.error as error:
             raise RuleError(f"정규식 오류: {error}") from None
-    return dict(find=find, to=_str(spec, "to"), regex=regex, case=case,
+    return dict(find=find, to=to, regex=regex, case=case,
                 count=_choice(spec, "count", "all", ("all", "first")),
                 scope=_choice(spec, "scope", "stem", ("stem", "ext", "name")))
 
@@ -96,8 +155,11 @@ def _a_replace(state, opt, ctx):
     flags = 0 if opt["case"] else re.IGNORECASE
     pattern = re.compile(opt["find"] if opt["regex"] else re.escape(opt["find"]), flags)
     count = 1 if opt["count"] == "first" else 0
-    replacement = opt["to"] if opt["regex"] else opt["to"].replace("\\", "\\\\")
-    return _scoped(state, opt["scope"], lambda text: pattern.sub(replacement, text, count=count))
+    if opt["regex"]:
+        to = expand_vars(_regex_groups(opt["to"]), ctx)
+    else:
+        to = expand_vars(opt["to"], ctx).replace("\\", "\\\\")
+    return _scoped(state, opt["scope"], lambda text: pattern.sub(to, text, count=count))
 
 
 def _v_add(spec):
@@ -106,10 +168,7 @@ def _v_add(spec):
 
 
 def _a_add(state, opt, ctx):
-    entry = ctx["entry"]
-    text = (opt["text"].replace("{orig}", entry.stem).replace("{folder}", os.path.basename(entry.folder))
-            .replace("{date}", format_datetime(entry_datetime(entry, "mtime")[0], "YYYYMMDD")))
-    return _place(state[0], text, opt["position"], opt["sep"]), state[1]
+    return _place(state[0], expand_vars(opt["text"], ctx), opt["position"], opt["sep"]), state[1]
 
 
 def _v_none(spec):
@@ -274,13 +333,24 @@ def _a_date(state, opt, ctx):
 def _v_cleanup(spec):
     return dict(nfc=_bool(spec, "nfc", True), collapse_spaces=_bool(spec, "collapse_spaces", True),
                 underscore=_choice(spec, "underscore", "keep", ("keep", "to_space", "from_space")),
-                strip=_bool(spec, "strip", True))
+                strip=_bool(spec, "strip", True), width=_choice(spec, "width", "keep", ("keep", "half", "full")))
+
+
+def _to_width(text, width):
+    """전각 영숫자·기호(！～)와 전각 공백을 반각으로, 또는 그 반대로. 한글은 그대로."""
+    if width == "half":
+        return "".join(" " if c == "\u3000" else chr(ord(c) - 0xFEE0) if "\uff01" <= c <= "\uff5e" else c
+                       for c in text)
+    if width == "full":
+        return "".join("\u3000" if c == " " else chr(ord(c) + 0xFEE0) if "!" <= c <= "~" else c for c in text)
+    return text
 
 
 def _a_cleanup(state, opt, ctx):
     stem = state[0]
     if opt["nfc"]:
         stem = unicodedata.normalize("NFC", stem)
+    stem = _to_width(stem, opt.get("width", "keep"))
     if opt["underscore"] == "to_space":
         stem = stem.replace("_", " ")
     elif opt["underscore"] == "from_space":
@@ -295,12 +365,44 @@ def _a_cleanup(state, opt, ctx):
 
 
 def _v_case(spec):
-    return dict(mode=_choice(spec, "mode", "lower", ("lower", "upper", "title")))
+    return dict(mode=_choice(spec, "mode", "lower", ("lower", "upper", "title", "capitalize", "sentence")))
 
 
 def _a_case(state, opt, ctx):
-    stem = state[0]
-    return (stem.lower() if opt["mode"] == "lower" else stem.upper() if opt["mode"] == "upper" else stem.title()), state[1]
+    stem, mode = state[0], opt["mode"]
+    if mode == "lower":
+        stem = stem.lower()
+    elif mode == "upper":
+        stem = stem.upper()
+    elif mode == "title":  # 낱말마다 첫 글자 대문자
+        stem = stem.title()
+    elif mode == "capitalize":  # 맨 앞 글자만 대문자(나머지 그대로)
+        stem = stem[:1].upper() + stem[1:]
+    else:  # sentence: 맨 앞만 대문자, 나머지 소문자
+        stem = stem[:1].upper() + stem[1:].lower()
+    return stem, state[1]
+
+
+# ── 이름 목록 붙여넣기(DarkNamer: 엑셀 열·메모장 줄을 차례로 새 이름으로) ───────────────
+def _v_names_list(spec):
+    names = _str(spec, "names", allow_empty=False, max_len=200000)
+    lines = [line.strip() for line in names.replace("\r", "").split("\n")]
+    while lines and not lines[-1]:
+        lines.pop()
+    if not lines:
+        raise RuleError("새 이름을 한 줄에 하나씩 넣어 주세요.")
+    return dict(names=names, lines=lines, keep_ext=_bool(spec, "keep_ext", True))
+
+
+def _a_names_list(state, opt, ctx):
+    position = ctx.get("position", 0)
+    if position >= len(opt["lines"]) or not opt["lines"][position]:
+        ctx["warnings"].add("names_short")
+        return state
+    line = opt["lines"][position]
+    if opt["keep_ext"]:
+        return line, state[1]
+    return split_name(line)
 
 
 # 앱 결과 파일 접미사. 새 접미사가 생기면 여기만 고친다.
@@ -402,7 +504,10 @@ RULE_KINDS = {
     "strip_result_suffix": (_v_strip_suffix, _a_strip_suffix),
     "doc_title": (_v_doc_title, _a_doc_title),
     "template": (_v_template, _a_template),
+    "names_list": (_v_names_list, _a_names_list),
 }
+# 폴더에는 확장자 규칙을 적용하지 않는다(폴더 이름 전체를 이름으로 본다).
+EXT_RULES = {"ext_del", "ext_add", "ext_replace", "ext_case"}
 MAX_RULES = 50
 
 
@@ -437,12 +542,12 @@ def apply_rules(entries, rules, *, today=None, exif_reader=None):
     results = []
     title_cache, title_errors = {}, set()
     for position, entry in enumerate(entries):
-        state = (entry.stem, entry.ext)
+        state = (entry.name, "") if entry.is_folder else (entry.stem, entry.ext)
         ctx = dict(entry=entry, today=today, exif_reader=exif_reader, warnings=set(), number=position + 1,
-                   title_cache=title_cache, title_errors=title_errors)
+                   title_cache=title_cache, title_errors=title_errors, position=position)
         try:
             for index, rule in enumerate(rules):
-                if entry.is_folder:
+                if entry.is_folder and rule["kind"] in EXT_RULES:
                     continue
                 if index in numbers:
                     ctx["number"] = numbers[index][position]
