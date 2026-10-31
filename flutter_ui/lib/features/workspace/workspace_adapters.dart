@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/api/abbreviation_api.dart' show ApiCall;
 import '../file_rename/file_rename_screen.dart';
+import '../timemachine/timemachine_screen.dart';
 import '../flows/flow_editor_screen.dart';
 import '../table_sketch/table_sketch_screen.dart';
 import '../table_units/table_units_screen.dart';
@@ -100,7 +101,20 @@ class FileRenameAdapter extends StatelessWidget {
   );
 }
 
-/// Workspace adapter for Tab 8 (always last): File Format Conversion & Merge
+/// Workspace adapter for Tab 8: 타임머신.
+class TimemachineAdapter extends StatelessWidget {
+  const TimemachineAdapter({super.key, required this.api});
+
+  final ApiCall api;
+
+  @override
+  Widget build(BuildContext context) => KeyedSubtree(
+    key: const ValueKey('tab-timemachine-adapter'),
+    child: TimemachineScreen(api: api),
+  );
+}
+
+/// Workspace adapter for Tab 9 (always last): File Format Conversion & Merge
 class FileConversionAdapter extends StatelessWidget {
   const FileConversionAdapter({super.key, required this.child});
 
@@ -146,6 +160,28 @@ class IntegratedWorkspace extends StatelessWidget {
       fileConversion: FileConversionAdapter(child: fileConversionWidget),
       paint: PaintAdapter(api: api),
       fileRename: FileRenameAdapter(api: api),
+      timemachine: _LazyTimemachineAdapter(api: api),
     );
+  }
+}
+
+class _LazyTimemachineAdapter extends StatefulWidget {
+  const _LazyTimemachineAdapter({required this.api});
+  final ApiCall api;
+
+  @override
+  State<_LazyTimemachineAdapter> createState() => _LazyTimemachineAdapterState();
+}
+
+class _LazyTimemachineAdapterState extends State<_LazyTimemachineAdapter> {
+  bool _visited = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = TickerMode.valuesOf(context).enabled;
+    if (active && !_visited) _visited = true;
+    return _visited
+        ? TimemachineAdapter(api: widget.api)
+        : const SizedBox.expand();
   }
 }

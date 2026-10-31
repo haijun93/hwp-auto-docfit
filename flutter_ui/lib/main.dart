@@ -161,7 +161,7 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
       unawaited(
         widget.api('set_drop_target', ['rename_files']).catchError((_) => null),
       );
-    } else if (lastTab == 2 || lastTab == 5 || lastTab == kTabFileRename) {
+    } else if (lastTab == 2 || lastTab == 5 || lastTab == kTabFileRename || lastTab == kTabTimemachine) {
       unawaited(
         widget.api('set_drop_target', ['documents']).catchError((_) => null),
       );
