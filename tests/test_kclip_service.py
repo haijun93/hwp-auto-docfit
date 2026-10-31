@@ -72,6 +72,18 @@ class KClipServiceTests(unittest.TestCase):
                                                 ("pin", {"id": 3, "pinned": False})])
         self.assertEqual(self.service.command("quit")["code"], "NOT_AVAILABLE")
 
+    def test_scheduled_pause_resumes_on_next_status_after_expiry(self):
+        import time
+        self.client.on = True
+        self.service._pause_file = Path(self.tmp.name) / "pause.json"
+        result = self.service.command("pause", {"minutes": 30})
+        self.assertEqual(result["cmd"], "pause")
+        self.assertTrue(self.service.command("status")["status"]["paused"])
+        self.service._pause_file.write_text('{"until": %s}' % (time.time() - 1), encoding="utf-8")
+        self.service.command("status")
+        self.assertEqual(self.client.requests[-1][0], "resume")
+        self.assertFalse(self.service._pause_file.exists())
+
     def test_disable_quits_and_removes_autostart(self):
         self.client.on = True
         result = self.service.command("disable")

@@ -6,7 +6,10 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import os
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -43,9 +46,33 @@ class KClipService:
         self._start = starter
         self._autostart = autostart
         self._bundled = bundled
+        self._pause_file = Path(tempfile.gettempdir()) / f"docfit-kclip-pause-{os.getpid()}.json"
+
+    def _pause_until(self, until=None):
+        try:
+            data = json.loads(self._pause_file.read_text(encoding="utf-8"))
+            expiry = float(data.get("until", 0))
+        except (OSError, ValueError, TypeError):
+            expiry = 0
+        if until is not None:
+            expiry = until
+            self._pause_file.write_text(json.dumps({"until": expiry}), encoding="utf-8")
+        if expiry and expiry <= time.time():
+            self._pause_file.unlink(missing_ok=True)
+            if self.client.running():
+                try:
+                    self.client.request("resume")
+                except kc.KAgentError:
+                    pass
+            return 0
+        return expiry
 
     def status(self):
+        expiry = self._pause_until()
         status = self.client.status_file() if self.client.running() else None
+        if status is not None and expiry:
+            status["paused"] = True
+            status["pause_until"] = expiry
         return dict(ok=True, running=bool(status), available=self._bundled() is not None, consent=CONSENT,
                     status=status or {})
 
@@ -109,12 +136,22 @@ class KClipService:
             "delete": ("delete", ("id",)),
             "pin": ("pin", ("id", "pinned")),
             "clear": ("clear", ("keep_pinned",)),
-            "pause": ("pause", ()),
+            "pause": ("pause", ("minutes",)),
             "resume": ("resume", ()),
             "settings_get": ("settings_get", ()),
             "settings_set": ("settings_set", ("settings",)),
         }
         if action not in forwards:
             return dict(ok=False, code="NOT_AVAILABLE", message="지원하지 않는 명령입니다.")
+        if action == "pause":
+            minutes = payload.get("minutes")
+            if minutes is not None:
+                try:
+                    minutes = max(1, min(1440, int(minutes)))
+                except (TypeError, ValueError):
+                    return dict(ok=False, code="KCLIP_PAUSE", message="일시정지 시간을 확인해 주세요.")
+                self._pause_until(time.time() + minutes * 60)
+        elif action == "resume":
+            self._pause_file.unlink(missing_ok=True)
         cmd, keys = forwards[action]
         return self._forward(cmd, payload, keys)
