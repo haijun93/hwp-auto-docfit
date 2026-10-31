@@ -2,6 +2,7 @@
 from dataclasses import asdict
 from pathlib import Path
 import threading
+import sys
 
 from docfit_app.abbreviation_service import AbbreviationService
 from docfit_app.api_contract import ServiceError, response
@@ -221,6 +222,12 @@ class ApplicationService:
             if getattr(self, '_rename_service', None) is None:
                 from .file_rename_service import FileRenameService
                 self._rename_service = FileRenameService(self.store._path.parent)
+            if args and args[0] == 'sendto_set':
+                from .file_rename_service import FileRenameService
+                enabled = bool(args[1].get('enabled')) if len(args) > 1 and isinstance(args[1], dict) else False
+                result = FileRenameService.set_sendto(enabled, executable=getattr(sys, 'executable', None))
+                self.store.update(lambda settings: settings.update(file_rename_sendto=enabled))
+                return result
             if args[0] == 'add_paths':  # 네이티브 실행기: Dart가 파일 선택 창으로 고른 경로
                 payload = args[1] if len(args) > 1 and isinstance(args[1], dict) else {}
                 paths = payload.get('paths')

@@ -77,17 +77,19 @@ Map<String, String> _choices(String kind, String key) {
 Future<Map<String, Object?>?> showRuleEditor(
   BuildContext context,
   Map<String, Object?> rule,
+  {List<Map<String, Object?>> mru = const []}
 ) {
   return showDialog<Map<String, Object?>>(
     context: context,
-    builder: (_) => _RuleEditorDialog(rule: rule),
+    builder: (_) => _RuleEditorDialog(rule: rule, mru: mru),
   );
 }
 
 class _RuleEditorDialog extends StatefulWidget {
-  const _RuleEditorDialog({required this.rule});
+  const _RuleEditorDialog({required this.rule, required this.mru});
 
   final Map<String, Object?> rule;
+  final List<Map<String, Object?>> mru;
 
   @override
   State<_RuleEditorDialog> createState() => _RuleEditorDialogState();
@@ -138,7 +140,22 @@ class _RuleEditorDialogState extends State<_RuleEditorDialog> {
     return TextField(
       key: ValueKey('rule-field-$key'),
       controller: _controller(key),
-      decoration: InputDecoration(labelText: label, alignLabelWithHint: key == 'names'),
+      decoration: InputDecoration(
+        labelText: label,
+        alignLabelWithHint: key == 'names',
+        suffixIcon: key == 'find' || key == 'to' ? PopupMenuButton<Map<String, Object?>>(
+          tooltip: '최근 입력',
+          icon: const Icon(Icons.history),
+          itemBuilder: (_) => [for (final pair in widget.mru)
+            PopupMenuItem(value: pair, child: Text('${pair['find']} → ${pair['to']}', maxLines: 1, overflow: TextOverflow.ellipsis))],
+          onSelected: (pair) => setState(() {
+            _controllers['find']?.text = '${pair['find'] ?? ''}';
+            _controllers['to']?.text = '${pair['to'] ?? ''}';
+            _value['find'] = pair['find'];
+            _value['to'] = pair['to'];
+          }),
+        ) : null,
+      ),
       keyboardType: defaultValue is int
           ? TextInputType.number
           : key == 'names'

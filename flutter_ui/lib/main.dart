@@ -146,6 +146,32 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
   final savedSidebarExpanded = ValueNotifier<bool?>(null);
   final workspace = GlobalKey<_WorkspaceState>();
   int lastTab = 0;
+  bool renameStartup = false;
+  late final void Function() _stopRenameStartup = watchWindowEvent(
+    'docfit-rename-startup',
+    () => unawaited(_loadRenameStartupPaths()),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadRenameStartupPaths());
+  }
+
+  Future<void> _loadRenameStartupPaths() async {
+    final result = await widget.api('take_rename_startup_paths', const []);
+    if (!mounted || result is! Map || result['ok'] != true) return;
+    final paths = result['paths'];
+    if (paths is! List || paths.isEmpty) return;
+    setState(() => renameStartup = true);
+    await widget.api('file_rename', ['add_argument_paths', {'paths': paths}]);
+  }
+
+  @override
+  void dispose() {
+    _stopRenameStartup();
+    super.dispose();
+  }
 
   /// 표그림판 탭에서는 끌어 놓은 사진을 칸 배경 그림으로, 그림판 탭에서는 배경 사진으로 받고,
   /// 나가면 문서 목록으로 되돌린다.
@@ -173,6 +199,7 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
   @override
   Widget build(BuildContext context) => IntegratedWorkspace(
     api: widget.api,
+    renameStartup: renameStartup,
     documentEditorWidget: Workspace(
       key: workspace,
       api: widget.api,

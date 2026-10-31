@@ -11,20 +11,42 @@ def _folder():
 
 
 def forward(files):
-    files = [str(Path(f).resolve()) for f in files if Path(f).is_file()]
+    rename, paths = split_rename_arguments(files)
+    files = [str(Path(f).resolve()) for f in paths if Path(f).is_file()]
     if not files:
         return
     folder = _folder()
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / (uuid.uuid4().hex + '.tmp')
-    path.write_text(json.dumps(files, ensure_ascii=False), encoding='utf-8')
+    path.write_text(json.dumps({'rename': rename, 'paths': files}, ensure_ascii=False), encoding='utf-8')
     path.replace(path.with_suffix('.json'))
 
 
+def split_rename_arguments(arguments):
+    """Separate `--rename <paths>` from ordinary document-open arguments."""
+    values = list(arguments or [])
+    if '--rename' not in values:
+        return False, values
+    index = values.index('--rename')
+    paths = values[index + 1:]
+    return True, [value for value in paths if isinstance(value, str) and not value.startswith('--')]
+
+
+def _deliver(gui, paths, rename=False):
+    if rename:
+        if hasattr(gui, '_file_rename_argument_paths'):
+            gui._file_rename_argument_paths(paths)
+        else:
+            gui._rename_startup_paths = list(getattr(gui, '_rename_startup_paths', [])) + list(paths)
+    else:
+        for value in paths:
+            if Path(value).is_file():
+                gui.파일추가(value)
+
+
 def start(gui):
-    for value in sys.argv[1:]:
-        if Path(value).is_file():
-            gui.파일추가(value)
+    rename, paths = split_rename_arguments(sys.argv[1:])
+    _deliver(gui, paths, rename)
 
     def poll():
         folder = _folder()
@@ -32,10 +54,10 @@ def start(gui):
             for path in sorted(folder.glob('*.json')):
                 try:
                     values = json.loads(path.read_text(encoding='utf-8'))
-                    if isinstance(values, list):
-                        for value in values:
-                            if isinstance(value, str):
-                                gui.파일추가(value)
+                    if isinstance(values, dict) and isinstance(values.get('paths'), list):
+                        _deliver(gui, values['paths'], values.get('rename') is True)
+                    elif isinstance(values, list):
+                        _deliver(gui, values)
                     path.unlink()
                 except (ValueError, UnicodeError):
                     # 깨진 요청을 격리하고 다음 정상 요청을 계속 처리한다.
