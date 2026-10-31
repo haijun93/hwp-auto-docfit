@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 
 
 
+import '../../core/api/live_link_api.dart';
 import '../../core/api/table_units_api.dart';
 
 import 'table_grid_preview.dart';
@@ -50,7 +51,8 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
 
   bool _loadingPreview = false;
 
-  bool _copying = false;
+  bool _copying = false;
+  bool _inserting = false;
 
 
 
@@ -660,6 +662,34 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
 
 
 
+  /// 3.0: 실행 중인 한/글 문서의 커서 위치에 바로 넣기(붙여넣기 한 번, Ctrl+Z로 되돌림).
+  Future<void> _insertTable() async {
+    final template = _selectedTemplate;
+    if (template == null || _inserting || _copying) return;
+    setState(() => _inserting = true);
+    try {
+      final result = await LiveLinkApi(widget.api).insertTableUnits({
+        'id': template.id,
+        'row_count': _currentRowCount,
+        'col_count': _currentColCount,
+        'fill': _selectedFill,
+        'cell_texts': Map<String, String>.from(_cellTexts),
+        'arrow': ?_arrow,
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        behavior: SnackBarBehavior.floating,
+        content: Text(result.ok
+            ? "'${result.title ?? '한/글 문서'}' 커서 위치에 넣었어요. 한/글에서 Ctrl+Z로 되돌릴 수 있어요."
+            : (result.message ?? '한/글에 넣지 못했어요.')),
+      ));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    } finally {
+      if (mounted) setState(() => _inserting = false);
+    }
+  }
+
   Future<void> _copyTable() async {
 
     if (_selectedTemplate == null || _copying) return;
@@ -2174,12 +2204,22 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
 
                 backgroundColor: const Color(0xff2563eb),
 
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 10),
 
               ),
 
               onPressed: (_loadingPreview || _copying) ? null : _copyTable,
 
+            ),
+            IconButton.filledTonal(
+              key: const Key('btnTopInsertTable'),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 30, height: 30),
+              tooltip: '한/글에 바로 넣기 (열린 문서의 커서 위치, Ctrl+Z로 되돌림)',
+              icon: _inserting
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.input_rounded, size: 18),
+              onPressed: (_loadingPreview || _copying || _inserting) ? null : _insertTable,
             ),
 
                         if (_cellTexts.isNotEmpty)

@@ -124,6 +124,7 @@ class IntegratedWorkspace extends StatelessWidget {
       initialIndex: initialIndex,
       onTabChanged: onTabChanged,
       trailing: trailing,
+      api: api,
       documentEditor: DocumentEditorAdapter(child: documentEditorWidget),
       tableTemplates: TableTemplatesAdapter(api: api),
       tableSketch: TableSketchAdapter(api: api),

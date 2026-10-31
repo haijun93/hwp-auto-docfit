@@ -110,6 +110,7 @@ void main() {
       final state = initialState();
       final commands = <String>[];
       Future<Object?> api(String name, List<Object?> args) async {
+        if (name == 'live_link') return args.first == 'status' ? {'ok': true, 'connected': false, 'code': 'NO_HANGUL', 'message': '한/글 없음'} : {'ok': true, 'title': '문서', 'undo_steps': 1};
         if (name == 'table_units') {
           return {
             'api_version': 1,
@@ -198,7 +199,8 @@ void main() {
       final calls = <String>[];
       final state = initialState();
       Future<Object?> api(String name, List<Object?> args) async {
-        calls.add(name);
+        if (name == 'live_link') return args.first == 'status' ? {'ok': true, 'connected': false} : {'ok': true, 'title': '문서', 'undo_steps': 1};
+        if (name != 'live_link') calls.add(name);
         if (name == 'add_files') {
           state['files'] = [
             {'name': '문서.hwpx', 'folder': r'C:\문서'},
@@ -304,7 +306,7 @@ void main() {
       {'name': '문서.hwp', 'folder': r'C:\문서'},
     ];
     Future<Object?> api(String name, List<Object?> args) async {
-      if (name != 'get_state') calls.add([name, ...args]);
+      if (name != 'get_state' && name != 'live_link') calls.add([name, ...args]);
       if (name == 'set_stage') {
         final stages = state['stages'] as List;
         (stages.firstWhere((s) => s['key'] == args[0]) as Map)['on'] = args[1];
@@ -385,7 +387,7 @@ void main() {
     ];
     state['include_spacing'] = true;
     Future<Object?> api(String name, List<Object?> args) async {
-      if (name != 'get_state') calls.add([name, ...args]);
+      if (name != 'get_state' && name != 'live_link') calls.add([name, ...args]);
       if (name == 'set_mode') {
         state['mode'] = state['include_spacing'] == true ? 'all' : 'format';
       }
@@ -429,7 +431,7 @@ void main() {
     ];
     state['reset_spacing'] = true;
     Future<Object?> api(String name, List<Object?> args) async {
-      if (name != 'get_state') calls.add([name, ...args]);
+      if (name != 'get_state' && name != 'live_link') calls.add([name, ...args]);
       if (name == 'set_reset_spacing') {
         state['reset_spacing'] = args.first;
         state['mode'] = 'spacing';
@@ -462,7 +464,7 @@ void main() {
     ];
     state['table_spacing'] = true;
     Future<Object?> api(String name, List<Object?> args) async {
-      if (name != 'get_state') calls.add([name, ...args]);
+      if (name != 'get_state' && name != 'live_link') calls.add([name, ...args]);
       if (name == 'set_table_spacing') {
         state['table_spacing'] = args.first;
         state['mode'] = 'spacing';
@@ -497,7 +499,7 @@ void main() {
     state['mode'] = 'all';
     state['exclude_tables'] = false;
     Future<Object?> api(String name, List<Object?> args) async {
-      if (name != 'get_state') calls.add([name, ...args]);
+      if (name != 'get_state' && name != 'live_link') calls.add([name, ...args]);
       if (name == 'set_exclude_tables') {
         state['exclude_tables'] = args.first;
         state['mode'] = 'all';
@@ -532,7 +534,7 @@ void main() {
     state['mode'] = 'unify';
     state['card_options'] = <String, Object?>{};
     Future<Object?> api(String name, List<Object?> args) async {
-      if (name != 'get_state') calls.add([name, ...args]);
+      if (name != 'get_state' && name != 'live_link') calls.add([name, ...args]);
       if (name == 'set_card_option') {
         (state['card_options'] as Map)[args[0]] = args[1];
       }
@@ -601,7 +603,7 @@ void main() {
     ];
     state['format_task'] = {'busy': false, 'file': ''};
     Future<Object?> api(String name, List<Object?> args) async {
-      if (name != 'get_state') calls.add([name, ...args]);
+      if (name != 'get_state' && name != 'live_link') calls.add([name, ...args]);
       if (name == 'format_profile') {
         return {
           'ok': true,
@@ -681,7 +683,7 @@ void main() {
       {'name': '문서.hwpx', 'folder': r'C:\문서'},
     ];
     Future<Object?> api(String name, List<Object?> args) async {
-      if (name != 'get_state') calls.add([name, ...args]);
+      if (name != 'get_state' && name != 'live_link') calls.add([name, ...args]);
       if (name == 'start') state['running'] = true;
       return Map<String, dynamic>.from(state);
     }
@@ -821,7 +823,8 @@ void main() {
               name != 'enable_close_guard' &&
               name != 'table_units' &&
               name != 'table_sketch' &&
-              name != 'flow_editor',
+              name != 'flow_editor' &&
+              name != 'live_link',
         ),
         ['get_abbreviations'],
       );
@@ -844,7 +847,7 @@ void main() {
       state['range'] = {'enabled': true, 'start': '5', 'end': '7'};
       final calls = <List<Object?>>[];
       Future<Object?> api(String name, List<Object?> args) async {
-        if (name != 'get_state') calls.add([name, ...args]);
+        if (name != 'get_state' && name != 'live_link') calls.add([name, ...args]);
         if (name == resetMethod) {
           state['files'] = resetMethod == 'next_job'
               ? []
@@ -934,7 +937,7 @@ void main() {
         holdPoll = false;
         return delayedPoll.future;
       }
-      if (name != 'get_state') calls.add([name, ...args]);
+      if (name != 'get_state' && name != 'live_link') calls.add([name, ...args]);
       if (name == 'set_mode') state['mode'] = args.first;
       if (name == 'start') state['running'] = true;
       return Map<String, dynamic>.from(state);
@@ -985,7 +988,7 @@ void main() {
       {'name': 'report.pdf', 'folder': r'C:\Docs'},
     ];
     Future<Object?> api(String name, List<Object?> args) async {
-      if (name != 'get_state') calls.add([name, ...args]);
+      if (name != 'get_state' && name != 'live_link') calls.add([name, ...args]);
       if (name == 'set_mode') state['mode'] = args.first;
       if (name == 'set_conversion_target') {
         state['conversion_target'] = args.first;
@@ -1034,7 +1037,7 @@ void main() {
       {'name': 'report.hwpx', 'folder': r'C:\Docs'},
     ];
     Future<Object?> api(String name, List<Object?> args) async {
-      if (name != 'get_state') calls.add([name, ...args]);
+      if (name != 'get_state' && name != 'live_link') calls.add([name, ...args]);
       if (name == 'set_mode') state['mode'] = args.first;
       if (name == 'set_conversion_target') {
         state['conversion_target'] = args.first;
@@ -1083,7 +1086,7 @@ void main() {
       {'name': 'report.hwpx', 'folder': r'C:\Docs'},
     ];
     Future<Object?> api(String name, List<Object?> args) async {
-      if (name != 'get_state') calls.add([name, ...args]);
+      if (name != 'get_state' && name != 'live_link') calls.add([name, ...args]);
       if (name == 'set_mode') state['mode'] = args.first;
       if (name == 'set_conversion_target') {
         state['conversion_target'] = args.first;

@@ -3,6 +3,7 @@ import 'package:docfit_ui/features/table_units/table_grid_preview.dart';
 import 'package:docfit_ui/features/table_units/table_units_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'dart:async';
 
 const samplePngBase64 =
     'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
@@ -159,6 +160,54 @@ void main() {
       calls.any((c) => c[0] == 'table_units' && c[1] == 'preview'),
       isTrue,
     );
+  });
+
+  testWidgets('표 템플릿 직접 삽입 payload·성공 메시지·진행 잠금', (tester) async {
+    final pending = Completer<Object?>();
+    final insertCalls = <List<Object?>>[];
+    Future<Object?> api(String name, List<Object?> args) async {
+      if (name == 'live_link') { insertCalls.add(args); return pending.future; }
+      final action = args[0] as String;
+      if (action == 'list') return envelope(sampleListData());
+      if (action == 'preview') return envelope(samplePreview());
+      return envelope({});
+    }
+    await pumpScreen(tester, api: api);
+    final button = find.byKey(const Key('btnTopInsertTable'));
+    await tester.tap(button);
+    await tester.pump();
+    expect(insertCalls, hasLength(1));
+    expect(insertCalls.single[0], 'insert');
+    final request = insertCalls.single[1] as Map;
+    expect(request['source'], 'table_units');
+      final data = request['data'] as Map;
+      expect(data.keys, containsAll(['id', 'row_count', 'col_count', 'fill', 'cell_texts']));
+      expect(data['id'], '0:1');
+      expect(data['row_count'], 3);
+      expect(data.containsKey('col_count'), isTrue);
+      expect(data['fill'], 'increment');
+      expect(data['cell_texts'], isEmpty);
+      expect(data['arrow'], isNull);
+    expect(tester.widget<IconButton>(button).onPressed, isNull);
+    await tester.tap(button, warnIfMissed: false);
+    expect(insertCalls, hasLength(1));
+    pending.complete({'ok': true, 'title': '보고서', 'undo_steps': 1});
+    await tester.pump();
+    expect(find.text("'보고서' 커서 위치에 넣었어요. 한/글에서 Ctrl+Z로 되돌릴 수 있어요."), findsOneWidget);
+  });
+
+  testWidgets('표 템플릿 삽입 실패 message 노출', (tester) async {
+    Future<Object?> api(String name, List<Object?> args) async {
+      if (name == 'live_link') return {'ok': false, 'message': '선택한 문서가 바뀌었습니다.'};
+      final action = args[0] as String;
+      if (action == 'list') return envelope(sampleListData());
+      if (action == 'preview') return envelope(samplePreview());
+      return envelope({});
+    }
+    await pumpScreen(tester, api: api);
+    await tester.tap(find.byKey(const Key('btnTopInsertTable')));
+    await tester.pump();
+    expect(find.text('선택한 문서가 바뀌었습니다.'), findsOneWidget);
   });
 
   testWidgets('검색창 검색어 필터링 (이름·분류 부분 일치) 및 분류 칩과 연동', (tester) async {

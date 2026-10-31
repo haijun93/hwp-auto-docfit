@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'dart:async';
 
 import 'package:docfit_ui/features/table_sketch/table_sketch_models.dart';
 import 'package:docfit_ui/features/table_sketch/table_sketch_painter.dart';
@@ -614,6 +615,38 @@ void main() {
       expect((savePayload['sketch'] as Map).containsKey('grid'), isTrue);
 
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('direct insert sends table JSON, displays error, and locks duplicate taps', (tester) async {
+      tester.view.physicalSize = const Size(1024, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final pending = Completer<Object?>();
+      final calls = <List<Object?>>[];
+      Future<Object?> api(String name, List<Object?> args) async {
+        if (name == 'live_link') { calls.add(args); return pending.future; }
+        if (name == 'table_sketch' && args[0] == 'preview') {
+          return {'ok': true, 'rows': 5, 'cols': 8, 'cells': [], 'warnings': []};
+        }
+        return {'ok': true};
+      }
+      await tester.pumpWidget(MaterialApp(home: TableSketchScreen(api: api)));
+      await tester.pumpAndSettle();
+      final button = find.byKey(const Key('sketchInsertButton'));
+      await tester.tap(button);
+      await tester.pump();
+      expect(calls, hasLength(1));
+        expect(calls.single[0], 'insert');
+      final request = calls.single[1] as Map;
+      expect(request['source'], 'table_sketch');
+      expect((request['data'] as Map).keys, containsAll(['grid', 'lines', 'texts']));
+      expect(tester.widget<OutlinedButton>(button).onPressed, isNull);
+      await tester.tap(button, warnIfMissed: false);
+      expect(calls, hasLength(1));
+      pending.complete({'ok': false, 'message': '한/글 문서가 없습니다.'});
+      await tester.pump();
+      expect(find.text('한/글 문서가 없습니다.'), findsOneWidget);
     });
 
     testWidgets(

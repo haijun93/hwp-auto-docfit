@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/api/abbreviation_api.dart' show ApiCall;
+import '../../core/api/live_link_api.dart';
 import 'table_sketch_api.dart';
 import 'table_sketch_models.dart';
 import 'dart:convert';
@@ -92,6 +93,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
   bool _previewLoading = false;
   Timer? _previewDebounceTimer;
   bool _copying = false;
+  bool _inserting = false;
 
   // 저장/불러오기 컨트롤러
   final TextEditingController _saveNameController = TextEditingController(
@@ -256,6 +258,24 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
           ),
         );
       }
+    }
+  }
+
+  Future<void> _insertIntoHwp() async {
+    if (_inserting) return;
+    setState(() => _inserting = true);
+    try {
+      final payload = Map<String, Object?>.from(_doc.toJson(forTable: true));
+      final result = await LiveLinkApi(widget.api).insertTableSketch(payload);
+      if (!mounted) return;
+      final title = result.title?.isNotEmpty == true ? result.title! : '한/글 문서';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.ok
+          ? "'$title' 커서 위치에 넣었어요. 한/글에서 Ctrl+Z로 되돌릴 수 있어요."
+          : (result.message ?? '한/글에 넣지 못했습니다.'))));
+    } catch (error) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$error')));
+    } finally {
+      if (mounted) setState(() => _inserting = false);
     }
   }
 
@@ -2438,7 +2458,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
             const SizedBox(height: 12),
 
             // 복사 버튼
-            FilledButton.icon(
+            Row(children: [Expanded(child: FilledButton.icon(
               key: const Key('sketchCopyButton'),
               onPressed: _copying ? null : _copyToClipboard,
               icon: _copying
@@ -2459,7 +2479,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
-            ),
+            )), const SizedBox(width: 8), Expanded(child: OutlinedButton.icon(key: const Key('sketchInsertButton'), onPressed: _inserting ? null : _insertIntoHwp, icon: _inserting ? const SizedBox(width: 16,height: 16,child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.input), label: const Text('한/글에 바로 넣기')))]),
             const SizedBox(height: 16),
 
             // 저장 및 불러오기

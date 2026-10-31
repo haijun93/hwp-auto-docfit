@@ -1,4 +1,5 @@
 import '../../core/close_guards.dart';
+import '../../core/api/live_link_api.dart';
 import '../../core/drop_events.dart';
 import 'edit_save_state.dart';
 import 'dart:async';
@@ -42,6 +43,26 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
   String? identity, revision;
   final saveState = EditSaveState();
   bool dirty = false, ready = false, busy = false;
+  // 3.0: '한/글에 바로 넣기'를 누르면 편집기에 PNG를 요청하고, 돌아온 PNG를 저장 대신 한/글 커서 위치에 넣는다.
+  bool insertNext = false, inserting = false;
+
+  Future<void> insertPng(String encoded) async {
+    try {
+      final result = await LiveLinkApi(widget.api).insertImage({'kind': 'png', 'base64': encoded});
+      notice(result.ok
+          ? "'${result.title ?? '한/글 문서'}' 커서 위치에 넣었어요. 한/글에서 Ctrl+Z로 되돌릴 수 있어요."
+          : (result.message ?? '한/글에 넣지 못했어요.'));
+    } finally {
+      if (mounted) setState(() => inserting = false);
+    }
+  }
+
+  void requestInsert() {
+    if (inserting || !ready) return;
+    setState(() => inserting = true);
+    insertNext = true;
+    post({'type': 'export_png'});
+  }
   CloseLease? _closeLease;
   Future<bool> _prepareHostClose() async {
     if (saveState.saving || busy || !canCloseEditor(context)) return false;
@@ -274,6 +295,11 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
               bytes.take(8).join(',') != '137,80,78,71,13,10,26,10') {
             throw Exception('PNG 형식이 올바르지 않습니다.');
           }
+          if (insertNext) {
+            insertNext = false;
+            await insertPng(encoded);
+            break;
+          }
           final result = await storage('export_png', {
             'base64': encoded,
             'name': name,
@@ -288,6 +314,10 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
       notice('표/다이어그램 작업에 실패했어요: $error');
     } finally {
       busy = false;
+      if (type == 'export_png') {
+        insertNext = false;  // PNG를 받지 못했거나 넣기가 실패해도 단추를 다시 쓸 수 있게
+        inserting = false;
+      }
       if (mounted) setState(() {});
     }
   }
@@ -462,6 +492,20 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
         children: [
           HtmlElementView(viewType: viewType),
           if (!ready) const Center(child: CircularProgressIndicator()),
+          if (ready)
+            Positioned(
+              right: 16,
+              bottom: 16,
+              child: FilledButton.icon(
+                key: const Key('flowInsertButton'),
+                style: FilledButton.styleFrom(backgroundColor: const Color(0xff7664ec)),
+                icon: inserting
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.input_rounded, size: 18),
+                label: Text(inserting ? '넣는 중…' : '한/글에 바로 넣기'),
+                onPressed: inserting ? null : requestInsert,
+              ),
+            ),
         ],
       ),
     ),
