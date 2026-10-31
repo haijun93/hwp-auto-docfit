@@ -7,22 +7,22 @@
 설치된 한/글을 직접 다뤄 공문서 모양으로 다듬어 드립니다. 원본은 그대로 둡니다.
 </p>
 
-<h2 align="center">⬇️ 지금 내려받기 · 최신 v2.0.8</h2>
+<h2 align="center">⬇️ 지금 내려받기 · 최신 v2.0.9</h2>
 
 <table align="center">
 <tr>
 <td align="center" width="50%">
 <b>무설치(포터블)</b><br><sub>받아서 더블클릭하면 바로 실행 · 추천</sub><br><br>
-<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.0.8/HWP_AutoDocFit_v2.0.8_Portable.exe"><img height="56" alt="GitHub에서 무설치로 받기 v2.0.8" src="https://img.shields.io/badge/%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v2.0.8-2563eb?style=for-the-badge&logo=github"></a>
+<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.0.9/HWP_AutoDocFit_v2.0.9_Portable.exe"><img height="56" alt="GitHub에서 무설치로 받기 v2.0.9" src="https://img.shields.io/badge/%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v2.0.9-2563eb?style=for-the-badge&logo=github"></a>
 </td>
 <td align="center" width="50%">
 <b>설치용</b><br><sub>시작 메뉴·제어판에 등록</sub><br><br>
-<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.0.8/HWP_AutoDocFit_v2.0.8_Setup.exe"><img height="56" alt="GitHub에서 설치용 받기 v2.0.8" src="https://img.shields.io/badge/%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0%20v2.0.8-2563eb?style=for-the-badge&logo=github"></a>
+<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.0.9/HWP_AutoDocFit_v2.0.9_Setup.exe"><img height="56" alt="GitHub에서 설치용 받기 v2.0.9" src="https://img.shields.io/badge/%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0%20v2.0.9-2563eb?style=for-the-badge&logo=github"></a>
 </td>
 </tr>
 </table>
 
-<p align="center"><sub>Windows 10·11 · 무료 · 한/글 설치 필요 · <b>GitHub가 막힌 공공기관 PC</b>는 <a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.0.8_Portable.exe?inline=false">GitLab에서 받기</a></sub></p>
+<p align="center"><sub>Windows 10·11 · 무료 · 한/글 설치 필요 · <b>GitHub가 막힌 공공기관 PC</b>는 <a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.0.9_Portable.exe?inline=false">GitLab에서 받기</a></sub></p>
 <p align="center">
 <img alt="무료" src="https://img.shields.io/badge/%EA%B0%80%EA%B2%A9-%EB%AC%B4%EB%A3%8C-16a34a">
 <img alt="Windows 10·11" src="https://img.shields.io/badge/Windows-10%C2%B711-0078d4">
@@ -54,6 +54,23 @@
 <td width="50%" valign="top"><a href="../docs/media/app/mindmap.png"><img src="../docs/media/app/mindmap.png" alt="마인드맵 화면: 2026 업무 계획을 가지로 펼친 지도"></a><br><b>마인드맵</b><br><sub>Tab·Enter로 가지를 늘려 생각을 정리합니다. 테마를 고르고 그림으로 한/글에 붙여 넣습니다.</sub></td>
 </tr>
 </table>
+
+---
+
+<h2 align="center">v2.0.9 릴리즈</h2>
+<p align="center">파일명 일괄변경을 강화하고, 작업한 문서를 시간 순으로 보는 타임머신 탭을 더했습니다</p>
+
+### 파일명 일괄변경 (2.0.9)
+
+'파일이름' 탭의 이름이 바뀌었습니다. 문서 제목으로 이름 짓기, 공문서 이름 틀, 폴더 이름 바꾸기, 이름 목록 붙여넣기, 번호·날짜 변수(`${start=1,increment=1,padding=3}`, `$YYYY$MM$DD`), 정규식 `$1`, 전각↔반각을 더했습니다. 이름이 겹치면 자동으로 번호를 붙이도록 고를 수 있고, 이미 있는 파일은 덮어쓰지 않습니다.
+
+### 타임머신 (2.0.9, 기본 꺼짐)
+
+작업한 문서를 세로 타임라인과 월 달력으로 보고 종류별로 걸러 봅니다. HWPX·PDF·사진·Office 문서는 썸네일로 보입니다. 내용은 이 PC에만 보관합니다.
+
+### 파일변환·작업 방식 (2.0.9)
+
+파일변환의 올린 파일 오른쪽 메뉴에서 '이 파일만 다른 포맷으로' 바꿀 수 있습니다. 작업 방식 카드의 옵션 3개는 '…제외' 방식으로 바뀌었고, 기존 설정의 동작은 그대로 이어집니다.
 
 ---
 
