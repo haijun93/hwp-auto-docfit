@@ -6,9 +6,7 @@ const kTabTimemachine = 7;
 const kTabFileConversion = 8;
 const kTabCount = 9;
 
-/// 파일명 일괄변경은 기능이 완벽해질 때까지 메뉴에 보이지 않는다(2026-11-01 사용자 지시).
-/// 완성되면 true로 바꾼다. 탭 번호는 그대로 둔다.
-const kFileRenameMenuEnabled = false;
+const kFileRenameMenuEnabled = true;
 const kDefaultHiddenTabs = kFileRenameMenuEnabled ? <int>{} : <int>{kTabFileRename};
 
 /// 탭 안 화면이 '닫기·뒤로'를 요청할 때 쓰는 통로.
