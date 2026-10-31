@@ -22,6 +22,7 @@ import io
 import re
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
+from . import pdfium_guard
 from .hwpx import open_hwpx_safely
 
 from defusedxml import ElementTree as ET
@@ -58,6 +59,7 @@ def _skip(ch: str) -> bool:
     return ord(ch) < 33 or ch in "　 "
 
 
+@pdfium_guard.exclusive()
 def pdf_characters(path: str | Path) -> list[tuple[str, dict]]:
     """PDF의 보이는 글자마다 (글자, {font, size, bold, color, bg, page}). 공백은 뺀다."""
     import pypdfium2 as pdfium

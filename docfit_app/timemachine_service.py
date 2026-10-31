@@ -1,6 +1,7 @@
 """타임머신 화면 명령과 기존 KAgent 색인 저장소의 앱 측 연결."""
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import math
@@ -12,15 +13,20 @@ import threading
 import time
 from pathlib import Path
 
+from docfit_core.timemachine import thumbs
 from docfit_core.timemachine.rules import KINDS, Rules
 from docfit_core.timemachine.scan import default_roots, scan_roots
 from docfit_core.timemachine.store import Store
 from .kagent_client import KAgentClient, data_dir
 
+THUMBNAIL_SLOTS = 2
+THUMBNAIL_WAIT_SECONDS = 8.0
+THUMBNAIL_TIME_LIMIT = 5.0
+
 
 class TimemachineService:
     def __init__(self, settings_root, *, db_path=None, agent=None, opener=None,
-                 revealer=None, scanner=scan_roots):
+                 revealer=None, scanner=scan_roots, thumb_dir=None):
         self.settings_root = Path(settings_root)
         self.settings_path = self.settings_root / "timemachine.json"
         self.store = Store(db_path or data_dir() / "timeline.db")
@@ -28,10 +34,13 @@ class TimemachineService:
         self.opener = opener if opener is not None else self._open_file
         self.revealer = revealer if revealer is not None else self._reveal_file
         self.scanner = scanner
+        self.thumbnails = thumbs.ThumbnailCache(thumb_dir or data_dir() / "thumbs")
+        self._thumbnail_slots = threading.BoundedSemaphore(THUMBNAIL_SLOTS)
         self._settings_lock = threading.RLock()
         self._scan_lock = threading.Lock()
         self._scan_state = {"running": False, "seen": 0, "written": 0, "removed": 0,
                             "errors": [], "started_at": None, "finished_at": None}
+        self._rescan = False
         self._settings = self._load_settings()
 
     @staticmethod
@@ -150,7 +159,52 @@ class TimemachineService:
         with self._scan_lock:
             scan = dict(self._scan_state, errors=list(self._scan_state["errors"]))
         return {"ok": True, **self._settings, "stats": self.store.stats(),
-                "agent_running": self._agent_running(), "scan": scan}
+                "agent_running": self._agent_running(), "watch": self._watch_mode(), "scan": scan}
+
+    def _watch_mode(self):
+        """화면 표시용: 에이전트가 실제로 조사 폴더를 맡았을 때만 'agent'(켜져만 있으면 안 됨)."""
+        roots = self._settings["roots"]
+        if not self._settings["enabled"] or not roots or not self._agent_running():
+            return "app"
+        status = self.agent.status_file()
+        return "agent" if status and status.get("timeline_roots") == len(roots) else "app"
+
+    @classmethod
+    def _same_roots(cls, left, right):
+        return (isinstance(left, list) and isinstance(right, list) and
+                sorted(cls._root_key(str(item)) for item in left) ==
+                sorted(cls._root_key(str(item)) for item in right))
+
+    @staticmethod
+    def _agent_settings(settings):
+        # 꺼진 타임머신의 폴더를 에이전트가 계속 감시하면 안 되므로 빈 목록을 보낸다.
+        return {"timeline_roots": settings["roots"] if settings["enabled"] else [],
+                "timeline_mtime_only": settings["time_mode"] == "mtime"}
+
+    def _sync_agent(self, *, force=False):
+        """에이전트에 조사 폴더를 맡긴다. 맡았으면 True, 아니면 앱이 색인해야 하므로 False.
+
+        에이전트를 타임머신보다 나중에 켜면 에이전트 설정에 폴더가 없으므로, 보내기 전에 비교한다.
+        """
+        wanted = self._agent_settings(self._settings)
+        try:
+            if not self._agent_running():
+                return False
+            if not force:
+                current = self.agent.request("settings_get")
+                current = current.get("settings") if isinstance(current, dict) else None
+                if (isinstance(current, dict) and
+                        self._same_roots(current.get("timeline_roots"), wanted["timeline_roots"]) and
+                        current.get("timeline_mtime_only") == wanted["timeline_mtime_only"]):
+                    return True
+            reply = self.agent.request("settings_set", settings=wanted)
+            applied = reply.get("settings") if isinstance(reply, dict) else None
+            # 에이전트가 거른 폴더(네트워크 경로 등)가 있으면 앱이 색인한다.
+            return (isinstance(applied, dict) and
+                    self._same_roots(applied.get("timeline_roots"), wanted["timeline_roots"]))
+        except Exception:
+            logging.getLogger(__name__).debug("KAgent 설정 알림을 전달하지 못했습니다.", exc_info=True)
+            return False
 
     def _scan_worker(self, roots, mode):
         def progress(result):
@@ -177,14 +231,21 @@ class TimemachineService:
         finally:
             with self._scan_lock:
                 self._scan_state.update(running=False, finished_at=time.time())
+                again, self._rescan = self._rescan, False
+            if again:
+                self._start_scan()
 
-    def _start_scan(self):
+    def _start_scan(self, *, agent_ready=None, restart=False):
         if not self._settings["enabled"]:
             return self._error("TM_DISABLED", "타임머신을 켠 뒤 다시 훑어 주세요.")
+        if agent_ready is None:
+            agent_ready = self._sync_agent()
         with self._scan_lock:
             if self._scan_state["running"]:
+                # 진행 중인 훑기는 예전 폴더 목록이므로 설정이 바뀌었으면 끝난 뒤 한 번 더 훑는다.
+                self._rescan = self._rescan or restart
                 return {"ok": True, "by": "app", "running": True}
-            if self._agent_running():
+            if agent_ready:
                 return {"ok": True, "by": "agent"}
             self._scan_state.update(running=True, seen=0, written=0, removed=0,
                                     errors=[], started_at=time.time(), finished_at=None)
@@ -212,18 +273,16 @@ class TimemachineService:
             settings = {"roots": roots, "time_mode": mode, "enabled": enabled}
             with self._settings_lock:
                 old_roots = list(self._settings["roots"])
+                changed = self._settings != settings
                 removed = {self._root_key(root) for root in old_roots} - {self._root_key(root) for root in roots}
                 self._save_settings(settings)
                 self._settings = settings
                 for root in old_roots:
                     if self._root_key(root) in removed:
                         self.store.drop_root(root)
-            try:
-                if self._agent_running():
-                    self.agent.request("settings_set", settings={"timeline_roots": roots,
-                                         "timeline_mtime_only": mode == "mtime"})
-            except Exception:
-                logging.getLogger(__name__).debug("KAgent 설정 알림을 전달하지 못했습니다.", exc_info=True)
+            agent_ready = self._sync_agent(force=True)
+            if enabled and changed:
+                self._start_scan(agent_ready=agent_ready, restart=True)
             return {"ok": True, "settings": dict(settings, roots=list(roots))}
         if action == "scan":
             return self._start_scan()
@@ -283,7 +342,68 @@ class TimemachineService:
                 return self._error("TM_OPEN_FAILED" if action == "open" else "TM_REVEAL_FAILED",
                                    "파일을 열지 못했습니다." if action == "open" else "폴더를 열지 못했습니다.")
             return {"ok": True}
+        if action == "thumbnail":
+            return self._thumbnail(payload.get("id"))
         return self._error("NOT_AVAILABLE", "지원하지 않는 타임머신 명령입니다.")
+
+    def _thumbnail_allowed(self, row):
+        """색인에 있고 지금 조사 폴더 안(연결 경로로 밖을 가리키지 않음)의 파일인지 본다."""
+        path = row["path"]
+        if (row["hidden"] or Rules().kind(row["name"]) not in KINDS or
+                not self._path_in_active_root(path, row.get("root"))):
+            return False
+        if row["cloud"]:
+            return True  # 내용을 열지 않고 아이콘으로 끝나므로 실제 경로를 확인할 필요가 없다.
+        real = os.path.normcase(os.path.realpath(path)).casefold()
+        for root in self._settings["roots"]:
+            base = os.path.normcase(os.path.realpath(root)).casefold()
+            try:
+                if os.path.commonpath((base, real)) == base:
+                    return True
+            except ValueError:
+                continue
+        return False
+
+    def _thumbnail(self, file_id):
+        if type(file_id) is not int or file_id <= 0:
+            raise ValueError("파일 항목을 확인해 주세요.")
+        if not self._settings["enabled"]:
+            return self._error("TM_DISABLED", "타임머신이 꺼져 있습니다.")
+        row = self.store.get(file_id)
+        if not row:
+            return self._error("TM_NOT_FOUND", "파일 항목을 찾지 못했습니다.")
+        if not self._thumbnail_allowed(row):
+            return self._error("TM_NOT_AVAILABLE", "지원하지 않는 파일입니다.")
+        path = row["path"]
+        cached, key = thumbs.lookup(path, self.thumbnails, cloud=bool(row["cloud"]))
+        if key is None or cached is not None:
+            return self._thumbnail_result(cached)
+        if not self._thumbnail_slots.acquire(timeout=THUMBNAIL_WAIT_SECONDS):
+            return self._thumbnail_result(None, retry=True)
+        outcome = {}
+        def work():
+            # 멈춘 PDF는 강제로 끝낼 수 없으므로 칸을 끝날 때까지 쥐고 있어 동시 2개 한도를 지킨다.
+            try:
+                outcome["data"] = thumbs.generate(path, key, self.thumbnails)
+            except thumbs.ThumbnailBusy:
+                outcome["busy"] = True
+            finally:
+                self._thumbnail_slots.release()
+        worker = threading.Thread(target=work, name="timemachine-thumbnail", daemon=True)
+        try:
+            worker.start()
+        except Exception:
+            self._thumbnail_slots.release()
+            return self._thumbnail_result(None, retry=True)
+        worker.join(THUMBNAIL_TIME_LIMIT)
+        return self._thumbnail_result(outcome.get("data"), retry=outcome.get("busy", False))
+
+    @staticmethod
+    def _thumbnail_result(data, *, retry=False):
+        result = {"ok": True, "data": base64.b64encode(data).decode("ascii") if data else None}
+        if retry:
+            result["retry"] = True
+        return result
 
     def command(self, action, payload=None):
         if not isinstance(action, str) or not isinstance(payload, (dict, type(None))):
