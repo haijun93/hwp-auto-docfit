@@ -24,9 +24,12 @@ THUMBNAIL_WAIT_SECONDS = 8.0
 THUMBNAIL_TIME_LIMIT = 5.0
 
 
+ALLOWED_FEATURES = frozenset(("rename_batch", "convert", "document_edit"))
+
+
 class TimemachineService:
     def __init__(self, settings_root, *, db_path=None, agent=None, opener=None,
-                 revealer=None, scanner=scan_roots, thumb_dir=None):
+                 revealer=None, scanner=scan_roots, thumb_dir=None, feature_api=None):
         self.settings_root = Path(settings_root)
         self.settings_path = self.settings_root / "timemachine.json"
         self.store = Store(db_path or data_dir() / "timeline.db")
@@ -35,6 +38,8 @@ class TimemachineService:
         self.revealer = revealer if revealer is not None else self._reveal_file
         self.scanner = scanner
         self.thumbnails = thumbs.ThumbnailCache(thumb_dir or data_dir() / "thumbs")
+        self.feature_api = feature_api
+        self._pdf_child_target = None
         self._thumbnail_slots = threading.BoundedSemaphore(THUMBNAIL_SLOTS)
         self._settings_lock = threading.RLock()
         self._scan_lock = threading.Lock()
@@ -344,7 +349,53 @@ class TimemachineService:
             return {"ok": True}
         if action == "thumbnail":
             return self._thumbnail(payload.get("id"))
+        if action == "thumbnail_cache_clear":
+            return {"ok": True, "removed": self.thumbnails.clear()}
+        if action == "send_to_feature":
+            return self._send_to_feature(payload.get("feature"), payload.get("ids"))
         return self._error("NOT_AVAILABLE", "지원하지 않는 타임머신 명령입니다.")
+
+    def _send_to_feature(self, feature, file_ids):
+        if feature not in ALLOWED_FEATURES:
+            raise ValueError("지원하지 않는 기능입니다.")
+        if (not isinstance(file_ids, list) or not (1 <= len(file_ids) <= 200) or
+                any(isinstance(fid, bool) or not isinstance(fid, int) or fid <= 0 for fid in file_ids) or
+                len(file_ids) != len(set(file_ids))):
+            raise ValueError("파일 항목을 확인해 주세요.")
+
+        if feature in ("convert", "document_edit") and len(file_ids) > 1:
+            return self._error("FEATURE_LIMIT", "문서편집/파일변환은 한 번에 한 파일만 지원합니다.")
+
+        paths = []
+        for fid in file_ids:
+            row = self.store.get(fid)
+            if not row:
+                return self._error("TM_NOT_FOUND", "파일 항목을 찾지 못했습니다.")
+            if row["hidden"]:
+                return self._error("TM_NOT_AVAILABLE", "지원하지 않는 파일입니다.")
+            if Rules().kind(row["name"]) not in KINDS:
+                return self._error("TM_NOT_AVAILABLE", "지원하지 않는 파일입니다.")
+            path = row["path"]
+            if not self._path_in_active_root(path, row.get("root")):
+                return self._error("TM_NOT_AVAILABLE", "지원하지 않는 파일입니다.")
+            if row["cloud"]:
+                return self._error("TM_NOT_AVAILABLE", "클라우드 전용 파일은 지원하지 않습니다.")
+            if not os.path.isfile(path):
+                self.store.hide(fid)
+                return self._error("TM_MISSING", "파일이 없어 목록에서 정리했습니다.")
+            paths.append(path)
+
+        if self.feature_api is not None:
+            try:
+                res = self.feature_api(feature, list(file_ids))
+                if isinstance(res, dict) and res.get("ok") is False:
+                    return self._error(res.get("code", "FEATURE_FAILED"),
+                                       res.get("message", "기능 작업을 완료하지 못했습니다."))
+                return {"ok": True, "feature": feature, "accepted_ids": list(file_ids)}
+            except Exception as exc:
+                return self._error("FEATURE_FAILED", str(exc))
+
+        return self._error("FEATURE_UNAVAILABLE", "해당 기능을 사용할 수 없습니다.")
 
     def _thumbnail_allowed(self, row):
         """색인에 있고 지금 조사 폴더 안(연결 경로로 밖을 가리키지 않음)의 파일인지 본다."""
@@ -380,9 +431,37 @@ class TimemachineService:
             return self._thumbnail_result(cached)
         if not self._thumbnail_slots.acquire(timeout=THUMBNAIL_WAIT_SECONDS):
             return self._thumbnail_result(None, retry=True)
+        if os.path.splitext(path)[1].lower() == ".pdf":
+            proc = thumbs.PdfRenderProcess(path, target=self._pdf_child_target)
+            try:
+                proc.start()
+                proc.join(THUMBNAIL_TIME_LIMIT)
+                if proc.is_alive():
+                    proc.terminate()
+                    return self._thumbnail_result(None, retry=True)
+                outcome = proc.get_result()
+                if not outcome:
+                    return self._thumbnail_result(None, retry=True)
+                status, data = outcome
+                if status == "busy":
+                    return self._thumbnail_result(None, retry=True)
+                if status == "ok" and data:
+                    try:
+                        self.thumbnails.put(key, data)
+                    except OSError:
+                        pass
+                    return self._thumbnail_result(data)
+                return self._thumbnail_result(None)
+            except Exception:
+                if proc.is_alive():
+                    proc.terminate()
+                return self._thumbnail_result(None, retry=True)
+            finally:
+                proc.close()
+                self._thumbnail_slots.release()
         outcome = {}
         def work():
-            # 멈춘 PDF는 강제로 끝낼 수 없으므로 칸을 끝날 때까지 쥐고 있어 동시 2개 한도를 지킨다.
+            # 멈춘 작업은 강제로 끝낼 수 없으므로 칸을 끝날 때까지 쥐고 있어 동시 2개 한도를 지킨다.
             try:
                 outcome["data"] = thumbs.generate(path, key, self.thumbnails)
             except thumbs.ThumbnailBusy:

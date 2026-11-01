@@ -40,6 +40,11 @@ def stub_scanner(store, roots, rules, progress=None):
     return StubResult()
 
 
+def _stuck_pdf_worker_for_test(path, conn):
+    """Windows spawn 프로세스에서 pickle 가능한 timeout 테스트용 최상위 worker."""
+    time.sleep(10)
+
+
 class TimemachineServiceTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -359,6 +364,240 @@ class TimemachineServiceTests(unittest.TestCase):
         def busy(path): raise thumbs.ThumbnailBusy()
         with patch("docfit_core.timemachine.thumbs.render", busy):
             self.assertEqual(self.service.command("thumbnail", {"id": file_id}), {"ok": True, "data": None, "retry": True})
+
+    def test_hour_density_returns_store_values_for_exact_range(self):
+        self.enable()
+        from datetime import datetime
+        dt_start = datetime(2026, 10, 31, 10, 0)
+        dt_mid = datetime(2026, 10, 31, 10, 30)
+        dt_end = datetime(2026, 10, 31, 12, 0)
+        start = dt_start.timestamp()
+        mid = dt_mid.timestamp()
+        end = dt_end.timestamp()
+
+        # start 이전, start(포함), mid(포함), end(제외), end 이후
+        f_before = self.root / "before.pdf"; f_before.write_bytes(b"x")
+        f_start = self.root / "start.pdf"; f_start.write_bytes(b"x")
+        f_mid = self.root / "mid.pdf"; f_mid.write_bytes(b"x")
+        f_end = self.root / "end.pdf"; f_end.write_bytes(b"x")
+        f_after = self.root / "after.pdf"; f_after.write_bytes(b"x")
+
+        rows = [
+            {"path": str(f_before), "root": str(self.root), "name": f_before.name, "kind": "pdf",
+             "size": 1, "mtime": start - 1, "ctime": start - 1, "work_time": start - 1, "flags": [], "cloud": False},
+            {"path": str(f_start), "root": str(self.root), "name": f_start.name, "kind": "pdf",
+             "size": 1, "mtime": start, "ctime": start, "work_time": start, "flags": [], "cloud": False},
+            {"path": str(f_mid), "root": str(self.root), "name": f_mid.name, "kind": "pdf",
+             "size": 1, "mtime": mid, "ctime": mid, "work_time": mid, "flags": [], "cloud": False},
+            {"path": str(f_end), "root": str(self.root), "name": f_end.name, "kind": "pdf",
+             "size": 1, "mtime": end, "ctime": end, "work_time": end, "flags": [], "cloud": False},
+            {"path": str(f_after), "root": str(self.root), "name": f_after.name, "kind": "pdf",
+             "size": 1, "mtime": end + 1, "ctime": end + 1, "work_time": end + 1, "flags": [], "cloud": False},
+        ]
+        self.service.store.upsert_many(rows)
+
+        res = self.service.command("hour_density", {"start": start, "end": end, "roots": [str(self.root)]})
+        self.assertTrue(res["ok"])
+        # [start, end) 구간이므로 start와 mid만 포함 (10시 2개)
+        self.assertEqual(res["hours"], {10: 2})
+
+    def test_send_to_feature_calls_fake_api_with_authorized_paths(self):
+        self.enable()
+        f1 = self.png("doc1.png")
+        f2 = self.png("doc2.png")
+        id1 = self.add_file(f1)
+        id2 = self.add_file(f2)
+
+        calls = []
+        self.service.feature_api = lambda feat, ids: calls.append((feat, ids)) or {"ok": True}
+
+        res = self.service.command("send_to_feature", {"feature": "rename_batch", "ids": [id1, id2]})
+        self.assertTrue(res["ok"])
+        self.assertEqual(res["feature"], "rename_batch")
+        self.assertEqual(res["accepted_ids"], [id1, id2])
+        self.assertEqual(calls, [("rename_batch", [id1, id2])])
+
+    def test_send_to_feature_rejects_invalid_feature_and_id_types(self):
+        self.enable()
+        f1 = self.png()
+        id1 = self.add_file(f1)
+
+        calls = []
+        self.service.feature_api = lambda feat, ids: calls.append((feat, ids)) or {"ok": True}
+
+        # 미허용 feature
+        self.assertEqual(self.service.command("send_to_feature", {"feature": "unknown", "ids": [id1]})["code"], "INVALID_INPUT")
+        # 문자열 ID
+        self.assertEqual(self.service.command("send_to_feature", {"feature": "rename_batch", "ids": ["1"]})["code"], "INVALID_INPUT")
+        # bool ID
+        self.assertEqual(self.service.command("send_to_feature", {"feature": "rename_batch", "ids": [True]})["code"], "INVALID_INPUT")
+        # 0 ID
+        self.assertEqual(self.service.command("send_to_feature", {"feature": "rename_batch", "ids": [0]})["code"], "INVALID_INPUT")
+        # 중복 ID
+        self.assertEqual(self.service.command("send_to_feature", {"feature": "rename_batch", "ids": [id1, id1]})["code"], "INVALID_INPUT")
+        # 빈 ID 목록
+        self.assertEqual(self.service.command("send_to_feature", {"feature": "rename_batch", "ids": []})["code"], "INVALID_INPUT")
+        # 200개 초과 ID
+        self.assertEqual(self.service.command("send_to_feature", {"feature": "rename_batch", "ids": list(range(1, 202))})["code"], "INVALID_INPUT")
+        # fake 호출 0회 검증
+        self.assertEqual(calls, [])
+
+    def test_send_to_feature_permission_checks_all_ids_before_dispatch(self):
+        self.enable()
+        good_f = self.png("good.png")
+        good_id = self.add_file(good_f)
+
+        calls = []
+        self.service.feature_api = lambda feat, ids: calls.append((feat, ids)) or {"ok": True}
+
+        # 1) 없는 파일 항목
+        res = self.service.command("send_to_feature", {"feature": "rename_batch", "ids": [good_id, 999999]})
+        self.assertEqual(res["code"], "TM_NOT_FOUND")
+
+        # 2) 숨김 파일
+        hidden_id = self.add_file(self.png("hidden.png"))
+        self.service.store.hide(hidden_id)
+        res = self.service.command("send_to_feature", {"feature": "rename_batch", "ids": [good_id, hidden_id]})
+        self.assertEqual(res["code"], "TM_NOT_AVAILABLE")
+
+        # 3) 허용 종류 밖
+        bad_f = self.root / "bad.exe"; bad_f.write_bytes(b"x")
+        now = time.time()
+        self.service.store.upsert_many([{"path": str(bad_f), "root": str(self.root), "name": bad_f.name, "kind": "other", "size": 1, "mtime": now, "ctime": now, "work_time": now, "flags": [], "cloud": False}])
+        bad_id = self.service.store.get(self.service.store.range(now - 1, now + 1, kinds=["other"])[0]["id"])["id"]
+        res = self.service.command("send_to_feature", {"feature": "rename_batch", "ids": [good_id, bad_id]})
+        self.assertEqual(res["code"], "TM_NOT_AVAILABLE")
+
+        # 4) 비활성 루트 밖 파일
+        out_f = self.plain_file
+        self.service.store.upsert_many([{"path": str(out_f), "root": str(self.root), "name": out_f.name, "kind": "pdf", "size": 1, "mtime": now, "ctime": now, "work_time": now, "flags": [], "cloud": False}])
+        out_id = self.service.store.get(self.service.store.range(now - 1, now + 1)[0]["id"])["id"]
+        res = self.service.command("send_to_feature", {"feature": "rename_batch", "ids": [good_id, out_id]})
+        self.assertEqual(res["code"], "TM_NOT_AVAILABLE")
+
+        # 5) 클라우드 전용 항목
+        cloud_id = self.add_file(self.png("cloud.png"), cloud=True)
+        res = self.service.command("send_to_feature", {"feature": "rename_batch", "ids": [good_id, cloud_id]})
+        self.assertEqual(res["code"], "TM_NOT_AVAILABLE")
+
+        # 6) 실제 파일 없음
+        missing_id = self.add_file(self.root / "missing.png")
+        res = self.service.command("send_to_feature", {"feature": "rename_batch", "ids": [good_id, missing_id]})
+        self.assertEqual(res["code"], "TM_MISSING")
+
+        # 모든 실패에 대해 fake 호출은 전혀 없어야 함
+        self.assertEqual(calls, [])
+
+    def test_send_to_feature_does_not_return_paths(self):
+        self.enable()
+        f1 = self.png("safe.png")
+        id1 = self.add_file(f1)
+        self.service.feature_api = lambda feat, ids: {"ok": True}
+
+        success = self.service.command("send_to_feature", {"feature": "convert", "ids": [id1]})
+        self.assertTrue(success["ok"])
+        self.assertNotIn("path", success)
+        self.assertNotIn("paths", success)
+        self.assertNotIn("folder", success)
+
+        fail = self.service.command("send_to_feature", {"feature": "convert", "ids": [999999]})
+        self.assertFalse(fail["ok"])
+        self.assertNotIn("path", fail)
+        self.assertNotIn("folder", fail)
+
+    def test_thumbnail_cache_clear_removes_only_cache_files(self):
+        self.enable()
+        thumb_folder = Path(self.service.thumbnails.folder)
+        thumb_folder.mkdir(parents=True, exist_ok=True)
+
+        cache1 = thumb_folder / "abc.jpg"
+        cache1.write_bytes(b"\xff\xd8\xff")
+        cache2 = thumb_folder / "tmp.tmp"
+        cache2.write_bytes(b"temp")
+
+        sentinel = Path(self.temp.name) / "sentinel.txt"
+        sentinel.write_text("sentinel")
+        db_file = Path(self.temp.name) / "timeline.db"
+
+        res = self.service.command("thumbnail_cache_clear")
+        self.assertTrue(res["ok"])
+        self.assertGreaterEqual(res["removed"], 2)
+        self.assertFalse(cache1.exists())
+        self.assertFalse(cache2.exists())
+        self.assertTrue(sentinel.exists())
+        self.assertTrue(db_file.exists())
+
+    def test_thumbnail_timeout_terminates_child_and_releases_slot(self):
+        self.enable()
+        pdf_file = self.root / "hang.pdf"
+        pdf_file.write_bytes(b"%PDF-1.4 sample")
+        now = time.time()
+        self.service.store.upsert_many([{"path": str(pdf_file), "root": str(self.root), "name": pdf_file.name,
+                                         "kind": "pdf", "size": 15, "mtime": now, "ctime": now,
+                                         "work_time": now, "flags": [], "cloud": False}])
+        file_id = self.service.store.range(now - 1, now + 1)[0]["id"]
+
+        self.service._pdf_child_target = _stuck_pdf_worker_for_test
+        with patch("docfit_app.timemachine_service.THUMBNAIL_TIME_LIMIT", 0.05):
+            res = self.service.command("thumbnail", {"id": file_id})
+            self.assertTrue(res["ok"])
+            self.assertIsNone(res["data"])
+            self.assertTrue(res.get("retry"))
+            self.assertEqual(self.service._thumbnail_slots._value, 2)
+
+        # 슬롯이 반환되어 다음 요청이 정상 수행됨
+        self.service._pdf_child_target = None
+        good_id = self.add_file(self.png("next.png"))
+        next_res = self.service.command("thumbnail", {"id": good_id})
+        self.assertTrue(next_res["ok"])
+        self.assertIsNotNone(next_res["data"])
+
+    def test_thumbnail_start_failure_releases_slot_safely(self):
+        self.enable()
+        pdf_file = self.root / "start_fail.pdf"
+        pdf_file.write_bytes(b"%PDF-1.4 sample")
+        now = time.time()
+        self.service.store.upsert_many([{"path": str(pdf_file), "root": str(self.root), "name": pdf_file.name,
+                                         "kind": "pdf", "size": 15, "mtime": now, "ctime": now,
+                                         "work_time": now, "flags": [], "cloud": False}])
+        file_id = self.service.store.range(now - 1, now + 1)[0]["id"]
+
+        with patch.object(thumbs.PdfRenderProcess, "start", side_effect=RuntimeError("spawn failed")):
+            res = self.service.command("thumbnail", {"id": file_id})
+            self.assertTrue(res["ok"])
+            self.assertIsNone(res["data"])
+            self.assertEqual(self.service._thumbnail_slots._value, 2)
+
+    def test_send_to_feature_default_adapter_rename_batch(self):
+        self.enable()
+        f1 = self.png("default_batch1.png")
+        f2 = self.png("default_batch2.png")
+        id1 = self.add_file(f1)
+        id2 = self.add_file(f2)
+
+        self.service.feature_api = None
+        res = self.service.command("send_to_feature", {"feature": "rename_batch", "ids": [id1, id2]})
+        self.assertFalse(res["ok"])
+        self.assertEqual(res["code"], "FEATURE_UNAVAILABLE")
+
+    def test_send_to_feature_limits_convert_and_document_edit(self):
+        self.enable()
+        f1 = self.png("limit1.png")
+        f2 = self.png("limit2.png")
+        id1 = self.add_file(f1)
+        id2 = self.add_file(f2)
+
+        calls = []
+        self.service.feature_api = lambda feat, ids: calls.append((feat, ids)) or {"ok": True}
+
+        res_convert = self.service.command("send_to_feature", {"feature": "convert", "ids": [id1, id2]})
+        self.assertFalse(res_convert["ok"])
+        self.assertEqual(res_convert["code"], "FEATURE_LIMIT")
+
+        res_edit = self.service.command("send_to_feature", {"feature": "document_edit", "ids": [id1, id2]})
+        self.assertFalse(res_edit["ok"])
+        self.assertEqual(res_edit["code"], "FEATURE_LIMIT")
+        self.assertEqual(calls, [])
 
 
 if __name__ == "__main__": unittest.main()

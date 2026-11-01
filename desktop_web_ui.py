@@ -1861,8 +1861,42 @@ class DesktopWebBridge:
         if service is None:
             from docfit_app.timemachine_service import TimemachineService
             folder = self._tk(lambda: getattr(self.gui, "_준말_서비스")().settings._path.parent)
-            service = self._timemachine_service_instance = TimemachineService(folder)
+            service = self._timemachine_service_instance = TimemachineService(
+                folder, feature_api=self._timemachine_send_to_feature
+            )
         return service
+
+    def _timemachine_send_to_feature(self, feature, file_ids, paths=None):
+        """타임머신에서 보낸 승인된 파일 목록을 실제 기능 대기열에 연결한다."""
+        service = getattr(self, "_timemachine_service_instance", None)
+        if paths is None:
+            if service is not None:
+                paths = [service.store.get(fid)["path"] for fid in file_ids]
+            else:
+                paths = []
+        if feature == "rename_batch":
+            return self._file_rename_service().add_paths(paths)
+        if feature in ("convert", "document_edit"):
+            if len(paths) > 1:
+                return {"ok": False, "code": "FEATURE_LIMIT", "message": "문서편집/파일변환은 한 번에 한 파일만 지원합니다."}
+            def add_to_gui():
+                if self.gui.running:
+                    return {"ok": False, "code": "JOB_RUNNING", "message": "문서 작업이 진행 중입니다."}
+                if feature == "convert":
+                    self.gui.selected_mode.set("file_format")
+                    self._mode_selected()
+                else:
+                    if self.gui.selected_mode.get() == "file_format":
+                        self.gui.selected_mode.set("spacing")
+                        self._mode_selected()
+                added = self.gui.파일추가(paths[0])
+                if not added:
+                    return {"ok": False, "code": "FEATURE_FAILED", "message": "파일을 추가하지 못했습니다."}
+                self.gui.status_var.set(f"타임머신에서 문서 추가 · 총 {len(self.gui.files)}개")
+                self._update_document_hints()
+                return {"ok": True}
+            return self._tk(add_to_gui)
+        return {"ok": False, "code": "FEATURE_UNAVAILABLE", "message": "해당 기능을 사용할 수 없습니다."}
 
     def timemachine(self, action, payload=None):
         """타임머신 화면 명령을 처리한다."""
