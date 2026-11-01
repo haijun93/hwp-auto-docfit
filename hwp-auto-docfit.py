@@ -371,7 +371,7 @@ from docfit_core import (
 # ============================================================
 
 APP_NAME = "한글편집 후처리"
-APP_VERSION = "2.0.7"
+APP_VERSION = "2.1.0"
 PROJECT_URL = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit"
 UPDATE_API_URL = "https://gitlab.aigov.go.kr/api/v4/projects/haijun93%2Fhwp_autodocfit/releases/permalink/latest"
 GITHUB_UPDATE_API_URL = "https://api.github.com/repos/haijun93/hwp-auto-docfit/releases/latest"
@@ -3395,6 +3395,8 @@ def main():
     from docfit_app.cli import is_cli_command, main as cli_main
     if is_cli_command(sys.argv[1:]):
         raise SystemExit(cli_main())
+    from docfit_app.instance_files import split_rename_arguments
+    rename_requested, _rename_paths = split_rename_arguments(sys.argv[1:])
     import importlib.util
 
     if not _단일_인스턴스_확인():

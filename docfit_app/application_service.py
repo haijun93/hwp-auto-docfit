@@ -2,6 +2,7 @@
 from dataclasses import asdict
 from pathlib import Path
 import threading
+import sys
 
 from docfit_app.abbreviation_service import AbbreviationService
 from docfit_app.api_contract import ServiceError, response
@@ -72,27 +73,27 @@ class ApplicationService:
         return {'job':self.jobs.latest(), 'files':[{'path':p,'name':Path(p).name,'folder':str(Path(p).parent)} for p in self.data.files],
                 'count':len(self.data.files),'native_backend':True,'mode':self.data.mode,'running':bool(self.jobs.latest() and self.jobs.latest()['state'] in {'queued','running'}),'engine_ready':False,
                 'status':'문서 분석·설정 시제품', 'version':'1.74 Native Prototype 1',
-                'include_spacing':settings['all_include_spacing'], 'reset_spacing':self.data.stages.get(('spacing','reset_spacing'),settings.get('spacing_reset_existing') if settings.get('spacing_reset_existing') is not None else True),
+                'include_spacing':settings['all_include_spacing'], 'reset_spacing':self.data.stages.get(('spacing','reset_spacing'),not settings['spacing_exclude_reset']),
                 'table_spacing':settings['table_spacing'], 'exclude_tables':settings['all_exclude_tables'],
-                'card_options':{**{key:bool(settings.get(key)) for key in ('spacing_enabled','spacing_page_fit','unify_exclude_tables','unify_exclude_spacing','unify_exclude_pagefit','unify_keep_layout','unify_full_format','all_include_spacing','all_exclude_tables','all_exclude_pagefit','all_linespacing')},'spacing_exclude_tables':not settings['table_spacing'],'spacing_reset_existing':bool(settings['spacing_reset_existing']) if settings.get('spacing_reset_existing') is not None else True},'range':self.data.range,'results':[], 'options':settings,
+                'card_options':{**{key:bool(settings.get(key)) for key in ('spacing_enabled','spacing_exclude_pagefit','spacing_exclude_reset','unify_exclude_tables','unify_exclude_spacing','unify_exclude_pagefit','unify_keep_layout','unify_full_format','all_include_spacing','all_exclude_tables','all_exclude_pagefit','all_exclude_linespacing')},'spacing_exclude_tables':not settings['table_spacing']},'range':self.data.range,'results':[], 'options':settings,
                 'profiles':[], 'profile':'','default_saved':self.data.mode in saved_stages,'format_task':None,
                 'progress':{'steps':list(STAGE_ORDER),'active':None,'visited':[],'outcome':None,'detail':''},
                 'stages':[{'key':k,'label':label,'enabled':self.data.stages.get((self.data.mode,k),selected.get(k,default_choice(k,self.data.mode))),
                            'default':default_choice(k,self.data.mode)} for k,label in stages_for_mode(self.data.mode)],
-                'can_start':False,'capabilities':['documents.inspect','settings','abbreviations','flows']}
+                'can_start':False,'sidebar_collapsed':settings.get('sidebar_collapsed'),'capabilities':['documents.inspect','settings','abbreviations','flows']}
 
     def dispatch(self, method, args):
         counts = {'handshake':0,'get_state':0,'get_settings':0,'save_settings':2,
                   'get_abbreviations':0,'save_abbreviation':4,'delete_abbreviation':1,
                   'set_abbreviation_defaults':1,'abbreviation_document':1,'add_paths':1,'remove_file':1,
                   'clear_files':0,'set_mode':1,'inspect_document':1,'get_log':0,'clear_log':0,'shutdown':0}
-        counts.update({'start_job':2, 'cancel_job':1, 'get_events':1})
+        counts.update({'start_job':2, 'cancel_job':1, 'get_events':1, 'set_sidebar_collapsed':1})
         counts.update({'table_template':2,'document_tool':2,'get_pending_dialog':0,'stage_config':2,'set_stage':2,'set_stage_default':1})
         counts.update({'set_option':2,'set_include_spacing':1,'set_reset_spacing':1,'set_table_spacing':1,'set_exclude_tables':1,'set_range':3,'set_card_option':2})
-        counts.update({'flow_editor':2,'idioms':2,'hangul_fonts':2,'table_units':2,'table_sketch':2})
+        counts.update({'flow_editor':2,'idioms':2,'hangul_fonts':2,'table_units':2,'table_sketch':2,'file_rename':2,'kclip':2,'timemachine':2})
         if method not in counts:
             raise ServiceError('NOT_AVAILABLE','지원하지 않는 명령입니다.')
-        if not (method == 'table_sketch' and len(args) in (1, 2)) and len(args)!=counts[method]:
+        if not (method in ('table_sketch', 'file_rename', 'kclip', 'timemachine') and len(args) in (1, 2)) and len(args)!=counts[method]:
             raise ServiceError('INVALID_INPUT','입력 항목 수를 확인해 주세요.')
         if self.data.closing and method != 'shutdown':
             raise ServiceError('BACKEND_CLOSING','백엔드가 종료 중입니다.')
@@ -104,13 +105,14 @@ class ApplicationService:
                     'capabilities':['documents.inspect','settings','abbreviations','flows'],'engine_ready':False}
         if method=='set_card_option':
             name,value=args
-            allowed={'spacing_enabled','spacing_page_fit','spacing_reset_existing','spacing_exclude_tables','unify_exclude_tables','unify_exclude_spacing','unify_exclude_pagefit',
-                     'unify_keep_layout','unify_full_format','all_include_spacing','all_exclude_tables','all_exclude_pagefit','all_linespacing'}
+            allowed={'spacing_enabled','spacing_exclude_pagefit','spacing_exclude_reset','spacing_exclude_tables','unify_exclude_tables','unify_exclude_spacing','unify_exclude_pagefit',
+                     'unify_keep_layout','unify_full_format','all_include_spacing','all_exclude_tables','all_exclude_pagefit','all_exclude_linespacing'}
             if name not in allowed or not isinstance(value,bool):raise ServiceError('INVALID_OPTION','카드 옵션을 확인해 주세요.')
             if name=='spacing_exclude_tables':key,value='table_spacing',not value
             else:key=name
             self.store.update(lambda current:current.update({key:value}))
-            if name=='spacing_reset_existing':self.data.stages[('spacing','reset_spacing')]=value
+            if name=='spacing_exclude_reset':
+                self.data.stages[('spacing','reset_spacing')]=not value
             if name=='all_include_spacing' and self.data.mode in ('all','format'):
                 self.data.mode='all' if value else 'format'
             return self.state()
@@ -123,7 +125,7 @@ class ApplicationService:
             self.data.range={'enabled':enabled,'start':start,'end':end}
             return self.state()
         if method in ('set_option','set_include_spacing','set_reset_spacing','set_table_spacing','set_exclude_tables'):
-            mapping={'set_include_spacing':'all_include_spacing','set_reset_spacing':'spacing_reset_existing',
+            mapping={'set_include_spacing':'all_include_spacing','set_reset_spacing':'spacing_exclude_reset',
                      'set_table_spacing':'table_spacing','set_exclude_tables':'all_exclude_tables'}
             if method=='set_option':
                 key,value=args
@@ -132,8 +134,10 @@ class ApplicationService:
                     raise ServiceError('INVALID_OPTION','설정 항목을 확인해 주세요.')
             else:key,value=mapping[method],args[0]
             if not isinstance(value,bool):raise ServiceError('INVALID_OPTION','설정 값을 확인해 주세요.')
-            self.store.update(lambda current:current.update({key:value}))
-            if method=='set_reset_spacing':self.data.stages[('spacing','reset_spacing')]=value
+            stored_value = not value if method == 'set_reset_spacing' else value
+            self.store.update(lambda current:current.update({key:stored_value}))
+            if method=='set_reset_spacing':
+                self.data.stages[('spacing','reset_spacing')]=value
             if method=='set_include_spacing' and self.data.mode in ('all','format'):
                 self.data.mode='all' if value else 'format'
             return self.state()
@@ -192,6 +196,9 @@ class ApplicationService:
         if method=='table_template':
             from docfit_app.table_template_service import TableTemplateService
             return response(lambda:TableTemplateService(self.abbreviations).command(*args))
+        if method=='set_sidebar_collapsed':
+            self.store.update(lambda current:current.update({'sidebar_collapsed':bool(args[0])}))
+            return True
         if method=='get_pending_dialog': return None
         if method=='get_state': return self.state()
         if method=='get_settings': return response(self.configuration.snapshot)
@@ -206,6 +213,33 @@ class ApplicationService:
             if args[0] == 'copy' and getattr(self.data, 'running', False):
                 return {'ok':False,'message':'문서 작업이 끝난 뒤 다시 눌러 주세요.'}
             return TableSketchService(self.store._path.parent).command(*args)
+        if method=='kclip':
+            from .kclip_service import KClipService
+            if getattr(self, '_kclip_service', None) is None:
+                self._kclip_service = KClipService()
+            return self._kclip_service.command(*args)
+        if method=='file_rename':
+            if getattr(self, '_rename_service', None) is None:
+                from .file_rename_service import FileRenameService
+                self._rename_service = FileRenameService(self.store._path.parent)
+            if args and args[0] == 'sendto_set':
+                from .file_rename_service import FileRenameService
+                enabled = bool(args[1].get('enabled')) if len(args) > 1 and isinstance(args[1], dict) else False
+                result = FileRenameService.set_sendto(enabled, executable=getattr(sys, 'executable', None))
+                self.store.update(lambda settings: settings.update(file_rename_sendto=enabled))
+                return result
+            if args[0] == 'add_paths':  # 네이티브 실행기: Dart가 파일 선택 창으로 고른 경로
+                payload = args[1] if len(args) > 1 and isinstance(args[1], dict) else {}
+                paths = payload.get('paths')
+                if not isinstance(paths, list) or len(paths) > 10000:
+                    raise ServiceError('INVALID_INPUT', '추가할 파일 목록을 확인해 주세요.')
+                return self._rename_service.add_paths(paths, recursive=payload.get('recursive') is True)
+            return self._rename_service.command(*args)
+        if method=='timemachine':
+            if getattr(self, '_timemachine_service', None) is None:
+                from .timemachine_service import TimemachineService
+                self._timemachine_service = TimemachineService(self.store._path.parent)
+            return self._timemachine_service.command(*args)
         if method=='table_units':
             from .table_units_service import TableUnitsService
             if args[0] == 'copy':

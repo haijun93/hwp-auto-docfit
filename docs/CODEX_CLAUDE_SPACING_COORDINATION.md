@@ -543,6 +543,13 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 
 ## Codex 결과 보고 — OpenOffice 벤치마킹 (2026-10-26)
 
+## Codex 결과 보고 — OPT2 카드 제외 옵션 (2026-10-31)
+
+- 담당 범위는 OPT2 작업 방식 카드 3개 옵션 키·의미 변경이다. W1~W3 및 Gemini G1~G3 결과에는 손대지 않았다.
+- 새 키는 settings schema, stage selection, Python/Tk/Web 브리지와 Flutter 카드에 연결했다. 옛 키 반전 마이그레이션은 `docfit_core.config_store`에 두고 `card_options_rev=2`를 기록한다.
+- 기본값은 현재 동작을 보존한다: 줄 간격 제외 off, 자간 카드 페이지 맞춤 제외 on, 자간 초기화 제외 off.
+- Python·Flutter 전체 검사 및 사용자 지정 github push 결과는 작업 종료 후 이어 기록한다.
+
 - 사용자 신규 지시로 docs/OPENOFFICE_BENCHMARK_REPORT.md 작성. 이음오피스와 Apache OpenOffice를 구분하고 6탭 공통 스타일·이력·필터 설계 및 단계별 검증 게이트를 제안했다.
 - 외부 고정 SHA 소스·공식 UNO 문서와 현재 HEAD 2c164c8 구현을 대조. 1초대 실행은 실측 달성이 아닌 목표로 정정했다.
 - W1~W3는 현황판의 기존 완료/판정 기록을 보존했다. 앱 코드·사용자 원본·COM 변경 및 실행 없음.
@@ -577,3 +584,11 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 - 선택 완료 응답에는 이름/크기만 포함한다. 파일 추가는 add_paths, 폴더는 add_directory, 저장/가져오기는 output_selection_id/input_selection_id를 사용한다. 선택 없이 호출하면 FILE_SELECTION_REQUIRED. 일반 상태 조회용 _tk RPC는 유지한다.
 - 지정 5개 pytest와 관련 브리지/드롭/흐름도/수명 주기 시험 합계 128개 및 142 subtests PASS. 추가 reparse·브리지 연결 시험 포함 신규 서비스 최종 12개 및 4 subtests PASS.
 - CRLF 및 diff 검사 수행. 사용자 원본 수정·한/글 COM 시험 없음. 실제 Windows 대화상자 조작/Flutter 통합 UI 검증은 미실행이며, 전체 저장소 unittest 실행 결과로 보고하지 않는다.
+
+## Codex 결과 보고 — FR6 파일명 일괄변경 확장 (2026-11-01)
+
+- 브랜치 `feature/rename-sendto`에서 FR6 서비스·Flutter 화면을 보완했다. 파일명 메뉴 플래그 `kFileRenameMenuEnabled=false`는 유지했고 설정의 SendTo 스위치는 이 플래그가 켜질 때만 보이게 했다. 기본 설정은 false.
+- 서비스: `%APPDATA%\\Microsoft\\Windows\\SendTo\\파일명 일괄변경.lnk` 생성/삭제(레지스트리 사용 없음), JSON 규칙 세트 내보내기 자료 생성 및 버전·이름·규칙 검증 후 저장, 찾기/바꾸기 MRU 10개(동일 쌍은 맨 앞으로 이동), `add_argument_paths`에서 기존 추가 경로 검증 재사용.
+- Flutter: JSON 파일 열기/저장 대화상자, 규칙 편집 대화상자의 최근 찾기/바꾸기 메뉴를 연결했다. 메뉴가 숨겨진 상태의 UI 노출이나 인자 실행은 활성화하지 않았다.
+- 시험: 지정 Python 가상환경에서 파일명 변경 관련 55개 PASS(오류 0). SendTo 임시 폴더 생성·삭제, 잘못된/상대/없는 인자 경로, 잘못된 규칙 JSON 무저장, MRU 중복·순서·10개 상한을 포함한다. `flutter test --no-pub --timeout 120s`: 228개 PASS, 기존 제외 1개. `git diff --check` PASS.
+- 한/글 COM 시험 없음. 커밋/푸시는 이 결과 기록 완료 후 수행.

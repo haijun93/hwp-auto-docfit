@@ -34,11 +34,11 @@ class RegressionToolTest(unittest.TestCase):
         configure = self.ns['작업_설정']
         for mode in ('all', 'format', 'spacing', 'unify'):
             with self.subTest(mode=mode):
-                _, stages, detail, _ = configure({'all_linespacing': False, 'std_linespacing': True}, mode, False)
+                _, stages, detail, _ = configure({'all_exclude_linespacing': True, 'std_linespacing': True}, mode, False)
                 self.assertEqual(detail['std_linespacing'], mode not in ('all', 'format'))
                 _, baseline, _, _ = configure({}, mode, False)
                 self.assertEqual(stages, baseline)
-        for settings in ({}, {'all_linespacing': True}):
+        for settings in ({}, {'all_exclude_linespacing': False}):
             for enabled in (False, True):
                 _, _, detail, _ = configure({**settings, 'std_linespacing': enabled}, 'all', False)
                 self.assertEqual(detail['std_linespacing'], enabled)

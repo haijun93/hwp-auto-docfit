@@ -31,6 +31,9 @@ on:
       - release/2.0.5
       - release/2.0.6
       - release/2.0.7
+      - release/2.0.8
+      - release/2.0.9
+      - release/2.1.0
       - claude/affectionate-goldberg-ggln7c
     paths-ignore:
       - 'README.md'
@@ -54,16 +57,16 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
 
       - name: Install build dependencies
         run: |
           python -m venv .venv
-          & ".\.venv\Scripts\python.exe" -m pip install --disable-pip-version-check -r "requirements.txt" pyinstaller playwright psutil
+          & ".\.venv\Scripts\python.exe" -m pip install --disable-pip-version-check -c constraints.txt -r "requirements.txt" pyinstaller playwright psutil
 
       - name: Check Pillow image support
         run: |
@@ -106,12 +109,20 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: '3.47.5'
+          flutter-version: '3.47.9'
           cache: true
 
       - name: Build Flutter interface
         shell: pwsh
         run: ./build_flutter.ps1
+
+      - name: Build K agent (kagent.exe, Rust)
+        shell: pwsh
+        run: |
+          cargo test --release --locked --manifest-path kagent/Cargo.toml
+          cargo build --release --locked --manifest-path kagent/Cargo.toml
+          Copy-Item kagent/target/release/kagent.exe resources/kagent.exe -Force
+          (Get-FileHash resources/kagent.exe -Algorithm SHA256).Hash | Out-File -Encoding ascii resources/kagent.exe.sha256
 
       - name: Build EXE using shared packaging specification
         run: |

@@ -240,12 +240,13 @@ void main() {
               s != 'enable_close_guard' &&
               s != 'table_units' &&
               s != 'table_sketch' &&
-              s != 'flow_editor',
+              s != 'flow_editor' &&
+              s != 'timemachine',
         ),
         ['add_files', 'set_mode', 'start'],
       );
       expect(find.text('문서를 정리하고 있어요'), findsOneWidget);
-      await tester.tap(find.text(width >= 1000 ? '문서 선택' : '1. 문서 선택').first);
+      await tester.tap(find.textContaining('문서 선택').first);
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('문서.hwpx'), findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -436,6 +437,11 @@ void main() {
         state['reset_spacing'] = args.first;
         state['mode'] = 'spacing';
       }
+      if (name == 'set_card_option') {
+        final options = state['card_options'] as Map<String, Object?>? ?? {};
+        options[args[0] as String] = args[1];
+        state['card_options'] = options;
+      }
       return Map<String, dynamic>.from(state);
     }
 
@@ -443,10 +449,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('작업 방식 선택'));
     await tester.pumpAndSettle();
-    expect(find.text('기존 자간 초기화'), findsOneWidget);
+    expect(find.byKey(const Key('resetSpacingSwitch')), findsOneWidget);
     await tester.tap(find.byKey(const Key('resetSpacingSwitch')));
     await tester.pumpAndSettle();
-    expect(calls.last, ['set_reset_spacing', false]);
+    expect(calls.last, ['set_card_option', 'spacing_exclude_reset', true]);
     expect(find.text('문서에 있던 자간은 그대로 두고 그 위에서 정리해요.'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
@@ -561,11 +567,11 @@ void main() {
     expect(calls.last, ['set_card_option', 'all_exclude_pagefit', true]);
     final linespacingSwitch = find.byKey(const Key('allLinespacingSwitch'));
     await tester.ensureVisible(linespacingSwitch);
-    expect(tester.widget<Switch>(linespacingSwitch).value, isTrue);
+    expect(tester.widget<Switch>(linespacingSwitch).value, isFalse);
     await tester.tap(linespacingSwitch);
     await tester.pumpAndSettle();
-    expect(calls.last, ['set_card_option', 'all_linespacing', false]);
-    expect(tester.widget<Switch>(linespacingSwitch).value, isFalse);
+    expect(calls.last, ['set_card_option', 'all_exclude_linespacing', true]);
+    expect(tester.widget<Switch>(linespacingSwitch).value, isTrue);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
@@ -824,7 +830,8 @@ void main() {
               name != 'table_units' &&
               name != 'table_sketch' &&
               name != 'flow_editor' &&
-              name != 'live_link',
+              name != 'live_link' &&
+              name != 'timemachine',
         ),
         ['get_abbreviations'],
       );
@@ -867,7 +874,7 @@ void main() {
       await tester.pumpWidget(DocFitApp(api: api));
       await tester.pumpAndSettle();
       if (resetMethod == 'next_job') {
-        await tester.tap(find.text('결과 확인').first);
+        await tester.tap(find.textContaining('결과 확인').first);
         await tester.pumpAndSettle();
         await tester.tap(find.text('새 작업 시작'));
         await tester.pumpAndSettle();
@@ -1001,7 +1008,9 @@ void main() {
     await tester.tap(find.text('작업 방식 선택'));
     await tester.pumpAndSettle();
     // 파일 변환은 '파일변환' 탭에서 고른다(작업 방식 카드에서 뺐다, 2026-10-30).
-    await tester.tap(find.byKey(const Key('workspaceTab-6')));
+    // 탭 8개: 좁은 창에서는 탭 줄을 밀어야 보인다.
+    await tester.ensureVisible(find.byKey(const Key('workspaceTab-8')));
+    await tester.tap(find.byKey(const Key('workspaceTab-8')));
     await tester.pumpAndSettle();
     // 2.0.7: 파일변환 탭 한 화면에서 포맷 칸을 바로 누른다(팝업 없음).
     expect(find.byKey(const Key('conversionWorkspace')), findsOneWidget);
@@ -1050,7 +1059,9 @@ void main() {
     await tester.tap(find.text('작업 방식 선택'));
     await tester.pumpAndSettle();
     // 파일 변환은 '파일변환' 탭에서 고른다(작업 방식 카드에서 뺐다, 2026-10-30).
-    await tester.tap(find.byKey(const Key('workspaceTab-6')));
+    // 탭 8개: 좁은 창에서는 탭 줄을 밀어야 보인다.
+    await tester.ensureVisible(find.byKey(const Key('workspaceTab-8')));
+    await tester.tap(find.byKey(const Key('workspaceTab-8')));
     await tester.pumpAndSettle();
     // 2.0.7: 파일변환 탭 한 화면에서 포맷 칸을 바로 누른다(팝업 없음).
     expect(find.byKey(const Key('conversionWorkspace')), findsOneWidget);
@@ -1099,7 +1110,9 @@ void main() {
     await tester.tap(find.text('작업 방식 선택'));
     await tester.pumpAndSettle();
     // 파일 변환은 '파일변환' 탭에서 고른다(작업 방식 카드에서 뺐다, 2026-10-30).
-    await tester.tap(find.byKey(const Key('workspaceTab-6')));
+    // 탭 8개: 좁은 창에서는 탭 줄을 밀어야 보인다.
+    await tester.ensureVisible(find.byKey(const Key('workspaceTab-8')));
+    await tester.tap(find.byKey(const Key('workspaceTab-8')));
     await tester.pumpAndSettle();
     // 2.0.7: 파일변환 탭 한 화면에서 포맷 칸을 바로 누른다(팝업 없음).
     expect(find.byKey(const Key('conversionWorkspace')), findsOneWidget);
@@ -1166,7 +1179,9 @@ void main() {
     await tester.tap(find.text('작업 방식 선택'));
     await tester.pumpAndSettle();
     // 파일 변환은 '파일변환' 탭에서 고른다(작업 방식 카드에서 뺐다, 2026-10-30).
-    await tester.tap(find.byKey(const Key('workspaceTab-6')));
+    // 탭 8개: 좁은 창에서는 탭 줄을 밀어야 보인다.
+    await tester.ensureVisible(find.byKey(const Key('workspaceTab-8')));
+    await tester.tap(find.byKey(const Key('workspaceTab-8')));
     await tester.pumpAndSettle();
     // 2.0.7: 쓸 수 없는 포맷 칸은 눌러지지 않고, 말풍선으로 이유(설치 필요)를 보인다.
     expect(find.byTooltip('kordoc 4.24.9 설치 필요 (Node.js 20+)'), findsWidgets);
@@ -1202,7 +1217,9 @@ void main() {
 
         await tester.pumpWidget(DocFitApp(api: api));
         await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('workspaceTab-6')));
+        // 탭 8개: 좁은 창에서는 탭 줄을 밀어야 보인다.
+        await tester.ensureVisible(find.byKey(const Key('workspaceTab-8')));
+        await tester.tap(find.byKey(const Key('workspaceTab-8')));
         await tester.pumpAndSettle();
         expect(find.byKey(const Key('conversionWorkspace')), findsOneWidget);
         expect(find.byKey(const Key('floatingConversionPicker')), findsNothing);

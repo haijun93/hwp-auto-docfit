@@ -14,6 +14,8 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import pdfium_guard
+
 # 강도: (목표 dpi, JPEG 품질). 기본은 '보통'.
 LEVELS = {"lossless": None, "normal": (150, 75), "strong": (100, 60)}
 DEFAULT_LEVEL = "normal"
@@ -66,6 +68,7 @@ def _page_signature(reader):
             for p in reader.pages]
 
 
+@pdfium_guard.exclusive()
 def _page_texts(path: Path) -> list[str]:
     import pypdfium2 as pdfium
 
@@ -153,7 +156,7 @@ def compress_pdf(source: str | Path, target: str | Path, *, level: str = DEFAULT
             page.compress_content_streams(level=9)
             if setting:
                 images += _recompress_images(page, *setting)
-        writer.compress_identical_objects(remove_identicals=True, remove_orphans=True)
+        writer.compress_identical_objects(remove_duplicates=True, remove_unreferenced=True)
         if secured:
             # 원본과 같은 권한값으로 다시 잠근다. 원래 소유자 암호는 알 수 없으므로 새 무작위 값을 쓴다.
             writer.encrypt(user_password="", owner_password=secrets.token_urlsafe(24),

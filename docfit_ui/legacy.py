@@ -511,7 +511,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 # '한 번에 적용'의 '페이지 맞춤 제외'와 '서식 통일' 카드의 표 제외·자간 정리 제외·페이지 맞춤 제외. 세부 작업과
                 # 연동한다(_카드옵션_연동_시작).
                 self.all_exclude_pagefit_var = tk.BooleanVar(value=bool(저장된_설정.get("all_exclude_pagefit", False)))
-                self.all_linespacing_var = tk.BooleanVar(value=bool(저장된_설정.get("all_linespacing", True)))
+                self.all_exclude_linespacing_var = tk.BooleanVar(value=bool(저장된_설정.get("all_exclude_linespacing", False)))
                 self.unify_exclude_tables_var = tk.BooleanVar(value=bool(저장된_설정.get("unify_exclude_tables", False)))
                 self.unify_exclude_spacing_var = tk.BooleanVar(value=bool(저장된_설정.get("unify_exclude_spacing", False)))
                 self.unify_exclude_pagefit_var = tk.BooleanVar(value=bool(저장된_설정.get("unify_exclude_pagefit", True)))
@@ -528,20 +528,24 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         self.unify_quick_mode_var.set(target)
                 self.unify_quick_mode_var.trace_add("write", sync_full_format)
                 self.unify_full_format_var.trace_add("write", sync_quick_mode)
-                for 변수 in (self.exclude_tables_var, self.all_exclude_pagefit_var, self.all_linespacing_var, self.unify_exclude_tables_var,
+                for 변수 in (self.exclude_tables_var, self.all_exclude_pagefit_var, self.all_exclude_linespacing_var, self.unify_exclude_tables_var,
                              self.unify_exclude_spacing_var, self.unify_exclude_pagefit_var, self.unify_keep_layout_var,
                              self.unify_full_format_var):
                     변수.trace_add("write", self._설정_변경됨)
                     변수.trace_add("write", self._요약갱신)
-                # '자간 정리' 카드의 '기존 자간 초기화'. 세부 작업 01(문서 전체 자간 초기화)과 같은 값이며 설정 파일에 저장한다.
-                저장된_초기화 = 저장된_설정.get("spacing_reset_existing")
-                if isinstance(저장된_초기화, bool):
-                    self.stage_choices["spacing"]["reset_spacing"] = 저장된_초기화
-                self.reset_spacing_var = tk.BooleanVar(value=bool(self.stage_choices["spacing"]["reset_spacing"]))
-                self.reset_spacing_var.trace_add("write", self._자간초기화_값변경)
+                # 카드의 제외값과 세부 작업 01 값을 반대로 연결한다.
+                저장된_초기화_제외 = 저장된_설정.get("spacing_exclude_reset")
+                if isinstance(저장된_초기화_제외, bool):
+                    self.stage_choices["spacing"]["reset_spacing"] = not 저장된_초기화_제외
+                self.spacing_exclude_reset_var = tk.BooleanVar(value=not bool(저장된_설정.get("spacing_exclude_reset", False)))
+                self.spacing_exclude_reset_var.trace_add("write", self._자간초기화_값변경)
+                self.reset_spacing_var = tk.BooleanVar(value=not self.spacing_exclude_reset_var.get())
+                self.reset_spacing_var.trace_add("write", self._자간초기화_세부값변경)
+                self.spacing_exclude_reset_var.set(bool(저장된_초기화_제외) if isinstance(저장된_초기화_제외, bool)
+                                                   else not bool(self.stage_choices["spacing"].get("reset_spacing", True)))
                 self.spacing_enabled_var = tk.BooleanVar(value=bool(저장된_설정.get("spacing_enabled", True)))
-                self.spacing_page_fit_var = tk.BooleanVar(value=bool(저장된_설정.get("spacing_page_fit", False)))
-                for 변수 in (self.spacing_enabled_var, self.spacing_page_fit_var):
+                self.spacing_exclude_pagefit_var = tk.BooleanVar(value=bool(저장된_설정.get("spacing_exclude_pagefit", True)))
+                for 변수 in (self.spacing_enabled_var, self.spacing_exclude_pagefit_var):
                     변수.trace_add("write", self._설정_변경됨)
                     변수.trace_add("write", self._요약갱신)
                 # '자간 정리' 카드의 '표 제외'는 설정 table_spacing(표 안 문장 자간조정)의 반대 값이다. 바꾸면 카드 요약
@@ -588,10 +592,10 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         return check
                     if mode == "spacing":
                         카드_체크("자간 정리", self.spacing_enabled_var, lambda: self._카드옵션_변경("spacing"))
-                        카드_체크("페이지 맞춤", self.spacing_page_fit_var, lambda: self._카드옵션_변경("spacing"))
-                        # 끄면 문서에 이미 있는 자간을 0%로 되돌리지 않고 그 위에서 정리한다.
+                        카드_체크("페이지 맞춤 제외", self.spacing_exclude_pagefit_var, lambda: self._카드옵션_변경("spacing"))
+                        # 켜면 문서에 이미 있는 자간 초기화를 건너뛴다.
                         self.reset_spacing_check = tk.Checkbutton(
-                            inner, text="기존 자간 초기화", variable=self.reset_spacing_var,
+                            inner, text="기존 자간 초기화 제외", variable=self.spacing_exclude_reset_var,
                             command=self._자간초기화_변경, bg=UI_COLORS["surface"], activebackground=UI_COLORS["surface"],
                             fg=UI_COLORS["ink"], font=("맑은 고딕", 9), anchor="w", cursor="hand2")
                         self.reset_spacing_check.pack(anchor="w", pady=(0, 4))
@@ -633,8 +637,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         # 켜면 문단 아래 간격 페이지 맞춤·관련 문단 페이지 배치를 뺀다.
                         self.all_exclude_pagefit_check = 카드_체크(
                             "페이지 맞춤 제외", self.all_exclude_pagefit_var, self._표제외_변경)
-                        self.all_linespacing_check = 카드_체크(
-                            "줄 간격 적용", self.all_linespacing_var, self._표제외_변경)
+                        self.all_exclude_linespacing_check = 카드_체크(
+                            "줄 간격 적용 제외", self.all_exclude_linespacing_var, self._표제외_변경)
                     self.mode_cards[mode] = (card, inner, description)
                     for surface in (card, inner, description):
                         surface.bind("<Button-1>", lambda e, m=mode: self._카드_클릭(m))
@@ -1451,12 +1455,12 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     return
                 if mode == "spacing":
                     summary = ("줄 끝의 끊긴 단어와 자간을 정리합니다." if 초기화
-                               else "기존 자간을 초기화하지 않고 그 위에서 줄 끝의 끊긴 단어를 정리합니다.")
+                               else "기존 자간을 초기화하지 않고 그 위에서 줄 끝의 단어를 정리합니다.")
                     자간켜짐 = getattr(self, "spacing_enabled_var", None)
-                    쪽켜짐 = getattr(self, "spacing_page_fit_var", None)
+                    쪽제외 = getattr(self, "spacing_exclude_pagefit_var", None)
                     if 자간켜짐 is not None and not 자간켜짐.get():
-                        summary = "자간 변경 없이 페이지 맞춤만 실행합니다." if 쪽켜짐.get() else "자간 정리 또는 페이지 맞춤을 켜 주세요."
-                    elif 쪽켜짐 is not None and 쪽켜짐.get():
+                        summary = "자간 정리 없이 페이지 맞춤만 실행합니다." if 쪽제외 is not None and not 쪽제외.get() else "자간 정리를 끄고 페이지 맞춤도 제외하면 할 일이 없습니다."
+                    elif 쪽제외 is not None and not 쪽제외.get():
                         summary += " · 페이지 맞춤 포함"
                     if ((자간켜짐 is None or 자간켜짐.get())
                             and hasattr(self, "table_spacing_var") and not self.table_spacing_var.get()):
@@ -1477,8 +1481,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     summary += " · 표 제외"
                 if mode in ("all", "format") and hasattr(self, "all_exclude_pagefit_var") and self.all_exclude_pagefit_var.get():
                     summary += " · 페이지 맞춤 제외"
-                if mode in ("all", "format") and hasattr(self, "all_linespacing_var") and not self.all_linespacing_var.get():
-                    summary += " · 줄 간격 적용 끔"
+                if mode in ("all", "format") and hasattr(self, "all_exclude_linespacing_var") and self.all_exclude_linespacing_var.get():
+                    summary += " · 줄 간격 적용 제외"
                 choices = self.stage_choices[mode]
                 # 카드 옵션으로 끈 작업(자간 정리의 자간 초기화, 표 제외·페이지 맞춤 제외 등)은 위 문구로 이미 알린다.
                 카드로_끈작업 = 카드옵션_끈작업(self._카드옵션값_목록(), mode)
@@ -1622,8 +1626,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             # 자간 정리의 '표 제외'는 설정 table_spacing(표 안 문장 자간조정)의 반대 값이다.
             _카드옵션_변수 = {
                 "spacing_enabled": ("spacing_enabled_var", False),
-                "spacing_page_fit": ("spacing_page_fit_var", False),
-                "spacing_reset_existing": ("reset_spacing_var", False),
+                "spacing_exclude_pagefit": ("spacing_exclude_pagefit_var", False),
+                "spacing_exclude_reset": ("spacing_exclude_reset_var", False),
                 "spacing_exclude_tables": ("table_spacing_var", True),
                 "unify_exclude_tables": ("unify_exclude_tables_var", False),
                 "unify_exclude_spacing": ("unify_exclude_spacing_var", False),
@@ -1631,6 +1635,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 "unify_keep_layout": ("unify_keep_layout_var", False),
                 "unify_quick_mode": ("unify_quick_mode_var", False),
                 "all_include_spacing": ("include_spacing_var", False),
+                "all_exclude_linespacing": ("all_exclude_linespacing_var", False),
                 "all_exclude_tables": ("exclude_tables_var", False),
                 "all_exclude_pagefit": ("all_exclude_pagefit_var", False),
             }
@@ -1721,13 +1726,13 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 """
                 self._카드옵션_맞추는중 = False
                 # 새 포함 옵션의 저장된 OFF도 기본 단계보다 우선한다.
-                for 옵션 in ("spacing_enabled", "spacing_page_fit"):
+                for 옵션 in ("spacing_enabled", "spacing_exclude_pagefit"):
                     값 = self._카드옵션값(옵션)
-                    if 값 is False or (옵션 == "spacing_page_fit" and 값 is True and not any(
+                    if 값 is False or (옵션 == "spacing_exclude_pagefit" and 값 is True and not any(
                             self.stage_choices["spacing"].get(key) for key in ("page_fit", "page_group"))):
                         self._카드옵션_세부작업_반영(옵션)
                 for 옵션, (_, _, 제외) in 카드옵션_세부작업.items():
-                    if 제외 and self._카드옵션값(옵션):
+                    if 제외 and self._카드옵션값(옵션) and 옵션 != "spacing_exclude_reset":
                         self._카드옵션_세부작업_반영(옵션)
                 for mode in ("spacing", "unify", self._한번에_모드()):
                     self._세부작업_옵션_맞춤(mode)
@@ -1771,13 +1776,21 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 self._모드_선택됨()
 
             def _자간초기화_값변경(self, *args):
-                """'기존 자간 초기화' 값을 자간 정리 세부 작업 01에 반영하고 설정 파일에 저장한다."""
-                self.stage_choices["spacing"]["reset_spacing"] = bool(self.reset_spacing_var.get())
+                """초기화 제외 옵션과 세부 작업 01 값을 함께 갱신한다."""
+                excluded = bool(self.spacing_exclude_reset_var.get())
+                self.stage_choices["spacing"]["reset_spacing"] = not excluded
+                self.reset_spacing_var.set(not excluded)
                 self._설정_변경됨()
                 self._요약갱신()
 
+            def _자간초기화_세부값변경(self, *args):
+                reset = bool(self.reset_spacing_var.get())
+                self.stage_choices["spacing"]["reset_spacing"] = reset
+                if self.spacing_exclude_reset_var.get() == reset:
+                    self.spacing_exclude_reset_var.set(not reset)
+
             def _자간초기화_변경(self):
-                """'기존 자간 초기화'·'표 내 자간 정리'를 바꾸면 '자간 정리' 카드를 고른다."""
+                """자간 제외 옵션을 바꾸면 '자간 정리' 카드를 고른다."""
                 if self.running:
                     return
                 self.selected_mode.set("spacing")
@@ -3970,9 +3983,6 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                             self.unify_quick_mode_var.set(not bool(value))
                         elif variable is not None:
                             variable.set(value)
-                        if root == 'spacing_reset_existing':
-                            self.stage_choices['spacing']['reset_spacing'] = bool(value)
-                            self.reset_spacing_var.set(bool(value))
                     self.selected_mode.set(self._한번에_모드() if previous_mode in ('all','format') else previous_mode)
                     self._요약갱신()
                     self._항상위_적용()
@@ -4033,8 +4043,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                                                    if hasattr(self, "include_spacing_var") else True)
                     설정값["all_exclude_tables"] = (bool(self.exclude_tables_var.get())
                                                   if hasattr(self, "exclude_tables_var") else False)
-                    설정값["all_linespacing"] = (bool(self.all_linespacing_var.get())
-                                                if hasattr(self, "all_linespacing_var") else True)
+                    설정값["all_exclude_linespacing"] = (bool(self.all_exclude_linespacing_var.get())
+                                                          if hasattr(self, "all_exclude_linespacing_var") else False)
                     for 키, 이름 in (("all_exclude_pagefit", "all_exclude_pagefit_var"),
                                    ("unify_exclude_tables", "unify_exclude_tables_var"),
                                    ("unify_exclude_spacing", "unify_exclude_spacing_var"),
@@ -4042,9 +4052,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                                    ("unify_keep_layout", "unify_keep_layout_var"),
                                    ("unify_full_format", "unify_full_format_var")):
                         설정값[키] = bool(getattr(self, 이름).get()) if hasattr(self, 이름) else False
-                    설정값["spacing_reset_existing"] = bool(self.stage_choices["spacing"].get("reset_spacing", True))
+                    설정값["spacing_exclude_reset"] = bool(self.spacing_exclude_reset_var.get())
                     설정값["spacing_enabled"] = bool(self.spacing_enabled_var.get())
-                    설정값["spacing_page_fit"] = bool(self.spacing_page_fit_var.get())
+                    설정값["spacing_exclude_pagefit"] = bool(self.spacing_exclude_pagefit_var.get())
                     설정값["active_format_profile"] = getattr(self, "_활성_서식_프로파일", "")
                     기존_설정 = 설정_불러오기()
                     기존_세부작업 = 기존_설정.get("stage_choices", {})
@@ -4626,8 +4636,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 self.worker = manager_for(self).thread(self._job_id)
 
             def 작업시작(self, mode='all'):
-                if mode == "spacing" and not self.spacing_enabled_var.get() and not self.spacing_page_fit_var.get():
-                    self._알림(messagebox.showinfo, APP_NAME, "자간 정리 또는 페이지 맞춤을 하나 이상 켜 주세요.")
+                if mode == "spacing" and not self.spacing_enabled_var.get() and self.spacing_exclude_pagefit_var.get():
+                    self._알림(messagebox.showinfo, APP_NAME, "자간 정리를 끄고 페이지 맞춤도 제외하면 할 일이 없습니다.")
                     return
                 if getattr(self, "_서식분석중", False):
                     self._알림(messagebox.showinfo, APP_NAME, "서식 분석이 끝난 뒤 실행해 주세요.")
@@ -4772,8 +4782,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 self.state.options = RunOptions(
                     mode=mode, include_spacing=bool(self.include_spacing_var.get()),
                     spacing_enabled=bool(self.spacing_enabled_var.get()),
-                    spacing_page_fit=bool(self.spacing_page_fit_var.get()),
+                    spacing_exclude_pagefit=bool(self.spacing_exclude_pagefit_var.get()),
                     reset_spacing=bool(self.stage_choices[mode].get("reset_spacing", True)),
+                    spacing_exclude_reset=bool(self.spacing_exclude_reset_var.get()),
                     table_spacing=bool(self.table_spacing_var.get()), exclude_tables=bool(표제외),
                     verify_result=bool(self.verify_var.get()), autoclose=bool(self.autoclose_var.get()),
                     developer_mode=bool(self.developer_mode_var.get()),
@@ -4795,7 +4806,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     self.로그표시("자간 정리 제외: 서식통일이 고친 문장의 자간 조정·외톨이 글자 당기기를 하지 않습니다.")
                 표준서식_세부_전달["unify_exclude_spacing"] = 자간제외
                 # 프로필 옵션을 반영한 화면 값보다 이번 작업의 카드 선택을 우선한다.
-                if mode in ("all", "format") and not self.all_linespacing_var.get():
+                if mode in ("all", "format") and self.all_exclude_linespacing_var.get():
                     표준서식_세부_전달["std_linespacing"] = False
 
                 self._진행_세부작업 = dict(세부작업)   # 진행 화면이 끈 단계를 목록에서 뺄 때 쓴다

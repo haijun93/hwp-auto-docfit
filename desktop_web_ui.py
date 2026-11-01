@@ -431,6 +431,9 @@ class DesktopWebBridge:
         return {"ok": service.open_download_page()}
 
     def get_state(self):
+        # 파일명 서비스를 처음 만들 때 Tk 호출을 기다리므로 Tk 스레드 밖에서 처리한다.
+        rename_open = self._drain_rename_paths()
+
         def snapshot():
             gui = self.gui
             mode = gui.selected_mode.get()
@@ -499,6 +502,8 @@ class DesktopWebBridge:
                 "format_task": self._format_task(),
                 "pending_dialog": self._pending_dialog(),
                 "drop_target": self.drop_target,
+                "rename_open": rename_open,
+                "sidebar_collapsed": self._sidebar_collapsed_value(),
                 "document_drop_revision": self._document_drop_revision,
                 "options": {
                     name: bool(getattr(gui, attribute).get())
@@ -541,7 +546,7 @@ class DesktopWebBridge:
             return False
         if mode == "spacing":
             options = self._card_options()
-            if not options["spacing_enabled"] and not options["spacing_page_fit"]:
+            if not options["spacing_enabled"] and options["spacing_exclude_pagefit"]:
                 return False
         suffixes = [Path(path).suffix.lower() for path in files]
         if mode == "file_format":
@@ -815,6 +820,80 @@ class DesktopWebBridge:
         self._tk(update)
         return self.get_state()
 
+    def start_single_file_conversion(self, file_index, target):
+        """현재 공통 변환 가능성 판단을 적용해 선택한 입력 하나를 고정하여 변환한다."""
+        from docfit_app.api_contract import ServiceError
+        target = str(target or "").lower()
+        if target not in CONVERSION_OUTPUTS:
+            raise ValueError("지원하지 않는 결과 형식입니다.")
+
+        def begin():
+            gui = self.gui
+            if gui.running:
+                raise ServiceError('JOB_RUNNING', '문서 작업이 진행 중입니다.')
+            try:
+                index = int(file_index)
+            except (TypeError, ValueError):
+                raise ValueError("파일 선택이 올바르지 않습니다.")
+            current_files = list(gui.files)
+            if not 0 <= index < len(current_files):
+                raise ValueError("파일을 찾을 수 없습니다.")
+            source_snapshot = str(current_files[index])
+            targets = {item["format"]: item for item in self._conversion_targets([source_snapshot])}
+            chosen = targets.get(target)
+            if chosen is None or not chosen.get("enabled"):
+                reason = (chosen or {}).get("reason") or "지원하지 않는 결과 형식입니다"
+                raise ValueError(f"{target.upper()} 변환을 시작할 수 없습니다: {reason}")
+
+            return self._start_single_conversion_snapshot(source_snapshot, target)
+
+        return self._tk(begin)
+
+    def _start_single_conversion_snapshot(self, source_snapshot, target):
+        """목록/현재 타깃 UI 상태를 쓰지 않고 단일 경로 snapshot으로 runner를 시작한다."""
+        from docfit_app.api_contract import ServiceError
+        from docfit_app.jobs import manager_for, prepare_legacy
+        from docfit_app.conversion_runner import start_conversion_job
+        gui = self.gui
+        if gui.running:
+            raise ServiceError('JOB_RUNNING', '문서 작업이 진행 중입니다.')
+        runtime = getattr(gui, '_docfit_runtime_namespace', None)
+        if runtime is None:
+            runtime = getattr(gui, '파일포맷_변경_시작').__globals__
+        stop_event = runtime.get('중단_event')
+        gui_queue = runtime.get('gui_queue')
+        if stop_event is None or gui_queue is None:
+            raise ServiceError('JOB_NOT_STARTED', '변환 작업 실행 환경을 준비하지 못했습니다.')
+        identifier = prepare_legacy(gui).begin(
+            'file_format', {'target': target, 'files': [source_snapshot]}, stop_event=stop_event,
+        )
+        gui._job_id = identifier
+        manager = manager_for(gui)
+        manager.report(identifier, 'started', {})
+        gui._flutter_completion = {}
+        gui._flutter_format_review = {}
+        gui.running = True
+        gui.closing = False
+        stop_event.clear()
+        gui.selected_mode.set('file_format')
+        gui._결과_초기화(결과목록도_지우기=True)
+        gui._안내키, gui._안내지남 = None, set()
+        gui._진행문서, gui._실패목록, gui._진행_세부작업 = None, {}, None
+        gui._작업시작시각, gui._작업종료시각 = time.monotonic(), None
+        gui.status_var.set('파일 변환 중 · 1개')
+        gui._안내_설정(0)
+        gui.버튼_작업중()
+        gui.로그표시("")
+        gui.로그표시(f"파일 변환 시작 · 1개 · 결과 {target.upper()}")
+        gui._job_managed_conversion = identifier
+        start_conversion_job(
+            manager, [source_snapshot], target, job_id=identifier,
+            progress=gui_queue.put, stop_event=stop_event,
+            runtime_factory=lambda: runtime, log=gui.로그표시,
+        )
+        gui.worker = manager.thread(identifier)
+        return identifier
+
     def set_include_spacing(self, on):
         """'한 번에 적용'의 '자간 조정 포함'을 바꾸고 그 카드를 고른다(설정 파일에 저장된다)."""
         def update():
@@ -831,17 +910,17 @@ class DesktopWebBridge:
         return self.get_state()
 
     def _reset_spacing(self):
-        return bool(self.gui.stage_choices.get("spacing", {}).get("reset_spacing", True))
+        return not bool(getattr(self.gui, "spacing_exclude_reset_var", None).get()) if getattr(self.gui, "spacing_exclude_reset_var", None) is not None else bool(self.gui.stage_choices.get("spacing", {}).get("reset_spacing", True))
 
     def set_reset_spacing(self, on):
-        """'자간 정리'의 '기존 자간 초기화'(세부 작업 01)를 바꾸고 그 카드를 고른다(설정 파일에 저장된다)."""
+        """기존 호환 호출을 새 초기화 제외 카드 옵션에 연결한다."""
         def update():
             gui = self.gui
             if gui.running:
                 return
-            variable = getattr(gui, "reset_spacing_var", None)
+            variable = getattr(gui, "spacing_exclude_reset_var", None)
             if variable is not None:
-                variable.set(bool(on))   # 변경 감시가 세부 작업 값과 설정 파일을 함께 바꾼다
+                variable.set(not bool(on))
             else:
                 gui.stage_choices["spacing"]["reset_spacing"] = bool(on)
             self._page_fit_card = False  # 다른 카드를 고르면 페이지 맞춤 카드 해제
@@ -901,9 +980,10 @@ class DesktopWebBridge:
     # 같이 켜고 끈다(서식 통일의 쪽 맞춤은 세부 작업 기본값이 꺼짐이라 '페이지 맞춤 제외'가 기본 켜짐).
     _CARD_OPTIONS = {
         "spacing_enabled": ("spacing_enabled_var", "spacing"),
-        "spacing_page_fit": ("spacing_page_fit_var", "spacing"),
+        "spacing_exclude_pagefit": ("spacing_exclude_pagefit_var", "spacing"),
+        "spacing_exclude_reset": ("spacing_exclude_reset_var", "spacing"),
         "all_exclude_pagefit": ("all_exclude_pagefit_var", "all"),
-        "all_linespacing": ("all_linespacing_var", "all"),
+        "all_exclude_linespacing": ("all_exclude_linespacing_var", "all"),
         "unify_exclude_tables": ("unify_exclude_tables_var", "unify"),
         "unify_exclude_spacing": ("unify_exclude_spacing_var", "unify"),
         "unify_exclude_pagefit": ("unify_exclude_pagefit_var", "unify"),
@@ -915,7 +995,9 @@ class DesktopWebBridge:
         result = {}
         for key, (name, _) in self._CARD_OPTIONS.items():
             variable = getattr(self.gui, name, None)
-            result[key] = (key in ("spacing_enabled", "all_linespacing")) if variable is None else bool(variable.get())
+            defaults = {"spacing_enabled": True, "spacing_exclude_pagefit": True,
+                        "spacing_exclude_reset": False, "all_exclude_linespacing": False}
+            result[key] = defaults.get(key, False) if variable is None else bool(variable.get())
         return result
 
     def set_card_option(self, key, on):
@@ -969,11 +1051,18 @@ class DesktopWebBridge:
                 self._table_copy_job(params, report, cancelled))
         if kind not in {'format', 'spacing', 'unify', 'all', 'file_format', 'pagefit'}:
             raise ServiceError('INVALID_INPUT', '지원하지 않는 작업 종류입니다.')
-        if kind == 'file_format' and 'target' in params:
+        if kind == 'file_format' and 'target' in params and not params.get('single_file'):
             self.set_conversion_target(params['target'])
-        return self._start_legacy(kind, params.get('range_enabled', False),
+        if kind == 'file_format' and params.get('single_file'):
+            self._single_conversion_target = str(params['target']).lower()
+        try:
+            return self._start_legacy(kind, params.get('range_enabled', False),
                                   params.get('start', '1'), params.get('end', '1'),
-                                  file_order=params.get('file_order'), _strict=True)
+                                  file_order=params.get('file_order'), _strict=True,
+                                  single_file=bool(params.get('single_file')))
+        finally:
+            if kind == 'file_format' and params.get('single_file'):
+                self._single_conversion_target = None
 
     def _table_copy_job(self, params, report, cancelled):
         if cancelled():
@@ -1005,14 +1094,16 @@ class DesktopWebBridge:
                 raise
         return self.get_state()
 
-    def _start_legacy(self, mode, range_enabled=False, start="1", end="1", *, file_order=None, _strict=False):
+    def _start_legacy(self, mode, range_enabled=False, start="1", end="1", *, file_order=None,
+                      _strict=False, single_file=False):
         from docfit_app.api_contract import ServiceError
         def started(previous):
             identifier = getattr(self.gui, '_job_id', None)
             if _strict and (not identifier or identifier == previous):
                 raise ServiceError('JOB_NOT_STARTED', '입력 문서와 작업 설정을 확인해 주세요.')
             return identifier
-        if file_order is not None and (mode != "file_format" or self.conversion_target != "pdfm"):
+        if file_order is not None and (mode != "file_format" or
+                                       (self.conversion_target != "pdfm" and not single_file)):
             raise ValueError("파일 순서는 PDF 하나로 합치기에서만 지정할 수 있습니다.")
 
         if mode not in {"spacing", "unify", "format", "all", "file_format", "pagefit"}:
@@ -1021,11 +1112,12 @@ class DesktopWebBridge:
         if mode == "file_format":
             # 화면은 준비되지 않은 형식의 시작 버튼을 끄지만, 늦게 온 요청도 여기서 막는다.
             files = self._tk(lambda: list(self.gui.files))
+            target = getattr(self, '_single_conversion_target', self.conversion_target) if single_file else self.conversion_target
             targets = {item["format"]: item for item in self._conversion_targets(files)}
-            chosen = targets.get(self.conversion_target)
+            chosen = targets.get(target)
             if files and (chosen is None or not chosen.get("enabled")):
                 reason = (chosen or {}).get("reason") or "지원하지 않는 결과 형식입니다"
-                raise ValueError(f"{self.conversion_target.upper()} 변환을 시작할 수 없습니다: {reason}")
+                raise ValueError(f"{target.upper()} 변환을 시작할 수 없습니다: {reason}")
             if file_order is not None:
                 if not isinstance(file_order, (list, tuple)):
                     raise ValueError("파일 순서 목록이 올바르지 않습니다.")
@@ -1034,7 +1126,9 @@ class DesktopWebBridge:
                         return os.path.normcase(os.path.normpath(str(p)))
                     except Exception:
                         return str(p)
-                if len(file_order) != len(files) or set(map(_norm, file_order)) != set(map(_norm, files)):
+                if (single_file and (len(file_order) != 1 or file_order[0] not in files) or
+                        not single_file and (len(file_order) != len(files) or
+                                             set(map(_norm, file_order)) != set(map(_norm, files)))):
                     raise ValueError("지정한 파일 순서 목록이 현재 문서 목록과 일치하지 않습니다.")
             def begin_conversion():
                 if self.gui.running:
@@ -1042,11 +1136,55 @@ class DesktopWebBridge:
                 previous = getattr(self.gui, '_job_id', None)
                 self.gui._flutter_completion = {}
                 self.gui._flutter_format_review = {}
-                if self.conversion_target == "pdfm" and file_order:
+                if single_file:
+                    gui = self.gui
+                    target_files = list(file_order or [])
+                    if gui.running or not target_files:
+                        raise ServiceError('JOB_RUNNING' if gui.running else 'JOB_NOT_STARTED',
+                                           '입력 문서와 작업 설정을 확인해 주세요.')
+                    from docfit_app.jobs import manager_for, prepare_legacy
+                    from docfit_app.conversion_runner import start_conversion_job
+                    gui._flutter_completion = {}
+                    gui._flutter_format_review = {}
+                    runtime = getattr(gui, '_docfit_runtime_namespace', None)
+                    if runtime is None:
+                        runtime = getattr(gui.파일포맷_변경_시작, '__globals__', {})
+                    중단_event = runtime.get('중단_event')
+                    gui_queue = runtime.get('gui_queue')
+                    if 중단_event is None or gui_queue is None:
+                        raise ServiceError('JOB_NOT_STARTED', '변환 작업 실행 환경을 준비하지 못했습니다.')
+                    gui._job_id = prepare_legacy(gui).begin(
+                        'file_format', {'target': target}, stop_event=중단_event,
+                    )
+                    identifier = gui._job_id
+                    manager = manager_for(gui)
+                    manager.report(identifier, 'started', {})
+                    gui.running = True
+                    gui.closing = False
+                    중단_event.clear()
+                    gui.selected_mode.set('file_format')
+                    gui._결과_초기화(결과목록도_지우기=True)
+                    gui._안내키, gui._안내지남 = None, set()
+                    gui._진행문서, gui._실패목록, gui._진행_세부작업 = None, {}, None
+                    gui._작업시작시각, gui._작업종료시각 = time.monotonic(), None
+                    gui.status_var.set(f"파일 변환 중 · 1개")
+                    gui._안내_설정(0)
+                    gui.버튼_작업중()
+                    gui.로그표시("")
+                    gui.로그표시(f"파일 변환 시작 · 1개 · 결과 {target.upper()}")
+                    gui._job_managed_conversion = identifier
+                    start_conversion_job(
+                        manager, list(target_files), target, job_id=identifier,
+                        progress=gui_queue.put, stop_event=중단_event,
+                        runtime_factory=lambda: runtime,
+                        log=gui.로그표시,
+                    )
+                    gui.worker = manager.thread(identifier)
+                elif file_order:
                     original_files = list(self.gui.files)
                     try:
                         self.gui.files = list(file_order)
-                        self.gui.파일포맷_변경_시작(self.conversion_target)
+                        self.gui.파일포맷_변경_시작(target)
                     finally:
                         self.gui.files = original_files
                 else:
@@ -1060,8 +1198,8 @@ class DesktopWebBridge:
                 raise ServiceError('JOB_RUNNING', '문서 작업이 진행 중입니다.')
             previous = getattr(self.gui, '_job_id', None)
             options = self._card_options()
-            if mode == "spacing" and not options["spacing_enabled"] and not options["spacing_page_fit"]:
-                raise ValueError("자간 정리 또는 페이지 맞춤을 하나 이상 켜 주세요.")
+            if mode == "spacing" and not options["spacing_enabled"] and options["spacing_exclude_pagefit"]:
+                raise ValueError("자간 정리를 끄고 페이지 맞춤도 제외하면 할 일이 없습니다.")
             page_fit_only = mode == "pagefit"
             run_mode = "spacing" if page_fit_only else mode
             self.gui.selected_mode.set(run_mode)
@@ -1078,14 +1216,16 @@ class DesktopWebBridge:
                 return started(previous)
             # 작업시작이 옵션을 그 자리에서 읽어 두므로, 잠깐 '자간 끔·쪽 맞춤 켬'으로 바꿨다가 자간 정리 카드 설정을 되돌린다.
             gui = self.gui
-            saved = (gui.spacing_enabled_var.get(), gui.spacing_page_fit_var.get())
+            saved = (gui.spacing_enabled_var.get(), gui.spacing_exclude_pagefit_var.get(), gui.spacing_exclude_reset_var.get())
             try:
                 gui.spacing_enabled_var.set(False)
-                gui.spacing_page_fit_var.set(True)
+                gui.spacing_exclude_pagefit_var.set(False)
+                gui.spacing_exclude_reset_var.set(True)
                 gui.작업시작("spacing")
             finally:
                 gui.spacing_enabled_var.set(saved[0])
-                gui.spacing_page_fit_var.set(saved[1])
+                gui.spacing_exclude_pagefit_var.set(saved[1])
+                gui.spacing_exclude_reset_var.set(saved[2])
             return started(previous)
 
         identifier = self._tk(begin)
@@ -1840,6 +1980,71 @@ class DesktopWebBridge:
             logging.getLogger(__name__).warning("LiveLink 실패", exc_info=True)
             return {"ok": False, "message": str(exc) or "한/글에 넣지 못했어요."}
 
+    def _file_rename_service(self):
+        service = getattr(self, "_rename_service", None)
+        if service is None:
+            from docfit_app.file_rename_service import FileRenameService
+            folder = self._tk(lambda: getattr(self.gui, "_준말_서비스")().settings._path.parent)
+            service = self._rename_service = FileRenameService(folder, dialogs=self._file_dialogs)
+        return service
+
+    def _timemachine_service(self):
+        service = getattr(self, "_timemachine_service_instance", None)
+        if service is None:
+            from docfit_app.timemachine_service import TimemachineService
+            folder = self._tk(lambda: getattr(self.gui, "_준말_서비스")().settings._path.parent)
+            service = self._timemachine_service_instance = TimemachineService(folder)
+        return service
+
+    def timemachine(self, action, payload=None):
+        """타임머신 화면 명령을 처리한다."""
+        try:
+            return self._timemachine_service().command(action, payload)
+        except Exception:
+            logging.getLogger(__name__).exception("타임머신 처리 실패")
+            return {"ok": False, "code": "TM_FAILED", "message": "타임머신 작업을 완료하지 못했습니다."}
+
+    def kclip(self, action, payload=None):
+        """K클립보드: 상주 프로그램(kagent.exe) 켜기·끄기와 목록·설정(파이프 명령)."""
+        try:
+            from docfit_app.kclip_service import KClipService
+            service = getattr(self, "_kclip_service", None)
+            if service is None:
+                service = self._kclip_service = KClipService()
+            return service.command(action, payload)
+        except Exception as exc:
+            logging.getLogger(__name__).warning("K클립보드 처리 실패", exc_info=True)
+            return {"ok": False, "message": str(exc) or "K클립보드를 처리하지 못했습니다."}
+
+    def file_rename(self, action, payload=None):
+        """파일이름 탭: 목록·미리보기·적용·되돌리기(경로는 호스트에만 둔다)."""
+        try:
+            return self._file_rename_service().command(action, payload)
+        except Exception as exc:
+            logging.getLogger(__name__).warning("파일이름 처리 실패", exc_info=True)
+            return {"ok": False, "message": str(exc) or "이름 바꾸기를 처리하지 못했습니다."}
+
+    def _drain_rename_paths(self):
+        """탐색기 보내기(--rename)로 받은 경로를 목록에 넣고, 화면이 탭을 열도록 True를 돌려준다.
+        시작 때 호출을 늘리지 않으려 이미 오가는 상태 조회에 얹는다."""
+        queue = getattr(self.gui, "_rename_startup_paths", None)
+        if not isinstance(queue, list) or not queue:
+            return False
+        paths, queue[:] = list(queue), []
+        try:
+            self._file_rename_service().add_paths(paths[:10000])
+        except Exception:
+            logging.getLogger(__name__).exception("rename startup paths failed")
+        window = self.window
+        if window is not None and hasattr(window, "run_js"):
+            # 상태 조회는 Tk 스레드에서 돌아 화면 호출을 기다리면 서로 막힌다.
+            threading.Thread(
+                target=window.run_js,
+                args=("window.dispatchEvent(new Event('docfit-rename-files-dropped'));",),
+                daemon=True,
+            ).start()
+        return True
+
     def table_sketch(self, action, payload=None):
         """Table sketch conversion, storage and clipboard API."""
         from docfit_app.table_sketch_service import TableSketchService
@@ -2114,9 +2319,26 @@ class DesktopWebBridge:
         return self.get_state()
 
     # ---- 서식 관리(예시 보고서로 서식 복제·이름 바꾸기·세부 수정·삭제) ----
+    def _sidebar_collapsed_value(self):
+        """왼쪽 메뉴 접힘 저장값(없으면 None). 상태 조회가 잦아 한 번만 읽는다."""
+        if not hasattr(self, "_sidebar_collapsed"):
+            try:
+                self._sidebar_collapsed = self.gui._준말_서비스().settings.read().get("sidebar_collapsed")
+            except Exception:
+                self._sidebar_collapsed = None
+        return self._sidebar_collapsed
+
+    def set_sidebar_collapsed(self, collapsed):
+        """☰을 눌렀을 때만 왼쪽 메뉴 접힘 상태를 설정 파일에 저장한다."""
+        value = bool(collapsed)
+        self._sidebar_collapsed = value
+        self.gui._준말_서비스().settings.update(lambda current: current.update({"sidebar_collapsed": value}))
+        return value
+
     def set_drop_target(self, target):
         """끌어 놓은 파일을 넣을 곳을 바꾼다: documents(문서 목록) 또는 format(예시 서식 복제)."""
-        if target not in ("documents", "manual_documents", "format", "quick_format", "sketch_image", "paint_image"):
+        if target not in ("documents", "manual_documents", "format", "quick_format", "sketch_image", "paint_image",
+                          "rename_files"):
             raise ValueError("지원하지 않는 놓기 대상입니다.")
         self.drop_target = target
         if target == "format":   # 서식 관리 창을 열 때 서식예시 폴더에 새로 넣은 예시를 찾아 등록한다
@@ -2128,6 +2350,7 @@ class DesktopWebBridge:
             text = ("여기에 놓으면 이 보고서의 서식을 복제합니다" if target == "format"
                     else "표 칸 위에 놓으면 칸 배경 그림으로 넣습니다" if target == "sketch_image"
                     else "여기에 놓으면 그림판 배경 사진으로 넣습니다" if target == "paint_image"
+                    else "여기에 파일을 놓으면 이름 목록에 추가됩니다" if target == "rename_files"
                     else "여기에 놓으면 문서 목록에 추가됩니다")
             try:
                 window.run_js(f"window.docfitDropText = {text!r};")
@@ -2169,6 +2392,8 @@ class DesktopWebBridge:
             return self._receive_sketch_image(paths, client_x, client_y)
         if self.drop_target == "paint_image":
             return self._receive_sketch_image(paths, client_x, client_y, event="docfit-paint-image-dropped")
+        if self.drop_target == "rename_files":
+            return self._receive_rename_paths(paths)
         bounds = getattr(self, "_profile_drop_bounds", None)
         on_badge = (bounds is not None and isinstance(client_x, (int, float)) and isinstance(client_y, (int, float)))
         if on_badge:
@@ -2179,6 +2404,23 @@ class DesktopWebBridge:
         if self.drop_target == "manual_documents":
             return self.add_paths(paths, from_drop=False)
         return self.add_paths(paths, from_drop=True)
+
+    def _receive_rename_paths(self, paths):
+        """파일이름 탭에 끌어 놓은 파일·폴더(폴더는 바로 아래 파일만): 목록에 더하고 화면에 알린다."""
+        try:
+            result = self._file_rename_service().add_paths(list(paths or [])[:10000])
+        except Exception as exc:
+            return self._with_notice(str(exc) or "파일을 추가하지 못했습니다.")
+        window = self.window
+        if window is not None and hasattr(window, "run_js"):
+            try:
+                window.run_js("window.dispatchEvent(new Event('docfit-rename-files-dropped'));")
+            except Exception:
+                logging.getLogger(__name__).debug("rename drop event failed", exc_info=True)
+        if result.get("skipped_count"):
+            return self._with_notice(f"{result['skipped_count']}개 파일은 목록에 넣지 않았습니다: "
+                                     f"{result['skipped'][0]['reason']}")
+        return self.get_state()
 
     def _receive_sketch_image(self, paths, client_x, client_y, event="docfit-sketch-image-dropped"):
         """표그림판·그림판에 끌어 놓은 사진: 알맞은 크기로 바꿔 두고 화면에 알린다(화면이 take_drop으로 가져간다)."""
@@ -2410,12 +2652,15 @@ class _BrowserApi:
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
             "get_pending_dialog", "resolve_dialog", "enable_close_guard", "acknowledge_close", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch",
             "hwp_bulk", "live_link", "live_hotkeys", "open_results", "next_job", "run_tool", "open_result",
+
+            "get_pending_dialog", "resolve_dialog", "enable_close_guard", "acknowledge_close", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch", "timemachine",
+            "file_rename", "kclip", "hwp_bulk", "open_results", "next_job", "run_tool", "open_result",
             "show_result", "open_source_file", "show_source_file", "open_result_source", "open_diff", "compare_result", "launch_external_hwp_diff", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",
             "set_exclude_tables", "set_card_option",
-            "set_drop_target", "add_format_file", "write_format_example", "rename_profile", "delete_profile",
+            "set_sidebar_collapsed", "set_drop_target", "add_format_file", "write_format_example", "rename_profile", "delete_profile",
             "edit_profile", "show_format_example", "open_format_samples", "format_gallery",
-            "set_conversion_target", "check_update", "start_update", "open_update_page",
+            "set_conversion_target", "start_single_file_conversion", "check_update", "start_update", "open_update_page",
         ):
             setattr(self, name, getattr(bridge, name))
 

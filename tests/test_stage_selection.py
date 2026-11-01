@@ -60,11 +60,13 @@ class StageSelectionTest(unittest.TestCase):
     def test_every_card_option_links_to_stages_of_its_card(self):
         # 모든 카드 옵션은 해당 카드의 실제 실행 단계와 연동한다.
         self.assertIn("spacing_enabled", CARD_OPTION_STAGES)
-        self.assertIn("spacing_page_fit", CARD_OPTION_STAGES)
+        self.assertIn("spacing_exclude_pagefit", CARD_OPTION_STAGES)
+        self.assertIn("spacing_exclude_reset", CARD_OPTION_STAGES)
+        self.assertIn("all_exclude_linespacing", CARD_OPTION_STAGES)
         self.assertEqual(card_option_keys("unify_keep_layout", "unify"), ("page_layout_keep",))
         self.assertEqual(card_option_keys("unify_quick_mode", "unify"), ("unify_full_format",))
         for option, (modes, _, _) in CARD_OPTION_STAGES.items():
-            self.assertTrue(card_option_keys(option, modes[0]), option)
+            self.assertTrue(card_option_keys(option, modes[0]) or option == "all_exclude_linespacing", option)
         self.assertEqual(card_option_keys("spacing_exclude_tables", "spacing"),
                          ("control_spacing", "control_short_line", "control_word_check"))
         self.assertEqual(card_option_keys("unify_exclude_tables", "unify"), ("table_style", "table_unify"))
@@ -82,7 +84,11 @@ class StageSelectionTest(unittest.TestCase):
                          {"table_style": False, "table_unify": False})
         self.assertEqual(card_option_stage_values("unify_exclude_tables", False, {}, "unify"),
                          {"table_style": True, "table_unify": True})
-        self.assertEqual(card_option_stage_values("spacing_reset_existing", False, {}, "spacing"), {"reset_spacing": False})
+        self.assertEqual(card_option_stage_values("spacing_exclude_reset", True, {}, "spacing"), {"reset_spacing": False})
+        self.assertEqual(card_option_stage_values("spacing_exclude_pagefit", True, {}, "spacing"), {"page_fit": False, "page_group": False})
+        self.assertEqual(card_option_stage_values("spacing_exclude_pagefit", False, {}, "spacing"), {"page_fit": True, "page_group": True})
+        self.assertEqual(card_option_keys("all_exclude_linespacing", "all"), ())
+        self.assertTrue(CARD_OPTION_STAGES["all_exclude_linespacing"][2])
         self.assertEqual(card_option_stage_values("unify_quick_mode", True, {}, "unify"),
                          {"unify_full_format": False})
         self.assertEqual(card_option_stage_values("unify_quick_mode", False, {}, "unify"),
@@ -113,7 +119,7 @@ class StageSelectionTest(unittest.TestCase):
         # 카드 요약이 이미 알리는 작업(켜진 제외 옵션·꺼진 포함 옵션이 끈 작업)
         self.assertEqual(card_option_off_keys({"unify_exclude_pagefit": True, "unify_exclude_tables": False}, "unify"),
                          {"page_fit"})
-        self.assertEqual(card_option_off_keys({"spacing_reset_existing": False}, "spacing"), {"reset_spacing"})
+        self.assertEqual(card_option_off_keys({"spacing_exclude_reset": True}, "spacing"), {"reset_spacing"})
 
 
 if __name__ == "__main__":

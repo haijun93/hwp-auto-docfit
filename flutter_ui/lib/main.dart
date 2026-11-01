@@ -25,6 +25,7 @@ import 'features/settings/update_panel.dart';
 import 'features/stages/stage_board.dart';
 import 'features/workspace/workspace_adapters.dart';
 import 'features/workspace/tab_navigation_shell.dart';
+import 'features/kclip/kclip_dialog.dart';
 
 export 'core/api/abbreviation_api.dart' show ApiCall;
 
@@ -142,8 +143,10 @@ class _IntegratedHome extends StatefulWidget {
 }
 
 class _IntegratedHomeState extends State<_IntegratedHome> {
+  final savedSidebarExpanded = ValueNotifier<bool?>(null);
   final workspace = GlobalKey<_WorkspaceState>();
   int lastTab = 0;
+  final tabRequest = ValueNotifier<int?>(null);
 
   /// 표그림판 탭에서는 끌어 놓은 사진을 칸 배경 그림으로, 그림판 탭에서는 배경 사진으로 받고,
   /// 나가면 문서 목록으로 되돌린다.
@@ -156,7 +159,11 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
       unawaited(
         widget.api('set_drop_target', ['paint_image']).catchError((_) => null),
       );
-    } else if (lastTab == 2 || lastTab == 5) {
+    } else if (index == kTabFileRename) {
+      unawaited(
+        widget.api('set_drop_target', ['rename_files']).catchError((_) => null),
+      );
+    } else if (lastTab == 2 || lastTab == 5 || lastTab == kTabFileRename || lastTab == kTabTimemachine) {
       unawaited(
         widget.api('set_drop_target', ['documents']).catchError((_) => null),
       );
@@ -167,23 +174,49 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
   @override
   Widget build(BuildContext context) => IntegratedWorkspace(
     api: widget.api,
-    documentEditorWidget: Workspace(key: workspace, api: widget.api),
+    tabRequest: tabRequest,
+    documentEditorWidget: Workspace(
+      key: workspace,
+      api: widget.api,
+      onSidebarCollapsed: (collapsed) =>
+          savedSidebarExpanded.value = collapsed == null ? null : !collapsed,
+      onRenameOpen: () {
+        tabRequest.value = null;
+        tabRequest.value = kTabFileRename;
+      },
+    ),
     fileConversionWidget: _ConversionTab(workspace: workspace),
     onTabChanged: (index) {
       final from = lastTab;
       routeDrops(index);
-      if (index == 6) {
+      if (index == kTabFileConversion) {
         workspace.currentState?.enterConversionMode();
-      } else if (from == 6) {
+      } else if (from == kTabFileConversion) {
         // 파일변환 탭을 그냥 떠나면 작업 방식을 원래 카드로 되돌린다(넣은 파일을 변환하러 가는 때는 제외).
         workspace.currentState?.leaveConversionMode();
       }
     },
-    // 앱 메뉴(사용 방법·작업 로그·설정)는 상단 탭 줄 오른쪽 끝에 둔다.
+    savedSidebarExpanded: savedSidebarExpanded,
+    // 시작 때 호출을 늘리지 않으려 ☰을 누를 때만 저장한다.
+    onSidebarExpandedChanged: (expanded) {
+      unawaited(
+        widget
+            .api('set_sidebar_collapsed', [!expanded])
+            .then<void>((_) {}, onError: (_) {}),
+      );
+    },
+    // 앱 메뉴(사용 방법·작업 로그·설정)는 왼쪽 메뉴 아래쪽에 둔다.
     trailing: Builder(
-      builder: (context) => Row(
+      builder: (context) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          IconButton(
+            key: const ValueKey('kclip-open'),
+            tooltip: 'K클립보드 (복사 기록 · Ctrl+Shift+V)',
+            visualDensity: VisualDensity.compact,
+            onPressed: () => showKClipDialog(context, widget.api),
+            icon: const Icon(Icons.content_paste_search, size: 20),
+          ),
           IconButton(
             tooltip: '사용 방법 (F1)',
             visualDensity: VisualDensity.compact,
@@ -215,8 +248,19 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
 }
 
 class Workspace extends StatefulWidget {
-  const Workspace({super.key, required this.api});
+  const Workspace({
+    super.key,
+    required this.api,
+    this.onSidebarCollapsed,
+    this.onRenameOpen,
+  });
   final ApiCall api;
+
+  /// 상태 응답에 실려 온 왼쪽 메뉴 접힘 저장값.
+  final ValueChanged<bool?>? onSidebarCollapsed;
+
+  /// 탐색기 보내기로 파일이 들어와 파일명 일괄변경 탭을 열어야 할 때.
+  final VoidCallback? onRenameOpen;
   @override
   State<Workspace> createState() => _WorkspaceState();
 }
@@ -342,12 +386,14 @@ class _WorkspaceState extends State<Workspace> implements ConversionHost {
   );
   String get cardMode => mode == 'format' ? 'all' : mode;
   bool get includeSpacing => state['include_spacing'] != false;
-  // '자간 정리' 카드의 '기존 자간 초기화'(세부 작업 01과 같은 값).
-  bool get resetSpacing => state['reset_spacing'] != false;
+  // '자간 정리' 카드 제외 옵션은 세부 작업 상태와 반대 의미다.
+  bool get excludeResetSpacing => cardOption('spacing_exclude_reset');
+  bool get resetSpacing => !excludeResetSpacing;
   bool get tableSpacing => state['table_spacing'] != false;
   bool get spacingEnabled =>
       (state['card_options'] as Map? ?? const {})['spacing_enabled'] != false;
-  bool get spacingPageFit => cardOption('spacing_page_fit');
+  bool get excludePageFit => cardOption('spacing_exclude_pagefit');
+  bool get spacingPageFit => !excludePageFit;
   // '한 번에 적용'의 '표 제외'(설정 all_exclude_tables, 기본 꺼짐).
   bool get excludeTables => state['exclude_tables'] == true;
   // 카드 옵션(한 번에 적용 '페이지 맞춤 제외', 서식 통일 '표 제외'·'자간 정리 제외'·'페이지 맞춤 제외').
@@ -432,6 +478,9 @@ class _WorkspaceState extends State<Workspace> implements ConversionHost {
     final documentsChanged =
         jsonEncode(state['files'] ?? []) != jsonEncode(next['files'] ?? []);
     state = Map<String, dynamic>.from(next);
+    final collapsed = next['sidebar_collapsed'];
+    widget.onSidebarCollapsed?.call(collapsed is bool ? collapsed : null);
+    if (next['rename_open'] == true) widget.onRenameOpen?.call();
     // 입력 중인 값은 유지하되, 문서 변경·새 작업·백엔드 범위 변경은 반영한다.
     if (range.isNotEmpty &&
         (!rangeLoaded || syncRange || rangeChanged || documentsChanged)) {
@@ -587,6 +636,17 @@ class _WorkspaceState extends State<Workspace> implements ConversionHost {
     if (mounted && mode == 'file_format' && canStart) {
       await startJob(fileOrder: mergeOrder);
     }
+  }
+
+  /// 파일 메뉴에서 호출하는 단일 변환. 공통 포맷 선택값과 파일 목록을 건드리지 않는다.
+  @override
+  Future<void> convertSingleFile(int index, String format) async {
+    if (locked || index < 0 || index >= files.length) return;
+    final target = conversionTargets.whereType<Map>().where(
+      (item) => item['format'] == format,
+    ).firstOrNull;
+    if (target == null || target['enabled'] != true) return;
+    await command('start_single_file_conversion', [index, format]);
   }
 
   Future<void> enterConversionMode() async {
@@ -1691,18 +1751,18 @@ class _WorkspaceState extends State<Workspace> implements ConversionHost {
           children: [
             const Expanded(
               child: Text(
-                '페이지 맞춤',
+                '페이지 맞춤 제외',
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
-            const OptionImageButton('spacing_page_fit'),
+            const OptionImageButton('spacing_exclude_pagefit'),
             Switch(
-              key: const Key('spacingPageFitSwitch'),
-              value: spacingPageFit,
+              key: const Key('spacingExcludePagefitSwitch'),
+              value: excludePageFit,
               onChanged: locked
                   ? null
                   : (on) =>
-                        command('set_card_option', ['spacing_page_fit', on]),
+                        command('set_card_option', ['spacing_exclude_pagefit', on]),
             ),
           ],
         ),
@@ -1710,28 +1770,28 @@ class _WorkspaceState extends State<Workspace> implements ConversionHost {
           Text(
             spacingPageFit
                 ? '자간·장평·줄 병합은 그대로 두고 문단·표의 세로 간격과 페이지 배치만 조정해요.'
-                : '자간 정리 또는 페이지 맞춤을 하나 이상 켜 주세요.',
+                : '자간 정리를 끄고 페이지 맞춤도 제외하면 할 일이 없습니다.',
             style: const TextStyle(fontSize: 12, color: _faint),
           ),
-        // 끄면 문서에 이미 있는 자간을 0%로 되돌리지 않고 그 위에서 정리한다.
+  // 켜면 문서에 이미 있는 자간을 0%로 되돌리는 단계를 건너뛴다.
         Row(
           children: [
             const Expanded(
               child: Text(
-                '기존 자간 초기화',
+                '기존 자간 초기화 제외',
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
             Switch(
               key: const Key('resetSpacingSwitch'),
-              value: resetSpacing,
+              value: excludeResetSpacing,
               onChanged: locked || !spacingEnabled
                   ? null
-                  : (on) => command('set_reset_spacing', [on]),
+                  : (on) => command('set_card_option', ['spacing_exclude_reset', on]),
             ),
           ],
         ),
-        if (spacingEnabled && !resetSpacing)
+        if (spacingEnabled && excludeResetSpacing)
           const Text(
             '문서에 있던 자간은 그대로 두고 그 위에서 정리해요.',
             style: TextStyle(fontSize: 12, color: _faint),
@@ -1850,19 +1910,16 @@ class _WorkspaceState extends State<Workspace> implements ConversionHost {
           children: [
             const Expanded(
               child: Text(
-                '줄 간격 적용',
+                '줄 간격 적용 제외',
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
             Switch(
               key: const Key('allLinespacingSwitch'),
-              value:
-                  (state['card_options'] as Map? ??
-                      const {})['all_linespacing'] !=
-                  false,
+              value: cardOption('all_exclude_linespacing'),
               onChanged: locked
                   ? null
-                  : (on) => command('set_card_option', ['all_linespacing', on]),
+                  : (on) => command('set_card_option', ['all_exclude_linespacing', on]),
             ),
           ],
         ),

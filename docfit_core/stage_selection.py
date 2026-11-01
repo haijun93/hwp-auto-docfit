@@ -179,9 +179,9 @@ SPACING_STAGE_KEYS = tuple(key for key, _ in SPACING_STAGES)
 # 자간 정리의 '표 제외'는 설정 table_spacing의 반대 값이다. 한 번에 적용의 두 구성(자간 조정 포함 all·제외 format)은
 # '표 제외'·'페이지 맞춤 제외'를 함께 쓰고, '자간 조정 포함'은 all 구성의 자간 작업과 연동한다.
 CARD_OPTION_STAGES = {
-    "spacing_enabled": (("spacing",), SPACING_STAGE_KEYS, False),
-    "spacing_page_fit": (("spacing",), PAGE_FIT_STAGE_KEYS, False),
-    "spacing_reset_existing": (("spacing",), ("reset_spacing",), False),
+    "spacing_exclude_pagefit": (("spacing",), PAGE_FIT_STAGE_KEYS, True),
+    "spacing_exclude_reset": (("spacing",), ("reset_spacing",), True),
+    "spacing_enabled": (("spacing",), tuple(key for key in SPACING_STAGE_KEYS if key != "reset_spacing"), False),
     "spacing_exclude_tables": (("spacing",), TABLE_STAGE_KEYS, True),
     "unify_exclude_tables": (("unify",), TABLE_STAGE_KEYS, True),
     "unify_exclude_spacing": (("unify",), ("unify_spacing",), True),
@@ -189,6 +189,7 @@ CARD_OPTION_STAGES = {
     "unify_keep_layout": (("unify",), ("page_layout_keep",), False),
     "unify_quick_mode": (("unify",), ("unify_full_format",), True),
     "all_include_spacing": (("all",), SPACING_STAGE_KEYS, False),
+    "all_exclude_linespacing": (("all", "format"), (), True),
     "all_exclude_tables": (("all", "format"), TABLE_STAGE_KEYS, True),
     "all_exclude_pagefit": (("all", "format"), PAGE_FIT_STAGE_KEYS, True),
 }
