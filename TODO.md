@@ -696,10 +696,10 @@
   번들·사전 설치 + `package-lock.json` 무결성, npx 경로는 `--ignore-scripts`·`--no-install` 또는 명시 동의 뒤에만.
 - [ ] **S4 (중간) 업데이트 스크립트 바꿔치기**: 교체용 `.ps1`을 사용자 쓰기 가능 폴더에 쓰고 `-ExecutionPolicy Bypass`로 실행(`hwp-auto-docfit.py` ~20200).
   내장 스크립트를 `-EncodedCommand`로 넘기거나 쓴 직후 해시 확인.
-- [ ] **S5 (중간) 빌드 파이프라인**: `.github/workflows/build-windows-exe.yml`의 액션을 커밋 SHA로 고정, `requirements.txt` 버전·해시 고정(`pip install --require-hashes`), `contents: write` 권한 최소화, 산출물 증명(attestation)·SBOM.
+- [x] **S5 (중간) 빌드 파이프라인 — 액션 SHA 고정 완료(2026-11-01)**: `.github/workflows/*.yml`의 `uses:` 14곳을 태그 원격 커밋 SHA로 고정하고 태그 주석을 추가. 해시 고정 설치(`pip install --require-hashes`), 권한 최소화, 산출물 증명·SBOM은 별도 남은 일.
 - [ ] **S6 (낮음) WebView 화면 CSP**: `desktop_web/index.html`에 CSP 메타 추가(`default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'`), Flutter 화면도 검토.
 - [ ] **S7 (낮음) `add_paths` 경로 검증**: 확장자 허용 목록, 파일 존재, 심볼릭 링크 검사(`desktop_web_ui.py:189`).
-- [ ] **S8 (낮음) 임시 파일 정리 보장**: `NamedTemporaryFile(delete=False)` 계열(`docfit_core/korean_proofread.py:151` 등)을 `try/finally`로 삭제하고 종료 시 정리 확인.
+- [x] **S8 (낮음) 임시 파일 정리 보장 — 분류·누수 보완 완료(2026-11-01)**: 분류표 `docs/SECURITY_S8_TEMPFILES.md`. 변환 중간 폴더를 `TemporaryDirectory`로 관리하고 예외 경로 시험을 추가. 사용자 결과·COM 사용 경로는 유지.
 - [ ] **S9 (정보) `MapoHwpAutoDocFitSecurity.dll` 출처 문서화**: 출처·해시·소스를 `SECURITY.md`에 기재.
 - [ ] **소개 사이트(Vercel) 강화**: 인라인 스타일을 CSS로 옮겨 CSP에서 `'unsafe-inline'` 제거, Google Fonts 자체 호스팅, COOP/CORP/COEP·보안 헤더(`docs/Vercel_보안_검토_2026-10-12.md`의 `vercel.json` 초안),
   Deployment Protection(Preview 인증)·Spend Management·2단계 인증, `/.well-known/security.txt`. 미리보기 보호는 GitHub/GitLab에 같은 기능이 없어 Vercel 쪽 설정(또는 GitLab Pages "구성원만")으로 한다.
