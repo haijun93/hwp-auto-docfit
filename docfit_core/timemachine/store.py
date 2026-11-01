@@ -52,6 +52,16 @@ class Store:
         with self._lock:
             self._db.close()
 
+    def get_meta(self, key):
+        with self._lock:
+            row = self._db.execute("SELECT v FROM meta WHERE k = ?", (key,)).fetchone()
+            return row["v"] if row else None
+
+    def set_meta(self, key, value):
+        with self._lock:
+            self._db.execute("INSERT INTO meta(k, v) VALUES(?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+                             (key, str(value)))
+
     # ── 쓰기(스캐너) ─────────────────────────────────────────────────────
     def known(self, root):
         """root 아래 색인된 파일: key → (size, mtime, ctime)."""

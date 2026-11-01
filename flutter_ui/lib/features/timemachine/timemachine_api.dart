@@ -23,6 +23,25 @@ class TimemachineItem {
   );
 }
 
+class TimemachineHourDensity {
+  const TimemachineHourDensity(this.counts);
+  final Map<int, int> counts; // 빠진 0~23은 0
+  factory TimemachineHourDensity.fromJson(Map value) {
+    final raw = value['hours'];
+    final counts = <int, int>{for (var i = 0; i < 24; i++) i: 0};
+    if (raw is Map) {
+      for (final entry in raw.entries) {
+        final h = int.tryParse('${entry.key}');
+        final c = (entry.value as num?)?.toInt();
+        if (h != null && h >= 0 && h < 24 && c != null) {
+          counts[h] = c;
+        }
+      }
+    }
+    return TimemachineHourDensity(counts);
+  }
+}
+
 class TimemachineApi {
   const TimemachineApi(this.call);
   final ApiCall call;
@@ -38,4 +57,15 @@ class TimemachineApi {
     }
     return {'ok': false, 'code': 'TM_RESPONSE', 'message': '타임머신 응답을 읽지 못했습니다.'};
   }
+
+  Future<TimemachineHourDensity> hourDensity(Map<String, Object?> payload) async {
+    final response = await command('hour_density', payload);
+    return TimemachineHourDensity.fromJson(response);
+  }
+
+  Future<Map<String, Object?>> sendToFeature(String feature, List<int> ids) =>
+      command('send_to_feature', {'feature': feature, 'ids': ids});
+
+  Future<Map<String, Object?>> clearThumbnailCache() =>
+      command('thumbnail_cache_clear');
 }
