@@ -38,6 +38,7 @@ class BlockRuleTest(unittest.TestCase):
         self.assertEqual(find_blocks(['붙임: 가.', None, '끝.']), [])                    # 표·그림 문단
         self.assertEqual(find_blocks(['붙임: 가.', '나.']), [])                          # 끝. 없음
         self.assertEqual(find_blocks(['붙임: 가']), [])                                  # 붙임 줄이 마침표로 끝나지 않음
+        self.assertEqual(find_blocks(['붙임: 1. 시행계획 1부', '2. 스케줄표 1부.  끝.']), [(0, 1)])
         self.assertEqual(find_blocks(['참고 붙임 자료 끝.']), [])                         # 첫 어절이 붙임이 아님
         self.assertEqual(find_blocks(['붙임: 가.'] + ['나.'] * 40 + ['끝.']), [])         # 너무 긴 목록
 

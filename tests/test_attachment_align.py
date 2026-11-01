@@ -6,16 +6,19 @@ from unittest.mock import Mock, call, patch
 
 
 class AttachmentAlignTest(unittest.TestCase):
-    def test_top_level_ㅁ_and_square_headings_clear_hanging_indent(self):
+    def test_top_level_ㅁ_and_square_headings_use_shift_tab(self):
         ns = runpy.run_path(str(Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"))
         fn = ns["_내어쓰기_한문단"]
         hwp = Mock()
         hwp.GetPos.return_value = (0, 7, 0)
-        reset = Mock()
-        with patch.dict(fn.__globals__, {"hwp": hwp, "_내어쓰기_여백쌍_설정": reset}):
+        reset, apply = Mock(), Mock()
+        with patch.dict(fn.__globals__, {"hwp": hwp, "_내어쓰기_여백쌍_설정": reset, "문단_내어쓰기_적용": apply,
+                                         "문단_내어쓰기_기준_오프셋": lambda text: 2,
+                                         "내어쓰기_기호선택_허용": lambda text: True}):
             for marker in ("ㅁ", "□"):
                 fn(f"{marker} 추진 배경", {}, {})
-        self.assertEqual(reset.call_args_list, [call(0, 0), call(0, 0)])
+        reset.assert_not_called()
+        self.assertEqual(apply.call_count, 2)
 
     def test_baseline_measure_sets_pos_with_three_values(self):
         ns = runpy.run_path(str(Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"))
