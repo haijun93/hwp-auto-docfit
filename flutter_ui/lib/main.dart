@@ -143,8 +143,10 @@ class _IntegratedHome extends StatefulWidget {
 }
 
 class _IntegratedHomeState extends State<_IntegratedHome> {
+  final savedSidebarExpanded = ValueNotifier<bool?>(null);
   final workspace = GlobalKey<_WorkspaceState>();
   int lastTab = 0;
+  final tabRequest = ValueNotifier<int?>(null);
 
   /// 표그림판 탭에서는 끌어 놓은 사진을 칸 배경 그림으로, 그림판 탭에서는 배경 사진으로 받고,
   /// 나가면 문서 목록으로 되돌린다.
@@ -172,7 +174,17 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
   @override
   Widget build(BuildContext context) => IntegratedWorkspace(
     api: widget.api,
-    documentEditorWidget: Workspace(key: workspace, api: widget.api),
+    tabRequest: tabRequest,
+    documentEditorWidget: Workspace(
+      key: workspace,
+      api: widget.api,
+      onSidebarCollapsed: (collapsed) =>
+          savedSidebarExpanded.value = collapsed == null ? null : !collapsed,
+      onRenameOpen: () {
+        tabRequest.value = null;
+        tabRequest.value = kTabFileRename;
+      },
+    ),
     fileConversionWidget: _ConversionTab(workspace: workspace),
     onTabChanged: (index) {
       final from = lastTab;
@@ -184,9 +196,18 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
         workspace.currentState?.leaveConversionMode();
       }
     },
-    // 앱 메뉴(사용 방법·작업 로그·설정)는 상단 탭 줄 오른쪽 끝에 둔다.
+    savedSidebarExpanded: savedSidebarExpanded,
+    // 시작 때 호출을 늘리지 않으려 ☰을 누를 때만 저장한다.
+    onSidebarExpandedChanged: (expanded) {
+      unawaited(
+        widget
+            .api('set_sidebar_collapsed', [!expanded])
+            .then<void>((_) {}, onError: (_) {}),
+      );
+    },
+    // 앱 메뉴(사용 방법·작업 로그·설정)는 왼쪽 메뉴 아래쪽에 둔다.
     trailing: Builder(
-      builder: (context) => Row(
+      builder: (context) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
@@ -227,8 +248,19 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
 }
 
 class Workspace extends StatefulWidget {
-  const Workspace({super.key, required this.api});
+  const Workspace({
+    super.key,
+    required this.api,
+    this.onSidebarCollapsed,
+    this.onRenameOpen,
+  });
   final ApiCall api;
+
+  /// 상태 응답에 실려 온 왼쪽 메뉴 접힘 저장값.
+  final ValueChanged<bool?>? onSidebarCollapsed;
+
+  /// 탐색기 보내기로 파일이 들어와 파일명 일괄변경 탭을 열어야 할 때.
+  final VoidCallback? onRenameOpen;
   @override
   State<Workspace> createState() => _WorkspaceState();
 }
@@ -446,6 +478,9 @@ class _WorkspaceState extends State<Workspace> implements ConversionHost {
     final documentsChanged =
         jsonEncode(state['files'] ?? []) != jsonEncode(next['files'] ?? []);
     state = Map<String, dynamic>.from(next);
+    final collapsed = next['sidebar_collapsed'];
+    widget.onSidebarCollapsed?.call(collapsed is bool ? collapsed : null);
+    if (next['rename_open'] == true) widget.onRenameOpen?.call();
     // 입력 중인 값은 유지하되, 문서 변경·새 작업·백엔드 범위 변경은 반영한다.
     if (range.isNotEmpty &&
         (!rangeLoaded || syncRange || rangeChanged || documentsChanged)) {

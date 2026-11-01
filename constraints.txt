@@ -1,0 +1,28 @@
+# 전 환경 공통 패키지 버전 고정(Python 3.14 전체 시험 1,972건 통과).
+# 사용: pip install -r requirements.txt -c constraints.txt
+altgraph==0.17.5
+bottle==0.13.4
+cffi==2.1.1
+clr_loader==0.3.1; sys_platform == "win32"
+cryptography==50.0.2
+defusedxml==0.7.1
+greenlet==3.5.6
+packaging==26.3
+pefile==2024.8.26; sys_platform == "win32"
+pillow==13.0.0
+playwright==1.64.1
+proxy_tools==0.1.0; sys_platform == "win32"
+psutil==7.2.2
+pycparser==3.12
+pyee==14.0.0
+pyinstaller==6.22.3
+pyinstaller-hooks-contrib==2026.9
+pypdf==6.21.2
+pypdfium2==5.14.0
+pythonnet==3.2.1; sys_platform == "win32"
+pywebview==6.2.1
+pywin32==312; sys_platform == "win32"
+pywin32-ctypes==0.2.3; sys_platform == "win32"
+setuptools==84.2.1
+tkinterdnd2==0.7.0
+typing_extensions==4.16.0

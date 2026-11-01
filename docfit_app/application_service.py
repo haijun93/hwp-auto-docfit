@@ -2,6 +2,7 @@
 from dataclasses import asdict
 from pathlib import Path
 import threading
+import sys
 
 from docfit_app.abbreviation_service import AbbreviationService
 from docfit_app.api_contract import ServiceError, response
@@ -79,14 +80,14 @@ class ApplicationService:
                 'progress':{'steps':list(STAGE_ORDER),'active':None,'visited':[],'outcome':None,'detail':''},
                 'stages':[{'key':k,'label':label,'enabled':self.data.stages.get((self.data.mode,k),selected.get(k,default_choice(k,self.data.mode))),
                            'default':default_choice(k,self.data.mode)} for k,label in stages_for_mode(self.data.mode)],
-                'can_start':False,'capabilities':['documents.inspect','settings','abbreviations','flows']}
+                'can_start':False,'sidebar_collapsed':settings.get('sidebar_collapsed'),'capabilities':['documents.inspect','settings','abbreviations','flows']}
 
     def dispatch(self, method, args):
         counts = {'handshake':0,'get_state':0,'get_settings':0,'save_settings':2,
                   'get_abbreviations':0,'save_abbreviation':4,'delete_abbreviation':1,
                   'set_abbreviation_defaults':1,'abbreviation_document':1,'add_paths':1,'remove_file':1,
                   'clear_files':0,'set_mode':1,'inspect_document':1,'get_log':0,'clear_log':0,'shutdown':0}
-        counts.update({'start_job':2, 'cancel_job':1, 'get_events':1})
+        counts.update({'start_job':2, 'cancel_job':1, 'get_events':1, 'set_sidebar_collapsed':1})
         counts.update({'table_template':2,'document_tool':2,'get_pending_dialog':0,'stage_config':2,'set_stage':2,'set_stage_default':1})
         counts.update({'set_option':2,'set_include_spacing':1,'set_reset_spacing':1,'set_table_spacing':1,'set_exclude_tables':1,'set_range':3,'set_card_option':2})
         counts.update({'flow_editor':2,'idioms':2,'hangul_fonts':2,'table_units':2,'table_sketch':2,'file_rename':2,'kclip':2,'timemachine':2})
@@ -195,6 +196,9 @@ class ApplicationService:
         if method=='table_template':
             from docfit_app.table_template_service import TableTemplateService
             return response(lambda:TableTemplateService(self.abbreviations).command(*args))
+        if method=='set_sidebar_collapsed':
+            self.store.update(lambda current:current.update({'sidebar_collapsed':bool(args[0])}))
+            return True
         if method=='get_pending_dialog': return None
         if method=='get_state': return self.state()
         if method=='get_settings': return response(self.configuration.snapshot)
@@ -218,6 +222,12 @@ class ApplicationService:
             if getattr(self, '_rename_service', None) is None:
                 from .file_rename_service import FileRenameService
                 self._rename_service = FileRenameService(self.store._path.parent)
+            if args and args[0] == 'sendto_set':
+                from .file_rename_service import FileRenameService
+                enabled = bool(args[1].get('enabled')) if len(args) > 1 and isinstance(args[1], dict) else False
+                result = FileRenameService.set_sendto(enabled, executable=getattr(sys, 'executable', None))
+                self.store.update(lambda settings: settings.update(file_rename_sendto=enabled))
+                return result
             if args[0] == 'add_paths':  # 네이티브 실행기: Dart가 파일 선택 창으로 고른 경로
                 payload = args[1] if len(args) > 1 and isinstance(args[1], dict) else {}
                 paths = payload.get('paths')

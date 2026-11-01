@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_selector/file_selector.dart';
 
 import '../../core/api/abbreviation_api.dart' show ApiCall;
 import '../../core/drop_events.dart';
@@ -35,9 +37,11 @@ class FileRenameScreen extends StatefulWidget {
 }
 
 class FileRenameScreenState extends State<FileRenameScreen> {
+  bool _mruLoaded = false;
   late final FileRenameApi _api = FileRenameApi(widget.api);
   List<RenameEntry> _entries = const [];
   final List<Map<String, Object?>> _rules = [];
+  List<Map<String, Object?>> _replaceMru = [];
   final Map<String, String> _overrides = {};
   final Set<String> _excluded = {};
   Map<String, RenamePreviewItem> _preview = const {};
@@ -59,6 +63,25 @@ class FileRenameScreenState extends State<FileRenameScreen> {
   void initState() {
     super.initState();
     _stopDrops = watchWindowEvent('docfit-rename-files-dropped', () => unawaited(_refreshList()));
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 시작 때 호출을 늘리지 않으려 탭이 처음 보일 때 불러온다.
+    if (!_mruLoaded && TickerMode.valuesOf(context).enabled) {
+      _mruLoaded = true;
+      unawaited(_loadReplaceMru());
+    }
+  }
+
+  Future<void> _loadReplaceMru() async {
+    final result = await _api.command('replace_mru_list');
+    if (!mounted || !result.ok) return;
+    setState(() => _replaceMru = [
+      for (final value in (result.raw['values'] as List? ?? const []))
+        Map<String, Object?>.from(value as Map),
+    ]);
   }
 
   @override
@@ -242,16 +265,24 @@ class FileRenameScreenState extends State<FileRenameScreen> {
   // ── 규칙 ──────────────────────────────────────────────────────────────
   Future<void> _addRule(RuleKind kind) async {
     final rule = <String, Object?>{'kind': kind.kind, ...kind.defaults};
-    final edited = kind.defaults.isEmpty ? rule : await showRuleEditor(context, rule);
+    final edited = kind.defaults.isEmpty ? rule : await showRuleEditor(context, rule, mru: _replaceMru);
     if (edited == null || !mounted) return;
     setState(() => _rules.add(edited));
+    if (edited['kind'] == 'replace') {
+      final result = await _api.command('replace_mru_add', {'find': edited['find'] ?? '', 'to': edited['to'] ?? ''});
+      _replaceMru = [for (final v in (result.raw['values'] as List? ?? const [])) Map<String, Object?>.from(v as Map)];
+    }
     _schedulePreview();
   }
 
   Future<void> _editRule(int index) async {
-    final edited = await showRuleEditor(context, _rules[index]);
+    final edited = await showRuleEditor(context, _rules[index], mru: _replaceMru);
     if (edited == null || !mounted) return;
     setState(() => _rules[index] = edited);
+    if (edited['kind'] == 'replace') {
+      final result = await _api.command('replace_mru_add', {'find': edited['find'] ?? '', 'to': edited['to'] ?? ''});
+      _replaceMru = [for (final v in (result.raw['values'] as List? ?? const [])) Map<String, Object?>.from(v as Map)];
+    }
     _schedulePreview();
   }
 
@@ -266,6 +297,31 @@ class FileRenameScreenState extends State<FileRenameScreen> {
   }
 
   Future<void> _rulesetMenu(String action) async {
+    if (action == 'export' || action == 'import') {
+      if (action == 'export') {
+        final list = await _api.command('ruleset_list');
+        if (!mounted) return;
+        final sets = ((list.raw['rulesets'] as List?) ?? const []).cast<Map>();
+        final selected = await showDialog<Map>(context: context, builder: (context) => SimpleDialog(
+          title: const Text('내보낼 규칙 세트'),
+          children: [for (final item in sets) SimpleDialogOption(onPressed: () => Navigator.pop(context, item), child: Text('${item['name']}'))],
+        ));
+        if (selected == null || !mounted) return;
+        final result = await _api.command('ruleset_export', {'name': selected['name']});
+        if (!result.ok) { setState(() => _message = result.message); return; }
+        final location = await getSaveLocation(suggestedName: '${selected['name']}.json', acceptedTypeGroups: const [XTypeGroup(label: 'JSON', extensions: ['json'])]);
+        if (location == null) return;
+        await XFile.fromData(utf8.encode('${result.raw['json']}'), mimeType: 'application/json').saveTo(location.path);
+        if (mounted) setState(() => _message = '규칙 JSON을 내보냈습니다.');
+        return;
+      }
+      final file = await openFile(acceptedTypeGroups: const [XTypeGroup(label: 'JSON', extensions: ['json'])]);
+      if (file == null || !mounted) return;
+      final raw = await file.readAsString();
+      final result = await _api.command('ruleset_import', {'json': raw});
+      if (mounted) setState(() => _message = result.ok ? '규칙 세트를 가져왔습니다.' : result.message);
+      return;
+    }
     if (action == 'save') {
       final controller = TextEditingController();
       final name = await showDialog<String>(
@@ -703,6 +759,8 @@ class FileRenameScreenState extends State<FileRenameScreen> {
                 itemBuilder: (_) => [
                   const PopupMenuItem(value: 'load', child: Text('규칙 세트 불러오기')),
                   PopupMenuItem(value: 'save', enabled: _rules.isNotEmpty, child: const Text('지금 규칙 저장')),
+                  const PopupMenuItem(value: 'export', child: Text('JSON 내보내기')),
+                  const PopupMenuItem(value: 'import', child: Text('JSON 가져오기')),
                 ],
                 icon: const Icon(Icons.bookmarks_outlined),
               ),

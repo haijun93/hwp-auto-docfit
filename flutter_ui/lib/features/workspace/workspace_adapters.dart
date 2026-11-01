@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/api/abbreviation_api.dart' show ApiCall;
@@ -135,23 +136,32 @@ class IntegratedWorkspace extends StatelessWidget {
     required this.documentEditorWidget,
     required this.fileConversionWidget,
     this.initialIndex = 0,
+    this.tabRequest,
     this.onTabChanged,
     this.trailing,
+    this.savedSidebarExpanded,
+    this.onSidebarExpandedChanged,
   });
 
   final Widget? trailing;
+  final ValueListenable<bool?>? savedSidebarExpanded;
+  final ValueChanged<bool>? onSidebarExpandedChanged;
   final ApiCall api;
   final Widget documentEditorWidget;
   final Widget fileConversionWidget;
   final int initialIndex;
+  final ValueListenable<int?>? tabRequest;
   final ValueChanged<int>? onTabChanged;
 
   @override
   Widget build(BuildContext context) {
     return TabNavigationShell(
       initialIndex: initialIndex,
+      tabRequest: tabRequest,
       onTabChanged: onTabChanged,
       trailing: trailing,
+      savedSidebarExpanded: savedSidebarExpanded,
+      onSidebarExpandedChanged: onSidebarExpandedChanged,
       documentEditor: DocumentEditorAdapter(child: documentEditorWidget),
       tableTemplates: TableTemplatesAdapter(api: api),
       tableSketch: TableSketchAdapter(api: api),

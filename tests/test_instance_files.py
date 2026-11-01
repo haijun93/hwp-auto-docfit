@@ -17,7 +17,8 @@ class InstanceFileTests(unittest.TestCase):
             instance_files.forward([str(document), str(document.parent / 'missing')])
             requests = list(instance_files._folder().glob('*.json'))
             self.assertEqual(len(requests), 1)
-            self.assertEqual(json.loads(requests[0].read_text(encoding='utf-8')), [str(document)])
+            self.assertEqual(json.loads(requests[0].read_text(encoding='utf-8')),
+                             {'rename': False, 'paths': [str(document)]})
             gui = Mock(running=False)
             with patch.object(sys, 'argv', ['app', str(document)]):
                 instance_files.start(gui)
@@ -60,3 +61,31 @@ class InstanceFileTests(unittest.TestCase):
             gui.running = False
             poll()
             gui.파일추가.assert_called_once_with(str(document))
+
+    def test_rename_arguments_startup_and_forward_stay_out_of_documents(self):
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {'LOCALAPPDATA': folder}):
+            first = Path(folder).resolve() / 'first.txt'
+            second = Path(folder).resolve() / 'second.txt'
+            missing = Path(folder).resolve() / 'missing.txt'
+            first.write_text('a')
+            second.write_text('b')
+            gui = Mock(running=False)
+            with patch.object(sys, 'argv', ['app', '--rename', str(first), str(missing)]):
+                instance_files.start(gui)
+            self.assertEqual(gui._rename_startup_paths, [str(first), str(missing)])
+            gui.파일추가.assert_not_called()
+
+            gui._rename_startup_paths.clear()
+            instance_files.forward(['--rename', str(second), str(missing)])
+            poll = gui.root.after.call_args.args[1]
+            poll()
+            self.assertEqual(gui._rename_startup_paths, [str(second)])
+            gui.파일추가.assert_not_called()
+
+    def test_split_rename_arguments_and_ignore_missing_when_forwarding(self):
+        self.assertEqual(instance_files.split_rename_arguments(['--rename', 'a', 'b']),
+                         (True, ['a', 'b']))
+        self.assertEqual(instance_files.split_rename_arguments(['a', 'b']), (False, ['a', 'b']))
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {'LOCALAPPDATA': folder}):
+            instance_files.forward(['--rename', str(Path(folder) / 'missing')])
+            self.assertFalse(instance_files._folder().exists())

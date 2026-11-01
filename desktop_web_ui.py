@@ -422,6 +422,9 @@ class DesktopWebBridge:
         return {"ok": service.open_download_page()}
 
     def get_state(self):
+        # 파일명 서비스를 처음 만들 때 Tk 호출을 기다리므로 Tk 스레드 밖에서 처리한다.
+        rename_open = self._drain_rename_paths()
+
         def snapshot():
             gui = self.gui
             mode = gui.selected_mode.get()
@@ -488,6 +491,8 @@ class DesktopWebBridge:
                 "format_task": self._format_task(),
                 "pending_dialog": self._pending_dialog(),
                 "drop_target": self.drop_target,
+                "rename_open": rename_open,
+                "sidebar_collapsed": self._sidebar_collapsed_value(),
                 "document_drop_revision": self._document_drop_revision,
                 "options": {
                     name: bool(getattr(gui, attribute).get())
@@ -1920,6 +1925,27 @@ class DesktopWebBridge:
             logging.getLogger(__name__).warning("파일이름 처리 실패", exc_info=True)
             return {"ok": False, "message": str(exc) or "이름 바꾸기를 처리하지 못했습니다."}
 
+    def _drain_rename_paths(self):
+        """탐색기 보내기(--rename)로 받은 경로를 목록에 넣고, 화면이 탭을 열도록 True를 돌려준다.
+        시작 때 호출을 늘리지 않으려 이미 오가는 상태 조회에 얹는다."""
+        queue = getattr(self.gui, "_rename_startup_paths", None)
+        if not isinstance(queue, list) or not queue:
+            return False
+        paths, queue[:] = list(queue), []
+        try:
+            self._file_rename_service().add_paths(paths[:10000])
+        except Exception:
+            logging.getLogger(__name__).exception("rename startup paths failed")
+        window = self.window
+        if window is not None and hasattr(window, "run_js"):
+            # 상태 조회는 Tk 스레드에서 돌아 화면 호출을 기다리면 서로 막힌다.
+            threading.Thread(
+                target=window.run_js,
+                args=("window.dispatchEvent(new Event('docfit-rename-files-dropped'));",),
+                daemon=True,
+            ).start()
+        return True
+
     def table_sketch(self, action, payload=None):
         """Table sketch conversion, storage and clipboard API."""
         from docfit_app.table_sketch_service import TableSketchService
@@ -2194,6 +2220,22 @@ class DesktopWebBridge:
         return self.get_state()
 
     # ---- 서식 관리(예시 보고서로 서식 복제·이름 바꾸기·세부 수정·삭제) ----
+    def _sidebar_collapsed_value(self):
+        """왼쪽 메뉴 접힘 저장값(없으면 None). 상태 조회가 잦아 한 번만 읽는다."""
+        if not hasattr(self, "_sidebar_collapsed"):
+            try:
+                self._sidebar_collapsed = self.gui._준말_서비스().settings.read().get("sidebar_collapsed")
+            except Exception:
+                self._sidebar_collapsed = None
+        return self._sidebar_collapsed
+
+    def set_sidebar_collapsed(self, collapsed):
+        """☰을 눌렀을 때만 왼쪽 메뉴 접힘 상태를 설정 파일에 저장한다."""
+        value = bool(collapsed)
+        self._sidebar_collapsed = value
+        self.gui._준말_서비스().settings.update(lambda current: current.update({"sidebar_collapsed": value}))
+        return value
+
     def set_drop_target(self, target):
         """끌어 놓은 파일을 넣을 곳을 바꾼다: documents(문서 목록) 또는 format(예시 서식 복제)."""
         if target not in ("documents", "manual_documents", "format", "quick_format", "sketch_image", "paint_image",
@@ -2514,7 +2556,7 @@ class _BrowserApi:
             "show_result", "open_source_file", "show_source_file", "open_result_source", "open_diff", "compare_result", "launch_external_hwp_diff", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",
             "set_exclude_tables", "set_card_option",
-            "set_drop_target", "add_format_file", "write_format_example", "rename_profile", "delete_profile",
+            "set_sidebar_collapsed", "set_drop_target", "add_format_file", "write_format_example", "rename_profile", "delete_profile",
             "edit_profile", "show_format_example", "open_format_samples", "format_gallery",
             "set_conversion_target", "start_single_file_conversion", "check_update", "start_update", "open_update_page",
         ):

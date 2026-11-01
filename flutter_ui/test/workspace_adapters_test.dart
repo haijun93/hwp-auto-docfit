@@ -6,6 +6,9 @@ import 'package:docfit_ui/features/workspace/workspace_adapters.dart';
 
 void main() {
   testWidgets('IntegratedWorkspace mounts TabNavigationShell with 9 tabs', (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     int currentTab = 0;
     Future<Object?> mockApi(String endpoint, List<Object?> params) async {
       return {'ok': true};
@@ -30,7 +33,7 @@ void main() {
     expect(find.text('표그림판'), findsOneWidget);
     expect(find.text('다이어그램'), findsOneWidget);
     expect(find.text('마인드맵'), findsOneWidget);
-    expect(find.text('파일명 일괄변경'), findsNothing);
+    expect(find.text('파일명 일괄변경'), findsOneWidget);
     expect(find.text('타임머신'), findsOneWidget);
     expect(find.text('파일변환'), findsOneWidget);
 

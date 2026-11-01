@@ -1,4 +1,6 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 /// 탭 번호. 파일이름 뒤에 타임머신을 두고 파일변환을 맨 끝에 둔다.
 const kTabFileRename = 6;
@@ -6,9 +8,12 @@ const kTabTimemachine = 7;
 const kTabFileConversion = 8;
 const kTabCount = 9;
 
-/// 파일명 일괄변경은 기능이 완벽해질 때까지 메뉴에 보이지 않는다(2026-11-01 사용자 지시).
-/// 완성되면 true로 바꾼다. 탭 번호는 그대로 둔다.
-const kFileRenameMenuEnabled = false;
+/// 왼쪽 메뉴 폭. 저장값이 없으면 창 폭이 기준 이상일 때 펼친다.
+const kSidebarCollapsedWidth = 56.0;
+const kSidebarExpandedWidth = 200.0;
+const kSidebarAutoExpandWidth = 900.0;
+
+const kFileRenameMenuEnabled = true;
 const kDefaultHiddenTabs = kFileRenameMenuEnabled ? <int>{} : <int>{kTabFileRename};
 
 /// 탭 안 화면이 '닫기·뒤로'를 요청할 때 쓰는 통로.
@@ -61,6 +66,9 @@ class TabNavigationShell extends StatefulWidget {
     this.initialIndex = 0,
     this.onTabChanged,
     this.trailing,
+    this.onSidebarExpandedChanged,
+    this.savedSidebarExpanded,
+    this.tabRequest,
     this.hiddenTabs = kDefaultHiddenTabs,
   }) : assert(initialIndex >= 0 && initialIndex < kTabCount);
 
@@ -83,8 +91,15 @@ class TabNavigationShell extends StatefulWidget {
   final Set<int> hiddenTabs;
   final ValueChanged<int>? onTabChanged;
 
-  /// 상단 탭 줄 오른쪽 끝의 앱 전체 메뉴(사용 방법·작업 로그·설정 등).
+  /// 왼쪽 메뉴 아래쪽의 앱 전체 메뉴(사용 방법·작업 로그·설정 등).
   final Widget? trailing;
+  final ValueChanged<bool>? onSidebarExpandedChanged;
+
+  /// 저장된 펼침 상태. null이면 창 폭으로 정한다.
+  final ValueListenable<bool?>? savedSidebarExpanded;
+
+  /// 바깥에서 특정 탭을 열어 달라는 요청(탐색기 보내기 등).
+  final ValueListenable<int?>? tabRequest;
 
   @override
   State<TabNavigationShell> createState() => _TabNavigationShellState();
@@ -93,9 +108,14 @@ class TabNavigationShell extends StatefulWidget {
 class _TabNavigationShellState extends State<TabNavigationShell> {
   late int _index = widget.hiddenTabs.contains(widget.initialIndex) ? 0 : widget.initialIndex;
   final ScrollController _tabScrollController = ScrollController();
+  bool? _expanded;
+  bool _sidebarTouched = false;
+  bool _built = false;
 
   @override
   void dispose() {
+    widget.savedSidebarExpanded?.removeListener(_applySaved);
+    widget.tabRequest?.removeListener(_applyTabRequest);
     _tabScrollController.dispose();
     super.dispose();
   }
@@ -125,26 +145,44 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
   ];
 
   void _select(int index) {
-    if (widget.hiddenTabs.contains(index)) return;
-    if (index == _index) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        final context = _tabContexts[index];
-        if (context != null && context.mounted) Scrollable.ensureVisible(context, alignment: 0.5, duration: const Duration(milliseconds: 180), curve: Curves.easeOut);
-      });
-      return;
-    }
+    if (widget.hiddenTabs.contains(index) || index == _index) return;
     setState(() => _index = index);
     widget.onTabChanged?.call(index);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final context = _tabContexts[index];
-      if (context == null || !context.mounted) return;
-      Scrollable.ensureVisible(context, alignment: 0.5, duration: const Duration(milliseconds: 180), curve: Curves.easeOut);
-    });
   }
 
   void _goHome() => _select(0);
+
+  @override
+  void initState() {
+    super.initState();
+    _applySaved();
+    widget.savedSidebarExpanded?.addListener(_applySaved);
+    widget.tabRequest?.addListener(_applyTabRequest);
+  }
+
+  /// 저장값은 첫 상태 응답 때 늦게 온다. 사용자가 이미 눌렀으면 덮지 않는다.
+  void _applySaved() {
+    if (_sidebarTouched) return;
+    final saved = widget.savedSidebarExpanded?.value;
+    if (saved == null || saved == _expanded) return;
+    if (mounted && _built) {
+      setState(() => _expanded = saved);
+    } else {
+      _expanded = saved;
+    }
+  }
+
+  void _applyTabRequest() {
+    final index = widget.tabRequest?.value;
+    if (index != null && mounted) _select(index);
+  }
+
+  void _toggleSidebar() {
+    final next = !(_expanded ?? MediaQuery.sizeOf(context).width >= kSidebarAutoExpandWidth);
+    _sidebarTouched = true;
+    setState(() => _expanded = next);
+    widget.onSidebarExpandedChanged?.call(next);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -159,54 +197,87 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
       widget.timemachine,
       widget.fileConversion,
     ];
-    // 탭 메뉴와 앱 메뉴(설정 등)를 상단 한 줄로 합쳤다(2026-10-30 사용자 지시).
+    _built = true;
+    final expanded = _expanded ?? MediaQuery.sizeOf(context).width >= kSidebarAutoExpandWidth;
     return Scaffold(
       body: WorkspaceTabScope(
         goHome: _goHome,
         selectTab: _select,
-        child: Column(
-          children: [
-            WorkspaceTabBar(
-              labels: _labels,
-              icons: _icons,
-              selectedIndex: _index,
-              onSelected: _select,
-              hiddenTabs: widget.hiddenTabs,
-              scrollController: _tabScrollController,
-              trailing: widget.trailing,
-            ),
-            Expanded(
-              child: IndexedStack(
-                index: _index,
+        child: Shortcuts(
+          shortcuts: {
+            for (var i = 0; i < kTabCount; i++)
+              LogicalKeySet(
+                LogicalKeyboardKey.control,
+                LogicalKeyboardKey(LogicalKeyboardKey.digit1.keyId + i),
+              ): _SelectWorkspaceTabIntent(i),
+          },
+          child: Actions(
+            actions: {
+              _SelectWorkspaceTabIntent:
+                  CallbackAction<_SelectWorkspaceTabIntent>(
+                    onInvoke: (intent) {
+                      _select(intent.index);
+                      return null;
+                    },
+                  ),
+            },
+            // 아무것도 초점을 잡지 않았을 때도 단축키가 듣게 한다.
+            child: Focus(
+              autofocus: true,
+              child: Row(
                 children: [
-                  for (var i = 0; i < pages.length; i++)
-                    TickerMode(
-                      key: ValueKey('workspace-tab-$i'),
-                      enabled: i == _index,
-                      child: widget.hiddenTabs.contains(i) ? const SizedBox.shrink() : pages[i],
+                  WorkspaceTabBar(
+                    labels: _labels,
+                    icons: _icons,
+                    selectedIndex: _index,
+                    onSelected: _select,
+                    hiddenTabs: widget.hiddenTabs,
+                    scrollController: _tabScrollController,
+                    trailing: widget.trailing,
+                    expanded: expanded,
+                    onToggleExpanded: _toggleSidebar,
+                  ),
+                  Expanded(
+                    child: IndexedStack(
+                      index: _index,
+                      children: [
+                        for (var i = 0; i < pages.length; i++)
+                          TickerMode(
+                            key: ValueKey('workspace-tab-$i'),
+                            enabled: i == _index,
+                            child: widget.hiddenTabs.contains(i) ? const SizedBox.shrink() : pages[i],
+                          ),
+                      ],
                     ),
+                  ),
                 ],
               ),
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 }
 
-/// 상단 작업 탭 줄(높이 52): 앱 표시 · 알약 탭(아이콘 16 + 이름 13, 고른 탭은 채운 알약) · 앱 메뉴.
-/// Filee 목록 메뉴·이음오피스 탭 크기를 참고했다. 창이 좁으면 탭 부분을 가로로 밀어 본다.
+class _SelectWorkspaceTabIntent extends Intent {
+  const _SelectWorkspaceTabIntent(this.index);
+  final int index;
+}
+
+/// 왼쪽 세로 메뉴. 항목 키는 기존 workspaceTab-N 계약을 유지한다.
 class WorkspaceTabBar extends StatelessWidget {
   const WorkspaceTabBar({
-    this.hiddenTabs = const {},
     super.key,
     required this.labels,
     required this.icons,
     required this.selectedIndex,
     required this.onSelected,
     required this.scrollController,
+    this.hiddenTabs = const {},
     this.trailing,
+    this.expanded = true,
+    this.onToggleExpanded,
   });
 
   final Set<int> hiddenTabs;
@@ -216,111 +287,73 @@ class WorkspaceTabBar extends StatelessWidget {
   final ValueChanged<int> onSelected;
   final ScrollController scrollController;
   final Widget? trailing;
-
-  void _ensureSelectedTabVisible(int index) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!scrollController.hasClients) return;
-      final tabContext = _tabContexts[index];
-      if (tabContext == null || !tabContext.mounted) return;
-      Scrollable.ensureVisible(
-        tabContext,
-        alignment: 0.5,
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
-        alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
-      );
-    });
-  }
+  final bool expanded;
+  final VoidCallback? onToggleExpanded;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final wide = MediaQuery.sizeOf(context).width >= 1100;
+    final color = Theme.of(context).colorScheme.primary;
     return Material(
       color: Colors.white,
       child: Container(
-        height: 52,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
+        width: expanded ? kSidebarExpandedWidth : kSidebarCollapsedWidth,
         decoration: const BoxDecoration(
-          border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+          border: Border(right: BorderSide(color: Color(0xFFE2E8F0))),
         ),
-        child: Row(
+        child: LayoutBuilder(
+          builder: (context, constraints) => Column(
           children: [
-            Container(
-              width: 30,
-              height: 30,
-              decoration: BoxDecoration(
-                color: const Color(0xFF0F172A),
-                borderRadius: BorderRadius.circular(9),
-              ),
-              child: const Icon(
-                Icons.description_rounded,
-                color: Colors.white,
-                size: 18,
+            SizedBox(
+              height: 48,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: IconButton(
+                  key: const ValueKey('workspaceSidebarToggle'),
+                  tooltip: expanded ? '메뉴 접기' : '메뉴 펼치기',
+                  onPressed: onToggleExpanded,
+                  icon: const Icon(Icons.menu),
+                ),
               ),
             ),
-            if (wide) ...[
-              const SizedBox(width: 8),
-              const Text(
-                '한글편집 후처리',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -.5,
+            Expanded(
+              child: ListView(
+                controller: scrollController,
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                children: [
+                  for (var i = 0; i < labels.length; i++)
+                    if (!hiddenTabs.contains(i))
+                      _TabPill(
+                        key: Key('workspaceTab-$i'),
+                        label: labels[i],
+                        icon: icons[i],
+                        selected: i == selectedIndex,
+                        color: color,
+                        expanded: expanded,
+                        onTap: () => onSelected(i),
+                      ),
+                ],
+              ),
+            ),
+            if (trailing != null) ...[
+              const Divider(height: 1),
+              // 창이 낮아도 넘치지 않게 앱 메뉴는 남은 높이의 절반까지만 쓰고 그 안에서 스크롤한다.
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: ((constraints.maxHeight - 49) / 2).clamp(0.0, double.infinity),
+                ),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Center(child: trailing!),
                 ),
               ),
             ],
-            const SizedBox(width: 12),
-            Expanded(
-              // 자리가 모자라면 탭을 촘촘하게, 더 모자라면 아이콘만(이름은 툴팁) — 끝 탭이 가려지지 않게.
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final per = constraints.maxWidth / (labels.length - hiddenTabs.length);
-                  final density = per >= 104
-                      ? _PillDensity.normal
-                      : per >= 82
-                      ? _PillDensity.compact
-                      : _PillDensity.iconOnly;
-                  return SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    controller: scrollController,
-                    child: Row(
-                      children: [
-                        for (var i = 0; i < labels.length; i++)
-                          if (!hiddenTabs.contains(i))
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 1),
-                            child: _TabPill(
-                              key: Key('workspaceTab-$i'),
-                              label: labels[i],
-                              icon: icons[i],
-                              selected: i == selectedIndex,
-                              color: scheme.primary,
-                              density: density,
-                              index: i,
-                              onTap: () {
-                                onSelected(i);
-                                _ensureSelectedTabVisible(i);
-                              },
-                            ),
-                          ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
-            ?trailing,
           ],
+          ),
         ),
       ),
     );
   }
 }
-
-enum _PillDensity { normal, compact, iconOnly }
-
-final Map<int, BuildContext> _tabContexts = {};
 
 class _TabPill extends StatelessWidget {
   const _TabPill({
@@ -330,63 +363,79 @@ class _TabPill extends StatelessWidget {
     required this.selected,
     required this.color,
     required this.onTap,
-    this.density = _PillDensity.normal,
-    required this.index,
+    this.expanded = true,
   });
 
-  final _PillDensity density;
-
+  final bool expanded;
   final String label;
   final IconData icon;
   final bool selected;
   final Color color;
   final VoidCallback onTap;
-  final int index;
 
   @override
   Widget build(BuildContext context) {
-    final fg = selected ? Colors.white : const Color(0xFF475569);
-    final compact = density != _PillDensity.normal;
-    final pill = Semantics(
+    final fg = selected ? color : const Color(0xFF475569);
+    final item = Semantics(
       selected: selected,
       button: true,
+      label: label,
       child: Material(
-        color: selected ? color : Colors.transparent,
+        color: selected ? color.withValues(alpha: .10) : Colors.transparent,
         borderRadius: BorderRadius.circular(8),
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
           onTap: onTap,
-          child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: compact ? 8 : 12,
-              vertical: 7,
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, size: 16, color: fg),
-                if (density != _PillDensity.iconOnly) ...[
-                  SizedBox(width: compact ? 4 : 6),
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: compact ? 12 : 13,
-                      color: fg,
-                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ],
-            ),
+          child: Stack(
+            children: [
+              Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: expanded ? 12 : 0,
+                  vertical: 10,
+                ),
+                child: Row(
+                  mainAxisAlignment: expanded
+                      ? MainAxisAlignment.start
+                      : MainAxisAlignment.center,
+                  children: [
+                    Icon(icon, size: 20, color: fg),
+                    if (expanded) ...[
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: fg,
+                            fontWeight: selected
+                                ? FontWeight.w700
+                                : FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (selected)
+                Positioned(
+                  left: 0,
+                  top: 8,
+                  bottom: 8,
+                  width: 3,
+                  child: ColoredBox(color: color),
+                ),
+            ],
           ),
         ),
       ),
     );
-    return Builder(builder: (context) {
-      _tabContexts[index] = context;
-      return density == _PillDensity.iconOnly
-          ? Tooltip(message: label, child: pill)
-          : pill;
-    });
+    // 접혀 있을 때는 이름을 툴팁으로 보여 준다.
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 1),
+      child: expanded ? item : Tooltip(message: label, child: item),
+    );
   }
 }

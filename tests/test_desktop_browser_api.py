@@ -1,3 +1,4 @@
+from unittest.mock import Mock
 import unittest
 import tempfile
 from pathlib import Path
@@ -130,6 +131,30 @@ class BrowserApiTests(unittest.TestCase):
         self.assertEqual(items[0]['image'], 'data:image/jpeg;base64,anBn')
         self.assertTrue(all('name' in item and 'id' in item for item in items))
         self.assertTrue(all(item['image'] is None for item in items[1:]))
+
+    def test_rename_paths_are_added_outside_tk_and_open_the_tab_once(self):
+        gui = _FakeGui()
+        gui._rename_startup_paths = ["C:/문서/a.txt"]
+        bridge = _bridge(gui)
+        inside = []
+        real_tk = bridge._tk
+
+        def tracking_tk(callback, *args, **kwargs):
+            inside.append(True)
+            try:
+                return real_tk(callback, *args, **kwargs)
+            finally:
+                inside.pop()
+
+        bridge._tk = tracking_tk
+        service = Mock()
+        depth = []
+        service.add_paths.side_effect = lambda paths: depth.append(len(inside))
+        bridge._file_rename_service = lambda: service
+        self.assertIs(bridge.get_state()["rename_open"], True)
+        service.add_paths.assert_called_once_with(["C:/문서/a.txt"])
+        self.assertEqual(depth, [0])
+        self.assertIs(bridge.get_state()["rename_open"], False)
 
     def test_state_lists_stages_profiles_and_options(self):
         state = _bridge(_FakeGui()).get_state()

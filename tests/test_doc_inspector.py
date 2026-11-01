@@ -3,6 +3,7 @@ import tempfile
 import unittest
 import zipfile
 import struct
+from xml.sax.saxutils import escape
 from unittest.mock import patch
 
 from docfit_core.doc_inspector import inspect_documents
@@ -11,7 +12,8 @@ from docfit_core.doc_inspector import inspect_documents
 def hwpx(path, paragraphs, table=False):
     header = '<hh:head xmlns:hh="urn:hh"><hh:charPr id="0" height="1500"><hh:fontRef hangul="0"/></hh:charPr><hh:charPr id="1" height="1300"><hh:fontRef hangul="1"/></hh:charPr></hh:head>'
     section = '<hp:sec xmlns:hp="urn:hp">' + ''.join(
-        f'<hp:p><hp:run charPrIDRef="{style}"><hp:t>{text}</hp:t></hp:run></hp:p>' for text, style in paragraphs)
+        f'<hp:p><hp:run charPrIDRef="{style}"><hp:t>{escape(text)}</hp:t></hp:run></hp:p>'
+        for text, style in paragraphs)
     section += '<hp:tbl/>' if table else ''
     with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as archive:
         archive.writestr('Contents/header.xml', header)
@@ -56,10 +58,10 @@ class InspectorTests(unittest.TestCase):
         self.assertFalse(hints['show_table_option'])
 
     def test_same_role_font_or_size_variants_recommend_unify(self):
-        path = hwpx(self.root/'mixed.hwpx', [('□ 계획', 0), ('ㅇ 내용', 0), ('ㅇ 일정', 1)])
-        self.assertEqual(inspect_documents([str(path)])['recommended_mode'], 'unify')
-        path = hwpx(path, [('□ 계획', 1), ('ㅇ 내용', 0), ('ㅇ 일정', 0)])
-        self.assertEqual(inspect_documents([str(path)])['recommended_mode'], 'spacing')
+        mixed = hwpx(self.root/'mixed.hwpx', [('□ 계획', 0), ('ㅇ 내용', 0), ('ㅇ 일정', 1)])
+        consistent = hwpx(self.root/'consistent.hwpx', [('□ 계획', 1), ('ㅇ 내용', 0), ('ㅇ 일정', 0)])
+        self.assertEqual(inspect_documents([str(mixed)])['recommended_mode'], 'unify')
+        self.assertEqual(inspect_documents([str(consistent)])['recommended_mode'], 'spacing')
 
     def test_tables_and_long_single_document_context(self):
         path = hwpx(self.root/'long.hwpx', [('ㅇ 내용', 0)] * 200, table=True)
