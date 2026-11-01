@@ -7,22 +7,22 @@
 설치된 한/글을 직접 다뤄 공문서 모양으로 다듬어 드립니다. 원본은 그대로 둡니다.
 </p>
 
-<h2 align="center">⬇️ 지금 내려받기 · 최신 v2.0.9</h2>
+<h2 align="center">⬇️ 지금 내려받기 · 최신 v2.1.0</h2>
 
 <table align="center">
 <tr>
 <td align="center" width="50%">
 <b>무설치(포터블)</b><br><sub>받아서 더블클릭하면 바로 실행 · 추천</sub><br><br>
-<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.0.9_Portable.exe?inline=false"><img height="56" alt="GitLab에서 무설치로 받기 v2.0.9" src="https://img.shields.io/badge/%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v2.0.9-15803d?style=for-the-badge&logo=gitlab"></a>
+<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.1.0/HWP_AutoDocFit_v2.1.0_Portable.exe"><img height="56" alt="GitHub에서 무설치로 받기 v2.1.0" src="https://img.shields.io/badge/%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v2.1.0-2563eb?style=for-the-badge&logo=github"></a>
 </td>
 <td align="center" width="50%">
 <b>설치용</b><br><sub>시작 메뉴·제어판에 등록</sub><br><br>
-<a href="https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.0.9_Setup.exe?inline=false"><img height="56" alt="GitLab에서 설치용 받기 v2.0.9" src="https://img.shields.io/badge/%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0%20v2.0.9-15803d?style=for-the-badge&logo=gitlab"></a>
+<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.1.0/HWP_AutoDocFit_v2.1.0_Setup.exe"><img height="56" alt="GitHub에서 설치용 받기 v2.1.0" src="https://img.shields.io/badge/%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0%20v2.1.0-2563eb?style=for-the-badge&logo=github"></a>
 </td>
 </tr>
 </table>
 
-<p align="center"><sub>Windows 10·11 · 무료 · 한/글 설치 필요 · 공공기관 PC용(GitLab)</sub></p>
+<p align="center"><sub>Windows 10·11 · 무료 · 한/글 설치 필요</sub></p>
 <p align="center">
 <img alt="무료" src="https://img.shields.io/badge/%EA%B0%80%EA%B2%A9-%EB%AC%B4%EB%A3%8C-16a34a">
 <img alt="Windows 10·11" src="https://img.shields.io/badge/Windows-10%C2%B711-0078d4">
@@ -57,8 +57,27 @@
 
 ---
 
+<h2 align="center">v2.1.0 릴리즈</h2>
+<p align="center">왼쪽 메뉴와 파일명 일괄변경을 다시 열고, K클립보드 관리 기능을 더했습니다</p>
+
+### 왼쪽 세로 메뉴
+
+화면 왼쪽의 세로 메뉴를 접거나 펼칠 수 있습니다. Ctrl+1~9로 메뉴를 바로 선택합니다.
+
+### 파일명 일괄변경 메뉴
+
+파일명 일괄변경 화면을 다시 사용할 수 있습니다. 탐색기에서 보내기, 규칙 세트 내보내기·가져오기, 최근 입력을 지원합니다.
+
+### K클립보드 관리
+
+K클립보드 관리 화면에서 그림 미리보기를 확인하고, 고정 항목을 위로 올리며, 예약된 작업을 일시정지할 수 있습니다.
+
+Python 3.15 기반으로 빌드합니다.
+
+---
+
 <h2 align="center">v2.0.9 릴리즈</h2>
-<p align="center">작업한 문서를 시간 순으로 보는 타임머신과 파일변환 \'이 파일만 다른 포맷으로\'를 더했습니다</p>
+<p align="center">작업한 문서를 시간 순으로 보는 타임머신과 파일변환 '이 파일만 다른 포맷으로'를 더했습니다</p>
 
 ### 타임머신 (2.0.9, 기본 꺼짐)
 
