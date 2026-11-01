@@ -185,6 +185,12 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
         case 'table_sketch':
           requestTab(2);
           break;
+        case 'restore':
+          unawaited(widget.api('restore_app_window', []).catchError((_) => null));
+          break;
+        case 'exit':
+          unawaited(widget.api('exit_app', []).catchError((_) => null));
+          break;
       }
     }
   }

@@ -125,6 +125,8 @@ class DesktopWebBridge:
         self._last_hotkey = None
         self._last_hotkey_at = None
         self._hotkey_requests = []
+        self._tray = None
+        self._tray_start_scheduled = False
 
     def _shutdown(self):
         """Tk 종료 시 대기·실행 중 요청의 호출자를 종료 오류로 해제한다."""
@@ -132,8 +134,11 @@ class DesktopWebBridge:
             self._cancel_close_timer()
         with self._hotkey_lock:
             hotkeys, self._hotkeys = self._hotkeys, None
+            tray, self._tray = self._tray, None
         if hotkeys is not None:
             hotkeys.stop()
+        if tray is not None:
+            tray.stop()
         manager = getattr(self.gui, '_job_manager', None)
         if manager is not None:
             threading.Thread(target=manager.shutdown, daemon=True).start()
@@ -435,6 +440,10 @@ class DesktopWebBridge:
         # 파일명 서비스를 처음 만들 때 Tk 호출을 기다리므로 Tk 스레드 밖에서 처리한다.
         rename_open = self._drain_rename_paths()
         hotkey_requests = self._drain_hotkey_requests()
+        for request in hotkey_requests:
+            if request in ("restore", "exit"):
+                self._tray_action(request)
+        hotkey_requests = [request for request in hotkey_requests if request not in ("restore", "exit")]
 
         def snapshot():
             gui = self.gui
@@ -1874,10 +1883,69 @@ class DesktopWebBridge:
             self._last_hotkey_at = datetime.now(timezone.utc).isoformat()
             self._hotkey_requests.append(name)
 
+    def _tray_callback(self, action):
+        self._hotkey_callback(action)
+
+    def _ensure_tray(self):
+        """첫 화면 렌더링 뒤, 라이브 단축키가 켜졌을 때만 트레이를 시작한다."""
+        with self._hotkey_lock:
+            if self._tray is not None:
+                return True
+            try:
+                from docfit_live.tray import TrayService
+                service = TrayService(self._tray_callback)
+                service.start()
+                self._tray = service
+                return True
+            except Exception:
+                logging.getLogger(__name__).warning("트레이 시작 실패", exc_info=True)
+                return False
+
+    def _schedule_tray_start(self):
+        if self._tray_start_scheduled:
+            return
+        self._tray_start_scheduled = True
+        try:
+            self.gui.root.after(1500, self._ensure_tray)
+        except Exception:
+            self._tray_start_scheduled = False
+
+    def _tray_action(self, action):
+        if action == "restore":
+            try:
+                self.gui.root.after(0, self.gui.root.deiconify)
+            except Exception:
+                pass
+            if self.window is not None:
+                try:
+                    self.window.restore()
+                    self.window.show()
+                except Exception:
+                    pass
+        elif action == "exit":
+            try:
+                if self.window is not None:
+                    self.window.destroy()
+                else:
+                    self.gui.root.after(0, self.gui.종료)
+            except Exception:
+                try:
+                    self.gui.root.after(0, self.gui.종료)
+                except Exception:
+                    pass
+
     def _drain_hotkey_requests(self):
         with self._hotkey_state_lock:
             requests, self._hotkey_requests = self._hotkey_requests, []
         return requests
+
+    def restore_app_window(self):
+        self._tray_action("restore")
+        return {"ok": True}
+
+    def exit_app(self):
+        self._tray_action("exit")
+        return {"ok": True}
 
     def _hotkey_bindings(self):
         from docfit_live.hotkeys import DEFAULT_HOTKEYS
@@ -1892,6 +1960,7 @@ class DesktopWebBridge:
                 service = HotkeyService(self._hotkey_bindings(), self._hotkey_callback)
                 service.start()
                 self._hotkeys = service
+                self._schedule_tray_start()
             return self._hotkeys
 
     def live_hotkeys(self, action, payload=None) -> dict:
@@ -2657,6 +2726,7 @@ class _BrowserApi:
         for name in (
             "cancel_zero_click", "start_zero_click", "quick_register_and_activate_profile", "drop_format_file", "set_profile_drop_bounds",
             "get_state", "add_files", "add_folder", "add_paths", "remove_file",
+            "restore_app_window", "exit_app",
             "clear_files", "set_mode", "set_range", "start", "stop", "start_job", "cancel_job", "get_events",
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
             "get_pending_dialog", "resolve_dialog", "enable_close_guard", "acknowledge_close", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch",
