@@ -51,7 +51,8 @@ PAGE_LAYOUT_STAGE = ("page_layout_keep", "원본 쪽 구성 유지 (보고서별
 # 취소선·장평·정렬·좌우 여백·위 간격·내어쓰기까지 전체 서식을 맞춘다(사용자 결정, 2026-10-11).
 # 서식 통일 카드의 '전체 서식 맞추기'와 연동한다.
 UNIFY_FULL_STAGE = ("unify_full_format", "전체 서식 맞추기 (글자색·기울임·밑줄·정렬·여백·위 간격·내어쓰기까지)")
-DEFAULT_OFF = frozenset({"style_unify"})
+DEFAULT_OFF = frozenset({"style_unify", "cell_image_to_bg"})
+CELL_IMAGE_BG_STAGE = ("cell_image_to_bg", "표 셀 내 이미지를 배경 이미지로 변경")
 
 SPACING_STAGES = (
     ("reset_spacing", "문서 전체 자간 초기화"),
@@ -94,13 +95,15 @@ STAGE_EXAMPLES = {
     "table_unify": "예: 같은 모양 표에서 한 칸만 굴림이면 한컴돋움으로, 󰊱 제목 상자 하나만 10pt면 다른 제목 상자처럼 15pt로 맞춥니다. 칸에 맞추려 줄인 글자와 표 안 글자색은 그대로 둡니다.",
     "page_layout_keep": "예: 원본에서 1쪽이던 보고서가 서식을 맞춘 뒤 2쪽으로 넘어가면 문단 간격·표 셀 여백·줄간격을 줄여 다시 1쪽에 담고, 원본에서 새 쪽에 시작한 보고서는 결과에서도 새 쪽에서 시작합니다.",
     "unify_full_format": "예: 끄면(기본) ㅇ 문장 20개 중 18개가 한컴돋움 15pt일 때 굴림 12pt인 2개만 맞춥니다. 켜면 글자색·밑줄·정렬·여백·위 간격·내어쓰기가 다른 문장도 대표값에 맞춥니다.",
+    "cell_image_to_bg": "예: 표 셀 안의 단독 그림을 셀 배경 그림으로 바꿉니다.",
     "unify_spacing": "예: 서식이 이미 같은 문장도 포함하여 줄 끝 단어가 갈라지면 해당 문장을 자간으로 붙이고, 마지막 줄에 한두 글자만 남으면 앞줄로 당깁니다. 끄면 내어쓰기만 맞추고 자간은 그대로 둡니다.",
 }
 
 
 _STAGE_BY_KEY = {stage[0]: stage for stage in FORMAT_STAGES + SPACING_STAGES + (
     UNIFY_STAGE, TEXT_TABLE_STAGE, TABLE_UNIFY_STAGE, ABBREVIATION_STAGE, ASTERISK_STAGE,
-    ATTACH_FONT_STAGE, TABLE_STYLE_STAGE, TABLE_WIDTH_STAGE, UNIFY_SPACING_STAGE, PAGE_LAYOUT_STAGE, UNIFY_FULL_STAGE)}
+    ATTACH_FONT_STAGE, TABLE_STYLE_STAGE, TABLE_WIDTH_STAGE, UNIFY_SPACING_STAGE, PAGE_LAYOUT_STAGE, UNIFY_FULL_STAGE,
+    CELL_IMAGE_BG_STAGE)}
 # 서식 적용·한 번에 적용은 준말 → 본말 변환을 가장 먼저, 항목기호별 서식 등 보고서 표준서식을 두 번째로
 # 다른 모든 단계보다 먼저 실행한다(서식 통일은 두 단계를 하지 않는다).
 _FIRST_STAGES = ("abbreviation", "standard_format")
@@ -114,15 +117,15 @@ _MODE_STAGES = {
               "page_layout_keep"),
     "format": _FIRST_STAGES + (
         "text_table_convert", "asterisk_superscript", "attachment_font", "pre_format", "table_style",
-        "table_width", "precise_table", "normalize_space", "punctuation_space", "style_unify", "parenthesis",
+        "table_width", "precise_table", "cell_image_to_bg", "normalize_space", "punctuation_space", "style_unify", "parenthesis",
         "table_format", "single_cell_spacing", "hanging_indent", "supplement_indent", "star_align", "page_fit", "page_group"),
     # 서식통일은 예외 문단별 서식→자간→내어쓰기 처리이며 전체 자간 단계는 돌리지 않는다.
     "spacing": ("reset_spacing", "style_unify", "body_spacing", "short_line", "control_spacing",
-                "control_short_line", "word_check", "control_word_check", "page_fit", "page_group"),
+                "control_short_line", "word_check", "control_word_check", "cell_image_to_bg", "page_fit", "page_group"),
     # 개요·한 칸 표 자간 조정(single_cell_spacing)은 서식 및 일괄 적용(all)에 포함한다.
     "all": _FIRST_STAGES + (
         "text_table_convert", "reset_spacing", "asterisk_superscript", "attachment_font", "pre_format",
-        "table_style", "table_width", "precise_table", "normalize_space", "punctuation_space", "style_unify",
+        "table_style", "table_width", "precise_table", "cell_image_to_bg", "normalize_space", "punctuation_space", "style_unify",
         "parenthesis", "table_format", "single_cell_spacing", "hanging_indent", "supplement_indent", "star_align", "body_spacing", "short_line", "control_spacing",
         "control_short_line", "word_check", "control_word_check", "page_fit", "page_group"),
 }
@@ -149,7 +152,7 @@ def default_choice(key, mode=None):
 # 한 번에 적용의 '표 제외'를 켜면 끄는 표 관련 세부 작업(일반 표 변환·서식·너비, 표 안 자간·줄·단어 작업).
 # 제목·개요·중제목·붙임 서식 표(pre_format)는 문서 제목·구조라 그대로 둔다.
 TABLE_STAGE_KEYS = ("text_table_convert", "table_style", "table_width", "precise_table", "table_format",
-                    "table_unify", "control_spacing", "control_short_line", "control_word_check")
+                    "table_unify", "control_spacing", "control_short_line", "control_word_check", "cell_image_to_bg")
 
 
 def without_tables(selection):
@@ -192,6 +195,8 @@ CARD_OPTION_STAGES = {
     "all_exclude_linespacing": (("all", "format"), (), True),
     "all_exclude_tables": (("all", "format"), TABLE_STAGE_KEYS, True),
     "all_exclude_pagefit": (("all", "format"), PAGE_FIT_STAGE_KEYS, True),
+    "spacing_cell_image_to_bg": (("spacing",), ("cell_image_to_bg",), False),
+    "all_cell_image_to_bg": (("all", "format"), ("cell_image_to_bg",), False),
 }
 
 

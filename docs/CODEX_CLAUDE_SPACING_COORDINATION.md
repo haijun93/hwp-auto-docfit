@@ -592,3 +592,10 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 - Flutter: JSON 파일 열기/저장 대화상자, 규칙 편집 대화상자의 최근 찾기/바꾸기 메뉴를 연결했다. 메뉴가 숨겨진 상태의 UI 노출이나 인자 실행은 활성화하지 않았다.
 - 시험: 지정 Python 가상환경에서 파일명 변경 관련 55개 PASS(오류 0). SendTo 임시 폴더 생성·삭제, 잘못된/상대/없는 인자 경로, 잘못된 규칙 JSON 무저장, MRU 중복·순서·10개 상한을 포함한다. `flutter test --no-pub --timeout 120s`: 228개 PASS, 기존 제외 1개. `git diff --check` PASS.
 - 한/글 COM 시험 없음. 커밋/푸시는 이 결과 기록 완료 후 수행.
+
+
+## Codex 결과 보고 — release/1.80.10 기능 이관 (2026-11-01)
+- 변경: `docfit_core/continuation.py`, `docfit_core/cell_image_bg.py`, 관련 시험·fixture, `docfit_core/stage_selection.py`, TODO 상태.
+- 기능 실행기 연결은 미완료이며 이관 진행 상태다. 셀 그림 단계는 opt-in이며 기본 꺼짐.
+- Python 시험 10개 실행: 실패 9, 오류 4. Mac의 `winreg` 부재로 COM 래퍼 시험 로드 불가, alpha의 hanging-indent 기대값 차이로 9건 실패. 재시도하지 않았다.
+- 한/글 COM 시험 미실행(맥). 커밋·푸시 없음.
