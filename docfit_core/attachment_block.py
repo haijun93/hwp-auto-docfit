@@ -97,20 +97,18 @@ def blank_line_plan(texts: list, kinds: list) -> tuple[list[int], list[int]]:
 
 
 def find_trailing_numbered_blocks(texts: list) -> list[tuple[int, int]]:
-    """문서 끝에 놓인, 번호 붙임 항목이 둘 이상인 붙임~끝. 묶음을 찾는다."""
+    """문서 끝 번호 붙임 묶음의 (첫 항목, 마지막 항목)을 찾는다.
+
+    불변 규칙(사용자 2026-11-01): 붙임 뒤 숫자 1의 위치에 2. 이후 번호를 맞추고, 각 항목은
+    번호+빈칸 뒤 본문 첫 글자 기준으로 내어쓴다. 항목 중간의 마침표 유무로 규칙이 꺼지지 않는다.
+    """
     last = max((i for i, text in enumerate(texts) if text and text.strip()), default=-1)
-    if last < 0:
+    if last < 0 or not is_end(texts[last]):
         return []
-    result = []
-    for start, end in find_blocks(texts):
-        if end != last or not is_numbered_header(texts[start]):
-            continue
-        item_end = end if is_numbered_item(texts[end]) else end - 1
-        if item_end <= start or not all(is_numbered_item(texts[i]) for i in range(start, item_end + 1)):
-            continue
-        if item_end - start < 1:
-            continue
-        if item_end < end and (texts[item_end + 1] or "").strip() != "끝.":
-            continue
-        result.append((start, item_end))
-    return result
+    item_end = last - 1 if texts[last].strip() == "끝." else last
+    i = item_end
+    while i >= 0 and i >= last - MAX_LINES and texts[i] and is_numbered_item(texts[i]):
+        if is_numbered_header(texts[i]):
+            return [(i, item_end)] if item_end > i else []
+        i -= 1
+    return []

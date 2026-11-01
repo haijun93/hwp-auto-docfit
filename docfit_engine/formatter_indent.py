@@ -442,10 +442,19 @@ def _install(*, _docfit_namespace, _docfit_symbol, bind_function):
                 begin = hwp.GetPos()
                 original_indent = hwp.ParaShape.Item("Indentation")
                 original_left = hwp.ParaShape.Item("LeftMargin")
+                if offset and not text[:offset].strip():
+                    # 탭·빈칸으로 맞춘 앞 공백은 지운다. 위치는 왼쪽여백이 맡는다.
+                    if 문단_범위_선택(begin, 0, offset) is False or hwp_run("Delete") is False:
+                        raise RuntimeError("붙임 항목 앞 공백 삭제 실패")
+                    text, offset = text[offset:], 0
+                    hwp.SetPos(*begin)
                 _내어쓰기_값_설정(0)
                 changed = True
                 prefix_width = _캐럿위치_폭_실측(begin, offset) if offset else 0
+                # 불변 규칙: 번호+빈칸 뒤 본문 첫 글자에 맞춘다.
                 marker_end = text.find(".", offset) + 1
+                while marker_end < len(text) and text[marker_end] in "  　":
+                    marker_end += 1
                 marker_width = _캐럿위치_폭_실측(begin, marker_end)
                 if marker_width is None or marker_width <= 0 or prefix_width is None:
                     raise RuntimeError("번호 마커 폭 실측 실패")
