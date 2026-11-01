@@ -50,7 +50,6 @@ class MarkerSpacingTests(unittest.TestCase):
             ('<t>Ⅰ.<tab/>장 제목</t>','Ⅰ. 장 제목'),
             ('<t>1.<tab/>절 제목</t>','1. 절 제목'),
             ('<t>ㅇ 「법령」 적용</t>','ㅇ「법령」 적용'),
-            ('<t>ㅇ 『법령』 적용</t>','ㅇ 『법령』 적용'),
             ('<t>ㅇ법령 적용</t>','ㅇ 법령 적용'),
             ('<t>ㅇ<tab/>「법령」 적용</t>','ㅇ「법령」 적용'),
             ('<t>-내용</t>','- 내용'),
@@ -64,6 +63,9 @@ class MarkerSpacingTests(unittest.TestCase):
             self.assertEqual(xml_text(p),expected)
 
     def test_bracket_exception_is_only_for_symbol_markers(self):
+        p=paragraph('<run><t>ㅇ 『법령』 적용</t></run>')
+        self.assertFalse(normalize_paragraph(p))
+        self.assertEqual(xml_text(p),'ㅇ 『법령』 적용')
         p=paragraph('<run><t>-「지방계약법」 적용</t></run>')
         self.assertFalse(normalize_paragraph(p))
         self.assertEqual(xml_text(p),'-「지방계약법」 적용')
