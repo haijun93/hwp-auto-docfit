@@ -37,7 +37,6 @@ AXIS_CAPS = {
     ("추진절차(가로) · 모양 4", "col"): 15,
     ("추진절차(가로) · 모양 5", "col"): 15,
     ("추진절차(가로세로) · 모양 1", "col"): 8,
-    ("추진절차(가로세로) · 모양 1", "row"): 8,
     ("표(가로) · 모양 3", "col"): 8,
     ("행사시간표 · 모양 1", "col"): 30,
     ("행사표(1일) · 모양 1", "col"): 30,
@@ -133,9 +132,7 @@ def _plans():
         add(f"추진절차(가로) · 모양 {number}",
             (0, 1, 1) if number == 1 else (1, 1, 1 if number == 5 else 2),
             (0, 1, count, 1))
-    add("추진절차(가로세로) · 모양 1", (0, 1, 7, 1), (0, 1, 4, 1))
-    result["추진절차(가로세로) · 모양 1"]["row"]["kind"] = "grid_flow"
-    result["추진절차(가로세로) · 모양 1"]["col"]["kind"] = "grid_flow"
+    add("추진절차(가로세로) · 모양 1", (12, 1, 1), (0, 1, 4, 1))
     add("추진절차(가로세로) · 사용자형", (2, 1, 5, 1), (0, 1, 2, 1), signature="1660c86716c32a08")
     add("추진절차(세로) · 모양 1", (2, 1, 6, 1))
     add("신구대조표 · 모양 1", (1, 8, 1))
@@ -224,10 +221,6 @@ def _validate(cells, length, axis, p):
         if _cover(c, axis, p):
             continue
         lo, hi = c[axis], c[axis] + c[axis + "Span"]
-        # This template has one original 2-row box at the lower edge. Its span is
-        # clipped when that edge becomes an inter-box arrow row.
-        if axis == "row" and p.get("kind") == "grid_flow":
-            continue
         if any(lo < b < hi for b in boundaries):
             raise ValueError("정보단위 경계를 가로지르는 병합 칸이 있습니다.")
 
@@ -1288,50 +1281,6 @@ def _set_cell_text(cell, value):
         node.text = ""
 
 
-def _normalize_grid_flow_arrows(table, object_ids, right_source, down_source):
-    """내장 가로세로 추진절차의 짝수 격자는 박스, 사이 격자는 화살표로 맞춘다."""
-    rows, cols = int(table.get("rowCnt")), int(table.get("colCnt"))
-    for _, cell in _cells(table):
-        addr, span = cell.find(HP + "cellAddr"), cell.find(HP + "cellSpan")
-        row, col = int(addr.get("rowAddr")), int(addr.get("colAddr"))
-        span.set("rowSpan", str(min(int(span.get("rowSpan")), rows - row)))
-        span.set("colSpan", str(min(int(span.get("colSpan")), cols - col)))
-    indexed = {(int(c.find(HP + "cellAddr").get("rowAddr")),
-                int(c.find(HP + "cellAddr").get("colAddr"))): c for _, c in _cells(table)}
-    if right_source is None or down_source is None:
-        raise ValueError("가로세로 추진절차의 화살표 원본 칸을 찾을 수 없습니다.")
-    polygon = next((copy.deepcopy(node) for node in right_source.iter(HP + "polygon")), None)
-    if polygon is None:
-        raise ValueError("가로세로 추진절차의 오른쪽 화살표를 찾을 수 없습니다.")
-    for (r, c), cell in indexed.items():
-        right = r % 2 == 0 and c % 2 == 1
-        down = r % 2 == 1 and c % 2 == 0 and r < rows - 1
-        for node in list(cell.iter(HP + "polygon")):
-            parent = next((p for p in cell.iter() if node in list(p)), None)
-            if parent is not None:
-                parent.remove(node)
-        if right:
-            run = next((x for x in cell.iter(HP + "run")), None)
-            if run is None:
-                raise ValueError("화살표를 넣을 문단 칸이 없습니다.")
-            shape = copy.deepcopy(polygon)
-            run.append(shape)
-            object_ids.renew(shape)
-        text_nodes = list(cell.iter(HP + "t"))
-        for node in text_nodes:
-            if (node.text or "").strip() == "↓":
-                node.text = ""
-        if down:
-            if not text_nodes:
-                run = next((x for x in cell.iter(HP + "run")), None)
-                if run is None:
-                    raise ValueError("아래 화살표를 넣을 문단 칸이 없습니다.")
-                text_node = cell.makeelement(HP + "t", {})
-                run.append(text_node)
-                text_nodes = [text_node]
-            text_nodes[0].text = "↓"
-
-
 def _fill_weekly(table, plan):
     """일정표(주간): 1행은 1주·2주·…, 2행은 사용자가 1주 칸에 적은 첫 날짜(없으면 4.26.)부터 주 단위 기간.
 
@@ -1373,39 +1322,6 @@ def resize_table(tbl_element, plan, row_count=None, col_count=None, *, id_roots=
     validate_input(fill, cell_texts)
     working, updated = copy.deepcopy(tbl_element), copy.deepcopy(plan)
     object_ids = _ObjectIds((*id_roots, working))
-    flow = any(updated.get(axis) and updated[axis].get("kind") == "grid_flow" for axis in ("row", "col"))
-    if flow and "_flow_original" not in updated:
-        updated["_flow_original"] = copy.deepcopy(tbl_element)
-        indexed = {(int(c.find(HP + "cellAddr").get("rowAddr")),
-                    int(c.find(HP + "cellAddr").get("colAddr"))): c for _, c in _cells(tbl_element)}
-        updated["_flow_right"] = copy.deepcopy(indexed.get((0, 1)))
-        updated["_flow_down"] = copy.deepcopy(next((c for (r, _), c in indexed.items()
-            if r % 2 == 1 and any((n.text or "").strip() == "↓" for n in c.iter(HP + "t"))), None))
-    if flow:
-        # Split the source's one lower-edge box that spans into the next row. The
-        # separator row needs its own cell so row growth can clone a complete grid.
-        for _, cell in list(_cells(working)):
-            addr, span = cell.find(HP + "cellAddr"), cell.find(HP + "cellSpan")
-            row, col = int(addr.get("rowAddr")), int(addr.get("colAddr"))
-            row_span = int(span.get("rowSpan"))
-            if row_span <= 1:
-                continue
-            span.set("rowSpan", "1")
-            for offset in range(1, row_span):
-                target_row = row + offset
-                clone = copy.deepcopy(updated.get("_flow_down"))
-                clone.find(HP + "cellAddr").set("rowAddr", str(target_row))
-                clone.find(HP + "cellAddr").set("colAddr", str(col))
-                clone.find(HP + "cellSpan").set("rowSpan", "1")
-                clone.find(HP + "cellSpan").set("colSpan", "1")
-                clone.find(HP + "cellSz").set("height", str(_sizes(working, "row")[target_row]))
-                object_ids.renew(clone)
-                tr = working.findall(HP + "tr")[target_row]
-                tr.append(clone)
-                ordered = sorted(tr.findall(HP + "tc"), key=lambda x: int(x.find(HP + "cellAddr").get("colAddr")))
-                for tc in tr.findall(HP + "tc"):
-                    tr.remove(tc)
-                tr.extend(ordered)
     col_plan = updated.get("col")
     if col_plan and col_plan.get("kind") in ("org_chart", "org_chart_wide"):
         if row_count is not None:
@@ -1440,18 +1356,6 @@ def resize_table(tbl_element, plan, row_count=None, col_count=None, *, id_roots=
             _resize_axis(working, axis, p, target, object_ids, fill)
         else:
             _validate(_meta(working), int(working.get(axis + "Cnt")), axis, p)
-    if flow:
-        original = updated["_flow_original"]
-        target_rows = updated["row"]["count"] if row_count is None else row_count
-        target_cols = updated["col"]["count"] if col_count is None else col_count
-        original_counts = ((int(original.get("rowCnt")) + 1) // 2,
-                           (int(original.get("colCnt")) + 1) // 2)
-        if (target_rows, target_cols) == original_counts:
-            working = copy.deepcopy(original)
-            updated["row"]["count"] = (int(original.get("rowCnt")) + 1) // 2
-            updated["col"]["count"] = (int(original.get("colCnt")) + 1) // 2
-        else:
-            _normalize_grid_flow_arrows(working, object_ids, updated.get("_flow_right"), updated.get("_flow_down"))
     _apply_texts(working, cell_texts)
     col_plan = updated.get("col")
     if col_plan and col_plan.get("kind") == "weekly" and fill == "increment":

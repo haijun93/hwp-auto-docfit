@@ -2376,9 +2376,7 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
 
             _buildStepper(
 
-              axisLabel: template.name == '추진절차(가로세로) · 모양 1'
-                  ? '행 단위(박스+↓)'
-                  : '행 단위',
+              axisLabel: '행 단위',
 
               count: _currentRowCount ?? template.units.row!.count,
 
@@ -2426,9 +2424,7 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
 
             _buildStepper(
 
-              axisLabel: template.name == '추진절차(가로세로) · 모양 1'
-                  ? '열 단위(박스+→)'
-                  : '열 단위',
+              axisLabel: '열 단위',
 
               count: _currentColCount ?? template.units.col!.count,
 
