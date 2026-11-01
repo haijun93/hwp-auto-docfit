@@ -113,7 +113,7 @@ void main() {
 
   testWidgets('groups_only_when_hour_has_more_than_five_files', (tester) async {
     final now = DateTime.now();
-    final baseTime = DateTime(now.year, now.month, 1, 10, 0).millisecondsSinceEpoch ~/ 1000;
+    final baseTime = DateTime(now.year, now.month, now.day, 10, 30).millisecondsSinceEpoch ~/ 1000;
     // 5개: 개별 카드
     final items5 = [
       for (var i = 0; i < 5; i++)
@@ -164,11 +164,11 @@ void main() {
   testWidgets('hour_groups_split_at_midnight_and_on_the_hour', (tester) async {
     final now = DateTime.now();
     // 09:59:59 파일 6개, 10:00:00 파일 6개
-    final t0959 = DateTime(now.year, now.month, 1, 9, 59, 59).millisecondsSinceEpoch ~/ 1000;
-    final t1000 = DateTime(now.year, now.month, 1, 10, 0, 0).millisecondsSinceEpoch ~/ 1000;
+    final t0959 = DateTime(now.year, now.month, now.day, 9, 59, 59).millisecondsSinceEpoch ~/ 1000;
+    final t1000 = DateTime(now.year, now.month, now.day, 10, 0, 0).millisecondsSinceEpoch ~/ 1000;
     // 23:30 파일 6개, 다음 날 00:30 파일 6개
-    final t23 = DateTime(now.year, now.month, 1, 23, 30).millisecondsSinceEpoch ~/ 1000;
-    final t00 = DateTime(now.year, now.month, 2, 0, 30).millisecondsSinceEpoch ~/ 1000;
+    final t23 = DateTime(now.year, now.month, now.day, 23, 30).millisecondsSinceEpoch ~/ 1000;
+    final t00 = DateTime(now.year, now.month, now.day + 1, 0, 30).millisecondsSinceEpoch ~/ 1000;
 
     final items = [
       for (var i = 0; i < 6; i++)
@@ -194,11 +194,11 @@ void main() {
 
   testWidgets('group_boundary_at_page_edge_does_not_merge_unloaded_rows', (tester) async {
     final now = DateTime.now();
-    final t10 = DateTime(now.year, now.month, 1, 10, 0).millisecondsSinceEpoch ~/ 1000;
+    final t10 = DateTime(now.year, now.month, now.day, 10, 30).millisecondsSinceEpoch ~/ 1000;
     // 200개 아이템 중 마지막 3개가 10시
     final firstPage = [
       for (var i = 0; i < 197; i++)
-        {'id': 1 + i, 'name': '기타$i.pdf', 'kind': 'pdf', 'size': 1, 'mtime': 1.0, 'ctime': 1.0, 'work_time': (t10 + 3600 + i).toDouble(), 'flags': <String>[], 'cloud': false, 'folder': 'C:\\TM'},
+        {'id': 1 + i, 'name': '기타$i.pdf', 'kind': 'pdf', 'size': 1, 'mtime': 1.0, 'ctime': 1.0, 'work_time': (t10 + 3600 + 196 - i).toDouble(), 'flags': <String>[], 'cloud': false, 'folder': 'C:\\TM'},
       for (var i = 0; i < 3; i++)
         {'id': 198 + i, 'name': '끝파일$i.pdf', 'kind': 'pdf', 'size': 1, 'mtime': 1.0, 'ctime': 1.0, 'work_time': t10.toDouble(), 'flags': <String>[], 'cloud': false, 'folder': 'C:\\TM'},
     ];

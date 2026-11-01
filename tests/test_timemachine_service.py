@@ -409,13 +409,13 @@ class TimemachineServiceTests(unittest.TestCase):
         id2 = self.add_file(f2)
 
         calls = []
-        self.service.feature_api = lambda feat, ids: calls.append((feat, ids)) or {"ok": True}
+        self.service.feature_api = lambda feat, paths: calls.append((feat, paths)) or {"ok": True}
 
         res = self.service.command("send_to_feature", {"feature": "rename_batch", "ids": [id1, id2]})
         self.assertTrue(res["ok"])
         self.assertEqual(res["feature"], "rename_batch")
         self.assertEqual(res["accepted_ids"], [id1, id2])
-        self.assertEqual(calls, [("rename_batch", [id1, id2])])
+        self.assertEqual(calls, [("rename_batch", [str(f1), str(f2)])])
 
     def test_send_to_feature_rejects_invalid_feature_and_id_types(self):
         self.enable()
@@ -575,10 +575,16 @@ class TimemachineServiceTests(unittest.TestCase):
         id1 = self.add_file(f1)
         id2 = self.add_file(f2)
 
-        self.service.feature_api = None
+        calls = []
+        self.service.feature_api = lambda feat, paths: calls.append((feat, paths)) or {"ok": True}
         res = self.service.command("send_to_feature", {"feature": "rename_batch", "ids": [id1, id2]})
-        self.assertFalse(res["ok"])
-        self.assertEqual(res["code"], "FEATURE_UNAVAILABLE")
+        self.assertTrue(res["ok"])
+        self.assertEqual(calls, [("rename_batch", [str(f1), str(f2)])])
+
+        self.service.feature_api = None
+        unavailable = self.service.command("send_to_feature", {"feature": "rename_batch", "ids": [id1, id2]})
+        self.assertFalse(unavailable["ok"])
+        self.assertEqual(unavailable["code"], "FEATURE_UNAVAILABLE")
 
     def test_send_to_feature_limits_convert_and_document_edit(self):
         self.enable()
