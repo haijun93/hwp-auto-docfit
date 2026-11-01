@@ -54,7 +54,6 @@ class MarkerSpacingTests(unittest.TestCase):
             ('<t>ㅇ법령 적용</t>','ㅇ 법령 적용'),
             ('<t>ㅇ<tab/>「법령」 적용</t>','ㅇ「법령」 적용'),
             ('<t>-내용</t>','- 내용'),
-            ('<t>-「지방계약법」 적용</t>','-「지방계약법」 적용'),
             ('<t>•내용</t>','• 내용'),
             ('<t>①내용</t>','① 내용'),
             ('<t>1.내용</t>','1. 내용'),
@@ -63,6 +62,14 @@ class MarkerSpacingTests(unittest.TestCase):
             p=paragraph('<run>'+inner+'</run>')
             self.assertTrue(normalize_paragraph(p))
             self.assertEqual(xml_text(p),expected)
+
+    def test_bracket_exception_is_only_for_symbol_markers(self):
+        p=paragraph('<run><t>-「지방계약법」 적용</t></run>')
+        self.assertFalse(normalize_paragraph(p))
+        self.assertEqual(xml_text(p),'-「지방계약법」 적용')
+        p=paragraph('<run><t>2.「법령」 개정</t></run>')
+        self.assertTrue(normalize_paragraph(p))
+        self.assertEqual(xml_text(p),'2. 「법령」 개정')
 
     def test_negative_numbers_and_dates_are_preserved(self):
         for inner in ['<t>-12% 감소</t>', '<t>-500원 차감</t>', '<t>2026.10.25. 안내문</t>']:

@@ -3582,7 +3582,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             항목기호 뒤 「만 공백 0개. 내어쓰기는 「 바로 뒤 첫 글자 기준이다.
             내어쓰기는 '「' 바로 뒤 첫 글자 기준이다(_여는낫표_건너뛰기).
             """
-            m = re.match(r"[ \\t]*(?:\\*{1,2}|[□■ㅁㅇ○●◦※•·▶◆◇☞\\-–])([ \\t\\u3000]+)「", text or "")
+            m = re.match(r"[ \t]*(?:\*{1,2}|[□■ㅁㅇ○●◦※•·▶◆◇☞\-–])([ \t\u3000]+)「", text or "")
             return (m.start(1), m.end(1)) if m else None
         return bind_function(항목기호_낫표_빈칸_구간, _docfit_namespace)
     if _docfit_symbol == '항목기호_낫표_빈칸_정리_문단_처리':
@@ -3903,6 +3903,12 @@ def _install(*, _docfit_namespace, _docfit_symbol):
 
             문단_시작위치 = hwp.GetPos()
             try:
+                if 조치 == "remove":
+                    if 문단_범위_선택(문단_시작위치, 마커_끝, 마커_끝 + 1) is False:
+                        raise RuntimeError("공백류 문자 선택 실패")
+                    if hwp_run("Delete") is False:
+                        raise RuntimeError("공백류 문자 삭제 실패")
+                    return True
                 if 조치 == "replace":
                     # 탭·전각공백 등 다른 공백류가 이미 있으면 지우고 표준 반각
                     # 공백 한 칸으로 다시 넣는다(그냥 앞에 삽입만 하면 두 공백이

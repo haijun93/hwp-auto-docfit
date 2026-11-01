@@ -116,10 +116,12 @@ def marker_space_fix(text, marker_end):
     if marker_end is None or marker_end >= len(text):
         return None
     next_char = text[marker_end]
-    if next_char == "「":
-        return None
-    if next_char in _MARKER_SPACE_ALTERNATES and marker_end + 1 < len(text) and text[marker_end + 1] == "「":
-        return "remove"
+    # 사용자 규칙(2026-11-01): 기호 항목 뒤 「는 빈칸 없음. 번호(2.)는 원칙대로 1칸.
+    if marker_end > 0 and text[marker_end - 1] not in ".．)":
+        if next_char == "「":
+            return None
+        if next_char in _MARKER_SPACE_ALTERNATES and text[marker_end + 1:marker_end + 2] == "「":
+            return "remove"
     if next_char == " ":
         return None
     if next_char in _MARKER_SPACE_ALTERNATES:
