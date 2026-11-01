@@ -26,6 +26,7 @@ import 'features/stages/stage_board.dart';
 import 'features/workspace/workspace_adapters.dart';
 import 'features/workspace/tab_navigation_shell.dart';
 import 'features/kclip/kclip_dialog.dart';
+import 'features/live/helper_panel_screen.dart';
 
 export 'core/api/abbreviation_api.dart' show ApiCall;
 
@@ -216,6 +217,23 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
             visualDensity: VisualDensity.compact,
             onPressed: () => showKClipDialog(context, widget.api),
             icon: const Icon(Icons.content_paste_search, size: 20),
+          ),
+          IconButton(
+            key: const ValueKey('live-helper-open'),
+            tooltip: '한/글 도우미 패널',
+            visualDensity: VisualDensity.compact,
+            onPressed: () => showDialog<void>(
+              context: context,
+              builder: (_) => Dialog(
+                insetPadding: const EdgeInsets.all(12),
+                child: SizedBox(
+                  width: 360,
+                  height: 620,
+                  child: HelperPanelScreen(api: widget.api),
+                ),
+              ),
+            ),
+            icon: const Icon(Icons.dock_outlined, size: 20),
           ),
           IconButton(
             tooltip: '사용 방법 (F1)',
