@@ -248,6 +248,14 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
             notice('복사했어요. 한/글 2020에서 Ctrl+V로 붙여넣으세요.');
           }
           break;
+        case 'copy_diagram_shapes':
+          final copied = await storage('copy_diagram_shapes', {
+            'snapshot': message['snapshot'],
+          });
+          if (copied is Map && copied['copied'] == true) {
+            notice('도형으로 복사했어요. 한/글 2020에서 Ctrl+V로 붙여넣으세요.');
+          }
+          break;
         case 'request_png':
           post({'type': 'export_png'});
           break;
