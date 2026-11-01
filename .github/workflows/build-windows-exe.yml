@@ -89,6 +89,8 @@ jobs:
             Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value '```'
           }
           Get-Content -LiteralPath "windows-tests.log" -Tail 200
+          # 표준 출력이 끝에 몰려 꼬리만으로는 실패 이름이 안 보인다.
+          Select-String -LiteralPath "windows-tests.log" -Pattern '^(ERROR|FAIL): |^Ran [0-9]+ tests|^FAILED|^[A-Za-z_.]*Error: ' | ForEach-Object { $_.Line }
           exit $testExit
 
       - name: Publish regression diagnostics on failure
