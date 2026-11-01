@@ -184,6 +184,7 @@ class LiveHotkeyBridgeTests(unittest.TestCase):
         bridge._hotkey_state_lock = threading.Lock()
         bridge._last_hotkey = None
         bridge._last_hotkey_at = None
+        bridge._hotkey_requests = []
         bridge._test_settings_path = tmp_path / "settings.json"
         from docfit_app.settings_service import SettingsService
         bridge._configuration = lambda: SimpleNamespace(store=SettingsService(bridge._test_settings_path))
@@ -258,6 +259,13 @@ class LiveHotkeyBridgeTests(unittest.TestCase):
         state = {"last_hotkey": bridge._last_hotkey, "last_hotkey_at": bridge._last_hotkey_at}
         self.assertEqual(state["last_hotkey"], "panel")
         self.assertTrue(state["last_hotkey_at"])
+
+    def test_hotkey_requests_are_drained_once_without_tk_dispatch(self):
+        bridge = self.bridge(self._tmp_path())
+        bridge._hotkey_callback("panel")
+        bridge._hotkey_callback("table_template")
+        self.assertEqual(bridge._drain_hotkey_requests(), ["panel", "table_template"])
+        self.assertEqual(bridge._drain_hotkey_requests(), [])
 
     def test_live_hotkeys_unknown_action_returns_error(self):
         bridge = self.bridge(self._tmp_path())

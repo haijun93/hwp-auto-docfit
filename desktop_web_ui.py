@@ -124,6 +124,7 @@ class DesktopWebBridge:
         self._hotkey_state_lock = threading.Lock()
         self._last_hotkey = None
         self._last_hotkey_at = None
+        self._hotkey_requests = []
 
     def _shutdown(self):
         """Tk 종료 시 대기·실행 중 요청의 호출자를 종료 오류로 해제한다."""
@@ -433,6 +434,7 @@ class DesktopWebBridge:
     def get_state(self):
         # 파일명 서비스를 처음 만들 때 Tk 호출을 기다리므로 Tk 스레드 밖에서 처리한다.
         rename_open = self._drain_rename_paths()
+        hotkey_requests = self._drain_hotkey_requests()
 
         def snapshot():
             gui = self.gui
@@ -450,6 +452,7 @@ class DesktopWebBridge:
                 "job": self._jobs().latest(),
                 "last_hotkey": self._last_hotkey,
                 "last_hotkey_at": self._last_hotkey_at,
+                "hotkey_requests": hotkey_requests,
                 "_open_completed_result": False,
                 "files": [
                     {"name": Path(path).name, "path": path, "folder": str(Path(path).parent),
@@ -1869,6 +1872,12 @@ class DesktopWebBridge:
         with self._hotkey_state_lock:
             self._last_hotkey = name
             self._last_hotkey_at = datetime.now(timezone.utc).isoformat()
+            self._hotkey_requests.append(name)
+
+    def _drain_hotkey_requests(self):
+        with self._hotkey_state_lock:
+            requests, self._hotkey_requests = self._hotkey_requests, []
+        return requests
 
     def _hotkey_bindings(self):
         from docfit_live.hotkeys import DEFAULT_HOTKEYS

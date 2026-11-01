@@ -148,6 +148,46 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
   final workspace = GlobalKey<_WorkspaceState>();
   int lastTab = 0;
   final tabRequest = ValueNotifier<int?>(null);
+  bool helperPanelOpen = false;
+
+  void requestTab(int index) {
+    tabRequest.value = null;
+    tabRequest.value = index;
+  }
+
+  void toggleHelperPanel() {
+    if (helperPanelOpen || !mounted) return;
+    helperPanelOpen = true;
+    showDialog<void>(
+      context: context,
+      builder: (_) => Dialog(
+        insetPadding: const EdgeInsets.all(12),
+        child: SizedBox(
+          width: 360,
+          height: 620,
+          child: HelperPanelScreen(api: widget.api),
+        ),
+      ),
+    ).whenComplete(() => helperPanelOpen = false);
+  }
+
+  void handleHotkeyRequests(Map next) {
+    final requests = next['hotkey_requests'];
+    if (requests is! List) return;
+    for (final request in requests) {
+      switch (request) {
+        case 'panel':
+          toggleHelperPanel();
+          break;
+        case 'table_template':
+          requestTab(1);
+          break;
+        case 'table_sketch':
+          requestTab(2);
+          break;
+      }
+    }
+  }
 
   /// 표그림판 탭에서는 끌어 놓은 사진을 칸 배경 그림으로, 그림판 탭에서는 배경 사진으로 받고,
   /// 나가면 문서 목록으로 되돌린다.
@@ -182,9 +222,9 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
       onSidebarCollapsed: (collapsed) =>
           savedSidebarExpanded.value = collapsed == null ? null : !collapsed,
       onRenameOpen: () {
-        tabRequest.value = null;
-        tabRequest.value = kTabFileRename;
+        requestTab(kTabFileRename);
       },
+      onHotkeyRequests: handleHotkeyRequests,
     ),
     fileConversionWidget: _ConversionTab(workspace: workspace),
     onTabChanged: (index) {
@@ -222,17 +262,7 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
             key: const ValueKey('live-helper-open'),
             tooltip: '한/글 도우미 패널',
             visualDensity: VisualDensity.compact,
-            onPressed: () => showDialog<void>(
-              context: context,
-              builder: (_) => Dialog(
-                insetPadding: const EdgeInsets.all(12),
-                child: SizedBox(
-                  width: 360,
-                  height: 620,
-                  child: HelperPanelScreen(api: widget.api),
-                ),
-              ),
-            ),
+            onPressed: toggleHelperPanel,
             icon: const Icon(Icons.dock_outlined, size: 20),
           ),
           IconButton(
@@ -271,6 +301,7 @@ class Workspace extends StatefulWidget {
     required this.api,
     this.onSidebarCollapsed,
     this.onRenameOpen,
+    this.onHotkeyRequests,
   });
   final ApiCall api;
 
@@ -279,6 +310,7 @@ class Workspace extends StatefulWidget {
 
   /// 탐색기 보내기로 파일이 들어와 파일명 일괄변경 탭을 열어야 할 때.
   final VoidCallback? onRenameOpen;
+  final ValueChanged<Map>? onHotkeyRequests;
   @override
   State<Workspace> createState() => _WorkspaceState();
 }
@@ -496,6 +528,7 @@ class _WorkspaceState extends State<Workspace> implements ConversionHost {
     final documentsChanged =
         jsonEncode(state['files'] ?? []) != jsonEncode(next['files'] ?? []);
     state = Map<String, dynamic>.from(next);
+    widget.onHotkeyRequests?.call(next);
     final collapsed = next['sidebar_collapsed'];
     widget.onSidebarCollapsed?.call(collapsed is bool ? collapsed : null);
     if (next['rename_open'] == true) widget.onRenameOpen?.call();
