@@ -367,6 +367,9 @@ def run(exe: Path, minutes: int, quick: bool) -> dict:
     # quick 모드는 1분(60초) 측정, 일반 모드는 지정된 분(기본 10분)
     effective_minutes = 1 if quick else minutes
     total_seconds = effective_minutes * 60
+    live_path = Path('reports/kagent-stress-live.jsonl')
+    live_path.parent.mkdir(parents=True, exist_ok=True)
+    live_path.write_text('', encoding='utf-8')
 
     # 1. 단일 인스턴스 격리 확인: 기존 실행 중인 kagent가 있으면 즉시 중단
     if check_existing_instance():
@@ -436,6 +439,8 @@ def run(exe: Path, minutes: int, quick: bool) -> dict:
         init_snap = snapshot(proc.pid)
         init_snap["elapsed_sec"] = 0.0
         samples.append(init_snap)
+        with live_path.open('a', encoding='utf-8') as live:
+            live.write(json.dumps(init_snap, ensure_ascii=False) + '\n')
 
         next_snap = 30.0
         next_popup = 30.0
@@ -444,6 +449,9 @@ def run(exe: Path, minutes: int, quick: bool) -> dict:
         cycle = 0
 
         while (time.perf_counter() - t0) < total_seconds:
+            if proc.poll() is not None:
+                errors.append(f"kagent_process_exited_early: returncode={proc.returncode}")
+                break
             # 80ms 간격으로 글·그림·파일 경로 복사 순환
             mod = cycle % 3
             try:
@@ -532,6 +540,8 @@ def run(exe: Path, minutes: int, quick: bool) -> dict:
                 snap = snapshot(proc.pid)
                 snap["elapsed_sec"] = round(elapsed, 1)
                 samples.append(snap)
+                with live_path.open('a', encoding='utf-8') as live:
+                    live.write(json.dumps(snap, ensure_ascii=False) + '\n')
                 while next_snap <= elapsed:
                     next_snap += 30.0
 
@@ -539,6 +549,8 @@ def run(exe: Path, minutes: int, quick: bool) -> dict:
         final_snap = snapshot(proc.pid)
         final_snap["elapsed_sec"] = round(time.perf_counter() - t0, 1)
         samples.append(final_snap)
+        with live_path.open('a', encoding='utf-8') as live:
+            live.write(json.dumps(final_snap, ensure_ascii=False) + '\n')
 
     finally:
         if proc is not None:

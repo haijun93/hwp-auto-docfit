@@ -4,6 +4,8 @@ import unittest
 from unittest.mock import patch
 
 from defusedxml import ElementTree as ET
+from zipfile import ZipFile
+from io import BytesIO
 from docfit_core.hwpx.canvas_hwpx_builder import (
     HP, HH, HC, build_table_sketch_xml, build_table_sketch_border_fills_xml,
     build_diagram_shape_xml, build_mindmap_xml, build_mindmap_para_properties_xml,
@@ -72,14 +74,44 @@ class CanvasHwpxTests(unittest.TestCase):
         self.assertEqual(elements[0].find(HP+'pos').get('vertOffset'), str(round(2.5*7200/96)))
         self.assertEqual(elements[0].find(HP+'sz').get('width'), '225')
         self.assertEqual(elements[1].find(HP+'pos').get('horzOffset'), '7200')
-        self.assertEqual(elements[2].find(HP+'startPt').attrib, {'subjectIDRef': '0', 'subjectIdx': '0', 'x': '0', 'y': '375'})
-        self.assertEqual(elements[2].find(HP+'endPt').attrib, {'subjectIDRef': '0', 'subjectIdx': '0', 'x': '11700', 'y': '5850'})
+        self.assertEqual(elements[2].find(HP+'startPt').attrib, {'subjectIDRef': '20', 'subjectIdx': '3', 'x': '112', 'y': '375'})
+        self.assertEqual(elements[2].find(HP+'endPt').attrib, {'subjectIDRef': '21', 'subjectIdx': '1', 'x': '7200', 'y': '5850'})
         self.assertEqual(elements[2].find(HP+'lineShape').get('tailStyle'), 'ARROW')
         self.assertEqual(elements[0].find(HC+'pt2').attrib, {'x': '225', 'y': '375'})
         self.assertEqual(elements[1].find(HC+'center').attrib, {'x': '4500', 'y': '2250'})
         for element in elements:
             ET.fromstring(ET.tostring(element))
             self.assertEqual(element.findall('.//'+HP+'lineseg'), [])
+
+    def test_diagram_legacy_features_and_generated_package_roundtrip(self):
+        from docfit_core.hwpx.canvas_package_adapter import merge_canvas_block_into_hwpx
+        from tests.test_v2_canvas_package_adapter import fixture
+        source = fixture()
+        payload = {'nodes': [
+            dict(id='d', type='diamond', position={'x': 10, 'y': 20}, width=80, height=40,
+                 data={'label': '첫 줄\n둘째 줄', 'fill': '#abcdef'},
+                 style={'borderColor': '#123456', 'borderWidth': 2}),
+            dict(id='r', type='roundrect', position={'x': 150, 'y': 20}, width=60, height=40)],
+            'edges': [dict(id='edge', source='d', target='r', markerEnd={'type': 'arrow'})]}
+        data = merge_canvas_block_into_hwpx(source, {'kind': 'diagram', 'payload': payload})
+        with ZipFile(BytesIO(data)) as archive:
+            section = ET.fromstring(archive.read('Contents/section0.xml'))
+            shapes = [n for n in section.iter() if n.tag in (HP+'polygon', HP+'rect', HP+'ellipse', HP+'connectLine')]
+            self.assertEqual(len(shapes), 3)
+            diamond, rounded, connector = shapes
+            self.assertEqual(diamond.tag, HP+'polygon')
+            self.assertEqual(diamond.get('ratio'), '0')
+            self.assertEqual(diamond.find(HP+'pos').get('horzOffset'), '750')
+            self.assertEqual(diamond.find(HP+'sz').get('width'), '6000')
+            self.assertEqual(diamond.find('.//'+HC+'winBrush').get('faceColor'), '#ABCDEF')
+            self.assertEqual(diamond.find(HP+'lineShape').get('color'), '#123456')
+            self.assertEqual(diamond.find(HP+'lineShape').get('width'), '66')
+            self.assertEqual([''.join(p.itertext()) for p in diamond.findall('.//'+HP+'p')], ['첫 줄', '둘째 줄'])
+            self.assertEqual(rounded.get('ratio'), '20')
+            self.assertEqual(connector.find(HP+'startPt').get('subjectIDRef'), diamond.get('instid'))
+            self.assertEqual(connector.find(HP+'endPt').get('subjectIDRef'), rounded.get('instid'))
+            self.assertEqual(connector.find(HP+'startPt').get('subjectIdx'), '3')
+            self.assertEqual(connector.find(HP+'endPt').get('subjectIdx'), '1')
 
     def test_diagram_rejects_invalid_geometry(self):
         for key, value in [('width', 0), ('height', -1), ('width', float('nan')),
