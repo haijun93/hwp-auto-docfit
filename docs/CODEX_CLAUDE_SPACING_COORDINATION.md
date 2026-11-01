@@ -607,4 +607,4 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 - 셀 그림→배경 변환을 작업용 HWPX 단계에 연결하고 작업 방식 옵션/Flutter 화면에 노출했다. 기본값은 꺼짐이다.
 - alpha 사용자 결정으로 독립 숫자 목록(예: 1))은 새 세트 경계로 유지했다.
 - 관련 기능 시험 38개 PASS. 전체 시험: `python -m unittest discover -s tests` 출력상 300개 이상 PASS, 실행 프로세스가 공존해 완료 요약 미수신. 완료 조건 미확정. Flutter 시험은 `flutter_test`/`test` 의존성 누락으로 실행 불가. `hwp-auto-docfit.py` CRLF 3502, bare LF 0; XML 파서는 변경/이관 모듈 모두 `defusedxml.ElementTree`. Flutter 시험 명령은 `flutter_test`/`test`가 pubspec에 없어 기동 불가. COM 미사용.
-- git diff --check PASS. hwp-auto-docfit.py 원본은 이번 변경에서 수정하지 않았고 CRLF 3502/bare LF 0. 커밋/푸시는 전체 시험 종료 결과 미확정 상태를 명시한 뒤 수행.
+- git diff --check PASS. hwp-auto-docfit.py 원본은 이번 변경에서 수정하지 않았고 CRLF 3502/bare LF 0. 커밋 `07d7be6`, `github/feature/port-1.80.10` 푸시 완료. origin 푸시 없음.
