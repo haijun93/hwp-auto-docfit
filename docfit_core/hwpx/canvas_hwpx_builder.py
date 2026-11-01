@@ -41,11 +41,10 @@ def _label(value):
 
 def _paragraph(text, refs, index=0, level=0):
     para_ids = refs.get('para_pr_ids', {})
-    char_ids = refs.get('char_pr_ids', {})
     p = _element(HP+'p', id=int(refs.get('paragraph_id_start', 0))+index,
                  paraPrIDRef=para_ids.get(level, refs.get('para_pr_id', 0)),
                  styleIDRef=refs.get('style_id', 0), pageBreak=0, columnBreak=0, merged=0)
-    run = _add(p, HP+'run', charPrIDRef=char_ids.get(False, refs.get('char_pr_id', 0)))
+    run = _add(p, HP+'run', charPrIDRef=refs.get('char_pr_id', 0))
     _add(run, HP+'t').text = _label(text)
     return p
 

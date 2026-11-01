@@ -5,6 +5,7 @@ Usage: python scripts/make_diagram_sample.py <target.hwpx> <result.hwpx>
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from docfit_core.hwpx.canvas_package_adapter import merge_canvas_block_into_hwpx
 
 
