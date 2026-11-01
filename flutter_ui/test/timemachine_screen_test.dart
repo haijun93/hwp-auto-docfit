@@ -132,9 +132,9 @@ void main() {
         {'id': 200 + i, 'name': '육$i.pdf', 'kind': 'pdf', 'size': 10, 'mtime': 1000.0, 'ctime': 1000.0, 'work_time': baseTime.toDouble(), 'flags': <String>[], 'cloud': false, 'folder': 'C:\\TM'}
     ];
     final api6 = _FakeApi(enabled: true, items: items6);
-    await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: api6.call))));
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(key: const ValueKey(6), api: api6.call))));
     await tester.pumpAndSettle();
-    expect(find.textContaining('육 파일 6개'), findsOneWidget);
+    expect(find.textContaining('파일 6개'), findsOneWidget);
     expect(find.text('육0.pdf'), findsNothing); // 접혀있음
 
     // 12개: 레이블 "파일 12개", 펼침 후 12개 파일 렌더, 다시 접힘 복원
@@ -143,9 +143,9 @@ void main() {
         {'id': 300 + i, 'name': '열둘$i.pdf', 'kind': 'pdf', 'size': 10, 'mtime': 1000.0, 'ctime': 1000.0, 'work_time': baseTime.toDouble(), 'flags': <String>[], 'cloud': false, 'folder': 'C:\\TM'}
     ];
     final api12 = _FakeApi(enabled: true, items: items12);
-    await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: api12.call))));
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(key: const ValueKey(12), api: api12.call))));
     await tester.pumpAndSettle();
-    final groupFinder = find.textContaining('열둘 파일 12개');
+    final groupFinder = find.textContaining('파일 12개');
     expect(groupFinder, findsOneWidget);
     expect(find.text('열둘0.pdf'), findsNothing);
 
@@ -203,15 +203,12 @@ void main() {
         {'id': 198 + i, 'name': '끝파일$i.pdf', 'kind': 'pdf', 'size': 1, 'mtime': 1.0, 'ctime': 1.0, 'work_time': t10.toDouble(), 'flags': <String>[], 'cloud': false, 'folder': 'C:\\TM'},
     ];
     final api = _FakeApi(enabled: true, items: firstPage);
-    tester.view.physicalSize = const Size(800, 2400);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: api.call))));
     await tester.pumpAndSettle();
 
     // 페이지 내에서 3개뿐이므로 그룹 카드가 생성되지 않음
     expect(find.textContaining('파일 3개'), findsNothing);
+    // 묶음으로 목록이 짧아져 스크롤이 안 되어도 다음 쪽으로 갈 수 있어야 한다.
     expect(find.text('더 불러오기'), findsOneWidget);
   });
 

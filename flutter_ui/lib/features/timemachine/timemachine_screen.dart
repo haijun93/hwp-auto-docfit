@@ -460,7 +460,7 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
   Widget _timeline() {
     if (_items.isEmpty && !_loading) return const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('이 기간에 기록된 파일이 없습니다.')));
     final entries = _groupTimeline(_items);
-    final count = entries.length + (_loading ? 1 : 0);
+    final count = entries.length + (_loading || _more ? 1 : 0);
     return ListView.builder(
       controller: _scroll,
       itemCount: count,
