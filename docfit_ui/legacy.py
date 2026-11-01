@@ -545,7 +545,10 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                                                    else not bool(self.stage_choices["spacing"].get("reset_spacing", True)))
                 self.spacing_enabled_var = tk.BooleanVar(value=bool(저장된_설정.get("spacing_enabled", True)))
                 self.spacing_exclude_pagefit_var = tk.BooleanVar(value=bool(저장된_설정.get("spacing_exclude_pagefit", True)))
-                for 변수 in (self.spacing_enabled_var, self.spacing_exclude_pagefit_var):
+                self.spacing_cell_image_to_bg_var = tk.BooleanVar(value=bool(저장된_설정.get("spacing_cell_image_to_bg", False)))
+                self.all_cell_image_to_bg_var = tk.BooleanVar(value=bool(저장된_설정.get("all_cell_image_to_bg", False)))
+                for 변수 in (self.spacing_enabled_var, self.spacing_exclude_pagefit_var,
+                             self.spacing_cell_image_to_bg_var, self.all_cell_image_to_bg_var):
                     변수.trace_add("write", self._설정_변경됨)
                     변수.trace_add("write", self._요약갱신)
                 # '자간 정리' 카드의 '표 제외'는 설정 table_spacing(표 안 문장 자간조정)의 반대 값이다. 바꾸면 카드 요약
@@ -1627,6 +1630,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             _카드옵션_변수 = {
                 "spacing_enabled": ("spacing_enabled_var", False),
                 "spacing_exclude_pagefit": ("spacing_exclude_pagefit_var", False),
+                "spacing_cell_image_to_bg": ("spacing_cell_image_to_bg_var", False),
+                "all_cell_image_to_bg": ("all_cell_image_to_bg_var", False),
                 "spacing_exclude_reset": ("spacing_exclude_reset_var", False),
                 "spacing_exclude_tables": ("table_spacing_var", True),
                 "unify_exclude_tables": ("unify_exclude_tables_var", False),
@@ -4055,6 +4060,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     설정값["spacing_exclude_reset"] = bool(self.spacing_exclude_reset_var.get())
                     설정값["spacing_enabled"] = bool(self.spacing_enabled_var.get())
                     설정값["spacing_exclude_pagefit"] = bool(self.spacing_exclude_pagefit_var.get())
+                    설정값["spacing_cell_image_to_bg"] = bool(self.spacing_cell_image_to_bg_var.get())
+                    설정값["all_cell_image_to_bg"] = bool(self.all_cell_image_to_bg_var.get())
                     설정값["active_format_profile"] = getattr(self, "_활성_서식_프로파일", "")
                     기존_설정 = 설정_불러오기()
                     기존_세부작업 = 기존_설정.get("stage_choices", {})
@@ -4783,6 +4790,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     mode=mode, include_spacing=bool(self.include_spacing_var.get()),
                     spacing_enabled=bool(self.spacing_enabled_var.get()),
                     spacing_exclude_pagefit=bool(self.spacing_exclude_pagefit_var.get()),
+                    spacing_cell_image_to_bg=bool(self.spacing_cell_image_to_bg_var.get()),
+                    all_cell_image_to_bg=bool(self.all_cell_image_to_bg_var.get()),
                     reset_spacing=bool(self.stage_choices[mode].get("reset_spacing", True)),
                     spacing_exclude_reset=bool(self.spacing_exclude_reset_var.get()),
                     table_spacing=bool(self.table_spacing_var.get()), exclude_tables=bool(표제외),

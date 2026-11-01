@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'timemachine_api.dart';
 import 'timemachine_thumbnails.dart';
@@ -19,6 +19,9 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
   Timer? _scanPoll;
   Map<String, Object?>? _settings;
   Map<String, int> _days = {};
+  Map<int, int> _hourDensity = {for (var i = 0; i < 24; i++) i: 0};
+  int _densityRevision = 0;
+  final Set<String> _expandedHours = {};
   final List<TimemachineItem> _items = [];
   final ScrollController _scroll = ScrollController();
   final TextEditingController _search = TextEditingController();
@@ -63,8 +66,9 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
       if (firstOpen) { try { await _requestScan(); } catch (_) {} if (!mounted) return; }
       await _refreshDays();
       if (_start == null || _end == null) {
-        _resetRange();
+        await _resetRange();
       } else {
+        await _refreshHourDensity();
         await _loadPage();
       }
     }
@@ -105,20 +109,33 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
     if (raw is Map) { for (final entry in raw.entries) { final value = entry.value; values['${entry.key}'] = value is Map ? ((value['total'] as num?)?.toInt() ?? 0) : ((value as num?)?.toInt() ?? 0); } }
     setState(() => _days = values);
   }
+  Future<void> _refreshHourDensity() async {
+    if (_start == null || _end == null) return;
+    final revision = ++_densityRevision;
+    final response = await _api.command('hour_density', {
+      'start': _start!.millisecondsSinceEpoch / 1000,
+      'end': _end!.millisecondsSinceEpoch / 1000,
+      ..._filters,
+    });
+    if (!mounted || revision != _densityRevision || response['ok'] != true) return;
+    final density = TimemachineHourDensity.fromJson(response);
+    setState(() => _hourDensity = density.counts);
+  }
   Future<void> _moveMonth(int amount) async {
     setState(() {
       _month = DateTime(_month.year, _month.month + amount);
       _days = {};
     });
     await _refreshDays();
-    _resetRange();
+    await _resetRange();
   }
-  void _resetRange() {
+  Future<void> _resetRange() async {
     _filterRevision++; _requestSerial++; _loading = false;
     _start = DateTime(_month.year, _month.month).toLocal();
     _end = DateTime(_month.year, _month.month + 1).toLocal();
     _firstDay = null; _items.clear(); _offset = 0; _more = true;
-    _loadPage();
+    await _refreshHourDensity();
+    await _loadPage();
   }
   Map<String,Object?> _rangePayload() => {
     'start': _start!.millisecondsSinceEpoch / 1000,
@@ -159,7 +176,7 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
     });
   }
   void _onScroll() { if (_more && !_loading && _scroll.hasClients && _scroll.position.extentAfter < 500) _loadPage(); }
-  Future<void> _filtersChanged() async { _filterRevision++; _requestSerial++; _loading = false; _items.clear(); _offset = 0; _more = true; await _refreshDays(); await _loadPage(); }
+  Future<void> _filtersChanged() async { _filterRevision++; _requestSerial++; _loading = false; _items.clear(); _offset = 0; _more = true; await _refreshDays(); _refreshHourDensity(); await _loadPage(); }
   Future<void> _enable() async {
     final next = Map<String,Object?>.from(_settings ?? {})..['enabled'] = true;
     Map<String, Object?> saved;
@@ -189,6 +206,7 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
       }
       _filterRevision++; _requestSerial++; _loading = false; _items.clear(); _offset = 0; _more = true;
     });
+    _refreshHourDensity();
     await _loadPage();
   }
   bool _sameDay(DateTime a, DateTime b) => a.year == b.year && a.month == b.month && a.day == b.day;
@@ -201,7 +219,7 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
       if (mode == 'month') { _month = DateTime(now.year,now.month); _start = _month; _end = DateTime(now.year,now.month+1); }
       _firstDay = null; _filterRevision++; _requestSerial++; _loading = false; _items.clear(); _offset = 0; _more = true;
     });
-    await _refreshDays(); await _loadPage();
+    await _refreshDays(); _refreshHourDensity(); await _loadPage();
   }
   Future<void> _scan() async {
     try {
@@ -222,6 +240,37 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
       if (response['ok'] != true && mounted) setState(() => _error = '${response['message'] ?? '폴더를 열지 못했습니다.'}');
     } catch (_) { if (mounted) setState(() => _error = '폴더를 열지 못했습니다. 앱 연결을 확인해 주세요.'); }
   }
+
+  Future<void> _sendToFeature(String feature, int id) async {
+    try {
+      final response = await _api.command('send_to_feature', {'feature': feature, 'ids': [id]});
+      if (!mounted) return;
+      if (response['ok'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('목록에 추가했습니다.')));
+      } else {
+        setState(() => _error = '${response['message'] ?? '보내지 못했습니다.'}');
+      }
+    } catch (_) {
+      if (mounted) setState(() => _error = '보내지 못했습니다. 앱 연결을 확인해 주세요.');
+    }
+  }
+
+  Future<void> _clearThumbnailCache() async {
+    try {
+      final response = await _api.command('thumbnail_cache_clear');
+      if (!mounted) return;
+      if (response['ok'] == true) {
+        _thumbnails.clear();
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('썸네일 캐시를 지웠습니다.')));
+      } else {
+        setState(() => _error = '${response['message'] ?? '캐시를 지우지 못했습니다.'}');
+      }
+    } catch (_) {
+      if (mounted) setState(() => _error = '캐시를 지우지 못했습니다. 앱 연결을 확인해 주세요.');
+    }
+  }
+
   String _localizedDayHeading(DateTime value) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -240,15 +289,140 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_settings == null) return const Center(child:CircularProgressIndicator());
+    if (_settings == null) return const Center(child: CircularProgressIndicator());
     if (_settings!['enabled'] != true) return _disabledView();
-    return LayoutBuilder(builder:(context,box) {
-      final calendar = _calendar(); final timeline = _timeline();
-      return Column(children:[_filtersBar(), if (_error != null) MaterialBanner(content:Text(_error!), actions:[TextButton(onPressed:()=>setState(()=>_error=null),child:const Text('닫기'))]),
-        Expanded(child:box.maxWidth < 900
-          ? Column(children:[ConstrainedBox(constraints:const BoxConstraints(maxHeight:360),child:SingleChildScrollView(child:calendar)),Expanded(child:timeline)])
-          : Row(children:[Expanded(flex:3,child:timeline),SizedBox(width:390,child:calendar)]))]);
+    return LayoutBuilder(builder: (context, box) {
+      final calendar = _calendar();
+      final timeline = _timeline();
+      final isNarrow = box.maxWidth < 650;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _filtersBar(),
+          if (_error != null)
+            MaterialBanner(
+              content: Text(_error!),
+              actions: [
+                TextButton(
+                  onPressed: () => setState(() => _error = null),
+                  child: const Text('닫기'),
+                ),
+              ],
+            ),
+          Expanded(
+            child: isNarrow
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _densityBar(vertical: false),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 180),
+                        child: SingleChildScrollView(child: calendar),
+                      ),
+                      Expanded(child: timeline),
+                    ],
+                  )
+                : Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _densityBar(vertical: true),
+                      Expanded(child: timeline),
+                      SizedBox(width: 320, child: SingleChildScrollView(child: calendar)),
+                    ],
+                  ),
+          ),
+        ],
+      );
     });
+  }
+
+  Widget _densityBar({bool vertical = false}) {
+    final maximum = _hourDensity.values.fold<int>(0, (a, b) => a > b ? a : b);
+    final bars = List.generate(24, (h) {
+      final count = _hourDensity[h] ?? 0;
+      final ratio = maximum == 0 ? 0.0 : count / maximum;
+      final barLength = 4.0 + 36.0 * ratio;
+      final color = count > 0
+          ? Colors.blue.withValues(alpha: 0.3 + 0.7 * ratio)
+          : Colors.grey.withValues(alpha: 0.25);
+      return Semantics(
+        key: ValueKey('tm-density-bar-$h'),
+        container: true,
+        excludeSemantics: true,
+        label: '$h시, $count개',
+        child: Tooltip(
+          excludeFromSemantics: true,
+          message: '$h시, $count개',
+          child: Padding(
+            padding: vertical
+                ? const EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0)
+                : const EdgeInsets.symmetric(horizontal: 2.5),
+            child: vertical
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 14,
+                        child: Text(
+                          '$h',
+                          style: const TextStyle(fontSize: 8),
+                          textAlign: TextAlign.right,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Container(
+                        width: barLength,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: color,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ],
+                  )
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 8,
+                        height: barLength,
+                        decoration: BoxDecoration(
+                          color: color,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text('$h', style: const TextStyle(fontSize: 8)),
+                    ],
+                  ),
+          ),
+        ),
+      );
+    });
+
+    if (vertical) {
+      return SizedBox(
+        width: 68,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: bars,
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: bars,
+        ),
+      ),
+    );
   }
   Widget _disabledView() {
     final roots = (_settings?['roots'] as List?) ?? const [];
@@ -265,6 +439,7 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
     for(final entry in _kinds.entries) FilterChip(label:Text(entry.key),selected:_selectedKinds.contains(entry.value),onSelected:(value){setState(()=>value?_selectedKinds.add(entry.value):_selectedKinds.remove(entry.value));_filtersChanged();}),
     SizedBox(width:220,child:TextField(controller:_search,decoration:const InputDecoration(prefixIcon:Icon(Icons.search),hintText:'이름 찾기',isDense:true),onChanged:(value){_debounce?.cancel();_debounce=Timer(const Duration(milliseconds:300),(){_query=value.trim();_filtersChanged();});})),
     OutlinedButton.icon(onPressed:_scan,icon:const Icon(Icons.refresh),label:const Text('다시 훑기')),
+    OutlinedButton.icon(key:const ValueKey('tm-clear-thumb-cache'),onPressed:_clearThumbnailCache,icon:const Icon(Icons.delete_outline),label:const Text('썸네일 캐시 지우기')),
     Text(_watchByAgent ? '실시간 감시: K에이전트' : '실시간 감시: 앱을 열 때만',key:const ValueKey('tm-watch-status'),style:Theme.of(context).textTheme.bodySmall),
   ]));
   Widget _calendar() {
@@ -284,27 +459,197 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
   }
   Widget _timeline() {
     if (_items.isEmpty && !_loading) return const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('이 기간에 기록된 파일이 없습니다.')));
-    final count = _items.length + (_loading ? 1 : 0);
-    return ListView.builder(controller:_scroll,itemCount:count,itemBuilder:(context,index){
-      if (index >= _items.length) {
-        if (_loading) return const Center(child:Padding(padding:EdgeInsets.all(16),child:CircularProgressIndicator()));
-        return Center(child:Padding(padding:const EdgeInsets.all(16),child:TextButton(onPressed:_loadPage,child:const Text('더 불러오기'))));
-      }
-      final item = _items[index];
-      final date = DateTime.fromMillisecondsSinceEpoch((item.workTime * 1000).round()).toLocal();
-      final day = DateTime(date.year, date.month, date.day);
-      final previousDay = index == 0 ? null : DateTime.fromMillisecondsSinceEpoch((_items[index - 1].workTime * 1000).round()).toLocal();
-      final showHeading = index == 0 || previousDay == null || !_sameDay(day, previousDay);
-      return Column(key: ValueKey('tm-row-${item.id}'), crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children:[
-        if (showHeading) Padding(padding:const EdgeInsets.fromLTRB(24,14,8,6),child:Text(_localizedDayHeading(day),style:Theme.of(context).textTheme.titleSmall)),
-        _itemCard(item,date),
-      ]);
-    });
+    final entries = _groupTimeline(_items);
+    final count = entries.length + (_loading || _more ? 1 : 0);
+    return ListView.builder(
+      controller: _scroll,
+      itemCount: count,
+      itemBuilder: (context, index) {
+        if (index >= entries.length) {
+          if (_loading) return const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()));
+          return Center(child: Padding(padding: const EdgeInsets.all(16), child: TextButton(onPressed: _loadPage, child: const Text('더 불러오기'))));
+        }
+        final entry = entries[index];
+        final entryDate = entry.isGroup ? entry.hourStart! : entry.localTime!;
+        final day = DateTime(entryDate.year, entryDate.month, entryDate.day);
+        final prevDate = index == 0 ? null : (entries[index - 1].isGroup ? entries[index - 1].hourStart! : entries[index - 1].localTime!);
+        final prevDay = prevDate == null ? null : DateTime(prevDate.year, prevDate.month, prevDate.day);
+        final showHeading = index == 0 || prevDay == null || !_sameDay(day, prevDay);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (showHeading)
+              Padding(padding: const EdgeInsets.fromLTRB(24, 14, 8, 6), child: Text(_localizedDayHeading(day), style: Theme.of(context).textTheme.titleSmall)),
+            if (entry.isGroup)
+              _hourGroupCard(entry)
+            else
+              _itemCard(entry.item!, entry.localTime!),
+          ],
+        );
+      },
+    );
   }
-  Widget _itemCard(TimemachineItem item,DateTime date) => Padding(padding:const EdgeInsets.fromLTRB(18,2,12,8),child:Row(crossAxisAlignment:CrossAxisAlignment.center,children:[
-    SizedBox(width:24,child:Column(mainAxisSize:MainAxisSize.min,children:[Container(width:2,height:8,color:Colors.blue),Container(width:2,height:32,color:Colors.blue.withValues(alpha:.35)),Container(width:9,height:9,decoration:const BoxDecoration(color:Colors.blue,shape:BoxShape.circle))])),
-    Expanded(child:Card(child:InkWell(onTap:()=>_openItem(item),child:Padding(padding:const EdgeInsets.all(12),child:Row(children:[TimemachineThumbnail(item:item,icon:_kindIcon(item.kind),loader:_thumbnails),const SizedBox(width:10),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(item.name,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontWeight:FontWeight.w600)),Text('${date.hour.toString().padLeft(2,'0')}:${date.minute.toString().padLeft(2,'0')}  ·  ${item.folder}',maxLines:1,overflow:TextOverflow.ellipsis,style:Theme.of(context).textTheme.bodySmall),Wrap(spacing:4,children:[if(item.flags.contains('copied'))const _Badge('복사됨'),if(item.flags.contains('new'))const _Badge('새 문서')])])),TextButton(onPressed:()=>_revealItem(item),child:const Text('폴더 열기'))]))))),
-  ]));
+
+  Widget _hourGroupCard(_TimelineEntry group) {
+    final hourStart = group.hourStart!;
+    final keyStr = hourStart.toIso8601String();
+    final isExpanded = _expandedHours.contains(keyStr);
+    final label = _hourGroupLabel(hourStart, group.files.length);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 2, 12, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Card(
+            key: ValueKey('tm-group-$keyStr'),
+            child: InkWell(
+              onTap: () {
+                setState(() {
+                  if (isExpanded) {
+                    _expandedHours.remove(keyStr);
+                  } else {
+                    _expandedHours.add(keyStr);
+                  }
+                });
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Row(
+                  children: [
+                    const Icon(Icons.folder_zip_outlined, color: Colors.blue),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+                    ),
+                    Icon(isExpanded ? Icons.expand_less : Icons.expand_more),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          if (isExpanded)
+            for (final file in group.files)
+              _itemCard(file, DateTime.fromMillisecondsSinceEpoch((file.workTime * 1000).round()).toLocal()),
+        ],
+      ),
+    );
+  }
+
+  Widget _itemCard(TimemachineItem item, DateTime date) => Padding(
+    key: ValueKey('tm-row-${item.id}'),
+    padding: const EdgeInsets.fromLTRB(18, 2, 12, 8),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        SizedBox(
+          width: 24,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(width: 2, height: 8, color: Colors.blue),
+              Container(width: 2, height: 32, color: Colors.blue.withValues(alpha: .35)),
+              Container(width: 9, height: 9, decoration: const BoxDecoration(color: Colors.blue, shape: BoxShape.circle)),
+            ],
+          ),
+        ),
+        Expanded(
+          child: Card(
+            child: InkWell(
+              onTap: () => _openItem(item),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    TimemachineThumbnail(item: item, icon: _kindIcon(item.kind), loader: _thumbnails),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(item.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
+                          Text('${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}  ·  ${item.folder}', maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall),
+                          Wrap(spacing: 4, children: [if (item.flags.contains('copied')) const _Badge('복사됨'), if (item.flags.contains('new')) const _Badge('새 문서')]),
+                        ],
+                      ),
+                    ),
+                    TextButton(onPressed: () => _revealItem(item), child: const Text('폴더 열기')),
+                    PopupMenuButton<String>(
+                      key: ValueKey('tm-send-menu-${item.id}'),
+                      tooltip: '다른 기능으로 보내기',
+                      icon: const Icon(Icons.more_vert),
+                      onSelected: (feature) => _sendToFeature(feature, item.id),
+                      itemBuilder: (context) => const [
+                        PopupMenuItem(value: 'rename_batch', child: Text('파일명 일괄변경 목록에 추가')),
+                        PopupMenuItem(value: 'convert', child: Text('파일변환 목록에 추가')),
+                        PopupMenuItem(value: 'document_edit', child: Text('문서편집 목록에 추가')),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _TimelineEntry {
+  const _TimelineEntry.file(this.item, this.localTime) : files = const [], hourStart = null;
+  const _TimelineEntry.group(this.hourStart, this.files) : item = null, localTime = null;
+  final TimemachineItem? item;
+  final DateTime? localTime;
+  final DateTime? hourStart; // 지역 시각 정각
+  final List<TimemachineItem> files;
+  bool get isGroup => hourStart != null;
+}
+
+List<_TimelineEntry> _groupTimeline(List<TimemachineItem> newestFirst) {
+  if (newestFirst.isEmpty) return const [];
+  final entries = <_TimelineEntry>[];
+  var i = 0;
+  while (i < newestFirst.length) {
+    final firstItem = newestFirst[i];
+    final firstDate = DateTime.fromMillisecondsSinceEpoch((firstItem.workTime * 1000).round()).toLocal();
+    final hourWindow = DateTime(firstDate.year, firstDate.month, firstDate.day, firstDate.hour);
+
+    var j = i + 1;
+    while (j < newestFirst.length) {
+      final nextItem = newestFirst[j];
+      final nextDate = DateTime.fromMillisecondsSinceEpoch((nextItem.workTime * 1000).round()).toLocal();
+      final nextWindow = DateTime(nextDate.year, nextDate.month, nextDate.day, nextDate.hour);
+      if (nextWindow != hourWindow) {
+        break;
+      }
+      j++;
+    }
+
+    final count = j - i;
+    if (count > 5) {
+      final groupFiles = newestFirst.sublist(i, j);
+      entries.add(_TimelineEntry.group(hourWindow, groupFiles));
+    } else {
+      for (var k = i; k < j; k++) {
+        final item = newestFirst[k];
+        final local = DateTime.fromMillisecondsSinceEpoch((item.workTime * 1000).round()).toLocal();
+        entries.add(_TimelineEntry.file(item, local));
+      }
+    }
+    i = j;
+  }
+  return entries;
+}
+
+String _hourGroupLabel(DateTime hourStart, int count) {
+  if (hourStart.hour == 23) {
+    return '23:00~24:00 파일 $count개';
+  }
+  final startStr = hourStart.hour.toString().padLeft(2, '0');
+  final endStr = (hourStart.hour + 1).toString().padLeft(2, '0');
+  return '$startStr:00~$endStr:00 파일 $count개';
 }
 
 class _Badge extends StatelessWidget {

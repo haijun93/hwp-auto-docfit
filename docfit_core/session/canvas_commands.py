@@ -81,16 +81,21 @@ class InsertDiagramShapeCommand(_InsertCanvasCommand):
         ids, shapes = set(), []
         for node in nodes:
             ident = _identifier(node['id'])
-            if ident in ids or node.get('type', 'rect') not in ('rect', 'ellipse'):
+            shape_type = node.get('data', {}).get('shape', node.get('type', 'rect'))
+            if ident in ids or shape_type not in ('rect', 'ellipse', 'diamond', 'rhombus', 'roundrect', 'rounded_rect'):
                 raise ValueError('duplicate id or unsupported shape')
             ids.add(ident)
             pos = node['position']
             width, height = _number(node.get('width', 120)), _number(node.get('height', 60))
             if min(width, height) <= 0:
                 raise ValueError('shape size must be positive')
-            shapes.append(dict(id=ident, target='hp:' + node.get('type', 'rect'),
+            target = 'hp:ellipse' if shape_type == 'ellipse' else 'hp:polygon' if shape_type in ('diamond', 'rhombus') else 'hp:rect'
+            shapes.append(dict(id=ident, target=target, rounded=shape_type in ('roundrect', 'rounded_rect') or bool((node.get('style') or {}).get('borderRadius')),
                                x=_number(pos['x']), y=_number(pos['y']), width=width,
-                               height=height, text=_text(node.get('data', {}).get('label', ''))))
+                               height=height, text=_text(node.get('data', {}).get('label', '')),
+                               fill=(node.get('style') or {}).get('background', (node.get('style') or {}).get('backgroundColor', (node.get('data') or {}).get('fill', '#FFFFFF'))),
+                               stroke=(node.get('style') or {}).get('borderColor', (node.get('data') or {}).get('stroke', '#000000')),
+                               stroke_width=(node.get('style') or {}).get('borderWidth', 1)))
         connectors, edge_ids = [], set()
         for edge in edges:
             ident = _identifier(edge['id'])

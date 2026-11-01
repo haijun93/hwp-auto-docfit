@@ -138,6 +138,11 @@ def _unit(px):
     return round(px * 7200 / 96)
 
 
+def _diagram_color(value, default):
+    import re
+    return value.upper() if isinstance(value, str) and re.fullmatch(r'#[0-9a-fA-F]{6}', value) else default
+
+
 def build_diagram_shape_xml(payload, refs=None):
     refs = refs or {}
     graph = InsertDiagramShapeCommand('builder', payload).compile(payload)
@@ -147,32 +152,43 @@ def build_diagram_shape_xml(payload, refs=None):
         raise ValueError('노드와 연결선 ID가 중복됩니다.')
     for i, shape in enumerate(shapes):
         _label(shape['id'])
-        node = _element(HP+{'hp:rect': 'rect', 'hp:ellipse': 'ellipse'}[shape['target']],
+        node = _element(HP+{'hp:rect': 'rect', 'hp:ellipse': 'ellipse', 'hp:polygon': 'polygon'}[shape['target']],
                         id=int(refs.get('object_id_start', 1))+i)
         x, y, w, h = (_unit(shape[k]) for k in ('x', 'y', 'width', 'height'))
         _shape_scaffold(node, w, h)
         _add(node, HP+'sz', width=w, height=h, widthRelTo='ABSOLUTE', heightRelTo='ABSOLUTE', protect=0)
         _add(node, HP+'pos', treatAsChar=0, vertRelTo='PARA', horzRelTo='COLUMN',
              vertOffset=y, horzOffset=x, vertAlign='TOP', horzAlign='LEFT')
-        _add(node, HP+'lineShape', color='#000000', width=75, style='SOLID',
+        try:
+            line_width = max(10, round(float(str(shape.get('stroke_width', 1)).replace('px', '').strip()) * 33))
+        except (TypeError, ValueError):
+            line_width = 33
+        _add(node, HP+'lineShape', color=_diagram_color(shape.get('stroke'), '#000000'), width=line_width, style='SOLID',
              endCap='FLAT', headStyle='NORMAL', tailStyle='NORMAL', headfill=1,
              tailfill=1, headSz='SMALL_SMALL', tailSz='SMALL_SMALL', outlineStyle='NORMAL', alpha=255)
         # Geometry points use the core namespace (Hancom OWPML EllipseType).
         # https://github.com/hancom-io/hwpx-owpml-model/blob/main/OWPML/Class/Para/EllipseType.cpp
+        if shape['target'] in ('hp:rect', 'hp:polygon'):
+            node.set('ratio', '20' if shape.get('rounded') else '0')
         if shape['target'] == 'hp:rect':
-            node.set('ratio', '0')
             for j, (px, py) in enumerate(((0, 0), (w, 0), (w, h), (0, h))):
                 _add(node, HC+'pt'+str(j), x=px, y=py)
-        else:
+        elif shape['target'] == 'hp:ellipse':
             node.attrib.update(intervalDirty='0', hasArcPr='0', arcType='NORMAL')
             cx, cy = round(w/2), round(h/2)
             for tag, px, py in (('center', cx, cy), ('ax1', w, cy), ('ax2', cx, 0),
                                ('start1', w, cy), ('end1', w, cy), ('start2', w, cy), ('end2', w, cy)):
                 _add(node, HC+tag, x=px, y=py)
+        else:
+            for j, (px, py) in enumerate(((round(w/2), 0), (w, round(h/2)), (round(w/2), h), (0, round(h/2)))):
+                _add(node, HC+'pt'+str(j), x=px, y=py)
+        _add(node, HC+'fillBrush')
+        _add(node[-1], HC+'winBrush', faceColor=_diagram_color(shape.get('fill'), '#FFFFFF'), hatchColor='#FF000000', alpha=0)
         text = _add(node, HP+'drawText', lastWidth=w, name='', editable=0)
         sub = _add(text, HP+'subList', textDirection='HORIZONTAL', lineWrap='BREAK', vertAlign='CENTER')
-        sub.append(_paragraph(shape['text'], refs, i))
-        _add(text, HP+'textMargin', left=0, right=0, top=0, bottom=0)
+        for line in shape['text'].split('\n') or ['']:
+            sub.append(_paragraph(line, refs, i))
+        _add(text, HP+'textMargin', left=283, right=283, top=283, bottom=283)
         # Match the shape child order in tests/fixtures/hwp_shapes_sample.hwpx.
         for point in list(node):
             if point.tag.startswith(HC) and point.tag != HC+'fillBrush':
@@ -190,9 +206,22 @@ def build_diagram_shape_xml(payload, refs=None):
         node = _element(HP+'connectLine', id=int(refs.get('object_id_start', 1))+i, type='STRAIGHT_ONEWAY')
         _shape_scaffold(node, abs(centers[edge['target']][0]-centers[edge['source']][0]),
                         abs(centers[edge['target']][1]-centers[edge['source']][1]))
-        _add(node, HP+'startPt', subjectIDRef=0, subjectIdx=0, x=centers[edge['source']][0], y=centers[edge['source']][1])
-        _add(node, HP+'endPt', subjectIDRef=0, subjectIdx=0, x=centers[edge['target']][0], y=centers[edge['target']][1])
-        _add(node, HP+'lineShape', color='#000000', width=75, style='SOLID', headStyle='NORMAL', tailStyle='ARROW', headfill=1, tailfill=1)
+        def anchor(ident, other):
+            shape = next(s for s in shapes if s['id'] == ident)
+            x, y, w, h = (shape[k] for k in ('x', 'y', 'width', 'height'))
+            ox, oy = (v / 75 for v in centers[other])
+            dx, dy = ox-(x+w/2), oy-(y+h/2)
+            if abs(dx)*h >= abs(dy)*w:
+                return (x+w, y+h/2, 3) if dx >= 0 else (x, y+h/2, 1)
+            return (x+w/2, y+h, 2) if dy >= 0 else (x+w/2, y, 0)
+        sx, sy, si = anchor(edge['source'], edge['target'])
+        ex, ey, ei = anchor(edge['target'], edge['source'])
+        sx, sy, ex, ey = (_unit(v) for v in (sx, sy, ex, ey))
+        source_inst = int(refs.get('object_id_start', 1)) + next(i for i, s in enumerate(shapes) if s['id'] == edge['source'])
+        target_inst = int(refs.get('object_id_start', 1)) + next(i for i, s in enumerate(shapes) if s['id'] == edge['target'])
+        _add(node, HP+'startPt', subjectIDRef=source_inst, subjectIdx=si, x=sx, y=sy)
+        _add(node, HP+'endPt', subjectIDRef=target_inst, subjectIdx=ei, x=ex, y=ey)
+        _add(node, HP+'lineShape', color='#000000', width=33, style='SOLID', headStyle='NORMAL', tailStyle='ARROW', headfill=1, tailfill=1)
         if edge['text']:
             draw = _add(node, HP+'drawText', lastWidth=0, name='', editable=0)
             sub = _add(draw, HP+'subList', textDirection='HORIZONTAL', lineWrap='BREAK', vertAlign='CENTER')

@@ -155,6 +155,62 @@ class ScanStoreTests(unittest.TestCase):
         roots = default_roots(str(home), environ={})
         self.assertEqual([Path(r).name for r in roots], ["Desktop", "Documents"])
 
+    def test_hour_density_filters_and_local_hour_bins(self):
+        dt0 = datetime(2026, 10, 31, 0, 15)
+        dt23 = datetime(2026, 10, 31, 23, 45)
+        t0 = dt0.timestamp()
+        t23 = dt23.timestamp()
+        rows = [
+            dict(path=str(self.root / "a0.hwpx"), root=str(self.root), name="a0.hwpx", kind="hwp",
+                 size=10, mtime=t0, ctime=t0, work_time=t0, flags=[]),
+            dict(path=str(self.root / "b23.pdf"), root=str(self.root), name="b23.pdf", kind="pdf",
+                 size=20, mtime=t23, ctime=t23, work_time=t23, flags=[]),
+            dict(path=str(self.root / "c23.pdf"), root=str(self.root), name="c23.pdf", kind="pdf",
+                 size=30, mtime=t23, ctime=t23, work_time=t23, flags=[]),
+            dict(path=str(self.root / "hidden.hwpx"), root=str(self.root), name="hidden.hwpx", kind="hwp",
+                 size=40, mtime=t0, ctime=t0, work_time=t0, flags=[]),
+        ]
+        self.store.upsert_many(rows)
+        hidden_id = [r["id"] for r in self.store.range(0, 2e10) if r["name"] == "hidden.hwpx"][0]
+        self.store.hide(hidden_id)
+
+        start = datetime(2026, 10, 31, 0, 0).timestamp()
+        end = datetime(2026, 11, 1, 0, 0).timestamp()
+        density = self.store.hour_density(start, end)
+        self.assertEqual(density, {0: 1, 23: 2})
+
+        # 필터 검증: kind
+        pdf_density = self.store.hour_density(start, end, kinds=["pdf"])
+        self.assertEqual(pdf_density, {23: 2})
+
+        # 필터 검증: query
+        query_density = self.store.hour_density(start, end, query="b23")
+        self.assertEqual(query_density, {23: 1})
+
+    def test_scan_recalculates_work_time_when_time_mode_changes(self):
+        file = touch(self.root / "test.hwpx", self.day)
+        # stat의 mtime과 ctime 설정 (mtime은 self.day, ctime은 현재 시각이 됨)
+        result1 = scan_root(self.store, self.root, Rules(time_mode="max"))
+        self.assertEqual(result1.written, 1)
+        row1 = self.store.range(0, 2e10)[0]
+
+        # max -> mtime 전환 시 (파일 크기/mtime/ctime 불변)
+        result2 = scan_root(self.store, self.root, Rules(time_mode="mtime"))
+        self.assertEqual(result2.written, 1)
+        row2 = self.store.range(0, 2e10)[0]
+        self.assertEqual(row2["work_time"], row2["mtime"])
+
+        # 두 번째 mtime 스캔은 변경이 없으므로 written 0
+        result3 = scan_root(self.store, self.root, Rules(time_mode="mtime"))
+        self.assertEqual(result3.written, 0)
+
+    def test_scan_preserves_existing_work_time_for_unchanged_mode(self):
+        touch(self.root / "doc.hwpx", self.day)
+        res1 = scan_root(self.store, self.root, Rules(time_mode="max"))
+        self.assertEqual(res1.written, 1)
+        res2 = scan_root(self.store, self.root, Rules(time_mode="max"))
+        self.assertEqual((res2.seen, res2.written, res2.removed), (1, 0, 0))
+
 
 if __name__ == "__main__":
     unittest.main()

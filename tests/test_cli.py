@@ -157,6 +157,25 @@ class CliTests(unittest.TestCase):
         self.assertEqual(len([e for e in events if e[0] == 'document_error']), 2)
         self.assertEqual(events[-2][0], 'log')
 
+    def test_merge_failure_removes_private_intermediate_directory(self):
+        import tempfile
+        from pathlib import Path
+        created = []
+        original = tempfile.TemporaryDirectory
+        class TrackingDirectory(original):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                created.append(Path(self.name))
+        app, com = Mock(), Mock()
+        runtime = dict(pythoncom=com, 한글_COM_인스턴스_생성=lambda **k: app,
+                       REGISTER_MODULE_NAME='name', REGISTER_MODULE_VALUE='value')
+        first, second = self.file('fail.hwpx'), self.file('plain.pdf')
+        with (patch('docfit_app.conversion_runner.tempfile.TemporaryDirectory', TrackingDirectory),
+              patch('docfit_core.file_conversion.convert_to_pdf', side_effect=RuntimeError('expected'))):
+            run_conversion([first, second], 'pdfm', runtime_factory=lambda: runtime)
+        self.assertTrue(created)
+        self.assertTrue(all(not path.exists() for path in created))
+
     def test_argument_errors(self):
         for args in [(), ('convert',), ('convert', 'absent.hwpx', '--to', 'pdf'),
                      ('convert', str(self.file()), '--to', 'bad'),

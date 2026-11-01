@@ -119,6 +119,8 @@ DEFAULTS = {
     "spacing_exclude_reset": False,
     "spacing_enabled": True,
     "spacing_exclude_pagefit": True,
+    "spacing_cell_image_to_bg": False,
+    "all_cell_image_to_bg": False,
     # 2.0.0 단계별 Tk 창 제거 대비 비상 되돌리기용 플래그 (기본 False = Tk 창 대신 Flutter 화면 사용)
     "ui_tk_fallback": False,
 }
@@ -126,6 +128,8 @@ DEFAULTS = {
 VARIABLE_BINDINGS = {'prevent_word_split': 'prevent_word_split_var',
  'spacing_enabled': 'spacing_enabled_var',
  'spacing_exclude_pagefit': 'spacing_exclude_pagefit_var',
+ 'spacing_cell_image_to_bg': 'spacing_cell_image_to_bg_var',
+ 'all_cell_image_to_bg': 'all_cell_image_to_bg_var',
  'ratio_shrink': 'ratio_shrink_var',
  'punctuation': 'punctuation_var',
  'punctuation_threshold': 'punctuation_threshold_var',

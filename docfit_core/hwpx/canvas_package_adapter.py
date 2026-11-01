@@ -164,12 +164,21 @@ def merge_canvas_block_into_hwpx(hwpx_bytes_or_path, block_data, output_path=Non
         elements = [wrapper]
     next_id = maximum+1
     for root in elements:
+        object_id_map = {}
         for node in root.iter():
             if node.tag == HP+'p' or 'id' in node.attrib:
+                old_id = node.get('id')
                 node.set('id', str(next_id))
                 if 'instid' in node.attrib:
                     node.set('instid', str(next_id))
+                if node.tag in (HP+'rect', HP+'ellipse', HP+'polygon', HP+'connectLine', HP+'line') and old_id is not None:
+                    object_id_map[old_id] = str(next_id)
                 next_id += 1
+        for node in root.iter():
+            if node.tag in (HP+'startPt', HP+'endPt'):
+                ref = node.get('subjectIDRef')
+                if ref in object_id_map:
+                    node.set('subjectIDRef', object_id_map[ref])
     reference_pools = {'borderFillIDRef': 'borderFills', 'charPrIDRef': 'charProperties',
                        'paraPrIDRef': 'paraProperties', 'styleIDRef': 'styles'}
     valid_refs = {attr: set(_ids(pools[name])) for attr, name in reference_pools.items()}
