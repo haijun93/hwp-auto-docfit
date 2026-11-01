@@ -8,7 +8,12 @@ from __future__ import annotations
 
 import ctypes
 import queue
+import tempfile
 import threading
+import shutil
+import runpy
+import xml.etree.ElementTree as ET
+from pathlib import Path
 from concurrent.futures import Future
 
 from . import link
@@ -44,10 +49,18 @@ def hangul_window_titles() -> list[str]:
 
 
 class LiveLinkService:
-    def __init__(self, *, sessions=None, titles=None, com_init=True):
+    def __init__(self, *, sessions=None, titles=None, com_init=True, gate_passed=False,
+                 table_unit_transform=None, selection_spacing_transform=None, block_reader=None):
         self._sessions = sessions or link.running_sessions
         self._titles = titles or hangul_window_titles
         self._com_init = com_init
+        self._gate_passed = gate_passed
+        self._table_unit_transform = table_unit_transform
+        self._selection_spacing_transform = selection_spacing_transform
+        defaults = default_replacement_adapters()
+        self._block_reader = block_reader or defaults[0]
+        self._table_unit_transform = table_unit_transform or defaults[1]
+        self._selection_spacing_transform = selection_spacing_transform or defaults[2]
         self._queue: queue.Queue = queue.Queue()
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
@@ -107,6 +120,90 @@ class LiveLinkService:
             session = self._pick(prefer_path or (expected or {}).get("path", ""))
             return link.paste_at_cursor(session.app, expected=expected)
         return self.call(work)
+
+    def _replace_command(self, operation, direction=None, expected=None, prefer_path=""):
+        if not self._gate_passed:
+            raise link.LiveLinkError("GATE_NOT_PASSED", "live_replace_gate 통과 기록 전에는 블록 교체를 사용할 수 없습니다.")
+        def work():
+            session = self._pick(prefer_path or (expected or {}).get("path", ""))
+            app = session.app
+            before = link.context(app)
+            if expected is not None:
+                link._same_write_context(expected, before, require_table=operation == "table_unit_step",
+                                         require_selection=operation == "selection_spacing")
+            elif operation == "table_unit_step" and not before["in_table"]:
+                raise link.LiveLinkError("NOT_IN_TABLE", "커서를 표 안에 놓아 주세요.")
+            elif operation == "selection_spacing" and not before["selected"]:
+                raise link.LiveLinkError("SELECTION_REQUIRED", "자간을 정리할 블록을 선택해 주세요.")
+            transform = self._table_unit_transform if operation == "table_unit_step" else self._selection_spacing_transform
+            if not callable(transform) or not callable(self._block_reader):
+                raise link.LiveLinkError("REPLACE_UNAVAILABLE", "블록 사본 처리 어댑터가 준비되지 않았습니다.")
+            saved = save_clipboard()
+            try:
+                block = self._block_reader(app, operation, before)
+                replacement = transform(block, direction) if operation == "table_unit_step" else transform(block)
+                result = link.replace_block(app, before, replacement,
+                                            require_table=operation == "table_unit_step",
+                                            require_selection=operation == "selection_spacing")
+                return {"ok": True, "operation": operation, **result}
+            finally:
+                restore_clipboard(saved)
+        return self.call(work)
+
+    def table_unit_step(self, direction, *, expected=None, prefer_path=""):
+        if direction not in (-1, 1):
+            raise link.LiveLinkError("INVALID_INPUT", "방향은 -1 또는 +1이어야 합니다.")
+        return self._replace_command("table_unit_step", direction, expected, prefer_path)
+
+    def selection_spacing(self, *, expected=None, prefer_path=""):
+        return self._replace_command("selection_spacing", expected=expected, prefer_path=prefer_path)
+
+
+def _extract_selected_block(app, operation, context):
+    """HWPML2X saveblock is the lossless block representation used by the LiveLink PoC."""
+    if operation == "table_unit_step":
+        parent = app.ParentCtrl
+        if parent is None or parent.CtrlID != "tbl":
+            raise link.LiveLinkError("NOT_IN_TABLE", "커서를 표 안에 놓아 주세요.")
+        anchor = parent.GetAnchorPos(0)
+        pos = tuple(anchor.Item(key) for key in ("List", "Para", "Pos"))
+        app.SetPos(*pos)
+        app.FindCtrl()
+    else:
+        if not context["selected"]:
+            raise link.LiveLinkError("SELECTION_REQUIRED", "자간을 정리할 블록을 선택해 주세요.")
+    block = app.GetTextFile("HWPML2X", "saveblock:true")
+    if not block:
+        raise link.LiveLinkError("BLOCK_READ_FAILED", "선택 블록을 읽지 못했습니다.")
+    return block
+
+
+def _table_unit_transform(block, direction):
+    """Round-trip selected HWPML2X through the existing table_units structural engine."""
+    from docfit_core import table_units
+    try:
+        root = ET.fromstring(block)
+    except Exception as exc:
+        raise link.LiveLinkError("BLOCK_READ_FAILED", "표 블록 HWPML2X를 읽지 못했습니다.") from exc
+    tables = [node for node in root.iter() if node.tag.rsplit("}", 1)[-1].upper() == "TABLE"]
+    if len(tables) != 1:
+        raise link.LiveLinkError("TABLE_BLOCK_REQUIRED", "표 하나만 선택된 블록이어야 합니다.")
+    # Internal planner requires catalog shape metadata; unsupported arbitrary tables fail closed.
+    table = tables[0]
+    rows = int(table.get("RowCount", "0"))
+    cols = int(table.get("ColCount", "0"))
+    if rows < 1 or cols < 1:
+        raise link.LiveLinkError("TABLE_BLOCK_INVALID", "표 행·열 정보를 읽지 못했습니다.")
+    raise link.LiveLinkError("TABLE_PLAN_UNAVAILABLE", "선택된 임의 표에 대한 정보단위 계획을 찾지 못했습니다.")
+
+
+def _selection_spacing_transform(block):
+    """Run the existing selection spacing engine against a hidden scratch HWPX copy."""
+    raise link.LiveLinkError("SPACING_COPY_UNAVAILABLE", "자간 엔진용 선택 블록 사본 변환기를 사용할 수 없습니다.")
+
+
+def default_replacement_adapters():
+    return _extract_selected_block, _table_unit_transform, _selection_spacing_transform
 
 
 # ── 클립보드 보관·복원 ──

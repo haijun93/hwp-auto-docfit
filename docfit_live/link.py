@@ -105,6 +105,13 @@ def context(app) -> dict:
     except Exception as exc:
         raise LiveLinkError("DOCUMENT_BUSY", "한/글이 응답하지 않아요. 열린 대화상자를 닫고 다시 시도해 주세요.") from exc
     try:
+        if bool(app.IsDialogOpen()):
+            raise LiveLinkError("DOCUMENT_BUSY", "한/글 대화상자를 닫고 다시 시도해 주세요.")
+    except LiveLinkError:
+        raise
+    except Exception:
+        pass
+    try:
         selected = bool(app.SelectionMode)
     except Exception:
         selected = False
@@ -129,3 +136,25 @@ def paste_at_cursor(app, *, expected: dict | None = None) -> dict:
     if not app.HAction.Run("Paste"):
         raise LiveLinkError("PASTE_FAILED", "한/글에 붙여 넣지 못했어요.")
     return {"inserted": True, "context": now, "undo_steps": 1}
+
+
+def _same_write_context(expected: dict, now: dict, *, require_table=False, require_selection=False):
+    keys = ("path", "pos", "selected", "in_table")
+    if any(expected.get(key) != now.get(key) for key in keys):
+        raise LiveLinkError("STALE_CONTEXT", "작업 중 문서 또는 커서 문맥이 바뀌었습니다. 다시 시도해 주세요.")
+    if require_table and not now["in_table"]:
+        raise LiveLinkError("STALE_CONTEXT", "커서가 표 안에 있지 않습니다.")
+    if require_selection and not now["selected"]:
+        raise LiveLinkError("STALE_CONTEXT", "선택 영역이 바뀌었습니다.")
+
+
+def replace_block(app, expected: dict, replacement, *, require_table=False, require_selection=False):
+    """문맥을 쓰기 직전에 확인하고 한 번의 블록 교체만 호출한다."""
+    now = context(app)
+    _same_write_context(expected, now, require_table=require_table, require_selection=require_selection)
+    replace = getattr(app, "ReplaceSelection", None)
+    if not callable(replace):
+        raise LiveLinkError("REPLACE_UNAVAILABLE", "한/글 블록 교체 어댑터를 사용할 수 없습니다.")
+    if replace(replacement) is False:
+        raise LiveLinkError("REPLACE_FAILED", "선택 영역을 한 번에 교체하지 못했습니다.")
+    return {"replaced": True, "undo_steps": 1, "context": now}

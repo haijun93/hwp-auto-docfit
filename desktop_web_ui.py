@@ -1812,6 +1812,15 @@ class DesktopWebBridge:
         try:
             if action == "status":
                 return {"ok": True, **self._live.status(str(payload.get("path") or ""))}
+            if action in ("table_unit_step", "selection_spacing"):
+                store = self._tk(lambda: self.gui.settings_store)
+                settings = store.read()
+                if not isinstance(settings, dict) or settings.get("live_replace_gate") is not True:
+                    return {"ok": False, "code": "GATE_NOT_PASSED", "message": "live_replace_gate gate not passed"}
+                self._live._gate_passed = True
+                if action == "table_unit_step":
+                    return {"ok": True, **self._live.table_unit_step(payload.get("direction"), expected=payload.get("context"), prefer_path=str(payload.get("path") or ""))}
+                return {"ok": True, **self._live.selection_spacing(expected=payload.get("context"), prefer_path=str(payload.get("path") or ""))}
             if action != "insert":
                 return {"ok": False, "message": "알 수 없는 명령입니다."}
             source, data = payload.get("source"), payload.get("data")
