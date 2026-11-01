@@ -159,6 +159,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         pass
                     else:
                         break
+                    hwp_run('MoveParaEnd')
                     result.append((next_start, hwp.GetPos(), next_role))
                 return result
             finally:

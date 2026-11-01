@@ -49,6 +49,9 @@ class SupplementGroupingTest(unittest.TestCase):
                 '현재문단_텍스트': lambda: lines[doc.pos[1]], '중단_요청됨': lambda: False}):
             group = fn((0, 0, 0))
         self.assertEqual(len(group), 7)
+        # 쪽 묶음 계산은 각 문단의 끝 위치를 쓴다.
+        for start, end, _ in group:
+            self.assertEqual(end[2], len(lines[start[1]]))
         self.assertEqual(doc.pos, (0, 0, 0))
 
     def test_same_depth_note_starts_independent_group(self):
