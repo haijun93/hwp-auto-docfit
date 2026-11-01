@@ -422,6 +422,9 @@ class DesktopWebBridge:
         return {"ok": service.open_download_page()}
 
     def get_state(self):
+        # 파일명 서비스를 처음 만들 때 Tk 호출을 기다리므로 Tk 스레드 밖에서 처리한다.
+        rename_open = self._drain_rename_paths()
+
         def snapshot():
             gui = self.gui
             mode = gui.selected_mode.get()
@@ -488,7 +491,7 @@ class DesktopWebBridge:
                 "format_task": self._format_task(),
                 "pending_dialog": self._pending_dialog(),
                 "drop_target": self.drop_target,
-                "rename_open": self._drain_rename_paths(),
+                "rename_open": rename_open,
                 "sidebar_collapsed": self._sidebar_collapsed_value(),
                 "document_drop_revision": self._document_drop_revision,
                 "options": {
