@@ -268,7 +268,7 @@ class _TabNavigationShellState extends State<TabNavigationShell> with WidgetsBin
                     onSelected: _select,
                     hiddenTabs: widget.hiddenTabs,
                     scrollController: _tabScrollController,
-                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                    trailing: Column(mainAxisSize: MainAxisSize.min, children: [
                       if (_liveLink != null && MediaQuery.sizeOf(context).width >= 600)
                         Tooltip(
                           message: '$_statusLabel — 눌러서 다시 확인',
@@ -276,7 +276,7 @@ class _TabNavigationShellState extends State<TabNavigationShell> with WidgetsBin
                             key: const Key('liveLinkStatus'),
                             onTap: _refreshStatus,
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 6),
+                              padding: const EdgeInsets.symmetric(vertical: 6),
                               child: Icon(Icons.link_rounded, size: 18, key: const Key('liveLinkStatusIcon'),
                                   color: _statusLabel == '한/글 없음' ? const Color(0xFFB0B4C0) : const Color(0xFF7664EC)),
                             ),
