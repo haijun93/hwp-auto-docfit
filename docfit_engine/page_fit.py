@@ -148,7 +148,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     elif body_attached and next_role == '내용':
                         parent_indent = 세트문장_선행들여쓰기_폭(next_text)
                     elif (next_role == '부연설명' and role in ('소제목', '본문', '내용')
-                          and 세트문장_선행들여쓰기_폭(next_text) > parent_indent):
+                          and (세트문장_선행들여쓰기_폭(next_text) > parent_indent or parent_indent == 0)):
                         pass
                     elif (세트문장_선행들여쓰기_폭(next_text) > parent_indent
                           and not (parent_indent == 0 and next_text.lstrip().startswith(('※', '*')))
