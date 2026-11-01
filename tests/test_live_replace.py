@@ -5,6 +5,7 @@ from unittest.mock import patch
 from docfit_live import link
 from docfit_live.service import LiveLinkService
 from tests.test_live_link import FakeApp
+from docfit_live.service import _table_unit_transform, transform_selection_spacing
 
 
 class FakeReplaceApp(FakeApp):
@@ -57,6 +58,40 @@ class LiveReplaceTest(unittest.TestCase):
         self.assertTrue(result["replaced"])
         self.assertEqual(app.replacements, [b"block spacing"])
         restore.assert_called_once_with({13: "kept"})
+
+    def test_hwpml2x_unit_adjustment_simple_and_merged(self):
+        examples = [
+            """<HWPML2X><TABLE RowCount="1" ColCount="4"><ROW>""" + "".join(
+                f'<CELL><CELLADDR RowAddr="0" ColAddr="{i}"/><CELLSPAN RowSpan="1" ColSpan="1"/><CELLSZ Width="1000" Height="500"/></CELL>' for i in range(4)) + "</ROW></TABLE></HWPML2X>",
+            """<HWPML2X><TABLE RowCount="2" ColCount="6"><ROW>""" + "".join(
+                f'<CELL><CELLADDR RowAddr="0" ColAddr="{i}"/><CELLSPAN RowSpan="1" ColSpan="1"/><CELLSZ Width="1000" Height="500"/></CELL>' for i in range(6)) + "</ROW><ROW>" +
+                '<CELL><CELLADDR RowAddr="1" ColAddr="0"/><CELLSPAN RowSpan="1" ColSpan="2"/><CELLSZ Width="2000" Height="500"/></CELL>' + "".join(
+                f'<CELL><CELLADDR RowAddr="1" ColAddr="{i}"/><CELLSPAN RowSpan="1" ColSpan="1"/><CELLSZ Width="1000" Height="500"/></CELL>' for i in range(2, 6)) + "</ROW></TABLE></HWPML2X>"
+        ]
+        for source in examples:
+            with self.subTest(source=source[:50]):
+                reduced = _table_unit_transform(source, -1)
+                increased = _table_unit_transform(source, 1)
+                self.assertIn("<HWPML2X", reduced)
+                self.assertNotEqual(reduced, source)
+                self.assertNotEqual(increased, source)
+
+    def test_unreadable_table_is_unsupported(self):
+        with self.assertRaises(link.LiveLinkError) as raised:
+            _table_unit_transform("<not-a-table/>", 1)
+        self.assertEqual(raised.exception.code, "UNSUPPORTED_TABLE")
+
+    def test_selection_spacing_stage_order_uses_injected_document(self):
+        events = []
+        class FakeCopy:
+            def Close(self): events.append("close")
+        doc = FakeCopy()
+        result = transform_selection_spacing(b"block", save_block=lambda b: events.append("save") or b"saved",
+            open_copy=lambda b: events.append(("open", b)) or doc,
+            spacing_engine=lambda d: events.append(("engine", d is doc)),
+            extract_block=lambda d: events.append(("extract", d is doc)) or b"adjusted")
+        self.assertEqual(result, b"adjusted")
+        self.assertEqual(events, ["save", ("open", b"saved"), ("engine", True), ("extract", True), "close"])
 
 
 if __name__ == "__main__":

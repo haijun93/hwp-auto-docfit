@@ -179,27 +179,73 @@ def _extract_selected_block(app, operation, context):
 
 
 def _table_unit_transform(block, direction):
-    """Round-trip selected HWPML2X through the existing table_units structural engine."""
+    """Adjust one unit in a selected HWPML2X table using table_units rules."""
     from docfit_core import table_units
     try:
         root = ET.fromstring(block)
+        tables = [n for n in root.iter() if n.tag.rsplit("}", 1)[-1].lower() in ("table", "tbl")]
+        if len(tables) != 1:
+            raise ValueError("one table required")
+        table = tables[0]
+        hp = table_units.HP
+        aliases = {"row": "tr", "cell": "tc", "celladdr": "cellAddr", "cellspan": "cellSpan",
+                   "cellsz": "cellSz", "para": "p", "run": "run", "text": "t"}
+        attr_alias = {"rowcount": "rowCnt", "colcount": "colCnt", "rowcnt": "rowCnt", "colcnt": "colCnt",
+                      "rowaddr": "rowAddr", "coladdr": "colAddr", "rowspan": "rowSpan", "colspan": "colSpan"}
+        for node in table.iter():
+            key = node.tag.rsplit("}", 1)[-1].lower()
+            if key in aliases:
+                node.tag = hp + aliases[key]
+            for name, value in list(node.attrib.items()):
+                target = attr_alias.get(name.lower())
+                if target:
+                    node.set(target, value)
+        cells = list(table.iter(hp + "tc"))
+        if not cells:
+            raise ValueError("no cells")
+        rows = int(table.get("rowCnt", "0")); cols = int(table.get("colCnt", "0"))
+        if rows < 1 or cols < 1:
+            coords = []
+            for i, cell in enumerate(cells):
+                addr, span = cell.find(hp + "cellAddr"), cell.find(hp + "cellSpan")
+                r = int(addr.get("rowAddr", i)) if addr is not None else i
+                c = int(addr.get("colAddr", 0)) if addr is not None else 0
+                rs = int(span.get("rowSpan", 1)) if span is not None else 1
+                cs = int(span.get("colSpan", 1)) if span is not None else 1
+                coords.append((r + rs, c + cs))
+            rows, cols = max(x[0] for x in coords), max(x[1] for x in coords)
+        table.set("rowCnt", str(rows)); table.set("colCnt", str(cols))
+        meta = [table_units.catalog._cell_meta(c, 0, 0, "", None) for c in cells]
+        plan = table_units.plan_for({"cell_meta": meta, "rows": rows, "cols": cols})
+        axis = "col" if plan["col"] else "row" if plan["row"] else None
+        if axis is None:
+            raise ValueError("no matching information-unit plan")
+        target = plan[axis]["count"] + direction
+        table_units.resize_table(table, plan,
+            row_count=target if axis == "row" else None,
+            col_count=target if axis == "col" else None)
+        return ET.tostring(root, encoding="unicode")
+    except link.LiveLinkError:
+        raise
     except Exception as exc:
-        raise link.LiveLinkError("BLOCK_READ_FAILED", "표 블록 HWPML2X를 읽지 못했습니다.") from exc
-    tables = [node for node in root.iter() if node.tag.rsplit("}", 1)[-1].upper() == "TABLE"]
-    if len(tables) != 1:
-        raise link.LiveLinkError("TABLE_BLOCK_REQUIRED", "표 하나만 선택된 블록이어야 합니다.")
-    # Internal planner requires catalog shape metadata; unsupported arbitrary tables fail closed.
-    table = tables[0]
-    rows = int(table.get("RowCount", "0"))
-    cols = int(table.get("ColCount", "0"))
-    if rows < 1 or cols < 1:
-        raise link.LiveLinkError("TABLE_BLOCK_INVALID", "표 행·열 정보를 읽지 못했습니다.")
-    raise link.LiveLinkError("TABLE_PLAN_UNAVAILABLE", "선택된 임의 표에 대한 정보단위 계획을 찾지 못했습니다.")
+        raise link.LiveLinkError("UNSUPPORTED_TABLE", "The table block could not be parsed or its unit structure was unsupported.") from exc
 
 
 def _selection_spacing_transform(block):
-    """Run the existing selection spacing engine against a hidden scratch HWPX copy."""
-    raise link.LiveLinkError("SPACING_COPY_UNAVAILABLE", "자간 엔진용 선택 블록 사본 변환기를 사용할 수 없습니다.")
+    raise link.LiveLinkError("SPACING_COPY_UNAVAILABLE", "선택 자간 정리는 아직 한/글 사본 연결이 끝나지 않았습니다.")
+
+
+def transform_selection_spacing(block, *, save_block, open_copy, spacing_engine, extract_block):
+    """Call stages in order: save block, open copy, spacing engine, extract block."""
+    saved = save_block(block)
+    copy_doc = open_copy(saved)
+    try:
+        spacing_engine(copy_doc)
+        return extract_block(copy_doc)
+    finally:
+        close = getattr(copy_doc, "Close", None)
+        if callable(close):
+            close()
 
 
 def default_replacement_adapters():
