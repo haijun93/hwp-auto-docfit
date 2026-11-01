@@ -11,7 +11,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.15'
+          python-version: '3.14'
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -23,7 +23,7 @@ jobs:
           cache: npm
           cache-dependency-path: diagram_editor/package-lock.json
       - name: Install backend build dependencies
-        run: python -m pip install -c constraints-py315.txt -r requirements.txt pyinstaller
+        run: python -m pip install -c constraints.txt -r requirements.txt pyinstaller
       - name: Test independent services and protocol
         run: python -m unittest tests.test_configuration_service tests.test_native_ipc tests.test_process_lock
       - name: Build separate prototype bundle
