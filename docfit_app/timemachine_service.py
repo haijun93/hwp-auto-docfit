@@ -387,7 +387,7 @@ class TimemachineService:
 
         if self.feature_api is not None:
             try:
-                res = self.feature_api(feature, list(file_ids))
+                res = self.feature_api(feature, list(paths))
                 if isinstance(res, dict) and res.get("ok") is False:
                     return self._error(res.get("code", "FEATURE_FAILED"),
                                        res.get("message", "기능 작업을 완료하지 못했습니다."))

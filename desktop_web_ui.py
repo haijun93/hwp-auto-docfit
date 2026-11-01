@@ -1866,14 +1866,8 @@ class DesktopWebBridge:
             )
         return service
 
-    def _timemachine_send_to_feature(self, feature, file_ids, paths=None):
+    def _timemachine_send_to_feature(self, feature, paths):
         """타임머신에서 보낸 승인된 파일 목록을 실제 기능 대기열에 연결한다."""
-        service = getattr(self, "_timemachine_service_instance", None)
-        if paths is None:
-            if service is not None:
-                paths = [service.store.get(fid)["path"] for fid in file_ids]
-            else:
-                paths = []
         if feature == "rename_batch":
             return self._file_rename_service().add_paths(paths)
         if feature in ("convert", "document_edit"):
@@ -1889,7 +1883,7 @@ class DesktopWebBridge:
                     if self.gui.selected_mode.get() == "file_format":
                         self.gui.selected_mode.set("spacing")
                         self._mode_selected()
-                added = self.gui.파일추가(paths[0])
+                added = self.add_paths(paths, from_drop=False)
                 if not added:
                     return {"ok": False, "code": "FEATURE_FAILED", "message": "파일을 추가하지 못했습니다."}
                 self.gui.status_var.set(f"타임머신에서 문서 추가 · 총 {len(self.gui.files)}개")
