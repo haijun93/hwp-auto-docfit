@@ -107,11 +107,11 @@ def scan_roots(store, roots, rules=None, *, cancel=None, progress=None):
 
 
 def default_roots(home=None, environ=None):
-    """사용자 결정 1: 바탕 화면·문서 폴더(OneDrive로 옮겨진 경우 포함). 다운로드는 기본 제외."""
+    """기본 조사 위치는 바탕 화면. OneDrive로 이동된 바탕 화면도 찾아본다."""
     home = home or os.path.expanduser("~")
     environ = os.environ if environ is None else environ
     candidates = []
-    for name in ("Desktop", "Documents", "바탕 화면", "문서"):
+    for name in ("Desktop", "바탕 화면"):
         for base in (home, environ.get("OneDrive") or "", environ.get("OneDriveCommercial") or ""):
             if base:
                 candidates.append(os.path.join(base, name))

@@ -136,3 +136,14 @@ def set_autostart(enabled, exe=None):
                 winreg.DeleteValue(key, RUN_NAME)
             except FileNotFoundError:
                 pass
+
+
+def autostart_enabled():
+    """현재 사용자 계정의 K에이전트 자동 시작 등록 여부."""
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_QUERY_VALUE) as key:
+            command, _ = winreg.QueryValueEx(key, RUN_NAME)
+    except FileNotFoundError:
+        return False
+    return isinstance(command, str) and "kagent.exe" in command.lower()
