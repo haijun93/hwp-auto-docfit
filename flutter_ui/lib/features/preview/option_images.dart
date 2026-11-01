@@ -68,6 +68,8 @@ const Map<String, OptionImage> optionImages = {
   // 작업 방식 카드 옵션(stage_selection.CARD_OPTION_STAGES)
   'spacing_enabled': _spacing,
   'spacing_exclude_pagefit': _pageFit,
+  'spacing_cell_image_to_bg': OptionImage('table-format.png', '표 셀 그림을 배경 이미지로 변경'),
+  'all_cell_image_to_bg': OptionImage('table-format.png', '표 셀 그림을 배경 이미지로 변경'),
   'spacing_exclude_reset': OptionImage(
     'reset-spacing.png',
     '기존 자간 초기화 단계를 제외하기 전·후',
