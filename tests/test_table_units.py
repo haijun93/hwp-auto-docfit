@@ -677,9 +677,47 @@ class C13TableUnitsTests(unittest.TestCase):
             rec = self.records[source]["추진절차(가로세로) · 모양 1"]
             _, table, _ = units._load(rec["id"], source)
             plan = units.plan_for(rec)
+            if source != SOURCE:
+                self.assertNotIn("kind", plan["row"])
+                self.assertNotIn("kind", plan["col"])
+                continue
+            self.assertEqual((plan["row"]["start"], plan["row"]["core"], plan["row"]["sep"], plan["row"]["count"]), (0, 1, 1, 7))
+            self.assertEqual((plan["col"]["start"], plan["col"]["core"], plan["col"]["sep"], plan["col"]["count"]), (0, 1, 1, 4))
+            original = ET.tostring(table)
             units.resize_table(table, plan, row_count=plan["row"]["count"] + 1,
                                col_count=plan["col"]["count"] + 1)
             self.grid(table, width=True)
+            self.assert_grid_flow_arrows(table)
+            units.resize_table(table, plan, row_count=6, col_count=3)
+            self.assert_grid_flow_arrows(table)
+            units.resize_table(table, plan, row_count=7, col_count=4)
+            self.assertEqual(ET.tostring(table), original)
+            self.assertEqual((plan["row"]["min"], plan["row"]["max"]), (1, 8))
+            self.assertEqual((plan["col"]["min"], plan["col"]["max"]), (1, 8))
+            for counts in ((1, 1), (8, 8)):
+                _, boundary, _ = units._load(rec["id"], source)
+                boundary_plan = units.plan_for(rec)
+                units.resize_table(boundary, boundary_plan, row_count=counts[0], col_count=counts[1])
+                self.grid(boundary, width=True)
+                self.assert_grid_flow_arrows(boundary)
+            for counts in ((6, 4), (7, 3)):
+                _, reduced, _ = units._load(rec["id"], source)
+                reduced_plan = units.plan_for(rec)
+                units.resize_table(reduced, reduced_plan, row_count=counts[0], col_count=counts[1])
+                self.grid(reduced, width=True)
+                self.assert_grid_flow_arrows(reduced)
+
+    def assert_grid_flow_arrows(self, table):
+        rows, cols = int(table.get("rowCnt")), int(table.get("colCnt"))
+        cells = {(m["row"], m["col"]): (cell, m) for (_, cell), m in zip(units._cells(table), units._meta(table))}
+        for r in range(rows):
+            for c in range(cols):
+                cell, meta = cells[(r, c)]
+                polygons = list(cell.iter(units.HP + "polygon"))
+                texts = [n.text or "" for n in cell.iter(units.HP + "t")]
+                self.assertEqual(bool(polygons), r % 2 == 0 and c % 2 == 1, (r, c, "right"))
+                self.assertEqual(any(t.strip() == "↓" for t in texts),
+                                 r % 2 == 1 and c % 2 == 0 and r < rows - 1, (r, c, "down"))
 
     def test_c13_04_comparison_rows_and_merged_arrow(self):
         self.check_axes("신구대조표 · 모양 1", ("row",))
