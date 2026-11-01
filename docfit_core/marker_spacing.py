@@ -58,9 +58,8 @@ def normalize_paragraph(p):
     end = marker_end
     while end < len(value) and value[end] in SEPARATORS:
         end += 1
-    # 사용자 규칙(2026-11-01): 기호 항목 뒤 「는 빈칸 없음. 번호(2.)는 원칙대로 1칸.
-    bracket_exception = (end < len(value) and value[end] == "「"
-                         and value[marker_end-1:marker_end] not in (".", "．", ")"))
+    # 사용자 규칙(2026-11-02): 기호·번호 뒤 「는 무조건 빈칸 없음.
+    bracket_exception = end < len(value) and value[end] == "「"
     if end == len(value) or value[end] in "\r\n":
         return False
     # Account for controls before the marker (paragraph indentation), which
