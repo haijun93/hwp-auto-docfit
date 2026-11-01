@@ -152,6 +152,14 @@ def merge_canvas_block_into_hwpx(hwpx_bytes_or_path, block_data, output_path=Non
             refs['para_pr_id'] = _ids(pools['paraProperties'])[-1]
             refs['style_id'] = _ids(pools['styles'])[-1]
         refs['char_pr_ids'] = {False: refs['char_pr_id'], True: refs['char_pr_id']}
+        # Clone the source paragraph properties and request centered labels.
+        center_para = clone('paraProperties', refs['para_pr_id'])
+        alignment = center_para.find(HH+'align')
+        if alignment is None:
+            alignment = _element(HH+'align', vertical='BASELINE')
+            center_para.insert(0, alignment)
+        alignment.set('horizontal', 'CENTER')
+        refs['diagram_center_para_pr_id'] = int(center_para.get('id'))
         elements = build_diagram_shape_xml(payload, refs)
     elif kind == 'mindmap':
         start = max(_ids(pools['paraProperties']))+1
@@ -174,7 +182,11 @@ def merge_canvas_block_into_hwpx(hwpx_bytes_or_path, block_data, output_path=Non
     if elements and elements[0].tag != HP+'p':
         wrapper = _element(HP+'p', paraPrIDRef=refs['para_pr_id'], styleIDRef=refs['style_id'], pageBreak=0, columnBreak=0, merged=0)
         run = _element(HP+'run', charPrIDRef=refs['char_pr_id'])
-        run.extend(elements)
+        if kind == 'diagram' and elements[0].tag == HP+'container':
+            # Shape containers are floating children of run, alongside text.
+            run.append(elements[0])
+        else:
+            run.extend(elements)
         wrapper.append(run)
         elements = [wrapper]
     next_id = maximum+1

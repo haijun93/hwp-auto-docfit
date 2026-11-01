@@ -68,21 +68,40 @@ class CanvasHwpxTests(unittest.TestCase):
 
     def test_diagram_exact_units_and_center_arrows(self):
         elements = build_diagram_shape_xml(graph(), {'object_id_start': 20})
-        self.assertEqual([e.tag for e in elements], [HP+'rect', HP+'ellipse', HP+'connectLine'])
-        self.assertEqual([e.get('id') for e in elements], ['20', '21', '22'])
-        self.assertEqual(elements[0].find(HP+'pos').get('horzOffset'), str(round(-1.5*7200/96)))
-        self.assertEqual(elements[0].find(HP+'pos').get('vertOffset'), str(round(2.5*7200/96)))
-        self.assertEqual(elements[0].find(HP+'sz').get('width'), '225')
-        self.assertEqual(elements[1].find(HP+'pos').get('horzOffset'), '7200')
-        self.assertEqual(elements[2].find(HP+'startPt').attrib, {'x': '0', 'y': '0', 'subjectIDRef': '20', 'subjectIdx': '3'})
-        self.assertEqual(elements[2].find(HP+'endPt').get('subjectIDRef'), '21')
-        self.assertGreater(int(elements[2].find(HP+'endPt').get('x')), 0)
-        self.assertEqual(elements[2].find(HP+'lineShape').get('tailStyle'), 'ARROW')
-        self.assertEqual(elements[0].find(HC+'pt2').attrib, {'x': '225', 'y': '375'})
-        self.assertEqual(elements[1].find(HC+'center').attrib, {'x': '4500', 'y': '2250'})
-        for element in elements:
+        self.assertEqual([e.tag for e in elements], [HP+'container'])
+        shapes = list(elements[0])[-3:]
+        self.assertEqual([e.tag for e in shapes], [HP+'rect', HP+'ellipse', HP+'connectLine'])
+        self.assertEqual([e.get('id') for e in shapes], ['20', '21', '22'])
+        self.assertEqual(shapes[0].find(HP+'pos').get('horzOffset'), str(round(-1.5*7200/96)))
+        self.assertEqual(shapes[0].find(HP+'pos').get('vertOffset'), str(round(2.5*7200/96)))
+        self.assertEqual(shapes[0].find(HP+'sz').get('width'), '225')
+        self.assertEqual(shapes[1].find(HP+'pos').get('horzOffset'), '7200')
+        self.assertEqual(shapes[2].find(HP+'startPt').attrib, {'x': '0', 'y': '0', 'subjectIDRef': '20', 'subjectIdx': '3'})
+        self.assertEqual(shapes[2].find(HP+'endPt').get('subjectIDRef'), '21')
+        self.assertGreater(int(shapes[2].find(HP+'endPt').get('x')), 0)
+        self.assertEqual(shapes[2].find(HP+'lineShape').get('tailStyle'), 'ARROW')
+        self.assertEqual(shapes[0].find(HC+'pt2').attrib, {'x': '225', 'y': '375'})
+        self.assertEqual(shapes[1].find(HC+'center').attrib, {'x': '4500', 'y': '2250'})
+        for element in elements[0]:
             ET.fromstring(ET.tostring(element))
             self.assertEqual(element.findall('.//'+HP+'lineseg'), [])
+
+    def test_group_fixture_connectline_structure(self):
+        from pathlib import Path
+        source = Path(__file__).parent / 'fixtures' / 'hwp_shapes_group_sample.hwpx'
+        with ZipFile(source) as archive:
+            section = ET.fromstring(archive.read('Contents/section0.xml'))
+        lines = list(section.iter(HP+'connectLine'))
+        self.assertEqual(len(lines), 3)
+        self.assertEqual([next(p.tag for p in section.iter() if line in list(p)) for line in lines],
+                         [HP+'container', HP+'run', HP+'run'])
+        grouped = lines[0]
+        self.assertEqual(list(grouped)[0].tag, HP+'offset')
+        self.assertEqual([grouped.find(HP+tag) is not None for tag in
+                          ('lineShape', 'shadow', 'startPt', 'endPt', 'controlPoints', 'sz', 'pos')],
+                         [True, True, True, True, True, False, False])
+        self.assertEqual(grouped.get('instid'), '155120512')
+        self.assertEqual(grouped.find(HP+'startPt').get('subjectIDRef'), '0')
 
     def test_diagram_legacy_features_and_generated_package_roundtrip(self):
         from docfit_core.hwpx.canvas_package_adapter import merge_canvas_block_into_hwpx
@@ -99,15 +118,31 @@ class CanvasHwpxTests(unittest.TestCase):
             section = ET.fromstring(archive.read('Contents/section0.xml'))
             shapes = [n for n in section.iter() if n.tag in (HP+'polygon', HP+'rect', HP+'ellipse', HP+'connectLine')]
             self.assertEqual(len(shapes), 3)
-            diamond, rounded, connector = shapes
+            generated = section[-1]
+            self.assertEqual(generated.find(HP+'run/'+HP+'container'), generated.find('.//'+HP+'container'))
+            grouped_shapes = [n for n in generated.find('.//'+HP+'container') if n.tag in
+                              (HP+'polygon', HP+'rect', HP+'ellipse')]
+            grouped_connectors = [n for n in generated.find('.//'+HP+'container') if n.tag == HP+'connectLine']
+            self.assertEqual(len(grouped_shapes), 2)
+            self.assertEqual(len(grouped_connectors), 1)
+            self.assertLess(list(generated.find('.//'+HP+'container')).index(grouped_shapes[-1]),
+                            list(generated.find('.//'+HP+'container')).index(grouped_connectors[0]))
+            diamond, rounded = grouped_shapes
+            connector = grouped_connectors[0]
             self.assertEqual(diamond.tag, HP+'polygon')
             self.assertEqual(diamond.get('ratio'), '0')
             self.assertEqual(diamond.find(HP+'pos').get('horzOffset'), '750')
             self.assertEqual(diamond.find(HP+'sz').get('width'), '6000')
+            pts = [diamond.find(HC+'pt'+str(i)).attrib for i in range(4)]
+            self.assertEqual(pts, [{'x':'3000','y':'0'}, {'x':'6000','y':'1500'},
+                                   {'x':'3000','y':'3000'}, {'x':'0','y':'1500'}])
+            self.assertTrue(all(0 <= int(p['x']) <= 6000 and 0 <= int(p['y']) <= 3000 for p in pts))
             self.assertEqual(diamond.find('.//'+HC+'winBrush').get('faceColor'), '#ABCDEF')
             self.assertEqual(diamond.find(HP+'lineShape').get('color'), '#123456')
             self.assertEqual(diamond.find(HP+'lineShape').get('width'), '66')
             self.assertEqual([''.join(p.itertext()) for p in diamond.findall('.//'+HP+'p')], ['첫 줄', '둘째 줄'])
+            self.assertEqual(diamond.find('.//'+HP+'p').get('paraPrIDRef'),
+                             generated.find(HP+'run/'+HP+'container').find('.//'+HP+'p').get('paraPrIDRef'))
             self.assertEqual(rounded.get('ratio'), '20')
             self.assertEqual(connector.find(HP+'startPt').get('subjectIDRef'), diamond.get('instid'))
             self.assertEqual(connector.find(HP+'endPt').get('subjectIDRef'), rounded.get('instid'))
@@ -187,7 +222,9 @@ class CanvasHwpxTests(unittest.TestCase):
     def test_diagram_inclusive_graph_limits(self):
         nodes = [dict(id=str(i), position={'x': i, 'y': 0}) for i in range(1000)]
         edges = [dict(id='e'+str(i), source='0', target='999') for i in range(2000)]
-        self.assertEqual(len(build_diagram_shape_xml({'nodes': nodes, 'edges': edges})), 3000)
+        result = build_diagram_shape_xml({'nodes': nodes, 'edges': edges})
+        self.assertEqual(sum(n.tag in (HP+'rect', HP+'ellipse', HP+'polygon', HP+'connectLine')
+                             for n in result[0]), 3000)
 
     def test_mindmap_rejects_nonfinite_json(self):
         for value in (float('nan'), float('inf'), float('-inf')):

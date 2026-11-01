@@ -152,8 +152,9 @@ def build_diagram_shape_xml(payload, refs=None):
         raise ValueError('노드와 연결선 ID가 중복됩니다.')
     for i, shape in enumerate(shapes):
         _label(shape['id'])
+        object_id = int(refs.get('object_id_start', 1))+i
         node = _element(HP+{'hp:rect': 'rect', 'hp:ellipse': 'ellipse', 'hp:polygon': 'polygon'}[shape['target']],
-                        id=int(refs.get('object_id_start', 1))+i)
+                        id=object_id, instid=object_id)
         x, y, w, h = (_unit(shape[k]) for k in ('x', 'y', 'width', 'height'))
         _shape_scaffold(node, w, h)
         _add(node, HP+'sz', width=w, height=h, widthRelTo='ABSOLUTE', heightRelTo='ABSOLUTE', protect=0)
@@ -190,8 +191,10 @@ def build_diagram_shape_xml(payload, refs=None):
              hatchColor='#000000', alpha=255 if no_fill else 0)
         text = _add(node, HP+'drawText', lastWidth=w, name='', editable=0)
         sub = _add(text, HP+'subList', textDirection='HORIZONTAL', lineWrap='BREAK', vertAlign='CENTER')
+        # Hancom honors paragraph alignment for floating shape text.
+        align_para_id = refs.get('diagram_center_para_pr_id', refs.get('para_pr_id', 0))
         for line in shape['text'].split('\n') or ['']:
-            sub.append(_paragraph(line, refs, i))
+            sub.append(_paragraph(line, {**refs, 'para_pr_id': align_para_id}, i))
         _add(text, HP+'textMargin', left=283, right=283, top=283, bottom=283)
         # Match the shape child order in tests/fixtures/hwp_shapes_sample.hwpx.
         for point in list(node):
@@ -242,13 +245,29 @@ def build_diagram_shape_xml(payload, refs=None):
              holdAnchorAndSO=0, vertRelTo='PAPER', horzRelTo='PAPER', vertOffset=top, horzOffset=left,
              vertAlign='TOP', horzAlign='LEFT')
         _add(node, HP+'outMargin', left=0, right=0, top=0, bottom=0)
+        _add(node, HP+'shapeComment').text = '개체 연결선입니다.'
         if edge['text']:
             draw = _add(node, HP+'drawText', lastWidth=0, name='', editable=0)
             sub = _add(draw, HP+'subList', textDirection='HORIZONTAL', lineWrap='BREAK', vertAlign='CENTER')
             sub.append(_paragraph(edge['text'], refs, i))
             _add(draw, HP+'textMargin', left=0, right=0, top=0, bottom=0)
         output.append(node)
-    return output
+    # Hancom stores a diagram as a grouped container. Child order matters:
+    # shapes first, connectors afterward, with subjectIDRef pointing at instid.
+    container = _element(HP+'container', id=int(refs.get('object_id_start', 1))+len(output),
+                         zOrder='0', numberingType='NONE', textWrap='TOP_AND_BOTTOM',
+                         textFlow='BOTH_SIDES', lock='0', dropcapstyle='None', href='',
+                         groupLevel='1', instid=int(refs.get('object_id_start', 1))+len(output))
+    _add(container, HP+'offset', x=0, y=0)
+    _add(container, HP+'orgSz', width=1, height=1)
+    _add(container, HP+'curSz', width=1, height=1)
+    _add(container, HP+'flip', horizontal=0, vertical=0)
+    _add(container, HP+'rotationInfo', angle=0, centerX=0, centerY=0, rotateimage=1)
+    rendering = _add(container, HP+'renderingInfo')
+    for tag in ('transMatrix', 'scaMatrix', 'rotMatrix'):
+        _add(rendering, HC+tag, e1=1, e2=0, e3=0, e4=0, e5=1, e6=0)
+    container.extend(output)
+    return [container]
 
 
 def build_mindmap_para_properties_xml(refs=None):
