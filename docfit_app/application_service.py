@@ -75,7 +75,7 @@ class ApplicationService:
                 'status':'문서 분석·설정 시제품', 'version':'1.74 Native Prototype 1',
                 'include_spacing':settings['all_include_spacing'], 'reset_spacing':self.data.stages.get(('spacing','reset_spacing'),not settings['spacing_exclude_reset']),
                 'table_spacing':settings['table_spacing'], 'exclude_tables':settings['all_exclude_tables'],
-                'card_options':{**{key:bool(settings.get(key)) for key in ('spacing_enabled','spacing_exclude_pagefit','spacing_exclude_reset','unify_exclude_tables','unify_exclude_spacing','unify_exclude_pagefit','unify_keep_layout','unify_full_format','all_include_spacing','all_exclude_tables','all_exclude_pagefit','all_exclude_linespacing')},'spacing_exclude_tables':not settings['table_spacing']},'range':self.data.range,'results':[], 'options':settings,
+                'card_options':{**{key:bool(settings.get(key)) for key in ('spacing_enabled','spacing_exclude_pagefit','spacing_exclude_reset','spacing_cell_image_to_bg','all_cell_image_to_bg','unify_exclude_tables','unify_exclude_spacing','unify_exclude_pagefit','unify_keep_layout','unify_full_format','all_include_spacing','all_exclude_tables','all_exclude_pagefit','all_exclude_linespacing')},'spacing_exclude_tables':not settings['table_spacing']},'range':self.data.range,'results':[], 'options':settings,
                 'profiles':[], 'profile':'','default_saved':self.data.mode in saved_stages,'format_task':None,
                 'progress':{'steps':list(STAGE_ORDER),'active':None,'visited':[],'outcome':None,'detail':''},
                 'stages':[{'key':k,'label':label,'enabled':self.data.stages.get((self.data.mode,k),selected.get(k,default_choice(k,self.data.mode))),
@@ -105,7 +105,7 @@ class ApplicationService:
                     'capabilities':['documents.inspect','settings','abbreviations','flows'],'engine_ready':False}
         if method=='set_card_option':
             name,value=args
-            allowed={'spacing_enabled','spacing_exclude_pagefit','spacing_exclude_reset','spacing_exclude_tables','unify_exclude_tables','unify_exclude_spacing','unify_exclude_pagefit',
+            allowed={'spacing_enabled','spacing_exclude_pagefit','spacing_exclude_reset','spacing_cell_image_to_bg','all_cell_image_to_bg','spacing_exclude_tables','unify_exclude_tables','unify_exclude_spacing','unify_exclude_pagefit',
                      'unify_keep_layout','unify_full_format','all_include_spacing','all_exclude_tables','all_exclude_pagefit','all_exclude_linespacing'}
             if name not in allowed or not isinstance(value,bool):raise ServiceError('INVALID_OPTION','카드 옵션을 확인해 주세요.')
             if name=='spacing_exclude_tables':key,value='table_spacing',not value

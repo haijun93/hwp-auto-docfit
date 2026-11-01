@@ -27,8 +27,19 @@ def is_continuation(parent_indent, text):
         return False
     if is_supplement(text):
         return True
-    # Ranges such as (6~16번) are explanations, numbered lists are independent.
-    return classify_marker(text) is None
+    # Numbered labels after a colon and supported circle labels are continuations;
+    # ordinary numbered list markers remain independent items.
+    marker = classify_marker(text)
+    stripped = text.lstrip(' \t')
+    if marker and marker[0] == '①':
+        return False
+    if marker is None and stripped.startswith('②') and (len(stripped) == 1 or stripped[1].isspace()):
+        return True
+    if stripped.startswith(('❶', 'ㅇ)', 'ㅇ(')):
+        return True
+    if marker and re.match(r'^\s*[^:：\r\n]{1,30}[:：]\s*', text):
+        return True
+    return marker is None
 
 
 def inline_item(text):

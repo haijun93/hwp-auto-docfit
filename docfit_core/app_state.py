@@ -18,6 +18,8 @@ class RunOptions:
     spacing_enabled: bool = True
     spacing_exclude_pagefit: bool = True
     spacing_exclude_reset: bool = False
+    spacing_cell_image_to_bg: bool = False
+    all_cell_image_to_bg: bool = False
 
     def __post_init__(self):
         if self.mode not in ("spacing", "unify", "format", "all"):
@@ -36,6 +38,11 @@ class RunOptions:
         selected = stage_choices.get(mode, {})
         result = {key: bool(selected.get(key, default_choice(key, mode)))
                   for key, _ in stages_for_mode(mode)}
+        if "cell_image_to_bg" in result:
+            result["cell_image_to_bg"] = bool(selected.get(
+                "cell_image_to_bg",
+                self.spacing_cell_image_to_bg if mode == "spacing" else self.all_cell_image_to_bg,
+            ))
         if "reset_spacing" in result:
             if mode == "spacing":
                 result["reset_spacing"] = not self.spacing_exclude_reset

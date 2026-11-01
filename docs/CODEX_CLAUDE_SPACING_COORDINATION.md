@@ -599,3 +599,12 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 - 기능 실행기 연결은 미완료이며 이관 진행 상태다. 셀 그림 단계는 opt-in이며 기본 꺼짐.
 - Python 시험 10개 실행: 실패 9, 오류 4. Mac의 `winreg` 부재로 COM 래퍼 시험 로드 불가, alpha의 hanging-indent 기대값 차이로 9건 실패. 재시도하지 않았다.
 - 한/글 COM 시험 미실행(맥). 커밋·푸시 없음.
+
+
+## Codex 결과 보고 — RB10b release/1.80.10 실행 흐름 연결 (2026-11-01)
+
+- continuation의 colon 후속 라벨 및 ②·❶·ㅇ 계열 인식기를 page-fit 세트 탐색에 연결하고, 본문에 속한 더 깊은 부연설명은 ※ 포함 같은 쪽 묶음에 포함하도록 연결했다. 연속된 부연설명에서 기존 역할 규칙은 유지한다.
+- 셀 그림→배경 변환을 작업용 HWPX 단계에 연결하고 작업 방식 옵션/Flutter 화면에 노출했다. 기본값은 꺼짐이다.
+- alpha 사용자 결정으로 독립 숫자 목록(예: 1))은 새 세트 경계로 유지했다.
+- 관련 기능 시험 38개 PASS. 전체 시험: `python -m unittest discover -s tests` 출력상 300개 이상 PASS, 실행 프로세스가 공존해 완료 요약 미수신. 완료 조건 미확정. Flutter 시험은 `flutter_test`/`test` 의존성 누락으로 실행 불가. `hwp-auto-docfit.py` CRLF 3502, bare LF 0; XML 파서는 변경/이관 모듈 모두 `defusedxml.ElementTree`. Flutter 시험 명령은 `flutter_test`/`test`가 pubspec에 없어 기동 불가. COM 미사용.
+- git diff --check PASS. hwp-auto-docfit.py 원본은 이번 변경에서 수정하지 않았고 CRLF 3502/bare LF 0. 커밋/푸시는 전체 시험 종료 결과 미확정 상태를 명시한 뒤 수행.

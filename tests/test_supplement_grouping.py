@@ -41,14 +41,14 @@ class SupplementGroupingTest(unittest.TestCase):
         return Doc()
 
     def test_notes_and_deeper_explanations_join_parent_until_next_item(self):
-        lines = [' ㅇ 계약방법: 가상 계약', '     ※ 근거 하나', '     ※ 근거 둘',
+        lines = [' ㅇ 계약방법: 가상 계약', '     ※ 근거 하나', '       ※ 깊은 부연설명', '     ※ 근거 둘',
                  '     * 주석', '     ** 보충', '       (범위 설명) 본문', ' ㅇ 다음 항목']
         doc = self.document(lines)
         fn = self.ns['보고서_본문묶음_수집']
         with patch.dict(fn.__globals__, {'hwp': doc, 'hwp_run': doc.run,
                 '현재문단_텍스트': lambda: lines[doc.pos[1]], '중단_요청됨': lambda: False}):
             group = fn((0, 0, 0))
-        self.assertEqual(len(group), 6)
+        self.assertEqual(len(group), 7)
         self.assertEqual(doc.pos, (0, 0, 0))
 
     def test_same_depth_note_starts_independent_group(self):

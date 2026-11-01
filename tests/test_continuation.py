@@ -7,20 +7,27 @@ from unittest.mock import patch
 
 from defusedxml import ElementTree as ET
 
-from docfit_core.continuation import align_sections, inline_item, geometry
+from docfit_core.continuation import align_sections, inline_item, geometry, is_continuation
 from docfit_core.xml_hanging_indent import hanging_indent_offset
 from docfit_core.batch_format import plain_text, tag
 from tests.test_batch_format import HEADER, paragraph, section, shapes
 
 
 class ContinuationTest(unittest.TestCase):
+    def test_deeper_supported_labels_are_continuations_but_independent_list_is_not(self):
+        for text in ('    ※ 연속 설명', '    ❶ 설명', '    ㅇ) 라벨'):
+            with self.subTest(text=text):
+                self.assertTrue(is_continuation(1, text))
+        self.assertFalse(is_continuation(1, '    ② 독립 항목'))
+        self.assertFalse(is_continuation(1, '    1) 독립 목록'))
+        self.assertTrue(is_continuation(1, '    항목: ② 설명'))
     def test_inline_families_and_multiple_item_exception(self):
         for a, b in [('①', '②'), ('1)', '2)'), ('(1)', '(2)'), ('가.', '나.'), ('가)', '나)'), ('㉮', '㉯'), ('-', '-'), ('•', '•'), ('※', '※')]:
             with self.subTest(a=a):
                 text = '   • 위치: ' + a + ' 본문(참고)'
                 found = inline_item(text)
                 self.assertIsNotNone(found)
-                self.assertEqual(hanging_indent_offset(text), text.index('본문'))
+                self.assertEqual(hanging_indent_offset(text), text.index(a + ' 본문'))
         self.assertIsNone(inline_item('   • 위치: ① 첫째 ② 둘째'))
         self.assertIsNone(inline_item('   • 위치 ① 첫째'))
 
@@ -110,5 +117,5 @@ class ContinuationTest(unittest.TestCase):
             self.assertGreater(fn(source, output), 0)
             header, root = roots(output)
             p, q = root[0], root[1]
-            self.assertEqual(plain_text(q), '② 가상로 200 인근(가상 복지관 앞)')
+            self.assertEqual(plain_text(q), ' ② 가상로 200 인근(가상 복지관 앞)')
             self.assertEqual(self.pair(header, p)[0], self.pair(header, q)[0])

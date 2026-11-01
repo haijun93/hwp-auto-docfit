@@ -1766,6 +1766,23 @@ class _WorkspaceState extends State<Workspace> implements ConversionHost {
             ),
           ],
         ),
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                '표 셀 그림을 배경으로 변경',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            Switch(
+              key: const Key('spacingCellImageToBgSwitch'),
+              value: (state['card_options'] as Map?)?['spacing_cell_image_to_bg'] as bool? ?? false,
+              onChanged: locked
+                  ? null
+                  : (on) => command('set_card_option', ['spacing_cell_image_to_bg', on]),
+            ),
+          ],
+        ),
         if (!spacingEnabled)
           Text(
             spacingPageFit
@@ -1858,6 +1875,16 @@ class _WorkspaceState extends State<Workspace> implements ConversionHost {
       ],
       if (optionMode == 'all') ...[
         const SizedBox(height: 8),
+        Row(
+          children: [
+            const Expanded(child: Text('표 셀 그림을 배경으로 변경', style: TextStyle(fontWeight: FontWeight.w600))),
+            Switch(
+              key: const Key('allCellImageToBgSwitch'),
+              value: (state['card_options'] as Map?)?['all_cell_image_to_bg'] as bool? ?? false,
+              onChanged: locked ? null : (on) => command('set_card_option', ['all_cell_image_to_bg', on]),
+            ),
+          ],
+        ),
         // 끄면 기존 자간은 그대로 두고 서식만 적용한다(서식 적용).
         Row(
           children: [
