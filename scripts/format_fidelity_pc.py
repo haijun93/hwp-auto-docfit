@@ -37,6 +37,10 @@ from defusedxml import ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 # 시험 전용 예시는 앱의 서식예시 폴더와 따로, 이 PC에만 둔다(저장소에 넣지 않음, 사용자 지시 2026-10-17).
 SAMPLE_FOLDER = Path(r"C:\HWP_AUTODOCFIT\테스트예시")
+# 예시 제작용 제목·개요 원고. 제목 문단을 제목 표로 변환하므로 충실도 재연 기본 목록에서 제외한다.
+EXCLUDED_SAMPLE_REASONS = {
+    "내어쓰기 테스트(원본변환).hwpx": "원고 예시: 제목·개요 문단을 서식 표로 변환하는 예시 성격 문서라 문단/표 구조 재연 기준에 맞지 않음",
+}
 H = "{http://www.hancom.co.kr/hwpml/2011/head}"
 P = "{http://www.hancom.co.kr/hwpml/2011/paragraph}"
 
@@ -292,13 +296,21 @@ def _norm_doc_text(text: str) -> str:
     t = text.replace("ㆍ", "•")
     # 2. 표 헤더 2글자 띄어쓰기('구 분' -> '구분', '비 고' -> '비고')
     t = re.sub(r"^(구|비)\s+(분|고)$", r"\1\2", t)
-    # 3. 2단계 항목기호 앞 선행 공백 정규화
-    t = re.sub(r"^\s*([ㅇ○◦])\s+", r"\1 ", t)
+    # 3. 2단계 항목기호 뒤 공백 1개 규칙. 선행 들여쓰기는 그대로 둔다.
+    marker = re.match(r"^(\s*)([ㅇ○◦])\s*([^\s])", t)
+    if marker:
+        leading, symbol, rest = marker.groups()
+        t = leading + symbol + " " + rest
     # 4. 끝. 앞 공백 정규화
     t = re.sub(r"^\s*끝\.$", "끝.", t)
-    # 5. 날짜 띄어쓰기 정규화: '2026. 10. 25.' -> '2026.10.25.'
+    # 4. 날짜 띄어쓰기 정규화: '2026. 10. 25.' -> '2026.10.25.'
     t = re.sub(r"(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.", r"\1.\2.\3.", t)
     return t
+
+
+def _paragraph_key_text(text: str) -> str:
+    """비교 정렬 키는 원문 공백을 보존하고 비공백 문자만 매칭한다."""
+    return "".join(char for char in (text or "") if not char.isspace())
 
 
 def _normalized(x, line_count, hand=()):
@@ -372,13 +384,14 @@ def _table_render_normalized(original, result):
 
 
 def compare(original, result):
-    """(불일치 수, 사람이 읽을 목록). 손 조정 제외 항목은 따로 센다."""
+    """(불일치 수, 사람이 읽을 목록). 손 조정·기호 뒤 공백 규칙은 별도 계측한다."""
     from collections import Counter
     excluded = Counter()
-    a, b = load(original), load(result)
+    marker_space_rule = Counter()
+    a, b = load(str(original)), load(str(result))
     levels = _level_values(a)
     contexts = _contexts(a)
-    key = lambda x: (x[0], _norm_doc_text(x[1]) if x[0] == "P" else "")
+    key = lambda x: (x[0], _paragraph_key_text(x[1]) if x[0] == "P" else "")
     lines, count = [f"항목 수 원본 {len(a)} / 결과 {len(b)}"], 0
     for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, [key(x) for x in a], [key(x) for x in b],
                                                       autojunk=False).get_opcodes():
@@ -389,6 +402,10 @@ def compare(original, result):
             continue
         for i, j in zip(range(i1, i2), range(j1, j2)):
             x, y = a[i], b[j]
+            if x[0] == "P" and y[0] == "P":
+                rule_pair = _marker_space_rule_pair(x[1], y[1])
+                if rule_pair:
+                    marker_space_rule[rule_pair] += 1
             if x[0] == "P":
                 hand = _hand_keys(x, levels, contexts.get(i))
                 if _is_marker_paragraph(x[1]):
@@ -430,8 +447,25 @@ def compare(original, result):
                 lines.append(f"## 쪽 설정 {x} / {y}")
     if excluded:
         lines.append("재연 기준에서 뺀 손 조정(문단 수): " + ", ".join(f"{k} {v}" for k, v in excluded.most_common()))
+    if marker_space_rule:
+        lines.append("항목기호 뒤 공백 규칙 적용(별도 계측, 불일치 수 포함): " +
+                     ", ".join(f"{marker!r} 뒤 공백 {spaces}개 {count}건" for (marker, spaces), count
+                               in sorted(marker_space_rule.items())))
     lines.append(f"불일치 {count}")
     return count, lines
+
+
+def _marker_space_rule_pair(original, result):
+    """기호 뒤 공백 하나 적용으로만 바뀐 문단이면 (기호, 결과 공백 수)를 반환한다."""
+    source = original or ""
+    output = result or ""
+    marker = re.match(r"^(\s*[ㅇ○◦])([^\s])", source)
+    if not marker:
+        return None
+    expected = source[:marker.end(1)] + " " + source[marker.end(1):]
+    if output != expected:
+        return None
+    return marker.group(1).strip(), 1
 
 
 # ── 서식 복제와 적용(예시 하나, 새 프로세스) ──
@@ -524,7 +558,12 @@ def main():
     if args.one:
         print(json.dumps(run_one(args.one[0], args.one[1], out, args.mode), ensure_ascii=False))
         return 0
-    examples = args.examples or sorted(p for p in SAMPLE_FOLDER.iterdir() if p.suffix.lower() in (".hwpx", ".hwp"))
+    if args.examples:
+        examples = args.examples
+    else:
+        examples = sorted(p for p in SAMPLE_FOLDER.iterdir()
+                          if p.suffix.lower() in (".hwpx", ".hwp")
+                          and p.name not in EXCLUDED_SAMPLE_REASONS)
     # 한/글 COM 잠금은 맨 바깥(이 프로세스)에서 한 번 잡고, 하위 --one 프로세스는 환경 변수로 물려받아 그대로 통과한다.
     # 예전에는 하위의 regression_pc.처리가 바깥에서 잡힌 잠금을 다시 기다려 첫 예시에서 끝없이 멈췄다(2026-10-21).
     sys.path.insert(0, str(ROOT))
