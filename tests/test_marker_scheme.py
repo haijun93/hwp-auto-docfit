@@ -173,7 +173,7 @@ class MarkerSchemeConnectionTests(unittest.TestCase):
         self.ns['활성_항목기호_체계'] = detect_scheme(DECIMAL_TEXTS)
         self.ns['표준서식_설정']['내어쓰기_규칙'] = {'ㅇ': 'fixed'}
         self.assertEqual(self.ns['복사_내어쓰기_규칙']('1.1. 상황'), 'fixed')
-        self.assertIsNone(self.ns['문단_내어쓰기_기준_오프셋']('1.1. 상황'))
+        self.assertEqual(self.ns['문단_내어쓰기_기준_오프셋']('1.1. 상황'), 5)  # 사용자 2026-11-01: 고정 값도 Shift+Tab
 
     def test_com_spacing_tracker_sees_canonical_hierarchy(self):
         tracker = Mock()

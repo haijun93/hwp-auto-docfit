@@ -46,8 +46,12 @@ def _install(*, _docfit_namespace, _docfit_symbol, bind_function):
             규칙이 손대지 않도록 None(복사한 첫 줄 값을 그대로 씀)이다. 규칙이 없을 때는 콜론 라벨이면 콜론 뒤 본문,
             괄호 라벨 '( )'이면 라벨 뒤가 아니라 기호 뒤 첫 글자(2026-10-10 개정)에 맞춘다.
             """
+            if (text or "").lstrip().startswith(("*", "＊")):
+                from docfit_core.xml_hanging_indent import hanging_indent_offset
+                return hanging_indent_offset(text)
             규칙 = 복사_내어쓰기_규칙(text)
-            if 규칙 in ("fixed", "none"):
+            # 복사한 고정 값도, 부연설명(*, **)도 최종 Shift+Tab으로 재서 맞춘다(사용자 2026-11-01).
+            if 규칙 == "none" and not (text or "").lstrip().startswith(("*", "＊")):
                 return None
             if 규칙 == "after_marker":
                 # 콜론 라벨은 예시 규칙과 관계없이 콜론 뒤 본문 첫 글자 기준(불변 규칙, 2026-10-17). 콜론이 없으면
@@ -314,11 +318,7 @@ def _install(*, _docfit_namespace, _docfit_symbol, bind_function):
     if _docfit_symbol == '_내어쓰기_한문단':
         def _내어쓰기_한문단(text, 붙임번호_대상, 붙임번호_기준점들):
             """커서가 있는 문단(문단 시작)의 내어쓰기를 계산해 적용한다(문단_내어쓰기_전체_갱신·문단 세트 공용)."""
-            정규키 = (text or '').lstrip(' \t\u00a0\u3000').rstrip('\r\n')
-            if (_알파_일괄서식_문서 and any(
-                    item.lstrip(' \t\u00a0\u3000').rstrip('\r\n') == 정규키
-                    for item in globals().get('_표준서식_XML기준확정', ()))):
-                return  # 예시와 같은 문장만 예시의 문단 여백을 지킨다. 그 밖은 1.78처럼 Shift+Tab 실측(2026-10-21).
+            # 사용자 규칙(2026-11-01): 최종 서식에서 문단마다 실제 Shift+Tab 값을 쓴다. 예시 값으로 건너뛰지 않는다.
             현재키 = tuple(hwp.GetPos()[:2])
             if re.match(r'^\s*(?:ㅁ|□)\s+\S', text or ''):
                 # 최상위 항목 제목(ㅁ/□)은 하위 설명 문장처럼 매달지 않는다.
@@ -339,7 +339,7 @@ def _install(*, _docfit_namespace, _docfit_symbol, bind_function):
                 elif not _붙임목록_번호_내어쓰기_적용(hwp.GetPos(), text, 기준값[0]):
                     로그(f"[붙임 내어쓰기] 번호 정렬을 건너뜀: {text.strip()[:60]}")
             elif (문단_내어쓰기_기준_오프셋(text) is not None
-                    and 내어쓰기_기호선택_허용(text)):
+                    and (내어쓰기_기호선택_허용(text) or (text or "").lstrip().startswith(("*", "＊")))):
                 문단_내어쓰기_적용(hwp.GetPos(), text)
         return bind_function(_내어쓰기_한문단, _docfit_namespace)
     if _docfit_symbol == '_붙임목록_내어쓰기_대상수집':
@@ -556,6 +556,20 @@ def _install(*, _docfit_namespace, _docfit_symbol, bind_function):
                     raise RuntimeError("Shift+Tab 실행 후 내어쓰기 값이 설정되지 않았습니다")
                 target_left = baseline_left
                 _내어쓰기_여백쌍_설정(target_left, int(value))
+                # 내어쓰기를 넣으면 줄바꿈이 달라져 양쪽 정렬 첫 줄 빈칸 폭도 바뀐다.
+                # 사용자가 누르는 Shift+Tab과 같아지도록 값이 멈출 때까지 다시 잰다(2026-11-01).
+                for _ in range(4):
+                    if hwp.SetPos(*target) is False or tuple(hwp.GetPos()) != target:
+                        break
+                    if hwp_run("ParagraphShapeIndentAtCaret") is False:
+                        break
+                    다시잰값 = int(hwp.ParaShape.Item("Indentation"))
+                    if 다시잰값 >= 0:
+                        break
+                    _내어쓰기_여백쌍_설정(target_left, 다시잰값)
+                    if 다시잰값 == int(value):
+                        break
+                    value = 다시잰값
                 actual_left = int(hwp.ParaShape.Item("LeftMargin"))
                 actual_indent = int(hwp.ParaShape.Item("Indentation"))
                 if actual_left != target_left or actual_indent != int(value):

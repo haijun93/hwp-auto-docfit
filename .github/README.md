@@ -7,17 +7,17 @@
 설치된 한/글을 직접 다뤄 공문서 모양으로 다듬어 드립니다. 원본은 그대로 둡니다.
 </p>
 
-<h2 align="center">⬇️ 지금 내려받기 · 최신 v2.2.0</h2>
+<h2 align="center">⬇️ 지금 내려받기 · 최신 v2.2.1</h2>
 
 <table align="center">
 <tr>
 <td align="center" width="50%">
 <b>무설치(포터블)</b><br><sub>받아서 더블클릭하면 바로 실행 · 추천</sub><br><br>
-<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.2.0/HWP_AutoDocFit_v2.2.0_Portable.exe"><img height="56" alt="GitHub에서 무설치로 받기 v2.2.0" src="https://img.shields.io/badge/%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v2.2.0-2563eb?style=for-the-badge&logo=github"></a>
+<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.2.1/HWP_AutoDocFit_v2.2.1_Portable.exe"><img height="56" alt="GitHub에서 무설치로 받기 v2.2.1" src="https://img.shields.io/badge/%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v2.2.1-2563eb?style=for-the-badge&logo=github"></a>
 </td>
 <td align="center" width="50%">
 <b>설치용</b><br><sub>시작 메뉴·제어판에 등록</sub><br><br>
-<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.2.0/HWP_AutoDocFit_v2.2.0_Setup.exe"><img height="56" alt="GitHub에서 설치용 받기 v2.2.0" src="https://img.shields.io/badge/%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0%20v2.2.0-2563eb?style=for-the-badge&logo=github"></a>
+<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.2.1/HWP_AutoDocFit_v2.2.1_Setup.exe"><img height="56" alt="GitHub에서 설치용 받기 v2.2.1" src="https://img.shields.io/badge/%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0%20v2.2.1-2563eb?style=for-the-badge&logo=github"></a>
 </td>
 </tr>
 </table>
@@ -54,6 +54,19 @@
 <td width="50%" valign="top"><a href="../docs/media/app/mindmap.png"><img src="../docs/media/app/mindmap.png" alt="마인드맵 화면: 2026 업무 계획을 가지로 펼친 지도"></a><br><b>마인드맵</b><br><sub>Tab·Enter로 가지를 늘려 생각을 정리합니다. 테마를 고르고 그림으로 한/글에 붙여 넣습니다.</sub></td>
 </tr>
 </table>
+
+---
+
+<h2 align="center">v2.2.1 릴리즈</h2>
+<p align="center">항목기호·붙임·내어쓰기 규칙을 바로잡고 PDF 라이브러리 보안 수정을 반영했습니다</p>
+
+### 서식 규칙
+
+항목기호 바로 뒤에 「가 오면 빈칸을 두지 않습니다(`ㅇ「법령」`). 문서 끝 붙임 목록은 `2.`를 붙임 뒤 숫자 1 위치에 맞추고, 꺾인 줄은 번호 뒤 본문 첫 글자에 맞춥니다. 번호 항목의 내어쓰기는 실제 Shift+Tab 값으로 맞춥니다.
+
+### 보안
+
+PDF 처리 라이브러리 pypdf를 6.21.4로 올렸습니다.
 
 ---
 

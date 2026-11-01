@@ -4,5 +4,5 @@ Pillow
 defusedxml
 pywebview
 pypdfium2
-pypdf==6.21.2
+pypdf==6.21.4
 cryptography==50.0.2
