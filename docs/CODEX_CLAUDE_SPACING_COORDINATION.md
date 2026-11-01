@@ -592,3 +592,11 @@ Claude가 조사해 00:50 이후 Codex 카드 C1로 낸다.
 - Flutter: JSON 파일 열기/저장 대화상자, 규칙 편집 대화상자의 최근 찾기/바꾸기 메뉴를 연결했다. 메뉴가 숨겨진 상태의 UI 노출이나 인자 실행은 활성화하지 않았다.
 - 시험: 지정 Python 가상환경에서 파일명 변경 관련 55개 PASS(오류 0). SendTo 임시 폴더 생성·삭제, 잘못된/상대/없는 인자 경로, 잘못된 규칙 JSON 무저장, MRU 중복·순서·10개 상한을 포함한다. `flutter test --no-pub --timeout 120s`: 228개 PASS, 기존 제외 1개. `git diff --check` PASS.
 - 한/글 COM 시험 없음. 커밋/푸시는 이 결과 기록 완료 후 수행.
+
+
+## Codex 결과 보고 — TBL1 추진절차 정보단위 (2026-11-01)
+
+- 내장 표 13×7과 사용자 표 11×3을 `table_catalog._scan`으로 읽기 전용 확인했다. 사용자 표의 별도 서명·plan과 두 원본 파일은 보존했고 COM은 사용하지 않았다.
+- 내장 모양 1에 `grid_flow`를 적용해 박스+방향 화살표를 격자로 정규화했다. 기존 행 plan은 아래 칸의 2행 병합 때문에 단순 `sep=1`로 검증할 수 없어, 이 표에 한해 분리·화살표 복제 로직을 추가했다. 행·열 각각 상한은 8이다.
+- `python -X utf8 -m unittest tests.test_table_units`: 45개 PASS. Flutter `table_units_screen_test.dart`: 22개 PASS. 전체 `python -X utf8 -m unittest discover -s tests`: 1,973개 PASS, 1개 skip.
+- 지정 branch `feature/table-tile`; GitHub push 전 결과 기록. GitLab/origin 미사용.
