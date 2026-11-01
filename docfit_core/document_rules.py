@@ -116,6 +116,10 @@ def marker_space_fix(text, marker_end):
     if marker_end is None or marker_end >= len(text):
         return None
     next_char = text[marker_end]
+    if next_char == "「":
+        return None
+    if next_char in _MARKER_SPACE_ALTERNATES and marker_end + 1 < len(text) and text[marker_end + 1] == "「":
+        return "remove"
     if next_char == " ":
         return None
     if next_char in _MARKER_SPACE_ALTERNATES:

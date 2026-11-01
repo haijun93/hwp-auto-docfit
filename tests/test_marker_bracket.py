@@ -9,13 +9,13 @@ class MarkerBracketTest(unittest.TestCase):
     def setUpClass(cls):
         cls.ns = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'hwp-auto-docfit.py'))
 
-    def test_space_before_bracket_is_preserved_by_latest_invariant(self):
+    def test_space_before_opening_bracket_is_removed(self):
         span = self.ns['항목기호_낫표_빈칸_구간']
         convert = self.ns['공백규칙_글변환']
-        self.assertIsNone(span(' ㅇ 「법령」 개정'))
-        self.assertEqual(convert(' ㅇ 「법령」 개정'), ' ㅇ 「법령」 개정')
+        self.assertEqual(span(' ㅇ 「법령」 개정'), (2, 3))
+        self.assertEqual(convert(' ㅇ 「법령」 개정'), ' ㅇ「법령」 개정')
         punct = self.ns['문장부호뒤공백_글변환']
-        self.assertEqual(punct(' ㅇ「법령」 개정'), ' ㅇ 「법령」 개정')
+        self.assertEqual(punct(' ㅇ「법령」 개정'), ' ㅇ「법령」 개정')
 
     def test_other_text_is_unchanged(self):
         span = self.ns['항목기호_낫표_빈칸_구간']

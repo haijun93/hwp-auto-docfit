@@ -58,6 +58,7 @@ def normalize_paragraph(p):
     end = marker_end
     while end < len(value) and value[end] in SEPARATORS:
         end += 1
+    bracket_exception = end < len(value) and value[end] == "「"
     if end == len(value) or value[end] in "\r\n":
         return False
     # Account for controls before the marker (paragraph indentation), which
@@ -79,7 +80,9 @@ def normalize_paragraph(p):
                         selected.append((t, child))
                     position += 1
                 position += len(child.tail or "")
-    if value[marker_end:end] == " " and not selected:
+    if bracket_exception and end == marker_end:
+        return False
+    if value[marker_end:end] == " " and not selected and not bracket_exception:
         return False
     for parent, node in reversed(selected):
         index = list(parent).index(node)
@@ -93,11 +96,12 @@ def normalize_paragraph(p):
     literal = text_edit.paragraph_text(p)
     start = marker_end-before
     stop = start+(end-marker_end)
-    text_edit.apply_text(p, literal[:start]+" "+literal[stop:])
+    replacement = "" if bracket_exception else " "
+    text_edit.apply_text(p, literal[:start]+replacement+literal[stop:])
     for cache in list(p):
         if _tag(cache) == "linesegarray":
             p.remove(cache)
-    expected = value[:marker_end]+" "+value[end:]
+    expected = value[:marker_end]+replacement+value[end:]
     if xml_text(p) != expected:
         raise RuntimeError("항목기호 빈칸 처리의 본문 보존 검사 실패")
     return True

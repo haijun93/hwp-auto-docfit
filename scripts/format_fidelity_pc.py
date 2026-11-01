@@ -300,7 +300,8 @@ def _norm_doc_text(text: str) -> str:
     marker = re.match(r"^(\s*)([ㅇ○◦])\s*([^\s])", t)
     if marker:
         leading, symbol, rest = marker.groups()
-        t = leading + symbol + " " + rest
+        if rest != "「":
+            t = leading + symbol + " " + rest
     # 4. 끝. 앞 공백 정규화
     t = re.sub(r"^\s*끝\.$", "끝.", t)
     # 4. 날짜 띄어쓰기 정규화: '2026. 10. 25.' -> '2026.10.25.'
