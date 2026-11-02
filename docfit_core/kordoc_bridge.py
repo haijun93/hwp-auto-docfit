@@ -19,6 +19,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -160,7 +161,31 @@ def _kordoc_command() -> list[str]:
             f"{kordoc_runtime.RUNTIME_PACK_NAME}(앱과 함께 배포하는 변환 엔진 꾸러미)를 두면 "
             "인터넷 없이 바로 사용할 수 있습니다."
         )
-    return [*_npx_command(), "--yes", "--ignore-scripts", KORDOC_PACKAGE]
+    return _locked_npm_install()
+
+
+def _locked_npm_install() -> list[str]:
+    """Install the exact engine into a private cache using npm's lock integrity checks."""
+    npm = shutil.which("npm.cmd") or shutil.which("npm")
+    if not npm:
+        raise KordocUnavailableError("잠금 설치에 필요한 npm을 찾을 수 없습니다.")
+    root = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "HwpAutoDocFit" / "kordoc-network"
+    root.mkdir(parents=True, exist_ok=True)
+    source = Path(__file__).resolve().parents[1] / "kordoc_pack"
+    if not (source / "package-lock.json").is_file() or not (source / "package.json").is_file():
+        raise KordocUnavailableError("kordoc 고정 잠금 파일을 찾을 수 없습니다.")
+    shutil.copy2(source / "package-lock.json", root / "package-lock.json")
+    shutil.copy2(source / "package.json", root / "package.json")
+    installed = subprocess.run([npm, "ci", "--ignore-scripts", "--no-audit", "--no-fund"], cwd=str(root),
+                               capture_output=True, text=True, timeout=600, startupinfo=_startupinfo(),
+                               creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+    if installed.returncode:
+        raise KordocUnavailableError("kordoc 잠금 설치 또는 무결성 검사에 실패했습니다.")
+    cli = root / "node_modules" / "kordoc" / "dist" / "cli.js"
+    node = _node_executable()
+    if not node or not cli.is_file():
+        raise KordocUnavailableError("잠금 설치된 kordoc 실행 파일을 확인할 수 없습니다.")
+    return [node, str(cli)]
 
 
 def ocr_available() -> bool:
