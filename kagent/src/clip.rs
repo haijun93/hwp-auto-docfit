@@ -4,7 +4,7 @@ use std::sync::OnceLock;
 
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, HWND};
 use windows_sys::Win32::System::DataExchange::{
-    CloseClipboard, EmptyClipboard, GetClipboardData, GetClipboardOwner, IsClipboardFormatAvailable, OpenClipboard,
+    CloseClipboard, EmptyClipboard, EnumClipboardFormats, GetClipboardData, GetClipboardOwner, IsClipboardFormatAvailable, OpenClipboard,
     RegisterClipboardFormatW, SetClipboardData,
 };
 use windows_sys::Win32::Foundation::GlobalFree;
@@ -19,18 +19,23 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindow
 use crate::util::wide;
 
 pub enum Capture {
-    /// 글과 같은 내용의 서식 형식 묶음(HTML·RTF, pack_formats).
-    Text(String, Vec<u8>),
+    /// kind, 기본 내용, HGLOBAL 형식 묶음, 보관 초과 형식 이름.
+    Text(String, Vec<(String, Vec<u8>)>, Vec<String>),
     Files(Vec<String>),
-    Png(Vec<u8>),
-    Dib(Vec<u8>),
+    Png(Vec<u8>, Vec<(String, Vec<u8>)>, Vec<String>),
+    Dib(Vec<u8>, Vec<(String, Vec<u8>)>, Vec<String>),
 }
 
-/// 글과 함께 보관해 되돌릴 서식 형식(이름으로 등록되는 형식).
-const RICH_FORMATS: [&str; 2] = ["HTML Format", "Rich Text Format"];
+pub const MAX_FORMAT_BYTES: usize = 32 * 1024 * 1024;
+const FORMAT_READ_BUDGET: std::time::Duration = std::time::Duration::from_millis(180);
+/// 코드에서 등록·식별하는 표준 서식 이름. EnumClipboardFormats의 실제 이름과 대소문자 무시 비교.
+pub const TARGET_FORMAT_NAMES: [&str; 9] = [
+    "HTML Format", "Rich Text Format", "XML Spreadsheet", "Biff8", "Biff12", "Csv", "Link",
+    "CF_UNICODETEXT", "CF_DIB",
+];
 
 struct Formats {
-    rich: [u32; 2],
+    named: Vec<(String, u32)>,
     png: u32,
     exclude: u32,
     history: u32,
@@ -40,7 +45,7 @@ fn formats() -> &'static Formats {
     static F: OnceLock<Formats> = OnceLock::new();
     F.get_or_init(|| unsafe {
         Formats {
-            rich: RICH_FORMATS.map(|name| RegisterClipboardFormatW(wide(name).as_ptr())),
+            named: ["HTML Format", "Rich Text Format"].iter().map(|name| (name.to_string(), RegisterClipboardFormatW(wide(name).as_ptr()))).collect(),
             png: RegisterClipboardFormatW(wide("PNG").as_ptr()),
             exclude: RegisterClipboardFormatW(wide("ExcludeClipboardContentFromMonitorProcessing").as_ptr()),
             history: RegisterClipboardFormatW(wide("CanIncludeInClipboardHistory").as_ptr()),
@@ -86,6 +91,51 @@ unsafe fn global_bytes(h: HANDLE, max: usize) -> Option<Vec<u8>> {
     Some(v)
 }
 
+fn eligible_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower.contains("hwp") || matches!(lower.as_str(),
+        "html format" | "rich text format" | "xml spreadsheet" | "biff8" | "biff12" | "csv" | "link")
+}
+
+fn bounded_payload(name: &str, data: &[u8]) -> Result<Vec<u8>, String> {
+    if data.len() > MAX_FORMAT_BYTES { Err(name.to_string()) } else { Ok(data.to_vec()) }
+}
+
+/// 클립보드에서 대상 이름 형식들을 원시 바이트로 복사한다. 열기 시간과 총 읽기 시간을 제한한다.
+unsafe fn named_payloads(start: std::time::Instant) -> (Vec<(String, Vec<u8>)>, Vec<String>) {
+    let mut formats = Vec::new();
+    let mut skipped = Vec::new();
+    let mut format = 0u32;
+    while std::time::Instant::now().duration_since(start) < FORMAT_READ_BUDGET {
+        format = unsafe { EnumClipboardFormats(format) };
+        if format == 0 { break; }
+        let name = if format < 0xC000 {
+            match format {
+                1 => "CF_TEXT".to_string(),
+                2 => "CF_BITMAP".to_string(),
+                8 => "CF_DIB".to_string(),
+                13 => "CF_UNICODETEXT".to_string(),
+                _ => continue,
+            }
+        } else {
+            let mut buf = [0u16; 256];
+            let len = unsafe { windows_sys::Win32::System::DataExchange::GetClipboardFormatNameW(format, buf.as_mut_ptr(), buf.len() as i32) };
+            if len <= 0 { continue; }
+            String::from_utf16_lossy(&buf[..len as usize])
+        };
+        if !eligible_name(&name) || name == "CF_BITMAP" { continue; }
+        let h = unsafe { GetClipboardData(format) };
+        match unsafe { global_bytes(h, MAX_FORMAT_BYTES) } {
+            Some(bytes) => match bounded_payload(&name, &bytes) {
+                Ok(bytes) => formats.push((name, bytes)),
+                Err(name) => skipped.push(name),
+            },
+            None => skipped.push(name),
+        }
+    }
+    (formats, skipped)
+}
+
 /// 클립보드 주인(없으면 앞 창)의 실행 파일 이름(소문자).
 pub fn source_app() -> String {
     unsafe {
@@ -119,6 +169,7 @@ pub fn source_app() -> String {
 pub fn read(hwnd: HWND, max_bytes: usize) -> Option<Capture> {
     let f = formats();
     let _open = Open::new(hwnd)?;
+    let enumeration_start = std::time::Instant::now();
     unsafe {
         if IsClipboardFormatAvailable(f.exclude) != 0 {
             return None;
@@ -157,29 +208,37 @@ pub fn read(hwnd: HWND, max_bytes: usize) -> Option<Capture> {
                 let end = units.iter().position(|&u| u == 0).unwrap_or(units.len());
                 let text = String::from_utf16_lossy(&units[..end]);
                 if !text.trim().is_empty() {
-                    let mut rich = Vec::new();
-                    for (name, fmt) in RICH_FORMATS.iter().zip(f.rich) {
-                        if fmt != 0 && IsClipboardFormatAvailable(fmt) != 0 {
-                            if let Some(bytes) = global_bytes(GetClipboardData(fmt), max_bytes) {
-                                rich.push((name.to_string(), bytes));
-                            }
+                    let (mut formats, mut skipped) = named_payloads(enumeration_start);
+                    if let Some(bytes) = global_bytes(GetClipboardData(CF_UNICODETEXT as u32), MAX_FORMAT_BYTES) {
+                        if bounded_payload("CF_UNICODETEXT", &bytes).is_ok() { formats.push(("CF_UNICODETEXT".into(), bytes)); }
+                    } else { skipped.push("CF_UNICODETEXT".into()); }
+                    if let Some(html) = formats.iter().find(|(name, _)| name.eq_ignore_ascii_case("HTML Format")).map(|(_, b)| b.as_slice()) {
+                        if let Some(url) = crate::open_item::source_url_from_html(html) {
+                            formats.push(("KAgent SourceURL".into(), url.into_bytes()));
                         }
                     }
-                    return Some(Capture::Text(text, pack_formats(&rich)));
+                    return Some(Capture::Text(text, formats, skipped));
                 }
             }
         }
         if f.png != 0 && IsClipboardFormatAvailable(f.png) != 0 {
             if let Some(b) = global_bytes(GetClipboardData(f.png), max_bytes) {
                 if b.starts_with(b"\x89PNG") {
-                    return Some(Capture::Png(b));
+                    let (mut formats, mut skipped) = named_payloads(enumeration_start);
+                    if let Some(dib) = global_bytes(GetClipboardData(CF_DIB as u32), MAX_FORMAT_BYTES) {
+                        formats.push(("CF_DIB".into(), dib));
+                    } else { skipped.push("CF_DIB".into()); }
+                    return Some(Capture::Png(b, formats, skipped));
                 }
             }
         }
         if IsClipboardFormatAvailable(CF_DIB as u32) != 0 {
             // 비트맵은 PNG로 줄이기 전이라 상한을 넉넉히(4배) 둔다.
             if let Some(b) = global_bytes(GetClipboardData(CF_DIB as u32), max_bytes.saturating_mul(4)) {
-                return Some(Capture::Dib(b));
+                let (mut formats, skipped) = named_payloads(enumeration_start);
+                formats.retain(|(name, _)| name != "CF_DIB");
+                formats.push(("CF_DIB".into(), b.clone()));
+                return Some(Capture::Dib(b, formats, skipped));
             }
         }
     }
@@ -303,11 +362,7 @@ pub fn write(hwnd: HWND, kind: &str, payload: &[u8], extra: &[u8]) -> bool {
                 units.push(0);
                 let bytes: Vec<u8> = units.iter().flat_map(|u| u.to_le_bytes()).collect();
                 let ok = put(CF_UNICODETEXT as u32, &bytes);
-                for (name, data) in unpack_formats(extra) {
-                    if let Some(i) = RICH_FORMATS.iter().position(|n| *n == name) {
-                        put(formats().rich[i], &data);
-                    }
-                }
+                unsafe { restore_formats(&crate::open_item::formats_from_extra(extra)); }
                 ok
             }
             "files" => {
@@ -332,12 +387,36 @@ pub fn write(hwnd: HWND, kind: &str, payload: &[u8], extra: &[u8]) -> bool {
             "image" => {
                 let png_ok = put(formats().png, payload);
                 let dib_ok = png_to_dib(payload).map(|d| put(CF_DIB as u32, &d)).unwrap_or(false);
-                png_ok || dib_ok
+                let formats = crate::open_item::formats_from_extra(extra);
+                unsafe { restore_formats(&formats); }
+                png_ok || dib_ok || !formats.is_empty()
             }
             _ => false,
         }
     }
 }
+
+unsafe fn restore_formats(items: &[(String, Vec<u8>)]) {
+    for (name, data) in items {
+        if name == "CF_HDROP" { continue; }
+        if name == "CF_UNICODETEXT" {
+            let _ = unsafe { put(CF_UNICODETEXT as u32, data) };
+            continue;
+        }
+        if name == "CF_DIB" {
+            let _ = unsafe { put(CF_DIB as u32, data) };
+            continue;
+        }
+        let id = if let Some((_, id)) = formats().named.iter().find(|(n, _)| n == name) {
+            *id
+        } else if eligible_name(name) {
+            unsafe { RegisterClipboardFormatW(wide(name).as_ptr()) }
+        } else { 0 };
+        if id != 0 { unsafe { put(id, data); } }
+    }
+}
+
+pub fn has_formats(extra: &[u8]) -> bool { !unpack_formats(extra).is_empty() }
 
 pub const MAX_HDROP_FILES: u32 = 10_000;
 pub const MAX_DIB_DIMENSION: u32 = 20_000;
@@ -602,6 +681,25 @@ mod tests {
         assert!(unpack_formats(&[]).is_empty());
         assert!(unpack_formats(&packed[..7]).is_empty());
         assert!(pack_formats(&[]).is_empty());
+    }
+
+    #[test]
+    fn target_names_cover_requested_formats_and_hwp_names() {
+        for expected in ["HTML Format", "Rich Text Format", "XML Spreadsheet", "Biff8", "Biff12", "Csv", "Link", "CF_UNICODETEXT", "CF_DIB"] {
+            assert!(TARGET_FORMAT_NAMES.contains(&expected));
+        }
+        for name in ["HWP Character Shape", "Hwp Native", "HWP Format", "HTML Format", "Rich Text Format", "XML Spreadsheet", "BIFF8", "BIFF12", "CSV", "Link"] {
+            assert!(eligible_name(name), "{name}");
+        }
+        assert!(!eligible_name("CF_BITMAP"));
+    }
+
+    #[test]
+    fn format_limit_keeps_primary_data_and_reports_skipped_name() {
+        assert_eq!(bounded_payload("small", &[1, 2]).unwrap(), vec![1, 2]);
+        assert_eq!(bounded_payload("too-large", &vec![0; MAX_FORMAT_BYTES + 1]).unwrap_err(), "too-large");
+        let primary_text = b"still stored";
+        assert!(!primary_text.is_empty());
     }
 
     #[test]

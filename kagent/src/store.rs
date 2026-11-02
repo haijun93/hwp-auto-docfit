@@ -9,7 +9,7 @@ use crate::json::{self, Value};
 use crate::sqlite::{Arg, Connection};
 
 /// 스키마 버전(PRAGMA user_version). 앱(kagent_client.py)이 같은 값을 확인한다.
-pub const SCHEMA_VERSION: i64 = 2;
+pub const SCHEMA_VERSION: i64 = 3;
 
 #[derive(Clone, Debug)]
 pub struct Settings {
@@ -35,6 +35,8 @@ pub struct Settings {
     pub popup_y: i64,
     pub popup_width: i64,
     pub popup_height: i64,
+    /// 스티커 창 접힘 상태.
+    pub popup_collapsed: bool,
 }
 
 impl Default for Settings {
@@ -61,6 +63,7 @@ impl Default for Settings {
             popup_y: -1,
             popup_width: 0,
             popup_height: 0,
+            popup_collapsed: false,
         }
     }
 }
@@ -95,6 +98,7 @@ impl Settings {
             ("popup_y", self.popup_y.into()),
             ("popup_width", self.popup_width.into()),
             ("popup_height", self.popup_height.into()),
+            ("popup_collapsed", self.popup_collapsed.into()),
         ])
     }
 
@@ -150,6 +154,7 @@ impl Settings {
         if let Some(n) = v.num("popup_y").filter(|n| (-100_000.0..=100_000.0).contains(n)) { self.popup_y = n as i64; }
         if let Some(n) = v.num("popup_width").filter(|n| (200.0..=4000.0).contains(n)) { self.popup_width = n as i64; }
         if let Some(n) = v.num("popup_height").filter(|n| (150.0..=4000.0).contains(n)) { self.popup_height = n as i64; }
+        if let Some(b) = v.bool("popup_collapsed") { self.popup_collapsed = b; }
     }
 
     pub fn load(path: &str) -> Settings {
@@ -218,13 +223,13 @@ impl Store {
                 extra BLOB NOT NULL DEFAULT x'');
              CREATE INDEX IF NOT EXISTS items_used ON items(used);",
         )?;
-        // v1 → v2: 서식(HTML·RTF) 보관 칸 추가.
+        // v1 → v2: HTML·RTF, v2 → v3: 전체 형식 묶음은 같은 extra 칸을 사용.
         let mut version = 0;
         conn.query("PRAGMA user_version", &[], |r| version = r.int(0))?;
         if version < 2 {
             let _ = conn.exec("ALTER TABLE items ADD COLUMN extra BLOB NOT NULL DEFAULT x''");
-            conn.exec(&format!("PRAGMA user_version={SCHEMA_VERSION}"))?;
         }
+        if version < 3 { conn.exec(&format!("PRAGMA user_version={SCHEMA_VERSION}"))?; }
         Ok(Store { conn, previews: std::collections::HashMap::new() })
     }
 
@@ -399,6 +404,24 @@ mod tests {
     }
 
     #[test]
+    fn schema_v2_migration_preserves_legacy_rows_and_extra() {
+        let dir = std::env::temp_dir().join(format!("kagent-mig-v2-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("v2.db");
+        let _ = std::fs::remove_file(&path);
+        {
+            let c = Connection::open(path.to_str().unwrap()).unwrap();
+            c.exec("CREATE TABLE items(id INTEGER PRIMARY KEY, created REAL NOT NULL, used REAL NOT NULL, kind TEXT NOT NULL, hash TEXT NOT NULL UNIQUE, size INTEGER NOT NULL, pinned INTEGER NOT NULL DEFAULT 0, source TEXT NOT NULL DEFAULT '', preview BLOB NOT NULL, payload BLOB NOT NULL, extra BLOB NOT NULL DEFAULT x''); PRAGMA user_version=2;").unwrap();
+        }
+        let migrated = Store::open(path.to_str().unwrap()).unwrap();
+        let mut version = 0;
+        migrated.conn.query("PRAGMA user_version", &[], |r| version = r.int(0)).unwrap();
+        assert_eq!(version, 3);
+        drop(migrated);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn insert_dedupe_and_order() {
         let mut s = store();
         let (a, new_a) = s.insert_plain("text", "첫째".as_bytes(), "첫째", "notepad.exe", 1.0).unwrap();
@@ -461,5 +484,27 @@ mod tests {
         assert_eq!((loaded.popup_x, loaded.popup_y, loaded.popup_width, loaded.popup_height), (120, 80, 520, 460));
         loaded.apply(&json::parse(r#"{"popup_x":900000,"popup_width":10,"popup_height":99999}"#).unwrap());
         assert_eq!((loaded.popup_x, loaded.popup_width, loaded.popup_height), (120, 520, 460));
+    }
+
+    #[test]
+    fn screenshot_watch_defaults_on_and_existing_value_is_preserved() {
+        let mut settings = Settings::default();
+        assert!(settings.watch_screenshots);
+        settings.apply(&json::parse(r#"{"watch_screenshots":false}"#).unwrap());
+        assert!(!settings.watch_screenshots);
+        let mut roundtrip = Settings::default();
+        roundtrip.apply(&settings.to_json());
+        assert!(!roundtrip.watch_screenshots);
+    }
+
+    #[test]
+    fn collapsed_popup_setting_round_trips() {
+        let mut settings = Settings::default();
+        assert!(!settings.popup_collapsed);
+        settings.apply(&json::parse(r#"{"popup_collapsed":true}"#).unwrap());
+        assert!(settings.popup_collapsed);
+        let mut loaded = Settings::default();
+        loaded.apply(&settings.to_json());
+        assert!(loaded.popup_collapsed);
     }
 }
