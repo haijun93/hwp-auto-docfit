@@ -2646,12 +2646,41 @@ def _bind_file_drop(web_window, bridge):
     web_window.run_js(_FILE_DROP_SCRIPT)
 
 
+def _guard_pywebview_form_closed():
+    """pywebview 6.2.1 may dispatch WinForms FormClosed twice during a close race.
+
+    Its handler deletes BrowserView.instances[uid] without checking whether the
+    first FormClosed callback already removed it. pythonnet then surfaces the
+    resulting KeyError through WinForms as an unhandled JIT dialog.
+    """
+    if os.name != "nt":
+        return
+    try:
+        from webview.platforms import winforms
+    except ImportError:
+        return
+    form_type = winforms.BrowserView.BrowserForm
+    if getattr(form_type, "_docfit_close_guarded", False):
+        return
+    original = form_type.on_close
+
+    def close_once(form, *args):
+        if getattr(form, "_docfit_form_closed_handled", False):
+            return
+        form._docfit_form_closed_handled = True
+        return original(form, *args)
+
+    form_type.on_close = close_once
+    form_type._docfit_close_guarded = True
+
+
 def run_webview(gui):
     """기존 Tk 백엔드를 숨겨 실행하고 WebView2를 주 UI로 표시한다."""
     if importlib.util.find_spec("webview") is None:
         return False
 
     import webview
+    _guard_pywebview_form_closed()
 
     bridge = DesktopWebBridge(gui)
     page = _resource_path()
