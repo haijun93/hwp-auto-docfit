@@ -80,8 +80,44 @@ def merge_canvas_block_into_hwpx(hwpx_bytes_or_path, block_data, output_path=Non
             raise ValueError('missing style pool: '+name)
         _ids(pool)
         pools[name] = pool
+    sections = [r for n, r in roots.items() if re.fullmatch(r'Contents/section\d+\.xml', n)]
     paragraphs = list(section.findall(HP+'p'))
     anchor = block_data.get('after_id', block_data.get('anchor_id'))
+    replace_sample_shapes = bool(block_data.get('replace_sample_shapes', False))
+    if replace_sample_shapes:
+        shape_tags = {HP+'rect', HP+'ellipse', HP+'polygon', HP+'connectLine', HP+'line'}
+        for current_section in sections:
+            for paragraph in list(current_section.findall(HP+'p')):
+                if current_section is not section:
+                    continue
+                for run in list(paragraph.findall(HP+'run')):
+                    for child in list(run):
+                        if child.tag in shape_tags:
+                            run.remove(child)
+                for child in list(paragraph):
+                    if child.tag in shape_tags:
+                        paragraph.remove(child)
+        paragraphs = list(section.findall(HP+'p'))
+        if not paragraphs:
+            paragraphs = [_element(HP+'p', id=0, paraPrIDRef=_ids(pools['paraProperties'])[0],
+                                   styleIDRef=_ids(pools['styles'])[0], pageBreak=0,
+                                   columnBreak=0, merged=0)]
+            section.insert(0, paragraphs[0])
+        if not paragraphs:
+            raise ValueError('cannot replace sample shapes without a text anchor')
+    if block_data.get('clear_body') and paragraphs:
+        # 클립보드로 넘길 때 바탕 문서의 본문이 함께 붙지 않게 쪽 설정 문단만 남긴다.
+        for extra in paragraphs[1:]:
+            section.remove(extra)
+        paragraphs = paragraphs[:1]
+        for child in list(paragraphs[0]):
+            if child.tag != HP+'run':
+                paragraphs[0].remove(child)
+                continue
+            for item in list(child):
+                keep = item.tag == HP+'secPr' or (item.tag == HP+'ctrl' and item.find(HP+'colPr') is not None)
+                if not keep:
+                    child.remove(item)
     index = len(section)
     base_p = paragraphs[0] if paragraphs else None
     if anchor is not None:
@@ -90,6 +126,8 @@ def merge_canvas_block_into_hwpx(hwpx_bytes_or_path, block_data, output_path=Non
             raise ValueError('insertion anchor missing or ambiguous')
         base_p = matches[0]
         index = list(section).index(base_p)+1
+    # Pick only IDs that exist in this document. The source paragraph's
+    # formatting is the closest match for floating shapes and their text.
     refs = dict(border_fill_id=_ids(pools['borderFills'])[0],
                 char_pr_id=_ids(pools['charProperties'])[0],
                 para_pr_id=_ids(pools['paraProperties'])[0], style_id=_ids(pools['styles'])[0])
@@ -99,7 +137,14 @@ def merge_canvas_block_into_hwpx(hwpx_bytes_or_path, block_data, output_path=Non
         run = base_p.find(HP+'run')
         if run is not None:
             refs['char_pr_id'] = int(run.get('charPrIDRef', refs['char_pr_id']))
-    sections = [r for n, r in roots.items() if re.fullmatch(r'Contents/section\d+\.xml', n)]
+    # A source paragraph may refer to a missing ID in a malformed document.
+    # Resolve each reference against the corresponding actual pool.
+    if block_data.get('kind') == 'diagram':
+        for key, pool_name in (('char_pr_id', 'charProperties'), ('para_pr_id', 'paraProperties'),
+                               ('style_id', 'styles'), ('border_fill_id', 'borderFills')):
+            valid = set(_ids(pools[pool_name]))
+            if refs[key] not in valid:
+                refs[key] = min(valid)
     maximum = max((int(n.get(a)) for r in sections for n in r.iter()
                    for a in ('id', 'instid') if (n.get(a) or '').isdigit()), default=0)
     refs.update(object_id=maximum+1, object_id_start=maximum+1, paragraph_id_start=maximum+1)
@@ -137,6 +182,18 @@ def merge_canvas_block_into_hwpx(hwpx_bytes_or_path, block_data, output_path=Non
         elements = [build_table_sketch_xml(payload, refs)]
         pools['borderFills'].extend(build_table_sketch_border_fills_xml(payload, refs))
     elif kind == 'diagram':
+        if base_p is None:
+            refs['char_pr_id'] = _ids(pools['charProperties'])[-1]
+            refs['para_pr_id'] = _ids(pools['paraProperties'])[-1]
+            refs['style_id'] = _ids(pools['styles'])[-1]
+        refs['char_pr_ids'] = {False: refs['char_pr_id'], True: refs['char_pr_id']}
+        center = clone('paraProperties', refs['para_pr_id'])
+        alignment = center.find(HH+'align')
+        if alignment is None:
+            alignment = _element(HH+'align', vertical='BASELINE')
+            center.insert(0, alignment)
+        alignment.set('horizontal', 'CENTER')
+        refs['diagram_center_para_pr_id'] = int(center.get('id'))
         elements = build_diagram_shape_xml(payload, refs)
     elif kind == 'mindmap':
         start = max(_ids(pools['paraProperties']))+1
@@ -183,7 +240,7 @@ def merge_canvas_block_into_hwpx(hwpx_bytes_or_path, block_data, output_path=Non
                        'paraPrIDRef': 'paraProperties', 'styleIDRef': 'styles'}
     valid_refs = {attr: set(_ids(pools[name])) for attr, name in reference_pools.items()}
     # Check source and generated style references before publishing anything.
-    for root in [header, *sections, *elements]:
+    for root in [*sections, *elements]:
         for node in root.iter():
             for attr, ids in valid_refs.items():
                 if attr in node.attrib and int(node.get(attr)) not in ids:

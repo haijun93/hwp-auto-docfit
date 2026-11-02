@@ -291,6 +291,8 @@ class ApplicationService:
             if action=='copy_result':
                 from docfit_app.clipboard_service import copy_result
                 return copy_result(payload)
+            if action=='copy_diagram_shapes':
+                return self.flows.copy_diagram(payload.get('snapshot'))
             if action=='export_png':return self.flows.export_png(payload.get('base64'))
             if action=='export_hwpx':
                 base=Path(__file__).resolve().parents[1]/'resources'/'서식예시'/'기본 서식.hwpx'
@@ -302,6 +304,9 @@ class ApplicationService:
             raise ServiceError('INVALID_ACTION','흐름도 작업을 확인해 주세요.')
         if method=='shutdown':
             self.data.closing=True
+            service = getattr(self, '_timemachine_service', None)
+            if service is not None:
+                service.close()
             self.jobs.shutdown()
             return {'closed':True}
         raise ServiceError('NOT_AVAILABLE','지원하지 않는 명령입니다.')

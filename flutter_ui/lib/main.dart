@@ -254,48 +254,84 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
     },
     // 앱 메뉴(사용 방법·작업 로그·설정)는 왼쪽 메뉴 아래쪽에 둔다.
     trailing: Builder(
-      builder: (context) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            key: const ValueKey('kclip-open'),
-            tooltip: 'K클립보드 (복사 기록 · Ctrl+Shift+V)',
-            visualDensity: VisualDensity.compact,
-            onPressed: () => showKClipDialog(context, widget.api),
-            icon: const Icon(Icons.content_paste_search, size: 20),
-          ),
-          IconButton(
-            key: const ValueKey('live-helper-open'),
-            tooltip: '한/글 도우미 패널',
-            visualDensity: VisualDensity.compact,
-            onPressed: toggleHelperPanel,
-            icon: const Icon(Icons.dock_outlined, size: 20),
-          ),
-          IconButton(
-            tooltip: '사용 방법 (F1)',
-            visualDensity: VisualDensity.compact,
-            onPressed: () => workspace.currentState?.showHelp(),
-            icon: const Icon(Icons.help_outline_rounded, size: 20),
-          ),
-          IconButton(
-            tooltip: '작업 로그',
-            visualDensity: VisualDensity.compact,
-            onPressed: () => workspace.currentState?.showLog(),
-            icon: const Icon(Icons.receipt_long_outlined, size: 20),
-          ),
-          IconButton(
-            tooltip: '설정',
-            visualDensity: VisualDensity.compact,
-            onPressed: () {
-              // 설정 서랍은 문서편집 화면에 붙어 있어 그 탭으로 옮긴 뒤 연다.
-              WorkspaceTabScope.maybeOf(context)?.selectTab(0);
-              WidgetsBinding.instance.addPostFrameCallback(
-                (_) => workspace.currentState?.openSettings(),
-              );
-            },
-            icon: const Icon(Icons.settings_outlined, size: 20),
-          ),
-        ],
+      builder: (context) => LayoutBuilder(
+        builder: (context, constraints) {
+          final expanded = constraints.maxWidth >= 140;
+          final actions = <({String label, IconData icon, VoidCallback onPressed, Key? key})>[
+            (
+              label: '몽땅클립보드',
+              icon: Icons.content_paste_search,
+              onPressed: () => showKClipDialog(context, widget.api),
+              key: const ValueKey('kclip-open'),
+            ),
+            (
+              label: '한/글 도우미 패널',
+              icon: Icons.dock_outlined,
+              onPressed: toggleHelperPanel,
+              key: const ValueKey('live-helper-open'),
+            ),
+            (
+              label: '사용 방법',
+              icon: Icons.help_outline_rounded,
+              onPressed: () => workspace.currentState?.showHelp(),
+              key: null,
+            ),
+            (
+              label: '작업 로그',
+              icon: Icons.receipt_long_outlined,
+              onPressed: () => workspace.currentState?.showLog(),
+              key: null,
+            ),
+            (
+              label: '설정',
+              icon: Icons.settings_outlined,
+              onPressed: () {
+                WorkspaceTabScope.maybeOf(context)?.selectTab(0);
+                WidgetsBinding.instance.addPostFrameCallback(
+                  (_) => workspace.currentState?.openSettings(),
+                );
+              },
+              key: null,
+            ),
+          ];
+          String tipOf(String label) => switch (label) {
+            '몽땅클립보드' => '몽땅클립보드 (복사 기록 · Ctrl+Shift+V)',
+            '사용 방법' => '사용 방법 (F1)',
+            _ => label,
+          };
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: expanded
+                ? CrossAxisAlignment.stretch
+                : CrossAxisAlignment.center,
+            children: [
+              for (final action in actions)
+                if (expanded)
+                  Tooltip(
+                    message: tipOf(action.label),
+                    child: TextButton.icon(
+                    key: action.key,
+                    onPressed: action.onPressed,
+                    icon: Icon(action.icon, size: 20),
+                    label: Text(action.label),
+                    style: TextButton.styleFrom(
+                      alignment: Alignment.centerLeft,
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                    ),
+                  ),
+                  )
+                else
+                  IconButton(
+                    key: action.key,
+                    tooltip: tipOf(action.label),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: action.onPressed,
+                    icon: Icon(action.icon, size: 20),
+                  ),
+            ],
+          );
+        },
       ),
     ),
   );

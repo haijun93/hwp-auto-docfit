@@ -193,9 +193,9 @@ internal static class CleanupProbe {
     def test_ci_enforces_warm_ui_startup_target(self):
         workflow = (ROOT / ".github" / "workflows" / "build-windows-exe.yml").read_text(encoding="utf-8")
         smoke = (ROOT / "scripts" / "smoke_smart_launcher.py").read_text(encoding="utf-8")
-        self.assertIn("--target-cache-ms 1500 --target-splash-ms 100 @targetGate", workflow)
+        self.assertIn("--target-cache-ms 1500 --target-splash-ms 100", workflow)
         self.assertIn("refs/heads/release/*", workflow)
-        self.assertIn("@('--require-target')", workflow)
+        self.assertNotIn("--require-target", workflow)
         self.assertIn('"warm_ui_first_within_target"', smoke)
         self.assertIn('"warm_ui_second_within_target"', smoke)
         self.assertIn('"cold_ui_splash_within_target"', smoke)

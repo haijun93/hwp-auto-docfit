@@ -20,7 +20,7 @@ void main() {
     'lineStyleSolid',
     'lineStyleDash',
     'lineStyleDot',
-    'sketchOrgExample',
+    'sketchDinoExample',
     'undoButton',
     'redoButton',
     'clearAllButton',

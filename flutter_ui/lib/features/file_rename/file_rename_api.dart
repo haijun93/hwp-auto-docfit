@@ -93,6 +93,7 @@ class RuleKind {
 const ruleKinds = <RuleKind>[
   RuleKind('replace', '문자열 바꾸기', {'find': '', 'to': '', 'regex': false, 'case': true, 'count': 'all'}),
   RuleKind('add', '앞/뒤에 추가', {'text': '', 'position': 'prefix', 'sep': ''}),
+  RuleKind('uuid_replace', '무작위 UUID 파일명 바꾸기', {'text': ''}),
   RuleKind('date', '날짜·시각 넣기', {'source': 'mtime', 'format': 'YYYYMMDD', 'position': 'prefix', 'sep': '_'}),
   RuleKind('number', '번호 붙이기', {'start': 1, 'step': 1, 'digits': 3, 'position': 'suffix', 'per_folder': false, 'sep': '_'}),
   RuleKind('number_shift', '번호 늘리기/줄이기', {'delta': 1, 'which': 'first'}),
@@ -125,6 +126,8 @@ String ruleSummary(Map<String, Object?> rule) {
       return "'${rule['find']}' → '${rule['to']}'${rule['regex'] == true ? ' (정규식)' : ''}";
     case 'add':
       return "${pos(rule['position'])}에 '${rule['text']}'";
+    case 'uuid_replace':
+      return "UUID 이름을 '${rule['text']}'로";
     case 'date':
       const sources = {'exif': '촬영일', 'mtime': '수정일', 'ctime': '만든 날', 'today': '오늘'};
       return '${sources[rule['source']] ?? ''} ${rule['format']} · ${pos(rule['position'])}';

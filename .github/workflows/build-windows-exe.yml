@@ -35,6 +35,10 @@ on:
       - release/2.0.9
       - release/2.1.0
       - release/2.2.0
+      - release/2.2.1
+      - release/2.2.2
+      - release/2.2.3
+      - release/2.2.4
       - claude/affectionate-goldberg-ggln7c
     paths-ignore:
       - 'README.md'
@@ -89,6 +93,8 @@ jobs:
             Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value '```'
           }
           Get-Content -LiteralPath "windows-tests.log" -Tail 200
+          # 표준 출력이 끝에 몰려 꼬리만으로는 실패 이름이 안 보인다.
+          Select-String -LiteralPath "windows-tests.log" -Pattern '^(ERROR|FAIL): |^Ran [0-9]+ tests|^FAILED|^[A-Za-z_.]*Error: ' | ForEach-Object { $_.Line }
           exit $testExit
 
       - name: Publish regression diagnostics on failure
@@ -197,11 +203,8 @@ jobs:
       - name: Smoke test smart launcher self-test argument forwarding
         shell: pwsh
         run: |
-          $targetGate = @()
-          # 2.0.1·2.0.2도 기록만(2026-10-29 사용자 결정: 2.0.2는 기능 먼저 배포, 시작 속도는 2.0.3부터 다시 차단).
-          # v1.80.x는 시작 속도 목표를 기록으로 두고 배포(사용자 결정 2026-10-21, 측정 스플래시 114ms·재실행 1.72초). 1.81부터 다시 차단.
-          if ($env:GITHUB_REF -like 'refs/heads/release/*' -and $env:GITHUB_REF -notlike 'refs/heads/release/1.80.*' -and $env:GITHUB_REF -ne 'refs/heads/release/2.0.1' -and $env:GITHUB_REF -ne 'refs/heads/release/2.0.2' -and $env:GITHUB_REF -ne 'refs/heads/release/2.0.3' -and $env:GITHUB_REF -ne 'refs/heads/release/2.0.4' -and $env:GITHUB_REF -ne 'refs/heads/release/2.0.7') { $targetGate = @('--require-target') }
-          & ".\.venv\Scripts\python.exe" scripts\smoke_smart_launcher.py --report "dist/smart-launcher-startup.json" --target-cache-ms 1500 --target-splash-ms 100 @targetGate
+          # 시작 속도는 기록만 하고 빌드를 막지 않는다(2026-11-02 사용자 결정: CI 기준 폐지, 러너 속도에 좌우됨).
+          & ".\.venv\Scripts\python.exe" scripts\smoke_smart_launcher.py --report "dist/smart-launcher-startup.json" --target-cache-ms 1500 --target-splash-ms 100
           if ($LASTEXITCODE -ne 0) { throw "Smart launcher cold/warm smoke test failed with exit code $LASTEXITCODE." }
 
       - name: Collect runtime build evidence

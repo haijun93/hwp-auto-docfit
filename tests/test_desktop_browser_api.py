@@ -499,9 +499,16 @@ class BrowserApiTests(unittest.TestCase):
         bridge = _bridge(gui)
         self.assertEqual(bridge.get_state()["card_options"],
                          {"spacing_enabled": True, "spacing_exclude_pagefit": True, "spacing_exclude_reset": False,
+                          "spacing_cell_image_to_bg": False, "all_cell_image_to_bg": False,
                           "all_exclude_pagefit": False, "all_exclude_linespacing": False, "unify_exclude_tables": False,
                           "unify_exclude_spacing": False, "unify_exclude_pagefit": False,
                           "unify_keep_layout": False, "unify_quick_mode": True})
+        gui.spacing_cell_image_to_bg_var = _Var(False)
+        state = bridge.set_card_option("spacing_cell_image_to_bg", True)
+        self.assertEqual((state["mode"], state["card_options"]["spacing_cell_image_to_bg"]), ("spacing", True))
+        gui.all_cell_image_to_bg_var = _Var(False)
+        state = bridge.set_card_option("all_cell_image_to_bg", True)
+        self.assertEqual((state["mode"], state["card_options"]["all_cell_image_to_bg"]), ("all", True))
         gui.all_exclude_linespacing_var = _Var(False)
         state = bridge.set_card_option("all_exclude_linespacing", True)
         self.assertEqual((state["mode"], state["card_options"]["all_exclude_linespacing"]), ("all", True))

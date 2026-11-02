@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/api/abbreviation_api.dart' show ApiCall;
 
-/// K클립보드 관리: 켜기(동의)·끄기·상태·목록(검색·고정·지우기·클립보드에 올리기)·설정.
+/// 몽땅클립보드 관리: 켜기(동의)·끄기·상태·목록(검색·고정·지우기·클립보드에 올리기)·설정.
 /// 빠른 붙여넣기는 상주 프로그램의 단축키 팝업(기본 Ctrl+Shift+V)이 맡고, 이 화면은 관리용이다.
 Future<void> showKClipDialog(BuildContext context, ApiCall api) {
   return showDialog<void>(
@@ -35,7 +35,7 @@ class _KClipPanelState extends State<KClipPanel> {
   List<Map> items = const [];
   Map settings = const {};
   bool consent = false;
-  bool autostart = true;
+  bool autostart = false;
   bool busy = false;
   String message = '';
   String query = '';
@@ -68,7 +68,10 @@ class _KClipPanelState extends State<KClipPanel> {
   Future<void> _reload() async {
     final s = await _call('status');
     if (!mounted) return;
-    setState(() => status = s);
+    setState(() {
+      status = s;
+      autostart = s['autostart'] == true;
+    });
     if (running) {
       final list = await _call('list', {'limit': 200, if (query.isNotEmpty) 'query': query});
       final conf = await _call('settings_get');
@@ -140,6 +143,28 @@ class _KClipPanelState extends State<KClipPanel> {
     }
   }
 
+  Future<void> _confirmClearAll() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        content: const Text('고정한 항목은 남고 나머지를 지웁니다.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('지우기'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      await _act('clear', {'keep_pinned': true}, '고정하지 않은 항목을 지웠습니다.');
+    }
+  }
+
   String _kind(Object? kind) => switch (kind) {
     'text' => '글',
     'image' => '그림',
@@ -174,6 +199,7 @@ class _KClipPanelState extends State<KClipPanel> {
           title: const Text('위 안내를 읽었고 기록에 동의합니다'),
         ),
         CheckboxListTile(
+          key: const ValueKey('kclip-autostart'),
           contentPadding: EdgeInsets.zero,
           value: autostart,
           onChanged: (v) => setState(() => autostart = v == true),
@@ -181,15 +207,15 @@ class _KClipPanelState extends State<KClipPanel> {
         ),
         const SizedBox(height: 8),
         if (!available)
-          Text('이 버전에는 K클립보드 프로그램이 들어 있지 않습니다.',
+          Text('이 버전에는 몽땅클립보드 프로그램이 들어 있지 않습니다.',
               style: TextStyle(color: Theme.of(context).colorScheme.error)),
         FilledButton.icon(
           key: const ValueKey('kclip-enable'),
           onPressed: consent && available && !busy
-              ? () => _act('enable', {'consent': true, 'autostart': autostart}, 'K클립보드를 켰습니다.')
+              ? () => _act('enable', {'consent': true, 'autostart': autostart}, '몽땅클립보드를 켰습니다.')
               : null,
           icon: const Icon(Icons.power_settings_new),
-          label: const Text('K클립보드 켜기'),
+          label: const Text('몽땅클립보드 켜기'),
         ),
       ],
     );
@@ -208,9 +234,53 @@ class _KClipPanelState extends State<KClipPanel> {
       spacing: 12,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
+        SizedBox(
+          width: 300,
+          child: CheckboxListTile(
+            key: const ValueKey('kclip-autostart-running'),
+            contentPadding: EdgeInsets.zero,
+            value: autostart,
+            onChanged: busy ? null : (value) async {
+              final result = await _call('autostart', {'enabled': value == true});
+              if (mounted && result['ok'] != false) {
+                setState(() {
+                  status = result;
+                  autostart = result['autostart'] == true;
+                });
+              }
+            },
+            title: const Text('Windows 로그인 시 자동 실행'),
+          ),
+        ),
         number('max_items', '보관 개수', const [20, 50, 100, 200, 500, 1000]),
         number('max_total_mb', '최대 MB', const [50, 100, 200, 500, 1000]),
         number('max_age_days', '보관 일', const [7, 30, 90, 365]),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Switch(
+              key: const ValueKey('kclip-sticky-popup'),
+              value: settings['sticky_popup'] == true,
+              onChanged: (v) => _act('settings_set', {
+                'settings': {'sticky_popup': v},
+              }),
+            ),
+            const Text('스티커 메모처럼 화면에 유지'),
+          ],
+        ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Switch(
+              key: const ValueKey('kclip-always-on-top'),
+              value: settings['always_on_top'] != false,
+              onChanged: (v) => _act('settings_set', {
+                'settings': {'always_on_top': v},
+              }),
+            ),
+            const Text('항상 위'),
+          ],
+        ),
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -257,13 +327,17 @@ class _KClipPanelState extends State<KClipPanel> {
               itemBuilder: (_) => const [PopupMenuItem(value: 30, child: Text('30분')), PopupMenuItem(value: 60, child: Text('1시간'))],
               child: const Padding(padding: EdgeInsets.all(8), child: Text('일시정지 시간')),
             ),
-            OutlinedButton(
-              onPressed: busy ? null : () => _act('clear', {'keep_pinned': true}, '고정하지 않은 항목을 지웠습니다.'),
-              child: const Text('모두 지우기(고정 제외)'),
+            Tooltip(
+              message: '고정한 항목은 유지됩니다.',
+              child: OutlinedButton(
+                key: const ValueKey('kclip-clear-all'),
+                onPressed: busy ? null : _confirmClearAll,
+                child: const Text('모두 지우기'),
+              ),
             ),
             TextButton(
               key: const ValueKey('kclip-disable'),
-              onPressed: busy ? null : () => _act('disable', null, 'K클립보드를 껐습니다.'),
+              onPressed: busy ? null : () => _act('disable', null, '몽땅클립보드를 껐습니다.'),
               child: const Text('끄기'),
             ),
           ],
@@ -332,7 +406,7 @@ class _KClipPanelState extends State<KClipPanel> {
             children: [
               const Icon(Icons.content_paste_search),
               const SizedBox(width: 8),
-              Expanded(child: Text('K클립보드', style: Theme.of(context).textTheme.titleLarge)),
+              Expanded(child: Text('몽땅클립보드', style: Theme.of(context).textTheme.titleLarge)),
               IconButton(
                 tooltip: '닫기',
                 onPressed: () => Navigator.of(context).maybePop(),

@@ -1,4 +1,4 @@
-//! K클립보드 저장소(clip.db)와 설정(settings.json).
+//! 몽땅클립보드 저장소(clip.db)와 설정(settings.json).
 //!
 //! - 내용(payload)과 미리보기는 DPAPI로 암호화해 저장한다.
 //! - 같은 내용을 다시 복사하면 새로 쓰지 않고 순서만 앞으로 올린다(중복 0바이트).
@@ -18,6 +18,10 @@ pub struct Settings {
     pub max_total_bytes: i64,
     pub max_age_days: f64,
     pub auto_paste: bool,
+    /// 빠른 목록 창을 포커스를 잃어도 화면에 유지한다(스티커 메모 모드).
+    pub sticky_popup: bool,
+    /// 빠른 목록 창을 다른 창보다 위에 둔다.
+    pub always_on_top: bool,
     pub paused: bool,
     pub hotkey: String,
     pub excluded_apps: Vec<String>,
@@ -26,6 +30,11 @@ pub struct Settings {
     /// 타임머신 조사 폴더(앱이 정해 준다, 비어 있으면 감시 안 함).
     pub timeline_roots: Vec<String>,
     pub timeline_mtime_only: bool,
+    /// 빠른 목록 창의 마지막 논리 화면 좌표·크기.
+    pub popup_x: i64,
+    pub popup_y: i64,
+    pub popup_width: i64,
+    pub popup_height: i64,
 }
 
 impl Default for Settings {
@@ -36,6 +45,8 @@ impl Default for Settings {
             max_total_bytes: 200 * 1024 * 1024,
             max_age_days: 30.0,
             auto_paste: true,
+            sticky_popup: false,
+            always_on_top: true,
             paused: false,
             hotkey: "Ctrl+Shift+V".into(),
             // 암호 관리자는 제외 신호를 보내지만, 보내지 않는 프로그램도 있어 기본으로 뺀다.
@@ -46,6 +57,10 @@ impl Default for Settings {
             watch_screenshots: true,
             timeline_roots: Vec::new(),
             timeline_mtime_only: false,
+            popup_x: -1,
+            popup_y: -1,
+            popup_width: 0,
+            popup_height: 0,
         }
     }
 }
@@ -68,12 +83,18 @@ impl Settings {
             ("max_total_mb", (self.max_total_bytes / 1024 / 1024).into()),
             ("max_age_days", self.max_age_days.into()),
             ("auto_paste", self.auto_paste.into()),
+            ("sticky_popup", self.sticky_popup.into()),
+            ("always_on_top", self.always_on_top.into()),
             ("paused", self.paused.into()),
             ("hotkey", self.hotkey.as_str().into()),
             ("excluded_apps", Value::Arr(self.excluded_apps.iter().map(|s| s.as_str().into()).collect())),
             ("watch_screenshots", self.watch_screenshots.into()),
             ("timeline_roots", Value::Arr(self.timeline_roots.iter().map(|s| s.as_str().into()).collect())),
             ("timeline_mtime_only", self.timeline_mtime_only.into()),
+            ("popup_x", self.popup_x.into()),
+            ("popup_y", self.popup_y.into()),
+            ("popup_width", self.popup_width.into()),
+            ("popup_height", self.popup_height.into()),
         ])
     }
 
@@ -94,6 +115,12 @@ impl Settings {
         if let Some(b) = v.bool("auto_paste") {
             self.auto_paste = b;
         }
+        if let Some(b) = v.bool("sticky_popup") {
+            self.sticky_popup = b;
+        }
+        if let Some(b) = v.bool("always_on_top") {
+            self.always_on_top = b;
+        }
         if let Some(b) = v.bool("paused") {
             self.paused = b;
         }
@@ -110,13 +137,19 @@ impl Settings {
         if let Some(list) = string_list(v, "timeline_roots", false, 1000) {
             self.timeline_roots = list
                 .into_iter()
-                .filter(|p| p.len() > 3 && p.as_bytes()[1] == b':' && !p.contains("..") && !p.starts_with("\\\\"))
+                .filter(|p| p.len() > 3 && p.as_bytes()[1] == b':' && !p.contains("..") &&
+                    !p.starts_with("\\\\") && !p.split(|ch| ch == '\\' || ch == '/')
+                        .any(|part| part.eq_ignore_ascii_case("$Recycle.Bin")))
                 .take(20)
                 .collect();
         }
         if let Some(b) = v.bool("timeline_mtime_only") {
             self.timeline_mtime_only = b;
         }
+        if let Some(n) = v.num("popup_x").filter(|n| (-100_000.0..=100_000.0).contains(n)) { self.popup_x = n as i64; }
+        if let Some(n) = v.num("popup_y").filter(|n| (-100_000.0..=100_000.0).contains(n)) { self.popup_y = n as i64; }
+        if let Some(n) = v.num("popup_width").filter(|n| (200.0..=4000.0).contains(n)) { self.popup_width = n as i64; }
+        if let Some(n) = v.num("popup_height").filter(|n| (150.0..=4000.0).contains(n)) { self.popup_height = n as i64; }
     }
 
     pub fn load(path: &str) -> Settings {
@@ -416,5 +449,17 @@ mod tests {
         let mut again = Settings::default();
         again.apply(&back.to_json());
         assert_eq!(again.max_items, back.max_items);
+    }
+
+    #[test]
+    fn popup_geometry_round_trips_and_rejects_unreasonable_values() {
+        let mut settings = Settings::default();
+        settings.apply(&json::parse(r#"{"popup_x":120,"popup_y":80,"popup_width":520,"popup_height":460}"#).unwrap());
+        assert_eq!((settings.popup_x, settings.popup_y, settings.popup_width, settings.popup_height), (120, 80, 520, 460));
+        let mut loaded = Settings::default();
+        loaded.apply(&settings.to_json());
+        assert_eq!((loaded.popup_x, loaded.popup_y, loaded.popup_width, loaded.popup_height), (120, 80, 520, 460));
+        loaded.apply(&json::parse(r#"{"popup_x":900000,"popup_width":10,"popup_height":99999}"#).unwrap());
+        assert_eq!((loaded.popup_x, loaded.popup_width, loaded.popup_height), (120, 520, 460));
     }
 }

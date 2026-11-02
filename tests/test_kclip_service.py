@@ -22,7 +22,7 @@ class FakeClient:
 
     def request(self, cmd, **payload):
         if not self.on:
-            raise kc.KAgentError("K클립보드가 켜져 있지 않습니다.")
+            raise kc.KAgentError("몽땅클립보드가 켜져 있지 않습니다.")
         self.requests.append((cmd, payload))
         if cmd == "quit":
             self.on = False

@@ -158,8 +158,15 @@ class NativeClient {
   }
 
   void disconnected() {
-    socket?.destroy();
+    final connection = socket;
     socket = null;
+    connection?.destroy();
+    final child = process;
+    process = null;
+    starting = null;
+    // A broken IPC connection cannot be reused. Stop its backend so the next
+    // read can start a clean process; never replay the request that was lost.
+    child?.kill();
     bytes.clear();
     for (final waiter in pending.values) {
       if (!waiter.isCompleted) waiter.completeError(Exception('백엔드 연결이 끊겼어요.'));

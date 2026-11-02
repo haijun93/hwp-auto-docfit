@@ -5,50 +5,61 @@ import 'table_sketch_models.dart';
 
 /// 표그림판에서 여러 개체(선·칸 글)를 함께 고른 상태. 번호는 [TableSketchDoc]의 목록 순서다.
 class SketchSelection {
-  SketchSelection({Set<int>? lines, Set<int>? texts})
+  SketchSelection({Set<int>? lines, Set<int>? texts, Set<int>? arrows})
     : lines = lines ?? <int>{},
-      texts = texts ?? <int>{};
+      texts = texts ?? <int>{},
+      arrows = arrows ?? <int>{};
 
   final Set<int> lines;
   final Set<int> texts;
+  final Set<int> arrows;
 
-  bool get isEmpty => lines.isEmpty && texts.isEmpty;
+  bool get isEmpty => lines.isEmpty && texts.isEmpty && arrows.isEmpty;
   bool get isNotEmpty => !isEmpty;
-  int get count => lines.length + texts.length;
+  int get count => lines.length + texts.length + arrows.length;
 
-  SketchSelection copy() =>
-      SketchSelection(lines: {...lines}, texts: {...texts});
+  SketchSelection copy() => SketchSelection(
+    lines: {...lines},
+    texts: {...texts},
+    arrows: {...arrows},
+  );
 
   /// 범위를 벗어난 번호를 버린다(되돌리기 등으로 문서가 바뀐 뒤).
   SketchSelection validFor(TableSketchDoc doc) => SketchSelection(
     lines: lines.where((i) => i >= 0 && i < doc.lines.length).toSet(),
     texts: texts.where((i) => i >= 0 && i < doc.texts.length).toSet(),
+    arrows: arrows.where((i) => i >= 0 && i < doc.arrows.length).toSet(),
   );
 
   /// Shift로 더할 때: 이미 있던 것은 빼고 없던 것은 더한다(포토샵·파워포인트와 같은 토글).
   SketchSelection toggled(SketchSelection other) {
-    final l = {...lines}, t = {...texts};
+    final l = {...lines}, t = {...texts}, a = {...arrows};
     for (final i in other.lines) {
       if (!l.remove(i)) l.add(i);
     }
     for (final i in other.texts) {
       if (!t.remove(i)) t.add(i);
     }
-    return SketchSelection(lines: l, texts: t);
+    for (final i in other.arrows) {
+      if (!a.remove(i)) a.add(i);
+    }
+    return SketchSelection(lines: l, texts: t, arrows: a);
   }
 
   SketchSelection union(SketchSelection other) => SketchSelection(
     lines: {...lines, ...other.lines},
     texts: {...texts, ...other.texts},
+    arrows: {...arrows, ...other.arrows},
   );
 }
 
 /// 복사해 둔 개체들.
 class SketchClip {
-  const SketchClip(this.lines, this.texts);
+  const SketchClip(this.lines, this.texts, [this.arrows = const []]);
   final List<SketchLine> lines;
   final List<SketchText> texts;
-  bool get isEmpty => lines.isEmpty && texts.isEmpty;
+  final List<SketchArrow> arrows;
+  bool get isEmpty => lines.isEmpty && texts.isEmpty && arrows.isEmpty;
 }
 
 /// 짝수-홀수 규칙으로 점이 다각형 안에 있는지 본다.
@@ -117,7 +128,18 @@ SketchSelection lassoSelect(
       ))
         i,
   };
-  return SketchSelection(lines: picked, texts: texts);
+  final arrows = <int>{
+    for (var i = 0; i < doc.arrows.length; i++)
+      if (pointInPolygon(
+        Offset(
+          (doc.arrows[i].x1 + doc.arrows[i].x2) / 2,
+          (doc.arrows[i].y1 + doc.arrows[i].y2) / 2,
+        ),
+        polygon,
+      ))
+        i,
+  };
+  return SketchSelection(lines: picked, texts: texts, arrows: arrows);
 }
 
 /// 한 번 눌러 고르기: 가장 가까운 선 하나(통째) 또는 누른 칸의 글.
@@ -142,6 +164,28 @@ SketchSelection hitSelect(TableSketchDoc doc, Offset grid, double tolerance) {
   if (text >= 0 &&
       (best == null || bestDist > .2 || _insideCellCore(grid, cx, cy))) {
     return SketchSelection(texts: {text});
+  }
+  for (var i = 0; i < doc.arrows.length; i++) {
+    final a = doc.arrows[i];
+    if (_distanceToSegment(
+          grid,
+          Offset(a.x1.toDouble(), a.y1.toDouble()),
+          Offset(a.x2.toDouble(), a.y2.toDouble()),
+        ) <=
+        tolerance) {
+      return SketchSelection(arrows: {i});
+    }
+  }
+  for (var i = 0; i < doc.arrows.length; i++) {
+    final a = doc.arrows[i];
+    if (_distanceToSegment(
+          grid,
+          Offset(a.x1.toDouble(), a.y1.toDouble()),
+          Offset(a.x2.toDouble(), a.y2.toDouble()),
+        ) <=
+        tolerance) {
+      return SketchSelection(arrows: {i});
+    }
   }
   return best == null ? SketchSelection() : SketchSelection(lines: {best});
 }
@@ -168,6 +212,11 @@ Rect? selectionBounds(TableSketchDoc doc, SketchSelection sel) {
     if (i < 0 || i >= doc.texts.length) continue;
     final s = doc.texts[i];
     add(s.x, s.y, s.x + 1, s.y + 1);
+  }
+  for (final i in sel.arrows) {
+    if (i < 0 || i >= doc.arrows.length) continue;
+    final a = doc.arrows[i];
+    add(a.x1, a.y1, a.x2, a.y2);
   }
   return l == null ? null : Rect.fromLTRB(l!, t!, r!, b!);
 }
@@ -198,6 +247,19 @@ bool translateSelection(
     if (x < 0 || y < 0 || x >= cols || y >= rows) return false;
     if (occupied.contains((x, y))) return false;
   }
+  for (final i in sel.arrows) {
+    final a = doc.arrows[i];
+    if (a.x1 + dx < 0 ||
+        a.x2 + dx < 0 ||
+        a.x1 + dx > cols ||
+        a.x2 + dx > cols ||
+        a.y1 + dy < 0 ||
+        a.y2 + dy < 0 ||
+        a.y1 + dy > rows ||
+        a.y2 + dy > rows) {
+      return false;
+    }
+  }
   final before = sel.lines.isEmpty ? null : selectionBounds(doc, sel);
   if (before != null) {
     moveFill(doc, before, before.shift(Offset(dx.toDouble(), dy.toDouble())));
@@ -215,6 +277,15 @@ bool translateSelection(
     final s = doc.texts[i];
     doc.texts[i] = s.copyWith(x: s.x + dx, y: s.y + dy);
   }
+  for (final i in sel.arrows) {
+    final a = doc.arrows[i];
+    doc.arrows[i] = a.copyWith(
+      x1: a.x1 + dx,
+      y1: a.y1 + dy,
+      x2: a.x2 + dx,
+      y2: a.y2 + dy,
+    );
+  }
   return true;
 }
 
@@ -226,6 +297,10 @@ SketchClip copySelection(TableSketchDoc doc, SketchSelection sel) => SketchClip(
   [
     for (final i in sel.texts.toList()..sort())
       if (i < doc.texts.length) doc.texts[i],
+  ],
+  [
+    for (final i in sel.arrows.toList()..sort())
+      if (i < doc.arrows.length) doc.arrows[i],
   ],
 );
 
@@ -239,6 +314,10 @@ bool deleteSelection(TableSketchDoc doc, SketchSelection sel) {
   doc.texts = [
     for (var i = 0; i < doc.texts.length; i++)
       if (!sel.texts.contains(i)) doc.texts[i],
+  ];
+  doc.arrows = [
+    for (var i = 0; i < doc.arrows.length; i++)
+      if (!sel.arrows.contains(i)) doc.arrows[i],
   ];
   return true;
 }
@@ -265,11 +344,27 @@ SketchSelection? pasteClip(
     maxX = math.max(maxX, s.x + 1);
     maxY = math.max(maxY, s.y + 1);
   }
+  for (final a in clip.arrows) {
+    minX = math.min(minX, math.min(a.x1, a.x2));
+    minY = math.min(minY, math.min(a.y1, a.y2));
+    maxX = math.max(maxX, math.max(a.x1, a.x2));
+    maxY = math.max(maxY, math.max(a.y1, a.y2));
+  }
   final cols = doc.grid.cols, rows = doc.grid.rows;
   if (maxX - minX > cols || maxY - minY > rows) return null;
   dx = dx.clamp(-minX, cols - maxX);
   dy = dy.clamp(-minY, rows - maxY);
   final sel = SketchSelection();
+  for (final a in clip.arrows) {
+    final moved = a.copyWith(
+      x1: a.x1 + dx,
+      y1: a.y1 + dy,
+      x2: a.x2 + dx,
+      y2: a.y2 + dy,
+    );
+    sel.arrows.add(doc.arrows.length);
+    doc.arrows.add(moved);
+  }
   for (final s in clip.lines) {
     final moved = s.copyWith(
       x1: s.x1 + dx,
@@ -600,6 +695,23 @@ SketchSelection resizeRectangle(
   SketchSelection sel,
   Rect bounds,
 ) {
+  if (sel.lines.isEmpty && sel.arrows.length == 1) {
+    final i = sel.arrows.first;
+    final arrow = doc.arrows[i];
+    final oldBounds = selectionBounds(doc, sel)!;
+    final sx = oldBounds.width == 0 ? 1.0 : bounds.width / oldBounds.width;
+    final sy = oldBounds.height == 0 ? 1.0 : bounds.height / oldBounds.height;
+    int mapX(int x) => (bounds.left + (x - oldBounds.left) * sx)
+        .round().clamp(0, doc.grid.cols);
+    int mapY(int y) => (bounds.top + (y - oldBounds.top) * sy)
+        .round().clamp(0, doc.grid.rows);
+    doc.arrows[i] = arrow.copyWith(
+      x1: mapX(arrow.x1), y1: mapY(arrow.y1),
+      x2: mapX(arrow.x2), y2: mapY(arrow.y2),
+    );
+    return sel;
+  }
+  if (sel.lines.isEmpty) return sel;
   final sample = doc.lines[sel.lines.first];
   moveFill(doc, selectionBounds(doc, sel), bounds);
   for (final i in sel.lines.toList()..sort((a, b) => b.compareTo(a))) {

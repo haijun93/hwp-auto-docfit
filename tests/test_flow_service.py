@@ -91,6 +91,27 @@ class FlowServiceTests(unittest.TestCase):
         second = service.export_png(encoded)["path"]
         self.assertNotEqual(first, second)
 
+    def test_png_export_requires_a_selected_output_and_uses_native_save_dialog(self):
+        import base64
+        from docfit_app.native_file_dialog_service import NativeFileDialogService
+        encoded = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aJ8sAAAAASUVORK5CYII="
+        target = self.folder / "diagram.png"
+        bridge = DesktopWebBridge.__new__(DesktopWebBridge)
+        bridge.gui = SimpleNamespace(root=object(), _준말_서비스=lambda: SimpleNamespace(settings=self.store))
+        bridge._tk = lambda fn, **kwargs: fn()
+        bridge._file_dialogs = NativeFileDialogService(lambda purpose, mode, multiple: [str(target)])
+        self.addCleanup(bridge._file_dialogs.close)
+
+        selection = bridge.flow_editor("select_output", {"format": "png"})
+        self.assertFalse(selection["cancelled"])
+        result = bridge.flow_editor("export_png", {
+            "name": "diagram", "base64": encoded,
+            "output_selection_id": selection["selection_id"],
+        })
+
+        self.assertEqual(result["path"], str(target))
+        self.assertEqual(target.read_bytes(), base64.b64decode(encoded))
+
     def test_removed_sdk_commands_rejected_and_old_setting_ignored(self):
         self.store.update(lambda s: s.update(developer_mode=True, diagram_editor_enabled=True))
         app = ApplicationService(self.folder / "settings.json")

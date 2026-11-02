@@ -994,6 +994,8 @@ class DesktopWebBridge:
         "spacing_enabled": ("spacing_enabled_var", "spacing"),
         "spacing_exclude_pagefit": ("spacing_exclude_pagefit_var", "spacing"),
         "spacing_exclude_reset": ("spacing_exclude_reset_var", "spacing"),
+        "spacing_cell_image_to_bg": ("spacing_cell_image_to_bg_var", "spacing"),
+        "all_cell_image_to_bg": ("all_cell_image_to_bg_var", "all"),
         "all_exclude_pagefit": ("all_exclude_pagefit_var", "all"),
         "all_exclude_linespacing": ("all_exclude_linespacing_var", "all"),
         "unify_exclude_tables": ("unify_exclude_tables_var", "unify"),
@@ -1466,6 +1468,12 @@ class DesktopWebBridge:
         if action == "copy_result":
             from docfit_app.clipboard_service import copy_result
             return self._tk(lambda: copy_result(payload))
+        if action == "select_output":
+            import uuid
+            purpose = {"png": "flow_png", "hwpx": "flow_hwpx"}.get(payload.get("format"))
+            if purpose is None:
+                raise ServiceError("INVALID_INPUT", "저장할 파일 형식을 확인해 주세요.")
+            return self._file_dialogs.select_files(uuid.uuid4().hex, purpose, "save")
         if action == "export_png":
             import os
             import tempfile
@@ -2111,7 +2119,7 @@ class DesktopWebBridge:
             return {"ok": False, "code": "TM_FAILED", "message": "타임머신 작업을 완료하지 못했습니다."}
 
     def kclip(self, action, payload=None):
-        """K클립보드: 상주 프로그램(kagent.exe) 켜기·끄기와 목록·설정(파이프 명령)."""
+        """몽땅클립보드: 상주 프로그램(kagent.exe) 켜기·끄기와 목록·설정(파이프 명령)."""
         try:
             from docfit_app.kclip_service import KClipService
             service = getattr(self, "_kclip_service", None)
@@ -2119,8 +2127,8 @@ class DesktopWebBridge:
                 service = self._kclip_service = KClipService()
             return service.command(action, payload)
         except Exception as exc:
-            logging.getLogger(__name__).warning("K클립보드 처리 실패", exc_info=True)
-            return {"ok": False, "message": str(exc) or "K클립보드를 처리하지 못했습니다."}
+            logging.getLogger(__name__).warning("몽땅클립보드 처리 실패", exc_info=True)
+            return {"ok": False, "message": str(exc) or "몽땅클립보드를 처리하지 못했습니다."}
 
     def file_rename(self, action, payload=None):
         """파일이름 탭: 목록·미리보기·적용·되돌리기(경로는 호스트에만 둔다)."""
@@ -2855,12 +2863,109 @@ def _bind_file_drop(web_window, bridge):
     web_window.run_js(_FILE_DROP_SCRIPT)
 
 
+def _guard_pywebview_form_closed():
+    """pywebview 6.2.1 may dispatch WinForms FormClosed twice during a close race.
+
+    Its handler deletes BrowserView.instances[uid] without checking whether the
+    first FormClosed callback already removed it. pythonnet then surfaces the
+    resulting KeyError through WinForms as an unhandled JIT dialog.
+    """
+    if os.name != "nt":
+        return
+    try:
+        from webview.platforms import winforms
+    except ImportError:
+        return
+    form_type = winforms.BrowserView.BrowserForm
+    if getattr(form_type, "_docfit_close_guarded", False):
+        return
+    original = form_type.on_close
+
+    def close_once(form, *args):
+        if getattr(form, "_docfit_form_closed_handled", False):
+            return
+        form._docfit_form_closed_handled = True
+        return original(form, *args)
+
+    form_type.on_close = close_once
+    form_type._docfit_close_guarded = True
+
+
+_WEBVIEW_RENDERING_ARGUMENTS = (
+    "--disable-renderer-backgrounding",
+    "--disable-background-timer-throttling",
+    "--disable-backgrounding-occluded-windows",
+    "--disable-features=CalculateNativeWinOcclusion",
+)
+
+
+def _append_webview_rendering_arguments(arguments):
+    """Merge renderer keep-alive switches into pywebview's WebView2 arguments."""
+    tokens = str(arguments or "").split()
+    features = []
+    remaining = []
+    for token in tokens:
+        if token.startswith("--disable-features="):
+            features.extend(part for part in token.partition("=")[2].split(",") if part)
+        else:
+            remaining.append(token)
+    features.extend(
+        argument.partition("=")[2]
+        for argument in _WEBVIEW_RENDERING_ARGUMENTS
+        if argument.startswith("--disable-features=")
+    )
+    for argument in _WEBVIEW_RENDERING_ARGUMENTS:
+        if not argument.startswith("--disable-features=") and argument not in remaining:
+            remaining.append(argument)
+    unique_features = list(dict.fromkeys(features))
+    if unique_features:
+        remaining.append("--disable-features=" + ",".join(unique_features))
+    return " ".join(remaining)
+
+
+def _install_webview_rendering_guard(edgechromium_module=None):
+    """Prevent the visible WebView2 renderer from being background-throttled.
+
+    pywebview 6.2.1 sets AdditionalBrowserArguments itself, so the usual
+    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS environment variable is not reliable.
+    A small WebView2 subclass adds the flags immediately before initialization.
+    """
+    if edgechromium_module is None:
+        if os.name != "nt":
+            return False
+        try:
+            from webview.platforms import edgechromium as edgechromium_module
+        except ImportError:
+            return False
+    if getattr(edgechromium_module, "_docfit_rendering_guarded", False):
+        return True
+
+    webview_type = edgechromium_module.WebView2
+
+    class RenderingGuardWebView2(webview_type):
+        def EnsureCoreWebView2Async(self, *args, **kwargs):
+            properties = self.CreationProperties
+            properties.AdditionalBrowserArguments = _append_webview_rendering_arguments(
+                properties.AdditionalBrowserArguments
+            )
+            return super().EnsureCoreWebView2Async(*args, **kwargs)
+
+    edgechromium_module.WebView2 = RenderingGuardWebView2
+    edgechromium_module._docfit_rendering_guarded = True
+    return True
+
+
 def run_webview(gui):
     """기존 Tk 백엔드를 숨겨 실행하고 WebView2를 주 UI로 표시한다."""
     if importlib.util.find_spec("webview") is None:
         return False
 
     import webview
+    _guard_pywebview_form_closed()
+    try:
+        _install_webview_rendering_guard()
+    except Exception:
+        logging.getLogger(__name__).exception("Could not disable WebView2 idle rendering throttling")
 
     bridge = DesktopWebBridge(gui)
     page = _resource_path()

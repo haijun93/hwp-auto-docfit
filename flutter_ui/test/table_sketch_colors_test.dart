@@ -104,9 +104,8 @@ void main() {
       {for (final l in (last['lines'] as List).cast<Map>()) l['color']},
       {'#1D4ED8'},
     );
-    expect(last['fills'], [
-      {'x1': 3, 'y1': 3, 'x2': 11, 'y2': 7, 'color': '#FCE4D6'},
-    ]);
+    expect((last['fills'] as List).length, 32);
+    expect((last['fills'] as List).every((f) => f['color'] == '#FCE4D6' && f['x2'] == f['x1'] + 1 && f['y2'] == f['y1'] + 1), isTrue);
 
     // '없음'은 배경을 지운다.
     await tester.tap(find.byKey(const Key('fillColorButton')));

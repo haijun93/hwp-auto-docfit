@@ -135,6 +135,27 @@ bool isHighlighted(WidgetTester tester, Finder button) {
 }
 
 void main() {
+  testWidgets('가로세로 추진절차는 박스와 방향 화살표를 정보단위 라벨에 표시한다', (tester) async {
+    final data = sampleListData();
+    final templates = (data['templates'] as List).cast<Map<String, Object?>>();
+    final item = templates.first;
+    item['name'] = '추진절차(가로세로) · 모양 1';
+    item['units'] = {
+      'row': {'count': 2, 'min': 1, 'max': 8, 'core': 1, 'sep': 1},
+      'col': {'count': 4, 'min': 1, 'max': 8, 'core': 1, 'sep': 1},
+    };
+    Future<Object?> api(String name, List<Object?> args) async {
+      final action = args[0] as String;
+      if (action == 'list') return envelope(data);
+      if (action == 'preview') return envelope(samplePreview());
+      return envelope({});
+    }
+
+    await pumpScreen(tester, api: api);
+    expect(find.text('행 단위(박스+↓) 2개'), findsOneWidget);
+    expect(find.text('열 단위(박스+→) 4개'), findsOneWidget);
+  });
+
   testWidgets('목록 로드, 첫 번째 템플릿 자동 선택 및 preview 호출', (tester) async {
     final calls = <List<Object?>>[];
     Future<Object?> api(String name, List<Object?> args) async {

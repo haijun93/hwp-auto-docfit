@@ -538,6 +538,8 @@ def _install(*, _docfit_namespace, _docfit_symbol, bind_function):
             조치 = marker_space_fix(text, 마커_끝)
             if 조치 is None:
                 return text
+            if 조치 == "remove":
+                return text[:마커_끝] + text[마커_끝 + 1:]
             if 조치 == "replace":
                 return text[:마커_끝] + " " + text[마커_끝 + 1:]
             return text[:마커_끝] + " " + text[마커_끝:]

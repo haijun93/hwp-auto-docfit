@@ -38,7 +38,7 @@ license and notice files remain available in the installed kordoc package.
 | tkinterdnd2 | Drag and drop | MIT |
 | Pillow | Images | MIT-CMU (HPND) |
 | defusedxml | Safe XML parsing | PSF |
-| pypdf 6.21.2 | PDF compression (file format: PDF 압축) | BSD-3-Clause |
+| pypdf 6.21.4 | PDF compression (file format: PDF 압축) | BSD-3-Clause |
 | cryptography 50.0.2 | AES encryption when re-securing compressed PDFs | Apache-2.0 OR BSD-3-Clause |
 | pywebview | Web UI window | BSD-3-Clause |
 | Flutter | flutter_ui | BSD-3-Clause |

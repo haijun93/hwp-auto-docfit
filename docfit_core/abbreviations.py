@@ -128,7 +128,8 @@ def _colon_line(text: str, registry: dict[str, dict]):
 
 def is_attachment_list(rest: str) -> bool:
     """준말 뒤 글이 공문 붙임 목록('… 1부.', '… 1부.  끝.')이면 True."""
-    return bool(_COPIES.search(rest or ""))
+    # 번호로 시작하면 부수 표기와 마침표가 없어도 붙임 목록이다('붙임: 1. 시행계획 1부', 2026-11-02).
+    return bool(_COPIES.search(rest or "") or re.match(r"\s*\d+[.．](?:\s|$|「)", rest or ""))
 
 
 def match_line(text: str, registry: dict[str, dict]):

@@ -1,4 +1,4 @@
-//! K에이전트: K클립보드 기록·빠른 붙여넣기 상주 프로그램.
+//! K에이전트: 몽땅클립보드 기록·빠른 붙여넣기 상주 프로그램.
 //!
 //! 속도·자원 원칙(사용자 지시 2026-10-31: 실행 속도와 최소 자원이 가장 중요):
 //! - 이벤트로만 깨어난다(WM_CLIPBOARDUPDATE·단축키·파이프 요청). 폴링·주기 타이머 없음 → 유휴 CPU 0.
@@ -508,10 +508,10 @@ fn tray(hwnd: HWND, op: u32) {
         nid.uCallbackMessage = WM_TRAY;
         nid.hIcon = make_icon(paused);
         let tip = if paused {
-            "K클립보드 — 일시정지".to_string()
+            "몽땅클립보드 — 일시정지".to_string()
         } else {
             let hotkey = app().settings.lock().unwrap().hotkey.clone();
-            format!("K클립보드 — 기록 중 ({count}개) · {hotkey}")
+            format!("몽땅클립보드 — 기록 중 ({count}개) · {hotkey}")
         };
         for (i, u) in tip.encode_utf16().take(nid.szTip.len() - 1).enumerate() {
             nid.szTip[i] = u;
@@ -531,7 +531,7 @@ fn tray_menu(hwnd: HWND) {
         AppendMenuW(menu, MF_STRING, 2, wide(if paused { "다시 기록" } else { "일시정지" }).as_ptr());
         AppendMenuW(menu, MF_STRING, 3, wide("모두 지우기(고정 제외)").as_ptr());
         AppendMenuW(menu, MF_SEPARATOR, 0, std::ptr::null());
-        AppendMenuW(menu, MF_STRING, 4, wide("K클립보드 끝내기").as_ptr());
+        AppendMenuW(menu, MF_STRING, 4, wide("몽땅클립보드 끝내기").as_ptr());
         let mut pt = POINT { x: 0, y: 0 };
         GetCursorPos(&mut pt);
         SetForegroundWindow(hwnd);
@@ -638,6 +638,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             }
             WM_SETTINGS => {
                 register_hotkey(hwnd);
+                popup::apply_settings();
                 let paused = app().settings.lock().unwrap().paused;
                 set_listening(hwnd, !paused);
                 tray(hwnd, NIM_MODIFY);

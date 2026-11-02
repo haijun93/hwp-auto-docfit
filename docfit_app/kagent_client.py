@@ -53,7 +53,7 @@ class KAgentClient:
     def request(self, cmd, **payload):
         status = self.status_file()
         if not status or not status.get("pipe"):
-            raise KAgentError("K클립보드가 켜져 있지 않습니다.")
+            raise KAgentError("몽땅클립보드가 켜져 있지 않습니다.")
         pipe = status["pipe"]
         if not str(pipe).startswith("\\\\.\\pipe\\HwpAutoDocFit.kagent."):
             raise KAgentError("상태 파일의 연결 이름을 확인해 주세요.")
@@ -72,11 +72,11 @@ class KAgentClient:
                     if chunk.endswith(b"\n") or size > MAX_RESPONSE:
                         break
         except OSError as error:
-            raise KAgentError("K클립보드에 연결하지 못했습니다.") from error
+            raise KAgentError("몽땅클립보드에 연결하지 못했습니다.") from error
         try:
             return json.loads(b"".join(chunks).decode("utf-8"))
         except ValueError as error:
-            raise KAgentError("K클립보드 응답을 읽지 못했습니다.") from error
+            raise KAgentError("몽땅클립보드 응답을 읽지 못했습니다.") from error
 
 
 def _pid_alive(pid):
@@ -136,3 +136,14 @@ def set_autostart(enabled, exe=None):
                 winreg.DeleteValue(key, RUN_NAME)
             except FileNotFoundError:
                 pass
+
+
+def autostart_enabled():
+    """현재 사용자 계정의 K에이전트 자동 시작 등록 여부."""
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_QUERY_VALUE) as key:
+            command, _ = winreg.QueryValueEx(key, RUN_NAME)
+    except FileNotFoundError:
+        return False
+    return isinstance(command, str) and "kagent.exe" in command.lower()

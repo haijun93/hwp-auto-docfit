@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS files (
 CREATE INDEX IF NOT EXISTS files_work_time ON files(work_time);
 CREATE INDEX IF NOT EXISTS files_root ON files(root);
 CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
+CREATE TABLE IF NOT EXISTS related_exclusions (left_path TEXT NOT NULL, right_path TEXT NOT NULL, PRIMARY KEY(left_path,right_path));
 """
 MAX_PAGE = 2000
 
@@ -113,9 +114,26 @@ class Store:
         with self._lock:
             return self._db.execute("UPDATE files SET hidden = ? WHERE id = ?", (int(hidden), file_id)).rowcount == 1
 
+    def exclude_related(self, left, right, excluded=True):
+        left, right = path_key(left), path_key(right)
+        if left == right:
+            raise ValueError("서로 다른 문서를 지정해 주세요.")
+        left, right = sorted((left, right))
+        with self._lock:
+            if excluded:
+                self._db.execute("INSERT OR IGNORE INTO related_exclusions VALUES(?,?)", (left, right))
+            else:
+                self._db.execute("DELETE FROM related_exclusions WHERE left_path=? AND right_path=?", (left, right))
+        return True
+
+    def related_exclusions(self):
+        with self._lock:
+            rows = self._db.execute("SELECT left_path,right_path FROM related_exclusions").fetchall()
+        return [tuple(row) for row in rows]
+
     # ── 읽기(화면) ───────────────────────────────────────────────────────
     @staticmethod
-    def _filters(kinds=None, roots=None, query=None):
+    def _filters(kinds=None, roots=None, query=None, extensions=None):
         where, params = ["hidden = 0"], []
         if kinds:
             where.append(f"kind IN ({','.join('?' * len(kinds))})")
@@ -127,12 +145,16 @@ class Store:
             escaped = query.casefold().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             where.append("lower(name) LIKE ? ESCAPE '\\'")
             params.append(f"%{escaped}%")
+        if extensions is not None:
+            # 파일명에 점이 여러 개여도 맨 뒤 확장자로 판정한다.
+            where.append("(" + (" OR ".join(["lower(name) LIKE ?"] * len(extensions)) or "0") + ")")
+            params.extend("%." + str(ext).lower().lstrip(".") for ext in extensions)
         return where, params
 
-    def range(self, start, end, *, kinds=None, roots=None, query=None, newest_first=True, limit=200, offset=0):
+    def range(self, start, end, *, kinds=None, roots=None, query=None, extensions=None, newest_first=True, limit=200, offset=0):
         """[start, end) 구간(유닉스 초)의 파일. 가상 스크롤용으로 limit·offset."""
         limit = max(1, min(int(limit), MAX_PAGE))
-        where, params = self._filters(kinds, roots, query)
+        where, params = self._filters(kinds, roots, query, extensions)
         where.insert(0, "work_time >= ? AND work_time < ?")
         params[:0] = [start, end]
         order = "DESC" if newest_first else "ASC"

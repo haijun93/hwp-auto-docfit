@@ -1,4 +1,4 @@
-"""K클립보드 화면 서비스: 켜기(동의)·끄기·상태·목록·고정·지우기·되돌려 붙이기·설정.
+"""몽땅클립보드 화면 서비스: 켜기(동의)·끄기·상태·목록·고정·지우기·되돌려 붙이기·설정.
 
 기록과 빠른 붙여넣기는 독립 상주 프로그램 kagent.exe가 한다(기본 꺼짐). 이 서비스는
 사용자가 켤 때만 에이전트를 설치·실행하고, 이후에는 파이프로 명령만 보낸다.
@@ -15,7 +15,7 @@ from pathlib import Path
 
 from . import kagent_client as kc
 
-CONSENT = ("K클립보드는 이 PC에서 복사(Ctrl+C)한 글·그림·파일 경로를 기록해 다시 붙여넣을 수 있게 합니다. "
+CONSENT = ("몽땅클립보드는 이 PC에서 복사(Ctrl+C)한 글·그림·파일 경로를 기록해 다시 붙여넣을 수 있게 합니다. "
            "기록은 이 PC의 사용자 폴더에만 암호화해 저장하고 밖으로 보내지 않습니다. "
            "암호 관리자가 보내는 '기록 제외' 신호는 따릅니다. 언제든 일시정지·끄기·모두 지우기를 할 수 있습니다.")
 
@@ -40,11 +40,13 @@ def _verify(exe):
 
 class KClipService:
     def __init__(self, client=None, *, installer=kc.install, starter=kc.start, autostart=kc.set_autostart,
+                 autostart_status=kc.autostart_enabled,
                  bundled=bundled_exe):
         self.client = client or kc.KAgentClient()
         self._install = installer
         self._start = starter
         self._autostart = autostart
+        self._autostart_status = autostart_status
         self._bundled = bundled
         self._pause_file = Path(tempfile.gettempdir()) / f"docfit-kclip-pause-{os.getpid()}.json"
 
@@ -73,17 +75,21 @@ class KClipService:
         if status is not None and expiry:
             status["paused"] = True
             status["pause_until"] = expiry
-        return dict(ok=True, running=bool(status), available=self._bundled() is not None, consent=CONSENT,
-                    status=status or {})
+        try:
+            autostart = bool(self._autostart_status())
+        except (OSError, ImportError):
+            autostart = False
+        return dict(ok=True, running=bool(status), available=self._bundled() is not None,
+                    autostart=autostart, consent=CONSENT, status=status or {})
 
     def enable(self, payload):
         if payload.get("consent") is not True:
             return dict(ok=False, code="KCLIP_CONSENT", message="안내를 읽고 동의해 주세요.")
         exe = self._bundled()
         if exe is None:
-            return dict(ok=False, code="KCLIP_MISSING", message="이 버전에는 K클립보드 프로그램이 들어 있지 않습니다.")
+            return dict(ok=False, code="KCLIP_MISSING", message="이 버전에는 몽땅클립보드 프로그램이 들어 있지 않습니다.")
         if not _verify(exe):
-            return dict(ok=False, code="KCLIP_INTEGRITY", message="K클립보드 프로그램 파일이 손상됐습니다. 다시 설치해 주세요.")
+            return dict(ok=False, code="KCLIP_INTEGRITY", message="몽땅클립보드 프로그램 파일이 손상됐습니다. 다시 설치해 주세요.")
         if not self.client.running():
             installed = self._install(exe)
             self._start(installed)
@@ -91,11 +97,10 @@ class KClipService:
                 if self.client.running():
                     break
                 time.sleep(0.02)
-        if payload.get("autostart", True):
-            try:
-                self._autostart(True)
-            except OSError:
-                pass
+        try:
+            self._autostart(payload.get("autostart", True) is True)
+        except OSError:
+            pass
         return self.status()
 
     def disable(self, payload):
@@ -129,6 +134,13 @@ class KClipService:
             return self.enable(payload)
         if action == "disable":
             return self.disable(payload)
+        if action == "autostart":
+            enabled = payload.get("enabled") is True
+            try:
+                self._autostart(enabled)
+            except OSError as error:
+                return dict(ok=False, code="KCLIP_AUTOSTART", message=f"자동 시작 설정을 바꾸지 못했습니다: {error}")
+            return self.status()
         forwards = {
             "list": ("list", ("limit", "query")),
             "get": ("get", ("id",)),

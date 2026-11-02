@@ -43,6 +43,25 @@ def roots(data):
 
 
 class CanvasPackageTests(unittest.TestCase):
+    def test_diagram_merges_into_real_hancom_shape_fixtures_without_dangling_styles(self):
+        from pathlib import Path
+        payload = {'nodes': [dict(id='box', type='rect', position={'x': 20, 'y': 30}, width=120, height=60,
+                                 data={'label': '샘플 도형'})], 'edges': []}
+        for name in ('hwp_shapes_sample.hwpx', 'hwp_shapes_group_sample.hwpx'):
+            source = Path(__file__).parent / 'fixtures' / name
+            header, section = roots(merge(source, {'kind': 'diagram', 'source': payload}))
+            pools = {key: {n.get('id') for n in header.find('.//'+HH+key)}
+                     for key in ('charProperties', 'paraProperties', 'styles', 'borderFills')}
+            for node in section.iter():
+                for attr, pool in (('charPrIDRef', 'charProperties'), ('paraPrIDRef', 'paraProperties'),
+                                   ('styleIDRef', 'styles'), ('borderFillIDRef', 'borderFills')):
+                    if node.get(attr) is not None:
+                        self.assertIn(node.get(attr), pools[pool])
+            shape = next(n for n in section.iter() if n.tag == HP+'rect' and n.find(HP+'drawText') is not None)
+            para = shape.find(HP+'drawText/'+HP+'subList/'+HP+'p')
+            self.assertIn(para.get('paraPrIDRef'), pools['paraProperties'])
+            self.assertIn(para.find(HP+'run').get('charPrIDRef'), pools['charProperties'])
+
     def test_table_remaps_sparse_ids_and_clones_formatting(self):
         data = fixture()
         header, section = roots(merge(data, dict(kind='table_sketch', source=sketch(), after_id='10')))
@@ -166,6 +185,15 @@ class CanvasPackageTests(unittest.TestCase):
             self.assertEqual(target.read_bytes(), b'previous')
             self.assertEqual(list(Path(directory).iterdir()), [target])
 
+
+class ClipboardBodyTests(unittest.TestCase):
+    def test_clear_body_leaves_only_the_block(self):
+        merged = merge(fixture(), {'kind': 'diagram', 'source': graph(), 'clear_body': True})
+        with ZipFile(BytesIO(merged)) as package:
+            section = package.read('Contents/section0.xml').decode('utf-8')
+        self.assertNotIn('original', section)
+        self.assertNotIn('>end<', section)
+        self.assertIn('connectLine', section)
 
 if __name__ == '__main__':
     unittest.main()

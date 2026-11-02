@@ -48,6 +48,19 @@ void main() {
     expect(payload['offset'],0); expect(payload['query'],'보고서'); expect(payload['kinds'],['pdf']);
   });
 
+  testWidgets('본문 모드에서 색인하고 본문 검색 결과를 표시한다', (tester) async {
+    final api=_FakeApi(enabled:true);
+    await tester.pumpWidget(MaterialApp(home:Scaffold(body:TimemachineScreen(api:api.call)))); await tester.pumpAndSettle();
+    await tester.tap(find.text('본문')); await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField),'회의'); await tester.pump(const Duration(milliseconds:400)); await tester.pumpAndSettle();
+    expect(api.calls.any((c)=>c.$1=='content_search'&&c.$2['query']=='회의'),true);
+    expect(find.text('본문포함.docx'),findsOneWidget);
+    expect(find.textContaining('[회의] 결과'),findsOneWidget);
+    await tester.tap(find.text('본문 색인')); await tester.pumpAndSettle();
+    expect(api.calls.any((c)=>c.$1=='content_index_start'),true);
+    expect(find.textContaining('추출 실패 2건'),findsOneWidget);
+  });
+
   testWidgets('썸네일이 오면 그림을 보이고 같은 항목은 다시 요청하지 않는다', (tester) async {
     final api=_FakeApi(enabled:true,thumbnail:{'ok':true,'data':_jpeg});
     await tester.pumpWidget(MaterialApp(home:Scaffold(body:TimemachineScreen(api:api.call)))); await tester.pumpAndSettle();
@@ -283,6 +296,8 @@ void main() {
 
     final clearBtn = find.byKey(const ValueKey('tm-clear-thumb-cache'));
     expect(clearBtn, findsOneWidget);
+    await tester.ensureVisible(clearBtn);
+    await tester.pumpAndSettle();
     await tester.tap(clearBtn);
     await tester.pumpAndSettle();
 
@@ -334,6 +349,14 @@ class _FakeApi {
         };
       case 'scan':
         return scanBy == 'agent' ? {'ok': true, 'by': 'agent'} : {'ok': true, 'by': 'app', if (scanRunning) 'running': true};
+      case 'content_index_start':
+        return {'ok':true,'running':false,'seen':5,'indexed':3,'errors':2};
+      case 'content_index_status':
+        return {'ok':true,'running':false,'seen':5,'indexed':3,'errors':2};
+      case 'content_index_cancel':
+        return {'ok':true,'running':false,'seen':5,'indexed':3,'errors':2};
+      case 'content_search':
+        return {'ok':true,'items':[{'name':'본문포함.docx','path':'C:\\Temp\\TM\\본문포함.docx','snippet':'[회의] 결과'}]};
       case 'thumbnail':
         thumbnailCalls++;
         _inFlight++;

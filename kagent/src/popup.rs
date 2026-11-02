@@ -97,7 +97,9 @@ pub fn register(instance: HINSTANCE) {
             hIconSm: std::ptr::null_mut(),
         };
         RegisterClassExW(&wc);
-        let hwnd = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, class.as_ptr(), wide("K클립보드").as_ptr(),
+        let topmost = app().settings.lock().unwrap().always_on_top;
+        let ex_style = WS_EX_TOOLWINDOW | if topmost { WS_EX_TOPMOST } else { 0 };
+        let hwnd = CreateWindowExW(ex_style, class.as_ptr(), wide("몽땅클립보드").as_ptr(),
                                    WS_POPUP | WS_BORDER, 0, 0, BASE_W, 200, std::ptr::null_mut(),
                                    std::ptr::null_mut(), instance, std::ptr::null());
         HWND_POPUP.store(hwnd as isize, Ordering::Relaxed);
@@ -117,6 +119,11 @@ pub fn show() {
     }
     let recent_items = app().recent.lock().unwrap().clone();
     unsafe {
+        let settings = app().settings.lock().unwrap().clone();
+        if settings.sticky_popup && IsWindowVisible(hwnd) != 0 {
+            ShowWindow(hwnd, SW_HIDE);
+            return;
+        }
         let fg = GetForegroundWindow();
         let mut st = STATE.lock().unwrap();
         st.seq += 1;
@@ -136,17 +143,46 @@ pub fn show() {
         GetCursorPos(&mut pt);
         // 창을 그 모니터의 DPI로 먼저 옮긴 뒤 크기를 정한다.
         SetWindowPos(hwnd, std::ptr::null_mut(), pt.x, pt.y, 1, 1, SWP_NOZORDER | SWP_NOACTIVATE);
-        let (w, h) = (scale(hwnd, BASE_W), scale(hwnd, HEAD_H + ROW_H * rows + 8));
+        let (default_w, default_h) = (scale(hwnd, BASE_W), scale(hwnd, HEAD_H + ROW_H * rows + 8));
         let monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
         let mut mi: MONITORINFO = std::mem::zeroed();
         mi.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
         GetMonitorInfoW(monitor, &mut mi);
         let wa = mi.rcWork;
-        let x = (pt.x + 8).min(wa.right - w).max(wa.left);
-        let y = (pt.y + 8).min(wa.bottom - h).max(wa.top);
-        SetWindowPos(hwnd, HWND_TOPMOST, x, y, w, h, SWP_SHOWWINDOW);
+        let (sticker, saved_x, saved_y, saved_w, saved_h) = {
+            let s = app().settings.lock().unwrap();
+            (s.sticky_popup, s.popup_x, s.popup_y, s.popup_width, s.popup_height)
+        };
+        let dpi = GetDpiForWindow(hwnd).max(96) as i64;
+        let saved_x_px = saved_x * dpi / 96;
+        let saved_y_px = saved_y * dpi / 96;
+        let saved_w_px = saved_w * dpi / 96;
+        let saved_h_px = saved_h * dpi / 96;
+        let saved_rect_valid = sticker && saved_x_px >= wa.left as i64 && saved_y_px >= wa.top as i64
+            && saved_w > 0 && saved_h > 0
+            && saved_x_px + saved_w_px <= wa.right as i64 && saved_y_px + saved_h_px <= wa.bottom as i64;
+        let (x, y, w, h) = if saved_rect_valid {
+            (saved_x_px as i32, saved_y_px as i32, saved_w_px as i32, saved_h_px as i32)
+        } else {
+            ((pt.x + 8).min(wa.right - default_w).max(wa.left),
+             (pt.y + 8).min(wa.bottom - default_h).max(wa.top), default_w, default_h)
+        };
+        SetWindowPos(hwnd, if settings.always_on_top { HWND_TOPMOST } else { HWND_NOTOPMOST },
+                     x, y, w, h, SWP_SHOWWINDOW);
         SetForegroundWindow(hwnd);
         SetFocus(hwnd);
+        InvalidateRect(hwnd, std::ptr::null(), 0);
+    }
+}
+
+/// 설정 화면에서 항상 위 상태를 바꾸면 열린 창에도 즉시 반영한다.
+pub fn apply_settings() {
+    let hwnd = popup_hwnd();
+    if hwnd.is_null() { return; }
+    let topmost = app().settings.lock().unwrap().always_on_top;
+    unsafe {
+        SetWindowPos(hwnd, if topmost { HWND_TOPMOST } else { HWND_NOTOPMOST }, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         InvalidateRect(hwnd, std::ptr::null(), 0);
     }
 }
@@ -213,8 +249,9 @@ fn choose(index: usize) {
             None => return,
         }
     };
-    let paste = app().settings.lock().unwrap().auto_paste;
-    hide();
+    let settings = app().settings.lock().unwrap().clone();
+    let paste = settings.auto_paste;
+    if !settings.sticky_popup { hide(); }
     if !restore(id, paste, target) {
         refresh();
     }
@@ -345,7 +382,7 @@ unsafe fn paint(hwnd: HWND) {
         let mut hr = RECT { left: scale(hwnd, 10), top: 0, right: w - scale(hwnd, 10), bottom: head };
         let st = STATE.lock().unwrap();
         let title = if st.needle().is_empty() {
-            "K클립보드 · 1~9 또는 ↑↓ Enter · 글자를 치면 찾기 · Esc 닫기".to_string()
+            "몽땅클립보드 · 드래그해서 이동 · 1~9 또는 ↑↓ Enter · 글자를 치면 찾기 · Esc 닫기".to_string()
         } else {
             SetTextColor(mem, 0x00222222);
             format!("찾기: {}{}▏ · {}개 · Esc 지우기", st.query, st.comp, st.items.len())
@@ -407,9 +444,33 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                 0
             }
             WM_ERASEBKGND => 1,
-            WM_ACTIVATE if (wp & 0xFFFF) as u32 == WA_INACTIVE => {
-                hide();
+            WM_EXITSIZEMOVE if IsWindowVisible(hwnd) != 0 => {
+                let mut rect: RECT = std::mem::zeroed();
+                if GetWindowRect(hwnd, &mut rect) != 0 {
+                    let dpi = GetDpiForWindow(hwnd).max(96) as i64;
+                    let mut settings = app().settings.lock().unwrap();
+                    settings.popup_x = rect.left as i64 * 96 / dpi;
+                    settings.popup_y = rect.top as i64 * 96 / dpi;
+                    settings.popup_width = (rect.right - rect.left) as i64 * 96 / dpi;
+                    settings.popup_height = (rect.bottom - rect.top) as i64 * 96 / dpi;
+                    drop(settings);
+                    crate::save_settings();
+                }
                 0
+            }
+            WM_ACTIVATE if (wp & 0xFFFF) as u32 == WA_INACTIVE => {
+                if !app().settings.lock().unwrap().sticky_popup { hide(); }
+                0
+            }
+            WM_NCHITTEST => {
+                let mut rect: RECT = std::mem::zeroed();
+                GetWindowRect(hwnd, &mut rect);
+                let screen_y = (lp >> 16) as i16 as i32;
+                if screen_y >= rect.top && screen_y < rect.top + scale(hwnd, HEAD_H) {
+                    HTCAPTION as LRESULT
+                } else {
+                    DefWindowProcW(hwnd, msg, wp, lp)
+                }
             }
             WM_KEYDOWN => {
                 let vk = wp as u16;

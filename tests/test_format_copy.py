@@ -144,7 +144,7 @@ class FormatCopyStage1Test(unittest.TestCase):
         with patch.dict(fn.__globals__, {'표준서식_설정': dict(settings, 내어쓰기_규칙={'ㅇ': 'after_marker'})}):
             self.assertEqual(fn(text), 2)            # 예시가 기호 뒤 맞춤
         with patch.dict(fn.__globals__, {'표준서식_설정': dict(settings, 내어쓰기_규칙={'ㅇ': 'fixed'})}):
-            self.assertIsNone(fn(text))              # 고정 값: 규칙이 손대지 않고 복사한 값을 씀
+            self.assertEqual(fn(text), 2)            # 고정 값도 최종 Shift+Tab으로 맞춤(사용자 2026-11-01)
 
     def test_spacing_rules_set_prev_spacing_for_first_sentence_and_level_return(self):
         fn = self.ns['복사_간격_규칙_적용']
