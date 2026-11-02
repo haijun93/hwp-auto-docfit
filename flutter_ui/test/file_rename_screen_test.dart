@@ -126,7 +126,10 @@ void main() {
 
     final now = DateTime.now();
     String two(int v) => v.toString().padLeft(2, '0');
-    await tester.tap(find.text('${two(now.year % 100)}${two(now.month)}${two(now.day)}'));
+    final yymmddItem = find.text('${two(now.year % 100)}${two(now.month)}${two(now.day)}');
+    await tester.ensureVisible(yymmddItem);
+    await tester.pumpAndSettle();
+    await tester.tap(yymmddItem);
     await tester.pumpAndSettle(const Duration(milliseconds: 300));
     expect(((backend.lastPreview!['rules'] as List).single as Map)['format'], 'YYMMDD');
   });
@@ -171,6 +174,8 @@ void main() {
     // 옵션 없는 규칙(숫자 지우기)은 바로 추가된다.
     await tester.tap(find.byKey(const ValueKey('rename-add-rule')));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('숫자 지우기').last);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('숫자 지우기').last);
     await tester.pumpAndSettle(const Duration(milliseconds: 300));
     expect(backend.lastPreview!['rules'], [
@@ -201,6 +206,8 @@ void main() {
     await tester.pumpAndSettle(const Duration(milliseconds: 300));
     await tester.tap(find.byKey(const ValueKey('rename-add-rule')));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('이름 지우기(확장자만 남김)').last);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('이름 지우기(확장자만 남김)').last);
     await tester.pumpAndSettle(const Duration(milliseconds: 300));
     expect(find.text('충돌'), findsNWidgets(2));
@@ -216,15 +223,49 @@ void main() {
     await tester.pumpAndSettle(const Duration(milliseconds: 300));
     await tester.tap(find.byKey(const ValueKey('rename-add-rule')));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('번호 붙이기').last);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('번호 붙이기').last);
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('rule-field-digits')));
+    await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const ValueKey('rule-field-digits')), '2');
+    await tester.ensureVisible(find.text('확인'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('확인'));
     await tester.pumpAndSettle(const Duration(milliseconds: 300));
     final rule = (backend.lastPreview!['rules'] as List).single as Map;
     expect(rule['kind'], 'number');
     expect(rule['digits'], 2);
     expect(find.textContaining('2자리'), findsOneWidget);
+  });
+
+  testWidgets('규칙 편집 대화상자: 사진 촬영일(EXIF) 옵션 저장', (tester) async {
+    final backend = _FakeBackend();
+    await _pump(tester, backend);
+    await tester.tap(find.byKey(const ValueKey('rename-advanced')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('rename-add-files')));
+    await tester.pumpAndSettle(const Duration(milliseconds: 300));
+    await tester.tap(find.byKey(const ValueKey('rename-add-rule')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('사진 촬영일(EXIF)').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('사진 촬영일(EXIF)').last);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('rule-field-format')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('rule-field-format')), 'yyyy-MM-dd');
+    await tester.ensureVisible(find.text('확인'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('확인'));
+    await tester.pumpAndSettle(const Duration(milliseconds: 300));
+    final rule = (backend.lastPreview!['rules'] as List).single as Map;
+    expect(rule['kind'], 'exif_date');
+    expect(rule['format'], 'yyyy-MM-dd');
+    expect(rule['sep'], '_');
+    expect(rule['position'], 'prefix');
+    expect(find.textContaining('EXIF yyyy-MM-dd'), findsOneWidget);
   });
 
   testWidgets('새 문서 이름 규칙 메뉴와 폴더 자체 이름 바꾸기 버튼 표시', (tester) async {
@@ -235,7 +276,9 @@ void main() {
     expect(find.byKey(const ValueKey('rename-folder-self')), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('rename-add-rule')));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('문서 제목으로').last);
     expect(find.text('문서 제목으로'), findsOneWidget);
+    await tester.ensureVisible(find.text('공문서 이름 틀').last);
     expect(find.text('공문서 이름 틀'), findsOneWidget);
   });
 
@@ -254,6 +297,8 @@ void main() {
     await tester.pumpAndSettle(const Duration(milliseconds: 300));
     expect(backend.lastPreview?['on_conflict'] ?? 'block', 'block');
     await tester.tap(find.byKey(const ValueKey('rename-on-conflict')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('이름이 겹치면 (2)·(3) 붙이기').last);
     await tester.pumpAndSettle();
     await tester.tap(find.text('이름이 겹치면 (2)·(3) 붙이기').last);
     await tester.pumpAndSettle(const Duration(milliseconds: 300));
@@ -281,7 +326,11 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('이름 목록 붙여넣기(엑셀·메모장 줄)').last);
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('rule-field-names')));
+    await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const ValueKey('rule-field-names')), '보고서\n붙임1');
+    await tester.ensureVisible(find.text('확인'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('확인'));
     await tester.pumpAndSettle(const Duration(milliseconds: 300));
     final rule = (backend.lastPreview!['rules'] as List).single as Map;
@@ -296,5 +345,6 @@ void main() {
     expect(ruleSummary({'kind': 'case', 'mode': 'capitalize'}), '맨 앞 글자만 대문자');
     expect(ruleSummary({'kind': 'case', 'mode': 'sentence'}), '문장형(맨 앞만 대문자)');
     expect(ruleSummary({'kind': 'ext_case', 'mode': 'lower'}), '소문자');
+    expect(ruleSummary({'kind': 'exif_date', 'format': 'YYYYMMDD', 'position': 'prefix'}), 'EXIF YYYYMMDD · 앞');
   });
 }
