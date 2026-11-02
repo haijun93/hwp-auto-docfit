@@ -58,14 +58,26 @@ class KordocContractTest(unittest.TestCase):
             with self.assertRaises(kb.KordocUnavailableError):
                 kb._kordoc_command()
 
-    def test_npx_requires_explicit_opt_in_and_disables_lifecycle_scripts(self):
-        # 인터넷이 되는 PC에서 폐쇄망 모드를 끄고 명시적으로 허용한 경우에만 npx를 쓴다.
+    def test_network_install_uses_locked_ci_and_disables_lifecycle_scripts(self):
         with patch.object(kb, "_node_major", return_value=20), patch.object(kb, "_local_kordoc", return_value=None), \
                 patch.object(kb, "_bundled_runtime", return_value=None), \
-                patch.object(kb, "_npx_command", return_value=["node.exe", "npx-cli.js"]), \
+                patch.object(kb, "_locked_npm_install", return_value=["node.exe", "kordoc.js"]) as install, \
                 patch.dict(os.environ, {"DOCFIT_ALLOW_NPX_DOWNLOAD": "1", "DOCFIT_OFFLINE": "0"}, clear=False):
             command = kb._kordoc_command()
-        self.assertEqual(command, ["node.exe", "npx-cli.js", "--yes", "--ignore-scripts", kb.KORDOC_PACKAGE])
+        self.assertEqual(command, ["node.exe", "kordoc.js"])
+        install.assert_called_once_with()
+
+    def test_locked_install_invokes_npm_ci_with_scripts_disabled(self):
+        with tempfile.TemporaryDirectory() as folder, \
+                patch.object(kb.shutil, "which", return_value="npm"), \
+                patch.object(kb, "_node_executable", return_value="node"), \
+                patch.object(kb.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "", "")) as run, \
+                patch.dict(os.environ, {"LOCALAPPDATA": folder}):
+            root = Path(folder) / "HwpAutoDocFit" / "kordoc-network"
+            with patch.object(kb.Path, "is_file", autospec=True, side_effect=lambda p: True):
+                command = kb._locked_npm_install()
+        self.assertEqual(command[0], "node")
+        self.assertEqual(run.call_args_list[0].args[0][1:3], ["ci", "--ignore-scripts"])
 
     def test_engine_status_reports_missing_runtime_dependency(self):
         with patch.object(kb, "_node_major", return_value=20), \

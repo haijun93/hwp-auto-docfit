@@ -336,13 +336,13 @@ def reference_marker_indent_pairs(path: str | Path) -> dict[str, tuple[int, int]
     동률이면 문서에서 먼저 나온 값을 사용한다.
     """
     from collections import Counter
-    from zipfile import ZipFile
+    from .hwpx import open_hwpx_safely
 
     namespaces = {
         "hp": "http://www.hancom.co.kr/hwpml/2011/paragraph",
         "hh": "http://www.hancom.co.kr/hwpml/2011/head",
     }
-    with ZipFile(path) as archive:
+    with open_hwpx_safely(path) as archive:
         header = ET.fromstring(archive.read("Contents/header.xml"))
         styles = {node.get("id", ""): node for node in header.findall(".//hh:paraPr", namespaces)}
         samples: dict[str, list[tuple[int, int]]] = {}

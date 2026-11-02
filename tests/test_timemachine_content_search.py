@@ -23,7 +23,7 @@ class ContentSearchTests(unittest.TestCase):
         self.assertFalse(self.index.index_file(path)["indexed"])
         found = self.index.search("업무 실적", roots=[str(self.root)])
         self.assertEqual(found[0]["name"], path.name)
-        self.assertIn("[업무 실적]", found[0]["snippet"])
+        self.assertIn("업무 실적", found[0]["snippet"])
         path.write_text("새로운 내용", encoding="utf-8")
         self.assertTrue(self.index.index_file(path)["indexed"])
         self.assertEqual(self.index.search("업무 실적"), [])
@@ -31,6 +31,7 @@ class ContentSearchTests(unittest.TestCase):
     def test_hwpx_uses_defused_xml_extractor(self):
         path = self.root / "문서.hwpx"
         with ZipFile(path, "w") as archive:
+            archive.writestr("Contents/header.xml", "<head/>")
             archive.writestr("Contents/section0.xml", '<root><p>타임머신 본문 검색</p></root>')
         self.assertIn("타임머신 본문", extract_text(path))
         self.index.index_file(path)

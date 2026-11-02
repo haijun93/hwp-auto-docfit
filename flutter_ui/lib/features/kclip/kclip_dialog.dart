@@ -36,6 +36,7 @@ class _KClipPanelState extends State<KClipPanel> {
   Map settings = const {};
   bool consent = false;
   bool autostart = false;
+  bool keepExcelBackground = true;
   bool busy = false;
   String message = '';
   String query = '';
@@ -141,6 +142,23 @@ class _KClipPanelState extends State<KClipPanel> {
     } finally {
       if (mounted) setState(() => busy = false);
     }
+  }
+
+  Future<void> _convertExcel() async {
+    if (busy) return;
+    setState(() => busy = true);
+    try {
+      final result = await widget.api('excel_table', ['convert', {'keep_cell_background': keepExcelBackground}]);
+      if (!mounted) return;
+      setState(() {
+        if (result is Map && result['ok'] == true) {
+          final counts = (result['cleaned'] as Map?) ?? const {};
+          message = '${result['rows']}행 × ${result['cols']}열 변환 완료 · 바탕색 ${counts['background'] ?? 0}, 공백 ${counts['spaces'] ?? 0}, 기호 ${counts['symbols'] ?? 0} 정리. 한/글에서 Ctrl+V';
+        } else {
+          message = '${(result is Map ? result['message'] : null) ?? '클립보드에서 엑셀 표를 찾지 못했습니다.'}';
+        }
+      });
+    } finally { if (mounted) setState(() => busy = false); }
   }
 
   Future<void> _confirmClearAll() async {
@@ -344,6 +362,18 @@ class _KClipPanelState extends State<KClipPanel> {
         ),
         const SizedBox(height: 8),
         _settings(context),
+        Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+          FilledButton.icon(
+            key: const ValueKey('kclip-excel-table'),
+            onPressed: busy ? null : _convertExcel,
+            icon: const Icon(Icons.table_view),
+            label: const Text('엑셀 표를 한/글 표로'),
+          ),
+          Row(mainAxisSize: MainAxisSize.min, children: [
+            Checkbox(value: keepExcelBackground, onChanged: (v) => setState(() => keepExcelBackground = v == true)),
+            const Text('칸 배경색 유지'),
+          ]),
+        ]),
         TextField(
           decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: '찾기'),
           onChanged: (v) {

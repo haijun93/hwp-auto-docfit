@@ -11,6 +11,7 @@ import time
 from zipfile import BadZipFile, ZipFile
 
 from defusedxml import ElementTree as ET
+from .hwpx import open_hwpx_safely
 
 
 DEFAULT_COM_LOCK_PATH = Path(r"C:\HWP_AUTODOCFIT\.com-test.lock")
@@ -27,7 +28,7 @@ def count_hwpx_nonspace_chars(hwpx_path: str | Path) -> int:
     if not path.is_file():
         raise RuntimeError(f"저장된 HWPX 파일이 존재하지 않습니다: {path}")
     try:
-        with ZipFile(path, "r") as archive:
+        with open_hwpx_safely(path) as archive:
             section_names = sorted(
                 name for name in archive.namelist() if _SECTION_NAME_RE.match(name)
             )

@@ -18,6 +18,7 @@ import time
 import zipfile
 
 from .. import pdfium_guard
+from ..hwpx import HwpxLimits, open_hwpx_safely
 from .rules import cloud_only
 from .store import path_key
 
@@ -75,7 +76,14 @@ def _from_image(path):
 
 
 def _from_archive(path, member, *, check_manifest=False):
-    with zipfile.ZipFile(path) as archive:
+    if str(path).lower().endswith(".hwpx"):
+        archive_context = open_hwpx_safely(
+            path, limits=HwpxLimits(max_entries=MAX_ARCHIVE_ENTRIES,
+                                    max_total_size=MAX_ARCHIVE_BYTES,
+                                    max_file_size=MAX_MEMBER_BYTES))
+    else:
+        archive_context = zipfile.ZipFile(path)
+    with archive_context as archive:
         infos = archive.infolist()
         if (len(infos) > MAX_ARCHIVE_ENTRIES or
                 sum(item.file_size for item in infos) > MAX_ARCHIVE_BYTES):

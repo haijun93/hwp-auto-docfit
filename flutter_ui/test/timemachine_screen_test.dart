@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:docfit_ui/features/timemachine/timemachine_screen.dart';
 
 void main() {
+  _labelsTest();
   testWidgets('켜기 후 목록과 날짜 머리글 표시', (tester) async {
     final api = _FakeApi();
     await tester.pumpWidget(MaterialApp(home:Scaffold(body:TimemachineScreen(api:api.call))));
@@ -55,7 +56,9 @@ void main() {
     await tester.enterText(find.byType(TextField),'회의'); await tester.pump(const Duration(milliseconds:400)); await tester.pumpAndSettle();
     expect(api.calls.any((c)=>c.$1=='content_search'&&c.$2['query']=='회의'),true);
     expect(find.text('본문포함.docx'),findsOneWidget);
-    expect(find.textContaining('[회의] 결과'),findsOneWidget);
+    final snippet=tester.widget<RichText>(find.textContaining('회의 결과',findRichText:true));
+    TextSpan? hit; snippet.text.visitChildren((s){ if(s is TextSpan&&s.text=='회의'){hit=s; return false;} return true; });
+    expect(hit!.style!.backgroundColor,const Color(0xFFFFEB3B));
     await tester.tap(find.text('본문 색인')); await tester.pumpAndSettle();
     expect(api.calls.any((c)=>c.$1=='content_index_start'),true);
     expect(find.textContaining('추출 실패 2건'),findsOneWidget);
@@ -309,6 +312,17 @@ void main() {
 // 1×1 JPEG
 const _jpeg='/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=';
 
+void _labelsTest() {
+  testWidgets('종류 필터는 확장자 이름으로 보인다', (tester) async {
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: _FakeApi(enabled: true).call))));
+    await tester.pumpAndSettle();
+    for (final label in ['hwpx', 'docx', 'xlsx', 'ppt', 'PDF', '이미지']) {
+      expect(find.widgetWithText(FilterChip, label), findsOneWidget);
+    }
+    expect(find.widgetWithText(FilterChip, '한/글'), findsNothing);
+  });
+}
+
 class _FakeApi {
   _FakeApi({
     this.enabled = false,
@@ -356,7 +370,7 @@ class _FakeApi {
       case 'content_index_cancel':
         return {'ok':true,'running':false,'seen':5,'indexed':3,'errors':2};
       case 'content_search':
-        return {'ok':true,'items':[{'name':'본문포함.docx','path':'C:\\Temp\\TM\\본문포함.docx','snippet':'[회의] 결과'}]};
+        return {'ok':true,'items':[{'name':'본문포함.docx','path':'C:\\Temp\\TM\\본문포함.docx','snippet':'회의 결과'}]};
       case 'thumbnail':
         thumbnailCalls++;
         _inFlight++;

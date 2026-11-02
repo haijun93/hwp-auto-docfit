@@ -95,6 +95,7 @@ const ruleKinds = <RuleKind>[
   RuleKind('add', '앞/뒤에 추가', {'text': '', 'position': 'prefix', 'sep': ''}),
   RuleKind('uuid_replace', '무작위 UUID 파일명 바꾸기', {'text': ''}),
   RuleKind('date', '날짜·시각 넣기', {'source': 'mtime', 'format': 'YYYYMMDD', 'position': 'prefix', 'sep': '_'}),
+  RuleKind('exif_date', '사진 촬영일(EXIF)', {'format': 'YYYYMMDD', 'position': 'prefix', 'sep': '_'}),
   RuleKind('number', '번호 붙이기', {'start': 1, 'step': 1, 'digits': 3, 'position': 'suffix', 'per_folder': false, 'sep': '_'}),
   RuleKind('number_shift', '번호 늘리기/줄이기', {'delta': 1, 'which': 'first'}),
   RuleKind('digits_pad', '자리수 맞추기', {'digits': 3, 'which': 'last'}),
@@ -131,6 +132,8 @@ String ruleSummary(Map<String, Object?> rule) {
     case 'date':
       const sources = {'exif': '촬영일', 'mtime': '수정일', 'ctime': '만든 날', 'today': '오늘'};
       return '${sources[rule['source']] ?? ''} ${rule['format']} · ${pos(rule['position'])}';
+    case 'exif_date':
+      return 'EXIF ${rule['format']} · ${pos(rule['position'])}';
     case 'number':
       return '${rule['start']}부터 ${rule['step']}씩 · ${rule['digits']}자리 · ${pos(rule['position'])}'
           '${rule['per_folder'] == true ? ' · 폴더별' : ''}';

@@ -65,6 +65,17 @@ class VariableTests(unittest.TestCase):
 
 
 class RuleTests(unittest.TestCase):
+    def test_exif_date_rule_uses_capture_time_and_warns_when_missing(self):
+        captured = datetime(2024, 2, 3, 4, 5, 6)
+        photo = fake('/d/photo.jpg', datetime(2026, 1, 1).timestamp())
+        no_exif = fake('/d/no-exif.png', datetime(2025, 1, 1).timestamp())
+        results = apply_rules([photo, no_exif], [{
+            'kind': 'exif_date', 'format': 'YYYYMMDD-hhmmss', 'position': 'prefix', 'sep': '_',
+        }], exif_reader=lambda path: captured if path.endswith('photo.jpg') else None)
+        self.assertEqual(results[0][0], '20240203-040506_photo.jpg')
+        self.assertEqual(results[1][0], 'no-exif.png')
+        self.assertIn('exif_missing', results[1][2])
+
     def test_names_list(self):
         e = [fake(f"/d/{n}.hwpx") for n in ("a", "b", "c")]
         rule = {"kind": "names_list", "names": "보고서\r\n붙임1\n\n"}

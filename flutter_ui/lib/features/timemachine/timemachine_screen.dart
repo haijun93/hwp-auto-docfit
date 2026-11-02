@@ -13,7 +13,7 @@ class TimemachineScreen extends StatefulWidget {
 }
 
 class _TimemachineScreenState extends State<TimemachineScreen> {
-  static const _kinds = {'한/글':'hwp', '문서':'doc', '표':'sheet', '발표':'slide', 'PDF':'pdf', '이미지':'image'};
+  static const _kinds = {'hwpx':'hwp', 'docx':'doc', 'xlsx':'sheet', 'ppt':'slide', 'PDF':'pdf', '이미지':'image'};
   late final TimemachineApi _api = TimemachineApi(widget.api);
   late final TimemachineThumbnailLoader _thumbnails = TimemachineThumbnailLoader(_api);
   bool _watchByAgent = false;
@@ -47,6 +47,26 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
   void initState() { super.initState(); _load(firstOpen: true); _scroll.addListener(_onScroll); }
   @override
   void dispose() { _debounce?.cancel(); _scanPoll?.cancel(); _contentPoll?.cancel(); _thumbnails.dispose(); _scroll.dispose(); _search.dispose(); super.dispose(); }
+
+  /// 검색어와 일치하는 글자의 바탕을 노란색으로 칠한다(대소문자 무시).
+  Widget _marked(String text, String query, {int? maxLines, TextStyle? style}) {
+    final lower = text.toLowerCase(), key = query.toLowerCase();
+    if (key.isEmpty || !lower.contains(key)) {
+      return Text(text, maxLines: maxLines, overflow: TextOverflow.ellipsis, style: style);
+    }
+    final spans = <TextSpan>[];
+    var at = 0;
+    for (var hit = lower.indexOf(key); hit >= 0; hit = lower.indexOf(key, at)) {
+      if (hit > at) spans.add(TextSpan(text: text.substring(at, hit)));
+      at = hit + key.length;
+      spans.add(TextSpan(
+        text: text.substring(hit, at),
+        style: const TextStyle(backgroundColor: Color(0xFFFFEB3B), color: Colors.black),
+      ));
+    }
+    if (at < text.length) spans.add(TextSpan(text: text.substring(at)));
+    return Text.rich(TextSpan(style: style, children: spans), maxLines: maxLines, overflow: TextOverflow.ellipsis);
+  }
 
   Future<void> _contentSearch(String query) async {
     if (query.isEmpty) { if (mounted) setState(() => _contentResults = []); return; }
@@ -364,7 +384,7 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
           if (_contentMode && _contentResults.isNotEmpty)
             ConstrainedBox(constraints:const BoxConstraints(maxHeight:180),child:ListView.builder(itemCount:_contentResults.length,itemBuilder:(context,index){
               final row=_contentResults[index];
-              return ListTile(dense:true,title:Text('${row['name'] ?? ''}'),subtitle:Text('${row['snippet'] ?? ''}',maxLines:2,overflow:TextOverflow.ellipsis));
+              return ListTile(dense:true,title:_marked('${row['name'] ?? ''}',_search.text.trim()),subtitle:_marked('${row['snippet'] ?? ''}',_search.text.trim(),maxLines:2));
             })),
           if (_error != null)
             MaterialBanner(
@@ -646,7 +666,7 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(item.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
+                          _marked(item.name, _contentMode ? '' : _query, maxLines: 1, style: const TextStyle(fontWeight: FontWeight.w600)),
                           Text('${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}  ·  ${item.folder}', maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall),
                           Wrap(spacing: 4, children: [if (item.flags.contains('copied')) const _Badge('복사됨'), if (item.flags.contains('new')) const _Badge('새 문서')]),
                         ],

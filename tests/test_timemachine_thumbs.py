@@ -60,7 +60,9 @@ class ThumbsTestCase(unittest.TestCase):
 
 class RenderTests(ThumbsTestCase):
     def test_hwpx_preview(self):
-        self.assertThumbnail(thumbs.render(self.archive("a.hwpx", {"Preview/PrvImage.png": picture_bytes()})))
+        self.assertThumbnail(thumbs.render(self.archive("a.hwpx", {
+            "Contents/header.xml": b"<head/>", "Contents/section0.xml": b"<section/>",
+            "Preview/PrvImage.png": picture_bytes()})))
 
     def test_hwpx_without_preview_is_none(self):
         self.assertIsNone(thumbs.render(self.archive("a.hwpx", {"Contents/section0.xml": b"<a/>"})))

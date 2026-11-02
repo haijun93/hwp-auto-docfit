@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import Mock
 from pathlib import Path
+import re
 import tempfile
 
 from desktop_web_ui import DesktopWebBridge, _bind_file_drop, _FILE_DROP_SCRIPT
@@ -14,6 +15,14 @@ class DropEvent:
 
 
 class FileDropTests(TestCase):
+    def test_desktop_page_has_restrictive_content_security_policy(self):
+        html = (Path(__file__).resolve().parents[1] / 'desktop_web' / 'index.html').read_text(encoding='utf-8')
+        match = re.search(r'<meta[^>]+http-equiv="Content-Security-Policy"[^>]+>', html, re.I)
+        self.assertIsNotNone(match)
+        for directive in ("default-src 'self'", "script-src 'self'", "connect-src 'none'",
+                          "object-src 'none'", "base-uri 'none'"):
+            self.assertIn(directive, match.group(0))
+
     def test_only_successful_document_drop_advances_navigation_revision(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'report.md'

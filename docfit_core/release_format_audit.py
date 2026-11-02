@@ -10,6 +10,7 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 import re
 from zipfile import ZipFile
+from .hwpx import open_hwpx_safely
 
 from defusedxml import ElementTree as ET
 
@@ -85,7 +86,7 @@ def inspect_hanging_indent(path: str | Path, reference_path: str | Path | None =
     if reference_path is not None:
         from .xml_hanging_indent import reference_marker_indent_pairs
         reference_pairs = reference_marker_indent_pairs(reference_path)
-    with ZipFile(source) as archive:
+    with open_hwpx_safely(source) as archive:
         header = ET.fromstring(archive.read("Contents/header.xml"))
         para_styles = {
             node.get("id", ""): node

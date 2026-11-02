@@ -76,9 +76,90 @@ Future<void> _pump(WidgetTester tester, _FakeBackend backend) async {
 }
 
 void main() {
+  testWidgets('쉬운 입력: 적은 항목만 규칙이 되고 적용 뒤 입력을 비운다', (tester) async {
+    final backend = _FakeBackend();
+    await _pump(tester, backend);
+    await tester.tap(find.byKey(const ValueKey('rename-add-files')));
+    await tester.pumpAndSettle(const Duration(milliseconds: 300));
+    expect(backend.lastPreview!['rules'], isEmpty);
+
+    await tester.enterText(find.byKey(const ValueKey('rename-prefix')), '사진');
+    await tester.pumpAndSettle(const Duration(milliseconds: 300));
+    expect(backend.lastPreview!['rules'], [
+      {'kind': 'add', 'text': '사진', 'position': 'prefix', 'sep': ''},
+    ]);
+
+    await tester.enterText(find.byKey(const ValueKey('rename-suffix')), '끝');
+    await tester.enterText(find.byKey(const ValueKey('rename-find')), '만두');
+    await tester.enterText(find.byKey(const ValueKey('rename-replace-to')), '자장면');
+    await tester.pumpAndSettle(const Duration(milliseconds: 300));
+    expect(backend.lastPreview!['rules'], [
+      {'kind': 'replace', 'find': '만두', 'to': '자장면'},
+      {'kind': 'add', 'text': '사진', 'position': 'prefix', 'sep': ''},
+      {'kind': 'add', 'text': '끝', 'position': 'suffix', 'sep': ''},
+    ]);
+
+    await tester.tap(find.byKey(const ValueKey('rename-apply')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('rename-confirm')));
+    await tester.pumpAndSettle(const Duration(milliseconds: 300));
+    expect(backend.lastPreview!['rules'], isEmpty);
+  });
+
+  testWidgets('날짜: 앞에는 끝 마침표를 두고 뒤에는 빼며 짧은 형식도 고른다', (tester) async {
+    final backend = _FakeBackend();
+    await _pump(tester, backend);
+    await tester.tap(find.byKey(const ValueKey('rename-add-files')));
+    await tester.pumpAndSettle(const Duration(milliseconds: 300));
+
+    await tester.ensureVisible(find.text('맨 앞'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('맨 앞'));
+    await tester.pumpAndSettle(const Duration(milliseconds: 300));
+    expect((backend.lastPreview!['rules'] as List).single, {
+      'kind': 'date', 'source': 'today', 'format': 'YYYY.MM.DD.', 'position': 'prefix', 'sep': '',
+    });
+
+    await tester.tap(find.text('맨 뒤'));
+    await tester.pumpAndSettle(const Duration(milliseconds: 300));
+    expect(((backend.lastPreview!['rules'] as List).single as Map)['format'], 'YYYY.MM.DD');
+
+    final now = DateTime.now();
+    String two(int v) => v.toString().padLeft(2, '0');
+    await tester.tap(find.text('${two(now.year % 100)}${two(now.month)}${two(now.day)}'));
+    await tester.pumpAndSettle(const Duration(milliseconds: 300));
+    expect(((backend.lastPreview!['rules'] as List).single as Map)['format'], 'YYMMDD');
+  });
+
+  for (final size in const [Size(1400, 800), Size(800, 600), Size(620, 700), Size(1000, 420)]) {
+    testWidgets('창 크기 $size: 넘치지 않고 구분선을 끌어 조절한다', (tester) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(MaterialApp(home: Scaffold(body: FileRenameScreen(api: _FakeBackend().call))));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      final side = find.byKey(const ValueKey('rename-split-side'));
+      final list = find.byKey(const ValueKey('rename-split-list'));
+      final handle = side.evaluate().isNotEmpty ? side : list;
+      expect(handle, findsOneWidget);
+      final horizontal = handle == side;
+      final before = tester.getCenter(handle);
+      await tester.drag(handle, horizontal ? const Offset(-80, 0) : const Offset(0, 40));
+      await tester.pumpAndSettle();
+      final after = tester.getCenter(handle);
+      expect(horizontal ? after.dx : after.dy, isNot(horizontal ? before.dx : before.dy));
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('파일 추가 → 규칙 추가 → 미리보기 → 적용 → 되돌리기', (tester) async {
     final backend = _FakeBackend();
     await _pump(tester, backend);
+    await tester.tap(find.byKey(const ValueKey('rename-advanced')));
+    await tester.pumpAndSettle();
     expect(find.textContaining('끌어다 놓거나'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('rename-add-files')));
@@ -114,6 +195,8 @@ void main() {
   testWidgets('충돌이 있으면 변경 적용 단추가 꺼진다', (tester) async {
     final backend = _FakeBackend()..conflict = true;
     await _pump(tester, backend);
+    await tester.tap(find.byKey(const ValueKey('rename-advanced')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('rename-add-files')));
     await tester.pumpAndSettle(const Duration(milliseconds: 300));
     await tester.tap(find.byKey(const ValueKey('rename-add-rule')));
@@ -127,6 +210,8 @@ void main() {
   testWidgets('규칙 편집 대화상자: 번호 붙이기 옵션을 숫자로 저장', (tester) async {
     final backend = _FakeBackend();
     await _pump(tester, backend);
+    await tester.tap(find.byKey(const ValueKey('rename-advanced')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('rename-add-files')));
     await tester.pumpAndSettle(const Duration(milliseconds: 300));
     await tester.tap(find.byKey(const ValueKey('rename-add-rule')));
@@ -145,6 +230,8 @@ void main() {
   testWidgets('새 문서 이름 규칙 메뉴와 폴더 자체 이름 바꾸기 버튼 표시', (tester) async {
     final backend = _FakeBackend();
     await _pump(tester, backend);
+    await tester.tap(find.byKey(const ValueKey('rename-advanced')));
+    await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('rename-folder-self')), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('rename-add-rule')));
     await tester.pumpAndSettle();
@@ -161,6 +248,8 @@ void main() {
     });
     addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
     await _pump(tester, backend);
+    await tester.tap(find.byKey(const ValueKey('rename-advanced')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('rename-add-files')));
     await tester.pumpAndSettle(const Duration(milliseconds: 300));
     expect(backend.lastPreview?['on_conflict'] ?? 'block', 'block');
@@ -182,9 +271,13 @@ void main() {
   testWidgets('이름 목록 붙여넣기 규칙: 여러 줄 입력이 그대로 실린다', (tester) async {
     final backend = _FakeBackend();
     await _pump(tester, backend);
+    await tester.tap(find.byKey(const ValueKey('rename-advanced')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('rename-add-files')));
     await tester.pumpAndSettle(const Duration(milliseconds: 300));
     await tester.tap(find.byKey(const ValueKey('rename-add-rule')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('이름 목록 붙여넣기(엑셀·메모장 줄)').last);
     await tester.pumpAndSettle();
     await tester.tap(find.text('이름 목록 붙여넣기(엑셀·메모장 줄)').last);
     await tester.pumpAndSettle();
