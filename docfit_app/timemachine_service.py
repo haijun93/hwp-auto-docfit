@@ -101,11 +101,16 @@ class TimemachineService:
                     break
             # 연결이 끊긴 드라이브의 문서는 지워진 것으로 보지 않는다.
             available = [os.path.normcase(os.path.abspath(root)) + os.sep for root in roots if os.path.isdir(root)]
+            active_roots = [os.path.normcase(os.path.abspath(root)) + os.sep
+                            for root in self._settings["roots"] if os.path.isdir(root)]
             for path in tuple(self._content_pending_roots):
                 if self._content_cancel.is_set():
                     break
-                if (os.path.normcase(os.path.abspath(path)).startswith(tuple(available))
-                        and not os.path.exists(path)):
+                normalized = os.path.normcase(os.path.abspath(path))
+                in_scan_roots = normalized.startswith(tuple(available))
+                in_active_roots = normalized.startswith(tuple(active_roots))
+                extension_allowed = Path(path).suffix.lower().lstrip(".") in self._settings["extensions"]
+                if in_scan_roots and (not in_active_roots or not extension_allowed or not os.path.exists(path)):
                     self.content_index.remove_file(path)
         finally:
             with self._content_lock:

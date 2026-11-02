@@ -99,6 +99,103 @@ class TimemachineServiceTests(unittest.TestCase):
         self.assertEqual(status["indexed"], 2)
         self.assertEqual(len(self.service.command("content_search", {"query":"색인"})["items"]), 1)
 
+    def test_content_index_cancel_during_refresh_keeps_unvisited_entries(self):
+        self.enable()
+        files = [self.root / f"{name}.txt" for name in ("one", "two")]
+        for file in files:
+            file.write_text("보존 문서", encoding="utf-8")
+            self.service.command("content_index", {"path": str(file)})
+        entered, release = threading.Event(), threading.Event()
+        original = self.service.content_index.index_file
+        def blocked(path):
+            entered.set(); release.wait(2)
+            return original(path)
+        with patch.object(self.service.content_index, "index_file", side_effect=blocked):
+            self.service._refresh_content_index_async()
+            self.assertTrue(entered.wait(1))
+            self.service.command("content_index_cancel")
+            release.set()
+            self.service._content_thread.join(2)
+        self.assertFalse(self.service._content_state["running"])
+        self.assertTrue(self.service._content_state["cancelled"])
+        self.assertEqual(len(self.service.command("content_search", {"query": "보존 문서"})["items"]), 2)
+
+    def test_content_index_refresh_is_single_flight(self):
+        self.enable()
+        file = self.root / "one.txt"
+        file.write_text("갱신", encoding="utf-8")
+        self.service.command("content_index", {"path": str(file)})
+        entered, release = threading.Event(), threading.Event()
+        original = self.service.content_index.index_file
+        calls = []
+        def blocked(path):
+            calls.append(path); entered.set(); release.wait(2)
+            return original(path)
+        with patch.object(self.service.content_index, "index_file", side_effect=blocked):
+            self.service._refresh_content_index_async()
+            self.assertTrue(entered.wait(1))
+            first = self.service._content_thread
+            self.service._refresh_content_index_async()
+            self.assertIs(self.service._content_thread, first)
+            release.set(); first.join(2)
+        self.assertEqual(len(calls), 1)
+
+    def test_refresh_removes_index_for_removed_root(self):
+        second = Path(self.temp.name) / "추가"; second.mkdir()
+        self.enable([self.root, second])
+        file = self.root / "old.txt"; file.write_text("제거 조사 폴더", encoding="utf-8")
+        self.service.command("content_index", {"path": str(file)})
+        self.enable([second])
+        self.service._refresh_content_index_async()
+        worker = self.service._content_thread
+        if worker: worker.join(2)
+        self.assertEqual(self.service.command("content_search", {"query": "제거 조사 폴더"})["items"], [])
+
+    def test_refresh_removes_entries_for_extensions_no_longer_enabled(self):
+        self.enable()
+        file = self.root / "old.txt"; file.write_text("확장자 제외", encoding="utf-8")
+        self.service.command("content_index", {"path": str(file)})
+        self.service.command("settings_set", {"roots": [str(self.root)], "time_mode": "max", "enabled": True, "extensions": ["pdf"]})
+        self.service._refresh_content_index_async()
+        self.service._content_thread.join(2)
+        self.assertEqual(self.service.command("content_search", {"query": "확장자 제외"})["items"], [])
+
+    def test_refresh_missing_root_preserves_indexed_documents(self):
+        offline_root = Path(self.temp.name) / "오프라인"; offline_root.mkdir()
+        self.enable([offline_root])
+        file = offline_root / "offline.txt"; file.write_text("오프라인 보존", encoding="utf-8")
+        self.service.command("content_index", {"path": str(file)})
+        file.unlink()
+        offline_root.rmdir()
+        try:
+            self.service._refresh_content_index_async()
+            worker = self.service._content_thread
+            if worker: worker.join(2)
+            self.assertEqual(len(self.service.command("content_search", {"query": "오프라인 보존"})["items"]), 1)
+        finally:
+            offline_root.mkdir()
+
+    def test_refresh_during_close_cancels_and_joins_worker(self):
+        self.enable()
+        file = self.root / "blocked.txt"; file.write_text("종료 갱신", encoding="utf-8")
+        self.service.command("content_index", {"path": str(file)})
+        entered, release = threading.Event(), threading.Event()
+        original = self.service.content_index.index_file
+        def blocked(path):
+            entered.set(); release.wait(2)
+            return original(path)
+        with patch.object(self.service.content_index, "index_file", side_effect=blocked):
+            self.service._refresh_content_index_async()
+            self.assertTrue(entered.wait(1))
+            closer = threading.Thread(target=self.service.close); closer.start()
+            deadline = time.monotonic() + 1
+            while not self.service._content_cancel.is_set() and time.monotonic() < deadline:
+                time.sleep(0.005)
+            self.assertTrue(self.service._content_cancel.is_set())
+            release.set(); closer.join(2)
+            self.assertFalse(closer.is_alive())
+        self.assertFalse(self.service._content_thread.is_alive())
+
     def test_scan_refreshes_only_existing_content_index_and_removes_deleted(self):
         self.enable()
         original = self.root / "original.txt"
