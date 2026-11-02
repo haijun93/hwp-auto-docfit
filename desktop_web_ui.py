@@ -971,6 +971,8 @@ class DesktopWebBridge:
         "spacing_enabled": ("spacing_enabled_var", "spacing"),
         "spacing_exclude_pagefit": ("spacing_exclude_pagefit_var", "spacing"),
         "spacing_exclude_reset": ("spacing_exclude_reset_var", "spacing"),
+        "spacing_cell_image_to_bg": ("spacing_cell_image_to_bg_var", "spacing"),
+        "all_cell_image_to_bg": ("all_cell_image_to_bg_var", "all"),
         "all_exclude_pagefit": ("all_exclude_pagefit_var", "all"),
         "all_exclude_linespacing": ("all_exclude_linespacing_var", "all"),
         "unify_exclude_tables": ("unify_exclude_tables_var", "unify"),

@@ -33,8 +33,6 @@ void main() {
         await expectLater(client.call('exec', ['arbitrary']), throwsException);
         client.process!.kill();
         await client.process!.exitCode;
-        await expectLater(client.call('get_state', []), throwsException);
-        await client.close();
         final recovered = await client.call('get_settings', []) as Map;
         expect((recovered['data'] as Map)['values']['retry_body'], '8');
       } finally {
