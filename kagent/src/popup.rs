@@ -99,7 +99,7 @@ pub fn register(instance: HINSTANCE) {
         RegisterClassExW(&wc);
         let topmost = app().settings.lock().unwrap().always_on_top;
         let ex_style = WS_EX_TOOLWINDOW | if topmost { WS_EX_TOPMOST } else { 0 };
-        let hwnd = CreateWindowExW(ex_style, class.as_ptr(), wide("K클립보드").as_ptr(),
+        let hwnd = CreateWindowExW(ex_style, class.as_ptr(), wide("몽땅클립보드").as_ptr(),
                                    WS_POPUP | WS_BORDER, 0, 0, BASE_W, 200, std::ptr::null_mut(),
                                    std::ptr::null_mut(), instance, std::ptr::null());
         HWND_POPUP.store(hwnd as isize, Ordering::Relaxed);
@@ -366,7 +366,7 @@ unsafe fn paint(hwnd: HWND) {
         let mut hr = RECT { left: scale(hwnd, 10), top: 0, right: w - scale(hwnd, 10), bottom: head };
         let st = STATE.lock().unwrap();
         let title = if st.needle().is_empty() {
-            "K클립보드 · 드래그해서 이동 · 1~9 또는 ↑↓ Enter · 글자를 치면 찾기 · Esc 닫기".to_string()
+            "몽땅클립보드 · 드래그해서 이동 · 1~9 또는 ↑↓ Enter · 글자를 치면 찾기 · Esc 닫기".to_string()
         } else {
             SetTextColor(mem, 0x00222222);
             format!("찾기: {}{}▏ · {}개 · Esc 지우기", st.query, st.comp, st.items.len())

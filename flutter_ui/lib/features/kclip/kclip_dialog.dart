@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/api/abbreviation_api.dart' show ApiCall;
 
-/// K클립보드 관리: 켜기(동의)·끄기·상태·목록(검색·고정·지우기·클립보드에 올리기)·설정.
+/// 몽땅클립보드 관리: 켜기(동의)·끄기·상태·목록(검색·고정·지우기·클립보드에 올리기)·설정.
 /// 빠른 붙여넣기는 상주 프로그램의 단축키 팝업(기본 Ctrl+Shift+V)이 맡고, 이 화면은 관리용이다.
 Future<void> showKClipDialog(BuildContext context, ApiCall api) {
   return showDialog<void>(
@@ -185,15 +185,15 @@ class _KClipPanelState extends State<KClipPanel> {
         ),
         const SizedBox(height: 8),
         if (!available)
-          Text('이 버전에는 K클립보드 프로그램이 들어 있지 않습니다.',
+          Text('이 버전에는 몽땅클립보드 프로그램이 들어 있지 않습니다.',
               style: TextStyle(color: Theme.of(context).colorScheme.error)),
         FilledButton.icon(
           key: const ValueKey('kclip-enable'),
           onPressed: consent && available && !busy
-              ? () => _act('enable', {'consent': true, 'autostart': autostart}, 'K클립보드를 켰습니다.')
+              ? () => _act('enable', {'consent': true, 'autostart': autostart}, '몽땅클립보드를 켰습니다.')
               : null,
           icon: const Icon(Icons.power_settings_new),
-          label: const Text('K클립보드 켜기'),
+          label: const Text('몽땅클립보드 켜기'),
         ),
       ],
     );
@@ -313,7 +313,7 @@ class _KClipPanelState extends State<KClipPanel> {
             ),
             TextButton(
               key: const ValueKey('kclip-disable'),
-              onPressed: busy ? null : () => _act('disable', null, 'K클립보드를 껐습니다.'),
+              onPressed: busy ? null : () => _act('disable', null, '몽땅클립보드를 껐습니다.'),
               child: const Text('끄기'),
             ),
           ],
@@ -382,7 +382,7 @@ class _KClipPanelState extends State<KClipPanel> {
             children: [
               const Icon(Icons.content_paste_search),
               const SizedBox(width: 8),
-              Expanded(child: Text('K클립보드', style: Theme.of(context).textTheme.titleLarge)),
+              Expanded(child: Text('몽땅클립보드', style: Theme.of(context).textTheme.titleLarge)),
               IconButton(
                 tooltip: '닫기',
                 onPressed: () => Navigator.of(context).maybePop(),

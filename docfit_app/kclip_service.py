@@ -1,4 +1,4 @@
-"""K클립보드 화면 서비스: 켜기(동의)·끄기·상태·목록·고정·지우기·되돌려 붙이기·설정.
+"""몽땅클립보드 화면 서비스: 켜기(동의)·끄기·상태·목록·고정·지우기·되돌려 붙이기·설정.
 
 기록과 빠른 붙여넣기는 독립 상주 프로그램 kagent.exe가 한다(기본 꺼짐). 이 서비스는
 사용자가 켤 때만 에이전트를 설치·실행하고, 이후에는 파이프로 명령만 보낸다.
@@ -15,7 +15,7 @@ from pathlib import Path
 
 from . import kagent_client as kc
 
-CONSENT = ("K클립보드는 이 PC에서 복사(Ctrl+C)한 글·그림·파일 경로를 기록해 다시 붙여넣을 수 있게 합니다. "
+CONSENT = ("몽땅클립보드는 이 PC에서 복사(Ctrl+C)한 글·그림·파일 경로를 기록해 다시 붙여넣을 수 있게 합니다. "
            "기록은 이 PC의 사용자 폴더에만 암호화해 저장하고 밖으로 보내지 않습니다. "
            "암호 관리자가 보내는 '기록 제외' 신호는 따릅니다. 언제든 일시정지·끄기·모두 지우기를 할 수 있습니다.")
 
@@ -87,9 +87,9 @@ class KClipService:
             return dict(ok=False, code="KCLIP_CONSENT", message="안내를 읽고 동의해 주세요.")
         exe = self._bundled()
         if exe is None:
-            return dict(ok=False, code="KCLIP_MISSING", message="이 버전에는 K클립보드 프로그램이 들어 있지 않습니다.")
+            return dict(ok=False, code="KCLIP_MISSING", message="이 버전에는 몽땅클립보드 프로그램이 들어 있지 않습니다.")
         if not _verify(exe):
-            return dict(ok=False, code="KCLIP_INTEGRITY", message="K클립보드 프로그램 파일이 손상됐습니다. 다시 설치해 주세요.")
+            return dict(ok=False, code="KCLIP_INTEGRITY", message="몽땅클립보드 프로그램 파일이 손상됐습니다. 다시 설치해 주세요.")
         if not self.client.running():
             installed = self._install(exe)
             self._start(installed)

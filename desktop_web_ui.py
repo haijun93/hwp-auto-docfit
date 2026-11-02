@@ -1906,7 +1906,7 @@ class DesktopWebBridge:
             return {"ok": False, "code": "TM_FAILED", "message": "타임머신 작업을 완료하지 못했습니다."}
 
     def kclip(self, action, payload=None):
-        """K클립보드: 상주 프로그램(kagent.exe) 켜기·끄기와 목록·설정(파이프 명령)."""
+        """몽땅클립보드: 상주 프로그램(kagent.exe) 켜기·끄기와 목록·설정(파이프 명령)."""
         try:
             from docfit_app.kclip_service import KClipService
             service = getattr(self, "_kclip_service", None)
@@ -1914,8 +1914,8 @@ class DesktopWebBridge:
                 service = self._kclip_service = KClipService()
             return service.command(action, payload)
         except Exception as exc:
-            logging.getLogger(__name__).warning("K클립보드 처리 실패", exc_info=True)
-            return {"ok": False, "message": str(exc) or "K클립보드를 처리하지 못했습니다."}
+            logging.getLogger(__name__).warning("몽땅클립보드 처리 실패", exc_info=True)
+            return {"ok": False, "message": str(exc) or "몽땅클립보드를 처리하지 못했습니다."}
 
     def file_rename(self, action, payload=None):
         """파일이름 탭: 목록·미리보기·적용·되돌리기(경로는 호스트에만 둔다)."""

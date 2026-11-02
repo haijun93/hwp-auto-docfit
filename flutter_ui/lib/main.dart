@@ -212,7 +212,7 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
           final expanded = constraints.maxWidth >= 140;
           final actions = <({String label, IconData icon, VoidCallback onPressed, Key? key})>[
             (
-              label: 'K클립보드',
+              label: '몽땅클립보드',
               icon: Icons.content_paste_search,
               onPressed: () => showKClipDialog(context, widget.api),
               key: const ValueKey('kclip-open'),
@@ -263,8 +263,8 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
                 else
                   IconButton(
                     key: action.key,
-                    tooltip: action.label == 'K클립보드'
-                        ? 'K클립보드 (복사 기록 · Ctrl+Shift+V)'
+                    tooltip: action.label == '몽땅클립보드'
+                        ? '몽땅클립보드 (복사 기록 · Ctrl+Shift+V)'
                         : action.label,
                     visualDensity: VisualDensity.compact,
                     onPressed: action.onPressed,

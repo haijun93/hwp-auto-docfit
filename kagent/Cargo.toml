@@ -2,7 +2,7 @@
 name = "kagent"
 version = "0.1.0"
 edition = "2024"
-description = "K에이전트: K클립보드 기록·빠른 붙여넣기 상주 프로그램(초경량, 네트워크 코드 없음)"
+description = "K에이전트: 몽땅클립보드 기록·빠른 붙여넣기 상주 프로그램(초경량, 네트워크 코드 없음)"
 license = "MIT"
 publish = false
 

@@ -53,7 +53,7 @@ class KAgentClient:
     def request(self, cmd, **payload):
         status = self.status_file()
         if not status or not status.get("pipe"):
-            raise KAgentError("K클립보드가 켜져 있지 않습니다.")
+            raise KAgentError("몽땅클립보드가 켜져 있지 않습니다.")
         pipe = status["pipe"]
         if not str(pipe).startswith("\\\\.\\pipe\\HwpAutoDocFit.kagent."):
             raise KAgentError("상태 파일의 연결 이름을 확인해 주세요.")
@@ -72,11 +72,11 @@ class KAgentClient:
                     if chunk.endswith(b"\n") or size > MAX_RESPONSE:
                         break
         except OSError as error:
-            raise KAgentError("K클립보드에 연결하지 못했습니다.") from error
+            raise KAgentError("몽땅클립보드에 연결하지 못했습니다.") from error
         try:
             return json.loads(b"".join(chunks).decode("utf-8"))
         except ValueError as error:
-            raise KAgentError("K클립보드 응답을 읽지 못했습니다.") from error
+            raise KAgentError("몽땅클립보드 응답을 읽지 못했습니다.") from error
 
 
 def _pid_alive(pid):
