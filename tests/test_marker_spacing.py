@@ -49,9 +49,10 @@ class MarkerSpacingTests(unittest.TestCase):
             ('<t>①<tab/>본문</t>','① 본문'),
             ('<t>Ⅰ.<tab/>장 제목</t>','Ⅰ. 장 제목'),
             ('<t>1.<tab/>절 제목</t>','1. 절 제목'),
-            ('<t>ㅇ「법령」 적용</t>','ㅇ 「법령」 적용'),
+            ('<t>ㅇ 「법령」 적용</t>','ㅇ「법령」 적용'),
+            ('<t>ㅇ법령 적용</t>','ㅇ 법령 적용'),
+            ('<t>ㅇ<tab/>「법령」 적용</t>','ㅇ「법령」 적용'),
             ('<t>-내용</t>','- 내용'),
-            ('<t>-「지방계약법」 적용</t>','- 「지방계약법」 적용'),
             ('<t>•내용</t>','• 내용'),
             ('<t>①내용</t>','① 내용'),
             ('<t>1.내용</t>','1. 내용'),
@@ -59,6 +60,26 @@ class MarkerSpacingTests(unittest.TestCase):
             ('<t>Ⅰ.내용</t>','Ⅰ. 내용')]:
             p=paragraph('<run>'+inner+'</run>')
             self.assertTrue(normalize_paragraph(p))
+            self.assertEqual(xml_text(p),expected)
+
+    def test_no_space_before_bracket_after_any_marker(self):
+        p=paragraph('<run><t>ㅇ 『법령』 적용</t></run>')
+        self.assertFalse(normalize_paragraph(p))
+        self.assertEqual(xml_text(p),'ㅇ 『법령』 적용')
+        p=paragraph('<run><t>-「지방계약법」 적용</t></run>')
+        self.assertFalse(normalize_paragraph(p))
+        self.assertEqual(xml_text(p),'-「지방계약법」 적용')
+        p=paragraph('<run><t>2.「법령」 개정</t></run>')
+        self.assertFalse(normalize_paragraph(p))
+        self.assertEqual(xml_text(p),'2.「법령」 개정')
+        for inner, expected in [('<t>2. 「법령」 개정</t>','2.「법령」 개정'),
+            ('<t>1)<tab/>「법령」 개정</t>','1)「법령」 개정'),
+            ('<t>가. 「법령」 개정</t>','가.「법령」 개정'),
+            ('<t>Ⅰ. 「법령」 개정</t>','Ⅰ.「법령」 개정'),
+            ('<t>① 「법령」 개정</t>','①「법령」 개정'),
+            ('<t>2. 법령 개정</t>','2. 법령 개정')]:
+            p=paragraph('<run>'+inner+'</run>')
+            normalize_paragraph(p)
             self.assertEqual(xml_text(p),expected)
 
     def test_negative_numbers_and_dates_are_preserved(self):

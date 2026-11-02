@@ -163,6 +163,9 @@ class MarkerSpaceFixTest(unittest.TestCase):
 
     def test_tab_after_marker_is_a_replace(self):
         self.assertEqual(marker_space_fix("ㅇ\t본문", 1), "replace")
+        self.assertEqual(marker_space_fix("2. 「법령」", 2), "remove")
+        self.assertIsNone(marker_space_fix("2.「법령」", 2))
+        self.assertEqual(marker_space_fix("ㅇ 「법령」", 1), "remove")
 
     def test_full_width_space_after_marker_is_a_replace(self):
         self.assertEqual(marker_space_fix("ㅇ　본문", 1), "replace")

@@ -121,12 +121,12 @@ def build_table_sketch_xml(payload, refs=None):
 
 
 def _shape_scaffold(node, width, height):
-    node.attrib.update(zOrder='0', numberingType='NONE', textWrap='TOP_AND_BOTTOM',
+    node.attrib.update(zOrder='0', numberingType='PICTURE', textWrap='IN_FRONT_OF_TEXT',
                        textFlow='BOTH_SIDES', lock='0', dropcapstyle='None', href='', groupLevel='0')
     node.set('instid', node.get('id'))
     _add(node, HP+'offset', x=0, y=0)
     _add(node, HP+'orgSz', width=width, height=height)
-    _add(node, HP+'curSz', width=width, height=height)
+    _add(node, HP+'curSz', width=0, height=0)
     _add(node, HP+'flip', horizontal=0, vertical=0)
     _add(node, HP+'rotationInfo', angle=0, centerX=round(width/2), centerY=round(height/2), rotateimage=1)
     rendering = _add(node, HP+'renderingInfo')
@@ -138,6 +138,11 @@ def _unit(px):
     return round(px * 7200 / 96)
 
 
+def _diagram_color(value, default):
+    import re
+    return value.upper() if isinstance(value, str) and re.fullmatch(r'#[0-9a-fA-F]{6}', value) else default
+
+
 def build_diagram_shape_xml(payload, refs=None):
     refs = refs or {}
     graph = InsertDiagramShapeCommand('builder', payload).compile(payload)
@@ -147,56 +152,131 @@ def build_diagram_shape_xml(payload, refs=None):
         raise ValueError('노드와 연결선 ID가 중복됩니다.')
     for i, shape in enumerate(shapes):
         _label(shape['id'])
-        node = _element(HP+{'hp:rect': 'rect', 'hp:ellipse': 'ellipse'}[shape['target']],
+        node = _element(HP+{'hp:rect': 'rect', 'hp:ellipse': 'ellipse', 'hp:polygon': 'polygon'}[shape['target']],
                         id=int(refs.get('object_id_start', 1))+i)
         x, y, w, h = (_unit(shape[k]) for k in ('x', 'y', 'width', 'height'))
         _shape_scaffold(node, w, h)
+        node.set('zOrder', '0')
         _add(node, HP+'sz', width=w, height=h, widthRelTo='ABSOLUTE', heightRelTo='ABSOLUTE', protect=0)
-        _add(node, HP+'pos', treatAsChar=0, vertRelTo='PARA', horzRelTo='COLUMN',
+        node.find(HP+'rotationInfo').attrib.update(centerX=str(round(w/2)),centerY=str(round(h/2)))
+        _add(node, HP+'pos', treatAsChar=0, affectLSpacing=0, flowWithText=0, allowOverlap=1,
+             holdAnchorAndSO=0, vertRelTo='PAPER', horzRelTo='PAPER',
              vertOffset=y, horzOffset=x, vertAlign='TOP', horzAlign='LEFT')
-        _add(node, HP+'lineShape', color='#000000', width=75, style='SOLID',
+        try:
+            line_width = max(10, round(float(str(shape.get('stroke_width', 1)).replace('px', '').strip()) * 33))
+        except (TypeError, ValueError):
+            line_width = 33
+        _add(node, HP+'lineShape', color=_diagram_color(shape.get('stroke'), '#000000'), width=line_width, style='SOLID',
              endCap='FLAT', headStyle='NORMAL', tailStyle='NORMAL', headfill=1,
-             tailfill=1, headSz='SMALL_SMALL', tailSz='SMALL_SMALL', outlineStyle='NORMAL', alpha=255)
+             tailfill=1, headSz='SMALL_SMALL', tailSz='SMALL_SMALL', outlineStyle='NORMAL', alpha=0)
         # Geometry points use the core namespace (Hancom OWPML EllipseType).
         # https://github.com/hancom-io/hwpx-owpml-model/blob/main/OWPML/Class/Para/EllipseType.cpp
+        if shape['target'] in ('hp:rect', 'hp:polygon'):
+            node.set('ratio', '20' if shape.get('rounded') else '0')
         if shape['target'] == 'hp:rect':
-            node.set('ratio', '0')
             for j, (px, py) in enumerate(((0, 0), (w, 0), (w, h), (0, h))):
                 _add(node, HC+'pt'+str(j), x=px, y=py)
-        else:
+        elif shape['target'] == 'hp:ellipse':
             node.attrib.update(intervalDirty='0', hasArcPr='0', arcType='NORMAL')
             cx, cy = round(w/2), round(h/2)
             for tag, px, py in (('center', cx, cy), ('ax1', w, cy), ('ax2', cx, 0),
                                ('start1', w, cy), ('end1', w, cy), ('start2', w, cy), ('end2', w, cy)):
                 _add(node, HC+tag, x=px, y=py)
+        else:
+            # 다각형 꼭짓점은 pt0~pt3(사각형 전용)이 아니라 hc:pt 반복이고 시작점으로 닫는다.
+            for px, py in ((round(w/2), 0), (w, round(h/2)), (round(w/2), h), (0, round(h/2)), (round(w/2), 0)):
+                _add(node, HC+'pt', x=px, y=py)
+        _add(node, HC+'fillBrush')
+        fill = shape.get('fill', '#FFFFFF')
+        no_fill = isinstance(fill, str) and fill.strip().lower() in ('transparent', 'none')
+        _add(node.find(HC+'fillBrush'), HC+'winBrush', faceColor='#FFFFFF' if no_fill else _diagram_color(fill, '#FFFFFF'),
+             hatchColor='#000000', alpha=255 if no_fill else 0)
         text = _add(node, HP+'drawText', lastWidth=w, name='', editable=0)
-        sub = _add(text, HP+'subList', textDirection='HORIZONTAL', lineWrap='BREAK', vertAlign='CENTER')
-        sub.append(_paragraph(shape['text'], refs, i))
-        _add(text, HP+'textMargin', left=0, right=0, top=0, bottom=0)
+        sub = _add(text, HP+'subList', id='', textDirection='HORIZONTAL', lineWrap='BREAK', vertAlign='CENTER',
+                   linkListIDRef=0, linkListNextIDRef=0, textWidth=0, textHeight=0, hasTextRef=0, hasNumRef=0)
+        for line in shape['text'].split('\n') or ['']:
+            para = _paragraph(line, {**refs, 'para_pr_id': refs.get('diagram_center_para_pr_id', refs.get('para_pr_id', 0))}, i)
+            _add(para, HP+'linesegarray')
+            sub.append(para)
+        _add(text, HP+'textMargin', left=283, right=283, top=283, bottom=283)
         # Match the shape child order in tests/fixtures/hwp_shapes_sample.hwpx.
         for point in list(node):
-            if point.tag.startswith(HC) and point.tag != HC+'fillBrush':
+            if point.tag.startswith(HC) and point.tag not in (HC+'fillBrush',):
                 node.remove(point)
                 node.append(point)
         for tag in ('sz', 'pos'):
             child = node.find(HP+tag)
             node.remove(child)
             node.append(child)
+        node.find(HP+'pos').set('vertRelTo','PAPER')
+        node.find(HP+'pos').set('horzRelTo','PAPER')
+        node.find(HP+'sz').set('width',str(w))
+        node.find(HP+'sz').set('height',str(h))
+        node.find(HP+'curSz').attrib.update(width='0',height='0')
         _add(node, HP+'outMargin', left=0, right=0, top=0, bottom=0)
         centers[shape['id']] = (_unit(shape['x']+shape['width']/2), _unit(shape['y']+shape['height']/2))
         output.append(node)
     for i, edge in enumerate(graph['connectors'], len(shapes)):
         _label(edge['id'])
-        node = _element(HP+'connectLine', id=int(refs.get('object_id_start', 1))+i, type='STRAIGHT_ONEWAY')
-        _shape_scaffold(node, abs(centers[edge['target']][0]-centers[edge['source']][0]),
-                        abs(centers[edge['target']][1]-centers[edge['source']][1]))
-        _add(node, HP+'startPt', subjectIDRef=0, subjectIdx=0, x=centers[edge['source']][0], y=centers[edge['source']][1])
-        _add(node, HP+'endPt', subjectIDRef=0, subjectIdx=0, x=centers[edge['target']][0], y=centers[edge['target']][1])
-        _add(node, HP+'lineShape', color='#000000', width=75, style='SOLID', headStyle='NORMAL', tailStyle='ARROW', headfill=1, tailfill=1)
+        node = _element(HP+'connectLine', id=int(refs.get('object_id_start', 1))+i,
+                         type='STRAIGHT_ONEWAY', zOrder=0, numberingType='PICTURE',
+                         textWrap='IN_FRONT_OF_TEXT', textFlow='BOTH_SIDES', lock=0,
+                         dropcapstyle='None', href='', groupLevel=0)
+        def anchor(ident, other):
+            shape = next(s for s in shapes if s['id'] == ident)
+            x, y, w, h = (shape[k] for k in ('x', 'y', 'width', 'height'))
+            ox, oy = (v / 75 for v in centers[other])
+            dx, dy = ox-(x+w/2), oy-(y+h/2)
+            if abs(dx)*h >= abs(dy)*w:
+                return (x+w, y+h/2, 3) if dx >= 0 else (x, y+h/2, 1)
+            return (x+w/2, y+h, 2) if dy >= 0 else (x+w/2, y, 0)
+        sx, sy, si = anchor(edge['source'], edge['target'])
+        ex, ey, ei = anchor(edge['target'], edge['source'])
+        sx, sy, ex, ey = (_unit(v) for v in (sx, sy, ex, ey))
+        left, top = min(sx, ex), min(sy, ey)
+        # Hancom's straight-line coordinates use the complete endpoint delta
+        # in orgSz/curSz while the anchor box may be one HWP unit high.
+        width, height = abs(ex-sx), abs(ey-sy)
+        _shape_scaffold(node, max(width, 1), max(height, 1))
+        node.find(HP+'orgSz').attrib.update(width=str(max(width,1)),height=str(max(height,1)))
+        node.find(HP+'curSz').attrib.update(width=str(width),height=str(height))
+        node.find(HP+'rotationInfo').attrib.update(centerX=str(max(width,1)//2),centerY=str(max(height,1)//2))
+        scale = node.find(HP+'renderingInfo/'+HC+'scaMatrix')
+        scale.attrib.update(e1='1', e2='0', e3='0', e4='0', e5='1', e6='0')
+        node.find(HP+'orgSz').attrib.update(width=str(max(width,1)),height=str(max(height,1)))
+        node.find(HP+'curSz').attrib.update(width=str(width),height=str(height))
+        node.find(HP+'rotationInfo').attrib.update(centerX=str(max(width,1)//2),centerY=str(max(height,1)//2))
+        scale.attrib.update(e1='1',e5='1')
+        node.find(HP+'offset').attrib.update(x='0', y='0')
+        node.find(HP+'renderingInfo/'+HC+'transMatrix').set('e3', '0')
+        node.find(HP+'renderingInfo/'+HC+'transMatrix').set('e6', '0')
+        source_inst = int(refs.get('object_id_start', 1)) + next(i for i, s in enumerate(shapes) if s['id'] == edge['source'])
+        target_inst = int(refs.get('object_id_start', 1)) + next(i for i, s in enumerate(shapes) if s['id'] == edge['target'])
+        _add(node, HP+'lineShape', color='#000000', width=33, style='SOLID', endCap='FLAT',
+             headStyle='NORMAL', tailStyle='ARROW', headfill=1, tailfill=1,
+             headSz='SMALL_SMALL', tailSz='SMALL_SMALL', outlineStyle='NORMAL', alpha=0)
+        _add(node, HP+'shadow', type='NONE', color='#B2B2B2', offsetX=0, offsetY=0, alpha=0)
+        node.set('zOrder','0')
+        _add(node, HP+'startPt', x=sx-left, y=sy-top, subjectIDRef=source_inst, subjectIdx=si)
+        _add(node, HP+'endPt', x=ex-left, y=ey-top, subjectIDRef=target_inst, subjectIdx=ei)
+        control = _add(node, HP+'controlPoints')
+        if sx <= ex:
+            _add(control, HP+'point', x=sx-left, y=sy-top, type=3)
+            _add(control, HP+'point', x=ex-left, y=ey-top, type=26)
+        else:
+            _add(control, HP+'point', x=ex-left, y=ey-top, type=3)
+            _add(control, HP+'point', x=sx-left, y=sy-top, type=26)
+        _add(node, HP+'sz', width=max(width, 1), height=max(height, 1), widthRelTo='ABSOLUTE', heightRelTo='ABSOLUTE', protect=0)
+        _add(node, HP+'pos', treatAsChar=0, affectLSpacing=0, flowWithText=0, allowOverlap=1,
+             holdAnchorAndSO=0, vertRelTo='PAPER', horzRelTo='PAPER', vertOffset=top, horzOffset=left,
+             vertAlign='TOP', horzAlign='LEFT')
+        _add(node, HP+'outMargin', left=0, right=0, top=0, bottom=0)
         if edge['text']:
             draw = _add(node, HP+'drawText', lastWidth=0, name='', editable=0)
             sub = _add(draw, HP+'subList', textDirection='HORIZONTAL', lineWrap='BREAK', vertAlign='CENTER')
-            sub.append(_paragraph(edge['text'], refs, i))
+            para = _paragraph(edge['text'], refs, i)
+            _add(para, HP+'linesegarray')
+            sub.append(para)
             _add(draw, HP+'textMargin', left=0, right=0, top=0, bottom=0)
         output.append(node)
     return output

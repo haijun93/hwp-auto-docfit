@@ -37,6 +37,11 @@ from defusedxml import ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 # 시험 전용 예시는 앱의 서식예시 폴더와 따로, 이 PC에만 둔다(저장소에 넣지 않음, 사용자 지시 2026-10-17).
 SAMPLE_FOLDER = Path(r"C:\HWP_AUTODOCFIT\테스트예시")
+# 예시 제작용 제목·개요 원고. 제목 문단을 제목 표로 변환하므로 충실도 재연 기본 목록에서 제외한다.
+EXCLUDED_SAMPLE_REASONS = {
+    "내어쓰기 테스트(XML내어쓰기).hwpx": "원고 예시: 제목·개요 문단을 서식 표로 변환해 구조가 달라진다",
+    "내어쓰기 테스트(원본변환).hwpx": "원고 예시: 제목·개요 문단을 서식 표로 변환하는 예시 성격 문서라 문단/표 구조 재연 기준에 맞지 않음",
+}
 H = "{http://www.hancom.co.kr/hwpml/2011/head}"
 P = "{http://www.hancom.co.kr/hwpml/2011/paragraph}"
 
@@ -292,13 +297,22 @@ def _norm_doc_text(text: str) -> str:
     t = text.replace("ㆍ", "•")
     # 2. 표 헤더 2글자 띄어쓰기('구 분' -> '구분', '비 고' -> '비고')
     t = re.sub(r"^(구|비)\s+(분|고)$", r"\1\2", t)
-    # 3. 2단계 항목기호 앞 선행 공백 정규화
-    t = re.sub(r"^\s*([ㅇ○◦])\s+", r"\1 ", t)
+    # 3. 2단계 항목기호 뒤 공백 1개 규칙. 선행 들여쓰기는 그대로 둔다.
+    marker = re.match(r"^(\s*)([ㅇ○◦])\s*([^\s])", t)
+    if marker:
+        leading, symbol, rest = marker.groups()
+        if rest != "「":
+            t = leading + symbol + " " + rest
     # 4. 끝. 앞 공백 정규화
     t = re.sub(r"^\s*끝\.$", "끝.", t)
-    # 5. 날짜 띄어쓰기 정규화: '2026. 10. 25.' -> '2026.10.25.'
+    # 4. 날짜 띄어쓰기 정규화: '2026. 10. 25.' -> '2026.10.25.'
     t = re.sub(r"(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.", r"\1.\2.\3.", t)
     return t
+
+
+def _paragraph_key_text(text: str) -> str:
+    """비교 정렬 키는 원문 공백을 보존하고 비공백 문자만 매칭한다."""
+    return "".join(char for char in (text or "") if not char.isspace())
 
 
 def _normalized(x, line_count, hand=()):
@@ -371,32 +385,113 @@ def _table_render_normalized(original, result):
     return tuple(normalized)
 
 
+def _para_int(x, key):
+    try:
+        return int(dict(x[2] or ()).get(key, 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _without_lead(x):
+    """문단 항목에서 앞 공백을 뺀 사본(글과 글자 서식 묶음 모두)."""
+    runs, leading = [], True
+    for char, text in x[3]:
+        if leading:
+            text = text.lstrip()
+            leading = not text
+        if text:
+            runs.append((char, text))
+    return (x[0], x[1].lstrip(), x[2], tuple(runs), *x[4:])
+
+
+def shift_tab_audit(path):
+    """결과의 내어쓰기 문단마다 그 자리 실제 Shift+Tab과 저장값을 비교해 다른 문단 목록을 돌려준다(임시 사본)."""
+    sys.path.insert(0, str(ROOT))
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import win32com.client
+    from verify_table_catalog_paste import _register
+    from docfit_core.attachment_block import is_numbered_item
+    from docfit_core.xml_hanging_indent import hanging_indent_offset
+    folder = Path(tempfile.mkdtemp(prefix="shift_tab_audit_"))
+    copy_path = folder / "audit.hwpx"
+    shutil.copyfile(path, copy_path)
+    app = win32com.client.DispatchEx("HwpFrame.HwpObject")
+    _register(app)
+    found = []
+    try:
+        app.Open(str(copy_path), "HWPX", "forceopen:true")
+        para = 0
+        while app.SetPos(0, para, 0) is not False and app.GetPos()[1] == para:
+            app.Run("MoveSelParaEnd")
+            text = (app.GetTextFile("UNICODE", "saveblock") or "").rstrip("\r\n")
+            app.Run("Cancel")
+            offset = hanging_indent_offset(text) if text.strip() and not is_numbered_item(text) else None
+            if offset and offset > 0:
+                app.SetPos(0, para, 0)
+                saved = int(app.ParaShape.Item("Indentation"))
+                app.SetPos(0, para, offset)
+                app.Run("ParagraphShapeIndentAtCaret")
+                app.SetPos(0, para, 0)
+                actual = int(app.ParaShape.Item("Indentation"))
+                if saved < 0 and saved != actual:
+                    found.append((para, saved, actual, text[:30]))
+            para += 1
+        app.Clear(1)
+    finally:
+        app.Quit()
+        shutil.rmtree(folder, ignore_errors=True)
+    return found
+
+
 def compare(original, result):
-    """(불일치 수, 사람이 읽을 목록). 손 조정 제외 항목은 따로 센다."""
+    """(불일치 수, 사람이 읽을 목록). 손 조정·기호 뒤 공백 규칙은 별도 계측한다."""
     from collections import Counter
     excluded = Counter()
-    a, b = load(original), load(result)
+    marker_space_rule = Counter()
+    a, b = load(str(original)), load(str(result))
     levels = _level_values(a)
     contexts = _contexts(a)
-    key = lambda x: (x[0], _norm_doc_text(x[1]) if x[0] == "P" else "")
+    from docfit_core.attachment_block import find_trailing_numbered_blocks
+    attachment_items = {n for start, end in find_trailing_numbered_blocks(
+        [x[1] if x[0] == "P" else None for x in a]) for n in range(start, end + 1)}
+    key = lambda x: (x[0], _paragraph_key_text(x[1]) if x[0] == "P" else "")
     lines, count = [f"항목 수 원본 {len(a)} / 결과 {len(b)}"], 0
     for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, [key(x) for x in a], [key(x) for x in b],
                                                       autojunk=False).get_opcodes():
         if op != "equal":
+            # 빈 문단 삭제만 있는 차이는 규칙 결과다(붙임 앞 빈 줄 1줄 등, 사용자 정상 판정 2026-11-01).
+            if op == "delete" and all(x[0] == "P" and not x[1].strip() for x in a[i1:i2]):
+                excluded["빈 줄 정리"] += i2 - i1
+                continue
             count += 1
             lines.append(f"[{op}] 원본 {i1}-{i2} / 결과 {j1}-{j2}")
             lines += [f"  - {x[0]} {x[1]!r:.90}" for x in a[i1:i2][:6]] + [f"  + {x[0]} {x[1]!r:.90}" for x in b[j1:j2][:6]]
             continue
         for i, j in zip(range(i1, i2), range(j1, j2)):
             x, y = a[i], b[j]
+            if x[0] == "P" and y[0] == "P":
+                rule_pair = _marker_space_rule_pair(x[1], y[1])
+                if rule_pair:
+                    marker_space_rule[rule_pair] += 1
             if x[0] == "P":
                 hand = _hand_keys(x, levels, contexts.get(i))
                 if _is_marker_paragraph(x[1]):
                     # 항목기호/번호 문단의 들여쓰기는 수동 예외가 아니라 핵심 출력 규격이다.
                     hand.discard("intent")
                     hand.discard("left")
+                    # 값 자체는 예시가 아니라 실제 Shift+Tab과 비교한다(shift_tab_audit, 사용자 2026-11-02).
+                    # 한 줄 문단은 내어쓰기 값이 달라도 화면이 같다.
+                    if (_para_int(x, "left") == _para_int(y, "left")
+                            and ((_para_int(x, "intent") < 0 and _para_int(y, "intent") < 0)
+                                 or (x[4] is not None and x[4] <= 1))):
+                        hand.add("intent")
+                # 문서 끝 붙임은 불변 규칙이 위치를 정한다(사용자 2026-11-01).
+                if i in attachment_items:
+                    hand.update(("intent", "left"))
                 excluded.update(_excluded(x, y, hand))
                 x, y = _normalized(x, x[4], hand), _normalized(y, x[4], hand)
+                if i in attachment_items:  # 붙임 줄의 앞 공백은 왼쪽 여백으로 옮긴다.
+                    x, y = _without_lead(x), _without_lead(y)
             elif x[0] == "TBL":
                 y = _table_render_normalized(x, y)
             if x == y:
@@ -430,8 +525,25 @@ def compare(original, result):
                 lines.append(f"## 쪽 설정 {x} / {y}")
     if excluded:
         lines.append("재연 기준에서 뺀 손 조정(문단 수): " + ", ".join(f"{k} {v}" for k, v in excluded.most_common()))
+    if marker_space_rule:
+        lines.append("항목기호 뒤 공백 규칙 적용(별도 계측, 불일치 수 포함): " +
+                     ", ".join(f"{marker!r} 뒤 공백 {spaces}개 {count}건" for (marker, spaces), count
+                               in sorted(marker_space_rule.items())))
     lines.append(f"불일치 {count}")
     return count, lines
+
+
+def _marker_space_rule_pair(original, result):
+    """기호 뒤 공백 하나 적용으로만 바뀐 문단이면 (기호, 결과 공백 수)를 반환한다."""
+    source = original or ""
+    output = result or ""
+    marker = re.match(r"^(\s*[ㅇ○◦])([^\s])", source)
+    if not marker:
+        return None
+    expected = source[:marker.end(1)] + " " + source[marker.end(1):]
+    if output != expected:
+        return None
+    return marker.group(1).strip(), 1
 
 
 # ── 서식 복제와 적용(예시 하나, 새 프로세스) ──
@@ -524,7 +636,12 @@ def main():
     if args.one:
         print(json.dumps(run_one(args.one[0], args.one[1], out, args.mode), ensure_ascii=False))
         return 0
-    examples = args.examples or sorted(p for p in SAMPLE_FOLDER.iterdir() if p.suffix.lower() in (".hwpx", ".hwp"))
+    if args.examples:
+        examples = args.examples
+    else:
+        examples = sorted(p for p in SAMPLE_FOLDER.iterdir()
+                          if p.suffix.lower() in (".hwpx", ".hwp")
+                          and p.name not in EXCLUDED_SAMPLE_REASONS)
     # 한/글 COM 잠금은 맨 바깥(이 프로세스)에서 한 번 잡고, 하위 --one 프로세스는 환경 변수로 물려받아 그대로 통과한다.
     # 예전에는 하위의 regression_pc.처리가 바깥에서 잡힌 잠금을 다시 기다려 첫 예시에서 끝없이 멈췄다(2026-10-21).
     sys.path.insert(0, str(ROOT))
@@ -553,6 +670,14 @@ def _run_examples(examples, out, mode):
         except ValueError:
             item = {"file": example.name, "error": (proc.stderr or proc.stdout)[-500:]}
         item["wall_seconds"] = round(time.time() - started, 1)
+        kept = out / f"{example.stem}.{mode}.hwpx"
+        if "mismatches" in item and kept.is_file():
+            audit = shift_tab_audit(kept)
+            item["mismatches"] += len(audit)
+            item["shift_tab_diff"] = audit
+            with open(out / f"{example.stem}.{mode}.diff.txt", "a", encoding="utf-8") as stream:
+                for para, saved, actual, text in audit:
+                    stream.write(f"\n[Shift+Tab 다름] 문단 {para} 저장 {saved} / 실제 {actual}: {text!r}")
         results.append(item)
         print(f"{example.name}: " + (f"불일치 {item['mismatches']}" if "mismatches" in item else f"오류 {item['error'][:200]}"))
     (out / "summary.json").write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")

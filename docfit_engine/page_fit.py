@@ -29,28 +29,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             예) '     ※ ...' 다음의 '         (6~16번) ...'은 포함하지만,
                 ' ㅇ ...', '   - ...', '□ ...'처럼 독립 구조 항목은 새 세트로 본다.
             """
-            if not text or not text.strip():
-                return False
-
-            현재_들여쓰기 = 세트문장_선행들여쓰기_폭(text)
-            if 현재_들여쓰기 <= 상위_들여쓰기:
-                return False
-
-            벗긴텍스트 = text.lstrip(" \t")
-            if not 벗긴텍스트:
-                return False
-
-            # 공문서 구조 기호(□/ㅇ/-/※ 등)는 들여쓰기가 더 깊어도 별도 항목이다.
-            if 벗긴텍스트[0] in 공문서_기호:
-                return False
-
-            # '1.', '(1)', '가.' 등 명시적 항목 번호 역시 별도 항목으로 본다.
-            # '(6~16번)'처럼 범위 설명 라벨은 항목_패턴과 일치하지 않으므로 후속문단으로 유지된다.
-            for pattern in 항목_패턴:
-                if pattern.match(벗긴텍스트):
-                    return False
-
-            return True
+            from docfit_core.continuation import is_continuation
+            return is_continuation(상위_들여쓰기, text)
         return bind_function(세트문장_후속문단인가, _docfit_namespace)
     if _docfit_symbol == '세트문장_끝위치_찾기':
         def 세트문장_끝위치_찾기(시작위치, 시작텍스트):
@@ -145,7 +125,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 hwp.SetPos(*시작위치)
                 hwp_run('MoveParaBegin')
                 start = hwp.GetPos()
-                role = 보고서_문단역할(현재문단_텍스트())
+                start_text = 현재문단_텍스트()
+                parent_indent = 세트문장_선행들여쓰기_폭(start_text)
+                role = 보고서_문단역할(start_text)
                 if role not in ('소제목', '본문', '내용', '부연설명'):
                     return []
                 hwp_run('MoveParaEnd')
@@ -158,12 +140,22 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     next_start = hwp.GetPos()
                     if next_start[0] != start[0] or next_start[1] <= result[-1][0][1]:
                         break
-                    next_role = 보고서_문단역할(현재문단_텍스트())
+                    next_text = 현재문단_텍스트()
+                    next_role = 보고서_문단역할(next_text)
                     if role == '소제목' and not body_attached and next_role == '본문':
                         body_attached = True
-                    elif next_role == '부연설명':
-                        pass
+                        parent_indent = 세트문장_선행들여쓰기_폭(next_text)
                     elif body_attached and next_role == '내용':
+                        parent_indent = 세트문장_선행들여쓰기_폭(next_text)
+                    elif (next_role == '부연설명' and role in ('소제목', '본문', '내용')
+                          and (세트문장_선행들여쓰기_폭(next_text) > parent_indent or parent_indent == 0)):
+                        pass
+                    elif (세트문장_선행들여쓰기_폭(next_text) > parent_indent
+                          and not (parent_indent == 0 and next_text.lstrip().startswith(('※', '*')))
+                          and 세트문장_후속문단인가(parent_indent, next_text)
+                          and (next_role != '부연설명' or parent_indent == 0)):
+                        next_role = next_role or '부연설명'
+                    elif role == '부연설명' and next_role == '부연설명':
                         pass
                     else:
                         break
@@ -3587,11 +3579,14 @@ def _install(*, _docfit_namespace, _docfit_symbol):
         def 항목기호_낫표_빈칸_구간(text):
             """' ㅇ 「법령」 개정'처럼 항목기호와 여는 낫표 사이 빈칸의 (시작, 끝). 없으면 None(순수 함수).
 
-            이전 사용자 규칙(2026-10-17)은 2026-10-25의 U+0020 1개 불변 규칙으로 대체되었다.
+            기호·번호 뒤 「는 무조건 공백 0개. 내어쓰기는 「 바로 뒤 첫 글자 기준이다.
             내어쓰기는 '「' 바로 뒤 첫 글자 기준이다(_여는낫표_건너뛰기).
             """
-            # 2026-10-25: 모든 본문은 기호 뒤 U+0020 1개. 이전 낫표 예외는 폐기.
-            return None
+            m = re.match(r"[ \t]*(?:\*{1,2}|[□■ㅁㅇ○●◦※•·▶◆◇☞\-–①-⑳]"
+                         r"|[0-9]{1,2}[.．)]|[가나다라마바사아자차카타파하][.．)]|[Ⅰ-Ⅿ]+[.．]"
+                         r"|[(（](?:[0-9]{1,2}|[가나다라마바사아자차카타파하])[)）])"
+                         r"([ \t\u3000\u00a0]+)「", text or "")
+            return (m.start(1), m.end(1)) if m else None
         return bind_function(항목기호_낫표_빈칸_구간, _docfit_namespace)
     if _docfit_symbol == '항목기호_낫표_빈칸_정리_문단_처리':
         def 항목기호_낫표_빈칸_정리_문단_처리():
@@ -3911,6 +3906,12 @@ def _install(*, _docfit_namespace, _docfit_symbol):
 
             문단_시작위치 = hwp.GetPos()
             try:
+                if 조치 == "remove":
+                    if 문단_범위_선택(문단_시작위치, 마커_끝, 마커_끝 + 1) is False:
+                        raise RuntimeError("공백류 문자 선택 실패")
+                    if hwp_run("Delete") is False:
+                        raise RuntimeError("공백류 문자 삭제 실패")
+                    return True
                 if 조치 == "replace":
                     # 탭·전각공백 등 다른 공백류가 이미 있으면 지우고 표준 반각
                     # 공백 한 칸으로 다시 넣는다(그냥 앞에 삽입만 하면 두 공백이

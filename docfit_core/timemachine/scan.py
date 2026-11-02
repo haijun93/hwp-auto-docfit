@@ -29,9 +29,12 @@ def _stat_times(info):
     return info.st_mtime, ctime
 
 
-def scan_root(store, root, rules=None, *, cancel=None, progress=None, chunk=CHUNK):
+def scan_root(store, root, rules=None, *, cancel=None, progress=None, chunk=CHUNK, recalculate=None):
     """root 아래를 훑어 색인을 갱신한다. cancel()이 참이면 지금까지 한 것만 쓰고 멈춘다(삭제 정리는 생략)."""
     rules = rules or Rules()
+    if recalculate is None:
+        prev_mode = store.get_meta("time_mode")
+        recalculate = prev_mode is not None and prev_mode != rules.time_mode
     root = os.path.abspath(root)
     result = ScanResult()
     known = store.known(root)
@@ -70,7 +73,7 @@ def scan_root(store, root, rules=None, *, cancel=None, progress=None, chunk=CHUN
                 seen_keys.add(key)
                 result.seen += 1
                 mtime, ctime = _stat_times(info)
-                if known.get(key) == (info.st_size, mtime, ctime):
+                if not recalculate and known.get(key) == (info.st_size, mtime, ctime):
                     continue
                 work_time, flags = rules.work_time(ctime, mtime)
                 pending.append(dict(path=item.path, root=root, name=item.name, kind=rules.kind(item.name),
@@ -85,6 +88,7 @@ def scan_root(store, root, rules=None, *, cancel=None, progress=None, chunk=CHUN
     if not result.cancelled:
         gone = [key for key in known if key not in seen_keys]
         result.removed = store.delete_keys(gone) if gone else 0
+        store.set_meta("time_mode", rules.time_mode)
     if progress:
         progress(result)
     return result
@@ -92,9 +96,12 @@ def scan_root(store, root, rules=None, *, cancel=None, progress=None, chunk=CHUN
 
 def scan_roots(store, roots, rules=None, *, cancel=None, progress=None):
     """여러 조사 폴더. 목록에서 빠진 폴더의 색인은 따로 drop_root로 지운다."""
+    rules = rules or Rules()
+    prev_mode = store.get_meta("time_mode")
+    mode_changed = prev_mode is not None and prev_mode != rules.time_mode
     total = ScanResult()
     for root in roots:
-        part = scan_root(store, root, rules, cancel=cancel, progress=progress)
+        part = scan_root(store, root, rules, cancel=cancel, progress=progress, recalculate=mode_changed)
         total.seen += part.seen
         total.written += part.written
         total.removed += part.removed
@@ -103,6 +110,8 @@ def scan_roots(store, roots, rules=None, *, cancel=None, progress=None):
         if part.cancelled:
             total.cancelled = True
             break
+    if not total.cancelled:
+        store.set_meta("time_mode", rules.time_mode)
     return total
 
 

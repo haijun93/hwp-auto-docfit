@@ -53,7 +53,7 @@ class HangingParenLabelTest(unittest.TestCase):
         # 폐지된 라벨 규칙(2026-10-10): 예전 프로필의 값은 규칙 없음으로 읽어 이전과 같은 결과를 낸다.
         self.assertEqual(self.offset(text, {'ㅇ': 'after_label'}), 2)
         self.assertEqual(self.offset('- 추진부서 : 문화경제과', {'-': 'after_label'}), 9)
-        self.assertIsNone(self.offset(text, {'ㅇ': 'fixed'}))
+        self.assertEqual(self.offset(text, {'ㅇ': 'fixed'}), 2)  # 사용자 2026-11-01: 고정 값도 Shift+Tab
         self.assertIsNone(self.offset(text, {'ㅇ': 'none'}))
 
     def test_spacing_protection_still_covers_the_parenthesis_label(self):

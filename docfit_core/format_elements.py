@@ -1630,7 +1630,7 @@ def _apply_rules(profile, analysis):
         if back is not None and normal is not None and abs(back - normal) > max(100, 0.1 * abs(normal)):
             returns[marker] = int(back)
     fmt["내어쓰기_규칙"] = rules
-    options["std_hanging_indent"] = legacy_hanging or any(r == "after_marker" for r in rules.values())
+    options["std_hanging_indent"] = legacy_hanging or any(r in ("after_marker", "fixed") for r in rules.values())
     if label_symbols:
         options["paren_label_bold"] = any(label_symbols.values())
         options["label_symbols"] = {**options.get("label_symbols", {}), **label_symbols}

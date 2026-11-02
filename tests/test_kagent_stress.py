@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import os
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -245,6 +246,7 @@ class TestKAgentStressRunLifecycle(unittest.TestCase):
         mock_proc = MagicMock()
         mock_proc.pid = 9999
         mock_proc.wait.return_value = 0
+        mock_proc.poll.return_value = None
         mock_popen.return_value = mock_proc
 
         mock_client = MagicMock()
@@ -340,6 +342,36 @@ class TestKAgentStressRunLifecycle(unittest.TestCase):
         mock_set_text.assert_called_with("ORIGINAL_TEXT_ON_EXCEPTION")
         self.assertEqual(os.environ.get("KAGENT_DATA"), orig_env_data)
         self.assertEqual(os.environ.get("KAGENT_SCREENSHOTS"), orig_env_shots)
+
+    @patch("scripts.kagent_stress_pc.check_existing_instance", return_value=False)
+    @patch("scripts.kagent_stress_pc.subprocess.Popen")
+    @patch("scripts.kagent_stress_pc.KAgentClient")
+    @patch("scripts.kagent_stress_pc.snapshot")
+    @patch("scripts.kagent_stress_pc.get_text", return_value=None)
+    def test_early_process_exit_is_recorded_and_fails(self, mock_get, mock_snap, mock_client_cls, mock_popen, mock_check):
+        mock_snap.return_value = {"private": 0, "handles": 0, "gdi": 0, "user": 0, "valid": True, "error": None}
+        proc = MagicMock()
+        proc.pid = 123
+        proc.poll.return_value = 17
+        proc.returncode = 17
+        mock_popen.return_value = proc
+        client = MagicMock()
+        client.status_file.return_value = {"version": "test"}
+        roots = []
+        def request(req, **kw):
+            if req == "settings_get":
+                return {"ok": True, "settings": {"timeline_roots": list(roots)}}
+            if req == "settings_set":
+                roots[:] = kw.get("settings", {}).get("timeline_roots", [])
+            return {"ok": True}
+        client.request.side_effect = request
+        mock_client_cls.return_value = client
+        result = run(Path("fake.exe"), minutes=1, quick=True)
+        self.assertFalse(result["passed"])
+        self.assertTrue(any("kagent_process_exited_early" in item for item in result["errors"]))
+        live_rows = Path("reports/kagent-stress-live.jsonl").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(live_rows), len(result["samples"]))
+        self.assertTrue(all(isinstance(json.loads(row), dict) for row in live_rows))
 
 
 if __name__ == "__main__":

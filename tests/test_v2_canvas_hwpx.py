@@ -4,6 +4,8 @@ import unittest
 from unittest.mock import patch
 
 from defusedxml import ElementTree as ET
+from zipfile import ZipFile
+from io import BytesIO
 from docfit_core.hwpx.canvas_hwpx_builder import (
     HP, HH, HC, build_table_sketch_xml, build_table_sketch_border_fills_xml,
     build_diagram_shape_xml, build_mindmap_xml, build_mindmap_para_properties_xml,
@@ -72,14 +74,94 @@ class CanvasHwpxTests(unittest.TestCase):
         self.assertEqual(elements[0].find(HP+'pos').get('vertOffset'), str(round(2.5*7200/96)))
         self.assertEqual(elements[0].find(HP+'sz').get('width'), '225')
         self.assertEqual(elements[1].find(HP+'pos').get('horzOffset'), '7200')
-        self.assertEqual(elements[2].find(HP+'startPt').attrib, {'subjectIDRef': '0', 'subjectIdx': '0', 'x': '0', 'y': '375'})
-        self.assertEqual(elements[2].find(HP+'endPt').attrib, {'subjectIDRef': '0', 'subjectIdx': '0', 'x': '11700', 'y': '5850'})
+        self.assertEqual(elements[2].find(HP+'startPt').attrib, {'x': '0', 'y': '0', 'subjectIDRef': '20', 'subjectIdx': '3'})
+        self.assertEqual(elements[2].find(HP+'endPt').get('subjectIDRef'), '21')
+        self.assertGreater(int(elements[2].find(HP+'endPt').get('x')), 0)
         self.assertEqual(elements[2].find(HP+'lineShape').get('tailStyle'), 'ARROW')
         self.assertEqual(elements[0].find(HC+'pt2').attrib, {'x': '225', 'y': '375'})
         self.assertEqual(elements[1].find(HC+'center').attrib, {'x': '4500', 'y': '2250'})
         for element in elements:
             ET.fromstring(ET.tostring(element))
             self.assertEqual(element.findall('.//'+HP+'lineseg'), [])
+
+    def test_diagram_legacy_features_and_generated_package_roundtrip(self):
+        from docfit_core.hwpx.canvas_package_adapter import merge_canvas_block_into_hwpx
+        from tests.test_v2_canvas_package_adapter import fixture
+        source = fixture()
+        payload = {'nodes': [
+            dict(id='d', type='diamond', position={'x': 10, 'y': 20}, width=80, height=40,
+                 data={'label': '첫 줄\n둘째 줄', 'fill': '#abcdef'},
+                 style={'borderColor': '#123456', 'borderWidth': 2}),
+            dict(id='r', type='roundrect', position={'x': 150, 'y': 20}, width=60, height=40)],
+            'edges': [dict(id='edge', source='d', target='r', markerEnd={'type': 'arrow'})]}
+        data = merge_canvas_block_into_hwpx(source, {'kind': 'diagram', 'payload': payload})
+        with ZipFile(BytesIO(data)) as archive:
+            section = ET.fromstring(archive.read('Contents/section0.xml'))
+            shapes = [n for n in section.iter() if n.tag in (HP+'polygon', HP+'rect', HP+'ellipse', HP+'connectLine')]
+            self.assertEqual(len(shapes), 3)
+            diamond, rounded, connector = shapes
+            self.assertEqual(diamond.tag, HP+'polygon')
+            self.assertEqual(diamond.get('ratio'), '0')
+            self.assertEqual(diamond.find(HP+'pos').get('horzOffset'), '750')
+            self.assertEqual(diamond.find(HP+'sz').get('width'), '6000')
+            self.assertEqual(diamond.find('.//'+HC+'winBrush').get('faceColor'), '#ABCDEF')
+            self.assertEqual(diamond.find(HP+'lineShape').get('color'), '#123456')
+            self.assertEqual(diamond.find(HP+'lineShape').get('width'), '66')
+            # 다각형 꼭짓점은 hc:pt 반복이고 시작점으로 닫는다(pt0~pt3이면 한/글이 그리지 않는다).
+            self.assertEqual(len(diamond.findall(HC+'pt')), 5)
+            self.assertEqual(diamond.findall(HC+'pt')[0].attrib, diamond.findall(HC+'pt')[-1].attrib)
+            self.assertIsNone(diamond.find(HC+'pt0'))
+            self.assertEqual([''.join(p.itertext()) for p in diamond.findall('.//'+HP+'p')], ['첫 줄', '둘째 줄'])
+            self.assertEqual(rounded.get('ratio'), '20')
+            self.assertEqual(connector.find(HP+'startPt').get('subjectIDRef'), diamond.get('instid'))
+            self.assertEqual(connector.find(HP+'endPt').get('subjectIDRef'), rounded.get('instid'))
+            self.assertEqual(connector.find(HP+'startPt').get('subjectIdx'), '3')
+            self.assertEqual(connector.find(HP+'endPt').get('subjectIdx'), '1')
+
+    def test_diagram_matches_hancom_shape_fields_and_preserves_snapshot_edges(self):
+        from pathlib import Path
+        from docfit_core.hwpx.canvas_package_adapter import merge_canvas_block_into_hwpx
+        source = Path(__file__).parent / 'fixtures' / 'hwp_shapes_sample.hwpx'
+        with ZipFile(source) as archive:
+            sample = ET.fromstring(archive.read('Contents/section0.xml'))
+        sample_shapes = [n for n in sample.iter() if n.tag in
+                         (HP+'rect', HP+'ellipse', HP+'connectLine')]
+        sample_line = sample_shapes[0].find(HP+'lineShape')
+        payload = {'nodes': [
+            {'id': 'oval', 'type': 'ellipse', 'position': {'x': 30, 'y': 30}, 'width': 120, 'height': 60,
+             'data': {'label': '시작'}},
+            {'id': 'box', 'type': 'rect', 'position': {'x': 210, 'y': 30}, 'width': 150, 'height': 60,
+             'data': {'label': '처리', 'fill': 'transparent'}},
+            {'id': 'diamond', 'type': 'diamond', 'position': {'x': 430, 'y': 20}, 'width': 100, 'height': 80,
+             'data': {'label': '완료?'}}],
+            'edges': [{'id': 'e1', 'source': 'oval', 'target': 'box'},
+                      {'id': 'e2', 'source': 'box', 'target': 'diamond'}]}
+        result = merge_canvas_block_into_hwpx(source, {'kind': 'diagram', 'source': payload})
+        with ZipFile(BytesIO(result)) as archive:
+            section = ET.fromstring(archive.read('Contents/section0.xml'))
+        generated = section[-1]
+        shapes = [n for n in generated.iter() if n.tag in
+                  (HP+'rect', HP+'ellipse', HP+'polygon', HP+'connectLine')]
+        nodes = [n for n in shapes if n.tag != HP+'connectLine']
+        connectors = [n for n in shapes if n.tag == HP+'connectLine']
+        self.assertEqual(len(connectors), len(payload['edges']))
+        for shape in nodes:
+            line = shape.find(HP+'lineShape')
+            self.assertIsNotNone(line)
+            for attr in ('style', 'width', 'color', 'alpha'):
+                self.assertEqual(line.get(attr), sample_line.get(attr))
+            self.assertIsNotNone(shape.find(HC+'fillBrush/'+HC+'winBrush'))
+            expected_alpha = '255' if shape is nodes[1] else '0'
+            self.assertEqual(shape.find(HC+'fillBrush/'+HC+'winBrush').get('alpha'), expected_alpha)
+        for connector in connectors:
+            line = connector.find(HP+'lineShape')
+            self.assertEqual(line.get('style'), sample_line.get('style'))
+            self.assertEqual(line.get('width'), sample_line.get('width'))
+            self.assertEqual(line.get('alpha'), sample_line.get('alpha'))
+            for tag in ('startPt', 'endPt', 'controlPoints', 'sz', 'pos'):
+                self.assertIsNotNone(connector.find(HP+tag))
+            self.assertNotEqual(connector.find(HP+'startPt').attrib['subjectIDRef'], '0')
+            self.assertNotEqual(connector.find(HP+'endPt').attrib['subjectIDRef'], '0')
 
     def test_diagram_rejects_invalid_geometry(self):
         for key, value in [('width', 0), ('height', -1), ('width', float('nan')),

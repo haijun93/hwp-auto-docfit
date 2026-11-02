@@ -36,7 +36,7 @@ class ReferenceSampleTests(unittest.TestCase):
         self.assertIn("활성_서식예시_파일", defaults)
         self.assertIsNone(defaults["활성_서식예시_파일"])
 
-    def test_pipeline_uses_active_sample_file_when_present(self):
+    def test_pipeline_keeps_shift_tab_with_active_sample(self):
         fn = self.ns["문서_처리"]
         doc = Mock()
         logs = []
@@ -94,9 +94,10 @@ class ReferenceSampleTests(unittest.TestCase):
                 with patch.dict(fn.__globals__, settings), patch("docfit_core.marker_spacing.normalize_hwpx", return_value=0):
                     self.assertTrue(fn(source, 1, 1))
 
-        self.assertEqual(restored_calls, [custom_sample])
+        # 저장 뒤 기준 값으로 덮지 않는다: Shift+Tab 값이 최종이다(사용자 2026-11-02).
+        self.assertEqual(restored_calls, [])
 
-    def test_pipeline_skips_restore_for_user_format_when_sample_missing(self):
+    def test_pipeline_keeps_shift_tab_for_user_format(self):
         fn = self.ns["문서_처리"]
         doc = Mock()
         logs = []
@@ -156,9 +157,8 @@ class ReferenceSampleTests(unittest.TestCase):
                     self.assertTrue(fn(source, 1, 1))
 
         self.assertEqual(restored_calls, [])
-        self.assertTrue(any("사용자 서식 예시 파일이 없어 기준 복원을 건너뜁니다" in line for line in logs), logs)
 
-    def test_pipeline_default_format_falls_back_to_default_sample(self):
+    def test_pipeline_keeps_shift_tab_for_default_format(self):
         fn = self.ns["문서_처리"]
         doc = Mock()
         restored_calls = []
@@ -215,7 +215,7 @@ class ReferenceSampleTests(unittest.TestCase):
                 with patch.dict(fn.__globals__, settings), patch("docfit_core.marker_spacing.normalize_hwpx", return_value=0):
                     self.assertTrue(fn(source, 1, 1))
 
-        self.assertEqual(restored_calls, [default_sample])
+        self.assertEqual(restored_calls, [])
 
     def test_formatter_uses_active_sample_as_first_candidate(self):
         from docfit_core.batch_format import BatchUnsupported, ParagraphStyle, apply_batch

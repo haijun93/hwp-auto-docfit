@@ -9,6 +9,7 @@ import hashlib
 import io
 import logging
 import math
+import multiprocessing
 import os
 import stat
 import tempfile
@@ -126,6 +127,79 @@ def _from_pdf(path):
     return _encode(image)
 
 
+def _pdf_child_worker(path, conn):
+    try:
+        data = _from_pdf(path)
+        conn.send(("ok", data))
+    except ThumbnailBusy:
+        conn.send(("busy", None))
+    except Exception:
+        conn.send(("error", None))
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+class PdfRenderProcess:
+    def __init__(self, path, *, target=None):
+        self.path = path
+        self.target = target or _pdf_child_worker
+        ctx = multiprocessing.get_context("spawn") if hasattr(multiprocessing, "get_context") else multiprocessing
+        self.parent_conn, self.child_conn = ctx.Pipe()
+        self.proc = ctx.Process(target=self.target, args=(path, self.child_conn), daemon=True)
+        self._started = False
+
+    def start(self):
+        self.proc.start()
+        self._started = True
+
+    def is_alive(self):
+        return self._started and self.proc.is_alive()
+
+    def terminate(self):
+        if self._started and self.proc.is_alive():
+            try:
+                self.proc.terminate()
+            except Exception:
+                pass
+            self.proc.join(timeout=0.5)
+            if self.proc.is_alive():
+                try:
+                    self.proc.kill()
+                except Exception:
+                    pass
+                self.proc.join(timeout=0.5)
+
+    def join(self, timeout=None):
+        if self._started:
+            self.proc.join(timeout=timeout)
+
+    def get_result(self):
+        try:
+            if self.parent_conn.poll(0.01):
+                return self.parent_conn.recv()
+        except Exception:
+            pass
+        return None
+
+    def close(self):
+        try:
+            self.parent_conn.close()
+        except Exception:
+            pass
+        try:
+            self.child_conn.close()
+        except Exception:
+            pass
+        if self._started:
+            try:
+                self.proc.close()
+            except Exception:
+                pass
+
+
 def render(path):
     """파일 내용에서 썸네일 JPEG를 만든다. 지원하지 않거나 읽지 못하면 None."""
     extension = os.path.splitext(path)[1].lower()
@@ -188,6 +262,28 @@ class ThumbnailCache:
                 self._prune()
             else:
                 self._total += len(data)
+
+    def clear(self):
+        """캐시 폴더 안의 캐시 파일(.jpg, .tmp)만 삭제하고 삭제한 파일 수를 반환한다."""
+        count = 0
+        with self._lock:
+            if not os.path.isdir(self.folder):
+                self._total = 0
+                return 0
+            try:
+                with os.scandir(self.folder) as iterator:
+                    for item in iterator:
+                        try:
+                            if item.is_file(follow_symlinks=False) and (
+                                    item.name.endswith(".jpg") or item.name.endswith(".tmp")):
+                                os.unlink(item.path)
+                                count += 1
+                        except OSError:
+                            continue
+            except OSError:
+                pass
+            self._total = 0
+        return count
 
     def _prune(self):
         entries, total = [], 0

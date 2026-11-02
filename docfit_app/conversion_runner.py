@@ -1,6 +1,7 @@
 """UI와 CLI가 함께 쓰는 파일 변환 실행기. progress는 기존 GUI 이벤트 튜플을 받는다."""
 from pathlib import Path
 import shutil
+import tempfile
 import threading
 
 
@@ -103,6 +104,7 @@ def run_conversion(files, target, output_dir=None, progress=None, stop_event=Non
     com_initialized = False
     # PDF 하나로 합치기(pdfm): PDF·그림은 그대로, 나머지는 한/글로 임시 PDF를 만든 뒤 순서대로 합친다.
     합칠_부분, 합치기_임시 = [], None
+    합치기_임시관리 = None
     합치기_한글필요 = target_format == "pdfm" and any(
         Path(f).suffix.lower() != ".pdf" and Path(f).suffix.lower() not in IMAGE_INPUT_EXTENSIONS for f in files)
     try:
@@ -140,8 +142,8 @@ def run_conversion(files, target, output_dir=None, progress=None, stop_event=Non
                         합칠_부분.append((source.name, source))
                     else:
                         if 합치기_임시 is None:
-                            import tempfile as _tempfile
-                            합치기_임시 = Path(_tempfile.mkdtemp(prefix="docfit_merge_parts_"))
+                            합치기_임시관리 = tempfile.TemporaryDirectory(prefix="docfit_merge_parts_")
+                            합치기_임시 = Path(합치기_임시관리.name)
                         임시_pdf = 합치기_임시 / f"{number:04d}.pdf"
                         convert_to_pdf(app, source, 임시_pdf)
                         합칠_부분.append((source.name, 임시_pdf))
@@ -213,8 +215,8 @@ def run_conversion(files, target, output_dir=None, progress=None, stop_event=Non
     except Exception as exc:
         gui_queue.put(("fatal_error", str(exc)))
     finally:
-        if 합치기_임시 is not None:
-            shutil.rmtree(합치기_임시, ignore_errors=True)
+        if 합치기_임시관리 is not None:
+            합치기_임시관리.cleanup()
         if app is not None:
             try:
                 app.Clear(1)

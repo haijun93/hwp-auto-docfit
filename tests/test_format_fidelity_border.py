@@ -28,10 +28,14 @@ class BorderFidelityTest(unittest.TestCase):
         self.assertEqual(MODULE["_normalized"](original, 2), MODULE["_normalized"](result, 2))
 
     def test_normalized_text_is_also_used_in_character_runs(self):
-        for text, changed in (("ㅇ text", " ㅇ text"), ("ㆍ text", "• text"),
+        for text, changed in (("ㅇtext", "ㅇ text"), ("ㆍ text", "• text"),
                               ("구분", "구 분"), ("끝.", "  끝."),
                               ("2026.10.25.", "2026. 10. 25.")):
             with self.subTest(text=text):
                 original = ("P", text, (), [((), text)], 2)
                 result = ("P", changed, (), [((), changed)], 2)
                 self.assertEqual(MODULE["_normalized"](original, 2), MODULE["_normalized"](result, 2))
+
+        original = ("P", "ㅇ text", (), [((), "ㅇ text")], 2)
+        result = ("P", " ㅇ text", (), [((), " ㅇ text")], 2)
+        self.assertNotEqual(MODULE["_normalized"](original, 2), MODULE["_normalized"](result, 2))

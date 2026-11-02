@@ -40,6 +40,8 @@ class StageSelectionTest(unittest.TestCase):
     def test_omitted_selection_keeps_previous_behavior(self):
         self.assertTrue(enabled(None, "body_spacing"))
         self.assertTrue(enabled({}, "body_spacing"))
+        self.assertFalse(enabled(None, "cell_image_to_bg", "all"))
+        self.assertFalse(enabled({}, "cell_image_to_bg", "spacing"))
         self.assertFalse(enabled({"body_spacing": False}, "body_spacing"))
 
     def test_without_tables_turns_off_every_table_stage(self):

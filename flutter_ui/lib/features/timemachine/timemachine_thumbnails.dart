@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'timemachine_api.dart';
 
 /// 카드 썸네일 요청·메모리 캐시. 화면에 보이는 카드만 요청하고, 스크롤로 사라진 카드의 대기 요청은 버린다.
-class TimemachineThumbnailLoader {
+class TimemachineThumbnailLoader extends ChangeNotifier {
   TimemachineThumbnailLoader(this.api);
   static const maxConcurrent = 2, maxCached = 400, maxBytes = 1024 * 1024;
   final TimemachineApi api;
@@ -69,7 +69,17 @@ class TimemachineThumbnailLoader {
     }
   }
 
-  void dispose() { _disposed = true; _waiting.clear(); _cache.clear(); }
+  void clear() {
+    for (final job in _waiting) {
+      job.cancelled = true;
+    }
+    _waiting.clear();
+    _cache.clear();
+    notifyListeners();
+  }
+
+  @override
+  void dispose() { _disposed = true; _waiting.clear(); _cache.clear(); super.dispose(); }
 }
 
 class _Job {
@@ -93,11 +103,26 @@ class _TimemachineThumbnailState extends State<TimemachineThumbnail> {
   VoidCallback? _cancel;
 
   @override
-  void initState() { super.initState(); _prepare(); }
+  void initState() {
+    super.initState();
+    widget.loader.addListener(_onLoaderUpdate);
+    _prepare();
+  }
+
+  void _onLoaderUpdate() {
+    if (!mounted) return;
+    _cancel?.call();
+    _bytes = null;
+    _prepare();
+  }
 
   @override
   void didUpdateWidget(TimemachineThumbnail old) {
     super.didUpdateWidget(old);
+    if (old.loader != widget.loader) {
+      old.loader.removeListener(_onLoaderUpdate);
+      widget.loader.addListener(_onLoaderUpdate);
+    }
     if (TimemachineThumbnailLoader.keyOf(old.item) != TimemachineThumbnailLoader.keyOf(widget.item)) {
       _cancel?.call();
       _bytes = null;
@@ -117,7 +142,11 @@ class _TimemachineThumbnailState extends State<TimemachineThumbnail> {
   }
 
   @override
-  void dispose() { _cancel?.call(); super.dispose(); }
+  void dispose() {
+    widget.loader.removeListener(_onLoaderUpdate);
+    _cancel?.call();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
