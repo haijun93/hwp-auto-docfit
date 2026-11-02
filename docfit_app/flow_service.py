@@ -185,6 +185,29 @@ class FlowService:
             raise ServiceError("INVALID_TABLE", str(exc)) from exc
         return {"path": str(path)}
 
+    def copy_diagram(self, snapshot):
+        """Create a temporary native HWPX diagram and publish Hancom clipboard data."""
+        import uuid
+        from docfit_core.hwpx.canvas_package_adapter import merge_canvas_block_into_hwpx
+        from docfit_app.native_table_clipboard import copy_hwpx_document
+        if (not isinstance(snapshot, dict) or snapshot.get('format') != 'docfit-flow' or
+                snapshot.get('version') != 1 or not isinstance(snapshot.get('nodes'), list) or
+                not isinstance(snapshot.get('edges'), list)):
+            raise ServiceError('INVALID_FLOW', '다이어그램 정보를 확인해 주세요.')
+        base = Path(__file__).resolve().parents[1] / 'resources' / '서식예시' / '기본 서식.hwpx'
+        folder = self.root / 'exports'
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / (uuid.uuid4().hex + '.hwpx')
+        try:
+            try:
+                merged = merge_canvas_block_into_hwpx(base, {'kind': 'diagram', 'source': snapshot})
+            except ValueError as exc:
+                raise ServiceError('DIAGRAM_CONVERSION_FAILED', f'도형으로 바꾸지 못했습니다: {exc}') from exc
+            path.write_bytes(merged)
+            return copy_hwpx_document(path)
+        finally:
+            path.unlink(missing_ok=True)
+
     def _catalog_export_folder(self):
         folder = self.root / "exports"
         if self.root.is_symlink() or folder.is_symlink():

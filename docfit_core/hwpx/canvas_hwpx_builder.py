@@ -121,7 +121,7 @@ def build_table_sketch_xml(payload, refs=None):
 
 
 def _shape_scaffold(node, width, height):
-    node.attrib.update(zOrder='0', numberingType='NONE', textWrap='TOP_AND_BOTTOM',
+    node.attrib.update(zOrder='0', numberingType='PICTURE', textWrap='IN_FRONT_OF_TEXT',
                        textFlow='BOTH_SIDES', lock='0', dropcapstyle='None', href='', groupLevel='0')
     node.set('instid', node.get('id'))
     _add(node, HP+'offset', x=0, y=0)
@@ -157,7 +157,8 @@ def build_diagram_shape_xml(payload, refs=None):
         x, y, w, h = (_unit(shape[k]) for k in ('x', 'y', 'width', 'height'))
         _shape_scaffold(node, w, h)
         _add(node, HP+'sz', width=w, height=h, widthRelTo='ABSOLUTE', heightRelTo='ABSOLUTE', protect=0)
-        _add(node, HP+'pos', treatAsChar=0, vertRelTo='PARA', horzRelTo='COLUMN',
+        _add(node, HP+'pos', treatAsChar=0, affectLSpacing=0, flowWithText=0, allowOverlap=1,
+             holdAnchorAndSO=0, vertRelTo='PAPER', horzRelTo='PAPER',
              vertOffset=y, horzOffset=x, vertAlign='TOP', horzAlign='LEFT')
         try:
             line_width = max(10, round(float(str(shape.get('stroke_width', 1)).replace('px', '').strip()) * 33))
@@ -165,7 +166,7 @@ def build_diagram_shape_xml(payload, refs=None):
             line_width = 33
         _add(node, HP+'lineShape', color=_diagram_color(shape.get('stroke'), '#000000'), width=line_width, style='SOLID',
              endCap='FLAT', headStyle='NORMAL', tailStyle='NORMAL', headfill=1,
-             tailfill=1, headSz='SMALL_SMALL', tailSz='SMALL_SMALL', outlineStyle='NORMAL', alpha=255)
+             tailfill=1, headSz='SMALL_SMALL', tailSz='SMALL_SMALL', outlineStyle='NORMAL', alpha=0)
         # Geometry points use the core namespace (Hancom OWPML EllipseType).
         # https://github.com/hancom-io/hwpx-owpml-model/blob/main/OWPML/Class/Para/EllipseType.cpp
         if shape['target'] in ('hp:rect', 'hp:polygon'):
@@ -183,7 +184,10 @@ def build_diagram_shape_xml(payload, refs=None):
             for j, (px, py) in enumerate(((round(w/2), 0), (w, round(h/2)), (round(w/2), h), (0, round(h/2)))):
                 _add(node, HC+'pt'+str(j), x=px, y=py)
         _add(node, HC+'fillBrush')
-        _add(node[-1], HC+'winBrush', faceColor=_diagram_color(shape.get('fill'), '#FFFFFF'), hatchColor='#FF000000', alpha=0)
+        fill = shape.get('fill', '#FFFFFF')
+        no_fill = isinstance(fill, str) and fill.strip().lower() in ('transparent', 'none')
+        _add(node[-1], HC+'winBrush', faceColor='#FFFFFF' if no_fill else _diagram_color(fill, '#FFFFFF'),
+             hatchColor='#000000', alpha=255 if no_fill else 0)
         text = _add(node, HP+'drawText', lastWidth=w, name='', editable=0)
         sub = _add(text, HP+'subList', textDirection='HORIZONTAL', lineWrap='BREAK', vertAlign='CENTER')
         for line in shape['text'].split('\n') or ['']:
@@ -203,9 +207,8 @@ def build_diagram_shape_xml(payload, refs=None):
         output.append(node)
     for i, edge in enumerate(graph['connectors'], len(shapes)):
         _label(edge['id'])
-        node = _element(HP+'connectLine', id=int(refs.get('object_id_start', 1))+i, type='STRAIGHT_ONEWAY')
-        _shape_scaffold(node, abs(centers[edge['target']][0]-centers[edge['source']][0]),
-                        abs(centers[edge['target']][1]-centers[edge['source']][1]))
+        node = _element(HP+'connectLine', id=int(refs.get('object_id_start', 1))+i,
+                        type='STRAIGHT_ONEWAY')
         def anchor(ident, other):
             shape = next(s for s in shapes if s['id'] == ident)
             x, y, w, h = (shape[k] for k in ('x', 'y', 'width', 'height'))
@@ -217,11 +220,28 @@ def build_diagram_shape_xml(payload, refs=None):
         sx, sy, si = anchor(edge['source'], edge['target'])
         ex, ey, ei = anchor(edge['target'], edge['source'])
         sx, sy, ex, ey = (_unit(v) for v in (sx, sy, ex, ey))
+        left, top = min(sx, ex), min(sy, ey)
+        width, height = abs(ex-sx), abs(ey-sy)
+        _shape_scaffold(node, max(width, 1), max(height, 1))
+        node.find(HP+'offset').attrib.update(x=str(left), y=str(top))
+        node.find(HP+'renderingInfo/'+HC+'transMatrix').set('e3', str(left))
+        node.find(HP+'renderingInfo/'+HC+'transMatrix').set('e6', str(top))
         source_inst = int(refs.get('object_id_start', 1)) + next(i for i, s in enumerate(shapes) if s['id'] == edge['source'])
         target_inst = int(refs.get('object_id_start', 1)) + next(i for i, s in enumerate(shapes) if s['id'] == edge['target'])
-        _add(node, HP+'startPt', subjectIDRef=source_inst, subjectIdx=si, x=sx, y=sy)
-        _add(node, HP+'endPt', subjectIDRef=target_inst, subjectIdx=ei, x=ex, y=ey)
-        _add(node, HP+'lineShape', color='#000000', width=33, style='SOLID', headStyle='NORMAL', tailStyle='ARROW', headfill=1, tailfill=1)
+        _add(node, HP+'lineShape', color='#000000', width=33, style='SOLID', endCap='FLAT',
+             headStyle='NORMAL', tailStyle='ARROW', headfill=1, tailfill=1,
+             headSz='SMALL_SMALL', tailSz='SMALL_SMALL', outlineStyle='NORMAL', alpha=0)
+        _add(node, HP+'shadow', type='NONE', color='#B2B2B2', offsetX=0, offsetY=0, alpha=0)
+        _add(node, HP+'startPt', x=sx-left, y=sy-top, subjectIDRef=source_inst, subjectIdx=si)
+        _add(node, HP+'endPt', x=ex-left, y=ey-top, subjectIDRef=target_inst, subjectIdx=ei)
+        points = _add(node, HP+'controlPoints')
+        _add(points, HP+'point', x=sx-left, y=sy-top, type=3)
+        _add(points, HP+'point', x=ex-left, y=ey-top, type=26)
+        _add(node, HP+'sz', width=max(width, 1), height=max(height, 1), widthRelTo='ABSOLUTE', heightRelTo='ABSOLUTE', protect=0)
+        _add(node, HP+'pos', treatAsChar=0, affectLSpacing=0, flowWithText=0, allowOverlap=1,
+             holdAnchorAndSO=0, vertRelTo='PAPER', horzRelTo='PAPER', vertOffset=top, horzOffset=left,
+             vertAlign='TOP', horzAlign='LEFT')
+        _add(node, HP+'outMargin', left=0, right=0, top=0, bottom=0)
         if edge['text']:
             draw = _add(node, HP+'drawText', lastWidth=0, name='', editable=0)
             sub = _add(draw, HP+'subList', textDirection='HORIZONTAL', lineWrap='BREAK', vertAlign='CENTER')
