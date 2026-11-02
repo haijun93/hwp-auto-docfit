@@ -2674,6 +2674,70 @@ def _guard_pywebview_form_closed():
     form_type._docfit_close_guarded = True
 
 
+_WEBVIEW_RENDERING_ARGUMENTS = (
+    "--disable-renderer-backgrounding",
+    "--disable-background-timer-throttling",
+    "--disable-backgrounding-occluded-windows",
+    "--disable-features=CalculateNativeWinOcclusion",
+)
+
+
+def _append_webview_rendering_arguments(arguments):
+    """Merge renderer keep-alive switches into pywebview's WebView2 arguments."""
+    tokens = str(arguments or "").split()
+    features = []
+    remaining = []
+    for token in tokens:
+        if token.startswith("--disable-features="):
+            features.extend(part for part in token.partition("=")[2].split(",") if part)
+        else:
+            remaining.append(token)
+    features.extend(
+        argument.partition("=")[2]
+        for argument in _WEBVIEW_RENDERING_ARGUMENTS
+        if argument.startswith("--disable-features=")
+    )
+    for argument in _WEBVIEW_RENDERING_ARGUMENTS:
+        if not argument.startswith("--disable-features=") and argument not in remaining:
+            remaining.append(argument)
+    unique_features = list(dict.fromkeys(features))
+    if unique_features:
+        remaining.append("--disable-features=" + ",".join(unique_features))
+    return " ".join(remaining)
+
+
+def _install_webview_rendering_guard(edgechromium_module=None):
+    """Prevent the visible WebView2 renderer from being background-throttled.
+
+    pywebview 6.2.1 sets AdditionalBrowserArguments itself, so the usual
+    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS environment variable is not reliable.
+    A small WebView2 subclass adds the flags immediately before initialization.
+    """
+    if edgechromium_module is None:
+        if os.name != "nt":
+            return False
+        try:
+            from webview.platforms import edgechromium as edgechromium_module
+        except ImportError:
+            return False
+    if getattr(edgechromium_module, "_docfit_rendering_guarded", False):
+        return True
+
+    webview_type = edgechromium_module.WebView2
+
+    class RenderingGuardWebView2(webview_type):
+        def EnsureCoreWebView2Async(self, *args, **kwargs):
+            properties = self.CreationProperties
+            properties.AdditionalBrowserArguments = _append_webview_rendering_arguments(
+                properties.AdditionalBrowserArguments
+            )
+            return super().EnsureCoreWebView2Async(*args, **kwargs)
+
+    edgechromium_module.WebView2 = RenderingGuardWebView2
+    edgechromium_module._docfit_rendering_guarded = True
+    return True
+
+
 def run_webview(gui):
     """기존 Tk 백엔드를 숨겨 실행하고 WebView2를 주 UI로 표시한다."""
     if importlib.util.find_spec("webview") is None:
@@ -2681,6 +2745,10 @@ def run_webview(gui):
 
     import webview
     _guard_pywebview_form_closed()
+    try:
+        _install_webview_rendering_guard()
+    except Exception:
+        logging.getLogger(__name__).exception("Could not disable WebView2 idle rendering throttling")
 
     bridge = DesktopWebBridge(gui)
     page = _resource_path()
