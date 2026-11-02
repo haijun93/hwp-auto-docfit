@@ -237,6 +237,32 @@ class _KClipPanelState extends State<KClipPanel> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Switch(
+              key: const ValueKey('kclip-sticky-popup'),
+              value: settings['sticky_popup'] == true,
+              onChanged: (v) => _act('settings_set', {
+                'settings': {'sticky_popup': v},
+              }),
+            ),
+            const Text('스티커 메모처럼 화면에 유지'),
+          ],
+        ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Switch(
+              key: const ValueKey('kclip-always-on-top'),
+              value: settings['always_on_top'] != false,
+              onChanged: (v) => _act('settings_set', {
+                'settings': {'always_on_top': v},
+              }),
+            ),
+            const Text('항상 위'),
+          ],
+        ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Switch(
               value: settings['auto_paste'] != false,
               onChanged: (v) => _act('settings_set', {
                 'settings': {'auto_paste': v},

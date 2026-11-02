@@ -18,6 +18,10 @@ pub struct Settings {
     pub max_total_bytes: i64,
     pub max_age_days: f64,
     pub auto_paste: bool,
+    /// 빠른 목록 창을 포커스를 잃어도 화면에 유지한다(스티커 메모 모드).
+    pub sticky_popup: bool,
+    /// 빠른 목록 창을 다른 창보다 위에 둔다.
+    pub always_on_top: bool,
     pub paused: bool,
     pub hotkey: String,
     pub excluded_apps: Vec<String>,
@@ -36,6 +40,8 @@ impl Default for Settings {
             max_total_bytes: 200 * 1024 * 1024,
             max_age_days: 30.0,
             auto_paste: true,
+            sticky_popup: false,
+            always_on_top: true,
             paused: false,
             hotkey: "Ctrl+Shift+V".into(),
             // 암호 관리자는 제외 신호를 보내지만, 보내지 않는 프로그램도 있어 기본으로 뺀다.
@@ -68,6 +74,8 @@ impl Settings {
             ("max_total_mb", (self.max_total_bytes / 1024 / 1024).into()),
             ("max_age_days", self.max_age_days.into()),
             ("auto_paste", self.auto_paste.into()),
+            ("sticky_popup", self.sticky_popup.into()),
+            ("always_on_top", self.always_on_top.into()),
             ("paused", self.paused.into()),
             ("hotkey", self.hotkey.as_str().into()),
             ("excluded_apps", Value::Arr(self.excluded_apps.iter().map(|s| s.as_str().into()).collect())),
@@ -94,6 +102,12 @@ impl Settings {
         if let Some(b) = v.bool("auto_paste") {
             self.auto_paste = b;
         }
+        if let Some(b) = v.bool("sticky_popup") {
+            self.sticky_popup = b;
+        }
+        if let Some(b) = v.bool("always_on_top") {
+            self.always_on_top = b;
+        }
         if let Some(b) = v.bool("paused") {
             self.paused = b;
         }
@@ -110,7 +124,9 @@ impl Settings {
         if let Some(list) = string_list(v, "timeline_roots", false, 1000) {
             self.timeline_roots = list
                 .into_iter()
-                .filter(|p| p.len() > 3 && p.as_bytes()[1] == b':' && !p.contains("..") && !p.starts_with("\\\\"))
+                .filter(|p| p.len() > 3 && p.as_bytes()[1] == b':' && !p.contains("..") &&
+                    !p.starts_with("\\\\") && !p.split(|ch| ch == '\\' || ch == '/')
+                        .any(|part| part.eq_ignore_ascii_case("$Recycle.Bin")))
                 .take(20)
                 .collect();
         }
