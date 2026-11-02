@@ -14,7 +14,8 @@ import time
 from pathlib import Path
 
 from docfit_core.timemachine import thumbs
-from docfit_core.timemachine.rules import KINDS, Rules
+from docfit_core.timemachine.content_search import ContentSearchIndex
+from docfit_core.timemachine.rules import DEFAULT_EXTENSIONS, KINDS, Rules
 from docfit_core.timemachine.scan import default_roots, scan_roots
 from docfit_core.timemachine.store import Store
 from .kagent_client import KAgentClient, data_dir
@@ -33,6 +34,8 @@ class TimemachineService:
         self.settings_root = Path(settings_root)
         self.settings_path = self.settings_root / "timemachine.json"
         self.store = Store(db_path or data_dir() / "timeline.db")
+        content_db = (Path(db_path).with_suffix(".content.sqlite") if db_path else data_dir() / "timeline-content.sqlite")
+        self.content_index = ContentSearchIndex(content_db)
         self.agent = agent if agent is not None else KAgentClient()
         self.opener = opener if opener is not None else self._open_file
         self.revealer = revealer if revealer is not None else self._reveal_file
@@ -43,6 +46,11 @@ class TimemachineService:
         self._thumbnail_slots = threading.BoundedSemaphore(THUMBNAIL_SLOTS)
         self._settings_lock = threading.RLock()
         self._scan_lock = threading.Lock()
+        self._content_lock = threading.RLock()
+        self._content_cancel = threading.Event()
+        self._content_thread = None
+        self._content_state = {"running": False, "seen": 0, "indexed": 0, "errors": 0,
+                               "cancelled": False, "started_at": None, "finished_at": None}
         self._scan_state = {"running": False, "seen": 0, "written": 0, "removed": 0,
                             "errors": [], "started_at": None, "finished_at": None}
         self._rescan = False
@@ -57,7 +65,62 @@ class TimemachineService:
         subprocess.Popen(["explorer", "/select," + path])
 
     def _defaults(self):
-        return {"roots": default_roots(), "time_mode": "max", "enabled": False}
+        return {"roots": default_roots(), "time_mode": "max", "enabled": False, "extensions": list(DEFAULT_EXTENSIONS)}
+
+    def close(self):
+        self.cancel_content_index(wait=True)
+        self.content_index.close()
+        self.store.close()
+
+    def _content_index_worker(self, roots, extensions):
+        seen = indexed = errors = 0
+        try:
+            for root in roots:
+                for folder, dirs, files in os.walk(root, followlinks=False):
+                    dirs[:] = [d for d in dirs if d.casefold() != "$recycle.bin" and not self._content_cancel.is_set()]
+                    for name in files:
+                        if self._content_cancel.is_set():
+                            break
+                        if Path(name).suffix.lower().lstrip(".") not in extensions:
+                            continue
+                        path = os.path.join(folder, name)
+                        if not self._path_in_active_root(path):
+                            continue
+                        result = self.content_index.index_file(path)
+                        seen += 1
+                        indexed += bool(result["indexed"])
+                        errors += bool(result["error"])
+                        with self._content_lock:
+                            self._content_state.update(seen=seen, indexed=indexed, errors=errors)
+                    if self._content_cancel.is_set():
+                        break
+                if self._content_cancel.is_set():
+                    break
+        finally:
+            with self._content_lock:
+                self._content_state.update(running=False, cancelled=self._content_cancel.is_set(),
+                                           finished_at=time.time())
+
+    def _start_content_index(self):
+        with self._content_lock:
+            if self._content_state["running"]:
+                return {"ok": True, **self._content_state}
+            self._content_cancel.clear()
+            self._content_state = {"running": True, "seen": 0, "indexed": 0, "errors": 0,
+                                   "cancelled": False, "started_at": time.time(), "finished_at": None}
+            self._content_thread = threading.Thread(target=self._content_index_worker,
+                args=(list(self._settings["roots"]), frozenset(self._settings["extensions"])),
+                name="timemachine-content-index", daemon=True)
+            self._content_thread.start()
+            return {"ok": True, **self._content_state}
+
+    def cancel_content_index(self, *, wait=False):
+        self._content_cancel.set()
+        worker = self._content_thread
+        if wait and worker and worker is not threading.current_thread():
+            worker.join()
+        with self._content_lock:
+            return {"ok": True, **self._content_state}
 
     def _load_settings(self):
         defaults = self._defaults()
@@ -69,7 +132,8 @@ class TimemachineService:
             roots = self._validate_roots(roots)
             if mode not in ("max", "mtime") or type(enabled) is not bool:
                 raise ValueError("settings")
-            return {"roots": roots, "time_mode": mode, "enabled": enabled}
+            extensions = self._validate_extensions(data.get("extensions", list(DEFAULT_EXTENSIONS)))
+            return {"roots": roots, "time_mode": mode, "enabled": enabled, "extensions": extensions}
         except (OSError, ValueError, TypeError, KeyError):
             return defaults
 
@@ -117,6 +181,20 @@ class TimemachineService:
             if key not in seen:
                 result.append(path)
                 seen.add(key)
+        return result
+
+    @staticmethod
+    def _validate_extensions(values):
+        allowed = set(DEFAULT_EXTENSIONS)
+        if not isinstance(values, list) or any(not isinstance(v, str) for v in values):
+            raise ValueError("적용 확장자를 확인해 주세요.")
+        result = []
+        for value in values:
+            ext = value.lower().lstrip(".")
+            if ext not in allowed:
+                raise ValueError("지원하지 않는 확장자입니다.")
+            if ext not in result:
+                result.append(ext)
         return result
 
     def _save_settings(self, settings):
@@ -220,7 +298,7 @@ class TimemachineService:
                                         removed=result.removed,
                                         errors=[str(item[1]) for item in result.errors])
         try:
-            result = self.scanner(self.store, roots, Rules(time_mode=mode), progress=progress)
+            result = self.scanner(self.store, roots, Rules(time_mode=mode, extensions=self._settings["extensions"]), progress=progress)
             with self._settings_lock:
                 current = list(self._settings["roots"])
             retained = {self._root_key(root) for root in current}
@@ -277,7 +355,8 @@ class TimemachineService:
             mode, enabled = payload.get("time_mode"), payload.get("enabled")
             if mode not in ("max", "mtime") or type(enabled) is not bool:
                 raise ValueError("설정 값을 확인해 주세요.")
-            settings = {"roots": roots, "time_mode": mode, "enabled": enabled}
+            extensions = self._validate_extensions(payload.get("extensions", self._settings["extensions"]))
+            settings = {"roots": roots, "time_mode": mode, "enabled": enabled, "extensions": extensions}
             with self._settings_lock:
                 old_roots = list(self._settings["roots"])
                 changed = self._settings != settings
@@ -293,6 +372,27 @@ class TimemachineService:
             return {"ok": True, "settings": dict(settings, roots=list(roots))}
         if action == "scan":
             return self._start_scan()
+        if action == "content_index":
+            path = payload.get("path")
+            if (not isinstance(path, str) or not self._path_in_active_root(path) or
+                    Path(path).suffix.lower().lstrip(".") not in self._settings["extensions"] or
+                    any(part.casefold() == "$recycle.bin" for part in Path(path).parts)):
+                return self._error("INVALID_INPUT", "현재 조사 폴더의 허용된 문서를 선택해 주세요.")
+            result = self.content_index.index_file(path)
+            return {"ok": True, **result}
+        if action in ("content_index_all", "content_index_start"):
+            return self._start_content_index()
+        if action in ("content_index_status", "content_index_progress"):
+            with self._content_lock:
+                return {"ok": True, **self._content_state}
+        if action == "content_index_cancel":
+            return self.cancel_content_index()
+        if action == "content_search":
+            query = payload.get("query")
+            rows = self.content_index.search(query, roots=self._settings["roots"], limit=payload.get("limit", 100))
+            return {"ok": True, "items": rows}
+        if action == "content_errors":
+            return {"ok": True, "items": self.content_index.errors(self._settings["roots"])}
         if action == "range":
             start, end, filters = self._filter_args(payload, range_required=True)
             newest = payload.get("newest_first", True)
@@ -301,6 +401,7 @@ class TimemachineService:
                 raise ValueError("페이지 범위를 확인해 주세요.")
             if not filters["roots"]:
                 return {"ok": True, "items": []}
+            filters["extensions"] = self._settings["extensions"]
             rows = self.store.range(start, end, **filters, newest_first=newest, limit=limit, offset=offset)
             rows = [row for row in rows if self._path_in_active_root(row["path"], row.get("root"))]
             items = [{"id": row["id"], "name": row["name"], "kind": row["kind"],
@@ -316,10 +417,12 @@ class TimemachineService:
                     raise ValueError("달력 날짜를 확인해 주세요.")
                 if not filters["roots"]:
                     return {"ok": True, "days": {}}
+                filters["extensions"] = self._settings["extensions"]
                 return {"ok": True, "days": self.store.day_counts(year, month, **filters)}
             start, end, range_filters = self._filter_args(payload, range_required=True)
             if not range_filters["roots"]:
                 return {"ok": True, "hours": {}}
+            range_filters["extensions"] = self._settings["extensions"]
             return {"ok": True, "hours": self.store.hour_density(start, end, **range_filters)}
         if action == "hide":
             file_id = payload.get("id")

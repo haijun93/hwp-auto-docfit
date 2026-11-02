@@ -60,7 +60,7 @@ class TimemachineServiceTests(unittest.TestCase):
             scanner=stub_scanner, thumb_dir=Path(self.temp.name) / "thumbs")
 
     def tearDown(self):
-        self.service.store.close()
+        self.service.close()
         self.temp.cleanup()
 
     def enable(self, roots=None):
@@ -72,6 +72,56 @@ class TimemachineServiceTests(unittest.TestCase):
         self.assertFalse(settings["enabled"])
         self.assertIsInstance(settings["roots"], list)
         self.assertFalse(self.service.command("status")["enabled"])
+
+    def test_content_index_requires_active_root_and_searches_local_text(self):
+        self.enable()
+        document = self.root / "내용.txt"
+        document.write_text("서비스 본문 키워드", encoding="utf-8")
+        indexed = self.service.command("content_index", {"path": str(document)})
+        self.assertTrue(indexed["ok"])
+        result = self.service.command("content_search", {"query": "본문 키워드"})
+        self.assertEqual(result["items"][0]["name"], document.name)
+        outside = self.plain_file
+        self.assertFalse(self.service.command("content_index", {"path": str(outside)})["ok"])
+
+    def test_background_content_index_progress_and_cancel(self):
+        (self.root / "one.txt").write_text("한글 색인", encoding="utf-8")
+        (self.root / "two.txt").write_text("두 번째", encoding="utf-8")
+        self.enable()
+        started = self.service.command("content_index_all")
+        self.assertTrue(started["ok"])
+        worker = self.service._content_thread
+        worker.join(5)
+        self.assertFalse(worker.is_alive())
+        status = self.service.command("content_index_status")
+        self.assertFalse(status["running"])
+        self.assertEqual(status["seen"], 2)
+        self.assertEqual(status["indexed"], 2)
+        self.assertEqual(len(self.service.command("content_search", {"query":"색인"})["items"]), 1)
+
+    def test_close_cancels_and_joins_content_index(self):
+        self.enable()
+        entered, release = threading.Event(), threading.Event()
+        original = self.service.content_index.index_file
+        def blocked(path):
+            entered.set()
+            release.wait(2)
+            return original(path)
+        document = self.root / "blocked.txt"
+        document.write_text("본문", encoding="utf-8")
+        with patch.object(self.service.content_index, "index_file", side_effect=blocked):
+            self.service.command("content_index_start")
+            self.assertTrue(entered.wait(1))
+            closer = threading.Thread(target=self.service.close)
+            closer.start()
+            deadline = time.monotonic() + 1
+            while not self.service._content_cancel.is_set() and time.monotonic() < deadline:
+                time.sleep(0.005)
+            self.assertTrue(self.service._content_cancel.is_set())
+            release.set()
+            closer.join(2)
+            self.assertFalse(closer.is_alive())
+        self.assertFalse(self.service._content_thread.is_alive())
 
     def test_settings_reject_relative_missing_and_more_than_twenty_roots(self):
         for roots in (["relative"], [str(self.root / "missing")], [str(self.plain_file)], [str(self.root)] * 21):
@@ -153,6 +203,13 @@ class TimemachineServiceTests(unittest.TestCase):
         self.enable(); now=time.time(); base={"start":now-10,"end":now+10,"limit":200,"offset":0}
         for update in ({"kinds":["other"]},{"roots":[str(Path(self.temp.name))]},{"start":5,"end":4},{"limit":201},{"offset":-1},{"query":3}):
             self.assertEqual(self.service.command("range",base|update)["code"],"INVALID_INPUT")
+
+    def test_extension_settings_are_validated_and_persisted(self):
+        result=self.service.command("settings_set",{"roots":[str(self.root)],"time_mode":"max","enabled":True,"extensions":["pdf","txt"]})
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["settings"]["extensions"],["pdf","txt"])
+        invalid=self.service.command("settings_set",{"roots":[str(self.root)],"time_mode":"max","enabled":True,"extensions":["exe"]})
+        self.assertEqual(invalid["code"],"INVALID_INPUT")
 
     def test_day_counts_and_hour_density_forward_filters(self):
         self.enable()

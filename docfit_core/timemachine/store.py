@@ -115,7 +115,7 @@ class Store:
 
     # ── 읽기(화면) ───────────────────────────────────────────────────────
     @staticmethod
-    def _filters(kinds=None, roots=None, query=None):
+    def _filters(kinds=None, roots=None, query=None, extensions=None):
         where, params = ["hidden = 0"], []
         if kinds:
             where.append(f"kind IN ({','.join('?' * len(kinds))})")
@@ -127,12 +127,16 @@ class Store:
             escaped = query.casefold().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             where.append("lower(name) LIKE ? ESCAPE '\\'")
             params.append(f"%{escaped}%")
+        if extensions is not None:
+            # 파일명에 점이 여러 개여도 맨 뒤 확장자로 판정한다.
+            where.append("(" + (" OR ".join(["lower(name) LIKE ?"] * len(extensions)) or "0") + ")")
+            params.extend("%." + str(ext).lower().lstrip(".") for ext in extensions)
         return where, params
 
-    def range(self, start, end, *, kinds=None, roots=None, query=None, newest_first=True, limit=200, offset=0):
+    def range(self, start, end, *, kinds=None, roots=None, query=None, extensions=None, newest_first=True, limit=200, offset=0):
         """[start, end) 구간(유닉스 초)의 파일. 가상 스크롤용으로 limit·offset."""
         limit = max(1, min(int(limit), MAX_PAGE))
-        where, params = self._filters(kinds, roots, query)
+        where, params = self._filters(kinds, roots, query, extensions)
         where.insert(0, "work_time >= ? AND work_time < ?")
         params[:0] = [start, end]
         order = "DESC" if newest_first else "ASC"

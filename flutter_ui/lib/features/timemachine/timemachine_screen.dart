@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:file_selector/file_selector.dart';
 import 'timemachine_api.dart';
 import 'timemachine_thumbnails.dart';
 import '../../core/api/abbreviation_api.dart' show ApiCall;
@@ -36,6 +37,7 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
   int _requestSerial = 0;
   int _calendarRevision = 0;
   Timer? _debounce;
+  static const _extensions = ['hwpx','hwp','docx','pptx','xlsx','pdf','txt'];
 
   @override
   void initState() { super.initState(); _load(firstOpen: true); _scroll.addListener(_onScroll); }
@@ -186,6 +188,25 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
     try { await _requestScan(); }
     catch (_) { if (mounted) setState(() => _error = '색인 요청을 보내지 못했습니다. 앱 연결을 확인해 주세요.'); }
     await _load();
+  }
+  Future<void> _saveSettings(Map<String,Object?> next) async {
+    final response=await _api.command('settings_set',next);
+    if(response['ok']==true){setState(()=>_settings=Map<String,Object?>.from(response['settings'] as Map));await _filtersChanged();}
+    else if(mounted)setState(()=>_error='${response['message'] ?? '설정을 저장하지 못했습니다.'}');
+  }
+  Future<void> _pickExtensions() async {
+    final values=List<String>.from((_settings?['extensions'] as List?) ?? _extensions);
+    final saved=await showDialog<bool>(context:context,builder:(context)=>StatefulBuilder(builder:(context,update)=>AlertDialog(
+      title:const Text('적용 확장자'),
+      content:Wrap(spacing:6,runSpacing:4,children:[for(final ext in _extensions) FilterChip(label:Text(ext),selected:values.contains(ext),onSelected:(selected)=>update(()=>selected?values.add(ext):values.remove(ext)))]),
+      actions:[TextButton(onPressed:()=>Navigator.pop(context,false),child:const Text('취소')),FilledButton(onPressed:()=>Navigator.pop(context,true),child:const Text('저장'))],
+    )));
+    if(saved==true&&mounted)await _saveSettings(Map<String,Object?>.from(_settings!)..['extensions']=values);
+  }
+  Future<void> _addRoot() async {
+    final path=await getDirectoryPath(); if(path==null||!mounted)return;
+    final roots=List<String>.from((_settings?['roots'] as List?) ?? const [])..add(path);
+    await _saveSettings(Map<String,Object?>.from(_settings!)..['roots']=roots);
   }
   Future<void> _chooseDay(DateTime day) async {
     final chosen = DateTime(day.year, day.month, day.day);
@@ -429,13 +450,16 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
     final disconnected = _error?.contains('연결하지 못했습니다') == true;
     return Center(child:ConstrainedBox(constraints:const BoxConstraints(maxWidth:620),child:Card(child:Padding(padding:const EdgeInsets.all(24),child:Column(mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.start,children:[
       Text('타임머신',style:Theme.of(context).textTheme.headlineSmall), const SizedBox(height:8), const Text('켜면 선택한 폴더의 문서 정보만 색인해 시간순으로 찾아볼 수 있습니다.'), const SizedBox(height:16), const Text('조사 폴더'),
-      for(final root in roots) Padding(padding:const EdgeInsets.symmetric(vertical:3),child:Text('• $root')),
+      for(final root in roots) Row(children:[Expanded(child:Text('• $root')),IconButton(tooltip:'조사 폴더 삭제',onPressed:(){final next=Map<String,Object?>.from(_settings!)..['roots']=List<String>.from(roots.cast<String>())..remove(root);_saveSettings(next);},icon:const Icon(Icons.close))]),
+      OutlinedButton.icon(onPressed:_addRoot,icon:const Icon(Icons.folder_open),label:const Text('조사 폴더 추가')),
       const SizedBox(height:16), FilledButton.icon(onPressed:_enable,icon:const Icon(Icons.power_settings_new),label:const Text('켜기')),
       if (_error != null) Text(_error!,style:const TextStyle(color:Colors.red)),
       if (disconnected) TextButton(onPressed:_retryConnection,child:const Text('다시 연결')),
     ])))));
   }
   Widget _filtersBar() => Padding(padding:const EdgeInsets.fromLTRB(12,8,12,4),child:Wrap(spacing:6,runSpacing:4,crossAxisAlignment:WrapCrossAlignment.center,children:[
+    OutlinedButton.icon(onPressed:_pickExtensions,icon:const Icon(Icons.tune,size:16),label:const Text('확장자')),
+
     for(final entry in _kinds.entries) FilterChip(label:Text(entry.key),selected:_selectedKinds.contains(entry.value),onSelected:(value){setState(()=>value?_selectedKinds.add(entry.value):_selectedKinds.remove(entry.value));_filtersChanged();}),
     SizedBox(width:220,child:TextField(controller:_search,decoration:const InputDecoration(prefixIcon:Icon(Icons.search),hintText:'이름 찾기',isDense:true),onChanged:(value){_debounce?.cancel();_debounce=Timer(const Duration(milliseconds:300),(){_query=value.trim();_filtersChanged();});})),
     OutlinedButton.icon(onPressed:_scan,icon:const Icon(Icons.refresh),label:const Text('다시 훑기')),

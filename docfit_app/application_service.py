@@ -304,6 +304,9 @@ class ApplicationService:
             raise ServiceError('INVALID_ACTION','흐름도 작업을 확인해 주세요.')
         if method=='shutdown':
             self.data.closing=True
+            service = getattr(self, '_timemachine_service', None)
+            if service is not None:
+                service.close()
             self.jobs.shutdown()
             return {'closed':True}
         raise ServiceError('NOT_AVAILABLE','지원하지 않는 명령입니다.')
