@@ -131,6 +131,30 @@ void main() {
     expect(((backend.lastPreview!['rules'] as List).single as Map)['format'], 'YYMMDD');
   });
 
+  for (final size in const [Size(1400, 800), Size(800, 600), Size(620, 700), Size(1000, 420)]) {
+    testWidgets('창 크기 $size: 넘치지 않고 구분선을 끌어 조절한다', (tester) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(MaterialApp(home: Scaffold(body: FileRenameScreen(api: _FakeBackend().call))));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      final side = find.byKey(const ValueKey('rename-split-side'));
+      final list = find.byKey(const ValueKey('rename-split-list'));
+      final handle = side.evaluate().isNotEmpty ? side : list;
+      expect(handle, findsOneWidget);
+      final horizontal = handle == side;
+      final before = tester.getCenter(handle);
+      await tester.drag(handle, horizontal ? const Offset(-80, 0) : const Offset(0, 40));
+      await tester.pumpAndSettle();
+      final after = tester.getCenter(handle);
+      expect(horizontal ? after.dx : after.dy, isNot(horizontal ? before.dx : before.dy));
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('파일 추가 → 규칙 추가 → 미리보기 → 적용 → 되돌리기', (tester) async {
     final backend = _FakeBackend();
     await _pump(tester, backend);

@@ -68,6 +68,9 @@ class FileRenameScreenState extends State<FileRenameScreen> {
   String _datePosition = 'none';
   String _dateFormat = 'YYYY.MM.DD.';
   bool _advanced = false;
+  /// 넓은 창: 오른쪽 입력 칸의 폭 비율. 좁은 창: 위쪽 목록의 높이 비율. 끌어서 바꾼다.
+  double _sideFraction = 0.34;
+  double _listFraction = 0.5;
 
   @override
   void initState() {
@@ -449,7 +452,7 @@ class FileRenameScreenState extends State<FileRenameScreen> {
           autofocus: false,
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final wide = constraints.maxWidth >= 900;
+              final wide = constraints.maxWidth >= 720;
               final list = _buildList(context);
               final rules = _advanced ? _buildRules(context) : _buildSimple(context);
               return Column(
@@ -457,22 +460,11 @@ class FileRenameScreenState extends State<FileRenameScreen> {
                   _buildToolbar(context),
                   const Divider(height: 1),
                   Expanded(
-                    child: wide
-                        ? Row(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Expanded(flex: 3, child: list),
-                              const VerticalDivider(width: 1),
-                              SizedBox(width: 340, child: rules),
-                            ],
-                          )
-                        : Column(
-                            children: [
-                              Expanded(flex: 3, child: list),
-                              const Divider(height: 1),
-                              Expanded(flex: 2, child: rules),
-                            ],
-                          ),
+                    child: LayoutBuilder(
+                      builder: (context, area) => wide
+                          ? _splitRow(area.maxWidth, list, rules)
+                          : _splitColumn(area.maxHeight, list, rules),
+                    ),
                   ),
                   const Divider(height: 1),
                   _buildFooter(context),
@@ -482,6 +474,61 @@ class FileRenameScreenState extends State<FileRenameScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  /// 비율로 칸 크기를 정해 창 크기를 따라가고, 양쪽 최소 크기는 지킨다.
+  static double _clampSize(double size, double total, double minA, double minB) {
+    final top = total - minB;
+    if (top <= minA) return total / 2;
+    return size.clamp(minA, top).toDouble();
+  }
+
+  Widget _splitRow(double width, Widget list, Widget side) {
+    const handle = 8.0;
+    final available = width - handle;
+    final sideWidth = _clampSize(available * _sideFraction, available, 280, 280);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(child: list),
+        MouseRegion(
+          cursor: SystemMouseCursors.resizeColumn,
+          child: GestureDetector(
+            key: const ValueKey('rename-split-side'),
+            behavior: HitTestBehavior.opaque,
+            onHorizontalDragUpdate: (d) => setState(() {
+              _sideFraction = _clampSize(sideWidth - d.delta.dx, available, 280, 280) / available;
+            }),
+            child: const SizedBox(width: handle, child: VerticalDivider(width: handle)),
+          ),
+        ),
+        SizedBox(width: sideWidth, child: side),
+      ],
+    );
+  }
+
+  Widget _splitColumn(double height, Widget list, Widget side) {
+    const handle = 8.0;
+    final available = height - handle;
+    final listHeight = _clampSize(available * _listFraction, available, 120, 160);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(height: listHeight, child: list),
+        MouseRegion(
+          cursor: SystemMouseCursors.resizeRow,
+          child: GestureDetector(
+            key: const ValueKey('rename-split-list'),
+            behavior: HitTestBehavior.opaque,
+            onVerticalDragUpdate: (d) => setState(() {
+              _listFraction = _clampSize(listHeight + d.delta.dy, available, 120, 160) / available;
+            }),
+            child: const SizedBox(height: handle, child: Divider(height: handle)),
+          ),
+        ),
+        Expanded(child: side),
+      ],
     );
   }
 
@@ -815,6 +862,12 @@ class FileRenameScreenState extends State<FileRenameScreen> {
     return format == 'YYMMDD' ? '${two(t.year % 100)}${two(t.month)}${two(t.day)}' : '${t.year}.${two(t.month)}.${two(t.day)}.';
   }
 
+  /// 칸이 좁으면 단추 묶음을 줄여 넘치지 않게 한다.
+  Widget _fit(Widget child) => Align(
+    alignment: Alignment.centerLeft,
+    child: FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: child),
+  );
+
   Widget _buildSimple(BuildContext context) {
     const gap = SizedBox(height: 16);
     final rules = _rules.length;
@@ -837,18 +890,25 @@ class FileRenameScreenState extends State<FileRenameScreen> {
         gap,
         _simpleTitle('글자 바꾸기', _find.text.isNotEmpty),
         const SizedBox(height: 6),
-        Row(
-          children: [
-            Expanded(child: _simpleField(_find, 'rename-find', '예: 만두')),
-            const Padding(padding: EdgeInsets.symmetric(horizontal: 6), child: Text('을(를)')),
-            Expanded(child: _simpleField(_replaceTo, 'rename-replace-to', '예: 자장면')),
-            const Padding(padding: EdgeInsets.only(left: 6), child: Text('(으)로')),
-          ],
+        LayoutBuilder(
+          builder: (context, box) {
+            final from = Row(children: [
+              Expanded(child: _simpleField(_find, 'rename-find', '예: 만두')),
+              const Padding(padding: EdgeInsets.symmetric(horizontal: 6), child: Text('을(를)')),
+            ]);
+            final to = Row(children: [
+              Expanded(child: _simpleField(_replaceTo, 'rename-replace-to', '예: 자장면')),
+              const Padding(padding: EdgeInsets.only(left: 6), child: Text('(으)로')),
+            ]);
+            return box.maxWidth < 300
+                ? Column(children: [from, const SizedBox(height: 6), to])
+                : Row(children: [Expanded(child: from), const SizedBox(width: 6), Expanded(child: to)]);
+          },
         ),
         gap,
         _simpleTitle('오늘 날짜 넣기 (선택)', _datePosition != 'none'),
         const SizedBox(height: 6),
-        SegmentedButton<String>(
+        _fit(SegmentedButton<String>(
           key: const ValueKey('rename-date-position'),
           showSelectedIcon: false,
           segments: const [
@@ -861,9 +921,9 @@ class FileRenameScreenState extends State<FileRenameScreen> {
             setState(() => _datePosition = v.first);
             _schedulePreview();
           },
-        ),
+        )),
         const SizedBox(height: 6),
-        SegmentedButton<String>(
+        _fit(SegmentedButton<String>(
           key: const ValueKey('rename-date-format'),
           showSelectedIcon: false,
           segments: [
@@ -877,7 +937,7 @@ class FileRenameScreenState extends State<FileRenameScreen> {
                   setState(() => _dateFormat = v.first);
                   _schedulePreview();
                 },
-        ),
+        )),
         gap,
         const Divider(height: 1),
         Align(
