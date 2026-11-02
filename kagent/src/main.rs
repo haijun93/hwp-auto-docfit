@@ -103,6 +103,13 @@ fn now_ms() -> u64 {
 fn screenshots_folder() -> Option<String> {
     use windows_sys::Win32::System::Com::CoTaskMemFree;
     use windows_sys::Win32::UI::Shell::{FOLDERID_Screenshots, SHGetKnownFolderPath};
+    if let Ok(root) = std::env::var("KAGENT_TEST_ROOT") {
+        let dir = std::path::Path::new(&root).join("Screenshots");
+        if std::fs::create_dir_all(&dir).is_ok() {
+            return Some(dir.to_string_lossy().into_owned());
+        }
+        return None;
+    }
     if let Ok(dir) = std::env::var("KAGENT_SCREENSHOTS") {
         return std::path::Path::new(&dir).is_dir().then_some(dir); // 시험용
     }
@@ -724,9 +731,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let has = |flag: &str| args.iter().any(|a| a == flag);
+    let mutex_name = format!("Local\\HwpAutoDocFit.kagent{}", util::instance_suffix().unwrap_or_default());
     let instance_mutex = unsafe {
         // 하나만 실행: 이미 있으면 그쪽에 요청만 보내고 끝낸다.
-        CreateMutexW(std::ptr::null(), 0, wide("Local\\HwpAutoDocFit.kagent").as_ptr())
+        CreateMutexW(std::ptr::null(), 0, wide(&mutex_name).as_ptr())
     };
     if instance_mutex.is_null() {
         std::process::exit(1);
@@ -816,6 +824,38 @@ fn main() {
         }
         app().hwnd.store(hwnd as isize, Ordering::Relaxed);
         popup::register(instance);
+        // 격리 시험 전용: 시험 폴더가 없으면 실제 기록에 시험 항목을 넣지 않도록 무시한다.
+        if has("--test-window") && std::env::var_os("KAGENT_TEST_ROOT").is_some() {
+            if let Some(root) = std::env::var_os("KAGENT_TEST_ROOT") {
+                let _ = std::fs::create_dir_all(&root);
+                let settings_path = std::path::Path::new(&root).join("settings.json");
+                let mut settings = app().settings.lock().unwrap();
+                settings.always_on_top = true;
+                settings.sticky_popup = true;
+                settings.watch_screenshots = false;
+                settings.popup_x = 120;
+                settings.popup_y = 100;
+                settings.popup_width = 560;
+                settings.popup_height = 420;
+                let _ = settings.save(&settings_path.to_string_lossy());
+            }
+            // 시험 데이터와 창 상태를 먼저 준비해 한 번만 표시한다. sticky_popup=true인 상태에서
+            // show()를 연속 호출하면 두 번째 호출이 창을 숨기는 토글 동작을 한다.
+            let sample = format!("V229 KAG 시험 복사 항목 {}", std::process::id());
+            let _ = app().store.lock().unwrap().insert("text", sample.as_bytes(), &[], &sample, "test", now());
+            refresh_recent();
+            {
+                let mut settings = app().settings.lock().unwrap();
+                settings.sticky_popup = true;
+                settings.popup_collapsed = false;
+                settings.popup_x = 120;
+                settings.popup_y = 100;
+                settings.popup_width = 560;
+                settings.popup_height = 420;
+            }
+            save_settings();
+            popup::show();
+        }
         register_hotkey(hwnd);
         let paused = app().settings.lock().unwrap().paused;
         set_listening(hwnd, !paused);
