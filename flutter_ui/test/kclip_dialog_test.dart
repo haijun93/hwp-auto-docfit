@@ -58,7 +58,7 @@ void main() {
     expect(calls, contains('enable'));
     expect(find.text('업무보고(안)'), findsOneWidget);
     expect(find.textContaining('기록 중 · 2개'), findsOneWidget);
-    final itemTiles = tester.widgetList<ListTile>(find.byType(ListTile)).toList();
+    final itemTiles = tester.widgetList<ListTile>(find.descendant(of: find.byType(ListView), matching: find.byType(ListTile))).toList();
     expect((itemTiles.first.title as Text).data, '그림 640×480');
     expect((itemTiles.first.leading as Tooltip).message, '그림');
     await tester.tap(find.byKey(const ValueKey('kclip-item-2')));

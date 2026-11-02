@@ -238,11 +238,11 @@ class ConversionWorkspace extends StatelessWidget {
                       style: TextStyle(color: faint, height: 1.6),
                     ),
                   )
-                : Scrollbar(
+                : _FilesScrollbar(
                     key: const Key('conversionFilesScrollbar'),
-                    thumbVisibility: true,
-                    child: ListView.separated(
+                    builder: (controller) => ListView.separated(
                       key: const Key('conversionFilesList'),
+                      controller: controller,
                       itemCount: files.length,
                       separatorBuilder: (_, _) => const SizedBox(height: 8),
                       itemBuilder: (context, i) {
@@ -666,4 +666,30 @@ class ConversionWorkspace extends StatelessWidget {
       ],
     );
   }
+}
+
+/// 파일 목록 스크롤바. 막대를 늘 보이려면 목록과 같은 컨트롤러가 필요하다.
+class _FilesScrollbar extends StatefulWidget {
+  const _FilesScrollbar({super.key, required this.builder});
+  final Widget Function(ScrollController controller) builder;
+
+  @override
+  State<_FilesScrollbar> createState() => _FilesScrollbarState();
+}
+
+class _FilesScrollbarState extends State<_FilesScrollbar> {
+  final _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scrollbar(
+    controller: _controller,
+    thumbVisibility: true,
+    child: widget.builder(_controller),
+  );
 }

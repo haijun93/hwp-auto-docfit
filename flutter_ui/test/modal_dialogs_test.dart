@@ -22,7 +22,7 @@ void main() {
     await tester.tap(find.byTooltip('작업 로그'));
     await tester.pumpAndSettle();
 
-    expect(find.text('작업 로그'), findsOneWidget);
+    expect(find.text('작업 로그'), findsWidgets);
     expect(find.text('테스트 작업 로그 본문'), findsOneWidget);
     await tester.tap(find.text('닫기'));
     await tester.pumpAndSettle();

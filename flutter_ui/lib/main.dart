@@ -241,6 +241,11 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
               key: null,
             ),
           ];
+          String tipOf(String label) => switch (label) {
+            '몽땅클립보드' => '몽땅클립보드 (복사 기록 · Ctrl+Shift+V)',
+            '사용 방법' => '사용 방법 (F1)',
+            _ => label,
+          };
           return Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: expanded
@@ -249,7 +254,9 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
             children: [
               for (final action in actions)
                 if (expanded)
-                  TextButton.icon(
+                  Tooltip(
+                    message: tipOf(action.label),
+                    child: TextButton.icon(
                     key: action.key,
                     onPressed: action.onPressed,
                     icon: Icon(action.icon, size: 20),
@@ -259,13 +266,12 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
                       visualDensity: VisualDensity.compact,
                       padding: const EdgeInsets.symmetric(horizontal: 10),
                     ),
+                  ),
                   )
                 else
                   IconButton(
                     key: action.key,
-                    tooltip: action.label == '몽땅클립보드'
-                        ? '몽땅클립보드 (복사 기록 · Ctrl+Shift+V)'
-                        : action.label,
+                    tooltip: tipOf(action.label),
                     visualDensity: VisualDensity.compact,
                     onPressed: action.onPressed,
                     icon: Icon(action.icon, size: 20),

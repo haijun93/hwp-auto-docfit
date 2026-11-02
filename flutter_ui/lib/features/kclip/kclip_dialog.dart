@@ -305,11 +305,13 @@ class _KClipPanelState extends State<KClipPanel> {
               itemBuilder: (_) => const [PopupMenuItem(value: 30, child: Text('30분')), PopupMenuItem(value: 60, child: Text('1시간'))],
               child: const Padding(padding: EdgeInsets.all(8), child: Text('일시정지 시간')),
             ),
-            OutlinedButton(
-              key: const ValueKey('kclip-clear-all'),
-              tooltip: '고정한 항목은 유지됩니다.',
-              onPressed: busy ? null : () => _act('clear', {'keep_pinned': true}, '고정하지 않은 항목을 지웠습니다.'),
-              child: const Text('모두 지우기'),
+            Tooltip(
+              message: '고정한 항목은 유지됩니다.',
+              child: OutlinedButton(
+                key: const ValueKey('kclip-clear-all'),
+                onPressed: busy ? null : () => _act('clear', {'keep_pinned': true}, '고정하지 않은 항목을 지웠습니다.'),
+                child: const Text('모두 지우기'),
+              ),
             ),
             TextButton(
               key: const ValueKey('kclip-disable'),
