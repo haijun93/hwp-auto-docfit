@@ -20,8 +20,12 @@ def _column_widths(model):
     widths = [max(MIN_COLUMN_MM, BODY_WIDTH_MM * w / total) for w in raw]
     overflow = sum(widths) - BODY_WIDTH_MM
     free = sum(w - MIN_COLUMN_MM for w in widths)
-    if overflow > 0 and free > overflow:
-        widths = [w - (w - MIN_COLUMN_MM) * overflow / free for w in widths]
+    if overflow > 0:
+        if free > overflow:
+            widths = [w - (w - MIN_COLUMN_MM) * overflow / free for w in widths]
+        else:
+            # 최소 폭의 합계조차 본문보다 크면 모든 열을 같은 폭으로 축소한다.
+            widths = [BODY_WIDTH_MM / len(widths)] * len(widths)
     return widths
 
 

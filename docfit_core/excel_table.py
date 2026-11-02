@@ -16,7 +16,8 @@ _NAMED_COLORS = {
     "silver": "#C0C0C0", "gray": "#808080", "grey": "#808080", "lime": "#00FF00", "maroon": "#800000",
     "navy": "#000080", "olive": "#808000", "purple": "#800080", "teal": "#008080", "orange": "#FFA500",
 }
-_NUMERIC = re.compile(r"[+-]?(?:\d[\d,]*(?:\.\d+)?|\.\d+)%?|\([\d,.]+\)|[₩$€£¥]\s?[\d,.]+")
+_NUMBER = r"(?:\d[\d,]*(?:\.\d+)?|\.\d+)"
+_NUMERIC = re.compile(rf"(?:[+-]?{_NUMBER}%?|\({ _NUMBER }\)|[₩$€£¥]\s?[+-]?{_NUMBER})")
 _CONTROL = re.compile(r"_x000[0-9A-Fa-f]_|[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f​-‍⁠﻿]")
 _SPACES = re.compile(r"[ \t  -  　]+")
 
@@ -174,6 +175,7 @@ def _trim(rows):
             cell["colspan"] = min(cell["colspan"], last_col - cell["col"])
             cell["rowspan"] = min(cell["rowspan"], last_row - cell["row"])
         kept.append(cells)
+    # 선행 빈 행·열도 표 격자의 일부이므로 실제 좌표를 유지한다.
     return kept, last_row, last_col
 
 

@@ -7,7 +7,7 @@ from pathlib import Path
 from defusedxml import ElementTree as ET
 
 from docfit_core.excel_table import parse_clipboard
-from docfit_core.excel_table_hwpx import to_hwpx
+from docfit_core.excel_table_hwpx import BODY_WIDTH_MM, _column_widths, to_hwpx
 
 FIXTURE = Path(__file__).parent / "fixtures" / "excel_clipboard.cf_html"
 HP = "{http://www.hancom.co.kr/hwpml/2011/paragraph}"
@@ -73,6 +73,39 @@ class FallbackAndCleanupTests(unittest.TestCase):
     def test_empty_input_raises(self):
         with self.assertRaises(ValueError):
             parse_clipboard(None, None)
+
+    def test_merges_reaching_last_row_and_column_keep_full_extent(self):
+        model = parse_clipboard('<tr><td rowspan="2" colspan="2">a</td></tr><tr></tr>')
+        self.assertEqual((model["row_count"], model["col_count"]), (2, 2))
+        self.assertEqual((cell(model, 0, 0)["rowspan"], cell(model, 0, 0)["colspan"]), (2, 2))
+
+    def test_empty_first_row_and_column_preserve_offsets(self):
+        model = parse_clipboard('<tr><td></td><td></td></tr><tr><td></td><td>x</td></tr>')
+        self.assertEqual((model["row_count"], model["col_count"]), (2, 2))
+        self.assertEqual((cell(model, 1, 1)["row"], cell(model, 1, 1)["col"]), (1, 1))
+
+    def test_text_line_breaks_and_special_spaces_are_cleaned(self):
+        model = parse_clipboard('<tr><td>첫 줄<br>둘\u202f 줄</td></tr>')
+        self.assertEqual(cell(model, 0, 0)["text"], "첫 줄\n둘 줄")
+
+    def test_signed_parenthesized_and_currency_numbers_align_right(self):
+        model = parse_clipboard('<tr><td>-12</td><td>(1,234.50)</td><td>₩ -500</td><td>$12.00</td></tr>')
+        self.assertTrue(all(cell(model, 0, col)["numeric"] for col in range(4)))
+        self.assertTrue(all(cell(model, 0, col)["align"] == "right" for col in range(4)))
+
+    def test_column_widths_without_data_and_minimum_overflow(self):
+        widths = _column_widths({"col_count": 4, "widths": []})
+        self.assertAlmostEqual(sum(widths), BODY_WIDTH_MM)
+        widths = _column_widths({"col_count": 30, "widths": [0] * 30})
+        self.assertAlmostEqual(sum(widths), BODY_WIDTH_MM)
+
+    def test_200_by_200_is_allowed_but_201_is_rejected(self):
+        from docfit_core.excel_table_hwpx import _sketch
+        self.assertEqual(_sketch({"rows": [], "row_count": 200, "col_count": 200})["grid"]["cols"], 200)
+        with tempfile.TemporaryDirectory() as folder:
+            for dimensions in ((201, 1), (1, 201)):
+                with self.subTest(dimensions=dimensions), self.assertRaises(ValueError):
+                    to_hwpx({"row_count": dimensions[1], "col_count": dimensions[0], "rows": [], "widths": []}, Path(folder) / "x.hwpx")
 
 
 if __name__ == "__main__":
