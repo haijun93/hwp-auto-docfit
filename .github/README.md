@@ -13,11 +13,11 @@
 <tr>
 <td align="center" width="50%">
 <b>무설치(포터블)</b><br><sub>받아서 더블클릭하면 바로 실행 · 추천</sub><br><br>
-<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.2.2/HWP_AutoDocFit_v2.2.2_Portable.exe"><img height="56" alt="GitHub에서 무설치로 받기 v2.2.1" src="https://img.shields.io/badge/%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v2.2.1-2563eb?style=for-the-badge&logo=github"></a>
+<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.2.2/HWP_AutoDocFit_v2.2.2_Portable.exe"><img height="56" alt="GitHub에서 무설치로 받기 v2.2.2" src="https://img.shields.io/badge/%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v2.2.2-2563eb?style=for-the-badge&logo=github"></a>
 </td>
 <td align="center" width="50%">
 <b>설치용</b><br><sub>시작 메뉴·제어판에 등록</sub><br><br>
-<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.2.2/HWP_AutoDocFit_v2.2.2_Setup.exe"><img height="56" alt="GitHub에서 설치용 받기 v2.2.1" src="https://img.shields.io/badge/%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0%20v2.2.1-2563eb?style=for-the-badge&logo=github"></a>
+<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.2.2/HWP_AutoDocFit_v2.2.2_Setup.exe"><img height="56" alt="GitHub에서 설치용 받기 v2.2.2" src="https://img.shields.io/badge/%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0%20v2.2.2-2563eb?style=for-the-badge&logo=github"></a>
 </td>
 </tr>
 </table>
@@ -38,22 +38,31 @@
 ---
 
 <h2 align="center">주요 기능 한눈에</h2>
-<p align="center">위 탭에서 기능을 고릅니다. 모든 작업은 이 PC 안에서만 하고 문서를 밖으로 보내지 않습니다.</p>
+<p align="center">왼쪽 메뉴에서 기능을 고릅니다. 화면에서 파일을 넣고 필요한 옵션을 설정하면 결과를 확인할 수 있습니다.</p>
 
 <table>
 <tr>
-<td width="50%" valign="top"><a href="../docs/media/app/edit.png"><img src="../docs/media/app/edit.png" alt="문서편집 화면: 문서 선택, 작업 방식, 진행 과정, 결과 확인 4단계"></a><br><b>문서편집</b><br><sub>한/글 문서를 넣고 자간 정리·서식 통일·쪽 맞춤을 고르면 결과가 새 파일로 저장됩니다. 원본은 그대로 둡니다.</sub></td>
-<td width="50%" valign="top"><a href="../docs/media/app/table-template.png"><img src="../docs/media/app/table-template.png" alt="표 템플릿 화면: 추진절차(가로) 모양 1을 고르고 행·열 단위를 조절"></a><br><b>표 템플릿</b><br><sub>공공기관 보고서에 자주 쓰는 표 80종. 행·열을 정보 단위로 늘리고 줄인 뒤 한/글에 바로 붙여 넣습니다(Ctrl+V).</sub></td>
+<td width="50%" valign="top"><a href="../docs/media/app/edit.png"><img src="../docs/media/app/edit.png" alt="문서편집: 문서 선택, 작업 방식 선택, 진행 과정, 결과 확인"></a><br><b>문서편집</b><br><sub>HWP·HWPX 문서나 폴더를 끌어 놓거나 텍스트를 입력합니다. 자간 정리·서식 통일·한 번에 적용·쪽 맞춤 중 작업 방식을 고르고, 결과를 확인해 새 파일로 저장합니다. 원본은 보존됩니다.</sub></td>
+<td width="50%" valign="top"><a href="../docs/media/app/table-template.png"><img src="../docs/media/app/table-template.png" alt="표 템플릿: 추진절차 서식을 고르고 행·열 단위와 화살표 모양을 조절"></a><br><b>표 템플릿</b><br><sub>공공기관 보고서에 자주 쓰는 표 서식을 찾아 미리 보고 한/글로 복사합니다. 반복되는 행·열 정보단위를 늘리거나 줄이고, 추진절차·신구대조표의 화살표 기호와 그림 모양도 고를 수 있습니다.</sub></td>
 </tr>
 <tr>
-<td width="50%" valign="top"><a href="../docs/media/app/table-sketch.png"><img src="../docs/media/app/table-sketch.png" alt="표그림판 화면: 조직도 예시를 선으로 그린 모습과 표 미리보기"></a><br><b>표그림판</b><br><sub>모눈 위에 선을 긋듯 표를 그리면 한/글 표로 바뀝니다. 선 색·배경색, 레이어, 한/글 표 붙여넣기(Ctrl+V)를 지원합니다.</sub></td>
-<td width="50%" valign="top"><a href="../docs/media/app/file-convert.png"><img src="../docs/media/app/file-convert.png" alt="파일변환 화면: 올린 파일, 변환할 포맷, 변환 결과 세 칸과 HWPX 일괄 변환 결과"></a><br><b>파일변환</b><br><sub>HWP·HWPX·PDF·DOCX·그림을 한 화면에서 바꿉니다. 폴더·드라이브 전체의 HWP를 찾아 HWPX로 한 번에 바꾸고, 암호 문서도 처리합니다.</sub></td>
+<td width="50%" valign="top"><a href="../docs/media/app/table-sketch.png"><img src="../docs/media/app/table-sketch.png" alt="표그림판: 모눈 캔버스에서 선과 사각형으로 표 모양을 만들고 한글 표로 복사"></a><br><b>표그림판</b><br><sub>모눈 캔버스에 선·사각형·화살표를 그리고, 칸마다 배경색을 입힙니다. 레이어와 실행 취소를 사용해 도형을 다듬은 뒤 한/글 표로 복사해 붙여 넣습니다.</sub></td>
+<td width="50%" valign="top"><a href="../docs/media/app/file-convert.png"><img src="../docs/media/app/file-convert.png" alt="파일변환: 파일 목록, 변환 포맷 선택, 변환 결과를 한 화면에서 확인"></a><br><b>파일변환</b><br><sub>여러 파일이나 폴더를 추가하고 HWPX·DOCX·EPUB·HTML·MD·PDF·JPG·PNG·TXT 중 변환할 형식을 누릅니다. 변환 결과를 열거나 결과 폴더에서 확인할 수 있으며, HWP 일괄 HWPX 변환도 지원합니다.</sub></td>
 </tr>
 <tr>
-<td width="50%" valign="top"><a href="../docs/media/app/diagram.png"><img src="../docs/media/app/diagram.png" alt="다이어그램 화면: 신청 접수부터 결과 통보까지 업무 흐름도"></a><br><b>다이어그램</b><br><sub>업무 흐름도·순서도를 도형을 끌어 만들고 그림으로 복사해 한/글에 붙여 넣습니다.</sub></td>
-<td width="50%" valign="top"><a href="../docs/media/app/mindmap.png"><img src="../docs/media/app/mindmap.png" alt="마인드맵 화면: 2026 업무 계획을 가지로 펼친 지도"></a><br><b>마인드맵</b><br><sub>Tab·Enter로 가지를 늘려 생각을 정리합니다. 테마를 고르고 그림으로 한/글에 붙여 넣습니다.</sub></td>
+<td width="50%" valign="top"><a href="../docs/media/app/diagram.png"><img src="../docs/media/app/diagram.png" alt="다이어그램 편집기에서 도형과 연결 화살표로 업무 흐름도를 작성"></a><br><b>다이어그램</b><br><sub>도형을 캔버스에 놓고 연결선을 이어 업무 흐름도를 만듭니다. 완성한 도식은 한/글에 그림으로 붙여 넣을 수 있습니다.</sub></td>
+<td width="50%" valign="top"><a href="../docs/media/app/mindmap.png"><img src="../docs/media/app/mindmap.png" alt="마인드맵 편집기에서 업무 계획을 가지로 펼쳐 정리"></a><br><b>마인드맵</b><br><sub>Tab으로 하위 가지를 만들고 Enter로 같은 단계의 가지를 더합니다. 배치와 색 테마를 조정한 뒤 한/글에 붙여 넣습니다.</sub></td>
 </tr>
 </table>
+
+### 화면에서 바로 쓰는 기능
+
+- **작업 방식 고르기**: 자간 정리, 서식 통일, 한 번에 적용, 쪽 맞춤 카드 중 목적에 맞는 방식을 선택합니다. 카드 안 옵션 스위치로 표 제외, 기존 자간 유지, 페이지 맞춤 제외 같은 세부 범위를 조절하고, 결과 파일 이름도 미리 확인합니다.
+- **타임머신**: 날짜별 문서를 시간순 목록과 월 달력으로 살펴봅니다. HWP·한/글·표·발표·PDF·이미지 유형을 골라보고 파일명을 검색할 수 있으며, 카드에서 원본 폴더를 열거나 파일을 다른 작업으로 보낼 수 있습니다.
+- **K클립보드**: 복사한 글·그림을 검색하고, 자주 쓰는 항목은 핀으로 고정합니다. 항목별 삭제와 전체 비우기, 보관 개수·크기·기간 설정, 단축키(Ctrl+Shift+V), 선택 항목 바로 붙여넣기를 지원합니다.
+- **서식 관리**: 예시 보고서를 끌어 놓거나 파일에서 골라 서식을 등록합니다. 문단 계층·제목·표 서식 요소를 관리하고, 예시 화면에서 서식 적용 결과를 확인한 뒤 작업에 사용할 수 있습니다.
+
+<p align="center"><sub>문서편집은 「문서 선택 → 작업 방식 → 진행 과정 → 결과 확인」 순서로 진행됩니다. 입력 문서는 유지하고 처리 결과를 별도 파일로 저장합니다.</sub></p>
 
 ---
 
@@ -563,15 +572,15 @@ GitHub가 막힌 기관 PC에서도 위 「받기」 링크가 GitLab에서 바�
 
 | 파일 | 받기 | 용도 |
 |---|---|---|
-| **포터블 · HWP_AutoDocFit_v2.0.0_Portable.exe** | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.0.0/HWP_AutoDocFit_v2.0.0_Portable.exe) | 설치 없이 바로 실행 |
-| 설치용 · HWP_AutoDocFit_v2.0.0_Setup.exe | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.0.0/HWP_AutoDocFit_v2.0.0_Setup.exe) | 시작 메뉴 등록, Windows 앱 제거로 정리 |
-| 보고서 예시 파일(한번에 적용).txt | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/latest) | 처음 체험용 예시 |
-| SHA256SUMS | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.0.0/SHA256SUMS) | 내려받은 파일 확인용 해시 |
+| **포터블 · HWP_AutoDocFit_v2.0.0_Portable.exe** | [받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.0.0_Portable.exe?inline=false) | 설치 없이 바로 실행 |
+| 설치용 · HWP_AutoDocFit_v2.0.0_Setup.exe | [받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.0.0_Setup.exe?inline=false) | 시작 메뉴 등록, Windows 앱 제거로 정리 |
+| 보고서 예시 파일(한번에 적용).txt | [받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/%EB%B3%B4%EA%B3%A0%EC%84%9C%20%EC%98%88%EC%8B%9C%20%ED%8C%8C%EC%9D%BC%28%ED%95%9C%EB%B2%88%EC%97%90%20%EC%A0%81%EC%9A%A9%29.txt?inline=false) | 처음 체험용 예시 |
+| SHA256SUMS | [받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/SHA256SUMS?inline=false) | 내려받은 파일 확인용 해시 |
 
 - **필요한 것**: Windows 10·11(64비트), 문서를 편집할 수 있는 **한컴오피스 한/글**(모든 버전 사용 — NEO·2018·2020·2022·2024 등). Python 등 다른 설치는 필요 없습니다.
 - 변환 엔진은 실행 파일에 들어 있습니다. 첫 실행 때 `C:\HWP_AUTODOCFIT`(쓰기 권한이 없으면 `%LOCALAPPDATA%\HwpAutoDocFit`)에 풀며, 인터넷에서 받지 않습니다.
-- 모든 릴리스는 [GitHub 릴리스](https://github.com/haijun93/hwp-auto-docfit/releases/latest)에 있습니다.
-- [v2.0.0 변경 사항](../releases/v2.0.0.md) · [GitHub](https://github.com/haijun93/hwp-auto-docfit)
+- 배포 파일은 GitLab의 downloads 브랜치에서 로그인 없이 받을 수 있습니다.
+- [v2.0.0 변경 사항](../releases/v2.0.0.md) · [GitLab](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit)
 
 ---
 
@@ -610,7 +619,9 @@ GitHub가 막힌 기관 PC에서도 위 「받기」 링크가 GitLab에서 바�
 
 <details><summary><b>줄 간격은 건드리지 않았으면 해요.</b></summary>
 
-한 번에 적용 카드의 **줄 간격 적용**을 끄면 문서의 줄 간격을 그대로 둡니다.
+한 번에 적용 카드의 **줄 간격 적용 제외**를 켜면 문서의 기본 줄 간격 적용 단계를 건너뜁니다(기본 꺼짐).
+
+자간 정리 카드의 **페이지 맞춤 제외**는 기본 켜짐이며, 끄면 문단 간격 페이지 맞춤과 관련 문단 배치를 실행합니다. **기존 자간 초기화 제외**는 기본 꺼짐이며, 켜면 기존 자간을 0%로 되돌리는 단계를 건너뜁니다. 기존 설정은 마이그레이션으로 이전 동작을 유지합니다.
 </details>
 
 ---
