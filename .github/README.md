@@ -13,11 +13,11 @@
 <tr>
 <td align="center" width="50%">
 <b>무설치(포터블)</b><br><sub>받아서 더블클릭하면 바로 실행 · 추천</sub><br><br>
-<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.2.2/HWP_AutoDocFit_v2.2.2_Portable.exe"><img height="56" alt="GitHub에서 무설치로 받기 v2.2.1" src="https://img.shields.io/badge/%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v2.2.1-2563eb?style=for-the-badge&logo=github"></a>
+<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.2.2/HWP_AutoDocFit_v2.2.2_Portable.exe"><img height="56" alt="GitHub에서 무설치로 받기 v2.2.2" src="https://img.shields.io/badge/%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v2.2.2-2563eb?style=for-the-badge&logo=github"></a>
 </td>
 <td align="center" width="50%">
 <b>설치용</b><br><sub>시작 메뉴·제어판에 등록</sub><br><br>
-<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.2.2/HWP_AutoDocFit_v2.2.2_Setup.exe"><img height="56" alt="GitHub에서 설치용 받기 v2.2.1" src="https://img.shields.io/badge/%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0%20v2.2.1-2563eb?style=for-the-badge&logo=github"></a>
+<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.2.2/HWP_AutoDocFit_v2.2.2_Setup.exe"><img height="56" alt="GitHub에서 설치용 받기 v2.2.2" src="https://img.shields.io/badge/%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0%20v2.2.2-2563eb?style=for-the-badge&logo=github"></a>
 </td>
 </tr>
 </table>
