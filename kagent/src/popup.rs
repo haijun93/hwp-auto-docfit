@@ -25,6 +25,10 @@ const VISIBLE: usize = 12;
 const BASE_W: i32 = 440;
 const ROW_H: i32 = 30;
 const HEAD_H: i32 = 30;
+/// 머리글 오른쪽 '항상 위' 단추의 폭.
+const PIN_W: i32 = 76;
+/// 머리글 맨 오른쪽 닫기(X) 단추의 폭.
+const CLOSE_W: i32 = 30;
 
 struct State {
     items: Vec<Summary>,
@@ -379,7 +383,19 @@ unsafe fn paint(hwnd: HWND) {
         fill(RECT { left: 0, top: 0, right: w, bottom: head }, 0x00F5EFE8);
         SelectObject(mem, small);
         SetTextColor(mem, 0x00555555);
-        let mut hr = RECT { left: scale(hwnd, 10), top: 0, right: w - scale(hwnd, 10), bottom: head };
+        let pin_w = scale(hwnd, PIN_W);
+        let pinned = { let s = app().settings.lock().unwrap(); s.sticky_popup && s.always_on_top };
+        let close_w = scale(hwnd, CLOSE_W);
+        let mut close = RECT { left: w - close_w, top: 0, right: w, bottom: head };
+        SetTextColor(mem, 0x00555555);
+        DrawTextW(mem, wide("✕").as_ptr(), -1, &mut close, DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
+        let mut pin = RECT { left: w - close_w - pin_w, top: 0, right: w - close_w, bottom: head };
+        fill(pin, if pinned { 0x00D9731F } else { 0x00E6DDD2 });
+        SetTextColor(mem, if pinned { 0x00FFFFFF } else { 0x00555555 });
+        DrawTextW(mem, wide(if pinned { "■ 항상 위" } else { "□ 항상 위" }).as_ptr(), -1, &mut pin,
+                  DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
+        SetTextColor(mem, 0x00555555);
+        let mut hr = RECT { left: scale(hwnd, 10), top: 0, right: w - close_w - pin_w - scale(hwnd, 6), bottom: head };
         let st = STATE.lock().unwrap();
         let title = if st.needle().is_empty() {
             "몽땅클립보드 · 드래그해서 이동 · 1~9 또는 ↑↓ Enter · 글자를 치면 찾기 · Esc 닫기".to_string()
@@ -425,6 +441,29 @@ unsafe fn paint(hwnd: HWND) {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum HeadButton { Pin, Close }
+
+/// 창 안 좌표가 머리글의 어느 단추 위인지(폭·높이는 화면 배율을 적용한 값).
+fn head_button(x: i32, y: i32, width: i32, pin_w: i32, close_w: i32, head: i32) -> Option<HeadButton> {
+    if y < 0 || y >= head || x >= width { return None; }
+    if x >= width - close_w { return Some(HeadButton::Close); }
+    if x >= width - close_w - pin_w { return Some(HeadButton::Pin); }
+    None
+}
+
+/// '항상 위': 다른 창을 눌러도 닫히지 않고 맨 위에 남는다. 끄면 원래처럼 포커스를 잃을 때 닫힌다.
+fn toggle_pin() {
+    {
+        let mut settings = app().settings.lock().unwrap();
+        let on = !(settings.sticky_popup && settings.always_on_top);
+        settings.sticky_popup = on;
+        settings.always_on_top = true;
+    }
+    crate::save_settings();
+    apply_settings();
+}
+
 fn row_at(hwnd: HWND, lp: LPARAM) -> Option<usize> {
     let y = ((lp >> 16) & 0xFFFF) as i16 as i32;
     let head = scale(hwnd, HEAD_H);
@@ -466,6 +505,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                 let mut rect: RECT = std::mem::zeroed();
                 GetWindowRect(hwnd, &mut rect);
                 let screen_y = (lp >> 16) as i16 as i32;
+                let screen_x = (lp & 0xFFFF) as i16 as i32;
+                if head_button(screen_x - rect.left, screen_y - rect.top, rect.right - rect.left,
+                               scale(hwnd, PIN_W), scale(hwnd, CLOSE_W), scale(hwnd, HEAD_H)).is_some() {
+                    return HTCLIENT as LRESULT;
+                }
                 if screen_y >= rect.top && screen_y < rect.top + scale(hwnd, HEAD_H) {
                     HTCAPTION as LRESULT
                 } else {
@@ -571,6 +615,14 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                 0
             }
             WM_LBUTTONUP => {
+                let mut rc: RECT = std::mem::zeroed();
+                GetClientRect(hwnd, &mut rc);
+                let (x, y) = ((lp & 0xFFFF) as i16 as i32, (lp >> 16) as i16 as i32);
+                match head_button(x, y, rc.right, scale(hwnd, PIN_W), scale(hwnd, CLOSE_W), scale(hwnd, HEAD_H)) {
+                    Some(HeadButton::Pin) => { toggle_pin(); return 0; }
+                    Some(HeadButton::Close) => { hide(); return 0; }
+                    None => {}
+                }
                 if let Some(i) = row_at(hwnd, lp) {
                     choose(i);
                 }
@@ -584,5 +636,24 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             }
             _ => DefWindowProcW(hwnd, msg, wp, lp),
         }
+    }
+}
+
+#[cfg(test)]
+mod head_button_tests {
+    use super::*;
+
+    #[test]
+    fn close_is_rightmost_then_pin_then_title() {
+        assert_eq!(head_button(399, 5, 400, 76, 30, 30), Some(HeadButton::Close));
+        assert_eq!(head_button(370, 5, 400, 76, 30, 30), Some(HeadButton::Close));
+        assert_eq!(head_button(369, 5, 400, 76, 30, 30), Some(HeadButton::Pin));
+        assert_eq!(head_button(294, 5, 400, 76, 30, 30), Some(HeadButton::Pin));
+        assert_eq!(head_button(293, 5, 400, 76, 30, 30), None);
+    }
+
+    #[test]
+    fn rows_below_header_are_not_buttons() {
+        assert_eq!(head_button(399, 30, 400, 76, 30, 30), None);
     }
 }

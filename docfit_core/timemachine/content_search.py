@@ -144,7 +144,7 @@ class ContentSearchIndex:
             raise ValueError("검색어는 1~200자로 입력해 주세요.")
         # 일반 문구는 FTS 구문이 아닌 안전한 phrase로 처리
         phrase = '"' + query.replace('"', '""') + '"'
-        sql = "SELECT f.path,f.name,snippet(content_fts,2,'[',']','…',18) snippet FROM content_fts f WHERE content_fts MATCH ?"
+        sql = "SELECT f.path,f.name,snippet(content_fts,2,'','','…',18) snippet FROM content_fts f WHERE content_fts MATCH ?"
         with self._lock:
             rows = self.db.execute(sql + " ORDER BY rank LIMIT ?", (phrase, max(1, min(int(limit), 500)))).fetchall()
         allowed = [os.path.normcase(os.path.abspath(r)) for r in roots] if roots else None

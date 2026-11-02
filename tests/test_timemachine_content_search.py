@@ -23,7 +23,7 @@ class ContentSearchTests(unittest.TestCase):
         self.assertFalse(self.index.index_file(path)["indexed"])
         found = self.index.search("업무 실적", roots=[str(self.root)])
         self.assertEqual(found[0]["name"], path.name)
-        self.assertIn("[업무 실적]", found[0]["snippet"])
+        self.assertIn("업무 실적", found[0]["snippet"])
         path.write_text("새로운 내용", encoding="utf-8")
         self.assertTrue(self.index.index_file(path)["indexed"])
         self.assertEqual(self.index.search("업무 실적"), [])
