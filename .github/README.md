@@ -7,17 +7,17 @@
 설치된 한/글을 직접 다뤄 공문서 모양으로 다듬어 드립니다. 원본은 그대로 둡니다.
 </p>
 
-<h2 align="center">⬇️ 지금 내려받기 · 최신 v2.2.2</h2>
+<h2 align="center">⬇️ 지금 내려받기 · 최신 v2.2.3</h2>
 
 <table align="center">
 <tr>
 <td align="center" width="50%">
 <b>무설치(포터블)</b><br><sub>받아서 더블클릭하면 바로 실행 · 추천</sub><br><br>
-<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.2.2/HWP_AutoDocFit_v2.2.2_Portable.exe"><img height="56" alt="GitHub에서 무설치로 받기 v2.2.2" src="https://img.shields.io/badge/%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v2.2.2-2563eb?style=for-the-badge&logo=github"></a>
+<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.2.3/HWP_AutoDocFit_v2.2.3_Portable.exe"><img height="56" alt="GitHub에서 무설치로 받기 v2.2.3" src="https://img.shields.io/badge/%EB%AC%B4%EC%84%A4%EC%B9%98%EB%A1%9C%20%EB%B0%9B%EA%B8%B0%20v2.2.3-2563eb?style=for-the-badge&logo=github"></a>
 </td>
 <td align="center" width="50%">
 <b>설치용</b><br><sub>시작 메뉴·제어판에 등록</sub><br><br>
-<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.2.2/HWP_AutoDocFit_v2.2.2_Setup.exe"><img height="56" alt="GitHub에서 설치용 받기 v2.2.2" src="https://img.shields.io/badge/%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0%20v2.2.2-2563eb?style=for-the-badge&logo=github"></a>
+<a href="https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.2.3/HWP_AutoDocFit_v2.2.3_Setup.exe"><img height="56" alt="GitHub에서 설치용 받기 v2.2.3" src="https://img.shields.io/badge/%EC%84%A4%EC%B9%98%EC%9A%A9%20%EB%B0%9B%EA%B8%B0%20v2.2.3-2563eb?style=for-the-badge&logo=github"></a>
 </td>
 </tr>
 </table>
@@ -57,6 +57,15 @@
 
 ---
 
+<h2 align="center">v2.2.3 릴리즈</h2>
+
+- 표그림판 예시를 공룡 그림으로 교체, 추진절차 정보단위에 상자·화살표 결합
+- 다이어그램을 한/글 도형으로 복사할 때 마름모·연결선·가운데 글자 표시
+- 오래 쉰 뒤 흰 화면 방지, 백엔드 연결 복구, PNG 저장 위치 선택
+- K클립보드 이름을 몽땅클립보드로 변경, 스티커 모드 추가
+
+자세한 내용: [v2.2.3 릴리스 노트](../releases/v2.2.3.md)
+
 <h2 align="center">v2.2.2 릴리즈</h2>
 <p align="center">내어쓰기를 실제 Shift+Tab 값으로 저장하고, 번호 뒤 낫표·마침표 없는 붙임을 바로잡았습니다</p>
 
@@ -93,7 +102,7 @@ PDF 처리 라이브러리 pypdf를 6.21.4로 올렸습니다.
 ---
 
 <h2 align="center">v2.1.0 릴리즈</h2>
-<p align="center">왼쪽 메뉴와 파일명 일괄변경을 다시 열고, 몽땅클립보드 관리 기능을 더했습니다</p>
+<p align="center">왼쪽 메뉴와 파일명 일괄변경을 다시 열고, K클립보드 관리 기능을 더했습니다</p>
 
 ### 왼쪽 세로 메뉴
 
@@ -103,9 +112,9 @@ PDF 처리 라이브러리 pypdf를 6.21.4로 올렸습니다.
 
 파일명 일괄변경 화면을 다시 사용할 수 있습니다. 탐색기에서 보내기, 규칙 세트 내보내기·가져오기, 최근 입력을 지원합니다.
 
-### 몽땅클립보드 관리
+### K클립보드 관리
 
-몽땅클립보드 관리 화면에서 그림 미리보기를 확인하고, 고정 항목을 위로 올리며, 예약된 작업을 일시정지할 수 있습니다.
+K클립보드 관리 화면에서 그림 미리보기를 확인하고, 고정 항목을 위로 올리며, 예약된 작업을 일시정지할 수 있습니다.
 
 Python 3.14 기반으로 빌드합니다.
 
@@ -125,9 +134,9 @@ Python 3.14 기반으로 빌드합니다.
 ---
 
 <h2 align="center">v2.0.8 릴리즈</h2>
-<p align="center">복사한 것을 모아 두는 몽땅클립보드를 더했습니다</p>
+<p align="center">복사한 것을 모아 두는 K클립보드를 더했습니다</p>
 
-### 몽땅클립보드 (2.0.8, 기본 꺼짐)
+### K클립보드 (2.0.8, 기본 꺼짐)
 
 복사(Ctrl+C)한 글·그림·파일 경로와 화면 캡처를 이 PC에 암호화해 모아 두고, 아무 창에서나 Ctrl+Shift+V로 골라 바로 붙여 넣습니다. 앱과 따로 도는 아주 작은 프로그램(약 0.7MB, 쉴 때 CPU 0%)이 맡으며, 상단 오른쪽 단추에서 동의한 뒤 켤 때만 동작합니다.
 
@@ -563,10 +572,10 @@ GitHub가 막힌 기관 PC에서도 위 「받기」 링크가 GitLab에서 바�
 
 | 파일 | 받기 | 용도 |
 |---|---|---|
-| **포터블 · HWP_AutoDocFit_v2.2.2_Portable.exe** | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.2.2/HWP_AutoDocFit_v2.2.2_Portable.exe) | 설치 없이 바로 실행 |
-| 설치용 · HWP_AutoDocFit_v2.2.2_Setup.exe | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.2.2/HWP_AutoDocFit_v2.2.2_Setup.exe) | 시작 메뉴 등록, Windows 앱 제거로 정리 |
+| **포터블 · HWP_AutoDocFit_v2.2.3_Portable.exe** | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.2.3/HWP_AutoDocFit_v2.2.3_Portable.exe) | 설치 없이 바로 실행 |
+| 설치용 · HWP_AutoDocFit_v2.2.3_Setup.exe | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.2.3/HWP_AutoDocFit_v2.2.3_Setup.exe) | 시작 메뉴 등록, Windows 앱 제거로 정리 |
 | 보고서 예시 파일(한번에 적용).txt | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/latest) | 처음 체험용 예시 |
-| SHA256SUMS | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.2.2/SHA256SUMS) | 내려받은 파일 확인용 해시 |
+| SHA256SUMS | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.2.3/SHA256SUMS) | 내려받은 파일 확인용 해시 |
 
 - **필요한 것**: Windows 10·11(64비트), 문서를 편집할 수 있는 **한컴오피스 한/글**(모든 버전 사용 — NEO·2018·2020·2022·2024 등). Python 등 다른 설치는 필요 없습니다.
 - 변환 엔진은 실행 파일에 들어 있습니다. 첫 실행 때 `C:\HWP_AUTODOCFIT`(쓰기 권한이 없으면 `%LOCALAPPDATA%\HwpAutoDocFit`)에 풀며, 인터넷에서 받지 않습니다.
