@@ -7,7 +7,7 @@
 | GitLab | [설치형 내려받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.2.3_Setup.exe?inline=false) | [포터블 내려받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.2.3_Portable.exe?inline=false) |
 | GitHub | [설치형 내려받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.2.3/HWP_AutoDocFit_v2.2.3_Setup.exe) | [포터블 내려받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.2.3/HWP_AutoDocFit_v2.2.3_Portable.exe) |
 
-**설치형**은 설치 후 시작 메뉴에서 실행하고, **포터블**은 설치 없이 파일을 바로 실행합니다. Windows 10·11용이며, 문서 편집 기능에는 한컴오피스 한/글이 필요합니다. 이번 버전의 변경 내용과 SHA-256은 [v2.2.3 릴리스 노트](releases/v2.2.3.md)에 있습니다.
+**설치형**은 설치 후 시작 메뉴에서 실행하고, **포터블**은 설치 없이 파일을 바로 실행합니다. Windows 10·11용이며, 문서 편집 기능에는 한컴오피스 한/글이 필요합니다.
 
 ---
 
