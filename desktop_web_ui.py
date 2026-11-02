@@ -2747,8 +2747,22 @@ def _install_webview_rendering_guard(edgechromium_module=None):
 
                 def initialized(sender, event):
                     try:
+                        # A persistently crashing renderer must not turn recovery
+                        # into an unbounded Reload loop. Keep a rolling one-minute
+                        # budget per WebView instance.
+                        reload_times = []
+
                         def renderer_failed(_sender, _event):
                             try:
+                                now = time.monotonic()
+                                while reload_times and now - reload_times[0] >= 60:
+                                    reload_times.pop(0)
+                                if len(reload_times) >= 3:
+                                    logging.getLogger(__name__).error(
+                                        "WebView2 renderer recovery stopped after 3 reloads in 60 seconds"
+                                    )
+                                    return
+                                reload_times.append(now)
                                 self.CoreWebView2.Reload()
                             except Exception:
                                 logging.getLogger(__name__).exception(
