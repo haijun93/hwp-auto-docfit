@@ -17,6 +17,7 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 use crate::store::Summary;
+use crate::open_item;
 use crate::util::wide;
 use crate::{app, main_hwnd, refresh_recent, restore};
 
@@ -29,6 +30,13 @@ const HEAD_H: i32 = 30;
 const PIN_W: i32 = 76;
 /// 머리글 맨 오른쪽 닫기(X) 단추의 폭.
 const CLOSE_W: i32 = 30;
+const CAPTURE_W: i32 = 54;
+const CLEAR_W: i32 = 54;
+const COLLAPSE_W: i32 = 34;
+const ROW_PIN_W: i32 = 28;
+const ROW_DELETE_W: i32 = 28;
+const MIN_W: i32 = 300;
+const MIN_H: i32 = 90;
 
 struct State {
     items: Vec<Summary>,
@@ -61,7 +69,7 @@ fn refilter() {
         st.seq += 1;
         (st.needle(), st.seq)
     };
-    let items = if needle.trim().is_empty() {
+        let items = if needle.trim().is_empty() {
         app().recent.lock().unwrap().clone()
     } else {
         app().store.lock().unwrap().recent(50, Some(needle.trim())).unwrap_or_default()
@@ -104,7 +112,7 @@ pub fn register(instance: HINSTANCE) {
         let topmost = app().settings.lock().unwrap().always_on_top;
         let ex_style = WS_EX_TOOLWINDOW | if topmost { WS_EX_TOPMOST } else { 0 };
         let hwnd = CreateWindowExW(ex_style, class.as_ptr(), wide("몽땅클립보드").as_ptr(),
-                                   WS_POPUP | WS_BORDER, 0, 0, BASE_W, 200, std::ptr::null_mut(),
+                                   WS_POPUP | WS_BORDER | WS_THICKFRAME, 0, 0, BASE_W, 200, std::ptr::null_mut(),
                                    std::ptr::null_mut(), instance, std::ptr::null());
         HWND_POPUP.store(hwnd as isize, Ordering::Relaxed);
     }
@@ -153,9 +161,9 @@ pub fn show() {
         mi.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
         GetMonitorInfoW(monitor, &mut mi);
         let wa = mi.rcWork;
-        let (sticker, saved_x, saved_y, saved_w, saved_h) = {
+        let (sticker, collapsed, saved_x, saved_y, saved_w, saved_h) = {
             let s = app().settings.lock().unwrap();
-            (s.sticky_popup, s.popup_x, s.popup_y, s.popup_width, s.popup_height)
+            (s.sticky_popup, s.popup_collapsed, s.popup_x, s.popup_y, s.popup_width, s.popup_height)
         };
         let dpi = GetDpiForWindow(hwnd).max(96) as i64;
         let saved_x_px = saved_x * dpi / 96;
@@ -165,12 +173,13 @@ pub fn show() {
         let saved_rect_valid = sticker && saved_x_px >= wa.left as i64 && saved_y_px >= wa.top as i64
             && saved_w > 0 && saved_h > 0
             && saved_x_px + saved_w_px <= wa.right as i64 && saved_y_px + saved_h_px <= wa.bottom as i64;
-        let (x, y, w, h) = if saved_rect_valid {
+        let (x, y, w, mut h) = if saved_rect_valid {
             (saved_x_px as i32, saved_y_px as i32, saved_w_px as i32, saved_h_px as i32)
         } else {
             ((pt.x + 8).min(wa.right - default_w).max(wa.left),
              (pt.y + 8).min(wa.bottom - default_h).max(wa.top), default_w, default_h)
         };
+        if collapsed { h = scale(hwnd, HEAD_H + 2); }
         SetWindowPos(hwnd, if settings.always_on_top { HWND_TOPMOST } else { HWND_NOTOPMOST },
                      x, y, w, h, SWP_SHOWWINDOW);
         SetForegroundWindow(hwnd);
@@ -248,7 +257,7 @@ pub fn paste_into(target: HWND) {
 fn choose(index: usize) {
     let (id, target) = {
         let st = STATE.lock().unwrap();
-        match st.items.get(index) {
+        match ordered_items(&st).get(index) {
             Some(item) => (item.id, st.target as HWND),
             None => return,
         }
@@ -259,6 +268,10 @@ fn choose(index: usize) {
     if !restore(id, paste, target) {
         refresh();
     }
+}
+
+fn ordered_items(st: &State) -> Vec<&Summary> {
+    st.items.iter().filter(|it| it.pinned).chain(st.items.iter().filter(|it| !it.pinned)).collect()
 }
 
 fn move_sel(delta: isize) {
@@ -386,6 +399,9 @@ unsafe fn paint(hwnd: HWND) {
         let pin_w = scale(hwnd, PIN_W);
         let pinned = { let s = app().settings.lock().unwrap(); s.sticky_popup && s.always_on_top };
         let close_w = scale(hwnd, CLOSE_W);
+        let capture_w = scale(hwnd, CAPTURE_W);
+        let clear_w = scale(hwnd, CLEAR_W);
+        let collapse_w = scale(hwnd, COLLAPSE_W);
         let mut close = RECT { left: w - close_w, top: 0, right: w, bottom: head };
         SetTextColor(mem, 0x00555555);
         DrawTextW(mem, wide("✕").as_ptr(), -1, &mut close, DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
@@ -394,11 +410,22 @@ unsafe fn paint(hwnd: HWND) {
         SetTextColor(mem, if pinned { 0x00FFFFFF } else { 0x00555555 });
         DrawTextW(mem, wide(if pinned { "■ 항상 위" } else { "□ 항상 위" }).as_ptr(), -1, &mut pin,
                   DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
+        let mut capture = RECT { left: pin.left - capture_w, top: 0, right: pin.left, bottom: head };
+        fill(capture, 0x00E6DDD2);
+        DrawTextW(mem, wide("캡처").as_ptr(), -1, &mut capture, DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
+        let mut clear = RECT { left: capture.left - clear_w, top: 0, right: capture.left, bottom: head };
+        fill(clear, 0x00E6DDD2);
+        DrawTextW(mem, wide("지우기").as_ptr(), -1, &mut clear, DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
+        let mut collapse = RECT { left: clear.left - collapse_w, top: 0, right: clear.left, bottom: head };
+        fill(collapse, 0x00E6DDD2);
+        let collapsed = app().settings.lock().unwrap().popup_collapsed;
+        DrawTextW(mem, wide(if collapsed { "□" } else { "▁" }).as_ptr(), -1, &mut collapse,
+                  DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
         SetTextColor(mem, 0x00555555);
-        let mut hr = RECT { left: scale(hwnd, 10), top: 0, right: w - close_w - pin_w - scale(hwnd, 6), bottom: head };
+        let mut hr = RECT { left: scale(hwnd, 10), top: 0, right: collapse.left - scale(hwnd, 6), bottom: head };
         let st = STATE.lock().unwrap();
         let title = if st.needle().is_empty() {
-            "몽땅클립보드 · 드래그해서 이동 · 1~9 또는 ↑↓ Enter · 글자를 치면 찾기 · Esc 닫기".to_string()
+            "몽땅클립보드 · 드래그 이동 · 1~9 선택".to_string()
         } else {
             SetTextColor(mem, 0x00222222);
             format!("찾기: {}{}▏ · {}개 · Esc 지우기", st.query, st.comp, st.items.len())
@@ -406,6 +433,9 @@ unsafe fn paint(hwnd: HWND) {
         DrawTextW(mem, wide(&title).as_ptr(), -1, &mut hr, DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
 
         let row = scale(hwnd, ROW_H);
+        let collapsed = app().settings.lock().unwrap().popup_collapsed;
+        if collapsed { drop(st); BitBlt(hdc, 0, 0, w, h, mem, 0, 0, SRCCOPY); return; }
+        let visible_rows = ((h - head).max(0) / row).max(1) as usize;
         if st.items.is_empty() {
             SelectObject(mem, font);
             let mut r = RECT { left: scale(hwnd, 12), top: head, right: w, bottom: head + row };
@@ -413,7 +443,8 @@ unsafe fn paint(hwnd: HWND) {
                          else { "찾는 글자가 들어 있는 항목이 없습니다." });
             DrawTextW(mem, t.as_ptr(), -1, &mut r, DT_SINGLELINE | DT_VCENTER);
         }
-        for (i, item) in st.items.iter().enumerate().skip(st.top).take(VISIBLE) {
+        let ordered = ordered_items(&st);
+        for (i, item) in ordered.iter().enumerate().skip(st.top).take(visible_rows) {
             let y = head + (i - st.top) as i32 * row;
             let r = RECT { left: 0, top: y, right: w, bottom: y + row };
             if i == st.sel {
@@ -427,14 +458,25 @@ unsafe fn paint(hwnd: HWND) {
             let mut nr = RECT { left: scale(hwnd, 8), top: y, right: scale(hwnd, 24), bottom: y + row };
             DrawTextW(mem, wide(&shortcut).as_ptr(), -1, &mut nr, DT_SINGLELINE | DT_VCENTER | DT_CENTER);
             SetTextColor(mem, 0x00888888);
-            let tag = format!("{}{}", if item.pinned { "★" } else { "" }, kind_tag(&item.kind));
+            let tag = format!("{}{}{}{}", if item.pinned { "★" } else { "" }, kind_tag(&item.kind),
+                if item.preview.contains("웹 ·") { " · 웹" } else { "" },
+                if item.preview.contains("서식 포함") { " · 서식 포함" } else { "" });
             let mut tr = RECT { left: scale(hwnd, 28), top: y, right: scale(hwnd, 70), bottom: y + row };
             DrawTextW(mem, wide(&tag).as_ptr(), -1, &mut tr, DT_SINGLELINE | DT_VCENTER);
             SelectObject(mem, font);
             SetTextColor(mem, 0x00222222);
-            let mut pr = RECT { left: scale(hwnd, 72), top: y, right: w - scale(hwnd, 10), bottom: y + row };
+            let actions = if st.hover == Some(i) { scale(hwnd, ROW_PIN_W + ROW_DELETE_W) } else { 0 };
+            let mut pr = RECT { left: scale(hwnd, 72), top: y, right: w - actions - scale(hwnd, 10), bottom: y + row };
             DrawTextW(mem, wide(&item.preview).as_ptr(), -1, &mut pr,
                       DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
+            if st.hover == Some(i) {
+                let mut del = RECT { left: w - scale(hwnd, ROW_DELETE_W), top: y, right: w, bottom: y + row };
+                let mut pin = RECT { left: del.left - scale(hwnd, ROW_PIN_W), top: y, right: del.left, bottom: y + row };
+                SetTextColor(mem, 0x00555555);
+                DrawTextW(mem, wide("✕").as_ptr(), -1, &mut del, DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
+                DrawTextW(mem, wide(if item.pinned { "📌" } else { "📍" }).as_ptr(), -1, &mut pin,
+                          DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
+            }
         }
         drop(st);
         BitBlt(hdc, 0, 0, w, h, mem, 0, 0, SRCCOPY);
@@ -442,14 +484,22 @@ unsafe fn paint(hwnd: HWND) {
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
-enum HeadButton { Pin, Close }
+enum HeadButton { Pin, Close, Capture, Clear, Collapse }
 
 /// 창 안 좌표가 머리글의 어느 단추 위인지(폭·높이는 화면 배율을 적용한 값).
-fn head_button(x: i32, y: i32, width: i32, pin_w: i32, close_w: i32, head: i32) -> Option<HeadButton> {
+fn head_button(x: i32, y: i32, width: i32, pin_w: i32, close_w: i32, capture_w: i32, clear_w: i32, collapse_w: i32, head: i32) -> Option<HeadButton> {
     if y < 0 || y >= head || x >= width { return None; }
     if x >= width - close_w { return Some(HeadButton::Close); }
     if x >= width - close_w - pin_w { return Some(HeadButton::Pin); }
+    if x >= width - close_w - pin_w - capture_w { return Some(HeadButton::Capture); }
+    if x >= width - close_w - pin_w - capture_w - clear_w { return Some(HeadButton::Clear); }
+    if x >= width - close_w - pin_w - capture_w - clear_w - collapse_w { return Some(HeadButton::Collapse); }
     None
+}
+
+fn row_action(x: i32, width: i32, pin_w: i32, delete_w: i32) -> Option<bool> {
+    if x >= width || x < width - pin_w - delete_w { return None; }
+    Some(x < width - delete_w) // true = pin, false = delete
 }
 
 /// '항상 위': 다른 창을 눌러도 닫히지 않고 맨 위에 남는다. 끄면 원래처럼 포커스를 잃을 때 닫힌다.
@@ -482,6 +532,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                 paint(hwnd);
                 0
             }
+            WM_GETMINMAXINFO => {
+                let info = &mut *(lp as *mut MINMAXINFO);
+                info.ptMinTrackSize.x = scale(hwnd, MIN_W);
+                info.ptMinTrackSize.y = scale(hwnd, MIN_H);
+                0
+            }
             WM_ERASEBKGND => 1,
             WM_EXITSIZEMOVE if IsWindowVisible(hwnd) != 0 => {
                 let mut rect: RECT = std::mem::zeroed();
@@ -507,7 +563,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                 let screen_y = (lp >> 16) as i16 as i32;
                 let screen_x = (lp & 0xFFFF) as i16 as i32;
                 if head_button(screen_x - rect.left, screen_y - rect.top, rect.right - rect.left,
-                               scale(hwnd, PIN_W), scale(hwnd, CLOSE_W), scale(hwnd, HEAD_H)).is_some() {
+                               scale(hwnd, PIN_W), scale(hwnd, CLOSE_W), scale(hwnd, CAPTURE_W), scale(hwnd, CLEAR_W),
+                               scale(hwnd, COLLAPSE_W), scale(hwnd, HEAD_H)).is_some() {
                     return HTCLIENT as LRESULT;
                 }
                 if screen_y >= rect.top && screen_y < rect.top + scale(hwnd, HEAD_H) {
@@ -618,13 +675,62 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                 let mut rc: RECT = std::mem::zeroed();
                 GetClientRect(hwnd, &mut rc);
                 let (x, y) = ((lp & 0xFFFF) as i16 as i32, (lp >> 16) as i16 as i32);
-                match head_button(x, y, rc.right, scale(hwnd, PIN_W), scale(hwnd, CLOSE_W), scale(hwnd, HEAD_H)) {
+                match head_button(x, y, rc.right, scale(hwnd, PIN_W), scale(hwnd, CLOSE_W), scale(hwnd, CAPTURE_W),
+                                  scale(hwnd, CLEAR_W), scale(hwnd, COLLAPSE_W), scale(hwnd, HEAD_H)) {
                     Some(HeadButton::Pin) => { toggle_pin(); return 0; }
                     Some(HeadButton::Close) => { hide(); return 0; }
+                    Some(HeadButton::Capture) => { hide(); crate::capture_screen(); return 0; }
+                    Some(HeadButton::Clear) => { if crate::confirm_clear(hwnd) { let _ = app().store.lock().unwrap().clear(true); refresh_recent(); } return 0; }
+                    Some(HeadButton::Collapse) => { let mut s = app().settings.lock().unwrap(); s.popup_collapsed = !s.popup_collapsed; let collapsed = s.popup_collapsed; drop(s); crate::save_settings(); if collapsed { SetWindowPos(hwnd, std::ptr::null_mut(), 0, 0, 0, scale(hwnd, HEAD_H + 2), SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE); } else { SetWindowPos(hwnd, std::ptr::null_mut(), 0, 0, 0, scale(hwnd, app().settings.lock().unwrap().popup_height as i32), SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE); } InvalidateRect(hwnd, std::ptr::null(), 0); return 0; }
                     None => {}
                 }
                 if let Some(i) = row_at(hwnd, lp) {
+                    let x = (lp & 0xFFFF) as i16 as i32;
+                    let mut rc: RECT = std::mem::zeroed(); GetClientRect(hwnd, &mut rc);
+                    let action_width = scale(hwnd, ROW_PIN_W + ROW_DELETE_W);
+                    if STATE.lock().unwrap().hover == Some(i) && x >= rc.right - action_width {
+                        let pinned = { let st = STATE.lock().unwrap(); st.items.get(i).map(|v| v.pinned).unwrap_or(false) };
+                        if row_action(x, rc.right, scale(hwnd, ROW_PIN_W), scale(hwnd, ROW_DELETE_W)) == Some(true) {
+                            let id = STATE.lock().unwrap().items[i].id;
+                            let _ = app().store.lock().unwrap().pin(id, !pinned);
+                        } else { let id = STATE.lock().unwrap().items[i].id; let _ = app().store.lock().unwrap().delete(id); }
+                        refresh_recent(); refresh(); return 0;
+                    }
                     choose(i);
+                }
+                0
+            }
+            WM_RBUTTONUP => {
+                if let Some(i) = row_at(hwnd, lp) {
+                    let item = {
+                        let st = STATE.lock().unwrap();
+                        ordered_items(&st).get(i).map(|v| (v.id, v.kind.clone(), v.preview.contains("웹 ·")))
+                    };
+                    if let Some((id, kind, web)) = item {
+                        let mut pt = POINT { x: (lp & 0xffff) as i16 as i32, y: (lp >> 16) as i16 as i32 };
+                        ClientToScreen(hwnd, &mut pt);
+                        let menu = CreatePopupMenu();
+                        if !menu.is_null() {
+                            AppendMenuW(menu, MF_STRING, 1, wide("열기").as_ptr());
+                            if web {
+                                if kind == "text" { AppendMenuW(menu, MF_STRING, 3, wide("글을 연결 프로그램으로 열기").as_ptr()); }
+                            } else {
+                                AppendMenuW(menu, MF_STRING, 2, wide("연결 프로그램 선택…").as_ptr());
+                            }
+                            let command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd, std::ptr::null());
+                            DestroyMenu(menu);
+                            if command == 1 || command == 2 || command == 3 {
+                                let payload = app().store.lock().unwrap().payload(id).ok().flatten();
+                                if let Some((_, data, extra)) = payload {
+                                    if command == 3 {
+                                        if restore(id, false, std::ptr::null_mut()) {
+                                            open_item::open(hwnd, &app().dir, "text", &data, &[], true);
+                                        }
+                                    } else { open_item::open(hwnd, &app().dir, &kind, &data, &extra, command == 2); }
+                                }
+                            }
+                        }
+                    }
                 }
                 0
             }
@@ -645,15 +751,35 @@ mod head_button_tests {
 
     #[test]
     fn close_is_rightmost_then_pin_then_title() {
-        assert_eq!(head_button(399, 5, 400, 76, 30, 30), Some(HeadButton::Close));
-        assert_eq!(head_button(370, 5, 400, 76, 30, 30), Some(HeadButton::Close));
-        assert_eq!(head_button(369, 5, 400, 76, 30, 30), Some(HeadButton::Pin));
-        assert_eq!(head_button(294, 5, 400, 76, 30, 30), Some(HeadButton::Pin));
-        assert_eq!(head_button(293, 5, 400, 76, 30, 30), None);
+        assert_eq!(head_button(599, 5, 600, 76, 30, 54, 54, 34, 30), Some(HeadButton::Close));
+        assert_eq!(head_button(570, 5, 600, 76, 30, 54, 54, 34, 30), Some(HeadButton::Close));
+        assert_eq!(head_button(539, 5, 600, 76, 30, 54, 54, 34, 30), Some(HeadButton::Pin));
+        assert_eq!(head_button(493, 5, 600, 76, 30, 54, 54, 34, 30), Some(HeadButton::Capture));
+        assert_eq!(head_button(465, 5, 600, 76, 30, 54, 54, 34, 30), Some(HeadButton::Capture));
+        assert_eq!(head_button(409, 5, 600, 76, 30, 54, 54, 34, 30), Some(HeadButton::Clear));
+        assert_eq!(head_button(365, 5, 600, 76, 30, 54, 54, 34, 30), Some(HeadButton::Collapse));
     }
 
     #[test]
     fn rows_below_header_are_not_buttons() {
-        assert_eq!(head_button(399, 30, 400, 76, 30, 30), None);
+        assert_eq!(head_button(599, 30, 600, 76, 30, 54, 54, 34, 30), None);
+    }
+
+    #[test]
+    fn header_button_hit_regions_do_not_overlap() {
+        let args = (600, 76, 30, 54, 54, 34, 30);
+        assert_eq!(head_button(599, 10, args.0, args.1, args.2, args.3, args.4, args.5, args.6), Some(HeadButton::Close));
+        assert_eq!(head_button(539, 10, args.0, args.1, args.2, args.3, args.4, args.5, args.6), Some(HeadButton::Pin));
+        assert_eq!(head_button(493, 10, args.0, args.1, args.2, args.3, args.4, args.5, args.6), Some(HeadButton::Capture));
+        assert_eq!(head_button(439, 10, args.0, args.1, args.2, args.3, args.4, args.5, args.6), Some(HeadButton::Clear));
+        assert_eq!(head_button(385, 10, args.0, args.1, args.2, args.3, args.4, args.5, args.6), Some(HeadButton::Collapse));
+    }
+
+    #[test]
+    fn hover_actions_reserve_right_side_only() {
+        assert_eq!(row_action(543, 600, 28, 28), None);
+        assert_eq!(row_action(544, 600, 28, 28), Some(true));
+        assert_eq!(row_action(572, 600, 28, 28), Some(false));
+        assert_eq!(row_action(600, 600, 28, 28), None);
     }
 }

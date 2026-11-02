@@ -9,6 +9,7 @@
 
 mod clip;
 mod crypt;
+mod open_item;
 mod json;
 mod pipe;
 mod popup;
@@ -84,6 +85,8 @@ pub struct App {
     pub listening: AtomicBool,
     /// 마지막으로 클립보드에서 그림을 기록한 때(ms) — 같은 캡처가 스크린샷 폴더로도 오면 한 번만.
     pub last_clip_image: AtomicU64,
+    /// 마지막 스크린샷 PNG 지문과 시각(클립보드·파일 경로 공통 중복 제거).
+    pub image_dedupe: Mutex<std::collections::VecDeque<(String, u64)>>,
     pub timeline: Mutex<Option<timeline::Timeline>>,
     pub screenshots: Mutex<String>,
     pub scan_pending: Mutex<HashSet<String>>,
@@ -128,9 +131,6 @@ fn record_screenshot(path: &str) {
     if !path.to_lowercase().ends_with(".png") {
         return;
     }
-    if now_ms().saturating_sub(app().last_clip_image.load(Ordering::Relaxed)) < 3000 {
-        return; // 같은 캡처가 클립보드로 이미 기록됨
-    }
     let max = app().settings.lock().unwrap().max_item_bytes as u64;
     // 캡처 도구가 아직 쓰는 중일 수 있어 몇 번 다시 시도한다.
     let mut data = None;
@@ -150,6 +150,7 @@ fn record_screenshot(path: &str) {
         std::thread::sleep(std::time::Duration::from_millis(150));
     }
     let Some(data) = data else { return };
+    if !claim_image(&data) { return; }
     let preview = format!("캡처 · {}", clip::preview("image", &data));
     let settings = app().settings.lock().unwrap().clone();
     {
@@ -161,6 +162,35 @@ fn record_screenshot(path: &str) {
         let _ = store.enforce(&settings, t);
     }
     refresh_recent();
+}
+
+fn image_hash(data: &[u8]) -> String { store::content_hash("image", data) }
+
+fn claim_image(data: &[u8]) -> bool {
+    let now = now_ms();
+    let hash = image_hash(data);
+    let mut seen = app().image_dedupe.lock().unwrap();
+    seen.retain(|(_, at)| now.saturating_sub(*at) <= 5000);
+    if seen.iter().any(|(h, _)| h == &hash) { return false; }
+    seen.push_back((hash, now));
+    while seen.len() > 32 { seen.pop_front(); }
+    true
+}
+
+pub fn confirm_clear(hwnd: HWND) -> bool {
+    unsafe {
+        MessageBoxW(hwnd, wide("고정 항목을 제외한 기록을 모두 지울까요?").as_ptr(), wide("몽땅클립보드").as_ptr(), MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) == IDYES
+    }
+}
+
+pub fn capture_screen() {
+    std::thread::Builder::new().name("kagent-screen-capture".into()).spawn(|| unsafe {
+        std::thread::sleep(std::time::Duration::from_millis(180));
+        let uri = wide("ms-screenclip:");
+        let verb = wide("open");
+        let result = windows_sys::Win32::UI::Shell::ShellExecuteW(std::ptr::null_mut(), verb.as_ptr(), uri.as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOWNORMAL);
+        if result as isize <= 32 { return; }
+    }).ok();
 }
 
 fn mark_scan_pending(pending: &mut HashSet<String>, root: &str) -> bool {
@@ -384,23 +414,54 @@ fn worker(rx: std::sync::mpsc::Receiver<(Capture, String)>) {
         SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
     }
     for (capture, source) in rx {
-        let (kind, data, extra) = match capture {
-            Capture::Text(s, extra) => ("text", s.into_bytes(), extra),
-            Capture::Files(files) => ("files", files.join("\n").into_bytes(), Vec::new()),
-            Capture::Png(b) => {
+        let (mut kind, data, mut extra, skipped) = match capture {
+            Capture::Text(s, formats, skipped) => ("text", s.into_bytes(), clip::pack_formats(&formats), skipped),
+            Capture::Files(files) => ("files", files.join("\n").into_bytes(), Vec::new(), Vec::new()),
+            Capture::Png(b, formats, skipped) => {
                 app().last_clip_image.store(now_ms(), Ordering::Relaxed);
-                ("image", b, Vec::new())
+                if !claim_image(&b) { continue; }
+                ("image", b, clip::pack_formats(&formats), skipped)
             }
-            Capture::Dib(d) => match { app().last_clip_image.store(now_ms(), Ordering::Relaxed); clip::dib_to_png(&d) } {
-                Some(p) => ("image", p, Vec::new()),
+            Capture::Dib(d, formats, skipped) => match { app().last_clip_image.store(now_ms(), Ordering::Relaxed); clip::dib_to_png(&d) } {
+                Some(p) if claim_image(&p) => ("image", p, clip::pack_formats(&formats), skipped),
+                Some(_) => continue,
                 None => continue,
             },
         };
+        let web_url = if kind == "text" {
+            open_item::classify_web_text(&String::from_utf8_lossy(&data)).or_else(|| {
+                clip::unpack_formats(&extra).into_iter().find_map(|(name, value)|
+                    (name == "KAgent SourceURL").then(|| String::from_utf8(value).ok()).flatten()
+                        .and_then(|url| open_item::safe_web_url(&url).map(str::to_owned)))
+            })
+        } else { None };
+        if let Some(url) = &web_url { extra = open_item::encode_web_extra(&clip::unpack_formats(&extra), url); }
         let settings = app().settings.lock().unwrap().clone();
         if (data.len() + extra.len()) as i64 > settings.max_item_bytes {
+            let names = skipped.join(", ");
+            let suffix = if names.is_empty() { "저장 용량 상한".to_string() } else { names };
+            let mut retained = clip::unpack_formats(&extra);
+            retained.retain(|(_, bytes)| bytes.len() <= clip::MAX_FORMAT_BYTES);
+            let mut trimmed = clip::pack_formats(&retained);
+            while data.len().saturating_add(trimmed.len()) > settings.max_item_bytes as usize && !retained.is_empty() {
+                retained.pop();
+                trimmed = clip::pack_formats(&retained);
+            }
+            if data.len() as i64 > settings.max_item_bytes { continue; }
+            let preview = format!("{} · 서식 상한 초과: {}", clip::preview(kind, &data), suffix);
+            let t = now();
+            let store = app().store.lock().unwrap();
+            if store.insert(kind, &data, &trimmed, &preview, &source, t).is_ok() { let _ = store.enforce(&settings, t); }
+            drop(store);
+            refresh_recent();
             continue;
         }
-        let preview = clip::preview(kind, &data);
+        let preview = if let Some(url) = &web_url {
+            let domain = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://")).unwrap_or(url).split(['/', '?', '#']).next().unwrap_or(url);
+            format!("{} · 웹 · {}", clip::preview(kind, &data), domain)
+        } else if extra.is_empty() { clip::preview(kind, &data) }
+            else if skipped.is_empty() { format!("{} · 서식 포함", clip::preview(kind, &data)) }
+            else { format!("{} · 서식 포함 ({}개 형식 생략)", clip::preview(kind, &data), skipped.len()) };
         let t = now();
         {
             let store = app().store.lock().unwrap();
@@ -698,6 +759,7 @@ fn main() {
 
     let dir = util::data_dir();
     let _ = std::fs::create_dir_all(&dir);
+    open_item::cleanup(&dir);
     let store = match Store::open(&format!("{dir}\\clip.db")) {
         Ok(s) => s,
         Err(_) => std::process::exit(2),
@@ -716,6 +778,7 @@ fn main() {
         hotkey_ok: AtomicBool::new(false),
         listening: AtomicBool::new(false),
         last_clip_image: AtomicU64::new(0),
+        image_dedupe: Mutex::new(std::collections::VecDeque::new()),
         timeline: Mutex::new(None),
         screenshots: Mutex::new(String::new()),
         scan_pending: Mutex::new(HashSet::new()),
@@ -768,6 +831,7 @@ fn main() {
         }
         CloseHandle(instance_mutex);
     }
+    open_item::cleanup(&app().dir);
 }
 
 #[cfg(test)]
