@@ -39,7 +39,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
     'paint' => '새 그림',
     _ => '새 다이어그램',
   };
-  String? identity, revision;
+  String? identity, revision, _pngOutputSelectionId;
   final saveState = EditSaveState();
   bool dirty = false, ready = false, busy = false;
   CloseLease? _closeLease;
@@ -257,15 +257,25 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
           }
           break;
         case 'request_png':
+          _pngOutputSelectionId = null;
+          final selection = await storage('select_output', {'format': 'png'});
+          if (selection is! Map) throw Exception('PNG 저장 위치를 선택해 주세요.');
+          if (selection['cancelled'] == true) break;
+          final selectionId = selection['selection_id'];
+          if (selectionId is! String) throw Exception('PNG 저장 위치를 확인해 주세요.');
+          _pngOutputSelectionId = selectionId;
           post({'type': 'export_png'});
           break;
         case 'export_hwpx':
           // 표/다이어그램의 흐름표·기본 표를 한/글 문서로 저장한다(검증은 Python table_builder).
           final spec = message['spec'];
           if (spec is! Map) throw Exception('표 정보를 확인해 주세요.');
+          final outputSelectionId = await _selectOutput('hwpx');
+          if (outputSelectionId == null) break;
           final saved = await storage('export_hwpx', {
             'spec': spec,
             'name': name,
+            'output_selection_id': outputSelectionId,
           });
           if (saved is Map && saved['path'] is String) {
             notice('한/글 문서로 저장했어요: ${saved['path']}');
@@ -285,6 +295,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
           final result = await storage('export_png', {
             'base64': encoded,
             'name': name,
+            'output_selection_id': _takePngOutputSelection(),
           });
           if (result is Map && result['path'] is String) {
             notice('PNG를 저장했어요: ${result['path']}');
@@ -298,6 +309,22 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
       busy = false;
       if (mounted) setState(() {});
     }
+  }
+
+  String? _takePngOutputSelection() {
+    final selectionId = _pngOutputSelectionId;
+    _pngOutputSelectionId = null;
+    if (selectionId == null) throw Exception('PNG 저장 위치를 먼저 선택해 주세요.');
+    return selectionId;
+  }
+
+  Future<String?> _selectOutput(String format) async {
+    final selection = await storage('select_output', {'format': format});
+    if (selection is! Map) throw Exception('저장 위치를 선택해 주세요.');
+    if (selection['cancelled'] == true) return null;
+    final selectionId = selection['selection_id'];
+    if (selectionId is! String) throw Exception('저장 위치를 확인해 주세요.');
+    return selectionId;
   }
 
   void notice(String message) {

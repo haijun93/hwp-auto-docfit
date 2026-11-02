@@ -1443,6 +1443,12 @@ class DesktopWebBridge:
         if action == "copy_result":
             from docfit_app.clipboard_service import copy_result
             return self._tk(lambda: copy_result(payload))
+        if action == "select_output":
+            import uuid
+            purpose = {"png": "flow_png", "hwpx": "flow_hwpx"}.get(payload.get("format"))
+            if purpose is None:
+                raise ServiceError("INVALID_INPUT", "저장할 파일 형식을 확인해 주세요.")
+            return self._file_dialogs.select_files(uuid.uuid4().hex, purpose, "save")
         if action == "export_png":
             import os
             import tempfile
