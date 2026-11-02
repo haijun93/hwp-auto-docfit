@@ -336,6 +336,56 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
     }
   }
 
+  Future<void> _findRelated(TimemachineItem item) async {
+    final selectedPath = '${item.folder}\\${item.name}';
+    try {
+      final response = await _api.command('related_search', {'path': selectedPath});
+      if (!mounted) return;
+      if (response['ok'] != true) {
+        setState(() => _error = '${response['message'] ?? '연관 문서를 찾지 못했습니다.'}');
+        return;
+      }
+      final raw = response['items'];
+      final items = raw is List
+          ? raw.whereType<Map>().map((entry) => Map<String, Object?>.from(entry)).toList()
+          : <Map<String, Object?>>[];
+      await showDialog<void>(context: context, builder: (dialogContext) => AlertDialog(
+        title: const Text('연관 문서'),
+        content: SizedBox(width: 520, child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text('선택 문서 작성 기준일: ${response['reference_date_found'] == true && response['reference_date'] != null ? response['reference_date'] : '기준일 없음'}'),
+          const SizedBox(height: 8),
+          if (items.isEmpty) const Text('연관 문서가 없습니다.') else Flexible(child: ListView(shrinkWrap: true, children: [
+            for (final related in items)
+              ListTile(
+                title: Text('${related['name'] ?? ''}'),
+                subtitle: Text('${related['reference_date_found'] == true && related['reference_date'] != null ? related['reference_date'] : '기준일 없음'} · 점수 ${related['score'] ?? 0}\n근거: ${((related['reasons'] as List?) ?? const []).join(', ')}'),
+                isThreeLine: true,
+                trailing: TextButton(
+                  child: const Text('연관 아님'),
+                  onPressed: () async {
+                    final path = related['path'];
+                    if (path is! String) return;
+                    try {
+                      final excluded = await _api.command('related_exclude', {'selected_path': selectedPath, 'related_path': path});
+                      if (excluded['ok'] == true && dialogContext.mounted) {
+                        Navigator.of(dialogContext).pop();
+                        await _findRelated(item);
+                      }
+                    } catch (_) {
+                      if (mounted) setState(() => _error = '연관 제외를 저장하지 못했습니다.');
+                    }
+                  },
+                ),
+              ),
+          ])),
+        ])),
+        actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('닫기'))],
+      ));
+    } catch (_) {
+      if (mounted) setState(() => _error = '연관 문서를 찾지 못했습니다. 앱 연결을 확인해 주세요.');
+    }
+  }
+
   Future<void> _clearThumbnailCache() async {
     try {
       final response = await _api.command('thumbnail_cache_clear');
@@ -677,8 +727,9 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
                       key: ValueKey('tm-send-menu-${item.id}'),
                       tooltip: '다른 기능으로 보내기',
                       icon: const Icon(Icons.more_vert),
-                      onSelected: (feature) => _sendToFeature(feature, item.id),
+                      onSelected: (feature) { if (feature == 'related') { _findRelated(item); } else { _sendToFeature(feature, item.id); } },
                       itemBuilder: (context) => const [
+                        PopupMenuItem(value: 'related', child: Text('연관 문서 찾기')),
                         PopupMenuItem(value: 'rename_batch', child: Text('파일명 일괄변경 목록에 추가')),
                         PopupMenuItem(value: 'convert', child: Text('파일변환 목록에 추가')),
                         PopupMenuItem(value: 'document_edit', child: Text('문서편집 목록에 추가')),
