@@ -509,16 +509,16 @@ void main() {
         await tester.pumpWidget(MaterialApp(home: TableSketchScreen(api: api)));
         await tester.pumpAndSettle();
 
-        // 조직도 예시 버튼 클릭
-        expect(find.byKey(const Key('sketchOrgExample')), findsOneWidget);
-        await tester.tap(find.byKey(const Key('sketchOrgExample')));
+        // 공룡 예시 버튼 클릭
+        expect(find.byKey(const Key('sketchDinoExample')), findsOneWidget);
+        await tester.tap(find.byKey(const Key('sketchDinoExample')));
         await tester.pumpAndSettle();
 
         // 디바운스 0.5초 경과
         await tester.pump(const Duration(milliseconds: 600));
         await tester.pumpAndSettle();
 
-        // 조직도 예시 생성 후 preview가 21개 선을 담고 전송되었는지 확인
+        // 공룡 예시 생성 후 preview에 점 그림의 선과 검은 칸이 담겨 전송되었는지 확인
         final previewCalls = calls
             .where((c) => c[0] == 'table_sketch' && c[1] == 'preview')
             .toList();
@@ -527,12 +527,12 @@ void main() {
         final lastPreview = previewCalls.last;
         final sketch = lastPreview[2] as Map;
         final lines = sketch['lines'] as List;
-        // 위 상자 4개 + 가운데 세로선 1개 + 가로 연결선 1개 + 하향 연결선 3개 + 아래 상자 3개(각 4개 = 12개) = 총 21개 선
-        expect(lines.length, 21);
+        expect(lines.length, greaterThan(100));
+        expect((sketch['fills'] as List).length, greaterThan(50));
 
-        // 텍스트는 4개
+        // 글은 없다
         final texts = sketch['texts'] as List;
-        expect(texts.length, 4);
+        expect(texts, isEmpty);
 
         expect(tester.takeException(), isNull);
       },

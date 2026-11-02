@@ -194,7 +194,7 @@ def build_diagram_shape_xml(payload, refs=None):
         text = _add(node, HP+'drawText', lastWidth=w, name='', editable=0)
         sub = _add(text, HP+'subList', id='', textDirection='HORIZONTAL', lineWrap='BREAK', vertAlign='CENTER',
                    linkListIDRef=0, linkListNextIDRef=0, textWidth=0, textHeight=0, hasTextRef=0, hasNumRef=0)
-        for line in shape['text'].split('\n') or ['']:
+        for line in (shape.get('text') or '').split('\n'):
             para = _paragraph(line, {**refs, 'para_pr_id': refs.get('diagram_center_para_pr_id', refs.get('para_pr_id', 0))}, i)
             _add(para, HP+'linesegarray')
             sub.append(para)

@@ -263,80 +263,56 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
     }
   }
 
-  // --- 조직도 예시 ---
+  // --- 공룡 예시 ---
 
-  void _loadOrgExample() {
+  /// 칸 하나가 # 하나인 점 그림(가로 66칸, 세로 27칸).
+  static const _dinoExampleRows = <String>[
+    '............#########',
+    '...........###########',
+    '...........##.########',
+    '...........###########',
+    '...........###########',
+    '...........###########',
+    '...........######',
+    '...........#########',
+    '.#........######..................##.........##.........##',
+    '.#.......#######..................##.........##.........##',
+    '.##.....##########.............##.##......##.##......##.##',
+    '.###...###########.#...........##.##......##.##......##.##',
+    '.####.#########.....#..........##.##.##...##.##.##...##.##.##',
+    '.###############...............##.##.##...##.##.##...##.##.##',
+    '.###############...............##.##.##...##.##.##...##.##.##',
+    '..##############...............#####.##...#####.##...#####.##',
+    '...#############................####.##....####.##....####.##',
+    '....###########...................#####......#####......#####',
+    '.....#########....................####.......####.......####',
+    '......####.###....................##.........##.........##',
+    '......###...##....................##.........##.........##',
+    '......##.....#....................##.........##.........##',
+    '......#......#....................##.........##.........##.....#',
+    '##....##.....##...........##......##.........##.........##....###',
+    '##################################################################',
+    '',
+    '....##......#.......###...........##...........##.........#',
+  ];
+
+  void _loadDinoExample() {
     _saveSnapshot();
     setState(() {
       final newDoc = TableSketchDoc(
-        grid: const GridConfig(cols: 36, rows: 50, cellMm: 5.0),
+        grid: const GridConfig(cols: 66, rows: 27, cellMm: 2.5),
       );
-
-      // 위 상자 1개: (12, 4) ~ (24, 8) -> 선 4개
-      newDoc.addLine(const SketchLine(x1: 12, y1: 4, x2: 24, y2: 4));
-      newDoc.addLine(const SketchLine(x1: 12, y1: 8, x2: 24, y2: 8));
-      newDoc.addLine(const SketchLine(x1: 12, y1: 4, x2: 12, y2: 8));
-      newDoc.addLine(const SketchLine(x1: 24, y1: 4, x2: 24, y2: 8));
-      newDoc.setText(
-        const SketchText(x: 16, y: 5, text: '총괄팀', bold: true, align: 'center'),
-      );
-
-      // 가운데 세로선 1개: (18, 8) ~ (18, 14)
-      newDoc.addLine(const SketchLine(x1: 18, y1: 8, x2: 18, y2: 14));
-
-      // 가로 연결선 1개: (6, 14) ~ (30, 14)
-      newDoc.addLine(const SketchLine(x1: 6, y1: 14, x2: 30, y2: 14));
-
-      // 아래 상자로 내려가는 연결선 3개
-      newDoc.addLine(const SketchLine(x1: 6, y1: 14, x2: 6, y2: 18));
-      newDoc.addLine(const SketchLine(x1: 18, y1: 14, x2: 18, y2: 18));
-      newDoc.addLine(const SketchLine(x1: 30, y1: 14, x2: 30, y2: 18));
-
-      // 아래 상자 3개: 각 4개 선
-      // 상자 1: (2, 18) ~ (10, 22)
-      newDoc.addLine(const SketchLine(x1: 2, y1: 18, x2: 10, y2: 18));
-      newDoc.addLine(const SketchLine(x1: 2, y1: 22, x2: 10, y2: 22));
-      newDoc.addLine(const SketchLine(x1: 2, y1: 18, x2: 2, y2: 22));
-      newDoc.addLine(const SketchLine(x1: 10, y1: 18, x2: 10, y2: 22));
-      newDoc.setText(
-        const SketchText(
-          x: 4,
-          y: 19,
-          text: '개발팀',
-          bold: false,
-          align: 'center',
-        ),
-      );
-
-      // 상자 2: (14, 18) ~ (22, 22)
-      newDoc.addLine(const SketchLine(x1: 14, y1: 18, x2: 22, y2: 18));
-      newDoc.addLine(const SketchLine(x1: 14, y1: 22, x2: 22, y2: 22));
-      newDoc.addLine(const SketchLine(x1: 14, y1: 18, x2: 14, y2: 22));
-      newDoc.addLine(const SketchLine(x1: 22, y1: 18, x2: 22, y2: 22));
-      newDoc.setText(
-        const SketchText(
-          x: 16,
-          y: 19,
-          text: '기획팀',
-          bold: false,
-          align: 'center',
-        ),
-      );
-
-      // 상자 3: (26, 18) ~ (34, 22)
-      newDoc.addLine(const SketchLine(x1: 26, y1: 18, x2: 34, y2: 18));
-      newDoc.addLine(const SketchLine(x1: 26, y1: 22, x2: 34, y2: 22));
-      newDoc.addLine(const SketchLine(x1: 26, y1: 18, x2: 26, y2: 22));
-      newDoc.addLine(const SketchLine(x1: 34, y1: 18, x2: 34, y2: 22));
-      newDoc.setText(
-        const SketchText(
-          x: 28,
-          y: 19,
-          text: '운영팀',
-          bold: false,
-          align: 'center',
-        ),
-      );
+      for (var y = 0; y < _dinoExampleRows.length; y++) {
+        final row = _dinoExampleRows[y];
+        for (final run in RegExp('#+').allMatches(row)) {
+          final x1 = run.start, x2 = run.end;
+          newDoc.addLine(SketchLine(x1: x1, y1: y, x2: x2, y2: y));
+          newDoc.addLine(SketchLine(x1: x1, y1: y + 1, x2: x2, y2: y + 1));
+          newDoc.addLine(SketchLine(x1: x1, y1: y, x2: x1, y2: y + 1));
+          newDoc.addLine(SketchLine(x1: x2, y1: y, x2: x2, y2: y + 1));
+          newDoc.setFill(x1, y, x2, y + 1, sketchBlack);
+        }
+      }
 
       _doc = newDoc;
       _sel = SketchSelection();
@@ -1615,17 +1591,17 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
               // 좁은 창(폭 600 미만)에서는 글 없는 아이콘 버튼으로 도구 줄이 넘치지 않게 한다.
               if (MediaQuery.sizeOf(context).width < 600)
                 IconButton(
-                  key: const Key('sketchOrgExample'),
-                  tooltip: '조직도 예시',
-                  icon: const Icon(Icons.account_tree_outlined),
-                  onPressed: _loadOrgExample,
+                  key: const Key('sketchDinoExample'),
+                  tooltip: '공룡 예시',
+                  icon: const Icon(Icons.pets_outlined),
+                  onPressed: _loadDinoExample,
                 )
               else
                 OutlinedButton.icon(
-                  key: const Key('sketchOrgExample'),
-                  icon: const Icon(Icons.account_tree_outlined, size: 18),
-                  label: const Text('조직도 예시'),
-                  onPressed: _loadOrgExample,
+                  key: const Key('sketchDinoExample'),
+                  icon: const Icon(Icons.pets_outlined, size: 18),
+                  label: const Text('공룡 예시'),
+                  onPressed: _loadDinoExample,
                 ),
               const SizedBox(width: 8),
               if (MediaQuery.sizeOf(context).width < 600)
