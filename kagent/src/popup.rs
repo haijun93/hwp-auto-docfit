@@ -26,6 +26,8 @@ const VISIBLE: usize = 12;
 const BASE_W: i32 = 440;
 const ROW_H: i32 = 30;
 const HEAD_H: i32 = 30;
+/// 접힌 창 높이. 두꺼운 틀 안쪽에 머리글이 다 보이도록 틀 높이를 더한다.
+const COLLAPSED_H: i32 = HEAD_H + 12;
 /// 머리글 오른쪽 '항상 위' 단추의 폭.
 const PIN_W: i32 = 76;
 /// 머리글 맨 오른쪽 닫기(X) 단추의 폭.
@@ -179,7 +181,7 @@ pub fn show() {
             ((pt.x + 8).min(wa.right - default_w).max(wa.left),
              (pt.y + 8).min(wa.bottom - default_h).max(wa.top), default_w, default_h)
         };
-        if collapsed { h = scale(hwnd, HEAD_H + 2); }
+        if collapsed { h = scale(hwnd, COLLAPSED_H); }
         SetWindowPos(hwnd, if settings.always_on_top { HWND_TOPMOST } else { HWND_NOTOPMOST },
                      x, y, w, h, SWP_SHOWWINDOW);
         SetForegroundWindow(hwnd);
@@ -536,7 +538,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             WM_GETMINMAXINFO => {
                 let info = &mut *(lp as *mut MINMAXINFO);
                 info.ptMinTrackSize.x = scale(hwnd, MIN_W);
-                info.ptMinTrackSize.y = scale(hwnd, MIN_H);
+                // 접힌 창은 머리글 높이까지 줄어야 한다.
+                let min_h = if app().settings.lock().unwrap().popup_collapsed { COLLAPSED_H } else { MIN_H };
+                info.ptMinTrackSize.y = scale(hwnd, min_h);
                 0
             }
             WM_ERASEBKGND => 1,
@@ -682,7 +686,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                     Some(HeadButton::Close) => { hide(); return 0; }
                     Some(HeadButton::Capture) => { hide(); crate::capture_screen(); return 0; }
                     Some(HeadButton::Clear) => { if crate::confirm_clear(hwnd) { let _ = app().store.lock().unwrap().clear(true); refresh_recent(); } return 0; }
-                    Some(HeadButton::Collapse) => { let mut s = app().settings.lock().unwrap(); s.popup_collapsed = !s.popup_collapsed; let collapsed = s.popup_collapsed; drop(s); crate::save_settings(); if collapsed { SetWindowPos(hwnd, std::ptr::null_mut(), 0, 0, 0, scale(hwnd, HEAD_H + 2), SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE); } else { SetWindowPos(hwnd, std::ptr::null_mut(), 0, 0, 0, scale(hwnd, app().settings.lock().unwrap().popup_height as i32), SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE); } InvalidateRect(hwnd, std::ptr::null(), 0); return 0; }
+                    Some(HeadButton::Collapse) => { let mut s = app().settings.lock().unwrap(); s.popup_collapsed = !s.popup_collapsed; let collapsed = s.popup_collapsed; drop(s); crate::save_settings(); // 폭은 그대로 두고 높이만 바꾼다. 설정 잠금은 SetWindowPos 전에 풀어야 한다(WM_GETMINMAXINFO가 다시 잠근다).
+                        let saved_h = app().settings.lock().unwrap().popup_height as i32;
+                        let target_h = if collapsed { COLLAPSED_H } else if saved_h > COLLAPSED_H { saved_h } else { HEAD_H + ROW_H * 5 + 8 };
+                        let mut rect: RECT = std::mem::zeroed();
+                        GetWindowRect(hwnd, &mut rect);
+                        SetWindowPos(hwnd, std::ptr::null_mut(), 0, 0, rect.right - rect.left, scale(hwnd, target_h), SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE); InvalidateRect(hwnd, std::ptr::null(), 0); return 0; }
                     None => {}
                 }
                 if let Some(i) = row_at(hwnd, lp) {
