@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 
 from docfit_core.timemachine import thumbs
-from docfit_core.timemachine.rules import KINDS, Rules
+from docfit_core.timemachine.rules import DEFAULT_EXTENSIONS, KINDS, Rules
 from docfit_core.timemachine.scan import default_roots, scan_roots
 from docfit_core.timemachine.store import Store
 from .kagent_client import KAgentClient, data_dir
@@ -57,7 +57,7 @@ class TimemachineService:
         subprocess.Popen(["explorer", "/select," + path])
 
     def _defaults(self):
-        return {"roots": default_roots(), "time_mode": "max", "enabled": False}
+        return {"roots": default_roots(), "time_mode": "max", "enabled": False, "extensions": list(DEFAULT_EXTENSIONS)}
 
     def _load_settings(self):
         defaults = self._defaults()
@@ -69,7 +69,8 @@ class TimemachineService:
             roots = self._validate_roots(roots)
             if mode not in ("max", "mtime") or type(enabled) is not bool:
                 raise ValueError("settings")
-            return {"roots": roots, "time_mode": mode, "enabled": enabled}
+            extensions = self._validate_extensions(data.get("extensions", list(DEFAULT_EXTENSIONS)))
+            return {"roots": roots, "time_mode": mode, "enabled": enabled, "extensions": extensions}
         except (OSError, ValueError, TypeError, KeyError):
             return defaults
 
@@ -117,6 +118,20 @@ class TimemachineService:
             if key not in seen:
                 result.append(path)
                 seen.add(key)
+        return result
+
+    @staticmethod
+    def _validate_extensions(values):
+        allowed = set(DEFAULT_EXTENSIONS)
+        if not isinstance(values, list) or any(not isinstance(v, str) for v in values):
+            raise ValueError("적용 확장자를 확인해 주세요.")
+        result = []
+        for value in values:
+            ext = value.lower().lstrip(".")
+            if ext not in allowed:
+                raise ValueError("지원하지 않는 확장자입니다.")
+            if ext not in result:
+                result.append(ext)
         return result
 
     def _save_settings(self, settings):
@@ -220,7 +235,7 @@ class TimemachineService:
                                         removed=result.removed,
                                         errors=[str(item[1]) for item in result.errors])
         try:
-            result = self.scanner(self.store, roots, Rules(time_mode=mode), progress=progress)
+            result = self.scanner(self.store, roots, Rules(time_mode=mode, extensions=self._settings["extensions"]), progress=progress)
             with self._settings_lock:
                 current = list(self._settings["roots"])
             retained = {self._root_key(root) for root in current}
@@ -277,7 +292,8 @@ class TimemachineService:
             mode, enabled = payload.get("time_mode"), payload.get("enabled")
             if mode not in ("max", "mtime") or type(enabled) is not bool:
                 raise ValueError("설정 값을 확인해 주세요.")
-            settings = {"roots": roots, "time_mode": mode, "enabled": enabled}
+            extensions = self._validate_extensions(payload.get("extensions", self._settings["extensions"]))
+            settings = {"roots": roots, "time_mode": mode, "enabled": enabled, "extensions": extensions}
             with self._settings_lock:
                 old_roots = list(self._settings["roots"])
                 changed = self._settings != settings
@@ -301,6 +317,7 @@ class TimemachineService:
                 raise ValueError("페이지 범위를 확인해 주세요.")
             if not filters["roots"]:
                 return {"ok": True, "items": []}
+            filters["extensions"] = self._settings["extensions"]
             rows = self.store.range(start, end, **filters, newest_first=newest, limit=limit, offset=offset)
             rows = [row for row in rows if self._path_in_active_root(row["path"], row.get("root"))]
             items = [{"id": row["id"], "name": row["name"], "kind": row["kind"],
@@ -316,10 +333,12 @@ class TimemachineService:
                     raise ValueError("달력 날짜를 확인해 주세요.")
                 if not filters["roots"]:
                     return {"ok": True, "days": {}}
+                filters["extensions"] = self._settings["extensions"]
                 return {"ok": True, "days": self.store.day_counts(year, month, **filters)}
             start, end, range_filters = self._filter_args(payload, range_required=True)
             if not range_filters["roots"]:
                 return {"ok": True, "hours": {}}
+            range_filters["extensions"] = self._settings["extensions"]
             return {"ok": True, "hours": self.store.hour_density(start, end, **range_filters)}
         if action == "hide":
             file_id = payload.get("id")

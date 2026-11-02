@@ -31,6 +31,9 @@ class RulesTests(unittest.TestCase):
             self.assertTrue(rules.skip_dir(name), name)
         self.assertFalse(rules.skip_dir("2026 업무"))
         self.assertEqual(Rules(extra_extensions=["dwg"]).kind("도면.DWG"), "other")
+        selected = Rules(extensions=["pdf", "txt"])
+        self.assertEqual(selected.kind("a.PDF"), "pdf")
+        self.assertIsNone(selected.kind("a.hwpx"))
         self.assertTrue(Rules(extra_dirs=["백업"]).skip_dir("백업"))
 
     def test_work_time(self):
@@ -82,6 +85,7 @@ class ScanStoreTests(unittest.TestCase):
         self.assertEqual([r["name"] for r in mrows.range(0, 2e10, kinds=["image"])], ["사진.jpg"])
         self.assertEqual([r["name"] for r in mrows.range(0, 2e10, query="보고")], ["보고서.hwpx"])
         self.assertEqual(mrows.range(0, 2e10, query="%"), [])
+        self.assertEqual([r["name"] for r in mrows.range(0, 2e10, extensions=["hwpx"])], ["보고서.hwpx"])
         counts = mrows.day_counts(2026, 10)
         self.assertEqual(counts[31]["total"], 2)
         self.assertEqual(counts[30], {"total": 1, "image": 1})

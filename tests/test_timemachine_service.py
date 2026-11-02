@@ -154,6 +154,13 @@ class TimemachineServiceTests(unittest.TestCase):
         for update in ({"kinds":["other"]},{"roots":[str(Path(self.temp.name))]},{"start":5,"end":4},{"limit":201},{"offset":-1},{"query":3}):
             self.assertEqual(self.service.command("range",base|update)["code"],"INVALID_INPUT")
 
+    def test_extension_settings_are_validated_and_persisted(self):
+        result=self.service.command("settings_set",{"roots":[str(self.root)],"time_mode":"max","enabled":True,"extensions":["pdf","txt"]})
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["settings"]["extensions"],["pdf","txt"])
+        invalid=self.service.command("settings_set",{"roots":[str(self.root)],"time_mode":"max","enabled":True,"extensions":["exe"]})
+        self.assertEqual(invalid["code"],"INVALID_INPUT")
+
     def test_day_counts_and_hour_density_forward_filters(self):
         self.enable()
         response=self.service.command("day_counts",{"year":2026,"month":10,"roots":[str(self.root)],"kinds":["pdf"],"query":"x"})

@@ -115,7 +115,7 @@ class Store:
 
     # ── 읽기(화면) ───────────────────────────────────────────────────────
     @staticmethod
-    def _filters(kinds=None, roots=None, query=None):
+    def _filters(kinds=None, roots=None, query=None, extensions=None):
         where, params = ["hidden = 0"], []
         if kinds:
             where.append(f"kind IN ({','.join('?' * len(kinds))})")
@@ -127,6 +127,9 @@ class Store:
             escaped = query.casefold().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             where.append("lower(name) LIKE ? ESCAPE '\\'")
             params.append(f"%{escaped}%")
+        if extensions is not None:
+            where.append("0" if not extensions else f"lower(substr(name, instr(name, '.'))) IN ({','.join('?' * len(extensions))})")
+            params.extend("." + str(ext).lower().lstrip(".") for ext in extensions)
         return where, params
 
     def range(self, start, end, *, kinds=None, roots=None, query=None, newest_first=True, limit=200, offset=0):
