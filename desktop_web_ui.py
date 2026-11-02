@@ -2739,7 +2739,35 @@ def _install_webview_rendering_guard(edgechromium_module=None):
             properties.AdditionalBrowserArguments = _append_webview_rendering_arguments(
                 properties.AdditionalBrowserArguments
             )
-            return super().EnsureCoreWebView2Async(*args, **kwargs)
+            try:
+                try:
+                    from System import EventHandler
+                except ImportError:
+                    EventHandler = lambda callback: callback
+
+                def initialized(sender, event):
+                    try:
+                        def renderer_failed(_sender, _event):
+                            try:
+                                self.CoreWebView2.Reload()
+                            except Exception:
+                                logging.getLogger(__name__).exception(
+                                    "Could not reload WebView2 after renderer exit"
+                                )
+
+                        self.CoreWebView2.ProcessFailed += EventHandler(renderer_failed)
+                    except Exception:
+                        logging.getLogger(__name__).exception(
+                            "Could not monitor WebView2 renderer process"
+                        )
+
+                self.CoreWebView2InitializationCompleted += EventHandler(initialized)
+            except Exception:
+                logging.getLogger(__name__).debug(
+                    "WebView2 initialization event unavailable", exc_info=True
+                )
+            result = super().EnsureCoreWebView2Async(*args, **kwargs)
+            return result
 
     edgechromium_module.WebView2 = RenderingGuardWebView2
     edgechromium_module._docfit_rendering_guarded = True
