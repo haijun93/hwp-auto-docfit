@@ -30,6 +30,11 @@ pub struct Settings {
     /// 타임머신 조사 폴더(앱이 정해 준다, 비어 있으면 감시 안 함).
     pub timeline_roots: Vec<String>,
     pub timeline_mtime_only: bool,
+    /// 빠른 목록 창의 마지막 논리 화면 좌표·크기.
+    pub popup_x: i64,
+    pub popup_y: i64,
+    pub popup_width: i64,
+    pub popup_height: i64,
 }
 
 impl Default for Settings {
@@ -52,6 +57,10 @@ impl Default for Settings {
             watch_screenshots: true,
             timeline_roots: Vec::new(),
             timeline_mtime_only: false,
+            popup_x: -1,
+            popup_y: -1,
+            popup_width: 0,
+            popup_height: 0,
         }
     }
 }
@@ -82,6 +91,10 @@ impl Settings {
             ("watch_screenshots", self.watch_screenshots.into()),
             ("timeline_roots", Value::Arr(self.timeline_roots.iter().map(|s| s.as_str().into()).collect())),
             ("timeline_mtime_only", self.timeline_mtime_only.into()),
+            ("popup_x", self.popup_x.into()),
+            ("popup_y", self.popup_y.into()),
+            ("popup_width", self.popup_width.into()),
+            ("popup_height", self.popup_height.into()),
         ])
     }
 
@@ -133,6 +146,10 @@ impl Settings {
         if let Some(b) = v.bool("timeline_mtime_only") {
             self.timeline_mtime_only = b;
         }
+        if let Some(n) = v.num("popup_x").filter(|n| (-100_000.0..=100_000.0).contains(n)) { self.popup_x = n as i64; }
+        if let Some(n) = v.num("popup_y").filter(|n| (-100_000.0..=100_000.0).contains(n)) { self.popup_y = n as i64; }
+        if let Some(n) = v.num("popup_width").filter(|n| (200.0..=4000.0).contains(n)) { self.popup_width = n as i64; }
+        if let Some(n) = v.num("popup_height").filter(|n| (150.0..=4000.0).contains(n)) { self.popup_height = n as i64; }
     }
 
     pub fn load(path: &str) -> Settings {
@@ -432,5 +449,17 @@ mod tests {
         let mut again = Settings::default();
         again.apply(&back.to_json());
         assert_eq!(again.max_items, back.max_items);
+    }
+
+    #[test]
+    fn popup_geometry_round_trips_and_rejects_unreasonable_values() {
+        let mut settings = Settings::default();
+        settings.apply(&json::parse(r#"{"popup_x":120,"popup_y":80,"popup_width":520,"popup_height":460}"#).unwrap());
+        assert_eq!((settings.popup_x, settings.popup_y, settings.popup_width, settings.popup_height), (120, 80, 520, 460));
+        let mut loaded = Settings::default();
+        loaded.apply(&settings.to_json());
+        assert_eq!((loaded.popup_x, loaded.popup_y, loaded.popup_width, loaded.popup_height), (120, 80, 520, 460));
+        loaded.apply(&json::parse(r#"{"popup_x":900000,"popup_width":10,"popup_height":99999}"#).unwrap());
+        assert_eq!((loaded.popup_x, loaded.popup_width, loaded.popup_height), (120, 520, 460));
     }
 }

@@ -77,5 +77,18 @@ void main() {
     await tester.tap(find.byTooltip('고정(지워지지 않음)'));
     await tester.pumpAndSettle();
     expect(calls, contains('pin'));
+    calls.clear();
+    await tester.tap(find.byKey(const ValueKey('kclip-clear-all')));
+    await tester.pumpAndSettle();
+    expect(find.text('고정한 항목은 남고 나머지를 지웁니다.'), findsOneWidget);
+    await tester.tap(find.text('취소'));
+    await tester.pumpAndSettle();
+    expect(calls, isNot(contains('clear')));
+
+    await tester.tap(find.byKey(const ValueKey('kclip-clear-all')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('지우기'));
+    await tester.pumpAndSettle();
+    expect(calls, contains('clear'));
   });
 }
