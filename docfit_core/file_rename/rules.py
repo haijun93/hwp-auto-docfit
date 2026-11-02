@@ -13,7 +13,7 @@ import string
 import uuid
 import unicodedata
 
-from .datetime_rules import entry_datetime, format_datetime, read_exif_datetime
+from .datetime_rules import EXIF_EXTENSIONS, entry_datetime, format_datetime, read_exif_datetime
 from .doc_title import read_document_title, sanitize_title
 from .model import RuleError, split_name
 from .numbering import number_sequence
@@ -342,6 +342,25 @@ def _a_date(state, opt, ctx):
     return _place(state[0], format_datetime(moment, opt["format"]), opt["position"], opt["sep"]), state[1]
 
 
+def _v_exif_date(spec):
+    """사진 촬영일을 EXIF에서 읽어 파일 이름에 넣는 전용 규칙."""
+    pattern = _str(spec, "format", "YYYYMMDD", allow_empty=False, max_len=40)
+    if not re.search(r"YYYY|YY|MM|DD|hh|mm|ss", pattern):
+        raise RuleError("날짜 형식에 YYYY·MM·DD·hh·mm·ss 중 하나가 있어야 합니다.")
+    return dict(format=pattern, position=_choice(spec, "position", "prefix", ("prefix", "suffix", "replace")),
+                sep=_str(spec, "sep", "_", max_len=8))
+
+
+def _a_exif_date(state, opt, ctx):
+    entry = ctx["entry"]
+    reader = ctx.get("exif_reader") or read_exif_datetime
+    moment = reader(entry.path) if entry.ext.casefold() in EXIF_EXTENSIONS and not entry.is_folder else None
+    if moment is None:
+        ctx["warnings"].add("exif_missing")
+        return state
+    return _place(state[0], format_datetime(moment, opt["format"]), opt["position"], opt["sep"]), state[1]
+
+
 def _v_cleanup(spec):
     return dict(nfc=_bool(spec, "nfc", True), collapse_spaces=_bool(spec, "collapse_spaces", True),
                 underscore=_choice(spec, "underscore", "keep", ("keep", "to_space", "from_space")),
@@ -512,6 +531,7 @@ RULE_KINDS = {
     "ext_replace": (_v_ext, _a_ext_replace),
     "ext_case": (_v_ext_case, _a_ext_case),
     "date": (_v_date, _a_date),
+    "exif_date": (_v_exif_date, _a_exif_date),
     "cleanup": (_v_cleanup, _a_cleanup),
     "case": (_v_case, _a_case),
     "strip_result_suffix": (_v_strip_suffix, _a_strip_suffix),

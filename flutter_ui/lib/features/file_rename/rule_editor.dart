@@ -15,6 +15,7 @@ const _keyLabels = {
   'position': '위치',
   'sep': '구분 문자',
   'source': '날짜 기준',
+  'exif_date': '촬영일(EXIF)',
   'format': '형식 (YYYY YY MM DD hh mm ss)',
   'start': '시작',
   'step': '간격',
@@ -45,7 +46,7 @@ Map<String, String> _choices(String kind, String key) {
       return {
         'prefix': '이름 앞',
         'suffix': '이름 뒤',
-        if (kind == 'date' || kind == 'number') 'replace': '이름 대신',
+        if (kind == 'date' || kind == 'exif_date' || kind == 'number') 'replace': '이름 대신',
       };
     case 'count':
       return {'all': '모두', 'first': '처음 하나만'};
