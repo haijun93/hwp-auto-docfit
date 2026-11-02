@@ -83,6 +83,14 @@ void main() {
       expect(restored.texts.first.text, '테스트');
       expect(restored.texts.first.bold, isTrue);
     });
+
+    test('direction arrows round-trip as independent styled objects', () {
+      final doc=TableSketchDoc(arrows:[const SketchArrow(x1:4,y1:4,x2:8,y2:4,width:'thick',color:'#DC2626')]);
+      final restored=TableSketchDoc.fromJson(doc.toJson());
+      expect(restored.arrows.single.x2,8);
+      expect(restored.arrows.single.width,'thick');
+      expect(restored.toJson(forTable:true)['arrows'],isNotEmpty);
+    });
   });
 
   group('TableSketchScreen Widget Tests', () {

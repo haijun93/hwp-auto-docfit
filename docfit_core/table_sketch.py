@@ -115,6 +115,18 @@ def normalize(sketch):
             x2, y2 = point(end)
             lines.append(dict(x1=x1, y1=y1, x2=x2, y2=y2, width=width, style=style,
                               **({} if color == "#000000" else {"color": color})))
+    arrows = []
+    raw_arrows = sketch.get("arrows", [])
+    if not isinstance(raw_arrows, list) or len(raw_arrows) > 2000:
+        raise ValueError("화살표는 2000개까지 넣을 수 있습니다.")
+    for i, item in enumerate(raw_arrows):
+        try:
+            x1,y1,x2,y2=(item[k] for k in ("x1","y1","x2","y2"))
+            if (any(type(v) is not int for v in (x1,y1,x2,y2)) or not (0<=x1<=cols and 0<=x2<=cols and 0<=y1<=rows and 0<=y2<=rows) or (x1,y1)==(x2,y2) or not (x1==x2 or y1==y2 or abs(x2-x1)==abs(y2-y1))):
+                raise ValueError
+            arrows.append(dict(x1=x1,y1=y1,x2=x2,y2=y2,width=item.get("width","thin"),style=item.get("style","solid"),color=_color(item.get("color"))))
+        except (TypeError,KeyError,ValueError):
+            warnings.append(f"화살표 {i+1}: 좌표나 서식이 잘못되어 제외했습니다.")
     clean_texts = []
     for i, item in enumerate(texts):
         if (not isinstance(item, dict) or type(item.get("x")) is not int or type(item.get("y")) is not int or
@@ -139,7 +151,7 @@ def normalize(sketch):
         except (TypeError, KeyError, ValueError):
             warnings.append(f"칸 배경색 {i+1}: 범위·색이 잘못되어 제외했습니다.")
     return dict(grid=dict(cols=cols, rows=rows, cell_mm=float(mm)), lines=lines, texts=clean_texts, images=images,
-                fills=fills), warnings
+                fills=fills, arrows=arrows), warnings
 
 
 def _layout(sketch, _split_lines=()):
@@ -250,7 +262,7 @@ def _layout(sketch, _split_lines=()):
             if xs[c] <= t["x"] < xs[ce] and ys[r] <= t["y"] < ys[re]:
                 cell["texts"].append(t)
         cell["text"] = "\n".join(t["text"] for t in cell["texts"])
-        # 칸 배경색(2.0.7): 칸 왼쪽 위 격자점이 든 마지막 채우기 사각형의 색.
+        # 칸별 배경색: 해당 칸 안의 격자 단위 채움 객체를 적용한다.
         for fill in drawing.get("fills", []):
             if fill["x1"] <= xs[c] < fill["x2"] and fill["y1"] <= ys[r] < fill["y2"]:
                 cell["fill"] = fill["color"]
@@ -260,6 +272,12 @@ def _layout(sketch, _split_lines=()):
                 cell["image"] = k
                 break
         cells.append(cell)
+    # 화살표를 셀 내부 전용 선 객체로 옮긴다. HWPX 셀 경계/분할선과 별개라 방향·위치·스타일을 유지한다.
+    for arrow in drawing["arrows"]:
+        cx, cy = (arrow["x1"] + arrow["x2"]) / 2, (arrow["y1"] + arrow["y2"]) / 2
+        target = next((cell for cell in cells if xs[cell["col"]] <= cx < xs[cell["col"]+cell["colspan"]] and ys[cell["row"]] <= cy < ys[cell["row"]+cell["rowspan"]]), None)
+        if target is not None:
+            target.setdefault("arrows", []).append(arrow)
     for t in drawing["texts"]:
         if not xs[0] <= t["x"] < xs[-1] or not ys[0] <= t["y"] < ys[-1]:
             warnings.append("표 범위 밖의 글을 제외했습니다.")
@@ -283,6 +301,7 @@ def _add(parent, tag, **attrs):
 
 
 def to_hwpx(sketch, path):
+    from .hwpx.canvas_hwpx_builder import _shape_scaffold
     result = _layout(sketch)
     images = normalize(sketch)[0]["images"]
     if not result["cells"]:
@@ -356,6 +375,44 @@ def to_hwpx(sketch, path):
                 _add(brush, HC+"img", binaryItemIDRef=bin_item(cell["image"]), bright="0", contrast="0", effect="REAL_PIC", alpha="0")
             border_cache[key] = definition("borderFills", "borderFill", node)
             return border_cache[key]
+        def add_arrow_shape(arrow, index):
+            x1,y1,x2,y2=(arrow[k] for k in ("x1","y1","x2","y2"))
+            sx,sy,ex,ey=(round((v-origin)*mm*UNIT_MM) for v,origin in ((x1,xs[0]),(y1,ys[0]),(x2,xs[0]),(y2,ys[0])))
+            # connectLine의 HWPX 좌표는 전체 끝점 간격(orgSz/curSz)에 대한 상대값이다.
+            left,top=min(sx,ex),min(sy,ey); width,height=abs(ex-sx),abs(ey-sy)
+            node=_add(paragraph.find(HP+"run"),HP+"connectLine",id=400000+index,type="STRAIGHT_ONEWAY")
+            _shape_scaffold(node,max(width,1),max(height,1))
+            # Canvas connectLine metadata is part of the object's element tree.
+            node.set("zOrder",str(2000+index))
+            node.set("numberingType","PICTURE")
+            node.set("textWrap","IN_FRONT_OF_TEXT")
+            node.set("textFlow","BOTH_SIDES")
+            node.set("lock","0")
+            node.set("dropcapstyle","None")
+            node.set("href","")
+            node.set("groupLevel","0")
+            node.find(HP+"orgSz").attrib.update(width=str(max(width,1)),height=str(max(height,1)))
+            node.find(HP+"curSz").attrib.update(width=str(width),height=str(height))
+            node.find(HP+"rotationInfo").attrib.update(centerX=str(max(width,1)//2),centerY=str(max(height,1)//2))
+            rendering=node.find(HP+"renderingInfo")
+            core="{http://www.hancom.co.kr/hwpml/2011/core}"
+            rendering.find(core+"scaMatrix").attrib.update(e1="1",e2="0",e3="0",e4="0",e5="1",e6="0")
+            rendering.find(core+"transMatrix").attrib.update(e3="0",e6="0")
+            _add(node,HP+"startPt",subjectIDRef=0,subjectIdx=0,x=sx-left,y=sy-top)
+            _add(node,HP+"endPt",subjectIDRef=0,subjectIdx=0,x=ex-left,y=ey-top)
+            _add(node,HP+"lineShape",color=arrow["color"],width={"thin":20,"thick":40,"double":60}[arrow["width"]],
+                 style={"solid":"SOLID","dash":"DASH","dot":"DOT"}[arrow["style"]],
+                 endCap="FLAT",headStyle="NORMAL",tailStyle="ARROW",headfill=1,tailfill=1,
+                 headSz="SMALL_SMALL",tailSz="SMALL_SMALL",outlineStyle="NORMAL",alpha=0)
+            _add(node,HP+"shadow",type="NONE",color="#B2B2B2",offsetX=0,offsetY=0,alpha=0)
+            control=_add(node,HP+"controlPoints")
+            for px,py,kind in ((sx-left,sy-top,3),(ex-left,ey-top,26)):
+                _add(control,HP+"point",x=px,y=py,type=kind)
+            _add(node,HP+"sz",width=max(width,1),height=max(height,1),widthRelTo="ABSOLUTE",heightRelTo="ABSOLUTE",protect=0)
+            _add(node,HP+"pos",treatAsChar=0,affectLSpacing=0,flowWithText=0,allowOverlap=1,
+                 holdAnchorAndSO=0,vertRelTo="PARA",horzRelTo="PARA",vertOffset=top,horzOffset=left,
+                 vertAlign="TOP",horzAlign="LEFT")
+            _add(node,HP+"outMargin",left=0,right=0,top=0,bottom=0)
         invisible = border_id(dict(borders={s:"none" for s in ("top","bottom","left","right")}, diagonal="none"))
         proto = copy.deepcopy(table.find(HP+"tr/"+HP+"tc"))
         for child in list(table):
@@ -386,6 +443,24 @@ def to_hwpx(sketch, path):
             tc.find(HP+"cellSz").attrib.update(width=str(ux[c+cs]-ux[c]),height=str(uy[r+rs]-uy[r]))
             tc.find(HP+"cellMargin").attrib.update({s:str(round(0.5*UNIT_MM)) for s in ("left","right","top","bottom")})
             row_nodes[r].append(tc)
+        for index,arrow in enumerate(normalize(sketch)[0]["arrows"]):
+            add_arrow_shape(arrow,index)
+        # 화살표는 표 첫 칸 문단에 고정한다. 표와 함께 움직이고, 표 앞뒤에 두면 표 폭·높이만큼 기준이 밀린다.
+        arrow_nodes=list(paragraph.findall(HP+"run/"+HP+"connectLine"))
+        if arrow_nodes:
+            first_cell=table.find(HP+"tr/"+HP+"tc")
+            first_sub=first_cell.find(HP+"subList")
+            first_sub.set("vertAlign","TOP")
+            first_p=first_sub.find(HP+"p")
+            arrow_run=_add(first_p,HP+"run",charPrIDRef=chars[False])
+            first_p.remove(arrow_run); first_p.insert(0,arrow_run)
+            margin=round(0.5*UNIT_MM)
+            for arrow_node in arrow_nodes:
+                next(parent for parent in paragraph.iter() if arrow_node in list(parent)).remove(arrow_node)
+                arrow_run.append(arrow_node)
+                arrow_pos=arrow_node.find(HP+"pos")
+                arrow_pos.set("vertOffset",str(int(arrow_pos.get("vertOffset"))-margin))
+                arrow_pos.set("horzOffset",str(int(arrow_pos.get("horzOffset"))-margin))
         properties = catalog._section_properties_paragraph(section)
         section[:] = [n for n in (properties,paragraph) if n is not None]
         target.parent.mkdir(parents=True,exist_ok=True)

@@ -102,11 +102,13 @@ class TableSketchPainter extends CustomPainter {
     required this.cellSize,
     this.selectedLines = const {},
     this.selectedTexts = const {},
+    this.selectedArrows = const {},
     this.lassoPath,
     this.marquee = false,
     this.cellImages = const [],
     this.imageTarget,
     this.previewLine,
+    this.previewArrow = false,
     this.previewRect,
     this.resizeBox,
     this.guideXs = const {},
@@ -117,6 +119,7 @@ class TableSketchPainter extends CustomPainter {
   final double cellSize;
   final Set<int> selectedLines;
   final Set<int> selectedTexts;
+  final Set<int> selectedArrows;
 
   /// 올가미(자유 곡선) 또는 선택 상자([시작, 현재]) 경로, 화면 좌표.
   final List<Offset>? lassoPath;
@@ -128,6 +131,7 @@ class TableSketchPainter extends CustomPainter {
   /// '칸 그림' 도구로 고른 칸(격자 단위).
   final Rect? imageTarget;
   final SketchLine? previewLine;
+  final bool previewArrow;
   final Rect? previewRect;
 
   /// 고른 사각형 모형(격자 단위): 크기 조절 손잡이 8개를 그린다.
@@ -221,9 +225,27 @@ class TableSketchPainter extends CustomPainter {
       );
     }
 
+    // 화살표는 선과 별도 객체로 보관하되 같은 선 스타일로 그린다.
+    final visibleArrows = [...doc.lockedArrows, ...doc.arrows];
+    for (var arrowIndex = 0; arrowIndex < visibleArrows.length; arrowIndex++) {
+      final arrow = visibleArrows[arrowIndex];
+      _drawArrow(
+        canvas,
+        Offset(arrow.x1 * cellSize, arrow.y1 * cellSize),
+        Offset(arrow.x2 * cellSize, arrow.y2 * cellSize),
+        arrow.color,
+        arrow.width,
+        selectedArrows.contains(arrowIndex - doc.lockedArrows.length),
+      );
+    }
+
     // 4. 드래그 중인 미리보기 선 / 사각형
     if (previewLine != null) {
-      _drawSketchLine(canvas, previewLine!, isPreview: true);
+      if (previewArrow) {
+        drawArrowPreview(canvas, previewLine!);
+      } else {
+        _drawSketchLine(canvas, previewLine!, isPreview: true);
+      }
     }
     if (previewRect != null) {
       _drawPreviewRect(canvas, previewRect!);
@@ -242,7 +264,8 @@ class TableSketchPainter extends CustomPainter {
     }
 
     // 6. 여러 개를 고르면 감싸는 점선 상자
-    if (selectedLines.length + selectedTexts.length > 1) {
+    if (selectedLines.length + selectedTexts.length + selectedArrows.length >
+        1) {
       final bounds = _selectionRect();
       if (bounds != null) {
         canvas.drawPath(
@@ -455,6 +478,46 @@ class TableSketchPainter extends CustomPainter {
     canvas.drawPath(dashed, paint);
   }
 
+  void _drawArrow(
+    Canvas canvas,
+    Offset a,
+    Offset b,
+    String color,
+    String width,
+    bool selected,
+  ) {
+    final paint = Paint()
+      ..color = selected ? const Color(0xFF1D4ED8) : sketchColorValue(color)
+      ..strokeWidth = width == 'thick' ? 3 : 1.4
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(a, b, paint);
+    if ((b - a).distance == 0) return;
+    final u = (b - a) / (b - a).distance,
+        n = Offset(-u.dy, u.dx),
+        h = math.min(cellSize * .28, 8.0);
+    final path = Path()
+      ..moveTo(
+        b.dx - u.dx * h + n.dx * h * .55,
+        b.dy - u.dy * h + n.dy * h * .55,
+      )
+      ..lineTo(b.dx, b.dy)
+      ..lineTo(
+        b.dx - u.dx * h - n.dx * h * .55,
+        b.dy - u.dy * h - n.dy * h * .55,
+      );
+    canvas.drawPath(path, paint..style = PaintingStyle.stroke);
+    if (selected) {
+      canvas.drawCircle(a, 4, Paint()..color = const Color(0xFF2563EB));
+      canvas.drawCircle(b, 4, Paint()..color = const Color(0xFF2563EB));
+    }
+  }
+
+  void drawArrowPreview(Canvas canvas, SketchLine line) {
+    final a = Offset(line.x1 * cellSize, line.y1 * cellSize),
+        b = Offset(line.x2 * cellSize, line.y2 * cellSize);
+    _drawArrow(canvas, a, b, sketchBlack, line.width, false);
+  }
+
   void _drawSketchText(Canvas canvas, SketchText textItem) {
     final cellRect = Rect.fromLTWH(
       textItem.x * cellSize,
@@ -529,6 +592,16 @@ class TableSketchPainter extends CustomPainter {
       if (i < 0 || i >= doc.texts.length) continue;
       final t = doc.texts[i];
       add(Rect.fromLTWH(t.x * cellSize, t.y * cellSize, cellSize, cellSize));
+    }
+    for (final i in selectedArrows) {
+      if (i < 0 || i >= doc.arrows.length) continue;
+      final a = doc.arrows[i];
+      add(
+        Rect.fromPoints(
+          Offset(a.x1 * cellSize, a.y1 * cellSize),
+          Offset(a.x2 * cellSize, a.y2 * cellSize),
+        ),
+      );
     }
     return box;
   }

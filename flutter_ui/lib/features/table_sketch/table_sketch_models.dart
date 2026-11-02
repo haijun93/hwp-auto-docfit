@@ -204,6 +204,54 @@ class SketchFill {
       o.x1 == x1 && o.y1 == y1 && o.x2 == x2 && o.y2 == y2;
 }
 
+/// 독립 방향 화살표 도형. (x1,y1)에서 (x2,y2)로 향한다.
+class SketchArrow {
+  const SketchArrow({
+    required this.x1,
+    required this.y1,
+    required this.x2,
+    required this.y2,
+    this.width = 'thin',
+    this.style = 'solid',
+    this.color = sketchBlack,
+    this.layer,
+  });
+  final int x1, y1, x2, y2;
+  final String width, style, color;
+  final String? layer;
+  factory SketchArrow.fromJson(Map<dynamic, dynamic> json) => SketchArrow(
+    x1: (json['x1'] as num?)?.toInt() ?? 0,
+    y1: (json['y1'] as num?)?.toInt() ?? 0,
+    x2: (json['x2'] as num?)?.toInt() ?? 0,
+    y2: (json['y2'] as num?)?.toInt() ?? 0,
+    width: '${json['width'] ?? 'thin'}',
+    style: '${json['style'] ?? 'solid'}',
+    color: normalizeSketchColor(json['color']) ?? sketchBlack,
+    layer: json['layer'] is String ? json['layer'] as String : null,
+  );
+  Map<String, dynamic> toJson() => {
+    'x1': x1,
+    'y1': y1,
+    'x2': x2,
+    'y2': y2,
+    'width': width,
+    'style': style,
+    if (color != sketchBlack) 'color': color,
+    if (layer != null) 'layer': layer,
+  };
+  SketchArrow copyWith({int? x1, int? y1, int? x2, int? y2, String? layer}) =>
+      SketchArrow(
+        x1: x1 ?? this.x1,
+        y1: y1 ?? this.y1,
+        x2: x2 ?? this.x2,
+        y2: y2 ?? this.y2,
+        width: width,
+        style: style,
+        color: color,
+        layer: layer ?? this.layer,
+      );
+}
+
 /// 표그림판 칸 글자 (x, y는 칸 번호, 왼쪽 위 격자점).
 class SketchText {
   const SketchText({
@@ -347,11 +395,13 @@ class TableSketchDoc {
     List<SketchText>? texts,
     List<SketchImage>? images,
     List<SketchFill>? fills,
+    List<SketchArrow>? arrows,
     List<SketchLayer>? layers,
     String? activeLayer,
     TableSketchDoc? parked,
   }) : lines = lines ?? <SketchLine>[],
        fills = fills ?? <SketchFill>[],
+       arrows = arrows ?? <SketchArrow>[],
        texts = texts ?? <SketchText>[],
        images = images ?? <SketchImage>[],
        layers =
@@ -360,7 +410,8 @@ class TableSketchDoc {
        activeLayer = activeLayer ?? defaultSketchLayerId,
        _parkedLines = parked?.lines ?? <SketchLine>[],
        _parkedTexts = parked?.texts ?? <SketchText>[],
-       _parkedImages = parked?.images ?? <SketchImage>[];
+       _parkedImages = parked?.images ?? <SketchImage>[],
+       _parkedArrows = parked?.arrows ?? <SketchArrow>[];
 
   GridConfig grid;
   List<SketchLine> lines;
@@ -369,11 +420,13 @@ class TableSketchDoc {
 
   /// 사각형 배경색(레이어와 무관, 그린 순서대로 겹친다).
   List<SketchFill> fills;
+  List<SketchArrow> arrows;
   List<SketchLayer> layers;
   String activeLayer;
   List<SketchLine> _parkedLines;
   List<SketchText> _parkedTexts;
   List<SketchImage> _parkedImages;
+  List<SketchArrow> _parkedArrows;
 
   SketchLayer layerOf(String? id) => layers.firstWhere(
     (l) => l.id == id,
@@ -395,6 +448,9 @@ class TableSketchDoc {
     images = [
       for (final i in images) i.layer == null ? i.copyWith(layer: target) : i,
     ];
+    arrows = [
+      for (final a in arrows) a.layer == null ? a.copyWith(layer: target) : a,
+    ];
   }
 
   /// 레이어 상태에 맞게 개체를 고칠 수 있는 목록과 [parked]로 나눈다.
@@ -403,6 +459,7 @@ class TableSketchDoc {
     final allLines = [...lines, ..._parkedLines];
     final allTexts = [...texts, ..._parkedTexts];
     final allImages = [...images, ..._parkedImages];
+    final allArrows = [...arrows, ..._parkedArrows];
     bool editable(String? id) => layerOf(id).editable;
     lines = allLines.where((l) => editable(l.layer)).toList();
     texts = allTexts.where((t) => editable(t.layer)).toList();
@@ -410,6 +467,8 @@ class TableSketchDoc {
     _parkedLines = allLines.where((l) => !editable(l.layer)).toList();
     _parkedTexts = allTexts.where((t) => !editable(t.layer)).toList();
     _parkedImages = allImages.where((i) => !editable(i.layer)).toList();
+    arrows = allArrows.where((a) => editable(a.layer)).toList();
+    _parkedArrows = allArrows.where((a) => !editable(a.layer)).toList();
   }
 
   /// 화면에 그릴 잠근(보이는) 레이어 개체.
@@ -417,6 +476,8 @@ class TableSketchDoc {
       _parkedLines.where((l) => layerOf(l.layer).visible).toList();
   List<SketchText> get lockedTexts =>
       _parkedTexts.where((t) => layerOf(t.layer).visible).toList();
+  List<SketchArrow> get lockedArrows =>
+      _parkedArrows.where((a) => layerOf(a.layer).visible).toList();
 
   int countIn(String layerId) =>
       [
@@ -430,14 +491,18 @@ class TableSketchDoc {
       [
         ...images,
         ..._parkedImages,
-      ].where((i) => (i.layer ?? activeLayer) == layerId).length;
+      ].where((i) => (i.layer ?? activeLayer) == layerId).length +
+      [...arrows, ..._parkedArrows]
+          .where((a) => (a.layer ?? activeLayer) == layerId)
+          .length;
 
   /// 고른 선·글을 다른 레이어로 옮긴다.
   void moveToLayer(
     Set<SketchLine> chosenLines,
     Set<SketchText> chosenTexts,
-    String layerId,
-  ) {
+    String layerId, {
+    Set<SketchArrow> chosenArrows = const {},
+  }) {
     lines = [
       for (final l in lines)
         chosenLines.contains(l) ? l.copyWith(layer: layerId) : l,
@@ -445,6 +510,10 @@ class TableSketchDoc {
     texts = [
       for (final t in texts)
         chosenTexts.contains(t) ? t.copyWith(layer: layerId) : t,
+    ];
+    arrows = [
+      for (final a in arrows)
+        chosenArrows.contains(a) ? a.copyWith(layer: layerId) : a,
     ];
     repark();
   }
@@ -461,6 +530,8 @@ class TableSketchDoc {
     _parkedImages.removeWhere((i) => i.layer == layerId);
     layers = layers.where((l) => l.id != layerId).toList();
     if (activeLayer == layerId) activeLayer = layers.last.id;
+    arrows.removeWhere((a) => a.layer == layerId);
+    _parkedArrows.removeWhere((a) => a.layer == layerId);
   }
 
   /// 겹친 선을 포함하여 해당 한 격자 구간을 모두 지운다.
@@ -482,12 +553,14 @@ class TableSketchDoc {
     texts: texts.map((t) => t.copyWith()).toList(),
     images: List.of(images),
     fills: List.of(fills),
+    arrows: arrows.map((a) => a.copyWith()).toList(),
     layers: List.of(layers),
     activeLayer: activeLayer,
     parked: TableSketchDoc(
       lines: List.of(_parkedLines),
       texts: List.of(_parkedTexts),
       images: List.of(_parkedImages),
+      arrows: List.of(_parkedArrows),
     ),
   );
 
@@ -519,6 +592,12 @@ class TableSketchDoc {
         for (final item in rawFills)
           if (item is Map) ?SketchFill.fromJson(item),
     ];
+    final rawArrows = json['arrows'];
+    final arrows = <SketchArrow>[
+      if (rawArrows is List)
+        for (final item in rawArrows)
+          if (item is Map) SketchArrow.fromJson(item),
+    ];
     final rawLayers = json['layers'];
     final layers = <SketchLayer>[];
     if (rawLayers is List) {
@@ -532,6 +611,7 @@ class TableSketchDoc {
       texts: texts,
       images: images,
       fills: fills,
+      arrows: arrows,
       layers: layers.isEmpty ? null : layers,
       activeLayer: json['active_layer'] is String
           ? json['active_layer'] as String
@@ -551,6 +631,7 @@ class TableSketchDoc {
     final allLines = [...lines, ..._parkedLines].where((l) => keep(l.layer));
     final allTexts = [...texts, ..._parkedTexts].where((t) => keep(t.layer));
     final allImages = [...images, ..._parkedImages].where((i) => keep(i.layer));
+    final allArrows = [...arrows, ..._parkedArrows].where((a) => keep(a.layer));
     // 한/글 표로 바꿀 때는 레이어 표시가 필요 없다(표 변환은 레이어를 모른다).
     Map<String, dynamic> item(Map<String, dynamic> json) =>
         forTable ? (json..remove('layer')) : json;
@@ -561,6 +642,8 @@ class TableSketchDoc {
       if (allImages.isNotEmpty)
         'images': allImages.map((i) => item(i.toJson())).toList(),
       if (fills.isNotEmpty) 'fills': fills.map((f) => f.toJson()).toList(),
+      if (allArrows.isNotEmpty)
+        'arrows': allArrows.map((a) => item(a.toJson())).toList(),
       if (!forTable) 'layers': layers.map((l) => l.toJson()).toList(),
       if (!forTable) 'active_layer': activeLayer,
     };

@@ -324,3 +324,23 @@ class SketchColorTests(unittest.TestCase):
         self.assertEqual(clean["lines"], [])
         self.assertEqual(clean["fills"], [])
         self.assertEqual(len(warnings), 2)
+
+
+class ArrowExportTests(unittest.TestCase):
+    def test_arrows_are_single_floating_connect_line_objects(self):
+        sketch=drawing(box(0,0,8,4))
+        sketch['arrows']=[dict(x1=1,y1=2,x2=6,y2=2,width='thick',style='dash',color='#DC2626')]
+        result=ts.preview(sketch)
+        self.assertFalse(any(t.get('arrow') for c in result['cells'] for t in c['texts']))
+        with tempfile.TemporaryDirectory() as folder:
+            path=ts.to_hwpx(sketch,Path(folder)/'arrow.hwpx')
+            with zipfile.ZipFile(path) as archive:
+                root=ET.fromstring(archive.read('Contents/section0.xml'))
+            arrows=list(root.iter(ts.HP+'connectLine'))
+            self.assertEqual(len(arrows),1)
+            self.assertEqual(arrows[0].find(ts.HP+'lineShape').get('color'),'#DC2626')
+            self.assertEqual(arrows[0].find(ts.HP+'lineShape').get('tailStyle'),'ARROW')
+            self.assertEqual(len(list(root.iter(ts.HP+'lineShape'))),1)
+            self.assertFalse(any(n.get('id','').startswith('300000') for n in root.iter(ts.HP+'lineShape')))
+            self.assertEqual(arrows[0].find(ts.HP+'pos').get('vertRelTo'),'PARA')
+            self.assertEqual(arrows[0].find(ts.HP+'pos').get('horzRelTo'),'PARA')
