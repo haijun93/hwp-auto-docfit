@@ -99,6 +99,45 @@ class TimemachineServiceTests(unittest.TestCase):
         self.assertEqual(status["indexed"], 2)
         self.assertEqual(len(self.service.command("content_search", {"query":"색인"})["items"]), 1)
 
+    def test_scan_refreshes_only_existing_content_index_and_removes_deleted(self):
+        self.enable()
+        original = self.root / "original.txt"
+        original.write_text("오래된 본문", encoding="utf-8")
+        # 사용자가 한 번 색인한 적이 있어야 자동 갱신 대상이 된다.
+        self.service.command("content_index", {"path": str(original)})
+        self.assertTrue(self.service._content_index_requested)
+        original.write_text("바뀐 본문", encoding="utf-8")
+        added = self.root / "added.txt"
+        added.write_text("새 문서 본문", encoding="utf-8")
+        deleted = self.root / "deleted.txt"
+        deleted.write_text("삭제할 본문", encoding="utf-8")
+        self.service.command("content_index", {"path": str(deleted)})
+        deleted.unlink()
+
+        # 스캔 완료 후 별도 스레드에서 본문 색인이 수행된다.
+        self.service.agent.is_running = False
+        self.service.scanner = lambda *a, **k: StubResult()
+        scan = self.service.command("scan")
+        self.assertEqual(scan.get("by"), "app")
+        self.wait_scan_idle()
+        worker = self.service._content_thread
+        self.assertIsNotNone(worker)
+        worker.join(5)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(len(self.service.command("content_search", {"query": "바뀐 본문"})["items"]), 1)
+        self.assertEqual(len(self.service.command("content_search", {"query": "새 문서 본문"})["items"]), 1)
+        self.assertEqual(self.service.command("content_search", {"query": "오래된 본문"})["items"], [])
+        self.assertEqual(self.service.command("content_search", {"query": "삭제할 본문"})["items"], [])
+
+    def test_scan_does_not_start_full_content_index_without_user_request(self):
+        (self.root / "unrequested.txt").write_text("자동 전체 색인 금지", encoding="utf-8")
+        self.enable()
+        self.service.scanner = lambda *a, **k: StubResult()
+        self.service.command("scan")
+        self.wait_scan_idle()
+        self.assertIsNone(self.service._content_thread)
+        self.assertEqual(self.service.command("content_search", {"query": "자동 전체 색인 금지"})["items"], [])
+
     def test_close_cancels_and_joins_content_index(self):
         self.enable()
         entered, release = threading.Event(), threading.Event()

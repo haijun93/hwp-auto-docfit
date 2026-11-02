@@ -50,6 +50,8 @@ class TimemachineService:
         self._content_lock = threading.RLock()
         self._content_cancel = threading.Event()
         self._content_thread = None
+        self._content_index_requested = False
+        self._content_pending_roots = None
         self._content_state = {"running": False, "seen": 0, "indexed": 0, "errors": 0,
                                "cancelled": False, "started_at": None, "finished_at": None}
         self._scan_state = {"running": False, "seen": 0, "written": 0, "removed": 0,
@@ -87,6 +89,7 @@ class TimemachineService:
                         path = os.path.join(folder, name)
                         if not self._path_in_active_root(path):
                             continue
+                        self._content_pending_roots.discard(os.path.normcase(os.path.abspath(path)))
                         result = self.content_index.index_file(path)
                         seen += 1
                         indexed += bool(result["indexed"])
@@ -97,6 +100,10 @@ class TimemachineService:
                         break
                 if self._content_cancel.is_set():
                     break
+            if not self._content_cancel.is_set():
+                for path in tuple(self._content_pending_roots):
+                    if not self._content_cancel.is_set():
+                        self.content_index.remove_file(path)
         finally:
             with self._content_lock:
                 self._content_state.update(running=False, cancelled=self._content_cancel.is_set(),
@@ -107,6 +114,8 @@ class TimemachineService:
             if self._content_state["running"]:
                 return {"ok": True, **self._content_state}
             self._content_cancel.clear()
+            self._content_index_requested = True
+            self._content_pending_roots = set(self.content_index.indexed_paths(roots=self._settings["roots"]))
             self._content_state = {"running": True, "seen": 0, "indexed": 0, "errors": 0,
                                    "cancelled": False, "started_at": time.time(), "finished_at": None}
             self._content_thread = threading.Thread(target=self._content_index_worker,
@@ -298,6 +307,10 @@ class TimemachineService:
                 self._scan_state.update(seen=result.seen, written=result.written,
                                         removed=result.removed,
                                         errors=[str(item[1]) for item in result.errors])
+            with self._content_lock:
+                should_refresh = self._content_index_requested and not self._content_cancel.is_set()
+            if should_refresh:
+                self._refresh_content_index_async()
         try:
             result = self.scanner(self.store, roots, Rules(time_mode=mode, extensions=self._settings["extensions"]), progress=progress)
             with self._settings_lock:
@@ -346,6 +359,19 @@ class TimemachineService:
                 return self._error("TM_SCAN_FAILED", "색인 작업을 시작하지 못했습니다.")
         return {"ok": True, "by": "app", "running": True}
 
+    def _refresh_content_index_async(self):
+        with self._content_lock:
+            if self._content_state["running"] or self._content_cancel.is_set():
+                return
+            self._content_cancel.clear()
+            self._content_pending_roots = set(self.content_index.indexed_paths(roots=self._settings["roots"]))
+            self._content_state = {"running": True, "seen": 0, "indexed": 0, "errors": 0,
+                                   "cancelled": False, "started_at": time.time(), "finished_at": None}
+            self._content_thread = threading.Thread(target=self._content_index_worker,
+                args=(list(self._settings["roots"]), frozenset(self._settings["extensions"])),
+                name="timemachine-content-index", daemon=True)
+            self._content_thread.start()
+
     def _command(self, action, payload):
         if action == "status":
             return self._status()
@@ -380,6 +406,8 @@ class TimemachineService:
                     any(part.casefold() == "$recycle.bin" for part in Path(path).parts)):
                 return self._error("INVALID_INPUT", "현재 조사 폴더의 허용된 문서를 선택해 주세요.")
             result = self.content_index.index_file(path)
+            with self._content_lock:
+                self._content_index_requested = True
             return {"ok": True, **result}
         if action in ("content_index_all", "content_index_start"):
             return self._start_content_index()
