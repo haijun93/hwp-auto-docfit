@@ -151,6 +151,12 @@ class ScanStoreTests(unittest.TestCase):
         self.assertGreater(sum(c["total"] for c in counts.values()), 0)
         self.assertLess(elapsed, 0.5)  # 목표 20ms(PC 측정), 시험 환경 여유
 
+    def test_extension_filter_uses_last_suffix(self):
+        where, params = Store._filters(extensions=["hwpx", ".PDF"])
+        self.assertIn("lower(name) LIKE ?", where[-1])
+        self.assertEqual(params, ["%.hwpx", "%.pdf"])
+        self.assertIn("0", Store._filters(extensions=[])[0][-1])
+
     def test_default_roots(self):
         home = Path(self.tmp.name) / "home"
         (home / "Desktop").mkdir(parents=True)

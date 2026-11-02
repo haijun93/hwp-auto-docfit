@@ -194,6 +194,15 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
     if(response['ok']==true){setState(()=>_settings=Map<String,Object?>.from(response['settings'] as Map));await _filtersChanged();}
     else if(mounted)setState(()=>_error='${response['message'] ?? '설정을 저장하지 못했습니다.'}');
   }
+  Future<void> _pickExtensions() async {
+    final values=List<String>.from((_settings?['extensions'] as List?) ?? _extensions);
+    final saved=await showDialog<bool>(context:context,builder:(context)=>StatefulBuilder(builder:(context,update)=>AlertDialog(
+      title:const Text('적용 확장자'),
+      content:Wrap(spacing:6,runSpacing:4,children:[for(final ext in _extensions) FilterChip(label:Text(ext),selected:values.contains(ext),onSelected:(selected)=>update(()=>selected?values.add(ext):values.remove(ext)))]),
+      actions:[TextButton(onPressed:()=>Navigator.pop(context,false),child:const Text('취소')),FilledButton(onPressed:()=>Navigator.pop(context,true),child:const Text('저장'))],
+    )));
+    if(saved==true&&mounted)await _saveSettings(Map<String,Object?>.from(_settings!)..['extensions']=values);
+  }
   Future<void> _addRoot() async {
     final path=await getDirectoryPath(); if(path==null||!mounted)return;
     final roots=List<String>.from((_settings?['roots'] as List?) ?? const [])..add(path);
@@ -448,13 +457,15 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
       if (disconnected) TextButton(onPressed:_retryConnection,child:const Text('다시 연결')),
     ])))));
   }
-  Widget _filtersBar() => Padding(padding:const EdgeInsets.fromLTRB(12,8,12,4),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Wrap(spacing:6,runSpacing:4,crossAxisAlignment:WrapCrossAlignment.center,children:[
+  Widget _filtersBar() => Padding(padding:const EdgeInsets.fromLTRB(12,8,12,4),child:Wrap(spacing:6,runSpacing:4,crossAxisAlignment:WrapCrossAlignment.center,children:[
+    OutlinedButton.icon(onPressed:_pickExtensions,icon:const Icon(Icons.tune,size:16),label:const Text('확장자')),
+
     for(final entry in _kinds.entries) FilterChip(label:Text(entry.key),selected:_selectedKinds.contains(entry.value),onSelected:(value){setState(()=>value?_selectedKinds.add(entry.value):_selectedKinds.remove(entry.value));_filtersChanged();}),
     SizedBox(width:220,child:TextField(controller:_search,decoration:const InputDecoration(prefixIcon:Icon(Icons.search),hintText:'이름 찾기',isDense:true),onChanged:(value){_debounce?.cancel();_debounce=Timer(const Duration(milliseconds:300),(){_query=value.trim();_filtersChanged();});})),
     OutlinedButton.icon(onPressed:_scan,icon:const Icon(Icons.refresh),label:const Text('다시 훑기')),
     OutlinedButton.icon(key:const ValueKey('tm-clear-thumb-cache'),onPressed:_clearThumbnailCache,icon:const Icon(Icons.delete_outline),label:const Text('썸네일 캐시 지우기')),
     Text(_watchByAgent ? '실시간 감시: K에이전트' : '실시간 감시: 앱을 열 때만',key:const ValueKey('tm-watch-status'),style:Theme.of(context).textTheme.bodySmall),
-  ]),Wrap(spacing:4,runSpacing:2,children:[const Text('적용 확장자:'),for(final ext in _extensions) FilterChip(label:Text(ext),selected:((_settings?['extensions'] as List?)?.contains(ext) ?? true),onSelected:(selected){final values=List<String>.from((_settings?['extensions'] as List?) ?? _extensions);selected?values.add(ext):values.remove(ext);_saveSettings(Map<String,Object?>.from(_settings!)..['extensions']=values);})]) ]));
+  ]));
   Widget _calendar() {
     final first = DateTime(_month.year,_month.month,1); final offset = first.weekday-1; final cells = ((offset+DateTime(_month.year,_month.month+1,0).day+6)~/7)*7;
     final maximum = _days.values.fold<int>(0,(a,b)=>a>b?a:b);
