@@ -200,7 +200,7 @@ class FlowService:
         path = folder / (uuid.uuid4().hex + '.hwpx')
         try:
             try:
-                merged = merge_canvas_block_into_hwpx(base, {'kind': 'diagram', 'source': snapshot})
+                merged = merge_canvas_block_into_hwpx(base, {'kind': 'diagram', 'source': snapshot, 'clear_body': True})
             except ValueError as exc:
                 raise ServiceError('DIAGRAM_CONVERSION_FAILED', f'도형으로 바꾸지 못했습니다: {exc}') from exc
             path.write_bytes(merged)

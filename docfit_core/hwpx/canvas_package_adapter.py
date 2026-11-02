@@ -105,6 +105,19 @@ def merge_canvas_block_into_hwpx(hwpx_bytes_or_path, block_data, output_path=Non
             section.insert(0, paragraphs[0])
         if not paragraphs:
             raise ValueError('cannot replace sample shapes without a text anchor')
+    if block_data.get('clear_body') and paragraphs:
+        # 클립보드로 넘길 때 바탕 문서의 본문이 함께 붙지 않게 쪽 설정 문단만 남긴다.
+        for extra in paragraphs[1:]:
+            section.remove(extra)
+        paragraphs = paragraphs[:1]
+        for child in list(paragraphs[0]):
+            if child.tag != HP+'run':
+                paragraphs[0].remove(child)
+                continue
+            for item in list(child):
+                keep = item.tag == HP+'secPr' or (item.tag == HP+'ctrl' and item.find(HP+'colPr') is not None)
+                if not keep:
+                    child.remove(item)
     index = len(section)
     base_p = paragraphs[0] if paragraphs else None
     if anchor is not None:

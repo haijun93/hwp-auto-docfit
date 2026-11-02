@@ -186,5 +186,14 @@ class CanvasPackageTests(unittest.TestCase):
             self.assertEqual(list(Path(directory).iterdir()), [target])
 
 
+class ClipboardBodyTests(unittest.TestCase):
+    def test_clear_body_leaves_only_the_block(self):
+        merged = merge(fixture(), {'kind': 'diagram', 'source': graph(), 'clear_body': True})
+        with ZipFile(BytesIO(merged)) as package:
+            section = package.read('Contents/section0.xml').decode('utf-8')
+        self.assertNotIn('original', section)
+        self.assertNotIn('>end<', section)
+        self.assertIn('connectLine', section)
+
 if __name__ == '__main__':
     unittest.main()
