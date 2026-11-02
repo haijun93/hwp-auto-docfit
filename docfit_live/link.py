@@ -118,14 +118,41 @@ def context(app) -> dict:
         page = int(indicator[3]) if isinstance(indicator, (tuple, list)) and len(indicator) > 3 else None
     except Exception:
         page = None
-    return {"path": path, "title": title, "pos": list(pos), "selected": selected, "in_table": in_table, "page": page}
+    try:
+        doc_id = int(app.XHwpDocuments.Active_XHwpDocument.DocumentID)
+    except Exception:
+        doc_id = None
+    try:
+        window = app.XHwpWindows.Active_XHwpWindow
+        visible = bool(window.Visible)
+        hwnd = int(getattr(window, "Hwnd", getattr(window, "HWND", 0)) or 0)
+    except Exception as exc:
+        raise LiveLinkError("DOCUMENT_BUSY", "한/글 문서 창을 확인할 수 없어요. 대화상자나 다른 창을 닫고 다시 시도해 주세요.") from exc
+    return {"path": path, "title": title, "document_id": doc_id, "hwnd": hwnd, "visible": visible, "pos": list(pos), "selected": selected, "in_table": in_table, "page": page}
 
 
 def paste_at_cursor(app, *, expected: dict | None = None) -> dict:
     """클립보드 내용을 커서 위치에 한 번 붙여 넣는다(Ctrl+Z 한 번으로 되돌림). expected 문맥이 다르면 멈춘다."""
     now = context(app)
-    if expected and (expected.get("path") != now["path"] or expected.get("pos") != now["pos"]):
+    if not now.get("visible"):
+        raise LiveLinkError("DOCUMENT_BUSY", "한/글 문서 창이 활성 상태가 아니에요. 문서 창을 앞에 두고 다시 시도해 주세요.")
+    try:
+        foreground = int(ctypes.windll.user32.GetForegroundWindow())
+    except Exception:
+        foreground = now["hwnd"]
+    if now["hwnd"] and foreground != now["hwnd"]:
+        raise LiveLinkError("DOCUMENT_BUSY", "한/글 문서 창이 활성 상태가 아니에요. 대화상자나 다른 창을 닫고 다시 시도해 주세요.")
+    if expected and any(expected.get(k) != now.get(k) for k in ("path", "document_id", "pos", "selected", "in_table", "page", "hwnd")):
         raise LiveLinkError("STALE_CONTEXT", "넣으려던 사이에 커서나 문서가 바뀌었어요. 다시 눌러 주세요.")
-    if not app.HAction.Run("Paste"):
+    if not _run_allowed(app, "Paste"):
         raise LiveLinkError("PASTE_FAILED", "한/글에 붙여 넣지 못했어요.")
     return {"inserted": True, "context": now, "undo_steps": 1}
+
+
+_ALLOWED_ACTIONS = frozenset({"Paste"})
+
+
+def _run_allowed(app, action: str) -> bool:
+    if action not in _ALLOWED_ACTIONS:
+        raise LiveLinkError("ACTION_NOT_ALLOWED", "이 한/글 작업은 허용되지 않습니다.")
+    return bool(app.HAction.Run(action))

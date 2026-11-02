@@ -16,6 +16,8 @@ class FakeMoniker:
 class FakeApp:
     def __init__(self, path, pos=(0, 1, 2), in_table=False):
         self.XHwpDocuments = SimpleNamespace(Active_XHwpDocument=SimpleNamespace(FullName=path))
+        self.XHwpDocuments.Active_XHwpDocument.DocumentID = 17
+        self.XHwpWindows = SimpleNamespace(Active_XHwpWindow=SimpleNamespace(Visible=True, Hwnd=9))
         self._pos = pos
         self.SelectionMode = 0
         self.ParentCtrl = SimpleNamespace(CtrlID="tbl") if in_table else None
@@ -45,7 +47,8 @@ class LiveLinkTest(unittest.TestCase):
         a, b = FakeApp(r"C:\문서\보고서.hwpx"), FakeApp("")
         rot = FakeRot([("!HwpObject.96.1:1", a), ("!Excel.Application", object()), ("!HwpObject.96.1:2", b)])
         sessions = running_sessions(rot=rot, bind_ctx=None, dispatch=lambda x: x)
-        self.assertEqual([s.title for s in sessions], ["보고서.hwpx", ""])
+        self.assertEqual(len(sessions), 2)
+        self.assertEqual(sessions[0].path, r"C:\문서\보고서.hwpx")
 
     def test_choose_never_guesses_between_many(self):
         one = Session("m1", FakeApp(r"C:\a\가.hwpx"), r"C:\a\가.hwpx", "가.hwpx")
@@ -80,6 +83,26 @@ class LiveLinkTest(unittest.TestCase):
         with self.assertRaises(LiveLinkError) as raised:
             paste_at_cursor(app, expected=stale)
         self.assertEqual(raised.exception.code, "STALE_CONTEXT")
+        self.assertEqual(app.runs, [])
+
+    def test_document_or_window_change_never_runs_paste(self):
+        app = FakeApp(r"C:\a\가.hwpx")
+        stale = context(app)
+        stale["document_id"] = 18
+        with self.assertRaises(LiveLinkError):
+            paste_at_cursor(app, expected=stale)
+        self.assertEqual(app.runs, [])
+        app.XHwpWindows.Active_XHwpWindow.Visible = False
+        with self.assertRaises(LiveLinkError) as raised:
+            paste_at_cursor(app)
+        self.assertEqual(raised.exception.code, "DOCUMENT_BUSY")
+        self.assertEqual(app.runs, [])
+
+    def test_save_action_is_denied_without_document_change(self):
+        app = FakeApp(r"C:\a\가.hwpx")
+        from docfit_live.link import _run_allowed
+        with self.assertRaises(LiveLinkError):
+            _run_allowed(app, "FileSave")
         self.assertEqual(app.runs, [])
 
 

@@ -50,6 +50,7 @@ class LiveBridgeTest(unittest.TestCase):
         self.gui = Mock(files=[], running=False)
         self.bridge = DesktopWebBridge(self.gui)
         self.user = session(r"C:\a\보고서.hwpx")
+        self.user.app.XHwpWindows.Active_XHwpWindow.Hwnd = 9
         self.bridge._live = LiveLinkService(sessions=lambda: [self.user], titles=lambda: [], com_init=False)
         self.assertTrue(callable(getattr(_BrowserApi(self.bridge), "live_link")))
 
@@ -70,6 +71,27 @@ class LiveBridgeTest(unittest.TestCase):
             result = self.bridge.live_link("insert", {"source": "table_sketch", "data": {"lines": []}})
         self.assertFalse(result["ok"])
         self.assertEqual(self.user.app.runs, [])
+
+    def test_clipboard_save_failure_preserves_clipboard_and_document(self):
+        self.bridge.table_sketch = Mock(return_value={"ok": True})
+        with patch("docfit_live.service.save_clipboard", side_effect=link.LiveLinkError("CLIPBOARD_SAVE_FAILED", "보관 실패")) as save, \
+                patch("docfit_live.service.restore_clipboard") as restore:
+            result = self.bridge.live_link("insert", {"source": "table_sketch", "data": {}})
+        self.assertFalse(result["ok"])
+        save.assert_called_once()
+        self.bridge.table_sketch.assert_not_called()
+        restore.assert_not_called()
+        self.assertEqual(self.user.app.runs, [])
+
+    def test_restore_failure_is_reported_after_single_insert(self):
+        self.bridge.table_sketch = Mock(return_value={"ok": True})
+        with patch("docfit_live.service.save_clipboard", return_value={13: "사용자 글"}), \
+                patch("docfit_live.service.restore_clipboard", return_value=False):
+            result = self.bridge.live_link("insert", {"source": "table_sketch", "data": {}})
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["clipboard_restored"])
+        self.assertIn("복원하지 못", result["clipboard_warning"])
+        self.assertEqual(self.user.app.runs, ["Paste"])
 
     def test_rejects_bad_input_and_busy_app(self):
         self.assertFalse(self.bridge.live_link("insert", {"source": "exe", "data": {}})["ok"])

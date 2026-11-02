@@ -105,6 +105,10 @@ class LiveLinkService:
     def paste(self, expected: dict | None = None, prefer_path="") -> dict:
         def work():
             session = self._pick(prefer_path or (expected or {}).get("path", ""))
+            if expected:
+                current = link.context(session.app)
+                if current.get("path") != expected.get("path") or current.get("document_id") != expected.get("document_id"):
+                    raise link.LiveLinkError("STALE_CONTEXT", "넣으려던 사이에 문서가 바뀌었어요. 다시 눌러 주세요.")
             return link.paste_at_cursor(session.app, expected=expected)
         return self.call(work)
 
@@ -122,8 +126,10 @@ def save_clipboard() -> dict:
                     saved[fmt] = cb.GetClipboardData(fmt)
         finally:
             cb.CloseClipboard()
-    except Exception:
-        pass
+    except Exception as exc:
+        raise link.LiveLinkError("CLIPBOARD_SAVE_FAILED", "클립보드를 보관하지 못해 넣기를 취소했어요.") from exc
+    if not saved:
+        raise link.LiveLinkError("CLIPBOARD_SAVE_FAILED", "보관할 글·그림 클립보드가 없어 넣기를 취소했어요.")
     return saved
 
 
