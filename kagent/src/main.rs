@@ -839,8 +839,8 @@ fn main() {
                 settings.popup_height = 420;
                 let _ = settings.save(&settings_path.to_string_lossy());
             }
-            popup::show();
-            unsafe { std::thread::sleep(std::time::Duration::from_millis(350)); }
+            // 시험 데이터와 창 상태를 먼저 준비해 한 번만 표시한다. sticky_popup=true인 상태에서
+            // show()를 연속 호출하면 두 번째 호출이 창을 숨기는 토글 동작을 한다.
             let sample = format!("V229 KAG 시험 복사 항목 {}", std::process::id());
             let _ = app().store.lock().unwrap().insert("text", sample.as_bytes(), &[], &sample, "test", now());
             refresh_recent();

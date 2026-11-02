@@ -507,8 +507,9 @@ fn toggle_pin() {
     {
         let mut settings = app().settings.lock().unwrap();
         let on = !(settings.sticky_popup && settings.always_on_top);
-        settings.sticky_popup = on;
-        settings.always_on_top = true;
+        // 항상 위만 끄고 켠다. 창은 닫기 단추를 누를 때까지 그대로 둔다.
+        settings.sticky_popup = true;
+        settings.always_on_top = on;
     }
     crate::save_settings();
     apply_settings();
