@@ -164,7 +164,7 @@ class TimemachineServiceTests(unittest.TestCase):
             result=service.command("scan")
             self.assertEqual(result["code"],"TM_DISABLED")
             self.assertEqual(called,[])
-        finally: service.store.close()
+        finally: service.close()
 
     def test_scan_runs_once_in_background_and_reports_progress(self):
         entered, release = threading.Event(), threading.Event()
