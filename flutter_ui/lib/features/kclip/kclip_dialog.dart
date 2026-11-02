@@ -143,6 +143,28 @@ class _KClipPanelState extends State<KClipPanel> {
     }
   }
 
+  Future<void> _confirmClearAll() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        content: const Text('고정한 항목은 남고 나머지를 지웁니다.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('지우기'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      await _act('clear', {'keep_pinned': true}, '고정하지 않은 항목을 지웠습니다.');
+    }
+  }
+
   String _kind(Object? kind) => switch (kind) {
     'text' => '글',
     'image' => '그림',
@@ -309,7 +331,7 @@ class _KClipPanelState extends State<KClipPanel> {
               message: '고정한 항목은 유지됩니다.',
               child: OutlinedButton(
                 key: const ValueKey('kclip-clear-all'),
-                onPressed: busy ? null : () => _act('clear', {'keep_pinned': true}, '고정하지 않은 항목을 지웠습니다.'),
+                onPressed: busy ? null : _confirmClearAll,
                 child: const Text('모두 지우기'),
               ),
             ),

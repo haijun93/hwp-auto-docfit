@@ -143,14 +143,30 @@ pub fn show() {
         GetCursorPos(&mut pt);
         // 창을 그 모니터의 DPI로 먼저 옮긴 뒤 크기를 정한다.
         SetWindowPos(hwnd, std::ptr::null_mut(), pt.x, pt.y, 1, 1, SWP_NOZORDER | SWP_NOACTIVATE);
-        let (w, h) = (scale(hwnd, BASE_W), scale(hwnd, HEAD_H + ROW_H * rows + 8));
+        let (default_w, default_h) = (scale(hwnd, BASE_W), scale(hwnd, HEAD_H + ROW_H * rows + 8));
         let monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
         let mut mi: MONITORINFO = std::mem::zeroed();
         mi.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
         GetMonitorInfoW(monitor, &mut mi);
         let wa = mi.rcWork;
-        let x = (pt.x + 8).min(wa.right - w).max(wa.left);
-        let y = (pt.y + 8).min(wa.bottom - h).max(wa.top);
+        let (sticker, saved_x, saved_y, saved_w, saved_h) = {
+            let s = app().settings.lock().unwrap();
+            (s.sticky_popup, s.popup_x, s.popup_y, s.popup_width, s.popup_height)
+        };
+        let dpi = GetDpiForWindow(hwnd).max(96) as i64;
+        let saved_x_px = saved_x * dpi / 96;
+        let saved_y_px = saved_y * dpi / 96;
+        let saved_w_px = saved_w * dpi / 96;
+        let saved_h_px = saved_h * dpi / 96;
+        let saved_rect_valid = sticker && saved_x_px >= wa.left as i64 && saved_y_px >= wa.top as i64
+            && saved_w > 0 && saved_h > 0
+            && saved_x_px + saved_w_px <= wa.right as i64 && saved_y_px + saved_h_px <= wa.bottom as i64;
+        let (x, y, w, h) = if saved_rect_valid {
+            (saved_x_px as i32, saved_y_px as i32, saved_w_px as i32, saved_h_px as i32)
+        } else {
+            ((pt.x + 8).min(wa.right - default_w).max(wa.left),
+             (pt.y + 8).min(wa.bottom - default_h).max(wa.top), default_w, default_h)
+        };
         SetWindowPos(hwnd, if settings.always_on_top { HWND_TOPMOST } else { HWND_NOTOPMOST },
                      x, y, w, h, SWP_SHOWWINDOW);
         SetForegroundWindow(hwnd);
@@ -428,6 +444,20 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                 0
             }
             WM_ERASEBKGND => 1,
+            WM_EXITSIZEMOVE if IsWindowVisible(hwnd) != 0 => {
+                let mut rect: RECT = std::mem::zeroed();
+                if GetWindowRect(hwnd, &mut rect) != 0 {
+                    let dpi = GetDpiForWindow(hwnd).max(96) as i64;
+                    let mut settings = app().settings.lock().unwrap();
+                    settings.popup_x = rect.left as i64 * 96 / dpi;
+                    settings.popup_y = rect.top as i64 * 96 / dpi;
+                    settings.popup_width = (rect.right - rect.left) as i64 * 96 / dpi;
+                    settings.popup_height = (rect.bottom - rect.top) as i64 * 96 / dpi;
+                    drop(settings);
+                    crate::save_settings();
+                }
+                0
+            }
             WM_ACTIVATE if (wp & 0xFFFF) as u32 == WA_INACTIVE => {
                 if !app().settings.lock().unwrap().sticky_popup { hide(); }
                 0
