@@ -28,6 +28,10 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
   final TextEditingController _search = TextEditingController();
   final Set<String> _selectedKinds = {};
   String _query = '';
+  bool _contentMode = false, _contentIndexRunning = false;
+  Map<String, Object?> _contentProgress = {};
+  List<Map<String, Object?>> _contentResults = [];
+  Timer? _contentPoll;
   DateTime _month = DateTime(DateTime.now().year, DateTime.now().month);
   DateTime? _start, _end, _firstDay;
   bool _loading = false, _more = true;
@@ -42,7 +46,43 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
   @override
   void initState() { super.initState(); _load(firstOpen: true); _scroll.addListener(_onScroll); }
   @override
-  void dispose() { _debounce?.cancel(); _scanPoll?.cancel(); _thumbnails.dispose(); _scroll.dispose(); _search.dispose(); super.dispose(); }
+  void dispose() { _debounce?.cancel(); _scanPoll?.cancel(); _contentPoll?.cancel(); _thumbnails.dispose(); _scroll.dispose(); _search.dispose(); super.dispose(); }
+
+  Future<void> _contentSearch(String query) async {
+    if (query.isEmpty) { if (mounted) setState(() => _contentResults = []); return; }
+    try {
+      final response = await _api.command('content_search', {'query': query, 'limit': 100});
+      if (!mounted || query != _search.text.trim()) return;
+      final raw = response['items'];
+      setState(() => _contentResults = response['ok'] == true && raw is List
+          ? raw.whereType<Map>().map((e) => Map<String,Object?>.from(e)).toList() : []);
+    } catch (_) { if (mounted) setState(() => _error = '본문 검색을 수행하지 못했습니다.'); }
+  }
+  Future<void> _startContentIndex() async {
+    final response = await _api.command('content_index_start');
+    if (!mounted) return;
+    setState(() { _contentProgress = response; _contentIndexRunning = response['running'] == true; });
+    if (_contentIndexRunning) _pollContentIndex();
+  }
+  void _pollContentIndex() {
+    _contentPoll?.cancel();
+    _contentPoll = Timer(const Duration(seconds: 1), () async {
+      try {
+        final status = await _api.command('content_index_status');
+        if (!mounted) return;
+        setState(() { _contentProgress = status; _contentIndexRunning = status['running'] == true; });
+        if (_contentIndexRunning) _pollContentIndex();
+      } catch (_) { if (mounted) setState(() => _contentIndexRunning = false); }
+    });
+  }
+  Future<void> _cancelContentIndex() async {
+    final status = await _api.command('content_index_cancel');
+    if (mounted) setState(() { _contentProgress = status; _contentIndexRunning = status['running'] == true; });
+  }
+  void _toggleContentMode(bool value) {
+    setState(() { _contentMode = value; _contentResults = []; _search.clear(); _query = ''; });
+    if (!value) { _filtersChanged(); }
+  }
 
   Future<void> _load({bool firstOpen = false}) async {
     Map<String, Object?> status;
@@ -192,7 +232,7 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
   Future<void> _saveSettings(Map<String,Object?> next) async {
     final response=await _api.command('settings_set',next);
     if(response['ok']==true){setState(()=>_settings=Map<String,Object?>.from(response['settings'] as Map));await _filtersChanged();}
-    else if(mounted)setState(()=>_error='${response['message'] ?? '설정을 저장하지 못했습니다.'}');
+    else if(mounted){setState(()=>_error='${response['message'] ?? '설정을 저장하지 못했습니다.'}');}
   }
   Future<void> _pickExtensions() async {
     final values=List<String>.from((_settings?['extensions'] as List?) ?? _extensions);
@@ -319,7 +359,15 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _filtersBar(),
+          LayoutBuilder(builder:(context, constraints) => constraints.maxWidth < 920
+              ? Align(alignment:Alignment.centerRight,child:TextButton.icon(onPressed:()=>showDialog<void>(context:context,builder:(context)=>AlertDialog(title:const Text('타임머신 필터'),content:SizedBox(width:520,child:_filtersBar()),actions:[TextButton(onPressed:()=>Navigator.pop(context),child:const Text('닫기'))])),icon:const Icon(Icons.filter_list),label:const Text('필터 및 검색')))
+              : _filtersBar()),
+          if (_contentMode) _contentSearchPanel(),
+          if (_contentMode && _contentResults.isNotEmpty)
+            ConstrainedBox(constraints:const BoxConstraints(maxHeight:180),child:ListView.builder(itemCount:_contentResults.length,itemBuilder:(context,index){
+              final row=_contentResults[index];
+              return ListTile(dense:true,title:Text('${row['name'] ?? ''}'),subtitle:Text('${row['snippet'] ?? ''}',maxLines:2,overflow:TextOverflow.ellipsis));
+            })),
           if (_error != null)
             MaterialBanner(
               content: Text(_error!),
@@ -457,15 +505,23 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
       if (disconnected) TextButton(onPressed:_retryConnection,child:const Text('다시 연결')),
     ])))));
   }
-  Widget _filtersBar() => Padding(padding:const EdgeInsets.fromLTRB(12,8,12,4),child:Wrap(spacing:6,runSpacing:4,crossAxisAlignment:WrapCrossAlignment.center,children:[
+  Widget _contentSearchPanel() => Padding(padding:const EdgeInsets.symmetric(horizontal:12),child:Row(children:[
+    if (_contentIndexRunning) Expanded(child:LinearProgressIndicator()),
+    if (_contentIndexRunning) Text('${_contentProgress['seen'] ?? 0}건 확인 · ${_contentProgress['indexed'] ?? 0}건 색인 · 실패 ${_contentProgress['errors'] ?? 0}건'),
+    if (_contentIndexRunning) TextButton(onPressed:_cancelContentIndex,child:const Text('취소')) else TextButton(onPressed:_startContentIndex,child:const Text('본문 색인')),
+    if (_contentProgress['errors'] != null) Text('추출 실패 ${_contentProgress['errors']}건'),
+    Expanded(child:Text('검색 결과 ${_contentResults.length}건')),
+  ]));
+  Widget _filtersBar() => Padding(padding:const EdgeInsets.fromLTRB(12,8,12,4),child:SingleChildScrollView(scrollDirection:Axis.horizontal,child:Row(children:[
     OutlinedButton.icon(onPressed:_pickExtensions,icon:const Icon(Icons.tune,size:16),label:const Text('확장자')),
 
     for(final entry in _kinds.entries) FilterChip(label:Text(entry.key),selected:_selectedKinds.contains(entry.value),onSelected:(value){setState(()=>value?_selectedKinds.add(entry.value):_selectedKinds.remove(entry.value));_filtersChanged();}),
-    SizedBox(width:220,child:TextField(controller:_search,decoration:const InputDecoration(prefixIcon:Icon(Icons.search),hintText:'이름 찾기',isDense:true),onChanged:(value){_debounce?.cancel();_debounce=Timer(const Duration(milliseconds:300),(){_query=value.trim();_filtersChanged();});})),
+    SegmentedButton<bool>(segments:const [ButtonSegment(value:false,label:Text('파일명')),ButtonSegment(value:true,label:Text('본문'))],selected:{_contentMode},onSelectionChanged:(values)=>_toggleContentMode(values.first)),
+    SizedBox(width:180,child:TextField(controller:_search,decoration:InputDecoration(prefixIcon:const Icon(Icons.search),hintText:_contentMode?'본문 검색':'이름 찾기',isDense:true),onChanged:(value){_debounce?.cancel();_debounce=Timer(const Duration(milliseconds:300),(){if(_contentMode){_contentSearch(value.trim());}else{_query=value.trim();_filtersChanged();}});})),
     OutlinedButton.icon(onPressed:_scan,icon:const Icon(Icons.refresh),label:const Text('다시 훑기')),
     OutlinedButton.icon(key:const ValueKey('tm-clear-thumb-cache'),onPressed:_clearThumbnailCache,icon:const Icon(Icons.delete_outline),label:const Text('썸네일 캐시 지우기')),
     Text(_watchByAgent ? '실시간 감시: K에이전트' : '실시간 감시: 앱을 열 때만',key:const ValueKey('tm-watch-status'),style:Theme.of(context).textTheme.bodySmall),
-  ]));
+  ])));
   Widget _calendar() {
     final first = DateTime(_month.year,_month.month,1); final offset = first.weekday-1; final cells = ((offset+DateTime(_month.year,_month.month+1,0).day+6)~/7)*7;
     final maximum = _days.values.fold<int>(0,(a,b)=>a>b?a:b);
