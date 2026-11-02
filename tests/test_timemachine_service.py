@@ -84,6 +84,45 @@ class TimemachineServiceTests(unittest.TestCase):
         outside = self.plain_file
         self.assertFalse(self.service.command("content_index", {"path": str(outside)})["ok"])
 
+    def test_background_content_index_progress_and_cancel(self):
+        (self.root / "one.txt").write_text("한글 색인", encoding="utf-8")
+        (self.root / "two.txt").write_text("두 번째", encoding="utf-8")
+        self.enable()
+        started = self.service.command("content_index_all")
+        self.assertTrue(started["ok"])
+        worker = self.service._content_thread
+        worker.join(5)
+        self.assertFalse(worker.is_alive())
+        status = self.service.command("content_index_status")
+        self.assertFalse(status["running"])
+        self.assertEqual(status["seen"], 2)
+        self.assertEqual(status["indexed"], 2)
+        self.assertEqual(len(self.service.command("content_search", {"query":"색인"})["items"]), 1)
+
+    def test_close_cancels_and_joins_content_index(self):
+        self.enable()
+        entered, release = threading.Event(), threading.Event()
+        original = self.service.content_index.index_file
+        def blocked(path):
+            entered.set()
+            release.wait(2)
+            return original(path)
+        document = self.root / "blocked.txt"
+        document.write_text("본문", encoding="utf-8")
+        with patch.object(self.service.content_index, "index_file", side_effect=blocked):
+            self.service.command("content_index_start")
+            self.assertTrue(entered.wait(1))
+            closer = threading.Thread(target=self.service.close)
+            closer.start()
+            deadline = time.monotonic() + 1
+            while not self.service._content_cancel.is_set() and time.monotonic() < deadline:
+                time.sleep(0.005)
+            self.assertTrue(self.service._content_cancel.is_set())
+            release.set()
+            closer.join(2)
+            self.assertFalse(closer.is_alive())
+        self.assertFalse(self.service._content_thread.is_alive())
+
     def test_settings_reject_relative_missing_and_more_than_twenty_roots(self):
         for roots in (["relative"], [str(self.root / "missing")], [str(self.plain_file)], [str(self.root)] * 21):
             result = self.service.command("settings_set", {"roots":list(roots),"time_mode":"max","enabled":True})

@@ -46,6 +46,11 @@ class TimemachineService:
         self._thumbnail_slots = threading.BoundedSemaphore(THUMBNAIL_SLOTS)
         self._settings_lock = threading.RLock()
         self._scan_lock = threading.Lock()
+        self._content_lock = threading.RLock()
+        self._content_cancel = threading.Event()
+        self._content_thread = None
+        self._content_state = {"running": False, "seen": 0, "indexed": 0, "errors": 0,
+                               "cancelled": False, "started_at": None, "finished_at": None}
         self._scan_state = {"running": False, "seen": 0, "written": 0, "removed": 0,
                             "errors": [], "started_at": None, "finished_at": None}
         self._rescan = False
@@ -63,8 +68,59 @@ class TimemachineService:
         return {"roots": default_roots(), "time_mode": "max", "enabled": False, "extensions": list(DEFAULT_EXTENSIONS)}
 
     def close(self):
+        self.cancel_content_index(wait=True)
         self.content_index.close()
         self.store.close()
+
+    def _content_index_worker(self, roots, extensions):
+        seen = indexed = errors = 0
+        try:
+            for root in roots:
+                for folder, dirs, files in os.walk(root, followlinks=False):
+                    dirs[:] = [d for d in dirs if d.casefold() != "$recycle.bin" and not self._content_cancel.is_set()]
+                    for name in files:
+                        if self._content_cancel.is_set():
+                            break
+                        if Path(name).suffix.lower().lstrip(".") not in extensions:
+                            continue
+                        path = os.path.join(folder, name)
+                        if not self._path_in_active_root(path):
+                            continue
+                        result = self.content_index.index_file(path)
+                        seen += 1
+                        indexed += bool(result["indexed"])
+                        errors += bool(result["error"])
+                        with self._content_lock:
+                            self._content_state.update(seen=seen, indexed=indexed, errors=errors)
+                    if self._content_cancel.is_set():
+                        break
+                if self._content_cancel.is_set():
+                    break
+        finally:
+            with self._content_lock:
+                self._content_state.update(running=False, cancelled=self._content_cancel.is_set(),
+                                           finished_at=time.time())
+
+    def _start_content_index(self):
+        with self._content_lock:
+            if self._content_state["running"]:
+                return {"ok": True, **self._content_state}
+            self._content_cancel.clear()
+            self._content_state = {"running": True, "seen": 0, "indexed": 0, "errors": 0,
+                                   "cancelled": False, "started_at": time.time(), "finished_at": None}
+            self._content_thread = threading.Thread(target=self._content_index_worker,
+                args=(list(self._settings["roots"]), frozenset(self._settings["extensions"])),
+                name="timemachine-content-index", daemon=True)
+            self._content_thread.start()
+            return {"ok": True, **self._content_state}
+
+    def cancel_content_index(self, *, wait=False):
+        self._content_cancel.set()
+        worker = self._content_thread
+        if wait and worker and worker is not threading.current_thread():
+            worker.join()
+        with self._content_lock:
+            return {"ok": True, **self._content_state}
 
     def _load_settings(self):
         defaults = self._defaults()
@@ -324,6 +380,13 @@ class TimemachineService:
                 return self._error("INVALID_INPUT", "현재 조사 폴더의 허용된 문서를 선택해 주세요.")
             result = self.content_index.index_file(path)
             return {"ok": True, **result}
+        if action in ("content_index_all", "content_index_start"):
+            return self._start_content_index()
+        if action in ("content_index_status", "content_index_progress"):
+            with self._content_lock:
+                return {"ok": True, **self._content_state}
+        if action == "content_index_cancel":
+            return self.cancel_content_index()
         if action == "content_search":
             query = payload.get("query")
             rows = self.content_index.search(query, roots=self._settings["roots"], limit=payload.get("limit", 100))

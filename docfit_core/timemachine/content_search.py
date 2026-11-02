@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import zipfile
+import threading
 from pathlib import Path
 from defusedxml import ElementTree as ET
 
@@ -55,6 +56,8 @@ class ContentSearchIndex:
         if self.path != ":memory:":
             os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
         self.db = sqlite3.connect(self.path, check_same_thread=False)
+        self._lock = threading.RLock()
+        self._closed = False
         self.db.row_factory = sqlite3.Row
         self.db.executescript("""
             CREATE TABLE IF NOT EXISTS content_meta(path TEXT PRIMARY KEY, size INTEGER, mtime REAL);
@@ -63,37 +66,43 @@ class ContentSearchIndex:
         """)
 
     def close(self):
-        self.db.close()
+        with self._lock:
+            if not self._closed:
+                self.db.close()
+                self._closed = True
 
     def index_file(self, path):
         path = os.path.abspath(os.fspath(path))
         stat = os.stat(path)
-        old = self.db.execute("SELECT size,mtime FROM content_meta WHERE path=?", (path,)).fetchone()
-        if old and old["size"] == stat.st_size and old["mtime"] == stat.st_mtime:
-            return {"indexed": False, "error": None}
         try:
             body = extract_text(path)
-            with self.db:
-                self.db.execute("DELETE FROM content_fts WHERE path=?", (path,))
-                self.db.execute("INSERT INTO content_fts(path,name,body) VALUES(?,?,?)", (path, os.path.basename(path), body))
-                self.db.execute("INSERT OR REPLACE INTO content_meta VALUES(?,?,?)", (path, stat.st_size, stat.st_mtime))
-                self.db.execute("DELETE FROM content_errors WHERE path=?", (path,))
+            with self._lock:
+                old = self.db.execute("SELECT size,mtime FROM content_meta WHERE path=?", (path,)).fetchone()
+                if old and old["size"] == stat.st_size and old["mtime"] == stat.st_mtime:
+                    return {"indexed": False, "error": None}
+                with self.db:
+                    self.db.execute("DELETE FROM content_fts WHERE path=?", (path,))
+                    self.db.execute("INSERT INTO content_fts(path,name,body) VALUES(?,?,?)", (path, os.path.basename(path), body))
+                    self.db.execute("INSERT OR REPLACE INTO content_meta VALUES(?,?,?)", (path, stat.st_size, stat.st_mtime))
+                    self.db.execute("DELETE FROM content_errors WHERE path=?", (path,))
             return {"indexed": True, "error": None}
         except Exception as exc:
             reason = f"{type(exc).__name__}: {exc}"
-            with self.db:
-                self.db.execute("DELETE FROM content_fts WHERE path=?", (path,))
-                self.db.execute("DELETE FROM content_meta WHERE path=?", (path,))
-                self.db.execute("INSERT OR REPLACE INTO content_errors VALUES(?,?,?,?)",
-                                (path, reason, stat.st_size, stat.st_mtime))
+            with self._lock:
+                with self.db:
+                    self.db.execute("DELETE FROM content_fts WHERE path=?", (path,))
+                    self.db.execute("DELETE FROM content_meta WHERE path=?", (path,))
+                    self.db.execute("INSERT OR REPLACE INTO content_errors VALUES(?,?,?,?)",
+                                    (path, reason, stat.st_size, stat.st_mtime))
             return {"indexed": False, "error": reason}
 
     def remove_file(self, path):
         path = os.path.abspath(os.fspath(path))
-        with self.db:
-            self.db.execute("DELETE FROM content_fts WHERE path=?", (path,))
-            self.db.execute("DELETE FROM content_meta WHERE path=?", (path,))
-            self.db.execute("DELETE FROM content_errors WHERE path=?", (path,))
+        with self._lock:
+            with self.db:
+                self.db.execute("DELETE FROM content_fts WHERE path=?", (path,))
+                self.db.execute("DELETE FROM content_meta WHERE path=?", (path,))
+                self.db.execute("DELETE FROM content_errors WHERE path=?", (path,))
 
     def search(self, query, *, roots=None, limit=100):
         if not isinstance(query, str) or not query.strip() or len(query) > 200:
@@ -101,7 +110,8 @@ class ContentSearchIndex:
         # 일반 문구는 FTS 구문이 아닌 안전한 phrase로 처리
         phrase = '"' + query.replace('"', '""') + '"'
         sql = "SELECT f.path,f.name,snippet(content_fts,2,'[',']','…',18) snippet FROM content_fts f WHERE content_fts MATCH ?"
-        rows = self.db.execute(sql + " ORDER BY rank LIMIT ?", (phrase, max(1, min(int(limit), 500)))).fetchall()
+        with self._lock:
+            rows = self.db.execute(sql + " ORDER BY rank LIMIT ?", (phrase, max(1, min(int(limit), 500)))).fetchall()
         allowed = [os.path.normcase(os.path.abspath(r)) for r in roots] if roots else None
         result = []
         for row in rows:
@@ -115,7 +125,8 @@ class ContentSearchIndex:
         return result
 
     def errors(self, roots=None):
-        rows = self.db.execute("SELECT path,reason FROM content_errors ORDER BY path").fetchall()
+        with self._lock:
+            rows = self.db.execute("SELECT path,reason FROM content_errors ORDER BY path").fetchall()
         allowed = [os.path.normcase(os.path.abspath(r)) for r in roots] if roots else None
         return [dict(r) for r in rows if not any(p.casefold() == "$recycle.bin" for p in Path(r["path"]).parts)
                 and (allowed is None or any(os.path.commonpath((os.path.normcase(os.path.abspath(r["path"])), root)) == root
