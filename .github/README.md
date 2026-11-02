@@ -563,10 +563,10 @@ GitHub가 막힌 기관 PC에서도 위 「받기」 링크가 GitLab에서 바�
 
 | 파일 | 받기 | 용도 |
 |---|---|---|
-| **포터블 · HWP_AutoDocFit_v2.0.0_Portable.exe** | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.0.0/HWP_AutoDocFit_v2.0.0_Portable.exe) | 설치 없이 바로 실행 |
-| 설치용 · HWP_AutoDocFit_v2.0.0_Setup.exe | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.0.0/HWP_AutoDocFit_v2.0.0_Setup.exe) | 시작 메뉴 등록, Windows 앱 제거로 정리 |
+| **포터블 · HWP_AutoDocFit_v2.2.2_Portable.exe** | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.2.2/HWP_AutoDocFit_v2.2.2_Portable.exe) | 설치 없이 바로 실행 |
+| 설치용 · HWP_AutoDocFit_v2.2.2_Setup.exe | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.2.2/HWP_AutoDocFit_v2.2.2_Setup.exe) | 시작 메뉴 등록, Windows 앱 제거로 정리 |
 | 보고서 예시 파일(한번에 적용).txt | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/latest) | 처음 체험용 예시 |
-| SHA256SUMS | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.0.0/SHA256SUMS) | 내려받은 파일 확인용 해시 |
+| SHA256SUMS | [받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.2.2/SHA256SUMS) | 내려받은 파일 확인용 해시 |
 
 - **필요한 것**: Windows 10·11(64비트), 문서를 편집할 수 있는 **한컴오피스 한/글**(모든 버전 사용 — NEO·2018·2020·2022·2024 등). Python 등 다른 설치는 필요 없습니다.
 - 변환 엔진은 실행 파일에 들어 있습니다. 첫 실행 때 `C:\HWP_AUTODOCFIT`(쓰기 권한이 없으면 `%LOCALAPPDATA%\HwpAutoDocFit`)에 풀며, 인터넷에서 받지 않습니다.
