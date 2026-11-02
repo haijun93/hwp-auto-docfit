@@ -5,10 +5,40 @@ import os
 import sqlite3
 import zipfile
 import threading
+import re
+from datetime import date
 from pathlib import Path
 from defusedxml import ElementTree as ET
 
 SUPPORTED = {"hwpx", "txt", "docx", "pdf"}
+
+_DATE_PATTERNS = (
+    re.compile(r"(?:작성\s*)?기준일\s*[:：]?\s*(20\d{2})\s*[.년/-]\s*(\d{1,2})\s*[.월/-]\s*(\d{1,2})\s*일?"),
+    re.compile(r"(20\d{2})\s*년도?\s*(\d{1,2})\s*분기"),
+    re.compile(r"(?:작성\s*)?기준일\s*[:：]?\s*(20\d{2})\s*년?\s*(\d{1,2})\s*월?"),
+    re.compile(r"(20\d{2})\s*년도?\s*(\d{1,2})\s*분기"),
+)
+
+
+def extract_reference_date(text):
+    """본문에서 작성 기준일 또는 연·분기/연도 기준일을 ISO 날짜로 돌려준다."""
+    for pattern in _DATE_PATTERNS:
+        for match in pattern.finditer(text):
+            parts = [int(part) for part in match.groups()]
+            try:
+                if len(parts) == 3:
+                    return date(*parts).isoformat()
+                if len(parts) == 2 and "분기" in match.group(0):
+                    year, quarter = parts
+                    if 1 <= quarter <= 4:
+                        return date(year, quarter * 3, 1).isoformat()
+                if len(parts) == 3:
+                    return date(*parts).isoformat()
+                if len(parts) == 2:
+                    return date(parts[0], parts[1], 1).isoformat()
+            except ValueError:
+                continue
+    return None
 
 
 def extract_text(path):
@@ -60,10 +90,13 @@ class ContentSearchIndex:
         self._closed = False
         self.db.row_factory = sqlite3.Row
         self.db.executescript("""
-            CREATE TABLE IF NOT EXISTS content_meta(path TEXT PRIMARY KEY, size INTEGER, mtime REAL);
+            CREATE TABLE IF NOT EXISTS content_meta(path TEXT PRIMARY KEY, size INTEGER, mtime REAL, reference_date TEXT);
             CREATE VIRTUAL TABLE IF NOT EXISTS content_fts USING fts5(path UNINDEXED, name UNINDEXED, body, tokenize='unicode61');
             CREATE TABLE IF NOT EXISTS content_errors(path TEXT PRIMARY KEY, reason TEXT, size INTEGER, mtime REAL);
         """)
+        columns = {row[1] for row in self.db.execute("PRAGMA table_info(content_meta)")}
+        if "reference_date" not in columns:
+            self.db.execute("ALTER TABLE content_meta ADD COLUMN reference_date TEXT")
 
     def close(self):
         with self._lock:
@@ -83,7 +116,8 @@ class ContentSearchIndex:
                 with self.db:
                     self.db.execute("DELETE FROM content_fts WHERE path=?", (path,))
                     self.db.execute("INSERT INTO content_fts(path,name,body) VALUES(?,?,?)", (path, os.path.basename(path), body))
-                    self.db.execute("INSERT OR REPLACE INTO content_meta VALUES(?,?,?)", (path, stat.st_size, stat.st_mtime))
+                    self.db.execute("INSERT OR REPLACE INTO content_meta(path,size,mtime,reference_date) VALUES(?,?,?,?)",
+                                    (path, stat.st_size, stat.st_mtime, extract_reference_date(body)))
                     self.db.execute("DELETE FROM content_errors WHERE path=?", (path,))
             return {"indexed": True, "error": None}
         except Exception as exc:
@@ -131,3 +165,20 @@ class ContentSearchIndex:
         return [dict(r) for r in rows if not any(p.casefold() == "$recycle.bin" for p in Path(r["path"]).parts)
                 and (allowed is None or any(os.path.commonpath((os.path.normcase(os.path.abspath(r["path"])), root)) == root
                                             for root in allowed if os.path.splitdrive(root)[0].casefold() == os.path.splitdrive(os.path.abspath(r["path"]))[0].casefold()))]
+
+    def related_candidates(self, path, roots=None):
+        path = os.path.abspath(os.fspath(path))
+        with self._lock:
+            selected = self.db.execute("SELECT f.body,m.reference_date FROM content_fts f JOIN content_meta m ON m.path=f.path WHERE f.path=?", (path,)).fetchone()
+            rows = self.db.execute("SELECT f.path,f.name,f.body,m.reference_date FROM content_fts f JOIN content_meta m ON m.path=f.path WHERE f.path<>?", (path,)).fetchall()
+        if not selected:
+            return None, []
+        allowed = [os.path.normcase(os.path.abspath(r)) for r in roots] if roots else None
+        candidates = []
+        for row in rows:
+            item_path = os.path.normcase(os.path.abspath(row["path"]))
+            if allowed is not None and not any(os.path.commonpath((item_path, root)) == root for root in allowed
+                    if os.path.splitdrive(root)[0].casefold() == os.path.splitdrive(os.path.abspath(row["path"]))[0].casefold()):
+                continue
+            candidates.append(row)
+        return selected, candidates
