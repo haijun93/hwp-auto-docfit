@@ -103,6 +103,8 @@ class TimemachineService:
             if not isinstance(raw, str) or not os.path.isabs(raw):
                 raise ValueError("조사 폴더는 절대 경로로 지정해 주세요.")
             path = os.path.abspath(raw)
+            if any(part.casefold() == "$recycle.bin" for part in Path(path).parts):
+                raise ValueError("Windows 휴지통($Recycle.Bin)은 타임머신 조사 폴더로 선택할 수 없습니다.")
             try:
                 info = os.lstat(path)
             except OSError as exc:

@@ -116,7 +116,9 @@ class _RuleEditorDialogState extends State<_RuleEditorDialog> {
   );
 
   Widget _field(String key, Object? defaultValue) {
-    final label = _keyLabels[key] ?? key;
+    final label = _kind == 'uuid_replace' && key == 'text'
+        ? 'UUID 파일명을 바꿀 공통 이름'
+        : _keyLabels[key] ?? key;
     final choices = _choices(_kind, key);
     if (defaultValue is bool) {
       return SwitchListTile(

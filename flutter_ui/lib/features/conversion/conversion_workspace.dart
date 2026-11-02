@@ -238,10 +238,14 @@ class ConversionWorkspace extends StatelessWidget {
                       style: TextStyle(color: faint, height: 1.6),
                     ),
                   )
-                : ListView.separated(
-                    itemCount: files.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 8),
-                    itemBuilder: (context, i) {
+                : Scrollbar(
+                    key: const Key('conversionFilesScrollbar'),
+                    thumbVisibility: true,
+                    child: ListView.separated(
+                      key: const Key('conversionFilesList'),
+                      itemCount: files.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 8),
+                      itemBuilder: (context, i) {
                       final file = files[i];
                       return GestureDetector(
                         onSecondaryTapDown: host.locked
@@ -327,7 +331,8 @@ class ConversionWorkspace extends StatelessWidget {
                           ),
                         ),
                       );
-                    },
+                      },
+                    ),
                   ),
           ),
           const SizedBox(height: 10),

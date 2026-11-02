@@ -171,6 +171,18 @@ def _a_add(state, opt, ctx):
     return _place(state[0], expand_vars(opt["text"], ctx), opt["position"], opt["sep"]), state[1]
 
 
+_UUID_NAME = re.compile(r"(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+
+
+def _v_uuid_replace(spec):
+    return dict(text=_str(spec, "text", allow_empty=False, max_len=255))
+
+
+def _a_uuid_replace(state, opt, ctx):
+    # UUID 형태의 파일명 전체만 치환해 일반 이름은 실수로 바꾸지 않는다.
+    return (opt["text"], state[1]) if _UUID_NAME.fullmatch(state[0]) else state
+
+
 def _v_none(spec):
     return {}
 
@@ -486,6 +498,7 @@ def _a_template(state, opt, ctx):
 RULE_KINDS = {
     "replace": (_v_replace, _a_replace),
     "add": (_v_add, _a_add),
+    "uuid_replace": (_v_uuid_replace, _a_uuid_replace),
     "clear": (_v_none, _a_clear),
     "del_pos": (_v_del_pos, _a_del_pos),
     "del_between": (_v_del_between, _a_del_between),

@@ -35,7 +35,7 @@ class _KClipPanelState extends State<KClipPanel> {
   List<Map> items = const [];
   Map settings = const {};
   bool consent = false;
-  bool autostart = true;
+  bool autostart = false;
   bool busy = false;
   String message = '';
   String query = '';
@@ -68,7 +68,10 @@ class _KClipPanelState extends State<KClipPanel> {
   Future<void> _reload() async {
     final s = await _call('status');
     if (!mounted) return;
-    setState(() => status = s);
+    setState(() {
+      status = s;
+      autostart = s['autostart'] == true;
+    });
     if (running) {
       final list = await _call('list', {'limit': 200, if (query.isNotEmpty) 'query': query});
       final conf = await _call('settings_get');
@@ -174,6 +177,7 @@ class _KClipPanelState extends State<KClipPanel> {
           title: const Text('위 안내를 읽었고 기록에 동의합니다'),
         ),
         CheckboxListTile(
+          key: const ValueKey('kclip-autostart'),
           contentPadding: EdgeInsets.zero,
           value: autostart,
           onChanged: (v) => setState(() => autostart = v == true),
@@ -208,9 +212,53 @@ class _KClipPanelState extends State<KClipPanel> {
       spacing: 12,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
+        SizedBox(
+          width: 300,
+          child: CheckboxListTile(
+            key: const ValueKey('kclip-autostart-running'),
+            contentPadding: EdgeInsets.zero,
+            value: autostart,
+            onChanged: busy ? null : (value) async {
+              final result = await _call('autostart', {'enabled': value == true});
+              if (mounted && result['ok'] != false) {
+                setState(() {
+                  status = result;
+                  autostart = result['autostart'] == true;
+                });
+              }
+            },
+            title: const Text('Windows 로그인 시 자동 실행'),
+          ),
+        ),
         number('max_items', '보관 개수', const [20, 50, 100, 200, 500, 1000]),
         number('max_total_mb', '최대 MB', const [50, 100, 200, 500, 1000]),
         number('max_age_days', '보관 일', const [7, 30, 90, 365]),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Switch(
+              key: const ValueKey('kclip-sticky-popup'),
+              value: settings['sticky_popup'] == true,
+              onChanged: (v) => _act('settings_set', {
+                'settings': {'sticky_popup': v},
+              }),
+            ),
+            const Text('스티커 메모처럼 화면에 유지'),
+          ],
+        ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Switch(
+              key: const ValueKey('kclip-always-on-top'),
+              value: settings['always_on_top'] != false,
+              onChanged: (v) => _act('settings_set', {
+                'settings': {'always_on_top': v},
+              }),
+            ),
+            const Text('항상 위'),
+          ],
+        ),
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -258,8 +306,10 @@ class _KClipPanelState extends State<KClipPanel> {
               child: const Padding(padding: EdgeInsets.all(8), child: Text('일시정지 시간')),
             ),
             OutlinedButton(
+              key: const ValueKey('kclip-clear-all'),
+              tooltip: '고정한 항목은 유지됩니다.',
               onPressed: busy ? null : () => _act('clear', {'keep_pinned': true}, '고정하지 않은 항목을 지웠습니다.'),
-              child: const Text('모두 지우기(고정 제외)'),
+              child: const Text('모두 지우기'),
             ),
             TextButton(
               key: const ValueKey('kclip-disable'),

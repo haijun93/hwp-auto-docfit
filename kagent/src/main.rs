@@ -638,6 +638,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             }
             WM_SETTINGS => {
                 register_hotkey(hwnd);
+                popup::apply_settings();
                 let paused = app().settings.lock().unwrap().paused;
                 set_listening(hwnd, !paused);
                 tray(hwnd, NIM_MODIFY);

@@ -18,6 +18,10 @@ import 'table_sketch_selection.dart';
 enum SketchToolMode {
   line,
   rect,
+  arrowLeft,
+  arrowRight,
+  arrowUp,
+  arrowDown,
   eraser,
   preciseEraser,
   text,
@@ -765,6 +769,14 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
     final pos = details.localPosition;
     if (_tool == SketchToolMode.text) {
       _openTextDialogAt(pos);
+    } else if (_tool == SketchToolMode.arrowLeft) {
+      _openTextDialogAt(pos, insert: '←');
+    } else if (_tool == SketchToolMode.arrowRight) {
+      _openTextDialogAt(pos, insert: '→');
+    } else if (_tool == SketchToolMode.arrowUp) {
+      _openTextDialogAt(pos, insert: '↑');
+    } else if (_tool == SketchToolMode.arrowDown) {
+      _openTextDialogAt(pos, insert: '↓');
     } else if (_tool == SketchToolMode.select ||
         _tool == SketchToolMode.lasso) {
       _selectLineAt(pos);
@@ -1474,7 +1486,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
 
   // --- 글 입력 대화상자 ---
 
-  void _openTextDialogAt(Offset pos) {
+  void _openTextDialogAt(Offset pos, {String? insert}) {
     final cx = (pos.dx / _cellSize).floor().clamp(0, _doc.grid.cols - 1);
     final cy = (pos.dy / _cellSize).floor().clamp(0, _doc.grid.rows - 1);
     final existing = _doc.findText(cx, cy);
@@ -1484,7 +1496,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
       builder: (ctx) => TableSketchTextDialog(
         x: cx,
         y: cy,
-        initialText: existing?.text ?? '',
+        initialText: '${existing?.text ?? ''}${insert ?? ''}',
         initialBold: existing?.bold ?? false,
         initialAlign: existing?.align ?? 'center',
       ),
@@ -1727,6 +1739,34 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
             icon: Icons.crop_square_rounded,
             label: '사각형',
             tooltip: '사각형 그리기 (4변 선)',
+          ),
+          _toolButton(
+            key: const Key('toolArrowLeft'),
+            mode: SketchToolMode.arrowLeft,
+            icon: Icons.arrow_back,
+            label: '좌',
+            tooltip: '칸에 왼쪽 화살표 추가',
+          ),
+          _toolButton(
+            key: const Key('toolArrowRight'),
+            mode: SketchToolMode.arrowRight,
+            icon: Icons.arrow_forward,
+            label: '우',
+            tooltip: '칸에 오른쪽 화살표 추가',
+          ),
+          _toolButton(
+            key: const Key('toolArrowUp'),
+            mode: SketchToolMode.arrowUp,
+            icon: Icons.arrow_upward,
+            label: '상',
+            tooltip: '칸에 위쪽 화살표 추가',
+          ),
+          _toolButton(
+            key: const Key('toolArrowDown'),
+            mode: SketchToolMode.arrowDown,
+            icon: Icons.arrow_downward,
+            label: '하',
+            tooltip: '칸에 아래쪽 화살표 추가',
           ),
           _toolButton(
             key: const Key('toolEraser'),

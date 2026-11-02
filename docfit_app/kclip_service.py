@@ -40,11 +40,13 @@ def _verify(exe):
 
 class KClipService:
     def __init__(self, client=None, *, installer=kc.install, starter=kc.start, autostart=kc.set_autostart,
+                 autostart_status=kc.autostart_enabled,
                  bundled=bundled_exe):
         self.client = client or kc.KAgentClient()
         self._install = installer
         self._start = starter
         self._autostart = autostart
+        self._autostart_status = autostart_status
         self._bundled = bundled
         self._pause_file = Path(tempfile.gettempdir()) / f"docfit-kclip-pause-{os.getpid()}.json"
 
@@ -73,8 +75,12 @@ class KClipService:
         if status is not None and expiry:
             status["paused"] = True
             status["pause_until"] = expiry
-        return dict(ok=True, running=bool(status), available=self._bundled() is not None, consent=CONSENT,
-                    status=status or {})
+        try:
+            autostart = bool(self._autostart_status())
+        except (OSError, ImportError):
+            autostart = False
+        return dict(ok=True, running=bool(status), available=self._bundled() is not None,
+                    autostart=autostart, consent=CONSENT, status=status or {})
 
     def enable(self, payload):
         if payload.get("consent") is not True:
@@ -91,11 +97,10 @@ class KClipService:
                 if self.client.running():
                     break
                 time.sleep(0.02)
-        if payload.get("autostart", True):
-            try:
-                self._autostart(True)
-            except OSError:
-                pass
+        try:
+            self._autostart(payload.get("autostart", True) is True)
+        except OSError:
+            pass
         return self.status()
 
     def disable(self, payload):
@@ -129,6 +134,13 @@ class KClipService:
             return self.enable(payload)
         if action == "disable":
             return self.disable(payload)
+        if action == "autostart":
+            enabled = payload.get("enabled") is True
+            try:
+                self._autostart(enabled)
+            except OSError as error:
+                return dict(ok=False, code="KCLIP_AUTOSTART", message=f"자동 시작 설정을 바꾸지 못했습니다: {error}")
+            return self.status()
         forwards = {
             "list": ("list", ("limit", "query")),
             "get": ("get", ("id",)),
