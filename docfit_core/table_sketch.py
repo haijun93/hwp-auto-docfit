@@ -426,6 +426,7 @@ def to_hwpx(sketch, path):
         for tag in ("inMargin","outMargin"):
             table.find(HP+tag).attrib.update({s:"0" for s in ("left","right","top","bottom")})
         row_nodes = [_add(table, HP+"tr") for _ in range(result["rows"])]
+        cell_nodes = {}
         for index, cell in enumerate(result["cells"]):
             r,c,rs,cs = (cell[k] for k in ("row","col","rowspan","colspan"))
             tc = copy.deepcopy(proto)
@@ -443,24 +444,28 @@ def to_hwpx(sketch, path):
             tc.find(HP+"cellSz").attrib.update(width=str(ux[c+cs]-ux[c]),height=str(uy[r+rs]-uy[r]))
             tc.find(HP+"cellMargin").attrib.update({s:str(round(0.5*UNIT_MM)) for s in ("left","right","top","bottom")})
             row_nodes[r].append(tc)
+            cell_nodes[(r, c)] = tc
         for index,arrow in enumerate(normalize(sketch)[0]["arrows"]):
             add_arrow_shape(arrow,index)
-        # 화살표는 표 첫 칸 문단에 고정한다. 표와 함께 움직이고, 표 앞뒤에 두면 표 폭·높이만큼 기준이 밀린다.
+        # 화살표는 표 빈 칸(없으면 첫 칸) 문단에 고정한다. 표와 함께 움직이고, 표 앞뒤에 두면 표 폭·높이만큼 기준이 밀린다.
         arrow_nodes=list(paragraph.findall(HP+"run/"+HP+"connectLine"))
         if arrow_nodes:
-            first_cell=table.find(HP+"tr/"+HP+"tc")
-            first_sub=first_cell.find(HP+"subList")
-            first_sub.set("vertAlign","TOP")
-            first_p=first_sub.find(HP+"p")
-            arrow_run=_add(first_p,HP+"run",charPrIDRef=chars[False])
-            first_p.remove(arrow_run); first_p.insert(0,arrow_run)
-            margin=round(0.5*UNIT_MM)
+            anchor_cell = next((cell for cell in result["cells"] if not cell["text"]), result["cells"][0])
+            anchor_tc = cell_nodes[(anchor_cell["row"], anchor_cell["col"])]
+            anchor_sub = anchor_tc.find(HP+"subList")
+            anchor_sub.set("vertAlign", "TOP")
+            first_p = anchor_sub.find(HP+"p")
+            arrow_run = _add(first_p, HP+"run", charPrIDRef=chars[False])
+            first_p.remove(arrow_run); first_p.insert(0, arrow_run)
+            margin = round(0.5 * UNIT_MM)
+            anchor_ux = ux[anchor_cell["col"]]
+            anchor_uy = uy[anchor_cell["row"]]
             for arrow_node in arrow_nodes:
                 next(parent for parent in paragraph.iter() if arrow_node in list(parent)).remove(arrow_node)
                 arrow_run.append(arrow_node)
-                arrow_pos=arrow_node.find(HP+"pos")
-                arrow_pos.set("vertOffset",str(int(arrow_pos.get("vertOffset"))-margin))
-                arrow_pos.set("horzOffset",str(int(arrow_pos.get("horzOffset"))-margin))
+                arrow_pos = arrow_node.find(HP+"pos")
+                arrow_pos.set("vertOffset", str(int(arrow_pos.get("vertOffset")) - margin - anchor_uy))
+                arrow_pos.set("horzOffset", str(int(arrow_pos.get("horzOffset")) - margin - anchor_ux))
         properties = catalog._section_properties_paragraph(section)
         section[:] = [n for n in (properties,paragraph) if n is not None]
         target.parent.mkdir(parents=True,exist_ok=True)
