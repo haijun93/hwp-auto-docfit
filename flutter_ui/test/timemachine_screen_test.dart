@@ -296,6 +296,8 @@ void main() {
 
     final clearBtn = find.byKey(const ValueKey('tm-clear-thumb-cache'));
     expect(clearBtn, findsOneWidget);
+    await tester.ensureVisible(clearBtn);
+    await tester.pumpAndSettle();
     await tester.tap(clearBtn);
     await tester.pumpAndSettle();
 

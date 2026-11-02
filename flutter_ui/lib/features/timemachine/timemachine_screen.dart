@@ -359,9 +359,7 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          LayoutBuilder(builder:(context, constraints) => constraints.maxWidth < 920
-              ? Align(alignment:Alignment.centerRight,child:TextButton.icon(onPressed:()=>showDialog<void>(context:context,builder:(context)=>AlertDialog(title:const Text('타임머신 필터'),content:SizedBox(width:520,child:_filtersBar()),actions:[TextButton(onPressed:()=>Navigator.pop(context),child:const Text('닫기'))])),icon:const Icon(Icons.filter_list),label:const Text('필터 및 검색')))
-              : _filtersBar()),
+          _filtersBar(),
           if (_contentMode) _contentSearchPanel(),
           if (_contentMode && _contentResults.isNotEmpty)
             ConstrainedBox(constraints:const BoxConstraints(maxHeight:180),child:ListView.builder(itemCount:_contentResults.length,itemBuilder:(context,index){
