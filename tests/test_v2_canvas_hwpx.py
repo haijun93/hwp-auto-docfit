@@ -107,6 +107,10 @@ class CanvasHwpxTests(unittest.TestCase):
             self.assertEqual(diamond.find('.//'+HC+'winBrush').get('faceColor'), '#ABCDEF')
             self.assertEqual(diamond.find(HP+'lineShape').get('color'), '#123456')
             self.assertEqual(diamond.find(HP+'lineShape').get('width'), '66')
+            # 다각형 꼭짓점은 hc:pt 반복이고 시작점으로 닫는다(pt0~pt3이면 한/글이 그리지 않는다).
+            self.assertEqual(len(diamond.findall(HC+'pt')), 5)
+            self.assertEqual(diamond.findall(HC+'pt')[0].attrib, diamond.findall(HC+'pt')[-1].attrib)
+            self.assertIsNone(diamond.find(HC+'pt0'))
             self.assertEqual([''.join(p.itertext()) for p in diamond.findall('.//'+HP+'p')], ['첫 줄', '둘째 줄'])
             self.assertEqual(rounded.get('ratio'), '20')
             self.assertEqual(connector.find(HP+'startPt').get('subjectIDRef'), diamond.get('instid'))
