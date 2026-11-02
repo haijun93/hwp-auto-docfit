@@ -10,11 +10,22 @@ pub fn now() -> f64 {
 
 /// %LOCALAPPDATA%\HwpAutoDocFit\kagent (KAGENT_DATA로 바꿀 수 있음 — 시험용).
 pub fn data_dir() -> String {
+    if let Ok(root) = std::env::var("KAGENT_TEST_ROOT") {
+        return root;
+    }
     if let Ok(dir) = std::env::var("KAGENT_DATA") {
         return dir;
     }
     let base = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| ".".into());
     format!("{base}\\HwpAutoDocFit\\kagent")
+}
+
+/// 시험 실행은 기본 인스턴스와 충돌하지 않는 별도 커널 객체 이름을 쓴다.
+pub fn instance_suffix() -> Option<String> {
+    std::env::var("KAGENT_TEST_ROOT").ok().map(|root| {
+        let hash = root.encode_utf16().fold(0xcbf29ce484222325u64, |h, c| (h ^ c as u64).wrapping_mul(0x100000001b3));
+        format!(".test.{hash:016x}")
+    })
 }
 
 pub fn base64(data: &[u8]) -> String {
@@ -36,6 +47,21 @@ pub fn base64(data: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn test_root_is_the_private_data_directory_and_changes_instance_name() {
+        let root = std::env::temp_dir().join(format!("kagent-root-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        unsafe { std::env::set_var("KAGENT_TEST_ROOT", &root); }
+        assert_eq!(data_dir(), root.to_string_lossy());
+        let first = instance_suffix().unwrap();
+        unsafe { std::env::set_var("KAGENT_TEST_ROOT", root.join("other")); }
+        assert_ne!(first, instance_suffix().unwrap());
+        unsafe { std::env::remove_var("KAGENT_TEST_ROOT"); }
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     #[test]
     fn b64() {
         assert_eq!(super::base64(b""), "");
