@@ -1,0 +1,143 @@
+Version:1.0
+StartHTML:0000000105
+EndHTML:0000004887
+StartFragment:0000002335
+EndFragment:0000004835
+
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+xmlns:x="urn:schemas-microsoft-com:office:excel"
+xmlns="http://www.w3.org/TR/REC-html40">
+
+<head>
+<meta http-equiv=Content-Type content="text/html; charset=utf-8">
+<meta name=ProgId content=Excel.Sheet>
+<meta name=Generator content="Microsoft Excel 15">
+<link id=Main-File rel=Main-File
+href="file:///C:/Users/haiju/AppData/Local/Temp/msohtmlclip1/01/clip.htm">
+<link rel=File-List
+href="file:///C:/Users/haiju/AppData/Local/Temp/msohtmlclip1/01/clip_filelist.xml">
+<style>
+<!--table
+	{mso-displayed-decimal-separator:"\.";
+	mso-displayed-thousand-separator:"\,";}
+@page
+	{margin:.75in .7in .75in .7in;
+	mso-header-margin:.3in;
+	mso-footer-margin:.3in;}
+tr
+	{mso-height-source:auto;
+	mso-ruby-visibility:none;}
+col
+	{mso-width-source:auto;
+	mso-ruby-visibility:none;}
+br
+	{mso-data-placement:same-cell;}
+td
+	{padding-top:1px;
+	padding-right:1px;
+	padding-left:1px;
+	mso-ignore:padding;
+	color:black;
+	font-size:11.0pt;
+	font-weight:400;
+	font-style:normal;
+	text-decoration:none;
+	font-family:"맑은 고딕", monospace;
+	mso-font-charset:129;
+	mso-number-format:General;
+	text-align:general;
+	vertical-align:middle;
+	border:none;
+	mso-background-source:auto;
+	mso-pattern:auto;
+	mso-protection:locked visible;
+	white-space:nowrap;
+	mso-rotate:0;}
+.xl63
+	{font-weight:700;
+	border:.5pt solid windowtext;
+	background:#C0D5E6;
+	mso-pattern:black none;}
+.xl64
+	{border:.5pt solid windowtext;}
+.xl65
+	{border:.5pt solid windowtext;
+	background:yellow;
+	mso-pattern:black none;}
+.xl66
+	{mso-number-format:"\#\,\#\#0";
+	border:.5pt solid windowtext;}
+.xl67
+	{mso-number-format:"0\.0%";
+	border:.5pt solid windowtext;}
+.xl68
+	{border:.5pt solid windowtext;
+	white-space:normal;}
+ruby
+	{ruby-align:left;}
+rt
+	{color:windowtext;
+	font-size:8.0pt;
+	font-weight:400;
+	font-style:normal;
+	text-decoration:none;
+	font-family:"맑은 고딕", monospace;
+	mso-font-charset:129;
+	mso-char-type:none;
+	display:none;}
+-->
+</style>
+</head>
+
+<body link="#0563C1" vlink="#954F72">
+
+<table border=0 cellpadding=0 cellspacing=0 width=482 style='border-collapse:
+ collapse;width:362pt'>
+<!--StartFragment-->
+ <col width=70 style='width:53pt'>
+ <col width=198 style='mso-width-source:userset;mso-width-alt:6323;width:148pt'>
+ <col width=74 style='mso-width-source:userset;mso-width-alt:2355;width:55pt'>
+ <col width=70 span=2 style='width:53pt'>
+ <tr height=23 style='height:17.4pt'>
+  <td height=23 class=xl63 width=70 style='height:17.4pt;width:53pt'>구분</td>
+  <td class=xl63 width=198 style='border-left:none;width:148pt'>사업명</td>
+  <td class=xl63 width=74 style='border-left:none;width:55pt'>예산(천원)</td>
+  <td class=xl63 width=70 style='border-left:none;width:53pt'>집행률</td>
+  <td class=xl63 width=70 style='border-left:none;width:53pt'>비고</td>
+ </tr>
+ <tr height=23 style='height:17.4pt'>
+  <td rowspan=2 height=69 class=xl64 style='height:52.2pt;border-top:none'>문화</td>
+  <td class=xl65 style='border-top:none;border-left:none'><span
+  style='mso-spacerun:yes'>  </span>마포 축제&nbsp; 지원<span
+  style='mso-spacerun:yes'> </span></td>
+  <td class=xl66 align=right style='border-top:none;border-left:none'>1,234,567</td>
+  <td class=xl67 align=right style='border-top:none;border-left:none'>87.5%</td>
+  <td class=xl64 style='border-top:none;border-left:none'>메모</td>
+ </tr>
+ <tr height=46 style='height:34.8pt'>
+  <td height=46 class=xl64 style='height:34.8pt;border-top:none;border-left:
+  none'>도서관<span style='mso-spacerun:yes'>   </span>운영</td>
+  <td class=xl66 align=right style='border-top:none;border-left:none'>98,000</td>
+  <td class=xl67 align=right style='border-top:none;border-left:none'>50.0%</td>
+  <td class=xl68 width=70 style='border-top:none;border-left:none;width:53pt'>줄1<br>
+    줄2</td>
+ </tr>
+ <tr height=23 style='height:17.4pt'>
+  <td height=23 class=xl64 style='height:17.4pt;border-top:none'>복지</td>
+  <td class=xl64 style='border-top:none;border-left:none'>경로당 지원</td>
+  <td class=xl66 align=right style='border-top:none;border-left:none'>5,000</td>
+  <td class=xl67 align=right style='border-top:none;border-left:none'>100.0%</td>
+  <td class=xl64 style='border-top:none;border-left:none'>　</td>
+ </tr>
+ <tr height=23 style='height:17.4pt'>
+  <td colspan=2 height=23 class=xl64 style='height:17.4pt'>합계</td>
+  <td class=xl66 align=right style='border-top:none;border-left:none'>1,337,567</td>
+  <td class=xl67 align=right style='border-top:none;border-left:none'>91.0%</td>
+  <td class=xl64 style='border-top:none;border-left:none'>　</td>
+ </tr>
+<!--EndFragment-->
+</table>
+
+</body>
+
+</html>
