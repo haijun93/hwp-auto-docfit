@@ -50,6 +50,35 @@ class WebViewRenderingGuardTests(unittest.TestCase):
         self.assertTrue(_install_webview_rendering_guard(module))
         self.assertIs(module.WebView2, guarded_type)
 
+    def test_renderer_process_failure_reloads_initialized_page(self):
+        class Event:
+            def __init__(self):
+                self.handler = None
+
+            def __iadd__(self, handler):
+                self.handler = handler
+                return self
+
+        class FakeWebView2:
+            def __init__(self):
+                self.CreationProperties = SimpleNamespace(AdditionalBrowserArguments="")
+                self.CoreWebView2InitializationCompleted = Event()
+                self.CoreWebView2 = SimpleNamespace(ProcessFailed=Event(), reloads=0)
+                self.CoreWebView2.Reload = lambda: setattr(
+                    self.CoreWebView2, "reloads", self.CoreWebView2.reloads + 1
+                )
+
+            def EnsureCoreWebView2Async(self, *args, **kwargs):
+                self.CoreWebView2InitializationCompleted.handler(self, None)
+                return "initialized"
+
+        module = SimpleNamespace(WebView2=FakeWebView2)
+        _install_webview_rendering_guard(module)
+        view = module.WebView2()
+        view.EnsureCoreWebView2Async()
+        view.CoreWebView2.ProcessFailed.handler(view.CoreWebView2, None)
+        self.assertEqual(view.CoreWebView2.reloads, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
