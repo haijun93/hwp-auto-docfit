@@ -37,7 +37,16 @@ void main() {
         expect((recovered['data'] as Map)['values']['retry_body'], '8');
       } finally {
         await client.close();
-        await temp.delete(recursive: true);
+        // Windows는 끝난 백엔드의 파일을 잠시 더 잡고 있을 수 있어 몇 번 다시 지운다.
+        for (var attempt = 0; ; attempt++) {
+          try {
+            await temp.delete(recursive: true);
+            break;
+          } on FileSystemException {
+            if (attempt >= 20) rethrow;
+            await Future<void>.delayed(const Duration(milliseconds: 250));
+          }
+        }
       }
     },
     skip: Platform.environment['DOCFIT_TEST_PYTHON'] == null,
