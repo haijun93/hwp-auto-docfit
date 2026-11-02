@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS files (
 CREATE INDEX IF NOT EXISTS files_work_time ON files(work_time);
 CREATE INDEX IF NOT EXISTS files_root ON files(root);
 CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
+CREATE TABLE IF NOT EXISTS related_exclusions (left_path TEXT NOT NULL, right_path TEXT NOT NULL, PRIMARY KEY(left_path,right_path));
 """
 MAX_PAGE = 2000
 
@@ -112,6 +113,23 @@ class Store:
     def hide(self, file_id, hidden=True):
         with self._lock:
             return self._db.execute("UPDATE files SET hidden = ? WHERE id = ?", (int(hidden), file_id)).rowcount == 1
+
+    def exclude_related(self, left, right, excluded=True):
+        left, right = path_key(left), path_key(right)
+        if left == right:
+            raise ValueError("서로 다른 문서를 지정해 주세요.")
+        left, right = sorted((left, right))
+        with self._lock:
+            if excluded:
+                self._db.execute("INSERT OR IGNORE INTO related_exclusions VALUES(?,?)", (left, right))
+            else:
+                self._db.execute("DELETE FROM related_exclusions WHERE left_path=? AND right_path=?", (left, right))
+        return True
+
+    def related_exclusions(self):
+        with self._lock:
+            rows = self._db.execute("SELECT left_path,right_path FROM related_exclusions").fetchall()
+        return [tuple(row) for row in rows]
 
     # ── 읽기(화면) ───────────────────────────────────────────────────────
     @staticmethod
