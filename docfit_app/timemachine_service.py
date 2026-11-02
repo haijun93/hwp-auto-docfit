@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 from docfit_core.timemachine import thumbs
+from docfit_core.timemachine.content_search import ContentSearchIndex
 from docfit_core.timemachine.rules import DEFAULT_EXTENSIONS, KINDS, Rules
 from docfit_core.timemachine.scan import default_roots, scan_roots
 from docfit_core.timemachine.store import Store
@@ -33,6 +34,8 @@ class TimemachineService:
         self.settings_root = Path(settings_root)
         self.settings_path = self.settings_root / "timemachine.json"
         self.store = Store(db_path or data_dir() / "timeline.db")
+        content_db = (Path(db_path).with_suffix(".content.sqlite") if db_path else data_dir() / "timeline-content.sqlite")
+        self.content_index = ContentSearchIndex(content_db)
         self.agent = agent if agent is not None else KAgentClient()
         self.opener = opener if opener is not None else self._open_file
         self.revealer = revealer if revealer is not None else self._reveal_file
@@ -58,6 +61,10 @@ class TimemachineService:
 
     def _defaults(self):
         return {"roots": default_roots(), "time_mode": "max", "enabled": False, "extensions": list(DEFAULT_EXTENSIONS)}
+
+    def close(self):
+        self.content_index.close()
+        self.store.close()
 
     def _load_settings(self):
         defaults = self._defaults()
@@ -309,6 +316,20 @@ class TimemachineService:
             return {"ok": True, "settings": dict(settings, roots=list(roots))}
         if action == "scan":
             return self._start_scan()
+        if action == "content_index":
+            path = payload.get("path")
+            if (not isinstance(path, str) or not self._path_in_active_root(path) or
+                    Path(path).suffix.lower().lstrip(".") not in self._settings["extensions"] or
+                    any(part.casefold() == "$recycle.bin" for part in Path(path).parts)):
+                return self._error("INVALID_INPUT", "현재 조사 폴더의 허용된 문서를 선택해 주세요.")
+            result = self.content_index.index_file(path)
+            return {"ok": True, **result}
+        if action == "content_search":
+            query = payload.get("query")
+            rows = self.content_index.search(query, roots=self._settings["roots"], limit=payload.get("limit", 100))
+            return {"ok": True, "items": rows}
+        if action == "content_errors":
+            return {"ok": True, "items": self.content_index.errors(self._settings["roots"])}
         if action == "range":
             start, end, filters = self._filter_args(payload, range_required=True)
             newest = payload.get("newest_first", True)

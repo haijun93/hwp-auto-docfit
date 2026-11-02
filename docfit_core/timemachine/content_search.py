@@ -1,0 +1,122 @@
+"""별도 SQLite FTS5 문서 본문 색인 및 로컬 텍스트 추출."""
+from __future__ import annotations
+
+import os
+import sqlite3
+import zipfile
+from pathlib import Path
+from defusedxml import ElementTree as ET
+
+SUPPORTED = {"hwpx", "txt", "docx", "pdf"}
+
+
+def extract_text(path):
+    ext = Path(path).suffix.lower().lstrip(".")
+    if ext not in SUPPORTED:
+        raise ValueError("지원하지 않는 형식")
+    if ext == "txt":
+        raw = Path(path).read_bytes()
+        for encoding in ("utf-8-sig", "cp949", "utf-16"):
+            try:
+                return raw.decode(encoding)
+            except UnicodeError:
+                pass
+        raise ValueError("텍스트 인코딩을 판별할 수 없음")
+    if ext in ("hwpx", "docx"):
+        chunks = []
+        with zipfile.ZipFile(path) as archive:
+            names = archive.namelist()
+            if ext == "hwpx":
+                targets = [n for n in names if n.startswith("Contents/section") and n.endswith(".xml")]
+            else:
+                targets = [n for n in names if n == "word/document.xml" or
+                           (n.startswith("word/header") or n.startswith("word/footer")) and n.endswith(".xml")]
+            for name in targets:
+                root = ET.fromstring(archive.read(name))
+                chunks.extend(t.strip() for t in root.itertext() if t and t.strip())
+        text = "\n".join(chunks)
+        if not text.strip():
+            raise ValueError("본문 텍스트가 없음")
+        return text
+    from pypdf import PdfReader
+    reader = PdfReader(path)
+    if reader.is_encrypted:
+        raise ValueError("암호화된 PDF")
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    if not text.strip():
+        raise ValueError("추출 가능한 PDF 텍스트가 없음")
+    return text
+
+
+class ContentSearchIndex:
+    """메타데이터 DB와 물리적으로 분리된 FTS5 색인."""
+    def __init__(self, path):
+        self.path = os.fspath(path)
+        if self.path != ":memory:":
+            os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
+        self.db = sqlite3.connect(self.path, check_same_thread=False)
+        self.db.row_factory = sqlite3.Row
+        self.db.executescript("""
+            CREATE TABLE IF NOT EXISTS content_meta(path TEXT PRIMARY KEY, size INTEGER, mtime REAL);
+            CREATE VIRTUAL TABLE IF NOT EXISTS content_fts USING fts5(path UNINDEXED, name UNINDEXED, body, tokenize='unicode61');
+            CREATE TABLE IF NOT EXISTS content_errors(path TEXT PRIMARY KEY, reason TEXT, size INTEGER, mtime REAL);
+        """)
+
+    def close(self):
+        self.db.close()
+
+    def index_file(self, path):
+        path = os.path.abspath(os.fspath(path))
+        stat = os.stat(path)
+        old = self.db.execute("SELECT size,mtime FROM content_meta WHERE path=?", (path,)).fetchone()
+        if old and old["size"] == stat.st_size and old["mtime"] == stat.st_mtime:
+            return {"indexed": False, "error": None}
+        try:
+            body = extract_text(path)
+            with self.db:
+                self.db.execute("DELETE FROM content_fts WHERE path=?", (path,))
+                self.db.execute("INSERT INTO content_fts(path,name,body) VALUES(?,?,?)", (path, os.path.basename(path), body))
+                self.db.execute("INSERT OR REPLACE INTO content_meta VALUES(?,?,?)", (path, stat.st_size, stat.st_mtime))
+                self.db.execute("DELETE FROM content_errors WHERE path=?", (path,))
+            return {"indexed": True, "error": None}
+        except Exception as exc:
+            reason = f"{type(exc).__name__}: {exc}"
+            with self.db:
+                self.db.execute("DELETE FROM content_fts WHERE path=?", (path,))
+                self.db.execute("DELETE FROM content_meta WHERE path=?", (path,))
+                self.db.execute("INSERT OR REPLACE INTO content_errors VALUES(?,?,?,?)",
+                                (path, reason, stat.st_size, stat.st_mtime))
+            return {"indexed": False, "error": reason}
+
+    def remove_file(self, path):
+        path = os.path.abspath(os.fspath(path))
+        with self.db:
+            self.db.execute("DELETE FROM content_fts WHERE path=?", (path,))
+            self.db.execute("DELETE FROM content_meta WHERE path=?", (path,))
+            self.db.execute("DELETE FROM content_errors WHERE path=?", (path,))
+
+    def search(self, query, *, roots=None, limit=100):
+        if not isinstance(query, str) or not query.strip() or len(query) > 200:
+            raise ValueError("검색어는 1~200자로 입력해 주세요.")
+        # 일반 문구는 FTS 구문이 아닌 안전한 phrase로 처리
+        phrase = '"' + query.replace('"', '""') + '"'
+        sql = "SELECT f.path,f.name,snippet(content_fts,2,'[',']','…',18) snippet FROM content_fts f WHERE content_fts MATCH ?"
+        rows = self.db.execute(sql + " ORDER BY rank LIMIT ?", (phrase, max(1, min(int(limit), 500)))).fetchall()
+        allowed = [os.path.normcase(os.path.abspath(r)) for r in roots] if roots else None
+        result = []
+        for row in rows:
+            path = os.path.abspath(row["path"])
+            if any(part.casefold() == "$recycle.bin" for part in Path(path).parts):
+                continue
+            if allowed is not None and not any(os.path.commonpath((os.path.normcase(path), root)) == root
+                                               for root in allowed if os.path.splitdrive(root)[0].casefold() == os.path.splitdrive(path)[0].casefold()):
+                continue
+            result.append({"path": path, "name": row["name"], "snippet": row["snippet"]})
+        return result
+
+    def errors(self, roots=None):
+        rows = self.db.execute("SELECT path,reason FROM content_errors ORDER BY path").fetchall()
+        allowed = [os.path.normcase(os.path.abspath(r)) for r in roots] if roots else None
+        return [dict(r) for r in rows if not any(p.casefold() == "$recycle.bin" for p in Path(r["path"]).parts)
+                and (allowed is None or any(os.path.commonpath((os.path.normcase(os.path.abspath(r["path"])), root)) == root
+                                            for root in allowed if os.path.splitdrive(root)[0].casefold() == os.path.splitdrive(os.path.abspath(r["path"]))[0].casefold()))]

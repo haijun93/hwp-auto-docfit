@@ -60,7 +60,7 @@ class TimemachineServiceTests(unittest.TestCase):
             scanner=stub_scanner, thumb_dir=Path(self.temp.name) / "thumbs")
 
     def tearDown(self):
-        self.service.store.close()
+        self.service.close()
         self.temp.cleanup()
 
     def enable(self, roots=None):
@@ -72,6 +72,17 @@ class TimemachineServiceTests(unittest.TestCase):
         self.assertFalse(settings["enabled"])
         self.assertIsInstance(settings["roots"], list)
         self.assertFalse(self.service.command("status")["enabled"])
+
+    def test_content_index_requires_active_root_and_searches_local_text(self):
+        self.enable()
+        document = self.root / "내용.txt"
+        document.write_text("서비스 본문 키워드", encoding="utf-8")
+        indexed = self.service.command("content_index", {"path": str(document)})
+        self.assertTrue(indexed["ok"])
+        result = self.service.command("content_search", {"query": "본문 키워드"})
+        self.assertEqual(result["items"][0]["name"], document.name)
+        outside = self.plain_file
+        self.assertFalse(self.service.command("content_index", {"path": str(outside)})["ok"])
 
     def test_settings_reject_relative_missing_and_more_than_twenty_roots(self):
         for roots in (["relative"], [str(self.root / "missing")], [str(self.plain_file)], [str(self.root)] * 21):
