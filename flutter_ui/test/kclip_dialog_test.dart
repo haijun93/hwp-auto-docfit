@@ -91,4 +91,19 @@ void main() {
     await tester.pumpAndSettle();
     expect(calls, contains('clear'));
   });
+
+  testWidgets('엑셀 표 변환 버튼과 칸 배경색 옵션을 제공한다', (tester) async {
+    Future<Object?> api(String method, List<Object?> args) async {
+      switch (args[0]) {
+        case 'status': return {'ok':true,'running':true,'available':true,'status':{'paused':false}};
+        case 'list': return {'ok':true,'items':[]};
+        case 'settings_get': return {'ok':true,'settings':{}};
+      }
+      return {'ok':true};
+    }
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body:SizedBox(height:700,child:KClipPanel(api:api)))));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('kclip-excel-table')), findsOneWidget);
+    expect(find.text('칸 배경색 유지'), findsOneWidget);
+  });
 }

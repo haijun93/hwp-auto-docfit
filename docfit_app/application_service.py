@@ -213,6 +213,13 @@ class ApplicationService:
             if args[0] == 'copy' and getattr(self.data, 'running', False):
                 return {'ok':False,'message':'문서 작업이 끝난 뒤 다시 눌러 주세요.'}
             return TableSketchService(self.store._path.parent).command(*args)
+        if method=='excel_table':
+            from .excel_table_service import ExcelTableService
+            if getattr(self.data, 'running', False):
+                return {'ok':False,'message':'문서 작업이 끝난 뒤 다시 눌러 주세요.'}
+            if getattr(self, '_excel_table_service', None) is None:
+                self._excel_table_service = ExcelTableService()
+            return self._excel_table_service.command(*args)
         if method=='kclip':
             from .kclip_service import KClipService
             if getattr(self, '_kclip_service', None) is None:
