@@ -115,8 +115,8 @@ class LiveLinkService:
 
 # ── 클립보드 보관·복원 ──
 def save_clipboard() -> dict:
-    """사용자 클립보드의 글·그림을 보관한다(다른 형식은 보관하지 않음)."""
-    saved: dict = {}
+    """사용자 클립보드의 글·그림을 보관하고 원래 비었는지 기록한다."""
+    saved: dict = {"_empty": False, "_restorable": False}
     try:
         import win32clipboard as cb
         cb.OpenClipboard()
@@ -124,22 +124,27 @@ def save_clipboard() -> dict:
             for fmt in (cb.CF_UNICODETEXT, cb.CF_DIB):
                 if cb.IsClipboardFormatAvailable(fmt):
                     saved[fmt] = cb.GetClipboardData(fmt)
+                    saved["_restorable"] = True
+            if not saved["_restorable"]:
+                saved["_empty"] = cb.CountClipboardFormats() == 0
         finally:
             cb.CloseClipboard()
     except Exception as exc:
         raise link.LiveLinkError("CLIPBOARD_SAVE_FAILED", "클립보드를 보관하지 못해 넣기를 취소했어요.") from exc
-    if not saved:
-        raise link.LiveLinkError("CLIPBOARD_SAVE_FAILED", "보관할 글·그림 클립보드가 없어 넣기를 취소했어요.")
     return saved
 
 
 def restore_clipboard(saved: dict) -> bool:
     try:
         import win32clipboard as cb
+        if not saved.get("_restorable") and not saved.get("_empty"):
+            return False
         cb.OpenClipboard()
         try:
             cb.EmptyClipboard()
             for fmt, data in saved.items():
+                if isinstance(fmt, str):
+                    continue
                 cb.SetClipboardData(fmt, data)
         finally:
             cb.CloseClipboard()

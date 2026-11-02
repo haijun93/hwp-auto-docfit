@@ -2053,6 +2053,7 @@ class DesktopWebBridge:
                 return {"ok": False, **before}
             saved = live.save_clipboard()
             restored = False
+            restore_warning = not saved.get("_restorable") and not saved.get("_empty")
             try:
                 made = producers[source]()
                 if isinstance(made, dict) and made.get("ok") is False:
@@ -2061,7 +2062,7 @@ class DesktopWebBridge:
             finally:
                 restored = live.restore_clipboard(saved)
             response = {"ok": True, "title": before["title"], **result, "clipboard_restored": restored}
-            if not restored:
+            if restore_warning or not restored:
                 response["clipboard_warning"] = "넣기는 완료했지만 사용자 클립보드를 복원하지 못했어요."
             return response
         except link.LiveLinkError as exc:

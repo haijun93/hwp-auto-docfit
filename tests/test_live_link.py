@@ -1,6 +1,7 @@
 """3.0 LiveLink 연결·문맥·넣기(가짜 한/글로 시험)."""
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from docfit_live.link import LiveLinkError, Session, choose, context, paste_at_cursor, running_sessions
 
@@ -76,6 +77,24 @@ class LiveLinkTest(unittest.TestCase):
         self.assertEqual((ctx["in_table"], ctx["page"], ctx["pos"]), (True, 3, [0, 1, 2]))
         result = paste_at_cursor(app, expected=ctx)
         self.assertEqual((result["undo_steps"], app.runs), (1, ["Paste"]))
+
+    def test_foreground_app_window_pastes_when_hangul_owner_is_enabled(self):
+        app = FakeApp(r"C:\a\가.hwpx")
+        with patch("docfit_live.link.ctypes.windll", create=True) as windll:
+            windll.user32.IsWindowEnabled.return_value = 1
+            windll.user32.GetForegroundWindow.return_value = 999  # 도우미 앱이 전경
+            result = paste_at_cursor(app)
+        self.assertTrue(result["inserted"])
+        self.assertEqual(app.runs, ["Paste"])
+
+    def test_disabled_owner_blocks_without_paste(self):
+        app = FakeApp(r"C:\a\가.hwpx")
+        with patch("docfit_live.link.ctypes.windll", create=True) as windll:
+            windll.user32.IsWindowEnabled.return_value = 0
+            with self.assertRaises(LiveLinkError) as raised:
+                paste_at_cursor(app)
+        self.assertEqual(raised.exception.code, "DOCUMENT_BUSY")
+        self.assertEqual(app.runs, [])
 
     def test_paste_stops_when_cursor_moved(self):
         app = FakeApp(r"C:\a\가.hwpx")

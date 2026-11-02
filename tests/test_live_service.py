@@ -93,6 +93,29 @@ class LiveBridgeTest(unittest.TestCase):
         self.assertIn("복원하지 못", result["clipboard_warning"])
         self.assertEqual(self.user.app.runs, ["Paste"])
 
+    def test_empty_clipboard_is_cleared_after_insert_and_restored(self):
+        self.bridge.table_sketch = Mock(return_value={"ok": True})
+        saved = {"_empty": True, "_restorable": False}
+        with patch("docfit_live.service.save_clipboard", return_value=saved), \
+                patch("docfit_live.service.restore_clipboard", return_value=True) as restore:
+            result = self.bridge.live_link("insert", {"source": "table_sketch", "data": {}})
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["clipboard_restored"])
+        restore.assert_called_once_with(saved)
+        self.assertEqual(self.user.app.runs, ["Paste"])
+
+    def test_unrestorable_clipboard_format_allows_insert_with_warning(self):
+        self.bridge.table_sketch = Mock(return_value={"ok": True})
+        saved = {"_empty": False, "_restorable": False}
+        with patch("docfit_live.service.save_clipboard", return_value=saved), \
+                patch("docfit_live.service.restore_clipboard", return_value=False) as restore:
+            result = self.bridge.live_link("insert", {"source": "table_sketch", "data": {}})
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["clipboard_restored"])
+        self.assertIn("복원하지 못", result["clipboard_warning"])
+        restore.assert_called_once_with(saved)
+        self.assertEqual(self.user.app.runs, ["Paste"])
+
     def test_rejects_bad_input_and_busy_app(self):
         self.assertFalse(self.bridge.live_link("insert", {"source": "exe", "data": {}})["ok"])
         self.assertFalse(self.bridge.live_link("unknown")["ok"])

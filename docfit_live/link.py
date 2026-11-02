@@ -136,11 +136,17 @@ def paste_at_cursor(app, *, expected: dict | None = None) -> dict:
     now = context(app)
     if not now.get("visible"):
         raise LiveLinkError("DOCUMENT_BUSY", "한/글 문서 창이 활성 상태가 아니에요. 문서 창을 앞에 두고 다시 시도해 주세요.")
-    try:
-        foreground = int(ctypes.windll.user32.GetForegroundWindow())
-    except Exception:
-        foreground = now["hwnd"]
-    if now["hwnd"] and foreground != now["hwnd"]:
+    if now["hwnd"]:
+        try:
+            user32 = ctypes.windll.user32
+            user32.IsWindowEnabled.argtypes = [ctypes.c_void_p]
+            user32.IsWindowEnabled.restype = ctypes.c_bool
+            enabled = bool(user32.IsWindowEnabled(now["hwnd"]))
+        except Exception:
+            enabled = True  # hwnd 상태를 확인할 수 없으면 문맥 재확인 결과에 맡긴다.
+    else:
+        enabled = True
+    if not enabled:
         raise LiveLinkError("DOCUMENT_BUSY", "한/글 문서 창이 활성 상태가 아니에요. 대화상자나 다른 창을 닫고 다시 시도해 주세요.")
     if expected and any(expected.get(k) != now.get(k) for k in ("path", "document_id", "pos", "selected", "in_table", "page", "hwnd")):
         raise LiveLinkError("STALE_CONTEXT", "넣으려던 사이에 커서나 문서가 바뀌었어요. 다시 눌러 주세요.")
