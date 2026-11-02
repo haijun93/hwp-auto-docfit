@@ -15,7 +15,7 @@
 
 줄 끝에서 끊긴 단어와 짧은 마지막 줄을 자간으로 정리하고, 문서에서 많이 쓰인 서식을 기준으로 문장 모양을 통일합니다. 기본 보고서 양식이나 예시 문서에서 가져온 사용자 서식을 적용해 글꼴·문단·표 모양을 맞출 수도 있습니다. 원본은 보존하고 결과를 새 파일로 저장합니다.
 
-<p align="center"><img src="docs/media/cardnews/02-work-modes.png" alt="자간 정리, 서식 통일, 한 번에 적용, 페이지 맞춤 작업 선택 화면" width="860"></p>
+<p align="center"><img src="docs/media/features/options.png" alt="문서 모양 정리 작업과 세부 옵션 안내" width="860"></p>
 
 ### 예시 문서의 서식 재사용
 
@@ -23,8 +23,8 @@ HWP·HWPX 보고서를 분석해 제목과 개요 표, 항목 기호 문장, 표
 
 <table>
 <tr>
-<td width="50%"><img src="docs/media/cardnews/03-style-picker.png" alt="기본 보고서 서식과 사용자 서식 선택 화면"></td>
-<td width="50%"><img src="docs/media/cardnews/03-style-manager.png" alt="예시 보고서 서식 요소 관리 화면"></td>
+<td width="50%"><img src="docs/media/features/format-copy.png" alt="예시 문서의 서식을 다른 문서에 복사하는 기능"></td>
+<td width="50%"><img src="docs/media/features/format-manage.png" alt="등록한 서식 요소를 관리하는 화면"></td>
 </tr>
 </table>
 
@@ -34,8 +34,8 @@ HWP·HWPX 보고서를 분석해 제목과 개요 표, 항목 기호 문장, 표
 
 <table>
 <tr>
-<td width="50%"><img src="docs/media/cardnews/04-table-templates.png" alt="추진절차 표 템플릿과 구성 설정"></td>
-<td width="50%"><img src="docs/media/cardnews/05-table-sketch.png" alt="표그림판에서 만든 편집 가능한 표"></td>
+<td width="50%"><img src="docs/media/app/table-template.png" alt="추진절차 표 템플릿 선택과 구성 화면"></td>
+<td width="50%"><img src="docs/media/app/table-sketch.png" alt="표그림판으로 만든 편집 가능한 표"></td>
 </tr>
 </table>
 
@@ -43,7 +43,7 @@ HWP·HWPX 보고서를 분석해 제목과 개요 표, 항목 기호 문장, 표
 
 파일이나 폴더를 추가해 HWPX, DOCX, EPUB, HTML, Markdown, PDF, 이미지, 텍스트 등으로 변환합니다. PDF 합치기·압축과 폴더 안 HWP 문서의 일괄 HWPX 변환도 지원합니다. 변환 결과는 원본을 덮어쓰지 않고 원본 옆에 저장합니다.
 
-<p align="center"><img src="docs/media/cardnews/06-file-converter.png" alt="파일과 변환 형식을 선택하는 파일 변환 화면" width="860"></p>
+<p align="center"><img src="docs/media/app/file-convert.png" alt="파일과 변환 형식을 선택하는 파일 변환 화면" width="860"></p>
 
 ### 다이어그램과 마인드맵
 
@@ -51,8 +51,8 @@ HWP·HWPX 보고서를 분석해 제목과 개요 표, 항목 기호 문장, 표
 
 <table>
 <tr>
-<td width="50%"><img src="docs/media/cardnews/07-diagram.png" alt="다이어그램 편집 화면과 결과"></td>
-<td width="50%"><img src="docs/media/cardnews/08-mindmap.png" alt="마인드맵 편집 화면과 결과"></td>
+<td width="50%"><img src="docs/media/app/diagram.png" alt="다이어그램 편집 화면과 결과"></td>
+<td width="50%"><img src="docs/media/app/mindmap.png" alt="마인드맵 편집 화면과 결과"></td>
 </tr>
 </table>
 
@@ -60,13 +60,9 @@ HWP·HWPX 보고서를 분석해 제목과 개요 표, 항목 기호 문장, 표
 
 오늘·이번 주·이번 달에 작업한 파일을 시간순으로 확인합니다. 날짜와 파일 종류로 좁혀 보고, 미리보기와 파일명으로 찾은 뒤 원본 폴더를 열 수 있습니다.
 
-<p align="center"><img src="docs/media/cardnews/09-timeline.png" alt="시간대별 파일 목록과 달력이 있는 파일 타임라인" width="860"></p>
-
 ### 몽땅클립보드
 
 복사한 텍스트·그림·파일·폴더 경로를 모아 두고 다시 사용합니다. `Ctrl+Shift+V`로 기록을 열어 검색하고, 자주 쓰는 항목을 고정하거나 보관 개수·용량·기간을 설정할 수 있습니다.
-
-<p align="center"><img src="docs/media/cardnews/10-mongttang-clipboard.png" alt="몽땅클립보드 기록과 보관 설정 화면" width="860"></p>
 
 ## 시작하기
 
@@ -74,4 +70,4 @@ HWP·HWPX 보고서를 분석해 제목과 개요 표, 항목 기호 문장, 표
 2. Windows 10·11에서 실행합니다. Python이나 Node.js를 별도로 설치할 필요는 없습니다.
 3. 문서 편집 기능은 한컴오피스 한/글이 설치된 PC에서 사용할 수 있습니다. 한/글이 필요 없는 변환 기능도 있습니다.
 
-자세한 사용법은 [사용자 안내서](docs/USER_GUIDE.md)를 참고하세요. 개발·빌드 방법은 [개발 안내](DEVELOPMENT.md)에 있습니다.
+자세한 사용법은 [사용자 안내서](docs/USER_GUIDE.md)를 참고하세요. 개발·빌드 방법은 [개발 안내](docs/DEVELOPMENT.md)에 있습니다.
