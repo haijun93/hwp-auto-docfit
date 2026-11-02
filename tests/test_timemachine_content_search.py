@@ -31,6 +31,7 @@ class ContentSearchTests(unittest.TestCase):
     def test_hwpx_uses_defused_xml_extractor(self):
         path = self.root / "문서.hwpx"
         with ZipFile(path, "w") as archive:
+            archive.writestr("Contents/header.xml", "<head/>")
             archive.writestr("Contents/section0.xml", '<root><p>타임머신 본문 검색</p></root>')
         self.assertIn("타임머신 본문", extract_text(path))
         self.index.index_file(path)

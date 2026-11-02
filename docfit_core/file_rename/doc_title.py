@@ -4,24 +4,16 @@ from __future__ import annotations
 import re
 import zipfile
 from pathlib import Path
+from ..hwpx import open_hwpx_safely
 
 from defusedxml import ElementTree as ET
 
 _HP = "{http://www.hancom.co.kr/hwpml/2011/paragraph}"
-_MAX_ARCHIVE_BYTES = 80 * 1024 * 1024
-_MAX_ENTRIES = 2000
-_MAX_ENTRY_BYTES = 20 * 1024 * 1024
 _FORBIDDEN = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 
 
 def _safe_archive(path):
-    archive = zipfile.ZipFile(path)
-    infos = archive.infolist()
-    if (len(infos) > _MAX_ENTRIES or sum(i.file_size for i in infos) > _MAX_ARCHIVE_BYTES
-            or any(i.file_size > _MAX_ENTRY_BYTES for i in infos)):
-        archive.close()
-        raise ValueError("HWPX 압축 파일 크기가 허용 범위를 넘습니다.")
-    return archive
+    return open_hwpx_safely(path)
 
 
 def _section_names(archive):

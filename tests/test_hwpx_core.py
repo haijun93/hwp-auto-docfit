@@ -33,6 +33,16 @@ class HwpxCoreTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 open_hwpx_safely(source, "w")
 
+    def test_safe_opener_preserves_entry_and_size_limits(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "limited.hwpx"
+            make_hwpx(source)
+            from docfit_core.hwpx import HwpxLimits
+            with self.assertRaises(HwpxSecurityError):
+                open_hwpx_safely(source, limits=HwpxLimits(max_entries=2))
+            with self.assertRaises(HwpxSecurityError):
+                open_hwpx_safely(source, limits=HwpxLimits(max_file_size=8))
+
     def test_inspect_and_markdown_export(self):
         with tempfile.TemporaryDirectory() as folder:
             source = Path(folder) / "sample.hwpx"

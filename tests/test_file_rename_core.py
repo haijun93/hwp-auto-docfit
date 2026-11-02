@@ -28,6 +28,7 @@ class RuleTests(unittest.TestCase):
             def hwpx(name, body):
                 path = root / name
                 with zipfile.ZipFile(path, "w") as archive:
+                    archive.writestr("Contents/header.xml", "<head/>")
                     archive.writestr("Contents/section0.xml", body)
                 return Entry.from_path(path)
             table = hwpx("table.hwpx", '<hp:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p><hp:run><hp:tbl><hp:tr><hp:tc><hp:p><hp:run><hp:t>보고서: 계획/안</hp:t></hp:run></hp:p></hp:tc></hp:tr></hp:tbl></hp:run></hp:p></hp:sec>')

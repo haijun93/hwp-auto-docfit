@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import os
 import sqlite3
-import zipfile
 import threading
 import re
 from datetime import date
 from pathlib import Path
 from defusedxml import ElementTree as ET
+from ..hwpx import open_hwpx_safely
 
 SUPPORTED = {"hwpx", "txt", "docx", "pdf"}
 
@@ -55,7 +55,8 @@ def extract_text(path):
         raise ValueError("텍스트 인코딩을 판별할 수 없음")
     if ext in ("hwpx", "docx"):
         chunks = []
-        with zipfile.ZipFile(path) as archive:
+        opener = open_hwpx_safely if ext == "hwpx" else __import__("zipfile").ZipFile
+        with opener(path) as archive:
             names = archive.namelist()
             if ext == "hwpx":
                 targets = [n for n in names if n.startswith("Contents/section") and n.endswith(".xml")]
