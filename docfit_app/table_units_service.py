@@ -195,13 +195,17 @@ class TableUnitsService:
         except (OSError, ValueError) as exc:
             raise ServiceError("CATALOG_UNAVAILABLE", f"표 서식 모음을 읽지 못했습니다: {exc}") from exc
         if FLOW_OVERRIDE_CATALOG.is_file():
-            items = [item for item in items if item.get("name") != FLOW_OVERRIDE_NAME]
             try:
                 replacement = table_units.describe_units(FLOW_OVERRIDE_CATALOG)
             except (OSError, ValueError):
                 replacement = []
-            items += [{**item, "id": FLOW_OVERRIDE_PREFIX + str(item["id"]), "v3_override": True}
-                      for item in replacement if item.get("name") == FLOW_OVERRIDE_NAME]
+            replacement = [{**item, "id": FLOW_OVERRIDE_PREFIX + str(item["id"]), "v3_override": True}
+                           for item in replacement if item.get("name") == FLOW_OVERRIDE_NAME]
+            if replacement:
+                # 교체한 템플릿은 원래 템플릿 자리에 둔다(목록 순서 유지).
+                position = next((i for i, item in enumerate(items) if item.get("name") == FLOW_OVERRIDE_NAME), len(items))
+                items = [item for item in items if item.get("name") != FLOW_OVERRIDE_NAME]
+                items[position:position] = replacement
         if self._gallery_ready():
             try:
                 extra = table_units.describe_units(self._gallery)
