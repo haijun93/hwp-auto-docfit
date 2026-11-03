@@ -443,6 +443,9 @@ class TimemachineService:
             query = payload.get("query")
             rows = self.content_index.search(query, roots=self._settings["roots"], limit=payload.get("limit", 100))
             return {"ok": True, "items": rows}
+        if action == "file_search":
+            query = payload.get("query")
+            return {"ok": True, "items": self.content_index.search_files(query, roots=self._settings["roots"], limit=payload.get("limit", 500))}
         if action == "related_search":
             path = payload.get("path")
             if not isinstance(path, str) or not self._path_in_active_root(path):

@@ -92,12 +92,71 @@ class ContentSearchIndex:
         self.db.row_factory = sqlite3.Row
         self.db.executescript("""
             CREATE TABLE IF NOT EXISTS content_meta(path TEXT PRIMARY KEY, size INTEGER, mtime REAL, reference_date TEXT);
-            CREATE VIRTUAL TABLE IF NOT EXISTS content_fts USING fts5(path UNINDEXED, name UNINDEXED, body, tokenize='unicode61');
             CREATE TABLE IF NOT EXISTS content_errors(path TEXT PRIMARY KEY, reason TEXT, size INTEGER, mtime REAL);
         """)
-        columns = {row[1] for row in self.db.execute("PRAGMA table_info(content_meta)")}
-        if "reference_date" not in columns:
-            self.db.execute("ALTER TABLE content_meta ADD COLUMN reference_date TEXT")
+        # Keep the legacy table as migration source; trigram supports Korean substring matches.
+        try:
+            fts_exists = self.db.execute("SELECT 1 FROM sqlite_master WHERE name='content_fts'").fetchone()
+            if fts_exists:
+                sql = self.db.execute("SELECT sql FROM sqlite_master WHERE name='content_fts'").fetchone()[0]
+                if "trigram" not in (sql or "").lower():
+                    with self.db:
+                        self.db.execute("ALTER TABLE content_fts RENAME TO content_fts_legacy")
+                        self.db.execute("CREATE VIRTUAL TABLE content_fts USING fts5(path UNINDEXED,name UNINDEXED,body, tokenize='trigram')")
+                        self.db.execute("INSERT INTO content_fts(path,name,body) SELECT path,name,body FROM content_fts_legacy")
+                        self.db.execute("DROP TABLE content_fts_legacy")
+            else:
+                self.db.execute("CREATE VIRTUAL TABLE content_fts USING fts5(path UNINDEXED,name UNINDEXED,body, tokenize='trigram')")
+            cols = {r[1] for r in self.db.execute("PRAGMA table_info(content_meta)")}
+            if "reference_date" not in cols:
+                self.db.execute("ALTER TABLE content_meta ADD COLUMN reference_date TEXT")
+            if "name" not in cols: self.db.execute("ALTER TABLE content_meta ADD COLUMN name TEXT")
+            if "extension" not in cols: self.db.execute("ALTER TABLE content_meta ADD COLUMN extension TEXT")
+            if "mtime" not in cols: self.db.execute("ALTER TABLE content_meta ADD COLUMN mtime REAL")
+            if "size" not in cols: self.db.execute("ALTER TABLE content_meta ADD COLUMN size INTEGER")
+            self.db.execute("UPDATE content_meta SET name=COALESCE(name,(SELECT name FROM content_fts WHERE content_fts.path=content_meta.path)), extension=COALESCE(extension,lower(substr(path,instr(path,'.')+1))), mtime=COALESCE(mtime,0), size=COALESCE(size,0)")
+            with self.db:
+                for row in self.db.execute("SELECT path,name,body FROM content_fts_legacy").fetchall():
+                    self.db.execute("INSERT INTO content_fts(path,name,body) VALUES(?,?,?)", tuple(row))
+                self.db.execute("DROP TABLE content_fts_legacy")
+            self.migration_error = None
+        except sqlite3.OperationalError as exc:
+            # A legacy unicode61 table named content_fts needs a safe rebuild.
+            try:
+                with self.db:
+                    self.db.execute("ALTER TABLE content_fts RENAME TO content_fts_legacy")
+                    self.db.execute("CREATE VIRTUAL TABLE content_fts USING fts5(path UNINDEXED,name UNINDEXED,body, tokenize='trigram')")
+                    self.db.execute("INSERT INTO content_fts(path,name,body) SELECT path,name,body FROM content_fts_legacy")
+                    self.db.execute("DROP TABLE content_fts_legacy")
+                self.migration_error = None
+            except sqlite3.Error as migration_exc:
+                self.migration_error = str(migration_exc)
+                raise RuntimeError("본문 색인 스키마 이전에 실패했습니다. 본문 재색인이 필요합니다.") from migration_exc
+
+    @staticmethod
+    def parse_query(query):
+        """Parse AND terms, quoted phrases and Docufinder-style filters."""
+        if not isinstance(query, str) or not query.strip() or len(query) > 200:
+            raise ValueError("검색어는 1~200자로 입력해 주세요.")
+        tokens = re.findall(r'-?"(?:[^"\\]|\\.)*"|\S+', query)
+        parsed = {"terms": [], "phrases": [], "exclude": [], "ext": [], "path": [], "after": None, "before": None, "near": None}
+        for token in tokens:
+            neg = token.startswith("-")
+            raw = token[1:] if neg else token
+            if raw.startswith('"') and raw.endswith('"'):
+                parsed["exclude" if neg else "phrases"].append(raw[1:-1].replace('\\"','"'))
+                continue
+            if not neg and ":" in raw:
+                key, value = raw.split(":", 1)
+                if key == "ext": parsed["ext"].extend(x.lower().lstrip(".") for x in value.split(",") if x)
+                elif key == "path" and value: parsed["path"].append(value)
+                elif key in ("after", "before"):
+                    parsed[key] = value if re.fullmatch(r"\d{4}(?:-\d{2}(?:-\d{2})?)?", value) else (_ for _ in ()).throw(ValueError(f"{key} 날짜 형식이 올바르지 않습니다."))
+                else: parsed["terms"].append(raw)
+                continue
+            if not neg and re.fullmatch(r"~\d+", raw): parsed["near"] = int(raw[1:]); continue
+            (parsed["exclude"] if neg else parsed["terms"]).append(raw)
+        return parsed
 
     def close(self):
         with self._lock:
@@ -119,6 +178,7 @@ class ContentSearchIndex:
                     self.db.execute("INSERT INTO content_fts(path,name,body) VALUES(?,?,?)", (path, os.path.basename(path), body))
                     self.db.execute("INSERT OR REPLACE INTO content_meta(path,size,mtime,reference_date) VALUES(?,?,?,?)",
                                     (path, stat.st_size, stat.st_mtime, extract_reference_date(body)))
+                    self.db.execute("UPDATE content_meta SET name=?,extension=? WHERE path=?", (os.path.basename(path), Path(path).suffix.lower().lstrip("."), path))
                     self.db.execute("DELETE FROM content_errors WHERE path=?", (path,))
             return {"indexed": True, "error": None}
         except Exception as exc:
@@ -149,15 +209,38 @@ class ContentSearchIndex:
             for root in allowed if os.path.splitdrive(root)[0].casefold() == os.path.splitdrive(os.path.abspath(row["path"]))[0].casefold())]
 
     def search(self, query, *, roots=None, limit=100):
-        if not isinstance(query, str) or not query.strip() or len(query) > 200:
-            raise ValueError("검색어는 1~200자로 입력해 주세요.")
-        # 일반 문구는 FTS 구문이 아닌 안전한 phrase로 처리
-        phrase = '"' + query.replace('"', '""') + '"'
-        sql = "SELECT f.path,f.name,snippet(content_fts,2,'','','…',18) snippet FROM content_fts f WHERE content_fts MATCH ?"
+        parsed = self.parse_query(query)
+        terms = parsed["terms"] + parsed["phrases"]
+        if not terms:
+            raise ValueError("본문 검색어를 입력해 주세요.")
+        lim = max(1, min(int(limit), 500))
+        # >=3 characters use indexed trigram; short Korean terms use substring scan.
+        candidates = None
+        short_terms = []
+        for term in terms:
+            if len(term) < 3:
+                short_terms.append(term)
+                continue
+            try:
+                with self._lock:
+                    expression = '"' + term.replace('"','""') + '"'
+                    found = {r[0] for r in self.db.execute("SELECT path FROM content_fts WHERE content_fts MATCH ?", (expression,))}
+            except sqlite3.OperationalError:
+                with self._lock:
+                    found = {r[0] for r in self.db.execute("SELECT path FROM content_fts WHERE body LIKE ?", ("%" + term + "%",))}
+            candidates = found if candidates is None else candidates & found
+            if not candidates:
+                return []
         with self._lock:
-            rows = self.db.execute(sql + " ORDER BY rank LIMIT ?", (phrase, max(1, min(int(limit), 500)))).fetchall()
+            if candidates is None:
+                rows = self.db.execute("SELECT path,name,body FROM content_fts").fetchall()
+            else:
+                marks = ",".join("?" for _ in candidates)
+                rows = self.db.execute(f"SELECT path,name,body FROM content_fts WHERE path IN ({marks})", tuple(candidates)).fetchall()
+            reference_dates = {r["path"]: r["reference_date"] for r in self.db.execute("SELECT path,reference_date FROM content_meta")}
         allowed = [os.path.normcase(os.path.abspath(r)) for r in roots] if roots else None
         result = []
+        prepared = []
         for row in rows:
             path = os.path.abspath(row["path"])
             if any(part.casefold() == "$recycle.bin" for part in Path(path).parts):
@@ -165,8 +248,53 @@ class ContentSearchIndex:
             if allowed is not None and not any(os.path.commonpath((os.path.normcase(path), root)) == root
                                                for root in allowed if os.path.splitdrive(root)[0].casefold() == os.path.splitdrive(path)[0].casefold()):
                 continue
-            result.append({"path": path, "name": row["name"], "snippet": row["snippet"]})
-        return result
+            ext = Path(path).suffix.lower().lstrip(".")
+            parent = os.path.dirname(path).casefold()
+            if parsed["ext"] and ext not in parsed["ext"]: continue
+            if parsed["path"] and not all(v.casefold() in path.casefold() for v in parsed["path"]): continue
+            ref_date = reference_dates.get(row["path"])
+            if parsed["after"] and (not ref_date or ref_date < parsed["after"]): continue
+            if parsed["before"] and (not ref_date or ref_date >= parsed["before"]): continue
+            body = row["body"] or ""
+            folded = body.casefold()
+            if any(t.casefold() not in folded for t in terms): continue
+            if any(t.casefold() in folded for t in parsed["exclude"]): continue
+            # N proximity: all terms must occur within N intervening whitespace tokens.
+            if parsed["near"] is not None and len(terms) > 1:
+                word_spans = [(m.group().casefold(), m.start(), m.end()) for m in re.finditer(r"\S+", body)]
+                term_positions = [[i for i, (word, _, _) in enumerate(word_spans) if term.casefold() in word]
+                                  for term in terms]
+                if any(not p for p in term_positions): continue
+                if not any(max(combo) - min(combo) <= parsed["near"] + 1
+                           for combo in __import__('itertools').product(*term_positions)):
+                    continue
+            offsets = [folded.find(t.casefold()) for t in terms if folded.find(t.casefold()) >= 0]
+            first = min(offsets) if offsets else 0
+            start, end = max(0, first - 70), min(len(body), first + 180)
+            snippet = body[start:end]
+            spans = []
+            for term in terms:
+                match = re.search(re.escape(term), snippet, re.I)
+                if match: spans.append([match.start(), match.end()])
+            score = sum(body.casefold().count(t.casefold()) for t in terms) + sum(4 for p in parsed["phrases"] if p.casefold() in folded)
+            result.append({"path": path, "name": row["name"], "snippet": snippet, "highlights": spans,
+                           "score": score, "position": {"page": None, "sheet": None, "row": None}})
+        result.sort(key=lambda item: (-item["score"], item["name"].casefold()))
+        return result[:lim]
+
+    def search_files(self, query, *, roots=None, limit=500):
+        """Immediate in-memory filename cache populated from indexed metadata."""
+        words = [w.casefold() for w in query.split() if w]
+        if not words: return []
+        allowed = [os.path.normcase(os.path.abspath(r)) for r in roots] if roots else None
+        with self._lock: rows = self.db.execute("SELECT path,name,size,mtime,extension FROM content_meta ORDER BY name COLLATE NOCASE").fetchall()
+        out = []
+        for r in rows:
+            p = os.path.abspath(r["path"])
+            if all(w in r["name"].casefold() for w in words) and (allowed is None or any(os.path.commonpath((os.path.normcase(p), root)) == root for root in allowed if os.path.splitdrive(root)[0].casefold() == os.path.splitdrive(p)[0].casefold())):
+                out.append({"path": p, "name": r["name"] or Path(p).name, "size": r["size"], "mtime": r["mtime"], "extension": r["extension"] or Path(p).suffix.lower().lstrip(".")})
+                if len(out) >= limit: break
+        return out
 
     def errors(self, roots=None):
         with self._lock:
