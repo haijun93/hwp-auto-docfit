@@ -442,13 +442,38 @@ class TimemachineService:
             return self._start_content_index()
         if action in ("content_index_status", "content_index_progress"):
             with self._content_lock:
-                return {"ok": True, **self._content_state}
+                state = dict(self._content_state)
+            reindex_cnt = self.content_index.needs_reindex_count(roots=self._settings["roots"])
+            state["needs_reindex_count"] = reindex_cnt
+            state["needs_reindex"] = reindex_cnt > 0
+            state["reindex_guide"] = "기존 본문 색인은 위계 정보가 없어 재색인이 필요합니다." if reindex_cnt > 0 else None
+            return {"ok": True, **state}
         if action == "content_index_cancel":
             return self.cancel_content_index()
         if action == "content_search":
             query = payload.get("query")
-            rows = self.content_index.search(query, roots=self._settings["roots"], limit=payload.get("limit", 100))
-            return {"ok": True, "items": rows}
+            sort = payload.get("sort")
+            if not sort or not isinstance(sort, str):
+                sort = "hierarchy_relevance"
+            rows = self.content_index.search(query, roots=self._settings["roots"], limit=payload.get("limit", 100), sort=sort)
+            for row in rows:
+                row["file_name"] = row["name"]
+                row["folder_path"] = os.path.dirname(row["path"])
+                row["folder_name"] = os.path.basename(row["folder_path"])
+                row.pop("_best_level_rank", None)
+                row.pop("_document_date", None)
+                row.pop("_bm25_score", None)
+            reindex_cnt = self.content_index.needs_reindex_count(roots=self._settings["roots"])
+            return {
+                "ok": True,
+                "items": rows,
+                "needs_reindex": reindex_cnt > 0,
+                "needs_reindex_count": reindex_cnt,
+                "reindex_guide": "기존 본문 색인은 위계 정보가 없어 재색인이 필요합니다." if reindex_cnt > 0 else None,
+            }
+        if action == "file_search":
+            query = payload.get("query")
+            return {"ok": True, "items": self.content_index.search_files(query, roots=self._settings["roots"], limit=payload.get("limit", 500))}
         if action == "related_search":
             path = payload.get("path")
             if not isinstance(path, str) or not self._path_in_active_root(path):

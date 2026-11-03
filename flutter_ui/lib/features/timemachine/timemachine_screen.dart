@@ -31,6 +31,11 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
   bool _contentMode = false, _contentIndexRunning = false;
   Map<String, Object?> _contentProgress = {};
   List<Map<String, Object?>> _contentResults = [];
+  bool _contentNeedsReindex = false;
+  bool _contentReindexDismissed = false;
+  int _contentNeedsReindexCount = 0;
+  String? _contentReindexGuide;
+  String _contentSort = 'hierarchy_relevance';
   Timer? _contentPoll;
   DateTime _month = DateTime(DateTime.now().year, DateTime.now().month);
   DateTime? _start, _end, _firstDay;
@@ -68,15 +73,44 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
     return Text.rich(TextSpan(style: style, children: spans), maxLines: maxLines, overflow: TextOverflow.ellipsis);
   }
 
-  Future<void> _contentSearch(String query) async {
-    if (query.isEmpty) { if (mounted) setState(() => _contentResults = []); return; }
+  Future<void> _contentSearch(String query, {String? sort}) async {
+    if (query.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _contentResults = [];
+          _contentNeedsReindex = false;
+          _contentNeedsReindexCount = 0;
+          _contentReindexGuide = null;
+        });
+      }
+      return;
+    }
+    final activeSort = sort ?? _contentSort;
     try {
-      final response = await _api.command('content_search', {'query': query, 'limit': 100});
+      final payload = <String, Object?>{
+        'query': query,
+        'limit': 100,
+        if (activeSort != 'hierarchy_relevance') 'sort': activeSort,
+      };
+      final response = await _api.command('content_search', payload);
       if (!mounted || query != _search.text.trim()) return;
       final raw = response['items'];
-      setState(() => _contentResults = response['ok'] == true && raw is List
-          ? raw.whereType<Map>().map((e) => Map<String,Object?>.from(e)).toList() : []);
-    } catch (_) { if (mounted) setState(() => _error = '본문 검색을 수행하지 못했습니다.'); }
+      final needsReindex = response['needs_reindex'] == true;
+      final needsCount = (response['needs_reindex_count'] as num?)?.toInt() ?? 0;
+      final guide = response['reindex_guide'] as String?;
+      setState(() {
+        _contentSort = activeSort;
+        _contentNeedsReindex = needsReindex;
+        _contentReindexDismissed = false;
+        _contentNeedsReindexCount = needsCount;
+        _contentReindexGuide = guide;
+        _contentResults = response['ok'] == true && raw is List
+            ? raw.whereType<Map>().map((e) => Map<String, Object?>.from(e)).toList()
+            : [];
+      });
+    } catch (_) {
+      if (mounted) setState(() => _error = '본문 검색을 수행하지 못했습니다.');
+    }
   }
   Future<void> _startContentIndex() async {
     final response = await _api.command('content_index_start');
@@ -90,8 +124,14 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
       try {
         final status = await _api.command('content_index_status');
         if (!mounted) return;
-        setState(() { _contentProgress = status; _contentIndexRunning = status['running'] == true; });
-        if (_contentIndexRunning) _pollContentIndex();
+        final wasRunning = _contentIndexRunning;
+        final isRunning = status['running'] == true;
+        setState(() { _contentProgress = status; _contentIndexRunning = isRunning; });
+        if (isRunning) {
+          _pollContentIndex();
+        } else if (wasRunning && _search.text.trim().isNotEmpty) {
+          await _contentSearch(_search.text.trim());
+        }
       } catch (_) { if (mounted) setState(() => _contentIndexRunning = false); }
     });
   }
@@ -100,7 +140,16 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
     if (mounted) setState(() { _contentProgress = status; _contentIndexRunning = status['running'] == true; });
   }
   void _toggleContentMode(bool value) {
-    setState(() { _contentMode = value; _contentResults = []; _search.clear(); _query = ''; });
+    setState(() {
+      _contentMode = value;
+      _contentResults = [];
+      _search.clear();
+      _query = '';
+      _contentNeedsReindex = false;
+      _contentNeedsReindexCount = 0;
+      _contentReindexGuide = null;
+      _contentSort = 'hierarchy_relevance';
+    });
     if (!value) { _filtersChanged(); }
   }
 
@@ -434,11 +483,70 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
         children: [
           _filtersBar(),
           if (_contentMode) _contentSearchPanel(),
+          if (_contentMode && _contentNeedsReindex && !_contentReindexDismissed && _contentReindexGuide != null)
+            MaterialBanner(
+              content: Text('$_contentReindexGuide (재색인 필요: $_contentNeedsReindexCount건)'),
+              leading: const Icon(Icons.info_outline, color: Colors.amber),
+              actions: [
+                TextButton(
+                  onPressed: () async {
+                    await _startContentIndex();
+                    if (!_contentIndexRunning && _search.text.trim().isNotEmpty) {
+                      await _contentSearch(_search.text.trim());
+                    }
+                  },
+                  child: const Text('재색인 시작'),
+                ),
+                TextButton(
+                  onPressed: () => setState(() => _contentReindexDismissed = true),
+                  child: const Text('닫기'),
+                ),
+              ],
+            ),
           if (_contentMode && _contentResults.isNotEmpty)
-            ConstrainedBox(constraints:const BoxConstraints(maxHeight:180),child:ListView.builder(itemCount:_contentResults.length,itemBuilder:(context,index){
-              final row=_contentResults[index];
-              return ListTile(dense:true,title:_marked('${row['name'] ?? ''}',_search.text.trim()),subtitle:_marked('${row['snippet'] ?? ''}',_search.text.trim(),maxLines:2));
-            })),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 220),
+              child: ListView.builder(
+                itemCount: _contentResults.length,
+                itemBuilder: (context, index) {
+                  final row = _contentResults[index];
+                  final rank = row['relevance_rank'] ?? (index + 1);
+                  final name = '${row['name'] ?? row['file_name'] ?? ''}';
+                  final bestLevel = row['best_level'] != null ? '${row['best_level']}' : '';
+                  final totalMatches = row['total_matches'] != null ? '${row['total_matches']}회' : '';
+                  final badgeText = [
+                    if (bestLevel.isNotEmpty) '위계: $bestLevel',
+                    if (totalMatches.isNotEmpty) '언급 $totalMatches',
+                  ].join(' · ');
+
+                  return ListTile(
+                    dense: true,
+                    leading: CircleAvatar(
+                      key: ValueKey('tm-content-rank-$index'),
+                      radius: 14,
+                      child: Text('$rank', style: const TextStyle(fontSize: 11)),
+                    ),
+                    title: Row(
+                      children: [
+                        Expanded(child: _marked(name, _search.text.trim())),
+                        if (badgeText.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 8.0),
+                            child: Text(
+                              badgeText,
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    subtitle: _marked('${row['snippet'] ?? ''}', _search.text.trim(), maxLines: 2),
+                  );
+                },
+              ),
+            ),
           if (_error != null)
             MaterialBanner(
               content: Text(_error!),
@@ -576,19 +684,52 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
       if (disconnected) TextButton(onPressed:_retryConnection,child:const Text('다시 연결')),
     ])))));
   }
-  Widget _contentSearchPanel() => Padding(padding:const EdgeInsets.symmetric(horizontal:12),child:Row(children:[
-    if (_contentIndexRunning) Expanded(child:LinearProgressIndicator()),
-    if (_contentIndexRunning) Text('${_contentProgress['seen'] ?? 0}건 확인 · ${_contentProgress['indexed'] ?? 0}건 색인 · 실패 ${_contentProgress['errors'] ?? 0}건'),
-    if (_contentIndexRunning) TextButton(onPressed:_cancelContentIndex,child:const Text('취소')) else TextButton(onPressed:_startContentIndex,child:const Text('본문 색인')),
-    if (_contentProgress['errors'] != null) Text('추출 실패 ${_contentProgress['errors']}건'),
-    Expanded(child:Text('검색 결과 ${_contentResults.length}건')),
-  ]));
+  Widget _contentSearchPanel() => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 12),
+    child: Row(
+      children: [
+        if (_contentIndexRunning) ...[
+          const Expanded(child: LinearProgressIndicator()),
+          const SizedBox(width: 8),
+          Text('${_contentProgress['seen'] ?? 0}건 확인 · ${_contentProgress['indexed'] ?? 0}건 색인 · 실패 ${_contentProgress['errors'] ?? 0}건'),
+          TextButton(onPressed: _cancelContentIndex, child: const Text('취소')),
+        ] else ...[
+          TextButton(onPressed: _startContentIndex, child: const Text('본문 색인')),
+          if (_contentProgress['errors'] != null) Text('추출 실패 ${_contentProgress['errors']}건'),
+        ],
+        const SizedBox(width: 8),
+        Text('검색 결과 ${_contentResults.length}건'),
+        const Spacer(),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('정렬: ', style: TextStyle(fontSize: 12)),
+            DropdownButton<String>(
+              key: const ValueKey('tm-content-sort-dropdown'),
+              value: _contentSort,
+              isDense: true,
+              underline: const SizedBox(),
+              items: const [
+                DropdownMenuItem(value: 'hierarchy_relevance', child: Text('위계기반 연관도')),
+                DropdownMenuItem(value: 'mentions', child: Text('언급 횟수 많은 순')),
+              ],
+              onChanged: (val) {
+                if (val != null) {
+                  _contentSearch(_search.text.trim(), sort: val);
+                }
+              },
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
   Widget _filtersBar() => Padding(padding:const EdgeInsets.fromLTRB(12,8,12,4),child:SingleChildScrollView(scrollDirection:Axis.horizontal,child:Row(children:[
     OutlinedButton.icon(onPressed:_pickExtensions,icon:const Icon(Icons.tune,size:16),label:const Text('확장자')),
 
     for(final entry in _kinds.entries) FilterChip(label:Text(entry.key),selected:_selectedKinds.contains(entry.value),onSelected:(value){setState(()=>value?_selectedKinds.add(entry.value):_selectedKinds.remove(entry.value));_filtersChanged();}),
     SegmentedButton<bool>(segments:const [ButtonSegment(value:false,label:Text('파일명')),ButtonSegment(value:true,label:Text('본문'))],selected:{_contentMode},onSelectionChanged:(values)=>_toggleContentMode(values.first)),
-    SizedBox(width:180,child:TextField(controller:_search,decoration:InputDecoration(prefixIcon:const Icon(Icons.search),hintText:_contentMode?'본문 검색':'이름 찾기',isDense:true),onChanged:(value){_debounce?.cancel();_debounce=Timer(const Duration(milliseconds:300),(){if(_contentMode){_contentSearch(value.trim());}else{_query=value.trim();_filtersChanged();}});})),
+    SizedBox(width:180,child:TextField(controller:_search,decoration:InputDecoration(prefixIcon:const Icon(Icons.search),hintText:_contentMode?'본문 검색':'이름 찾기',isDense:true),onChanged:(value){_debounce?.cancel();_debounce=Timer(const Duration(milliseconds:300),(){if(_contentMode){_contentSort = 'hierarchy_relevance'; _contentSearch(value.trim(), sort: 'hierarchy_relevance');}else{_query=value.trim();_filtersChanged();}});})),
     OutlinedButton.icon(onPressed:_scan,icon:const Icon(Icons.refresh),label:const Text('다시 훑기')),
     OutlinedButton.icon(key:const ValueKey('tm-clear-thumb-cache'),onPressed:_clearThumbnailCache,icon:const Icon(Icons.delete_outline),label:const Text('썸네일 캐시 지우기')),
     Text(_watchByAgent ? '실시간 감시: K에이전트' : '실시간 감시: 앱을 열 때만',key:const ValueKey('tm-watch-status'),style:Theme.of(context).textTheme.bodySmall),
