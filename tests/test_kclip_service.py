@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from docfit_app import kagent_client as kc
@@ -97,6 +98,45 @@ class KClipServiceTests(unittest.TestCase):
 
 
 class ClientTests(unittest.TestCase):
+    def test_install_retries_locked_agent_replace_and_keeps_old_file_until_success(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder, "bundled.exe")
+            target = Path(folder, "data", "kagent.exe")
+            source.write_bytes(b"new agent")
+            target.parent.mkdir()
+            target.write_bytes(b"old agent")
+            real_replace = kc.os.replace
+            attempts = []
+
+            def replace_with_brief_lock(src, dst):
+                attempts.append((src, dst))
+                if len(attempts) < 3:
+                    raise PermissionError("sharing violation")
+                return real_replace(src, dst)
+
+            with patch.object(kc.os, "replace", side_effect=replace_with_brief_lock), \
+                 patch.object(kc.time, "sleep"):
+                installed = kc.install(source, target.parent)
+
+            self.assertEqual(installed, target)
+            self.assertEqual(target.read_bytes(), b"new agent")
+            self.assertEqual(len(attempts), 3)
+            self.assertFalse(list(target.parent.glob("*.new")))
+
+    def test_install_reports_locked_agent_after_bounded_retries(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder, "bundled.exe")
+            target = Path(folder, "data", "kagent.exe")
+            source.write_bytes(b"new agent")
+            target.parent.mkdir()
+            target.write_bytes(b"old agent")
+            with patch.object(kc.os, "replace", side_effect=PermissionError("sharing violation")), \
+                 patch.object(kc.time, "sleep"):
+                with self.assertRaisesRegex(kc.KAgentError, "이전 몽땅클립보드가 종료됐는지"):
+                    kc.install(source, target.parent)
+            self.assertEqual(target.read_bytes(), b"old agent")
+            self.assertFalse(list(target.parent.glob("*.new")))
+
     def test_status_file_and_pipe_name_check(self):
         with tempfile.TemporaryDirectory() as folder:
             client = kc.KAgentClient(folder)
@@ -108,6 +148,32 @@ class ClientTests(unittest.TestCase):
                 self.assertTrue(client.running())
             with self.assertRaises(kc.KAgentError):
                 client.request("status")
+
+
+class KAgentPipeRetryTests(unittest.TestCase):
+    def test_busy_pipe_waits_then_retries_open_once_connected(self):
+        client = kc.KAgentClient(timeout=1.0)
+        busy = OSError("pipe busy")
+        busy.winerror = 231
+        stream = object()
+        with patch.object(kc.os, "name", "nt"), \
+             patch("builtins.open", side_effect=[busy, stream]) as open_pipe, \
+             patch.object(client, "_wait_pipe", return_value=True) as wait_pipe:
+            self.assertIs(client._open_pipe(r"\\.\pipe\agent"), stream)
+        self.assertEqual(open_pipe.call_count, 2)
+        wait_pipe.assert_called_once()
+
+    def test_non_busy_pipe_error_is_not_retried(self):
+        client = kc.KAgentClient(timeout=1.0)
+        denied = OSError("access denied")
+        denied.winerror = 5
+        with patch.object(kc.os, "name", "nt"), \
+             patch("builtins.open", side_effect=denied) as open_pipe, \
+             patch.object(client, "_wait_pipe") as wait_pipe:
+            with self.assertRaises(OSError):
+                client._open_pipe(r"\\.\pipe\agent")
+        open_pipe.assert_called_once()
+        wait_pipe.assert_not_called()
 
 
 if __name__ == "__main__":

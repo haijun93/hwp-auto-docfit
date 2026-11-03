@@ -1,5 +1,6 @@
 """작업 규약 시험: 실제 한/글·원본 문서·프로세스 종료 없이 검증한다."""
 import json
+import os
 from pathlib import Path
 import tempfile
 import threading
@@ -13,6 +14,13 @@ from docfit_app.jobs import JobManager, legacy_event
 
 
 class JobsTests(unittest.TestCase):
+    def setUp(self):
+        self.appdata = tempfile.TemporaryDirectory(prefix="docfit-jobs-appdata-")
+        self.addCleanup(self.appdata.cleanup)
+        self.appdata_patch = patch.dict(os.environ, {"APPDATA": self.appdata.name})
+        self.appdata_patch.start()
+        self.addCleanup(self.appdata_patch.stop)
+
     def manager(self, **kwargs):
         manager = JobManager(**kwargs)
         self.addCleanup(lambda: manager.shutdown(timeout=.1))

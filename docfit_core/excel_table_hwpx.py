@@ -39,7 +39,7 @@ def _sketch(model):
             for edge in ((x1, y1, x2, y1), (x1, y2, x2, y2), (x1, y1, x1, y2), (x2, y1, x2, y2)):
                 lines[edge] = dict(zip(("x1", "y1", "x2", "y2"), edge))
             if cell["text"]:
-                texts.append(dict(x=x1, y=y1, text=cell["text"], bold=bool(cell["bold"]), align=cell["align"]))
+                texts.append(dict(x=x1, y=y1, text=cell["text"], bold=bool(cell["bold"]), align=cell["align"], color=cell.get("color") or "#000000"))
             if cell.get("fill"):
                 fills.append(dict(x1=x1, y1=y1, x2=x2, y2=y2, color=cell["fill"]))
     return dict(grid=dict(cols=model["col_count"], rows=model["row_count"], cell_mm=5.0),

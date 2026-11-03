@@ -86,6 +86,11 @@ def related_documents(index, path, *, roots=None, excluded_pairs=(), limit=100):
         items.append({"path": candidate["path"], "name": candidate["name"], "score": score,
                       "reasons": reasons, "reference_date": ref_date,
                       "reference_date_found": bool(ref_date)})
-    items.sort(key=lambda item: (item["reference_date"] is None, -(item["score"] if item["reference_date"] is not None else 0),
-                                 item["reference_date"] or "", item["name"].casefold()))
+    items.sort(key=lambda item: (
+        item["reference_date"] is None,
+        -date.fromisoformat(item["reference_date"]).toordinal()
+        if item["reference_date"] is not None else 0,
+        -item["score"] if item["reference_date"] is not None else 0,
+        item["name"].casefold(),
+    ))
     return {"reference_date": selected_date, "reference_date_found": bool(selected_date), "items": items[:max(1, min(int(limit), 200))]}

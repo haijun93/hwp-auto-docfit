@@ -4,11 +4,13 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+from defusedxml import ElementTree as ET
 
 from docfit_app.api_contract import ServiceError
 from docfit_app.table_units_service import TableUnitsService, crop_to_content
 from docfit_core.table_catalog import default_catalog_path
 from docfit_app.settings_service import SettingsService
+from docfit_core.hwpx import open_hwpx_safely
 
 
 class FakeHwp:
@@ -74,6 +76,25 @@ class TableUnitsServiceTests(unittest.TestCase):
         first = data["templates"][0]
         self.assertIn("units", first)
         self.assertIsNone(first["thumbnail"])
+
+    def test_v3_flow_template_replaces_default_with_attached_5_by_3_design(self):
+        matches = [item for item in self.service._units()
+                   if item["name"] == "추진절차(가로세로) · 모양 1"]
+        self.assertEqual(len(matches), 1)
+        template = matches[0]
+        self.assertTrue(template["id"].startswith("v3flow:"))
+        self.assertEqual((template["rows"], template["cols"]), (5, 3))
+        self.assertEqual(template["units"]["row"]["count"], 3)
+        self.assertEqual(template["units"]["col"]["count"], 2)
+        preview = self.service.preview(template["id"])
+        self.assertEqual((preview["rows"], preview["cols"]), (5, 3))
+        expanded = self.service.preview(template["id"], row_count=4, col_count=3)
+        self.assertEqual((expanded["rows"], expanded["cols"]), (7, 5))
+        exported = self.service._export(Path(self.temp.name), template["id"], row_count=4, col_count=3)
+        with open_hwpx_safely(exported) as archive:
+            root = ET.fromstring(archive.read("Contents/section0.xml"))
+        table = next(root.iter("{http://www.hancom.co.kr/hwpml/2011/paragraph}tbl"))
+        self.assertEqual((int(table.get("rowCnt")), int(table.get("colCnt"))), (7, 5))
 
     def test_thumbnails_are_made_once_and_cached(self):
         data = self.service.command("thumbnails", {})

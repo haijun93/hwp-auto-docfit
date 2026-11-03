@@ -76,10 +76,11 @@ class TimemachineService:
 
     def _content_index_worker(self, roots, extensions):
         seen = indexed = errors = 0
+        rules = Rules(extensions=extensions, extra_extensions=extensions)  # 본문 색인 확장자(예: txt)는 타임라인 종류에 없어도 색인한다
         try:
             for root in roots:
                 for folder, dirs, files in os.walk(root, followlinks=False):
-                    dirs[:] = [d for d in dirs if d.casefold() != "$recycle.bin" and not self._content_cancel.is_set()]
+                    dirs[:] = [d for d in dirs if not rules.skip_dir(d) and not self._content_cancel.is_set()]
                     for name in files:
                         if self._content_cancel.is_set():
                             break
@@ -89,6 +90,9 @@ class TimemachineService:
                         if not self._path_in_active_root(path):
                             continue
                         self._content_pending_roots.discard(os.path.normcase(os.path.abspath(path)))
+                        if rules.skip_file(name):
+                            self.content_index.remove_file(path)
+                            continue
                         result = self.content_index.index_file(path)
                         seen += 1
                         indexed += bool(result["indexed"])
@@ -157,6 +161,18 @@ class TimemachineService:
     @staticmethod
     def _root_key(path):
         return os.path.normcase(os.path.normpath(os.path.abspath(path))).casefold()
+
+    def _parts_under_root(self, path):
+        """조사 폴더 아래의 폴더 이름만 돌려준다. 조사 폴더 자체의 상위(예: AppData, Temp)는 제외 규칙에 넣지 않는다."""
+        file_path = os.path.normcase(os.path.normpath(os.path.abspath(path)))
+        for root in self._settings["roots"]:
+            root_path = os.path.normcase(os.path.normpath(os.path.abspath(root)))
+            try:
+                if os.path.commonpath((root_path, file_path)) == root_path:
+                    return Path(os.path.relpath(file_path, root_path)).parts[:-1]
+            except ValueError:
+                continue
+        return Path(path).parts[:-1]
 
     def _path_in_active_root(self, path, stored_root=None):
         if not isinstance(path, str) or not os.path.isabs(path):
@@ -408,9 +424,11 @@ class TimemachineService:
             return self._start_scan()
         if action == "content_index":
             path = payload.get("path")
+            content_rules = Rules(extensions=self._settings["extensions"], extra_extensions=self._settings["extensions"])
             if (not isinstance(path, str) or not self._path_in_active_root(path) or
                     Path(path).suffix.lower().lstrip(".") not in self._settings["extensions"] or
-                    any(part.casefold() == "$recycle.bin" for part in Path(path).parts)):
+                    any(content_rules.skip_dir(part) for part in self._parts_under_root(path)) or
+                    content_rules.skip_file(Path(path).name)):
                 return self._error("INVALID_INPUT", "현재 조사 폴더의 허용된 문서를 선택해 주세요.")
             result = self.content_index.index_file(path)
             return {"ok": True, **result}

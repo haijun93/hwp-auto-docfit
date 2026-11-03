@@ -122,7 +122,14 @@ internal static class SmartLauncher
             CloseSplash();
             if (!cliCommand && !args.Any(a => string.Equals(a, "--self-test", StringComparison.OrdinalIgnoreCase)))
             {
-                MessageBoxW(IntPtr.Zero, "앱 실행 준비 중 오류가 발생했습니다.\r\n\r\n" + ex.Message, AppTitle, 0x10);
+                string detail = ex.Message;
+                if (ex is UnauthorizedAccessException || ex is IOException)
+                {
+                    detail = "캐시 파일을 만들거나 교체하지 못했습니다. 이전 앱 또는 백신이 파일을 사용 중이면 잠시 기다린 뒤 다시 실행해 주세요. " +
+                        "계속되면 캐시 폴더의 쓰기 권한을 확인해 주세요.\r\n경로: " + (cachePath ?? "캐시 경로 확인 불가") +
+                        "\r\n상세: " + ex.Message;
+                }
+                MessageBoxW(IntPtr.Zero, "앱 실행 준비 중 오류가 발생했습니다.\r\n\r\n" + detail, AppTitle, 0x10);
             }
             return 1;
         }
@@ -313,7 +320,7 @@ internal static class SmartLauncher
         }
         if (trash != null)
         {
-            try { Directory.Delete(trash, true); } catch { }
+            DeleteTrashDirectory(trash);
         }
     }
 
@@ -331,14 +338,34 @@ internal static class SmartLauncher
             string trash = Path.Combine(cacheRoot, ".trash-" + Guid.NewGuid().ToString("N"));
             try { Directory.Move(path, trash); }
             catch { continue; }
-            try { Directory.Delete(trash, true); } catch { }
+            DeleteTrashDirectory(trash);
         }
         // 지우지 못하고 남은 옛 캐시(.trash-*)는 다음 실행 때 다시 지운다.
         foreach (string trash in Directory.GetDirectories(cacheRoot, ".trash-*"))
         {
-            try { Directory.Delete(trash, true); } catch { }
+            DeleteTrashDirectory(trash);
         }
         // Another launcher may still be extracting into .staging-*; it owns that cleanup.
+    }
+
+    private static void DeleteTrashDirectory(string path)
+    {
+        // Windows refuses recursive deletion when an old cache contains read-only files.
+        // These are launcher-owned cache files, so clear only that attribute before best-effort cleanup.
+        try
+        {
+            foreach (string file in Directory.GetFiles(path, "*", SearchOption.AllDirectories))
+            {
+                try { File.SetAttributes(file, File.GetAttributes(file) & ~FileAttributes.ReadOnly); } catch { }
+            }
+            foreach (string directory in Directory.GetDirectories(path, "*", SearchOption.AllDirectories))
+            {
+                try { File.SetAttributes(directory, File.GetAttributes(directory) & ~FileAttributes.ReadOnly); } catch { }
+            }
+            try { File.SetAttributes(path, File.GetAttributes(path) & ~FileAttributes.ReadOnly); } catch { }
+            Directory.Delete(path, true);
+        }
+        catch { } // A file still open by another process remains in .trash-* for a later run.
     }
 
     private static Version CacheVersion(string name)

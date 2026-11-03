@@ -57,7 +57,10 @@ class TableUnitsTests(unittest.TestCase):
             self.assertEqual(row_widths, [total] * rows)
 
     def test_describe_units_matches_all_builtin_plans(self):
-        descriptions = units.describe_units(SOURCE)
+        replaced_name = "추진절차(가로세로) · 모양 1"
+        replacement = SOURCE.parent / "추진절차_가로세로_모양1.hwpx"
+        descriptions = [item for item in units.describe_units(SOURCE) if item["name"] != replaced_name]
+        descriptions.extend(units.describe_units(replacement))
         self.assertEqual(len(descriptions), len(self.records))
         for item in descriptions:
             with self.subTest(name=item["name"]):

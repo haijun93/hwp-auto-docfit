@@ -100,4 +100,23 @@ class TableSketchApi {
     }
     return false;
   }
+
+  Future<Map<String, dynamic>> saveDraft(Map<String, dynamic> sketch) async {
+    final response = await call('table_sketch', ['save_draft', {'sketch': sketch}]);
+    return response is Map ? Map<String, dynamic>.from(response) : {'ok': false};
+  }
+
+  Future<Map<String, dynamic>> loadDraft() async {
+    final response = await call('table_sketch', ['load_draft']);
+    return response is Map ? Map<String, dynamic>.from(response) : {'ok': false};
+  }
+
+  Future<void> clearDraft() async {
+    await call('table_sketch', ['clear_draft']);
+  }
+
+  Future<Map<String, dynamic>> importImage(String data) async {
+    final response = await call('table_sketch', ['import_image', data]);
+    return response is Map ? Map<String, dynamic>.from(response) : {'ok': false};
+  }
 }

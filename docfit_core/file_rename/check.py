@@ -27,8 +27,8 @@ def invalid_name_reason(name):
         return "Windows 예약 이름(CON·NUL·COM1 등)입니다."
     if name[-1] in ". ":
         return "이름 끝에 마침표나 공백을 쓸 수 없습니다."
-    if len(name) > MAX_NAME:
-        return f"이름이 {MAX_NAME}자를 넘습니다."
+    if sum(2 if ord(ch) > 0xFFFF else 1 for ch in name) > MAX_NAME:
+        return f"이름이 UTF-16 기준 {MAX_NAME}단위를 넘습니다(일부 이모지는 2단위로 계산됩니다)."
     return None
 
 

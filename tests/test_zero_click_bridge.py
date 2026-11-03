@@ -14,7 +14,10 @@ from tests.test_desktop_browser_api import _FakeGui, _Var, _bridge
 class ZeroClickBridgeTests(unittest.TestCase):
     def setUp(self):
         self.folder = tempfile.TemporaryDirectory()
+        self.appdata_patch = patch.dict(os.environ, {'APPDATA': self.folder.name})
+        self.appdata_patch.start()
         self.addCleanup(self.folder.cleanup)
+        self.addCleanup(self.appdata_patch.stop)
         self.path = Path(self.folder.name)/'초안.md'
         self.path.write_text('# 추진 계획\nㅇ 내용', encoding='utf-8')
         self.gui = _FakeGui()
