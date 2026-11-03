@@ -462,7 +462,7 @@ def to_hwpx(sketch, path):
             anchor_sub = anchor_tc.find(HP+"subList")
             anchor_sub.set("vertAlign", "TOP")
             first_p = anchor_sub.find(HP+"p")
-            arrow_run = _add(first_p, HP+"run", charPrIDRef=chars[False])
+            arrow_run = _add(first_p, HP+"run", charPrIDRef=chars[(False, "#000000")])
             first_p.remove(arrow_run); first_p.insert(0, arrow_run)
             margin = round(0.5 * UNIT_MM)
             anchor_ux = ux[anchor_cell["col"]]

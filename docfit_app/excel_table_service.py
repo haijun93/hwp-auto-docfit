@@ -16,7 +16,7 @@ class ExcelTableService:
         try:
             html_data, tsv = self.clipboard()
             model = parse_clipboard(html_data, tsv, clean=not (isinstance(payload,dict) and payload.get('clean') is False))
-            keep_fill = isinstance(payload,dict) and payload.get('keep_cell_background') is True
+            keep_fill = not (isinstance(payload,dict) and payload.get('keep_cell_background') is False)
             if not keep_fill:
                 for row in model['rows']:
                     for cell in row: cell['fill']=''
