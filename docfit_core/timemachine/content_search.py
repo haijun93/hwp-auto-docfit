@@ -208,7 +208,7 @@ class ContentSearchIndex:
             os.path.commonpath((os.path.normcase(os.path.abspath(row["path"])), root)) == root
             for root in allowed if os.path.splitdrive(root)[0].casefold() == os.path.splitdrive(os.path.abspath(row["path"]))[0].casefold())]
 
-    def search(self, query, *, roots=None, limit=100):
+    def search(self, query, *, roots=None, limit=100, sort="relevance"):
         parsed = self.parse_query(query)
         terms = parsed["terms"] + parsed["phrases"]
         if not terms:
@@ -276,10 +276,18 @@ class ContentSearchIndex:
             for term in terms:
                 match = re.search(re.escape(term), snippet, re.I)
                 if match: spans.append([match.start(), match.end()])
-            score = sum(body.casefold().count(t.casefold()) for t in terms) + sum(4 for p in parsed["phrases"] if p.casefold() in folded)
+            # Count positive terms only; phrases are counted as whole phrases.
+            count_terms = [(t, t) for t in parsed["terms"]] + [(p, p) for p in parsed["phrases"]]
+            match_counts = {label: folded.count(term.casefold()) for label, term in count_terms}
+            score = sum(match_counts.values())
+            total_matches = score
             result.append({"path": path, "name": row["name"], "snippet": snippet, "highlights": spans,
-                           "score": score, "position": {"page": None, "sheet": None, "row": None}})
-        result.sort(key=lambda item: (-item["score"], item["name"].casefold()))
+                           "score": score, "match_counts": match_counts, "total_matches": total_matches,
+                           "position": {"page": None, "sheet": None, "row": None}})
+        if sort == "mentions":
+            result.sort(key=lambda item: (-item["total_matches"], item["name"].casefold()))
+        else:
+            result.sort(key=lambda item: (-item["score"], item["name"].casefold()))
         return result[:lim]
 
     def search_files(self, query, *, roots=None, limit=500):

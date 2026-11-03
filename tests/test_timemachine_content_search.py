@@ -77,6 +77,18 @@ class ContentSearchTests(unittest.TestCase):
         names = self.index.search_files("strong txt")
         self.assertEqual(names[0]["name"], strong.name)
 
+    def test_match_counts_phrases_exclusions_casefold_and_mentions_sort(self):
+        low = self.root / "low.txt"
+        high = self.root / "high.txt"
+        low.write_text('예산이 집행되고 Annual Plan annual plan', encoding="utf-8")
+        high.write_text('예산 예산을 집행 집행했다 annual plan Annual Plan', encoding="utf-8")
+        self.index.index_file(low); self.index.index_file(high)
+        found = self.index.search('예산 집행 "Annual Plan" -없는말', sort="mentions")
+        self.assertEqual(found[0]["name"], high.name)
+        item = next(row for row in found if row["name"] == low.name)
+        self.assertEqual(item["match_counts"], {"예산": 1, "집행": 1, "Annual Plan": 2})
+        self.assertEqual(item["total_matches"], 4)
+
     def test_legacy_schema_migrates_without_losing_documents(self):
         path = self.root / "legacy.sqlite"
         db = sqlite3.connect(path)

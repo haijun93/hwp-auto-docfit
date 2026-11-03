@@ -441,7 +441,11 @@ class TimemachineService:
             return self.cancel_content_index()
         if action == "content_search":
             query = payload.get("query")
-            rows = self.content_index.search(query, roots=self._settings["roots"], limit=payload.get("limit", 100))
+            rows = self.content_index.search(query, roots=self._settings["roots"], limit=payload.get("limit", 100), sort=payload.get("sort", "relevance"))
+            for row in rows:
+                row["file_name"] = row["name"]
+                row["folder_path"] = os.path.dirname(row["path"])
+                row["folder_name"] = os.path.basename(row["folder_path"])
             return {"ok": True, "items": rows}
         if action == "file_search":
             query = payload.get("query")

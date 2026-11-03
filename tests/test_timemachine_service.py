@@ -80,6 +80,11 @@ class TimemachineServiceTests(unittest.TestCase):
         indexed = self.service.command("content_index", {"path": str(document)})
         self.assertTrue(indexed["ok"])
         result = self.service.command("content_search", {"query": "본문 키워드"})
+        self.assertIn("file_name", result["items"][0])
+        self.assertIn("folder_name", result["items"][0])
+        self.assertIn("folder_path", result["items"][0])
+        self.assertIn("match_counts", result["items"][0])
+        self.assertIn("total_matches", result["items"][0])
         self.assertEqual(result["items"][0]["name"], document.name)
         outside = self.plain_file
         self.assertFalse(self.service.command("content_index", {"path": str(outside)})["ok"])
