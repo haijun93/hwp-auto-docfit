@@ -286,7 +286,11 @@ def _v_number_shift(spec):
     delta = _int(spec, "delta", 1, minimum=-10**9, maximum=10**9)
     if delta == 0:
         raise RuleError("증감 값은 0이 아니어야 합니다.")
-    return dict(delta=delta, which=_choice(spec, "which", "first", ("first", "last")))
+    return dict(
+        delta=delta,
+        which=_choice(spec, "which", "first", ("first", "last")),
+        keep_width=_bool(spec, "keep_width", True),
+    )
 
 
 def _a_number_shift(state, opt, ctx):
@@ -296,7 +300,10 @@ def _a_number_shift(state, opt, ctx):
     value = int(match.group()) + opt["delta"]
     if value < 0:
         raise RuleError("번호가 0보다 작아집니다.")
-    width = len(match.group()) if match.group().startswith("0") else 1
+    if opt.get("keep_width", True):
+        width = len(match.group())
+    else:
+        width = len(match.group()) if match.group().startswith("0") else 1
     stem = state[0]
     return stem[:match.start()] + str(value).zfill(width) + stem[match.end():], state[1]
 
