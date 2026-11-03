@@ -53,6 +53,8 @@ class SmartLauncherBuildTest(unittest.TestCase):
             'GetManifestResourceStream("DocFitSplash")', "new NativeSplash(version)",
         ):
             self.assertIn(token, source)
+        self.assertIn("캐시 파일을 만들거나 교체하지 못했습니다", source)
+        self.assertIn("캐시 폴더의 쓰기 권한을 확인해 주세요", source)
         # 첫 실행 스플래시는 WinForms 없이 Win32로 그리고, 전체 매니페스트를 읽기 전에 띄운다(2.0.5 시작 속도).
         self.assertNotIn("System.Windows.Forms", source)
         self.assertNotIn("System.Windows.Forms", (ROOT / "scripts" / "build_smart_launcher.py").read_text(encoding="utf-8"))
@@ -76,11 +78,12 @@ class SmartLauncherBuildTest(unittest.TestCase):
     def test_cleanup_protects_running_newer_and_unmovable_caches(self):
         source = (ROOT / 'launcher' / 'smart_launcher.cs').read_text(encoding='utf-8')
         cleanup = source.split('private static void CleanupOldCaches(', 1)[1].split(
-            'private static Version CacheVersion(', 1)[0]
+            'private static void DeleteTrashDirectory(', 1)[0]
         self.assertIn('candidateVersion == null || candidateVersion > currentVersion', cleanup)
         self.assertIn('if (CacheIsInUse(path)) continue;', cleanup)
         self.assertIn('try { Directory.Move(path, trash); }\n            catch { continue; }', cleanup)
-        self.assertLess(cleanup.index('Directory.Move(path, trash)'), cleanup.index('Directory.Delete(trash, true)'))
+        self.assertLess(cleanup.index('Directory.Move(path, trash)'), cleanup.index('DeleteTrashDirectory(trash)'))
+        self.assertIn('FileAttributes.ReadOnly', source)
         self.assertNotIn('Directory.Delete(path, true)', cleanup)
         self.assertIn('Process.GetProcessesByName("app_main")', source)
         self.assertIn('process.MainModule.FileName', source)
@@ -159,6 +162,14 @@ internal static class CleanupProbe {
                         self.assertFalse(list(cache.glob('.trash-*')))
                     cleanup()
                     self.assertFalse(locked.exists())
+
+            read_only = make_cache('app_v1.80.7_readonly')
+            read_only_file = read_only / 'asset.txt'
+            read_only_file.write_bytes(b'read only payload')
+            read_only_file.chmod(0o444)
+            cleanup()
+            self.assertFalse(read_only.exists())
+            self.assertFalse(list(cache.glob('.trash-*')))
 
             running = make_cache('app_v1.80.8_running')
             shutil.copy2(probe, running / 'app_main.exe')

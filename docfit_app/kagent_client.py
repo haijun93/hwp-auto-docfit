@@ -9,6 +9,7 @@ import json
 import os
 import shutil
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -124,9 +125,25 @@ def install(bundled_exe, folder=None):
     target.parent.mkdir(parents=True, exist_ok=True)
     source = Path(bundled_exe)
     if not target.exists() or target.read_bytes() != source.read_bytes():
-        temp = target.with_suffix(".new")
-        shutil.copyfile(source, temp)
-        os.replace(temp, target)
+        temp = target.with_name(f"{target.name}.{os.getpid()}.{threading.get_ident()}.new")
+        try:
+            shutil.copyfile(source, temp)
+            for attempt in range(21):
+                try:
+                    os.replace(temp, target)
+                    break
+                except PermissionError as error:
+                    if attempt == 20:
+                        raise KAgentError(
+                            "몽땅클립보드 파일을 교체하지 못했습니다. 이전 몽땅클립보드가 종료됐는지 "
+                            "확인한 뒤 앱에서 다시 켜 주세요. (" + str(error) + ")"
+                        ) from error
+                    time.sleep(0.25)
+        finally:
+            try:
+                temp.unlink(missing_ok=True)
+            except OSError:
+                pass
     return target
 
 
