@@ -639,5 +639,124 @@ class BrowserApiTests(unittest.TestCase):
         gui.log_window.lift.assert_called_once()
 
 
+    def test_live_alpha3_disabled_has_zero_service_and_document_side_effects(self):
+        gui = _FakeGui()
+        gui.settings = {"live_alpha3_enabled": False}
+        bridge = _bridge(gui)
+
+        with mock.patch("docfit_live.service.LiveLinkService", side_effect=AssertionError("LiveLinkService가 생성되면 안 됩니다")) as mock_service_cls, \
+             mock.patch("docfit_live.link.running_sessions") as mock_sessions, \
+             mock.patch("docfit_live.link.choose") as mock_choose, \
+             mock.patch("docfit_live.link.context") as mock_context, \
+             mock.patch("docfit_live.link.paste_at_cursor") as mock_paste, \
+             mock.patch("docfit_live.link.replace_table_block") as mock_rep_table, \
+             mock.patch("docfit_live.link.replace_selection_block") as mock_rep_sel, \
+             mock.patch("docfit_live.service.save_clipboard") as mock_save_clip, \
+             mock.patch("docfit_live.service.restore_clipboard") as mock_restore_clip:
+            res_tu = bridge.live_link("table_unit", {"delta": 1, "expected": {"path": "a.hwpx"}})
+            res_ss = bridge.live_link("selection_spacing", {"expected": {"path": "a.hwpx"}})
+
+        self.assertFalse(res_tu["ok"])
+        self.assertEqual(res_tu["code"], "FEATURE_DISABLED")
+        self.assertFalse(res_ss["ok"])
+        self.assertEqual(res_ss["code"], "FEATURE_DISABLED")
+        self.assertIsNone(getattr(bridge, "_live", None))
+
+        # 세션 탐색, COM 접근, 문서 및 클립보드 메서드 호출 0회 직접 단언
+        mock_service_cls.assert_not_called()
+        mock_sessions.assert_not_called()
+        mock_choose.assert_not_called()
+        mock_context.assert_not_called()
+        mock_paste.assert_not_called()
+        mock_rep_table.assert_not_called()
+        mock_rep_sel.assert_not_called()
+        mock_save_clip.assert_not_called()
+        mock_restore_clip.assert_not_called()
+
+    def test_live_alpha3_enabled_rejects_missing_or_incomplete_expected(self):
+        gui = _FakeGui()
+        gui.settings = {"live_alpha3_enabled": True}
+        bridge = _bridge(gui)
+
+        valid_table_exp = {
+            "path": r"C:\a\test.hwpx",
+            "document_id": "doc-1",
+            "pos": [0, 1, 2],
+            "selected": False,
+            "in_table": True,
+        }
+
+        # 1. missing expected, empty dict, missing fields in table_unit
+        with mock.patch("docfit_live.service.LiveLinkService", side_effect=AssertionError("검증 실패 시 LiveLinkService 생성 금지")):
+            self.assertEqual(bridge.live_link("table_unit", {"delta": 1, "expected": None})["code"], "INVALID_ARGUMENT")
+            self.assertEqual(bridge.live_link("table_unit", {"delta": 1, "expected": {}})["code"], "INVALID_ARGUMENT")
+            for key in ("path", "document_id", "pos", "selected", "in_table"):
+                bad_exp = dict(valid_table_exp)
+                del bad_exp[key]
+                self.assertEqual(bridge.live_link("table_unit", {"delta": 1, "expected": bad_exp})["code"], "INVALID_ARGUMENT")
+
+            # delta 누락/잘못됨
+            self.assertEqual(bridge.live_link("table_unit", {"delta": 0, "expected": valid_table_exp})["code"], "INVALID_ARGUMENT")
+
+            # 2. missing expected in selection_spacing
+            valid_sel_exp = dict(valid_table_exp, selected=True, in_table=False, selection_range=[[0, 1, 0], [0, 1, 10]])
+            self.assertEqual(bridge.live_link("selection_spacing", {"expected": None})["code"], "INVALID_ARGUMENT")
+            self.assertEqual(bridge.live_link("selection_spacing", {"expected": {}})["code"], "INVALID_ARGUMENT")
+            self.assertEqual(bridge.live_link("selection_spacing", {"expected": dict(valid_sel_exp, selected=False)})["code"], "INVALID_ARGUMENT")
+            # selection_range 누락/오류
+            no_sr_exp = dict(valid_sel_exp)
+            del no_sr_exp["selection_range"]
+            self.assertEqual(bridge.live_link("selection_spacing", {"expected": no_sr_exp})["code"], "INVALID_ARGUMENT")
+            self.assertEqual(bridge.live_link("selection_spacing", {"expected": dict(valid_sel_exp, selection_range=[1, 2])})["code"], "INVALID_ARGUMENT")
+
+        self.assertIsNone(getattr(bridge, "_live", None))
+
+        # 기존 status / insert 경로는 영향 없음
+        mock_service = mock.Mock()
+        mock_service.status.return_value = {"title": "정상"}
+        with mock.patch("docfit_live.service.LiveLinkService", return_value=mock_service):
+            status_res = bridge.live_link("status")
+            self.assertTrue(status_res["ok"])
+            self.assertEqual(status_res["title"], "정상")
+
+    def test_live_alpha3_enabled_routes_valid_expected(self):
+        gui = _FakeGui()
+        gui.settings = {"live_alpha3_enabled": True}
+        bridge = _bridge(gui)
+
+        valid_table_exp = {
+            "path": r"C:\a\test.hwpx",
+            "document_id": "doc-1",
+            "pos": [0, 1, 2],
+            "selected": False,
+            "in_table": True,
+        }
+        valid_sel_exp = {
+            "path": r"C:\a\test.hwpx",
+            "document_id": "doc-1",
+            "pos": [0, 1, 2],
+            "selected": True,
+            "in_table": False,
+            "selection_range": [[0, 1, 0], [0, 1, 10]],
+        }
+
+        mock_service = mock.Mock()
+        mock_service.resize_cursor_table.return_value = {"ok": True, "action": "resize"}
+        mock_service.normalize_selection_spacing.return_value = {"ok": True, "action": "spacing"}
+
+        with mock.patch("docfit_live.service.LiveLinkService", return_value=mock_service):
+            res_tu = bridge.live_link("table_unit", {"delta": 1, "expected": valid_table_exp, "path": r"C:\a\test.hwpx"})
+            self.assertEqual(res_tu, {"ok": True, "action": "resize"})
+            mock_service.resize_cursor_table.assert_called_once_with(
+                1, expected=valid_table_exp, prefer_path=r"C:\a\test.hwpx", enabled=True
+            )
+
+            res_ss = bridge.live_link("selection_spacing", {"expected": valid_sel_exp, "path": r"C:\a\test.hwpx"})
+            self.assertEqual(res_ss, {"ok": True, "action": "spacing"})
+            mock_service.normalize_selection_spacing.assert_called_once_with(
+                expected=valid_sel_exp, prefer_path=r"C:\a\test.hwpx", enabled=True
+            )
+
+
 if __name__ == '__main__':
     unittest.main()

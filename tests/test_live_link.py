@@ -1,9 +1,24 @@
 """3.0 LiveLink 연결·문맥·넣기(가짜 한/글로 시험)."""
 import unittest
 from types import SimpleNamespace
+<<<<<<< HEAD
 from unittest.mock import patch
+=======
+from unittest.mock import Mock
+>>>>>>> origin/feature/3.0-wip
 
-from docfit_live.link import LiveLinkError, Session, choose, context, paste_at_cursor, running_sessions
+from docfit_live.link import (
+    LiveLinkError,
+    Session,
+    choose,
+    context,
+    export_selection_block,
+    export_table_block,
+    paste_at_cursor,
+    replace_selection_block,
+    replace_table_block,
+    running_sessions,
+)
 
 
 class FakeMoniker:
@@ -15,12 +30,20 @@ class FakeMoniker:
 
 
 class FakeApp:
+<<<<<<< HEAD
     def __init__(self, path, pos=(0, 1, 2), in_table=False):
         self.XHwpDocuments = SimpleNamespace(Active_XHwpDocument=SimpleNamespace(FullName=path))
         self.XHwpDocuments.Active_XHwpDocument.DocumentID = 17
         self.XHwpWindows = SimpleNamespace(Active_XHwpWindow=SimpleNamespace(Visible=True, Hwnd=9))
+=======
+    def __init__(self, path, pos=(0, 1, 2), in_table=False, document_id="doc-default", selection_range=None):
+        self.XHwpDocuments = SimpleNamespace(
+            Active_XHwpDocument=SimpleNamespace(FullName=path, DocumentID=document_id)
+        )
+>>>>>>> origin/feature/3.0-wip
         self._pos = pos
         self.SelectionMode = 0
+        self.selection_range = selection_range
         self.ParentCtrl = SimpleNamespace(CtrlID="tbl") if in_table else None
         self.runs = []
         self.HAction = SimpleNamespace(Run=lambda name: self.runs.append(name) or True)
@@ -64,10 +87,10 @@ class LiveLinkTest(unittest.TestCase):
             choose([])
 
     def test_unsaved_new_document_is_chosen_only_when_single(self):
-        saved = Session("m1", FakeApp(r"C:\가.hwpx"), r"C:\가.hwpx", "가.hwpx")
+        saved = Session("m1", FakeApp(r"C: \가.hwpx"), r"C: \가.hwpx", "가.hwpx")
         blank = Session("m2", FakeApp(""), "", "")
         self.assertIs(choose([saved, blank], window_title="빈 문서 1 - 한글"), blank)
-        self.assertIs(choose([saved, blank], window_title="가.hwpx [C:\a\] - 한글"), saved)
+        self.assertIs(choose([saved, blank], window_title=r"가.hwpx [C:\a\] - 한글"), saved)
         with self.assertRaises(LiveLinkError):
             choose([saved, blank, Session("m3", FakeApp(""), "", "")], window_title="빈 문서 2 - 한글")
 
@@ -104,6 +127,7 @@ class LiveLinkTest(unittest.TestCase):
         self.assertEqual(raised.exception.code, "STALE_CONTEXT")
         self.assertEqual(app.runs, [])
 
+<<<<<<< HEAD
     def test_document_or_window_change_never_runs_paste(self):
         app = FakeApp(r"C:\a\가.hwpx")
         stale = context(app)
@@ -122,6 +146,143 @@ class LiveLinkTest(unittest.TestCase):
         from docfit_live.link import _run_allowed
         with self.assertRaises(LiveLinkError):
             _run_allowed(app, "FileSave")
+=======
+    def test_context_includes_document_id_and_missing_id_is_not_match(self):
+        # 1. 정상 DocumentID 반환
+        app_valid = FakeApp(r"C:\a\가.hwpx", document_id="doc-uuid-1234")
+        ctx = context(app_valid)
+        self.assertEqual(ctx["document_id"], "doc-uuid-1234")
+
+        # 2. DocumentID 누락/빈 값인 앱은 완전한 expected와 매칭 시 STALE_CONTEXT
+        app_missing = FakeApp(r"C:\a\가.hwpx", in_table=True, document_id="")
+        expected = {
+            "path": r"C:\a\가.hwpx",
+            "document_id": "doc-uuid-1234",
+            "pos": [0, 1, 2],
+            "selected": False,
+            "in_table": True,
+        }
+        with self.assertRaises(LiveLinkError) as raised:
+            replace_table_block(app_missing, b"dummy", expected=expected)
+        self.assertEqual(raised.exception.code, "STALE_CONTEXT")
+
+    def test_export_table_block_requires_measured_gettextfile_contract(self):
+        app = FakeApp(r"C:\a\가.hwpx", in_table=True)
+        get_calls = []
+        app.GetTextFile = lambda *a, **kw: get_calls.append((a, kw)) or ""
+        with self.assertRaises(NotImplementedError) as raised:
+            export_table_block(app)
+        self.assertIn("실측 필요", str(raised.exception))
+        self.assertEqual(get_calls, [])
+        self.assertEqual(app.runs, [])
+
+    def test_replace_table_requires_complete_expected_and_rechecks_document_id(self):
+        app = FakeApp(r"C:\a\가.hwpx", in_table=True, document_id="doc-1")
+        mock_write = Mock()
+        app.SetTextFile = mock_write
+
+        valid_expected = {
+            "path": r"C:\a\가.hwpx",
+            "document_id": "doc-1",
+            "pos": [0, 1, 2],
+            "selected": False,
+            "in_table": True,
+        }
+
+        # 1. 필수 expected 하나라도 누락 시 INVALID_ARGUMENT, SetTextFile 호출 0
+        with self.assertRaises(LiveLinkError) as raised:
+            replace_table_block(app, b"dummy", expected=None)
+        self.assertEqual(raised.exception.code, "INVALID_ARGUMENT")
+
+        with self.assertRaises(LiveLinkError) as raised:
+            replace_table_block(app, b"dummy", expected={})
+        self.assertEqual(raised.exception.code, "INVALID_ARGUMENT")
+
+        for key in ("path", "document_id", "pos", "selected", "in_table"):
+            bad = dict(valid_expected)
+            del bad[key]
+            with self.assertRaises(LiveLinkError) as raised:
+                replace_table_block(app, b"dummy", expected=bad)
+            self.assertEqual(raised.exception.code, "INVALID_ARGUMENT")
+
+        # 2. ID/path/pos/selected 불일치 시 STALE_CONTEXT
+        for field, val in [("path", r"C:\other.hwpx"), ("document_id", "doc-2"), ("pos", [9, 9, 9]), ("selected", True)]:
+            stale = dict(valid_expected, **{field: val})
+            with self.assertRaises(LiveLinkError) as raised:
+                replace_table_block(app, b"dummy", expected=stale)
+            self.assertEqual(raised.exception.code, "STALE_CONTEXT")
+
+        # 3. 대상 표 상태 불일치(표 밖) 시 NOT_IN_TABLE
+        app_out = FakeApp(r"C:\a\가.hwpx", in_table=False, document_id="doc-1")
+        with self.assertRaises(LiveLinkError) as raised:
+            replace_table_block(app_out, b"dummy", expected=dict(valid_expected, in_table=False))
+        self.assertEqual(raised.exception.code, "NOT_IN_TABLE")
+
+        # 4. 완벽한 expected이지만 미실측 포맷은 NotImplementedError 안전 종료
+        with self.assertRaises(NotImplementedError) as raised:
+            replace_table_block(app, b"dummy", expected=valid_expected)
+        self.assertIn("실측 필요", str(raised.exception))
+
+        mock_write.assert_not_called()
+        self.assertEqual(app.runs, [])
+
+    def test_replace_selection_requires_complete_expected_and_rechecks_selection(self):
+        app = FakeApp(r"C:\a\가.hwpx", document_id="doc-1", selection_range=[[0, 1, 2], [0, 1, 10]])
+        app.SelectionMode = 1
+        mock_write = Mock()
+        app.SetTextFile = mock_write
+
+        valid_expected = {
+            "path": r"C:\a\가.hwpx",
+            "document_id": "doc-1",
+            "pos": [0, 1, 2],
+            "selected": True,
+            "in_table": False,
+            "selection_range": [[0, 1, 2], [0, 1, 10]],
+        }
+
+        # 1. 필수 expected 누락 시 INVALID_ARGUMENT
+        with self.assertRaises(LiveLinkError) as raised:
+            replace_selection_block(app, b"dummy", expected=None)
+        self.assertEqual(raised.exception.code, "INVALID_ARGUMENT")
+
+        with self.assertRaises(LiveLinkError) as raised:
+            replace_selection_block(app, b"dummy", expected={})
+        self.assertEqual(raised.exception.code, "INVALID_ARGUMENT")
+
+        bad_sr = dict(valid_expected)
+        del bad_sr["selection_range"]
+        with self.assertRaises(LiveLinkError) as raised:
+            replace_selection_block(app, b"dummy", expected=bad_sr)
+        self.assertEqual(raised.exception.code, "INVALID_ARGUMENT")
+
+        # 2. DocumentID/pos 불일치 시 STALE_CONTEXT
+        stale_doc = dict(valid_expected, document_id="doc-2")
+        with self.assertRaises(LiveLinkError) as raised:
+            replace_selection_block(app, b"dummy", expected=stale_doc)
+        self.assertEqual(raised.exception.code, "STALE_CONTEXT")
+
+        # 3. 시작 위치(pos)는 같으나 selection_range 끝점만 바뀌었을 때 STALE_CONTEXT (지적 2 Fake 회귀 시험)
+        app.selection_range = [[0, 1, 2], [0, 1, 25]]
+        with self.assertRaises(LiveLinkError) as raised:
+            replace_selection_block(app, b"dummy", expected=valid_expected)
+        self.assertEqual(raised.exception.code, "STALE_CONTEXT")
+        app.selection_range = [[0, 1, 2], [0, 1, 10]]
+
+        # 4. 선택 없음 시 NO_SELECTION
+        app_no_sel = FakeApp(r"C:\a\가.hwpx", document_id="doc-1")
+        app_no_sel.SelectionMode = 0
+        with self.assertRaises(LiveLinkError) as raised:
+            replace_selection_block(app_no_sel, b"dummy", expected=dict(valid_expected, selected=False))
+        self.assertEqual(raised.exception.code, "NO_SELECTION")
+
+        # 5. 완벽한 expected이지만 미실측 포맷은 NotImplementedError 안전 종료
+        with self.assertRaises(NotImplementedError) as raised:
+            replace_selection_block(app, b"dummy", expected=valid_expected)
+        self.assertIn("실측 필요", str(raised.exception))
+
+        mock_write.assert_not_called()
+>>>>>>> origin/feature/3.0-wip
         self.assertEqual(app.runs, [])
 
 
