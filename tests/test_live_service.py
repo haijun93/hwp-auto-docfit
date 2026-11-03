@@ -26,6 +26,7 @@ class LiveServiceTest(unittest.TestCase):
             titles=lambda: list(titles),
             com_init=False,
             gate_checker=gate_checker or (lambda: True),
+            window_enabled=lambda hwnd: True,
         )
 
     def test_hidden_helper_hangul_is_never_chosen(self):
@@ -176,7 +177,8 @@ class LiveBridgeTest(unittest.TestCase):
         self.user = session(r"C:\a\보고서.hwpx", in_table=True, document_id="doc-1")
         self.user.app.XHwpWindows.Active_XHwpWindow.Hwnd = 9
         self.bridge._live = LiveLinkService(
-            sessions=lambda: [self.user], titles=lambda: [], com_init=False, gate_checker=lambda: True
+            sessions=lambda: [self.user], titles=lambda: [], com_init=False, gate_checker=lambda: True,
+            window_enabled=lambda hwnd: True,
         )
         self.assertTrue(callable(getattr(_BrowserApi(self.bridge), "live_link")))
 
@@ -268,6 +270,7 @@ class LiveBridgeTest(unittest.TestCase):
     def test_alpha3_service_enabled_flag_gate(self):
         user = session(r"C:\a\보고서.hwpx", in_table=True, document_id="doc-1")
         svc = LiveLinkService(sessions=lambda: [user], titles=lambda: [], com_init=False, gate_checker=lambda: True)
+        svc._window_enabled = lambda hwnd: True
         ctx = link.context(user.app)
 
         # enabled=False(기본값)일 때 FEATURE_DISABLED 즉시 반환 및 COM 접근 없음

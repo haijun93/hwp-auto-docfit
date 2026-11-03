@@ -88,7 +88,7 @@ class LiveLinkTest(unittest.TestCase):
         app = FakeApp(r"C:\a\가.hwpx", in_table=True)
         ctx = context(app)
         self.assertEqual((ctx["in_table"], ctx["page"], ctx["pos"]), (True, 3, [0, 1, 2]))
-        result = paste_at_cursor(app, expected=ctx)
+        result = paste_at_cursor(app, expected=ctx, window_enabled=lambda hwnd: True)
         self.assertEqual((result["undo_steps"], app.runs), (1, ["Paste"]))
 
     def test_foreground_app_window_pastes_when_hangul_owner_is_enabled(self):
@@ -113,7 +113,7 @@ class LiveLinkTest(unittest.TestCase):
         app = FakeApp(r"C:\a\가.hwpx")
         stale = {**context(app), "pos": [0, 9, 9]}
         with self.assertRaises(LiveLinkError) as raised:
-            paste_at_cursor(app, expected=stale)
+            paste_at_cursor(app, expected=stale, window_enabled=lambda hwnd: True)
         self.assertEqual(raised.exception.code, "STALE_CONTEXT")
         self.assertEqual(app.runs, [])
 

@@ -246,11 +246,12 @@ def hangul_window_titles() -> list[str]:
 
 
 class LiveLinkService:
-    def __init__(self, *, sessions=None, titles=None, com_init=True, gate_checker=None):
+    def __init__(self, *, sessions=None, titles=None, com_init=True, gate_checker=None, window_enabled=None):
         self._sessions = sessions or link.running_sessions
         self._titles = titles or hangul_window_titles
         self._com_init = com_init
         self._gate_checker = gate_checker or is_undo_gate_passed
+        self._window_enabled = window_enabled
         self._queue: queue.Queue = queue.Queue()
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
@@ -321,7 +322,9 @@ class LiveLinkService:
                 current = link.context(session.app)
                 if current.get("path") != expected.get("path") or current.get("document_id") != expected.get("document_id"):
                     raise link.LiveLinkError("STALE_CONTEXT", "넣으려던 사이에 문서가 바뀌었어요. 다시 눌러 주세요.")
-            return link.paste_at_cursor(session.app, expected=expected)
+            return link.paste_at_cursor(
+                session.app, expected=expected, window_enabled=self._window_enabled
+            )
         return self.call(work)
 
     def resize_cursor_table(

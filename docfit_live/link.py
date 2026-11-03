@@ -183,17 +183,23 @@ def context(app) -> dict:
     return {"path": path, "title": title, "document_id": doc_id, "hwnd": hwnd, "visible": visible, "pos": list(pos), "selected": selected, "in_table": in_table, "page": page, "selection_range": selection_range}
 
 
-def paste_at_cursor(app, *, expected: dict | None = None) -> dict:
+def _window_enabled(hwnd: int) -> bool:
+    """한/글 문서 창이 대화상자 등에 의해 비활성화됐는지 확인한다."""
+    user32 = ctypes.windll.user32
+    user32.IsWindowEnabled.argtypes = [ctypes.c_void_p]
+    user32.IsWindowEnabled.restype = ctypes.c_bool
+    return bool(user32.IsWindowEnabled(hwnd))
+
+
+def paste_at_cursor(app, *, expected: dict | None = None, window_enabled=None) -> dict:
     """클립보드 내용을 커서 위치에 한 번 붙여 넣는다(Ctrl+Z 한 번으로 되돌림). expected 문맥이 다르면 멈춘다."""
     now = context(app)
     if not now.get("visible"):
         raise LiveLinkError("DOCUMENT_BUSY", "한/글 문서 창이 활성 상태가 아니에요. 문서 창을 앞에 두고 다시 시도해 주세요.")
     if now["hwnd"]:
         try:
-            user32 = ctypes.windll.user32
-            user32.IsWindowEnabled.argtypes = [ctypes.c_void_p]
-            user32.IsWindowEnabled.restype = ctypes.c_bool
-            enabled = bool(user32.IsWindowEnabled(now["hwnd"]))
+            # 주입값은 실제 HWND 대화상자 검사를 대체하므로 명시적으로만 사용한다.
+            enabled = (window_enabled or _window_enabled)(now["hwnd"])
         except Exception:
             enabled = True  # hwnd 상태를 확인할 수 없으면 문맥 재확인 결과에 맡긴다.
     else:
