@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - alpha
+      - release/3.0.0-rc.1
       - release/1.74-beta.2
       - release/1.76.0
       - release/1.76.1
