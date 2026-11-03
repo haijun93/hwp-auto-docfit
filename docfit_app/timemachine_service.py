@@ -528,7 +528,13 @@ class TimemachineService:
             return {"ok": True}
         if action == "thumbnail":
             return self._thumbnail(payload.get("id"))
+        if action == "thumbnail_cache_stats":
+            return {"ok": True, **self.thumbnails.stats()}
         if action == "thumbnail_cache_clear":
+            target_bytes = payload.get("target_bytes")
+            if isinstance(target_bytes, int) and not isinstance(target_bytes, bool) and target_bytes >= 0:
+                result = self.thumbnails.prune(target_bytes)
+                return {"ok": True, "removed": result["removed_count"], "freed_bytes": result["removed_bytes"]}
             return {"ok": True, "removed": self.thumbnails.clear()}
         if action == "send_to_feature":
             return self._send_to_feature(payload.get("feature"), payload.get("ids"))
