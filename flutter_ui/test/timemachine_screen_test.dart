@@ -358,6 +358,48 @@ void main() {
     expect(api.calls.any((c) => c.$1 == 'thumbnail_cache_clear'), true);
     expect(find.text('썸네일 캐시를 지웠습니다.'), findsOneWidget);
   });
+
+  testWidgets('본문 검색 결과에 위계, 언급수, 순위 및 정렬 라벨 표시', (tester) async {
+    final api = _FakeApi(enabled: true);
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: api.call))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('본문'));
+    await tester.pumpAndSettle();
+    expect(find.text('위계기반 연관도'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), '회의');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('tm-content-rank-0')), findsOneWidget);
+    expect(find.text('위계: 장 · 언급 3회'), findsOneWidget);
+    expect(find.text('본문포함.docx'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('tm-content-sort-dropdown')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('언급 횟수 많은 순').last);
+    await tester.pumpAndSettle();
+    expect(api.calls.any((c) => c.$1 == 'content_search' && c.$2['sort'] == 'mentions'), true);
+  });
+
+  testWidgets('재색인 필요 시 안내 배너 표시 및 닫기 동작', (tester) async {
+    final api = _FakeApi(enabled: true);
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: api.call))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('본문'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), '재색인필요');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('기존 본문 색인은 위계 정보가 없어 재색인이 필요합니다.'), findsOneWidget);
+    expect(find.textContaining('재색인 필요: 5건'), findsOneWidget);
+
+    await tester.tap(find.text('닫기'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('재색인이 필요합니다'), findsNothing);
+  });
 }
 
 // 1×1 JPEG
@@ -421,7 +463,39 @@ class _FakeApi {
       case 'content_index_cancel':
         return {'ok':true,'running':false,'seen':5,'indexed':3,'errors':2};
       case 'content_search':
-        return {'ok':true,'items':[{'name':'본문포함.docx','path':'C:\\Temp\\TM\\본문포함.docx','snippet':'회의 결과'}]};
+        if (payload['query'] == '재색인필요') {
+          return {
+            'ok': true,
+            'items': [
+              {
+                'name': '구형문서.hwpx',
+                'path': 'C:\\Temp\\TM\\구형문서.hwpx',
+                'snippet': '재색인 필요 내용',
+                'best_level': '본문',
+                'total_matches': 1,
+                'relevance_rank': 1,
+              }
+            ],
+            'needs_reindex': true,
+            'needs_reindex_count': 5,
+            'reindex_guide': '기존 본문 색인은 위계 정보가 없어 재색인이 필요합니다.',
+          };
+        }
+        return {
+          'ok': true,
+          'items': [
+            {
+              'name': '본문포함.docx',
+              'path': 'C:\\Temp\\TM\\본문포함.docx',
+              'snippet': '회의 결과',
+              'best_level': '장',
+              'total_matches': 3,
+              'relevance_rank': 1,
+            }
+          ],
+          'needs_reindex': false,
+          'needs_reindex_count': 0,
+        };
       case 'related_search':
         return {'ok': true, 'reference_date_found': false, 'reference_date': null, 'items': [
           {'name': '연관.docx', 'path': 'C:\\Temp\\TM\\연관.docx', 'score': 82, 'reasons': ['공통 단어: 사업'], 'reference_date_found': false, 'reference_date': null},

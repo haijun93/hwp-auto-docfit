@@ -85,12 +85,101 @@ class TimemachineServiceTests(unittest.TestCase):
         self.assertIn("folder_path", result["items"][0])
         self.assertIn("match_counts", result["items"][0])
         self.assertIn("total_matches", result["items"][0])
+        self.assertIn("best_level", result["items"][0])
+        self.assertIn("relevance_rank", result["items"][0])
+        self.assertEqual(result["items"][0]["best_level"], "본문")
+        self.assertEqual(result["items"][0]["relevance_rank"], 1)
         self.assertEqual(result["items"][0]["name"], document.name)
         outside = self.plain_file
         self.assertFalse(self.service.command("content_index", {"path": str(outside)})["ok"])
         junk = self.root / "#IEeEE'.txt"
         junk.write_text("비정상 파일 검색어", encoding="utf-8")
         self.assertFalse(self.service.command("content_index", {"path": str(junk)})["ok"])
+
+    def test_content_search_defaults_to_hierarchy_relevance(self):
+        self.enable()
+        from tests.test_timemachine_content_search import write_hwpx_paragraphs
+        doc_sq = self.root / "square.hwpx"
+        write_hwpx_paragraphs(doc_sq, [{"text": "ㅁ 서비스검색어"}])
+        doc_body = self.root / "body.txt"
+        doc_body.write_text("서비스검색어 서비스검색어 서비스검색어", encoding="utf-8")
+        self.service.command("content_index", {"path": str(doc_sq)})
+        self.service.command("content_index", {"path": str(doc_body)})
+
+        res = self.service.command("content_search", {"query": "서비스검색어"})
+        self.assertTrue(res["ok"])
+        self.assertEqual(res["items"][0]["file_name"], doc_sq.name)
+        self.assertEqual(res["items"][0]["best_level"], "ㅁ")
+        self.assertEqual(res["items"][0]["relevance_rank"], 1)
+        self.assertEqual(res["items"][1]["file_name"], doc_body.name)
+        self.assertEqual(res["items"][1]["best_level"], "본문")
+        self.assertEqual(res["items"][1]["relevance_rank"], 2)
+
+    def test_content_search_preserves_explicit_user_sort(self):
+        self.enable()
+        from tests.test_timemachine_content_search import write_hwpx_paragraphs
+        doc_sq = self.root / "square.hwpx"
+        write_hwpx_paragraphs(doc_sq, [{"text": "ㅁ 명시정렬검색어"}])
+        doc_body = self.root / "body.txt"
+        doc_body.write_text("명시정렬검색어 명시정렬검색어 명시정렬검색어", encoding="utf-8")
+        self.service.command("content_index", {"path": str(doc_sq)})
+        self.service.command("content_index", {"path": str(doc_body)})
+
+        res = self.service.command("content_search", {"query": "명시정렬검색어", "sort": "mentions"})
+        self.assertTrue(res["ok"])
+        self.assertEqual(res["items"][0]["file_name"], doc_body.name)
+
+    def test_content_search_returns_public_fields_without_internal_sort_keys(self):
+        self.enable()
+        doc = self.root / "public_fields.txt"
+        doc.write_text("필드 검증 텍스트", encoding="utf-8")
+        self.service.command("content_index", {"path": str(doc)})
+        res = self.service.command("content_search", {"query": "필드"})
+        self.assertTrue(res["ok"])
+        item = res["items"][0]
+        for field in ("path", "file_name", "folder_name", "folder_path", "best_level", "total_matches", "relevance_rank", "match_counts", "snippet", "highlights", "position"):
+            self.assertIn(field, item)
+        for internal in ("_best_level_rank", "_bm25_score", "_document_date", "best_level_rank", "bm25_score", "document_date"):
+            self.assertNotIn(internal, item)
+
+    def test_needs_reindex_count_drops_after_background_index(self):
+        self.enable()
+        p1 = self.root / "old1.txt"
+        p2 = self.root / "old2.txt"
+        p1.write_text("재색인 대상 하나", encoding="utf-8")
+        p2.write_text("재색인 대상 둘", encoding="utf-8")
+        self.service.command("content_index", {"path": str(p1)})
+        self.service.command("content_index", {"path": str(p2)})
+
+        with self.service.content_index._lock, self.service.content_index.db:
+            self.service.content_index.db.execute("UPDATE content_meta SET hierarchy_schema_version=0")
+            self.service.content_index.db.execute("DELETE FROM content_paragraph_fts")
+
+        status = self.service.command("content_index_status")
+        self.assertEqual(status["needs_reindex_count"], 2)
+        self.assertTrue(status["needs_reindex"])
+        self.assertIn("위계 정보가 없어 재색인이 필요", status["reindex_guide"])
+
+        self.service.command("content_index", {"path": str(p1)})
+        status = self.service.command("content_index_status")
+        self.assertEqual(status["needs_reindex_count"], 1)
+
+        search_res = self.service.command("content_search", {"query": "재색인"})
+        names = [it["name"] for it in search_res["items"]]
+        self.assertIn(p1.name, names)
+        self.assertNotIn(p2.name, names)
+
+    def test_explicit_sort_is_forwarded_unchanged(self):
+        self.enable()
+        doc = self.root / "forward.txt"
+        doc.write_text("전달 확인 텍스트", encoding="utf-8")
+        self.service.command("content_index", {"path": str(doc)})
+
+        with patch.object(self.service.content_index, "search", wraps=self.service.content_index.search) as spy:
+            self.service.command("content_search", {"query": "전달", "sort": "mentions"})
+            spy.assert_called_once()
+            _, kwargs = spy.call_args
+            self.assertEqual(kwargs.get("sort"), "mentions")
 
     def test_background_content_index_progress_and_cancel(self):
         (self.root / "one.txt").write_text("한글 색인", encoding="utf-8")
