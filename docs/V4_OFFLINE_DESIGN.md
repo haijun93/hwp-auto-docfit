@@ -143,3 +143,15 @@ Scrivener의 긴 원고 작성·집필 전용 기능(전체 화면 집필, 장�
 - Scrivener 제품 안내(공식, 이번 환경에서는 접속 차단): https://www.literatureandlatte.com/scrivener/overview
 - Scrivener 사용자 매뉴얼 안내(공식, 플랫폼/버전별 재확인 필요): https://www.literatureandlatte.com/learn-and-support/user-guides
 - 네트워크 조회 시도는 `Tunnel connection failed: 403 Forbidden`으로 완료되지 않았다. 위 링크를 검토 시점에 열람했다고 주장하지 않는다.
+
+## 구조 결정 (2026-11-03 사용자 지시)
+
+자료함과 로컬 검색은 **앱과 분리된 별도 프로세스**로 독립 작동하며, 최적·최소 자원을 위해 **Rust**로 만든다. 화면은 **Flutter**로 만든다. 앞 절의 Python 서비스(`docfit_core/library`, `docfit_app/library_service.py`)는 동작 규격과 시험 기준으로만 쓰고, 실제 색인·검색 엔진은 Rust로 옮긴다.
+
+- **실행 파일**: 저장소 `klib/`의 Rust 크레이트가 `klib.exe`를 만든다. 몽땅클립보드 `kagent/`와 같은 방식(windows-sys, 네트워크 코드 없음, 릴리스 빌드 크기·메모리 최소화)으로 만들고 CI에서 함께 빌드해 `resources/klib.exe`로 넣는다.
+- **수명**: 상주하지 않는다. 앱이나 자료함 화면이 요청할 때 시작하고, 색인·검색이 끝난 뒤 일정 시간(기본 60초) 요청이 없으면 스스로 종료한다. 앱 종료 상태에서 프로세스·CPU·메모리·핸들 0을 시험으로 확인한다. 같은 사용자 안에서는 한 개만 실행(뮤텍스, 시험용 격리 폴더 지원).
+- **통신**: 사용자 SID가 붙은 로컬 named pipe, 한 줄 JSON 요청·응답(kagent `pipe.rs`와 같은 형식). 외부 네트워크 0회. 요청 종류: 자료함 만들기·수정·삭제, 폴더 추가·제거, 색인 시작·진행·취소, 파일명 검색, (4.0-B) 본문 검색, (4.0-C) 메모.
+- **저장**: `%LOCALAPPDATA%\HwpAutoDocFit\library\library.db` SQLite(WAL). 본문 검색은 FTS5를 쓰기 위해 SQLite를 정적으로 묶는다(rusqlite `bundled`, CI의 MSVC로 빌드). 타임머신 DB와 섞지 않는다.
+- **색인**: 지정 폴더만 증분 검사(경로·크기·수정 시각), 심볼릭 링크·정션 따라가지 않음, 네트워크·OneDrive 온디맨드 경로는 기본 제외, 한 파일 실패가 전체를 멈추지 않음. 원본은 읽기만 한다.
+- **화면**: Flutter에 「자료함」 메뉴(기본 꺼짐 설정 뒤)를 추가한다. 화면은 Python 브리지를 거쳐 파이프로 `klib.exe`에 요청한다(웹뷰 안에서 직접 파이프를 열 수 없으므로). 브리지는 요청을 그대로 전달하고 경로 검증은 `klib.exe`가 다시 한다.
+- **완료 기준(4.0-A)**: `cargo test` 통과, 10만 파일 메타데이터 색인·검색 실측(p95 300ms 이하 목표), 유휴 종료 확인, 화면 위젯 시험, 실제 앱에서 자료함 만들기→폴더 추가→검색→열기 판정.
