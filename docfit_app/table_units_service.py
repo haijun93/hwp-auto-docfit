@@ -26,6 +26,9 @@ SNAPSHOT_FOLDER = ".스냅샷"
 BUNDLED_SNAPSHOTS = default_catalog_path().parents[1] / "table_snapshots" / "tables"
 SNAPSHOT_REVISION = b"C13-shapes-v1"
 HWP_CLIPBOARD_FORMAT = "Hwp Native"
+FLOW_OVERRIDE_PREFIX = "v3flow:"
+FLOW_OVERRIDE_NAME = "추진절차(가로세로) · 모양 1"
+FLOW_OVERRIDE_CATALOG = default_catalog_path().parent / "추진절차_가로세로_모양1.hwpx"
 # 2.0.5 추가 서식(공공기관 표 16종 × 디자인 유형): 사용자 서식모음과 따로 늘 함께 보인다. id는 'g' + 원래 id.
 GALLERY_PATH = default_catalog_path().parent / GALLERY_NAME
 # 목록 맨 뒤에 둘 분류(사용자 요청 2026-10-26). 띄어쓰기 변형(라벨서식)도 같은 분류로 본다.
@@ -89,6 +92,8 @@ class TableUnitsService:
     def _resolve(self, template_id) -> tuple[Path, str]:
         """템플릿 id를 (서식 파일, 그 파일 안의 id)로. 'g'로 시작하면 추가 서식 파일이다."""
         value = str(template_id)
+        if value.startswith(FLOW_OVERRIDE_PREFIX):
+            return FLOW_OVERRIDE_CATALOG, value[len(FLOW_OVERRIDE_PREFIX):]
         if self._gallery is not None and value.startswith(GALLERY_PREFIX):
             return self._gallery, value[len(GALLERY_PREFIX):]
         return self.source, value
@@ -128,7 +133,11 @@ class TableUnitsService:
         표 내용 지문으로 두면 바뀌지 않은 표의 그림은 그대로 쓴다."""
         from defusedxml import ElementTree as ET
         from docfit_core import table_catalog as catalog
-        sources = [("", self.source)] + ([(GALLERY_PREFIX, self._gallery)] if self._gallery_ready() else [])
+        sources = [("", self.source)]
+        if FLOW_OVERRIDE_CATALOG.is_file():
+            sources.append((FLOW_OVERRIDE_PREFIX, FLOW_OVERRIDE_CATALOG))
+        if self._gallery_ready():
+            sources.append((GALLERY_PREFIX, self._gallery))
         digest = "|".join(_digest(path) for _, path in sources)
         cached = self._content_cache.get(digest)
         if cached is not None:
@@ -162,6 +171,9 @@ class TableUnitsService:
         return self._snapshot_dir() / f"{_safe_name(template_id)}.png"
 
     def _bundled_snapshot(self, template_id: str) -> Path | None:
+        if str(template_id).startswith(FLOW_OVERRIDE_PREFIX):
+            path = BUNDLED_SNAPSHOTS / "v3_flow_procedure.png"
+            return path if path.is_file() else None
         key = self._content_keys().get(str(template_id))
         path = BUNDLED_SNAPSHOTS / f"{key}.png" if key else None
         return path if path is not None and path.is_file() else None
@@ -182,6 +194,14 @@ class TableUnitsService:
             items = table_units.describe_units(self.source)
         except (OSError, ValueError) as exc:
             raise ServiceError("CATALOG_UNAVAILABLE", f"표 서식 모음을 읽지 못했습니다: {exc}") from exc
+        if FLOW_OVERRIDE_CATALOG.is_file():
+            items = [item for item in items if item.get("name") != FLOW_OVERRIDE_NAME]
+            try:
+                replacement = table_units.describe_units(FLOW_OVERRIDE_CATALOG)
+            except (OSError, ValueError):
+                replacement = []
+            items += [{**item, "id": FLOW_OVERRIDE_PREFIX + str(item["id"]), "v3_override": True}
+                      for item in replacement if item.get("name") == FLOW_OVERRIDE_NAME]
         if self._gallery_ready():
             try:
                 extra = table_units.describe_units(self._gallery)
