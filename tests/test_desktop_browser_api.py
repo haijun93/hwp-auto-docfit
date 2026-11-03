@@ -1,4 +1,5 @@
-from unittest.mock import Mock
+import os
+from unittest.mock import Mock, patch
 import unittest
 import tempfile
 from pathlib import Path
@@ -101,6 +102,13 @@ def _bridge(gui):
 
 
 class BrowserApiTests(unittest.TestCase):
+    def setUp(self):
+        self.appdata = tempfile.TemporaryDirectory(prefix="docfit-browser-api-appdata-")
+        self.addCleanup(self.appdata.cleanup)
+        self.appdata_patch = patch.dict(os.environ, {"APPDATA": self.appdata.name})
+        self.appdata_patch.start()
+        self.addCleanup(self.appdata_patch.stop)
+
     def test_only_commands_exposed_not_native_window_or_tk_graph(self):
         bridge = DesktopWebBridge(object())
         bridge.window = object()
