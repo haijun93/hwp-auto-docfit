@@ -12,8 +12,11 @@ import os
 from pathlib import Path
 import socket
 import subprocess
+import tempfile
+import sys
 import time
 import uuid
+from contextlib import contextmanager
 
 
 def _cdp_diagnostics(process, port):
@@ -38,6 +41,45 @@ def _cdp_diagnostics(process, port):
     return info
 
 
+@contextmanager
+def _app_test_lock(path):
+    """Serialize launches that use the shared app-test reporting area."""
+    path = Path(path)
+    try:
+        path.mkdir()
+    except FileExistsError as exc:
+        raise RuntimeError(f'Application test lock is already held: {path}') from exc
+    try:
+        yield
+    finally:
+        path.rmdir()
+
+
+def _kill_test_tree(process):
+    """Stop only the launcher and descendants created by this smoke run."""
+    try:
+        import psutil
+        root = psutil.Process(process.pid)
+        children = root.children(recursive=True)
+        for child in children:
+            try:
+                child.kill()
+            except psutil.NoSuchProcess:
+                pass
+        try:
+            root.kill()
+        except psutil.NoSuchProcess:
+            pass
+    except Exception:
+        if process.poll() is None:
+            process.kill()
+
+
+def _start_app(executable, env):
+    """Small launch seam so callers can assert profile isolation and locking."""
+    return subprocess.Popen([str(executable)], env=env)
+
+
 def main():
     from PIL import Image
     from playwright.sync_api import sync_playwright
@@ -52,6 +94,7 @@ def main():
     parser.add_argument('--legacy-frame', action='store_true', help='diagnose pre-2.0.1 bundles without a first-frame marker')
     args = parser.parse_args()
     args.report.parent.mkdir(parents=True, exist_ok=True)
+    lock = args.report.parent / '.app-test.lock'
     with socket.socket() as listener:
         listener.bind(('127.0.0.1', 0))
         port = listener.getsockname()[1]
@@ -60,11 +103,26 @@ def main():
     env['DOCFIT_LAUNCHER_MUTEX_NAME'] = 'Local\\DocFitSmoke_' + uuid.uuid4().hex
     env['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'] = f'--remote-debugging-port={port}'
     env['DOCFIT_SMOKE_CDP_PORT'] = str(port)  # honoured by the app via pywebview settings
+    # Keep app state away from the signed-in user's profile.
+    isolation = Path(tempfile.mkdtemp(prefix='docfit-smoke-profile-'))
+    env['APPDATA'] = str(isolation / 'Roaming')
+    env['LOCALAPPDATA'] = str(isolation / 'Local')
+    Path(env['APPDATA']).mkdir()
+    Path(env['LOCALAPPDATA']).mkdir()
+    # Preserve the launcher's established, independently managed cache root.
+    env['DOCFIT_LAUNCHER_TEST_ROOT'] = str(args.report.parent / 'launcher-cache')
+    Path(env['DOCFIT_LAUNCHER_TEST_ROOT']).mkdir(parents=True, exist_ok=True)
     # A WebView2 browser already running on the same user data folder (e.g. the
     # previous smoke step's app) would adopt this window and ignore the CDP port.
-    import tempfile
     env['WEBVIEW2_USER_DATA_FOLDER'] = tempfile.mkdtemp(prefix='docfit-smoke-webview-')
-    process = subprocess.Popen([str(args.exe.resolve())], env=env)
+    lock_context = _app_test_lock(lock)
+    lock_context.__enter__()
+    process = None
+    try:
+        process = _start_app(args.exe.resolve(), env)
+    except BaseException:
+        lock_context.__exit__(*sys.exc_info())
+        raise
     result = {'ok': False, 'exe': str(args.exe.resolve()), 'pid': process.pid, 'console': [], 'errors': [], 'failed_requests': []}
     app_pid = process.pid
     # Hard limit: Playwright evaluate/cleanup have no timeout of their own. Record
@@ -72,9 +130,11 @@ def main():
     import threading
     def _hung():
         result['error'] = f"Timeout after {args.hard_timeout}s at stage {result.get('stage')}"
-        args.report.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
-        print(json.dumps(result, ensure_ascii=False), flush=True)
-        subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'], capture_output=True, timeout=15)
+        try:
+            args.report.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
+            print(json.dumps(result, ensure_ascii=False), flush=True)
+        finally:
+            _kill_test_tree(process)
         os._exit(1)
     watchdog = threading.Timer(args.hard_timeout, _hung)
     watchdog.daemon = True
@@ -165,10 +225,12 @@ def main():
     except Exception as error:
         result['error'] = f'{type(error).__name__}: {error}'
     finally:
-        args.report.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
-        if not result['ok']:
-            for pid in {process.pid, app_pid}:
-                subprocess.run(['taskkill', '/PID', str(pid), '/T', '/F'], capture_output=True, timeout=15)
+        try:
+            args.report.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
+        finally:
+            if not result['ok']:
+                _kill_test_tree(process)
+            lock_context.__exit__(None, None, None)
     watchdog.cancel()
     print(json.dumps(result, ensure_ascii=False), flush=True)
     return 0 if result['ok'] else 1
