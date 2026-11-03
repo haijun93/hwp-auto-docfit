@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import base64
+import binascii
 import re
 import tempfile
 import threading
@@ -70,6 +72,103 @@ class TableSketchService:
         self._path(name).unlink()
         return dict(ok=True, name=name)
 
+    def save_draft(self, sketch):
+        """작업 중 그림을 별도 복구 파일에 원자적으로 저장한다."""
+        table_sketch.normalize(sketch)
+        folder = self.folder / "recovery"
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / "draft.json"
+        encoded = json.dumps(sketch, ensure_ascii=False, allow_nan=False)
+        if len(encoded.encode("utf-8")) > 8_000_000:
+            raise ValueError("자동 복구 데이터가 너무 큽니다.")
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".tmp", dir=folder, delete=False) as stream:
+                temporary = Path(stream.name)
+                stream.write(encoded)
+                stream.flush()
+                import os
+                os.fsync(stream.fileno())
+            temporary.replace(path)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+        return dict(ok=True)
+
+    def load_draft(self):
+        path = self.folder / "recovery" / "draft.json"
+        if not path.is_file():
+            return dict(ok=True, exists=False)
+        if path.stat().st_size > 8_000_000:
+            return dict(ok=False, exists=False, message="자동 복구 데이터가 너무 큽니다.")
+        try:
+            sketch = json.loads(path.read_text(encoding="utf-8"))
+            table_sketch.normalize(sketch)
+        except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            return dict(ok=False, exists=False, message=f"자동 복구 데이터를 읽지 못했습니다: {exc}")
+        return dict(ok=True, exists=True, sketch=sketch)
+
+    def clear_draft(self):
+        (self.folder / "recovery" / "draft.json").unlink(missing_ok=True)
+        return dict(ok=True)
+
+    def import_image(self, data):
+        """스케치 표 이미지에서 주된 가로·세로 선을 찾아 편집 가능한 격자로 만든다."""
+        if not isinstance(data, str):
+            raise ValueError("표 스케치 이미지를 읽지 못했습니다.")
+        encoded = data.split(",", 1)[-1] if data.startswith("data:") else data
+        if len(encoded) > 12_000_000:
+            raise ValueError("이미지가 너무 큽니다. 8MB 이하 파일을 사용해 주세요.")
+        try:
+            raw = base64.b64decode(encoded, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError("이미지 데이터가 올바르지 않습니다.") from exc
+        from io import BytesIO
+        from PIL import Image, ImageOps
+        try:
+            image = Image.open(BytesIO(raw))
+            if image.width < 32 or image.height < 32 or image.width * image.height > 16_000_000:
+                raise ValueError("표 스케치 이미지 크기를 확인해 주세요.")
+            image.load()
+            gray = ImageOps.grayscale(image)
+            gray.thumbnail((1200, 1200))
+        except (OSError, Image.DecompressionBombError) as exc:
+            raise ValueError("지원하는 그림 파일을 읽지 못했습니다.") from exc
+        width, height = gray.size
+        pixels = gray.load()
+        threshold = 170
+        horizontal = []
+        for y in range(height):
+            count = sum(1 for x in range(width) if pixels[x, y] < threshold)
+            if count >= width * 0.35:
+                horizontal.append(y)
+        vertical = []
+        for x in range(width):
+            count = sum(1 for y in range(height) if pixels[x, y] < threshold)
+            if count >= height * 0.35:
+                vertical.append(x)
+
+        def groups(values, gap=5):
+            result = []
+            for value in values:
+                if not result or value - result[-1][-1] > gap:
+                    result.append([value])
+                else:
+                    result[-1].append(value)
+            return [round(sum(group) / len(group)) for group in result]
+
+        ys, xs = groups(horizontal), groups(vertical)
+        if len(xs) < 2 or len(ys) < 2 or len(xs) > 101 or len(ys) > 101:
+            raise ValueError("표의 가로·세로 선을 충분히 찾지 못했습니다. 선이 선명한 정면 이미지를 사용해 주세요.")
+        lines = []
+        for row, y in enumerate(ys):
+            lines.append(dict(x1=0, y1=row, x2=len(xs)-1, y2=row))
+        for col, x in enumerate(xs):
+            lines.append(dict(x1=col, y1=0, x2=col, y2=len(ys)-1))
+        sketch = dict(grid=dict(cols=len(xs)-1, rows=len(ys)-1, cell_mm=5.0), lines=lines, texts=[])
+        table_sketch.normalize(sketch)
+        return dict(ok=True, sketch=sketch, rows=len(ys)-1, cols=len(xs)-1)
+
     def copy(self, sketch):
         if not COM_LOCK.acquire(blocking=False):
             return dict(ok=False, message="표 복사 작업이 진행 중입니다. 잠시 후 다시 눌러 주세요.")
@@ -131,6 +230,10 @@ class TableSketchService:
                 return self.save(payload.get("name"), payload.get("sketch"))
             if action == "load": return self.load(payload)
             if action == "delete": return self.delete(payload)
+            if action == "save_draft" and isinstance(payload, dict): return self.save_draft(payload.get("sketch"))
+            if action == "load_draft": return self.load_draft()
+            if action == "clear_draft": return self.clear_draft()
+            if action == "import_image": return self.import_image(payload)
             if action == "paste_hwp": return self.paste_hwp(payload)
             if action == "clipboard_seq": return dict(ok=True, seq=self._clipboard_seq())
             raise ValueError("표그림판 작업을 확인해 주세요.")

@@ -95,6 +95,8 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
   TableSketchPreviewResult? _previewResult;
   bool _previewLoading = false;
   Timer? _previewDebounceTimer;
+  Timer? _draftSaveTimer;
+  bool _editedBeforeDraftCheck = false;
   bool _copying = false;
 
   // 저장/불러오기 컨트롤러
@@ -111,7 +113,60 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
       'docfit-sketch-image-dropped',
       () => unawaited(takeDroppedImage()),
     );
+    unawaited(_offerDraftRecovery());
     _requestPreview();
+  }
+
+  Future<void> _offerDraftRecovery() async {
+    Map<String, dynamic> draft;
+    try {
+      draft = await _sketchApi.loadDraft();
+    } catch (_) {
+      return;
+    }
+    if (!mounted || draft['exists'] != true || draft['sketch'] is! Map) return;
+    if (_editedBeforeDraftCheck) return;
+    final recover = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('복구 가능한 작업이 있습니다'),
+        content: const Text('이전에 저장하지 못한 표그림판 작업을 복구할까요?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('복구 안 함')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('복구')),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (recover == true && draft['sketch'] is Map) {
+      setState(() {
+        _doc = TableSketchDoc.fromJson(draft['sketch'] as Map);
+        _sel = SketchSelection();
+      });
+      _triggerPreviewDebounced();
+    } else {
+      try {
+        await _sketchApi.clearDraft();
+      } catch (_) {
+        // 복구 초안 정리 실패는 새 작업을 막지 않는다.
+      }
+    }
+  }
+
+  void _scheduleDraftSave() {
+    _editedBeforeDraftCheck = true;
+    _draftSaveTimer?.cancel();
+    _draftSaveTimer = Timer(const Duration(milliseconds: 600), _persistDraft);
+  }
+
+  Future<void> _persistDraft() async {
+    if (!mounted) return;
+    try {
+      await _sketchApi.saveDraft(_doc.toJson());
+    } catch (_) {
+      // 저장 실패는 편집을 막지 않는다. 다음 변경 때 다시 저장한다.
+    }
   }
 
   // 끌기는 언제나 그리기에 쓰고(스크롤 상자가 끌기를 가져가면 선이 그려지지 않았다), 화면 이동은 휠·스크롤 막대로 한다.
@@ -120,6 +175,8 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
 
   @override
   void dispose() {
+    _draftSaveTimer?.cancel();
+    unawaited(_persistDraft());
     _previewDebounceTimer?.cancel();
     _keyboardFocus.dispose();
     _stopImageDrops?.call();
@@ -149,6 +206,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
     _undoStack.add(_doc.clone());
     if (_undoStack.length > 50) _undoStack.removeAt(0);
     _redoStack.clear();
+    _scheduleDraftSave();
   }
 
   void _undo() {
@@ -160,6 +218,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
       _previewLine = null;
       _previewRect = null;
     });
+    _scheduleDraftSave();
     _triggerPreviewDebounced();
   }
 
@@ -172,6 +231,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
       _previewLine = null;
       _previewRect = null;
     });
+    _scheduleDraftSave();
     _triggerPreviewDebounced();
   }
 
@@ -2120,6 +2180,18 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
   Future<void> takeDroppedImage() async {
     final result = await widget.api('table_sketch', ['take_drop']);
     if (!mounted || result is! Map || result['data'] is! String) return;
+    final imported = await _sketchApi.importImage(result['data'] as String);
+    if (mounted && imported['ok'] == true && imported['sketch'] is Map) {
+      _saveSnapshot();
+      setState(() {
+        _doc = TableSketchDoc.fromJson(imported['sketch'] as Map);
+        _sel = SketchSelection();
+        _imageTarget = null;
+      });
+      _triggerPreviewDebounced();
+      _notice('스케치 이미지에서 표 ${imported['rows']}행 × ${imported['cols']}열을 인식했습니다.');
+      return;
+    }
     final box = _canvasKey.currentContext?.findRenderObject() as RenderBox?;
     final cx = result['client_x'], cy = result['client_y'];
     if (box == null || cx is! num || cy is! num) {
