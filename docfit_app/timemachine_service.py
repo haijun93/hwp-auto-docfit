@@ -6,11 +6,13 @@ import json
 import logging
 import math
 import os
+import secrets
 import stat
 import subprocess
 import tempfile
 import threading
 import time
+from collections import OrderedDict
 from pathlib import Path
 
 from docfit_core.timemachine import thumbs
@@ -24,6 +26,7 @@ from .kagent_client import KAgentClient, data_dir
 THUMBNAIL_SLOTS = 2
 THUMBNAIL_WAIT_SECONDS = 8.0
 THUMBNAIL_TIME_LIMIT = 5.0
+RELATED_ID_LIMIT = 1000
 
 
 ALLOWED_FEATURES = frozenset(("rename_batch", "convert", "document_edit"))
@@ -56,7 +59,25 @@ class TimemachineService:
         self._scan_state = {"running": False, "seen": 0, "written": 0, "removed": 0,
                             "errors": [], "started_at": None, "finished_at": None}
         self._rescan = False
+        # 연관 항목 불투명 ID → (선택 경로, 연관 경로). 응답에 경로를 내보내지 않기 위한 대응표.
+        self._related_ids = OrderedDict()
+        self._related_lock = threading.Lock()
         self._settings = self._load_settings()
+
+    def _issue_related_id(self, selected_path, related_path):
+        """연관 항목마다 새 불투명 ID를 발급하고 최근 RELATED_ID_LIMIT개만 보관한다."""
+        related_id = secrets.token_urlsafe(16)
+        with self._related_lock:
+            self._related_ids[related_id] = (selected_path, related_path)
+            while len(self._related_ids) > RELATED_ID_LIMIT:
+                self._related_ids.popitem(last=False)
+        return related_id
+
+    def _lookup_related_id(self, related_id):
+        if not isinstance(related_id, str):
+            return None
+        with self._related_lock:
+            return self._related_ids.get(related_id)
 
     @staticmethod
     def _open_file(path):
@@ -435,12 +456,19 @@ class TimemachineService:
             exclusions = self.store.related_exclusions()
             result = related_documents(self.content_index, path, roots=self._settings["roots"],
                                        excluded_pairs=exclusions, limit=limit)
-            # 경로는 내부 판정에만 쓰고 서비스 응답에는 노출하지 않는다.
+            # 경로는 내부 판정에만 쓰고 서비스 응답에는 불투명 related_id만 노출한다.
             for item in result["items"]:
-                item.pop("path", None)
+                item["related_id"] = self._issue_related_id(path, item.pop("path"))
             return {"ok": True, **result}
         if action == "related_exclude":
-            left, right = payload.get("selected_path"), payload.get("related_path")
+            related_id = payload.get("related_id")
+            if related_id is not None:
+                pair = self._lookup_related_id(related_id)
+                if pair is None:
+                    return self._error("INVALID_INPUT", "연관 문서 항목을 다시 검색해 주세요.")
+                left, right = pair
+            else:
+                left, right = payload.get("selected_path"), payload.get("related_path")
             excluded = payload.get("excluded", True)
             if (not isinstance(left, str) or not isinstance(right, str) or type(excluded) is not bool or
                     not self._path_in_active_root(left) or not self._path_in_active_root(right)):

@@ -798,4 +798,48 @@ class TimemachineServiceTests(unittest.TestCase):
         self.assertEqual(calls, [])
 
 
+    def _related_pair(self):
+        self.enable()
+        a, b = self.root / "A.txt", self.root / "B.txt"
+        a.write_text("2026년도 3분기 주요업무추진실적\n작성 기준일: 2026-09-30\n디지털전환 사업", encoding="utf-8")
+        b.write_text("2026년도 2분기 주요업무추진실적\n작성 기준일: 2026-06-30\n디지털전환 사업", encoding="utf-8")
+        self.service.content_index.index_file(a)
+        self.service.content_index.index_file(b)
+        return a, b
+
+    def test_related_id_exclude_round_trip_without_paths_in_response(self):
+        a, b = self._related_pair()
+        response = self.service.command("related_search", {"path": str(a)})
+        self.assertTrue(response["ok"])
+        item = response["items"][0]
+        self.assertNotIn("path", item)
+        self.assertNotIn(str(self.root), json.dumps(response, ensure_ascii=False))
+        related_id = item["related_id"]
+        saved = self.service.command("related_exclude", {"related_id": related_id})
+        self.assertEqual(saved, {"ok": True, "excluded": True})
+        self.assertNotIn(str(self.root), json.dumps(saved, ensure_ascii=False))
+        self.assertEqual(self.service.command("related_search", {"path": str(a)})["items"], [])
+        restored = self.service.command("related_exclude", {"related_id": related_id, "excluded": False})
+        self.assertTrue(restored["ok"])
+        again = self.service.command("related_search", {"path": str(a)})["items"]
+        self.assertEqual([i["name"] for i in again], ["B.txt"])
+        self.assertNotEqual(again[0]["related_id"], related_id)
+
+    def test_related_exclude_rejects_unknown_id_and_keeps_path_input(self):
+        a, b = self._related_pair()
+        for bad in ("없는-id", 123, ""):
+            res = self.service.command("related_exclude", {"related_id": bad})
+            self.assertFalse(res["ok"])
+            self.assertEqual(res["code"], "INVALID_INPUT")
+        self.assertEqual(len(self.service.command("related_search", {"path": str(a)})["items"]), 1)
+        saved = self.service.command("related_exclude", {"selected_path": str(a), "related_path": str(b)})
+        self.assertTrue(saved["ok"])
+        self.assertEqual(self.service.command("related_search", {"path": str(a)})["items"], [])
+
+    def test_related_id_table_keeps_only_recent_entries(self):
+        with patch("docfit_app.timemachine_service.RELATED_ID_LIMIT", 2):
+            ids = [self.service._issue_related_id("a", str(n)) for n in range(3)]
+        self.assertIsNone(self.service._lookup_related_id(ids[0]))
+        self.assertEqual(self.service._lookup_related_id(ids[2]), ("a", "2"))
+
 if __name__ == "__main__": unittest.main()

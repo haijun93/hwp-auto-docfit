@@ -12,33 +12,47 @@ from ..hwpx import open_hwpx_safely
 
 SUPPORTED = {"hwpx", "txt", "docx", "pdf"}
 
+# 종류 우선순위 순서: 명시 기준일 > 분기 > 반기
 _DATE_PATTERNS = (
-    re.compile(r"(?:작성\s*)?기준일\s*[:：]?\s*(20\d{2})\s*[.년/-]\s*(\d{1,2})\s*[.월/-]\s*(\d{1,2})\s*일?"),
-    re.compile(r"(20\d{2})\s*년도?\s*(\d{1,2})\s*분기"),
-    re.compile(r"(?:작성\s*)?기준일\s*[:：]?\s*(20\d{2})\s*년?\s*(\d{1,2})\s*월?"),
-    re.compile(r"(20\d{2})\s*년도?\s*(\d{1,2})\s*분기"),
+    # 월·일 뒤 (?!\d)로 숫자 경계를 지키고, 일이 숫자 경계에서 끊기면(예: 9. 301) 일 없는 해석으로 떨어지지 않게 한다.
+    # 일치 원문에는 끝 표기(일·월·마침표)까지 포함한다.
+    ("explicit", re.compile(r"(?:작성\s*)?기준일\s*[:：]?\s*(20\d{2})\s*[.년/-]\s*(\d{1,2})(?!\d)"
+                            r"(?:\s*[.월/-]\s*(\d{1,2})(?!\d)(?:\s*일)?|(?!\s*[.월/-]\s*\d)(?:\s*월)?)(?:\s*\.)?")),
+    ("quarter", re.compile(r"(20\d{2})\s*년도?\s*([1-4])\s*분기")),
+    ("half", re.compile(r"(20\d{2})\s*년도?\s*(상|하)반기")),
 )
 
 
-def extract_reference_date(text):
-    """본문에서 작성 기준일 또는 연·분기/연도 기준일을 ISO 날짜로 돌려준다."""
-    for pattern in _DATE_PATTERNS:
-        for match in pattern.finditer(text):
-            parts = [int(part) for part in match.groups()]
+def _match_date(source, match):
+    """일치 하나를 날짜로 바꾼다. 잘못된 날짜면 ValueError."""
+    year = int(match.group(1))
+    if source == "explicit":
+        day = match.group(3)
+        return date(year, int(match.group(2)), int(day) if day else 1)
+    if source == "quarter":
+        return date(year, int(match.group(2)) * 3, 1)
+    return date(year, 6 if match.group(2) == "상" else 12, 1)
+
+
+def extract_reference_date_info(text):
+    """본문에서 작성 기준일과 그 출처(explicit/quarter/half)를 찾는다.
+
+    종류 우선(명시 기준일 > 분기 > 반기), 같은 종류는 본문에서 먼저 나온 것을 쓴다.
+    잘못된 날짜(예: 2026.2.30)는 그 일치만 건너뛴다.
+    """
+    for source, pattern in _DATE_PATTERNS:
+        for match in pattern.finditer(text or ""):
             try:
-                if len(parts) == 3:
-                    return date(*parts).isoformat()
-                if len(parts) == 2 and "분기" in match.group(0):
-                    year, quarter = parts
-                    if 1 <= quarter <= 4:
-                        return date(year, quarter * 3, 1).isoformat()
-                if len(parts) == 3:
-                    return date(*parts).isoformat()
-                if len(parts) == 2:
-                    return date(parts[0], parts[1], 1).isoformat()
+                value = _match_date(source, match)
             except ValueError:
                 continue
-    return None
+            return {"date": value.isoformat(), "source": source, "text": match.group(0).strip()}
+    return {"date": None, "source": None, "text": None}
+
+
+def extract_reference_date(text):
+    """본문에서 작성 기준일 또는 연·분기/반기 기준일을 ISO 날짜로 돌려준다."""
+    return extract_reference_date_info(text)["date"]
 
 
 def extract_text(path):
@@ -179,7 +193,7 @@ class ContentSearchIndex:
     def related_candidates(self, path, roots=None):
         path = os.path.abspath(os.fspath(path))
         with self._lock:
-            selected = self.db.execute("SELECT f.body,m.reference_date FROM content_fts f JOIN content_meta m ON m.path=f.path WHERE f.path=?", (path,)).fetchone()
+            selected = self.db.execute("SELECT f.path,f.name,f.body,m.reference_date FROM content_fts f JOIN content_meta m ON m.path=f.path WHERE f.path=?", (path,)).fetchone()
             rows = self.db.execute("SELECT f.path,f.name,f.body,m.reference_date FROM content_fts f JOIN content_meta m ON m.path=f.path WHERE f.path<>?", (path,)).fetchall()
         if not selected:
             return None, []

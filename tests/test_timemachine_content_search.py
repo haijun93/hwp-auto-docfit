@@ -3,7 +3,8 @@ import unittest
 from pathlib import Path
 from zipfile import ZipFile
 
-from docfit_core.timemachine.content_search import ContentSearchIndex, extract_text
+from docfit_core.timemachine.content_search import (ContentSearchIndex, extract_reference_date,
+                                                     extract_reference_date_info, extract_text)
 
 
 class ContentSearchTests(unittest.TestCase):
@@ -48,6 +49,52 @@ class ContentSearchTests(unittest.TestCase):
         hidden.write_text("secretword", encoding="utf-8")
         self.index.index_file(hidden)
         self.assertEqual(self.index.search("secretword"), [])
+
+    def test_reference_date_info_prefers_explicit_over_quarter_over_half(self):
+        info = extract_reference_date_info("2026년 상반기 2026년도 1분기\n작성 기준일: 2026. 5. 20.")
+        self.assertEqual(info, {"date": "2026-05-20", "source": "explicit", "text": "작성 기준일: 2026. 5. 20."})
+        info = extract_reference_date_info("2026년 하반기 실적\n2026년도 3분기")
+        self.assertEqual((info["date"], info["source"], info["text"]), ("2026-09-01", "quarter", "2026년도 3분기"))
+        self.assertEqual(extract_reference_date_info("없음"), {"date": None, "source": None, "text": None})
+
+    def test_reference_date_quarter_before_explicit_still_uses_explicit(self):
+        info = extract_reference_date_info("2026년도 2분기 주요업무\n기준일: 2026-06-30")
+        self.assertEqual((info["date"], info["source"]), ("2026-06-30", "explicit"))
+
+    def test_reference_date_skips_invalid_date_and_uses_next_valid(self):
+        info = extract_reference_date_info("기준일: 2026.2.30\n작성 기준일: 2026.3.31")
+        self.assertEqual((info["date"], info["source"]), ("2026-03-31", "explicit"))
+        self.assertEqual(info["text"], "작성 기준일: 2026.3.31")
+
+    def test_reference_date_ignores_fifth_quarter(self):
+        self.assertIsNone(extract_reference_date("2026년 5분기 계획"))
+        self.assertEqual(extract_reference_date("2026년 5분기, 2026년 4분기"), "2026-12-01")
+
+    def test_reference_date_without_day_defaults_to_first(self):
+        info = extract_reference_date_info("기준일: 2026. 3.")
+        self.assertEqual((info["date"], info["source"]), ("2026-03-01", "explicit"))
+        self.assertEqual(extract_reference_date("작성기준일 2026년 7월"), "2026-07-01")
+
+    def test_reference_date_half_years(self):
+        self.assertEqual(extract_reference_date_info("2026년 상반기 실적")["date"], "2026-06-01")
+        info = extract_reference_date_info("2025년도 하반기 실적")
+        self.assertEqual((info["date"], info["source"], info["text"]), ("2025-12-01", "half", "2025년도 하반기"))
+
+    def test_reference_date_text_includes_trailing_marks(self):
+        info = extract_reference_date_info("기준일: 2026. 9. 30.\n본문")
+        self.assertEqual((info["date"], info["text"]), ("2026-09-30", "기준일: 2026. 9. 30."))
+        info = extract_reference_date_info("작성 기준일 2026년 12월 실적")
+        self.assertEqual((info["date"], info["text"]), ("2026-12-01", "작성 기준일 2026년 12월"))
+        info = extract_reference_date_info("기준일: 2026. 3.")
+        self.assertEqual((info["date"], info["text"]), ("2026-03-01", "기준일: 2026. 3."))
+
+    def test_reference_date_respects_digit_boundary(self):
+        # 일이 숫자 경계를 넘으면(301) 30일로도, 일 없는 9월 1일로도 판정하지 않고 그 일치를 무시한다.
+        self.assertEqual(extract_reference_date_info("기준일: 2026. 9. 301"),
+                         {"date": None, "source": None, "text": None})
+        info = extract_reference_date_info("기준일: 2026. 9. 301\n2026년도 3분기")
+        self.assertEqual((info["date"], info["source"]), ("2026-09-01", "quarter"))
+        self.assertIsNone(extract_reference_date("기준일: 2026. 123. 1"))
 
 
 if __name__ == "__main__":
