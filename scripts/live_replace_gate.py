@@ -782,19 +782,8 @@ def _run_table_unit_case(
             except Exception as exc:
                 action_parts.append(f"live_link import/call failed: {exc}")
 
-            # G2 link 어댑터가 NotImplementedError인 경우 표준 COM GetTextFile 계측
-            if raw_block is None and hasattr(app, "GetTextFile"):
-                try:
-                    fmt = "HWPML2X"
-                    opt = "saveblock"
-                    raw_block = app.GetTextFile(fmt, opt)
-                    action_parts.append(
-                        f"GetTextFile(fmt='{fmt}', opt='{opt}') -> "
-                        f"type={type(raw_block).__name__}, len={len(raw_block) if raw_block else 0}"
-                    )
-                except Exception as exc:
-                    action_parts.append(f"COM GetTextFile failed: {exc}")
-                    error_msg = str(exc)
+            if raw_block is None:
+                error_msg = "docfit_live.link 표 블록 export가 구현되지 않아 게이트를 닫았습니다."
 
             # 3. 표 단위 변환 엔진 적용 (임의 알고리즘 금지)
             transformed_block: bytes | str | None = None
@@ -831,19 +820,9 @@ def _run_table_unit_case(
                     res = live_link.replace_table_block(app, transformed_block, expected=live_link.context(app))
                     action_parts.append(f"live_link.replace_table_block(app, ...) -> {res}")
                     replaced = bool(res.get("ok", True))
-                except (NotImplementedError, Exception) as nie:
-                    action_parts.append(f"live_link.replace_table_block -> {type(nie).__name__}({nie})")
-                    # 표준 COM SetTextFile 계측
-                    if hasattr(app, "SetTextFile"):
-                        try:
-                            fmt = "HWPML2X"
-                            replace_opt = "insertfile"
-                            set_res = app.SetTextFile(transformed_block, fmt, replace_opt)
-                            action_parts.append(f"SetTextFile(data, fmt='{fmt}', opt='{replace_opt}') -> {set_res}")
-                            replaced = bool(set_res)
-                        except Exception as exc:
-                            action_parts.append(f"SetTextFile failed: {exc}")
-                            error_msg = str(exc)
+                except Exception as exc:
+                    action_parts.append(f"live_link.replace_table_block -> {type(exc).__name__}({exc})")
+                    error_msg = str(exc)
 
             if not replaced and not error_msg:
                 error_msg = "표 단위 변환 및 단일 교체 API 미실측 또는 미구현 (FAIL closed)"
@@ -981,19 +960,8 @@ def _run_selection_spacing_case(
                 except Exception as exc:
                     action_parts.append(f"live_link import/call failed: {exc}")
 
-                # G2 link 어댑터가 NotImplementedError인 경우 표준 COM GetTextFile 계측
-                if raw_block is None and hasattr(app, "GetTextFile"):
-                    try:
-                        fmt = "HWPML2X"
-                        opt = "saveblock"
-                        raw_block = app.GetTextFile(fmt, opt)
-                        action_parts.append(
-                            f"GetTextFile(fmt='{fmt}', opt='{opt}') -> "
-                            f"type={type(raw_block).__name__}, len={len(raw_block) if raw_block else 0}"
-                        )
-                    except Exception as exc:
-                        action_parts.append(f"COM selection GetTextFile failed: {exc}")
-                        error_msg = str(exc)
+                if raw_block is None:
+                    error_msg = "docfit_live.link 선택 블록 export가 구현되지 않아 게이트를 닫았습니다."
 
                 # 3. 자간 변환 엔진 적용 (임의 알고리즘 금지)
                 transformed_block: bytes | str | None = None
@@ -1032,21 +1000,9 @@ def _run_selection_spacing_case(
                         )
                         action_parts.append(f"live_link.replace_selection_block(app, ...) -> {res}")
                         replaced = bool(res.get("ok", True))
-                    except (NotImplementedError, Exception) as nie:
-                        action_parts.append(f"live_link.replace_selection_block -> {type(nie).__name__}({nie})")
-                        # 표준 COM SetTextFile 계측
-                        if hasattr(app, "SetTextFile"):
-                            try:
-                                fmt = "HWPML2X"
-                                replace_opt = "insertfile"
-                                set_res = app.SetTextFile(transformed_block, fmt, replace_opt)
-                                action_parts.append(
-                                    f"SetTextFile(data, fmt='{fmt}', opt='{replace_opt}') -> {set_res}"
-                                )
-                                replaced = bool(set_res)
-                            except Exception as exc:
-                                action_parts.append(f"SetTextFile failed: {exc}")
-                                error_msg = str(exc)
+                    except Exception as exc:
+                        action_parts.append(f"live_link.replace_selection_block -> {type(exc).__name__}({exc})")
+                        error_msg = str(exc)
 
                 if not replaced and not error_msg:
                     error_msg = "선택 자간 변환 및 단일 교체 API 미실측 또는 미구현 (FAIL closed)"
@@ -1160,7 +1116,7 @@ def run_gate(
         if (fixture_root / "table_unit_sample.hwpx").is_file()
         else _DEFAULT_TABLE_FIXTURE
     )
-    sel_fixture = selection_fixture or (fixture_root / "selection_spacing_sample.hwpx")
+    sel_fixture = selection_fixture or _DEFAULT_SELECTION_FIXTURE
 
     # 동일 fixture 방지
     if tbl_fixture.resolve() == sel_fixture.resolve():

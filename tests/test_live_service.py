@@ -173,16 +173,11 @@ class LiveBridgeTest(unittest.TestCase):
         from desktop_web_ui import DesktopWebBridge, _BrowserApi
         self.gui = Mock(files=[], running=False)
         self.bridge = DesktopWebBridge(self.gui)
-<<<<<<< HEAD
-        self.user = session(r"C:\a\보고서.hwpx")
-        self.user.app.XHwpWindows.Active_XHwpWindow.Hwnd = 9
-        self.bridge._live = LiveLinkService(sessions=lambda: [self.user], titles=lambda: [], com_init=False)
-=======
         self.user = session(r"C:\a\보고서.hwpx", in_table=True, document_id="doc-1")
+        self.user.app.XHwpWindows.Active_XHwpWindow.Hwnd = 9
         self.bridge._live = LiveLinkService(
             sessions=lambda: [self.user], titles=lambda: [], com_init=False, gate_checker=lambda: True
         )
->>>>>>> origin/feature/3.0-wip
         self.assertTrue(callable(getattr(_BrowserApi(self.bridge), "live_link")))
 
     def test_insert_copies_then_pastes_once_and_restores_clipboard(self):

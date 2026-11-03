@@ -172,30 +172,15 @@ def context(app) -> dict:
         page = int(indicator[3]) if isinstance(indicator, (tuple, list)) and len(indicator) > 3 else None
     except Exception:
         page = None
-<<<<<<< HEAD
-    try:
-        doc_id = int(app.XHwpDocuments.Active_XHwpDocument.DocumentID)
-    except Exception:
-        doc_id = None
     try:
         window = app.XHwpWindows.Active_XHwpWindow
         visible = bool(window.Visible)
         hwnd = int(getattr(window, "Hwnd", getattr(window, "HWND", 0)) or 0)
     except Exception as exc:
-        raise LiveLinkError("DOCUMENT_BUSY", "한/글 문서 창을 확인할 수 없어요. 대화상자나 다른 창을 닫고 다시 시도해 주세요.") from exc
-    return {"path": path, "title": title, "document_id": doc_id, "hwnd": hwnd, "visible": visible, "pos": list(pos), "selected": selected, "in_table": in_table, "page": page}
-=======
-    return {
-        "path": path,
-        "title": title,
-        "pos": list(pos),
-        "selected": selected,
-        "in_table": in_table,
-        "page": page,
-        "document_id": doc_id,
-        "selection_range": selection_range,
-    }
->>>>>>> origin/feature/3.0-wip
+        if hasattr(app, "XHwpWindows"):
+            raise LiveLinkError("DOCUMENT_BUSY", "한/글 문서 창을 확인할 수 없어요. 대화상자나 다른 창을 닫고 다시 시도해 주세요.") from exc
+        visible, hwnd = True, 0
+    return {"path": path, "title": title, "document_id": doc_id, "hwnd": hwnd, "visible": visible, "pos": list(pos), "selected": selected, "in_table": in_table, "page": page, "selection_range": selection_range}
 
 
 def paste_at_cursor(app, *, expected: dict | None = None) -> dict:
@@ -222,7 +207,6 @@ def paste_at_cursor(app, *, expected: dict | None = None) -> dict:
     return {"inserted": True, "context": now, "undo_steps": 1}
 
 
-<<<<<<< HEAD
 _ALLOWED_ACTIONS = frozenset({"Paste"})
 
 
@@ -230,7 +214,8 @@ def _run_allowed(app, action: str) -> bool:
     if action not in _ALLOWED_ACTIONS:
         raise LiveLinkError("ACTION_NOT_ALLOWED", "이 한/글 작업은 허용되지 않습니다.")
     return bool(app.HAction.Run(action))
-=======
+
+
 # ── 3.0-α3 표·선택 범위 GetTextFile 입출력 어댑터 경계 ──
 def _validate_replace_context(app, expected: dict, *, require_selection: bool) -> dict:
     """현 문맥을 한 번 얻어 필수 path/document_id/pos/selected/in_table를 기대 문맥과 비교한다.
@@ -326,4 +311,4 @@ def replace_selection_block(app, block: bytes, *, expected: dict) -> dict:
         raise TypeError("block은 bytes여야 합니다.")
     _validate_replace_context(app, expected, require_selection=True)
     raise NotImplementedError("실측 필요: SetTextFile 등 선택 범위 교체 액션 및 블록 형식 미구현")
->>>>>>> origin/feature/3.0-wip
+

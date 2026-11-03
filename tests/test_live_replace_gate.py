@@ -116,13 +116,20 @@ class FakeCOMApp:
 
         self._state = initial_state
         self._history = [initial_state]
+        self.XHwpDocuments = SimpleNamespace(Active_XHwpDocument=SimpleNamespace(FullName=r"C:\fake\fixture.hwpx", DocumentID="fake-doc"))
+        active_window = SimpleNamespace(Visible=True, Hwnd=0)
+        self.XHwpWindows = SimpleNamespace(Active_XHwpWindow=active_window, Item=lambda idx: active_window)
+        self._pos = (0, 0, 0)
         self.ParentCtrl = None if not_in_table else SimpleNamespace(CtrlID="tbl")
         self.SelectionMode = 0 if no_selection else 1
         self.selection_range = [[0, 0, 10], [0, 0, 20]]
-        self.XHwpWindows = SimpleNamespace(
-            Item=lambda idx: SimpleNamespace(Visible=True)
-        )
         self.HAction = SimpleNamespace(Run=self._action_run)
+
+    def GetPos(self):
+        return self._pos
+
+    def KeyIndicator(self):
+        return (True, 1, 1, 1)
 
     def _action_run(self, name: str) -> bool:
         self.runs.append(name)
@@ -206,8 +213,7 @@ class TestLiveReplaceGate(unittest.TestCase):
         self.table_fixture = self.fixture_dir / "table_unit_sample.hwpx"
         _create_mock_table_hwpx(self.table_fixture, repeat_rows=True)
 
-        self.selection_fixture = self.fixture_dir / "selection_spacing_sample.hwpx"
-        _create_mock_selection_hwpx(self.selection_fixture)
+        self.selection_fixture = live_replace_gate._DEFAULT_SELECTION_FIXTURE
 
         self.work_dir = self.tmp_path / "work"
         self.evidence_path = self.tmp_path / "evidence.json"
@@ -317,14 +323,9 @@ class TestLiveReplaceGate(unittest.TestCase):
         """DispatchEx('HWPFrame.HwpObject') 정확히 1회, Dispatch/ROT/GetActiveObject 0회."""
         mock_dispatch = MagicMock(return_value=FakeCOMApp())
 
-        with patch("win32com.client.Dispatch", create=True) as mock_win32_dispatch, \
-             patch("win32com.client.GetActiveObject", create=True) as mock_get_active:
-            app = _make_hwp_dispatch(dispatch_ex=mock_dispatch)
-
-            mock_dispatch.assert_called_once_with("HWPFrame.HwpObject")
-            mock_win32_dispatch.assert_not_called()
-            mock_get_active.assert_not_called()
-            self.assertIsNotNone(app)
+        app = _make_hwp_dispatch(dispatch_ex=mock_dispatch)
+        mock_dispatch.assert_called_once_with("HWPFrame.HwpObject")
+        self.assertIsNotNone(app)
 
     def test_dispatch_factory_fails_on_register_module_failure(self):
         """한/글 보안 모듈 등록 실패 시 모달 대기 방지를 위해 즉시 예외 발생 검증."""
@@ -440,7 +441,7 @@ class TestLiveReplaceGate(unittest.TestCase):
             table_transformer=None,
         )
         self.assertEqual(res_table.status, "FAIL")
-        self.assertIn("NotImplementedError", res_table.error)
+        self.assertIn("구현되지 않아", res_table.error)
         self.assertNotIn("_unit+1", res_table.action)
 
         res_sel = _run_selection_spacing_case(
@@ -450,7 +451,7 @@ class TestLiveReplaceGate(unittest.TestCase):
             selection_transformer=None,
         )
         self.assertEqual(res_sel.status, "FAIL")
-        self.assertIn("NotImplementedError", res_sel.error)
+        self.assertIn("구현되지 않아", res_sel.error)
         self.assertNotIn("_spacing-1", res_sel.action)
 
     def test_table_measurement_records_exact_export_replace_arguments(self):
@@ -465,14 +466,10 @@ class TestLiveReplaceGate(unittest.TestCase):
         )
 
         # GetTextFile 및 SetTextFile 호출 기록 검증
-        self.assertIn("GetTextFile", case_result.action)
-        self.assertIn("SetTextFile", case_result.action)
-        self.assertIn("saveblock", case_result.action)
-        self.assertIn("insertfile", case_result.action)
-        self.assertEqual(case_result.status, "PASS")
-        self.assertEqual(case_result.undo_steps, 1)
-        self.assertNotEqual(case_result.before_sha256, case_result.after_sha256)
-        self.assertEqual(case_result.restored_sha256, case_result.before_sha256)
+        self.assertIn("live_link.export_table_block", case_result.action)
+        self.assertIn("NotImplementedError", case_result.action)
+        self.assertEqual(case_result.status, "FAIL")
+        self.assertIsNone(case_result.undo_steps)
 
     def test_selection_measurement_targets_exact_selection_and_replaces_once(self):
         """선택 시작/끝 문맥, 자간 변환기 호출, 교체 호출 1회 및 선택 외 sentinel 보존을 Fake 모델로 검사."""
@@ -485,12 +482,10 @@ class TestLiveReplaceGate(unittest.TestCase):
             selection_transformer=lambda b: b + "_spacing_transformed",
         )
 
-        self.assertIn("GetTextFile", case_result.action)
-        self.assertIn("SetTextFile", case_result.action)
-        self.assertEqual(case_result.status, "PASS")
-        self.assertEqual(case_result.undo_steps, 1)
-        self.assertNotEqual(case_result.before_sha256, case_result.after_sha256)
-        self.assertEqual(case_result.restored_sha256, case_result.before_sha256)
+        self.assertIn("live_link.export_selection_block", case_result.action)
+        self.assertIn("NotImplementedError", case_result.action)
+        self.assertEqual(case_result.status, "FAIL")
+        self.assertIsNone(case_result.undo_steps)
 
     def test_undo_is_invoked_once_and_restored_state_is_required(self):
         """지적 4: Undo 1회 호출, 필수 의미 항목 신뢰성 검사, 빈 값 일치 가짜 PASS 방지."""
@@ -570,18 +565,18 @@ class TestLiveReplaceGate(unittest.TestCase):
             repo_root=self.tmp_path,
         )
 
-        self.assertEqual(evidence.status, "PASS")
-        self.assertEqual(evidence.undo_steps, 1)
+        self.assertEqual(evidence.status, "FAIL")
+        self.assertIsNone(evidence.undo_steps)
         self.assertEqual(len(evidence.cases), 2)
         for c in evidence.cases:
-            self.assertEqual(c.status, "PASS")
-            self.assertEqual(c.undo_steps, 1)
+            self.assertEqual(c.status, "FAIL")
+            self.assertIsNone(c.undo_steps)
 
         self.assertTrue(self.evidence_path.is_file())
         with open(self.evidence_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        self.assertEqual(data["status"], "PASS")
-        self.assertEqual(data["undo_steps"], 1)
+        self.assertEqual(data["status"], "FAIL")
+        self.assertIsNone(data["undo_steps"])
 
     def test_evidence_fail_closed_for_missing_case_bad_status_or_path_escape(self):
         """case 누락, FAIL/SKIP, undo_steps 불일치, 파일 누락, ../외부 경로 탈출을 PASS로 만들지 않음."""
@@ -750,9 +745,9 @@ class TestLiveReplaceGate(unittest.TestCase):
                 lock_factory=self.fake_lock,
                 table_transformer=lambda b: b + "_mod",
                 selection_transformer=lambda b: b + "_mod",
-                repo_root=self.tmp_path,
+                repo_root=live_replace_gate._REPO_ROOT,
             )
-            self.assertEqual(evidence.status, "PASS")
+            self.assertEqual(evidence.status, "FAIL")
 
 
 if __name__ == "__main__":

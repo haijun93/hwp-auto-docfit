@@ -1,11 +1,7 @@
 """3.0 LiveLink 연결·문맥·넣기(가짜 한/글로 시험)."""
 import unittest
 from types import SimpleNamespace
-<<<<<<< HEAD
-from unittest.mock import patch
-=======
-from unittest.mock import Mock
->>>>>>> origin/feature/3.0-wip
+from unittest.mock import Mock, patch
 
 from docfit_live.link import (
     LiveLinkError,
@@ -30,17 +26,11 @@ class FakeMoniker:
 
 
 class FakeApp:
-<<<<<<< HEAD
-    def __init__(self, path, pos=(0, 1, 2), in_table=False):
-        self.XHwpDocuments = SimpleNamespace(Active_XHwpDocument=SimpleNamespace(FullName=path))
-        self.XHwpDocuments.Active_XHwpDocument.DocumentID = 17
-        self.XHwpWindows = SimpleNamespace(Active_XHwpWindow=SimpleNamespace(Visible=True, Hwnd=9))
-=======
     def __init__(self, path, pos=(0, 1, 2), in_table=False, document_id="doc-default", selection_range=None):
         self.XHwpDocuments = SimpleNamespace(
             Active_XHwpDocument=SimpleNamespace(FullName=path, DocumentID=document_id)
         )
->>>>>>> origin/feature/3.0-wip
+        self.XHwpWindows = SimpleNamespace(Active_XHwpWindow=SimpleNamespace(Visible=True, Hwnd=9))
         self._pos = pos
         self.SelectionMode = 0
         self.selection_range = selection_range
@@ -127,7 +117,6 @@ class LiveLinkTest(unittest.TestCase):
         self.assertEqual(raised.exception.code, "STALE_CONTEXT")
         self.assertEqual(app.runs, [])
 
-<<<<<<< HEAD
     def test_document_or_window_change_never_runs_paste(self):
         app = FakeApp(r"C:\a\가.hwpx")
         stale = context(app)
@@ -146,7 +135,6 @@ class LiveLinkTest(unittest.TestCase):
         from docfit_live.link import _run_allowed
         with self.assertRaises(LiveLinkError):
             _run_allowed(app, "FileSave")
-=======
     def test_context_includes_document_id_and_missing_id_is_not_match(self):
         # 1. 정상 DocumentID 반환
         app_valid = FakeApp(r"C:\a\가.hwpx", document_id="doc-uuid-1234")
@@ -282,7 +270,7 @@ class LiveLinkTest(unittest.TestCase):
         self.assertIn("실측 필요", str(raised.exception))
 
         mock_write.assert_not_called()
->>>>>>> origin/feature/3.0-wip
+
         self.assertEqual(app.runs, [])
 
 
