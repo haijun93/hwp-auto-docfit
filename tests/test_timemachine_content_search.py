@@ -49,6 +49,24 @@ class ContentSearchTests(unittest.TestCase):
         self.index.index_file(hidden)
         self.assertEqual(self.index.search("secretword"), [])
 
+    def test_location_labels_are_indexed_and_searchable(self):
+        path = self.root / "위치시험.txt"
+        path.write_text("1행 건너뛰고\n\n3행에 핵심 키워드 위치정보 포함", encoding="utf-8")
+        res = self.index.index_file(path)
+        self.assertTrue(res["indexed"])
+
+        found = self.index.search("위치정보", roots=[str(self.root)])
+        self.assertEqual(len(found), 1)
+        item = found[0]
+        # name, path, snippet 키 보존 확인
+        self.assertIn("name", item)
+        self.assertIn("path", item)
+        self.assertIn("snippet", item)
+        self.assertEqual(item["name"], path.name)
+        # 위치 표기(⟦...⟧)가 snippet에 남는지 확인
+        self.assertIn("⟦3행⟧", item["snippet"])
+        self.assertIn("위치정보", item["snippet"])
+
 
 if __name__ == "__main__":
     unittest.main()
