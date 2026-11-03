@@ -344,3 +344,111 @@ class ArrowExportTests(unittest.TestCase):
             self.assertFalse(any(n.get('id','').startswith('300000') for n in root.iter(ts.HP+'lineShape')))
             self.assertEqual(arrows[0].find(ts.HP+'pos').get('vertRelTo'),'PARA')
             self.assertEqual(arrows[0].find(ts.HP+'pos').get('horzRelTo'),'PARA')
+
+    def _export_xml(self, sketch):
+        with tempfile.TemporaryDirectory() as folder:
+            path = ts.to_hwpx(sketch, Path(folder) / 'test.hwpx')
+            with zipfile.ZipFile(path) as archive:
+                return ET.fromstring(archive.read('Contents/section0.xml'))
+
+    def test_arrow_uses_first_empty_cell_and_preserves_text_cell_alignment(self):
+        # 2열 표: 첫 칸에 텍스트, 둘째 칸은 빈 칸, 화살표는 둘째 칸에 위치
+        sketch = drawing(box(0, 0, 8, 4) + [line(4, 0, 4, 4)],
+                         texts=[dict(x=1, y=2, text="첫 칸 글")])
+        sketch['arrows'] = [dict(x1=5, y1=2, x2=7, y2=2)]
+        root = self._export_xml(sketch)
+        tbl = root.find('.//' + ts.HP + 'tbl')
+        cells = tbl.findall(ts.HP + 'tr/' + ts.HP + 'tc')
+        self.assertEqual(len(cells), 2)
+
+        # 첫 칸: CENTER 정렬 및 텍스트 원문 유지, 화살표 없음
+        sub0 = cells[0].find(ts.HP + 'subList')
+        self.assertEqual(sub0.get('vertAlign'), 'CENTER')
+        t0 = cells[0].find('.//' + ts.HP + 't')
+        self.assertEqual(t0.text, "첫 칸 글")
+        self.assertEqual(len(cells[0].findall('.//' + ts.HP + 'connectLine')), 0)
+
+        # 둘째 칸(빈 칸): 화살표 고정 칸이 되어 TOP 정렬, 화살표가 첫 문단 run 안에 위치
+        sub1 = cells[1].find(ts.HP + 'subList')
+        self.assertEqual(sub1.get('vertAlign'), 'TOP')
+        t1 = cells[1].find('.//' + ts.HP + 't')
+        self.assertEqual(t1.text or "", "")
+        p1 = sub1.find(ts.HP + 'p')
+        arrow_run = p1.find(ts.HP + 'run')
+        self.assertIsNotNone(arrow_run.find(ts.HP + 'connectLine'))
+        self.assertEqual(len(cells[1].findall('.//' + ts.HP + 'connectLine')), 1)
+
+        # 둘째 칸 시작 좌표 ux[1] > 0 검증
+        preview = ts.preview(sketch)
+        xs = preview['x_coords']
+        mm = sketch['grid']['cell_mm']
+        ux = [round((x - xs[0]) * mm * ts.UNIT_MM) for x in xs]
+        self.assertGreater(ux[1], 0)
+
+    def test_arrow_anchor_offsets_subtract_anchor_cell_origin(self):
+        # 첫 칸에 텍스트가 있고 둘째 칸(빈 칸)에 화살표가 고정되는 2열 표
+        sketch = drawing(box(0, 0, 4, 4) + [line(2, 0, 2, 4)],
+                         texts=[dict(x=1, y=2, text="칸1")])
+        sketch['arrows'] = [dict(x1=3, y1=1, x2=5, y2=1)]
+        preview = ts.preview(sketch)
+        xs, ys = preview["x_coords"], preview["y_coords"]
+        cell_mm = sketch["grid"]["cell_mm"]
+        ux = [round((x - xs[0]) * cell_mm * ts.UNIT_MM) for x in xs]
+        uy = [round((y - ys[0]) * cell_mm * ts.UNIT_MM) for y in ys]
+        margin = round(0.5 * ts.UNIT_MM)
+        anchor_col = 1
+        anchor_row = 0
+
+        root = self._export_xml(sketch)
+        arrow = root.find('.//' + ts.HP + 'connectLine')
+        pos = arrow.find(ts.HP + 'pos')
+
+        expected_horz = round((3 - xs[0]) * cell_mm * ts.UNIT_MM) - margin - ux[anchor_col]
+        expected_vert = round((1 - ys[0]) * cell_mm * ts.UNIT_MM) - margin - uy[anchor_row]
+        self.assertEqual(int(pos.get("horzOffset")), expected_horz)
+        self.assertEqual(int(pos.get("vertOffset")), expected_vert)
+        self.assertGreater(ux[anchor_col], 0)
+
+        # 원래 표 원점 기준 좌표로 환산 복원 검증
+        restored_horz = int(pos.get("horzOffset")) + margin + ux[anchor_col]
+        restored_vert = int(pos.get("vertOffset")) + margin + uy[anchor_row]
+        orig_horz = round((3 - xs[0]) * cell_mm * ts.UNIT_MM)
+        orig_vert = round((1 - ys[0]) * cell_mm * ts.UNIT_MM)
+        self.assertEqual(restored_horz, orig_horz)
+        self.assertEqual(restored_vert, orig_vert)
+
+    def test_arrow_falls_back_to_first_cell_when_all_cells_have_text(self):
+        # 2열의 모든 칸에 텍스트가 있을 때 화살표는 첫 칸으로 fallback
+        sketch = drawing(box(0, 0, 8, 4) + [line(4, 0, 4, 4)],
+                         texts=[dict(x=1, y=2, text="칸1"), dict(x=5, y=2, text="칸2")])
+        sketch['arrows'] = [dict(x1=2, y1=2, x2=6, y2=2)]
+        preview = ts.preview(sketch)
+        xs, ys = preview["x_coords"], preview["y_coords"]
+        cell_mm = sketch["grid"]["cell_mm"]
+        margin = round(0.5 * ts.UNIT_MM)
+
+        root = self._export_xml(sketch)
+        tbl = root.find('.//' + ts.HP + 'tbl')
+        cells = tbl.findall(ts.HP + 'tr/' + ts.HP + 'tc')
+        self.assertEqual(len(cells), 2)
+
+        # 첫 셀 subList가 TOP, 화살표가 첫 셀 첫 문단에 위치
+        sub0 = cells[0].find(ts.HP + 'subList')
+        self.assertEqual(sub0.get('vertAlign'), 'TOP')
+        p0 = sub0.find(ts.HP + 'p')
+        arrow_run = p0.find(ts.HP + 'run')
+        self.assertIsNotNone(arrow_run.find(ts.HP + 'connectLine'))
+        self.assertEqual(len(cells[0].findall('.//' + ts.HP + 'connectLine')), 1)
+
+        # 둘째 셀은 CENTER 유지, 화살표 없음
+        sub1 = cells[1].find(ts.HP + 'subList')
+        self.assertEqual(sub1.get('vertAlign'), 'CENTER')
+        self.assertEqual(len(cells[1].findall('.//' + ts.HP + 'connectLine')), 0)
+
+        # 첫 셀 고정 fallback에서 기존 오프셋(원래 표 기준 값 - margin) 유지 검증
+        arrow = root.find('.//' + ts.HP + 'connectLine')
+        pos = arrow.find(ts.HP + 'pos')
+        expected_horz = round((2 - xs[0]) * cell_mm * ts.UNIT_MM) - margin
+        expected_vert = round((2 - ys[0]) * cell_mm * ts.UNIT_MM) - margin
+        self.assertEqual(int(pos.get("horzOffset")), expected_horz)
+        self.assertEqual(int(pos.get("vertOffset")), expected_vert)

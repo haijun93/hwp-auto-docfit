@@ -292,6 +292,24 @@ void main() {
     expect(api.calls.any((c) => c.$1 == 'reveal' && c.$2['id'] == 42), true);
   });
 
+
+  testWidgets('연관 문서 메뉴에 점수·근거·기준일 없음 및 제외를 표시한다', (tester) async {
+    final api = _FakeApi(enabled: true);
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: api.call))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('tm-send-menu-42')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('연관 문서 찾기'));
+    await tester.pumpAndSettle();
+    expect(api.calls.any((c) => c.$1 == 'related_search' && c.$2['path'] == 'C:\\Temp\\TM\\보고서.pdf'), isTrue);
+    expect(find.textContaining('기준일 없음'), findsNWidgets(2));
+    expect(find.textContaining('점수 82'), findsOneWidget);
+    expect(find.textContaining('공통 단어: 사업'), findsOneWidget);
+    await tester.tap(find.text('연관 아님'));
+    await tester.pumpAndSettle();
+    expect(api.calls.any((c) => c.$1 == 'related_exclude' && c.$2['related_path'] == 'C:\\Temp\\TM\\연관.docx'), isTrue);
+  });
+
   testWidgets('cache_clear_clears_service_and_memory_cache', (tester) async {
     final api = _FakeApi(enabled: true);
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: api.call))));
@@ -371,6 +389,12 @@ class _FakeApi {
         return {'ok':true,'running':false,'seen':5,'indexed':3,'errors':2};
       case 'content_search':
         return {'ok':true,'items':[{'name':'본문포함.docx','path':'C:\\Temp\\TM\\본문포함.docx','snippet':'회의 결과'}]};
+      case 'related_search':
+        return {'ok': true, 'reference_date_found': false, 'reference_date': null, 'items': [
+          {'name': '연관.docx', 'path': 'C:\\Temp\\TM\\연관.docx', 'score': 82, 'reasons': ['공통 단어: 사업'], 'reference_date_found': false, 'reference_date': null},
+        ]};
+      case 'related_exclude':
+        return {'ok': true, 'excluded': true};
       case 'thumbnail':
         thumbnailCalls++;
         _inFlight++;

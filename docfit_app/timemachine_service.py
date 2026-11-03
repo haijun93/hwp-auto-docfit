@@ -50,6 +50,7 @@ class TimemachineService:
         self._content_lock = threading.RLock()
         self._content_cancel = threading.Event()
         self._content_thread = None
+        self._content_pending_roots = None
         self._content_state = {"running": False, "seen": 0, "indexed": 0, "errors": 0,
                                "cancelled": False, "started_at": None, "finished_at": None}
         self._scan_state = {"running": False, "seen": 0, "written": 0, "removed": 0,
@@ -87,6 +88,7 @@ class TimemachineService:
                         path = os.path.join(folder, name)
                         if not self._path_in_active_root(path):
                             continue
+                        self._content_pending_roots.discard(os.path.normcase(os.path.abspath(path)))
                         result = self.content_index.index_file(path)
                         seen += 1
                         indexed += bool(result["indexed"])
@@ -97,6 +99,19 @@ class TimemachineService:
                         break
                 if self._content_cancel.is_set():
                     break
+            # 연결이 끊긴 드라이브의 문서는 지워진 것으로 보지 않는다.
+            available = [os.path.normcase(os.path.abspath(root)) + os.sep for root in roots if os.path.isdir(root)]
+            active_roots = [os.path.normcase(os.path.abspath(root)) + os.sep
+                            for root in self._settings["roots"] if os.path.isdir(root)]
+            for path in tuple(self._content_pending_roots):
+                if self._content_cancel.is_set():
+                    break
+                normalized = os.path.normcase(os.path.abspath(path))
+                in_scan_roots = normalized.startswith(tuple(available))
+                in_active_roots = normalized.startswith(tuple(active_roots))
+                extension_allowed = Path(path).suffix.lower().lstrip(".") in self._settings["extensions"]
+                if in_scan_roots and (not in_active_roots or not extension_allowed or not os.path.exists(path)):
+                    self.content_index.remove_file(path)
         finally:
             with self._content_lock:
                 self._content_state.update(running=False, cancelled=self._content_cancel.is_set(),
@@ -107,6 +122,7 @@ class TimemachineService:
             if self._content_state["running"]:
                 return {"ok": True, **self._content_state}
             self._content_cancel.clear()
+            self._content_pending_roots = set(self.content_index.indexed_paths(roots=self._settings["roots"]))
             self._content_state = {"running": True, "seen": 0, "indexed": 0, "errors": 0,
                                    "cancelled": False, "started_at": time.time(), "finished_at": None}
             self._content_thread = threading.Thread(target=self._content_index_worker,
@@ -310,6 +326,7 @@ class TimemachineService:
                 self._scan_state.update(seen=result.seen, written=result.written,
                                         removed=result.removed,
                                         errors=[str(item[1]) for item in result.errors])
+            self._refresh_content_index_async()
         except Exception as exc:
             logging.getLogger(__name__).exception("타임머신 색인 갱신 실패")
             with self._scan_lock:
@@ -345,6 +362,22 @@ class TimemachineService:
                                         errors=[type(exc).__name__])
                 return self._error("TM_SCAN_FAILED", "색인 작업을 시작하지 못했습니다.")
         return {"ok": True, "by": "app", "running": True}
+
+    def _refresh_content_index_async(self):
+        with self._content_lock:
+            if self._content_state["running"] or self._content_cancel.is_set():
+                return
+            # 본문 색인을 쓴 적이 없으면(색인이 비어 있으면) 자동으로 시작하지 않는다.
+            pending = set(self.content_index.indexed_paths(roots=self._settings["roots"]))
+            if not pending:
+                return
+            self._content_pending_roots = pending
+            self._content_state = {"running": True, "seen": 0, "indexed": 0, "errors": 0,
+                                   "cancelled": False, "started_at": time.time(), "finished_at": None}
+            self._content_thread = threading.Thread(target=self._content_index_worker,
+                args=(list(self._settings["roots"]), frozenset(self._settings["extensions"])),
+                name="timemachine-content-index", daemon=True)
+            self._content_thread.start()
 
     def _command(self, action, payload):
         if action == "status":

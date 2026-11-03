@@ -52,7 +52,8 @@ fn user_sid() -> String {
 }
 
 pub fn pipe_name() -> String {
-    format!("\\\\.\\pipe\\HwpAutoDocFit.kagent.{}", user_sid())
+    let suffix = crate::util::instance_suffix().unwrap_or_default();
+    format!("\\\\.\\pipe\\HwpAutoDocFit.kagent{suffix}.{}", user_sid())
 }
 
 pub fn start() {

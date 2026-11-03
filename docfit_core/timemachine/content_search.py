@@ -139,6 +139,15 @@ class ContentSearchIndex:
                 self.db.execute("DELETE FROM content_meta WHERE path=?", (path,))
                 self.db.execute("DELETE FROM content_errors WHERE path=?", (path,))
 
+    def indexed_paths(self, *, roots=None):
+        """색인된 경로 목록. 전달된 루트 안의 문서만 돌려준다."""
+        with self._lock:
+            rows = self.db.execute("SELECT path FROM content_meta").fetchall()
+        allowed = [os.path.normcase(os.path.abspath(root)) for root in roots] if roots else None
+        return [os.path.abspath(row["path"]) for row in rows if allowed is None or any(
+            os.path.commonpath((os.path.normcase(os.path.abspath(row["path"])), root)) == root
+            for root in allowed if os.path.splitdrive(root)[0].casefold() == os.path.splitdrive(os.path.abspath(row["path"]))[0].casefold())]
+
     def search(self, query, *, roots=None, limit=100):
         if not isinstance(query, str) or not query.strip() or len(query) > 200:
             raise ValueError("검색어는 1~200자로 입력해 주세요.")

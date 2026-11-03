@@ -30,7 +30,40 @@ import 'features/live/helper_panel_screen.dart';
 
 export 'core/api/abbreviation_api.dart' show ApiCall;
 
-void main() => runApp(const DocFitApp());
+void main() => runApp(const _LifecycleRedraw(child: DocFitApp()));
+
+class _LifecycleRedraw extends StatefulWidget {
+  const _LifecycleRedraw({required this.child});
+  final Widget child;
+
+  @override
+  State<_LifecycleRedraw> createState() => _LifecycleRedrawState();
+}
+
+class _LifecycleRedrawState extends State<_LifecycleRedraw>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      WidgetsBinding.instance.scheduleFrame();
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
 
 const _ink = Color(0xff172b4d);
 const _muted = Color(0xff64748b);
