@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from docfit_app import kagent_client as kc
@@ -108,6 +109,32 @@ class ClientTests(unittest.TestCase):
                 self.assertTrue(client.running())
             with self.assertRaises(kc.KAgentError):
                 client.request("status")
+
+
+class KAgentPipeRetryTests(unittest.TestCase):
+    def test_busy_pipe_waits_then_retries_open_once_connected(self):
+        client = kc.KAgentClient(timeout=1.0)
+        busy = OSError("pipe busy")
+        busy.winerror = 231
+        stream = object()
+        with patch.object(kc.os, "name", "nt"), \
+             patch("builtins.open", side_effect=[busy, stream]) as open_pipe, \
+             patch.object(client, "_wait_pipe", return_value=True) as wait_pipe:
+            self.assertIs(client._open_pipe(r"\\.\pipe\agent"), stream)
+        self.assertEqual(open_pipe.call_count, 2)
+        wait_pipe.assert_called_once()
+
+    def test_non_busy_pipe_error_is_not_retried(self):
+        client = kc.KAgentClient(timeout=1.0)
+        denied = OSError("access denied")
+        denied.winerror = 5
+        with patch.object(kc.os, "name", "nt"), \
+             patch("builtins.open", side_effect=denied) as open_pipe, \
+             patch.object(client, "_wait_pipe") as wait_pipe:
+            with self.assertRaises(OSError):
+                client._open_pipe(r"\\.\pipe\agent")
+        open_pipe.assert_called_once()
+        wait_pipe.assert_not_called()
 
 
 if __name__ == "__main__":
