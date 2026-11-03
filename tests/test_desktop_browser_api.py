@@ -640,6 +640,8 @@ class BrowserApiTests(unittest.TestCase):
 
 
     def test_live_alpha3_disabled_has_zero_service_and_document_side_effects(self):
+        from docfit_app.settings_schema import DEFAULTS
+        self.assertFalse(DEFAULTS["live_alpha3_enabled"])
         gui = _FakeGui()
         gui.settings = {"live_alpha3_enabled": False}
         bridge = _bridge(gui)

@@ -1,5 +1,7 @@
 """Shared settings defaults; storage keys and legacy adapter bindings are preserved."""
 DEFAULTS = {
+    # 3.0 사용자 문서 직접 편집 기능은 실측 승인 전까지 비활성화한다.
+    "live_alpha3_enabled": False,
     'shell_menu': False,
     'file_rename_sendto': False,
     "prevent_word_split": True,
