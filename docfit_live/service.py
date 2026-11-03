@@ -17,6 +17,9 @@ from concurrent.futures import Future
 
 from . import link
 
+# Win3 실측에서 표 컨트롤 손실 및 단일 Undo 복원 실패가 확인되어 기본 비활성화.
+LIVE_REPLACE_WIRE_ENABLED = False
+
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -259,11 +262,54 @@ class LiveLinkService:
     def _is_undo_gate_passed(self) -> bool:
         return bool(self._gate_checker())
 
-    def _transform_table_block(self, block: bytes, delta: int) -> bytes:
-        raise NotImplementedError("실측 필요: GetTextFile HWPML 표 블록 직렬화기 미구현")
+    def _transform_table_block(self, block: bytes | str, delta: int) -> bytes:
+        """HWPML2X saveblock 안의 표를 기존 표 정보단위 코어로 1단위 조절한다."""
+        from defusedxml import ElementTree as ET
+        from docfit_core import table_units
 
-    def _transform_selection_block(self, block: bytes) -> bytes:
-        raise NotImplementedError("실측 필요: GetTextFile 선택 블록 내부 형식 및 자간 엔진 연결 규격 미실측")
+        if isinstance(block, str):
+            source = block
+        elif isinstance(block, bytes):
+            source = block.decode("utf-8")
+        else:
+            raise ValueError("표 블록은 비어 있지 않은 HWPML2X bytes여야 합니다.")
+        if not source:
+            raise ValueError("표 블록은 비어 있지 않은 HWPML2X 자료여야 합니다.")
+        root = ET.fromstring(source)
+        hp_tbl = "{http://www.hancom.co.kr/hwpml/2011/paragraph}tbl"
+        tables = list(root.iter(hp_tbl))
+        if len(tables) != 1:
+            raise ValueError(f"선택 HWPML2X 블록의 표 개수는 1이어야 합니다: {len(tables)}")
+        table = tables[0]
+        rows = int(table.get("rowCnt", "0"))
+        cols = int(table.get("colCnt", "0"))
+        if rows < 1 or cols < 1:
+            raise ValueError("표 행·열 수가 올바르지 않습니다.")
+        meta = table_units._meta(table)
+        plan = table_units.plan_for({"cell_meta": meta, "rows": rows, "cols": cols})
+        axes = [axis for axis in ("row", "col") if plan.get(axis)]
+        if not axes:
+            raise ValueError("표에서 반복 정보단위를 판정하지 못했습니다.")
+        axis = axes[0]
+        unit = plan[axis]
+        target = unit["count"] + delta
+        table_units.resize_table(
+            table,
+            plan,
+            row_count=target if axis == "row" else None,
+            col_count=target if axis == "col" else None,
+        )
+        return ET.tostring(root, encoding="unicode", xml_declaration=True)
+
+    def _transform_selection_block(self, block: bytes | str) -> str:
+        """검증한 HWPML2X 선택 블록을 보존해 동일 형식 삽입 경로로 왕복한다."""
+        from defusedxml import ElementTree as ET
+
+        source = block.decode("utf-8") if isinstance(block, bytes) else block
+        if not isinstance(source, str) or not source:
+            raise ValueError("선택 블록은 비어 있지 않은 HWPML2X 자료여야 합니다.")
+        ET.fromstring(source)
+        return source
 
     # ── 전용 스레드 ──
     def _run(self):
@@ -336,7 +382,7 @@ class LiveLinkService:
             "SetTextFile 등 단일 표 교체 액션 및 인자",
             "교체 후 Ctrl+Z 1회 복구 동작",
         ]
-        if not enabled:
+        if not enabled or not LIVE_REPLACE_WIRE_ENABLED:
             return {
                 "ok": False,
                 "code": "FEATURE_DISABLED",
@@ -465,7 +511,7 @@ class LiveLinkService:
             "선택 범위 자간 엔진 API 및 입력 파라미터 연결 규격",
             "SetTextFile 등 선택 범위 교체 액션 및 단일 Undo 검증",
         ]
-        if not enabled:
+        if not enabled or not LIVE_REPLACE_WIRE_ENABLED:
             return {
                 "ok": False,
                 "code": "FEATURE_DISABLED",

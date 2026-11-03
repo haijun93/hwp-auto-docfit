@@ -941,7 +941,15 @@ def _run_selection_spacing_case(
             extracted_text = ""
             if hasattr(app, "GetTextFile"):
                 try:
-                    extracted_text = str(app.GetTextFile("TEXT", "saveblock") or "")
+                    extracted_block = app.GetTextFile("HWPML2X", "saveblock") or ""
+                    extracted_text = str(extracted_block)
+                    if extracted_text:
+                        from defusedxml import ElementTree as SafeET
+                        selected_root = SafeET.fromstring(extracted_text)
+                        extracted_text = "".join(
+                            node.text or "" for node in selected_root.iter()
+                            if node.tag.rsplit("}", 1)[-1] == "t"
+                        )
                 except Exception:
                     extracted_text = ""
 

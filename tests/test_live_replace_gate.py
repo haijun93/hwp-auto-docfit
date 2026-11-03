@@ -161,6 +161,20 @@ class FakeCOMApp:
 
     def GetTextFile(self, fmt: str, opt: str) -> str:
         self.get_text_file_calls.append((fmt, opt))
+        if fmt == "HWPML2X":
+            text = self._state if "SPACING_TARGET" in self._state else "table"
+            if "SPACING_TARGET" in self._state:
+                return (
+                    '<?xml version="1.0" encoding="UTF-16"?><hp:root '
+                    'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">'
+                    f'<hp:t>{text}</hp:t></hp:root>'
+                )
+            return (
+                '<?xml version="1.0" encoding="UTF-16"?><hp:root '
+                'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">'
+                '<hp:tbl rowCnt="2" colCnt="1"><hp:tr><hp:tc><hp:cellAddr rowAddr="0" colAddr="0"/><hp:cellSpan rowSpan="1" colSpan="1"/><hp:cellSz width="1000" height="500"/></hp:tc></hp:tr>'
+                '<hp:tr><hp:tc><hp:cellAddr rowAddr="1" colAddr="0"/><hp:cellSpan rowSpan="1" colSpan="1"/><hp:cellSz width="1000" height="500"/></hp:tc></hp:tr><hp:sz width="1000" height="1000"/></hp:tbl></hp:root>'
+            )
         if fmt == "TEXT":
             if "saveblock" in opt:
                 return _TARGET_SPACING_TEXT
@@ -429,11 +443,11 @@ class TestLiveReplaceGate(unittest.TestCase):
         self.assertEqual(res_mismatch.status, "FAIL")
         self.assertIn("일치하지 않습니다", res_mismatch.error)
 
-    def test_arbitrary_transform_is_forbidden_and_not_implemented_fails(self):
+    def test_arbitrary_transform_is_forbidden_and_unmeasured_fake_fails(self):
         """지적 1: 임의 알고리즘(_unit+1, _spacing-1) 금지 및 운영 엔진 미구현 시 명시적 FAIL 검증."""
         fake_app = FakeCOMApp()
 
-        # transformer 주입 없이 실행 시, 운영 엔진이 NotImplementedError이므로 명시적 FAIL이어야 함
+        # 측정된 COM 입출력이 없는 가짜 객체에서는 명시적 FAIL이어야 함
         res_table = _run_table_unit_case(
             fake_app,
             self.table_fixture,
@@ -441,7 +455,7 @@ class TestLiveReplaceGate(unittest.TestCase):
             table_transformer=None,
         )
         self.assertEqual(res_table.status, "FAIL")
-        self.assertIn("구현되지 않아", res_table.error)
+        self.assertIn("HWPML2X", res_table.error)
         self.assertNotIn("_unit+1", res_table.action)
 
         res_sel = _run_selection_spacing_case(
@@ -451,7 +465,7 @@ class TestLiveReplaceGate(unittest.TestCase):
             selection_transformer=None,
         )
         self.assertEqual(res_sel.status, "FAIL")
-        self.assertIn("구현되지 않아", res_sel.error)
+        self.assertIn("선택 영역 내용이 대상", res_sel.error)
         self.assertNotIn("_spacing-1", res_sel.action)
 
     def test_table_measurement_records_exact_export_replace_arguments(self):
@@ -467,7 +481,7 @@ class TestLiveReplaceGate(unittest.TestCase):
 
         # GetTextFile 및 SetTextFile 호출 기록 검증
         self.assertIn("live_link.export_table_block", case_result.action)
-        self.assertIn("NotImplementedError", case_result.action)
+        self.assertIn("HWPML2X", case_result.action)
         self.assertEqual(case_result.status, "FAIL")
         self.assertIsNone(case_result.undo_steps)
 
@@ -483,7 +497,7 @@ class TestLiveReplaceGate(unittest.TestCase):
         )
 
         self.assertIn("live_link.export_selection_block", case_result.action)
-        self.assertIn("NotImplementedError", case_result.action)
+        self.assertIn("HWPML2X", case_result.action)
         self.assertEqual(case_result.status, "FAIL")
         self.assertIsNone(case_result.undo_steps)
 

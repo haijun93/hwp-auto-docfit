@@ -10,6 +10,28 @@ from __future__ import annotations
 import ctypes
 from dataclasses import dataclass, field
 from pathlib import Path, PureWindowsPath
+from defusedxml import ElementTree as ET
+
+
+_HP = "{http://www.hancom.co.kr/hwpml/2011/paragraph}"
+
+
+def _hwpml_bytes(value) -> bytes:
+    if not isinstance(value, str) or not value:
+        raise LiveLinkError("FORMAT_UNAVAILABLE", "한/글이 HWPML2X 블록을 반환하지 않았습니다.")
+    return value.encode("utf-8")
+
+
+def _hwpml_text(block: bytes | str) -> str:
+    if isinstance(block, bytes):
+        return block.decode("utf-8")
+    if isinstance(block, str):
+        return block
+    raise TypeError("HWPML2X 블록은 str 또는 bytes여야 합니다.")
+
+
+def _supports_hwpml2x(app) -> bool:
+    return bool(getattr(app, "GetTextFile", None) and getattr(app, "SetTextFile", None))
 
 
 class LiveLinkError(RuntimeError):
@@ -288,40 +310,60 @@ def _validate_replace_context(app, expected: dict, *, require_selection: bool) -
     return now
 
 
-def export_table_block(app) -> bytes:
-    """커서의 상위 tbl 컨트롤을 확인하고, 실측된 GetTextFile 인자로 표 블록을 얻는다."""
+def export_table_block(app) -> str:
+    """표 안에서 선택한 블록을 HWPML2X/saveblock으로 내보낸다."""
     now = context(app)
     if not now["in_table"]:
         raise LiveLinkError("NOT_IN_TABLE", "커서가 표 안에 있지 않아요.")
-    raise NotImplementedError(
-        '실측 결과: GetTextFile("HWPML", "") 및 GetTextFile("HWPML", "saveblock")는 None, '
-        'GetTextFile("TEXT", "")는 문서 전체 텍스트를 반환해 표 블록 추출에 사용할 수 없습니다.'
-    )
+    if not getattr(app, "GetTextFile", None):
+        raise LiveLinkError("UNSUPPORTED_FORMAT", "HWPML2X 입출력을 지원하지 않는 한/글 객체입니다.")
+    if not now["selected"]:
+        try:
+            app.HAction.Run("TableCellBlock")
+            app.HAction.Run("TableCellBlock")
+        except Exception as exc:
+            raise LiveLinkError("NO_SELECTION", f"표 전체 선택에 실패했습니다: {exc}") from exc
+    if not bool(getattr(app, "SelectionMode", 0)):
+        raise LiveLinkError("NO_SELECTION", "표 전체 선택 상태가 아닙니다.")
+    value = app.GetTextFile("HWPML2X", "saveblock")
+    if not isinstance(value, str) or not value:
+        raise LiveLinkError("FORMAT_UNAVAILABLE", "한/글이 HWPML2X 표 블록을 반환하지 않았습니다.")
+    return value
 
 
-def replace_table_block(app, block: bytes, *, expected: dict) -> dict:
+def replace_table_block(app, block: bytes | str, *, expected: dict) -> dict:
     """expected 문맥/대상 표를 재확인하고 실측된 한 번의 교체 명령으로 블록을 넣는다."""
-    if not isinstance(block, bytes):
-        raise TypeError("block은 bytes여야 합니다.")
+    if not isinstance(block, (bytes, str)):
+        raise TypeError("block은 HWPML2X str 또는 bytes여야 합니다.")
     _validate_replace_context(app, expected, require_selection=False)
-    raise NotImplementedError("실측 필요: GetTextFile이 표 블록을 반환하지 않아 SetTextFile 표 교체 계약을 확정할 수 없습니다.")
+    if not getattr(app, "SetTextFile", None):
+        raise LiveLinkError("UNSUPPORTED_FORMAT", "HWPML2X 입출력을 지원하지 않는 한/글 객체입니다.")
+    if not app.SetTextFile(_hwpml_text(block), "HWPML2X", "insertfile"):
+        raise LiveLinkError("INSERT_FAILED", "HWPML2X 표 블록 삽입에 실패했습니다.")
+    return {"ok": True, "format": "HWPML2X", "option": "insertfile", "undo_steps": 1}
 
 
-def export_selection_block(app) -> bytes:
+def export_selection_block(app) -> str:
     """현재 선택 범위를 실측된 GetTextFile 인자로 반환한다."""
     now = context(app)
     if not now["selected"]:
         raise LiveLinkError("NO_SELECTION", "선택된 범위가 없어요.")
-    raise NotImplementedError(
-        '실측 결과: 선택 중 GetTextFile("HWPML", "") 및 GetTextFile("HWPML", "saveblock")는 None, '
-        'GetTextFile("TEXT", "")는 선택 범위가 아닌 문서 전체 텍스트를 반환합니다.'
-    )
+    if not getattr(app, "GetTextFile", None):
+        raise LiveLinkError("UNSUPPORTED_FORMAT", "HWPML2X 입출력을 지원하지 않는 한/글 객체입니다.")
+    value = app.GetTextFile("HWPML2X", "saveblock")
+    if not isinstance(value, str) or not value:
+        raise LiveLinkError("FORMAT_UNAVAILABLE", "한/글이 HWPML2X 선택 블록을 반환하지 않았습니다.")
+    return value
 
 
-def replace_selection_block(app, block: bytes, *, expected: dict) -> dict:
+def replace_selection_block(app, block: bytes | str, *, expected: dict) -> dict:
     """선택 범위 문맥을 재확인하고 한 번의 교체로 반환한다."""
-    if not isinstance(block, bytes):
-        raise TypeError("block은 bytes여야 합니다.")
+    if not isinstance(block, (bytes, str)):
+        raise TypeError("block은 HWPML2X str 또는 bytes여야 합니다.")
     _validate_replace_context(app, expected, require_selection=True)
-    raise NotImplementedError("실측 필요: GetTextFile이 선택 블록을 반환하지 않아 SetTextFile 선택 교체 계약을 확정할 수 없습니다.")
+    if not getattr(app, "SetTextFile", None):
+        raise LiveLinkError("UNSUPPORTED_FORMAT", "HWPML2X 입출력을 지원하지 않는 한/글 객체입니다.")
+    if not app.SetTextFile(_hwpml_text(block), "HWPML2X", "insertfile"):
+        raise LiveLinkError("INSERT_FAILED", "HWPML2X 선택 블록 삽입에 실패했습니다.")
+    return {"ok": True, "format": "HWPML2X", "option": "insertfile", "undo_steps": 1}
 

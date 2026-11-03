@@ -62,7 +62,7 @@ class LiveReplaceContractTest(unittest.TestCase):
         self.assertFalse(res["ok"])
         self.assertNotEqual(res.get("code"), "OK")
         self.assertEqual(res["code"], "UNSUPPORTED_FORMAT")
-        self.assertIn("실측", res["message"])
+        self.assertIn("HWPML2X", res["message"])
         self.assertTrue(len(res["required_measurements"]) > 0)
         self.assertEqual(user.app.runs, [])
 

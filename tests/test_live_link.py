@@ -155,16 +155,18 @@ class LiveLinkTest(unittest.TestCase):
         app = FakeApp(r"C:\a\가.hwpx", in_table=True)
         get_calls = []
         app.GetTextFile = lambda *a, **kw: get_calls.append((a, kw)) or ""
-        with self.assertRaises(NotImplementedError) as raised:
+        app.SetTextFile = lambda *a, **kw: True
+        with self.assertRaises(LiveLinkError) as raised:
             export_table_block(app)
-        self.assertIn("실측 결과", str(raised.exception))
+        self.assertEqual(raised.exception.code, "NO_SELECTION")
         self.assertEqual(get_calls, [])
-        self.assertEqual(app.runs, [])
+        self.assertEqual(app.runs, ["TableCellBlock", "TableCellBlock"])
 
     def test_replace_table_requires_complete_expected_and_rechecks_document_id(self):
         app = FakeApp(r"C:\a\가.hwpx", in_table=True, document_id="doc-1")
         mock_write = Mock()
         app.SetTextFile = mock_write
+        app.GetTextFile = Mock(return_value='<root/>')
 
         valid_expected = {
             "path": r"C:\a\가.hwpx",
@@ -203,10 +205,10 @@ class LiveLinkTest(unittest.TestCase):
             replace_table_block(app_out, b"dummy", expected=dict(valid_expected, in_table=False))
         self.assertEqual(raised.exception.code, "NOT_IN_TABLE")
 
-        # 4. 완벽한 expected이지만 미실측 포맷은 NotImplementedError 안전 종료
-        with self.assertRaises(NotImplementedError) as raised:
+        # 4. 측정 COM 메서드가 없는 객체는 새 포맷 미지원으로 안전 종료
+        with self.assertRaises(LiveLinkError) as raised:
             replace_table_block(app, b"dummy", expected=valid_expected)
-        self.assertIn("실측 필요", str(raised.exception))
+        self.assertEqual(raised.exception.code, "UNSUPPORTED_FORMAT")
 
         mock_write.assert_not_called()
         self.assertEqual(app.runs, [])
@@ -216,6 +218,7 @@ class LiveLinkTest(unittest.TestCase):
         app.SelectionMode = 1
         mock_write = Mock()
         app.SetTextFile = mock_write
+        app.GetTextFile = Mock(return_value='<root/>')
 
         valid_expected = {
             "path": r"C:\a\가.hwpx",
@@ -262,9 +265,9 @@ class LiveLinkTest(unittest.TestCase):
         self.assertEqual(raised.exception.code, "NO_SELECTION")
 
         # 5. 완벽한 expected이지만 미실측 포맷은 NotImplementedError 안전 종료
-        with self.assertRaises(NotImplementedError) as raised:
+        with self.assertRaises(LiveLinkError) as raised:
             replace_selection_block(app, b"dummy", expected=valid_expected)
-        self.assertIn("실측 필요", str(raised.exception))
+        self.assertEqual(raised.exception.code, "UNSUPPORTED_FORMAT")
 
         mock_write.assert_not_called()
 
