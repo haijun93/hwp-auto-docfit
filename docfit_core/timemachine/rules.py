@@ -18,6 +18,8 @@ KINDS = {
 }
 EXT_KIND = {ext: kind for kind, exts in KINDS.items() for ext in exts}
 DEFAULT_EXTENSIONS = ("hwpx", "hwp", "docx", "pptx", "xlsx", "pdf", "txt")
+SUPPORTED_EXTENSIONS = tuple(ext.lstrip(".").lower() for ext in EXT_KIND)
+IMAGE_EXTENSIONS = tuple(ext.lstrip(".").lower() for ext in KINDS["image"])
 
 # 폴더 이름(대소문자 무시)이 이것이면 그 아래 전체를 건너뛴다.
 EXCLUDED_DIRS = frozenset(name.casefold() for name in (

@@ -16,7 +16,7 @@ from pathlib import Path
 from docfit_core.timemachine import thumbs
 from docfit_core.timemachine.content_search import ContentSearchIndex
 from docfit_core.timemachine.related import related_documents
-from docfit_core.timemachine.rules import DEFAULT_EXTENSIONS, KINDS, Rules
+from docfit_core.timemachine.rules import DEFAULT_EXTENSIONS, IMAGE_EXTENSIONS, KINDS, Rules, SUPPORTED_EXTENSIONS
 from docfit_core.timemachine.scan import default_roots, scan_roots
 from docfit_core.timemachine.store import Store
 from .kagent_client import KAgentClient, data_dir
@@ -84,12 +84,18 @@ class TimemachineService:
                     for name in files:
                         if self._content_cancel.is_set():
                             break
-                        if Path(name).suffix.lower().lstrip(".") not in extensions:
+                        ext = Path(name).suffix.lower().lstrip(".")
+                        if ext not in extensions:
                             continue
                         path = os.path.join(folder, name)
                         if not self._path_in_active_root(path):
                             continue
                         self._content_pending_roots.discard(os.path.normcase(os.path.abspath(path)))
+                        if ext in IMAGE_EXTENSIONS:
+                            # 설계 의도: 디스크에 존재하는 이미지 파일은 pending 색인 큐에서 정상 제거하여
+                            # 스캔 종료 후 불필요한 삭제 검사를 생략하고, 본문 텍스트 추출 대상이 아니므로
+                            # index_file 호출을 건너뛰어 오류 및 처리 카운트를 증가시키지 않는다.
+                            continue
                         if rules.skip_file(name):
                             self.content_index.remove_file(path)
                             continue
@@ -218,8 +224,8 @@ class TimemachineService:
 
     @staticmethod
     def _validate_extensions(values):
-        allowed = set(DEFAULT_EXTENSIONS)
-        if not isinstance(values, list) or any(not isinstance(v, str) for v in values):
+        allowed = set(SUPPORTED_EXTENSIONS)
+        if not isinstance(values, list) or not values or any(not isinstance(v, str) for v in values):
             raise ValueError("적용 확장자를 확인해 주세요.")
         result = []
         for value in values:
@@ -398,9 +404,9 @@ class TimemachineService:
     def _command(self, action, payload):
         if action == "status":
             return self._status()
-        if action == "settings_get":
+        if action == "settings_get" or (action == "settings" and not payload):
             return {"ok": True, "settings": dict(self._settings, roots=list(self._settings["roots"]))}
-        if action == "settings_set":
+        if action in ("settings_set", "settings"):
             roots = self._validate_roots(payload.get("roots"))
             mode, enabled = payload.get("time_mode"), payload.get("enabled")
             if mode not in ("max", "mtime") or type(enabled) is not bool:
