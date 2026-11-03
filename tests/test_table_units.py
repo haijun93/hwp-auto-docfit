@@ -837,6 +837,65 @@ class C13TableUnitsTests(unittest.TestCase):
         self.assertEqual((shapes[0]["x"], shapes[0]["y"], shapes[0]["w"], shapes[0]["h"]), (1.2, -.2, .2, .6))
         self.assertEqual(shapes[0]["direction"], "down")
 
+    def test_catalog_diagnostic_baseline_is_reported_without_fixture_mutation(self):
+        """내장 표 서식(SOURCE) 진단 기준선(미등록 54종, 불일치 34종, 일치 0종) 고정 및 fixture 바이트 불변성 검증."""
+        import hashlib
+
+        fixtures_to_check = [SOURCE]
+        user_catalog = Path(r"C:\HWP_AUTODOCFIT\표서식모음\표 서식모음.hwpx")
+        if user_catalog.is_file():
+            fixtures_to_check.append(user_catalog)
+
+        hashes_before = {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in fixtures_to_check}
+
+        # 1. SOURCE 기준선 검증
+        records = {r["name"]: r for r in catalog._scan(SOURCE)}
+        self.assertEqual(len(records), 34)
+
+        missing_names = []
+        mismatch_names = []
+        matched_names = []
+
+        for name, expected_plan in units.PLANS.items():
+            r = records.get(name)
+            if r is None:
+                missing_names.append(name)
+                continue
+            actual_plan = units.detect_plan(r["cell_meta"], r["rows"], r["cols"])
+            if actual_plan == expected_plan:
+                matched_names.append(name)
+            else:
+                mismatch_names.append(name)
+
+        # 34개 레코드 중 detect_plan 결과와 expected(units.PLANS) 대조
+        # 기준선: units.PLANS 88개 중 SOURCE 미등록 54종, 감지 불일치 34종, 완전 일치 0종
+        self.assertEqual(len(units.PLANS), 88)
+        self.assertEqual(len(missing_names), 54)
+        self.assertEqual(len(mismatch_names), 34)
+        self.assertEqual(len(matched_names), 0)
+
+        # describe_units 결과 대조
+        descriptions = units.describe_units(SOURCE)
+        self.assertEqual(len(descriptions), 34)
+        # describe_units를 거친 모든 서식(34종)에 units 계획이 생성됨을 확인
+        with_units = [d["name"] for d in descriptions if d.get("units")]
+        self.assertEqual(len(with_units), 34)
+
+        # 2. 사용자 카탈로그가 존재할 경우 불변성 및 진단 실행
+        if user_catalog.is_file():
+            u_records = {r["name"]: r for r in catalog._scan(user_catalog)}
+            self.assertGreaterEqual(len(u_records), 30)
+            u_desc = units.describe_units(user_catalog)
+            self.assertGreaterEqual(len(u_desc), 30)
+
+        # 3. fixture 해시 불변성 검증
+        for p in fixtures_to_check:
+            self.assertEqual(
+                hashlib.sha256(p.read_bytes()).hexdigest(),
+                hashes_before[p],
+                f"카탈로그 진단 중 fixture 파일이 변경되었습니다: {p}"
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

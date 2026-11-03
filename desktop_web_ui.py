@@ -2029,10 +2029,137 @@ class DesktopWebBridge:
             logging.getLogger(__name__).warning("단축키 명령 처리에 실패했습니다.", exc_info=True)
             return {"ok": False, "message": str(exc) or "단축키 설정을 처리하지 못했습니다."}
 
+    def _live_alpha3_enabled(self) -> bool:
+        try:
+            settings_obj = None
+            if hasattr(self.gui, "settings"):
+                settings_obj = self.gui.settings
+            elif callable(getattr(self.gui, "_준말_서비스", None)):
+                service = self.gui._준말_서비스()
+                settings_obj = getattr(service, "settings", None)
+
+            if settings_obj is not None:
+                if isinstance(settings_obj, dict):
+                    return bool(settings_obj.get("live_alpha3_enabled", False))
+                if hasattr(settings_obj, "read"):
+                    data = settings_obj.read()
+                    if isinstance(data, dict):
+                        return bool(data.get("live_alpha3_enabled", False))
+            from docfit_app.settings_schema import DEFAULTS
+            return bool(DEFAULTS.get("live_alpha3_enabled", False))
+        except Exception as exc:
+            logging.getLogger(__name__).warning("live_alpha3_enabled 설정 조회 실패 (기본값 OFF 적용): %s", exc)
+            return False
+
     def live_link(self, action, payload=None):
         """3.0 LiveLink: 실행 중인 한/글 문서의 커서 위치에 바로 넣기(저장하지 않음, Ctrl+Z 한 번으로 되돌림)."""
         from docfit_live import link, service as live
         payload = payload if isinstance(payload, dict) else {}
+        if action in ("table_unit", "selection_spacing"):
+            enabled = self._live_alpha3_enabled()
+            if not enabled:
+                return {
+                    "ok": False,
+                    "code": "FEATURE_DISABLED",
+                    "message": "3.0-α3 기능이 비활성화되어 있습니다.",
+                    "required_measurements": [],
+                }
+            expected = payload.get("expected")
+            if not isinstance(expected, dict) or not expected:
+                return {
+                    "ok": False,
+                    "code": "INVALID_ARGUMENT",
+                    "message": "expected 문맥이 필요합니다.",
+                    "required_measurements": [],
+                }
+            doc_id = expected.get("document_id") or expected.get("DocumentID") or expected.get("doc_id")
+            if not isinstance(doc_id, str) or not doc_id.strip():
+                return {
+                    "ok": False,
+                    "code": "INVALID_ARGUMENT",
+                    "message": "expected.document_id가 유효하지 않습니다.",
+                    "required_measurements": [],
+                }
+            for k in ("path", "pos", "selected", "in_table"):
+                if k not in expected:
+                    return {
+                        "ok": False,
+                        "code": "INVALID_ARGUMENT",
+                        "message": f"expected.{k}가 필요합니다.",
+                        "required_measurements": [],
+                    }
+            if not isinstance(expected["path"], str) or not expected["path"].strip():
+                return {
+                    "ok": False,
+                    "code": "INVALID_ARGUMENT",
+                    "message": "expected.path가 유효하지 않습니다.",
+                    "required_measurements": [],
+                }
+            pos = expected["pos"]
+            if not (isinstance(pos, (list, tuple)) and len(pos) == 3 and all(isinstance(x, int) and not isinstance(x, bool) for x in pos)):
+                return {
+                    "ok": False,
+                    "code": "INVALID_ARGUMENT",
+                    "message": "expected.pos가 유효하지 않습니다.",
+                    "required_measurements": [],
+                }
+            if not isinstance(expected["selected"], bool) or not isinstance(expected["in_table"], bool):
+                return {
+                    "ok": False,
+                    "code": "INVALID_ARGUMENT",
+                    "message": "expected 불리언 필드가 유효하지 않습니다.",
+                    "required_measurements": [],
+                }
+
+            if action == "table_unit":
+                if not expected["in_table"] or expected["selected"]:
+                    return {
+                        "ok": False,
+                        "code": "INVALID_ARGUMENT",
+                        "message": "표 정보단위 변환은 표 안이고 선택이 없어야 합니다.",
+                        "required_measurements": [],
+                    }
+                delta = payload.get("delta")
+                if delta not in (-1, 1):
+                    return {
+                        "ok": False,
+                        "code": "INVALID_ARGUMENT",
+                        "message": "delta는 -1 또는 +1이어야 합니다.",
+                        "required_measurements": [],
+                    }
+                if getattr(self, "_live", None) is None:
+                    self._live = live.LiveLinkService()
+                return self._live.resize_cursor_table(
+                    delta,
+                    expected=expected,
+                    prefer_path=str(payload.get("path") or ""),
+                    enabled=enabled,
+                )
+            elif action == "selection_spacing":
+                if not expected["selected"]:
+                    return {
+                        "ok": False,
+                        "code": "INVALID_ARGUMENT",
+                        "message": "선택 범위 자간 변환은 선택이 있어야 합니다.",
+                        "required_measurements": [],
+                    }
+                sr = expected.get("selection_range")
+                if not (isinstance(sr, (list, tuple)) and len(sr) == 2 and
+                        all(isinstance(p, (list, tuple)) and len(p) == 3 and
+                            all(isinstance(x, int) and not isinstance(x, bool) for x in p) for p in sr)):
+                    return {
+                        "ok": False,
+                        "code": "INVALID_ARGUMENT",
+                        "message": "expected.selection_range가 유효하지 않습니다.",
+                        "required_measurements": [],
+                    }
+                if getattr(self, "_live", None) is None:
+                    self._live = live.LiveLinkService()
+                return self._live.normalize_selection_spacing(
+                    expected=expected,
+                    prefer_path=str(payload.get("path") or ""),
+                    enabled=enabled,
+                )
         if getattr(self, "_live", None) is None:
             self._live = live.LiveLinkService()
         try:

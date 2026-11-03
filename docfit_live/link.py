@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import ctypes
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 
 class LiveLinkError(RuntimeError):
@@ -29,13 +29,35 @@ class Session:
 def _document(app):
     try:
         doc = app.XHwpDocuments.Active_XHwpDocument
-        return str(doc.FullName or ""), str(Path(str(doc.FullName or "")).name)
+        full = str(doc.FullName or "")
+        return full, PureWindowsPath(full).name if full else ""
     except Exception:
         try:
             path = str(app.Path or "")
-            return path, Path(path).name
+            return path, PureWindowsPath(path).name if path else ""
         except Exception:
             return "", ""
+
+
+def _document_id(app) -> str:
+    try:
+        doc = app.XHwpDocuments.Active_XHwpDocument
+        if hasattr(doc, "DocumentID"):
+            return str(doc.DocumentID or "")
+    except Exception:
+        pass
+    try:
+        if hasattr(app, "DocumentID"):
+            return str(app.DocumentID or "")
+    except Exception:
+        pass
+    try:
+        doc = getattr(app, "ActiveDocument", None)
+        if doc and hasattr(doc, "DocumentID"):
+            return str(doc.DocumentID or "")
+    except Exception:
+        pass
+    return ""
 
 
 def running_sessions(*, rot=None, bind_ctx=None, dispatch=None) -> list[Session]:
@@ -98,8 +120,9 @@ def choose(sessions: list[Session], *, prefer_path: str = "", window_title: str 
 
 
 def context(app) -> dict:
-    """커서 문맥: 위치·선택 여부·표 안 여부·쪽 표시·문서."""
+    """커서 문맥: 위치·선택 여부·표 안 여부·쪽 표시·문서·선택 범위."""
     path, title = _document(app)
+    doc_id = _document_id(app)
     try:
         pos = tuple(app.GetPos())
     except Exception as exc:
@@ -108,6 +131,37 @@ def context(app) -> dict:
         selected = bool(app.SelectionMode)
     except Exception:
         selected = False
+
+    selection_range = None
+    if selected:
+        try:
+            if hasattr(app, "GetSelectedPos") and callable(app.GetSelectedPos):
+                res = app.GetSelectedPos()
+                if isinstance(res, (tuple, list)) and len(res) == 2:
+                    selection_range = [list(res[0]), list(res[1])]
+                elif hasattr(res, "spara") and hasattr(res, "epara"):
+                    s_list = getattr(res, "slist", 0)
+                    e_list = getattr(res, "elist", 0)
+                    selection_range = [[int(s_list), int(res.spara), int(res.spos)], [int(e_list), int(res.epara), int(res.epos)]]
+                elif isinstance(res, dict) and "start" in res and "end" in res:
+                    selection_range = [list(res["start"]), list(res["end"])]
+            elif hasattr(app, "GetSelectedPosBySet") and callable(app.GetSelectedPosBySet):
+                sset = app.CreateSet("ListParaPos")
+                eset = app.CreateSet("ListParaPos")
+                if app.GetSelectedPosBySet(sset, eset):
+                    selection_range = [
+                        [int(sset.Item("List")), int(sset.Item("Para")), int(sset.Item("Pos"))],
+                        [int(eset.Item("List")), int(eset.Item("Para")), int(eset.Item("Pos"))],
+                    ]
+            elif hasattr(app, "selection_range") and app.selection_range is not None:
+                sr = app.selection_range
+                if isinstance(sr, (list, tuple)) and len(sr) == 2:
+                    selection_range = [list(sr[0]), list(sr[1])]
+        except Exception:
+            selection_range = None
+        if selection_range is None:
+            selection_range = [list(pos), list(pos)]
+
     try:
         parent = app.ParentCtrl
         in_table = bool(parent is not None and parent.CtrlID == "tbl")
@@ -118,7 +172,16 @@ def context(app) -> dict:
         page = int(indicator[3]) if isinstance(indicator, (tuple, list)) and len(indicator) > 3 else None
     except Exception:
         page = None
-    return {"path": path, "title": title, "pos": list(pos), "selected": selected, "in_table": in_table, "page": page}
+    return {
+        "path": path,
+        "title": title,
+        "pos": list(pos),
+        "selected": selected,
+        "in_table": in_table,
+        "page": page,
+        "document_id": doc_id,
+        "selection_range": selection_range,
+    }
 
 
 def paste_at_cursor(app, *, expected: dict | None = None) -> dict:
@@ -129,3 +192,100 @@ def paste_at_cursor(app, *, expected: dict | None = None) -> dict:
     if not app.HAction.Run("Paste"):
         raise LiveLinkError("PASTE_FAILED", "한/글에 붙여 넣지 못했어요.")
     return {"inserted": True, "context": now, "undo_steps": 1}
+
+
+# ── 3.0-α3 표·선택 범위 GetTextFile 입출력 어댑터 경계 ──
+def _validate_replace_context(app, expected: dict, *, require_selection: bool) -> dict:
+    """현 문맥을 한 번 얻어 필수 path/document_id/pos/selected/in_table를 기대 문맥과 비교한다.
+    불완전 expected는 INVALID_ARGUMENT, 불일치는 STALE_CONTEXT, 대상 밖은 NOT_IN_TABLE 또는 NO_SELECTION.
+    """
+    if not isinstance(expected, dict) or not expected:
+        raise LiveLinkError("INVALID_ARGUMENT", "expected 문맥이 필요합니다.")
+
+    exp_path = expected.get("path")
+    if not isinstance(exp_path, str) or not exp_path.strip():
+        raise LiveLinkError("INVALID_ARGUMENT", "expected.path가 필요합니다.")
+
+    exp_doc_id = expected.get("document_id") or expected.get("DocumentID") or expected.get("doc_id")
+    if not isinstance(exp_doc_id, str) or not exp_doc_id.strip():
+        raise LiveLinkError("INVALID_ARGUMENT", "expected.document_id가 필요합니다.")
+
+    for k in ("pos", "selected", "in_table"):
+        if k not in expected:
+            raise LiveLinkError("INVALID_ARGUMENT", f"expected.{k}가 필요합니다.")
+
+    exp_pos = expected["pos"]
+    if not (isinstance(exp_pos, (list, tuple)) and len(exp_pos) == 3 and all(isinstance(x, int) and not isinstance(x, bool) for x in exp_pos)):
+        raise LiveLinkError("INVALID_ARGUMENT", "expected.pos가 올바르지 않습니다.")
+
+    if not isinstance(expected["selected"], bool) or not isinstance(expected["in_table"], bool):
+        raise LiveLinkError("INVALID_ARGUMENT", "expected 불리언 필드가 올바르지 않습니다.")
+
+    now = context(app)
+    now_doc_id = now.get("document_id") or now.get("DocumentID") or now.get("doc_id")
+    if not now_doc_id or not isinstance(now_doc_id, str) or not now_doc_id.strip():
+        # DocumentID를 가져올 수 없으면 빈 문자열을 허용해 비교를 통과시키지 않는다.
+        raise LiveLinkError("STALE_CONTEXT", "문서 식별자를 확인할 수 없습니다.")
+
+    if (
+        exp_path != now.get("path")
+        or exp_doc_id != now_doc_id
+        or tuple(exp_pos) != tuple(now.get("pos") or ())
+        or expected["selected"] != now.get("selected")
+        or expected["in_table"] != now.get("in_table")
+    ):
+        raise LiveLinkError("STALE_CONTEXT", "넣으려던 사이에 커서나 문서가 바뀌었어요. 다시 눌러 주세요.")
+
+    if require_selection:
+        if not now.get("selected"):
+            raise LiveLinkError("NO_SELECTION", "선택된 범위가 없어요.")
+        if "selection_range" not in expected:
+            raise LiveLinkError("INVALID_ARGUMENT", "expected.selection_range가 필요합니다.")
+        exp_range = expected["selection_range"]
+        if not (isinstance(exp_range, (list, tuple)) and len(exp_range) == 2 and
+                all(isinstance(p, (list, tuple)) and len(p) == 3 and
+                    all(isinstance(x, int) and not isinstance(x, bool) for x in p) for p in exp_range)):
+            raise LiveLinkError("INVALID_ARGUMENT", "expected.selection_range가 올바르지 않습니다.")
+
+        now_range = now.get("selection_range")
+        if not (isinstance(now_range, (list, tuple)) and len(now_range) == 2):
+            raise LiveLinkError("STALE_CONTEXT", "선택 범위를 확인할 수 없습니다.")
+        if tuple(tuple(p) for p in exp_range) != tuple(tuple(p) for p in now_range):
+            raise LiveLinkError("STALE_CONTEXT", "넣으려던 사이에 선택 범위가 바뀌었어요. 다시 눌러 주세요.")
+    else:
+        if not now.get("in_table"):
+            raise LiveLinkError("NOT_IN_TABLE", "커서가 표 안에 있지 않아요.")
+
+    return now
+
+
+def export_table_block(app) -> bytes:
+    """커서의 상위 tbl 컨트롤을 확인하고, 실측된 GetTextFile 인자로 표 블록을 얻는다."""
+    now = context(app)
+    if not now["in_table"]:
+        raise LiveLinkError("NOT_IN_TABLE", "커서가 표 안에 있지 않아요.")
+    raise NotImplementedError("실측 필요: GetTextFile 표 블록 추출 인자 및 반환 인코딩 미구현")
+
+
+def replace_table_block(app, block: bytes, *, expected: dict) -> dict:
+    """expected 문맥/대상 표를 재확인하고 실측된 한 번의 교체 명령으로 블록을 넣는다."""
+    if not isinstance(block, bytes):
+        raise TypeError("block은 bytes여야 합니다.")
+    _validate_replace_context(app, expected, require_selection=False)
+    raise NotImplementedError("실측 필요: SetTextFile 등 단일 표 교체 액션 및 블록 형식 미구현")
+
+
+def export_selection_block(app) -> bytes:
+    """현재 선택 범위를 실측된 GetTextFile 인자로 반환한다."""
+    now = context(app)
+    if not now["selected"]:
+        raise LiveLinkError("NO_SELECTION", "선택된 범위가 없어요.")
+    raise NotImplementedError("실측 필요: GetTextFile 선택 블록 추출 인자 및 반환 인코딩 미구현")
+
+
+def replace_selection_block(app, block: bytes, *, expected: dict) -> dict:
+    """선택 범위 문맥을 재확인하고 한 번의 교체로 반환한다."""
+    if not isinstance(block, bytes):
+        raise TypeError("block은 bytes여야 합니다.")
+    _validate_replace_context(app, expected, require_selection=True)
+    raise NotImplementedError("실측 필요: SetTextFile 등 선택 범위 교체 액션 및 블록 형식 미구현")
