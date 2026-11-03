@@ -296,7 +296,7 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
     setState(() {
       _month = DateTime(now.year,now.month);
       if (mode == 'today') { _start = DateTime(now.year,now.month,now.day); _end = _start!.add(const Duration(days:1)); }
-      if (mode == 'week') { _start = DateTime(now.year,now.month,now.day).subtract(Duration(days:now.weekday-1)); _end = _start!.add(const Duration(days:7)); }
+      if (mode == 'week') { _start = _sundayStart(now); _end = _start!.add(const Duration(days:7)); }
       if (mode == 'month') { _month = DateTime(now.year,now.month); _start = _month; _end = DateTime(now.year,now.month+1); }
       _firstDay = null; _filterRevision++; _requestSerial++; _loading = false; _items.clear(); _offset = 0; _more = true;
     });
@@ -414,7 +414,10 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
   }
 
   String _localizedWeekday(DateTime value) =>
-      '${const ['월', '화', '수', '목', '금', '토', '일'][value.weekday - 1]}요일';
+      '${const ['일', '월', '화', '수', '목', '금', '토'][value.weekday % 7]}요일';
+
+  DateTime _sundayStart(DateTime value) =>
+      DateTime(value.year, value.month, value.day).subtract(Duration(days: value.weekday % 7));
 
   IconData _kindIcon(String kind) => switch(kind) {'hwp'=>Icons.description_outlined,'doc'=>Icons.article_outlined,'sheet'=>Icons.table_chart_outlined,'slide'=>Icons.slideshow_outlined,'pdf'=>Icons.picture_as_pdf_outlined,'image'=>Icons.image_outlined,_=>Icons.insert_drive_file_outlined};
 
@@ -591,11 +594,11 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
     Text(_watchByAgent ? '실시간 감시: K에이전트' : '실시간 감시: 앱을 열 때만',key:const ValueKey('tm-watch-status'),style:Theme.of(context).textTheme.bodySmall),
   ])));
   Widget _calendar() {
-    final first = DateTime(_month.year,_month.month,1); final offset = first.weekday-1; final cells = ((offset+DateTime(_month.year,_month.month+1,0).day+6)~/7)*7;
+    final first = DateTime(_month.year,_month.month,1); final offset = first.weekday%7; final cells = ((offset+DateTime(_month.year,_month.month+1,0).day+6)~/7)*7;
     final maximum = _days.values.fold<int>(0,(a,b)=>a>b?a:b);
     return Card(margin:const EdgeInsets.all(12),child:Padding(padding:const EdgeInsets.all(12),child:Column(mainAxisSize:MainAxisSize.min,children:[
       Row(children:[IconButton(onPressed:()=>_moveMonth(-1),icon:const Icon(Icons.chevron_left)),Expanded(child:Center(child:Text('${_month.year}년 ${_month.month}월',style:Theme.of(context).textTheme.titleMedium))),IconButton(onPressed:()=>_moveMonth(1),icon:const Icon(Icons.chevron_right))]),
-      Row(mainAxisAlignment:MainAxisAlignment.spaceAround,children:const ['월','화','수','목','금','토','일'].map((e)=>SizedBox(width:34,child:Center(child:Text(e)))).toList()),
+      Row(key:const ValueKey('tm-calendar-weekdays'),mainAxisAlignment:MainAxisAlignment.spaceAround,children:const ['일','월','화','수','목','금','토'].map((e)=>SizedBox(width:36,child:Center(child:Text(e)))).toList()),
       for(var row=0;row<cells~/7;row++) Row(mainAxisAlignment:MainAxisAlignment.spaceAround,children:[for(var col=0;col<7;col++) _dateCell(row*7+col-offset,DateTime(_month.year,_month.month,1+row*7+col-offset), maximum)]),
       Wrap(spacing:4,children:[TextButton(onPressed:()=>_quickRange('today'),child:const Text('오늘')),TextButton(onPressed:()=>_quickRange('week'),child:const Text('이번 주')),TextButton(onPressed:()=>_quickRange('month'),child:const Text('이번 달'))]),
     ])));

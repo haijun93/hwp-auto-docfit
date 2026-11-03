@@ -23,7 +23,8 @@ class RulesTests(unittest.TestCase):
         for name in ("보고서.hwpx", "a.HWP", "표.xlsx", "b.pdf", "사진.JPG", "메모.txt"):
             self.assertFalse(rules.skip_file(name), name)
         for name in ("~$보고서.docx", "~WRL0001.tmp", "a.tmp", "x.crdownload", "Thumbs.db", "desktop.ini",
-                     "a.asv", "a.bak", "setup.exe", "a.zip", "a(무결성검사).json", "b.heic"):
+                     "a.asv", "a.bak", "setup.exe", "a.zip", "a(무결성검사).json", "b.heic",
+                     "#IEeEE'.pptx", "#IEeEE'.docx", "#IEeEE'.hwp", "#IEeEE'.xlsx"):
             self.assertTrue(rules.skip_file(name), name)
         self.assertTrue(rules.skip_file("a.pdf", 2))  # 숨김
         self.assertFalse(Rules(include_hidden=True).skip_file("a.pdf", 2))

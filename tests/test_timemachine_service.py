@@ -83,10 +83,16 @@ class TimemachineServiceTests(unittest.TestCase):
         self.assertEqual(result["items"][0]["name"], document.name)
         outside = self.plain_file
         self.assertFalse(self.service.command("content_index", {"path": str(outside)})["ok"])
+        junk = self.root / "#IEeEE'.txt"
+        junk.write_text("비정상 파일 검색어", encoding="utf-8")
+        self.assertFalse(self.service.command("content_index", {"path": str(junk)})["ok"])
 
     def test_background_content_index_progress_and_cancel(self):
         (self.root / "one.txt").write_text("한글 색인", encoding="utf-8")
         (self.root / "two.txt").write_text("두 번째", encoding="utf-8")
+        junk = self.root / "#IEeEE'.txt"
+        junk.write_text("비정상 전용 단어", encoding="utf-8")
+        self.service.content_index.index_file(junk)  # 기존에 남아 있던 항목도 정리해야 한다.
         self.enable()
         started = self.service.command("content_index_all")
         self.assertTrue(started["ok"])
@@ -98,6 +104,7 @@ class TimemachineServiceTests(unittest.TestCase):
         self.assertEqual(status["seen"], 2)
         self.assertEqual(status["indexed"], 2)
         self.assertEqual(len(self.service.command("content_search", {"query":"색인"})["items"]), 1)
+        self.assertEqual(self.service.command("content_search", {"query":"비정상"})["items"], [])
 
     def test_content_index_cancel_during_refresh_keeps_unvisited_entries(self):
         self.enable()

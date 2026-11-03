@@ -30,6 +30,39 @@ void main() {
     expect((range['end'] as double)-(range['start'] as double),closeTo(86400,1));
   });
 
+  testWidgets('달력 요일과 월 날짜 칸은 일요일부터 시작한다', (tester) async {
+    final api = _FakeApi(enabled: true);
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: api.call))));
+    await tester.pumpAndSettle();
+    final weekdays = find.byKey(const ValueKey('tm-calendar-weekdays'));
+    final sunday = find.descendant(of: weekdays, matching: find.text('일'));
+    final monday = find.descendant(of: weekdays, matching: find.text('월'));
+    final firstDay = find.byKey(const ValueKey('tm-day-1'));
+    expect(sunday, findsOneWidget);
+    expect(monday, findsOneWidget);
+    final first = DateTime(DateTime.now().year, DateTime.now().month, 1);
+    final sundayColumn = first.weekday % 7;
+    final columnWidth = tester.getCenter(monday).dx - tester.getCenter(sunday).dx;
+    final actualFirstDay = tester.getCenter(firstDay).dx;
+    // Compare the first date's position with the Sunday column's weekday step.
+    expect(actualFirstDay - tester.getCenter(sunday).dx,
+        closeTo(sundayColumn * columnWidth, 2));
+  });
+
+  testWidgets('이번 주 빠른 범위도 일요일부터 계산한다', (tester) async {
+    final api = _FakeApi(enabled: true);
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: api.call))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('이번 주'));
+    await tester.pumpAndSettle();
+    final range = api.calls.where((call) => call.$1 == 'range').last.$2;
+    final now = DateTime.now();
+    final sunday = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: now.weekday % 7));
+    expect(range['start'], closeTo(sunday.millisecondsSinceEpoch / 1000, 1));
+    expect(range['end'], closeTo(sunday.add(const Duration(days: 7)).millisecondsSinceEpoch / 1000, 1));
+  });
+
   testWidgets('카드 누르기와 폴더 열기가 각 명령을 호출한다', (tester) async {
     final api=_FakeApi(enabled:true);
     await tester.pumpWidget(MaterialApp(home:Scaffold(body:TimemachineScreen(api:api.call)))); await tester.pumpAndSettle();

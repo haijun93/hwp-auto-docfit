@@ -76,10 +76,11 @@ class TimemachineService:
 
     def _content_index_worker(self, roots, extensions):
         seen = indexed = errors = 0
+        rules = Rules(extensions=extensions)
         try:
             for root in roots:
                 for folder, dirs, files in os.walk(root, followlinks=False):
-                    dirs[:] = [d for d in dirs if d.casefold() != "$recycle.bin" and not self._content_cancel.is_set()]
+                    dirs[:] = [d for d in dirs if not rules.skip_dir(d) and not self._content_cancel.is_set()]
                     for name in files:
                         if self._content_cancel.is_set():
                             break
@@ -89,6 +90,9 @@ class TimemachineService:
                         if not self._path_in_active_root(path):
                             continue
                         self._content_pending_roots.discard(os.path.normcase(os.path.abspath(path)))
+                        if rules.skip_file(name):
+                            self.content_index.remove_file(path)
+                            continue
                         result = self.content_index.index_file(path)
                         seen += 1
                         indexed += bool(result["indexed"])
@@ -408,9 +412,11 @@ class TimemachineService:
             return self._start_scan()
         if action == "content_index":
             path = payload.get("path")
+            content_rules = Rules(extensions=self._settings["extensions"])
             if (not isinstance(path, str) or not self._path_in_active_root(path) or
                     Path(path).suffix.lower().lstrip(".") not in self._settings["extensions"] or
-                    any(part.casefold() == "$recycle.bin" for part in Path(path).parts)):
+                    any(content_rules.skip_dir(part) for part in Path(path).parts) or
+                    content_rules.skip_file(Path(path).name)):
                 return self._error("INVALID_INPUT", "현재 조사 폴더의 허용된 문서를 선택해 주세요.")
             result = self.content_index.index_file(path)
             return {"ok": True, **result}
