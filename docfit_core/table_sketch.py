@@ -336,8 +336,7 @@ def to_hwpx(sketch, path):
           for color in colors:
             node = copy.deepcopy(refs.find(HH+"charProperties")[0])
             node.set("height", "1000")
-            for n in node.iter():
-                if n.tag == HH+"textColor": n.set("value", color)
+            node.set("textColor", color)  # 글자색은 charPr의 속성이다
             for n in list(node):
                 if n.tag == HH+"bold": node.remove(n)
             if bold: _add(node, HH+"bold")
