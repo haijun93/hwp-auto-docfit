@@ -429,7 +429,7 @@ def _open_isolated_copy(app: object, path: Path) -> None:
     opened = False
     if hasattr(app, "Open"):
         try:
-            opened = app.Open(str(path), fmt, "forceopen:true")
+            opened = app.Open(str(path.resolve()), fmt, "forceopen:true")
         except Exception as exc:
             raise RuntimeError(f"격리 복사본 열기 중 예외 발생: {exc}") from exc
     if opened is False:
@@ -651,6 +651,22 @@ def _move_cursor_to_table(app: object) -> bool:
     elif hasattr(app, "Run"):
         try:
             app.Run("MoveDocBegin")
+        except Exception:
+            pass
+
+    # 실제 한/글 2020에서 문서 시작 뒤 MoveDown으로 첫 표 셀에 진입됨을 실측했다.
+    for action in ("MoveDown", "MoveRight"):
+        try:
+            if hasattr(app, "HAction") and hasattr(app.HAction, "Run"):
+                app.HAction.Run(action)
+            elif hasattr(app, "Run"):
+                app.Run(action)
+        except Exception:
+            continue
+        try:
+            parent = getattr(app, "ParentCtrl", None)
+            if parent is not None and getattr(parent, "CtrlID", "") == "tbl":
+                return True
         except Exception:
             pass
 

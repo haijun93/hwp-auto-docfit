@@ -93,19 +93,16 @@ class LiveLinkTest(unittest.TestCase):
 
     def test_foreground_app_window_pastes_when_hangul_owner_is_enabled(self):
         app = FakeApp(r"C:\a\가.hwpx")
-        with patch("docfit_live.link.ctypes.windll", create=True) as windll:
-            windll.user32.IsWindowEnabled.return_value = 1
-            windll.user32.GetForegroundWindow.return_value = 999  # 도우미 앱이 전경
-            result = paste_at_cursor(app)
+        checker = Mock(return_value=True)
+        result = paste_at_cursor(app, window_enabled=checker)
+        checker.assert_called_once_with(9)
         self.assertTrue(result["inserted"])
         self.assertEqual(app.runs, ["Paste"])
 
     def test_disabled_owner_blocks_without_paste(self):
         app = FakeApp(r"C:\a\가.hwpx")
-        with patch("docfit_live.link.ctypes.windll", create=True) as windll:
-            windll.user32.IsWindowEnabled.return_value = 0
-            with self.assertRaises(LiveLinkError) as raised:
-                paste_at_cursor(app)
+        with self.assertRaises(LiveLinkError) as raised:
+            paste_at_cursor(app, window_enabled=lambda hwnd: False)
         self.assertEqual(raised.exception.code, "DOCUMENT_BUSY")
         self.assertEqual(app.runs, [])
 
@@ -160,7 +157,7 @@ class LiveLinkTest(unittest.TestCase):
         app.GetTextFile = lambda *a, **kw: get_calls.append((a, kw)) or ""
         with self.assertRaises(NotImplementedError) as raised:
             export_table_block(app)
-        self.assertIn("실측 필요", str(raised.exception))
+        self.assertIn("실측 결과", str(raised.exception))
         self.assertEqual(get_calls, [])
         self.assertEqual(app.runs, [])
 

@@ -199,7 +199,8 @@ def paste_at_cursor(app, *, expected: dict | None = None, window_enabled=None) -
     if now["hwnd"]:
         try:
             # 주입값은 실제 HWND 대화상자 검사를 대체하므로 명시적으로만 사용한다.
-            enabled = (window_enabled or _window_enabled)(now["hwnd"])
+            checker = window_enabled if window_enabled is not None else _window_enabled
+            enabled = checker(now["hwnd"])
         except Exception:
             enabled = True  # hwnd 상태를 확인할 수 없으면 문맥 재확인 결과에 맡긴다.
     else:
@@ -292,7 +293,10 @@ def export_table_block(app) -> bytes:
     now = context(app)
     if not now["in_table"]:
         raise LiveLinkError("NOT_IN_TABLE", "커서가 표 안에 있지 않아요.")
-    raise NotImplementedError("실측 필요: GetTextFile 표 블록 추출 인자 및 반환 인코딩 미구현")
+    raise NotImplementedError(
+        '실측 결과: GetTextFile("HWPML", "") 및 GetTextFile("HWPML", "saveblock")는 None, '
+        'GetTextFile("TEXT", "")는 문서 전체 텍스트를 반환해 표 블록 추출에 사용할 수 없습니다.'
+    )
 
 
 def replace_table_block(app, block: bytes, *, expected: dict) -> dict:
@@ -300,7 +304,7 @@ def replace_table_block(app, block: bytes, *, expected: dict) -> dict:
     if not isinstance(block, bytes):
         raise TypeError("block은 bytes여야 합니다.")
     _validate_replace_context(app, expected, require_selection=False)
-    raise NotImplementedError("실측 필요: SetTextFile 등 단일 표 교체 액션 및 블록 형식 미구현")
+    raise NotImplementedError("실측 필요: GetTextFile이 표 블록을 반환하지 않아 SetTextFile 표 교체 계약을 확정할 수 없습니다.")
 
 
 def export_selection_block(app) -> bytes:
@@ -308,7 +312,10 @@ def export_selection_block(app) -> bytes:
     now = context(app)
     if not now["selected"]:
         raise LiveLinkError("NO_SELECTION", "선택된 범위가 없어요.")
-    raise NotImplementedError("실측 필요: GetTextFile 선택 블록 추출 인자 및 반환 인코딩 미구현")
+    raise NotImplementedError(
+        '실측 결과: 선택 중 GetTextFile("HWPML", "") 및 GetTextFile("HWPML", "saveblock")는 None, '
+        'GetTextFile("TEXT", "")는 선택 범위가 아닌 문서 전체 텍스트를 반환합니다.'
+    )
 
 
 def replace_selection_block(app, block: bytes, *, expected: dict) -> dict:
@@ -316,5 +323,5 @@ def replace_selection_block(app, block: bytes, *, expected: dict) -> dict:
     if not isinstance(block, bytes):
         raise TypeError("block은 bytes여야 합니다.")
     _validate_replace_context(app, expected, require_selection=True)
-    raise NotImplementedError("실측 필요: SetTextFile 등 선택 범위 교체 액션 및 블록 형식 미구현")
+    raise NotImplementedError("실측 필요: GetTextFile이 선택 블록을 반환하지 않아 SetTextFile 선택 교체 계약을 확정할 수 없습니다.")
 
