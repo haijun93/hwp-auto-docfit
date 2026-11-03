@@ -85,6 +85,7 @@ class _Parser(HTMLParser):
                 text="", rowspan=_span(a.get("rowspan")), colspan=_span(a.get("colspan")),
                 align=(_style_value(style, "text-align") or a.get("align") or "").lower(),
                 bold=tag == "th" or weight in ("bold", "bolder") or (weight.isdigit() and int(weight) >= 600),
+                color=_color(_style_value(style, "color")) or "#000000",
                 fill=_color(a.get("bgcolor")) or _color(_style_value(style, "background", "background-color")),
                 numeric=False)
         elif self.cell is not None:
@@ -92,6 +93,9 @@ class _Parser(HTMLParser):
                 self.cell["text"] += "\n"
             elif tag in ("b", "strong"):
                 self.cell["bold"] = True
+            color = _color(_style_value(a.get("style"), "color"))
+            if color:
+                self.cell["color"] = color
             if re.search(r"background|mso-highlight", a.get("style") or "", re.I):
                 self.highlights += 1  # 글자 단위 바탕색은 옮기지 않는다.
 
@@ -143,7 +147,7 @@ def _fragment(html):
 
 def _tsv_rows(tsv):
     rows = list(csv.reader(io.StringIO(tsv), delimiter="\t", quotechar='"'))
-    return [[dict(text=value, rowspan=1, colspan=1, align="", bold=False, fill="", numeric=False)
+    return [[dict(text=value, rowspan=1, colspan=1, align="", bold=False, fill="", color="", numeric=False)
              for value in row] for row in rows if row]
 
 

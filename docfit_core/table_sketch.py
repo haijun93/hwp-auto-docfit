@@ -136,7 +136,9 @@ def normalize(sketch):
                 type(item.get("bold", False)) is not bool or item.get("align", "center") not in ("left", "center", "right")):
             warnings.append(f"글 {i+1}: 위치나 서식이 잘못되어 제외했습니다.")
         else:
-            clean_texts.append({**item, "bold": item.get("bold", False), "align": item.get("align", "center")})
+            color = item.get("color", "#000000")
+            if not isinstance(color, str) or not __import__("re").fullmatch(r"#[0-9A-Fa-f]{6}", color): color = "#000000"
+            clean_texts.append({**item, "bold": item.get("bold", False), "align": item.get("align", "center"), "color": color.upper()})
     images = _clean_images(sketch.get("images"), cols, rows, warnings)
     fills = []
     raw_fills = sketch.get("fills", [])
@@ -328,13 +330,18 @@ def to_hwpx(sketch, path):
             parent.set("itemCnt", str(len(parent)))
             return ident
         chars, paras = {}, {}
+        colors = {"#000000"}
+        colors.update(item.get("color", "#000000").upper() for item in sketch.get("texts", []) if item.get("color"))
         for bold in (False, True):
+          for color in colors:
             node = copy.deepcopy(refs.find(HH+"charProperties")[0])
             node.set("height", "1000")
+            for n in node.iter():
+                if n.tag == HH+"textColor": n.set("value", color)
             for n in list(node):
                 if n.tag == HH+"bold": node.remove(n)
             if bold: _add(node, HH+"bold")
-            chars[bold] = definition("charProperties", "charPr", node)
+            chars[(bold,color)] = definition("charProperties", "charPr", node)
         for align in ("left", "center", "right"):
             node = copy.deepcopy(refs.find(HH+"paraProperties")[0])
             node.find(HH+"align").set("horizontal", align.upper())
@@ -434,10 +441,10 @@ def to_hwpx(sketch, path):
             sub = tc.find(HP+"subList")
             sub[:] = []
             sub.set("vertAlign", "CENTER")
-            for item in cell["texts"] or [dict(text="",bold=False,align="center")]:
+            for item in cell["texts"] or [dict(text="",bold=False,align="center",color="#000000")]:
                 for line in item["text"].split("\n"):
                     p = _add(sub,HP+"p",id=100000+index,paraPrIDRef=paras[item["align"]],styleIDRef="0",pageBreak="0",columnBreak="0",merged="0")
-                    run = _add(p,HP+"run",charPrIDRef=chars[item["bold"]])
+                    run = _add(p,HP+"run",charPrIDRef=chars[(item["bold"],item.get("color", "#000000").upper())])
                     _add(run,HP+"t").text = line
             tc.find(HP+"cellAddr").attrib.update(rowAddr=str(r),colAddr=str(c))
             tc.find(HP+"cellSpan").attrib.update(rowSpan=str(rs),colSpan=str(cs))

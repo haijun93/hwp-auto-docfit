@@ -104,6 +104,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: Scaffold(body:SizedBox(height:700,child:KClipPanel(api:api)))));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('kclip-excel-table')), findsOneWidget);
-    expect(find.text('칸 배경색 유지'), findsOneWidget);
+    expect(find.text('칸 배경색 빼기'), findsOneWidget);
+    expect(tester.widget<Checkbox>(find.byType(Checkbox).last).value, isFalse);
   });
 }

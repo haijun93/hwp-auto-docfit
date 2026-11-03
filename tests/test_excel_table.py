@@ -36,6 +36,9 @@ class ExcelClipboardTests(unittest.TestCase):
         self.assertEqual(cell(self.model, 1, 1)["fill"], "#FFFF00")
         self.assertEqual(cell(self.model, 1, 2)["align"], "right")
 
+    def test_character_color_from_excel_fixture(self):
+        self.assertEqual(cell(self.model, 0, 0)["color"], "#000000")
+
     def test_merges_are_placed_on_the_grid(self):
         self.assertEqual(cell(self.model, 1, 0)["rowspan"], 2)
         self.assertEqual(cell(self.model, 2, 1)["text"], "도서관 운영")

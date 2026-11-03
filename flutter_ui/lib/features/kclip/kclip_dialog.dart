@@ -36,7 +36,7 @@ class _KClipPanelState extends State<KClipPanel> {
   Map settings = const {};
   bool consent = false;
   bool autostart = false;
-  bool keepExcelBackground = true;
+  bool keepExcelBackground = false;
   bool busy = false;
   String message = '';
   String query = '';
@@ -371,7 +371,7 @@ class _KClipPanelState extends State<KClipPanel> {
           ),
           Row(mainAxisSize: MainAxisSize.min, children: [
             Checkbox(value: keepExcelBackground, onChanged: (v) => setState(() => keepExcelBackground = v == true)),
-            const Text('칸 배경색 유지'),
+            const Text('칸 배경색 빼기'),
           ]),
         ]),
         TextField(
