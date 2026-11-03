@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:file_selector/file_selector.dart';
 import 'timemachine_api.dart';
@@ -30,12 +31,34 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
   String _query = '';
   bool _contentMode = false, _contentIndexRunning = false;
   Map<String, Object?> _contentProgress = {};
-  List<Map<String, Object?>> _contentResults = [];
+  List<TimemachineContentResult> _contentResults = [];
   bool _contentNeedsReindex = false;
   bool _contentReindexDismissed = false;
   int _contentNeedsReindexCount = 0;
   String? _contentReindexGuide;
   String _contentSort = 'hierarchy_relevance';
+  TimemachineContentResult? _selectedContentResult;
+  bool _previewLoading = false;
+  Map<String, Object?>? _preview;
+  int _previewRevision = 0;
+  int _contentSearchRevision = 0;
+  bool _showOperatorHelp = false;
+
+  // 파일명 모드 열 보기(테이블) 상태
+  bool _fileTableView = false;
+  List<TimemachineItem> _fileSearchResults = [];
+  bool _fileSearchActive = false;
+  bool _fileSearchSupported = true;
+  int _fileSearchRevision = 0;
+  String _fileSortColumn = 'name';
+  bool _fileSortAscending = true;
+  final Map<String, double> _fileColumnWidths = {
+    'name': 140.0,
+    'folder': 200.0,
+    'size': 70.0,
+    'mtime': 110.0,
+    'kind': 60.0,
+  };
   Timer? _contentPoll;
   DateTime _month = DateTime(DateTime.now().year, DateTime.now().month);
   DateTime? _start, _end, _firstDay;
@@ -73,7 +96,140 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
     return Text.rich(TextSpan(style: style, children: spans), maxLines: maxLines, overflow: TextOverflow.ellipsis);
   }
 
+  /// 다중 검색어 강조 표시
+  Widget _markedTerms(String text, Iterable<String> terms, {int? maxLines, TextStyle? style}) {
+    final cleanTerms = terms
+        .map((t) => t.trim().toLowerCase())
+        .where((t) => t.isNotEmpty)
+        .toSet()
+        .toList();
+    if (cleanTerms.isEmpty || text.isEmpty) {
+      return Text(text, maxLines: maxLines, overflow: TextOverflow.ellipsis, style: style);
+    }
+    final lower = text.toLowerCase();
+    final intervals = <(int, int)>[];
+    for (final term in cleanTerms) {
+      var at = 0;
+      while (at < lower.length) {
+        final hit = lower.indexOf(term, at);
+        if (hit < 0) break;
+        intervals.add((hit, hit + term.length));
+        at = hit + term.length;
+      }
+    }
+    if (intervals.isEmpty) {
+      return Text(text, maxLines: maxLines, overflow: TextOverflow.ellipsis, style: style);
+    }
+    intervals.sort((a, b) {
+      final c = a.$1.compareTo(b.$1);
+      return c != 0 ? c : b.$2.compareTo(a.$2);
+    });
+    final merged = <(int, int)>[];
+    var curStart = intervals.first.$1;
+    var curEnd = intervals.first.$2;
+    for (var i = 1; i < intervals.length; i++) {
+      final next = intervals[i];
+      if (next.$1 <= curEnd) {
+        if (next.$2 > curEnd) curEnd = next.$2;
+      } else {
+        merged.add((curStart, curEnd));
+        curStart = next.$1;
+        curEnd = next.$2;
+      }
+    }
+    merged.add((curStart, curEnd));
+
+    final spans = <TextSpan>[];
+    var last = 0;
+    for (final interval in merged) {
+      if (interval.$1 > last) {
+        spans.add(TextSpan(text: text.substring(last, interval.$1)));
+      }
+      spans.add(TextSpan(
+        text: text.substring(interval.$1, interval.$2),
+        style: const TextStyle(backgroundColor: Color(0xFFFFEB3B), color: Colors.black),
+      ));
+      last = interval.$2;
+    }
+    if (last < text.length) {
+      spans.add(TextSpan(text: text.substring(last)));
+    }
+
+    return Text.rich(TextSpan(style: style, children: spans), maxLines: maxLines, overflow: TextOverflow.ellipsis);
+  }
+
+  Set<String> _extractKeywords(String query, Iterable<String> extraKeys) {
+    final keys = <String>{};
+    for (final k in extraKeys) {
+      if (k.trim().isNotEmpty) keys.add(k.trim());
+    }
+    final terms = query.trim().split(RegExp(r'\s+'));
+    for (final t in terms) {
+      if (t.isEmpty) continue;
+      if (t.contains(':')) continue;
+      var clean = t;
+      if (clean.startsWith('"') && clean.endsWith('"') && clean.length > 2) {
+        clean = clean.substring(1, clean.length - 1);
+      } else {
+        clean = clean.replaceAll(RegExp(r'^["\-]'), '').replaceAll(RegExp(r'["~].*$'), '');
+      }
+      if (clean.isNotEmpty) keys.add(clean);
+    }
+    return keys;
+  }
+
+  String _formatMatchCounts(TimemachineContentResult result) {
+    if (result.matchCounts.isEmpty) {
+      return '언급 ${result.totalMatches}회';
+    }
+    final entries = result.matchCounts.entries.map((e) => '${e.key} ${e.value}').join(' \u00B7 ');
+    return '$entries (합계 ${result.totalMatches})';
+  }
+
+  List<TimemachineContentResult> _sortContentResults(
+      List<TimemachineContentResult> results, String sortKey) {
+    final indexed = results.asMap().entries.toList();
+    indexed.sort((a, b) {
+      final itemA = a.value;
+      final itemB = b.value;
+      if (sortKey == 'hierarchy_relevance') {
+        final hComp = itemA.hierarchyRank.compareTo(itemB.hierarchyRank);
+        if (hComp != 0) return hComp;
+
+        final mComp = itemB.totalMatches.compareTo(itemA.totalMatches);
+        if (mComp != 0) return mComp;
+
+        final dateA = itemA.mtime > itemA.ctime ? itemA.mtime : itemA.ctime;
+        final dateB = itemB.mtime > itemB.ctime ? itemB.mtime : itemB.ctime;
+        final dComp = dateB.compareTo(dateA);
+        if (dComp != 0) return dComp;
+
+        final bComp = itemB.bm25.compareTo(itemA.bm25);
+        if (bComp != 0) return bComp;
+
+        return a.key.compareTo(b.key);
+      } else if (sortKey == 'mentions') {
+        final mComp = itemB.totalMatches.compareTo(itemA.totalMatches);
+        if (mComp != 0) return mComp;
+
+        final dateA = itemA.mtime > itemA.ctime ? itemA.mtime : itemA.ctime;
+        final dateB = itemB.mtime > itemB.ctime ? itemB.mtime : itemB.ctime;
+        final dComp = dateB.compareTo(dateA);
+        if (dComp != 0) return dComp;
+
+        final bComp = itemB.bm25.compareTo(itemA.bm25);
+        if (bComp != 0) return bComp;
+
+        return a.key.compareTo(b.key);
+      }
+      return a.key.compareTo(b.key);
+    });
+    return indexed.map((e) => e.value).toList();
+  }
+
+
   Future<void> _contentSearch(String query, {String? sort}) async {
+    final searchRev = ++_contentSearchRevision;
     if (query.isEmpty) {
       if (mounted) {
         setState(() {
@@ -81,37 +237,106 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
           _contentNeedsReindex = false;
           _contentNeedsReindexCount = 0;
           _contentReindexGuide = null;
+          _selectedContentResult = null;
+          _contentSort = 'hierarchy_relevance';
+          _preview = null;
         });
       }
       return;
     }
-    final activeSort = sort ?? _contentSort;
+    setState(() {
+      _contentSort = 'hierarchy_relevance';
+      _selectedContentResult = null;
+      _preview = null;
+    });
     try {
-      final payload = <String, Object?>{
-        'query': query,
-        'limit': 100,
-        if (activeSort != 'hierarchy_relevance') 'sort': activeSort,
-      };
-      final response = await _api.command('content_search', payload);
-      if (!mounted || query != _search.text.trim()) return;
-      final raw = response['items'];
-      final needsReindex = response['needs_reindex'] == true;
-      final needsCount = (response['needs_reindex_count'] as num?)?.toInt() ?? 0;
-      final guide = response['reindex_guide'] as String?;
+       final activeSort = sort ?? _contentSort;
+       final response = await _api.command('content_search', {
+         'query': query, 'limit': 100,
+         if (activeSort != 'hierarchy_relevance') 'sort': activeSort,
+       });
+       final rawItems = response['items'];
+       final items = rawItems is List ? rawItems.map((raw) => TimemachineContentResult.fromJson(Map<String, Object?>.from(raw as Map), query: query)).toList() : <TimemachineContentResult>[];
+      if (!mounted || searchRev != _contentSearchRevision || query != _search.text.trim()) return;
       setState(() {
-        _contentSort = activeSort;
-        _contentNeedsReindex = needsReindex;
-        _contentReindexDismissed = false;
-        _contentNeedsReindexCount = needsCount;
-        _contentReindexGuide = guide;
-        _contentResults = response['ok'] == true && raw is List
-            ? raw.whereType<Map>().map((e) => Map<String, Object?>.from(e)).toList()
-            : [];
+         _contentSort = activeSort;
+         _contentNeedsReindex = response['needs_reindex'] == true;
+         _contentReindexDismissed = false;
+         _contentNeedsReindexCount = (response['needs_reindex_count'] as num?)?.toInt() ?? 0;
+         _contentReindexGuide = response['reindex_guide'] as String?;
+         _contentResults = _sortContentResults(items, activeSort);
       });
     } catch (_) {
       if (mounted) setState(() => _error = '본문 검색을 수행하지 못했습니다.');
     }
   }
+
+  Future<void> _previewContentResult(TimemachineContentResult result) async {
+    final rev = ++_previewRevision;
+    setState(() {
+      _selectedContentResult = result;
+      _previewLoading = true;
+      _preview = null;
+    });
+    try {
+      final payload = <String, Object?>{
+        if (result.id != null) 'id': result.id,
+        if (result.path != null) 'path': result.path,
+        'query': _search.text.trim(),
+        if (result.position?.page != null) 'page': result.position!.page,
+        if (result.position?.sheet != null) 'sheet': result.position!.sheet,
+        if (result.position?.row != null) 'row': result.position!.row,
+      };
+      final response = await _api.command('preview', payload);
+      if (!mounted || rev != _previewRevision) return;
+      setState(() {
+        _preview = response;
+        _previewLoading = false;
+      });
+    } catch (_) {
+      if (!mounted || rev != _previewRevision) return;
+      setState(() {
+        _previewLoading = false;
+        _preview = {'ok': false, 'message': '미리보기를 불러오지 못했습니다.'};
+      });
+    }
+  }
+
+  Future<void> _openContentResult(TimemachineContentResult result) async {
+    if (result.id != null) {
+      await _api.command('open', {'id': result.id});
+    } else if (result.path != null && result.path!.isNotEmpty) {
+      await _api.command('open', {'path': result.path});
+    }
+  }
+  Future<void> _runFileSearch(String query) async {
+    if (!_fileSearchSupported) return;
+    final rev = ++_fileSearchRevision;
+    try {
+      final roots = _settings?['roots'];
+      final results = await _api.fileSearch(
+        query,
+        kinds: _selectedKinds.isEmpty ? null : _selectedKinds.toList(),
+        roots: roots is List ? roots.map((e) => '$e').toList() : null,
+      );
+      if (!mounted || rev != _fileSearchRevision) return;
+      setState(() {
+        _fileSearchResults = results;
+        _fileSearchActive = true;
+        _fileSearchSupported = true;
+      });
+    } catch (_) {
+      if (!mounted || rev != _fileSearchRevision) return;
+      setState(() {
+        _fileSearchSupported = false;
+        _fileSearchActive = false;
+        _fileSearchResults = [];
+        _fileTableView = false;
+      });
+      _filtersChanged();
+    }
+  }
+
   Future<void> _startContentIndex() async {
     final response = await _api.command('content_index_start');
     if (!mounted) return;
@@ -124,14 +349,8 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
       try {
         final status = await _api.command('content_index_status');
         if (!mounted) return;
-        final wasRunning = _contentIndexRunning;
-        final isRunning = status['running'] == true;
-        setState(() { _contentProgress = status; _contentIndexRunning = isRunning; });
-        if (isRunning) {
-          _pollContentIndex();
-        } else if (wasRunning && _search.text.trim().isNotEmpty) {
-          await _contentSearch(_search.text.trim());
-        }
+        setState(() { _contentProgress = status; _contentIndexRunning = status['running'] == true; });
+        if (_contentIndexRunning) _pollContentIndex();
       } catch (_) { if (mounted) setState(() => _contentIndexRunning = false); }
     });
   }
@@ -143,12 +362,15 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
     setState(() {
       _contentMode = value;
       _contentResults = [];
+      _selectedContentResult = null;
+      _preview = null;
+
       _search.clear();
       _query = '';
-      _contentNeedsReindex = false;
-      _contentNeedsReindexCount = 0;
-      _contentReindexGuide = null;
+      _showOperatorHelp = false;
       _contentSort = 'hierarchy_relevance';
+      _fileSearchResults = [];
+      _fileSearchActive = false;
     });
     if (!value) { _filtersChanged(); }
   }
@@ -483,69 +705,15 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
         children: [
           _filtersBar(),
           if (_contentMode) _contentSearchPanel(),
+          if (_contentMode && _showOperatorHelp) _operatorHelp(),
           if (_contentMode && _contentNeedsReindex && !_contentReindexDismissed && _contentReindexGuide != null)
             MaterialBanner(
               content: Text('$_contentReindexGuide (재색인 필요: $_contentNeedsReindexCount건)'),
               leading: const Icon(Icons.info_outline, color: Colors.amber),
               actions: [
-                TextButton(
-                  onPressed: () async {
-                    await _startContentIndex();
-                    if (!_contentIndexRunning && _search.text.trim().isNotEmpty) {
-                      await _contentSearch(_search.text.trim());
-                    }
-                  },
-                  child: const Text('재색인 시작'),
-                ),
-                TextButton(
-                  onPressed: () => setState(() => _contentReindexDismissed = true),
-                  child: const Text('닫기'),
-                ),
+                TextButton(onPressed: _startContentIndex, child: const Text('재색인 시작')),
+                TextButton(onPressed: () => setState(() => _contentReindexDismissed = true), child: const Text('닫기')),
               ],
-            ),
-          if (_contentMode && _contentResults.isNotEmpty)
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 220),
-              child: ListView.builder(
-                itemCount: _contentResults.length,
-                itemBuilder: (context, index) {
-                  final row = _contentResults[index];
-                  final rank = row['relevance_rank'] ?? (index + 1);
-                  final name = '${row['name'] ?? row['file_name'] ?? ''}';
-                  final bestLevel = row['best_level'] != null ? '${row['best_level']}' : '';
-                  final totalMatches = row['total_matches'] != null ? '${row['total_matches']}회' : '';
-                  final badgeText = [
-                    if (bestLevel.isNotEmpty) '위계: $bestLevel',
-                    if (totalMatches.isNotEmpty) '언급 $totalMatches',
-                  ].join(' · ');
-
-                  return ListTile(
-                    dense: true,
-                    leading: CircleAvatar(
-                      key: ValueKey('tm-content-rank-$index'),
-                      radius: 14,
-                      child: Text('$rank', style: const TextStyle(fontSize: 11)),
-                    ),
-                    title: Row(
-                      children: [
-                        Expanded(child: _marked(name, _search.text.trim())),
-                        if (badgeText.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 8.0),
-                            child: Text(
-                              badgeText,
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: Theme.of(context).colorScheme.primary,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                    subtitle: _marked('${row['snippet'] ?? ''}', _search.text.trim(), maxLines: 2),
-                  );
-                },
-              ),
             ),
           if (_error != null)
             MaterialBanner(
@@ -553,35 +721,417 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
               actions: [
                 TextButton(
                   onPressed: () => setState(() => _error = null),
-                  child: const Text('닫기'),
+                  child: const Text('\uB2EB\uAE30'),
                 ),
               ],
             ),
           Expanded(
-            child: isNarrow
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _densityBar(vertical: false),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxHeight: 180),
-                        child: SingleChildScrollView(child: calendar),
-                      ),
-                      Expanded(child: timeline),
-                    ],
-                  )
-                : Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _densityBar(vertical: true),
-                      Expanded(child: timeline),
-                      SizedBox(width: 320, child: SingleChildScrollView(child: calendar)),
-                    ],
-                  ),
+            child: _contentMode
+                ? _contentResultsView()
+                : (_fileTableView && _fileSearchSupported
+                    ? _fileSearchTable(_fileSearchActive ? _fileSearchResults : _items)
+                    : (isNarrow
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _densityBar(vertical: false),
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(maxHeight: 180),
+                                child: SingleChildScrollView(child: calendar),
+                              ),
+                              Expanded(child: timeline),
+                            ],
+                          )
+                        : Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _densityBar(vertical: true),
+                              Expanded(child: timeline),
+                              SizedBox(width: 320, child: SingleChildScrollView(child: calendar)),
+                            ],
+                          ))),
           ),
         ],
       );
     });
+  }
+
+
+  Widget _operatorHelp() => Card(
+    margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+    child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.help_outline, size: 18),
+              const SizedBox(width: 6),
+              const Text('본문 키워드 검색 연산자 안내', style: TextStyle(fontWeight: FontWeight.bold)),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.close, size: 18),
+                tooltip: '닫기',
+                onPressed: () => setState(() => _showOperatorHelp = false),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text('\u2022 "\uAD6C\uBB38": \uB744\uC5B4\uC4F0\uAE30\uB97C \uD3EC\uD568\uD55C \uC815\uD655\uD55C \uAD6C\uBB38 \uC77C\uCE58\n'
+              '\u2022 -\uB0B1\uB9D0 \uB610\uB294 -\uC81C\uC678\uC5B4: \uD2B9\uC815 \uB2E8\uC5B4\uAC00 \uD3EC\uD568\uB41C \uBB38\uC11C \uC81C\uC678\n'
+              '\u2022 ext:hwp,pdf: \uD2B9\uC815 \uD655\uC7A5\uC790 \uBB38\uC11C\uB9CC \uAC80\uC0C9\n'
+              '\u2022 path:\uD3F4\uB354: \uD2B9\uC815 \uD3F4\uB354 \uACBD\uB85C \uB0B4 \uBB38\uC11C\uB9CC \uAC80\uC0C9\n'
+              '\u2022 after:2024-06 \uB610\uB294 before:2024-12: \uBB38\uC11C \uC218\uC815\uC77C \uBC94\uC744 \uD544\uD130\n'
+              '\u2022 ~N: N\uB0B1\uB9D0 \uC774\uB0B4 \uADFC\uC811 \uAC80\uC0C9\n'
+              '\u2022 \uC5EC\uB7EC \uB2E8\uC5B4 \uC785\uB825 \uC2DC \uAE30\uBCF8 AND \uC5F0\uC0B0\uC774 \uC801\uC6A9\uB418\uBA70, \uD55C\uAE00 \uC870\uC0AC\uAC00 \uBD98\uC740 \uAC8D\uC6B0\uB3C4 \uBD80\uBD84 \uC77C\uCE58\uB85C \uCC3E\uC2B5\uB2C8\uB2E4.',
+              style: TextStyle(fontSize: 12, height: 1.4)),
+        ],
+      ),
+    ),
+  );
+
+  Widget _contentResultsView() {
+    if (_contentResults.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(_search.text.trim().isEmpty ? '본문 검색어를 입력해 주세요.' : '일치하는 본문 검색 결과가 없습니다.'),
+        ),
+      );
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          flex: 3,
+          child: ListView.builder(
+            itemCount: _contentResults.length,
+            itemBuilder: (context, index) => _contentResultRow(_contentResults[index], index),
+          ),
+        ),
+        if (_selectedContentResult != null || _previewLoading)
+          const VerticalDivider(width: 1),
+        if (_selectedContentResult != null || _previewLoading)
+          Expanded(
+            flex: 2,
+            child: _contentPreviewPane(),
+          ),
+      ],
+    );
+  }
+
+  Widget _contentResultRow(TimemachineContentResult result, int index) {
+    final isSelected = _selectedContentResult == result;
+    final keywords = _extractKeywords(_search.text.trim(), result.matchCounts.keys);
+    return Padding(
+      key: ValueKey('tm-content-row-${result.id ?? result.path ?? index}'),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: Card(
+        color: isSelected ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.25) : null,
+        child: InkWell(
+          onTap: () => _previewContentResult(result),
+          onDoubleTap: () => _openContentResult(result),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(_kindIcon(result.kind), size: 20, color: Theme.of(context).colorScheme.primary),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        result.fileName,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (result.position != null && result.position!.badgeLabel.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      _Badge(result.position!.badgeLabel),
+                    ],
+                    if (result.hierarchy.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      _Badge(result.hierarchy),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${result.folderName.isNotEmpty ? '${result.folderName} \u00B7 ' : ''}${result.folderPath}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 6),
+                _markedTerms(result.snippet, keywords, maxLines: 3, style: Theme.of(context).textTheme.bodyMedium),
+                const SizedBox(height: 6),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      _formatMatchCounts(result),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (result.hierarchy.isNotEmpty)
+                      Text(
+                        '장 제목: ${result.hierarchy}',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.grey),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _contentPreviewPane() {
+    final item = _selectedContentResult;
+    if (item == null) return const SizedBox.shrink();
+    return Card(
+      margin: const EdgeInsets.all(8),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(_kindIcon(item.kind), size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    item.fileName,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  tooltip: '미리보기 닫기',
+                  onPressed: () => setState(() => _selectedContentResult = null),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(item.folderPath, style: Theme.of(context).textTheme.bodySmall, overflow: TextOverflow.ellipsis),
+            if (item.position != null && item.position!.badgeLabel.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  _Badge(item.position!.badgeLabel),
+                  if (item.hierarchy.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    _Badge(item.hierarchy),
+                  ],
+                ],
+              ),
+            ],
+            const Divider(height: 18),
+            Expanded(
+              child: _previewLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('\uC77C\uCE58 \uC704\uCE58 \uBCF8\uBB38 \uBBF8\uB9AC\uBCF4\uAE30',
+                              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                                    color: Theme.of(context).colorScheme.primary,
+                                    fontWeight: FontWeight.bold,
+                                  )),
+                          const SizedBox(height: 8),
+                          _markedTerms(
+                            '${_preview?['snippet'] ?? item.snippet}',
+                            _extractKeywords(_search.text.trim(), item.matchCounts.keys),
+                            style: const TextStyle(fontSize: 13, height: 1.5),
+                          ),
+                        ],
+                      ),
+                    ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                FilledButton.icon(
+                  onPressed: (item.id != null || (item.path != null && item.path!.isNotEmpty))
+                      ? () => _openContentResult(item)
+                      : null,
+                  icon: const Icon(Icons.open_in_new, size: 16),
+                  label: const Text('\uBB38\uC11C \uC5F4\uAE30'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _fileSearchTable(List<TimemachineItem> items) {
+    final sorted = List<TimemachineItem>.from(items);
+    sorted.sort((a, b) {
+      int cmp = 0;
+      switch (_fileSortColumn) {
+        case 'name':
+          cmp = a.name.compareTo(b.name);
+          break;
+        case 'folder':
+          cmp = a.folder.compareTo(b.folder);
+          break;
+        case 'size':
+          cmp = a.size.compareTo(b.size);
+          break;
+        case 'mtime':
+          cmp = a.mtime.compareTo(b.mtime);
+          break;
+        case 'kind':
+          cmp = a.kind.compareTo(b.kind);
+          break;
+        default:
+          cmp = a.name.compareTo(b.name);
+      }
+      return _fileSortAscending ? cmp : -cmp;
+    });
+
+    final columns = [
+      ('name', '\uC774\uB984'),
+      ('folder', '\uACBD\uB85C'),
+      ('size', '\uD06C\uAE30'),
+      ('mtime', '\uC218\uC815\uC77C'),
+      ('kind', '\uD615\uC2DD'),
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final totalWidth = _fileColumnWidths.values.fold<double>(0.0, (a, b) => a + b) + columns.length * 16.0;
+        final tableWidth = max(constraints.maxWidth, totalWidth);
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(
+            width: tableWidth,
+            child: Column(
+              children: [
+                Container(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Row(
+                    children: [
+                      for (final (colKey, colName) in columns) ...[
+                        SizedBox(
+                          width: _fileColumnWidths[colKey] ?? 100,
+                          child: InkWell(
+                            key: ValueKey('tm-col-header-$colKey'),
+                            onTap: () {
+                              setState(() {
+                                if (_fileSortColumn == colKey) {
+                                  _fileSortAscending = !_fileSortAscending;
+                                } else {
+                                  _fileSortColumn = colKey;
+                                  _fileSortAscending = true;
+                                }
+                              });
+                            },
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(colName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                const SizedBox(width: 4),
+                                if (_fileSortColumn == colKey)
+                                  Icon(_fileSortAscending ? Icons.arrow_upward : Icons.arrow_downward, size: 14),
+                              ],
+                            ),
+                          ),
+                        ),
+                        GestureDetector(
+                          key: ValueKey('tm-col-resizer-$colKey'),
+                          behavior: HitTestBehavior.translucent,
+                          onHorizontalDragUpdate: (details) {
+                            setState(() {
+                              final cur = _fileColumnWidths[colKey] ?? 100;
+                              _fileColumnWidths[colKey] = max(40.0, cur + details.delta.dx);
+                            });
+                          },
+                          child: MouseRegion(
+                            cursor: SystemMouseCursors.resizeColumn,
+                            child: Container(
+                              width: 12,
+                              height: 20,
+                              alignment: Alignment.center,
+                              child: Container(width: 2, height: 16, color: Colors.grey.withValues(alpha: 0.4)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: sorted.isEmpty
+                      ? const Center(child: Text('\uD15C\uC2DC\uD560 \uD30C\uC77C\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.'))
+                      : ListView.separated(
+                          itemCount: sorted.length,
+                          separatorBuilder: (context, _) => const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            final item = sorted[index];
+                            final date = DateTime.fromMillisecondsSinceEpoch((item.mtime * 1000).round()).toLocal();
+                            final dateStr = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+                            final sizeKb = (item.size / 1024).toStringAsFixed(1);
+                            return InkWell(
+                              key: ValueKey('tm-file-row-${item.id}'),
+                              onTap: () => _openItem(item),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                child: Row(
+                                  children: [
+                                    SizedBox(
+                                      width: _fileColumnWidths['name'] ?? 100,
+                                      child: Text(item.name, overflow: TextOverflow.ellipsis),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    SizedBox(
+                                      width: _fileColumnWidths['folder'] ?? 100,
+                                      child: Text(item.folder, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    SizedBox(
+                                      width: _fileColumnWidths['size'] ?? 100,
+                                      child: Text('${sizeKb}KB', overflow: TextOverflow.ellipsis),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    SizedBox(
+                                      width: _fileColumnWidths['mtime'] ?? 100,
+                                      child: Text(dateStr, overflow: TextOverflow.ellipsis),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    SizedBox(
+                                      width: _fileColumnWidths['kind'] ?? 100,
+                                      child: Text(item.kind, overflow: TextOverflow.ellipsis),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Widget _densityBar({bool vertical = false}) {
@@ -685,21 +1235,24 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
     ])))));
   }
   Widget _contentSearchPanel() => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 12),
-    child: Row(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+    child: Wrap(
+      spacing: 12,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
+        const Text('위계기반 본문검색', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
         if (_contentIndexRunning) ...[
-          const Expanded(child: LinearProgressIndicator()),
-          const SizedBox(width: 8),
-          Text('${_contentProgress['seen'] ?? 0}건 확인 · ${_contentProgress['indexed'] ?? 0}건 색인 · 실패 ${_contentProgress['errors'] ?? 0}건'),
-          TextButton(onPressed: _cancelContentIndex, child: const Text('취소')),
-        ] else ...[
-          TextButton(onPressed: _startContentIndex, child: const Text('본문 색인')),
-          if (_contentProgress['errors'] != null) Text('추출 실패 ${_contentProgress['errors']}건'),
-        ],
-        const SizedBox(width: 8),
-        Text('검색 결과 ${_contentResults.length}건'),
-        const Spacer(),
+          const SizedBox(width: 80, child: LinearProgressIndicator()),
+          Text('${_contentProgress['seen'] ?? 0}건 확인 · ${_contentProgress['indexed'] ?? 0}건 색인 · 실패 ${_contentProgress['errors'] ?? 0}건', style: const TextStyle(fontSize: 12)),
+          TextButton(onPressed: _cancelContentIndex, child: const Text('\uCDE8\uC18C')),
+        ] else
+          TextButton.icon(
+            onPressed: _startContentIndex,
+            icon: const Icon(Icons.play_arrow, size: 16),
+            label: const Text('\uBCF8\uBB38 \uC0C9\uC778'),
+          ),
+        if (_contentProgress['errors'] != null)
+          Text('추출 실패 ${_contentProgress['errors']}건', style: const TextStyle(fontSize: 12, color: Colors.red)),
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -708,28 +1261,46 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
               key: const ValueKey('tm-content-sort-dropdown'),
               value: _contentSort,
               isDense: true,
-              underline: const SizedBox(),
               items: const [
                 DropdownMenuItem(value: 'hierarchy_relevance', child: Text('위계기반 연관도')),
                 DropdownMenuItem(value: 'mentions', child: Text('언급 횟수 많은 순')),
               ],
               onChanged: (val) {
                 if (val != null) {
-                  _contentSearch(_search.text.trim(), sort: val);
+                    _contentSearch(_search.text.trim(), sort: val);
                 }
               },
             ),
           ],
         ),
+        Text('검색 결과 ${_contentResults.length}건', style: const TextStyle(fontSize: 12)),
       ],
     ),
   );
   Widget _filtersBar() => Padding(padding:const EdgeInsets.fromLTRB(12,8,12,4),child:SingleChildScrollView(scrollDirection:Axis.horizontal,child:Row(children:[
     OutlinedButton.icon(onPressed:_pickExtensions,icon:const Icon(Icons.tune,size:16),label:const Text('확장자')),
 
-    for(final entry in _kinds.entries) FilterChip(label:Text(entry.key),selected:_selectedKinds.contains(entry.value),onSelected:(value){setState(()=>value?_selectedKinds.add(entry.value):_selectedKinds.remove(entry.value));_filtersChanged();}),
+    for(final entry in _kinds.entries) FilterChip(label:Text(entry.key),selected:_selectedKinds.contains(entry.value),onSelected:(value){setState(()=>value?_selectedKinds.add(entry.value):_selectedKinds.remove(entry.value));_filtersChanged();if(_fileTableView && _fileSearchSupported){_runFileSearch(_search.text.trim());}}),
     SegmentedButton<bool>(segments:const [ButtonSegment(value:false,label:Text('파일명')),ButtonSegment(value:true,label:Text('본문'))],selected:{_contentMode},onSelectionChanged:(values)=>_toggleContentMode(values.first)),
-    SizedBox(width:180,child:TextField(controller:_search,decoration:InputDecoration(prefixIcon:const Icon(Icons.search),hintText:_contentMode?'본문 검색':'이름 찾기',isDense:true),onChanged:(value){_debounce?.cancel();_debounce=Timer(const Duration(milliseconds:300),(){if(_contentMode){_contentSort = 'hierarchy_relevance'; _contentSearch(value.trim(), sort: 'hierarchy_relevance');}else{_query=value.trim();_filtersChanged();}});})),
+    SizedBox(width:180,child:TextField(controller:_search,decoration:InputDecoration(prefixIcon:const Icon(Icons.search),hintText:_contentMode?'본문 검색':'이름 찾기',isDense:true),onChanged:(value){_debounce?.cancel();_debounce=Timer(const Duration(milliseconds:300),(){final trimmed=value.trim();if(_contentMode){_contentSearch(trimmed);}else{_query=trimmed;_filtersChanged();if(_fileTableView || _fileSearchActive){_runFileSearch(trimmed);}}});})),
+    if (_contentMode)
+      IconButton(
+        icon: const Icon(Icons.help_outline),
+        tooltip: '검색 연산자 도움말',
+        onPressed: () => setState(() => _showOperatorHelp = !_showOperatorHelp),
+      )
+    else if (_fileSearchSupported)
+      IconButton(
+        icon: Icon(_fileTableView ? Icons.view_timeline : Icons.table_chart),
+        tooltip: _fileTableView ? '타임라인 보기' : '열 보기',
+        onPressed: () {
+          if (!_fileSearchSupported) return;
+          setState(() => _fileTableView = !_fileTableView);
+          if (_fileTableView) {
+            _runFileSearch(_search.text.trim());
+          }
+        },
+      ),
     OutlinedButton.icon(onPressed:_scan,icon:const Icon(Icons.refresh),label:const Text('다시 훑기')),
     OutlinedButton.icon(key:const ValueKey('tm-clear-thumb-cache'),onPressed:_clearThumbnailCache,icon:const Icon(Icons.delete_outline),label:const Text('썸네일 캐시 지우기')),
     Text(_watchByAgent ? '실시간 감시: K에이전트' : '실시간 감시: 앱을 열 때만',key:const ValueKey('tm-watch-status'),style:Theme.of(context).textTheme.bodySmall),

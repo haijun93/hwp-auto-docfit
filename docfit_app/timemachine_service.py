@@ -74,15 +74,21 @@ class TimemachineService:
         self.content_index.close()
         self.store.close()
 
-    def _content_index_worker(self, roots, extensions):
+    def _finish_content_index(self, cancel_event):
+        with self._content_lock:
+            self._content_state.update(running=False, cancelled=cancel_event.is_set(), finished_at=time.time())
+
+    def _content_index_worker(self, roots, extensions, cancel_event=None):
+        cancel_event = cancel_event or self._content_cancel
         seen = indexed = errors = 0
         rules = Rules(extensions=extensions, extra_extensions=extensions)  # 본문 색인 확장자(예: txt)는 타임라인 종류에 없어도 색인한다
         try:
             for root in roots:
                 for folder, dirs, files in os.walk(root, followlinks=False):
-                    dirs[:] = [d for d in dirs if not rules.skip_dir(d) and not self._content_cancel.is_set()]
+                    if cancel_event.is_set(): break
+                    dirs[:] = [d for d in dirs if not rules.skip_dir(d) and not cancel_event.is_set()]
                     for name in files:
-                        if self._content_cancel.is_set():
+                        if cancel_event.is_set():
                             break
                         ext = Path(name).suffix.lower().lstrip(".")
                         if ext not in extensions:
@@ -90,7 +96,10 @@ class TimemachineService:
                         path = os.path.join(folder, name)
                         if not self._path_in_active_root(path):
                             continue
-                        self._content_pending_roots.discard(os.path.normcase(os.path.abspath(path)))
+                        if cancel_event.is_set(): break
+                        with self._content_lock:
+                            if self._content_pending_roots is not None:
+                                self._content_pending_roots.discard(os.path.normcase(os.path.abspath(path)))
                         if ext in IMAGE_EXTENSIONS:
                             # 설계 의도: 디스크에 존재하는 이미지 파일은 pending 색인 큐에서 정상 제거하여
                             # 스캔 종료 후 불필요한 삭제 검사를 생략하고, 본문 텍스트 추출 대상이 아니므로
@@ -105,16 +114,18 @@ class TimemachineService:
                         errors += bool(result["error"])
                         with self._content_lock:
                             self._content_state.update(seen=seen, indexed=indexed, errors=errors)
-                    if self._content_cancel.is_set():
+                    if cancel_event.is_set():
                         break
-                if self._content_cancel.is_set():
+                if cancel_event.is_set():
                     break
             # 연결이 끊긴 드라이브의 문서는 지워진 것으로 보지 않는다.
             available = [os.path.normcase(os.path.abspath(root)) + os.sep for root in roots if os.path.isdir(root)]
             active_roots = [os.path.normcase(os.path.abspath(root)) + os.sep
                             for root in self._settings["roots"] if os.path.isdir(root)]
-            for path in tuple(self._content_pending_roots):
-                if self._content_cancel.is_set():
+            with self._content_lock:
+                pending = tuple(self._content_pending_roots or ())
+            for path in pending:
+                if cancel_event.is_set():
                     break
                 normalized = os.path.normcase(os.path.abspath(path))
                 in_scan_roots = normalized.startswith(tuple(available))
@@ -123,31 +134,41 @@ class TimemachineService:
                 if in_scan_roots and (not in_active_roots or not extension_allowed or not os.path.exists(path)):
                     self.content_index.remove_file(path)
         finally:
-            with self._content_lock:
-                self._content_state.update(running=False, cancelled=self._content_cancel.is_set(),
-                                           finished_at=time.time())
+            self._finish_content_index(cancel_event)
 
     def _start_content_index(self):
         with self._content_lock:
-            if self._content_state["running"]:
-                return {"ok": True, **self._content_state}
-            self._content_cancel.clear()
+            if self._content_state["running"] or (self._content_thread and self._content_thread.is_alive()):
+                return {"ok": True, **dict(self._content_state)}
             self._content_pending_roots = set(self.content_index.indexed_paths(roots=self._settings["roots"]))
+            cancel_event = threading.Event()
+            self._content_cancel = cancel_event
             self._content_state = {"running": True, "seen": 0, "indexed": 0, "errors": 0,
                                    "cancelled": False, "started_at": time.time(), "finished_at": None}
             self._content_thread = threading.Thread(target=self._content_index_worker,
-                args=(list(self._settings["roots"]), frozenset(self._settings["extensions"])),
+                args=(list(self._settings["roots"]), frozenset(self._settings["extensions"]), cancel_event),
                 name="timemachine-content-index", daemon=True)
-            self._content_thread.start()
-            return {"ok": True, **self._content_state}
+            try:
+                self._content_thread.start()
+            except Exception as exc:
+                self._content_state.update(running=False, finished_at=time.time())
+                return self._error("TM_INDEX_FAILED", f"색인 작업을 시작하지 못했습니다: {exc}")
+            return {"ok": True, **dict(self._content_state)}
 
-    def cancel_content_index(self, *, wait=False):
-        self._content_cancel.set()
-        worker = self._content_thread
-        if wait and worker and worker is not threading.current_thread():
-            worker.join()
+    def cancel_content_index(self, *, wait=False, timeout=2.0):
         with self._content_lock:
-            return {"ok": True, **self._content_state}
+            cancel_event = self._content_cancel
+            worker = self._content_thread
+            if not self._content_state["running"]:
+                return {"ok": True, **dict(self._content_state)}
+            cancel_event.set()
+        if wait and worker and worker is not threading.current_thread():
+            worker.join(timeout=max(0.0, timeout))
+            if worker.is_alive():
+                with self._content_lock:
+                    return {"ok": False, "code": "TM_CANCEL_TIMEOUT", "message": "색인 작업 취소 대기 시간이 초과되었습니다.", **dict(self._content_state)}
+        with self._content_lock:
+            return {"ok": True, **dict(self._content_state)}
 
     def _load_settings(self):
         defaults = self._defaults()
@@ -387,17 +408,19 @@ class TimemachineService:
 
     def _refresh_content_index_async(self):
         with self._content_lock:
-            if self._content_state["running"] or self._content_cancel.is_set():
+            if self._content_state["running"] or (self._content_thread and self._content_thread.is_alive()):
                 return
             # 본문 색인을 쓴 적이 없으면(색인이 비어 있으면) 자동으로 시작하지 않는다.
             pending = set(self.content_index.indexed_paths(roots=self._settings["roots"]))
             if not pending:
                 return
             self._content_pending_roots = pending
+            cancel_event = threading.Event()
+            self._content_cancel = cancel_event
             self._content_state = {"running": True, "seen": 0, "indexed": 0, "errors": 0,
                                    "cancelled": False, "started_at": time.time(), "finished_at": None}
             self._content_thread = threading.Thread(target=self._content_index_worker,
-                args=(list(self._settings["roots"]), frozenset(self._settings["extensions"])),
+                args=(list(self._settings["roots"]), frozenset(self._settings["extensions"]), cancel_event),
                 name="timemachine-content-index", daemon=True)
             self._content_thread.start()
 
@@ -449,7 +472,7 @@ class TimemachineService:
             state["reindex_guide"] = "기존 본문 색인은 위계 정보가 없어 재색인이 필요합니다." if reindex_cnt > 0 else None
             return {"ok": True, **state}
         if action == "content_index_cancel":
-            return self.cancel_content_index()
+            return self.cancel_content_index(wait=bool(payload.get("wait", False)), timeout=float(payload.get("timeout", 2.0)))
         if action == "content_search":
             query = payload.get("query")
             sort = payload.get("sort")

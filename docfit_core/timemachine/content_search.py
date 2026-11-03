@@ -10,8 +10,10 @@ from datetime import date
 from pathlib import Path
 from defusedxml import ElementTree as ET
 from ..hwpx import open_hwpx_safely
+from .extract_text import extract_text as _extract_text_by_format
+from .extractors import ExtractionError, extract_document
 
-SUPPORTED = {"hwpx", "txt", "docx", "pdf"}
+SUPPORTED = {"hwpx", "hwp", "txt", "md", "docx", "pptx", "xlsx", "xls", "pdf", "eml"}
 
 LEVEL_ORDER: tuple[str, ...] = (
     "document_title", "chapter", "section", "topic", "square", "circle",
@@ -223,30 +225,29 @@ def extract_paragraphs(path: str | os.PathLike[str]) -> list[ParagraphRecord]:
     ext = Path(path).suffix.lower().lstrip(".")
     if ext not in SUPPORTED:
         raise ValueError("지원하지 않는 형식")
-    raw_records: list[dict] = []
-    if ext == "txt":
-        raw = Path(path).read_bytes()
-        decoded = None
-        for encoding in ("utf-8-sig", "cp949", "utf-16"):
-            try:
-                decoded = raw.decode(encoding)
-                break
-            except UnicodeError:
-                pass
-        if decoded is None:
-            raise ValueError("텍스트 인코딩을 판별할 수 없음")
-        lines = decoded.splitlines()
-        for idx, line in enumerate(lines):
-            stripped = line.strip()
-            if stripped:
-                raw_records.append({
-                    "paragraph_index": idx,
-                    "text": stripped,
-                    "is_table_cell": False,
-                    "style_name": None,
-                    "outline_level": None,
-                })
-    elif ext == "hwpx":
+    if ext in {"hwpx", "docx"}:
+        hierarchy_records = extract_paragraphs_legacy(path, ext)
+    else:
+        hierarchy_records = None
+    try:
+        extracted = extract_document(path, hierarchy_records=hierarchy_records)
+    except ExtractionError as exc:
+        raise ValueError(str(exc)) from exc
+    paragraphs = [ParagraphRecord(
+        paragraph_index=record.sequence - 1,
+        text=record.text,
+        level=record.hierarchy_level or "body",
+        level_rank=LEVEL_ORDER.index(record.hierarchy_level) if record.hierarchy_level in LEVEL_ORDER else LEVEL_ORDER.index("body"),
+        is_table_cell=record.is_table_cell,
+        style_name=record.style_name,
+        outline_level=record.outline_level,
+    ) for record in extracted]
+    return classify_paragraph_levels(path, paragraphs)
+
+def extract_paragraphs_legacy(path, ext):
+    """위치 추출 전에 기존 HWPX/DOCX 위계 판정 결과를 얻는다."""
+    records = []
+    if ext == "hwpx":
         with open_hwpx_safely(path) as archive:
             names = archive.namelist()
             style_map = {}
@@ -255,159 +256,94 @@ def extract_paragraphs(path: str | os.PathLike[str]) -> list[ParagraphRecord]:
                     head_root = ET.fromstring(archive.read("Contents/header.xml"))
                     for elem in head_root.iter():
                         if _tag_name(elem) == "style":
-                            sid = elem.attrib.get("id")
-                            sname = elem.attrib.get("name")
+                            sid, sname = elem.attrib.get("id"), elem.attrib.get("name")
                             if sid and sname:
                                 style_map[sid] = sname
                 except Exception:
                     pass
-            section_names = [n for n in names if n.startswith("Contents/section") and n.endswith(".xml")]
-            def _sec_key(name):
-                match = re.search(r"section(\d+)\.xml", name)
-                return int(match.group(1)) if match else 0
-            section_names.sort(key=_sec_key)
-            para_idx = 0
-            for sec_name in section_names:
-                sec_root = ET.fromstring(archive.read(sec_name))
-                def _get_direct_text(p_elem):
+            section_names = sorted((n for n in names if n.startswith("Contents/section") and n.endswith(".xml")),
+                                   key=lambda n: int(re.search(r"section(\d+)", n).group(1)) if re.search(r"section(\d+)", n) else 0)
+            index = 0
+            def walk(node, in_table=False):
+                nonlocal index
+                tag = _tag_name(node)
+                if tag in ("tc", "cell"):
+                    for child in node:
+                        walk(child, True)
+                    return
+                if tag == "p":
                     chunks = []
-                    def _collect(node, is_root=False):
-                        tag = _tag_name(node)
-                        if not is_root and tag in ("tbl", "table"):
+                    def collect(elem, root=False):
+                        if not root and _tag_name(elem) in ("tbl", "table"):
                             return
-                        if node.text:
-                            chunks.append(node.text)
-                        for ch in node:
-                            _collect(ch, is_root=False)
-                            if ch.tail:
-                                chunks.append(ch.tail)
-                    _collect(p_elem, is_root=True)
-                    return "".join(chunks).strip()
-
-                def _walk(node, in_table=False):
-                    nonlocal para_idx
-                    tag = _tag_name(node)
-                    if tag in ("tc", "cell"):
-                        for ch in node:
-                            _walk(ch, in_table=True)
-                        return
-                    if tag == "p":
-                        text = _get_direct_text(node)
+                        if elem.text:
+                            chunks.append(elem.text)
+                        for child in elem:
+                            collect(child)
+                            if child.tail:
+                                chunks.append(child.tail)
+                    collect(node, True)
+                    text = "".join(chunks).strip()
+                    if text:
                         style_id = node.attrib.get("styleIDRef") or node.attrib.get("styleID") or node.attrib.get("style")
-                        outline_lvl = node.attrib.get("outlineLevel") or node.attrib.get("outline_level")
-                        for ch in node:
-                            if _tag_name(ch) in ("pPr", "p_pr"):
-                                style_id = style_id or ch.attrib.get("styleIDRef") or ch.attrib.get("styleID")
-                                outline_lvl = outline_lvl or ch.attrib.get("outlineLevel") or ch.attrib.get("outline_level")
-                        outline_val = int(outline_lvl) if outline_lvl and outline_lvl.isdigit() else None
-                        style_name = style_map.get(style_id) if (style_map and style_id) else (node.attrib.get("styleName") or node.attrib.get("style_name"))
-                        if text:
-                            raw_records.append({
-                                "paragraph_index": para_idx,
-                                "text": text,
-                                "is_table_cell": in_table,
-                                "style_name": style_name,
-                                "outline_level": outline_val,
-                            })
-                            para_idx += 1
-                        for ch in node:
-                            _walk(ch, in_table=in_table)
-                        return
-                    for ch in node:
-                        _walk(ch, in_table=in_table)
-
-                _walk(sec_root, in_table=False)
+                        outline = node.attrib.get("outlineLevel") or node.attrib.get("outline_level")
+                        for child in node:
+                            if _tag_name(child) in ("pPr", "p_pr"):
+                                style_id = style_id or child.attrib.get("styleIDRef") or child.attrib.get("styleID")
+                                outline = outline or child.attrib.get("outlineLevel") or child.attrib.get("outline_level")
+                        records.append(ParagraphRecord(index, text, "body", LEVEL_ORDER.index("body"), in_table,
+                            style_map.get(style_id) if style_id else node.attrib.get("styleName"),
+                            int(outline) if outline and outline.isdigit() else None))
+                        index += 1
+                    for child in node:
+                        walk(child, in_table)
+                    return
+                for child in node:
+                    walk(child, in_table)
+            for name in section_names:
+                walk(ET.fromstring(archive.read(name)))
     elif ext == "docx":
         with __import__("zipfile").ZipFile(path) as archive:
-            names = archive.namelist()
-            targets = [n for n in names if n == "word/document.xml"]
-            para_idx = 0
-            for target in targets:
-                root = ET.fromstring(archive.read(target))
-                def _get_docx_text(p_elem):
+            if "word/document.xml" not in archive.namelist():
+                return []
+            root = ET.fromstring(archive.read("word/document.xml"))
+            index = 0
+            def walk(node, in_table=False):
+                nonlocal index
+                tag = _tag_name(node)
+                if tag == "tc":
+                    for child in node:
+                        walk(child, True)
+                    return
+                if tag == "p":
                     chunks = []
-                    def _collect(node, is_root=False):
-                        tag = _tag_name(node)
-                        if not is_root and tag in ("tbl", "table"):
+                    def collect(elem, root=False):
+                        if not root and _tag_name(elem) in ("tbl", "table"):
                             return
-                        if node.text:
-                            chunks.append(node.text)
-                        for ch in node:
-                            _collect(ch, is_root=False)
-                            if ch.tail:
-                                chunks.append(ch.tail)
-                    _collect(p_elem, is_root=True)
-                    return "".join(chunks).strip()
-
-                def _walk_docx(node, in_table=False):
-                    nonlocal para_idx
-                    tag = _tag_name(node)
-                    if tag == "tc":
-                        for ch in node:
-                            _walk_docx(ch, in_table=True)
-                        return
-                    if tag == "p":
-                        text = _get_docx_text(node)
-                        style_name = None
-                        outline_val = None
+                        if elem.text: chunks.append(elem.text)
+                        for child in elem:
+                            collect(child)
+                            if child.tail: chunks.append(child.tail)
+                    collect(node, True)
+                    text = "".join(chunks).strip()
+                    if text:
+                        style = None; outline = None
                         for ppr in node:
                             if _tag_name(ppr) == "pPr":
                                 for child in ppr:
-                                    if _tag_name(child) == "pStyle":
-                                        style_name = child.attrib.get(list(child.attrib.keys())[0]) if child.attrib else None
-                                    elif _tag_name(child) == "outlineLvl":
-                                        val = child.attrib.get(list(child.attrib.keys())[0]) if child.attrib else None
-                                        if val and val.isdigit():
-                                            outline_val = int(val)
-                        if text:
-                            raw_records.append({
-                                "paragraph_index": para_idx,
-                                "text": text,
-                                "is_table_cell": in_table,
-                                "style_name": style_name,
-                                "outline_level": outline_val,
-                            })
-                            para_idx += 1
-                        for ch in node:
-                            _walk_docx(ch, in_table=in_table)
-                        return
-                    for ch in node:
-                        _walk_docx(ch, in_table=in_table)
-                _walk_docx(root, in_table=False)
-    elif ext == "pdf":
-        from pypdf import PdfReader
-        reader = PdfReader(path)
-        if reader.is_encrypted:
-            raise ValueError("암호화된 PDF")
-        para_idx = 0
-        for page in reader.pages:
-            page_text = page.extract_text() or ""
-            for line in page_text.splitlines():
-                stripped = line.strip()
-                if stripped:
-                    raw_records.append({
-                        "paragraph_index": para_idx,
-                        "text": stripped,
-                        "is_table_cell": False,
-                        "style_name": None,
-                        "outline_level": None,
-                    })
-                    para_idx += 1
-    if not raw_records:
-        raise ValueError("본문 텍스트가 없음")
-    base_records = [
-        ParagraphRecord(
-            paragraph_index=r["paragraph_index"],
-            text=r["text"],
-            level="body",
-            level_rank=LEVEL_ORDER.index("body"),
-            is_table_cell=r["is_table_cell"],
-            style_name=r["style_name"],
-            outline_level=r["outline_level"],
-        )
-        for r in raw_records
-    ]
-    return classify_paragraph_levels(path, base_records)
+                                    if _tag_name(child) == "pStyle": style = next(iter(child.attrib.values()), None)
+                                    if _tag_name(child) == "outlineLvl":
+                                        value = next(iter(child.attrib.values()), None)
+                                        outline = int(value) if value and value.isdigit() else None
+                        records.append(ParagraphRecord(index, text, "body", LEVEL_ORDER.index("body"), in_table, style, outline))
+                        index += 1
+                    for child in node:
+                        walk(child, in_table)
+                    return
+                for child in node:
+                    walk(child, in_table)
+            walk(root)
+    return classify_paragraph_levels(path, records)
 
 _DATE_PATTERNS = (
     re.compile(r"(?:작성\s*)?기준일\s*[:：]?\s*(20\d{2})\s*[.년/-]\s*(\d{1,2})\s*[.월/-]\s*(\d{1,2})\s*일?"),
