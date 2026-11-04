@@ -825,26 +825,13 @@ class ContentSearchIndex:
                 chosen_match = highest_matches[0]
                 target_para_body = next((p["body"] for p in p_list if int(p["paragraph_index"]) == chosen_match.paragraph_index), p_list[0]["body"])
 
-            # 스니펫 및 하이라이트 생성
-            t_folded = target_para_body.casefold()
-            offsets = [t_folded.find(t.casefold()) for t in terms if t_folded.find(t.casefold()) >= 0]
-            first = min(offsets) if offsets else 0
-            start, end = max(0, first - 70), min(len(target_para_body), first + 180)
-            snippet = target_para_body[start:end]
-            spans = []
-            for term in terms:
-                match = re.search(re.escape(term), snippet, re.I)
-                if match:
-                    spans.append([match.start(), match.end()])
-
             doc_date = _document_date(meta["ctime"], meta["mtime"])
             file_name = meta["name"] or os.path.basename(path)
 
             prepared.append({
                 "path": path,
                 "name": file_name,
-                "snippet": snippet,
-                "highlights": spans,
+                "_target_body": target_para_body or "",
                 "score": total_matches,
                 "match_counts": match_counts,
                 "total_matches": total_matches,
@@ -859,6 +846,26 @@ class ContentSearchIndex:
         _sort_hierarchy_results(prepared, sort=sort)
         final_items = prepared[:lim]
         for idx, item in enumerate(final_items):
+            # 스니펫·하이라이트는 화면에 보일 상위 결과에만 만든다(N214B 속도 개선, 결과 동일)
+            target_para_body = item.pop("_target_body")
+            t_folded = target_para_body.casefold()
+            offsets = [t_folded.find(t.casefold()) for t in terms if t_folded.find(t.casefold()) >= 0]
+            first = min(offsets) if offsets else 0
+            start, end = max(0, first - 70), min(len(target_para_body), first + 180)
+            snippet = target_para_body[start:end]
+            spans = []
+            for term in terms:
+                match = re.search(re.escape(term), snippet, re.I)
+                if match:
+                    spans.append([match.start(), match.end()])
+            ordered = {}
+            for key, value in item.items():
+                ordered[key] = value
+                if key == "name":
+                    ordered["snippet"] = snippet
+                    ordered["highlights"] = spans
+            item.clear()
+            item.update(ordered)
             item["relevance_rank"] = idx + 1
             item.pop("_best_level_rank", None)
             item.pop("_document_date", None)
