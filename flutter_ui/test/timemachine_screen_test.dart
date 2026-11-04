@@ -131,6 +131,25 @@ void main() {
     expect(find.textContaining('추출 실패 2건'),findsOneWidget);
   });
 
+  testWidgets('본문 검색 결과를 Markdown으로 내보낸다', (tester) async {
+    final api = _FakeApi(enabled: true, developerMode: true);
+    await tester.binding.setSurfaceSize(const Size(1400, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: api.call))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('본문검색'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, '회의');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('tm-export-markdown')));
+    await tester.pumpAndSettle();
+    final export = api.calls.lastWhere((call) => call.$1 == 'content_export_markdown');
+    expect(export.$2['query'], '회의');
+
+  });
+
   testWidgets('썸네일이 오면 그림을 보이고 같은 항목은 다시 요청하지 않는다', (tester) async {
     final api=_FakeApi(enabled:true,thumbnail:{'ok':true,'data':_jpeg});
     await tester.pumpWidget(MaterialApp(home:Scaffold(body:TimemachineScreen(api:api.call)))); await tester.pumpAndSettle();
@@ -626,6 +645,7 @@ void main() {
           'page': 5,
         }
       ],
+      previewHandler: (_) async => {'ok': true, 'snippet': '키워드 본문 키워드'},
     );
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: api.call))));
     await tester.pumpAndSettle();
@@ -641,6 +661,16 @@ void main() {
     await tester.pumpAndSettle();
     expect(api.calls.any((c) => c.$1 == 'preview' && c.$2['id'] == 42 && c.$2['page'] == 5), isTrue);
     expect(find.text('일치 위치 본문 미리보기'), findsOneWidget);
+
+    await tester.enterText(find.byKey(const ValueKey('tm-preview-find')), '키워드');
+    await tester.pumpAndSettle();
+    expect(find.text('1 / 2'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('tm-preview-find-next')));
+    await tester.pumpAndSettle();
+    expect(find.text('2 / 2'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('tm-preview-find-previous')));
+    await tester.pumpAndSettle();
+    expect(find.text('1 / 2'), findsOneWidget);
 
     // 더블클릭 -> open 호출
     await tester.tap(find.text('보고서.hwpx').first);
