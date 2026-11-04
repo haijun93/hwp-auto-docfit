@@ -134,6 +134,83 @@ abstract interface class LibraryApi {
   Future<void> deleteRelation(String relationId);
 }
 
+typedef LibraryBridgeCall = Future<Object?> Function(String method, List<Object?> args);
+
+/// Adapts screen models to klib's command and response schema.
+class BridgeLibraryApi implements LibraryApi {
+  BridgeLibraryApi(this._call);
+  final LibraryBridgeCall _call;
+
+  Future<Map<String, Object?>> _request(String cmd, [Map<String, Object?> args = const {}]) async {
+    final result = await _call('library', [<String, Object?>{'cmd': cmd, ...args}]);
+    if (result is! Map) throw StateError('자료함 브리지 응답 형식이 잘못되었습니다.');
+    final response = Map<String, Object?>.from(result);
+    if (response['ok'] != true) throw StateError('${response['message'] ?? '자료함 요청에 실패했습니다.'}');
+    return response;
+  }
+
+  int _id(Object? value) => int.tryParse('$value') ?? (throw FormatException('잘못된 자료함 ID: $value'));
+  String _string(Object? value) => value?.toString() ?? '';
+  LibraryItem _item(Map value) => LibraryItem(
+        id: _string(value['id']), boxId: _string(value['box_id']),
+        kind: LibraryItemKind.values.firstWhere((e) => e.name == value['kind'], orElse: () => LibraryItemKind.file),
+        title: _string(value['display_name']),
+        source: _string(value['source_path']).isEmpty ? null : _string(value['source_path']),
+        space: LibrarySpace.values.firstWhere((e) => e.name == value['space'], orElse: () => LibrarySpace.temp),
+        x: (value['x'] as num?)?.toDouble() ?? 0, y: (value['y'] as num?)?.toDouble() ?? 0,
+      );
+  LibraryRelation _relation(Map value) => LibraryRelation(
+        id: _string(value['id']), boxId: _string(value['box_id']),
+        fromItemId: _string(value['from_item']), toItemId: _string(value['to_item']),
+        label: _string(value['label']),
+      );
+
+  @override
+  Future<List<LibraryBox>> listBoxes() async => ((await _request('box_list'))['boxes'] as List)
+      .map((e) => LibraryBox(id: _string((e as Map)['id']), name: _string(e['name']))).toList();
+  @override
+  Future<LibraryBox> createBox(String name) async {
+    final r = await _request('box_create', {'name': name});
+    return LibraryBox(id: _string(r['id']), name: name.trim());
+  }
+  @override
+  Future<List<LibraryItem>> listItems(String boxId, {String query = ''}) async =>
+      ((await _request('item_search', {'box_id': _id(boxId), 'query': query}))['items'] as List)
+          .map((e) => _item(e as Map)).toList();
+  @override
+  Future<LibraryItem> addItem({required String boxId, required LibraryItemKind kind,
+    required String title, required LibrarySpace space, required double x,
+    required double y, String? source, String? text}) async {
+    final r = await _request('item_add', {'box_id': _id(boxId), 'kind': kind.name,
+      'source_path': source ?? '', 'display_name': title, 'space': space.name,
+      'x': x, 'y': y, 'content': ?text});
+    return LibraryItem(id: _string(r['id']), boxId: boxId, kind: kind, title: title,
+      space: space, x: x, y: y, source: source, text: text);
+  }
+  @override
+  Future<LibraryItem> moveItem(String itemId, {required String boxId,
+    required LibrarySpace space, required double x, required double y}) async {
+    await _request('item_move', {'id': _id(itemId), 'space': space.name, 'x': x, 'y': y});
+    return LibraryItem(id: itemId, boxId: boxId, kind: LibraryItemKind.file,
+      title: '', space: space, x: x, y: y);
+  }
+  @override
+  Future<List<LibraryRelation>> listRelations(String boxId) async =>
+      ((await _request('relation_list', {'box_id': _id(boxId)}))['relations'] as List)
+          .map((e) => _relation(e as Map)).toList();
+  @override
+  Future<LibraryRelation> addRelation(String boxId, String fromItemId, String toItemId) async {
+    final r = await _request('relation_add', {'box_id': _id(boxId),
+      'from_item': _id(fromItemId), 'to_item': _id(toItemId)});
+    return LibraryRelation(id: _string(r['id']), boxId: boxId,
+      fromItemId: fromItemId, toItemId: toItemId);
+  }
+  @override
+  Future<void> deleteRelation(String relationId) async {
+    await _request('relation_delete', {'id': _id(relationId)});
+  }
+}
+
 class InMemoryLibraryApi implements LibraryApi {
   InMemoryLibraryApi({
     List<LibraryBox>? initialBoxes,
@@ -315,4 +392,14 @@ class InMemoryLibraryApi implements LibraryApi {
   Future<void> deleteRelation(String relationId) async {
     _relations.remove(relationId);
   }
+}
+
+/// Selects the bridge only when explicitly enabled; tests keep using memory by default.
+LibraryApi createLibraryApi({
+  bool bridgeEnabled = false,
+  LibraryBridgeCall? bridgeCall,
+}) {
+  if (!bridgeEnabled) return InMemoryLibraryApi();
+  if (bridgeCall == null) throw ArgumentError('브리지 호출 함수를 지정해야 합니다.');
+  return BridgeLibraryApi(bridgeCall);
 }

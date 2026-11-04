@@ -119,6 +119,7 @@ class DesktopWebBridge:
         self._close_protocol = False
         self._close_request = None
         self._close_timer = None
+        self._library_bridge = None
 
     def _shutdown(self):
         """Tk 종료 시 대기·실행 중 요청의 호출자를 종료 오류로 해제한다."""
@@ -1984,6 +1985,18 @@ class DesktopWebBridge:
     def table_units(self, action, payload=None):
         if action != 'copy':
             return self._table_units_command(action, payload)
+
+    def library(self, request):
+        """Forward one allowlisted library JSON request when the opt-in flag is set."""
+        if os.environ.get("DOCFIT_LIBRARY_BRIDGE", "").strip().lower() not in {"1", "true", "yes", "on"}:
+            return {"ok": False, "message": "자료함 브리지가 비활성화되어 있습니다."}
+        if self._library_bridge is None:
+            from docfit_app.library_bridge import LibraryBridge
+            self._library_bridge = LibraryBridge()
+        try:
+            return self._library_bridge.request(request)
+        except Exception as exc:
+            return {"ok": False, "message": str(exc)}
         def execute():
             manager = self._jobs()
             identifier = manager.begin('table_copy', payload)
@@ -2559,7 +2572,7 @@ class _BrowserApi:
             "get_state", "add_files", "add_folder", "add_paths", "remove_file",
             "clear_files", "set_mode", "set_range", "start", "stop", "start_job", "cancel_job", "get_events",
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
-            "get_pending_dialog", "resolve_dialog", "enable_close_guard", "acknowledge_close", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch", "timemachine",
+            "get_pending_dialog", "resolve_dialog", "enable_close_guard", "acknowledge_close", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch", "timemachine", "library",
             "file_rename", "kclip", "hwp_bulk", "open_results", "next_job", "run_tool", "open_result",
             "show_result", "open_source_file", "show_source_file", "open_result_source", "open_diff", "compare_result", "launch_external_hwp_diff", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",
