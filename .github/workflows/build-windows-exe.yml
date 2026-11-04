@@ -1,0 +1,295 @@
+name: Build Windows exe
+
+on:
+  push:
+    branches:
+      - alpha
+      - release/1.74-beta.2
+      - release/1.76.0
+      - release/1.76.1
+      - release/1.76.2
+      - release/1.76.3
+      - release/1.76.4
+      - release/1.76.5
+      - release/1.77.0
+      - release/1.78.0
+      - release/1.79.0
+      - release/1.80.0
+      - release/1.80.1
+      - release/1.80.2
+      - release/1.80.3
+      - release/1.80.4
+      - release/1.80.5
+      - release/1.80.6
+      - release/1.80.7
+      - release/1.80.8
+      - release/1.80.9
+      - release/2.0.1
+      - release/2.0.2
+      - release/2.0.3
+      - release/2.0.4
+      - release/2.0.5
+      - release/2.0.6
+      - release/2.0.7
+      - release/2.0.8
+      - release/2.0.9
+      - release/2.1.0
+      - release/2.2.0
+      - release/2.2.1
+      - release/2.2.2
+      - release/2.2.3
+      - release/2.2.4
+      - release/2.2.5
+      - release/2.2.6
+      - release/2.2.7
+      - release/2.2.8
+      - release/2.2.9
+      - release/2.2.10
+      - release/2.2.11
+      - release/2.2.12
+      - release/2.2.13
+      - release/2.2.14
+      - release/2.2.15
+      - claude/affectionate-goldberg-ggln7c
+    paths-ignore:
+      - 'README.md'
+      - '.github/README.md'
+      - 'HANDOVER.md'
+      - 'releases/**'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      PYTHONIOENCODING: utf-8
+      DOCFIT_TEST_PYTHON: ${{ github.workspace }}/.venv/Scripts/python.exe
+      DOCFIT_TEST_REPO: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.14"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+
+      - name: Install build dependencies
+        run: |
+          python -m venv .venv
+          & ".\.venv\Scripts\python.exe" -m pip install --disable-pip-version-check -c constraints.txt -r "requirements.txt" pyinstaller playwright psutil
+
+      - name: Check Pillow image support
+        run: |
+          & ".\.venv\Scripts\python.exe" -c "from PIL import Image, ImageTk, ImageOps; print('Pillow', Image.__version__)"
+
+      - name: Validate source and regression tests
+        # RUNNER~1 8.3 short TEMP paths break path-equality tests; use the long runner temp.
+        env:
+          TEMP: ${{ runner.temp }}
+          TMP: ${{ runner.temp }}
+        run: |
+          & ".\.venv\Scripts\python.exe" -m py_compile "hwp-auto-docfit.py" "docfit_core/batch_format.py"
+          & ".\.venv\Scripts\python.exe" -m unittest discover -s "tests" *> "windows-tests.log"
+          $testExit = $LASTEXITCODE
+          if ($testExit -ne 0) {
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value '### Windows regression failure'
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value '```text'
+            Get-Content -LiteralPath "windows-tests.log" -Tail 200 | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value '```'
+          }
+          Get-Content -LiteralPath "windows-tests.log" -Tail 200
+          # 표준 출력이 끝에 몰려 꼬리만으로는 실패 이름이 안 보인다.
+          Select-String -LiteralPath "windows-tests.log" -Pattern '^(ERROR|FAIL): |^Ran [0-9]+ tests|^FAILED|^[A-Za-z_.]*Error: ' | ForEach-Object { $_.Line }
+          exit $testExit
+
+      - name: Publish regression diagnostics on failure
+        if: failure()
+        shell: pwsh
+        run: |
+          if (Test-Path -LiteralPath "windows-tests.log") {
+            $details = (Get-Content -LiteralPath "windows-tests.log" -Tail 160) -join "`n"
+            $escaped = $details.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error title=Windows regression details::$escaped"
+          } else {
+            Write-Output "::error title=Windows regression details::No test log produced; failure occurred before unittest started."
+          }
+
+      - name: Build embedded offline runtime
+        shell: pwsh
+        run: ./scripts/build_kordoc_runtime.ps1 -Output resources/HWP_AutoDocFit_kordoc_runtime.zip
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: stable
+          flutter-version: '3.47.9'
+          cache: true
+
+      - name: Build Flutter interface
+        shell: pwsh
+        run: ./build_flutter.ps1
+
+      - name: Build K agent (kagent.exe, Rust)
+        shell: pwsh
+        run: |
+          cargo test --release --locked --manifest-path kagent/Cargo.toml
+          cargo build --release --locked --manifest-path kagent/Cargo.toml
+          Copy-Item kagent/target/release/kagent.exe resources/kagent.exe -Force
+          (Get-FileHash resources/kagent.exe -Algorithm SHA256).Hash | Out-File -Encoding ascii resources/kagent.exe.sha256
+
+      - name: Test hierarchy core (Rust)
+        shell: pwsh
+        run: cargo test --manifest-path hierarchy/Cargo.toml
+      - name: Build klib (Rust)
+        shell: pwsh
+        run: |
+          cargo test --manifest-path klib/Cargo.toml
+          cargo build --release --manifest-path klib/Cargo.toml
+          Copy-Item klib/target/release/klib.exe resources/klib.exe -Force
+          (Get-FileHash resources/klib.exe -Algorithm SHA256).Hash | Out-File -Encoding ascii resources/klib.exe.sha256
+
+      - name: Build EXE using shared packaging specification
+        run: |
+          & ".\.venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean "HWP_AutoDocFit.spec"
+
+      - name: Build per-user Inno Setup installer
+        shell: pwsh
+        run: |
+          $compiler = Get-Command ISCC.exe -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Source
+          if (-not $compiler -and (Get-Command choco.exe -ErrorAction SilentlyContinue)) {
+            choco install innosetup --yes --no-progress
+            $compiler = Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+          }
+          if (-not $compiler) { throw 'Inno Setup 6 compiler was not found or installed.' }
+          $env:DOCFIT_VERSION = & ".\.venv\Scripts\python.exe" scripts\read_app_version.py
+          & $compiler /Qp installer\setup.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE." }
+          $setup = "dist\HWP_AutoDocFit_v$($env:DOCFIT_VERSION)_Setup.exe"
+          if (-not (Test-Path -LiteralPath $setup)) { throw "Installer was not created: $setup" }
+
+      - name: Smoke test frozen modules without GUI or COM
+        shell: pwsh
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP "docfit-self-test.json"
+          $app = ".\dist\HWP_AutoDocFit\HWP_AutoDocFit.exe"
+          $process = Start-Process -FilePath $app -ArgumentList @("--self-test", "--self-test-report", ('"' + $report + '"')) -WindowStyle Hidden -PassThru
+          if (-not $process.WaitForExit(60000)) { $process.Kill(); throw "EXE self-test timed out" }
+          if ($process.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $report)) { throw "EXE self-test failed" }
+          $result = Get-Content -Raw -LiteralPath $report | ConvertFrom-Json
+          if (-not $result.ok) { throw "EXE module imports failed" }
+
+      - name: Verify visible frozen EXE version window
+        run: |
+          & ".\.venv\Scripts\python.exe" "scripts/smoke_windows_exe.py" --exe "dist/HWP_AutoDocFit/HWP_AutoDocFit.exe" --report "dist/windows-ui-smoke.json" --embedded-runtime *> "windows-smoke.log"
+          $smokeExit = $LASTEXITCODE
+          Get-Content -LiteralPath "windows-smoke.log" -Tail 120
+          if ($smokeExit -ne 0) {
+            $details = (Get-Content -LiteralPath "windows-smoke.log" -Tail 120) -join "`n"
+            $escaped = $details.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error title=Frozen EXE OCR diagnostics::$escaped"
+          }
+          exit $smokeExit
+
+      - name: Verify Flutter content and native close on frozen EXE
+        timeout-minutes: 12
+        run: |
+          & ".\.venv\Scripts\python.exe" scripts\smoke_webview_content.py --exe dist/HWP_AutoDocFit/HWP_AutoDocFit.exe --report dist/webview-content-smoke.json
+          if ($LASTEXITCODE -ne 0) { throw 'Flutter content/native close smoke failed.' }
+          & ".\.venv\Scripts\python.exe" scripts\smoke_webview_content.py --exe dist/HWP_AutoDocFit/HWP_AutoDocFit.exe --report dist/webview-unresponsive-smoke.json --unresponsive
+          if ($LASTEXITCODE -ne 0) { throw 'Unresponsive frontend close smoke failed.' }
+
+      - name: Upload WebView smoke diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: webview-smoke-diagnostics
+          path: |
+            dist/webview-*-smoke.json
+            dist/webview-*-smoke.png
+          if-no-files-found: ignore
+
+      - name: Build smart-caching single-file portable launcher
+        shell: pwsh
+        run: |
+          $version = & ".\.venv\Scripts\python.exe" scripts\read_app_version.py
+          & ".\.venv\Scripts\python.exe" scripts\build_smart_launcher.py --version $version
+          if ($LASTEXITCODE -ne 0) { throw "Smart launcher build failed with exit code $LASTEXITCODE." }
+          if (-not (Test-Path -LiteralPath "dist\HWP_AutoDocFit.exe")) { throw 'Smart portable launcher was not created.' }
+          Copy-Item -LiteralPath "dist\HWP_AutoDocFit.exe" -Destination "dist\HWP_AutoDocFit_v${version}_Portable.exe" -Force
+
+      - name: Smoke test smart launcher self-test argument forwarding
+        shell: pwsh
+        run: |
+          # 시작 속도는 기록만 하고 빌드를 막지 않는다(2026-11-02 사용자 결정: CI 기준 폐지, 러너 속도에 좌우됨).
+          & ".\.venv\Scripts\python.exe" scripts\smoke_smart_launcher.py --report "dist/smart-launcher-startup.json" --target-cache-ms 1500 --target-splash-ms 100
+          if ($LASTEXITCODE -ne 0) { throw "Smart launcher cold/warm smoke test failed with exit code $LASTEXITCODE." }
+
+      - name: Collect runtime build evidence
+        run: Copy-Item "resources/HWP_AutoDocFit_kordoc_runtime.zip*" -Destination "dist"
+
+      - name: Upload exe artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ github.ref_name == 'alpha' && 'HWP_AutoDocFit-alpha' || 'HWP_AutoDocFit-binaries' }}
+          path: |
+            dist/HWP_AutoDocFit_v*_Portable.exe
+            dist/HWP_AutoDocFit_v*_Setup.exe
+            dist/windows-ui-smoke.json
+            dist/webview-*-smoke.json
+            dist/webview-*-smoke.png
+            dist/smart-launcher-startup.json
+            dist/HWP_AutoDocFit_kordoc_runtime.zip
+            dist/HWP_AutoDocFit_kordoc_runtime.zip.sha256
+          if-no-files-found: error
+
+      - name: Stage binary in draft release (Git objects have a 100MiB limit)
+        if: startsWith(github.ref, 'refs/heads/release/')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(".venv/Scripts/python.exe" -c "from scripts.smoke_windows_exe import version_from_source; print(version_from_source('hwp-auto-docfit.py'))")
+          TAG="v$VERSION"
+          PORTABLE="dist/HWP_AutoDocFit_v${VERSION}_Portable.exe"
+          SETUP="dist/HWP_AutoDocFit_v${VERSION}_Setup.exe"
+          test -s "$PORTABLE"
+          test -s "$SETUP"
+          if gh release view "$TAG" --json isDraft >/dev/null 2>&1; then
+            test "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = true || { echo "Published tag must not be overwritten"; exit 1; }
+            gh release edit "$TAG" --target "$GITHUB_SHA"
+          else
+            gh release create "$TAG" --draft --target "$GITHUB_SHA" --title "HWP AutoDocFit $VERSION" --notes "빌드 검증 후 게시 예정"
+          fi
+          gh release upload "$TAG" "$PORTABLE" "$SETUP" --clobber
+
+      - name: Commit build provenance and verification records
+        if: github.ref != 'refs/heads/alpha'
+        shell: bash
+        run: |
+          mkdir -p release-assets
+          VERSION=$(".venv/Scripts/python.exe" -c "from scripts.smoke_windows_exe import version_from_source; print(version_from_source('hwp-auto-docfit.py'))")
+          cp dist/windows-ui-smoke.json release-assets/windows-ui-smoke.json
+          cp dist/smart-launcher-startup.json release-assets/smart-launcher-startup.json
+          git rev-parse HEAD > release-assets/build-source.txt
+          sha256sum "dist/HWP_AutoDocFit_v${VERSION}_Portable.exe" "dist/HWP_AutoDocFit_v${VERSION}_Setup.exe" | sed 's|dist/|release-assets/|' > release-assets/SHA256SUMS
+          if [[ "$GITHUB_REF" == refs/heads/release/* ]]; then
+            printf '{"delivery":"github-draft-release","portable":true,"installer":true,"tag":"v%s","source":"%s","run":"%s"}\n' "$VERSION" "$GITHUB_SHA" "$GITHUB_RUN_ID" > release-assets/build-delivery.json
+            git rm --ignore-unmatch release-assets/HWP_AutoDocFit.exe release-assets/HWP_AutoDocFit_kordoc_runtime.zip release-assets/HWP_AutoDocFit_kordoc_runtime.zip.sha256
+          else
+            cp dist/HWP_AutoDocFit.exe release-assets/HWP_AutoDocFit.exe
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -f release-assets/windows-ui-smoke.json release-assets/smart-launcher-startup.json release-assets/build-source.txt release-assets/SHA256SUMS
+          if test -f release-assets/build-delivery.json; then git add -f release-assets/build-delivery.json; fi
+          if git diff --cached --quiet; then
+            echo "No change in built exes; skipping commit."
+          else
+            git commit -m "Update built exes from CI run ${{ github.run_id }}"
+            git push origin HEAD:${{ github.ref_name }}
+          fi
