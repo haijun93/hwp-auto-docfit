@@ -33,7 +33,7 @@ impl Value {
         }
     }
     pub fn i64(&self, key: &str) -> Option<i64> {
-        self.num(key).filter(|n| n.fract() == 0.0).map(|n| *n as i64)
+        self.num(key).filter(|n| n.fract() == 0.0).map(|n| n as i64)
     }
     pub fn bool(&self, key: &str) -> Option<bool> {
         match self.get(key) {
