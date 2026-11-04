@@ -18,7 +18,9 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
   late final TimemachineApi _api = TimemachineApi(widget.api);
   late final TimemachineThumbnailLoader _thumbnails = TimemachineThumbnailLoader(_api);
   bool _watchByAgent = false;
+  bool _developerMode = false;
   Timer? _scanPoll;
+  Timer? _developerModePoll;
   Map<String, Object?>? _settings;
   Map<String, int> _days = {};
   Map<int, int> _hourDensity = {for (var i = 0; i < 24; i++) i: 0};
@@ -72,9 +74,41 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
   static const _extensions = ['hwpx','hwp','docx','pptx','xlsx','pdf','txt'];
 
   @override
-  void initState() { super.initState(); _load(firstOpen: true); _scroll.addListener(_onScroll); }
+  void initState() { super.initState(); _load(firstOpen: true); _scroll.addListener(_onScroll); _pollDeveloperMode(); }
   @override
-  void dispose() { _debounce?.cancel(); _scanPoll?.cancel(); _contentPoll?.cancel(); _thumbnails.dispose(); _scroll.dispose(); _search.dispose(); super.dispose(); }
+  void dispose() { _debounce?.cancel(); _scanPoll?.cancel(); _developerModePoll?.cancel(); _contentPoll?.cancel(); _thumbnails.dispose(); _scroll.dispose(); _search.dispose(); super.dispose(); }
+
+  void _pollDeveloperMode() {
+    _developerModePoll?.cancel();
+    _developerModePoll = Timer(const Duration(seconds: 1), () async {
+      var enabled = false;
+      try {
+        final response = await widget.api('get_settings', const []);
+        if (response is Map && response['api_version'] == 1 && response['ok'] == true && response['data'] is Map) {
+          final values = (response['data'] as Map)['values'];
+          enabled = values is Map && values['developer_mode'] == true;
+      } else if (response is Map && response['developer_mode'] is bool) {
+        enabled = response['developer_mode'] == true;
+      }
+      } catch (_) {
+        enabled = false;
+      }
+      if (!mounted) return;
+      if (enabled != _developerMode) {
+        setState(() {
+          _developerMode = enabled;
+          if (!enabled && _contentMode) {
+            _contentMode = false;
+            _contentResults = [];
+            _selectedContentResult = null;
+            _preview = null;
+            _search.clear();
+          }
+        });
+      }
+      _pollDeveloperMode();
+    });
+  }
 
   /// 검색어와 일치하는 글자의 바탕을 노란색으로 칠한다(대소문자 무시).
   Widget _marked(String text, String query, {int? maxLines, TextStyle? style}) {
@@ -236,6 +270,7 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
 
 
   Future<void> _contentSearch(String query, {String? sort}) async {
+    if (!_developerMode) return;
     final searchRev = ++_contentSearchRevision;
     if (query.isEmpty) {
       if (mounted) {
@@ -345,6 +380,7 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
   }
 
   Future<void> _startContentIndex() async {
+    if (!_developerMode) return;
     final response = await _api.command('content_index_start');
     if (!mounted) return;
     setState(() { _contentProgress = response; _contentIndexRunning = response['running'] == true; });
@@ -366,6 +402,7 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
     if (mounted) setState(() { _contentProgress = status; _contentIndexRunning = status['running'] == true; });
   }
   void _toggleContentMode(bool value) {
+    if (value && !_developerMode) return;
     setState(() {
       _contentMode = value;
       _contentResults = [];
@@ -399,7 +436,31 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
     }
     final raw = settings['settings'];
     final loaded = raw is Map ? Map<String, Object?>.from(raw) : {'roots': [], 'time_mode':'max', 'enabled':false};
-    setState(() { _settings = loaded; _watchByAgent = status['watch'] == 'agent';
+    var developerMode = false;
+    try {
+      final appSettings = await widget.api('get_settings', const []);
+      if (appSettings is Map && appSettings['api_version'] == 1 && appSettings['ok'] == true) {
+        final settingsBody = appSettings['data'] is Map
+            ? Map<String, Object?>.from(appSettings['data'] as Map)
+            : <String, Object?>{};
+        final values = settingsBody['values'] is Map
+            ? Map<String, Object?>.from(settingsBody['values'] as Map)
+            : <String, Object?>{};
+        developerMode = values['developer_mode'] == true;
+      } else if (appSettings is Map && appSettings['developer_mode'] is bool) {
+        developerMode = appSettings['developer_mode'] == true;
+      }
+    } catch (_) {
+      developerMode = false;
+    }
+    setState(() { _settings = loaded; _developerMode = developerMode; _watchByAgent = status['watch'] == 'agent';
+      if (!developerMode && _contentMode) {
+        _contentMode = false;
+        _contentResults = [];
+        _selectedContentResult = null;
+        _preview = null;
+        _search.clear();
+      }
       if (status['ok'] != true) _error = '${status['message'] ?? '상태를 불러오지 못했습니다.'}'; });
     if (loaded['enabled'] == true) {
       // 에이전트가 없으면 앱을 열 때 증분 색인한다(사용자 결정 6). 에이전트가 있으면 폴더 설정만 맞춘다.
@@ -1281,11 +1342,17 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
       ],
     ),
   );
-  Widget _filtersBar() => Padding(padding:const EdgeInsets.fromLTRB(12,8,12,4),child:SingleChildScrollView(scrollDirection:Axis.horizontal,child:Row(children:[
+  Widget _filtersBar() => Padding(padding:const EdgeInsets.fromLTRB(12,8,12,4),child:LayoutBuilder(builder:(context, constraints){
+    final compact = constraints.maxWidth < 900;
+    final tools = <Widget>[
+      OutlinedButton.icon(onPressed:_scan,icon:const Icon(Icons.refresh),label:const Text('다시 훑기')),
+      OutlinedButton.icon(key:const ValueKey('tm-clear-thumb-cache'),onPressed:_clearThumbnailCache,icon:const Icon(Icons.delete_outline),label:const Text('썸네일 캐시 지우기')),
+      Row(mainAxisSize:MainAxisSize.min,children:[Icon(_watchByAgent?Icons.sync:Icons.hourglass_empty,size:18),const SizedBox(width:4),Text(_watchByAgent?'실시간 감시: K에이전트':'실시간 감시: 앱을 열 때만',key:const ValueKey('tm-watch-status'),style:Theme.of(context).textTheme.bodySmall)]),
+    ];
+    final children=<Widget>[
     OutlinedButton.icon(onPressed:_pickExtensions,icon:const Icon(Icons.tune,size:16),label:const Text('확장자')),
-
     for(final entry in _kinds.entries) FilterChip(label:Text(entry.key),selected:_selectedKinds.contains(entry.value),onSelected:(value){setState(()=>value?_selectedKinds.add(entry.value):_selectedKinds.remove(entry.value));_filtersChanged();if(_fileTableView && _fileSearchSupported){_runFileSearch(_search.text.trim());}}),
-    SegmentedButton<bool>(segments:const [ButtonSegment(value:false,label:Text('파일명')),ButtonSegment(value:true,label:Text('본문'))],selected:{_contentMode},onSelectionChanged:(values)=>_toggleContentMode(values.first)),
+    SegmentedButton<bool>(segments:[const ButtonSegment(value:false,label:Text('파일명')),if (_developerMode) const ButtonSegment(value:true,label:Text('본문'))],selected:{_contentMode},onSelectionChanged:(values)=>_toggleContentMode(values.first)),
     SizedBox(width:180,child:TextField(controller:_search,decoration:InputDecoration(prefixIcon:const Icon(Icons.search),hintText:_contentMode?'본문 검색':'이름 찾기',isDense:true),onChanged:(value){_debounce?.cancel();_debounce=Timer(const Duration(milliseconds:300),(){final trimmed=value.trim();if(_contentMode){_contentSearch(trimmed);}else{_query=trimmed;_filtersChanged();if(_fileTableView || _fileSearchActive){_runFileSearch(trimmed);}}});})),
     if (_contentMode)
       IconButton(
@@ -1305,10 +1372,17 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
           }
         },
       ),
-    OutlinedButton.icon(onPressed:_scan,icon:const Icon(Icons.refresh),label:const Text('다시 훑기')),
-    OutlinedButton.icon(key:const ValueKey('tm-clear-thumb-cache'),onPressed:_clearThumbnailCache,icon:const Icon(Icons.delete_outline),label:const Text('썸네일 캐시 지우기')),
-    Text(_watchByAgent ? '실시간 감시: K에이전트' : '실시간 감시: 앱을 열 때만',key:const ValueKey('tm-watch-status'),style:Theme.of(context).textTheme.bodySmall),
-  ])));
+    if(!compact)...tools,
+    ];
+    if(compact){
+      children.add(PopupMenuButton<int>(key:const ValueKey('tm-more-menu'),tooltip:'더보기',icon:const Icon(Icons.more_horiz),onSelected:(index){if(index==0)_scan();if(index==1)_clearThumbnailCache();},itemBuilder:(context)=>[
+        const PopupMenuItem(value:0,child:ListTile(leading:Icon(Icons.refresh),title:Text('다시 훑기'),contentPadding:EdgeInsets.zero)),
+        const PopupMenuItem(value:1,child:ListTile(leading:Icon(Icons.delete_outline),title:Text('썸네일 캐시 지우기'),contentPadding:EdgeInsets.zero)),
+        PopupMenuItem(value:2,enabled:false,child:ListTile(leading:Icon(_watchByAgent?Icons.sync:Icons.hourglass_empty),title:Text(_watchByAgent?'실시간 감시: K에이전트':'실시간 감시: 앱을 열 때만'),contentPadding:EdgeInsets.zero)),
+      ]));
+    }
+    return Wrap(spacing:8,runSpacing:6,alignment:WrapAlignment.start,crossAxisAlignment:WrapCrossAlignment.center,children:children);
+  }));
   Widget _calendar() {
     final first = DateTime(_month.year,_month.month,1); final offset = first.weekday%7; final cells = ((offset+DateTime(_month.year,_month.month+1,0).day+6)~/7)*7;
     final maximum = _days.values.fold<int>(0,(a,b)=>a>b?a:b);

@@ -20,6 +20,38 @@ void main() {
     expect(find.textContaining('오늘 ·'),findsOneWidget);
   });
 
+  testWidgets('개발자 모드가 꺼져 있으면 본문검색 전환을 숨긴다', (tester) async {
+    final api = _FakeApi(enabled: true, developerMode: false);
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: api.call))));
+    await tester.pumpAndSettle();
+    expect(find.text('파일명'), findsOneWidget);
+    expect(find.text('본문'), findsNothing);
+  });
+
+  testWidgets('상단 도구는 좁은 창의 더보기에서 접근할 수 있고 overflow가 없다', (tester) async {
+    final api = _FakeApi(enabled: true);
+    for (final width in [360.0, 800.0, 1400.0]) {
+      await tester.binding.setSurfaceSize(Size(width, 900));
+      await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: api.call))));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull, reason: '너비 $width');
+      if (width < 900) {
+        await tester.tap(find.byKey(const ValueKey('tm-more-menu')));
+        await tester.pumpAndSettle();
+        expect(find.text('다시 훑기'), findsWidgets);
+        expect(find.text('썸네일 캐시 지우기'), findsOneWidget);
+        await tester.tapAt(const Offset(5, 5));
+        await tester.pumpAndSettle();
+      } else {
+        expect(find.text('다시 훑기'), findsOneWidget);
+        expect(find.byKey(const ValueKey('tm-clear-thumb-cache')), findsOneWidget);
+      }
+      expect(find.text('확장자'), findsOneWidget);
+      expect(find.text('파일명'), findsOneWidget);
+    }
+    await tester.binding.setSurfaceSize(null);
+  });
+
   testWidgets('달력 날짜를 누르면 조회 기간이 바뀐다', (tester) async {
     final api=_FakeApi(enabled:true);
     await tester.pumpWidget(MaterialApp(home:Scaffold(body:TimemachineScreen(api:api.call))));
@@ -84,7 +116,7 @@ void main() {
   });
 
   testWidgets('본문 모드에서 색인하고 본문 검색 결과를 표시한다', (tester) async {
-    final api=_FakeApi(enabled:true);
+    final api=_FakeApi(enabled:true, developerMode:true);
     await tester.pumpWidget(MaterialApp(home:Scaffold(body:TimemachineScreen(api:api.call)))); await tester.pumpAndSettle();
     await tester.tap(find.text('본문')); await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField),'회의'); await tester.pump(const Duration(milliseconds:400)); await tester.pumpAndSettle();
@@ -147,9 +179,15 @@ void main() {
     final app=_FakeApi(enabled:true);
     await tester.pumpWidget(MaterialApp(home:Scaffold(body:TimemachineScreen(api:app.call)))); await tester.pumpAndSettle();
     expect(app.calls.where((call)=>call.$1=='scan').length,1);
+    await tester.tap(find.byKey(const ValueKey('tm-more-menu')));
+    await tester.pumpAndSettle();
     expect(find.text('실시간 감시: 앱을 열 때만'),findsOneWidget);
+    await tester.tapAt(const Offset(5,5));
+    await tester.pumpAndSettle();
     final agent=_FakeApi(enabled:true,scanBy:'agent');
     await tester.pumpWidget(MaterialApp(home:Scaffold(body:TimemachineScreen(key:UniqueKey(),api:agent.call)))); await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('tm-more-menu')));
+    await tester.pumpAndSettle();
     expect(find.text('실시간 감시: K에이전트'),findsOneWidget);
   });
 
@@ -350,10 +388,10 @@ void main() {
     await tester.pumpAndSettle();
 
     final clearBtn = find.byKey(const ValueKey('tm-clear-thumb-cache'));
-    expect(clearBtn, findsOneWidget);
-    await tester.ensureVisible(clearBtn);
+    expect(clearBtn, findsNothing);
+    await tester.tap(find.byKey(const ValueKey('tm-more-menu')));
     await tester.pumpAndSettle();
-    await tester.tap(clearBtn);
+    await tester.tap(find.text('썸네일 캐시 지우기'));
     await tester.pumpAndSettle();
 
     expect(api.calls.any((c) => c.$1 == 'thumbnail_cache_clear'), true);
@@ -860,9 +898,10 @@ class _FakeApi {
     this.previewHandler,
     this.fileSearchResults,
     this.fileSearchSupported = true,
+    this.developerMode = true,
   });
 
-  final bool enabled, cloud, scanRunning;
+  final bool enabled, cloud, scanRunning, developerMode;
   final Object? thumbnail;
   final int itemCount;
   final List<Map<String, Object?>>? items;
@@ -877,6 +916,7 @@ class _FakeApi {
   final List<(String, Map<String, Object?>)> calls = [];
 
   Future<Object?> call(String method, List<Object?> args) async {
+    if (method == 'get_settings') return {'api_version':1,'ok':true,'data':{'values':{'developer_mode':developerMode}}, 'developer_mode':developerMode};
     if (method != 'timemachine') return {'ok': true};
     final action = args[0] as String;
     final payload = Map<String, Object?>.from(args.length > 1 ? args[1] as Map : {});

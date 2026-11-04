@@ -31,7 +31,8 @@ ALLOWED_FEATURES = frozenset(("rename_batch", "convert", "document_edit"))
 
 class TimemachineService:
     def __init__(self, settings_root, *, db_path=None, agent=None, opener=None,
-                 revealer=None, scanner=scan_roots, thumb_dir=None, feature_api=None):
+                 revealer=None, scanner=scan_roots, thumb_dir=None, feature_api=None,
+                 developer_mode=None):
         self.settings_root = Path(settings_root)
         self.settings_path = self.settings_root / "timemachine.json"
         self.store = Store(db_path or data_dir() / "timeline.db")
@@ -43,6 +44,7 @@ class TimemachineService:
         self.scanner = scanner
         self.thumbnails = thumbs.ThumbnailCache(thumb_dir or data_dir() / "thumbs")
         self.feature_api = feature_api
+        self.developer_mode = developer_mode or (lambda: False)
         self._pdf_child_target = None
         self._thumbnail_slots = threading.BoundedSemaphore(THUMBNAIL_SLOTS)
         self._settings_lock = threading.RLock()
@@ -275,6 +277,12 @@ class TimemachineService:
     def _error(code, message):
         return {"ok": False, "code": code, "message": message}
 
+    def _require_developer_mode(self):
+        enabled = bool(self.developer_mode()) if callable(self.developer_mode) else False
+        if not enabled:
+            return self._error("DEVELOPER_MODE_REQUIRED", "본문검색은 개발자 모드에서만 사용할 수 있습니다.")
+        return None
+
     def _agent_running(self):
         return bool(self.agent.running())
 
@@ -425,6 +433,12 @@ class TimemachineService:
             self._content_thread.start()
 
     def _command(self, action, payload):
+        if action in {"content_index", "content_index_all", "content_index_start",
+                      "content_index_status", "content_index_progress", "content_index_cancel",
+                      "content_search", "content_preview"}:
+            denied = self._require_developer_mode()
+            if denied is not None:
+                return denied
         if action == "status":
             return self._status()
         if action == "settings_get" or (action == "settings" and not payload):

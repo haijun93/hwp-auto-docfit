@@ -57,7 +57,9 @@ class TimemachineServiceTests(unittest.TestCase):
         self.opened, self.revealed = [], []
         self.service = TimemachineService(self.settings, db_path=Path(self.temp.name) / "timeline.db",
             agent=self.agent, opener=self.opened.append, revealer=self.revealed.append,
-            scanner=stub_scanner, thumb_dir=Path(self.temp.name) / "thumbs")
+            scanner=stub_scanner, thumb_dir=Path(self.temp.name) / "thumbs",
+            developer_mode=lambda: getattr(self, "developer_mode", True))
+        self.developer_mode = False
 
     def tearDown(self):
         self.service.close()
@@ -73,7 +75,28 @@ class TimemachineServiceTests(unittest.TestCase):
         self.assertIsInstance(settings["roots"], list)
         self.assertFalse(self.service.command("status")["enabled"])
 
+    def test_content_search_and_index_require_developer_mode(self):
+        denied = self.service.command("content_search", {"query": "금지"})
+        self.assertFalse(denied["ok"])
+        self.assertEqual(denied["code"], "DEVELOPER_MODE_REQUIRED")
+        self.assertIn("개발자 모드", denied["message"])
+        self.assertEqual(self.service.command("content_index_start")["code"], "DEVELOPER_MODE_REQUIRED")
+
+        self.developer_mode = True
+        self.enable()
+        document = self.root / "허용.txt"
+        document.write_text("허용 검색어", encoding="utf-8")
+        self.assertTrue(self.service.command("content_index", {"path": str(document)})["ok"])
+        result = self.service.command("content_search", {"query": "허용 검색어"})
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["items"][0]["name"], document.name)
+
+    def test_file_name_search_is_available_without_developer_mode(self):
+        result = self.service.command("file_search", {"query": "보고서"})
+        self.assertTrue(result["ok"])
+
     def test_content_index_requires_active_root_and_searches_local_text(self):
+        self.developer_mode = True
         self.enable()
         document = self.root / "내용.txt"
         document.write_text("서비스 본문 키워드", encoding="utf-8")
@@ -97,6 +120,7 @@ class TimemachineServiceTests(unittest.TestCase):
         self.assertFalse(self.service.command("content_index", {"path": str(junk)})["ok"])
 
     def test_content_search_defaults_to_hierarchy_relevance(self):
+        self.developer_mode = True
         self.enable()
         from tests.test_timemachine_content_search import write_hwpx_paragraphs
         doc_sq = self.root / "square.hwpx"
@@ -116,6 +140,7 @@ class TimemachineServiceTests(unittest.TestCase):
         self.assertEqual(res["items"][1]["relevance_rank"], 2)
 
     def test_content_search_preserves_explicit_user_sort(self):
+        self.developer_mode = True
         self.enable()
         from tests.test_timemachine_content_search import write_hwpx_paragraphs
         doc_sq = self.root / "square.hwpx"
@@ -130,6 +155,7 @@ class TimemachineServiceTests(unittest.TestCase):
         self.assertEqual(res["items"][0]["file_name"], doc_body.name)
 
     def test_content_search_returns_public_fields_without_internal_sort_keys(self):
+        self.developer_mode = True
         self.enable()
         doc = self.root / "public_fields.txt"
         doc.write_text("필드 검증 텍스트", encoding="utf-8")
@@ -143,6 +169,7 @@ class TimemachineServiceTests(unittest.TestCase):
             self.assertNotIn(internal, item)
 
     def test_needs_reindex_count_drops_after_background_index(self):
+        self.developer_mode = True
         self.enable()
         p1 = self.root / "old1.txt"
         p2 = self.root / "old2.txt"
@@ -170,6 +197,7 @@ class TimemachineServiceTests(unittest.TestCase):
         self.assertNotIn(p2.name, names)
 
     def test_explicit_sort_is_forwarded_unchanged(self):
+        self.developer_mode = True
         self.enable()
         doc = self.root / "forward.txt"
         doc.write_text("전달 확인 텍스트", encoding="utf-8")
@@ -182,6 +210,7 @@ class TimemachineServiceTests(unittest.TestCase):
             self.assertEqual(kwargs.get("sort"), "mentions")
 
     def test_background_content_index_progress_and_cancel(self):
+        self.developer_mode = True
         (self.root / "one.txt").write_text("한글 색인", encoding="utf-8")
         (self.root / "two.txt").write_text("두 번째", encoding="utf-8")
         junk = self.root / "#IEeEE'.txt"
@@ -201,6 +230,7 @@ class TimemachineServiceTests(unittest.TestCase):
         self.assertEqual(self.service.command("content_search", {"query":"비정상"})["items"], [])
 
     def test_content_index_cancel_during_refresh_keeps_unvisited_entries(self):
+        self.developer_mode = True
         self.enable()
         files = [self.root / f"{name}.txt" for name in ("one", "two")]
         for file in files:
@@ -222,6 +252,7 @@ class TimemachineServiceTests(unittest.TestCase):
         self.assertEqual(len(self.service.command("content_search", {"query": "보존 문서"})["items"]), 2)
 
     def test_content_index_refresh_is_single_flight(self):
+        self.developer_mode = True
         self.enable()
         file = self.root / "one.txt"
         file.write_text("갱신", encoding="utf-8")
@@ -242,6 +273,7 @@ class TimemachineServiceTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
 
     def test_refresh_removes_index_for_removed_root(self):
+        self.developer_mode = True
         second = Path(self.temp.name) / "추가"; second.mkdir()
         self.enable([self.root, second])
         file = self.root / "old.txt"; file.write_text("제거 조사 폴더", encoding="utf-8")
@@ -253,6 +285,7 @@ class TimemachineServiceTests(unittest.TestCase):
         self.assertEqual(self.service.command("content_search", {"query": "제거 조사 폴더"})["items"], [])
 
     def test_refresh_removes_entries_for_extensions_no_longer_enabled(self):
+        self.developer_mode = True
         self.enable()
         file = self.root / "old.txt"; file.write_text("확장자 제외", encoding="utf-8")
         self.service.command("content_index", {"path": str(file)})
@@ -262,6 +295,7 @@ class TimemachineServiceTests(unittest.TestCase):
         self.assertEqual(self.service.command("content_search", {"query": "확장자 제외"})["items"], [])
 
     def test_refresh_missing_root_preserves_indexed_documents(self):
+        self.developer_mode = True
         offline_root = Path(self.temp.name) / "오프라인"; offline_root.mkdir()
         self.enable([offline_root])
         file = offline_root / "offline.txt"; file.write_text("오프라인 보존", encoding="utf-8")
@@ -277,6 +311,7 @@ class TimemachineServiceTests(unittest.TestCase):
             offline_root.mkdir()
 
     def test_refresh_during_close_cancels_and_joins_worker(self):
+        self.developer_mode = True
         self.enable()
         file = self.root / "blocked.txt"; file.write_text("종료 갱신", encoding="utf-8")
         self.service.command("content_index", {"path": str(file)})
@@ -298,6 +333,7 @@ class TimemachineServiceTests(unittest.TestCase):
         self.assertFalse(self.service._content_thread.is_alive())
 
     def test_scan_refreshes_only_existing_content_index_and_removes_deleted(self):
+        self.developer_mode = True
         self.enable()
         original = self.root / "original.txt"
         original.write_text("오래된 본문", encoding="utf-8")
@@ -327,6 +363,7 @@ class TimemachineServiceTests(unittest.TestCase):
         self.assertEqual(self.service.command("content_search", {"query": "삭제할 본문"})["items"], [])
 
     def test_scan_does_not_start_full_content_index_without_user_request(self):
+        self.developer_mode = True
         (self.root / "unrequested.txt").write_text("자동 전체 색인 금지", encoding="utf-8")
         self.enable()
         self.service.scanner = lambda *a, **k: StubResult()
@@ -336,6 +373,7 @@ class TimemachineServiceTests(unittest.TestCase):
         self.assertEqual(self.service.command("content_search", {"query": "자동 전체 색인 금지"})["items"], [])
 
     def test_close_cancels_and_joins_content_index(self):
+        self.developer_mode = True
         self.enable()
         entered, release = threading.Event(), threading.Event()
         original = self.service.content_index.index_file
