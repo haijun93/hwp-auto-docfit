@@ -2449,7 +2449,7 @@ class DesktopWebBridge:
     def set_drop_target(self, target):
         """끌어 놓은 파일을 넣을 곳을 바꾼다: documents(문서 목록) 또는 format(예시 서식 복제)."""
         if target not in ("documents", "manual_documents", "format", "quick_format", "sketch_image", "paint_image",
-                          "rename_files"):
+                          "rename_files", "kclip"):
             raise ValueError("지원하지 않는 놓기 대상입니다.")
         self.drop_target = target
         if target == "format":   # 서식 관리 창을 열 때 서식예시 폴더에 새로 넣은 예시를 찾아 등록한다
@@ -2458,7 +2458,8 @@ class DesktopWebBridge:
                 self._tk(detect)
         window = self.window
         if window is not None and hasattr(window, "run_js"):
-            text = ("여기에 놓으면 이 보고서의 서식을 복제합니다" if target == "format"
+            text = ("여기에 놓으면 몽땅클립보드 항목으로 추가합니다" if target == "kclip"
+                    else "여기에 놓으면 이 보고서의 서식을 복제합니다" if target == "format"
                     else "표 칸 위에 놓으면 칸 배경 그림으로 넣습니다" if target == "sketch_image"
                     else "여기에 놓으면 그림판 배경 사진으로 넣습니다" if target == "paint_image"
                     else "여기에 파일을 놓으면 이름 목록에 추가됩니다" if target == "rename_files"
@@ -2497,6 +2498,10 @@ class DesktopWebBridge:
 
     def receive_drop(self, paths, client_x=None, client_y=None):
         """창에 끌어 놓은 파일: '서식 관리' 창이 열려 있으면 예시 서식 복제, 아니면 문서 목록에 추가."""
+        if self.drop_target == "kclip":
+            result = self._kclip_service().command("add_files", {"paths": list(paths or [])[:100]})
+            message = result.get("message") or f"{len(paths or [])}개 항목을 몽땅클립보드에 추가했습니다."
+            return self._with_notice(message)
         if self.drop_target == "format":
             return self.add_format_paths(paths)
         if self.drop_target == "sketch_image":
