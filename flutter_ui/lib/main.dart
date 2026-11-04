@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show kIsWeb, listEquals;
-import 'package:flutter/services.dart' show MethodChannel;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -389,9 +388,9 @@ Future<void> _showNewDocument(BuildContext context, ApiCall api) async {
       ? const Text('등록된 HWPX 서식이 없습니다.')
       : ListView(shrinkWrap: true, children: [for (final raw in items)
           ListTile(title: Text('${(raw as Map)['name'] ?? '서식'}'), subtitle: const Text('사본을 만들어 한/글에서 엽니다.'),
-            leading: (raw as Map)['preview'] is String
+            leading: raw['preview'] is String
               ? Image.file(File(raw['preview'] as String), width: 52, height: 64, fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => const Icon(Icons.description_outlined))
+                  errorBuilder: (_, _, _) => const Icon(Icons.description_outlined))
               : const Icon(Icons.description_outlined), onTap: () async {
               Navigator.pop(dialogContext);
               final opened = await api('new_document', ['create', {'id': raw['id']}]);

@@ -323,6 +323,7 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
     }
   }
 
+  // ignore: unused_element
   Future<void> _exportMarkdown() async {
     try {
       final response = await _api.command('content_export_markdown', {'query': _search.text.trim()});
@@ -334,6 +335,7 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
     }
   }
 
+  // ignore: unused_element
   void _movePreviewFind(int direction) {
     final body = '${_preview?['snippet'] ?? _selectedContentResult?.snippet ?? ''}'.toLowerCase();
     final term = _previewFind.text.trim().toLowerCase();

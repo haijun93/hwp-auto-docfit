@@ -219,7 +219,6 @@ void main() {
       if (method == 'set_drop_target') return {'ok': true};
       if (method != 'kclip') return {'ok': true};
       final action = args[0] as String;
-      final payload = Map<String, Object?>.from(args[1] as Map);
       switch (action) {
         case 'status':
           return {'ok': true, 'running': true, 'available': true, 'status': {}};

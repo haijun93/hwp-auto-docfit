@@ -74,8 +74,9 @@ class _KClipPanelState extends State<KClipPanel> {
     final map = response is Map
         ? response
         : {'ok': false, 'message': '올바르지 않은 응답입니다.'};
-    if (map['ok'] == false && mounted)
+    if (map['ok'] == false && mounted) {
       setState(() => message = '${map['message'] ?? ''}');
+    }
     return map;
   }
 
@@ -154,11 +155,12 @@ class _KClipPanelState extends State<KClipPanel> {
               : Future.value(null),
           builder: (context, snapshot) {
             if (item['kind'] == 'image') {
-              if (snapshot.connectionState != ConnectionState.done)
+              if (snapshot.connectionState != ConnectionState.done) {
                 return const SizedBox(
                   height: 160,
                   child: Center(child: CircularProgressIndicator()),
                 );
+              }
               return snapshot.data == null
                   ? const Text('그림을 불러오지 못했습니다.')
                   : Image.memory(snapshot.data!, fit: BoxFit.contain);
@@ -181,8 +183,9 @@ class _KClipPanelState extends State<KClipPanel> {
     setState(() => busy = true);
     try {
       final result = await _call(action, payload);
-      if (result['ok'] != false && done != null && mounted)
+      if (result['ok'] != false && done != null && mounted) {
         setState(() => message = done);
+      }
       await _reload();
     } finally {
       if (mounted) setState(() => busy = false);
