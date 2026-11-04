@@ -423,6 +423,13 @@ class DesktopWebBridge:
         service = self._tk(lambda: self.gui._업데이트_서비스())
         return {"ok": service.open_download_page()}
 
+    def _setting_flag(self, name):
+        # 설정 서비스가 없는 환경(시험용 가짜 GUI 등)에서는 꺼짐으로 본다.
+        try:
+            return bool(self.gui._준말_서비스().settings.read().get(name, False))
+        except Exception:
+            return False
+
     def get_state(self):
         # 파일명 서비스를 처음 만들 때 Tk 호출을 기다리므로 Tk 스레드 밖에서 처리한다.
         rename_open = self._drain_rename_paths()
@@ -495,8 +502,8 @@ class DesktopWebBridge:
                 "drop_target": self.drop_target,
                 "rename_open": rename_open,
                 "sidebar_collapsed": self._sidebar_collapsed_value(),
-                "developer_mode": bool(self.gui._준말_서비스().settings.read().get('developer_mode', False)),
-                "always_on_top": bool(self.gui._준말_서비스().settings.read().get('always_on_top', False)),
+                "developer_mode": self._setting_flag('developer_mode'),
+                "always_on_top": self._setting_flag('always_on_top'),
                 "sidebar_mode": self.sidebar_active,
                 "document_drop_revision": self._document_drop_revision,
                 "options": {
