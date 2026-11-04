@@ -21,6 +21,28 @@ HP = "{http://www.hancom.co.kr/hwpml/2011/paragraph}"
 
 
 class TableCatalogTests(unittest.TestCase):
+    def test_new_old_comparison_arrow_preview_applies_hwp_rotation_and_flip(self):
+        import base64
+        from io import BytesIO
+        from PIL import Image
+
+        record = next(item for item in _scan(default_catalog_path())
+                      if item["name"] == "신구대조표 · 모양 1")
+        shape = next(shape for row in record["cell_meta"] for cell in row
+                     for shape in cell.get("shapes", []) if shape.get("src"))
+        image_data = base64.b64decode(shape["src"].split(",", 1)[1])
+        with Image.open(BytesIO(image_data)) as image:
+            oriented = image.convert("RGBA")
+        self.assertEqual(oriented.size, (56, 278))
+        width, height = oriented.size
+        alpha_by_column = [
+            sum(oriented.getpixel((x, y))[3] for y in range(height))
+            for x in range(width)
+        ]
+        left_mass = sum(alpha_by_column[:width // 4])
+        right_mass = sum(alpha_by_column[-width // 4:])
+        self.assertGreater(right_mass, left_mass, "화살표 이미지가 오른쪽을 향해야 합니다")
+
     def test_embedded_catalog_has_named_groups_and_all_table_shapes(self):
         catalog = list_catalog()
         self.assertEqual(catalog["category_count"], 16)

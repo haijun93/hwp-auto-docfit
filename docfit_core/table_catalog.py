@@ -299,7 +299,7 @@ def _cell_shapes(cell, width, height, header_info, align):
                 "text": " ".join(n.text or "" for n in drawing.iter(_HP + "t"))}
         img = next((n for n in drawing.iter() if _tag(n) == "img"), None)
         if img is not None and img.get("binaryItemIDRef") in images:
-            item["src"] = images[img.get("binaryItemIDRef")]
+            item["src"] = _orient_picture_data(images[img.get("binaryItemIDRef")], drawing)
         shapes.append(item)
     # Background images (e.g. 신구대조표's arrow) are not hp:pic objects.
     background = (header_info or {}).get("borders", {}).get(cell.get("borderFillIDRef"), {}).get("image")
@@ -310,6 +310,44 @@ def _cell_shapes(cell, width, height, header_info, align):
             item["src"] = images[background]
         shapes.insert(0, item)
     return shapes
+
+
+def _orient_picture_data(data_url: str, drawing) -> str:
+    """미리보기 이미지에 HWP 그림 개체의 회전·좌우/상하 뒤집기를 적용한다.
+
+    HWPX는 그림 픽셀과 개체 회전값을 따로 저장한다. 이미지만 표시하는 미리보기
+    레이어가 회전값을 놓치면 신구대조표의 오른쪽 화살표가 위쪽을 향해 보인다.
+    """
+    rotation = drawing.find(_HP + "rotationInfo")
+    flip = drawing.find(_HP + "flip")
+    if rotation is None and flip is None:
+        return data_url
+    try:
+        angle = float(rotation.get("angle", 0)) if rotation is not None else 0.0
+        horizontal = flip is not None and flip.get("horizontal") == "1"
+        vertical = flip is not None and flip.get("vertical") == "1"
+        if angle % 360 == 0 and not horizontal and not vertical:
+            return data_url
+        import base64
+        from io import BytesIO
+        from PIL import Image, ImageOps
+
+        encoded = data_url.split(",", 1)[1]
+        with Image.open(BytesIO(base64.b64decode(encoded))) as source:
+            image = source.convert("RGBA")
+        # HWPX의 각도는 시계 방향이다. Pillow의 양수 회전은 반시계 방향.
+        if angle % 360:
+            image = image.rotate(-angle, expand=True, resample=Image.Resampling.BICUBIC)
+        if horizontal:
+            image = ImageOps.mirror(image)
+        if vertical:
+            image = ImageOps.flip(image)
+        output = BytesIO()
+        image.save(output, format="PNG")
+        return "data:image/png;base64," + base64.b64encode(output.getvalue()).decode("ascii")
+    except Exception:
+        # 잘못된 선택 효과나 손상 이미지 때문에 표 카탈로그 로딩 전체를 막지 않는다.
+        return data_url
 
 
 def _cell_meta(cell, fallback_row: int, fallback_col: int, text: str, header_info: dict | None) -> dict:
