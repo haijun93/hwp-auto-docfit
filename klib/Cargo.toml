@@ -17,6 +17,9 @@ windows-sys = { version = "0.59", features = [
     "Win32_System_Pipes",
     "Win32_System_Threading",
 ] }
+tantivy = "=0.22.1"
+md5 = "0.7"
+regex = "1"
 
 [profile.release]
 opt-level = 3
