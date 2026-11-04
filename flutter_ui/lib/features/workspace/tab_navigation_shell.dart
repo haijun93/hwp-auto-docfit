@@ -71,6 +71,7 @@ class TabNavigationShell extends StatefulWidget {
     this.tabRequest,
     this.hiddenTabs = kDefaultHiddenTabs,
     this.developerMode = false,
+    this.libraryScreen,
   }) : assert(initialIndex >= 0 && initialIndex < kTabCount);
 
   final Widget documentEditor;
@@ -91,6 +92,7 @@ class TabNavigationShell extends StatefulWidget {
   /// 메뉴에 보이지 않고 화면도 만들지 않는 탭.
   final Set<int> hiddenTabs;
   final bool developerMode;
+  final Widget? libraryScreen;
   final ValueChanged<int>? onTabChanged;
 
   /// 왼쪽 메뉴 아래쪽의 앱 전체 메뉴(사용 방법·작업 로그·설정 등).
@@ -241,6 +243,7 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
                     hiddenTabs: widget.hiddenTabs,
                     scrollController: _tabScrollController,
                     trailing: widget.trailing,
+                    libraryScreen: widget.libraryScreen,
                     expanded: expanded,
                     onToggleExpanded: _toggleSidebar,
                     developerMode: widget.developerMode,
@@ -259,6 +262,7 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
                           labels: _labels, icons: _icons, selectedIndex: _index, onSelected: _select,
                           hiddenTabs: widget.hiddenTabs, scrollController: _tabScrollController,
                           trailing: widget.trailing, expanded: true, onToggleExpanded: _toggleSidebar,
+                          libraryScreen: widget.libraryScreen,
                           developerMode: widget.developerMode,
                           onSidebarModeChanged: _setSidebarOnly,
                           sidebarOnly: _sidebarOnly,
@@ -311,6 +315,7 @@ class WorkspaceTabBar extends StatelessWidget {
     this.onSidebarModeChanged,
     this.sidebarOnly = false,
     this.onAlwaysOnTop,
+    this.libraryScreen,
   });
 
   final Set<int> hiddenTabs;
@@ -326,6 +331,7 @@ class WorkspaceTabBar extends StatelessWidget {
   final ValueChanged<bool>? onSidebarModeChanged;
   final bool sidebarOnly;
   final VoidCallback? onAlwaysOnTop;
+  final Widget? libraryScreen;
 
   @override
   Widget build(BuildContext context) {
@@ -368,6 +374,18 @@ class WorkspaceTabBar extends StatelessWidget {
                         expanded: expanded,
                         onTap: () => onSelected(i),
                       ),
+                  if (developerMode && libraryScreen != null)
+                    _TabPill(
+                      key: const ValueKey('library-open'),
+                      label: '자료함',
+                      icon: Icons.dashboard_customize_outlined,
+                      selected: false,
+                      color: color,
+                      expanded: expanded,
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                        builder: (_) => libraryScreen!,
+                      )),
+                    ),
                 ],
               ),
             ),

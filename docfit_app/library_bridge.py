@@ -25,7 +25,13 @@ class LibraryBridge:
                  connector=None, popen=None, retries=8, retry_delay=0.05):
         self.pipe_name = pipe_name or _current_user_pipe_name()
         base = Path(getattr(__import__("sys"), "_MEIPASS", Path(__file__).resolve().parent.parent))
-        self.executable = Path(executable) if executable else base / "resources" / "klib.exe"
+        repository = Path(__file__).resolve().parent.parent
+        if executable:
+            self.executable = Path(executable)
+        else:
+            packaged = base / "resources" / "klib.exe"
+            development = repository / "klib" / "target" / "release" / "klib.exe"
+            self.executable = packaged if packaged.is_file() else development
         self.test_root = test_root if test_root is not None else os.environ.get("KLIB_TEST_ROOT")
         self.connector = connector or _open_pipe
         self.popen = popen or subprocess.Popen

@@ -1,4 +1,4 @@
-"""Tk 湲곕컲 臾몄꽌 泥섎━ 湲곕뒫??諛섏쓳??WebView ?붾㈃???곌껐?쒕떎."""
+"""Tk 기반 문서 처리 기능을 반응형 WebView 화면에 연결한다."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ from docfit_core.file_conversion import HANCOM_PDF_DIRECT, IMAGE_FORMATS, SAME_F
 
 _TABLE_UNITS_COM_LOCK = threading.Lock()
 
-# ?붾㈃?먯꽌 諛붾줈 耳쒓퀬 ?꾨뒗 怨듯넻 ?ㅼ젙(?대쫫 ???깆쓽 Tk 蹂???띿꽦). 媛믪쓣 諛붽씀硫??깆씠 ?ㅼ젙 ?뚯씪????ν븳??
+# 화면에서 바로 켜고 끄는 공통 설정(이름 → 앱의 Tk 변수 속성). 값을 바꾸면 앱이 설정 파일에 저장한다.
 def _format_coverage(analysis):
     try:
         from docfit_core.format_elements import coverage
@@ -50,7 +50,7 @@ QUICK_OPTIONS = {
 
 
 def _profile_trace(message):
-    """?쒖떇 ?좏깮 ?묐룞 湲곕줉: DOCFIT_PROFILE_TRACE???뚯씪 寃쎈줈媛 ?덉쓣 ?뚮쭔 ?④릿???ъ슜???쒗뿕??."""
+    """서식 선택 작동 기록: DOCFIT_PROFILE_TRACE에 파일 경로가 있을 때만 남긴다(사용자 시험용)."""
     target = os.environ.get("DOCFIT_PROFILE_TRACE")
     if not target:
         return
@@ -63,10 +63,10 @@ def _profile_trace(message):
 
 
 class PendingGui:
-    """Tk ?붾㈃??留뚮뱶???숈븞 癒쇱? ??李쎌쓣 ?꾩슦湲??꾪븳 ?由?媛앹껜(2.0.5 ?쒖옉 ?띾룄).
+    """Tk 화면을 만드는 동안 먼저 웹 창을 띄우기 위한 대리 객체(2.0.5 시작 속도).
 
-    ?④릿 Tk ?붾㈃(HwpAutoDocFitGUI)??留뚮뱶????1~2珥덇? 嫄몃젮 ??李쎌씠 洹몃쭔????쾶 ?대떎. ??李쎌? 諛붾줈 留뚮뱾怨?
-    ?붾㈃ ?붿껌(釉뚮━吏 ?몄텧)? Tk 以鍮꾧? ?앸궇 ?뚭퉴吏 湲곕떎?몃떎媛 ?ㅼ젣 ?붾㈃?쇰줈 ?섍릿??"""
+    숨긴 Tk 화면(HwpAutoDocFitGUI)을 만드는 데 1~2초가 걸려 웹 창이 그만큼 늦게 떴다. 웹 창은 바로 만들고,
+    화면 요청(브리지 호출)은 Tk 준비가 끝날 때까지 기다렸다가 실제 화면으로 넘긴다."""
 
     def __init__(self, ready: threading.Event, holder: dict, timeout: float = 30.0):
         object.__setattr__(self, "_ready", ready)
@@ -75,9 +75,9 @@ class PendingGui:
 
     def resolve(self):
         if not self._ready.wait(self._timeout):
-            raise RuntimeError("???명꽣?섏씠?ㅻ? ?쒖옉?섏? 紐삵뻽?듬땲??")
-        if "?ㅻ쪟" in self._holder:
-            raise RuntimeError("???명꽣?섏씠?ㅻ? ?쒖옉?섏? 紐삵뻽?듬땲??") from self._holder["?ㅻ쪟"]
+            raise RuntimeError("앱 인터페이스를 시작하지 못했습니다.")
+        if "오류" in self._holder:
+            raise RuntimeError("앱 인터페이스를 시작하지 못했습니다.") from self._holder["오류"]
         return self._holder["gui"]
 
     def __getattr__(self, name):
@@ -92,7 +92,7 @@ def _real_gui(gui):
 
 
 class DesktopWebBridge:
-    """WebView?먯꽌 ?몄텧?섎뒗 API. 紐⑤뱺 Tk ?묎렐? Tk ?대깽??猷⑦봽???꾩엫?쒕떎."""
+    """WebView에서 호출하는 API. 모든 Tk 접근은 Tk 이벤트 루프에 위임한다."""
 
     def __init__(self, gui):
         self.gui = gui
@@ -102,11 +102,11 @@ class DesktopWebBridge:
         self.sidebar_controller = None
         self.sidebar_active = False
         self.tk_stopped = None
-        # ?ъ슜?먭? ??李쎌쓣 ?レ븘 醫낅즺?섎뒗 以묒씤吏. ?대븣??李쎌씠 ?ㅼ뒪濡??ロ엳誘濡?
-        # 醫낅즺 媛먯떆 ?ㅻ젅?쒓? destroy()瑜??ㅼ떆 遺瑜대㈃ ???쒕떎(pywebview ?댁쨷 ?ロ옒 ?ㅻ쪟).
+        # 사용자가 웹 창을 닫아 종료하는 중인지. 이때는 창이 스스로 닫히므로
+        # 종료 감시 스레드가 destroy()를 다시 부르면 안 된다(pywebview 이중 닫힘 오류).
         self.user_closing = False
-        # 李쎌뿉 ?뚯뼱 ?볦? ?뚯씪???대뵒???ｌ쓣吏: documents(?뺣━??臾몄꽌 紐⑸줉) ?먮뒗 format(?덉떆 ?쒖떇 蹂듭젣).
-        # ?붾㈃??'?쒖떇 愿由? 李쎌씠 ?대젮 ?덈뒗 ?숈븞 format?대떎.
+        # 창에 끌어 놓은 파일을 어디에 넣을지: documents(정리할 문서 목록) 또는 format(예시 서식 복제).
+        # 화면의 '서식 관리' 창이 열려 있는 동안 format이다.
         self.drop_target = "documents"
         self._document_drop_revision = 0
         self._request_lock = threading.Lock()
@@ -121,10 +121,9 @@ class DesktopWebBridge:
         self._close_protocol = False
         self._close_request = None
         self._close_timer = None
-        self._library_bridge = None
 
     def _shutdown(self):
-        """Tk 醫낅즺 ???湲걔룹떎??以??붿껌???몄텧?먮? 醫낅즺 ?ㅻ쪟濡??댁젣?쒕떎."""
+        """Tk 종료 시 대기·실행 중 요청의 호출자를 종료 오류로 해제한다."""
         with self._close_lock:
             self._cancel_close_timer()
         manager = getattr(self.gui, '_job_manager', None)
@@ -138,7 +137,7 @@ class DesktopWebBridge:
                 self.tk_stopped.set()
             for request in self._requests:
                 if not request.done():
-                    request.set_exception(RuntimeError("?깆씠 醫낅즺 以묒엯?덈떎."))
+                    request.set_exception(RuntimeError("앱이 종료 중입니다."))
             self._requests.clear()
 
     def _ux(self):
@@ -162,13 +161,13 @@ class DesktopWebBridge:
             ux.user_overrode_mode = False
         elif not ux.user_overrode_mode and not self.gui.running:
             mode = ux.doc_hints["recommended_mode"]
-            self._page_fit_card = False  # ?ㅻⅨ 移대뱶瑜?怨좊Ⅴ硫??섏씠吏 留욎땄 移대뱶 ?댁젣
+            self._page_fit_card = False  # 다른 카드를 고르면 페이지 맞춤 카드 해제
             self.gui.selected_mode.set("format" if mode == "all" and not self._include_spacing() else mode)
             self._mode_selected()
             self.gui.status_var.set(ux.doc_hints["reason"])
 
     def _zero_click_snapshot(self):
-        # 臾몄꽌 異붽???紐⑸줉 ?깅줉留??쒕떎. ?묒뾽? ?ъ슜?먭? 吏곸젒 ?쒖옉?쒕떎.
+        # 문서 추가는 목록 등록만 한다. 작업은 사용자가 직접 시작한다.
         self._cancel_pending_drop()
         return {"pending": False}
 
@@ -177,7 +176,7 @@ class DesktopWebBridge:
         return self.get_state()
 
     def start_zero_click(self, token):
-        # ?댁쟾 ?꾨윴?몄뿏?쒕굹 ????ㅼ젙?먯꽌 ??吏???ㅽ뻾 ?붿껌??臾댁떆?쒕떎.
+        # 이전 프런트엔드나 저장 설정에서 온 지연 실행 요청도 무시한다.
         self._tk(self._cancel_pending_drop)
         return self.get_state()
 
@@ -185,7 +184,7 @@ class DesktopWebBridge:
         import math
         if not isinstance(bounds, (list, tuple)) or len(bounds) != 4 or any(
                 isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in bounds):
-            raise ValueError("?쒖떇 諛곗? ?곸뿭???щ컮瑜댁? ?딆뒿?덈떎.")
+            raise ValueError("서식 배지 영역이 올바르지 않습니다.")
         self._profile_drop_bounds = tuple(bounds)
         if self.window is not None and hasattr(self.window, "run_js"):
             self.window.run_js(f"window.docfitProfileDropRect = {list(bounds)!r};")
@@ -194,25 +193,25 @@ class DesktopWebBridge:
     def quick_register_and_activate_profile(self, path):
         path = Path(str(path))
         if path.is_symlink() or not path.is_file() or path.suffix.lower() not in {".hwp", ".hwpx"}:
-            return self._with_notice("HWP ?먮뒗 HWPX ?덉떆 ?뚯씪???볦븘 二쇱꽭??")
+            return self._with_notice("HWP 또는 HWPX 예시 파일을 놓아 주세요.")
         def register():
             self._cancel_pending_drop()
             if self.gui.running or self._profile_state().analyzing_format:
-                return "?묒뾽?대굹 ?쒖떇 遺꾩꽍???앸궃 ???ㅼ떆 ?볦븘 二쇱꽭??"
-            name = re.sub(r"[_\s]+", " ", path.stem).strip()[:120] or "???쒖떇"
+                return "작업이나 서식 분석이 끝난 뒤 다시 놓아 주세요."
+            name = re.sub(r"[_\s]+", " ", path.stem).strip()[:120] or "새 서식"
             parts = re.split(r"[_\s]+", path.stem, maxsplit=1)
             organization = (parts[0][:60] if len(parts) == 2 and parts[0].endswith(
-                ("援?, "??, "援?, "泥?, "怨듭궗", "怨듬떒", "?곌뎄??)) else None)
+                ("구", "시", "군", "청", "공사", "공단", "연구원")) else None)
             self._quick_watch = {"ids": set(self._profile_state().profiles), "name": name}
-            self._quick_notice = {"id": uuid.uuid4().hex, "message": f"{name} 쨌 ?쒖떇 遺꾩꽍 以?}
+            self._quick_notice = {"id": uuid.uuid4().hex, "message": f"{name} · 서식 분석 중"}
             self.gui._quick_registration = True
             try:
-                self.gui._?쒖떇_遺꾩꽍_?쒖옉(str(path.resolve()), ?대쫫臾산린=False, 湲곕낯?대쫫=name, 湲곌?=organization)
+                self.gui._서식_분석_시작(str(path.resolve()), 이름묻기=False, 기본이름=name, 기관=organization)
             except Exception:
                 self.gui._quick_registration = False
                 self._quick_watch = None
                 raise
-            return f"{name} 쨌 ?쒖떇 遺꾩꽍 ???먮룞?쇰줈 ?깅줉쨌?좏깮?⑸땲??"
+            return f"{name} · 서식 분석 후 자동으로 등록·선택합니다."
         return self._with_notice(self._tk(register))
 
     def drop_format_file(self, path):
@@ -222,13 +221,13 @@ class DesktopWebBridge:
         result = Future()
         with self._request_lock:
             if self._closed or (self.tk_stopped is not None and self.tk_stopped.is_set()):
-                raise RuntimeError("?깆씠 醫낅즺 以묒엯?덈떎.")
+                raise RuntimeError("앱이 종료 중입니다.")
             self._requests.add(result)
 
         def complete(value=None, error=None):
             with self._request_lock:
                 self._requests.discard(result)
-                # 醫낅즺媛 癒쇱? ?몄텧?먮? ?댁젣?덉쑝硫?callback??寃곌낵瑜??ㅼ떆 ?곗? ?딅뒗??
+                # 종료가 먼저 호출자를 해제했으면 callback의 결과를 다시 쓰지 않는다.
                 if not result.done():
                     if error is not None:
                         result.set_exception(error)
@@ -237,7 +236,7 @@ class DesktopWebBridge:
 
         def run():
             with self._request_lock:
-                # ?쒓컙 珥덇낵쨌醫낅즺 ???먯뿉 ?⑥? callback? ?ㅽ뻾?섏? ?딅뒗??
+                # 시간 초과·종료 후 큐에 남은 callback은 실행하지 않는다.
                 if result.done():
                     self._requests.discard(result)
                     return
@@ -255,7 +254,7 @@ class DesktopWebBridge:
                         self.gui.root.geometry("1x1+0+0")
                         self.gui.root.deiconify()
                         temporary_host = True
-                    # ?뚯씪 ?좏깮 ??湲곕낯 李쎌쓣 遺紐⑤줈 ?곕뒗 ??붿긽?먭? ???붾㈃ ?ㅼ뿉 ?⑥? ?딄쾶 ?쒕떎.
+                    # 파일 선택 등 기본 창을 부모로 쓰는 대화상자가 웹 화면 뒤에 뜨지 않게 한다.
                     self.gui.root.lift()
                     self.gui.root.focus_force()
                 except Exception:
@@ -282,12 +281,12 @@ class DesktopWebBridge:
             else:
                 self.gui.root.after(0, run)
         except Exception as exc:
-            complete(error=RuntimeError("?깆씠 醫낅즺 以묒엯?덈떎."))
-            raise RuntimeError("?깆씠 醫낅즺 以묒엯?덈떎.") from exc
+            complete(error=RuntimeError("앱이 종료 중입니다."))
+            raise RuntimeError("앱이 종료 중입니다.") from exc
         try:
             return result.result(timeout=timeout)
         except TimeoutError as exc:
-            # callback ?먯껜媛 ??TimeoutError瑜????묐떟 ?쒓컙 珥덇낵濡?諛붽씀吏 ?딅뒗??
+            # callback 자체가 낸 TimeoutError를 큐 응답 시간 초과로 바꾸지 않는다.
             with self._request_lock:
                 if result.done():
                     return result.result()
@@ -295,8 +294,8 @@ class DesktopWebBridge:
                 if cancelled:
                     self._requests.discard(result)
             if not cancelled:
-                raise RuntimeError("紐낅졊???대? ?ㅽ뻾 以묒엯?덈떎. 以묐났 ?ㅽ뻾?섏? 留먭퀬 吏꾪뻾 ?곹깭瑜??뺤씤??二쇱꽭??") from exc
-            raise RuntimeError("???묐떟 ?쒓컙??珥덇낵?섏뿀?듬땲??") from exc
+                raise RuntimeError("명령이 이미 실행 중입니다. 중복 실행하지 말고 진행 상태를 확인해 주세요.") from exc
+            raise RuntimeError("앱 응답 시간이 초과되었습니다.") from exc
 
     def _stages(self, mode):
         choices = self.gui.stage_choices.get(mode, {})
@@ -319,14 +318,14 @@ class DesktopWebBridge:
         gui = self.gui
         state = AppState()
         try:
-            state.profiles = gui._?꾨줈?뚯씪??or {}
-            state.profile_ids = gui._?꾨줈?뚯씪_ids or []
-            state.active_profile_id = gui._?쒖꽦_?쒖떇_?꾨줈?뚯씪
+            state.profiles = gui._프로파일들 or {}
+            state.profile_ids = gui._프로파일_ids or []
+            state.active_profile_id = gui._활성_서식_프로파일
         except AttributeError:
             pass
         try:
-            state.analyzing_format = gui._?쒖떇遺꾩꽍以?
-            state.analyzing_file = gui._?쒖떇遺꾩꽍_?뚯씪
+            state.analyzing_format = gui._서식분석중
+            state.analyzing_file = gui._서식분석_파일
         except AttributeError:
             pass
         return state
@@ -349,7 +348,7 @@ class DesktopWebBridge:
             self._coverage_cache.pop(identifier, None)
 
     def _profiles(self):
-        """?쒖떇 紐⑸줉: ?쒖떆 ?대쫫(湲곌? ?ы븿), ?대쫫쨌湲곌?, 湲곕낯 ?쒖떇 ?щ?, ?덉떆 ?뚯씪 ?대쫫, ?ъ슜 以??щ?."""
+        """서식 목록: 표시 이름(기관 포함), 이름·기관, 기본 서식 여부, 예시 파일 이름, 사용 중 여부."""
         gui = self.gui
         state = self._profile_state()
         profiles = state.profiles
@@ -360,7 +359,7 @@ class DesktopWebBridge:
         items = []
         for identifier in ids:
             profile = profiles.get(identifier) or {}
-            name = str(profile.get("name") or "湲곕낯 ?쒖떇")
+            name = str(profile.get("name") or "기본 서식")
             organization = str(profile.get("organization") or "").strip()
             source = profile.get("source")
             analysis = profile.get("element_analysis")
@@ -372,7 +371,7 @@ class DesktopWebBridge:
                 "builtin": not identifier,
                 "source": str(source.get("filename") or "") if isinstance(source, dict) else "",
                 "active": identifier == active,
-                # ?덉떆 蹂닿퀬?쒖뿉??遺꾩꽍???쒖떇 ?붿냼 媛?대뜲 ?뺣━???곕뒗 ???쒖떇 愿由?李쎌쓽 蹂듭젣 踰붿쐞 ?붿빟)
+                # 예시 보고서에서 분석한 서식 요소 가운데 정리에 쓰는 수(서식 관리 창의 복제 범위 요약)
                 "coverage": self._cached_coverage(identifier, analysis),
             })
         return items
@@ -383,28 +382,28 @@ class DesktopWebBridge:
         return {"busy": bool(state.analyzing_format), "file": str(state.analyzing_file or "")}
 
     def _live_progress(self, gui, mode):
-        started = getattr(gui, "_?묒뾽?쒖옉?쒓컖", None)
-        ended = getattr(gui, "_?묒뾽醫낅즺?쒓컖", None)
+        started = getattr(gui, "_작업시작시각", None)
+        ended = getattr(gui, "_작업종료시각", None)
         elapsed = None
         if started is not None:
             elapsed = max(0.0, (time.monotonic() if gui.running or ended is None else ended) - started)
         return progress_view(
             mode,
-            getattr(gui, "_?덈궡??, None),
-            getattr(gui, "_?덈궡吏??, ()),
-            selection=getattr(gui, "_吏꾪뻾_?몃??묒뾽", None),
+            getattr(gui, "_안내키", None),
+            getattr(gui, "_안내지남", ()),
+            selection=getattr(gui, "_진행_세부작업", None),
             running=bool(gui.running),
             files=list(gui.files),
-            doc=getattr(gui, "_吏꾪뻾臾몄꽌", None),
-            results=[{"source": Path(item.get("?먮낯", "")).name, "name": Path(item.get("寃곌낵", "")).name}
-                     for item in getattr(gui, "_寃곌낵紐⑸줉", [])],
-            failures=getattr(gui, "_?ㅽ뙣紐⑸줉", {}),
+            doc=getattr(gui, "_진행문서", None),
+            results=[{"source": Path(item.get("원본", "")).name, "name": Path(item.get("결과", "")).name}
+                     for item in getattr(gui, "_결과목록", [])],
+            failures=getattr(gui, "_실패목록", {}),
             target=self.conversion_target,
             elapsed=elapsed,
         )
 
     def check_update(self):
-        service = self._tk(lambda: self.gui._?낅뜲?댄듃_?쒕퉬??))
+        service = self._tk(lambda: self.gui._업데이트_서비스())
         threading.Thread(target=service.check, daemon=True, name="manual-update-check").start()
         return {"ok": True}
 
@@ -412,33 +411,33 @@ class DesktopWebBridge:
         def begin():
             from docfit_app.api_contract import ServiceError
             if self.gui.running:
-                raise ServiceError("JOB_RUNNING", "臾몄꽌 ?묒뾽???앸궃 ???낅뜲?댄듃??二쇱꽭??")
-            service = self.gui._?낅뜲?댄듃_?쒕퉬??)
+                raise ServiceError("JOB_RUNNING", "문서 작업이 끝난 뒤 업데이트해 주세요.")
+            service = self.gui._업데이트_서비스()
             if service.state()["step"] in ("checking", "downloading", "installing"):
-                raise ServiceError("BUSY", "?낅뜲?댄듃 ?묒뾽??吏꾪뻾 以묒씠?먯슂.")
+                raise ServiceError("BUSY", "업데이트 작업이 진행 중이에요.")
             threading.Thread(target=service.start_update, daemon=True, name="manual-update-download").start()
             return {"ok": True}
         return self._tk(lambda: response(begin))
 
     def open_update_page(self):
-        service = self._tk(lambda: self.gui._?낅뜲?댄듃_?쒕퉬??))
+        service = self._tk(lambda: self.gui._업데이트_서비스())
         return {"ok": service.open_download_page()}
 
     def get_state(self):
-        # ?뚯씪紐??쒕퉬?ㅻ? 泥섏쓬 留뚮뱾 ??Tk ?몄텧??湲곕떎由щ?濡?Tk ?ㅻ젅??諛뽰뿉??泥섎━?쒕떎.
+        # 파일명 서비스를 처음 만들 때 Tk 호출을 기다리므로 Tk 스레드 밖에서 처리한다.
         rename_open = self._drain_rename_paths()
 
         def snapshot():
             gui = self.gui
             mode = gui.selected_mode.get()
             if mode == "spacing" and getattr(self, "_page_fit_card", False):
-                mode = "pagefit"  # '?섏씠吏 留욎땄' 移대뱶: ?대????먭컙 ?뺣━ ?먮쫫??履?留욎땄留?
+                mode = "pagefit"  # '페이지 맞춤' 카드: 내부는 자간 정리 흐름의 쪽 맞춤만
             watched = getattr(self, "_quick_watch", None)
             if watched and not self._profile_state().analyzing_format:
                 active = self._profile_state().active_profile_id
                 self._quick_notice = {"id": uuid.uuid4().hex, "message": (
-                    f"{watched['name']} 쨌 ???쒖떇???깅줉?섍퀬 ?좏깮?덉뼱??" if active not in watched["ids"]
-                    else "?쒖떇???깅줉?섏? 紐삵뻽?댁슂. 泥섎━ ?곹깭瑜??뺤씤??二쇱꽭??")}
+                    f"{watched['name']} · 새 서식을 등록하고 선택했어요." if active not in watched["ids"]
+                    else "서식을 등록하지 못했어요. 처리 상태를 확인해 주세요.")}
                 self._quick_watch = None
             return {
                 "job": self._jobs().latest(),
@@ -465,7 +464,7 @@ class DesktopWebBridge:
                 "running": bool(gui.running),
                 "completion": dict(getattr(gui, "_flutter_completion", {}) or {}),
                 "format_review": dict(getattr(gui, "_flutter_format_review", {}) or {}),
-                "failures": dict(getattr(gui, "_?ㅽ뙣紐⑸줉", {}) or {}),
+                "failures": dict(getattr(gui, "_실패목록", {}) or {}),
                 "range": {
                     "enabled": gui.range_mode_var.get() == "pages",
                     "start": gui.range_start_var.get(),
@@ -480,14 +479,14 @@ class DesktopWebBridge:
                 },
                 "results": [
                     {
-                        "name": Path(item.get("寃곌낵", "")).name,
-                        "path": item.get("寃곌낵", ""),
-                        "source": Path(item.get("?먮낯", "")).name,
-                        "pages": item.get("履쎌닔"),
+                        "name": Path(item.get("결과", "")).name,
+                        "path": item.get("결과", ""),
+                        "source": Path(item.get("원본", "")).name,
+                        "pages": item.get("쪽수"),
                     }
-                    for item in getattr(gui, "_寃곌낵紐⑸줉", [])
+                    for item in getattr(gui, "_결과목록", [])
                 ],
-                "default_saved": bool(gui._?몃??묒뾽_湲곕낯???get(mode, False)),
+                "default_saved": bool(gui._세부작업_기본저장.get(mode, False)),
                 "stages": [] if mode == "file_format" else self._stages(mode),
                 "profiles": self._profiles(),
                 "profile": self._profile_state().active_profile_id,
@@ -496,8 +495,8 @@ class DesktopWebBridge:
                 "drop_target": self.drop_target,
                 "rename_open": rename_open,
                 "sidebar_collapsed": self._sidebar_collapsed_value(),
-                "developer_mode": bool(self.gui._以留??쒕퉬??).settings.read().get('developer_mode', False)),
-                "always_on_top": bool(self.gui._以留??쒕퉬??).settings.read().get('always_on_top', False)),
+                "developer_mode": bool(self.gui._준말_서비스().settings.read().get('developer_mode', False)),
+                "always_on_top": bool(self.gui._준말_서비스().settings.read().get('always_on_top', False)),
                 "sidebar_mode": self.sidebar_active,
                 "document_drop_revision": self._document_drop_revision,
                 "options": {
@@ -507,16 +506,16 @@ class DesktopWebBridge:
                 },
                 "guide": guide_state(
                     mode,
-                    getattr(gui, "_?덈궡??, None),
-                    getattr(gui, "_?덈궡吏??, ()),
+                    getattr(gui, "_안내키", None),
+                    getattr(gui, "_안내지남", ()),
                 ),
-                # 湲곕뒫蹂?留욎땄 吏꾪뻾 ?붾㈃(?뚰뙆): ?④퀎쨌臾몄꽌 ?湲곗뿴쨌寃쎄낵 ?쒓컙????踰덉뿉 蹂대궦??
+                # 기능별 맞춤 진행 화면(알파): 단계·문서 대기열·경과 시간을 한 번에 보낸다.
                 "live": self._live_progress(gui, mode),
                 "conversion_target": self.conversion_target,
                 "conversion_targets": [],
                 "can_start": self._can_start(mode, gui.files, gui.running) if mode != "file_format" else False,
                 "version": APP_VERSION,
-                "update": gui._?낅뜲?댄듃_?쒕퉬??).state() if hasattr(gui, "_?낅뜲?댄듃_?쒕퉬??) else {},
+                "update": gui._업데이트_서비스().state() if hasattr(gui, "_업데이트_서비스") else {},
             }
 
         state = self._tk(snapshot)
@@ -524,10 +523,10 @@ class DesktopWebBridge:
             try:
                 self.open_result(0)
             except OSError:
-                logging.getLogger(__name__).warning("寃곌낵 ?먮룞 ?닿린 ?ㅽ뙣", exc_info=True)
+                logging.getLogger(__name__).warning("결과 자동 열기 실패", exc_info=True)
         if state["mode"] == "file_format":
-            # ?몃? ?꾧뎄 踰꾩쟾 議고쉶瑜?Tk ?대깽??猷⑦봽?먯꽌 ?ㅽ뻾?섎㈃ ?붾㈃??硫덉텣??
-            # GUI ?곹깭瑜??쎌? ??WebView ?붿껌 ?ㅻ젅?쒖뿉??以鍮??곹깭瑜??뺤씤?쒕떎.
+            # 외부 도구 버전 조회를 Tk 이벤트 루프에서 실행하면 화면이 멈춘다.
+            # GUI 상태를 읽은 뒤 WebView 요청 스레드에서 준비 상태를 확인한다.
             files = [item["path"] for item in state["files"]]
             targets = self._conversion_targets(files)
             state["conversion_targets"] = targets
@@ -554,7 +553,7 @@ class DesktopWebBridge:
 
     @staticmethod
     def _hwp_com_available():
-        """??湲???꾩슦吏 ?딄퀬 湲곕낯쨌32鍮꾪듃쨌64鍮꾪듃 COM ?깅줉 蹂닿린瑜??뺤씤?쒕떎."""
+        """한/글을 띄우지 않고 기본·32비트·64비트 COM 등록 보기를 확인한다."""
         if os.name != "nt":
             return False
         try:
@@ -590,7 +589,7 @@ class DesktopWebBridge:
             return self._conversion_prerequisites_cache
 
     def _conversion_targets(self, files):
-        """寃곌낵 ?뺤떇 紐⑸줉. ?ｌ? ?뚯씪??紐⑤몢 ?대? 洹??뺤떇?대㈃(?? PDF?뭁DF) 洹??뺤떇? 怨좊? ???녾쾶 ?쒕떎(2026-10-22)."""
+        """결과 형식 목록. 넣은 파일이 모두 이미 그 형식이면(예: PDF→PDF) 그 형식은 고를 수 없게 한다(2026-10-22)."""
         suffixes = [Path(path).suffix.lower() for path in files]
         targets = self._conversion_targets_raw(files, suffixes)
         if suffixes:
@@ -598,7 +597,7 @@ class DesktopWebBridge:
                 same = SAME_FORMAT_SUFFIXES.get(target["format"])
                 if same and all(suffix in same for suffix in suffixes):
                     target["enabled"] = False
-                    target["reason"] = f"?대? {target['label']} ?뚯씪?대씪 媛숈? ?뺤떇?쇰줈??諛붽? ???놁뼱??
+                    target["reason"] = f"이미 {target['label']} 파일이라 같은 형식으로는 바꿀 수 없어요"
         return targets
 
     def _conversion_targets_raw(self, files, suffixes):
@@ -608,38 +607,38 @@ class DesktopWebBridge:
         kordoc_ready = bool(kordoc.get("available"))
         pandoc_ready = prerequisites["pandoc"]
         hwp_ready = prerequisites["hwp_com"]
-        engine_reason = str(kordoc.get("reason") or "蹂???붿쭊???ъ슜?????놁뒿?덈떎")
-        # 洹몃┝ ?낅젰? 湲???몄떇(OCR)???꾩슂?섎떎. ?먯뇙留?袁몃윭誘몄뿉??OCR???놁쑝誘濡?誘몃━ 留됯퀬 ?댁쑀瑜?蹂댁씤??
+        engine_reason = str(kordoc.get("reason") or "변환 엔진을 사용할 수 없습니다")
+        # 그림 입력은 글자 인식(OCR)이 필요하다. 폐쇄망 꾸러미에는 OCR이 없으므로 미리 막고 이유를 보인다.
         if valid and kordoc_ready and not prerequisites.get("ocr", True) and any(
                 suffix in IMAGE_INPUT_EXTENSIONS for suffix in suffixes):
             kordoc_ready = False
-            engine_reason = "洹몃┝ ?뚯씪? 湲???몄떇(OCR)???꾩슂??蹂?섑븷 ???놁뒿?덈떎(?먯뇙留?袁몃윭誘몄뿉 OCR 誘명룷??"
-        # HWP쨌HWPX????湲??吏곸젒 PDF濡???ν븳?? ?ㅻⅨ ?낅젰留?kordoc 以묎컙 蹂?섏씠 ?꾩슂?섎떎.
-        # ?대? PDF???뚯씪? PDF 蹂?섏뿉??嫄대꼫?곕?濡?蹂???붿쭊???꾩슂 ?녿떎.
+            engine_reason = "그림 파일은 글자 인식(OCR)이 필요해 변환할 수 없습니다(폐쇄망 꾸러미에 OCR 미포함)"
+        # HWP·HWPX는 한/글이 직접 PDF로 저장한다. 다른 입력만 kordoc 중간 변환이 필요하다.
+        # 이미 PDF인 파일은 PDF 변환에서 건너뛰므로 변환 엔진이 필요 없다.
         pdf_needs_kordoc = any(suffix not in HANCOM_PDF_DIRECT and suffix != ".pdf" for suffix in suffixes)
         pdf_ready = hwp_ready and (not pdf_needs_kordoc or kordoc_ready)
-        invalid_reason = "蹂?섑븷 ???녿뒗 ?뚯씪 ?뺤떇???덉뒿?덈떎"
+        invalid_reason = "변환할 수 없는 파일 형식이 있습니다"
         pdf_reason = (invalid_reason if not valid else
-                      "??湲 PDF ???湲곕뒫???ъ슜?????놁뒿?덈떎" if not hwp_ready else
+                      "한/글 PDF 저장 기능을 사용할 수 없습니다" if not hwp_ready else
                       engine_reason if pdf_needs_kordoc and not kordoc_ready else
-                      "??湲 ?댁옣 PDF ????ъ슜 쨌 異붽? 蹂?섍린 ?ㅼ튂 ?놁쓬" if not pdf_needs_kordoc else
-                      "蹂???붿쭊 + ??湲 PDF ???以鍮꾨맖")
-        # 洹몃┝? ??湲 PDF ??λ낯??履쎈쭏???뚮뜑留곹븯誘濡?PDF? 以鍮?議곌굔??媛숇떎.
+                      "한/글 내장 PDF 저장 사용 · 추가 변환기 설치 없음" if not pdf_needs_kordoc else
+                      "변환 엔진 + 한/글 PDF 저장 준비됨")
+        # 그림은 한/글 PDF 저장본을 쪽마다 렌더링하므로 PDF와 준비 조건이 같다.
         hwpx_needs_kordoc = any(suffix != ".hwp" for suffix in suffixes)
         hwpx_needs_com = any(suffix == ".hwp" for suffix in suffixes)
         hwpx_ready = (not hwpx_needs_kordoc or kordoc_ready) and (not hwpx_needs_com or hwp_ready)
         hwpx_reason = (invalid_reason if not valid else
-                       "??湲 HWP ???湲곕뒫???ъ슜?????놁뒿?덈떎" if hwpx_needs_com and not hwp_ready else
+                       "한/글 HWP 저장 기능을 사용할 수 없습니다" if hwpx_needs_com and not hwp_ready else
                        engine_reason if hwpx_needs_kordoc and not kordoc_ready else
-                       "??湲 ?댁옣 HWP?묱WPX ???쨌 ?먮낯 蹂댁〈" if not hwpx_needs_kordoc else
-                       "蹂??以鍮꾨맖")
+                       "한/글 내장 HWP→HWPX 저장 · 원본 보존" if not hwpx_needs_kordoc else
+                       "변환 준비됨")
         pdf_only = all(suffix == ".pdf" for suffix in suffixes)
         merge_direct = all(suffix == ".pdf" or suffix in IMAGE_INPUT_EXTENSIONS for suffix in suffixes)
-        # ?⑹튂湲곗뿉??PDF쨌洹몃┝? 洹몃?濡??곌퀬, HWP쨌HWPX????湲, 洹?諛뽰쓽 ?뺤떇留?蹂???붿쭊?????꾩슂?섎떎.
+        # 합치기에서 PDF·그림은 그대로 쓰고, HWP·HWPX는 한/글, 그 밖의 형식만 변환 엔진이 더 필요하다.
         merge_converted = [s for s in suffixes if s != ".pdf" and s not in IMAGE_INPUT_EXTENSIONS]
         merge_ready = merge_direct or (hwp_ready and (kordoc_ready or all(s in HANCOM_PDF_DIRECT for s in merge_converted)))
         image_reason = (pdf_reason if not (valid and pdf_ready) else
-                        "??湲 PDF ?????履쎈쭏??洹몃┝ ???쨌 ?щ윭 履쎌? ?대뜑濡????)
+                        "한/글 PDF 저장 후 쪽마다 그림 저장 · 여러 쪽은 폴더로 저장")
         pandoc_only = all(suffix in {".html", ".htm", ".md", ".txt"} for suffix in suffixes)
         pandoc_targets_ready = pandoc_ready and (kordoc_ready or pandoc_only)
         text_targets_ready = (all(suffix == ".hwpx" for suffix in suffixes) or
@@ -648,26 +647,26 @@ class DesktopWebBridge:
             {"format": "hwpx", "label": "HWPX", "enabled": valid and hwpx_ready,
              "reason": hwpx_reason},
             {"format": "pdf", "label": "PDF", "enabled": valid and pdf_ready, "reason": pdf_reason},
-            # PDF ?섎굹濡??⑹튂湲? ?щ윭 ?뚯씪(PDF쨌洹몃┝? 洹몃?濡? HWP쨌HWPX ?깆? ??湲 PDF ????????쒖꽌?濡???PDF濡?臾띕뒗??
-            {"format": "pdfm", "label": "PDF ?섎굹濡??⑹튂湲?,
+            # PDF 하나로 합치기: 여러 파일(PDF·그림은 그대로, HWP·HWPX 등은 한/글 PDF 저장 뒤)을 순서대로 한 PDF로 묶는다.
+            {"format": "pdfm", "label": "PDF 하나로 합치기",
              "enabled": valid and len(suffixes) >= 2 and merge_ready,
              "reason": (invalid_reason if not valid else
-                        "?뚯씪??2媛??댁긽 ?ｌ쑝硫??섎굹??PDF濡??⑹튌 ???덉뼱?? if len(suffixes) < 2 else
+                        "파일을 2개 이상 넣으면 하나의 PDF로 합칠 수 있어요" if len(suffixes) < 2 else
                         pdf_reason if not merge_ready else
-                        "?ｌ? ?쒖꽌?濡???PDF濡??⑹묠 쨌 ?뚯씪留덈떎 梨낃컝??쨌 ?뷀샇 PDF???쒖쇅")},
-            # PDF ?뺤텞? ??湲쨌蹂???붿쭊 ?놁씠 PDF ?덉쓽 洹몃┝쨌?ㅽ듃由쇰쭔 ?ㅼ떆 ??ν븳??蹂댁븞 PDF??媛숈? 沅뚰븳 ?좎?).
-            {"format": "pdfz", "label": "PDF ?뺤텞", "enabled": valid and all(s == ".pdf" for s in suffixes),
+                        "넣은 순서대로 한 PDF로 합침 · 파일마다 책갈피 · 암호 PDF는 제외")},
+            # PDF 압축은 한/글·변환 엔진 없이 PDF 안의 그림·스트림만 다시 저장한다(보안 PDF는 같은 권한 유지).
+            {"format": "pdfz", "label": "PDF 압축", "enabled": valid and all(s == ".pdf" for s in suffixes),
              "reason": (invalid_reason if not valid else
-                        "PDF ?뚯씪?먮쭔 ?????덉뒿?덈떎" if any(s != ".pdf" for s in suffixes) else
-                        "湲?먃룹そ? 洹몃?濡? 洹몃┝留??ㅼ떆 ???쨌 蹂댁븞 PDF??媛숈? 沅뚰븳 ?좎?")},
+                        "PDF 파일에만 쓸 수 있습니다" if any(s != ".pdf" for s in suffixes) else
+                        "글자·쪽은 그대로, 그림만 다시 저장 · 보안 PDF는 같은 권한 유지")},
             *({"format": kind, "label": kind.upper(), "enabled": valid and text_targets_ready,
-               "reason": invalid_reason if not valid else engine_reason if not text_targets_ready and not kordoc_ready else "?띿뒪??異붿텧 以鍮꾨맖"} for kind in ("txt", "md")),
+               "reason": invalid_reason if not valid else engine_reason if not text_targets_ready and not kordoc_ready else "텍스트 추출 준비됨"} for kind in ("txt", "md")),
             *({"format": kind, "label": kind.upper(), "enabled": valid and pandoc_targets_ready,
                "reason": invalid_reason if not valid else engine_reason if not kordoc_ready and not pandoc_only else
-                        "?댁옣 Pandoc???ъ슜?????놁쓬" if not pandoc_ready else "?댁옣 Pandoc 以鍮꾨맖"} for kind in ("docx", "epub", "html")),
-            # PDF留??ｌ쑝硫???湲쨌蹂???붿쭊 ?놁씠 履쎈쭏??諛붾줈 洹몃┛??
+                        "내장 Pandoc을 사용할 수 없음" if not pandoc_ready else "내장 Pandoc 준비됨"} for kind in ("docx", "epub", "html")),
+            # PDF만 넣으면 한/글·변환 엔진 없이 쪽마다 바로 그린다.
             *({"format": kind, "label": kind.upper(), "enabled": valid and (pdf_only or pdf_ready),
-               "reason": "PDF 履쎈쭏??洹몃┝ ???쨌 ??湲 遺덊븘?? if valid and pdf_only else image_reason}
+               "reason": "PDF 쪽마다 그림 저장 · 한/글 불필요" if valid and pdf_only else image_reason}
               for kind in IMAGE_FORMATS),
         ]
 
@@ -736,16 +735,16 @@ class DesktopWebBridge:
                     ):
                         continue
                     if Path(path).is_dir():
-                        added += self.gui.?대뜑異붽?(path)
-                    elif self.gui.?뚯씪異붽?(path):
+                        added += self.gui.폴더추가(path)
+                    elif self.gui.파일추가(path):
                         added += 1
                 except (OSError, ValueError):
                     continue
             if added:
                 if from_drop:
                     self._document_drop_revision += 1
-                self.gui.status_var.set(f"{added}媛?異붽? 쨌 珥?{len(self.gui.files)}媛?臾몄꽌")
-                self.gui.濡쒓렇?쒖떆(f"{added}媛?臾몄꽌 異붽?")
+                self.gui.status_var.set(f"{added}개 추가 · 총 {len(self.gui.files)}개 문서")
+                self.gui.로그표시(f"{added}개 문서 추가")
                 self._update_document_hints()
                 self._cancel_pending_drop()
 
@@ -761,14 +760,14 @@ class DesktopWebBridge:
             if not self.gui.running and 0 <= index_value < len(self.gui.files):
                 self.gui.file_list.selection_clear(0, "end")
                 self.gui.file_list.selection_set(index_value)
-                self.gui._?좏깮??젣()
+                self.gui._선택삭제()
                 self._update_document_hints()
 
         self._tk(remove)
         return self.get_state()
 
     def clear_files(self):
-        self._tk(self.gui.紐⑸줉吏?곌린)
+        self._tk(self.gui.목록지우기)
         self._tk(self._update_document_hints)
         return self.get_state()
 
@@ -777,21 +776,21 @@ class DesktopWebBridge:
         return True if variable is None else bool(variable.get())
 
     def _mode_selected(self):
-        if hasattr(self.gui, "_紐⑤뱶_?좏깮??):
-            self.gui._紐⑤뱶_?좏깮??)
+        if hasattr(self.gui, "_모드_선택됨"):
+            self.gui._모드_선택됨()
 
     def set_mode(self, mode):
-        """?묒뾽 移대뱶瑜?怨좊Ⅸ?? 移대뱶?????μ씠硫?'??踰덉뿉 ?곸슜'(all)? '?먭컙 議곗젙 ?ы븿'???꾨㈃
-        ?쒖떇 ?곸슜(format)?쇰줈 ?ㅽ뻾?쒕떎. ?덉쟾 ?붾㈃??蹂대궡??format? ?먭컙 議곗젙??????踰덉뿉 ?곸슜?대떎."""
+        """작업 카드를 고른다. 카드는 세 장이며 '한 번에 적용'(all)은 '자간 조정 포함'을 끄면
+        서식 적용(format)으로 실행한다. 예전 화면이 보내는 format은 자간 조정을 끈 한 번에 적용이다."""
         if mode not in {"spacing", "unify", "format", "all", "file_format", "pagefit"}:
-            raise ValueError("吏?먰븯吏 ?딅뒗 ?묒뾽 諛⑹떇?낅땲??")
+            raise ValueError("지원하지 않는 작업 방식입니다.")
 
         def select():
             if self.gui.running:
                 return
             self._ux().user_overrode_mode = True
             self._cancel_pending_drop()
-            # '?섏씠吏 留욎땄' 移대뱶(2026-10-30): 履?留욎땄留??섎뒗 ?묒뾽. ?대????먭컙 ?뺣━ ?먮쫫?먯꽌 ?먭컙???꾧퀬 履?留욎땄留?耳좊떎.
+            # '페이지 맞춤' 카드(2026-10-30): 쪽 맞춤만 하는 작업. 내부는 자간 정리 흐름에서 자간을 끄고 쪽 맞춤만 켠다.
             self._page_fit_card = mode == "pagefit"
             internal = "spacing" if mode == "pagefit" else mode
             if mode in ("all", "format"):
@@ -808,7 +807,7 @@ class DesktopWebBridge:
     def set_conversion_target(self, target):
         target = str(target or "").lower()
         if target not in CONVERSION_OUTPUTS:
-            raise ValueError("寃곌낵 ?뺤떇? HWPX, PDF, PDF ?뺤텞, DOCX, EPUB, HTML, JPG, PNG, TXT ?먮뒗 MD留??좏깮?????덉뒿?덈떎.")
+            raise ValueError("결과 형식은 HWPX, PDF, PDF 압축, DOCX, EPUB, HTML, JPG, PNG, TXT 또는 MD만 선택할 수 있습니다.")
         def update():
             if not self.gui.running:
                 self.conversion_target = target
@@ -816,49 +815,49 @@ class DesktopWebBridge:
         return self.get_state()
 
     def start_single_file_conversion(self, file_index, target):
-        """?꾩옱 怨듯넻 蹂??媛?μ꽦 ?먮떒???곸슜???좏깮???낅젰 ?섎굹瑜?怨좎젙?섏뿬 蹂?섑븳??"""
+        """현재 공통 변환 가능성 판단을 적용해 선택한 입력 하나를 고정하여 변환한다."""
         from docfit_app.api_contract import ServiceError
         target = str(target or "").lower()
         if target not in CONVERSION_OUTPUTS:
-            raise ValueError("吏?먰븯吏 ?딅뒗 寃곌낵 ?뺤떇?낅땲??")
+            raise ValueError("지원하지 않는 결과 형식입니다.")
 
         def begin():
             gui = self.gui
             if gui.running:
-                raise ServiceError('JOB_RUNNING', '臾몄꽌 ?묒뾽??吏꾪뻾 以묒엯?덈떎.')
+                raise ServiceError('JOB_RUNNING', '문서 작업이 진행 중입니다.')
             try:
                 index = int(file_index)
             except (TypeError, ValueError):
-                raise ValueError("?뚯씪 ?좏깮???щ컮瑜댁? ?딆뒿?덈떎.")
+                raise ValueError("파일 선택이 올바르지 않습니다.")
             current_files = list(gui.files)
             if not 0 <= index < len(current_files):
-                raise ValueError("?뚯씪??李얠쓣 ???놁뒿?덈떎.")
+                raise ValueError("파일을 찾을 수 없습니다.")
             source_snapshot = str(current_files[index])
             targets = {item["format"]: item for item in self._conversion_targets([source_snapshot])}
             chosen = targets.get(target)
             if chosen is None or not chosen.get("enabled"):
-                reason = (chosen or {}).get("reason") or "吏?먰븯吏 ?딅뒗 寃곌낵 ?뺤떇?낅땲??
-                raise ValueError(f"{target.upper()} 蹂?섏쓣 ?쒖옉?????놁뒿?덈떎: {reason}")
+                reason = (chosen or {}).get("reason") or "지원하지 않는 결과 형식입니다"
+                raise ValueError(f"{target.upper()} 변환을 시작할 수 없습니다: {reason}")
 
             return self._start_single_conversion_snapshot(source_snapshot, target)
 
         return self._tk(begin)
 
     def _start_single_conversion_snapshot(self, source_snapshot, target):
-        """紐⑸줉/?꾩옱 ?源?UI ?곹깭瑜??곗? ?딄퀬 ?⑥씪 寃쎈줈 snapshot?쇰줈 runner瑜??쒖옉?쒕떎."""
+        """목록/현재 타깃 UI 상태를 쓰지 않고 단일 경로 snapshot으로 runner를 시작한다."""
         from docfit_app.api_contract import ServiceError
         from docfit_app.jobs import manager_for, prepare_legacy
         from docfit_app.conversion_runner import start_conversion_job
         gui = self.gui
         if gui.running:
-            raise ServiceError('JOB_RUNNING', '臾몄꽌 ?묒뾽??吏꾪뻾 以묒엯?덈떎.')
+            raise ServiceError('JOB_RUNNING', '문서 작업이 진행 중입니다.')
         runtime = getattr(gui, '_docfit_runtime_namespace', None)
         if runtime is None:
-            runtime = getattr(gui, '?뚯씪?щ㎎_蹂寃??쒖옉').__globals__
-        stop_event = runtime.get('以묐떒_event')
+            runtime = getattr(gui, '파일포맷_변경_시작').__globals__
+        stop_event = runtime.get('중단_event')
         gui_queue = runtime.get('gui_queue')
         if stop_event is None or gui_queue is None:
-            raise ServiceError('JOB_NOT_STARTED', '蹂???묒뾽 ?ㅽ뻾 ?섍꼍??以鍮꾪븯吏 紐삵뻽?듬땲??')
+            raise ServiceError('JOB_NOT_STARTED', '변환 작업 실행 환경을 준비하지 못했습니다.')
         identifier = prepare_legacy(gui).begin(
             'file_format', {'target': target, 'files': [source_snapshot]}, stop_event=stop_event,
         )
@@ -871,33 +870,33 @@ class DesktopWebBridge:
         gui.closing = False
         stop_event.clear()
         gui.selected_mode.set('file_format')
-        gui._寃곌낵_珥덇린??寃곌낵紐⑸줉??吏?곌린=True)
-        gui._?덈궡?? gui._?덈궡吏??= None, set()
-        gui._吏꾪뻾臾몄꽌, gui._?ㅽ뙣紐⑸줉, gui._吏꾪뻾_?몃??묒뾽 = None, {}, None
-        gui._?묒뾽?쒖옉?쒓컖, gui._?묒뾽醫낅즺?쒓컖 = time.monotonic(), None
-        gui.status_var.set('?뚯씪 蹂??以?쨌 1媛?)
-        gui._?덈궡_?ㅼ젙(0)
-        gui.踰꾪듉_?묒뾽以?)
-        gui.濡쒓렇?쒖떆("")
-        gui.濡쒓렇?쒖떆(f"?뚯씪 蹂???쒖옉 쨌 1媛?쨌 寃곌낵 {target.upper()}")
+        gui._결과_초기화(결과목록도_지우기=True)
+        gui._안내키, gui._안내지남 = None, set()
+        gui._진행문서, gui._실패목록, gui._진행_세부작업 = None, {}, None
+        gui._작업시작시각, gui._작업종료시각 = time.monotonic(), None
+        gui.status_var.set('파일 변환 중 · 1개')
+        gui._안내_설정(0)
+        gui.버튼_작업중()
+        gui.로그표시("")
+        gui.로그표시(f"파일 변환 시작 · 1개 · 결과 {target.upper()}")
         gui._job_managed_conversion = identifier
         start_conversion_job(
             manager, [source_snapshot], target, job_id=identifier,
             progress=gui_queue.put, stop_event=stop_event,
-            runtime_factory=lambda: runtime, log=gui.濡쒓렇?쒖떆,
+            runtime_factory=lambda: runtime, log=gui.로그표시,
         )
         gui.worker = manager.thread(identifier)
         return identifier
 
     def set_include_spacing(self, on):
-        """'??踰덉뿉 ?곸슜'??'?먭컙 議곗젙 ?ы븿'??諛붽씀怨?洹?移대뱶瑜?怨좊Ⅸ???ㅼ젙 ?뚯씪????λ맂??."""
+        """'한 번에 적용'의 '자간 조정 포함'을 바꾸고 그 카드를 고른다(설정 파일에 저장된다)."""
         def update():
             gui = self.gui
             variable = getattr(gui, "include_spacing_var", None)
             if gui.running or variable is None:
                 return
             variable.set(bool(on))
-            self._page_fit_card = False  # ?ㅻⅨ 移대뱶瑜?怨좊Ⅴ硫??섏씠吏 留욎땄 移대뱶 ?댁젣
+            self._page_fit_card = False  # 다른 카드를 고르면 페이지 맞춤 카드 해제
             gui.selected_mode.set("all" if on else "format")
             self._mode_selected()
 
@@ -908,7 +907,7 @@ class DesktopWebBridge:
         return not bool(getattr(self.gui, "spacing_exclude_reset_var", None).get()) if getattr(self.gui, "spacing_exclude_reset_var", None) is not None else bool(self.gui.stage_choices.get("spacing", {}).get("reset_spacing", True))
 
     def set_reset_spacing(self, on):
-        """湲곗〈 ?명솚 ?몄텧????珥덇린???쒖쇅 移대뱶 ?듭뀡???곌껐?쒕떎."""
+        """기존 호환 호출을 새 초기화 제외 카드 옵션에 연결한다."""
         def update():
             gui = self.gui
             if gui.running:
@@ -918,7 +917,7 @@ class DesktopWebBridge:
                 variable.set(not bool(on))
             else:
                 gui.stage_choices["spacing"]["reset_spacing"] = bool(on)
-            self._page_fit_card = False  # ?ㅻⅨ 移대뱶瑜?怨좊Ⅴ硫??섏씠吏 留욎땄 移대뱶 ?댁젣
+            self._page_fit_card = False  # 다른 카드를 고르면 페이지 맞춤 카드 해제
             gui.selected_mode.set("spacing")
             self._mode_selected()
 
@@ -930,10 +929,10 @@ class DesktopWebBridge:
         return True if variable is None else bool(variable.get())
 
     def set_table_spacing(self, on):
-        """'?먭컙 ?뺣━'??'?????먭컙 ?뺣━'(?ㅼ젙 table_spacing)瑜?諛붽씀怨?洹?移대뱶瑜?怨좊Ⅸ??
+        """'자간 정리'의 '표 내 자간 정리'(설정 table_spacing)를 바꾸고 그 카드를 고른다.
 
-        ?꾨㈃ ??移???臾몄옣? ?먭컙 珥덇린?붋룹옄媛?議곗젙쨌以?蹂묓빀쨌?⑥뼱 寃????곸뿉??鍮좎쭊?? ?ㅼ젙李쎌쓽
-        '???쒖떇 ??臾몄옣???먭컙議곗젙?섍린'? 媛숈? 媛믪씠硫??ㅼ젙 ?뚯씪????λ맂??
+        끄면 표 칸 안 문장은 자간 초기화·자간 조정·줄 병합·단어 검사 대상에서 빠진다. 설정창의
+        '표 서식 내 문장도 자간조정하기'와 같은 값이며 설정 파일에 저장된다.
         """
         def update():
             gui = self.gui
@@ -941,7 +940,7 @@ class DesktopWebBridge:
             if gui.running or variable is None:
                 return
             variable.set(bool(on))
-            self._page_fit_card = False  # ?ㅻⅨ 移대뱶瑜?怨좊Ⅴ硫??섏씠吏 留욎땄 移대뱶 ?댁젣
+            self._page_fit_card = False  # 다른 카드를 고르면 페이지 맞춤 카드 해제
             gui.selected_mode.set("spacing")
             self._mode_selected()
 
@@ -953,9 +952,9 @@ class DesktopWebBridge:
         return False if variable is None else bool(variable.get())
 
     def set_exclude_tables(self, on):
-        """'??踰덉뿉 ?곸슜'??'???쒖쇅'(?ㅼ젙 all_exclude_tables)瑜?諛붽씀怨?洹?移대뱶瑜?怨좊Ⅸ??
+        """'한 번에 적용'의 '표 제외'(설정 all_exclude_tables)를 바꾸고 그 카드를 고른다.
 
-        耳쒕㈃ ??愿???몃? ?묒뾽??紐⑤몢 鍮쇨퀬 ??移???臾몄옣???먭컙 ?묒뾽?먯꽌 類?? ?ㅼ젙 ?뚯씪????λ맂??
+        켜면 표 관련 세부 작업을 모두 빼고 표 칸 안 문장도 자간 작업에서 뺀다. 설정 파일에 저장된다.
         """
         def update():
             gui = self.gui
@@ -963,16 +962,16 @@ class DesktopWebBridge:
             if gui.running or variable is None:
                 return
             variable.set(bool(on))
-            self._page_fit_card = False  # ?ㅻⅨ 移대뱶瑜?怨좊Ⅴ硫??섏씠吏 留욎땄 移대뱶 ?댁젣
+            self._page_fit_card = False  # 다른 카드를 고르면 페이지 맞춤 카드 해제
             gui.selected_mode.set("all" if self._include_spacing() else "format")
             self._mode_selected()
 
         self._tk(update)
         return self.get_state()
 
-    # 移대뱶 ?듭뀡(?ㅼ젙 ?????붾㈃ 蹂?? 怨좊Ⅴ??移대뱶): ??踰덉뿉 ?곸슜??'?섏씠吏 留욎땄 ?쒖쇅', ?쒖떇 ?듭씪??'???쒖쇅'쨌
-    # '?먭컙 ?뺣━ ?쒖쇅'쨌'?섏씠吏 留욎땄 ?쒖쇅'. ?ㅼ젙 ?뚯씪????λ릺硫? 諛붽씀硫??깆쓽 蹂??媛먯떆媛 洹?移대뱶??愿???몃? ?묒뾽??
-    # 媛숈씠 耳쒓퀬 ?덈떎(?쒖떇 ?듭씪??履?留욎땄? ?몃? ?묒뾽 湲곕낯媛믪씠 爰쇱쭚?대씪 '?섏씠吏 留욎땄 ?쒖쇅'媛 湲곕낯 耳쒖쭚).
+    # 카드 옵션(설정 키 → 화면 변수, 고르는 카드): 한 번에 적용의 '페이지 맞춤 제외', 서식 통일의 '표 제외'·
+    # '자간 정리 제외'·'페이지 맞춤 제외'. 설정 파일에 저장되며, 바꾸면 앱의 변수 감시가 그 카드의 관련 세부 작업을
+    # 같이 켜고 끈다(서식 통일의 쪽 맞춤은 세부 작업 기본값이 꺼짐이라 '페이지 맞춤 제외'가 기본 켜짐).
     _CARD_OPTIONS = {
         "spacing_enabled": ("spacing_enabled_var", "spacing"),
         "spacing_exclude_pagefit": ("spacing_exclude_pagefit_var", "spacing"),
@@ -998,9 +997,9 @@ class DesktopWebBridge:
         return result
 
     def set_card_option(self, key, on):
-        """移대뱶 ?듭뀡 ?섎굹瑜?諛붽씀怨?洹?移대뱶瑜?怨좊Ⅸ??"""
+        """카드 옵션 하나를 바꾸고 그 카드를 고른다."""
         if key not in self._CARD_OPTIONS:
-            raise ValueError("吏?먰븯吏 ?딅뒗 移대뱶 ?듭뀡?낅땲??")
+            raise ValueError("지원하지 않는 카드 옵션입니다.")
         name, card = self._CARD_OPTIONS[key]
 
         def update():
@@ -1010,10 +1009,10 @@ class DesktopWebBridge:
                 return
             variable.set(bool(on))
             if card == "all":
-                self._page_fit_card = False  # ?ㅻⅨ 移대뱶瑜?怨좊Ⅴ硫??섏씠吏 留욎땄 移대뱶 ?댁젣
+                self._page_fit_card = False  # 다른 카드를 고르면 페이지 맞춤 카드 해제
                 gui.selected_mode.set("all" if self._include_spacing() else "format")
             else:
-                self._page_fit_card = False  # ?ㅻⅨ 移대뱶瑜?怨좊Ⅴ硫??섏씠吏 留욎땄 移대뱶 ?댁젣
+                self._page_fit_card = False  # 다른 카드를 고르면 페이지 맞춤 카드 해제
                 gui.selected_mode.set(card)
             self._mode_selected()
 
@@ -1028,8 +1027,8 @@ class DesktopWebBridge:
             self.gui.page_range_var.set(bool(enabled))
             self.gui.range_start_var.set(str(start or "1"))
             self.gui.range_end_var.set(str(end or start or "1"))
-            self.gui._踰붿쐞_?앹쭅?묒꽕??= bool(enabled)
-            self.gui._踰붿쐞_?곹깭_媛깆떊()
+            self.gui._범위_끝직접설정 = bool(enabled)
+            self.gui._범위_상태_갱신()
 
         self._tk(update)
         return self.get_state()
@@ -1041,13 +1040,13 @@ class DesktopWebBridge:
     def start_job(self, kind, params=None):
         from docfit_app.api_contract import ServiceError
         if params is not None and not isinstance(params, dict):
-            raise ServiceError('INVALID_INPUT', '?묒뾽 ?낅젰???뺤씤??二쇱꽭??')
+            raise ServiceError('INVALID_INPUT', '작업 입력을 확인해 주세요.')
         params = params or {}
         if kind == 'table_copy':
             return self._jobs().start(kind, params, lambda report, cancelled:
                 self._table_copy_job(params, report, cancelled))
         if kind not in {'format', 'spacing', 'unify', 'all', 'file_format', 'pagefit'}:
-            raise ServiceError('INVALID_INPUT', '吏?먰븯吏 ?딅뒗 ?묒뾽 醫낅쪟?낅땲??')
+            raise ServiceError('INVALID_INPUT', '지원하지 않는 작업 종류입니다.')
         if kind == 'file_format' and 'target' in params and not params.get('single_file'):
             self.set_conversion_target(params['target'])
         if kind == 'file_format' and params.get('single_file'):
@@ -1068,14 +1067,14 @@ class DesktopWebBridge:
         if not result.get('ok'):
             error = result.get('error') or {}
             from docfit_app.api_contract import ServiceError
-            raise ServiceError(error.get('code', 'JOB_FAILED'), error.get('message', '??蹂듭궗 ?ㅽ뙣'))
+            raise ServiceError(error.get('code', 'JOB_FAILED'), error.get('message', '표 복사 실패'))
         report('item_done', result.get('data') or {})
         return result.get('data')
 
     def cancel_job(self, job_id):
         state = self._jobs().cancel(job_id)
         if self._tk(lambda: getattr(self.gui, '_job_id', None)) == job_id:
-            self._tk(self.gui.?묒뾽以묐떒)
+            self._tk(self.gui.작업중단)
         return state
 
     def get_events(self, after_seq=0, max=200):
@@ -1086,7 +1085,7 @@ class DesktopWebBridge:
         try:
             self.start_job(mode, dict(range_enabled=range_enabled, start=start, end=end, file_order=file_order))
         except ServiceError as exc:
-            # 湲곗〈 start???뚯씪 ?놁쓬쨌?대? ?ㅽ뻾 以???GUI媛 ?쒖옉?섏? ?딆? 寃쎌슦?먮룄 ?곹깭瑜??뚮젮以??
+            # 기존 start는 파일 없음·이미 실행 중 등 GUI가 시작하지 않은 경우에도 상태를 돌려준다.
             if exc.code not in {'JOB_NOT_STARTED', 'JOB_RUNNING'}:
                 raise
         return self.get_state()
@@ -1097,27 +1096,27 @@ class DesktopWebBridge:
         def started(previous):
             identifier = getattr(self.gui, '_job_id', None)
             if _strict and (not identifier or identifier == previous):
-                raise ServiceError('JOB_NOT_STARTED', '?낅젰 臾몄꽌? ?묒뾽 ?ㅼ젙???뺤씤??二쇱꽭??')
+                raise ServiceError('JOB_NOT_STARTED', '입력 문서와 작업 설정을 확인해 주세요.')
             return identifier
         if file_order is not None and (mode != "file_format" or
                                        (self.conversion_target != "pdfm" and not single_file)):
-            raise ValueError("?뚯씪 ?쒖꽌??PDF ?섎굹濡??⑹튂湲곗뿉?쒕쭔 吏?뺥븷 ???덉뒿?덈떎.")
+            raise ValueError("파일 순서는 PDF 하나로 합치기에서만 지정할 수 있습니다.")
 
         if mode not in {"spacing", "unify", "format", "all", "file_format", "pagefit"}:
-            raise ValueError("吏?먰븯吏 ?딅뒗 ?묒뾽 諛⑹떇?낅땲??")
+            raise ValueError("지원하지 않는 작업 방식입니다.")
 
         if mode == "file_format":
-            # ?붾㈃? 以鍮꾨릺吏 ?딆? ?뺤떇???쒖옉 踰꾪듉???꾩?留? ??쾶 ???붿껌???ш린??留됰뒗??
+            # 화면은 준비되지 않은 형식의 시작 버튼을 끄지만, 늦게 온 요청도 여기서 막는다.
             files = self._tk(lambda: list(self.gui.files))
             target = getattr(self, '_single_conversion_target', self.conversion_target) if single_file else self.conversion_target
             targets = {item["format"]: item for item in self._conversion_targets(files)}
             chosen = targets.get(target)
             if files and (chosen is None or not chosen.get("enabled")):
-                reason = (chosen or {}).get("reason") or "吏?먰븯吏 ?딅뒗 寃곌낵 ?뺤떇?낅땲??
-                raise ValueError(f"{target.upper()} 蹂?섏쓣 ?쒖옉?????놁뒿?덈떎: {reason}")
+                reason = (chosen or {}).get("reason") or "지원하지 않는 결과 형식입니다"
+                raise ValueError(f"{target.upper()} 변환을 시작할 수 없습니다: {reason}")
             if file_order is not None:
                 if not isinstance(file_order, (list, tuple)):
-                    raise ValueError("?뚯씪 ?쒖꽌 紐⑸줉???щ컮瑜댁? ?딆뒿?덈떎.")
+                    raise ValueError("파일 순서 목록이 올바르지 않습니다.")
                 def _norm(p):
                     try:
                         return os.path.normcase(os.path.normpath(str(p)))
@@ -1126,10 +1125,10 @@ class DesktopWebBridge:
                 if (single_file and (len(file_order) != 1 or file_order[0] not in files) or
                         not single_file and (len(file_order) != len(files) or
                                              set(map(_norm, file_order)) != set(map(_norm, files)))):
-                    raise ValueError("吏?뺥븳 ?뚯씪 ?쒖꽌 紐⑸줉???꾩옱 臾몄꽌 紐⑸줉怨??쇱튂?섏? ?딆뒿?덈떎.")
+                    raise ValueError("지정한 파일 순서 목록이 현재 문서 목록과 일치하지 않습니다.")
             def begin_conversion():
                 if self.gui.running:
-                    raise ServiceError('JOB_RUNNING', '臾몄꽌 ?묒뾽??吏꾪뻾 以묒엯?덈떎.')
+                    raise ServiceError('JOB_RUNNING', '문서 작업이 진행 중입니다.')
                 previous = getattr(self.gui, '_job_id', None)
                 self.gui._flutter_completion = {}
                 self.gui._flutter_format_review = {}
@@ -1138,65 +1137,65 @@ class DesktopWebBridge:
                     target_files = list(file_order or [])
                     if gui.running or not target_files:
                         raise ServiceError('JOB_RUNNING' if gui.running else 'JOB_NOT_STARTED',
-                                           '?낅젰 臾몄꽌? ?묒뾽 ?ㅼ젙???뺤씤??二쇱꽭??')
+                                           '입력 문서와 작업 설정을 확인해 주세요.')
                     from docfit_app.jobs import manager_for, prepare_legacy
                     from docfit_app.conversion_runner import start_conversion_job
                     gui._flutter_completion = {}
                     gui._flutter_format_review = {}
                     runtime = getattr(gui, '_docfit_runtime_namespace', None)
                     if runtime is None:
-                        runtime = getattr(gui.?뚯씪?щ㎎_蹂寃??쒖옉, '__globals__', {})
-                    以묐떒_event = runtime.get('以묐떒_event')
+                        runtime = getattr(gui.파일포맷_변경_시작, '__globals__', {})
+                    중단_event = runtime.get('중단_event')
                     gui_queue = runtime.get('gui_queue')
-                    if 以묐떒_event is None or gui_queue is None:
-                        raise ServiceError('JOB_NOT_STARTED', '蹂???묒뾽 ?ㅽ뻾 ?섍꼍??以鍮꾪븯吏 紐삵뻽?듬땲??')
+                    if 중단_event is None or gui_queue is None:
+                        raise ServiceError('JOB_NOT_STARTED', '변환 작업 실행 환경을 준비하지 못했습니다.')
                     gui._job_id = prepare_legacy(gui).begin(
-                        'file_format', {'target': target}, stop_event=以묐떒_event,
+                        'file_format', {'target': target}, stop_event=중단_event,
                     )
                     identifier = gui._job_id
                     manager = manager_for(gui)
                     manager.report(identifier, 'started', {})
                     gui.running = True
                     gui.closing = False
-                    以묐떒_event.clear()
+                    중단_event.clear()
                     gui.selected_mode.set('file_format')
-                    gui._寃곌낵_珥덇린??寃곌낵紐⑸줉??吏?곌린=True)
-                    gui._?덈궡?? gui._?덈궡吏??= None, set()
-                    gui._吏꾪뻾臾몄꽌, gui._?ㅽ뙣紐⑸줉, gui._吏꾪뻾_?몃??묒뾽 = None, {}, None
-                    gui._?묒뾽?쒖옉?쒓컖, gui._?묒뾽醫낅즺?쒓컖 = time.monotonic(), None
-                    gui.status_var.set(f"?뚯씪 蹂??以?쨌 1媛?)
-                    gui._?덈궡_?ㅼ젙(0)
-                    gui.踰꾪듉_?묒뾽以?)
-                    gui.濡쒓렇?쒖떆("")
-                    gui.濡쒓렇?쒖떆(f"?뚯씪 蹂???쒖옉 쨌 1媛?쨌 寃곌낵 {target.upper()}")
+                    gui._결과_초기화(결과목록도_지우기=True)
+                    gui._안내키, gui._안내지남 = None, set()
+                    gui._진행문서, gui._실패목록, gui._진행_세부작업 = None, {}, None
+                    gui._작업시작시각, gui._작업종료시각 = time.monotonic(), None
+                    gui.status_var.set(f"파일 변환 중 · 1개")
+                    gui._안내_설정(0)
+                    gui.버튼_작업중()
+                    gui.로그표시("")
+                    gui.로그표시(f"파일 변환 시작 · 1개 · 결과 {target.upper()}")
                     gui._job_managed_conversion = identifier
                     start_conversion_job(
                         manager, list(target_files), target, job_id=identifier,
-                        progress=gui_queue.put, stop_event=以묐떒_event,
+                        progress=gui_queue.put, stop_event=중단_event,
                         runtime_factory=lambda: runtime,
-                        log=gui.濡쒓렇?쒖떆,
+                        log=gui.로그표시,
                     )
                     gui.worker = manager.thread(identifier)
                 elif file_order:
                     original_files = list(self.gui.files)
                     try:
                         self.gui.files = list(file_order)
-                        self.gui.?뚯씪?щ㎎_蹂寃??쒖옉(target)
+                        self.gui.파일포맷_변경_시작(target)
                     finally:
                         self.gui.files = original_files
                 else:
-                    self.gui.?뚯씪?щ㎎_蹂寃??쒖옉(self.conversion_target)
+                    self.gui.파일포맷_변경_시작(self.conversion_target)
                 return started(previous)
             identifier = self._tk(begin_conversion)
             return identifier if _strict else self.get_state()
 
         def begin():
             if self.gui.running:
-                raise ServiceError('JOB_RUNNING', '臾몄꽌 ?묒뾽??吏꾪뻾 以묒엯?덈떎.')
+                raise ServiceError('JOB_RUNNING', '문서 작업이 진행 중입니다.')
             previous = getattr(self.gui, '_job_id', None)
             options = self._card_options()
             if mode == "spacing" and not options["spacing_enabled"] and options["spacing_exclude_pagefit"]:
-                raise ValueError("?먭컙 ?뺣━瑜??꾧퀬 ?섏씠吏 留욎땄???쒖쇅?섎㈃ ???쇱씠 ?놁뒿?덈떎.")
+                raise ValueError("자간 정리를 끄고 페이지 맞춤도 제외하면 할 일이 없습니다.")
             page_fit_only = mode == "pagefit"
             run_mode = "spacing" if page_fit_only else mode
             self.gui.selected_mode.set(run_mode)
@@ -1204,21 +1203,21 @@ class DesktopWebBridge:
             self.gui.page_range_var.set(bool(range_enabled))
             self.gui.range_start_var.set(str(start or "1"))
             self.gui.range_end_var.set(str(end or start or "1"))
-            self.gui._踰붿쐞_?앹쭅?묒꽕??= bool(range_enabled)
-            self.gui._踰붿쐞_?곹깭_媛깆떊()
+            self.gui._범위_끝직접설정 = bool(range_enabled)
+            self.gui._범위_상태_갱신()
             self.gui._flutter_completion = {}
             self.gui._flutter_format_review = {}
             if not page_fit_only:
-                self.gui.?묒뾽?쒖옉(mode)
+                self.gui.작업시작(mode)
                 return started(previous)
-            # ?묒뾽?쒖옉???듭뀡??洹??먮━?먯꽌 ?쎌뼱 ?먮?濡? ?좉퉸 '?먭컙 ?붋룹そ 留욎땄 耳??쇰줈 諛붽엥?ㅺ? ?먭컙 ?뺣━ 移대뱶 ?ㅼ젙???섎룎由곕떎.
+            # 작업시작이 옵션을 그 자리에서 읽어 두므로, 잠깐 '자간 끔·쪽 맞춤 켬'으로 바꿨다가 자간 정리 카드 설정을 되돌린다.
             gui = self.gui
             saved = (gui.spacing_enabled_var.get(), gui.spacing_exclude_pagefit_var.get(), gui.spacing_exclude_reset_var.get())
             try:
                 gui.spacing_enabled_var.set(False)
                 gui.spacing_exclude_pagefit_var.set(False)
                 gui.spacing_exclude_reset_var.set(True)
-                gui.?묒뾽?쒖옉("spacing")
+                gui.작업시작("spacing")
             finally:
                 gui.spacing_enabled_var.set(saved[0])
                 gui.spacing_exclude_pagefit_var.set(saved[1])
@@ -1234,13 +1233,19 @@ class DesktopWebBridge:
         if identifier:
             self.cancel_job(identifier)
         else:
-            self._tk(self.gui.?묒뾽以묐떒)
+            self._tk(self.gui.작업중단)
         return self.get_state()
 
     def _configuration(self):
         from docfit_app.configuration_service import ConfigurationService
-        return ConfigurationService(self.gui._以留??쒕퉬??).settings)
+        return ConfigurationService(self.gui._준말_서비스().settings)
 
+    def _developer_mode_enabled(self):
+        try:
+            return bool(self._configuration().snapshot(running=self.gui.running)
+                        .get("values", {}).get("developer_mode", False))
+        except Exception:
+            return False
     def _settings_snapshot(self):
         from docfit_app.shell_menu import status
         snapshot = self._configuration().snapshot(running=self.gui.running)
@@ -1259,7 +1264,7 @@ class DesktopWebBridge:
                     register(launch_command())
                 else:
                     unregister()
-            self.gui._Flutter?ㅼ젙_諛섏쁺(values)
+            self.gui._Flutter설정_반영(values)
             if self.window is not None and 'always_on_top' in values:
                 self.window.set_on_top(bool(values['always_on_top']))
                 self._saved_window['topmost'] = bool(values['always_on_top'])
@@ -1274,7 +1279,7 @@ class DesktopWebBridge:
         if fallback is not None:
             return bool(fallback)
         try:
-            service = getattr(self.gui, "_以留??쒕퉬??, None)
+            service = getattr(self.gui, "_준말_서비스", None)
             if callable(service):
                 settings = service().settings.read()
                 if isinstance(settings, dict) and "ui_tk_fallback" in settings:
@@ -1293,20 +1298,20 @@ class DesktopWebBridge:
     def open_settings(self):
         if not self._tk_fallback_enabled():
             return {"ok": False, "error": "FLUTTER_ONLY"}
-        self._tk(self.gui.?ㅼ젙李??닿린, timeout=None, front=True)
+        self._tk(self.gui.설정창_열기, timeout=None, front=True)
         return True
 
     def text_input(self):
         if not self._tk_fallback_enabled():
             return {"ok": False, "error": "FLUTTER_ONLY"}
-        self._tk(self.gui._?띿뒪?몃줈_臾몄꽌異붽?_?닿린, timeout=None, front=True)
+        self._tk(self.gui._텍스트로_문서추가_열기, timeout=None, front=True)
         return self.get_state()
 
     def open_stages(self):
         if not self._tk_fallback_enabled():
             return {"ok": False, "error": "FLUTTER_ONLY"}
-        self._tk(lambda: self.gui._?몃??묒뾽_?닿린(
-            self.gui.selected_mode.get(), self.gui._?몃??묒뾽_湲곕낯???get(self.gui.selected_mode.get(), True)
+        self._tk(lambda: self.gui._세부작업_열기(
+            self.gui.selected_mode.get(), self.gui._세부작업_기본저장.get(self.gui.selected_mode.get(), True)
         ), timeout=None, front=True)
         return True
 
@@ -1317,7 +1322,7 @@ class DesktopWebBridge:
         return True
 
     def get_log(self):
-        """?묒뾽 濡쒓렇 蹂몃Ц? ?ъ슜?먭? ?댁뿀???뚮쭔 ?쎌뼱 蹂대궦??"""
+        """작업 로그 본문은 사용자가 열었을 때만 읽어 보낸다."""
         def read():
             widget = getattr(self.gui, "log_text", None)
             return widget.get("1.0", "end-1c") if widget is not None else ""
@@ -1325,7 +1330,7 @@ class DesktopWebBridge:
         return self._tk(read)
 
     def clear_log(self):
-        """湲곕줉 李쎄낵 媛숈? 洹쒖튃?쇰줈, ?묒뾽 以묒뿉??濡쒓렇瑜?吏?곗? ?딅뒗??"""
+        """기록 창과 같은 규칙으로, 작업 중에는 로그를 지우지 않는다."""
         def clear():
             widget = getattr(self.gui, "log_text", None)
             if widget is not None and not self.gui.running:
@@ -1400,7 +1405,7 @@ class DesktopWebBridge:
             host_close = self._close_request is not None and self._close_request["id"] == identifier
             if host_close:
                 if not isinstance(accepted, bool):
-                    raise ValueError("醫낅즺 ?묐떟???뺤씤??二쇱꽭??")
+                    raise ValueError("종료 응답을 확인해 주세요.")
                 self._close_request = None
                 self._cancel_close_timer()
         if host_close:
@@ -1410,7 +1415,7 @@ class DesktopWebBridge:
                 # The original OS event was vetoed; the watcher must now destroy
                 # the host after Tk stops (unlike the legacy synchronous close).
                 self.user_closing = False
-                self.gui.醫낅즺()
+                self.gui.종료()
                 try:
                     closed = not bool(self.gui.root.winfo_exists())
                 except Exception:
@@ -1427,10 +1432,10 @@ class DesktopWebBridge:
             if pending and pending["id"] == identifier and isinstance(accepted, bool):
                 allowed = {item["id"] for item in pending.get("choices", [])}
                 if selection is not None and (not isinstance(selection, list) or any(item not in allowed for item in selection)):
-                    raise ValueError("寃????ぉ???ㅼ떆 ?좏깮??二쇱꽭??")
+                    raise ValueError("검토 항목을 다시 선택해 주세요.")
                 allowed_fields = {item["id"] for item in pending.get("fields", [])}
                 if fields is not None and (not isinstance(fields, dict) or any(key not in allowed_fields or not isinstance(value, str) for key, value in fields.items())):
-                    raise ValueError("寃??媛믪쓣 ?뺤씤??二쇱꽭??")
+                    raise ValueError("검토 값을 확인해 주세요.")
                 pending["selection"] = selection if selection is not None else list(allowed)
                 pending["values"] = fields or {}
                 pending["answer"] = accepted
@@ -1448,8 +1453,8 @@ class DesktopWebBridge:
         from docfit_app.flow_service import FlowService
         from docfit_app.api_contract import ServiceError
         if not isinstance(payload, dict):
-            raise ServiceError("INVALID_INPUT", "?낅젰???뺤씤??二쇱꽭??")
-        store = self._tk(lambda: self.gui._以留??쒕퉬??).settings)
+            raise ServiceError("INVALID_INPUT", "입력을 확인해 주세요.")
+        store = self._tk(lambda: self.gui._준말_서비스().settings)
         service = FlowService(store._path.parent, store)
         if action == "copy_result":
             from docfit_app.clipboard_service import copy_result
@@ -1458,18 +1463,18 @@ class DesktopWebBridge:
             import uuid
             purpose = {"png": "flow_png", "hwpx": "flow_hwpx"}.get(payload.get("format"))
             if purpose is None:
-                raise ServiceError("INVALID_INPUT", "??ν븷 ?뚯씪 ?뺤떇???뺤씤??二쇱꽭??")
+                raise ServiceError("INVALID_INPUT", "저장할 파일 형식을 확인해 주세요.")
             return self._file_dialogs.select_files(uuid.uuid4().hex, purpose, "save")
         if action == "export_png":
             import os
             import tempfile
             data = service.png_bytes(payload.get("base64"))
-            raw_name = payload.get("name", "???ㅼ씠?닿렇??)
-            name = "".join(c for c in str(raw_name)[:120] if c.isalnum() or c in " _-") or "???ㅼ씠?닿렇??
+            raw_name = payload.get("name", "표/다이어그램")
+            name = "".join(c for c in str(raw_name)[:120] if c.isalnum() or c in " _-") or "표 다이어그램"
             selected = self._selection_path(payload, 'flow_png', 'output_selection_id')
             target = Path(selected)
             if target.suffix.lower() != ".png":
-                raise ServiceError("INVALID_PATH", "PNG ?뚯씪濡???ν빐 二쇱꽭??")
+                raise ServiceError("INVALID_PATH", "PNG 파일로 저장해 주세요.")
             temporary = None
             try:
                 with tempfile.NamedTemporaryFile(dir=target.parent, suffix=".tmp", delete=False) as stream:
@@ -1483,7 +1488,7 @@ class DesktopWebBridge:
                     temporary.unlink(missing_ok=True)
             return {"path": str(target)}
         if action == "export_hwpx":
-            # ???ㅼ씠?닿렇???몄쭛湲곗쓽 ?먮쫫?쑣룰린蹂??쒕? ??湲 HWPX 臾몄꽌濡???ν븳??docfit_core.table_builder).
+            # 표/다이어그램 편집기의 흐름표·기본 표를 한/글 HWPX 문서로 저장한다(docfit_core.table_builder).
             import os
             import sys
             import tempfile
@@ -1491,20 +1496,20 @@ class DesktopWebBridge:
             from docfit_app.table_template_service import TableTemplateService
             spec = payload.get("spec")
             if not isinstance(spec, dict) or spec.get("kind") not in {"flow", "grid"}:
-                raise ServiceError("TABLE_KIND_DISABLED", "?뚰뙆 踰꾩쟾?먯꽌???먮쫫?쒖? 湲곕낯 ?쒕쭔 留뚮뱾 ???덉뒿?덈떎.")
+                raise ServiceError("TABLE_KIND_DISABLED", "알파 버전에서는 흐름표와 기본 표만 만들 수 있습니다.")
             try:
                 normalize(spec)
             except TableSpecError as exc:
                 raise ServiceError("INVALID_TABLE", str(exc)) from exc
-            raw_name = payload.get("name", "??)
-            name = "".join(c for c in str(raw_name)[:120] if c.isalnum() or c in " _-") or "??
+            raw_name = payload.get("name", "표")
+            name = "".join(c for c in str(raw_name)[:120] if c.isalnum() or c in " _-") or "표"
             selected = self._selection_path(payload, 'flow_hwpx', 'output_selection_id')
             target = Path(selected)
             if target.suffix.lower() != ".hwpx":
-                raise ServiceError("INVALID_PATH", "HWPX ?뚯씪濡???ν빐 二쇱꽭??")
-            base = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / "resources" / "?쒖떇?덉떆" / "湲곕낯 ?쒖떇.hwpx"
-            # 湲곕낯 ?쒕뒗 ?깆쓽 湲곕낯 ???쒖떇(以留?'??, ?덉떆 ???숈뒿 寃곌낵)??洹몃?濡??낇엺??
-            basic = self._tk(lambda: TableTemplateService(self.gui._以留??쒕퉬??)).snapshot().get("preview"))
+                raise ServiceError("INVALID_PATH", "HWPX 파일로 저장해 주세요.")
+            base = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / "resources" / "서식예시" / "기본 서식.hwpx"
+            # 기본 표는 앱의 기본 표 서식(준말 '표', 예시 표 학습 결과)을 그대로 입힌다.
+            basic = self._tk(lambda: TableTemplateService(self.gui._준말_서비스()).snapshot().get("preview"))
             temporary = None
             try:
                 with tempfile.NamedTemporaryFile(dir=target.parent, suffix=".tmp", delete=False) as stream:
@@ -1518,11 +1523,11 @@ class DesktopWebBridge:
                     temporary.unlink(missing_ok=True)
             return {"path": str(target)}
         if action == "catalog_list":
-            raise ServiceError("FEATURE_DISABLED", "???쒖떇 紐⑥쓬? ?꾩옱 ?뚰뙆 踰꾩쟾?먯꽌 鍮꾪솢?깊솕?섏뼱 ?덉뒿?덈떎.")
+            raise ServiceError("FEATURE_DISABLED", "표 서식 모음은 현재 알파 버전에서 비활성화되어 있습니다.")
         if action == "catalog_copy":
-            raise ServiceError("FEATURE_DISABLED", "???쒖떇 紐⑥쓬? ?꾩옱 ?뚰뙆 踰꾩쟾?먯꽌 鍮꾪솢?깊솕?섏뼱 ?덉뒿?덈떎.")
+            raise ServiceError("FEATURE_DISABLED", "표 서식 모음은 현재 알파 버전에서 비활성화되어 있습니다.")
         if action == "catalog_export":
-            raise ServiceError("FEATURE_DISABLED", "???쒖떇 紐⑥쓬? ?꾩옱 ?뚰뙆 踰꾩쟾?먯꽌 鍮꾪솢?깊솕?섏뼱 ?덉뒿?덈떎.")
+            raise ServiceError("FEATURE_DISABLED", "표 서식 모음은 현재 알파 버전에서 비활성화되어 있습니다.")
         if action == "list":
             return service.list()
         if action == "load":
@@ -1531,23 +1536,23 @@ class DesktopWebBridge:
             return service.save(payload.get("id"), payload.get("name"), payload.get("snapshot"), payload.get("revision"))
         if action == "delete":
             return service.delete(payload.get("id"))
-        raise ServiceError("INVALID_ACTION", "?먮쫫???묒뾽???뺤씤??二쇱꽭??")
+        raise ServiceError("INVALID_ACTION", "흐름도 작업을 확인해 주세요.")
 
     def document_tool(self, name, payload):
         from docfit_app.document_tools_service import DocumentToolsService
         def execute():
-            settings = self.gui._以留??쒕퉬??).settings
+            settings = self.gui._준말_서비스().settings
             service = DocumentToolsService(settings._path.parent)
             if name == "add_text":
                 if self.gui.running:
                     from docfit_app.api_contract import ServiceError
-                    raise ServiceError("JOB_RUNNING", "?묒뾽 ?꾨즺 ??臾몄꽌瑜?異붽???二쇱꽭??")
+                    raise ServiceError("JOB_RUNNING", "작업 완료 후 문서를 추가해 주세요.")
                 result = service.command(name, payload)
-                self.gui.?뚯씪異붽?(result["path"])
+                self.gui.파일추가(result["path"])
                 return result
             return service.command(name, payload)
         if name != "add_text":
-            folder = self._tk(lambda: self.gui._以留??쒕퉬??).settings._path.parent)
+            folder = self._tk(lambda: self.gui._준말_서비스().settings._path.parent)
             return response(lambda: DocumentToolsService(folder).command(name, payload))
         return self._tk(lambda: response(execute))
 
@@ -1557,18 +1562,18 @@ class DesktopWebBridge:
                 return
             mode = self.gui.selected_mode.get()
             if mode not in self.gui.stage_choices:
-                return  # ?뚯씪 蹂?섏뿉???몃? ?묒뾽???녿떎
+                return  # 파일 변환에는 세부 작업이 없다
             choices = self.gui.stage_choices[mode]
             if action == "all":
                 if not isinstance(payload.get("enabled"), bool):
-                    raise ValueError("?묒뾽 ?좏깮 媛믪쓣 ?뺤씤??二쇱꽭??")
+                    raise ValueError("작업 선택 값을 확인해 주세요.")
                 for key in choices:
                     choices[key] = payload["enabled"]
             elif action == "defaults":
                 for key in choices:
                     choices[key] = default_choice(key, mode)
             else:
-                raise ValueError("吏?먰븯吏 ?딅뒗 ?④퀎 紐낅졊?낅땲??")
+                raise ValueError("지원하지 않는 단계 명령입니다.")
             self._stages_changed(mode)
         self._tk(execute)
         return self.get_state()
@@ -1582,29 +1587,29 @@ class DesktopWebBridge:
         from docfit_app.api_contract import ServiceError
         def execute():
             if not isinstance(payload, dict):
-                raise ServiceError("INVALID_INPUT", "?쒖떇 ?낅젰???뺤씤??二쇱꽭??")
+                raise ServiceError("INVALID_INPUT", "서식 입력을 확인해 주세요.")
             identifier = payload.get("id", "")
             profiles = self._profile_state().profiles
             if identifier not in profiles:
-                raise ServiceError("NOT_FOUND", "?쒖떇???ㅼ떆 ?좏깮??二쇱꽭??")
+                raise ServiceError("NOT_FOUND", "서식을 다시 선택해 주세요.")
             original = profiles[identifier]
             revision = sha256(json.dumps(original, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
             profile = deepcopy(original)
             analysis = profile.setdefault("element_analysis", {})
             if not analysis and not identifier:
                 import sys
-                source = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / "resources" / "?쒖떇?덉떆" / "湲곕낯 ?쒖떇.hwpx"
+                source = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / "resources" / "서식예시" / "기본 서식.hwpx"
                 if source.is_file():
                     analysis = elements.analyze_format_elements(source)
                     profile["element_analysis"] = analysis
             if action in ("save", "restore"):
                 if self.gui.running:
-                    raise ServiceError("JOB_RUNNING", "?묒뾽 以묒뿉???쒖떇???섏젙?????놁뒿?덈떎.")
+                    raise ServiceError("JOB_RUNNING", "작업 중에는 서식을 수정할 수 없습니다.")
                 if payload.get("revision") != revision:
-                    raise ServiceError("PROFILE_CONFLICT", "?쒖떇??諛붾뚯뿀?듬땲?? ?ㅼ떆 遺덈윭? 二쇱꽭??")
+                    raise ServiceError("PROFILE_CONFLICT", "서식이 바뀌었습니다. 다시 불러와 주세요.")
                 edits = payload.get("edits", [])
                 if not isinstance(edits, list) or len(edits) > 2000:
-                    raise ServiceError("INVALID_INPUT", "?쒖떇 ?섏젙 紐⑸줉???뺤씤??二쇱꽭??")
+                    raise ServiceError("INVALID_INPUT", "서식 수정 목록을 확인해 주세요.")
                 if action == "restore" and not edits:
                     edits = [{"path": list(path), "key": key} for path, _, _ in elements.detail_nodes(analysis)
                              for key, item in elements.element_map(analysis, path).items()
@@ -1615,7 +1620,7 @@ class DesktopWebBridge:
                             path, key = tuple(edit["path"]), edit["key"]
                             item = elements.element_map(analysis, path).get(key)
                             if item is None or not elements.element_editable(key):
-                                raise ValueError("?섏젙?????녿뒗 ?붿냼?낅땲??")
+                                raise ValueError("수정할 수 없는 요소입니다.")
                             value = (item.get("analyzed", item["value"]) if action == "restore"
                                      else elements.parse_value(key, edit["value"]))
                             elements.set_value(analysis, path, key, value)
@@ -1624,19 +1629,19 @@ class DesktopWebBridge:
                         raise ServiceError("INVALID_STYLE", str(exc)) from exc
                     if not identifier:
                         identifier = uuid.uuid4().hex
-                        profile["name"] = profile.get("name", "湲곕낯 ?쒖떇") + " (?ъ슜???섏젙)"
+                        profile["name"] = profile.get("name", "기본 서식") + " (사용자 수정)"
                     try:
-                        self.gui._?쒖떇_?뚯씪_???identifier, profile)
+                        self.gui._서식_파일_저장(identifier, profile)
                     except OSError as exc:
-                        raise ServiceError("PROFILE_SAVE_FAILED", "?쒖떇 ?뚯씪????ν븯吏 紐삵뻽?듬땲??") from exc
+                        raise ServiceError("PROFILE_SAVE_FAILED", "서식 파일을 저장하지 못했습니다.") from exc
                     profiles[identifier] = profile
-                    self.gui._?쒖꽦_?쒖떇_?꾨줈?뚯씪 = identifier
-                    self.gui._?꾨줈?뚯씪_紐⑸줉媛깆떊()
-                    self.gui._?꾨줈?뚯씪_?좏깮()
+                    self.gui._활성_서식_프로파일 = identifier
+                    self.gui._프로파일_목록갱신()
+                    self.gui._프로파일_선택()
                     self.invalidate_format_coverage(identifier)
                     revision = sha256(json.dumps(profile, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
             elif action != "get":
-                raise ServiceError("INVALID_ACTION", "吏?먰븯吏 ?딅뒗 ?쒖떇 紐낅졊?낅땲??")
+                raise ServiceError("INVALID_ACTION", "지원하지 않는 서식 명령입니다.")
             nodes = []
             for path, parent, label in elements.detail_nodes(analysis):
                 fields = []
@@ -1652,9 +1657,9 @@ class DesktopWebBridge:
         return self._tk(lambda: response(execute))
 
     def hangul_fonts(self, action, payload=None):
-        """??湲???곕뒗 湲瑗???湲 ?꾩슜 ?대뜑 + Windows 湲瑗? 紐⑸줉怨? 誘몃━蹂닿린媛 ??湲瑗??뚯씪(base64).
+        """한/글이 쓰는 글꼴(한/글 전용 폴더 + Windows 글꼴) 목록과, 미리보기가 쓸 글꼴 파일(base64).
 
-        ???붾㈃? ??湲 ?꾩슜 湲瑗??대㉫紐낆“쨌?쒖뺨?뗭? ????紐⑤Ⅴ誘濡?誘몃━蹂닿린媛 ???뚯씪??諛쏆븘 FontFace濡??щ┛??
+        웹 화면은 한/글 전용 글꼴(휴먼명조·한컴돋움 …)을 모르므로 미리보기가 이 파일을 받아 FontFace로 올린다.
         """
         import base64
         from docfit_core import hangul_fonts
@@ -1664,14 +1669,14 @@ class DesktopWebBridge:
         if action == "data":
             name = str((payload or {}).get("name") or "")[:80]
             path = hangul_fonts.font_file(name)
-            # 誘몃━蹂닿린?⑹씠???덈Т ??湲瑗??쒖뺨?뗭? ??24MB ??? 蹂대궡吏 ?딅뒗???泥?湲瑗대줈 洹몃┛??.
+            # 미리보기용이라 너무 큰 글꼴(한컴돋움 약 24MB 등)은 보내지 않는다(대체 글꼴로 그린다).
             if path is None or path.stat().st_size > 15 * 1024 * 1024:
                 return {"name": name, "base64": None}
             return {"name": name, "base64": base64.b64encode(path.read_bytes()).decode("ascii")}
-        raise ValueError("吏?먰븯吏 ?딅뒗 湲瑗??묒뾽?낅땲??")
+        raise ValueError("지원하지 않는 글꼴 작업입니다.")
 
     def idioms(self, action, payload):
-        """?ㅼ젙??湲???곸슜援?룸낯臾??곸슜援?愿由?docfit_app.idiom_service). ??湲???쎈뒗 ?ъ슜???대뜑 ?뚯씪??怨좎튇??"""
+        """설정의 글자 상용구·본문 상용구 관리(docfit_app.idiom_service). 한/글이 읽는 사용자 폴더 파일을 고친다."""
         import sys
         from docfit_app.api_contract import ServiceError
         from docfit_app.idiom_service import IdiomService
@@ -1693,7 +1698,7 @@ class DesktopWebBridge:
                 key = "body" if kind == "body" else "text"
                 path = Path(snapshot.get("config_files", {}).get(key, ""))
                 if snapshot.get("source") != "hwpx" or not path.is_file():
-                    raise ServiceError("INVALID_IDIOM", "?곸슜援?HWPX ?ㅼ젙 臾몄꽌瑜?李얠? 紐삵뻽?댁슂.")
+                    raise ServiceError("INVALID_IDIOM", "상용구 HWPX 설정 문서를 찾지 못했어요.")
                 os.startfile(str(path))
                 return snapshot
             if action == "apply_hwpx":
@@ -1704,9 +1709,9 @@ class DesktopWebBridge:
 
                 def convert_body(text, output):
                     if not config.is_file():
-                        raise ServiceError("CONFIG_MISSING", "蹂몃Ц?곸슜援?HWPX ?ㅼ젙 臾몄꽌媛 ?놁뒿?덈떎.")
+                        raise ServiceError("CONFIG_MISSING", "본문상용구 HWPX 설정 문서가 없습니다.")
                     source = Path(output).with_suffix(".hwpx")
-                    create_template(config, source, [{"key": "蹂몃Ц", "value": text}])
+                    create_template(config, source, [{"key": "본문", "value": text}])
                     self._hwpx_to_hwp(source, output)
 
                 return service.apply_hwpx(convert_body)
@@ -1715,25 +1720,25 @@ class DesktopWebBridge:
                 key = str((data or {}).get("key") or "")
                 snapshot = service.snapshot()
                 if not snapshot.get("available") or key not in {item["key"] for item in snapshot["body"]}:
-                    raise ServiceError("INVALID_IDIOM", "蹂몃Ц ?곸슜援щ? 李얠? 紐삵뻽?댁슂.")
+                    raise ServiceError("INVALID_IDIOM", "본문 상용구를 찾지 못했어요.")
                 if snapshot.get("source") == "hwpx":
                     path = Path(snapshot["config_files"]["body"])
                     if not path.is_file():
-                        raise ServiceError("INVALID_IDIOM", "蹂몃Ц?곸슜援?HWPX ?ㅼ젙 臾몄꽌瑜?李얠? 紐삵뻽?댁슂.")
+                        raise ServiceError("INVALID_IDIOM", "본문상용구 HWPX 설정 문서를 찾지 못했어요.")
                     os.startfile(str(path))
                     return snapshot
                 from docfit_core.hwp_idioms import IdiomStore
                 path = IdiomStore(snapshot["folder"]).body_path(key)
                 if not path.is_file():
-                    raise ServiceError("INVALID_IDIOM", "??蹂몃Ц ?곸슜援ъ쓽 臾몄꽌 ?뚯씪???놁뼱??")
-                os.startfile(str(path))   # ??湲?먯꽌 ?댁뼱 ?댁슜??怨좎튇??
+                    raise ServiceError("INVALID_IDIOM", "이 본문 상용구의 문서 파일이 없어요.")
+                os.startfile(str(path))   # 한/글에서 열어 내용을 고친다
                 return snapshot
             if action == "add_body" and isinstance(data, dict):
                 if data.get('input_selection_id') or not data.get('path'):
                     data['path'] = self._selection_path(data, 'idioms')
                 source = Path(str(data["path"]))
                 if source.suffix.lower() == ".hwpx" and source.is_file():
-                    # ??湲 蹂몃Ц ?곸슜援щ뒗 HWP 臾몄꽌????湲濡?諛붽퓭 ?ｋ뒗??
+                    # 한/글 본문 상용구는 HWP 문서라 한/글로 바꿔 넣는다.
                     import tempfile
                     with tempfile.TemporaryDirectory(prefix="docfit_idiom_") as folder:
                         converted = Path(folder) / (source.stem + ".hwp")
@@ -1744,7 +1749,7 @@ class DesktopWebBridge:
         return response(execute)
 
     def _hwpx_to_hwp(self, source, target):
-        """??湲 COM(蹂꾨룄 ?몄뒪?댁뒪)?쇰줈 HWPX瑜?HWP濡???ν븳??"""
+        """한/글 COM(별도 인스턴스)으로 HWPX를 HWP로 저장한다."""
         import pythoncom
         import win32com.client
         from docfit_core.format_samples import REGISTRY_VALUE
@@ -1758,7 +1763,7 @@ class DesktopWebBridge:
             except Exception:
                 pass
             if not app.Open(str(source), "HWPX", "forceopen:true") or not app.SaveAs(str(target), "HWP", ""):
-                raise RuntimeError("??湲濡?HWP 臾몄꽌瑜?留뚮뱾吏 紐삵뻽?댁슂.")
+                raise RuntimeError("한/글로 HWP 문서를 만들지 못했어요.")
         finally:
             if app is not None:
                 try:
@@ -1772,31 +1777,31 @@ class DesktopWebBridge:
         from docfit_app.table_template_service import TableTemplateService
         def execute():
             if action != "get":
-                self.gui._以留??쒕퉬??)._editable(self.gui.running)
+                self.gui._준말_서비스()._editable(self.gui.running)
             data = dict(payload) if isinstance(payload, dict) else payload
             if action == 'learn' and isinstance(data, dict):
                 if data.get('input_selection_id') or not data.get('path'):
                     data['path'] = self._selection_path(data, 'table_template')
-            result = TableTemplateService(self.gui._以留??쒕퉬??)).command(
+            result = TableTemplateService(self.gui._준말_서비스()).command(
                 action, data, running=self.gui.running)
             return result
         return self._tk(lambda: response(execute))
 
     def _table_units_hwp(self):
-        """?깆씠 ?곕뒗 諛⑹떇 洹몃?濡??낅┰ ??湲??留뚮뱾怨?蹂댁븞 紐⑤뱢???깅줉???④릿??"""
-        # 2.0.5 ?ㅻ쪟: ?쒖옉??鍮좊Ⅴ寃??섎젮怨????由?媛앹껜(PendingGui)??type???쎌뼱 ??湲 蹂듭궗媛 紐⑤몢 ?ㅽ뙣?덈떎.
-        namespace = type(_real_gui(self.gui)).?뚯씪?щ㎎_蹂寃??쒖옉.__globals__
-        app = namespace["?쒓?_COM_?몄뒪?댁뒪_?앹꽦"](?낅┰=True)
+        """앱이 쓰는 방식 그대로 독립 한/글을 만들고 보안 모듈을 등록해 숨긴다."""
+        # 2.0.5 오류: 시작을 빠르게 하려고 둔 대리 객체(PendingGui)의 type을 읽어 한/글 복사가 모두 실패했다.
+        namespace = type(_real_gui(self.gui)).파일포맷_변경_시작.__globals__
+        app = namespace["한글_COM_인스턴스_생성"](독립=True)
         try:
             registered = app.RegisterModule(namespace["REGISTER_MODULE_NAME"], namespace["REGISTER_MODULE_VALUE"])
         except Exception:
             registered = False
         if registered is False:
             try:
-                app.Quit()   # ?깅줉???ㅽ뙣?대룄 ?⑥? ??湲???⑥? ?딄쾶 ?ル뒗??
+                app.Quit()   # 등록에 실패해도 숨은 한/글이 남지 않게 닫는다
             except Exception:
                 pass
-            raise RuntimeError("?깆뿉 ?ы븿????湲 蹂댁븞 紐⑤뱢???깅줉?섏? 紐삵뻽?듬땲??")
+            raise RuntimeError("앱에 포함된 한/글 보안 모듈을 등록하지 못했습니다.")
         try:
             app.XHwpWindows.Item(0).Visible = False
         except Exception:
@@ -1804,7 +1809,7 @@ class DesktopWebBridge:
         return app
 
     def hwp_bulk(self, action, payload=None):
-        """HWP ??HWPX ?쇨큵 蹂??2.0.7): drives 쨌 start 쨌 stop 쨌 status 쨌 open_report 쨌 show_report."""
+        """HWP → HWPX 일괄 변환(2.0.7): drives · start · stop · status · open_report · show_report."""
         from docfit_core import hwp_bulk as bulk
         payload = payload if isinstance(payload, dict) else {}
         state = getattr(self, "_bulk_state", None)
@@ -1824,27 +1829,27 @@ class DesktopWebBridge:
         if action in {"open_report", "show_report"}:
             path = state.report if state else ""
             opener = self._open_path if action == "open_report" else self._reveal
-            self._tk(lambda: opener(path, "蹂??寃곌낵?쒓? ?꾩쭅 ?놁뒿?덈떎."))
+            self._tk(lambda: opener(path, "변환 결과표가 아직 없습니다."))
             return status()
         if action != "start":
-            return status(False, "吏?먰븯吏 ?딅뒗 紐낅졊?낅땲??")
+            return status(False, "지원하지 않는 명령입니다.")
         if running:
-            return status(False, "HWPX ?쇨큵 蹂?섏씠 ?대? 吏꾪뻾 以묒엯?덈떎.")
+            return status(False, "HWPX 일괄 변환이 이미 진행 중입니다.")
         if self._tk(lambda: self.gui.running):
-            return status(False, "?ㅻⅨ 臾몄꽌 ?묒뾽???앸궃 ???쒖옉??二쇱꽭??")
+            return status(False, "다른 문서 작업이 끝난 뒤 시작해 주세요.")
         roots, passwords = payload.get("roots"), payload.get("passwords") or []
         if (not isinstance(roots, list) or not 1 <= len(roots) <= 20 or not isinstance(passwords, list)
                 or len(passwords) > 20 or not all(isinstance(x, str) and 0 < len(x) <= 128 for x in passwords)):
-            return status(False, "李얠쓣 ?꾩튂? ?뷀샇 紐⑸줉???뺤씤??二쇱꽭??")
+            return status(False, "찾을 위치와 암호 목록을 확인해 주세요.")
         clean = []
         for value in roots:
             path = Path(str(value or ""))
             if not path.is_absolute() or path.is_symlink() or not (
                     path.is_dir() or (path.is_file() and path.suffix.lower() == ".hwp")):
-                return status(False, f"李얠쓣 ?꾩튂瑜??????놁뒿?덈떎: {value}")
+                return status(False, f"찾을 위치를 열 수 없습니다: {value}")
             clean.append(path.resolve())
         documents = Path(os.path.expanduser("~")) / "Documents"
-        report_dir = (documents if documents.is_dir() else Path(tempfile.gettempdir())) / "HWP_AutoDocFit" / "HWPX蹂??寃곌낵??
+        report_dir = (documents if documents.is_dir() else Path(tempfile.gettempdir())) / "HWP_AutoDocFit" / "HWPX변환_결과표"
         state = self._bulk_state = bulk.BulkState(phase="scan")
         stop = self._bulk_stop = threading.Event()
 
@@ -1857,11 +1862,11 @@ class DesktopWebBridge:
             try:
                 bulk.run_bulk(clean, app_factory=factory, state=state, stop=stop, passwords=list(passwords),
                               report_dir=report_dir, recursive=payload.get("recursive", True) is not False)
-            except Exception as exc:  # ??湲 ?놁쓬 ?? ?붾㈃???댁쑀瑜?蹂댁씤??
-                logging.getLogger(__name__).warning("HWPX ?쇨큵 蹂???ㅽ뙣", exc_info=True)
+            except Exception as exc:  # 한/글 없음 등: 화면에 이유를 보인다.
+                logging.getLogger(__name__).warning("HWPX 일괄 변환 실패", exc_info=True)
                 state.error, state.phase = str(exc), "error"
             finally:
-                passwords.clear()  # ?뷀샇???묒뾽???앸굹硫?踰꾨┛????Β룰린濡앺븯吏 ?딆쓬).
+                passwords.clear()  # 암호는 작업이 끝나면 버린다(저장·기록하지 않음).
                 try:
                     import pythoncom
                     pythoncom.CoUninitialize()
@@ -1874,7 +1879,7 @@ class DesktopWebBridge:
         service = getattr(self, "_rename_service", None)
         if service is None:
             from docfit_app.file_rename_service import FileRenameService
-            folder = self._tk(lambda: getattr(self.gui, "_以留??쒕퉬??)().settings._path.parent)
+            folder = self._tk(lambda: getattr(self.gui, "_준말_서비스")().settings._path.parent)
             service = self._rename_service = FileRenameService(folder, dialogs=self._file_dialogs)
         return service
 
@@ -1882,22 +1887,22 @@ class DesktopWebBridge:
         service = getattr(self, "_timemachine_service_instance", None)
         if service is None:
             from docfit_app.timemachine_service import TimemachineService
-            folder = self._tk(lambda: getattr(self.gui, "_以留??쒕퉬??)().settings._path.parent)
+            folder = self._tk(lambda: getattr(self.gui, "_준말_서비스")().settings._path.parent)
             service = self._timemachine_service_instance = TimemachineService(
                 folder, feature_api=self._timemachine_send_to_feature
             )
         return service
 
     def _timemachine_send_to_feature(self, feature, paths):
-        """??꾨㉧?좎뿉??蹂대궦 ?뱀씤???뚯씪 紐⑸줉???ㅼ젣 湲곕뒫 ?湲곗뿴???곌껐?쒕떎."""
+        """타임머신에서 보낸 승인된 파일 목록을 실제 기능 대기열에 연결한다."""
         if feature == "rename_batch":
             return self._file_rename_service().add_paths(paths)
         if feature in ("convert", "document_edit"):
             if len(paths) > 1:
-                return {"ok": False, "code": "FEATURE_LIMIT", "message": "臾몄꽌?몄쭛/?뚯씪蹂?섏? ??踰덉뿉 ???뚯씪留?吏?먰빀?덈떎."}
+                return {"ok": False, "code": "FEATURE_LIMIT", "message": "문서편집/파일변환은 한 번에 한 파일만 지원합니다."}
             def add_to_gui():
                 if self.gui.running:
-                    return {"ok": False, "code": "JOB_RUNNING", "message": "臾몄꽌 ?묒뾽??吏꾪뻾 以묒엯?덈떎."}
+                    return {"ok": False, "code": "JOB_RUNNING", "message": "문서 작업이 진행 중입니다."}
                 if feature == "convert":
                     self.gui.selected_mode.set("file_format")
                     self._mode_selected()
@@ -1907,23 +1912,23 @@ class DesktopWebBridge:
                         self._mode_selected()
                 added = self.add_paths(paths, from_drop=False)
                 if not added:
-                    return {"ok": False, "code": "FEATURE_FAILED", "message": "?뚯씪??異붽??섏? 紐삵뻽?듬땲??"}
-                self.gui.status_var.set(f"??꾨㉧?좎뿉??臾몄꽌 異붽? 쨌 珥?{len(self.gui.files)}媛?)
+                    return {"ok": False, "code": "FEATURE_FAILED", "message": "파일을 추가하지 못했습니다."}
+                self.gui.status_var.set(f"타임머신에서 문서 추가 · 총 {len(self.gui.files)}개")
                 self._update_document_hints()
                 return {"ok": True}
             return self._tk(add_to_gui)
-        return {"ok": False, "code": "FEATURE_UNAVAILABLE", "message": "?대떦 湲곕뒫???ъ슜?????놁뒿?덈떎."}
+        return {"ok": False, "code": "FEATURE_UNAVAILABLE", "message": "해당 기능을 사용할 수 없습니다."}
 
     def timemachine(self, action, payload=None):
-        """??꾨㉧???붾㈃ 紐낅졊??泥섎━?쒕떎."""
+        """타임머신 화면 명령을 처리한다."""
         try:
             return self._timemachine_service().command(action, payload)
         except Exception:
-            logging.getLogger(__name__).exception("??꾨㉧??泥섎━ ?ㅽ뙣")
-            return {"ok": False, "code": "TM_FAILED", "message": "??꾨㉧???묒뾽???꾨즺?섏? 紐삵뻽?듬땲??"}
+            logging.getLogger(__name__).exception("타임머신 처리 실패")
+            return {"ok": False, "code": "TM_FAILED", "message": "타임머신 작업을 완료하지 못했습니다."}
 
     def kclip(self, action, payload=None):
-        """紐쎈븙?대┰蹂대뱶: ?곸＜ ?꾨줈洹몃옩(kagent.exe) 耳쒓린쨌?꾧린? 紐⑸줉쨌?ㅼ젙(?뚯씠??紐낅졊)."""
+        """몽땅클립보드: 상주 프로그램(kagent.exe) 켜기·끄기와 목록·설정(파이프 명령)."""
         try:
             from docfit_app.kclip_service import KClipService
             service = getattr(self, "_kclip_service", None)
@@ -1931,16 +1936,16 @@ class DesktopWebBridge:
                 service = self._kclip_service = KClipService()
             return service.command(action, payload)
         except Exception as exc:
-            logging.getLogger(__name__).warning("紐쎈븙?대┰蹂대뱶 泥섎━ ?ㅽ뙣", exc_info=True)
-            return {"ok": False, "message": str(exc) or "紐쎈븙?대┰蹂대뱶瑜?泥섎━?섏? 紐삵뻽?듬땲??"}
+            logging.getLogger(__name__).warning("몽땅클립보드 처리 실패", exc_info=True)
+            return {"ok": False, "message": str(exc) or "몽땅클립보드를 처리하지 못했습니다."}
 
     def file_rename(self, action, payload=None):
-        """?뚯씪?대쫫 ?? 紐⑸줉쨌誘몃━蹂닿린쨌?곸슜쨌?섎룎由ш린(寃쎈줈???몄뒪?몄뿉留??붾떎)."""
+        """파일이름 탭: 목록·미리보기·적용·되돌리기(경로는 호스트에만 둔다)."""
         try:
             return self._file_rename_service().command(action, payload)
         except Exception as exc:
-            logging.getLogger(__name__).warning("?뚯씪?대쫫 泥섎━ ?ㅽ뙣", exc_info=True)
-            return {"ok": False, "message": str(exc) or "?대쫫 諛붽씀湲곕? 泥섎━?섏? 紐삵뻽?듬땲??"}
+            logging.getLogger(__name__).warning("파일이름 처리 실패", exc_info=True)
+            return {"ok": False, "message": str(exc) or "이름 바꾸기를 처리하지 못했습니다."}
 
     def new_document(self, action, payload=None):
         from docfit_app.new_document_service import create_copy, user_documents
@@ -1949,7 +1954,7 @@ class DesktopWebBridge:
             profiles = self._profile_state().profiles or {}
             def snapshot_path(identifier):
                 try:
-                    pair = self.gui._?쒖떇?덉떆_寃쎈줈(identifier)
+                    pair = self.gui._서식예시_경로(identifier)
                     source = Path(pair[0])
                     return source if source.is_file() else None
                 except Exception:
@@ -1962,7 +1967,7 @@ class DesktopWebBridge:
                     if source:
                         preview = None
                         try:
-                            pair = self.gui._?쒖떇?덉떆_寃쎈줈(identifier)
+                            pair = self.gui._서식예시_경로(identifier)
                             candidates = [Path(pair[1])] if len(pair) > 1 and pair[1] else []
                             candidates += [source.with_suffix('.png'), source.with_name(source.stem + '_preview.png')]
                             preview = next((str(item.resolve()) for item in candidates if item.is_file()), None)
@@ -1970,16 +1975,16 @@ class DesktopWebBridge:
                             pass
                         items.append({'id': str(identifier), 'name': str(profile.get('name') or source.stem), 'preview': preview})
                 return {'ok': True, 'items': items}
-            if action != 'create': return {'ok': False, 'message': '吏?먰븯吏 ?딅뒗 ?덈Ц??紐낅졊?낅땲??'}
+            if action != 'create': return {'ok': False, 'message': '지원하지 않는 새문서 명령입니다.'}
             profile = profiles.get(payload.get('id'))
-            if not isinstance(profile, dict): return {'ok': False, 'message': '?쒖떇???ㅼ떆 ?좏깮??二쇱꽭??'}
+            if not isinstance(profile, dict): return {'ok': False, 'message': '서식을 다시 선택해 주세요.'}
             source = snapshot_path(payload.get('id'))
-            if not source: return {'ok': False, 'message': '???쒖떇???먮낯 HWPX 寃쎈줈瑜??뺤씤?????놁뒿?덈떎.'}
+            if not source: return {'ok': False, 'message': '이 서식의 원본 HWPX 경로를 확인할 수 없습니다.'}
             target = create_copy(source, user_documents(), profile.get('name'))
             try: os.startfile(str(target))
             except OSError as exc:
                 target.unlink(missing_ok=True)
-                return {'ok': False, 'message': f'??湲?먯꽌 臾몄꽌瑜??댁? 紐삵뻽?듬땲?? {exc}'}
+                return {'ok': False, 'message': f'한/글에서 문서를 열지 못했습니다: {exc}'}
             return {'ok': True, 'path': str(target), 'name': target.name}
         return self._tk(execute)
 
@@ -1989,12 +1994,12 @@ class DesktopWebBridge:
             config = self._configuration().snapshot(running=self.gui.running)
             values = config.get('values', {})
             if not values.get('developer_mode', False):
-                return {'ok': False, 'message': '?ъ씠?쒕찓??紐⑤뱶??媛쒕컻??紐⑤뱶?먯꽌留??ъ슜?????덉뒿?덈떎.'}
+                return {'ok': False, 'message': '사이드메뉴 모드는 개발자 모드에서만 사용할 수 있습니다.'}
             if self.sidebar_controller is None:
                 if self.window is None:
-                    return {'ok': False, 'message': '李쎌씠 ?꾩쭅 以鍮꾨릺吏 ?딆븯?듬땲??'}
+                    return {'ok': False, 'message': '창이 아직 준비되지 않았습니다.'}
                 self.sidebar_controller = SidebarModeController(
-                    _Win32WindowApi(), _PyWebViewWindow(self.window, self.gui._以留??쒕퉬??).settings, lambda: self._saved_window), True,
+                    _Win32WindowApi(), _PyWebViewWindow(self.window, self.gui._준말_서비스().settings, lambda: self._saved_window), True,
                     values.get('sidebar_mode_side', 'right'))
             else:
                 self.sidebar_controller.developer_mode = True
@@ -2011,16 +2016,16 @@ class DesktopWebBridge:
         def execute():
             config = self._configuration().snapshot(running=self.gui.running)
             if not config.get('values', {}).get('developer_mode', False):
-                return {'ok': False, 'message': '??긽 ???ㅼ젙? 媛쒕컻??紐⑤뱶?먯꽌留??ъ슜?????덉뒿?덈떎.'}
-            self.gui._以留??쒕퉬??).settings.update(lambda current: current.update({'always_on_top': bool(enabled)}))
+                return {'ok': False, 'message': '항상 위 설정은 개발자 모드에서만 사용할 수 있습니다.'}
+            self.gui._준말_서비스().settings.update(lambda current: current.update({'always_on_top': bool(enabled)}))
             if self.window is not None:
                 self.window.set_on_top(bool(enabled))
             return {'ok': True, 'enabled': bool(enabled)}
         return self._tk(execute)
 
     def _drain_rename_paths(self):
-        """?먯깋湲?蹂대궡湲?--rename)濡?諛쏆? 寃쎈줈瑜?紐⑸줉???ｊ퀬, ?붾㈃????쓣 ?대룄濡?True瑜??뚮젮以??
-        ?쒖옉 ???몄텧???섎━吏 ?딆쑝???대? ?ㅺ????곹깭 議고쉶???밸뒗??"""
+        """탐색기 보내기(--rename)로 받은 경로를 목록에 넣고, 화면이 탭을 열도록 True를 돌려준다.
+        시작 때 호출을 늘리지 않으려 이미 오가는 상태 조회에 얹는다."""
         queue = getattr(self.gui, "_rename_startup_paths", None)
         if not isinstance(queue, list) or not queue:
             return False
@@ -2031,7 +2036,7 @@ class DesktopWebBridge:
             logging.getLogger(__name__).exception("rename startup paths failed")
         window = self.window
         if window is not None and hasattr(window, "run_js"):
-            # ?곹깭 議고쉶??Tk ?ㅻ젅?쒖뿉???뚯븘 ?붾㈃ ?몄텧??湲곕떎由щ㈃ ?쒕줈 留됲엺??
+            # 상태 조회는 Tk 스레드에서 돌아 화면 호출을 기다리면 서로 막힌다.
             threading.Thread(
                 target=window.run_js,
                 args=("window.dispatchEvent(new Event('docfit-rename-files-dropped'));",),
@@ -2044,21 +2049,21 @@ class DesktopWebBridge:
         from docfit_app.table_sketch_service import TableSketchService
         try:
             if action == "copy" and self.gui.running:
-                return {"ok": False, "message": "臾몄꽌 ?묒뾽???앸궃 ???ㅼ떆 ?뚮윭 二쇱꽭??"}
-            folder = self._tk(lambda: getattr(self.gui, "_以留??쒕퉬??)().settings._path.parent)
+                return {"ok": False, "message": "문서 작업이 끝난 뒤 다시 눌러 주세요."}
+            folder = self._tk(lambda: getattr(self.gui, "_준말_서비스")().settings._path.parent)
             if action == "take_drop":
                 dropped, self._sketch_drop = getattr(self, "_sketch_drop", None), None
-                return dropped or {"ok": False, "message": "?볦? 洹몃┝???놁뒿?덈떎."}
+                return dropped or {"ok": False, "message": "놓은 그림이 없습니다."}
             if action == "clipboard_image":
                 from docfit_app import sketch_image_input
                 try:
                     return sketch_image_input.from_clipboard()
                 except Exception as exc:
-                    return {"ok": False, "message": str(exc) or "?대┰蹂대뱶 ?ъ쭊???쎌? 紐삵뻽?듬땲??"}
+                    return {"ok": False, "message": str(exc) or "클립보드 사진을 읽지 못했습니다."}
             if action != "copy":
                 return TableSketchService(folder).command(action, payload)
             if not _TABLE_UNITS_COM_LOCK.acquire(blocking=False):
-                return {"ok": False, "message": "???묒뾽??吏꾪뻾 以묒엯?덈떎. ?좎떆 ???ㅼ떆 ?뚮윭 二쇱꽭??"}
+                return {"ok": False, "message": "표 작업이 진행 중입니다. 잠시 후 다시 눌러 주세요."}
             try:
                 return TableSketchService(folder, self._table_units_hwp).command(action, payload)
             finally:
@@ -2069,6 +2074,24 @@ class DesktopWebBridge:
     def table_units(self, action, payload=None):
         if action != 'copy':
             return self._table_units_command(action, payload)
+        def execute():
+            manager = self._jobs()
+            identifier = manager.begin('table_copy', payload)
+            manager.report(identifier, 'started', {})
+            try:
+                result = self._table_units_command(action, payload)
+                if result.get('ok'):
+                    manager.report(identifier, 'item_done', result.get('data') or {})
+                    manager.report(identifier, 'done', result.get('data') or {})
+                else:
+                    manager.report(identifier, 'failed', result.get('error') or {})
+                return result
+            except Exception as exc:
+                manager.report(identifier, 'failed', {'code':'JOB_FAILED', 'message':str(exc)})
+                raise
+        # 기존 응답 봉투를 그대로 유지한다.
+        result = response(execute)
+        return result['data'] if result['ok'] else result
 
     def library_drop(self, paths, x, y, box_id, space=None):
         """OS 파일 끌어놓기: 경로 목록을 item_add 요청으로 순차 등록한다.
@@ -2080,8 +2103,8 @@ class DesktopWebBridge:
         box_id는 정수 또는 정수 문자열만 허용하며 int로 변환해 전달한다.
         """
         import math
-        if os.environ.get("DOCFIT_LIBRARY_BRIDGE", "").strip().lower() not in {"1", "true", "yes", "on"}:
-            return {"ok": False, "message": "자료함 브리지가 비활성화되어 있습니다."}
+        if not self._developer_mode_enabled():
+            return {"ok": False, "code": "DEVELOPER_MODE_REQUIRED", "message": "개발자 모드에서만 자료함을 사용할 수 있습니다."}
         valid_spaces = {"core", "basis", "reference", "temp"}
         if space is not None and space not in valid_spaces:
             return {"ok": False, "message": "자료함 공간이 올바르지 않습니다."}
@@ -2162,8 +2185,8 @@ class DesktopWebBridge:
 
     def library(self, request):
         """Forward one allowlisted library JSON request when the opt-in flag is set."""
-        if os.environ.get("DOCFIT_LIBRARY_BRIDGE", "").strip().lower() not in {"1", "true", "yes", "on"}:
-            return {"ok": False, "message": "?먮즺??釉뚮━吏媛 鍮꾪솢?깊솕?섏뼱 ?덉뒿?덈떎."}
+        if not self._developer_mode_enabled():
+            return {"ok": False, "code": "DEVELOPER_MODE_REQUIRED", "message": "개발자 모드에서만 자료함을 사용할 수 있습니다."}
         if self._library_bridge is None:
             from docfit_app.library_bridge import LibraryBridge
             self._library_bridge = LibraryBridge()
@@ -2171,47 +2194,28 @@ class DesktopWebBridge:
             return self._library_bridge.request(request)
         except Exception as exc:
             return {"ok": False, "message": str(exc)}
-        def execute():
-            manager = self._jobs()
-            identifier = manager.begin('table_copy', payload)
-            manager.report(identifier, 'started', {})
-            try:
-                result = self._table_units_command(action, payload)
-                if result.get('ok'):
-                    manager.report(identifier, 'item_done', result.get('data') or {})
-                    manager.report(identifier, 'done', result.get('data') or {})
-                else:
-                    manager.report(identifier, 'failed', result.get('error') or {})
-                return result
-            except Exception as exc:
-                manager.report(identifier, 'failed', {'code':'JOB_FAILED', 'message':str(exc)})
-                raise
-        # 湲곗〈 ?묐떟 遊됲닾瑜?洹몃?濡??좎??쒕떎.
-        result = response(execute)
-        return result['data'] if result['ok'] else result
-
     def _table_units_command(self, action, payload=None):
-        """???쒗뵆由? ?ㅻ깄??紐⑸줉쨌?뺣낫?⑥쐞 誘몃━蹂닿린쨌??湲 遺숈뿬?ｊ린??蹂듭궗(2026-10-22).
+        """표 템플릿: 스냅샷 목록·정보단위 미리보기·한/글 붙여넣기용 복사(2026-10-22).
 
-        ??湲???곕뒗 ?ㅻ깄?력룸났?щ뒗 ?쒓컙??嫄몃━誘濡?Tk ?붾㈃ ?ㅻ젅?쒓? ?꾨땲???몄텧 ?ㅻ젅?쒖뿉???곕줈 COM???곕떎.
+        한/글을 쓰는 스냅샷·복사는 시간이 걸리므로 Tk 화면 스레드가 아니라 호출 스레드에서 따로 COM을 연다.
         """
         from docfit_app.table_units_service import TableUnitsService
         from docfit_app.api_contract import ServiceError
 
         def execute():
             if action in ("copy", "thumbnails") and self.gui.running:
-                raise ServiceError("JOB_RUNNING", "臾몄꽌 ?묒뾽???앸궃 ???ㅼ떆 ?뚮윭 二쇱꽭??")
+                raise ServiceError("JOB_RUNNING", "문서 작업이 끝난 뒤 다시 눌러 주세요.")
             if action not in ("copy", "thumbnails"):
-                settings = self._tk(lambda: self.gui._以留??쒕퉬??).settings)
+                settings = self._tk(lambda: self.gui._준말_서비스().settings)
                 return TableUnitsService(settings=settings).command(action, payload)
-            # ?ㅻ깄???앹꽦 以묒뿉 蹂듭궗媛 寃뱀튂硫???湲쨌?대┰蹂대뱶媛 ?됲궎誘濡???踰덉뿉 ?섎굹留??쒕떎.
+            # 스냅샷 생성 중에 복사가 겹치면 한/글·클립보드가 엉키므로 한 번에 하나만 한다.
             if not _TABLE_UNITS_COM_LOCK.acquire(blocking=False):
-                raise ServiceError("BUSY", "???쒗뵆由??묒뾽??吏꾪뻾 以묒씠?먯슂. ?앸궃 ???ㅼ떆 ?뚮윭 二쇱꽭??")
+                raise ServiceError("BUSY", "표 템플릿 작업이 진행 중이에요. 끝난 뒤 다시 눌러 주세요.")
             import pythoncom
             try:
                 pythoncom.CoInitialize()
                 try:
-                    settings = self._tk(lambda: self.gui._以留??쒕퉬??).settings)
+                    settings = self._tk(lambda: self.gui._준말_서비스().settings)
                     return TableUnitsService(self._table_units_hwp, settings=settings).command(action, payload)
                 finally:
                     pythoncom.CoUninitialize()
@@ -2220,41 +2224,41 @@ class DesktopWebBridge:
         return response(execute)
 
     def get_abbreviations(self):
-        return self._tk(lambda: response(lambda: self.gui._以留??쒕퉬??).snapshot(running=self.gui.running)))
+        return self._tk(lambda: response(lambda: self.gui._준말_서비스().snapshot(running=self.gui.running)))
 
     def save_abbreviation(self, key, kind, value, original_key=""):
-        return self._tk(lambda: response(lambda: self.gui._以留??쒕퉬??).save(
+        return self._tk(lambda: response(lambda: self.gui._준말_서비스().save(
             key, kind, value, original_key, running=self.gui.running)))
 
     def delete_abbreviation(self, key):
-        return self._tk(lambda: response(lambda: self.gui._以留??쒕퉬??).delete(key, running=self.gui.running)))
+        return self._tk(lambda: response(lambda: self.gui._준말_서비스().delete(key, running=self.gui.running)))
 
     def set_abbreviation_defaults(self, enabled):
-        return self._tk(lambda: response(lambda: self.gui._以留??쒕퉬??).set_defaults(enabled, running=self.gui.running)))
+        return self._tk(lambda: response(lambda: self.gui._준말_서비스().set_defaults(enabled, running=self.gui.running)))
 
     def abbreviation_document(self, action):
-        """以留?愿由?HWPX 臾몄꽌 留뚮뱾湲걔룹뿴湲걔룸떎???쎄린쨌異쒖쿂 ?꾪솚(1.80.3)."""
-        return self._tk(lambda: response(lambda: self.gui._以留??쒕퉬??).document_command(
+        """준말 관리 HWPX 문서 만들기·열기·다시 읽기·출처 전환(1.80.3)."""
+        return self._tk(lambda: response(lambda: self.gui._준말_서비스().document_command(
             action, running=self.gui.running)))
 
     def open_results(self):
-        self._tk(self.gui._寃곌낵?뚯씪_?닿린, timeout=None, front=True)
+        self._tk(self.gui._결과파일_열기, timeout=None, front=True)
         return True
 
     def _result_path(self, index):
         try:
-            return getattr(self.gui, "_寃곌낵紐⑸줉", [])[int(index)].get("寃곌낵", "")
+            return getattr(self.gui, "_결과목록", [])[int(index)].get("결과", "")
         except (IndexError, TypeError, ValueError):
             return ""
 
     def open_result(self, index):
-        """寃곌낵 ?뚯씪 ?섎굹瑜??곌껐???꾨줈洹몃옩(??湲)?쇰줈 ?곕떎."""
+        """결과 파일 하나를 연결된 프로그램(한/글)으로 연다."""
         def open_one():
             path = self._result_path(index)
             if path and os.path.isfile(path):
-                self.gui._寃쎈줈_?닿린(path)
+                self.gui._경로_열기(path)
             else:
-                self.gui.status_var.set("寃곌낵 ?뚯씪??李얠쓣 ???놁뒿?덈떎. ??린嫄곕굹 吏?곗? ?딆븯?붿? ?뺤씤??二쇱꽭??")
+                self.gui.status_var.set("결과 파일을 찾을 수 없습니다. 옮기거나 지우지 않았는지 확인해 주세요.")
 
         self._tk(open_one, timeout=None, front=True)
         return self.get_state()
@@ -2263,13 +2267,13 @@ class DesktopWebBridge:
         if path and os.path.isfile(path) and os.name == "nt":
             subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
         elif path and os.path.isdir(os.path.dirname(path)):
-            self.gui._寃쎈줈_?닿린(os.path.dirname(path))
+            self.gui._경로_열기(os.path.dirname(path))
         else:
             self.gui.status_var.set(missing)
 
     def _open_path(self, path, missing):
         if path and os.path.isfile(path):
-            self.gui._寃쎈줈_?닿린(path)
+            self.gui._경로_열기(path)
         else:
             self.gui.status_var.set(missing)
 
@@ -2280,63 +2284,63 @@ class DesktopWebBridge:
             return ""
 
     def open_source_file(self, index):
-        """?뚯씪蹂???붾㈃ ?ㅻⅨ履?踰꾪듉 硫붾돱: ?щ┛ ?뚯씪???곌껐???꾨줈洹몃옩?쇰줈 ?곕떎(2.0.7)."""
-        self._tk(lambda: self._open_path(self._source_path(index), "?뚯씪??李얠쓣 ???놁뒿?덈떎."), timeout=None, front=True)
+        """파일변환 화면 오른쪽 버튼 메뉴: 올린 파일을 연결된 프로그램으로 연다(2.0.7)."""
+        self._tk(lambda: self._open_path(self._source_path(index), "파일을 찾을 수 없습니다."), timeout=None, front=True)
         return self.get_state()
 
     def show_source_file(self, index):
-        """?щ┛ ?뚯씪???먯깋湲곗뿉??怨⑤씪 蹂댁씤??2.0.7)."""
-        self._tk(lambda: self._reveal(self._source_path(index), "?뚯씪 ?대뜑瑜?李얠쓣 ???놁뒿?덈떎."), timeout=None, front=True)
+        """올린 파일을 탐색기에서 골라 보인다(2.0.7)."""
+        self._tk(lambda: self._reveal(self._source_path(index), "파일 폴더를 찾을 수 없습니다."), timeout=None, front=True)
         return self.get_state()
 
     def open_result_source(self, index):
-        """寃곌낵???먮낯 ?뚯씪???곕떎(2.0.7)."""
+        """결과의 원본 파일을 연다(2.0.7)."""
         def source():
             try:
-                return getattr(self.gui, "_寃곌낵紐⑸줉", [])[int(index)].get("?먮낯", "")
+                return getattr(self.gui, "_결과목록", [])[int(index)].get("원본", "")
             except (IndexError, TypeError, ValueError, AttributeError):
                 return ""
-        self._tk(lambda: self._open_path(source(), "?먮낯 ?뚯씪??李얠쓣 ???놁뒿?덈떎."), timeout=None, front=True)
+        self._tk(lambda: self._open_path(source(), "원본 파일을 찾을 수 없습니다."), timeout=None, front=True)
         return self.get_state()
 
     def show_result(self, index):
-        """?먯깋湲곗뿉??寃곌낵 ?뚯씪???덈뒗 ?대뜑瑜??닿퀬 洹??뚯씪???좏깮???붾떎."""
+        """탐색기에서 결과 파일이 있는 폴더를 열고 그 파일을 선택해 둔다."""
         def reveal():
             path = self._result_path(index)
             if path and os.path.isfile(path) and os.name == "nt":
                 subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
             elif path and os.path.isdir(os.path.dirname(path)):
-                self.gui._寃쎈줈_?닿린(os.path.dirname(path))
+                self.gui._경로_열기(os.path.dirname(path))
             else:
-                self.gui.status_var.set("寃곌낵 ?대뜑瑜?李얠쓣 ???놁뒿?덈떎.")
+                self.gui.status_var.set("결과 폴더를 찾을 수 없습니다.")
 
         self._tk(reveal, timeout=None, front=True)
         return self.get_state()
 
     def open_diff(self, index=0):
-        """?먮낯쨌寃곌낵??湲???섎???鍮꾧탳??HTML??留뚮뱾??湲곕낯 釉뚮씪?곗?濡??곕떎(2.0.6).
+        """원본·결과의 글을 나란히 비교한 HTML을 만들어 기본 브라우저로 연다(2.0.6).
 
-        ?덉쟾?먮뒗 ?낅┰ ??湲 鍮꾧탳 酉곗뼱媛 遺숈쓣 ?뚭퉴吏 '以鍮?以? ?ㅻ쪟留?蹂댁????ъ슜??蹂닿퀬)."""
+        예전에는 독립 한/글 비교 뷰어가 붙을 때까지 '준비 중' 오류만 보였다(사용자 보고)."""
         if self._tk_fallback_enabled():
-            self._tk(self.gui.鍮꾧탳李?以鍮? timeout=None, front=True)
+            self._tk(self.gui.비교창_준비, timeout=None, front=True)
             return {**self.get_state(), "ok": True, "tk_fallback": True}
         from docfit_app.result_compare import build_report
         try:
-            item = getattr(self.gui, "_寃곌낵紐⑸줉", [])[int(index)]
-            original, result = item.get("?먮낯", ""), item.get("寃곌낵", "")
+            item = getattr(self.gui, "_결과목록", [])[int(index)]
+            original, result = item.get("원본", ""), item.get("결과", "")
         except (IndexError, TypeError, ValueError, AttributeError):
             original = result = ""
         if not (original and os.path.isfile(original) and result and os.path.isfile(result)):
             return {"ok": False, "code": "DIFF_FILE_MISSING",
-                    "error": "?먮낯?대굹 寃곌낵 ?뚯씪??李얠쓣 ???놁뼱 鍮꾧탳?섏? 紐삵뻽?댁슂. ??린嫄곕굹 吏?곗? ?딆븯?붿? ?뺤씤??二쇱꽭??"}
+                    "error": "원본이나 결과 파일을 찾을 수 없어 비교하지 못했어요. 옮기거나 지우지 않았는지 확인해 주세요."}
         try:
             folder = Path(tempfile.gettempdir()) / "HWP_AutoDocFit_compare"
-            report = build_report(original, result, folder / f"鍮꾧탳_{Path(result).stem[:60]}.html")
+            report = build_report(original, result, folder / f"비교_{Path(result).stem[:60]}.html")
         except Exception as exc:
-            return {"ok": False, "code": "DIFF_UNSUPPORTED", "error": str(exc) or "鍮꾧탳?섏? 紐삵뻽?댁슂."}
+            return {"ok": False, "code": "DIFF_UNSUPPORTED", "error": str(exc) or "비교하지 못했어요."}
         opener = getattr(os, "startfile", None)
         if opener:
-            opener(str(report))   # noqa: S606 ???깆씠 留뚮뱺 HTML??湲곕낯 釉뚮씪?곗?濡??곕떎
+            opener(str(report))   # noqa: S606 — 앱이 만든 HTML을 기본 브라우저로 연다
         return {**self.get_state(), "ok": True, "report": str(report)}
 
     def compare_result(self, index=0):
@@ -2346,14 +2350,14 @@ class DesktopWebBridge:
         return self.open_diff(index)
 
     def _stages_changed(self, mode):
-        """?몃? ?묒뾽??諛붽씔 ??洹?移대뱶 ?듭뀡(???쒖쇅쨌?섏씠吏 留욎땄 ?쒖쇅 ?????몃? ?묒뾽??留욎텣??"""
-        if hasattr(self.gui, "_?몃??묒뾽_?듭뀡_留욎땄"):
-            self.gui._?몃??묒뾽_?듭뀡_留욎땄(mode)
+        """세부 작업을 바꾼 뒤 그 카드 옵션(표 제외·페이지 맞춤 제외 등)을 세부 작업에 맞춘다."""
+        if hasattr(self.gui, "_세부작업_옵션_맞춤"):
+            self.gui._세부작업_옵션_맞춤(mode)
 
     def set_stage(self, key, on):
-        """?꾩옱 ?묒뾽 ?좏삎???몃? ?묒뾽 ?섎굹瑜?耳쒓퀬 ?덈떎. 湲곕낯媛???μ쓣 耳??좏삎?대㈃ 諛붾줈 ??ν븳??
+        """현재 작업 유형의 세부 작업 하나를 켜고 끈다. 기본값 저장을 켠 유형이면 바로 저장한다.
 
-        移대뱶 ?듭뀡怨??곕룞???묒뾽?대㈃ ?듭뀡??諛붾먮떎(?? ???묒뾽???섎굹?쇰룄 耳쒕㈃ '???쒖쇅'媛 爰쇱쭊??.
+        카드 옵션과 연동된 작업이면 옵션도 바뀐다(예: 표 작업을 하나라도 켜면 '표 제외'가 꺼진다).
         """
         def update():
             gui = self.gui
@@ -2361,93 +2365,93 @@ class DesktopWebBridge:
             if gui.running or key not in gui.stage_choices.get(mode, {}):
                 return
             gui.stage_choices[mode][key] = bool(on)
-            if gui._?몃??묒뾽_湲곕낯???get(mode):
-                gui._?몃??묒뾽_湲곕낯媛????mode)
+            if gui._세부작업_기본저장.get(mode):
+                gui._세부작업_기본값_저장(mode)
             self._stages_changed(mode)
-            gui._?붿빟媛깆떊()
+            gui._요약갱신()
 
         self._tk(update)
         return self.get_state()
 
     def reset_stages(self):
-        """?꾩옱 ?묒뾽 ?좏삎???몃? ?묒뾽??泥섏쓬 湲곕낯媛믪쑝濡??섎룎由곕떎(移대뱶 ?듭뀡??洹몄뿉 留욎텣??."""
+        """현재 작업 유형의 세부 작업을 처음 기본값으로 되돌린다(카드 옵션도 그에 맞춘다)."""
         def reset():
             gui = self.gui
             mode = gui.selected_mode.get()
             if gui.running or mode not in gui.stage_choices:
                 return
             gui.stage_choices[mode] = {key: default_choice(key, mode) for key, _ in stages_for_mode(mode)}
-            if gui._?몃??묒뾽_湲곕낯???get(mode):
-                gui._?몃??묒뾽_湲곕낯媛????mode)
+            if gui._세부작업_기본저장.get(mode):
+                gui._세부작업_기본값_저장(mode)
             self._stages_changed(mode)
-            gui._?붿빟媛깆떊()
+            gui._요약갱신()
 
         self._tk(reset)
         return self.get_state()
 
     def set_stage_default(self, save):
-        """?꾩옱 援ъ꽦???ㅼ쓬 ?ㅽ뻾?먮룄 ?몄? ?뺥븳?? ?꾨㈃ ??ν븳 援ъ꽦??吏??泥섏쓬 湲곕낯媛믪쑝濡??쒖옉?쒕떎."""
+        """현재 구성을 다음 실행에도 쓸지 정한다. 끄면 저장한 구성을 지워 처음 기본값으로 시작한다."""
         def update():
             if not self.gui.running:
-                self.gui._?몃??묒뾽_湲곕낯媛????self.gui.selected_mode.get(), bool(save))
+                self.gui._세부작업_기본값_저장(self.gui.selected_mode.get(), bool(save))
 
         self._tk(update)
         return self.get_state()
 
     def set_profile(self, identifier):
-        """?쒖떇 ?곸슜?????쒖떇(?꾨줈?뚯씪)??怨좊Ⅸ?? 湲곗〈 肄ㅻ낫 ?좏깮怨?媛숈? 寃쎈줈濡?諛섏쁺?쒕떎."""
+        """서식 적용에 쓸 서식(프로파일)을 고른다. 기존 콤보 선택과 같은 경로로 반영한다."""
         def select():
             gui = self.gui
             ids = list(self._profile_state().profile_ids or [])
-            if not ids and hasattr(gui, "_?꾨줈?뚯씪_紐⑸줉媛깆떊"):
-                gui._?꾨줈?뚯씪_紐⑸줉媛깆떊()   # ?쒖떇 ?쒖꽌媛 ?꾩쭅 ?놁쑝硫?癒쇱? 梨꾩슫???놁쑝硫?紐⑤뱺 ?좏깮??臾댁떆??
+            if not ids and hasattr(gui, "_프로파일_목록갱신"):
+                gui._프로파일_목록갱신()   # 서식 순서가 아직 없으면 먼저 채운다(없으면 모든 선택이 무시됨)
                 ids = list(self._profile_state().profile_ids or [])
             combo = getattr(gui, "main_profile_combo", None)
             before = self._profile_state().active_profile_id
             if gui.running or identifier not in ids or combo is None:
-                _profile_trace(f"臾댁떆 ?붿껌={identifier!r} ?묒뾽以?{gui.running} 紐⑸줉={ids} 肄ㅻ낫={combo is not None}")
+                _profile_trace(f"무시 요청={identifier!r} 작업중={gui.running} 목록={ids} 콤보={combo is not None}")
                 return
             combo.current(ids.index(identifier))
-            gui._?꾨줈?뚯씪_?좏깮(SimpleNamespace(widget=combo))
-            _profile_trace(f"?좏깮 ?붿껌={identifier!r} ?댁쟾={before!r} ?댄썑={self._profile_state().active_profile_id!r}")
+            gui._프로파일_선택(SimpleNamespace(widget=combo))
+            _profile_trace(f"선택 요청={identifier!r} 이전={before!r} 이후={self._profile_state().active_profile_id!r}")
 
         self._tk(select)
         return self.get_state()
 
-    # ---- ?쒖떇 愿由??덉떆 蹂닿퀬?쒕줈 ?쒖떇 蹂듭젣쨌?대쫫 諛붽씀湲걔룹꽭遺 ?섏젙쨌??젣) ----
+    # ---- 서식 관리(예시 보고서로 서식 복제·이름 바꾸기·세부 수정·삭제) ----
     def _sidebar_collapsed_value(self):
-        """?쇱そ 硫붾돱 ?묓옒 ??κ컪(?놁쑝硫?None). ?곹깭 議고쉶媛 ??븘 ??踰덈쭔 ?쎈뒗??"""
+        """왼쪽 메뉴 접힘 저장값(없으면 None). 상태 조회가 잦아 한 번만 읽는다."""
         if not hasattr(self, "_sidebar_collapsed"):
             try:
-                self._sidebar_collapsed = self.gui._以留??쒕퉬??).settings.read().get("sidebar_collapsed")
+                self._sidebar_collapsed = self.gui._준말_서비스().settings.read().get("sidebar_collapsed")
             except Exception:
                 self._sidebar_collapsed = None
         return self._sidebar_collapsed
 
     def set_sidebar_collapsed(self, collapsed):
-        """?곗쓣 ?뚮????뚮쭔 ?쇱そ 硫붾돱 ?묓옒 ?곹깭瑜??ㅼ젙 ?뚯씪????ν븳??"""
+        """☰을 눌렀을 때만 왼쪽 메뉴 접힘 상태를 설정 파일에 저장한다."""
         value = bool(collapsed)
         self._sidebar_collapsed = value
-        self.gui._以留??쒕퉬??).settings.update(lambda current: current.update({"sidebar_collapsed": value}))
+        self.gui._준말_서비스().settings.update(lambda current: current.update({"sidebar_collapsed": value}))
         return value
 
     def set_drop_target(self, target):
-        """?뚯뼱 ?볦? ?뚯씪???ｌ쓣 怨녹쓣 諛붽씔?? documents(臾몄꽌 紐⑸줉) ?먮뒗 format(?덉떆 ?쒖떇 蹂듭젣)."""
+        """끌어 놓은 파일을 넣을 곳을 바꾼다: documents(문서 목록) 또는 format(예시 서식 복제)."""
         if target not in ("documents", "manual_documents", "format", "quick_format", "sketch_image", "paint_image",
                           "rename_files"):
-            raise ValueError("吏?먰븯吏 ?딅뒗 ?볤린 ??곸엯?덈떎.")
+            raise ValueError("지원하지 않는 놓기 대상입니다.")
         self.drop_target = target
-        if target == "format":   # ?쒖떇 愿由?李쎌쓣 ?????쒖떇?덉떆 ?대뜑???덈줈 ?ｌ? ?덉떆瑜?李얠븘 ?깅줉?쒕떎
-            detect = getattr(self.gui, "_?쒖떇?덉떆_?먮룞媛먯?", None)
+        if target == "format":   # 서식 관리 창을 열 때 서식예시 폴더에 새로 넣은 예시를 찾아 등록한다
+            detect = getattr(self.gui, "_서식예시_자동감지", None)
             if detect is not None:
                 self._tk(detect)
         window = self.window
         if window is not None and hasattr(window, "run_js"):
-            text = ("?ш린???볦쑝硫???蹂닿퀬?쒖쓽 ?쒖떇??蹂듭젣?⑸땲?? if target == "format"
-                    else "??移??꾩뿉 ?볦쑝硫?移?諛곌꼍 洹몃┝?쇰줈 ?ｌ뒿?덈떎" if target == "sketch_image"
-                    else "?ш린???볦쑝硫?洹몃┝??諛곌꼍 ?ъ쭊?쇰줈 ?ｌ뒿?덈떎" if target == "paint_image"
-                    else "?ш린???뚯씪???볦쑝硫??대쫫 紐⑸줉??異붽??⑸땲?? if target == "rename_files"
-                    else "?ш린???볦쑝硫?臾몄꽌 紐⑸줉??異붽??⑸땲??)
+            text = ("여기에 놓으면 이 보고서의 서식을 복제합니다" if target == "format"
+                    else "표 칸 위에 놓으면 칸 배경 그림으로 넣습니다" if target == "sketch_image"
+                    else "여기에 놓으면 그림판 배경 사진으로 넣습니다" if target == "paint_image"
+                    else "여기에 파일을 놓으면 이름 목록에 추가됩니다" if target == "rename_files"
+                    else "여기에 놓으면 문서 목록에 추가됩니다")
             try:
                 window.run_js(f"window.docfitDropText = {text!r};")
             except Exception:
@@ -2455,7 +2459,7 @@ class DesktopWebBridge:
         return self.get_state()
 
     def add_format_paths(self, paths):
-        """?뚯뼱 ?볦? ?덉떆 蹂닿퀬??HWP/HWPX) 以?泥??뚯씪???쒖떇??遺꾩꽍?????쒖떇?쇰줈 蹂듭젣?쒕떎."""
+        """끌어 놓은 예시 보고서(HWP/HWPX) 중 첫 파일의 서식을 분석해 새 서식으로 복제한다."""
         from docfit_app.api_contract import ServiceError
         candidates = [str(p) for p in (paths or []) if Path(str(p)).suffix.lower() in {'.hwp', '.hwpx'}]
         if candidates:
@@ -2468,20 +2472,20 @@ class DesktopWebBridge:
         def start():
             gui = self.gui
             if gui.running or self._profile_state().analyzing_format:
-                gui.status_var.set("?묒뾽?대굹 ?쒖떇 遺꾩꽍???앸궃 ???ㅼ떆 ?볦븘 二쇱꽭??")
+                gui.status_var.set("작업이나 서식 분석이 끝난 뒤 다시 놓아 주세요.")
                 return
             if not candidates:
-                gui.status_var.set("?쒖떇??蹂듭젣?섎젮硫?HWP ?먮뒗 HWPX ?덉떆 蹂닿퀬?쒕? ?볦븘 二쇱꽭??")
+                gui.status_var.set("서식을 복제하려면 HWP 또는 HWPX 예시 보고서를 놓아 주세요.")
                 return
             if len(candidates) > 1:
-                gui.濡쒓렇?쒖떆(f"?덉떆 蹂닿퀬?쒕뒗 ??踰덉뿉 ?섎굹??蹂듭젣?⑸땲?? {Path(candidates[0]).name}")
-            gui._?쒖떇_遺꾩꽍_?쒖옉(candidates[0], ?대쫫臾산린=False)
+                gui.로그표시(f"예시 보고서는 한 번에 하나씩 복제합니다: {Path(candidates[0]).name}")
+            gui._서식_분석_시작(candidates[0], 이름묻기=False)
 
         self._tk(start)
         return self.get_state()
 
     def receive_drop(self, paths, client_x=None, client_y=None):
-        """李쎌뿉 ?뚯뼱 ?볦? ?뚯씪: '?쒖떇 愿由? 李쎌씠 ?대젮 ?덉쑝硫??덉떆 ?쒖떇 蹂듭젣, ?꾨땲硫?臾몄꽌 紐⑸줉??異붽?."""
+        """창에 끌어 놓은 파일: '서식 관리' 창이 열려 있으면 예시 서식 복제, 아니면 문서 목록에 추가."""
         if self.drop_target == "format":
             return self.add_format_paths(paths)
         if self.drop_target == "sketch_image":
@@ -2496,17 +2500,17 @@ class DesktopWebBridge:
             left, top, right, bottom = bounds
             on_badge = left <= client_x < right and top <= client_y < bottom
         if self.drop_target == "quick_format" or on_badge:
-            return self.quick_register_and_activate_profile(paths[0]) if len(paths) == 1 else self._with_notice("?덉떆 ?쒖떇? ??媛쒖뵫 ?볦븘 二쇱꽭??")
+            return self.quick_register_and_activate_profile(paths[0]) if len(paths) == 1 else self._with_notice("예시 서식은 한 개씩 놓아 주세요.")
         if self.drop_target == "manual_documents":
             return self.add_paths(paths, from_drop=False)
         return self.add_paths(paths, from_drop=True)
 
     def _receive_rename_paths(self, paths):
-        """?뚯씪?대쫫 ??뿉 ?뚯뼱 ?볦? ?뚯씪쨌?대뜑(?대뜑??諛붾줈 ?꾨옒 ?뚯씪留?: 紐⑸줉???뷀븯怨??붾㈃???뚮┛??"""
+        """파일이름 탭에 끌어 놓은 파일·폴더(폴더는 바로 아래 파일만): 목록에 더하고 화면에 알린다."""
         try:
             result = self._file_rename_service().add_paths(list(paths or [])[:10000])
         except Exception as exc:
-            return self._with_notice(str(exc) or "?뚯씪??異붽??섏? 紐삵뻽?듬땲??")
+            return self._with_notice(str(exc) or "파일을 추가하지 못했습니다.")
         window = self.window
         if window is not None and hasattr(window, "run_js"):
             try:
@@ -2514,19 +2518,19 @@ class DesktopWebBridge:
             except Exception:
                 logging.getLogger(__name__).debug("rename drop event failed", exc_info=True)
         if result.get("skipped_count"):
-            return self._with_notice(f"{result['skipped_count']}媛??뚯씪? 紐⑸줉???ｌ? ?딆븯?듬땲?? "
+            return self._with_notice(f"{result['skipped_count']}개 파일은 목록에 넣지 않았습니다: "
                                      f"{result['skipped'][0]['reason']}")
         return self.get_state()
 
     def _receive_sketch_image(self, paths, client_x, client_y, event="docfit-sketch-image-dropped"):
-        """?쒓렇由쇳뙋쨌洹몃┝?먯뿉 ?뚯뼱 ?볦? ?ъ쭊: ?뚮쭪? ?ш린濡?諛붽퓭 ?먭퀬 ?붾㈃???뚮┛???붾㈃??take_drop?쇰줈 媛?멸컙??."""
+        """표그림판·그림판에 끌어 놓은 사진: 알맞은 크기로 바꿔 두고 화면에 알린다(화면이 take_drop으로 가져간다)."""
         from docfit_app import sketch_image_input
         try:
             image = sketch_image_input.from_path(paths[0]) if paths else None
             if image is None:
-                raise ValueError("洹몃┝ ?뚯씪???볦븘 二쇱꽭??")
+                raise ValueError("그림 파일을 놓아 주세요.")
         except Exception as exc:
-            return self._with_notice(str(exc) or "洹몃┝???쎌? 紐삵뻽?듬땲??")
+            return self._with_notice(str(exc) or "그림을 읽지 못했습니다.")
         self._sketch_drop_seq = getattr(self, "_sketch_drop_seq", 0) + 1
         self._sketch_drop = dict(image, client_x=client_x, client_y=client_y, seq=self._sketch_drop_seq)
         window = self.window
@@ -2543,8 +2547,8 @@ class DesktopWebBridge:
         return self.add_format_paths(self._file_dialogs.resolve_selection(selection_id, 'add_format_file'))
 
     def write_format_example(self):
-        """鍮???湲 臾몄꽌???덉떆瑜?吏곸젒 ?⑥꽌 ?쒖떇??留뚮뱺??"""
-        self._tk(self.gui._?쒖떇_?덉떆?몄쭛_?쒖옉, timeout=None, front=True)
+        """빈 한/글 문서에 예시를 직접 써서 서식을 만든다."""
+        self._tk(self.gui._서식_예시편집_시작, timeout=None, front=True)
         return self.get_state()
 
     def _with_notice(self, message):
@@ -2554,32 +2558,32 @@ class DesktopWebBridge:
         return state
 
     def rename_profile(self, identifier, name, organization=""):
-        """?쒖떇 ?대쫫(怨?湲곌?)??諛붽씔?? ???섎㈃ notice???댁쑀瑜??댁븘 ?뚮젮以??"""
-        return self._with_notice(self._tk(lambda: self.gui._?쒖떇_?대쫫_???str(identifier or ""), name, organization)))
+        """서식 이름(과 기관)을 바꾼다. 안 되면 notice에 이유를 담아 돌려준다."""
+        return self._with_notice(self._tk(lambda: self.gui._서식_이름_저장(str(identifier or ""), name, organization)))
 
     def delete_profile(self, identifier):
-        """?쒖떇????젣?쒕떎(?뺤씤? ?붾㈃???쒕떎). 湲곕낯 ?쒖떇? ??젣?섏? ?딅뒗??"""
-        return self._with_notice(self._tk(lambda: self.gui._?쒖떇_??젣(str(identifier or ""))))
+        """서식을 삭제한다(확인은 화면이 한다). 기본 서식은 삭제하지 않는다."""
+        return self._with_notice(self._tk(lambda: self.gui._서식_삭제(str(identifier or ""))))
 
     def edit_profile(self, identifier):
-        """?쒖떇 ?몃??ы빆 李쎌쓣 ?댁뼱 ??쒓컪??怨좎튇??李쎌쓣 ?レ쓣 ?뚭퉴吏 湲곕떎由곕떎)."""
-        self._tk(lambda: self.gui._?쒖떇_?섏젙?섍린(str(identifier or "")), timeout=None, front=True)
+        """서식 세부사항 창을 열어 대표값을 고친다(창을 닫을 때까지 기다린다)."""
+        self._tk(lambda: self.gui._서식_수정하기(str(identifier or "")), timeout=None, front=True)
         return self.get_state()
 
     def show_format_example(self):
-        """吏湲?怨좊Ⅸ ?쒖떇???낇엺 ?덉떆 蹂닿퀬?쒕? 留뚮뱾????湲濡?蹂댁뿬 以??留뚮뱶???숈븞 ?묒뾽 吏꾪뻾???붾㈃??蹂댁씤??."""
-        self._tk(self.gui._?쒖떇?덉떆_?뺤씤)
+        """지금 고른 서식을 입힌 예시 보고서를 만들어 한/글로 보여 준다(만드는 동안 작업 진행이 화면에 보인다)."""
+        self._tk(self.gui._서식예시_확인)
         return self.get_state()
 
     def format_gallery(self):
-        """?ㅼ삤?ㅽ겕???쒖떇 怨좊Ⅴ湲? ?쒖떇留덈떎 ?덉떆 泥?履?洹몃┝(?ㅽ떥而? JPEG data URI ?먮뒗 None)怨??대쫫쨌湲곌?쨌?ъ슜 以??щ?."""
+        """키오스크식 서식 고르기: 서식마다 예시 첫 쪽 그림(스틸컷, JPEG data URI 또는 None)과 이름·기관·사용 중 여부."""
         def collect():
             items = []
-            still = getattr(self.gui, "_?쒖떇_?ㅽ떥而?, None)
-            make = getattr(self.gui, "_?몃꽕??留뚮뱾湲??쒖옉", None)
-            need = getattr(self.gui, "_?몃꽕???꾩슂???쒖떇", None)
+            still = getattr(self.gui, "_서식_스틸컷", None)
+            make = getattr(self.gui, "_썸네일_만들기_시작", None)
+            need = getattr(self.gui, "_썸네일_필요한_서식", None)
             if make is not None and need is not None:
-                make(need())          # 誘몃━蹂닿린 洹몃┝???녿뒗 ?덉떆??諛깃렇?쇱슫?쒖뿉???몃꽕?쇱쓣 留뚮뱺???ㅼ쓬??????蹂댁엫)
+                make(need())          # 미리보기 그림이 없는 예시는 백그라운드에서 썸네일을 만든다(다음에 열 때 보임)
             for item in self._profiles():
                 data = still(item["id"], 300, "JPEG") if still is not None else None
                 image = "data:image/jpeg;base64," + base64.b64encode(data).decode("ascii") if data else None
@@ -2589,17 +2593,17 @@ class DesktopWebBridge:
         return self._tk(collect)
 
     def open_format_samples(self):
-        """?쒖떇?덉떆 ?대뜑(C:\\HWP_AUTODOCFIT\\?쒖떇?덉떆)瑜??먯깋湲곕줈 ?곕떎(?뚰뙆). ?덉떆 ?뚯씪??怨좎튂硫?'??踰덉뿉 ?곸슜' ??諛섏쁺?쒕떎."""
-        opener = getattr(self.gui, "_?쒖떇?덉떆_?대뜑_?닿린", None)
+        """서식예시 폴더(C:\\HWP_AUTODOCFIT\\서식예시)를 탐색기로 연다(알파). 예시 파일을 고치면 '한 번에 적용' 때 반영된다."""
+        opener = getattr(self.gui, "_서식예시_폴더_열기", None)
         if opener is not None:
             self._tk(opener)
         return self.get_state()
 
     def set_option(self, name, value):
-        """鍮좊Ⅸ ?ㅼ젙??耳쒓린쨌?꾧린 媛믪쓣 諛붽씔?? ???ㅼ젙 蹂?섏쓽 蹂寃?媛먯떆媛 ?ㅼ젙 ?뚯씪????ν븳??"""
+        """빠른 설정의 켜기·끄기 값을 바꾼다. 앱 설정 변수의 변경 감시가 설정 파일에 저장한다."""
         attribute = QUICK_OPTIONS.get(name)
         if attribute is None:
-            raise ValueError("吏?먰븯吏 ?딅뒗 ?ㅼ젙?낅땲??")
+            raise ValueError("지원하지 않는 설정입니다.")
 
         def update():
             variable = getattr(self.gui, attribute, None)
@@ -2613,31 +2617,31 @@ class DesktopWebBridge:
         def reset():
             if self.gui.running:
                 return
-            self.gui.紐⑸줉吏?곌린()
+            self.gui.목록지우기()
             self._cancel_pending_drop()
             self._update_document_hints()
-            self.gui._寃곌낵_珥덇린??)
-            self.gui._?덈궡?? self.gui._?덈궡吏??= None, set()
-            self.gui.status_var.set("??臾몄꽌瑜??좏깮?섏꽭??")
-            self._page_fit_card = False  # ?ㅻⅨ 移대뱶瑜?怨좊Ⅴ硫??섏씠吏 留욎땄 移대뱶 ?댁젣
+            self.gui._결과_초기화()
+            self.gui._안내키, self.gui._안내지남 = None, set()
+            self.gui.status_var.set("새 문서를 선택하세요.")
+            self._page_fit_card = False  # 다른 카드를 고르면 페이지 맞춤 카드 해제
             self.gui.selected_mode.set("spacing")
-            self.gui._紐⑤뱶_?좏깮??)
+            self.gui._모드_선택됨()
 
         self._tk(reset)
         return self.get_state()
 
     def run_tool(self, name):
-        commands = {"paste": self.gui._?띿뒪?몃줈_臾몄꽌異붽?_?닿린}
+        commands = {"paste": self.gui._텍스트로_문서추가_열기}
         command = commands.get(name)
         if command is None:
-            raise ValueError("吏?먰븯吏 ?딅뒗 ?꾧뎄?낅땲??")
+            raise ValueError("지원하지 않는 도구입니다.")
         if not self._tk_fallback_enabled():
             return {"ok": False, "error": "FLUTTER_ONLY"}
         self._tk(command, timeout=None, front=True)
         return True
 
     def request_close(self):
-        """OS 李??リ린 ?꾩뿉 湲곗〈 ?깆쓽 醫낅즺 ?뺤씤쨌?묒뾽 以묐떒 ?덉감瑜??섑뻾?쒕떎."""
+        """OS 창 닫기 전에 기존 앱의 종료 확인·작업 중단 절차를 수행한다."""
         if self.tk_stopped is not None and self.tk_stopped.is_set():
             return True
         force = False
@@ -2663,7 +2667,7 @@ class DesktopWebBridge:
                 self._close_prompt_queued = True
                 def ask_after_os_close_returns():
                     try:
-                        self.gui.醫낅즺()
+                        self.gui.종료()
                     finally:
                         self._close_prompt_queued = False
                 self.gui.root.after(0, ask_after_os_close_returns)
@@ -2679,27 +2683,27 @@ class DesktopWebBridge:
             except Exception:
                 return True
             self.user_closing = True
-            self.gui.醫낅즺()
+            self.gui.종료()
             try:
                 closed = not bool(self.gui.root.winfo_exists())
             except Exception:
                 closed = True
             if not closed:
-                self.user_closing = False   # ?묒뾽 以?醫낅즺瑜?痍⑥냼??寃쎌슦
+                self.user_closing = False   # 작업 중 종료를 취소한 경우
             return closed
 
-        # ?묒뾽 以묒씠硫?醫낅즺 ?뺤씤 李쎌씠 ?좎꽌 ?ъ슜?먯쓽 ?듭쓣 湲곕떎由곕떎.
+        # 작업 중이면 종료 확인 창이 떠서 사용자의 답을 기다린다.
         try:
             return self._tk(close, timeout=None, front=True)
         except RuntimeError:
-            # 醫낅즺 callback??root.destroy瑜??몄텧?섎㈃ ?먯떊??Future??醫낅즺?쒕떎.
+            # 종료 callback이 root.destroy를 호출하면 자신의 Future도 종료된다.
             if self.tk_stopped is not None and self.tk_stopped.is_set():
                 return True
             raise
 
 
 def _cancel_before_edit(method):
-    """?ㅼ젙쨌臾몄꽌쨌?쒖떇 蹂寃쎌? 媛숈? Tk ?먯뿉???덉빟 ?좏겙??癒쇱? 臾댄슚?뷀븳??"""
+    """설정·문서·서식 변경은 같은 Tk 큐에서 예약 토큰을 먼저 무효화한다."""
     from functools import wraps
     @wraps(method)
     def call(self, *args, **kwargs):
@@ -2771,16 +2775,16 @@ class _Win32WindowApi:
                 return r.left, r.top, r.right, r.bottom
         except Exception:
             pass
-        # 紐⑤땲?곕퀎 API媛 ?녿뒗 ?섍꼍?먯꽌??湲곕낯 ?붾㈃ ?묒뾽 ?곸뿭???ъ슜?쒕떎.
+        # 모니터별 API가 없는 환경에서는 기본 화면 작업 영역을 사용한다.
         rect = wintypes.RECT()
         if not self.user32.SystemParametersInfoW(self.SPI_GETWORKAREA, 0, ctypes.byref(rect), 0):
-            raise OSError('?붾㈃ ?묒뾽 ?곸뿭???뺤씤?섏? 紐삵뻽?듬땲??')
+            raise OSError('화면 작업 영역을 확인하지 못했습니다.')
         return rect.left, rect.top, rect.right, rect.bottom
 
     def set_window_pos(self, hwnd, x, y, width, height, topmost):
         insert_after = self.HWND_TOPMOST if topmost else self.HWND_NOTOPMOST
         if not self.user32.SetWindowPos(hwnd, insert_after, x, y, width, height, self.SWP_NOACTIVATE):
-            raise OSError('??李??꾩튂瑜?諛붽씀吏 紐삵뻽?듬땲??')
+            raise OSError('앱 창 위치를 바꾸지 못했습니다.')
         return True
 
 
@@ -2849,7 +2853,7 @@ _FILE_DROP_SCRIPT = """
   let depth = 0;
   const overlay = document.createElement('div');
   overlay.id = 'docfit-file-drop';
-  overlay.textContent = window.docfitDropText || '?ш린???볦쑝硫?臾몄꽌 紐⑸줉??異붽??⑸땲??;
+  overlay.textContent = window.docfitDropText || '여기에 놓으면 문서 목록에 추가됩니다';
   overlay.style.cssText = 'display:none;position:fixed;box-sizing:border-box;inset:16px;z-index:2147483647;'
     + 'pointer-events:none;align-items:center;justify-content:center;border:3px dashed #2563eb;'
     + 'border-radius:24px;background:rgba(239,246,255,.94);color:#1e40af;'
@@ -2859,7 +2863,7 @@ _FILE_DROP_SCRIPT = """
   const hide = () => { depth = 0; overlay.style.display = 'none'; };
   document.addEventListener('dragenter', e => {
     if (!files(e)) return;
-    overlay.textContent = window.docfitDropText || '?ш린???볦쑝硫?臾몄꽌 紐⑸줉??異붽??⑸땲??;
+    overlay.textContent = window.docfitDropText || '여기에 놓으면 문서 목록에 추가됩니다';
     e.preventDefault(); depth++; overlay.style.display = 'flex';
   }, true);
   document.addEventListener('dragover', e => {
@@ -2867,7 +2871,7 @@ _FILE_DROP_SCRIPT = """
     e.preventDefault(); e.dataTransfer.dropEffect = 'copy';
     const r = window.docfitProfileDropRect;
     const badge = r && e.clientX >= r[0] && e.clientX < r[2] && e.clientY >= r[1] && e.clientY < r[3];
-    overlay.textContent = badge ? '???ш린???볦븘 ???쒖떇?쇰줈 諛붾줈 ?깅줉쨌?곸슜' : (window.docfitDropText || '?ш린???볦쑝硫?臾몄꽌 紐⑸줉??異붽??⑸땲??);
+    overlay.textContent = badge ? '➕ 여기에 놓아 새 서식으로 바로 등록·적용' : (window.docfitDropText || '여기에 놓으면 문서 목록에 추가됩니다');
     Object.assign(overlay.style, badge ? {left:r[0]+'px', top:r[1]+'px', right:'auto', bottom:'auto', width:(r[2]-r[0])+'px', height:(r[3]-r[1])+'px', fontSize:'9px',padding:'2px'} : {left:'0',top:'0',right:'0',bottom:'0',width:'auto',height:'auto',fontSize:'20px',padding:'24px'});
     overlay.style.display = 'flex';
   }, true);
@@ -2900,11 +2904,11 @@ def _bind_file_drop(web_window, bridge):
                     bridge.receive_drop(paths, client_x=event["clientX"], client_y=event["clientY"])
                 else:
                     bridge.receive_drop(paths)
-                # ?꾨윴?몄뿏?쒓? ?ㅼ쓬 ?대쭅 二쇨린瑜?湲곕떎由ъ? ?딄퀬 理쒖떊 ?곹깭瑜??ㅼ떆 ?쎄쾶 ?쒕떎.
+                # 프런트엔드가 다음 폴링 주기를 기다리지 않고 최신 상태를 다시 읽게 한다.
                 web_window.run_js("window.dispatchEvent(new Event('docfit-documents-dropped'));")
             elif files:
                 bridge._tk(lambda: bridge.gui.status_var.set(
-                    "?쒕∼???뚯씪 寃쎈줈瑜??쎌? 紐삵뻽?듬땲?? 臾몄꽌 ?좏깮 踰꾪듉???댁슜??二쇱꽭??"))
+                    "드롭한 파일 경로를 읽지 못했습니다. 문서 선택 버튼을 이용해 주세요."))
                 logging.getLogger(__name__).warning("File drop received without native paths")
         except Exception:
             logging.getLogger(__name__).exception("File drop failed")
@@ -3050,7 +3054,7 @@ def _install_webview_rendering_guard(edgechromium_module=None):
 
 
 def run_webview(gui):
-    """湲곗〈 Tk 諛깆뿏?쒕? ?④꺼 ?ㅽ뻾?섍퀬 WebView2瑜?二?UI濡??쒖떆?쒕떎."""
+    """기존 Tk 백엔드를 숨겨 실행하고 WebView2를 주 UI로 표시한다."""
     if importlib.util.find_spec("webview") is None:
         return False
 
@@ -3064,10 +3068,10 @@ def run_webview(gui):
     bridge = DesktopWebBridge(gui)
     page = _resource_path()
     if not page.is_file():
-        raise FileNotFoundError(f"??UI ?뚯씪??李얠쓣 ???놁뒿?덈떎: {page}")
+        raise FileNotFoundError(f"웹 UI 파일을 찾을 수 없습니다: {page}")
 
     if isinstance(gui, PendingGui):
-        # Tk瑜?湲곕떎由ъ? ?딄퀬 李??ш린瑜??뺥븳??pywebview ?붾㈃ ?뺣낫??Tk? 媛숈? ?쇰━ ?쎌?).
+        # Tk를 기다리지 않고 창 크기를 정한다(pywebview 화면 정보는 Tk와 같은 논리 픽셀).
         try:
             screen = webview.screens[0]
             screen_width, screen_height = int(screen.width), int(screen.height)
@@ -3087,7 +3091,7 @@ def run_webview(gui):
     y = max(0, (screen_height - height) // 2)
 
     window = webview.create_window(
-        f"{APP_NAME} 쨌 v{APP_VERSION}",
+        f"{APP_NAME} · v{APP_VERSION}",
         # A filesystem path activates pywebview's local HTTP asset server;
         # file:// URLs bypass it and cannot load Flutter's WASM/font assets.
         url=str(page),
@@ -3114,11 +3118,11 @@ def run_webview(gui):
     def track_tk_destroy():
         try:
             real = _real_gui(gui)
-            # Tk 以鍮꾧? ?앸굹硫?釉뚮━吏???由?媛앹껜 ????ㅼ젣 ?붾㈃???대떎(type쨌isinstance 寃?щ룄 ?ㅼ젣 ?붾㈃ 湲곗?).
+            # Tk 준비가 끝나면 브리지는 대리 객체 대신 실제 화면을 쓴다(type·isinstance 검사도 실제 화면 기준).
             bridge.gui = real
             root = real.root
         except Exception:
-            # Tk ?붾㈃??留뚮뱾吏 紐삵뻽?? ??李쎌쓣 ?リ퀬 ?쒖옉 ?ㅻ쪟???몄텧??履쎌씠 ?뚮┛??
+            # Tk 화면을 만들지 못했다: 웹 창을 닫고 시작 오류는 호출한 쪽이 알린다.
             tk_stopped.set()
             return
         original_destroy = root.destroy
@@ -3143,8 +3147,8 @@ def run_webview(gui):
     def stop_webview_when_app_exits(web_window):
         tk_stopped.wait()
         if bridge.user_closing:
-            # ?ъ슜?먭? ??李쎌쓣 ?ル뒗 以묒씠硫?李쎌씠 ?ㅼ뒪濡??ロ엺?? ?ш린??destroy()瑜???遺瑜대㈃
-            # pywebview媛 ?ロ옒 泥섎━瑜???踰??ㅽ뻾??.NET '泥섎━?섏? ?딆? ?덉쇅' 李쎌씠 ?щ떎.
+            # 사용자가 웹 창을 닫는 중이면 창이 스스로 닫힌다. 여기서 destroy()를 또 부르면
+            # pywebview가 닫힘 처리를 두 번 실행해 .NET '처리되지 않은 예외' 창이 뜬다.
             return
         try:
             web_window.destroy()
@@ -3170,12 +3174,12 @@ def run_webview(gui):
             daemon=True,
         ).start()
 
-    # 李??꾩씠肄? 吏?뺥븯吏 ?딆쑝硫??ㅽ뻾 ?뚯씪(python.exe ?먮뒗 exe)???꾩씠肄섏쓣 ?대떎.
-    ?꾩씠肄?= {"icon": APP_ICON} if APP_ICON and Path(APP_ICON).is_file() else {}
+    # 창 아이콘: 지정하지 않으면 실행 파일(python.exe 또는 exe)의 아이콘을 쓴다.
+    아이콘 = {"icon": APP_ICON} if APP_ICON and Path(APP_ICON).is_file() else {}
     smoke_port = smoke_cdp_port()
     if smoke_port is not None:
         webview.settings["REMOTE_DEBUGGING_PORT"] = smoke_port
-    webview.start(initialize_webview, args=[window], gui="edgechromium", http_server=True, **?꾩씠肄?
+    webview.start(initialize_webview, args=[window], gui="edgechromium", http_server=True, **아이콘)
     return True
 
 

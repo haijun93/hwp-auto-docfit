@@ -1,9 +1,20 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:docfit_ui/features/library/library_api.dart';
 import 'package:docfit_ui/features/library/library_screen.dart';
 
+class _UnavailableLibraryApi implements LibraryApi {
+  Future<T> _missing<T>() async => throw StateError('자료함 엔진(klib.exe)이 없습니다');
+  @override Future<List<LibraryBox>> listBoxes() => _missing();
+  @override Future<LibraryBox> createBox(String name) => _missing();
+  @override Future<List<LibraryItem>> listItems(String boxId, {String query = ''}) => _missing();
+  @override Future<LibraryItem> addItem({required String boxId, required LibraryItemKind kind, required String title, required LibrarySpace space, required double x, required double y, String? source, String? text}) => _missing();
+  @override Future<LibraryItem> moveItem(String itemId, {required String boxId, required LibrarySpace space, required double x, required double y}) => _missing();
+  @override Future<List<LibraryRelation>> listRelations(String boxId) => _missing();
+  @override Future<LibraryRelation> addRelation(String boxId, String fromItemId, String toItemId) => _missing();
+  @override Future<void> deleteRelation(String relationId) => _missing();
+}
 class FakeLibraryClipboardReader implements LibraryClipboardReader {
   FakeLibraryClipboardReader({this.nextData});
   LibraryClipboardData? nextData;
@@ -13,6 +24,11 @@ class FakeLibraryClipboardReader implements LibraryClipboardReader {
 }
 
 void main() {
+  testWidgets('missing klib is shown without crashing', (tester) async {
+    await tester.pumpWidget(MaterialApp(home: LibraryScreen(api: _UnavailableLibraryApi())));
+    await tester.pumpAndSettle();
+    expect(find.text('자료함 엔진(klib.exe)이 없습니다'), findsOneWidget);
+  });
   test('초기 ID 뒤에서 안전하게 증가하고 잘못된 자료함 이동을 거부한다', () async {
     final api = InMemoryLibraryApi(
       initialBoxes: const [LibraryBox(id: 'box_8', name: '초기')],

@@ -48,7 +48,8 @@ on:
       - release/2.2.11
       - release/2.2.12
       - release/2.2.13
-      - feature/v4-offline-library`r`n      - claude/affectionate-goldberg-ggln7c
+      - feature/v4-offline-library
+      - claude/affectionate-goldberg-ggln7c
     paths-ignore:
       - 'README.md'
       - '.github/README.md'

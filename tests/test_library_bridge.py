@@ -79,14 +79,16 @@ class LibraryBridgeTests(unittest.TestCase):
 
         bridge = DesktopWebBridge.__new__(DesktopWebBridge)
         bridge._library_bridge = None
+        bridge._developer_mode_enabled = lambda: False
         with patch.dict(os.environ, {"DOCFIT_LIBRARY_BRIDGE": "0"}), \
              patch("docfit_app.library_bridge._open_pipe", side_effect=AssertionError), \
              patch("subprocess.Popen", side_effect=AssertionError):
             result = bridge.library({"cmd": "box_list"})
         self.assertFalse(result["ok"])
+        self.assertEqual(result["code"], "DEVELOPER_MODE_REQUIRED")
         self.assertIsNone(bridge._library_bridge)
 
-    def _drop_bridge(self, responses):
+    def _drop_bridge(self, responses, *, developer_mode=True):
         from desktop_web_ui import DesktopWebBridge
 
         requests = []
@@ -99,14 +101,17 @@ class LibraryBridgeTests(unittest.TestCase):
 
         bridge = DesktopWebBridge.__new__(DesktopWebBridge)
         bridge._library_bridge = FakeLibrary()
+        bridge._developer_mode_enabled = lambda: developer_mode
         return bridge, requests
 
     def test_library_drop_adds_file_and_folder_by_quadrant(self):
-        with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {"DOCFIT_LIBRARY_BRIDGE": "1"}):
+        with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {"DOCFIT_LIBRARY_BRIDGE": "0"}):
             file_path = os.path.join(root, "한글 문서.txt")
             folder_path = os.path.join(root, "자료 폴더")
             open(file_path, "wb").close()
             os.mkdir(folder_path)
+            denied, _ = self._drop_bridge([], developer_mode=False)
+            self.assertEqual(denied.library_drop([file_path], 0.25, 0.25, 7)["code"], "DEVELOPER_MODE_REQUIRED")
             bridge, requests = self._drop_bridge([{"ok": True}, {"ok": True}])
             first = bridge.library_drop([file_path], 0.25, 0.25, 7)
             second = bridge.library_drop(folder_path, 0.5, 0.5, 7)
@@ -121,14 +126,14 @@ class LibraryBridgeTests(unittest.TestCase):
                 "display_name": "자료 폴더", "space": "temp", "x": 0.5, "y": 0.5})
 
     def test_library_drop_maps_remaining_quadrants(self):
-        with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {"DOCFIT_LIBRARY_BRIDGE": "1"}):
+        with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {"DOCFIT_LIBRARY_BRIDGE": "0"}):
             for x, y, space in ((0.75, 0.25, "basis"), (0.25, 0.75, "reference")):
                 bridge, requests = self._drop_bridge([{"ok": True}])
                 bridge.library_drop([root], x, y, 1)
                 self.assertEqual(requests[0]["space"], space)
 
     def test_library_drop_skips_missing_and_duplicate_paths(self):
-        with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {"DOCFIT_LIBRARY_BRIDGE": "1"}):
+        with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {"DOCFIT_LIBRARY_BRIDGE": "0"}):
             file_path = os.path.join(root, "a.txt")
             open(file_path, "wb").close()
             missing = os.path.join(root, "없는파일.txt")
@@ -142,7 +147,7 @@ class LibraryBridgeTests(unittest.TestCase):
             self.assertEqual(len(result["added"]), 1)
 
     def test_library_drop_continues_after_item_add_error(self):
-        with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {"DOCFIT_LIBRARY_BRIDGE": "1"}):
+        with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {"DOCFIT_LIBRARY_BRIDGE": "0"}):
             first = os.path.join(root, "a.txt")
             second = os.path.join(root, "b.txt")
             open(first, "wb").close()
@@ -155,7 +160,7 @@ class LibraryBridgeTests(unittest.TestCase):
             self.assertEqual(result["failed"], [{"path": first, "message": "오류"}])
 
     def test_library_drop_rejects_invalid_coordinates_and_box_id(self):
-        with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {"DOCFIT_LIBRARY_BRIDGE": "1"}):
+        with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {"DOCFIT_LIBRARY_BRIDGE": "0"}):
             paths = [root]
             bridge, requests = self._drop_bridge([])
             for x, y, box in ((float("nan"), 0.1, 1), (0.1, float("inf"), 1), ("abc", 0.1, 1),
@@ -166,7 +171,7 @@ class LibraryBridgeTests(unittest.TestCase):
 
     def test_library_drop_normalized_board_coordinates_pass_through(self):
         # space 생략: x,y는 보드 전체 0~1 정규화 좌표. 사분면만 판정(0.5는 오른쪽/아래)하고 값은 그대로 전달.
-        with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {"DOCFIT_LIBRARY_BRIDGE": "1"}):
+        with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {"DOCFIT_LIBRARY_BRIDGE": "0"}):
             cases = ((0.0, 0.0, "core"), (0.49, 0.49, "core"), (0.5, 0.0, "basis"),
                      (1.0, 0.25, "basis"), (0.1, 0.5, "reference"), (0.5, 1.0, "temp"))
             for x, y, space in cases:
@@ -180,7 +185,7 @@ class LibraryBridgeTests(unittest.TestCase):
 
     def test_library_drop_local_pixel_coordinates_with_space(self):
         # space 지정: x,y는 해당 사분면 캔버스의 로컬 픽셀 좌표(globalToLocal)이며 그대로 item_add로 전달.
-        with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {"DOCFIT_LIBRARY_BRIDGE": "1"}):
+        with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {"DOCFIT_LIBRARY_BRIDGE": "0"}):
             for space in ("core", "basis", "reference", "temp"):
                 bridge, requests = self._drop_bridge([{"ok": True}])
                 self.assertTrue(bridge.library_drop([root], 312.5, 140, 1, space)["ok"])
@@ -191,7 +196,7 @@ class LibraryBridgeTests(unittest.TestCase):
             self.assertEqual(requests, [])
 
     def test_library_drop_box_id_converted_to_int(self):
-        with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {"DOCFIT_LIBRARY_BRIDGE": "1"}):
+        with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {"DOCFIT_LIBRARY_BRIDGE": "0"}):
             for box in ("7", " 7 ", 7):
                 bridge, requests = self._drop_bridge([{"ok": True}])
                 bridge.library_drop([root], 0.1, 0.1, box)
@@ -203,7 +208,7 @@ class LibraryBridgeTests(unittest.TestCase):
             self.assertEqual(requests, [])
 
     def test_library_drop_isolates_per_path_errors(self):
-        with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {"DOCFIT_LIBRARY_BRIDGE": "1"}):
+        with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {"DOCFIT_LIBRARY_BRIDGE": "0"}):
             good = os.path.join(root, "a.txt")
             open(good, "wb").close()
             bridge, requests = self._drop_bridge([{"ok": True}])
@@ -227,6 +232,7 @@ class LibraryBridgeTests(unittest.TestCase):
 
         bridge = DesktopWebBridge.__new__(DesktopWebBridge)
         bridge._library_bridge = None
+        bridge._developer_mode_enabled = lambda: True
         with patch.dict(os.environ, {"DOCFIT_LIBRARY_BRIDGE": "0"}), \
              patch("docfit_app.library_bridge._open_pipe", side_effect=AssertionError), \
              patch("subprocess.Popen", side_effect=AssertionError):

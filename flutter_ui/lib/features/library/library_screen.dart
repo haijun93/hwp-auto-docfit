@@ -94,7 +94,17 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   Future<void> _loadBoxes() async {
-    final boxes = await widget.api.listBoxes();
+    List<LibraryBox> boxes;
+    try {
+      boxes = await widget.api.listBoxes();
+    } catch (error) {
+      if (!mounted) return;
+      final message = error.toString().contains('klib') || error.toString().contains('자료함 엔진')
+          ? '자료함 엔진(klib.exe)이 없습니다'
+          : error.toString();
+      setState(() => _statusMessage = message);
+      return;
+    }
     if (!mounted) return;
     setState(() {
       _boxes = boxes;
@@ -105,8 +115,16 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   Future<void> _loadBoxContent(String boxId) async {
-    final items = await widget.api.listItems(boxId, query: _searchController.text);
-    final relations = await widget.api.listRelations(boxId);
+    List<LibraryItem> items;
+    List<LibraryRelation> relations;
+    try {
+      items = await widget.api.listItems(boxId, query: _searchController.text);
+      relations = await widget.api.listRelations(boxId);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _statusMessage = error.toString());
+      return;
+    }
     if (!mounted) return;
     setState(() {
       _items = items;
@@ -277,7 +295,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
           child: Focus(
             autofocus: true,
             child: LayoutBuilder(builder: (context, constraints) => Scaffold(
-              body: Row(children: [
+              body: _statusMessage != null && _boxes.isEmpty
+                  ? Center(child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(_statusMessage!, key: const ValueKey('library-engine-error')),
+                    ))
+                  : Row(children: [
                 SizedBox(width: 260, child: _buildSidebar()),
                 const VerticalDivider(width: 1),
                 Expanded(child: _selectedBox == null ? _buildEmptyState() : _buildWorkspace()),
