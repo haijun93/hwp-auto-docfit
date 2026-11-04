@@ -215,6 +215,23 @@ class ContentSearchTests(unittest.TestCase):
         self.assertEqual(found[0]["name"], doc2.name)
         self.assertEqual(found[1]["name"], doc1.name)
 
+    def test_table_cell_two_mentions_beats_body_one_at_same_lowest_level(self):
+        table_doc = self.root / "table.hwpx"
+        body_doc = self.root / "body.hwpx"
+        write_hwpx_paragraphs(table_doc, [
+            {"text": "표순위검색 표순위검색", "is_table_cell": True},
+        ])
+        write_hwpx_paragraphs(body_doc, [
+            {"text": "표순위검색", "style_name": "바탕글"},
+        ])
+        self.index.index_file(table_doc)
+        self.index.index_file(body_doc)
+
+        found = self.index.search("표순위검색")
+        self.assertEqual([item["name"] for item in found], [table_doc.name, body_doc.name])
+        self.assertEqual([item["best_level"] for item in found], ["표 칸", "본문"])
+        self.assertEqual([item["total_matches"] for item in found], [2, 1])
+
     def test_hierarchy_order_same_level_same_mentions_newer_document_first(self):
         p_old = self.root / "z_older.txt"
         p_new = self.root / "a_newer.txt"
@@ -346,6 +363,7 @@ class ContentSearchTests(unittest.TestCase):
         path.write_text("2026. 10. 20. 날짜로 시작하는 일반 문장\n1. 문맥 없는 단독 번호 문장", encoding="utf-8")
         records = extract_paragraphs(path)
         self.assertEqual(records[0].level, "body")
+        self.assertEqual(records[0].level_rank, records[1].level_rank)
         self.assertEqual(records[1].level, "body")
 
     def test_table_cell_records_keep_table_level_and_order(self):
