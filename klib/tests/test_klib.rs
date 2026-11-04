@@ -366,7 +366,7 @@ fn test_json_strictness_and_surrogates() {
     assert!(json::parse("1e").is_none());
     assert!(json::parse("x").is_none());
     assert_eq!(json::parse("0").unwrap().num("").unwrap_or(0.0), 0.0);
-    assert_eq!(json::parse("-12.34").unwrap().num("").unwrap_or(0.0), -12.34);
+    assert!(matches!(json::parse("-12.34").unwrap(), json::Value::Num(n) if n == -12.34));
 
     assert!(json::parse(r#""abc"#).is_none());
     assert!(json::parse("\"\x01\"").is_none());
