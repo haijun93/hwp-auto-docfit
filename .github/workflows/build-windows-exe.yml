@@ -142,6 +142,8 @@ jobs:
       - name: Build klib (Rust)
         shell: pwsh
         run: |
+          $mingw = Join-Path $env:LOCALAPPDATA "DocFitTools\mingw64\bin"
+          if (Test-Path -LiteralPath $mingw) { $env:PATH = "$mingw;$env:PATH" }
           cargo test --locked --manifest-path klib/Cargo.toml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo build --locked --release --manifest-path klib/Cargo.toml

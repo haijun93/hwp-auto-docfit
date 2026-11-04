@@ -18,8 +18,8 @@ windows-sys = { version = "0.59", features = [
     "Win32_System_Threading",
 ] }
 tantivy = "=0.22.1"
-lindera-tantivy = { version = "=0.38.1", features = ["ko-dic"] }
-lindera = { version = "=0.38.1", features = ["ko-dic"] }
+lindera-tantivy = { version = "=0.38.1" }
+lindera = { version = "=0.38.1" }
 md5 = "0.7"
 regex = "1"
 zip = { version = "2", default-features = false, features = ["deflate"] }
@@ -30,3 +30,7 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
+
+[features]
+default = []
+ko-dic = ["lindera/ko-dic", "lindera-tantivy/ko-dic"]

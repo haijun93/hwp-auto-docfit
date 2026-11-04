@@ -20,7 +20,7 @@ use windows_sys::Win32::System::Threading::CreateMutexW;
 use crate::db::Database;
 use crate::util::{data_dir, now_ms, wide};
 
-static SEARCH_INDEX: std::sync::OnceLock<search::SearchIndex> = std::sync::OnceLock::new();
+static SEARCH_INDEX: std::sync::OnceLock<Result<search::SearchIndex, String>> = std::sync::OnceLock::new();
 
 pub(crate) fn search_index() -> Result<&'static search::SearchIndex, String> {
     SEARCH_INDEX.get_or_init(|| {
