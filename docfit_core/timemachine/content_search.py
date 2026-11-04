@@ -17,8 +17,11 @@ SUPPORTED = {"hwpx", "hwp", "txt", "md", "docx", "pptx", "xlsx", "xls", "pdf", "
 
 LEVEL_ORDER: tuple[str, ...] = (
     "document_title", "chapter", "section", "topic", "square", "circle",
-    "dash", "asterisk", "body", "table_cell",
+    "dash", "asterisk", "body",
 )
+LEVEL_RANKS: dict[str, int] = {level: rank for rank, level in enumerate(LEVEL_ORDER)}
+# 표 칸은 표시 이름을 유지하면서 본문과 같은 최하위 위계를 사용한다.
+LEVEL_RANKS["table_cell"] = LEVEL_RANKS["body"]
 LEVEL_LABELS: dict[str, str] = {
     "document_title": "문서 제목", "chapter": "장", "section": "절",
     "topic": "주제·소제목", "square": "ㅁ", "circle": "ㅇ",
@@ -212,7 +215,7 @@ def classify_paragraph_levels(path: str | os.PathLike[str], paragraphs: list[Par
                 paragraph_index=p.paragraph_index,
                 text=p.text,
                 level=level,
-                level_rank=LEVEL_ORDER.index(level),
+                level_rank=LEVEL_RANKS[level],
                 is_table_cell=p.is_table_cell,
                 style_name=p.style_name,
                 outline_level=p.outline_level,
@@ -237,7 +240,7 @@ def extract_paragraphs(path: str | os.PathLike[str]) -> list[ParagraphRecord]:
         paragraph_index=record.sequence - 1,
         text=record.text,
         level=record.hierarchy_level or "body",
-        level_rank=LEVEL_ORDER.index(record.hierarchy_level) if record.hierarchy_level in LEVEL_ORDER else LEVEL_ORDER.index("body"),
+        level_rank=LEVEL_RANKS.get(record.hierarchy_level, LEVEL_RANKS["body"]),
         is_table_cell=record.is_table_cell,
         style_name=record.style_name,
         outline_level=record.outline_level,
