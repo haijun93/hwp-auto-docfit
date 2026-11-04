@@ -2070,6 +2070,96 @@ class DesktopWebBridge:
         if action != 'copy':
             return self._table_units_command(action, payload)
 
+    def library_drop(self, paths, x, y, box_id, space=None):
+        """OS 파일 끌어놓기: 경로 목록을 item_add 요청으로 순차 등록한다.
+
+        space를 주면(core/basis/reference/temp) x, y는 그 사분면 캔버스의 로컬 픽셀 좌표
+        (Flutter globalToLocal 결과, 0 이상 유한 실수)이며 item_add에 그대로 전달한다.
+        space를 생략하면 x, y는 보드 전체 0~1 정규화 좌표로 보고 사분면(0.5 경계는
+        오른쪽/아래)만 판정하며 item_add에는 받은 값을 전달한다.
+        box_id는 정수 또는 정수 문자열만 허용하며 int로 변환해 전달한다.
+        """
+        import math
+        if os.environ.get("DOCFIT_LIBRARY_BRIDGE", "").strip().lower() not in {"1", "true", "yes", "on"}:
+            return {"ok": False, "message": "자료함 브리지가 비활성화되어 있습니다."}
+        valid_spaces = {"core", "basis", "reference", "temp"}
+        if space is not None and space not in valid_spaces:
+            return {"ok": False, "message": "자료함 공간이 올바르지 않습니다."}
+        try:
+            if isinstance(x, bool) or isinstance(y, bool):
+                raise ValueError("bool")
+            norm_x = float(x)
+            norm_y = float(y)
+            if not (math.isfinite(norm_x) and math.isfinite(norm_y) and norm_x >= 0.0 and norm_y >= 0.0):
+                raise ValueError("range")
+            if space is None and not (norm_x <= 1.0 and norm_y <= 1.0):
+                raise ValueError("range")
+        except (TypeError, ValueError):
+            return {"ok": False, "message": "놓은 위치 좌표가 올바르지 않습니다."}
+        try:
+            if isinstance(box_id, bool) or not isinstance(box_id, (str, int)):
+                raise ValueError("type")
+            box = int(box_id.strip() if isinstance(box_id, str) else box_id)
+        except ValueError:
+            return {"ok": False, "message": "자료함 번호가 올바르지 않습니다."}
+        added, skipped, failed = [], [], []
+        if paths is None:
+            items = []
+        elif isinstance(paths, (str, bytes, os.PathLike)):
+            items = [paths]
+        else:
+            try:
+                items = list(paths)
+            except TypeError:
+                return {"ok": False, "added": added, "skipped": skipped,
+                        "failed": [{"path": str(paths), "message": "경로 목록 형식이 올바르지 않습니다."}]}
+        if space is None:
+            left = norm_x < 0.5
+            top = norm_y < 0.5
+            space = {(True, True): "core", (False, True): "basis",
+                     (True, False): "reference", (False, False): "temp"}[(left, top)]
+        seen = set()
+        for raw in items:
+            text = str(raw)
+            try:
+                text = os.fspath(raw)
+                if not isinstance(text, str):
+                    text = os.fsdecode(text)
+                if not text.strip():
+                    continue
+                path = Path(text)
+                if path.is_file():
+                    kind = "file"
+                elif path.is_dir():
+                    kind = "folder"
+                else:
+                    failed.append({"path": text, "message": "존재하지 않거나 파일·폴더가 아닌 경로입니다."})
+                    continue
+                key = os.path.normcase(str(path.resolve(strict=True)))
+            except (TypeError, ValueError, OSError, RuntimeError) as exc:
+                failed.append({"path": text, "message": str(exc) or "경로 형식이 올바르지 않습니다."})
+                continue
+            if key in seen:
+                skipped.append({"path": text, "message": "중복 경로"})
+                continue
+            seen.add(key)
+            result = self.library({
+                "cmd": "item_add",
+                "box_id": box,
+                "kind": kind,
+                "source_path": str(path),
+                "display_name": path.name,
+                "space": space,
+                "x": norm_x,
+                "y": norm_y,
+            })
+            if isinstance(result, dict) and result.get("ok") is True:
+                added.append(result)
+            else:
+                message = result.get("message", "") if isinstance(result, dict) else str(result)
+                failed.append({"path": text, "message": message})
+        return {"ok": not failed, "added": added, "skipped": skipped, "failed": failed}
+
     def library(self, request):
         """Forward one allowlisted library JSON request when the opt-in flag is set."""
         if os.environ.get("DOCFIT_LIBRARY_BRIDGE", "").strip().lower() not in {"1", "true", "yes", "on"}:
