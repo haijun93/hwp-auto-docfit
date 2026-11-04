@@ -72,6 +72,7 @@ class TabNavigationShell extends StatefulWidget {
     this.hiddenTabs = kDefaultHiddenTabs,
     this.developerMode = false,
     this.libraryScreen,
+    this.onSidebarSideSwitch,
   }) : assert(initialIndex >= 0 && initialIndex < kTabCount);
 
   final Widget documentEditor;
@@ -93,6 +94,7 @@ class TabNavigationShell extends StatefulWidget {
   final Set<int> hiddenTabs;
   final bool developerMode;
   final Widget? libraryScreen;
+  final VoidCallback? onSidebarSideSwitch;
   final ValueChanged<int>? onTabChanged;
 
   /// 왼쪽 메뉴 아래쪽의 앱 전체 메뉴(사용 방법·작업 로그·설정 등).
@@ -248,6 +250,7 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
                     onToggleExpanded: _toggleSidebar,
                     developerMode: widget.developerMode,
                     onSidebarModeChanged: _setSidebarOnly,
+                    onSidebarSideSwitch: widget.onSidebarSideSwitch,
                     sidebarOnly: _sidebarOnly,
                     onAlwaysOnTop: () {},
                   ),
@@ -257,6 +260,13 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
                       color: Colors.white,
                       child: Column(children: [
                         const SizedBox(height: 8),
+                        if (widget.developerMode)
+                          TextButton.icon(
+                            key: const ValueKey('sidebar-mode-switch-side'),
+                            onPressed: widget.onSidebarSideSwitch,
+                            icon: const Icon(Icons.swap_horiz),
+                            label: const Text('왼쪽↔오른쪽 고정'),
+                          ),
                         TextButton.icon(onPressed: () => _setSidebarOnly(false), icon: const Icon(Icons.close_fullscreen), label: const Text('사이드메뉴 모드 끄기')),
                         Expanded(child: WorkspaceTabBar(
                           labels: _labels, icons: _icons, selectedIndex: _index, onSelected: _select,
@@ -265,6 +275,7 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
                           libraryScreen: widget.libraryScreen,
                           developerMode: widget.developerMode,
                           onSidebarModeChanged: _setSidebarOnly,
+                    onSidebarSideSwitch: widget.onSidebarSideSwitch,
                           sidebarOnly: _sidebarOnly,
                           onAlwaysOnTop: () {},
                         )),
@@ -313,6 +324,7 @@ class WorkspaceTabBar extends StatelessWidget {
     this.onToggleExpanded,
     this.developerMode = false,
     this.onSidebarModeChanged,
+    this.onSidebarSideSwitch,
     this.sidebarOnly = false,
     this.onAlwaysOnTop,
     this.libraryScreen,
@@ -329,6 +341,7 @@ class WorkspaceTabBar extends StatelessWidget {
   final VoidCallback? onToggleExpanded;
   final bool developerMode;
   final ValueChanged<bool>? onSidebarModeChanged;
+  final VoidCallback? onSidebarSideSwitch;
   final bool sidebarOnly;
   final VoidCallback? onAlwaysOnTop;
   final Widget? libraryScreen;
@@ -415,6 +428,13 @@ class WorkspaceTabBar extends StatelessWidget {
                 icon: const Icon(Icons.view_sidebar_outlined),
                 label: Text('사이드메뉴 모드 ${sidebarOnly ? '켜짐' : '꺼짐'}'),
               ),
+              if (sidebarOnly)
+                TextButton.icon(
+                  key: const ValueKey('sidebar-mode-switch-side'),
+                  onPressed: onSidebarSideSwitch,
+                  icon: const Icon(Icons.swap_horiz),
+                  label: const Text('왼쪽↔오른쪽 고정'),
+                ),
             ],
           ],
           ),

@@ -225,9 +225,12 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
     api: widget.api,
     tabRequest: tabRequest,
     developerMode: developerMode,
+    onSidebarSideSwitch: () => unawaited(widget.api('sidebar_mode_switch_side', [])),
     documentEditorWidget: Workspace(
       key: workspace,
       api: widget.api,
+      developerMode: developerMode,
+      onSidebarSideSwitch: () => unawaited(widget.api('sidebar_mode_switch_side', [])),
       onSidebarCollapsed: (collapsed) =>
           savedSidebarExpanded.value = collapsed == null ? null : !collapsed,
       onRenameOpen: () {
@@ -408,6 +411,8 @@ class Workspace extends StatefulWidget {
     required this.api,
     this.onSidebarCollapsed,
     this.onRenameOpen,
+    this.developerMode = false,
+    this.onSidebarSideSwitch,
   });
   final ApiCall api;
 
@@ -416,6 +421,8 @@ class Workspace extends StatefulWidget {
 
   /// 탐색기 보내기로 파일이 들어와 파일명 일괄변경 탭을 열어야 할 때.
   final VoidCallback? onRenameOpen;
+  final bool developerMode;
+  final VoidCallback? onSidebarSideSwitch;
   @override
   State<Workspace> createState() => _WorkspaceState();
 }
@@ -1461,6 +1468,14 @@ class _WorkspaceState extends State<Workspace> implements ConversionHost {
             ),
           ),
         const Spacer(),
+        if (sidebarOnly)
+          if (widget.developerMode)
+            TextButton.icon(
+              key: const ValueKey('sidebar-mode-switch-side'),
+              onPressed: widget.onSidebarSideSwitch,
+              icon: const Icon(Icons.swap_horiz),
+              label: const Text('왼쪽↔오른쪽 고정'),
+            ),
         if (sidebarOnly)
           TextButton.icon(
             key: const ValueKey('sidebar-mode-exit'),
