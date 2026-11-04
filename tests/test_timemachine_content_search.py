@@ -135,6 +135,58 @@ class ContentSearchTests(unittest.TestCase):
         names = self.index.search_files("strong txt")
         self.assertEqual(names[0]["name"], strong.name)
 
+    def test_keyword_search_uses_bm25_and_limits_locations(self):
+        weak = self.root / "a_weak.txt"
+        strong = self.root / "z_strong.txt"
+        weak.write_text("순위검색", encoding="utf-8")
+        strong.write_text("순위검색 " + "잡음 " * 100, encoding="utf-8")
+        self.index.index_file(weak); self.index.index_file(strong)
+        found = self.index.keyword_search("순위검색")
+        self.assertEqual(found[0]["name"], weak.name)
+        many = self.root / "many.txt"
+        many.write_text("\n".join(["세위치검색 문단"] * 5), encoding="utf-8")
+        self.index.index_file(many)
+        result = next(row for row in self.index.keyword_search("세위치검색") if row["name"] == many.name)
+        self.assertLessEqual(len(result["locations"]), 3)
+
+    def test_keyword_query_syntax_filters_and_extension_aliases(self):
+        root = self.root / "폴더"
+        root.mkdir()
+        first = root / "first.hwpx"
+        second = root / "second.txt"
+        first.write_text('2026-10-20 "정확 구문" 한국어조사 처리 제외어', encoding="utf-8")
+        second.write_text('2026-10-21 "정확 구문" 한국어조사 처리 다른말', encoding="utf-8")
+        self.index.index_file(first); self.index.index_file(second)
+        self.assertEqual([x["name"] for x in self.index.keyword_search('"정확 구문" -제외어')], ["second.txt"])
+        self.assertEqual(len(self.index.keyword_search("한국어조사")), 1)
+        self.assertEqual([x["name"] for x in self.index.keyword_search('정확 ext:txt')], ["second.txt"])
+        self.assertEqual(len(self.index.keyword_search('"정확 구문" path:폴더')), 1)
+        self.assertEqual(len(self.index.keyword_search('"정확 구문" after:2026-10-01 before:2026-10-30')), 1)
+        self.assertEqual(len(self.index.keyword_search('정확 처리 ~5')), 1)
+        self.assertEqual(len(self.index.keyword_search('"정확 구문" ext:txt')), 1)
+
+    def test_keyword_results_keep_sheet_row_location_badge(self):
+        path = self.root / "sheet.xlsx"
+        with ZipFile(path, "w") as archive:
+            archive.writestr("xl/workbook.xml", '<workbook xmlns:r="urn:r"><sheets><sheet name="매출" r:id="rId1"/></sheets></workbook>')
+            archive.writestr("xl/_rels/workbook.xml.rels", '<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>')
+            archive.writestr("xl/worksheets/sheet1.xml", '<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>제목</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>시트행검색 배지</t></is></c></row></sheetData></worksheet>')
+        self.index.index_file(path)
+        result = self.index.keyword_search("시트행검색")[0]
+        self.assertEqual(result["locations"][0]["position"]["sheet"], "매출")
+        self.assertEqual(result["locations"][0]["position"]["row"], 2)
+
+    def test_keyword_results_keep_pdf_page_badge(self):
+        path = self.root / "pages.pdf"
+        from unittest.mock import patch
+        from docfit_core.timemachine.extractors import ExtractionRecord
+        records = [ExtractionRecord("둘째쪽 페이지검색 배지", "page", "2쪽", 2)]
+        with patch("docfit_core.timemachine.content_search.extract_document", return_value=records):
+            path.write_bytes(b"pdf stub")
+            self.index.index_file(path)
+        result = self.index.keyword_search("페이지검색")[0]
+        self.assertEqual(result["locations"][0]["position"]["page"], 2)
+
     def test_match_counts_phrases_exclusions_casefold_and_mentions_sort(self):
         low = self.root / "low.txt"
         high = self.root / "high.txt"
