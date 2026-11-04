@@ -21,6 +21,15 @@ use crate::{VERSION, WM_PAUSE, WM_SETTINGS, app, main_hwnd, refresh_recent};
 
 const MAX_REQUEST: usize = 64 * 1024;
 
+fn dropped_web_url(path: &str) -> Option<String> {
+    let trimmed = path.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    let rest = lower.strip_prefix("https://").or_else(|| lower.strip_prefix("http://"))?;
+    let host = rest.split(['/', '?', '#']).next().unwrap_or("");
+    (host.contains('.') && !host.starts_with('.') && !host.ends_with('.'))
+        .then(|| trimmed.trim_end_matches('/').to_string())
+}
+
 fn user_sid() -> String {
     static SID: OnceLock<String> = OnceLock::new();
     SID.get_or_init(|| unsafe {
@@ -155,6 +164,20 @@ fn id_of(v: &Value) -> Option<i64> {
     v.num("id").filter(|n| n.fract() == 0.0 && *n > 0.0).map(|n| n as i64)
 }
 
+#[cfg(test)]
+mod drop_tests {
+    use super::dropped_web_url;
+
+    #[test]
+    fn accepts_http_links_and_rejects_other_schemes_or_malformed_hosts() {
+        assert_eq!(dropped_web_url(" https://example.com/page ").as_deref(), Some("https://example.com/page"));
+        assert_eq!(dropped_web_url("HTTP://example.org/" ).as_deref(), Some("HTTP://example.org"));
+        assert!(dropped_web_url("file:///C:/secret.txt").is_none());
+        assert!(dropped_web_url("https://.example.com").is_none());
+        assert!(dropped_web_url("https://localhost").is_none());
+    }
+}
+
 pub fn handle(v: &Value) -> Value {
     let a = app();
     let hwnd = main_hwnd();
@@ -176,6 +199,84 @@ pub fn handle(v: &Value) -> Value {
             let items = a.store.lock().unwrap().recent(limit, v.str("query"));
             match items {
                 Ok(items) => ok(vec![("items", Value::Arr(items.iter().map(|i| i.to_json()).collect()))]),
+                Err(e) => error(&e),
+            }
+        }
+        "add_text" => {
+            let Some(text) = v.str("text").map(str::trim).filter(|s| !s.is_empty()) else {
+                return error("메모 내용을 입력해 주세요.");
+            };
+            if text.len() > 1024 * 1024 { return error("메모는 1MB 이하로 입력해 주세요."); }
+            let preview = text.lines().next().unwrap_or("").chars().take(160).collect::<String>();
+            let settings = a.settings.lock().unwrap().clone();
+            if settings.paused { return error("기록이 일시정지되어 있어 메모를 추가하지 못했습니다."); }
+            let inserted = a.store.lock().unwrap().insert("text", text.as_bytes(), &[], &preview, "memo", now());
+            match inserted {
+                Ok((id, created)) => {
+                    let _ = a.store.lock().unwrap().enforce(&settings, now());
+                    refresh_recent();
+                    ok(vec![("id", id.into()), ("created", created.into())])
+                }
+                Err(e) => error(&e),
+            }
+        }
+        "add_files" => {
+            let Some(Value::Arr(paths)) = v.get("paths") else { return error("파일이나 폴더를 끌어 놓아 주세요.") };
+            if paths.is_empty() || paths.len() > 100 { return error("한 번에 최대 100개까지 추가할 수 있습니다."); }
+            let settings = a.settings.lock().unwrap().clone();
+            if settings.paused { return error("기록이 일시정지되어 있어 항목을 추가하지 못했습니다."); }
+            let mut accepted = Vec::with_capacity(paths.len());
+            let mut images = Vec::new();
+            for value in paths {
+                let Value::Str(path) = value else { continue };
+                if path.len() > 32760 { continue; }
+                if let Some(url) = dropped_web_url(path) {
+                    if !accepted.iter().any(|p: &String| p.eq_ignore_ascii_case(&url)) {
+                        accepted.push(url);
+                    }
+                    continue;
+                }
+                let p = std::path::Path::new(path);
+                if !p.is_file() && !p.is_dir() { continue; }
+                let ext = p.extension().and_then(|s| s.to_str()).unwrap_or("").to_ascii_lowercase();
+                if matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "bmp") && p.is_file() {
+                    if let Ok(meta) = std::fs::metadata(p) {
+                        if meta.len() > 10 * 1024 * 1024 { continue; }
+                        if let Ok(bytes) = std::fs::read(p) {
+                            let valid = (ext == "png" && bytes.starts_with(b"\x89PNG\r\n\x1a\n"))
+                                || (matches!(ext.as_str(), "jpg" | "jpeg") && bytes.starts_with(&[0xff, 0xd8, 0xff]))
+                                || (ext == "bmp" && bytes.starts_with(b"BM"));
+                            if valid && !images.iter().any(|(hash, _): &(String, Vec<u8>)| hash == &crate::store::content_hash("image", &bytes)) {
+                                images.push((crate::store::content_hash("image", &bytes), bytes));
+                                continue;
+                            }
+                        }
+                    }
+                    continue;
+                }
+                if !accepted.iter().any(|p: &String| p.eq_ignore_ascii_case(path)) {
+                    accepted.push(path.clone());
+                }
+            }
+            if accepted.is_empty() && images.is_empty() { return error("지원하는 파일이나 폴더가 없습니다. 웹 링크(HTTP·HTTPS)와 이미지(PNG·JPG·BMP, 10MB 이하)를 지원합니다."); }
+            let mut added = 0i64;
+            for (_, data) in images {
+                let preview = format!("그림 · {}", crate::clip::preview("image", &data));
+                if let Ok((_, created)) = a.store.lock().unwrap().insert("image", &data, &[], &preview, "drop", now()) { if created { added += 1; } }
+            }
+            if accepted.is_empty() {
+                let _ = a.store.lock().unwrap().enforce(&settings, now());
+                refresh_recent();
+                return ok(vec![("created", (added > 0).into()), ("count", added.into())]);
+            }
+            let payload = accepted.join("\0");
+            let preview = accepted.iter().map(|p| std::path::Path::new(p).file_name().and_then(|s| s.to_str()).unwrap_or(p)).collect::<Vec<_>>().join(" · ");
+            match a.store.lock().unwrap().insert("files", payload.as_bytes(), &[], &preview, "drop", now()) {
+                Ok((id, created)) => {
+                    let _ = a.store.lock().unwrap().enforce(&settings, now());
+                    refresh_recent();
+                    ok(vec![("id", id.into()), ("created", created.into()), ("count", ((accepted.len() as i64) + added).into())])
+                }
                 Err(e) => error(&e),
             }
         }
