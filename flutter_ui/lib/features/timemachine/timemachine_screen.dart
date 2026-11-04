@@ -221,6 +221,13 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
         if (bComp != 0) return bComp;
 
         return a.key.compareTo(b.key);
+      } else if (sortKey == 'recent') {
+        final dateA = itemA.mtime > itemA.ctime ? itemA.mtime : itemA.ctime;
+        final dateB = itemB.mtime > itemB.ctime ? itemB.mtime : itemB.ctime;
+        final dComp = dateB.compareTo(dateA);
+        if (dComp != 0) return dComp;
+
+        return a.key.compareTo(b.key);
       }
       return a.key.compareTo(b.key);
     });
@@ -238,14 +245,14 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
           _contentNeedsReindexCount = 0;
           _contentReindexGuide = null;
           _selectedContentResult = null;
-          _contentSort = 'hierarchy_relevance';
+          _contentSort = sort ?? 'hierarchy_relevance';
           _preview = null;
         });
       }
       return;
     }
     setState(() {
-      _contentSort = 'hierarchy_relevance';
+      _contentSort = sort ?? 'hierarchy_relevance';
       _selectedContentResult = null;
       _preview = null;
     });
@@ -853,10 +860,6 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
                       const SizedBox(width: 6),
                       _Badge(result.position!.badgeLabel),
                     ],
-                    if (result.hierarchy.isNotEmpty) ...[
-                      const SizedBox(width: 6),
-                      _Badge(result.hierarchy),
-                    ],
                   ],
                 ),
                 const SizedBox(height: 4),
@@ -881,7 +884,7 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
                     ),
                     if (result.hierarchy.isNotEmpty)
                       Text(
-                        '장 제목: ${result.hierarchy}',
+                        result.hierarchy,
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.grey),
                       ),
                   ],
@@ -1264,6 +1267,7 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
               items: const [
                 DropdownMenuItem(value: 'hierarchy_relevance', child: Text('위계기반 연관도')),
                 DropdownMenuItem(value: 'mentions', child: Text('언급 횟수 많은 순')),
+                DropdownMenuItem(value: 'recent', child: Text('최근 수정 순')),
               ],
               onChanged: (val) {
                 if (val != null) {
