@@ -142,9 +142,9 @@ jobs:
       - name: Build klib (Rust)
         shell: pwsh
         run: |
-          cargo test --manifest-path klib/Cargo.toml
+          cargo test --locked --manifest-path klib/Cargo.toml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo build --release --manifest-path klib/Cargo.toml
+          cargo build --locked --release --manifest-path klib/Cargo.toml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Copy-Item klib/target/release/klib.exe resources/klib.exe -Force
           (Get-FileHash resources/klib.exe -Algorithm SHA256).Hash | Out-File -Encoding ascii resources/klib.exe.sha256

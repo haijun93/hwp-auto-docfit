@@ -47,6 +47,10 @@ pub struct SearchHit {
     pub score: Score,
     pub paragraph_count: usize,
     pub snippets: Vec<String>,
+    pub page: Option<u64>,
+    pub box_ids: Vec<String>,
+    pub hit_pages: Vec<Option<u64>>,
+    pub highlighted: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -219,8 +223,15 @@ impl SearchIndex {
             let d=searcher.doc::<TantivyDocument>(addr)?;
             let path=d.get_first(self.fields.path).and_then(|v|v.as_str()).unwrap_or("").to_string();
             let body=d.get_first(self.fields.body).and_then(|v|v.as_str()).unwrap_or("").to_string();
-            let hit=groups.entry(path.clone()).or_insert_with(|| SearchHit {path,name:d.get_first(self.fields.name).and_then(|v|v.as_str()).unwrap_or("").into(),title:d.get_first(self.fields.title).and_then(|v|v.as_str()).unwrap_or("").into(),score,paragraph_count:0,snippets:Vec::new()});
-            hit.paragraph_count+=1; if hit.snippets.len()<3 { hit.snippets.push(gen.snippet(&body).to_html()); }
+            let page=d.get_first(self.fields.page).and_then(|v|v.as_u64());
+            let hit=groups.entry(path.clone()).or_insert_with(|| SearchHit {path,name:d.get_first(self.fields.name).and_then(|v|v.as_str()).unwrap_or("").into(),title:d.get_first(self.fields.title).and_then(|v|v.as_str()).unwrap_or("").into(),score,paragraph_count:0,snippets:Vec::new(),page,box_ids:d.get_all(self.fields.box_ids).filter_map(|v|v.as_str().map(str::to_string)).collect()});
+            hit.paragraph_count+=1;
+            if hit.snippets.len()<3 {
+                let snippet=gen.snippet(&body);
+                hit.highlighted.extend(snippet.highlighted().iter().map(|range| snippet.fragment()[range.clone()].to_string()));
+                hit.snippets.push(snippet.fragment().to_string());
+            }
+            hit.hit_pages.push(page);
             if score>hit.score {hit.score=score;}
         }
         let mut out:Vec<_>=groups.into_values().collect(); out.sort_by(|a,b|b.score.total_cmp(&a.score)); out.truncate(options.limit.max(1)); Ok(out)
