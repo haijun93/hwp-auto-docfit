@@ -60,6 +60,17 @@ MARKER_CLASS_TO_LEVEL: dict[str, str] = {
     "－": "dash",
 }
 CURRENT_HIERARCHY_SCHEMA_VERSION = 1
+_EXTRACTED_LOCATIONS: dict[str, dict[int, tuple[str, str | None]]] = {}
+_EXTRACTED_LOCATIONS_LOCK = threading.RLock()
+
+
+def _terms_are_near(text: str, terms: list[str], distance: int) -> bool:
+    words = [match.group().casefold() for match in re.finditer(r"\S+", text)]
+    positions = [[index for index, word in enumerate(words) if term.casefold() in word] for term in terms]
+    if any(not found for found in positions):
+        return False
+    import itertools
+    return any(max(combo) - min(combo) <= distance + 1 for combo in itertools.product(*positions))
 
 
 @dataclass(frozen=True)
@@ -236,6 +247,9 @@ def extract_paragraphs(path: str | os.PathLike[str]) -> list[ParagraphRecord]:
         extracted = extract_document(path, hierarchy_records=hierarchy_records)
     except ExtractionError as exc:
         raise ValueError(str(exc)) from exc
+    with _EXTRACTED_LOCATIONS_LOCK:
+        _EXTRACTED_LOCATIONS[os.path.abspath(os.fspath(path))] = {
+            record.sequence - 1: (record.location_label, record.section) for record in extracted}
     paragraphs = [ParagraphRecord(
         paragraph_index=record.sequence - 1,
         text=record.text,
@@ -439,9 +453,20 @@ class ContentSearchIndex:
             );
             CREATE TABLE IF NOT EXISTS content_errors(path TEXT PRIMARY KEY, reason TEXT, size INTEGER, mtime REAL);
         """)
+        self._paragraph_has_location = False
         try:
             # 1. 문단 FTS5 테이블 확인 및 생성
-            self.db.execute("""
+            para_exists = self.db.execute("SELECT 1 FROM sqlite_master WHERE name='content_paragraph_fts'").fetchone()
+            if para_exists:
+                para_sql = (self.db.execute("SELECT sql FROM sqlite_master WHERE name='content_paragraph_fts'").fetchone() or [""])[0] or ""
+                if "location_label" not in para_sql:
+                    with self.db:
+                        self.db.execute("ALTER TABLE content_paragraph_fts RENAME TO content_paragraph_fts_legacy")
+                        self.db.execute("CREATE VIRTUAL TABLE content_paragraph_fts USING fts5(path UNINDEXED,name UNINDEXED,paragraph_index UNINDEXED,level UNINDEXED,level_rank UNINDEXED,body,location_label UNINDEXED,section UNINDEXED,tokenize='trigram')")
+                        self.db.execute("INSERT INTO content_paragraph_fts(path,name,paragraph_index,level,level_rank,body,location_label,section) SELECT path,name,paragraph_index,level,level_rank,body,'문단 '||CAST(CAST(paragraph_index AS INTEGER)+1 AS TEXT),NULL FROM content_paragraph_fts_legacy")
+                        self.db.execute("DROP TABLE content_paragraph_fts_legacy")
+            else:
+                self.db.execute("""
                 CREATE VIRTUAL TABLE IF NOT EXISTS content_paragraph_fts USING fts5(
                     path UNINDEXED,
                     name UNINDEXED,
@@ -449,9 +474,12 @@ class ContentSearchIndex:
                     level UNINDEXED,
                     level_rank UNINDEXED,
                     body,
+                    location_label UNINDEXED,
+                    section UNINDEXED,
                     tokenize='trigram'
                 )
             """)
+            self._paragraph_has_location = True
             # 2. 문서 FTS5 테이블 확인 및 생성/이전
             fts_exists = self.db.execute("SELECT 1 FROM sqlite_master WHERE name='content_fts'").fetchone()
             if fts_exists:
@@ -464,6 +492,16 @@ class ContentSearchIndex:
                         self.db.execute("DROP TABLE content_fts_legacy")
             else:
                 self.db.execute("CREATE VIRTUAL TABLE content_fts USING fts5(path UNINDEXED,name UNINDEXED,body, tokenize='trigram')")
+
+            # SQLite trigram tokenizer cannot answer LIKE queries shorter than 3 chars.
+            # Store distinct 2-character substrings as an ordinary indexed candidate table.
+            self.db.executescript("""
+                CREATE TABLE IF NOT EXISTS content_short_grams(
+                    gram TEXT NOT NULL, path TEXT NOT NULL,
+                    PRIMARY KEY(gram,path)
+                );
+                CREATE INDEX IF NOT EXISTS content_short_grams_path ON content_short_grams(path);
+            """)
 
             cols = {r[1] for r in self.db.execute("PRAGMA table_info(content_meta)")}
             if "reference_date" not in cols:
@@ -589,12 +627,18 @@ class ContentSearchIndex:
             with self._lock, self.db:
                 self.db.execute("DELETE FROM content_paragraph_fts WHERE path=?", (path,))
                 self.db.execute("DELETE FROM content_fts WHERE path=?", (path,))
+                self.db.execute("DELETE FROM content_short_grams WHERE path=?", (path,))
                 for p in paragraphs:
+                    location = _EXTRACTED_LOCATIONS.get(path, {}).get(p.paragraph_index,
+                        (f"문단 {p.paragraph_index + 1}", None))
                     self.db.execute(
-                        "INSERT INTO content_paragraph_fts(path, name, paragraph_index, level, level_rank, body) VALUES(?,?,?,?,?,?)",
-                        (path, name, int(p.paragraph_index), p.level, int(p.level_rank), p.text)
+                        "INSERT INTO content_paragraph_fts(path, name, paragraph_index, level, level_rank, body, location_label, section) VALUES(?,?,?,?,?,?,?,?)",
+                        (path, name, int(p.paragraph_index), p.level, int(p.level_rank), p.text, *location)
                     )
                 self.db.execute("INSERT INTO content_fts(path, name, body) VALUES(?,?,?)", (path, name, body))
+                grams = {body[i:i + 2].casefold() for i in range(max(0, len(body) - 1))}
+                self.db.executemany("INSERT INTO content_short_grams(gram,path) VALUES(?,?)",
+                                    ((gram, path) for gram in grams))
                 self.db.execute(
                     "INSERT OR REPLACE INTO content_meta(path, size, mtime, ctime, reference_date, name, extension, hierarchy_schema_version) VALUES(?,?,?,?,?,?,?,?)",
                     (path, size, mtime, ctime, ref_date, name, ext, CURRENT_HIERARCHY_SCHEMA_VERSION)
@@ -615,6 +659,7 @@ class ContentSearchIndex:
         with self._lock, self.db:
             self.db.execute("DELETE FROM content_paragraph_fts WHERE path=?", (path,))
             self.db.execute("DELETE FROM content_fts WHERE path=?", (path,))
+            self.db.execute("DELETE FROM content_short_grams WHERE path=?", (path,))
             self.db.execute("DELETE FROM content_meta WHERE path=?", (path,))
             self.db.execute("DELETE FROM content_errors WHERE path=?", (path,))
 
@@ -871,6 +916,314 @@ class ContentSearchIndex:
             item.pop("_document_date", None)
             item.pop("_bm25_score", None)
         return final_items
+
+    @staticmethod
+    def _keyword_match_expression(parsed):
+        """Build FTS5 AND query while retaining phrases and excluding operators."""
+        positive = [*parsed["terms"], *parsed["phrases"]]
+        if not positive:
+            raise ValueError("본문 검색어를 입력해 주세요.")
+        def quote(term):
+            return '"' + term.replace('"', '""') + '"'
+        expression = " AND ".join(quote(term) for term in positive if len(term) >= 3)
+        if not expression:
+            return None
+        if parsed["near"] is not None and len(positive) > 1:
+            expression = " AND ".join(quote(term) for term in positive if len(term) >= 3)
+        return expression
+
+    def keyword_search(self, query, *, roots=None, limit=100, offset=0):
+        """Docufinder식 키워드 검색. 위계 필드 없이 BM25로 문서 순위를 정한다."""
+        parsed = self.parse_query(query)
+        positive = [*parsed["terms"], *parsed["phrases"]]
+        if not positive:
+            raise ValueError("본문 검색어를 입력해 주세요.")
+        if type(limit) is not int or not 1 <= limit <= 500 or type(offset) is not int or offset < 0:
+            raise ValueError("결과 범위를 확인해 주세요.")
+        # 레거시 Office 그룹 확장
+        groups = ({"hwp", "hwpx"}, {"doc", "docx"}, {"xls", "xlsx"}, {"ppt", "pptx"})
+        extensions = set(parsed["ext"])
+        for group in groups:
+            if extensions & group:
+                extensions.update(group)
+        parsed["ext"] = extensions
+        fts_positive = [t for t in parsed["terms"] if len(t) >= 3]
+        match = " AND ".join('"' + t.replace('"', '""') + '"' for t in fts_positive if t not in parsed["phrases"])
+        short_positive = [t for t in positive if len(t) < 3]
+        allowed = [os.path.normcase(os.path.abspath(root)) for root in roots] if roots else None
+        clauses, params = [], []
+        candidate_paths = None
+        for term in parsed["terms"]:
+            if len(term) >= 3:
+                clauses.append("content_paragraph_fts MATCH ?")
+                params.append('"' + term.replace('"', '""') + '"')
+            else:
+                clauses.append("body LIKE ?"); params.append("%" + term + "%")
+        for phrase in parsed["phrases"]:
+            clauses.append("body LIKE ?"); params.append("%" + phrase + "%")
+        where_positive = " AND ".join(clauses)
+        with self._lock:
+            # Short terms use the gram table only to narrow candidates; LIKE remains the
+            # final substring check, preserving the old exact matching behavior.
+            if short_positive:
+                short_candidates = None
+                for term in short_positive:
+                    if len(term) == 2:
+                        found = {r[0] for r in self.db.execute(
+                            "SELECT path FROM content_short_grams WHERE gram=?", (term.casefold(),))}
+                    else:
+                        found = {r[0] for r in self.db.execute(
+                            "SELECT path FROM content_paragraph_fts WHERE body LIKE ?", ("%" + term + "%",))}
+                    short_candidates = found if short_candidates is None else short_candidates & found
+                if short_candidates is not None:
+                    candidate_paths = short_candidates
+                    if candidate_paths is not None and not candidate_paths:
+                        return []
+            if short_positive and candidate_paths is not None:
+                self.db.execute("CREATE TEMP TABLE IF NOT EXISTS keyword_candidate_paths(path TEXT PRIMARY KEY)")
+                self.db.execute("DELETE FROM keyword_candidate_paths")
+                self.db.executemany("INSERT INTO keyword_candidate_paths(path) VALUES(?)",
+                                    ((path,) for path in candidate_paths))
+                long_predicates = []
+                long_params = []
+                for term in parsed["terms"]:
+                    if len(term) >= 3:
+                        long_predicates.append("p.body LIKE ?")
+                        long_params.append("%" + term + "%")
+                for phrase in parsed["phrases"]:
+                    long_predicates.append("p.body LIKE ?")
+                    long_params.append("%" + phrase + "%")
+                predicate = " AND ".join(long_predicates) if long_predicates else "1"
+                scored_rows = self.db.execute(f"""
+                    SELECT p.path,p.name,p.level_rank,p.body,0.0 AS rank
+                    FROM keyword_candidate_paths c
+                    JOIN content_paragraph_fts p ON p.path=c.path
+                    WHERE {predicate}
+                """, long_params).fetchall()
+            else:
+                scored_rows = self.db.execute(f"""
+                    SELECT path, name, level_rank, body,
+                           bm25(content_paragraph_fts, 0.0, 3.0, 2.0, 1.0, 0.0, 0.0, 1.0) AS rank
+                    FROM content_paragraph_fts WHERE {where_positive}
+                    ORDER BY rank ASC
+                """, params).fetchall()
+            if candidate_paths is not None:
+                scored_rows = [r for r in scored_rows if r["path"] in candidate_paths]
+        # FTS5 bm25 weights: filename=3, body=1. Add a hierarchy boost to the
+        # paragraph score for levels 0..3, then proximity/phrase boosts per document.
+        doc_scores = {}
+        for scored in scored_rows:
+            path = scored["path"]
+            rank = float(scored["rank"])
+            name_folded = (scored["name"] or "").casefold()
+            # Filename is UNINDEXED in this legacy FTS5 schema, so apply the exact
+            # requested 3:1 field weight as an explicit weighted occurrence count.
+            body_term_count = sum((scored["body"] or "").casefold().count(term.casefold()) for term in positive)
+            filename_term_count = sum(term.casefold() in name_folded for term in positive)
+            rank -= 0.001 * (body_term_count + 3.0 * filename_term_count)
+            level_rank = int(scored["level_rank"] if scored["level_rank"] is not None else LEVEL_ORDER.index("body"))
+            if level_rank <= 3:
+                rank -= 0.002 * (4 - level_rank)
+            prior = doc_scores.get(path)
+            doc_scores[path] = min(rank, prior) if prior is not None else rank
+        if short_positive and candidate_paths is not None:
+            for candidate_path in candidate_paths:
+                doc_scores.setdefault(candidate_path, 0.0)
+        rows = [{"path": path, "best_bm25": score} for path, score in doc_scores.items()]
+        if short_positive and candidate_paths is not None:
+            rows = [row for row in rows if row["path"] in candidate_paths]
+        rows = rows[:100000]
+        excluded = set()
+        excluded_short = []
+        with self._lock:
+            for term in parsed["exclude"]:
+                if len(term) < 3:
+                    excluded_short.append(term)
+                if len(term) >= 3:
+                    expr = '"' + term.replace('"', '""') + '"'
+                    try:
+                        excluded.update(row[0] for row in self.db.execute(
+                            "SELECT DISTINCT path FROM content_paragraph_fts WHERE content_paragraph_fts MATCH ?", (expr,)))
+                    except sqlite3.OperationalError:
+                        pass
+                excluded.update(row[0] for row in self.db.execute(
+                    "SELECT DISTINCT path FROM content_paragraph_fts WHERE body LIKE ?", ("%" + term + "%",)))
+            metas = {row["path"]: row for row in self.db.execute(
+                "SELECT path,name,extension,mtime,reference_date FROM content_meta WHERE path IN (" +
+                ",".join("?" for _ in rows) + ")", tuple(row["path"] for row in rows))} if rows else {}
+        ranked = []
+        candidate_path_set = {r["path"] for r in rows}
+        candidate_texts = {}
+        with self._lock:
+            if candidate_path_set:
+                marks = ",".join("?" for _ in candidate_path_set)
+                if short_positive and candidate_paths is not None:
+                    candidate_texts = {r["path"]: r["body"] or "" for r in self.db.execute(
+                        f"SELECT path, body FROM content_paragraph_fts WHERE path IN ({marks})",
+                        tuple(candidate_path_set))}
+                else:
+                    candidate_texts = {r["path"]: r["body"] or "" for r in self.db.execute(
+                        f"SELECT path, group_concat(body, char(10)) AS body FROM content_paragraph_fts WHERE path IN ({marks}) GROUP BY path",
+                        tuple(candidate_path_set))}
+        rows = [row for row in rows if all(term.casefold() in candidate_texts.get(row["path"], "").casefold()
+                                           for term in parsed["terms"]) and all(
+                phrase.casefold() in candidate_texts.get(row["path"], "").replace('"', '').casefold()
+                for phrase in parsed["phrases"]) and not any(
+                term.casefold() in candidate_texts.get(row["path"], "").casefold()
+                for term in [*parsed["exclude"], *excluded_short])]
+        paragraph_rows_by_path = {}
+        candidate_path_set = {row["path"] for row in rows}
+        with self._lock:
+            if candidate_path_set:
+                marks = ",".join("?" for _ in candidate_path_set)
+                for paragraph_row in self.db.execute(
+                    f"SELECT path,paragraph_index,body,level_rank FROM content_paragraph_fts WHERE path IN ({marks})",
+                    tuple(candidate_path_set)):
+                    paragraph_rows_by_path.setdefault(paragraph_row["path"], []).append(paragraph_row)
+        # 근접 검색은 동일 문단 내 양성 용어 사이의 단어 간격으로 제한한다.
+        if parsed["near"] is not None and len(positive) > 1:
+            near = parsed["near"]
+            filtered = []
+            for row in rows:
+                paragraphs_for_near = paragraph_rows_by_path.get(row["path"], [])
+                proximity_terms = [*parsed["terms"]]
+                if len(proximity_terms) < 2:
+                    proximity_terms = positive
+                if any(_terms_are_near(paragraph["body"] or "", proximity_terms, near) for paragraph in paragraphs_for_near):
+                    filtered.append(row)
+            rows = filtered
+        for row in rows:
+            path = row["path"]
+            para_candidates = paragraph_rows_by_path.get(path, [])
+            valid_para_indices = {int(p["paragraph_index"]) for p in para_candidates
+                if all(term.casefold() in (p["body"] or "").casefold() for term in parsed["terms"])
+                and all(phrase.casefold() in (p["body"] or "").casefold() for phrase in parsed["phrases"])}
+            if not valid_para_indices:
+                continue
+            meta = metas.get(path)
+            if not meta or path in excluded or os.path.abspath(path) in excluded:
+                continue
+            normalized = os.path.normcase(os.path.abspath(path))
+            if any(part.casefold() == "$recycle.bin" for part in Path(path).parts):
+                continue
+            if allowed is not None and not any(os.path.commonpath((normalized, root)) == root for root in allowed
+                    if os.path.splitdrive(root)[0].casefold() == os.path.splitdrive(normalized)[0].casefold()):
+                continue
+            ext = (meta["extension"] or Path(path).suffix.lstrip(".")).lower()
+            if parsed["ext"] and ext not in parsed["ext"]:
+                continue
+            if parsed["path"] and not all(value.casefold() in path.casefold() for value in parsed["path"]):
+                continue
+            ref_date = meta["reference_date"] or ""
+            if ref_date and len(ref_date) == 4:
+                ref_date += "-01-01"
+            elif ref_date and len(ref_date) == 7:
+                ref_date += "-01"
+            if not ref_date and meta["mtime"]:
+                ref_date = date.fromtimestamp(meta["mtime"]).isoformat()
+            text_date = re.search(r"\b(\d{4}-\d{2}-\d{2})\b", candidate_texts.get(path, ""))
+            if text_date:
+                ref_date = text_date.group(1)
+            after = parsed["after"]
+            before = parsed["before"]
+            if after and len(after) == 4: after += "-01-01"
+            elif after and len(after) == 7: after += "-01"
+            if before and len(before) == 4: before += "-12-31"
+            elif before and len(before) == 7: before += "-31"
+            if after and (not ref_date or ref_date < after):
+                continue
+            if before and (not ref_date or ref_date > before):
+                continue
+            # Proximity bonus: reward the closest pair of positive terms in a single
+            # paragraph. Explicit quoted phrases also get a phrase-match bonus.
+            proximity_bonus = 0.0
+            phrase_bonus = 0.0
+            if parsed["near"] is None or len(positive) > 1 or parsed["phrases"]:
+                proximity_paragraphs = para_candidates
+            else:
+                proximity_paragraphs = ()
+            for paragraph in proximity_paragraphs:
+                text = paragraph["body"] or ""
+                if all(term.casefold() in text.casefold() for term in positive):
+                    terms_for_distance = parsed["terms"] or positive
+                    words = [m.group().casefold() for m in re.finditer(r"\S+", text)]
+                    positions = [[i for i, word in enumerate(words) if term.casefold() in word]
+                                 for term in terms_for_distance]
+                    if positions and all(positions):
+                        import itertools
+                        distance = min(max(combo) - min(combo) for combo in itertools.product(*positions))
+                        proximity_bonus = max(proximity_bonus, 0.20 / (1 + distance))
+                    if parsed["phrases"] and all(p.casefold() in text.casefold() for p in parsed["phrases"]):
+                        phrase_bonus = max(phrase_bonus, 0.35)
+            filename_bonus = 0.0
+            ranked.append((float(row["best_bm25"]) - proximity_bonus - phrase_bonus - filename_bonus, path, meta))
+        ranked.sort(key=lambda value: (value[0], value[1].casefold()))
+        selected = ranked[offset:offset + limit]
+        results = []
+        for score, path, meta in selected:
+            conditions, match_params = [], []
+            if match and not parsed["phrases"]:
+                conditions.append("content_paragraph_fts MATCH ?"); match_params.append(match)
+            else:
+                for term in parsed["terms"]:
+                    if len(term) >= 3:
+                        conditions.append("content_paragraph_fts MATCH ?")
+                        match_params.append('"' + term.replace('"', '""') + '"')
+                    else:
+                        conditions.append("body LIKE ?"); match_params.append("%" + term + "%")
+                for phrase in parsed["phrases"]:
+                    conditions.append("body LIKE ?"); match_params.append("%" + phrase.replace('"', '""') + "%")
+            for term in short_positive:
+                conditions.append("body LIKE ?"); match_params.append("%" + term + "%")
+            match_where = " AND ".join(conditions)
+            with self._lock:
+                if short_positive:
+                    paragraphs = self.db.execute(f"""
+                        SELECT paragraph_index, body, location_label, section, 0.0 AS rank
+                        FROM content_paragraph_fts WHERE path=? AND {match_where}
+                        ORDER BY CAST(paragraph_index AS INTEGER) ASC LIMIT 3
+                    """, [path, *match_params]).fetchall()
+                else:
+                    paragraphs = self.db.execute(f"""
+                        SELECT paragraph_index, body, location_label, section,
+                               bm25(content_paragraph_fts, 0.0, 3.0, 2.0, 1.0, 0.0, 0.0, 1.0) AS rank
+                        FROM content_paragraph_fts WHERE path=? AND {match_where}
+                        ORDER BY rank ASC, CAST(paragraph_index AS INTEGER) ASC LIMIT 3
+                    """, [path, *match_params]).fetchall()
+            paragraphs = [p for p in paragraphs if int(p["paragraph_index"]) in valid_para_indices]
+            locations = []
+            for paragraph in paragraphs:
+                text = paragraph["body"] or ""
+                folded = text.casefold()
+                starts = [folded.find(term.casefold()) for term in positive if folded.find(term.casefold()) >= 0]
+                if not starts:
+                    continue
+                first = min(starts); start = max(0, first - 70); end = min(len(text), first + 180)
+                snippet = text[start:end]
+                highlights = [[m.start(), m.end()] for term in positive
+                              for m in list(re.finditer(re.escape(term), snippet, re.I))]
+                label = paragraph["location_label"] or f"문단 {int(paragraph['paragraph_index']) + 1}"
+                location = {"page": None, "sheet": None, "row": None, "label": label}
+                page_match = re.search(r"(\d+)쪽", label)
+                row_match = re.search(r"(.+?)\s+(\d+)행", label)
+                line_match = re.fullmatch(r"(\d+)행", label)
+                if page_match:
+                    location["page"] = int(page_match.group(1))
+                if row_match:
+                    location["sheet"], location["row"] = row_match.group(1), int(row_match.group(2))
+                elif line_match:
+                    location["row"] = int(line_match.group(1))
+                locations.append({"paragraph_index": int(paragraph["paragraph_index"]), "snippet": snippet,
+                                  "highlights": highlights, "position": location})
+            results.append({"path": path, "name": meta["name"] or os.path.basename(path),
+                            "extension": meta["extension"] or Path(path).suffix.lstrip("."),
+                            "mtime": meta["mtime"], "folder_path": os.path.dirname(path),
+                            "folder_name": os.path.basename(os.path.dirname(path)),
+                            "locations": locations, "snippet": locations[0]["snippet"] if locations else "",
+                            "highlights": locations[0]["highlights"] if locations else [],
+                            "position": locations[0]["position"] if locations else {"page": None, "sheet": None, "row": None},
+                            "score": score, "relevance_rank": offset + len(results) + 1})
+        return results
 
     def search_files(self, query, *, roots=None, limit=500):
         """Immediate in-memory filename cache populated from indexed metadata."""

@@ -435,7 +435,7 @@ class TimemachineService:
     def _command(self, action, payload):
         if action in {"content_index", "content_index_all", "content_index_start",
                       "content_index_status", "content_index_progress", "content_index_cancel",
-                      "content_search", "content_preview"}:
+                      "content_preview", "related_search"}:
             denied = self._require_developer_mode()
             if denied is not None:
                 return denied
@@ -489,29 +489,37 @@ class TimemachineService:
             return self.cancel_content_index(wait=bool(payload.get("wait", False)), timeout=float(payload.get("timeout", 2.0)))
         if action == "content_search":
             query = payload.get("query")
-            sort = payload.get("sort")
-            if not sort or not isinstance(sort, str):
-                sort = "hierarchy_relevance"
-            rows = self.content_index.search(query, roots=self._settings["roots"], limit=payload.get("limit", 100), sort=sort)
+            rows = self.content_index.keyword_search(query, roots=self._settings["roots"],
+                limit=payload.get("limit", 100), offset=payload.get("offset", 0))
             for row in rows:
                 row["file_name"] = row["name"]
-                row["folder_path"] = os.path.dirname(row["path"])
-                row["folder_name"] = os.path.basename(row["folder_path"])
-                row.pop("_best_level_rank", None)
-                row.pop("_document_date", None)
-                row.pop("_bm25_score", None)
-            reindex_cnt = self.content_index.needs_reindex_count(roots=self._settings["roots"])
-            return {
-                "ok": True,
-                "items": rows,
-                "needs_reindex": reindex_cnt > 0,
-                "needs_reindex_count": reindex_cnt,
-                "reindex_guide": "기존 본문 색인은 위계 정보가 없어 재색인이 필요합니다." if reindex_cnt > 0 else None,
-            }
+            return {"ok": True, "items": rows}
+        if action == "content_export_markdown":
+            target = payload.get("path")
+            if not isinstance(target, str) or not target.strip():
+                raise ValueError("Markdown 저장 경로를 확인해 주세요.")
+            query = payload.get("query")
+            rows = self.content_index.keyword_search(query, roots=self._settings["roots"],
+                limit=payload.get("limit", 500), offset=payload.get("offset", 0))
+            target_abs = os.path.normcase(os.path.abspath(target))
+            if any(target_abs == os.path.normcase(os.path.abspath(item["path"])) for item in rows):
+                return self._error("INVALID_INPUT", "검색 대상 문서 경로에는 결과를 저장할 수 없습니다.")
+            from datetime import datetime
+            lines = ["# 본문검색 결과", "", f"- 검색어: {query}", f"- 검색 일시: {datetime.now().astimezone().isoformat(timespec='seconds')}", ""]
+            for item in rows:
+                lines.extend([f"## {item['name']}", f"- 경로: `{item['path']}`"])
+                for location in item["locations"]:
+                    lines.extend([f"- 위치: 문단 {location['paragraph_index']}", f"- 미리보기: {location['snippet']}"])
+                lines.append("")
+            Path(target).write_text("\n".join(lines), encoding="utf-8")
+            return {"ok": True, "path": os.path.abspath(target), "count": len(rows)}
         if action == "file_search":
             query = payload.get("query")
             return {"ok": True, "items": self.content_index.search_files(query, roots=self._settings["roots"], limit=payload.get("limit", 500))}
         if action == "related_search":
+            denied = self._require_developer_mode()
+            if denied is not None:
+                return denied
             path = payload.get("path")
             if not isinstance(path, str) or not self._path_in_active_root(path):
                 return self._error("INVALID_INPUT", "현재 조사 폴더의 문서를 선택해 주세요.")
