@@ -19,6 +19,67 @@ pub struct DocScheme { pub families: Vec<FamilyRank>, pub diagnostics: Vec<Diagn
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SchemeParagraph<'a> { pub text: &'a str, pub position: usize, pub left_indent: i32, pub size_hundredth_pt: u32, pub bold: bool, pub in_attachment: bool }
 
+/// Full-analysis metadata. `confidence` is the margin between the best and
+/// second-best dynamic-programming paths (scaled to 0..100).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ParagraphKind { Heading, Annotation, Body, AttachmentHeading, ReferenceHeading }
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StructureDiagnostic { NumberGap { paragraph: usize, expected: u32, found: u32 }, LevelGap { paragraph: usize, from: u8, to: u8 }, OrphanLevel { paragraph: usize, level: u8 }, OrderViolation { paragraph: usize, expected_rank: u8, found_rank: u8 }, SameLevelDifferentFamily { rank: u8 } }
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ParagraphAnalysis { pub role: Role, pub kind: ParagraphKind, pub parent_index: Option<usize>, pub confidence: u8, pub diagnostics: Vec<StructureDiagnostic> }
+
+fn role_for_rank(rank: u8) -> Role { match rank { 1 => Role::Chapter, 2 => Role::Section, 3 => Role::Topic, 4 => Role::Square, 5 => Role::Circle, 6 => Role::Dash, _ => Role::Asterisk } }
+
+/// Jointly assigns marker-bearing paragraphs to the document's inferred
+/// family order. Dynamic programming retains the cheapest path and runner-up.
+pub fn analyze_paragraphs(paragraphs: &[SchemeParagraph<'_>]) -> Vec<ParagraphAnalysis> {
+    let scheme = infer_doc_scheme(paragraphs);
+    let n = paragraphs.len();
+    let raw: Vec<Option<PrefixReading>> = paragraphs.iter().map(|p| read_prefix_marker(p.text)).collect();
+    // Attachment numbering is a separate scheme: infer it locally and offset
+    // its levels beneath the main-document hierarchy.
+    let mut attachment = Vec::new();
+    for (i,p) in paragraphs.iter().enumerate() { if p.in_attachment { if let Some(m)=raw[i] { attachment.push(SchemeParagraph{text:p.text,position:i,left_indent:p.left_indent,size_hundredth_pt:p.size_hundredth_pt,bold:p.bold,in_attachment:false}); let _=m; } } }
+    let attachment_scheme = infer_doc_scheme(&attachment);
+    let mut assigned=vec![None;n]; let mut confidences=vec![45u8;n];
+    let mut active_attach=false; let mut start=0;
+    while start<n {
+        if paragraphs[start].in_attachment {active_attach=true;}
+        let regime=active_attach; let mut end=start;
+        while end<n && paragraphs[end].in_attachment==regime {end+=1;}
+        let max_depth=if regime{attachment_scheme.families.len()}else{scheme.families.len()}.min(8).max(1);
+        let mut indices:Vec<usize>=(start..end).filter(|i|raw[*i].is_some()).collect();
+        if indices.is_empty(){start=end;continue;}
+        let mut costs=vec![vec![f64::INFINITY;max_depth];indices.len()];let mut prev=vec![vec![0usize;max_depth];indices.len()];
+        for (k,&i) in indices.iter().enumerate(){let m=raw[i].unwrap();let ranks=if regime{&attachment_scheme.families}else{&scheme.families};let rank=ranks.iter().find(|f|f.family==m.family).map(|f|f.rank).unwrap_or(1) as usize;let rank=rank.clamp(1,max_depth);let expected=ranks.iter().find(|f|f.family==m.family).map(|f|f.evidence.median_indent).unwrap_or(paragraphs[i].left_indent);let ic=(paragraphs[i].left_indent.abs_diff(expected) as f64/100.0).min(8.0);
+            for d in 0..max_depth{let path_indent=if d+1==rank{0.0}else{(paragraphs[i].left_indent.abs_diff(if d+1==1{scheme.families.iter().map(|f|f.evidence.median_indent).min().unwrap_or(0)}else{scheme.families.iter().map(|f|f.evidence.median_indent).max().unwrap_or(0)}) as f64/100.0).min(4.0)};let emission=ic+path_indent+(d+1).abs_diff(rank) as f64*0.4+if d==0&&rank>1{1.5}else{0.0};if k==0{costs[k][d]=emission;}else{let pm=raw[indices[k-1]].unwrap();let seq=match(pm.ordinal,m.ordinal){(Some(a),Some(b))if b>a+1=>(b-a-1)as f64*1.5,_=>0.0};let mut best=(f64::INFINITY,0);for pd in 0..max_depth{let tr=if d>pd+1{2.5*(d-pd-1)as f64}else{0.0};let candidate=costs[k-1][pd]+tr+seq+emission;if candidate<best.0{best=(candidate,pd);}}costs[k][d]=best.0;prev[k][d]=best.1;}}
+        }
+        let last=indices.len()-1;let mut order:Vec<usize>=(0..max_depth).collect();order.sort_by(|a,b|costs[last][*a].total_cmp(&costs[last][*b]));let mut d=order[0];for k in (0..indices.len()).rev(){let i=indices[k];let mut alternatives:Vec<f64>=(0..max_depth).filter(|x|*x!=d).map(|alt|{let mut c=costs[k][alt];for j in k+1..indices.len(){let chosen=(0..max_depth).min_by(|a,b|{let ca=costs[j-1][*a]+if j>0&& *a+1<*b{2.5*(*b-*a-1)as f64}else{0.0};let cb=costs[j-1][*b]+if j>0&& *b+1<*a{2.5*(*a-*b-1)as f64}else{0.0};ca.total_cmp(&cb)}).unwrap_or(alt);c+=costs[j][chosen];}c}).collect();alternatives.sort_by(f64::total_cmp);let base=costs[k][d];let margin=alternatives.first().map(|x|(x-base).max(0.0)).unwrap_or(8.0);assigned[i]=Some((d+1)as u8);confidences[i]=(45.0+margin*7.0).min(100.0)as u8;if k>0{d=prev[k][d];}}
+        start=end;
+    }
+    let mut result=Vec::with_capacity(n); let mut stack:Vec<(usize,u8)>=Vec::new(); let mut last_ord:HashMap<(bool,MarkerFamily),u32>=HashMap::new();
+    let mut attachment_started=false;
+    for (i,p) in paragraphs.iter().enumerate() {
+        let trimmed=p.text.trim(); let starts_attach=trimmed.starts_with("붙임")||trimmed.starts_with("첨부")||trimmed.starts_with("붙 임");
+        let starts_ref=trimmed.starts_with("참고")||trimmed.starts_with("※ 참고");
+        let in_attach=p.in_attachment||starts_attach||attachment_started;
+        if starts_attach {attachment_started=true;stack.clear();}
+        let is_header= !in_attach && ((i==0 && p.size_hundredth_pt>=1600) || trimmed.starts_with("수신")||trimmed.starts_with("제목:")||trimmed.starts_with("문서번호")||trimmed.starts_with("결재"));
+        let heading_like=raw[i].is_none() && !trimmed.is_empty() && trimmed.chars().count()<=36 && !["다","요","함","임","음","됨","습니다","합니다","입니다","있다","한다","된다","한다.","입니다.","합니다."].iter().any(|x|trimmed.ends_with(x)) && (p.bold||p.size_hundredth_pt>=1300) && (i+1<n && raw[i+1].is_some());
+        let annotation=trimmed.starts_with('※')||trimmed.starts_with('*')||(!stack.is_empty()&&p.left_indent>paragraphs[stack.last().unwrap().0].left_indent+50);
+        let kind=if starts_attach {ParagraphKind::AttachmentHeading}else if starts_ref{ParagraphKind::ReferenceHeading}else if is_header{ParagraphKind::Heading}else if annotation{ParagraphKind::Annotation}else if heading_like{ParagraphKind::Heading}else{ParagraphKind::Body};
+        let level=assigned[i]; let role=if starts_attach||starts_ref||is_header||heading_like {Role::DocumentTitle} else if let Some(l)=level { if confidences[i]<48 {Role::Ambiguous}else{role_for_rank(l)} } else if let Some(m)=raw[i] { marker_role(p.text.trim_start().chars().next().unwrap_or(' ')).unwrap_or_else(|| role_for_rank(scheme.families.iter().find(|f|f.family==m.family).map(|f|f.rank).unwrap_or(8))) } else {Role::Body};
+        let mut diagnostics=Vec::new();
+        if let Some(m)=raw[i] {if let Some(o)=m.ordinal {let key=(in_attach,m.family);if let Some(prev)=last_ord.get(&key){if o>*prev+1{diagnostics.push(StructureDiagnostic::NumberGap{paragraph:i,expected:*prev+1,found:o});}}last_ord.insert(key,o);}}
+        if let Some(l)=level { let evidence_rank=if in_attach {attachment_scheme.families.iter().find(|f|raw[i].map(|m|m.family==f.family).unwrap_or(false)).map(|f|f.rank)}else{scheme.families.iter().find(|f|raw[i].map(|m|m.family==f.family).unwrap_or(false)).map(|f|f.rank)};if raw[i].is_some() && !stack.is_empty(){let pl=stack.last().unwrap().1;if l>pl+1||evidence_rank.map(|r|r>pl+1).unwrap_or(false){diagnostics.push(StructureDiagnostic::LevelGap{paragraph:i,from:pl,to:l});}}else if raw[i].is_some()&&(evidence_rank.map(|r|r>1).unwrap_or(l>1)||l>1){diagnostics.push(StructureDiagnostic::OrphanLevel{paragraph:i,level:l});}
+            let expected=if in_attach {attachment_scheme.families.iter().find(|f|raw[i].map(|m|m.family==f.family).unwrap_or(false)).map(|f|f.rank)}else{scheme.families.iter().find(|f|raw[i].map(|m|m.family==f.family).unwrap_or(false)).map(|f|f.rank)}.unwrap_or(l);if l!=expected{diagnostics.push(StructureDiagnostic::OrderViolation{paragraph:i,expected_rank:expected,found_rank:l});}
+            while stack.last().map(|x|x.1>=l).unwrap_or(false){stack.pop();}let parent=stack.last().map(|x|x.0);stack.push((i,l));
+            result.push(ParagraphAnalysis{role,kind,parent_index:parent,confidence:confidences[i],diagnostics});
+        } else {let parent=if kind==ParagraphKind::Annotation{stack.last().map(|x|x.0)}else{None}; result.push(ParagraphAnalysis{role,kind,parent_index:parent,confidence:if raw[i].is_none(){70}else{confidences[i]},diagnostics});}
+    }
+    result
+}
+
 /// 판독은 문두의 짧은 토큰만 대상으로 하며 본문 중간 기호를 검색하지 않는다.
 pub fn read_prefix_marker(text: &str) -> Option<PrefixReading> {
     let s=text.trim_start(); let offset=text.len()-s.len();
@@ -359,6 +420,25 @@ mod tests {
         (vec!["□ 가","□ 나","ㅇ 가","ㅇ 나","- 가","- 나","* 가","* 나"],vec![0,0,100,100,200,200,300,300],vec![MarkerFamily::Square,MarkerFamily::Circle,MarkerFamily::Dash,MarkerFamily::Asterisk]),
         ];for (n,(t,i,e)) in cases.iter().enumerate(){let s=infer_doc_scheme(&scheme_paras(t,i));let got:Vec<_>=s.families.iter().map(|x|x.family).collect();assert_eq!(&got,e,"example {}",n+1);}}
 
+    fn analysis(ps:&[(&str,i32,bool,bool)])->Vec<ParagraphAnalysis>{let v:Vec<_>=ps.iter().enumerate().map(|(i,(text,indent,bold,attach))|SchemeParagraph{text,position:i,left_indent:*indent,size_hundredth_pt:if *bold{1400}else{1100},bold:*bold,in_attachment:*attach}).collect();analyze_paragraphs(&v)}
+    #[test] fn dp_two_level_circled_number_by_indent(){let a=analysis(&[("① main",0,false,false),("① sub",100,false,false),("② next",0,false,false)]);assert_eq!(a[0].role,Role::Chapter);assert_eq!(a[1].role,Role::Chapter);assert!(a[1].confidence<=100);}
+    #[test] fn number_gap_emits_diagnostic(){let a=analysis(&[("1. one",0,false,false),("3. three",0,false,false)]);assert!(a[1].diagnostics.iter().any(|d|matches!(d,StructureDiagnostic::NumberGap{expected:2,found:3,..})));}
+    #[test] fn attachment_header_detected(){assert_eq!(analysis(&[("붙임 1. 자료",0,false,false)])[0].kind,ParagraphKind::AttachmentHeading);}
+    #[test] fn attachment_counter_resets(){let a=analysis(&[("1. main",0,false,false),("붙임 1. files",0,false,false),("1. first",0,false,true),("3. third",0,false,true)]);assert!(a[3].diagnostics.iter().any(|d|matches!(d,StructureDiagnostic::NumberGap{expected:2,..})));}
+    #[test] fn short_bold_noun_before_list_is_heading(){assert_eq!(analysis(&[("검토 사항",0,true,false),("1. 첫째",0,false,false)])[0].kind,ParagraphKind::Heading);}
+    #[test] fn descriptive_sentence_is_body(){assert_eq!(analysis(&[("필요한 내용을 검토합니다.",0,true,false)])[0].kind,ParagraphKind::Body);}
+    #[test] fn note_is_annotation(){assert_eq!(analysis(&[("1. 항목",0,false,false),("※ 세부 설명",100,false,false)])[1].kind,ParagraphKind::Annotation);}
+    #[test] fn annotation_parent_is_previous_heading(){let a=analysis(&[("1. 항목",0,false,false),("※ 주의",100,false,false)]);assert_eq!(a[1].parent_index,Some(0));}
+    #[test] fn header_lines_are_document_heading(){assert_eq!(analysis(&[("수신 기관장",0,false,false)])[0].kind,ParagraphKind::Heading);}
+    #[test] fn reference_region_detected(){assert_eq!(analysis(&[("참고자료",0,false,false)])[0].kind,ParagraphKind::ReferenceHeading);}
+    #[test] fn attachment_stays_separate_from_body(){let a=analysis(&[("1. 본문",0,false,false),("붙임 1. 첨부",0,false,false),("가. 별도 번호",100,false,true)]);assert_eq!(a[2].role,Role::Chapter);}
+    #[test] fn parent_is_linked_by_dynamic_level(){let a=analysis(&[("Ⅰ. 장",0,false,false),("1. 절",100,false,false),("가. 항",200,false,false)]);assert_eq!(a[1].parent_index,Some(0));assert_eq!(a[2].parent_index,Some(1));}
+    #[test] fn orphan_lower_level_is_diagnosed(){let a=analysis(&[("가. orphan",200,false,false)]);assert!(a[0].diagnostics.iter().any(|d|matches!(d,StructureDiagnostic::OrphanLevel{..})));}
+    #[test] fn level_skip_is_diagnosed(){let a=analysis(&[("Ⅰ. top",0,false,false),("가. lower",200,false,false)]);assert!(a[1].diagnostics.iter().any(|d|matches!(d,StructureDiagnostic::LevelGap{..})));}
+    #[test] fn paragraph_confidence_is_bounded(){let a=analysis(&[("1. a",0,false,false),("2. b",0,false,false)]);assert!(a.iter().all(|p|p.confidence<=100));}
+    #[test] fn unmarked_regular_paragraph_is_body(){assert_eq!(analysis(&[("일반적인 설명 문장입니다",0,false,false)])[0].role,Role::Body);}
+    #[test] fn attachment_header_resets_parent_stack(){let a=analysis(&[("1. parent",0,false,false),("붙임 1. files",0,false,false),("가. child",100,false,true)]);assert_eq!(a[2].parent_index,None);}
+    #[test] fn no_marker_unformatted_text_remains_body(){assert_eq!(analysis(&[("본문 단락",0,false,false)])[0].kind,ParagraphKind::Body);}
     #[test]
     fn nine_families_cap_at_eight_with_diagnostic(){let t=["Ⅰ. 가","Ⅱ. 나","ⅰ. 가","ⅱ. 나","1. 가","2. 나","(1) 가","(2) 나","가. 가","나. 나","① 가","② 나","□ 가","□ 나","ㅇ 가","ㅇ 나","- 가","- 나","* 가","* 나"];let s=infer_doc_scheme(&scheme_paras(&t,&[0;20]));assert_eq!(s.families.len(),8);assert!(s.diagnostics.iter().any(|x|matches!(x,Diagnostic::TooManyFamilies{detected} if *detected>8)));}
 }
