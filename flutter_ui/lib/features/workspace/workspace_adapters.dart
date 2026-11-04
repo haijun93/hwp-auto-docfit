@@ -140,12 +140,14 @@ class IntegratedWorkspace extends StatelessWidget {
     this.onTabChanged,
     this.trailing,
     this.savedSidebarExpanded,
-    this.onSidebarExpandedChanged,
+      this.onSidebarExpandedChanged,
+      this.developerMode = false,
   });
 
   final Widget? trailing;
   final ValueListenable<bool?>? savedSidebarExpanded;
   final ValueChanged<bool>? onSidebarExpandedChanged;
+  final bool developerMode;
   final ApiCall api;
   final Widget documentEditorWidget;
   final Widget fileConversionWidget;
@@ -162,6 +164,7 @@ class IntegratedWorkspace extends StatelessWidget {
       trailing: trailing,
       savedSidebarExpanded: savedSidebarExpanded,
       onSidebarExpandedChanged: onSidebarExpandedChanged,
+      developerMode: developerMode,
       documentEditor: DocumentEditorAdapter(child: documentEditorWidget),
       tableTemplates: TableTemplatesAdapter(api: api),
       tableSketch: TableSketchAdapter(api: api),

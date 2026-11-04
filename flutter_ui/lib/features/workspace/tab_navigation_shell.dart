@@ -70,6 +70,7 @@ class TabNavigationShell extends StatefulWidget {
     this.savedSidebarExpanded,
     this.tabRequest,
     this.hiddenTabs = kDefaultHiddenTabs,
+    this.developerMode = false,
   }) : assert(initialIndex >= 0 && initialIndex < kTabCount);
 
   final Widget documentEditor;
@@ -89,6 +90,7 @@ class TabNavigationShell extends StatefulWidget {
 
   /// 메뉴에 보이지 않고 화면도 만들지 않는 탭.
   final Set<int> hiddenTabs;
+  final bool developerMode;
   final ValueChanged<int>? onTabChanged;
 
   /// 왼쪽 메뉴 아래쪽의 앱 전체 메뉴(사용 방법·작업 로그·설정 등).
@@ -110,6 +112,7 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
   final ScrollController _tabScrollController = ScrollController();
   bool? _expanded;
   bool _sidebarTouched = false;
+  bool _sidebarOnly = false;
   bool _built = false;
 
   @override
@@ -184,6 +187,10 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
     widget.onSidebarExpandedChanged?.call(next);
   }
 
+  Future<void> _setSidebarOnly(bool enabled) async {
+    if (mounted) setState(() => _sidebarOnly = enabled);
+  }
+
   @override
   Widget build(BuildContext context) {
     final pages = [
@@ -226,7 +233,7 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
               autofocus: true,
               child: Row(
                 children: [
-                  WorkspaceTabBar(
+                  if (!_sidebarOnly) WorkspaceTabBar(
                     labels: _labels,
                     icons: _icons,
                     selectedIndex: _index,
@@ -236,8 +243,30 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
                     trailing: widget.trailing,
                     expanded: expanded,
                     onToggleExpanded: _toggleSidebar,
+                    developerMode: widget.developerMode,
+                    onSidebarModeChanged: _setSidebarOnly,
+                    sidebarOnly: _sidebarOnly,
+                    onAlwaysOnTop: () {},
                   ),
-                  Expanded(
+                  if (_sidebarOnly)
+                    Container(
+                      width: kSidebarExpandedWidth,
+                      color: Colors.white,
+                      child: Column(children: [
+                        const SizedBox(height: 8),
+                        TextButton.icon(onPressed: () => _setSidebarOnly(false), icon: const Icon(Icons.close_fullscreen), label: const Text('사이드메뉴 모드 끄기')),
+                        Expanded(child: WorkspaceTabBar(
+                          labels: _labels, icons: _icons, selectedIndex: _index, onSelected: _select,
+                          hiddenTabs: widget.hiddenTabs, scrollController: _tabScrollController,
+                          trailing: widget.trailing, expanded: true, onToggleExpanded: _toggleSidebar,
+                          developerMode: widget.developerMode,
+                          onSidebarModeChanged: _setSidebarOnly,
+                          sidebarOnly: _sidebarOnly,
+                          onAlwaysOnTop: () {},
+                        )),
+                      ]),
+                    ),
+                  if (!_sidebarOnly) Expanded(
                     child: IndexedStack(
                       index: _index,
                       children: [
@@ -278,6 +307,10 @@ class WorkspaceTabBar extends StatelessWidget {
     this.trailing,
     this.expanded = true,
     this.onToggleExpanded,
+    this.developerMode = false,
+    this.onSidebarModeChanged,
+    this.sidebarOnly = false,
+    this.onAlwaysOnTop,
   });
 
   final Set<int> hiddenTabs;
@@ -289,6 +322,10 @@ class WorkspaceTabBar extends StatelessWidget {
   final Widget? trailing;
   final bool expanded;
   final VoidCallback? onToggleExpanded;
+  final bool developerMode;
+  final ValueChanged<bool>? onSidebarModeChanged;
+  final bool sidebarOnly;
+  final VoidCallback? onAlwaysOnTop;
 
   @override
   Widget build(BuildContext context) {
@@ -334,7 +371,7 @@ class WorkspaceTabBar extends StatelessWidget {
                 ],
               ),
             ),
-            if (trailing != null) ...[
+    if (trailing != null) ...[
               const Divider(height: 1),
               // 창이 낮아도 넘치지 않게 앱 메뉴는 남은 높이의 절반까지만 쓰고 그 안에서 스크롤한다.
               ConstrainedBox(
@@ -345,6 +382,20 @@ class WorkspaceTabBar extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Center(child: trailing!),
                 ),
+      ),
+    ],
+            if (developerMode) ...[
+              TextButton.icon(
+                key: const ValueKey('always-on-top-toggle'),
+                onPressed: onAlwaysOnTop,
+                icon: const Icon(Icons.push_pin_outlined),
+                label: const Text('항상 위'),
+              ),
+              TextButton.icon(
+                key: const ValueKey('sidebar-mode-toggle'),
+                onPressed: () => onSidebarModeChanged?.call(!sidebarOnly),
+                icon: const Icon(Icons.view_sidebar_outlined),
+                label: Text('사이드메뉴 모드 ${sidebarOnly ? '켜짐' : '꺼짐'}'),
               ),
             ],
           ],

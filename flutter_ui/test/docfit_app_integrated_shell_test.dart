@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:docfit_ui/main.dart';
 import 'package:docfit_ui/features/conversion/conversion_workspace.dart';
@@ -7,6 +8,47 @@ import 'package:docfit_ui/features/workspace/workspace_adapters.dart';
 import 'package:docfit_ui/features/workspace/tab_navigation_shell.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  const windowChannel = MethodChannel('docfit/window');
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(windowChannel, (call) async => {'ok': true, 'active': true});
+  testWidgets('workspace sidebar shows new document first and gates developer toggles', (tester) async {
+    final state = <String, dynamic>{'developer_mode': false, 'always_on_top': false};
+    Future<Object?> api(String name, List<Object?> args) async => name == 'get_state' ? state : {'items': []};
+    await tester.pumpWidget(MaterialApp(home: IntegratedWorkspace(
+      api: api,
+      documentEditorWidget: const SizedBox(),
+      fileConversionWidget: const SizedBox(),
+      developerMode: false,
+      trailing: Builder(builder: (context) => Column(children: [
+        TextButton(key: const ValueKey('new-document-open'), onPressed: () {}, child: const Text('새문서')),
+        TextButton(onPressed: () {}, child: const Text('몽땅클립보드')),
+      ])),
+    )));
+    expect(find.byKey(const ValueKey('new-document-open')), findsOneWidget);
+    expect(find.text('새문서'), findsOneWidget);
+    expect(find.byKey(const ValueKey('always-on-top-toggle')), findsNothing);
+    expect(find.byKey(const ValueKey('sidebar-mode-toggle')), findsNothing);
+    expect(tester.getTopLeft(find.byKey(const ValueKey('new-document-open'))).dy,
+        lessThan(tester.getTopLeft(find.text('몽땅클립보드')).dy));
+  });
+
+  testWidgets('developer controls appear only when enabled', (tester) async {
+    var sidebarMode = false;
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: StatefulBuilder(builder: (context, setState) => WorkspaceTabBar(
+      labels: const ['문서편집'], icons: const [Icons.description], selectedIndex: 0,
+      onSelected: (_) {}, scrollController: ScrollController(), developerMode: true,
+      sidebarOnly: sidebarMode,
+      onSidebarModeChanged: (value) => setState(() => sidebarMode = value),
+    )))));
+    expect(find.byKey(const ValueKey('always-on-top-toggle')), findsOneWidget);
+    expect(find.byKey(const ValueKey('sidebar-mode-toggle')), findsOneWidget);
+    expect(find.text('작업 순서'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('sidebar-mode-toggle')));
+    await tester.pump();
+    expect(find.text('사이드메뉴 모드 켜짐'), findsOneWidget);
+  });
+
   testWidgets('DocFitApp mounts IntegratedWorkspace with 6 tabs by default',
       (tester) async {
     // 탭이 8개라 좁은 창에서는 아이콘만 보인다 — 이름까지 보이는 넓이로 시험한다.

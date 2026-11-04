@@ -99,6 +99,8 @@ class DesktopWebBridge:
         from docfit_app.native_file_dialog_service import NativeFileDialogService
         self._file_dialogs = NativeFileDialogService()
         self.window = None
+        self.sidebar_controller = None
+        self.sidebar_active = False
         self.tk_stopped = None
         # 사용자가 웹 창을 닫아 종료하는 중인지. 이때는 창이 스스로 닫히므로
         # 종료 감시 스레드가 destroy()를 다시 부르면 안 된다(pywebview 이중 닫힘 오류).
@@ -493,6 +495,9 @@ class DesktopWebBridge:
                 "drop_target": self.drop_target,
                 "rename_open": rename_open,
                 "sidebar_collapsed": self._sidebar_collapsed_value(),
+                "developer_mode": bool(self.gui._준말_서비스().settings.read().get('developer_mode', False)),
+                "always_on_top": bool(self.gui._준말_서비스().settings.read().get('always_on_top', False)),
+                "sidebar_mode": self.sidebar_active,
                 "document_drop_revision": self._document_drop_revision,
                 "options": {
                     name: bool(getattr(gui, attribute).get())
@@ -1254,6 +1259,9 @@ class DesktopWebBridge:
                 else:
                     unregister()
             self.gui._Flutter설정_반영(values)
+            if self.window is not None and 'always_on_top' in values:
+                self.window.set_on_top(bool(values['always_on_top']))
+                self._saved_window['topmost'] = bool(values['always_on_top'])
             return self._settings_snapshot()
         return self._tk(lambda: response(save))
 
@@ -1950,7 +1958,16 @@ class DesktopWebBridge:
                 for identifier, profile in profiles.items():
                     if not isinstance(profile, dict): continue
                     source = snapshot_path(identifier)
-                    if source: items.append({'id': str(identifier), 'name': str(profile.get('name') or source.stem)})
+                    if source:
+                        preview = None
+                        try:
+                            pair = self.gui._서식예시_경로(identifier)
+                            candidates = [Path(pair[1])] if len(pair) > 1 and pair[1] else []
+                            candidates += [source.with_suffix('.png'), source.with_name(source.stem + '_preview.png')]
+                            preview = next((str(item.resolve()) for item in candidates if item.is_file()), None)
+                        except Exception:
+                            pass
+                        items.append({'id': str(identifier), 'name': str(profile.get('name') or source.stem), 'preview': preview})
                 return {'ok': True, 'items': items}
             if action != 'create': return {'ok': False, 'message': '지원하지 않는 새문서 명령입니다.'}
             profile = profiles.get(payload.get('id'))
@@ -1963,6 +1980,41 @@ class DesktopWebBridge:
                 target.unlink(missing_ok=True)
                 return {'ok': False, 'message': f'한/글에서 문서를 열지 못했습니다: {exc}'}
             return {'ok': True, 'path': str(target), 'name': target.name}
+        return self._tk(execute)
+
+    def sidebar_mode(self, enabled):
+        from docfit_app.sidebar_mode import SidebarModeController
+        def execute():
+            config = self._configuration().snapshot(running=self.gui.running)
+            values = config.get('values', {})
+            if not values.get('developer_mode', False):
+                return {'ok': False, 'message': '사이드메뉴 모드는 개발자 모드에서만 사용할 수 있습니다.'}
+            if self.sidebar_controller is None:
+                if self.window is None:
+                    return {'ok': False, 'message': '창이 아직 준비되지 않았습니다.'}
+                self.sidebar_controller = SidebarModeController(
+                    _Win32WindowApi(), _PyWebViewWindow(self.window, self.gui._준말_서비스().settings, lambda: self._saved_window), True,
+                    values.get('sidebar_mode_side', 'right'))
+            else:
+                self.sidebar_controller.developer_mode = True
+                self.sidebar_controller.saved = self._saved_window
+            result = self.sidebar_controller.toggle(bool(enabled))
+            self.sidebar_active = bool(enabled)
+            return result
+        try:
+            return self._tk(execute)
+        except Exception as exc:
+            return {'ok': False, 'message': str(exc)}
+
+    def always_on_top(self, enabled):
+        def execute():
+            config = self._configuration().snapshot(running=self.gui.running)
+            if not config.get('values', {}).get('developer_mode', False):
+                return {'ok': False, 'message': '항상 위 설정은 개발자 모드에서만 사용할 수 있습니다.'}
+            self.gui._준말_서비스().settings.update(lambda current: current.update({'always_on_top': bool(enabled)}))
+            if self.window is not None:
+                self.window.set_on_top(bool(enabled))
+            return {'ok': True, 'enabled': bool(enabled)}
         return self._tk(execute)
 
     def _drain_rename_paths(self):
@@ -2582,6 +2634,79 @@ def _file_size(path):
         return None
 
 
+class _Win32WindowApi:
+    """Monitor work-area and SetWindowPos wrapper; isolated for fake-driven tests."""
+    SPI_GETWORKAREA = 0x0030
+    HWND_TOPMOST = -1
+    HWND_NOTOPMOST = -2
+    SWP_NOACTIVATE = 0x0010
+
+    def __init__(self, user32=None):
+        self._ctypes = None
+        if user32 is None:
+            import ctypes
+            self._ctypes = ctypes
+            user32 = ctypes.windll.user32
+        self.user32 = user32
+
+    def work_area(self, hwnd):
+        if self._ctypes is None:
+            import ctypes
+        else:
+            ctypes = self._ctypes
+        from ctypes import wintypes
+        try:
+            class MONITORINFO(ctypes.Structure):
+                _fields_ = [('cbSize', wintypes.DWORD), ('rcMonitor', wintypes.RECT), ('rcWork', wintypes.RECT), ('dwFlags', wintypes.DWORD)]
+            monitor_from_window = getattr(self.user32, 'MonitorFromWindow', None)
+            get_monitor_info = getattr(self.user32, 'GetMonitorInfoW', None)
+            monitor = monitor_from_window(hwnd, 2) if monitor_from_window else None
+            info = MONITORINFO()
+            info.cbSize = ctypes.sizeof(info)
+            if monitor and get_monitor_info and get_monitor_info(monitor, ctypes.byref(info)):
+                r = info.rcWork
+                return r.left, r.top, r.right, r.bottom
+        except Exception:
+            pass
+        # 모니터별 API가 없는 환경에서는 기본 화면 작업 영역을 사용한다.
+        rect = wintypes.RECT()
+        if not self.user32.SystemParametersInfoW(self.SPI_GETWORKAREA, 0, ctypes.byref(rect), 0):
+            raise OSError('화면 작업 영역을 확인하지 못했습니다.')
+        return rect.left, rect.top, rect.right, rect.bottom
+
+    def set_window_pos(self, hwnd, x, y, width, height, topmost):
+        insert_after = self.HWND_TOPMOST if topmost else self.HWND_NOTOPMOST
+        if not self.user32.SetWindowPos(hwnd, insert_after, x, y, width, height, self.SWP_NOACTIVATE):
+            raise OSError('앱 창 위치를 바꾸지 못했습니다.')
+        return True
+
+
+class _PyWebViewWindow:
+    def __init__(self, window, settings=None, saved_state=None):
+        self.window = window
+        self.settings = settings
+        self.saved_state = saved_state
+
+    def handle(self):
+        return self.window.native.Handle.ToInt64()
+
+    def geometry(self):
+        if self.saved_state and self.window.width < 250:
+            saved = self.saved_state()
+            return saved['x'], saved['y'], saved['width'], saved['height']
+        return self.window.x, self.window.y, self.window.width, self.window.height
+
+    def topmost(self):
+        return bool(self.saved_state()['topmost']) if self.saved_state else bool(getattr(self.window, '_on_top', False))
+
+    def set_sidebar_only(self, enabled):
+        self.window.resize(190 if enabled else self.saved_state()['width'], self.saved_state()['height'])
+
+    def save_side(self, side):
+        if self.settings is not None:
+            self.settings.update(lambda current: current.update({'sidebar_mode_side': side}))
+
+
 class _BrowserApi:
     """Expose commands only: pywebview recursively inspects public attributes."""
 
@@ -2593,6 +2718,7 @@ class _BrowserApi:
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
             "get_pending_dialog", "resolve_dialog", "enable_close_guard", "acknowledge_close", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch", "timemachine",
             "file_rename", "kclip", "new_document", "hwp_bulk", "open_results", "next_job", "run_tool", "open_result",
+            "sidebar_mode", "always_on_top",
             "show_result", "open_source_file", "show_source_file", "open_result_source", "open_diff", "compare_result", "launch_external_hwp_diff", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",
             "set_exclude_tables", "set_card_option",
@@ -2850,7 +2976,7 @@ def run_webview(gui):
         screen_width, screen_height = bridge._tk(
             lambda: (gui.root.winfo_screenwidth(), gui.root.winfo_screenheight())
         )
-    width = min(1040, max(420, screen_width - 40))
+    width = min(1040, max(700, screen_width - 40))
     # Reserve space for the title bar and taskbar; center the window so it
     # remains fully reachable even when Tk reports a logical (DPI-scaled) size.
     height = min(800, max(400, screen_height - 220))
@@ -2867,10 +2993,17 @@ def run_webview(gui):
         height=height,
         x=x,
         y=y,
-        min_size=(min(520, width), min(440, height)),
+        min_size=(min(260, width), min(180, height)),
         text_select=True,
     )
     bridge.window = window
+    bridge._saved_window = {'x': x, 'y': y, 'width': width, 'height': height, 'topmost': False}
+    try:
+        initial_settings = bridge._tk(lambda: bridge._configuration().snapshot(running=bridge.gui.running).get('values', {}))
+        window.set_on_top(bool(initial_settings.get('always_on_top', False)))
+        bridge._saved_window['topmost'] = bool(initial_settings.get('always_on_top', False))
+    except Exception:
+        logging.getLogger(__name__).debug('Could not apply saved always-on-top setting', exc_info=True)
     tk_stopped = threading.Event()
     bridge.tk_stopped = tk_stopped
     window.events.closing += bridge.request_close
