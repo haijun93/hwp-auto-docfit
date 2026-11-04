@@ -1,0 +1,21 @@
+From: sender@example.com
+To: receiver@example.com
+Subject: =?UTF-8?B?7Jew6rCEIOyXheustCDrs7Tqs6DshJwg7KCc7Lac?=
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="BOUNDARY_12345"
+
+--BOUNDARY_12345
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+안녕하세요.
+2026년 업무 추진 실적 보고서입니다.
+확인 부탁드립니다.
+
+--BOUNDARY_12345
+Content-Type: application/octet-stream; name="data.bin"
+Content-Disposition: attachment; filename="data.bin"
+Content-Transfer-Encoding: base64
+
+AQIDBAUGBwg=
+--BOUNDARY_12345--

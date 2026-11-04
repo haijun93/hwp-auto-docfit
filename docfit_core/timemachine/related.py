@@ -37,8 +37,12 @@ def _type(text):
 
 
 def _score(reference, candidate):
-    ref_text = reference["name"] + "\n" + reference["body"]
-    cand_text = candidate["name"] + "\n" + candidate["body"]
+    ref_dict = dict(reference) if hasattr(reference, "keys") else (reference or {})
+    cand_dict = dict(candidate) if hasattr(candidate, "keys") else (candidate or {})
+    ref_body = ref_dict.get("body") or ""
+    cand_body = cand_dict.get("body") or ""
+    ref_text = (ref_dict.get("name") or "") + "\n" + ref_body
+    cand_text = (cand_dict.get("name") or "") + "\n" + cand_body
     left, right = _tokens(ref_text), _tokens(cand_text)
     shared = sorted(left & right)
     reasons = []
