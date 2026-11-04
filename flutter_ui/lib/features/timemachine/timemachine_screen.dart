@@ -32,19 +32,22 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
   final Set<String> _selectedKinds = {};
   String _query = '';
   bool _contentMode = false, _contentIndexRunning = false;
+  bool _relatedMode = false;
   Map<String, Object?> _contentProgress = {};
   List<TimemachineContentResult> _contentResults = [];
   bool _contentNeedsReindex = false;
   bool _contentReindexDismissed = false;
   int _contentNeedsReindexCount = 0;
   String? _contentReindexGuide;
-  String _contentSort = 'hierarchy_relevance';
+  String _contentSort = 'relevance';
   TimemachineContentResult? _selectedContentResult;
   bool _previewLoading = false;
   Map<String, Object?>? _preview;
   int _previewRevision = 0;
   int _contentSearchRevision = 0;
   bool _showOperatorHelp = false;
+  final TextEditingController _previewFind = TextEditingController();
+  int _previewFindIndex = 0;
 
   // 파일명 모드 열 보기(테이블) 상태
   bool _fileTableView = false;
@@ -76,7 +79,7 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
   @override
   void initState() { super.initState(); _load(firstOpen: true); _scroll.addListener(_onScroll); _pollDeveloperMode(); }
   @override
-  void dispose() { _debounce?.cancel(); _scanPoll?.cancel(); _developerModePoll?.cancel(); _contentPoll?.cancel(); _thumbnails.dispose(); _scroll.dispose(); _search.dispose(); super.dispose(); }
+  void dispose() { _debounce?.cancel(); _scanPoll?.cancel(); _developerModePoll?.cancel(); _contentPoll?.cancel(); _thumbnails.dispose(); _scroll.dispose(); _search.dispose(); _previewFind.dispose(); super.dispose(); }
 
   void _pollDeveloperMode() {
     _developerModePoll?.cancel();
@@ -97,8 +100,9 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
       if (enabled != _developerMode) {
         setState(() {
           _developerMode = enabled;
-          if (!enabled && _contentMode) {
+          if (!enabled && _relatedMode) {
             _contentMode = false;
+            _relatedMode = false;
             _contentResults = [];
             _selectedContentResult = null;
             _preview = null;
@@ -255,6 +259,10 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
         if (bComp != 0) return bComp;
 
         return a.key.compareTo(b.key);
+      } else if (sortKey == 'relevance') {
+        final scoreComp = itemB.bm25.compareTo(itemA.bm25);
+        if (scoreComp != 0) return scoreComp;
+        return a.key.compareTo(b.key);
       } else if (sortKey == 'recent') {
         final dateA = itemA.mtime > itemA.ctime ? itemA.mtime : itemA.ctime;
         final dateB = itemB.mtime > itemB.ctime ? itemB.mtime : itemB.ctime;
@@ -270,7 +278,6 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
 
 
   Future<void> _contentSearch(String query, {String? sort}) async {
-    if (!_developerMode) return;
     final searchRev = ++_contentSearchRevision;
     if (query.isEmpty) {
       if (mounted) {
@@ -280,41 +287,70 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
           _contentNeedsReindexCount = 0;
           _contentReindexGuide = null;
           _selectedContentResult = null;
-          _contentSort = sort ?? 'hierarchy_relevance';
+          _contentSort = sort ?? (_relatedMode ? 'hierarchy_relevance' : 'relevance');
           _preview = null;
         });
       }
       return;
     }
     setState(() {
-      _contentSort = sort ?? 'hierarchy_relevance';
+      _contentSort = sort ?? (_relatedMode ? 'hierarchy_relevance' : 'relevance');
       _selectedContentResult = null;
       _preview = null;
     });
     try {
-       final activeSort = sort ?? _contentSort;
-       final response = await _api.command('content_search', {
+       final activeSort = sort ?? (_relatedMode ? 'hierarchy_relevance' : _contentSort);
+       final relatedMode = _relatedMode;
+       final response = await _api.command(relatedMode ? 'related_search' : 'content_search', {
          'query': query, 'limit': 100,
-         if (activeSort != 'hierarchy_relevance') 'sort': activeSort,
+         if (relatedMode) 'sort': 'hierarchy_relevance' else 'sort': activeSort == 'relevance' ? 'relevance' : activeSort,
        });
        final rawItems = response['items'];
        final items = rawItems is List ? rawItems.map((raw) => TimemachineContentResult.fromJson(Map<String, Object?>.from(raw as Map), query: query)).toList() : <TimemachineContentResult>[];
-      if (!mounted || searchRev != _contentSearchRevision || query != _search.text.trim()) return;
+      if (!mounted || searchRev != _contentSearchRevision || query != _search.text.trim() || relatedMode != _relatedMode) return;
       setState(() {
          _contentSort = activeSort;
          _contentNeedsReindex = response['needs_reindex'] == true;
          _contentReindexDismissed = false;
          _contentNeedsReindexCount = (response['needs_reindex_count'] as num?)?.toInt() ?? 0;
          _contentReindexGuide = response['reindex_guide'] as String?;
-         _contentResults = _sortContentResults(items, activeSort);
+         _contentResults = relatedMode
+             ? _sortContentResults(items, 'hierarchy_relevance')
+             : activeSort == 'relevance' ? items : _sortContentResults(items, activeSort);
       });
     } catch (_) {
       if (mounted) setState(() => _error = '본문 검색을 수행하지 못했습니다.');
     }
   }
 
+  Future<void> _exportMarkdown() async {
+    try {
+      final response = await _api.command('content_export_markdown', {'query': _search.text.trim()});
+      if (!mounted) return;
+      final message = response['message'] ?? response['path'] ?? (response['ok'] == true ? 'Markdown으로 저장했습니다.' : 'Markdown 저장에 실패했습니다.');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$message')));
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Markdown 저장에 실패했습니다.')));
+    }
+  }
+
+  void _movePreviewFind(int direction) {
+    final body = '${_preview?['snippet'] ?? _selectedContentResult?.snippet ?? ''}'.toLowerCase();
+    final term = _previewFind.text.trim().toLowerCase();
+    if (term.isEmpty || body.isEmpty) return;
+    final hits = <int>[];
+    for (var at = 0; at <= body.length - term.length;) {
+      final hit = body.indexOf(term, at);
+      if (hit < 0) break;
+      hits.add(hit);
+      at = hit + term.length;
+    }
+    setState(() => _previewFindIndex = hits.isEmpty ? 0 : (_previewFindIndex + direction + hits.length) % hits.length);
+  }
+
   Future<void> _previewContentResult(TimemachineContentResult result) async {
     final rev = ++_previewRevision;
+    final selectedSearchRevision = _contentSearchRevision;
     setState(() {
       _selectedContentResult = result;
       _previewLoading = true;
@@ -330,13 +366,13 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
         if (result.position?.row != null) 'row': result.position!.row,
       };
       final response = await _api.command('preview', payload);
-      if (!mounted || rev != _previewRevision) return;
+      if (!mounted || rev != _previewRevision || selectedSearchRevision != _contentSearchRevision || _selectedContentResult != result) return;
       setState(() {
         _preview = response;
         _previewLoading = false;
       });
     } catch (_) {
-      if (!mounted || rev != _previewRevision) return;
+      if (!mounted || rev != _previewRevision || selectedSearchRevision != _contentSearchRevision || _selectedContentResult != result) return;
       setState(() {
         _previewLoading = false;
         _preview = {'ok': false, 'message': '미리보기를 불러오지 못했습니다.'};
@@ -350,6 +386,24 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
     } else if (result.path != null && result.path!.isNotEmpty) {
       await _api.command('open', {'path': result.path});
     }
+  }
+
+  Future<void> _setContentMode(bool related) async {
+    if (related && !_developerMode) return;
+    setState(() {
+      _relatedMode = related;
+      _contentMode = true;
+      _contentResults = [];
+      _selectedContentResult = null;
+      _preview = null;
+      _search.clear();
+      _query = '';
+      _showOperatorHelp = false;
+      _contentSort = related ? 'hierarchy_relevance' : 'relevance';
+      _fileSearchResults = [];
+      _fileSearchActive = false;
+    });
+    await _contentSearch('', sort: _contentSort);
   }
   Future<void> _runFileSearch(String query) async {
     if (!_fileSearchSupported) return;
@@ -380,7 +434,6 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
   }
 
   Future<void> _startContentIndex() async {
-    if (!_developerMode) return;
     final response = await _api.command('content_index_start');
     if (!mounted) return;
     setState(() { _contentProgress = response; _contentIndexRunning = response['running'] == true; });
@@ -405,6 +458,7 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
     if (value && !_developerMode) return;
     setState(() {
       _contentMode = value;
+      _relatedMode = false;
       _contentResults = [];
       _selectedContentResult = null;
       _preview = null;
@@ -412,11 +466,28 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
       _search.clear();
       _query = '';
       _showOperatorHelp = false;
-      _contentSort = 'hierarchy_relevance';
+      _contentSort = 'relevance';
       _fileSearchResults = [];
       _fileSearchActive = false;
     });
     if (!value) { _filtersChanged(); }
+  }
+
+  void _toggleRelatedMode(bool value) {
+    if (value && !_developerMode) return;
+    setState(() {
+      _relatedMode = value;
+      _contentMode = value;
+      _contentResults = [];
+      _selectedContentResult = null;
+      _preview = null;
+      _search.clear();
+      _query = '';
+      _contentSort = 'relevance';
+      _fileSearchResults = [];
+      _fileSearchActive = false;
+    });
+    if (!value) _filtersChanged();
   }
 
   Future<void> _load({bool firstOpen = false}) async {
@@ -772,7 +843,6 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _filtersBar(),
-          if (_contentMode) _contentSearchPanel(),
           if (_contentMode && _showOperatorHelp) _operatorHelp(),
           if (_contentMode && _contentNeedsReindex && !_contentReindexDismissed && _contentReindexGuide != null)
             MaterialBanner(
@@ -794,8 +864,8 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
               ],
             ),
           Expanded(
-            child: _contentMode
-                ? _contentResultsView()
+            child: (_contentMode || _relatedMode)
+                ? Column(children: [if (_contentMode) _contentSearchPanel(), Expanded(child: _contentResultsView())])
                 : (_fileTableView && _fileSearchSupported
                     ? _fileSearchTable(_fileSearchActive ? _fileSearchResults : _items)
                     : (isNarrow
@@ -929,6 +999,8 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
                   style: Theme.of(context).textTheme.bodySmall,
                   overflow: TextOverflow.ellipsis,
                 ),
+                const SizedBox(height: 3),
+                Text('${_formatEpochDate(result.mtime)} · ${result.kind.toUpperCase()}', style: Theme.of(context).textTheme.labelSmall),
                 const SizedBox(height: 6),
                 _markedTerms(result.snippet, keywords, maxLines: 3, style: Theme.of(context).textTheme.bodyMedium),
                 const SizedBox(height: 6),
@@ -956,6 +1028,12 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
         ),
       ),
     );
+  }
+
+  String _formatEpochDate(double value) {
+    if (value <= 0) return '수정일 정보 없음';
+    final d = DateTime.fromMillisecondsSinceEpoch((value * 1000).round()).toLocal();
+    return '${d.year}.${d.month.toString().padLeft(2, '0')}.${d.day.toString().padLeft(2, '0')} 수정';
   }
 
   Widget _contentPreviewPane() {
@@ -1304,20 +1382,20 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
       spacing: 12,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        const Text('위계기반 본문검색', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-        if (_contentIndexRunning) ...[
+        Text(_relatedMode ? '연관검색' : '본문검색', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+        if (_developerMode && _contentIndexRunning) ...[
           const SizedBox(width: 80, child: LinearProgressIndicator()),
           Text('${_contentProgress['seen'] ?? 0}건 확인 · ${_contentProgress['indexed'] ?? 0}건 색인 · 실패 ${_contentProgress['errors'] ?? 0}건', style: const TextStyle(fontSize: 12)),
           TextButton(onPressed: _cancelContentIndex, child: const Text('\uCDE8\uC18C')),
-        ] else
+        ] else if (_developerMode)
           TextButton.icon(
             onPressed: _startContentIndex,
             icon: const Icon(Icons.play_arrow, size: 16),
             label: const Text('\uBCF8\uBB38 \uC0C9\uC778'),
           ),
-        if (_contentProgress['errors'] != null)
+        if (_developerMode && _contentProgress['errors'] != null)
           Text('추출 실패 ${_contentProgress['errors']}건', style: const TextStyle(fontSize: 12, color: Colors.red)),
-        Row(
+        if (_developerMode || _relatedMode) Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text('정렬: ', style: TextStyle(fontSize: 12)),
@@ -1325,10 +1403,14 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
               key: const ValueKey('tm-content-sort-dropdown'),
               value: _contentSort,
               isDense: true,
-              items: const [
-                DropdownMenuItem(value: 'hierarchy_relevance', child: Text('위계기반 연관도')),
-                DropdownMenuItem(value: 'mentions', child: Text('언급 횟수 많은 순')),
-                DropdownMenuItem(value: 'recent', child: Text('최근 수정 순')),
+            items: [
+                if (_relatedMode || _developerMode)
+                  const DropdownMenuItem(value: 'hierarchy_relevance', child: Text('위계순')),
+                const DropdownMenuItem(value: 'relevance', child: Text('관련도순')),
+                if (_developerMode)
+                  const DropdownMenuItem(value: 'mentions', child: Text('언급 횟수 많은 순')),
+                const DropdownMenuItem(value: 'recent', child: Text('수정일순')),
+                const DropdownMenuItem(value: 'name', child: Text('이름순')),
               ],
               onChanged: (val) {
                 if (val != null) {
@@ -1352,9 +1434,9 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
     final children=<Widget>[
     OutlinedButton.icon(onPressed:_pickExtensions,icon:const Icon(Icons.tune,size:16),label:const Text('확장자')),
     for(final entry in _kinds.entries) FilterChip(label:Text(entry.key),selected:_selectedKinds.contains(entry.value),onSelected:(value){setState(()=>value?_selectedKinds.add(entry.value):_selectedKinds.remove(entry.value));_filtersChanged();if(_fileTableView && _fileSearchSupported){_runFileSearch(_search.text.trim());}}),
-    SegmentedButton<bool>(segments:[const ButtonSegment(value:false,label:Text('파일명')),if (_developerMode) const ButtonSegment(value:true,label:Text('본문'))],selected:{_contentMode},onSelectionChanged:(values)=>_toggleContentMode(values.first)),
+    SegmentedButton<String>(key: const ValueKey('tm-search-mode'),segments:[const ButtonSegment(value:'file',label:Text('파일명')),const ButtonSegment(value:'content',label:Text('본문검색')),if (_developerMode) const ButtonSegment(value:'related',label:Text('연관검색'))],selected:{_relatedMode?'related':_contentMode?'content':'file'},onSelectionChanged:(values){final mode=values.first;if(mode=='related'){_setContentMode(true);}else if(mode=='content'){_setContentMode(false);}else{_toggleRelatedMode(false);_toggleContentMode(false);}}),
     SizedBox(width:180,child:TextField(controller:_search,decoration:InputDecoration(prefixIcon:const Icon(Icons.search),hintText:_contentMode?'본문 검색':'이름 찾기',isDense:true),onChanged:(value){_debounce?.cancel();_debounce=Timer(const Duration(milliseconds:300),(){final trimmed=value.trim();if(_contentMode){_contentSearch(trimmed);}else{_query=trimmed;_filtersChanged();if(_fileTableView || _fileSearchActive){_runFileSearch(trimmed);}}});})),
-    if (_contentMode)
+    if (_contentMode && !_relatedMode)
       IconButton(
         icon: const Icon(Icons.help_outline),
         tooltip: '검색 연산자 도움말',
