@@ -17,6 +17,12 @@ from tests.test_style_profile import HEADER, SECTION
 
 
 class StartupTest(unittest.TestCase):
+    def setUp(self):
+        self.appdata = tempfile.TemporaryDirectory(prefix="docfit-startup-appdata-")
+        self.appdata_patch = patch.dict(os.environ, {"APPDATA": self.appdata.name})
+        self.appdata_patch.start()
+        self.addCleanup(self.appdata.cleanup)
+
     def test_page_group_collects_only_the_current_paragraph(self):
         source = Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"
         namespace = runpy.run_path(str(source), run_name="page_group_unit_test")

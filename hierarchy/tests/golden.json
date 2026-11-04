@@ -1,0 +1,334 @@
+{
+  "source": "docfit_core.timemachine.content_search.classify_paragraph_levels",
+  "cases": [
+    {
+      "text": "2026. 11. 04. 시행계획 안내",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "dash"
+    },
+    {
+      "text": "2026.11.04. 날짜 형식",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "body"
+    },
+    {
+      "text": "문서번호 제2026-123호",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "body"
+    },
+    {
+      "text": "제목: 골든 표본",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "body"
+    },
+    {
+      "text": "제1장 총칙",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "chapter"
+    },
+    {
+      "text": "제2장 적용 범위",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "chapter"
+    },
+    {
+      "text": "Ⅰ. 추진 배경",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "section"
+    },
+    {
+      "text": "Ⅱ. 추진 목적",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "section"
+    },
+    {
+      "text": "I. 영문 로마자",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "section"
+    },
+    {
+      "text": "□ 기본 원칙",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "square"
+    },
+    {
+      "text": "ㅁ 추가 원칙",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "square"
+    },
+    {
+      "text": "■ 검토 항목",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "square"
+    },
+    {
+      "text": "ㅇ 첫 항목",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "circle"
+    },
+    {
+      "text": "○ 둘째 항목",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "circle"
+    },
+    {
+      "text": "◦ 셋째 항목",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "circle"
+    },
+    {
+      "text": "- 세부 내용",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "dash"
+    },
+    {
+      "text": "– 긴 대시",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "body"
+    },
+    {
+      "text": "— 전각 대시",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "body"
+    },
+    {
+      "text": "* 참고 사항",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "asterisk"
+    },
+    {
+      "text": "** 중요 참고",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "asterisk"
+    },
+    {
+      "text": "※ 유의사항",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "asterisk"
+    },
+    {
+      "text": "• 추가 설명",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "asterisk"
+    },
+    {
+      "text": "· 가운데점 표식",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "asterisk"
+    },
+    {
+      "text": "1. 첫째",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "dash"
+    },
+    {
+      "text": "2. 둘째",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "dash"
+    },
+    {
+      "text": "가. 가나다 항목",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "body"
+    },
+    {
+      "text": "나. 이어지는 항목",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "body"
+    },
+    {
+      "text": "(1) 괄호 번호",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "dash"
+    },
+    {
+      "text": "1) 괄호 없는 번호",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "dash"
+    },
+    {
+      "text": "① 원문자 항목",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "dash"
+    },
+    {
+      "text": "② 다음 원문자",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "dash"
+    },
+    {
+      "text": "㉮ 한글 원문자",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "dash"
+    },
+    {
+      "text": "붙임 1. 제출 서식",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "body"
+    },
+    {
+      "text": "붙임 2. 참고 자료",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "body"
+    },
+    {
+      "text": "참고자료: 본문 설명",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "body"
+    },
+    {
+      "text": "일반 본문 문장입니다.",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "body"
+    },
+    {
+      "text": "",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "body"
+    },
+    {
+      "text": "   ",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "body"
+    },
+    {
+      "text": "표 안의 □ 표식",
+      "is_table_cell": true,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "table_cell"
+    },
+    {
+      "text": "표 셀의 제목 텍스트",
+      "is_table_cell": true,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "table_cell"
+    },
+    {
+      "text": "날짜 2026. 11. 04. 본문 중간",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "body"
+    },
+    {
+      "text": "문서번호 1234-5678",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "body"
+    },
+    {
+      "text": "제3부 부록",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "chapter"
+    },
+    {
+      "text": "Chapter 4 Appendix",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "chapter"
+    },
+    {
+      "text": "Ⅲ. 세 번째 절",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "section"
+    },
+    {
+      "text": "□ 마무리 소제목",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "square"
+    },
+    {
+      "text": "ㅇ 마무리 본문 항목",
+      "is_table_cell": false,
+      "style_hint": null,
+      "outline_level": -1,
+      "expected": "circle"
+    }
+  ]
+}

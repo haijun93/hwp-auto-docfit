@@ -44,6 +44,11 @@ on:
       - release/2.2.7
       - release/2.2.8
       - release/2.2.9
+      - release/2.2.10
+      - release/2.2.11
+      - release/2.2.12
+      - release/2.2.13
+      - release/2.2.14
       - claude/affectionate-goldberg-ggln7c
     paths-ignore:
       - 'README.md'
@@ -135,6 +140,10 @@ jobs:
           cargo build --release --locked --manifest-path kagent/Cargo.toml
           Copy-Item kagent/target/release/kagent.exe resources/kagent.exe -Force
           (Get-FileHash resources/kagent.exe -Algorithm SHA256).Hash | Out-File -Encoding ascii resources/kagent.exe.sha256
+
+      - name: Test hierarchy core (Rust)
+        shell: pwsh
+        run: cargo test --manifest-path hierarchy/Cargo.toml
 
       - name: Build EXE using shared packaging specification
         run: |

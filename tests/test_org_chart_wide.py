@@ -55,7 +55,11 @@ class TemplateOrderTest(unittest.TestCase):
         self.assertEqual(labels, list(range(len(categories) - len(labels), len(categories))))
         others = [t["id"] for t in listing if not _is_last_category(t["category"])]
         builtin = [t["id"] for t in table_units.describe_units(CATALOG) if not _is_last_category(t["category"])]
-        self.assertEqual(others[:len(builtin)], builtin)
+        # 추진절차(가로세로) 모양 1은 같은 자리에서 교체본(v3flow:)으로 바뀔 수 있다.
+        replaced = [i for i in others if str(i).startswith("v3flow:")]
+        expected = [replaced[0] if replaced and t["name"] == "추진절차(가로세로) · 모양 1" else t["id"]
+                    for t in table_units.describe_units(CATALOG) if not _is_last_category(t["category"])]
+        self.assertEqual(others[:len(expected)], expected)
         self.assertTrue(_is_last_category("라벨서식"))
 
 

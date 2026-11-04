@@ -8,6 +8,7 @@ from defusedxml import ElementTree as ET
 
 from docfit_core.excel_table import parse_clipboard
 from docfit_core.excel_table_hwpx import BODY_WIDTH_MM, _column_widths, to_hwpx
+from docfit_app.excel_table_service import ExcelTableService
 
 FIXTURE = Path(__file__).parent / "fixtures" / "excel_clipboard.cf_html"
 HP = "{http://www.hancom.co.kr/hwpml/2011/paragraph}"
@@ -36,6 +37,9 @@ class ExcelClipboardTests(unittest.TestCase):
         self.assertEqual(cell(self.model, 1, 1)["fill"], "#FFFF00")
         self.assertEqual(cell(self.model, 1, 2)["align"], "right")
 
+    def test_character_color_from_excel_fixture(self):
+        self.assertEqual(cell(self.model, 0, 0)["color"], "#000000")
+
     def test_merges_are_placed_on_the_grid(self):
         self.assertEqual(cell(self.model, 1, 0)["rowspan"], 2)
         self.assertEqual(cell(self.model, 2, 1)["text"], "도서관 운영")
@@ -53,6 +57,25 @@ class ExcelClipboardTests(unittest.TestCase):
 
 
 class FallbackAndCleanupTests(unittest.TestCase):
+    def test_service_keeps_background_by_default_and_can_remove_it(self):
+        captured = []
+        original = __import__('docfit_app.excel_table_service', fromlist=['to_hwpx']).to_hwpx
+
+        def capture(model, path):
+            captured.append([c['fill'] for row in model['rows'] for c in row])
+            return original(model, path)
+
+        def copier(path):
+            return {'ok': True}
+
+        service = ExcelTableService(clipboard=lambda: (FIXTURE.read_bytes(), None), copier=copier)
+        with unittest.mock.patch('docfit_app.excel_table_service.to_hwpx', side_effect=capture):
+            self.assertTrue(service.command('convert')['ok'])
+        self.assertIn('#C0D5E6', captured[-1])
+        with unittest.mock.patch('docfit_app.excel_table_service.to_hwpx', side_effect=capture):
+            service.command('convert', {'keep_cell_background': False})
+        self.assertTrue(all(not fill for fill in captured[-1]))
+
     def test_tsv_keeps_quoted_line_break_in_one_cell(self):
         model = parse_clipboard(None, 'a\t"줄1\n줄2"\nb\tc')
         self.assertEqual((model["row_count"], model["col_count"]), (2, 2))

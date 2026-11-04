@@ -100,7 +100,7 @@ SHAPE_SIGNATURES: dict[str, str | None] = {
     '추진절차(가로) · 모양 3': 'fb587afb20a87119',
     '추진절차(가로) · 모양 4': 'fb587afb20a87119',
     '추진절차(가로) · 모양 5': '153a12978b7c3ab3',
-    '추진절차(가로세로) · 모양 1': 'de7a0cc46096a07b',
+    '추진절차(가로세로) · 모양 1': 'dcc581be5e609dcd',
     '추진절차(세로) · 모양 1': '77d7182dd4a2859a',
     '표(가로) · 모양 1': 'eb8966dfb9811ca3',
     '표(가로) · 모양 2': 'dc2b6b8dcf7f4325',
@@ -108,6 +108,15 @@ SHAPE_SIGNATURES: dict[str, str | None] = {
     '행사시간표 · 모양 1': '93fdef0a5e0e82aa',
     '행사표(1일) · 모양 1': '4cfe028a946afd99',
     '현황표(가로) · 모양 1': '96d1f6dc43f69192',
+}
+
+_GRID_FLOW_LEGACY_SIGNATURE = "de7a0cc46096a07b"
+_GRID_FLOW_LEGACY_PLAN = {
+    "row": {"start": 0, "core": 1, "sep": 1, "count": 7, "min": 1,
+            "max": UNIT_MAX, "kind": "grid_flow"},
+    "col": {"start": 0, "core": 1, "sep": 1, "count": 4, "min": 1,
+            "max": UNIT_MAX, "kind": "grid_flow"},
+    "signature": _GRID_FLOW_LEGACY_SIGNATURE,
 }
 
 
@@ -133,7 +142,8 @@ def _plans():
         add(f"추진절차(가로) · 모양 {number}",
             (0, 1, 1) if number == 1 else (1, 1, 1 if number == 5 else 2),
             (0, 1, count, 1))
-    add("추진절차(가로세로) · 모양 1", (0, 1, 7, 1), (0, 1, 4, 1))
+    # v3.0 replacement source: 3 box rows × 2 box columns, with arrows in separator cells.
+    add("추진절차(가로세로) · 모양 1", (0, 1, 3, 1), (0, 1, 2, 1))
     result["추진절차(가로세로) · 모양 1"]["row"]["kind"] = "grid_flow"
     result["추진절차(가로세로) · 모양 1"]["col"]["kind"] = "grid_flow"
     add("추진절차(가로세로) · 사용자형", (2, 1, 5, 1), (0, 1, 2, 1), signature="1660c86716c32a08")
@@ -307,6 +317,8 @@ def plan_for(template) -> dict:
             named = PLANS.get(template.get("name"))
             if named is not None and named.get("signature") in (None, sig):
                 matched_plan = named
+            if matched_plan is None and sig == _GRID_FLOW_LEGACY_SIGNATURE:
+                matched_plan = _GRID_FLOW_LEGACY_PLAN
             for p in ([] if matched_plan is not None else PLANS.values()):
                 if p.get("signature") and p["signature"] == sig:
                     matched_plan = p
@@ -318,7 +330,14 @@ def plan_for(template) -> dict:
     if matched_plan is None:
         name = template.get("name")
         if name in PLANS:
-            matched_plan = PLANS[name]
+            named = PLANS[name]
+            # This flow template has two supported revisions with different grid sizes.
+            # Do not apply either layout to a third-party table that merely reuses its name.
+            if (name == "추진절차(가로세로) · 모양 1" and cell_meta is not None and
+                    named.get("signature") and sig not in (named["signature"], _GRID_FLOW_LEGACY_SIGNATURE)):
+                matched_plan = None
+            else:
+                matched_plan = named
         elif template.get("category") == "조직도" and template.get("cols") == 14:
             matched_plan = {"row": None, "col": {"count": 5, "min": 2, "max": UNIT_MAX, "core": 2, "sep": 1, "kind": "org_chart"}}
 

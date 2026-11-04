@@ -18,6 +18,8 @@ KINDS = {
 }
 EXT_KIND = {ext: kind for kind, exts in KINDS.items() for ext in exts}
 DEFAULT_EXTENSIONS = ("hwpx", "hwp", "docx", "pptx", "xlsx", "pdf", "txt")
+SUPPORTED_EXTENSIONS = tuple(ext.lstrip(".").lower() for ext in EXT_KIND)
+IMAGE_EXTENSIONS = tuple(ext.lstrip(".").lower() for ext in KINDS["image"])
 
 # 폴더 이름(대소문자 무시)이 이것이면 그 아래 전체를 건너뛴다.
 EXCLUDED_DIRS = frozenset(name.casefold() for name in (
@@ -26,7 +28,8 @@ EXCLUDED_DIRS = frozenset(name.casefold() for name in (
     "venv", "__pycache__", ".dart_tool", ".gradle", ".idea", ".vscode",
 ))
 EXCLUDED_NAMES = ("~$*", "~WRL*.tmp", "*.tmp", "*.crdownload", "*.part", "Thumbs.db", "desktop.ini", "*.asv",
-                  "*.bak", "*.hwp.tmp", ".~lock.*", "*(무결성검사).json", ".rename-tmp-*")
+                  "*.bak", "*.hwp.tmp", ".~lock.*", "*(무결성검사).json", ".rename-tmp-*",
+                  "#ieeee*")  # 깨진 시스템/프로그램 생성 파일명 예: #IEeEE'.docx
 COPY_SLACK_SECONDS = 2.0
 _HIDDEN = getattr(stat, "FILE_ATTRIBUTE_HIDDEN", 2) | getattr(stat, "FILE_ATTRIBUTE_SYSTEM", 4)
 _RECALL = 0x00400000 | 0x00040000 | 0x00001000  # RECALL_ON_DATA_ACCESS · RECALL_ON_OPEN · OFFLINE

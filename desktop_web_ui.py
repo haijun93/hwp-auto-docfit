@@ -1242,7 +1242,10 @@ class DesktopWebBridge:
         return snapshot
 
     def get_settings(self):
-        return self._tk(lambda: response(self._settings_snapshot))
+        result = self._tk(lambda: response(self._settings_snapshot))
+        if isinstance(result, dict) and result.get('ok') is True and isinstance(result.get('data'), dict):
+            result['developer_mode'] = result['data'].get('values', {}).get('developer_mode', False)
+        return result
 
     def save_settings(self, values, revision):
         def save():
@@ -1875,7 +1878,8 @@ class DesktopWebBridge:
             from docfit_app.timemachine_service import TimemachineService
             folder = self._tk(lambda: getattr(self.gui, "_준말_서비스")().settings._path.parent)
             service = self._timemachine_service_instance = TimemachineService(
-                folder, feature_api=self._timemachine_send_to_feature
+                folder, feature_api=self._timemachine_send_to_feature,
+                developer_mode=lambda: bool(self._configuration().store.read().get("developer_mode", False)),
             )
         return service
 
@@ -1908,6 +1912,13 @@ class DesktopWebBridge:
     def timemachine(self, action, payload=None):
         """타임머신 화면 명령을 처리한다."""
         try:
+            if action in {"content_index", "content_index_all", "content_index_start",
+                          "content_index_status", "content_index_progress", "content_index_cancel",
+                          "content_search", "content_preview"}:
+                settings = self._configuration().store.read()
+                if not bool(settings.get("developer_mode", False)):
+                    return {"ok": False, "code": "DEVELOPER_MODE_REQUIRED",
+                            "message": "본문검색은 개발자 모드에서만 사용할 수 있습니다."}
             return self._timemachine_service().command(action, payload)
         except Exception:
             logging.getLogger(__name__).exception("타임머신 처리 실패")

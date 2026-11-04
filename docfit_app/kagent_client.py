@@ -9,6 +9,7 @@ import json
 import os
 import shutil
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -50,6 +51,26 @@ class KAgentClient:
         status = self.status_file()
         return bool(status and _pid_alive(status.get("pid")))
 
+    def _wait_pipe(self, pipe, timeout_ms):
+        """Wait for the agent's serialized named-pipe instance to become free."""
+        import ctypes
+        return bool(ctypes.windll.kernel32.WaitNamedPipeW(str(pipe), int(timeout_ms)))
+
+    def _open_pipe(self, pipe):
+        # Retry opening only. Once bytes may have reached the agent, never resend
+        # a mutation because its result could be ambiguous.
+        deadline = time.monotonic() + max(0.0, self.timeout)
+        while True:
+            try:
+                return open(pipe, "r+b", buffering=0)
+            except OSError as error:
+                if os.name != "nt" or getattr(error, "winerror", None) != 231:
+                    raise
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise
+                self._wait_pipe(pipe, max(1, min(250, int(remaining * 1000))))
+
     def request(self, cmd, **payload):
         status = self.status_file()
         if not status or not status.get("pipe"):
@@ -59,7 +80,7 @@ class KAgentClient:
             raise KAgentError("상태 파일의 연결 이름을 확인해 주세요.")
         line = json.dumps(dict(payload, cmd=cmd), ensure_ascii=False).encode("utf-8") + b"\n"
         try:
-            with open(pipe, "r+b", buffering=0) as stream:
+            with self._open_pipe(pipe) as stream:
                 stream.write(line)
                 chunks = []
                 size = 0
@@ -72,7 +93,9 @@ class KAgentClient:
                     if chunk.endswith(b"\n") or size > MAX_RESPONSE:
                         break
         except OSError as error:
-            raise KAgentError("몽땅클립보드에 연결하지 못했습니다.") from error
+            code = getattr(error, "winerror", None)
+            detail = f" (Windows 오류 {code})" if code is not None else ""
+            raise KAgentError(f"몽땅클립보드에 연결하지 못했습니다.{detail}") from error
         try:
             return json.loads(b"".join(chunks).decode("utf-8"))
         except ValueError as error:
@@ -102,9 +125,25 @@ def install(bundled_exe, folder=None):
     target.parent.mkdir(parents=True, exist_ok=True)
     source = Path(bundled_exe)
     if not target.exists() or target.read_bytes() != source.read_bytes():
-        temp = target.with_suffix(".new")
-        shutil.copyfile(source, temp)
-        os.replace(temp, target)
+        temp = target.with_name(f"{target.name}.{os.getpid()}.{threading.get_ident()}.new")
+        try:
+            shutil.copyfile(source, temp)
+            for attempt in range(21):
+                try:
+                    os.replace(temp, target)
+                    break
+                except PermissionError as error:
+                    if attempt == 20:
+                        raise KAgentError(
+                            "몽땅클립보드 파일을 교체하지 못했습니다. 이전 몽땅클립보드가 종료됐는지 "
+                            "확인한 뒤 앱에서 다시 켜 주세요. (" + str(error) + ")"
+                        ) from error
+                    time.sleep(0.25)
+        finally:
+            try:
+                temp.unlink(missing_ok=True)
+            except OSError:
+                pass
     return target
 
 

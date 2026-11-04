@@ -293,33 +293,95 @@ class ThumbnailCache:
             self._total = 0
         return count
 
+    def stats(self):
+        """캐시 폴더 내 유효한 .jpg 파일 통계를 반환한다."""
+        with self._lock:
+            if not os.path.isdir(self.folder):
+                return {"bytes": 0, "count": 0, "oldest_mtime": None, "newest_mtime": None, "max_bytes": self.max_bytes}
+            total_bytes = 0
+            count = 0
+            oldest_mtime = None
+            newest_mtime = None
+            try:
+                with os.scandir(self.folder) as iterator:
+                    for item in iterator:
+                        try:
+                            if not item.is_file(follow_symlinks=False) or not item.name.endswith(".jpg"):
+                                continue
+                            info = item.stat(follow_symlinks=False)
+                            size = info.st_size
+                            mtime = info.st_mtime
+                        except OSError:
+                            continue
+                        total_bytes += size
+                        count += 1
+                        if oldest_mtime is None or mtime < oldest_mtime:
+                            oldest_mtime = mtime
+                        if newest_mtime is None or mtime > newest_mtime:
+                            newest_mtime = mtime
+            except OSError:
+                return {"bytes": 0, "count": 0, "oldest_mtime": None, "newest_mtime": None, "max_bytes": self.max_bytes}
+            self._total = total_bytes
+            return {
+                "bytes": total_bytes,
+                "count": count,
+                "oldest_mtime": oldest_mtime,
+                "newest_mtime": newest_mtime,
+                "max_bytes": self.max_bytes,
+            }
+
+    def prune(self, target_bytes=None):
+        """지정 용량 이하로 오래된 캐시부터 삭제하고 결과를 반환한다."""
+        with self._lock:
+            return self._prune_internal(target_bytes)
+
     def _prune(self):
+        self._prune_internal(self.max_bytes)
+
+    def _prune_internal(self, target_bytes=None):
+        target = self.max_bytes if target_bytes is None else int(target_bytes)
+        if target < 0:
+            target = 0
+        if not os.path.isdir(self.folder):
+            self._total = 0
+            return {"removed_count": 0, "removed_bytes": 0, "remaining_bytes": 0}
+
         entries, total = [], 0
         now = time.time()
-        with os.scandir(self.folder) as iterator:
-            for item in iterator:
-                try:
-                    info = item.stat(follow_symlinks=False)
-                    if not item.is_file(follow_symlinks=False):
+        try:
+            with os.scandir(self.folder) as iterator:
+                for item in iterator:
+                    try:
+                        info = item.stat(follow_symlinks=False)
+                        if not item.is_file(follow_symlinks=False):
+                            continue
+                        if not item.name.endswith(".jpg"):
+                            if item.name.endswith(".tmp") and now - info.st_mtime > STALE_TEMP_SECONDS:
+                                os.unlink(item.path)
+                            continue
+                    except OSError:
                         continue
-                    if not item.name.endswith(".jpg"):
-                        if item.name.endswith(".tmp") and now - info.st_mtime > STALE_TEMP_SECONDS:
-                            os.unlink(item.path)
-                        continue
-                except OSError:
-                    continue
-                entries.append((info.st_mtime_ns, item.path, info.st_size))
-                total += info.st_size
+                    entries.append((info.st_mtime_ns, item.path, info.st_size))
+                    total += info.st_size
+        except OSError:
+            self._total = 0
+            return {"removed_count": 0, "removed_bytes": 0, "remaining_bytes": 0}
+
         entries.sort()
-        for _, target, size in entries:
-            if total <= self.max_bytes:
+        removed_count = 0
+        removed_bytes = 0
+        for _, target_path, size in entries:
+            if total <= target:
                 break
             try:
-                os.unlink(target)
+                os.unlink(target_path)
                 total -= size
+                removed_count += 1
+                removed_bytes += size
             except OSError:
                 continue
         self._total = total
+        return {"removed_count": removed_count, "removed_bytes": removed_bytes, "remaining_bytes": total}
 
 
 def lookup(path, cache, *, cloud=False):

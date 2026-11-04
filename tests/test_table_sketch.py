@@ -1,5 +1,6 @@
 """표그림판: 기하 구조·HWPX·저장·브리지 계약 회귀 시험."""
 import copy
+import base64
 import json
 import shutil
 import subprocess
@@ -233,6 +234,57 @@ class ExportTests(unittest.TestCase):
 
 
 class ServiceTests(unittest.TestCase):
+    def test_autosave_draft_survives_restart_and_can_be_cleared(self):
+        with tempfile.TemporaryDirectory() as folder:
+            first = TableSketchService(folder)
+            sketch = organization()
+            self.assertTrue(first.command('save_draft', {'sketch': sketch})['ok'])
+            restarted = TableSketchService(folder)
+            draft = restarted.command('load_draft')
+            self.assertTrue(draft['exists'])
+            self.assertEqual(draft['sketch'], sketch)
+            self.assertTrue(restarted.command('clear_draft')['ok'])
+            self.assertFalse(restarted.command('load_draft')['exists'])
+
+    def test_corrupt_autosave_draft_is_reported_without_crashing(self):
+        with tempfile.TemporaryDirectory() as folder:
+            service = TableSketchService(folder)
+            path = service.folder / 'recovery' / 'draft.json'
+            path.parent.mkdir(parents=True)
+            path.write_text('{broken', encoding='utf-8')
+            result = service.command('load_draft')
+            self.assertFalse(result['ok'])
+            self.assertFalse(result['exists'])
+
+    def test_import_image_detects_rectangular_hand_sketch_grid(self):
+        from PIL import Image, ImageDraw
+        from io import BytesIO
+        image = Image.new('RGB', (360, 240), 'white')
+        draw = ImageDraw.Draw(image)
+        for x in (30, 180, 330):
+            draw.line((x, 30, x, 210), fill='black', width=4)
+        for y in (30, 120, 210):
+            draw.line((30, y, 330, y), fill='black', width=4)
+        output = BytesIO()
+        image.save(output, format='PNG')
+        payload = base64.b64encode(output.getvalue()).decode('ascii')
+        with tempfile.TemporaryDirectory() as folder:
+            result = TableSketchService(folder).command('import_image', payload)
+        self.assertTrue(result['ok'], result)
+        self.assertEqual((result['rows'], result['cols']), (2, 2))
+        self.assertTrue(ts.preview(result['sketch'])['ok'])
+
+    def test_import_image_rejects_unstructured_photo(self):
+        from PIL import Image
+        from io import BytesIO
+        image = Image.new('RGB', (80, 80), 'white')
+        output = BytesIO()
+        image.save(output, format='PNG')
+        with tempfile.TemporaryDirectory() as folder:
+            result = TableSketchService(folder).command(
+                'import_image', base64.b64encode(output.getvalue()).decode('ascii'))
+        self.assertFalse(result['ok'])
+
     def test_names_and_storage(self):
         with tempfile.TemporaryDirectory() as folder:
             service=TableSketchService(folder)
@@ -248,6 +300,7 @@ class ServiceTests(unittest.TestCase):
 
     def test_copy_selection_cleanup_and_clipboard_failure(self):
         log=[]
+        pythoncom_stub = SimpleNamespace(CoInitialize=lambda: None, CoUninitialize=lambda: None)
         class App:
             HeadCtrl=SimpleNamespace(CtrlID='tbl',Next=None,GetAnchorPos=lambda n:'anchor')
             def Open(self,path,*args): self.path=Path(path); return self.path.exists()
@@ -259,11 +312,13 @@ class ServiceTests(unittest.TestCase):
         app=App()
         with tempfile.TemporaryDirectory() as folder:
             service=TableSketchService(folder,lambda:app,clipboard_formats=lambda:['Hwp Native'],activator=lambda:log.append('activate'))
-            self.assertTrue(service.copy(drawing(box(0,0,4,4)))['ok'])
+            with patch.dict('sys.modules', {'pythoncom': pythoncom_stub}):
+                self.assertTrue(service.copy(drawing(box(0,0,4,4)))['ok'])
             self.assertEqual(log,['anchor','select','Copy','clear','quit','activate'])
             self.assertFalse(app.path.exists())
             service.hwp._clipboard_formats=lambda:[]
-            self.assertFalse(service.copy(drawing(box(0,0,4,4)))['ok'])
+            with patch.dict('sys.modules', {'pythoncom': pythoncom_stub}):
+                self.assertFalse(service.copy(drawing(box(0,0,4,4)))['ok'])
             COM_LOCK.acquire()
             try: self.assertFalse(service.copy(drawing(box(0,0,4,4)))['ok'])
             finally: COM_LOCK.release()

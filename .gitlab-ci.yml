@@ -26,81 +26,54 @@ validate-source:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - if: '$CI_PIPELINE_SOURCE == "web"'
 
-release-windows:
+# GitLab 릴리스 페이지 동기화(2026-11-04): exe가 200MB를 넘어 GitLab 첨부·산출물 한도를 넘기므로
+# 파일은 올리지 않고, 릴리스 노트(releases/vX.md)와 내려받기 링크(GitHub 릴리스·GitLab downloads 브랜치)만 등록한다.
+# 태그 파이프라인뿐 아니라 main 파이프라인에서도 돌아 빠진 버전 릴리스를 채운다(이미 있으면 건너뜀).
+sync-releases:
   stage: release
   tags:
     - security-deploy
+  variables:
+    GIT_DEPTH: "0"
   script:
-    - mkdir -p dist
+    - git fetch --tags --force --quiet origin || true
     - |
-      VERSION=${CI_COMMIT_TAG#v}
-      PORTABLE="HWP_AutoDocFit_v${VERSION}_Portable.exe"
-      SETUP="HWP_AutoDocFit_v${VERSION}_Setup.exe"
-      for asset in "$PORTABLE" "$SETUP" SHA256SUMS; do
-        curl --fail --location --retry 3 --retry-all-errors \
-          "https://github.com/haijun93/hwp-auto-docfit/releases/download/$CI_COMMIT_TAG/$asset" \
-          --output "dist/$asset"
+      latest=$(git tag -l 'v2.*' --sort=-v:refname | grep -v -- '-rc' | head -1)
+      for tag in $(git tag -l 'v2.*' --sort=-v:refname | head -40); do
+        notes="releases/$tag.md"
+        if [ ! -f "$notes" ]; then
+          git show "$tag:releases/$tag.md" > /tmp/notes.md 2>/dev/null || continue
+          notes=/tmp/notes.md
+        fi
+        version=${tag#v}
+        code=$(curl --silent --output /tmp/release.out --write-out '%{http_code}' --request POST \
+          --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+          --data-urlencode "tag_name=$tag" \
+          --data-urlencode "name=HWP AutoDocFit $version" \
+          --data-urlencode "description@$notes" \
+          "$CI_API_V4_URL/projects/$CI_PROJECT_ID/releases")
+        if [ "$code" != 201 ]; then echo "$tag: 건너뜀(HTTP $code)"; continue; fi
+        echo "$tag: 릴리스 등록"
+        for kind in Portable Setup; do
+          name="HWP_AutoDocFit_v${version}_${kind}.exe"
+          curl --silent --show-error --request POST --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+            --data-urlencode "name=$name (GitHub)" \
+            --data-urlencode "url=https://github.com/haijun93/hwp-auto-docfit/releases/download/$tag/$name" \
+            --data-urlencode "link_type=package" \
+            "$CI_API_V4_URL/projects/$CI_PROJECT_ID/releases/$tag/assets/links" > /dev/null
+          if [ "$tag" = "$latest" ]; then
+            curl --silent --show-error --request POST --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+              --data-urlencode "name=$name (GitLab 내려받기)" \
+              --data-urlencode "url=$CI_PROJECT_URL/-/raw/downloads/$name?inline=false" \
+              --data-urlencode "link_type=package" \
+              "$CI_API_V4_URL/projects/$CI_PROJECT_ID/releases/$tag/assets/links" > /dev/null
+          fi
+        done
       done
-      for asset in "$PORTABLE" "$SETUP"; do
-        expected=$(awk -v name="$asset" '$2 ~ ("/" name "$" ) || $2 == name {print $1; exit}' dist/SHA256SUMS)
-        actual=$(sha256sum "dist/$asset" | awk '{print $1}')
-        test -n "$expected" && test "$actual" = "$expected"
-      done
-      test -s "dist/$PORTABLE" && test -s "dist/$SETUP"
-    # 한 번에 적용 시험용 보고서 예시(텍스트)도 함께 내려받게 한다(2026-10-04 사용자 요청).
-    - cp "release-assets/보고서 예시 파일(한번에 적용).txt" "dist/보고서 예시 파일(한번에 적용).txt"
-    # 압축팩(exe+예시)은 GitHub 릴리스에만 둔다. exe가 50MB를 넘으며 exe·압축팩을 함께 올리면 GitLab 첨부 한도(100MB)를
-    # 넘어 작업이 실패했다(v1.73 첫 태그, 2026-10-11). GitLab에는 exe와 예시 텍스트만 올린다.
-    - |
-      if [ -f "releases/$CI_COMMIT_TAG.md" ]; then
-        release_notes="releases/$CI_COMMIT_TAG.md"
-      else
-        printf '%s\n' 'Windows 테스트 베타 릴리스입니다. 운영 환경 적용 전 충분히 테스트해 주세요.' > release-notes.txt
-        release_notes="release-notes.txt"
-      fi
-      curl --silent --show-error --request DELETE \
-        --header "JOB-TOKEN: $CI_JOB_TOKEN" \
-        "$CI_API_V4_URL/projects/$CI_PROJECT_ID/releases/$CI_COMMIT_TAG" || true
-      curl --fail-with-body --request POST \
-        --header "JOB-TOKEN: $CI_JOB_TOKEN" \
-        --data-urlencode "tag_name=$CI_COMMIT_TAG" \
-        --data-urlencode "name=한글편집 후처리 $CI_COMMIT_TAG" \
-        --data-urlencode "description@$release_notes" \
-        "$CI_API_V4_URL/projects/$CI_PROJECT_ID/releases"
-    - |
-      curl --fail-with-body --request POST \
-        --header "JOB-TOKEN: $CI_JOB_TOKEN" \
-        --data-urlencode "name=보고서 예시 파일(한번에 적용).txt" \
-        --data-urlencode "url=$CI_PROJECT_URL/-/jobs/$CI_JOB_ID/artifacts/raw/dist/%EB%B3%B4%EA%B3%A0%EC%84%9C%20%EC%98%88%EC%8B%9C%20%ED%8C%8C%EC%9D%BC%28%ED%95%9C%EB%B2%88%EC%97%90%20%EC%A0%81%EC%9A%A9%29.txt" \
-        --data-urlencode "link_type=other" \
-        --data-urlencode "direct_asset_path=/report-example-all-in-one.txt" \
-        "$CI_API_V4_URL/projects/$CI_PROJECT_ID/releases/$CI_COMMIT_TAG/assets/links"
-    - |
-      curl --fail-with-body --request POST \
-        --header "JOB-TOKEN: $CI_JOB_TOKEN" \
-        --data-urlencode "name=$PORTABLE (Portable, no installation)" \
-        --data-urlencode "url=$CI_PROJECT_URL/-/jobs/$CI_JOB_ID/artifacts/raw/dist/$PORTABLE" \
-        --data-urlencode "link_type=other" \
-        --data-urlencode "direct_asset_path=/$PORTABLE" \
-        "$CI_API_V4_URL/projects/$CI_PROJECT_ID/releases/$CI_COMMIT_TAG/assets/links"
-    - |
-      curl --fail-with-body --request POST \
-        --header "JOB-TOKEN: $CI_JOB_TOKEN" \
-        --data-urlencode "name=$SETUP (Installer)" \
-        --data-urlencode "url=$CI_PROJECT_URL/-/jobs/$CI_JOB_ID/artifacts/raw/dist/$SETUP" \
-        --data-urlencode "link_type=other" \
-        --data-urlencode "direct_asset_path=/$SETUP" \
-        "$CI_API_V4_URL/projects/$CI_PROJECT_ID/releases/$CI_COMMIT_TAG/assets/links"
-  artifacts:
-    name: "HWP_AutoDocFit-$CI_COMMIT_TAG"
-    paths:
-      - "dist/HWP_AutoDocFit_v*_Portable.exe"
-      - "dist/HWP_AutoDocFit_v*_Setup.exe"
-      - "dist/보고서 예시 파일(한번에 적용).txt"
-      - dist/SHA256SUMS
-    expire_in: never
   rules:
     - if: '$CI_COMMIT_TAG'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
 
 create-pages:
   stage: deploy
