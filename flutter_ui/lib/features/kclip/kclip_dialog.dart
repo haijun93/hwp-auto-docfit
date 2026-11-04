@@ -36,7 +36,6 @@ class _KClipPanelState extends State<KClipPanel> {
   Map settings = const {};
   bool consent = false;
   bool autostart = false;
-  bool removeExcelBackground = false;
   bool busy = false;
   String message = '';
   String query = '';
@@ -148,12 +147,12 @@ class _KClipPanelState extends State<KClipPanel> {
     if (busy) return;
     setState(() => busy = true);
     try {
-      final result = await widget.api('excel_table', ['convert', {'keep_cell_background': !removeExcelBackground}]);
+      final result = await widget.api('excel_table', ['paste_clean', const {}]);
       if (!mounted) return;
       setState(() {
         if (result is Map && result['ok'] == true) {
           final counts = (result['cleaned'] as Map?) ?? const {};
-          message = '${result['rows']}행 × ${result['cols']}열 변환 완료 · 바탕색 ${counts['background'] ?? 0}, 공백 ${counts['spaces'] ?? 0}, 기호 ${counts['symbols'] ?? 0} 정리. 한/글에서 Ctrl+V';
+            message = '${result['rows']}행 × ${result['cols']}열 표 구조·내용 유지, 배경 음영 제거 · 공백 ${counts['spaces'] ?? 0}, 기호 ${counts['symbols'] ?? 0} 정리. 한/글에서 Ctrl+V';
         } else {
           message = '${(result is Map ? result['message'] : null) ?? '클립보드에서 엑셀 표를 찾지 못했습니다.'}';
         }
@@ -369,10 +368,6 @@ class _KClipPanelState extends State<KClipPanel> {
             icon: const Icon(Icons.table_view),
             label: const Text('엑셀 표를 한/글 표로'),
           ),
-          Row(mainAxisSize: MainAxisSize.min, children: [
-            Checkbox(value: removeExcelBackground, onChanged: (v) => setState(() => removeExcelBackground = v == true)),
-            const Text('칸 배경색 빼기'),
-          ]),
         ]),
         TextField(
           decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: '찾기'),

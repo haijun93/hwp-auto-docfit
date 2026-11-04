@@ -19,6 +19,11 @@
 
 
 .zero-click-bar { position:fixed; bottom:0; left:0; right:0; z-index:100; display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:12px; padding:16px; background:#eaf1ff; box-shadow:0 -2px 12px #14274422; }
+.sidebar-only .topbar,.sidebar-only .stepper,.sidebar-only .workspace,.sidebar-only .action-bar { display:none!important; }
+.sidebar-only .topbar { display:flex!important; height:100vh; align-items:flex-start; padding:16px 8px; }
+.sidebar-only .brand { display:none; }
+.sidebar-only .top-actions { display:flex; flex-direction:column; align-items:stretch; gap:8px; width:100%; }
+.sidebar-only #quickProfileBadge,.sidebar-only .version,.sidebar-only #logButton { display:none!important; }
 .zero-click-bar[hidden], #quickOptionsPanel[hidden] { display:none; }
 .zero-click-bar progress { width:100%; height:4px; }
 #quickProfileBadge { max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

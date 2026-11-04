@@ -99,6 +99,8 @@ class DesktopWebBridge:
         from docfit_app.native_file_dialog_service import NativeFileDialogService
         self._file_dialogs = NativeFileDialogService()
         self.window = None
+        self.sidebar_controller = None
+        self.sidebar_active = False
         self.tk_stopped = None
         # 사용자가 웹 창을 닫아 종료하는 중인지. 이때는 창이 스스로 닫히므로
         # 종료 감시 스레드가 destroy()를 다시 부르면 안 된다(pywebview 이중 닫힘 오류).
@@ -493,6 +495,9 @@ class DesktopWebBridge:
                 "drop_target": self.drop_target,
                 "rename_open": rename_open,
                 "sidebar_collapsed": self._sidebar_collapsed_value(),
+                "developer_mode": bool(self.gui._준말_서비스().settings.read().get('developer_mode', False)),
+                "always_on_top": bool(self.gui._준말_서비스().settings.read().get('always_on_top', False)),
+                "sidebar_mode": self.sidebar_active,
                 "document_drop_revision": self._document_drop_revision,
                 "options": {
                     name: bool(getattr(gui, attribute).get())
@@ -1235,6 +1240,12 @@ class DesktopWebBridge:
         from docfit_app.configuration_service import ConfigurationService
         return ConfigurationService(self.gui._준말_서비스().settings)
 
+    def _developer_mode_enabled(self):
+        try:
+            return bool(self._configuration().snapshot(running=self.gui.running)
+                        .get("values", {}).get("developer_mode", False))
+        except Exception:
+            return False
     def _settings_snapshot(self):
         from docfit_app.shell_menu import status
         snapshot = self._configuration().snapshot(running=self.gui.running)
@@ -1257,6 +1268,9 @@ class DesktopWebBridge:
                 else:
                     unregister()
             self.gui._Flutter설정_반영(values)
+            if self.window is not None and 'always_on_top' in values:
+                self.window.set_on_top(bool(values['always_on_top']))
+                self._saved_window['topmost'] = bool(values['always_on_top'])
             return self._settings_snapshot()
         return self._tk(lambda: response(save))
 
@@ -1944,6 +1958,82 @@ class DesktopWebBridge:
             logging.getLogger(__name__).warning("파일이름 처리 실패", exc_info=True)
             return {"ok": False, "message": str(exc) or "이름 바꾸기를 처리하지 못했습니다."}
 
+    def new_document(self, action, payload=None):
+        from docfit_app.new_document_service import create_copy, user_documents
+        payload = payload if isinstance(payload, dict) else {}
+        def execute():
+            profiles = self._profile_state().profiles or {}
+            def snapshot_path(identifier):
+                try:
+                    pair = self.gui._서식예시_경로(identifier)
+                    source = Path(pair[0])
+                    return source if source.is_file() else None
+                except Exception:
+                    return None
+            if action == 'list':
+                items = []
+                for identifier, profile in profiles.items():
+                    if not isinstance(profile, dict): continue
+                    source = snapshot_path(identifier)
+                    if source:
+                        preview = None
+                        try:
+                            pair = self.gui._서식예시_경로(identifier)
+                            candidates = [Path(pair[1])] if len(pair) > 1 and pair[1] else []
+                            candidates += [source.with_suffix('.png'), source.with_name(source.stem + '_preview.png')]
+                            preview = next((str(item.resolve()) for item in candidates if item.is_file()), None)
+                        except Exception:
+                            pass
+                        items.append({'id': str(identifier), 'name': str(profile.get('name') or source.stem), 'preview': preview})
+                return {'ok': True, 'items': items}
+            if action != 'create': return {'ok': False, 'message': '지원하지 않는 새문서 명령입니다.'}
+            profile = profiles.get(payload.get('id'))
+            if not isinstance(profile, dict): return {'ok': False, 'message': '서식을 다시 선택해 주세요.'}
+            source = snapshot_path(payload.get('id'))
+            if not source: return {'ok': False, 'message': '이 서식의 원본 HWPX 경로를 확인할 수 없습니다.'}
+            target = create_copy(source, user_documents(), profile.get('name'))
+            try: os.startfile(str(target))
+            except OSError as exc:
+                target.unlink(missing_ok=True)
+                return {'ok': False, 'message': f'한/글에서 문서를 열지 못했습니다: {exc}'}
+            return {'ok': True, 'path': str(target), 'name': target.name}
+        return self._tk(execute)
+
+    def sidebar_mode(self, enabled):
+        from docfit_app.sidebar_mode import SidebarModeController
+        def execute():
+            config = self._configuration().snapshot(running=self.gui.running)
+            values = config.get('values', {})
+            if not values.get('developer_mode', False):
+                return {'ok': False, 'message': '사이드메뉴 모드는 개발자 모드에서만 사용할 수 있습니다.'}
+            if self.sidebar_controller is None:
+                if self.window is None:
+                    return {'ok': False, 'message': '창이 아직 준비되지 않았습니다.'}
+                self.sidebar_controller = SidebarModeController(
+                    _Win32WindowApi(), _PyWebViewWindow(self.window, self.gui._준말_서비스().settings, lambda: self._saved_window), True,
+                    values.get('sidebar_mode_side', 'right'))
+            else:
+                self.sidebar_controller.developer_mode = True
+                self.sidebar_controller.saved = self._saved_window
+            result = self.sidebar_controller.toggle(bool(enabled))
+            self.sidebar_active = bool(enabled)
+            return result
+        try:
+            return self._tk(execute)
+        except Exception as exc:
+            return {'ok': False, 'message': str(exc)}
+
+    def always_on_top(self, enabled):
+        def execute():
+            config = self._configuration().snapshot(running=self.gui.running)
+            if not config.get('values', {}).get('developer_mode', False):
+                return {'ok': False, 'message': '항상 위 설정은 개발자 모드에서만 사용할 수 있습니다.'}
+            self.gui._준말_서비스().settings.update(lambda current: current.update({'always_on_top': bool(enabled)}))
+            if self.window is not None:
+                self.window.set_on_top(bool(enabled))
+            return {'ok': True, 'enabled': bool(enabled)}
+        return self._tk(execute)
+
     def _drain_rename_paths(self):
         """탐색기 보내기(--rename)로 받은 경로를 목록에 넣고, 화면이 탭을 열도록 True를 돌려준다.
         시작 때 호출을 늘리지 않으려 이미 오가는 상태 조회에 얹는다."""
@@ -2014,6 +2104,107 @@ class DesktopWebBridge:
         result = response(execute)
         return result['data'] if result['ok'] else result
 
+    def library_drop(self, paths, x, y, box_id, space=None):
+        """OS 파일 끌어놓기: 경로 목록을 item_add 요청으로 순차 등록한다.
+
+        space를 주면(core/basis/reference/temp) x, y는 그 사분면 캔버스의 로컬 픽셀 좌표
+        (Flutter globalToLocal 결과, 0 이상 유한 실수)이며 item_add에 그대로 전달한다.
+        space를 생략하면 x, y는 보드 전체 0~1 정규화 좌표로 보고 사분면(0.5 경계는
+        오른쪽/아래)만 판정하며 item_add에는 받은 값을 전달한다.
+        box_id는 정수 또는 정수 문자열만 허용하며 int로 변환해 전달한다.
+        """
+        import math
+        if not self._developer_mode_enabled():
+            return {"ok": False, "code": "DEVELOPER_MODE_REQUIRED", "message": "개발자 모드에서만 자료함을 사용할 수 있습니다."}
+        valid_spaces = {"core", "basis", "reference", "temp"}
+        if space is not None and space not in valid_spaces:
+            return {"ok": False, "message": "자료함 공간이 올바르지 않습니다."}
+        try:
+            if isinstance(x, bool) or isinstance(y, bool):
+                raise ValueError("bool")
+            norm_x = float(x)
+            norm_y = float(y)
+            if not (math.isfinite(norm_x) and math.isfinite(norm_y) and norm_x >= 0.0 and norm_y >= 0.0):
+                raise ValueError("range")
+            if space is None and not (norm_x <= 1.0 and norm_y <= 1.0):
+                raise ValueError("range")
+        except (TypeError, ValueError):
+            return {"ok": False, "message": "놓은 위치 좌표가 올바르지 않습니다."}
+        try:
+            if isinstance(box_id, bool) or not isinstance(box_id, (str, int)):
+                raise ValueError("type")
+            box = int(box_id.strip() if isinstance(box_id, str) else box_id)
+        except ValueError:
+            return {"ok": False, "message": "자료함 번호가 올바르지 않습니다."}
+        added, skipped, failed = [], [], []
+        if paths is None:
+            items = []
+        elif isinstance(paths, (str, bytes, os.PathLike)):
+            items = [paths]
+        else:
+            try:
+                items = list(paths)
+            except TypeError:
+                return {"ok": False, "added": added, "skipped": skipped,
+                        "failed": [{"path": str(paths), "message": "경로 목록 형식이 올바르지 않습니다."}]}
+        if space is None:
+            left = norm_x < 0.5
+            top = norm_y < 0.5
+            space = {(True, True): "core", (False, True): "basis",
+                     (True, False): "reference", (False, False): "temp"}[(left, top)]
+        seen = set()
+        for raw in items:
+            text = str(raw)
+            try:
+                text = os.fspath(raw)
+                if not isinstance(text, str):
+                    text = os.fsdecode(text)
+                if not text.strip():
+                    continue
+                path = Path(text)
+                if path.is_file():
+                    kind = "file"
+                elif path.is_dir():
+                    kind = "folder"
+                else:
+                    failed.append({"path": text, "message": "존재하지 않거나 파일·폴더가 아닌 경로입니다."})
+                    continue
+                key = os.path.normcase(str(path.resolve(strict=True)))
+            except (TypeError, ValueError, OSError, RuntimeError) as exc:
+                failed.append({"path": text, "message": str(exc) or "경로 형식이 올바르지 않습니다."})
+                continue
+            if key in seen:
+                skipped.append({"path": text, "message": "중복 경로"})
+                continue
+            seen.add(key)
+            result = self.library({
+                "cmd": "item_add",
+                "box_id": box,
+                "kind": kind,
+                "source_path": str(path),
+                "display_name": path.name,
+                "space": space,
+                "x": norm_x,
+                "y": norm_y,
+            })
+            if isinstance(result, dict) and result.get("ok") is True:
+                added.append(result)
+            else:
+                message = result.get("message", "") if isinstance(result, dict) else str(result)
+                failed.append({"path": text, "message": message})
+        return {"ok": not failed, "added": added, "skipped": skipped, "failed": failed}
+
+    def library(self, request):
+        """Forward one allowlisted library JSON request when the opt-in flag is set."""
+        if not self._developer_mode_enabled():
+            return {"ok": False, "code": "DEVELOPER_MODE_REQUIRED", "message": "개발자 모드에서만 자료함을 사용할 수 있습니다."}
+        if self._library_bridge is None:
+            from docfit_app.library_bridge import LibraryBridge
+            self._library_bridge = LibraryBridge()
+        try:
+            return self._library_bridge.request(request)
+        except Exception as exc:
+            return {"ok": False, "message": str(exc)}
     def _table_units_command(self, action, payload=None):
         """표 템플릿: 스냅샷 목록·정보단위 미리보기·한/글 붙여넣기용 복사(2026-10-22).
 
@@ -2561,6 +2752,79 @@ def _file_size(path):
         return None
 
 
+class _Win32WindowApi:
+    """Monitor work-area and SetWindowPos wrapper; isolated for fake-driven tests."""
+    SPI_GETWORKAREA = 0x0030
+    HWND_TOPMOST = -1
+    HWND_NOTOPMOST = -2
+    SWP_NOACTIVATE = 0x0010
+
+    def __init__(self, user32=None):
+        self._ctypes = None
+        if user32 is None:
+            import ctypes
+            self._ctypes = ctypes
+            user32 = ctypes.windll.user32
+        self.user32 = user32
+
+    def work_area(self, hwnd):
+        if self._ctypes is None:
+            import ctypes
+        else:
+            ctypes = self._ctypes
+        from ctypes import wintypes
+        try:
+            class MONITORINFO(ctypes.Structure):
+                _fields_ = [('cbSize', wintypes.DWORD), ('rcMonitor', wintypes.RECT), ('rcWork', wintypes.RECT), ('dwFlags', wintypes.DWORD)]
+            monitor_from_window = getattr(self.user32, 'MonitorFromWindow', None)
+            get_monitor_info = getattr(self.user32, 'GetMonitorInfoW', None)
+            monitor = monitor_from_window(hwnd, 2) if monitor_from_window else None
+            info = MONITORINFO()
+            info.cbSize = ctypes.sizeof(info)
+            if monitor and get_monitor_info and get_monitor_info(monitor, ctypes.byref(info)):
+                r = info.rcWork
+                return r.left, r.top, r.right, r.bottom
+        except Exception:
+            pass
+        # 모니터별 API가 없는 환경에서는 기본 화면 작업 영역을 사용한다.
+        rect = wintypes.RECT()
+        if not self.user32.SystemParametersInfoW(self.SPI_GETWORKAREA, 0, ctypes.byref(rect), 0):
+            raise OSError('화면 작업 영역을 확인하지 못했습니다.')
+        return rect.left, rect.top, rect.right, rect.bottom
+
+    def set_window_pos(self, hwnd, x, y, width, height, topmost):
+        insert_after = self.HWND_TOPMOST if topmost else self.HWND_NOTOPMOST
+        if not self.user32.SetWindowPos(hwnd, insert_after, x, y, width, height, self.SWP_NOACTIVATE):
+            raise OSError('앱 창 위치를 바꾸지 못했습니다.')
+        return True
+
+
+class _PyWebViewWindow:
+    def __init__(self, window, settings=None, saved_state=None):
+        self.window = window
+        self.settings = settings
+        self.saved_state = saved_state
+
+    def handle(self):
+        return self.window.native.Handle.ToInt64()
+
+    def geometry(self):
+        if self.saved_state and self.window.width < 250:
+            saved = self.saved_state()
+            return saved['x'], saved['y'], saved['width'], saved['height']
+        return self.window.x, self.window.y, self.window.width, self.window.height
+
+    def topmost(self):
+        return bool(self.saved_state()['topmost']) if self.saved_state else bool(getattr(self.window, '_on_top', False))
+
+    def set_sidebar_only(self, enabled):
+        self.window.resize(190 if enabled else self.saved_state()['width'], self.saved_state()['height'])
+
+    def save_side(self, side):
+        if self.settings is not None:
+            self.settings.update(lambda current: current.update({'sidebar_mode_side': side}))
+
+
 class _BrowserApi:
     """Expose commands only: pywebview recursively inspects public attributes."""
 
@@ -2570,8 +2834,9 @@ class _BrowserApi:
             "get_state", "add_files", "add_folder", "add_paths", "remove_file",
             "clear_files", "set_mode", "set_range", "start", "stop", "start_job", "cancel_job", "get_events",
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
-            "get_pending_dialog", "resolve_dialog", "enable_close_guard", "acknowledge_close", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch", "timemachine",
-            "file_rename", "kclip", "hwp_bulk", "open_results", "next_job", "run_tool", "open_result",
+            "get_pending_dialog", "resolve_dialog", "enable_close_guard", "acknowledge_close", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch", "timemachine", "library",
+            "file_rename", "kclip", "new_document", "hwp_bulk", "open_results", "next_job", "run_tool", "open_result",
+            "sidebar_mode", "always_on_top",
             "show_result", "open_source_file", "show_source_file", "open_result_source", "open_diff", "compare_result", "launch_external_hwp_diff", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",
             "set_exclude_tables", "set_card_option",
@@ -2829,7 +3094,7 @@ def run_webview(gui):
         screen_width, screen_height = bridge._tk(
             lambda: (gui.root.winfo_screenwidth(), gui.root.winfo_screenheight())
         )
-    width = min(1040, max(420, screen_width - 40))
+    width = min(1040, max(700, screen_width - 40))
     # Reserve space for the title bar and taskbar; center the window so it
     # remains fully reachable even when Tk reports a logical (DPI-scaled) size.
     height = min(800, max(400, screen_height - 220))
@@ -2846,10 +3111,17 @@ def run_webview(gui):
         height=height,
         x=x,
         y=y,
-        min_size=(min(520, width), min(440, height)),
+        min_size=(min(260, width), min(180, height)),
         text_select=True,
     )
     bridge.window = window
+    bridge._saved_window = {'x': x, 'y': y, 'width': width, 'height': height, 'topmost': False}
+    try:
+        initial_settings = bridge._tk(lambda: bridge._configuration().snapshot(running=bridge.gui.running).get('values', {}))
+        window.set_on_top(bool(initial_settings.get('always_on_top', False)))
+        bridge._saved_window['topmost'] = bool(initial_settings.get('always_on_top', False))
+    except Exception:
+        logging.getLogger(__name__).debug('Could not apply saved always-on-top setting', exc_info=True)
     tk_stopped = threading.Event()
     bridge.tk_stopped = tk_stopped
     window.events.closing += bridge.request_close

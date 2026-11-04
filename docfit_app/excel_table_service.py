@@ -12,11 +12,12 @@ class ExcelTableService:
         self.copier = copier or copy_hwpx_document
 
     def command(self, action, payload=None):
-        if action != 'convert': return {'ok':False,'message':'엑셀 표 변환 명령을 확인해 주세요.'}
+        if action not in ('convert', 'paste_clean'): return {'ok':False,'message':'엑셀 표 변환 명령을 확인해 주세요.'}
         try:
             html_data, tsv = self.clipboard()
             model = parse_clipboard(html_data, tsv, clean=not (isinstance(payload,dict) and payload.get('clean') is False))
-            keep_fill = not (isinstance(payload,dict) and payload.get('keep_cell_background') is False)
+            # 몽땅클립보드 전용 경로는 셀 음영만 제거하고 표/내용/병합 구조는 그대로 둔다.
+            keep_fill = action != 'paste_clean' and not (isinstance(payload,dict) and payload.get('keep_cell_background') is False)
             if not keep_fill:
                 for row in model['rows']:
                     for cell in row: cell['fill']=''

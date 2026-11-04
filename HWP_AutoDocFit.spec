@@ -9,6 +9,9 @@ pack = root / 'resources' / 'HWP_AutoDocFit_kordoc_runtime.zip'
 if not pack.is_file() or not pack.with_name(pack.name + '.sha256').is_file():
     raise RuntimeError('Build the embedded offline runtime before PyInstaller packaging')
 binaries, hiddenimports = [], []
+klib_exe = root / 'resources' / 'klib.exe'
+if klib_exe.is_file():
+    binaries.append((str(klib_exe), 'resources'))
 for package in ('docfit_core', 'docfit_engine', 'docfit_app', 'docfit_ui'):
     hiddenimports += collect_submodules(package)
 for package in ('tkinterdnd2', 'PIL', 'webview', 'pythonnet', 'clr_loader', 'pypdfium2', 'pypdfium2_raw', 'pypdf', 'cryptography'):

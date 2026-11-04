@@ -49,6 +49,7 @@ on:
       - release/2.2.12
       - release/2.2.13
       - release/2.2.14
+      - feature/v4-offline-library
       - claude/affectionate-goldberg-ggln7c
     paths-ignore:
       - 'README.md'
@@ -103,7 +104,7 @@ jobs:
             Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value '```'
           }
           Get-Content -LiteralPath "windows-tests.log" -Tail 200
-          # 표준 출력이 끝에 몰려 꼬리만으로는 실패 이름이 안 보인다.
+          # ?쒖? 異쒕젰???앹뿉 紐곕젮 瑗щ━留뚯쑝濡쒕뒗 ?ㅽ뙣 ?대쫫????蹂댁씤??
           Select-String -LiteralPath "windows-tests.log" -Pattern '^(ERROR|FAIL): |^Ran [0-9]+ tests|^FAILED|^[A-Za-z_.]*Error: ' | ForEach-Object { $_.Line }
           exit $testExit
 
@@ -144,6 +145,13 @@ jobs:
       - name: Test hierarchy core (Rust)
         shell: pwsh
         run: cargo test --manifest-path hierarchy/Cargo.toml
+      - name: Build klib (Rust)
+        shell: pwsh
+        run: |
+          cargo test --manifest-path klib/Cargo.toml
+          cargo build --release --manifest-path klib/Cargo.toml
+          Copy-Item klib/target/release/klib.exe resources/klib.exe -Force
+          (Get-FileHash resources/klib.exe -Algorithm SHA256).Hash | Out-File -Encoding ascii resources/klib.exe.sha256
 
       - name: Build EXE using shared packaging specification
         run: |
@@ -217,7 +225,7 @@ jobs:
       - name: Smoke test smart launcher self-test argument forwarding
         shell: pwsh
         run: |
-          # 시작 속도는 기록만 하고 빌드를 막지 않는다(2026-11-02 사용자 결정: CI 기준 폐지, 러너 속도에 좌우됨).
+          # ?쒖옉 ?띾룄??湲곕줉留??섍퀬 鍮뚮뱶瑜?留됱? ?딅뒗??2026-11-02 ?ъ슜??寃곗젙: CI 湲곗? ?먯?, ?щ꼫 ?띾룄??醫뚯슦??.
           & ".\.venv\Scripts\python.exe" scripts\smoke_smart_launcher.py --report "dist/smart-launcher-startup.json" --target-cache-ms 1500 --target-splash-ms 100
           if ($LASTEXITCODE -ne 0) { throw "Smart launcher cold/warm smoke test failed with exit code $LASTEXITCODE." }
 
@@ -255,7 +263,7 @@ jobs:
             test "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = true || { echo "Published tag must not be overwritten"; exit 1; }
             gh release edit "$TAG" --target "$GITHUB_SHA"
           else
-            gh release create "$TAG" --draft --target "$GITHUB_SHA" --title "HWP AutoDocFit $VERSION" --notes "빌드 검증 후 게시 예정"
+            gh release create "$TAG" --draft --target "$GITHUB_SHA" --title "HWP AutoDocFit $VERSION" --notes "鍮뚮뱶 寃利???寃뚯떆 ?덉젙"
           fi
           gh release upload "$TAG" "$PORTABLE" "$SETUP" --clobber
 

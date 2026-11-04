@@ -39,11 +39,12 @@ class DistributionBuildTest(unittest.TestCase):
         build = (ROOT / ".github" / "workflows" / "build-windows-exe.yml").read_text(encoding="utf-8")
         release = (ROOT / ".github" / "workflows" / "github-release.yml").read_text(encoding="utf-8")
         gitlab = (ROOT / ".gitlab-ci.yml").read_text(encoding="utf-8")
-        for source in (build, release, gitlab):
+        for source in (build, release):
             self.assertIn("HWP_AutoDocFit_v${VERSION}_Portable.exe", source)
             self.assertIn("HWP_AutoDocFit_v${VERSION}_Setup.exe", source)
-        self.assertIn("PORTABLE (Portable, no installation)", gitlab)
-        self.assertIn("SETUP (Installer)", gitlab)
+        # GitLab은 exe를 올리지 않고 릴리스 노트와 Portable·Setup 내려받기 링크만 등록한다.
+        self.assertIn('HWP_AutoDocFit_v${version}_${kind}.exe', gitlab)
+        self.assertIn("for kind in Portable Setup", gitlab)
 
     def test_self_test_guard_precedes_gui_mutex_and_main(self):
         source = (ROOT / "hwp-auto-docfit.py").read_text(encoding="utf-8")
