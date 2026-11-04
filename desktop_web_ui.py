@@ -1933,6 +1933,38 @@ class DesktopWebBridge:
             logging.getLogger(__name__).warning("파일이름 처리 실패", exc_info=True)
             return {"ok": False, "message": str(exc) or "이름 바꾸기를 처리하지 못했습니다."}
 
+    def new_document(self, action, payload=None):
+        from docfit_app.new_document_service import create_copy, user_documents
+        payload = payload if isinstance(payload, dict) else {}
+        def execute():
+            profiles = self._profile_state().profiles or {}
+            def snapshot_path(identifier):
+                try:
+                    pair = self.gui._서식예시_경로(identifier)
+                    source = Path(pair[0])
+                    return source if source.is_file() else None
+                except Exception:
+                    return None
+            if action == 'list':
+                items = []
+                for identifier, profile in profiles.items():
+                    if not isinstance(profile, dict): continue
+                    source = snapshot_path(identifier)
+                    if source: items.append({'id': str(identifier), 'name': str(profile.get('name') or source.stem)})
+                return {'ok': True, 'items': items}
+            if action != 'create': return {'ok': False, 'message': '지원하지 않는 새문서 명령입니다.'}
+            profile = profiles.get(payload.get('id'))
+            if not isinstance(profile, dict): return {'ok': False, 'message': '서식을 다시 선택해 주세요.'}
+            source = snapshot_path(payload.get('id'))
+            if not source: return {'ok': False, 'message': '이 서식의 원본 HWPX 경로를 확인할 수 없습니다.'}
+            target = create_copy(source, user_documents(), profile.get('name'))
+            try: os.startfile(str(target))
+            except OSError as exc:
+                target.unlink(missing_ok=True)
+                return {'ok': False, 'message': f'한/글에서 문서를 열지 못했습니다: {exc}'}
+            return {'ok': True, 'path': str(target), 'name': target.name}
+        return self._tk(execute)
+
     def _drain_rename_paths(self):
         """탐색기 보내기(--rename)로 받은 경로를 목록에 넣고, 화면이 탭을 열도록 True를 돌려준다.
         시작 때 호출을 늘리지 않으려 이미 오가는 상태 조회에 얹는다."""
@@ -2560,7 +2592,7 @@ class _BrowserApi:
             "clear_files", "set_mode", "set_range", "start", "stop", "start_job", "cancel_job", "get_events",
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
             "get_pending_dialog", "resolve_dialog", "enable_close_guard", "acknowledge_close", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch", "timemachine",
-            "file_rename", "kclip", "hwp_bulk", "open_results", "next_job", "run_tool", "open_result",
+            "file_rename", "kclip", "new_document", "hwp_bulk", "open_results", "next_job", "run_tool", "open_result",
             "show_result", "open_source_file", "show_source_file", "open_result_source", "open_diff", "compare_result", "launch_external_hwp_diff", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",
             "set_exclude_tables", "set_card_option",

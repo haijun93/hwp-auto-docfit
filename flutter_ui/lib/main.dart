@@ -245,6 +245,12 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
           final expanded = constraints.maxWidth >= 140;
           final actions = <({String label, IconData icon, VoidCallback onPressed, Key? key})>[
             (
+              label: '새문서 시작',
+              icon: Icons.note_add_outlined,
+              onPressed: () => _showNewDocument(context, widget.api),
+              key: const ValueKey('new-document-open'),
+            ),
+            (
               label: '몽땅클립보드',
               icon: Icons.content_paste_search,
               onPressed: () => showKClipDialog(context, widget.api),
@@ -315,6 +321,27 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
       ),
     ),
   );
+}
+
+Future<void> _showNewDocument(BuildContext context, ApiCall api) async {
+  final result = await api('new_document', ['list', const {}]);
+  if (!context.mounted) return;
+  final items = result is Map ? (result['items'] as List? ?? const []) : const [];
+  await showDialog<void>(context: context, builder: (dialogContext) => AlertDialog(
+    title: const Text('새문서 시작'),
+    content: SizedBox(width: 420, child: items.isEmpty
+      ? const Text('등록된 HWPX 서식이 없습니다.')
+      : ListView(shrinkWrap: true, children: [for (final raw in items)
+          ListTile(title: Text('${(raw as Map)['name'] ?? '서식'}'), subtitle: const Text('사본을 만들어 한/글에서 엽니다.'),
+            leading: const Icon(Icons.description_outlined), onTap: () async {
+              Navigator.pop(dialogContext);
+              final opened = await api('new_document', ['create', {'id': raw['id']}]);
+              if (context.mounted && opened is Map && opened['ok'] != true) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${opened['message'] ?? '새문서를 만들지 못했습니다.'}')));
+              }
+            })])),
+    actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('닫기'))],
+  ));
 }
 
 class Workspace extends StatefulWidget {

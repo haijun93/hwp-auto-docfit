@@ -92,11 +92,11 @@ void main() {
     expect(calls, contains('clear'));
   });
 
-  testWidgets('엑셀 표 변환 버튼과 칸 배경색 옵션을 제공한다', (tester) async {
-    final sentBackgroundValues = <bool>[];
+  testWidgets('몽땅클립보드 Excel 표는 전용 음영 제거 경로를 사용한다', (tester) async {
+    final sentActions = <String>[];
     Future<Object?> api(String method, List<Object?> args) async {
       if (method == 'excel_table') {
-        sentBackgroundValues.add((args[1] as Map)['keep_cell_background'] as bool);
+        sentActions.add(args[0] as String);
         return {'ok': true, 'rows': 1, 'cols': 1, 'cleaned': {}};
       }
       switch (args[0]) {
@@ -109,17 +109,8 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: Scaffold(body:SizedBox(height:700,child:KClipPanel(api:api)))));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('kclip-excel-table')), findsOneWidget);
-    expect(find.text('칸 배경색 빼기'), findsOneWidget);
-    expect(tester.widget<Checkbox>(find.byType(Checkbox).last).value, isFalse);
     await tester.tap(find.byKey(const ValueKey('kclip-excel-table')));
     await tester.pumpAndSettle();
-    expect(sentBackgroundValues, [true]);
-    await tester.pump(const Duration(milliseconds: 1));
-    await tester.tap(find.byType(Checkbox).last);
-    await tester.pump();
-    expect(tester.widget<Checkbox>(find.byType(Checkbox).last).value, isTrue);
-    await tester.tap(find.byKey(const ValueKey('kclip-excel-table')));
-    await tester.pumpAndSettle();
-    expect(sentBackgroundValues, [true, false]);
+    expect(sentActions, ['paste_clean']);
   });
 }
