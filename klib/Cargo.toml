@@ -18,6 +18,8 @@ windows-sys = { version = "0.59", features = [
     "Win32_System_Threading",
 ] }
 tantivy = "=0.22.1"
+lindera-tantivy = { version = "=0.38.1", features = ["ko-dic"] }
+lindera = { version = "=0.38.1", features = ["ko-dic"] }
 md5 = "0.7"
 regex = "1"
 
