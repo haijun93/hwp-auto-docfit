@@ -3,6 +3,61 @@
 use std::collections::HashMap;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum MarkerFamily { RomanUpper, RomanLower, DecimalDot, DecimalParen, DecimalBare, HangulDot, HangulParen, CircledNumber, CircledHangul, Square, Circle, Dash, Asterisk }
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Decoration { Plain, Dot, Parentheses, ClosingParen }
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PrefixReading { pub family: MarkerFamily, pub ordinal: Option<u32>, pub decoration: Decoration, pub end_byte: usize }
+#[derive(Clone, Debug, PartialEq)]
+pub struct FamilyEvidence { pub family: MarkerFamily, pub count: usize, pub first_position: usize, pub median_indent: i32, pub median_size_hundredth_pt: u32, pub bold_count: usize, pub recount_points: usize }
+#[derive(Clone, Debug, PartialEq)]
+pub struct FamilyRank { pub family: MarkerFamily, pub rank: u8, pub score: i32, pub evidence: FamilyEvidence }
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Diagnostic { FamiliesMerged { from: usize, into: usize }, TooManyFamilies { detected: usize } }
+#[derive(Clone, Debug, PartialEq)]
+pub struct DocScheme { pub families: Vec<FamilyRank>, pub diagnostics: Vec<Diagnostic> }
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SchemeParagraph<'a> { pub text: &'a str, pub position: usize, pub left_indent: i32, pub size_hundredth_pt: u32, pub bold: bool, pub in_attachment: bool }
+
+/// 판독은 문두의 짧은 토큰만 대상으로 하며 본문 중간 기호를 검색하지 않는다.
+pub fn read_prefix_marker(text: &str) -> Option<PrefixReading> {
+    let s=text.trim_start(); let offset=text.len()-s.len();
+    if s.chars().take(12).filter(|c| *c=='.'||*c=='．').count()>=2 && s.chars().any(|c|c.is_ascii_digit()) { return None; }
+    let (family,ordinal,decoration,len)=parse_scheme_token(s)?;
+    Some(PrefixReading { family,ordinal,decoration,end_byte:offset+len })
+}
+
+fn parse_scheme_token(s:&str)->Option<(MarkerFamily,Option<u32>,Decoration,usize)> {
+    let c=s.chars().next()?; let n=c.len_utf8(); let tail=&s[n..];
+    let punct=match c {'□'|'ㅁ'|'■'=>Some(MarkerFamily::Square),'ㅇ'|'○'|'◦'=>Some(MarkerFamily::Circle),'-'=>Some(MarkerFamily::Dash),'*'|'※'|'•'|'·'|'‧'|'∙'|'⋅'|'ㆍ'|'●'=>Some(MarkerFamily::Asterisk),_=>None};
+    if let Some(f)=punct { if tail.chars().next().map(char::is_whitespace).unwrap_or(false) {return Some((f,None,Decoration::Plain,n));} }
+    if ('①'..='⑳').contains(&c)||('㉠'..='㉻').contains(&c) {if tail.chars().next().map(char::is_whitespace).unwrap_or(false){return Some((if ('①'..='⑳').contains(&c){MarkerFamily::CircledNumber}else{MarkerFamily::CircledHangul},Some(c as u32),Decoration::Plain,n));}}
+    if c=='('||c=='（' {let close=if c=='(' {')'} else {'）'}; if let Some(end)=s.find(close) {let inner=&s[n..end]; if inner.chars().count()==1 && "가나다라마바사아자차카타파하".contains(inner.chars().next()?){return Some((MarkerFamily::HangulParen,Some(inner.chars().next()? as u32),Decoration::Parentheses,end+close.len_utf8()));} let (mut f,v)=scheme_ordinal(inner)?; if f==MarkerFamily::DecimalBare{f=MarkerFamily::DecimalParen} if f==MarkerFamily::HangulDot{f=MarkerFamily::HangulParen} let len=end+close.len_utf8(); if s[len..].chars().next().map(char::is_whitespace).unwrap_or(true){return Some((f,v,Decoration::Parentheses,len));}}}
+    if c=='('||c=='（' {let close=if c=='(' {')'} else {'）'};if let Some(end)=s.find(close){let inner=&s[n..end];if inner.chars().count()==1&&"가나다라마바사아자차카타파하".contains(inner.chars().next()?){return Some((MarkerFamily::HangulParen,Some(inner.chars().next()? as u32),Decoration::Parentheses,end+close.len_utf8()));}}}
+    if (c=='가'||c=='나'||c=='다'||c=='라'||c=='마'||c=='바'||c=='사'||c=='아'||c=='자'||c=='차'||c=='카'||c=='타'||c=='파'||c=='하') && tail.starts_with(')') {let k=1+tail[1..].chars().take_while(|x|x.is_whitespace()).map(char::len_utf8).sum::<usize>();return Some((MarkerFamily::HangulParen,Some("가나다라마바사아자차카타파하".find(c)? as u32),Decoration::ClosingParen,n+k));}
+    if c.is_ascii_digit() {let d=s.chars().take_while(|x|x.is_ascii_digit()).count(); let v=s[..d].parse().ok()?; let rest=&s[d..]; if rest.starts_with(". "){return Some((MarkerFamily::DecimalDot,Some(v),Decoration::Dot,d+2));} if rest.starts_with(')')||rest.starts_with("）"){let k=rest.chars().next()?.len_utf8(); if rest[k..].chars().next().map(char::is_whitespace).unwrap_or(true){return Some((MarkerFamily::DecimalParen,Some(v),Decoration::ClosingParen,d+k));}} if rest.chars().next().map(char::is_whitespace).unwrap_or(false){return Some((MarkerFamily::DecimalBare,Some(v),Decoration::Plain,d));} }
+    if (c=='가'||c=='나'||c=='다'||c=='라'||c=='마'||c=='바'||c=='사'||c=='아'||c=='자'||c=='차'||c=='카'||c=='타'||c=='파'||c=='하') && tail.starts_with(')') {let k=1+tail[1..].chars().take_while(|x|x.is_whitespace()).map(char::len_utf8).sum::<usize>();return Some((MarkerFamily::HangulParen,Some("가나다라마바사아자차카타파하".find(c)? as u32),Decoration::ClosingParen,n+k));}
+    if "가나다라마바사아자차카타파하".contains(c)&&(tail.starts_with(". ")||tail.starts_with("． ")) {return Some((MarkerFamily::HangulDot,Some("가나다라마바사아자차카타파하".find(c)? as u32),Decoration::Dot,n+if tail.starts_with(". "){2}else{"． ".len()}));}
+    let end=s.find(char::is_whitespace).unwrap_or(s.len()); let token=&s[..end]; if token.starts_with("Ⅰ.")||token.starts_with("Ⅱ.")||token.starts_with("Ⅲ.")||token.starts_with("Ⅳ.")||token.starts_with("Ⅴ.")||token.starts_with("Ⅵ.")||token.starts_with("Ⅶ.")||token.starts_with("Ⅷ.")||token.starts_with("Ⅸ.")||token.starts_with("Ⅹ.")||token.starts_with("Ⅺ.")||token.starts_with("Ⅻ."){let c=token.chars().next()?;return Some((MarkerFamily::RomanUpper,Some(c as u32),Decoration::Dot,token.len()));} if token.starts_with("ⅰ.")||token.starts_with("ⅱ.")||token.starts_with("ⅲ.")||token.starts_with("ⅳ.")||token.starts_with("ⅴ.")||token.starts_with("ⅵ.")||token.starts_with("ⅶ.")||token.starts_with("ⅷ.")||token.starts_with("ⅸ.")||token.starts_with("ⅹ.")||token.starts_with("ⅺ.")||token.starts_with("ⅻ."){let c=token.chars().next()?;return Some((MarkerFamily::RomanLower,Some(c as u32),Decoration::Dot,token.len()));} let (base,dec)=if let Some(x)=token.strip_suffix('.') {(x,Decoration::Dot)} else if let Some(x)=token.strip_suffix('．'){(x,Decoration::Dot)}else{(token,Decoration::Plain)};
+    if base.is_empty()||base.contains('.')||base.contains(',')||base.contains('/')||base.contains(':')||base.chars().any(|x|x.is_ascii_digit()) {return None;}
+    let (mut f,v)=scheme_ordinal(base)?; if f==MarkerFamily::HangulDot&&dec==Decoration::Parentheses{f=MarkerFamily::HangulParen;} if dec==Decoration::Plain&&end==s.len(){return None;} if end<s.len()&&!s[end..].chars().next()?.is_whitespace(){return None;} Some((f,v,dec,end))
+}
+fn scheme_ordinal(s:&str)->Option<(MarkerFamily,Option<u32>)>{if s.chars().all(|c|c.is_ascii_digit())&&!s.is_empty(){return Some((MarkerFamily::DecimalBare,s.parse().ok()));} if s.len()!=1{return None;}let c=s.chars().next()?; if "ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅪⅫ".contains(c){Some((MarkerFamily::RomanUpper,Some(c as u32)))}else if "ⅰⅱⅲⅳⅴⅵⅶⅷⅸⅹⅺⅻ".contains(c){Some((MarkerFamily::RomanLower,Some(c as u32)))}else if "가나다라마바사아자차카타파하".contains(c){Some((MarkerFamily::HangulDot,Some(c as u32)))}else{None}}
+
+pub fn infer_doc_scheme(paragraphs:&[SchemeParagraph<'_>])->DocScheme {
+    type Obs=(usize,i32,u32,bool,Option<u32>,usize);
+    let mut groups:Vec<(MarkerFamily,Vec<Obs>)>=Vec::new();
+    for p in paragraphs {if let Some(mut m)=read_prefix_marker(p.text){if p.text.trim_start().starts_with("(가)")||p.text.trim_start().starts_with("(나)"){m.family=MarkerFamily::HangulParen;} let i=groups.iter().position(|x|x.0==m.family).unwrap_or_else(||{groups.push((m.family,Vec::new()));groups.len()-1});let v=&mut groups[i].1;let recount=if m.ordinal==Some(1)&&v.last().and_then(|x|x.4).map(|x|x>1).unwrap_or(false){1}else{0};v.push((p.position,p.left_indent,p.size_hundredth_pt,p.bold,m.ordinal,recount));}}
+    let detected=groups.len(); let mut diagnostics=Vec::new();
+    while groups.len()>8 {let i=(0..groups.len()).min_by_key(|&k|groups[k].1.len()).unwrap();let f=groups[i].1.len();let target=if i==0{1}else{0};let into=groups[target].1.len();let (_,v)=groups.remove(i);let t=if i<target{target-1}else{target};groups[t].1.extend(v);diagnostics.push(Diagnostic::FamiliesMerged{from:f,into});}
+    if detected>8 {diagnostics.push(Diagnostic::TooManyFamilies{detected});}
+    let mut ranks:Vec<FamilyRank>=groups.into_iter().map(|(family,v)|{let mut ind:Vec<i32>=v.iter().map(|x|x.1).collect();ind.sort();let mut siz:Vec<u32>=v.iter().map(|x|x.2).collect();siz.sort();let e=FamilyEvidence{family,count:v.len(),first_position:v.iter().map(|x|x.0).min().unwrap_or(0),median_indent:ind[(ind.len()-1)/2],median_size_hundredth_pt:siz[(siz.len()-1)/2],bold_count:v.iter().filter(|x|x.3).count(),recount_points:v.iter().map(|x|x.5).sum()};FamilyRank{family,rank:0,score:0,evidence:e}}).collect();
+    let conventional=[MarkerFamily::RomanUpper,MarkerFamily::DecimalDot,MarkerFamily::HangulDot,MarkerFamily::DecimalParen,MarkerFamily::CircledNumber,MarkerFamily::Square,MarkerFamily::Circle,MarkerFamily::Dash,MarkerFamily::Asterisk];
+    let mut wins=vec![0i32;ranks.len()];for i in 0..ranks.len(){for j in i+1..ranks.len(){let a=&ranks[i].evidence;let b=&ranks[j].evidence;let (w,weight)=if a.recount_points!=b.recount_points{(if a.recount_points>b.recount_points{i}else{j},1000)}else if a.median_indent!=b.median_indent{(if a.median_indent<b.median_indent{i}else{j},100)}else if a.median_size_hundredth_pt!=b.median_size_hundredth_pt||(a.bold_count*2>=a.count)!=(b.bold_count*2>=b.count){(if a.median_size_hundredth_pt>b.median_size_hundredth_pt||a.bold_count*2>=a.count{i}else{j},10)}else{let x=conventional.iter().position(|f|*f==a.family).unwrap_or(99);let y=conventional.iter().position(|f|*f==b.family).unwrap_or(99);(if x<=y{i}else{j},1)};wins[w]+=weight;}}
+    let mut order:Vec<usize>=(0..ranks.len()).collect();order.sort_by_key(|&i|(-wins[i],ranks[i].evidence.first_position));for (r,i) in order.into_iter().enumerate(){ranks[i].rank=(r+1)as u8;ranks[i].score=wins[i];}ranks.sort_by_key(|x|x.rank);DocScheme{families:ranks,diagnostics}
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[repr(u8)]
 pub enum Role {
     DocumentTitle = 0,
@@ -127,6 +182,7 @@ fn parse_prefix(text: &str) -> Parsed {
     }
     if s.starts_with("일반 본문") { return none; }
     if let Some((token, role, family, ord)) = parse_ascii_or_hangul_number(s) {
+        let family=if family==400 { 450 } else { family };
         let _ = token;
         return Parsed { role, family, ordinal: ord, explicit_marker: true };
     }
@@ -281,4 +337,28 @@ mod tests {
         let actual = classify(&buffer, &records, Mode::Search);
         for (i,(got,case)) in actual.iter().zip(cases.iter()).enumerate() { assert_eq!(got.role, case.expected, "paragraph {i}: {:?}", case.text); }
     }
+
+    fn scheme_paras<'a>(texts:&'a [&'a str], ind:&[i32])->Vec<SchemeParagraph<'a>>{texts.iter().enumerate().map(|(i,t)|SchemeParagraph{text:t,position:i,left_indent:ind.get(i).copied().unwrap_or(0),size_hundredth_pt:1200,bold:false,in_attachment:false}).collect()}
+
+    #[test]
+    fn scheme_prefix_filters_and_parses(){for t in ["2024. 3. 5. 시행","문서번호 123-4","1,000원","1.5%","본문 중간 - 기호"]{assert!(read_prefix_marker(t).is_none(),"{t}");}assert_eq!(read_prefix_marker("Ⅰ. 배경").unwrap().family,MarkerFamily::RomanUpper);assert_eq!(read_prefix_marker("1. 항목").unwrap().family,MarkerFamily::DecimalDot);assert_eq!(read_prefix_marker("(1) 하위").unwrap().family,MarkerFamily::DecimalParen);assert_eq!(read_prefix_marker("가. 하위").unwrap().family,MarkerFamily::HangulDot);}
+
+    #[test]
+    fn twelve_official_scheme_examples_have_expected_order(){let cases:Vec<(Vec<&str>,Vec<i32>,Vec<MarkerFamily>)>=vec![
+        (vec!["Ⅰ. 가","Ⅱ. 나","1. 가","2. 나","가. 가","나. 나"],vec![0,0,100,100,200,200],vec![MarkerFamily::RomanUpper,MarkerFamily::DecimalDot,MarkerFamily::HangulDot]),
+        (vec!["□ 가","□ 나","ㅇ 가","ㅇ 나","- 가","- 나"],vec![0,0,100,100,200,200],vec![MarkerFamily::Square,MarkerFamily::Circle,MarkerFamily::Dash]),
+        (vec!["1. 가","2. 나","(1) 가","(2) 나","① 가","② 나"],vec![0,0,100,100,200,200],vec![MarkerFamily::DecimalDot,MarkerFamily::DecimalParen,MarkerFamily::CircledNumber]),
+        (vec!["붙임 1. 가","붙임 2. 나","1. 본문","2. 본문","가. 하위","나. 하위"],vec![0,0,0,0,100,100],vec![MarkerFamily::DecimalDot,MarkerFamily::HangulDot]),
+        (vec!["2024. 3. 5. 시행","문서번호 123-4","Ⅰ. 배경","Ⅱ. 목적","1. 대상","2. 범위"],vec![0,0,0,0,100,100],vec![MarkerFamily::RomanUpper,MarkerFamily::DecimalDot]),
+        (vec!["Ⅰ. 가","Ⅱ. 나","1. 가","2. 나","(1) 가","(2) 나"],vec![0,0,100,100,200,200],vec![MarkerFamily::RomanUpper,MarkerFamily::DecimalDot,MarkerFamily::DecimalParen]),
+        (vec!["가. 가","나. 나","(가) 가","(나) 나","- 가","- 나"],vec![0,0,100,100,200,200],vec![MarkerFamily::HangulDot,MarkerFamily::HangulParen,MarkerFamily::Dash]),
+        (vec!["1. 가","2. 나","① 가","② 나","※ 가","※ 나"],vec![0,0,100,100,200,200],vec![MarkerFamily::DecimalDot,MarkerFamily::CircledNumber,MarkerFamily::Asterisk]),
+        (vec!["□ 가","□ 나","ㅇ 가","ㅇ 나","* 가","* 나"],vec![0,0,100,100,200,200],vec![MarkerFamily::Square,MarkerFamily::Circle,MarkerFamily::Asterisk]),
+        (vec!["Ⅰ. 가","Ⅱ. 나","ⅰ. 가","ⅱ. 나","1. 가","2. 나"],vec![0,0,100,100,200,200],vec![MarkerFamily::RomanUpper,MarkerFamily::RomanLower,MarkerFamily::DecimalDot]),
+        (vec!["1. 가","2. 나","(1) 가","(2) 나","가. 가","나. 나"],vec![0,0,100,100,200,200],vec![MarkerFamily::DecimalDot,MarkerFamily::DecimalParen,MarkerFamily::HangulDot]),
+        (vec!["□ 가","□ 나","ㅇ 가","ㅇ 나","- 가","- 나","* 가","* 나"],vec![0,0,100,100,200,200,300,300],vec![MarkerFamily::Square,MarkerFamily::Circle,MarkerFamily::Dash,MarkerFamily::Asterisk]),
+        ];for (n,(t,i,e)) in cases.iter().enumerate(){let s=infer_doc_scheme(&scheme_paras(t,i));let got:Vec<_>=s.families.iter().map(|x|x.family).collect();assert_eq!(&got,e,"example {}",n+1);}}
+
+    #[test]
+    fn nine_families_cap_at_eight_with_diagnostic(){let t=["Ⅰ. 가","Ⅱ. 나","ⅰ. 가","ⅱ. 나","1. 가","2. 나","(1) 가","(2) 나","가. 가","나. 나","① 가","② 나","□ 가","□ 나","ㅇ 가","ㅇ 나","- 가","- 나","* 가","* 나"];let s=infer_doc_scheme(&scheme_paras(&t,&[0;20]));assert_eq!(s.families.len(),8);assert!(s.diagnostics.iter().any(|x|matches!(x,Diagnostic::TooManyFamilies{detected} if *detected>8)));}
 }
