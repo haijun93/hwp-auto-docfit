@@ -35,7 +35,7 @@ class TimemachineExtensionsTests(unittest.TestCase):
             db_path=Path(self.temp.name) / "timeline.db",
             agent=FakeAgent(),
             scanner=lambda *a, **k: type("Stub", (), {"seen": 0, "written": 0, "removed": 0, "errors": []})(),
-            thumb_dir=Path(self.temp.name) / "thumbs",
+            thumb_dir=Path(self.temp.name) / "thumbs", developer_mode=lambda: True,
         )
 
     def tearDown(self):

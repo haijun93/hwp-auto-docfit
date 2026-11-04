@@ -66,7 +66,7 @@ class TimemachineContentIndexLifecycleTests(unittest.TestCase):
             opener=lambda p: None,
             revealer=lambda p: None,
             scanner=stub_scanner,
-            thumb_dir=self.temp_path / "thumbs",
+            thumb_dir=self.temp_path / "thumbs", developer_mode=lambda: True,
         )
         self.service.command("settings_set", {
             "roots": [str(self.root)],
@@ -222,7 +222,7 @@ class TimemachineContentIndexLifecycleTests(unittest.TestCase):
                 opener=lambda p: None,
                 revealer=lambda p: None,
                 scanner=stub_scanner,
-                thumb_dir=self.temp_path / "thumbs_slow",
+                thumb_dir=self.temp_path / "thumbs_slow", developer_mode=lambda: True,
             )
             try:
                 service_slow.command("settings_set", {
@@ -311,7 +311,7 @@ class TimemachineContentIndexLifecycleTests(unittest.TestCase):
                 opener=lambda p: None,
                 revealer=lambda p: None,
                 scanner=stub_scanner,
-                thumb_dir=self.temp_path / "thumbs_skip",
+                thumb_dir=self.temp_path / "thumbs_skip", developer_mode=lambda: True,
             )
             try:
                 service_skip.command("settings_set", {
@@ -404,7 +404,7 @@ class TimemachineContentIndexLifecycleTests(unittest.TestCase):
                 opener=lambda p: None,
                 revealer=lambda p: None,
                 scanner=stub_scanner,
-                thumb_dir=self.temp_path / "thumbs2",
+                thumb_dir=self.temp_path / "thumbs2", developer_mode=lambda: True,
             )
             try:
                 service2.command("settings_set", {

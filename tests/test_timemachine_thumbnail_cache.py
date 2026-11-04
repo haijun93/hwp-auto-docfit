@@ -113,7 +113,7 @@ class TimemachineServiceThumbnailCommandTests(unittest.TestCase):
             opener=lambda p: None,
             revealer=lambda p: None,
             scanner=stub_scanner,
-            thumb_dir=self.thumb_dir,
+            thumb_dir=self.thumb_dir, developer_mode=lambda: True,
         )
         self.addCleanup(self.service.close)
 

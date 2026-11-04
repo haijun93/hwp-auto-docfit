@@ -64,7 +64,7 @@ class TimemachineRelatedTests(unittest.TestCase):
             root.mkdir()
             settings = Path(temp) / "settings"
             service = TimemachineService(settings, db_path=Path(temp) / "timeline.db",
-                                         scanner=lambda *a, **k: None, thumb_dir=Path(temp) / "thumbs")
+                                         scanner=lambda *a, **k: None, thumb_dir=Path(temp) / "thumbs", developer_mode=lambda: True)
             try:
                 service._settings.update(roots=[str(root)], enabled=True)
                 a, b = root / "A.txt", root / "B.txt"
