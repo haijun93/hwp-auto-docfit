@@ -25,12 +25,24 @@ def _temp_name(path):
 def _run_moves(moves, history, run_id, *, stop_on_error=True, rename=_rename_no_overwrite):
     """moves: [(item_id, src, dst)]. 연쇄(A→B, B→C)는 순서대로, 순환(A↔B)·대소문자만 바꿈은 임시 이름을 거친다."""
     pending = {item_id: [src, dst] for item_id, src, dst in moves}
+    originals = {item_id: src for item_id, src, _ in moves}
+    temporary = {}
     done, failed = [], []
+    failed_by_id = {}
 
     def step(item_id, src, dst, final):
         history.write(dict(op="intent", run=run_id, item=item_id, src=src, dst=dst, final=final))
         rename(src, dst)
         history.write(dict(op="done", run=run_id, item=item_id, src=src, dst=dst))
+
+    def record_failure(item_id: str, reason: str) -> None:
+        if item_id not in failed_by_id:
+            record = dict(id=item_id, reason=reason)
+            failed.append(record)
+            failed_by_id[item_id] = record
+        else:
+            failed_by_id[item_id]["reason"] = reason
+        history.write(dict(op="fail", run=run_id, item=item_id, reason=reason))
 
     while pending:
         sources = {_key(src): item_id for item_id, (src, _) in pending.items()}
@@ -43,12 +55,12 @@ def _run_moves(moves, history, run_id, *, stop_on_error=True, rename=_rename_no_
             try:
                 step(item_id, src, temp, False)
             except OSError as error:
-                history.write(dict(op="fail", run=run_id, item=item_id, reason=_reason(error)))
-                failed.append(dict(id=item_id, reason=_reason(error)))
+                record_failure(item_id, _reason(error))
                 del pending[item_id]
                 if stop_on_error:
                     break
                 continue
+            temporary[item_id] = temp
             pending[item_id][0] = temp
             continue
         stop = False
@@ -56,27 +68,29 @@ def _run_moves(moves, history, run_id, *, stop_on_error=True, rename=_rename_no_
             src, dst = pending.pop(item_id)
             try:
                 step(item_id, src, dst, True)
+                temporary.pop(item_id, None)
                 done.append(dict(id=item_id, path=dst))
             except OSError as error:
-                history.write(dict(op="fail", run=run_id, item=item_id, reason=_reason(error)))
-                failed.append(dict(id=item_id, reason=_reason(error)))
+                record_failure(item_id, _reason(error))
                 if stop_on_error:
                     stop = True
                     break
         if stop:
             break
     # 멈췄을 때 임시 이름에 남은 항목은 원래 이름으로 돌려놓는다.
-    for item_id, (src, _) in list(pending.items()):
-        original = next(s for i, s, _ in moves if i == item_id)
-        if src != original:
-            try:
-                step(item_id, src, original, False)
-            except OSError:
-                pass
-    skipped = [item_id for item_id in pending]
+    for item_id, src in list(temporary.items()):
+        original = originals[item_id]
+        try:
+            if os.path.lexists(original):
+                raise FileExistsError(original)
+            step(item_id, src, original, False)
+            temporary.pop(item_id, None)
+        except OSError as error:
+            prev_reason = failed_by_id[item_id]["reason"] if item_id in failed_by_id else "이름 변경이 중단되었습니다."
+            augmented_reason = f"{prev_reason} 원래 이름 복구 실패: {_reason(error)} 보존 경로: {src}"
+            record_failure(item_id, augmented_reason)
+    skipped = [item_id for item_id in pending if item_id not in failed_by_id]
     return done, failed, skipped
-
-
 def _reason(error):
     if isinstance(error, FileExistsError):
         return "같은 이름의 파일이 이미 있습니다."

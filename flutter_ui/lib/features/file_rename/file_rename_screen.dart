@@ -706,18 +706,20 @@ class FileRenameScreenState extends State<FileRenameScreen> {
   Widget _buildList(BuildContext context) {
     if (_entries.isEmpty) {
       return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.drive_file_rename_outline, size: 48, color: Theme.of(context).colorScheme.outline),
-              const SizedBox(height: 12),
-              const Text('여기에 파일이나 폴더를 끌어다 놓거나 [파일 추가]를 누르세요.', textAlign: TextAlign.center),
-              const SizedBox(height: 4),
-              const Text('오른쪽에 넣을 글자를 적으면 바뀔 이름을 바로 보여 줍니다. [변경 적용]을 눌러야 실제로 바뀝니다.',
-                  textAlign: TextAlign.center, style: TextStyle(fontSize: 12)),
-            ],
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.drive_file_rename_outline, size: 36, color: Theme.of(context).colorScheme.outline),
+                const SizedBox(height: 8),
+                const Text('여기에 파일이나 폴더를 끌어다 놓거나 [파일 추가]를 누르세요.', textAlign: TextAlign.center),
+                const SizedBox(height: 4),
+                const Text('오른쪽에 넣을 글자를 적으면 바뀔 이름을 바로 보여 줍니다. [변경 적용]을 눌러야 실제로 바뀝니다.',
+                    textAlign: TextAlign.center, style: TextStyle(fontSize: 12)),
+              ],
+            ),
           ),
         ),
       );

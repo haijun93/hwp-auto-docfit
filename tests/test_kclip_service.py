@@ -98,6 +98,45 @@ class KClipServiceTests(unittest.TestCase):
 
 
 class ClientTests(unittest.TestCase):
+    def test_install_retries_locked_agent_replace_and_keeps_old_file_until_success(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder, "bundled.exe")
+            target = Path(folder, "data", "kagent.exe")
+            source.write_bytes(b"new agent")
+            target.parent.mkdir()
+            target.write_bytes(b"old agent")
+            real_replace = kc.os.replace
+            attempts = []
+
+            def replace_with_brief_lock(src, dst):
+                attempts.append((src, dst))
+                if len(attempts) < 3:
+                    raise PermissionError("sharing violation")
+                return real_replace(src, dst)
+
+            with patch.object(kc.os, "replace", side_effect=replace_with_brief_lock), \
+                 patch.object(kc.time, "sleep"):
+                installed = kc.install(source, target.parent)
+
+            self.assertEqual(installed, target)
+            self.assertEqual(target.read_bytes(), b"new agent")
+            self.assertEqual(len(attempts), 3)
+            self.assertFalse(list(target.parent.glob("*.new")))
+
+    def test_install_reports_locked_agent_after_bounded_retries(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder, "bundled.exe")
+            target = Path(folder, "data", "kagent.exe")
+            source.write_bytes(b"new agent")
+            target.parent.mkdir()
+            target.write_bytes(b"old agent")
+            with patch.object(kc.os, "replace", side_effect=PermissionError("sharing violation")), \
+                 patch.object(kc.time, "sleep"):
+                with self.assertRaisesRegex(kc.KAgentError, "이전 몽땅클립보드가 종료됐는지"):
+                    kc.install(source, target.parent)
+            self.assertEqual(target.read_bytes(), b"old agent")
+            self.assertFalse(list(target.parent.glob("*.new")))
+
     def test_status_file_and_pipe_name_check(self):
         with tempfile.TemporaryDirectory() as folder:
             client = kc.KAgentClient(folder)

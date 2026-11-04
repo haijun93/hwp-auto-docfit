@@ -36,7 +36,7 @@ class _KClipPanelState extends State<KClipPanel> {
   Map settings = const {};
   bool consent = false;
   bool autostart = false;
-  bool keepExcelBackground = true;
+  bool removeExcelBackground = false;
   bool busy = false;
   String message = '';
   String query = '';
@@ -148,7 +148,7 @@ class _KClipPanelState extends State<KClipPanel> {
     if (busy) return;
     setState(() => busy = true);
     try {
-      final result = await widget.api('excel_table', ['convert', {'keep_cell_background': keepExcelBackground}]);
+      final result = await widget.api('excel_table', ['convert', {'keep_cell_background': !removeExcelBackground}]);
       if (!mounted) return;
       setState(() {
         if (result is Map && result['ok'] == true) {
@@ -370,8 +370,8 @@ class _KClipPanelState extends State<KClipPanel> {
             label: const Text('엑셀 표를 한/글 표로'),
           ),
           Row(mainAxisSize: MainAxisSize.min, children: [
-            Checkbox(value: keepExcelBackground, onChanged: (v) => setState(() => keepExcelBackground = v == true)),
-            const Text('칸 배경색 유지'),
+            Checkbox(value: removeExcelBackground, onChanged: (v) => setState(() => removeExcelBackground = v == true)),
+            const Text('칸 배경색 빼기'),
           ]),
         ]),
         TextField(

@@ -13,6 +13,13 @@ BASE = {"chapter": 15, "midtitle": 15, "box": 15, "circle": 8, "dash": 4, "note"
 
 
 class SixLevelSpacingTest(unittest.TestCase):
+    def setUp(self):
+        self.appdata = tempfile.TemporaryDirectory(prefix="docfit-parspace-appdata-")
+        self.addCleanup(self.appdata.cleanup)
+        self.appdata_patch = patch.dict(os.environ, {"APPDATA": self.appdata.name})
+        self.appdata_patch.start()
+        self.addCleanup(self.appdata_patch.stop)
+
     @classmethod
     def setUpClass(cls):
         cls.ns = runpy.run_path(str(Path(__file__).resolve().parents[1] / "hwp-auto-docfit.py"))
