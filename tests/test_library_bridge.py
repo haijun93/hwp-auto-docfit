@@ -295,5 +295,21 @@ class LibraryBridgeTests(unittest.TestCase):
             bridge.library_search("한글", box_id=True)
 
 
+class LibraryFirstCallTests(unittest.TestCase):
+    def test_first_call_without_preexisting_attribute_creates_bridge(self):
+        """실제 앱처럼 _library_bridge 속성이 없을 때도 AttributeError 없이 브리지를 만든다."""
+        from unittest import mock
+        import desktop_web_ui
+        bridge = desktop_web_ui.DesktopWebBridge.__new__(desktop_web_ui.DesktopWebBridge)
+        bridge._developer_mode_enabled = lambda: True
+        self.assertFalse(hasattr(bridge, "_library_bridge"))
+        fake = mock.Mock()
+        fake.request.return_value = {"ok": True, "boxes": []}
+        with mock.patch("docfit_app.library_bridge.LibraryBridge", return_value=fake):
+            result = bridge.library({"cmd": "box_list"})
+        self.assertEqual(result, {"ok": True, "boxes": []})
+        self.assertIs(bridge._library_bridge, fake)
+
+
 if __name__ == "__main__":
     unittest.main()

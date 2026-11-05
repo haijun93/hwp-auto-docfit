@@ -2239,7 +2239,8 @@ class DesktopWebBridge:
         """Forward one allowlisted library JSON request when the opt-in flag is set."""
         if not self._developer_mode_enabled():
             return {"ok": False, "code": "DEVELOPER_MODE_REQUIRED", "message": "개발자 모드에서만 자료함을 사용할 수 있습니다."}
-        if self._library_bridge is None:
+        # 앱 시작 때 만들지 않으므로 처음 부를 때 만든다(v2.2.17: 속성 없음 오류 수정).
+        if getattr(self, "_library_bridge", None) is None:
             from docfit_app.library_bridge import LibraryBridge
             self._library_bridge = LibraryBridge()
         try:
