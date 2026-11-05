@@ -2229,6 +2229,9 @@ class DesktopWebBridge:
             from docfit_app.library_bridge import LibraryBridge
             self._library_bridge = LibraryBridge()
         try:
+            if isinstance(request, dict) and request.get("cmd") == "open_item":
+                from docfit_app.library_bridge import open_library_item
+                return {"ok": True, "opened": open_library_item(request)}
             return self._library_bridge.request(request)
         except Exception as exc:
             return {"ok": False, "message": str(exc)}

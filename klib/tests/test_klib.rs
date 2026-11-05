@@ -15,6 +15,15 @@ mod json;
 mod pipe;
 #[path = "../src/util.rs"]
 mod util;
+#[path = "../src/search.rs"]
+mod search;
+#[path = "../src/content.rs"]
+mod content;
+
+static SEARCH_INDEX: std::sync::OnceLock<Result<search::SearchIndex, String>> = std::sync::OnceLock::new();
+fn search_index() -> Result<&'static search::SearchIndex, String> {
+    SEARCH_INDEX.get_or_init(|| { let dir=std::env::var("KLIB_TANTIVY_DIR").unwrap_or_else(|_| format!("{}\\tantivy", util::data_dir())); search::SearchIndex::open_or_create(dir).map_err(|e|e.to_string()) }).as_ref().map_err(Clone::clone)
+}
 
 use db::Database;
 use json::Value;
@@ -366,7 +375,7 @@ fn test_json_strictness_and_surrogates() {
     assert!(json::parse("1e").is_none());
     assert!(json::parse("x").is_none());
     assert_eq!(json::parse("0").unwrap().num("").unwrap_or(0.0), 0.0);
-    assert_eq!(json::parse("-12.34").unwrap().num("").unwrap_or(0.0), -12.34);
+    assert!(matches!(json::parse("-12.34").unwrap(), json::Value::Num(n) if n == -12.34));
 
     assert!(json::parse(r#""abc"#).is_none());
     assert!(json::parse("\"\x01\"").is_none());
