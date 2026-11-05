@@ -2235,6 +2235,21 @@ class DesktopWebBridge:
                 failed.append({"path": text, "message": message})
         return {"ok": not failed, "added": added, "skipped": skipped, "failed": failed}
 
+    def notebook(self, request):
+        """노트북 요청(개발자 모드 전용): 출처 추출 + klib nb_* 명령 중계."""
+        if not self._developer_mode_enabled():
+            return {"ok": False, "code": "DEVELOPER_MODE_REQUIRED", "message": "개발자 모드에서만 사용할 수 있습니다."}
+        try:
+            if getattr(self, "_notebook_service", None) is None:
+                from docfit_app.library_bridge import LibraryBridge
+                from docfit_app.notebook_service import NotebookService
+                if getattr(self, "_library_bridge", None) is None:
+                    self._library_bridge = LibraryBridge()
+                self._notebook_service = NotebookService(self._library_bridge)
+            return self._notebook_service.handle(request)
+        except Exception as exc:
+            return {"ok": False, "message": str(exc)}
+
     def library(self, request):
         """Forward one allowlisted library JSON request when the opt-in flag is set."""
         if not self._developer_mode_enabled():
@@ -2884,7 +2899,7 @@ class _BrowserApi:
             "get_state", "add_files", "add_folder", "add_paths", "remove_file",
             "clear_files", "set_mode", "set_range", "start", "stop", "start_job", "cancel_job", "get_events",
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
-            "get_pending_dialog", "resolve_dialog", "enable_close_guard", "acknowledge_close", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch", "timemachine", "library",
+            "get_pending_dialog", "resolve_dialog", "enable_close_guard", "acknowledge_close", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch", "timemachine", "library", "notebook",
             "file_rename", "kclip", "new_document", "hwp_bulk", "open_results", "next_job", "run_tool", "open_result",
             "sidebar_mode", "sidebar_mode_switch_side", "always_on_top",
             "show_result", "open_source_file", "show_source_file", "open_result_source", "open_diff", "compare_result", "launch_external_hwp_diff", "set_stage", "reset_stages", "set_stage_default",
