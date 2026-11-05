@@ -188,9 +188,23 @@ def _current_user_pipe_name():
 
         from ctypes import wintypes
 
+        # 64비트에서 핸들·포인터가 32비트로 잘리지 않도록 함수 형식을 지정한다(v2.2.18 자료함 SID 오류 수정).
+        advapi32 = ctypes.WinDLL('advapi32', use_last_error=True)
+        kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+        kernel32.LocalFree.restype = ctypes.c_void_p
+        advapi32.OpenProcessToken.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE)]
+        advapi32.OpenProcessToken.restype = wintypes.BOOL
+        advapi32.GetTokenInformation.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
+        advapi32.GetTokenInformation.restype = wintypes.BOOL
+        advapi32.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.LPWSTR)]
+        advapi32.ConvertSidToStringSidW.restype = wintypes.BOOL
+
         token = wintypes.HANDLE()
 
-        if not ctypes.windll.advapi32.OpenProcessToken(ctypes.windll.kernel32.GetCurrentProcess(), 0x0008, ctypes.byref(token)):
+        if not advapi32.OpenProcessToken(kernel32.GetCurrentProcess(), 0x0008, ctypes.byref(token)):
 
             raise LibraryBridgeError("현재 사용자 SID를 확인하지 못했습니다.")
 
@@ -198,11 +212,11 @@ def _current_user_pipe_name():
 
             size = wintypes.DWORD()
 
-            ctypes.windll.advapi32.GetTokenInformation(token, 1, None, 0, ctypes.byref(size))
+            advapi32.GetTokenInformation(token, 1, None, 0, ctypes.byref(size))
 
             buf = ctypes.create_string_buffer(size.value)
 
-            if not ctypes.windll.advapi32.GetTokenInformation(token, 1, buf, size, ctypes.byref(size)):
+            if not advapi32.GetTokenInformation(token, 1, buf, size, ctypes.byref(size)):
 
                 raise LibraryBridgeError("현재 사용자 SID를 확인하지 못했습니다.")
 
@@ -210,7 +224,7 @@ def _current_user_pipe_name():
 
             text = wintypes.LPWSTR()
 
-            if not ctypes.windll.advapi32.ConvertSidToStringSidW(sid_ptr, ctypes.byref(text)):
+            if not advapi32.ConvertSidToStringSidW(sid_ptr, ctypes.byref(text)):
 
                 raise LibraryBridgeError("현재 사용자 SID를 확인하지 못했습니다.")
 
@@ -220,11 +234,11 @@ def _current_user_pipe_name():
 
             finally:
 
-                ctypes.windll.kernel32.LocalFree(text)
+                kernel32.LocalFree(ctypes.cast(text, ctypes.c_void_p))
 
         finally:
 
-            ctypes.windll.kernel32.CloseHandle(token)
+            kernel32.CloseHandle(token)
 
         suffix = ""
 
