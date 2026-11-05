@@ -2075,6 +2075,34 @@ class DesktopWebBridge:
             return {'ok': True, 'enabled': bool(enabled)}
         return self._tk(execute)
 
+    def window_control(self, action="toggle_maximize"):
+        """앱 창 최대화/복원(몽땅클립보드 창 제목줄 단추). 상태는 Win32 IsZoomed로 확인한다."""
+        window = self.window
+        if action not in ("state", "maximize", "restore", "toggle_maximize"):
+            return {"ok": False, "message": "지원하지 않는 창 명령입니다."}
+        if window is None:
+            return {"ok": False, "message": "창이 아직 준비되지 않았습니다."}
+        try:
+            maximized = self._window_is_maximized(window)
+            if action == "state":
+                return {"ok": True, "maximized": maximized}
+            if self.sidebar_active:
+                return {"ok": False, "maximized": maximized,
+                        "message": "사이드메뉴 모드에서는 창 크기를 바꿀 수 없습니다."}
+            target = (not maximized) if action == "toggle_maximize" else action == "maximize"
+            (window.maximize if target else window.restore)()
+            self._window_maximized = target
+            return {"ok": True, "maximized": target}
+        except Exception as exc:
+            logging.getLogger(__name__).warning("창 최대화/복원 실패", exc_info=True)
+            return {"ok": False, "message": str(exc) or "창 크기를 바꾸지 못했습니다."}
+
+    def _window_is_maximized(self, window):
+        try:
+            return _Win32WindowApi().is_zoomed(_PyWebViewWindow(window).handle())
+        except Exception:
+            return bool(getattr(self, "_window_maximized", False))
+
     def _drain_rename_paths(self):
         """탐색기 보내기(--rename)로 받은 경로를 목록에 넣고, 화면이 탭을 열도록 True를 돌려준다.
         시작 때 호출을 늘리지 않으려 이미 오가는 상태 조회에 얹는다."""
@@ -2907,6 +2935,9 @@ class _Win32WindowApi:
             raise OSError('앱 창 위치를 바꾸지 못했습니다.')
         return True
 
+    def is_zoomed(self, hwnd):
+        return bool(self.user32.IsZoomed(hwnd))
+
 
 class _PyWebViewWindow:
     def __init__(self, window, settings=None, saved_state=None):
@@ -2945,7 +2976,7 @@ class _BrowserApi:
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
             "get_pending_dialog", "resolve_dialog", "enable_close_guard", "acknowledge_close", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch", "timemachine", "library", "notebook",
             "file_rename", "kclip", "new_document", "hwp_bulk", "open_results", "next_job", "run_tool", "open_result",
-            "sidebar_mode", "sidebar_mode_switch_side", "always_on_top",
+            "sidebar_mode", "sidebar_mode_switch_side", "always_on_top", "window_control",
             "show_result", "open_source_file", "show_source_file", "open_result_source", "open_diff", "compare_result", "launch_external_hwp_diff", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",
             "set_exclude_tables", "set_card_option",

@@ -148,6 +148,38 @@ class BrowserApiTests(unittest.TestCase):
         self.assertNotIn('window', public)
         self.assertNotIn('request_close', public)
         self.assertEqual(api.get_state, bridge.get_state)
+        self.assertEqual(api.window_control, bridge.window_control)
+
+    def test_window_control_maximizes_and_restores_native_window(self):
+        bridge = DesktopWebBridge(object())
+        window = Mock()
+        bridge.window = window
+        zoomed = [False]
+        with patch.object(DesktopWebBridge, '_window_is_maximized', lambda self, w: zoomed[0]):
+            self.assertEqual(bridge.window_control('state'), {'ok': True, 'maximized': False})
+            self.assertEqual(bridge.window_control('toggle_maximize'), {'ok': True, 'maximized': True})
+            window.maximize.assert_called_once_with()
+            zoomed[0] = True
+            self.assertEqual(bridge.window_control('toggle_maximize'), {'ok': True, 'maximized': False})
+            window.restore.assert_called_once_with()
+            bridge.sidebar_active = True
+            refused = bridge.window_control('maximize')
+            self.assertFalse(refused['ok'])
+            self.assertEqual(window.maximize.call_count, 1)
+        self.assertFalse(bridge.window_control('close')['ok'])
+        bridge.window = None
+        self.assertFalse(bridge.window_control('state')['ok'])
+
+    def test_window_state_reads_win32_zoom_and_falls_back(self):
+        from desktop_web_ui import _Win32WindowApi
+        user32 = Mock()
+        user32.IsZoomed.return_value = 1
+        self.assertTrue(_Win32WindowApi(user32).is_zoomed(7))
+        user32.IsZoomed.assert_called_once_with(7)
+        bridge = DesktopWebBridge(object())
+        bridge._window_maximized = True
+        # pywebview 창 핸들을 얻지 못하면 마지막으로 바꾼 상태를 돌려준다.
+        self.assertTrue(bridge._window_is_maximized(object()))
 
     def test_show_format_example_calls_app(self):
         # '서식 예시 확인': 지금 고른 서식을 입힌 예시 보고서를 앱이 만들어 연다.

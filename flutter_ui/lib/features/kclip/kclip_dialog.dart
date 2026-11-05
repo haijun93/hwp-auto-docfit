@@ -12,26 +12,44 @@ enum KClipEntryMode { sidebar, hotkey }
 
 Future<void> showKClipDialog(BuildContext context, ApiCall api,
     {KClipEntryMode mode = KClipEntryMode.sidebar}) {
+  var fill = false;
   return showDialog<void>(
     context: context,
     barrierDismissible: false,
-    builder: (_) => Dialog(
-      insetPadding: const EdgeInsets.all(28),
-      clipBehavior: Clip.antiAlias,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 720, maxHeight: 820),
-        child: KClipPanel(api: api, mode: mode),
+    builder: (_) => StatefulBuilder(
+      // 앱 창을 최대화하면 몽땅클립보드 창도 앱 창 전체를 채운다.
+      builder: (context, setDialogState) => Dialog(
+        insetPadding: fill ? EdgeInsets.zero : const EdgeInsets.all(28),
+        clipBehavior: Clip.antiAlias,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+        child: ConstrainedBox(
+          constraints: fill
+              ? const BoxConstraints.expand()
+              : const BoxConstraints(maxWidth: 720, maxHeight: 820),
+          child: KClipPanel(
+            api: api,
+            mode: mode,
+            onMaximizedChanged: (value) {
+              if (value != fill) setDialogState(() => fill = value);
+            },
+          ),
+        ),
       ),
     ),
   );
 }
 
 class KClipPanel extends StatefulWidget {
-  const KClipPanel({super.key, required this.api, this.mode = KClipEntryMode.sidebar});
+  const KClipPanel({
+    super.key,
+    required this.api,
+    this.mode = KClipEntryMode.sidebar,
+    this.onMaximizedChanged,
+  });
 
   final ApiCall api;
   final KClipEntryMode mode;
+  final ValueChanged<bool>? onMaximizedChanged;
 
   @override
   State<KClipPanel> createState() => _KClipPanelState();
@@ -45,6 +63,7 @@ class _KClipPanelState extends State<KClipPanel> {
   bool autostart = false;
   bool minimized = false;
   bool isTop = false;
+  bool maximized = false;
   final TextEditingController _memo = TextEditingController();
   bool busy = false;
   String message = '';
@@ -93,7 +112,29 @@ class _KClipPanelState extends State<KClipPanel> {
   void initState() {
     super.initState();
     unawaited(_reload());
+    unawaited(_windowControl('state'));
   }
+
+  /// 네이티브 앱 창 최대화/복원(desktop_web_ui.window_control). 실패하면 화면 상태를 바꾸지 않는다.
+  Future<void> _windowControl(String action) async {
+    Object? result;
+    try {
+      result = await widget.api('window_control', [action]);
+    } catch (_) {
+      return;
+    }
+    if (!mounted || result is! Map) return;
+    final map = result;
+    setState(() {
+      if (map['maximized'] is bool) maximized = map['maximized'] as bool;
+      if (action != 'state' && map['ok'] == false) {
+        message = '${map['message'] ?? '창 크기를 바꾸지 못했습니다.'}';
+      }
+    });
+    widget.onMaximizedChanged?.call(maximized);
+  }
+
+  Future<void> _toggleMaximize() => _windowControl('toggle_maximize');
 
   @override
   void dispose() {
@@ -615,7 +656,12 @@ class _KClipPanelState extends State<KClipPanel> {
                   onPressed: () => setState(() => minimized = !minimized),
                   icon: Icon(minimized ? Icons.expand_more : Icons.minimize),
                 ),
-                IconButton(tooltip: '최대화/복원', onPressed: () {}, icon: const Icon(Icons.crop_square)),
+                IconButton(
+                  key: const ValueKey('kclip-maximize'),
+                  tooltip: maximized ? '이전 크기로 복원' : '최대화',
+                  onPressed: _toggleMaximize,
+                  icon: Icon(maximized ? Icons.filter_none : Icons.crop_square),
+                ),
                 IconButton(
                   tooltip: '닫기',
                   onPressed: () => Navigator.of(context).maybePop(),

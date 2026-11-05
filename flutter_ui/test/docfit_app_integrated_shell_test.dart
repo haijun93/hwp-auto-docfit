@@ -225,4 +225,40 @@ void main() {
     expect(sketchAt, greaterThanOrEqualTo(0));
     expect(calls.lastIndexOf('set_drop_target:documents'), greaterThan(sketchAt));
   });
+
+  testWidgets('앱 창에서 Ctrl+Shift+V를 누르면 단축키용 몽땅클립보드 화면을 연다', (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final calls = <String>[];
+    Future<Object?> mockApi(String endpoint, List<Object?> params) async {
+      calls.add('$endpoint:${params.firstOrNull}');
+      if (endpoint == 'kclip' && params.firstOrNull == 'status') {
+        return {'ok': true, 'running': false, 'available': true, 'consent': '동의 안내'};
+      }
+      return {'ok': true};
+    }
+
+    await tester.pumpWidget(DocFitApp(api: mockApi, useIntegratedShell: true));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byKey(const ValueKey('kclip-memo')), findsNothing);
+
+    // Ctrl+V만으로는 열지 않는다.
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyV);
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byKey(const ValueKey('kclip-memo')), findsNothing);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyV);
+    // 두 번 눌러도 창은 하나만 열린다.
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyV);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byKey(const ValueKey('kclip-memo')), findsOneWidget);
+    expect(find.byKey(const ValueKey('kclip-drop-zone')), findsOneWidget);
+    expect(calls, contains('set_drop_target:kclip'));
+    expect(calls, contains('window_control:state'));
+  });
 }
