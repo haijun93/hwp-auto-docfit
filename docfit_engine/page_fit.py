@@ -154,7 +154,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         parent_indent = 세트문장_선행들여쓰기_폭(next_text)
                     elif body_attached and next_role == '내용':
                         parent_indent = 세트문장_선행들여쓰기_폭(next_text)
-                    elif (globals()['쪽맞춤_부연설명인가'](next_text)
+                    elif ((next_role == '부연설명' or globals()['쪽맞춤_부연설명인가'](next_text))
                           and role in ('소제목', '본문', '내용')):
                         pass
                     elif (세트문장_선행들여쓰기_폭(next_text) > parent_indent
