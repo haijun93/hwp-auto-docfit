@@ -140,13 +140,6 @@ impl SearchIndex {
         let (schema, fields)=schema();
         let index=if path.join("meta.json").exists() { Index::open_in_dir(&path)? } else { Index::create_in_dir(&path, schema)? };
         index.tokenizers().register(TOKENIZER, KoBigram);
-        #[cfg(feature = "ko-dic")]
-        {
-            let dict=lindera::dictionary::load_dictionary_from_kind(lindera::dictionary::DictionaryKind::KoDic)
-                .map_err(|e|tantivy::TantivyError::InvalidArgument(format!("ko-dic load failed: {e}")))?;
-            let segmenter=lindera::segmenter::Segmenter::new(lindera::mode::Mode::Normal,dict,None);
-            index.tokenizers().register("ko_morph",lindera_tantivy::tokenizer::LinderaTokenizer::from_segmenter(segmenter));
-        }
         let reader=index.reader_builder().reload_policy(ReloadPolicy::Manual).try_into()?;
         Ok(Self {index, reader, fields, path, synonyms: Mutex::new(SynonymCache::default())})
     }
@@ -203,7 +196,7 @@ impl SearchIndex {
             q=Box::new(BooleanQuery::new(cho_clauses));
         }
         let searcher=self.reader.searcher();
-        if searcher.search(&q,&TopDocs::with_limit(options.limit.max(1)))?.len()<options.limit.max(1) {
+        if searcher.search(&q,&TopDocs::with_limit(options.limit.max(1)).order_by_score())?.len()<options.limit.max(1) {
             if let Some(fuzzy)=fuzzy_query(&parsed.text,self.fields.body_jamo) {
                 q=Box::new(BooleanQuery::new(vec![(Occur::Should,q),(Occur::Should,Box::new(tantivy::query::BoostQuery::new(fuzzy,0.5)))]));
             }
@@ -215,13 +208,13 @@ impl SearchIndex {
             } else if let Some((field,value))=filter.strip_prefix("path:").map(|v|(self.fields.path,v)) {
                 clauses.push((Occur::Must, Box::new(tantivy::query::RegexQuery::from_pattern(&format!(".*{}.*",regex::escape(value)),field)?)));
             } else if let Some(value)=filter.strip_prefix("after:").and_then(parse_date_epoch) {
-                clauses.push((Occur::Must, Box::new(tantivy::query::RangeQuery::new_i64_bounds("mtime".to_string(), std::ops::Bound::Excluded(value), std::ops::Bound::Unbounded))));
+                clauses.push((Occur::Must, Box::new(tantivy::query::RangeQuery::new(std::ops::Bound::Excluded(tantivy::Term::from_field_i64(self.fields.mtime,value)), std::ops::Bound::Unbounded))));
             } else if let Some(value)=filter.strip_prefix("before:").and_then(parse_date_epoch) {
-                clauses.push((Occur::Must, Box::new(tantivy::query::RangeQuery::new_i64_bounds("mtime".to_string(), std::ops::Bound::Unbounded, std::ops::Bound::Excluded(value)))));
+                clauses.push((Occur::Must, Box::new(tantivy::query::RangeQuery::new(std::ops::Bound::Unbounded, std::ops::Bound::Excluded(tantivy::Term::from_field_i64(self.fields.mtime,value))))));
             }
         }
         q=Box::new(BooleanQuery::new(clauses));
-        let top=searcher.search(&q,&TopDocs::with_limit(options.limit.max(1)*10))?;
+        let top=searcher.search(&q,&TopDocs::with_limit(options.limit.max(1)*10).order_by_score())?;
         let mut groups:HashMap<String,SearchHit>=HashMap::new();
         let mut generator=SnippetGenerator::create(&searcher,q.as_ref(),self.fields.body_bi)?;
         for (score,addr) in top {

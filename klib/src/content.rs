@@ -27,7 +27,7 @@ fn extract_text(path: &Path, ext: &str) -> Result<String, String> {
     let mut zip = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
     let mut names = Vec::new();
     for i in 0..zip.len() {
-        let name = zip.by_index(i).map_err(|e| e.to_string())?.name().to_string();
+        let name = zip.by_index(i).map_err(|e| e.to_string())?.name().map_err(|e| e.to_string())?.to_string();
         let include = match ext {
             "hwpx" => name.starts_with("Contents/section") && name.ends_with(".xml"),
             "docx" => name == "word/document.xml" || (name.starts_with("word/header") || name.starts_with("word/footer")) && name.ends_with(".xml"),
