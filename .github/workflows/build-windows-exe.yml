@@ -150,6 +150,12 @@ jobs:
       - name: Test hierarchy core (Rust)
         shell: pwsh
         run: cargo test --manifest-path hierarchy/Cargo.toml
+      - name: Build hierarchy (Rust)
+        shell: pwsh
+        run: |
+          cargo build --locked --release --manifest-path hierarchy/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item hierarchy/target/release/hierarchy.exe resources/hierarchy.exe -Force
       - name: Build klib (Rust)
         shell: pwsh
         run: |

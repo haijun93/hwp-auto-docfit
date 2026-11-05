@@ -8,3 +8,7 @@ publish = false
 path = "src/lib.rs"
 
 [dependencies]
+
+[[bin]]
+name = "hierarchy"
+path = "src/bin/hierarchy.rs"
