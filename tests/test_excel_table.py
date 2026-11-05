@@ -1,6 +1,7 @@
 """실제 엑셀이 만든 클립보드(HTML Format)로 표 모델과 HWPX를 검사한다."""
 import tempfile
 import unittest
+from unittest import mock
 import zipfile
 from pathlib import Path
 
@@ -62,19 +63,23 @@ class FallbackAndCleanupTests(unittest.TestCase):
         original = __import__('docfit_app.excel_table_service', fromlist=['to_hwpx']).to_hwpx
 
         def capture(model, path):
-            captured.append([c['fill'] for row in model['rows'] for c in row])
+            captured.append((model['row_count'], model['col_count'],
+                             [c['text'] for row in model['rows'] for c in row],
+                             [c['fill'] for row in model['rows'] for c in row]))
             return original(model, path)
 
         def copier(path):
             return {'ok': True}
 
         service = ExcelTableService(clipboard=lambda: (FIXTURE.read_bytes(), None), copier=copier)
-        with unittest.mock.patch('docfit_app.excel_table_service.to_hwpx', side_effect=capture):
+        with mock.patch('docfit_app.excel_table_service.to_hwpx', side_effect=capture):
             self.assertTrue(service.command('convert')['ok'])
-        self.assertIn('#C0D5E6', captured[-1])
-        with unittest.mock.patch('docfit_app.excel_table_service.to_hwpx', side_effect=capture):
-            service.command('convert', {'keep_cell_background': False})
-        self.assertTrue(all(not fill for fill in captured[-1]))
+        self.assertIn('#C0D5E6', captured[-1][3])
+        with mock.patch('docfit_app.excel_table_service.to_hwpx', side_effect=capture):
+            result = service.command('paste_clean')
+        self.assertTrue(result['ok'])
+        self.assertEqual(captured[-1][:3], captured[0][:3])
+        self.assertTrue(all(not fill for fill in captured[-1][3]))
 
     def test_tsv_keeps_quoted_line_break_in_one_cell(self):
         model = parse_clipboard(None, 'a\t"줄1\n줄2"\nb\tc')

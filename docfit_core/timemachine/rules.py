@@ -28,8 +28,7 @@ EXCLUDED_DIRS = frozenset(name.casefold() for name in (
     "venv", "__pycache__", ".dart_tool", ".gradle", ".idea", ".vscode",
 ))
 EXCLUDED_NAMES = ("~$*", "~WRL*.tmp", "*.tmp", "*.crdownload", "*.part", "Thumbs.db", "desktop.ini", "*.asv",
-                  "*.bak", "*.hwp.tmp", ".~lock.*", "*(무결성검사).json", ".rename-tmp-*",
-                  "#ieeee*")  # 깨진 시스템/프로그램 생성 파일명 예: #IEeEE'.docx
+                  "*.bak", "*.hwp.tmp", ".~lock.*", "*(무결성검사).json", ".rename-tmp-*")
 COPY_SLACK_SECONDS = 2.0
 _HIDDEN = getattr(stat, "FILE_ATTRIBUTE_HIDDEN", 2) | getattr(stat, "FILE_ATTRIBUTE_SYSTEM", 4)
 _RECALL = 0x00400000 | 0x00040000 | 0x00001000  # RECALL_ON_DATA_ACCESS · RECALL_ON_OPEN · OFFLINE
@@ -62,6 +61,8 @@ class Rules:
         return bool(not self.include_hidden and (attributes & _HIDDEN or name.startswith(".")))
 
     def skip_file(self, name, attributes=0):
+        if excluded_name(name):
+            return True
         if self.kind(name) is None:
             return True
         folded = name.casefold()
@@ -83,3 +84,9 @@ class Rules:
 def cloud_only(attributes):
     """OneDrive '클라우드에만 있음': 내용을 읽으면 내려받기가 시작되므로 썸네일을 만들지 않는다."""
     return bool(attributes & _RECALL)
+
+
+def excluded_name(name):
+    """접두어 제외 규칙은 확장자 판정과 무관하게 적용한다."""
+    value = os.path.basename(os.fspath(name)).casefold().strip(" \t\r\n'\"‘’“”")
+    return value.startswith("#ieeee")

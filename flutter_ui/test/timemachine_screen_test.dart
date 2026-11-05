@@ -22,12 +22,13 @@ void main() {
     expect(find.textContaining('오늘 ·'),findsOneWidget);
   });
 
-  testWidgets('개발자 모드가 꺼져 있으면 본문검색 전환을 숨긴다', (tester) async {
+  testWidgets('개발자 모드가 꺼져 있어도 본문검색은 보이고 연관검색 전환은 숨긴다', (tester) async {
     final api = _FakeApi(enabled: true, developerMode: false);
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: api.call))));
     await tester.pumpAndSettle();
     expect(find.text('파일명'), findsOneWidget);
-    expect(find.text('본문'), findsNothing);
+    expect(find.text('본문검색'), findsOneWidget);
+    expect(find.text('연관검색'), findsNothing);
   });
 
   testWidgets('상단 도구는 좁은 창의 더보기에서 접근할 수 있고 overflow가 없다', (tester) async {
@@ -120,16 +121,35 @@ void main() {
   testWidgets('본문 모드에서 색인하고 본문 검색 결과를 표시한다', (tester) async {
     final api=_FakeApi(enabled:true, developerMode:true);
     await tester.pumpWidget(MaterialApp(home:Scaffold(body:TimemachineScreen(api:api.call)))); await tester.pumpAndSettle();
-    await tester.tap(find.text('본문')); await tester.pumpAndSettle();
+    await tester.tap(find.text('본문검색')); await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField),'회의'); await tester.pump(const Duration(milliseconds:400)); await tester.pumpAndSettle();
     expect(api.calls.any((c)=>c.$1=='content_search'&&c.$2['query']=='회의'),true);
     expect(find.text('본문포함.docx'),findsOneWidget);
     final snippet=tester.widget<RichText>(find.textContaining('회의 결과',findRichText:true));
     TextSpan? hit; snippet.text.visitChildren((s){ if(s is TextSpan&&s.text=='회의'){hit=s; return false;} return true; });
     expect(hit!.style!.backgroundColor,const Color(0xFFFFEB3B));
-    await tester.tap(find.text('본문 색인')); await tester.pumpAndSettle();
+    await tester.tap(find.text('본문 색인').last); await tester.pumpAndSettle();
     expect(api.calls.any((c)=>c.$1=='content_index_start'),true);
     expect(find.textContaining('추출 실패 2건'),findsOneWidget);
+  });
+
+  testWidgets('본문 검색 결과를 Markdown으로 내보낸다', (tester) async {
+    final api = _FakeApi(enabled: true, developerMode: true);
+    await tester.binding.setSurfaceSize(const Size(1400, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: api.call))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('본문검색'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, '회의');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('tm-export-markdown')));
+    await tester.pumpAndSettle();
+    final export = api.calls.lastWhere((call) => call.$1 == 'content_export_markdown');
+    expect(export.$2['query'], '회의');
+
   });
 
   testWidgets('썸네일이 오면 그림을 보이고 같은 항목은 다시 요청하지 않는다', (tester) async {
@@ -483,7 +503,7 @@ void main() {
     ]);
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: api.call))));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('본문'));
+    await tester.tap(find.text('본문검색'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '예산 집행');
     await tester.pump(const Duration(milliseconds: 400));
@@ -508,7 +528,7 @@ void main() {
     );
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: api.call))));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('본문'));
+    await tester.tap(find.text('본문검색'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '테스트');
     await tester.pump(const Duration(milliseconds: 400));
@@ -519,7 +539,7 @@ void main() {
     expect(find.textContaining('구형 응답 스니펫 테스트 내용'), findsOneWidget);
   });
 
-  testWidgets('본문 검색은 기본 정렬을 위계기반 연관도로 매번 초기화한다', (tester) async {
+  testWidgets('본문 검색은 기본 정렬을 관련도순로 매번 초기화한다', (tester) async {
     final api = _FakeApi(
       enabled: true,
       contentSearchResults: [
@@ -535,33 +555,33 @@ void main() {
     );
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: api.call))));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('본문'));
+    await tester.tap(find.text('본문검색'));
     await tester.pumpAndSettle();
 
-    expect(find.text('위계기반 연관도'), findsOneWidget);
+    expect(find.text('관련도순'), findsWidgets);
 
     // 다른 정렬 선택
-    await tester.tap(find.byKey(const ValueKey('tm-content-sort-dropdown')));
+    await tester.tap(find.byKey(const ValueKey('tm-content-sort-dropdown')).last);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('언급 횟수 많은 순').last);
+    await tester.tap(find.text('수정일순').last);
     await tester.pumpAndSettle();
-    expect(find.text('언급 횟수 많은 순'), findsOneWidget);
+    expect(find.text('수정일순'), findsWidgets);
 
-    // 새 검색 시작 -> 기본 정렬 '위계기반 연관도'로 매번 초기화
+    // 새 검색 시작 -> 기본 정렬 '관련도순'로 매번 초기화
     await tester.enterText(find.byType(TextField), '새검색');
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pumpAndSettle();
-    expect(find.text('위계기반 연관도'), findsOneWidget);
+    expect(find.text('관련도순'), findsWidgets);
 
-    // 모드 전환 시에는 기본 정렬 '위계기반 연관도'로 복구
+    // 모드 전환 시에는 기본 정렬 '관련도순'로 복구
     await tester.tap(find.text('파일명'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('본문'));
+    await tester.tap(find.text('본문검색'));
     await tester.pumpAndSettle();
-    expect(find.text('위계기반 연관도'), findsOneWidget);
+    expect(find.text('관련도순'), findsWidgets);
   });
 
-  testWidgets('본문 위계기반 연관도는 위계와 언급 횟수 뒤 최근 문서를 먼저 둔다', (tester) async {
+  testWidgets('본문 관련도순는 검색 점수가 높은 문서를 먼저 둔다', (tester) async {
     final api = _FakeApi(
       enabled: true,
       contentSearchResults: [
@@ -605,24 +625,24 @@ void main() {
     );
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: api.call))));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('본문'));
+    await tester.tap(find.text('본문검색'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '단어');
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pumpAndSettle();
 
-    final yRecent = tester.getTopLeft(find.text('최신문서.hwpx')).dy;
     final yOld = tester.getTopLeft(find.text('오래된문서.hwpx')).dy;
+    final yRecent = tester.getTopLeft(find.text('최신문서.hwpx')).dy;
     final yLower = tester.getTopLeft(find.text('낮은위계문서.hwpx')).dy;
 
+    expect(yOld < yRecent, isTrue);
     expect(yRecent < yLower, isTrue);
-    expect(yOld < yLower, isTrue);
-    expect(yRecent < yOld, isTrue);
   });
 
-  testWidgets('본문 언급 횟수 정렬은 총 언급 많은 순이다', (tester) async {
+  testWidgets('개발자 모드의 본문 언급 횟수 정렬은 총 언급 많은 순이다', (tester) async {
     final api = _FakeApi(
       enabled: true,
+      developerMode: true,
       contentSearchResults: [
         {
           'id': 1,
@@ -644,13 +664,13 @@ void main() {
     );
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: api.call))));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('본문'));
+    await tester.tap(find.text('본문검색'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '단어');
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('tm-content-sort-dropdown')));
+    await tester.tap(find.byKey(const ValueKey('tm-content-sort-dropdown')).last);
     await tester.pumpAndSettle();
     await tester.tap(find.text('언급 횟수 많은 순').last);
     await tester.pumpAndSettle();
@@ -667,7 +687,7 @@ void main() {
 
     expect(find.byTooltip('검색 연산자 도움말'), findsNothing);
 
-    await tester.tap(find.text('본문'));
+    await tester.tap(find.text('본문검색'));
     await tester.pumpAndSettle();
     final helpBtn = find.byTooltip('검색 연산자 도움말');
     expect(helpBtn, findsOneWidget);
@@ -704,10 +724,11 @@ void main() {
           'page': 5,
         }
       ],
+      previewHandler: (_) async => {'ok': true, 'snippet': '키워드 본문 키워드'},
     );
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: api.call))));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('본문'));
+    await tester.tap(find.text('본문검색'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '키워드');
     await tester.pump(const Duration(milliseconds: 400));
@@ -719,6 +740,16 @@ void main() {
     await tester.pumpAndSettle();
     expect(api.calls.any((c) => c.$1 == 'preview' && c.$2['id'] == 42 && c.$2['page'] == 5), isTrue);
     expect(find.text('일치 위치 본문 미리보기'), findsOneWidget);
+
+    await tester.enterText(find.byKey(const ValueKey('tm-preview-find')), '키워드');
+    await tester.pumpAndSettle();
+    expect(find.text('1 / 2'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('tm-preview-find-next')));
+    await tester.pumpAndSettle();
+    expect(find.text('2 / 2'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('tm-preview-find-previous')));
+    await tester.pumpAndSettle();
+    expect(find.text('1 / 2'), findsOneWidget);
 
     // 더블클릭 -> open 호출
     await tester.tap(find.text('보고서.hwpx').first);
@@ -756,7 +787,7 @@ void main() {
 
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: api.call))));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('본문'));
+    await tester.tap(find.text('본문검색'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '단어');
     await tester.pump(const Duration(milliseconds: 400));
@@ -851,6 +882,19 @@ void main() {
     expect(api.calls.any((call) => call.$1 == 'open' && call.$2['id'] == 42), isTrue);
   });
 
+  testWidgets('열 보기에서 검색어가 비어 있으면 타임라인 기간의 항목을 표로 표시한다', (tester) async {
+    final api = _FakeApi(enabled: true);
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: api.call))));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('열 보기'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('tm-col-header-name')), findsOneWidget);
+    expect(find.text('보고서.pdf'), findsOneWidget);
+    expect(api.calls.any((call) => call.$1 == 'file_search'), isFalse);
+  });
+
   testWidgets('파일명 모드 열 보기는 file_search 결과를 공급받고 구형 서비스는 시간순 화면으로 폴백한다', (tester) async {
     // 1. 신형 서비스: file_search 성공
     final apiNew = _FakeApi(
@@ -871,6 +915,10 @@ void main() {
       ],
     );
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: apiNew.call))));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byKey(const ValueKey('tm-file-search')), '검색결과');
+    await tester.pump(const Duration(milliseconds: 350));
     await tester.pumpAndSettle();
 
     // 열 보기 누르기
@@ -935,7 +983,7 @@ void main() {
     );
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: api.call))));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('본문'));
+    await tester.tap(find.text('본문검색'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '정상');
     await tester.pump(const Duration(milliseconds: 400));

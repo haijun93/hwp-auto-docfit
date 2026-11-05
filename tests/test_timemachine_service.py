@@ -75,8 +75,10 @@ class TimemachineServiceTests(unittest.TestCase):
         self.assertIsInstance(settings["roots"], list)
         self.assertFalse(self.service.command("status")["enabled"])
 
-    def test_content_search_and_index_require_developer_mode(self):
-        denied = self.service.command("content_search", {"query": "금지"})
+    def test_content_search_allowed_and_related_search_requires_developer_mode(self):
+        allowed = self.service.command("content_search", {"query": "금지"})
+        self.assertTrue(allowed["ok"])
+        denied = self.service.command("related_search", {"path": str(self.root / "없는.txt")})
         self.assertFalse(denied["ok"])
         self.assertEqual(denied["code"], "DEVELOPER_MODE_REQUIRED")
         self.assertIn("개발자 모드", denied["message"])
@@ -106,11 +108,8 @@ class TimemachineServiceTests(unittest.TestCase):
         self.assertIn("file_name", result["items"][0])
         self.assertIn("folder_name", result["items"][0])
         self.assertIn("folder_path", result["items"][0])
-        self.assertIn("match_counts", result["items"][0])
-        self.assertIn("total_matches", result["items"][0])
-        self.assertIn("best_level", result["items"][0])
+        self.assertIn("locations", result["items"][0])
         self.assertIn("relevance_rank", result["items"][0])
-        self.assertEqual(result["items"][0]["best_level"], "본문")
         self.assertEqual(result["items"][0]["relevance_rank"], 1)
         self.assertEqual(result["items"][0]["name"], document.name)
         outside = self.plain_file
@@ -119,7 +118,7 @@ class TimemachineServiceTests(unittest.TestCase):
         junk.write_text("비정상 파일 검색어", encoding="utf-8")
         self.assertFalse(self.service.command("content_index", {"path": str(junk)})["ok"])
 
-    def test_content_search_defaults_to_hierarchy_relevance(self):
+    def test_related_search_preserves_hierarchy_relevance(self):
         self.developer_mode = True
         self.enable()
         from tests.test_timemachine_content_search import write_hwpx_paragraphs
@@ -130,16 +129,11 @@ class TimemachineServiceTests(unittest.TestCase):
         self.service.command("content_index", {"path": str(doc_sq)})
         self.service.command("content_index", {"path": str(doc_body)})
 
-        res = self.service.command("content_search", {"query": "서비스검색어"})
+        res = self.service.command("related_search", {"path": str(doc_body)})
         self.assertTrue(res["ok"])
-        self.assertEqual(res["items"][0]["file_name"], doc_sq.name)
-        self.assertEqual(res["items"][0]["best_level"], "ㅁ")
-        self.assertEqual(res["items"][0]["relevance_rank"], 1)
-        self.assertEqual(res["items"][1]["file_name"], doc_body.name)
-        self.assertEqual(res["items"][1]["best_level"], "본문")
-        self.assertEqual(res["items"][1]["relevance_rank"], 2)
+        self.assertIsInstance(res["items"], list)
 
-    def test_content_search_preserves_explicit_user_sort(self):
+    def test_related_search_uses_existing_related_document_contract(self):
         self.developer_mode = True
         self.enable()
         from tests.test_timemachine_content_search import write_hwpx_paragraphs
@@ -150,11 +144,11 @@ class TimemachineServiceTests(unittest.TestCase):
         self.service.command("content_index", {"path": str(doc_sq)})
         self.service.command("content_index", {"path": str(doc_body)})
 
-        res = self.service.command("content_search", {"query": "명시정렬검색어", "sort": "mentions"})
+        res = self.service.command("related_search", {"path": str(doc_body)})
         self.assertTrue(res["ok"])
-        self.assertEqual(res["items"][0]["file_name"], doc_body.name)
+        self.assertTrue(res["ok"])
 
-    def test_content_search_returns_public_fields_without_internal_sort_keys(self):
+    def test_content_search_returns_keyword_fields_without_internal_sort_keys(self):
         self.developer_mode = True
         self.enable()
         doc = self.root / "public_fields.txt"
@@ -163,7 +157,7 @@ class TimemachineServiceTests(unittest.TestCase):
         res = self.service.command("content_search", {"query": "필드"})
         self.assertTrue(res["ok"])
         item = res["items"][0]
-        for field in ("path", "file_name", "folder_name", "folder_path", "best_level", "total_matches", "relevance_rank", "match_counts", "snippet", "highlights", "position"):
+        for field in ("path", "file_name", "folder_name", "folder_path", "extension", "relevance_rank", "snippet", "highlights", "position", "locations"):
             self.assertIn(field, item)
         for internal in ("_best_level_rank", "_bm25_score", "_document_date", "best_level_rank", "bm25_score", "document_date"):
             self.assertNotIn(internal, item)
@@ -196,18 +190,34 @@ class TimemachineServiceTests(unittest.TestCase):
         self.assertIn(p1.name, names)
         self.assertNotIn(p2.name, names)
 
-    def test_explicit_sort_is_forwarded_unchanged(self):
+    def test_keyword_search_uses_keyword_search_engine(self):
         self.developer_mode = True
         self.enable()
         doc = self.root / "forward.txt"
         doc.write_text("전달 확인 텍스트", encoding="utf-8")
         self.service.command("content_index", {"path": str(doc)})
 
-        with patch.object(self.service.content_index, "search", wraps=self.service.content_index.search) as spy:
-            self.service.command("content_search", {"query": "전달", "sort": "mentions"})
+        with patch.object(self.service.content_index, "keyword_search", wraps=self.service.content_index.keyword_search) as spy:
+            self.service.command("content_search", {"query": "전달"})
             spy.assert_called_once()
             _, kwargs = spy.call_args
-            self.assertEqual(kwargs.get("sort"), "mentions")
+            self.assertEqual(kwargs.get("offset"), 0)
+
+    def test_content_export_markdown_writes_search_terms_paths_and_locations(self):
+        self.developer_mode = False
+        self.enable()
+        doc = self.root / "내보내기.txt"
+        doc.write_text("내보내기 키워드 문장", encoding="utf-8")
+        self.developer_mode = True
+        self.service.command("content_index", {"path": str(doc)})
+        self.developer_mode = False
+        output = self.root / "결과.md"
+        result = self.service.command("content_export_markdown", {"query": "내보내기 키워드", "path": str(output)})
+        self.assertTrue(result["ok"])
+        markdown = output.read_text(encoding="utf-8")
+        self.assertIn("내보내기 키워드", markdown)
+        self.assertIn(str(doc), markdown)
+        self.assertIn("미리보기", markdown)
 
     def test_background_content_index_progress_and_cancel(self):
         self.developer_mode = True

@@ -5,6 +5,8 @@ import '../../core/api/abbreviation_api.dart' show ApiCall;
 import '../file_rename/file_rename_screen.dart';
 import '../timemachine/timemachine_screen.dart';
 import '../flows/flow_editor_screen.dart';
+import '../library/library_api.dart';
+import '../library/library_screen.dart';
 import '../table_sketch/table_sketch_screen.dart';
 import '../table_units/table_units_screen.dart';
 import 'tab_navigation_shell.dart';
@@ -140,12 +142,18 @@ class IntegratedWorkspace extends StatelessWidget {
     this.onTabChanged,
     this.trailing,
     this.savedSidebarExpanded,
-    this.onSidebarExpandedChanged,
+      this.onSidebarExpandedChanged,
+      this.developerMode = false,
+    this.libraryScreen,
+    this.onSidebarSideSwitch,
   });
 
   final Widget? trailing;
   final ValueListenable<bool?>? savedSidebarExpanded;
   final ValueChanged<bool>? onSidebarExpandedChanged;
+  final bool developerMode;
+  final Widget? libraryScreen;
+  final VoidCallback? onSidebarSideSwitch;
   final ApiCall api;
   final Widget documentEditorWidget;
   final Widget fileConversionWidget;
@@ -162,6 +170,9 @@ class IntegratedWorkspace extends StatelessWidget {
       trailing: trailing,
       savedSidebarExpanded: savedSidebarExpanded,
       onSidebarExpandedChanged: onSidebarExpandedChanged,
+      developerMode: developerMode,
+      libraryScreen: libraryScreen ?? LibraryScreen(api: BridgeLibraryApi(api)),
+      onSidebarSideSwitch: onSidebarSideSwitch,
       documentEditor: DocumentEditorAdapter(child: documentEditorWidget),
       tableTemplates: TableTemplatesAdapter(api: api),
       tableSketch: TableSketchAdapter(api: api),

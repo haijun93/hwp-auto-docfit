@@ -80,7 +80,7 @@ class ApplicationService:
                 'progress':{'steps':list(STAGE_ORDER),'active':None,'visited':[],'outcome':None,'detail':''},
                 'stages':[{'key':k,'label':label,'enabled':self.data.stages.get((self.data.mode,k),selected.get(k,default_choice(k,self.data.mode))),
                            'default':default_choice(k,self.data.mode)} for k,label in stages_for_mode(self.data.mode)],
-                'can_start':False,'sidebar_collapsed':settings.get('sidebar_collapsed'),'capabilities':['documents.inspect','settings','abbreviations','flows']}
+                'can_start':False,'sidebar_collapsed':settings.get('sidebar_collapsed'),'capabilities':['documents.inspect','settings','abbreviations','flows','library.metadata']}
 
     def dispatch(self, method, args):
         counts = {'handshake':0,'get_state':0,'get_settings':0,'save_settings':2,
@@ -90,10 +90,10 @@ class ApplicationService:
         counts.update({'start_job':2, 'cancel_job':1, 'get_events':1, 'set_sidebar_collapsed':1})
         counts.update({'table_template':2,'document_tool':2,'get_pending_dialog':0,'stage_config':2,'set_stage':2,'set_stage_default':1})
         counts.update({'set_option':2,'set_include_spacing':1,'set_reset_spacing':1,'set_table_spacing':1,'set_exclude_tables':1,'set_range':3,'set_card_option':2})
-        counts.update({'flow_editor':2,'idioms':2,'hangul_fonts':2,'table_units':2,'table_sketch':2,'file_rename':2,'kclip':2,'timemachine':2})
+        counts.update({'flow_editor':2,'idioms':2,'hangul_fonts':2,'table_units':2,'table_sketch':2,'file_rename':2,'kclip':2,'timemachine':2,'library':2})
         if method not in counts:
             raise ServiceError('NOT_AVAILABLE','지원하지 않는 명령입니다.')
-        if not (method in ('table_sketch', 'file_rename', 'kclip', 'timemachine') and len(args) in (1, 2)) and len(args)!=counts[method]:
+        if not (method in ('table_sketch', 'file_rename', 'kclip', 'timemachine', 'library') and len(args) in (1, 2)) and len(args)!=counts[method]:
             raise ServiceError('INVALID_INPUT','입력 항목 수를 확인해 주세요.')
         if self.data.closing and method != 'shutdown':
             raise ServiceError('BACKEND_CLOSING','백엔드가 종료 중입니다.')
@@ -102,7 +102,7 @@ class ApplicationService:
         if method == 'get_events': return self.get_events(*args)
         if method=='handshake':
             return {'protocol_version':1,'backend_version':'1.74 Native Prototype 1',
-                    'capabilities':['documents.inspect','settings','abbreviations','flows'],'engine_ready':False}
+                    'capabilities':['documents.inspect','settings','abbreviations','flows','library.metadata'],'engine_ready':False}
         if method=='set_card_option':
             name,value=args
             allowed={'spacing_enabled','spacing_exclude_pagefit','spacing_exclude_reset','spacing_cell_image_to_bg','all_cell_image_to_bg','spacing_exclude_tables','unify_exclude_tables','unify_exclude_spacing','unify_exclude_pagefit',
@@ -247,6 +247,11 @@ class ApplicationService:
                 from .timemachine_service import TimemachineService
                 self._timemachine_service = TimemachineService(self.store._path.parent)
             return self._timemachine_service.command(*args)
+        if method=='library':
+            if getattr(self, '_library_service', None) is None:
+                from .library_service import LibraryService
+                self._library_service = LibraryService(self.store._path.parent / 'workspace' / 'library.db')
+            return self._library_service.command(*args)
         if method=='table_units':
             from .table_units_service import TableUnitsService
             if args[0] == 'copy':
@@ -315,6 +320,8 @@ class ApplicationService:
             if service is not None:
                 service.close()
             self.jobs.shutdown()
+            if getattr(self, '_library_service', None) is not None:
+                self._library_service.close()
             return {'closed':True}
         raise ServiceError('NOT_AVAILABLE','지원하지 않는 명령입니다.')
 

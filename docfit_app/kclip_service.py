@@ -142,6 +142,8 @@ class KClipService:
                 return dict(ok=False, code="KCLIP_AUTOSTART", message=f"자동 시작 설정을 바꾸지 못했습니다: {error}")
             return self.status()
         forwards = {
+            "add_text": ("add_text", ("text",)),
+            "add_files": ("add_files", ("paths",)),
             "list": ("list", ("limit", "query")),
             "get": ("get", ("id",)),
             "restore": ("restore", ("id",)),

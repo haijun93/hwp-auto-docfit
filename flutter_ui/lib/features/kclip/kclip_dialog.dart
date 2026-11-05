@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 
 import '../../core/api/abbreviation_api.dart' show ApiCall;
@@ -12,9 +11,16 @@ import '../../core/api/abbreviation_api.dart' show ApiCall;
 Future<void> showKClipDialog(BuildContext context, ApiCall api) {
   return showDialog<void>(
     context: context,
+    barrierDismissible: false,
     builder: (_) => Dialog(
+      insetPadding: const EdgeInsets.all(28),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+      ),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 640, maxHeight: 720),
+        constraints: const BoxConstraints(maxWidth: 720, maxHeight: 820),
         child: KClipPanel(api: api),
       ),
     ),
@@ -36,7 +42,9 @@ class _KClipPanelState extends State<KClipPanel> {
   Map settings = const {};
   bool consent = false;
   bool autostart = false;
-  bool removeExcelBackground = false;
+  bool minimized = false;
+  bool isTop = false;
+  final TextEditingController _memo = TextEditingController();
   bool busy = false;
   String message = '';
   String query = '';
@@ -56,13 +64,19 @@ class _KClipPanelState extends State<KClipPanel> {
   @override
   void dispose() {
     _debounce?.cancel();
+    _memo.dispose();
+    unawaited(_setNativeDropTarget('documents'));
     super.dispose();
   }
 
   Future<Map> _call(String action, [Map<String, Object?>? payload]) async {
     final response = await widget.api('kclip', [action, payload ?? const {}]);
-    final map = response is Map ? response : {'ok': false, 'message': '올바르지 않은 응답입니다.'};
-    if (map['ok'] == false && mounted) setState(() => message = '${map['message'] ?? ''}');
+    final map = response is Map
+        ? response
+        : {'ok': false, 'message': '올바르지 않은 응답입니다.'};
+    if (map['ok'] == false && mounted) {
+      setState(() => message = '${map['message'] ?? ''}');
+    }
     return map;
   }
 
@@ -74,12 +88,21 @@ class _KClipPanelState extends State<KClipPanel> {
       autostart = s['autostart'] == true;
     });
     if (running) {
-      final list = await _call('list', {'limit': 200, if (query.isNotEmpty) 'query': query});
+      final list = await _call('list', {
+        'limit': 200,
+        if (query.isNotEmpty) 'query': query,
+      });
       final conf = await _call('settings_get');
       if (!mounted) return;
       setState(() {
-        items = [for (final i in (list['items'] as List? ?? const [])) i as Map];
-        items.sort((a, b) => (b['pinned'] == true ? 1 : 0).compareTo(a['pinned'] == true ? 1 : 0));
+        items = [
+          for (final i in (list['items'] as List? ?? const [])) i as Map,
+        ];
+        items.sort(
+          (a, b) => (b['pinned'] == true ? 1 : 0).compareTo(
+            a['pinned'] == true ? 1 : 0,
+          ),
+        );
         settings = (conf['settings'] as Map?) ?? const {};
       });
     }
@@ -107,37 +130,62 @@ class _KClipPanelState extends State<KClipPanel> {
   }
 
   void _preview(Map item) {
-    showDialog<void>(context: context, builder: (context) => AlertDialog(
-      title: Text(_kind(item['kind'])),
-      actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('닫기')),
-        FilledButton(
-          onPressed: () {
-            Navigator.of(context).pop();
-            _act('restore', {'id': item['id']}, '클립보드에 올렸습니다. Ctrl+V로 붙여넣으세요.');
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(_kind(item['kind'])),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('닫기'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _act('restore', {
+                'id': item['id'],
+              }, '클립보드에 올렸습니다. Ctrl+V로 붙여넣으세요.');
+            },
+            child: const Text('다시 복사'),
+          ),
+        ],
+        content: FutureBuilder<Uint8List?>(
+          future: item['kind'] == 'image'
+              ? _imageFor((item['id'] as num).toInt())
+              : Future.value(null),
+          builder: (context, snapshot) {
+            if (item['kind'] == 'image') {
+              if (snapshot.connectionState != ConnectionState.done) {
+                return const SizedBox(
+                  height: 160,
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              return snapshot.data == null
+                  ? const Text('그림을 불러오지 못했습니다.')
+                  : Image.memory(snapshot.data!, fit: BoxFit.contain);
+            }
+            return SingleChildScrollView(
+              child: SelectableText('${item['preview'] ?? ''}'),
+            );
           },
-          child: const Text('다시 복사'),
         ),
-      ],
-      content: FutureBuilder<Uint8List?>(
-        future: item['kind'] == 'image' ? _imageFor((item['id'] as num).toInt()) : Future.value(null),
-        builder: (context, snapshot) {
-          if (item['kind'] == 'image') {
-            if (snapshot.connectionState != ConnectionState.done) return const SizedBox(height: 160, child: Center(child: CircularProgressIndicator()));
-            return snapshot.data == null ? const Text('그림을 불러오지 못했습니다.') : Image.memory(snapshot.data!, fit: BoxFit.contain);
-          }
-          return SingleChildScrollView(child: SelectableText('${item['preview'] ?? ''}'));
-        },
       ),
-    ));
+    );
   }
 
-  Future<void> _act(String action, [Map<String, Object?>? payload, String? done]) async {
+  Future<void> _act(
+    String action, [
+    Map<String, Object?>? payload,
+    String? done,
+  ]) async {
     if (busy) return;
     setState(() => busy = true);
     try {
       final result = await _call(action, payload);
-      if (result['ok'] != false && done != null && mounted) setState(() => message = done);
+      if (result['ok'] != false && done != null && mounted) {
+        setState(() => message = done);
+      }
       await _reload();
     } finally {
       if (mounted) setState(() => busy = false);
@@ -148,17 +196,33 @@ class _KClipPanelState extends State<KClipPanel> {
     if (busy) return;
     setState(() => busy = true);
     try {
-      final result = await widget.api('excel_table', ['convert', {'keep_cell_background': !removeExcelBackground}]);
+      final result = await widget.api('excel_table', ['paste_clean', const {}]);
       if (!mounted) return;
       setState(() {
         if (result is Map && result['ok'] == true) {
           final counts = (result['cleaned'] as Map?) ?? const {};
-          message = '${result['rows']}행 × ${result['cols']}열 변환 완료 · 바탕색 ${counts['background'] ?? 0}, 공백 ${counts['spaces'] ?? 0}, 기호 ${counts['symbols'] ?? 0} 정리. 한/글에서 Ctrl+V';
+            message = '${result['rows']}행 × ${result['cols']}열 표 구조·내용 유지, 배경 음영 제거 · 공백 ${counts['spaces'] ?? 0}, 기호 ${counts['symbols'] ?? 0} 정리. 한/글에서 Ctrl+V';
         } else {
-          message = '${(result is Map ? result['message'] : null) ?? '클립보드에서 엑셀 표를 찾지 못했습니다.'}';
+          message =
+              '${(result is Map ? result['message'] : null) ?? '클립보드에서 엑셀 표를 찾지 못했습니다.'}';
         }
       });
-    } finally { if (mounted) setState(() => busy = false); }
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> _addMemo() async {
+    final text = _memo.text.trim();
+    if (text.isEmpty || busy) return;
+    await _act('add_text', {'text': text}, '메모를 클립보드 항목에 추가했습니다.');
+    if (message.startsWith('메모를')) _memo.clear();
+  }
+
+  Future<void> _setNativeDropTarget(String target) async {
+    try {
+      await widget.api('set_drop_target', [target]);
+    } catch (_) {}
   }
 
   Future<void> _confirmClearAll() async {
@@ -223,14 +287,19 @@ class _KClipPanelState extends State<KClipPanel> {
           onChanged: (v) => setState(() => autostart = v == true),
           title: const Text('Windows에 로그인하면 자동으로 켜기(30초 뒤)'),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 2),
         if (!available)
-          Text('이 버전에는 몽땅클립보드 프로그램이 들어 있지 않습니다.',
-              style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          Text(
+            '이 버전에는 몽땅클립보드 프로그램이 들어 있지 않습니다.',
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
         FilledButton.icon(
           key: const ValueKey('kclip-enable'),
           onPressed: consent && available && !busy
-              ? () => _act('enable', {'consent': true, 'autostart': autostart}, '몽땅클립보드를 켰습니다.')
+              ? () => _act('enable', {
+                  'consent': true,
+                  'autostart': autostart,
+                }, '몽땅클립보드를 켰습니다.')
               : null,
           icon: const Icon(Icons.power_settings_new),
           label: const Text('몽땅클립보드 켜기'),
@@ -240,14 +309,20 @@ class _KClipPanelState extends State<KClipPanel> {
   }
 
   Widget _settings(BuildContext context) {
-    Widget number(String key, String label, List<int> choices) => DropdownButton<int>(
-      value: choices.contains((settings[key] as num?)?.toInt()) ? (settings[key] as num).toInt() : null,
-      hint: Text('${settings[key] ?? ''}'),
-      items: [for (final c in choices) DropdownMenuItem(value: c, child: Text('$label $c'))],
-      onChanged: (v) => _act('settings_set', {
-        'settings': {key: v},
-      }),
-    );
+    Widget number(String key, String label, List<int> choices) =>
+        DropdownButton<int>(
+          value: choices.contains((settings[key] as num?)?.toInt())
+              ? (settings[key] as num).toInt()
+              : null,
+          hint: Text('${settings[key] ?? ''}'),
+          items: [
+            for (final c in choices)
+              DropdownMenuItem(value: c, child: Text('$label $c')),
+          ],
+          onChanged: (v) => _act('settings_set', {
+            'settings': {key: v},
+          }),
+        );
     return Wrap(
       spacing: 12,
       crossAxisAlignment: WrapCrossAlignment.center,
@@ -258,15 +333,19 @@ class _KClipPanelState extends State<KClipPanel> {
             key: const ValueKey('kclip-autostart-running'),
             contentPadding: EdgeInsets.zero,
             value: autostart,
-            onChanged: busy ? null : (value) async {
-              final result = await _call('autostart', {'enabled': value == true});
-              if (mounted && result['ok'] != false) {
-                setState(() {
-                  status = result;
-                  autostart = result['autostart'] == true;
-                });
-              }
-            },
+            onChanged: busy
+                ? null
+                : (value) async {
+                    final result = await _call('autostart', {
+                      'enabled': value == true,
+                    });
+                    if (mounted && result['ok'] != false) {
+                      setState(() {
+                        status = result;
+                        autostart = result['autostart'] == true;
+                      });
+                    }
+                  },
             title: const Text('Windows 로그인 시 자동 실행'),
           ),
         ),
@@ -327,13 +406,24 @@ class _KClipPanelState extends State<KClipPanel> {
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             Chip(
-              avatar: Icon(paused ? Icons.pause_circle_outline : Icons.fiber_manual_record,
-                  size: 16, color: paused ? null : Colors.red),
-              label: Text(paused ? '일시정지' : '기록 중 · ${agent['items'] ?? items.length}개'),
+              avatar: Icon(
+                paused ? Icons.pause_circle_outline : Icons.fiber_manual_record,
+                size: 16,
+                color: paused ? null : Colors.red,
+              ),
+              label: Text(
+                paused ? '일시정지' : '기록 중 · ${agent['items'] ?? items.length}개',
+              ),
             ),
             Tooltip(
-              message: hotkeyOk ? '아무 창에서나 누르면 최근 항목이 뜹니다' : '다른 프로그램이 이 단축키를 쓰고 있습니다',
-              child: Chip(label: Text('${agent['hotkey'] ?? 'Ctrl+Shift+V'}${hotkeyOk ? '' : ' (사용 불가)'}')),
+              message: hotkeyOk
+                  ? '아무 창에서나 누르면 최근 항목이 뜹니다'
+                  : '다른 프로그램이 이 단축키를 쓰고 있습니다',
+              child: Chip(
+                label: Text(
+                  '${agent['hotkey'] ?? 'Ctrl+Shift+V'}${hotkeyOk ? '' : ' (사용 불가)'}',
+                ),
+              ),
             ),
             OutlinedButton(
               onPressed: busy ? null : () => _act(paused ? 'resume' : 'pause'),
@@ -342,8 +432,14 @@ class _KClipPanelState extends State<KClipPanel> {
             PopupMenuButton<int>(
               tooltip: '일시정지 시간',
               onSelected: (minutes) => _act('pause', {'minutes': minutes}),
-              itemBuilder: (_) => const [PopupMenuItem(value: 30, child: Text('30분')), PopupMenuItem(value: 60, child: Text('1시간'))],
-              child: const Padding(padding: EdgeInsets.all(8), child: Text('일시정지 시간')),
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 30, child: Text('30분')),
+                PopupMenuItem(value: 60, child: Text('1시간')),
+              ],
+              child: const Padding(
+                padding: EdgeInsets.all(8),
+                child: Text('일시정지 시간'),
+              ),
             ),
             Tooltip(
               message: '고정한 항목은 유지됩니다.',
@@ -355,12 +451,14 @@ class _KClipPanelState extends State<KClipPanel> {
             ),
             TextButton(
               key: const ValueKey('kclip-disable'),
-              onPressed: busy ? null : () => _act('disable', null, '몽땅클립보드를 껐습니다.'),
+              onPressed: busy
+                  ? null
+                  : () => _act('disable', null, '몽땅클립보드를 껐습니다.'),
               child: const Text('끄기'),
             ),
           ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 4),
         _settings(context),
         Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
           FilledButton.icon(
@@ -369,21 +467,24 @@ class _KClipPanelState extends State<KClipPanel> {
             icon: const Icon(Icons.table_view),
             label: const Text('엑셀 표를 한/글 표로'),
           ),
-          Row(mainAxisSize: MainAxisSize.min, children: [
-            Checkbox(value: removeExcelBackground, onChanged: (v) => setState(() => removeExcelBackground = v == true)),
-            const Text('칸 배경색 빼기'),
-          ]),
         ]),
         TextField(
-          decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: '찾기'),
+          decoration: const InputDecoration(
+            prefixIcon: Icon(Icons.search),
+            hintText: '찾기',
+          ),
           onChanged: (v) {
             query = v.trim();
             _debounce?.cancel();
-            _debounce = Timer(const Duration(milliseconds: 200), () => unawaited(_reload()));
+            _debounce = Timer(
+              const Duration(milliseconds: 200),
+              () => unawaited(_reload()),
+            );
           },
         ),
         const SizedBox(height: 4),
-        Expanded(
+        SizedBox(
+          height: 220,
           child: items.isEmpty
               ? const Center(child: Text('기록된 항목이 없습니다.'))
               : ListView.builder(
@@ -393,22 +494,45 @@ class _KClipPanelState extends State<KClipPanel> {
                     final pinned = item['pinned'] == true;
                     final id = (item['id'] as num).toInt();
                     final thumb = item['kind'] == 'image' ? _images[id] : null;
-                    if (item['kind'] == 'image' && !_images.containsKey(id) && !_loadingImages.contains(id)) {
-                      WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) unawaited(_imageFor(id)); });
+                    if (item['kind'] == 'image' &&
+                        !_images.containsKey(id) &&
+                        !_loadingImages.contains(id)) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) unawaited(_imageFor(id));
+                      });
                     }
                     return ListTile(
                       key: ValueKey('kclip-item-${item['id']}'),
                       dense: true,
-                      leading: Tooltip(message: _kind(item['kind']), child: thumb == null ? Icon(_kindIcon(item['kind'])) : Image.memory(thumb, width: 48, height: 48, fit: BoxFit.cover)),
-                      title: Text('${item['preview'] ?? ''}', maxLines: 2, overflow: TextOverflow.ellipsis),
+                      leading: Tooltip(
+                        message: _kind(item['kind']),
+                        child: thumb == null
+                            ? Icon(_kindIcon(item['kind']))
+                            : Image.memory(
+                                thumb,
+                                width: 48,
+                                height: 48,
+                                fit: BoxFit.cover,
+                              ),
+                      ),
+                      title: Text(
+                        '${item['preview'] ?? ''}',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                       onTap: () => _preview(item),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           IconButton(
                             tooltip: pinned ? '고정 풀기' : '고정(지워지지 않음)',
-                            onPressed: () => _act('pin', {'id': item['id'], 'pinned': !pinned}),
-                            icon: Icon(pinned ? Icons.push_pin : Icons.push_pin_outlined),
+                            onPressed: () => _act('pin', {
+                              'id': item['id'],
+                              'pinned': !pinned,
+                            }),
+                            icon: Icon(
+                              pinned ? Icons.push_pin : Icons.push_pin_outlined,
+                            ),
                           ),
                           IconButton(
                             tooltip: '지우기',
@@ -427,34 +551,119 @@ class _KClipPanelState extends State<KClipPanel> {
 
   @override
   Widget build(BuildContext context) {
+    unawaited(_setNativeDropTarget('kclip'));
     return Padding(
-      padding: const EdgeInsets.all(20),
+      padding: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              const Icon(Icons.content_paste_search),
-              const SizedBox(width: 8),
-              Expanded(child: Text('몽땅클립보드', style: Theme.of(context).textTheme.titleLarge)),
-              IconButton(
-                tooltip: '닫기',
-                onPressed: () => Navigator.of(context).maybePop(),
-                icon: const Icon(Icons.close),
+          Container(
+            padding: const EdgeInsets.fromLTRB(18, 10, 10, 10),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              border: Border(
+                bottom: BorderSide(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
               ),
-            ],
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.content_paste_search),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '몽땅클립보드',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+                IconButton(
+                  tooltip: isTop ? '항상 위 해제' : '항상 위',
+                  onPressed: () => setState(() => isTop = !isTop),
+                  icon: Icon(isTop ? Icons.push_pin : Icons.push_pin_outlined),
+                ),
+                IconButton(
+                  tooltip: minimized ? '창 펼치기' : '최소화',
+                  onPressed: () => setState(() => minimized = !minimized),
+                  icon: Icon(minimized ? Icons.expand_more : Icons.minimize),
+                ),
+                IconButton(
+                  tooltip: '닫기',
+                  onPressed: () => Navigator.of(context).maybePop(),
+                  icon: const Icon(Icons.close),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 8),
-          if (status.isEmpty)
-            const Center(child: CircularProgressIndicator())
-          else if (running)
-            Expanded(child: _on(context))
-          else
-            Flexible(child: SingleChildScrollView(child: _off(context))),
-          if (message.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(message, key: const ValueKey('kclip-message')),
+          if (!minimized)
+        SizedBox(
+          height: 520,
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const SizedBox(height: 8),
+                      TextField(
+                        key: const ValueKey('kclip-memo'),
+                        controller: _memo,
+                        minLines: 1,
+                        maxLines: 3,
+                        decoration: InputDecoration(
+                          labelText: '메모 작성',
+                          hintText: '내용을 입력하고 추가를 누르세요',
+                          suffixIcon: IconButton(
+                            tooltip: '메모 추가',
+                            onPressed: busy ? null : _addMemo,
+                            icon: const Icon(Icons.add),
+                          ),
+                        ),
+                        onSubmitted: (_) => _addMemo(),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                          key: const ValueKey('kclip-drop-zone'),
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 10,
+                            horizontal: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: Theme.of(context).colorScheme.outlineVariant,
+                            ),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.file_download_outlined),
+                              SizedBox(width: 8),
+                              Expanded(
+                                child: Text('파일·폴더·이미지·웹 링크를 여기에 끌어 놓으세요'),
+                              ),
+                            ],
+                          ),
+                      ),
+                      const SizedBox(height: 8),
+                      if (status.isEmpty)
+                        const Center(child: CircularProgressIndicator())
+                      else if (running)
+                        _on(context)
+                      else
+                        _off(context),
+                      if (message.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            message,
+                            key: const ValueKey('kclip-message'),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
             ),
         ],
       ),

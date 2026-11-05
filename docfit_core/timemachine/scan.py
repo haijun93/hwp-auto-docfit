@@ -37,6 +37,7 @@ def scan_root(store, root, rules=None, *, cancel=None, progress=None, chunk=CHUN
         recalculate = prev_mode is not None and prev_mode != rules.time_mode
     root = os.path.abspath(root)
     result = ScanResult()
+    store.purge_excluded()
     known = store.known(root)
     seen_keys = set()
     pending = []

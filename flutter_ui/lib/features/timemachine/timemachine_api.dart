@@ -116,7 +116,7 @@ class TimemachineContentResult {
       }
     }
 
-    final snippet = '${value['snippet'] ?? ''}';
+    final snippet = '${value['snippet'] ?? (value['reasons'] is List ? (value['reasons'] as List).join(' · ') : '')}';
 
     final matchCounts = <String, int>{};
     final rawCounts = value['match_counts'];
@@ -145,8 +145,8 @@ class TimemachineContentResult {
     final mtime = _safeDouble(value['mtime']);
     final ctime = _safeDouble(value['ctime']);
     final hierarchy = '${value['hierarchy'] ?? value['highest_hierarchy'] ?? ''}';
-    final hierarchyRank = _safeInt(value['hierarchy_rank']) ?? 999999;
-    final bm25 = _safeDouble(value['bm25']);
+    final hierarchyRank = _safeInt(value['hierarchy_rank']) ?? _safeInt(value['rank']) ?? 999999;
+    final bm25 = _safeDouble(value['bm25'], _safeDouble(value['score']));
 
     final page = _safeInt(value['page']) ?? _safeInt(value['page_number']);
     final sheet = value['sheet'] != null ? '${value['sheet']}' : null;
@@ -215,7 +215,7 @@ class TimemachineApi {
   Future<List<TimemachineContentResult>> contentSearch(
     String query, {
     int limit = 100,
-    String sort = 'hierarchy_relevance',
+    String sort = 'relevance',
   }) async {
     final response = await command('content_search', {
       'query': query,

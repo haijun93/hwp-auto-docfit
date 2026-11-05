@@ -5,6 +5,7 @@ import os
 import sqlite3
 import threading
 from datetime import datetime, timedelta
+from .rules import excluded_name
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS files (
@@ -159,7 +160,8 @@ class Store:
         params[:0] = [start, end]
         order = "DESC" if newest_first else "ASC"
         sql = (f"SELECT id, path, name, kind, size, mtime, ctime, work_time, flags, cloud FROM files "
-               f"WHERE {' AND '.join(where)} ORDER BY work_time {order}, id {order} LIMIT ? OFFSET ?")
+               f"WHERE {' AND '.join(where)} AND name NOT LIKE '#ieeee%' "
+               f"ORDER BY work_time {order}, id {order} LIMIT ? OFFSET ?")
         with self._lock:
             rows = self._db.execute(sql, [*params, limit, max(0, int(offset))]).fetchall()
         return [dict(row, flags=[f for f in row["flags"].split(",") if f], cloud=bool(row["cloud"])) for row in rows]
@@ -168,7 +170,8 @@ class Store:
         where, params = self._filters(**filters)
         with self._lock:
             return self._db.execute(f"SELECT COUNT(*) FROM files WHERE work_time >= ? AND work_time < ? AND "
-                                    f"{' AND '.join(where)}", [start, end, *params]).fetchone()[0]
+                                    f"{' AND '.join(where)} AND name NOT LIKE '#ieeee%'",
+                                    [start, end, *params]).fetchone()[0]
 
     def day_counts(self, year, month, **filters):
         """그 달 날짜별 파일 수(지역 시각 기준) {일: {kind: 수, 'total': 수}}. 달력 히트맵용."""
@@ -176,10 +179,15 @@ class Store:
         after = (first + timedelta(days=32)).replace(day=1)
         where, params = self._filters(**filters)
         sql = (f"SELECT CAST(strftime('%d', work_time, 'unixepoch', 'localtime') AS INTEGER) AS day, kind, COUNT(*) "
-               f"FROM files WHERE work_time >= ? AND work_time < ? AND {' AND '.join(where)} GROUP BY day, kind")
+               f"FROM files WHERE work_time >= ? AND work_time < ? AND {' AND '.join(where)} "
+               f"AND (name NOT LIKE '#ieeee%' AND name NOT LIKE ' #ieeee%' AND name NOT LIKE '''#ieeee%' "
+               f"AND name NOT LIKE ' \"#ieeee%' AND name NOT LIKE '‘#ieeee%' AND name NOT LIKE '’#ieeee%') "
+               f"GROUP BY day, kind")
         result = {}
         with self._lock:
             for day, kind, count in self._db.execute(sql, [first.timestamp(), after.timestamp(), *params]):
+                if not count:
+                    continue
                 bucket = result.setdefault(day, {"total": 0})
                 bucket[kind] = count
                 bucket["total"] += count
@@ -189,9 +197,16 @@ class Store:
         """구간 안 시간대(0~23)별 파일 수 — 타임라인 옆 활동 밀도 막대."""
         where, params = self._filters(**filters)
         sql = (f"SELECT CAST(strftime('%H', work_time, 'unixepoch', 'localtime') AS INTEGER), COUNT(*) FROM files "
-               f"WHERE work_time >= ? AND work_time < ? AND {' AND '.join(where)} GROUP BY 1")
+               f"WHERE work_time >= ? AND work_time < ? AND {' AND '.join(where)} "
+               f"AND (name NOT LIKE '#ieeee%' AND name NOT LIKE ' #ieeee%' AND name NOT LIKE '''#ieeee%' "
+               f"AND name NOT LIKE ' \"#ieeee%' AND name NOT LIKE '‘#ieeee%' AND name NOT LIKE '’#ieeee%') GROUP BY 1")
         with self._lock:
-            return {hour: count for hour, count in self._db.execute(sql, [start, end, *params])}
+            rows = self._db.execute(sql, [start, end, *params]).fetchall()
+        result = {}
+        for hour, count in rows:
+            if count:
+                result[hour] = count
+        return result
 
     def get(self, file_id):
         with self._lock:
@@ -200,6 +215,14 @@ class Store:
 
     def stats(self):
         with self._lock:
-            row = self._db.execute("SELECT COUNT(*), MIN(work_time), MAX(work_time) FROM files WHERE hidden = 0"
-                                   ).fetchone()
-        return dict(files=row[0], first=row[1], last=row[2])
+            sql_rows = self._db.execute("SELECT COUNT(*), MIN(work_time), MAX(work_time) FROM files WHERE hidden = 0 AND name NOT LIKE '#ieeee%'").fetchone()
+        return dict(files=sql_rows[0], first=sql_rows[1], last=sql_rows[2])
+
+    def purge_excluded(self):
+        """이전 버전에서 저장한 제외 대상 행도 조회 전에 제거한다."""
+        with self._lock:
+            rows = self._db.execute("SELECT key, path, name, mtime, size FROM files").fetchall()
+            bad = [dict(row) for row in rows if excluded_name(row["name"])]
+        if bad:
+            self.delete_keys([row["key"] for row in bad])
+        return bad

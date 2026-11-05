@@ -74,6 +74,18 @@ class FileDropTests(TestCase):
         bridge.receive_drop([r'C:\예시.hwpx'])
         bridge.add_format_paths.assert_called_once_with([r'C:\예시.hwpx'])
 
+    def test_kclip_native_drop_routes_all_paths_to_agent_and_reports_duplicates(self):
+        bridge = DesktopWebBridge(Mock())
+        service = Mock()
+        bridge._kclip_service = lambda: service
+        bridge.drop_target = 'kclip'
+        bridge._with_notice = Mock(side_effect=lambda message: message)
+        service.command.return_value = {'ok': True, 'count': 0}
+        paths = [r'C:\폴더\a.png', 'https://example.com/page']
+        message = bridge.receive_drop(paths)
+        service.command.assert_called_once_with('add_files', {'paths': paths})
+        self.assertIn('2개 항목', message)
+
     def test_missing_native_path_never_guesses_from_filename(self):
         handler, bridge = self.bind()
         with self.assertLogs('desktop_web_ui', level='WARNING'):

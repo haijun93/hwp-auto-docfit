@@ -90,6 +90,12 @@ class ContentSearchTests(unittest.TestCase):
         self.assertTrue(self.index.index_file(path)["indexed"])
         self.assertEqual(self.index.search("업무 실적"), [])
 
+    def test_excluded_filename_is_not_indexed_or_searchable(self):
+        path = self.root / " '#IEeEE legacy'.txt"
+        path.write_text("needleword hidden", encoding="utf-8")
+        self.assertFalse(self.index.index_file(path)["indexed"])
+        self.assertEqual(self.index.search("needleword"), [])
+
     def test_hwpx_uses_defused_xml_extractor(self):
         path = self.root / "문서.hwpx"
         with ZipFile(path, "w") as archive:
@@ -181,6 +187,118 @@ class ContentSearchTests(unittest.TestCase):
         self.assertEqual(found[0]["snippet"][slice(*found[0]["highlights"][0])], "업무")
         names = self.index.search_files("strong txt")
         self.assertEqual(names[0]["name"], strong.name)
+
+    def test_keyword_search_uses_bm25_and_limits_locations(self):
+        weak = self.root / "a_weak.txt"
+        strong = self.root / "z_strong.txt"
+        weak.write_text("순위검색", encoding="utf-8")
+        strong.write_text("순위검색 " + "잡음 " * 100, encoding="utf-8")
+        self.index.index_file(weak); self.index.index_file(strong)
+        found = self.index.keyword_search("순위검색")
+        self.assertEqual(found[0]["name"], weak.name)
+        many = self.root / "many.txt"
+        many.write_text("\n".join(["세위치검색 문단"] * 5), encoding="utf-8")
+        self.index.index_file(many)
+        result = next(row for row in self.index.keyword_search("세위치검색") if row["name"] == many.name)
+        self.assertLessEqual(len(result["locations"]), 3)
+
+    def test_keyword_filename_field_weight_three_changes_rank(self):
+        named = self.root / "가중치검색.txt"
+        body = self.root / "other.txt"
+        named.write_text("가중치검색", encoding="utf-8")
+        body.write_text("가중치검색 " + "잡음 " * 300, encoding="utf-8")
+        self.index.index_file(named); self.index.index_file(body)
+        self.assertEqual(self.index.keyword_search("가중치검색")[0]["name"], named.name)
+
+    def test_keyword_hierarchy_boost_changes_rank(self):
+        heading = self.root / "heading.hwpx"
+        body = self.root / "body.txt"
+        write_hwpx_paragraphs(heading, [{"text": "위계점수검색", "style_name": "제목", "outline_level": 0}])
+        body.write_text("위계점수검색 " + "잡음 " * 300, encoding="utf-8")
+        self.index.index_file(heading); self.index.index_file(body)
+        self.assertEqual(self.index.keyword_search("위계점수검색")[0]["name"], heading.name)
+
+    def test_keyword_proximity_bonus_changes_rank(self):
+        near = self.root / "near.txt"
+        far = self.root / "far.txt"
+        near.write_text("근접검색 알파 베타", encoding="utf-8")
+        far.write_text("근접검색 알파 " + "잡음 " * 30 + "베타", encoding="utf-8")
+        self.index.index_file(near); self.index.index_file(far)
+        self.assertEqual(self.index.keyword_search("알파 베타")[0]["name"], near.name)
+
+    def test_keyword_phrase_bonus_changes_rank(self):
+        phrase = self.root / "phrase.txt"
+        scattered = self.root / "scattered.txt"
+        phrase.write_text("구문가산검색 알파 베타", encoding="utf-8")
+        scattered.write_text("구문가산검색 알파 " + "잡음 " * 40 + "베타", encoding="utf-8")
+        self.index.index_file(phrase); self.index.index_file(scattered)
+        self.assertEqual(self.index.keyword_search('"알파 베타"')[0]["name"], phrase.name)
+
+    def test_keyword_two_character_search_3000_documents_and_record_timings(self):
+        with self.index._lock, self.index.db:
+            rows = [(f"{self.root}/short{i}.txt", f"short{i}.txt", 0, "body", 8, f"문서 {i} 공통어 검색 대상") for i in range(3000)]
+            self.index.db.executemany(
+                "INSERT INTO content_paragraph_fts(path,name,paragraph_index,level,level_rank,body,location_label,section) VALUES(?,?,?,?,?,?,?,?)",
+                [(*row, f"문단 1", None) for row in rows])
+            self.index.db.executemany("INSERT INTO content_fts(path,name,body) VALUES(?,?,?)",
+                                      [(row[0], row[1], row[5]) for row in rows])
+            self.index.db.executemany(
+                "INSERT INTO content_meta(path,size,mtime,ctime,hierarchy_schema_version) VALUES(?,?,?,?,?)",
+                [(row[0], 1, 1.0, 1.0, CURRENT_HIERARCHY_SCHEMA_VERSION) for row in rows])
+            self.index.db.executemany("INSERT INTO content_short_grams(gram,path) VALUES(?,?)",
+                                      [(gram, row[0]) for row in rows
+                                       for gram in {row[5][i:i + 2].casefold() for i in range(len(row[5]) - 1)}])
+        start = time.perf_counter()
+        self.index.db.execute("SELECT DISTINCT path FROM content_paragraph_fts WHERE body LIKE ?", ("%검색%",)).fetchall()
+        before_seconds = time.perf_counter() - start
+        start = time.perf_counter()
+        self.index.db.execute("SELECT path FROM content_short_grams WHERE gram=?", ("검색",)).fetchall()
+        gram_seconds = time.perf_counter() - start
+        start = time.perf_counter()
+        result = self.index.keyword_search("검색", limit=100)
+        after_seconds = time.perf_counter() - start
+        print(f"\n[성능 측정] 2글자 3,000건 전체검색={after_seconds:.4f}초 / 전 LIKE 후보={before_seconds:.4f}초 / 후 그램 후보={gram_seconds:.4f}초", flush=True)
+        self.assertEqual(len(result), 100)
+        self.assertLess(gram_seconds, before_seconds)
+        self.assertLess(after_seconds, 1.5)
+
+    def test_keyword_query_syntax_filters_and_extension_aliases(self):
+        root = self.root / "폴더"
+        root.mkdir()
+        first = root / "first.hwpx"
+        second = root / "second.txt"
+        first.write_text('2026-10-20 "정확 구문" 한국어조사 처리 제외어', encoding="utf-8")
+        second.write_text('2026-10-21 "정확 구문" 한국어조사 처리 다른말', encoding="utf-8")
+        self.index.index_file(first); self.index.index_file(second)
+        self.assertEqual([x["name"] for x in self.index.keyword_search('"정확 구문" -제외어')], ["second.txt"])
+        self.assertEqual(len(self.index.keyword_search("한국어조사")), 1)
+        self.assertEqual([x["name"] for x in self.index.keyword_search('정확 ext:txt')], ["second.txt"])
+        self.assertEqual(len(self.index.keyword_search('"정확 구문" path:폴더')), 1)
+        self.assertEqual(len(self.index.keyword_search('"정확 구문" after:2026-10-01 before:2026-10-30')), 1)
+        self.assertEqual(len(self.index.keyword_search('정확 처리 ~5')), 1)
+        self.assertEqual(len(self.index.keyword_search('"정확 구문" ext:txt')), 1)
+
+    def test_keyword_results_keep_sheet_row_location_badge(self):
+        path = self.root / "sheet.xlsx"
+        with ZipFile(path, "w") as archive:
+            archive.writestr("xl/workbook.xml", '<workbook xmlns:r="urn:r"><sheets><sheet name="매출" r:id="rId1"/></sheets></workbook>')
+            archive.writestr("xl/_rels/workbook.xml.rels", '<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>')
+            archive.writestr("xl/worksheets/sheet1.xml", '<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>제목</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>시트행검색 배지</t></is></c></row></sheetData></worksheet>')
+        self.index.index_file(path)
+        result = self.index.keyword_search("시트행검색")[0]
+        self.assertEqual(result["locations"][0]["position"]["sheet"], "매출")
+        self.assertEqual(result["locations"][0]["position"]["row"], 2)
+
+    def test_keyword_results_keep_pdf_page_badge(self):
+        path = self.root / "pages.pdf"
+        from unittest.mock import patch
+        from docfit_core.timemachine.extractors import ExtractionRecord
+        records = [ExtractionRecord("둘째쪽 페이지검색 배지", "page", "2쪽", 2)]
+        with patch("docfit_core.timemachine.content_search.extract_document", return_value=records):
+            path.write_bytes(b"pdf stub")
+            self.index.index_file(path)
+        result = self.index.keyword_search("페이지검색")[0]
+        self.assertEqual(result["locations"][0]["position"]["page"], 2)
 
     def test_match_counts_phrases_exclusions_casefold_and_mentions_sort(self):
         low = self.root / "low.txt"

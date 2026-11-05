@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show kIsWeb, listEquals;
 
@@ -179,6 +180,21 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
   final savedSidebarExpanded = ValueNotifier<bool?>(null);
   final workspace = GlobalKey<_WorkspaceState>();
   int lastTab = 0;
+  bool developerMode = false;
+  bool alwaysOnTop = false;
+  bool sidebarOnly = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(widget.api('get_state', []).then((value) {
+      if (!mounted || value is! Map) return;
+      setState(() {
+        developerMode = value['developer_mode'] == true;
+        alwaysOnTop = value['always_on_top'] == true;
+      });
+    }).catchError((_) {}));
+  }
   final tabRequest = ValueNotifier<int?>(null);
 
   /// 표그림판 탭에서는 끌어 놓은 사진을 칸 배경 그림으로, 그림판 탭에서는 배경 사진으로 받고,
@@ -208,9 +224,13 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
   Widget build(BuildContext context) => IntegratedWorkspace(
     api: widget.api,
     tabRequest: tabRequest,
+    developerMode: developerMode,
+    onSidebarSideSwitch: () => unawaited(widget.api('sidebar_mode_switch_side', [])),
     documentEditorWidget: Workspace(
       key: workspace,
       api: widget.api,
+      developerMode: developerMode,
+      onSidebarSideSwitch: () => unawaited(widget.api('sidebar_mode_switch_side', [])),
       onSidebarCollapsed: (collapsed) =>
           savedSidebarExpanded.value = collapsed == null ? null : !collapsed,
       onRenameOpen: () {
@@ -245,6 +265,12 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
           final expanded = constraints.maxWidth >= 140;
           final actions = <({String label, IconData icon, VoidCallback onPressed, Key? key})>[
             (
+              label: '새문서',
+              icon: Icons.note_add_outlined,
+              onPressed: () => _showNewDocument(context, widget.api),
+              key: const ValueKey('new-document-open'),
+            ),
+            (
               label: '몽땅클립보드',
               icon: Icons.content_paste_search,
               onPressed: () => showKClipDialog(context, widget.api),
@@ -273,6 +299,30 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
               },
               key: null,
             ),
+            if (developerMode) ...[
+              (
+                label: '항상 위',
+                icon: Icons.push_pin_outlined,
+                onPressed: () async {
+                  final enabled = !alwaysOnTop;
+                  await widget.api('always_on_top', [enabled]);
+                  if (context.mounted) setState(() => alwaysOnTop = enabled);
+                },
+                key: const ValueKey('always-on-top-toggle'),
+              ),
+              (
+                label: '사이드메뉴 모드 ${sidebarOnly ? '켜짐' : '꺼짐'}',
+                icon: Icons.view_sidebar_outlined,
+                onPressed: () async {
+                  final enabled = !sidebarOnly;
+                  final result = await widget.api('sidebar_mode', [enabled]);
+                  if (result is Map && result['ok'] == true && context.mounted) {
+                    setState(() => sidebarOnly = enabled);
+                  }
+                },
+                key: const ValueKey('sidebar-mode-toggle'),
+              ),
+            ],
           ];
           String tipOf(String label) => switch (label) {
             '몽땅클립보드' => '몽땅클립보드 (복사 기록 · Ctrl+Shift+V)',
@@ -291,7 +341,14 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
                     message: tipOf(action.label),
                     child: TextButton.icon(
                     key: action.key,
-                    onPressed: action.onPressed,
+                  onPressed: () {
+                    if (sidebarOnly && !action.label.startsWith('사이드메뉴 모드')) {
+                      widget.api('sidebar_mode', [false]).then((_) {
+                        if (mounted) setState(() => sidebarOnly = false);
+                      });
+                    }
+                    action.onPressed();
+                  },
                     icon: Icon(action.icon, size: 20),
                     label: Text(action.label),
                     style: TextButton.styleFrom(
@@ -306,7 +363,14 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
                     key: action.key,
                     tooltip: tipOf(action.label),
                     visualDensity: VisualDensity.compact,
-                    onPressed: action.onPressed,
+                    onPressed: () {
+                      if (sidebarOnly && !action.label.startsWith('사이드메뉴 모드')) {
+                        widget.api('sidebar_mode', [false]).then((_) {
+                          if (mounted) setState(() => sidebarOnly = false);
+                        });
+                      }
+                      action.onPressed();
+                    },
                     icon: Icon(action.icon, size: 20),
                   ),
             ],
@@ -317,12 +381,38 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
   );
 }
 
+Future<void> _showNewDocument(BuildContext context, ApiCall api) async {
+  final result = await api('new_document', ['list', const {}]);
+  if (!context.mounted) return;
+  final items = result is Map ? (result['items'] as List? ?? const []) : const [];
+  await showDialog<void>(context: context, builder: (dialogContext) => AlertDialog(
+    title: const Text('스냅샷 서식 고르기'),
+    content: SizedBox(width: 420, child: items.isEmpty
+      ? const Text('등록된 HWPX 서식이 없습니다.')
+      : ListView(shrinkWrap: true, children: [for (final raw in items)
+          ListTile(title: Text('${(raw as Map)['name'] ?? '서식'}'), subtitle: const Text('사본을 만들어 한/글에서 엽니다.'),
+            leading: raw['preview'] is String
+              ? Image.file(File(raw['preview'] as String), width: 52, height: 64, fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => const Icon(Icons.description_outlined))
+              : const Icon(Icons.description_outlined), onTap: () async {
+              Navigator.pop(dialogContext);
+              final opened = await api('new_document', ['create', {'id': raw['id']}]);
+              if (context.mounted && opened is Map && opened['ok'] != true) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${opened['message'] ?? '새문서를 만들지 못했습니다.'}')));
+              }
+            })])),
+    actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('닫기'))],
+  ));
+}
+
 class Workspace extends StatefulWidget {
   const Workspace({
     super.key,
     required this.api,
     this.onSidebarCollapsed,
     this.onRenameOpen,
+    this.developerMode = false,
+    this.onSidebarSideSwitch,
   });
   final ApiCall api;
 
@@ -331,12 +421,15 @@ class Workspace extends StatefulWidget {
 
   /// 탐색기 보내기로 파일이 들어와 파일명 일괄변경 탭을 열어야 할 때.
   final VoidCallback? onRenameOpen;
+  final bool developerMode;
+  final VoidCallback? onSidebarSideSwitch;
   @override
   State<Workspace> createState() => _WorkspaceState();
 }
 
 class _WorkspaceState extends State<Workspace> implements ConversionHost {
   Map<String, dynamic> state = {};
+  bool sidebarOnly = false;
   int tab = 0;
   bool busy = false, polling = false, wasRunning = false;
   int commandVersion = 0;
@@ -548,6 +641,9 @@ class _WorkspaceState extends State<Workspace> implements ConversionHost {
     final documentsChanged =
         jsonEncode(state['files'] ?? []) != jsonEncode(next['files'] ?? []);
     state = Map<String, dynamic>.from(next);
+    if (next['sidebar_mode'] is bool && next['sidebar_mode'] != sidebarOnly) {
+      sidebarOnly = next['sidebar_mode'] as bool;
+    }
     final collapsed = next['sidebar_collapsed'];
     widget.onSidebarCollapsed?.call(collapsed is bool ? collapsed : null);
     if (next['rename_open'] == true) widget.onRenameOpen?.call();
@@ -1017,8 +1113,8 @@ class _WorkspaceState extends State<Workspace> implements ConversionHost {
               child: LayoutBuilder(
                 builder: (context, layout) => Row(
                   children: [
-                    if (layout.maxWidth >= 1000) sidebar(),
-                    Expanded(
+                    if (sidebarOnly || layout.maxWidth >= 1000) sidebar(),
+                    if (!sidebarOnly) Expanded(
                       child: Column(
                         children: [
                           if (busy) const LinearProgressIndicator(minHeight: 2),
@@ -1372,6 +1468,24 @@ class _WorkspaceState extends State<Workspace> implements ConversionHost {
             ),
           ),
         const Spacer(),
+        if (sidebarOnly)
+          if (widget.developerMode)
+            TextButton.icon(
+              key: const ValueKey('sidebar-mode-switch-side'),
+              onPressed: widget.onSidebarSideSwitch,
+              icon: const Icon(Icons.swap_horiz),
+              label: const Text('왼쪽↔오른쪽 고정'),
+            ),
+        if (sidebarOnly)
+          TextButton.icon(
+            key: const ValueKey('sidebar-mode-exit'),
+            onPressed: () async {
+              await widget.api('sidebar_mode', [false]);
+              if (mounted) setState(() => sidebarOnly = false);
+            },
+            icon: const Icon(Icons.close_fullscreen),
+            label: const Text('사이드메뉴 모드 끄기'),
+          ),
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
