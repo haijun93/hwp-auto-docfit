@@ -44,6 +44,17 @@ pub struct Database {
 }
 
 impl Database {
+    pub(crate) fn connection(&self) -> &Connection { &self.conn }
+
+    pub fn notebook_create(&self,name:&str,description:&str)->Result<i64>{crate::notebook::create(&self.conn,name,description)}
+    pub fn notebook_update(&self,id:i64,name:&str,description:&str)->Result<bool>{crate::notebook::update(&self.conn,id,name,description)}
+    pub fn notebook_delete(&self,id:i64)->Result<bool>{crate::notebook::delete(&self.conn,id)}
+    pub fn notebook_sources(&self,id:i64)->Result<Vec<crate::notebook::Source>>{crate::notebook::sources(&self.conn,id)}
+    pub fn notebook_source_paragraphs(&self,notebook_id:i64,source_id:i64)->Result<Vec<crate::notebook::Paragraph>>{crate::notebook::source_paragraphs(&self.conn,notebook_id,source_id)}
+    pub fn notebook_notes(&self,notebook_id:i64)->Result<Vec<(i64,String,String,i64)>>{let mut s=self.conn.prepare("SELECT id,title,body,updated_at FROM nb_note WHERE notebook_id=?1 ORDER BY updated_at DESC,id DESC")?;s.query_map([notebook_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?)))?.collect()}
+}
+
+impl Database {
     pub fn open(db_path: &str) -> Result<Self> {
         if let Some(parent) = Path::new(db_path).parent() {
             let _ = fs::create_dir_all(parent);
@@ -51,6 +62,7 @@ impl Database {
         let conn = Connection::open(db_path)?;
         let db = Database { conn };
         db.init_schema()?;
+        crate::notebook::init_schema(&db.conn)?;
         Ok(db)
     }
 

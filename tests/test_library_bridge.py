@@ -252,7 +252,7 @@ class FakeProcess:
         self.args = (args, kwargs)
 
 
-class LibraryBridgeTests(unittest.TestCase):
+class LibrarySearchTests(unittest.TestCase):
     def test_search_forwards_unicode_query_box_and_limit(self):
         process = FakeProcess()
         bridge = LibraryBridge(exe="klib.exe", process=process, pipe_factory=lambda: "fake")

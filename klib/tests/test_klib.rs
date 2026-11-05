@@ -17,6 +17,10 @@ mod pipe;
 mod util;
 #[path = "../src/search.rs"]
 mod search;
+#[path = "../src/notebook.rs"]
+mod notebook;
+#[path = "../src/nb_transform.rs"]
+mod nb_transform;
 #[path = "../src/content.rs"]
 mod content;
 
