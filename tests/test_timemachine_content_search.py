@@ -88,6 +88,12 @@ class ContentSearchTests(unittest.TestCase):
         self.assertTrue(self.index.index_file(path)["indexed"])
         self.assertEqual(self.index.search("업무 실적"), [])
 
+    def test_excluded_filename_is_not_indexed_or_searchable(self):
+        path = self.root / " '#IEeEE legacy'.txt"
+        path.write_text("needleword hidden", encoding="utf-8")
+        self.assertFalse(self.index.index_file(path)["indexed"])
+        self.assertEqual(self.index.search("needleword"), [])
+
     def test_hwpx_uses_defused_xml_extractor(self):
         path = self.root / "문서.hwpx"
         with ZipFile(path, "w") as archive:

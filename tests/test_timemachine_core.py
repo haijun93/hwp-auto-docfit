@@ -25,7 +25,7 @@ class RulesTests(unittest.TestCase):
         for name in ("~$보고서.docx", "~WRL0001.tmp", "a.tmp", "x.crdownload", "Thumbs.db", "desktop.ini",
                      "a.asv", "a.bak", "setup.exe", "a.zip", "a(무결성검사).json", "b.heic",
                      "#IEeEE'.pptx", "#IEeEE'.docx", "#IEeEE'.hwp", "#IEeEE'.xlsx",
-                     "#IEeEE 메모.txt", "#ieeee-extra.pdf"):
+                     "#IEeEE 메모.txt", "#ieeee-extra.pdf", " ' #IEeEE ‘ weird name.zzz ” ", "‘#IeEeE.any.ext’"):
             self.assertTrue(rules.skip_file(name), name)
         self.assertTrue(rules.skip_file("a.pdf", 2))  # 숨김
         self.assertFalse(Rules(include_hidden=True).skip_file("a.pdf", 2))
@@ -105,6 +105,20 @@ class ScanStoreTests(unittest.TestCase):
         self.assertEqual(first.written, 30)
         again = scan_root(self.store, self.root)
         self.assertEqual((again.seen, again.written, again.removed), (30, 0, 0))
+
+    def test_legacy_excluded_rows_removed_and_never_reindexed(self):
+        variants = ["#IEeEE'.docx", " '#ieeee x'.pdf", "‘#IEEEEfoo’.hwp"]
+        for index, name in enumerate(variants):
+            touch(self.root / "nested" / str(index) / name, self.day)
+        # 예전 버전이 저장한 제외 파일을 스캔으로 정리한다.
+        legacy = [dict(path=str(self.root / "nested" / str(i) / name), root=str(self.root), name=name,
+                       kind="doc", size=1, mtime=self.day, ctime=self.day, work_time=self.day, flags=[])
+                  for i, name in enumerate(variants)]
+        self.store.upsert_many(legacy)
+        result = scan_root(self.store, self.root)
+        self.assertEqual(result.seen, 0)
+        self.assertEqual(self.store.stats()["files"], 0)
+        self.assertEqual(scan_root(self.store, self.root).seen, 0)
 
     def test_incremental_modify_add_delete_rename(self):
         a = touch(self.root / "a.hwpx", self.day)

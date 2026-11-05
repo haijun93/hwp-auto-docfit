@@ -16,7 +16,7 @@ from pathlib import Path
 from docfit_core.timemachine import thumbs
 from docfit_core.timemachine.content_search import ContentSearchIndex
 from docfit_core.timemachine.related import related_documents
-from docfit_core.timemachine.rules import DEFAULT_EXTENSIONS, IMAGE_EXTENSIONS, KINDS, Rules, SUPPORTED_EXTENSIONS
+from docfit_core.timemachine.rules import DEFAULT_EXTENSIONS, IMAGE_EXTENSIONS, KINDS, Rules, SUPPORTED_EXTENSIONS, excluded_name
 from docfit_core.timemachine.scan import default_roots, scan_roots
 from docfit_core.timemachine.store import Store
 from .kagent_client import KAgentClient, data_dir
@@ -36,6 +36,7 @@ class TimemachineService:
         self.settings_root = Path(settings_root)
         self.settings_path = self.settings_root / "timemachine.json"
         self.store = Store(db_path or data_dir() / "timeline.db")
+        excluded_rows = self.store.purge_excluded()
         content_db = (Path(db_path).with_suffix(".content.sqlite") if db_path else data_dir() / "timeline-content.sqlite")
         self.content_index = ContentSearchIndex(content_db)
         self.agent = agent if agent is not None else KAgentClient()
@@ -43,6 +44,7 @@ class TimemachineService:
         self.revealer = revealer if revealer is not None else self._reveal_file
         self.scanner = scanner
         self.thumbnails = thumbs.ThumbnailCache(thumb_dir or data_dir() / "thumbs")
+        thumbs.purge_excluded_cache(self.thumbnails, excluded_rows)
         self.feature_api = feature_api
         self.developer_mode = developer_mode or (lambda: False)
         self._pdf_child_target = None
@@ -93,6 +95,9 @@ class TimemachineService:
                         if cancel_event.is_set():
                             break
                         ext = Path(name).suffix.lower().lstrip(".")
+                        if excluded_name(name):
+                            self.content_index.remove_file(os.path.join(folder, name))
+                            continue
                         if ext not in extensions:
                             continue
                         path = os.path.join(folder, name)
@@ -661,7 +666,7 @@ class TimemachineService:
     def _thumbnail_allowed(self, row):
         """색인에 있고 지금 조사 폴더 안(연결 경로로 밖을 가리키지 않음)의 파일인지 본다."""
         path = row["path"]
-        if (row["hidden"] or Rules().kind(row["name"]) not in KINDS or
+        if (excluded_name(row["name"]) or row["hidden"] or Rules().kind(row["name"]) not in KINDS or
                 not self._path_in_active_root(path, row.get("root"))):
             return False
         if row["cloud"]:

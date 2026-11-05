@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import threading
+from .rules import excluded_name
 import re
 from dataclasses import dataclass
 from datetime import date
@@ -596,6 +597,10 @@ class ContentSearchIndex:
 
     def index_file(self, path):
         path = os.path.abspath(os.fspath(path))
+        from .rules import excluded_name
+        if excluded_name(os.path.basename(path)):
+            self.remove_file(path)
+            return {"indexed": False, "error": None}
         stat = os.stat(path)
         ctime = getattr(stat, "st_ctime", 0.0)
         mtime = stat.st_mtime
@@ -667,10 +672,20 @@ class ContentSearchIndex:
         """색인된 경로 목록. 전달된 루트 안의 문서만 돌려준다."""
         with self._lock:
             rows = self.db.execute("SELECT path FROM content_meta").fetchall()
+            bad = [row["path"] for row in rows if excluded_name(os.path.basename(row["path"]))]
+            if bad:
+                with self.db:
+                    for path in bad:
+                        self.db.execute("DELETE FROM content_paragraph_fts WHERE path=?", (path,))
+                        self.db.execute("DELETE FROM content_fts WHERE path=?", (path,))
+                        self.db.execute("DELETE FROM content_short_grams WHERE path=?", (path,))
+                        self.db.execute("DELETE FROM content_meta WHERE path=?", (path,))
+                        self.db.execute("DELETE FROM content_errors WHERE path=?", (path,))
+                rows = [row for row in rows if row["path"] not in set(bad)]
         allowed = [os.path.normcase(os.path.abspath(root)) for root in roots] if roots else None
-        return [os.path.abspath(row["path"]) for row in rows if allowed is None or any(
+        return [os.path.abspath(row["path"]) for row in rows if not excluded_name(os.path.basename(row["path"])) and (allowed is None or any(
             os.path.commonpath((os.path.normcase(os.path.abspath(row["path"])), root)) == root
-            for root in allowed if os.path.splitdrive(root)[0].casefold() == os.path.splitdrive(os.path.abspath(row["path"]))[0].casefold())]
+            for root in allowed if os.path.splitdrive(root)[0].casefold() == os.path.splitdrive(os.path.abspath(row["path"]))[0].casefold()))]
 
     def search(self, query, *, roots=None, limit=100, sort="hierarchy_relevance"):
         parsed = self.parse_query(query)
@@ -726,6 +741,8 @@ class ContentSearchIndex:
         for r in meta_rows:
             raw_p = r["path"]
             p = os.path.abspath(raw_p)
+            if excluded_name(r["name"] or os.path.basename(p)):
+                continue
             if any(part.casefold() == "$recycle.bin" for part in Path(p).parts):
                 continue
             if allowed is not None and not any(

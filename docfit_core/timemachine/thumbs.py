@@ -19,7 +19,7 @@ import zipfile
 
 from .. import pdfium_guard
 from ..hwpx import HwpxLimits, open_hwpx_safely
-from .rules import cloud_only
+from .rules import cloud_only, excluded_name
 from .store import path_key
 
 SIZE = 160
@@ -386,7 +386,7 @@ class ThumbnailCache:
 
 def lookup(path, cache, *, cloud=False):
     """(캐시된 JPEG, 캐시 키). 만들 수 없는 파일이면 키가 None이다. 내용은 읽지 않는다."""
-    if cloud:
+    if cloud or excluded_name(os.path.basename(path)):
         return None, None
     try:
         info = os.lstat(path)
@@ -397,6 +397,21 @@ def lookup(path, cache, *, cloud=False):
         return None, None
     key = cache.key(path, info.st_mtime_ns, info.st_size)
     return cache.get(key), key
+
+
+def purge_excluded_cache(cache, rows):
+    """이전 DB 행에 연결되는 #IEeEE 썸네일 캐시 파일을 지운다."""
+    count = 0
+    for row in rows:
+        if not excluded_name(row.get("name", "")):
+            continue
+        key = ThumbnailCache.key(row["path"], int(row["mtime"] * 1_000_000_000), row["size"])
+        try:
+            os.unlink(cache._file(key))
+            count += 1
+        except OSError:
+            pass
+    return count
 
 
 def generate(path, key, cache):
