@@ -112,6 +112,13 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             role = 항목기호_역할표().get(marker, role)
             return role or None
         return bind_function(보고서_문단역할, _docfit_namespace)
+    if _docfit_symbol == '쪽맞춤_부연설명인가':
+        def 쪽맞춤_부연설명인가(text):
+            """문두가 ※, * 또는 **인 부연설명인지 들여쓰기와 무관하게 판정한다."""
+            stripped = (text or '').lstrip()
+            return (stripped.startswith('※') or stripped.startswith('*')) and \
+                보고서_문단역할(text) == '부연설명'
+        return bind_function(쪽맞춤_부연설명인가, _docfit_namespace)
     if _docfit_symbol == '보고서_본문묶음_수집':
         def 보고서_본문묶음_수집(시작위치):
             """본문과 직속 내용·부연설명을 묶고, 소제목은 첫 본문 묶음에 연결한다.
@@ -147,15 +154,15 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         parent_indent = 세트문장_선행들여쓰기_폭(next_text)
                     elif body_attached and next_role == '내용':
                         parent_indent = 세트문장_선행들여쓰기_폭(next_text)
-                    elif (next_role == '부연설명' and role in ('소제목', '본문', '내용')
-                          and (세트문장_선행들여쓰기_폭(next_text) > parent_indent or parent_indent == 0)):
+                    elif (쪽맞춤_부연설명인가(next_text)
+                          and role in ('소제목', '본문', '내용')):
                         pass
                     elif (세트문장_선행들여쓰기_폭(next_text) > parent_indent
                           and not (parent_indent == 0 and next_text.lstrip().startswith(('※', '*')))
                           and 세트문장_후속문단인가(parent_indent, next_text)
                           and (next_role != '부연설명' or parent_indent == 0)):
                         next_role = next_role or '부연설명'
-                    elif role == '부연설명' and next_role == '부연설명':
+                    elif role == '부연설명' and 쪽맞춤_부연설명인가(next_text):
                         pass
                     else:
                         break
@@ -635,11 +642,15 @@ def _install(*, _docfit_namespace, _docfit_symbol):
         def 쪽맞춤_논리단위(roles):
             """문단 역할 목록을 논리단위(문단 인덱스 목록)로 나눈다."""
             units = []
+            previous_role = None
             for index, role in enumerate(roles):
                 if role in ('소제목', '본문') or not units:
                     units.append([index])
+                elif role == '부연설명' and previous_role in ('소제목', '본문', '내용'):
+                    units[-1].append(index)
                 else:
                     units[-1].append(index)
+                previous_role = role
             return units
         return bind_function(쪽맞춤_논리단위, _docfit_namespace)
     if _docfit_symbol == '쪽맞춤_뒤로밀기인가':
