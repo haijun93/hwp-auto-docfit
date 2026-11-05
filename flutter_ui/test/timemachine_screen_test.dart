@@ -773,6 +773,19 @@ void main() {
     expect(api.calls.any((call) => call.$1 == 'open' && call.$2['id'] == 42), isTrue);
   });
 
+  testWidgets('열 보기에서 검색어가 비어 있으면 타임라인 기간의 항목을 표로 표시한다', (tester) async {
+    final api = _FakeApi(enabled: true);
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: api.call))));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('열 보기'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('tm-col-header-name')), findsOneWidget);
+    expect(find.text('보고서.pdf'), findsOneWidget);
+    expect(api.calls.any((call) => call.$1 == 'file_search'), isFalse);
+  });
+
   testWidgets('파일명 모드 열 보기는 file_search 결과를 공급받고 구형 서비스는 시간순 화면으로 폴백한다', (tester) async {
     // 1. 신형 서비스: file_search 성공
     final apiNew = _FakeApi(
@@ -793,6 +806,10 @@ void main() {
       ],
     );
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: apiNew.call))));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byKey(const ValueKey('tm-file-search')), '검색결과');
+    await tester.pump(const Duration(milliseconds: 350));
     await tester.pumpAndSettle();
 
     // 열 보기 누르기

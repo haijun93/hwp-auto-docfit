@@ -410,6 +410,15 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
   Future<void> _runFileSearch(String query) async {
     if (!_fileSearchSupported) return;
     final rev = ++_fileSearchRevision;
+    if (query.trim().isEmpty) {
+      // 검색어가 없으면 빈 file_search 결과 대신 현재 기간의 타임라인 항목을 표로 보여준다.
+      if (!mounted) return;
+      setState(() {
+        _fileSearchResults = [];
+        _fileSearchActive = false;
+      });
+      return;
+    }
     try {
       final roots = _settings?['roots'];
       final results = await _api.fileSearch(
@@ -1437,7 +1446,7 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
     OutlinedButton.icon(onPressed:_pickExtensions,icon:const Icon(Icons.tune,size:16),label:const Text('확장자')),
     for(final entry in _kinds.entries) FilterChip(label:Text(entry.key),selected:_selectedKinds.contains(entry.value),onSelected:(value){setState(()=>value?_selectedKinds.add(entry.value):_selectedKinds.remove(entry.value));_filtersChanged();if(_fileTableView && _fileSearchSupported){_runFileSearch(_search.text.trim());}}),
     SegmentedButton<String>(key: const ValueKey('tm-search-mode'),segments:[const ButtonSegment(value:'file',label:Text('파일명')),const ButtonSegment(value:'content',label:Text('본문검색')),if (_developerMode) const ButtonSegment(value:'related',label:Text('연관검색'))],selected:{_relatedMode?'related':_contentMode?'content':'file'},onSelectionChanged:(values){final mode=values.first;if(mode=='related'){_setContentMode(true);}else if(mode=='content'){_setContentMode(false);}else{_toggleRelatedMode(false);_toggleContentMode(false);}}),
-    SizedBox(width:180,child:TextField(controller:_search,decoration:InputDecoration(prefixIcon:const Icon(Icons.search),hintText:_contentMode?'본문 검색':'이름 찾기',isDense:true),onChanged:(value){_debounce?.cancel();_debounce=Timer(const Duration(milliseconds:300),(){final trimmed=value.trim();if(_contentMode){_contentSearch(trimmed);}else{_query=trimmed;_filtersChanged();if(_fileTableView || _fileSearchActive){_runFileSearch(trimmed);}}});})),
+    SizedBox(width:180,child:TextField(key:const ValueKey('tm-file-search'),controller:_search,decoration:InputDecoration(prefixIcon:const Icon(Icons.search),hintText:_contentMode?'본문 검색':'이름 찾기',isDense:true),onChanged:(value){_debounce?.cancel();_debounce=Timer(const Duration(milliseconds:300),(){final trimmed=value.trim();if(_contentMode){_contentSearch(trimmed);}else{_query=trimmed;_filtersChanged();if(_fileTableView || _fileSearchActive){_runFileSearch(trimmed);}}});})),
     if (_contentMode && !_relatedMode)
       IconButton(
         icon: const Icon(Icons.help_outline),
