@@ -176,7 +176,7 @@ class IntegratedWorkspace extends StatelessWidget {
       onSidebarExpandedChanged: onSidebarExpandedChanged,
       developerMode: developerMode,
       libraryScreen: libraryScreen ?? LibraryScreen(api: BridgeLibraryApi(api)),
-      notebookScreen: notebookScreen ?? NotebookScreen(api: BridgeNotebookApi(api)),
+      notebookScreen: notebookScreen ?? NotebookScreen(api: BridgeNotebookApi(api), library: BridgeLibraryApi(api)),
       onSidebarSideSwitch: onSidebarSideSwitch,
       onAlwaysOnTopChanged: (enabled) async {
         await api('always_on_top', [enabled]);

@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../core/drop_events.dart';
+import '../library/library_api.dart';
 import 'notebook_api.dart';
 
 /// 노트북 화면(개발자 모드). 세 칸: 출처 · 근거 찾기/미리보기/변환 · 노트.
@@ -9,10 +13,26 @@ const kNotebookWideWidth = 1000.0;
 
 enum _Middle { search, preview, transform }
 
+/// 창에 파일을 끌어 놓았다는 알림을 듣는다. 돌려준 함수를 부르면 듣기를 멈춘다.
+typedef NotebookDropWatcher = void Function() Function(void Function() onDrop);
+
+void Function() _watchNotebookDrops(void Function() onDrop) =>
+    watchWindowEvent('docfit-notebook-files-dropped', onDrop);
+
+String _errorText(Object error) => error.toString().replaceFirst(RegExp(r'^(Bad state|StateError): '), '');
+
+String _fileName(String path) => path.split(RegExp(r'[\\/]')).last;
+
 class NotebookScreen extends StatefulWidget {
-  const NotebookScreen({super.key, required this.api});
+  const NotebookScreen({super.key, required this.api, this.library, this.watchDropEvents});
 
   final NotebookApi api;
+
+  /// 있으면 '자료함에서 가져오기'로 자료함의 파일 자료를 출처로 넣을 수 있다.
+  final LibraryApi? library;
+
+  /// 시험에서 드롭 알림을 직접 넣을 때 쓴다. 없으면 창 이벤트를 듣는다.
+  final NotebookDropWatcher? watchDropEvents;
 
   @override
   State<NotebookScreen> createState() => _NotebookScreenState();
@@ -40,15 +60,20 @@ class _NotebookScreenState extends State<NotebookScreen> {
   String? _status;
   bool _busy = false;
   bool _loaded = false;
+  void Function()? _stopDrops;
 
   @override
   void initState() {
     super.initState();
+    _stopDrops = (widget.watchDropEvents ?? _watchNotebookDrops)(() => unawaited(_takeDrops()));
+    unawaited(widget.api.watchDrops(true).catchError((Object _) {}));
     _run(_loadNotebooks);
   }
 
   @override
   void dispose() {
+    _stopDrops?.call();
+    unawaited(widget.api.watchDrops(false).catchError((Object _) {}));
     _queryController.dispose();
     _titleController.dispose();
     _bodyController.dispose();
@@ -62,8 +87,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
       if (mounted && done != null) setState(() => _status = done);
     } catch (error) {
       if (!mounted) return;
-      final text = error.toString().replaceFirst(RegExp(r'^(Bad state|StateError): '), '');
-      setState(() => _status = text);
+      setState(() => _status = _errorText(error));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -145,16 +169,66 @@ class _NotebookScreenState extends State<NotebookScreen> {
     if (nb == null) return;
     final path = await _askText(
       title: '출처 추가',
-      label: '파일 경로(txt·md·hwpx·docx·pptx·xlsx)',
+      label: '파일 경로(hwpx·hwp·docx·pdf·txt·md·pptx·xlsx)',
       fieldKey: 'nb-source-path',
       okKey: 'nb-source-path-ok',
     );
     final trimmed = path?.trim().replaceAll('"', '') ?? '';
     if (trimmed.isEmpty) return;
+    await _addPaths([trimmed]);
+  }
+
+  /// 여러 파일을 차례로 출처로 넣는다. 하나가 실패해도 나머지는 계속한다.
+  Future<void> _addPaths(List<String> paths) async {
+    final nb = _notebook;
+    final targets = paths.map((p) => p.trim()).where((p) => p.isNotEmpty).toList();
+    if (targets.isEmpty) return;
+    if (nb == null) {
+      setState(() => _status = '먼저 노트북을 만들거나 고르세요.');
+      return;
+    }
+    final failed = <String>[];
+    var added = 0;
     await _run(() async {
-      await widget.api.addSource(nb.id, trimmed);
+      for (final path in targets) {
+        try {
+          await widget.api.addSource(nb.id, path);
+          added++;
+        } catch (error) {
+          failed.add('${_fileName(path)}: ${_errorText(error)}');
+        }
+      }
       await _loadNotebookContent();
-    }, done: '출처를 추가했습니다.');
+    });
+    if (!mounted) return;
+    setState(() {
+      if (failed.isEmpty) {
+        _status = added == 1 ? '출처를 추가했습니다.' : '출처 $added개를 추가했습니다.';
+      } else {
+        _status = '출처 $added개 추가, ${failed.length}개 실패 — ${failed.join(' / ')}';
+      }
+    });
+  }
+
+  /// 창에 끌어 놓은 파일을 가져와 지금 노트북의 출처로 넣는다.
+  Future<void> _takeDrops() async {
+    if (!mounted) return;
+    try {
+      final paths = await widget.api.takeDroppedPaths();
+      if (mounted && paths.isNotEmpty) await _addPaths(paths);
+    } catch (error) {
+      if (mounted) setState(() => _status = _errorText(error));
+    }
+  }
+
+  Future<void> _importFromLibrary() async {
+    final library = widget.library;
+    if (library == null || _notebook == null) return;
+    final paths = await showDialog<List<String>>(
+      context: context,
+      builder: (context) => _LibraryPickDialog(library: library),
+    );
+    if (paths != null && paths.isNotEmpty) await _addPaths(paths);
   }
 
   Future<void> _removeSource(NbSource source) async {
@@ -425,6 +499,13 @@ class _NotebookScreenState extends State<NotebookScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _paneHeader('출처 ${_sources.length}', [
+          if (widget.library != null)
+            IconButton(
+              key: const ValueKey('nb-source-library'),
+              tooltip: '자료함에서 가져오기',
+              onPressed: _busy ? null : _importFromLibrary,
+              icon: const Icon(Icons.inventory_2_outlined, size: 18),
+            ),
           TextButton.icon(
             key: const ValueKey('nb-source-add'),
             onPressed: _busy ? null : _addSource,
@@ -434,7 +515,10 @@ class _NotebookScreenState extends State<NotebookScreen> {
         ]),
         const Padding(
           padding: EdgeInsets.symmetric(horizontal: 12),
-          child: Text('체크한 출처에서만 근거를 찾습니다.', style: TextStyle(fontSize: 12, color: Colors.black54)),
+          child: Text(
+            '체크한 출처에서만 근거를 찾습니다. 파일을 이 창에 끌어 놓아도 출처로 추가됩니다.',
+            style: TextStyle(fontSize: 12, color: Colors.black54),
+          ),
         ),
         Expanded(
           child: _sources.isEmpty
@@ -617,8 +701,12 @@ class _NotebookScreenState extends State<NotebookScreen> {
           Container(
             key: ValueKey('nb-preview-${p.ordinal}'),
             margin: const EdgeInsets.only(bottom: 4),
-            padding: const EdgeInsets.all(6),
-            color: p.ordinal == _previewOrdinal ? const Color(0xFFFFF3BF) : null,
+            padding: EdgeInsets.fromLTRB(6.0 + 12.0 * p.level.clamp(0, 6), 6, 6, 6),
+            color: p.ordinal == _previewOrdinal
+                ? const Color(0xFFFFF3BF)
+                : p.isTable
+                ? const Color(0xFFF1F5F9)
+                : null,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -626,7 +714,12 @@ class _NotebookScreenState extends State<NotebookScreen> {
                   width: 36,
                   child: Text('${p.ordinal + 1}', style: const TextStyle(fontSize: 12, color: Colors.black45)),
                 ),
-                Expanded(child: SelectableText(p.body)),
+                Expanded(
+                  child: SelectableText(
+                    p.isTable ? p.body.replaceAll('\t', '  |  ') : p.body,
+                    style: p.level > 0 ? const TextStyle(fontWeight: FontWeight.w600) : null,
+                  ),
+                ),
                 IconButton(
                   tooltip: '노트에 인용',
                   icon: const Icon(Icons.format_quote, size: 18),
@@ -670,7 +763,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
                     return ListTile(
                       dense: true,
                       contentPadding: EdgeInsets.only(left: 8.0 + 12.0 * row.level.clamp(0, 6)),
-                      title: Text(row.text),
+                      title: Text(row.text.replaceAll('\t', '  |  ')),
                       subtitle: Text(
                         _transformType == 'keywords'
                             ? '${_sourceName(row.sourceId)} · ${row.score.toStringAsFixed(0)}회'
@@ -845,6 +938,128 @@ class _TextPromptDialogState extends State<_TextPromptDialog> {
           key: ValueKey(widget.okKey),
           onPressed: () => Navigator.of(context).pop(_controller.text),
           child: const Text('확인'),
+        ),
+      ],
+    );
+  }
+}
+
+/// 자료함을 골라 파일 자료를 체크하고, 고른 파일 경로들을 돌려준다.
+class _LibraryPickDialog extends StatefulWidget {
+  const _LibraryPickDialog({required this.library});
+
+  final LibraryApi library;
+
+  @override
+  State<_LibraryPickDialog> createState() => _LibraryPickDialogState();
+}
+
+class _LibraryPickDialogState extends State<_LibraryPickDialog> {
+  List<LibraryBox> _boxes = [];
+  String? _boxId;
+  List<LibraryItem> _files = [];
+  final _picked = <String>{};
+  String? _error;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadBoxes());
+  }
+
+  Future<void> _guard(Future<void> Function() action) async {
+    setState(() => _loading = true);
+    try {
+      await action();
+      if (mounted) setState(() => _error = null);
+    } catch (error) {
+      if (mounted) setState(() => _error = _errorText(error));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadBoxes() => _guard(() async {
+    final boxes = await widget.library.listBoxes();
+    if (!mounted) return;
+    setState(() {
+      _boxes = boxes;
+      _boxId = boxes.isEmpty ? null : boxes.first.id;
+    });
+    await _loadItems();
+  });
+
+  Future<void> _loadItems() async {
+    final id = _boxId;
+    if (id == null) return;
+    final items = await widget.library.listItems(id);
+    if (!mounted) return;
+    setState(() {
+      _files = [
+        for (final item in items)
+          if (item.kind == LibraryItemKind.file && (item.source ?? '').trim().isNotEmpty) item,
+      ];
+      _picked.clear();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('자료함에서 가져오기'),
+      content: SizedBox(
+        width: 460,
+        height: 360,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_boxes.isNotEmpty)
+              DropdownButton<String>(
+                key: const ValueKey('nb-lib-box'),
+                isExpanded: true,
+                value: _boxId,
+                items: [
+                  for (final box in _boxes)
+                    DropdownMenuItem(value: box.id, child: Text(box.name, overflow: TextOverflow.ellipsis)),
+                ],
+                onChanged: (id) {
+                  if (id == null || id == _boxId) return;
+                  setState(() => _boxId = id);
+                  unawaited(_guard(_loadItems));
+                },
+              ),
+            if (_loading) const LinearProgressIndicator(minHeight: 2),
+            if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
+            Expanded(
+              child: !_loading && _boxes.isEmpty
+                  ? const Center(child: Text('자료함이 없습니다.'))
+                  : !_loading && _files.isEmpty
+                  ? const Center(child: Text('이 자료함에는 파일 자료가 없습니다.'))
+                  : ListView(
+                      children: [
+                        for (final item in _files)
+                          CheckboxListTile(
+                            key: ValueKey('nb-lib-item-${item.id}'),
+                            dense: true,
+                            value: _picked.contains(item.source),
+                            title: Text(item.title, overflow: TextOverflow.ellipsis),
+                            subtitle: Text(item.source!, overflow: TextOverflow.ellipsis),
+                            onChanged: (v) =>
+                                setState(() => v == true ? _picked.add(item.source!) : _picked.remove(item.source)),
+                          ),
+                      ],
+                    ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('취소')),
+        FilledButton(
+          key: const ValueKey('nb-lib-ok'),
+          onPressed: _picked.isEmpty ? null : () => Navigator.of(context).pop(_picked.toList()),
+          child: Text('가져오기 ${_picked.length}개'),
         ),
       ],
     );

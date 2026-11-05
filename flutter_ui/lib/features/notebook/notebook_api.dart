@@ -25,11 +25,25 @@ class NbSource {
 }
 
 class NbParagraph {
-  const NbParagraph({required this.sourceId, required this.ordinal, required this.body, this.location = ''});
+  const NbParagraph({
+    required this.sourceId,
+    required this.ordinal,
+    required this.body,
+    this.location = '',
+    this.level = 0,
+    this.kind = 'text',
+  });
   final int sourceId;
   final int ordinal;
   final String body;
   final String location;
+
+  /// 위계 수준(0=본문). hwpx·docx 개요 수준이나 공문서 기호(Ⅰ. 1. □ ○ - *)에서 온다.
+  final int level;
+
+  /// 'text' 또는 'table'(표 한 행, 칸은 탭으로 나뉨).
+  final String kind;
+  bool get isTable => kind == 'table';
 }
 
 /// 근거 찾기 결과 문단.
@@ -105,6 +119,12 @@ abstract class NotebookApi {
   Future<int> saveNote(int notebookId, NbNote note);
   Future<void> deleteNote(int notebookId, int noteId);
   Future<String> exportMarkdown(int notebookId, int noteId);
+
+  /// 창에 끌어 놓은 파일을 노트북 출처로 받기 켜기·끄기(노트북 화면이 열려 있는 동안 켠다).
+  Future<void> watchDrops(bool active);
+
+  /// 창에 끌어 놓아 맡겨 둔 파일 경로를 가져간다(가져가면 비워진다).
+  Future<List<String>> takeDroppedPaths();
 }
 
 typedef NotebookBridgeCall = Future<Object?> Function(String method, List<Object?> args);
@@ -169,6 +189,8 @@ class BridgeNotebookApi implements NotebookApi {
         ordinal: _int(r['ordinal']),
         body: _str(r['body']),
         location: _str(r['location']),
+        level: _int(r['level']),
+        kind: r['kind'] == null ? 'text' : _str(r['kind']),
       ),
   ];
 
@@ -245,6 +267,14 @@ class BridgeNotebookApi implements NotebookApi {
   @override
   Future<String> exportMarkdown(int notebookId, int noteId) async =>
       _str((await _request('nb_export_md', {'notebook_id': notebookId, 'note_id': noteId}))['markdown']);
+
+  @override
+  Future<void> watchDrops(bool active) => _request('nb_drop_watch', {'active': active});
+
+  @override
+  Future<List<String>> takeDroppedPaths() async => [
+    for (final p in (await _request('nb_take_drop'))['paths'] as List? ?? const []) '$p',
+  ];
 }
 
 /// 시험·미리보기용 메모리 구현. 파일 내용은 [fileContents]에서 읽고, 없으면 파일 이름을 한 문단으로 쓴다.
@@ -256,7 +286,14 @@ class InMemoryNotebookApi implements NotebookApi {
   final _sources = <int, List<NbSource>>{};
   final _paragraphs = <int, List<NbParagraph>>{};
   final _notes = <int, List<NbNote>>{};
+  final _dropped = <String>[];
   int _next = 1;
+
+  /// 드롭 받기가 켜져 있는지(시험 확인용).
+  bool watchingDrops = false;
+
+  /// 창에 파일을 끌어 놓은 것처럼 경로를 맡겨 둔다(시험용).
+  void queueDrop(List<String> paths) => _dropped.addAll(paths);
 
   @override
   Future<List<Notebook>> listNotebooks() async => List.of(_notebooks);
@@ -372,5 +409,15 @@ class InMemoryNotebookApi implements NotebookApi {
       buffer.write('\n> ${c.quote}\n');
     }
     return buffer.toString();
+  }
+
+  @override
+  Future<void> watchDrops(bool active) async => watchingDrops = active;
+
+  @override
+  Future<List<String>> takeDroppedPaths() async {
+    final paths = List.of(_dropped);
+    _dropped.clear();
+    return paths;
   }
 }

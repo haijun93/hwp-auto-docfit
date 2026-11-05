@@ -446,6 +446,84 @@ fn write_all(h: HANDLE, mut data: &[u8]) {
 
 }
 
+/// 노트북 출처 문단을 JSON 행에서 만든다(Python 추출 경로). text·level·table(또는 kind="table")·location(또는 page).
+fn nb_paragraphs_from_json(rows: &[Value]) -> Result<Vec<crate::notebook::Paragraph>, String> {
+    let mut out = Vec::new();
+    for row in rows {
+        let Some(text) = row.str("text").or_else(|| row.str("body")) else { return Err("문단마다 text가 필요합니다.".into()) };
+        let text = text.trim();
+        if text.is_empty() { continue; }
+        let table = row.bool("table").unwrap_or(false) || row.str("kind") == Some("table");
+        let location = row.str("location").or_else(|| row.str("page")).unwrap_or("").to_string();
+        out.push(crate::notebook::Paragraph { source_id: 0, ordinal: out.len() as i64, location, level: row.i64("level").unwrap_or(0).clamp(0, 9), kind: if table { "table" } else { "text" }.into(), body: text.to_string() });
+    }
+    Ok(out)
+}
+
+/// 출처 추가: 기본은 klib가 직접 추출한다(txt·md·hwpx·docx·pptx·xlsx, hwpx·docx는 개요 수준·표 행 포함).
+/// 요청에 paragraphs가 있으면(구형 hwp·pdf를 Python이 추출한 경우) 그 문단을 첫 묶음으로 쓴다. 나머지 묶음은 nb_index로 덧붙인다.
+fn nb_source_add(val: &Value, db: &Mutex<Database>) -> Value {
+    let Some(nb) = val.i64("notebook_id") else { return err_val("notebook_id가 필요합니다.") };
+    let Some(source_path) = val.str("source_path").or_else(|| val.str("origin")) else { return err_val("source_path가 필요합니다.") };
+    let path = std::path::Path::new(source_path);
+    if crate::util::is_or_has_reparse_point(path) { return err_val("심볼릭 링크나 정션 경로는 출처로 추가할 수 없습니다."); }
+    if !path.is_file() { return err_val("출처 파일을 찾을 수 없습니다."); }
+    let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("").to_ascii_lowercase();
+    let paragraphs = match val.arr("paragraphs") {
+        Some(rows) => {
+            if !matches!(ext.as_str(), "txt" | "md" | "hwpx" | "hwp" | "docx" | "pdf" | "pptx" | "xlsx") { return err_val(&format!("지원하지 않는 출처 형식입니다: {ext}")); }
+            match nb_paragraphs_from_json(rows) { Ok(p) => p, Err(e) => return err_val(&e) }
+        }
+        None => {
+            if !matches!(ext.as_str(), "txt" | "md" | "hwpx" | "docx" | "pptx" | "xlsx") { return err_val(&format!("지원하지 않는 출처 형식입니다: {ext}")); }
+            match crate::content::extract_blocks(path, &ext) {
+                Ok(blocks) => blocks.into_iter().enumerate().map(|(i, b)| crate::notebook::Paragraph { source_id: 0, ordinal: i as i64, location: String::new(), level: b.level, kind: if b.table { "table" } else { "text" }.into(), body: b.text }).collect(),
+                Err(e) => return err_val(&e),
+            }
+        }
+    };
+    if paragraphs.is_empty() { return err_val("출처에서 본문 문단을 찾지 못했습니다."); }
+    let metadata = match std::fs::metadata(path) { Ok(m) => m, Err(e) => return err_val(&e.to_string()) };
+    let mtime = metadata.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_millis() as i64).unwrap_or(0);
+    let display = val.str("display_name").unwrap_or_else(|| path.file_name().and_then(|s| s.to_str()).unwrap_or(source_path));
+    let source = {
+        let db_guard = db.lock().unwrap();
+        let c = db_guard.connection();
+        let id = match crate::notebook::add_source(c, nb, &ext, source_path, display) { Ok(id) => id, Err(e) => return err_val(&e.to_string()) };
+        if let Err(e) = crate::notebook::replace_paragraphs(c, id, &paragraphs) { return err_val(&e.to_string()); }
+        let _ = c.execute("UPDATE nb_source SET original_size=?1,original_mtime=?2,updated_at=?3 WHERE id=?4", rusqlite::params![metadata.len() as i64, mtime, crate::util::now() as i64, id]);
+        match crate::notebook::source_by_id(c, id) { Ok(Some(s)) => s, Ok(None) => return err_val("등록한 출처를 찾을 수 없습니다."), Err(e) => return err_val(&e.to_string()) }
+    };
+    match crate::search_index().and_then(|ix| ix.replace_notebook_source(nb, &source, &paragraphs).map_err(|e| e.to_string())) {
+        Ok(()) => ok_val(vec![("id", source.id.into()), ("paragraph_count", (paragraphs.len() as i64).into())]),
+        Err(e) => err_val(&e),
+    }
+}
+
+/// 출처 다시 색인. paragraphs가 있으면 먼저 그 문단을 끝에 덧붙인다(64 KiB 요청 한도 때문에 나눠 보낸 묶음).
+fn nb_index(val: &Value, db: &Mutex<Database>) -> Value {
+    let Some(id) = val.i64("source_id") else { return err_val("source_id가 필요합니다.") };
+    let Some(nb) = val.i64("notebook_id") else { return err_val("notebook_id가 필요합니다.") };
+    let extra = match val.arr("paragraphs").map(nb_paragraphs_from_json) { Some(Ok(p)) => Some(p), Some(Err(e)) => return err_val(&e), None => None };
+    let data = {
+        let db_guard = db.lock().unwrap();
+        let c = db_guard.connection();
+        crate::notebook::source_by_id(c, id).map_err(|e| e.to_string())
+            .and_then(|s| s.ok_or_else(|| "출처를 찾을 수 없습니다.".to_string()))
+            .and_then(|s| {
+                if s.notebook_id != nb { return Err("출처가 해당 노트북에 속하지 않습니다.".to_string()); }
+                if let Some(extra) = &extra { crate::notebook::append_paragraphs(c, id, extra).map_err(|e| e.to_string())?; }
+                let ps = crate::notebook::paragraphs(c, id).map_err(|e| e.to_string())?;
+                let s = crate::notebook::source_by_id(c, id).map_err(|e| e.to_string())?.unwrap_or(s);
+                Ok((s, ps))
+            })
+    };
+    match data.and_then(|(s, ps)| crate::search_index()?.replace_notebook_source(nb, &s, &ps).map_err(|e| e.to_string()).map(|()| ps.len())) {
+        Ok(count) => ok_val(vec![("indexed_paragraphs", (count as i64).into()), ("paragraph_count", (count as i64).into()), ("status", "indexed".into())]),
+        Err(e) => err_val(&e),
+    }
+}
+
 fn ok_val(mut extra: Vec<(&str, Value)>) -> Value {
 
     extra.insert(0, ("ok", true.into()));
@@ -481,11 +559,11 @@ pub fn handle_request(req_str: &str, db: &Mutex<Database>, running: &AtomicBool)
         "nb_list" => { let db_guard=db.lock().unwrap(); match crate::notebook::list(db_guard.connection()){Ok(rows)=>ok_val(vec![("notebooks",Value::Arr(rows.into_iter().map(|(id,name,description,created,updated)|Value::obj(vec![("id",id.into()),("name",name.into()),("description",description.into()),("created_at",created.into()),("updated_at",updated.into())])).collect()))]),Err(e)=>err_val(&e.to_string())} }
         "nb_update" => { let Some(id)=val.i64("id") else{return json::to_string(&err_val("노트북 id가 필요합니다."))};let db_guard=db.lock().unwrap();match crate::notebook::update(db_guard.connection(),id,val.str("name").unwrap_or(""),val.str("description").unwrap_or("")){Ok(true)=>ok_val(vec![]),Ok(false)=>err_val("노트북을 찾을 수 없습니다."),Err(e)=>err_val(&e.to_string())} }
         "nb_delete" => { let Some(id)=val.i64("id") else{return json::to_string(&err_val("노트북 id가 필요합니다."))};if let Err(e)=crate::search_index().and_then(|ix|ix.remove_notebook(id).map_err(|e|e.to_string())){return json::to_string(&err_val(&e))}let db_guard=db.lock().unwrap();match crate::notebook::delete(db_guard.connection(),id){Ok(true)=>ok_val(vec![]),Ok(false)=>err_val("노트북을 찾을 수 없습니다."),Err(e)=>err_val(&e.to_string())} }
-        "nb_source_add" => {let Some(nb)=val.i64("notebook_id") else{return json::to_string(&err_val("notebook_id가 필요합니다."))};let Some(source_path)=val.str("source_path").or_else(||val.str("origin")) else{return json::to_string(&err_val("source_path가 필요합니다."))};let path=std::path::Path::new(source_path);if crate::util::is_or_has_reparse_point(path){return json::to_string(&err_val("심볼릭 링크나 정션 경로는 출처로 추가할 수 없습니다."))}if !path.is_file(){return json::to_string(&err_val("출처 파일을 찾을 수 없습니다."))}let ext=path.extension().and_then(|s|s.to_str()).unwrap_or("").to_ascii_lowercase();if !matches!(ext.as_str(),"txt"|"md"|"hwpx"|"docx"|"pptx"|"xlsx"){return json::to_string(&err_val(&format!("지원하지 않는 출처 형식입니다: {ext}")))}let extracted=match crate::content::extract_text(path,&ext){Ok(s)=>s,Err(e)=>return json::to_string(&err_val(&e))};let metadata=match std::fs::metadata(path){Ok(m)=>m,Err(e)=>return json::to_string(&err_val(&e.to_string()))};let mtime=metadata.modified().ok().and_then(|t|t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d|d.as_millis() as i64).unwrap_or(0);let display=val.str("display_name").unwrap_or_else(||path.file_name().and_then(|s|s.to_str()).unwrap_or(source_path));let paragraphs:Vec<_>=extracted.lines().enumerate().filter(|(_,line)|!line.trim().is_empty()).map(|(ordinal,line)|crate::notebook::Paragraph{source_id:0,ordinal:ordinal as i64,location:String::new(),level:0,kind:"text".into(),body:line.trim().to_string()}).collect();let source_id={let db_guard=db.lock().unwrap();match crate::notebook::add_source(db_guard.connection(),nb,&ext,source_path,display){Ok(id)=>{if let Err(e)=crate::notebook::replace_paragraphs(db_guard.connection(),id,&paragraphs){return json::to_string(&err_val(&e.to_string()))}let _=db_guard.connection().execute("UPDATE nb_source SET original_size=?1,original_mtime=?2,updated_at=?3 WHERE id=?4",rusqlite::params![metadata.len() as i64,mtime,crate::util::now() as i64,id]);id},Err(e)=>return json::to_string(&err_val(&e.to_string()))}};let db_guard=db.lock().unwrap();let source=match crate::notebook::source_by_id(db_guard.connection(),source_id){Ok(Some(s))=>s,Ok(None)=>return json::to_string(&err_val("등록한 출처를 찾을 수 없습니다.")),Err(e)=>return json::to_string(&err_val(&e.to_string()))};drop(db_guard);match crate::search_index().and_then(|ix|ix.replace_notebook_source(nb,&source,&paragraphs).map_err(|e|e.to_string())){Ok(())=>ok_val(vec![("id",source_id.into()),("paragraph_count",(paragraphs.len() as i64).into())]),Err(e)=>err_val(&e)} }
+        "nb_source_add" => nb_source_add(&val, db),
         "nb_source_list" => {let Some(nb)=val.i64("notebook_id") else{return json::to_string(&err_val("notebook_id가 필요합니다."))};let db_guard=db.lock().unwrap();match crate::notebook::sources(db_guard.connection(),nb){Ok(rows)=>ok_val(vec![("sources",Value::Arr(rows.into_iter().map(|s|Value::obj(vec![("id",s.id.into()),("notebook_id",s.notebook_id.into()),("kind",s.kind.into()),("origin",s.origin.into()),("display_name",s.display_name.into()),("status",s.status.into()),("reason",s.reason.into()),("paragraph_count",s.paragraph_count.into()),("original_size",s.original_size.into()),("original_mtime",s.original_mtime.into())])).collect()))]),Err(e)=>err_val(&e.to_string())} }
         "nb_source_remove" => {let Some(nb)=val.i64("notebook_id") else{return json::to_string(&err_val("notebook_id가 필요합니다."))};let Some(id)=val.i64("source_id") else{return json::to_string(&err_val("source_id가 필요합니다."))};{let db_guard=db.lock().unwrap();match crate::notebook::source_by_id(db_guard.connection(),id){Ok(Some(s)) if s.notebook_id==nb=>{},Ok(Some(_))=>return json::to_string(&err_val("출처가 해당 노트북에 속하지 않습니다.")),Ok(None)=>return json::to_string(&err_val("출처를 찾을 수 없습니다.")),Err(e)=>return json::to_string(&err_val(&e.to_string()))}}match crate::search_index().and_then(|ix|ix.remove_notebook_source(id).map_err(|e|e.to_string())){Err(e)=>err_val(&e),Ok(())=>{let db_guard=db.lock().unwrap();match crate::notebook::remove_source(db_guard.connection(),id){Ok(true)=>ok_val(vec![]),Ok(false)=>err_val("출처를 찾을 수 없습니다."),Err(e)=>err_val(&e.to_string())}}} }
         "nb_source_paragraphs" => {let Some(nb)=val.i64("notebook_id") else{return json::to_string(&err_val("notebook_id가 필요합니다."))};let Some(id)=val.i64("source_id") else{return json::to_string(&err_val("source_id가 필요합니다."))};let db_guard=db.lock().unwrap();match crate::notebook::source_paragraphs(db_guard.connection(),nb,id){Ok(rows)=>ok_val(vec![("paragraphs",Value::Arr(rows.into_iter().map(|p|Value::obj(vec![("source_id",p.source_id.into()),("ordinal",p.ordinal.into()),("location",p.location.into()),("level",p.level.into()),("kind",p.kind.into()),("body",p.body.into())])).collect()))]),Err(e)=>err_val(&e.to_string())} }
-        "nb_index" => {let Some(id)=val.i64("source_id") else{return json::to_string(&err_val("source_id가 필요합니다."))};let Some(nb)=val.i64("notebook_id") else{return json::to_string(&err_val("notebook_id가 필요합니다."))};let data={let db_guard=db.lock().unwrap();crate::notebook::source_by_id(db_guard.connection(),id).map_err(|e|e.to_string()).and_then(|s|s.ok_or_else(||"출처를 찾을 수 없습니다.".to_string())).and_then(|s|{if s.notebook_id!=nb{return Err("출처가 해당 노트북에 속하지 않습니다.".to_string())}let ps=crate::notebook::paragraphs(db_guard.connection(),id).map_err(|e|e.to_string())?;Ok((s,ps))})};let result=data.and_then(|(s,ps)|crate::search_index()?.replace_notebook_source(nb,&s,&ps).map_err(|e|e.to_string()).map(|()|ps.len()));match result{Ok(count)=>ok_val(vec![("indexed_paragraphs",(count as i64).into()),("status","indexed".into())]),Err(e)=>err_val(&e)} }
+        "nb_index" => nb_index(&val, db),
         "nb_search" => {let Some(nb)=val.i64("notebook_id") else{return json::to_string(&err_val("notebook_id가 필요합니다."))};let Some(query)=val.str("query") else{return json::to_string(&err_val("query 문자열이 필요합니다."))};let ids=match val.arr("source_ids"){Some(a)=>{let mut ids=Vec::new();for v in a{if let Value::Num(n)=v{if n.fract()!=0.0{return json::to_string(&err_val("source_ids는 정수 배열이어야 합니다."))}ids.push(*n as i64)}else{return json::to_string(&err_val("source_ids는 정수 배열이어야 합니다."))}}Some(ids)},None=>None};let limit=val.i64("limit").unwrap_or(20).clamp(1,200) as usize;let terms=crate::nb_transform::query_terms(query);let search_query=if terms.is_empty(){query.to_string()}else{terms.join(" ")};match crate::search_index().and_then(|ix|ix.search_notebook(nb,&search_query,ids.as_deref(),limit).map_err(|e|e.to_string())){Ok(hits)=>ok_val(vec![("terms",Value::Arr(terms.into_iter().map(Into::into).collect())),("results",Value::Arr(hits.into_iter().map(|h|Value::obj(vec![("source_id",h.source_id.into()),("ordinal",h.ordinal.into()),("display_name",h.display_name.into()),("location",h.location.into()),("score",(h.score as f64).into()),("body",h.body.into())])).collect()))]),Err(e)=>err_val(&e)} }
         "nb_transform" => {let Some(nb)=val.i64("notebook_id") else{return json::to_string(&err_val("notebook_id가 필요합니다."))};let Some(transform_type)=val.str("type") else{return json::to_string(&err_val("type 문자열이 필요합니다."))};let ids=val.arr("source_ids").map(|a|a.iter().filter_map(|v|if let Value::Num(n)=v{Some(*n as i64)}else{None}).collect::<Vec<_>>());let limit=val.i64("limit").unwrap_or(20).clamp(1,200) as usize;let db_guard=db.lock().unwrap();let sources=match crate::notebook::sources(db_guard.connection(),nb){Ok(v)=>v,Err(e)=>return json::to_string(&err_val(&e.to_string()))};let mut paragraphs=Vec::new();for source in sources{if ids.as_ref().is_some_and(|set|!set.contains(&source.id)){continue}match crate::notebook::paragraphs(db_guard.connection(),source.id){Ok(mut p)=>paragraphs.append(&mut p),Err(e)=>return json::to_string(&err_val(&e.to_string()))}}match crate::notebook::transform(&paragraphs,transform_type,limit){Ok(rows)=>ok_val(vec![("results",Value::Arr(rows.into_iter().map(|r|Value::obj(vec![("source_id",r.source_id.into()),("ordinal",r.ordinal.into()),("location",r.location.into()),("level",r.level.into()),("kind",r.kind.into()),("text",r.text.into()),("score",r.score.into())])).collect()))]),Err(e)=>err_val(&e)} }
         "nb_note_save" => {let Some(nb)=val.i64("notebook_id") else{return json::to_string(&err_val("notebook_id가 필요합니다."))};let citations=match val.arr("citations"){Some(rows)=>{let mut out=Vec::new();for row in rows{let(Some(s),Some(o),Some(q))=(row.i64("source_id"),row.i64("paragraph_ordinal"),row.str("quote"))else{return json::to_string(&err_val("인용에는 source_id, paragraph_ordinal, quote가 필요합니다."))};out.push((s,o,q.to_string()));}out},None=>Vec::new()};let db_guard=db.lock().unwrap();match crate::notebook::save_note_with_citations(db_guard.connection(),val.i64("id"),nb,val.str("title").unwrap_or(""),val.str("body").unwrap_or(""),&citations){Ok(note)=>ok_val(vec![("id",note.into())]),Err(e)=>err_val(&e.to_string())} }
