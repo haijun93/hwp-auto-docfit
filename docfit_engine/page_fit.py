@@ -117,7 +117,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             """문두가 ※, * 또는 **인 부연설명인지 들여쓰기와 무관하게 판정한다."""
             stripped = (text or '').lstrip()
             return (stripped.startswith('※') or stripped.startswith('*')) and \
-                보고서_문단역할(text) == '부연설명'
+                globals()['보고서_문단역할'](text) == '부연설명'
         return bind_function(쪽맞춤_부연설명인가, _docfit_namespace)
     if _docfit_symbol == '보고서_본문묶음_수집':
         def 보고서_본문묶음_수집(시작위치):
@@ -154,7 +154,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         parent_indent = 세트문장_선행들여쓰기_폭(next_text)
                     elif body_attached and next_role == '내용':
                         parent_indent = 세트문장_선행들여쓰기_폭(next_text)
-                    elif (쪽맞춤_부연설명인가(next_text)
+                    elif (globals()['쪽맞춤_부연설명인가'](next_text)
                           and role in ('소제목', '본문', '내용')):
                         pass
                     elif (세트문장_선행들여쓰기_폭(next_text) > parent_indent
@@ -162,7 +162,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                           and 세트문장_후속문단인가(parent_indent, next_text)
                           and (next_role != '부연설명' or parent_indent == 0)):
                         next_role = next_role or '부연설명'
-                    elif role == '부연설명' and 쪽맞춤_부연설명인가(next_text):
+                    elif role == '부연설명' and globals()['쪽맞춤_부연설명인가'](next_text):
                         pass
                     else:
                         break
