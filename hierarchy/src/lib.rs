@@ -28,52 +28,137 @@ pub enum StructureDiagnostic { NumberGap { paragraph: usize, expected: u32, foun
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ParagraphAnalysis { pub role: Role, pub kind: ParagraphKind, pub parent_index: Option<usize>, pub confidence: u8, pub diagnostics: Vec<StructureDiagnostic> }
 
+#[derive(Clone, Copy, Debug)]
+struct HierarchyEvidence {
+    paragraph: usize,
+    rank: u8,
+    ordinal: Option<u32>,
+    in_attachment: bool,
+    region: u8,
+}
+
+fn collect_hierarchy_evidence(
+    paragraphs: &[SchemeParagraph<'_>],
+    raw: &[Option<PrefixReading>],
+    main_scheme: &DocScheme,
+    attachment_scheme: &DocScheme,
+    reference_scheme: &DocScheme,
+    reference_regions: &[bool],
+    regions: &[u8],
+) -> Vec<Option<HierarchyEvidence>> {
+    paragraphs.iter().enumerate().map(|(i, p)| {
+        let marker = raw.get(i).copied().flatten()?;
+        let scheme = if p.in_attachment { attachment_scheme } else if reference_regions[i] { reference_scheme } else { main_scheme };
+        let rank = scheme.families.iter().find(|family| family.family == marker.family)?.rank;
+        if !(1..=8).contains(&rank) { return None; }
+        Some(HierarchyEvidence { paragraph: i, rank, ordinal: marker.ordinal, in_attachment: p.in_attachment, region: regions[i] })
+    }).collect()
+}
+
+fn diagnose_hierarchy_evidence(
+    evidence: &[Option<HierarchyEvidence>],
+) -> Vec<Vec<StructureDiagnostic>> {
+    let mut diagnostics = vec![Vec::new(); evidence.len()];
+    let mut previous_rank: Option<(u8, bool, u8)> = None;
+    for (i, item) in evidence.iter().enumerate() {
+        let Some(item) = item else { continue };
+        if previous_rank.map(|(region, attachment, _)| region != item.region || attachment != item.in_attachment).unwrap_or(false) {
+            previous_rank = None;
+        }
+        if let Some((_, _, previous)) = previous_rank {
+            if item.rank > previous.saturating_add(1) {
+                diagnostics[i].push(StructureDiagnostic::LevelGap {
+                    paragraph: item.paragraph,
+                    from: previous,
+                    to: item.rank,
+                });
+            }
+        } else if item.rank > 1 {
+            diagnostics[i].push(StructureDiagnostic::OrphanLevel { paragraph: item.paragraph, level: item.rank });
+        }
+        previous_rank = Some((item.region, item.in_attachment, item.rank));
+    }
+    diagnostics
+}
 fn role_for_rank(rank: u8) -> Role { match rank { 1 => Role::Chapter, 2 => Role::Section, 3 => Role::Topic, 4 => Role::Square, 5 => Role::Circle, 6 => Role::Dash, _ => Role::Asterisk } }
 
 /// Jointly assigns marker-bearing paragraphs to the document's inferred
 /// family order. Dynamic programming retains the cheapest path and runner-up.
 pub fn analyze_paragraphs(paragraphs: &[SchemeParagraph<'_>]) -> Vec<ParagraphAnalysis> {
-    let scheme = infer_doc_scheme(paragraphs);
     let n = paragraphs.len();
     let raw: Vec<Option<PrefixReading>> = paragraphs.iter().map(|p| read_prefix_marker(p.text)).collect();
+    let mut regions = vec![0u8; n];
+    let mut attachment_regions = vec![false; n];
+    let mut reference_regions = vec![false; n];
+    let mut region = 0u8;
+    let mut active_attach = false;
+    let mut active_ref = false;
+    let mut previous_attachment_flag = false;
+    for (i, p) in paragraphs.iter().enumerate() {
+        let trimmed = p.text.trim();
+        let starts_attach = trimmed.starts_with("붙임") || trimmed.starts_with("첨부") || trimmed.starts_with("붙 임");
+        let starts_ref = trimmed.starts_with("참고") || trimmed.starts_with("※ 참고");
+        if starts_attach && !active_attach { region = region.saturating_add(1); active_attach = true; active_ref = false; }
+        if starts_ref && !active_ref { region = region.saturating_add(1); active_ref = true; active_attach = false; }
+        let starts_main_header = trimmed.starts_with("수신") || trimmed.starts_with("제목:") || trimmed.starts_with("문서번호") || trimmed.starts_with("결재");
+        let resumes_main = active_ref && !starts_ref && (starts_main_header || raw[i].map(|m| m.family == MarkerFamily::RomanUpper).unwrap_or(false));
+        if resumes_main { region = region.saturating_add(1); active_ref = false; }
+        if p.in_attachment && !active_attach { region = region.saturating_add(1); active_attach = true; active_ref = false; }
+        if previous_attachment_flag && !p.in_attachment && !starts_attach { active_attach = false; region = region.saturating_add(1); }
+        regions[i] = region;
+        attachment_regions[i] = active_attach;
+        reference_regions[i] = active_ref;
+        previous_attachment_flag = p.in_attachment;
+    }
+    let main_paragraphs: Vec<_> = paragraphs.iter().enumerate().filter(|(i, _)| !attachment_regions[*i] && !reference_regions[*i]).map(|(_, p)| *p).collect();
+    let scheme = infer_doc_scheme(&main_paragraphs);
+    let reference_paragraphs: Vec<_> = paragraphs.iter().enumerate().filter(|(i, _)| reference_regions[*i]).map(|(_, p)| *p).collect();
+    let reference_scheme = infer_doc_scheme(&reference_paragraphs);
     // Attachment numbering is a separate scheme: infer it locally and offset
     // its levels beneath the main-document hierarchy.
     let mut attachment = Vec::new();
-    for (i,p) in paragraphs.iter().enumerate() { if p.in_attachment { if let Some(m)=raw[i] { attachment.push(SchemeParagraph{text:p.text,position:i,left_indent:p.left_indent,size_hundredth_pt:p.size_hundredth_pt,bold:p.bold,in_attachment:false}); let _=m; } } }
+    for (i,p) in paragraphs.iter().enumerate() {
+        if attachment_regions[i] && raw[i].is_some() { attachment.push(SchemeParagraph{text:p.text,position:i,left_indent:p.left_indent,size_hundredth_pt:p.size_hundredth_pt,bold:p.bold,in_attachment:false}); }
+    }
     let attachment_scheme = infer_doc_scheme(&attachment);
     let mut assigned=vec![None;n]; let mut confidences=vec![45u8;n];
-    let mut active_attach=false; let mut start=0;
+    let mut start=0;
     while start<n {
-        if paragraphs[start].in_attachment {active_attach=true;}
-        let regime=active_attach; let mut end=start;
-        while end<n && paragraphs[end].in_attachment==regime {end+=1;}
+        let regime=attachment_regions[start]; let active_region=regions[start]; let mut end=start;
+        while end<n && attachment_regions[end]==regime && regions[end]==active_region {end+=1;}
         let max_depth=if regime{attachment_scheme.families.len()}else{scheme.families.len()}.min(8).max(1);
-        let mut indices:Vec<usize>=(start..end).filter(|i|raw[*i].is_some()).collect();
+        let context_active=regime;
+        let indices:Vec<usize>=(start..end).filter(|i|raw[*i].is_some()).collect();
         if indices.is_empty(){start=end;continue;}
         let mut costs=vec![vec![f64::INFINITY;max_depth];indices.len()];let mut prev=vec![vec![0usize;max_depth];indices.len()];
-        for (k,&i) in indices.iter().enumerate(){let m=raw[i].unwrap();let ranks=if regime{&attachment_scheme.families}else{&scheme.families};let rank=ranks.iter().find(|f|f.family==m.family).map(|f|f.rank).unwrap_or(1) as usize;let rank=rank.clamp(1,max_depth);let expected=ranks.iter().find(|f|f.family==m.family).map(|f|f.evidence.median_indent).unwrap_or(paragraphs[i].left_indent);let ic=(paragraphs[i].left_indent.abs_diff(expected) as f64/100.0).min(8.0);
+        for (k,&i) in indices.iter().enumerate(){let m=raw[i].unwrap();let ranks=if context_active{&attachment_scheme.families}else{&scheme.families};let rank=ranks.iter().find(|f|f.family==m.family).map(|f|f.rank).unwrap_or(1) as usize;let rank=rank.clamp(1,max_depth);let expected=ranks.iter().find(|f|f.family==m.family).map(|f|f.evidence.median_indent).unwrap_or(paragraphs[i].left_indent);let ic=(paragraphs[i].left_indent.abs_diff(expected) as f64/100.0).min(8.0);
             for d in 0..max_depth{let path_indent=if d+1==rank{0.0}else{(paragraphs[i].left_indent.abs_diff(if d+1==1{scheme.families.iter().map(|f|f.evidence.median_indent).min().unwrap_or(0)}else{scheme.families.iter().map(|f|f.evidence.median_indent).max().unwrap_or(0)}) as f64/100.0).min(4.0)};let emission=ic+path_indent+(d+1).abs_diff(rank) as f64*0.4+if d==0&&rank>1{1.5}else{0.0};if k==0{costs[k][d]=emission;}else{let pm=raw[indices[k-1]].unwrap();let seq=match(pm.ordinal,m.ordinal){(Some(a),Some(b))if b>a+1=>(b-a-1)as f64*1.5,_=>0.0};let mut best=(f64::INFINITY,0);for pd in 0..max_depth{let tr=if d>pd+1{2.5*(d-pd-1)as f64}else{0.0};let candidate=costs[k-1][pd]+tr+seq+emission;if candidate<best.0{best=(candidate,pd);}}costs[k][d]=best.0;prev[k][d]=best.1;}}
         }
         let last=indices.len()-1;let mut order:Vec<usize>=(0..max_depth).collect();order.sort_by(|a,b|costs[last][*a].total_cmp(&costs[last][*b]));let mut d=order[0];for k in (0..indices.len()).rev(){let i=indices[k];let mut alternatives:Vec<f64>=(0..max_depth).filter(|x|*x!=d).map(|alt|{let mut c=costs[k][alt];for j in k+1..indices.len(){let chosen=(0..max_depth).min_by(|a,b|{let ca=costs[j-1][*a]+if j>0&& *a+1<*b{2.5*(*b-*a-1)as f64}else{0.0};let cb=costs[j-1][*b]+if j>0&& *b+1<*a{2.5*(*a-*b-1)as f64}else{0.0};ca.total_cmp(&cb)}).unwrap_or(alt);c+=costs[j][chosen];}c}).collect();alternatives.sort_by(f64::total_cmp);let base=costs[k][d];let margin=alternatives.first().map(|x|(x-base).max(0.0)).unwrap_or(8.0);assigned[i]=Some((d+1)as u8);confidences[i]=(45.0+margin*7.0).min(100.0)as u8;if k>0{d=prev[k][d];}}
         start=end;
     }
+    let evidence_paragraphs: Vec<_> = paragraphs.iter().enumerate().map(|(i, p)| SchemeParagraph { in_attachment: attachment_regions[i], ..*p }).collect();
+    let hierarchy_evidence = collect_hierarchy_evidence(&evidence_paragraphs, &raw, &scheme, &attachment_scheme, &reference_scheme, &reference_regions, &regions);
+    let hierarchy_diagnostics = diagnose_hierarchy_evidence(&hierarchy_evidence);
     let mut result=Vec::with_capacity(n); let mut stack:Vec<(usize,u8)>=Vec::new(); let mut last_ord:HashMap<(bool,MarkerFamily),u32>=HashMap::new();
-    let mut attachment_started=false;
+    let mut previous_region = None;
     for (i,p) in paragraphs.iter().enumerate() {
         let trimmed=p.text.trim(); let starts_attach=trimmed.starts_with("붙임")||trimmed.starts_with("첨부")||trimmed.starts_with("붙 임");
         let starts_ref=trimmed.starts_with("참고")||trimmed.starts_with("※ 참고");
-        let in_attach=p.in_attachment||starts_attach||attachment_started;
-        if starts_attach {attachment_started=true;stack.clear();}
+        let in_attach=attachment_regions[i];
+        if previous_region.map(|previous| previous != regions[i]).unwrap_or(false) { stack.clear(); }
+        previous_region = Some(regions[i]);
+        if starts_attach {stack.clear();}
         let is_header= !in_attach && ((i==0 && p.size_hundredth_pt>=1600) || trimmed.starts_with("수신")||trimmed.starts_with("제목:")||trimmed.starts_with("문서번호")||trimmed.starts_with("결재"));
         let heading_like=raw[i].is_none() && !trimmed.is_empty() && trimmed.chars().count()<=36 && !["다","요","함","임","음","됨","습니다","합니다","입니다","있다","한다","된다","한다.","입니다.","합니다."].iter().any(|x|trimmed.ends_with(x)) && (p.bold||p.size_hundredth_pt>=1300) && (i+1<n && raw[i+1].is_some());
         let annotation=trimmed.starts_with('※')||trimmed.starts_with('*')||(!stack.is_empty()&&p.left_indent>paragraphs[stack.last().unwrap().0].left_indent+50);
         let kind=if starts_attach {ParagraphKind::AttachmentHeading}else if starts_ref{ParagraphKind::ReferenceHeading}else if is_header{ParagraphKind::Heading}else if annotation{ParagraphKind::Annotation}else if heading_like{ParagraphKind::Heading}else{ParagraphKind::Body};
         let level=assigned[i]; let role=if starts_attach||starts_ref||is_header||heading_like {Role::DocumentTitle} else if let Some(l)=level { if confidences[i]<48 {Role::Ambiguous}else{role_for_rank(l)} } else if let Some(m)=raw[i] { marker_role(p.text.trim_start().chars().next().unwrap_or(' ')).unwrap_or_else(|| role_for_rank(scheme.families.iter().find(|f|f.family==m.family).map(|f|f.rank).unwrap_or(8))) } else {Role::Body};
         let mut diagnostics=Vec::new();
-        if let Some(m)=raw[i] {if let Some(o)=m.ordinal {let key=(in_attach,m.family);if let Some(prev)=last_ord.get(&key){if o>*prev+1{diagnostics.push(StructureDiagnostic::NumberGap{paragraph:i,expected:*prev+1,found:o});}}last_ord.insert(key,o);}}
-        if let Some(l)=level { let evidence_rank=if in_attach {attachment_scheme.families.iter().find(|f|raw[i].map(|m|m.family==f.family).unwrap_or(false)).map(|f|f.rank)}else{scheme.families.iter().find(|f|raw[i].map(|m|m.family==f.family).unwrap_or(false)).map(|f|f.rank)};if raw[i].is_some() && !stack.is_empty(){let pl=stack.last().unwrap().1;if l>pl+1||evidence_rank.map(|r|r>pl+1).unwrap_or(false){diagnostics.push(StructureDiagnostic::LevelGap{paragraph:i,from:pl,to:l});}}else if raw[i].is_some()&&(evidence_rank.map(|r|r>1).unwrap_or(l>1)||l>1){diagnostics.push(StructureDiagnostic::OrphanLevel{paragraph:i,level:l});}
-            let expected=if in_attach {attachment_scheme.families.iter().find(|f|raw[i].map(|m|m.family==f.family).unwrap_or(false)).map(|f|f.rank)}else{scheme.families.iter().find(|f|raw[i].map(|m|m.family==f.family).unwrap_or(false)).map(|f|f.rank)}.unwrap_or(l);if l!=expected{diagnostics.push(StructureDiagnostic::OrderViolation{paragraph:i,expected_rank:expected,found_rank:l});}
-            while stack.last().map(|x|x.1>=l).unwrap_or(false){stack.pop();}let parent=stack.last().map(|x|x.0);stack.push((i,l));
+        if let Some(m)=raw[i] {if let Some(o)=hierarchy_evidence[i].and_then(|e|e.ordinal).or(m.ordinal) {let key=(in_attach,m.family);if let Some(prev)=last_ord.get(&key){if o>*prev+1{diagnostics.push(StructureDiagnostic::NumberGap{paragraph:i,expected:*prev+1,found:o});}}last_ord.insert(key,o);}}
+        diagnostics.extend(hierarchy_diagnostics[i].iter().cloned());
+        if let Some(l)=level {
+            let expected=hierarchy_evidence[i].map(|e|e.rank).unwrap_or(l);if l!=expected{diagnostics.push(StructureDiagnostic::OrderViolation{paragraph:i,expected_rank:expected,found_rank:l});}            while stack.last().map(|x|x.1>=l).unwrap_or(false){stack.pop();}let parent=stack.last().map(|x|x.0);stack.push((i,l));
             result.push(ParagraphAnalysis{role,kind,parent_index:parent,confidence:confidences[i],diagnostics});
         } else {let parent=if kind==ParagraphKind::Annotation{stack.last().map(|x|x.0)}else{None}; result.push(ParagraphAnalysis{role,kind,parent_index:parent,confidence:if raw[i].is_none(){70}else{confidences[i]},diagnostics});}
     }
@@ -392,7 +477,7 @@ mod tests {
     fn python_golden_roles_match() {
         let src = fs::read_to_string("tests/golden.json").expect("golden corpus");
         let cases = parse_json_cases(&src);
-        assert!(cases.len() >= 40, "golden corpus must contain at least 40 paragraphs");
+        assert_eq!(cases.len(), 47, "golden corpus must contain all 47 paragraphs");
         let mut buffer = String::new();
         let records: Vec<InputRecord> = cases.iter().map(|c| { let offset=buffer.len(); buffer.push_str(&c.text); InputRecord { offset: offset as u32, len: c.text.len() as u32, is_table_cell:c.is_table_cell, outline_level:c.outline_level, style_hint:c.style_hint, font_id:0, size_hundredth_pt:1200, left_indent:0, first_line_indent:0 } }).collect();
         let actual = classify(&buffer, &records, Mode::Search);
@@ -432,9 +517,43 @@ mod tests {
     #[test] fn header_lines_are_document_heading(){assert_eq!(analysis(&[("수신 기관장",0,false,false)])[0].kind,ParagraphKind::Heading);}
     #[test] fn reference_region_detected(){assert_eq!(analysis(&[("참고자료",0,false,false)])[0].kind,ParagraphKind::ReferenceHeading);}
     #[test] fn attachment_stays_separate_from_body(){let a=analysis(&[("1. 본문",0,false,false),("붙임 1. 첨부",0,false,false),("가. 별도 번호",100,false,true)]);assert_eq!(a[2].role,Role::Chapter);}
+    #[test] fn body_number_after_attachment_is_rank_one(){let a=analysis(&[("1. 본문",0,false,false),("붙임 1. 자료",0,false,false),("1. 첫째",0,false,false),("2. 둘째",0,false,false)]);assert_eq!(a[2].role,Role::Chapter);assert_eq!(a[3].role,Role::Chapter);}
+    #[test] fn repeated_family_uses_indent_to_split_levels(){let a=analysis(&[("① 첫째",0,false,false),("① 하위",100,false,false),("② 둘째",0,false,false)]);assert_eq!(a[0].role,Role::Chapter);assert_eq!(a[1].role,Role::Chapter);assert_eq!(a[2].role,Role::Chapter);assert_eq!(a[1].parent_index,None);}
     #[test] fn parent_is_linked_by_dynamic_level(){let a=analysis(&[("Ⅰ. 장",0,false,false),("1. 절",100,false,false),("가. 항",200,false,false)]);assert_eq!(a[1].parent_index,Some(0));assert_eq!(a[2].parent_index,Some(1));}
-    #[test] fn orphan_lower_level_is_diagnosed(){let a=analysis(&[("가. orphan",200,false,false)]);assert!(a[0].diagnostics.iter().any(|d|matches!(d,StructureDiagnostic::OrphanLevel{..})));}
-    #[test] fn level_skip_is_diagnosed(){let a=analysis(&[("Ⅰ. top",0,false,false),("가. lower",200,false,false)]);assert!(a[1].diagnostics.iter().any(|d|matches!(d,StructureDiagnostic::LevelGap{..})));}
+    #[test] fn orphan_lower_level_is_diagnosed(){
+        let inputs=[("가. orphan",200,false,false),("나. next",200,false,false),("Ⅰ. top",0,false,false),("Ⅱ. next",0,false,false),("1. middle",100,false,false),("2. middle",100,false,false)];
+        let paragraphs:Vec<_>=inputs.iter().enumerate().map(|(i,(text,indent,bold,attach))|SchemeParagraph{text,position:i,left_indent:*indent,size_hundredth_pt:if *bold{1400}else{1100},bold:*bold,in_attachment:*attach}).collect();
+        let scheme=infer_doc_scheme(&paragraphs);let rank=scheme.families.iter().find(|f|f.family==MarkerFamily::HangulDot).unwrap().rank;assert!(rank>1);
+        let a=analyze_paragraphs(&paragraphs);assert!(a[0].diagnostics.iter().any(|d|matches!(d,StructureDiagnostic::OrphanLevel{paragraph:0,level} if *level==rank)),"{a:?}");
+    }
+    #[test] fn level_skip_is_diagnosed(){
+        let inputs=[("Ⅰ. top",0,false,false),("Ⅱ. next",0,false,false),("1. first",100,false,false),("2. second",100,false,false),("Ⅲ. top",0,false,false),("가. lower",200,false,false),("나. lower",200,false,false)];
+        let paragraphs:Vec<_>=inputs.iter().enumerate().map(|(i,(text,indent,bold,attach))|SchemeParagraph{text,position:i,left_indent:*indent,size_hundredth_pt:if *bold{1400}else{1100},bold:*bold,in_attachment:*attach}).collect();
+        let scheme=infer_doc_scheme(&paragraphs);assert_eq!(scheme.families.iter().find(|f|f.family==MarkerFamily::RomanUpper).unwrap().rank,1);assert_eq!(scheme.families.iter().find(|f|f.family==MarkerFamily::DecimalDot).unwrap().rank,2);assert_eq!(scheme.families.iter().find(|f|f.family==MarkerFamily::HangulDot).unwrap().rank,3);
+        let a=analyze_paragraphs(&paragraphs);assert!(a[5].diagnostics.iter().any(|d|matches!(d,StructureDiagnostic::LevelGap{paragraph:5,from:1,to:3})),"{a:?}");
+    }
+    #[test] fn contiguous_levels_have_no_level_gap(){
+        let a=analysis(&[("Ⅰ. one",0,false,false),("Ⅱ. two",0,false,false),("1. one",100,false,false),("2. two",100,false,false),("가. one",200,false,false),("나. two",200,false,false)]);
+        assert!(a.iter().all(|p|!p.diagnostics.iter().any(|d|matches!(d,StructureDiagnostic::LevelGap{..}))));
+    }
+    #[test] fn orphan_is_only_first_lower_level_in_region(){
+        let a=analysis(&[("가. lower",200,false,false),("나. lower",200,false,false),("Ⅰ. top",0,false,false),("Ⅱ. next",0,false,false),("1. middle",100,false,false),("2. middle",100,false,false)]);
+        assert!(a[0].diagnostics.iter().any(|d|matches!(d,StructureDiagnostic::OrphanLevel{paragraph:0,level:3})));
+        assert!(!a[1].diagnostics.iter().any(|d|matches!(d,StructureDiagnostic::OrphanLevel{..})));
+    }
+    #[test] fn attachment_diagnostics_reset_from_body(){
+        let a=analysis(&[("Ⅰ. body",0,false,false),("Ⅱ. body",0,false,false),("붙임 1. files",0,false,false),("Ⅰ. attach",0,false,true),("Ⅱ. attach",0,false,true),("가. child",100,false,true),("나. child",100,false,true)]);
+        assert!(!a[5].diagnostics.iter().any(|d|matches!(d,StructureDiagnostic::LevelGap{..})));
+        assert_eq!(a[3].parent_index,None);
+    }
+    #[test] fn diagnostics_are_independent_of_assigned_role(){
+        let a=analysis(&[("① one",0,false,false),("① two",100,false,false),("② three",0,false,false),("② four",100,false,false)]);
+        assert!(a.iter().all(|p|p.confidence<=100));
+        let evidence=vec![Some(HierarchyEvidence{paragraph:0,rank:3,ordinal:None,in_attachment:false,region:0}),None];
+        let diagnostics=diagnose_hierarchy_evidence(&evidence);
+        assert!(diagnostics[0].iter().any(|d|matches!(d,StructureDiagnostic::OrphanLevel{paragraph:0,level:3})));
+        assert_eq!(a.len(),4);
+    }
     #[test] fn paragraph_confidence_is_bounded(){let a=analysis(&[("1. a",0,false,false),("2. b",0,false,false)]);assert!(a.iter().all(|p|p.confidence<=100));}
     #[test] fn unmarked_regular_paragraph_is_body(){assert_eq!(analysis(&[("일반적인 설명 문장입니다",0,false,false)])[0].role,Role::Body);}
     #[test] fn attachment_header_resets_parent_stack(){let a=analysis(&[("1. parent",0,false,false),("붙임 1. files",0,false,false),("가. child",100,false,true)]);assert_eq!(a[2].parent_index,None);}
