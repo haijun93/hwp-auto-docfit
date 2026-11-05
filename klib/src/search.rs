@@ -180,7 +180,7 @@ impl SearchIndex {
             clauses.push((Occur::Must,Box::new(BooleanQuery::new(terms))));
         }
         let q=BooleanQuery::new(clauses);let searcher=self.reader.searcher();
-        let docs=searcher.search(&q,&TopDocs::with_limit(limit.max(1)))?;let mut hits=Vec::new();
+        let docs=searcher.search(&q,&TopDocs::with_limit(limit.max(1)).order_by_score())?;let mut hits=Vec::new();
         for(score,address) in docs{let d=searcher.doc::<TantivyDocument>(address)?;hits.push(crate::notebook::Hit{
             source_id:d.get_first(self.fields.source_id).and_then(|v|v.as_u64()).unwrap_or(0) as i64,
             ordinal:d.get_first(self.fields.paragraph_ordinal).and_then(|v|v.as_u64()).unwrap_or(0) as i64,
