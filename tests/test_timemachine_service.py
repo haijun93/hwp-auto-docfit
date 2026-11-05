@@ -957,6 +957,7 @@ class TimemachineServiceTests(unittest.TestCase):
         return a, b
 
     def test_related_id_exclude_round_trip_without_paths_in_response(self):
+        self.developer_mode = True
         a, b = self._related_pair()
         response = self.service.command("related_search", {"path": str(a)})
         self.assertTrue(response["ok"])
@@ -975,6 +976,7 @@ class TimemachineServiceTests(unittest.TestCase):
         self.assertNotEqual(again[0]["related_id"], related_id)
 
     def test_related_exclude_rejects_unknown_id_and_keeps_path_input(self):
+        self.developer_mode = True
         a, b = self._related_pair()
         for bad in ("없는-id", 123, ""):
             res = self.service.command("related_exclude", {"related_id": bad})

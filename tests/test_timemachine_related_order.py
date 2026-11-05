@@ -79,6 +79,8 @@ class TimemachineRelatedOrderTests(unittest.TestCase):
         self.assertEqual([item["score"] for item in res["items"]], [60, 90, 80])
         self.assertEqual(res["reference_date"], "2026-11-03")
         self.assertIs(res["reference_date_found"], True)
+        self.assertEqual(res["reference_date_source"], "explicit")
+        self.assertEqual(res["reference_date_text"], "작성 기준일: 2026-11-03")
 
         expected_items = [
             {
@@ -88,6 +90,9 @@ class TimemachineRelatedOrderTests(unittest.TestCase):
                 "reasons": [{"type": "terms", "label": "공통 업무·사업 단서", "values": ["sep.txt"]}],
                 "reference_date": "2026-09-30",
                 "reference_date_found": True,
+                "estimated_reference_date": None,
+                "reference_date_source": "explicit",
+                "reference_date_text": "작성 기준일: 2026-09-30",
             },
             {
                 "path": str(self.root / "may.txt"),
@@ -96,6 +101,9 @@ class TimemachineRelatedOrderTests(unittest.TestCase):
                 "reasons": [{"type": "terms", "label": "공통 업무·사업 단서", "values": ["may.txt"]}],
                 "reference_date": "2026-05-31",
                 "reference_date_found": True,
+                "estimated_reference_date": None,
+                "reference_date_source": "explicit",
+                "reference_date_text": "작성 기준일: 2026-05-31",
             },
             {
                 "path": str(self.root / "jan.txt"),
@@ -104,10 +112,16 @@ class TimemachineRelatedOrderTests(unittest.TestCase):
                 "reasons": [{"type": "terms", "label": "공통 업무·사업 단서", "values": ["jan.txt"]}],
                 "reference_date": "2026-01-31",
                 "reference_date_found": True,
+                "estimated_reference_date": None,
+                "reference_date_source": "explicit",
+                "reference_date_text": "작성 기준일: 2026-01-31",
             },
         ]
         for item, expected in zip(res["items"], expected_items):
-            self.assertEqual(set(item.keys()), {"path", "name", "score", "reasons", "reference_date", "reference_date_found"})
+            self.assertEqual(set(item.keys()), {
+                "path", "name", "score", "reasons", "reference_date", "reference_date_found",
+                "estimated_reference_date", "reference_date_source", "reference_date_text",
+            })
             self.assertEqual(item, expected)
         self.assertEqual(candidates, original_candidates)
 
@@ -144,11 +158,16 @@ class TimemachineRelatedOrderTests(unittest.TestCase):
         self.assertEqual(res["items"][0]["reference_date"], "2026-01-31")
         self.assertIs(res["items"][0]["reference_date_found"], True)
         self.assertEqual(res["items"][0]["score"], 1)
+        self.assertEqual(res["items"][0]["reference_date_source"], "explicit")
+        self.assertEqual(res["items"][0]["reference_date_text"], "작성 기준일: 2026-01-31")
 
         missing_items = res["items"][1:]
         for item in missing_items:
             self.assertIsNone(item["reference_date"])
             self.assertIs(item["reference_date_found"], False)
+            self.assertIsNone(item["reference_date_source"])
+            self.assertIsNone(item["reference_date_text"])
+            self.assertIsNone(item["estimated_reference_date"])
         self.assertEqual([item["score"] for item in missing_items], [10, 90, 100])
         for item in res["items"]:
             self.assertEqual(item["reasons"], [{"type": "terms", "label": "공통 업무·사업 단서", "values": [item["name"]]}])
@@ -279,12 +298,18 @@ class TimemachineRelatedOrderTests(unittest.TestCase):
 
         with self.subTest(step="empty_db"):
             res = related_documents(index, selected_path, roots=[str(docs)])
-            self.assertEqual(res, {"reference_date": None, "reference_date_found": False, "items": []})
+            self.assertEqual(res, {
+                "reference_date": None, "reference_date_found": False,
+                "reference_date_source": None, "reference_date_text": None, "items": [],
+            })
 
         with self.subTest(step="selected_only"):
             self._write_txt(index, docs, "selected.txt", "주요업무추진실적\n디지털전환 사업", 1600259200)
             res = related_documents(index, selected_path, roots=[str(docs)])
-            self.assertEqual(res, {"reference_date": None, "reference_date_found": False, "items": []})
+            self.assertEqual(res, {
+                "reference_date": None, "reference_date_found": False,
+                "reference_date_source": None, "reference_date_text": None, "items": [],
+            })
 
         alpha_path = self._write_txt(index, docs, "alpha.txt", "주요업무추진실적\n디지털전환 사업", 1600000000)
         period_path = self._write_txt(index, docs, "period.txt", "2026년도 1분기 주요업무추진실적\n디지털전환 사업", 1600086400)
@@ -304,6 +329,14 @@ class TimemachineRelatedOrderTests(unittest.TestCase):
             for item in res["items"]:
                 self.assertIsNone(item["reference_date"])
                 self.assertIs(item["reference_date_found"], False)
+                if item["name"] == "period.txt":
+                    self.assertEqual(item["estimated_reference_date"], "2026-03-01")
+                    self.assertEqual(item["reference_date_source"], "quarter")
+                    self.assertEqual(item["reference_date_text"], "2026년도 1분기")
+                else:
+                    self.assertIsNone(item["estimated_reference_date"])
+                    self.assertIsNone(item["reference_date_source"])
+                    self.assertIsNone(item["reference_date_text"])
 
         store = Store(self.root / "timeline.db")
         self.addCleanup(store.close)

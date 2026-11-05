@@ -113,8 +113,12 @@ def related_documents(index, path, *, roots=None, excluded_pairs=(), limit=100):
                       "estimated_reference_date": None if explicit else info["date"],
                       "reference_date_source": info["source"],
                       "reference_date_text": info["text"]})
-    items.sort(key=lambda item: (item["reference_date"] is None, -(item["score"] if item["reference_date"] is not None else 0),
-                                 item["reference_date"] or "", item["name"].casefold()))
+    items.sort(key=lambda item: (
+        item["reference_date"] is None,
+        -date.fromisoformat(item["reference_date"]).toordinal() if item["reference_date"] is not None else 0,
+        -item["score"] if item["reference_date"] is not None else 0,
+        item["name"].casefold(),
+    ))
     return {"reference_date": selected_date, "reference_date_found": bool(selected_date),
             "reference_date_source": selected_info["source"], "reference_date_text": selected_info["text"],
             "items": items[:max(1, min(int(limit), 200))]}
