@@ -2235,21 +2235,6 @@ class DesktopWebBridge:
                 failed.append({"path": text, "message": message})
         return {"ok": not failed, "added": added, "skipped": skipped, "failed": failed}
 
-    def notebook(self, request):
-        """노트북 요청(개발자 모드 전용): 출처 추출 + klib nb_* 명령 중계."""
-        if not self._developer_mode_enabled():
-            return {"ok": False, "code": "DEVELOPER_MODE_REQUIRED", "message": "개발자 모드에서만 사용할 수 있습니다."}
-        try:
-            if getattr(self, "_notebook_service", None) is None:
-                from docfit_app.library_bridge import LibraryBridge
-                from docfit_app.notebook_service import NotebookService
-                if getattr(self, "_library_bridge", None) is None:
-                    self._library_bridge = LibraryBridge()
-                self._notebook_service = NotebookService(self._library_bridge)
-            return self._notebook_service.handle(request)
-        except Exception as exc:
-            return {"ok": False, "message": str(exc)}
-
     def library(self, request):
         """Forward one allowlisted library JSON request when the opt-in flag is set."""
         if not self._developer_mode_enabled():
@@ -2267,18 +2252,56 @@ class DesktopWebBridge:
             return {"ok": False, "message": str(exc)}
 
     def notebook(self, request):
-        """노트북(nb_*) 요청을 klib로 전달한다. 개발자 모드 전용, 자료함과 같은 브리지를 쓴다."""
+        """노트북 요청(개발자 모드 전용). 자료함과 같은 klib 브리지를 쓴다.
+
+        출처 추가는 klib가 직접 추출하고, klib가 못 읽는 구형 hwp·pdf만 NotebookService가 Python으로 추출해 넣는다.
+        nb_drop_watch(창에 끌어 놓은 파일을 노트북으로 받기 켜기·끄기)와 nb_take_drop(놓은 경로 가져가기)은 여기서 처리한다.
+        """
         if not self._developer_mode_enabled():
             return {"ok": False, "code": "DEVELOPER_MODE_REQUIRED", "message": "개발자 모드에서만 노트북을 사용할 수 있습니다."}
         if not isinstance(request, dict) or not str(request.get("cmd", "")).startswith("nb_"):
             return {"ok": False, "message": "허용되지 않은 노트북 명령입니다."}
-        if getattr(self, "_library_bridge", None) is None:
-            from docfit_app.library_bridge import LibraryBridge
-            self._library_bridge = LibraryBridge()
+        cmd = request["cmd"]
         try:
-            return self._library_bridge.request(request)
+            if cmd == "nb_drop_watch":
+                return self._notebook_drop_watch(bool(request.get("active")))
+            if cmd == "nb_take_drop":
+                paths, self._notebook_drop = list(getattr(self, "_notebook_drop", None) or []), []
+                return {"ok": True, "paths": paths}
+            if getattr(self, "_notebook_service", None) is None:
+                from docfit_app.notebook_service import NotebookService
+                if getattr(self, "_library_bridge", None) is None:
+                    from docfit_app.library_bridge import LibraryBridge
+                    self._library_bridge = LibraryBridge()
+                self._notebook_service = NotebookService(self._library_bridge)
+            return self._notebook_service.handle(request)
         except Exception as exc:
             return {"ok": False, "message": str(exc)}
+
+    def _notebook_drop_watch(self, active):
+        """노트북 화면이 열려 있는 동안 창에 놓은 파일을 노트북 출처로 받고, 닫히면 이전 놓기 대상으로 되돌린다."""
+        current = getattr(self, "drop_target", "documents")
+        if active:
+            if current != "notebook":
+                self._drop_target_before_notebook = current
+            self._apply_drop_target("notebook")
+        elif current == "notebook":
+            self._apply_drop_target(getattr(self, "_drop_target_before_notebook", None) or "documents")
+        return {"ok": True, "drop_target": self.drop_target}
+
+    def _receive_notebook_paths(self, paths):
+        """노트북에 끌어 놓은 파일: 경로를 맡겨 두고 화면에 알린다(화면이 nb_take_drop으로 가져가 출처로 추가)."""
+        pending = list(getattr(self, "_notebook_drop", None) or [])
+        pending.extend(str(p) for p in (paths or [])[:200] if str(p).strip())
+        self._notebook_drop = pending
+        window = self.window
+        if window is not None and hasattr(window, "run_js"):
+            try:
+                window.run_js("window.dispatchEvent(new Event('docfit-notebook-files-dropped'));")
+            except Exception:
+                logging.getLogger(__name__).debug("notebook drop notify failed", exc_info=True)
+        return {"ok": True, "pending": len(pending)}
+
     def _table_units_command(self, action, payload=None):
         """표 템플릿: 스냅샷 목록·정보단위 미리보기·한/글 붙여넣기용 복사(2026-10-22).
 
@@ -2522,8 +2545,12 @@ class DesktopWebBridge:
 
     def set_drop_target(self, target):
         """끌어 놓은 파일을 넣을 곳을 바꾼다: documents(문서 목록) 또는 format(예시 서식 복제)."""
+        self._apply_drop_target(target)
+        return self.get_state()
+
+    def _apply_drop_target(self, target):
         if target not in ("documents", "manual_documents", "format", "quick_format", "sketch_image", "paint_image",
-                          "rename_files", "kclip"):
+                          "rename_files", "kclip", "notebook"):
             raise ValueError("지원하지 않는 놓기 대상입니다.")
         self.drop_target = target
         if target == "format":   # 서식 관리 창을 열 때 서식예시 폴더에 새로 넣은 예시를 찾아 등록한다
@@ -2537,12 +2564,12 @@ class DesktopWebBridge:
                     else "표 칸 위에 놓으면 칸 배경 그림으로 넣습니다" if target == "sketch_image"
                     else "여기에 놓으면 그림판 배경 사진으로 넣습니다" if target == "paint_image"
                     else "여기에 파일을 놓으면 이름 목록에 추가됩니다" if target == "rename_files"
+                    else "여기에 놓으면 노트북 출처로 추가합니다" if target == "notebook"
                     else "여기에 놓으면 문서 목록에 추가됩니다")
             try:
                 window.run_js(f"window.docfitDropText = {text!r};")
             except Exception:
                 logging.getLogger(__name__).debug("drop text update failed", exc_info=True)
-        return self.get_state()
 
     def add_format_paths(self, paths):
         """끌어 놓은 예시 보고서(HWP/HWPX) 중 첫 파일의 서식을 분석해 새 서식으로 복제한다."""
@@ -2584,6 +2611,9 @@ class DesktopWebBridge:
             return self._receive_sketch_image(paths, client_x, client_y, event="docfit-paint-image-dropped")
         if self.drop_target == "rename_files":
             return self._receive_rename_paths(paths)
+        if self.drop_target == "notebook":
+            self._receive_notebook_paths(paths)
+            return self.get_state()
         bounds = getattr(self, "_profile_drop_bounds", None)
         on_badge = (bounds is not None and isinstance(client_x, (int, float)) and isinstance(client_y, (int, float)))
         if on_badge:

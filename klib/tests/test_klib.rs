@@ -26,7 +26,8 @@ mod content;
 
 static SEARCH_INDEX: std::sync::OnceLock<Result<search::SearchIndex, String>> = std::sync::OnceLock::new();
 fn search_index() -> Result<&'static search::SearchIndex, String> {
-    SEARCH_INDEX.get_or_init(|| { let dir=std::env::var("KLIB_TANTIVY_DIR").unwrap_or_else(|_| format!("{}\\tantivy", util::data_dir())); search::SearchIndex::open_or_create(dir).map_err(|e|e.to_string()) }).as_ref().map_err(Clone::clone)
+    // 시험마다 지우는 KLIB_TEST_ROOT가 아니라 프로세스 단위 폴더에 둔다(먼저 부른 시험의 폴더에 묶이면 순서에 따라 실패).
+    SEARCH_INDEX.get_or_init(|| { let dir=std::env::var("KLIB_TANTIVY_DIR").unwrap_or_else(|_| std::env::temp_dir().join(format!("klib-test-tantivy-{}", std::process::id())).to_string_lossy().into_owned()); search::SearchIndex::open_or_create(dir).map_err(|e|e.to_string()) }).as_ref().map_err(Clone::clone)
 }
 
 use db::Database;
@@ -513,4 +514,46 @@ fn test_copy_dir_recursive_reparse_point_rejection() {
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().kind(), std::io::ErrorKind::InvalidData);
     }
+}
+
+#[test]
+fn test_nb_source_add_structured_and_python_paragraphs() {
+    let ctx = TestContext::new("nb_source_add");
+    let db = Arc::new(Mutex::new(Database::open(&ctx.dir.join("library.db").to_str().unwrap()).unwrap()));
+    let running = Arc::new(AtomicBool::new(true));
+    let call = |req: String| json::parse(&pipe::handle_request(&req, &db, &running)).unwrap();
+    let nb = call(r#"{"cmd":"nb_create","name":"노트"}"#.into()).i64("id").unwrap();
+
+    // klib 직접 추출: md 제목 수준과 기호 수준이 문단에 남는다.
+    let md = ctx.dir.join("계획.md");
+    fs::write(&md, "# 추진 계획\n□ 예산 현황\n본문\n").unwrap();
+    let md_path = md.to_str().unwrap().replace(std::path::MAIN_SEPARATOR, "/");
+    let added = call(format!(r#"{{"cmd":"nb_source_add","notebook_id":{nb},"source_path":"{md_path}"}}"#));
+    assert_eq!(added.bool("ok"), Some(true), "{added:?}");
+    assert_eq!(added.i64("paragraph_count"), Some(3));
+    let outline = call(format!(r#"{{"cmd":"nb_transform","notebook_id":{nb},"type":"outline"}}"#));
+    let rows = outline.arr("results").unwrap();
+    assert_eq!(rows.iter().map(|r| (r.str("text").unwrap(), r.i64("level").unwrap())).collect::<Vec<_>>(), vec![("추진 계획", 1), ("□ 예산 현황", 3)]);
+
+    // 구형 hwp·pdf는 klib가 직접 읽지 않는다.
+    let pdf = ctx.dir.join("자료.pdf");
+    fs::write(&pdf, b"%PDF-1.4").unwrap();
+    let pdf_path = pdf.to_str().unwrap().replace(std::path::MAIN_SEPARATOR, "/");
+    let refused = call(format!(r#"{{"cmd":"nb_source_add","notebook_id":{nb},"source_path":"{pdf_path}"}}"#));
+    assert_eq!(refused.bool("ok"), Some(false));
+
+    // Python 추출 문단을 첫 묶음으로 받고, 나머지 묶음은 nb_index로 덧붙인다.
+    let first = call(format!(r#"{{"cmd":"nb_source_add","notebook_id":{nb},"source_path":"{pdf_path}","paragraphs":[{{"text":"Ⅰ. 개요","level":1,"location":"1쪽"}},{{"text":"구분\t금액","table":true}}]}}"#));
+    assert_eq!(first.bool("ok"), Some(true), "{first:?}");
+    let sid = first.i64("id").unwrap();
+    let more = call(format!(r#"{{"cmd":"nb_index","notebook_id":{nb},"source_id":{sid},"paragraphs":[{{"text":"예산\t1,250만원","kind":"table"}}]}}"#));
+    assert_eq!(more.i64("paragraph_count"), Some(3), "{more:?}");
+    let ps = call(format!(r#"{{"cmd":"nb_source_paragraphs","notebook_id":{nb},"source_id":{sid}}}"#));
+    let ps = ps.arr("paragraphs").unwrap();
+    assert_eq!(ps.iter().map(|p| p.i64("ordinal").unwrap()).collect::<Vec<_>>(), vec![0, 1, 2]);
+    assert_eq!(ps[0].str("location"), Some("1쪽"));
+    let tables = call(format!(r#"{{"cmd":"nb_transform","notebook_id":{nb},"type":"tables","source_ids":[{sid}]}}"#));
+    assert_eq!(tables.arr("results").unwrap().iter().map(|r| r.str("text").unwrap()).collect::<Vec<_>>(), vec!["구분\t금액", "예산\t1,250만원"]);
+    let hits = call(format!(r#"{{"cmd":"nb_search","notebook_id":{nb},"query":"1,250만원","source_ids":[{sid}]}}"#));
+    assert!(!hits.arr("results").unwrap().is_empty(), "{hits:?}");
 }

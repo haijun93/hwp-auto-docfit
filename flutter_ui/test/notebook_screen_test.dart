@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:docfit_ui/features/library/library_api.dart';
 import 'package:docfit_ui/features/notebook/notebook_api.dart';
 import 'package:docfit_ui/features/notebook/notebook_screen.dart';
 import 'package:docfit_ui/features/workspace/tab_navigation_shell.dart';
@@ -179,5 +180,113 @@ void main() {
     );
     await tester.pump();
     expect(find.byKey(const ValueKey('notebook-open')), findsNothing);
+  });
+
+  testWidgets('dropped files become sources and drop watching follows the screen', (tester) async {
+    await _setSize(tester, 1400);
+    const other = r'C:\자료\도로.md';
+    final api = InMemoryNotebookApi(fileContents: {_path: _content, other: '도로 정비\n교량 보수'});
+    await api.createNotebook('연구');
+    void Function()? onDrop;
+    var stopped = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: NotebookScreen(
+          api: api,
+          watchDropEvents: (callback) {
+            onDrop = callback;
+            return () => stopped = true;
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(api.watchingDrops, isTrue);
+
+    api.queueDrop([_path, other, '  ']);
+    onDrop!();
+    await tester.pumpAndSettle();
+    expect(find.text('예산보고.txt'), findsOneWidget);
+    expect(find.text('도로.md'), findsOneWidget);
+    expect(find.text('출처 2개를 추가했습니다.'), findsOneWidget);
+    expect(await api.takeDroppedPaths(), isEmpty);
+
+    await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+    await tester.pumpAndSettle();
+    expect(stopped, isTrue);
+    expect(api.watchingDrops, isFalse);
+  });
+
+  testWidgets('import file items from library as sources', (tester) async {
+    await _setSize(tester, 1400);
+    final api = InMemoryNotebookApi(fileContents: {_path: _content});
+    await api.createNotebook('연구');
+    LibraryItem item(String id, LibraryItemKind kind, String title, {String? source}) => LibraryItem(
+      id: id,
+      boxId: 'box_1',
+      kind: kind,
+      title: title,
+      space: LibrarySpace.core,
+      x: 0,
+      y: 0,
+      source: source,
+    );
+    final library = InMemoryLibraryApi(
+      initialBoxes: const [LibraryBox(id: 'box_1', name: '예산 자료')],
+      initialItems: [
+        item('item_1', LibraryItemKind.file, '예산보고', source: _path),
+        item('item_2', LibraryItemKind.text, '메모'),
+      ],
+    );
+    await tester.pumpWidget(MaterialApp(home: NotebookScreen(api: api, library: library)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('nb-source-library')));
+    await tester.pumpAndSettle();
+    expect(find.text('예산 자료'), findsOneWidget);
+    expect(find.byKey(const ValueKey('nb-lib-item-item_1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('nb-lib-item-item_2')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('nb-lib-item-item_1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('nb-lib-ok')));
+    await tester.pumpAndSettle();
+    expect(find.text('예산보고.txt'), findsOneWidget);
+    expect(find.text('문단 3개'), findsOneWidget);
+    expect(find.text('출처를 추가했습니다.'), findsOneWidget);
+  });
+
+  testWidgets('library button is hidden without library api', (tester) async {
+    final api = InMemoryNotebookApi();
+    await api.createNotebook('연구');
+    await tester.pumpWidget(MaterialApp(home: NotebookScreen(api: api)));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('nb-source-library')), findsNothing);
+  });
+
+  testWidgets('bridge api parses paragraph level and drop commands', (tester) async {
+    final calls = <Map>[];
+    final api = BridgeNotebookApi((method, args) async {
+      final request = args.single as Map;
+      calls.add(request);
+      return switch (request['cmd']) {
+        'nb_source_paragraphs' => {
+          'ok': true,
+          'paragraphs': [
+            {'source_id': 5, 'ordinal': 0, 'location': '', 'level': 3, 'kind': 'text', 'body': '□ 현황'},
+            {'source_id': 5, 'ordinal': 1, 'location': '', 'level': 0, 'kind': 'table', 'body': '구분\t금액'},
+          ],
+        },
+        'nb_take_drop' => {
+          'ok': true,
+          'paths': [_path],
+        },
+        _ => {'ok': true},
+      };
+    });
+    final ps = await api.paragraphs(1, 5);
+    expect(ps.map((p) => (p.level, p.isTable)), [(3, false), (0, true)]);
+    expect(await api.takeDroppedPaths(), [_path]);
+    await api.watchDrops(true);
+    expect(calls.last, {'cmd': 'nb_drop_watch', 'active': true});
   });
 }
