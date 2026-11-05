@@ -1,11 +1,11 @@
 <h1 align="center">한글편집 후처리</h1>
 
-<h2 align="center">⬇️ 지금 내려받기 · 최신 v2.2.17</h2>
+<h2 align="center">⬇️ 지금 내려받기 · 최신 v2.2.18</h2>
 
 | 내려받는 곳 | 설치형 (Setup, 184MB) | 포터블 (Portable, 204MB) |
 |:---:|:---:|:---:|
-| GitHub | [설치형 내려받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.2.17/HWP_AutoDocFit_v2.2.17_Setup.exe) | [포터블 내려받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.2.17/HWP_AutoDocFit_v2.2.17_Portable.exe) |
-| GitLab | [설치형 내려받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.2.17_Setup.exe?inline=false) | [포터블 내려받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.2.17_Portable.exe?inline=false) |
+| GitHub | [설치형 내려받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.2.18/HWP_AutoDocFit_v2.2.18_Setup.exe) | [포터블 내려받기](https://github.com/haijun93/hwp-auto-docfit/releases/download/v2.2.18/HWP_AutoDocFit_v2.2.18_Portable.exe) |
+| GitLab | [설치형 내려받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.2.18_Setup.exe?inline=false) | [포터블 내려받기](https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/HWP_AutoDocFit_v2.2.18_Portable.exe?inline=false) |
 
 **설치형**은 설치 후 시작 메뉴에서 실행하고, **포터블**은 설치 없이 파일을 바로 실행합니다. Windows 10·11용이며, 문서 편집 기능에는 한컴오피스 한/글이 필요합니다.
 
