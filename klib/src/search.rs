@@ -56,7 +56,8 @@ struct Fields {
     doc_id: Field, path: Field, box_ids: Field, name: Field, name_cho: Field, title: Field,
     level: Field, body_ko: Field, body_bi: Field, body_jamo: Field,
     body_cho: Field, ext: Field, mtime: Field, page: Field, sheet: Field,
-    row: Field, body: Field,
+    row: Field, body: Field, notebook_id: Field, source_id: Field,
+    paragraph_ordinal: Field, location: Field,
 }
 
 pub struct SearchIndex {
@@ -129,11 +130,65 @@ fn schema() -> (Schema, Fields) {
     let sheet=b.add_text_field("sheet", tantivy::schema::STRING | tantivy::schema::STORED);
     let row=b.add_u64_field("row", tantivy::schema::STORED);
     let body=b.add_text_field("body", tantivy::schema::STORED);
-    (b.build(), Fields {doc_id,path,box_ids,name,name_cho,title,level,body_ko,body_bi,body_jamo,body_cho,ext,mtime,page,sheet,row,body})
+    let notebook_id=b.add_u64_field("notebook_id",tantivy::schema::INDEXED|tantivy::schema::STORED);
+    let source_id=b.add_u64_field("source_id",tantivy::schema::INDEXED|tantivy::schema::STORED);
+    let paragraph_ordinal=b.add_u64_field("paragraph_ordinal",tantivy::schema::INDEXED|tantivy::schema::STORED);
+    let location=b.add_text_field("location",tantivy::schema::STRING|tantivy::schema::STORED);
+    (b.build(), Fields {doc_id,path,box_ids,name,name_cho,title,level,body_ko,body_bi,body_jamo,body_cho,ext,mtime,page,sheet,row,body,notebook_id,source_id,paragraph_ordinal,location})
 }
 fn id(path: &str) -> String { format!("{:x}", md5::compute(path.to_lowercase().as_bytes())) }
 
 impl SearchIndex {
+    pub fn replace_notebook_source(&self, notebook_id:i64, source:&crate::notebook::Source, paragraphs:&[crate::notebook::Paragraph])->tantivy::Result<()> {
+        let mut writer=self.index.writer::<TantivyDocument>(50_000_000)?;
+        writer.delete_term(tantivy::Term::from_field_u64(self.fields.source_id,source.id as u64));
+        for p in paragraphs {
+            let path=format!("notebook/{notebook_id}/source/{}",source.id);
+            let doc=doc!(self.fields.doc_id=>format!("{notebook_id}:{}:{}",source.id,p.ordinal),
+                self.fields.path=>path,self.fields.box_ids=>format!("notebook:{notebook_id}"),
+                self.fields.name=>source.display_name.clone(),self.fields.title=>source.display_name.clone(),
+                self.fields.level=>p.level.max(0) as u64,self.fields.body_ko=>p.body.clone(),
+                self.fields.body_bi=>p.body.clone(),self.fields.body_jamo=>jamo_text(&p.body),
+                self.fields.body_cho=>cho_text(&p.body),self.fields.ext=>"nb".to_string(),
+                self.fields.mtime=>source.original_mtime,self.fields.body=>p.body.clone(),
+                self.fields.notebook_id=>notebook_id as u64,self.fields.source_id=>source.id as u64,
+                self.fields.paragraph_ordinal=>p.ordinal as u64,self.fields.location=>p.location.clone());
+            writer.add_document(doc)?;
+        }
+        writer.commit()?;self.reader.reload()?;Ok(())
+    }
+    pub fn remove_notebook_source(&self,source_id:i64)->tantivy::Result<()> {
+        let mut writer=self.index.writer::<TantivyDocument>(50_000_000)?;
+        writer.delete_term(tantivy::Term::from_field_u64(self.fields.source_id,source_id as u64));
+        writer.commit()?;self.reader.reload()?;Ok(())
+    }
+    pub fn remove_notebook(&self,notebook_id:i64)->tantivy::Result<()> {
+        let mut writer=self.index.writer::<TantivyDocument>(50_000_000)?;
+        writer.delete_term(tantivy::Term::from_field_u64(self.fields.notebook_id,notebook_id as u64));
+        writer.commit()?;self.reader.reload()?;Ok(())
+    }
+    pub fn search_notebook(&self,notebook_id:i64,query:&str,source_ids:Option<&[i64]>,limit:usize)->tantivy::Result<Vec<crate::notebook::Hit>> {
+        if query.trim().is_empty(){return Ok(Vec::new())}
+        let parser=QueryParser::for_index(&self.index,vec![self.fields.name,self.fields.body_ko,self.fields.body_bi]);
+        let parsed=parser.parse_query(query).unwrap_or_else(|_|Box::new(tantivy::query::EmptyQuery));
+        let mut clauses:Vec<(Occur,Box<dyn Query>)>=vec![
+            (Occur::Must,Box::new(tantivy::query::TermQuery::new(tantivy::Term::from_field_u64(self.fields.notebook_id,notebook_id as u64),IndexRecordOption::Basic))),
+            (Occur::Must,parsed)];
+        if let Some(ids)=source_ids{
+            if ids.is_empty(){return Ok(Vec::new())}
+            let terms=ids.iter().map(|id|(Occur::Should,Box::new(tantivy::query::TermQuery::new(tantivy::Term::from_field_u64(self.fields.source_id,*id as u64),IndexRecordOption::Basic)) as Box<dyn Query>)).collect();
+            clauses.push((Occur::Must,Box::new(BooleanQuery::new(terms))));
+        }
+        let q=BooleanQuery::new(clauses);let searcher=self.reader.searcher();
+        let docs=searcher.search(&q,&TopDocs::with_limit(limit.max(1)))?;let mut hits=Vec::new();
+        for(score,address) in docs{let d=searcher.doc::<TantivyDocument>(address)?;hits.push(crate::notebook::Hit{
+            source_id:d.get_first(self.fields.source_id).and_then(|v|v.as_u64()).unwrap_or(0) as i64,
+            ordinal:d.get_first(self.fields.paragraph_ordinal).and_then(|v|v.as_u64()).unwrap_or(0) as i64,
+            display_name:d.get_first(self.fields.name).and_then(|v|v.as_str()).unwrap_or("").into(),
+            location:d.get_first(self.fields.location).and_then(|v|v.as_str()).unwrap_or("").into(),
+            score,body:d.get_first(self.fields.body).and_then(|v|v.as_str()).unwrap_or("").into()});}
+        Ok(hits)
+    }
     pub fn open_or_create(path: impl AsRef<Path>) -> tantivy::Result<Self> {
         let path=path.as_ref().to_path_buf();
         std::fs::create_dir_all(&path).map_err(|e| tantivy::TantivyError::InternalError(e.to_string()))?;
@@ -201,7 +256,10 @@ impl SearchIndex {
                 q=Box::new(BooleanQuery::new(vec![(Occur::Should,q),(Occur::Should,Box::new(tantivy::query::BoostQuery::new(fuzzy,0.5)))]));
             }
         }
-        let mut clauses=vec![(Occur::Must,q)];
+        let mut clauses=vec![
+            (Occur::Must,q),
+            (Occur::MustNot,Box::new(tantivy::query::TermQuery::new(tantivy::Term::from_field_text(self.fields.ext,"nb"),IndexRecordOption::Basic)) as Box<dyn Query>),
+        ];
         for filter in parsed.filters {
             if let Some((field,value))=filter.strip_prefix("ext:").map(|v|(self.fields.ext,v)) {
                 clauses.push((Occur::Must, Box::new(tantivy::query::TermQuery::new(tantivy::Term::from_field_text(field,value),IndexRecordOption::Basic))));
@@ -299,5 +357,6 @@ mod tests {
  #[test] fn tokenizer_utf8_offsets(){let mut s=KoBigram.token_stream("\u{ac00}\u{b098}\u{b2e4}");s.advance();assert_eq!(&"\u{ac00}\u{b098}\u{b2e4}"[s.token().offset_from..s.token().offset_to],"\u{ac00}\u{b098}");}
  #[test] fn directives_extract_filters(){let p=parse_directives("\u{d55c}\u{ad6d}\u{c5b4} ext:txt path:abc");assert_eq!(p.text,"\u{d55c}\u{ad6d}\u{c5b4}");assert_eq!(p.filters.len(),2);}
  #[test] fn add_and_search(){let dir=temp();let ix=SearchIndex::open_or_create(&dir).unwrap();ix.add_or_update(&paragraph("a.txt","\u{d55c}\u{ad6d}\u{c5b4} \u{ac80}\u{c0c9} \u{bb38}\u{b2e8}")).unwrap();assert_eq!(ix.search("\u{d55c}\u{ad6d}\u{c5b4}",SearchOptions{limit:10}).unwrap().len(),1);let _=std::fs::remove_dir_all(dir);}
+ #[test] fn notebook_index_reuses_search_index_with_exact_scope_and_rank(){let dir=temp();let ix=SearchIndex::open_or_create(&dir).unwrap();let source=|id|crate::notebook::Source{id,notebook_id:7,kind:"txt".into(),origin:"".into(),display_name:format!("자료{id}"),status:"ready".into(),reason:"".into(),paragraph_count:1,original_size:0,original_mtime:0};let a=source(31);let b=source(32);ix.replace_notebook_source(7,&a,&[crate::notebook::Paragraph{source_id:31,ordinal:0,location:"1".into(),level:0,kind:"text".into(),body:"서울 예산".into()}]).unwrap();ix.replace_notebook_source(7,&b,&[crate::notebook::Paragraph{source_id:32,ordinal:0,location:"2".into(),level:0,kind:"text".into(),body:"서울 서울 예산 예산".into()}]).unwrap();let all=ix.search_notebook(7,"서울 예산",None,10).unwrap();assert_eq!(all.len(),2);assert!(all[0].score>=all[1].score);assert!(ix.search_notebook(7,"서울 예산",Some(&[31]),10).unwrap().iter().all(|h|h.source_id==31));assert!(ix.search_notebook(8,"서울 예산",None,10).unwrap().is_empty());ix.remove_notebook(7).unwrap();assert!(ix.search_notebook(7,"서울",None,10).unwrap().is_empty());let _=std::fs::remove_dir_all(dir);}
  #[test] fn chosung_and_fuzzy_helpers(){assert_eq!(cho_text("\u{d589}\u{c815}\u{bcf5}\u{c9c0}\u{c13c}\u{d130}"),"\u{314E}\u{3148}\u{3142}\u{3148}\u{3145}\u{314C}");assert!(is_chosung_query("\u{314E}\u{3148}\u{3142}\u{3148}"));assert!(fuzzy_query("\u{d589}\u{c815}\u{bcf5}\u{c9c0}\u{c13c}\u{d130}",schema().1.body_jamo).is_some());}
 }

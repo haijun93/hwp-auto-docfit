@@ -2250,6 +2250,20 @@ class DesktopWebBridge:
             return self._library_bridge.request(request)
         except Exception as exc:
             return {"ok": False, "message": str(exc)}
+
+    def notebook(self, request):
+        """노트북(nb_*) 요청을 klib로 전달한다. 개발자 모드 전용, 자료함과 같은 브리지를 쓴다."""
+        if not self._developer_mode_enabled():
+            return {"ok": False, "code": "DEVELOPER_MODE_REQUIRED", "message": "개발자 모드에서만 노트북을 사용할 수 있습니다."}
+        if not isinstance(request, dict) or not str(request.get("cmd", "")).startswith("nb_"):
+            return {"ok": False, "message": "허용되지 않은 노트북 명령입니다."}
+        if getattr(self, "_library_bridge", None) is None:
+            from docfit_app.library_bridge import LibraryBridge
+            self._library_bridge = LibraryBridge()
+        try:
+            return self._library_bridge.request(request)
+        except Exception as exc:
+            return {"ok": False, "message": str(exc)}
     def _table_units_command(self, action, payload=None):
         """표 템플릿: 스냅샷 목록·정보단위 미리보기·한/글 붙여넣기용 복사(2026-10-22).
 
@@ -2884,7 +2898,7 @@ class _BrowserApi:
             "get_state", "add_files", "add_folder", "add_paths", "remove_file",
             "clear_files", "set_mode", "set_range", "start", "stop", "start_job", "cancel_job", "get_events",
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
-            "get_pending_dialog", "resolve_dialog", "enable_close_guard", "acknowledge_close", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch", "timemachine", "library",
+            "get_pending_dialog", "resolve_dialog", "enable_close_guard", "acknowledge_close", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch", "timemachine", "library", "notebook",
             "file_rename", "kclip", "new_document", "hwp_bulk", "open_results", "next_job", "run_tool", "open_result",
             "sidebar_mode", "sidebar_mode_switch_side", "always_on_top",
             "show_result", "open_source_file", "show_source_file", "open_result_source", "open_diff", "compare_result", "launch_external_hwp_diff", "set_stage", "reset_stages", "set_stage_default",
