@@ -183,6 +183,7 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
   bool developerMode = false;
   bool alwaysOnTop = false;
   bool sidebarOnly = false;
+  String sidebarSide = 'right';
 
   @override
   void initState() {
@@ -192,8 +193,19 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
       setState(() {
         developerMode = value['developer_mode'] == true;
         alwaysOnTop = value['always_on_top'] == true;
+        if (value['sidebar_mode_side'] == 'left' || value['sidebar_mode_side'] == 'right') {
+          sidebarSide = value['sidebar_mode_side'] as String;
+        }
       });
     }).catchError((_) {}));
+  }
+
+  Future<void> _setSidebarSide(String side) async {
+    if (!developerMode || (side != 'left' && side != 'right')) return;
+    final result = await widget.api('set_sidebar_mode_side', [side]);
+    if (result is Map && result['ok'] == true && mounted) {
+      setState(() => sidebarSide = side);
+    }
   }
   final tabRequest = ValueNotifier<int?>(null);
 
@@ -225,6 +237,8 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
     api: widget.api,
     tabRequest: tabRequest,
     developerMode: developerMode,
+    sidebarSide: sidebarSide,
+    onSidebarSideChanged: _setSidebarSide,
     documentEditorWidget: Workspace(
       key: workspace,
       api: widget.api,

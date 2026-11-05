@@ -71,6 +71,27 @@ void main() {
     expect(find.text('사이드메뉴 모드 켜짐'), findsOneWidget);
   });
 
+  testWidgets('developer mode shows and selects sidebar side', (tester) async {
+    String? selected;
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: StatefulBuilder(
+      builder: (context, setState) => WorkspaceTabBar(
+        labels: const ['문서편집'], icons: const [Icons.description], selectedIndex: 0,
+        onSelected: (_) {}, scrollController: ScrollController(), developerMode: true,
+        sidebarSide: selected ?? 'right',
+        onSidebarSideChanged: (side) => setState(() => selected = side),
+      ),
+    ))));
+    expect(find.byKey(const ValueKey('sidebar-side-left')), findsOneWidget);
+    expect(find.byKey(const ValueKey('sidebar-side-right')), findsOneWidget);
+    expect(tester.widget<ToggleButtons>(find.byKey(const ValueKey('sidebar-side-selector'))).isSelected,
+        [false, true]);
+    await tester.tap(find.byKey(const ValueKey('sidebar-side-left')));
+    await tester.pump();
+    expect(selected, 'left');
+    expect(tester.widget<ToggleButtons>(find.byKey(const ValueKey('sidebar-side-selector'))).isSelected,
+        [true, false]);
+  });
+
   testWidgets('DocFitApp mounts IntegratedWorkspace with 6 tabs by default',
       (tester) async {
     // 탭이 8개라 좁은 창에서는 아이콘만 보인다 — 이름까지 보이는 넓이로 시험한다.

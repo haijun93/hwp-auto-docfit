@@ -109,6 +109,11 @@ class BrowserApiTests(unittest.TestCase):
         self.appdata_patch.start()
         self.addCleanup(self.appdata_patch.stop)
 
+    def test_sidebar_side_state_is_safe_without_settings_service(self):
+        bridge = _bridge(_FakeGui())
+
+        self.assertEqual(bridge._sidebar_mode_side_setting(), 'right')
+
     def test_only_commands_exposed_not_native_window_or_tk_graph(self):
         bridge = DesktopWebBridge(object())
         bridge.window = object()

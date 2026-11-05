@@ -430,6 +430,19 @@ class DesktopWebBridge:
         except Exception:
             return False
 
+    def _sidebar_mode_side_setting(self):
+        """Read the persisted side when the settings service is available."""
+        try:
+            service_factory = getattr(self.gui, '_\uc900\ub9d0_\uc11c\ube44\uc2a4', None)
+            if not callable(service_factory):
+                return 'right'
+            settings = service_factory().settings
+            values = settings.read()
+            side = values.get('sidebar_mode_side', 'right')
+            return side if side in ('left', 'right') else 'right'
+        except Exception:
+            return 'right'
+
     def get_state(self):
         # 파일명 서비스를 처음 만들 때 Tk 호출을 기다리므로 Tk 스레드 밖에서 처리한다.
         rename_open = self._drain_rename_paths()
@@ -505,6 +518,7 @@ class DesktopWebBridge:
                 "developer_mode": self._setting_flag('developer_mode'),
                 "always_on_top": self._setting_flag('always_on_top'),
                 "sidebar_mode": self.sidebar_active,
+                "sidebar_mode_side": self._sidebar_mode_side_setting(),
                 "document_drop_revision": self._document_drop_revision,
                 "options": {
                     name: bool(getattr(gui, attribute).get())
@@ -2022,8 +2036,42 @@ class DesktopWebBridge:
             else:
                 self.sidebar_controller.developer_mode = True
                 self.sidebar_controller.saved = self._saved_window
+                if self.sidebar_controller.window is None:
+                    self.sidebar_controller.window = _PyWebViewWindow(
+                        self.window, self.gui._준말_서비스().settings, lambda: self._saved_window)
             result = self.sidebar_controller.toggle(bool(enabled))
             self.sidebar_active = bool(enabled)
+            return result
+        try:
+            return self._tk(execute)
+        except Exception as exc:
+            return {'ok': False, 'message': str(exc)}
+
+    def set_sidebar_mode_side(self, side):
+        from docfit_app.sidebar_mode import SidebarModeController
+        def execute():
+            config = self._configuration().snapshot(running=self.gui.running)
+            values = config.get('values', {})
+            if not values.get('developer_mode', False):
+                return {'ok': False, 'message': '사이드메뉴 모드는 개발자 모드에서만 사용할 수 있습니다.'}
+            if side not in ('left', 'right'):
+                return {'ok': False, 'code': 'INVALID_SIDEBAR_SIDE', 'message': "방향은 'left' 또는 'right'여야 합니다."}
+            if self.sidebar_controller is None:
+                window = (_PyWebViewWindow(self.window, self.gui._준말_서비스().settings, lambda: self._saved_window)
+                          if self.window is not None else None)
+                self.sidebar_controller = SidebarModeController(
+                    _Win32WindowApi(), window, True, values.get('sidebar_mode_side', 'right'))
+            else:
+                self.sidebar_controller.developer_mode = True
+            if self.sidebar_controller.window is None and self.window is not None:
+                self.sidebar_controller.window = _PyWebViewWindow(
+                    self.window, self.gui._준말_서비스().settings, lambda: self._saved_window)
+            self.sidebar_controller.saved = self._saved_window
+            result = self.sidebar_controller.set_side(side)
+            self.sidebar_active = result['active']
+            if self.window is None:
+                self.gui._준말_서비스().settings.update(
+                    lambda current: current.update({'sidebar_mode_side': side}))
             return result
         try:
             return self._tk(execute)
@@ -2848,7 +2896,7 @@ class _BrowserApi:
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
             "get_pending_dialog", "resolve_dialog", "enable_close_guard", "acknowledge_close", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch", "timemachine", "library",
             "file_rename", "kclip", "new_document", "hwp_bulk", "open_results", "next_job", "run_tool", "open_result",
-            "sidebar_mode", "always_on_top",
+            "sidebar_mode", "set_sidebar_mode_side", "always_on_top",
             "show_result", "open_source_file", "show_source_file", "open_result_source", "open_diff", "compare_result", "launch_external_hwp_diff", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",
             "set_exclude_tables", "set_card_option",

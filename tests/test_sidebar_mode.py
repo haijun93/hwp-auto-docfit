@@ -12,11 +12,12 @@ class FakeApi:
 
 class FakeWindow:
     def __init__(self, rect=(600, 100, 800, 600), topmost=False):
-        self.rect, self.on_top, self.only = rect, topmost, None
+        self.rect, self.on_top, self.only, self.saved_side = rect, topmost, None, None
     def handle(self): return 42
     def geometry(self): return self.rect
     def topmost(self): return self.on_top
     def set_sidebar_only(self, value): self.only = value
+    def save_side(self, side): self.saved_side = side
 
 
 class SidebarModeTests(unittest.TestCase):
@@ -56,6 +57,38 @@ class SidebarModeTests(unittest.TestCase):
         api.set_window_pos(55, 10, 20, 190, 700, True)
         self.assertEqual(fake.calls[0], ('work', api.SPI_GETWORKAREA))
         self.assertEqual(fake.calls[1][0], 'position')
+
+    def test_set_side_moves_active_sidebar_and_preserves_restore_state(self):
+        api, window = FakeApi(), FakeWindow(topmost=True)
+        controller = SidebarModeController(api, window, True)
+        controller.toggle(True)
+        saved = dict(controller.saved)
+        result = controller.set_side('left')
+        self.assertEqual(result, {'ok': True, 'active': True, 'side': 'left'})
+        self.assertEqual(api.positions[-1], (42, 100, 40, 190, 800, True))
+        self.assertEqual(controller.saved, saved)
+        self.assertEqual(window.saved_side, 'left')
+        controller.toggle(False)
+        controller.toggle(True)
+        self.assertEqual(api.positions[-1], (42, 100, 40, 190, 800, True))
+
+    def test_set_side_rejects_invalid_value_without_mutation_and_remembers_inactive_choice(self):
+        api, window = FakeApi(), FakeWindow()
+        controller = SidebarModeController(api, window, True)
+        with self.assertRaises(ValueError):
+            controller.set_side('center')
+        self.assertEqual(api.positions, [])
+        self.assertEqual(window.saved_side, None)
+        self.assertEqual(controller.set_side('left'), {'ok': True, 'active': False, 'side': 'left'})
+        self.assertEqual(api.positions, [])
+        controller.toggle(True)
+        self.assertEqual(api.positions[-1], (42, 100, 40, 190, 800, True))
+        self.assertEqual(window.saved_side, 'left')
+
+    def test_set_side_requires_developer_mode(self):
+        controller = SidebarModeController(FakeApi(), FakeWindow(), False)
+        with self.assertRaises(PermissionError):
+            controller.set_side('left')
 
 
 if __name__ == '__main__':

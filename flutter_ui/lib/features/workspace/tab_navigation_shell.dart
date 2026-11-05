@@ -71,6 +71,8 @@ class TabNavigationShell extends StatefulWidget {
     this.tabRequest,
     this.hiddenTabs = kDefaultHiddenTabs,
     this.developerMode = false,
+    this.sidebarSide = 'right',
+    this.onSidebarSideChanged,
     this.libraryScreen,
   }) : assert(initialIndex >= 0 && initialIndex < kTabCount);
 
@@ -92,6 +94,8 @@ class TabNavigationShell extends StatefulWidget {
   /// 메뉴에 보이지 않고 화면도 만들지 않는 탭.
   final Set<int> hiddenTabs;
   final bool developerMode;
+  final String sidebarSide;
+  final ValueChanged<String>? onSidebarSideChanged;
   final Widget? libraryScreen;
   final ValueChanged<int>? onTabChanged;
 
@@ -248,6 +252,8 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
                     onToggleExpanded: _toggleSidebar,
                     developerMode: widget.developerMode,
                     onSidebarModeChanged: _setSidebarOnly,
+                    sidebarSide: widget.sidebarSide,
+                    onSidebarSideChanged: widget.onSidebarSideChanged,
                     sidebarOnly: _sidebarOnly,
                     onAlwaysOnTop: () {},
                   ),
@@ -265,6 +271,8 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
                           libraryScreen: widget.libraryScreen,
                           developerMode: widget.developerMode,
                           onSidebarModeChanged: _setSidebarOnly,
+                          sidebarSide: widget.sidebarSide,
+                          onSidebarSideChanged: widget.onSidebarSideChanged,
                           sidebarOnly: _sidebarOnly,
                           onAlwaysOnTop: () {},
                         )),
@@ -313,6 +321,8 @@ class WorkspaceTabBar extends StatelessWidget {
     this.onToggleExpanded,
     this.developerMode = false,
     this.onSidebarModeChanged,
+    this.sidebarSide = 'right',
+    this.onSidebarSideChanged,
     this.sidebarOnly = false,
     this.onAlwaysOnTop,
     this.libraryScreen,
@@ -329,6 +339,8 @@ class WorkspaceTabBar extends StatelessWidget {
   final VoidCallback? onToggleExpanded;
   final bool developerMode;
   final ValueChanged<bool>? onSidebarModeChanged;
+  final String sidebarSide;
+  final ValueChanged<String>? onSidebarSideChanged;
   final bool sidebarOnly;
   final VoidCallback? onAlwaysOnTop;
   final Widget? libraryScreen;
@@ -403,6 +415,15 @@ class WorkspaceTabBar extends StatelessWidget {
       ),
     ],
             if (developerMode) ...[
+              ToggleButtons(
+                key: const ValueKey('sidebar-side-selector'),
+                isSelected: [sidebarSide == 'left', sidebarSide == 'right'],
+                onPressed: (index) => onSidebarSideChanged?.call(index == 0 ? 'left' : 'right'),
+                children: const [
+                  Padding(key: ValueKey('sidebar-side-left'), padding: EdgeInsets.symmetric(horizontal: 8), child: Text('왼쪽 고정')),
+                  Padding(key: ValueKey('sidebar-side-right'), padding: EdgeInsets.symmetric(horizontal: 8), child: Text('오른쪽 고정')),
+                ],
+              ),
               TextButton.icon(
                 key: const ValueKey('always-on-top-toggle'),
                 onPressed: onAlwaysOnTop,
