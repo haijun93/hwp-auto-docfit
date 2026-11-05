@@ -73,6 +73,15 @@ class KClipServiceTests(unittest.TestCase):
                                                 ("pin", {"id": 3, "pinned": False})])
         self.assertEqual(self.service.command("quit")["code"], "NOT_AVAILABLE")
 
+    def test_open_web_only_accepts_http_schemes(self):
+        self.client.on = True
+        self.client.request = lambda cmd, **payload: {"ok": True, "kind": "text", "data": "https://example.com/path"}
+        with patch("webbrowser.open", return_value=True) as open_browser:
+            self.assertTrue(self.service.command("open_web", {"id": 3})["ok"])
+            open_browser.assert_called_once_with("https://example.com/path")
+        self.client.request = lambda cmd, **payload: {"ok": True, "kind": "text", "data": "file:///C:/secret"}
+        self.assertEqual(self.service.command("open_web", {"id": 3})["code"], "KCLIP_WEB")
+
     def test_scheduled_pause_resumes_on_next_status_after_expiry(self):
         import time
         self.client.on = True
