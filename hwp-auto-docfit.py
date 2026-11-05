@@ -2373,6 +2373,7 @@ _괄호따옴표_시작문자인가 = _engine_resolve('docfit_engine.spacing', '
 보고서_문단역할 = _engine_resolve('docfit_engine.page_fit', '보고서_문단역할', globals())
 
 쪽맞춤_부연설명인가 = _engine_resolve('docfit_engine.page_fit', '쪽맞춤_부연설명인가', globals())
+엔진_문단역할_보조 = _engine_resolve('docfit_engine.page_fit', '엔진_문단역할_보조', globals())
 
 
 보고서_본문묶음_수집 = _engine_resolve('docfit_engine.page_fit', '보고서_본문묶음_수집', globals())

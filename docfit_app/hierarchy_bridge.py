@@ -49,3 +49,18 @@ def analyze_levels(paragraphs, settings=None, executable=None, timeout=TIMEOUT_S
     if exe is None:
         return None
     return run_executable(exe, paragraphs, timeout)
+
+
+# 엔진 Role 번호(hierarchy/src/lib.rs) → 쪽 맞춤 문단 역할. 그 밖의 값은 판정 보류(None).
+ENGINE_ROLE_NAMES = {4: "소제목", 5: "본문", 6: "내용", 7: "부연설명"}
+
+
+def engine_role_of_last(paragraphs, settings=None, executable=None, timeout=TIMEOUT_SECONDS):
+    """문단 목록(맥락 포함)의 마지막 문단 역할을 엔진으로 판정한다.
+
+    꺼져 있거나 엔진이 실패·판정 보류면 None이며, 호출한 쪽은 기존 규칙을 그대로 쓴다.
+    """
+    result = analyze_levels(paragraphs, settings, executable=executable, timeout=timeout)
+    if not result or not result["levels"]:
+        return None
+    return ENGINE_ROLE_NAMES.get(result["levels"][-1])
