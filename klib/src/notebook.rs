@@ -1,6 +1,5 @@
 //! SQLite-backed notebooks, citations, paragraph search, and deterministic transforms.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use rusqlite::{params, Connection, OptionalExtension};
@@ -81,7 +80,34 @@ pub fn citations(c:&Connection,note_id:i64)->rusqlite::Result<Vec<(i64,i64,i64,S
     let mut s=c.prepare("SELECT source_id,paragraph_ordinal,id,quote FROM nb_citation WHERE note_id=?1 ORDER BY id")?;
     s.query_map([note_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?)))?.collect()
 }
-pub fn transform(items:&[Paragraph],kind:&str,limit:usize)->Result<Vec<TransformItem>,String>{let mut out=Vec::new();match kind{"outline"=>out.extend(items.iter().filter(|p|p.level>0).map(|p|TransformItem{source_id:p.source_id,ordinal:p.ordinal,location:p.location.clone(),level:p.level,kind:p.kind.clone(),text:p.body.clone(),score:p.level as f64})),"tables"=>out.extend(items.iter().filter(|p|p.kind.eq_ignore_ascii_case("table")).map(|p|TransformItem{source_id:p.source_id,ordinal:p.ordinal,location:p.location.clone(),level:p.level,kind:p.kind.clone(),text:p.body.clone(),score:1.0})),"numbers"=>{let re=regex::Regex::new(r"[0-9０-９]+([.,:/-][0-9０-９]+)*").map_err(|e|e.to_string())?;for p in items{for sentence in p.body.split_inclusive(['.','!','?','。','！','？','\n']).map(str::trim).filter(|s|!s.is_empty()&&re.is_match(s)){out.push(TransformItem{source_id:p.source_id,ordinal:p.ordinal,location:p.location.clone(),level:p.level,kind:p.kind.clone(),text:sentence.to_string(),score:1.0});}}},"keywords"=>{let re=regex::Regex::new(r"[\p{Hangul}\p{Alphabetic}\p{Number}]{2,}").map_err(|e|e.to_string())?;let mut counts=HashMap::<String,(usize,&Paragraph)>::new();for p in items{for w in re.find_iter(&p.body){let entry=counts.entry(w.as_str().to_lowercase()).or_insert((0,p));entry.0+=1;}}let mut v:Vec<_>=counts.into_iter().collect();v.sort_by(|a,b|b.1.0.cmp(&a.1.0).then_with(||a.0.cmp(&b.0)));for (word,(count,p)) in v{out.push(TransformItem{source_id:p.source_id,ordinal:p.ordinal,location:p.location.clone(),level:p.level,kind:"keyword".into(),text:word,score:count as f64});}},_=>return Err(format!("알 수 없는 변환 종류: {kind}"))}out.truncate(limit);Ok(out)}
+/// 규칙 기반 변환(개요·표·숫자 문장·핵심어). 규칙 자체는 `nb_transform`에 있고, 여기서는 문단 형식만 맞춘다.
+pub fn transform(items:&[Paragraph],kind:&str,limit:usize)->Result<Vec<TransformItem>,String>{
+    use crate::nb_transform as nt;
+    let to_para=|p:&Paragraph,text:&str|nt::Para{source_id:p.source_id.to_string(),seq:p.ordinal.max(0) as u64,page:None,level:(p.level>0).then(||p.level.min(u8::MAX as i64) as u8),text:text.to_string(),table:p.kind.eq_ignore_ascii_case("table")};
+    let item=|p:&Paragraph,kind:&str,text:String,score:f64|TransformItem{source_id:p.source_id,ordinal:p.ordinal,location:p.location.clone(),level:p.level,kind:kind.to_string(),text,score};
+    let find=|source:&str,seq:u64|items.iter().find(|p|p.source_id.to_string()==source&&p.ordinal.max(0) as u64==seq);
+    let paras:Vec<nt::Para>=items.iter().map(|p|to_para(p,&p.body)).collect();
+    let mut out=Vec::new();
+    match kind{
+        "outline"=>for o in nt::outline(&paras){if let Some(p)=find(&o.source_id,o.seq){out.push(item(p,&p.kind,o.text,p.level as f64))}},
+        // 표 묶음마다 원문 문단을 차례로 낸다. score는 1부터 세는 표 묶음 번호.
+        "tables"=>for(n,group) in nt::tables(&paras).into_iter().enumerate(){for seq in group.paragraph_seqs{if let Some(p)=find(&group.source_id,seq){out.push(item(p,"table",p.body.clone(),(n+1) as f64))}}},
+        "numbers"=>{let sentences:Vec<(&Paragraph,nt::Para)>=items.iter().flat_map(|p|split_sentences(&p.body).into_iter().map(move|s|(p,s))).map(|(p,s)|(p,to_para(p,s))).collect();let only:Vec<nt::Para>=sentences.iter().map(|(_,s)|s.clone()).collect();let hits=nt::numbers(&only);let mut next=0;for hit in hits{while let Some((p,s))=sentences.get(next){next+=1;if s.source_id==hit.source_id&&s.seq==hit.seq&&s.text==hit.text{out.push(item(p,&p.kind,hit.text,1.0));break}}}},
+        "keywords"=>for k in nt::keywords(&paras,limit){if let Some(p)=items.iter().find(|p|p.body.to_lowercase().contains(&k.term)){out.push(item(p,"keyword",k.term,k.count as f64))}},
+        _=>return Err(format!("알 수 없는 변환 종류: {kind}"))
+    }
+    out.truncate(limit);Ok(out)
+}
+/// 문장 나누기: 마침표류 뒤가 공백·끝이고 앞이 숫자가 아닐 때만 끊는다(“2026. 11. 5.”, “3.5%”는 한 문장에 둔다). 줄바꿈은 항상 끊는다.
+fn split_sentences(text:&str)->Vec<&str>{
+    let mut out=Vec::new();let mut start=0;let chars:Vec<(usize,char)>=text.char_indices().collect();
+    for(i,&(at,c)) in chars.iter().enumerate(){
+        let end=at+c.len_utf8();
+        let cut=c=='\n'||(matches!(c,'.'|'!'|'?'|'。'|'！'|'？')&&chars.get(i+1).is_none_or(|(_,n)|n.is_whitespace())&&!(c=='.'&&i>0&&chars[i-1].1.is_ascii_digit()));
+        if cut{let s=text[start..end].trim();if !s.is_empty(){out.push(s)}start=end;}
+    }
+    let rest=text[start..].trim();if !rest.is_empty(){out.push(rest)}out
+}
 pub fn export_md(c:&Connection,notebook_id:i64,note_id:i64)->rusqlite::Result<Option<String>>{let note:Option<(String,String)>=c.query_row("SELECT title,body FROM nb_note WHERE id=?1 AND notebook_id=?2",params![note_id,notebook_id],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;let Some((title,body))=note else{return Ok(None)};let mut out=format!("# {title}\n\n{body}");let mut s=c.prepare("SELECT c.quote,src.display_name,src.origin,c.paragraph_ordinal FROM nb_citation c JOIN nb_source src ON src.id=c.source_id WHERE c.note_id=?1 ORDER BY c.id")?;let rows=s.query_map([note_id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,i64>(3)?)))?;for row in rows{let(q,n,path,o)=row?;out.push_str(&format!("\n\n> {q}\n> — {n} ({path}), 문단 {o}"));}Ok(Some(out))}
 
 pub fn source_by_id(c:&Connection,id:i64)->rusqlite::Result<Option<Source>>{c.query_row("SELECT id,notebook_id,kind,origin,display_name,status,reason,paragraph_count,original_size,original_mtime FROM nb_source WHERE id=?1",[id],|r|Ok(Source{id:r.get(0)?,notebook_id:r.get(1)?,kind:r.get(2)?,origin:r.get(3)?,display_name:r.get(4)?,status:r.get(5)?,reason:r.get(6)?,paragraph_count:r.get(7)?,original_size:r.get(8)?,original_mtime:r.get(9)?})).optional()}
@@ -89,6 +115,7 @@ pub fn index_root(db_path:&str)->PathBuf{Path::new(db_path).parent().unwrap_or(P
 
 #[cfg(test)] mod tests { use super::*; fn db()->Connection{let c=Connection::open_in_memory().unwrap();init_schema(&c).unwrap();c} fn p(s:i64,n:i64,l:i64,k:&str,b:&str)->Paragraph{Paragraph{source_id:s,ordinal:n,location:"1".into(),level:l,kind:k.into(),body:b.into()}}
 #[test]fn source_scope_and_search_order(){let dir=std::env::temp_dir().join(format!("nb-index-{}",std::process::id()));let ix=NotebookIndex::open(&dir).unwrap();let s1=Source{id:1,notebook_id:1,kind:"txt".into(),origin:"".into(),display_name:"하나".into(),status:"ready".into(),reason:"".into(),paragraph_count:2,original_size:0,original_mtime:0};let s2=Source{id:2,..s1.clone()};ix.replace_source(1,&s1,&[p(1,0,0,"text","서울 정책 자료"),p(1,1,0,"text","서울 서울 정책")]).unwrap();ix.replace_source(1,&s2,&[p(2,0,0,"text","서울 예산 정책")]).unwrap();let hits=ix.search(1,"서울 정책",None,10).unwrap();assert!(hits.len()>=2);assert!(hits[0].score>=hits[1].score);assert!(ix.search(1,"서울 정책",Some(&[2]),10).unwrap().iter().all(|h|h.source_id==2));assert!(ix.search(2,"서울 정책",None,10).unwrap().is_empty());let _=std::fs::remove_dir_all(dir);}
-#[test]fn transforms_four_kinds(){let ps=vec![p(1,0,2,"text","정책 개요 2025년 예산. 다음 문장."),p(1,1,0,"table","항목 금액"),p(1,2,0,"text","정책 정책 자료")];assert_eq!(transform(&ps,"outline",10).unwrap()[0].text,"정책 개요 2025년 예산. 다음 문장.");assert_eq!(transform(&ps,"tables",10).unwrap()[0].text,"항목 금액");assert_eq!(transform(&ps,"numbers",10).unwrap()[0].text,"정책 개요 2025년 예산.");let keywords=transform(&ps,"keywords",2).unwrap();assert_eq!(keywords[0].text,"정책");assert_eq!(keywords[0].score,2.0);assert!(keywords[0].source_id>0);}
+#[test]fn transforms_four_kinds(){let ps=vec![p(1,0,2,"text","정책 개요 2025년 예산. 다음 문장."),p(1,1,0,"table","항목 금액"),p(1,2,0,"text","정책 정책 자료")];assert_eq!(transform(&ps,"outline",10).unwrap()[0].text,"정책 개요 2025년 예산. 다음 문장.");assert_eq!(transform(&ps,"tables",10).unwrap()[0].text,"항목 금액");assert_eq!(transform(&ps,"numbers",10).unwrap()[0].text,"정책 개요 2025년 예산.");let keywords=transform(&ps,"keywords",2).unwrap();assert_eq!(keywords[0].text,"정책");assert_eq!(keywords[0].score,3.0);assert!(keywords[0].source_id>0);}
+#[test]fn transforms_keep_dates_in_one_sentence_and_group_table_rows(){let ps=vec![p(1,0,0,"text","신청서는 2026. 11. 5.까지 제출합니다. 증가율은 3.5%입니다. 안내 문장."),p(1,1,0,"table","구분\t금액"),p(1,2,0,"table","예산\t1,250만원"),p(1,3,0,"text","본문"),p(1,4,0,"text","[표] 일정|담당")];let n=transform(&ps,"numbers",10).unwrap();assert_eq!(n.iter().map(|x|x.text.as_str()).collect::<Vec<_>>(),vec!["신청서는 2026. 11. 5.까지 제출합니다.","증가율은 3.5%입니다.","예산\t1,250만원"]);let t=transform(&ps,"tables",10).unwrap();assert_eq!(t.iter().map(|x|(x.ordinal,x.score)).collect::<Vec<_>>(),vec![(1,1.0),(2,1.0),(4,2.0)]);assert_eq!(t[0].text,"구분\t금액");assert!(transform(&ps,"요약",10).is_err());}
 #[test]fn citation_snapshot_and_cascade(){let c=db();let n=create(&c,"노트","설명").unwrap();let s=add_source(&c,n,"txt","source.txt","원문").unwrap();replace_paragraphs(&c,s,&[p(s,0,0,"text","수정 전 원문 인용")]).unwrap();let note=save_note(&c,None,n,"제목","본문").unwrap();let quote="수정 전 원문 인용";save_citation(&c,note,s,0,quote).unwrap();replace_paragraphs(&c,s,&[p(s,0,0,"text","새 원문")]).unwrap();let saved:String=c.query_row("SELECT quote FROM nb_citation WHERE note_id=?1",[note],|r|r.get(0)).unwrap();assert_eq!(saved,quote);c.execute("UPDATE nb_source SET display_name='바뀐 원본' WHERE id=?1",[s]).unwrap();let md=export_md(&c,n,note).unwrap().unwrap();assert!(md.contains(quote));assert!(md.contains("source.txt"));assert!(export_md(&c,n+1,note).unwrap().is_none());delete(&c,n).unwrap();let count:i64=c.query_row("SELECT count(*) FROM nb_citation",[],|r|r.get(0)).unwrap();assert_eq!(count,0);}
 }
