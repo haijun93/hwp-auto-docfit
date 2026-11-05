@@ -8,29 +8,30 @@ import '../../core/api/abbreviation_api.dart' show ApiCall;
 
 /// 몽땅클립보드 관리: 켜기(동의)·끄기·상태·목록(검색·고정·지우기·클립보드에 올리기)·설정.
 /// 빠른 붙여넣기는 상주 프로그램의 단축키 팝업(기본 Ctrl+Shift+V)이 맡고, 이 화면은 관리용이다.
-Future<void> showKClipDialog(BuildContext context, ApiCall api) {
+enum KClipEntryMode { sidebar, hotkey }
+
+Future<void> showKClipDialog(BuildContext context, ApiCall api,
+    {KClipEntryMode mode = KClipEntryMode.sidebar}) {
   return showDialog<void>(
     context: context,
     barrierDismissible: false,
     builder: (_) => Dialog(
       insetPadding: const EdgeInsets.all(28),
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
-      ),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 720, maxHeight: 820),
-        child: KClipPanel(api: api),
+        child: KClipPanel(api: api, mode: mode),
       ),
     ),
   );
 }
 
 class KClipPanel extends StatefulWidget {
-  const KClipPanel({super.key, required this.api});
+  const KClipPanel({super.key, required this.api, this.mode = KClipEntryMode.sidebar});
 
   final ApiCall api;
+  final KClipEntryMode mode;
 
   @override
   State<KClipPanel> createState() => _KClipPanelState();
@@ -48,12 +49,45 @@ class _KClipPanelState extends State<KClipPanel> {
   bool busy = false;
   String message = '';
   String query = '';
+  String category = '전체';
   Timer? _debounce;
   final LinkedHashMap<int, Uint8List?> _images = LinkedHashMap();
   final Set<int> _loadingImages = {};
 
   bool get running => status['running'] == true;
   Map get agent => (status['status'] as Map?) ?? const {};
+  bool get hotkeyMode => widget.mode == KClipEntryMode.hotkey;
+  List<Map> get visibleItems => items.where((item) {
+    final kind = '${item['kind'] ?? ''}';
+    final webItem = _isWebText(item);
+    final matches = switch (category) {
+      '글' => kind == 'text' && !webItem,
+      '그림' => kind == 'image',
+      '파일' => webItem || (kind == 'files' && !_isFolder(item)),
+      '폴더' => kind == 'files' && _isFolder(item),
+      '웹' => webItem,
+      _ => true,
+    };
+    return matches;
+  }).toList();
+
+  bool _isWeb(Map item) => '${item['preview'] ?? ''}'.contains('· 웹 ·');
+  bool _isWebText(Map item) => _isWeb(item) || RegExp(r'^https?://[^\s]+$', caseSensitive: false)
+      .hasMatch('${item['preview'] ?? ''}'.trim());
+  bool _isFolder(Map item) {
+    if (item['is_folder'] == true || item['kind'] == 'folder') return true;
+    if (item['kind'] != 'files') return false;
+    final preview = '${item['preview'] ?? ''}';
+    if (preview.contains(' · ')) return false;
+    final parts = preview.split(RegExp(r'\s*·\s*'));
+    return parts.isNotEmpty && parts.every((part) => part.contains('\\') || part.contains('/'));
+  }
+  Future<void> _openWeb(Map item) async {
+    final result = await widget.api('kclip', ['open_web', {'id': item['id']}]);
+    if (result is Map && result['ok'] == false && mounted) {
+      setState(() => message = '${result['message'] ?? '웹 링크를 열지 못했습니다.'}');
+    }
+  }
 
   @override
   void initState() {
@@ -459,7 +493,7 @@ class _KClipPanelState extends State<KClipPanel> {
           ],
         ),
         const SizedBox(height: 4),
-        _settings(context),
+        if (!hotkeyMode) _settings(context),
         Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
           FilledButton.icon(
             key: const ValueKey('kclip-excel-table'),
@@ -468,29 +502,27 @@ class _KClipPanelState extends State<KClipPanel> {
             label: const Text('엑셀 표를 한/글 표로'),
           ),
         ]),
-        TextField(
-          decoration: const InputDecoration(
-            prefixIcon: Icon(Icons.search),
-            hintText: '찾기',
-          ),
-          onChanged: (v) {
-            query = v.trim();
-            _debounce?.cancel();
-            _debounce = Timer(
-              const Duration(milliseconds: 200),
-              () => unawaited(_reload()),
-            );
-          },
+        Wrap(alignment: WrapAlignment.spaceBetween, crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Wrap(spacing: 2, children: [for (final c in const ['전체','글','그림','파일','폴더','웹'])
+              TextButton(key: ValueKey('kclip-category-$c'), onPressed: () => setState(() => category = c),
+                style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 7)),
+                child: Text(c, style: TextStyle(fontWeight: category == c ? FontWeight.bold : null))) ]),
+            SizedBox(width: 210, child: TextField(
+              decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: '키워드 검색', isDense: true),
+              onChanged: (v) { query = v.trim(); _debounce?.cancel(); _debounce = Timer(const Duration(milliseconds: 200), () => unawaited(_reload())); },
+            )),
+          ],
         ),
         const SizedBox(height: 4),
         SizedBox(
           height: 220,
-          child: items.isEmpty
+          child: visibleItems.isEmpty
               ? const Center(child: Text('기록된 항목이 없습니다.'))
               : ListView.builder(
-                  itemCount: items.length,
+              itemCount: visibleItems.length,
                   itemBuilder: (context, index) {
-                    final item = items[index];
+                    final item = visibleItems[index];
                     final pinned = item['pinned'] == true;
                     final id = (item['id'] as num).toInt();
                     final thumb = item['kind'] == 'image' ? _images[id] : null;
@@ -501,7 +533,9 @@ class _KClipPanelState extends State<KClipPanel> {
                         if (mounted) unawaited(_imageFor(id));
                       });
                     }
-                    return ListTile(
+                    return GestureDetector(
+                      onDoubleTap: _isWebText(item) ? () => unawaited(_openWeb(item)) : null,
+                      child: ListTile(
                       key: ValueKey('kclip-item-${item['id']}'),
                       dense: true,
                       leading: Tooltip(
@@ -541,6 +575,7 @@ class _KClipPanelState extends State<KClipPanel> {
                           ),
                         ],
                       ),
+                      ),
                     );
                   },
                 ),
@@ -551,14 +586,14 @@ class _KClipPanelState extends State<KClipPanel> {
 
   @override
   Widget build(BuildContext context) {
-    unawaited(_setNativeDropTarget('kclip'));
+    if (hotkeyMode) unawaited(_setNativeDropTarget('kclip'));
     return Padding(
       padding: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Container(
-            padding: const EdgeInsets.fromLTRB(18, 10, 10, 10),
+            padding: const EdgeInsets.fromLTRB(6, 2, 2, 2),
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.surfaceContainerHighest,
               border: Border(
@@ -569,14 +604,7 @@ class _KClipPanelState extends State<KClipPanel> {
             ),
             child: Row(
               children: [
-                const Icon(Icons.content_paste_search),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    '몽땅클립보드',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                ),
+                const Spacer(),
                 IconButton(
                   tooltip: isTop ? '항상 위 해제' : '항상 위',
                   onPressed: () => setState(() => isTop = !isTop),
@@ -587,6 +615,7 @@ class _KClipPanelState extends State<KClipPanel> {
                   onPressed: () => setState(() => minimized = !minimized),
                   icon: Icon(minimized ? Icons.expand_more : Icons.minimize),
                 ),
+                IconButton(tooltip: '최대화/복원', onPressed: () {}, icon: const Icon(Icons.crop_square)),
                 IconButton(
                   tooltip: '닫기',
                   onPressed: () => Navigator.of(context).maybePop(),
@@ -596,16 +625,15 @@ class _KClipPanelState extends State<KClipPanel> {
             ),
           ),
           if (!minimized)
-        SizedBox(
-          height: 520,
+        Expanded(
               child: SingleChildScrollView(
                 child: Padding(
                   padding: const EdgeInsets.all(18),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const SizedBox(height: 8),
-                      TextField(
+                      if (hotkeyMode) const SizedBox(height: 8),
+                      if (hotkeyMode) TextField(
                         key: const ValueKey('kclip-memo'),
                         controller: _memo,
                         minLines: 1,
@@ -621,7 +649,8 @@ class _KClipPanelState extends State<KClipPanel> {
                         ),
                         onSubmitted: (_) => _addMemo(),
                       ),
-                      const SizedBox(height: 8),
+                      if (hotkeyMode) const SizedBox(height: 8),
+                      if (hotkeyMode)
                       Container(
                           key: const ValueKey('kclip-drop-zone'),
                           padding: const EdgeInsets.symmetric(

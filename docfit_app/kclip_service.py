@@ -11,6 +11,7 @@ import os
 import sys
 import tempfile
 import time
+import webbrowser
 from pathlib import Path
 
 from . import kagent_client as kc
@@ -155,6 +156,21 @@ class KClipService:
             "settings_get": ("settings_get", ()),
             "settings_set": ("settings_set", ("settings",)),
         }
+        if action == "open_web":
+            try:
+                item_id = int(payload.get("id"))
+            except (TypeError, ValueError):
+                return dict(ok=False, code="KCLIP_WEB", message="웹 링크 항목을 확인해 주세요.")
+            try:
+                result = self.client.request("get", id=item_id)
+            except kc.KAgentError as error:
+                return dict(ok=False, code="KCLIP_OFFLINE", message=str(error))
+            from urllib.parse import urlsplit
+            url = str(result.get("data") or "").strip()
+            parsed = urlsplit(url)
+            if parsed.scheme.lower() not in ("http", "https") or not parsed.netloc:
+                return dict(ok=False, code="KCLIP_WEB", message="HTTP 또는 HTTPS 웹 주소가 아닙니다.")
+            return dict(ok=bool(webbrowser.open(url)), message="기본 브라우저에서 웹 링크를 열었습니다.")
         if action not in forwards:
             return dict(ok=False, code="NOT_AVAILABLE", message="지원하지 않는 명령입니다.")
         if action == "pause":
