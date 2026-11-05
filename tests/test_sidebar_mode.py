@@ -13,10 +13,12 @@ class FakeApi:
 class FakeWindow:
     def __init__(self, rect=(600, 100, 800, 600), topmost=False):
         self.rect, self.on_top, self.only = rect, topmost, None
+        self.saved_sides = []
     def handle(self): return 42
     def geometry(self): return self.rect
     def topmost(self): return self.on_top
     def set_sidebar_only(self, value): self.only = value
+    def save_side(self, side): self.saved_sides.append(side)
 
 
 class SidebarModeTests(unittest.TestCase):
@@ -35,6 +37,31 @@ class SidebarModeTests(unittest.TestCase):
         controller.toggle(False)
         self.assertEqual(api.positions[-1], (42, 600, 100, 800, 600, True))
         self.assertFalse(window.only)
+
+    def test_saved_side_has_priority_and_switch_persists_and_moves(self):
+        api, window = FakeApi(area=(-1200, 30, -200, 830)), FakeWindow(rect=(900, 100, 800, 600))
+        controller = SidebarModeController(api, window, True, saved_side='left')
+        enabled = controller.toggle(True)
+        self.assertEqual(enabled['side'], 'left')
+        self.assertEqual(api.positions[-1], (42, -1200, 30, 190, 800, True))
+        switched = controller.switch_side()
+        self.assertEqual(switched['side'], 'right')
+        self.assertEqual(api.positions[-1], (42, -390, 30, 190, 800, True))
+        self.assertEqual(window.saved_sides, ['left', 'right'])
+        controller.toggle(False)
+        next_controller = SidebarModeController(api, window, True, saved_side=controller.saved_side)
+        self.assertEqual(next_controller.toggle(True)['side'], 'right')
+
+    def test_missing_saved_side_uses_nearest_edge(self):
+        controller = SidebarModeController(FakeApi(), FakeWindow(rect=(100, 100, 800, 600)), True, saved_side=None)
+        self.assertEqual(controller.toggle(True)['side'], 'left')
+
+    def test_switch_requires_active_developer_mode(self):
+        controller = SidebarModeController(FakeApi(), FakeWindow(), True)
+        self.assertFalse(controller.switch_side()['ok'])
+        controller.developer_mode = False
+        with self.assertRaises(PermissionError):
+            controller.switch_side()
 
     def test_developer_mode_denied(self):
         controller = SidebarModeController(FakeApi(), FakeWindow(), False)

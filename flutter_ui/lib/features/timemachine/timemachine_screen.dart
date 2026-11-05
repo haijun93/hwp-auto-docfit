@@ -323,7 +323,6 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
     }
   }
 
-  // ignore: unused_element
   Future<void> _exportMarkdown() async {
     try {
       final response = await _api.command('content_export_markdown', {'query': _search.text.trim()});
@@ -335,11 +334,10 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
     }
   }
 
-  // ignore: unused_element
-  void _movePreviewFind(int direction) {
+  List<int> _previewFindHits() {
     final body = '${_preview?['snippet'] ?? _selectedContentResult?.snippet ?? ''}'.toLowerCase();
     final term = _previewFind.text.trim().toLowerCase();
-    if (term.isEmpty || body.isEmpty) return;
+    if (term.isEmpty || body.isEmpty) return const [];
     final hits = <int>[];
     for (var at = 0; at <= body.length - term.length;) {
       final hit = body.indexOf(term, at);
@@ -347,7 +345,50 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
       hits.add(hit);
       at = hit + term.length;
     }
-    setState(() => _previewFindIndex = hits.isEmpty ? 0 : (_previewFindIndex + direction + hits.length) % hits.length);
+    return hits;
+  }
+
+  void _movePreviewFind(int direction) {
+    final hits = _previewFindHits();
+    if (hits.isEmpty) return;
+    setState(() => _previewFindIndex = (_previewFindIndex + direction + hits.length) % hits.length);
+  }
+
+  Widget _previewFindText(String text) {
+    final term = _previewFind.text.trim();
+    final lower = text.toLowerCase();
+    final needle = term.toLowerCase();
+    if (needle.isEmpty) {
+      return _markedTerms(
+        text,
+        _extractKeywords(_search.text.trim(), _selectedContentResult?.matchCounts.keys ?? const <String>[]),
+        style: const TextStyle(fontSize: 13, height: 1.5),
+      );
+    }
+    final hits = <int>[];
+    for (var at = 0; at <= lower.length - needle.length;) {
+      final hit = lower.indexOf(needle, at);
+      if (hit < 0) break;
+      hits.add(hit);
+      at = hit + needle.length;
+    }
+    if (hits.isEmpty) return Text(text, style: const TextStyle(fontSize: 13, height: 1.5));
+    final active = hits[_previewFindIndex % hits.length];
+    final spans = <TextSpan>[];
+    var at = 0;
+    for (final hit in hits) {
+      if (hit > at) spans.add(TextSpan(text: text.substring(at, hit)));
+      spans.add(TextSpan(
+        text: text.substring(hit, hit + needle.length),
+        style: TextStyle(
+          backgroundColor: hit == active ? Colors.orangeAccent : const Color(0xFFFFEB3B),
+          color: Colors.black,
+        ),
+      ));
+      at = hit + needle.length;
+    }
+    if (at < text.length) spans.add(TextSpan(text: text.substring(at)));
+    return Text.rich(TextSpan(children: spans), style: const TextStyle(fontSize: 13, height: 1.5));
   }
 
   Future<void> _previewContentResult(TimemachineContentResult result) async {
@@ -1103,16 +1144,42 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
                                     fontWeight: FontWeight.bold,
                                   )),
                           const SizedBox(height: 8),
-                          _markedTerms(
-                            '${_preview?['snippet'] ?? item.snippet}',
-                            _extractKeywords(_search.text.trim(), item.matchCounts.keys),
-                            style: const TextStyle(fontSize: 13, height: 1.5),
-                          ),
+                          _previewFindText('${_preview?['snippet'] ?? item.snippet}'),
                         ],
                       ),
                     ),
             ),
             const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    key: const ValueKey('tm-preview-find'),
+                    controller: _previewFind,
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.search),
+                      hintText: '미리보기에서 찾기',
+                      isDense: true,
+                    ),
+                    onChanged: (_) => setState(() => _previewFindIndex = 0),
+                  ),
+                ),
+                IconButton(
+                  key: const ValueKey('tm-preview-find-previous'),
+                  tooltip: '이전 찾기',
+                  onPressed: _previewFindHits().isEmpty ? null : () => _movePreviewFind(-1),
+                  icon: const Icon(Icons.keyboard_arrow_up),
+                ),
+                Text(_previewFindHits().isEmpty ? '0 / 0' : '${_previewFindIndex % _previewFindHits().length + 1} / ${_previewFindHits().length}'),
+                IconButton(
+                  key: const ValueKey('tm-preview-find-next'),
+                  tooltip: '다음 찾기',
+                  onPressed: _previewFindHits().isEmpty ? null : () => _movePreviewFind(1),
+                  icon: const Icon(Icons.keyboard_arrow_down),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
@@ -1432,6 +1499,13 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
           ],
         ),
         Text('검색 결과 ${_contentResults.length}건', style: const TextStyle(fontSize: 12)),
+        if (!_relatedMode)
+          OutlinedButton.icon(
+            key: const ValueKey('tm-export-markdown'),
+            onPressed: _search.text.trim().isEmpty ? null : _exportMarkdown,
+            icon: const Icon(Icons.download_outlined, size: 16),
+            label: const Text('Markdown 내보내기'),
+          ),
       ],
     ),
   );

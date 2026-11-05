@@ -9,6 +9,8 @@ import 'package:docfit_ui/features/flows/flow_editor_screen.dart';
 import 'package:docfit_ui/features/workspace/workspace_adapters.dart';
 import 'package:docfit_ui/features/workspace/tab_navigation_shell.dart';
 
+int sidebarSwitchCalls = 0;
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const windowChannel = MethodChannel('docfit/window');
@@ -32,11 +34,35 @@ void main() {
     expect(find.text('새문서'), findsOneWidget);
     expect(find.byKey(const ValueKey('always-on-top-toggle')), findsNothing);
     expect(find.byKey(const ValueKey('sidebar-mode-toggle')), findsNothing);
+    expect(find.byKey(const ValueKey('sidebar-mode-switch-side')), findsNothing);
     expect(find.byKey(const ValueKey('library-open')), findsNothing);
     expect(tester.getTopLeft(find.byKey(const ValueKey('new-document-open'))).dy,
         lessThan(tester.getTopLeft(find.text('몽땅클립보드')).dy));
   });
 
+  testWidgets('sidebar side switch calls backend only in developer sidebar mode', (tester) async {
+    final calls = <String>[];
+    Future<Object?> api(String name, List<Object?> args) async {
+      calls.add(name);
+      if (name == 'get_state') return <String, dynamic>{'developer_mode': true};
+      return {'ok': true, 'active': true};
+    }
+    await tester.pumpWidget(MaterialApp(home: IntegratedWorkspace(
+      api: api,
+      documentEditorWidget: const SizedBox(),
+      fileConversionWidget: const SizedBox(),
+      developerMode: true,
+      onSidebarSideSwitch: () => api('sidebar_mode_switch_side', []),
+      trailing: const SizedBox(),
+    )));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('sidebar-mode-toggle')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('sidebar-mode-switch-side')), findsNWidgets(2));
+    await tester.tap(find.byKey(const ValueKey('sidebar-mode-switch-side')).first);
+    await tester.pump();
+    expect(calls, contains('sidebar_mode_switch_side'));
+  });
   testWidgets('developer mode shows library button and opens LibraryScreen', (tester) async {
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: WorkspaceTabBar(
       labels: const ['문서편집'],
@@ -45,6 +71,7 @@ void main() {
       onSelected: (_) {},
       scrollController: ScrollController(),
       developerMode: true,
+      onSidebarSideSwitch: () => sidebarSwitchCalls++,
       libraryScreen: LibraryScreen(api: InMemoryLibraryApi()),
     ))));
     await tester.pump();
@@ -57,18 +84,24 @@ void main() {
 
   testWidgets('developer controls appear only when enabled', (tester) async {
     var sidebarMode = false;
+    sidebarSwitchCalls = 0;
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: StatefulBuilder(builder: (context, setState) => WorkspaceTabBar(
       labels: const ['문서편집'], icons: const [Icons.description], selectedIndex: 0,
       onSelected: (_) {}, scrollController: ScrollController(), developerMode: true,
       sidebarOnly: sidebarMode,
+      onSidebarSideSwitch: () => sidebarSwitchCalls++,
       onSidebarModeChanged: (value) => setState(() => sidebarMode = value),
     )))));
     expect(find.byKey(const ValueKey('always-on-top-toggle')), findsOneWidget);
     expect(find.byKey(const ValueKey('sidebar-mode-toggle')), findsOneWidget);
+    expect(find.byKey(const ValueKey('sidebar-mode-switch-side')), findsNothing);
     expect(find.text('작업 순서'), findsNothing);
     await tester.tap(find.byKey(const ValueKey('sidebar-mode-toggle')));
     await tester.pump();
     expect(find.text('사이드메뉴 모드 켜짐'), findsOneWidget);
+    expect(find.byKey(const ValueKey('sidebar-mode-switch-side')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('sidebar-mode-switch-side')));
+    expect(sidebarSwitchCalls, 1);
   });
 
   testWidgets('DocFitApp mounts IntegratedWorkspace with 6 tabs by default',

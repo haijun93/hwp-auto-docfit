@@ -337,34 +337,16 @@ void main() {
     var items = await api.listItems(box.id);
     expect(items.where((i) => i.kind == LibraryItemKind.text && i.text == '클립보드 텍스트 자료').length, 1);
 
-    // 가짜 파일 드롭 타깃으로 file 자료 등록
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Column(
-          children: [
-            LibraryFileDropSource(
-              drop: const LibraryFileDrop(path: 'C:/docs/report_v1.pdf'),
-              child: const SizedBox(key: ValueKey('file-source'), width: 80, height: 40),
-            ),
-            Expanded(child: LibraryScreen(api: api, clipboardReader: fakeClipboard)),
-          ],
-        ),
-      ),
+    // 드롭 타깃 제스처 대신 자료함 공개 API에 파일 자료를 직접 등록
+    await api.addItem(
+      boxId: box.id,
+      kind: LibraryItemKind.file,
+      title: 'report_v1.pdf',
+      space: LibrarySpace.basis,
+      x: 24,
+      y: 32,
+      source: 'C:/docs/report_v1.pdf',
     );
-    await tester.pumpAndSettle();
-    if (find.byKey(const ValueKey('libraryEmptyStateCta')).evaluate().isNotEmpty) {
-      await tester.tap(find.byKey(const ValueKey('libraryEmptyStateCta')));
-      await tester.pumpAndSettle();
-    }
-    final fileSource = find.byKey(const ValueKey('file-source'));
-    final basisDropZone = find.byKey(const ValueKey('librarySpace-basis'));
-    final fileDrag = await tester.startGesture(tester.getCenter(fileSource));
-    await tester.pump(const Duration(milliseconds: 100));
-    await fileDrag.moveTo(tester.getCenter(basisDropZone));
-    await tester.pump(const Duration(milliseconds: 100));
-    await fileDrag.up();
-    await tester.pumpAndSettle();
-    await tester.pumpAndSettle();
 
     items = await api.listItems(box.id);
     final fileItem = items.firstWhere((i) => i.kind == LibraryItemKind.file);
@@ -378,7 +360,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('클립보드에 지원되는 자료가 없습니다.'), findsOneWidget);
-  }, skip: true); // 앱 안 DragTarget 가상 끌기 시험 불안정(N215-LIBTEST). 실제 OS 끌어 놓기는 tests/test_library_bridge.py가 검증
+  });
 
   testWidgets('기본 Flutter 클립보드 브리지에서 붙여넣는다', (tester) async {
     // Flutter test clipboard handler exercises the same platform channel used by Windows/web.

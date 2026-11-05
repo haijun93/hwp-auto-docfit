@@ -145,6 +145,7 @@ class IntegratedWorkspace extends StatelessWidget {
       this.onSidebarExpandedChanged,
       this.developerMode = false,
     this.libraryScreen,
+    this.onSidebarSideSwitch,
   });
 
   final Widget? trailing;
@@ -152,6 +153,7 @@ class IntegratedWorkspace extends StatelessWidget {
   final ValueChanged<bool>? onSidebarExpandedChanged;
   final bool developerMode;
   final Widget? libraryScreen;
+  final VoidCallback? onSidebarSideSwitch;
   final ApiCall api;
   final Widget documentEditorWidget;
   final Widget fileConversionWidget;
@@ -170,6 +172,7 @@ class IntegratedWorkspace extends StatelessWidget {
       onSidebarExpandedChanged: onSidebarExpandedChanged,
       developerMode: developerMode,
       libraryScreen: libraryScreen ?? LibraryScreen(api: BridgeLibraryApi(api)),
+      onSidebarSideSwitch: onSidebarSideSwitch,
       documentEditor: DocumentEditorAdapter(child: documentEditorWidget),
       tableTemplates: TableTemplatesAdapter(api: api),
       tableSketch: TableSketchAdapter(api: api),

@@ -2030,6 +2030,26 @@ class DesktopWebBridge:
         except Exception as exc:
             return {'ok': False, 'message': str(exc)}
 
+    def sidebar_mode_switch_side(self):
+        from docfit_app.sidebar_mode import SidebarModeController
+        def execute():
+            values = self._configuration().snapshot(running=self.gui.running).get('values', {})
+            if not values.get('developer_mode', False):
+                return {'ok': False, 'message': '사이드메뉴 모드는 개발자 모드에서만 사용할 수 있습니다.'}
+            if self.sidebar_controller is None:
+                if self.window is None:
+                    return {'ok': False, 'message': '창이 아직 준비되지 않았습니다.'}
+                self.sidebar_controller = SidebarModeController(
+                    _Win32WindowApi(), _PyWebViewWindow(self.window, self.gui._준말_서비스().settings,
+                    lambda: self._saved_window), True,
+                    values.get('sidebar_mode_side'))
+            self.sidebar_controller.developer_mode = True
+            return self.sidebar_controller.switch_side()
+        try:
+            return self._tk(execute)
+        except Exception as exc:
+            return {'ok': False, 'message': str(exc)}
+
     def always_on_top(self, enabled):
         def execute():
             config = self._configuration().snapshot(running=self.gui.running)
@@ -2848,7 +2868,7 @@ class _BrowserApi:
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
             "get_pending_dialog", "resolve_dialog", "enable_close_guard", "acknowledge_close", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch", "timemachine", "library",
             "file_rename", "kclip", "new_document", "hwp_bulk", "open_results", "next_job", "run_tool", "open_result",
-            "sidebar_mode", "always_on_top",
+            "sidebar_mode", "sidebar_mode_switch_side", "always_on_top",
             "show_result", "open_source_file", "show_source_file", "open_result_source", "open_diff", "compare_result", "launch_external_hwp_diff", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",
             "set_exclude_tables", "set_card_option",
