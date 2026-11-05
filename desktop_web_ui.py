@@ -2235,6 +2235,21 @@ class DesktopWebBridge:
                 failed.append({"path": text, "message": message})
         return {"ok": not failed, "added": added, "skipped": skipped, "failed": failed}
 
+    def notebook(self, request):
+        """노트북 요청(개발자 모드 전용): 출처 추출 + klib nb_* 명령 중계."""
+        if not self._developer_mode_enabled():
+            return {"ok": False, "code": "DEVELOPER_MODE_REQUIRED", "message": "개발자 모드에서만 사용할 수 있습니다."}
+        try:
+            if getattr(self, "_notebook_service", None) is None:
+                from docfit_app.library_bridge import LibraryBridge
+                from docfit_app.notebook_service import NotebookService
+                if getattr(self, "_library_bridge", None) is None:
+                    self._library_bridge = LibraryBridge()
+                self._notebook_service = NotebookService(self._library_bridge)
+            return self._notebook_service.handle(request)
+        except Exception as exc:
+            return {"ok": False, "message": str(exc)}
+
     def library(self, request):
         """Forward one allowlisted library JSON request when the opt-in flag is set."""
         if not self._developer_mode_enabled():
