@@ -19,7 +19,7 @@ pub fn remove_file(index: &SearchIndex, path: &str) -> Result<(), String> {
     index.delete_path(path).map_err(|e| e.to_string())
 }
 
-fn extract_text(path: &Path, ext: &str) -> Result<String, String> {
+pub(crate) fn extract_text(path: &Path, ext: &str) -> Result<String, String> {
     if matches!(ext, "txt" | "md") {
         return fs::read_to_string(path).or_else(|_| fs::read(path).map(|b| String::from_utf8_lossy(&b).into_owned())).map_err(|e| e.to_string());
     }

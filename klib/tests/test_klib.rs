@@ -17,6 +17,8 @@ mod pipe;
 mod util;
 #[path = "../src/search.rs"]
 mod search;
+#[path = "../src/notebook.rs"]
+mod notebook;
 #[path = "../src/content.rs"]
 mod content;
 

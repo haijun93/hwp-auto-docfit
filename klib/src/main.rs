@@ -9,6 +9,7 @@ mod pipe;
 mod util;
 mod search;
 mod content;
+mod notebook;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
