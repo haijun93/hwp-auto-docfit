@@ -1993,6 +1993,8 @@ class DesktopWebBridge:
                             pass
                         items.append({'id': str(identifier), 'name': str(profile.get('name') or source.stem), 'preview': preview})
                 return {'ok': True, 'items': items}
+            if action == 'blank':
+                return self._open_blank_hwp_document()
             if action != 'create': return {'ok': False, 'message': '지원하지 않는 새문서 명령입니다.'}
             profile = profiles.get(payload.get('id'))
             if not isinstance(profile, dict): return {'ok': False, 'message': '서식을 다시 선택해 주세요.'}
@@ -2005,6 +2007,18 @@ class DesktopWebBridge:
                 return {'ok': False, 'message': f'한/글에서 문서를 열지 못했습니다: {exc}'}
             return {'ok': True, 'path': str(target), 'name': target.name}
         return self._tk(execute)
+
+    def _open_blank_hwp_document(self):
+        """Open a blank HWP document through the existing isolated COM factory."""
+        try:
+            namespace = getattr(_real_gui(self.gui), "파일포맷_변경_시작").__globals__
+            app = namespace['한글_COM_인스턴스_생성'](독립=True)
+            app.XHwpWindows.Item(0).Visible = True
+            app.Run('FileNew')
+            return {'ok': True, 'blank': True}
+        except Exception as exc:
+            logging.getLogger(__name__).exception('빈 한/글 문서 열기 실패')
+            return {'ok': False, 'message': f'빈 한/글 문서를 열지 못했습니다: {exc}'}
 
     def sidebar_mode(self, enabled):
         from docfit_app.sidebar_mode import SidebarModeController

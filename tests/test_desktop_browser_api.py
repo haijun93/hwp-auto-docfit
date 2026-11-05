@@ -94,6 +94,33 @@ class _FakeGui:
     def _경로_열기(self, path):
         self.opened.append(path)
 
+    @staticmethod
+    def 파일포맷_변경_시작():
+        pass
+
+
+class NewDocumentBridgeTests(unittest.TestCase):
+    def test_blank_document_calls_isolated_factory_without_snapshot_copy(self):
+        from types import SimpleNamespace
+
+        gui = _FakeGui()
+        bridge = DesktopWebBridge(gui)
+        bridge._tk = lambda callback: callback()
+        calls = []
+        class Windows:
+            def Item(self, index):
+                return SimpleNamespace(Visible=False)
+        class Hwp:
+            XHwpWindows = Windows()
+            def Run(self, command): calls.append(command)
+        factory = lambda **kwargs: (calls.append(kwargs) or Hwp())
+        namespace = {'한글_COM_인스턴스_생성': factory}
+        fake_type = SimpleNamespace(파일포맷_변경_시작=SimpleNamespace(__globals__=namespace))
+        with mock.patch('desktop_web_ui._real_gui', return_value=fake_type):
+            result = bridge.new_document('blank', {})
+        self.assertEqual(result, {'ok': True, 'blank': True})
+        self.assertEqual(calls, [{'독립': True}, 'FileNew'])
+
 
 def _bridge(gui):
     bridge = DesktopWebBridge(gui)

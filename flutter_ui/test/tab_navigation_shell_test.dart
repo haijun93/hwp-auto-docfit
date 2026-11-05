@@ -2,6 +2,7 @@ import 'package:docfit_ui/features/workspace/tab_navigation_shell.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -177,9 +178,40 @@ void main2() {
     await tester.pump();
     expect(changes, const [false]);
     expect(_sidebarWidth(tester), kSidebarCollapsedWidth);
+    await tester.tap(find.byKey(const ValueKey('workspaceSidebarToggle')));
+    await tester.pump();
+    expect(find.byType(IndexedStack), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('workspaceSidebarToggle')));
+    await tester.pump();
+    expect(_sidebarWidth(tester), kSidebarExpandedWidth);
+    expect(find.byType(IndexedStack), findsOneWidget);
     saved.value = true;
     await tester.pump();
-    expect(_sidebarWidth(tester), kSidebarCollapsedWidth);
+    expect(_sidebarWidth(tester), kSidebarExpandedWidth);
+  });
+
+  testWidgets('왼쪽 메뉴: 150ms hover/focus로 모든 탭을 선택하고 스치기는 무시한다', (tester) async {
+    await _size(tester, 1400);
+    final selected = <int>[];
+    await tester.pumpWidget(MaterialApp(home: TabNavigationShell(
+      documentEditor: const SizedBox(), tableTemplates: const SizedBox(), tableSketch: const SizedBox(),
+      diagram: const SizedBox(), mindMap: const SizedBox(), fileConversion: const SizedBox(),
+      paint: const SizedBox(), fileRename: const SizedBox(), timemachine: const SizedBox(), onTabChanged: selected.add,
+    )));
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    for (var i = 1; i < kTabCount; i++) {
+      await tester.ensureVisible(find.byKey(Key('workspaceTab-$i')));
+      await mouse.moveTo(tester.getCenter(find.byKey(Key('workspaceTab-$i'))));
+      await tester.pump(const Duration(milliseconds: 151));
+      expect(selected.last, i);
+    }
+    selected.clear();
+    final target = find.byKey(const Key('workspaceTab-0'));
+    await mouse.moveTo(tester.getCenter(target));
+    await tester.pump(const Duration(milliseconds: 50));
+    await mouse.moveTo(const Offset(1, 1));
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(selected, isEmpty);
   });
 
   testWidgets('왼쪽 메뉴: 저장값이 창 폭 기본값보다 앞선다', (tester) async {
