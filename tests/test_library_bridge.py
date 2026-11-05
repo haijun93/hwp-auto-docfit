@@ -311,5 +311,36 @@ class LibraryFirstCallTests(unittest.TestCase):
         self.assertIs(bridge._library_bridge, fake)
 
 
+class NotebookBridgeTests(unittest.TestCase):
+    def _bridge(self, developer=True):
+        import desktop_web_ui
+        bridge = desktop_web_ui.DesktopWebBridge.__new__(desktop_web_ui.DesktopWebBridge)
+        bridge._developer_mode_enabled = lambda: developer
+        return bridge
+
+    def test_nb_commands_are_allowed(self):
+        for cmd in ("nb_create", "nb_source_add", "nb_search", "nb_transform", "nb_note_save", "nb_export_md"):
+            self.assertIn(cmd, ALLOWED_COMMANDS)
+
+    def test_notebook_forwards_nb_request_and_creates_bridge_lazily(self):
+        from unittest import mock
+        bridge = self._bridge()
+        fake = mock.Mock()
+        fake.request.return_value = {"ok": True, "id": 3}
+        request = {"cmd": "nb_source_add", "notebook_id": 1, "source_path": "C:/자료/보고서.txt"}
+        with mock.patch("docfit_app.library_bridge.LibraryBridge", return_value=fake):
+            self.assertEqual(bridge.notebook(request), {"ok": True, "id": 3})
+        fake.request.assert_called_once_with(request)
+
+    def test_notebook_rejects_non_nb_and_requires_developer_mode(self):
+        from unittest import mock
+        bridge = self._bridge()
+        with mock.patch("docfit_app.library_bridge.LibraryBridge") as factory:
+            self.assertFalse(bridge.notebook({"cmd": "box_delete", "id": 1})["ok"])
+            factory.assert_not_called()
+        result = self._bridge(developer=False).notebook({"cmd": "nb_list"})
+        self.assertEqual(result["code"], "DEVELOPER_MODE_REQUIRED")
+
+
 if __name__ == "__main__":
     unittest.main()

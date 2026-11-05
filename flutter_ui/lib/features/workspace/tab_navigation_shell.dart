@@ -72,6 +72,7 @@ class TabNavigationShell extends StatefulWidget {
     this.hiddenTabs = kDefaultHiddenTabs,
     this.developerMode = false,
     this.libraryScreen,
+    this.notebookScreen,
     this.onSidebarSideSwitch,
     this.onAlwaysOnTopChanged,
     this.onSidebarModeRequest,
@@ -96,6 +97,8 @@ class TabNavigationShell extends StatefulWidget {
   final Set<int> hiddenTabs;
   final bool developerMode;
   final Widget? libraryScreen;
+  /// 개발자 모드 전용 노트북 화면(자료함 버튼 옆).
+  final Widget? notebookScreen;
   final VoidCallback? onSidebarSideSwitch;
   /// 항상 위 켜기/끄기를 앱(창)에 요청한다.
   final Future<void> Function(bool enabled)? onAlwaysOnTopChanged;
@@ -293,6 +296,7 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
                     scrollController: _tabScrollController,
                     trailing: widget.trailing,
                     libraryScreen: widget.libraryScreen,
+                    notebookScreen: widget.notebookScreen,
                     expanded: expanded,
                     onToggleExpanded: _toggleSidebar,
                     showToggle: true,
@@ -353,6 +357,7 @@ class WorkspaceTabBar extends StatelessWidget {
     this.sidebarOnly = false,
     this.onAlwaysOnTop,
     this.libraryScreen,
+    this.notebookScreen,
     this.onPreview,
     this.onPreviewCancel,
     this.showToggle = true,
@@ -377,6 +382,8 @@ class WorkspaceTabBar extends StatelessWidget {
   final bool sidebarOnly;
   final VoidCallback? onAlwaysOnTop;
   final Widget? libraryScreen;
+  /// 개발자 모드 전용 노트북 화면(자료함 버튼 옆).
+  final Widget? notebookScreen;
   final ValueChanged<int>? onPreview;
   final VoidCallback? onPreviewCancel;
   final bool showToggle;
@@ -434,6 +441,18 @@ class WorkspaceTabBar extends StatelessWidget {
                       expanded: expanded,
                       onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
                         builder: (_) => libraryScreen!,
+                      )),
+                    ),
+                  if (developerMode && notebookScreen != null)
+                    _TabPill(
+                      key: const ValueKey('notebook-open'),
+                      label: '노트북',
+                      icon: Icons.menu_book_outlined,
+                      selected: false,
+                      color: color,
+                      expanded: expanded,
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                        builder: (_) => notebookScreen!,
                       )),
                     ),
                 ],
