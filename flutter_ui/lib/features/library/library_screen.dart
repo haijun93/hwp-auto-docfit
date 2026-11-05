@@ -1,7 +1,8 @@
-import 'dart:math' as math;
+﻿import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_selector/file_selector.dart';
 
 import 'library_api.dart';
 
@@ -70,6 +71,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
   final _searchController = TextEditingController();
   final _newItemController = TextEditingController();
   final _spaceKeys = {for (final space in LibrarySpace.values) space: GlobalKey()};
+  final _searchResults = <LibrarySearchResult>[];
+  String? _highlightedItemId;
+  bool _showSearchResults = false;
   List<LibraryBox> _boxes = [];
   LibraryBox? _selectedBox;
   List<LibraryItem> _items = [];
@@ -136,9 +140,147 @@ class _LibraryScreenState extends State<LibraryScreen> {
     if (_selectedBox?.id == box.id) return;
     setState(() {
       _selectedBox = box;
+      _searchController.clear();
+      _searchResults.clear();
+      _highlightedItemId = null;
       _selectedCoreItemId = null;
       _statusMessage = null;
     });
+    await _loadBoxContent(box.id);
+  }
+
+  Future<void> _renameBox() async {
+    final box = _selectedBox;
+    if (box == null) return;
+    final controller = TextEditingController(text: box.name);
+    final name = await showDialog<String>(context: context, builder: (context) => AlertDialog(
+      title: const Text('자료함 이름 바꾸기'),
+      content: TextField(controller: controller, autofocus: true, key: const ValueKey('libraryRenameBoxInput')),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
+        TextButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: const Text('저장'))],
+    ));
+    if (name == null || name.trim().isEmpty) return;
+    await widget.api.renameBox(box.id, name.trim());
+    if (!mounted) return;
+    setState(() {
+      _selectedBox = LibraryBox(id: box.id, name: name.trim());
+      _boxes = _boxes.map((b) => b.id == box.id ? _selectedBox! : b).toList();
+    });
+  }
+
+  Future<void> _deleteBox() async {
+    final box = _selectedBox;
+    if (box == null) return;
+    final confirm = await showDialog<bool>(context: context, builder: (context) => AlertDialog(
+      title: const Text('자료함 삭제'), content: Text('“${box.name}” 자료함과 등록된 자료를 삭제할까요?'),
+      actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
+        TextButton(key: const ValueKey('libraryConfirmDeleteBox'), onPressed: () => Navigator.pop(context, true), child: const Text('삭제'))],
+    ));
+    if (confirm != true) return;
+    await widget.api.deleteBox(box.id);
+    if (!mounted) return;
+    setState(() { _boxes.removeWhere((b) => b.id == box.id); _selectedBox = null; _items = []; _relations = []; });
+    await _loadBoxes();
+  }
+
+  Future<void> _exportBox() async {
+    final box = _selectedBox;
+    if (box == null) return;
+    final directory = await getDirectoryPath();
+    if (directory == null || !mounted) return;
+    final count = await widget.api.exportBox(box.id, directory);
+    if (!mounted) return;
+    setState(() => _statusMessage = '$directory 에 자료 $count개를 내보냈습니다.');
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('저장 위치: $directory'), action: SnackBarAction(label: '열기', onPressed: () => _openPath(directory))));
+  }
+
+  Future<void> _openPath(String path) async {
+    if (path.isNotEmpty && !path.contains('\n') && !path.contains('\r')) {
+      try {
+        await const MethodChannel('docfit/library').invokeMethod<void>('openPath', path);
+      } on MissingPluginException {
+        // Keep a copyable path dialog when no host opener is registered.
+      }
+    }
+    if (!mounted) return;
+    await showDialog<void>(context: context, builder: (context) => AlertDialog(
+      title: const Text('자료 위치'), content: SelectableText(path),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('확인'))],
+    ));
+  }
+
+  Future<void> _search(String query) async {
+    final box = _selectedBox;
+    if (box == null) return;
+    if (query.trim().isEmpty) {
+      if (mounted) setState(() { _searchResults.clear(); _highlightedItemId = null; _showSearchResults = false; });
+      await _loadBoxContent(box.id);
+      return;
+    }
+    final results = await widget.api.searchContent(box.id, query);
+    final items = await widget.api.listItems(box.id, query: query);
+    if (!mounted || _selectedBox?.id != box.id) return;
+    setState(() { _searchResults..clear()..addAll(results); _items = items; _highlightedItemId = null; _showSearchResults = true; });
+  }
+
+  Future<void> _jumpToSearchResult(LibrarySearchResult result) async {
+    final box = _selectedBox;
+    if (box == null) return;
+    final items = await widget.api.listItems(box.id);
+    final match = items.where((i) => i.source == result.path || i.title == result.name).firstOrNull;
+    if (!mounted) return;
+    setState(() { _items = items; _highlightedItemId = match?.id; });
+    await _openPath(result.path.isNotEmpty ? result.path : (match?.text ?? result.name));
+  }
+
+  Future<void> _renameItem(LibraryItem item) async {
+    final controller = TextEditingController(text: item.title);
+    final title = await showDialog<String>(context: context, builder: (context) => AlertDialog(
+      title: const Text('자료 이름 바꾸기'), content: TextField(controller: controller, autofocus: true, key: const ValueKey('libraryRenameItemInput')),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
+        TextButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: const Text('저장'))],
+    ));
+    if (title == null || title.isEmpty) return;
+    await widget.api.renameItem(item.id, title);
+    final box = _selectedBox;
+    if (box != null) await _loadBoxContent(box.id);
+  }
+
+  Future<void> _deleteItem(LibraryItem item) async {
+    final yes = await showDialog<bool>(context: context, builder: (context) => AlertDialog(
+      title: const Text('자료 삭제'), content: Text('“${item.title}” 자료를 자료함에서 삭제할까요?'),
+      actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
+        TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('삭제'))],
+    ));
+    if (yes != true) return;
+    await widget.api.deleteItem(item.id);
+    final box = _selectedBox;
+    if (box != null) await _loadBoxContent(box.id);
+  }
+
+  Future<void> _editRelationLabel(LibraryRelation relation) async {
+    final controller = TextEditingController(text: relation.label ?? '');
+    final label = await showDialog<String>(context: context, builder: (context) => AlertDialog(
+      title: const Text('관계 이름표'), content: TextField(controller: controller, autofocus: true, key: ValueKey('libraryRelationLabelInput-${relation.id}')),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
+        TextButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: const Text('저장'))],
+    ));
+    if (label == null) return;
+    await widget.api.updateRelationLabel(relation.id, label);
+    final box = _selectedBox;
+    if (box != null) await _loadBoxContent(box.id);
+  }
+
+  Future<void> _openItem(LibraryItem item) async {
+    final value = item.source ?? item.text ?? item.title;
+    await _openPath(value);
+  }
+
+  Future<void> _moveItemToSpace(LibraryItem item, LibrarySpace space) async {
+    final box = _selectedBox;
+    if (box == null) return;
+    await widget.api.moveItem(item.id, boxId: box.id, space: space, x: item.x, y: item.y);
     await _loadBoxContent(box.id);
   }
 
@@ -267,8 +409,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
     }
     final box = _selectedBox;
     if (box != null) {
+      final fromItemId = _selectedCoreItemId!;
       try {
-        await widget.api.addRelation(box.id, _selectedCoreItemId!, item.id);
+        await widget.api.addRelation(box.id, fromItemId, item.id);
       } catch (error) {
         if (mounted) setState(() => _statusMessage = error.toString());
       }
@@ -301,8 +444,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       child: Text(_statusMessage!, key: const ValueKey('library-engine-error')),
                     ))
                   : Row(children: [
-                SizedBox(width: 260, child: _buildSidebar()),
-                const VerticalDivider(width: 1),
+                if (constraints.maxWidth >= 760) ...[SizedBox(width: 260, child: _buildSidebar()), const VerticalDivider(width: 1)],
                 Expanded(child: _selectedBox == null ? _buildEmptyState() : _buildWorkspace()),
               ]),
             )),
@@ -354,17 +496,25 @@ class _LibraryScreenState extends State<LibraryScreen> {
         Padding(
           padding: const EdgeInsets.all(8),
           child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, spacing: 8, runSpacing: 6, children: [
+            if (MediaQuery.sizeOf(context).width < 760) SizedBox(width: 190, child: DropdownButton<LibraryBox>(
+              key: const ValueKey('libraryCompactBoxSelector'), isExpanded: true, value: _selectedBox,
+              items: [for (final b in _boxes) DropdownMenuItem(value: b, child: Text(b.name, overflow: TextOverflow.ellipsis))], onChanged: (b) { if (b != null) _selectBox(b); },
+            )),
+            if (MediaQuery.sizeOf(context).width < 760) IconButton(
+              key: const ValueKey('libraryCompactAddBox'),
+              tooltip: '새 자료함',
+              onPressed: _createBox,
+              icon: const Icon(Icons.create_new_folder_outlined),
+            ),
             Text(_selectedBox!.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+            IconButton(key: const ValueKey('libraryRenameBox'), tooltip: '자료함 이름 바꾸기', onPressed: _renameBox, icon: const Icon(Icons.edit_outlined)),
+            IconButton(key: const ValueKey('libraryDeleteBox'), tooltip: '자료함 삭제', onPressed: _deleteBox, icon: const Icon(Icons.delete_outline)),
+            OutlinedButton(key: const ValueKey('libraryExportBox'), onPressed: _exportBox, child: const Text('물리 폴더로 전환')),
             SizedBox(width: 190, height: 38, child: TextField(
               key: const ValueKey('librarySearch'),
               controller: _searchController,
               decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: '자료 검색', isDense: true),
-              onChanged: (query) async {
-                final box = _selectedBox;
-                if (box == null) return;
-                final items = await widget.api.listItems(box.id, query: query);
-                if (mounted) setState(() => _items = items);
-              },
+              onChanged: _search,
             )),
             SizedBox(width: 180, height: 38, child: TextField(
               key: const ValueKey('libraryNewItemText'),
@@ -377,11 +527,18 @@ class _LibraryScreenState extends State<LibraryScreen> {
             const Text('각 공간에 파일을 끌어 놓으세요.'),
           ]),
         ),
+        if (_showSearchResults && _searchResults.isNotEmpty) SizedBox(height: 72, child: ListView.builder(
+          key: const ValueKey('librarySearchResults'), itemCount: _searchResults.length,
+          itemBuilder: (context, index) { final result = _searchResults[index]; return ListTile(
+            dense: true, key: ValueKey('librarySearchResult-$index'), title: Text(result.name), subtitle: Text(result.snippet, maxLines: 2, overflow: TextOverflow.ellipsis),
+            onTap: () => _jumpToSearchResult(result),
+          ); },
+        )),
         if (_statusMessage != null) Text(_statusMessage!, key: const ValueKey('libraryStatus')),
         Expanded(child: _buildQuadrants()),
       ]);
 
-  Widget _buildQuadrants() => Column(children: [
+  Widget _buildQuadrants() => LayoutBuilder(builder: (context, constraints) => Column(children: [
         Expanded(child: Row(children: [
           for (final space in [LibrarySpace.core, LibrarySpace.basis])
             Expanded(child: _quadrant(space)),
@@ -391,7 +548,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           for (final space in [LibrarySpace.reference, LibrarySpace.temp])
             Expanded(child: _quadrant(space)),
         ])),
-      ]);
+      ]));
 
   Widget _quadrant(LibrarySpace space) {
     final names = {
@@ -414,6 +571,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
       onFileDrop: _addFile,
       canvasKey: _spaceKeys[space]!,
       onDeleteRelation: _deleteRelation,
+      onEditRelation: _editRelationLabel,
+      onRenameItem: _renameItem,
+      onDeleteItem: _deleteItem,
+      onOpenItem: _openItem,
+      onMoveToSpace: _moveItemToSpace,
+      highlightedItemId: _highlightedItemId,
     );
   }
 }
@@ -433,6 +596,12 @@ class _LibraryQuadrant extends StatelessWidget {
     required this.onFileDrop,
     required this.canvasKey,
     required this.onDeleteRelation,
+    required this.onEditRelation,
+    required this.onRenameItem,
+    required this.onDeleteItem,
+    required this.onOpenItem,
+    required this.onMoveToSpace,
+    required this.highlightedItemId,
   });
 
   final LibrarySpace space;
@@ -447,6 +616,12 @@ class _LibraryQuadrant extends StatelessWidget {
   final Future<void> Function(LibraryFileDrop, LibrarySpace, Offset) onFileDrop;
   final GlobalKey canvasKey;
   final ValueChanged<String> onDeleteRelation;
+  final ValueChanged<LibraryRelation> onEditRelation;
+  final ValueChanged<LibraryItem> onRenameItem;
+  final ValueChanged<LibraryItem> onDeleteItem;
+  final ValueChanged<LibraryItem> onOpenItem;
+  final void Function(LibraryItem, LibrarySpace) onMoveToSpace;
+  final String? highlightedItemId;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -494,32 +669,39 @@ class _LibraryQuadrant extends StatelessWidget {
                           item: item,
                           width: cardWidth,
                           height: cardHeight,
-                          selected: selectedCoreItemId == item.id,
+                          selected: selectedCoreItemId == item.id || highlightedItemId == item.id,
                           onTap: () => onItemTap(item),
+                          onDoubleTap: () => onOpenItem(item),
+                          onRename: () => onRenameItem(item),
+                          onDelete: () => onDeleteItem(item),
+                          onMoveToSpace: (space) => onMoveToSpace(item, space),
                         ),
                       ),
                     ),
+                  if (space == LibrarySpace.core)
+                    for (final relation in relations) _relationLabel(relation, items, size),
                   if (items.isEmpty) const Center(child: Text('자료가 없습니다.', style: TextStyle(color: Colors.black45))),
-                  for (final relation in relations)
-                    Positioned(
-                      left: 8,
-                      top: 4,
-                      child: Row(children: [
-                        Text('관계', key: ValueKey('libraryRelation-${relation.id}')),
-                        IconButton(
-                          key: ValueKey('libraryRelationDelete-${relation.id}'),
-                          tooltip: '관계선 삭제',
-                          icon: const Icon(Icons.close),
-                          onPressed: () => onDeleteRelation(relation.id),
-                        ),
-                      ]),
-                    ),
                 ],
               ),
             );
           })),
         ]),
       );
+
+  Widget _relationLabel(LibraryRelation relation, List<LibraryItem> items, Size size) {
+    final from = items.where((item) => item.id == relation.fromItemId).firstOrNull;
+    final to = items.where((item) => item.id == relation.toItemId).firstOrNull;
+    if (from == null || to == null) return const SizedBox.shrink();
+    final center = Offset((from.x + to.x + cardWidth) / 2, (from.y + to.y + cardHeight) / 2);
+    return Positioned(
+      left: center.dx.clamp(0.0, math.max(0.0, size.width - 110)),
+      top: center.dy.clamp(0.0, math.max(0.0, size.height - 36)),
+      child: Material(color: Colors.white.withValues(alpha: .9), borderRadius: BorderRadius.circular(12), child: Row(mainAxisSize: MainAxisSize.min, children: [
+        InkWell(key: ValueKey('libraryRelation-${relation.id}'), onTap: () => onEditRelation(relation), child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), child: Text(relation.label?.isNotEmpty == true ? relation.label! : '관계'))),
+        IconButton(key: ValueKey('libraryRelationDelete-${relation.id}'), tooltip: '관계선 삭제', onPressed: () => onDeleteRelation(relation.id), constraints: const BoxConstraints.tightFor(width: 26, height: 26), padding: EdgeInsets.zero, icon: const Icon(Icons.close, size: 14)),
+      ])),
+    );
+  }
 
   Color _spaceColor(LibrarySpace space) => switch (space) {
         LibrarySpace.core => const Color(0xFFF0F5FF),
@@ -530,12 +712,22 @@ class _LibraryQuadrant extends StatelessWidget {
 }
 
 class _LibraryCard extends StatelessWidget {
-  const _LibraryCard({super.key, required this.item, required this.width, required this.height, required this.selected, this.onTap});
+  const _LibraryCard({super.key, required this.item, required this.width, required this.height, required this.selected, this.onTap, this.onDoubleTap, this.onRename, this.onDelete, this.onMoveToSpace});
   final LibraryItem item;
   final double width;
   final double height;
   final bool selected;
   final VoidCallback? onTap;
+  final VoidCallback? onDoubleTap;
+  final VoidCallback? onRename;
+  final VoidCallback? onDelete;
+  final ValueChanged<LibrarySpace>? onMoveToSpace;
+
+  IconData get _icon => switch (item.kind) {
+    LibraryItemKind.file => Icons.insert_drive_file_outlined, LibraryItemKind.folder => Icons.folder_outlined,
+    LibraryItemKind.link => Icons.link, LibraryItemKind.text => Icons.notes, LibraryItemKind.richText => Icons.article_outlined,
+    LibraryItemKind.image || LibraryItemKind.capture => Icons.image_outlined, LibraryItemKind.note => Icons.sticky_note_2_outlined,
+  };
 
   @override
   Widget build(BuildContext context) => SizedBox(
@@ -549,10 +741,13 @@ class _LibraryCard extends StatelessWidget {
           ),
           child: InkWell(
             onTap: onTap,
+            onDoubleTap: onDoubleTap,
+            onSecondaryTap: () => _showMenu(context),
+            onLongPress: () => _showMenu(context),
             child: Padding(
               padding: const EdgeInsets.all(8),
               child: Row(children: [
-                const Icon(Icons.description_outlined, size: 20),
+                Icon(_icon, size: 20),
                 const SizedBox(width: 6),
                 Expanded(child: Text(item.title, maxLines: 2, overflow: TextOverflow.ellipsis)),
               ]),
@@ -560,6 +755,16 @@ class _LibraryCard extends StatelessWidget {
           ),
         ),
       );
+
+  void _showMenu(BuildContext context) => showMenu<String>(context: context, position: const RelativeRect.fromLTRB(80, 80, 0, 0), items: const [
+    PopupMenuItem(value: 'rename', child: Text('이름 바꾸기')), PopupMenuItem(value: 'delete', child: Text('삭제')),
+    PopupMenuItem(value: 'core', child: Text('핵심자료로 이동')), PopupMenuItem(value: 'basis', child: Text('기초자료로 이동')),
+    PopupMenuItem(value: 'reference', child: Text('참고자료로 이동')), PopupMenuItem(value: 'temp', child: Text('임시저장소로 이동')),
+  ]).then((action) {
+    if (action == 'rename') onRename?.call();
+    if (action == 'delete') onDelete?.call();
+    for (final space in LibrarySpace.values) { if (action == space.name) onMoveToSpace?.call(space); }
+  });
 }
 
 class _RelationPainter extends CustomPainter {

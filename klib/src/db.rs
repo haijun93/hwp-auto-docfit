@@ -199,6 +199,11 @@ impl Database {
         Ok(Some((b, items, relations)))
     }
 
+    pub fn box_rename(&self, id: i64, name: &str) -> Result<bool> {
+        let affected = self.conn.execute("UPDATE box SET name = ?1, updated_at = ?2 WHERE id = ?3", params![name, now(), id])?;
+        Ok(affected > 0)
+    }
+
     pub fn box_update(&self, id: i64, name: &str, description: &str) -> Result<bool> {
         let t = now();
         let affected = self.conn.execute(
@@ -380,6 +385,12 @@ impl Database {
         Ok(affected > 0)
     }
 
+    pub fn item_delete_source(&self, id: i64) -> Result<Option<String>> {
+        let source = self.conn.query_row("SELECT source_path FROM item WHERE id=?1", params![id], |r| r.get::<_, String>(0)).optional()?;
+        self.item_delete(id)?;
+        Ok(source)
+    }
+
     pub fn item_search(&self, box_id: Option<i64>, query: &str) -> Result<Vec<ItemRow>> {
         let pattern = format!("%{query}%");
         let (sql, params_vec): (&str, Vec<rusqlite::types::Value>) = match box_id {
@@ -417,6 +428,14 @@ impl Database {
             items.push(it?);
         }
         Ok(items)
+    }
+
+    pub fn item_rename(&self, id: i64, name: &str) -> Result<bool> {
+        Ok(self.conn.execute("UPDATE item SET display_name=?1 WHERE id=?2", params![name,id])? > 0)
+    }
+
+    pub fn relation_update(&self, id: i64, label: &str) -> Result<bool> {
+        Ok(self.conn.execute("UPDATE relation SET label = ?1 WHERE id = ?2", params![label, id])? > 0)
     }
 
     // --- Relation CRUD ---
@@ -632,10 +651,11 @@ impl Database {
                 }
                 "text" | "rich_text" | "note" => {
                     let clean_name = sanitize_filename(&display_name);
-                    let filename = if clean_name.ends_with(".txt") {
+                    let ext = if kind == "rich_text" { "html" } else { "txt" };
+                    let filename = if clean_name.to_ascii_lowercase().ends_with(&format!(".{ext}")) {
                         clean_name
                     } else {
-                        format!("{clean_name}.txt")
+                        format!("{clean_name}.{ext}")
                     };
                     let dest_path = unique_path(dest_folder, &filename);
                     if dest_path.parent() != Some(dest_folder) {
@@ -643,7 +663,10 @@ impl Database {
                         return Err(format!("잘못된 대상 경로입니다: {}", dest_path.display()));
                     }
                     let src = Path::new(&source_path);
-                    if src.is_file() {
+                    if kind == "rich_text" && src.is_file() {
+                        if is_or_has_reparse_point(src) { cleanup_export(); return Err("reparse point".into()); }
+                        if let Err(e) = fs::copy(src, &dest_path) { cleanup_export(); return Err(format!("HTML export failed: {e}")); }
+                    } else if src.is_file() {
                         if is_or_has_reparse_point(src) {
                             cleanup_export();
                             return Err(format!("심볼릭 링크나 정션은 내보낼 수 없습니다: {source_path}"));
