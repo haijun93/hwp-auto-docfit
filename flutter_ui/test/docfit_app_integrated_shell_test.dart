@@ -62,6 +62,13 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('sidebar-mode-switch-side')));
     await tester.pump();
     expect(calls, contains('sidebar_mode_switch_side'));
+    // 사이드메뉴 모드 버튼은 창을 가장자리에 붙이는 앱 기능을 부르고, 각 버튼은 하나씩만 보인다.
+    expect(calls, contains('sidebar_mode'));
+    expect(find.byKey(const ValueKey('sidebar-mode-toggle')), findsOneWidget);
+    expect(find.byKey(const ValueKey('always-on-top-toggle')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('always-on-top-toggle')));
+    await tester.pump();
+    expect(calls, contains('always_on_top'));
   });
   testWidgets('developer mode shows library button and opens LibraryScreen', (tester) async {
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: WorkspaceTabBar(

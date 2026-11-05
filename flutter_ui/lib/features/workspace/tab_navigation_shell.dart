@@ -73,6 +73,8 @@ class TabNavigationShell extends StatefulWidget {
     this.developerMode = false,
     this.libraryScreen,
     this.onSidebarSideSwitch,
+    this.onAlwaysOnTopChanged,
+    this.onSidebarModeRequest,
   }) : assert(initialIndex >= 0 && initialIndex < kTabCount);
 
   final Widget documentEditor;
@@ -95,6 +97,10 @@ class TabNavigationShell extends StatefulWidget {
   final bool developerMode;
   final Widget? libraryScreen;
   final VoidCallback? onSidebarSideSwitch;
+  /// 항상 위 켜기/끄기를 앱(창)에 요청한다.
+  final Future<void> Function(bool enabled)? onAlwaysOnTopChanged;
+  /// 사이드메뉴 모드(창을 화면 가장자리에 붙임)를 앱에 요청한다. false를 돌려주면 전환하지 않는다.
+  final Future<bool> Function(bool enabled)? onSidebarModeRequest;
   final ValueChanged<int>? onTabChanged;
 
   /// 왼쪽 메뉴 아래쪽의 앱 전체 메뉴(사용 방법·작업 로그·설정 등).
@@ -217,7 +223,17 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
     }
   }
 
+  bool _alwaysOnTop = false;
+
+  Future<void> _toggleAlwaysOnTop() async {
+    final enabled = !_alwaysOnTop;
+    await widget.onAlwaysOnTopChanged?.call(enabled);
+    if (mounted) setState(() => _alwaysOnTop = enabled);
+  }
+
   Future<void> _setSidebarOnly(bool enabled) async {
+    final request = widget.onSidebarModeRequest;
+    if (request != null && !await request(enabled)) return;
     if (mounted) {
       setState(() {
         _sidebarOnly = enabled;
@@ -286,7 +302,7 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
                     sidebarOnly: _sidebarOnly,
                     onPreview: _previewTab,
                     onPreviewCancel: _cancelPreview,
-                    onAlwaysOnTop: () {},
+                    onAlwaysOnTop: _toggleAlwaysOnTop,
                   ),
                   if (!_sidebarOnly) Expanded(
                     child: IndexedStack(
@@ -332,6 +348,8 @@ class WorkspaceTabBar extends StatelessWidget {
     this.developerMode = false,
     this.onSidebarModeChanged,
     this.onSidebarSideSwitch,
+    this.onAlwaysOnTopChanged,
+    this.onSidebarModeRequest,
     this.sidebarOnly = false,
     this.onAlwaysOnTop,
     this.libraryScreen,
@@ -352,6 +370,10 @@ class WorkspaceTabBar extends StatelessWidget {
   final bool developerMode;
   final ValueChanged<bool>? onSidebarModeChanged;
   final VoidCallback? onSidebarSideSwitch;
+  /// 항상 위 켜기/끄기를 앱(창)에 요청한다.
+  final Future<void> Function(bool enabled)? onAlwaysOnTopChanged;
+  /// 사이드메뉴 모드(창을 화면 가장자리에 붙임)를 앱에 요청한다. false를 돌려주면 전환하지 않는다.
+  final Future<bool> Function(bool enabled)? onSidebarModeRequest;
   final bool sidebarOnly;
   final VoidCallback? onAlwaysOnTop;
   final Widget? libraryScreen;

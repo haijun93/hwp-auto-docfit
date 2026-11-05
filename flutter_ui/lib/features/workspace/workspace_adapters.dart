@@ -173,6 +173,13 @@ class IntegratedWorkspace extends StatelessWidget {
       developerMode: developerMode,
       libraryScreen: libraryScreen ?? LibraryScreen(api: BridgeLibraryApi(api)),
       onSidebarSideSwitch: onSidebarSideSwitch,
+      onAlwaysOnTopChanged: (enabled) async {
+        await api('always_on_top', [enabled]);
+      },
+      onSidebarModeRequest: (enabled) async {
+        final result = await api('sidebar_mode', [enabled]);
+        return result is Map && result['ok'] == true;
+      },
       documentEditor: DocumentEditorAdapter(child: documentEditorWidget),
       tableTemplates: TableTemplatesAdapter(api: api),
       tableSketch: TableSketchAdapter(api: api),
