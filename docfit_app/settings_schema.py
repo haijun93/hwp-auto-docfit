@@ -123,6 +123,8 @@ DEFAULTS = {
     "all_cell_image_to_bg": False,
     # 2.0.0 단계별 Tk 창 제거 대비 비상 되돌리기용 플래그 (기본 False = Tk 창 대신 Flutter 화면 사용)
     "ui_tk_fallback": False,
+    # 위계 엔진(hierarchy 실행 파일) 사용 여부. 기본 꺼짐.
+    "hierarchy_engine": False,
 }
 
 VARIABLE_BINDINGS = {'prevent_word_split': 'prevent_word_split_var',
