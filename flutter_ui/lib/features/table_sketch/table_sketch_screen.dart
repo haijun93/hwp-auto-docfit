@@ -1,3 +1,4 @@
+// TARGET:# N216E
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -15,6 +16,8 @@ import '../../core/drop_events.dart';
 import 'table_sketch_painter.dart';
 import 'table_sketch_selection.dart';
 
+// TARGET:# N216E
+
 enum SketchToolMode {
   line,
   rect,
@@ -28,6 +31,58 @@ enum SketchToolMode {
   select,
   lasso,
   cellImage,
+}
+
+/// 표그림판 미로 예시(15×15, S 입구·E 출구).
+const List<String> tableSketchMazeExampleRows = [
+  '###############',
+  'S.....#.......#',
+  '#####.#.#####.#',
+  '#.....#.....#.#',
+  '#.#########.#.#',
+  '#.........#.#.#',
+  '#########.#.#.#',
+  '#.......#.#...#',
+  '#.#####.#.#####',
+  '#.#...#.#.....#',
+  '#.#.#.#.#####.#',
+  '#...#.#.....#.#',
+  '#####.#####.#.#',
+  '#...........#.E',
+  '###############',
+];
+
+/// Returns whether a rectangular maze has one entrance-to-exit path.
+bool hasMazeExamplePath(List<String> rows) {
+  if (rows.isEmpty || rows.any((row) => row.length != rows.first.length)) {
+    return false;
+  }
+  final width = rows.first.length;
+  if (width == 0 || rows.any((row) => RegExp(r'[^#.SE]').hasMatch(row))) {
+    return false;
+  }
+  final starts = <(int, int)>[];
+  final ends = <(int, int)>[];
+  for (var y = 0; y < rows.length; y++) {
+    for (var x = 0; x < width; x++) {
+      if (rows[y][x] == 'S') starts.add((x, y));
+      if (rows[y][x] == 'E') ends.add((x, y));
+    }
+  }
+  if (starts.length != 1 || ends.length != 1) return false;
+  final queue = <(int, int)>[starts.single];
+  final visited = <(int, int)>{starts.single};
+  for (var head = 0; head < queue.length; head++) {
+    final (x, y) = queue[head];
+    if ((x, y) == ends.single) return true;
+    for (final (dx, dy) in const [(0, -1), (1, 0), (0, 1), (-1, 0)]) {
+      final nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= width || ny >= rows.length) continue;
+      final next = (nx, ny);
+      if (rows[ny][nx] != '#' && visited.add(next)) queue.add(next);
+    }
+  }
+  return false;
 }
 
 /// 표그림판 화면: 점선 격자 용지에 직선을 그려 한/글 표로 변환 및 복사.
@@ -374,6 +429,64 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
         }
       }
 
+      _doc = newDoc;
+      _sel = SketchSelection();
+      _previewLine = null;
+      _previewRect = null;
+    });
+    _triggerPreviewDebounced();
+  }
+
+  void _loadMazeExample() {
+    _saveSnapshot();
+    setState(() {
+      final newDoc = TableSketchDoc(
+        grid: const GridConfig(cols: 15, rows: 15, cellMm: 2.5),
+      );
+      for (var y = 0; y < tableSketchMazeExampleRows.length; y++) {
+        for (var x = 0; x < tableSketchMazeExampleRows[y].length; x++) {
+          final cell = tableSketchMazeExampleRows[y][x];
+          newDoc.setFill(x, y, x + 1, y + 1, cell == '#' ? sketchBlack : '#FFFFFF');
+          if (cell == 'S' || cell == 'E') {
+            newDoc.setText(SketchText(x: x, y: y, text: cell, bold: true));
+          }
+        }
+      }
+      // 행 경계는 인접 셀의 벽 여부가 다를 때, 또는 바깥 가장자리일 때 그린다.
+      for (var y = 0; y <= 15; y++) {
+        var runStart = -1;
+        for (var x = 0; x < 15; x++) {
+          final boundary = y == 0 || y == 15
+              ? true
+              : (tableSketchMazeExampleRows[y - 1][x] == '#') !=
+                    (tableSketchMazeExampleRows[y][x] == '#');
+          if (boundary && runStart < 0) runStart = x;
+          if ((!boundary || x == 14) && runStart >= 0) {
+            newDoc.addLine(SketchLine(
+              x1: runStart, y1: y, x2: boundary && x == 14 ? 15 : x, y2: y,
+            ));
+            runStart = -1;
+          }
+        }
+      }
+      // 열 경계도 동일한 방식으로 만들며 각 셀의 네 변이 닫히도록 통로 경계도 포함한다.
+      for (var x = 0; x <= 15; x++) {
+        var runStart = -1;
+        for (var y = 0; y < 15; y++) {
+          final boundary = x == 0 || x == 15
+              ? true
+              : (tableSketchMazeExampleRows[y][x - 1] == '#') !=
+                    (tableSketchMazeExampleRows[y][x] == '#');
+          if (boundary && runStart < 0) runStart = y;
+          if ((!boundary || y == 14) && runStart >= 0) {
+            newDoc.addLine(SketchLine(
+              x1: x, y1: runStart, x2: x,
+              y2: boundary && y == 14 ? 15 : y,
+            ));
+            runStart = -1;
+          }
+        }
+      }
       _doc = newDoc;
       _sel = SketchSelection();
       _previewLine = null;
@@ -1831,9 +1944,31 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
               else
                 OutlinedButton.icon(
                   key: const Key('sketchDinoExample'),
-                  icon: const Icon(Icons.pets_outlined, size: 18),
-                  label: const Text('공룡 예시'),
+                  icon: const Icon(Icons.pets_outlined, size: 16),
+                  label: const Text('공룡'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    visualDensity: VisualDensity.compact,
+                  ),
                   onPressed: _loadDinoExample,
+                ),
+              if (MediaQuery.sizeOf(context).width < 600)
+                IconButton(
+                  key: const Key('sketchMazeExample'),
+                  tooltip: '미로 예시',
+                  icon: const Icon(Icons.route_outlined),
+                  onPressed: _loadMazeExample,
+                )
+              else
+                OutlinedButton.icon(
+                  key: const Key('sketchMazeExample'),
+                  icon: const Icon(Icons.route_outlined, size: 16),
+                  label: const Text('미로'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  onPressed: _loadMazeExample,
                 ),
               const SizedBox(width: 8),
               if (MediaQuery.sizeOf(context).width < 600)
