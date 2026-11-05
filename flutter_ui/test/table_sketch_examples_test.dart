@@ -73,7 +73,7 @@ void main() {
     final fillsBeforeEdit = List<Map<String, dynamic>>.from(
       (maze['fills'] as List).map((fill) => Map<String, dynamic>.from(fill as Map)),
     );
-    // 선택 후 Delete → 되돌리기에서 선 일부가 복원되지 않는 문제는 TODO(2.2.18)에서 따로 확인한다.
+    // 선택 도구로 끌면 도형이 옮겨지므로 Delete 뒤 되돌리기는 이동까지 두 번 해야 원래대로 돌아온다(버그 아님, 2.2.21 확인).
     expect(_segments(linesBeforeEdit), isNotEmpty);
     expect(fillsBeforeEdit, isNotEmpty);
 
