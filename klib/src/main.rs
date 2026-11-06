@@ -11,6 +11,7 @@ mod search;
 mod content;
 mod notebook;
 mod nb_transform;
+mod scan;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -133,6 +134,7 @@ fn main() {
         .spawn(move || {
             while r_clone.load(Ordering::Relaxed) {
                 std::thread::sleep(Duration::from_millis(500));
+                if scan::is_running() { act_clone.store(now_ms(), Ordering::Relaxed); } // 스캔 중에는 유휴 종료하지 않음
                 let elapsed = (now_ms().saturating_sub(act_clone.load(Ordering::Relaxed))) / 1000;
                 if elapsed >= idle_limit_secs {
                     r_clone.store(false, Ordering::Relaxed);

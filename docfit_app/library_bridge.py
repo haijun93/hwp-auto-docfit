@@ -25,6 +25,7 @@ ALLOWED_COMMANDS = frozenset({
     "search", "index_file", "remove_file",
 
     "relation_update",
+    "box_scan", "box_scan_status", "box_scan_cancel",
 
     "nb_create", "nb_list", "nb_update", "nb_delete",
 

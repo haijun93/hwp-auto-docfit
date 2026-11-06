@@ -23,6 +23,8 @@ mod notebook;
 mod nb_transform;
 #[path = "../src/content.rs"]
 mod content;
+#[path = "../src/scan.rs"]
+mod scan;
 
 static SEARCH_INDEX: std::sync::OnceLock<Result<search::SearchIndex, String>> = std::sync::OnceLock::new();
 fn search_index() -> Result<&'static search::SearchIndex, String> {
@@ -556,4 +558,50 @@ fn test_nb_source_add_structured_and_python_paragraphs() {
     assert_eq!(tables.arr("results").unwrap().iter().map(|r| r.str("text").unwrap()).collect::<Vec<_>>(), vec!["구분\t금액", "예산\t1,250만원"]);
     let hits = call(format!(r#"{{"cmd":"nb_search","notebook_id":{nb},"query":"1,250만원","source_ids":[{sid}]}}"#));
     assert!(!hits.arr("results").unwrap().is_empty(), "{hits:?}");
+}
+
+#[test]
+fn test_box_scan_pipe_commands_incremental_progress_cancel() {
+    let ctx = TestContext::new("box_scan");
+    let db = Arc::new(Mutex::new(Database::open(&ctx.dir.join("library.db").to_str().unwrap()).unwrap()));
+    let running = Arc::new(AtomicBool::new(true));
+    let call = |req: String| json::parse(&pipe::handle_request(&req, &db, &running)).unwrap();
+    let wait_done = || {
+        for _ in 0..400 {
+            let s = call(r#"{"cmd":"box_scan_status"}"#.into());
+            if s.str("state") != Some("scanning") { return s; }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+        panic!("스캔이 끝나지 않음");
+    };
+    let b = call(r#"{"cmd":"box_create","name":"스캔"}"#.into()).i64("id").unwrap();
+
+    assert_eq!(call(r#"{"cmd":"box_scan_status"}"#.into()).str("state"), Some("idle"));
+    assert_eq!(call(r#"{"cmd":"box_scan_cancel"}"#.into()).bool("cancelling"), Some(false));
+
+    let src = ctx.dir.join("폴더");
+    fs::create_dir_all(src.join("하위")).unwrap();
+    for i in 0..4 { fs::write(src.join(format!("f{i}.txt")), "x").unwrap(); }
+    fs::write(src.join("하위").join("g.txt"), "y").unwrap();
+    // 상위 폴더에 링크가 있으면(macOS /var) 스캔을 거부하므로 실제 경로로 바꾼다. Windows는 \\?\ 접두가 붙어 그대로 둔다.
+    let src = if cfg!(windows) { src } else { fs::canonicalize(&src).unwrap() };
+    let p = src.to_str().unwrap().replace('\\', "/");
+
+    assert_eq!(call(format!(r#"{{"cmd":"box_scan","box_id":999,"path":"{p}"}}"#)).bool("ok"), Some(false));
+    assert_eq!(call(format!(r#"{{"cmd":"box_scan","box_id":{b},"path":"{p}/없는폴더"}}"#)).bool("ok"), Some(false));
+
+    let started = call(format!(r#"{{"cmd":"box_scan","box_id":{b},"path":"{p}"}}"#));
+    assert_eq!(started.bool("started"), Some(true), "{:?}", started.str("message"));
+    let s = wait_done();
+    assert_eq!(s.str("state"), Some("done"));
+    assert_eq!((s.i64("total"), s.i64("processed"), s.i64("added"), s.i64("unchanged")), (Some(5), Some(5), Some(5), Some(0)));
+
+    call(format!(r#"{{"cmd":"box_scan","box_id":{b},"path":"{p}"}}"#));
+    let s = wait_done();
+    assert_eq!((s.i64("added"), s.i64("updated"), s.i64("unchanged"), s.i64("removed")), (Some(0), Some(0), Some(5), Some(0)));
+
+    fs::remove_file(src.join("f0.txt")).unwrap();
+    call(format!(r#"{{"cmd":"box_scan","box_id":{b},"path":"{p}"}}"#));
+    let s = wait_done();
+    assert_eq!((s.i64("unchanged"), s.i64("removed")), (Some(4), Some(1)));
 }

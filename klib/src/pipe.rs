@@ -532,6 +532,18 @@ fn ok_val(mut extra: Vec<(&str, Value)>) -> Value {
 
 }
 
+fn scan_status_val() -> Value {
+    let s = crate::scan::GLOBAL.snapshot();
+    let n = |v: u64| Value::from(v as i64);
+    ok_val(vec![
+        ("state", s.state.into()), ("phase", s.phase.into()), ("box_id", s.box_id.into()), ("root", s.root.into()),
+        ("discovered", n(s.discovered)), ("total", n(s.total)), ("processed", n(s.processed)),
+        ("added", n(s.added)), ("updated", n(s.updated)), ("unchanged", n(s.unchanged)), ("removed", n(s.removed)),
+        ("skipped_errors", n(s.skipped_errors)), ("error_samples", Value::Arr(s.error_samples.into_iter().map(Into::into).collect())),
+        ("message", s.message.into()), ("elapsed_ms", n(s.elapsed_ms)),
+    ])
+}
+
 fn err_val(msg: &str) -> Value {
 
     Value::obj(vec![("ok", false.into()), ("message", msg.into())])
@@ -1346,6 +1358,19 @@ pub fn handle_request(req_str: &str, db: &Mutex<Database>, running: &AtomicBool)
             }
 
         }
+
+        "box_scan" => {
+            let Some(box_id) = val.i64("box_id") else { return json::to_string(&err_val("box_id가 필요합니다.")); };
+            let Some(path) = val.str("path") else { return json::to_string(&err_val("path(스캔할 폴더)가 필요합니다.")); };
+            let db_path = db.lock().unwrap().connection().path().map(|p| p.to_string()).unwrap_or_default();
+            if db_path.is_empty() { return json::to_string(&err_val("DB 파일 경로를 알 수 없습니다.")); }
+            match crate::scan::start(&db_path, box_id, path) {
+                Ok(()) => ok_val(vec![("started", true.into())]),
+                Err(e) => err_val(&e),
+            }
+        }
+        "box_scan_status" => scan_status_val(),
+        "box_scan_cancel" => ok_val(vec![("cancelling", crate::scan::GLOBAL.request_cancel().into())]),
 
         "box_export" => {
 
