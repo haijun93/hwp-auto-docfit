@@ -39,10 +39,16 @@ def _verify(exe):
     return hashlib.sha256(exe.read_bytes()).hexdigest() == expected
 
 
+def _norm_text(value):
+    return str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+
+
 class KClipService:
     def __init__(self, client=None, *, installer=kc.install, starter=kc.start, autostart=kc.set_autostart,
                  autostart_status=kc.autostart_enabled,
-                 bundled=bundled_exe):
+                 bundled=bundled_exe, excel=None, sleep=time.sleep):
+        self._excel_service = excel
+        self._sleep = sleep
         self.client = client or kc.KAgentClient()
         self._install = installer
         self._start = starter
@@ -127,8 +133,68 @@ class KClipService:
             return dict(ok=False, code="KCLIP_OFFLINE", message=str(error))
         return response
 
+    def _excel(self):
+        if self._excel_service is None:
+            from .excel_table_service import ExcelTableService
+            self._excel_service = ExcelTableService()
+        return self._excel_service
+
+    def _table_item(self, item_id):
+        """항목이 엑셀 표(HTML Format + 탭/줄 구분 글)인지 본다. (정보, 오류 응답) 반환."""
+        try:
+            info = self.client.request("get", id=item_id)
+        except kc.KAgentError as error:
+            return None, dict(ok=False, code="KCLIP_OFFLINE", message=str(error))
+        if not isinstance(info, dict) or info.get("ok") is False:
+            return None, info if isinstance(info, dict) else dict(ok=False, message="항목을 확인해 주세요.")
+        formats = [str(f).lower() for f in (info.get("formats") or [])]
+        data = str(info.get("data") or "")
+        table = info.get("kind") == "text" and "html format" in formats and "\t" in data
+        return dict(info, table=table), None
+
+    def _item_id(self, payload):
+        try:
+            item_id = int(payload.get("id"))
+            if isinstance(payload.get("id"), bool) or item_id <= 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            return None
+        return item_id
+
+    def _copy_no_shade(self, payload):
+        """표 항목을 클립보드로 되돌린 뒤 셀 배경만 지워 같은 클립보드에 다시 올린다(kagent는 그대로 쓴다)."""
+        item_id = self._item_id(payload)
+        if item_id is None:
+            return dict(ok=False, code="KCLIP_ITEM", message="항목을 확인해 주세요.")
+        info, error = self._table_item(item_id)
+        if error:
+            return error
+        if not info["table"]:
+            return dict(ok=False, code="KCLIP_NOT_TABLE", message="엑셀 표(HTML 서식 포함) 항목이 아닙니다.")
+        restored = self._forward("restore", dict(id=item_id), ("id",))
+        if isinstance(restored, dict) and restored.get("ok") is False:
+            return restored
+        excel = self._excel()
+        want = _norm_text(info.get("data"))
+        for _ in range(40):  # 되돌리기는 kagent 창 스레드에서 비동기로 일어난다(최대 약 2초).
+            html, tsv = excel.clipboard()
+            if html and _norm_text(tsv) == want:
+                break
+            self._sleep(0.05)
+        else:
+            return dict(ok=False, code="KCLIP_RESTORE", message="항목을 클립보드로 되돌리지 못해 그대로 두었습니다. 다시 눌러 주세요.")
+        return excel.command("strip_shading")
+
     def command(self, action, payload=None):
         payload = payload if isinstance(payload, dict) else {}
+        if action == "is_table":
+            item_id = self._item_id(payload)
+            if item_id is None:
+                return dict(ok=False, code="KCLIP_ITEM", message="항목을 확인해 주세요.")
+            info, error = self._table_item(item_id)
+            return error or dict(ok=True, table=info["table"])
+        if action == "copy_no_shade":
+            return self._copy_no_shade(payload)
         if action == "status":
             return self.status()
         if action == "enable":

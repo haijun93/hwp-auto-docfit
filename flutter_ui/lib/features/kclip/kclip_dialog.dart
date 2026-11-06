@@ -287,6 +287,9 @@ class _KClipPanelState extends State<KClipPanel> {
   Timer? _debounce;
   final LinkedHashMap<int, Uint8List?> _images = LinkedHashMap();
   final Set<int> _loadingImages = {};
+  // 항목 id → 엑셀 표(HTML 서식 포함) 여부. 서식 포함 글 항목만 한 번씩 물어 둔다.
+  final Map<int, bool> _tableItems = {};
+  final Set<int> _checkingTables = {};
 
   bool get running => status['running'] == true;
   Map get agent => (status['status'] as Map?) ?? const {};
@@ -417,6 +420,38 @@ class _KClipPanelState extends State<KClipPanel> {
       }
     });
     return bytes;
+  }
+
+  bool _maybeTable(Map item) =>
+      item['kind'] == 'text' && '${item['preview'] ?? ''}'.contains('서식 포함');
+
+  Future<void> _checkTable(int id) async {
+    if (_tableItems.containsKey(id) || !_checkingTables.add(id)) return;
+    var table = false;
+    try {
+      final result = await widget.api('kclip', ['is_table', {'id': id}]);
+      table = result is Map && result['ok'] == true && result['table'] == true;
+    } catch (_) {}
+    _checkingTables.remove(id);
+    if (!mounted) return;
+    setState(() => _tableItems[id] = table);
+  }
+
+  Future<void> _copyNoShade(Map item) async {
+    if (busy) return;
+    setState(() => busy = true);
+    try {
+      final result = await widget.api('kclip', [
+        'copy_no_shade',
+        {'id': item['id']},
+      ]);
+      if (!mounted) return;
+      setState(() {
+        message = '${(result is Map ? result['message'] : null) ?? '음영 없이 복사하지 못했습니다.'}';
+      });
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
   }
 
   void _preview(Map item) {
@@ -794,6 +829,11 @@ class _KClipPanelState extends State<KClipPanel> {
                         if (mounted) unawaited(_imageFor(id));
                       });
                     }
+                    if (_maybeTable(item) && !_tableItems.containsKey(id)) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) unawaited(_checkTable(id));
+                      });
+                    }
                     return GestureDetector(
                       onDoubleTap: _isWebText(item) ? () => unawaited(_openWeb(item)) : null,
                       child: ListTile(
@@ -819,6 +859,21 @@ class _KClipPanelState extends State<KClipPanel> {
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          if (_tableItems[id] == true)
+                            PopupMenuButton<String>(
+                              key: ValueKey('kclip-item-menu-$id'),
+                              tooltip: '표 항목 메뉴',
+                              icon: const Icon(Icons.more_vert),
+                              onSelected: (value) {
+                                if (value == 'no_shade') unawaited(_copyNoShade(item));
+                              },
+                              itemBuilder: (context) => const [
+                                PopupMenuItem(
+                                  value: 'no_shade',
+                                  child: Text('음영 없이 복사'),
+                                ),
+                              ],
+                            ),
                           IconButton(
                             tooltip: pinned ? '고정 풀기' : '고정(지워지지 않음)',
                             onPressed: () => _act('pin', {

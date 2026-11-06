@@ -211,5 +211,77 @@ class KAgentPipeRetryTests(unittest.TestCase):
         wait_pipe.assert_not_called()
 
 
+class NoShadeCopyTests(unittest.TestCase):
+    """몽땅클립보드 표 항목 → 음영 없이 복사(kagent 수정 없이 restore 후 strip_shading)."""
+
+    TSV = "a\tb\r\n1\t2"
+
+    def make(self, *, formats=("HTML Format", "CF_UNICODETEXT"), data=TSV, kind="text", clip=None, strip=None):
+        class Client:
+            def __init__(inner):
+                inner.requests = []
+            def request(inner, cmd, **payload):
+                inner.requests.append((cmd, payload))
+                if cmd == "get":
+                    return {"ok": True, "id": payload["id"], "kind": kind, "data": data, "formats": list(formats)}
+                return {"ok": True}
+        class Excel:
+            def __init__(inner):
+                inner.commands = []
+                inner.reads = 0
+            def clipboard(inner):
+                inner.reads += 1
+                return clip(inner.reads) if clip else (b"<table>", data)
+            def command(inner, action, payload=None):
+                inner.commands.append(action)
+                return strip or {"ok": True, "removed": 3, "message": "셀 배경을 지웠습니다."}
+        client, excel = Client(), Excel()
+        return KClipService(client, excel=excel, sleep=lambda s: None), client, excel
+
+    def test_table_item_is_restored_then_shading_stripped(self):
+        service, client, excel = self.make()
+        result = service.command("copy_no_shade", {"id": 7})
+        self.assertEqual(result["removed"], 3)
+        self.assertEqual([c for c, _ in client.requests], ["get", "restore"])
+        self.assertEqual(client.requests[1][1], {"id": 7})
+        self.assertEqual(excel.commands, ["strip_shading"])
+
+    def test_waits_for_async_restore(self):
+        service, _, excel = self.make(clip=lambda n: (None, "old") if n < 4 else (b"<table>", self.TSV))
+        self.assertTrue(service.command("copy_no_shade", {"id": 7})["ok"])
+        self.assertEqual(excel.reads, 4)
+
+    def test_restore_never_lands_leaves_clipboard_alone(self):
+        service, _, excel = self.make(clip=lambda n: (b"<table>", "다른 내용"))
+        result = service.command("copy_no_shade", {"id": 7})
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["code"], "KCLIP_RESTORE")
+        self.assertEqual(excel.commands, [])
+
+    def test_non_table_items_are_rejected_without_restore(self):
+        for kwargs in ({"formats": ("CF_UNICODETEXT",)}, {"data": "한 줄 글"}, {"kind": "image"}):
+            service, client, excel = self.make(**kwargs)
+            result = service.command("copy_no_shade", {"id": 7})
+            self.assertEqual(result["code"], "KCLIP_NOT_TABLE")
+            self.assertEqual([c for c, _ in client.requests], ["get"])
+            self.assertEqual(excel.commands, [])
+
+    def test_bad_id_and_is_table(self):
+        service, _, _ = self.make()
+        self.assertEqual(service.command("copy_no_shade", {"id": 0})["code"], "KCLIP_ITEM")
+        self.assertEqual(service.command("copy_no_shade", {"id": True})["code"], "KCLIP_ITEM")
+        self.assertEqual(service.command("is_table", {"id": "x"})["code"], "KCLIP_ITEM")
+        self.assertIs(service.command("is_table", {"id": 7})["table"], True)
+        service, _, _ = self.make(formats=())
+        self.assertIs(service.command("is_table", {"id": 7})["table"], False)
+
+    def test_offline_agent(self):
+        class Off:
+            def request(self, cmd, **p):
+                raise kc.KAgentError("꺼짐")
+        service = KClipService(Off(), excel=object(), sleep=lambda s: None)
+        self.assertEqual(service.command("copy_no_shade", {"id": 1})["code"], "KCLIP_OFFLINE")
+
+
 if __name__ == "__main__":
     unittest.main()
