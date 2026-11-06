@@ -64,3 +64,29 @@ def engine_role_of_last(paragraphs, settings=None, executable=None, timeout=TIME
     if not result or not result["levels"]:
         return None
     return ENGINE_ROLE_NAMES.get(result["levels"][-1])
+
+
+def _leading_width(text):
+    body = str(text or "").rstrip("\r\n")
+    return len(body) - len(body.lstrip(" \t 　"))
+
+
+def engine_roles(items, settings=None, executable=None, timeout=TIMEOUT_SECONDS):
+    """서식통일용: (키, 글) 목록(문서 순서)을 엔진 한 번 호출로 분석해 {키: 문단 역할}을 돌려준다.
+
+    꺼져 있거나 엔진이 실패하면 빈 dict(호출한 쪽은 기존 규칙 그대로). 엔진이 판정을 보류한
+    문단(장·절·표 칸·모호 등 ENGINE_ROLE_NAMES 밖의 값)은 결과에 넣지 않는다.
+    """
+    items = list(items)
+    if not items or not (settings or {}).get("hierarchy_engine", False):
+        return {}
+    result = analyze_levels([{"text": text, "indent": _leading_width(text)} for _, text in items],
+                            settings, executable=executable, timeout=timeout)
+    if not result:
+        return {}
+    roles = {}
+    for (key, _), level in zip(items, result["levels"]):
+        role = ENGINE_ROLE_NAMES.get(level)
+        if role:
+            roles[key] = role
+    return roles

@@ -324,10 +324,17 @@ def _install(*, _docfit_namespace, _docfit_symbol, bind_function):
             return 표본모양, 시작, (시작[0], 시작[1], 시작[2] + 본문끝)
         return bind_function(서식통일_표본, _docfit_namespace)
     if _docfit_symbol == '_서식통일_그룹키':
-        def _서식통일_그룹키(marker, text, pos):
-            """같은 계층(번호 계열을 묶은 항목기호·보고서 역할)의 문장끼리 대표 서식을 비교한다."""
+        def _서식통일_그룹키(marker, text, pos, 엔진역할=None):
+            """같은 계층(번호 계열을 묶은 항목기호·보고서 역할)의 문장끼리 대표 서식을 비교한다.
+
+            기존 규칙으로 역할을 못 정한 문단(원문자 ①처럼 기호만으로 계층을 알 수 없어 '원문자'로 남거나
+            '미분류')만, 위계 엔진 판정(엔진역할: 문단 번호 → 역할)이 있으면 그 값으로 보조한다.
+            엔진 꺼짐·실패면 엔진역할이 비어 기존 결과와 같다.
+            """
             기호, 역할, 원래기호 = 서식통일_항목기호(text)
             role = 항목기호_역할표().get(원래기호) or 역할 or 보고서_문단역할(text) or "미분류"
+            if role in ("원문자", "미분류") and 엔진역할 and pos is not None:
+                role = 엔진역할.get(pos[1]) or role
             return 기호 or marker, role, "문서 공통"
         return bind_function(_서식통일_그룹키, _docfit_namespace)
     if _docfit_symbol == '_서식통일_현재_HWPX':
@@ -541,7 +548,7 @@ def _install(*, _docfit_namespace, _docfit_symbol, bind_function):
             return 결과
         return bind_function(_서식통일_제목표_표본, _docfit_namespace)
     if _docfit_symbol == '_서식통일_체계경계':
-        def _서식통일_체계경계(표본, 위치텍스트):
+        def _서식통일_체계경계(표본, 위치텍스트, 엔진역할=None):
             """서식 체계가 바뀌는 (본문 문단 번호, 영역 이름) 목록.
 
             붙임·별첨 제목(본문 문단이나 제목 표 안)은 구조 경계로, 여러 계층이 같은 곳에서 함께
@@ -566,7 +573,8 @@ def _install(*, _docfit_namespace, _docfit_symbol, bind_function):
             순서열 = defaultdict(list)
             for marker, 항목들 in 표본.items():
                 for 모양, 시작, _, text in 항목들:
-                    키 = _서식통일_그룹키(marker, 위치텍스트.get(tuple(시작), text), 시작)[:2]
+                    키 = _서식통일_그룹키(marker, 위치텍스트.get(tuple(시작), text), 시작,
+                                    *((엔진역할,) if 엔진역할 else ()))[:2]
                     값 = (모양[0], 모양[1]) if 모양[0] is not None and 모양[1] is not None else None
                     순서열[키].append((시작[1], 값))
             for 위치 in 서식통일_체계전환점(순서열):
@@ -1179,7 +1187,27 @@ def _install(*, _docfit_namespace, _docfit_symbol, bind_function):
             그룹별_표본 = {}
             # 한 문서에 서식 체계가 둘 이상일 수 있다(본문과 붙임 등). 붙임·별첨 제목과, 여러 계층이
             # 함께 서식을 바꾸는 큰 전환점에서 영역을 나누고 영역마다 대표 서식을 따로 정한다.
-            경계 = _서식통일_체계경계(표본, 위치텍스트)
+            # 위계 엔진 보조(설정 hierarchy_engine 켜짐일 때만): 기존 규칙으로 역할을 못 정한('원문자'·'미분류')
+            # 문단이 있을 때만 표본 문단 전체를 문서 순서로 엔진에 한 번 넘긴다. 꺼짐·실패는 빈 dict.
+            엔진역할 = {}
+            try:
+                설정 = globals()['설정_불러오기']()
+                if (설정 or {}).get('hierarchy_engine', False):
+                    순서항목 = sorted(((시작[1], 위치텍스트.get(tuple(시작), text))
+                                      for 항목들 in 표본.values() for _, 시작, _, text in 항목들))
+                    if any(_서식통일_그룹키(marker, 글, (0, 번호, 0))[1] in ("원문자", "미분류")
+                           for marker, 항목들 in 표본.items() for _, 시작, _, text in 항목들
+                           for 번호, 글 in [(시작[1], 위치텍스트.get(tuple(시작), text))]):
+                        from docfit_app import hierarchy_bridge
+                        엔진역할 = hierarchy_bridge.engine_roles(순서항목, 설정)
+                        if 엔진역할:
+                            진단로그(f"[서식통일] 위계 엔진 보조: 미분류 문단 {len(엔진역할)}개 범위에서 역할 판정 참고")
+            except Exception as 오류:
+                진단로그(f"[서식통일] 위계 엔진 보조 실패 — 기존 규칙만 사용: {오류}")
+                엔진역할 = {}
+            # 엔진 결과가 없으면 인자를 아예 넘기지 않아 기존 호출과 완전히 같다.
+            엔진인자 = (엔진역할,) if 엔진역할 else ()
+            경계 = _서식통일_체계경계(표본, 위치텍스트, *엔진인자)
 
             def 영역키(번호):
                 이름 = "본문" if 경계 else "문서 공통"
@@ -1191,7 +1219,7 @@ def _install(*, _docfit_namespace, _docfit_symbol, bind_function):
             for marker, 항목들 in 표본.items():
                 for 항목 in 항목들:
                     모양, 시작, 끝, text = 항목
-                    그룹키 = (_서식통일_그룹키(marker, 위치텍스트.get(tuple(시작), text), 시작)[:2]
+                    그룹키 = (_서식통일_그룹키(marker, 위치텍스트.get(tuple(시작), text), 시작, *엔진인자)[:2]
                               + (영역키(시작[1]),))
                     그룹별_표본.setdefault(그룹키, []).append(항목)
             제목표_표본 = [(번호, 키[:2] + (영역키(번호),), 모양)
