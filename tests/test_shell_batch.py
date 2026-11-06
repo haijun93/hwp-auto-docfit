@@ -93,6 +93,38 @@ class ShellBatchTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0], [str(f1), str(f2), str(f3)])
 
+    def test_leader_stops_when_request_cannot_be_removed(self):
+        """백신 등이 .req를 잡아 지울 수 없어도 대표가 같은 요청을 끝없이 다시 처리하지 않는다."""
+        f1 = self.make_file("doc1.hwpx")
+        calls = []
+
+        def mock_runner(files, target, **kwargs):
+            calls.append(list(files))
+            return [dict(source=f, output=f + ".pdf", status="success", error=None) for f in files]
+
+        real_unlink = Path.unlink
+
+        def locked_unlink(path, *args, **kwargs):
+            if path.suffix == ".req":
+                raise PermissionError(32, "sharing violation")
+            return real_unlink(path, *args, **kwargs)
+
+        result = {}
+
+        def leader():
+            with patch.object(Path, "unlink", locked_unlink):
+                result["code"] = shell_batch.handle_collect(
+                    "batch_folder", [str(f1)], "pdf", base_dir=self.root, runner=mock_runner,
+                    quiet_seconds=0.01, max_wait_seconds=0.5, user_profile=self.root)
+
+        thread = threading.Thread(target=leader, daemon=True)
+        thread.start()
+        thread.join(10)
+        self.assertFalse(thread.is_alive(), "대표 프로세스가 지우지 못한 요청을 끝없이 반복했습니다.")
+        self.assertEqual(result["code"], 0)
+        self.assertEqual(calls, [[str(f1)]])
+        self.assertFalse((self.batch_dir / ".lock").exists())
+
     def test_quiet_period_1_5_seconds(self):
         """가상 시각을 주입하여 1.5초 정지 후 처리가 완료되는지 검증."""
         f1 = self.make_file("a.hwpx")
