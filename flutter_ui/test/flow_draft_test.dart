@@ -31,7 +31,7 @@ void main() {
       await client.save({'name': '지도', 'snapshot': {'nodes': []}}, id: 'a' * 32),
       isTrue,
     );
-    expect(calls.last[2]['mode'], 'mindmap');
+    expect((calls.last[2] as Map)['mode'], 'mindmap');
     final draft = await client.pending();
     expect(draft!['name'], '지도');
     expect(await client.reconnect(draft), ('a' * 32, 'r1'));
