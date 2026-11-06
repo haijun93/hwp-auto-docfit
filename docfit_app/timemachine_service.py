@@ -545,6 +545,11 @@ class TimemachineService:
             # 경로는 내부 판정에만 쓰고 서비스 응답에는 노출하지 않는다.
             for item in result["items"]:
                 item.pop("path", None)
+            series = result.get("series")
+            if series:
+                for group in ("previous", "next", "same", "undated"):
+                    for item in series[group]:
+                        item.pop("path", None)
             return {"ok": True, **result}
         if action == "related_exclude":
             left, right = payload.get("selected_path"), payload.get("related_path")
