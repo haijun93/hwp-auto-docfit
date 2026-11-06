@@ -248,12 +248,72 @@ class LibrarySearchResult {
   final String snippet;
 }
 
+/// 폴더 스캔 진행 상태. klib(box_scan_status) 또는 Python 폴백이 같은 모양으로 채운다.
+class LibraryScanStatus {
+  const LibraryScanStatus({
+    this.state = 'idle',
+    this.phase = '',
+    this.backend,
+    this.discovered = 0,
+    this.total = 0,
+    this.processed = 0,
+    this.changed = 0,
+    this.removed = 0,
+    this.skippedErrors = 0,
+    this.message = '',
+  });
+
+  factory LibraryScanStatus.fromJson(Map<Object?, Object?> json) {
+    int n(Object? v) => (v is num) ? v.toInt() : 0;
+    return LibraryScanStatus(
+      state: '${json['state'] ?? 'idle'}',
+      phase: '${json['phase'] ?? ''}',
+      backend: json['backend'] as String?,
+      discovered: n(json['discovered']),
+      total: n(json['total']),
+      processed: n(json['processed']),
+      changed: n(json['changed']),
+      removed: n(json['removed']),
+      skippedErrors: n(json['skipped_errors']),
+      message: '${json['message'] ?? ''}',
+    );
+  }
+
+  final String state; // idle | scanning | done | cancelled | error
+  final String phase; // enumerate | reconcile | ''
+  final String? backend; // klib | python
+  final int discovered;
+  final int total;
+  final int processed;
+  final int changed;
+  final int removed;
+  final int skippedErrors;
+  final String message;
+
+  bool get isScanning => state == 'scanning';
+
+  /// 0~1 진행률. 전체 개수가 정해지기 전(폴더 훑는 중)에는 null(막대 미확정 표시).
+  double? get fraction => total > 0 ? (processed / total).clamp(0.0, 1.0) : null;
+}
+
+/// 자료함 폴더 스캔(선택 기능). `LibraryApi`를 구현한 클래스가 함께 구현하면 화면에 스캔 단추가 나타난다.
+abstract interface class LibraryScanApi {
+  /// klib 요청: box_scan {box_id, path}
+  Future<void> startScan(String boxId, String path);
+
+  /// klib 요청: box_scan_status
+  Future<LibraryScanStatus> scanStatus();
+
+  /// klib 요청: box_scan_cancel
+  Future<void> cancelScan();
+}
+
 typedef LibraryBridgeCall =
     Future<Object?> Function(String method, List<Object?> args);
 
 /// Adapts screen models to klib's command and response schema.
 
-class BridgeLibraryApi implements LibraryApi {
+class BridgeLibraryApi implements LibraryApi, LibraryScanApi {
   BridgeLibraryApi(this._call);
 
   final LibraryBridgeCall _call;
@@ -321,6 +381,20 @@ class BridgeLibraryApi implements LibraryApi {
 
     label: _string(value['label']),
   );
+
+  @override
+  Future<void> startScan(String boxId, String path) async {
+    await _request('box_scan', {'box_id': _id(boxId), 'path': path});
+  }
+
+  @override
+  Future<LibraryScanStatus> scanStatus() async =>
+      LibraryScanStatus.fromJson(await _request('box_scan_status'));
+
+  @override
+  Future<void> cancelScan() async {
+    await _request('box_scan_cancel');
+  }
 
   @override
   Future<List<LibraryBox>> listBoxes() async =>

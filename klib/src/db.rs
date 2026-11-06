@@ -63,6 +63,7 @@ impl Database {
         let db = Database { conn };
         db.init_schema()?;
         crate::notebook::init_schema(&db.conn)?;
+        crate::scan::init_schema(&db.conn)?;
         Ok(db)
     }
 
