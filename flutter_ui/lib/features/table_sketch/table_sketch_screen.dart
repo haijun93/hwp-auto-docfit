@@ -12,6 +12,8 @@ import 'table_sketch_models.dart';
 import 'dart:convert';
 import 'dart:ui' as ui;
 
+import 'package:file_selector/file_selector.dart';
+
 import '../../core/drop_events.dart';
 import 'table_sketch_painter.dart';
 import 'table_sketch_selection.dart';
@@ -85,11 +87,60 @@ bool hasMazeExamplePath(List<String> rows) {
   return false;
 }
 
+/// 이미지에서 인식한 표(칸 하나 = 격자 1눈금)를 그림판에서 고치기 좋은 크기로 키운다.
+/// 칸 하나를 최대 4눈금(20mm)으로, 표 폭은 32눈금(A4 본문 폭 정도) 안으로 맞추고,
+/// 격자는 지금 그림판 크기([base]) 이상·200눈금 이하로 둔다.
+TableSketchDoc fitRecognizedSketch(
+  TableSketchDoc recognized, {
+  GridConfig base = const GridConfig(),
+}) {
+  final cols = math.max(1, recognized.grid.cols);
+  final rows = math.max(1, recognized.grid.rows);
+  final scale = [
+    4,
+    32 ~/ cols,
+    200 ~/ cols,
+    200 ~/ rows,
+  ].reduce(math.min).clamp(1, 4);
+  return TableSketchDoc(
+    grid: GridConfig(
+      cols: math.min(200, math.max(base.cols, cols * scale)),
+      rows: math.min(200, math.max(base.rows, rows * scale)),
+      cellMm: recognized.grid.cellMm,
+    ),
+    lines: [
+      for (final l in recognized.lines)
+        l.copyWith(
+          x1: l.x1 * scale,
+          y1: l.y1 * scale,
+          x2: l.x2 * scale,
+          y2: l.y2 * scale,
+        ),
+    ],
+  );
+}
+
+/// 이미지 파일 고르기(png/jpg 등). 고르지 않으면 null.
+Future<Uint8List?> pickSketchImageFile() async {
+  final file = await openFile(
+    acceptedTypeGroups: const [
+      XTypeGroup(
+        label: '그림 파일',
+        extensions: ['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp'],
+      ),
+    ],
+  );
+  return file?.readAsBytes();
+}
+
 /// 표그림판 화면: 점선 격자 용지에 직선을 그려 한/글 표로 변환 및 복사.
 class TableSketchScreen extends StatefulWidget {
-  const TableSketchScreen({super.key, required this.api});
+  const TableSketchScreen({super.key, required this.api, this.pickImage});
 
   final ApiCall api;
+
+  /// '이미지에서 표 인식'의 파일 고르기(시험에서 바꿔 끼운다). 없으면 [pickSketchImageFile].
+  final Future<Uint8List?> Function()? pickImage;
 
   @override
   State<TableSketchScreen> createState() => _TableSketchScreenState();
@@ -153,6 +204,15 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
   Timer? _draftSaveTimer;
   bool _editedBeforeDraftCheck = false;
   bool _copying = false;
+
+  // 이미지에서 표 인식(SKREC2): 적용 전 결과는 캔버스 위에 겹쳐 보이고,
+  // 적용하면 되돌리기 1번으로 인식 전 그림으로 돌아간다.
+  TableSketchDoc? _recognized;
+  int _recognizedRows = 0, _recognizedCols = 0;
+  List<String> _recognizedWarnings = const [];
+  Uint8List? _recognizedImage;
+  String? _recognizeError;
+  bool _recognizing = false;
 
   // 저장/불러오기 컨트롤러
   final TextEditingController _saveNameController = TextEditingController(
@@ -1985,6 +2045,24 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
                   label: const Text('한/글 표 붙여넣기'),
                   onPressed: _pasteHwpTable,
                 ),
+              // 글자가 길어 폭 900 미만에서는 아이콘만(700px에서 도구 줄이 넘쳤다).
+              // 600 미만은 제목줄이 모자라 아래 도구 줄에 둔다(_buildTopToolbar).
+              if (MediaQuery.sizeOf(context).width < 600)
+                const SizedBox.shrink()
+              else if (MediaQuery.sizeOf(context).width < 900)
+                IconButton(
+                  key: const Key('sketchRecognizeImage'),
+                  tooltip: '이미지에서 표 인식',
+                  icon: const Icon(Icons.document_scanner_outlined),
+                  onPressed: _recognizing ? null : _recognizeFromFile,
+                )
+              else
+                OutlinedButton.icon(
+                  key: const Key('sketchRecognizeImage'),
+                  icon: const Icon(Icons.document_scanner_outlined, size: 18),
+                  label: const Text('이미지에서 표 인식'),
+                  onPressed: _recognizing ? null : _recognizeFromFile,
+                ),
               const SizedBox(width: 8),
               IconButton(
                 key: const Key('undoButton'),
@@ -2223,6 +2301,14 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
               constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
             ),
           ]),
+          // 폭 600 미만에서는 위 제목줄에 자리가 없어 이 줄(다음 줄로 내려감)에 둔다.
+          if (MediaQuery.sizeOf(context).width < 600)
+            IconButton(
+              key: const Key('sketchRecognizeImage'),
+              tooltip: '이미지에서 표 인식',
+              icon: const Icon(Icons.document_scanner_outlined, size: 20),
+              onPressed: _recognizing ? null : _recognizeFromFile,
+            ),
         ],
       ),
     );
@@ -2315,20 +2401,27 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
   Future<void> takeDroppedImage() async {
     final result = await widget.api('table_sketch', ['take_drop']);
     if (!mounted || result is! Map || result['data'] is! String) return;
-    final imported = await _sketchApi.importImage(result['data'] as String);
-    if (mounted && imported['ok'] == true && imported['sketch'] is Map) {
-      _saveSnapshot();
-      setState(() {
-        _doc = TableSketchDoc.fromJson(imported['sketch'] as Map);
-        _sel = SketchSelection();
-        _imageTarget = null;
-      });
-      _triggerPreviewDebounced();
-      _notice('스케치 이미지에서 표 ${imported['rows']}행 × ${imported['cols']}열을 인식했습니다.');
-      return;
-    }
     final box = _canvasKey.currentContext?.findRenderObject() as RenderBox?;
     final cx = result['client_x'], cy = result['client_y'];
+    // '칸 그림' 도구가 아니고 표 칸 위에 놓은 것도 아니면 표 인식으로 보낸다(적용 전 겹쳐 보기).
+    if (_tool != SketchToolMode.cellImage) {
+      Offset? local;
+      if (box != null && cx is num && cy is num) {
+        local = box.globalToLocal(Offset(cx.toDouble(), cy.toDouble()));
+      }
+      final onCell =
+          local != null &&
+          cellRegion(
+                _doc,
+                (local.dx / _cellSize).floor(),
+                (local.dy / _cellSize).floor(),
+              ) !=
+              null;
+      if (!onCell) {
+        await recognizeImageData(result['data'] as String);
+        return;
+      }
+    }
     if (box == null || cx is! num || cy is! num) {
       final target = _imageTarget;
       if (target != null) {
@@ -2340,6 +2433,212 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
     }
     final local = box.globalToLocal(Offset(cx.toDouble(), cy.toDouble()));
     applyDroppedImageAt(local, result['data'] as String);
+  }
+
+  // --- 이미지에서 표 인식 ---
+
+  /// '이미지에서 표 인식' 단추: 그림 파일을 골라 인식한다.
+  Future<void> _recognizeFromFile() async {
+    if (_recognizing) return;
+    Uint8List? bytes;
+    try {
+      bytes = await (widget.pickImage ?? pickSketchImageFile)();
+    } catch (e) {
+      if (mounted) setState(() => _recognizeError = '표 인식 실패: 그림 파일을 열지 못했습니다. ($e)');
+      return;
+    }
+    if (bytes == null || !mounted) return;
+    if (bytes.isEmpty) {
+      setState(() => _recognizeError = '표 인식 실패: 빈 파일입니다.');
+      return;
+    }
+    if (bytes.length > 8000000) {
+      setState(
+        () => _recognizeError = '표 인식 실패: 이미지가 너무 큽니다. 8MB 이하 파일을 사용해 주세요.',
+      );
+      return;
+    }
+    await recognizeImageData(base64Encode(bytes));
+  }
+
+  /// 이미지(base64)의 표를 인식해 캔버스 위에 겹쳐 보인다. 아직 그림은 바꾸지 않는다.
+  /// 인식 결과가 있으면 true(시험에서도 쓴다).
+  Future<bool> recognizeImageData(String data) async {
+    setState(() {
+      _recognizing = true;
+      _recognizeError = null;
+      _recognized = null;
+    });
+    Map<String, dynamic> res;
+    try {
+      res = await _sketchApi.recognize(data);
+    } catch (e) {
+      res = {'ok': false, 'message': '$e'};
+    }
+    if (!mounted) return false;
+    final sketch = res['sketch'];
+    String? error;
+    TableSketchDoc? found;
+    if (res['ok'] != true || sketch is! Map) {
+      error = '${res['message'] ?? ''}'.trim();
+      if (error.isEmpty) error = '표를 인식하지 못했습니다.';
+    } else {
+      try {
+        found = fitRecognizedSketch(
+          TableSketchDoc.fromJson(sketch),
+          base: _doc.grid,
+        );
+      } catch (_) {
+        found = null;
+      }
+      if (found == null || found.lines.isEmpty) {
+        found = null;
+        error = '이미지에서 표 선을 하나도 찾지 못했습니다. 선이 선명한 정면 이미지를 사용해 주세요.';
+      }
+    }
+    Uint8List? image;
+    if (found != null) {
+      try {
+        image = base64Decode(data.contains(',') ? data.split(',').last : data);
+      } catch (_) {
+        image = null;
+      }
+    }
+    final warnings = res['warnings'];
+    setState(() {
+      _recognizing = false;
+      _recognizeError = error == null ? null : '표 인식 실패: $error';
+      _recognized = found;
+      _recognizedRows = res['rows'] is num ? (res['rows'] as num).toInt() : 0;
+      _recognizedCols = res['cols'] is num ? (res['cols'] as num).toInt() : 0;
+      _recognizedWarnings = warnings is List
+          ? [for (final w in warnings) '$w']
+          : const [];
+      _recognizedImage = image;
+    });
+    return found != null;
+  }
+
+  /// 인식 결과를 그림판에 적용한다. 되돌리기 1번이면 인식 전 그림으로 돌아간다.
+  void _applyRecognized() {
+    final found = _recognized;
+    if (found == null) return;
+    _saveSnapshot();
+    setState(() {
+      _doc = found;
+      _recognized = null;
+      _recognizedImage = null;
+      _sel = SketchSelection();
+      _previewLine = null;
+      _previewRect = null;
+      _imageTarget = null;
+    });
+    _triggerPreviewDebounced();
+    _notice(
+      '인식한 표($_recognizedRows행 × $_recognizedCols열)를 적용했습니다. '
+      '선을 고칠 수 있고, 되돌리기(Ctrl+Z)로 인식 전으로 돌아갑니다.',
+    );
+  }
+
+  void _cancelRecognized() {
+    setState(() {
+      _recognized = null;
+      _recognizedImage = null;
+      _recognizeError = null;
+    });
+  }
+
+  /// 인식 중·인식 결과·실패 이유를 캔버스 위에 띄우는 띠.
+  Widget? _buildRecognizeBanner() {
+    if (_recognizing) {
+      return const _RecognizeCard(
+        key: Key('recognizeBusy'),
+        color: Color(0xFFEFF6FF),
+        children: [
+          SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          SizedBox(width: 10),
+          Text('이미지에서 표를 인식하는 중…'),
+        ],
+      );
+    }
+    final error = _recognizeError;
+    if (error != null) {
+      return _RecognizeCard(
+        key: const Key('recognizeError'),
+        color: const Color(0xFFFEF2F2),
+        children: [
+          const Icon(Icons.error_outline, color: Color(0xFFDC2626), size: 20),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(error, style: const TextStyle(color: Color(0xFF991B1B))),
+          ),
+          const SizedBox(width: 8),
+          TextButton(
+            key: const Key('recognizeErrorClose'),
+            onPressed: _cancelRecognized,
+            child: const Text('닫기'),
+          ),
+        ],
+      );
+    }
+    if (_recognized == null) return null;
+    final image = _recognizedImage;
+    return _RecognizeCard(
+      key: const Key('recognizeOverlay'),
+      color: const Color(0xFFEFF6FF),
+      children: [
+        if (image != null) ...[
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: Image.memory(
+              image,
+              width: 56,
+              height: 56,
+              fit: BoxFit.contain,
+              errorBuilder: (_, _, _) => const SizedBox(width: 56, height: 56),
+            ),
+          ),
+          const SizedBox(width: 10),
+        ],
+        Flexible(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '인식한 표: $_recognizedRows행 × $_recognizedCols열 (파란 선)',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const Text(
+                '적용하면 지금 그림이 바뀝니다. 되돌리기로 돌아갈 수 있어요.',
+                style: TextStyle(fontSize: 12, color: Color(0xFF475569)),
+              ),
+              for (final w in _recognizedWarnings)
+                Text(
+                  w,
+                  style: const TextStyle(fontSize: 12, color: Color(0xFFB45309)),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        TextButton(
+          key: const Key('recognizeCancel'),
+          onPressed: _cancelRecognized,
+          child: const Text('취소'),
+        ),
+        const SizedBox(width: 4),
+        FilledButton(
+          key: const Key('recognizeApply'),
+          onPressed: _applyRecognized,
+          child: const Text('적용'),
+        ),
+      ],
+    );
   }
 
   /// 캔버스 좌표에 놓인 사진을 그 칸에 넣는다(시험에서도 쓴다).
@@ -2626,8 +2925,42 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
 
   /// 캔버스 작업 영역 (스크롤뷰 + 커스텀페인트)
   Widget _buildCanvasArea() {
-    final canvasWidth = _doc.grid.cols * _cellSize;
-    final canvasHeight = _doc.grid.rows * _cellSize;
+    final banner = _buildRecognizeBanner();
+    final canvas = _buildCanvas();
+    if (banner == null) return canvas;
+    return Stack(
+      children: [
+        Positioned.fill(child: canvas),
+        Positioned(left: 12, right: 12, top: 8, child: Center(child: banner)),
+      ],
+    );
+  }
+
+  /// 적용 전 인식 결과: 지금 그림은 흐리게, 인식한 선은 파랗게 겹쳐 그린다(누름은 받지 않는다).
+  Widget _buildRecognizedOverlay(double width, double height) {
+    final found = _recognized!;
+    final overlay = TableSketchDoc(
+      grid: found.grid,
+      lines: [for (final l in found.lines) l.copyWith(color: '#2563EB')],
+    );
+    return IgnorePointer(
+      child: Container(
+        key: const Key('recognizeCanvasOverlay'),
+        color: const Color(0xC8FFFFFF),
+        child: CustomPaint(
+          size: Size(width, height),
+          painter: TableSketchPainter(doc: overlay, cellSize: _cellSize),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCanvas() {
+    final pending = _recognized;
+    final canvasWidth =
+        math.max(_doc.grid.cols, pending?.grid.cols ?? 0) * _cellSize;
+    final canvasHeight =
+        math.max(_doc.grid.rows, pending?.grid.rows ?? 0) * _cellSize;
     // 옮기거나 크기를 바꾸는 동안 다른 개체와 맞는 곳에 빨간 안내선(다이어그램처럼).
     final guides = _movingSelection || _resizeHandle != null
         ? alignmentGuides(_doc, _sel)
@@ -2727,6 +3060,12 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
                               guideXs: guides.xs,
                               guideYs: guides.ys,
                             ),
+                            child: pending == null
+                                ? null
+                                : _buildRecognizedOverlay(
+                                    canvasWidth,
+                                    canvasHeight,
+                                  ),
                           ),
                         ),
                       ),
@@ -3033,4 +3372,30 @@ class _TableSketchTextDialogState extends State<TableSketchTextDialog> {
     );
     Navigator.of(context).pop(result);
   }
+}
+
+/// 표 인식 안내 띠(인식 중·결과·실패 이유).
+class _RecognizeCard extends StatelessWidget {
+  const _RecognizeCard({
+    super.key,
+    required this.color,
+    required this.children,
+  });
+
+  final Color color;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) => ConstrainedBox(
+    constraints: const BoxConstraints(maxWidth: 640),
+    child: Material(
+      color: color,
+      elevation: 3,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(mainAxisSize: MainAxisSize.min, children: children),
+      ),
+    ),
+  );
 }
