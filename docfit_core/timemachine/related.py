@@ -5,7 +5,7 @@ import re
 from collections import Counter
 from datetime import date
 
-from .content_search import extract_reference_date
+from .basedate import extract_base_date
 
 _STOP = {"주요", "업무", "실적", "자료", "현황", "보고", "보고서", "문서", "결과", "추진", "작성", "기준", "년도", "년", "분기", "부서", "사업"}
 _TOKEN = re.compile(r"[가-힣A-Za-z0-9]{2,}")
@@ -67,12 +67,23 @@ def _score(reference, candidate):
     return min(score, 100), reasons
 
 
+def _date_fields(body):
+    info = extract_base_date(body or "")
+    if not info:
+        return {"reference_date": None, "reference_date_found": False, "reference_date_precision": None,
+                "reference_date_basis": None, "reference_date_evidence": None,
+                "reference_date_note": "본문에서 기준일을 찾지 못함"}
+    return {"reference_date": info["date"], "reference_date_found": True,
+            "reference_date_precision": info["precision"], "reference_date_basis": info["basis"],
+            "reference_date_evidence": info["evidence"], "reference_date_note": None}
+
+
 def related_documents(index, path, *, roots=None, excluded_pairs=(), limit=100):
     """선택 문서와 연관된 색인 자료를 점수·근거와 함께 기준일 순으로 반환한다."""
     selected, candidates = index.related_candidates(path, roots=roots)
     if selected is None:
-        return {"reference_date": None, "reference_date_found": False, "items": []}
-    selected_date = selected["reference_date"] or extract_reference_date(selected["body"])
+        return {**_date_fields(""), "items": []}
+    selected_info = _date_fields(selected["body"])
     from .store import path_key
     excluded = {frozenset(path_key(value) for value in pair) for pair in excluded_pairs}
     items = []
@@ -83,13 +94,9 @@ def related_documents(index, path, *, roots=None, excluded_pairs=(), limit=100):
         if not scored:
             continue
         score, reasons = scored
-        ref_date = candidate["reference_date"]
-        # 제목의 기간은 연관성 근거로 쓰되, 작성 기준일 표시에는 본문 추출값만 사용한다.
-        if ref_date and "기준일" not in candidate["body"]:
-            ref_date = None
+        # 작성 기준일은 본문 추출값만 쓴다. 못 찾으면 수정 시각으로 대체하지 않고 없음으로 표시한다.
         items.append({"path": candidate["path"], "name": candidate["name"], "score": score,
-                      "reasons": reasons, "reference_date": ref_date,
-                      "reference_date_found": bool(ref_date)})
+                      "reasons": reasons, **_date_fields(candidate["body"])})
     items.sort(key=lambda item: (
         item["reference_date"] is None,
         -date.fromisoformat(item["reference_date"]).toordinal()
@@ -97,4 +104,4 @@ def related_documents(index, path, *, roots=None, excluded_pairs=(), limit=100):
         -item["score"] if item["reference_date"] is not None else 0,
         item["name"].casefold(),
     ))
-    return {"reference_date": selected_date, "reference_date_found": bool(selected_date), "items": items[:max(1, min(int(limit), 200))]}
+    return {**selected_info, "items": items[:max(1, min(int(limit), 200))]}

@@ -38,7 +38,11 @@ class TimemachineRelatedTests(unittest.TestCase):
                 names = [item["name"] for item in result["items"]]
                 self.assertEqual(names, ["이전.txt", "기준일없음.txt"])
                 self.assertTrue(result["items"][0]["reference_date_found"])
-                self.assertFalse(result["items"][1]["reference_date_found"])
+                self.assertEqual(result["items"][0]["reference_date_basis"], "explicit")
+                # 본문의 대상 분기는 기준일 근거로 인정하되 '기간' 근거임을 표시한다.
+                self.assertTrue(result["items"][1]["reference_date_found"])
+                self.assertEqual(result["items"][1]["reference_date"], "2026-03-31")
+                self.assertEqual(result["items"][1]["reference_date_basis"], "period")
                 self.assertIn("period_pattern", {reason["type"] for reason in result["items"][0]["reasons"]})
                 self.assertGreater(result["items"][0]["score"], 0)
             finally:
