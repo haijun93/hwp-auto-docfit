@@ -24,8 +24,6 @@ ALLOWED_COMMANDS = frozenset({
 
     "search", "index_file", "remove_file",
 
-    "relation_update",
-
     "nb_create", "nb_list", "nb_update", "nb_delete",
 
     "nb_source_add", "nb_source_list", "nb_source_remove", "nb_source_paragraphs", "nb_index",
@@ -143,32 +141,6 @@ class LibraryBridge:
                     time.sleep(self.retry_delay)
 
         raise LibraryBridgeError("klib 파이프에 연결하거나 응답을 읽지 못했습니다.") from last_error
-
-    def library_search(self, query, *, box_id=None, limit=20):
-
-        if not isinstance(query, str) or not query.strip() or len(query) > 200:
-
-            raise ValueError("검색어는 1~200자로 입력하세요.")
-
-        if type(limit) is not int or not 1 <= limit <= 200:
-
-            raise ValueError("검색 결과 수는 1~200이어야 합니다.")
-
-        payload = {"query": query, "limit": limit}
-
-        if box_id is not None:
-
-            if type(box_id) is not int:
-
-                raise ValueError("자료함을 선택하세요.")
-
-            payload["box_id"] = box_id
-
-        return self.request("search", **payload).get("results", [])
-
-    def request_command(self, cmd, **payload):
-
-        return self.request(dict(payload, cmd=cmd))
 
     def _start(self):
 
