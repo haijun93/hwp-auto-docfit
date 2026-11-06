@@ -1,0 +1,63 @@
+import 'package:docfit_ui/features/workspace/tab_navigation_shell.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+/// 햄버거 단추 순환(사용자 지시 2026-11-07):
+/// 펼치기 → 닫기 → 닫은 채로 오른쪽 작업 화면 닫기 → 다시 펼치기.
+void main() {
+  testWidgets('hamburger cycles expand, collapse, collapse and close work area', (tester) async {
+    tester.view.physicalSize = const Size(600, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final requests = <bool>[];
+    await tester.pumpWidget(MaterialApp(
+      home: TabNavigationShell(
+        documentEditor: const Text('work-area'),
+        tableTemplates: const SizedBox(),
+        tableSketch: const SizedBox(),
+        diagram: const SizedBox(),
+        mindMap: const SizedBox(),
+        fileConversion: const SizedBox(),
+        paint: const SizedBox(),
+        fileRename: const SizedBox(),
+        timemachine: const SizedBox(),
+        onSidebarModeRequest: (enabled) async {
+          requests.add(enabled);
+          return true;
+        },
+      ),
+    ));
+    await tester.pumpAndSettle();
+    final toggle = find.byKey(const ValueKey('workspaceSidebarToggle'));
+    double railWidth() => tester.getSize(find.ancestor(of: toggle, matching: find.byType(Container)).first).width;
+
+    // 좁은 창이라 처음엔 닫힌 상태.
+    expect(railWidth(), kSidebarCollapsedWidth);
+
+    // (1) 펼치기
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(railWidth(), kSidebarExpandedWidth);
+    expect(find.text('work-area'), findsOneWidget);
+
+    // (2) 닫기
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(railWidth(), kSidebarCollapsedWidth);
+    expect(find.text('work-area'), findsOneWidget);
+
+    // (3) 닫은 채로 작업 화면 닫기(앱 창도 사이드메뉴 모드로 요청)
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(railWidth(), kSidebarCollapsedWidth);
+    expect(find.text('work-area'), findsNothing);
+    expect(requests, [true]);
+
+    // 다시 (1) 펼치기 + 작업 화면 복귀
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(railWidth(), kSidebarExpandedWidth);
+    expect(find.text('work-area'), findsOneWidget);
+    expect(requests, [true, false]);
+  });
+}

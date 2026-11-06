@@ -28,8 +28,11 @@ CREATE INDEX IF NOT EXISTS files_work_time ON files(work_time);
 CREATE INDEX IF NOT EXISTS files_root ON files(root);
 CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
 CREATE TABLE IF NOT EXISTS related_exclusions (left_path TEXT NOT NULL, right_path TEXT NOT NULL, PRIMARY KEY(left_path,right_path));
+CREATE TABLE IF NOT EXISTS related_links (left_path TEXT NOT NULL, right_path TEXT NOT NULL, PRIMARY KEY(left_path,right_path));
 """
 MAX_PAGE = 2000
+# 빠른 C 수준 LIKE로 후보만 고른 뒤 Python 규칙(excluded_name)으로 확정한다. 10만 행 조회에서도 함수 호출을 피한다.
+NOT_EXCLUDED = "(CASE WHEN name LIKE '%#ieeee%' THEN NOT tm_excluded(name) ELSE 1 END)"
 
 
 def path_key(path):
@@ -43,6 +46,8 @@ class Store:
             os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
         self._db = sqlite3.connect(self.path, check_same_thread=False, isolation_level=None)
         self._db.row_factory = sqlite3.Row
+        # 제외 규칙은 Python 판정 하나로 통일한다(따옴표·공백 변형을 SQL LIKE로 나열하면 빠지는 경우가 생긴다).
+        self._db.create_function("tm_excluded", 1, lambda name: int(excluded_name(name or "")), deterministic=True)
         self._lock = threading.RLock()
         with self._lock:
             self._db.execute("PRAGMA journal_mode=WAL")
@@ -73,6 +78,7 @@ class Store:
 
     def upsert_many(self, rows):
         """rows: dict(path, root, name, kind, size, mtime, ctime, work_time, flags, cloud). 쓴 개수."""
+        rows = [row for row in rows if not excluded_name(row.get("name") or row.get("path", ""))]
         if not rows:
             return 0
         with self._lock:
@@ -123,6 +129,7 @@ class Store:
         with self._lock:
             if excluded:
                 self._db.execute("INSERT OR IGNORE INTO related_exclusions VALUES(?,?)", (left, right))
+                self._db.execute("DELETE FROM related_links WHERE left_path=? AND right_path=?", (left, right))
             else:
                 self._db.execute("DELETE FROM related_exclusions WHERE left_path=? AND right_path=?", (left, right))
         return True
@@ -132,10 +139,29 @@ class Store:
             rows = self._db.execute("SELECT left_path,right_path FROM related_exclusions").fetchall()
         return [tuple(row) for row in rows]
 
+    def set_related_link(self, left, right, included=True):
+        """사용자가 직접 추가한 연관 자료 쌍을 저장한다. 추가하면 같은 쌍의 '관련 없음'은 해제한다."""
+        left, right = path_key(left), path_key(right)
+        if left == right:
+            raise ValueError("서로 다른 문서를 지정해 주세요.")
+        left, right = sorted((left, right))
+        with self._lock:
+            if included:
+                self._db.execute("INSERT OR IGNORE INTO related_links VALUES(?,?)", (left, right))
+                self._db.execute("DELETE FROM related_exclusions WHERE left_path=? AND right_path=?", (left, right))
+            else:
+                self._db.execute("DELETE FROM related_links WHERE left_path=? AND right_path=?", (left, right))
+        return True
+
+    def related_links(self):
+        with self._lock:
+            rows = self._db.execute("SELECT left_path,right_path FROM related_links").fetchall()
+        return [tuple(row) for row in rows]
+
     # ── 읽기(화면) ───────────────────────────────────────────────────────
     @staticmethod
     def _filters(kinds=None, roots=None, query=None, extensions=None):
-        where, params = ["hidden = 0"], []
+        where, params = ["hidden = 0", NOT_EXCLUDED], []
         if kinds:
             where.append(f"kind IN ({','.join('?' * len(kinds))})")
             params.extend(kinds)
@@ -160,7 +186,7 @@ class Store:
         params[:0] = [start, end]
         order = "DESC" if newest_first else "ASC"
         sql = (f"SELECT id, path, name, kind, size, mtime, ctime, work_time, flags, cloud FROM files "
-               f"WHERE {' AND '.join(where)} AND name NOT LIKE '#ieeee%' "
+               f"WHERE {' AND '.join(where)} "
                f"ORDER BY work_time {order}, id {order} LIMIT ? OFFSET ?")
         with self._lock:
             rows = self._db.execute(sql, [*params, limit, max(0, int(offset))]).fetchall()
@@ -170,7 +196,7 @@ class Store:
         where, params = self._filters(**filters)
         with self._lock:
             return self._db.execute(f"SELECT COUNT(*) FROM files WHERE work_time >= ? AND work_time < ? AND "
-                                    f"{' AND '.join(where)} AND name NOT LIKE '#ieeee%'",
+                                    f"{' AND '.join(where)}",
                                     [start, end, *params]).fetchone()[0]
 
     def day_counts(self, year, month, **filters):
@@ -180,8 +206,6 @@ class Store:
         where, params = self._filters(**filters)
         sql = (f"SELECT CAST(strftime('%d', work_time, 'unixepoch', 'localtime') AS INTEGER) AS day, kind, COUNT(*) "
                f"FROM files WHERE work_time >= ? AND work_time < ? AND {' AND '.join(where)} "
-               f"AND (name NOT LIKE '#ieeee%' AND name NOT LIKE ' #ieeee%' AND name NOT LIKE '''#ieeee%' "
-               f"AND name NOT LIKE ' \"#ieeee%' AND name NOT LIKE '‘#ieeee%' AND name NOT LIKE '’#ieeee%') "
                f"GROUP BY day, kind")
         result = {}
         with self._lock:
@@ -197,9 +221,7 @@ class Store:
         """구간 안 시간대(0~23)별 파일 수 — 타임라인 옆 활동 밀도 막대."""
         where, params = self._filters(**filters)
         sql = (f"SELECT CAST(strftime('%H', work_time, 'unixepoch', 'localtime') AS INTEGER), COUNT(*) FROM files "
-               f"WHERE work_time >= ? AND work_time < ? AND {' AND '.join(where)} "
-               f"AND (name NOT LIKE '#ieeee%' AND name NOT LIKE ' #ieeee%' AND name NOT LIKE '''#ieeee%' "
-               f"AND name NOT LIKE ' \"#ieeee%' AND name NOT LIKE '‘#ieeee%' AND name NOT LIKE '’#ieeee%') GROUP BY 1")
+               f"WHERE work_time >= ? AND work_time < ? AND {' AND '.join(where)} GROUP BY 1")
         with self._lock:
             rows = self._db.execute(sql, [start, end, *params]).fetchall()
         result = {}
@@ -211,18 +233,18 @@ class Store:
     def get(self, file_id):
         with self._lock:
             row = self._db.execute("SELECT * FROM files WHERE id = ?", (file_id,)).fetchone()
-        return dict(row) if row else None
+        return dict(row) if row and not excluded_name(row["name"]) else None
 
     def stats(self):
         with self._lock:
-            sql_rows = self._db.execute("SELECT COUNT(*), MIN(work_time), MAX(work_time) FROM files WHERE hidden = 0 AND name NOT LIKE '#ieeee%'").fetchone()
+            sql_rows = self._db.execute("SELECT COUNT(*), MIN(work_time), MAX(work_time) FROM files WHERE hidden = 0 AND " + NOT_EXCLUDED).fetchone()
         return dict(files=sql_rows[0], first=sql_rows[1], last=sql_rows[2])
 
     def purge_excluded(self):
         """이전 버전에서 저장한 제외 대상 행도 조회 전에 제거한다."""
         with self._lock:
-            rows = self._db.execute("SELECT key, path, name, mtime, size FROM files").fetchall()
-            bad = [dict(row) for row in rows if excluded_name(row["name"])]
+            rows = self._db.execute("SELECT key, path, name, mtime, size FROM files WHERE NOT " + NOT_EXCLUDED).fetchall()
+            bad = [dict(row) for row in rows]
         if bad:
             self.delete_keys([row["key"] for row in bad])
         return bad

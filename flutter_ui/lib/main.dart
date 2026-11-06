@@ -229,7 +229,7 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
         if (mounted) setState(() => sidebarOnly = false);
       }
       if (!mounted) return;
-      await showKClipDialog(context, widget.api, mode: KClipEntryMode.hotkey);
+      await showKClipStickyWindow(context, widget.api, mode: KClipEntryMode.hotkey);
     } finally {
       _kclipOpen = false;
     }
@@ -305,7 +305,7 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
           final expanded = constraints.maxWidth >= 140;
           final actions = <({String label, IconData icon, VoidCallback onPressed, Key? key})>[
             (
-              label: '서식 고르기',
+              label: '새문서 열기',
               icon: Icons.note_add_outlined,
               onPressed: () => _showNewDocument(context, widget.api),
               key: const ValueKey('new-document-open'),
@@ -317,7 +317,7 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
                 if (_kclipOpen) return;
                 _kclipOpen = true;
                 try {
-                  await showKClipDialog(context, widget.api);
+                  await showKClipStickyWindow(context, widget.api);
                 } finally {
                   _kclipOpen = false;
                 }
@@ -410,7 +410,7 @@ Future<void> _showNewDocument(BuildContext context, ApiCall api) async {
   if (!context.mounted) return;
   final items = result is Map ? (result['items'] as List? ?? const []) : const [];
   await showDialog<void>(context: context, builder: (dialogContext) => AlertDialog(
-    title: const Text('서식 고르기'),
+    title: const Text('새문서 열기'),
     content: SizedBox(width: 420, child: Column(mainAxisSize: MainAxisSize.min, children: [
       ListTile(key: const ValueKey('new-document-blank'), leading: const Icon(Icons.note_add_outlined),
         title: const Text('새문서 작성(서식X)'), subtitle: const Text('빈 한/글 문서를 엽니다.'), onTap: () async {

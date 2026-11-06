@@ -458,10 +458,17 @@ class TimemachineService:
                 name="timemachine-content-index", daemon=True)
             self._content_thread.start()
 
+    # 본문검색(색인·검색·내보내기·오류 목록)과 연관검색은 개발자 모드에서만 허용한다.
+    # 매 명령마다 설정을 다시 읽으므로 설정 전환 직후부터 반영된다.
+    DEVELOPER_ONLY_ACTIONS = frozenset({
+        "content_index", "content_index_all", "content_index_start",
+        "content_index_status", "content_index_progress", "content_index_cancel",
+        "content_search", "content_export_markdown", "content_errors",
+        "content_preview", "related_search", "related_include",
+    })
+
     def _command(self, action, payload):
-        if action in {"content_index", "content_index_all", "content_index_start",
-                      "content_index_status", "content_index_progress", "content_index_cancel",
-                      "content_preview", "related_search"}:
+        if action in self.DEVELOPER_ONLY_ACTIONS:
             denied = self._require_developer_mode()
             if denied is not None:
                 return denied
@@ -554,7 +561,8 @@ class TimemachineService:
                 raise ValueError("결과 개수를 확인해 주세요.")
             exclusions = self.store.related_exclusions()
             result = related_documents(self.content_index, path, roots=self._settings["roots"],
-                                       excluded_pairs=exclusions, limit=limit)
+                                       excluded_pairs=exclusions,
+                                       included_pairs=self.store.related_links(), limit=limit)
             # 경로는 내부 판정에만 쓰고 서비스 응답에는 불투명 related_id만 노출한다.
             for item in result["items"]:
                 item["related_id"] = self._issue_related_id(path, item.pop("path"))
@@ -574,6 +582,21 @@ class TimemachineService:
                 return self._error("INVALID_INPUT", "현재 조사 폴더의 두 문서를 선택해 주세요.")
             self.store.exclude_related(left, right, excluded)
             return {"ok": True, "excluded": excluded}
+        if action == "related_include":
+            related_id = payload.get("related_id")
+            if related_id is not None:
+                pair = self._lookup_related_id(related_id)
+                if pair is None:
+                    return self._error("INVALID_INPUT", "연관 문서 항목을 다시 검색해 주세요.")
+                left, right = pair
+            else:
+                left, right = payload.get("selected_path"), payload.get("related_path")
+            included = payload.get("included", True)
+            if (not isinstance(left, str) or not isinstance(right, str) or type(included) is not bool or
+                    not self._path_in_active_root(left) or not self._path_in_active_root(right)):
+                return self._error("INVALID_INPUT", "현재 조사 폴더의 두 문서를 선택해 주세요.")
+            self.store.set_related_link(left, right, included)
+            return {"ok": True, "included": included}
         if action == "content_errors":
             return {"ok": True, "items": self.content_index.errors(self._settings["roots"])}
         if action == "range":

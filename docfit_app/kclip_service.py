@@ -184,4 +184,23 @@ class KClipService:
         elif action == "resume":
             self._pause_file.unlink(missing_ok=True)
         cmd, keys = forwards[action]
+        if action in ("get", "restore", "delete", "pin"):
+            try:
+                item_id = int(payload.get("id"))
+                if isinstance(payload.get("id"), bool) or item_id <= 0:
+                    raise ValueError
+            except (TypeError, ValueError):
+                return dict(ok=False, code="KCLIP_ITEM", message="항목을 확인해 주세요.")
+            payload = dict(payload, id=item_id)
+        if action == "pin":
+            payload = dict(payload, pinned=payload.get("pinned") is not False)
+        if action == "clear":
+            # 고정 항목은 기본으로 보존한다. 고정까지 지우려면 keep_pinned=False를 명시해야 한다.
+            keep_pinned = payload.get("keep_pinned") is not False
+            result = self._forward(cmd, dict(payload, keep_pinned=keep_pinned), keys)
+            if isinstance(result, dict) and result.get("ok") is not False:
+                result = dict(result, keep_pinned=keep_pinned)
+                result.setdefault("message", "고정한 항목은 남기고 지웠습니다." if keep_pinned
+                                  else "고정한 항목까지 모두 지웠습니다.")
+            return result
         return self._forward(cmd, payload, keys)

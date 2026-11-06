@@ -33,6 +33,16 @@ String _formatReason(Object? reason) {
 /// 기존 응답은 예전처럼 날짜 또는 `기준일 없음`만 보인다.
 String formatReferenceDate(Map response) {
   final date = _nonEmptyString(response['reference_date']);
+  // v2.2.24(main) 응답: reference_date_basis(explicit/period)·reference_date_evidence.
+  final basis = _nonEmptyString(response['reference_date_basis']);
+  if (basis != null) {
+    final evidence = _nonEmptyString(response['reference_date_evidence']);
+    if (response['reference_date_found'] == true && date != null) {
+      if (evidence == null) return '작성 기준일 $date';
+      return basis == 'explicit' ? "작성 기준일 $date (본문 '$evidence')" : '작성 기준일 $date ($evidence 표기로 추정)';
+    }
+    return '기준일 없음';
+  }
   final source = _nonEmptyString(response['reference_date_source']);
   final sourceText = _nonEmptyString(response['reference_date_text']);
   if (response['reference_date_found'] == true && date != null) {

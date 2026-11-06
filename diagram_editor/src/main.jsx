@@ -318,7 +318,13 @@ function App(){
  const flow=useRef(null),current=useRef(graph),history=useRef([]),future=useRef([]),nameRef=useRef(name),clipboard=useRef(null);
  current.current=graph;nameRef.current=name;
  const generation=useRef(0),savedGeneration=useRef(0);
- const mark=()=>{generation.current++;send({type:'dirty',value:true,generation:generation.current});};
+ const draftTimer=useRef(null);
+ // 편집 중 자동 임시저장: 마지막 변경 후 2.5초 쉬면 한 번만 앱에 보낸다(디바운스). 저장되면 취소.
+ const scheduleDraft=()=>{clearTimeout(draftTimer.current);draftTimer.current=setTimeout(()=>{
+  if(generation.current<=savedGeneration.current)return;
+  try{send({type:'draft',generation:generation.current,name:nameRef.current,snapshot:snapshot()});}catch(_){/* 임시저장 실패는 편집을 막지 않는다 */}
+ },2500);};
+ const mark=()=>{generation.current++;send({type:'dirty',value:true,generation:generation.current});scheduleDraft();};
  const checkpoint=()=>{history.current.push(structuredClone(current.current));if(history.current.length>80)history.current.shift();future.current=[];};
  const commit=(next,record=true)=>{
   if(record)checkpoint();
@@ -436,13 +442,14 @@ function App(){
      commit({...current.current,nodes:withBackground(current.current.nodes,message.src,size.width,size.height)});
      setStatus('배경 사진을 넣었어요. 펜·도형·글상자를 올려 보세요.');setTimeout(()=>flow.current?.fitView({padding:.05}),50);break;}
     case 'mark_saved':
+     clearTimeout(draftTimer.current);
      if(Number.isInteger(message.generation))savedGeneration.current=Math.max(savedGeneration.current,message.generation);
      send({type:'dirty',value:generation.current>savedGeneration.current,generation:generation.current});
      setStatus(generation.current>savedGeneration.current?'추가 변경사항을 저장해 주세요.':'저장했습니다.');break;
     case 'load':{
      const loaded=decode(message.snapshot);
      if(loaded.table)tables.current[loaded.table.kind]=loaded.table;
-     setActiveLayer(null);replace({nodes:loaded.nodes,edges:loaded.edges,...(loaded.table?{table:loaded.table}:{}),...(loaded.mindmap?{mindmap:loaded.mindmap}:{}),...(loaded.layers?{layers:loaded.layers}:{})},message.name,loaded.converted);
+     setActiveLayer(null);replace({nodes:loaded.nodes,edges:loaded.edges,...(loaded.table?{table:loaded.table}:{}),...(loaded.mindmap?{mindmap:loaded.mindmap}:{}),...(loaded.layers?{layers:loaded.layers}:{})},message.name,loaded.converted||message.recovered===true);
      send({type:'document_loaded',converted:loaded.converted});break;
     }
     case 'apply_template':{

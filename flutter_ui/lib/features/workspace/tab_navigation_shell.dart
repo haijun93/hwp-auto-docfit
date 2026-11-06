@@ -212,17 +212,30 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
     if (index != null && mounted) _select(index);
   }
 
-  void _toggleSidebar() {
+  /// 햄버거 단추 순환(사용자 지시 2026-11-07):
+  /// 펼치기 → 닫기(아이콘만) → 닫은 채로 오른쪽 작업 화면까지 닫기 → 다시 펼치기.
+  /// 다음 단계는 지금 화면 상태로 정하므로 처음 상태와 관계없이 순서가 맞다.
+  Future<void> _toggleSidebar() async {
     _sidebarTouched = true;
-    _sidebarStage = (_sidebarStage + 1) % 3;
-    if (_sidebarStage == 0) {
-      setState(() { _sidebarOnly = false; _expanded = true; });
+    final open = _expanded ?? MediaQuery.sizeOf(context).width >= kSidebarAutoExpandWidth;
+    if (_sidebarOnly) {
+      await _setSidebarOnly(false);
+      if (!mounted || _sidebarOnly) return;
+      setState(() { _expanded = true; _sidebarStage = 0; });
       widget.onSidebarExpandedChanged?.call(true);
-    } else if (_sidebarStage == 1) {
-      setState(() { _sidebarOnly = false; _expanded = false; });
+    } else if (open) {
+      // (2) 닫기
+      setState(() { _expanded = false; _sidebarStage = 1; });
       widget.onSidebarExpandedChanged?.call(false);
+    } else if (_sidebarStage == 1) {
+      // (3) 단추로 닫은 다음 번에는 작업 화면까지 닫는다.
+      await _setSidebarOnly(true);
+      if (!mounted || !_sidebarOnly) return;
+      setState(() { _expanded = false; _sidebarStage = 2; });
     } else {
-      setState(() { _sidebarOnly = true; _expanded = true; });
+      // (1) 처음부터 닫혀 있던 메뉴는 먼저 펼친다.
+      setState(() { _expanded = true; _sidebarStage = 0; });
+      widget.onSidebarExpandedChanged?.call(true);
     }
   }
 

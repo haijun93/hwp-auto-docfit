@@ -1544,6 +1544,12 @@ class DesktopWebBridge:
             return service.load(payload.get("id"))
         if action == "save":
             return service.save(payload.get("id"), payload.get("name"), payload.get("snapshot"), payload.get("revision"))
+        if action == "save_draft":
+            return service.save_draft(payload.get("mode"), payload.get("id"), payload.get("name"), payload.get("snapshot"))
+        if action == "load_draft":
+            return service.load_draft(payload.get("mode"))
+        if action == "clear_draft":
+            return service.clear_draft(payload.get("mode"))
         if action == "delete":
             return service.delete(payload.get("id"))
         raise ServiceError("INVALID_ACTION", "흐름도 작업을 확인해 주세요.")
@@ -1933,9 +1939,8 @@ class DesktopWebBridge:
     def timemachine(self, action, payload=None):
         """타임머신 화면 명령을 처리한다."""
         try:
-            if action in {"content_index", "content_index_all", "content_index_start",
-                          "content_index_status", "content_index_progress", "content_index_cancel",
-                          "content_search", "content_preview"}:
+            from docfit_app.timemachine_service import TimemachineService
+            if action in TimemachineService.DEVELOPER_ONLY_ACTIONS:
                 settings = self._configuration().store.read()
                 if not bool(settings.get("developer_mode", False)):
                     return {"ok": False, "code": "DEVELOPER_MODE_REQUIRED",
@@ -1956,6 +1961,26 @@ class DesktopWebBridge:
         except Exception as exc:
             logging.getLogger(__name__).warning("몽땅클립보드 처리 실패", exc_info=True)
             return {"ok": False, "message": str(exc) or "몽땅클립보드를 처리하지 못했습니다."}
+
+    def kclip_window(self, action, payload=None):
+        """몽땅클립보드 스티커 메모형 관리창: 위치·크기·항상 위 저장·복원.
+        관리창을 열고 닫아도 상주 기록 프로그램(kagent)에는 명령을 보내지 않는다."""
+        from docfit_app import kclip_window_state
+
+        def apply_topmost(enabled):
+            window = self.window
+            if window is None:
+                return
+            if enabled is None:  # 앱 본래 항상 위 설정으로 되돌림
+                enabled = bool(self.gui._준말_서비스().settings.read().get("always_on_top", False))
+            window.set_on_top(bool(enabled))
+
+        try:
+            store = self._tk(lambda: self.gui._준말_서비스().settings)
+            return kclip_window_state.command(store, action, payload, apply_topmost)
+        except Exception as exc:
+            logging.getLogger(__name__).warning("몽땅클립보드 관리창 처리 실패", exc_info=True)
+            return {"ok": False, "message": str(exc) or "관리창 설정을 처리하지 못했습니다."}
 
     def file_rename(self, action, payload=None):
         """파일이름 탭: 목록·미리보기·적용·되돌리기(경로는 호스트에만 둔다)."""
@@ -2975,7 +3000,7 @@ class _BrowserApi:
             "clear_files", "set_mode", "set_range", "start", "stop", "start_job", "cancel_job", "get_events",
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
             "get_pending_dialog", "resolve_dialog", "enable_close_guard", "acknowledge_close", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch", "timemachine", "library", "notebook",
-            "file_rename", "kclip", "new_document", "hwp_bulk", "open_results", "next_job", "run_tool", "open_result",
+            "file_rename", "kclip", "kclip_window", "new_document", "hwp_bulk", "open_results", "next_job", "run_tool", "open_result",
             "sidebar_mode", "sidebar_mode_switch_side", "always_on_top", "window_control",
             "show_result", "open_source_file", "show_source_file", "open_result_source", "open_diff", "compare_result", "launch_external_hwp_diff", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",

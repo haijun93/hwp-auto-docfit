@@ -616,14 +616,45 @@ def _install(*, _docfit_namespace, _docfit_symbol, bind_function):
                     create_default_configs(HWP_AUTOMATION_DIR, 기본문서)
             except Exception as e:
                 로그(f"상용구 HWPX 기본 파일 준비 실패(기존 상용구는 유지): {e}")
+            # 앱 리소스는 %LOCALAPPDATA%\HWP_AutoDocFit\app_v… 캐시(또는 설치 폴더)에 막 풀린 파일이라 첫 실행 때
+            # 백신이 공유 없이 열고 검사하는 동안 open()이 '[Errno 13] Permission denied'를 낸다(v2.2.8 보고, 격리 재현).
+            # 잠시 다시 시도하고, 임시 파일로 복사한 뒤 바꿔 넣어 반쯤 복사된 파일이 '이미 있음'으로 굳지 않게 한다.
+            def 번들_복사(원본, 대상):
+                for 시도 in range(25):
+                    임시 = 대상.with_name(f"{대상.name}.{os.getpid()}.tmp")
+                    try:
+                        shutil.copyfile(원본, 임시)
+                        os.replace(임시, 대상)
+                        return
+                    except PermissionError:
+                        if 시도 == 24:
+                            raise
+                        time.sleep(0.2)
+                    finally:
+                        try:
+                            임시.unlink(missing_ok=True)
+                        except OSError:
+                            pass
+
+            복사할 = []
             번들 = 번들_상용구_파일_찾기()
             if 번들 is not None and not (글자 / 상용구_파일명).is_file():
-                shutil.copyfile(번들, 글자 / 상용구_파일명)
+                복사할.append((번들, 글자 / 상용구_파일명))
             번들_본문 = 번들_본문상용구_폴더()
             if 번들_본문 is not None:
                 for 파일 in 번들_본문.iterdir():
                     if 파일.is_file() and not (본문 / 파일.name).exists():
-                        shutil.copyfile(파일, 본문 / 파일.name)
+                        복사할.append((파일, 본문 / 파일.name))
+            실패 = []
+            for 원본, 대상 in 복사할:
+                try:
+                    번들_복사(원본, 대상)
+                except OSError as e:
+                    실패.append(e)    # 한 파일이 막혀도 나머지는 복사하고, 못 한 파일은 다음 실행 때 다시 복사한다
+            if 실패:
+                raise OSError(
+                    f"앱 리소스 {len(실패)}개를 읽지 못했습니다. 백신 검사 등으로 파일이 잠시 잠긴 것일 수 있으며 "
+                    f"다음 실행 때 다시 복사합니다. ({실패[0]})") from 실패[0]
         return bind_function(상용구_폴더_준비, _docfit_namespace)
     if _docfit_symbol == '상용구_전용폴더_찾기':
         def 상용구_전용폴더_찾기():
