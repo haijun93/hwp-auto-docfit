@@ -287,19 +287,22 @@ def handle_collect(
     all_results: list[dict[str, Any]] = []
     final_error: str | None = None
     exit_code = 0
+    # 이미 다룬 요청. 백신 등이 잡고 있어 지우지 못한 .req를 다시 모아 끝없이 도는 일을 막는다.
+    handled: set[Path] = set()
 
     try:
         while True:
-            req_files = collect_requests(
+            req_files = [p for p in collect_requests(
                 folder,
                 quiet_seconds=quiet_seconds,
                 max_wait_seconds=max_wait_seconds,
                 max_files=max_files,
                 time_func=time_func,
                 sleep_func=sleep_func,
-            )
+            ) if p not in handled]
             if not req_files:
                 break
+            handled.update(req_files)
 
             valid_paths: list[Path] = []
             for req in req_files:
@@ -344,7 +347,7 @@ def handle_collect(
 
             # 늦게 들어온 요청이 남아있는지 확인
             try:
-                remaining = [p for p in folder.glob("*.req") if p.is_file()]
+                remaining = [p for p in folder.glob("*.req") if p.is_file() and p not in handled]
             except OSError:
                 remaining = []
             if not remaining:

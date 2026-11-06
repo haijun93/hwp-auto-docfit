@@ -7,7 +7,7 @@ import tempfile
 import types
 import unittest
 import zipfile
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from docfit_core import format_samples as fs
 from tests import test_format_elements as fx
@@ -321,6 +321,56 @@ class AppFolderTest(unittest.TestCase):
             self.assertEqual(parse_hwpx(home / '글자상용구' / '글자상용구.hwpx')[0],
                              {'key': 'ㅁ', 'value': '□'})
             self.assertEqual(parse_hwpx(home / '본문상용구' / '본문상용구.hwpx')[0]['key'], 'ㅂㄱ')
+
+    def _prepare_idioms_with_locked_resource(self, open_failures):
+        """앱 캐시의 리소스가 백신 검사로 잠긴 상황: 원본 open()이 정해진 횟수만큼 Errno 13을 낸다."""
+        fn = self.ns['상용구_폴더_준비']
+        g = fn.__globals__
+        tmp = Path(self._tmp.name)
+        res = tmp / 'AppData' / 'Local' / 'HWP_AutoDocFit' / 'app_v2.2.8_test' / '_internal' / 'resources'
+        (res / 'IDIOM').mkdir(parents=True)
+        (res / 'HWP.IDO').write_bytes(b'[HWPIDIOM]')
+        (res / 'IDIOM' / 'a0000000.HWP').write_bytes(b'body')
+        home = tmp / 'HWP_AUTODOCFIT'
+        real_copyfile = g['shutil'].copyfile
+        failures = {'left': open_failures}
+
+        def copyfile(src, dst, *args, **kwargs):
+            if Path(src).name == 'HWP.IDO' and failures['left']:
+                failures['left'] -= 1
+                raise PermissionError(13, 'Permission denied', str(src))
+            return real_copyfile(src, dst, *args, **kwargs)
+
+        saved = {k: g[k] for k in ('HWP_AUTOMATION_DIR', '번들_상용구_파일_찾기', '번들_본문상용구_폴더', '로그')}
+        g.update(HWP_AUTOMATION_DIR=home, 번들_상용구_파일_찾기=lambda: res / 'HWP.IDO',
+                 번들_본문상용구_폴더=lambda: res / 'IDIOM', 로그=Mock())
+        try:
+            with patch.object(g['shutil'], 'copyfile', side_effect=copyfile), \
+                 patch.object(g['time'], 'sleep'):
+                fn()
+        finally:
+            g.update(saved)
+        return home
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+
+    def test_idiom_copy_retries_briefly_locked_bundled_resource(self):
+        home = self._prepare_idioms_with_locked_resource(open_failures=3)
+        self.assertEqual((home / '글자상용구' / 'HWP.IDO').read_bytes(), b'[HWPIDIOM]')
+        self.assertEqual((home / '본문상용구' / 'a0000000.HWP').read_bytes(), b'body')
+        self.assertFalse([p for p in (home / '글자상용구').iterdir() if p.name.endswith('.tmp')])
+
+    def test_idiom_copy_keeps_other_files_and_explains_persistent_lock(self):
+        with self.assertRaisesRegex(OSError, '백신 검사 등으로') as caught:
+            self._prepare_idioms_with_locked_resource(open_failures=1000)
+        self.assertIsInstance(caught.exception.__cause__, PermissionError)
+        self.assertIn('HWP.IDO', str(caught.exception))
+        home = Path(self._tmp.name) / 'HWP_AUTODOCFIT'
+        self.assertFalse((home / '글자상용구' / 'HWP.IDO').exists())    # 다음 실행 때 다시 복사
+        self.assertEqual((home / '본문상용구' / 'a0000000.HWP').read_bytes(), b'body')
+        self.assertFalse([p for p in (home / '글자상용구').iterdir() if p.name.endswith('.tmp')])
 
 
 if __name__ == '__main__':
