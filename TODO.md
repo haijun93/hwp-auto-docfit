@@ -496,11 +496,11 @@
 - 따라서 **확정 규칙**: ① P: 항목기호 뒤 라벨+콜론+기호(①)로 시작하면 **내어쓰기 = (① 위치) + 폭("① ")**, 즉 기호 뒤 본문 시작 ② Q: P의 연속 항목이면 **첫 줄 = ① 위치에 ②가 오도록 앞 빈칸(또는 문단 왼쪽 여백) 계산**, **내어쓰기 = (① 위치) + 폭("② ")** ③ 글꼴·크기는 P의 같은 역할 구간(본문 13pt·괄호 11pt)을 그대로. 한 문단 안에 ①②가 함께 있는 경우(문단 18 `위치: ① … ② …`)는 기존대로 첫 기호 뒤에 맞춰도 되는지 확인 필요(여기도 "① " 뒤 본문으로 갈지 6880으로 둘지는 이 규칙과 같게 일관 적용 — 5번 문서의 문단 18은 `intent -6880` 그대로이므로 사용자는 이 경우를 바꾸지 않았음 → **기호가 두 개 이상 한 줄에 있는 경우는 현재 동작 유지**(사용자 확인됨, 2026-10-24), 줄이 기호 하나로만 시작하는 경우 위 규칙).
 - 시험 자료: 5번 문서에서 뽑은 **숫자 기준값**(P `intent -9044`, Q `intent -8857`, 빈칸 11칸·자간 -5%, 글꼴 한컴돋움 13/11pt, ① 위치 6880)을 시험의 기대값(허용 오차 ±200 HWPUNIT)으로 쓴다. 5번 문서 자체는 임의 글자("ㅁㄴㅇㄹ")가 섞여 있어 저장소에 넣지 않는다.
 
-- [ ] **구현 위치**: `docfit_core/xml_hanging_indent.py`(순수 XML 내어쓰기: `hanging_indent_offset`·`hanging_indent_pair`·`marker_end_offset`·`apply_xml_hanging_indent`, `(left, intent)` 쌍을 HWPUNIT으로 계산·`header.xml`/`section*.xml`에 기록), 같은 규칙의 COM 쪽 구현(`hwp-auto-docfit.py`/`docfit_engine/formatter.py`의 내어쓰기 단계)과 **두 경로가 같은 결과**를 내는지 시험(앞선 "XML과 COM 결과 동일 검증" 원칙). 마커 종류 판별은 `docfit_core/marker_scheme.py`(`classify_marker`)·`style_hierarchy.py`(`leading_marker`) 재사용 — 원형숫자 ①~⑳, ㉮~㉻ 등이 "같은 유형"으로 묶이는지 확인·보강.
-- [ ] **규칙 정의**: ① "앞 문단"(콜론 뒤에 시작 기호가 있는 문단 P)을 찾는다 — 항목기호(□ ㅇ - • 등) + 라벨 + 콜론 + 기호(①…) ② 바로 **다음 문단 Q의 첫 글자(앞 빈칸 제외)**가 P의 그 기호와 같은 유형이면 **Q를 P의 연속 항목**으로 본다 ③ Q의 첫 줄 시작 위치 = P의 "콜론 뒤 첫 글자(①)" 위치(= P의 내어쓰기 값, 샘플 6880 HWPUNIT) — **앞 빈칸이 아니라 문단 왼쪽 여백(`left`)으로** 만든다 ④ Q의 둘째 줄 이후(글이 길어 줄바꿈 될 때)는 `② `의 폭만큼 더 들여 **② 뒤 본문 첫 글자**에 맞춘다(**5번 문서로 확정**: Q `intent -8857`) ⑤ Q 다음 문단(③…)이 계속 같은 유형이면 같은 규칙으로 이어서 적용, 유형이 바뀌거나 다른 항목기호가 나오면 끝.
-- [ ] **공백 정리와의 충돌 해결**: 지금은 공백 정리 단계가 Q의 앞 빈칸을 줄여(13→3칸) 위치를 망가뜨린다. Q가 연속 항목으로 인식되면 **앞 빈칸은 모두 지우고 위 ③의 문단 왼쪽 여백으로 대체**한다(글자 내용은 그대로 — 글자 보존 검사 통과해야 함). 연속 항목으로 인식되지 않으면 기존 동작 유지.
+- [x] **구현 위치**: `docfit_core/xml_hanging_indent.py`(순수 XML 내어쓰기: `hanging_indent_offset`·`hanging_indent_pair`·`marker_end_offset`·`apply_xml_hanging_indent`, `(left, intent)` 쌍을 HWPUNIT으로 계산·`header.xml`/`section*.xml`에 기록), 같은 규칙의 COM 쪽 구현(`hwp-auto-docfit.py`/`docfit_engine/formatter.py`의 내어쓰기 단계)과 **두 경로가 같은 결과**를 내는지 시험(앞선 "XML과 COM 결과 동일 검증" 원칙). 마커 종류 판별은 `docfit_core/marker_scheme.py`(`classify_marker`)·`style_hierarchy.py`(`leading_marker`) 재사용 — 원형숫자 ①~⑳, ㉮~㉻ 등이 "같은 유형"으로 묶이는지 확인·보강. (확인 2026-11-07: `docfit_core/continuation.py`(`is_continuation`·`inline_item`)와 `xml_hanging_indent.py`가 XML·COM 공용 오프셋을 계산; 시험 `test_continuation.py::test_xml_and_com_share_offset`)
+- [x] **규칙 정의**: ① "앞 문단"(콜론 뒤에 시작 기호가 있는 문단 P)을 찾는다 — 항목기호(□ ㅇ - • 등) + 라벨 + 콜론 + 기호(①…) ② 바로 **다음 문단 Q의 첫 글자(앞 빈칸 제외)**가 P의 그 기호와 같은 유형이면 **Q를 P의 연속 항목**으로 본다 ③ Q의 첫 줄 시작 위치 = P의 "콜론 뒤 첫 글자(①)" 위치(= P의 내어쓰기 값, 샘플 6880 HWPUNIT) — **앞 빈칸이 아니라 문단 왼쪽 여백(`left`)으로** 만든다 ④ Q의 둘째 줄 이후(글이 길어 줄바꿈 될 때)는 `② `의 폭만큼 더 들여 **② 뒤 본문 첫 글자**에 맞춘다(**5번 문서로 확정**: Q `intent -8857`) ⑤ Q 다음 문단(③…)이 계속 같은 유형이면 같은 규칙으로 이어서 적용, 유형이 바뀌거나 다른 항목기호가 나오면 끝. (확인 2026-11-07: `continuation.py::is_continuation`/`inline_item`; 시험 `test_continuation.py`의 `test_deeper_supported_labels_are_continuations_but_independent_list_is_not`·`test_inline_families_and_multiple_item_exception`)
+- [x] **공백 정리와의 충돌 해결**: 지금은 공백 정리 단계가 Q의 앞 빈칸을 줄여(13→3칸) 위치를 망가뜨린다. Q가 연속 항목으로 인식되면 **앞 빈칸은 모두 지우고 위 ③의 문단 왼쪽 여백으로 대체**한다(글자 내용은 그대로 — 글자 보존 검사 통과해야 함). 연속 항목으로 인식되지 않으면 기존 동작 유지. (확인 2026-11-07: 시험 `test_continuation.py::test_final_user_geometry_with_spaces_replaced_by_margins` — 앞 빈칸을 문단 왼쪽 여백으로 대체)
 - [ ] **안전·예외**: 앞 문단이 표·그림·각주 안이면 건드리지 않음 / 다음 문단이 다른 문단 모양(번호 매기기 목록 `heading` 등)이면 건너뜀 / 콜론이 없는 `• 위치 ① …`도 적용할지(요청은 "콜론이 오면" — 우선 콜론 있는 경우만) / 기호 유형이 같아도 번호가 이어지지 않으면(① 다음 ③) 적용 여부 / 문단 두 개가 아닌 **줄바꿈(Shift+Enter, 강제 줄바꿈)**으로 이어진 경우도 같은 규칙 / 사용자 서식 프로필의 "내어쓰기: 없음·고정값" 설정이 우선(기호 뒤/고정 값/없음 선택 시 그 규칙을 따름).
-- [ ] **시험(`tests/`)**: 위 사례를 **익명화한 합성 HWPX**(내용만 바꾼 같은 구조: `• 위치: ① …` + 다음 문단 `② …`, 앞 빈칸 3·10·13칸 변형, 줄바꿈 되는 긴 글, ③까지 세 줄, `1)`·`가.`·`(1)`·`㉮` 유형, 유형이 다른 경우(건드리지 않음), 콜론 없는 경우, 표 안, 사용자 프로필 "없음") — `ParagraphStyle`의 `(left, intent)` 값과 글자 보존·멱등(두 번 실행해도 같음)을 단언. 사용자 3개 문서는 **익명화 허락을 받은 뒤** `tests/fixtures/`에 넣을지 결정(지금은 저장소에 넣지 않음).
+- [x] **시험(`tests/`)**: 위 사례를 **익명화한 합성 HWPX**(내용만 바꾼 같은 구조: `• 위치: ① …` + 다음 문단 `② …`, 앞 빈칸 3·10·13칸 변형, 줄바꿈 되는 긴 글, ③까지 세 줄, `1)`·`가.`·`(1)`·`㉮` 유형, 유형이 다른 경우(건드리지 않음), 콜론 없는 경우, 표 안, 사용자 프로필 "없음") — `ParagraphStyle`의 `(left, intent)` 값과 글자 보존·멱등(두 번 실행해도 같음)을 단언. 사용자 3개 문서는 **익명화 허락을 받은 뒤** `tests/fixtures/`에 넣을지 결정(지금은 저장소에 넣지 않음). (확인 2026-11-07: `test_continuation.py` 8건 — 유형별 연속 판정·경계·프로필 우선·수동 줄바꿈·합성 HWPX를 실제 표준 서식 처리로 통과. 표 안·번호 불연속 등 모든 변형을 다루는지는 미확인)
 - [ ] **PC 확인**: 실제 한/글에서 2번과 같은 원본에 적용해 **②가 ① 아래에 오고, 긴 ② 문장의 둘째 줄이 ② 뒤 본문에 맞는지**(3번처럼 보이는지) 확인, 쪽 수·줄바꿈 변화 없음 확인. 한/글 글꼴·장평이 다르면 폭 계산이 달라지므로 `hangul_fonts.py`의 글자 폭 계산 사용.
 - 배경: 앞선 내어쓰기 정리에서 "괄호 라벨 기준 폐지, 콜론 라벨 기준 유지"로 정했으므로(`after_label` 폐지, `after_marker` 합침) 이번 규칙은 **콜론 라벨 기준의 확장**(콜론 뒤 본문 첫 글자가 기호일 때 다음 줄까지 같은 기준 적용)이다.
 
@@ -529,8 +529,8 @@
 
 첨부 이미지(사용자 제공, 저장소에는 넣지 않음): 한/글 **"셀 테두리/배경 > 배경" 탭** — 채우기(색 채우기 없음/색/그라데이션), 맨 아래 **"그림" 체크 → 그림 파일(삽입 그림)·"문서에 포함" 체크·채우기 유형("크기에 맞추어")·밝기·그림 효과·대비·워터마크 효과**, 적용 범위(선택된 셀/모든 셀).
 
-- [ ] **옵션 추가**: 작업 방식 카드 **"자간 정리"와 "한 번에 적용"**에 **"표 셀 내 이미지를 배경 이미지로 변경"** 켜기/끄기 옵션을 추가한다(기본값은 사용자 확인 — 한 번에 적용 제안: 끔으로 시작해 알파에서 시험 후 결정). 카드 옵션 구조는 기존 방식 그대로: `docfit_core/stage_selection.py`의 `CARD_OPTION_STAGES`(새 옵션 키 → 모드 `spacing`·`all`(`format`은 한 번에 적용 계열이므로 함께 검토)·단계 키), 세부 작업 목록에 새 단계 추가, Flutter 카드 옵션(`flutter_ui/lib/features/stages/`, `main.dart` 카드), Tk 카드(`카드_체크`), `desktop_web_ui.py`·`docfit_app/` 상태·설정 저장 키, README의 옵션 설명과 적용 전후 이미지(앞의 "옵션 설명을 적용 전후 이미지로" 항목과 함께).
-- [ ] **동작**: 표 **셀 안에 글자처럼/개체로 배치된 이미지(그림)**를 찾아 그 셀의 **배경 이미지(채우기 그림)**로 바꾼다.
+- [x] **옵션 추가**: 작업 방식 카드 **"자간 정리"와 "한 번에 적용"**에 **"표 셀 내 이미지를 배경 이미지로 변경"** 켜기/끄기 옵션을 추가한다(기본값은 사용자 확인 — 한 번에 적용 제안: 끔으로 시작해 알파에서 시험 후 결정). 카드 옵션 구조는 기존 방식 그대로: `docfit_core/stage_selection.py`의 `CARD_OPTION_STAGES`(새 옵션 키 → 모드 `spacing`·`all`(`format`은 한 번에 적용 계열이므로 함께 검토)·단계 키), 세부 작업 목록에 새 단계 추가, Flutter 카드 옵션(`flutter_ui/lib/features/stages/`, `main.dart` 카드), Tk 카드(`카드_체크`), `desktop_web_ui.py`·`docfit_app/` 상태·설정 저장 키, README의 옵션 설명과 적용 전후 이미지(앞의 "옵션 설명을 적용 전후 이미지로" 항목과 함께). (확인 2026-11-07: `stage_selection.py`의 `cell_image_to_bg` 단계(기본 꺼짐)와 Flutter 카드 옵션 `spacing_cell_image_to_bg`(`main.dart`, `option_images.dart`); 시험 `test_stage_selection.py`)
+- [x] **동작**: 표 **셀 안에 글자처럼/개체로 배치된 이미지(그림)**를 찾아 그 셀의 **배경 이미지(채우기 그림)**로 바꾼다. (확인 2026-11-07: `docfit_core/cell_image_bg.py::convert_cell_images_to_bg_hwpx`; 시험 `test_cell_image_bg.py` 변환·멱등 2건)
   - 세부 설정(사용자 지정): ① **"문서에 포함"** 켬(링크가 아니라 문서 안에 이미지 데이터를 넣어 파일을 옮겨도 그림이 유지) ② **채우기 유형 = "크기에 맞추어"**(기본값). 밝기 0%·대비 0%·효과 없음·워터마크 끔(한/글 기본값) 유지. 채우기 유형을 바꿀 수 있게 할지(바둑판·가운데·크기에 맞추어 등)는 후속 검토.
   - 변환 뒤 원래 셀 안 그림 개체는 **삭제**(중복 표시 방지) — 단, 변환에 실패하면 원래 그림을 그대로 둔다(그림이 사라지지 않게). 셀 안에 **글자와 그림이 함께** 있거나 **그림이 여러 개**인 셀은 건드리지 않고 건너뛴 이유를 기록하는 것을 기본으로 검토(그림만 있는 셀이 대상).
   - 표 밖(본문)의 그림, 글상자·도형 안 그림, 대표 이미지가 아닌 장식(로고)은 대상 아님. 병합된 셀은 병합 영역 전체가 한 셀이므로 그 셀에 적용.
@@ -566,11 +566,11 @@
 
 관련 코드(읽기 결과): Flutter 카드 `flutter_ui/lib/main.dart`(한 번에 적용 '줄 간격 적용' 스위치 `allLinespacingSwitch` ~1720행, 자간 정리 '페이지 맞춤' `spacingPageFitSwitch` ~1561행, '기존 자간 초기화' `resetSpacingSwitch` ~1588행, 값 읽기 `state['card_options']`), 옵션 이미지 `OptionImageButton('spacing_page_fit')`(옵션 키로 연결), 안내 글 `flutter_ui/lib/features/settings/setting_guides.dart`(`'한 번에 적용: 줄 간격 적용'`·`'기존 자간 초기화'` 등 이름 문자열), 설정 키·기본값 `docfit_app/settings_schema.py`(`all_linespacing: True`, `spacing_page_fit: False`, `spacing_reset_existing: None`, 변수 이름 매핑 `*_var`), 옵션 이름 사전 `docfit_app/configuration_service.py`(`'all_linespacing':'한 번에 적용: 줄 간격 적용'`, `'spacing_reset_existing'`, `'spacing_page_fit':'자간 정리: 페이지 맞춤'`), 세부 작업과 연동 `docfit_core/stage_selection.py`의 `CARD_OPTION_STAGES`(`spacing_page_fit`·`spacing_reset_existing`은 "켜면 단계를 켬"(마지막 값 False), 제외 방식은 True), Tk 카드 `docfit_ui/legacy.py`(~536~600행), WebView `desktop_web_ui.py`·`desktop_web/`.
 
-- [ ] **이름·의미 변경(제외 방식)**: `all_exclude_linespacing`·`spacing_exclude_pagefit`·`spacing_exclude_reset`을 제외 옵션으로 연결하고 `CARD_OPTION_STAGES` 마지막 값 True로 등록. 줄 간격 제외는 기존 `std_linespacing` 전달과 충돌하지 않게 처리한다. 페이지 맞춤 카드(`pagefit`) 동작은 유지한다.
-- [ ] **기존 설정 이전(마이그레이션, 필수)**: `docfit_core.config_store`에서 옛 키를 새 키로 의미를 뒤집어 옮기고 옛 키를 제거한다. `spacing_reset_existing`이 None이면 저장된 `stage_choices.spacing.reset_spacing`을 따르고, 그 값도 없으면 신규 기본을 적용한다. 이전은 멱등이어야 한다.
+- [x] **이름·의미 변경(제외 방식)**: `all_exclude_linespacing`·`spacing_exclude_pagefit`·`spacing_exclude_reset`을 제외 옵션으로 연결하고 `CARD_OPTION_STAGES` 마지막 값 True로 등록. 줄 간격 제외는 기존 `std_linespacing` 전달과 충돌하지 않게 처리한다. 페이지 맞춤 카드(`pagefit`) 동작은 유지한다. (확인 2026-11-07: `stage_selection.py` `CARD_OPTION_STAGES`에 `spacing_exclude_pagefit`·`spacing_exclude_reset`·`all_exclude_linespacing` 등록(마지막 값 True), `app_state.py`·`settings_schema.py` 연결)
+- [x] **기존 설정 이전(마이그레이션, 필수)**: `docfit_core.config_store`에서 옛 키를 새 키로 의미를 뒤집어 옮기고 옛 키를 제거한다. `spacing_reset_existing`이 None이면 저장된 `stage_choices.spacing.reset_spacing`을 따르고, 그 값도 없으면 신규 기본을 적용한다. 이전은 멱등이어야 한다. (확인 2026-11-07: `config_store.py::migrate_settings`가 옛 키를 반전 이전·제거하고 `stage_choices.spacing.reset_spacing`을 이어받음; 시험 `test_core_app_state.py::test_card_option_migration_all_combinations_and_idempotence`)
 - [x] **기본값은 현재 동작 보존**: 줄 간격 적용 제외 off, 페이지 맞춤 제외 on, 자간 초기화 제외는 reset_spacing 기본값의 반대.
-- [ ] **연동 규칙 점검**: 자간 정리 카드는 "자간 정리"(`spacing_enabled`)와 "페이지 맞춤" 중 **하나 이상 켜져 있어야** 실행한다(현재 안내 문구 "자간 정리 또는 페이지 맞춤을 하나 이상 켜 주세요", `작업시작`의 검사). "페이지 맞춤 제외"로 바뀌면 이 검사를 **"자간 정리를 끄고 페이지 맞춤도 제외하면 할 일이 없음"**으로 다시 정의하고(`spacing_enabled=off` ∧ `spacing_exclude_pagefit=on`이면 실행 불가 안내), `기존 자간 초기화 제외`는 자간 정리가 꺼져 있으면 의미가 없으므로 비활성(현재처럼 `!spacingEnabled`일 때 스위치 잠금) 유지. 한 번에 적용의 "자간 조정 포함"·"표 제외"·"페이지 맞춤 제외"와 이름·배치 일관성(제외 옵션끼리 모아 표시) 확인.
-- [ ] **시험**: 새 옵션 방향, 마이그레이션 조합·멱등, 기본값 동작 보존, 자간 정리 시작 검사, Flutter 위젯, pagefit 회귀를 검증.
+- [x] **연동 규칙 점검**: 자간 정리 카드는 "자간 정리"(`spacing_enabled`)와 "페이지 맞춤" 중 **하나 이상 켜져 있어야** 실행한다(현재 안내 문구 "자간 정리 또는 페이지 맞춤을 하나 이상 켜 주세요", `작업시작`의 검사). "페이지 맞춤 제외"로 바뀌면 이 검사를 **"자간 정리를 끄고 페이지 맞춤도 제외하면 할 일이 없음"**으로 다시 정의하고(`spacing_enabled=off` ∧ `spacing_exclude_pagefit=on`이면 실행 불가 안내), `기존 자간 초기화 제외`는 자간 정리가 꺼져 있으면 의미가 없으므로 비활성(현재처럼 `!spacingEnabled`일 때 스위치 잠금) 유지. 한 번에 적용의 "자간 조정 포함"·"표 제외"·"페이지 맞춤 제외"와 이름·배치 일관성(제외 옵션끼리 모아 표시) 확인. (확인 2026-11-07: `desktop_web_ui.py:1205`·`docfit_ui/legacy.py`가 '자간 정리를 끄고 페이지 맞춤도 제외하면 할 일이 없습니다' 안내)
+- [x] **시험**: 새 옵션 방향, 마이그레이션 조합·멱등, 기본값 동작 보존, 자간 정리 시작 검사, Flutter 위젯, pagefit 회귀를 검증. (확인 2026-11-07: `test_stage_selection.py`·`test_core_app_state.py`·`test_all_linespacing.py`·`flutter_ui/test/spacing_page_only_test.dart`)
 
 ## [완료] 표그림판 — 셀 단위 "정밀 지우개" 추가 (사용자 요청, 2026-10-24)
 요구: 현재 지우개는 사용자가 그린 **여러 셀에 걸친 선(과 사각형)을 통째로** 지운다. 새 **정밀 지우개**는 같은 선이라도 **셀 1개 단위로** 지운다. (달성: 커밋 `0be3d6f`, `f0cacd4`, 단위 시험 및 위젯 시험 100% PASS)
@@ -788,17 +788,17 @@
 - [ ] **S1 (높음) 업데이트 무결성 신뢰 근원 분리**: SHA-256이 exe와 같은 릴리스에서 와서 계정 탈취 시 함께 바뀔 수 있음.
   exe 코드서명(Authenticode), 별도 경로의 서명된 `latest.json`(Ed25519, 공개키 앱 내장), 릴리스 계정 2단계 인증·권한 최소화.
   (`docfit_core/updater.py` `expected_sha256`) — 위의 "업데이트 확인 403" 항목(정적 `latest.json`)과 함께 설계하면 중복이 없다.
-- [ ] **S2 (중간) 압축 해제 방어 공용화**: 크기·압축률 상한이 `docfit_core/hwpx.py`에만 있고 `ZipFile` 직접 열기 약 20곳에는 없음(압축 폭탄 → 메모리 고갈).
+- [ ] **S2 (중간) 압축 해제 방어 공용화**: 크기·압축률 상한이 `docfit_core/hwpx.py`에만 있고 `ZipFile` 직접 열기 약 20곳에는 없음(압축 폭탄 → 메모리 고갈). 남은 일: `open_hwpx_safely`는 37개 파일 93곳에 적용(시험 `test_timemachine_thumbs.py::test_archive_limits_block_zip_bomb`)됐으나 `ZipFile(` 직접 열기가 비시험 코드에 44곳 남아 있음(일부는 스크립트·쓰기용).
   공용 `open_hwpx_safely()`를 만들어 모든 열기에 적용하고 폭탄 HWPX 시험을 추가.
-- [ ] **S3 (중간) kordoc 공급망**: 사전 설치본이 없으면 `npx -y kordoc@4.21.6`을 실행 시점에 받음(`docfit_core/kordoc_bridge.py:79`).
+- [x] **S3 (중간) kordoc 공급망**: 사전 설치본이 없으면 `npx -y kordoc@4.21.6`을 실행 시점에 받음(`docfit_core/kordoc_bridge.py:79`). (확인 2026-11-07: `kordoc_bridge.py`가 번들·사전 설치본을 우선하고 npx는 `DOCFIT_ALLOW_NPX_DOWNLOAD=1`+온라인일 때만 사용, 설치는 `npm ci --ignore-scripts`, `kordoc_pack/package-lock.json` 고정; 시험 `test_kordoc_contract.py`·`test_offline_runtime.py`)
   번들·사전 설치 + `package-lock.json` 무결성, npx 경로는 `--ignore-scripts`·`--no-install` 또는 명시 동의 뒤에만.
-- [ ] **S4 (중간) 업데이트 스크립트 바꿔치기**: 교체용 `.ps1`을 사용자 쓰기 가능 폴더에 쓰고 `-ExecutionPolicy Bypass`로 실행(`hwp-auto-docfit.py` ~20200).
+- [x] **S4 (중간) 업데이트 스크립트 바꿔치기**: 교체용 `.ps1`을 사용자 쓰기 가능 폴더에 쓰고 `-ExecutionPolicy Bypass`로 실행(`hwp-auto-docfit.py` ~20200). (확인 2026-11-07: `docfit_core/updater.py` `powershell_command`가 스크립트를 파일로 쓰지 않고 `-EncodedCommand`로 실행; 시험 `test_updater.py::test_encoded_command_runs_script_with_quoted_parameters`)
   내장 스크립트를 `-EncodedCommand`로 넘기거나 쓴 직후 해시 확인.
 - [x] **S5 (중간) 빌드 파이프라인 — 액션 SHA 고정 완료(2026-11-01)**: `.github/workflows/*.yml`의 `uses:` 14곳을 태그 원격 커밋 SHA로 고정하고 태그 주석을 추가. 해시 고정 설치(`pip install --require-hashes`), 권한 최소화, 산출물 증명·SBOM은 별도 남은 일.
-- [ ] **S6 (낮음) WebView 화면 CSP**: `desktop_web/index.html`에 CSP 메타 추가(`default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'`), Flutter 화면도 검토.
-- [ ] **S7 (낮음) `add_paths` 경로 검증**: 확장자 허용 목록, 파일 존재, 심볼릭 링크 검사(`desktop_web_ui.py:189`).
+- [ ] **S6 (낮음) WebView 화면 CSP**: `desktop_web/index.html`에 CSP 메타 추가(`default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'`), Flutter 화면도 검토. 남은 일: WebView `index.html` CSP 메타는 적용됨(`tests/test_desktop_file_drop.py`가 확인). Flutter 화면 CSP 검토는 남음.
+- [x] **S7 (낮음) `add_paths` 경로 검증**: 확장자 허용 목록, 파일 존재, 심볼릭 링크 검사(`desktop_web_ui.py:189`). (확인 2026-11-07: `desktop_web_ui.py` `add_paths`가 심볼릭 링크 건너뜀·`resolve(strict=True)`로 존재 확인·확장자 허용 목록 적용, 선택 등록(`register_selection`) 경유)
 - [x] **S8 (낮음) 임시 파일 정리 보장 — 분류·누수 보완 완료(2026-11-01)**: 분류표 `docs/SECURITY_S8_TEMPFILES.md`. 변환 중간 폴더를 `TemporaryDirectory`로 관리하고 예외 경로 시험을 추가. 사용자 결과·COM 사용 경로는 유지.
-- [ ] **S9 (정보) `MapoHwpAutoDocFitSecurity.dll` 출처 문서화**: 출처·해시·소스를 `SECURITY.md`에 기재.
+- [ ] **S9 (정보) `MapoHwpAutoDocFitSecurity.dll` 출처 문서화**: 출처·해시·소스를 `SECURITY.md`에 기재. 남은 일: `SECURITY.md`에 역할·설치 위치·SHA-256(시험 `test_security_module.py`로 고정)은 기재됨. 출처·소스는 '확인 필요'로 남아 있음.
 - [ ] **소개 사이트(Vercel) 강화**: 인라인 스타일을 CSS로 옮겨 CSP에서 `'unsafe-inline'` 제거, Google Fonts 자체 호스팅, COOP/CORP/COEP·보안 헤더(`docs/Vercel_보안_검토_2026-10-12.md`의 `vercel.json` 초안),
   Deployment Protection(Preview 인증)·Spend Management·2단계 인증, `/.well-known/security.txt`. 미리보기 보호는 GitHub/GitLab에 같은 기능이 없어 Vercel 쪽 설정(또는 GitLab Pages "구성원만")으로 한다.
 - 권장 순서: S1 → S2 → S3 → S5 → 나머지(S6·S7은 위험이 작고 바로 가능).
@@ -1592,12 +1592,12 @@ PyPI의 `pyhwpx`·`hwpapi` 패키지 소스(포럼 문서 사이트는 이 환�
 5. 실패 시 원복 비용 약 11초(102곳 ≈ 0.1초/곳).
 
 **개선 과제** (효과가 큰 순서):
-- [ ] **최대치 선시도**: 1단계에서 10pt(아래·위·표 여백)를 한 번에 적용해 목표에 닿는지 확인, 안 닿으면 즉시 포기·원복.
+- [x] **최대치 선시도**: 1단계에서 10pt(아래·위·표 여백)를 한 번에 적용해 목표에 닿는지 확인, 안 닿으면 즉시 포기·원복. (확인 2026-11-07: `docfit_core/page_fit_search.py::search_level`이 최대 레벨을 먼저 측정해 못 닿으면 즉시 실패, `page_fit.py::_보고서_페이지수_맞춤_고속`이 실패 시 원복; 시험 `test_page_fit_search.py::test_gives_up_after_one_measurement_when_max_level_fails`)
       이번 사례 약 321초 → 약 45초 예상(−86%).
-- [ ] **이분 탐색**: 닿는 것이 확인되면 1~10pt를 이분 탐색(쪽 수는 줄일수록 단조 감소). 최악 10단계 → 약 4단계.
-- [ ] **표·셀 정보 캐시**: 표 묶음·한 칸 표 영역·셀 원래 여백·소속 쪽을 시도 시작 때 한 번만 수집. 12쪽 이전 표는 아예 제외.
-- [ ] **순회 범위 축소**: 문서 처음부터 걷지 않고 `최소쪽`의 첫 문단으로 바로 이동. 묶음 검사에도 동일 적용.
-- [ ] **진행 없음 중단·시간 상한**: (마지막 쪽, 줄 수)가 3단계 연속 같으면 중단, 60초 상한과 경과 시간 로그.
+- [x] **이분 탐색**: 닿는 것이 확인되면 1~10pt를 이분 탐색(쪽 수는 줄일수록 단조 감소). 최악 10단계 → 약 4단계. (확인 2026-11-07: `search_level`이 레벨 이분 탐색; 시험 `test_finds_minimum_level_with_few_measurements`)
+- [x] **표·셀 정보 캐시**: 표 묶음·한 칸 표 영역·셀 원래 여백·소속 쪽을 시도 시작 때 한 번만 수집. 12쪽 이전 표는 아예 제외. (확인 2026-11-07: `쪽맞춤_대상_조사`가 문단·표 셀 원래 값을 시도 시작 때 한 번만 수집하고 `최소쪽` 이전 쪽은 제외)
+- [ ] **순회 범위 축소**: 문서 처음부터 걷지 않고 `최소쪽`의 첫 문단으로 바로 이동. 묶음 검사에도 동일 적용. 남은 일: 보고서 문단 범위가 주어질 때만 그 첫 문단으로 바로 이동(`쪽맞춤_대상_조사`)하고, 범위가 없으면 문서 처음부터 걷는다. `최소쪽`의 첫 문단으로 바로 이동하는 경로는 확인 못 함.
+- [ ] **진행 없음 중단·시간 상한**: (마지막 쪽, 줄 수)가 3단계 연속 같으면 중단, 60초 상한과 경과 시간 로그. 남은 일: 고속 탐색에 경과 시간 로그(`[쪽 수 맞춤 고속]`)는 있으나 '3단계 연속 같으면 중단'·60초 상한은 코드에서 확인 못 함.
 - [x] **계측 로그**(2026-10-08 구현, 단계 A — 사용자 확인 대기): 단계별 소요를 문단 간격 / 표 여백 / 쪽 측정 / 묶음 검사로 나눠 기록. **다른 개선보다 먼저 넣고** 이번 문서
       사본으로 현재 상태를 측정한다(위 시간은 추정이므로).
       로그 형식: 단계마다 `[쪽 수 맞춤 계측] 아래 간격 3단계: 문단 간격 …초(순회 + 쓰기) / 표 여백 …초(표 스캔 + 셀 읽기 + 셀 쓰기 + 기타)
