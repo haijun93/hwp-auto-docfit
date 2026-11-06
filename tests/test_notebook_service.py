@@ -52,6 +52,20 @@ class NotebookServiceTests(unittest.TestCase):
 
     def test_commands_are_allowed_by_bridge(self):
         self.assertTrue(NOTEBOOK_COMMANDS <= ALLOWED_COMMANDS)
+        self.assertIn("nb_compare", NOTEBOOK_COMMANDS)
+
+    def test_compare_and_tagged_note_requests_pass_through(self):
+        bridge = FakeBridge()
+        service = NotebookService(bridge, extractor=mock.Mock())
+        requests = [
+            {"cmd": "nb_compare", "notebook_id": 1, "query": "복지 예산", "source_ids": [2, 3], "per_source": 3},
+            {"cmd": "nb_note_save", "notebook_id": 1, "title": "메모", "body": "", "tags": ["예산"]},
+            {"cmd": "nb_note_list", "notebook_id": 1, "tag": "예산"},
+            {"cmd": "nb_export_md", "notebook_id": 1, "note_id": 4, "compare_query": "복지"},
+        ]
+        for request in requests:
+            service.handle(request)
+        self.assertEqual(bridge.calls, requests)
 
     def test_only_old_hwp_and_pdf_use_python_extraction(self):
         self.assertTrue(needs_python_extraction("C:/자료/옛보고서.HWP"))

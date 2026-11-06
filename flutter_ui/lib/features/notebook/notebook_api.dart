@@ -88,18 +88,45 @@ class NbCitation {
 }
 
 class NbNote {
-  const NbNote({this.id, required this.title, required this.body, this.citations = const []});
+  const NbNote({this.id, required this.title, required this.body, this.citations = const [], this.tags = const []});
   final int? id;
   final String title;
   final String body;
   final List<NbCitation> citations;
 
-  NbNote copyWith({int? id, String? title, String? body, List<NbCitation>? citations}) => NbNote(
+  /// 노트 태그(앞 '#' 없이, 넣은 순서).
+  final List<String> tags;
+
+  NbNote copyWith({int? id, String? title, String? body, List<NbCitation>? citations, List<String>? tags}) => NbNote(
     id: id ?? this.id,
     title: title ?? this.title,
     body: body ?? this.body,
     citations: citations ?? this.citations,
+    tags: tags ?? this.tags,
   );
+}
+
+/// 출처 비교 한 칸: 한 출처에서 찾은 근거 문단(점수순). 근거가 없으면 [hits]가 비어 있다.
+class NbCompareGroup {
+  const NbCompareGroup({required this.sourceId, required this.displayName, required this.hits, this.origin = ''});
+  final int sourceId;
+  final String displayName;
+  final String origin;
+  final List<NbHit> hits;
+}
+
+/// 태그 입력 글을 태그 목록으로 바꾼다(쉼표·공백 구분, 앞 '#' 제거, 30자, 대소문자 무시 중복 제거, 최대 20개). klib 규칙과 같다.
+List<String> parseNbTags(String text) {
+  final out = <String>[];
+  for (final raw in text.split(RegExp(r'[,，\s]+'))) {
+    var tag = raw.trim().replaceFirst(RegExp(r'^#+'), '').trim();
+    if (tag.isEmpty) continue;
+    if (tag.runes.length > 30) tag = String.fromCharCodes(tag.runes.take(30));
+    if (out.any((t) => t.toLowerCase() == tag.toLowerCase())) continue;
+    out.add(tag);
+    if (out.length >= 20) break;
+  }
+  return out;
 }
 
 const kNbTransformTypes = <String, String>{'outline': '개요', 'tables': '표', 'numbers': '숫자 문장', 'keywords': '핵심어'};
@@ -114,11 +141,16 @@ abstract class NotebookApi {
   Future<void> removeSource(int notebookId, int sourceId);
   Future<List<NbParagraph>> paragraphs(int notebookId, int sourceId);
   Future<List<NbHit>> search(int notebookId, String query, {List<int>? sourceIds, int limit = 20});
+
+  /// 같은 검색어로 출처마다 근거를 찾아 출처별로 나란히 놓는다(근거 많은 출처 먼저, 근거 없는 출처는 빈 칸).
+  Future<List<NbCompareGroup>> compare(int notebookId, String query, {List<int>? sourceIds, int perSource = 3});
   Future<List<NbTransformRow>> transform(int notebookId, String type, {List<int>? sourceIds});
   Future<List<NbNote>> listNotes(int notebookId);
   Future<int> saveNote(int notebookId, NbNote note);
   Future<void> deleteNote(int notebookId, int noteId);
-  Future<String> exportMarkdown(int notebookId, int noteId);
+
+  /// [compareQuery]가 있으면 그 검색어의 출처 비교 절([compareSourceIds] 범위)을 뒤에 붙인다.
+  Future<String> exportMarkdown(int notebookId, int noteId, {String? compareQuery, List<int>? compareSourceIds});
 
   /// 창에 끌어 놓은 파일을 노트북 출처로 받기 켜기·끄기(노트북 화면이 열려 있는 동안 켠다).
   Future<void> watchDrops(bool active);
@@ -133,6 +165,16 @@ int _int(Object? v) => v is num ? v.toInt() : int.tryParse('$v') ?? 0;
 double _double(Object? v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
 String _str(Object? v) => v?.toString() ?? '';
 List<Map> _rows(Object? v) => v is List ? v.whereType<Map>().toList() : const [];
+List<String> _strs(Object? v) => v is List ? [for (final x in v) '$x'] : const [];
+
+NbHit _hit(Map r) => NbHit(
+  sourceId: _int(r['source_id']),
+  ordinal: _int(r['ordinal']),
+  displayName: _str(r['display_name']),
+  body: _str(r['body']),
+  score: _double(r['score']),
+  location: _str(r['location']),
+);
 
 class BridgeNotebookApi implements NotebookApi {
   BridgeNotebookApi(this._call);
@@ -204,13 +246,24 @@ class BridgeNotebookApi implements NotebookApi {
         'source_ids': ?sourceIds,
       }))['results'],
     ))
-      NbHit(
-        sourceId: _int(r['source_id']),
-        ordinal: _int(r['ordinal']),
-        displayName: _str(r['display_name']),
-        body: _str(r['body']),
-        score: _double(r['score']),
-        location: _str(r['location']),
+      _hit(r),
+  ];
+
+  @override
+  Future<List<NbCompareGroup>> compare(int notebookId, String query, {List<int>? sourceIds, int perSource = 3}) async => [
+    for (final g in _rows(
+      (await _request('nb_compare', {
+        'notebook_id': notebookId,
+        'query': query,
+        'per_source': perSource,
+        'source_ids': ?sourceIds,
+      }))['groups'],
+    ))
+      NbCompareGroup(
+        sourceId: _int(g['source_id']),
+        displayName: _str(g['display_name']),
+        origin: _str(g['origin']),
+        hits: [for (final h in _rows(g['hits'])) _hit(h)],
       ),
   ];
 
@@ -235,6 +288,7 @@ class BridgeNotebookApi implements NotebookApi {
         id: _int(r['id']),
         title: _str(r['title']),
         body: _str(r['body']),
+        tags: _strs(r['tags']),
         citations: [
           for (final c in _rows(r['citations']))
             NbCitation(
@@ -253,6 +307,7 @@ class BridgeNotebookApi implements NotebookApi {
       if (note.id != null) 'id': note.id,
       'title': note.title,
       'body': note.body,
+      'tags': note.tags,
       'citations': [
         for (final c in note.citations)
           {'source_id': c.sourceId, 'paragraph_ordinal': c.paragraphOrdinal, 'quote': c.quote},
@@ -265,8 +320,17 @@ class BridgeNotebookApi implements NotebookApi {
       _request('nb_note_delete', {'notebook_id': notebookId, 'id': noteId});
 
   @override
-  Future<String> exportMarkdown(int notebookId, int noteId) async =>
-      _str((await _request('nb_export_md', {'notebook_id': notebookId, 'note_id': noteId}))['markdown']);
+  Future<String> exportMarkdown(int notebookId, int noteId, {String? compareQuery, List<int>? compareSourceIds}) async =>
+      _str(
+        (await _request('nb_export_md', {
+          'notebook_id': notebookId,
+          'note_id': noteId,
+          if (compareQuery != null && compareQuery.trim().isNotEmpty) ...{
+            'compare_query': compareQuery.trim(),
+            'compare_source_ids': ?compareSourceIds,
+          },
+        }))['markdown'],
+      );
 
   @override
   Future<void> watchDrops(bool active) => _request('nb_drop_watch', {'active': active});
@@ -363,6 +427,21 @@ class InMemoryNotebookApi implements NotebookApi {
   }
 
   @override
+  Future<List<NbCompareGroup>> compare(int notebookId, String query, {List<int>? sourceIds, int perSource = 3}) async {
+    final groups = <NbCompareGroup>[];
+    for (final source in _scope(notebookId, sourceIds)) {
+      final hits = await search(notebookId, query, sourceIds: [source.id], limit: perSource);
+      groups.add(NbCompareGroup(sourceId: source.id, displayName: source.displayName, origin: source.origin, hits: hits));
+    }
+    double best(NbCompareGroup g) => g.hits.isEmpty ? double.negativeInfinity : g.hits.first.score;
+    groups.sort((a, b) {
+      final byScore = best(b).compareTo(best(a));
+      return byScore != 0 ? byScore : a.sourceId.compareTo(b.sourceId);
+    });
+    return groups;
+  }
+
+  @override
   Future<List<NbTransformRow>> transform(int notebookId, String type, {List<int>? sourceIds}) async {
     final rows = <NbTransformRow>[];
     for (final source in _scope(notebookId, sourceIds)) {
@@ -385,7 +464,7 @@ class InMemoryNotebookApi implements NotebookApi {
   Future<int> saveNote(int notebookId, NbNote note) async {
     final list = _notes[notebookId] ??= [];
     final id = note.id ?? _next++;
-    final saved = note.copyWith(id: id);
+    final saved = note.copyWith(id: id, tags: parseNbTags(note.tags.join(' ')));
     final index = list.indexWhere((n) => n.id == id);
     if (index >= 0) {
       list[index] = saved;
@@ -399,14 +478,27 @@ class InMemoryNotebookApi implements NotebookApi {
   Future<void> deleteNote(int notebookId, int noteId) async => _notes[notebookId]?.removeWhere((n) => n.id == noteId);
 
   @override
-  Future<String> exportMarkdown(int notebookId, int noteId) async {
+  Future<String> exportMarkdown(int notebookId, int noteId, {String? compareQuery, List<int>? compareSourceIds}) async {
     final note = (_notes[notebookId] ?? const <NbNote>[]).firstWhere(
       (n) => n.id == noteId,
       orElse: () => throw StateError('노트를 찾을 수 없습니다.'),
     );
-    final buffer = StringBuffer('# ${note.title}\n\n${note.body}\n');
+    final buffer = StringBuffer('# ${note.title}\n\n');
+    if (note.tags.isNotEmpty) buffer.write('태그: ${note.tags.map((t) => '#$t').join(' ')}\n\n');
+    buffer.write('${note.body}\n');
     for (final c in note.citations) {
       buffer.write('\n> ${c.quote}\n');
+    }
+    final query = compareQuery?.trim() ?? '';
+    if (query.isNotEmpty) {
+      buffer.write('\n## 출처 비교: $query\n');
+      for (final g in await compare(notebookId, query, sourceIds: compareSourceIds)) {
+        buffer.write('\n### ${g.displayName}\n');
+        if (g.hits.isEmpty) buffer.write('\n근거 문단 없음\n');
+        for (final h in g.hits) {
+          buffer.write('\n> ${h.body}\n> — 문단 ${h.ordinal}\n');
+        }
+      }
     }
     return buffer.toString();
   }

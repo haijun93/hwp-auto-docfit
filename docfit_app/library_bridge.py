@@ -30,7 +30,7 @@ ALLOWED_COMMANDS = frozenset({
 
     "nb_source_add", "nb_source_list", "nb_source_remove", "nb_source_paragraphs", "nb_index",
 
-    "nb_search", "nb_transform", "nb_note_save", "nb_note_list", "nb_note_delete", "nb_export_md",
+    "nb_search", "nb_transform", "nb_note_save", "nb_note_list", "nb_note_delete", "nb_export_md", "nb_compare",
 
 })
 

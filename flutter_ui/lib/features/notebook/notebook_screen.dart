@@ -11,7 +11,7 @@ import 'notebook_api.dart';
 /// 폭이 [kNotebookWideWidth] 미만이면 세 칸을 탭으로 바꾼다.
 const kNotebookWideWidth = 1000.0;
 
-enum _Middle { search, preview, transform }
+enum _Middle { search, compare, preview, transform }
 
 /// 창에 파일을 끌어 놓았다는 알림을 듣는다. 돌려준 함수를 부르면 듣기를 멈춘다.
 typedef NotebookDropWatcher = void Function() Function(void Function() onDrop);
@@ -42,6 +42,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
   final _queryController = TextEditingController();
   final _titleController = TextEditingController();
   final _bodyController = TextEditingController();
+  final _tagsController = TextEditingController();
 
   List<Notebook> _notebooks = [];
   Notebook? _notebook;
@@ -57,6 +58,14 @@ class _NotebookScreenState extends State<NotebookScreen> {
   int? _previewOrdinal;
   String _transformType = 'outline';
   List<NbTransformRow> _transformRows = [];
+  List<NbCompareGroup> _compareGroups = [];
+
+  /// 마지막으로 출처 비교한 검색어와 범위. 있으면 Markdown 내보내기에 출처 비교 절을 붙인다.
+  String? _compareQuery;
+  List<int>? _compareScope;
+
+  /// 노트 목록을 거르는 태그(null이면 전체).
+  String? _tagFilter;
   String? _status;
   bool _busy = false;
   bool _loaded = false;
@@ -77,6 +86,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
     _queryController.dispose();
     _titleController.dispose();
     _bodyController.dispose();
+    _tagsController.dispose();
     super.dispose();
   }
 
@@ -117,8 +127,25 @@ class _NotebookScreenState extends State<NotebookScreen> {
       // 새로 들어온 출처는 근거 찾기 범위에 넣어 둔다.
       _checked.addAll(sources.where((s) => !known.contains(s.id)).map((s) => s.id));
       _notes = notes;
+      if (_tagFilter != null && !notes.any((n) => n.tags.contains(_tagFilter))) _tagFilter = null;
     });
   }
+
+  /// 노트북의 태그와 노트 수(많은 순, 같으면 이름순).
+  List<(String, int)> get _tagCounts {
+    final counts = <String, int>{};
+    for (final note in _notes) {
+      for (final tag in note.tags) {
+        counts[tag] = (counts[tag] ?? 0) + 1;
+      }
+    }
+    final list = [for (final e in counts.entries) (e.key, e.value)];
+    list.sort((a, b) => b.$2 != a.$2 ? b.$2.compareTo(a.$2) : a.$1.compareTo(b.$1));
+    return list;
+  }
+
+  List<NbNote> get _visibleNotes =>
+      _tagFilter == null ? _notes : _notes.where((n) => n.tags.contains(_tagFilter)).toList();
 
   void _selectNotebook(Notebook nb) {
     setState(() {
@@ -127,6 +154,10 @@ class _NotebookScreenState extends State<NotebookScreen> {
       _checked.clear();
       _hits = [];
       _transformRows = [];
+      _compareGroups = [];
+      _compareQuery = null;
+      _compareScope = null;
+      _tagFilter = null;
       _previewSource = null;
       _previewParagraphs = [];
       _newNote();
@@ -265,6 +296,33 @@ class _NotebookScreenState extends State<NotebookScreen> {
     });
   }
 
+  /// 같은 검색어의 근거를 출처마다 따로 찾아 나란히 보여 준다.
+  Future<void> _compare() async {
+    final nb = _notebook;
+    final query = _queryController.text.trim();
+    if (nb == null || query.isEmpty) {
+      setState(() => _status = '비교할 검색어를 입력하세요.');
+      return;
+    }
+    if (_checked.isEmpty) {
+      setState(() => _status = '비교할 출처를 하나 이상 고르세요.');
+      return;
+    }
+    final scope = _scope;
+    await _run(() async {
+      final groups = await widget.api.compare(nb.id, query, sourceIds: scope);
+      if (!mounted) return;
+      final found = groups.where((g) => g.hits.isNotEmpty).length;
+      setState(() {
+        _compareGroups = groups;
+        _compareQuery = query;
+        _compareScope = scope;
+        _middle = _Middle.compare;
+        _status = '출처 ${groups.length}개 중 $found개에서 근거를 찾았습니다.';
+      });
+    });
+  }
+
   Future<void> _transform(String type) async {
     final nb = _notebook;
     if (nb == null) return;
@@ -306,6 +364,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
     _noteId = null;
     _titleController.clear();
     _bodyController.clear();
+    _tagsController.clear();
     _citations = [];
   }
 
@@ -314,6 +373,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
       _noteId = note.id;
       _titleController.text = note.title;
       _bodyController.text = note.body;
+      _tagsController.text = note.tags.join(', ');
       _citations = List.of(note.citations);
     });
   }
@@ -325,10 +385,17 @@ class _NotebookScreenState extends State<NotebookScreen> {
     await _run(() async {
       final id = await widget.api.saveNote(
         nb.id,
-        NbNote(id: _noteId, title: title, body: _bodyController.text, citations: _citations),
+        NbNote(
+          id: _noteId,
+          title: title,
+          body: _bodyController.text,
+          citations: _citations,
+          tags: parseNbTags(_tagsController.text),
+        ),
       );
       _noteId = id;
       _titleController.text = title;
+      _tagsController.text = parseNbTags(_tagsController.text).join(', ');
       await _loadNotebookContent();
     }, done: '노트를 저장했습니다.');
   }
@@ -351,13 +418,24 @@ class _NotebookScreenState extends State<NotebookScreen> {
       setState(() => _status = '먼저 노트를 저장하세요.');
       return;
     }
+    final compareQuery = _compareQuery;
     String markdown = '';
-    await _run(() async => markdown = await widget.api.exportMarkdown(nb.id, id));
+    await _run(
+      () async => markdown = await widget.api.exportMarkdown(
+        nb.id,
+        id,
+        compareQuery: compareQuery,
+        compareSourceIds: _compareScope,
+      ),
+    );
     if (!mounted || markdown.isEmpty) return;
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Markdown 내보내기'),
+        title: Text(
+          compareQuery == null ? 'Markdown 내보내기' : 'Markdown 내보내기(출처 비교: $compareQuery 포함)',
+          overflow: TextOverflow.ellipsis,
+        ),
         content: SizedBox(
           width: 560,
           height: 360,
@@ -570,6 +648,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
             children: [
               for (final (mode, key, label) in const [
                 (_Middle.search, 'nb-mid-search', '근거 찾기'),
+                (_Middle.compare, 'nb-mid-compare', '출처 비교'),
                 (_Middle.preview, 'nb-mid-preview', '미리보기'),
                 (_Middle.transform, 'nb-mid-transform', '변환'),
               ])
@@ -586,6 +665,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
         Expanded(
           child: switch (_middle) {
             _Middle.search => _searchView(),
+            _Middle.compare => _compareView(),
             _Middle.preview => _previewView(),
             _Middle.transform => _transformView(),
           },
@@ -664,6 +744,127 @@ class _NotebookScreenState extends State<NotebookScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  /// 출처 비교: 같은 검색어의 근거 문단을 출처마다 한 칸씩 나란히 놓는다. 칸이 많으면 가로로 넘긴다.
+  Widget _compareView() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  key: const ValueKey('nb-compare-query'),
+                  controller: _queryController,
+                  decoration: const InputDecoration(
+                    hintText: '출처마다 비교할 검색어(예: 복지 예산)',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  onSubmitted: (_) => _compare(),
+                ),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                key: const ValueKey('nb-compare-run'),
+                onPressed: _busy ? null : _compare,
+                child: const Text('비교'),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: _compareGroups.isEmpty
+              ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(12),
+                    child: Text('검색어를 넣고 비교를 누르면 체크한 출처마다 근거 문단을 나란히 보여 줍니다.'),
+                  ),
+                )
+              : Scrollbar(
+                  child: ListView.separated(
+                    key: const ValueKey('nb-compare'),
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                    itemCount: _compareGroups.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 8),
+                    itemBuilder: (context, i) => _compareColumn(_compareGroups[i]),
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _compareColumn(NbCompareGroup group) {
+    return Container(
+      key: ValueKey('nb-compare-col-${group.sourceId}'),
+      width: 280,
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            color: const Color(0xFFF1F5F9),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Text(
+              '${group.displayName} · 근거 ${group.hits.length}개',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Expanded(
+            child: group.hits.isEmpty
+                ? const Center(
+                    child: Text('근거 문단 없음', style: TextStyle(color: Colors.black45)),
+                  )
+                : ListView(
+                    padding: const EdgeInsets.all(6),
+                    children: [
+                      for (var i = 0; i < group.hits.length; i++)
+                        Card(
+                          key: ValueKey('nb-compare-hit-${group.sourceId}-$i'),
+                          child: InkWell(
+                            onTap: () => _preview(group.sourceId, group.hits[i].ordinal),
+                            child: Padding(
+                              padding: const EdgeInsets.all(8),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '문단 ${group.hits[i].ordinal + 1}${group.hits[i].location.isEmpty ? '' : ' · ${group.hits[i].location}'} · 점수 ${group.hits[i].score.toStringAsFixed(1)}',
+                                    style: const TextStyle(fontSize: 12, color: Colors.black54),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  _highlighted(group.hits[i].body, _compareQuery ?? ''),
+                                  Align(
+                                    alignment: Alignment.centerRight,
+                                    child: IconButton(
+                                      key: ValueKey('nb-compare-cite-${group.sourceId}-$i'),
+                                      tooltip: '노트에 인용',
+                                      icon: const Icon(Icons.format_quote, size: 18),
+                                      onPressed: () =>
+                                          _cite(group.sourceId, group.hits[i].ordinal, group.hits[i].body),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -780,10 +981,12 @@ class _NotebookScreenState extends State<NotebookScreen> {
   }
 
   Widget _notesPane() {
+    final tags = _tagCounts;
+    final visible = _visibleNotes;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _paneHeader('노트 ${_notes.length}', [
+        _paneHeader(_tagFilter == null ? '노트 ${_notes.length}' : '노트 ${visible.length}/${_notes.length}', [
           TextButton.icon(
             key: const ValueKey('nb-note-new'),
             onPressed: () => setState(_newNote),
@@ -791,19 +994,53 @@ class _NotebookScreenState extends State<NotebookScreen> {
             label: const Text('새 노트'),
           ),
         ]),
-        if (_notes.isNotEmpty)
+        if (tags.isNotEmpty)
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                ChoiceChip(
+                  key: const ValueKey('nb-tag-all'),
+                  label: const Text('전체'),
+                  visualDensity: VisualDensity.compact,
+                  selected: _tagFilter == null,
+                  onSelected: (_) => setState(() => _tagFilter = null),
+                ),
+                for (final (tag, count) in tags)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 4),
+                    child: ChoiceChip(
+                      key: ValueKey('nb-tag-$tag'),
+                      label: Text('#$tag $count'),
+                      visualDensity: VisualDensity.compact,
+                      selected: _tagFilter == tag,
+                      onSelected: (on) => setState(() => _tagFilter = on ? tag : null),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        if (visible.isNotEmpty)
           ConstrainedBox(
             constraints: const BoxConstraints(maxHeight: 140),
             child: ListView(
               shrinkWrap: true,
               children: [
-                for (final note in _notes)
+                for (final note in visible)
                   ListTile(
                     key: ValueKey('nb-note-${note.id}'),
                     dense: true,
                     selected: note.id == _noteId,
                     title: Text(note.title, overflow: TextOverflow.ellipsis),
-                    subtitle: Text('인용 ${note.citations.length}개', style: const TextStyle(fontSize: 12)),
+                    subtitle: Text(
+                      [
+                        '인용 ${note.citations.length}개',
+                        if (note.tags.isNotEmpty) note.tags.map((t) => '#$t').join(' '),
+                      ].join(' · '),
+                      style: const TextStyle(fontSize: 12),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     onTap: () => _openNote(note),
                     trailing: IconButton(
                       tooltip: '노트 지우기',
@@ -823,6 +1060,16 @@ class _NotebookScreenState extends State<NotebookScreen> {
                 key: const ValueKey('nb-note-title'),
                 controller: _titleController,
                 decoration: const InputDecoration(labelText: '제목', isDense: true),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                key: const ValueKey('nb-note-tags'),
+                controller: _tagsController,
+                decoration: const InputDecoration(
+                  labelText: '태그(쉼표나 공백으로 구분, 예: 예산, 복지)',
+                  isDense: true,
+                  prefixText: '# ',
+                ),
               ),
               const SizedBox(height: 8),
               TextField(
