@@ -686,15 +686,18 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
     setState(() {
       if (response['ok'] == true && raw is List) {
         final page = <TimemachineItem>[];
+        var skipped = 0;
         for (final entry in raw) {
           if (entry is! Map) continue;
           try {
-            page.add(TimemachineItem.fromJson(entry));
+            final item = TimemachineItem.fromJson(entry);
+            if (isExcludedTimemachineName(item.name)) { skipped++; continue; }
+            page.add(item);
           } on Object {
             _error = '목록 응답의 파일 정보를 읽지 못했습니다.';
           }
         }
-        _items.addAll(page); _offset += page.length; _more = raw.length == 200;
+        _items.addAll(page); _offset += page.length + skipped; _more = raw.length == 200;
       } else { _error = '${response['message'] ?? '목록을 불러오지 못했습니다.'}'; _more = false; }
       _loading = false;
     });

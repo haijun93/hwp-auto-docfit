@@ -541,6 +541,31 @@ class ContentSearchIndex:
             except sqlite3.Error as migration_exc:
                 self.migration_error = str(migration_exc)
                 raise RuntimeError("본문 색인 스키마 이전에 실패했습니다. 본문 재색인이 필요합니다.") from migration_exc
+        self.purge_excluded()
+
+    def purge_excluded(self):
+        """이전 버전이 색인한 제외 대상(#IEeEE…) 문서를 모든 본문 표에서 지운다. 지운 경로 목록."""
+        paths = set()
+        with self._lock:
+            for sql in ("SELECT path, name FROM content_meta", "SELECT path, NULL AS name FROM content_errors",
+                        "SELECT DISTINCT path, name FROM content_paragraph_fts", "SELECT path, name FROM content_fts",
+                        "SELECT DISTINCT path, NULL AS name FROM content_short_grams"):
+                try:
+                    rows = self.db.execute(sql).fetchall()
+                except sqlite3.OperationalError:
+                    continue
+                paths.update(row[0] for row in rows
+                             if excluded_name(os.path.basename(row[0] or "")) or excluded_name(row[1] or ""))
+            if paths:
+                with self.db:
+                    for path in paths:
+                        for table in ("content_paragraph_fts", "content_fts", "content_short_grams",
+                                      "content_meta", "content_errors"):
+                            try:
+                                self.db.execute(f"DELETE FROM {table} WHERE path=?", (path,))
+                            except sqlite3.OperationalError:
+                                pass
+        return sorted(paths)
 
     @staticmethod
     def parse_query(query):
@@ -671,17 +696,8 @@ class ContentSearchIndex:
     def indexed_paths(self, *, roots=None):
         """색인된 경로 목록. 전달된 루트 안의 문서만 돌려준다."""
         with self._lock:
+            self.purge_excluded()
             rows = self.db.execute("SELECT path FROM content_meta").fetchall()
-            bad = [row["path"] for row in rows if excluded_name(os.path.basename(row["path"]))]
-            if bad:
-                with self.db:
-                    for path in bad:
-                        self.db.execute("DELETE FROM content_paragraph_fts WHERE path=?", (path,))
-                        self.db.execute("DELETE FROM content_fts WHERE path=?", (path,))
-                        self.db.execute("DELETE FROM content_short_grams WHERE path=?", (path,))
-                        self.db.execute("DELETE FROM content_meta WHERE path=?", (path,))
-                        self.db.execute("DELETE FROM content_errors WHERE path=?", (path,))
-                rows = [row for row in rows if row["path"] not in set(bad)]
         allowed = [os.path.normcase(os.path.abspath(root)) for root in roots] if roots else None
         return [os.path.abspath(row["path"]) for row in rows if not excluded_name(os.path.basename(row["path"])) and (allowed is None or any(
             os.path.commonpath((os.path.normcase(os.path.abspath(row["path"])), root)) == root
@@ -1120,6 +1136,8 @@ class ContentSearchIndex:
             meta = metas.get(path)
             if not meta or path in excluded or os.path.abspath(path) in excluded:
                 continue
+            if excluded_name(meta["name"] or "") or excluded_name(os.path.basename(path)):
+                continue
             normalized = os.path.normcase(os.path.abspath(path))
             if any(part.casefold() == "$recycle.bin" for part in Path(path).parts):
                 continue
@@ -1251,7 +1269,9 @@ class ContentSearchIndex:
         out = []
         for r in rows:
             p = os.path.abspath(r["path"])
-            if all(w in r["name"].casefold() for w in words) and (allowed is None or any(os.path.commonpath((os.path.normcase(p), root)) == root for root in allowed if os.path.splitdrive(root)[0].casefold() == os.path.splitdrive(p)[0].casefold())):
+            if excluded_name(r["name"] or "") or excluded_name(os.path.basename(p)):
+                continue
+            if all(w in (r["name"] or "").casefold() for w in words) and (allowed is None or any(os.path.commonpath((os.path.normcase(p), root)) == root for root in allowed if os.path.splitdrive(root)[0].casefold() == os.path.splitdrive(p)[0].casefold())):
                 out.append({"path": p, "name": r["name"] or Path(p).name, "size": r["size"], "mtime": r["mtime"], "extension": r["extension"] or Path(p).suffix.lower().lstrip(".")})
                 if len(out) >= limit: break
         return out
@@ -1261,6 +1281,7 @@ class ContentSearchIndex:
             rows = self.db.execute("SELECT path,reason FROM content_errors ORDER BY path").fetchall()
         allowed = [os.path.normcase(os.path.abspath(r)) for r in roots] if roots else None
         return [dict(r) for r in rows if not any(p.casefold() == "$recycle.bin" for p in Path(r["path"]).parts)
+                and not excluded_name(os.path.basename(r["path"]))
                 and (allowed is None or any(os.path.commonpath((os.path.normcase(os.path.abspath(r["path"])), root)) == root
                                             for root in allowed if os.path.splitdrive(root)[0].casefold() == os.path.splitdrive(os.path.abspath(r["path"]))[0].casefold()))]
 
@@ -1360,6 +1381,8 @@ class ContentSearchIndex:
         candidates = []
         for row in rows:
             row_path = row["path"]
+            if excluded_name(row["name"] or "") or excluded_name(os.path.basename(row_path or "")):
+                continue
             if allowed is not None:
                 item_path = os.path.normcase(os.path.abspath(row_path))
                 if not any(
