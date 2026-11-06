@@ -14,8 +14,10 @@ MIN_SIDE = 32
 MAX_PIXELS = 16_000_000
 MAX_SKEW = 3.0           # 보정하는 최대 기울기(도)
 GAP_RATIO = 0.20         # 끊긴 선을 잇는 최대 간격(셀 크기 대비)
-THRESHOLD_DELTA = 14     # 주변 평균보다 이만큼 어두우면 잉크
+THRESHOLD_DELTA = 14     # 주변 평균보다 이만큼 어두우면 잉크(최소값)
+STROKE_RATIO = 0.35      # 가장 진한 획 대비 이 비율보다 옅으면 잉크로 보지 않는다.
 MAX_GRID = 200
+PERSPECTIVE_MAX = 0.08   # 가장자리 선이 이만큼(약 4.6°)까지 기울어도 원근 보정을 시도한다.
 
 _RUN = re.compile(rb"\xff+")
 
@@ -58,7 +60,19 @@ def binarize(gray):
     radius = max(7, min(gray.size) // 16)
     local = gray.filter(ImageFilter.BoxBlur(radius))
     diff = ImageChops.subtract(local, gray)
-    return diff.point(lambda v: 255 if v > THRESHOLD_DELTA else 0)
+    # 선 대비가 큰 그림에서는 종이 줄무늬 같은 옅은 흔적을 버리도록 문턱을 올린다.
+    hist = diff.histogram()
+    strong = sum(hist[THRESHOLD_DELTA + 1:])
+    delta = THRESHOLD_DELTA
+    if strong >= 50:
+        acc, contrast = 0, 255
+        for level in range(255, THRESHOLD_DELTA, -1):
+            acc += hist[level]
+            if acc >= strong * 0.05:
+                contrast = level
+                break
+        delta = max(THRESHOLD_DELTA, int(contrast * STROKE_RATIO))
+    return diff.point(lambda v: 255 if v > delta else 0)
 
 
 def _profile_score(image):
@@ -106,11 +120,108 @@ def estimate_skew(binary, max_angle=MAX_SKEW, work=600):
     return best_angle if best > base * 1.02 else 0.0
 
 
+def _edge_tilt(small, box, vertical):
+    """표 가장자리 띠에서 선의 기울기 k(선 진행 방향 1칸당 가로 이동)와 가운데 높이의 위치를 찾는다.
+
+    vertical=True면 세로선(x = pos + k*(y-cy)), False면 가로선(y = pos + k*(x-cx)).
+    반환: (k, pos). 뚜렷한 기울기가 없으면 k=0.
+    """
+    from PIL import Image
+    strip = small.crop(box)
+    if not vertical:
+        strip = strip.transpose(Image.Transpose.TRANSPOSE)
+    w, h = strip.size
+    if w < 2 or h < 8:
+        return 0.0, None
+    cy = h / 2
+
+    def sheared(k):
+        if not k:
+            return strip
+        return strip.transform((w, h), Image.AFFINE, (1, k, -k * cy, 0, 1, 0), Image.BILINEAR)
+
+    def score(img):
+        cols = img.resize((w, 1), Image.BOX).tobytes()
+        return sum(v * v for v in cols)
+
+    base = score(strip)
+    best_k, best = 0.0, base
+    steps = int(PERSPECTIVE_MAX / 0.01)
+    for i in range(-steps, steps + 1):
+        k = i * 0.01
+        if k:
+            sc = score(sheared(k))
+            if sc > best * 1.0001:
+                best_k, best = k, sc
+    if best_k:
+        for k in (best_k - 0.005, best_k + 0.005):
+            sc = score(sheared(k))
+            if sc > best * 1.0001:
+                best_k, best = k, sc
+    if best < base * 1.05:
+        best_k = 0.0
+    cols = sheared(best_k).resize((w, 1), Image.BOX).tobytes()
+    peak = max(range(w), key=lambda i: cols[i])
+    origin = box[0] if vertical else box[1]
+    return best_k, origin + peak + 0.5
+
+
+def rectify_perspective(gray, binary):
+    """약한 사다리꼴(원근) 왜곡을 네 모서리를 맞춰 바로잡는다. 반환: (gray, 바로잡았는지).
+
+    네 가장자리 선의 기울기를 따로 재서 서로 평행하지 않을 때만 쓴다(단순 회전은 기울기 보정이 맡는다).
+    """
+    from PIL import Image
+    scale = min(1.0, 600 / max(binary.size))
+    small = binary.resize((max(1, round(binary.width * scale)), max(1, round(binary.height * scale))), Image.BOX)
+    mask = small.resize((max(1, small.width // 3), max(1, small.height // 3)), Image.BOX).point(lambda v: 255 if v > 60 else 0)
+    bb = mask.getbbox()
+    if not bb:
+        return gray, False
+    x0, y0, x1, y1 = (bb[0] * 3, bb[1] * 3, min(small.width, bb[2] * 3), min(small.height, bb[3] * 3))
+    bw, bh = x1 - x0, y1 - y0
+    if bw < 60 or bh < 60:
+        return gray, False
+    sx, sy = max(6, int(bw * 0.12)), max(6, int(bh * 0.12))
+    kl, xl = _edge_tilt(small, (x0, y0, x0 + sx, y1), True)
+    kr, xr = _edge_tilt(small, (x1 - sx, y0, x1, y1), True)
+    kt, yt = _edge_tilt(small, (x0, y0, x1, y0 + sy), False)
+    kb, yb = _edge_tilt(small, (x0, y1 - sy, x1, y1), False)
+    if None in (xl, xr, yt, yb):
+        return gray, False
+    if abs(kl - kr) < 0.01 and abs(kt - kb) < 0.01:
+        return gray, False
+    cy, cx = (y0 + y1) / 2, (x0 + x1) / 2
+
+    def corner(vk, vx, hk, hy):
+        # x = vx + vk*(y-cy), y = hy + hk*(x-cx) 의 교점
+        y = hy
+        x = vx
+        for _ in range(4):
+            x = vx + vk * (y - cy)
+            y = hy + hk * (x - cx)
+        return x, y
+
+    tl, tr = corner(kl, xl, kt, yt), corner(kr, xr, kt, yt)
+    bl, br = corner(kl, xl, kb, yb), corner(kr, xr, kb, yb)
+    m = 5
+    quad = [(tl[0] - m, tl[1] - m), (bl[0] - m, bl[1] + m), (br[0] + m, br[1] + m), (tr[0] + m, tr[1] - m)]
+    quad = [(x / scale, y / scale) for x, y in quad]
+    width = round((((quad[3][0] - quad[0][0]) + (quad[2][0] - quad[1][0])) / 2))
+    height = round((((quad[1][1] - quad[0][1]) + (quad[2][1] - quad[3][1])) / 2))
+    if width < MIN_SIDE or height < MIN_SIDE or width > gray.width * 2 or height > gray.height * 2:
+        return gray, False
+    data = tuple(v for point in quad for v in point)
+    out = gray.transform((width, height), Image.QUAD, data, Image.BICUBIC, fillcolor=255)
+    return out, True
+
+
 def _segments(binary, gap, minlen, min_run=4):
     """가로 방향 선분 (중심 y, x0, x1, 두께) 목록.
 
     행마다 잉크 연속 구간(min_run 미만은 잡음)을 gap 이하 간격으로 이어 선분을 만들고,
-    잉크 비율 50% 이상·길이 minlen 이상만 남긴다. 위아래로 겹치는 선분은 한 줄로 합친다.
+    잉크 비율 50% 이상·길이 minlen 이상만 남기고, 위아래로 겹치는 선분은 한 줄로 합친 뒤
+    합친 잉크 구간이 80% 이상 덮는 것만 선으로 인정한다(글자 획 조각 배제).
     """
     w, h = binary.size
     data = binary.tobytes()
@@ -125,33 +236,49 @@ def _segments(binary, gap, minlen, min_run=4):
             if cur and start - cur[1] <= gap:
                 cur[1] = end
                 cur[2] += end - start
+                cur[3].append((start, end))
             else:
                 if cur:
                     found.append(cur)
-                cur = [start, end, end - start]
+                cur = [start, end, end - start, [(start, end)]]
         if cur:
             found.append(cur)
-        found = [(s, e) for s, e, ink in found if e - s >= minlen and ink * 2 >= e - s]
+        found = [(s, e, rs) for s, e, ink, rs in found if e - s >= minlen and ink * 2 >= e - s]
         if active:
             still = []
             for comp in active:
                 (still if comp[3] >= y - 2 else done).append(comp)
             active = still
-        for s, e in found:
+        for s, e, rs in found:
             for comp in active:
                 overlap = min(e, comp[2]) - max(s, comp[1])
                 if overlap > 0 and overlap >= 0.25 * max(e - s, comp[2] - comp[1]):
                     comp[1], comp[2], comp[3] = min(comp[1], s), max(comp[2], e), y
+                    comp[4].extend(rs)
                     break
             else:
-                active.append([y, s, e, y])  # [첫 행, x0, x1, 마지막 행]
+                active.append([y, s, e, y, list(rs)])  # [첫 행, x0, x1, 마지막 행, 잉크 구간들]
     done.extend(active)
     result = []
-    for first, x0, x1, last in done:
+    for first, x0, x1, last, runs in done:
         thickness = last - first + 1
-        if x1 - x0 >= minlen and thickness <= max(3, 0.3 * (x1 - x0)):
+        if x1 - x0 >= minlen and thickness <= max(3, 0.3 * (x1 - x0)) and _covered(runs) * 5 >= 4 * (x1 - x0):
             result.append([(first + last) / 2, x0, x1, thickness])
     return _join_collinear(result, gap)
+
+
+def _covered(runs):
+    """잉크 구간들의 합집합 길이. 손으로 그어 흔들린 선은 행마다 끊겨도 합치면 꽉 차고,
+    글자 획 조각은 글자 사이 빈틈이 어느 행에서도 비어 있다."""
+    total, end = 0, -1
+    for a, b in sorted(runs):
+        if a > end:
+            total += b - a
+            end = b
+        elif b > end:
+            total += b - end
+            end = b
+    return total
 
 
 def _join_collinear(segs, gap):
@@ -199,12 +326,17 @@ def _detect(binary):
     """(가로 선분, 세로 선분, 셀 추정 크기). 선분은 [위치, 시작, 끝, 두께]."""
     w, h = binary.size
     dim = max(w, h)
-    transposed = binary.transpose(2)  # Image.Transpose.TRANSPOSE
+    transposed = binary.transpose(5)  # Image.Transpose.TRANSPOSE (2는 ROTATE_90이라 위아래가 뒤집힌다)
     # 1차: 셀 크기를 가늠한다.
     gap1, min1 = max(2, int(dim * 0.03)), max(10, int(dim * 0.04))
     first_h, first_v = _segments(binary, gap1, min1), _segments(transposed, gap1, min1)
     tol1 = max(3, dim * 0.01)
-    spacing = _spacing(_cluster([s[0] for s in first_h], tol1)) + _spacing(_cluster([s[0] for s in first_v], tol1))
+    # 짧은 조각(글자 획·그림자 가장자리)이 셀 크기를 흐리지 않도록 긴 선분이 둘 이상이면 그것만 쓴다.
+    long_h = [s for s in first_h if s[2] - s[1] >= dim * 0.25]
+    long_v = [s for s in first_v if s[2] - s[1] >= dim * 0.25]
+    use_h = long_h if len(_cluster([s[0] for s in long_h], tol1)) >= 2 else first_h
+    use_v = long_v if len(_cluster([s[0] for s in long_v], tol1)) >= 2 else first_v
+    spacing = _spacing(_cluster([s[0] for s in use_h], tol1)) + _spacing(_cluster([s[0] for s in use_v], tol1))
     spacing = [d for d in spacing if d >= 6]
     cell = min(spacing) if spacing else dim * 0.1
     # 2차: 셀 크기에 맞춘 간격·길이 기준으로 다시 찾는다.
@@ -220,6 +352,13 @@ def recognize_image(source):
     """
     gray = _to_gray(_open(source))
     binary = binarize(gray)
+    warped = False
+    try:
+        gray, warped = rectify_perspective(gray, binary)
+    except (ValueError, OSError):
+        warped = False
+    if warped:
+        binary = binarize(gray)
     angle = estimate_skew(binary)
     if angle:
         from PIL import Image
@@ -254,6 +393,8 @@ def recognize_image(source):
             lines.append(dict(x1=c, y1=r1, x2=c, y2=r2, width=width(t)))
     sketch = dict(grid=dict(cols=len(xs) - 1, rows=len(ys) - 1, cell_mm=5.0), lines=lines, texts=[])
     warnings = []
+    if warped:
+        warnings.append("이미지가 비스듬히 찍혀 사다리꼴 왜곡을 바로잡았습니다.")
     if angle:
         warnings.append(f"이미지가 약 {abs(angle):g}° 기울어 있어 바로잡았습니다.")
     return dict(sketch=sketch, rows=len(ys) - 1, cols=len(xs) - 1, angle=angle, warnings=warnings)
