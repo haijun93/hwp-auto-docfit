@@ -313,6 +313,9 @@ class ApplicationService:
             if action=='load':return self.flows.load(payload.get('id'))
             if action=='save':return self.flows.save(payload.get('id'),payload.get('name'),payload.get('snapshot'),payload.get('revision'))
             if action=='delete':return self.flows.delete(payload.get('id'))
+            if action=='save_draft':return self.flows.save_draft(payload.get('mode'),payload.get('id'),payload.get('name'),payload.get('snapshot'))
+            if action=='load_draft':return self.flows.load_draft(payload.get('mode'))
+            if action=='clear_draft':return self.flows.clear_draft(payload.get('mode'))
             raise ServiceError('INVALID_ACTION','흐름도 작업을 확인해 주세요.')
         if method=='shutdown':
             self.data.closing=True

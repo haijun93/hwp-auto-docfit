@@ -1,5 +1,6 @@
 import '../../core/close_guards.dart';
 import '../flows/edit_save_state.dart';
+import '../flows/flow_draft.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -33,6 +34,7 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
   Set<String> assets = {};
   bool initialized = false;
   final saveState = EditSaveState();
+  late final draftClient = FlowDraftClient(widget.api, 'diagram');
   bool dirty = false;
   bool busy = true;
   String? diagramId, revision;
@@ -188,6 +190,10 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
               'snapshot': loaded['snapshot'],
             });
           }
+          unawaited(offerRecovery());
+          break;
+        case 'draft':
+          await draftClient.save(message, id: diagramId);
           break;
         case 'dirty':
           if (mounted) {
@@ -211,6 +217,7 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
             revision = null;
             name = '새 업무 흐름도';
             dirty = false;
+            await draftClient.clear();
             post({'type': 'new'});
             if (mounted) setState(() {});
           }
@@ -250,6 +257,7 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
           revision = saved['revision'] as String;
           name = saved['name'] as String;
           post({'type': 'mark_saved', 'generation': targetGeneration});
+          if (!saveState.dirty) await draftClient.clear();
           if (mounted) setState(() => dirty = saveState.dirty);
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -288,6 +296,42 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
     16,
     (_) => Random.secure().nextInt(256),
   ).map((value) => value.toRadixString(16).padLeft(2, '0')).join();
+
+  Future<void> offerRecovery() async {
+    // 저장된 문서를 먼저 열어야 하는 경우(diagramId 있음)에는 복구를 묻지 않는다.
+    if (diagramId != null) return;
+    final draft = await draftClient.pending();
+    if (draft == null || !mounted) return;
+    final restore = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('저장하지 않은 편집 내용'),
+        content: Text(
+          "'${draft['name']}'을(를) 편집하던 내용이 자동 저장돼 있어요. 복구할까요?",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('버리기'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('복구'),
+          ),
+        ],
+      ),
+    );
+    if (restore != true) {
+      await draftClient.clear();
+      return;
+    }
+    final (id, rev) = await draftClient.reconnect(draft);
+    diagramId = id;
+    revision = rev;
+    name = '${draft['name']}';
+    if (mounted) setState(() => dirty = true);
+    post(FlowDraftClient.restoreMessage(draft, id));
+  }
 
   Future<bool> confirmDiscard() async {
     if (!dirty) return true;
@@ -423,6 +467,7 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
     diagramId = selected['id'] as String;
     revision = loaded['revision'] as String;
     name = loaded['name'] as String;
+    await draftClient.clear();
     post({
       'type': 'load',
       'id': diagramId,
