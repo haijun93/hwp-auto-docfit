@@ -229,7 +229,7 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
         if (mounted) setState(() => sidebarOnly = false);
       }
       if (!mounted) return;
-      await showKClipDialog(context, widget.api, mode: KClipEntryMode.hotkey);
+      await showKClipStickyWindow(context, widget.api, mode: KClipEntryMode.hotkey);
     } finally {
       _kclipOpen = false;
     }
@@ -317,7 +317,7 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
                 if (_kclipOpen) return;
                 _kclipOpen = true;
                 try {
-                  await showKClipDialog(context, widget.api);
+                  await showKClipStickyWindow(context, widget.api);
                 } finally {
                   _kclipOpen = false;
                 }
