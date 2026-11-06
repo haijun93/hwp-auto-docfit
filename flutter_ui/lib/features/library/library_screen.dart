@@ -110,7 +110,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
   LibraryScanApi? get _scanApi {
     final explicit = widget.scanApi;
     if (explicit != null) return explicit;
-    final api = widget.api;
+    // LibraryScanApi는 LibraryApi의 하위형이 아니라 Object로 받아야 형 승격이 된다.
+    final Object api = widget.api;
     return api is LibraryScanApi ? api : null;
   }
 

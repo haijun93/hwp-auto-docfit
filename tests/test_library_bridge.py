@@ -75,7 +75,10 @@ class LibraryBridgeTests(unittest.TestCase):
         self.assertIn("item_add", ALLOWED_COMMANDS)
 
     def test_box_scan_commands_are_allowed(self):
-        for cmd in ("box_scan", "box_scan_status", "box_scan_cancel"):
+        from docfit_app.library_scan import SCAN_COMMANDS
+
+        # 스캔 서비스가 klib로 보내는 명령은 모두 브리지 허용 목록에 있어야 한다(box_scan_files 누락 회귀).
+        for cmd in SCAN_COMMANDS:
             self.assertIn(cmd, ALLOWED_COMMANDS)
 
     def test_disabled_flag_has_no_pipe_or_process_side_effect(self):
