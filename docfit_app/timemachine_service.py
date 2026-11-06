@@ -543,8 +543,11 @@ class TimemachineService:
                                        excluded_pairs=exclusions,
                                        included_pairs=self.store.related_links(), limit=limit)
             # 경로는 내부 판정에만 쓰고 서비스 응답에는 노출하지 않는다.
+            # 화면의 '관련 없음' 단추가 문서를 지정할 수 있게 range 응답처럼 folder만 준다.
             for item in result["items"]:
-                item.pop("path", None)
+                item_path = item.pop("path", None)
+                if isinstance(item_path, str):
+                    item["folder"] = os.path.dirname(item_path)
             series = result.get("series")
             if series:
                 for group in ("previous", "next", "same", "undated"):
