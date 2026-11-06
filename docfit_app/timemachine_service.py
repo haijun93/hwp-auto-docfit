@@ -443,7 +443,7 @@ class TimemachineService:
         "content_index", "content_index_all", "content_index_start",
         "content_index_status", "content_index_progress", "content_index_cancel",
         "content_search", "content_export_markdown", "content_errors",
-        "content_preview", "related_search",
+        "content_preview", "related_search", "related_include",
     })
 
     def _command(self, action, payload):
@@ -540,7 +540,8 @@ class TimemachineService:
                 raise ValueError("결과 개수를 확인해 주세요.")
             exclusions = self.store.related_exclusions()
             result = related_documents(self.content_index, path, roots=self._settings["roots"],
-                                       excluded_pairs=exclusions, limit=limit)
+                                       excluded_pairs=exclusions,
+                                       included_pairs=self.store.related_links(), limit=limit)
             # 경로는 내부 판정에만 쓰고 서비스 응답에는 노출하지 않는다.
             for item in result["items"]:
                 item.pop("path", None)
@@ -553,6 +554,14 @@ class TimemachineService:
                 return self._error("INVALID_INPUT", "현재 조사 폴더의 두 문서를 선택해 주세요.")
             self.store.exclude_related(left, right, excluded)
             return {"ok": True, "excluded": excluded}
+        if action == "related_include":
+            left, right = payload.get("selected_path"), payload.get("related_path")
+            included = payload.get("included", True)
+            if (not isinstance(left, str) or not isinstance(right, str) or type(included) is not bool or
+                    not self._path_in_active_root(left) or not self._path_in_active_root(right)):
+                return self._error("INVALID_INPUT", "현재 조사 폴더의 두 문서를 선택해 주세요.")
+            self.store.set_related_link(left, right, included)
+            return {"ok": True, "included": included}
         if action == "content_errors":
             return {"ok": True, "items": self.content_index.errors(self._settings["roots"])}
         if action == "range":

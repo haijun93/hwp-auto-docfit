@@ -165,3 +165,68 @@ class TimemachineRelatedTests(unittest.TestCase):
                 self.assertEqual(candidates[0]["name"], "old2.txt")
             finally:
                 index.close()
+
+
+class TimemachineRelatedReasonTests(unittest.TestCase):
+    def _service(self, temp):
+        root = Path(temp) / "docs"
+        root.mkdir()
+        service = TimemachineService(Path(temp) / "settings", db_path=Path(temp) / "timeline.db",
+                                     scanner=lambda *a, **k: None, thumb_dir=Path(temp) / "thumbs",
+                                     developer_mode=lambda: True)
+        service._settings.update(roots=[str(root)], enabled=True)
+        return service, root
+
+    def test_related_reasons_list_project_department_type_and_period(self):
+        with tempfile.TemporaryDirectory() as temp:
+            service, root = self._service(temp)
+            try:
+                a, b = root / "A.txt", root / "B.txt"
+                a.write_text("정보화과\n2026년도 3분기 주요업무추진실적\n작성 기준일: 2026-09-30\n디지털전환 사업", encoding="utf-8")
+                b.write_text("정보화과\n2026년도 2분기 주요업무추진실적\n작성 기준일: 2026-06-30\n디지털전환 사업", encoding="utf-8")
+                service.content_index.index_file(a)
+                service.content_index.index_file(b)
+                item = service.command("related_search", {"path": str(a)})["items"][0]
+                joined = "\n".join(item["related_reasons"])
+                self.assertIn("같은 사업명: 디지털전환", joined)
+                self.assertIn("같은 부서명: 정보화과", joined)
+                self.assertIn("같은 문서 유형: 업무추진실적", joined)
+                self.assertIn("인접한 기간 패턴", joined)
+                self.assertFalse(item["user_added"])
+            finally:
+                service.close()
+
+    def test_user_can_add_unrelated_document_and_it_persists(self):
+        with tempfile.TemporaryDirectory() as temp:
+            service, root = self._service(temp)
+            try:
+                a, c = root / "A.txt", root / "C.txt"
+                a.write_text("2026년도 3분기 주요업무추진실적\n디지털전환 사업", encoding="utf-8")
+                c.write_text("전혀 다른 내용의 메모", encoding="utf-8")
+                service.content_index.index_file(a)
+                service.content_index.index_file(c)
+                self.assertEqual(service.command("related_search", {"path": str(a)})["items"], [])
+                self.assertTrue(service.command("related_include", {"selected_path": str(a), "related_path": str(c)})["ok"])
+                items = service.command("related_search", {"path": str(a)})["items"]
+                self.assertEqual([i["name"] for i in items], ["C.txt"])
+                self.assertTrue(items[0]["user_added"])
+                self.assertEqual(items[0]["related_reasons"], ["사용자가 연관 자료로 추가"])
+                self.assertNotIn("path", items[0])
+                # 같은 쌍을 '관련 없음'으로 바꾸면 추가가 풀린다.
+                service.command("related_exclude", {"selected_path": str(a), "related_path": str(c)})
+                self.assertEqual(service.command("related_search", {"path": str(a)})["items"], [])
+                self.assertEqual(service.store.related_links(), [])
+                service.command("related_include", {"selected_path": str(c), "related_path": str(a)})
+                service.command("related_include", {"selected_path": str(a), "related_path": str(c), "included": False})
+                self.assertEqual(service.command("related_search", {"path": str(a)})["items"], [])
+            finally:
+                service.close()
+
+    def test_related_include_validates_input(self):
+        with tempfile.TemporaryDirectory() as temp:
+            service, root = self._service(temp)
+            try:
+                res = service.command("related_include", {"selected_path": str(root / "x.txt"), "related_path": "/outside/y.txt"})
+                self.assertFalse(res["ok"])
+            finally:
+                service.close()

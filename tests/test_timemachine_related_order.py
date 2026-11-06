@@ -109,7 +109,8 @@ class TimemachineRelatedOrderTests(unittest.TestCase):
         for item, expected in zip(res["items"], expected_items):
             self.assertEqual(set(item.keys()), {"path", "name", "score", "reasons", "reference_date", "reference_date_found",
                                                 "reference_date_precision", "reference_date_basis",
-                                                "reference_date_evidence", "reference_date_note"})
+                                                "reference_date_evidence", "reference_date_note",
+                                        "related_reasons", "user_added"})
             self.assertEqual({k: item[k] for k in expected}, expected)
             self.assertEqual(item["reference_date_precision"], "day")
             self.assertEqual(item["reference_date_basis"], "explicit")

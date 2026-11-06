@@ -28,6 +28,7 @@ CREATE INDEX IF NOT EXISTS files_work_time ON files(work_time);
 CREATE INDEX IF NOT EXISTS files_root ON files(root);
 CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
 CREATE TABLE IF NOT EXISTS related_exclusions (left_path TEXT NOT NULL, right_path TEXT NOT NULL, PRIMARY KEY(left_path,right_path));
+CREATE TABLE IF NOT EXISTS related_links (left_path TEXT NOT NULL, right_path TEXT NOT NULL, PRIMARY KEY(left_path,right_path));
 """
 MAX_PAGE = 2000
 
@@ -123,6 +124,7 @@ class Store:
         with self._lock:
             if excluded:
                 self._db.execute("INSERT OR IGNORE INTO related_exclusions VALUES(?,?)", (left, right))
+                self._db.execute("DELETE FROM related_links WHERE left_path=? AND right_path=?", (left, right))
             else:
                 self._db.execute("DELETE FROM related_exclusions WHERE left_path=? AND right_path=?", (left, right))
         return True
@@ -130,6 +132,25 @@ class Store:
     def related_exclusions(self):
         with self._lock:
             rows = self._db.execute("SELECT left_path,right_path FROM related_exclusions").fetchall()
+        return [tuple(row) for row in rows]
+
+    def set_related_link(self, left, right, included=True):
+        """사용자가 직접 추가한 연관 자료 쌍을 저장한다. 추가하면 같은 쌍의 '관련 없음'은 해제한다."""
+        left, right = path_key(left), path_key(right)
+        if left == right:
+            raise ValueError("서로 다른 문서를 지정해 주세요.")
+        left, right = sorted((left, right))
+        with self._lock:
+            if included:
+                self._db.execute("INSERT OR IGNORE INTO related_links VALUES(?,?)", (left, right))
+                self._db.execute("DELETE FROM related_exclusions WHERE left_path=? AND right_path=?", (left, right))
+            else:
+                self._db.execute("DELETE FROM related_links WHERE left_path=? AND right_path=?", (left, right))
+        return True
+
+    def related_links(self):
+        with self._lock:
+            rows = self._db.execute("SELECT left_path,right_path FROM related_links").fetchall()
         return [tuple(row) for row in rows]
 
     # ── 읽기(화면) ───────────────────────────────────────────────────────
