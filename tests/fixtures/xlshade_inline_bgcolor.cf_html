@@ -1,0 +1,34 @@
+Version:1.0
+StartHTML:0000000105
+EndHTML:0000001097
+StartFragment:0000000493
+EndFragment:0000001057
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+xmlns:x="urn:schemas-microsoft-com:office:excel"
+xmlns="http://www.w3.org/TR/REC-html40">
+
+<head>
+<meta http-equiv=Content-Type content="text/html; charset=utf-8">
+<meta name=ProgId content=Excel.Sheet>
+<meta name=Generator content="Microsoft Excel 15">
+</head>
+
+<body link="#0563C1" vlink="#954F72">
+<!--StartFragment-->
+<table border=1 cellpadding=0 cellspacing=0 width=300 bgcolor="#EEEEEE" style='border-collapse:collapse;background:#EEEEEE'>
+ <col width=100 span=3>
+ <tr>
+  <td bgcolor="#FFFF00" style='color:#0000FF;border:.5pt solid windowtext'>이름</td>
+  <td bgcolor=#92D050 style="color:#FF0000; background:#92D050; border-bottom:1.0pt double black">부서</td>
+  <td style='background-color:rgb(255,0,0);mso-pattern:#FF0000 none'>연락처</td>
+ </tr>
+ <tr>
+  <td>홍길동</td>
+  <td style='color:green'>기획</td>
+  <td>010-0000-0000</td>
+ </tr>
+</table>
+<!--EndFragment-->
+</body>
+
+</html>
