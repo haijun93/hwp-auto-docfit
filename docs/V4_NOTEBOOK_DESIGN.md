@@ -54,6 +54,15 @@
 | NB1 | klib 노트북 모듈(테이블·명령·Tantivy 근거 찾기·규칙 변환) | cargo test: 근거 찾기 순위(질문 핵심어 포함 문단 우선), 출처 범위 필터, 변환 4종, 인용 보존 |
 | NB2 | Python 브리지·추출 연결, Flutter 3칸 화면, 사이드메뉴 버튼(개발자 모드) | Python 브리지 시험(임시 폴더, 원본 불변), 위젯 시험(추가→근거 찾기→인용→노트 저장→내보내기), 폭 1000·1400·좁은 폭 넘침 없음 |
 | NB3 | 자료함 연계(자료함 자료를 출처로), 한/글 보내기 | 다음 버전 |
+| NB4 | 노트 태그·태그로 거르기, 여러 출처 비교, Markdown 내보내기에 태그·출처 비교 | cargo test(태그 정리·거르기·옛 DB에 태그 표 추가·출처 비교 순서), 위젯 시험(폭 700·1000·1400) |
+
+### NB4 노트 태그·출처 비교 (2026-11-07)
+
+- **태그**: `nb_note_tag(note_id, tag, PRIMARY KEY(note_id,tag))` 별도 표(`CREATE TABLE IF NOT EXISTS`라 옛 DB도 열 때 표만 더해짐, 기존 노트 그대로). 노트를 지우면 태그도 함께 지워진다. 태그 정리 규칙(klib `normalize_tags`, Flutter `parseNbTags` 같음): 앞 '#' 제거, 30자, 대소문자 무시 중복 제거, 노트당 20개.
+  - `nb_note_save`에 `tags`(문자열 배열)를 보내면 태그를 그 목록으로 바꾸고, 빼면 기존 태그를 둔다.
+  - `nb_note_list`에 `tag`를 보내면 그 태그 노트만 낸다. 응답에 노트별 `tags`와 노트북 전체 `tags`([{tag,count}])가 있다.
+- **출처 비교** `nb_compare`(notebook_id, query, source_ids?, per_source=3): 출처마다 따로 근거를 찾아(점수가 낮은 출처도 빠지지 않게) `groups`[{source_id, display_name, origin, kind, hits}]로 낸다. 근거가 있는 출처(최고 점수순) → 근거 없는 출처(빈 칸) 순. 화면은 가운데 칸 '출처 비교'에서 출처마다 한 칸씩 가로로 놓고, 근거를 누르면 미리보기에서 원문 문단을 강조한다.
+- **내보내기**: 제목 아래 `태그: #가 #나` 줄. `nb_export_md`에 `compare_query`(·`compare_source_ids`·`per_source`)를 주면 `## 출처 비교: 검색어` 절을 붙인다. 화면은 마지막으로 비교한 검색어·범위를 자동으로 넣는다.
 
 ## 7. 성능 목표
 

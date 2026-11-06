@@ -7,6 +7,8 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 // klib 내부 모듈 접근을 위한 선언 (크레이트 바이너리 테스트)
+#[path = "../src/scan.rs"]
+mod scan;
 #[path = "../src/db.rs"]
 mod db;
 #[path = "../src/json.rs"]
@@ -23,8 +25,6 @@ mod notebook;
 mod nb_transform;
 #[path = "../src/content.rs"]
 mod content;
-#[path = "../src/scan.rs"]
-mod scan;
 
 static SEARCH_INDEX: std::sync::OnceLock<Result<search::SearchIndex, String>> = std::sync::OnceLock::new();
 fn search_index() -> Result<&'static search::SearchIndex, String> {
@@ -558,6 +558,73 @@ fn test_nb_source_add_structured_and_python_paragraphs() {
     assert_eq!(tables.arr("results").unwrap().iter().map(|r| r.str("text").unwrap()).collect::<Vec<_>>(), vec!["구분\t금액", "예산\t1,250만원"]);
     let hits = call(format!(r#"{{"cmd":"nb_search","notebook_id":{nb},"query":"1,250만원","source_ids":[{sid}]}}"#));
     assert!(!hits.arr("results").unwrap().is_empty(), "{hits:?}");
+}
+
+#[test]
+fn test_nb_note_tags_compare_and_export() {
+    let ctx = TestContext::new("nb_tags_compare");
+    let db = Arc::new(Mutex::new(Database::open(&ctx.dir.join("library.db").to_str().unwrap()).unwrap()));
+    let running = Arc::new(AtomicBool::new(true));
+    let call = |req: String| json::parse(&pipe::handle_request(&req, &db, &running)).unwrap();
+    let nb = call(r#"{"cmd":"nb_create","name":"비교"}"#.into()).i64("id").unwrap();
+    let add = |name: &str, text: &str| {
+        let path = ctx.dir.join(name);
+        fs::write(&path, text).unwrap();
+        let path = path.to_str().unwrap().replace(std::path::MAIN_SEPARATOR, "/");
+        let added = call(format!(r#"{{"cmd":"nb_source_add","notebook_id":{nb},"source_path":"{path}"}}"#));
+        assert_eq!(added.bool("ok"), Some(true), "{added:?}");
+        added.i64("id").unwrap()
+    };
+    let a = add("가.txt", "복지 예산은 120억 원이다\n도로 정비\n복지 예산 복지 예산 증가\n");
+    let b = add("나.txt", "복지 지원 확대\n");
+    let c = add("다.txt", "무관한 내용\n");
+
+    // 출처별 비교: 출처마다 따로 찾고, 근거가 없는 출처도 빈 칸으로 낸다.
+    let cmp = call(format!(r#"{{"cmd":"nb_compare","notebook_id":{nb},"query":"복지 예산","per_source":2}}"#));
+    assert_eq!(cmp.bool("ok"), Some(true), "{cmp:?}");
+    let groups = cmp.arr("groups").unwrap();
+    assert_eq!(groups.iter().map(|g| g.i64("source_id").unwrap()).collect::<Vec<_>>(), vec![a, b, c]);
+    assert_eq!(groups[0].arr("hits").unwrap().len(), 2);
+    assert!(groups[0].arr("hits").unwrap().iter().all(|h| h.i64("source_id") == Some(a)));
+    assert_eq!(groups[1].arr("hits").unwrap()[0].i64("ordinal"), Some(0));
+    assert!(groups[2].arr("hits").unwrap().is_empty());
+    let scoped = call(format!(r#"{{"cmd":"nb_compare","notebook_id":{nb},"query":"복지","source_ids":[{b}]}}"#));
+    assert_eq!(scoped.arr("groups").unwrap().len(), 1);
+    assert_eq!(call(format!(r#"{{"cmd":"nb_compare","notebook_id":{nb},"query":"  "}}"#)).bool("ok"), Some(false));
+    assert_eq!(call(format!(r#"{{"cmd":"nb_compare","notebook_id":{nb},"query":"복지","source_ids":["x"]}}"#)).bool("ok"), Some(false));
+
+    // 태그 저장·거르기·태그 목록.
+    let saved = call(format!(r##"{{"cmd":"nb_note_save","notebook_id":{nb},"title":"메모","body":"본문","tags":["#예산"," 복지 정책 ","예산"],"citations":[{{"source_id":{a},"paragraph_ordinal":0,"quote":"복지 예산은 120억 원이다"}}]}}"##));
+    assert_eq!(saved.bool("ok"), Some(true), "{saved:?}");
+    let note = saved.i64("id").unwrap();
+    assert!(matches!(saved.arr("tags").unwrap(), [Value::Str(x), Value::Str(y)] if x == "예산" && y == "복지_정책"), "{saved:?}");
+    call(format!(r#"{{"cmd":"nb_note_save","notebook_id":{nb},"title":"다른","body":"","tags":["도로"]}}"#));
+    let all = call(format!(r#"{{"cmd":"nb_note_list","notebook_id":{nb}}}"#));
+    assert_eq!(all.arr("notes").unwrap().len(), 2);
+    assert_eq!(all.arr("tags").unwrap().iter().map(|t| t.str("tag").unwrap()).collect::<Vec<_>>(), vec!["도로", "복지_정책", "예산"]);
+    let filtered = call(format!(r#"{{"cmd":"nb_note_list","notebook_id":{nb},"tag":"예산"}}"#));
+    let notes = filtered.arr("notes").unwrap();
+    assert_eq!(notes.len(), 1);
+    assert_eq!(notes[0].i64("id"), Some(note));
+    assert_eq!(notes[0].arr("tags").unwrap().len(), 2);
+    assert_eq!(notes[0].arr("citations").unwrap().len(), 1);
+    // tags 없이 저장하면 태그를 그대로 둔다.
+    call(format!(r#"{{"cmd":"nb_note_save","notebook_id":{nb},"id":{note},"title":"메모","body":"고친 본문","citations":[]}}"#));
+    assert_eq!(call(format!(r#"{{"cmd":"nb_note_list","notebook_id":{nb},"tag":"복지_정책"}}"#)).arr("notes").unwrap().len(), 1);
+    assert_eq!(call(format!(r#"{{"cmd":"nb_note_save","notebook_id":{nb},"title":"x","tags":[1]}}"#)).bool("ok"), Some(false));
+
+    // 내보내기: 태그 줄과 출처 비교 절.
+    let plain = call(format!(r#"{{"cmd":"nb_export_md","notebook_id":{nb},"note_id":{note}}}"#));
+    let plain = plain.str("markdown").unwrap();
+    assert!(plain.starts_with("# 메모\n\n태그: #예산 #복지_정책\n\n고친 본문"), "{plain}");
+    assert!(!plain.contains("출처 비교"));
+    let md = call(format!(r#"{{"cmd":"nb_export_md","notebook_id":{nb},"note_id":{note},"compare_query":"복지 예산","compare_source_ids":[{a},{c}],"per_source":1}}"#));
+    let md = md.str("markdown").unwrap();
+    assert!(md.contains("## 출처 비교: 복지 예산"), "{md}");
+    assert!(md.contains("### 가.txt"));
+    assert!(!md.contains("### 나.txt"));
+    assert!(md.contains("### 다.txt"));
+    assert!(md.contains("근거 문단 없음"));
 }
 
 #[test]
