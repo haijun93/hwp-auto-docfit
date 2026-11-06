@@ -260,19 +260,33 @@ class FakeProcess:
 
 
 class LibrarySearchTests(unittest.TestCase):
-    def test_search_forwards_unicode_query_box_and_limit(self):
-        process = FakeProcess()
-        bridge = LibraryBridge(exe="klib.exe", process=process, pipe_factory=lambda: "fake")
-        expected = [{"path": "C:/자료/문서.hwpx", "name": "문서.hwpx", "snippet": "행정복지센터"}]
-        sent = {}
+    """자료함 검색은 library() → LibraryBridge.request() → klib 파이프 한 경로뿐이다(가짜 klib로 응답 고정)."""
 
-        def request(cmd, **payload):
-            sent.update(cmd=cmd, **payload)
-            return {"ok": True, "results": expected}
+    def _desktop_bridge(self, pipes):
+        import desktop_web_ui
+        desktop = desktop_web_ui.DesktopWebBridge.__new__(desktop_web_ui.DesktopWebBridge)
+        desktop._developer_mode_enabled = lambda: True
+        desktop._library_bridge = LibraryBridge(pipe_name="fake", connector=lambda _name: pipes.pop(0))
+        return desktop
 
-        bridge.request = request
-        self.assertEqual(bridge.library_search("행정복지센터", box_id=4, limit=7), expected)
-        self.assertEqual(sent, {"cmd": "search", "query": "행정복지센터", "box_id": 4, "limit": 7})
+    def test_search_and_item_search_responses_pass_through_unchanged(self):
+        search = {"ok": True, "results": [{"path": "C:/자료/문서.hwpx", "name": "문서.hwpx", "snippet": "행정복지센터"}]}
+        item_search = {"ok": True, "items": [{"id": 3, "name": "문서.hwpx"}]}
+        pipes = [FakePipe(json.dumps(search, ensure_ascii=False).encode() + b"\n"),
+                 FakePipe(json.dumps(item_search, ensure_ascii=False).encode() + b"\n")]
+        sent = list(pipes)
+        desktop = self._desktop_bridge(pipes)
+        self.assertEqual(desktop.library({"cmd": "search", "query": "행정복지센터", "box_id": 4, "limit": 7}), search)
+        self.assertEqual(desktop.library({"cmd": "item_search", "box_id": 4, "query": "문서"}), item_search)
+        self.assertEqual(json.loads(sent[0].written), {"cmd": "search", "query": "행정복지센터", "box_id": 4, "limit": 7})
+        self.assertEqual(json.loads(sent[1].written), {"cmd": "item_search", "box_id": 4, "query": "문서"})
+
+    def test_search_error_and_disallowed_commands_keep_response_shape(self):
+        desktop = self._desktop_bridge([FakePipe(b'{"ok":false,"message":"x"}\n')])
+        self.assertEqual(desktop.library({"cmd": "search", "query": "a"}), {"ok": False, "message": "x"})
+        denied = desktop.library({"cmd": "search_all"})
+        self.assertEqual(denied, {"ok": False, "message": "허용되지 않은 자료함 명령입니다."})
+        self.assertEqual(desktop.library("search"), {"ok": False, "message": "자료함 요청은 JSON 객체여야 합니다."})
 
     def test_library_export_copies_without_mutating_sources(self):
         import shutil
@@ -291,15 +305,6 @@ class LibrarySearchTests(unittest.TestCase):
             self.assertTrue(response["ok"])
             self.assertEqual((destination / source.name).read_bytes(), before)
             self.assertEqual(source.read_bytes(), before)
-
-    def test_invalid_search_options_are_rejected(self):
-        bridge = LibraryBridge(pipe_factory=lambda: "fake")
-        with self.assertRaises(ValueError):
-            bridge.library_search(" ")
-        with self.assertRaises(ValueError):
-            bridge.library_search("한글", limit=0)
-        with self.assertRaises(ValueError):
-            bridge.library_search("한글", box_id=True)
 
 
 class LibraryFirstCallTests(unittest.TestCase):

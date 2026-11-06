@@ -2288,25 +2288,28 @@ class DesktopWebBridge:
                 failed.append({"path": text, "message": message})
         return {"ok": not failed, "added": added, "skipped": skipped, "failed": failed}
 
+    def _get_library_bridge(self):
+        """klib 브리지는 앱 시작 때 만들지 않고 처음 부를 때 만든다(v2.2.17: 속성 없음 오류 수정)."""
+        if getattr(self, "_library_bridge", None) is None:
+            from docfit_app.library_bridge import LibraryBridge
+            self._library_bridge = LibraryBridge()
+        return self._library_bridge
+
     def library(self, request):
         """Forward one allowlisted library JSON request when the opt-in flag is set."""
         if not self._developer_mode_enabled():
             return {"ok": False, "code": "DEVELOPER_MODE_REQUIRED", "message": "개발자 모드에서만 자료함을 사용할 수 있습니다."}
-        # 앱 시작 때 만들지 않으므로 처음 부를 때 만든다(v2.2.17: 속성 없음 오류 수정).
-        if getattr(self, "_library_bridge", None) is None:
-            from docfit_app.library_bridge import LibraryBridge
-            self._library_bridge = LibraryBridge()
         from docfit_app.library_scan import SCAN_COMMANDS, FolderScanService
         try:
             if isinstance(request, dict) and request.get("cmd") in SCAN_COMMANDS:
                 # 폴더 스캔: klib가 되면 klib, 안 되면 기존 Python 증분 스캔(같은 명령·같은 상태 모양).
                 if getattr(self, "_folder_scan", None) is None:
-                    self._folder_scan = FolderScanService(lambda: self._library_bridge)
+                    self._folder_scan = FolderScanService(self._get_library_bridge)
                 return self._folder_scan.handle(request)
             if isinstance(request, dict) and request.get("cmd") == "open_item":
                 from docfit_app.library_bridge import open_library_item
                 return {"ok": True, "opened": open_library_item(request)}
-            return self._library_bridge.request(request)
+            return self._get_library_bridge().request(request)
         except Exception as exc:
             return {"ok": False, "message": str(exc)}
 
@@ -2329,10 +2332,7 @@ class DesktopWebBridge:
                 return {"ok": True, "paths": paths}
             if getattr(self, "_notebook_service", None) is None:
                 from docfit_app.notebook_service import NotebookService
-                if getattr(self, "_library_bridge", None) is None:
-                    from docfit_app.library_bridge import LibraryBridge
-                    self._library_bridge = LibraryBridge()
-                self._notebook_service = NotebookService(self._library_bridge)
+                self._notebook_service = NotebookService(self._get_library_bridge())
             return self._notebook_service.handle(request)
         except Exception as exc:
             return {"ok": False, "message": str(exc)}
