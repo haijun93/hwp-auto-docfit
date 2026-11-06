@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
@@ -39,17 +40,231 @@ Future<void> showKClipDialog(BuildContext context, ApiCall api,
   );
 }
 
+/// 스티커 메모형 관리창: 앱 창 안에 떠 있는 이동·크기 조절 가능한 창(모달 아님)으로 연다.
+/// 위치·크기·항상 위 설정은 `kclip_window` 명령으로 저장·복원한다.
+/// 닫아도 상주 기록 프로그램(kagent)에는 아무 명령도 보내지 않아 백그라운드 기록은 계속된다.
+Future<void> showKClipStickyWindow(BuildContext context, ApiCall api,
+    {KClipEntryMode mode = KClipEntryMode.sidebar}) {
+  final overlay = Overlay.of(context, rootOverlay: true);
+  final done = Completer<void>();
+  late final OverlayEntry entry;
+  entry = OverlayEntry(
+    builder: (_) => KClipStickyWindow(
+      api: api,
+      mode: mode,
+      onClosed: () {
+        if (entry.mounted) entry.remove();
+        WidgetsBinding.instance.addPostFrameCallback((_) => entry.dispose());
+        if (!done.isCompleted) done.complete();
+      },
+    ),
+  );
+  overlay.insert(entry);
+  return done.future;
+}
+
+class KClipStickyWindow extends StatefulWidget {
+  const KClipStickyWindow({
+    super.key,
+    required this.api,
+    required this.onClosed,
+    this.mode = KClipEntryMode.sidebar,
+  });
+
+  final ApiCall api;
+  final KClipEntryMode mode;
+  final VoidCallback onClosed;
+
+  static const double minWidth = 320;
+  static const double minHeight = 240;
+
+  @override
+  State<KClipStickyWindow> createState() => _KClipStickyWindowState();
+}
+
+class _KClipStickyWindowState extends State<KClipStickyWindow> {
+  double? _x;
+  double? _y;
+  double _width = 460;
+  double _height = 620;
+  bool _top = false;
+  bool _fill = false;
+  bool _closing = false;
+  Size _area = Size.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_open());
+  }
+
+  Future<Map> _window(String action, [Map<String, Object?>? payload]) async {
+    try {
+      final result = await widget.api('kclip_window', [action, payload ?? const {}]);
+      if (result is Map && result['window'] is Map) return result['window'] as Map;
+    } catch (_) {}
+    return const {};
+  }
+
+  Future<void> _open() async {
+    final saved = await _window('open');
+    if (!mounted || saved.isEmpty) return;
+    setState(() {
+      double? number(Object? v) => v is num ? v.toDouble() : null;
+      _x = number(saved['x']);
+      _y = number(saved['y']);
+      _width = number(saved['width']) ?? _width;
+      _height = number(saved['height']) ?? _height;
+      _top = saved['always_on_top'] == true;
+      _clamp();
+    });
+  }
+
+  /// 저장된 위치가 지금 앱 창 밖이면(창 크기를 줄였거나 다른 화면) 보이는 곳으로 옮긴다.
+  void _clamp() {
+    if (_area.isEmpty) return;
+    final maxW = _area.width;
+    final maxH = _area.height;
+    _width = _width.clamp(math.min(KClipStickyWindow.minWidth, maxW), maxW).toDouble();
+    _height = _height.clamp(math.min(KClipStickyWindow.minHeight, maxH), maxH).toDouble();
+    _x = (_x ?? (maxW - _width - 24)).clamp(0.0, maxW - _width).toDouble();
+    _y = (_y ?? 24.0).clamp(0.0, maxH - _height).toDouble();
+  }
+
+  Future<void> _save() async {
+    if (_closing) return;
+    await _window('set', {
+      if (_x != null) 'x': _x!.round(),
+      if (_y != null) 'y': _y!.round(),
+      'width': _width.round(),
+      'height': _height.round(),
+      'always_on_top': _top,
+    });
+  }
+
+  void _setTop(bool value) {
+    setState(() => _top = value);
+    unawaited(_save());
+  }
+
+  Future<void> _close() async {
+    if (_closing) return;
+    _closing = true;
+    // 창 항상 위만 앱 본래 설정으로 되돌린다. 기록 에이전트는 건드리지 않는다.
+    await _window('close');
+    widget.onClosed();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final area = constraints.biggest;
+        if (area != _area) {
+          _area = area;
+          _clamp();
+        }
+        final left = _fill ? 0.0 : (_x ?? 0);
+        final top = _fill ? 0.0 : (_y ?? 0);
+        final width = _fill ? area.width : _width;
+        final height = _fill ? area.height : _height;
+        return Stack(
+          children: [
+            Positioned(
+              left: left,
+              top: top,
+              width: width,
+              height: height,
+              child: Material(
+                key: const ValueKey('kclip-sticky-window'),
+                elevation: 12,
+                clipBehavior: Clip.antiAlias,
+                shape: RoundedRectangleBorder(
+                  side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+                ),
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: KClipPanel(
+                        api: widget.api,
+                        mode: widget.mode,
+                        onClose: () => unawaited(_close()),
+                        alwaysOnTop: _top,
+                        onAlwaysOnTopChanged: _setTop,
+                        onMaximizedChanged: (value) {
+                          if (value != _fill) setState(() => _fill = value);
+                        },
+                        onHeaderDragUpdate: _fill
+                            ? null
+                            : (details) => setState(() {
+                                  _x = (_x ?? 0) + details.delta.dx;
+                                  _y = (_y ?? 0) + details.delta.dy;
+                                  _clamp();
+                                }),
+                        onHeaderDragEnd: (_) => unawaited(_save()),
+                      ),
+                    ),
+                    if (!_fill)
+                      Positioned(
+                        right: 0,
+                        bottom: 0,
+                        child: MouseRegion(
+                          cursor: SystemMouseCursors.resizeDownRight,
+                          child: GestureDetector(
+                            key: const ValueKey('kclip-resize'),
+                            behavior: HitTestBehavior.opaque,
+                            onPanUpdate: (details) => setState(() {
+                              _width += details.delta.dx;
+                              _height += details.delta.dy;
+                              _clamp();
+                            }),
+                            onPanEnd: (_) => unawaited(_save()),
+                            child: const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: Icon(Icons.south_east, size: 14),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
 class KClipPanel extends StatefulWidget {
   const KClipPanel({
     super.key,
     required this.api,
     this.mode = KClipEntryMode.sidebar,
     this.onMaximizedChanged,
+    this.onClose,
+    this.alwaysOnTop,
+    this.onAlwaysOnTopChanged,
+    this.onHeaderDragUpdate,
+    this.onHeaderDragEnd,
   });
 
   final ApiCall api;
   final KClipEntryMode mode;
   final ValueChanged<bool>? onMaximizedChanged;
+
+  /// 스티커 창에서 닫기. 없으면 대화상자처럼 경로를 닫는다.
+  final VoidCallback? onClose;
+
+  /// 스티커 창의 항상 위 상태(저장값). 콜백이 없으면 화면 안 상태만 바꾼다.
+  final bool? alwaysOnTop;
+  final ValueChanged<bool>? onAlwaysOnTopChanged;
+
+  /// 머리글을 끌어 스티커 창을 옮긴다.
+  final GestureDragUpdateCallback? onHeaderDragUpdate;
+  final GestureDragEndCallback? onHeaderDragEnd;
 
   @override
   State<KClipPanel> createState() => _KClipPanelState();
@@ -625,15 +840,36 @@ class _KClipPanelState extends State<KClipPanel> {
     );
   }
 
+  bool get _top => widget.onAlwaysOnTopChanged != null
+      ? widget.alwaysOnTop == true
+      : isTop;
+
+  void _toggleTop() {
+    final callback = widget.onAlwaysOnTopChanged;
+    if (callback != null) {
+      callback(!_top);
+    } else {
+      setState(() => isTop = !isTop);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (hotkeyMode) unawaited(_setNativeDropTarget('kclip'));
+    final draggable = widget.onHeaderDragUpdate != null;
     return Padding(
       padding: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
+          GestureDetector(
+            key: const ValueKey('kclip-header'),
+            behavior: HitTestBehavior.opaque,
+            onPanUpdate: widget.onHeaderDragUpdate,
+            onPanEnd: widget.onHeaderDragEnd,
+            child: MouseRegion(
+              cursor: draggable ? SystemMouseCursors.move : MouseCursor.defer,
+              child: Container(
             padding: const EdgeInsets.fromLTRB(6, 2, 2, 2),
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.surfaceContainerHighest,
@@ -645,11 +881,17 @@ class _KClipPanelState extends State<KClipPanel> {
             ),
             child: Row(
               children: [
+                if (draggable)
+                  const Padding(
+                    padding: EdgeInsets.only(left: 4),
+                    child: Text('몽땅클립보드', style: TextStyle(fontWeight: FontWeight.w600)),
+                  ),
                 const Spacer(),
                 IconButton(
-                  tooltip: isTop ? '항상 위 해제' : '항상 위',
-                  onPressed: () => setState(() => isTop = !isTop),
-                  icon: Icon(isTop ? Icons.push_pin : Icons.push_pin_outlined),
+                  key: const ValueKey('kclip-always-on-top-toggle'),
+                  tooltip: _top ? '항상 위 해제' : '항상 위',
+                  onPressed: _toggleTop,
+                  icon: Icon(_top ? Icons.push_pin : Icons.push_pin_outlined),
                 ),
                 IconButton(
                   tooltip: minimized ? '창 펼치기' : '최소화',
@@ -663,11 +905,14 @@ class _KClipPanelState extends State<KClipPanel> {
                   icon: Icon(maximized ? Icons.filter_none : Icons.crop_square),
                 ),
                 IconButton(
+                  key: const ValueKey('kclip-close'),
                   tooltip: '닫기',
-                  onPressed: () => Navigator.of(context).maybePop(),
+                  onPressed: widget.onClose ?? () => Navigator.of(context).maybePop(),
                   icon: const Icon(Icons.close),
                 ),
               ],
+            ),
+          ),
             ),
           ),
           if (!minimized)

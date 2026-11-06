@@ -307,6 +307,131 @@ void main() {
     expect(tester.getSize(panel).width, lessThanOrEqualTo(720));
   });
 
+  group('스티커 메모형 관리창', () {
+    late List<(String, String, Map)> calls;
+    late Map<String, Object?> saved;
+
+    Future<Object?> api(String method, List<Object?> args) async {
+      final action = args.isEmpty ? '' : '${args[0]}';
+      final payload = args.length > 1 && args[1] is Map ? Map.from(args[1] as Map) : <dynamic, dynamic>{};
+      calls.add((method, action, payload));
+      if (method == 'kclip_window') {
+        if (action == 'set') saved = {...saved, ...payload.cast<String, Object?>()};
+        return {'ok': true, 'window': saved};
+      }
+      if (method == 'window_control') return {'ok': true, 'maximized': false};
+      if (method != 'kclip') return {'ok': true};
+      switch (action) {
+        case 'status':
+          return {'ok': true, 'running': true, 'available': true, 'status': {}};
+        case 'list':
+          return {'ok': true, 'items': []};
+        case 'settings_get':
+          return {'ok': true, 'settings': {}};
+      }
+      return {'ok': true};
+    }
+
+    Future<void> pumpHost(WidgetTester tester, ValueChanged<bool> onClosed) async {
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      var hits = 0;
+      await tester.pumpWidget(MaterialApp(home: Scaffold(body: Builder(
+        builder: (context) => Column(children: [
+          TextButton(
+            onPressed: () => showKClipStickyWindow(context, api).then((_) => onClosed(true)),
+            child: const Text('열기'),
+          ),
+          StatefulBuilder(builder: (context, set) => TextButton(
+            key: const ValueKey('app-behind'),
+            onPressed: () => set(() => hits++),
+            child: Text('앱 단추 $hits'),
+          )),
+        ]),
+      ))));
+    }
+
+    setUp(() {
+      calls = [];
+      saved = {'x': 300, 'y': 120, 'width': 500, 'height': 560, 'always_on_top': false};
+    });
+
+    testWidgets('저장된 위치·크기로 열리고 뒤의 앱 화면을 계속 쓸 수 있다', (tester) async {
+      var closed = false;
+      await pumpHost(tester, (v) => closed = v);
+      await tester.tap(find.text('열기'));
+      await tester.pumpAndSettle();
+      final window = find.byKey(const ValueKey('kclip-sticky-window'));
+      expect(window, findsOneWidget);
+      expect(tester.getTopLeft(window), const Offset(300, 120));
+      expect(tester.getSize(window), const Size(500, 560));
+      expect(calls.where((c) => c.$1 == 'kclip_window').first.$2, 'open');
+      // 모달이 아니므로 창 밖의 앱 단추가 눌린다.
+      await tester.tap(find.byKey(const ValueKey('app-behind')));
+      await tester.pumpAndSettle();
+      expect(find.text('앱 단추 1'), findsOneWidget);
+      expect(closed, isFalse);
+    });
+
+    testWidgets('머리글 끌기·모서리 크기 조절·항상 위를 저장한다', (tester) async {
+      await pumpHost(tester, (_) {});
+      await tester.tap(find.text('열기'));
+      await tester.pumpAndSettle();
+      final window = find.byKey(const ValueKey('kclip-sticky-window'));
+
+      await tester.drag(find.byKey(const ValueKey('kclip-header')), const Offset(-100, 60));
+      await tester.pumpAndSettle();
+      expect(tester.getTopLeft(window).dx, closeTo(200, 0.5));
+      expect(tester.getTopLeft(window).dy, closeTo(180, 0.5));
+      expect(saved['x'], 200);
+      expect(saved['y'], 180);
+
+      await tester.drag(find.byKey(const ValueKey('kclip-resize')), const Offset(80, -100));
+      await tester.pumpAndSettle();
+      expect(tester.getSize(window).width, closeTo(580, 0.5));
+      expect(tester.getSize(window).height, closeTo(460, 0.5));
+      expect(saved['width'], 580);
+      expect(saved['height'], 460);
+
+      await tester.tap(find.byKey(const ValueKey('kclip-always-on-top-toggle')));
+      await tester.pumpAndSettle();
+      expect(saved['always_on_top'], isTrue);
+      expect(find.byTooltip('항상 위 해제'), findsOneWidget);
+    });
+
+    testWidgets('앱 창 밖으로 나간 저장 위치는 보이는 곳으로 옮기고 최소 크기를 지킨다', (tester) async {
+      saved = {'x': 5000, 'y': -300, 'width': 100, 'height': 9000, 'always_on_top': true};
+      await pumpHost(tester, (_) {});
+      await tester.tap(find.text('열기'));
+      await tester.pumpAndSettle();
+      final window = find.byKey(const ValueKey('kclip-sticky-window'));
+      final rect = tester.getRect(window);
+      expect(rect.width, KClipStickyWindow.minWidth);
+      expect(rect.height, 900);
+      expect(rect.right, lessThanOrEqualTo(1200));
+      expect(rect.top, 0);
+      expect(find.byTooltip('항상 위 해제'), findsOneWidget);
+    });
+
+    testWidgets('닫기는 관리창만 닫고 기록 에이전트에는 명령을 보내지 않는다', (tester) async {
+      var closed = false;
+      await pumpHost(tester, (v) => closed = v);
+      await tester.tap(find.text('열기'));
+      await tester.pumpAndSettle();
+      final kclipBefore = calls.where((c) => c.$1 == 'kclip').map((c) => c.$2).toList();
+      await tester.tap(find.byKey(const ValueKey('kclip-close')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('kclip-sticky-window')), findsNothing);
+      expect(closed, isTrue);
+      expect(calls.where((c) => c.$1 == 'kclip_window').last.$2, 'close');
+      final kclipAfter = calls.where((c) => c.$1 == 'kclip').map((c) => c.$2).toList();
+      expect(kclipAfter, kclipBefore);
+      expect(kclipAfter, isNot(contains('disable')));
+      expect(kclipAfter, isNot(contains('pause')));
+    });
+  });
+
   testWidgets('창 명령이 거절되면 상태를 유지하고 이유를 보여준다', (tester) async {
     Future<Object?> api(String method, List<Object?> args) async {
       if (method == 'window_control') {
