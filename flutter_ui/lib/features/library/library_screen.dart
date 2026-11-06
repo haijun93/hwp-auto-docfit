@@ -1,4 +1,5 @@
-﻿import 'dart:math' as math;
+﻿import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -55,10 +56,24 @@ class _LibraryPasteIntent extends Intent {
 }
 
 class LibraryScreen extends StatefulWidget {
-  const LibraryScreen({super.key, required this.api, this.clipboardReader});
+  const LibraryScreen({
+    super.key,
+    required this.api,
+    this.clipboardReader,
+    this.scanApi,
+    this.folderPicker,
+    this.scanPollInterval = const Duration(milliseconds: 400),
+  });
 
   final LibraryApi api;
   final LibraryClipboardReader? clipboardReader;
+
+  /// 폴더 스캔 API. 생략하면 `api`가 `LibraryScanApi`일 때 그것을 쓰고, 아니면 스캔 단추를 숨긴다.
+  final LibraryScanApi? scanApi;
+
+  /// 스캔할 폴더 선택 창(시험에서 대체). 기본은 file_selector의 getDirectoryPath.
+  final Future<String?> Function()? folderPicker;
+  final Duration scanPollInterval;
 
   @override
   State<LibraryScreen> createState() => _LibraryScreenState();
@@ -80,6 +95,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
   List<LibraryRelation> _relations = [];
   String? _selectedCoreItemId;
   String? _statusMessage;
+  LibraryScanStatus? _scanStatus;
+  Timer? _scanTimer;
+  bool _scanPolling = false;
   static const _cardWidth = 140.0;
   static const _cardHeight = 72.0;
 
@@ -89,8 +107,104 @@ class _LibraryScreenState extends State<LibraryScreen> {
     _loadBoxes();
   }
 
+  LibraryScanApi? get _scanApi {
+    final explicit = widget.scanApi;
+    if (explicit != null) return explicit;
+    final api = widget.api;
+    return api is LibraryScanApi ? api : null;
+  }
+
+  Future<void> _startScan() async {
+    final box = _selectedBox;
+    final scan = _scanApi;
+    if (box == null || scan == null || (_scanStatus?.isScanning ?? false)) return;
+    final picker = widget.folderPicker;
+    final directory = picker != null ? await picker() : await getDirectoryPath();
+    if (directory == null || !mounted) return;
+    try {
+      await scan.startScan(box.id, directory);
+    } catch (error) {
+      if (mounted) setState(() => _statusMessage = error.toString());
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      _statusMessage = null;
+      _scanStatus = const LibraryScanStatus(state: 'scanning', phase: 'enumerate');
+    });
+    _scanTimer?.cancel();
+    _scanTimer = Timer.periodic(widget.scanPollInterval, (_) => _pollScan());
+  }
+
+  Future<void> _pollScan() async {
+    final scan = _scanApi;
+    if (scan == null || _scanPolling) return;
+    _scanPolling = true;
+    try {
+      final status = await scan.scanStatus();
+      if (!mounted) return;
+      setState(() => _scanStatus = status);
+      if (!status.isScanning) {
+        _scanTimer?.cancel();
+        _scanTimer = null;
+      }
+    } catch (error) {
+      _scanTimer?.cancel();
+      _scanTimer = null;
+      if (mounted) setState(() => _statusMessage = error.toString());
+    } finally {
+      _scanPolling = false;
+    }
+  }
+
+  Future<void> _cancelScan() async {
+    try {
+      await _scanApi?.cancelScan();
+    } catch (error) {
+      if (mounted) setState(() => _statusMessage = error.toString());
+    }
+  }
+
+  String _scanSummary(LibraryScanStatus s) {
+    switch (s.state) {
+      case 'scanning':
+        return s.total > 0
+            ? '스캔 중 ${s.processed}/${s.total}'
+            : '폴더를 훑는 중… 파일 ${s.discovered}개 발견';
+      case 'done':
+        return '스캔 완료: 파일 ${s.total}개(변경 ${s.changed}개, 삭제 ${s.removed}개)'
+            '${s.skippedErrors > 0 ? ', 읽지 못한 곳 ${s.skippedErrors}곳' : ''}';
+      case 'cancelled':
+        return '스캔을 취소했습니다. 이미 반영된 항목은 유지됩니다.';
+      case 'error':
+        return '스캔 오류: ${s.message}';
+      default:
+        return '';
+    }
+  }
+
+  Widget _buildScanPanel() {
+    final status = _scanStatus;
+    if (status == null || status.state == 'idle') return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      child: Row(children: [
+        if (status.isScanning)
+          SizedBox(
+            width: 220,
+            child: LinearProgressIndicator(key: const ValueKey('libraryScanProgress'), value: status.fraction),
+          ),
+        if (status.isScanning) const SizedBox(width: 8),
+        Flexible(child: Text(_scanSummary(status), key: const ValueKey('libraryScanStatus'), overflow: TextOverflow.ellipsis)),
+        if (status.isScanning)
+          TextButton(key: const ValueKey('libraryScanCancel'), onPressed: _cancelScan, child: const Text('취소')),
+      ]),
+    );
+  }
+
   @override
   void dispose() {
+    _scanTimer?.cancel();
     _newBoxController.dispose();
     _searchController.dispose();
     _newItemController.dispose();
@@ -510,6 +624,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
             IconButton(key: const ValueKey('libraryRenameBox'), tooltip: '자료함 이름 바꾸기', onPressed: _renameBox, icon: const Icon(Icons.edit_outlined)),
             IconButton(key: const ValueKey('libraryDeleteBox'), tooltip: '자료함 삭제', onPressed: _deleteBox, icon: const Icon(Icons.delete_outline)),
             OutlinedButton(key: const ValueKey('libraryExportBox'), onPressed: _exportBox, child: const Text('물리 폴더로 전환')),
+            if (_scanApi != null)
+              OutlinedButton(
+                key: const ValueKey('libraryScanFolder'),
+                onPressed: (_scanStatus?.isScanning ?? false) ? null : _startScan,
+                child: const Text('폴더 스캔'),
+              ),
             SizedBox(width: 190, height: 38, child: TextField(
               key: const ValueKey('librarySearch'),
               controller: _searchController,
@@ -534,6 +654,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             onTap: () => _jumpToSearchResult(result),
           ); },
         )),
+        _buildScanPanel(),
         if (_statusMessage != null) Text(_statusMessage!, key: const ValueKey('libraryStatus')),
         Expanded(child: _buildQuadrants()),
       ]);

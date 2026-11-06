@@ -25,6 +25,7 @@ ALLOWED_COMMANDS = frozenset({
     "search", "index_file", "remove_file",
 
     "relation_update",
+    "box_scan", "box_scan_status", "box_scan_cancel",
 
     "nb_create", "nb_list", "nb_update", "nb_delete",
 
@@ -165,6 +166,16 @@ class LibraryBridge:
             payload["box_id"] = box_id
 
         return self.request("search", **payload).get("results", [])
+
+    def available(self):
+
+        """klib를 쓸 수 있는지(실행 파일이 있고, 기본 파이프라면 Windows일 때만)."""
+
+        if self.connector is _open_pipe and os.name != "nt":
+
+            return False
+
+        return self.executable.is_file() or self.connector is not _open_pipe
 
     def request_command(self, cmd, **payload):
 

@@ -74,6 +74,10 @@ class LibraryBridgeTests(unittest.TestCase):
         self.assertEqual(calls, [])
         self.assertIn("item_add", ALLOWED_COMMANDS)
 
+    def test_box_scan_commands_are_allowed(self):
+        for cmd in ("box_scan", "box_scan_status", "box_scan_cancel"):
+            self.assertIn(cmd, ALLOWED_COMMANDS)
+
     def test_disabled_flag_has_no_pipe_or_process_side_effect(self):
         from desktop_web_ui import DesktopWebBridge
 

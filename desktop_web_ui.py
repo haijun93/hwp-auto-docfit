@@ -2296,7 +2296,13 @@ class DesktopWebBridge:
         if getattr(self, "_library_bridge", None) is None:
             from docfit_app.library_bridge import LibraryBridge
             self._library_bridge = LibraryBridge()
+        from docfit_app.library_scan import SCAN_COMMANDS, FolderScanService
         try:
+            if isinstance(request, dict) and request.get("cmd") in SCAN_COMMANDS:
+                # 폴더 스캔: klib가 되면 klib, 안 되면 기존 Python 증분 스캔(같은 명령·같은 상태 모양).
+                if getattr(self, "_folder_scan", None) is None:
+                    self._folder_scan = FolderScanService(lambda: self._library_bridge)
+                return self._folder_scan.handle(request)
             if isinstance(request, dict) and request.get("cmd") == "open_item":
                 from docfit_app.library_bridge import open_library_item
                 return {"ok": True, "opened": open_library_item(request)}
