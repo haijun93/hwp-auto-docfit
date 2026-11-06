@@ -73,6 +73,32 @@ class KClipServiceTests(unittest.TestCase):
                                                 ("pin", {"id": 3, "pinned": False})])
         self.assertEqual(self.service.command("quit")["code"], "NOT_AVAILABLE")
 
+    def test_item_commands_validate_id(self):
+        self.client.on = True
+        for action in ("delete", "pin", "get", "restore"):
+            for bad in (None, "x", 0, -1, True):
+                self.assertEqual(self.service.command(action, {"id": bad})["code"], "KCLIP_ITEM")
+        self.assertEqual(self.client.requests, [])
+        self.service.command("delete", {"id": "7"})
+        self.service.command("pin", {"id": 7})
+        self.assertEqual(self.client.requests, [("delete", {"id": 7}), ("pin", {"id": 7, "pinned": True})])
+
+    def test_clear_keeps_pinned_unless_explicitly_disabled(self):
+        self.client.on = True
+        self.service.command("clear")
+        self.service.command("clear", {"keep_pinned": "no"})
+        self.service.command("clear", {"keep_pinned": False})
+        self.assertEqual(self.client.requests, [("clear", {"keep_pinned": True}),
+                                                ("clear", {"keep_pinned": True}),
+                                                ("clear", {"keep_pinned": False})])
+
+    def test_clear_reports_pinned_preservation(self):
+        self.client.on = True
+        result = self.service.command("clear", {})
+        self.assertTrue(result["keep_pinned"])
+        self.assertIn("고정", result["message"])
+        self.assertFalse(self.service.command("clear", {"keep_pinned": False})["keep_pinned"])
+
     def test_open_web_only_accepts_http_schemes(self):
         self.client.on = True
         self.client.request = lambda cmd, **payload: {"ok": True, "kind": "text", "data": "https://example.com/path"}

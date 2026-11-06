@@ -117,7 +117,7 @@ void main() {
     calls.clear();
     await tester.tap(find.byKey(const ValueKey('kclip-clear-all')));
     await tester.pumpAndSettle();
-    expect(find.text('고정한 항목은 남고 나머지를 지웁니다.'), findsOneWidget);
+    expect(find.textContaining('고정한 항목 1개는 남고'), findsOneWidget);
     await tester.tap(find.text('취소'));
     await tester.pumpAndSettle();
     expect(calls, isNot(contains('clear')));
@@ -325,5 +325,68 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byTooltip('최대화'), findsOneWidget);
     expect(find.text('사이드메뉴 모드에서는 창 크기를 바꿀 수 없습니다.'), findsOneWidget);
+  });
+
+  testWidgets('항목별 삭제·고정 해제와 모두 지우기(고정 보존 안내)', (tester) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final sent = <List<Object?>>[];
+    Future<Object?> api(String method, List<Object?> args) async {
+      if (method == 'window_control') return {'ok': true, 'maximized': false};
+      final action = args[0] as String;
+      final payload = args.length > 1 ? args[1] : null;
+      sent.add([action, payload]);
+      switch (action) {
+        case 'status':
+          return {
+            'ok': true,
+            'running': true,
+            'available': true,
+            'consent': '동의 안내',
+            'status': {'items': 2, 'paused': false},
+          };
+        case 'list':
+          return {
+            'ok': true,
+            'items': [
+              {'id': 1, 'kind': 'text', 'preview': '일반', 'pinned': false},
+              {'id': 2, 'kind': 'text', 'preview': '고정됨', 'pinned': true},
+            ],
+          };
+        case 'settings_get':
+          return {'ok': true, 'settings': {'max_items': 50}};
+      }
+      return {'ok': true};
+    }
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(height: 760, child: KClipPanel(api: api)),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 20));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('고정 풀기'));
+    await tester.pumpAndSettle();
+    expect(sent.any((c) => c[0] == 'pin' &&
+        (c[1] as Map)['id'] == 2 && (c[1] as Map)['pinned'] == false), isTrue);
+
+    await tester.tap(find.byTooltip('지우기').first);
+    await tester.pumpAndSettle();
+    expect(sent.any((c) => c[0] == 'delete' && (c[1] as Map)['id'] == 2 ||
+        c[0] == 'delete' && (c[1] as Map)['id'] == 1), isTrue);
+
+    sent.clear();
+    await tester.tap(find.byKey(const ValueKey('kclip-clear-all')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('고정한 항목 1개는 남고'), findsOneWidget);
+    await tester.tap(find.text('지우기'));
+    await tester.pumpAndSettle();
+    final clear = sent.firstWhere((c) => c[0] == 'clear');
+    expect((clear[1] as Map)['keep_pinned'], true);
   });
 }
