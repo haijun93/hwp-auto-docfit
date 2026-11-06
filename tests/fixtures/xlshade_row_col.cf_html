@@ -1,0 +1,42 @@
+Version:1.0
+StartHTML:0000000105
+EndHTML:0000001148
+StartFragment:0000000702
+EndFragment:0000001108
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+xmlns:x="urn:schemas-microsoft-com:office:excel"
+xmlns="http://www.w3.org/TR/REC-html40">
+
+<head>
+<meta http-equiv=Content-Type content="text/html; charset=utf-8">
+<meta name=ProgId content=Excel.Sheet>
+<meta name=Generator content="Microsoft Excel 15">
+<style>
+<!--
+td
+	{padding-top:1px;
+	color:black;
+	font-size:11.0pt;
+	font-family:"맑은 고딕", monospace;
+	border:none;
+	mso-background-source:auto;
+	mso-pattern:auto;
+	white-space:nowrap;}
+-->
+</style>
+</head>
+
+<body link="#0563C1" vlink="#954F72">
+<!--StartFragment-->
+<table>
+ <colgroup><col width=80 style='background:#DDEBF7'><col width=80 bgcolor=#FCE4D6></colgroup>
+ <thead><tr bgcolor="#BDD7EE" style='background:#BDD7EE;height:15pt'><th>구분</th><th>금액</th></tr></thead>
+ <tbody>
+ <tr style='mso-pattern:auto;height:15pt'><td rowspan=2 align=center>A</td><td>1</td></tr>
+ <tr><td style='background:#F8CBAD;color:#7F6000'>2</td></tr>
+ </tbody>
+</table>
+<!--EndFragment-->
+</body>
+
+</html>
