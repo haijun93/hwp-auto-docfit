@@ -524,12 +524,125 @@ fn nb_index(val: &Value, db: &Mutex<Database>) -> Value {
     }
 }
 
+/// 정수 배열 값(source_ids·tags 등)을 읽는다. 키가 없으면 None.
+fn nb_id_list(val: &Value, key: &str) -> Result<Option<Vec<i64>>, String> {
+    let Some(rows) = val.arr(key) else { return Ok(None) };
+    let mut ids = Vec::new();
+    for v in rows {
+        match v { Value::Num(n) if n.fract() == 0.0 => ids.push(*n as i64), _ => return Err(format!("{key}는 정수 배열이어야 합니다.")) }
+    }
+    Ok(Some(ids))
+}
+
+/// 문자열 배열 값. 키가 없으면 None(태그를 바꾸지 않음).
+fn nb_str_list(val: &Value, key: &str) -> Result<Option<Vec<String>>, String> {
+    let Some(rows) = val.arr(key) else { return Ok(None) };
+    rows.iter().map(|v| match v { Value::Str(s) => Ok(s.clone()), _ => Err(format!("{key}는 문자열 배열이어야 합니다.")) }).collect::<Result<Vec<_>, _>>().map(Some)
+}
+
+fn nb_note_save(val: &Value, db: &Mutex<Database>) -> Value {
+    let Some(nb) = val.i64("notebook_id") else { return err_val("notebook_id가 필요합니다.") };
+    let mut citations = Vec::new();
+    for row in val.arr("citations").unwrap_or(&[]) {
+        let (Some(s), Some(o), Some(q)) = (row.i64("source_id"), row.i64("paragraph_ordinal"), row.str("quote")) else { return err_val("인용에는 source_id, paragraph_ordinal, quote가 필요합니다.") };
+        citations.push((s, o, q.to_string()));
+    }
+    let tags = match nb_str_list(val, "tags") { Ok(t) => t, Err(e) => return err_val(&e) };
+    let db_guard = db.lock().unwrap();
+    match crate::notebook::save_note_with_citations(db_guard.connection(), val.i64("id"), nb, val.str("title").unwrap_or(""), val.str("body").unwrap_or(""), &citations, tags.as_deref()) {
+        Ok(note) => match crate::notebook::note_tags(db_guard.connection(), note) {
+            Ok(tags) => ok_val(vec![("id", note.into()), ("tags", Value::Arr(tags.into_iter().map(Into::into).collect()))]),
+            Err(e) => err_val(&e.to_string()),
+        },
+        Err(e) => err_val(&e.to_string()),
+    }
+}
+
+/// 노트 목록. tag가 있으면 그 태그가 달린 노트만 낸다. 노트북 전체 태그(노트 수)도 함께 낸다.
+fn nb_note_list(val: &Value, db: &Mutex<Database>) -> Value {
+    let Some(nb) = val.i64("notebook_id") else { return err_val("notebook_id가 필요합니다.") };
+    let db_guard = db.lock().unwrap();
+    let c = db_guard.connection();
+    let result = (|| -> rusqlite::Result<Value> {
+        let mut notes = Vec::new();
+        for (id, title, body, updated_at) in crate::notebook::notes(c, nb, val.str("tag"))? {
+            let citations = crate::notebook::citations(c, id)?.into_iter().map(|(source_id, paragraph_ordinal, citation_id, quote)| Value::obj(vec![("id", citation_id.into()), ("source_id", source_id.into()), ("paragraph_ordinal", paragraph_ordinal.into()), ("quote", quote.into())])).collect();
+            let tags = crate::notebook::note_tags(c, id)?.into_iter().map(Into::into).collect();
+            notes.push(Value::obj(vec![("id", id.into()), ("title", title.into()), ("body", body.into()), ("updated_at", updated_at.into()), ("tags", Value::Arr(tags)), ("citations", Value::Arr(citations))]));
+        }
+        let tags = crate::notebook::notebook_tags(c, nb)?.into_iter().map(|(tag, count)| Value::obj(vec![("tag", tag.into()), ("count", count.into())])).collect();
+        Ok(ok_val(vec![("notes", Value::Arr(notes)), ("tags", Value::Arr(tags))]))
+    })();
+    result.unwrap_or_else(|e| err_val(&e.to_string()))
+}
+
+/// 같은 검색어로 출처마다 근거를 찾아 출처별로 묶는다(nb_compare, 내보내기의 출처 비교 절).
+fn nb_compare_groups(db: &Mutex<Database>, nb: i64, query: &str, scope: Option<&[i64]>, per_source: usize) -> Result<(Vec<String>, Vec<crate::notebook::CompareGroup>), String> {
+    let terms = crate::nb_transform::query_terms(query);
+    let search_query = if terms.is_empty() { query.to_string() } else { terms.join(" ") };
+    let sources = { let db_guard = db.lock().unwrap(); crate::notebook::sources(db_guard.connection(), nb).map_err(|e| e.to_string())? };
+    let ix = crate::search_index()?;
+    let groups = crate::notebook::compare_sources(&sources, scope, per_source, |id, limit| ix.search_notebook(nb, &search_query, Some(&[id]), limit).map_err(|e| e.to_string()))?;
+    Ok((terms, groups))
+}
+
+fn nb_compare_args(val: &Value, query_key: &str, ids_key: &str) -> Result<Option<(String, Option<Vec<i64>>, usize)>, String> {
+    let query = val.str(query_key).unwrap_or("").trim().to_string();
+    if query.is_empty() { return Ok(None); }
+    let ids = nb_id_list(val, ids_key)?;
+    let per_source = val.i64("per_source").unwrap_or(3).clamp(1, 20) as usize;
+    Ok(Some((query, ids, per_source)))
+}
+
+fn nb_compare(val: &Value, db: &Mutex<Database>) -> Value {
+    let Some(nb) = val.i64("notebook_id") else { return err_val("notebook_id가 필요합니다.") };
+    let (query, ids, per_source) = match nb_compare_args(val, "query", "source_ids") { Ok(Some(a)) => a, Ok(None) => return err_val("query 문자열이 필요합니다."), Err(e) => return err_val(&e) };
+    match nb_compare_groups(db, nb, &query, ids.as_deref(), per_source) {
+        Ok((terms, groups)) => ok_val(vec![
+            ("terms", Value::Arr(terms.into_iter().map(Into::into).collect())),
+            ("groups", Value::Arr(groups.into_iter().map(|g| Value::obj(vec![
+                ("source_id", g.source.id.into()), ("display_name", g.source.display_name.into()), ("origin", g.source.origin.into()), ("kind", g.source.kind.into()),
+                ("hits", Value::Arr(g.hits.into_iter().map(|h| Value::obj(vec![("source_id", h.source_id.into()), ("ordinal", h.ordinal.into()), ("display_name", h.display_name.into()), ("location", h.location.into()), ("score", (h.score as f64).into()), ("body", h.body.into())])).collect())),
+            ])).collect())),
+        ]),
+        Err(e) => err_val(&e),
+    }
+}
+
+/// 노트 Markdown 내보내기. compare_query가 있으면 그 검색어의 출처 비교 절(compare_source_ids 범위)을 뒤에 붙인다.
+fn nb_export_md(val: &Value, db: &Mutex<Database>) -> Value {
+    let Some(nb) = val.i64("notebook_id") else { return err_val("notebook_id가 필요합니다.") };
+    let Some(id) = val.i64("note_id") else { return err_val("note_id가 필요합니다.") };
+    let compare = match nb_compare_args(val, "compare_query", "compare_source_ids") { Ok(c) => c, Err(e) => return err_val(&e) };
+    let markdown = { let db_guard = db.lock().unwrap(); crate::notebook::export_md(db_guard.connection(), nb, id) };
+    let mut markdown = match markdown { Ok(Some(m)) => m, Ok(None) => return err_val("노트를 찾을 수 없습니다."), Err(e) => return err_val(&e.to_string()) };
+    if let Some((query, ids, per_source)) = compare {
+        match nb_compare_groups(db, nb, &query, ids.as_deref(), per_source) {
+            Ok((_, groups)) => { markdown.push_str("\n\n"); markdown.push_str(&crate::notebook::compare_md(&query, &groups)); }
+            Err(e) => return err_val(&e),
+        }
+    }
+    ok_val(vec![("markdown", markdown.into())])
+}
+
 fn ok_val(mut extra: Vec<(&str, Value)>) -> Value {
 
     extra.insert(0, ("ok", true.into()));
 
     Value::obj(extra)
 
+}
+
+fn scan_status_val() -> Value {
+    let s = crate::scan::GLOBAL.snapshot();
+    let n = |v: u64| Value::from(v as i64);
+    ok_val(vec![
+        ("state", s.state.into()), ("phase", s.phase.into()), ("box_id", s.box_id.into()), ("root", s.root.into()),
+        ("discovered", n(s.discovered)), ("total", n(s.total)), ("processed", n(s.processed)),
+        ("added", n(s.added)), ("updated", n(s.updated)), ("unchanged", n(s.unchanged)), ("removed", n(s.removed)),
+        ("skipped_errors", n(s.skipped_errors)), ("error_samples", Value::Arr(s.error_samples.into_iter().map(Into::into).collect())),
+        ("message", s.message.into()), ("elapsed_ms", n(s.elapsed_ms)),
+    ])
 }
 
 fn err_val(msg: &str) -> Value {
@@ -566,10 +679,11 @@ pub fn handle_request(req_str: &str, db: &Mutex<Database>, running: &AtomicBool)
         "nb_index" => nb_index(&val, db),
         "nb_search" => {let Some(nb)=val.i64("notebook_id") else{return json::to_string(&err_val("notebook_id가 필요합니다."))};let Some(query)=val.str("query") else{return json::to_string(&err_val("query 문자열이 필요합니다."))};let ids=match val.arr("source_ids"){Some(a)=>{let mut ids=Vec::new();for v in a{if let Value::Num(n)=v{if n.fract()!=0.0{return json::to_string(&err_val("source_ids는 정수 배열이어야 합니다."))}ids.push(*n as i64)}else{return json::to_string(&err_val("source_ids는 정수 배열이어야 합니다."))}}Some(ids)},None=>None};let limit=val.i64("limit").unwrap_or(20).clamp(1,200) as usize;let terms=crate::nb_transform::query_terms(query);let search_query=if terms.is_empty(){query.to_string()}else{terms.join(" ")};match crate::search_index().and_then(|ix|ix.search_notebook(nb,&search_query,ids.as_deref(),limit).map_err(|e|e.to_string())){Ok(hits)=>ok_val(vec![("terms",Value::Arr(terms.into_iter().map(Into::into).collect())),("results",Value::Arr(hits.into_iter().map(|h|Value::obj(vec![("source_id",h.source_id.into()),("ordinal",h.ordinal.into()),("display_name",h.display_name.into()),("location",h.location.into()),("score",(h.score as f64).into()),("body",h.body.into())])).collect()))]),Err(e)=>err_val(&e)} }
         "nb_transform" => {let Some(nb)=val.i64("notebook_id") else{return json::to_string(&err_val("notebook_id가 필요합니다."))};let Some(transform_type)=val.str("type") else{return json::to_string(&err_val("type 문자열이 필요합니다."))};let ids=val.arr("source_ids").map(|a|a.iter().filter_map(|v|if let Value::Num(n)=v{Some(*n as i64)}else{None}).collect::<Vec<_>>());let limit=val.i64("limit").unwrap_or(20).clamp(1,200) as usize;let db_guard=db.lock().unwrap();let sources=match crate::notebook::sources(db_guard.connection(),nb){Ok(v)=>v,Err(e)=>return json::to_string(&err_val(&e.to_string()))};let mut paragraphs=Vec::new();for source in sources{if ids.as_ref().is_some_and(|set|!set.contains(&source.id)){continue}match crate::notebook::paragraphs(db_guard.connection(),source.id){Ok(mut p)=>paragraphs.append(&mut p),Err(e)=>return json::to_string(&err_val(&e.to_string()))}}match crate::notebook::transform(&paragraphs,transform_type,limit){Ok(rows)=>ok_val(vec![("results",Value::Arr(rows.into_iter().map(|r|Value::obj(vec![("source_id",r.source_id.into()),("ordinal",r.ordinal.into()),("location",r.location.into()),("level",r.level.into()),("kind",r.kind.into()),("text",r.text.into()),("score",r.score.into())])).collect()))]),Err(e)=>err_val(&e)} }
-        "nb_note_save" => {let Some(nb)=val.i64("notebook_id") else{return json::to_string(&err_val("notebook_id가 필요합니다."))};let citations=match val.arr("citations"){Some(rows)=>{let mut out=Vec::new();for row in rows{let(Some(s),Some(o),Some(q))=(row.i64("source_id"),row.i64("paragraph_ordinal"),row.str("quote"))else{return json::to_string(&err_val("인용에는 source_id, paragraph_ordinal, quote가 필요합니다."))};out.push((s,o,q.to_string()));}out},None=>Vec::new()};let db_guard=db.lock().unwrap();match crate::notebook::save_note_with_citations(db_guard.connection(),val.i64("id"),nb,val.str("title").unwrap_or(""),val.str("body").unwrap_or(""),&citations){Ok(note)=>ok_val(vec![("id",note.into())]),Err(e)=>err_val(&e.to_string())} }
-        "nb_note_list" => {let Some(nb)=val.i64("notebook_id") else{return json::to_string(&err_val("notebook_id가 필요합니다."))};let db_guard=db.lock().unwrap();let mut stmt=match db_guard.connection().prepare("SELECT id,title,body,updated_at FROM nb_note WHERE notebook_id=?1 ORDER BY updated_at DESC,id DESC"){Ok(s)=>s,Err(e)=>return json::to_string(&err_val(&e.to_string()))};let rows=stmt.query_map([nb],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,i64>(3)?)));match rows{Ok(rows)=>{let mut notes=Vec::new();for row in rows{let(id,title,body,updated_at)=match row{Ok(v)=>v,Err(e)=>return json::to_string(&err_val(&e.to_string()))};let citations=match crate::notebook::citations(db_guard.connection(),id){Ok(items)=>Value::Arr(items.into_iter().map(|(source_id,paragraph_ordinal,citation_id,quote)|Value::obj(vec![("id",citation_id.into()),("source_id",source_id.into()),("paragraph_ordinal",paragraph_ordinal.into()),("quote",quote.into())])).collect()),Err(e)=>return json::to_string(&err_val(&e.to_string()))};notes.push(Value::obj(vec![("id",id.into()),("title",title.into()),("body",body.into()),("updated_at",updated_at.into()),("citations",citations)]));}ok_val(vec![("notes",Value::Arr(notes))])},Err(e)=>err_val(&e.to_string())} }
+        "nb_note_save" => nb_note_save(&val, db),
+        "nb_note_list" => nb_note_list(&val, db),
         "nb_note_delete" => {let Some(id)=val.i64("id") else{return json::to_string(&err_val("note id가 필요합니다."))};let Some(nb)=val.i64("notebook_id") else{return json::to_string(&err_val("notebook_id가 필요합니다."))};let db_guard=db.lock().unwrap();match db_guard.connection().execute("DELETE FROM nb_note WHERE id=?1 AND notebook_id=?2",[id,nb]){Ok(n) if n>0=>ok_val(vec![]),Ok(_)=>err_val("해당 노트북의 노트를 찾을 수 없습니다."),Err(e)=>err_val(&e.to_string())} }
-        "nb_export_md" => {let Some(nb)=val.i64("notebook_id") else{return json::to_string(&err_val("notebook_id가 필요합니다."))};let Some(id)=val.i64("note_id") else{return json::to_string(&err_val("note_id가 필요합니다."))};let db_guard=db.lock().unwrap();match crate::notebook::export_md(db_guard.connection(),nb,id){Ok(Some(markdown))=>ok_val(vec![("markdown",markdown.into())]),Ok(None)=>err_val("노트를 찾을 수 없습니다."),Err(e)=>err_val(&e.to_string())} }
+        "nb_export_md" => nb_export_md(&val, db),
+        "nb_compare" => nb_compare(&val, db),
 
         "box_create" => {
 
@@ -1346,6 +1460,32 @@ pub fn handle_request(req_str: &str, db: &Mutex<Database>, running: &AtomicBool)
             }
 
         }
+
+        "box_scan" => {
+            let Some(box_id) = val.i64("box_id") else { return json::to_string(&err_val("box_id가 필요합니다.")); };
+            let Some(path) = val.str("path") else { return json::to_string(&err_val("path(스캔할 폴더)가 필요합니다.")); };
+            let db_path = db.lock().unwrap().connection().path().map(|p| p.to_string()).unwrap_or_default();
+            if db_path.is_empty() { return json::to_string(&err_val("DB 파일 경로를 알 수 없습니다.")); }
+            let exts: Vec<String> = val.arr("extensions").unwrap_or(&[]).iter()
+                .filter_map(|v| if let Value::Str(e) = v { Some(e.trim().to_lowercase()) } else { None })
+                .filter(|e| !e.is_empty()).map(|e| if e.starts_with('.') { e } else { format!(".{e}") }).collect();
+            match crate::scan::start(&db_path, box_id, path, exts) {
+                Ok(()) => ok_val(vec![("started", true.into())]),
+                Err(e) => err_val(&e),
+            }
+        }
+        "box_scan_status" => scan_status_val(),
+        "box_scan_files" => {
+            let Some(box_id) = val.i64("box_id") else { return json::to_string(&err_val("box_id가 필요합니다.")); };
+            let offset = val.i64("offset").unwrap_or(0).max(0);
+            let limit = val.i64("limit").unwrap_or(1000).clamp(1, 5000);
+            let guard = db.lock().unwrap();
+            match crate::scan::list_files(guard.connection(), box_id, val.str("path"), offset, limit) {
+                Ok(rows) => ok_val(vec![("files", Value::Arr(rows.into_iter().map(|(p, s, m)| Value::obj(vec![("path", p.into()), ("size", s.into()), ("mtime", Value::Num(m as f64 / 1e9))])).collect()))]),
+                Err(e) => err_val(&e.to_string()),
+            }
+        }
+        "box_scan_cancel" => ok_val(vec![("cancelling", crate::scan::GLOBAL.request_cancel().into())]),
 
         "box_export" => {
 

@@ -24,11 +24,13 @@ ALLOWED_COMMANDS = frozenset({
 
     "search", "index_file", "remove_file",
 
+    "box_scan", "box_scan_status", "box_scan_cancel", "box_scan_files",
+
     "nb_create", "nb_list", "nb_update", "nb_delete",
 
     "nb_source_add", "nb_source_list", "nb_source_remove", "nb_source_paragraphs", "nb_index",
 
-    "nb_search", "nb_transform", "nb_note_save", "nb_note_list", "nb_note_delete", "nb_export_md",
+    "nb_search", "nb_transform", "nb_note_save", "nb_note_list", "nb_note_delete", "nb_export_md", "nb_compare",
 
 })
 
@@ -141,6 +143,20 @@ class LibraryBridge:
                     time.sleep(self.retry_delay)
 
         raise LibraryBridgeError("klib 파이프에 연결하거나 응답을 읽지 못했습니다.") from last_error
+
+    def available(self):
+
+        """klib를 쓸 수 있는지(실행 파일이 있고, 기본 파이프라면 Windows일 때만)."""
+
+        if self.connector is _open_pipe and os.name != "nt":
+
+            return False
+
+        return self.executable.is_file() or self.connector is not _open_pipe
+
+    def request_command(self, cmd, **payload):
+
+        return self.request(dict(payload, cmd=cmd))
 
     def _start(self):
 

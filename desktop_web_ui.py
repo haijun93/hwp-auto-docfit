@@ -2299,7 +2299,13 @@ class DesktopWebBridge:
         """Forward one allowlisted library JSON request when the opt-in flag is set."""
         if not self._developer_mode_enabled():
             return {"ok": False, "code": "DEVELOPER_MODE_REQUIRED", "message": "개발자 모드에서만 자료함을 사용할 수 있습니다."}
+        from docfit_app.library_scan import SCAN_COMMANDS, FolderScanService
         try:
+            if isinstance(request, dict) and request.get("cmd") in SCAN_COMMANDS:
+                # 폴더 스캔: klib가 되면 klib, 안 되면 기존 Python 증분 스캔(같은 명령·같은 상태 모양).
+                if getattr(self, "_folder_scan", None) is None:
+                    self._folder_scan = FolderScanService(self._get_library_bridge)
+                return self._folder_scan.handle(request)
             if isinstance(request, dict) and request.get("cmd") == "open_item":
                 from docfit_app.library_bridge import open_library_item
                 return {"ok": True, "opened": open_library_item(request)}

@@ -60,7 +60,7 @@ class LibraryService:
 
         return self.store.add_root(library_id, path)
 
-    def index(self, library_id, *, cancel=None):
+    def index(self, library_id, *, cancel=None, progress=None):
 
         if not self._lock.acquire(blocking=False):
 
@@ -95,6 +95,10 @@ class LibraryService:
                                 "skipped": skipped, "errors": errors}
 
                     current = stack.pop()
+
+                    if progress:
+
+                        progress(len(found))
 
                     try:
 

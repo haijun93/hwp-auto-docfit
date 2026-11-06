@@ -17,7 +17,7 @@ NOTEBOOK_COMMANDS = frozenset({
     "nb_create", "nb_list", "nb_update", "nb_delete",
     "nb_source_add", "nb_source_list", "nb_source_remove", "nb_source_paragraphs",
     "nb_index", "nb_search", "nb_transform",
-    "nb_note_save", "nb_note_list", "nb_note_delete", "nb_export_md",
+    "nb_note_save", "nb_note_list", "nb_note_delete", "nb_export_md", "nb_compare",
 })
 # klib(Rust)가 직접 읽지 못해 Python이 추출하는 형식.
 PYTHON_EXTRACT_EXTENSIONS = frozenset({"hwp", "pdf"})
