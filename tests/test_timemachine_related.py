@@ -1,4 +1,5 @@
 """타임머신 연관 문서 검색 코어 시험."""
+import os
 import sqlite3
 import tempfile
 import unittest
@@ -80,6 +81,8 @@ class TimemachineRelatedTests(unittest.TestCase):
                 self.assertTrue(response["ok"])
                 self.assertEqual(response["items"][0]["name"], "B.txt")
                 self.assertNotIn("path", response["items"][0])
+                # 화면이 '관련 없음'으로 문서를 지정할 수 있도록 폴더는 준다.
+                self.assertEqual(os.path.normcase(response["items"][0]["folder"]), os.path.normcase(str(b.parent)))
                 saved = service.command("related_exclude", {"selected_path": str(a), "related_path": str(b)})
                 self.assertTrue(saved["ok"])
                 self.assertEqual(service.command("related_search", {"path": str(a)})["items"], [])
