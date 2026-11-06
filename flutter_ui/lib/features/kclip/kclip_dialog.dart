@@ -516,10 +516,15 @@ class _KClipPanelState extends State<KClipPanel> {
   }
 
   Future<void> _confirmClearAll() async {
+    final pinnedCount = items.where((i) => i['pinned'] == true).length;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        content: const Text('고정한 항목은 남고 나머지를 지웁니다.'),
+        content: Text(
+          pinnedCount > 0
+              ? '고정한 항목 $pinnedCount개는 남고 나머지를 지웁니다.\n고정을 풀면 다음에 지워집니다.'
+              : '고정한 항목은 남고 나머지를 지웁니다.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
