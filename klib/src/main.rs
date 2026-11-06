@@ -7,6 +7,10 @@ mod db;
 mod json;
 mod pipe;
 mod util;
+mod search;
+mod content;
+mod notebook;
+mod nb_transform;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -17,6 +21,15 @@ use windows_sys::Win32::System::Threading::CreateMutexW;
 
 use crate::db::Database;
 use crate::util::{data_dir, now_ms, wide};
+
+static SEARCH_INDEX: std::sync::OnceLock<Result<search::SearchIndex, String>> = std::sync::OnceLock::new();
+
+pub(crate) fn search_index() -> Result<&'static search::SearchIndex, String> {
+    SEARCH_INDEX.get_or_init(|| {
+        let dir = std::env::var("KLIB_TANTIVY_DIR").unwrap_or_else(|_| format!("{}\\tantivy", data_dir()));
+        search::SearchIndex::open_or_create(dir).map_err(|e| e.to_string())
+    }).as_ref().map_err(Clone::clone)
+}
 
 fn send_pipe_cmd(cmd_json: &str) -> Option<String> {
     use windows_sys::Win32::Storage::FileSystem::{
@@ -58,6 +71,19 @@ fn send_pipe_cmd(cmd_json: &str) -> Option<String> {
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let has = |flag: &str| args.iter().any(|a| a == flag);
+
+    if let Some(pos) = args.iter().position(|a| a == "--request-json") {
+        if let Some(request) = args.get(pos + 1) {
+            let dir = std::env::var("KLIB_DATA").unwrap_or_else(|_| data_dir());
+            let _ = std::fs::create_dir_all(&dir);
+            let db = Database::open(&format!("{dir}\\library.db")).expect("open library database");
+            let running = AtomicBool::new(true);
+            print!("{}\n", pipe::handle_request(request, &Mutex::new(db), &running));
+            return;
+        }
+        eprintln!("--request-json requires one JSON request argument");
+        std::process::exit(2);
+    }
 
     let mutex_name = format!("Local\\HwpAutoDocFit.klib{}", util::instance_suffix().unwrap_or_default());
     let instance_mutex = unsafe { CreateMutexW(std::ptr::null(), 0, wide(&mutex_name).as_ptr()) };

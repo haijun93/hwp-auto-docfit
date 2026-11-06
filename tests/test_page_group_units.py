@@ -42,6 +42,19 @@ class PageGroupUnitsTest(unittest.TestCase):
         units = self.ns['쪽맞춤_논리단위'](layout('ㅁ*ㅇ-*ㅇ*')[0])
         self.assertEqual(units, [[0, 1], [2, 3, 4], [5, 6]])
 
+    def test_supplement_notes_stay_with_nearest_parent_regardless_of_indent(self):
+        roles = ['본문', '부연설명', '부연설명', '본문', '부연설명']
+        self.assertEqual(self.ns['쪽맞춤_논리단위'](roles), [[0, 1, 2], [3, 4]])
+
+    def test_note_marker_recognition_ignores_leading_indentation(self):
+        is_note = self.ns['쪽맞춤_부연설명인가']
+        with patch.dict(is_note.__globals__, {
+            '보고서_문단역할': lambda text: '부연설명' if text.lstrip().startswith(('※', '*')) else None,
+        }):
+            for text in ('※ 참고', '    ※ 참고', '* 주석', '      ** 주석'):
+                self.assertTrue(is_note(text), text)
+            self.assertFalse(is_note('본문 ※ 참고'))
+
     def _group_attempt(self, pattern, move_result='성공', head=None, head_pages=None):
         fn = self.ns['소제목묶음_같은쪽_시도']
         roles, pages = layout(pattern)

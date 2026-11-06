@@ -54,13 +54,14 @@ class SupplementGroupingTest(unittest.TestCase):
             self.assertEqual(end[2], len(lines[start[1]]))
         self.assertEqual(doc.pos, (0, 0, 0))
 
-    def test_same_depth_note_starts_independent_group(self):
+    def test_same_depth_note_joins_previous_item(self):
+        # 2.2.16 사용자 결정: ※·*·** 부연설명은 들여쓰기 수준과 관계없이 바로 앞 항목과 한 묶음.
         lines = ['   - 부모 문장', '   ※ 같은 깊이', ' ㅇ 다음']
         doc = self.document(lines)
         fn = self.ns['보고서_본문묶음_수집']
         with patch.dict(fn.__globals__, {'hwp': doc, 'hwp_run': doc.run,
                 '현재문단_텍스트': lambda: lines[doc.pos[1]], '중단_요청됨': lambda: False}):
-            self.assertEqual(len(fn((0, 0, 0))), 1)
+            self.assertEqual(len(fn((0, 0, 0))), 2)
 
     def test_page_boundary_move_includes_notes_and_is_idempotent(self):
         lines = [' ㅇ 부모 문장', '     ※ 부연 하나', '     ※ 부연 둘', ' ㅇ 다음']

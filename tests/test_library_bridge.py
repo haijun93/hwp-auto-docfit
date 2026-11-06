@@ -239,6 +239,107 @@ class LibraryBridgeTests(unittest.TestCase):
             result = bridge.library_drop(["x"], 0.1, 0.1, 1)
         self.assertFalse(result["ok"])
         self.assertIsNone(bridge._library_bridge)
+import unittest
+
+from docfit_app.library_bridge import LibraryBridge
+
+
+class FakeProcess:
+    def __init__(self):
+        self.args = None
+
+    def Popen(self, args, **kwargs):
+        self.args = (args, kwargs)
+
+
+class LibrarySearchTests(unittest.TestCase):
+    def test_search_forwards_unicode_query_box_and_limit(self):
+        process = FakeProcess()
+        bridge = LibraryBridge(exe="klib.exe", process=process, pipe_factory=lambda: "fake")
+        expected = [{"path": "C:/자료/문서.hwpx", "name": "문서.hwpx", "snippet": "행정복지센터"}]
+        sent = {}
+
+        def request(cmd, **payload):
+            sent.update(cmd=cmd, **payload)
+            return {"ok": True, "results": expected}
+
+        bridge.request = request
+        self.assertEqual(bridge.library_search("행정복지센터", box_id=4, limit=7), expected)
+        self.assertEqual(sent, {"cmd": "search", "query": "행정복지센터", "box_id": 4, "limit": 7})
+
+    def test_library_export_copies_without_mutating_sources(self):
+        import shutil
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as root:
+            source = Path(root) / "source.txt"
+            source.write_text("source remains unchanged", encoding="utf-8")
+            before = source.read_bytes()
+            destination = Path(root) / "export"
+            destination.mkdir()
+            class ExportBridge:
+                def request(self, request):
+                    shutil.copy2(source, destination / source.name)
+                    return {"ok": True, "count": 1}
+            response = ExportBridge().request({"cmd": "box_export", "box_id": 2, "target_dir": str(destination)})
+            self.assertTrue(response["ok"])
+            self.assertEqual((destination / source.name).read_bytes(), before)
+            self.assertEqual(source.read_bytes(), before)
+
+    def test_invalid_search_options_are_rejected(self):
+        bridge = LibraryBridge(pipe_factory=lambda: "fake")
+        with self.assertRaises(ValueError):
+            bridge.library_search(" ")
+        with self.assertRaises(ValueError):
+            bridge.library_search("한글", limit=0)
+        with self.assertRaises(ValueError):
+            bridge.library_search("한글", box_id=True)
+
+
+class LibraryFirstCallTests(unittest.TestCase):
+    def test_first_call_without_preexisting_attribute_creates_bridge(self):
+        """실제 앱처럼 _library_bridge 속성이 없을 때도 AttributeError 없이 브리지를 만든다."""
+        from unittest import mock
+        import desktop_web_ui
+        bridge = desktop_web_ui.DesktopWebBridge.__new__(desktop_web_ui.DesktopWebBridge)
+        bridge._developer_mode_enabled = lambda: True
+        self.assertFalse(hasattr(bridge, "_library_bridge"))
+        fake = mock.Mock()
+        fake.request.return_value = {"ok": True, "boxes": []}
+        with mock.patch("docfit_app.library_bridge.LibraryBridge", return_value=fake):
+            result = bridge.library({"cmd": "box_list"})
+        self.assertEqual(result, {"ok": True, "boxes": []})
+        self.assertIs(bridge._library_bridge, fake)
+
+
+class NotebookBridgeTests(unittest.TestCase):
+    def _bridge(self, developer=True):
+        import desktop_web_ui
+        bridge = desktop_web_ui.DesktopWebBridge.__new__(desktop_web_ui.DesktopWebBridge)
+        bridge._developer_mode_enabled = lambda: developer
+        return bridge
+
+    def test_nb_commands_are_allowed(self):
+        for cmd in ("nb_create", "nb_source_add", "nb_search", "nb_transform", "nb_note_save", "nb_export_md"):
+            self.assertIn(cmd, ALLOWED_COMMANDS)
+
+    def test_notebook_forwards_nb_request_and_creates_bridge_lazily(self):
+        from unittest import mock
+        bridge = self._bridge()
+        fake = mock.Mock()
+        fake.request.return_value = {"ok": True, "id": 3}
+        request = {"cmd": "nb_source_add", "notebook_id": 1, "source_path": "C:/자료/보고서.txt"}
+        with mock.patch("docfit_app.library_bridge.LibraryBridge", return_value=fake):
+            self.assertEqual(bridge.notebook(request), {"ok": True, "id": 3})
+        fake.request.assert_called_once_with(request)
+
+    def test_notebook_rejects_non_nb_and_requires_developer_mode(self):
+        from unittest import mock
+        bridge = self._bridge()
+        with mock.patch("docfit_app.library_bridge.LibraryBridge") as factory:
+            self.assertFalse(bridge.notebook({"cmd": "box_delete", "id": 1})["ok"])
+            factory.assert_not_called()
+        result = self._bridge(developer=False).notebook({"cmd": "nb_list"})
+        self.assertEqual(result["code"], "DEVELOPER_MODE_REQUIRED")
 
 
 if __name__ == "__main__":

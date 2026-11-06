@@ -72,7 +72,10 @@ class TabNavigationShell extends StatefulWidget {
     this.hiddenTabs = kDefaultHiddenTabs,
     this.developerMode = false,
     this.libraryScreen,
+    this.notebookScreen,
     this.onSidebarSideSwitch,
+    this.onAlwaysOnTopChanged,
+    this.onSidebarModeRequest,
   }) : assert(initialIndex >= 0 && initialIndex < kTabCount);
 
   final Widget documentEditor;
@@ -94,7 +97,13 @@ class TabNavigationShell extends StatefulWidget {
   final Set<int> hiddenTabs;
   final bool developerMode;
   final Widget? libraryScreen;
+  /// 개발자 모드 전용 노트북 화면(자료함 버튼 옆).
+  final Widget? notebookScreen;
   final VoidCallback? onSidebarSideSwitch;
+  /// 항상 위 켜기/끄기를 앱(창)에 요청한다.
+  final Future<void> Function(bool enabled)? onAlwaysOnTopChanged;
+  /// 사이드메뉴 모드(창을 화면 가장자리에 붙임)를 앱에 요청한다. false를 돌려주면 전환하지 않는다.
+  final Future<bool> Function(bool enabled)? onSidebarModeRequest;
   final ValueChanged<int>? onTabChanged;
 
   /// 왼쪽 메뉴 아래쪽의 앱 전체 메뉴(사용 방법·작업 로그·설정 등).
@@ -118,6 +127,21 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
   bool _sidebarTouched = false;
   bool _sidebarOnly = false;
   bool _built = false;
+  int _hoverRequest = 0;
+  int _sidebarStage = 0;
+
+  void _previewTab(int index) {
+    final request = ++_hoverRequest;
+    Future<void>.delayed(const Duration(milliseconds: 150), () {
+      if (!mounted || request != _hoverRequest || index == _index ||
+          widget.hiddenTabs.contains(index)) {
+        return;
+      }
+      _select(index);
+    });
+  }
+
+  void _cancelPreview() { _hoverRequest++; }
 
   @override
   void dispose() {
@@ -152,7 +176,11 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
   ];
 
   void _select(int index) {
-    if (widget.hiddenTabs.contains(index) || index == _index) return;
+    if (widget.hiddenTabs.contains(index)) return;
+    if (index == _index) {
+      widget.onTabChanged?.call(index);
+      return;
+    }
     setState(() => _index = index);
     widget.onTabChanged?.call(index);
   }
@@ -185,14 +213,36 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
   }
 
   void _toggleSidebar() {
-    final next = !(_expanded ?? MediaQuery.sizeOf(context).width >= kSidebarAutoExpandWidth);
     _sidebarTouched = true;
-    setState(() => _expanded = next);
-    widget.onSidebarExpandedChanged?.call(next);
+    _sidebarStage = (_sidebarStage + 1) % 3;
+    if (_sidebarStage == 0) {
+      setState(() { _sidebarOnly = false; _expanded = true; });
+      widget.onSidebarExpandedChanged?.call(true);
+    } else if (_sidebarStage == 1) {
+      setState(() { _sidebarOnly = false; _expanded = false; });
+      widget.onSidebarExpandedChanged?.call(false);
+    } else {
+      setState(() { _sidebarOnly = true; _expanded = true; });
+    }
+  }
+
+  bool _alwaysOnTop = false;
+
+  Future<void> _toggleAlwaysOnTop() async {
+    final enabled = !_alwaysOnTop;
+    await widget.onAlwaysOnTopChanged?.call(enabled);
+    if (mounted) setState(() => _alwaysOnTop = enabled);
   }
 
   Future<void> _setSidebarOnly(bool enabled) async {
-    if (mounted) setState(() => _sidebarOnly = enabled);
+    final request = widget.onSidebarModeRequest;
+    if (request != null && !await request(enabled)) return;
+    if (mounted) {
+      setState(() {
+        _sidebarOnly = enabled;
+        _sidebarStage = enabled ? 2 : 0;
+      });
+    }
   }
 
   @override
@@ -237,7 +287,7 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
               autofocus: true,
               child: Row(
                 children: [
-                  if (!_sidebarOnly) WorkspaceTabBar(
+                  WorkspaceTabBar(
                     labels: _labels,
                     icons: _icons,
                     selectedIndex: _index,
@@ -246,41 +296,18 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
                     scrollController: _tabScrollController,
                     trailing: widget.trailing,
                     libraryScreen: widget.libraryScreen,
+                    notebookScreen: widget.notebookScreen,
                     expanded: expanded,
                     onToggleExpanded: _toggleSidebar,
+                    showToggle: true,
                     developerMode: widget.developerMode,
                     onSidebarModeChanged: _setSidebarOnly,
                     onSidebarSideSwitch: widget.onSidebarSideSwitch,
                     sidebarOnly: _sidebarOnly,
-                    onAlwaysOnTop: () {},
+                    onPreview: _previewTab,
+                    onPreviewCancel: _cancelPreview,
+                    onAlwaysOnTop: _toggleAlwaysOnTop,
                   ),
-                  if (_sidebarOnly)
-                    Container(
-                      width: kSidebarExpandedWidth,
-                      color: Colors.white,
-                      child: Column(children: [
-                        const SizedBox(height: 8),
-                        if (widget.developerMode)
-                          TextButton.icon(
-                            key: const ValueKey('sidebar-mode-switch-side'),
-                            onPressed: widget.onSidebarSideSwitch,
-                            icon: const Icon(Icons.swap_horiz),
-                            label: const Text('왼쪽↔오른쪽 고정'),
-                          ),
-                        TextButton.icon(onPressed: () => _setSidebarOnly(false), icon: const Icon(Icons.close_fullscreen), label: const Text('사이드메뉴 모드 끄기')),
-                        Expanded(child: WorkspaceTabBar(
-                          labels: _labels, icons: _icons, selectedIndex: _index, onSelected: _select,
-                          hiddenTabs: widget.hiddenTabs, scrollController: _tabScrollController,
-                          trailing: widget.trailing, expanded: true, onToggleExpanded: _toggleSidebar,
-                          libraryScreen: widget.libraryScreen,
-                          developerMode: widget.developerMode,
-                          onSidebarModeChanged: _setSidebarOnly,
-                    onSidebarSideSwitch: widget.onSidebarSideSwitch,
-                          sidebarOnly: _sidebarOnly,
-                          onAlwaysOnTop: () {},
-                        )),
-                      ]),
-                    ),
                   if (!_sidebarOnly) Expanded(
                     child: IndexedStack(
                       index: _index,
@@ -325,9 +352,15 @@ class WorkspaceTabBar extends StatelessWidget {
     this.developerMode = false,
     this.onSidebarModeChanged,
     this.onSidebarSideSwitch,
+    this.onAlwaysOnTopChanged,
+    this.onSidebarModeRequest,
     this.sidebarOnly = false,
     this.onAlwaysOnTop,
     this.libraryScreen,
+    this.notebookScreen,
+    this.onPreview,
+    this.onPreviewCancel,
+    this.showToggle = true,
   });
 
   final Set<int> hiddenTabs;
@@ -342,9 +375,18 @@ class WorkspaceTabBar extends StatelessWidget {
   final bool developerMode;
   final ValueChanged<bool>? onSidebarModeChanged;
   final VoidCallback? onSidebarSideSwitch;
+  /// 항상 위 켜기/끄기를 앱(창)에 요청한다.
+  final Future<void> Function(bool enabled)? onAlwaysOnTopChanged;
+  /// 사이드메뉴 모드(창을 화면 가장자리에 붙임)를 앱에 요청한다. false를 돌려주면 전환하지 않는다.
+  final Future<bool> Function(bool enabled)? onSidebarModeRequest;
   final bool sidebarOnly;
   final VoidCallback? onAlwaysOnTop;
   final Widget? libraryScreen;
+  /// 개발자 모드 전용 노트북 화면(자료함 버튼 옆).
+  final Widget? notebookScreen;
+  final ValueChanged<int>? onPreview;
+  final VoidCallback? onPreviewCancel;
+  final bool showToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -359,7 +401,7 @@ class WorkspaceTabBar extends StatelessWidget {
         child: LayoutBuilder(
           builder: (context, constraints) => Column(
           children: [
-            SizedBox(
+            if (showToggle) SizedBox(
               height: 48,
               child: Align(
                 alignment: Alignment.centerLeft,
@@ -385,6 +427,8 @@ class WorkspaceTabBar extends StatelessWidget {
                         selected: i == selectedIndex,
                         color: color,
                         expanded: expanded,
+                        onPreview: onPreview == null ? null : () => onPreview!(i),
+                        onPreviewCancel: onPreviewCancel,
                         onTap: () => onSelected(i),
                       ),
                   if (developerMode && libraryScreen != null)
@@ -397,6 +441,18 @@ class WorkspaceTabBar extends StatelessWidget {
                       expanded: expanded,
                       onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
                         builder: (_) => libraryScreen!,
+                      )),
+                    ),
+                  if (developerMode && notebookScreen != null)
+                    _TabPill(
+                      key: const ValueKey('notebook-open'),
+                      label: '노트북',
+                      icon: Icons.menu_book_outlined,
+                      selected: false,
+                      color: color,
+                      expanded: expanded,
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                        builder: (_) => notebookScreen!,
                       )),
                     ),
                 ],
@@ -416,25 +472,48 @@ class WorkspaceTabBar extends StatelessWidget {
       ),
     ],
             if (developerMode) ...[
-              TextButton.icon(
-                key: const ValueKey('always-on-top-toggle'),
-                onPressed: onAlwaysOnTop,
-                icon: const Icon(Icons.push_pin_outlined),
-                label: const Text('항상 위'),
-              ),
-              TextButton.icon(
-                key: const ValueKey('sidebar-mode-toggle'),
-                onPressed: () => onSidebarModeChanged?.call(!sidebarOnly),
-                icon: const Icon(Icons.view_sidebar_outlined),
-                label: Text('사이드메뉴 모드 ${sidebarOnly ? '켜짐' : '꺼짐'}'),
-              ),
               if (sidebarOnly)
+                if (expanded)
+                  TextButton.icon(
+                    key: const ValueKey('sidebar-mode-switch-side'),
+                    onPressed: onSidebarSideSwitch,
+                    icon: const Icon(Icons.swap_horiz),
+                    label: const Text('왼쪽↔오른쪽 고정'),
+                  )
+                else
+                  IconButton(
+                    key: const ValueKey('sidebar-mode-switch-side'),
+                    tooltip: '왼쪽↔오른쪽 고정',
+                    onPressed: onSidebarSideSwitch,
+                    icon: const Icon(Icons.swap_horiz),
+                  ),
+              if (expanded) ...[
                 TextButton.icon(
-                  key: const ValueKey('sidebar-mode-switch-side'),
-                  onPressed: onSidebarSideSwitch,
-                  icon: const Icon(Icons.swap_horiz),
-                  label: const Text('왼쪽↔오른쪽 고정'),
+                  key: const ValueKey('always-on-top-toggle'),
+                  onPressed: onAlwaysOnTop,
+                  icon: const Icon(Icons.push_pin_outlined),
+                  label: const Text('항상 위'),
                 ),
+                TextButton.icon(
+                  key: const ValueKey('sidebar-mode-toggle'),
+                  onPressed: () => onSidebarModeChanged?.call(!sidebarOnly),
+                  icon: const Icon(Icons.view_sidebar_outlined),
+                  label: Text('사이드메뉴 모드 ${sidebarOnly ? '켜짐' : '꺼짐'}'),
+                ),
+              ] else ...[
+                IconButton(
+                  key: const ValueKey('always-on-top-toggle'),
+                  tooltip: '항상 위',
+                  onPressed: onAlwaysOnTop,
+                  icon: const Icon(Icons.push_pin_outlined),
+                ),
+                IconButton(
+                  key: const ValueKey('sidebar-mode-toggle'),
+                  tooltip: '사이드메뉴 모드 ${sidebarOnly ? '켜짐' : '꺼짐'}',
+                  onPressed: () => onSidebarModeChanged?.call(!sidebarOnly),
+                  icon: const Icon(Icons.view_sidebar_outlined),
+                ),
+              ],
             ],
           ],
           ),
@@ -453,6 +532,8 @@ class _TabPill extends StatelessWidget {
     required this.color,
     required this.onTap,
     this.expanded = true,
+    this.onPreview,
+    this.onPreviewCancel,
   });
 
   final bool expanded;
@@ -461,6 +542,8 @@ class _TabPill extends StatelessWidget {
   final bool selected;
   final Color color;
   final VoidCallback onTap;
+  final VoidCallback? onPreview;
+  final VoidCallback? onPreviewCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -469,6 +552,17 @@ class _TabPill extends StatelessWidget {
       selected: selected,
       button: true,
       label: label,
+      child: Focus(
+      onFocusChange: (focused) {
+        if (focused) {
+          onPreview?.call();
+        } else {
+          onPreviewCancel?.call();
+        }
+      },
+      child: MouseRegion(
+      onEnter: (_) => onPreview?.call(),
+      onExit: (_) => onPreviewCancel?.call(),
       child: Material(
         color: selected ? color.withValues(alpha: .10) : Colors.transparent,
         borderRadius: BorderRadius.circular(8),
@@ -519,7 +613,7 @@ class _TabPill extends StatelessWidget {
             ],
           ),
         ),
-      ),
+      ))),
     );
     // 접혀 있을 때는 이름을 툴팁으로 보여 준다.
     return Padding(

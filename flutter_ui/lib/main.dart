@@ -194,7 +194,47 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
         alwaysOnTop = value['always_on_top'] == true;
       });
     }).catchError((_) {}));
+    HardwareKeyboard.instance.addHandler(_onKClipHotkey);
   }
+
+  @override
+  void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onKClipHotkey);
+    super.dispose();
+  }
+
+  bool _kclipOpen = false;
+
+  /// 앱 창 안에서 Ctrl+Shift+V를 누르면 단축키 전용 몽땅클립보드 화면(메모·끌어놓기)을 연다.
+  /// 다른 프로그램에서는 상주 프로그램(kagent)의 빠른 붙여넣기 팝업이 그대로 맡는다.
+  bool _onKClipHotkey(KeyEvent event) {
+    if (event is! KeyDownEvent || event.logicalKey != LogicalKeyboardKey.keyV) {
+      return false;
+    }
+    final keys = HardwareKeyboard.instance;
+    if (!keys.isControlPressed || !keys.isShiftPressed || keys.isAltPressed || keys.isMetaPressed) {
+      return false;
+    }
+    if (_kclipOpen || !mounted) return true;
+    unawaited(openKClipFromHotkey());
+    return true;
+  }
+
+  Future<void> openKClipFromHotkey() async {
+    if (_kclipOpen) return;
+    _kclipOpen = true;
+    try {
+      if (sidebarOnly) {
+        await widget.api('sidebar_mode', [false]).catchError((_) => null);
+        if (mounted) setState(() => sidebarOnly = false);
+      }
+      if (!mounted) return;
+      await showKClipDialog(context, widget.api, mode: KClipEntryMode.hotkey);
+    } finally {
+      _kclipOpen = false;
+    }
+  }
+
   final tabRequest = ValueNotifier<int?>(null);
 
   /// 표그림판 탭에서는 끌어 놓은 사진을 칸 배경 그림으로, 그림판 탭에서는 배경 사진으로 받고,
@@ -265,7 +305,7 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
           final expanded = constraints.maxWidth >= 140;
           final actions = <({String label, IconData icon, VoidCallback onPressed, Key? key})>[
             (
-              label: '새문서',
+              label: '서식 고르기',
               icon: Icons.note_add_outlined,
               onPressed: () => _showNewDocument(context, widget.api),
               key: const ValueKey('new-document-open'),
@@ -273,7 +313,15 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
             (
               label: '몽땅클립보드',
               icon: Icons.content_paste_search,
-              onPressed: () => showKClipDialog(context, widget.api),
+              onPressed: () async {
+                if (_kclipOpen) return;
+                _kclipOpen = true;
+                try {
+                  await showKClipDialog(context, widget.api);
+                } finally {
+                  _kclipOpen = false;
+                }
+              },
               key: const ValueKey('kclip-open'),
             ),
             (
@@ -299,30 +347,6 @@ class _IntegratedHomeState extends State<_IntegratedHome> {
               },
               key: null,
             ),
-            if (developerMode) ...[
-              (
-                label: '항상 위',
-                icon: Icons.push_pin_outlined,
-                onPressed: () async {
-                  final enabled = !alwaysOnTop;
-                  await widget.api('always_on_top', [enabled]);
-                  if (context.mounted) setState(() => alwaysOnTop = enabled);
-                },
-                key: const ValueKey('always-on-top-toggle'),
-              ),
-              (
-                label: '사이드메뉴 모드 ${sidebarOnly ? '켜짐' : '꺼짐'}',
-                icon: Icons.view_sidebar_outlined,
-                onPressed: () async {
-                  final enabled = !sidebarOnly;
-                  final result = await widget.api('sidebar_mode', [enabled]);
-                  if (result is Map && result['ok'] == true && context.mounted) {
-                    setState(() => sidebarOnly = enabled);
-                  }
-                },
-                key: const ValueKey('sidebar-mode-toggle'),
-              ),
-            ],
           ];
           String tipOf(String label) => switch (label) {
             '몽땅클립보드' => '몽땅클립보드 (복사 기록 · Ctrl+Shift+V)',
@@ -386,10 +410,18 @@ Future<void> _showNewDocument(BuildContext context, ApiCall api) async {
   if (!context.mounted) return;
   final items = result is Map ? (result['items'] as List? ?? const []) : const [];
   await showDialog<void>(context: context, builder: (dialogContext) => AlertDialog(
-    title: const Text('스냅샷 서식 고르기'),
-    content: SizedBox(width: 420, child: items.isEmpty
-      ? const Text('등록된 HWPX 서식이 없습니다.')
-      : ListView(shrinkWrap: true, children: [for (final raw in items)
+    title: const Text('서식 고르기'),
+    content: SizedBox(width: 420, child: Column(mainAxisSize: MainAxisSize.min, children: [
+      ListTile(key: const ValueKey('new-document-blank'), leading: const Icon(Icons.note_add_outlined),
+        title: const Text('새문서 작성(서식X)'), subtitle: const Text('빈 한/글 문서를 엽니다.'), onTap: () async {
+          Navigator.pop(dialogContext);
+          final opened = await api('new_document', ['blank', const {}]);
+          if (context.mounted && opened is Map && opened['ok'] != true) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${opened['message'] ?? '빈 문서를 열지 못했습니다.'}')));
+          }
+        }),
+      if (items.isEmpty) const Padding(padding: EdgeInsets.all(16), child: Text('등록된 HWPX 서식이 없습니다.'))
+      else Flexible(child: ListView(shrinkWrap: true, children: [for (final raw in items)
           ListTile(title: Text('${(raw as Map)['name'] ?? '서식'}'), subtitle: const Text('사본을 만들어 한/글에서 엽니다.'),
             leading: raw['preview'] is String
               ? Image.file(File(raw['preview'] as String), width: 52, height: 64, fit: BoxFit.cover,
@@ -400,7 +432,8 @@ Future<void> _showNewDocument(BuildContext context, ApiCall api) async {
               if (context.mounted && opened is Map && opened['ok'] != true) {
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${opened['message'] ?? '새문서를 만들지 못했습니다.'}')));
               }
-            })])),
+            })]))
+    ])),
     actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('닫기'))],
   ));
 }

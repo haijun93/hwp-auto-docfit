@@ -7,6 +7,8 @@ import '../timemachine/timemachine_screen.dart';
 import '../flows/flow_editor_screen.dart';
 import '../library/library_api.dart';
 import '../library/library_screen.dart';
+import '../notebook/notebook_api.dart';
+import '../notebook/notebook_screen.dart';
 import '../table_sketch/table_sketch_screen.dart';
 import '../table_units/table_units_screen.dart';
 import 'tab_navigation_shell.dart';
@@ -145,6 +147,7 @@ class IntegratedWorkspace extends StatelessWidget {
       this.onSidebarExpandedChanged,
       this.developerMode = false,
     this.libraryScreen,
+    this.notebookScreen,
     this.onSidebarSideSwitch,
   });
 
@@ -153,6 +156,7 @@ class IntegratedWorkspace extends StatelessWidget {
   final ValueChanged<bool>? onSidebarExpandedChanged;
   final bool developerMode;
   final Widget? libraryScreen;
+  final Widget? notebookScreen;
   final VoidCallback? onSidebarSideSwitch;
   final ApiCall api;
   final Widget documentEditorWidget;
@@ -172,7 +176,15 @@ class IntegratedWorkspace extends StatelessWidget {
       onSidebarExpandedChanged: onSidebarExpandedChanged,
       developerMode: developerMode,
       libraryScreen: libraryScreen ?? LibraryScreen(api: BridgeLibraryApi(api)),
+      notebookScreen: notebookScreen ?? NotebookScreen(api: BridgeNotebookApi(api), library: BridgeLibraryApi(api)),
       onSidebarSideSwitch: onSidebarSideSwitch,
+      onAlwaysOnTopChanged: (enabled) async {
+        await api('always_on_top', [enabled]);
+      },
+      onSidebarModeRequest: (enabled) async {
+        final result = await api('sidebar_mode', [enabled]);
+        return result is Map && result['ok'] == true;
+      },
       documentEditor: DocumentEditorAdapter(child: documentEditorWidget),
       tableTemplates: TableTemplatesAdapter(api: api),
       tableSketch: TableSketchAdapter(api: api),

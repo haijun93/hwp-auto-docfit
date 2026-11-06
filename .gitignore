@@ -34,5 +34,6 @@ flutter_ui/tool/settings_preview_data.dart
 # K에이전트(Rust) 빌드 산출물 — CI가 만들어 resources에 넣는다
 kagent/target/
 klib/target/
+hierarchy/target/
 resources/kagent.exe
 resources/kagent.exe.sha256

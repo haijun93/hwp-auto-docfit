@@ -51,6 +51,12 @@ on:
       - release/2.2.14
       - release/2.2.15
       - release/2.2.16
+      - release/2.2.17
+      - release/2.2.18
+      - release/2.2.19
+      - release/2.2.20
+      - release/2.2.21
+      - release/2.2.22
       - claude/affectionate-goldberg-ggln7c
     paths-ignore:
       - 'README.md'
@@ -146,11 +152,21 @@ jobs:
       - name: Test hierarchy core (Rust)
         shell: pwsh
         run: cargo test --manifest-path hierarchy/Cargo.toml
+      - name: Build hierarchy (Rust)
+        shell: pwsh
+        run: |
+          cargo build --locked --release --manifest-path hierarchy/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item hierarchy/target/release/hierarchy.exe resources/hierarchy.exe -Force
       - name: Build klib (Rust)
         shell: pwsh
         run: |
-          cargo test --manifest-path klib/Cargo.toml
-          cargo build --release --manifest-path klib/Cargo.toml
+          $mingw = Join-Path $env:LOCALAPPDATA "DocFitTools\mingw64\bin"
+          if (Test-Path -LiteralPath $mingw) { $env:PATH = "$mingw;$env:PATH" }
+          cargo test --locked --manifest-path klib/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo build --locked --release --manifest-path klib/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Copy-Item klib/target/release/klib.exe resources/klib.exe -Force
           (Get-FileHash resources/klib.exe -Algorithm SHA256).Hash | Out-File -Encoding ascii resources/klib.exe.sha256
 

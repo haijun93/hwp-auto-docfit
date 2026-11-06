@@ -1993,6 +1993,8 @@ class DesktopWebBridge:
                             pass
                         items.append({'id': str(identifier), 'name': str(profile.get('name') or source.stem), 'preview': preview})
                 return {'ok': True, 'items': items}
+            if action == 'blank':
+                return self._open_blank_hwp_document()
             if action != 'create': return {'ok': False, 'message': '지원하지 않는 새문서 명령입니다.'}
             profile = profiles.get(payload.get('id'))
             if not isinstance(profile, dict): return {'ok': False, 'message': '서식을 다시 선택해 주세요.'}
@@ -2005,6 +2007,18 @@ class DesktopWebBridge:
                 return {'ok': False, 'message': f'한/글에서 문서를 열지 못했습니다: {exc}'}
             return {'ok': True, 'path': str(target), 'name': target.name}
         return self._tk(execute)
+
+    def _open_blank_hwp_document(self):
+        """Open a blank HWP document through the existing isolated COM factory."""
+        try:
+            namespace = getattr(_real_gui(self.gui), "파일포맷_변경_시작").__globals__
+            app = namespace['한글_COM_인스턴스_생성'](독립=True)
+            app.XHwpWindows.Item(0).Visible = True
+            app.Run('FileNew')
+            return {'ok': True, 'blank': True}
+        except Exception as exc:
+            logging.getLogger(__name__).exception('빈 한/글 문서 열기 실패')
+            return {'ok': False, 'message': f'빈 한/글 문서를 열지 못했습니다: {exc}'}
 
     def sidebar_mode(self, enabled):
         from docfit_app.sidebar_mode import SidebarModeController
@@ -2060,6 +2074,34 @@ class DesktopWebBridge:
                 self.window.set_on_top(bool(enabled))
             return {'ok': True, 'enabled': bool(enabled)}
         return self._tk(execute)
+
+    def window_control(self, action="toggle_maximize"):
+        """앱 창 최대화/복원(몽땅클립보드 창 제목줄 단추). 상태는 Win32 IsZoomed로 확인한다."""
+        window = self.window
+        if action not in ("state", "maximize", "restore", "toggle_maximize"):
+            return {"ok": False, "message": "지원하지 않는 창 명령입니다."}
+        if window is None:
+            return {"ok": False, "message": "창이 아직 준비되지 않았습니다."}
+        try:
+            maximized = self._window_is_maximized(window)
+            if action == "state":
+                return {"ok": True, "maximized": maximized}
+            if self.sidebar_active:
+                return {"ok": False, "maximized": maximized,
+                        "message": "사이드메뉴 모드에서는 창 크기를 바꿀 수 없습니다."}
+            target = (not maximized) if action == "toggle_maximize" else action == "maximize"
+            (window.maximize if target else window.restore)()
+            self._window_maximized = target
+            return {"ok": True, "maximized": target}
+        except Exception as exc:
+            logging.getLogger(__name__).warning("창 최대화/복원 실패", exc_info=True)
+            return {"ok": False, "message": str(exc) or "창 크기를 바꾸지 못했습니다."}
+
+    def _window_is_maximized(self, window):
+        try:
+            return _Win32WindowApi().is_zoomed(_PyWebViewWindow(window).handle())
+        except Exception:
+            return bool(getattr(self, "_window_maximized", False))
 
     def _drain_rename_paths(self):
         """탐색기 보내기(--rename)로 받은 경로를 목록에 넣고, 화면이 탭을 열도록 True를 돌려준다.
@@ -2225,13 +2267,69 @@ class DesktopWebBridge:
         """Forward one allowlisted library JSON request when the opt-in flag is set."""
         if not self._developer_mode_enabled():
             return {"ok": False, "code": "DEVELOPER_MODE_REQUIRED", "message": "개발자 모드에서만 자료함을 사용할 수 있습니다."}
-        if self._library_bridge is None:
+        # 앱 시작 때 만들지 않으므로 처음 부를 때 만든다(v2.2.17: 속성 없음 오류 수정).
+        if getattr(self, "_library_bridge", None) is None:
             from docfit_app.library_bridge import LibraryBridge
             self._library_bridge = LibraryBridge()
         try:
+            if isinstance(request, dict) and request.get("cmd") == "open_item":
+                from docfit_app.library_bridge import open_library_item
+                return {"ok": True, "opened": open_library_item(request)}
             return self._library_bridge.request(request)
         except Exception as exc:
             return {"ok": False, "message": str(exc)}
+
+    def notebook(self, request):
+        """노트북 요청(개발자 모드 전용). 자료함과 같은 klib 브리지를 쓴다.
+
+        출처 추가는 klib가 직접 추출하고, klib가 못 읽는 구형 hwp·pdf만 NotebookService가 Python으로 추출해 넣는다.
+        nb_drop_watch(창에 끌어 놓은 파일을 노트북으로 받기 켜기·끄기)와 nb_take_drop(놓은 경로 가져가기)은 여기서 처리한다.
+        """
+        if not self._developer_mode_enabled():
+            return {"ok": False, "code": "DEVELOPER_MODE_REQUIRED", "message": "개발자 모드에서만 노트북을 사용할 수 있습니다."}
+        if not isinstance(request, dict) or not str(request.get("cmd", "")).startswith("nb_"):
+            return {"ok": False, "message": "허용되지 않은 노트북 명령입니다."}
+        cmd = request["cmd"]
+        try:
+            if cmd == "nb_drop_watch":
+                return self._notebook_drop_watch(bool(request.get("active")))
+            if cmd == "nb_take_drop":
+                paths, self._notebook_drop = list(getattr(self, "_notebook_drop", None) or []), []
+                return {"ok": True, "paths": paths}
+            if getattr(self, "_notebook_service", None) is None:
+                from docfit_app.notebook_service import NotebookService
+                if getattr(self, "_library_bridge", None) is None:
+                    from docfit_app.library_bridge import LibraryBridge
+                    self._library_bridge = LibraryBridge()
+                self._notebook_service = NotebookService(self._library_bridge)
+            return self._notebook_service.handle(request)
+        except Exception as exc:
+            return {"ok": False, "message": str(exc)}
+
+    def _notebook_drop_watch(self, active):
+        """노트북 화면이 열려 있는 동안 창에 놓은 파일을 노트북 출처로 받고, 닫히면 이전 놓기 대상으로 되돌린다."""
+        current = getattr(self, "drop_target", "documents")
+        if active:
+            if current != "notebook":
+                self._drop_target_before_notebook = current
+            self._apply_drop_target("notebook")
+        elif current == "notebook":
+            self._apply_drop_target(getattr(self, "_drop_target_before_notebook", None) or "documents")
+        return {"ok": True, "drop_target": self.drop_target}
+
+    def _receive_notebook_paths(self, paths):
+        """노트북에 끌어 놓은 파일: 경로를 맡겨 두고 화면에 알린다(화면이 nb_take_drop으로 가져가 출처로 추가)."""
+        pending = list(getattr(self, "_notebook_drop", None) or [])
+        pending.extend(str(p) for p in (paths or [])[:200] if str(p).strip())
+        self._notebook_drop = pending
+        window = self.window
+        if window is not None and hasattr(window, "run_js"):
+            try:
+                window.run_js("window.dispatchEvent(new Event('docfit-notebook-files-dropped'));")
+            except Exception:
+                logging.getLogger(__name__).debug("notebook drop notify failed", exc_info=True)
+        return {"ok": True, "pending": len(pending)}
+
     def _table_units_command(self, action, payload=None):
         """표 템플릿: 스냅샷 목록·정보단위 미리보기·한/글 붙여넣기용 복사(2026-10-22).
 
@@ -2475,8 +2573,12 @@ class DesktopWebBridge:
 
     def set_drop_target(self, target):
         """끌어 놓은 파일을 넣을 곳을 바꾼다: documents(문서 목록) 또는 format(예시 서식 복제)."""
+        self._apply_drop_target(target)
+        return self.get_state()
+
+    def _apply_drop_target(self, target):
         if target not in ("documents", "manual_documents", "format", "quick_format", "sketch_image", "paint_image",
-                          "rename_files", "kclip"):
+                          "rename_files", "kclip", "notebook"):
             raise ValueError("지원하지 않는 놓기 대상입니다.")
         self.drop_target = target
         if target == "format":   # 서식 관리 창을 열 때 서식예시 폴더에 새로 넣은 예시를 찾아 등록한다
@@ -2490,12 +2592,12 @@ class DesktopWebBridge:
                     else "표 칸 위에 놓으면 칸 배경 그림으로 넣습니다" if target == "sketch_image"
                     else "여기에 놓으면 그림판 배경 사진으로 넣습니다" if target == "paint_image"
                     else "여기에 파일을 놓으면 이름 목록에 추가됩니다" if target == "rename_files"
+                    else "여기에 놓으면 노트북 출처로 추가합니다" if target == "notebook"
                     else "여기에 놓으면 문서 목록에 추가됩니다")
             try:
                 window.run_js(f"window.docfitDropText = {text!r};")
             except Exception:
                 logging.getLogger(__name__).debug("drop text update failed", exc_info=True)
-        return self.get_state()
 
     def add_format_paths(self, paths):
         """끌어 놓은 예시 보고서(HWP/HWPX) 중 첫 파일의 서식을 분석해 새 서식으로 복제한다."""
@@ -2537,6 +2639,9 @@ class DesktopWebBridge:
             return self._receive_sketch_image(paths, client_x, client_y, event="docfit-paint-image-dropped")
         if self.drop_target == "rename_files":
             return self._receive_rename_paths(paths)
+        if self.drop_target == "notebook":
+            self._receive_notebook_paths(paths)
+            return self.get_state()
         bounds = getattr(self, "_profile_drop_bounds", None)
         on_badge = (bounds is not None and isinstance(client_x, (int, float)) and isinstance(client_y, (int, float)))
         if on_badge:
@@ -2830,6 +2935,9 @@ class _Win32WindowApi:
             raise OSError('앱 창 위치를 바꾸지 못했습니다.')
         return True
 
+    def is_zoomed(self, hwnd):
+        return bool(self.user32.IsZoomed(hwnd))
+
 
 class _PyWebViewWindow:
     def __init__(self, window, settings=None, saved_state=None):
@@ -2866,9 +2974,9 @@ class _BrowserApi:
             "get_state", "add_files", "add_folder", "add_paths", "remove_file",
             "clear_files", "set_mode", "set_range", "start", "stop", "start_job", "cancel_job", "get_events",
             "open_settings", "get_settings", "save_settings", "text_input", "open_stages", "open_log", "get_log", "clear_log",
-            "get_pending_dialog", "resolve_dialog", "enable_close_guard", "acknowledge_close", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch", "timemachine", "library",
+            "get_pending_dialog", "resolve_dialog", "enable_close_guard", "acknowledge_close", "format_profile", "flow_editor", "document_tool", "stage_config", "table_template", "idioms", "hangul_fonts", "get_abbreviations", "save_abbreviation", "delete_abbreviation", "set_abbreviation_defaults", "abbreviation_document", "table_units", "table_sketch", "timemachine", "library", "notebook",
             "file_rename", "kclip", "new_document", "hwp_bulk", "open_results", "next_job", "run_tool", "open_result",
-            "sidebar_mode", "sidebar_mode_switch_side", "always_on_top",
+            "sidebar_mode", "sidebar_mode_switch_side", "always_on_top", "window_control",
             "show_result", "open_source_file", "show_source_file", "open_result_source", "open_diff", "compare_result", "launch_external_hwp_diff", "set_stage", "reset_stages", "set_stage_default",
             "set_profile", "set_option", "set_include_spacing", "set_reset_spacing", "set_table_spacing",
             "set_exclude_tables", "set_card_option",

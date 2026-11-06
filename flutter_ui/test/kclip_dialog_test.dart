@@ -11,6 +11,7 @@ void main() {
     var running = false;
     final calls = <String>[];
     Future<Object?> api(String method, List<Object?> args) async {
+      if (method == 'window_control') return {'ok': true, 'maximized': false};
       expect(method, 'kclip');
       final action = args[0] as String;
       calls.add(action);
@@ -165,6 +166,23 @@ void main() {
     expect(sentActions, ['paste_clean']);
   });
 
+  testWidgets('사이드바 진입에서는 메모와 드롭 안내를 숨긴다', (tester) async {
+    Future<Object?> api(String method, List<Object?> args) async {
+      if (method == 'set_drop_target') return {'ok': true};
+      if (args[0] == 'status') return {'ok': true, 'running': true, 'available': true, 'status': {}};
+      if (args[0] == 'list') return {'ok': true, 'items': []};
+      if (args[0] == 'settings_get') return {'ok': true, 'settings': {}};
+      return {'ok': true};
+    }
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: SizedBox(width: 360, height: 760, child: KClipPanel(api: api)))));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('kclip-memo')), findsNothing);
+    expect(find.byKey(const ValueKey('kclip-drop-zone')), findsNothing);
+    for (final c in const ['전체', '글', '그림', '파일', '폴더', '웹']) {
+      expect(find.byKey(ValueKey('kclip-category-$c')), findsOneWidget);
+    }
+  });
+
   testWidgets('메모 입력을 에이전트 항목 추가 명령으로 보내고 창 제어를 제공한다', (tester) async {
     final sent = <(String, Map)>[];
     Future<Object?> api(String method, List<Object?> args) async {
@@ -195,7 +213,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: SizedBox(height: 760, child: KClipPanel(api: api)),
+          body: SizedBox(height: 760, child: KClipPanel(api: api, mode: KClipEntryMode.hotkey)),
         ),
       ),
     );
@@ -214,7 +232,7 @@ void main() {
     expect(find.text('메모를 클립보드 항목에 추가했습니다.'), findsOneWidget);
   });
 
-  testWidgets('몽땅클립보드에 네이티브 끌어 놓기 영역을 표시한다', (tester) async {
+  testWidgets('단축키 진입에서만 네이티브 끌어 놓기 영역을 표시한다', (tester) async {
     Future<Object?> api(String method, List<Object?> args) async {
       if (method == 'set_drop_target') return {'ok': true};
       if (method != 'kclip') return {'ok': true};
@@ -231,10 +249,81 @@ void main() {
     }
 
     await tester.pumpWidget(MaterialApp(home: Scaffold(
-      body: SizedBox(height: 760, child: KClipPanel(api: api)),
+      body: SizedBox(height: 760, child: KClipPanel(api: api, mode: KClipEntryMode.hotkey)),
     )));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('kclip-drop-zone')), findsOneWidget);
     expect(find.text('파일·폴더·이미지·웹 링크를 여기에 끌어 놓으세요'), findsOneWidget);
+  });
+
+  testWidgets('최대화/복원 단추는 네이티브 창 명령을 보내고 대화상자를 창 전체로 펼친다', (tester) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    var maximized = false;
+    final windowCalls = <String>[];
+    Future<Object?> api(String method, List<Object?> args) async {
+      if (method == 'window_control') {
+        final action = args[0] as String;
+        windowCalls.add(action);
+        if (action == 'toggle_maximize') maximized = !maximized;
+        return {'ok': true, 'maximized': maximized};
+      }
+      if (method != 'kclip') return {'ok': true};
+      switch (args[0]) {
+        case 'status':
+          return {'ok': true, 'running': true, 'available': true, 'status': {}};
+        case 'list':
+          return {'ok': true, 'items': []};
+        case 'settings_get':
+          return {'ok': true, 'settings': {}};
+      }
+      return {'ok': true};
+    }
+
+    await tester.pumpWidget(MaterialApp(home: Builder(
+      builder: (context) => TextButton(
+        onPressed: () => showKClipDialog(context, api),
+        child: const Text('열기'),
+      ),
+    )));
+    await tester.tap(find.text('열기'));
+    await tester.pumpAndSettle();
+    expect(windowCalls, ['state']);
+    final panel = find.byType(KClipPanel);
+    expect(tester.getSize(panel).width, lessThanOrEqualTo(720));
+    expect(find.byTooltip('최대화'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('kclip-maximize')));
+    await tester.pumpAndSettle();
+    expect(windowCalls, ['state', 'toggle_maximize']);
+    expect(find.byTooltip('이전 크기로 복원'), findsOneWidget);
+    expect(tester.getSize(panel), const Size(1400, 1000));
+
+    await tester.tap(find.byKey(const ValueKey('kclip-maximize')));
+    await tester.pumpAndSettle();
+    expect(windowCalls.last, 'toggle_maximize');
+    expect(find.byTooltip('최대화'), findsOneWidget);
+    expect(tester.getSize(panel).width, lessThanOrEqualTo(720));
+  });
+
+  testWidgets('창 명령이 거절되면 상태를 유지하고 이유를 보여준다', (tester) async {
+    Future<Object?> api(String method, List<Object?> args) async {
+      if (method == 'window_control') {
+        return args[0] == 'state'
+            ? {'ok': true, 'maximized': false}
+            : {'ok': false, 'maximized': false, 'message': '사이드메뉴 모드에서는 창 크기를 바꿀 수 없습니다.'};
+      }
+      if (args[0] == 'status') return {'ok': true, 'running': false, 'available': true};
+      return {'ok': true};
+    }
+    await tester.pumpWidget(MaterialApp(home: Scaffold(
+      body: SizedBox(height: 760, child: KClipPanel(api: api)),
+    )));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('kclip-maximize')));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('최대화'), findsOneWidget);
+    expect(find.text('사이드메뉴 모드에서는 창 크기를 바꿀 수 없습니다.'), findsOneWidget);
   });
 }

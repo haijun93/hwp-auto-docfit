@@ -26,12 +26,12 @@ void main() {
       developerMode: false,
       libraryScreen: LibraryScreen(api: InMemoryLibraryApi()),
       trailing: Builder(builder: (context) => Column(children: [
-        TextButton(key: const ValueKey('new-document-open'), onPressed: () {}, child: const Text('새문서')),
+        TextButton(key: const ValueKey('new-document-open'), onPressed: () {}, child: const Text('서식 고르기')),
         TextButton(onPressed: () {}, child: const Text('몽땅클립보드')),
       ])),
     )));
     expect(find.byKey(const ValueKey('new-document-open')), findsOneWidget);
-    expect(find.text('새문서'), findsOneWidget);
+    expect(find.text('서식 고르기'), findsOneWidget);
     expect(find.byKey(const ValueKey('always-on-top-toggle')), findsNothing);
     expect(find.byKey(const ValueKey('sidebar-mode-toggle')), findsNothing);
     expect(find.byKey(const ValueKey('sidebar-mode-switch-side')), findsNothing);
@@ -58,10 +58,17 @@ void main() {
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey('sidebar-mode-toggle')));
     await tester.pump();
-    expect(find.byKey(const ValueKey('sidebar-mode-switch-side')), findsNWidgets(2));
-    await tester.tap(find.byKey(const ValueKey('sidebar-mode-switch-side')).first);
+    expect(find.byKey(const ValueKey('sidebar-mode-switch-side')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('sidebar-mode-switch-side')));
     await tester.pump();
     expect(calls, contains('sidebar_mode_switch_side'));
+    // 사이드메뉴 모드 버튼은 창을 가장자리에 붙이는 앱 기능을 부르고, 각 버튼은 하나씩만 보인다.
+    expect(calls, contains('sidebar_mode'));
+    expect(find.byKey(const ValueKey('sidebar-mode-toggle')), findsOneWidget);
+    expect(find.byKey(const ValueKey('always-on-top-toggle')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('always-on-top-toggle')));
+    await tester.pump();
+    expect(calls, contains('always_on_top'));
   });
   testWidgets('developer mode shows library button and opens LibraryScreen', (tester) async {
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: WorkspaceTabBar(
@@ -96,12 +103,6 @@ void main() {
     expect(find.byKey(const ValueKey('sidebar-mode-toggle')), findsOneWidget);
     expect(find.byKey(const ValueKey('sidebar-mode-switch-side')), findsNothing);
     expect(find.text('작업 순서'), findsNothing);
-    await tester.tap(find.byKey(const ValueKey('sidebar-mode-toggle')));
-    await tester.pump();
-    expect(find.text('사이드메뉴 모드 켜짐'), findsOneWidget);
-    expect(find.byKey(const ValueKey('sidebar-mode-switch-side')), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('sidebar-mode-switch-side')));
-    expect(sidebarSwitchCalls, 1);
   });
 
   testWidgets('DocFitApp mounts IntegratedWorkspace with 6 tabs by default',
@@ -223,5 +224,41 @@ void main() {
     final sketchAt = calls.indexOf('set_drop_target:sketch_image');
     expect(sketchAt, greaterThanOrEqualTo(0));
     expect(calls.lastIndexOf('set_drop_target:documents'), greaterThan(sketchAt));
+  });
+
+  testWidgets('앱 창에서 Ctrl+Shift+V를 누르면 단축키용 몽땅클립보드 화면을 연다', (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final calls = <String>[];
+    Future<Object?> mockApi(String endpoint, List<Object?> params) async {
+      calls.add('$endpoint:${params.firstOrNull}');
+      if (endpoint == 'kclip' && params.firstOrNull == 'status') {
+        return {'ok': true, 'running': false, 'available': true, 'consent': '동의 안내'};
+      }
+      return {'ok': true};
+    }
+
+    await tester.pumpWidget(DocFitApp(api: mockApi, useIntegratedShell: true));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byKey(const ValueKey('kclip-memo')), findsNothing);
+
+    // Ctrl+V만으로는 열지 않는다.
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyV);
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byKey(const ValueKey('kclip-memo')), findsNothing);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyV);
+    // 두 번 눌러도 창은 하나만 열린다.
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyV);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byKey(const ValueKey('kclip-memo')), findsOneWidget);
+    expect(find.byKey(const ValueKey('kclip-drop-zone')), findsOneWidget);
+    expect(calls, contains('set_drop_target:kclip'));
+    expect(calls, contains('window_control:state'));
   });
 }
