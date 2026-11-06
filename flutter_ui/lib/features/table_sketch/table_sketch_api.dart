@@ -115,6 +115,15 @@ class TableSketchApi {
     await call('table_sketch', ['clear_draft']);
   }
 
+  /// command('table_sketch', ['recognize', base64]): 표 스케치 이미지의 선을 격자 그림으로 인식.
+  /// 실패하면 {'ok': false, 'message': 이유}.
+  Future<Map<String, dynamic>> recognize(String data) async {
+    final response = await call('table_sketch', ['recognize', data]);
+    return response is Map
+        ? Map<String, dynamic>.from(response)
+        : {'ok': false, 'message': '표 인식 응답을 읽지 못했습니다.'};
+  }
+
   Future<Map<String, dynamic>> importImage(String data) async {
     final response = await call('table_sketch', ['import_image', data]);
     return response is Map ? Map<String, dynamic>.from(response) : {'ok': false};

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:docfit_ui/features/timemachine/timemachine_screen.dart';
+import 'package:docfit_ui/features/timemachine/related_documents_dialog.dart' show RelatedDocumentsDialog;
 import 'package:docfit_ui/features/timemachine/timemachine_related_format.dart';
 
 void main() {
@@ -466,28 +467,124 @@ void main() {
     await tester.tap(find.text('연관 문서 찾기'));
     await tester.pumpAndSettle();
     expect(api.calls.any((c) => c.$1 == 'related_search' && c.$2['path'] == 'C:\\Temp\\TM\\보고서.pdf'), isTrue);
-    expect(find.textContaining('기준일 없음'), findsNWidgets(2));
+    expect(find.textContaining('기준일 못 찾음'), findsNWidgets(2));
     expect(find.textContaining('점수 82'), findsOneWidget);
-    expect(find.textContaining('공통 단어: 사업'), findsOneWidget);
-    await tester.tap(find.text('연관 아님'));
+    expect(find.text('공통 단어: 사업'), findsOneWidget);
+    await tester.tap(find.text('관련 없음'));
     await tester.pumpAndSettle();
     expect(api.calls.any((c) => c.$1 == 'related_exclude' && c.$2['related_path'] == 'C:\\Temp\\TM\\연관.docx'), isTrue);
+    // 제외 후 대화상자를 닫지 않고 다시 조회한다.
+    expect(api.calls.where((c) => c.$1 == 'related_search').length, 2);
   });
 
-  testWidgets('연관 근거 사전은 문장으로, 기준일은 출처와 함께 보이고 related_id로 제외한다', (tester) async {
-    final api = _FakeApi(enabled: true, related: _newRelatedResponse);
+  Future<void> openRelated(WidgetTester tester, _FakeApi api) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 2000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: api.call))));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('tm-send-menu-42')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('연관 문서 찾기'));
     await tester.pumpAndSettle();
-    expect(find.textContaining("선택 문서 작성 기준일 2026-09-30 (본문 '작성 기준일: 2026. 9. 30.')"), findsOneWidget);
-    expect(find.textContaining('기준일 없음 (2026년도 1분기 표기로 추정 2026-03-01)'), findsOneWidget);
-    expect(find.textContaining('근거: 공통 업무·사업 단서: 디지털전환 · 인접한 기간 패턴: 2단계 차이'), findsOneWidget);
-    expect(find.textContaining('{type:'), findsNothing);
-    expect(find.textContaining('period_pattern'), findsNothing);
-    await tester.tap(find.text('연관 아님'));
+  }
+
+  final richRelated = <String, Object?>{
+    'ok': true,
+    'reference_date': '2026-06-30', 'reference_date_found': true, 'reference_date_precision': 'day',
+    'reference_date_basis': 'explicit', 'reference_date_evidence': '작성 기준일: 2026-06-30', 'reference_date_note': null,
+    'items': [
+      {'name': '없음.hwpx', 'folder': 'C:\\Temp\\TM\\하위', 'score': 90, 'reasons': [], 'related_reasons': ['같은 문서 유형: 업무추진실적'],
+       'user_added': false, 'reference_date': null, 'reference_date_found': false, 'reference_date_note': '본문에서 기준일을 찾지 못함'},
+      {'name': '1분기.hwpx', 'folder': 'C:\\Temp\\TM\\하위', 'score': 40,
+       'reasons': [{'type': 'department', 'label': '같은 부서명', 'values': ['정보화과']}],
+       'related_reasons': ['같은 부서명: 정보화과', '인접한 기간 패턴'], 'user_added': false,
+       'reference_date': '2026-03-31', 'reference_date_found': true, 'reference_date_precision': 'quarter',
+       'reference_date_basis': 'period', 'reference_date_evidence': '2026년 1분기'},
+      {'name': '3분기.hwpx', 'folder': 'C:\\Temp\\TM\\하위', 'score': 10, 'reasons': [],
+       'related_reasons': ['사용자가 연관 자료로 추가'], 'user_added': true,
+       'reference_date': '2026-09-30', 'reference_date_found': true, 'reference_date_precision': 'day',
+       'reference_date_basis': 'explicit', 'reference_date_evidence': '2026. 9. 30. 기준'},
+    ],
+    'series': {
+      'key': '주요업무추진실적', 'label': '주요업무추진실적', 'period': {'kind': 'quarter', 'year': 2026, 'value': 2, 'label': '2026년 2분기'},
+      'reference_date': '2026-06-30', 'reference_date_found': true, 'total': 3,
+      'previous': [{'name': '1분기.hwpx', 'period_label': '2026년 1분기', 'reference_date': '2026-03-31', 'reference_date_found': true}],
+      'next': [{'name': '3분기.hwpx', 'period_label': '2026년 3분기', 'reference_date': '2026-09-30', 'reference_date_found': true}],
+      'same': [],
+      'undated': [{'name': '4분기.hwpx', 'period_label': '2026년 4분기', 'reference_date': null, 'reference_date_found': false}],
+    },
+  };
+
+  testWidgets('연관검색: 기준일·정밀도·근거와 못 찾음 표시, 기준일 순 정렬과 점수순 전환', (tester) async {
+    final api = _FakeApi(enabled: true)..relatedResponse = richRelated;
+    await openRelated(tester, api);
+    expect(find.text('선택 문서 기준일 2026-06-30 (일 단위·본문 명시) · 근거 “작성 기준일: 2026-06-30”'), findsOneWidget);
+    expect(find.text('기준일 2026-03-31 (분기 단위·기간 표기) · 근거 “2026년 1분기”'), findsOneWidget);
+    expect(find.text('기준일 못 찾음 (본문에서 기준일을 찾지 못함)'), findsOneWidget);
+    // 근거 칩
+    expect(find.widgetWithText(Chip, '같은 부서명: 정보화과'), findsOneWidget);
+    expect(find.widgetWithText(Chip, '인접한 기간 패턴'), findsOneWidget);
+    expect(find.text('직접 추가'), findsOneWidget);
+
+    double top(String name) => tester.getTopLeft(find.byKey(ValueKey('tm-related-item-$name'))).dy;
+    // 기본: 기준일 최신순, 기준일 없는 문서는 맨 뒤
+    expect(top('3분기.hwpx') < top('1분기.hwpx'), isTrue);
+    expect(top('1분기.hwpx') < top('없음.hwpx'), isTrue);
+
+    await tester.tap(find.byKey(const ValueKey('tm-related-sort')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('기준일 오래된순').last);
+    await tester.pumpAndSettle();
+    expect(top('1분기.hwpx') < top('3분기.hwpx'), isTrue);
+    expect(top('3분기.hwpx') < top('없음.hwpx'), isTrue);
+
+    await tester.tap(find.byKey(const ValueKey('tm-related-sort')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('점수순').last);
+    await tester.pumpAndSettle();
+    expect(top('없음.hwpx') < top('1분기.hwpx'), isTrue);
+    expect(top('1분기.hwpx') < top('3분기.hwpx'), isTrue);
+
+    // folder만 오는 실제 응답에서도 '관련 없음'이 경로를 만들어 보낸다.
+    await tester.tap(find.byKey(const ValueKey('tm-related-exclude-1분기.hwpx')));
+    await tester.pumpAndSettle();
+    final excluded = api.calls.lastWhere((c) => c.$1 == 'related_exclude').$2;
+    expect(excluded['selected_path'], 'C:\\Temp\\TM\\보고서.pdf');
+    expect(excluded['related_path'], 'C:\\Temp\\TM\\하위\\1분기.hwpx');
+  });
+
+  testWidgets('연관검색: 정기 문서 계열 이전·다음·기준일 없음 묶음', (tester) async {
+    final api = _FakeApi(enabled: true)..relatedResponse = richRelated;
+    await openRelated(tester, api);
+    expect(find.text('정기 문서 계열: 주요업무추진실적 (이 문서 2026년 2분기) · 3건'), findsOneWidget);
+    expect(find.text('이전 기간 (1)'), findsOneWidget);
+    expect(find.text('다음 기간 (1)'), findsOneWidget);
+    expect(find.text('기준일 없음 (1)'), findsOneWidget);
+    expect(find.byKey(const ValueKey('tm-related-series-same')), findsNothing);
+    expect(find.text('2026년 1분기 · 1분기.hwpx · 2026-03-31'), findsOneWidget);
+    expect(find.text('2026년 4분기 · 4분기.hwpx · 기준일 못 찾음'), findsOneWidget);
+    expect(find.descendant(of: find.byKey(const ValueKey('tm-related-series-next')), matching: find.textContaining('3분기.hwpx')), findsOneWidget);
+  });
+
+  testWidgets('연관검색: 계열이 없으면 안내하고 연관 자료 추가는 목록 문서를 related_include로 보낸다', (tester) async {
+    final api = _FakeApi(enabled: true, itemCount: 2);
+    await openRelated(tester, api);
+    expect(find.text('같은 계열(정기 문서) 자료를 찾지 못했습니다.'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('tm-related-include')));
+    await tester.pumpAndSettle();
+    // 선택 문서 자신은 고를 수 없다.
+    expect(find.byKey(const ValueKey('tm-related-include-42')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('tm-related-include-43')));
+    await tester.pumpAndSettle();
+    final included = api.calls.lastWhere((c) => c.$1 == 'related_include').$2;
+    expect(included, {'selected_path': 'C:\\Temp\\TM\\보고서.pdf', 'related_path': 'C:\\Temp\\TM\\보고서1.pdf', 'included': true});
+    expect(api.calls.where((c) => c.$1 == 'related_search').length, 2);
+  });
+
+  testWidgets('연관검색(alpha): related_id가 있으면 경로 대신 불투명 식별자로 관련 없음을 보낸다', (tester) async {
+    final api = _FakeApi(enabled: true, related: _newRelatedResponse);
+    await openRelated(tester, api);
+    await tester.tap(find.byKey(const ValueKey('tm-related-exclude-기준일없음.txt')));
     await tester.pumpAndSettle();
     final excludes = api.calls.where((c) => c.$1 == 'related_exclude').toList();
     expect(excludes.length, 1);
@@ -496,59 +593,39 @@ void main() {
     expect(excludes.single.$2.containsKey('related_path'), isFalse);
   });
 
-  testWidgets('선택 문서 분기 추정 기준일을 표시하고 식별자 없는 항목은 제외 버튼을 끈다', (tester) async {
+  testWidgets('연관검색(alpha): 식별자·경로가 없는 항목은 요청하지 않고 안내한다', (tester) async {
     final api = _FakeApi(enabled: true, related: {
-      'ok': true, 'reference_date': '2026-03-01', 'reference_date_found': true,
-      'reference_date_source': 'quarter', 'reference_date_text': '2026년도 1분기',
+      'ok': true, 'reference_date': null, 'reference_date_found': false,
       'items': [
-        {'name': '식별자없음.txt', 'score': 50, 'reasons': [{'type': 'terms', 'label': '공통 단어', 'values': ['예산', '집행']}],
-         'reference_date': null, 'reference_date_found': false},
+        {'name': '식별자없음.txt', 'score': 50, 'reasons': [], 'reference_date': null, 'reference_date_found': false},
       ],
     });
-    await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: api.call))));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('tm-send-menu-42')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('연관 문서 찾기'));
-    await tester.pumpAndSettle();
-    expect(find.textContaining('선택 문서 작성 기준일 2026-03-01 (2026년도 1분기 표기로 추정)'), findsOneWidget);
-    expect(find.textContaining('근거: 공통 단어: 예산, 집행'), findsOneWidget);
-    expect(find.textContaining('{type:'), findsNothing);
-    final button = tester.widget<TextButton>(find.widgetWithText(TextButton, '연관 아님'));
-    expect(button.onPressed, isNull);
-    await tester.tap(find.text('연관 아님'), warnIfMissed: false);
+    await openRelated(tester, api);
+    await tester.tap(find.byKey(const ValueKey('tm-related-exclude-식별자없음.txt')));
     await tester.pumpAndSettle();
     expect(api.calls.any((c) => c.$1 == 'related_exclude'), isFalse);
+    expect(find.text('문서 위치를 알 수 없어 관련 없음으로 표시하지 못했습니다.'), findsOneWidget);
   });
 
-  testWidgets('연관 제외가 거절되거나 실패하면 대화상자 안에 문구를 보인다', (tester) async {
+  testWidgets('연관검색(alpha): 관련 없음이 거절되거나 실패하면 대화상자 안에 문구를 보인다', (tester) async {
     final api = _FakeApi(enabled: true, related: _newRelatedResponse,
         excludeResponse: const {'ok': false, 'code': 'INVALID_INPUT', 'message': '연관 문서 항목을 다시 검색해 주세요.'});
-    await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: api.call))));
+    await openRelated(tester, api);
+    await tester.tap(find.byKey(const ValueKey('tm-related-exclude-기준일없음.txt')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('tm-send-menu-42')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('연관 문서 찾기'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('연관 아님'));
-    await tester.pumpAndSettle();
-    // 대화상자는 열린 채로 서버 문구가 보이고 다시 검색하지 않는다.
-    expect(find.byType(AlertDialog), findsOneWidget);
-    expect(find.descendant(of: find.byType(AlertDialog), matching: find.text('연관 문서 항목을 다시 검색해 주세요.')), findsOneWidget);
+    expect(find.descendant(of: find.byType(RelatedDocumentsDialog), matching: find.text('연관 문서 항목을 다시 검색해 주세요.')), findsOneWidget);
     expect(api.calls.where((c) => c.$1 == 'related_search').length, 1);
 
-    // 연결 오류(예외)도 대화상자 안에 기본 문구로 보인다.
     final broken = _FakeApi(enabled: true, related: _newRelatedResponse, excludeResponse: Exception('연결 끊김'));
-    // 앞 대화상자가 남지 않도록 앱 전체를 새로 만든다.
     await tester.pumpWidget(MaterialApp(key: UniqueKey(), home: Scaffold(body: TimemachineScreen(api: broken.call))));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('tm-send-menu-42')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('연관 문서 찾기'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('연관 아님'));
+    await tester.tap(find.byKey(const ValueKey('tm-related-exclude-기준일없음.txt')));
     await tester.pumpAndSettle();
-    expect(find.descendant(of: find.byType(AlertDialog), matching: find.text('연관 제외를 저장하지 못했습니다. 다시 검색해 주세요.')), findsOneWidget);
+    expect(find.descendant(of: find.byType(RelatedDocumentsDialog), matching: find.text('관련 없음을 저장하지 못했습니다.')), findsOneWidget);
   });
 
   testWidgets('cache_clear_clears_service_and_memory_cache', (tester) async {
@@ -1172,6 +1249,7 @@ class _FakeApi {
   final bool enabled, cloud, scanRunning;
   bool developerMode;
   final Object? thumbnail;
+  Map<String, Object?>? relatedResponse;
   final int itemCount;
   final List<Map<String, Object?>>? items;
   final Duration thumbnailDelay;
@@ -1262,6 +1340,7 @@ class _FakeApi {
           'row': payload['row'],
         };
       case 'related_search':
+        if (relatedResponse != null) return relatedResponse;
         if (related != null) return related;
         return {'ok': true, 'reference_date_found': false, 'reference_date': null, 'items': [
           {'name': '연관.docx', 'path': 'C:\\Temp\\TM\\연관.docx', 'score': 82, 'reasons': ['공통 단어: 사업'], 'reference_date_found': false, 'reference_date': null},
@@ -1269,6 +1348,8 @@ class _FakeApi {
       case 'related_exclude':
         if (excludeResponse is Exception) throw excludeResponse as Exception;
         return excludeResponse ?? {'ok': true, 'excluded': true};
+      case 'related_include':
+        return {'ok': true, 'included': true};
       case 'thumbnail':
         thumbnailCalls++;
         _inFlight++;

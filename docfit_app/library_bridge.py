@@ -24,13 +24,13 @@ ALLOWED_COMMANDS = frozenset({
 
     "search", "index_file", "remove_file",
 
-    "relation_update",
+    "box_scan", "box_scan_status", "box_scan_cancel", "box_scan_files",
 
     "nb_create", "nb_list", "nb_update", "nb_delete",
 
     "nb_source_add", "nb_source_list", "nb_source_remove", "nb_source_paragraphs", "nb_index",
 
-    "nb_search", "nb_transform", "nb_note_save", "nb_note_list", "nb_note_delete", "nb_export_md",
+    "nb_search", "nb_transform", "nb_note_save", "nb_note_list", "nb_note_delete", "nb_export_md", "nb_compare",
 
 })
 
@@ -144,27 +144,15 @@ class LibraryBridge:
 
         raise LibraryBridgeError("klib 파이프에 연결하거나 응답을 읽지 못했습니다.") from last_error
 
-    def library_search(self, query, *, box_id=None, limit=20):
+    def available(self):
 
-        if not isinstance(query, str) or not query.strip() or len(query) > 200:
+        """klib를 쓸 수 있는지(실행 파일이 있고, 기본 파이프라면 Windows일 때만)."""
 
-            raise ValueError("검색어는 1~200자로 입력하세요.")
+        if self.connector is _open_pipe and os.name != "nt":
 
-        if type(limit) is not int or not 1 <= limit <= 200:
+            return False
 
-            raise ValueError("검색 결과 수는 1~200이어야 합니다.")
-
-        payload = {"query": query, "limit": limit}
-
-        if box_id is not None:
-
-            if type(box_id) is not int:
-
-                raise ValueError("자료함을 선택하세요.")
-
-            payload["box_id"] = box_id
-
-        return self.request("search", **payload).get("results", [])
+        return self.executable.is_file() or self.connector is not _open_pipe
 
     def request_command(self, cmd, **payload):
 

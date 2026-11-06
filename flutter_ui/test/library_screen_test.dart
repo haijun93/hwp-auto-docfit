@@ -135,6 +135,7 @@ class FakeLibraryClipboardReader implements LibraryClipboardReader {
 }
 
 void main() {
+  libraryScanTests();
 
   testWidgets('missing klib is shown without crashing', (tester) async {
 
@@ -985,4 +986,90 @@ class _RecordingCanvas extends Fake implements Canvas {
 
   }
 
+}
+
+/// 폴더 스캔 시험용: 상태를 시험이 직접 바꾼다.
+class _ScanApi extends InMemoryLibraryApi implements LibraryScanApi {
+  _ScanApi() : super(initialBoxes: const [LibraryBox(id: 'box_1', name: '자료함')]);
+
+  final started = <String>[];
+  int cancelCalls = 0;
+  LibraryScanStatus status = const LibraryScanStatus();
+
+  @override
+  Future<void> startScan(String boxId, String path) async => started.add('$boxId|$path');
+
+  @override
+  Future<LibraryScanStatus> scanStatus() async => status;
+
+  @override
+  Future<void> cancelScan() async {
+    cancelCalls++;
+    status = const LibraryScanStatus(state: 'cancelled');
+  }
+}
+
+void libraryScanTests() {
+  testWidgets('스캔 API가 없으면 폴더 스캔 단추를 숨긴다', (tester) async {
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: LibraryScreen(api: InMemoryLibraryApi(initialBoxes: const [LibraryBox(id: 'box_1', name: '자료함')])))));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('libraryScanFolder')), findsNothing);
+  });
+
+  testWidgets('폴더 스캔 진행률을 보이고 취소 단추로 멈춘다', (tester) async {
+    final api = _ScanApi();
+    await tester.binding.setSurfaceSize(const Size(1200, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: LibraryScreen(
+      api: api,
+      folderPicker: () async => r'C:\자료',
+      scanPollInterval: const Duration(milliseconds: 50),
+    ))));
+    await tester.pumpAndSettle();
+
+    api.status = const LibraryScanStatus(state: 'scanning', phase: 'reconcile', total: 10, processed: 4);
+    await tester.tap(find.byKey(const ValueKey('libraryScanFolder')));
+    await tester.pump();
+    expect(api.started, [r'box_1|C:\자료']);
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(find.text('스캔 중 4/10'), findsOneWidget);
+    final bar = tester.widget<LinearProgressIndicator>(find.byKey(const ValueKey('libraryScanProgress')));
+    expect(bar.value, closeTo(0.4, 1e-9));
+    expect(tester.widget<OutlinedButton>(find.byKey(const ValueKey('libraryScanFolder'))).onPressed, isNull);
+
+    await tester.tap(find.byKey(const ValueKey('libraryScanCancel')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(api.cancelCalls, 1);
+    expect(find.textContaining('취소했습니다'), findsOneWidget);
+    expect(find.byKey(const ValueKey('libraryScanProgress')), findsNothing);
+    expect(find.byKey(const ValueKey('libraryScanCancel')), findsNothing);
+  });
+
+  testWidgets('스캔이 끝나면 요약을 보이고 폴링을 멈춘다', (tester) async {
+    final api = _ScanApi();
+    await tester.binding.setSurfaceSize(const Size(1200, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: LibraryScreen(
+      api: api,
+      folderPicker: () async => r'C:\자료',
+      scanPollInterval: const Duration(milliseconds: 50),
+    ))));
+    await tester.pumpAndSettle();
+    api.status = const LibraryScanStatus(state: 'done', total: 12, processed: 12, changed: 3, removed: 1);
+    await tester.tap(find.byKey(const ValueKey('libraryScanFolder')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(find.text('스캔 완료: 파일 12개(변경 3개, 삭제 1개)'), findsOneWidget);
+    await tester.pumpAndSettle();
+  });
+
+  test('LibraryScanStatus.fromJson은 klib·폴백 응답을 같은 모양으로 읽는다', () {
+    final s = LibraryScanStatus.fromJson({'state': 'scanning', 'total': 0, 'discovered': 7, 'backend': 'python'});
+    expect(s.isScanning, isTrue);
+    expect(s.fraction, isNull);
+    expect(s.discovered, 7);
+    final t = LibraryScanStatus.fromJson({'state': 'scanning', 'total': 8, 'processed': 2, 'changed': 2});
+    expect(t.fraction, 0.25);
+  });
 }

@@ -289,4 +289,170 @@ void main() {
     await api.watchDrops(true);
     expect(calls.last, {'cmd': 'nb_drop_watch', 'active': true});
   });
+
+  test('parseNbTags follows klib tag rules', () {
+    expect(parseNbTags(' #예산, 복지  예산,EU eu,,#'), ['예산', '복지', 'EU']);
+    expect(parseNbTags('가' * 40).single.runes.length, 30);
+    expect(parseNbTags([for (var i = 0; i < 30; i++) 't$i'].join(',')), hasLength(20));
+  });
+
+  for (final width in [700.0, 1000.0, 1400.0]) {
+    testWidgets('tags filter notes and compare shows sources side by side at width $width', (tester) async {
+      await _setSize(tester, width);
+      final narrow = width < kNotebookWideWidth;
+      const road = r'C:\자료\도로.md';
+      const misc = r'C:\자료\기타.txt';
+      final api = InMemoryNotebookApi(
+        fileContents: {_path: _content, road: '복지관 앞 도로 정비\n교량 보수', misc: '무관한 내용'},
+      );
+      final nb = await api.createNotebook('연구');
+      final budget = await api.addSource(nb, _path);
+      final roadId = await api.addSource(nb, road);
+      final miscId = await api.addSource(nb, misc);
+      await tester.pumpWidget(MaterialApp(home: NotebookScreen(api: api)));
+      await tester.pumpAndSettle();
+
+      Future<void> tab(String key) async {
+        if (!narrow) return;
+        await tester.tap(find.byKey(ValueKey(key)));
+        await tester.pumpAndSettle();
+      }
+
+      // 출처 비교: 같은 검색어를 출처마다 나란히 보여 주고, 근거 없는 출처는 빈 칸으로 둔다.
+      await tab('nb-tab-evidence');
+      await tester.tap(find.byKey(const ValueKey('nb-mid-compare')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const ValueKey('nb-compare-query')), '복지 예산');
+      await tester.tap(find.byKey(const ValueKey('nb-compare-run')));
+      await tester.pumpAndSettle();
+      expect(find.text('출처 3개 중 2개에서 근거를 찾았습니다.'), findsOneWidget);
+      expect(find.byKey(ValueKey('nb-compare-col-$budget')), findsOneWidget);
+      expect(find.byKey(ValueKey('nb-compare-col-$roadId')), findsOneWidget);
+      expect(find.text('예산보고.txt · 근거 2개'), findsOneWidget);
+      expect(find.text('도로.md · 근거 1개'), findsOneWidget);
+      // 근거가 많은 출처가 앞, 근거 없는 출처는 맨 뒤.
+      final x0 = tester.getTopLeft(find.byKey(ValueKey('nb-compare-col-$budget'))).dx;
+      final x1 = tester.getTopLeft(find.byKey(ValueKey('nb-compare-col-$roadId'))).dx;
+      expect(x0, lessThan(x1));
+      await tester.dragUntilVisible(
+        find.byKey(ValueKey('nb-compare-col-$miscId')),
+        find.byKey(const ValueKey('nb-compare')),
+        const Offset(-200, 0),
+      );
+      expect(
+        find.descendant(of: find.byKey(ValueKey('nb-compare-col-$miscId')), matching: find.text('근거 문단 없음')),
+        findsOneWidget,
+      );
+      await tester.dragUntilVisible(
+        find.byKey(ValueKey('nb-compare-col-$budget')),
+        find.byKey(const ValueKey('nb-compare')),
+        const Offset(200, 0),
+      );
+      await tester.tap(find.byKey(ValueKey('nb-compare-cite-$budget-0')));
+      await tester.pumpAndSettle();
+      // 칸의 근거를 누르면 원문 위치를 미리보기에서 강조한다.
+      await tester.tap(find.byKey(ValueKey('nb-compare-hit-$budget-0')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('nb-preview')), findsOneWidget);
+      expect(find.byKey(const ValueKey('nb-preview-1')), findsOneWidget);
+
+      // 태그 단 노트 둘을 저장한다.
+      await tab('nb-tab-notes');
+      await tester.enterText(find.byKey(const ValueKey('nb-note-title')), '복지 메모');
+      await tester.enterText(find.byKey(const ValueKey('nb-note-tags')), '#예산, 복지 예산');
+      await tester.ensureVisible(find.byKey(const ValueKey('nb-note-save')));
+      await tester.tap(find.byKey(const ValueKey('nb-note-save')));
+      await tester.pumpAndSettle();
+      final first = (await api.listNotes(nb)).single;
+      expect(first.tags, ['예산', '복지']);
+      expect(first.citations, hasLength(1));
+      await tester.ensureVisible(find.byKey(const ValueKey('nb-note-new')));
+      await tester.tap(find.byKey(const ValueKey('nb-note-new')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('nb-note-tags')), findsOneWidget);
+      await tester.enterText(find.byKey(const ValueKey('nb-note-title')), '도로 메모');
+      await tester.enterText(find.byKey(const ValueKey('nb-note-tags')), '도로');
+      await tester.ensureVisible(find.byKey(const ValueKey('nb-note-save')));
+      await tester.tap(find.byKey(const ValueKey('nb-note-save')));
+      await tester.pumpAndSettle();
+
+      // 태그로 거르기.
+      await tester.ensureVisible(find.byKey(const ValueKey('nb-tag-예산')));
+      expect(find.text('#예산 1'), findsOneWidget);
+      expect(find.text('#도로 1'), findsOneWidget);
+      expect(find.byKey(ValueKey('nb-note-${first.id}')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('nb-tag-도로')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(ValueKey('nb-note-${first.id}')), findsNothing);
+      expect(find.text('노트 1/2'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('nb-tag-예산')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(ValueKey('nb-note-${first.id}')), findsOneWidget);
+      await tester.tap(find.byKey(ValueKey('nb-note-${first.id}')));
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(find.byKey(const ValueKey('nb-note-tags'))).controller!.text, '예산, 복지');
+
+      // 내보내기에 태그와 마지막 출처 비교가 들어간다.
+      await tester.ensureVisible(find.byKey(const ValueKey('nb-note-export')));
+      await tester.tap(find.byKey(const ValueKey('nb-note-export')));
+      await tester.pumpAndSettle();
+      final text = tester.widget<SelectableText>(find.byKey(const ValueKey('nb-export-text'))).data!;
+      expect(text, contains('태그: #예산 #복지'));
+      expect(text, contains('## 출처 비교: 복지 예산'));
+      expect(text, contains('### 도로.md'));
+      expect(text, contains('### 기타.txt\n\n근거 문단 없음'));
+      expect(find.textContaining('출처 비교: 복지 예산 포함'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('bridge api sends compare, tags and export compare options', (tester) async {
+    final calls = <Map>[];
+    final api = BridgeNotebookApi((method, args) async {
+      final request = args.single as Map;
+      calls.add(request);
+      return switch (request['cmd']) {
+        'nb_compare' => {
+          'ok': true,
+          'groups': [
+            {
+              'source_id': 5,
+              'display_name': 'a.txt',
+              'origin': r'C:\a.txt',
+              'hits': [
+                {'source_id': 5, 'ordinal': 2, 'display_name': 'a.txt', 'location': '3쪽', 'score': 1.5, 'body': '복지'},
+              ],
+            },
+            {'source_id': 6, 'display_name': 'b.txt', 'origin': '', 'hits': <Object>[]},
+          ],
+        },
+        'nb_note_list' => {
+          'ok': true,
+          'notes': [
+            {'id': 1, 'title': 't', 'body': '', 'tags': ['예산', '복지'], 'citations': <Object>[]},
+          ],
+        },
+        'nb_note_save' => {'ok': true, 'id': 9},
+        'nb_export_md' => {'ok': true, 'markdown': '# t'},
+        _ => {'ok': true},
+      };
+    });
+    final groups = await api.compare(1, '복지', sourceIds: [5, 6], perSource: 2);
+    expect(calls.last, {'cmd': 'nb_compare', 'notebook_id': 1, 'query': '복지', 'per_source': 2, 'source_ids': [5, 6]});
+    expect(groups.map((g) => (g.sourceId, g.hits.length)), [(5, 1), (6, 0)]);
+    expect(groups.first.hits.single.location, '3쪽');
+    expect((await api.listNotes(1)).single.tags, ['예산', '복지']);
+    expect(await api.saveNote(1, const NbNote(title: 't', body: '', tags: ['예산'])), 9);
+    expect(calls.last['tags'], ['예산']);
+    await api.exportMarkdown(1, 9);
+    expect(calls.last, {'cmd': 'nb_export_md', 'notebook_id': 1, 'note_id': 9});
+    await api.exportMarkdown(1, 9, compareQuery: ' 복지 ', compareSourceIds: [5]);
+    expect(calls.last, {
+      'cmd': 'nb_export_md',
+      'notebook_id': 1,
+      'note_id': 9,
+      'compare_query': '복지',
+      'compare_source_ids': [5],
+    });
+  });
 }

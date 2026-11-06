@@ -7,6 +7,7 @@ from collections import Counter
 from datetime import date
 
 from .basedate import extract_base_date
+from .series import build_series
 
 _STOP = {"주요", "업무", "실적", "자료", "현황", "보고", "보고서", "문서", "결과", "추진", "작성", "기준", "년도", "년", "분기", "부서", "사업"}
 _TOKEN = re.compile(r"[가-힣A-Za-z0-9]{2,}")
@@ -132,7 +133,7 @@ def related_documents(index, path, *, roots=None, excluded_pairs=(), included_pa
     """선택 문서와 연관된 색인 자료를 점수·근거와 함께 기준일 순으로 반환한다."""
     selected, candidates = index.related_candidates(path, roots=roots)
     if selected is None:
-        return {**_date_fields(""), "items": []}
+        return {**_date_fields(""), "items": [], "series": None}
     selected_info = _date_fields(selected["body"])
     from .store import path_key
     excluded = {frozenset(path_key(value) for value in pair) for pair in excluded_pairs}
@@ -160,4 +161,10 @@ def related_documents(index, path, *, roots=None, excluded_pairs=(), included_pa
         -item["score"] if item["reference_date"] is not None else 0,
         item["name"].casefold(),
     ))
-    return {**selected_info, "items": items[:max(1, min(int(limit), 200))]}
+    def _pair_excluded(candidate):
+        pair = frozenset((path_key(path), path_key(candidate["path"])))
+        return pair in excluded and pair not in included
+
+    series = build_series(path.replace("\\", "/").rsplit("/", 1)[-1], selected["body"], selected_info,
+                          candidates, excluded=_pair_excluded)
+    return {**selected_info, "items": items[:max(1, min(int(limit), 200))], "series": series}

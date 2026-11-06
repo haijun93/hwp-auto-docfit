@@ -1,0 +1,63 @@
+Version:1.0
+StartHTML:0000000105
+EndHTML:0000001624
+StartFragment:0000001025
+EndFragment:0000001584
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+xmlns:x="urn:schemas-microsoft-com:office:excel"
+xmlns="http://www.w3.org/TR/REC-html40">
+
+<head>
+<meta http-equiv=Content-Type content="text/html; charset=utf-8">
+<meta name=ProgId content=Excel.Sheet>
+<meta name=Generator content="Microsoft Excel 15">
+<style>
+<!--
+td
+	{padding-top:1px;
+	color:black;
+	font-size:11.0pt;
+	font-family:"맑은 고딕", monospace;
+	border:none;
+	mso-background-source:auto;
+	mso-pattern:auto;
+	white-space:nowrap;}
+.xl65
+	{font-weight:700;
+	text-align:center;
+	border:.5pt solid windowtext;
+	background:#1F4E79;
+	color:white;
+	mso-pattern:black none;}
+.xl66
+	{border:.5pt solid windowtext;
+	background:#FFF2CC;
+	mso-pattern:black none;}
+.xl67
+	{color:#C00000;
+	border:.5pt solid windowtext;
+	mso-number-format:"\#\,\#\#0\;\\-\#\,\#\#0";}
+-->
+</style>
+</head>
+
+<body link="#0563C1" vlink="#954F72">
+<!--StartFragment-->
+<tr height=20 style='height:15.0pt'>
+  <td colspan=3 height=20 class=xl65 style='height:15.0pt'>2026 상반기 집행 현황</td>
+  <td class=xl65>비고</td>
+ </tr>
+ <tr height=20 style='height:15.0pt'>
+  <td rowspan=2 height=40 class=xl66 style='height:30.0pt'>축제</td>
+  <td class=xl66>예산</td>
+  <td class=xl67 align=right>1,200,000</td>
+  <td rowspan=2 class=xl66>보류</td>
+ </tr>
+ <tr height=20 style='height:15.0pt'>
+  <td height=20 class=xl66 style='height:15.0pt'>집행</td>
+  <td class=xl67 align=right>-350,000</td>
+ </tr>
+<!--EndFragment-->
+</body>
+
+</html>

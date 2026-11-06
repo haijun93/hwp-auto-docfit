@@ -7,6 +7,8 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 // klib 내부 모듈 접근을 위한 선언 (크레이트 바이너리 테스트)
+#[path = "../src/scan.rs"]
+mod scan;
 #[path = "../src/db.rs"]
 mod db;
 #[path = "../src/json.rs"]
@@ -556,4 +558,133 @@ fn test_nb_source_add_structured_and_python_paragraphs() {
     assert_eq!(tables.arr("results").unwrap().iter().map(|r| r.str("text").unwrap()).collect::<Vec<_>>(), vec!["구분\t금액", "예산\t1,250만원"]);
     let hits = call(format!(r#"{{"cmd":"nb_search","notebook_id":{nb},"query":"1,250만원","source_ids":[{sid}]}}"#));
     assert!(!hits.arr("results").unwrap().is_empty(), "{hits:?}");
+}
+
+#[test]
+fn test_nb_note_tags_compare_and_export() {
+    let ctx = TestContext::new("nb_tags_compare");
+    let db = Arc::new(Mutex::new(Database::open(&ctx.dir.join("library.db").to_str().unwrap()).unwrap()));
+    let running = Arc::new(AtomicBool::new(true));
+    let call = |req: String| json::parse(&pipe::handle_request(&req, &db, &running)).unwrap();
+    let nb = call(r#"{"cmd":"nb_create","name":"비교"}"#.into()).i64("id").unwrap();
+    let add = |name: &str, text: &str| {
+        let path = ctx.dir.join(name);
+        fs::write(&path, text).unwrap();
+        let path = path.to_str().unwrap().replace(std::path::MAIN_SEPARATOR, "/");
+        let added = call(format!(r#"{{"cmd":"nb_source_add","notebook_id":{nb},"source_path":"{path}"}}"#));
+        assert_eq!(added.bool("ok"), Some(true), "{added:?}");
+        added.i64("id").unwrap()
+    };
+    let a = add("가.txt", "복지 예산은 120억 원이다\n도로 정비\n복지 예산 복지 예산 증가\n");
+    let b = add("나.txt", "복지 지원 확대\n");
+    let c = add("다.txt", "무관한 내용\n");
+
+    // 출처별 비교: 출처마다 따로 찾고, 근거가 없는 출처도 빈 칸으로 낸다.
+    let cmp = call(format!(r#"{{"cmd":"nb_compare","notebook_id":{nb},"query":"복지 예산","per_source":2}}"#));
+    assert_eq!(cmp.bool("ok"), Some(true), "{cmp:?}");
+    let groups = cmp.arr("groups").unwrap();
+    assert_eq!(groups.iter().map(|g| g.i64("source_id").unwrap()).collect::<Vec<_>>(), vec![a, b, c]);
+    assert_eq!(groups[0].arr("hits").unwrap().len(), 2);
+    assert!(groups[0].arr("hits").unwrap().iter().all(|h| h.i64("source_id") == Some(a)));
+    assert_eq!(groups[1].arr("hits").unwrap()[0].i64("ordinal"), Some(0));
+    assert!(groups[2].arr("hits").unwrap().is_empty());
+    let scoped = call(format!(r#"{{"cmd":"nb_compare","notebook_id":{nb},"query":"복지","source_ids":[{b}]}}"#));
+    assert_eq!(scoped.arr("groups").unwrap().len(), 1);
+    assert_eq!(call(format!(r#"{{"cmd":"nb_compare","notebook_id":{nb},"query":"  "}}"#)).bool("ok"), Some(false));
+    assert_eq!(call(format!(r#"{{"cmd":"nb_compare","notebook_id":{nb},"query":"복지","source_ids":["x"]}}"#)).bool("ok"), Some(false));
+
+    // 태그 저장·거르기·태그 목록.
+    let saved = call(format!(r##"{{"cmd":"nb_note_save","notebook_id":{nb},"title":"메모","body":"본문","tags":["#예산"," 복지 정책 ","예산"],"citations":[{{"source_id":{a},"paragraph_ordinal":0,"quote":"복지 예산은 120억 원이다"}}]}}"##));
+    assert_eq!(saved.bool("ok"), Some(true), "{saved:?}");
+    let note = saved.i64("id").unwrap();
+    assert!(matches!(saved.arr("tags").unwrap(), [Value::Str(x), Value::Str(y)] if x == "예산" && y == "복지_정책"), "{saved:?}");
+    call(format!(r#"{{"cmd":"nb_note_save","notebook_id":{nb},"title":"다른","body":"","tags":["도로"]}}"#));
+    let all = call(format!(r#"{{"cmd":"nb_note_list","notebook_id":{nb}}}"#));
+    assert_eq!(all.arr("notes").unwrap().len(), 2);
+    assert_eq!(all.arr("tags").unwrap().iter().map(|t| t.str("tag").unwrap()).collect::<Vec<_>>(), vec!["도로", "복지_정책", "예산"]);
+    let filtered = call(format!(r#"{{"cmd":"nb_note_list","notebook_id":{nb},"tag":"예산"}}"#));
+    let notes = filtered.arr("notes").unwrap();
+    assert_eq!(notes.len(), 1);
+    assert_eq!(notes[0].i64("id"), Some(note));
+    assert_eq!(notes[0].arr("tags").unwrap().len(), 2);
+    assert_eq!(notes[0].arr("citations").unwrap().len(), 1);
+    // tags 없이 저장하면 태그를 그대로 둔다.
+    call(format!(r#"{{"cmd":"nb_note_save","notebook_id":{nb},"id":{note},"title":"메모","body":"고친 본문","citations":[]}}"#));
+    assert_eq!(call(format!(r#"{{"cmd":"nb_note_list","notebook_id":{nb},"tag":"복지_정책"}}"#)).arr("notes").unwrap().len(), 1);
+    assert_eq!(call(format!(r#"{{"cmd":"nb_note_save","notebook_id":{nb},"title":"x","tags":[1]}}"#)).bool("ok"), Some(false));
+
+    // 내보내기: 태그 줄과 출처 비교 절.
+    let plain = call(format!(r#"{{"cmd":"nb_export_md","notebook_id":{nb},"note_id":{note}}}"#));
+    let plain = plain.str("markdown").unwrap();
+    assert!(plain.starts_with("# 메모\n\n태그: #예산 #복지_정책\n\n고친 본문"), "{plain}");
+    assert!(!plain.contains("출처 비교"));
+    let md = call(format!(r#"{{"cmd":"nb_export_md","notebook_id":{nb},"note_id":{note},"compare_query":"복지 예산","compare_source_ids":[{a},{c}],"per_source":1}}"#));
+    let md = md.str("markdown").unwrap();
+    assert!(md.contains("## 출처 비교: 복지 예산"), "{md}");
+    assert!(md.contains("### 가.txt"));
+    assert!(!md.contains("### 나.txt"));
+    assert!(md.contains("### 다.txt"));
+    assert!(md.contains("근거 문단 없음"));
+}
+
+#[test]
+fn test_box_scan_pipe_commands_incremental_progress_cancel() {
+    let ctx = TestContext::new("box_scan");
+    let db = Arc::new(Mutex::new(Database::open(&ctx.dir.join("library.db").to_str().unwrap()).unwrap()));
+    let running = Arc::new(AtomicBool::new(true));
+    let call = |req: String| json::parse(&pipe::handle_request(&req, &db, &running)).unwrap();
+    let wait_done = || {
+        for _ in 0..400 {
+            let s = call(r#"{"cmd":"box_scan_status"}"#.into());
+            if s.str("state") != Some("scanning") { return s; }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+        panic!("스캔이 끝나지 않음");
+    };
+    let b = call(r#"{"cmd":"box_create","name":"스캔"}"#.into()).i64("id").unwrap();
+
+    assert_eq!(call(r#"{"cmd":"box_scan_status"}"#.into()).str("state"), Some("idle"));
+    assert_eq!(call(r#"{"cmd":"box_scan_cancel"}"#.into()).bool("cancelling"), Some(false));
+
+    let src = ctx.dir.join("폴더");
+    fs::create_dir_all(src.join("하위")).unwrap();
+    for i in 0..4 { fs::write(src.join(format!("f{i}.txt")), "x").unwrap(); }
+    fs::write(src.join("하위").join("g.txt"), "y").unwrap();
+    // 상위 폴더에 링크가 있으면(macOS /var) 스캔을 거부하므로 실제 경로로 바꾼다. Windows는 \\?\ 접두가 붙어 그대로 둔다.
+    let src = if cfg!(windows) { src } else { fs::canonicalize(&src).unwrap() };
+    let p = src.to_str().unwrap().replace('\\', "/");
+
+    assert_eq!(call(format!(r#"{{"cmd":"box_scan","box_id":999,"path":"{p}"}}"#)).bool("ok"), Some(false));
+    assert_eq!(call(format!(r#"{{"cmd":"box_scan","box_id":{b},"path":"{p}/없는폴더"}}"#)).bool("ok"), Some(false));
+
+    let started = call(format!(r#"{{"cmd":"box_scan","box_id":{b},"path":"{p}"}}"#));
+    assert_eq!(started.bool("started"), Some(true), "{:?}", started.str("message"));
+    let s = wait_done();
+    assert_eq!(s.str("state"), Some("done"));
+    assert_eq!((s.i64("total"), s.i64("processed"), s.i64("added"), s.i64("unchanged")), (Some(5), Some(5), Some(5), Some(0)));
+
+    call(format!(r#"{{"cmd":"box_scan","box_id":{b},"path":"{p}"}}"#));
+    let s = wait_done();
+    assert_eq!((s.i64("added"), s.i64("updated"), s.i64("unchanged"), s.i64("removed")), (Some(0), Some(0), Some(5), Some(0)));
+
+    fs::remove_file(src.join("f0.txt")).unwrap();
+    call(format!(r#"{{"cmd":"box_scan","box_id":{b},"path":"{p}"}}"#));
+    let s = wait_done();
+    assert_eq!((s.i64("unchanged"), s.i64("removed")), (Some(4), Some(1)));
+
+    // 확장자 필터와 결과 목록 조회(box_scan_files)
+    fs::write(src.join("a.HWPX"), "1").unwrap();
+    fs::write(src.join("b.exe"), "2").unwrap();
+    let ext_started = call(format!(r#"{{"cmd":"box_scan","box_id":{b},"path":"{p}","extensions":["hwpx",".TXT"]}}"#));
+    assert_eq!(ext_started.bool("started"), Some(true));
+    let s = wait_done();
+    assert_eq!(s.i64("total"), Some(5), "txt 4개(f1~f3, 하위/g)+hwpx 1개, exe 제외");
+    let listed = call(format!(r#"{{"cmd":"box_scan_files","box_id":{b},"path":"{p}","limit":100}}"#));
+    assert_eq!(listed.bool("ok"), Some(true));
+    let files = listed.arr("files").unwrap();
+    assert_eq!(files.len(), 5);
+    assert!(files.iter().all(|f| !f.str("path").unwrap().ends_with(".exe")));
+    let page = call(format!(r#"{{"cmd":"box_scan_files","box_id":{b},"path":"{p}","offset":4,"limit":100}}"#));
+    assert_eq!(page.arr("files").unwrap().len(), 1);
+    assert_eq!(call(r#"{"cmd":"box_scan_files"}"#.into()).bool("ok"), Some(false));
 }

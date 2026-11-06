@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:file_selector/file_selector.dart';
+import 'related_documents_dialog.dart';
 import 'timemachine_api.dart';
-import 'timemachine_related_format.dart';
 import 'timemachine_thumbnails.dart';
 import '../../core/api/abbreviation_api.dart' show ApiCall;
 
@@ -811,83 +811,12 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
   }
 
   Future<void> _findRelated(TimemachineItem item) async {
-    final selectedPath = '${item.folder}\\${item.name}';
-    try {
-      final response = await _api.command('related_search', {'path': selectedPath});
-      if (!mounted) return;
-      if (response['ok'] != true) {
-        setState(() => _error = '${response['message'] ?? '연관 문서를 찾지 못했습니다.'}');
-        return;
-      }
-      final raw = response['items'];
-      final items = raw is List
-          ? raw.whereType<Map>().map((entry) => Map<String, Object?>.from(entry)).toList()
-          : <Map<String, Object?>>[];
-      // 제외 저장 실패 문구는 대화상자 안에 보여 준다(바깥 화면 배너는 대화상자에 가려진다).
-      String? excludeError;
-      await showDialog<void>(context: context, builder: (dialogContext) => StatefulBuilder(builder: (_, updateDialog) => AlertDialog(
-        title: const Text('연관 문서'),
-        content: SizedBox(width: 520, child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Text('선택 문서 ${formatReferenceDate(response)}'),
-          if (excludeError != null) ...[
-            const SizedBox(height: 8),
-            Text(excludeError!, key: const ValueKey('tm-related-exclude-error'), style: TextStyle(color: Theme.of(dialogContext).colorScheme.error)),
-          ],
-          const SizedBox(height: 8),
-          if (items.isEmpty) const Text('연관 문서가 없습니다.') else Flexible(child: ListView(shrinkWrap: true, children: [
-            for (final related in items)
-              ListTile(
-                title: Text('${related['name'] ?? ''}'),
-                subtitle: Text('${formatReferenceDate(related)} · 점수 ${related['score'] ?? 0}\n근거: ${formatRelatedReasons(related['reasons'])}'),
-                isThreeLine: true,
-                trailing: TextButton(
-                  onPressed: _relatedExcludePayload(selectedPath, related) == null ? null : () async {
-                    // 서비스가 발급한 불투명 related_id를 우선 쓰고, 없으면 예전 응답의 path로 보낸다.
-                    final payload = _relatedExcludePayload(selectedPath, related);
-                    if (payload == null) return;
-                    try {
-                      final excluded = await _api.command('related_exclude', payload);
-                      if (!dialogContext.mounted) return;
-                      if (excluded['ok'] == true) {
-                        Navigator.of(dialogContext).pop();
-                        await _findRelated(item);
-                      } else {
-                        final message = excluded['message'];
-                        updateDialog(() => excludeError = message is String && message.trim().isNotEmpty
-                            ? message
-                            : '연관 제외를 저장하지 못했습니다. 다시 검색해 주세요.');
-                      }
-                    } catch (_) {
-                      if (dialogContext.mounted) {
-                        updateDialog(() => excludeError = '연관 제외를 저장하지 못했습니다. 다시 검색해 주세요.');
-                      } else if (mounted) {
-                        setState(() => _error = '연관 제외를 저장하지 못했습니다.');
-                      }
-                    }
-                  },
-                  child: const Text('연관 아님'),
-                ),
-              ),
-          ])),
-        ])),
-        actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('닫기'))],
-      )));
-    } catch (_) {
-      if (mounted) setState(() => _error = '연관 문서를 찾지 못했습니다. 앱 연결을 확인해 주세요.');
-    }
-  }
-
-  /// "연관 아님" 요청 인자. related_id도 path도 없으면 null(버튼 비활성).
-  Map<String, Object?>? _relatedExcludePayload(String selectedPath, Map<String, Object?> related) {
-    final relatedId = related['related_id'];
-    if (relatedId is String && relatedId.isNotEmpty) {
-      return {'selected_path': selectedPath, 'related_id': relatedId};
-    }
-    final path = related['path'];
-    if (path is String && path.isNotEmpty) {
-      return {'selected_path': selectedPath, 'related_path': path};
-    }
-    return null;
+    await showDialog<void>(context: context, builder: (_) => RelatedDocumentsDialog(
+      api: _api,
+      selectedPath: '${item.folder}\\${item.name}',
+      selectedName: item.name,
+      candidates: List.unmodifiable(_items),
+    ));
   }
 
   Future<void> _clearThumbnailCache() async {

@@ -129,6 +129,62 @@ void main() {
     expect(calls, contains('clear'));
   });
 
+  testWidgets('표 항목에만 항목 메뉴가 보이고 음영 없이 복사를 호출한다', (tester) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final calls = <String>[];
+    Map? copyPayload;
+    Future<Object?> api(String method, List<Object?> args) async {
+      if (method == 'window_control') return {'ok': true, 'maximized': false};
+      final action = args[0] as String;
+      calls.add(action);
+      switch (action) {
+        case 'status':
+          return {
+            'ok': true,
+            'running': true,
+            'available': true,
+            'consent': '동의 안내',
+            'status': {'items': 3, 'hotkey': 'Ctrl+Shift+V', 'hotkey_ok': true, 'paused': false},
+          };
+        case 'list':
+          return {
+            'ok': true,
+            'items': [
+              {'id': 1, 'kind': 'text', 'preview': 'a b 1 2 · 서식 포함', 'pinned': false},
+              {'id': 2, 'kind': 'text', 'preview': '웹에서 복사한 글 · 서식 포함', 'pinned': false},
+              {'id': 3, 'kind': 'text', 'preview': '일반 글', 'pinned': false},
+            ],
+          };
+        case 'is_table':
+          return {'ok': true, 'table': (args[1] as Map)['id'] == 1};
+        case 'copy_no_shade':
+          copyPayload = args[1] as Map;
+          return {'ok': true, 'removed': 3, 'message': '셀 배경을 지웠습니다. 한/글에서 Ctrl+V로 붙여넣으세요.'};
+        case 'settings_get':
+          return {'ok': true, 'settings': {'max_items': 50, 'max_total_mb': 200, 'max_age_days': 30, 'auto_paste': true}};
+      }
+      return {'ok': true};
+    }
+
+    await tester.pumpWidget(
+      MaterialApp(home: Scaffold(body: SizedBox(height: 760, child: KClipPanel(api: api)))),
+    );
+    await tester.pumpAndSettle();
+    // 서식 포함 글 항목 둘만 표 여부를 묻고, 표인 1번에만 메뉴가 생긴다.
+    expect(calls.where((c) => c == 'is_table').length, 2);
+    expect(find.byKey(const ValueKey('kclip-item-menu-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('kclip-item-menu-2')), findsNothing);
+    expect(find.byKey(const ValueKey('kclip-item-menu-3')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('kclip-item-menu-1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('음영 없이 복사'));
+    await tester.pumpAndSettle();
+    expect(copyPayload?['id'], 1);
+    expect(find.textContaining('셀 배경을 지웠습니다'), findsOneWidget);
+  });
+
   testWidgets('몽땅클립보드 Excel 표는 전용 음영 제거 경로를 사용한다', (tester) async {
     final sentActions = <String>[];
     Future<Object?> api(String method, List<Object?> args) async {

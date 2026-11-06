@@ -563,9 +563,18 @@ class TimemachineService:
             result = related_documents(self.content_index, path, roots=self._settings["roots"],
                                        excluded_pairs=exclusions,
                                        included_pairs=self.store.related_links(), limit=limit)
-            # 경로는 내부 판정에만 쓰고 서비스 응답에는 불투명 related_id만 노출한다.
+            # 경로는 내부 판정에만 쓰고 서비스 응답에는 노출하지 않는다.
+            # alpha: '관련 없음'은 불투명 related_id로 지정한다. main 화면 호환을 위해 folder도 준다.
             for item in result["items"]:
-                item["related_id"] = self._issue_related_id(path, item.pop("path"))
+                item_path = item.pop("path", None)
+                if isinstance(item_path, str):
+                    item["related_id"] = self._issue_related_id(path, item_path)
+                    item["folder"] = os.path.dirname(item_path)
+            series = result.get("series")
+            if series:
+                for group in ("previous", "next", "same", "undated"):
+                    for item in series[group]:
+                        item.pop("path", None)
             return {"ok": True, **result}
         if action == "related_exclude":
             related_id = payload.get("related_id")
