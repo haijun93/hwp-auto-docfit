@@ -88,5 +88,5 @@ def cloud_only(attributes):
 
 def excluded_name(name):
     """접두어 제외 규칙은 확장자 판정과 무관하게 적용한다."""
-    value = os.path.basename(os.fspath(name)).casefold().strip(" \t\r\n'\"‘’“”")
+    value = os.path.basename(os.fspath(name or "")).casefold().strip(" \t\r\n'\"‘’“”` ​﻿")
     return value.startswith("#ieeee")

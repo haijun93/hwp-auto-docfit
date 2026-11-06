@@ -12,6 +12,13 @@ double _safeDouble(dynamic v, [double fallback = 0.0]) {
   return fallback;
 }
 
+/// 서버 제외 규칙과 같은 `#IEeEE` 접두어 판정(대소문자·앞뒤 따옴표/공백 무관). 이전 서버 응답에 섞여도 화면에 내지 않는다.
+bool isExcludedTimemachineName(String name) {
+  final base = name.split(RegExp(r'[/\\]')).last;
+  final trimmed = base.replaceAll(RegExp('^[\\s\'"‘’“”` ​﻿]+'), '');
+  return trimmed.toLowerCase().startsWith('#ieeee');
+}
+
 class TimemachineItem {
   const TimemachineItem({
     required this.id,
@@ -231,7 +238,8 @@ class TimemachineApi {
     for (final item in raw) {
       if (item is Map) {
         try {
-          results.add(TimemachineContentResult.fromJson(item, query: query));
+          final result = TimemachineContentResult.fromJson(item, query: query);
+          if (!isExcludedTimemachineName(result.fileName)) results.add(result);
         } catch (_) {
           // 파싱 실패 항목 하나로 전체 응답을 폐기하지 않는다.
         }
@@ -262,7 +270,8 @@ class TimemachineApi {
     for (final entry in raw) {
       if (entry is Map) {
         try {
-          results.add(TimemachineItem.fromJson(entry));
+          final item = TimemachineItem.fromJson(entry);
+          if (!isExcludedTimemachineName(item.name)) results.add(item);
         } catch (_) {}
       }
     }
