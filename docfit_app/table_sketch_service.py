@@ -169,6 +169,23 @@ class TableSketchService:
         table_sketch.normalize(sketch)
         return dict(ok=True, sketch=sketch, rows=len(ys)-1, cols=len(xs)-1)
 
+    def recognize(self, data):
+        """표 스케치 이미지(base64/data URL)의 선을 격자 sketch로 인식한다(화면 연결 전 1단계)."""
+        if not isinstance(data, str):
+            raise ValueError("표 스케치 이미지를 읽지 못했습니다.")
+        encoded = data.split(",", 1)[-1] if data.startswith("data:") else data
+        if len(encoded) > 12_000_000:
+            raise ValueError("이미지가 너무 큽니다. 8MB 이하 파일을 사용해 주세요.")
+        try:
+            raw = base64.b64decode(encoded, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError("이미지 데이터가 올바르지 않습니다.") from exc
+        from docfit_core import table_sketch_recognize
+        found = table_sketch_recognize.recognize_image(raw)
+        _, warnings = table_sketch.normalize(found["sketch"])
+        return dict(ok=True, sketch=found["sketch"], rows=found["rows"], cols=found["cols"],
+                    angle=found["angle"], warnings=found["warnings"] + warnings)
+
     def copy(self, sketch):
         if not COM_LOCK.acquire(blocking=False):
             return dict(ok=False, message="표 복사 작업이 진행 중입니다. 잠시 후 다시 눌러 주세요.")
@@ -234,6 +251,7 @@ class TableSketchService:
             if action == "load_draft": return self.load_draft()
             if action == "clear_draft": return self.clear_draft()
             if action == "import_image": return self.import_image(payload)
+            if action == "recognize": return self.recognize(payload)
             if action == "paste_hwp": return self.paste_hwp(payload)
             if action == "clipboard_seq": return dict(ok=True, seq=self._clipboard_seq())
             raise ValueError("표그림판 작업을 확인해 주세요.")
