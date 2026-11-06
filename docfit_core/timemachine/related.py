@@ -5,10 +5,12 @@ import re
 from collections import Counter
 from datetime import date
 
-from .content_search import extract_reference_date
+from .basedate import extract_base_date
 
 _STOP = {"주요", "업무", "실적", "자료", "현황", "보고", "보고서", "문서", "결과", "추진", "작성", "기준", "년도", "년", "분기", "부서", "사업"}
 _TOKEN = re.compile(r"[가-힣A-Za-z0-9]{2,}")
+_DEPT = re.compile(r"([가-힣]{2,12}(?:과|팀|국|실|본부|센터|담당관|사업소))(?![가-힣])")
+_PROJECT = re.compile(r"([가-힣A-Za-z0-9]{2,})\s*사업")
 _PERIOD = re.compile(r"(20\d{2})\s*년도?\s*(\d)\s*분기|(20\d{2})\s*년\s*(상반기|하반기)")
 
 
@@ -23,6 +25,14 @@ def _period(text):
     if match.group(1):
         return (int(match.group(1)), int(match.group(2)))
     return (int(match.group(3)), 1 if match.group(4) == "상반기" else 2)
+
+
+def _departments(text):
+    return {m.group(1) for m in _DEPT.finditer(text)}
+
+
+def _projects(text):
+    return {m.group(1).casefold() for m in _PROJECT.finditer(text) if m.group(1).casefold() not in _STOP}
 
 
 def _type(text):
@@ -50,6 +60,14 @@ def _score(reference, candidate):
     if shared:
         score += min(50, 12 * len(shared))
         reasons.append({"type": "terms", "label": "공통 업무·사업 단서", "values": shared[:8]})
+    shared_projects = sorted(_projects(ref_text) & _projects(cand_text))
+    if shared_projects:
+        score += 10
+        reasons.append({"type": "project", "label": "같은 사업명", "values": shared_projects[:5]})
+    shared_depts = sorted(_departments(ref_text) & _departments(cand_text))
+    if shared_depts:
+        score += 10
+        reasons.append({"type": "department", "label": "같은 부서명", "values": shared_depts[:5]})
     left_type, right_type = _type(ref_text), _type(cand_text)
     if left_type and left_type == right_type:
         score += 25
@@ -67,29 +85,58 @@ def _score(reference, candidate):
     return min(score, 100), reasons
 
 
-def related_documents(index, path, *, roots=None, excluded_pairs=(), limit=100):
+def reason_texts(reasons):
+    """근거 목록을 화면에 그대로 보일 수 있는 문장 목록으로 만든다."""
+    texts = []
+    for reason in reasons:
+        label = reason.get("label", "")
+        if reason.get("values"):
+            texts.append(f"{label}: {', '.join(reason['values'])}")
+        elif reason.get("value"):
+            texts.append(f"{label}: {reason['value']}")
+        elif reason.get("type") == "period_pattern":
+            texts.append(label if reason.get("distance") else "같은 기간 패턴")
+        else:
+            texts.append(label)
+    return texts
+
+
+def _date_fields(body):
+    info = extract_base_date(body or "")
+    if not info:
+        return {"reference_date": None, "reference_date_found": False, "reference_date_precision": None,
+                "reference_date_basis": None, "reference_date_evidence": None,
+                "reference_date_note": "본문에서 기준일을 찾지 못함"}
+    return {"reference_date": info["date"], "reference_date_found": True,
+            "reference_date_precision": info["precision"], "reference_date_basis": info["basis"],
+            "reference_date_evidence": info["evidence"], "reference_date_note": None}
+
+
+def related_documents(index, path, *, roots=None, excluded_pairs=(), included_pairs=(), limit=100):
     """선택 문서와 연관된 색인 자료를 점수·근거와 함께 기준일 순으로 반환한다."""
     selected, candidates = index.related_candidates(path, roots=roots)
     if selected is None:
-        return {"reference_date": None, "reference_date_found": False, "items": []}
-    selected_date = selected["reference_date"] or extract_reference_date(selected["body"])
+        return {**_date_fields(""), "items": []}
+    selected_info = _date_fields(selected["body"])
     from .store import path_key
     excluded = {frozenset(path_key(value) for value in pair) for pair in excluded_pairs}
+    included = {frozenset(path_key(value) for value in pair) for pair in included_pairs}
     items = []
     for candidate in candidates:
-        if frozenset((path_key(path), path_key(candidate["path"]))) in excluded:
+        pair = frozenset((path_key(path), path_key(candidate["path"])))
+        manual = pair in included
+        if pair in excluded and not manual:
             continue
-        scored = _score({"name": path.rsplit("/", 1)[-1], "body": selected["body"]}, candidate)
-        if not scored:
+        scored = _score({"name": path.replace("\\", "/").rsplit("/", 1)[-1], "body": selected["body"]}, candidate)
+        if not scored and not manual:
             continue
-        score, reasons = scored
-        ref_date = candidate["reference_date"]
-        # 제목의 기간은 연관성 근거로 쓰되, 작성 기준일 표시에는 본문 추출값만 사용한다.
-        if ref_date and "기준일" not in candidate["body"]:
-            ref_date = None
+        score, reasons = scored if scored else (0, [])
+        if manual:
+            reasons = [{"type": "user_added", "label": "사용자가 연관 자료로 추가"}, *reasons]
+        # 작성 기준일은 본문 추출값만 쓴다. 못 찾으면 수정 시각으로 대체하지 않고 없음으로 표시한다.
         items.append({"path": candidate["path"], "name": candidate["name"], "score": score,
-                      "reasons": reasons, "reference_date": ref_date,
-                      "reference_date_found": bool(ref_date)})
+                      "reasons": reasons, "related_reasons": reason_texts(reasons),
+                      "user_added": manual, **_date_fields(candidate["body"])})
     items.sort(key=lambda item: (
         item["reference_date"] is None,
         -date.fromisoformat(item["reference_date"]).toordinal()
@@ -97,4 +144,4 @@ def related_documents(index, path, *, roots=None, excluded_pairs=(), limit=100):
         -item["score"] if item["reference_date"] is not None else 0,
         item["name"].casefold(),
     ))
-    return {"reference_date": selected_date, "reference_date_found": bool(selected_date), "items": items[:max(1, min(int(limit), 200))]}
+    return {**selected_info, "items": items[:max(1, min(int(limit), 200))]}

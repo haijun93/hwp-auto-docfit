@@ -107,8 +107,14 @@ class TimemachineRelatedOrderTests(unittest.TestCase):
             },
         ]
         for item, expected in zip(res["items"], expected_items):
-            self.assertEqual(set(item.keys()), {"path", "name", "score", "reasons", "reference_date", "reference_date_found"})
-            self.assertEqual(item, expected)
+            self.assertEqual(set(item.keys()), {"path", "name", "score", "reasons", "reference_date", "reference_date_found",
+                                                "reference_date_precision", "reference_date_basis",
+                                                "reference_date_evidence", "reference_date_note",
+                                        "related_reasons", "user_added"})
+            self.assertEqual({k: item[k] for k in expected}, expected)
+            self.assertEqual(item["reference_date_precision"], "day")
+            self.assertEqual(item["reference_date_basis"], "explicit")
+            self.assertTrue(item["reference_date_evidence"])
         self.assertEqual(candidates, original_candidates)
 
     def test_same_date_uses_score_then_casefold_name(self) -> None:
@@ -279,12 +285,18 @@ class TimemachineRelatedOrderTests(unittest.TestCase):
 
         with self.subTest(step="empty_db"):
             res = related_documents(index, selected_path, roots=[str(docs)])
-            self.assertEqual(res, {"reference_date": None, "reference_date_found": False, "items": []})
+            self.assertEqual(res["items"], [])
+            self.assertIsNone(res["reference_date"])
+            self.assertIs(res["reference_date_found"], False)
+            self.assertTrue(res["reference_date_note"])
 
         with self.subTest(step="selected_only"):
             self._write_txt(index, docs, "selected.txt", "주요업무추진실적\n디지털전환 사업", 1600259200)
             res = related_documents(index, selected_path, roots=[str(docs)])
-            self.assertEqual(res, {"reference_date": None, "reference_date_found": False, "items": []})
+            self.assertEqual(res["items"], [])
+            self.assertIsNone(res["reference_date"])
+            self.assertIs(res["reference_date_found"], False)
+            self.assertTrue(res["reference_date_note"])
 
         alpha_path = self._write_txt(index, docs, "alpha.txt", "주요업무추진실적\n디지털전환 사업", 1600000000)
         period_path = self._write_txt(index, docs, "period.txt", "2026년도 1분기 주요업무추진실적\n디지털전환 사업", 1600086400)
@@ -298,12 +310,17 @@ class TimemachineRelatedOrderTests(unittest.TestCase):
             self.assertIsNone(cand_dates["Zulu.txt"])
 
             res = related_documents(index, selected_path, roots=[str(docs)])
-            self.assertEqual([item["name"] for item in res["items"]], ["alpha.txt", "period.txt", "Zulu.txt"])
+            self.assertEqual([item["name"] for item in res["items"]], ["period.txt", "alpha.txt", "Zulu.txt"])
             self.assertIsNone(res["reference_date"])
             self.assertIs(res["reference_date_found"], False)
-            for item in res["items"]:
+            period_item, *undated = res["items"]
+            # 본문의 대상 분기는 기간 근거로 표시하고, 못 찾은 문서는 수정 시각 대신 '없음'으로 둔다.
+            self.assertEqual((period_item["reference_date"], period_item["reference_date_basis"]), ("2026-03-31", "period"))
+            self.assertEqual(period_item["reference_date_evidence"], "2026년도 1분기")
+            for item in undated:
                 self.assertIsNone(item["reference_date"])
                 self.assertIs(item["reference_date_found"], False)
+                self.assertTrue(item["reference_date_note"])
 
         store = Store(self.root / "timeline.db")
         self.addCleanup(store.close)
@@ -322,9 +339,9 @@ class TimemachineRelatedOrderTests(unittest.TestCase):
             res_rev = related_documents(index, selected_path, roots=[str(docs)], excluded_pairs=reversed_pairs)
             self.assertEqual([item["name"] for item in res_rev["items"]], ["period.txt", "Zulu.txt"])
 
-            for item in res["items"]:
-                self.assertIsNone(item["reference_date"])
-                self.assertIs(item["reference_date_found"], False)
+            self.assertEqual(res["items"][0]["reference_date"], "2026-03-31")
+            self.assertIsNone(res["items"][1]["reference_date"])
+            self.assertIs(res["items"][1]["reference_date_found"], False)
 
         with self.subTest(step="limit_1_with_exclusions"):
             res_limit1 = related_documents(index, selected_path, roots=[str(docs)], excluded_pairs=pairs, limit=1)
