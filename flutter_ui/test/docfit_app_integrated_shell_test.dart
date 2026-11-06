@@ -26,12 +26,12 @@ void main() {
       developerMode: false,
       libraryScreen: LibraryScreen(api: InMemoryLibraryApi()),
       trailing: Builder(builder: (context) => Column(children: [
-        TextButton(key: const ValueKey('new-document-open'), onPressed: () {}, child: const Text('서식 고르기')),
+        TextButton(key: const ValueKey('new-document-open'), onPressed: () {}, child: const Text('새문서 열기')),
         TextButton(onPressed: () {}, child: const Text('몽땅클립보드')),
       ])),
     )));
     expect(find.byKey(const ValueKey('new-document-open')), findsOneWidget);
-    expect(find.text('서식 고르기'), findsOneWidget);
+    expect(find.text('새문서 열기'), findsOneWidget);
     expect(find.byKey(const ValueKey('always-on-top-toggle')), findsNothing);
     expect(find.byKey(const ValueKey('sidebar-mode-toggle')), findsNothing);
     expect(find.byKey(const ValueKey('sidebar-mode-switch-side')), findsNothing);
