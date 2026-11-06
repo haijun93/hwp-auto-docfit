@@ -20,37 +20,107 @@ void main() {
     expect(find.textContaining('오늘 ·'),findsOneWidget);
   });
 
-  testWidgets('개발자 모드가 꺼져 있어도 본문검색은 보이고 연관검색 전환은 숨긴다', (tester) async {
+  testWidgets('개발자 모드가 꺼져 있으면 본문검색·연관검색 진입을 숨기고 호출하지 않는다', (tester) async {
     final api = _FakeApi(enabled: true, developerMode: false);
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: api.call))));
     await tester.pumpAndSettle();
     expect(find.text('파일명'), findsOneWidget);
-    expect(find.text('본문검색'), findsOneWidget);
+    expect(find.text('본문검색'), findsNothing);
     expect(find.text('연관검색'), findsNothing);
+    await tester.enterText(find.byKey(const ValueKey('tm-file-search')), '회의');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+    expect(api.calls.any((c) => c.$1.startsWith('content_') || c.$1 == 'related_search'), false);
+    expect(api.calls.where((c) => c.$1 == 'range').last.$2['query'], '회의');
   });
 
-  testWidgets('상단 도구는 좁은 창의 더보기에서 접근할 수 있고 overflow가 없다', (tester) async {
+  testWidgets('개발자 모드 전환 직후 본문검색 표시와 본문 모드가 바로 바뀐다', (tester) async {
+    final api = _FakeApi(enabled: true, developerMode: true);
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: api.call))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('본문검색'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('tm-file-search')), '회의');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+    expect(find.text('본문포함.docx'), findsOneWidget);
+
+    api.developerMode = false;
+    await tester.pump(const Duration(milliseconds: 1100));
+    await tester.pumpAndSettle();
+    expect(find.text('본문검색'), findsNothing);
+    expect(find.text('본문포함.docx'), findsNothing);
+    expect(tester.widget<TextField>(find.byKey(const ValueKey('tm-file-search'))).controller!.text, '');
+    final searchesBefore = api.calls.where((c) => c.$1 == 'content_search').length;
+    await tester.enterText(find.byKey(const ValueKey('tm-file-search')), '회의');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+    expect(api.calls.where((c) => c.$1 == 'content_search').length, searchesBefore);
+
+    api.developerMode = true;
+    await tester.pump(const Duration(milliseconds: 1100));
+    await tester.pumpAndSettle();
+    expect(find.text('본문검색'), findsOneWidget);
+    expect(find.text('연관검색'), findsOneWidget);
+  });
+
+  testWidgets('상단 메뉴는 여러 창 너비에서 잘리지 않고 좁으면 접힌다', (tester) async {
     final api = _FakeApi(enabled: true);
-    for (final width in [360.0, 800.0, 1400.0]) {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    // 320px 미만은 본문 달력(7칸×36px)이 먼저 넘치므로 상단 메뉴 시험은 320px부터 본다.
+    for (final width in [320.0, 340.0, 360.0, 480.0, 600.0, 640.0, 800.0, 900.0, 1024.0, 1400.0]) {
       await tester.binding.setSurfaceSize(Size(width, 900));
-      await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: api.call))));
+      await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(key: ValueKey(width), api: api.call))));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull, reason: '너비 $width');
-      if (width < 900) {
+      final inner = width - 24; // 메뉴 줄 좌우 여백 12px
+      // 확장자·검색·검색 방식은 어느 너비에서나 화면 안에 온전히 보인다.
+      final always = <Finder>[
+        find.byKey(const ValueKey('tm-extensions')),
+        find.byKey(const ValueKey('tm-file-search')),
+        inner < 340 ? find.byKey(const ValueKey('tm-search-mode-menu')) : find.byKey(const ValueKey('tm-search-mode')),
+        if (inner < 600) find.byKey(const ValueKey('tm-kind-menu')),
+        if (inner < 900) find.byKey(const ValueKey('tm-more-menu')),
+        if (inner >= 900) find.byKey(const ValueKey('tm-clear-thumb-cache')),
+        if (inner >= 900) find.text('다시 훑기'),
+      ];
+      for (final finder in always) {
+        expect(finder, findsOneWidget, reason: '너비 $width: $finder');
+        final rect = tester.getRect(finder);
+        expect(rect.left >= 0 && rect.right <= width + 0.5, true, reason: '너비 $width: $finder 잘림 $rect');
+      }
+      expect(find.byType(FilterChip), inner < 600 ? findsNothing : findsNWidgets(6), reason: '너비 $width');
+      if (inner < 900) {
+        expect(find.byKey(const ValueKey('tm-clear-thumb-cache')), findsNothing);
         await tester.tap(find.byKey(const ValueKey('tm-more-menu')));
         await tester.pumpAndSettle();
         expect(find.text('다시 훑기'), findsWidgets);
         expect(find.text('썸네일 캐시 지우기'), findsOneWidget);
-        await tester.tapAt(const Offset(5, 5));
+        await tester.tap(find.text('썸네일 캐시 지우기'));
         await tester.pumpAndSettle();
-      } else {
-        expect(find.text('다시 훑기'), findsOneWidget);
-        expect(find.byKey(const ValueKey('tm-clear-thumb-cache')), findsOneWidget);
+        expect(api.calls.where((c) => c.$1 == 'thumbnail_cache_clear').isNotEmpty, true, reason: '너비 $width');
       }
-      expect(find.text('확장자'), findsOneWidget);
-      expect(find.text('파일명'), findsOneWidget);
     }
-    await tester.binding.setSurfaceSize(null);
+  });
+
+  testWidgets('좁은 창의 종류 메뉴와 검색 방식 메뉴가 필터·모드를 바꾼다', (tester) async {
+    final api = _FakeApi(enabled: true, developerMode: true);
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(300, 900));
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: TimemachineScreen(api: api.call))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('tm-kind-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(CheckedPopupMenuItem<String>, 'PDF'));
+    await tester.pumpAndSettle();
+    expect(api.calls.where((c) => c.$1 == 'range').last.$2['kinds'], ['pdf']);
+    expect(find.text('종류 1'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('tm-search-mode-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(CheckedPopupMenuItem<String>, '본문검색'));
+    await tester.pumpAndSettle();
+    expect(find.descendant(of: find.byKey(const ValueKey('tm-search-mode-menu')), matching: find.text('본문검색')), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('달력 날짜를 누르면 조회 기간이 바뀐다', (tester) async {
@@ -949,7 +1019,8 @@ class _FakeApi {
     this.developerMode = true,
   });
 
-  final bool enabled, cloud, scanRunning, developerMode;
+  final bool enabled, cloud, scanRunning;
+  bool developerMode;
   final Object? thumbnail;
   final int itemCount;
   final List<Map<String, Object?>>? items;

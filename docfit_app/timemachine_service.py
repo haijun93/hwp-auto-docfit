@@ -437,10 +437,17 @@ class TimemachineService:
                 name="timemachine-content-index", daemon=True)
             self._content_thread.start()
 
+    # 본문검색(색인·검색·내보내기·오류 목록)과 연관검색은 개발자 모드에서만 허용한다.
+    # 매 명령마다 설정을 다시 읽으므로 설정 전환 직후부터 반영된다.
+    DEVELOPER_ONLY_ACTIONS = frozenset({
+        "content_index", "content_index_all", "content_index_start",
+        "content_index_status", "content_index_progress", "content_index_cancel",
+        "content_search", "content_export_markdown", "content_errors",
+        "content_preview", "related_search",
+    })
+
     def _command(self, action, payload):
-        if action in {"content_index", "content_index_all", "content_index_start",
-                      "content_index_status", "content_index_progress", "content_index_cancel",
-                      "content_preview", "related_search"}:
+        if action in self.DEVELOPER_ONLY_ACTIONS:
             denied = self._require_developer_mode()
             if denied is not None:
                 return denied
