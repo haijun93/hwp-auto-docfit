@@ -139,6 +139,71 @@ class FlowService:
             raise ServiceError("DIAGRAM_DELETE_FAILED", "도형 문서를 삭제하지 못했습니다.") from exc
         return {"deleted": True}
 
+    # ---- 자동 임시저장(복구) ----
+    _DRAFT_MODES = ("diagram", "mindmap", "paint")
+
+    def _draft_path(self, mode):
+        if mode not in self._DRAFT_MODES:
+            raise ServiceError("INVALID_DRAFT_MODE", "임시저장 종류를 확인해 주세요.")
+        folder = self.root / "recovery"
+        if self.root.is_symlink() or folder.is_symlink():
+            raise ServiceError("DIAGRAM_PATH_INVALID", "도형 저장 폴더 경로가 올바르지 않습니다.")
+        return folder / (mode + ".draft.json")
+
+    def save_draft(self, mode, diagram_id, name, snapshot):
+        """편집 중인 내용을 복구용 파일에 원자적으로 덮어쓴다(정식 저장본·목록과 분리)."""
+        path = self._draft_path(mode)
+        if not isinstance(snapshot, dict) or snapshot.get("format") != "docfit-flow" or snapshot.get("version") != 1:
+            raise ServiceError("INVALID_FLOW", "일반 흐름도 형식을 확인해 주세요.")
+        if not isinstance(snapshot.get("nodes"), list) or not isinstance(snapshot.get("edges"), list):
+            raise ServiceError("INVALID_FLOW", "도형과 연결선 목록을 확인해 주세요.")
+        if diagram_id is not None and not (isinstance(diagram_id, str) and _ID.fullmatch(diagram_id)):
+            raise ServiceError("INVALID_DIAGRAM_ID", "도형 문서 식별자를 확인해 주세요.")
+        if not isinstance(name, str) or not name or len(name) > 120:
+            raise ServiceError("INVALID_NAME", "문서 이름을 확인해 주세요.")
+        item = {"mode": mode, "id": diagram_id, "name": name,
+                "saved_at": datetime.now(timezone.utc).isoformat(), "snapshot": snapshot}
+        encoded = json.dumps(item, ensure_ascii=False, allow_nan=False).encode("utf-8")
+        if len(encoded) > _MAX_SNAPSHOT_BYTES + 16_384:
+            raise ServiceError("DRAFT_TOO_LARGE", "자동 복구 데이터가 너무 큽니다.")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=path.parent, suffix=".tmp", delete=False) as stream:
+                temporary = Path(stream.name)
+                stream.write(encoded)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, path)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+        return {"saved": True}
+
+    def load_draft(self, mode):
+        """복구할 임시본이 있으면 돌려준다. 깨진 파일은 없는 것으로 보고 지운다."""
+        path = self._draft_path(mode)
+        if not path.is_file() or path.is_symlink():
+            return {"exists": False}
+        try:
+            if path.stat().st_size > _MAX_SNAPSHOT_BYTES + 16_384:
+                raise ValueError("too large")
+            item = json.loads(path.read_text(encoding="utf-8"))
+            snapshot = item["snapshot"]
+            if (not isinstance(snapshot, dict) or snapshot.get("format") != "docfit-flow"
+                    or not isinstance(snapshot.get("nodes"), list) or not isinstance(snapshot.get("edges"), list)
+                    or not isinstance(item["name"], str)):
+                raise ValueError("invalid")
+        except (OSError, ValueError, KeyError, TypeError):
+            path.unlink(missing_ok=True)
+            return {"exists": False, "discarded_corrupt": True}
+        return {"exists": True, "id": item.get("id"), "name": item["name"],
+                "saved_at": item.get("saved_at", ""), "snapshot": snapshot}
+
+    def clear_draft(self, mode):
+        self._draft_path(mode).unlink(missing_ok=True)
+        return {"cleared": True}
+
     def save(self, diagram_id, name, snapshot, expected_revision=None):
         if not isinstance(snapshot, dict) or snapshot.get("format") != "docfit-flow" or snapshot.get("version") != 1:
             raise ServiceError("INVALID_FLOW", "일반 흐름도 형식을 확인해 주세요.")

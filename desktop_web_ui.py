@@ -1544,6 +1544,12 @@ class DesktopWebBridge:
             return service.load(payload.get("id"))
         if action == "save":
             return service.save(payload.get("id"), payload.get("name"), payload.get("snapshot"), payload.get("revision"))
+        if action == "save_draft":
+            return service.save_draft(payload.get("mode"), payload.get("id"), payload.get("name"), payload.get("snapshot"))
+        if action == "load_draft":
+            return service.load_draft(payload.get("mode"))
+        if action == "clear_draft":
+            return service.clear_draft(payload.get("mode"))
         if action == "delete":
             return service.delete(payload.get("id"))
         raise ServiceError("INVALID_ACTION", "흐름도 작업을 확인해 주세요.")

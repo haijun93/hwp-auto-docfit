@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:web/web.dart' as web;
 import '../../core/api/abbreviation_api.dart';
 import '../table_units/table_units_screen.dart';
+import 'flow_draft.dart';
 import '../workspace/tab_navigation_shell.dart';
 
 class FlowEditorScreen extends StatefulWidget {
@@ -41,6 +42,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
   };
   String? identity, revision, _pngOutputSelectionId;
   final saveState = EditSaveState();
+  late final draftClient = FlowDraftClient(widget.api, widget.initialMode);
   bool dirty = false, ready = false, busy = false;
   CloseLease? _closeLease;
   Future<bool> _prepareHostClose() async {
@@ -137,6 +139,11 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
     if (type == 'ready') {
       if (mounted) setState(() => ready = true);
       post({'type': 'set_mode', 'mode': widget.initialMode});
+      unawaited(offerRecovery());
+      return;
+    }
+    if (type == 'draft') {
+      if (!saveState.saving) await draftClient.save(message, id: identity);
       return;
     }
     if (type == 'open_table_units') {
@@ -186,6 +193,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
             revision = null;
             name = newName;
             dirty = false;
+            await draftClient.clear();
             post({'type': 'new'});
           }
           break;
@@ -236,6 +244,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
           name = result['name'] as String;
           dirty = saveState.dirty;
           post({'type': 'mark_saved', 'generation': targetGeneration});
+          if (!saveState.dirty) await draftClient.clear();
           notice('표/다이어그램을 이 PC에 저장했어요.');
           break;
         case 'copy_result':
@@ -369,6 +378,41 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
     }
   }
 
+  /// 앱을 다시 켰을 때 이전 편집 내용이 임시저장돼 있으면 복구할지 묻는다.
+  Future<void> offerRecovery() async {
+    final draft = await draftClient.pending();
+    if (draft == null || !mounted) return;
+    final restore = await showHostDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('저장하지 않은 편집 내용'),
+        content: Text(
+          "'${draft['name']}'을(를) 편집하던 내용이 자동 저장돼 있어요. 복구할까요?",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('버리기'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('복구'),
+          ),
+        ],
+      ),
+    );
+    if (restore != true) {
+      await draftClient.clear();
+      return;
+    }
+    final (id, rev) = await draftClient.reconnect(draft);
+    identity = id;
+    revision = rev;
+    name = '${draft['name']}';
+    if (mounted) setState(() => dirty = true);
+    post(FlowDraftClient.restoreMessage(draft, id));
+  }
+
   Future<void> openSaved() async {
     final list = await storage('list');
     if (list is! List || !mounted) return;
@@ -444,6 +488,7 @@ class _FlowEditorScreenState extends State<FlowEditorScreen> {
     revision = loaded['revision'] as String;
     name = loaded['name'] as String;
     dirty = false;
+    await draftClient.clear();
     post({
       'type': 'load',
       'id': identity,
