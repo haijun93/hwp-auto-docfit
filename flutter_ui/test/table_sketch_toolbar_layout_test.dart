@@ -21,6 +21,7 @@ void main() {
     'lineStyleDash',
     'lineStyleDot',
     'sketchDinoExample',
+    'sketchRecognizeImage',
     'undoButton',
     'redoButton',
     'clearAllButton',

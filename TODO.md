@@ -23,6 +23,8 @@
 - [ ] 서식 분석과 위계기반 본문검색이 함께 쓰는 공문서 위계 분석 엔진을 Rust로 구현하고 Flutter 앱에서 FFI로 사용한다. 단일 문서 내 선형 처리, 문단 특징 1회 추출, 문서 단위 통계 1회 산출로 최적화하고 기존 분석 결과와 검색 순위를 회귀 검증한다. 설계: `docs/OFFICIAL_HIERARCHY_ENGINE_DESIGN.md`.
 - [x] 표그림판 Delete → 되돌리기 선 일부 미복원: 버그 아님. 선택 도구로 16px 끌면 도형 이동이 먼저 기록되어 되돌리기 두 번이 필요(2.2.21 확인).
 - [ ] 표 스케치 이미지의 사각형·직선 인식 정확도와 기울기·불완전 선·잡음 처리, 인식 결과 수정 흐름을 구현·검증한다.
+  - [x] 1단계(코어, feature/skrec): `docfit_core/table_sketch_recognize.py`(Pillow만) + 서비스 명령 `recognize`, `tests/test_table_sketch_recognize.py` 20개. 화면 연결·인식 결과 수정 흐름은 남음.
+  - [x] 2단계(화면, feature/skrec2): 표그림판 '이미지에서 표 인식' 단추(파일 고르기)·끌어 놓기(칸 그림 도구가 아니고 표 칸 밖) → `recognize` → 캔버스 위에 파란 선으로 겹쳐 보기 → 적용/취소. 적용 뒤 되돌리기 1번으로 인식 전 복귀, 칸 하나를 4눈금(폭 32눈금 이내)으로 키움, 실패·빈 결과 이유 표시. `flutter_ui/test/table_sketch_recognize_test.dart` 7개. 실제 손그림 사진·Windows 실제 앱 확인은 남음.
 - [ ] Windows/한글 실기기에서 설치·실행, 템플릿 삽입·저장, Excel 표 붙여넣기와 작업 복구를 검증.
 
 ## [기준선·2.2.10] 오류 보고 확인 결과 (2026-11-03)
