@@ -37,3 +37,10 @@
 - Windows 실기 `cargo test`·재측정.
 - UI(Flutter) 연결, 본문 색인과의 연동(변경된 파일만 `index_file`), 한 명령으로 여러 루트 스캔.
 - `--request-json` 1회 실행 방식에서는 백그라운드 스캔이 프로세스 종료와 함께 끝난다(앱 브리지는 pipe 사용이라 영향 없음).
+
+## 6. LIBSCAN2 — 앱 연결 (2026-11-07)
+- klib: `box_scan`에 `extensions`(선택) 추가, 새 명령 `box_scan_files {box_id, path?, offset?, limit?}`(경로순 결과 목록), `--request-json` 한 번 실행 모드에서 `box_scan`은 끝날 때까지 기다린 뒤 최종 상태를 출력(5절의 한계 해소). 한 번 실행 모드의 DB 경로를 `Path::join`으로 바꿈(Windows 결과 동일).
+- Python `docfit_app/library_scan.py`(`FolderScanService`): klib 가능하면 `box_scan`을 쓰고 상태를 폴링, 연결 실패·klib 없음이면 기존 `LibraryService.index`(동작 불변, `progress` 선택 인자만 추가)로 폴백. 폴백 DB는 `%LOCALAPPDATA%\HwpAutoDocFit\library\scan_fallback.db`. klib가 폴더 오류·진행 중이라고 답하면 폴백하지 않고 그 답을 돌려준다.
+- `desktop_web_ui.library()`가 `box_scan*` 명령을 이 서비스로 보낸다(개발자 모드 제한 그대로).
+- Flutter 자료함 화면: `LibraryScanApi`(선택 인터페이스)·'폴더 스캔' 단추·진행 막대·취소 단추·완료 요약. 위젯 시험 4건 작성.
+- 한계: 이 맥에는 Flutter SDK가 없어 Dart 시험·정적 분석을 실행하지 못했다. 폴백의 파일 개수·변경 수는 klib와 달리 추가/갱신을 나누지 못하고 `changed`로만 센다. 폴백은 klib의 box가 필요 없는 대신 자료함 번호를 이름(`box-N`)으로만 구분한다.

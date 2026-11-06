@@ -604,4 +604,20 @@ fn test_box_scan_pipe_commands_incremental_progress_cancel() {
     call(format!(r#"{{"cmd":"box_scan","box_id":{b},"path":"{p}"}}"#));
     let s = wait_done();
     assert_eq!((s.i64("unchanged"), s.i64("removed")), (Some(4), Some(1)));
+
+    // 확장자 필터와 결과 목록 조회(box_scan_files)
+    fs::write(src.join("a.HWPX"), "1").unwrap();
+    fs::write(src.join("b.exe"), "2").unwrap();
+    let ext_started = call(format!(r#"{{"cmd":"box_scan","box_id":{b},"path":"{p}","extensions":["hwpx",".TXT"]}}"#));
+    assert_eq!(ext_started.bool("started"), Some(true));
+    let s = wait_done();
+    assert_eq!(s.i64("total"), Some(5), "txt 4개(f1~f3, 하위/g)+hwpx 1개, exe 제외");
+    let listed = call(format!(r#"{{"cmd":"box_scan_files","box_id":{b},"path":"{p}","limit":100}}"#));
+    assert_eq!(listed.bool("ok"), Some(true));
+    let files = listed.arr("files").unwrap();
+    assert_eq!(files.len(), 5);
+    assert!(files.iter().all(|f| !f.str("path").unwrap().ends_with(".exe")));
+    let page = call(format!(r#"{{"cmd":"box_scan_files","box_id":{b},"path":"{p}","offset":4,"limit":100}}"#));
+    assert_eq!(page.arr("files").unwrap().len(), 1);
+    assert_eq!(call(r#"{"cmd":"box_scan_files"}"#.into()).bool("ok"), Some(false));
 }

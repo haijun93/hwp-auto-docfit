@@ -82,7 +82,7 @@ pub static GLOBAL: Shared = Shared::new();
 pub fn is_running() -> bool { GLOBAL.is_running() }
 
 /// 요청을 검증하고 백그라운드 스레드에서 스캔을 시작한다. 파이프 요청은 곧바로 돌려보낸다.
-pub fn start(db_path: &str, box_id: i64, root: &str) -> Result<(), String> {
+pub fn start(db_path: &str, box_id: i64, root: &str, exts: Vec<String>) -> Result<(), String> {
     let root = normalize_root(root)?;
     let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
     prepare(&conn, box_id)?;
@@ -93,7 +93,7 @@ pub fn start(db_path: &str, box_id: i64, root: &str) -> Result<(), String> {
     GLOBAL.update(|s| *s = Status { state: "scanning".into(), phase: "enumerate".into(), box_id, root: root.clone(), ..Default::default() });
     let spawned = std::thread::Builder::new().name("klib-scan".into()).spawn(move || {
         let mut conn = conn;
-        run_scan(&mut conn, box_id, &root, &GLOBAL);
+        run_scan_filtered(&mut conn, box_id, &root, &GLOBAL, true, &exts);
         GLOBAL.running.store(false, Ordering::SeqCst);
     });
     if let Err(e) = spawned {
@@ -135,7 +135,7 @@ fn note_error(sh: &Shared, what: &str) {
 }
 
 /// 1단계: 폴더 훑기. 링크/정션 폴더는 따라가지 않는다. 읽기 오류가 있었는지(`complete=false`)도 돌려준다.
-fn enumerate(root: &str, sh: &Shared, started: &std::time::Instant) -> (Vec<Found>, bool, bool) {
+fn enumerate(root: &str, sh: &Shared, started: &std::time::Instant, exts: &[String]) -> (Vec<Found>, bool, bool) {
     let mut out = Vec::new();
     let mut complete = true;
     let mut stack = vec![std::path::PathBuf::from(root)];
@@ -157,7 +157,7 @@ fn enumerate(root: &str, sh: &Shared, started: &std::time::Instant) -> (Vec<Foun
             #[cfg(windows)]
             { use std::os::windows::fs::MetadataExt; if meta.file_attributes() & 0x400 != 0 { continue; } }
             if ft.is_dir() { stack.push(entry.path()); }
-            else if ft.is_file() {
+            else if ft.is_file() && ext_allowed(&entry.path(), exts) {
                 out.push(Found { path: entry.path().to_string_lossy().into_owned(), size: meta.len().min(i64::MAX as u64) as i64, mtime_ns: mtime_ns(&meta) });
             }
         }
@@ -165,11 +165,24 @@ fn enumerate(root: &str, sh: &Shared, started: &std::time::Instant) -> (Vec<Foun
     (out, complete, false)
 }
 
+/// 확장자 목록이 비어 있으면 모두 허용. 목록은 소문자·점 포함(예: ".hwpx")이며 비교는 대소문자를 가리지 않는다.
+fn ext_allowed(path: &Path, exts: &[String]) -> bool {
+    if exts.is_empty() { return true; }
+    match path.extension() {
+        Some(e) => { let dotted = format!(".{}", e.to_string_lossy().to_lowercase()); exts.iter().any(|x| *x == dotted) }
+        None => false,
+    }
+}
+
 /// 동기 스캔 본체(스레드와 시험·측정이 함께 쓴다). `incremental=false`면 기존 행을 모두 다시 쓰는 비교 기준선이다.
 pub fn run_scan_mode(conn: &mut Connection, box_id: i64, root: &str, sh: &Shared, incremental: bool) {
+    run_scan_filtered(conn, box_id, root, sh, incremental, &[])
+}
+
+pub fn run_scan_filtered(conn: &mut Connection, box_id: i64, root: &str, sh: &Shared, incremental: bool, exts: &[String]) {
     let started = std::time::Instant::now();
     sh.update(|s| { s.state = "scanning".into(); s.phase = "enumerate".into(); s.box_id = box_id; s.root = root.to_string(); });
-    let (found, complete, cancelled) = enumerate(root, sh, &started);
+    let (found, complete, cancelled) = enumerate(root, sh, &started, exts);
     if cancelled {
         let ms = started.elapsed().as_millis() as u64;
         sh.update(|s| { s.state = "cancelled".into(); s.phase.clear(); s.elapsed_ms = ms; s.message = "취소됨(폴더 훑는 중). DB는 바뀌지 않았습니다.".into(); });
@@ -243,6 +256,13 @@ fn reconcile(conn: &mut Connection, box_id: i64, root: &str, found: Vec<Found>, 
     }
     sh.update(|s| { s.removed = removed; s.processed = processed; });
     Ok(false)
+}
+
+/// 한 자료함의 스캔 결과 파일 목록(경로순). `root`를 주면 그 루트 아래 행만 돌려준다.
+pub fn list_files(conn: &Connection, box_id: i64, root: Option<&str>, offset: i64, limit: i64) -> rusqlite::Result<Vec<(String, i64, i64)>> {
+    let mut st = conn.prepare("SELECT path,size,mtime_ns FROM scan_file WHERE box_id=?1 AND (?2 IS NULL OR root=?2) ORDER BY path LIMIT ?3 OFFSET ?4")?;
+    let rows = st.query_map(params![box_id, root, limit, offset], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+    rows.collect()
 }
 
 #[cfg(test)]
@@ -375,6 +395,29 @@ mod tests {
         run_scan(&mut c, 1, &root, &sh);
         assert_eq!(count(&c), 1, "폴더를 읽지 못하면 행을 지우지 않는다");
         assert!(sh.snapshot().skipped_errors > 0);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn extension_filter_limits_rows_and_lists_files() {
+        let dir = tmp("ext");
+        let src = dir.join("src");
+        fs::create_dir_all(src.join("sub")).unwrap();
+        fs::write(src.join("a.HWPX"), b"1").unwrap();
+        fs::write(src.join("b.exe"), b"2").unwrap();
+        fs::write(src.join("noext"), b"3").unwrap();
+        fs::write(src.join("sub").join("c.txt"), b"4").unwrap();
+        let mut c = db(&dir);
+        let root = src.to_string_lossy().into_owned();
+        let exts = vec![".hwpx".to_string(), ".txt".to_string()];
+        let sh = Shared::new();
+        run_scan_filtered(&mut c, 1, &root, &sh, true, &exts);
+        assert_eq!((sh.snapshot().total, sh.snapshot().added), (2, 2));
+        let rows = list_files(&c, 1, Some(&root), 0, 100).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert!(rows[0].0 < rows[1].0, "경로순");
+        assert_eq!(list_files(&c, 1, None, 1, 100).unwrap().len(), 1, "offset");
+        assert_eq!(list_files(&c, 1, Some("/없는루트"), 0, 100).unwrap().len(), 0);
         let _ = fs::remove_dir_all(&dir);
     }
 }

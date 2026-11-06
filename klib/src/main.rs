@@ -77,9 +77,18 @@ fn main() {
         if let Some(request) = args.get(pos + 1) {
             let dir = std::env::var("KLIB_DATA").unwrap_or_else(|_| data_dir());
             let _ = std::fs::create_dir_all(&dir);
-            let db = Database::open(&format!("{dir}\\library.db")).expect("open library database");
+            let db = Database::open(&std::path::Path::new(&dir).join("library.db").to_string_lossy()).expect("open library database");
             let running = AtomicBool::new(true);
-            print!("{}\n", pipe::handle_request(request, &Mutex::new(db), &running));
+            let db = Mutex::new(db);
+            let reply = pipe::handle_request(request, &db, &running);
+            // 폴더 스캔은 백그라운드 스레드라, 한 번 실행 방식에서는 끝날 때까지 기다린 뒤 최종 상태를 출력한다.
+            let is_scan = request.contains("\"box_scan\"");
+            if is_scan && reply.contains("\"started\":true") {
+                while scan::is_running() { std::thread::sleep(std::time::Duration::from_millis(10)); }
+                println!("{}", pipe::handle_request(r#"{"cmd":"box_scan_status"}"#, &db, &running));
+                return;
+            }
+            println!("{reply}");
             return;
         }
         eprintln!("--request-json requires one JSON request argument");
