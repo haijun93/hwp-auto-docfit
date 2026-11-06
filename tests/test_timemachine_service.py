@@ -75,14 +75,24 @@ class TimemachineServiceTests(unittest.TestCase):
         self.assertIsInstance(settings["roots"], list)
         self.assertFalse(self.service.command("status")["enabled"])
 
-    def test_content_search_allowed_and_related_search_requires_developer_mode(self):
-        allowed = self.service.command("content_search", {"query": "금지"})
-        self.assertTrue(allowed["ok"])
-        denied = self.service.command("related_search", {"path": str(self.root / "없는.txt")})
-        self.assertFalse(denied["ok"])
-        self.assertEqual(denied["code"], "DEVELOPER_MODE_REQUIRED")
-        self.assertIn("개발자 모드", denied["message"])
-        self.assertEqual(self.service.command("content_index_start")["code"], "DEVELOPER_MODE_REQUIRED")
+    def test_content_and_related_search_require_developer_mode(self):
+        output = self.root / "거부.md"
+        denied_calls = [
+            ("content_search", {"query": "금지"}),
+            ("content_export_markdown", {"query": "금지", "path": str(output)}),
+            ("content_errors", {}),
+            ("content_index_start", {}),
+            ("content_index_status", {}),
+            ("content_preview", {"path": str(self.root / "없는.txt")}),
+            ("related_search", {"path": str(self.root / "없는.txt")}),
+        ]
+        for action, payload in denied_calls:
+            with self.subTest(action=action):
+                denied = self.service.command(action, payload)
+                self.assertFalse(denied["ok"])
+                self.assertEqual(denied["code"], "DEVELOPER_MODE_REQUIRED")
+                self.assertIn("개발자 모드", denied["message"])
+        self.assertFalse(output.exists())
 
         self.developer_mode = True
         self.enable()
@@ -92,6 +102,21 @@ class TimemachineServiceTests(unittest.TestCase):
         result = self.service.command("content_search", {"query": "허용 검색어"})
         self.assertTrue(result["ok"])
         self.assertEqual(result["items"][0]["name"], document.name)
+
+    def test_developer_mode_toggle_applies_to_next_content_command(self):
+        self.developer_mode = True
+        self.enable()
+        document = self.root / "전환.txt"
+        document.write_text("전환 검색어", encoding="utf-8")
+        self.service.command("content_index", {"path": str(document)})
+        self.assertTrue(self.service.command("content_search", {"query": "전환 검색어"})["ok"])
+        self.developer_mode = False
+        self.assertEqual(self.service.command("content_search", {"query": "전환 검색어"})["code"],
+                         "DEVELOPER_MODE_REQUIRED")
+        # 파일명 검색·타임라인은 개발자 모드와 무관하게 계속 쓸 수 있다.
+        self.assertTrue(self.service.command("file_search", {"query": "전환"})["ok"])
+        self.developer_mode = True
+        self.assertEqual(len(self.service.command("content_search", {"query": "전환 검색어"})["items"]), 1)
 
     def test_file_name_search_is_available_without_developer_mode(self):
         result = self.service.command("file_search", {"query": "보고서"})
@@ -204,13 +229,11 @@ class TimemachineServiceTests(unittest.TestCase):
             self.assertEqual(kwargs.get("offset"), 0)
 
     def test_content_export_markdown_writes_search_terms_paths_and_locations(self):
-        self.developer_mode = False
+        self.developer_mode = True
         self.enable()
         doc = self.root / "내보내기.txt"
         doc.write_text("내보내기 키워드 문장", encoding="utf-8")
-        self.developer_mode = True
         self.service.command("content_index", {"path": str(doc)})
-        self.developer_mode = False
         output = self.root / "결과.md"
         result = self.service.command("content_export_markdown", {"query": "내보내기 키워드", "path": str(output)})
         self.assertTrue(result["ok"])

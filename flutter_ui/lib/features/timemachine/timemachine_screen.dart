@@ -98,17 +98,12 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
       }
       if (!mounted) return;
       if (enabled != _developerMode) {
+        final leaveContent = !enabled && (_contentMode || _relatedMode);
         setState(() {
           _developerMode = enabled;
-          if (!enabled && _relatedMode) {
-            _contentMode = false;
-            _relatedMode = false;
-            _contentResults = [];
-            _selectedContentResult = null;
-            _preview = null;
-            _search.clear();
-          }
+          if (leaveContent) _resetContentState();
         });
+        if (leaveContent) _filtersChanged();
       }
       _pollDeveloperMode();
     });
@@ -277,8 +272,25 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
   }
 
 
+  /// 개발자 모드가 꺼지면 본문·연관검색 상태를 모두 비우고 파일명 모드로 돌린다.
+  void _resetContentState() {
+    _contentSearchRevision++;
+    _contentPoll?.cancel();
+    _contentMode = false;
+    _relatedMode = false;
+    _contentIndexRunning = false;
+    _contentResults = [];
+    _selectedContentResult = null;
+    _preview = null;
+    _showOperatorHelp = false;
+    _contentNeedsReindex = false;
+    _search.clear();
+    _query = '';
+  }
+
   Future<void> _contentSearch(String query, {String? sort}) async {
     final searchRev = ++_contentSearchRevision;
+    if (!_developerMode) return;
     if (query.isEmpty) {
       if (mounted) {
         setState(() {
@@ -324,6 +336,7 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
   }
 
   Future<void> _exportMarkdown() async {
+    if (!_developerMode) return;
     try {
       final response = await _api.command('content_export_markdown', {'query': _search.text.trim()});
       if (!mounted) return;
@@ -432,7 +445,7 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
   }
 
   Future<void> _setContentMode(bool related) async {
-    if (related && !_developerMode) return;
+    if (!_developerMode) return;
     setState(() {
       _relatedMode = related;
       _contentMode = true;
@@ -486,6 +499,7 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
   }
 
   Future<void> _startContentIndex() async {
+    if (!_developerMode) return;
     final response = await _api.command('content_index_start');
     if (!mounted) return;
     setState(() { _contentProgress = response; _contentIndexRunning = response['running'] == true; });
@@ -577,13 +591,7 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
       developerMode = false;
     }
     setState(() { _settings = loaded; _developerMode = developerMode; _watchByAgent = status['watch'] == 'agent';
-      if (!developerMode && _contentMode) {
-        _contentMode = false;
-        _contentResults = [];
-        _selectedContentResult = null;
-        _preview = null;
-        _search.clear();
-      }
+      if (!developerMode && (_contentMode || _relatedMode)) _resetContentState();
       if (status['ok'] != true) _error = '${status['message'] ?? '상태를 불러오지 못했습니다.'}'; });
     if (loaded['enabled'] == true) {
       // 에이전트가 없으면 앱을 열 때 증분 색인한다(사용자 결정 6). 에이전트가 있으면 폴더 설정만 맞춘다.
@@ -916,7 +924,7 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
               ],
             ),
           Expanded(
-            child: (_contentMode || _relatedMode)
+            child: _developerMode && (_contentMode || _relatedMode)
                 ? Column(children: [if (_contentMode) _contentSearchPanel(), Expanded(child: _contentResultsView())])
                 : (_fileTableView && _fileSearchSupported
                     ? _fileSearchTable(_fileSearchActive ? _fileSearchResults : _items)
@@ -1509,18 +1517,99 @@ class _TimemachineScreenState extends State<TimemachineScreen> {
       ],
     ),
   );
+  // 상단 메뉴 반응형 기준(메뉴 줄 안쪽 너비).
+  // 900 미만: 새로고침·썸네일 캐시·감시 상태를 '더보기'로 접는다.
+  // 600 미만: 종류 칩을 '종류' 메뉴로 접고 검색창을 한 줄 전체로 넓힌다.
+  // 340 미만: 검색 방식 버튼을 메뉴 하나로 접는다.
+  static const double tmToolsCollapseWidth = 900, tmKindsCollapseWidth = 600, tmModeCollapseWidth = 340;
+
+  void _toggleKind(String kind, bool value) {
+    setState(() => value ? _selectedKinds.add(kind) : _selectedKinds.remove(kind));
+    _filtersChanged();
+    if (_fileTableView && _fileSearchSupported) _runFileSearch(_search.text.trim());
+  }
+
+  void _selectSearchMode(String mode) {
+    if (mode == 'related') {
+      _setContentMode(true);
+    } else if (mode == 'content') {
+      _setContentMode(false);
+    } else {
+      _toggleRelatedMode(false);
+      _toggleContentMode(false);
+    }
+  }
+
+  Widget _searchModeSelector({required bool collapsed}) {
+    final modes = <(String, String)>[
+      ('file', '파일명'),
+      if (_developerMode) ('content', '본문검색'),
+      if (_developerMode) ('related', '연관검색'),
+    ];
+    final selected = _developerMode && _relatedMode ? 'related' : _developerMode && _contentMode ? 'content' : 'file';
+    if (collapsed) {
+      final label = modes.firstWhere((m) => m.$1 == selected).$2;
+      return PopupMenuButton<String>(
+        key: const ValueKey('tm-search-mode-menu'),
+        tooltip: '검색 방식',
+        onSelected: _selectSearchMode,
+        itemBuilder: (context) => [
+          for (final m in modes) CheckedPopupMenuItem(value: m.$1, checked: m.$1 == selected, child: Text(m.$2)),
+        ],
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [Text(label), const Icon(Icons.arrow_drop_down, size: 18)]),
+        ),
+      );
+    }
+    return SegmentedButton<String>(
+      key: const ValueKey('tm-search-mode'),
+      showSelectedIcon: false,
+      style: const ButtonStyle(visualDensity: VisualDensity.compact),
+      segments: [for (final m in modes) ButtonSegment(value: m.$1, label: Text(m.$2))],
+      selected: {selected},
+      onSelectionChanged: (values) => _selectSearchMode(values.first),
+    );
+  }
+
+  Widget _kindMenu() {
+    final count = _selectedKinds.length;
+    return PopupMenuButton<String>(
+      key: const ValueKey('tm-kind-menu'),
+      tooltip: '종류 필터',
+      onSelected: (kind) => _toggleKind(kind, !_selectedKinds.contains(kind)),
+      itemBuilder: (context) => [
+        for (final entry in _kinds.entries)
+          CheckedPopupMenuItem(value: entry.value, checked: _selectedKinds.contains(entry.value), child: Text(entry.key)),
+      ],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.filter_list, size: 16),
+          const SizedBox(width: 4),
+          Text(count == 0 ? '종류' : '종류 $count'),
+          const Icon(Icons.arrow_drop_down, size: 18),
+        ]),
+      ),
+    );
+  }
+
   Widget _filtersBar() => Padding(padding:const EdgeInsets.fromLTRB(12,8,12,4),child:LayoutBuilder(builder:(context, constraints){
-    final compact = constraints.maxWidth < 900;
+    final width = constraints.maxWidth;
+    final compact = width < tmToolsCollapseWidth;
+    final narrow = width < tmKindsCollapseWidth;
     final tools = <Widget>[
       OutlinedButton.icon(onPressed:_scan,icon:const Icon(Icons.refresh),label:const Text('다시 훑기')),
       OutlinedButton.icon(key:const ValueKey('tm-clear-thumb-cache'),onPressed:_clearThumbnailCache,icon:const Icon(Icons.delete_outline),label:const Text('썸네일 캐시 지우기')),
       Row(mainAxisSize:MainAxisSize.min,children:[Icon(_watchByAgent?Icons.sync:Icons.hourglass_empty,size:18),const SizedBox(width:4),Text(_watchByAgent?'실시간 감시: K에이전트':'실시간 감시: 앱을 열 때만',key:const ValueKey('tm-watch-status'),style:Theme.of(context).textTheme.bodySmall)]),
     ];
     final children=<Widget>[
-    OutlinedButton.icon(onPressed:_pickExtensions,icon:const Icon(Icons.tune,size:16),label:const Text('확장자')),
-    for(final entry in _kinds.entries) FilterChip(label:Text(entry.key),selected:_selectedKinds.contains(entry.value),onSelected:(value){setState(()=>value?_selectedKinds.add(entry.value):_selectedKinds.remove(entry.value));_filtersChanged();if(_fileTableView && _fileSearchSupported){_runFileSearch(_search.text.trim());}}),
-    SegmentedButton<String>(key: const ValueKey('tm-search-mode'),segments:[const ButtonSegment(value:'file',label:Text('파일명')),const ButtonSegment(value:'content',label:Text('본문검색')),if (_developerMode) const ButtonSegment(value:'related',label:Text('연관검색'))],selected:{_relatedMode?'related':_contentMode?'content':'file'},onSelectionChanged:(values){final mode=values.first;if(mode=='related'){_setContentMode(true);}else if(mode=='content'){_setContentMode(false);}else{_toggleRelatedMode(false);_toggleContentMode(false);}}),
-    SizedBox(width:180,child:TextField(key:const ValueKey('tm-file-search'),controller:_search,decoration:InputDecoration(prefixIcon:const Icon(Icons.search),hintText:_contentMode?'본문 검색':'이름 찾기',isDense:true),onChanged:(value){_debounce?.cancel();_debounce=Timer(const Duration(milliseconds:300),(){final trimmed=value.trim();if(_contentMode){_contentSearch(trimmed);}else{_query=trimmed;_filtersChanged();if(_fileTableView || _fileSearchActive){_runFileSearch(trimmed);}}});})),
+    OutlinedButton.icon(key:const ValueKey('tm-extensions'),onPressed:_pickExtensions,icon:const Icon(Icons.tune,size:16),label:const Text('확장자')),
+    if (narrow) _kindMenu()
+    else for(final entry in _kinds.entries) FilterChip(label:Text(entry.key),selected:_selectedKinds.contains(entry.value),onSelected:(value)=>_toggleKind(entry.value, value)),
+    _searchModeSelector(collapsed: width < tmModeCollapseWidth),
+    // 좁은 창에서는 검색창을 넓히되 오른쪽 아이콘 두 개(도움말/열 보기, 더보기)가 같은 줄에 남게 한다.
+    SizedBox(width:narrow ? max(120.0, width - 120) : 180,child:TextField(key:const ValueKey('tm-file-search'),controller:_search,decoration:InputDecoration(prefixIcon:const Icon(Icons.search),hintText:_contentMode?'본문 검색':'이름 찾기',isDense:true),onChanged:(value){_debounce?.cancel();_debounce=Timer(const Duration(milliseconds:300),(){final trimmed=value.trim();if(_contentMode){_contentSearch(trimmed);}else{_query=trimmed;_filtersChanged();if(_fileTableView || _fileSearchActive){_runFileSearch(trimmed);}}});})),
     if (_contentMode && !_relatedMode)
       IconButton(
         icon: const Icon(Icons.help_outline),

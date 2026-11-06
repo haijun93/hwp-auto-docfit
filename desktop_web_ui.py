@@ -1933,9 +1933,8 @@ class DesktopWebBridge:
     def timemachine(self, action, payload=None):
         """타임머신 화면 명령을 처리한다."""
         try:
-            if action in {"content_index", "content_index_all", "content_index_start",
-                          "content_index_status", "content_index_progress", "content_index_cancel",
-                          "content_search", "content_preview"}:
+            from docfit_app.timemachine_service import TimemachineService
+            if action in TimemachineService.DEVELOPER_ONLY_ACTIONS:
                 settings = self._configuration().store.read()
                 if not bool(settings.get("developer_mode", False)):
                     return {"ok": False, "code": "DEVELOPER_MODE_REQUIRED",
