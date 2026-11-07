@@ -316,15 +316,71 @@ abstract interface class LibraryScanApi {
   Future<void> cancelScan();
 }
 
+/// 자료 열기 결과. 실패하면 [code]·[message]로 이유를 알린다.
+class LibraryOpenResult {
+  const LibraryOpenResult({required this.ok, this.code = '', this.message = ''});
+
+  final bool ok;
+
+  /// SOURCE_MISSING(원본 없음) | NO_SOURCE(경로 없음) | CONFIRM_REQUIRED(실행 파일 확인 필요)
+  /// | BLOCKED(차단) | INVALID_PATH | NOT_REGISTERED | NO_APP(연결 앱 없음) | ERROR
+  final String code;
+
+  final String message;
+}
+
+/// 자료를 Windows 연결 앱·탐색기·기본 브라우저로 연다(Python `library({"cmd":"open_item"})`).
+abstract interface class LibraryOpenApi {
+  /// [itemId]가 있으면 호스트가 자료함에 저장된 경로를 다시 읽어 그 경로만 연다.
+  Future<LibraryOpenResult> openItem({
+    String? itemId,
+    required LibraryItemKind kind,
+    required String source,
+    bool confirmed = false,
+  });
+}
+
 typedef LibraryBridgeCall =
     Future<Object?> Function(String method, List<Object?> args);
 
 /// Adapts screen models to klib's command and response schema.
 
-class BridgeLibraryApi implements LibraryApi, LibraryScanApi, LibraryDropApi {
+class BridgeLibraryApi implements LibraryApi, LibraryScanApi, LibraryDropApi, LibraryOpenApi {
   BridgeLibraryApi(this._call);
 
   final LibraryBridgeCall _call;
+
+  @override
+  Future<LibraryOpenResult> openItem({
+    String? itemId,
+    required LibraryItemKind kind,
+    required String source,
+    bool confirmed = false,
+  }) async {
+    final Object? result;
+    try {
+      result = await _call('library', [
+        <String, Object?>{
+          'cmd': 'open_item',
+          if (itemId != null && itemId.isNotEmpty) 'item_id': int.tryParse(itemId) ?? itemId,
+          'kind': kind.name,
+          'source_path': source,
+          'confirmed': confirmed,
+        },
+      ]);
+    } catch (error) {
+      return LibraryOpenResult(ok: false, code: 'ERROR', message: '$error');
+    }
+    if (result is! Map) {
+      return const LibraryOpenResult(ok: false, code: 'ERROR', message: '자료함 브리지 응답 형식이 잘못되었습니다.');
+    }
+    if (result['ok'] == true && result['opened'] != false) return const LibraryOpenResult(ok: true);
+    return LibraryOpenResult(
+      ok: false,
+      code: '${result['code'] ?? (result['ok'] == true ? 'NO_APP' : 'ERROR')}',
+      message: '${result['message'] ?? '자료를 열지 못했습니다.'}',
+    );
+  }
 
   @override
   Future<void> watchDrops(bool active) => _request('lib_drop_watch', {'active': active});
