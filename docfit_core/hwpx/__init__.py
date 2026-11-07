@@ -75,6 +75,54 @@ def _safe_member_name(info: ZipInfo) -> None:
         raise HwpxSecurityError(f"심볼릭 링크가 포함되어 있습니다: {info.filename}")
 
 
+def _check_archive_limits(infos: list[ZipInfo], limits: HwpxLimits) -> tuple[set[str], int]:
+    """Check entry count, names, sizes and compression ratio; return (names, total size)."""
+    if len(infos) > limits.max_entries:
+        raise HwpxSecurityError(
+            f"압축 항목이 너무 많습니다({len(infos):,} > {limits.max_entries:,})."
+        )
+    total = 0
+    names: set[str] = set()
+    for info in infos:
+        _safe_member_name(info)
+        normalized_name = info.filename.replace("\\", "/")
+        if normalized_name in names:
+            raise HwpxSecurityError(f"중복 압축 항목입니다: {info.filename}")
+        names.add(normalized_name)
+        if info.file_size > limits.max_file_size:
+            raise HwpxSecurityError(
+                f"압축 내부 파일이 너무 큽니다: {info.filename} ({info.file_size:,}바이트)"
+            )
+        total += info.file_size
+        if total > limits.max_total_size:
+            raise HwpxSecurityError(
+                f"압축 해제 예상 크기가 제한을 넘습니다({total:,}바이트)."
+            )
+        if info.file_size and info.compress_size == 0:
+            raise HwpxSecurityError(f"비정상 압축 항목입니다: {info.filename}")
+        if info.compress_size and info.file_size / info.compress_size > limits.max_compression_ratio:
+            raise HwpxSecurityError(f"비정상 압축률이 감지되었습니다: {info.filename}")
+    return names, total
+
+
+def open_zip_safely(path, limits: HwpxLimits | None = None) -> ZipFile:
+    """Open any ZIP (HWPX/DOCX/XLSX...) for reading after the same size limits as HWPX.
+
+    Unlike open_hwpx_safely it does not require HWPX members or run a CRC scan.
+    """
+    limits = limits or HwpxLimits()
+    try:
+        archive = ZipFile(path)
+    except BadZipFile as exc:
+        raise HwpxSecurityError("올바른 ZIP 문서가 아닙니다.") from exc
+    try:
+        _check_archive_limits(archive.infolist(), limits)
+    except BaseException:
+        archive.close()
+        raise
+    return archive
+
+
 def validate_hwpx(path: str | Path, limits: HwpxLimits | None = None) -> dict:
     """Validate archive structure without extracting anything to disk."""
     limits = limits or HwpxLimits()
@@ -84,31 +132,7 @@ def validate_hwpx(path: str | Path, limits: HwpxLimits | None = None) -> dict:
     try:
         with ZipFile(source) as archive:
             infos = archive.infolist()
-            if len(infos) > limits.max_entries:
-                raise HwpxSecurityError(
-                    f"압축 항목이 너무 많습니다({len(infos):,} > {limits.max_entries:,})."
-                )
-            total = 0
-            names: set[str] = set()
-            for info in infos:
-                _safe_member_name(info)
-                normalized_name = info.filename.replace("\\", "/")
-                if normalized_name in names:
-                    raise HwpxSecurityError(f"중복 압축 항목입니다: {info.filename}")
-                names.add(normalized_name)
-                if info.file_size > limits.max_file_size:
-                    raise HwpxSecurityError(
-                        f"압축 내부 파일이 너무 큽니다: {info.filename} ({info.file_size:,}바이트)"
-                    )
-                total += info.file_size
-                if total > limits.max_total_size:
-                    raise HwpxSecurityError(
-                        f"압축 해제 예상 크기가 제한을 넘습니다({total:,}바이트)."
-                    )
-                if info.file_size and info.compress_size == 0:
-                    raise HwpxSecurityError(f"비정상 압축 항목입니다: {info.filename}")
-                if info.compress_size and info.file_size / info.compress_size > limits.max_compression_ratio:
-                    raise HwpxSecurityError(f"비정상 압축률이 감지되었습니다: {info.filename}")
+            names, total = _check_archive_limits(infos, limits)
             section_names = sorted(
                 (name for name in names if re.fullmatch(r"Contents/section\d+\.xml", name)),
                 key=lambda value: int(re.search(r"\d+", value).group()),

@@ -75,4 +75,8 @@
 - **설치 위치**: 처음 실행할 때 `C:\HWP_AUTODOCFIT\dll\HwpAutoDocFitSecurity.dll`로 복사하고, 현재 사용자 레지스트리(`HKCU`)에 값 `HwpAutoDocFitSecurity`로 등록합니다. 관리자 권한은 쓰지 않습니다.
 - **배포 파일 해시(SHA-256)**: `9AC5B97C47AC8AED1E8BCA27A3EEF39411361D8F68C262509F0C40A8F9D21BB6`(217,229바이트).
   - 시험(`tests/test_security_module.py`)이 이 값을 확인합니다. DLL을 바꾸면 시험이 실패하므로 이 문서와 함께 검토해야 합니다.
-- **출처**: 원본 출처와 소스는 저장소에 기록이 없어 **확인이 필요**합니다(보안 검토 S9). 확인하면 이 칸에 배포처와 확인 방법을 적습니다.
+- **출처**: 아래는 저장소와 파일 자체에서 확인한 사실이며, 그 밖의 항목은 **사용자 확인 필요**입니다(보안 검토 S9).
+  - 확인된 사실: 저장소에는 `MapoHwpAutoDocFitSecurity.dll` 한 개만 있고, 처음 추가된 커밋은 `8706715`(2026-09-20, "보안 모듈 고유 명칭 적용 및 버전 1.65 갱신")입니다. 크기 217,229바이트, SHA-256은 위와 같습니다.
+  - 확인된 사실: DLL 안의 문자열에 `FilePathCheckerModuleExample.cpp`·`FilePathCheckerModuleExample.dll`·`\HwpAutomation\FilePathCheckerModuleExample\Debug\…pdb`가 들어 있습니다. 즉 한컴이 개발자 자료에 싣는 파일 경로 검사 모듈 예제를 바탕으로 빌드한 것으로 보이며, Debug(디버그) 빌드입니다.
+  - 사용자 확인 필요: 소스 코드의 위치, 빌드한 사람·날짜·환경, 예제에서 바꾼 부분, 한컴 예제의 사용 허가 조건, 코드 서명 여부, 릴리스(Release) 빌드로 다시 빌드할지 여부.
+  - 사용자 확인 필요: 소스에서 다시 빌드해 같은 동작인지 확인한 기록이 없습니다. 확인되면 배포처와 확인 방법을 이 칸에 적습니다.
