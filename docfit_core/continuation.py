@@ -296,3 +296,17 @@ def align_hwpx(source, target, *, original=None, rules=None, include_plain=False
         Path(target).write_bytes(build_package(snapshot, replacements))
         validate_hwpx(target)
     return changed
+
+
+def align_hwpx_in_place(path, *, original=None, rules=None):
+    """Run align_hwpx on an already formatted file; replace it only after validation."""
+    path = Path(path)
+    temp = path.with_name(path.name + '.continuation.tmp')
+    try:
+        changed = align_hwpx(path, temp, original=original, rules=rules)
+        if changed:
+            os.replace(temp, path)
+        return changed
+    finally:
+        if temp.exists():
+            temp.unlink()

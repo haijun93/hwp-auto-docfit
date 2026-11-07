@@ -117,5 +117,6 @@ class ContinuationTest(unittest.TestCase):
             self.assertGreater(fn(source, output), 0)
             header, root = roots(output)
             p, q = root[0], root[1]
-            self.assertEqual(plain_text(q), ' ② 가상로 200 인근(가상 복지관 앞)')
+            # LABEL229: 실제 경로가 연속 줄 맞춤을 불러 앞 빈칸은 문단 왼쪽 여백으로 바뀐다.
+            self.assertEqual(plain_text(q), '② 가상로 200 인근(가상 복지관 앞)')
             self.assertEqual(self.pair(header, p)[0], self.pair(header, q)[0])
