@@ -6,6 +6,7 @@ import zipfile
 from defusedxml import ElementTree as ET
 
 from . import table_sketch
+from .hwpx import open_zip_safely
 
 HP = "{http://www.hancom.co.kr/hwpml/2011/paragraph}"
 BODY_WIDTH_MM = 170.0
@@ -58,7 +59,7 @@ def to_hwpx(model, path):
         x_edges.append(x_edges[-1] + round(width * unit))
     row_height = round(ROW_HEIGHT_MM * unit)
 
-    with zipfile.ZipFile(document) as package:
+    with open_zip_safely(document) as package:
         infos = [(info, package.read(info.filename)) for info in package.infolist()]
     section_name = next(info.filename for info, _ in infos if info.filename.endswith("section0.xml"))
     root = ET.fromstring(next(data for info, data in infos if info.filename == section_name))

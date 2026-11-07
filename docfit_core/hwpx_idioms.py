@@ -12,7 +12,7 @@ from zipfile import ZIP_STORED, ZipFile
 
 from defusedxml import ElementTree as ET
 
-from .hwpx import open_hwpx_safely
+from .hwpx import open_hwpx_safely, open_zip_safely
 
 
 class HwpxIdiomError(ValueError):
@@ -235,7 +235,7 @@ def write_paragraph_document(base_hwpx: str | Path, target: str | Path, lines: l
             section_bytes = ET.tostring(root, encoding="utf-8", xml_declaration=True)
             destination.parent.mkdir(parents=True, exist_ok=True)
             temp = destination.with_name(destination.name + ".tmp")
-            with ZipFile(source) as original, ZipFile(temp, "w") as output:
+            with open_zip_safely(source) as original, ZipFile(temp, "w") as output:
                 for info in original.infolist():
                     data = section_bytes if info.filename == section_name else original.read(info.filename)
                     output.writestr(info, data, compress_type=ZIP_STORED if info.filename == "mimetype"

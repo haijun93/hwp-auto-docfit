@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from defusedxml import ElementTree as ET
-from ..hwpx import open_hwpx_safely
+from ..hwpx import open_hwpx_safely, open_zip_safely
 from .extract_text import extract_text as _extract_text_by_format
 from .extractors import ExtractionError, extract_document
 
@@ -321,7 +321,7 @@ def extract_paragraphs_legacy(path, ext):
             for name in section_names:
                 walk(ET.fromstring(archive.read(name)))
     elif ext == "docx":
-        with __import__("zipfile").ZipFile(path) as archive:
+        with open_zip_safely(path) as archive:
             if "word/document.xml" not in archive.namelist():
                 return []
             root = ET.fromstring(archive.read("word/document.xml"))
