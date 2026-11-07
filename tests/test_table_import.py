@@ -6,7 +6,7 @@ from pathlib import Path
 
 from docfit_app.table_sketch_service import TableSketchService
 from docfit_core import table_sketch
-from docfit_core.table_import import import_hwpx_table
+from docfit_core.table_import import import_hwpx_table, list_hwpx_tables
 
 FIX = Path(__file__).parent / "fixtures"
 
@@ -130,6 +130,35 @@ class TableImportTest(unittest.TestCase):
             for bad in (None, dict(), dict(path=str(FIX / "nope.hwpx")), dict(path=str(FIX / "timport_fill.hwpx"), index=9),
                         dict(path=str(FIX / "timport_no_table.hwpx"))):
                 self.assertFalse(service.command("import_hwpx_table", bad)["ok"], bad)
+
+    def test_list_tables_summary(self):
+        found = list_hwpx_tables(FIX / "timport_two_tables.hwpx")
+        self.assertEqual(found["total"], 2)
+        self.assertEqual([(t["index"], t["first_text"], t["ok"]) for t in found["tables"]], [(0, "첫째", True), (1, "둘째", True)])
+        basic = list_hwpx_tables(FIX / "timport_basic.hwpx")["tables"]
+        self.assertEqual((basic[0]["rows"], basic[0]["cols"], basic[0]["first_text"], basic[0]["reason"]), (2, 2, "가", ""))
+        self.assertEqual(list_hwpx_tables(FIX / "timport_no_table.hwpx"), dict(tables=[], total=0))
+        wide = list_hwpx_tables(FIX / "timport_too_wide.hwpx")["tables"][0]
+        self.assertEqual((wide["ok"], wide["cols"]), (False, 201))
+        self.assertIn("너무 커서", wide["reason"])
+        # 칸 간격을 좁혀도(60mm 폭 → 0.5mm 120칸) 200칸 안이면 가져올 수 있다.
+        self.assertTrue(list_hwpx_tables(FIX / "timport_uneven.hwpx", cell_mm=0.5)["tables"][0]["ok"])
+        with self.assertRaises(ValueError):
+            list_hwpx_tables(FIX / "timport_basic.hwpx", cell_mm=0)
+
+    def test_service_list_command(self):
+        with tempfile.TemporaryDirectory() as folder:
+            service = TableSketchService(folder)
+            result = service.command("list_hwpx_tables", dict(path=str(FIX / "timport_two_tables.hwpx")))
+            self.assertTrue(result["ok"], result)
+            self.assertEqual([t["first_text"] for t in result["tables"]], ["첫째", "둘째"])
+            empty = service.command("list_hwpx_tables", dict(path=str(FIX / "timport_no_table.hwpx")))
+            self.assertEqual((empty["ok"], empty["tables"], empty["message"]), (True, [], "이 문서에는 표가 없습니다."))
+            for bad in (None, dict(), dict(path=str(FIX / "nope.hwpx")), dict(path=str(FIX / "timport_basic.hwpx") + ".txt")):
+                self.assertFalse(service.command("list_hwpx_tables", bad)["ok"], bad)
+            with tempfile.NamedTemporaryFile(suffix=".hwpx", dir=folder, delete=False) as bad:
+                bad.write(b"not a zip")
+            self.assertFalse(service.command("list_hwpx_tables", dict(path=bad.name))["ok"])
 
 
 if __name__ == "__main__":
