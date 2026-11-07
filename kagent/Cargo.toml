@@ -6,6 +6,12 @@ description = "K에이전트: 몽땅클립보드 기록·빠른 붙여넣기 상
 license = "MIT"
 publish = false
 
+# 플랫폼 독립 분류 규칙 코어만 따로 시험하는 라이브러리 목표(맥/리눅스에서 `cargo test --lib`).
+# 실행 파일(main.rs)은 같은 파일을 `mod category;`로 쓴다. 의존성 추가 없음.
+[lib]
+name = "kagent_category"
+path = "src/category.rs"
+
 [dependencies]
 # Win32 바인딩(순수 Rust, 빌드 스크립트·C 컴파일러 없음).
 windows-sys = { version = "0.59", features = [
