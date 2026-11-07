@@ -365,7 +365,9 @@ def _rewrite_runs(paragraph, spec, pool):
             clone = copy.deepcopy(run)
             clone[0].text = text[a:b]
             force = any(lo <= global_start + a and global_start + b <= hi for lo, hi in spec.bold_spans)
-            piece_spec = run_spec(run, global_start + a)
+            # 라벨 굵게 구간은 굵기만 더하고 크기·글꼴은 문단 본문(계층 서식)과 같게 둔다. 원본 라벨 run이 더 큰 글자였을 때
+            # 그 차이를 "강조 크기"로 옮기면 라벨이 본문보다 커진다(label228, 5번).
+            piece_spec = spec if force else run_spec(run, global_start + a)
             if any(lo <= global_start + a and global_start + b <= hi for lo, hi in spec.plain_spans):
                 piece_spec, force = replace(piece_spec, bold=False), False
             clone.set("charPrIDRef", pool.char(run.get("charPrIDRef"), piece_spec, force))

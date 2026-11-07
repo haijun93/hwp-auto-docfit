@@ -13,6 +13,8 @@ _OFFICIAL_LEVEL = {"□": "□", "ㅁ": "□", "ㅇ": "ㅇ", "○": "ㅇ", "-": 
 _NOTES = frozenset(("*", "**", "※"))
 _LEGACY_SYMBOLS = frozenset("◦☞•·∙‧⋅ㆍ")
 _HANGUL = "가나다라마바사아자차카타파하"
+# 검은 원 숫자 ❶~❿는 '-' 항목기호와 같은 수준·같은 규칙으로 다룬다(사용자 확정, 2026-10-24).
+BLACK_CIRCLED = "❶❷❸❹❺❻❼❽❾❿"
 _LABEL = re.compile(r"^\s*(?:제목|개요|요약|부제|중제목)\s*[:：]")
 _MULTI = re.compile(r"([0-9]+(?:[.．][0-9]+)+)[.．]?(?=\s|$)")
 _HYPHEN = re.compile(r"([0-9]+(?:-[0-9]+)+)[.．]?(?=\s|$)")
@@ -55,6 +57,8 @@ def classify_marker(text) -> tuple[str, int] | None:
         if len(stripped) == 1 or stripped[1].isspace():
             family = "①" if "①" <= first <= "⑳" else "㉠" if "㉠" <= first <= "㉭" else "㉮"
             return family, lead + 1
+    if first in BLACK_CIRCLED and (len(stripped) == 1 or stripped[1].isspace()):
+        return "-", lead + 1  # 카테고리가 "No"라 아래 일반 기호 판정에서 빠지던 ❶ 계열.
     if stripped.startswith("**") and (len(stripped) == 2 or stripped[2].isspace()):
         return "**", lead + 2
     if (len(stripped) == 1 or stripped[1].isspace()) and (
@@ -104,6 +108,8 @@ class MarkerScheme:
         found = classify_marker(text)
         if found:
             family, end = found
+            if family == "-" and text.lstrip()[0] in BLACK_CIRCLED:
+                return "-", end
             level = self.family_levels.get(family)
             # 감지된 다단 체계의 더 깊은 번호도 같은 상대 깊이로 조회한다(C6 조회 API 유지).
             separator = "-" if family.startswith("1-") else "." if family.startswith("1.") else None
@@ -146,7 +152,8 @@ def detect_scheme(texts) -> MarkerScheme:
     excluded_indices = {i for start, end in find_blocks(texts) for i in range(start, end + 1)}
     excluded = frozenset(texts[i].strip() for i in excluded_indices if texts[i])
     body = [text for i, text in enumerate(texts) if i not in excluded_indices and text and text.strip()]
-    found = [(text, classify_marker(text)) for text in body if not _LABEL.match(text)]
+    found = [(text, None if text.lstrip()[:1] in tuple(BLACK_CIRCLED) else classify_marker(text))
+             for text in body if not _LABEL.match(text)]  # ❶ 계열은 '-'로 고정이라 체계 감지에서 뺀다.
     occupied = {_OFFICIAL_LEVEL[marker[0]] for _, marker in found if marker and marker[0] in _OFFICIAL_LEVEL}
     has_box = "□" in occupied
     candidates = []
