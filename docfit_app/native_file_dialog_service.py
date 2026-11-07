@@ -21,6 +21,7 @@ PURPOSES = {
     'table_template': ('open', frozenset({'.hwpx'})),
     'flow_png': ('save', frozenset({'.png'})),
     'flow_hwpx': ('save', frozenset({'.hwpx'})),
+    'notebook_hwpx': ('save', frozenset({'.hwpx'})),
     # 파일이름 탭: 모든 확장자(None = 확장자 제한 없음).
     'rename_files': ('open', None),
     'rename_folder': ('directory', None),

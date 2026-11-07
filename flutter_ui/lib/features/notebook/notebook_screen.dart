@@ -452,6 +452,25 @@ class _NotebookScreenState extends State<NotebookScreen> {
     );
   }
 
+  /// 노트를 한/글 HWPX로 저장한다(저장 위치는 호스트 저장 대화상자). 출처 비교를 했으면 비교 표도 넣는다.
+  Future<void> _exportHwpx() async {
+    final nb = _notebook;
+    final id = _noteId;
+    if (nb == null || id == null) {
+      setState(() => _status = '먼저 노트를 저장하세요.');
+      return;
+    }
+    String? saved;
+    var finished = false;
+    await _run(() async {
+      saved = await widget.api.exportHwpx(nb.id, id, compareQuery: _compareQuery, compareSourceIds: _compareScope);
+      finished = true;
+    });
+    if (!mounted || !finished) return; // 실패 문구는 _run이 이미 보였다.
+    final path = saved;
+    setState(() => _status = path == null ? 'HWPX 내보내기를 취소했습니다.' : '한/글 문서로 저장했습니다: $path');
+  }
+
   String _sourceName(int id) => _sources.where((s) => s.id == id).map((s) => s.displayName).firstOrNull ?? '출처 $id';
 
   @override
@@ -1116,10 +1135,35 @@ class _NotebookScreenState extends State<NotebookScreen> {
                 runSpacing: 8,
                 alignment: WrapAlignment.end,
                 children: [
-                  OutlinedButton(
+                  PopupMenuButton<String>(
                     key: const ValueKey('nb-note-export'),
-                    onPressed: _busy || _noteId == null ? null : _exportNote,
-                    child: const Text('Markdown 내보내기'),
+                    enabled: !_busy && _noteId != null,
+                    tooltip: '내보내기 형식 고르기',
+                    onSelected: (format) => format == 'hwpx' ? _exportHwpx() : _exportNote(),
+                    itemBuilder: (context) => const [
+                      PopupMenuItem(
+                        key: ValueKey('nb-export-md'),
+                        value: 'md',
+                        child: ListTile(dense: true, leading: Icon(Icons.description_outlined), title: Text('Markdown')),
+                      ),
+                      PopupMenuItem(
+                        key: ValueKey('nb-export-hwpx'),
+                        value: 'hwpx',
+                        child: ListTile(
+                          dense: true,
+                          leading: Icon(Icons.save_alt),
+                          title: Text('HWPX(한/글)'),
+                          subtitle: Text('저장 위치를 골라 한/글 문서로 저장'),
+                        ),
+                      ),
+                    ],
+                    child: IgnorePointer(
+                      child: OutlinedButton.icon(
+                        onPressed: _busy || _noteId == null ? null : () {},
+                        icon: const Icon(Icons.arrow_drop_down),
+                        label: const Text('내보내기'),
+                      ),
+                    ),
                   ),
                   FilledButton(
                     key: const ValueKey('nb-note-save'),

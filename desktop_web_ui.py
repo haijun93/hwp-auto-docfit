@@ -2330,9 +2330,16 @@ class DesktopWebBridge:
             if cmd == "nb_take_drop":
                 paths, self._notebook_drop = list(getattr(self, "_notebook_drop", None) or []), []
                 return {"ok": True, "paths": paths}
+            if cmd == "nb_select_output":
+                # 노트 HWPX 내보내기 저장 위치(네이티브 저장 대화상자, 경로는 호스트에만 보관).
+                import uuid
+                return self._file_dialogs.select_files(uuid.uuid4().hex, "notebook_hwpx", "save")
             if getattr(self, "_notebook_service", None) is None:
                 from docfit_app.notebook_service import NotebookService
                 self._notebook_service = NotebookService(self._get_library_bridge())
+            if cmd == "nb_export_hwpx":
+                target = self._selection_path(request, "notebook_hwpx", "output_selection_id")
+                return self._notebook_service.export_hwpx(request, target)
             return self._notebook_service.handle(request)
         except Exception as exc:
             return {"ok": False, "message": str(exc)}

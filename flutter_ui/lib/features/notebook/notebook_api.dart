@@ -152,6 +152,10 @@ abstract class NotebookApi {
   /// [compareQuery]가 있으면 그 검색어의 출처 비교 절([compareSourceIds] 범위)을 뒤에 붙인다.
   Future<String> exportMarkdown(int notebookId, int noteId, {String? compareQuery, List<int>? compareSourceIds});
 
+  /// 노트를 한/글 HWPX 문서로 저장한다. 저장 위치는 호스트의 저장 대화상자에서 고르며,
+  /// 사용자가 취소하면 null, 저장하면 저장한 경로를 돌려준다(제목·태그·본문·인용·출처 비교 표).
+  Future<String?> exportHwpx(int notebookId, int noteId, {String? compareQuery, List<int>? compareSourceIds});
+
   /// 창에 끌어 놓은 파일을 노트북 출처로 받기 켜기·끄기(노트북 화면이 열려 있는 동안 켠다).
   Future<void> watchDrops(bool active);
 
@@ -333,6 +337,24 @@ class BridgeNotebookApi implements NotebookApi {
       );
 
   @override
+  Future<String?> exportHwpx(int notebookId, int noteId, {String? compareQuery, List<int>? compareSourceIds}) async {
+    final selection = await _request('nb_select_output');
+    if (selection['cancelled'] == true) return null;
+    final selectionId = selection['selection_id'];
+    if (selectionId is! String || selectionId.isEmpty) throw StateError('저장 위치를 확인해 주세요.');
+    final saved = await _request('nb_export_hwpx', {
+      'notebook_id': notebookId,
+      'note_id': noteId,
+      'output_selection_id': selectionId,
+      if (compareQuery != null && compareQuery.trim().isNotEmpty) ...{
+        'compare_query': compareQuery.trim(),
+        'compare_source_ids': ?compareSourceIds,
+      },
+    });
+    return _str(saved['path']);
+  }
+
+  @override
   Future<void> watchDrops(bool active) => _request('nb_drop_watch', {'active': active});
 
   @override
@@ -501,6 +523,27 @@ class InMemoryNotebookApi implements NotebookApi {
       }
     }
     return buffer.toString();
+  }
+
+  /// HWPX 내보내기 기록(시험 확인용): (노트북, 노트, 비교 검색어).
+  final hwpxExports = <(int, int, String?)>[];
+
+  /// 다음 HWPX 내보내기에서 저장 대화상자를 취소한 것처럼 한다(시험용).
+  bool cancelNextHwpxExport = false;
+
+  @override
+  Future<String?> exportHwpx(int notebookId, int noteId, {String? compareQuery, List<int>? compareSourceIds}) async {
+    if (cancelNextHwpxExport) {
+      cancelNextHwpxExport = false;
+      return null;
+    }
+    final note = (_notes[notebookId] ?? const <NbNote>[]).firstWhere(
+      (n) => n.id == noteId,
+      orElse: () => throw StateError('노트를 찾을 수 없습니다.'),
+    );
+    final query = compareQuery?.trim() ?? '';
+    hwpxExports.add((notebookId, noteId, query.isEmpty ? null : query));
+    return 'memory://${note.title}.hwpx';
   }
 
   @override

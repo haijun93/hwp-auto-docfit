@@ -72,11 +72,29 @@ Future<void> _flow(WidgetTester tester, InMemoryNotebookApi api, {required bool 
   expect(notes.single.citations.single.quote, '복지 예산은 120억 원으로 늘었다.');
   expect(notes.single.citations.single.paragraphOrdinal, 1);
 
+  await _chooseExport(tester, 'nb-export-md');
+  expect(find.textContaining('> 복지 예산은 120억 원으로 늘었다.'), findsOneWidget);
+  await tester.tap(find.text('닫기'));
+  await tester.pumpAndSettle();
+
+  // 같은 내보내기 메뉴의 HWPX(한/글): 저장 위치를 고르면 저장 경로를, 취소하면 취소 문구를 보인다.
+  await _chooseExport(tester, 'nb-export-hwpx');
+  expect(find.text('한/글 문서로 저장했습니다: memory://복지 예산 메모.hwpx'), findsOneWidget);
+  expect(api.hwpxExports.single.$2, notes.single.id);
+  api.cancelNextHwpxExport = true;
+  await _chooseExport(tester, 'nb-export-hwpx');
+  expect(find.text('HWPX 내보내기를 취소했습니다.'), findsOneWidget);
+  expect(api.hwpxExports, hasLength(1));
+  expect(tester.takeException(), isNull);
+}
+
+Future<void> _chooseExport(WidgetTester tester, String item) async {
   await tester.ensureVisible(find.byKey(const ValueKey('nb-note-export')));
   await tester.tap(find.byKey(const ValueKey('nb-note-export')));
   await tester.pumpAndSettle();
-  expect(find.textContaining('> 복지 예산은 120억 원으로 늘었다.'), findsOneWidget);
-  expect(tester.takeException(), isNull);
+  expect(find.text('HWPX(한/글)'), findsOneWidget);
+  await tester.tap(find.byKey(ValueKey(item)));
+  await tester.pumpAndSettle();
 }
 
 void main() {
@@ -393,15 +411,18 @@ void main() {
       expect(tester.widget<TextField>(find.byKey(const ValueKey('nb-note-tags'))).controller!.text, '예산, 복지');
 
       // 내보내기에 태그와 마지막 출처 비교가 들어간다.
-      await tester.ensureVisible(find.byKey(const ValueKey('nb-note-export')));
-      await tester.tap(find.byKey(const ValueKey('nb-note-export')));
-      await tester.pumpAndSettle();
+      await _chooseExport(tester, 'nb-export-md');
       final text = tester.widget<SelectableText>(find.byKey(const ValueKey('nb-export-text'))).data!;
       expect(text, contains('태그: #예산 #복지'));
       expect(text, contains('## 출처 비교: 복지 예산'));
       expect(text, contains('### 도로.md'));
       expect(text, contains('### 기타.txt\n\n근거 문단 없음'));
       expect(find.textContaining('출처 비교: 복지 예산 포함'), findsOneWidget);
+      await tester.tap(find.text('닫기'));
+      await tester.pumpAndSettle();
+      // HWPX에도 마지막 출처 비교 검색어가 넘어간다(비교 표).
+      await _chooseExport(tester, 'nb-export-hwpx');
+      expect(api.hwpxExports.last.$3, '복지 예산');
       expect(tester.takeException(), isNull);
     });
   }
@@ -434,6 +455,10 @@ void main() {
         },
         'nb_note_save' => {'ok': true, 'id': 9},
         'nb_export_md' => {'ok': true, 'markdown': '# t'},
+        'nb_select_output' => request['cancel'] == true
+            ? {'ok': true, 'cancelled': true}
+            : {'ok': true, 'cancelled': false, 'selection_id': 'sel-1'},
+        'nb_export_hwpx' => {'ok': true, 'path': r'C:\out\노트.hwpx'},
         _ => {'ok': true},
       };
     });
@@ -454,5 +479,25 @@ void main() {
       'compare_query': '복지',
       'compare_source_ids': [5],
     });
+    expect(await api.exportHwpx(1, 9, compareQuery: ' 복지 ', compareSourceIds: [5]), r'C:\out\노트.hwpx');
+    expect(calls[calls.length - 2], {'cmd': 'nb_select_output'});
+    expect(calls.last, {
+      'cmd': 'nb_export_hwpx',
+      'notebook_id': 1,
+      'note_id': 9,
+      'output_selection_id': 'sel-1',
+      'compare_query': '복지',
+      'compare_source_ids': [5],
+    });
+  });
+
+  testWidgets('bridge api hwpx export stops when save dialog is cancelled', (tester) async {
+    final calls = <String>[];
+    final api = BridgeNotebookApi((method, args) async {
+      calls.add('${(args.single as Map)['cmd']}');
+      return {'ok': true, 'cancelled': true};
+    });
+    expect(await api.exportHwpx(1, 2), isNull);
+    expect(calls, ['nb_select_output']);
   });
 }
