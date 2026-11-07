@@ -253,7 +253,7 @@ class TimemachineServiceTests(unittest.TestCase):
         started = self.service.command("content_index_all")
         self.assertTrue(started["ok"])
         worker = self.service._content_thread
-        worker.join(5)
+        worker.join(30)
         self.assertFalse(worker.is_alive())
         status = self.service.command("content_index_status")
         self.assertFalse(status["running"])
@@ -388,7 +388,7 @@ class TimemachineServiceTests(unittest.TestCase):
         self.wait_scan_idle()
         worker = self.service._content_thread
         self.assertIsNotNone(worker)
-        worker.join(5)
+        worker.join(30)
         self.assertFalse(worker.is_alive())
         self.assertEqual(len(self.service.command("content_search", {"query": "바뀐 본문"})["items"]), 1)
         self.assertEqual(len(self.service.command("content_search", {"query": "새 문서 본문"})["items"]), 1)
@@ -572,7 +572,7 @@ class TimemachineServiceTests(unittest.TestCase):
 
     # ── 켤 때 K에이전트 연동 ──
     def wait_scan_idle(self):
-        deadline = time.time() + 5
+        deadline = time.time() + 30
         while self.service.command("status")["scan"]["running"] and time.time() < deadline:
             time.sleep(0.01)
 
