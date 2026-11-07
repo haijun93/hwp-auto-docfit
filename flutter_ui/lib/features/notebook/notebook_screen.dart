@@ -14,12 +14,28 @@ import 'notebook_api.dart';
 /// 폭이 [kNotebookWideWidth] 미만이면 세 칸을 탭으로 바꾼다.
 const kNotebookWideWidth = 1000.0;
 
+<<<<<<< HEAD
 /// 본문검색 결과·출처 비교·미리보기 본문의 기본 글자 크기: 10pt.
 /// 기준: Flutter 논리 픽셀 1px = 1/96인치(Windows 100% 배율의 화면 픽셀, CSS px와 같음), 1pt = 1/72인치
 /// → 10pt = 10 × 96 ÷ 72 ≈ 13.33 논리 픽셀. Windows 배율(125%·150%)은 기기 픽셀 비율로, 접근성 글자 확대는
 /// textScaler로 따로 곱해지므로 여기서는 크기를 고정해 호스트의 기본 글자 크기(약 30px로 보이던 원인)에 끌려가지 않게 한다.
 const kNbReadingFontSize = 10 * 96 / 72;
 const _readingStyle = TextStyle(fontSize: kNbReadingFontSize, height: 1.5);
+=======
+/// 넓은 화면의 칸 폭(사용자가 구분선을 끌어 조정). 기본·최소·최대와 가운데 칸 최소 폭.
+const kNotebookSourcesWidth = 260.0;
+const kNotebookNotesWidth = 340.0;
+const kNotebookSourcesMin = 180.0;
+const kNotebookSourcesMax = 560.0;
+const kNotebookNotesMin = 240.0;
+const kNotebookNotesMax = 560.0;
+const kNotebookMiddleMin = 320.0;
+const kNotebookHandleWidth = 8.0;
+
+/// 마지막으로 정한 칸 폭. 앱을 켜 둔 동안 노트북을 다시 열어도 유지한다(파일 저장은 후속).
+double _savedSourcesWidth = kNotebookSourcesWidth;
+double _savedNotesWidth = kNotebookNotesWidth;
+>>>>>>> github/main
 
 enum _Middle { search, compare, preview, transform }
 
@@ -55,6 +71,9 @@ class NotebookScreen extends StatefulWidget {
 }
 
 class _NotebookScreenState extends State<NotebookScreen> {
+  double _sourcesWidth = _savedSourcesWidth;
+  double _notesWidth = _savedNotesWidth;
+  double _lastTotalWidth = 0;
   final _queryController = TextEditingController();
   final _titleController = TextEditingController();
   final _bodyController = TextEditingController();
@@ -626,14 +645,27 @@ class _NotebookScreenState extends State<NotebookScreen> {
     return LayoutBuilder(
       builder: (context, constraints) {
         if (constraints.maxWidth >= kNotebookWideWidth) {
+          _lastTotalWidth = constraints.maxWidth;
+          final (sourcesWidth, notesWidth) = _effectiveWidths(constraints.maxWidth);
           return Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              SizedBox(width: 260, child: _sourcesPane()),
-              const VerticalDivider(width: 1),
+              SizedBox(width: sourcesWidth, child: _sourcesPane()),
+              _PaneResizeHandle(
+                key: const ValueKey('nb-resize-sources'),
+                semanticLabel: '출처 칸 폭 조정',
+                onDelta: (d) => _resize(sources: d),
+                onReset: () => _resetWidths(sources: true),
+              ),
               Expanded(child: _middlePane()),
-              const VerticalDivider(width: 1),
-              SizedBox(width: 340, child: _notesPane()),
+              _PaneResizeHandle(
+                key: const ValueKey('nb-resize-notes'),
+                semanticLabel: '노트 칸 폭 조정',
+                // 구분선을 오른쪽으로 끌면 노트 칸이 좁아진다.
+                onDelta: (d) => _resize(notes: -d),
+                onReset: () => _resetWidths(notes: true),
+              ),
+              SizedBox(width: notesWidth, child: _notesPane()),
             ],
           );
         }
@@ -654,6 +686,44 @@ class _NotebookScreenState extends State<NotebookScreen> {
         );
       },
     );
+  }
+
+  /// 저장된 폭을 최소·최대와 가운데 칸 최소 폭 안으로 맞춘다.
+  (double, double) _effectiveWidths(double total) {
+    var sources = _sourcesWidth.clamp(kNotebookSourcesMin, kNotebookSourcesMax).toDouble();
+    var notes = _notesWidth.clamp(kNotebookNotesMin, kNotebookNotesMax).toDouble();
+    final room = total - kNotebookMiddleMin - kNotebookHandleWidth * 2;
+    if (sources + notes > room) {
+      var extra = sources + notes - room;
+      final cutNotes = (notes - kNotebookNotesMin).clamp(0.0, extra).toDouble();
+      notes -= cutNotes;
+      extra -= cutNotes;
+      sources = (sources - extra).clamp(kNotebookSourcesMin, kNotebookSourcesMax).toDouble();
+    }
+    return (sources, notes);
+  }
+
+  void _resize({double sources = 0, double notes = 0}) {
+    final total = _lastTotalWidth;
+    if (total <= 0) return;
+    setState(() {
+      final (currentSources, currentNotes) = _effectiveWidths(total);
+      var nextSources = (currentSources + sources).clamp(kNotebookSourcesMin, kNotebookSourcesMax).toDouble();
+      var nextNotes = (currentNotes + notes).clamp(kNotebookNotesMin, kNotebookNotesMax).toDouble();
+      final room = total - kNotebookMiddleMin - kNotebookHandleWidth * 2;
+      // 가운데 칸이 최소 폭보다 좁아지는 쪽으로는 더 넓힐 수 없다.
+      if (sources > 0 && nextSources + currentNotes > room) nextSources = (room - currentNotes).clamp(kNotebookSourcesMin, nextSources).toDouble();
+      if (notes > 0 && currentSources + nextNotes > room) nextNotes = (room - currentSources).clamp(kNotebookNotesMin, nextNotes).toDouble();
+      _sourcesWidth = _savedSourcesWidth = nextSources;
+      _notesWidth = _savedNotesWidth = nextNotes;
+    });
+  }
+
+  void _resetWidths({bool sources = false, bool notes = false}) {
+    setState(() {
+      if (sources) _sourcesWidth = _savedSourcesWidth = kNotebookSourcesWidth;
+      if (notes) _notesWidth = _savedNotesWidth = kNotebookNotesWidth;
+    });
   }
 
   Widget _paneHeader(String title, List<Widget> actions) => Padding(
@@ -727,11 +797,22 @@ class _NotebookScreenState extends State<NotebookScreen> {
                           value: _checked.contains(s.id),
                           onChanged: (v) => setState(() => v == true ? _checked.add(s.id) : _checked.remove(s.id)),
                         ),
+                        isThreeLine: true,
                         title: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Icon(_kindIcon(s.kind), size: 16),
                             const SizedBox(width: 4),
-                            Expanded(child: Text(s.displayName, overflow: TextOverflow.ellipsis)),
+                            Expanded(
+                              child: Tooltip(
+                                key: ValueKey('nb-source-name-${s.id}'),
+                                message: s.origin.isEmpty || s.origin == s.displayName
+                                    ? s.displayName
+                                    : '${s.displayName}\n${s.origin}',
+                                waitDuration: const Duration(milliseconds: 400),
+                                child: Text(s.displayName, maxLines: 2, overflow: TextOverflow.ellipsis),
+                              ),
+                            ),
                           ],
                         ),
                         subtitle: Text(
@@ -1165,7 +1246,12 @@ class _NotebookScreenState extends State<NotebookScreen> {
                     key: ValueKey('nb-note-${note.id}'),
                     dense: true,
                     selected: note.id == _noteId,
-                    title: Text(note.title, overflow: TextOverflow.ellipsis),
+                    isThreeLine: true,
+                    title: Tooltip(
+                      message: note.title,
+                      waitDuration: const Duration(milliseconds: 400),
+                      child: Text(note.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+                    ),
                     subtitle: Text(
                       [
                         '인용 ${note.citations.length}개',
@@ -1471,6 +1557,7 @@ class _LibraryPickDialogState extends State<_LibraryPickDialog> {
   }
 }
 
+<<<<<<< HEAD
 /// 메모 편집 화면: 메모 편집기 + '출처로 저장'. 저장하면 새 출처 id로 닫는다.
 class _MemoPage extends StatefulWidget {
   const _MemoPage({
@@ -1514,10 +1601,52 @@ class _MemoPageState extends State<_MemoPage> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+=======
+/// 두 칸 사이의 구분선. 끌거나 좌우 방향키로 폭을 바꾸고, 두 번 누르거나 Home 키로 기본 폭으로 되돌린다.
+class _PaneResizeHandle extends StatefulWidget {
+  const _PaneResizeHandle({super.key, required this.semanticLabel, required this.onDelta, required this.onReset});
+
+  final String semanticLabel;
+  final ValueChanged<double> onDelta;
+  final VoidCallback onReset;
+
+  @override
+  State<_PaneResizeHandle> createState() => _PaneResizeHandleState();
+}
+
+class _PaneResizeHandleState extends State<_PaneResizeHandle> {
+  final _node = FocusNode(debugLabel: 'nb-pane-resize');
+  bool _hover = false;
+  bool _focus = false;
+
+  @override
+  void dispose() {
+    _node.dispose();
+    super.dispose();
+  }
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) return KeyEventResult.ignored;
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.arrowLeft) {
+      widget.onDelta(-16);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowRight) {
+      widget.onDelta(16);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.home) {
+      widget.onReset();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+>>>>>>> github/main
   }
 
   @override
   Widget build(BuildContext context) {
+<<<<<<< HEAD
     return Scaffold(
       appBar: AppBar(title: const Text('메모'), toolbarHeight: 44),
       body: Padding(
@@ -1545,6 +1674,34 @@ class _MemoPageState extends State<_MemoPage> {
                   label: const Text('출처로 저장'),
                 ),
               ],
+=======
+    final theme = Theme.of(context);
+    final active = _hover || _focus;
+    return Semantics(
+      label: widget.semanticLabel,
+      hint: '끌거나 좌우 방향키로 폭을 바꾸고, 두 번 누르면 기본 폭으로 돌아갑니다',
+      child: Focus(
+        focusNode: _node,
+        onFocusChange: (value) => setState(() => _focus = value),
+        onKeyEvent: _onKey,
+        child: MouseRegion(
+          cursor: SystemMouseCursors.resizeColumn,
+          onEnter: (_) => setState(() => _hover = true),
+          onExit: (_) => setState(() => _hover = false),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapDown: (_) => _node.requestFocus(),
+            onHorizontalDragUpdate: (details) => widget.onDelta(details.delta.dx),
+            onDoubleTap: widget.onReset,
+            child: SizedBox(
+              width: kNotebookHandleWidth,
+              child: Center(
+                child: Container(
+                  width: active ? 3 : 1,
+                  color: active ? theme.colorScheme.primary : theme.dividerColor,
+                ),
+              ),
+>>>>>>> github/main
             ),
           ),
         ),
