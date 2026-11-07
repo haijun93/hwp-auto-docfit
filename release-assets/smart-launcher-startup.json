@@ -1,19 +1,4 @@
 {
-<<<<<<< .merge_file_90MQgA
-  "version": "2.2.29",
-  "payload_sha256": "44e2ca974c3640b40a18c77162d36beda0f632f584c7a6862f352ac50cce4a1d",
-  "self_test_start_ms": 595.71,
-  "cached_start_ms": 533.1,
-  "cached_start_target_ms": 1500.0,
-  "cached_start_within_target": true,
-  "cold_ui_window_ready_ms": 3779.77,
-  "cold_ui_splash_visible_ms": 40.62,
-  "cold_ui_splash_within_target": true,
-  "warm_ui_first_ms": 1111.77,
-  "warm_ui_second_ms": 1116.04,
-  "warm_ui_first_within_target": true,
-  "warm_ui_second_within_target": true,
-=======
   "version": "2.2.28",
   "payload_sha256": "307d2f6309efaad9e839613abb4c7715e9f1604791b816ac994d49b4648e0111",
   "self_test_start_ms": 908.74,
@@ -27,6 +12,5 @@
   "warm_ui_second_ms": 1675.26,
   "warm_ui_first_within_target": false,
   "warm_ui_second_within_target": false,
->>>>>>> .merge_file_JcKfYo
   "cache_hit_marker_unchanged": true
 }
