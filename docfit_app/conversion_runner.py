@@ -110,7 +110,7 @@ def run_conversion(files, target, output_dir=None, progress=None, stop_event=Non
     try:
         변환할_파일 = [f for f in files if not is_same_format(f, target_format)]
         그림_한글필요 = target_format in IMAGE_FORMATS and any(Path(f).suffix.lower() != ".pdf" for f in 변환할_파일)
-        if (target_format == "pdf" and 변환할_파일) or 합치기_한글필요 or 그림_한글필요 or (target_format == "hwpx" and any(Path(f).suffix.lower() == ".hwp" for f in files)):
+        if (target_format == "pdf" and any(Path(f).suffix.lower() not in IMAGE_INPUT_EXTENSIONS for f in 변환할_파일)) or 합치기_한글필요 or 그림_한글필요 or (target_format == "hwpx" and any(Path(f).suffix.lower() == ".hwp" for f in files)):
             runtime = runtime_factory()
             pythoncom = runtime["pythoncom"]
             한글_COM_인스턴스_생성 = runtime["한글_COM_인스턴스_생성"]

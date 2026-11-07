@@ -13,9 +13,12 @@ from concurrent.futures import ThreadPoolExecutor
 from .api_contract import ServiceError
 
 DOCUMENTS = frozenset({'.hwp', '.hwpx', '.pdf', '.doc', '.docx', '.txt', '.md'})
+# 파일변환 탭의 그림 입력(JPG·PNG 등). 파일 선택·끌어 놓기·폴더 추가가 모두 이 목록을 쓴다.
+IMAGES = frozenset({'.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tif', '.tiff', '.gif'})
+ADDABLE = DOCUMENTS | IMAGES
 PURPOSES = {
-    'add_files': ('open', DOCUMENTS),
-    'add_folder': ('directory', DOCUMENTS),
+    'add_files': ('open', ADDABLE),
+    'add_folder': ('directory', ADDABLE),
     'add_format_file': ('open', frozenset({'.hwp', '.hwpx'})),
     'idioms': ('open', frozenset({'.hwp', '.hwpx', '.ido'})),
     'table_template': ('open', frozenset({'.hwpx'})),
@@ -156,16 +159,16 @@ class NativeFileDialogService:
     def directory_files(self, paths, recursive=False):
         if type(recursive) is not bool or len(paths) != 1:
             fail('INVALID_INPUT')
-        root = self._path(paths[0], 'directory', DOCUMENTS)
+        root = self._path(paths[0], 'directory', ADDABLE)
         found, seen = [], set()
         for folder, dirs, names in os.walk(root, followlinks=False):
             for name in dirs:
-                self._path(str(Path(folder) / name), 'directory', DOCUMENTS)
+                self._path(str(Path(folder) / name), 'directory', ADDABLE)
             for name in sorted(names):
                 candidate = Path(folder) / name
-                if candidate.suffix.lower() not in DOCUMENTS:
+                if candidate.suffix.lower() not in ADDABLE:
                     continue
-                candidate = self._path(str(candidate), 'open', DOCUMENTS)
+                candidate = self._path(str(candidate), 'open', ADDABLE)
                 identity = self._identity(candidate)[:2]
                 if identity not in seen:
                     seen.add(identity)
