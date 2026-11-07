@@ -62,6 +62,7 @@ on:
       - release/2.2.25
       - release/2.2.26
       - release/2.2.27
+      - release/2.2.28
       - claude/affectionate-goldberg-ggln7c
     paths-ignore:
       - 'README.md'
