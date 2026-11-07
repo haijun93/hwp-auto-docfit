@@ -642,6 +642,14 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 except Exception:
                     globals()["장평_줄이기_사용"] = 기본_설정["ratio_shrink"]
                 로그(f"장평 줄이기: {'사용' if 장평_줄이기_사용 else '안 함(자간 줄이기·늘리기만 사용)'}")
+                from docfit_core.table_limits import TableLimits
+                try:
+                    _표한도 = TableLimits.from_settings(설정_불러오기())
+                except Exception:
+                    _표한도 = TableLimits()
+                globals()["표칸_줄간격_하한"] = _표한도.line_min
+                globals()["표칸_자간_하한"] = _표한도.spacing_min
+                로그(f"표 칸 하한: 줄 간격 {_표한도.line_min}% / 자간 {_표한도.spacing_min}% (본문: 줄 간격 {줄간격최소}% / 자간 -50%)")
                 로그(f"작업 로그 파일: {로그_파일_경로 or '(만들지 않음)'}")
                 정리수 = 이전_작업_임시폴더_정리()
                 if 정리수:

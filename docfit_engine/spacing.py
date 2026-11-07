@@ -894,8 +894,9 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             # 줄어드는 일이 없다.
             현재_최소자간 = min((v for _, _, vs in spacing_runs for v in vs), default=0)
             자간_한도 = min(4, max(1, 최대시도))
+            자간_하한 = __import__('docfit_core.table_limits', fromlist=['spacing_floor']).spacing_floor(globals())   # 표 칸 -25(설정), 그 밖 -50
             자간값 = -max(0, 자간_한도 + 현재_최소자간)
-            if 자간값 and any(not -50 <= v + 자간값 <= 50 for _, _, vs in spacing_runs for v in vs):
+            if 자간값 and any(not 자간_하한 <= v + 자간값 <= 50 for _, _, vs in spacing_runs for v in vs):
                 자간값 = 0
             자간적용됨 = False
             성공 = False
@@ -979,7 +980,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
             현재_최소자간 = min((v for _, _, vs in runs for v in vs), default=0)
             자간_상한 = max(0, min(최대시도, 다음단어_당김_자간_최대_퍼센트 + 현재_최소자간))
             # 자간은 -50%보다 작게 할 수 없다.
-            탐색_상한 = min(자간_상한, 50 + 현재_최소자간)
+            탐색_상한 = min(자간_상한, 현재_최소자간 - __import__('docfit_core.table_limits', fromlist=['spacing_floor']).spacing_floor(globals()))
 
             def 당김_확인(step):
                 nonlocal changed
@@ -1189,8 +1190,8 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                     if 괄호보관 is not None:
                         # 실제 자간 하한 -50%까지 남은 여유만 탐색한다.
                         # 예: 기존 -48%이면 추가 축소는 2단계만 허용한다.
-                        상한 = min(최대시도, 50 + min(
-                            (v for _, _, values in 괄호보관 for v in values), default=0))
+                        상한 = min(최대시도, min(
+                            (v for _, _, values in 괄호보관 for v in values), default=0) - __import__('docfit_core.table_limits', fromlist=['spacing_floor']).spacing_floor(globals()))
                         def 괄호확인(step):
                             nonlocal 괄호변경
                             괄호변경 = True
@@ -1277,7 +1278,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                         success = False
                         changed = False
                         # 자간은 -50%보다 작게 할 수 없다.
-                        상한 = min(최대시도, 50 + min((v for _, _, vs in runs for v in vs), default=0))
+                        상한 = min(최대시도, min((v for _, _, vs in runs for v in vs), default=0) - __import__('docfit_core.table_limits', fromlist=['spacing_floor']).spacing_floor(globals()))
 
                         def 당김_확인(step):
                             nonlocal changed
