@@ -1,6 +1,7 @@
 /// 노트북(개발자 모드) 화면용 API. klib의 nb_* 명령을 Python 'notebook' 브리지로 부른다.
 library;
 
+import '../editor/markdown_format.dart' show markdownToPlainParagraphs;
 import '../library/library_api.dart';
 
 class Notebook {
@@ -69,7 +70,7 @@ class NbParagraph {
   bool get isTable => kind == 'table';
 }
 
-/// 근거 찾기 결과 문단.
+/// 본문검색 결과 문단.
 class NbHit {
   const NbHit({
     required this.sourceId,
@@ -162,6 +163,10 @@ abstract class NotebookApi {
   /// 파일 경로만 klib에 넘긴다(추출은 엔진/추출 서비스가 맡음).
   Future<int> addSource(int notebookId, String path);
   Future<void> removeSource(int notebookId, int sourceId);
+
+  /// '+메모 추가'로 쓴 메모를 TEXT(.txt) 출처로 넣는다. [markdown]은 서식 원문이고,
+  /// 색인에는 서식 기호를 뺀 평문 문단이 들어간다(호스트 nb_memo_add). 새 출처 id를 돌려준다.
+  Future<int> addMemoSource(int notebookId, {required String title, required String markdown});
 
   /// 자료함 항목을 출처로 넣는다(klib nb_source_from_item). 이미 출처면 그 출처를 돌려주고 reused=true.
   Future<NbItemSourceResult> addSourceFromItem(int notebookId, String itemId);
@@ -271,6 +276,11 @@ class BridgeNotebookApi implements NotebookApi {
   @override
   Future<int> addSource(int notebookId, String path) async =>
       _int((await _request('nb_source_add', {'notebook_id': notebookId, 'source_path': path}))['id']);
+
+  @override
+  Future<int> addMemoSource(int notebookId, {required String title, required String markdown}) async => _int(
+    (await _request('nb_memo_add', {'notebook_id': notebookId, 'title': title, 'markdown': markdown}))['id'],
+  );
 
   @override
   Future<void> removeSource(int notebookId, int sourceId) =>
@@ -461,6 +471,27 @@ class InMemoryNotebookApi implements NotebookApi {
     _paragraphs[id] = [for (var i = 0; i < lines.length; i++) NbParagraph(sourceId: id, ordinal: i, body: lines[i])];
     (_sources[notebookId] ??= []).add(
       NbSource(id: id, displayName: name, kind: ext, status: 'ready', paragraphCount: lines.length, origin: trimmed),
+    );
+    return id;
+  }
+
+  /// 메모 출처의 Markdown 원문(시험 확인용): 출처 id → 원문.
+  final memoMarkdown = <int, String>{};
+
+  @override
+  Future<int> addMemoSource(int notebookId, {required String title, required String markdown}) async {
+    if (!_notebooks.any((n) => n.id == notebookId)) throw StateError('노트북을 찾을 수 없습니다.');
+    final plain = markdownToPlainParagraphs(markdown);
+    if (plain.isEmpty) throw StateError('메모에 내용이 없습니다.');
+    final id = _next++;
+    final name = title.trim().isEmpty ? '새 메모' : title.trim();
+    _paragraphs[id] = [
+      for (var i = 0; i < plain.length; i++)
+        NbParagraph(sourceId: id, ordinal: i, body: plain[i].text, level: plain[i].level),
+    ];
+    memoMarkdown[id] = markdown;
+    (_sources[notebookId] ??= []).add(
+      NbSource(id: id, displayName: name, kind: 'txt', status: 'ready', paragraphCount: plain.length, origin: 'memo://$id.txt'),
     );
     return id;
   }

@@ -1,4 +1,4 @@
-"""노트북(출처·근거 찾기·노트) 요청 중계: 기본은 klib가 직접 추출하고, klib가 못 읽는 형식만 Python이 추출한다.
+"""노트북(출처·본문검색·노트) 요청 중계: 기본은 klib가 직접 추출하고, klib가 못 읽는 형식만 Python이 추출한다.
 
 - klib nb_source_add가 txt·md·hwpx·docx·pptx·xlsx를 직접 읽는다(hwpx·docx는 개요 수준·표 행 포함).
 - 구형 hwp·pdf는 타임머신 content_search 추출기로 문단을 만든 뒤 nb_source_add(첫 묶음)·nb_index(나머지 묶음)로 넣는다.
@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import time
+import uuid
 from pathlib import Path
 
 from docfit_app.library_bridge import LibraryBridgeError
@@ -89,10 +92,91 @@ def needs_python_extraction(path):
     return Path(os.fspath(path)).suffix.lower().lstrip(".") in PYTHON_EXTRACT_EXTENSIONS
 
 
+MEMO_MAX_CHARS = 200_000
+MEMO_TITLE_MAX_CHARS = 100
+_MEMO_FENCE = re.compile(r"^\s*(```|~~~)")
+_MEMO_RULE = re.compile(r"^\s*([-*_])(\s*\1){2,}\s*$")
+_MEMO_HEADING = re.compile(r"^\s*(#{1,6})\s+")
+_MEMO_LIST = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
+_MEMO_QUOTE = re.compile(r"^\s*(?:>\s?)+")
+_MEMO_LINK = re.compile(r"\[([^\]]*)\]\(([^)\s]*)\)")
+_MEMO_EMPHASIS = re.compile(r"(\*\*|__)(.+?)\1|(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])|(?<![\w_])_(?!\s)(.+?)(?<!\s)_(?![\w_])")
+_MEMO_CODE = re.compile(r"`([^`]+)`")
+_MEMO_UNSAFE_NAME = re.compile(r'[\\/:*?"<>|\x00-\x1f]+')
+
+
+def default_memo_dir():
+    """메모 출처 파일 폴더: %LOCALAPPDATA%\\HWP_AutoDocFit\\notebook_memos (없으면 홈 아래)."""
+    base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+    return Path(base) / "HWP_AutoDocFit" / "notebook_memos"
+
+
+def memo_markdown_to_paragraphs(markdown):
+    """메모 Markdown을 검색용 평문 문단 [{text, level}]으로 바꾼다.
+
+    Flutter `features/editor/markdown_format.dart`의 markdownToPlainParagraphs와 같은 규칙이다
+    (제목 '#'은 수준으로, 목록·인용 기호와 굵게·기울임·코드 표시는 지우고, 링크는 '글 (주소)', 구분선·빈 줄은 버림).
+    """
+    result = []
+    in_code = False
+    for raw in str(markdown or "").replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        if _MEMO_FENCE.match(raw):
+            in_code = not in_code
+            continue
+        if in_code:
+            text, level = raw.strip(), 0
+        else:
+            if _MEMO_RULE.match(raw):
+                continue
+            line = raw
+            heading = _MEMO_HEADING.match(line)
+            level = len(heading.group(1)) if heading else 0
+            if heading:
+                line = line[heading.end():]
+            line = _MEMO_QUOTE.sub("", line, count=1)
+            line = _MEMO_LIST.sub("", line, count=1)
+            line = _MEMO_LINK.sub(lambda m: f"{m.group(1)} ({m.group(2)})" if m.group(2) else m.group(1), line)
+            line = _MEMO_CODE.sub(r"\1", line)
+            line = _MEMO_EMPHASIS.sub(lambda m: m.group(2) or m.group(3) or m.group(4) or "", line)
+            text = line.strip()
+        if text:
+            result.append({"text": text[:MAX_PARAGRAPH_CHARS], "level": level})
+    return result
+
+
+def _memo_file_name(title):
+    stem = _MEMO_UNSAFE_NAME.sub("_", title).strip(" ._") or "메모"
+    return f"{stem[:40]}-{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}.txt"
+
+
 class NotebookService:
-    def __init__(self, bridge, *, extractor=extract_source_paragraphs):
+    def __init__(self, bridge, *, extractor=extract_source_paragraphs, memo_dir=None):
         self.bridge = bridge
         self.extractor = extractor
+        self.memo_dir = Path(memo_dir) if memo_dir else default_memo_dir()
+
+    def add_memo(self, request):
+        """'+메모 추가'로 쓴 메모를 TEXT(.txt) 출처로 넣는다.
+
+        Markdown 원문은 메모 폴더의 새 .txt 파일로 보관하고(덮어쓰기 없음), 검색 색인에는 서식 기호를 뺀 평문 문단을 넣는다.
+        """
+        title = str(request.get("title") or "").strip()[:MEMO_TITLE_MAX_CHARS] or "새 메모"
+        markdown = request.get("markdown")
+        if not isinstance(markdown, str):
+            return {"ok": False, "message": "메모 본문이 필요합니다."}
+        if len(markdown) > MEMO_MAX_CHARS:
+            return {"ok": False, "message": f"메모가 너무 깁니다({MEMO_MAX_CHARS:,}자까지)."}
+        paragraphs = memo_markdown_to_paragraphs(markdown)
+        if not paragraphs:
+            return {"ok": False, "message": "메모에 내용이 없습니다."}
+        try:
+            self.memo_dir.mkdir(parents=True, exist_ok=True)
+            path = self.memo_dir / _memo_file_name(title)
+            with open(path, "x", encoding="utf-8", newline="") as handle:
+                handle.write(markdown)
+        except OSError as exc:
+            return {"ok": False, "message": f"메모 파일을 저장하지 못했습니다: {exc}"}
+        return self._add_paragraphs(request.get("notebook_id"), str(path), paragraphs, display_name=title)
 
     def add_source(self, notebook_id, path, *, display_name=None):
         """Python으로 추출한 문단을 klib에 넣는다. 첫 묶음은 출처 등록과 함께, 나머지는 nb_index로 덧붙인다."""
@@ -103,6 +187,9 @@ class NotebookService:
             paragraphs = self.extractor(path)
         except Exception as exc:
             return {"ok": False, "message": f"본문을 읽지 못했습니다: {exc or exc.__class__.__name__}"}
+        return self._add_paragraphs(notebook_id, path, paragraphs, display_name=display_name)
+
+    def _add_paragraphs(self, notebook_id, path, paragraphs, *, display_name=None):
         batches = list(_batches(paragraphs))
         request = {"cmd": "nb_source_add", "notebook_id": notebook_id, "source_path": path,
                    "paragraphs": batches[0]}
@@ -210,6 +297,8 @@ class NotebookService:
         if not isinstance(request, dict):
             raise LibraryBridgeError("노트북 요청은 JSON 객체여야 합니다.")
         cmd = request.get("cmd")
+        if cmd == "nb_memo_add":
+            return self.add_memo(request)
         if cmd not in NOTEBOOK_COMMANDS:
             raise LibraryBridgeError("허용되지 않은 노트북 명령입니다.")
         path = request.get("source_path")
