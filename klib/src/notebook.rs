@@ -56,7 +56,18 @@ CREATE TABLE IF NOT EXISTS nb_note(id INTEGER PRIMARY KEY AUTOINCREMENT,notebook
 CREATE TABLE IF NOT EXISTS nb_citation(id INTEGER PRIMARY KEY AUTOINCREMENT,note_id INTEGER NOT NULL REFERENCES nb_note(id) ON DELETE CASCADE,source_id INTEGER NOT NULL REFERENCES nb_source(id) ON DELETE CASCADE,paragraph_ordinal INTEGER NOT NULL,quote TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS nb_note_tag(note_id INTEGER NOT NULL REFERENCES nb_note(id) ON DELETE CASCADE,tag TEXT NOT NULL,PRIMARY KEY(note_id,tag));
 CREATE INDEX IF NOT EXISTS idx_nb_note_tag_tag ON nb_note_tag(tag);
-CREATE INDEX IF NOT EXISTS idx_nb_source_notebook ON nb_source(notebook_id); CREATE INDEX IF NOT EXISTS idx_nb_paragraph_source ON nb_paragraph(source_id,ordinal); CREATE INDEX IF NOT EXISTS idx_nb_note_notebook ON nb_note(notebook_id); CREATE INDEX IF NOT EXISTS idx_nb_citation_note ON nb_citation(note_id); CREATE INDEX IF NOT EXISTS idx_nb_citation_source_paragraph ON nb_citation(source_id,paragraph_ordinal);") }
+CREATE INDEX IF NOT EXISTS idx_nb_source_notebook ON nb_source(notebook_id); CREATE INDEX IF NOT EXISTS idx_nb_paragraph_source ON nb_paragraph(source_id,ordinal); CREATE INDEX IF NOT EXISTS idx_nb_note_notebook ON nb_note(notebook_id); CREATE INDEX IF NOT EXISTS idx_nb_citation_note ON nb_citation(note_id); CREATE INDEX IF NOT EXISTS idx_nb_citation_source_paragraph ON nb_citation(source_id,paragraph_ordinal);")?; migrate_item_link(c) }
+
+/// nb_source.item_id(출처가 나온 자료함 항목 id): 기존 DB에는 없을 수 있어 없으면 만든다. 항목이 지워져도 출처는 남으므로 외래키는 두지 않는다.
+fn migrate_item_link(c:&Connection)->rusqlite::Result<()> {
+    let has:bool=c.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('nb_source') WHERE name='item_id')",[],|r|r.get(0))?;
+    if !has { c.execute_batch("ALTER TABLE nb_source ADD COLUMN item_id INTEGER;")?; }
+    c.execute_batch("CREATE INDEX IF NOT EXISTS idx_nb_source_item ON nb_source(notebook_id,item_id);")
+}
+pub fn set_source_item(c:&Connection,source_id:i64,item_id:i64)->rusqlite::Result<()> {c.execute("UPDATE nb_source SET item_id=?1 WHERE id=?2",params![item_id,source_id])?;Ok(())}
+pub fn source_for_item(c:&Connection,notebook_id:i64,item_id:i64)->rusqlite::Result<Option<i64>> {c.query_row("SELECT id FROM nb_source WHERE notebook_id=?1 AND item_id=?2 ORDER BY id LIMIT 1",params![notebook_id,item_id],|r|r.get(0)).optional()}
+/// 출처의 원본 자료함 항목 id. 출처가 없으면 None, 항목과 연결되지 않은 출처는 Some(None).
+pub fn source_item_id(c:&Connection,notebook_id:i64,source_id:i64)->rusqlite::Result<Option<Option<i64>>> {c.query_row("SELECT item_id FROM nb_source WHERE id=?1 AND notebook_id=?2",params![source_id,notebook_id],|r|r.get::<_,Option<i64>>(0)).optional()}
 
 fn now()->i64{std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64}
 pub fn create(c:&Connection,name:&str,description:&str)->rusqlite::Result<i64>{let t=now();c.execute("INSERT INTO notebook(name,description,created_at,updated_at) VALUES(?1,?2,?3,?3)",params![name,description,t])?;Ok(c.last_insert_rowid())}

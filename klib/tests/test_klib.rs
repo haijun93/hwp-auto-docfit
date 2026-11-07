@@ -688,3 +688,64 @@ fn test_box_scan_pipe_commands_incremental_progress_cancel() {
     assert_eq!(page.arr("files").unwrap().len(), 1);
     assert_eq!(call(r#"{"cmd":"box_scan_files"}"#.into()).bool("ok"), Some(false));
 }
+
+#[test]
+fn test_nb_source_from_item_reuse_and_back_link() {
+    let ctx = TestContext::new("nb_item_link");
+    let db = Arc::new(Mutex::new(Database::open(&ctx.dir.join("library.db").to_str().unwrap()).unwrap()));
+    let running = Arc::new(AtomicBool::new(true));
+    let call = |req: String| json::parse(&pipe::handle_request(&req, &db, &running)).unwrap();
+    let nb = call(r#"{"cmd":"nb_create","name":"노트"}"#.into()).i64("id").unwrap();
+    let md = ctx.dir.join("계획.md");
+    fs::write(&md, "# 추진 계획\n본문\n").unwrap();
+    let b = db.lock().unwrap().box_create("자료함", "").unwrap();
+    let item = db.lock().unwrap().item_add(b, "file", md.to_str().unwrap(), "계획.md", "basis", 0.0, 0.0, None).unwrap();
+
+    // 처음 추가하면 새 출처, 다시 추가하면 같은 출처를 재사용한다.
+    let first = call(format!(r#"{{"cmd":"nb_source_from_item","notebook_id":{nb},"item_id":{item}}}"#));
+    assert_eq!(first.bool("ok"), Some(true), "{first:?}");
+    assert_eq!(first.bool("reused"), Some(false));
+    let sid = first.i64("id").unwrap();
+    let again = call(format!(r#"{{"cmd":"nb_source_from_item","notebook_id":{nb},"item_id":{item}}}"#));
+    assert_eq!(again.i64("id"), Some(sid));
+    assert_eq!(again.bool("reused"), Some(true));
+    let list = call(format!(r#"{{"cmd":"nb_source_list","notebook_id":{nb}}}"#));
+    assert_eq!(list.arr("sources").unwrap().len(), 1);
+    assert_eq!(list.arr("sources").unwrap()[0].i64("item_id"), Some(item));
+
+    // 출처 → 원본 항목 조회.
+    let back = call(format!(r#"{{"cmd":"nb_source_item","notebook_id":{nb},"source_id":{sid}}}"#));
+    assert_eq!(back.bool("found"), Some(true), "{back:?}");
+    assert_eq!(back.i64("item_id"), Some(item));
+    assert_eq!(back.i64("box_id"), Some(b));
+
+    // 직접 추가한 출처는 연결이 없고, 항목을 지우면 found:false, 없는 항목·노트북은 오류.
+    let md2 = ctx.dir.join("직접.md");
+    fs::write(&md2, "본문\n").unwrap();
+    let p2 = md2.to_str().unwrap().replace(std::path::MAIN_SEPARATOR, "/");
+    let direct = call(format!(r#"{{"cmd":"nb_source_add","notebook_id":{nb},"source_path":"{p2}"}}"#)).i64("id").unwrap();
+    let none = call(format!(r#"{{"cmd":"nb_source_item","notebook_id":{nb},"source_id":{direct}}}"#));
+    assert_eq!(none.bool("found"), Some(false));
+    call(format!(r#"{{"cmd":"item_delete","id":{item}}}"#));
+    let gone = call(format!(r#"{{"cmd":"nb_source_item","notebook_id":{nb},"source_id":{sid}}}"#));
+    assert_eq!(gone.bool("found"), Some(false));
+    assert_eq!(call(format!(r#"{{"cmd":"nb_source_from_item","notebook_id":{nb},"item_id":99999}}"#)).bool("ok"), Some(false));
+    assert_eq!(call(format!(r#"{{"cmd":"nb_source_from_item","notebook_id":99999,"item_id":1}}"#)).bool("ok"), Some(false));
+}
+
+#[test]
+fn test_nb_source_item_column_migration_on_old_db() {
+    let ctx = TestContext::new("nb_item_migrate");
+    let path = ctx.dir.join("library.db");
+    {
+        let db = Database::open(path.to_str().unwrap()).unwrap();
+        drop(db);
+    }
+    // item_id 열이 없는 옛 nb_source 표를 흉내 낸 뒤 다시 열어도 열이 생긴다.
+    let c = rusqlite::Connection::open(&path).unwrap();
+    c.execute_batch("DROP INDEX IF EXISTS idx_nb_source_item; ALTER TABLE nb_source DROP COLUMN item_id;").unwrap();
+    drop(c);
+    let db = Database::open(path.to_str().unwrap()).unwrap();
+    let has: bool = db.connection().query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('nb_source') WHERE name='item_id')", [], |r| r.get(0)).unwrap();
+    assert!(has);
+}
