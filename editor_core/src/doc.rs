@@ -1,0 +1,435 @@
+//! 문서: 버퍼 + 여러 단계 실행취소/다시실행(입력 묶음) + 줄바꿈/인코딩 + 저장.
+
+use crate::buffer::TextBuffer;
+use crate::fileio::{self, Encoding, LineEnding};
+use crate::search::{self, SearchOpts};
+use std::collections::VecDeque;
+use std::path::Path;
+
+pub type Res<T> = Result<T, String>;
+
+#[derive(Clone, Debug)]
+struct Edit {
+    pos: usize,
+    removed: String,
+    inserted: String,
+}
+
+struct Group {
+    edits: Vec<Edit>,
+    /// 다음 입력이 이어 붙을 수 있는 묶음(자동 묶기용).
+    open: bool,
+    /// begin_group~end_group으로 만든 묶음은 자동 병합하지 않는다.
+    explicit: bool,
+}
+
+const MAX_UNDO_GROUPS: usize = 5000;
+
+pub struct Document {
+    pub(crate) buf: TextBuffer,
+    undo: VecDeque<Group>,
+    redo: Vec<Group>,
+    depth: u32,
+    clean_marker: Option<usize>,
+    pub line_ending: LineEnding,
+    pub mixed_line_endings: bool,
+    pub encoding: Encoding,
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Stats {
+    pub lines: usize,
+    pub chars: usize,
+    pub bytes: usize,
+    pub words: usize,
+}
+
+impl Default for Document {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Document {
+    pub fn new() -> Self {
+        Document {
+            buf: TextBuffer::new(),
+            undo: VecDeque::new(),
+            redo: Vec::new(),
+            depth: 0,
+            clean_marker: Some(0),
+            line_ending: LineEnding::Crlf, // 새 문서는 Windows 메모장처럼 CRLF
+            mixed_line_endings: false,
+            encoding: Encoding::Utf8,
+            path: None,
+        }
+    }
+
+    /// 문자열에서 문서를 만든다. 줄바꿈 형식을 감지하고 내부는 LF로 통일한다.
+    pub fn from_text(text: &str) -> Self {
+        let mut d = Document::new();
+        let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+        let (le, mixed) = fileio::detect_line_ending(text);
+        d.line_ending = if text.contains(['\r', '\n']) { le } else { LineEnding::Crlf };
+        d.mixed_line_endings = mixed;
+        d.buf.insert(0, &fileio::normalize_to_lf(text));
+        d
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Res<Self> {
+        let (text, enc) = fileio::decode(bytes)?;
+        let mut d = Document::from_text(&text);
+        d.encoding = enc;
+        Ok(d)
+    }
+
+    pub fn open(path: &Path) -> Res<Self> {
+        let bytes = std::fs::read(path).map_err(|e| format!("파일을 열 수 없습니다: {e}"))?;
+        let mut d = Document::from_bytes(&bytes)?;
+        d.path = Some(path.to_string_lossy().into_owned());
+        Ok(d)
+    }
+
+    // ---- 조회 ----
+    pub fn len(&self) -> usize {
+        self.buf.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.buf.is_empty()
+    }
+    pub fn text(&mut self) -> &str {
+        self.buf.as_str()
+    }
+    pub fn slice(&self, start: usize, end: usize) -> Res<String> {
+        self.check_range(start, end)?;
+        Ok(self.buf.slice(start, end))
+    }
+    pub fn line_count(&self) -> usize {
+        self.buf.line_count()
+    }
+    pub fn line_start(&self, line: usize) -> usize {
+        self.buf.line_start(line)
+    }
+    pub fn line_end(&self, line: usize) -> usize {
+        self.buf.line_end(line)
+    }
+    pub fn line_of(&self, pos: usize) -> usize {
+        self.buf.line_of(pos)
+    }
+    pub fn line_text(&self, line: usize) -> String {
+        self.buf.slice(self.buf.line_start(line), self.buf.line_end(line))
+    }
+
+    /// 메모장식 (줄, 열): 둘 다 1부터, 열은 글자 단위.
+    pub fn line_col(&self, pos: usize) -> Res<(usize, usize)> {
+        self.check_pos(pos)?;
+        let line = self.buf.line_of(pos);
+        Ok((line + 1, self.buf.count_chars(self.buf.line_start(line), pos) + 1))
+    }
+
+    /// (줄, 열) → 바이트 오프셋. 범위를 넘으면 줄/문서 끝으로 맞춘다.
+    pub fn offset_of(&self, line1: usize, col1: usize) -> usize {
+        let line = line1.max(1).min(self.buf.line_count()) - 1;
+        let (s, e) = (self.buf.line_start(line), self.buf.line_end(line));
+        let mut pos = s;
+        let mut left = col1.max(1) - 1;
+        while left > 0 && pos < e {
+            pos += 1;
+            while pos < e && !self.buf.is_char_boundary(pos) {
+                pos += 1;
+            }
+            left -= 1;
+        }
+        pos
+    }
+
+    pub fn stats(&mut self) -> Stats {
+        let words = self.buf.as_str().split_whitespace().count();
+        Stats { lines: self.buf.line_count(), chars: self.buf.char_count(), bytes: self.buf.len(), words }
+    }
+
+    pub fn byte_to_utf16(&mut self, pos: usize) -> Res<usize> {
+        self.check_pos(pos)?;
+        Ok(self.buf.as_str()[..pos].chars().map(char::len_utf16).sum())
+    }
+    pub fn utf16_to_byte(&mut self, unit: usize) -> Res<usize> {
+        let mut u = 0;
+        for (i, c) in self.buf.as_str().char_indices() {
+            if u == unit {
+                return Ok(i);
+            }
+            if u > unit {
+                return Err("UTF-16 위치가 대리 쌍 한가운데입니다.".into());
+            }
+            u += c.len_utf16();
+        }
+        if u == unit { Ok(self.buf.len()) } else { Err("UTF-16 위치가 범위를 벗어났습니다.".into()) }
+    }
+
+    fn check_pos(&self, pos: usize) -> Res<()> {
+        if pos > self.buf.len() {
+            return Err(format!("위치 {pos}가 문서 길이 {}를 넘었습니다.", self.buf.len()));
+        }
+        if !self.buf.is_char_boundary(pos) {
+            return Err(format!("위치 {pos}는 글자 경계가 아닙니다."));
+        }
+        Ok(())
+    }
+    fn check_range(&self, s: usize, e: usize) -> Res<()> {
+        if s > e {
+            return Err("시작이 끝보다 큽니다.".into());
+        }
+        self.check_pos(s)?;
+        self.check_pos(e)
+    }
+
+    // ---- 편집 ----
+    pub fn insert(&mut self, pos: usize, text: &str) -> Res<usize> {
+        self.replace_range(pos, pos, text)
+    }
+    pub fn delete(&mut self, start: usize, end: usize) -> Res<usize> {
+        self.replace_range(start, end, "")
+    }
+
+    /// `[start,end)`를 `text`로 바꾼다. 바꾼 뒤 커서 위치(삽입 끝)를 돌려준다.
+    /// 외부 입력의 `\r\n`·`\r`는 `\n`으로 통일된다.
+    pub fn replace_range(&mut self, start: usize, end: usize, text: &str) -> Res<usize> {
+        self.check_range(start, end)?;
+        let owned;
+        let text = if text.contains('\r') {
+            owned = fileio::normalize_to_lf(text);
+            owned.as_str()
+        } else {
+            text
+        };
+        if start == end && text.is_empty() {
+            return Ok(start);
+        }
+        let removed = self.buf.delete(start, end);
+        self.buf.insert(start, text);
+        self.record(Edit { pos: start, removed, inserted: text.to_string() });
+        Ok(start + text.len())
+    }
+
+    fn record(&mut self, e: Edit) {
+        if !self.redo.is_empty() {
+            self.redo.clear();
+        }
+        if let Some(m) = self.clean_marker {
+            if m > self.undo.len() {
+                self.clean_marker = None;
+            }
+        }
+        if self.depth > 0 {
+            if let Some(g) = self.undo.back_mut() {
+                g.edits.push(e);
+            }
+            return;
+        }
+        if self.try_merge(&e) {
+            return;
+        }
+        if let Some(g) = self.undo.back_mut() {
+            g.open = false;
+        }
+        self.undo.push_back(Group { edits: vec![e], open: true, explicit: false });
+        if self.undo.len() > MAX_UNDO_GROUPS {
+            self.undo.pop_front();
+            self.clean_marker = match self.clean_marker {
+                Some(m) if m > 0 => Some(m - 1),
+                _ => None,
+            };
+        }
+    }
+
+    /// 직전 묶음이 열려 있고 이번 편집이 "이어 쓰기/이어 지우기/조합 갱신"이면 합친다.
+    fn try_merge(&mut self, e: &Edit) -> bool {
+        let marker_at_end = self.clean_marker == Some(self.undo.len());
+        let Some(g) = self.undo.back_mut() else { return false };
+        if !g.open || g.explicit || g.edits.len() != 1 {
+            return false;
+        }
+        let p = &mut g.edits[0];
+        let p_end = p.pos + p.inserted.len();
+        let e_rm_end = e.pos + e.removed.len();
+        // (A) 방금 넣은 글 안(끝 포함)에서 바꾸기 — 이어 쓰기, 한글 조합 갱신, 방금 쓴 글 지우기
+        if e.pos >= p.pos && e_rm_end <= p_end && !p.inserted.is_empty() {
+            let breaks = e.inserted.contains('\n')
+                || (e.removed.is_empty()
+                    && e.inserted.chars().next().is_some_and(char::is_whitespace)
+                    && p.inserted.chars().next_back().is_some_and(|c| !c.is_whitespace()));
+            if !breaks {
+                let a = e.pos - p.pos;
+                let b = a + e.removed.len();
+                p.inserted = format!("{}{}{}", &p.inserted[..a], e.inserted, &p.inserted[b..]);
+                if marker_at_end {
+                    self.clean_marker = None;
+                }
+                return true;
+            }
+            return false;
+        }
+        // (B) 순수 삭제의 연속: Backspace(앞으로) / Delete(제자리)
+        if p.inserted.is_empty() && e.inserted.is_empty() && !e.removed.is_empty() {
+            if e_rm_end == p.pos {
+                p.pos = e.pos;
+                p.removed = format!("{}{}", e.removed, p.removed);
+            } else if e.pos == p.pos {
+                p.removed.push_str(&e.removed);
+            } else {
+                return false;
+            }
+            if marker_at_end {
+                self.clean_marker = None;
+            }
+            return true;
+        }
+        false
+    }
+
+    /// 지금까지의 입력을 한 묶음으로 마감한다(커서 이동·붙여넣기 등 경계에서 호출).
+    pub fn commit(&mut self) {
+        if let Some(g) = self.undo.back_mut() {
+            g.open = false;
+        }
+    }
+
+    /// 여러 편집을 한 번의 실행취소로 묶는다. `end_group`과 짝을 이룬다(중첩 가능).
+    pub fn begin_group(&mut self) {
+        if self.depth == 0 {
+            if let Some(g) = self.undo.back_mut() {
+                g.open = false;
+            }
+            if !self.redo.is_empty() {
+                self.redo.clear();
+            }
+            if self.clean_marker.is_some_and(|m| m > self.undo.len()) {
+                self.clean_marker = None;
+            }
+            self.undo.push_back(Group { edits: Vec::new(), open: true, explicit: true });
+        }
+        self.depth += 1;
+    }
+
+    pub fn end_group(&mut self) {
+        if self.depth == 0 {
+            return;
+        }
+        self.depth -= 1;
+        if self.depth == 0 {
+            if self.undo.back().is_some_and(|g| g.edits.is_empty()) {
+                self.undo.pop_back();
+            } else if let Some(g) = self.undo.back_mut() {
+                g.open = false;
+            }
+        }
+    }
+
+    pub fn can_undo(&self) -> bool {
+        !self.undo.is_empty()
+    }
+    pub fn can_redo(&self) -> bool {
+        !self.redo.is_empty()
+    }
+
+    fn apply_inverse(&mut self, e: &Edit) {
+        self.buf.delete(e.pos, e.pos + e.inserted.len());
+        self.buf.insert(e.pos, &e.removed);
+    }
+    fn apply_forward(&mut self, e: &Edit) {
+        self.buf.delete(e.pos, e.pos + e.removed.len());
+        self.buf.insert(e.pos, &e.inserted);
+    }
+
+    /// 실행취소. 되돌린 뒤 커서 위치를 돌려준다.
+    pub fn undo(&mut self) -> Option<usize> {
+        if self.depth > 0 {
+            self.end_group();
+        }
+        let mut g = self.undo.pop_back()?;
+        g.open = false;
+        let mut cursor = 0;
+        for e in g.edits.iter().rev() {
+            self.apply_inverse(e);
+            cursor = e.pos + e.removed.len();
+        }
+        self.redo.push(g);
+        Some(cursor)
+    }
+
+    pub fn redo(&mut self) -> Option<usize> {
+        let g = self.redo.pop()?;
+        let mut cursor = 0;
+        for e in &g.edits {
+            self.apply_forward(e);
+            cursor = e.pos + e.inserted.len();
+        }
+        self.undo.push_back(g);
+        Some(cursor)
+    }
+
+    // ---- 찾기·바꾸기 ----
+    pub fn find_next(&mut self, query: &str, from: usize, o: SearchOpts, wrap: bool) -> Option<(usize, usize)> {
+        let text = self.buf.as_str();
+        search::find_next(text, query, from, o).or_else(|| if wrap && from > 0 { search::find_next(text, query, 0, o) } else { None })
+    }
+
+    pub fn find_all(&mut self, query: &str, o: SearchOpts, limit: usize) -> Vec<(usize, usize)> {
+        search::find_all(self.buf.as_str(), query, o, limit)
+    }
+
+    /// `from` 이후 첫 일치 하나를 바꾼다. 바꾼 구간과 커서를 돌려준다.
+    pub fn replace_next(&mut self, query: &str, with: &str, from: usize, o: SearchOpts, wrap: bool) -> Res<Option<(usize, usize)>> {
+        let Some((s, e)) = self.find_next(query, from, o, wrap) else { return Ok(None) };
+        let end = self.replace_range(s, e, with)?;
+        self.commit();
+        Ok(Some((s, end)))
+    }
+
+    /// 모두 바꾸기: 한 번의 실행취소. 바꾼 개수를 돌려준다.
+    pub fn replace_all(&mut self, query: &str, with: &str, o: SearchOpts) -> Res<usize> {
+        let hits = search::find_all(self.buf.as_str(), query, o, usize::MAX);
+        if hits.is_empty() {
+            return Ok(0);
+        }
+        let (first, last) = (hits[0].0, hits[hits.len() - 1].1);
+        let region = self.buf.slice(first, last);
+        let (rep, n) = search::replace_all_text(&region, query, with, o).unwrap_or((region.clone(), 0));
+        self.begin_group();
+        let r = self.replace_range(first, last, &rep);
+        self.end_group();
+        r.map(|_| n)
+    }
+
+    // ---- 저장 ----
+    pub fn is_dirty(&self) -> bool {
+        self.clean_marker != Some(self.undo.len())
+    }
+    pub fn mark_clean(&mut self) {
+        self.clean_marker = Some(self.undo.len());
+        self.commit();
+    }
+
+    pub fn to_bytes(&mut self) -> Vec<u8> {
+        let le = self.line_ending;
+        let enc = self.encoding;
+        let s = fileio::lf_to(self.buf.as_str(), le);
+        fileio::encode(&s, enc)
+    }
+
+    /// 임시 파일 후 교체 방식으로 저장하고 깨끗한 상태로 표시한다.
+    pub fn save(&mut self, path: &Path) -> Res<()> {
+        let bytes = self.to_bytes();
+        fileio::write_atomic(path, &bytes)?;
+        self.path = Some(path.to_string_lossy().into_owned());
+        self.mark_clean();
+        Ok(())
+    }
+
+    /// 자동 저장(복구용 사본). 원본과 변경 상태는 건드리지 않는다.
+    pub fn autosave(&mut self, recovery_path: &Path) -> Res<()> {
+        let bytes = self.to_bytes();
+        fileio::write_atomic(recovery_path, &bytes)
+    }
+}
