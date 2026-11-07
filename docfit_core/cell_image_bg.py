@@ -170,68 +170,62 @@ def convert_section_cell_images(section_root, header_root) -> int:
 def convert_cell_images_to_bg_hwpx(hwpx_path: str | Path, output_path: str | Path | None = None) -> int:
     """HWPX 파일 안의 모든 표 셀 내 단독 이미지를 셀 배경 이미지로 변환한다.
 
+    output_path가 없으면 원본을 덮어쓰므로, 호출자는 사본 경로를 넘기는 것이 안전하다.
+    변환할 셀이 없으면 파일은 바이트 단위로 그대로 복사된다.
+
     Returns:
         변환된 셀의 총 개수
     """
+    import shutil
+    import tempfile
+
+    from .batch_format import _serialize
+    from .hwpx import open_hwpx_safely
+
     source = Path(hwpx_path)
     target = Path(output_path) if output_path else source
 
     if not source.is_file() or source.suffix.lower() != ".hwpx":
         raise ValueError("올바른 .hwpx 파일 경로를 지정해 주세요.")
 
-    import tempfile
     total_converted = 0
-
-    from .table_catalog import _safe_archive
-    with _safe_archive(source) as archive:
-        namelist = archive.namelist()
-        if "Contents/header.xml" not in namelist:
-            return 0
-
+    with open_hwpx_safely(source) as archive:
         header_bytes = archive.read("Contents/header.xml")
         header_root = ET.fromstring(header_bytes)
-
         section_names = sorted(
-            [n for n in namelist if re.fullmatch(r"Contents/section\d+\.xml", n)],
+            (n for n in archive.namelist() if re.fullmatch(r"Contents/section\d+\.xml", n)),
             key=lambda name: int(re.search(r"section(\d+)", name).group(1)),
         )
-
-        modified_sections = {}
+        modified = {}
         for sec_name in section_names:
             sec_bytes = archive.read(sec_name)
             sec_root = ET.fromstring(sec_bytes)
             cnt = convert_section_cell_images(sec_root, header_root)
-            if cnt > 0:
+            if cnt:
                 total_converted += cnt
-                modified_sections[sec_name] = ET.tostring(sec_root, encoding="utf-8", xml_declaration=True)
+                modified[sec_name] = _serialize(sec_root, sec_bytes)
 
         if total_converted == 0:
             if target != source:
-                import shutil
+                target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, target)
             return 0
 
-        header_data = ET.tostring(header_root, encoding="utf-8", xml_declaration=True)
-
+        modified["Contents/header.xml"] = _serialize(header_root, header_bytes)
         target.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile(suffix=".hwpx", delete=False, dir=target.parent) as tmp:
             tmp_path = Path(tmp.name)
-
         try:
-            with zipfile.ZipFile(tmp_path, "w", compression=zipfile.ZIP_DEFLATED) as output:
+            with zipfile.ZipFile(tmp_path, "w") as output:
                 for info in archive.infolist():
-                    if info.filename == "Contents/header.xml":
-                        output.writestr(info, header_data)
-                    elif info.filename in modified_sections:
-                        output.writestr(info, modified_sections[info.filename])
-                    else:
-                        output.writestr(info, archive.read(info.filename))
-
-            archive.close()
-            tmp_path.replace(target)
-        finally:
+                    data = modified.get(info.filename)
+                    if data is None:
+                        data = archive.read(info.filename)
+                    output.writestr(info, data, compress_type=info.compress_type)
+        except BaseException:
             tmp_path.unlink(missing_ok=True)
-
+            raise
+    tmp_path.replace(target)
     return total_converted
 
 
