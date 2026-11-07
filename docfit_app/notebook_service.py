@@ -15,7 +15,8 @@ from docfit_app.library_bridge import LibraryBridgeError
 
 NOTEBOOK_COMMANDS = frozenset({
     "nb_create", "nb_list", "nb_update", "nb_delete",
-    "nb_source_add", "nb_source_list", "nb_source_remove", "nb_source_paragraphs",
+    "nb_source_add", "nb_source_from_item", "nb_source_item",
+    "nb_source_list", "nb_source_remove", "nb_source_paragraphs",
     "nb_index", "nb_search", "nb_transform",
     "nb_note_save", "nb_note_list", "nb_note_delete", "nb_export_md", "nb_compare",
 })
@@ -215,4 +216,33 @@ class NotebookService:
         if (cmd == "nb_source_add" and isinstance(path, str) and "paragraphs" not in request
                 and needs_python_extraction(path)):
             return self.add_source(request.get("notebook_id"), path, display_name=request.get("display_name"))
+        if cmd == "nb_source_from_item" and "paragraphs" not in request:
+            return self.add_source_from_item(request)
         return self.bridge.request(request)
+
+    def add_source_from_item(self, request):
+        """자료함 항목을 출처로 추가. 구형 hwp·pdf 항목은 Python으로 추출해 넘기고, 이미 출처면 klib가 재사용해 알려 준다."""
+        item = self.bridge.request({"cmd": "item_get", "id": request.get("item_id")})
+        path = item.get("source_path") if isinstance(item, dict) else None
+        if not (item.get("ok") and isinstance(path, str) and path and needs_python_extraction(path)):
+            return self.bridge.request(request)
+        path = os.path.abspath(os.fspath(path))
+        if not os.path.isfile(path):
+            return {"ok": False, "message": "출처 파일을 찾을 수 없습니다."}
+        try:
+            paragraphs = self.extractor(path)
+        except Exception as exc:
+            return {"ok": False, "message": f"본문을 읽지 못했습니다: {exc or exc.__class__.__name__}"}
+        batches = list(_batches(paragraphs))
+        if not batches:
+            return {"ok": False, "message": "출처에서 본문 문단을 찾지 못했습니다."}
+        added = self.bridge.request(dict(request, paragraphs=batches[0]))
+        if not added.get("ok") or added.get("reused"):
+            return added
+        source_id = added.get("id")
+        for batch in batches[1:]:
+            result = self.bridge.request({"cmd": "nb_index", "notebook_id": request.get("notebook_id"),
+                                          "source_id": source_id, "paragraphs": batch})
+            if not result.get("ok"):
+                return dict(result, id=source_id)
+        return {"ok": True, "id": source_id, "paragraph_count": len(paragraphs), "reused": False}

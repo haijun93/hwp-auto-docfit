@@ -18,6 +18,10 @@ class FakeBridge:
 
     def request(self, request):
         self.calls.append(request)
+        if request["cmd"] == "item_get":
+            return dict(self.item, ok=True) if getattr(self, "item", None) else {"ok": False}
+        if request["cmd"] == "nb_source_from_item":
+            return {"ok": True, "id": 9, "paragraph_count": len(request.get("paragraphs") or []), "reused": getattr(self, "reused", False)}
         if request["cmd"] == "nb_source_add":
             return {"ok": True, "id": 7, "paragraph_count": len(request.get("paragraphs") or [])}
         return {"ok": True}
@@ -80,6 +84,43 @@ class NotebookServiceTests(unittest.TestCase):
         NotebookService(bridge, extractor=extractor).handle(request)
         self.assertEqual(bridge.calls, [request])
         extractor.assert_not_called()
+
+    def test_item_link_commands_are_allowed(self):
+        for cmd in ("nb_source_from_item", "nb_source_item"):
+            self.assertIn(cmd, NOTEBOOK_COMMANDS)
+            self.assertIn(cmd, ALLOWED_COMMANDS)
+
+    def test_from_item_rust_format_passes_to_klib(self):
+        bridge = FakeBridge()
+        bridge.item = {"source_path": str(self.dir / "a.hwpx")}
+        request = {"cmd": "nb_source_from_item", "notebook_id": 3, "item_id": 5}
+        NotebookService(bridge).handle(request)
+        self.assertEqual(bridge.calls[-1], request)
+
+    def test_from_item_pdf_is_extracted_and_extra_batches_indexed(self):
+        pdf = self.dir / "자료.pdf"
+        pdf.write_bytes(b"%PDF-1.4")
+        rows = [{"text": "Ⅰ. 개요", "level": 1, "table": False, "location": "1쪽"}]
+        bridge = FakeBridge()
+        bridge.item = {"source_path": str(pdf)}
+        result = NotebookService(bridge, extractor=mock.Mock(return_value=rows)).handle(
+            {"cmd": "nb_source_from_item", "notebook_id": 3, "item_id": 5})
+        self.assertEqual(result["id"], 9)
+        sent = bridge.calls[-1]
+        self.assertEqual((sent["cmd"], sent["item_id"], sent["paragraphs"]), ("nb_source_from_item", 5, rows))
+
+    def test_from_item_reused_source_is_not_reindexed(self):
+        pdf = self.dir / "자료.pdf"
+        pdf.write_bytes(b"%PDF-1.4")
+        bridge = FakeBridge()
+        bridge.item = {"source_path": str(pdf)}
+        bridge.reused = True
+        rows = [{"text": "가", "level": 0, "table": False, "location": ""}]
+        with mock.patch("docfit_app.notebook_service._batches", return_value=iter([rows, rows])):
+            result = NotebookService(bridge, extractor=mock.Mock(return_value=rows)).handle(
+                {"cmd": "nb_source_from_item", "notebook_id": 3, "item_id": 5})
+        self.assertTrue(result["reused"])
+        self.assertNotIn("nb_index", [c["cmd"] for c in bridge.calls])
 
     def test_pdf_is_extracted_in_python_and_sent_with_paragraphs(self):
         pdf = self.dir / "자료.pdf"
