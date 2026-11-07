@@ -84,6 +84,8 @@ def leading_marker(text, scheme=None):
     roman = re.match(r"(?:[IVX]|[IVXLCDM]{2,})[.．](?=\s|$)", stripped)
     if roman:
         return roman.group(), "중제목"
+    if stripped[:1] in tuple("❶❷❸❹❺❻❼❽❾❿") and (len(stripped) == 1 or stripped[1].isspace()):
+        return "-", "내용"  # ❶~❿는 '-' 항목기호와 같은 수준·같은 규칙(사용자 확정)
     circled = CIRCLED_MARKER.match(stripped)
     if circled:
         # 역할은 기호만으로 정할 수 없으므로 문서 내 서식과 문맥으로 판정한다.

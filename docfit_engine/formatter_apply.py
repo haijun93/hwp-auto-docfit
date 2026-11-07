@@ -1249,6 +1249,9 @@ def _install(*, _docfit_namespace, _docfit_symbol, bind_function):
                         return 규칙
                 if detected_role in 표준서식_설정["논리역할_규칙"]:
                     return 표준서식_설정["논리역할_규칙"][detected_role]
+            if 벗긴텍스트[0] in "❶❷❸❹❺❻❼❽❾❿" and (len(벗긴텍스트) == 1 or 벗긴텍스트[1].isspace()):
+                # ❶~❿는 '-' 항목기호와 같은 수준·같은 규칙(사용자 확정, 2026-10-24).
+                return next((규칙 for 규칙 in 표준서식_설정["기호_규칙"] if 규칙[0] == "-"), None)
             if 벗긴텍스트[0] in DOT_MARKERS:
                 return next((규칙 for 규칙 in 표준서식_설정["기호_규칙"] if 규칙[0] == "•"), None)
             for 규칙 in 표준서식_설정["기호_규칙"]:

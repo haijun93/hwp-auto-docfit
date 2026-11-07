@@ -10,7 +10,7 @@ from defusedxml import ElementTree as ET
 from .batch_format import ParagraphStyle, StylePool, plain_text, tag, _serialize
 from .fidelity.package import PackageSnapshot, build_package
 from .hwpx import validate_hwpx
-from .marker_scheme import classify_marker
+from .marker_scheme import BLACK_CIRCLED, classify_marker
 
 
 def leading_width(text):
@@ -35,7 +35,7 @@ def is_continuation(parent_indent, text):
         return False
     if marker is None and stripped.startswith('②') and (len(stripped) == 1 or stripped[1].isspace()):
         return True
-    if stripped.startswith(('❶', 'ㅇ)', 'ㅇ(')):
+    if stripped[:1] in BLACK_CIRCLED or stripped.startswith(('ㅇ)', 'ㅇ(')):
         return True
     if marker and re.match(r'^\s*[^:：\r\n]{1,30}[:：]\s*', text):
         return True
