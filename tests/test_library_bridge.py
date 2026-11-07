@@ -353,6 +353,40 @@ class NotebookBridgeTests(unittest.TestCase):
         result = self._bridge(developer=False).notebook({"cmd": "nb_list"})
         self.assertEqual(result["code"], "DEVELOPER_MODE_REQUIRED")
 
+    def test_memo_editor_commands_are_allowed(self):
+        from docfit_app.library_bridge import EDITOR_COMMANDS
+        for cmd in ("edit_open", "edit_replace", "edit_undo", "edit_redo", "edit_find", "edit_replace_all",
+                    "edit_md_inline", "edit_md_block", "edit_info", "edit_lines", "edit_save", "edit_close"):
+            self.assertIn(cmd, ALLOWED_COMMANDS)
+            self.assertIn(cmd, EDITOR_COMMANDS)
+        self.assertNotIn("nb_list", EDITOR_COMMANDS)
+
+    def test_notebook_forwards_edit_commands_without_notebook_service(self):
+        from unittest import mock
+        bridge = self._bridge()
+        fake = mock.Mock()
+        fake.request.return_value = {"ok": True, "doc": 1, "line_ending": "CRLF"}
+        request = {"cmd": "edit_open", "text": "가나"}
+        with mock.patch("docfit_app.library_bridge.LibraryBridge", return_value=fake):
+            self.assertEqual(bridge.notebook(request), {"ok": True, "doc": 1, "line_ending": "CRLF"})
+        fake.request.assert_called_once_with(request)
+        self.assertIsNone(getattr(bridge, "_notebook_service", None))
+
+    def test_notebook_edit_rejects_paths_unknown_commands_and_needs_developer_mode(self):
+        from unittest import mock
+        bridge = self._bridge()
+        with mock.patch("docfit_app.library_bridge.LibraryBridge") as factory:
+            self.assertFalse(bridge.notebook({"cmd": "edit_save", "doc": 1, "path": "C:/Windows/win.ini"})["ok"])
+            self.assertFalse(bridge.notebook({"cmd": "edit_open", "path": "C:/Windows/win.ini"})["ok"])
+            self.assertFalse(bridge.notebook({"cmd": "edit_shell", "doc": 1})["ok"])
+            factory.assert_not_called()
+        result = self._bridge(developer=False).notebook({"cmd": "edit_open", "text": ""})
+        self.assertEqual(result["code"], "DEVELOPER_MODE_REQUIRED")
+        fake = mock.Mock()
+        fake.request.side_effect = RuntimeError("klib 없음")
+        with mock.patch("docfit_app.library_bridge.LibraryBridge", return_value=fake):
+            self.assertEqual(bridge.notebook({"cmd": "edit_ping"}), {"ok": False, "message": "klib 없음"})
+
 
 if __name__ == "__main__":
     unittest.main()

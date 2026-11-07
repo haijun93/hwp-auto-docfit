@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/drop_events.dart';
+import '../editor/klib_editor_core.dart';
 import '../editor/memo_editor.dart';
 import '../library/library_api.dart';
 import '../library/library_screen.dart';
@@ -248,6 +249,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
           },
           onSave: (doc) =>
               widget.api.addMemoSource(nb.id, title: doc.title.isEmpty ? '새 메모' : doc.title, markdown: doc.markdown),
+          editorBackend: widget.api.memoEditorBackend,
         ),
       ),
     );
@@ -1479,6 +1481,7 @@ class _MemoPage extends StatefulWidget {
     required this.onAutoSave,
     required this.onDelete,
     required this.onSave,
+    this.editorBackend,
   });
 
   final MemoDocument initial;
@@ -1486,6 +1489,9 @@ class _MemoPage extends StatefulWidget {
   final Future<void> Function(MemoDocument) onAutoSave;
   final VoidCallback onDelete;
   final Future<int> Function(MemoDocument) onSave;
+
+  /// Rust 편집 코어(klib edit_*) 통로. 없으면 편집기가 Dart 임시 코어를 쓴다.
+  final EditorBackend? editorBackend;
 
   @override
   State<_MemoPage> createState() => _MemoPageState();
@@ -1527,6 +1533,10 @@ class _MemoPageState extends State<_MemoPage> {
           controller: widget.controller,
           onAutoSave: widget.onAutoSave,
           onDelete: widget.onDelete,
+          createCore: switch (widget.editorBackend) {
+            final backend? => (text) => KlibEditorCore(backend, text: text),
+            null => null,
+          },
           footer: Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Row(

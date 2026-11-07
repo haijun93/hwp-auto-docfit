@@ -699,6 +699,15 @@ fn err_val(msg: &str) -> Value {
 
 }
 
+/// 메모 편집기 코어(editor_core) 문서들. klib 프로세스 수명 동안 유지되며 자료함 DB 잠금과 무관하다.
+static EDITOR: OnceLock<Mutex<editor_core::api::Engine>> = OnceLock::new();
+
+/// edit_* 명령을 편집 코어에 넘긴다. 응답은 코어가 만든 한 줄 JSON 그대로다(ok·message 규약 동일).
+fn editor_request(req_str: &str) -> String {
+    let engine = EDITOR.get_or_init(|| Mutex::new(editor_core::api::Engine::new()));
+    engine.lock().unwrap_or_else(|e| e.into_inner()).handle(req_str)
+}
+
 pub fn handle_request(req_str: &str, db: &Mutex<Database>, running: &AtomicBool) -> String {
 
     let Some(val) = json::parse(req_str) else {
@@ -706,6 +715,10 @@ pub fn handle_request(req_str: &str, db: &Mutex<Database>, running: &AtomicBool)
         return json::to_string(&err_val("요청 JSON 구문 분석에 실패했습니다."));
 
     };
+
+    if val.str("cmd").is_some_and(|c| c.starts_with("edit_")) {
+        return editor_request(req_str);
+    }
 
     let cmd = val.str("cmd").unwrap_or("");
 

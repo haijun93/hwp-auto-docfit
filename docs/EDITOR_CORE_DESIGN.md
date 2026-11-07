@@ -138,3 +138,30 @@ if val.str("cmd").is_some_and(|c| c.starts_with("edit_")) {
 3. 줄 색인 청크화(수십만 줄 이상 필요 시), 줄 바꿈(word wrap) 계산은 UI 쪽.
 4. CP949 등 레거시 인코딩 열기(표 필요 → 별도 결정), 확대·축소는 UI 단.
 5. 무작위 명령열 퍼징 확대(패닉 0 보장; klib `panic = "abort"`).
+
+## 9. klib 연결과 메모 화면 2단계 (EDLINK, 2026-11-07, 브랜치 `feature/edlink`)
+
+5절 A안으로 연결했다(새 exe 없음).
+- **klib**: `Cargo.toml`에 `editor_core = { path = "../editor_core" }`(경로 의존성만). `pipe.rs`의 `handle_request`가 `cmd`가 `edit_`로 시작하면
+  `OnceLock<Mutex<Engine>>`에 위임하고 코어의 응답 문자열을 그대로 돌려준다(자료함 DB 잠금과 무관). 시험 `test_edit_commands_delegate_to_editor_core`.
+- **Python**: `library_bridge.ALLOWED_COMMANDS`에 4절의 `edit_*` 33개, `EDITOR_COMMANDS` 추가. 화면 통로는 새 브리지 메서드 대신
+  `desktop_web_ui.notebook()`이 `edit_*`를 klib에 그대로 넘긴다(개발자 모드 전용). **`path` 인자는 거절**: 메모는 노트북 출처로 저장하므로
+  화면에서 임의 파일을 열거나 덮어쓰는 통로를 만들지 않는다(`edit_save`·`edit_autosave`는 허용 목록에는 있으나 지금 화면 경로로는 쓸 수 없음).
+- **Flutter**: `EditorCore` 경계를 넓혀(명령은 `Future`, 찾기·바꾸기·개수·줄바꿈·인코딩·엔진 이름·`changes`·`dispose`)
+  `KlibEditorCore`(`klib_editor_core.dart`)를 추가. 6절 권장대로 `TextEditingController`가 원본이고 Rust는 거울이다:
+  입력은 바뀐 구간만 UTF-16→UTF-8 바이트로 바꿔 `edit_replace`(요청 줄 세우기로 순서 보장), 실행취소·서식·찾기·바꾸기는 Rust에 묻고 글을 다시 받는다
+  (`edit_text`가 응답 64 KiB를 넘으면 `edit_lines`로 400줄씩). 30초마다 `edit_info`로 klib를 깨워 두고 글자 수로 드리프트를 검사한다.
+  klib가 문서를 잃으면(유휴 종료 후 재기동) 지금 글로 다시 열고(이전 실행취소 기록은 사라짐, 세대 번호로 중복 반영 방지),
+  다시 열 수도 없으면 `DartEditorCore`로 바꿔 끼운다(klib 없음·요청 64 KiB 초과 포함). 노트북 '+메모 추가'는 `NotebookApi.memoEditorBackend`가 있으면 Rust 코어를 쓴다.
+- **메모 화면 ②**: 찾기·바꾸기 막대(Ctrl+F/Ctrl+H, F3/Shift+F3, 대/소문자·온전한 낱말, 바꾸기=메모장처럼 첫 번째는 선택만, 모두 바꾸기, 일치 수,
+  포커스가 없어도 찾은 구간 칠하기), 확대·축소(Ctrl+휠, Ctrl+=/−/0, 50~500%, Ctrl 누른 동안 본문 휠 스크롤 막음),
+  상태 표시줄(줄·열, 글자 수, 확대 비율, 줄바꿈 `Windows (CRLF)`/`Unix (LF)`/`Macintosh (CR)`, 인코딩, 엔진 표시 도움말).
+  명령이 파이프를 오가는 동안 들어온 입력은 버린다(Rust와 글이 어긋나지 않게).
+
+### editor_core에 있으면 좋을 공개 API (이번 카드에서는 코어를 고치지 않음)
+1. 거꾸로 찾기(`edit_find`에 `backward`) — 지금은 `edit_find_all`(최대 10000개)에서 고른다.
+2. 개수만 세기(`edit_count`) — 지금은 일치 구간 목록 전체를 받는다. `edit_find_all`에 상한 초과 여부(`truncated`)도 필요.
+3. 실행취소·다시실행·서식·모두 바꾸기 응답에 **바뀐 구간**(`start,end,text`) — 지금은 명령마다 글 전체를 다시 받는다(큰 메모에서 느림).
+4. 이력 없이 글을 이어 넣는 열기(`edit_open` 나눠 보내기 또는 `edit_reset_history`) — 요청 64 KiB(Python 브리지 한도)를 넘는 메모는 지금 Dart 폴백.
+5. 열린 문서 수 조회(`Engine::doc_count`) — klib 유휴 종료 감시가 편집 중 문서가 있으면 종료하지 않게(지금은 30초 깨우기로 대신).
+6. 패닉 격리: klib release는 `panic = "abort"`라 코어 패닉이 자료함까지 끝낸다 — 무작위 명령열 퍼징 확대 필요(8절 5).

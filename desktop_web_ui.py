@@ -2363,6 +2363,22 @@ class DesktopWebBridge:
         except Exception as exc:
             return {"ok": False, "message": str(exc)}
 
+    def _memo_editor_request(self, request):
+        """메모 편집기 코어(klib edit_*)로 그대로 넘긴다. 노트북 화면의 '+메모 추가'가 쓴다.
+
+        파일 경로 인자(path)는 받지 않는다: 메모는 노트북 출처로 저장하므로 편집 코어가 디스크를 읽고 쓸 일이 없고,
+        화면에서 임의 경로를 열거나 덮어쓰는 통로가 되지 않게 막는다.
+        """
+        from docfit_app.library_bridge import EDITOR_COMMANDS
+        if request.get("cmd") not in EDITOR_COMMANDS:
+            return {"ok": False, "message": "허용되지 않은 편집기 명령입니다."}
+        if "path" in request:
+            return {"ok": False, "message": "편집기 명령에는 파일 경로를 쓸 수 없습니다."}
+        try:
+            return self._get_library_bridge().request(request)
+        except Exception as exc:
+            return {"ok": False, "message": str(exc)}
+
     def notebook(self, request):
         """노트북 요청(개발자 모드 전용). 자료함과 같은 klib 브리지를 쓴다.
 
@@ -2371,6 +2387,8 @@ class DesktopWebBridge:
         """
         if not self._developer_mode_enabled():
             return {"ok": False, "code": "DEVELOPER_MODE_REQUIRED", "message": "개발자 모드에서만 노트북을 사용할 수 있습니다."}
+        if isinstance(request, dict) and str(request.get("cmd", "")).startswith("edit_"):
+            return self._memo_editor_request(request)
         if not isinstance(request, dict) or not str(request.get("cmd", "")).startswith("nb_"):
             return {"ok": False, "message": "허용되지 않은 노트북 명령입니다."}
         cmd = request["cmd"]

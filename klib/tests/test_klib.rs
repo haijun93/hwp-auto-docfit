@@ -749,3 +749,65 @@ fn test_nb_source_item_column_migration_on_old_db() {
     let has: bool = db.connection().query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('nb_source') WHERE name='item_id')", [], |r| r.get(0)).unwrap();
     assert!(has);
 }
+
+/// 메모 편집기(edit_*) 명령이 파이프 처리기에서 editor_core로 위임되는지: Flutter KlibEditorCore가 보내는 순서 그대로.
+#[test]
+fn test_edit_commands_delegate_to_editor_core() {
+    let ctx = TestContext::new("edit_cmds");
+    let db = Mutex::new(Database::open(&ctx.dir.join("library.db").to_str().unwrap()).unwrap());
+    let running = AtomicBool::new(true);
+    let call = |req: String| json::parse(&pipe::handle_request(&req, &db, &running)).unwrap();
+    let ok = |v: &json::Value| assert_eq!(v.bool("ok"), Some(true), "응답 실패: {:?}", v.str("message"));
+
+    let pong = call(r#"{"cmd":"edit_ping"}"#.into());
+    ok(&pong);
+    assert_eq!(pong.str("message"), Some("pong"));
+
+    let opened = call(r#"{"cmd":"edit_open","text":"가나\r\n다"}"#.into());
+    ok(&opened);
+    let doc = opened.i64("doc").unwrap();
+    assert_eq!(opened.str("line_ending"), Some("CRLF"));
+    assert_eq!(opened.str("encoding"), Some("UTF-8"));
+    assert_eq!(opened.i64("lines"), Some(2));
+
+    // 한글 조합: 같은 구간 교체가 한 번의 실행취소 묶음이 된다("가나\n다" 끝 = 10바이트).
+    for (s, e, t) in [(10, 10, "ㅎ"), (10, 13, "하"), (10, 13, "한")] {
+        ok(&call(format!(r#"{{"cmd":"edit_replace","doc":{doc},"start":{s},"end":{e},"text":"{t}"}}"#)));
+    }
+    let text = call(format!(r#"{{"cmd":"edit_text","doc":{doc}}}"#));
+    assert_eq!(text.str("text"), Some("가나\n다한"));
+    let undo = call(format!(r#"{{"cmd":"edit_undo","doc":{doc}}}"#));
+    ok(&undo);
+    assert_eq!(undo.bool("changed"), Some(true));
+    assert_eq!(call(format!(r#"{{"cmd":"edit_text","doc":{doc}}}"#)).str("text"), Some("가나\n다"));
+    let redo = call(format!(r#"{{"cmd":"edit_redo","doc":{doc}}}"#));
+    assert_eq!(redo.i64("cursor"), Some(13));
+
+    // 찾기·모두 바꾸기·서식·상태값·줄 조회.
+    let found = call(format!(r#"{{"cmd":"edit_find","doc":{doc},"query":"다","from":0}}"#));
+    assert_eq!((found.bool("found"), found.i64("start"), found.i64("end")), (Some(true), Some(7), Some(10)));
+    let all = call(format!(r#"{{"cmd":"edit_replace_all","doc":{doc},"query":"가","with":"카"}}"#));
+    assert_eq!(all.i64("count"), Some(1));
+    let bold = call(format!(r#"{{"cmd":"edit_md_inline","doc":{doc},"start":0,"end":6,"kind":"bold"}}"#));
+    ok(&bold);
+    assert_eq!(call(format!(r#"{{"cmd":"edit_lines","doc":{doc},"from":0,"to":1}}"#)).arr("lines").unwrap()[0].str("text"), Some("**카나**"));
+    let lc = call(format!(r#"{{"cmd":"edit_line_col","doc":{doc},"pos":5}}"#));
+    assert_eq!((lc.i64("line"), lc.i64("col")), (Some(1), Some(4)));
+    let info = call(format!(r#"{{"cmd":"edit_info","doc":{doc}}}"#));
+    assert_eq!(info.i64("chars"), Some(9));
+    assert_eq!(info.bool("dirty"), Some(true));
+
+    // 저장(원래 CRLF로) 후 닫기. 닫은 문서는 오류.
+    let path = ctx.dir.join("memo.md");
+    let p = path.to_str().unwrap().replace('\\', "/");
+    ok(&call(format!(r#"{{"cmd":"edit_save","doc":{doc},"path":"{p}"}}"#)));
+    assert_eq!(fs::read(&path).unwrap(), "**카나**\r\n다한".as_bytes());
+    ok(&call(format!(r#"{{"cmd":"edit_close","doc":{doc}}}"#)));
+    let gone = call(format!(r#"{{"cmd":"edit_info","doc":{doc}}}"#));
+    assert_eq!(gone.bool("ok"), Some(false));
+    assert!(gone.str("message").unwrap().contains("찾을 수 없습니다"));
+
+    // 알 수 없는 edit_ 명령은 코어의 오류로, 다른 명령은 기존 처리 그대로.
+    assert_eq!(call(r#"{"cmd":"edit_nope"}"#.into()).bool("ok"), Some(false));
+    assert_eq!(call(r#"{"cmd":"ping"}"#.into()).str("message"), Some("pong"));
+}
