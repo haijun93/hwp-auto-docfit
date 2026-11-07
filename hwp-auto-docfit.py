@@ -3004,14 +3004,6 @@ _셀_안쪽여백_단계축소 = _engine_resolve('docfit_engine.formatter', '_�
 표_테두리_전체_적용 = _engine_resolve('docfit_engine.formatter', '표_테두리_전체_적용', globals())
 
 
-# 한 줄이 이 글자 수 이상인 표 칸은 본문과 같은 자간 한도를 쓴다(사용자 결정
-# 2026-09-25). 좁은 칸은 자간을 많이 바꾸면 글자가 뭉개져 표 한도로 묶어 둔다.
-넓은_표칸_기준글자수 = 20
-
-
-넓은_표칸_줄인가 = _engine_resolve('docfit_engine.formatter', '넓은_표칸_줄인가', globals())
-
-
 컨트롤_내부_자간조정 = _engine_resolve('docfit_engine.spacing', '컨트롤_내부_자간조정', globals())
 
 한칸표_자간조정 = _engine_resolve('docfit_engine.spacing', '한칸표_자간조정', globals())
