@@ -188,13 +188,14 @@ void main2() {
     expect(_sidebarWidth(tester), kSidebarExpandedWidth);
   });
 
-  testWidgets('왼쪽 메뉴: 150ms hover/focus로 모든 탭을 선택하고 스치기는 무시한다', (tester) async {
+  testWidgets('왼쪽 메뉴(개발자 모드): 150ms hover/focus로 모든 탭을 선택하고 스치기는 무시한다', (tester) async {
     await _size(tester, 1400);
     final selected = <int>[];
     await tester.pumpWidget(MaterialApp(home: TabNavigationShell(
       documentEditor: const SizedBox(), tableTemplates: const SizedBox(), tableSketch: const SizedBox(),
       diagram: const SizedBox(), mindMap: const SizedBox(), fileConversion: const SizedBox(),
       paint: const SizedBox(), fileRename: const SizedBox(), timemachine: const SizedBox(), onTabChanged: selected.add,
+      developerMode: true,
     )));
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
     for (var i = 1; i < kTabCount; i++) {
