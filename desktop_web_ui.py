@@ -2050,8 +2050,8 @@ class DesktopWebBridge:
         def execute():
             config = self._configuration().snapshot(running=self.gui.running)
             values = config.get('values', {})
-            # 햄버거 단추 3단계(작업 화면 닫기)는 누구나 쓰는 기능이라 개발자 모드와 관계없이 허용한다
-            # (사용자 지시 2026-11-07). 아래쪽 '사이드메뉴 모드' 단추·좌우 전환은 화면에서 개발자 모드에만 보인다.
+            if not values.get('developer_mode', False):
+                return {'ok': False, 'message': '사이드메뉴 모드는 개발자 모드에서만 사용할 수 있습니다.'}
             if self.sidebar_controller is None:
                 if self.window is None:
                     return {'ok': False, 'message': '창이 아직 준비되지 않았습니다.'}
