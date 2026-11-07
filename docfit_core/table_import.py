@@ -174,12 +174,13 @@ def _sizes(items, count, axis, cell_mm, warnings):
     return out
 
 
-def import_hwpx_table(path, index=0, cell_mm=5.0):
-    """HWPX 파일의 index번째(0부터, 문서 순서) 최상위 표 → (sketch, info). 실패는 ValueError."""
-    if isinstance(index, bool) or not isinstance(index, int) or index < 0:
-        raise ValueError("표 번호는 0 이상의 정수여야 합니다.")
+def _check_cell_mm(cell_mm):
     if isinstance(cell_mm, bool) or not isinstance(cell_mm, (int, float)) or not math.isfinite(cell_mm) or not 0.5 <= cell_mm <= 50:
         raise ValueError("칸 간격은 0.5~50mm로 지정해 주세요.")
+
+
+def _read_document(path):
+    """HWPX → (최상위 표 목록, header 뿌리). 표가 없으면 빈 목록."""
     sections, header = [], None
     with open_hwpx_safely(path) as archive:
         names = sorted((n for n in archive.namelist() if re.fullmatch(r"Contents/section\d+\.xml", n)),
@@ -200,17 +201,15 @@ def import_hwpx_table(path, index=0, cell_mm=5.0):
                 header = root
             else:
                 sections.append(root)
-    tables = _top_tables(sections)
-    if not tables:
-        raise ValueError("HWPX에 표가 없습니다.")
-    if index >= len(tables):
-        raise ValueError(f"표 번호가 범위를 벗어났습니다(표 {len(tables)}개).")
-    borders, chars, paras = _read_header(header)
-    warnings, cells = [], []
-    for tr in tables[index].findall(_HP + "tr"):
+    return _top_tables(sections), header
+
+
+def _read_cells(table, borders, chars, paras, warnings):
+    cells = []
+    for tr in table.findall(_HP + "tr"):
         for tc in tr.findall(_HP + "tc"):
             if len(cells) >= MAX_CELLS:
-                raise ValueError("표 칸이 너무 많습니다.")
+                raise ValueError("표 칸이 너무 많습니다(2000칸 넘음).")
             addr, span, size = tc.find(_HP + "cellAddr"), tc.find(_HP + "cellSpan"), tc.find(_HP + "cellSz")
             if addr is None:
                 continue
@@ -226,6 +225,51 @@ def import_hwpx_table(path, index=0, cell_mm=5.0):
                 bf=borders.get(tc.get("borderFillIDRef")), text=text, bold=bold, align=align))
     if not cells:
         raise ValueError("표에 칸이 없습니다.")
+    return cells
+
+
+def import_hwpx_table(path, index=0, cell_mm=5.0):
+    """HWPX 파일의 index번째(0부터, 문서 순서) 최상위 표 → (sketch, info). 실패는 ValueError."""
+    if isinstance(index, bool) or not isinstance(index, int) or index < 0:
+        raise ValueError("표 번호는 0 이상의 정수여야 합니다.")
+    _check_cell_mm(cell_mm)
+    tables, header = _read_document(path)
+    if not tables:
+        raise ValueError("HWPX에 표가 없습니다.")
+    if index >= len(tables):
+        raise ValueError(f"표 번호가 범위를 벗어났습니다(표 {len(tables)}개).")
+    sketch, info = _convert(tables[index], _read_header(header), cell_mm)
+    return sketch, dict(info, tables=len(tables))
+
+
+def list_hwpx_tables(path, cell_mm=5.0, limit=200):
+    """HWPX 파일의 최상위 표 요약(화면의 표 고르기 목록). 표마다 번호·행×열·첫 칸 글,
+    지금 칸 간격으로 가져올 수 있는지(ok)와 못 하면 이유(reason). 표가 없으면 빈 목록."""
+    _check_cell_mm(cell_mm)
+    tables, header = _read_document(path)
+    head = _read_header(header)
+    items = []
+    for index, table in enumerate(tables[:limit]):
+        item = dict(index=index, rows=0, cols=0, first_text="", ok=True, reason="")
+        try:
+            cells = _read_cells(table, *head, [])
+            item["rows"] = max(c["row"] + c["rowspan"] for c in cells)
+            item["cols"] = max(c["col"] + c["colspan"] for c in cells)
+            first = min(cells, key=lambda c: (c["row"], c["col"]))
+            text = " ".join(first["text"].split())
+            item["first_text"] = text if len(text) <= 40 else text[:39] + "…"
+            _convert(table, head, cell_mm)
+        except ValueError as exc:
+            item.update(ok=False, reason=str(exc))
+        items.append(item)
+    return dict(tables=items, total=len(tables))
+
+
+def _convert(table, head, cell_mm):
+    """최상위 표 하나 → (sketch, info). 너무 크면 ValueError."""
+    borders, chars, paras = head
+    warnings = []
+    cells = _read_cells(table, borders, chars, paras, warnings)
     n_rows = max(c["row"] + c["rowspan"] for c in cells)
     n_cols = max(c["col"] + c["colspan"] for c in cells)
     if n_rows > MAX_GRID or n_cols > MAX_GRID:
@@ -237,7 +281,7 @@ def import_hwpx_table(path, index=0, cell_mm=5.0):
     for h in heights:
         ys.append(ys[-1] + h)
     if xs[-1] + _MARGIN > MAX_GRID or ys[-1] + _MARGIN > MAX_GRID:
-        raise ValueError("표가 너무 커서 표그림판(200칸)에 들어가지 않습니다.")
+        raise ValueError(f"표가 너무 커서 표그림판(200칸)에 들어가지 않습니다(칸 간격 {cell_mm:g}mm). 칸 간격을 늘려 보세요.")
     segments, texts, fills = {}, [], []
 
     def mark(key, line):
@@ -278,4 +322,4 @@ def import_hwpx_table(path, index=0, cell_mm=5.0):
         lines.append({**coords, "width": width, "style": style, **({} if color == "#000000" else {"color": color})})
     sketch = dict(grid=dict(cols=max(36, xs[-1] + _MARGIN), rows=max(50, ys[-1] + _MARGIN), cell_mm=float(cell_mm)),
                   lines=lines, texts=texts, images=[], fills=fills)
-    return sketch, dict(rows=n_rows, cols=n_cols, tables=len(tables), warnings=sorted(set(warnings)))
+    return sketch, dict(rows=n_rows, cols=n_cols, warnings=sorted(set(warnings)))

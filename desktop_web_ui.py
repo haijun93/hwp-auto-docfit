@@ -2299,6 +2299,43 @@ class DesktopWebBridge:
             self._library_bridge = LibraryBridge()
         return self._library_bridge
 
+    def _library_open_item(self, request):
+        """자료함 자료를 연결 앱·탐색기·브라우저로 연다(더블클릭).
+
+        item_id가 있으면 klib에 저장된 경로(kind·source_path)만 쓴다(화면이 보낸 경로는 무시).
+        item_id가 없으면(내보낸 폴더·검색 결과) 실행 파일은 차단한다.
+        실행기는 self._library_opener / self._library_browser로 바꿔 시험한다.
+        """
+        from docfit_app.library_bridge import LibraryOpenError, open_library_item
+
+        target = {
+            "kind": request.get("kind"),
+            "source_path": str(request.get("source_path") or ""),
+            "confirmed": bool(request.get("confirmed")),
+        }
+        item_id = request.get("item_id")
+        registered = item_id not in (None, "")
+        if registered:
+            try:
+                stored = self._get_library_bridge().request({"cmd": "item_get", "id": int(item_id)})
+            except (TypeError, ValueError):
+                return {"ok": False, "code": "INVALID_PATH", "message": "잘못된 자료 ID입니다."}
+            if not isinstance(stored, dict) or not stored.get("ok"):
+                message = stored.get("message") if isinstance(stored, dict) else None
+                return {"ok": False, "code": "NOT_REGISTERED", "message": message or "자료함에서 자료를 찾을 수 없습니다."}
+            target["kind"] = stored.get("kind") or target["kind"]
+            target["source_path"] = str(stored.get("source_path") or "")
+        try:
+            opened = open_library_item(
+                target,
+                opener=getattr(self, "_library_opener", None),
+                browser=getattr(self, "_library_browser", None),
+                allow_risky=None if registered else False,
+            )
+        except LibraryOpenError as exc:
+            return {"ok": False, "code": exc.code, "message": str(exc), "path": target["source_path"]}
+        return {"ok": True, "opened": bool(opened), "path": target["source_path"]}
+
     def library(self, request):
         """Forward one allowlisted library JSON request when the opt-in flag is set."""
         if not self._developer_mode_enabled():
@@ -2316,8 +2353,7 @@ class DesktopWebBridge:
                 paths, self._library_drop = list(getattr(self, "_library_drop", None) or []), []
                 return {"ok": True, "paths": paths}
             if isinstance(request, dict) and request.get("cmd") == "open_item":
-                from docfit_app.library_bridge import open_library_item
-                return {"ok": True, "opened": open_library_item(request)}
+                return self._library_open_item(request)
             return self._get_library_bridge().request(request)
         except Exception as exc:
             return {"ok": False, "message": str(exc)}

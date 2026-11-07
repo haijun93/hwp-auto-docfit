@@ -136,14 +136,32 @@ Future<Uint8List?> pickSketchImageFile() async {
   return file?.readAsBytes();
 }
 
+/// HWPX 문서 고르기. 고르지 않으면 null, 고르면 파일 경로(원본은 서비스가 읽기만 한다).
+Future<String?> pickHwpxFilePath() async {
+  final file = await openFile(
+    acceptedTypeGroups: const [
+      XTypeGroup(label: '한/글 문서(HWPX)', extensions: ['hwpx']),
+    ],
+  );
+  return file?.path;
+}
+
 /// 표그림판 화면: 점선 격자 용지에 직선을 그려 한/글 표로 변환 및 복사.
 class TableSketchScreen extends StatefulWidget {
-  const TableSketchScreen({super.key, required this.api, this.pickImage});
+  const TableSketchScreen({
+    super.key,
+    required this.api,
+    this.pickImage,
+    this.pickHwpx,
+  });
 
   final ApiCall api;
 
   /// '이미지에서 표 인식'의 파일 고르기(시험에서 바꿔 끼운다). 없으면 [pickSketchImageFile].
   final Future<Uint8List?> Function()? pickImage;
+
+  /// '한/글 문서에서 표 가져오기'의 HWPX 고르기(시험에서 바꿔 끼운다). 없으면 [pickHwpxFilePath].
+  final Future<String?> Function()? pickHwpx;
 
   @override
   State<TableSketchScreen> createState() => _TableSketchScreenState();
@@ -227,6 +245,8 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
   Uint8List? _recognizedImage;
   String? _recognizeError;
   bool _recognizing = false;
+  // HWPX 표 가져오기(TIMPORTUI): 같은 겹쳐 보기·적용·취소를 쓰고 글·문구만 다르다.
+  bool _importingHwpx = false;
 
   // 저장/불러오기 컨트롤러
   final TextEditingController _saveNameController = TextEditingController(
@@ -2307,6 +2327,23 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
                   label: const Text('이미지에서 표 인식'),
                   onPressed: _recognizing ? null : _recognizeFromFile,
                 ),
+              // 한/글 문서(HWPX)에서 표 가져오기: 글이 길어 폭 1200 미만은 아이콘만, 600 미만은 아래 도구 줄.
+              if (MediaQuery.sizeOf(context).width < 600)
+                const SizedBox.shrink()
+              else if (MediaQuery.sizeOf(context).width < 1200)
+                IconButton(
+                  key: const Key('sketchImportHwpx'),
+                  tooltip: '한/글 문서에서 표 가져오기',
+                  icon: const Icon(Icons.table_view_outlined),
+                  onPressed: _recognizing ? null : _importFromHwpx,
+                )
+              else
+                OutlinedButton.icon(
+                  key: const Key('sketchImportHwpx'),
+                  icon: const Icon(Icons.table_view_outlined, size: 18),
+                  label: const Text('한/글 문서에서 표 가져오기'),
+                  onPressed: _recognizing ? null : _importFromHwpx,
+                ),
               const SizedBox(width: 8),
               IconButton(
                 key: const Key('undoButton'),
@@ -2579,6 +2616,13 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
               icon: const Icon(Icons.document_scanner_outlined, size: 20),
               onPressed: _recognizing ? null : _recognizeFromFile,
             ),
+          if (MediaQuery.sizeOf(context).width < 600)
+            IconButton(
+              key: const Key('sketchImportHwpx'),
+              tooltip: '한/글 문서에서 표 가져오기',
+              icon: const Icon(Icons.table_view_outlined, size: 20),
+              onPressed: _recognizing ? null : _importFromHwpx,
+            ),
         ],
       ),
     );
@@ -2736,6 +2780,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
   Future<bool> recognizeImageData(String data) async {
     setState(() {
       _recognizing = true;
+      _importingHwpx = false;
       _recognizeError = null;
       _recognized = null;
     });
@@ -2789,6 +2834,128 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
     return found != null;
   }
 
+  // --- 한/글 문서(HWPX)에서 표 가져오기 ---
+
+  /// '한/글 문서에서 표 가져오기' 단추: HWPX를 골라 표 목록을 보이고, 고른 표를 겹쳐 보인다.
+  Future<void> _importFromHwpx() async {
+    if (_recognizing) return;
+    String? path;
+    try {
+      path = await (widget.pickHwpx ?? pickHwpxFilePath)();
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _importingHwpx = true;
+          _recognizeError = '표 가져오기 실패: 문서를 열지 못했습니다. ($e)';
+        });
+      }
+      return;
+    }
+    if (path == null || path.isEmpty || !mounted) return;
+    await importHwpxPath(path);
+  }
+
+  /// HWPX 문서의 표 목록을 받아 하나를 고르게 한 뒤 겹쳐 보인다. 결과가 있으면 true(시험에서도 쓴다).
+  /// 표가 하나뿐이면 고르는 창 없이 바로 겹쳐 보인다.
+  Future<bool> importHwpxPath(String path) async {
+    void fail(String message) {
+      setState(() {
+        _recognizing = false;
+        _importingHwpx = true;
+        _recognized = null;
+        _recognizeError = '표 가져오기 실패: $message';
+      });
+    }
+
+    setState(() {
+      _recognizing = true;
+      _importingHwpx = true;
+      _recognizeError = null;
+      _recognized = null;
+    });
+    final cellMm = _doc.grid.cellMm;
+    Map<String, dynamic> listed;
+    try {
+      listed = await _sketchApi.listHwpxTables(path, cellMm);
+    } catch (e) {
+      listed = {'ok': false, 'message': '$e'};
+    }
+    if (!mounted) return false;
+    final rawTables = listed['tables'];
+    if (listed['ok'] != true || rawTables is! List) {
+      final message = '${listed['message'] ?? ''}'.trim();
+      fail(message.isEmpty ? '문서에서 표 목록을 읽지 못했습니다.' : message);
+      return false;
+    }
+    final tables = [
+      for (final t in rawTables)
+        if (t is Map && t['index'] is num) HwpxTableSummary.fromJson(t),
+    ];
+    if (tables.isEmpty) {
+      fail('이 문서에는 표가 없습니다.');
+      return false;
+    }
+    if (!tables.any((t) => t.ok)) {
+      fail(
+        tables.length == 1
+            ? tables.single.reason
+            : '가져올 수 있는 표가 없습니다. (${tables.first.reason})',
+      );
+      return false;
+    }
+    setState(() => _recognizing = false);
+    final total = listed['total'] is num
+        ? (listed['total'] as num).toInt()
+        : tables.length;
+    final int? index = tables.length == 1
+        ? tables.single.index
+        : await showDialog<int>(
+            context: context,
+            builder: (context) =>
+                _HwpxTablePicker(tables: tables, total: total),
+          );
+    if (index == null || !mounted) return false;
+    setState(() => _recognizing = true);
+    Map<String, dynamic> res;
+    try {
+      res = await _sketchApi.importHwpxTable(path, index, cellMm);
+    } catch (e) {
+      res = {'ok': false, 'message': '$e'};
+    }
+    if (!mounted) return false;
+    final sketch = res['sketch'];
+    TableSketchDoc? found;
+    if (res['ok'] == true && sketch is Map) {
+      try {
+        found = TableSketchDoc.fromJson(sketch);
+      } catch (_) {
+        found = null;
+      }
+    }
+    if (found == null || (found.lines.isEmpty && found.texts.isEmpty)) {
+      final message = res['ok'] == true ? '' : '${res['message'] ?? ''}'.trim();
+      fail(message.isEmpty ? '표 ${index + 1}을(를) 그림으로 바꾸지 못했습니다.' : message);
+      return false;
+    }
+    // 지금 그림판보다 작은 격자로 줄지 않게 한다(가져온 표는 이미 칸 간격에 맞춰 있다).
+    found.grid = found.grid.copyWith(
+      cols: math.min(200, math.max(found.grid.cols, _doc.grid.cols)),
+      rows: math.min(200, math.max(found.grid.rows, _doc.grid.rows)),
+    );
+    final warnings = res['warnings'];
+    setState(() {
+      _recognizing = false;
+      _recognized = found;
+      _recognizedRows = res['rows'] is num ? (res['rows'] as num).toInt() : 0;
+      _recognizedCols = res['cols'] is num ? (res['cols'] as num).toInt() : 0;
+      _recognizedWarnings = warnings is List
+          ? [for (final w in warnings) '$w']
+          : const [];
+      _recognizedImage = null;
+    });
+    return true;
+  }
+
   /// 인식 결과를 그림판에 적용한다. 되돌리기 1번이면 인식 전 그림으로 돌아간다.
   void _applyRecognized() {
     final found = _recognized;
@@ -2805,8 +2972,11 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
     });
     _triggerPreviewDebounced();
     _notice(
-      '인식한 표($_recognizedRows행 × $_recognizedCols열)를 적용했습니다. '
-      '선을 고칠 수 있고, 되돌리기(Ctrl+Z)로 인식 전으로 돌아갑니다.',
+      _importingHwpx
+          ? '가져온 표($_recognizedRows행 × $_recognizedCols열)를 적용했습니다. '
+                '선·글을 고칠 수 있고, 되돌리기(Ctrl+Z)로 가져오기 전으로 돌아갑니다.'
+          : '인식한 표($_recognizedRows행 × $_recognizedCols열)를 적용했습니다. '
+                '선을 고칠 수 있고, 되돌리기(Ctrl+Z)로 인식 전으로 돌아갑니다.',
     );
   }
 
@@ -2821,17 +2991,17 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
   /// 인식 중·인식 결과·실패 이유를 캔버스 위에 띄우는 띠.
   Widget? _buildRecognizeBanner() {
     if (_recognizing) {
-      return const _RecognizeCard(
-        key: Key('recognizeBusy'),
-        color: Color(0xFFEFF6FF),
+      return _RecognizeCard(
+        key: const Key('recognizeBusy'),
+        color: const Color(0xFFEFF6FF),
         children: [
-          SizedBox(
+          const SizedBox(
             width: 16,
             height: 16,
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
-          SizedBox(width: 10),
-          Text('이미지에서 표를 인식하는 중…'),
+          const SizedBox(width: 10),
+          Text(_importingHwpx ? '문서에서 표를 읽는 중…' : '이미지에서 표를 인식하는 중…'),
         ],
       );
     }
@@ -2880,7 +3050,8 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '인식한 표: $_recognizedRows행 × $_recognizedCols열 (파란 선)',
+                '${_importingHwpx ? '가져온' : '인식한'} 표: '
+                '$_recognizedRows행 × $_recognizedCols열 (파란 선)',
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
               const Text(
@@ -3328,6 +3499,8 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
     final overlay = TableSketchDoc(
       grid: found.grid,
       lines: [for (final l in found.lines) l.copyWith(color: '#2563EB')],
+      texts: found.texts,
+      fills: found.fills,
     );
     return IgnorePointer(
       child: Container(
@@ -3771,6 +3944,97 @@ class _TableSketchTextDialogState extends State<TableSketchTextDialog> {
       align: _align,
     );
     Navigator.of(context).pop(result);
+  }
+}
+
+/// 서비스 list_hwpx_tables가 돌려준 표 하나의 요약.
+class HwpxTableSummary {
+  const HwpxTableSummary({
+    required this.index,
+    this.rows = 0,
+    this.cols = 0,
+    this.firstText = '',
+    this.ok = true,
+    this.reason = '',
+  });
+
+  factory HwpxTableSummary.fromJson(Map json) => HwpxTableSummary(
+    index: (json['index'] as num).toInt(),
+    rows: json['rows'] is num ? (json['rows'] as num).toInt() : 0,
+    cols: json['cols'] is num ? (json['cols'] as num).toInt() : 0,
+    firstText: '${json['first_text'] ?? ''}',
+    ok: json['ok'] != false,
+    reason: '${json['reason'] ?? ''}',
+  );
+
+  final int index;
+  final int rows, cols;
+  final String firstText;
+  final bool ok;
+  final String reason;
+}
+
+/// HWPX 문서 안 표 고르기 창: 번호·행×열·첫 칸 글. 가져올 수 없는 표는 이유와 함께 흐리게.
+class _HwpxTablePicker extends StatelessWidget {
+  const _HwpxTablePicker({required this.tables, required this.total});
+
+  final List<HwpxTableSummary> tables;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      key: const Key('hwpxTablePicker'),
+      title: Text('가져올 표 고르기 (표 $total개)'),
+      content: SizedBox(
+        width: 420,
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            if (total > tables.length)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  '앞의 표 ${tables.length}개만 보입니다.',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF64748B),
+                  ),
+                ),
+              ),
+            for (final t in tables)
+              ListTile(
+                key: Key('hwpxTable_${t.index}'),
+                enabled: t.ok,
+                dense: true,
+                leading: CircleAvatar(
+                  radius: 14,
+                  child: Text('${t.index + 1}'),
+                ),
+                title: Text('표 ${t.index + 1} · ${t.rows}행 × ${t.cols}열'),
+                subtitle: Text(
+                  t.ok
+                      ? (t.firstText.isEmpty ? '(첫 칸 비어 있음)' : t.firstText)
+                      : t.reason,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: t.ok
+                      ? null
+                      : const TextStyle(color: Color(0xFFB91C1C)),
+                ),
+                onTap: () => Navigator.of(context).pop(t.index),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          key: const Key('hwpxTablePickerCancel'),
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('취소'),
+        ),
+      ],
+    );
   }
 }
 

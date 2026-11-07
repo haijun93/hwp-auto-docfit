@@ -11,7 +11,7 @@ from pathlib import Path
 
 from docfit_core import table_sketch
 from docfit_core.hwp_table_import import sketch_from_html
-from docfit_core.table_import import import_hwpx_table
+from docfit_core.table_import import import_hwpx_table, list_hwpx_tables
 from .table_units_service import TableUnitsService, HWP_CLIPBOARD_FORMAT
 
 COM_LOCK = threading.Lock()
@@ -239,8 +239,9 @@ class TableSketchService:
         return dict(ok=True, sketch=sketch, rows=source["rows"], cols=source["cols"], seq=seq,
                     message=f"한/글 표({source['rows']}행 × {source['cols']}열)를 가져왔어요. 선·글을 고친 뒤 다시 복사할 수 있어요.")
 
-    def import_hwpx(self, payload):
-        """HWPX 파일의 N번째 표(0부터)를 표그림판 그림으로. 원본은 읽기만 한다(클립보드·화면은 별도)."""
+    @staticmethod
+    def _hwpx_payload(payload):
+        """{path, cell_mm} 확인 → (경로, 칸 간격). 칸 간격이 이상하면 5mm."""
         if not isinstance(payload, dict) or not isinstance(payload.get("path"), str) or not payload["path"]:
             raise ValueError("HWPX 파일 경로를 지정해 주세요.")
         path = Path(payload["path"])
@@ -249,7 +250,19 @@ class TableSketchService:
         cell_mm = payload.get("cell_mm", 5.0)
         if isinstance(cell_mm, bool) or not isinstance(cell_mm, (int, float)) or not 0.5 <= cell_mm <= 50:
             cell_mm = 5.0
-        sketch, info = import_hwpx_table(path, payload.get("index", 0), float(cell_mm))
+        return path, float(cell_mm)
+
+    def list_hwpx(self, payload):
+        """HWPX 파일 안 최상위 표 목록(번호·행×열·첫 칸 글·가져올 수 있는지). 화면의 표 고르기용."""
+        path, cell_mm = self._hwpx_payload(payload)
+        found = list_hwpx_tables(path, cell_mm)
+        message = "" if found["tables"] else "이 문서에는 표가 없습니다."
+        return dict(ok=True, tables=found["tables"], total=found["total"], message=message)
+
+    def import_hwpx(self, payload):
+        """HWPX 파일의 N번째 표(0부터)를 표그림판 그림으로. 원본은 읽기만 한다(클립보드·화면은 별도)."""
+        path, cell_mm = self._hwpx_payload(payload)
+        sketch, info = import_hwpx_table(path, payload.get("index", 0), cell_mm)
         sketch, normalize_warnings = table_sketch.normalize(sketch)
         warnings = info["warnings"] + normalize_warnings
         return dict(ok=True, sketch=sketch, rows=info["rows"], cols=info["cols"], tables=info["tables"], warnings=warnings,
@@ -271,6 +284,7 @@ class TableSketchService:
             if action == "recognize": return self.recognize(payload)
             if action == "paste_hwp": return self.paste_hwp(payload)
             if action == "import_hwpx_table": return self.import_hwpx(payload)
+            if action == "list_hwpx_tables": return self.list_hwpx(payload)
             if action == "clipboard_seq": return dict(ok=True, seq=self._clipboard_seq())
             raise ValueError("표그림판 작업을 확인해 주세요.")
         except (OSError, ValueError, TypeError) as exc:

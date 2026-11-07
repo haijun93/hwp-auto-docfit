@@ -124,6 +124,36 @@ class TableSketchApi {
         : {'ok': false, 'message': '표 인식 응답을 읽지 못했습니다.'};
   }
 
+  /// command('table_sketch', ['list_hwpx_tables', {path, cell_mm}]): HWPX 문서 안 표 목록.
+  /// 성공이면 {'ok': true, 'tables': [{index, rows, cols, first_text, ok, reason}], 'total': 개수}.
+  Future<Map<String, dynamic>> listHwpxTables(
+    String path,
+    double cellMm,
+  ) async {
+    final response = await call('table_sketch', [
+      'list_hwpx_tables',
+      {'path': path, 'cell_mm': cellMm},
+    ]);
+    return response is Map
+        ? Map<String, dynamic>.from(response)
+        : {'ok': false, 'message': '표 목록 응답을 읽지 못했습니다.'};
+  }
+
+  /// command('table_sketch', ['import_hwpx_table', {path, index, cell_mm}]): HWPX 문서의 표 하나를 그림으로.
+  Future<Map<String, dynamic>> importHwpxTable(
+    String path,
+    int index,
+    double cellMm,
+  ) async {
+    final response = await call('table_sketch', [
+      'import_hwpx_table',
+      {'path': path, 'index': index, 'cell_mm': cellMm},
+    ]);
+    return response is Map
+        ? Map<String, dynamic>.from(response)
+        : {'ok': false, 'message': '표 가져오기 응답을 읽지 못했습니다.'};
+  }
+
   Future<Map<String, dynamic>> importImage(String data) async {
     final response = await call('table_sketch', ['import_image', data]);
     return response is Map ? Map<String, dynamic>.from(response) : {'ok': false};
