@@ -649,9 +649,12 @@ class _TabPill extends StatelessWidget {
 /// 자료함·노트북처럼 위에 띄운 화면. 저장할 편집이 없으므로 앱을 닫을 때
 /// 스스로 닫혀 종료를 막지 않는다(사용자 보고 2026-11-07: X를 눌러도 안 닫힘).
 class HostClosablePage extends StatefulWidget {
-  const HostClosablePage({super.key, required this.title, required this.child});
+  const HostClosablePage({super.key, required this.title, required this.child, this.backLabel = '처음 화면으로'});
   final String title;
   final Widget child;
+
+  /// 왼쪽 위 돌아가기 단추 글(다른 화면에서 열었으면 그 화면 이름).
+  final String backLabel;
 
   @override
   State<HostClosablePage> createState() => _HostClosablePageState();
@@ -700,7 +703,7 @@ class _HostClosablePageState extends State<HostClosablePage> {
                         key: const ValueKey('host-page-back'),
                         onPressed: () => Navigator.of(context).maybePop(),
                         icon: const Icon(Icons.arrow_back),
-                        label: const Text('처음 화면으로'),
+                        label: Text(widget.backLabel),
                       ),
                       const SizedBox(width: 8),
                       Text(widget.title, style: Theme.of(context).textTheme.titleMedium),

@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 
 import '../../core/drop_events.dart';
 import '../library/library_api.dart';
+import '../library/library_screen.dart';
+import '../workspace/tab_navigation_shell.dart' show HostClosablePage;
 import 'notebook_api.dart';
 
 /// 노트북 화면(개발자 모드). 세 칸: 출처 · 근거 찾기/미리보기/변환 · 노트.
@@ -16,6 +18,9 @@ enum _Middle { search, compare, preview, transform }
 /// 창에 파일을 끌어 놓았다는 알림을 듣는다. 돌려준 함수를 부르면 듣기를 멈춘다.
 typedef NotebookDropWatcher = void Function() Function(void Function() onDrop);
 
+/// 출처의 원본 자료함 항목을 보여 준다(자료함 화면을 열어 그 자료함·항목을 고르고 강조).
+typedef NotebookOpenLibraryItem = Future<void> Function(BuildContext context, String boxId, String itemId);
+
 void Function() _watchNotebookDrops(void Function() onDrop) =>
     watchWindowEvent('docfit-notebook-files-dropped', onDrop);
 
@@ -24,7 +29,7 @@ String _errorText(Object error) => error.toString().replaceFirst(RegExp(r'^(Bad 
 String _fileName(String path) => path.split(RegExp(r'[\\/]')).last;
 
 class NotebookScreen extends StatefulWidget {
-  const NotebookScreen({super.key, required this.api, this.library, this.watchDropEvents});
+  const NotebookScreen({super.key, required this.api, this.library, this.watchDropEvents, this.openLibraryItem});
 
   final NotebookApi api;
 
@@ -33,6 +38,9 @@ class NotebookScreen extends StatefulWidget {
 
   /// 시험에서 드롭 알림을 직접 넣을 때 쓴다. 없으면 창 이벤트를 듣는다.
   final NotebookDropWatcher? watchDropEvents;
+
+  /// '자료함에서 보기'가 자료함을 여는 방법. 없으면 [library]로 자료함 화면을 새 페이지로 연다.
+  final NotebookOpenLibraryItem? openLibraryItem;
 
   @override
   State<NotebookScreen> createState() => _NotebookScreenState();
@@ -273,6 +281,43 @@ class _NotebookScreenState extends State<NotebookScreen> {
       }
       await _loadNotebookContent();
     }, done: '출처를 뺐습니다(원본 파일은 그대로입니다).');
+  }
+
+  /// 출처가 나온 자료함 항목을 찾아 자료함 화면에서 보여 준다.
+  Future<void> _showInLibrary(NbSource source) async {
+    final nb = _notebook;
+    if (nb == null) return;
+    NbSourceItemLink? link;
+    await _run(() async => link = await widget.api.sourceItem(nb.id, source.id));
+    final found = link;
+    if (!mounted || found == null) return; // 실패 문구는 _run이 이미 보였다.
+    final boxId = found.boxId;
+    final itemId = found.itemId;
+    if (!found.found || boxId == null || itemId == null) {
+      setState(() => _status = found.reason.isEmpty ? '자료함 항목을 찾을 수 없습니다.' : found.reason);
+      return;
+    }
+    final open = widget.openLibraryItem ?? _defaultOpenLibraryItem;
+    await open(context, boxId, itemId);
+  }
+
+  Future<void> _defaultOpenLibraryItem(BuildContext context, String boxId, String itemId) async {
+    final library = widget.library;
+    if (library == null) {
+      setState(() => _status = '자료함을 열 수 없습니다.');
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => HostClosablePage(
+          title: '자료함',
+          backLabel: '노트북으로',
+          child: LibraryScreen(api: library, notebookApi: widget.api, initialBoxId: boxId, initialItemId: itemId),
+        ),
+      ),
+    );
+    // 자료함에서 이 노트북에 출처를 더 넣었을 수 있다.
+    if (mounted) await _run(_loadNotebookContent);
   }
 
   List<int>? get _scope => _checked.length == _sources.length ? null : _checked.toList();
@@ -642,10 +687,22 @@ class _NotebookScreenState extends State<NotebookScreen> {
                           style: const TextStyle(fontSize: 12),
                         ),
                         onTap: () => _preview(s.id, null),
-                        trailing: IconButton(
-                          tooltip: '출처 빼기',
-                          icon: const Icon(Icons.close, size: 18),
-                          onPressed: _busy ? null : () => _removeSource(s),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (s.itemId != null && (widget.library != null || widget.openLibraryItem != null))
+                              IconButton(
+                                key: ValueKey('nb-source-in-library-${s.id}'),
+                                tooltip: '자료함에서 보기',
+                                icon: const Icon(Icons.inventory_2_outlined, size: 18),
+                                onPressed: _busy ? null : () => _showInLibrary(s),
+                              ),
+                            IconButton(
+                              tooltip: '출처 빼기',
+                              icon: const Icon(Icons.close, size: 18),
+                              onPressed: _busy ? null : () => _removeSource(s),
+                            ),
+                          ],
                         ),
                       ),
                   ],
