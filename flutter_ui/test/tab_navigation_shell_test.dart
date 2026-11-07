@@ -178,9 +178,7 @@ void main2() {
     await tester.pump();
     expect(changes, const [false]);
     expect(_sidebarWidth(tester), kSidebarCollapsedWidth);
-    await tester.tap(find.byKey(const ValueKey('workspaceSidebarToggle')));
-    await tester.pump();
-    expect(find.byType(IndexedStack), findsNothing);
+    // 일반 모드는 펼치기 ↔ 닫기만 되풀이한다(작업 화면 닫기는 개발자 모드 전용, 2026-11-07).
     await tester.tap(find.byKey(const ValueKey('workspaceSidebarToggle')));
     await tester.pump();
     expect(_sidebarWidth(tester), kSidebarExpandedWidth);

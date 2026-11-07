@@ -2995,8 +2995,18 @@ class _Win32WindowApi:
 
     def set_window_pos(self, hwnd, x, y, width, height, topmost):
         insert_after = self.HWND_TOPMOST if topmost else self.HWND_NOTOPMOST
-        if not self.user32.SetWindowPos(hwnd, insert_after, x, y, width, height, self.SWP_NOACTIVATE):
-            raise OSError('앱 창 위치를 바꾸지 못했습니다.')
+        set_window_pos = self.user32.SetWindowPos
+        if self._ctypes is not None:
+            # 64비트에서 형을 정하지 않으면 HWND(-1 = 맨 위)와 창 핸들이 32비트로 넘어가 호출이 실패한다
+            # (사용자 보고 2026-11-07: 사이드메뉴 모드·햄버거 3단계가 '앱 창 위치를 바꾸지 못했습니다'로 실패).
+            from ctypes import wintypes
+            set_window_pos = self._ctypes.WinDLL('user32', use_last_error=True).SetWindowPos
+            set_window_pos.argtypes = [wintypes.HWND, wintypes.HWND, self._ctypes.c_int, self._ctypes.c_int,
+                                       self._ctypes.c_int, self._ctypes.c_int, wintypes.UINT]
+            set_window_pos.restype = wintypes.BOOL
+        if not set_window_pos(hwnd, insert_after, int(x), int(y), int(width), int(height), self.SWP_NOACTIVATE):
+            code = self._ctypes.get_last_error() if self._ctypes is not None else 0
+            raise OSError(f'앱 창 위치를 바꾸지 못했습니다.' + (f' (오류 {code})' if code else ''))
         return True
 
     def is_zoomed(self, hwnd):

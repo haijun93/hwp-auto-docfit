@@ -214,7 +214,9 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
     if (index != null && mounted) _select(index);
   }
 
-  /// 햄버거 단추 순환(사용자 지시 2026-11-07):
+  /// 햄버거 단추 순환(사용자 지시 2026-11-07): 일반 모드는 펼치기 ↔ 닫기만 되풀이하고,
+  /// 개발자 모드에서만 3번째로 작업 화면까지 닫는다(사이드메뉴 모드).
+  /// 개발자 모드 순서:
   /// 펼치기 → 닫기(아이콘만) → 닫은 채로 오른쪽 작업 화면까지 닫기 → 다시 펼치기.
   /// 다음 단계는 지금 화면 상태로 정하므로 처음 상태와 관계없이 순서가 맞다.
   Future<void> _toggleSidebar() async {
@@ -229,7 +231,7 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
       // (2) 닫기
       setState(() { _expanded = false; _sidebarStage = 1; });
       widget.onSidebarExpandedChanged?.call(false);
-    } else if (_sidebarStage == 1) {
+    } else if (_sidebarStage == 1 && widget.developerMode) {
       // (3) 단추로 닫은 다음 번에는 작업 화면까지 닫는다.
       await _setSidebarOnly(true);
       if (!mounted) return;
