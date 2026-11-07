@@ -37,23 +37,23 @@ class ControlLineLoopTest(unittest.TestCase):
             '재검사_영역인가': lambda area: True, '표셀_자간_제외인가': lambda: False,
             '괄호_안쪽_공백_정리_문단_처리': lambda: None, '쉼표_공백_정리_문단_처리': lambda: None,
             '자간자동조정': lambda 최대시도=None: calls.append(doc.GetPos()) or True,
-            '작업_모드': 'all', '진단로그': Mock(), '넓은_표칸_줄인가': lambda: False,
+            '작업_모드': 'all', '진단로그': Mock(),
         }):
             self.assertTrue(fn())
         self.assertEqual(calls, [(2, 0, 0)])
 
-    def test_wide_cell_lines_use_body_budget(self):
+    def test_cell_lines_use_table_budget_regardless_of_width(self):
         fn = self.ns['컨트롤_내부_자간조정']
         budgets = []
-        for wide in (True, False):
-            doc = self._doc()
+        for 줄길이 in (33, 6):
+            doc = self._doc(cell_len=줄길이)
             with patch.dict(fn.__globals__, {
                 'hwp': doc, 'hwp_run': doc.run, '중단_요청됨': lambda: False,
                 '한칸표_영역_목록': lambda: set(), '쪽범위_사용중': lambda: False,
                 '재검사_영역인가': lambda area: True, '표셀_자간_제외인가': lambda: False,
                 '괄호_안쪽_공백_정리_문단_처리': lambda: None, '쉼표_공백_정리_문단_처리': lambda: None,
                 '자간자동조정': lambda 최대시도=None: budgets.append(최대시도) or True,
-                '작업_모드': 'all', '진단로그': Mock(), '넓은_표칸_줄인가': lambda: wide,
+                '작업_모드': 'all', '진단로그': Mock(),
                 '자간_최대시도_본문': 30, '자간_최대시도_표': 5,
             }):
                 fn()
@@ -70,24 +70,16 @@ class ControlLineLoopTest(unittest.TestCase):
             '디자인표_보호영역': set(), '숫자_표칸인가': lambda: False,
             '괄호_안쪽_공백_정리_문단_처리': lambda: None, '쉼표_공백_정리_문단_처리': lambda: None,
             '자간자동조정': lambda 최대시도=None: calls.append((doc.GetPos(), 최대시도)) or True,
-            '작업_모드': 'all', '진단로그': Mock(), '넓은_표칸_줄인가': lambda: False,
+            '작업_모드': 'all', '진단로그': Mock(),
             '자간_최대시도_본문': 30, '자간_최대시도_표': 5,
         }):
             self.assertTrue(fn())
         self.assertEqual(calls, [((2, 0, 0), 30)])
 
-    def test_wide_cell_detection(self):
-        fn = self.ns['넓은_표칸_줄인가']
-        for length, expected in ((33, True), (20, True), (6, False)):
-            class Doc:
-                def GetPos(self):
-                    return (2, 0, 0)
-                def SetPos(self, *pos):
-                    pass
-            with patch.dict(fn.__globals__, {
-                'hwp': Doc(), '단어모드_줄범위': lambda p, n=length: ((2, 0, 0), (2, 0, n)),
-            }):
-                self.assertIs(fn(), expected)
+    def test_wide_cell_legacy_branch_is_removed(self):
+        # 사용자 결정(2026-10-24): 칸 폭(20자)에 따른 한도 분기는 폐기됐다.
+        self.assertNotIn('넓은_표칸_줄인가', self.ns)
+        self.assertNotIn('넓은_표칸_기준글자수', self.ns)
 
     def test_spacing_table_exclusion_also_excludes_single_cell_overview(self):
         fn = self.ns['컨트롤_내부_자간조정']

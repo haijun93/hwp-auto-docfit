@@ -1043,7 +1043,9 @@ def _install(*, _docfit_namespace, _docfit_symbol, bind_function):
             if hwp is None:
                 return
             # 줄간격 조정은 설정 범위(기본 140~200%)를 벗어날 수 없다.
-            퍼센트 = max(세트문장_최소줄간격_퍼센트, min(세트문장_최대줄간격_퍼센트, 퍼센트))
+            # 여러 칸 표의 칸 안이면 표 칸 전용 하한(기본 100%), 그 밖은 본문 하한.
+            하한 = __import__('docfit_core.table_limits', fromlist=['line_floor']).line_floor(globals(), 세트문장_최소줄간격_퍼센트)
+            퍼센트 = max(하한, min(max(하한, 세트문장_최대줄간격_퍼센트), 퍼센트))
             try:
                 act = hwp.HAction
                 pset = hwp.HParameterSet.HParaShape
