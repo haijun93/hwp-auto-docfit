@@ -1276,7 +1276,7 @@ class DesktopWebBridge:
                     unregister()
             self.gui._Flutter설정_반영(values)
             if self.window is not None and 'always_on_top' in values:
-                self.window.set_on_top(bool(values['always_on_top']))
+                _set_window_on_top(self.window, bool(values['always_on_top']))
                 self._saved_window['topmost'] = bool(values['always_on_top'])
             return self._settings_snapshot()
         return self._tk(lambda: response(save))
@@ -1973,7 +1973,7 @@ class DesktopWebBridge:
                 return
             if enabled is None:  # 앱 본래 항상 위 설정으로 되돌림
                 enabled = bool(self.gui._준말_서비스().settings.read().get("always_on_top", False))
-            window.set_on_top(bool(enabled))
+            _set_window_on_top(window, bool(enabled))
 
         try:
             store = self._tk(lambda: self.gui._준말_서비스().settings)
@@ -2096,7 +2096,7 @@ class DesktopWebBridge:
                 return {'ok': False, 'message': '항상 위 설정은 개발자 모드에서만 사용할 수 있습니다.'}
             self.gui._준말_서비스().settings.update(lambda current: current.update({'always_on_top': bool(enabled)}))
             if self.window is not None:
-                self.window.set_on_top(bool(enabled))
+                _set_window_on_top(self.window, bool(enabled))
             return {'ok': True, 'enabled': bool(enabled)}
         return self._tk(execute)
 
@@ -2953,6 +2953,16 @@ def _file_size(path):
         return None
 
 
+def _set_window_on_top(window, enabled):
+    """앱 창 '항상 위'. pywebview 6은 set_on_top 대신 on_top 속성을 쓴다
+    (사용자 보고 2026-11-07: '항상 위' 단추가 AttributeError로 동작하지 않음)."""
+    setter = getattr(window, "set_on_top", None)
+    if callable(setter):
+        setter(bool(enabled))
+    else:
+        window.on_top = bool(enabled)
+
+
 class _Win32WindowApi:
     """Monitor work-area and SetWindowPos wrapper; isolated for fake-driven tests."""
     SPI_GETWORKAREA = 0x0030
@@ -3332,7 +3342,7 @@ def run_webview(gui):
     bridge._saved_window = {'x': x, 'y': y, 'width': width, 'height': height, 'topmost': False}
     try:
         initial_settings = bridge._tk(lambda: bridge._configuration().snapshot(running=bridge.gui.running).get('values', {}))
-        window.set_on_top(bool(initial_settings.get('always_on_top', False)))
+        _set_window_on_top(window, bool(initial_settings.get('always_on_top', False)))
         bridge._saved_window['topmost'] = bool(initial_settings.get('always_on_top', False))
     except Exception:
         logging.getLogger(__name__).debug('Could not apply saved always-on-top setting', exc_info=True)
