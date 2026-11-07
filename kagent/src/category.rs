@@ -5,7 +5,8 @@
 //!
 //! 정한 규칙(사용자 확인 전 '기본안'; 바꿀 때는 이 목록과 시험을 함께 고친다):
 //! 1. 분류는 겹칠 수 있다. 한 항목이 여러 분류에 속하고, "전체"에는 항상 속한다.
-//! 2. 화면캡처: kind=image 이면서 source=="screenshot" 또는 미리보기가 "캡처 · "로 시작. 그림에도 함께 속한다.
+//! 2. 화면캡처: kind=image 이면서 source=="screenshot"·캡처 프로그램(ScreenClippingHost·캡처 도구) 또는
+//!    미리보기가 "캡처 · "로 시작. 그림에도 함께 속한다.
 //! 3. 그림: kind=image, 또는 파일 항목에 그림 확장자 파일이 하나라도 있음.
 //! 4. 문서: 파일 항목에 문서 확장자 파일이 하나라도 있음, 또는 글 항목이 문서 프로그램(source)에서 왔거나
 //!    문서 서식(한/글·엑셀·RTF)을 가짐. 브라우저 HTML만 있는 글은 문서가 아니라 웹.
@@ -58,6 +59,14 @@ impl Category {
 pub struct CategorySet(u8);
 
 impl CategorySet {
+    /// 주어진 분류들로 만든 집합("전체"는 넣지 않으면 빠진다 — 시험·호출 쪽 편의용).
+    pub fn of(cats: &[Category]) -> CategorySet {
+        let mut s = CategorySet::default();
+        for c in cats {
+            s.insert(*c);
+        }
+        s
+    }
     pub fn contains(self, c: Category) -> bool {
         self.0 & c.bit() != 0
     }
@@ -102,7 +111,9 @@ const BROWSERS: &[&str] = &[
     "chrome.exe", "msedge.exe", "firefox.exe", "whale.exe", "brave.exe", "opera.exe", "vivaldi.exe",
     "iexplore.exe", "safari",
 ];
-const DOC_FORMATS: &[&str] = &["hwp character shape", "hwp native", "hwp format", "hwp paragraph shape", "rich text format",
+/// 클립보드 주인이 이 프로그램이면 화면 캡처(Win+Shift+S·캡처 도구)로 본다.
+const CAPTURE_PROGRAMS: &[&str] = &["screenclippinghost.exe", "snippingtool.exe", "screensketch.exe"];
+const DOC_FORMATS: &[&str] =&["hwp character shape", "hwp native", "hwp format", "hwp paragraph shape", "rich text format",
                                "xml spreadsheet", "biff8", "biff12", "csv"];
 
 /// 경로의 파일 이름(\ 와 / 모두 구분자).
@@ -150,7 +161,7 @@ pub fn classify(entry: &Entry, is_dir: &dyn Fn(&str) -> Option<bool>) -> Categor
     match entry.kind.as_str() {
         "image" => {
             set.insert(Category::Image);
-            if source == "screenshot" || entry.preview.starts_with("캡처 · ") {
+            if source == "screenshot" || CAPTURE_PROGRAMS.contains(&source.as_str()) || entry.preview.starts_with("캡처 · ") {
                 set.insert(Category::Capture);
             }
         }
@@ -313,6 +324,8 @@ mod tests {
         assert_eq!(cats(&cap, &none), ["전체", "그림", "화면캡처"]);
         let cap2 = Entry { kind: "image".into(), preview: "캡처 · 그림".into(), ..Default::default() };
         assert!(cats(&cap2, &none).contains(&"화면캡처"));
+        let clip = Entry { kind: "image".into(), preview: "그림 5×5".into(), source: "ScreenClippingHost.exe".into(), ..Default::default() };
+        assert!(cats(&clip, &none).contains(&"화면캡처"));
     }
 
     #[test]

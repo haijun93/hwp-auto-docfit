@@ -54,7 +54,8 @@ pub const WM_SETTINGS: u32 = WM_APP + 6;
 const HOTKEY_ID: i32 = 1;
 const TIMER_READ: usize = 1;
 const READ_DELAY_MS: u32 = 60; // 연달아 오는 변경 알림을 한 번으로(복사 중간 상태 읽기 방지)
-const RECENT: usize = 50;
+/// 메모리에 두는 최근 목록 개수(빠른 목록은 분류를 이 목록에서 먼저 거른다).
+pub const RECENT: usize = 50;
 const MAIN_CLASS: &str = "HwpAutoDocFit.KAgentMain";
 
 pub enum TimelineMsg {
