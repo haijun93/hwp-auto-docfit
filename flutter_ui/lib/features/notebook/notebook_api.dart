@@ -1,6 +1,8 @@
 /// 노트북(개발자 모드) 화면용 API. klib의 nb_* 명령을 Python 'notebook' 브리지로 부른다.
 library;
 
+import '../library/library_api.dart';
+
 class Notebook {
   const Notebook({required this.id, required this.name});
   final int id;
@@ -15,6 +17,7 @@ class NbSource {
     required this.status,
     required this.paragraphCount,
     this.origin = '',
+    this.itemId,
   });
   final int id;
   final String displayName;
@@ -22,6 +25,26 @@ class NbSource {
   final String status;
   final int paragraphCount;
   final String origin;
+
+  /// 자료함 항목에서 온 출처면 그 항목 id(klib nb_source.item_id). 아니면 null.
+  final String? itemId;
+}
+
+/// 자료함 항목을 출처로 넣은 결과. [reused]면 이미 출처에 있어 새로 만들지 않았다.
+class NbItemSourceResult {
+  const NbItemSourceResult({required this.sourceId, required this.reused});
+  final int sourceId;
+  final bool reused;
+}
+
+/// 출처의 원본 자료함 항목(klib nb_source_item). [found]가 false면 [reason]에 까닭이 있다.
+class NbSourceItemLink {
+  const NbSourceItemLink({required this.found, this.boxId, this.itemId, this.displayName = '', this.reason = ''});
+  final bool found;
+  final String? boxId;
+  final String? itemId;
+  final String displayName;
+  final String reason;
 }
 
 class NbParagraph {
@@ -139,6 +162,12 @@ abstract class NotebookApi {
   /// 파일 경로만 klib에 넘긴다(추출은 엔진/추출 서비스가 맡음).
   Future<int> addSource(int notebookId, String path);
   Future<void> removeSource(int notebookId, int sourceId);
+
+  /// 자료함 항목을 출처로 넣는다(klib nb_source_from_item). 이미 출처면 그 출처를 돌려주고 reused=true.
+  Future<NbItemSourceResult> addSourceFromItem(int notebookId, String itemId);
+
+  /// 출처가 나온 자료함 항목을 찾는다(klib nb_source_item).
+  Future<NbSourceItemLink> sourceItem(int notebookId, int sourceId);
   Future<List<NbParagraph>> paragraphs(int notebookId, int sourceId);
   Future<List<NbHit>> search(int notebookId, String query, {List<int>? sourceIds, int limit = 20});
 
@@ -214,8 +243,30 @@ class BridgeNotebookApi implements NotebookApi {
         status: _str(r['status']),
         paragraphCount: _int(r['paragraph_count']),
         origin: _str(r['origin']),
+        itemId: r['item_id'] == null ? null : _str(r['item_id']),
       ),
   ];
+
+  @override
+  Future<NbItemSourceResult> addSourceFromItem(int notebookId, String itemId) async {
+    final id = int.tryParse(itemId.trim());
+    if (id == null) throw StateError('잘못된 자료함 항목 id입니다: $itemId');
+    final r = await _request('nb_source_from_item', {'notebook_id': notebookId, 'item_id': id});
+    return NbItemSourceResult(sourceId: _int(r['id']), reused: r['reused'] == true);
+  }
+
+  @override
+  Future<NbSourceItemLink> sourceItem(int notebookId, int sourceId) async {
+    final r = await _request('nb_source_item', {'notebook_id': notebookId, 'source_id': sourceId});
+    final found = r['found'] == true;
+    return NbSourceItemLink(
+      found: found,
+      boxId: r['box_id'] == null ? null : _str(r['box_id']),
+      itemId: r['item_id'] == null ? null : _str(r['item_id']),
+      displayName: _str(r['display_name']),
+      reason: found ? '' : (r['reason'] == null ? '자료함 항목을 찾을 수 없습니다.' : _str(r['reason'])),
+    );
+  }
 
   @override
   Future<int> addSource(int notebookId, String path) async =>
@@ -365,9 +416,13 @@ class BridgeNotebookApi implements NotebookApi {
 
 /// 시험·미리보기용 메모리 구현. 파일 내용은 [fileContents]에서 읽고, 없으면 파일 이름을 한 문단으로 쓴다.
 class InMemoryNotebookApi implements NotebookApi {
-  InMemoryNotebookApi({Map<String, String>? fileContents}) : _files = fileContents ?? const {};
+  InMemoryNotebookApi({Map<String, String>? fileContents, this.library}) : _files = fileContents ?? const {};
 
   final Map<String, String> _files;
+
+  /// 자료함 항목 연결(addSourceFromItem·sourceItem)에 쓰는 자료함. 없으면 그 두 기능은 오류를 낸다.
+  final LibraryApi? library;
+  final _sourceItems = <int, String>{};
   final _notebooks = <Notebook>[];
   final _sources = <int, List<NbSource>>{};
   final _paragraphs = <int, List<NbParagraph>>{};
@@ -414,6 +469,56 @@ class InMemoryNotebookApi implements NotebookApi {
   Future<void> removeSource(int notebookId, int sourceId) async {
     _sources[notebookId]?.removeWhere((s) => s.id == sourceId);
     _paragraphs.remove(sourceId);
+    _sourceItems.remove(sourceId);
+  }
+
+  Future<LibraryItem?> _libraryItem(String itemId) async {
+    final lib = library;
+    if (lib == null) throw StateError('자료함이 연결되지 않았습니다.');
+    for (final box in await lib.listBoxes()) {
+      final item = (await lib.listItems(box.id)).where((i) => i.id == itemId).firstOrNull;
+      if (item != null) return item;
+    }
+    return null;
+  }
+
+  @override
+  Future<NbItemSourceResult> addSourceFromItem(int notebookId, String itemId) async {
+    if (!_notebooks.any((n) => n.id == notebookId)) throw StateError('노트북을 찾을 수 없습니다.');
+    final item = await _libraryItem(itemId);
+    if (item == null) throw StateError('해당 자료 항목을 찾을 수 없습니다.');
+    for (final s in _sources[notebookId] ?? const <NbSource>[]) {
+      if (_sourceItems[s.id] == itemId) return NbItemSourceResult(sourceId: s.id, reused: true);
+    }
+    final path = item.source?.trim() ?? '';
+    if (path.isEmpty) throw StateError('이 자료 항목에는 파일 경로가 없어 출처로 추가할 수 없습니다.');
+    final id = await addSource(notebookId, path);
+    _sourceItems[id] = itemId;
+    final list = _sources[notebookId]!;
+    final index = list.indexWhere((s) => s.id == id);
+    final s = list[index];
+    list[index] = NbSource(
+      id: s.id,
+      displayName: item.title.isEmpty ? s.displayName : item.title,
+      kind: s.kind,
+      status: s.status,
+      paragraphCount: s.paragraphCount,
+      origin: s.origin,
+      itemId: itemId,
+    );
+    return NbItemSourceResult(sourceId: id, reused: false);
+  }
+
+  @override
+  Future<NbSourceItemLink> sourceItem(int notebookId, int sourceId) async {
+    if (!(_sources[notebookId] ?? const <NbSource>[]).any((s) => s.id == sourceId)) {
+      throw StateError('출처를 찾을 수 없습니다.');
+    }
+    final itemId = _sourceItems[sourceId];
+    if (itemId == null) return const NbSourceItemLink(found: false, reason: '자료함 항목과 연결되지 않은 출처입니다.');
+    final item = await _libraryItem(itemId);
+    if (item == null) return NbSourceItemLink(found: false, itemId: itemId, reason: '자료함 항목이 삭제되었습니다.');
+    return NbSourceItemLink(found: true, boxId: item.boxId, itemId: item.id, displayName: item.title);
   }
 
   @override

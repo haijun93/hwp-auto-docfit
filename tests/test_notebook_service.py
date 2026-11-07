@@ -235,5 +235,23 @@ class DesktopNotebookTests(unittest.TestCase):
         self.assertEqual(bridge.library({"cmd": "lib_take_drop"})["paths"], [])
         self.assertEqual(bridge.library({"cmd": "lib_drop_watch", "active": False})["drop_target"], "documents")
 
+    def test_item_link_requests_from_flutter_reach_klib(self):
+        """자료함↔노트북 화면이 보내는 요청 모양(BridgeNotebookApi)이 notebook 브리지를 거쳐 klib에 그대로 간다."""
+        bridge = make_desktop_bridge()
+        fake = FakeBridge()
+        with tempfile.TemporaryDirectory() as tmp:
+            fake.item = {"id": 5, "box_id": 2, "source_path": str(Path(tmp) / "예산.hwpx")}
+            fake.reused = True
+            add = {"cmd": "nb_source_from_item", "notebook_id": 3, "item_id": 5}
+            look = {"cmd": "nb_source_item", "notebook_id": 3, "source_id": 9}
+            with mock.patch("docfit_app.library_bridge.LibraryBridge", return_value=fake):
+                added = bridge.notebook(add)
+                bridge.notebook(look)
+        # '이미 출처에 있음' 표시는 klib의 reused 값을 그대로 쓴다.
+        self.assertEqual((added["ok"], added["id"], added["reused"]), (True, 9, True))
+        self.assertEqual([c["cmd"] for c in fake.calls], ["item_get", "nb_source_from_item", "nb_source_item"])
+        self.assertEqual(fake.calls[1], add)
+        self.assertEqual(fake.calls[2], look)
+
 if __name__ == "__main__":
     unittest.main()

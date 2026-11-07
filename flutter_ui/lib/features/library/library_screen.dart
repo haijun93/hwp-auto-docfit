@@ -6,7 +6,10 @@ import 'package:flutter/services.dart';
 import 'package:file_selector/file_selector.dart';
 
 import '../../core/drop_events.dart';
+import '../notebook/notebook_api.dart';
 import 'library_api.dart';
+
+String _errorText(Object error) => error.toString().replaceFirst(RegExp(r'^(Bad state|StateError): '), '');
 
 class LibraryClipboardData {
   const LibraryClipboardData({this.text, this.filePath});
@@ -65,7 +68,17 @@ class LibraryScreen extends StatefulWidget {
     this.folderPicker,
     this.scanPollInterval = const Duration(milliseconds: 400),
     this.watchDropEvents,
+    this.notebookApi,
+    this.initialBoxId,
+    this.initialItemId,
   });
+
+  /// 있으면 항목 메뉴에 '노트북에 출처로 추가'가 나타난다.
+  final NotebookApi? notebookApi;
+
+  /// 처음 열 때 고를 자료함과 강조할 항목(노트북 출처의 '자료함에서 보기').
+  final String? initialBoxId;
+  final String? initialItemId;
 
   /// 창에 파일을 놓았다는 알림 구독(시험에서 대체). 기본은 'docfit-library-files-dropped' 창 이벤트.
   final void Function() Function(void Function() onDrop)? watchDropEvents;
@@ -268,12 +281,58 @@ class _LibraryScreenState extends State<LibraryScreen> {
       return;
     }
     if (!mounted) return;
+    final target = _pendingFocusBoxId;
+    final targetBox = target == null ? null : boxes.where((b) => b.id == target).firstOrNull;
     setState(() {
       _boxes = boxes;
+      if (targetBox != null) _selectedBox = targetBox;
       _selectedBox ??= boxes.isEmpty ? null : boxes.first;
+      if (target != null && targetBox == null) {
+        _statusMessage = '자료함을 찾을 수 없습니다(삭제되었을 수 있습니다).';
+      }
     });
+    _pendingFocusBoxId = null;
     final selected = _selectedBox;
     if (selected != null) await _loadBoxContent(selected.id);
+    final itemId = _pendingFocusItemId;
+    _pendingFocusItemId = null;
+    if (targetBox != null && itemId != null && mounted) {
+      final item = _items.where((i) => i.id == itemId).firstOrNull;
+      setState(() {
+        _highlightedItemId = item?.id;
+        _statusMessage = item == null
+            ? '자료함 항목을 찾을 수 없습니다(삭제되었을 수 있습니다).'
+            : '“${item.title}” 항목입니다.';
+      });
+    }
+  }
+
+  /// 처음 열 때 고르고 강조할 자료함·항목(한 번만 쓴다).
+  late String? _pendingFocusBoxId = widget.initialBoxId;
+  late String? _pendingFocusItemId = widget.initialItemId;
+
+  /// 항목을 노트북 출처로 넣는다. 노트북을 고르게 하고, 이미 출처면 그렇다고 알린다.
+  Future<void> _addToNotebook(LibraryItem item) async {
+    final notebooks = widget.notebookApi;
+    if (notebooks == null) return;
+    if ((item.source ?? '').trim().isEmpty) {
+      setState(() => _statusMessage = '파일 경로가 있는 자료만 노트북 출처로 추가할 수 있습니다.');
+      return;
+    }
+    final notebook = await showDialog<Notebook>(
+      context: context,
+      builder: (context) => _NotebookPickDialog(api: notebooks, itemTitle: item.title),
+    );
+    if (notebook == null || !mounted) return;
+    try {
+      final result = await notebooks.addSourceFromItem(notebook.id, item.id);
+      if (!mounted) return;
+      setState(() => _statusMessage = result.reused
+          ? '이미 “${notebook.name}” 노트북 출처에 있습니다.'
+          : '“${item.title}”을(를) “${notebook.name}” 노트북 출처로 추가했습니다.');
+    } catch (error) {
+      if (mounted) setState(() => _statusMessage = '노트북에 추가하지 못했습니다: ${_errorText(error)}');
+    }
   }
 
   Future<void> _loadBoxContent(String boxId) async {
@@ -741,6 +800,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       onDeleteItem: _deleteItem,
       onOpenItem: _openItem,
       onMoveToSpace: _moveItemToSpace,
+      onAddToNotebook: widget.notebookApi == null ? null : _addToNotebook,
       highlightedItemId: _highlightedItemId,
     );
   }
@@ -767,6 +827,7 @@ class _LibraryQuadrant extends StatelessWidget {
     required this.onOpenItem,
     required this.onMoveToSpace,
     required this.highlightedItemId,
+    this.onAddToNotebook,
   });
 
   final LibrarySpace space;
@@ -787,6 +848,7 @@ class _LibraryQuadrant extends StatelessWidget {
   final ValueChanged<LibraryItem> onOpenItem;
   final void Function(LibraryItem, LibrarySpace) onMoveToSpace;
   final String? highlightedItemId;
+  final ValueChanged<LibraryItem>? onAddToNotebook;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -840,6 +902,7 @@ class _LibraryQuadrant extends StatelessWidget {
                           onRename: () => onRenameItem(item),
                           onDelete: () => onDeleteItem(item),
                           onMoveToSpace: (space) => onMoveToSpace(item, space),
+                          onAddToNotebook: onAddToNotebook == null ? null : () => onAddToNotebook!(item),
                         ),
                       ),
                     ),
@@ -877,7 +940,7 @@ class _LibraryQuadrant extends StatelessWidget {
 }
 
 class _LibraryCard extends StatelessWidget {
-  const _LibraryCard({super.key, required this.item, required this.width, required this.height, required this.selected, this.onTap, this.onDoubleTap, this.onRename, this.onDelete, this.onMoveToSpace});
+  const _LibraryCard({super.key, required this.item, required this.width, required this.height, required this.selected, this.onTap, this.onDoubleTap, this.onRename, this.onDelete, this.onMoveToSpace, this.onAddToNotebook});
   final LibraryItem item;
   final double width;
   final double height;
@@ -887,6 +950,10 @@ class _LibraryCard extends StatelessWidget {
   final VoidCallback? onRename;
   final VoidCallback? onDelete;
   final ValueChanged<LibrarySpace>? onMoveToSpace;
+  final VoidCallback? onAddToNotebook;
+
+  /// 메뉴가 있는 카드(드래그 미리보기 카드에는 없다).
+  bool get _hasMenu => onRename != null || onDelete != null || onMoveToSpace != null || onAddToNotebook != null;
 
   IconData get _icon => switch (item.kind) {
     LibraryItemKind.file => Icons.insert_drive_file_outlined, LibraryItemKind.folder => Icons.folder_outlined,
@@ -907,29 +974,55 @@ class _LibraryCard extends StatelessWidget {
           child: InkWell(
             onTap: onTap,
             onDoubleTap: onDoubleTap,
-            onSecondaryTap: () => _showMenu(context),
-            onLongPress: () => _showMenu(context),
+            onSecondaryTapUp: _hasMenu ? (details) => _showMenu(context, details.globalPosition) : null,
+            onLongPress: _hasMenu ? () => _showMenu(context, null) : null,
             child: Padding(
-              padding: const EdgeInsets.all(8),
+              padding: EdgeInsets.fromLTRB(8, 8, _hasMenu ? 0 : 8, 8),
               child: Row(children: [
                 Icon(_icon, size: 20),
                 const SizedBox(width: 6),
                 Expanded(child: Text(item.title, maxLines: 2, overflow: TextOverflow.ellipsis)),
+                if (_hasMenu)
+                  Builder(builder: (buttonContext) => IconButton(
+                    key: ValueKey('libraryItemMenu-${item.id}'),
+                    tooltip: '자료 메뉴',
+                    onPressed: () => _showMenu(buttonContext, null),
+                    constraints: const BoxConstraints.tightFor(width: 24, height: 32),
+                    padding: EdgeInsets.zero,
+                    iconSize: 18,
+                    icon: const Icon(Icons.more_vert),
+                  )),
               ]),
             ),
           ),
         ),
       );
 
-  void _showMenu(BuildContext context) => showMenu<String>(context: context, position: const RelativeRect.fromLTRB(80, 80, 0, 0), items: const [
-    PopupMenuItem(value: 'rename', child: Text('이름 바꾸기')), PopupMenuItem(value: 'delete', child: Text('삭제')),
-    PopupMenuItem(value: 'core', child: Text('핵심자료로 이동')), PopupMenuItem(value: 'basis', child: Text('기초자료로 이동')),
-    PopupMenuItem(value: 'reference', child: Text('참고자료로 이동')), PopupMenuItem(value: 'temp', child: Text('임시저장소로 이동')),
-  ]).then((action) {
-    if (action == 'rename') onRename?.call();
-    if (action == 'delete') onDelete?.call();
-    for (final space in LibrarySpace.values) { if (action == space.name) onMoveToSpace?.call(space); }
-  });
+  /// 항목 메뉴. [at]이 있으면 그 화면 위치(오른쪽 클릭), 없으면 [context] 위젯 옆에 연다.
+  void _showMenu(BuildContext context, Offset? at) {
+    final overlay = Overlay.of(context).context.findRenderObject();
+    final box = context.findRenderObject();
+    var position = const RelativeRect.fromLTRB(80, 80, 0, 0);
+    if (overlay is RenderBox && at != null) {
+      final local = overlay.globalToLocal(at);
+      position = RelativeRect.fromRect(local & const Size(1, 1), Offset.zero & overlay.size);
+    } else if (overlay is RenderBox && box is RenderBox && box.hasSize) {
+      final topLeft = box.localToGlobal(Offset.zero, ancestor: overlay);
+      position = RelativeRect.fromRect(topLeft & box.size, Offset.zero & overlay.size);
+    }
+    showMenu<String>(context: context, position: position, items: [
+      if (onAddToNotebook != null)
+        const PopupMenuItem(key: ValueKey('libraryMenuAddToNotebook'), value: 'notebook', child: Text('노트북에 출처로 추가')),
+      const PopupMenuItem(value: 'rename', child: Text('이름 바꾸기')), const PopupMenuItem(value: 'delete', child: Text('삭제')),
+      const PopupMenuItem(value: 'core', child: Text('핵심자료로 이동')), const PopupMenuItem(value: 'basis', child: Text('기초자료로 이동')),
+      const PopupMenuItem(value: 'reference', child: Text('참고자료로 이동')), const PopupMenuItem(value: 'temp', child: Text('임시저장소로 이동')),
+    ]).then((action) {
+      if (action == 'notebook') onAddToNotebook?.call();
+      if (action == 'rename') onRename?.call();
+      if (action == 'delete') onDelete?.call();
+      for (final space in LibrarySpace.values) { if (action == space.name) onMoveToSpace?.call(space); }
+    });
+  }
 }
 
 class _RelationPainter extends CustomPainter {
@@ -955,4 +1048,95 @@ class _RelationPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _RelationPainter oldDelegate) =>
       oldDelegate.relations != relations || oldDelegate.items != items;
+}
+
+/// '노트북에 출처로 추가'에서 노트북을 고르는 창. 노트북이 없으면 이름을 넣어 새로 만들 수 있다.
+class _NotebookPickDialog extends StatefulWidget {
+  const _NotebookPickDialog({required this.api, required this.itemTitle});
+  final NotebookApi api;
+  final String itemTitle;
+
+  @override
+  State<_NotebookPickDialog> createState() => _NotebookPickDialogState();
+}
+
+class _NotebookPickDialogState extends State<_NotebookPickDialog> {
+  final _nameController = TextEditingController(text: '새 노트북');
+  List<Notebook> _notebooks = [];
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final list = await widget.api.listNotebooks();
+      if (mounted) setState(() => _notebooks = list);
+    } catch (error) {
+      if (mounted) setState(() => _error = _errorText(error));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _create() async {
+    final name = _nameController.text.trim();
+    if (name.isEmpty) return;
+    try {
+      final id = await widget.api.createNotebook(name);
+      if (mounted) Navigator.of(context).pop(Notebook(id: id, name: name));
+    } catch (error) {
+      if (mounted) setState(() => _error = _errorText(error));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('노트북에 출처로 추가'),
+        content: SizedBox(
+          width: 400,
+          height: 300,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Text('“${widget.itemTitle}”을(를) 넣을 노트북을 고르세요.', maxLines: 2, overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 8),
+            if (_loading) const LinearProgressIndicator(minHeight: 2),
+            if (_error != null) Text(_error!, key: const ValueKey('libraryNbPickError'), style: const TextStyle(color: Colors.red)),
+            Expanded(
+              child: !_loading && _notebooks.isEmpty
+                  ? const Center(child: Text('노트북이 없습니다. 아래에서 새로 만드세요.'))
+                  : ListView(children: [
+                      for (final nb in _notebooks)
+                        ListTile(
+                          key: ValueKey('libraryNbPick-${nb.id}'),
+                          dense: true,
+                          leading: const Icon(Icons.menu_book_outlined, size: 18),
+                          title: Text(nb.name, overflow: TextOverflow.ellipsis),
+                          onTap: () => Navigator.of(context).pop(nb),
+                        ),
+                    ]),
+            ),
+            Row(children: [
+              Expanded(child: TextField(
+                key: const ValueKey('libraryNbPickNewName'),
+                controller: _nameController,
+                decoration: const InputDecoration(labelText: '새 노트북 이름', isDense: true),
+                onSubmitted: (_) => _create(),
+              )),
+              const SizedBox(width: 8),
+              TextButton(key: const ValueKey('libraryNbPickCreate'), onPressed: _create, child: const Text('만들어 추가')),
+            ]),
+          ]),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('취소'))],
+      );
 }
