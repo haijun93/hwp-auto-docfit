@@ -129,12 +129,16 @@ class TableUnitsListData {
     this.source,
     required this.thumbnailsReady,
     this.recent = const [],
+    this.favorites = const [],
     required this.templates,
   });
 
   final String? source;
   final bool thumbnailsReady;
   final List<String> recent;
+
+  /// 즐겨찾기 id(사용자가 별표를 누른 순서).
+  final List<String> favorites;
   final List<TableTemplateInfo> templates;
 
   factory TableUnitsListData.fromJson(Map<dynamic, dynamic> json) =>
@@ -142,6 +146,9 @@ class TableUnitsListData {
         source: json['source'] as String?,
         thumbnailsReady: json['thumbnails_ready'] == true,
         recent: (json['recent'] as List? ?? const [])
+            .map((e) => '$e')
+            .toList(),
+        favorites: (json['favorites'] as List? ?? const [])
             .map((e) => '$e')
             .toList(),
         templates: (json['templates'] as List? ?? const [])

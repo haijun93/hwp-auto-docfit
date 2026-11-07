@@ -873,4 +873,82 @@ void main() {
       expect(find.byType(Scrollbar), findsWidgets);
     },
   );
+  testWidgets('즐겨찾기 칩은 favorites 순서, 검색은 정확도·라벨 서식 뒤 순서', (tester) async {
+    final data = sampleListData();
+    final templates = (data['templates'] as List).cast<Map<String, Object?>>();
+    templates.add({
+      'id': '0:9',
+      'category': '라벨 서식',
+      'name': '라벨 서식 · 모양 1',
+      'rows': 1,
+      'cols': 1,
+      'thumbnail': null,
+      'favorite': true,
+      'units': {'row': null, 'col': null},
+    });
+    templates[2]['name'] = '월간 일정표 · 모양 1';
+    templates[2]['favorite'] = true;
+    data['favorites'] = ['0:9', '0:3', '0:2'];
+    Future<Object?> api(String name, List<Object?> args) async {
+      final action = args[0] as String;
+      if (action == 'list') return envelope(data);
+      if (action == 'preview') return envelope(samplePreview());
+      return envelope({});
+    }
+
+    await pumpScreen(tester, api: api);
+    double x(String id) =>
+        tester.getTopLeft(find.byKey(Key('templateCard_$id'))).dx +
+        tester.getTopLeft(find.byKey(Key('templateCard_$id'))).dy * 10000;
+
+    await tester.tap(find.byKey(const Key('categoryChip_즐겨찾기')));
+    await tester.pumpAndSettle();
+    // 라벨 서식이라도 사용자가 먼저 누른 즐겨찾기가 맨 앞.
+    expect(x('0:9') < x('0:3'), isTrue);
+    expect(x('0:3') < x('0:2'), isTrue);
+
+    await tester.tap(find.byKey(const Key('categoryChip_전체')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('searchTextField')), '모양 1');
+    await tester.pumpAndSettle();
+    // 둘 다 이름에 '모양 1'이 들어가 정확도가 같으면 라벨 서식이 뒤.
+    expect(x('0:3') < x('0:9'), isTrue);
+    expect(find.byKey(const Key('templateCard_0:1')), findsNothing);
+  });
+
+  testWidgets('조직도(팀 수 조절)는 안내 문구 대신 열 단위 −/+를 보인다', (tester) async {
+    final data = sampleListData();
+    final templates = (data['templates'] as List).cast<Map<String, Object?>>();
+    templates.first
+      ..['category'] = '조직도'
+      ..['name'] = '조직도'
+      ..['units'] = {
+        'row': null,
+        'col': {
+          'count': 6,
+          'min': 2,
+          'max': 9,
+          'core': 2,
+          'sep': 1,
+          'kind': 'org_chart_wide',
+        },
+      };
+    Future<Object?> api(String name, List<Object?> args) async {
+      final action = args[0] as String;
+      if (action == 'list') return envelope(data);
+      if (action == 'preview') return envelope(samplePreview());
+      return envelope({});
+    }
+
+    await pumpScreen(tester, api: api);
+    expect(find.byKey(const Key('fixedTableNotice')), findsNothing);
+    expect(find.byKey(const Key('btnColMinus')), findsOneWidget);
+    expect(find.byKey(const Key('btnColPlus')), findsOneWidget);
+    expect(find.byKey(const Key('btnRowPlus')), findsNothing);
+    expect(find.text('열 단위 6개'), findsOneWidget);
+    expect(find.text('정보단위 열 6개'), findsWidgets);
+    await tester.tap(find.byKey(const Key('btnColPlus')));
+    await tester.pumpAndSettle();
+    expect(find.text('열 단위 7개'), findsOneWidget);
+  });
 }

@@ -148,7 +148,11 @@ def _plans():
     result["추진절차(가로세로) · 모양 1"]["col"]["kind"] = "grid_flow"
     add("추진절차(가로세로) · 사용자형", (2, 1, 5, 1), (0, 1, 2, 1), signature="1660c86716c32a08")
     add("추진절차(세로) · 모양 1", (2, 1, 6, 1))
-    add("신구대조표 · 모양 1", (1, 8, 1))
+    # 신구대조표 모양 1: 왼쪽(현행) 칸과 오른쪽(개선) 칸이 한 줄씩 엇갈려 병합돼 있어 어느 행 경계에서 잘라도 병합 칸을
+    # 가로지른다. 예전에는 본문 8행 전체를 한 단위로 보아 늘리면 본문이 통째로 두 배가 됐다. 오른쪽 칸 하나(2행)와
+    # 그 옆 왼쪽 칸 하나를 한 정보단위로 보고, 엇갈린 모양을 유지한 채 끝에서 2행씩 붙이거나 뗀다(TMPL231).
+    add("신구대조표 · 모양 1", (1, 2, 4))
+    result["신구대조표 · 모양 1"]["row"]["kind"] = "staggered"
     add("신구대조표 · 사용자형", (1, 1, 4), signature="920eb8de103721f0")
     add("신구대조표 · 모양 2", (2, 1, 3))
     add("신구대조표 · 모양 3", (1, 2, 3))
@@ -355,6 +359,10 @@ def plan_for(template) -> dict:
     for axis, length in (("row", template["rows"]), ("col", template["cols"])):
         if plan[axis] is not None:
             if plan[axis].get("kind") in ("org_chart", "org_chart_wide"):
+                continue
+            if plan[axis].get("kind") == "staggered":
+                if axis != "row" or _staggered_layout(_flat(template["cell_meta"]), length, plan[axis]) is None:
+                    plan[axis] = None
                 continue
             try:
                 _validate(_flat(template["cell_meta"]), length, axis, plan[axis])
@@ -1384,6 +1392,151 @@ def _fill_weekly(table, plan):
         begin = end + _dt.timedelta(days=1)
 
 
+def _staggered_layout(cells, length, p):
+    """엇갈린 2행 단위(신구대조표 모양 1) 구조를 확인한다.
+
+    본문 [start, start + 2·count) 안의 각 열은 ① 1행·2행…2행·1행(count+1칸, 반 칸으로 시작·끝: lead) 또는
+    ② 2행 칸 count개(even)여야 하고, 본문 전체를 덮는 병합 칸(가운데 화살표 열 등)은 span만 바뀐다.
+    맞지 않으면 None.
+    """
+    if (any(type(p.get(k)) is not int for k in ("start", "count", "min", "max"))
+            or p.get("core") != 2 or p.get("sep", 0) != 0 or p["start"] < 0
+            or not 1 <= p["min"] <= p["count"] <= p["max"]):
+        return None
+    start, count = p["start"], p["count"]
+    end = start + 2 * count
+    if end > length:
+        return None
+    covers, columns = set(), {}
+    # 단위가 1개면 본문 2행만 덮는 칸과 2행 칸을 구별할 수 없어 처음 본 덮는 칸 목록을 쓴다.
+    known = p.get("_stagger_covers")
+    for c in cells:
+        lo, hi = c["row"], c["row"] + c["rowSpan"]
+        if ((c["row"], c["col"]) in known) if known is not None else (c["rowSpan"] > 1 and lo <= start and hi >= end):
+            covers.add((c["row"], c["col"]))
+        elif lo < end and hi > start:
+            if lo < start or hi > end or c["colSpan"] != 1:
+                return None
+            columns.setdefault(c["col"], []).append((lo, c["rowSpan"]))
+    lead, even = [], []
+    for col, spans in sorted(columns.items()):
+        spans.sort()
+        if [lo for lo, _ in spans] != [start + sum(s for _, s in spans[:i]) for i in range(len(spans))]:
+            return None
+        pattern = [s for _, s in spans]
+        if pattern == [1] + [2] * (count - 1) + [1]:
+            lead.append(col)
+        elif pattern == [2] * count:
+            even.append(col)
+        else:
+            return None
+    if not lead:
+        return None
+    return {"covers": covers, "lead": lead, "even": even}
+
+
+def _resize_staggered(table, p, target, object_ids, fill):
+    """엇갈린 2행 단위를 끝에서 붙이거나 뗀다. 반 칸(1행)으로 끝나는 열은 마지막 반 칸을 아래로 밀고 그 자리에
+    2행 칸을 넣고, 2행 칸만 있는 열은 끝에 2행 칸을 붙인다. 줄이기는 그 반대라 늘렸다 줄이면 원래 표와 같다."""
+    layout = _staggered_layout(_meta(table), int(table.get("rowCnt")), p)
+    if layout is None:
+        raise ValueError("엇갈린 병합 표의 구조가 정보단위 계획과 맞지 않습니다.")
+    p["_stagger_covers"] = set(layout["covers"])
+    sizes = _sizes(table, "row")
+    tcs = [tc for _, tc in _cells(table)]
+
+    def info(tc):
+        addr, span = tc.find(HP + "cellAddr"), tc.find(HP + "cellSpan")
+        return addr, span, int(addr.get("rowAddr")), int(addr.get("colAddr")), int(span.get("rowSpan"))
+
+    start, count = p["start"], p["count"]
+    if "_stagger_proto" not in p and count >= 2:
+        end = start + 2 * count
+        protos = {}
+        for tc in tcs:
+            _, _, r, c, rs = info(tc)
+            for col, proto_row in ([(col, end - 3) for col in layout["lead"]]
+                                   + [(col, end - 2) for col in layout["even"]]):
+                if c == col and r == proto_row and rs == 2:
+                    protos[col] = [copy.deepcopy(tc), None]
+            for col, prev_row in ([(col, end - 5) for col in layout["lead"]]
+                                  + [(col, end - 4) for col in layout["even"]]):
+                if c == col and r == prev_row and rs == 2:
+                    protos.setdefault(col, [None, None])
+                    protos[col][1] = copy.deepcopy(tc)
+        p["_stagger_proto"] = (count, protos, sizes[end - 3:end - 1])
+    if target > count and "_stagger_proto" not in p:
+        raise ValueError("엇갈린 칸의 복제 원본이 없습니다. 원본 템플릿에서 다시 조절해 주세요.")
+    covers = layout["covers"]
+    while count != target:
+        end = start + 2 * count
+        if target > count:
+            base, protos, heights = p["_stagger_proto"]
+            removed = p.get("_stagger_removed") or []
+            for tc in tcs:
+                addr, span, r, c, rs = info(tc)
+                if (r, c) in covers:
+                    span.set("rowSpan", str(rs + 2))
+                elif r >= end or (c in layout["lead"] and r == end - 1):
+                    addr.set("rowAddr", str(r + 2))
+            if removed:
+                # 줄이며 뗀 칸을 그대로 되살린다(줄였다 다시 늘리면 원래 표와 같다).
+                restored, restored_heights = removed.pop()
+                for col, cell in restored:
+                    cell = copy.deepcopy(cell)
+                    cell.find(HP + "cellAddr").set("rowAddr", str(end - 1 if col in layout["lead"] else end))
+                    tcs.append(cell)
+                sizes[end - 1:end - 1] = list(restored_heights)
+                count += 1
+                continue
+            for col in layout["lead"] + layout["even"]:
+                proto, previous = protos[col]
+                clone = copy.deepcopy(proto)
+                addr = clone.find(HP + "cellAddr")
+                addr.set("rowAddr", str(end - 1 if col in layout["lead"] else end))
+                _fill_clone(clone, previous, fill, count - base + 1)
+                object_ids.renew(clone)
+                tcs.append(clone)
+            sizes[end - 1:end - 1] = list(heights)
+            count += 1
+        else:
+            taken = []
+            for tc in list(tcs):
+                addr, span, r, c, rs = info(tc)
+                if (r, c) in covers:
+                    span.set("rowSpan", str(rs - 2))
+                elif (c in layout["lead"] and r == end - 3) or (c in layout["even"] and r == end - 2):
+                    tcs.remove(tc)
+                    taken.append((c, tc))
+                elif c in layout["lead"] and r == end - 1:
+                    addr.set("rowAddr", str(end - 3))
+                elif r >= end:
+                    addr.set("rowAddr", str(r - 2))
+            p.setdefault("_stagger_removed", []).append((taken, sizes[end - 3:end - 1]))
+            del sizes[end - 3:end - 1]
+            count -= 1
+        # 덮는 칸의 기준 좌표는 그대로라 covers 집합을 다시 만들 필요가 없다.
+    rows = table.findall(HP + "tr")
+    position = list(table).index(rows[0])
+    prototype_row = copy.deepcopy(rows[0])
+    for tc in prototype_row.findall(HP + "tc"):
+        prototype_row.remove(tc)
+    for row in rows:
+        table.remove(row)
+    by_row = {}
+    for tc in tcs:
+        _, _, r, c, rs = info(tc)
+        tc.find(HP + "cellSz").set("height", str(sum(sizes[r:r + rs])))
+        by_row.setdefault(r, []).append((c, tc))
+    for index in range(len(sizes)):
+        row = copy.deepcopy(prototype_row)
+        row.extend(tc for _, tc in sorted(by_row.get(index, []), key=lambda item: item[0]))
+        table.insert(position + index, row)
+    table.set("rowCnt", str(len(sizes)))
+    table.find(HP + "sz").set("height", str(sum(sizes)))
+    p["count"] = target
+
+
 def resize_table(tbl_element, plan, row_count=None, col_count=None, *, id_roots=(), fill="increment", cell_texts=None):
     """제자리 변경. plan의 count와 내부 복제 원본도 갱신하여 연속 조절을 지원한다.
 
@@ -1455,7 +1608,9 @@ def resize_table(tbl_element, plan, row_count=None, col_count=None, *, id_roots=
             raise ValueError("이 표에는 조절할 " + ("행" if axis == "row" else "열") + " 정보단위가 없습니다.")
         if type(target) is not int or not p["min"] <= target <= p["max"]:
             raise ValueError(f"정보단위 개수는 {p['min']}~{p['max']} 사이 정수로 지정해 주세요.")
-        if target != p["count"]:
+        if p.get("kind") == "staggered":
+            _resize_staggered(working, p, target, object_ids, fill)
+        elif target != p["count"]:
             _resize_axis(working, axis, p, target, object_ids, fill)
         else:
             _validate(_meta(working), int(working.get(axis + "Cnt")), axis, p)
