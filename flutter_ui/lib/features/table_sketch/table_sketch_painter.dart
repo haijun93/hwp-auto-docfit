@@ -113,7 +113,21 @@ class TableSketchPainter extends CustomPainter {
     this.resizeBox,
     this.guideXs = const {},
     this.guideYs = const {},
+    this.guideSpacing = const [],
+    this.guideSameSize = const [],
+    this.selectedBounds,
+    this.regionCells = const {},
   });
+
+  /// 같은 간격 표시 선분(격자 단위).
+  final List<(Offset, Offset)> guideSpacing;
+
+  /// 고른 것과 크기가 같은 다른 개체 테두리(격자 단위)와 고른 것의 테두리.
+  final List<Rect> guideSameSize;
+  final Rect? selectedBounds;
+
+  /// '칸 색' 도구로 고른 칸의 격자 칸들.
+  final Set<(int, int)> regionCells;
 
   final TableSketchDoc doc;
   final double cellSize;
@@ -189,6 +203,16 @@ class TableSketchPainter extends CustomPainter {
         dst,
         Paint()..filterQuality = FilterQuality.medium,
       );
+    }
+    // '칸 색'으로 고른 칸(선 아래, 연한 초록).
+    if (regionCells.isNotEmpty) {
+      final mark = Paint()..color = const Color(0x3316A34A);
+      for (final (x, y) in regionCells) {
+        canvas.drawRect(
+          Rect.fromLTWH(x * cellSize, y * cellSize, cellSize, cellSize),
+          mark,
+        );
+      }
     }
     final target = imageTarget;
     if (target != null) {
@@ -295,6 +319,53 @@ class TableSketchPainter extends CustomPainter {
         ..lineTo(size.width, y * cellSize);
       canvas.drawPath(createDashedPath(path, 6.0, 4.0), guide);
     }
+    // 같은 간격: 사이 구간을 빨간 점선과 양끝 짧은 막대로.
+    for (final (a, b) in guideSpacing) {
+      final p = a * cellSize, q = b * cellSize;
+      canvas.drawPath(
+        createDashedPath(Path()..moveTo(p.dx, p.dy)..lineTo(q.dx, q.dy), 4.0, 3.0),
+        guide,
+      );
+      final d = q - p;
+      if (d.distance == 0) continue;
+      final n = Offset(-d.dy, d.dx) / d.distance * 5;
+      canvas.drawLine(p - n, p + n, guide);
+      canvas.drawLine(q - n, q + n, guide);
+    }
+    // 같은 크기: 고른 것과 같은 크기의 개체 아래(오른쪽)에 빨간 점선 치수 표시.
+    final selected = selectedBounds;
+    for (final r in [...guideSameSize, ?selected]) {
+      final rect = Rect.fromLTRB(
+        r.left * cellSize,
+        r.top * cellSize,
+        r.right * cellSize,
+        r.bottom * cellSize,
+      );
+      if (selected != null && (r.width - selected.width).abs() < 1e-9) {
+        canvas.drawPath(
+          createDashedPath(
+            Path()
+              ..moveTo(rect.left, rect.bottom + 6)
+              ..lineTo(rect.right, rect.bottom + 6),
+            4.0,
+            3.0,
+          ),
+          guide,
+        );
+      }
+      if (selected != null && (r.height - selected.height).abs() < 1e-9) {
+        canvas.drawPath(
+          createDashedPath(
+            Path()
+              ..moveTo(rect.right + 6, rect.top)
+              ..lineTo(rect.right + 6, rect.bottom),
+            4.0,
+            3.0,
+          ),
+          guide,
+        );
+      }
+    }
 
     // 6-2. 사각형 크기 조절 손잡이
     final box = resizeBox;
@@ -378,11 +449,7 @@ class TableSketchPainter extends CustomPainter {
     final p1 = Offset(line.x1 * cellSize, line.y1 * cellSize);
     final p2 = Offset(line.x2 * cellSize, line.y2 * cellSize);
 
-    final baseStrokeWidth = switch (line.width) {
-      'thick' => 3.0,
-      'double' => 1.0,
-      _ => 1.4,
-    };
+    final baseStrokeWidth = sketchStrokePx(line.width);
 
     final color = isPreview
         ? const Color(0xFF2563EB).withValues(alpha: 0.8)
@@ -488,7 +555,7 @@ class TableSketchPainter extends CustomPainter {
   ) {
     final paint = Paint()
       ..color = selected ? const Color(0xFF1D4ED8) : sketchColorValue(color)
-      ..strokeWidth = width == 'thick' ? 3 : 1.4
+      ..strokeWidth = width == 'double' ? 1.4 : sketchStrokePx(width)
       ..strokeCap = StrokeCap.round;
     canvas.drawLine(a, b, paint);
     if ((b - a).distance == 0) return;

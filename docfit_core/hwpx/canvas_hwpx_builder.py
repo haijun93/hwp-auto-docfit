@@ -10,7 +10,7 @@ from defusedxml import ElementTree as ET
 from docfit_core.session.canvas_commands import (
     InsertDiagramShapeCommand, InsertMindmapTreeCommand, InsertTableSketchCommand,
 )
-from docfit_core.table_sketch import UNIT_MM, normalize
+from docfit_core.table_sketch import UNIT_MM, _hwpx_width, _width_rank, normalize
 
 HP = '{http://www.hancom.co.kr/hwpml/2011/paragraph}'
 HH = '{http://www.hancom.co.kr/hwpml/2011/head}'
@@ -81,10 +81,10 @@ def _border(cell, ident):
     def line(tag, width, style):
         _add(node, HH+tag, type='NONE' if width == 'none' else 'DOUBLE_SLIM' if width == 'double' else
              {'solid': 'SOLID', 'dash': 'DASH', 'dot': 'DOT'}[style],
-             width={'none': '0.12 mm', 'thin': '0.12 mm', 'thick': '0.4 mm', 'double': '0.5 mm'}[width], color='#000000')
+             width=_hwpx_width(width), color='#000000')
     for side in ('left', 'right', 'top', 'bottom'):
         line(side+'Border', cell['borders'][side], cell['border_styles'][side])
-    diagonal = max(cell['diagonal_styles'].values(), key=lambda v: ('thin', 'thick', 'double').index(v[0]), default=('thin', 'solid'))
+    diagonal = max(cell['diagonal_styles'].values(), key=lambda v: _width_rank(v[0]), default=('thin', 'solid'))
     line('diagonal', *diagonal)
     return node
 

@@ -41,15 +41,21 @@ class SketchLine {
     this.style = 'solid',
     this.color = sketchBlack,
     this.layer,
+    this.group,
   });
 
   /// 속한 레이어 id. null이면 아직 정하지 않은 새 선(다음 정리 때 지금 레이어로 들어간다).
   final String? layer;
+
+  /// 묶음 id(파워포인트 '그룹'). 같은 id의 개체는 함께 골라지고 함께 옮겨진다.
+  final String? group;
   final int x1;
   final int y1;
   final int x2;
   final int y2;
-  final String width; // "thin" | "thick" | "double"
+
+  /// "thin"(0.12mm) | "thick"(0.4mm) | "double" | 한/글 굵기 목록 값("0.25 mm" 등, [sketchLineWidthMms]).
+  final String width;
   final String style; // "solid" | "dash" | "dot"
   final String color; // "#RRGGBB" (2.0.7 선 색, 기본 검정)
 
@@ -105,10 +111,11 @@ class SketchLine {
     y1: (json['y1'] as num?)?.toInt() ?? 0,
     x2: (json['x2'] as num?)?.toInt() ?? 0,
     y2: (json['y2'] as num?)?.toInt() ?? 0,
-    width: '${json['width'] ?? 'thin'}',
+    width: isSketchWidth(json['width']) ? json['width'] as String : 'thin',
     style: '${json['style'] ?? 'solid'}',
     color: normalizeSketchColor(json['color']) ?? sketchBlack,
     layer: json['layer'] is String ? json['layer'] as String : null,
+    group: json['group'] is String ? json['group'] as String : null,
   );
 
   Map<String, dynamic> toJson() => {
@@ -120,6 +127,7 @@ class SketchLine {
     'style': style,
     if (color != sketchBlack) 'color': color,
     if (layer != null) 'layer': layer,
+    if (group != null) 'group': group,
   };
 
   SketchLine copyWith({
@@ -131,6 +139,8 @@ class SketchLine {
     String? style,
     String? color,
     String? layer,
+    String? group,
+    bool clearGroup = false,
   }) => SketchLine(
     x1: x1 ?? this.x1,
     y1: y1 ?? this.y1,
@@ -140,8 +150,54 @@ class SketchLine {
     style: style ?? this.style,
     color: color ?? this.color,
     layer: layer ?? this.layer,
+    group: clearGroup ? null : (group ?? this.group),
   );
 }
+
+/// 한/글 '셀 테두리/배경' 굵기 목록(mm). 0.12는 'thin', 0.4는 'thick'으로 저장한다(예전 저장본과 같게).
+const sketchLineWidthMms = [
+  '0.1', '0.12', '0.15', '0.2', '0.25', '0.3', '0.4', '0.5', //
+  '0.6', '0.7', '1.0', '1.5', '2.0', '3.0', '4.0', '5.0',
+];
+
+/// 굵기 목록의 mm 값을 저장 값으로: '0.12' → 'thin', '0.4' → 'thick', 그 밖은 '0.25 mm' 꼴.
+String sketchWidthFromMm(String mm) => switch (mm) {
+  '0.12' => 'thin',
+  '0.4' => 'thick',
+  _ => '$mm mm',
+};
+
+/// 저장 값의 굵기(mm). 'double'은 한/글 이중선(0.5mm)과 같다. 모르는 값은 0.12.
+double sketchWidthMm(String width) => switch (width) {
+  'thin' => 0.12,
+  'thick' => 0.4,
+  'double' => 0.5,
+  _ => double.tryParse(width.replaceAll('mm', '').trim()) ?? 0.12,
+};
+
+/// 굵기 목록 표시 이름('0.12 mm', '이중').
+String sketchWidthLabel(String width) => width == 'double'
+    ? '이중'
+    : '${sketchLineWidthMms.firstWhere((mm) => sketchWidthFromMm(mm) == width, orElse: () => '0.12')} mm';
+
+/// 화면에 그릴 선 굵기(px). 얇은 선 1.4px·굵은 선 3px은 예전과 같다.
+double sketchStrokePx(String width) => switch (width) {
+  'double' => 1.0,
+  'thin' => 1.4,
+  'thick' => 3.0,
+  _ => (1.0 + sketchWidthMm(width) * 5).clamp(1.0, 14.0),
+};
+
+/// 허용하는 굵기 값인지(불러올 때 모르는 값은 'thin'으로 바꾼다).
+bool isSketchWidth(Object? width) =>
+    width == 'thin' ||
+    width == 'thick' ||
+    width == 'double' ||
+    (width is String &&
+        width.endsWith(' mm') &&
+        sketchLineWidthMms.contains(width.substring(0, width.length - 3)) &&
+        width != '0.12 mm' &&
+        width != '0.4 mm');
 
 const sketchBlack = '#000000';
 
@@ -215,19 +271,22 @@ class SketchArrow {
     this.style = 'solid',
     this.color = sketchBlack,
     this.layer,
+    this.group,
   });
   final int x1, y1, x2, y2;
   final String width, style, color;
   final String? layer;
+  final String? group;
   factory SketchArrow.fromJson(Map<dynamic, dynamic> json) => SketchArrow(
     x1: (json['x1'] as num?)?.toInt() ?? 0,
     y1: (json['y1'] as num?)?.toInt() ?? 0,
     x2: (json['x2'] as num?)?.toInt() ?? 0,
     y2: (json['y2'] as num?)?.toInt() ?? 0,
-    width: '${json['width'] ?? 'thin'}',
+    width: isSketchWidth(json['width']) ? json['width'] as String : 'thin',
     style: '${json['style'] ?? 'solid'}',
     color: normalizeSketchColor(json['color']) ?? sketchBlack,
     layer: json['layer'] is String ? json['layer'] as String : null,
+    group: json['group'] is String ? json['group'] as String : null,
   );
   Map<String, dynamic> toJson() => {
     'x1': x1,
@@ -238,18 +297,30 @@ class SketchArrow {
     'style': style,
     if (color != sketchBlack) 'color': color,
     if (layer != null) 'layer': layer,
+    if (group != null) 'group': group,
   };
-  SketchArrow copyWith({int? x1, int? y1, int? x2, int? y2, String? layer}) =>
-      SketchArrow(
-        x1: x1 ?? this.x1,
-        y1: y1 ?? this.y1,
-        x2: x2 ?? this.x2,
-        y2: y2 ?? this.y2,
-        width: width,
-        style: style,
-        color: color,
-        layer: layer ?? this.layer,
-      );
+  SketchArrow copyWith({
+    int? x1,
+    int? y1,
+    int? x2,
+    int? y2,
+    String? width,
+    String? style,
+    String? color,
+    String? layer,
+    String? group,
+    bool clearGroup = false,
+  }) => SketchArrow(
+    x1: x1 ?? this.x1,
+    y1: y1 ?? this.y1,
+    x2: x2 ?? this.x2,
+    y2: y2 ?? this.y2,
+    width: width ?? this.width,
+    style: style ?? this.style,
+    color: color ?? this.color,
+    layer: layer ?? this.layer,
+    group: clearGroup ? null : (group ?? this.group),
+  );
 }
 
 /// 표그림판 칸 글자 (x, y는 칸 번호, 왼쪽 위 격자점).
@@ -261,9 +332,11 @@ class SketchText {
     this.bold = false,
     this.align = 'center',
     this.layer,
+    this.group,
   });
 
   final String? layer;
+  final String? group;
   final int x;
   final int y;
   final String text;
@@ -277,6 +350,7 @@ class SketchText {
     bold: json['bold'] == true,
     align: '${json['align'] ?? 'center'}',
     layer: json['layer'] is String ? json['layer'] as String : null,
+    group: json['group'] is String ? json['group'] as String : null,
   );
 
   Map<String, dynamic> toJson() => {
@@ -286,6 +360,7 @@ class SketchText {
     'bold': bold,
     'align': align,
     if (layer != null) 'layer': layer,
+    if (group != null) 'group': group,
   };
 
   SketchText copyWith({
@@ -295,6 +370,8 @@ class SketchText {
     bool? bold,
     String? align,
     String? layer,
+    String? group,
+    bool clearGroup = false,
   }) => SketchText(
     x: x ?? this.x,
     y: y ?? this.y,
@@ -302,6 +379,7 @@ class SketchText {
     bold: bold ?? this.bold,
     align: align ?? this.align,
     layer: layer ?? this.layer,
+    group: clearGroup ? null : (group ?? this.group),
   );
 }
 
@@ -634,7 +712,7 @@ class TableSketchDoc {
     final allArrows = [...arrows, ..._parkedArrows].where((a) => keep(a.layer));
     // 한/글 표로 바꿀 때는 레이어 표시가 필요 없다(표 변환은 레이어를 모른다).
     Map<String, dynamic> item(Map<String, dynamic> json) =>
-        forTable ? (json..remove('layer')) : json;
+        forTable ? (json..remove('layer')..remove('group')) : json;
     return {
       'grid': grid.toJson(),
       'lines': allLines.map((l) => item(l.toJson())).toList(),
@@ -658,6 +736,45 @@ class TableSketchDoc {
       if (color != null)
         SketchFill(x1: x1, y1: y1, x2: x2, y2: y2, color: color),
     ];
+  }
+
+  /// 격자 칸 (x, y)의 배경색(나중에 칠한 것이 위). 없으면 null.
+  String? fillAt(int x, int y) {
+    for (final f in fills.reversed) {
+      if (f.x1 <= x && x < f.x2 && f.y1 <= y && y < f.y2) return f.color;
+    }
+    return null;
+  }
+
+  /// 칸 단위 배경색: 고른 격자 칸들만 칠하거나(color가 null이면) 지운다.
+  /// 이 칸들에 걸친 큰 채움은 칸 단위로 나눠, 고르지 않은 칸의 색은 그대로 남긴다.
+  void paintCells(Set<(int, int)> cells, String? color) {
+    if (cells.isEmpty) return;
+    final kept = <SketchFill>[];
+    for (final f in fills) {
+      final touches = cells.any(
+        (c) => f.x1 <= c.$1 && c.$1 < f.x2 && f.y1 <= c.$2 && c.$2 < f.y2,
+      );
+      if (!touches) {
+        kept.add(f);
+        continue;
+      }
+      for (var y = f.y1; y < f.y2; y++) {
+        for (var x = f.x1; x < f.x2; x++) {
+          if (!cells.contains((x, y))) {
+            kept.add(SketchFill(x1: x, y1: y, x2: x + 1, y2: y + 1, color: f.color));
+          }
+        }
+      }
+    }
+    if (color != null) {
+      final sorted = cells.toList()
+        ..sort((a, b) => a.$2 != b.$2 ? a.$2 - b.$2 : a.$1 - b.$1);
+      for (final (x, y) in sorted) {
+        kept.add(SketchFill(x1: x, y1: y, x2: x + 1, y2: y + 1, color: color));
+      }
+    }
+    fills = kept;
   }
 
   /// 선 추가 (동일 좌표 선이 있으면 교체).

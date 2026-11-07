@@ -262,7 +262,7 @@ bool translateSelection(
   }
   final before = sel.lines.isEmpty ? null : selectionBounds(doc, sel);
   if (before != null) {
-    moveFill(doc, before, before.shift(Offset(dx.toDouble(), dy.toDouble())));
+    scaleFills(doc, before, before.shift(Offset(dx.toDouble(), dy.toDouble())));
   }
   for (final i in sel.lines) {
     final s = doc.lines[i];
@@ -355,12 +355,18 @@ SketchSelection? pasteClip(
   dx = dx.clamp(-minX, cols - maxX);
   dy = dy.clamp(-minY, rows - maxY);
   final sel = SketchSelection();
+  // 붙인 묶음은 원래 묶음과 따로 움직이도록 새 묶음 id를 받는다(묶음 구조는 그대로).
+  final fresh = groupIdMaker(doc);
+  final remap = <String, String>{};
+  String? regroup(String? old) =>
+      old == null ? null : remap.putIfAbsent(old, fresh);
   for (final a in clip.arrows) {
     final moved = a.copyWith(
       x1: a.x1 + dx,
       y1: a.y1 + dy,
       x2: a.x2 + dx,
       y2: a.y2 + dy,
+      group: regroup(a.group),
     );
     sel.arrows.add(doc.arrows.length);
     doc.arrows.add(moved);
@@ -371,6 +377,7 @@ SketchSelection? pasteClip(
       y1: s.y1 + dy,
       x2: s.x2 + dx,
       y2: s.y2 + dy,
+      group: regroup(s.group),
     );
     final same = doc.lines.indexWhere(
       (l) => l.isSameCoords(moved.x1, moved.y1, moved.x2, moved.y2),
@@ -384,7 +391,7 @@ SketchSelection? pasteClip(
     }
   }
   for (final s in clip.texts) {
-    final moved = s.copyWith(x: s.x + dx, y: s.y + dy);
+    final moved = s.copyWith(x: s.x + dx, y: s.y + dy, group: regroup(s.group));
     doc.setText(moved);
     final idx = doc.texts.indexWhere((t) => t.x == moved.x && t.y == moved.y);
     if (idx >= 0) sel.texts.add(idx);
@@ -440,6 +447,26 @@ double _distanceToSegment(Offset p, Offset a, Offset b) {
 /// 격자 칸 (x, y)가 든 표 칸(선으로 둘러싸인 영역)의 사각형(격자 단위).
 /// 선이 끊겨 종이 끝까지 열려 있으면 표 칸이 아니므로 null.
 Rect? cellRegion(TableSketchDoc doc, int x, int y) {
+  final cells = regionCells(doc, x, y);
+  if (cells == null) return null;
+  var minX = x, maxX = x, minY = y, maxY = y;
+  for (final (cx, cy) in cells) {
+    minX = math.min(minX, cx);
+    maxX = math.max(maxX, cx);
+    minY = math.min(minY, cy);
+    maxY = math.max(maxY, cy);
+  }
+  return Rect.fromLTRB(
+    minX.toDouble(),
+    minY.toDouble(),
+    maxX + 1.0,
+    maxY + 1.0,
+  );
+}
+
+/// 격자 칸 (x, y)가 든 '칸'(선으로 닫힌 영역)의 격자 칸 모음. 사각형 안을 선으로 나누면
+/// 나뉜 영역마다 따로 나온다. 경계가 닫히지 않아 종이 끝까지 열려 있으면 null(칸이 아니다).
+Set<(int, int)>? regionCells(TableSketchDoc doc, int x, int y) {
   final cols = doc.grid.cols, rows = doc.grid.rows;
   if (x < 0 || y < 0 || x >= cols || y >= rows) return null;
   final horizontal = <(int, int)>{}; // (x, y): (x,y)-(x+1,y) 가로 칸 경계
@@ -466,13 +493,8 @@ Rect? cellRegion(TableSketchDoc doc, int x, int y) {
   }
   final seen = <(int, int)>{(x, y)};
   final queue = <(int, int)>[(x, y)];
-  var minX = x, maxX = x, minY = y, maxY = y;
   while (queue.isNotEmpty) {
     final (cx, cy) = queue.removeLast();
-    minX = math.min(minX, cx);
-    maxX = math.max(maxX, cx);
-    minY = math.min(minY, cy);
-    maxY = math.max(maxY, cy);
     for (final (nx, ny, blocked) in [
       (cx - 1, cy, vertical.contains((cx, cy))),
       (cx + 1, cy, vertical.contains((cx + 1, cy))),
@@ -484,12 +506,7 @@ Rect? cellRegion(TableSketchDoc doc, int x, int y) {
       if (seen.add((nx, ny))) queue.add((nx, ny));
     }
   }
-  return Rect.fromLTRB(
-    minX.toDouble(),
-    minY.toDouble(),
-    maxX + 1.0,
-    maxY + 1.0,
-  );
+  return seen;
 }
 
 /// 칸 배경 그림을 넣는다: 같은 칸에 있던 그림은 바꾼다. 표 칸이 아니면 false.
@@ -713,19 +730,31 @@ SketchSelection resizeRectangle(
   }
   if (sel.lines.isEmpty) return sel;
   final sample = doc.lines[sel.lines.first];
-  moveFill(doc, selectionBounds(doc, sel), bounds);
+  final from = selectionBounds(doc, sel);
+  if (from != null) scaleFills(doc, from, bounds);
   for (final i in sel.lines.toList()..sort((a, b) => b.compareTo(a))) {
     doc.lines.removeAt(i);
   }
   final start = doc.lines.length;
-  doc.lines.addAll(
-    rectangleLines(
+  doc.lines.addAll([
+    for (final l in rectangleLines(
       bounds,
       width: sample.width,
       style: sample.style,
       color: sample.color,
-    ),
-  );
+    ))
+      SketchLine(
+        x1: l.x1,
+        y1: l.y1,
+        x2: l.x2,
+        y2: l.y2,
+        width: l.width,
+        style: l.style,
+        color: l.color,
+        layer: sample.layer,
+        group: sample.group,
+      ),
+  ]);
   return SketchSelection(
     lines: {for (var i = start; i < doc.lines.length; i++) i},
   );
@@ -752,4 +781,570 @@ SketchSelection resizeRectangle(
     xs: {bounds.left, bounds.center.dx, bounds.right}.intersection(otherXs),
     ys: {bounds.top, bounds.center.dy, bounds.bottom}.intersection(otherYs),
   );
+}
+
+// --- 묶음(그룹) ---
+
+int _groupSerial = 0;
+
+/// 새 묶음 id를 만드는 함수(문서에 이미 있는 id와 겹치지 않는다).
+String Function() groupIdMaker(TableSketchDoc doc) {
+  final taken = <String>{
+    for (final l in doc.lines) ?l.group,
+    for (final t in doc.texts) ?t.group,
+    for (final a in doc.arrows) ?a.group,
+  };
+  return () {
+    String id;
+    do {
+      id = 'g${DateTime.now().microsecondsSinceEpoch}-${++_groupSerial}';
+    } while (!taken.add(id));
+    return id;
+  };
+}
+
+/// 고른 개체 가운데 묶음에 든 것이 있으면 그 묶음의 다른 개체도 함께 고른다.
+SketchSelection expandGroups(TableSketchDoc doc, SketchSelection sel) {
+  final groups = selectedGroups(doc, sel);
+  if (groups.isEmpty) return sel;
+  return SketchSelection(
+    lines: {
+      ...sel.lines,
+      for (var i = 0; i < doc.lines.length; i++)
+        if (groups.contains(doc.lines[i].group)) i,
+    },
+    texts: {
+      ...sel.texts,
+      for (var i = 0; i < doc.texts.length; i++)
+        if (groups.contains(doc.texts[i].group)) i,
+    },
+    arrows: {
+      ...sel.arrows,
+      for (var i = 0; i < doc.arrows.length; i++)
+        if (groups.contains(doc.arrows[i].group)) i,
+    },
+  );
+}
+
+/// 고른 개체에 걸린 묶음 id들.
+Set<String> selectedGroups(TableSketchDoc doc, SketchSelection sel) => {
+  for (final i in sel.lines)
+    if (i >= 0 && i < doc.lines.length) ?doc.lines[i].group,
+  for (final i in sel.texts)
+    if (i >= 0 && i < doc.texts.length) ?doc.texts[i].group,
+  for (final i in sel.arrows)
+    if (i >= 0 && i < doc.arrows.length) ?doc.arrows[i].group,
+};
+
+/// 고른 개체(2개 이상)를 새 묶음 하나로 묶는다. 안에 있던 묶음은 새 묶음에 합쳐진다.
+bool groupSelection(TableSketchDoc doc, SketchSelection sel) {
+  final valid = sel.validFor(doc);
+  if (valid.count < 2) return false;
+  final id = groupIdMaker(doc)();
+  for (final i in valid.lines) {
+    doc.lines[i] = doc.lines[i].copyWith(group: id);
+  }
+  for (final i in valid.texts) {
+    doc.texts[i] = doc.texts[i].copyWith(group: id);
+  }
+  for (final i in valid.arrows) {
+    doc.arrows[i] = doc.arrows[i].copyWith(group: id);
+  }
+  return true;
+}
+
+/// 고른 개체의 묶음을 푼다. 푼 것이 있으면 true.
+bool ungroupSelection(TableSketchDoc doc, SketchSelection sel) {
+  final valid = sel.validFor(doc);
+  var changed = false;
+  for (final i in valid.lines) {
+    if (doc.lines[i].group == null) continue;
+    doc.lines[i] = doc.lines[i].copyWith(clearGroup: true);
+    changed = true;
+  }
+  for (final i in valid.texts) {
+    if (doc.texts[i].group == null) continue;
+    doc.texts[i] = doc.texts[i].copyWith(clearGroup: true);
+    changed = true;
+  }
+  for (final i in valid.arrows) {
+    if (doc.arrows[i].group == null) continue;
+    doc.arrows[i] = doc.arrows[i].copyWith(clearGroup: true);
+    changed = true;
+  }
+  return changed;
+}
+
+// --- 크기 바꾸기(여러 개·묶음) ---
+
+/// [from] 안에 든 배경색을 [to]로 옮기거나 늘린다(사각형·묶음을 옮기거나 크기를 바꿀 때 배경이 따라간다).
+/// 범위가 [from]과 꼭 같은 채움 하나는 [to] 하나로, 그 밖에는 칸마다 대응하는 원래 칸 색을 가져온다.
+void scaleFills(TableSketchDoc doc, Rect from, Rect to) {
+  if (from == to || from.width < 1 || from.height < 1) return;
+  final l = from.left.round(),
+      t = from.top.round(),
+      r = from.right.round(),
+      b = from.bottom.round();
+  bool inside(SketchFill f) =>
+      f.x1 >= l && f.x2 <= r && f.y1 >= t && f.y2 <= b;
+  final moving = doc.fills.where(inside).toList();
+  if (moving.isEmpty) return;
+  final others = doc.fills.where((f) => !inside(f)).toList();
+  final dx = (to.left - from.left).round(), dy = (to.top - from.top).round();
+  final cols = doc.grid.cols, rows = doc.grid.rows;
+  final moved = <SketchFill>[];
+  if ((to.width - from.width).abs() < 1e-9 &&
+      (to.height - from.height).abs() < 1e-9) {
+    for (final f in moving) {
+      moved.add(
+        SketchFill(
+          x1: f.x1 + dx,
+          y1: f.y1 + dy,
+          x2: f.x2 + dx,
+          y2: f.y2 + dy,
+          color: f.color,
+        ),
+      );
+    }
+  } else if (moving.length == 1 &&
+      moving.single.x1 == l &&
+      moving.single.y1 == t &&
+      moving.single.x2 == r &&
+      moving.single.y2 == b) {
+    moved.add(
+      SketchFill(
+        x1: to.left.round(),
+        y1: to.top.round(),
+        x2: to.right.round(),
+        y2: to.bottom.round(),
+        color: moving.single.color,
+      ),
+    );
+  } else {
+    final sx = from.width / math.max(to.width, 1e-9);
+    final sy = from.height / math.max(to.height, 1e-9);
+    String? colorAt(int x, int y) {
+      for (final f in moving.reversed) {
+        if (f.x1 <= x && x < f.x2 && f.y1 <= y && y < f.y2) return f.color;
+      }
+      return null;
+    }
+
+    for (var y = to.top.round(); y < to.bottom.round(); y++) {
+      for (var x = to.left.round(); x < to.right.round(); x++) {
+        final ox = (from.left + (x + .5 - to.left) * sx).floor();
+        final oy = (from.top + (y + .5 - to.top) * sy).floor();
+        final color = colorAt(ox, oy);
+        if (color != null) {
+          moved.add(
+            SketchFill(x1: x, y1: y, x2: x + 1, y2: y + 1, color: color),
+          );
+        }
+      }
+    }
+  }
+  doc.fills = [
+    ...others,
+    for (final f in moved)
+      if (f.x1 >= 0 &&
+          f.y1 >= 0 &&
+          f.x2 <= cols &&
+          f.y2 <= rows &&
+          f.x1 < f.x2 &&
+          f.y1 < f.y2)
+        f,
+  ];
+}
+
+/// 가로·세로·45° 선 모양을 지키며 새 끝점을 고친다(크기를 바꾸면 대각선이 45°에서 벗어날 수 있다).
+(int, int, int, int) _keepShape(
+  (int, int, int, int) original,
+  (int, int, int, int) mapped,
+  int cols,
+  int rows,
+) {
+  final (ox1, oy1, ox2, oy2) = original;
+  var (x1, y1, x2, y2) = mapped;
+  if (oy1 == oy2) {
+    y2 = y1;
+  } else if (ox1 == ox2) {
+    x2 = x1;
+  } else {
+    final sign = ((oy2 - oy1) * (ox2 - ox1)).sign;
+    y2 = (y1 + sign * (x2 - x1)).clamp(0, rows);
+    x2 = x1 + sign * (y2 - y1);
+  }
+  if (x1 == x2 && y1 == y2) {
+    // 너무 줄어 점이 되면 원래 방향으로 한 칸은 남긴다.
+    x2 = (x1 + (ox2 - ox1).sign).clamp(0, cols);
+    y2 = (y1 + (oy2 - oy1).sign).clamp(0, rows);
+  }
+  return (x1, y1, x2, y2);
+}
+
+/// 고른 개체(여러 개·묶음)를 [from] 테두리에서 [to] 테두리로 늘이거나 줄인다. 선 모양(가로·세로·45°)과
+/// 칸 글 위치·배경색이 함께 따라간다. 번호는 그대로이므로 선택도 그대로다.
+void scaleSelection(
+  TableSketchDoc doc,
+  SketchSelection sel,
+  Rect from,
+  Rect to,
+) {
+  final cols = doc.grid.cols, rows = doc.grid.rows;
+  final sx = from.width == 0 ? 1.0 : to.width / from.width;
+  final sy = from.height == 0 ? 1.0 : to.height / from.height;
+  int mx(num x) => (to.left + (x - from.left) * sx).round().clamp(0, cols);
+  int my(num y) => (to.top + (y - from.top) * sy).round().clamp(0, rows);
+  final valid = sel.validFor(doc);
+  for (final i in valid.lines) {
+    final s = doc.lines[i];
+    final (x1, y1, x2, y2) = _keepShape(
+      (s.x1, s.y1, s.x2, s.y2),
+      (mx(s.x1), my(s.y1), mx(s.x2), my(s.y2)),
+      cols,
+      rows,
+    );
+    doc.lines[i] = s.copyWith(x1: x1, y1: y1, x2: x2, y2: y2);
+  }
+  for (final i in valid.arrows) {
+    final a = doc.arrows[i];
+    final (x1, y1, x2, y2) = _keepShape(
+      (a.x1, a.y1, a.x2, a.y2),
+      (mx(a.x1), my(a.y1), mx(a.x2), my(a.y2)),
+      cols,
+      rows,
+    );
+    doc.arrows[i] = a.copyWith(x1: x1, y1: y1, x2: x2, y2: y2);
+  }
+  final occupied = {
+    for (var i = 0; i < doc.texts.length; i++)
+      if (!valid.texts.contains(i)) (doc.texts[i].x, doc.texts[i].y),
+  };
+  for (final i in valid.texts) {
+    final t = doc.texts[i];
+    final x = (to.left + (t.x + .5 - from.left) * sx).floor().clamp(
+      0,
+      cols - 1,
+    );
+    final y = (to.top + (t.y + .5 - from.top) * sy).floor().clamp(0, rows - 1);
+    if (occupied.contains((x, y))) continue;
+    occupied.add((x, y));
+    doc.texts[i] = t.copyWith(x: x, y: y);
+  }
+  scaleFills(doc, from, to);
+}
+
+/// 손잡이(0~7, TableSketchPainter.handlePoints 순서)를 (gx, gy)로 끌 때의 새 테두리.
+/// [keepRatio]면 처음 가로세로 비율을 지킨다(Shift 또는 '비율 유지').
+Rect resizeBounds(
+  Rect start,
+  int handle,
+  double gx,
+  double gy, {
+  bool keepRatio = false,
+}) {
+  var l = start.left, t = start.top, r = start.right, b = start.bottom;
+  final minW = start.width == 0 ? 0.0 : 1.0;
+  final minH = start.height == 0 ? 0.0 : 1.0;
+  final movesX = handle != 1 && handle != 5;
+  final movesY = handle != 3 && handle != 7;
+  if (const {0, 6, 7}.contains(handle)) l = math.min(gx, r - minW);
+  if (const {2, 3, 4}.contains(handle)) r = math.max(gx, l + minW);
+  if (const {0, 1, 2}.contains(handle)) t = math.min(gy, b - minH);
+  if (const {4, 5, 6}.contains(handle)) b = math.max(gy, t + minH);
+  if (keepRatio && start.width > 0 && start.height > 0) {
+    final ratio = start.width / start.height;
+    var w = r - l, h = b - t;
+    if (movesX && movesY) {
+      // 모서리: 더 많이 끈 쪽에 맞춘다.
+      if (w / start.width >= h / start.height) {
+        h = (w / ratio).roundToDouble();
+      } else {
+        w = (h * ratio).roundToDouble();
+      }
+    } else if (movesX) {
+      h = (w / ratio).roundToDouble();
+    } else {
+      w = (h * ratio).roundToDouble();
+    }
+    w = math.max(w, 1);
+    h = math.max(h, 1);
+    // 변 가운데 손잡이는 맞은편이 아니라 왼쪽·위를 고정하고 늘린다(종이 위·왼쪽 밖으로 나가지 않게).
+    if (const {0, 6, 7}.contains(handle)) {
+      l = r - w;
+    } else {
+      r = l + w;
+    }
+    if (const {0, 1, 2}.contains(handle)) {
+      t = b - h;
+    } else {
+      b = t + h;
+    }
+  }
+  return Rect.fromLTRB(l, t, r, b);
+}
+
+// --- 스마트 가이드(빨간 점선)와 자석 맞춤 ---
+
+/// 옮기는 동안 비교할 다른 개체들: 맞춤 기준 x·y와 개체별 테두리.
+class GuideTargets {
+  const GuideTargets(this.xs, this.ys, this.boxes);
+  final Set<double> xs;
+  final Set<double> ys;
+  final List<Rect> boxes;
+}
+
+/// 안내선 결과: 맞춘 세로(x)·가로(y) 줄, 같은 간격 표시 구간, 크기가 같은 다른 개체.
+class SmartGuides {
+  const SmartGuides({
+    this.xs = const {},
+    this.ys = const {},
+    this.spacing = const [],
+    this.sameSize = const [],
+  });
+  final Set<double> xs;
+  final Set<double> ys;
+
+  /// 같은 간격(격자 단위 선분): 왼쪽 개체~고른 것, 고른 것~오른쪽 개체 식으로 둘씩.
+  final List<(Offset, Offset)> spacing;
+
+  /// 고른 것과 가로 또는 세로 크기가 같은 다른 개체 테두리.
+  final List<Rect> sameSize;
+  bool get isEmpty =>
+      xs.isEmpty && ys.isEmpty && spacing.isEmpty && sameSize.isEmpty;
+}
+
+/// 고르지 않은 개체를 모형(사각형 네 변·이어진 직선·화살표·묶음) 단위 테두리로 나눈다.
+List<Rect> objectBoxes(TableSketchDoc doc, SketchSelection sel) {
+  final boxes = <Rect>[];
+  final chosenGroups = selectedGroups(doc, sel);
+  final grouped = <String, SketchSelection>{};
+  final visited = <int>{...sel.lines};
+  for (var i = 0; i < doc.lines.length; i++) {
+    final g = doc.lines[i].group;
+    if (g == null || sel.lines.contains(i)) continue;
+    visited.add(i);
+    if (!chosenGroups.contains(g)) {
+      grouped.putIfAbsent(g, SketchSelection.new).lines.add(i);
+    }
+  }
+  for (var i = 0; i < doc.arrows.length; i++) {
+    final g = doc.arrows[i].group;
+    if (sel.arrows.contains(i)) continue;
+    if (g != null) {
+      if (!chosenGroups.contains(g)) {
+        grouped.putIfAbsent(g, SketchSelection.new).arrows.add(i);
+      }
+      continue;
+    }
+    final box = selectionBounds(doc, SketchSelection(arrows: {i}));
+    if (box != null) boxes.add(box);
+  }
+  for (final members in grouped.values) {
+    final box = selectionBounds(doc, members);
+    if (box != null) boxes.add(box);
+  }
+  final segs = [
+    for (var i = 0; i < doc.lines.length; i++)
+      if (!visited.contains(i)) ?_AxisSeg.of(doc.lines[i], i),
+  ];
+  for (var i = 0; i < doc.lines.length; i++) {
+    if (visited.contains(i)) continue;
+    final seg = _AxisSeg.of(doc.lines[i], i);
+    final indices = seg == null
+        ? {i}
+        : (_rectangleThrough(segs, seg) ?? _chain(segs, seg).indices);
+    visited.addAll(indices);
+    final box = selectionBounds(doc, SketchSelection(lines: indices));
+    if (box != null) boxes.add(box);
+  }
+  return boxes;
+}
+
+/// 맞춤 기준을 한 번(끌기 시작할 때) 모은다: 다른 선 끝·가운데, 다른 개체 테두리의 가장자리·가운데.
+GuideTargets guideTargets(TableSketchDoc doc, SketchSelection sel) {
+  final boxes = objectBoxes(doc, sel);
+  final xs = <double>{}, ys = <double>{};
+  for (var i = 0; i < doc.lines.length; i++) {
+    if (sel.lines.contains(i)) continue;
+    final l = doc.lines[i];
+    xs.addAll([l.x1.toDouble(), l.x2.toDouble(), (l.x1 + l.x2) / 2]);
+    ys.addAll([l.y1.toDouble(), l.y2.toDouble(), (l.y1 + l.y2) / 2]);
+  }
+  for (final b in boxes) {
+    xs.addAll([b.left, b.center.dx, b.right]);
+    ys.addAll([b.top, b.center.dy, b.bottom]);
+  }
+  return GuideTargets(xs, ys, boxes);
+}
+
+bool _overlapY(Rect a, Rect b) => a.top <= b.bottom && b.top <= a.bottom;
+bool _overlapX(Rect a, Rect b) => a.left <= b.right && b.left <= a.right;
+
+/// 가로로 왼쪽·오른쪽(세로면 위·아래)에 가장 가까운 다른 개체.
+(Rect?, Rect?) _neighbors(Rect b, List<Rect> boxes, bool horizontal) {
+  Rect? before, after;
+  for (final o in boxes) {
+    if (horizontal) {
+      if (!_overlapY(o, b)) continue;
+      if (o.right <= b.left && (before == null || o.right > before.right)) {
+        before = o;
+      }
+      if (o.left >= b.right && (after == null || o.left < after.left)) {
+        after = o;
+      }
+    } else {
+      if (!_overlapX(o, b)) continue;
+      if (o.bottom <= b.top && (before == null || o.bottom > before.bottom)) {
+        before = o;
+      }
+      if (o.top >= b.bottom && (after == null || o.top < after.top)) {
+        after = o;
+      }
+    }
+  }
+  return (before, after);
+}
+
+/// 지금 테두리 [b]가 다른 개체와 맞는 곳(가장자리·가운데 정렬, 같은 간격, 같은 크기).
+SmartGuides smartGuides(Rect b, GuideTargets t) {
+  final spacing = <(Offset, Offset)>[];
+  final (left, right) = _neighbors(b, t.boxes, true);
+  if (left != null && right != null) {
+    final gapL = b.left - left.right, gapR = right.left - b.right;
+    if (gapL > 0 && (gapL - gapR).abs() < 1e-9) {
+      final y = b.center.dy;
+      spacing
+        ..add((Offset(left.right, y), Offset(b.left, y)))
+        ..add((Offset(b.right, y), Offset(right.left, y)));
+    }
+  }
+  final (above, below) = _neighbors(b, t.boxes, false);
+  if (above != null && below != null) {
+    final gapT = b.top - above.bottom, gapB = below.top - b.bottom;
+    if (gapT > 0 && (gapT - gapB).abs() < 1e-9) {
+      final x = b.center.dx;
+      spacing
+        ..add((Offset(x, above.bottom), Offset(x, b.top)))
+        ..add((Offset(x, b.bottom), Offset(x, below.top)));
+    }
+  }
+  return SmartGuides(
+    xs: {b.left, b.center.dx, b.right}.intersection(t.xs),
+    ys: {b.top, b.center.dy, b.bottom}.intersection(t.ys),
+    spacing: spacing,
+    sameSize: [
+      for (final o in t.boxes)
+        if ((b.width >= 1 && (o.width - b.width).abs() < 1e-9) ||
+            (b.height >= 1 && (o.height - b.height).abs() < 1e-9))
+          o,
+    ],
+  );
+}
+
+/// 옮길 칸 수(dx, dy)를 [threshold]칸 안의 맞춤 위치(정렬·같은 간격)로 당긴다(자석처럼).
+(int, int) snapMove(
+  Rect start,
+  int dx,
+  int dy,
+  GuideTargets t,
+  int threshold,
+) {
+  if (threshold <= 0) return (dx, dy);
+  final moved = start.shift(Offset(dx.toDouble(), dy.toDouble()));
+  int? best(List<double> features, Iterable<double> targets) {
+    double? found;
+    for (final f in features) {
+      for (final target in targets) {
+        final d = target - f;
+        if (d != d.roundToDouble() || d.abs() > threshold) continue;
+        if (found == null || d.abs() < found.abs()) found = d;
+      }
+    }
+    return found?.round();
+  }
+
+  final (left, right) = _neighbors(moved, t.boxes, true);
+  final (above, below) = _neighbors(moved, t.boxes, false);
+  final bx = best([moved.left, moved.center.dx, moved.right], t.xs);
+  final by = best([moved.top, moved.center.dy, moved.bottom], t.ys);
+  final ex = left != null && right != null
+      ? best([moved.left], [(left.right + right.left - moved.width) / 2])
+      : null;
+  final ey = above != null && below != null
+      ? best([moved.top], [(above.bottom + below.top - moved.height) / 2])
+      : null;
+  int pick(int? a, int? b) =>
+      a == null ? (b ?? 0) : (b == null || a.abs() <= b.abs() ? a : b);
+  return (dx + pick(bx, ex), dy + pick(by, ey));
+}
+
+/// 손잡이로 크기를 바꿀 때 움직이는 변을 [threshold]칸 안의 다른 개체 가장자리·같은 크기로 당긴다.
+Rect snapResize(Rect next, int handle, GuideTargets t, int threshold) {
+  if (threshold <= 0) return next;
+  double snap(double v, Iterable<double> targets) {
+    var best = v;
+    var dist = double.infinity;
+    for (final target in targets) {
+      final d = (target - v).abs();
+      if (d <= threshold && d < dist && target == target.roundToDouble()) {
+        dist = d;
+        best = target;
+      }
+    }
+    return best;
+  }
+
+  var l = next.left, t0 = next.top, r = next.right, b = next.bottom;
+  final widths = [for (final o in t.boxes) if (o.width >= 1) o.width];
+  final heights = [for (final o in t.boxes) if (o.height >= 1) o.height];
+  if (const {0, 6, 7}.contains(handle)) {
+    l = snap(l, [...t.xs, for (final w in widths) r - w]);
+    if (l >= r) l = next.left;
+  }
+  if (const {2, 3, 4}.contains(handle)) {
+    r = snap(r, [...t.xs, for (final w in widths) l + w]);
+    if (r <= l) r = next.right;
+  }
+  if (const {0, 1, 2}.contains(handle)) {
+    t0 = snap(t0, [...t.ys, for (final h in heights) b - h]);
+    if (t0 >= b) t0 = next.top;
+  }
+  if (const {4, 5, 6}.contains(handle)) {
+    b = snap(b, [...t.ys, for (final h in heights) t0 + h]);
+    if (b <= t0) b = next.bottom;
+  }
+  return Rect.fromLTRB(l, t0, r, b);
+}
+
+// --- 선·화살표 끝점 손잡이 ---
+
+/// 하나만 고른 선(또는 화살표)의 끝점 손잡이를 눌렀는지: (화살표인지, 번호, 끝 0/1).
+({bool arrow, int index, int end})? endpointAt(
+  TableSketchDoc doc,
+  SketchSelection sel,
+  Offset grid,
+  double tolerance,
+) {
+  final valid = sel.validFor(doc);
+  if (valid.count != 1 || valid.texts.isNotEmpty) return null;
+  final isArrow = valid.arrows.isNotEmpty;
+  final index = isArrow ? valid.arrows.single : valid.lines.single;
+  final (x1, y1, x2, y2) = isArrow
+      ? (
+          doc.arrows[index].x1,
+          doc.arrows[index].y1,
+          doc.arrows[index].x2,
+          doc.arrows[index].y2,
+        )
+      : (
+          doc.lines[index].x1,
+          doc.lines[index].y1,
+          doc.lines[index].x2,
+          doc.lines[index].y2,
+        );
+  final d1 = (grid - Offset(x1.toDouble(), y1.toDouble())).distance;
+  final d2 = (grid - Offset(x2.toDouble(), y2.toDouble())).distance;
+  if (math.min(d1, d2) > tolerance) return null;
+  return (arrow: isArrow, index: index, end: d1 <= d2 ? 0 : 1);
 }
