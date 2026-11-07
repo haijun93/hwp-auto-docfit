@@ -224,7 +224,9 @@ class TableUnitsService:
         # 라벨 서식은 분류 띠·전체 목록 모두 맨 뒤(안정 정렬이라 나머지 순서는 그대로).
         templates.sort(key=lambda t: _is_last_category(t.get("category")))
         ids = {t["id"] for t in templates}
+        # 즐겨찾기 칩은 사용자가 별표를 누른 순서 그대로 보인다(라벨 서식이라도 뒤로 보내지 않는다, TMPL231).
         return {"source": str(self.source), "templates": templates,
+                "favorites": [v for v in favorites if v in ids],
                 "recent": [v for v in _id_list(preferences.get("table_template_recent")) if v in ids][:8],
                 "thumbnails_ready": bool(templates) and all(item["thumbnail"] for item in templates)}
 

@@ -7,7 +7,7 @@ from unittest.mock import patch
 from defusedxml import ElementTree as ET
 
 from docfit_app.api_contract import ServiceError
-from docfit_app.table_units_service import TableUnitsService, crop_to_content
+from docfit_app.table_units_service import TableUnitsService, crop_to_content, _is_last_category
 from docfit_core.table_catalog import default_catalog_path
 from docfit_app.settings_service import SettingsService
 from docfit_core.hwpx import open_hwpx_safely
@@ -164,6 +164,23 @@ class TableUnitsServiceTests(unittest.TestCase):
             self.service.command("favorite", {"id": first, "on": 1})
         with self.assertRaises(ServiceError):
             self.service.favorite("missing", True)
+
+    def test_favorites_and_recent_keep_user_order_even_for_label_templates(self):
+        templates = self.service.list()["templates"]
+        label = next(t["id"] for t in templates if _is_last_category(t["category"]))
+        others = [t["id"] for t in templates if not _is_last_category(t["category"])][:2]
+        for template_id in (label, others[1], others[0]):
+            result = self.service.favorite(template_id, True)
+        # 즐겨찾기: 누른 순서 그대로(라벨 서식이 맨 앞이어도 뒤로 가지 않음).
+        self.assertEqual(result["favorites"], [label, others[1], others[0]])
+        self.assertEqual(self.service.favorite(others[1], False)["favorites"], [label, others[0]])
+        # 최근 사용: 방금 쓴 순서(라벨 서식을 마지막에 썼으면 맨 앞).
+        for template_id in (others[0], label):
+            self.service.copy(template_id)
+        self.assertEqual(self.service.list()["recent"][:2], [label, others[0]])
+        # 전체 목록은 여전히 라벨 서식이 맨 뒤.
+        ordered = [t["id"] for t in self.service.list()["templates"]]
+        self.assertGreater(ordered.index(label), ordered.index(others[0]))
 
     def test_payload_validation_and_post_fill_text(self):
         item = next(t for t in self.service.list()["templates"] if "연간" in t["name"])

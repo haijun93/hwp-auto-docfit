@@ -14,6 +14,8 @@ import '../../core/api/table_units_api.dart';
 
 import 'table_grid_preview.dart';
 
+import 'table_template_order.dart';
+
 
 
 /// 표 템플릿 화면: 스냅샷을 보고 고른 뒤 정보단위를 조절하여 한/글에 붙여넣을 수 있게 복사.
@@ -278,6 +280,8 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
 
     final newFav = !template.favorite;
 
+    final favoritesBefore = _listData?.favorites ?? const <String>[];
+
 
 
     // 즉시 UI 반영 (낙관적 갱신)
@@ -305,6 +309,16 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
           thumbnailsReady: _listData!.thumbnailsReady,
 
           recent: _listData!.recent,
+
+          favorites: [
+
+            for (final id in _listData!.favorites)
+
+              if (id != template.id) id,
+
+            if (newFav) template.id,
+
+          ],
 
           templates: updatedTemplates,
 
@@ -379,6 +393,8 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
             thumbnailsReady: _listData!.thumbnailsReady,
 
             recent: _listData!.recent,
+
+            favorites: favoritesBefore,
 
             templates: rolledBack,
 
@@ -834,74 +850,32 @@ class _TableUnitsScreenState extends State<TableUnitsScreen> {
 
 
 
-  List<TableTemplateInfo> _getFilteredTemplates() {
-
-    if (_listData == null) return const [];
-
-    List<TableTemplateInfo> list;
-
-
-
-    if (_selectedCategory == '즐겨찾기') {
-
-      list = _listData!.templates.where((t) => t.favorite).toList();
-
-    } else if (_selectedCategory == '최근 사용') {
-
-      final map = {for (final t in _listData!.templates) t.id: t};
-
-      list = [];
-
-      for (final id in _listData!.recent) {
-
-        if (map.containsKey(id)) {
-
-          list.add(map[id]!);
-
-        }
-
-      }
-
-    } else if (_selectedCategory == '전체') {
-
-      list = _listData!.templates;
-
-    } else {
-
-      list = _listData!.templates
-
-          .where((t) => t.category == _selectedCategory)
-
-          .toList();
-
-    }
-
-
-
-    final query = _searchQuery.trim().toLowerCase();
-
-    if (query.isNotEmpty) {
-
-      list = list.where((t) {
-
-        final nameMatch = t.name.toLowerCase().contains(query);
-
-        final catMatch = t.category.toLowerCase().contains(query);
-
-        return nameMatch || catMatch;
-
-      }).toList();
-
-    }
-
-
-
-    return list;
-
-  }
-
-
-
+  List<TableTemplateInfo> _getFilteredTemplates() {
+    if (_listData == null) return const [];
+    final query = _searchQuery.trim();
+    // 즐겨찾기·최근 사용은 사용자가 정한 순서/최근 순서 그대로(검색어로 거르기만 한다).
+    if (_selectedCategory == '즐겨찾기') {
+      return filterTemplateSearch(
+        orderedFavorites(_listData!.templates, _listData!.favorites),
+        query,
+      );
+    }
+    if (_selectedCategory == '최근 사용') {
+      return filterTemplateSearch(
+        orderedRecent(_listData!.templates, _listData!.recent),
+        query,
+      );
+    }
+    final list = _selectedCategory == '전체'
+        ? _listData!.templates
+        : _listData!.templates
+              .where((t) => t.category == _selectedCategory)
+              .toList();
+    // 검색 결과는 정확도 순서, 같은 정도면 라벨 서식이 뒤(TMPL231).
+    return query.isEmpty ? list : rankTemplateSearch(list, query);
+  }
+
+
   @override
 
   Widget build(BuildContext context) {
