@@ -72,7 +72,8 @@ class WebCspTests(unittest.TestCase):
         return html, dict(
             (part.split()[0], part.split()[1:]) for part in match.group(1).split(";") if part.strip())
 
-    @unittest.skip("S6 보류(2026-11-07): Flutter 화면 CSP가 pywebview·실행 확인의 스크립트 평가를 막아 CI 실행 시험이 실패. 호환 방안 확인 후 다시 적용")
+    @unittest.skip("S6 보류(2026-11-07): pywebview api.js가 new Function을 써서 'unsafe-eval' 없이는 API가 안 생김. "
+                   "docs/CSP_S6_재설계_2026-11-07.md의 정책(unsafe-eval 포함)을 Windows에서 확인한 뒤 해제하고 unsafe-eval 부재 검사를 바꿀 것")
     def test_flutter_index_has_minimal_csp(self):
         html, policy = self.policy("flutter_ui/web/index.html")
         self.assertEqual(policy["object-src"], ["'none'"])
