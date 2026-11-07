@@ -7,6 +7,8 @@
 
 pub mod api;
 pub mod buffer;
+pub mod cp949;
+mod cp949_table;
 pub mod doc;
 pub mod fileio;
 pub mod json;

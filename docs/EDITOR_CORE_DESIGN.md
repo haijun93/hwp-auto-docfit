@@ -1,8 +1,9 @@
-# 메모 편집기 Rust 코어(editor_core) 설계 — 1단계
+# 메모 편집기 Rust 코어(editor_core) 설계 — 1~3단계
 
 작성: 2026-11-07, 브랜치 `feature/edcore`. 근거: TODO.md '노트북(개발자 모드) 개선 3건 (3) +메모 추가'의 구현 방침
 (외부 서식 편집 패키지 없이 Rust 편집 코어 + Flutter UI, Windows 메모장 벤치마킹, 독립 모듈).
-이번 단계는 **Rust 코어만**이다. Flutter UI·klib 연결은 하지 않았다.
+1단계(버퍼·실행취소·찾기·Markdown·저장·JSON API) 뒤 2·3단계(인코딩 CP949, 상태 표시줄 값, 찾기·바꾸기 고급, 100만 글자 성능)를 9절에 추가했다.
+이 문서의 범위는 **Rust 코어만**이다. Flutter UI·klib 연결은 하지 않았다.
 
 ## 1. 구성
 
@@ -14,7 +15,8 @@
 | `doc.rs` `Document` | 버퍼 + 실행취소/다시실행(입력 묶음) + 줄·열 + 찾기·바꾸기 + 저장/자동 저장 + 변경 여부(dirty) |
 | `search.rs` | 찾기(대소문자 옵션·온전한 낱말 옵션), 모두 바꾸기 문자열 생성 |
 | `markdown.rs` | 블록·인라인 해석, 서식 적용/해제 연산 |
-| `fileio.rs` | 인코딩(UTF-8/UTF-8 BOM/UTF-16 LE·BE) 감지·변환, 줄바꿈(CRLF/LF/CR) 감지·변환, 임시 파일 후 교체 저장 |
+| `fileio.rs` | 인코딩(UTF-8/UTF-8 BOM/UTF-16 LE·BE/CP949) 감지·변환, 줄바꿈(CRLF/LF/CR) 감지·변환, 임시 파일 후 교체 저장 |
+| `cp949.rs` + `cp949_table.rs` | CP949(EUC-KR 계열) 변환. 표는 `tools/gen_cp949.py`로 생성(17,048자), 9.1절 |
 | `json.rs` | 직접 구현한 JSON 값·파서·직렬화(대리 쌍·깊이 64 제한) |
 | `api.rs` `Engine` | JSON 한 줄 명령 → JSON 한 줄 응답. 여러 문서를 번호로 관리 |
 
@@ -53,7 +55,7 @@
 | 명령 | 인자 | 응답 핵심 |
 |---|---|---|
 | `edit_ping` | – | `message`,`version` |
-| `edit_open` | `text` 또는 `path`, 선택 `line_ending` | `doc`, 줄/글자/바이트/낱말 수, `line_ending`,`mixed_line_endings`,`encoding`,`dirty` |
+| `edit_open` | `text` 또는 `path`, 선택 `line_ending`, `encoding`(지정해 다시 열기) | `doc`, 줄/글자/바이트/낱말 수, `line_ending`,`mixed_line_endings`,`encoding`,`dirty` |
 | `edit_close` / `edit_info` | `doc` | 정보 |
 | `edit_text` / `edit_lines` | `start,end` / `from,to` | `text` / `lines[{line,start,text}]` |
 | `edit_insert` / `edit_delete` / `edit_replace` | `pos,text` / `start,end` / `start,end,text` | `cursor`,`len`,`chars`,`lines`,`dirty`,`can_undo`,`can_redo` |
@@ -61,13 +63,14 @@
 | `edit_undo` / `edit_redo` | – | 위와 같음 + `changed` |
 | `edit_line_col` / `edit_offset` | `pos` / `line,col` | `line,col`(1부터, 글자 단위) / `pos` |
 | `edit_to_utf16` / `edit_from_utf16` | `pos` / `unit` | 변환값 |
-| `edit_find` / `edit_find_all` | `query`,`case_sensitive`,`whole_word`,`from`,`wrap`/`limit` | `found,start,end` / `count,matches[]` |
-| `edit_replace_next` / `edit_replace_all` | `query,with`+옵션 | `replaced,start` / `count` |
+| `edit_find` / `edit_find_all` | `query`,`case_sensitive`,`whole_word`,`from`,`wrap`/`limit`,선택 `start`+`end`(범위) | `found,start,end` / `count,matches[]` |
+| `edit_replace_next` / `edit_replace_all` | `query,with`+옵션, 모두 바꾸기는 선택 `start`+`end`(범위) | `replaced,start` / `count`,`sel_start`,`sel_end`(바뀐 구간) |
 | `edit_md_parse` | `from_line,to_line` | `blocks[{kind,line,start,end,content_start,spans[]}]` |
 | `edit_md_inline` | `start,end,kind=bold\|italic\|code` | `sel_start,sel_end` |
 | `edit_md_block` | `start,end,kind=paragraph\|heading\|bullet\|number\|quote`,`level` | `sel_start,sel_end` |
 | `edit_md_link` / `edit_md_rule` / `edit_md_code_block` / `edit_md_clear` | `start,end[,url]` / `pos` | 선택 범위 / `cursor` |
-| `edit_set_line_ending` / `edit_set_encoding` | `line_ending` / `encoding` | 정보 |
+| `edit_set_line_ending` / `edit_set_encoding` | `line_ending` / `encoding`(별칭 허용, CP949로 못 바꾸는 글자가 있으면 거절) | 정보 |
+| `edit_status` | `pos`, 선택 시 `sel_start`,`sel_end` | 상태 표시줄 값(9.2절) |
 | `edit_save` / `edit_autosave` | `path`(저장은 생략 가능) | 정보 / `saved,dirty` |
 
 Rust에서는 `editor_core::api::Engine::new().handle(&str) -> String` 한 함수가 전부다. 직접 쓸 때는 `Document`·`markdown::*`를 바로 호출할 수 있다.
@@ -76,7 +79,7 @@ Rust에서는 `editor_core::api::Engine::new().handle(&str) -> String` 한 함�
 `save`: 같은 폴더에 `.이름.PID.tmp`를 쓰고 `sync_all` 후 `rename`으로 교체(Windows에서도 기존 파일 덮어쓰기). 실패하면 임시 파일을 지우고 원본은 그대로.
 `autosave`: 같은 방식으로 **복구 사본**을 따로 쓰며 원본·dirty 상태는 건드리지 않는다. 호출 시점(입력 후 N초 유휴, 포커스 상실)은 UI가 정한다.
 복구 사본 위치·수명 정책(예: `%LOCALAPPDATA%\HWP_AUTODOCFIT\memo-recovery\<메모id>.autosave`, 저장 성공 시 삭제)은 UI 단계에서 확정.
-인코딩은 UTF-8/BOM/UTF-16만. BOM 없는 CP949(옛 한글 txt)는 **열기 오류**로 알린다(변환기는 후속, 표 없이 std만으로는 불가).
+인코딩은 UTF-8/BOM/UTF-16/CP949(9.1절). 새 문서·저장 기본은 UTF-8.
 
 ## 5. klib 통합 방안 비교
 
@@ -136,7 +139,7 @@ if val.str("cmd").is_some_and(|c| c.starts_with("edit_")) {
 1. klib 연결(`pipe.rs`에 `edit_*` 위임) + Dart 브리지 클라이언트 — 위 5절 결정 후.
 2. `flutter_ui/lib/features/editor/` UI(도구줄, 상태 표시줄 줄·열·글자 수·줄바꿈, 자동 저장 표시, 찾기·바꾸기 막대) — UTF-16↔바이트 변환 포함.
 3. 줄 색인 청크화(수십만 줄 이상 필요 시), 줄 바꿈(word wrap) 계산은 UI 쪽.
-4. CP949 등 레거시 인코딩 열기(표 필요 → 별도 결정), 확대·축소는 UI 단.
+4. 확대·축소는 UI 단. (CP949는 9.1절에서 완료. 그 밖의 레거시 인코딩·BOM 없는 UTF-16 자동 감지는 하지 않음 — 필요하면 `encoding` 지정으로 열기.)
 5. 무작위 명령열 퍼징 확대(패닉 0 보장; klib `panic = "abort"`).
 
 ## 9. klib 연결과 메모 화면 2단계 (EDLINK, 2026-11-07, 브랜치 `feature/edlink`)
@@ -182,3 +185,135 @@ if val.str("cmd").is_some_and(|c| c.starts_with("edit_")) {
   `path` 인자와 모르는 편집 명령을 거절한다(이전에는 자료함 통로로 `edit_save {path}`가 그대로 klib에 갈 수 있었음).
 - **한계**: 요청 64 KiB(Python 브리지 한도)를 넘는 메모는 `item_add`·`item_text_set`이 실패한다(편집기는 Dart 폴백으로 열리지만 저장 불가 — 오류 표시).
   고치기 화면은 자동 저장 초안이 없어 저장하지 않고 닫으면 고친 내용이 사라진다.
+
+## 9. 2·3단계 (2026-11-07): 인코딩·상태 표시줄·찾기 고급·100만 글자 성능
+
+### 9.1 인코딩
+- **열 때 자동 감지 순서**: BOM(UTF-8 BOM, UTF-16 LE/BE) → BOM 없는 엄격한 UTF-8(순수 ASCII 포함) → CP949 → 모두 아니면 오류(UTF-8·CP949 오류 위치를 함께 알림).
+  UTF-8로 해석되는 글은 항상 UTF-8로 본다(CP949 글이 우연히 유효한 UTF-8일 확률은 한글 글에서 사실상 0). **BOM 없는 UTF-16은 감지하지 않는다**(`encoding` 지정으로 열기).
+- **지정해 열기**: `edit_open`의 `encoding`(자동 감지가 틀렸을 때). 이름은 `UTF-8`·`UTF-8 BOM`·`UTF-16 LE`·`UTF-16 BE`·`CP949`와 별칭(`EUC-KR`, `MS949`, `UHC`, `utf-8-sig` 등, 대소문자·공백·하이픈 무시).
+- **저장**: 문서가 기억한 인코딩 그대로(새 문서·`text`로 연 문서는 UTF-8). `edit_set_encoding`으로 바꿔 저장 가능.
+  **CP949로 표현할 수 없는 글자(이모지, 표에 없는 한자 등)는 `?`로 바꾸지 않고 거절**한다: `set_encoding`은 처음 해당 글자의 줄·열을 알리며 거절하고,
+  이미 CP949인 문서에서 그런 글자를 입력한 뒤 `save`/`autosave`하면 오류를 돌려주며 **원본 파일은 그대로**(임시 파일 후 교체 이전 단계에서 실패).
+- **CP949 변환표**: `cp949_table.rs`(자동 생성 134 KB, 코드에 포함). 앞바이트 0x81~0xFE × 뒤바이트 0x41~0xFE 격자에 유니코드 값을 적은 표로 **17,048자**(완성형 한글 11,172자 전부 + 한자 4,888자 + 기호·자모·로마자 등 988자). 0x80·0xFF·짝 없는 앞바이트·미할당 코드는 오류.
+  역표(유니코드→CP949)는 처음 쓸 때 한 번 만든다(BMP 65,536칸, 128 KB).
+  - **출처·라이선스**: 표 값은 "코드 ↔ 유니코드 코드 포인트" 대응이라는 공개 표준(KS X 1001 + 마이크로소프트 UHC 확장, 유니코드 컨소시엄도 같은 대응표를 공개)의 사실 나열이며, 제3자 소스 코드나 크레이트를 복사하지 않았다.
+    생성기 `editor_core/tools/gen_cp949.py`가 파이썬 표준 코덱 `cp949`로 대응을 읽어 표를 쓴다(스크립트만 공개, 표는 재생성 가능). 법적 판단이 필요한 배포 전에는 사용자가 한 번 확인할 것(저작권이 성립하지 않는 사실 정보로 보지만 변호사 검토는 아님).
+  - **검증**: ① 전체 표를 (앞,뒤,유니코드) FNV-1a 해시로 파이썬 기준값과 비교(`cp949_table_matches_reference`), ② 17,048자 전부 왕복, ③ 대표 글자·실제 문장 바이트열 비교(`한`=C7D1, `똠`=8C63, `①`=A8E7 등), ④ 잘못된 바이트 거절.
+  - **알려진 한계**: 윈도 `bestfit949`의 "비슷한 글자로 대체"(예: 일부 특수 따옴표→`"`)는 하지 않는다 — 엄격 변환만. 유니코드 정규화(NFD 한글)는 하지 않는다.
+- 줄바꿈은 기존대로 감지·보존(CRLF/LF/CR, 섞이면 `mixed_line_endings`), 새 문서는 CRLF.
+
+### 9.2 상태 표시줄 값 (`edit_status`)
+요청 `{"cmd":"edit_status","doc":N,"pos":커서,"sel_start":a,"sel_end":b}` (선택은 생략 가능, a>b여도 됨). 응답:
+
+| 필드 | 뜻 |
+|---|---|
+| `line`,`col` | 1부터. **열은 글자(유니코드 스칼라) 경계 기준**: 이모지·한글 1개 = 1열, 줄 끝은 `줄 글자 수 + 1`. 위치가 글자 경계가 아니면 오류 |
+| `lines` | 줄 수 |
+| `chars` | 전체 글자 수(줄바꿈 1개 = 1글자), `chars_no_newline`은 줄바꿈 제외, 선택이 있으면 `selected_chars` |
+| `bytes` | 내부(LF) 기준 UTF-8 바이트 수 |
+| `line_ending`,`line_ending_label`,`mixed_line_endings` | `CRLF`/`LF`/`CR`, `Windows (CRLF)`/`Unix (LF)`/`Mac (CR)`, 섞임 여부 |
+| `encoding` | `UTF-8`·`UTF-8 BOM`·`UTF-16 LE`·`UTF-16 BE`·`CP949` |
+| `summary` | 바로 표시할 수 있는 문자열. 예: `줄 2, 열 1  |  5자 (선택 1자)  |  Windows (CRLF)  |  CP949` |
+
+"글자"는 유니코드 스칼라 값이다(결합 문자·NFD 자모·이모지 조합은 여러 글자로 센다). 자소(grapheme) 단위는 표가 필요해 하지 않았다.
+비용: 글자 수·줄 수는 O(1), 줄·열은 줄 길이에 비례(한 줄 100만 글자 가운데에서 1.1 ms), 선택 글자 수는 선택 길이에 비례(50만 글자 1.5 ms).
+
+### 9.3 찾기·바꾸기 고급 (정규식은 하지 않음 — 범위 밖)
+- **모두 바꾸기는 항상 실행취소 1단위**: 일치가 몇 건이어도 편집 기록은 하나(첫 일치~끝 일치 구간 교체)라 실행취소/다시실행 한 번에 모두 오가고, `dirty`도 처음 상태로 돌아온다(시험 `replace_all_is_single_undo_unit_with_dirty_tracking`). 사용자가 `begin_group` 안에서 부르면 그 묶음에 합쳐진다.
+- **범위 지정**: `edit_find_all`·`edit_replace_all`에 `start`+`end`를 주면 선택 영역 안에서만 찾고 바꾼다. 범위에 완전히 들어가는 일치만 대상이고, "온전한 낱말"은 범위 밖 글자도 보고 판정한다(`concat`의 `cat`을 선택 일부로 오인하지 않음).
+  응답에 바뀐 구간 `sel_start`,`sel_end`(바꾼 뒤 위치)를 줘 UI가 그대로 선택 표시할 수 있다.
+- **줄바꿈 정합**: 찾는 말·바꿀 말의 `\r\n`·`\r`도 LF로 맞춘다(입력 칸이 CRLF로 줘도 LF 글과 일치).
+- **빈 변경 없음**: 일치가 없거나 바꾼 결과가 같은 글이면 편집 기록·dirty를 만들지 않는다(개수는 알려 줌). 빈 검색어는 0건. `a`→`aa`처럼 바꿀 말에 찾는 말이 들어 있어도 한 번만 바꾼다.
+- 한계: 선택 영역 밖 일치 건수 미리 보기(`edit_find_all`의 `count`로 대체 가능), 정규식·역참조·대소문자 보존 바꾸기는 없다.
+
+### 9.4 큰 글(100만 글자) 성능 — 전/후
+측정: `cd editor_core && cargo test --release --test perf_1m -- --nocapture --test-threads=1` (macOS arm64, release). 입력은 한글·영문·숫자 혼합 정확히 1,000,000글자(약 1.95 MB), 줄 배치 3종.
+"전"은 이 단계 변경 전 코드(1단계 완료본), "후"는 3회 실행 중앙값. 단위는 칸에 표시(대부분 ms, "글자당/회당"은 µs). 디버그 빌드(`cargo test`)는 같은 시험을 10만 글자로 줄여 통과만 확인한다.
+
+
+**여러 줄(줄당 40자)**
+
+| 항목 | 전 | 후(3회 중앙값) | 비고 |
+|---|---:|---:|---|
+| N글자 한 번에 삽입 | 2.83 ms | 0.9 ms | 25001줄 **3배 빠름** |
+| └ 실행취소 | 3.85 ms | 1.56 ms | **2배 빠름** |
+| └ 다시실행 | 1.77 ms | 0.5 ms | **4배 빠름** |
+| N글자 전체 삭제 | 1.89 ms | 1.38 ms | |
+| └ 실행취소 | 0.58 ms | 0.46 ms | |
+| └ 다시실행 | 2.03 ms | 1.48 ms | |
+| 가운데 10% 삭제 | 0.18 ms | 0.16 ms | |
+| └ 실행취소 | 0.09 ms | 0.06 ms | |
+| 이어 입력 100000자(글자당) | 6.66 µs | 0.06 µs | 합계 7.3 ms **111배 빠름** |
+| └ 실행취소 1회(묶음) | 0.24 ms | 0.25 ms | |
+| Backspace 100000회(회당) | 4.47 µs | 0.14 µs | 합계 14.0 ms **32배 빠름** |
+| └ 실행취소 1회(묶음) | 0.06 ms | 1.18 ms | |
+| 무작위 위치 입력(회당) | 0.015 ms | 0.014 ms | 2000회 합계 28.3 ms |
+| └ 2000단계 실행취소 | 29.58 ms | 28.41 ms | |
+| 줄·열(문서 끝) 1회 | 0 ms | 0 ms | 25001줄 1열 |
+| 모두 바꾸기 | 9.22 ms | 6.99 ms | 28571건 |
+| └ 실행취소(1단위) | 1.81 ms | 2.09 ms | |
+
+**한 줄**
+
+| 항목 | 전 | 후(3회 중앙값) | 비고 |
+|---|---:|---:|---|
+| N글자 한 번에 삽입 | 0.52 ms | 0.49 ms | 1줄 |
+| └ 실행취소 | 1.42 ms | 1.34 ms | |
+| └ 다시실행 | 0.23 ms | 0.22 ms | |
+| N글자 전체 삭제 | 1.34 ms | 1.34 ms | |
+| └ 실행취소 | 0.24 ms | 0.21 ms | |
+| └ 다시실행 | 1.38 ms | 1.41 ms | |
+| 가운데 10% 삭제 | 0.15 ms | 0.15 ms | |
+| └ 실행취소 | 0.02 ms | 0.02 ms | |
+| 이어 입력 100000자(글자당) | 5.18 µs | 0.05 µs | 합계 4.5 ms **104배 빠름** |
+| └ 실행취소 1회(묶음) | 0.21 ms | 0.2 ms | |
+| Backspace 100000회(회당) | 4.14 µs | 0.05 µs | 합계 4.5 ms **83배 빠름** |
+| └ 실행취소 1회(묶음) | 0.02 ms | 1.07 ms | |
+| 무작위 위치 입력(회당) | 0 ms | 0 ms | 2000회 합계 0.2 ms |
+| └ 2000단계 실행취소 | 0.06 ms | 0.06 ms | |
+| 줄·열(문서 끝) 1회 | 1.22 ms | 1.28 ms | 1줄 1000001열 |
+| 모두 바꾸기 | 8.5 ms | 6.75 ms | 28571건 |
+| └ 실행취소(1단위) | 1.72 ms | 1.73 ms | |
+
+**짧은 줄(줄당 4자)**
+
+| 항목 | 전 | 후(3회 중앙값) | 비고 |
+|---|---:|---:|---|
+| N글자 한 번에 삽입 | 2.8 ms | 2.73 ms | 250001줄 |
+| └ 실행취소 | 1.2 ms | 1.19 ms | |
+| └ 다시실행 | 2.59 ms | 2.59 ms | |
+| N글자 전체 삭제 | 1.15 ms | 1.16 ms | |
+| └ 실행취소 | 2.48 ms | 2.7 ms | |
+| └ 다시실행 | 1.29 ms | 1.14 ms | |
+| 가운데 10% 삭제 | 0.18 ms | 0.14 ms | |
+| └ 실행취소 | 0.31 ms | 0.3 ms | |
+| 이어 입력 100000자(글자당) | 33.31 µs | 0.06 µs | 합계 6.4 ms **555배 빠름** |
+| └ 실행취소 1회(묶음) | 0.23 ms | 0.21 ms | |
+| Backspace 100000회(회당) | 26.34 µs | 4.84 µs | 합계 498.2 ms **5배 빠름** |
+| └ 실행취소 1회(묶음) | 0.33 ms | 1.43 ms | |
+| 무작위 위치 입력(회당) | 0.037 ms | 0.027 ms | 2000회 합계 54.0 ms |
+| └ 2000단계 실행취소 | 73.48 ms | 53.73 ms | |
+| 줄·열(문서 끝) 1회 | 0 ms | 0 ms | 250001줄 1열 |
+| 모두 바꾸기 | 7.93 ms | 7.19 ms | 7143건 |
+| └ 실행취소(1단위) | 4.09 ms | 3.9 ms | |
+
+**읽는 법과 변경 내용**
+- 가장 큰 병목 두 가지를 고쳤다.
+  1. **이어 입력·Backspace 병합**이 매 글자 묶음 전체를 `format!`으로 다시 복사했다 → 글자 수에 비례해 느려져(10만 글자 묶음에서 글자당 5~7 µs) 100만 글자를 계속 치면 사실상 멈춘다. 이제 끝에 덧붙이기(`push_str`)·제자리 교체로 **글자당 0.05~0.06 µs**, Backspace는 조각을 모았다가 실행취소 때 한 번에 합친다(그래서 Backspace 10만 회 묶음의 실행취소가 0.06→1.1 ms로 늘었다. 병합 비용을 뒤로 미룬 것이며 체감 한계 이하).
+  2. **줄 색인**을 갭 버퍼와 같은 물리 좌표로 저장해(`buffer.rs` 머리말), 갭 자리 입력·삭제에서 뒤쪽 줄 전부를 +n 하던 O(줄 수) 갱신을 없앴다. 줄당 4자(25만 줄)에서 이어 입력이 글자당 33 µs → 0.06 µs. 갭을 옮길 때만 옮겨지는 구간의 줄을 고친다. 무작위 위치 편집·실행취소가 약 30~35% 빨라졌다.
+- 정확성 확인: 무작위 삽입·삭제·갭 이동 6000단계를 문자열 모델과 비교하며 **매 단계 줄 색인·글자 수 전체 대조**(`buffer::tests`), 기존 시험 전부 통과.
+- **바뀌지 않은(잡음 수준) 항목**: 한 번에 삽입/삭제/실행취소/다시실행은 이미 1~4 ms 이내(메모리 복사 한계). 무작위 위치 입력은 갭 이동(memmove)이 지배적이라 줄 배치와 무관하게 위치 이동 거리에 비례한다(2000회 28~54 ms).
+- **남은 병목**: 줄당 4자(25만 줄)에서 **줄바꿈을 지우는 Backspace**는 글자당 4.8 µs(줄 색인 `Vec` 중간 삭제 memmove). 25만 줄 이상에서 줄을 연달아 지우는 작업에서만 드러나며 100만 줄이 되면 비례해 커진다 → 필요해지면 줄 색인을 청크/Fenwick 트리로(공개 API 불변).
+- 실행취소 기록은 편집당 지운/넣은 글을 문자열로 들고 있어, 100만 글자를 지우면 그만큼 메모리를 쓴다(5000묶음 제한이 있으나 묶음당 크기 제한은 없음). 필요하면 총 바이트 상한을 추가.
+
+변환 속도(같은 100만 글자, 줄당 40자):
+
+| 인코딩 | 저장용 변환 | 열기(자동 감지 포함) | 바이트 수 |
+|---|---:|---:|---:|
+| UTF-8 | 0.6 ms | 3.6 ms | 1,949,996 |
+| UTF-16 LE | 1.5 ms | 2.3 ms | 2,000,002 |
+| CP949 | 1.8 ms | 1.7 ms | 1,474,998 |
+
+### 9.5 시험
+`cd editor_core && cargo test` — 단위 1(줄 색인 무작위 모델) + 통합: `tests/core.rs` 21, `tests/encoding.rs` 14(CP949 표 해시·17,048자 왕복·대표 값·거절, 감지 순서·별칭, 지정 열기, CP949 파일 열기→편집→저장 왕복, 변환 불가 글자 처리, 상태 값, API, 모두 바꾸기 단위/범위/가장자리), 성능 2 + 100만 글자 2. 의존성 추가 없음(`Cargo.lock`에 외부 패키지 없음).

@@ -69,10 +69,18 @@ pub fn find_next(text: &str, query: &str, from: usize, o: SearchOpts) -> Option<
 
 /// 겹치지 않는 모든 일치(최대 `limit`개).
 pub fn find_all(text: &str, query: &str, o: SearchOpts, limit: usize) -> Vec<(usize, usize)> {
+    find_all_in(text, query, o, 0, text.len(), limit)
+}
+
+/// `[start,end)`에 완전히 들어가는 겹치지 않는 일치(최대 `limit`개).
+pub fn find_all_in(text: &str, query: &str, o: SearchOpts, start: usize, end: usize, limit: usize) -> Vec<(usize, usize)> {
     let mut v = Vec::new();
-    let mut at = 0;
+    let mut at = start;
     while v.len() < limit {
         let Some((s, e)) = find_next(text, query, at, o) else { break };
+        if e > end {
+            break;
+        }
         v.push((s, e));
         at = e;
     }

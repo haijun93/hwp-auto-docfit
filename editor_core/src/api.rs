@@ -1,7 +1,7 @@
 //! JSON 명령 API. 요청 `{"cmd":"edit_xxx","doc":1,...}` → 응답 `{"ok":true,...}` 또는 `{"ok":false,"message":"..."}`.
 //! klib 파이프 규약(`cmd`, `ok`, `message`)과 같은 모양이라 그대로 얹을 수 있다. 위치는 모두 UTF-8 바이트 오프셋.
 
-use crate::doc::{Document, Res};
+use crate::doc::{Document, Res, Status};
 use crate::fileio::{Encoding, LineEnding};
 use crate::json::{self, Json};
 use crate::markdown::{self, BlockKind, BlockSet, Inline, SpanKind};
@@ -57,10 +57,19 @@ impl Engine {
         match cmd {
             "edit_ping" => Ok(Json::obj(vec![("message", "pong".into()), ("version", env!("CARGO_PKG_VERSION").into())])),
             "edit_open" => {
+                // encoding: 자동 감지 대신 지정(다시 열기). path 없이 text로 열 때는 저장 인코딩만 정한다.
+                let enc = match req.str("encoding") {
+                    Some(n) => Some(Encoding::from_name(n).ok_or(ENC_HELP)?),
+                    None => None,
+                };
                 let mut d = if let Some(p) = req.str("path") {
-                    Document::open(Path::new(p))?
+                    Document::open_as(Path::new(p), enc)?
                 } else {
-                    Document::from_text(req.str("text").unwrap_or(""))
+                    let mut d = Document::from_text(req.str("text").unwrap_or(""));
+                    if let Some(e) = enc {
+                        d.set_encoding(e)?;
+                    }
+                    d
                 };
                 if let Some(n) = req.str("line_ending") {
                     d.line_ending = LineEnding::from_name(n).ok_or("line_ending은 LF·CRLF·CR 중 하나여야 합니다.")?;
@@ -162,7 +171,13 @@ impl Engine {
             "edit_find_all" => {
                 let q = req.str("query").ok_or("query가 필요합니다.")?;
                 let limit = req.usize("limit").unwrap_or(10000);
-                let v = self.doc(req)?.find_all(q, opts, limit);
+                // start·end를 주면 그 범위(선택 영역) 안의 일치만
+                let scope = scope_of(req)?;
+                let d = self.doc(req)?;
+                let v = match scope {
+                    Some((a, b)) => d.find_all_in(q, opts, a, b, limit)?,
+                    None => d.find_all(q, opts, limit),
+                };
                 let arr = v.iter().map(|&(s, e)| Json::obj(range_json(s, e))).collect();
                 Ok(Json::obj(vec![("count", num(v.len())), ("matches", Json::Arr(arr))]))
             }
@@ -187,11 +202,16 @@ impl Engine {
             "edit_replace_all" => {
                 let q = req.str("query").ok_or("query가 필요합니다.")?;
                 let w = req.str("with").unwrap_or("");
+                let scope = scope_of(req)?;
                 let d = self.doc(req)?;
-                let n = d.replace_all(q, w, opts)?;
-                let mut j = edited(d, 0);
+                let r = d.replace_all_in(q, w, opts, scope)?;
+                let mut j = edited(d, r.range.map_or(0, |x| x.1));
                 if let Json::Obj(items) = &mut j {
-                    items.push(("count".into(), num(n)));
+                    items.push(("count".into(), num(r.count)));
+                    if let Some((a, b)) = r.range {
+                        items.push(("sel_start".into(), num(a)));
+                        items.push(("sel_end".into(), num(b)));
+                    }
                 }
                 Ok(j)
             }
@@ -262,8 +282,18 @@ impl Engine {
             "edit_set_encoding" => {
                 let n = req.str("encoding").ok_or("encoding이 필요합니다.")?;
                 let d = self.doc(req)?;
-                d.encoding = Encoding::from_name(n).ok_or("encoding은 UTF-8·UTF-8 BOM·UTF-16 LE·UTF-16 BE 중 하나여야 합니다.")?;
+                d.set_encoding(Encoding::from_name(n).ok_or(ENC_HELP)?)?;
                 Ok(info(d))
+            }
+            "edit_status" => {
+                // 상태 표시줄: pos(커서, 기본 0), 선택이 있으면 sel_start·sel_end
+                let pos = req.usize("pos").unwrap_or(0);
+                let sel = match (req.usize("sel_start"), req.usize("sel_end")) {
+                    (Some(a), Some(b)) => Some((a.min(b), a.max(b))),
+                    _ => None,
+                };
+                let st = self.doc(req)?.status(pos, sel)?;
+                Ok(status_json(&st))
             }
             "edit_save" => {
                 let d = self.doc(req)?;
@@ -280,6 +310,48 @@ impl Engine {
             other => Err(format!("알 수 없는 명령: {other}")),
         }
     }
+}
+
+const ENC_HELP: &str = "encoding은 UTF-8·UTF-8 BOM·UTF-16 LE·UTF-16 BE·CP949(EUC-KR) 중 하나여야 합니다.";
+
+/// start·end가 둘 다 있으면 범위, 하나만 있으면 오류, 없으면 전체.
+fn scope_of(req: &Json) -> Res<Option<(usize, usize)>> {
+    match (req.usize("start"), req.usize("end")) {
+        (Some(a), Some(b)) if a <= b => Ok(Some((a, b))),
+        (Some(_), Some(_)) => Err("시작이 끝보다 큽니다.".into()),
+        (None, None) => Ok(None),
+        _ => Err("범위는 start와 end를 함께 주어야 합니다.".into()),
+    }
+}
+
+fn status_json(st: &Status) -> Json {
+    let le_label = match st.line_ending {
+        LineEnding::Crlf => "Windows (CRLF)",
+        LineEnding::Lf => "Unix (LF)",
+        LineEnding::Cr => "Mac (CR)",
+    };
+    let mut summary = format!("줄 {}, 열 {}  |  {}자", st.line, st.col, st.chars);
+    if let Some(n) = st.selected_chars {
+        summary.push_str(&format!(" (선택 {n}자)"));
+    }
+    summary.push_str(&format!("  |  {le_label}  |  {}", st.encoding.name()));
+    let mut v = vec![
+        ("line", num(st.line)),
+        ("col", num(st.col)),
+        ("lines", num(st.lines)),
+        ("chars", num(st.chars)),
+        ("chars_no_newline", num(st.chars_no_newline)),
+        ("bytes", num(st.bytes)),
+        ("line_ending", st.line_ending.name().into()),
+        ("line_ending_label", le_label.into()),
+        ("mixed_line_endings", st.mixed_line_endings.into()),
+        ("encoding", st.encoding.name().into()),
+    ];
+    if let Some(n) = st.selected_chars {
+        v.push(("selected_chars", num(n)));
+    }
+    v.push(("summary", summary.into()));
+    Json::obj(v)
 }
 
 fn info(d: &mut Document) -> Json {
