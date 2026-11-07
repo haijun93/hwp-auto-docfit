@@ -10,7 +10,7 @@ from defusedxml import ElementTree as ET
 from .batch_format import ParagraphStyle, StylePool, plain_text, tag, _serialize
 from .fidelity.package import PackageSnapshot, build_package
 from .hwpx import validate_hwpx
-from .marker_scheme import classify_marker
+from .marker_scheme import BLACK_CIRCLED, classify_marker
 
 
 def leading_width(text):
@@ -35,7 +35,7 @@ def is_continuation(parent_indent, text):
         return False
     if marker is None and stripped.startswith('②') and (len(stripped) == 1 or stripped[1].isspace()):
         return True
-    if stripped.startswith(('❶', 'ㅇ)', 'ㅇ(')):
+    if stripped[:1] in BLACK_CIRCLED or stripped.startswith(('ㅇ)', 'ㅇ(')):
         return True
     if marker and re.match(r'^\s*[^:：\r\n]{1,30}[:：]\s*', text):
         return True
@@ -296,3 +296,17 @@ def align_hwpx(source, target, *, original=None, rules=None, include_plain=False
         Path(target).write_bytes(build_package(snapshot, replacements))
         validate_hwpx(target)
     return changed
+
+
+def align_hwpx_in_place(path, *, original=None, rules=None):
+    """Run align_hwpx on an already formatted file; replace it only after validation."""
+    path = Path(path)
+    temp = path.with_name(path.name + '.continuation.tmp')
+    try:
+        changed = align_hwpx(path, temp, original=original, rules=rules)
+        if changed:
+            os.replace(temp, path)
+        return changed
+    finally:
+        if temp.exists():
+            temp.unlink()
