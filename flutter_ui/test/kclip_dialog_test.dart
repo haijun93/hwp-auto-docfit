@@ -234,7 +234,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('kclip-memo')), findsNothing);
     expect(find.byKey(const ValueKey('kclip-drop-zone')), findsNothing);
-    for (final c in const ['전체', '글', '그림', '파일', '폴더', '웹']) {
+    for (final c in const ['전체', '문서', '그림', '파일', '폴더', '웹', '화면캡처']) {
       expect(find.byKey(ValueKey('kclip-category-$c')), findsOneWidget);
     }
   });

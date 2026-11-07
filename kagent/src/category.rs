@@ -255,6 +255,11 @@ pub fn filter_sorted(entries: &[Entry], category: Category, query: &str, is_dir:
     hits
 }
 
+/// 공통 규칙 표 시험용 JSON 읽기(라이브러리 단독 빌드에서도 쓰도록 같은 파일을 붙인다).
+#[cfg(test)]
+#[path = "json.rs"]
+mod test_json;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -391,5 +396,63 @@ mod tests {
         assert_eq!(filter_sorted(&v, Category::Document, "", &none), vec![2, 3, 0]);
         assert_eq!(filter_sorted(&v, Category::Document, "메모4", &none), vec![3]);
         assert!(filter_sorted(&v, Category::Web, "", &none).is_empty());
+    }
+
+    // ---- 공통 규칙 표(tests/fixtures/kclip_category_rules.json): 관리창(Dart)과 같은 표·사례를 읽는다 ----
+
+    fn shared_rules() -> test_json::Value {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../tests/fixtures/kclip_category_rules.json");
+        let text = std::fs::read_to_string(path).expect("공통 분류 규칙 표를 읽지 못함");
+        test_json::parse(&text).expect("공통 분류 규칙 표 JSON 오류")
+    }
+
+    fn strings(v: Option<&test_json::Value>) -> Vec<String> {
+        match v {
+            Some(test_json::Value::Arr(items)) => items.iter().map(|x| match x {
+                test_json::Value::Str(s) => s.clone(),
+                other => panic!("문자열이 아님: {other:?}"),
+            }).collect(),
+            None => Vec::new(),
+            other => panic!("배열이 아님: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rule_tables_match_shared_fixture() {
+        let rules = shared_rules();
+        let own = |t: &[&str]| t.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(strings(rules.get("labels")), Category::ALL.iter().map(|c| c.label().to_string()).collect::<Vec<_>>());
+        assert_eq!(strings(rules.get("doc_exts")), own(DOC_EXTS));
+        assert_eq!(strings(rules.get("image_exts")), own(IMAGE_EXTS));
+        assert_eq!(strings(rules.get("doc_programs")), own(DOC_PROGRAMS));
+        assert_eq!(strings(rules.get("browsers")), own(BROWSERS));
+        assert_eq!(strings(rules.get("doc_formats")), own(DOC_FORMATS));
+    }
+
+    #[test]
+    fn shared_fixture_cases_classify_the_same() {
+        let rules = shared_rules();
+        let Some(test_json::Value::Arr(cases)) = rules.get("cases") else { panic!("cases 없음") };
+        assert!(cases.len() >= 30);
+        for case in cases {
+            let name = case.str("name").unwrap_or("?");
+            let e = case.get("entry").expect("entry 없음");
+            let entry = Entry {
+                kind: e.str("kind").unwrap_or("").into(),
+                preview: e.str("preview").unwrap_or("").into(),
+                source: e.str("source").unwrap_or("").into(),
+                formats: strings(e.get("formats")),
+                paths: strings(e.get("paths")),
+                web_url: e.str("web_url").map(str::to_owned),
+                text: e.str("text").unwrap_or("").into(),
+                ..Default::default()
+            };
+            let known: Vec<(String, bool)> = match case.get("is_dir") {
+                Some(test_json::Value::Obj(items)) => items.iter().map(|(k, v)| (k.clone(), *v == test_json::Value::Bool(true))).collect(),
+                _ => Vec::new(),
+            };
+            let lookup = |p: &str| known.iter().find(|(k, _)| k == p).map(|(_, d)| *d);
+            assert_eq!(cats(&entry, &lookup), strings(case.get("expect")), "사례: {name}");
+        }
     }
 }
