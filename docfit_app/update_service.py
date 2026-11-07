@@ -18,6 +18,7 @@ from urllib.parse import urlparse, urljoin, quote
 import webbrowser
 
 from docfit_core.network_policy import offline_mode, settings_folder
+from docfit_core import update_signature
 from docfit_core.updater import verify_download
 
 RAW = "https://gitlab.aigov.go.kr/haijun93/hwp_autodocfit/-/raw/downloads/"
@@ -217,6 +218,8 @@ class UpdateService:
 
     def _gitlab(self):
         data = json.loads(self._read(RAW + "latest.json?inline=false"))
+        if update_signature.enabled():
+            update_signature.verify_latest(data)
         version = str(data["version"]).removeprefix("v")
         version_key(version)
         files = {kind: self._file(version, kind, data["files"][kind]) for kind in ("portable", "setup")}
@@ -226,6 +229,8 @@ class UpdateService:
         return dict(version=version, files=files, notes=[str(n).replace("**", "").strip().splitlines()[0] for n in notes[:6] if str(n).strip()], source="GitLab")
 
     def _github(self):
+        if update_signature.enabled():
+            raise update_signature.SignatureError("서명 검증을 켠 상태에서는 서명되지 않은 GitHub 릴리스 정보를 쓰지 않습니다.")
         data = json.loads(self._read(GITHUB_API))
         version = str(data["tag_name"]).removeprefix("v")
         version_key(version)
@@ -241,13 +246,18 @@ class UpdateService:
 
     def _refresh(self):
         self._set(step="checking", percent=0, message="새 버전을 확인하고 있어요…")
-        results = []
+        results, rejected = [], None
         for read in (self._gitlab,) if self._internal_only() else (self._gitlab, self._github):
             try:
                 self._metadata_deadline = self.clock() + 8
                 results.append(read())
+            except update_signature.SignatureError as error:
+                rejected = rejected or str(error)
             except Exception:
                 pass
+        if not results and rejected:
+            self._set(step="failed", message=rejected)
+            return False
         if not results:
             self._set(step="failed", message="업데이트 정보를 확인하지 못했어요. 잠시 뒤 다시 눌러 주세요.")
             return False
