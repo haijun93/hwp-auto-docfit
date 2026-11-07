@@ -26,6 +26,7 @@ void main() {
     'lineStyleDot',
     'sketchDinoExample',
     'sketchRecognizeImage',
+    'sketchImportHwpx',
     'undoButton',
     'redoButton',
     'clearAllButton',
