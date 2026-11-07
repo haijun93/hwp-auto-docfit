@@ -753,6 +753,7 @@
 
 - [x] Alpha 6 기준 계층/IPC/성능 병목 검토 보고서를 현행화했다.
 - [ ] IPC 동기 호출에 job_id/취소/진행 이벤트를 설계하고, Flutter 네이티브 UI에 실제 문서 처리 엔진을 연결한다.
+  - 설계 완료(2026-11-07, 카드 IPCJOB): [docs/IPC_JOBS_DESIGN.md](docs/IPC_JOBS_DESIGN.md). 기존 `JobManager` 재사용, 전송층 잠금 분리→Dart 소비자→기능별 편입(P1~P6). 구현·엔진 연결(P6)은 아직 하지 않아 체크하지 않는다.
 - [ ] `main.dart`와 `hwp-auto-docfit.py`를 기능별로 점진 분리한다. 기존 COM·문서 정확도 회귀를 우선한다.
 - 근거: `docs/CODE_RESTRUCTURING_REVIEW_ALPHA6_2026-10-13.md`.
 
