@@ -153,6 +153,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.getCenter(notesHandle).dx, notesStart + 50);
       await tester.tap(notesHandle);
+      // 두 번 누르기 판정 시간이 지나야 초점이 확정된다.
+      await tester.pump(const Duration(milliseconds: 400));
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
       await tester.pumpAndSettle();
       expect(tester.getCenter(notesHandle).dx, notesStart + 50 - 16);

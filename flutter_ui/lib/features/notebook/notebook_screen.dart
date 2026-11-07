@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -14,14 +15,13 @@ import 'notebook_api.dart';
 /// 폭이 [kNotebookWideWidth] 미만이면 세 칸을 탭으로 바꾼다.
 const kNotebookWideWidth = 1000.0;
 
-<<<<<<< HEAD
 /// 본문검색 결과·출처 비교·미리보기 본문의 기본 글자 크기: 10pt.
 /// 기준: Flutter 논리 픽셀 1px = 1/96인치(Windows 100% 배율의 화면 픽셀, CSS px와 같음), 1pt = 1/72인치
 /// → 10pt = 10 × 96 ÷ 72 ≈ 13.33 논리 픽셀. Windows 배율(125%·150%)은 기기 픽셀 비율로, 접근성 글자 확대는
 /// textScaler로 따로 곱해지므로 여기서는 크기를 고정해 호스트의 기본 글자 크기(약 30px로 보이던 원인)에 끌려가지 않게 한다.
 const kNbReadingFontSize = 10 * 96 / 72;
 const _readingStyle = TextStyle(fontSize: kNbReadingFontSize, height: 1.5);
-=======
+
 /// 넓은 화면의 칸 폭(사용자가 구분선을 끌어 조정). 기본·최소·최대와 가운데 칸 최소 폭.
 const kNotebookSourcesWidth = 260.0;
 const kNotebookNotesWidth = 340.0;
@@ -35,7 +35,6 @@ const kNotebookHandleWidth = 8.0;
 /// 마지막으로 정한 칸 폭. 앱을 켜 둔 동안 노트북을 다시 열어도 유지한다(파일 저장은 후속).
 double _savedSourcesWidth = kNotebookSourcesWidth;
 double _savedNotesWidth = kNotebookNotesWidth;
->>>>>>> github/main
 
 enum _Middle { search, compare, preview, transform }
 
@@ -1557,7 +1556,6 @@ class _LibraryPickDialogState extends State<_LibraryPickDialog> {
   }
 }
 
-<<<<<<< HEAD
 /// 메모 편집 화면: 메모 편집기 + '출처로 저장'. 저장하면 새 출처 id로 닫는다.
 class _MemoPage extends StatefulWidget {
   const _MemoPage({
@@ -1601,7 +1599,45 @@ class _MemoPageState extends State<_MemoPage> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
-=======
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('메모'), toolbarHeight: 44),
+      body: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        child: MemoEditor(
+          initial: widget.initial,
+          controller: widget.controller,
+          onAutoSave: widget.onAutoSave,
+          onDelete: widget.onDelete,
+          footer: Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _error ?? "작성된 메모를 저장하면 TEXT 형식으로 '출처'에 추가됩니다.",
+                    key: const ValueKey('memo-hint'),
+                    style: TextStyle(fontSize: 12, color: _error == null ? Colors.black54 : Colors.red),
+                  ),
+                ),
+                FilledButton.icon(
+                  key: const ValueKey('memo-save'),
+                  onPressed: _saving ? null : _save,
+                  icon: const Icon(Icons.save_outlined, size: 18),
+                  label: const Text('출처로 저장'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// 두 칸 사이의 구분선. 끌거나 좌우 방향키로 폭을 바꾸고, 두 번 누르거나 Home 키로 기본 폭으로 되돌린다.
 class _PaneResizeHandle extends StatefulWidget {
   const _PaneResizeHandle({super.key, required this.semanticLabel, required this.onDelta, required this.onReset});
@@ -1641,40 +1677,10 @@ class _PaneResizeHandleState extends State<_PaneResizeHandle> {
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
->>>>>>> github/main
   }
 
   @override
   Widget build(BuildContext context) {
-<<<<<<< HEAD
-    return Scaffold(
-      appBar: AppBar(title: const Text('메모'), toolbarHeight: 44),
-      body: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-        child: MemoEditor(
-          initial: widget.initial,
-          controller: widget.controller,
-          onAutoSave: widget.onAutoSave,
-          onDelete: widget.onDelete,
-          footer: Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    _error ?? "작성된 메모를 저장하면 TEXT 형식으로 '출처'에 추가됩니다.",
-                    key: const ValueKey('memo-hint'),
-                    style: TextStyle(fontSize: 12, color: _error == null ? Colors.black54 : Colors.red),
-                  ),
-                ),
-                FilledButton.icon(
-                  key: const ValueKey('memo-save'),
-                  onPressed: _saving ? null : _save,
-                  icon: const Icon(Icons.save_outlined, size: 18),
-                  label: const Text('출처로 저장'),
-                ),
-              ],
-=======
     final theme = Theme.of(context);
     final active = _hover || _focus;
     return Semantics(
@@ -1691,6 +1697,8 @@ class _PaneResizeHandleState extends State<_PaneResizeHandle> {
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTapDown: (_) => _node.requestFocus(),
+            // 누른 지점부터 움직인 거리를 모두 반영(끌기 시작 여유 20px만큼 손잡이가 늦게 따라오지 않게).
+            dragStartBehavior: DragStartBehavior.down,
             onHorizontalDragUpdate: (details) => widget.onDelta(details.delta.dx),
             onDoubleTap: widget.onReset,
             child: SizedBox(
@@ -1701,7 +1709,6 @@ class _PaneResizeHandleState extends State<_PaneResizeHandle> {
                   color: active ? theme.colorScheme.primary : theme.dividerColor,
                 ),
               ),
->>>>>>> github/main
             ),
           ),
         ),
