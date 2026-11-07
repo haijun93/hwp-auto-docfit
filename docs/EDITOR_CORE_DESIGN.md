@@ -165,3 +165,20 @@ if val.str("cmd").is_some_and(|c| c.starts_with("edit_")) {
 4. 이력 없이 글을 이어 넣는 열기(`edit_open` 나눠 보내기 또는 `edit_reset_history`) — 요청 64 KiB(Python 브리지 한도)를 넘는 메모는 지금 Dart 폴백.
 5. 열린 문서 수 조회(`Engine::doc_count`) — klib 유휴 종료 감시가 편집 중 문서가 있으면 종료하지 않게(지금은 30초 깨우기로 대신).
 6. 패닉 격리: klib release는 `panic = "abort"`라 코어 패닉이 자료함까지 끝낸다 — 무작위 명령열 퍼징 확대 필요(8절 5).
+
+## 10. 자료함 '+메모'·글 자료 고치기 (LIBMEMO, 2026-11-07, 브랜치 `feature/libmemo`)
+
+결정 단계 ④(다른 화면에서도 재사용). 노트북 동작은 그대로다.
+- **Flutter**: 노트북의 메모 화면(`_MemoPage`)을 `editor/memo_editor_page.dart`의 `MemoEditorPage<T>`로 옮겨 두 화면이 같이 쓴다
+  (저장 단추 이름·안내 문구·저장 동작만 다르고 키 `memo-save`·`memo-hint`는 같음).
+  자료함 도구줄 `+메모`(`libraryAddMemo`): 편집기를 열고 '자료함에 저장'하면 핵심자료에 `text` 자료로 넣는다. 저장하지 않고 닫으면 초안이 남고(`+메모(초안)`), 휴지통은 초안을 버린다.
+  글 자료(`text`·`note`) 더블클릭·메뉴 '열기'·검색 결과 선택은 같은 편집기로 열고 '저장'하면 그 자료의 내용과 이름을 고친다(닫기만 하면 바뀌지 않음, 휴지통 없음).
+  파일·폴더·링크·서식 글(`richText`)은 이전처럼 연결 프로그램·보기 창. 새 인터페이스 `LibraryMemoApi`(`readItemText`·`updateItemText`·`memoEditorBackend`)를
+  `BridgeLibraryApi`·`InMemoryLibraryApi`가 구현하고, 구현하지 않는 API면 글 자료도 이전 보기 창으로 연다.
+- **klib**: `item_text_get {id}` → `content`·`display_name`·`kind`, `item_text_set {id, content, display_name?}`(이름이 비면 그대로). 경로 인자는 없고,
+  `text`·`note` 종류이면서 사본이 자료함 데이터 폴더 `boxes/<box_id>/items` 바로 아래 `.txt`일 때만 읽고 쓴다(사용자 원본 보호). 쓰기는 임시 파일 후 바꿔치기,
+  저장 뒤 본문 검색 색인을 다시 만든다(실패는 `index_warning`). 시험 `test_item_text_get_set_for_memo_editor`.
+- **Python**: `ALLOWED_COMMANDS`에 `item_text_get`·`item_text_set`. `desktop_web_ui.library()`도 `edit_*`를 노트북과 같은 `_memo_editor_request`로 보내
+  `path` 인자와 모르는 편집 명령을 거절한다(이전에는 자료함 통로로 `edit_save {path}`가 그대로 klib에 갈 수 있었음).
+- **한계**: 요청 64 KiB(Python 브리지 한도)를 넘는 메모는 `item_add`·`item_text_set`이 실패한다(편집기는 Dart 폴백으로 열리지만 저장 불가 — 오류 표시).
+  고치기 화면은 자동 저장 초안이 없어 저장하지 않고 닫으면 고친 내용이 사라진다.

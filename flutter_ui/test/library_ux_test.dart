@@ -165,14 +165,14 @@ void main() {
       expect(opener.calls.single.confirmed, isTrue);
     });
 
-    testWidgets('텍스트 자료는 보기 창으로 보여 주고 실행기를 부르지 않는다', (tester) async {
+    testWidgets('텍스트 자료는 메모 편집기로 열고 실행기를 부르지 않는다', (tester) async {
       final api = InMemoryLibraryApi();
       final box = await api.createBox('텍스트');
       final item = await api.addItem(boxId: box.id, kind: LibraryItemKind.text, title: '메모', space: LibrarySpace.core, x: 16, y: 16, text: '회의 메모 본문');
       final opener = _FakeOpener();
       await _pumpScreen(tester, api, opener: opener);
       await _doubleTap(tester, _card(item.id));
-      expect(find.byKey(const ValueKey('libraryTextView')), findsOneWidget);
+      expect(find.byKey(const ValueKey('libraryMemoPage')), findsOneWidget);
       expect(find.text('회의 메모 본문'), findsOneWidget);
       expect(opener.calls, isEmpty);
     });

@@ -388,5 +388,45 @@ class NotebookBridgeTests(unittest.TestCase):
             self.assertEqual(bridge.notebook({"cmd": "edit_ping"}), {"ok": False, "message": "klib 없음"})
 
 
+class LibraryMemoBridgeTests(unittest.TestCase):
+    """자료함 '+메모': 편집 코어 명령과 글 자료 읽기·고치기 명령."""
+
+    def _bridge(self, developer=True):
+        import desktop_web_ui
+        bridge = desktop_web_ui.DesktopWebBridge.__new__(desktop_web_ui.DesktopWebBridge)
+        bridge._developer_mode_enabled = lambda: developer
+        return bridge
+
+    def test_item_text_commands_are_allowed_but_not_editor_commands(self):
+        from docfit_app.library_bridge import EDITOR_COMMANDS
+        for cmd in ("item_text_get", "item_text_set"):
+            self.assertIn(cmd, ALLOWED_COMMANDS)
+            self.assertNotIn(cmd, EDITOR_COMMANDS)
+
+    def test_library_forwards_item_text_and_edit_commands(self):
+        from unittest import mock
+        bridge = self._bridge()
+        fake = mock.Mock()
+        fake.request.return_value = {"ok": True}
+        with mock.patch("docfit_app.library_bridge.LibraryBridge", return_value=fake):
+            for request in ({"cmd": "item_text_get", "id": 3},
+                            {"cmd": "item_text_set", "id": 3, "content": "# 메모", "display_name": "회의"},
+                            {"cmd": "edit_open", "text": "가나"}):
+                self.assertEqual(bridge.library(request), {"ok": True})
+        self.assertEqual([c.args[0]["cmd"] for c in fake.request.call_args_list],
+                         ["item_text_get", "item_text_set", "edit_open"])
+
+    def test_library_edit_rejects_paths_and_unknown_commands(self):
+        from unittest import mock
+        bridge = self._bridge()
+        with mock.patch("docfit_app.library_bridge.LibraryBridge") as factory:
+            self.assertFalse(bridge.library({"cmd": "edit_save", "doc": 1, "path": "C:/Windows/win.ini"})["ok"])
+            self.assertFalse(bridge.library({"cmd": "edit_open", "path": "C:/Windows/win.ini"})["ok"])
+            self.assertFalse(bridge.library({"cmd": "edit_shell", "doc": 1})["ok"])
+            factory.assert_not_called()
+        self.assertEqual(self._bridge(developer=False).library({"cmd": "edit_open", "text": ""})["code"],
+                         "DEVELOPER_MODE_REQUIRED")
+
+
 if __name__ == "__main__":
     unittest.main()

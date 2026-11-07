@@ -1244,6 +1244,74 @@ pub fn handle_request(req_str: &str, db: &Mutex<Database>, running: &AtomicBool)
 
         }
 
+        // 자료함 '+메모'·글 자료 더블클릭: 메모 편집기로 글 자료(text·note) 사본을 읽고 고친다. 경로 인자는 받지 않는다.
+        "item_text_get" => {
+
+            let Some(id) = val.i64("id") else {
+
+                return json::to_string(&err_val("item id가 누락되었습니다."));
+
+            };
+
+            match db.lock().unwrap().item_text_get(id) {
+
+                Ok((it, content)) => ok_val(vec![
+
+                    ("id", it.id.into()),
+
+                    ("kind", it.kind.into()),
+
+                    ("display_name", it.display_name.into()),
+
+                    ("content", content.into()),
+
+                ]),
+
+                Err(e) => err_val(&e),
+
+            }
+
+        }
+
+        "item_text_set" => {
+
+            let Some(id) = val.i64("id") else {
+
+                return json::to_string(&err_val("item id가 누락되었습니다."));
+
+            };
+
+            let Some(content) = val.str("content") else {
+
+                return json::to_string(&err_val("content가 누락되었습니다."));
+
+            };
+
+            let result = db.lock().unwrap().item_text_set(id, content, val.str("display_name"));
+
+            match result {
+
+                Ok(it) => {
+
+                    // 본문 검색 색인도 새 내용으로 갈아 끼운다. 실패해도 저장은 된 것이므로 경고로만 알린다.
+                    let indexing = crate::search_index()
+                        .and_then(|ix| crate::content::index_file(ix, &it.source_path, &it.display_name, it.box_id).map_err(|e| format!("본문 색인 실패: {e}")))
+                        .err();
+
+                    let mut extra = vec![("display_name", Value::from(it.display_name))];
+
+                    if let Some(message) = indexing { extra.push(("index_warning", message.into())); }
+
+                    ok_val(extra)
+
+                }
+
+                Err(e) => err_val(&e),
+
+            }
+
+        }
+
         "item_move" => {
 
             let Some(id) = val.i64("id") else {

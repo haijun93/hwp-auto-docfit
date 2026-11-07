@@ -7,6 +7,8 @@ import 'package:flutter/services.dart';
 import 'package:file_selector/file_selector.dart';
 
 import '../../core/drop_events.dart';
+import '../editor/memo_editor.dart';
+import '../editor/memo_editor_page.dart';
 import '../notebook/notebook_api.dart';
 import 'library_api.dart';
 import 'library_layout.dart';
@@ -108,6 +110,9 @@ bool _canCopyItem(LibraryItem item) =>
 
 const _textKinds = {LibraryItemKind.text, LibraryItemKind.richText, LibraryItemKind.note};
 
+/// 메모 편집기로 열어 고치는 글 자료(서식 글 richText는 JSON이라 제외).
+const _memoKinds = {LibraryItemKind.text, LibraryItemKind.note};
+
 final _riskyOpenPath = RegExp(
   r'\.(exe|bat|cmd|com|ps1|psm1|vbs|vbe|js|jse|wsf|wsh|msi|msp|scr|pif|lnk|url|hta|cpl|msc|reg|jar|appref-ms)[\s.]*$',
   caseSensitive: false,
@@ -205,6 +210,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final Object api = widget.api;
     return api is LibraryDropApi ? api : null;
   }
+
+  LibraryMemoApi? get _memoApi {
+    final Object api = widget.api;
+    return api is LibraryMemoApi ? api : null;
+  }
+
+  /// '+메모'로 쓰다가 저장하지 않고 닫은 초안. 다시 '+메모'를 누르면 이어서 쓴다.
+  MemoDocument? _memoDraft;
 
   LibraryOpenApi? get _openApi {
     final explicit = widget.openApi;
@@ -631,8 +644,86 @@ class _LibraryScreenState extends State<LibraryScreen> {
         ],
       ));
 
-  /// 더블클릭·메뉴 '열기'. 파일·폴더는 연결 앱/탐색기, 웹 주소는 기본 브라우저, 텍스트는 보기 창.
+  /// '+메모': 메모 편집기(노트북 '+메모 추가'와 같은 것)를 열고, 저장하면 핵심자료에 텍스트 자료로 넣는다.
+  /// 저장하지 않고 닫으면 초안이 남고, 휴지통을 누르면 초안을 버린다.
+  Future<void> _addMemo() async {
+    final box = _selectedBox;
+    if (box == null) return;
+    final saved = await Navigator.of(context).push<LibraryItem>(
+      MaterialPageRoute(
+        builder: (pageContext) => MemoEditorPage<LibraryItem>(
+          key: const ValueKey('libraryMemoPage'),
+          initial: _memoDraft ?? const MemoDocument(title: '새 메모', markdown: ''),
+          onAutoSave: (doc) async {
+            if (mounted) setState(() => _memoDraft = doc);
+          },
+          onDelete: () {
+            setState(() => _memoDraft = null);
+            Navigator.of(pageContext).pop();
+          },
+          onSave: (doc) {
+            final position = _nextPosition(LibrarySpace.core);
+            return widget.api.addItem(
+              boxId: box.id,
+              kind: LibraryItemKind.text,
+              title: doc.title.isEmpty ? '새 메모' : doc.title,
+              space: LibrarySpace.core,
+              x: position.dx,
+              y: position.dy,
+              text: doc.markdown,
+            );
+          },
+          saveLabel: '자료함에 저장',
+          hint: "작성한 메모를 저장하면 '${_spaceNames[LibrarySpace.core]}'에 텍스트 자료로 들어갑니다.",
+          editorBackend: _memoApi?.memoEditorBackend,
+        ),
+      ),
+    );
+    if (!mounted || saved == null) return;
+    setState(() {
+      _memoDraft = null;
+      _statusMessage = '메모를 자료함에 넣었습니다.';
+    });
+    if (_selectedBox?.id == box.id) await _loadBoxContent(box.id);
+  }
+
+  /// 글 자료를 메모 편집기로 열어 고친다. 저장하면 같은 자료의 내용(과 이름)이 바뀐다. 닫기만 하면 바뀌지 않는다.
+  Future<void> _editTextItem(LibraryItem item, LibraryMemoApi memoApi) async {
+    final String text;
+    try {
+      text = await memoApi.readItemText(item.id);
+    } catch (error) {
+      if (mounted) setState(() => _statusMessage = '메모를 열지 못했습니다: ${_errorText(error)}');
+      return;
+    }
+    if (!mounted) return;
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (pageContext) => MemoEditorPage<bool>(
+          key: const ValueKey('libraryMemoPage'),
+          initial: MemoDocument(title: item.title, markdown: text),
+          onSave: (doc) async {
+            await memoApi.updateItemText(item.id, title: doc.title, text: doc.markdown);
+            return true;
+          },
+          saveLabel: '저장',
+          hint: '저장하면 이 텍스트 자료의 내용이 바뀝니다. 닫기만 하면 바뀌지 않습니다.',
+          editorBackend: memoApi.memoEditorBackend,
+        ),
+      ),
+    );
+    if (!mounted || saved != true) return;
+    setState(() => _statusMessage = '메모를 저장했습니다.');
+    await _reload();
+  }
+
+  /// 더블클릭·메뉴 '열기'. 파일·폴더는 연결 앱/탐색기, 웹 주소는 기본 브라우저, 글 자료는 메모 편집기(고칠 수 없는 환경이면 보기 창).
   Future<void> _openItem(LibraryItem item) async {
+    final memoApi = _memoApi;
+    if (memoApi != null && _memoKinds.contains(item.kind)) {
+      await _editTextItem(item, memoApi);
+      return;
+    }
     final source = (item.source ?? '').trim();
     if (source.isEmpty && _textKinds.contains(item.kind)) {
       await _showTextItem(item);
@@ -1237,6 +1328,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
               onSubmitted: (_) => _addText(),
             )),
             ElevatedButton(key: const ValueKey('libraryAddItemSubmit'), onPressed: () => _addText(), child: const Text('자료 추가')),
+            OutlinedButton.icon(
+              key: const ValueKey('libraryAddMemo'),
+              onPressed: _addMemo,
+              icon: const Icon(Icons.note_add_outlined, size: 18),
+              label: Text(_memoDraft == null ? '+메모' : '+메모(초안)'),
+            ),
             OutlinedButton(key: const ValueKey('libraryPaste'), onPressed: _paste, child: const Text('붙여넣기')),
             const Text('각 공간에 파일을 끌어 놓으세요. Ctrl+클릭으로 여러 개를 고릅니다.'),
           ]),

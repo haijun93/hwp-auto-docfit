@@ -20,6 +20,8 @@ ALLOWED_COMMANDS = frozenset({
 
     "item_add", "item_get", "item_update", "item_rename", "item_move", "item_delete", "item_search",
 
+    "item_text_get", "item_text_set",  # 글 자료 사본 읽기·고치기(자료함 메모 편집기). 경로 인자 없음.
+
     "relation_add", "relation_delete", "relation_list", "relation_update", "box_export",
 
     "search", "index_file", "remove_file",
