@@ -1,0 +1,15 @@
+[package]
+name = "editor_core"
+version = "0.1.0"
+edition = "2024"
+description = "메모 편집기 Rust 코어 (텍스트 버퍼·실행취소·찾기·Markdown 서식·자동 저장). 외부 의존성 없음."
+license = "MIT"
+publish = false
+
+[dependencies]
+# 의존성 추가 금지(GitLab 보안 검사): std만 사용한다.
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

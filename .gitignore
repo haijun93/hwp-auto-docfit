@@ -37,3 +37,4 @@ klib/target/
 hierarchy/target/
 resources/kagent.exe
 resources/kagent.exe.sha256
+editor_core/target/
