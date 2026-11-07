@@ -288,3 +288,11 @@ KIND = {
 3. `start_job` 멱등키(`client_request_id`)와 완료 이력 영속화: 지금은 재연결 = 새 백엔드라 필요성이 낮다. 백엔드를 살려 둔 채 재연결하는 구조(Dart `disconnected`가 kill하지 않는 방식)로 바꿀 때 함께 결정한다.
 4. 자료함·타임머신 스캔처럼 오래 도는 `singleton` job을 문서 슬롯과 병행 허용해도 되는가(디스크 경쟁, 한/글과의 충돌 없음 여부는 Windows 실측 필요).
 5. `hwp_bulk`의 암호 목록은 `passwords.clear()`로 버린다. job `params`는 `native-jobs.json`에는 기록되지 않지만(ID·종류만) 사건 링 버퍼·`status`에 `params`가 새지 않는지 P3에서 확인해야 한다(`JobManager.status`는 `params`를 반환하지 않음을 확인했으나, 어댑터가 `item_done` 등에 담는 값은 검토 필요).
+
+## 10. 구현 현황 (카드 IPCJOB2, 1단계)
+
+- 공용 모듈 `docfit_app/job_envelope.py`: `job_error`(5.5 매핑, `recoverable` 추가), `ProgressThrottle`(초당 10건 상한), `fit_result`(256 KiB 한도).
+- `JobManager`: `job_status(id)`(종료 시 `result`/`error`), `SINGLETON_KINDS`(같은 kind 동시 1개, 위반 시 `JOB_RUNNING`), `failed.data`에 `recoverable` 추가, `cancelled.data.partial`.
+- 첫 이관 대상 **`library_index`**(3절 #8, 파일 IO만·COM 없음): `start_job('library_index', {library_id})`. 기존 `library('index')` 동기 호출은 그대로.
+- `handshake.capabilities`에 `jobs.v1` 추가. `job_status` 메서드 추가. 전송층 CONTROL 잠금 밖 처리(5.8)는 이번 카드에 포함하지 않음.
+- 시험: `tests/test_ipc_job_library_index.py`(11건).

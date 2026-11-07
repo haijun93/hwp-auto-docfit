@@ -38,6 +38,13 @@ class ApplicationService:
         if kind == 'table_copy':
             from .table_units_service import TableUnitsService
             return TableUnitsService(self._table_hwp, settings=self.store).start_copy_job(self.jobs, params)
+        if kind == 'library_index':
+            library_id = params.get('library_id')
+            if isinstance(library_id, bool) or not isinstance(library_id, int):
+                raise ServiceError('INVALID_INPUT', '자료함을 선택해 주세요.')
+            service = self._library()
+            identifier = self.jobs.begin(kind, {'library_id': library_id})
+            return self.jobs.start(kind, {'library_id': library_id}, service.index_runner(library_id), job_id=identifier)
         raise ServiceError('NOT_AVAILABLE', '이 실행기에서는 해당 문서 엔진을 아직 사용할 수 없습니다.')
 
     @staticmethod
@@ -57,6 +64,15 @@ class ApplicationService:
             except Exception:
                 pass
             raise
+
+    def _library(self):
+        if getattr(self, '_library_service', None) is None:
+            from .library_service import LibraryService
+            self._library_service = LibraryService(self.store._path.parent / 'workspace' / 'library.db')
+        return self._library_service
+
+    def job_status(self, job_id):
+        return self.jobs.job_status(job_id)
 
     def cancel_job(self, job_id):
         return self.jobs.cancel(job_id)
@@ -87,7 +103,7 @@ class ApplicationService:
                   'get_abbreviations':0,'save_abbreviation':4,'delete_abbreviation':1,
                   'set_abbreviation_defaults':1,'abbreviation_document':1,'add_paths':1,'remove_file':1,
                   'clear_files':0,'set_mode':1,'inspect_document':1,'get_log':0,'clear_log':0,'shutdown':0}
-        counts.update({'start_job':2, 'cancel_job':1, 'get_events':1, 'set_sidebar_collapsed':1})
+        counts.update({'start_job':2, 'cancel_job':1, 'job_status':1, 'get_events':1, 'set_sidebar_collapsed':1})
         counts.update({'table_template':2,'document_tool':2,'get_pending_dialog':0,'stage_config':2,'set_stage':2,'set_stage_default':1})
         counts.update({'set_option':2,'set_include_spacing':1,'set_reset_spacing':1,'set_table_spacing':1,'set_exclude_tables':1,'set_range':3,'set_card_option':2})
         counts.update({'flow_editor':2,'idioms':2,'hangul_fonts':2,'table_units':2,'table_sketch':2,'file_rename':2,'kclip':2,'kclip_window':2,'timemachine':2,'library':2})
@@ -99,10 +115,11 @@ class ApplicationService:
             raise ServiceError('BACKEND_CLOSING','백엔드가 종료 중입니다.')
         if method == 'start_job': return self.start_job(*args)
         if method == 'cancel_job': return self.cancel_job(*args)
+        if method == 'job_status': return self.job_status(*args)
         if method == 'get_events': return self.get_events(*args)
         if method=='handshake':
             return {'protocol_version':1,'backend_version':'1.74 Native Prototype 1',
-                    'capabilities':['documents.inspect','settings','abbreviations','flows','library.metadata'],'engine_ready':False}
+                    'capabilities':['documents.inspect','settings','abbreviations','flows','library.metadata','jobs.v1'],'engine_ready':False}
         if method=='set_card_option':
             name,value=args
             allowed={'spacing_enabled','spacing_exclude_pagefit','spacing_exclude_reset','spacing_cell_image_to_bg','all_cell_image_to_bg','spacing_exclude_tables','unify_exclude_tables','unify_exclude_spacing','unify_exclude_pagefit',
@@ -252,10 +269,7 @@ class ApplicationService:
                 self._timemachine_service = TimemachineService(self.store._path.parent)
             return self._timemachine_service.command(*args)
         if method=='library':
-            if getattr(self, '_library_service', None) is None:
-                from .library_service import LibraryService
-                self._library_service = LibraryService(self.store._path.parent / 'workspace' / 'library.db')
-            return self._library_service.command(*args)
+            return self._library().command(*args)
         if method=='table_units':
             from .table_units_service import TableUnitsService
             if args[0] == 'copy':

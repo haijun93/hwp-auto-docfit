@@ -178,6 +178,44 @@ class LibraryService:
 
             self._lock.release()
 
+    def index_runner(self, library_id):
+
+        """JobManager.start용 runner. 기존 index()를 그대로 쓰고 진행·취소만 연결한다."""
+
+        from docfit_app.job_envelope import ProgressThrottle
+
+        def run(report, cancelled):
+
+            class _Cancel:
+
+                @staticmethod
+
+                def is_set():
+
+                    return cancelled()
+
+            throttle = ProgressThrottle(report)
+
+            def progress(found):
+
+                throttle({"stage": "scan", "indeterminate": True, "discovered": int(found)})
+
+            try:
+
+                result = self.index(library_id, cancel=_Cancel, progress=progress)
+
+            finally:
+
+                throttle.flush()
+
+            if result.get("cancelled") or cancelled():
+
+                result = dict(result, partial={"success": result.get("indexed", 0), "failed": len(result.get("errors", []))})
+
+            return result
+
+        return run
+
     def search(self, library_id, query="", extensions=None, limit=200, offset=0):
 
         return self.store.search(library_id, query, extensions, limit, offset)

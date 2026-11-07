@@ -6,10 +6,13 @@ import threading
 import uuid
 
 from .api_contract import ServiceError
+from .job_envelope import job_error, fit_result
 
 TERMINAL = {'done', 'failed', 'cancelled'}
 EVENT_TYPES = TERMINAL | {'started', 'progress', 'item_done', 'item_failed', 'log', 'dialog'}
-LIGHT_KINDS = {'inspect', 'preview', 'catalog'}
+LIGHT_KINDS = {'inspect', 'preview', 'catalog', 'library_index'}
+# 같은 kind는 동시에 하나만(문서 슬롯은 쓰지 않음). 위반 시 JOB_RUNNING.
+SINGLETON_KINDS = {'library_index'}
 _creation_lock = threading.Lock()
 
 
@@ -68,6 +71,10 @@ class JobManager:
         with self._lock:
             if self._closed:
                 raise ServiceError('BACKEND_CLOSING', '앱이 종료 중입니다.')
+            if kind in SINGLETON_KINDS and any(
+                    j['kind'] == kind and (j['state'] not in TERMINAL or _alive(j.get('thread')))
+                    for j in self._jobs.values()):
+                raise ServiceError('JOB_RUNNING', '같은 종류의 작업이 이미 진행 중입니다.')
             if kind not in LIGHT_KINDS and any(
                     j['kind'] not in LIGHT_KINDS and (j['state'] not in TERMINAL or
                     _alive(j.get('thread'))) for j in self._jobs.values()):
@@ -75,7 +82,8 @@ class JobManager:
             identifier = str(uuid.uuid4())
             self._jobs[identifier] = dict(id=identifier, job_id=identifier, kind=kind,
                 params=deepcopy(params or {}), state='queued', progress={'file':0, 'total':0, 'stage':'', 'percent':0},
-                cancel_requested=False, stop=stop_event or threading.Event(), thread=None, timer=None)
+                cancel_requested=False, stop=stop_event or threading.Event(), thread=None, timer=None,
+                result=None, error=None)
             self._persist()
             return identifier
 
@@ -89,11 +97,13 @@ class JobManager:
                                     lambda: self.cancelled(identifier))
                 else:
                     result = None
-                self.report(identifier, 'cancelled' if self.cancelled(identifier) else 'done',
-                            {'result': result})
+                data = {'result': result}
+                if isinstance(result, dict) and isinstance(result.get('partial'), dict):
+                    data['partial'] = result['partial']
+                self.report(identifier, 'cancelled' if self.cancelled(identifier) else 'done', data)
             except Exception as exc:
                 self.report(identifier, 'cancelled' if self.cancelled(identifier) else 'failed',
-                            {'code':getattr(exc, 'code', 'JOB_FAILED'), 'message':str(exc)})
+                            job_error(exc))
         thread = threading.Thread(target=execute, daemon=True, name='docfit-job-' + identifier)
         with self._lock:
             self._jobs[identifier]['thread'] = thread
@@ -143,6 +153,9 @@ class JobManager:
                     job['timer'].cancel()
                 if type == 'done':
                     job['progress']['percent'] = 100
+                    job['result'] = deepcopy(data.get('result'))
+                elif type == 'failed':
+                    job['error'] = deepcopy(data)
             elif type == 'progress':
                 job['progress'].update(data)
                 job['progress']['percent'] = max(0, min(100, float(job['progress']['percent'])))
@@ -163,6 +176,17 @@ class JobManager:
         with self._lock:
             job = self._get(identifier)
             return deepcopy({k:job[k] for k in ('id', 'job_id', 'kind', 'state', 'progress', 'cancel_requested')})
+
+    def job_status(self, identifier):
+        """status 스냅샷 + 종료 시 result/error. 사건이 링 버퍼에서 밀려나도 결과를 읽는 안전망."""
+        with self._lock:
+            snapshot = self.status(identifier)
+            job = self._jobs[identifier]
+            if job['state'] == 'done':
+                snapshot['result'] = fit_result(job.get('result'))
+            elif job['state'] == 'failed' and job.get('error'):
+                snapshot['error'] = deepcopy(job['error'])
+            return snapshot
 
     def latest(self):
         with self._lock:
