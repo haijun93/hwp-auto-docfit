@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:docfit_ui/features/library/library_api.dart';
 import 'package:docfit_ui/features/notebook/notebook_api.dart';
@@ -111,6 +112,62 @@ void main() {
     await _setSize(tester, 700);
     final api = InMemoryNotebookApi(fileContents: {_path: _content});
     await _flow(tester, api, narrow: true);
+  });
+
+  testWidgets('wide notebook panes resize by dragging, keys and double tap; names show two lines', (tester) async {
+    await _setSize(tester, 1400);
+    final api = InMemoryNotebookApi();
+    await tester.pumpWidget(MaterialApp(home: NotebookScreen(api: api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('nb-create-empty')));
+    await tester.pumpAndSettle();
+    await _enterDialog(tester, 'nb-create-name', 'nb-create-ok', '폭 시험');
+    await tester.tap(find.byKey(const ValueKey('nb-source-add')));
+    await tester.pumpAndSettle();
+    await _enterDialog(tester, 'nb-source-path', 'nb-source-path-ok', _path);
+
+    final sourcesHandle = find.byKey(const ValueKey('nb-resize-sources'));
+    final notesHandle = find.byKey(const ValueKey('nb-resize-notes'));
+    // 출처 파일명은 두 줄까지 보여 준다.
+    expect(tester.widget<Text>(find.text('예산보고.txt')).maxLines, 2);
+    try {
+      final start = tester.getCenter(sourcesHandle).dx;
+      expect(start, kNotebookSourcesWidth + kNotebookHandleWidth / 2);
+      await tester.drag(sourcesHandle, const Offset(100, 0));
+      await tester.pumpAndSettle();
+      expect(tester.getCenter(sourcesHandle).dx, start + 100);
+      // 최대 폭을 넘지 않는다.
+      await tester.drag(sourcesHandle, const Offset(2000, 0));
+      await tester.pumpAndSettle();
+      expect(tester.getCenter(sourcesHandle).dx, kNotebookSourcesMax + kNotebookHandleWidth / 2);
+      // 두 번 누르면 기본 폭.
+      await tester.tap(sourcesHandle);
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.tap(sourcesHandle);
+      await tester.pumpAndSettle();
+      expect(tester.getCenter(sourcesHandle).dx, start);
+
+      // 노트 칸: 구분선을 오른쪽으로 끌면 좁아지고, 왼쪽 방향키는 넓어진다.
+      final notesStart = tester.getCenter(notesHandle).dx;
+      await tester.drag(notesHandle, const Offset(50, 0));
+      await tester.pumpAndSettle();
+      expect(tester.getCenter(notesHandle).dx, notesStart + 50);
+      await tester.tap(notesHandle);
+      // 두 번 누르기 판정 시간이 지나야 초점이 확정된다.
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.pumpAndSettle();
+      expect(tester.getCenter(notesHandle).dx, notesStart + 50 - 16);
+    } finally {
+      await tester.tap(sourcesHandle);
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.tap(sourcesHandle);
+      await tester.pumpAndSettle();
+      await tester.tap(notesHandle);
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.tap(notesHandle);
+      await tester.pumpAndSettle();
+    }
   });
 
   testWidgets('transform shows rule-based rows and preview highlights paragraph', (tester) async {
