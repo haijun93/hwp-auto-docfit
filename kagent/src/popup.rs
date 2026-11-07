@@ -120,6 +120,11 @@ pub fn register(instance: HINSTANCE) {
     }
 }
 
+/// 한 줄 높이(화면 배율 적용).
+fn row_h_px(hwnd: HWND) -> i32 {
+    scale(hwnd, ROW_H)
+}
+
 fn scale(hwnd: HWND, v: i32) -> i32 {
     let dpi = unsafe { GetDpiForWindow(hwnd) }.max(96) as i32;
     v * dpi / 96
@@ -173,7 +178,7 @@ pub fn show() {
         let saved_w_px = saved_w * dpi / 96;
         let saved_h_px = saved_h * dpi / 96;
         let saved_rect_valid = sticker && saved_x_px >= wa.left as i64 && saved_y_px >= wa.top as i64
-            && saved_w > 0 && saved_h > 0
+            && saved_w > 0 && saved_h > COLLAPSED_H as i64
             && saved_x_px + saved_w_px <= wa.right as i64 && saved_y_px + saved_h_px <= wa.bottom as i64;
         let (x, y, w, mut h) = if saved_rect_valid {
             (saved_x_px as i32, saved_y_px as i32, saved_w_px as i32, saved_h_px as i32)
@@ -181,7 +186,12 @@ pub fn show() {
             ((pt.x + 8).min(wa.right - default_w).max(wa.left),
              (pt.y + 8).min(wa.bottom - default_h).max(wa.top), default_w, default_h)
         };
-        if collapsed { h = scale(hwnd, COLLAPSED_H); }
+        if collapsed {
+            h = scale(hwnd, COLLAPSED_H);
+        } else if h < scale(hwnd, HEAD_H + ROW_H * 3) {
+            // 펼친 상태인데 높이가 너무 작으면(접힌 높이가 저장된 경우) 기본 높이로 되돌린다.
+            h = default_h;
+        }
         SetWindowPos(hwnd, if settings.always_on_top { HWND_TOPMOST } else { HWND_NOTOPMOST },
                      x, y, w, h, SWP_SHOWWINDOW);
         SetForegroundWindow(hwnd);
@@ -420,7 +430,8 @@ unsafe fn paint(hwnd: HWND) {
         DrawTextW(mem, wide("지우기").as_ptr(), -1, &mut clear, DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
         let mut collapse = RECT { left: clear.left - collapse_w, top: 0, right: clear.left, bottom: head };
         fill(collapse, 0x00E6DDD2);
-        let collapsed = app().settings.lock().unwrap().popup_collapsed;
+        // 접힘 여부는 설정값이 아니라 실제 창 높이로 판단한다(설정값과 창 높이가 어긋나도 목록이 가려지지 않게).
+        let collapsed = h < head + row_h_px(hwnd);
         DrawTextW(mem, wide(if collapsed { "□" } else { "▁" }).as_ptr(), -1, &mut collapse,
                   DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
         SetTextColor(mem, 0x00555555);
@@ -435,7 +446,6 @@ unsafe fn paint(hwnd: HWND) {
         DrawTextW(mem, wide(&title).as_ptr(), -1, &mut hr, DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
 
         let row = scale(hwnd, ROW_H);
-        let collapsed = app().settings.lock().unwrap().popup_collapsed;
         if collapsed { drop(st); BitBlt(hdc, 0, 0, w, h, mem, 0, 0, SRCCOPY); return; }
         let visible_rows = ((h - head).max(0) / row).max(1) as usize;
         if st.items.is_empty() {
