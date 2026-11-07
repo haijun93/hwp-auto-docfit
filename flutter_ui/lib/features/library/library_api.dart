@@ -1,3 +1,5 @@
+import '../editor/klib_editor_core.dart' show EditorBackend;
+
 enum LibrarySpace { core, basis, reference, temp }
 
 enum LibraryItemKind {
@@ -340,12 +342,24 @@ abstract interface class LibraryOpenApi {
   });
 }
 
+/// 자료함 '+메모'·글 자료 고치기(메모 편집기). 글 자료(text·note)의 내용을 klib 사본에서 읽고 고친다.
+abstract interface class LibraryMemoApi {
+  /// 글 자료 내용. 글 자료가 아니거나 사본을 못 읽으면 예외.
+  Future<String> readItemText(String itemId);
+
+  /// 글 자료 내용과 이름을 고친다. [title]이 비면 이름은 그대로 둔다.
+  Future<void> updateItemText(String itemId, {required String title, required String text});
+
+  /// 메모 편집기가 쓸 Rust 편집 코어(klib edit_*) 통로. 없으면 null(편집기는 Dart 임시 코어를 쓴다).
+  EditorBackend? get memoEditorBackend;
+}
+
 typedef LibraryBridgeCall =
     Future<Object?> Function(String method, List<Object?> args);
 
 /// Adapts screen models to klib's command and response schema.
 
-class BridgeLibraryApi implements LibraryApi, LibraryScanApi, LibraryDropApi, LibraryOpenApi {
+class BridgeLibraryApi implements LibraryApi, LibraryScanApi, LibraryDropApi, LibraryOpenApi, LibraryMemoApi {
   BridgeLibraryApi(this._call);
 
   final LibraryBridgeCall _call;
@@ -381,6 +395,28 @@ class BridgeLibraryApi implements LibraryApi, LibraryScanApi, LibraryDropApi, Li
       message: '${result['message'] ?? '자료를 열지 못했습니다.'}',
     );
   }
+
+  @override
+  Future<String> readItemText(String itemId) async =>
+      _string((await _request('item_text_get', {'id': _id(itemId)}))['content']);
+
+  @override
+  Future<void> updateItemText(String itemId, {required String title, required String text}) async {
+    await _request('item_text_set', {'id': _id(itemId), 'display_name': title.trim(), 'content': text});
+  }
+
+  @override
+  EditorBackend get memoEditorBackend => (request) async {
+    // 자료함 브리지(Python desktop_web_ui.library)가 edit_* 명령을 klib에 넘긴다(경로 인자는 거절). 실패도 ok:false 응답으로 온다.
+    final Object? result;
+    try {
+      result = await _call('library', [request]);
+    } catch (error) {
+      return {'ok': false, 'message': '$error'};
+    }
+    if (result is! Map) return const {'ok': false, 'message': '편집기 브리지 응답 형식이 잘못되었습니다.'};
+    return Map<String, Object?>.from(result);
+  };
 
   @override
   Future<void> watchDrops(bool active) => _request('lib_drop_watch', {'active': active});
@@ -699,7 +735,7 @@ class BridgeLibraryApi implements LibraryApi, LibraryScanApi, LibraryDropApi, Li
           .toList();
 }
 
-class InMemoryLibraryApi implements LibraryApi {
+class InMemoryLibraryApi implements LibraryApi, LibraryMemoApi {
   InMemoryLibraryApi({
     List<LibraryBox>? initialBoxes,
 
@@ -984,6 +1020,33 @@ class InMemoryLibraryApi implements LibraryApi {
     if (i == null) throw StateError('자료 없음');
 
     _items[itemId] = i.copyWith(title: title);
+  }
+
+  /// 시험에서 Rust 편집 코어 대신 쓸 통로. 기본은 없음(Dart 임시 코어).
+  EditorBackend? editorBackend;
+
+  @override
+  EditorBackend? get memoEditorBackend => editorBackend;
+
+  @override
+  Future<String> readItemText(String itemId) async {
+    final i = _items[itemId];
+    if (i == null) throw StateError('자료 없음');
+    if (i.kind != LibraryItemKind.text && i.kind != LibraryItemKind.note) {
+      throw StateError('글 자료(text·note)만 메모 편집기로 열 수 있습니다.');
+    }
+    return i.text ?? '';
+  }
+
+  @override
+  Future<void> updateItemText(String itemId, {required String title, required String text}) async {
+    final i = _items[itemId];
+    if (i == null) throw StateError('자료 없음');
+    if (i.kind != LibraryItemKind.text && i.kind != LibraryItemKind.note) {
+      throw StateError('글 자료(text·note)만 메모 편집기로 고칠 수 있습니다.');
+    }
+    final name = title.trim();
+    _items[itemId] = i.copyWith(title: name.isEmpty ? null : name, text: text);
   }
 
   @override

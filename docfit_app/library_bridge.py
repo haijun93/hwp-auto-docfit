@@ -20,6 +20,8 @@ ALLOWED_COMMANDS = frozenset({
 
     "item_add", "item_get", "item_update", "item_rename", "item_move", "item_delete", "item_search",
 
+    "item_text_get", "item_text_set",  # 글 자료 사본 읽기·고치기(자료함 메모 편집기). 경로 인자 없음.
+
     "relation_add", "relation_delete", "relation_list", "relation_update", "box_export",
 
     "search", "index_file", "remove_file",
@@ -32,7 +34,23 @@ ALLOWED_COMMANDS = frozenset({
 
     "nb_search", "nb_transform", "nb_note_save", "nb_note_list", "nb_note_delete", "nb_export_md", "nb_compare",
 
-})
+} | frozenset(f"edit_{name}" for name in (
+
+    # 메모 편집기 코어(editor_core, klib 파이프 edit_*). docs/EDITOR_CORE_DESIGN.md 4절.
+
+    "ping", "open", "close", "info", "text", "lines", "insert", "delete", "replace",
+
+    "begin_group", "end_group", "commit", "undo", "redo", "line_col", "offset", "to_utf16", "from_utf16",
+
+    "find", "find_all", "replace_next", "replace_all",
+
+    "md_parse", "md_inline", "md_block", "md_link", "md_rule", "md_code_block", "md_clear",
+
+    "set_line_ending", "set_encoding", "save", "autosave",
+
+)))
+
+EDITOR_COMMANDS = frozenset(c for c in ALLOWED_COMMANDS if c.startswith("edit_"))
 
 class LibraryBridgeError(RuntimeError):
 

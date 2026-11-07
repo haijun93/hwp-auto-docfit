@@ -749,3 +749,124 @@ fn test_nb_source_item_column_migration_on_old_db() {
     let has: bool = db.connection().query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('nb_source') WHERE name='item_id')", [], |r| r.get(0)).unwrap();
     assert!(has);
 }
+
+/// 메모 편집기(edit_*) 명령이 파이프 처리기에서 editor_core로 위임되는지: Flutter KlibEditorCore가 보내는 순서 그대로.
+#[test]
+fn test_edit_commands_delegate_to_editor_core() {
+    let ctx = TestContext::new("edit_cmds");
+    let db = Mutex::new(Database::open(&ctx.dir.join("library.db").to_str().unwrap()).unwrap());
+    let running = AtomicBool::new(true);
+    let call = |req: String| json::parse(&pipe::handle_request(&req, &db, &running)).unwrap();
+    let ok = |v: &json::Value| assert_eq!(v.bool("ok"), Some(true), "응답 실패: {:?}", v.str("message"));
+
+    let pong = call(r#"{"cmd":"edit_ping"}"#.into());
+    ok(&pong);
+    assert_eq!(pong.str("message"), Some("pong"));
+
+    let opened = call(r#"{"cmd":"edit_open","text":"가나\r\n다"}"#.into());
+    ok(&opened);
+    let doc = opened.i64("doc").unwrap();
+    assert_eq!(opened.str("line_ending"), Some("CRLF"));
+    assert_eq!(opened.str("encoding"), Some("UTF-8"));
+    assert_eq!(opened.i64("lines"), Some(2));
+
+    // 한글 조합: 같은 구간 교체가 한 번의 실행취소 묶음이 된다("가나\n다" 끝 = 10바이트).
+    for (s, e, t) in [(10, 10, "ㅎ"), (10, 13, "하"), (10, 13, "한")] {
+        ok(&call(format!(r#"{{"cmd":"edit_replace","doc":{doc},"start":{s},"end":{e},"text":"{t}"}}"#)));
+    }
+    let text = call(format!(r#"{{"cmd":"edit_text","doc":{doc}}}"#));
+    assert_eq!(text.str("text"), Some("가나\n다한"));
+    let undo = call(format!(r#"{{"cmd":"edit_undo","doc":{doc}}}"#));
+    ok(&undo);
+    assert_eq!(undo.bool("changed"), Some(true));
+    assert_eq!(call(format!(r#"{{"cmd":"edit_text","doc":{doc}}}"#)).str("text"), Some("가나\n다"));
+    let redo = call(format!(r#"{{"cmd":"edit_redo","doc":{doc}}}"#));
+    assert_eq!(redo.i64("cursor"), Some(13));
+
+    // 찾기·모두 바꾸기·서식·상태값·줄 조회.
+    let found = call(format!(r#"{{"cmd":"edit_find","doc":{doc},"query":"다","from":0}}"#));
+    assert_eq!((found.bool("found"), found.i64("start"), found.i64("end")), (Some(true), Some(7), Some(10)));
+    let all = call(format!(r#"{{"cmd":"edit_replace_all","doc":{doc},"query":"가","with":"카"}}"#));
+    assert_eq!(all.i64("count"), Some(1));
+    let bold = call(format!(r#"{{"cmd":"edit_md_inline","doc":{doc},"start":0,"end":6,"kind":"bold"}}"#));
+    ok(&bold);
+    assert_eq!(call(format!(r#"{{"cmd":"edit_lines","doc":{doc},"from":0,"to":1}}"#)).arr("lines").unwrap()[0].str("text"), Some("**카나**"));
+    let lc = call(format!(r#"{{"cmd":"edit_line_col","doc":{doc},"pos":5}}"#));
+    assert_eq!((lc.i64("line"), lc.i64("col")), (Some(1), Some(4)));
+    let info = call(format!(r#"{{"cmd":"edit_info","doc":{doc}}}"#));
+    assert_eq!(info.i64("chars"), Some(9));
+    assert_eq!(info.bool("dirty"), Some(true));
+
+    // 저장(원래 CRLF로) 후 닫기. 닫은 문서는 오류.
+    let path = ctx.dir.join("memo.md");
+    let p = path.to_str().unwrap().replace('\\', "/");
+    ok(&call(format!(r#"{{"cmd":"edit_save","doc":{doc},"path":"{p}"}}"#)));
+    assert_eq!(fs::read(&path).unwrap(), "**카나**\r\n다한".as_bytes());
+    ok(&call(format!(r#"{{"cmd":"edit_close","doc":{doc}}}"#)));
+    let gone = call(format!(r#"{{"cmd":"edit_info","doc":{doc}}}"#));
+    assert_eq!(gone.bool("ok"), Some(false));
+    assert!(gone.str("message").unwrap().contains("찾을 수 없습니다"));
+
+    // 알 수 없는 edit_ 명령은 코어의 오류로, 다른 명령은 기존 처리 그대로.
+    assert_eq!(call(r#"{"cmd":"edit_nope"}"#.into()).bool("ok"), Some(false));
+    assert_eq!(call(r#"{"cmd":"ping"}"#.into()).str("message"), Some("pong"));
+}
+
+#[test]
+fn test_item_text_get_set_for_memo_editor() {
+    let ctx = TestContext::new("item_text");
+    let db = Mutex::new(Database::open(&ctx.dir.join("library.db").to_str().unwrap()).unwrap());
+    let running = AtomicBool::new(true);
+    let call = |req: String| json::parse(&pipe::handle_request(&req, &db, &running)).unwrap();
+    let ok = |v: &json::Value| assert_eq!(v.bool("ok"), Some(true), "응답 실패: {:?}", v.str("message"));
+
+    let bid = call(r#"{"cmd":"box_create","name":"메모함"}"#.into()).i64("id").unwrap();
+    let added = call(format!(r#"{{"cmd":"item_add","box_id":{bid},"kind":"text","display_name":"회의","space":"core","content":"첫 줄\n둘째 줄"}}"#));
+    ok(&added);
+    let iid = added.i64("id").unwrap();
+
+    // 읽기: 사본 내용과 이름이 온다.
+    let got = call(format!(r#"{{"cmd":"item_text_get","id":{iid}}}"#));
+    ok(&got);
+    assert_eq!(got.str("content"), Some("첫 줄\n둘째 줄"));
+    assert_eq!(got.str("display_name"), Some("회의"));
+    assert_eq!(got.str("kind"), Some("text"));
+
+    // 고치기: 내용과 이름을 바꾸고, 사본 경로는 그대로, 임시 파일은 남지 않는다.
+    let before = db.lock().unwrap().item_get(iid).unwrap().unwrap().source_path;
+    let set = call(format!(r###"{{"cmd":"item_text_set","id":{iid},"display_name":"회의 정리","content":"# 결론\n**예산** 확정"}}"###));
+    ok(&set);
+    assert_eq!(set.str("display_name"), Some("회의 정리"));
+    let row = db.lock().unwrap().item_get(iid).unwrap().unwrap();
+    assert_eq!(row.source_path, before);
+    assert_eq!(row.display_name, "회의 정리");
+    assert_eq!(fs::read_to_string(&row.source_path).unwrap(), "# 결론\n**예산** 확정");
+    let dir = Path::new(&row.source_path).parent().unwrap();
+    assert_eq!(fs::read_dir(dir).unwrap().count(), 1, "임시 파일이 남았습니다");
+    assert_eq!(call(format!(r#"{{"cmd":"item_text_get","id":{iid}}}"#)).str("content"), Some("# 결론\n**예산** 확정"));
+
+    // 이름을 비우면 이름은 그대로 두고 내용만 고친다.
+    ok(&call(format!(r#"{{"cmd":"item_text_set","id":{iid},"display_name":"  ","content":"다시"}}"#)));
+    assert_eq!(db.lock().unwrap().item_get(iid).unwrap().unwrap().display_name, "회의 정리");
+
+    // 거절: content 없음, 없는 항목, 파일 항목, 자료함 데이터 폴더 밖을 가리키는 글 항목.
+    assert_eq!(call(format!(r#"{{"cmd":"item_text_set","id":{iid}}}"#)).bool("ok"), Some(false));
+    assert_eq!(call(r#"{"cmd":"item_text_get","id":999999}"#.into()).bool("ok"), Some(false));
+    let outside = ctx.dir.join("원본.txt");
+    fs::write(&outside, "사용자 원본").unwrap();
+    let op = outside.to_str().unwrap().replace('\\', "/");
+    let file_item = call(format!(r#"{{"cmd":"item_add","box_id":{bid},"kind":"file","source_path":"{op}","display_name":"원본.txt","space":"core"}}"#));
+    ok(&file_item);
+    let fid = file_item.i64("id").unwrap();
+    let refused = call(format!(r#"{{"cmd":"item_text_set","id":{fid},"content":"덮어쓰기"}}"#));
+    assert_eq!(refused.bool("ok"), Some(false));
+    assert!(refused.str("message").unwrap().contains("글 자료"));
+    let nid = call(format!(r#"{{"cmd":"item_add","box_id":{bid},"kind":"note","display_name":"메모","space":"core","content":"y"}}"#)).i64("id").unwrap();
+    // DB를 직접 바꿔 사본 경로를 사용자 원본으로 돌려 놓아도 편집기는 거절한다.
+    let raw = rusqlite::Connection::open(ctx.dir.join("library.db")).unwrap();
+    raw.execute("UPDATE item SET source_path = ?1 WHERE id = ?2", rusqlite::params![outside.to_str().unwrap(), nid]).unwrap();
+    let escaped = call(format!(r#"{{"cmd":"item_text_set","id":{nid},"content":"덮어쓰기"}}"#));
+    assert_eq!(escaped.bool("ok"), Some(false));
+    assert!(escaped.str("message").unwrap().contains("데이터 폴더 밖"));
+    assert_eq!(fs::read_to_string(&outside).unwrap(), "사용자 원본");
+}

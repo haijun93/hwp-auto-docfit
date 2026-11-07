@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../../core/drop_events.dart';
 import '../editor/memo_editor.dart';
+import '../editor/memo_editor_page.dart';
 import '../library/library_api.dart';
 import '../library/library_screen.dart';
 import '../workspace/tab_navigation_shell.dart' show HostClosablePage;
@@ -254,7 +255,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
     final initial = _memoDraft ?? const MemoDocument(title: '새 메모', markdown: '');
     final saved = await Navigator.of(context).push<int>(
       MaterialPageRoute(
-        builder: (context) => _MemoPage(
+        builder: (context) => MemoEditorPage<int>(
           initial: initial,
           controller: controller,
           onAutoSave: (doc) async {
@@ -266,6 +267,9 @@ class _NotebookScreenState extends State<NotebookScreen> {
           },
           onSave: (doc) =>
               widget.api.addMemoSource(nb.id, title: doc.title.isEmpty ? '새 메모' : doc.title, markdown: doc.markdown),
+          saveLabel: '출처로 저장',
+          hint: "작성된 메모를 저장하면 TEXT 형식으로 '출처'에 추가됩니다.",
+          editorBackend: widget.api.memoEditorBackend,
         ),
       ),
     );
@@ -1552,88 +1556,6 @@ class _LibraryPickDialogState extends State<_LibraryPickDialog> {
           child: Text('가져오기 ${_picked.length}개'),
         ),
       ],
-    );
-  }
-}
-
-/// 메모 편집 화면: 메모 편집기 + '출처로 저장'. 저장하면 새 출처 id로 닫는다.
-class _MemoPage extends StatefulWidget {
-  const _MemoPage({
-    required this.initial,
-    required this.controller,
-    required this.onAutoSave,
-    required this.onDelete,
-    required this.onSave,
-  });
-
-  final MemoDocument initial;
-  final MemoEditorController controller;
-  final Future<void> Function(MemoDocument) onAutoSave;
-  final VoidCallback onDelete;
-  final Future<int> Function(MemoDocument) onSave;
-
-  @override
-  State<_MemoPage> createState() => _MemoPageState();
-}
-
-class _MemoPageState extends State<_MemoPage> {
-  bool _saving = false;
-  String? _error;
-
-  Future<void> _save() async {
-    await widget.controller.flush();
-    final doc = widget.controller.document;
-    if (doc.isBlank) {
-      setState(() => _error = '메모에 내용이 없습니다.');
-      return;
-    }
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
-    try {
-      final id = await widget.onSave(doc);
-      if (mounted) Navigator.of(context).pop(id);
-    } catch (error) {
-      if (mounted) setState(() => _error = _errorText(error));
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('메모'), toolbarHeight: 44),
-      body: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-        child: MemoEditor(
-          initial: widget.initial,
-          controller: widget.controller,
-          onAutoSave: widget.onAutoSave,
-          onDelete: widget.onDelete,
-          footer: Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    _error ?? "작성된 메모를 저장하면 TEXT 형식으로 '출처'에 추가됩니다.",
-                    key: const ValueKey('memo-hint'),
-                    style: TextStyle(fontSize: 12, color: _error == null ? Colors.black54 : Colors.red),
-                  ),
-                ),
-                FilledButton.icon(
-                  key: const ValueKey('memo-save'),
-                  onPressed: _saving ? null : _save,
-                  icon: const Icon(Icons.save_outlined, size: 18),
-                  label: const Text('출처로 저장'),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

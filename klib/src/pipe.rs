@@ -699,6 +699,15 @@ fn err_val(msg: &str) -> Value {
 
 }
 
+/// 메모 편집기 코어(editor_core) 문서들. klib 프로세스 수명 동안 유지되며 자료함 DB 잠금과 무관하다.
+static EDITOR: OnceLock<Mutex<editor_core::api::Engine>> = OnceLock::new();
+
+/// edit_* 명령을 편집 코어에 넘긴다. 응답은 코어가 만든 한 줄 JSON 그대로다(ok·message 규약 동일).
+fn editor_request(req_str: &str) -> String {
+    let engine = EDITOR.get_or_init(|| Mutex::new(editor_core::api::Engine::new()));
+    engine.lock().unwrap_or_else(|e| e.into_inner()).handle(req_str)
+}
+
 pub fn handle_request(req_str: &str, db: &Mutex<Database>, running: &AtomicBool) -> String {
 
     let Some(val) = json::parse(req_str) else {
@@ -706,6 +715,10 @@ pub fn handle_request(req_str: &str, db: &Mutex<Database>, running: &AtomicBool)
         return json::to_string(&err_val("요청 JSON 구문 분석에 실패했습니다."));
 
     };
+
+    if val.str("cmd").is_some_and(|c| c.starts_with("edit_")) {
+        return editor_request(req_str);
+    }
 
     let cmd = val.str("cmd").unwrap_or("");
 
@@ -1228,6 +1241,74 @@ pub fn handle_request(req_str: &str, db: &Mutex<Database>, running: &AtomicBool)
             let name = val.str("display_name").unwrap_or("");
 
             match db.lock().unwrap().item_rename(id, name) { Ok(true) => ok_val(vec![]), Ok(false) => err_val("item not found"), Err(e) => err_val(&e.to_string()) }
+
+        }
+
+        // 자료함 '+메모'·글 자료 더블클릭: 메모 편집기로 글 자료(text·note) 사본을 읽고 고친다. 경로 인자는 받지 않는다.
+        "item_text_get" => {
+
+            let Some(id) = val.i64("id") else {
+
+                return json::to_string(&err_val("item id가 누락되었습니다."));
+
+            };
+
+            match db.lock().unwrap().item_text_get(id) {
+
+                Ok((it, content)) => ok_val(vec![
+
+                    ("id", it.id.into()),
+
+                    ("kind", it.kind.into()),
+
+                    ("display_name", it.display_name.into()),
+
+                    ("content", content.into()),
+
+                ]),
+
+                Err(e) => err_val(&e),
+
+            }
+
+        }
+
+        "item_text_set" => {
+
+            let Some(id) = val.i64("id") else {
+
+                return json::to_string(&err_val("item id가 누락되었습니다."));
+
+            };
+
+            let Some(content) = val.str("content") else {
+
+                return json::to_string(&err_val("content가 누락되었습니다."));
+
+            };
+
+            let result = db.lock().unwrap().item_text_set(id, content, val.str("display_name"));
+
+            match result {
+
+                Ok(it) => {
+
+                    // 본문 검색 색인도 새 내용으로 갈아 끼운다. 실패해도 저장은 된 것이므로 경고로만 알린다.
+                    let indexing = crate::search_index()
+                        .and_then(|ix| crate::content::index_file(ix, &it.source_path, &it.display_name, it.box_id).map_err(|e| format!("본문 색인 실패: {e}")))
+                        .err();
+
+                    let mut extra = vec![("display_name", Value::from(it.display_name))];
+
+                    if let Some(message) = indexing { extra.push(("index_warning", message.into())); }
+
+                    ok_val(extra)
+
+                }
+
+                Err(e) => err_val(&e),
+
+            }
 
         }
 

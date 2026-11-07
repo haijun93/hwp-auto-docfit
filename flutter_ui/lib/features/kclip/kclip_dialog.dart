@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../../core/api/abbreviation_api.dart' show ApiCall;
+import 'kclip_category.dart';
 
 /// 몽땅클립보드 관리: 켜기(동의)·끄기·상태·목록(검색·고정·지우기·클립보드에 올리기)·설정.
 /// 빠른 붙여넣기는 상주 프로그램의 단축키 팝업(기본 Ctrl+Shift+V)이 맡고, 이 화면은 관리용이다.
@@ -294,31 +295,12 @@ class _KClipPanelState extends State<KClipPanel> {
   bool get running => status['running'] == true;
   Map get agent => (status['status'] as Map?) ?? const {};
   bool get hotkeyMode => widget.mode == KClipEntryMode.hotkey;
-  List<Map> get visibleItems => items.where((item) {
-    final kind = '${item['kind'] ?? ''}';
-    final webItem = _isWebText(item);
-    final matches = switch (category) {
-      '글' => kind == 'text' && !webItem,
-      '그림' => kind == 'image',
-      '파일' => webItem || (kind == 'files' && !_isFolder(item)),
-      '폴더' => kind == 'files' && _isFolder(item),
-      '웹' => webItem,
-      _ => true,
-    };
-    return matches;
-  }).toList();
+  /// 분류 기준은 빠른 목록(kagent `category.rs`)과 같다(`kclip_category.dart`).
+  List<Map> get visibleItems => items.where((item) => kclipItemIn(item, category)).toList();
 
   bool _isWeb(Map item) => '${item['preview'] ?? ''}'.contains('· 웹 ·');
   bool _isWebText(Map item) => _isWeb(item) || RegExp(r'^https?://[^\s]+$', caseSensitive: false)
       .hasMatch('${item['preview'] ?? ''}'.trim());
-  bool _isFolder(Map item) {
-    if (item['is_folder'] == true || item['kind'] == 'folder') return true;
-    if (item['kind'] != 'files') return false;
-    final preview = '${item['preview'] ?? ''}';
-    if (preview.contains(' · ')) return false;
-    final parts = preview.split(RegExp(r'\s*·\s*'));
-    return parts.isNotEmpty && parts.every((part) => part.contains('\\') || part.contains('/'));
-  }
   Future<void> _openWeb(Map item) async {
     final result = await widget.api('kclip', ['open_web', {'id': item['id']}]);
     if (result is Map && result['ok'] == false && mounted) {
@@ -800,12 +782,12 @@ class _KClipPanelState extends State<KClipPanel> {
         ]),
         Wrap(alignment: WrapAlignment.spaceBetween, crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Wrap(spacing: 2, children: [for (final c in const ['전체','글','그림','파일','폴더','웹'])
+            Wrap(spacing: 2, children: [for (final c in kclipCategories)
               TextButton(key: ValueKey('kclip-category-$c'), onPressed: () => setState(() => category = c),
                 style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 7)),
                 child: Text(c, style: TextStyle(fontWeight: category == c ? FontWeight.bold : null))) ]),
             SizedBox(width: 210, child: TextField(
-              decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: '키워드 검색', isDense: true),
+              decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: kclipSearchLabel, isDense: true),
               onChanged: (v) { query = v.trim(); _debounce?.cancel(); _debounce = Timer(const Duration(milliseconds: 200), () => unawaited(_reload())); },
             )),
           ],

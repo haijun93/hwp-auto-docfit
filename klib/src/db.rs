@@ -381,6 +381,57 @@ impl Database {
         Ok(affected > 0)
     }
 
+    /// 글 자료(text·note)의 klib 사본 파일. 자료함 데이터 폴더(boxes/<box_id>/items) 바로 아래 .txt만 허용한다.
+    /// 화면의 메모 편집기가 고치는 대상이 사용자 원본이나 임의 경로가 되지 않게 막는다.
+    fn item_text_copy(&self, id: i64) -> std::result::Result<(ItemRow, PathBuf), String> {
+        let it = self.item_get(id).map_err(|e| e.to_string())?
+            .ok_or_else(|| "해당 자료 항목을 찾을 수 없습니다.".to_string())?;
+        if !matches!(it.kind.as_str(), "text" | "note") {
+            return Err("글 자료(text·note)만 메모 편집기로 열 수 있습니다.".into());
+        }
+        let path = PathBuf::from(&it.source_path);
+        let is_txt = path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("txt"));
+        if !is_txt || is_or_has_reparse_point(&path) || !path.is_file() {
+            return Err("글 자료의 사본 파일을 찾을 수 없습니다.".into());
+        }
+        let base = PathBuf::from(data_dir()).join("boxes").join(it.box_id.to_string()).join("items");
+        let inside = match (base.canonicalize(), path.parent().map(Path::canonicalize)) {
+            (Ok(b), Some(Ok(p))) => b == p,
+            _ => false,
+        };
+        if !inside {
+            return Err("자료함 데이터 폴더 밖의 파일은 편집할 수 없습니다.".into());
+        }
+        Ok((it, path))
+    }
+
+    /// 글 자료 내용 읽기(메모 편집기로 열기).
+    pub fn item_text_get(&self, id: i64) -> std::result::Result<(ItemRow, String), String> {
+        let (it, path) = self.item_text_copy(id)?;
+        let bytes = fs::read(&path).map_err(|e| format!("글 사본 읽기 실패: {e}"))?;
+        Ok((it, String::from_utf8_lossy(&bytes).into_owned()))
+    }
+
+    /// 글 자료 내용(과 이름) 고치기. 임시 파일에 쓴 뒤 바꿔치기해 중간에 실패해도 사본이 반쯤 쓰이지 않게 한다.
+    /// 돌려주는 값은 다시 색인할 때 쓰는 고친 뒤의 항목.
+    pub fn item_text_set(&self, id: i64, content: &str, display_name: Option<&str>) -> std::result::Result<ItemRow, String> {
+        let (mut it, path) = self.item_text_copy(id)?;
+        let tmp = path.with_extension(format!("txt.{}.tmp", now_ms()));
+        fs::write(&tmp, content).map_err(|e| format!("글 사본 쓰기 실패: {e}"))?;
+        if let Err(e) = fs::rename(&tmp, &path) {
+            let _ = fs::remove_file(&tmp);
+            return Err(format!("글 사본 바꾸기 실패: {e}"));
+        }
+        let t = now();
+        if let Some(name) = display_name.map(str::trim).filter(|n| !n.is_empty()) {
+            self.conn.execute("UPDATE item SET display_name = ?1 WHERE id = ?2", params![name, id])
+                .map_err(|e| e.to_string())?;
+            it.display_name = name.to_string();
+        }
+        let _ = self.conn.execute("UPDATE box SET updated_at = ?1 WHERE id = ?2", params![t, it.box_id]);
+        Ok(it)
+    }
+
     pub fn item_move(&self, id: i64, space: &str, x: f64, y: f64) -> std::result::Result<bool, String> {
         match space {
             "core" | "basis" | "reference" | "temp" => {}

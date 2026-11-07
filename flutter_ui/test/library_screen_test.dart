@@ -396,6 +396,10 @@ void main() {
     expect(find.text('고유 본문검색어가 든 문장'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('librarySearchResult-0')));
     await tester.pumpAndSettle();
+    // 글 자료는 메모 편집기로 열린다. 닫으면 강조된 카드가 보인다.
+    expect(find.byKey(const ValueKey('libraryMemoPage')), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
     final cardFinder = find.byKey(ValueKey('libraryItem-${item.id}'));
     expect(tester.widget<Card>(find.descendant(of: cardFinder, matching: find.byType(Card))).elevation, 5);
   });

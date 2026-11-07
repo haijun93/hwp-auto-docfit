@@ -2,6 +2,7 @@
 library;
 
 import '../editor/markdown_format.dart' show markdownToPlainParagraphs;
+import '../editor/klib_editor_core.dart' show EditorBackend;
 import '../library/library_api.dart';
 
 class Notebook {
@@ -195,6 +196,9 @@ abstract class NotebookApi {
 
   /// 창에 끌어 놓아 맡겨 둔 파일 경로를 가져간다(가져가면 비워진다).
   Future<List<String>> takeDroppedPaths();
+
+  /// '+메모 추가' 편집기가 쓸 Rust 편집 코어(klib edit_*) 통로. 없으면 null(편집기는 Dart 임시 코어를 쓴다).
+  EditorBackend? get memoEditorBackend;
 }
 
 typedef NotebookBridgeCall = Future<Object?> Function(String method, List<Object?> args);
@@ -422,6 +426,14 @@ class BridgeNotebookApi implements NotebookApi {
   Future<List<String>> takeDroppedPaths() async => [
     for (final p in (await _request('nb_take_drop'))['paths'] as List? ?? const []) '$p',
   ];
+
+  @override
+  EditorBackend get memoEditorBackend => (request) async {
+    // 노트북 브리지가 edit_* 명령을 klib에 그대로 넘긴다(Python desktop_web_ui.notebook). 실패도 ok:false 응답으로 온다.
+    final result = await _call('notebook', [request]);
+    if (result is! Map) return const {'ok': false, 'message': '편집기 브리지 응답 형식이 잘못되었습니다.'};
+    return Map<String, Object?>.from(result);
+  };
 }
 
 /// 시험·미리보기용 메모리 구현. 파일 내용은 [fileContents]에서 읽고, 없으면 파일 이름을 한 문단으로 쓴다.
@@ -691,4 +703,10 @@ class InMemoryNotebookApi implements NotebookApi {
     _dropped.clear();
     return paths;
   }
+
+  /// 시험에서 Rust 편집 코어 대신 쓸 통로. 기본은 없음(Dart 임시 코어).
+  EditorBackend? editorBackend;
+
+  @override
+  EditorBackend? get memoEditorBackend => editorBackend;
 }
