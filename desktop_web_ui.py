@@ -648,7 +648,11 @@ class DesktopWebBridge:
         # 합치기에서 PDF·그림은 그대로 쓰고, HWP·HWPX는 한/글, 그 밖의 형식만 변환 엔진이 더 필요하다.
         merge_converted = [s for s in suffixes if s != ".pdf" and s not in IMAGE_INPUT_EXTENSIONS]
         merge_ready = merge_direct or (hwp_ready and (kordoc_ready or all(s in HANCOM_PDF_DIRECT for s in merge_converted)))
-        image_reason = (pdf_reason if not (valid and pdf_ready) else
+        # 그림 → 그림(PNG·JPG) 변환은 여전히 기존 변환 경로(글자 인식)를 거친다. 그림 → PDF만 OCR 없이 된다(2026-11-07).
+        image_input_needs_ocr = any(suffix in IMAGE_INPUT_EXTENSIONS for suffix in suffixes) and not prerequisites.get("ocr", True)
+        image_targets_ready = pdf_ready and not image_input_needs_ocr
+        image_reason = ("그림 파일은 글자 인식(OCR)이 필요해 변환할 수 없습니다(폐쇄망 꾸러미에 OCR 미포함)" if valid and image_input_needs_ocr else
+                        pdf_reason if not (valid and pdf_ready) else
                         "한/글 PDF 저장 후 쪽마다 그림 저장 · 여러 쪽은 폴더로 저장")
         pandoc_only = all(suffix in {".html", ".htm", ".md", ".txt"} for suffix in suffixes)
         pandoc_targets_ready = pandoc_ready and (kordoc_ready or pandoc_only)
@@ -676,7 +680,7 @@ class DesktopWebBridge:
                "reason": invalid_reason if not valid else engine_reason if not kordoc_ready and not pandoc_only else
                         "내장 Pandoc을 사용할 수 없음" if not pandoc_ready else "내장 Pandoc 준비됨"} for kind in ("docx", "epub", "html")),
             # PDF만 넣으면 한/글·변환 엔진 없이 쪽마다 바로 그린다.
-            *({"format": kind, "label": kind.upper(), "enabled": valid and (pdf_only or pdf_ready),
+            *({"format": kind, "label": kind.upper(), "enabled": valid and (pdf_only or image_targets_ready),
                "reason": "PDF 쪽마다 그림 저장 · 한/글 불필요" if valid and pdf_only else image_reason}
               for kind in IMAGE_FORMATS),
         ]
