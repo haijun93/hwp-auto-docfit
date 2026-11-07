@@ -2067,8 +2067,9 @@ class DesktopWebBridge:
                     _Win32WindowApi(), _PyWebViewWindow(self.window, self.gui._준말_서비스().settings, lambda: self._saved_window), True,
                     values.get('sidebar_mode_side', 'right'))
             else:
+                # 복원 위치는 컨트롤러가 켤 때 잰 실제 창(물리 픽셀)을 쓴다. 처음 만든 창 크기(논리 픽셀)로
+                # 덮어쓰면 창을 옮기거나 키운 뒤, 또는 배율 125%·150%에서 엉뚱한 크기로 돌아간다.
                 self.sidebar_controller.developer_mode = True
-                self.sidebar_controller.saved = self._saved_window
             result = self.sidebar_controller.toggle(bool(enabled))
             self.sidebar_active = bool(enabled)
             return result
@@ -3073,6 +3074,45 @@ class _Win32WindowApi:
     def is_zoomed(self, hwnd):
         return bool(self.user32.IsZoomed(hwnd))
 
+    def _rect(self, name, hwnd):
+        if self._ctypes is None:
+            import ctypes
+        else:
+            ctypes = self._ctypes
+        from ctypes import wintypes
+        getter = getattr(self.user32, name)
+        if self._ctypes is not None:
+            # SetWindowPos와 같은 이유로 64비트 창 핸들을 HWND 형으로 넘긴다.
+            getter = self._ctypes.WinDLL('user32', use_last_error=True)[name]
+            getter.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+            getter.restype = wintypes.BOOL
+        rect = wintypes.RECT()
+        if not getter(hwnd, ctypes.byref(rect)):
+            raise OSError('앱 창 크기를 확인하지 못했습니다.')
+        return rect
+
+    def window_rect(self, hwnd):
+        """창 위치·크기(물리 픽셀, SetWindowPos와 같은 단위): x, y, 폭, 높이."""
+        r = self._rect('GetWindowRect', hwnd)
+        return r.left, r.top, r.right - r.left, r.bottom - r.top
+
+    def frame_width(self, hwnd):
+        """창 바깥 폭 - 안쪽(웹 화면) 폭 = 좌우 테두리 합(물리 픽셀)."""
+        outer = self._rect('GetWindowRect', hwnd)
+        inner = self._rect('GetClientRect', hwnd)
+        return max(0, (outer.right - outer.left) - (inner.right - inner.left))
+
+    def dpi_scale(self, hwnd):
+        """창이 있는 모니터의 화면 배율(1.0 = 100%)."""
+        get_dpi = getattr(self.user32, 'GetDpiForWindow', None)
+        if get_dpi is not None and self._ctypes is not None:
+            from ctypes import wintypes
+            get_dpi = self._ctypes.WinDLL('user32', use_last_error=True)['GetDpiForWindow']
+            get_dpi.argtypes = [wintypes.HWND]
+            get_dpi.restype = wintypes.UINT
+        dpi = get_dpi(hwnd) if get_dpi else 0
+        return dpi / 96 if dpi else 1.0
+
 
 class _PyWebViewWindow:
     def __init__(self, window, settings=None, saved_state=None):
@@ -3093,7 +3133,27 @@ class _PyWebViewWindow:
         return bool(self.saved_state()['topmost']) if self.saved_state else bool(getattr(self.window, '_on_top', False))
 
     def set_sidebar_only(self, enabled):
-        self.window.resize(190 if enabled else self.saved_state()['width'], self.saved_state()['height'])
+        # 창 위치·크기는 SidebarModeController가 SetWindowPos(물리 픽셀)로 정한다.
+        # 예전처럼 여기서 다시 resize하면 높이가 처음 창 높이로 돌아가고 폭도 고정값(190)이 된다.
+        return None
+
+    def min_size(self):
+        """WinForms 창 최소 크기(물리 픽셀). pywebview min_size=(260, 180)×배율로 정해져 있다."""
+        size = self.window.native.MinimumSize
+        return int(size.Width), int(size.Height)
+
+    def set_min_size(self, width, height):
+        native = self.window.native
+
+        def apply():
+            from System.Drawing import Size
+            native.MinimumSize = Size(int(width), int(height))
+
+        if getattr(native, 'InvokeRequired', False):
+            from System import Action
+            native.Invoke(Action(apply))
+        else:
+            apply()
 
     def save_side(self, side):
         if self.settings is not None:

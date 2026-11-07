@@ -315,7 +315,10 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
       widget.fileConversion,
     ];
     _built = true;
-    final expanded = _expanded ?? MediaQuery.sizeOf(context).width >= kSidebarAutoExpandWidth;
+    // 사이드메뉴 모드에서는 창 폭이 아이콘 줄(kSidebarCollapsedWidth)에 맞춰지므로 항상 아이콘만 보인다
+    // (펼친 상태에서 '사이드메뉴 모드' 단추로 켜도 글자 라벨이 잘리지 않게, 사용자 요청 2026-11-07).
+    final expanded = !_sidebarOnly &&
+        (_expanded ?? MediaQuery.sizeOf(context).width >= kSidebarAutoExpandWidth);
     final extraChild = switch (_extra) {
       WorkspaceExtraPage.library => widget.libraryScreen,
       WorkspaceExtraPage.notebook => widget.notebookScreen,
