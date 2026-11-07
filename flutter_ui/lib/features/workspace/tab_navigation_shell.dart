@@ -232,7 +232,13 @@ class _TabNavigationShellState extends State<TabNavigationShell> {
     } else if (_sidebarStage == 1) {
       // (3) 단추로 닫은 다음 번에는 작업 화면까지 닫는다.
       await _setSidebarOnly(true);
-      if (!mounted || !_sidebarOnly) return;
+      if (!mounted) return;
+      if (!_sidebarOnly) {
+        // 사이드메뉴 모드를 쓸 수 없으면(개발자 모드 꺼짐 등) 멈추지 않고 다시 펼친다.
+        setState(() { _expanded = true; _sidebarStage = 0; });
+        widget.onSidebarExpandedChanged?.call(true);
+        return;
+      }
       setState(() { _expanded = false; _sidebarStage = 2; });
     } else {
       // (1) 처음부터 닫혀 있던 메뉴는 먼저 펼친다.

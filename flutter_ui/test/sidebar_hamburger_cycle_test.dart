@@ -60,4 +60,34 @@ void main() {
     expect(find.text('work-area'), findsOneWidget);
     expect(requests, [true, false]);
   });
+
+  testWidgets('hamburger falls back to expand when sidebar mode is refused', (tester) async {
+    tester.view.physicalSize = const Size(600, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MaterialApp(
+      home: TabNavigationShell(
+        documentEditor: const Text('work-area'),
+        tableTemplates: const SizedBox(),
+        tableSketch: const SizedBox(),
+        diagram: const SizedBox(),
+        mindMap: const SizedBox(),
+        fileConversion: const SizedBox(),
+        paint: const SizedBox(),
+        fileRename: const SizedBox(),
+        timemachine: const SizedBox(),
+        onSidebarModeRequest: (enabled) async => false,
+      ),
+    ));
+    await tester.pumpAndSettle();
+    final toggle = find.byKey(const ValueKey('workspaceSidebarToggle'));
+    double railWidth() => tester.getSize(find.ancestor(of: toggle, matching: find.byType(Container)).first).width;
+    await tester.tap(toggle); await tester.pumpAndSettle();
+    expect(railWidth(), kSidebarExpandedWidth);
+    await tester.tap(toggle); await tester.pumpAndSettle();
+    expect(railWidth(), kSidebarCollapsedWidth);
+    await tester.tap(toggle); await tester.pumpAndSettle();
+    expect(railWidth(), kSidebarExpandedWidth);
+    expect(find.text('work-area'), findsOneWidget);
+  });
 }
