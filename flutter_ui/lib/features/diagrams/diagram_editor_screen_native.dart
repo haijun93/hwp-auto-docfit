@@ -315,12 +315,16 @@ class _DiagramEditorScreenState extends State<DiagramEditorScreen> {
             child: const Text('버리기'),
           ),
           FilledButton(
+            key: const ValueKey('draft-restore'),
+            autofocus: true, // 기본 선택 = 복구(Enter), 사용자 요청 2026-11-07
             onPressed: () => Navigator.pop(context, true),
             child: const Text('복구'),
           ),
         ],
       ),
     );
+    // 바깥 클릭·Esc로 닫으면(null) 복구도 삭제도 하지 않고 자동 저장본을 남겨 둔다.
+    if (restore == null) return;
     if (restore != true) {
       await draftClient.clear();
       return;
