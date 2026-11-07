@@ -622,12 +622,16 @@ class DesktopWebBridge:
             engine_reason = "그림 파일은 글자 인식(OCR)이 필요해 변환할 수 없습니다(폐쇄망 꾸러미에 OCR 미포함)"
         # HWP·HWPX는 한/글이 직접 PDF로 저장한다. 다른 입력만 kordoc 중간 변환이 필요하다.
         # 이미 PDF인 파일은 PDF 변환에서 건너뛰므로 변환 엔진이 필요 없다.
-        pdf_needs_kordoc = any(suffix not in HANCOM_PDF_DIRECT and suffix != ".pdf" for suffix in suffixes)
-        pdf_ready = hwp_ready and (not pdf_needs_kordoc or kordoc_ready)
+        pdf_needs_kordoc = any(suffix not in HANCOM_PDF_DIRECT and suffix != ".pdf" and suffix not in IMAGE_INPUT_EXTENSIONS
+                               for suffix in suffixes)
+        # 그림(JPG·PNG 등)은 Pillow로 바로 PDF를 만들므로 한/글·OCR이 필요 없다(2026-11-07).
+        pdf_needs_hwp = any(suffix not in IMAGE_INPUT_EXTENSIONS and suffix != ".pdf" for suffix in suffixes)
+        pdf_ready = (hwp_ready or not pdf_needs_hwp) and (not pdf_needs_kordoc or kordoc_ready)
         invalid_reason = "변환할 수 없는 파일 형식이 있습니다"
         pdf_reason = (invalid_reason if not valid else
-                      "한/글 PDF 저장 기능을 사용할 수 없습니다" if not hwp_ready else
+                      "한/글 PDF 저장 기능을 사용할 수 없습니다" if pdf_needs_hwp and not hwp_ready else
                       engine_reason if pdf_needs_kordoc and not kordoc_ready else
+                      "그림을 그대로 PDF로 저장 · 한/글·글자 인식 불필요" if not pdf_needs_hwp else
                       "한/글 내장 PDF 저장 사용 · 추가 변환기 설치 없음" if not pdf_needs_kordoc else
                       "변환 엔진 + 한/글 PDF 저장 준비됨")
         # 그림은 한/글 PDF 저장본을 쪽마다 렌더링하므로 PDF와 준비 조건이 같다.

@@ -100,7 +100,7 @@ def image_to_pdf_bytes(path: str | Path) -> bytes:
 
 
 def _image_to_pdf_bytes(path: Path) -> bytes:
-    from PIL import Image, ImageSequence
+    from PIL import Image, ImageOps, ImageSequence
 
     path = Path(path)
     if not path.is_file():
@@ -121,7 +121,7 @@ def _image_to_pdf_bytes(path: Path) -> bytes:
                 pixels = frame.width * frame.height
                 if pixels > MAX_PIXELS:
                     raise PdfMergeError(f"{path.name}: 그림 픽셀 수가 2억을 넘습니다({pixels:,}px).")
-                pages.append(_to_rgb_white_bg(frame))
+                pages.append(_to_rgb_white_bg(ImageOps.exif_transpose(frame) if len(pages) == 0 else frame))
 
             if not pages:
                 raise PdfMergeError(f"{path.name}: 변환할 그림 프레임이 없습니다.")

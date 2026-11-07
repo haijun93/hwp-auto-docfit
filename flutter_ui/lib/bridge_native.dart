@@ -29,7 +29,10 @@ Future<Object?> callApi(String method, List<Object?> args) async {
       acceptedTypeGroups: [
         const XTypeGroup(
           label: '문서',
-          extensions: ['hwp', 'hwpx', 'txt', 'md', 'pdf', 'doc', 'docx'],
+          extensions: [
+            'hwp', 'hwpx', 'txt', 'md', 'pdf', 'doc', 'docx', //
+            'jpg', 'jpeg', 'png', 'webp', 'bmp', 'tif', 'tiff', 'gif',
+          ],
         ),
       ],
     );
