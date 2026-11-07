@@ -7,6 +7,7 @@
 //! - SQLite는 Windows 내장 winsqlite3.dll, 네트워크 코드 없음.
 #![windows_subsystem = "windows"]
 
+mod category;
 mod clip;
 mod crypt;
 mod open_item;
