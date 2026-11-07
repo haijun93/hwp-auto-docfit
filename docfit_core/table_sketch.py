@@ -55,6 +55,23 @@ def _clean_images(images, cols, rows, warnings):
     return clean
 UNIT_MM = 283.465
 NONE = ("none", "solid", "#000000")
+# 선 굵기: 예전 이름(thin·thick·double)과 한/글 '셀 테두리/배경' 굵기 목록 값("0.25 mm" 등).
+BORDER_WIDTHS = ("0.1 mm", "0.12 mm", "0.15 mm", "0.2 mm", "0.25 mm", "0.3 mm", "0.4 mm", "0.5 mm",
+                 "0.6 mm", "0.7 mm", "1.0 mm", "1.5 mm", "2.0 mm", "3.0 mm", "4.0 mm", "5.0 mm")
+_NAMED_WIDTH = {"none": "0.12 mm", "thin": "0.12 mm", "thick": "0.4 mm", "double": "0.5 mm"}
+WIDTHS = ("thin", "thick", "double") + BORDER_WIDTHS
+
+
+def _width_rank(width):
+    """겹친 선 가운데 굵은 것을 고르는 순서(mm, 같으면 이중선이 위)."""
+    if width == "none":
+        return (0.0, 0)
+    return (float(_NAMED_WIDTH.get(width, width).split()[0]), 1 if width == "double" else 0)
+
+
+def _hwpx_width(width):
+    """HWPX 테두리 굵기 값('0.12 mm' 꼴)."""
+    return _NAMED_WIDTH.get(width, width)
 _COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 MAX_FILLS = 2000
 
@@ -91,7 +108,7 @@ def normalize(sketch):
                     not (0 <= x1 <= cols and 0 <= x2 <= cols and 0 <= y1 <= rows and 0 <= y2 <= rows) or
                     (x1, y1) == (x2, y2) or
                     not (x1 == x2 or y1 == y2 or abs(x2-x1) == abs(y2-y1)) or
-                    width not in ("thin", "thick", "double") or style not in ("solid", "dash", "dot")):
+                    width not in WIDTHS or style not in ("solid", "dash", "dot")):
                 raise ValueError
             if (x2, y2) < (x1, y1):
                 x1, y1, x2, y2 = x2, y2, x1, y1
@@ -122,9 +139,11 @@ def normalize(sketch):
     for i, item in enumerate(raw_arrows):
         try:
             x1,y1,x2,y2=(item[k] for k in ("x1","y1","x2","y2"))
-            if (any(type(v) is not int for v in (x1,y1,x2,y2)) or not (0<=x1<=cols and 0<=x2<=cols and 0<=y1<=rows and 0<=y2<=rows) or (x1,y1)==(x2,y2) or not (x1==x2 or y1==y2 or abs(x2-x1)==abs(y2-y1))):
+            width, style = item.get("width", "thin"), item.get("style", "solid")
+            if (any(type(v) is not int for v in (x1,y1,x2,y2)) or not (0<=x1<=cols and 0<=x2<=cols and 0<=y1<=rows and 0<=y2<=rows) or (x1,y1)==(x2,y2) or not (x1==x2 or y1==y2 or abs(x2-x1)==abs(y2-y1)) or
+                    width not in WIDTHS or style not in ("solid", "dash", "dot")):
                 raise ValueError
-            arrows.append(dict(x1=x1,y1=y1,x2=x2,y2=y2,width=item.get("width","thin"),style=item.get("style","solid"),color=_color(item.get("color"))))
+            arrows.append(dict(x1=x1,y1=y1,x2=x2,y2=y2,width=width,style=style,color=_color(item.get("color"))))
         except (TypeError,KeyError,ValueError):
             warnings.append(f"화살표 {i+1}: 좌표나 서식이 잘못되어 제외했습니다.")
     clean_texts = []
@@ -171,7 +190,7 @@ def _layout(sketch, _split_lines=()):
     vertical = [l for l in lines if l["x1"] == l["x2"]]
     diagonals = [l for l in lines if l not in horizontal and l not in vertical]
     # 겹친 다른 서식은 굵은 선 우선, 같은 굵기는 solid > dash > dot.
-    rank = lambda s: (("none", "thin", "thick", "double").index(s[0]), ("dot", "dash", "solid").index(s[1]))
+    rank = lambda s: (_width_rank(s[0]), ("dot", "dash", "solid").index(s[1]))
     def edge(kind, fixed, start, end):
         candidates = [(l["width"], l["style"], l.get("color", "#000000")) for l in (horizontal if kind == "h" else vertical)
                       if (l["y1"] if kind == "h" else l["x1"]) == fixed and
@@ -366,11 +385,11 @@ def to_hwpx(sketch, path):
                 _add(node, HH+name, type="CENTER" if cell["diagonal"] in (value,"cross") else "NONE", Crooked="0", isCounter="0")
             def line_attrs(width, style, color="#000000"):
                 return dict(type="NONE" if width=="none" else "DOUBLE_SLIM" if width=="double" else {"solid":"SOLID","dash":"DASH","dot":"DOT"}[style],
-                            width={"none":"0.12 mm","thin":"0.12 mm","thick":"0.4 mm","double":"0.5 mm"}[width],color=color)
+                            width=_hwpx_width(width),color=color)
             for side in ("left","right","top","bottom"):
                 _add(node, HH+side+"Border", **line_attrs(cell["borders"][side],cell.get("border_styles",{}).get(side,"solid"),
                                                           cell.get("border_colors",{}).get(side,"#000000")))
-            diag = max(cell.get("diagonal_styles",{}).values(), key=lambda v:("thin","thick","double").index(v[0]), default=("thin","solid"))
+            diag = max(cell.get("diagonal_styles",{}).values(), key=lambda v:_width_rank(v[0]), default=("thin","solid"))
             _add(node, HH+"diagonal", **line_attrs(*diag))
             if cell.get("fill") and cell.get("image") is None:
                 # 칸 배경색(2.0.7): 한/글 '셀 테두리/배경 > 배경 > 면 색'.
@@ -406,7 +425,8 @@ def to_hwpx(sketch, path):
             rendering.find(core+"transMatrix").attrib.update(e3="0",e6="0")
             _add(node,HP+"startPt",subjectIDRef=0,subjectIdx=0,x=sx-left,y=sy-top)
             _add(node,HP+"endPt",subjectIDRef=0,subjectIdx=0,x=ex-left,y=ey-top)
-            _add(node,HP+"lineShape",color=arrow["color"],width={"thin":20,"thick":40,"double":60}[arrow["width"]],
+            arrow_width = {"thin":20,"thick":40,"double":60}.get(arrow["width"]) or round(float(arrow["width"].split()[0])*UNIT_MM)
+            _add(node,HP+"lineShape",color=arrow["color"],width=arrow_width,
                  style={"solid":"SOLID","dash":"DASH","dot":"DOT"}[arrow["style"]],
                  endCap="FLAT",headStyle="NORMAL",tailStyle="ARROW",headfill=1,tailfill=1,
                  headSz="SMALL_SMALL",tailSz="SMALL_SMALL",outlineStyle="NORMAL",alpha=0)

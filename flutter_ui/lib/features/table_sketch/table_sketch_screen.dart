@@ -33,6 +33,9 @@ enum SketchToolMode {
   select,
   lasso,
   cellImage,
+
+  /// 칸 색: 선으로 닫힌 영역(칸)을 눌러 고르고 칸마다 배경색을 칠한다.
+  cellFill,
 }
 
 /// 표그림판 미로 예시(15×15, S 입구·E 출구).
@@ -171,6 +174,17 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
   // 고른 사각형의 크기 조절 손잡이(0~7, TableSketchPainter.handlePoints 순서)
   int? _resizeHandle;
   Rect? _resizeStart; // 격자 단위
+  // 여러 개·묶음 크기 바꾸기: 끌기 시작 때 문서(반올림 오차가 쌓이지 않게 매번 여기서 다시 늘인다).
+  TableSketchDoc? _resizeBase;
+  // 하나만 고른 선·화살표의 끝점 끌기
+  ({bool arrow, int index, int end})? _endpointDrag;
+  // 스마트 가이드(빨간 점선)·자석 맞춤 켜기, 크기 바꿀 때 비율 유지
+  bool _smartGuides = true;
+  bool _keepRatio = false;
+  GuideTargets? _guideTargets;
+  Rect? _moveStartBounds;
+  // '칸 색' 도구로 고른 칸(선으로 닫힌 영역)의 격자 칸들
+  Set<(int, int)> _regionSel = {};
   SketchClip? _clipboard;
   // 그림판 안에서 복사할 때의 Windows 클립보드 번호(그 뒤 한/글에서 새로 복사했는지 가린다).
   int? _clipboardSeq;
@@ -1051,7 +1065,30 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
       _erasePrecisionAt(pos);
     } else if (_tool == SketchToolMode.cellImage) {
       _pickImageCell(pos);
+    } else if (_tool == SketchToolMode.cellFill) {
+      _pickRegionAt(pos);
     }
+  }
+
+  /// '칸 색' 도구: 누른 칸(선으로 닫힌 영역)을 고른다. Shift면 더하거나(이미 고른 칸이면) 뺀다.
+  void _pickRegionAt(Offset pos) {
+    final x = (pos.dx / _cellSize).floor(), y = (pos.dy / _cellSize).floor();
+    final cells = regionCells(_doc, x, y);
+    final shift = HardwareKeyboard.instance.isShiftPressed;
+    if (cells == null) {
+      if (!shift) setState(() => _regionSel = {});
+      _notice('선으로 닫힌 칸 안을 누르세요(경계가 열려 있으면 칸이 아닙니다).');
+      return;
+    }
+    setState(() {
+      if (!shift) {
+        _regionSel = cells;
+      } else if (_regionSel.containsAll(cells)) {
+        _regionSel = _regionSel.difference(cells);
+      } else {
+        _regionSel = {..._regionSel, ...cells};
+      }
+    });
   }
 
   // --- 선 / 사각형 스냅 및 커밋 ---
@@ -1336,7 +1373,11 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
   /// 눌러 고르기: 사각형은 네 변을, 직선은 한 줄 전체를 한 모형으로 고른다.
   /// Shift를 누르고 있으면 더하고, 이미 고른 모형이면 뺀다.
   void _selectLineAt(Offset pos) {
-    final hit = shapeSelect(_doc, pos / _cellSize, _hitTolerance);
+    // 묶음에 든 모형을 누르면 묶음 전체가 골라진다.
+    final hit = expandGroups(
+      _doc,
+      shapeSelect(_doc, pos / _cellSize, _hitTolerance),
+    );
     final shift = HardwareKeyboard.instance.isShiftPressed;
     final already =
         hit.isNotEmpty &&
@@ -1367,7 +1408,8 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
   bool _hitsSelection(Offset grid) {
     final hit = hitSelect(_doc, grid, _hitTolerance);
     return hit.lines.any(_sel.lines.contains) ||
-        hit.texts.any(_sel.texts.contains);
+        hit.texts.any(_sel.texts.contains) ||
+        hit.arrows.any(_sel.arrows.contains);
   }
 
   void _beginSelectionDrag(Offset pos) {
@@ -1376,15 +1418,29 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
     _movingSelection = false;
     _lassoPath = null;
     _resizeHandle = null;
-    final box = _tool == SketchToolMode.select
-        ? selectedRectangle(_doc, _sel)
-        : null;
+    _resizeBase = null;
+    _endpointDrag = null;
+    _guideTargets = null;
+    // 하나만 고른 선·화살표의 끝점을 누르면 그 끝만 옮긴다(위치·길이·각도 고치기).
+    if (_tool == SketchToolMode.select) {
+      final end = endpointAt(_doc, _sel, grid, 10 / _cellSize);
+      if (end != null) {
+        _endpointDrag = end;
+        _moveSnapshotTaken = false;
+        return;
+      }
+    }
+    final box = _resizeBox;
     if (box != null) {
       final handles = TableSketchPainter.handlePoints(box);
       for (var i = 0; i < handles.length; i++) {
         if ((handles[i] * _cellSize - pos).distance <= 10) {
           _resizeHandle = i;
           _resizeStart = box;
+          if (selectedRectangle(_doc, _sel) == null) {
+            _resizeBase = _doc.clone();
+          }
+          _guideTargets = _smartGuides ? guideTargets(_doc, _sel) : null;
           _moveSnapshotTaken = false;
           return;
         }
@@ -1399,7 +1455,10 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
       }
       if (!onSelection && _tool == SketchToolMode.select) {
         // 고르지 않은 개체를 바로 끌면 그 모형(사각형·직선)을 골라 옮긴다(파워포인트처럼).
-        final hit = shapeSelect(_doc, grid, _hitTolerance);
+        final hit = expandGroups(
+          _doc,
+          shapeSelect(_doc, grid, _hitTolerance),
+        );
         if (hit.isNotEmpty) {
           setState(() => _sel = hit);
           onSelection = true;
@@ -1411,6 +1470,8 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
         _movedDx = 0;
         _movedDy = 0;
         _moveSnapshotTaken = false;
+        _moveStartBounds = selectionBounds(_doc, _sel.validFor(_doc));
+        _guideTargets = _smartGuides ? guideTargets(_doc, _sel) : null;
         return;
       }
     }
@@ -1428,24 +1489,53 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
           .round()
           .clamp(0, _doc.grid.rows)
           .toDouble();
-      var l = start.left, t = start.top, r = start.right, b = start.bottom;
-      if (const {0, 6, 7}.contains(handle)) l = math.min(gx, r - 1);
-      if (const {2, 3, 4}.contains(handle)) r = math.max(gx, l + 1);
-      if (const {0, 1, 2}.contains(handle)) t = math.min(gy, b - 1);
-      if (const {4, 5, 6}.contains(handle)) b = math.max(gy, t + 1);
-      final next = Rect.fromLTRB(l, t, r, b);
-      if (next == selectionBounds(_doc, _sel)) return;
+      final keepRatio = _keepRatio || HardwareKeyboard.instance.isShiftPressed;
+      var next = resizeBounds(start, handle, gx, gy, keepRatio: keepRatio);
+      final targets = _guideTargets;
+      if (targets != null && !keepRatio) {
+        next = snapResize(next, handle, targets, _snapCells);
+      }
+      final cols = _doc.grid.cols.toDouble(), rows = _doc.grid.rows.toDouble();
+      if (next.left < 0 || next.top < 0 || next.right > cols || next.bottom > rows) {
+        return; // 종이 밖으로는 늘이지 않는다.
+      }
+      final base = _resizeBase;
+      if (base == null && next == selectionBounds(_doc, _sel)) return;
       if (!_moveSnapshotTaken) {
         _saveSnapshot();
         _moveSnapshotTaken = true;
       }
-      setState(() => _sel = resizeRectangle(_doc, _sel, next));
+      setState(() {
+        if (base == null) {
+          _sel = resizeRectangle(_doc, _sel, next);
+        } else {
+          // 여러 개·묶음: 처음 모양에서 매번 다시 늘여 반올림 오차가 쌓이지 않게 한다.
+          final doc = base.clone();
+          scaleSelection(doc, _sel, start, next);
+          _doc = doc;
+        }
+      });
+      return;
+    }
+    final end = _endpointDrag;
+    if (end != null) {
+      _dragEndpoint(end, pos);
       return;
     }
     if (_movingSelection && _moveOrigin != null) {
       final grid = pos / _cellSize;
-      final totalDx = (grid.dx - _moveOrigin!.dx).round();
-      final totalDy = (grid.dy - _moveOrigin!.dy).round();
+      var totalDx = (grid.dx - _moveOrigin!.dx).round();
+      var totalDy = (grid.dy - _moveOrigin!.dy).round();
+      final targets = _guideTargets, startBounds = _moveStartBounds;
+      if (targets != null && startBounds != null) {
+        (totalDx, totalDy) = snapMove(
+          startBounds,
+          totalDx,
+          totalDy,
+          targets,
+          _snapCells,
+        );
+      }
       final stepX = totalDx - _movedDx, stepY = totalDy - _movedDy;
       if (stepX == 0 && stepY == 0) return;
       if (!_moveSnapshotTaken) {
@@ -1477,10 +1567,17 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
   }
 
   void _endSelectionDrag() {
+    _guideTargets = null;
+    if (_endpointDrag != null) {
+      setState(() => _endpointDrag = null);
+      if (_moveSnapshotTaken) _triggerPreviewDebounced();
+      return;
+    }
     if (_resizeHandle != null) {
       setState(() {
         _resizeHandle = null;
         _resizeStart = null;
+        _resizeBase = null;
       });
       if (_moveSnapshotTaken) _triggerPreviewDebounced();
       return;
@@ -1489,6 +1586,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
       setState(() {
         _movingSelection = false;
         _moveOrigin = null;
+        _moveStartBounds = null;
       });
       if (_movedDx != 0 || _movedDy != 0) _triggerPreviewDebounced();
       return;
@@ -1523,6 +1621,101 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
           : picked;
       _syncStyleFromSelection();
     });
+  }
+
+  /// 자석 맞춤 거리(격자 칸 수): 화면에서 약 12px 안이면 붙는다(확대할수록 칸 수는 줄어 최소 1칸).
+  int get _snapCells => _smartGuides ? math.max(1, (12 / _cellSize).ceil()) : 0;
+
+  /// 크기 조절 손잡이를 그릴 테두리: 사각형 하나 또는 여러 개·묶음을 고른 범위.
+  Rect? get _resizeBox {
+    if (_tool != SketchToolMode.select) return null;
+    final sel = _sel.validFor(_doc);
+    final rect = selectedRectangle(_doc, sel);
+    if (rect != null) return rect;
+    if (sel.count < 2) return null; // 선 하나·화살표 하나는 끝점 손잡이로 고친다.
+    final b = selectionBounds(_doc, sel);
+    if (b == null || b.width < 1 || b.height < 1) return null;
+    return b;
+  }
+
+  /// 끝점 하나를 (pos)로 옮긴다. 가로·세로·45° 모양은 그대로 지킨다(다른 끝은 고정).
+  void _dragEndpoint(({bool arrow, int index, int end}) end, Offset pos) {
+    final gx = (pos.dx / _cellSize).round().clamp(0, _doc.grid.cols);
+    final gy = (pos.dy / _cellSize).round().clamp(0, _doc.grid.rows);
+    final (ox1, oy1, ox2, oy2) = end.arrow
+        ? (
+            _doc.arrows[end.index].x1,
+            _doc.arrows[end.index].y1,
+            _doc.arrows[end.index].x2,
+            _doc.arrows[end.index].y2,
+          )
+        : (
+            _doc.lines[end.index].x1,
+            _doc.lines[end.index].y1,
+            _doc.lines[end.index].x2,
+            _doc.lines[end.index].y2,
+          );
+    final (fx, fy) = end.end == 0 ? (ox2, oy2) : (ox1, oy1);
+    final snapped = snapLineCoords(
+      fx,
+      fy,
+      gx,
+      gy,
+      _doc.grid.cols,
+      _doc.grid.rows,
+    );
+    if (snapped == null || (snapped.x == fx && snapped.y == fy)) return;
+    final (nx1, ny1, nx2, ny2) = end.end == 0
+        ? (snapped.x, snapped.y, fx, fy)
+        : (fx, fy, snapped.x, snapped.y);
+    if (nx1 == ox1 && ny1 == oy1 && nx2 == ox2 && ny2 == oy2) return;
+    if (!_moveSnapshotTaken) {
+      _saveSnapshot();
+      _moveSnapshotTaken = true;
+    }
+    setState(() {
+      if (end.arrow) {
+        _doc.arrows[end.index] = _doc.arrows[end.index].copyWith(
+          x1: nx1,
+          y1: ny1,
+          x2: nx2,
+          y2: ny2,
+        );
+      } else {
+        _doc.lines[end.index] = _doc.lines[end.index].copyWith(
+          x1: nx1,
+          y1: ny1,
+          x2: nx2,
+          y2: ny2,
+        );
+      }
+    });
+  }
+
+  /// 고른 개체를 하나의 묶음으로(Ctrl+G).
+  void _groupSelected() {
+    final sel = _sel.validFor(_doc);
+    if (sel.count < 2) {
+      _notice('묶을 개체를 2개 이상 고르세요.');
+      return;
+    }
+    final trial = _doc.clone();
+    if (!groupSelection(trial, sel)) return;
+    _saveSnapshot();
+    setState(() => groupSelection(_doc, sel));
+    _notice('${sel.count}개를 한 묶음으로 만들었습니다.');
+  }
+
+  /// 고른 묶음을 푼다(Ctrl+Shift+G).
+  void _ungroupSelected() {
+    final sel = _sel.validFor(_doc);
+    if (selectedGroups(_doc, sel).isEmpty) {
+      _notice('고른 것 가운데 묶음이 없습니다.');
+      return;
+    }
+    _saveSnapshot();
+    setState(() => ungroupSelection(_doc, sel));
+    _notice('묶음을 풀었습니다.');
   }
 
   void _deleteSelectedLine() {
@@ -1569,6 +1762,17 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
 
   /// 고른 사각형(또는 고른 선들이 두른 범위)의 배경색을 칠한다. color가 null이면 지운다.
   void _applyFill(String? color) {
+    if (_tool == SketchToolMode.cellFill) {
+      // 칸 색: 고른 칸(닫힌 영역)마다 따로 칠한다. 바탕 사각형 전체가 아니라 나뉜 칸만 칠해진다.
+      if (_regionSel.isEmpty) {
+        _notice('배경색을 칠할 칸을 먼저 누르세요(Shift로 여러 칸).');
+        return;
+      }
+      _saveSnapshot();
+      setState(() => _doc.paintCells(_regionSel, color));
+      _triggerPreviewDebounced();
+      return;
+    }
     final sel = _sel.validFor(_doc);
     final box =
         selectedRectangle(_doc, sel) ??
@@ -1585,11 +1789,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
       return;
     }
     _saveSnapshot();
-    setState(() {
-      for (final (x, y) in cells) {
-        _doc.setFill(x, y, x + 1, y + 1, color);
-      }
-    });
+    setState(() => _doc.paintCells(cells, color));
     _triggerPreviewDebounced();
   }
 
@@ -1648,6 +1848,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
     required String? current,
     required bool allowNone,
     required void Function(String? color) onPick,
+    bool mixed = false,
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2),
@@ -1690,7 +1891,10 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
                     : null,
               ),
               const SizedBox(width: 4),
-              Text(label, style: const TextStyle(fontSize: 12)),
+              Text(
+                mixed ? '$label(혼합)' : label,
+                style: const TextStyle(fontSize: 12),
+              ),
             ],
           ),
         ),
@@ -1781,18 +1985,43 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
   }
 
   String? get _selectedFillColor {
+    if (_tool == SketchToolMode.cellFill) {
+      final colors = {for (final (x, y) in _regionSel) _doc.fillAt(x, y)};
+      return colors.length == 1 ? colors.single : null;
+    }
     final sel = _sel.validFor(_doc);
     final box = sel.lines.isEmpty ? null : selectionBounds(_doc, sel);
-    if (box == null) return null;
-    for (final f in _doc.fills.reversed) {
-      if (f.x1 == box.left.round() &&
-          f.y1 == box.top.round() &&
-          f.x2 == box.right.round() &&
-          f.y2 == box.bottom.round()) {
-        return f.color;
+    if (box == null || box.width < 1 || box.height < 1) return null;
+    // 고른 사각형 안 칸이 모두 같은 색이면 그 색(칸마다 다르면 표시하지 않는다).
+    final colors = <String?>{};
+    for (var y = box.top.round(); y < box.bottom.round(); y++) {
+      for (var x = box.left.round(); x < box.right.round(); x++) {
+        colors.add(_doc.fillAt(x, y));
+        if (colors.length > 1) return null;
       }
     }
-    return null;
+    return colors.length == 1 ? colors.single : null;
+  }
+
+  /// 고른 선·화살표의 굵기: 모두 같으면 그 값, 서로 다르면 '혼합'(null), 고른 것이 없으면 지금 도구 값.
+  String? get _shownLineWidth {
+    final sel = _sel.validFor(_doc);
+    final widths = {
+      for (final i in sel.lines) _doc.lines[i].width,
+      for (final i in sel.arrows) _doc.arrows[i].width,
+    };
+    if (widths.isEmpty) return _lineWidth;
+    return widths.length == 1 ? widths.single : null;
+  }
+
+  /// 고른 선·화살표 색이 서로 다른지(선 색 단추에 '혼합'으로 보인다).
+  bool get _lineColorMixed {
+    final sel = _sel.validFor(_doc);
+    return {
+          for (final i in sel.lines) _doc.lines[i].color,
+          for (final i in sel.arrows) _doc.arrows[i].color,
+        }.length >
+        1;
   }
 
   void _selectAll() {
@@ -1948,6 +2177,13 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
             _pasteKey,
         const SingleActivator(LogicalKeyboardKey.keyD, control: true):
             _duplicateSelection,
+        const SingleActivator(LogicalKeyboardKey.keyG, control: true):
+            _groupSelected,
+        const SingleActivator(
+          LogicalKeyboardKey.keyG,
+          control: true,
+          shift: true,
+        ): _ungroupSelected,
         const SingleActivator(LogicalKeyboardKey.arrowLeft): () =>
             _nudgeSelection(-1, 0),
         const SingleActivator(LogicalKeyboardKey.arrowRight): () =>
@@ -2231,6 +2467,13 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
             label: '칸 그림',
             tooltip: '칸 배경 그림 (칸을 누르고 Ctrl+V, 또는 사진을 칸에 끌어 놓기)',
           ),
+          _toolButton(
+            key: const Key('toolCellFill'),
+            mode: SketchToolMode.cellFill,
+            icon: Icons.format_color_fill_rounded,
+            label: '칸 색',
+            tooltip: '칸 배경색: 선으로 나뉜 칸을 눌러 고르고(Shift로 여러 칸) 배경 단추로 칠하기',
+          ),
           // 묶음(굵기·종류·확대)은 한 덩어리로 줄을 바꾼다.
           _toolGroup([
             const Text(
@@ -2242,6 +2485,8 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
             _widthChip('thick', '굵게', const Key('lineWidthThick')),
             _widthChip('double', '이중', const Key('lineWidthDouble')),
           ]),
+          // 좁은 창(420px)에서 한 줄에 넘치지 않게 mm 목록은 따로 줄을 바꾼다.
+          _toolGroup([_widthMenu()]),
           _toolGroup([
             const Text(
               '종류:',
@@ -2258,6 +2503,7 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
               label: '선 색',
               tooltip: '새로 그을 선과 고른 선(사각형 테두리)의 색',
               current: _lineColor,
+              mixed: _lineColorMixed,
               allowNone: false,
               onPick: (color) {
                 if (color == null) return;
@@ -2268,10 +2514,26 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
             _colorButton(
               key: const Key('fillColorButton'),
               label: '배경',
-              tooltip: '고른 사각형의 배경색',
+              tooltip: '고른 사각형(또는 \'칸 색\' 도구로 고른 칸)의 배경색',
               current: _selectedFillColor,
               allowNone: true,
               onPick: _applyFill,
+            ),
+          ]),
+          _toolGroup([
+            _toggleChip(
+              key: const Key('smartGuideToggle'),
+              label: '가이드',
+              tooltip: '스마트 가이드: 옮기거나 크기를 바꿀 때 빨간 점선으로 맞춤을 보이고 가까우면 붙인다',
+              value: _smartGuides,
+              onChanged: (v) => setState(() => _smartGuides = v),
+            ),
+            _toggleChip(
+              key: const Key('keepRatioToggle'),
+              label: '비율 유지',
+              tooltip: '손잡이로 크기를 바꿀 때 가로세로 비율 유지(Shift를 누르고 끌어도 같다)',
+              value: _keepRatio,
+              onChanged: (v) => setState(() => _keepRatio = v),
             ),
           ]),
           _toolGroup([
@@ -2686,6 +2948,8 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
   void _deleteKey() {
     if (_tool == SketchToolMode.cellImage) {
       _removeTargetImage();
+    } else if (_tool == SketchToolMode.cellFill) {
+      if (_regionSel.isNotEmpty) _applyFill(null); // 고른 칸의 배경색 지우기
     } else {
       _deleteSelectedLine();
     }
@@ -2753,6 +3017,22 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
       ),
       child: _tool == SketchToolMode.cellImage
           ? _cellImageBar()
+          : _tool == SketchToolMode.cellFill
+          ? Row(
+              children: [
+                Text(
+                  _regionSel.isEmpty ? '칸을 누르세요' : '칸 ${_regionSel.length}격자 선택',
+                  key: const Key('sketchRegionCount'),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF15803D),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                _barHint('선으로 나뉜 칸마다 따로 칠해요 · Shift로 여러 칸 · 위 \'배경\' 단추로 색 고르기(없음=지우기)'),
+              ],
+            )
           : Row(
               children: [
                 if (_sel.isNotEmpty) ...[
@@ -2782,6 +3062,18 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
                     '삭제 (Delete)',
                     _deleteSelectedLine,
                     const Key('sketchDeleteSelection'),
+                  ),
+                  _selectionAction(
+                    Icons.workspaces_outlined,
+                    '묶기 (Ctrl+G)',
+                    _groupSelected,
+                    const Key('sketchGroup'),
+                  ),
+                  _selectionAction(
+                    Icons.workspaces_filled,
+                    '묶음 풀기 (Ctrl+Shift+G)',
+                    _ungroupSelected,
+                    const Key('sketchUngroup'),
                   ),
                 ],
                 if (_clipboard != null)
@@ -2903,6 +3195,92 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
     );
   }
 
+  /// 한/글 굵기 목록(0.1~5mm, 선 모양 미리보기). 여러 개를 골랐는데 굵기가 다르면 '혼합'.
+  Widget _widthMenu() {
+    final shown = _shownLineWidth;
+    Widget preview(String width) => SizedBox(
+      width: 48,
+      height: 16,
+      child: CustomPaint(painter: _WidthPreviewPainter(width)),
+    );
+    return PopupMenuButton<String>(
+      key: const Key('lineWidthMenu'),
+      tooltip: '선 굵기(한/글 셀 테두리 굵기 목록)',
+      onSelected: (width) {
+        setState(() => _lineWidth = width);
+        _updateSelectedLineStyle(width: width);
+      },
+      itemBuilder: (context) => [
+        for (final mm in sketchLineWidthMms)
+          PopupMenuItem(
+            key: Key('lineWidth-$mm'),
+            value: sketchWidthFromMm(mm),
+            height: 32,
+            child: Row(
+              children: [
+                preview(sketchWidthFromMm(mm)),
+                const SizedBox(width: 10),
+                Text('$mm mm', style: const TextStyle(fontSize: 12)),
+              ],
+            ),
+          ),
+        PopupMenuItem(
+          key: const Key('lineWidth-double'),
+          value: 'double',
+          height: 32,
+          child: Row(
+            children: [
+              preview('double'),
+              const SizedBox(width: 10),
+              const Text('이중', style: TextStyle(fontSize: 12)),
+            ],
+          ),
+        ),
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        margin: const EdgeInsets.only(left: 2),
+        decoration: BoxDecoration(
+          border: Border.all(color: const Color(0xFFCBD5E1)),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (shown != null) ...[preview(shown), const SizedBox(width: 4)],
+            Text(
+              shown == null ? '혼합' : sketchWidthLabel(shown),
+              key: const Key('lineWidthMenuLabel'),
+              style: const TextStyle(fontSize: 12),
+            ),
+            const Icon(Icons.arrow_drop_down, size: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _toggleChip({
+    required Key key,
+    required String label,
+    required String tooltip,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 2),
+    child: Tooltip(
+      message: tooltip,
+      child: FilterChip(
+        key: key,
+        label: Text(label, style: const TextStyle(fontSize: 12)),
+        selected: value,
+        onSelected: onChanged,
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+    ),
+  );
+
   Widget _styleChip(String style, String label, Key key) {
     final isSelected = _lineStyle == style;
     return Padding(
@@ -2962,9 +3340,17 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
     final canvasHeight =
         math.max(_doc.grid.rows, pending?.grid.rows ?? 0) * _cellSize;
     // 옮기거나 크기를 바꾸는 동안 다른 개체와 맞는 곳에 빨간 안내선(다이어그램처럼).
-    final guides = _movingSelection || _resizeHandle != null
-        ? alignmentGuides(_doc, _sel)
-        : (xs: <double>{}, ys: <double>{});
+    // 같은 간격·같은 크기도 함께 보인다. '가이드'를 끄면 보이지 않고 붙지도 않는다.
+    final targets = _guideTargets;
+    final bounds = targets == null
+        ? null
+        : selectionBounds(_doc, _sel.validFor(_doc));
+    final guides =
+        (_movingSelection || _resizeHandle != null) &&
+            targets != null &&
+            bounds != null
+        ? smartGuides(bounds, targets)
+        : const SmartGuides();
 
     return Listener(
       onPointerSignal: _handlePointerSignal,
@@ -3054,11 +3440,17 @@ class _TableSketchScreenState extends State<TableSketchScreen> {
                               previewLine: _previewLine,
                               previewArrow: _isArrowTool,
                               previewRect: _previewRect,
-                              resizeBox: _tool == SketchToolMode.select
-                                  ? selectedRectangle(_doc, _sel)
-                                  : null,
+                              resizeBox: _resizeBox,
                               guideXs: guides.xs,
                               guideYs: guides.ys,
+                              guideSpacing: guides.spacing,
+                              guideSameSize: guides.sameSize,
+                              selectedBounds: guides.sameSize.isEmpty
+                                  ? null
+                                  : bounds,
+                              regionCells: _tool == SketchToolMode.cellFill
+                                  ? _regionSel
+                                  : const {},
                             ),
                             child: pending == null
                                 ? null
@@ -3398,4 +3790,27 @@ class _RecognizeCard extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// 굵기 목록의 선 모양 미리보기.
+class _WidthPreviewPainter extends CustomPainter {
+  const _WidthPreviewPainter(this.width);
+  final String width;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xFF0F172A)
+      ..strokeWidth = sketchStrokePx(width);
+    final y = size.height / 2;
+    if (width == 'double') {
+      canvas.drawLine(Offset(0, y - 2), Offset(size.width, y - 2), paint);
+      canvas.drawLine(Offset(0, y + 2), Offset(size.width, y + 2), paint);
+    } else {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_WidthPreviewPainter old) => old.width != width;
 }
