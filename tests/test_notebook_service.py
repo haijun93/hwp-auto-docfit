@@ -181,5 +181,18 @@ class DesktopNotebookTests(unittest.TestCase):
         self.assertEqual(bridge.notebook({"cmd": "nb_drop_watch", "active": False})["drop_target"], "rename_files")
 
 
+    def test_library_drop_watch_routes_drops_to_library_and_restores(self):
+        """탐색기에서 자료함 창에 끌어 놓은 파일을 자료함이 가져간다(사용자 보고 2026-11-07)."""
+        bridge = make_desktop_bridge()
+        bridge.drop_target = "documents"
+        bridge.get_state = lambda: {"state": True}
+        bridge.add_paths = mock.Mock(side_effect=AssertionError("문서 목록으로 가면 안 됨"))
+        self.assertEqual(bridge.library({"cmd": "lib_drop_watch", "active": True})["drop_target"], "library")
+        bridge.receive_drop(["C:/자료/가.hwpx"])
+        bridge.receive_drop(["C:/자료/나.xlsx"])
+        self.assertEqual(bridge.library({"cmd": "lib_take_drop"})["paths"], ["C:/자료/가.hwpx", "C:/자료/나.xlsx"])
+        self.assertEqual(bridge.library({"cmd": "lib_take_drop"})["paths"], [])
+        self.assertEqual(bridge.library({"cmd": "lib_drop_watch", "active": False})["drop_target"], "documents")
+
 if __name__ == "__main__":
     unittest.main()

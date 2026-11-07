@@ -297,6 +297,14 @@ class LibraryScanStatus {
 }
 
 /// 자료함 폴더 스캔(선택 기능). `LibraryApi`를 구현한 클래스가 함께 구현하면 화면에 스캔 단추가 나타난다.
+/// 창(탐색기)에서 끌어 놓은 파일 받기. 브리지가 놓기 대상을 자료함으로 바꾸고 경로를 맡아 둔다.
+abstract interface class LibraryDropApi {
+  Future<void> watchDrops(bool active);
+
+  /// 맡겨 둔 경로를 가져간다(가져가면 비워진다).
+  Future<List<String>> takeDroppedPaths();
+}
+
 abstract interface class LibraryScanApi {
   /// klib 요청: box_scan {box_id, path}
   Future<void> startScan(String boxId, String path);
@@ -313,10 +321,18 @@ typedef LibraryBridgeCall =
 
 /// Adapts screen models to klib's command and response schema.
 
-class BridgeLibraryApi implements LibraryApi, LibraryScanApi {
+class BridgeLibraryApi implements LibraryApi, LibraryScanApi, LibraryDropApi {
   BridgeLibraryApi(this._call);
 
   final LibraryBridgeCall _call;
+
+  @override
+  Future<void> watchDrops(bool active) => _request('lib_drop_watch', {'active': active});
+
+  @override
+  Future<List<String>> takeDroppedPaths() async => [
+    for (final p in (await _request('lib_take_drop'))['paths'] as List? ?? const []) '$p',
+  ];
 
   Future<Map<String, Object?>> _request(
     String cmd, [

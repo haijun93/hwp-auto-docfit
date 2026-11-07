@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_selector/file_selector.dart';
 
+import '../../core/drop_events.dart';
 import 'library_api.dart';
 
 class LibraryClipboardData {
@@ -63,7 +64,11 @@ class LibraryScreen extends StatefulWidget {
     this.scanApi,
     this.folderPicker,
     this.scanPollInterval = const Duration(milliseconds: 400),
+    this.watchDropEvents,
   });
+
+  /// 창에 파일을 놓았다는 알림 구독(시험에서 대체). 기본은 'docfit-library-files-dropped' 창 이벤트.
+  final void Function() Function(void Function() onDrop)? watchDropEvents;
 
   final LibraryApi api;
   final LibraryClipboardReader? clipboardReader;
@@ -105,6 +110,41 @@ class _LibraryScreenState extends State<LibraryScreen> {
   void initState() {
     super.initState();
     _loadBoxes();
+    final drops = _dropApi;
+    if (drops != null) {
+      _stopDrops = (widget.watchDropEvents ??
+          (cb) => watchWindowEvent('docfit-library-files-dropped', cb))(() => unawaited(_takeDrops()));
+      unawaited(drops.watchDrops(true).catchError((Object _) {}));
+    }
+  }
+
+  void Function()? _stopDrops;
+
+  LibraryDropApi? get _dropApi {
+    final Object api = widget.api;
+    return api is LibraryDropApi ? api : null;
+  }
+
+  /// 탐색기에서 끌어 놓은 파일을 선택한 자료함의 '핵심' 공간에 차례로 넣는다.
+  Future<void> _takeDrops() async {
+    final drops = _dropApi;
+    if (drops == null || !mounted) return;
+    final paths = await drops.takeDroppedPaths();
+    if (paths.isEmpty || !mounted) return;
+    if (_selectedBox == null) {
+      setState(() => _statusMessage = '먼저 자료함을 고르거나 만든 뒤 파일을 놓아 주세요.');
+      return;
+    }
+    var added = 0;
+    for (final path in paths) {
+      try {
+        await _addFile(LibraryFileDrop(path: path), LibrarySpace.core, Offset.zero);
+        added++;
+      } catch (error) {
+        if (mounted) setState(() => _statusMessage = '추가하지 못했습니다: $error');
+      }
+    }
+    if (mounted && added > 0) setState(() => _statusMessage = '파일 $added개를 자료함에 넣었습니다.');
   }
 
   LibraryScanApi? get _scanApi {
@@ -205,6 +245,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   @override
   void dispose() {
+    _stopDrops?.call();
+    final drops = _dropApi;
+    if (drops != null) unawaited(drops.watchDrops(false).catchError((Object _) {}));
     _scanTimer?.cancel();
     _newBoxController.dispose();
     _searchController.dispose();

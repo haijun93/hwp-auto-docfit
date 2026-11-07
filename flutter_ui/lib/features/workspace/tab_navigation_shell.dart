@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../core/close_guards.dart';
+
 /// 탭 번호. 파일이름 뒤에 타임머신을 두고 파일변환을 맨 끝에 둔다.
 const kTabFileRename = 6;
 const kTabTimemachine = 7;
@@ -453,7 +455,7 @@ class WorkspaceTabBar extends StatelessWidget {
                       color: color,
                       expanded: expanded,
                       onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                        builder: (_) => libraryScreen!,
+                        builder: (_) => HostClosablePage(title: '자료함', child: libraryScreen!),
                       )),
                     ),
                   if (developerMode && notebookScreen != null)
@@ -465,7 +467,7 @@ class WorkspaceTabBar extends StatelessWidget {
                       color: color,
                       expanded: expanded,
                       onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                        builder: (_) => notebookScreen!,
+                        builder: (_) => HostClosablePage(title: '노트북', child: notebookScreen!),
                       )),
                     ),
                 ],
@@ -634,4 +636,74 @@ class _TabPill extends StatelessWidget {
       child: expanded ? item : Tooltip(message: label, child: item),
     );
   }
+}
+
+/// 자료함·노트북처럼 위에 띄운 화면. 저장할 편집이 없으므로 앱을 닫을 때
+/// 스스로 닫혀 종료를 막지 않는다(사용자 보고 2026-11-07: X를 눌러도 안 닫힘).
+class HostClosablePage extends StatefulWidget {
+  const HostClosablePage({super.key, required this.title, required this.child});
+  final String title;
+  final Widget child;
+
+  @override
+  State<HostClosablePage> createState() => _HostClosablePageState();
+}
+
+class _HostClosablePageState extends State<HostClosablePage> {
+  late final CloseLease _lease = CloseGuards.register(_prepareHostClose);
+
+  Future<bool> _prepareHostClose() async {
+    if (!mounted) return true;
+    final navigator = Navigator.of(context);
+    final route = ModalRoute.of(context);
+    if (route != null) navigator.removeRoute(route);
+    return true;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _lease;
+  }
+
+  @override
+  void dispose() {
+    _lease.release();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.escape): () => Navigator.of(context).maybePop(),
+        },
+        child: Focus(
+          autofocus: true,
+          child: Column(
+            children: [
+              Material(
+                color: Theme.of(context).colorScheme.surface,
+                child: SizedBox(
+                  height: 44,
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 4),
+                      TextButton.icon(
+                        key: const ValueKey('host-page-back'),
+                        onPressed: () => Navigator.of(context).maybePop(),
+                        icon: const Icon(Icons.arrow_back),
+                        label: const Text('처음 화면으로'),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(widget.title, style: Theme.of(context).textTheme.titleMedium),
+                    ],
+                  ),
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(child: widget.child),
+            ],
+          ),
+        ),
+      );
 }

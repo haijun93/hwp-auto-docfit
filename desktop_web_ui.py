@@ -2306,6 +2306,11 @@ class DesktopWebBridge:
                 if getattr(self, "_folder_scan", None) is None:
                     self._folder_scan = FolderScanService(self._get_library_bridge)
                 return self._folder_scan.handle(request)
+            if isinstance(request, dict) and request.get("cmd") == "lib_drop_watch":
+                return self._library_drop_watch(bool(request.get("active")))
+            if isinstance(request, dict) and request.get("cmd") == "lib_take_drop":
+                paths, self._library_drop = list(getattr(self, "_library_drop", None) or []), []
+                return {"ok": True, "paths": paths}
             if isinstance(request, dict) and request.get("cmd") == "open_item":
                 from docfit_app.library_bridge import open_library_item
                 return {"ok": True, "opened": open_library_item(request)}
@@ -2336,6 +2341,30 @@ class DesktopWebBridge:
             return self._notebook_service.handle(request)
         except Exception as exc:
             return {"ok": False, "message": str(exc)}
+
+    def _library_drop_watch(self, active):
+        """자료함 화면이 열려 있는 동안 창에 놓은 파일을 자료함 항목으로 받고, 닫히면 이전 놓기 대상으로 되돌린다."""
+        current = getattr(self, "drop_target", "documents")
+        if active:
+            if current != "library":
+                self._drop_target_before_library = current
+            self._apply_drop_target("library")
+        elif current == "library":
+            self._apply_drop_target(getattr(self, "_drop_target_before_library", None) or "documents")
+        return {"ok": True, "drop_target": self.drop_target}
+
+    def _receive_library_paths(self, paths):
+        """자료함에 끌어 놓은 파일: 경로를 맡겨 두고 화면에 알린다(화면이 lib_take_drop으로 가져가 항목으로 추가)."""
+        pending = list(getattr(self, "_library_drop", None) or [])
+        pending.extend(str(p) for p in (paths or [])[:200] if str(p).strip())
+        self._library_drop = pending
+        window = self.window
+        if window is not None and hasattr(window, "run_js"):
+            try:
+                window.run_js("window.dispatchEvent(new Event('docfit-library-files-dropped'));")
+            except Exception:
+                logging.getLogger(__name__).debug("library drop notify failed", exc_info=True)
+        return {"ok": True, "pending": len(pending)}
 
     def _notebook_drop_watch(self, active):
         """노트북 화면이 열려 있는 동안 창에 놓은 파일을 노트북 출처로 받고, 닫히면 이전 놓기 대상으로 되돌린다."""
@@ -2609,7 +2638,7 @@ class DesktopWebBridge:
 
     def _apply_drop_target(self, target):
         if target not in ("documents", "manual_documents", "format", "quick_format", "sketch_image", "paint_image",
-                          "rename_files", "kclip", "notebook"):
+                          "rename_files", "kclip", "notebook", "library"):
             raise ValueError("지원하지 않는 놓기 대상입니다.")
         self.drop_target = target
         if target == "format":   # 서식 관리 창을 열 때 서식예시 폴더에 새로 넣은 예시를 찾아 등록한다
@@ -2624,6 +2653,7 @@ class DesktopWebBridge:
                     else "여기에 놓으면 그림판 배경 사진으로 넣습니다" if target == "paint_image"
                     else "여기에 파일을 놓으면 이름 목록에 추가됩니다" if target == "rename_files"
                     else "여기에 놓으면 노트북 출처로 추가합니다" if target == "notebook"
+                    else "여기에 놓으면 자료함 항목으로 추가합니다" if target == "library"
                     else "여기에 놓으면 문서 목록에 추가됩니다")
             try:
                 window.run_js(f"window.docfitDropText = {text!r};")
@@ -2670,6 +2700,9 @@ class DesktopWebBridge:
             return self._receive_sketch_image(paths, client_x, client_y, event="docfit-paint-image-dropped")
         if self.drop_target == "rename_files":
             return self._receive_rename_paths(paths)
+        if self.drop_target == "library":
+            self._receive_library_paths(paths)
+            return self.get_state()
         if self.drop_target == "notebook":
             self._receive_notebook_paths(paths)
             return self.get_state()
