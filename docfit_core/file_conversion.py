@@ -17,6 +17,23 @@ IMAGE_INPUT_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".webp", ".bmp", ".
 IMAGE_FORMATS = {"jpg": "JPEG", "png": "PNG"}
 IMAGE_DPI = 150
 
+# 한/글이 PDF를 쓰는 중인 임시 파일. 강제 종료(os._exit)는 finally가 돌지 않으므로 종료 직전에 정리한다.
+_PENDING_TEMP_PDFS: set[Path] = set()
+
+
+def cleanup_pending_temp_outputs() -> list[Path]:
+    """저장 중이던 임시 PDF(결과 폴더의 docfit_pdf_*.pdf)만 지운다. 원본·완성된 결과는 건드리지 않는다."""
+    removed = []
+    for path in list(_PENDING_TEMP_PDFS):
+        _PENDING_TEMP_PDFS.discard(path)
+        try:
+            if path.name.startswith("docfit_pdf_") and path.is_file():
+                path.unlink()
+                removed.append(path)
+        except OSError:
+            pass
+    return removed
+
 # 결과 형식과 같은 형식의 입력(예: PDF→PDF)은 변환하지 않는다. PDF 압축(pdfz)은 PDF→PDF가 목적이라 뺀다.
 SAME_FORMAT_SUFFIXES = {
     "hwpx": frozenset({".hwpx"}), "pdf": frozenset({".pdf"}), "docx": frozenset({".docx"}),
@@ -147,6 +164,7 @@ def convert_hwpx_to_pdf(app, source: str | Path, target: str | Path) -> Path:
     # 한/글의 SaveAs가 이미 존재하는 빈 파일에 덮어쓰기 질문을 띄우지 않도록
     # 고유 경로만 확보하고 실제 저장 직전 파일은 제거한다.
     temporary.unlink()
+    _PENDING_TEMP_PDFS.add(temporary)
     opened = False
     try:
         # 암호 문서는 숨은 암호 창에서 멈추지 않고 바로 실패한다(2.0.7).
@@ -179,6 +197,7 @@ def convert_hwpx_to_pdf(app, source: str | Path, target: str | Path) -> Path:
             temporary.unlink(missing_ok=True)
         except OSError:
             pass
+        _PENDING_TEMP_PDFS.discard(temporary)
 
 
 def convert_to_pdf(app, source: str | Path, target: str | Path) -> Path:

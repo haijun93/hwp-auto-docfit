@@ -5542,7 +5542,7 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                             self._안내_설정(0)
                             self.버튼_대기중()
                             self.stage_board.finish("중단")
-                            self.status_var.set(f"변환 중단 · 성공 {item[1]}개 / 실패 {item[2]}개")
+                            self.status_var.set(f"변환 중단 · 성공 {item[1]}개 / 실패 {item[2]}개 · 남은 파일은 처리하지 않았고 원본은 그대로예요. 다시 시작할 수 있어요.")
                             self._flutter_completion = {
                                 "message": self.status_var.get(),
                                 "details": [],
@@ -5750,6 +5750,11 @@ def _install(*, _docfit_namespace, _docfit_symbol):
                 from docfit_core.hwp_process import kill_owned
                 try:
                     kill_owned(log=self.로그표시)
+                except Exception:
+                    pass
+                try:
+                    from docfit_core.file_conversion import cleanup_pending_temp_outputs
+                    cleanup_pending_temp_outputs()   # 저장 중이던 임시 PDF만 정리(원본은 읽기만 한다)
                 except Exception:
                     pass
                 try:
