@@ -375,9 +375,9 @@ fn line_ending_detection_and_roundtrip() {
     let mut d = Document::from_bytes("가\r\n나\r\n다".as_bytes()).unwrap();
     assert_eq!(d.line_ending, LineEnding::Crlf);
     assert_eq!(d.text(), "가\n나\n다");
-    assert_eq!(d.to_bytes(), "가\r\n나\r\n다".as_bytes());
+    assert_eq!(d.to_bytes().unwrap(), "가\r\n나\r\n다".as_bytes());
     d.line_ending = LineEnding::Lf;
-    assert_eq!(d.to_bytes(), "가\n나\n다".as_bytes());
+    assert_eq!(d.to_bytes().unwrap(), "가\n나\n다".as_bytes());
     // 붙여넣은 CRLF도 내부는 LF
     d.insert(0, "x\r\ny\rz").unwrap();
     assert!(!d.text().contains('\r'));
@@ -386,12 +386,13 @@ fn line_ending_detection_and_roundtrip() {
 #[test]
 fn encodings_roundtrip() {
     for enc in [Encoding::Utf8, Encoding::Utf8Bom, Encoding::Utf16Le, Encoding::Utf16Be] {
-        let bytes = fileio::encode("한글😀abc", enc);
+        let bytes = fileio::encode("한글😀abc", enc).unwrap();
         let (s, e) = fileio::decode(&bytes).unwrap();
         assert_eq!((s.as_str(), e), ("한글😀abc", enc));
     }
-    assert!(fileio::decode(&[0xB0, 0xA1, 0xB3, 0xAA]).is_err()); // CP949 "가나"
-    let d = Document::from_bytes(&fileio::encode("가\r\n나", Encoding::Utf16Le)).unwrap();
+    // BOM 없는 CP949 "가나"는 이제 자동 감지된다(상세 시험은 tests/encoding.rs)
+    assert_eq!(fileio::decode(&[0xB0, 0xA1, 0xB3, 0xAA]).unwrap(), ("가나".to_string(), Encoding::Cp949));
+    let d = Document::from_bytes(&fileio::encode("가\r\n나", Encoding::Utf16Le).unwrap()).unwrap();
     assert_eq!((d.encoding, d.line_ending), (Encoding::Utf16Le, LineEnding::Crlf));
 }
 
